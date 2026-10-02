@@ -642,7 +642,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
     {
         "key": "lr_scheduler_timescale",
         "type": "number",
-        "default": "",
+        "default": 10000,
         "section": "optimizer",
         "desc_key": "field.krea_lr_scheduler_timescale",
         "hint_key": "field.krea_lr_scheduler_timescaleHint",
@@ -968,6 +968,8 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": True,
         "section": "performance",
         "desc_key": "field.persistent_data_loader_workers",
+        "hint_key": "field.persistent_data_loader_workersHint",
+        "readonly_if": {"key": "max_data_loader_n_workers", "eq": 0, "reason_key": "field.persistent_data_loader_workersLocked"},
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -2035,7 +2037,7 @@ def build_krea2_train_config(
         config.get("lr_scheduler_min_lr_ratio")
     ):
         result["lr_scheduler_min_lr_ratio"] = float(config["lr_scheduler_min_lr_ratio"])
-    if bool(config.get("persistent_data_loader_workers", True)):
+    if bool(config.get("persistent_data_loader_workers", True)) and result["max_data_loader_n_workers"] > 0:
         result["persistent_data_loader_workers"] = True
     if bool(config.get("save_state", False)):
         result["save_state"] = True

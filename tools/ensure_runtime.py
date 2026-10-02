@@ -105,7 +105,7 @@ def sync_optional_packages(*, core_changed: bool) -> list[str]:
 
 
 def sync_triton() -> None:
-    """Keep the required Triton baseline installed, including in older venvs."""
+    """Try to install the optional Triton baseline, including in older venvs."""
     if sys.platform not in ("win32", "linux"):
         return
     expected_triton = "triton-windows" if sys.platform == "win32" else "triton"
@@ -147,9 +147,12 @@ def main() -> int:
 
     try:
         sync_triton()
-    except RuntimeError as exc:
-        print(f"[Runtime][ERROR] Triton synchronization failed / Triton 运行时同步失败: {exc}", file=sys.stderr)
-        return 1
+    except Exception:
+        print(
+            "[Runtime][WARN] Triton installation failed; startup will continue. "
+            "Retry from Environment Management / Triton 安装失败，继续启动，可在环境管理页重试。",
+            file=sys.stderr,
+        )
 
     warnings = sync_optional_packages(core_changed=core_changed)
     for warning in warnings:

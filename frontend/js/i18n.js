@@ -13,7 +13,7 @@
 const I18N = (() => {
   // ── Register available locales here ──────────────────────
   const LOCALES = ['zh-CN', 'en-US'];
-  const MESSAGES_VERSION = '20260929-tagger-review22';
+  const MESSAGES_VERSION = '20261002-scheduler-workers1';
 
   let _locale = 'en-US';
   let _messages = null;

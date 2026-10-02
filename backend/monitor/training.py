@@ -217,7 +217,9 @@ def read_tensorboard_loss(
                 "min": best["value"],
                 "min_step": best["step"],
                 "max": max(p["value"] for p in raw_points),
-                "diagnostic_points": raw_points[-120:] if tag in {"loss/average", "loss/current"} else [],
+                # 小图需要连续的最新原始点；全局 LTTB 曲线的尾部会随重采样改变。
+                # 40 个诊断观测各需前置 120 点；参照图仍由前端截取最近 120 点。
+                "diagnostic_points": raw_points[-160:] if tag in {"loss/average", "loss/current"} else raw_points[-40:],
             })
 
         if series_list:

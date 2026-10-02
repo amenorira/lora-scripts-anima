@@ -58,6 +58,7 @@ def install(path: str) -> None:
         return
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     lock = _OutputLock(path)
+    _install_step_logging(lock)
 
     if hasattr(os, "register_at_fork"):
         def after_fork():
@@ -79,8 +80,7 @@ def install(path: str) -> None:
             source = f"  {record.filename}:{record.lineno}" if self._log_render.show_path else ""
             text = prefix + lines[0] + source + "\n"
             text += "".join(" " * len(prefix) + line + "\n" for line in lines[1:])
-            # Only logging records participate in this lock. print/tqdm keep
-            # their original streams and terminal behavior.
+            # Redirected steps and logging records share this write lock.
             with lock.hold():
                 stream.write(text)
                 stream.flush()
@@ -89,3 +89,30 @@ def install(path: str) -> None:
 
     emit._anima_training_logging = True
     RichHandler.emit = emit
+
+
+def _install_step_logging(lock) -> None:
+    """Write every steps refresh to redirected output; leave terminal tqdm alone."""
+    from tqdm.std import tqdm
+
+    if getattr(tqdm.display, "_anima_step_logging", False):
+        return
+    original_display = tqdm.display
+
+    def file_steps(bar):
+        return (str(getattr(bar, "desc", "")).rstrip(": ").lower() == "steps"
+                and not getattr(bar.fp, "isatty", lambda: False)())
+
+    def display(self, msg=None, pos=None):
+        if file_steps(self):
+            # Empty messages only clear a terminal row. Every actual rendering,
+            # including repeated step numbers and identical text, is history.
+            if msg != "":
+                with lock.hold():
+                    self.fp.write((str(self) if msg is None else msg) + "\n")
+                    self.fp.flush()
+            return True
+        return original_display(self, msg=msg, pos=pos)
+
+    display._anima_step_logging = True
+    tqdm.display = display

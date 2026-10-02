@@ -9,7 +9,7 @@ from unittest.mock import patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from backend.core.realtime import RealtimeHub
+from backend.core.realtime import RealtimeHub, _compact_task_snapshot
 from backend.server.routes import realtime as realtime_route
 
 
@@ -33,6 +33,10 @@ class RealtimeHubTests(unittest.IsolatedAsyncioTestCase):
 
 
 class RealtimeRouteTests(unittest.TestCase):
+    def test_structured_logs_keep_their_level_in_realtime_snapshots(self):
+        entry = {"time": "21:00:21", "event": "done", "level": "success", "failed": 0}
+        self.assertEqual(_compact_task_snapshot({"logs": ["legacy", entry]})["logs"], ["legacy", entry])
+
     def test_websocket_hello_ready_subscribe_and_replay(self):
         hub = RealtimeHub()
         asyncio.run(hub.publish("server", "server.tasks", {"training_active": True}))

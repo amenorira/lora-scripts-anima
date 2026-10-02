@@ -11,6 +11,12 @@ from backend.server import application
 class BackgroundStartupTests(unittest.IsolatedAsyncioTestCase):
     async def test_slow_history_does_not_block_ready_or_lifespan_entry(self):
         started, release = threading.Event(), threading.Event()
+        preview_started, preview_release = asyncio.Event(), asyncio.Event()
+
+        async def warm_preview():
+            preview_started.set()
+            await asyncio.wait_for(preview_release.wait(), 5)
+            close_pool.assert_not_called()
 
         def scan():
             started.set()
@@ -20,9 +26,10 @@ class BackgroundStartupTests(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(application, "scan_history", side_effect=scan) as history, \
              patch.object(application, "warm_step_estimator") as estimator, \
+             patch.object(application, "warm_shape_preview", side_effect=warm_preview) as preview, \
              patch.object(application, "tensorboard", start=Mock(), stop=AsyncMock()) as tb, \
              patch.object(application, "task_monitor", start=AsyncMock(), stop=AsyncMock()), \
-             patch("backend.training.shape_preview.close_preview_pool"), \
+             patch("backend.training.shape_preview.close_preview_pool") as close_pool, \
              patch.object(application, "report_runtime_banner", new_callable=AsyncMock) as banner:
             async def report():
                 tb.start.assert_called_once()
@@ -32,13 +39,18 @@ class BackgroundStartupTests(unittest.IsolatedAsyncioTestCase):
             try:
                 async with application.lifespan(application.app):
                     self.assertTrue(await asyncio.to_thread(started.wait, 2))
+                    await asyncio.wait_for(preview_started.wait(), 2)
                     banner.assert_awaited_once()
                     release.set()
+                    preview_release.set()
             finally:
                 release.set()
+                preview_release.set()
             tb.stop.assert_awaited_once()
             history.assert_called_once()
             estimator.assert_called_once()
+            preview.assert_awaited_once()
+            close_pool.assert_called_once()
 
 
 class HistoryWarmupTests(unittest.TestCase):

@@ -1,11 +1,13 @@
 """Inspect the actual Anima network constructors without allocating model weights."""
 import ast
+import asyncio
 import copy
 import importlib
 import inspect
 import json
 import logging
 import math
+import multiprocessing
 import re
 import sys
 from concurrent.futures import ProcessPoolExecutor
@@ -21,7 +23,9 @@ _pool = None
 def preview_pool():
     global _pool
     if _pool is None:
-        _pool = ProcessPoolExecutor(max_workers=1)
+        # The server has already imported torch and started background threads.
+        # Linux's default fork can inherit their locked state and hang forever.
+        _pool = ProcessPoolExecutor(max_workers=1, mp_context=multiprocessing.get_context("spawn"))
     return _pool
 
 
@@ -30,6 +34,21 @@ def close_preview_pool():
     if _pool is not None:
         _pool.shutdown(wait=False, cancel_futures=True)
         _pool = None
+
+
+async def warm_up():
+    """Prepare the CPU preview worker while the server checks its GPU runtime."""
+    from backend.log import log
+
+    try:
+        await asyncio.get_running_loop().run_in_executor(preview_pool(), inspect_network, {
+            "model_train_type": "anima-lora", "network_module": "networks.lora_anima",
+            "network_dim": 32, "network_alpha": 16, "network_train_unet_only": True,
+            "save_precision": "bf16",
+        })
+    except Exception:
+        # Optional warm-up must not prevent startup; a later request can retry.
+        log.warning("Shape preview warm-up failed / 结构预览预热失败", exc_info=True)
 
 
 def _anima_config():

@@ -5,6 +5,7 @@
 # 任何上游仓库文件；vendor/sd-scripts 上游若增删依赖，需人工同步到此。
 # 安装顺序：启动器先单独安装 CUDA 版 PyTorch，再整体安装本文件。
 # torch / torchvision 不在此列，原因同上（避免解析时拉到非 CUDA 版）。
+# Triton 由 tools.ensure_runtime 尝试安装，失败不阻止启动，可在环境管理页重试。
 # ============================================================
 
 # ── 后端（FastAPI）──
@@ -29,9 +30,6 @@ PyYAML>=6.0,<7
 setuptools>=68,<82
 
 # ── 训练栈（sd-scripts 与 musubi-tuner 共用；与 musubi_runtime.MUSUBI_RUNTIME_PACKAGES 对账）──
-# 默认提供 LyCORIS 融合内核和编译后端；匹配 PyTorch 2.12.1。
-triton-windows>=3.7.1,<3.8; sys_platform == "win32"
-triton==3.7.1; sys_platform == "linux"
 accelerate==1.15.0
 av==14.0.1
 bitsandbytes

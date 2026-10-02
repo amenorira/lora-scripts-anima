@@ -631,18 +631,6 @@ input[type="checkbox"]:focus-visible {
   outline-offset: 2px;
 }
 
-/* ── Log Level Badge ─────────────────────────────────────── */
-.log-level-btn {
-  font-size: 11px; padding: 3px 8px; border-radius: var(--radius-control);
-  border: 1px solid var(--border-default);
-  background: var(--bg-surface-raised);
-  color: var(--text-secondary); cursor: pointer;
-  font-family: inherit;
-  transition: background-color var(--duration-fast), border-color var(--duration-fast), color var(--duration-fast);
-}
-.log-level-btn:hover { border-color: var(--border-input); color: var(--text-primary); }
-.log-level-btn.active { background: var(--accent-solid); color: #fff; border-color: var(--accent-solid); }
-
 /* ── Form Fields (row-based layout: info left, control right) ── */
 .field {
   padding: 10px 0 10px 10px;
@@ -721,7 +709,8 @@ input[type="checkbox"]:focus-visible {
    提示"这是默认值、尚未自定义"。改值后 class 移除、恢复正常字色。假留空——值仍保留，
    不触发必填校验失败、不影响训练流程。 */
 .field-control input[type="text"].is-default,
-.field-input-wrap input[type="text"].is-default {
+.field-input-wrap input[type="text"].is-default,
+.stepper input[type="number"].is-default {
   color: var(--text-tertiary);
 }
 /* Full-width input row for textarea/path fields */
@@ -2524,7 +2513,7 @@ input[type="range"]::-webkit-slider-thumb {
 .m-overview-progress { height: 4px; overflow: hidden; border-radius: var(--radius-pill); background: var(--bg-sunken); }
 .m-overview-progress i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .35s var(--ease-out); }
 .m-summary-progress-bottom { margin-top: 12px; color: var(--text-tertiary); font-size: 12px; line-height: 1.3; }
-.m-summary-progress-bottom > span:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.m-summary-progress-bottom > span { font-variant-numeric: tabular-nums; }
 .m-live-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 0 18px 18px; }
 .m-live-metric { position: relative; display: grid; grid-template-columns: minmax(0, max-content) minmax(48px, 1fr); grid-template-rows: auto 1fr auto; column-gap: 16px; container-type: inline-size; min-width: 0; min-height: 142px; padding: 14px; overflow: hidden; border: 1px solid var(--monitor-card-border); border-radius: 7px; background: var(--monitor-tile-bg); }
 .m-live-metric .m-metric-label { grid-area: 1 / 1 / 2 / -1; display: inline-flex; align-items: center; gap: 8px; margin-bottom: 13px; color: var(--text-secondary); font-size: 12px; line-height: 1.3; }
@@ -2551,7 +2540,9 @@ input[type="range"]::-webkit-slider-thumb {
 .m-number-outgoing { position: absolute; inset: 0; }
 .m-metric-sparkline { grid-area: 2 / 2; align-self: center; min-width: 0; width: 100%; height: 48px; fill: none; color: color-mix(in srgb, var(--accent) 60%, var(--text-tertiary)); pointer-events: none; }
 .m-metric-sparkline[hidden] { display: none; }
+.m-metric-sparkline, .m-diagnostic-mini { overflow: hidden; }
 .m-metric-sparkline path { stroke: currentColor; stroke-width: 1.25; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
+.m-metric-sparkline [data-summary-time-baseline] { stroke: currentColor; stroke-width: 1; stroke-dasharray: 2 3; opacity: .35; vector-effect: non-scaling-stroke; }
 .m-live-metric-lr .m-metric-sparkline { color: color-mix(in srgb, var(--section-training) 46%, var(--text-tertiary)); opacity: .8; }
 .m-live-metric-speed .m-metric-sparkline { color: color-mix(in srgb, var(--section-network) 52%, var(--text-tertiary)); }
 .m-live-metric-time .m-metric-sparkline { color: color-mix(in srgb, var(--section-optimizer) 48%, var(--text-tertiary)); }
@@ -2577,29 +2568,26 @@ input[type="range"]::-webkit-slider-thumb {
 .m-tensorboard-link { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 4px 8px !important; border: 1px solid var(--border-default) !important; border-radius: var(--radius-control); color: var(--text-secondary) !important; }
 .m-tensorboard-link:hover { border-color: var(--accent) !important; color: var(--accent) !important; }
 .m-tensorboard-link svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; }
-.m-diagnostic-body { display: block; flex: 1; }
-.m-diagnostic-verdict { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(60px, .65fr); gap: 12px 18px; align-content: start; container-type: inline-size; min-width: 0; min-height: 160px; padding: 20px 18px 14px; }
-.m-diagnostic-verdict .m-diagnostic-state { grid-column: 1 / -1; }
-.m-diagnostic-verdict p { min-width: 0; overflow-wrap: anywhere; }
-.m-diagnostic-verdict[data-has-trend="false"] p { grid-column: 1 / -1; }
-.m-diagnostic-verdict[data-has-trend="false"] .m-diagnostic-trend { display: none; }
-.m-diagnostic-trend { grid-area: 2 / 2; align-self: center; min-width: 0; width: 100%; height: 58px; fill: none; color: var(--text-tertiary); pointer-events: none; opacity: .7; }
+.m-diagnostic-body { display: block; flex: 1; container-type: inline-size; }
+.m-diagnostic-verdict { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(60px, .65fr); gap: 18px; align-items: center; min-width: 0; min-height: 166px; padding: 20px 18px 14px; }
+.m-diagnostic-copy { min-width: 0; }
+.m-diagnostic-trend { grid-area: 1 / 2; min-width: 0; width: 100%; height: 58px; overflow: hidden; fill: none; color: var(--text-tertiary); pointer-events: none; opacity: .7; }
 .m-diagnostic-trend path { stroke: currentColor; stroke-width: 1.25; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
 .m-diagnostic-verdict[data-diagnostic-tone="ok"] .m-diagnostic-trend { color: var(--success); }
 .m-diagnostic-verdict[data-diagnostic-tone="warn"] .m-diagnostic-trend { color: var(--warning); }
 .m-diagnostic-verdict[data-diagnostic-tone="danger"] .m-diagnostic-trend { color: var(--danger); }
 .m-diagnostic-details > summary { cursor: pointer; padding: 12px 14px; color: var(--text-secondary); border-top: 1px solid var(--monitor-card-border); font-size: 12px; }
 .m-gpu-select { max-width: 170px; padding: 3px; color: var(--text-secondary); background: transparent; border: 1px solid var(--border-default); border-radius: var(--radius-control); font-size: 11px; }
-.m-diagnostic-state { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
-.m-diagnostic-state i { width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: var(--text-tertiary); }
-.m-diagnostic-state strong { color: var(--text-primary); font-size: 20px; line-height: 1.1; letter-spacing: 0; }
+.m-diagnostic-state { display: flex; align-items: flex-start; gap: 8px; min-height: 52px; }
+.m-diagnostic-state i { width: 7px; height: 7px; margin-top: 10px; flex-shrink: 0; border-radius: 50%; background: var(--text-tertiary); }
+.m-diagnostic-state strong { min-width: 0; overflow-wrap: anywhere; color: var(--text-primary); font-size: 20px; line-height: 1.3; letter-spacing: 0; }
 .m-diagnostic-verdict[data-diagnostic-tone="ok"] .m-diagnostic-state i { background: var(--success); }
 .m-diagnostic-verdict[data-diagnostic-tone="warn"] .m-diagnostic-state i { background: var(--warning); }
 .m-diagnostic-verdict[data-diagnostic-tone="danger"] .m-diagnostic-state i { background: var(--danger); }
 .m-diagnostic-verdict[data-diagnostic-tone="ok"] .m-diagnostic-state strong { color: color-mix(in srgb, var(--success) 72%, var(--text-primary)); }
 .m-diagnostic-verdict[data-diagnostic-tone="warn"] .m-diagnostic-state strong { color: color-mix(in srgb, var(--warning) 76%, var(--text-primary)); }
 .m-diagnostic-verdict[data-diagnostic-tone="danger"] .m-diagnostic-state strong { color: color-mix(in srgb, var(--danger) 78%, var(--text-primary)); }
-.m-diagnostic-verdict p { margin: 12px 0 16px; color: var(--text-secondary); font-size: 13px; line-height: 1.55; }
+.m-diagnostic-copy p { min-height: 4.65em; margin: 8px 0 0; overflow-wrap: anywhere; color: var(--text-secondary); font-size: 13px; line-height: 1.55; }
 .m-diagnostic-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); min-width: 0; }
 .m-diagnostic-metric { position: relative; display: grid; grid-template-columns: minmax(0, max-content) minmax(40px, 1fr); column-gap: 16px; align-content: center; container-type: inline-size; min-width: 0; min-height: 95px; padding: 15px 18px; border-right: 1px solid var(--monitor-card-border); border-bottom: 1px solid var(--monitor-card-border); }
 .m-diagnostic-metric:nth-child(2n) { border-right: none; }
@@ -2612,9 +2600,9 @@ input[type="range"]::-webkit-slider-thumb {
   .m-diagnostic-mini { display: none; }
   .m-diagnostic-metric > span, .m-diagnostic-metric > strong { grid-column: 1 / -1; }
 }
-@container (max-width: 360px) {
+@container (max-width: 480px) {
   .m-diagnostic-trend { display: none; }
-  .m-diagnostic-verdict > p { grid-column: 1 / -1; }
+  .m-diagnostic-copy { grid-column: 1 / -1; }
 }
 .m-diagnostic-mini path { stroke: currentColor; stroke-width: 1.25; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
 /* 零长度线段的圆形端帽保持 5px，避免随 SVG 非等比缩放变成椭圆。 */
@@ -2757,11 +2745,6 @@ input[type="range"]::-webkit-slider-thumb {
 .m-logs-section .monitor-logs-container {
   border: 1px solid var(--monitor-card-border); border-radius: var(--monitor-radius);
 }
-.m-logs-section .log-level-btn {
-  height: 28px; min-height: 28px; padding: 0 9px; border-radius: var(--radius-control);
-  font-size: 11.5px; font-weight: 550; line-height: 1;
-}
-.m-logs-section .log-level-btn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 .m-samples-section .preview-grid {
   display: grid; grid-auto-flow: row;
   grid-template-columns: repeat(auto-fill, minmax(224px, 1fr)); gap: 16px;
@@ -2961,15 +2944,12 @@ input[type="range"]::-webkit-slider-thumb {
   flex-shrink: 0; min-width: 100%; width: max-content;
   white-space: pre; overflow-wrap: normal; word-break: normal;
   line-height: 1.6;
-  counter-increment: logline;          /* 行号由 CSS counter 按 DOM 位置生成 */
 }
 /* VSCode 2026 — list.hoverBackground (#1e1f20) */
 .log-line:hover { background: #1e1f20; }
 /* 完整日志搜索命中行：行底高亮 */
 .log-line.log-line-match { background: rgba(72, 160, 199, 0.10); }
-/* Line numbers — VSCode gutter (editorLineNumber.foreground #858889)。
-   counter-reset 由 .monitor-logs-container 提供；full 模式 JS 设 counter-reset=offset 得绝对行号。 */
-.monitor-logs-container { counter-reset: logline 0; }
+/* Original row numbers survive grouping and pagination. */
 .log-line::before {
   content: attr(data-line-no);
   display: inline-block; min-width: 48px; padding: 0 12px 0 4px;
@@ -2980,6 +2960,18 @@ input[type="range"]::-webkit-slider-thumb {
 .log-line-text-split { display: flex; align-items: baseline; gap: 16px; }
 .log-line-main { flex: 1 0 auto; }
 .log-line-source { flex: 0 0 auto; margin-left: auto; }
+.log-repeat-count {
+  display: inline-block; vertical-align: baseline;
+  flex: 0 0 auto; margin: 1px 0 1px 10px; padding: 0 6px;
+  color: #79c0ff; background: rgba(72, 160, 199, 0.16);
+  border: 1px solid rgba(121, 192, 255, 0.3); border-radius: 9px;
+  font-size: 11px; line-height: 1.5; font-weight: 600;
+}
+.log-line.log-line-current-match { box-shadow: inset 3px 0 var(--accent, #48a0c7); }
+[data-theme="light"] .log-repeat-count {
+  color: #075985; background: #e0f2fe; border-color: #7db5d2;
+}
+[data-theme="light"] .log-line:hover { background: #edf2f7; }
 /* ═══════ Inline syntax tokens — VSCode 2026 Dark (2026-dark.json) ═══════ */
 /* Log levels: VSCode colors log severity via the token.*-token scopes.
    Plain colored text — no badge, no background (matches VSCode log view). */

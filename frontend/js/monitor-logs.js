@@ -2,57 +2,54 @@
 window.monitorLogCoreMixin = {
   // ── Log helpers ────────────────────────────────────────
   async copyLogs() {
-    const lines = this.logMode === 'full' ? (this.logFullLines || []) : (this.logLines || []);
+    const lines = this.logFullLines || [];
     try { await navigator.clipboard.writeText(lines.join('\n')); this.toast(this.t('common.copied')); }
     catch (_) { this.toast(this.t('common.failed'), 'error'); }
   },
-  requestClearLogs() {
-    this.openConfirm(this.t('monitor.confirmClearLogsTitle'), this.t('monitor.confirmClearLogs'), () => this.clearLogs(), this.t('common.confirm'), { danger: true });
-  },
-  clearLogs() {
-    this.logLines = []; this._logContentVersion = 0;
-    this._renderedLogCount = 0; this._renderedLogFilterKey = '';
-    this._logDirty = true; this._logTrimK = 0; this._forceLogRebuild = true;
-    this.renderDashboard();
-  },
-
   // 内存缓冲上限 / 分页大小（取自 constants.js LOG）
   _logCap() { return (window.UI_CONSTANTS && window.UI_CONSTANTS.LOG && window.UI_CONSTANTS.LOG.MAX_LINES) || 5000; },
   _logPageSize() { return (window.UI_CONSTANTS && window.UI_CONSTANTS.LOG && window.UI_CONSTANTS.LOG.FULL_PAGE_SIZE) || 1000; },
 
-  _tqdmProgressSignature(line) {
-    const match = String(line || '').match(/^\s*steps:\s+\d+%\|.*\|\s*(\d+)\s*\/\s*(\d+)(?=\s*\[)/i);
-    return match ? match[1] + '/' + match[2] : '';
+  _applyMonitorLogSnapshot(lines = [], total = 0, preserveFull = false) {
+    const tail = lines.slice(-this._logCap());
+    preserveFull = preserveFull && total >= this.logTotal
+      && !((this.logAutoScroll || this._logAtBottom) && this.logFullOffset + this.logFullLines.length >= this.logTotal);
+    this.logTotal = total;
+    this._logObservationVersion = (this._logObservationVersion || 0) + 1;
+    this.logLines = tail;
+    this._logTailOffset = Math.max(0, total - tail.length);
+    this._logContentVersion++;
+    if (!preserveFull) {
+      this.logFullLines = tail.slice(-this._logPageSize());
+      this.logFullOffset = Math.max(0, total - this.logFullLines.length);
+      this._logFullLoaded = true;
+      this._logFullNeedsResync = false;
+      this._logFullSlide = false;
+      this._forceLogRebuild = true;
+    }
   },
 
-  _mergeRealtimeLogLines(target, incoming) {
-    const lines = Array.isArray(incoming) ? incoming : [];
-    let overlap = 0;
-    const maxOverlap = Math.min(target.length, lines.length);
-    for (let size = maxOverlap; size > 0; size--) {
-      let matches = true;
-      for (let index = 0; index < size; index++) {
-        if (target[target.length - size + index] !== lines[index]) { matches = false; break; }
-      }
-      if (matches) { overlap = size; break; }
-    }
+  // HTTP 尾页与 WS 重放可能交叠；按绝对行号替换/追加，文本相同的真实新行也保留。
+  _mergeRealtimeLogPage(target, offset, data, cap) {
+    const lines = Array.isArray(data.lines) ? data.lines : [];
+    const incomingOffset = data.offset;
+    const end = offset + target.length;
+    const gap = incomingOffset > end;
+    const reset = data.reset || gap || data.log_total < end;
+    const skip = reset ? 0 : Math.max(0, offset - incomingOffset);
+    const index = reset ? 0 : Math.max(0, incomingOffset - offset);
+    const incoming = lines.slice(skip);
+    if (!reset && incomingOffset + lines.length <= offset) return { offset, trimmed: 0, changed: false, replaced: false };
+    const replaced = reset || incoming.some((line, i) => index + i < target.length && target[index + i] !== line);
+    const changed = replaced || index + incoming.length !== target.length;
+    if (changed) target.splice(index, target.length - index, ...incoming);
+    const trimmed = Math.max(0, target.length - cap);
+    if (trimmed) target.splice(0, trimmed);
+    return { offset: (reset ? incomingOffset : offset) + trimmed, trimmed, changed, replaced, gap };
+  },
 
-    let appended = 0;
-    let replaced = 0;
-    for (const line of lines.slice(overlap)) {
-      const signature = this._tqdmProgressSignature(line);
-      const lastIndex = target.length - 1;
-      if (signature && lastIndex >= 0 && signature === this._tqdmProgressSignature(target[lastIndex])) {
-        if (target[lastIndex] !== line) {
-          target[lastIndex] = line;
-          replaced++;
-        }
-        continue;
-      }
-      target.push(line);
-      appended++;
-    }
-    return { appended, replaced, overlap, changed: appended > 0 || replaced > 0 };
+  _needsLogTailFetch() {
+    return !this.logFullLoading && (!this._logFullLoaded || (this._logFullNeedsResync && (this.logAutoScroll || this._logAtBottom)));
   },
 
   // ── 完整日志模式（后端分页）──────────────────────────────
@@ -72,34 +69,6 @@ window.monitorLogCoreMixin = {
   },
   /** 是否存在可拉取的实时/历史日志源（无训练且非历史模式时为 false） */
   _hasLogSource() { return !!this._currentLogSourceKey(); },
-
-  /** 切换 tail/full 模式 */
-  async setLogMode(mode) {
-    if (mode === this.logMode) return;
-    this.logMode = mode;
-    this._renderedLogCount = 0;
-    this._renderedLogFilterKey = '';
-    this._forceLogRebuild = true;
-    this._logFullSlide = false;
-    this._logFullEvictK = 0;
-    if (mode === 'full') {
-      // 进入完整日志：末页 + 跟随（实时训练随 WebSocket 增量滚动；历史停在末尾）
-      this.logAutoScroll = true;
-      this._logAtBottom = true;
-      this._logFullLoaded = true;       // setLogMode 自行拉取，标记已加载避免首屏重复拉
-      this._logFullNeedsResync = false;
-      this.logFullLoading = true;
-      this.logFullLines = [];
-      this.renderDashboard();           // 先渲染外壳 + Loading
-      await this.fetchLogSlice({ tail: true });
-      return;
-    }
-    // 切回 tail：恢复实时尾部缓冲视图
-    this.logAutoScroll = true;
-    this._logAtBottom = true;
-    this._logDirty = true;
-    this.renderDashboard();
-  },
 
   /** 回到完整日志末尾并恢复跟随（实时增量刷新）。浏览历史页后用它回到 live 末尾。 */
   followFullTail(opts) {
@@ -135,7 +104,7 @@ window.monitorLogCoreMixin = {
       return;
     }
     const requestSeq = ++this._logSliceRequestSeq;
-    const eventVersion = this._logEventVersion || 0;
+    const eventVersion = this._logObservationVersion || 0;
     const sourceKey = runDir ? ('run:' + runDir) : ('task:' + taskId);
     const q = (opts.q !== undefined) ? opts.q : this.logFullQuery;
     let offset = this.logFullOffset;
@@ -187,14 +156,14 @@ window.monitorLogCoreMixin = {
           }
         }
         this.logFullOffset = d.offset;
-        this.logFullTotal = d.total;
+        // 请求期间可能收到更晚的推送；分页响应不能把徽标总数倒退。
+        const updatedDuringRequest = eventVersion !== (this._logObservationVersion || 0);
+        this.logTotal = updatedDuringRequest && !this.selectedRunDir ? Math.max(this.logTotal, d.total) : d.total;
         this.logFullLines = nextLines;
         this.logFullMatches = nextMatches;
         this.logFullMatchesTruncated = !!d.matches_truncated;
         this.logFullQuery = q;
         this._logFullSourceKey = sourceKey;
-        // 更新 logTotal（live 模式首次探得）
-        if (!this.selectedRunDir) this.logTotal = d.total;
         if (opts._matchIdx !== undefined) {
           this.logFullMatchIdx = opts._matchIdx;
         } else if (opts.matchIdx === undefined) {
@@ -204,10 +173,12 @@ window.monitorLogCoreMixin = {
         } else {
           this.logFullMatchIdx = Math.max(0, Math.min(opts.matchIdx, this.logFullMatches.length - 1));
         }
+        this._logScrollTarget = (opts.matchIdx !== undefined || opts._matchIdx !== undefined)
+          ? this.logFullMatches[this.logFullMatchIdx] : null;
         this._forceLogRebuild = true;
         this._logFullSlide = false;
-        this._logFullEvictK = 0;
-        if (opts.tail && eventVersion !== (this._logEventVersion || 0)) this._logFullNeedsResync = true;
+        if (opts.tail && updatedDuringRequest) this._logFullNeedsResync = true;
+        this._logObservationVersion = (this._logObservationVersion || 0) + 1;
       } else {
         this.toast(j.message || this.t('monitor.logSliceError'), 'error');
       }
@@ -240,7 +211,7 @@ window.monitorLogCoreMixin = {
 
   /** 完整日志翻页 */
   async logFullFirstPage() {
-    if (this.logFullLoading || this.logFullTotal <= 0) return;
+    if (this.logFullLoading || this.logTotal <= 0) return;
     this.logAutoScroll = false;
     this._logAtBottom = false;
     if (this.logFullOffset > 0) await this.fetchLogSlice({ offset: 0 });
@@ -248,7 +219,7 @@ window.monitorLogCoreMixin = {
   },
   logFullLastPage() { this.followFullTail({ fetchNow: true }); },
   logFullPrevPage() { if (this.logFullOffset > 0) { this.logAutoScroll = false; this._logAtBottom = false; this.fetchLogSlice({ offset: Math.max(0, this.logFullOffset - this._logPageSize()) }); } },
-  logFullNextPage() { if (this.logFullOffset + this.logFullLines.length < this.logFullTotal) { this.logAutoScroll = false; this._logAtBottom = false; this.fetchLogSlice({ offset: this.logFullOffset + this._logPageSize() }); } },
+  logFullNextPage() { if (this.logFullOffset + this.logFullLines.length < this.logTotal) { this.logAutoScroll = false; this._logAtBottom = false; this.fetchLogSlice({ offset: this.logFullOffset + this._logPageSize() }); } },
   /** 上一/下一匹配行 */
   logFullPrevMatch() {
     if (!this.logFullMatches.length) return;
@@ -282,25 +253,10 @@ window.monitorLogRenderMixin = {
   // ═══════════════════════════════════════════════════════════
   _logsTabShellHtml(t) {
     let html = '<div class="m-section m-logs-section">';
-    const titleKey = this.logMode === 'full' ? 'logFullTitle' : 'logTitle';
+    const titleKey = 'logFullTitle';
     html += '<div class="m-view-header"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t(titleKey,'Logs')) + '</span><span class="m-logs-count" data-field="log-count">' + this._logDisplayCount() + '</span><span class="m-log-mode-indicator"><i></i>' + this.esc(this.selectedRunDir ? t('historyMode') : t('live')) + '</span></div>';
     html += '<div class="m-view-actions m-logs-tools">';
-    if (this.logMode === 'full') {
-      html += this._logFullToolbarHtml(t);
-    } else {
-      html += '<div class="m-log-toolgroup"><button type="button" class="btn btn-sm btn-secondary" @click="setLogMode(\'full\')">' + this.esc(t('logFullMode')) + '</button><button type="button" class="btn btn-sm" :class="logAutoScroll?\'btn-primary\':\'btn-secondary\'" @click="logAutoScroll=!logAutoScroll"><span x-text="logAutoScroll?\'' + this.esc(t('logAutoScroll')) + ': ON\':\'' + this.esc(t('logAutoScroll')) + ': OFF\'"></span></button></div>';
-      html += '<div class="m-log-toolgroup m-log-searchgroup"><input type="text" class="m-logs-search" x-model="logSearch" placeholder="' + this.esc(t('logSearch')) + '" @input.debounce.300ms="renderDashboard()">';
-      const levels = ['all','info','warn','error'];
-      const levelLabels = {all:t('logLevelAll'),info:t('logLevelInfo'),warn:t('logLevelWarn'),error:t('logLevelError')};
-      levels.forEach(l => {
-        html += '<button type="button" class="log-level-btn" :class="{active:logLevel===\'' + l + '\'}" @click="logLevel=\'' + l + '\';renderDashboard()">' + this.esc(levelLabels[l]) + '</button>';
-      });
-      html += '</div><div class="m-log-toolgroup m-log-toolgroup-actions"><button type="button" class="btn btn-sm btn-secondary" @click="copyLogs()">' + this.esc(t('logCopy')) + '</button>';
-      html += '<button type="button" class="btn btn-sm btn-secondary" @click="requestClearLogs()">' + this.esc(t('logClear')) + '</button>';
-      html += '<button type="button" class="btn btn-sm btn-secondary log-nav-btn-top" @click="_scrollLogsToTop()">' + this.esc(t('scrollToTop')) + '</button>';
-      html += '<button type="button" class="btn btn-sm btn-secondary log-nav-btn-bottom" @click="logAutoScroll=true;_scrollLogsToBottom()">' + this.esc(t('scrollToBottom')) + '</button>';
-      html += '<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">' + this.esc(t('logDownload')) + '</button></div>';
-    }
+    html += this._logFullToolbarHtml(t);
     html += '</div></div>';
     html += '<div id="monitorDashboardLogs" class="monitor-logs-container log-lines"></div></div>';
     return html;
@@ -312,10 +268,10 @@ window.monitorLogRenderMixin = {
     let html = '';
     const tailLabel = this.selectedRunDir ? t('logBottom') : t('logLiveTail');
     // 顶部：在有日志且非加载中时始终可用——offset 已为 0 时它仍负责把当前页滚回开头。
-    html += '<div class="m-log-toolgroup"><button type="button" class="btn btn-sm btn-secondary" @click="logFullFirstPage()" :disabled="logFullTotal<=0 || logFullLoading">' + this.esc(t('firstPage')) + '</button>';
+    html += '<div class="m-log-toolgroup"><button type="button" class="btn btn-sm btn-secondary" @click="logFullFirstPage()" :disabled="logTotal<=0 || logFullLoading">' + this.esc(t('firstPage')) + '</button>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullPrevPage()" :disabled="logFullOffset<=0">' + this.esc(t('prevPage')) + '</button>';
     html += '<span class="m-logs-range" x-text="logFullRangeText()"></span>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullNextPage()" :disabled="logFullOffset+logFullLines.length>=logFullTotal">' + this.esc(t('nextPage')) + '</button>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullNextPage()" :disabled="logFullOffset+logFullLines.length>=logTotal">' + this.esc(t('nextPage')) + '</button>';
     html += '<button type="button" class="btn btn-sm log-follow-btn" :class="logAutoScroll ? \'btn-primary\' : \'btn-secondary\'" @click="logFullLastPage()" x-text="selectedRunDir ? t(\'monitor.logBottom\') : (logAutoScroll ? t(\'monitor.logLiveTail\') : t(\'monitor.followPaused\'))">' + this.esc(tailLabel) + '</button></div>';
     html += '<div class="m-log-toolgroup m-log-searchgroup"><input type="text" class="m-logs-search m-logs-search-full" x-model="logFullQuery" placeholder="' + this.esc(t('searchFullLog')) + '" @keydown.enter="searchFullLog(logFullQuery)">';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="searchFullLog(logFullQuery)">' + this.esc(t('search')) + '</button>';
@@ -325,134 +281,37 @@ window.monitorLogRenderMixin = {
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullNextMatch()">›</button>';
     html += '</span></div><div class="m-log-toolgroup m-log-toolgroup-actions">';
     // 当前页操作（复制、刷新）在前，整文件下载收尾：范围由小到大，下载保持最右的位置不变。
-    html += '<button type="button" class="btn btn-sm btn-secondary" :disabled="logFullTotal<=0 || logFullLoading" @click="copyLogs()">' + this.esc(t('copyPage')) + '</button>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" :disabled="logTotal<=0 || logFullLoading" @click="copyLogs()">' + this.esc(t('copyPage')) + '</button>';
     html += '<button type="button" class="btn btn-sm btn-secondary" :disabled="logFullLoading" @click="refreshFullLog()">' + this.esc(t('refresh')) + '</button>';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">' + this.esc(t('downloadFullLog')) + '</button></div>';
     return html;
   },
 
-  _logLineMatches(line, search, level) {
-    const lower = line.toLowerCase();
-    if (search && lower.indexOf(search) === -1) return false;
-    if (level === 'error') {
-      return lower.indexOf('error') !== -1 || lower.indexOf('traceback') !== -1 || lower.indexOf('exception') !== -1 || /\bcuda\b.*\berror\b/i.test(line) || /\bfail\b/i.test(line);
-    } else if (level === 'warn') {
-      return lower.indexOf('warning') !== -1 || lower.indexOf('warn') !== -1 || /\bdeprecated\b/i.test(line);
-    } else if (level === 'info') {
-      return !(lower.indexOf('error') !== -1 || lower.indexOf('traceback') !== -1 || lower.indexOf('exception') !== -1 || lower.indexOf('warning') !== -1 || lower.indexOf('warn') !== -1);
-    }
-    return true;
-  },
-
   _renderLogs(contentEl, d, t, tabChanged) {
     const shellInDom = !!contentEl.querySelector('#monitorDashboardLogs');
-    const shellStale = this._builtLogMode !== this.logMode || this._builtLogLocale !== this._shellLocale;
-
-    // ── 首次 / 标签切换 / 模式切换：重建外壳 + 全量填充 ──
-    if (tabChanged || !shellInDom || shellStale) {
-      this._builtLogMode = this.logMode;
+    if (tabChanged || !shellInDom || this._builtLogLocale !== this._shellLocale) {
       this._builtLogLocale = this._shellLocale;
       contentEl.innerHTML = this._logsTabShellHtml(t);
-      this._renderedLogFilterKey = '';
-      this._renderedLogCount = 0;
-      this._logTrimK = 0;
-      this._forceLogRebuild = false;
-      this._logChunking = false;
-      this._populateLogs(contentEl, true);
-      // full 模式首屏/重连：自动拉取末页（async，先渲染 Loading 态，拉完再 renderDashboard）
-      if (this.logMode === 'full' && !this.logFullLoading && (!this._logFullLoaded || this._logFullNeedsResync)) {
-        // 无日志源（无训练且非历史模式）→ 不触发拉取，避免 toast 误报；保持空态文案。
-        // 不标记 _logFullLoaded，以便后续训练启动/实时重连时自动重新拉取。
-        if (!this._hasLogSource()) {
-          this._logFullNeedsResync = false;
-        } else {
-          this._logFullNeedsResync = false;
-          this._logFullLoaded = true;
-          this.fetchLogSlice({ tail: true, silent: true });
-        }
-      }
+      this._forceLogRebuild = true;
       this._bindLogScroll(contentEl);
-      // tail 全量是分帧的，末帧自会滚底；此处仅在非分帧（full/空）时按需滚动
-      this._afterLogsRender(contentEl, this.logMode === 'tail' && !this._logChunking);
-      return;
     }
-
-    // ── full 模式：末页 WebSocket 增量 + 翻页静态；首屏/重连自动拉取末页 ──
-    if (this.logMode === 'full') {
-      // 首屏未加载或实时重连后需 resync → 自动拉取末页（async，先返回 loading 态，拉完再 renderDashboard）
-      if ((!this._logFullLoaded || this._logFullNeedsResync) && !this.logFullLoading) {
-        if (!this._hasLogSource()) {
-          this._logFullNeedsResync = false;  // 留待有源时再拉
-        } else {
-          this._logFullNeedsResync = false;
-          this._logFullLoaded = true;
-          this.fetchLogSlice({ tail: true, silent: true });
-        }
+    if (this._needsLogTailFetch()) {
+      this._logFullNeedsResync = false;
+      if (this._hasLogSource()) {
+        this._logFullLoaded = true;
+        this.fetchLogSlice({ tail: true, silent: true });
       }
-      if (this._logFullSlide) {
-        this._logFullSlide = false;
-        this._populateFullSlide(contentEl);
-      } else if (this._forceLogRebuild) {
-        this._forceLogRebuild = false;
-        this._populateLogs(contentEl, true);
-      }
-      this._updateLogCount(contentEl);
-      return;
     }
-
-    // ── tail 模式 ──
-    const search = (this.logSearch || '').toLowerCase();
-    const level = this.logLevel || 'all';
-    const filterKey = search + '|' + level;
-    const filterChanged = this._renderedLogFilterKey !== filterKey;
-    const trimmed = this.logLines.length < this._renderedLogCount;
-    const wasDirty = this._logDirty;
-
-    // Fix3：非脏且无过滤/裁剪/强制重建 → 跳过日志重排（progress/hardware/loss 不再触碰日志 DOM）
-    if (!wasDirty && !filterChanged && !trimmed && !this._forceLogRebuild) {
-      this._updateLogCount(contentEl);
-      return;
-    }
-
-    if (filterChanged || trimmed || this._logTrimK > 0 || this._forceLogRebuild) {
-      this._renderedLogFilterKey = filterKey;
-      this._renderedLogCount = 0;
-      this._logTrimK = 0;
+    if (this._forceLogRebuild || this._logFullSlide) {
+      this._populateFullLogs(contentEl, !this._forceLogRebuild);
       this._forceLogRebuild = false;
-      this._populateLogs(contentEl, true);          // 分帧全量重建
-      this._logDirty = false;
-      this._updateLogCount(contentEl);
-      this._afterLogsRender(contentEl, !this._logChunking); // 末帧自滚底
-      return;
+      this._logFullSlide = false;
     }
-
-    // Fix1：分帧进行中 → 跳过增量（循环实时读 logLines 会吸收新行；裁剪已取消分帧并置 forceRebuild）
-    if (this._logChunking) {
-      this._logDirty = false;
-      this._updateLogCount(contentEl);
-      return;
-    }
-
-    // 增量 / 滑窗（Fix2）
-    if (wasDirty && (this.logLines.length > this._renderedLogCount || this._logTrimK > 0)) {
-      this._populateLogs(contentEl, false);
-    }
-    this._logDirty = false;
     this._updateLogCount(contentEl);
-    this._afterLogsRender(contentEl, wasDirty);
   },
 
-  _populateLogs(contentEl, isFullRebuild) {
-    if (this.logMode === 'full') { this._populateFullLogs(contentEl); return; }
-    const search = (this.logSearch || '').toLowerCase();
-    const level = this.logLevel || 'all';
-    if (isFullRebuild) this._populateTailFull(contentEl, search, level);
-    else this._populateTailIncremental(contentEl, search, level);
-  },
-
-  // 行号由 CSS counter（.log-line::before）按 DOM 位置自动生成；full 模式由
-  // counter-reset=offset 给出绝对行号。故此处不再创建 num span。
-  _buildLogLineDom(line, search, extraClass, lineNo) {
+  // Display original row numbers, independent of collapsed DOM rows.
+  _buildLogLineDom(line, search, extraClass, lineNo, count = 1) {
     const div = document.createElement('div');
     div.className = 'log-line' + (extraClass ? ' ' + extraClass : '');
     if (lineNo != null) div.dataset.lineNo = String(lineNo);
@@ -473,196 +332,134 @@ window.monitorLogRenderMixin = {
       this._highlightLogLine(span, String(line).trimEnd(), search);
     }
     div.appendChild(span);
+    this._setLogRepeatCount(div, count);
     return div;
   },
 
+  _setLogRepeatCount(div, count) {
+    if (div.dataset.repeatCount === String(count)) return;
+    div.dataset.repeatCount = String(count);
+    div.dataset.endLineNo = String(Number(div.dataset.lineNo) + count - 1);
+    let badge = div.querySelector('.log-repeat-count');
+    if (count > 1) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'log-repeat-count';
+        const main = div.querySelector('.log-line-main') || div.querySelector('.log-line-text');
+        main.appendChild(badge);
+      }
+      badge.textContent = '×' + count;
+    } else if (badge) badge.remove();
+  },
+
+  _parseLogRecord(line) {
+    const text = String(line || '').trimEnd();
+    const match = text.match(/^(?:(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:[.,]\d+)?|\[\d{2}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}\])\s+|\s*)(DEBUG|INFO|WARNING|WARN|ERROR|CRITICAL)\s+(.*)$/);
+    if (!match) return null;
+    const source = match[3].match(/^(.*\S)[ \t]+([\w.-]+\.py:\d+)$/);
+    const message = source ? source[1].trimEnd() : match[3];
+    const location = source ? source[2] : '';
+    return { timestamp: match[1] || '', level: match[2], message, source: location,
+      main: location ? text.slice(0, -location.length).trimEnd() : text,
+      key: [match[2], message, location].join('\u0000') };
+  },
+
   _splitRichLogSource(line) {
-    const text = String(line || '');
-    // Only Rich record headers have a source column. A path in a traceback,
-    // dataset configuration or continuation must remain part of the message.
-    if (!/^(?:\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}|\[\d{2}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}\]|\s+)\s+(?:DEBUG|INFO|WARNING|ERROR|CRITICAL)\s+/.test(text)) return null;
-    const match = text.match(/^(.*\S)[ \t]+([\w.-]+\.py:\d+)[ \t]*$/);
-    return match ? { main: match[1].trimEnd(), source: match[2] } : null;
+    const record = this._parseLogRecord(line);
+    return record && record.source ? record : null;
   },
 
-  _coalesceRichLogLines(lines, baseOffset) {
-    // Keep disk rows and DOM rows one-to-one in both full and incremental views.
-    return (lines || []).map((text, index) => ({ text: String(text || ''), lineNo: (baseOffset || 0) + index + 1 }));
-  },
-
-  // ── tail：分帧全量重建（Fix1 _logChunking 防竞态；末帧自滚底）──
-  _populateTailFull(contentEl, search, level) {
-    const container = contentEl.querySelector('#monitorDashboardLogs');
-    if (!container) return;
-    container.querySelectorAll('.log-line, .log-empty').forEach(n => n.remove());
-    container.style.counterReset = 'logline 0';   // tail：缓冲内相对行号 1..n
-    const lines = this.logLines.slice();
-    const version = this._logContentVersion;
-    const entries = this._coalesceRichLogLines(lines, 0);
-    const CHUNK = 400;
-    const self = this;
-    this._logChunking = true;
-    const generation = this._logRenderGeneration = (this._logRenderGeneration || 0) + 1;
-    let i = 0;
-    let firstChunk = true;
-
-    function renderChunk() {
-      if (!self._logChunking || generation !== self._logRenderGeneration) return;
-      const frag = document.createDocumentFragment();
-      let count = 0;
-      while (i < entries.length && count < CHUNK) {
-        const item = entries[i];
-        if (self._logLineMatches(item.text, search, level)) {
-          frag.appendChild(self._buildLogLineDom(item.text, search, '', item.lineNo));
-        }
-        i++; count++;
-      }
-      if (firstChunk) {
-        if (entries.length === 0) {
-          const empty = document.createElement('div');
-          empty.className = 'log-empty dashboard-empty';
-          empty.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>' + self.esc(self._logEmptyMessage(false)) + '</p>';
-          container.appendChild(empty);
-          self._renderedLogCount = lines.length;
-          self._logChunking = false;
-          self._afterLogsRender(contentEl, false);
-          return;
-        }
-        firstChunk = false;
-      }
-      container.appendChild(frag);
-      self._renderedLogCount = Math.min(i, entries.length);
-      if (i < entries.length) {
-        requestAnimationFrame(renderChunk);
-      } else {
-        self._logChunking = false;
-        if (!container.querySelector('.log-line') && entries.length > 0) {
-          const empty = document.createElement('div');
-          empty.className = 'log-empty dashboard-empty';
-          empty.innerHTML = '<p>' + self.esc(self.t('monitor.noResults')) + '</p>';
-          container.appendChild(empty);
-        }
-        self._renderedLogCount = lines.length;
-        self._afterLogsRender(contentEl, true);   // 末帧：按需滚底
-        if (self._logContentVersion !== version) { self._logDirty = true; self._forceLogRebuild = true; self.scheduleRender(); }
-      }
-    }
-    requestAnimationFrame(renderChunk);
-  },
-
-  // ── tail：增量 + 滑窗（Fix2 删顶补底，O(新增) 而非 O(缓冲)）──
-  _populateTailIncremental(contentEl, search, level) {
-    const container = contentEl.querySelector('#monitorDashboardLogs');
-    if (!container) return;
-    const lines = this.logLines;
-
-    // 滑窗删顶：环形缓冲裁掉头部 K 行 → 同步删除 DOM 前 K 个 .log-line。
-    // CSS counter 自动重编 surviving 行号，无需 JS 重编。仅在 DOM 已同步时执行。
-    if (this._logTrimK > 0) {
-      const k = Math.min(this._logTrimK, this._renderedLogCount);
-      let remove = k;
-      while (remove-- > 0) {
-        const first = container.querySelector('.log-line');
-        if (!first) break;
-        first.remove();
-      }
-      this._renderedLogCount = Math.max(0, this._renderedLogCount - k);
-      this._logTrimK = 0;
-      const emp = container.querySelector('.log-empty');
-      if (emp) emp.remove();
-    }
-
-    // 补底：追加新行
-    const start = this._renderedLogCount;
-    if (start < lines.length) {
-      const frag = document.createDocumentFragment();
-      let appended = 0;
-      for (let i = start; i < lines.length; i++) {
-        if (!this._logLineMatches(lines[i], search, level)) continue;
-        frag.appendChild(this._buildLogLineDom(lines[i], search, '', i + 1));
-        appended++;
-      }
-      container.appendChild(frag);
-      const emp = container.querySelector('.log-empty');
-      if (emp && appended > 0) emp.remove();
-      this._renderedLogCount = lines.length;
-    }
+  _coalesceRichLogLines(lines, baseOffset, search = '', activeLine = null) {
+    const entries = [];
+    const needle = search.toLowerCase();
+    (lines || []).forEach((line, index) => {
+      const text = String(line || '');
+      const record = this._parseLogRecord(text);
+      const key = record ? record.key : null;
+      const lineNo = (baseOffset || 0) + index + 1;
+      const last = entries[entries.length - 1];
+      if (key && last && key === last.key) {
+        last.count++;
+        last.lastTime = record.timestamp;
+        if (lineNo - 1 === activeLine || (activeLine == null && needle && text.toLowerCase().includes(needle))) last.text = text;
+      } else entries.push({ text, key, count: 1, lineNo,
+        firstTime: record?.timestamp || '', lastTime: record?.timestamp || '' });
+    });
+    return entries;
   },
 
   // ── full：完整日志分页渲染（≤ 一页，静态，绝对行号）──
-  _populateFullLogs(contentEl) {
+  _populateFullLogs(contentEl, reuse = false) {
     const container = contentEl.querySelector('#monitorDashboardLogs');
     if (!container) return;
-    container.querySelectorAll('.log-line, .log-empty').forEach(n => n.remove());
+    const existing = new Map();
+    container.querySelectorAll('.log-line, .log-empty').forEach(n => {
+      if (reuse && n.dataset.lineNo) existing.set(Number(n.dataset.lineNo), n);
+      else n.remove();
+    });
     const offset = this.logFullOffset || 0;
-    container.style.counterReset = 'logline ' + offset;  // 首行显示 offset+1
     const lines = this.logFullLines || [];
-    const entries = this._coalesceRichLogLines(lines, offset);
+    const search = this.logFullQuery || '';
+    const activeLine = search ? this.logFullMatches[this.logFullMatchIdx] : null;
+    const entries = this._coalesceRichLogLines(lines, offset, search, activeLine);
     if (this.logFullLoading || !entries.length) {
+      existing.forEach(n => n.remove());
       const empty = document.createElement('div');
       empty.className = 'log-empty dashboard-empty';
       const msg = this._logEmptyMessage(!!this.logFullLoading);
       empty.innerHTML = '<p>' + this.esc(msg) + '</p>';
       container.appendChild(empty);
-      this._renderedLogCount = 0;
       return;
     }
-    const search = this.logFullQuery || '';
     const matchSet = search ? new Set(this.logFullMatches) : null;
-    const frag = document.createDocumentFragment();
+    const wanted = new Set(entries.map(item => item.lineNo));
+    existing.forEach((node, number) => {
+      if (!wanted.has(number)) { node.remove(); existing.delete(number); }
+    });
+    let cursor = container.firstElementChild;
+    let activeNode = null;
     for (const item of entries) {
-      const cls = (matchSet && matchSet.has(item.lineNo - 1)) ? 'log-line-match' : '';
-      frag.appendChild(this._buildLogLineDom(item.text, search, cls, item.lineNo));
+      const matched = matchSet && lines.slice(item.lineNo - offset - 1, item.lineNo - offset - 1 + item.count)
+        .some((_, i) => matchSet.has(item.lineNo - 1 + i));
+      const active = activeLine != null && activeLine >= item.lineNo - 1 && activeLine < item.lineNo - 1 + item.count;
+      const cls = (matched ? 'log-line-match' : '') + (active ? ' log-line-current-match' : '');
+      let node = existing.get(item.lineNo);
+      if (node && node._logText === item.text && node._logSearch === search) {
+        this._setLogRepeatCount(node, item.count);
+        node.className = 'log-line' + (cls ? ' ' + cls : '');
+        existing.delete(item.lineNo);
+      } else {
+        if (node) {
+          if (node === cursor) cursor = node.nextElementSibling;
+          node.remove();
+          existing.delete(item.lineNo);
+        }
+        node = this._buildLogLineDom(item.text, search, cls, item.lineNo, item.count);
+        node._logText = item.text;
+        node._logSearch = search;
+      }
+      const badge = node.querySelector('.log-repeat-count');
+      if (badge) {
+        const range = `${item.lineNo}–${item.lineNo + item.count - 1}`;
+        const times = item.firstTime ? ` · ${item.firstTime} → ${item.lastTime}` : '';
+        const boundary = (offset > 0 && item.lineNo === offset + 1)
+          || (offset + lines.length < this.logTotal && item.lineNo + item.count - 1 === offset + lines.length);
+        badge.textContent = boundary ? this.t('monitor.logRepeatPageCount').replace('{count}', item.count) : '×' + item.count;
+        badge.title = this.t('monitor.logRepeatPage') + `: ${item.count} (${range})${times}`;
+      }
+      if (active) activeNode = node;
+      // Leave unchanged nodes in place: append/update/remove only affected rows.
+      if (node !== cursor) container.insertBefore(node, cursor);
+      cursor = node.nextElementSibling;
     }
-    container.appendChild(frag);
-    this._renderedLogCount = lines.length;
-    // 跟随（实时末页 / 历史停在末尾）滚底；浏览历史页时停在顶部
-    container.scrollTop = (this.logAutoScroll || this._logAtBottom) ? container.scrollHeight : (this._logRestoreScroll || 0);
+    existing.forEach(n => n.remove());
+    if (this._logScrollTarget != null && activeNode) {
+      container.scrollTop += activeNode.getBoundingClientRect().top - container.getBoundingClientRect().top
+        - (container.clientHeight - activeNode.offsetHeight) / 2;
+    } else if (this.logAutoScroll || this._logAtBottom) container.scrollTop = container.scrollHeight;
+    else if (!reuse) container.scrollTop = this._logRestoreScroll || 0;
+    this._logScrollTarget = null;
     this._logRestoreScroll = null;
-  },
-
-  // ── full：实时增量 slide（O(新行) 删除顶部 evicted + 追加底部新行，零 HTTP）──
-  _populateFullSlide(contentEl) {
-    const container = contentEl.querySelector('#monitorDashboardLogs');
-    if (!container) return;
-    const lines = this.logFullLines;
-
-    // 删顶：实时日志处理已 splice + bump offset；同步删除 DOM 前 K 个 .log-line
-    if (this._logFullEvictK > 0) {
-      const k = Math.min(this._logFullEvictK, this._renderedLogCount);
-      let remove = k;
-      while (remove-- > 0) {
-        const first = container.querySelector('.log-line');
-        if (!first) break;
-        first.remove();
-      }
-      this._renderedLogCount = Math.max(0, this._renderedLogCount - k);
-      this._logFullEvictK = 0;
-      const emp = container.querySelector('.log-empty');
-      if (emp) emp.remove();
-    }
-    // 更新 counter-reset 使 surviving 节点绝对行号与新的 logFullOffset 一致
-    container.style.counterReset = 'logline ' + (this.logFullOffset || 0);
-
-    // 补底：追加新行（词内搜索高亮，不加行级 match 背景——match_indices 来自后端快照不覆盖增量行）
-    const start = this._renderedLogCount;
-    if (start < lines.length) {
-      const search = this.logFullQuery || '';
-      const frag = document.createDocumentFragment();
-      let appended = 0;
-      for (let i = start; i < lines.length; i++) {
-        frag.appendChild(this._buildLogLineDom(lines[i], search, '', (this.logFullOffset || 0) + i + 1));
-        appended++;
-      }
-      container.appendChild(frag);
-      const emp = container.querySelector('.log-empty');
-      if (emp && appended > 0) emp.remove();
-      this._renderedLogCount = lines.length;
-    }
-    // 跟随则滚底
-    if (this.logAutoScroll || this._logAtBottom) {
-      container.scrollTop = container.scrollHeight;
-    }
   },
 
   _updateLogCount(contentEl) {
@@ -670,7 +467,7 @@ window.monitorLogRenderMixin = {
     if (countEl) countEl.textContent = this._logDisplayCount();
   },
   _logDisplayCount() {
-    return this.logMode === 'full' ? (this.logFullTotal || 0) : this.logLines.length;
+    return this.logTotal || 0;
   },
   /** 日志空态文案：按场景区分（实时无训练 / 实时训练中等待输出 / 历史无日志 / 加载中） */
   _logEmptyMessage(isLoading) {
@@ -686,7 +483,7 @@ window.monitorLogRenderMixin = {
   },
   // 完整日志工具栏文本（reactive：x-text 调用）
   logFullRangeText() {
-    const total = this.logFullTotal || 0;
+    const total = this.logTotal || 0;
     if (!total) return '0 / 0';
     const off = this.logFullOffset || 0;
     const end = Math.min(off + (this.logFullLines ? this.logFullLines.length : 0), total);
@@ -700,49 +497,19 @@ window.monitorLogRenderMixin = {
   _bindLogScroll(contentEl) {
     const container = contentEl.querySelector('#monitorDashboardLogs');
     if (!container) return;
-    if (!this.selectedRunDir) this._logAtBottom = true;
     container.onscroll = () => {
       const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 30;
-      this._logAtBottom = atBottom;
+      // Search navigation can scroll to the bottom programmatically; it must
+      // remain paused until the user explicitly follows the live tail again.
+      this._logAtBottom = atBottom && (!this.logFullQuery || this.logAutoScroll);
       if (this.logAutoScroll && !atBottom) this.logAutoScroll = false;
-      else if (!this.logAutoScroll && atBottom) this.logAutoScroll = true;
-      this._updateLogNavButtons(contentEl);
+      else if (!this.logAutoScroll && this._logAtBottom) this.logAutoScroll = true;
     };
   },
 
   _scrollLogsToTop() {
     const container = document.querySelector('#monitorDashboardLogs');
     if (container) { container.scrollTop = 0; this._logAtBottom = false; this.logAutoScroll = false; }
-    this._updateLogNavButtons(document.getElementById('monitorTabContent'));
-  },
-
-  _scrollLogsToBottom() {
-    const container = document.querySelector('#monitorDashboardLogs');
-    if (container) { container.scrollTop = container.scrollHeight; this._logAtBottom = true; }
-    this._updateLogNavButtons(document.getElementById('monitorTabContent'));
-  },
-
-  _updateLogNavButtons(contentEl) {
-    if (!contentEl) return;
-    const container = contentEl.querySelector('#monitorDashboardLogs');
-    if (!container) return;
-    const atTop = container.scrollTop < 30;
-    const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 30;
-    const topBtn = contentEl.querySelector('.log-nav-btn-top');
-    const bottomBtn = contentEl.querySelector('.log-nav-btn-bottom');
-    if (topBtn) topBtn.style.display = atTop ? 'none' : '';
-    if (bottomBtn) bottomBtn.style.display = atBottom ? 'none' : '';
-  },
-
-  _afterLogsRender(contentEl, doScroll) {
-    const container = contentEl.querySelector('#monitorDashboardLogs');
-    if (!container) return;
-    // Fix3：仅在有新日志（doScroll）时才设 scrollTop，避免大 DOM 上每帧强制 reflow
-    if (doScroll && (this.logAutoScroll || this._logAtBottom)) {
-      container.scrollTop = container.scrollHeight;
-      this._logAtBottom = true;
-    }
-    this._updateLogNavButtons(contentEl);
   },
 
   // ═══════════════════════════════════════════════════════════
@@ -866,31 +633,17 @@ window.monitorLogRenderMixin = {
   },
 
   downloadLogs() {
-    if (this.logMode === 'full') {
-      const runDir = this._logSliceRunDir ? this._logSliceRunDir() : null;
-      const taskId = this._logSliceTaskId ? this._logSliceTaskId() : null;
-      if (runDir || taskId) {
-        const params = new URLSearchParams();
-        if (runDir) params.set('run_dir', runDir);
-        else params.set('task_id', taskId);
-        this._triggerDownload('/api/monitor/log-download?' + params.toString());
-        this.toast(this.t('monitor.logDownloadStarted'));
-        return;
-      }
+    const runDir = this._logSliceRunDir();
+    const taskId = this._logSliceTaskId();
+    if (!runDir && !taskId) {
+      this.toast(this.t('monitor.logSliceNoSource'), 'error');
+      return;
     }
-
-    const lines = this.logMode === 'full' ? (this.logFullLines || []) : (this.logLines || []);
-    const content = lines.join('\n');
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'training-logs-' + new Date().toISOString().slice(0,19).replace(/[T:]/g,'-') + '.txt';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    this.toast(this.t('common.downloaded'));
+    const params = new URLSearchParams();
+    if (runDir) params.set('run_dir', runDir);
+    else params.set('task_id', taskId);
+    this._triggerDownload('/api/monitor/log-download?' + params.toString());
+    this.toast(this.t('monitor.logDownloadStarted'));
   },
 
 

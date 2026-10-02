@@ -39,3 +39,16 @@ test('native LoRA, LoHa, LoKr and LyCORIS serialize supported fields without top
     assert.doesNotMatch(text, /^(rank_dropout|conv_dim|conv_alpha|lokr_factor|use_tucker) =/m);
   }
 });
+
+test('scheduler previews export only the parameters used by the selected scheduler', () => {
+  const settings = { lr_scheduler_timescale: 500, lr_scheduler_min_lr_ratio: 0.1, lr_decay_steps: 0.2 };
+  for (const profile of ['sdxl-lora', 'anima-lora']) {
+    for (const scheduler of ['constant', 'inverse_sqrt', 'cosine_with_min_lr', 'warmup_stable_decay']) {
+      const { text } = preview(profile, profile === 'sdxl-lora' ? 'networks.lora' : 'networks.lora_anima',
+        { ...settings, lr_scheduler: scheduler });
+      assert.equal(/^lr_scheduler_timescale = 500$/m.test(text), scheduler === 'inverse_sqrt');
+      assert.equal(/^lr_scheduler_min_lr_ratio = 0.1$/m.test(text), ['cosine_with_min_lr', 'warmup_stable_decay'].includes(scheduler));
+      assert.equal(/^lr_decay_steps = 0.2$/m.test(text), scheduler === 'warmup_stable_decay');
+    }
+  }
+});

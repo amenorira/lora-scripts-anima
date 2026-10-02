@@ -4,7 +4,7 @@
 <link rel="stylesheet" href="/frontend/css/app.css">
 <link rel="stylesheet" href="/frontend/css/themes/light.css">
 <link rel="stylesheet" href="/frontend/css/themes/dark.css">
-<style>body { overflow: auto; } #fixture { max-width: 1380px; margin: auto; padding: 24px; } .fixture-controls { display:flex; flex-wrap:wrap; gap:8px; padding-bottom:16px; } #fixture.narrow { max-width:900px; } .route-monitor-dashboard { height:calc(100vh - 120px); } </style>
+<style>body { overflow: auto; } #fixture { max-width: 1380px; margin: auto; padding: 24px; } .fixture-controls { display:flex; flex-wrap:wrap; gap:8px; padding-bottom:16px; } #fixture.narrow { max-width:1040px; } #fixtureRoute { height:calc(100vh - 120px); } </style>
 <script src="/frontend/js/utils.js"></script>
 <script src="/frontend/js/config.js"></script>
 <script src="/frontend/js/monitor-logs.js"></script>
@@ -18,16 +18,18 @@
     <button class="btn btn-sm" @click="monitorData.state='RUNNING';monitorData.train_result=null;renderDashboard()">训练中</button>
     <button class="btn btn-sm" @click="monitorData.state='FINISHED';monitorData.step=740;monitorData.percent=100;monitorData.epoch='20/20';monitorData.elapsed='1:04:50';monitorData.lr=0;monitorData.train_result={status:'completed',duration_str:'1:04:50',ended_at:'2025-09-24T08:42:31+00:00'};lossSeries[1].points.push({step:740,value:0});lossSeries[1].latest=0;lossDataVersion++;renderDashboard()">训练完成</button>
     <button class="btn btn-sm" @click="monitorData.state='FAILED';monitorData.train_result={status:'failed',duration_str:'43:21'};monitorData.has_error=true;monitorData.error_msg='Sample failure';renderDashboard()">训练失败</button>
-    <button class="btn btn-sm" @click="selectedRunDir='output/fixture';runDetailData={...monitorData,state:'FINISHED',step:740,percent:100,epoch:'20/20',elapsed:'1:04:50',config:{output_name:'fixture',model_train_type:'anima-lora'},train_result:{status:'completed',duration_str:'1:04:50',ended_at:'2025-09-24T08:42:31+00:00'}};renderDashboard()">历史详情</button>
+    <button class="btn btn-sm" @click="selectedRunDir='output/fixture';runDetailData={...monitorData,tensorboard_loss:lossSeries,perf_samples:monitorPerfSamples,state:'FINISHED',step:740,percent:100,epoch:'20/20',elapsed:'1:04:50',config:{output_name:'fixture',model_train_type:'anima-lora'},train_result:{status:'completed',duration_str:'1:04:50',ended_at:'2025-09-24T08:42:31+00:00'}};renderDashboard()">历史详情</button>
     <button class="btn btn-sm" @click="realtimeState='degraded';renderDashboard()">数据延迟</button>
     <button class="btn btn-sm" @click="advanceMetrics()">模拟下一步</button>
     <button class="btn btn-sm" @click="advanceMetrics();setTimeout(()=>advanceMetrics(),80);setTimeout(()=>advanceMetrics(),160)">快速连续更新</button>
+    <button class="btn btn-sm" @click="appendFixtureLogs()">追加重复日志</button>
   </div>
-  <div id="fixtureRoute"></div>
+  <div id="fixtureRoute" class="main-fullscreen"></div>
 </main>
 <script>
 (async () => {
   const language = new URLSearchParams(location.search).get('lang') === 'en-US' ? 'en-US' : 'zh-CN';
+  document.documentElement.dataset.theme = new URLSearchParams(location.search).get('theme') === 'light' ? 'light' : 'dark';
   document.documentElement.lang = language;
   const [html, translations] = await Promise.all([fetch('/frontend/index.html').then(r=>r.text()),fetch('/frontend/i18n/'+language+'.json', {cache:'no-store'}).then(r=>r.json())]);
   const parsed = new DOMParser().parseFromString(html,'text/html');
@@ -46,6 +48,7 @@
     '                               resolution: (1024, 1024)',
     '2026-09-20 12:47:25 INFO     Loading VAE from ./models/qwen_image_vae.safetensors'.padEnd(129) + 'qwen_image_autoencoder_kl.py:1631',
     '                    WARNING  <script>alert("plain text")<\/script>',
+    ...Array.from({length:8}, (_, i) => `2026-10-02 11:29:${22 + i} INFO     epoch is incremented. current_epoch: 0, epoch: 17  dataset.py:462`),
     ...Array.from({length:40},(_,i)=>{
       const step=479+i;
       const seconds=Math.round(2601-(39-i)*5.26+Math.sin(i*.7)-Math.sin(39*.7));
@@ -60,7 +63,7 @@
   window.fetch=(url,opts)=> {
     if (!String(url).startsWith('/api/')) return realFetch(url,opts);
     const query = new URL(String(url), location.href).searchParams.get('q') || '';
-    return Promise.resolve(response(String(url).includes('outputs')?files:String(url).includes('log-slice')?{total:logs.length,offset:0,lines:logs,match_indices:logs.flatMap((line,i)=>query && line.toLowerCase().includes(query.toLowerCase())?[i]:[])}:[]));
+    return Promise.resolve(response(String(url).includes('outputs')?files:String(url).includes('previews')?samples:String(url).includes('log-slice')?{total:logs.length,offset:0,lines:logs.slice(),match_indices:logs.flatMap((line,i)=>query && line.toLowerCase().includes(query.toLowerCase())?[i]:[])}:[]));
   };
   document.addEventListener('alpine:init',()=>Alpine.data('monitorFixture',()=>{
     const a=Object.defineProperties({}, {...Object.getOwnPropertyDescriptors(window.utilsMixin),...Object.getOwnPropertyDescriptors(window.monitorCoreMixin),...Object.getOwnPropertyDescriptors(window.monitorRenderMixin)});
@@ -71,6 +74,13 @@
       _fieldOptionLabel: window.trainingCoreMixin._fieldOptionLabel,
       _fieldDefinition: window.trainingCoreMixin._fieldDefinition,
       form: { model_train_type: 'anima-lora' },
+      appendFixtureLogs(){
+        const offset=logs.length;
+        const batch=Array.from({length:8},()=> '2026-10-02 11:30:22 INFO     epoch is incremented. current_epoch: 0, epoch: 18  dataset.py:462');
+        logs.push(...batch);
+        this.handleRealtimeTaskLog({data:{lines:batch,offset,log_total:logs.length}});
+        this.renderDashboard();
+      },
       advanceMetrics(){
         if(this.selectedRunDir) { this.selectedRunDir=null; this.runDetailData=null; }
         const d=this.monitorData;
@@ -78,23 +88,26 @@
         d.speed=(5.1+(d.step%7)*.07).toFixed(2)+' s/it';
         d.elapsed=this._formatMonitorDuration('',2601+(d.step-518)*5);
         d.eta=this._formatMonitorDuration('',1114-(d.step-518)*5);
+        this._recordMonitorPerfSample(d);
         const current=this.lossSeries.find(s=>s.tag==='loss/current');
         const previous=current.points.at(-1).value;
         current.points.push({step:d.step,value:previous*(d.step%2?1.038:.962)});
+        current.points=current.points.slice(-160);
         this.lossSeries[0].points.push({step:d.step,value:.035+(d.step%5)*.0002});
+        this.lossSeries[0].points=this.lossSeries[0].points.slice(-160);
         this.lossSeries[1].latest=Math.max(0,.0000426-(d.step-518)*.0000001);
         this.lossSeries[1].points.push({step:d.step,value:this.lossSeries[1].latest});
         this.lossDataVersion++;this.renderDashboard();
       },
-      monitorData:{state:'RUNNING',step:518,total_steps:740,percent:70,loss:.0337,lr:4.26e-5,epoch:'14/20',elapsed:'43:21',eta:'18:34',speed:'5.26 s/it',run_dir:'output/fixture',artifact_dir:'C:/training/models',active_task:{id:'fixture'}},
+      monitorData:{state:'RUNNING',step:518,total_steps:740,percent:70,loss:.0337,lr:4.26e-5,epoch:14,elapsed:'43:21',eta:'18:34',speed:'5.26 s/it',run_dir:'output/fixture',artifact_dir:'C:/training/models',active_task:{id:'fixture'}},
       previews:samples,previewsVersion:1,weakNetworkMode:true,
       logLines:logs,
       gpuInfo:{name:'GPU fixture',gpu_load_pct:98,vram_used_mb:19000,vram_total_mb:24000,temperature_c:65,power_w:280},
       sysInfo:{cpu_name:'CPU fixture',cpu_pct:35,ram_pct:40,ram_used_gb:24,ram_total_gb:64},
       lossSeries:[
-        {tag:'loss/average',points:Array.from({length:120},(_,i)=>({step:i+1,value:i<60?.027+Math.sin(i)*.0003:i<90?.039+Math.sin(i)*.001:.034-(i-90)*.00001+Math.sin(i)*.0002}))},
-        {tag:'lr/unet',max:.00006,latest:.0000426,points:Array.from({length:120},(_,i)=>({step:i+1,value:.00006-i*(.0000174/119)}))},
-        {tag:'loss/current',points:Array.from({length:120},(_,i)=>({step:399+i,value:.034+Math.sin(i*.7)*.004}))}
+        {tag:'loss/average',points:Array.from({length:160},(_,i)=>{const j=i-40;return {step:359+i,value:j<60?.027+Math.sin(j)*.0003:j<90?.039+Math.sin(j)*.001:.034-(j-90)*.00001+Math.sin(j)*.0002};})},
+        {tag:'lr/unet',max:.00006,latest:.0000426,points:Array.from({length:120},(_,i)=>({step:399+i,value:.00006-i*(.0000174/119)}))},
+        {tag:'loss/current',points:Array.from({length:160},(_,i)=>({step:359+i,value:.034+Math.sin((i-40)*.7)*.004}))}
       ],
       trainParams:[
         {key:'pretrained_model_name_or_path',value:'C:/models/anima-base-v1.0.safetensors',section:'model'},
@@ -110,7 +123,7 @@
         {key:'seed',value:1337,section:'training'},
         ...Array.from({length:41},(_,i)=>({key:`fixture_param_${i}`,value:i,section:['model','network','training','optimizer','caption','save','performance'][i%7]}))
       ],
-      init(){this.$nextTick(()=>this.renderDashboard());}
+      init(){this._ingestMonitorPerfSamples(this._parseMonitorPerfLogs(logs));this._applyMonitorLogSnapshot(logs,logs.length);this._applyOutputCount('output/fixture',files.length);this._startMonitorClock();this.$nextTick(()=>this.renderDashboard());}
     });
   }));
   const script=document.createElement('script');script.src='/frontend/js/vendor/alpine.min.js';document.head.append(script);

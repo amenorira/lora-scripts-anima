@@ -410,6 +410,14 @@ window.trainingCoreMixin = {
       });
     }
 
+    if (Object.prototype.hasOwnProperty.call(defaults, 'lr_scheduler_timescale')) {
+      const timescale = draft?.lr_scheduler_timescale;
+      if (String(timescale ?? '').trim() === '') {
+        sources.lr_scheduler_timescale = 'default';
+      } else if (!hasPersisted || !Object.prototype.hasOwnProperty.call(persisted, 'lr_scheduler_timescale')) {
+        sources.lr_scheduler_timescale = 'saved';
+      }
+    }
     this._fieldSources = sources;
     this._profileFieldSources[trainType] = sources;
     return sources;
@@ -453,6 +461,10 @@ window.trainingCoreMixin = {
     Object.keys(defaults).forEach(key => {
       if (Object.prototype.hasOwnProperty.call(draft, key)) clean[key] = draft[key];
     });
+    // Older drafts stored an empty timescale; use the editable form default.
+    if (String(clean.lr_scheduler_timescale ?? '').trim() === '' && defaults.lr_scheduler_timescale !== undefined) {
+      clean.lr_scheduler_timescale = defaults.lr_scheduler_timescale;
+    }
     clean.model_train_type = trainType;
     return clean;
   },
@@ -2046,8 +2058,10 @@ window.trainingCoreMixin = {
     } else if (field.type === 'stepper' || field.type === 'number') {
       const constraints = this._numberConstraints(field);
       const sStep = constraints.step || 1;
+      const defaultOnBlur = dataKey === 'lr_scheduler_timescale'
+        ? ` x-data="{ editing: false }" x-effect="_syncLrTimescaleDefault(editing)" :class="{ 'is-default': ['default', 'auto'].includes(_fieldSources?.lr_scheduler_timescale) }" @focus="editing = true" @blur="editing = false; if (String(form.${dataKey} ?? '').trim() === '') resetField('${dataKey}')"` : '';
       const numberAttrs = `${constraints.min !== undefined ? ` min="${this.escapeAttr(constraints.min)}"` : ''}${constraints.max !== undefined ? ` max="${this.escapeAttr(constraints.max)}"` : ''} step="${this.escapeAttr(sStep)}"`;
-      inputHtml = `<div class="stepper"><button type="button" @click="stepField('${dataKey}', -${sStep})">−</button><input type="number" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)"${numberAttrs}${staticReadonlyAttrs}><button type="button" @click="stepField('${dataKey}', ${sStep})">+</button></div>`;
+      inputHtml = `<div class="stepper"><button type="button" @click="stepField('${dataKey}', -${sStep})">−</button><input type="number" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)"${numberAttrs}${defaultOnBlur}${staticReadonlyAttrs}><button type="button" @click="stepField('${dataKey}', ${sStep})">+</button></div>`;
     } else {
       // Text input: dynamic placeholder for optimizer merged fields (reactive via Alpine)
       // Values sourced from window.OPTIMIZER_DEFAULTS (single source of truth in constants.js)
@@ -3389,8 +3403,19 @@ window.trainingCoreMixin = {
     return !guarded || this._autoValueRuleCanSet(guarded);
   },
 
+  _enforceDataLoaderUiConstraints() {
+    const workers = this.form.max_data_loader_n_workers;
+    if (workers !== '' && workers !== null && workers !== undefined && Number(workers) === 0
+        && this.form.persistent_data_loader_workers === true) {
+      this.form.persistent_data_loader_workers = false;
+      this._setFieldSource('persistent_data_loader_workers', 'auto');
+    }
+  },
+
   /** Apply autoValue rules once based on current form state (no watcher side-effects). */
   _applyInitialAutoValues() {
+    this._syncLrTimescaleDefault();
+    this._enforceDataLoaderUiConstraints();
     if (!this._autoValueRules || this._autoValueRules.length === 0) return;
     const targets = new Set(this._autoValueRules.map(rule => rule.target));
     targets.forEach(target => {
@@ -3402,6 +3427,9 @@ window.trainingCoreMixin = {
           this.form[matched.target] = matched.set;
           this._setFieldSource(matched.target, 'auto');
           this.formDefaults[matched.target] = matched.set;
+          if (this._allShowIfKeys().includes(matched.target)) {
+            this.showConditionalFields(matched.target);
+          }
         }
       }
     });
@@ -3535,6 +3563,7 @@ window.trainingCoreMixin = {
   },
 
   updateReadonlyStates() {
+    this._enforceDataLoaderUiConstraints();
     const self = this;
     // 公用 apply 函数：根据 met 决定启用/解除 readonly 态（含告警文本注入）。
     // 由 [data-readonly-if-key]（单 key eq/neq）与 [data-readonly-if-any]（多 key，任一成立即锁定）复用。
@@ -3788,6 +3817,9 @@ window.trainingCoreMixin = {
 
     this.form[key] = value;
     this._setFieldSource(key, 'user');
+    if (key === 'max_data_loader_n_workers' || key === 'persistent_data_loader_workers') {
+      this._enforceDataLoaderUiConstraints();
+    }
     if (key === 'timestep_sampling') {
       this._refreshSubsetTimestepEditor();
     }
@@ -3881,6 +3913,7 @@ window.trainingCoreMixin = {
     if (this.lrPreviewOpen && [
       'model_train_type', 'optimizer_type', 'learning_rate', 'unet_lr', 'text_encoder_lr',
       'lr_scheduler', 'lr_warmup_steps', 'lr_scheduler_num_cycles', 'lr_scheduler_power',
+      'lr_decay_steps', 'lr_scheduler_timescale', 'lr_scheduler_min_lr_ratio',
       'network_train_unet_only', 'network_train_text_encoder_only', 'adafactor_relative_step'
     ].includes(key)) {
       if (key === 'model_train_type' && value === 'krea2-lora') {
@@ -3975,6 +4008,7 @@ window.trainingCoreMixin = {
   },
 
   _currentEffectiveFieldDefault(key) {
+    if (key === 'lr_scheduler_timescale') return this._defaultLrTimescale();
     const profileDefault = this._currentProfileFieldDefault(key);
     const rules = Array.isArray(this._autoValueRules) ? this._autoValueRules : [];
     const matched = rules.find(rule =>
@@ -3983,6 +4017,31 @@ window.trainingCoreMixin = {
     return matched && matched.set !== null && matched.set !== undefined
       ? matched.set
       : profileDefault;
+  },
+
+  _defaultLrTimescale() {
+    const warmup = Number(this.form.lr_warmup_steps) || 0;
+    const steps = Number(this.stepEstimate?.total_steps) || 10000;
+    const processes = Math.max(1, Number(this.stepEstimate?.gpu_processes) || 1);
+    const warmupSteps = warmup > 0 && warmup < 1 ? Math.floor(warmup * steps * processes) : warmup;
+    return warmupSteps > 0 ? warmupSteps : 10000;
+  },
+
+  _syncLrTimescaleDefault(editing = false) {
+    const key = 'lr_scheduler_timescale';
+    if (!Object.prototype.hasOwnProperty.call(this.form, key)) return;
+    const value = this.form[key];
+    const source = this._fieldSources?.[key];
+    const fallback = this._defaultLrTimescale();
+    if (editing) return;
+    if (String(value ?? '').trim() !== '' && !['default', 'auto'].includes(source)) return;
+    const changed = value !== fallback;
+    if (changed) this.form[key] = fallback;
+    if (source !== 'default') this._setFieldSource(key, 'default');
+    if (changed) {
+      if (this.lrPreviewOpen) this.refreshLrPreview();
+      this.updateTomlDebounced();
+    }
   },
 
   resetField(key) {

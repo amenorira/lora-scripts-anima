@@ -25,6 +25,11 @@ from backend.training.optimizer_contracts import (
 
 _TRAIN_TYPE_GROUP = {"sdxl-lora": "sdxl", "anima-lora": "anima", "krea2-lora": "krea2"}
 _EMPTY_STRINGS = {"", "undefined", "null", "nan"}
+_SCHEDULER_PARAMETER_MODES = {
+    "lr_scheduler_timescale": {"inverse_sqrt"},
+    "lr_scheduler_min_lr_ratio": {"cosine_with_min_lr", "warmup_stable_decay"},
+    "lr_decay_steps": {"warmup_stable_decay"},
+}
 
 
 def _is_empty(value: Any) -> bool:
@@ -361,6 +366,29 @@ def _validate_automagic(
     return errors
 
 
+def validate_scheduler_step_budget(config: dict[str, Any], total_steps: int, gpu_processes: int = 1) -> list[str]:
+    """Check WSD phase lengths after the dataset's training steps are known."""
+    if config.get("lr_scheduler") != "warmup_stable_decay" or total_steps <= 0:
+        return []
+    # sd-scripts scales scheduler steps by the process count before resolving fractions.
+    scheduler_steps = total_steps * max(1, gpu_processes)
+    phase_steps = []
+    for key in ("lr_warmup_steps", "lr_decay_steps"):
+        try:
+            value = float(config.get(key) or 0)
+        except (TypeError, ValueError):
+            return []  # Reported by the field validation before adapting the config.
+        if not math.isfinite(value) or value < 0:
+            return []
+        phase_steps.append(int(value * scheduler_steps) if value < 1 else int(value))
+    if sum(phase_steps) > scheduler_steps:
+        return [
+            "lr_decay_steps: warmup and decay must fit within total training steps / "
+            "预热步数与末段衰减步数之和不能超过总训练步数"
+        ]
+    return []
+
+
 def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> list[str]:
     """根据字段注册表与跨字段契约返回所有配置错误。"""
     errors: list[str] = []
@@ -378,6 +406,8 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
         if not _applies_to_group(field, group):
             continue
         key = field["key"]
+        if key in _SCHEDULER_PARAMETER_MODES and config.get("lr_scheduler") not in _SCHEDULER_PARAMETER_MODES[key]:
+            continue
         value = config.get(key)
         required = bool(field.get("required")) or group in (field.get("requiredGroups") or [])
         if _is_empty(value):
@@ -399,6 +429,8 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
                 continue
             normalized_number: int | float = int(number) if number.is_integer() else number
             config[key] = normalized_number
+            if key == "lr_decay_steps" and number >= 1 and not number.is_integer():
+                errors.append(f"{key}: use an integer step count or a fraction below 1 / 请填写整数步数或小于 1 的比例")
             if "min" in field and number < float(field["min"]):
                 errors.append(f"{key}: must be >= {field['min']} / 不能小于 {field['min']}")
             if "max" in field and number > float(field["max"]):

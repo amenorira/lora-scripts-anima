@@ -17,6 +17,8 @@ from urllib.parse import quote
 from backend.constants import REPO_ROOT, OUTPUT_DIR
 from backend.image_preview import build_image_preview_url
 from backend.monitor.run_registry import import_legacy_external_runs, iter_run_records
+from backend.monitor.log_parser import clean_bytes, record_frames
+from backend.monitor.log_index import indexed_slice
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
 # 隐藏 / 缓存目录名前缀与名称，扫描时一律跳过（避免 .ipynb_checkpoints、__pycache__ 等污染）
@@ -464,89 +466,12 @@ def _parse_log_checkpoint_losses(run_dir: str) -> dict[str, float]:
 # 日志 tail 读取的最大字节数（实时快照读取用，约 20000+ 行）
 _LOG_TAIL_BYTES = 2 * 1024 * 1024  # 2 MiB
 
-# ANSI 转义序列正则（颜色、光标控制、清屏等）
-_ANSI_RE = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]')
-_TQDM_BAR_RE = re.compile(
-    r'^(?P<label>.*?)(?P<pct>\d{1,3})%\|.*\|\s*'
-    r'(?P<suffix>\d+\s*/\s*\d+.*)$'
-)
-
-
-def _compact_tqdm_line(line: str, width: int = 10) -> str:
-    """Render terminal-width tqdm bars at a stable width for the web log viewer."""
-    match = _TQDM_BAR_RE.match(line)
-    if not match:
-        return line
-    percent = max(0, min(100, int(match.group("pct"))))
-    filled = round(width * percent / 100)
-    bar = "#" * filled + "-" * (width - filled)
-    return f'{match.group("label")}{percent}%|{bar}| {match.group("suffix")}'
-
-
-_TQDM_STEP_RE = re.compile(
-    r'^\s*steps:\s+\d{1,3}%\|.*\|\s*(?P<current>\d+)\s*/\s*(?P<total>\d+)(?=\s*\[)',
-    re.IGNORECASE,
-)
-
-
-def _collapse_adjacent_tqdm_steps(lines: list[str]) -> list[str]:
-    """Keep the newest adjacent rendering of the same training step."""
-    collapsed: list[str] = []
-    last_signature: tuple[str, str] | None = None
-    for line in lines:
-        match = _TQDM_STEP_RE.match(line)
-        signature = (match.group("current"), match.group("total")) if match else None
-        if signature and collapsed and signature == last_signature:
-            collapsed[-1] = line
-            continue
-        collapsed.append(line)
-        last_signature = signature
-    return collapsed
-
-
 def _normalized_log_lines(log_path: Path):
-    """Yield cleaned rows while collapsing adjacent updates of one tqdm step."""
-    pending: str | None = None
-    pending_signature: tuple[str, str] | None = None
-    # Split records only on LF. Bare CR is a terminal overwrite inside one
-    # record and must remain visible to _clean_log_text().
-    with open(log_path, "r", encoding="utf-8", errors="replace", newline="\n") as handle:
+    """Yield every cleaned frame, including repeated renderings of one step."""
+    with open(log_path, "rb") as handle:
         for raw_line in handle:
-            cleaned = _clean_log_text(raw_line.rstrip("\r\n"))
-            for line in cleaned.split("\n"):
-                match = _TQDM_STEP_RE.match(line)
-                signature = (match.group("current"), match.group("total")) if match else None
-                if signature and signature == pending_signature:
-                    pending = line
-                    continue
-                if pending is not None:
-                    yield pending
-                pending = line
-                pending_signature = signature
-    if pending is not None:
-        yield pending
-
-
-def _clean_log_text(text: str) -> str:
-    """清理训练日志中的终端控制字符：
-    - 移除 ANSI 转义序列（颜色、光标移动等）
-    - 处理 \\r 覆盖（tqdm 进度条）：每行只保留最后一次覆盖的结果
-    """
-    # 二进制切片读取不会像文本模式那样自动把 CRLF 归一化；先处理 Windows
-    # 换行，避免下面的 tqdm "\r 覆盖" 逻辑误删正常行内容。
-    text = text.replace("\r\n", "\n")
-    # 移除 ANSI CSI 序列
-    text = _ANSI_RE.sub('', text)
-    # 处理 \r（tqdm 在同一行反复覆盖）：每段取最终值
-    if '\r' in text:
-        cleaned_lines = []
-        for line in text.split('\n'):
-            if '\r' in line:
-                line = line.split('\r')[-1]
-            cleaned_lines.append(line)
-        text = '\n'.join(cleaned_lines)
-    compacted = [_compact_tqdm_line(line) for line in text.split('\n')]
-    return '\n'.join(_collapse_adjacent_tqdm_steps(compacted))
+            for _, line in record_frames(raw_line):
+                yield line
 
 
 def read_clean_log_lines(path: Path) -> list[str]:
@@ -571,9 +496,7 @@ def _tail_file(path: Path, max_bytes: int = _LOG_TAIL_BYTES) -> list[str]:
                 first_newline = raw.find(b"\n")
                 if first_newline >= 0:
                     raw = raw[first_newline + 1:]
-        content = raw.decode("utf-8", errors="replace")
-        # 清理 ANSI + \r 覆盖
-        content = _clean_log_text(content)
+        content = clean_bytes(raw)
         lines = content.split("\n")
         if lines and lines[-1] == "":
             lines.pop()
@@ -594,15 +517,13 @@ META_FILES = {"config.toml", "training.yaml", "run_info.txt", "output_dir.txt", 
                "error.log", "task_meta.json"}
 
 
-def list_output_files(run_dir: str) -> list[dict]:
-    """列出已由调用方验证的产物目录，路径统一相对该目录返回。"""
+def _output_file_paths(run_dir: str):
+    """计数与文件列表共用目录范围及隐藏项规则。"""
     rd = Path(run_dir)
     if not rd.is_absolute():
         rd = (REPO_ROOT / run_dir).resolve()
     if not rd.exists() or not rd.is_dir():
-        return []
-
-    result = []
+        return
     for p in _iter_dir(rd):
         if not p.is_file():
             continue
@@ -610,6 +531,24 @@ def list_output_files(run_dir: str) -> list[dict]:
             rel = str(p.relative_to(rd)).replace("\\", "/")
         except ValueError:
             continue
+        yield p, rel
+
+
+def read_output_summary(run_dir: str) -> dict:
+    """轻量总数与模型变更签名；不读取样本/日志等文件的元数据或解析检查点。"""
+    count, models = 0, []
+    for path, rel in _output_file_paths(run_dir):
+        count += 1
+        if path.suffix.lower() in LORA_EXTENSIONS:
+            stat = path.stat()
+            models.append((rel, stat.st_size, stat.st_mtime_ns))
+    return {"count": count, "models": sorted(models)}
+
+
+def list_output_files(run_dir: str) -> list[dict]:
+    """列出已由调用方验证的产物目录，路径统一相对该目录返回。"""
+    result = []
+    for p, rel in _output_file_paths(run_dir):
         suffix = p.suffix.lower()
         is_lora = suffix in LORA_EXTENSIONS
         is_image = suffix in IMAGE_EXTENSIONS
@@ -623,11 +562,12 @@ def list_output_files(run_dir: str) -> list[dict]:
             category = "tensorboard"
         else:
             category = "other"
+        stat = p.stat()
         entry = {
             "name": p.name,
             "path": rel,
-            "size": p.stat().st_size,
-            "mtime": p.stat().st_mtime,
+            "size": stat.st_size,
+            "mtime": stat.st_mtime,
             "is_lora": is_lora,
             "category": category,
         }
@@ -696,38 +636,6 @@ def find_train_log_path(task_id: str, output_dir: Path | None = None) -> Path | 
     return None
 
 
-def read_train_log(task_id: str, output_dir: Path | None = None) -> list[str]:
-    """读取训练任务的实时日志（tail 方式，高性能）。
-    优先从指定 output_dir 读取，否则扫描 output/ 子目录"""
-    now = time.time()
-    with _log_file_cache_lock:
-        if task_id in _log_file_cache:
-            cache_time, cached_path = _log_file_cache[task_id]
-            if now - cache_time < _LOG_FILE_CACHE_TTL and cached_path.exists():
-                cached_path_ref = cached_path
-            else:
-                cached_path_ref = None
-        else:
-            cached_path_ref = None
-    if cached_path_ref:
-        lines = _tail_file(cached_path_ref)
-        if lines:
-            return lines
-
-    # 使用 find_train_log_path 定位文件
-    log_path = find_train_log_path(task_id, output_dir)
-    if log_path:
-        lines = _tail_file(log_path)
-        if lines:
-            return lines
-
-    return []
-
-
-# 完整日志分页：单次搜索返回的匹配行号上限（避免超大文件撑爆响应）
-_LOG_SLICE_MAX_MATCHES = 5000
-
-
 def find_run_log_path(run_dir_path: Path) -> Path | None:
     """在历史训练目录中查找最新的训练日志文件（不读取内容）。"""
     try:
@@ -749,17 +657,16 @@ def read_log_slice(log_path: Path, offset: int = 0, limit: int = 1000,
     返回 {total, offset, limit, lines, query, match_indices}：
       - total: 文件总行数
       - lines: [offset, offset+limit) 区间的行
-      - match_indices: query 非空时，全文件匹配行的索引（上限 _LOG_SLICE_MAX_MATCHES），
+      - match_indices: query 非空时，全文件匹配行的索引（上限由日志解析模块定义），
         供前端「上一/下一匹配」跳转。
       - tail: 为 True 时定位到文件末尾（offset = max(0, total-limit)）；用于实时任务
         首次进入完整日志模式（此时前端未知 total，无法自行计算尾部 offset）。
     """
-    empty = {"total": 0, "offset": offset, "limit": limit,
+    empty = {"total": 0, "offset": offset, "limit": limit, "generation": 0,
              "lines": [], "query": query, "match_indices": []}
     try:
         if not log_path or not log_path.exists() or log_path.stat().st_size == 0:
             return empty
-        from backend.monitor.log_index import indexed_slice
         return indexed_slice(log_path, offset, limit, query, tail)
     except FileNotFoundError:
         return empty

@@ -139,7 +139,7 @@ window.taggerMixin = {
     const host = document.getElementById('taggerWorkspaceHost');
     if (!host || host.dataset.mounted === '1') return;
     try {
-      const response = await fetch('/anima-ui/tagger-workspace.html?v=20260929-tagger-review22');
+      const response = await fetch('/anima-ui/tagger-workspace.html?v=20261001-tagger-log2');
       if (!response.ok) throw new Error('Workspace template unavailable');
       host.innerHTML = await response.text();
       host.dataset.mounted = '1';
@@ -1484,38 +1484,17 @@ window.taggerMixin = {
     return this.t('tagger.phase.' + phase, phase.replace(/_/g, ' '));
   },
 
-  taggerLogLines() {
-    return Array.isArray(this.taggerTask?.logs) ? this.taggerTask.logs : [];
-  },
-
-  taggerLogCount() {
-    return this.taggerLogLines().length;
-  },
-
-  taggerHasLogs() {
-    return this.taggerLogCount() > 0;
-  },
-
   taggerVisibleLogs() {
-    const logs = this.taggerLogLines();
-    return logs.slice(this.taggerLogsOpen ? -160 : -32);
-  },
-
-  taggerLogTime(line) {
-    return String(line || '').match(/^\[([^\]]+)\]\s*/)?.[1] || '--:--:--';
+    const logs = Array.isArray(this.taggerTask?.logs) ? this.taggerTask.logs : [];
+    return logs.slice(this.taggerLogsOpen ? 0 : -32).map(line => typeof line === 'string' ? {
+      time: line.match(/^\[([^\]]+)\]\s*/)?.[1] || '--:--:--', level: 'info',
+      message: line.replace(/^\[[^\]]+\]\s*/, ''),
+    } : line);
   },
 
   taggerLogMessage(line) {
-    return String(line || '').replace(/^\[[^\]]+\]\s*/, '');
-  },
-
-  taggerLogTone(line) {
-    const value = String(line || '').toLowerCase();
-    if (/failed|error|unsupported|out of memory|exception/.test(value)) return 'error';
-    if (/skipped|cancelled|stopped/.test(value)) return 'warning';
-    if (/completed|model ready|\(success\)|written/.test(value)) return 'success';
-    if (/task started|loading model|download|preparing/.test(value)) return 'phase';
-    return '';
+    return line.message ?? this.t('tagger.log.' + line.event, line.event)
+      .replace(/\{(\w+)\}/g, (_, key) => line[key] ?? '');
   },
 
   _releaseTaggerPreview() {
