@@ -88,3 +88,45 @@ test('late network failure from old dataset is ignored without changing new load
   await request;
   assert.equal(app._teSearchLoading, true);
 });
+
+test('directory grouping keeps local sort inside root and nested folders before paging', () => {
+  const { app } = fixture();
+  app.tagEditorSessionId = '';
+  app.tagEditorSortBy = 'tagCount';
+  app.tagEditorSortAsc = false;
+  app.tagEditorImages = [
+    { path: '/a/low', rel_path: 'a/low.png', tags: 'one' },
+    { path: '/b/high', rel_path: 'b/high.png', tags: 'one, two, three' },
+    { path: '/a/high', rel_path: 'a\\high.png', tags: 'one, two' },
+    { path: '/root', rel_path: 'root.png', tags: '' },
+    { path: '/nested', rel_path: 'a/nested/image.png', tags: 'one' },
+  ];
+  const flat = Array.from(app.tagEditorGetFiltered(), img => img.path);
+  app.tagEditorGroupByDir = true;
+  app.tagEditorPageSize = 3;
+  assert.deepEqual(Array.from(app.tagEditorGetPaged(), img => img.path), ['/root', '/a/high', '/a/low']);
+  assert.equal(app.tagEditorIsDirectoryGroupStart(app.tagEditorGetPaged()[0], 0), true);
+  assert.equal(app.tagEditorIsDirectoryGroupStart(app.tagEditorGetPaged()[1], 1), true);
+  assert.equal(app.tagEditorIsDirectoryGroupStart(app.tagEditorGetPaged()[2], 2), false);
+  app.tagEditorPage = 2;
+  assert.deepEqual(Array.from(app.tagEditorGetPaged(), img => img.path), ['/nested', '/b/high']);
+  app.tagEditorGroupByDir = false;
+  assert.deepEqual(Array.from(app.tagEditorGetFiltered(), img => img.path), flat);
+  assert.equal(app.tagEditorIsDirectoryGroupStart(app.tagEditorImages[0], 0), false);
+});
+
+test('toggling directory groups resets paging and preserves selected drafts in modified filter', () => {
+  const { app } = fixture();
+  app.tagEditorQuickFilter = 'modified';
+  app.tagEditorPage = 2;
+  app.tagEditorSelected = ['/b'];
+  app._teGetModified = () => [{ path: '/b', rel_path: 'b/image.png', tags: 'draft' }, { path: '/a', rel_path: 'a/image.png', tags: 'draft' }];
+  const flatKey = app._teSessionQueryKey(1);
+  app.tagEditorToggleDirectoryGroups();
+  assert.equal(app.tagEditorPage, 1);
+  assert.equal(app._teSessionQuery(1).get('group_by_dir'), 'true');
+  assert.notEqual(app._teSessionQueryKey(1), flatKey);
+  assert.deepEqual(Array.from(app.tagEditorPageItems, img => img.path), ['/a', '/b']);
+  assert.deepEqual(app.tagEditorSelected, ['/b']);
+  assert.equal(app.tagEditorPageItems[1].tags, 'draft');
+});

@@ -79,6 +79,43 @@ class TagEditorTransactionTests(unittest.TestCase):
 
 
 class TagEditorSessionTests(unittest.TestCase):
+    def test_directory_groups_sort_before_pagination_and_keep_inner_sort(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            for folder, count in [("", 2), ("a", 15), ("a/nested", 10), ("b", 10)]:
+                directory = root / folder
+                directory.mkdir(parents=True, exist_ok=True)
+                for index in range(count):
+                    image = directory / f"img-{index:02}.png"
+                    image.touch()
+                    image.with_suffix(".txt").write_text("one, two, three" if index % 2 else "one", encoding="utf-8")
+            client = TestClient(app)
+            created = client.post("/api/tageditor/sessions", json={"dir": str(root), "recursive": True}).json()
+            session_id = created["data"]["session_id"]
+            url = f"/api/tageditor/sessions/{session_id}/images"
+            params = {"page_size": 240, "sort_by": "tagCount", "sort_asc": False, "sort_by2": "name", "sort_asc2": False}
+            try:
+                flat = client.get(url, params=params).json()["data"]["items"]
+                grouped_params = {**params, "page_size": 30, "group_by_dir": True}
+                first = client.get(url, params=grouped_params).json()["data"]
+                second = client.get(url, params={**grouped_params, "page": 2}).json()["data"]
+                grouped = first["items"] + second["items"]
+                directory_of = lambda item: item["rel_path"].replace("\\", "/").rpartition("/")[0]
+                directories = [directory_of(item) for item in grouped]
+                self.assertEqual(first["total"], 37)
+                self.assertEqual(len(first["items"]), 30)
+                self.assertEqual(len(second["items"]), 7)
+                self.assertEqual(directories, [""] * 2 + ["a"] * 15 + ["a/nested"] * 10 + ["b"] * 10)
+                for folder in set(directories):
+                    self.assertEqual(
+                        [item["path"] for item in grouped if directory_of(item) == folder],
+                        [item["path"] for item in flat if directory_of(item) == folder],
+                    )
+                restored = client.get(url, params=params).json()["data"]["items"]
+                self.assertEqual([item["path"] for item in restored], [item["path"] for item in flat])
+            finally:
+                client.delete(f"/api/tageditor/sessions/{session_id}")
+
     def test_refresh_cannot_resurrect_deleted_session(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             service = DatasetSessionService()

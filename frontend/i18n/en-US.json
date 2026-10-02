@@ -1549,6 +1549,8 @@
 		"dictTitle": "Tag dictionary",
 		"dictButton": "Tag dictionary",
 		"selectMenu": "Select images",
+		"groupByDirectory": "Group by folder",
+		"rootDirectory": "Root folder",
 		"moreMenu": "More",
 		"rescanDataset": "Rescan folder",
 		"globalRenameConfirm": "Rename this tag across the dataset? This affects {n} images, including unselected images.",

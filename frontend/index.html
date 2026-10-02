@@ -997,6 +997,7 @@
                 <button class="te-topbar-btn" @click="tagEditorSelectAll()" :disabled="!tagEditorFilteredCount()" x-text="t('tagEditor.selectPage')"></button>
                 <button class="te-topbar-btn" @click="_teFlushAllPendingTextEdits(); tagEditorSelected = []; _updateEditorPanel()" :disabled="!tagEditorSelected.length" x-text="t('tagEditor.selectNone')"></button>
                 <button class="te-topbar-btn" @click="tagEditorSelectInvert()" :disabled="!tagEditorFilteredCount()" x-text="t('tagEditor.selectInvert')"></button>
+                <button class="te-topbar-btn" :class="{ active: tagEditorGroupByDir }" :aria-pressed="tagEditorGroupByDir" @click="tagEditorToggleDirectoryGroups()" :disabled="tagEditorLoading || _teSearchLoading" x-text="t('tagEditor.groupByDirectory')"></button>
                 <span class="te-selection-count" x-text="t('tagEditor.selected').replace('{n}', tagEditorSelected.length)"></span>
                 <div class="te-sidebar-undo">
                   <button @click="tagEditorUndo()" :disabled="tagEditorHistoryIdx < 0" :title="t('tagEditor.undoHint')">
@@ -1022,8 +1023,15 @@
                 <div class="te-empty-title" x-text="t('tagEditor.emptySearch')"></div>
                 <button class="btn btn-ghost btn-sm" @click="tagEditorSearchQuery = ''; tagEditorTagSelection = []; tagEditorExcludedTags = []; tagEditorQuickFilter = 'all'; tagEditorSchedulePageFetch(true)" x-text="t('tagEditor.clearFilter')"></button>
               </div>
-              <div class="te-grid" id="teV3Grid" x-show="tagEditorFilteredCount() > 0">
+              <div class="te-grid" id="teV3Grid" :class="{ 'is-grouped': tagEditorGroupByDir }" x-show="tagEditorFilteredCount() > 0">
                 <template x-for="(img, idx) in tagEditorGetPaged()" :key="img.path">
+                  <div class="te-grid-item">
+                  <template x-if="tagEditorIsDirectoryGroupStart(img, idx)">
+                    <div class="te-directory-heading" @click.stop>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+                      <span x-text="tagEditorImageDirectory(img) || t('tagEditor.rootDirectory')" :title="tagEditorImageDirectory(img) || t('tagEditor.rootDirectory')"></span>
+                    </div>
+                  </template>
                   <div class="te-card" :data-path="img.path"
                     :class="{ selected: tagEditorSelected.includes(img.path), modified: img.tags !== tagEditorOriginal[img.path], 'te-card-no-cap': !img.has_caption }"
                     @click="tagEditorCardClick(img, idx, $event)"
@@ -1057,6 +1065,7 @@
                         </template>
                       </div>
                     </div>
+                  </div>
                   </div>
                 </template>
               </div>

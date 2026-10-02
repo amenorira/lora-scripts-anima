@@ -1549,6 +1549,8 @@
 		"dictTitle": "标签词典",
 		"dictButton": "标签词典",
 		"selectMenu": "选择图片",
+		"groupByDirectory": "按子目录分组",
+		"rootDirectory": "根目录",
 		"moreMenu": "更多",
 		"rescanDataset": "重新扫描文件夹",
 		"globalRenameConfirm": "将在整个数据集中重命名此标签，影响 {n} 张图片，包括未选中的图片。确认继续？",

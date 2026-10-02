@@ -131,10 +131,10 @@ class DatasetSessionService:
              search: str = "", use_regex: bool = False, quick_filter: str = "all",
              include_tags: tuple[str, ...] = (), exclude_tags: tuple[str, ...] = (),
              tag_logic: str = "AND", sort_by: str = "name", sort_asc: bool = True,
-             sort_by2: str = "", sort_asc2: bool = True) -> dict:
+             sort_by2: str = "", sort_asc2: bool = True, group_by_dir: bool = False) -> dict:
         session = self.get(session_id)
         query = (search, use_regex, quick_filter, tuple(include_tags), tuple(exclude_tags),
-                 tag_logic, sort_by, sort_asc, sort_by2, sort_asc2)
+                 tag_logic, sort_by, sort_asc, sort_by2, sort_asc2, group_by_dir)
         with self._lock:
             items = session.queries.get(query)
             if items is not None:
@@ -177,7 +177,8 @@ class DatasetSessionService:
 
     @staticmethod
     def _filter_images(session, search, use_regex, quick_filter, include_tags,
-                       exclude_tags, tag_logic, sort_by, sort_asc, sort_by2, sort_asc2):
+                       exclude_tags, tag_logic, sort_by, sort_asc, sort_by2, sort_asc2,
+                       group_by_dir=False):
         items = list(session.images)
         if quick_filter == "notag":
             items = [item for item in items if not str(item.get("tags", "")).strip()]
@@ -215,6 +216,9 @@ class DatasetSessionService:
         if sort_by2:
             items.sort(key=lambda item: sort_value(item, sort_by2), reverse=not sort_asc2)
         items.sort(key=lambda item: sort_value(item, sort_by), reverse=not sort_asc)
+        if group_by_dir:
+            # 分页前归组；稳定排序保留每个目录内的主、次排序。
+            items.sort(key=lambda item: str(item.get("rel_path", item.get("name", ""))).replace("\\", "/").rpartition("/")[0])
         return tuple(items)
 
     def _prune_locked(self, now: float) -> None:
