@@ -6,6 +6,40 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v26.1005.11852 - 2026-10-05
+
+This release introduces **Anima regularization image generation** from training captions, with incremental generation, resumable tasks, and result selection. Once reviewed, the results can be applied directly to the training configuration. It also improves caption editing and fixes the direction of the training-speed chart.
+
+### New Anima Regularization Image Workspace
+
+- Load the dataset, models, and bucket settings from the current Anima training configuration and generate regularization images from training captions.
+- Remove leading tags or exclude specific tags, and preview and edit captions for individual images to remove character trigger words and other unwanted content.
+- Start with recommended prompts and choose from multiple samplers, schedulers, and size modes, with automatic or manual VRAM management.
+- Save processed captions alongside generated images and embed generation parameters in PNG files for reference and reuse.
+- Review results individually, exclude or restore images, or generate an alternative with a new seed. Apply the reviewed results to the training configuration with one click.
+
+### Incremental Generation and Task Recovery
+
+- When new training images are added with the same settings, reuse the existing output directory, skip completed images, and generate only the new additions.
+- Changes to existing images, captions, or generation settings start a new round while preserving previous results. A new round can also be started manually.
+- Resume stopped tasks, recover tasks after restarting the application, and retry failed images separately.
+- Disable regularization generation operations while training is running to avoid conflicting GPU tasks.
+
+### Caption Editor Improvements
+
+- Group images by subdirectory for easier browsing and organization of datasets with multiple folders.
+- Increase the visible area of the multi-select tag candidate list to reduce scrolling.
+
+### Bug Fixes
+
+- Fix the reversed direction of the training-speed chart: faster training now produces a higher curve, while the displayed values and units remain unchanged.
+
+### Training Core Update
+
+- Upgrade **musubi-tuner to v0.3.6**, with related dependency updates and compatibility adaptations.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1002.171046...v26.1005.11852)
+
 ## v26.1002.171046 - 2026-10-02
 
 This release adds three learning-rate scheduler options and a remaining-time rate-of-change chart, enables persistent data-loading workers by default, and improves training monitoring, log display, and runtime compatibility.
