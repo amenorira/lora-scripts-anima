@@ -1,6 +1,6 @@
 /* Tagger follows the training form language while keeping single-image review focused. */
 .tagger-route { position: relative; inset: auto; display: flex; flex: 1 0 auto; min-width: 0; min-height: 100%; overflow: visible; }
-#taggerWorkspaceHost { display: flex; flex: 1 0 auto; flex-direction: column; min-height: 100%; }
+:is(#taggerWorkspaceHost, #regularizationWorkspaceHost) { display: flex; flex: 1 0 auto; flex-direction: column; min-width: 0; min-height: 100%; }
 .tagger-ui-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 .tagger-page-shell { display: flex; flex: 1 0 auto; flex-direction: column; width: 100%; min-height: 100%; padding: 24px 28px 40px; color: var(--text-primary); font-family: var(--font-sans); font-size: 14px; }
 .tagger-page-shell svg { width: 15px; height: 15px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }

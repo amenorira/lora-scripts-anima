@@ -275,7 +275,7 @@ class TaskMonitor:
     
     async def _check_all_tasks(self) -> None:
         """检查所有任务状态"""
-        tasks = tm.dump()
+        tasks = tm.training_dump()
         
         for task_data in tasks:
             task_id = task_data.get("id")

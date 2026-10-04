@@ -43,7 +43,7 @@ async def _snapshot_payload(
     # accidentally skipped, and the task list read below is then guaranteed to
     # include every change up to the captured cursors.
     cursors = await realtime_hub.cursors()
-    managed_tasks = tm.dump()
+    managed_tasks = tm.training_dump()
     gpu, system, tracked_tasks, monitor = await asyncio.gather(
         asyncio.to_thread(gpu_info, True),
         asyncio.to_thread(system_info, True),

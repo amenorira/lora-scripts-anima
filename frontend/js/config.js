@@ -87,6 +87,7 @@ window.ROUTE_CONFIG = {
   'train-anima': { titleKey: 'nav.loraTraining', trainType: 'anima-lora' },
   'tagger': { titleKey: 'tagger.title' },
   'tagEditor': { titleKey: 'tagEditor.title' },
+  'regularization': { titleKey: 'regularization.title' },
   'environment': { titleKey: 'environment.title' },
   'settings': { titleKey: 'settings.title' },
   'docs': { titleKey: 'docs.title' },

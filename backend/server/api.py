@@ -13,11 +13,13 @@ from backend.server.routes.docs import router as docs_router
 from backend.server.routes.system import router as system_router
 from backend.server.routes.tagger import router as tagger_router
 from backend.server.routes.image_preview import router as image_preview_router
+from backend.server.routes.regularization import router as regularization_router
 
 
 router = APIRouter()
 router.include_router(system_router)
 router.include_router(tagger_router)
 router.include_router(image_preview_router)
+router.include_router(regularization_router)
 router.include_router(environment_router)
 router.include_router(docs_router)

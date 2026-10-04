@@ -399,10 +399,13 @@ document.addEventListener('alpine:init', () => {
         if (typeof this._setTaggerRealtimeTask === 'function') this._setTaggerRealtimeTask(null);
       }
       if (r !== 'tagger' && typeof this.stopTaggerWorkspace === 'function') this.stopTaggerWorkspace();
+      if (r !== 'regularization' && typeof this.stopRegularizationWorkspace === 'function') this.stopRegularizationWorkspace();
       if (r && r.startsWith('train-')) {
         this.buildTrainForm();
       } else if (r === 'tagger') {
         this.buildTaggerForm();
+      } else if (r === 'regularization') {
+        this.buildRegularizationForm();
       } else if (r === 'tagEditor') {
         this.tagEditorLoad();
         progressManagedByRoute = true;
@@ -657,6 +660,7 @@ document.addEventListener('alpine:init', () => {
     window.trainingTomlMixin,
     window.trainingConfigIoMixin,
     window.taggerMixin,
+    window.regularizationMixin,
     window.tagEditorMixin,
     window.tagDictionaryMixin,
   ];
