@@ -317,7 +317,7 @@
 		"lossUpdatedAt": "更新于 Step {n}",
 		"currentSpeed": "当前迭代速度",
 		"lastSpeed": "末次迭代速度",
-		"speedTrendLabel": "最近上报的每步耗时变化",
+		"speedTrendLabel": "最近上报的迭代速度（it/s），越高越快",
 		"remainingTrendLabel": "剩余时间变化率：剩余时间变化 ÷ 已运行时间变化。中线 −1 表示每秒正常减少 1 秒；高于中线表示减少变慢，变化率大于 0 表示剩余时间增加",
 		"elapsedTrendLabel": "已运行时间随训练步数的变化",
 		"localTrendScaleHint": "纵轴随近期变化自动缩放，小幅变化会放大显示",

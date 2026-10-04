@@ -43,6 +43,26 @@ function summaryRoot() {
   };
 }
 
+test('speed sparkline rises as iteration time falls while the displayed unit stays unchanged', () => {
+  const a = app({ monitorPerfSamples: [
+    { observation: 1, speedSec: 8 }, { observation: 2, speedSec: 4 },
+    { observation: 3, speedSec: 0 }, { observation: 4, speedSec: null },
+  ] });
+  const root = summaryRoot();
+  const frames = [];
+  a._patchRollingSparkline = (path, points, animate, context, options) => {
+    frames.push(a._rollingSparklineFrame(points, null, options));
+    return frames.at(-1);
+  };
+  a._patchSummaryTelemetry(root, key => key, false, { state: 'RUNNING' });
+  assert.equal(frames[0].coords.length, 2);
+  assert.ok(frames[0].coords[1].y < frames[0].coords[0].y);
+  assert.equal(frames[0].points[0].value, 1 / 8);
+  assert.equal(frames[0].points[1].value, 1 / 4);
+  a._patchOverviewStatus(root, { state: 'RUNNING', speed: '3.91s/it' }, key => key, false);
+  assert.equal(root.node('[data-summary-field="speed"]').textContent, '3.91s/it');
+});
+
 test('summary patches live state, actual terminal progress, degraded connection and errors', () => {
   const a = app({ realtimeState: 'degraded', realtimeTaskStateUnknown: true, trainParams: [{ key: 'max_train_epochs', value: 20 }] });
   const root = summaryRoot();
