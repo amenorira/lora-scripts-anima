@@ -16,13 +16,13 @@ from typing import Any
 from packaging.version import InvalidVersion, Version
 
 
-# Shared sd-scripts v0.12.0 stack plus musubi-tuner 0.3.4 requirements and
+# Shared sd-scripts v0.12.0 stack plus musubi-tuner 0.3.6 requirements and
 # the curated ProdigyPlus optimizer. Torch and torchvision are
 # shared from the main CUDA 13 environment, but are validated explicitly below
 # because accelerate/bitsandbytes depend on torch indirectly.
 MUSUBI_RUNTIME_PACKAGES: dict[str, str | None] = {
     "accelerate": "1.15.0",
-    "av": "14.0.1",
+    "av": "17.1.0",
     "bitsandbytes": None,
     "diffusers": "0.40.0",
     "einops": "0.7.0",

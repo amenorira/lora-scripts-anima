@@ -151,6 +151,7 @@ async def get_dataset_session_page(
     sort_asc: bool = Query(True),
     sort_by2: str = Query(""),
     sort_asc2: bool = Query(True),
+    group_by_dir: bool = Query(False),
 ):
     try:
         data = await asyncio.to_thread(
@@ -168,6 +169,7 @@ async def get_dataset_session_page(
             sort_asc=sort_asc,
             sort_by2=sort_by2,
             sort_asc2=sort_asc2,
+            group_by_dir=group_by_dir,
         )
         return {"status": "success", "data": data}
     except KeyError:

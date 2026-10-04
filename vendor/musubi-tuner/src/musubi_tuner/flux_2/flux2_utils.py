@@ -603,6 +603,10 @@ class Mistral3Embedder(nn.Module):
 
         # Load tokenizer
         self.tokenizer = AutoProcessor.from_pretrained(M3_TOKENIZER_ID, use_fast=False)
+        # transformers 4.x resolved the Mistral tokenizer to LlamaTokenizerFast, whose default padding side is left, so
+        # the 512-token context has the prompt at the end; transformers 5.x resolves it to a class that pads on the right.
+        # Pin the left padding so the cached embeddings are the same across versions.
+        self.tokenizer.tokenizer.padding_side = "left"
 
     @property
     def dtype(self):

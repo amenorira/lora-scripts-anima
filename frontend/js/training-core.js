@@ -643,7 +643,7 @@ window.trainingCoreMixin = {
   // ── Training Form ──────────────────────────────────────
   buildTrainForm() {
     const r = this.currentRoute;
-    if (this._resumeTrainForm(r)) return;
+    if (this._resumeTrainForm(r)) { this.regApplyPendingTrainingPath?.(); return; }
     if (this._trainFormMountedRoute) this._disposeTrainForm();
 
     const cfg = ROUTE_CONFIG[r] || {};
@@ -691,6 +691,7 @@ window.trainingCoreMixin = {
       this.form.network_module = 'networks.lora';
     }
     this.formDefaults = { ...defaults };
+    this.regApplyPendingTrainingPath?.();
     this._syncKrea2CacheDir();
     this._captureProfileDraft(this.form.model_train_type, this.form, defaults);
     this._persistProfileDrafts(r);
@@ -2213,15 +2214,18 @@ window.trainingCoreMixin = {
     // merged 字段（优化器参数）显示真正写进 optimizer_args 的参数名，而不是内部表单键：
     // 同一时刻只显示一个优化器的参数，重名不会歧义，且这个名字与文档、日志一致。
     const displayKey = field.argKey || dataKey;
+    const infoHtml = field.labelOnly
+      ? `<div class="field-info"><div class="field-key">${label}${requiredMark}${docLink}</div>${field.helpKey ? `<div class="field-desc">${this.esc(this.t(field.helpKey))}</div>` : ''}</div>`
+      : `<div class="field-info"><div class="field-key">${this.esc(displayKey)}${requiredMark}</div><div class="field-desc">${label}${docLink}</div></div>`;
     let controlSection = '';
     let fullWidthRow = '';
     if (isFullWidth) {
       // Textarea / path: info on top, input full-width below (outside field-row)
-      controlSection = `<div class="field-info"><div class="field-key">${this.esc(displayKey)}${requiredMark}</div><div class="field-desc">${label}${docLink}</div></div>`;
+      controlSection = infoHtml + (field.controlActions || '');
       fullWidthRow = `<div class="field-input-row">${controlHtml}</div>`;
     } else {
       // Standard: info left, control right — single flex row
-      controlSection = `<div class="field-info"><div class="field-key">${this.esc(displayKey)}${requiredMark}</div><div class="field-desc">${label}${docLink}</div></div><div class="field-control">${controlHtml}</div>`;
+      controlSection = `${infoHtml}<div class="field-control">${controlHtml}${field.controlActions || ''}</div>`;
     }
 
     // ── Assemble ──
@@ -2261,6 +2265,9 @@ window.trainingCoreMixin = {
   // x-show 与扩展状态及 form 值联动。
   _getEnvHint(dataKey) {
     switch (dataKey) {
+      case 'enable_reg_data':
+        if (this.form.model_train_type !== 'anima-lora') return '';
+        return `<div class="timestep-preview-entry"><button type="button" class="btn btn-ghost btn-sm" @click="openRegularizationFromTraining()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1"/><path d="m21 15-5-5L5 21"/></svg><span x-text="regT('entry')"></span></button></div>`;
       case 'timestep_sampling':
         return `<div class="timestep-preview-entry">
           <button type="button" class="btn btn-ghost btn-sm" @click="openTimestepPreview()">
@@ -3741,6 +3748,7 @@ window.trainingCoreMixin = {
   },
 
   setField(key, value) {
+    if (key.startsWith('reg__')) { this.regSetField(key.slice(5), value); return; }
     if (key === 'dataset_cache_dir' && this.form.model_train_type === 'krea2-lora') {
       value = this._deriveKrea2CacheDir(this.form.train_data_dir);
     }
@@ -4227,6 +4235,7 @@ window.trainingCoreMixin = {
   async builtinFilePicker(key, role) {
     let pickType = 'model-file';
     if (role==='file-folder') pickType='train-dir';
+    if (key === 'reg_data_dir' && role === 'file-folder') pickType = 'reg-dir';
     if (role==='file-model') pickType='model-file';
     if (role==='file-model-saved') pickType='model-saved-file';
     const requestSeq = ++this._pickerRequestSeq;
@@ -4272,7 +4281,7 @@ window.trainingCoreMixin = {
   },
 
   // 与后端 get_files 的扫描根目录保持一致，用于弹窗上下文显示与子目录分组
-  PICKER_ROOTS: { 'model-file': './models', 'model-saved-file': './output', 'train-dir': './train' },
+  PICKER_ROOTS: { 'model-file': './models', 'model-saved-file': './output', 'train-dir': './train', 'reg-dir': './train/regularization' },
 
   showFilePickerModal(key, files, pickType) {
     this._pickerKey = key;
@@ -4347,7 +4356,7 @@ window.trainingCoreMixin = {
 
   pickerContextText() {
     const n = this.filteredPickerFiles.length;
-    const unit = this._pickerKind === 'train-dir'
+    const unit = ['train-dir', 'reg-dir'].includes(this._pickerKind)
       ? this.t('common.pickerFolderUnit', 'folders')
       : this.t('common.pickerFileUnit', 'files');
     return (this._pickerRoot || '') + ' · ' + n + ' ' + unit;
@@ -4358,7 +4367,7 @@ window.trainingCoreMixin = {
     const total = (this._pickerFiles || []).length;
     const n = this.filteredPickerFiles.length;
     if (!this._pickerFilter || n === total) return '';
-    const unit = this._pickerKind === 'train-dir'
+    const unit = ['train-dir', 'reg-dir'].includes(this._pickerKind)
       ? this.t('common.pickerFolderUnit', 'folders')
       : this.t('common.pickerFileUnit', 'files');
     return n + ' / ' + total + ' ' + unit;
@@ -4381,7 +4390,7 @@ window.trainingCoreMixin = {
   // 行内第二行详情：数据集给图片/打标进度，所有条目末尾补修改时间
   pickerDetailText(f) {
     const parts = [];
-    if (this._pickerKind === 'train-dir' && typeof f.images === 'number') {
+    if (['train-dir', 'reg-dir'].includes(this._pickerKind) && typeof f.images === 'number') {
       let s = f.images + ' ' + this.t('common.pickerImagesUnit', 'images');
       if (f.images > 0) s += ' · ' + (f.captioned || 0) + ' ' + this.t('common.pickerCaptionedUnit', 'captioned');
       parts.push(s);

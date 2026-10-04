@@ -518,10 +518,10 @@ a:focus-visible {
   line-height: 1.4;
 }
 
-#trainFormContent {
+:is(#trainFormContent, #regTrainingControls) {
   transition: opacity 110ms ease, transform 110ms ease;
 }
-#trainForm.train-type-switching #trainFormContent {
+#trainForm.train-type-switching :is(#trainFormContent, #regTrainingControls) {
   opacity: 0.35;
   transform: translateY(2px);
   pointer-events: none;
@@ -655,7 +655,7 @@ input[type="checkbox"]:focus-visible {
 .field.field-filled {
   border-left-color: var(--state-filled);
 }
-/* 嵌套字段（field-nested）的橙/绿条规则移至 #trainFormContent .field-nested 虚线规则之后，
+/* 嵌套字段（field-nested）的橙/绿条规则移至 :is(#trainFormContent, #regTrainingControls) .field-nested 虚线规则之后，
    用更高特异性覆盖虚线左边框——见下方嵌套缩进段。 */
 
 /* ── Field info (parameter name + description, stacked) ──── */
@@ -781,7 +781,7 @@ input[type="checkbox"]:focus-visible {
   padding-left: 12px;
   border-left: 2px dashed var(--border-default);
 }
-/* 嵌套字段的橙/绿条规则移至 #trainFormContent .field-nested 虚线规则之后，
+/* 嵌套字段的橙/绿条规则移至 :is(#trainFormContent, #regTrainingControls) .field-nested 虚线规则之后，
    用更高特异性覆盖虚线左边框——见下方嵌套缩进段。 */
 
 /* ── Menu button (square, 24×24) ─────────────────────────── */
@@ -806,22 +806,22 @@ input[type="checkbox"]:focus-visible {
 
 /* 训练表单内：点点菜单默认弱化，行 hover 或弹窗可见时凸显；
    右侧留白使其与 hover 高亮背景分离，不再贴边。 */
-#trainFormContent .field-menu-wrap {
+:is(#trainFormContent, #regTrainingControls) .field-menu-wrap {
   margin-left: 6px;
   margin-right: -2px;
 }
-#trainFormContent .btn-menu {
+:is(#trainFormContent, #regTrainingControls) .btn-menu {
   opacity: 0.35;
   border-color: transparent;
   background: transparent;
 }
-#trainFormContent .field:hover .btn-menu,
-#trainFormContent .field-menu-wrap:hover .btn-menu {
+:is(#trainFormContent, #regTrainingControls) .field:hover .btn-menu,
+:is(#trainFormContent, #regTrainingControls) .field-menu-wrap:hover .btn-menu {
   opacity: 1;
   border-color: var(--border-default);
 }
 /* 键盘聚焦时也可见（可访问性） */
-#trainFormContent .btn-menu:focus-visible {
+:is(#trainFormContent, #regTrainingControls) .btn-menu:focus-visible {
   opacity: 1;
   border-color: var(--accent);
   outline: none;
@@ -1120,7 +1120,7 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 
 
 /* ── Training Form — Flat Design (no card boxes) ─────────── */
-#trainFormContent .card {
+:is(#trainFormContent, #regTrainingControls) .card {
   background: transparent;
   border: none;
   border-left: none;
@@ -1129,7 +1129,7 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   margin-bottom: 0;
   box-shadow: none;
 }
-#trainFormContent .card-header {
+:is(#trainFormContent, #regTrainingControls) .card-header {
   font-size: 14px;
   font-weight: 700;
   color: var(--text-primary);
@@ -1144,14 +1144,14 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   user-select: none;
   transition: color var(--duration-fast) ease, border-bottom-color var(--duration-fast) ease;
 }
-#trainFormContent .card-header:hover {
+:is(#trainFormContent, #regTrainingControls) .card-header:hover {
   color: var(--text-secondary);
 }
-#trainFormContent .card:first-child .card-header {
+:is(#trainFormContent, #regTrainingControls) .card:first-child .card-header {
   padding-top: 0;
 }
 /* 分组标题左侧色条（与导航指示器圆点同色，强化分组身份识别） */
-#trainFormContent .card-header::before {
+:is(#trainFormContent, #regTrainingControls) .card-header::before {
   content: '';
   width: 3px;
   height: 14px;
@@ -1160,63 +1160,63 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   background: var(--border-default);
   transition: background-color var(--duration-fast) var(--ease-out);
 }
-/* 各分组色条：加 #trainFormContent 前缀提升优先级，覆盖上方灰色默认 */
-#trainFormContent [data-section="model"] .card-header::before         { background: var(--section-model); }
-#trainFormContent [data-section="network"] .card-header::before       { background: var(--section-network); }
-#trainFormContent [data-section="training"] .card-header::before      { background: var(--section-training); }
-#trainFormContent [data-section="optimizer"] .card-header::before     { background: var(--section-optimizer); }
-#trainFormContent [data-section="regularization"] .card-header::before{ background: var(--section-regularization); }
-#trainFormContent [data-section="performance"] .card-header::before   { background: var(--section-performance); }
-#trainFormContent [data-section="save"] .card-header::before          { background: var(--section-save); }
-#trainFormContent [data-section="caption"] .card-header::before       { background: var(--section-caption); }
-#trainFormContent [data-section="preview"] .card-header::before       { background: var(--section-preview); }
-#trainFormContent [data-section="misc"] .card-header::before          { background: var(--section-caption); }
+/* 各分组色条：加 :is(#trainFormContent, #regTrainingControls) 前缀提升优先级，覆盖上方灰色默认 */
+:is(#trainFormContent, #regTrainingControls) [data-section="model"] .card-header::before         { background: var(--section-model); }
+:is(#trainFormContent, #regTrainingControls) [data-section="network"] .card-header::before       { background: var(--section-network); }
+:is(#trainFormContent, #regTrainingControls) [data-section="training"] .card-header::before      { background: var(--section-training); }
+:is(#trainFormContent, #regTrainingControls) [data-section="optimizer"] .card-header::before     { background: var(--section-optimizer); }
+:is(#trainFormContent, #regTrainingControls) [data-section="regularization"] .card-header::before{ background: var(--section-regularization); }
+:is(#trainFormContent, #regTrainingControls) [data-section="performance"] .card-header::before   { background: var(--section-performance); }
+:is(#trainFormContent, #regTrainingControls) [data-section="save"] .card-header::before          { background: var(--section-save); }
+:is(#trainFormContent, #regTrainingControls) [data-section="caption"] .card-header::before       { background: var(--section-caption); }
+:is(#trainFormContent, #regTrainingControls) [data-section="preview"] .card-header::before       { background: var(--section-preview); }
+:is(#trainFormContent, #regTrainingControls) [data-section="misc"] .card-header::before          { background: var(--section-caption); }
 /* 折叠箭头（B2）：默认指向下（展开），收起时旋转 -90° */
-#trainFormContent .card-chevron {
+:is(#trainFormContent, #regTrainingControls) .card-chevron {
   width: 12px;
   height: 12px;
   flex-shrink: 0;
   color: var(--text-tertiary);
   transition: transform var(--duration-fast) var(--ease-out);
 }
-#trainFormContent .card-collapsed .card-chevron {
+:is(#trainFormContent, #regTrainingControls) .card-collapsed .card-chevron {
   transform: rotate(-90deg);
 }
 /* 分组主体：高度折叠动画由 JS _animateCollapse 驱动（测量 scrollHeight），
    此处仅声明过渡属性；初始渲染的持久化收起态由下方 .card-collapsed 规则承接。 */
-#trainFormContent .card-body {
+:is(#trainFormContent, #regTrainingControls) .card-body {
   transition: max-height var(--duration-normal) var(--ease-out), opacity var(--duration-fast) var(--ease-out);
 }
 /* 初始渲染即为收起态（页面加载 / 切训练类型重建时，无动画直接收起） */
-#trainFormContent .card.card-collapsed > .card-body {
+:is(#trainFormContent, #regTrainingControls) .card.card-collapsed > .card-body {
   max-height: 0;
   opacity: 0;
   overflow: hidden;
   pointer-events: none;
 }
 
-#trainFormContent [data-section="training"] .step-estimate-panel {
+:is(#trainFormContent, #regTrainingControls) [data-section="training"] .step-estimate-panel {
   margin: 8px -8px 12px;
   padding: 11px 4px 11px 12px;
   border: 1px solid color-mix(in srgb, var(--section-training) 28%, var(--border-default));
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--section-training) 3%, var(--bg-surface));
 }
-#trainFormContent .step-estimate-head {
+:is(#trainFormContent, #regTrainingControls) .step-estimate-head {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 27px;
   align-items: center;
   gap: 12px;
   min-height: 27px;
 }
-#trainFormContent .step-estimate-heading {
+:is(#trainFormContent, #regTrainingControls) .step-estimate-heading {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   align-items: baseline;
   column-gap: 12px;
   min-width: 0;
 }
-#trainFormContent .step-estimate-label {
+:is(#trainFormContent, #regTrainingControls) .step-estimate-label {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.5px;
@@ -1224,22 +1224,22 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   white-space: nowrap;
   color: var(--section-training);
 }
-#trainFormContent .step-estimate-total {
+:is(#trainFormContent, #regTrainingControls) .step-estimate-total {
   font-size: 17px;
   line-height: 1.35;
   color: var(--text-primary);
 }
-#trainFormContent .step-estimate-status {
+:is(#trainFormContent, #regTrainingControls) .step-estimate-status {
   min-width: 0;
   font-size: 12px;
   color: var(--text-tertiary);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
-#trainFormContent .step-estimate-status-error {
+:is(#trainFormContent, #regTrainingControls) .step-estimate-status-error {
   color: var(--warning);
 }
-#trainFormContent .step-estimate-refresh {
+:is(#trainFormContent, #regTrainingControls) .step-estimate-refresh {
   display: grid;
   place-items: center;
   justify-self: end;
@@ -1253,31 +1253,31 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   color: var(--text-tertiary);
   cursor: pointer;
 }
-#trainFormContent .step-estimate-refresh:hover:not(:disabled) {
+:is(#trainFormContent, #regTrainingControls) .step-estimate-refresh:hover:not(:disabled) {
   color: var(--section-training);
   background: color-mix(in srgb, var(--section-training) 10%, transparent);
 }
-#trainFormContent .step-estimate-refresh:disabled {
+:is(#trainFormContent, #regTrainingControls) .step-estimate-refresh:disabled {
   cursor: default;
   opacity: 0.55;
 }
-#trainFormContent .step-estimate-refresh svg {
+:is(#trainFormContent, #regTrainingControls) .step-estimate-refresh svg {
   display: block;
   width: 100%;
   height: 100%;
 }
-#trainFormContent .step-estimate-refresh svg.spinning {
+:is(#trainFormContent, #regTrainingControls) .step-estimate-refresh svg.spinning {
   animation: step-estimate-spin 0.8s linear infinite;
 }
 @keyframes step-estimate-spin { to { transform: rotate(360deg); } }
-#trainFormContent .step-estimate-formula {
+:is(#trainFormContent, #regTrainingControls) .step-estimate-formula {
   display: grid;
   gap: 6px;
   margin-top: 11px;
   padding-top: 10px;
   border-top: 1px dashed color-mix(in srgb, var(--section-training) 24%, var(--border-default));
 }
-#trainFormContent .step-estimate-line {
+:is(#trainFormContent, #regTrainingControls) .step-estimate-line {
   display: grid;
   grid-template-columns: 19px minmax(0, 1fr);
   gap: 7px;
@@ -1287,7 +1287,7 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
-#trainFormContent .step-estimate-number {
+:is(#trainFormContent, #regTrainingControls) .step-estimate-number {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1300,11 +1300,11 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   font-size: 10px;
   font-weight: 700;
 }
-#trainFormContent .step-estimate-line-total {
+:is(#trainFormContent, #regTrainingControls) .step-estimate-line-total {
   color: var(--text-primary);
   font-weight: 700;
 }
-#trainFormContent .step-estimate-note {
+:is(#trainFormContent, #regTrainingControls) .step-estimate-note {
   margin: 2px 0 0 26px;
   font-size: 10.5px;
   line-height: 1.45;
@@ -1312,45 +1312,45 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 }
 
 /* Field rows: subtle background on hover */
-#trainFormContent .field {
+:is(#trainFormContent, #regTrainingControls) .field {
   border-radius: 2px;
   padding: 8px 8px 8px 10px;
   margin: 0 -8px;
   transition: background-color var(--duration-fast) ease, border-left-color var(--duration-fast) var(--ease-out);
 }
 /* 条件字段的位移和淡入淡出由批量 FLIP 动画处理。 */
-#trainFormContent .field-conditional {
+:is(#trainFormContent, #regTrainingControls) .field-conditional {
   overflow: visible;
   transition: none;
 }
-#trainFormContent .field:hover {
+:is(#trainFormContent, #regTrainingControls) .field:hover {
   background: var(--hover-overlay);
 }
-#trainFormContent .field + .field {
+:is(#trainFormContent, #regTrainingControls) .field + .field {
   border-top: none;
 }
 /* 嵌套字段缩进（A2）：按 data-nest-level 递增，加深左边框，区分"开关→选项→子选项"层级 */
-#trainFormContent .field-nested {
+:is(#trainFormContent, #regTrainingControls) .field-nested {
   margin-left: 14px;
   padding-left: 12px;
   margin-right: -8px;
   border-left: 2px dashed var(--border-default);
 }
 /* 层级 ≥2（孙子参数）：额外缩进 + 更深的虚线，强化树形视觉 */
-#trainFormContent .field-nested[data-nest-level="2"],
-#trainFormContent .field-nested[data-nest-level="3"],
-#trainFormContent .field-nested[data-nest-level="4"] {
+:is(#trainFormContent, #regTrainingControls) .field-nested[data-nest-level="2"],
+:is(#trainFormContent, #regTrainingControls) .field-nested[data-nest-level="3"],
+:is(#trainFormContent, #regTrainingControls) .field-nested[data-nest-level="4"] {
   margin-left: 28px;
   border-left-color: var(--text-sidebar-muted);
 }
-/* 嵌套字段改值指示条：必须放在 #trainFormContent .field-nested 虚线规则之后，
+/* 嵌套字段改值指示条：必须放在 :is(#trainFormContent, #regTrainingControls) .field-nested 虚线规则之后，
    且用 .field.field-nested.field-changed (1,0,3) 提升特异性，覆盖上方虚线左边框
    （含 data-nest-level≥2 的 1,0,2 规则）。否则子字段改值后橙/绿条被虚线灰色压住不显示。 */
-#trainFormContent .field.field-nested.field-changed {
+:is(#trainFormContent, #regTrainingControls) .field.field-nested.field-changed {
   border-left-color: var(--state-changed);
   border-left-style: solid;
 }
-#trainFormContent .field.field-nested.field-filled {
+:is(#trainFormContent, #regTrainingControls) .field.field-nested.field-filled {
   border-left-color: var(--state-filled);
   border-left-style: solid;
 }
@@ -2462,7 +2462,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 #historyList { min-height: 120px; contain: style; }
 #environmentPage { min-width: 0; min-height: 300px; contain: style; container-type: inline-size; }
-#trainFormContent { min-height: 400px; contain: style; }
+:is(#trainFormContent, #regTrainingControls) { min-height: 400px; contain: style; }
 /* ── Monitor Dashboard ──────── */
 /* Tab content sections: lightweight, no card decoration */
 .monitor-dashboard > .m-section,
@@ -3390,6 +3390,13 @@ input[type="range"]::-webkit-slider-thumb {
 .te-tag-sort .te-sort-btn.active { color: var(--accent); background: var(--accent-soft); }
 .te-grid-wrap { display: flex; flex-direction: column; min-width: 0; position: relative; overflow: hidden; }
 .te-grid { display: grid; grid-template-columns: repeat(auto-fill, var(--te-card-size, 160px)); grid-auto-rows: var(--te-card-size, 160px); justify-content: start; gap: 8px; flex: 1; overflow-y: auto; padding: 8px; align-content: start; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: var(--border-default) transparent; contain: layout paint; }
+.te-grid-item { display: contents; }
+.te-grid.is-grouped { grid-auto-rows: auto; }
+.te-grid.is-grouped .te-card { height: var(--te-card-size, 160px); }
+.te-directory-heading { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; min-width: 0; padding: 8px 2px 6px; border-bottom: 1px solid var(--border-subtle); color: var(--text-secondary); font-size: 12px; font-weight: 600; }
+.te-directory-heading svg { flex-shrink: 0; }
+.te-directory-heading span { min-width: 0; overflow-wrap: anywhere; }
+.te-selection-toolbar .te-topbar-btn.active { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 
 /* ===== Card ===== */
 .te-card { width: 100%; min-width: 0; height: 100%; border: 2px solid var(--border-default); border-radius: var(--radius-panel); background: var(--bg-surface); position: relative; cursor: pointer; overflow: hidden; transition: border-color 0.1s; contain: layout paint; }
@@ -3494,7 +3501,7 @@ body.te-preview-resizing, body.te-preview-resizing * { cursor: row-resize !impor
 .te-batch-row button { font-size: 10px; padding: 5px 8px; border: 1px solid var(--border-default); border-radius: var(--radius-control); background: var(--bg-input); color: var(--text-secondary); cursor: pointer; white-space: nowrap; font-weight: 600; }
 .te-batch-row button:hover { background: var(--accent-solid); color: #fff; border-color: var(--accent-solid); }
 .te-batch-row button:disabled { opacity: 0.35; pointer-events: none; }
-.te-batch-row .te-suggest { bottom: auto; top: calc(100% + 4px); }
+.te-batch-row .te-suggest { bottom: auto; top: calc(100% + 4px); max-height: min(360px, 50vh); }
 .te-batch-arrow { font-size: 12px; color: var(--text-tertiary); flex-shrink: 0; padding: 0 2px; }
 
 .te-batch-pos { display: flex; gap: 1px; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); flex-shrink: 0; }

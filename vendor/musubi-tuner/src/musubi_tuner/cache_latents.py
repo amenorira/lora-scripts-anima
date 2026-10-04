@@ -1,6 +1,6 @@
 import argparse
 import os
-from typing import Optional, Union
+from typing import Callable, Optional, Union
 
 import numpy as np
 import torch
@@ -25,6 +25,7 @@ def show_image(
     image: Union[list[Union[Image.Image, np.ndarray], Union[Image.Image, np.ndarray]]],
     control_image: Optional[Union[np.ndarray, list[np.ndarray]]] = None,
 ) -> int:
+    from musubi_tuner.utils import cv2_compat  # noqa: F401 - must be imported before `import cv2`
     import cv2
 
     imgs = (
@@ -284,13 +285,25 @@ def encode_and_save_batch(vae: AutoencoderKLCausal3D, batch: list[ItemInfo]):
         save_latent_cache(item, l)
 
 
-def encode_datasets(datasets: list[BaseDataset], encode: callable, args: argparse.Namespace, supports_alpha: bool = False):
-    """Common function to encode datasets. This function is called from multiple architecture scripts."""
+def encode_datasets(
+    datasets: list[BaseDataset],
+    encode: callable,
+    args: argparse.Namespace,
+    supports_alpha: bool = False,
+    cache_is_current: Optional[Callable[[ItemInfo], bool]] = None,
+):
+    """Common function to encode datasets. This function is called from multiple architecture scripts.
+
+    With --skip_existing, an item whose latent cache file exists is skipped; an architecture can
+    replace that test with `cache_is_current(item)` (e.g. to also compare cache metadata).
+    """
     num_workers = args.num_workers if args.num_workers is not None else max(1, os.cpu_count() - 1)
+    if cache_is_current is None:
+        cache_is_current = lambda item: os.path.exists(item.latent_cache_path)  # noqa: E731
     for i, dataset in enumerate(datasets):
         logger.info(f"Encoding dataset [{i}]")
         all_latent_cache_paths = []
-        for _, batch in tqdm(dataset.retrieve_latent_cache_batches(num_workers)):
+        for _, batch in tqdm(dataset.retrieve_latent_cache_batches(num_workers, skip_broken=args.skip_broken)):
             batch: list[ItemInfo] = batch
             if not supports_alpha:
                 # make sure content has 3 channels
@@ -304,7 +317,7 @@ def encode_datasets(datasets: list[BaseDataset], encode: callable, args: argpars
             all_latent_cache_paths.extend([item.latent_cache_path for item in batch])
 
             if args.skip_existing:
-                filtered_batch = [item for item in batch if not os.path.exists(item.latent_cache_path)]
+                filtered_batch = [item for item in batch if not cache_is_current(item)]
                 if len(filtered_batch) == 0:
                     continue
                 batch = filtered_batch
@@ -375,18 +388,27 @@ def main():
     encode_datasets(datasets, encode, args)
 
 
-def setup_parser_common() -> argparse.ArgumentParser:
+def setup_parser_common(*, include_vae: bool = True) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--dataset_config", type=str, required=True, help="path to dataset config .toml file")
-    parser.add_argument("--vae", type=str, required=False, default=None, help="path to vae checkpoint")
-    parser.add_argument("--vae_dtype", type=str, default=None, help="data type for VAE, default depends on model, e.g., float16")
+    if include_vae:
+        parser.add_argument("--vae", type=str, required=False, default=None, help="path to vae checkpoint")
+        parser.add_argument(
+            "--vae_dtype", type=str, default=None, help="data type for VAE, default depends on model, e.g., float16"
+        )
     parser.add_argument("--device", type=str, default=None, help="device to use, default is cuda if available")
     parser.add_argument(
         "--batch_size", type=int, default=None, help="batch size, override dataset config if dataset batch size > this"
     )
     parser.add_argument("--num_workers", type=int, default=None, help="number of workers for dataset. default is cpu count-1")
     parser.add_argument("--skip_existing", action="store_true", help="skip existing cache files")
+    parser.add_argument(
+        "--skip_broken",
+        action="store_true",
+        help="skip media files that fail to decode or validate (logged with the reason) instead of stopping the run;"
+        " no cache is written for them",
+    )
     parser.add_argument("--keep_cache", action="store_true", help="keep cache files not in dataset")
     parser.add_argument("--debug_mode", type=str, default=None, choices=["image", "console", "video"], help="debug mode")
     parser.add_argument("--console_width", type=int, default=80, help="debug mode: console width")

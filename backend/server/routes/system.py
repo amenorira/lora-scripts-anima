@@ -13,6 +13,7 @@ from fastapi import APIRouter, Request, Response
 
 from backend import launch_utils
 from backend.constants import REPO_ROOT, SD_SCRIPTS_DIR, VENDOR_ROOT
+from backend.regularization.storage import OUTPUT_ROOT as REGULARIZATION_OUTPUT_ROOT
 from backend.server.models import APIResponse, APIResponseFail, APIResponseSuccess
 from backend.tasks import tm
 from backend.utils.devices import printable_devices
@@ -42,7 +43,7 @@ def _git_version() -> str:
 @router.get("/health")
 async def health_check():
     """Lightweight connectivity check — returns OK + training active flag."""
-    tasks = tm.dump()
+    tasks = tm.training_dump()
     active_task = next(
         (task for task in tasks if task.get("status") in {"CREATED", "RUNNING"}),
         None,
@@ -196,6 +197,7 @@ async def get_files(pick_type) -> APIResponse:
         "model-file": {"type": "file", "path": "./models", "filter": "(.safetensors|.ckpt|.pt)"},
         "model-saved-file": {"type": "file", "path": "./output", "filter": "(.safetensors|.ckpt|.pt)"},
         "train-dir": {"type": "folder", "path": "./train", "filter": None},
+        "reg-dir": {"type": "folder", "path": REGULARIZATION_OUTPUT_ROOT, "filter": None},
     }
     # 目录选择器里无意义的杂项目录
     hidden_dir_names = {".ipynb_checkpoints", ".DS_Store"}

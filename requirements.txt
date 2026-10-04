@@ -31,7 +31,7 @@ setuptools>=68,<82
 
 # ── 训练栈（sd-scripts 与 musubi-tuner 共用；与 musubi_runtime.MUSUBI_RUNTIME_PACKAGES 对账）──
 accelerate==1.15.0
-av==14.0.1
+av==17.1.0
 bitsandbytes
 diffusers==0.40.0
 easydict==1.13

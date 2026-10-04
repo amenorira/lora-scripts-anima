@@ -23,40 +23,42 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20261002-review-cache1">
+  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20261004-reg56">
   <link rel="stylesheet" href="/anima-ui/css/themes/light.css?v=20260919-dict17">
   <link rel="stylesheet" href="/anima-ui/css/themes/dark.css?v=20260924-monitor-time1">
   <link rel="stylesheet" href="/anima-ui/css/themes/comfy.css?v=20260923-sidebar1">
-  <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20261001-tagger-log2">
+  <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20261004-reg56">
+  <link rel="stylesheet" href="/anima-ui/css/regularization.css?v=20261004-reg56">
   <link rel="stylesheet" href="/anima-ui/css/motion.css?v=20260923-sidebar1">
   <link rel="stylesheet" href="/anima-ui/css/tag-dictionary.css?v=20260929-tagger-review22">
-  <script src="/anima-ui/js/i18n.js?v=20261002-scheduler-workers1" defer></script>
+  <script src="/anima-ui/js/i18n.js?v=20261004-reg56" defer></script>
   <script src="/anima-ui/js/constants.js" defer></script>
   <script src="/anima-ui/js/utils.js?v=20260815-utils1" defer></script>
   <!-- Feature modules (order matters: config first, app last) -->
-  <script src="/anima-ui/js/config.js?v=20261002-scheduler-workers1" defer></script>
+  <script src="/anima-ui/js/config.js?v=20261004-reg56" defer></script>
   <script src="/anima-ui/js/anima-select.js?v=20260928-select-cleanup" defer></script>
-  <script src="/anima-ui/js/realtime.js?v=20261002-review-cache1" defer></script>
+  <script src="/anima-ui/js/realtime.js?v=20261004-reg56" defer></script>
   <script src="/anima-ui/js/monitor-logs.js?v=20261002-review-cache1" defer></script>
-  <script src="/anima-ui/js/monitor-core.js?v=20261002-review-cache1" defer></script>
+  <script src="/anima-ui/js/monitor-core.js?v=20261004-reg56" defer></script>
   <script src="/anima-ui/js/monitor-render.js?v=20261002-review-cache1" defer></script>
   <script src="/anima-ui/js/environment-core.js?v=20260929-dictionary-update2" defer></script>
   <script src="/anima-ui/js/environment-render.js?v=20260929-dictionary-copy" defer></script>
   <script src="/anima-ui/js/docs.js?v=20260909-docscreens17" defer></script>
-  <script src="/anima-ui/js/training-core.js?v=20261002-scheduler-workers1" defer></script>
+  <script src="/anima-ui/js/training-core.js?v=20261004-reg56" defer></script>
   <script src="/anima-ui/js/dataset-repeat.js?v=20260916-repeat18" defer></script>
   <script src="/anima-ui/js/training-lr-preview.js?v=20261002-scheduler-workers1" defer></script>
   <script src="/anima-ui/js/preview-select.js?v=20260928-select-scroll-persist" defer></script>
   <script src="/anima-ui/js/training-shape-preview.js?v=20261002-review-cache1" defer></script>
   <script src="/anima-ui/js/training-toml.js?v=20260924-review5" defer></script>
   <script src="/anima-ui/js/training-config-io.js?v=20260922-lifecycle2" defer></script>
-  <script src="/anima-ui/js/tagger.js?v=20261001-tagger-log2" defer></script>
+  <script src="/anima-ui/js/tagger.js?v=20261004-reg56" defer></script>
+  <script src="/anima-ui/js/regularization.js?v=20261004-reg58" defer></script>
   <script src="/anima-ui/js/tag-editor.js?v=20260924-review5" defer></script>
   <!-- Tag Editor 词典：lib 定义纯逻辑，client 持有 Worker 与缓存，hover 只挂事件委托 -->
   <script src="/anima-ui/js/tag-dictionary-lib.js?v=20260920-escaped-tags1" defer></script>
   <script src="/anima-ui/js/tag-dictionary.js?v=20260929-tagger-review22" defer></script>
   <script src="/anima-ui/js/tag-hover-card.js?v=20260929-tagger-review22" defer></script>
-  <script src="/anima-ui/js/app.js?v=20260926-version-fallback" defer></script>
+  <script src="/anima-ui/js/app.js?v=20261004-reg56" defer></script>
   <script src="/anima-ui/js/vendor/alpine.min.js" defer></script>
 </head>
 <body x-data="animaApp()" x-cloak>
@@ -145,6 +147,11 @@
         </span>
         <span x-text="t('nav.tagEditor')">Tag Editor</span>
       </a>
+      <a class="sidebar-item" data-route="regularization" data-group="tools" :class="{ active: currentRoute === 'regularization' }"
+         @click="navigate('regularization')" href="javascript:void(0)" :aria-current="currentRoute === 'regularization' ? 'page' : null">
+        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1"/><path d="m21 15-5-5L5 21M16 3v6M13 6h6"/></svg></span>
+        <span x-text="regT('title')">Regularization</span>
+      </a>
 
       <!-- System -->
       <div class="sidebar-section-label" x-text="t('nav.system')">System</div>
@@ -213,7 +220,7 @@
   <!-- ── Main Content ─────────────────────────────────────── -->
   <div class="main-area">
     <main class="main-content" id="mainContent"
-          :class="{ 'main-fullscreen': currentRoute === 'tagEditor' || currentRoute === 'tensorboard' || currentRoute === 'monitor-dashboard', 'route-monitor-shell': currentRoute === 'monitor-dashboard', 'route-tagger-shell': currentRoute === 'tagger', 'route-tagger-single': currentRoute === 'tagger' && ['single', 'api-single'].includes(taggerSourceMode), 'route-transitioning': routeTransitioning }"
+          :class="{ 'main-fullscreen': currentRoute === 'tagEditor' || currentRoute === 'tensorboard' || currentRoute === 'monitor-dashboard', 'route-monitor-shell': currentRoute === 'monitor-dashboard', 'route-tagger-shell': currentRoute === 'tagger' || currentRoute === 'regularization', 'route-tagger-single': currentRoute === 'tagger' && ['single', 'api-single'].includes(taggerSourceMode), 'route-transitioning': routeTransitioning }"
               :aria-busy="routeTransitioning ? 'true' : 'false'">
 
       <!-- Route: Home -->
@@ -444,6 +451,9 @@
       <!-- Route: Tagger -->
       <div x-show="currentRoute === 'tagger'" class="tagger-route" x-cloak>
         <div id="taggerWorkspaceHost"></div>
+      </div>
+      <div x-show="currentRoute === 'regularization'" class="tagger-route" x-cloak>
+        <div id="regularizationWorkspaceHost"></div>
       </div>
 
       <!-- Route: Tag Editor -->
@@ -997,6 +1007,7 @@
                 <button class="te-topbar-btn" @click="tagEditorSelectAll()" :disabled="!tagEditorFilteredCount()" x-text="t('tagEditor.selectPage')"></button>
                 <button class="te-topbar-btn" @click="_teFlushAllPendingTextEdits(); tagEditorSelected = []; _updateEditorPanel()" :disabled="!tagEditorSelected.length" x-text="t('tagEditor.selectNone')"></button>
                 <button class="te-topbar-btn" @click="tagEditorSelectInvert()" :disabled="!tagEditorFilteredCount()" x-text="t('tagEditor.selectInvert')"></button>
+                <button class="te-topbar-btn" :class="{ active: tagEditorGroupByDir }" :aria-pressed="tagEditorGroupByDir" @click="tagEditorToggleDirectoryGroups()" :disabled="tagEditorLoading || _teSearchLoading" x-text="t('tagEditor.groupByDirectory')"></button>
                 <span class="te-selection-count" x-text="t('tagEditor.selected').replace('{n}', tagEditorSelected.length)"></span>
                 <div class="te-sidebar-undo">
                   <button @click="tagEditorUndo()" :disabled="tagEditorHistoryIdx < 0" :title="t('tagEditor.undoHint')">
@@ -1022,8 +1033,15 @@
                 <div class="te-empty-title" x-text="t('tagEditor.emptySearch')"></div>
                 <button class="btn btn-ghost btn-sm" @click="tagEditorSearchQuery = ''; tagEditorTagSelection = []; tagEditorExcludedTags = []; tagEditorQuickFilter = 'all'; tagEditorSchedulePageFetch(true)" x-text="t('tagEditor.clearFilter')"></button>
               </div>
-              <div class="te-grid" id="teV3Grid" x-show="tagEditorFilteredCount() > 0">
+              <div class="te-grid" id="teV3Grid" :class="{ 'is-grouped': tagEditorGroupByDir }" x-show="tagEditorFilteredCount() > 0">
                 <template x-for="(img, idx) in tagEditorGetPaged()" :key="img.path">
+                  <div class="te-grid-item">
+                  <template x-if="tagEditorIsDirectoryGroupStart(img, idx)">
+                    <div class="te-directory-heading" @click.stop>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+                      <span x-text="tagEditorImageDirectory(img) || t('tagEditor.rootDirectory')" :title="tagEditorImageDirectory(img) || t('tagEditor.rootDirectory')"></span>
+                    </div>
+                  </template>
                   <div class="te-card" :data-path="img.path"
                     :class="{ selected: tagEditorSelected.includes(img.path), modified: img.tags !== tagEditorOriginal[img.path], 'te-card-no-cap': !img.has_caption }"
                     @click="tagEditorCardClick(img, idx, $event)"
@@ -1057,6 +1075,7 @@
                         </template>
                       </div>
                     </div>
+                  </div>
                   </div>
                 </template>
               </div>
@@ -1539,8 +1558,8 @@
           <template x-for="f in group.files" :key="f.path">
             <div class="picker-row" :class="{ 'is-current': pickerIsCurrent(f), 'is-kb-active': filteredPickerFiles.indexOf(f) === _pickerIndex }"
                  @click="pickFileFromModal(f)" :title="f.path">
-              <svg class="picker-row-icon" x-show="_pickerKind !== 'train-dir'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-              <svg class="picker-row-icon" x-show="_pickerKind === 'train-dir'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              <svg class="picker-row-icon" x-show="!['train-dir', 'reg-dir'].includes(_pickerKind)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <svg class="picker-row-icon" x-show="['train-dir', 'reg-dir'].includes(_pickerKind)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
               <div class="picker-row-main">
                 <div class="picker-row-title">
                   <span class="picker-row-name" x-text="f.name || ''"></span>

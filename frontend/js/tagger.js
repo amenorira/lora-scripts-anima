@@ -795,8 +795,8 @@ window.taggerMixin = {
   },
 
   // 模式 tab 滑动指示条：与监控台 tab 共用 .monitor-tab-indicator 样式
-  _syncTaggerTabIndicator() {
-    const bar = document.querySelector('.tagger-mode-tabs');
+  _syncTaggerTabIndicator(selector = '.tagger-mode-tabs') {
+    const bar = document.querySelector(selector);
     if (!bar) return;
     const indicator = bar.querySelector('.monitor-tab-indicator');
     const active = bar.querySelector('button.active');

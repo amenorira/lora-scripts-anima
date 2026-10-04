@@ -183,14 +183,59 @@ Because the default already targets everything, both `exclude_patterns` and `inc
 
 - `--fp8_base` and `--fp8_scaled` reduce DiT memory usage. **Both must be specified together** (plain fp8 without scaled is rejected, because it would cast the norms to fp8 and break the model). fp8 is applied to the 28 main blocks only; the text-fusion transformer stays bf16.
 - `--blocks_to_swap N` offloads some of the main blocks to CPU. The maximum is **26** (28 blocks − 2).
-- `--gradient_checkpointing` is available for memory savings. See [HunyuanVideo documentation](./hunyuan_video.md#memory-optimization) for details.
+- `--gradient_checkpointing` and `--gradient_checkpointing_cpu_offload` are available for memory savings. See [HunyuanVideo documentation](./hunyuan_video.md#memory-optimization) for details.
 
 <details>
 <summary>日本語</summary>
 
 - `--fp8_base`と`--fp8_scaled`でDiTのメモリ使用量を削減します。**両方を同時に指定する必要があります**（scaledなしのplain fp8は、normをfp8にキャストしてモデルを壊すため拒否されます）。fp8は28個のメインブロックのみに適用され、text-fusion transformerはbf16のまま保持されます。
 - `--blocks_to_swap N`で一部のメインブロックをCPUにオフロードします。最大値は **26**（28ブロック − 2）です。
-- メモリ節約のために`--gradient_checkpointing`が利用可能です。詳細は[HunyuanVideoドキュメント](./hunyuan_video.md#memory-optimization)を参照してください。
+- メモリ節約のために`--gradient_checkpointing`と`--gradient_checkpointing_cpu_offload`が利用可能です。詳細は[HunyuanVideoドキュメント](./hunyuan_video.md#memory-optimization)を参照してください。
+
+</details>
+
+### ConvRot int8 / ConvRot int8
+
+`--convrot_int8` quantizes the frozen DiT base weights to int8 with ConvRot ([arXiv:2512.03673](https://arxiv.org/abs/2512.03673)): a block-diagonal Hadamard rotation smooths activation outliers, then weights are quantized per-channel to int8. The forward pass runs a fused Triton int8 GEMM (online activation rotation + dynamic row-wise int8 quantization + dequantization fused into the matmul). This is an **alternative to fp8** and cannot be combined with `--fp8_base`/`--fp8_scaled`.
+
+- Weight VRAM is halved vs bf16 (same as fp8). The main benefit is **speed on GPUs without fp8 support** (RTX 30 series and older): roughly 1.3–3x faster Linear forward vs bf16. On fp8-capable GPUs the gain is smaller.
+- Quantization noise is comparable to scaled fp8 (per-channel int8 after rotation).
+- Requires **triton** for the fused kernels (`pip install triton-windows` on Windows, matching your torch version). Without triton, training still works via a dequantized bf16 fallback: VRAM savings remain but there is no speedup.
+- `--convrot_int8_bwd int8` (opt-in) also routes the backward grad_x through the fused int8 GEMM: faster, at the cost of slightly quantized gradients. The default `bf16` dequantizes transiently and is the most accurate.
+- Same scope as fp8: the 28 main blocks only; the quantized layers are still LoRA-trainable (the LoRA branch receives the unrotated input and its gradients are unaffected by the base quantization).
+- ComfyUI pre-quantized ConvRot INT8 checkpoints (`weight` int8 + `weight_scale` + `comfy_quant` tensors) load directly with `--convrot_int8`; the layers the file quantized are used as-is. Load-time LoRA merge requires bf16 base weights (merging into int8 is rejected).
+- Composes with `--blocks_to_swap` and `--gradient_checkpointing`. With `--compile`, the quantized Linears are excluded from compilation automatically. Not supported together with `--turbo_dit` yet. Multi-GPU training is untested.
+
+Reference speed (rough 20-step measurement; LoRA training, 1024x1024, batch size 1, `--flash_attn`, gradient checkpointing):
+
+| GPU | bf16 | fp8_scaled | convrot_int8 |
+|---|---|---|---|
+| RTX 3090 | (does not fit) | 7.1 s/step | 5.3 s/step |
+| RTX PRO 6000 Blackwell Max-Q | 2.0 s/step | 2.3 s/step | 1.9 s/step |
+
+Loss curves match the fp8/bf16 baselines closely (both backward modes). `--convrot_int8_bwd int8` shows no measurable step-time gain under gradient checkpointing (the backward is dominated by the forward recomputation); it is mainly useful on pre-fp8 GPUs without checkpointing. fp8 is slower than bf16 here because the K2 fp8 path dequantizes to bf16 per forward (no scaled_mm); ConvRot runs a true int8 GEMM, which is why it wins on GPUs without fp8 support.
+
+<details>
+<summary>日本語</summary>
+
+`--convrot_int8`で、凍結されたDiTのbase重みをConvRot（[arXiv:2512.03673](https://arxiv.org/abs/2512.03673)）でint8量子化します。ブロック対角Hadamard回転でactivationの外れ値を平滑化してから、重みをper-channelでint8量子化します。forwardは融合Triton int8 GEMM（オンラインのactivation回転＋動的な行単位int8量子化＋逆量子化をmatmulに融合）で実行されます。**fp8の代替**であり、`--fp8_base`/`--fp8_scaled`とは併用できません。
+
+- 重みのVRAMはbf16比で半減します（fp8と同等）。主な利点は **fp8非対応GPU（RTX 30シリーズ以前）での速度** で、Linear forwardがbf16比でおよそ1.3〜3倍高速です。fp8対応GPUでは効果は小さくなります。
+- 量子化ノイズはscaled fp8と同程度です（回転後のper-channel int8）。
+- 融合カーネルには **triton** が必要です（Windowsではtorchのバージョンに対応する`pip install triton-windows`）。tritonがなくても逆量子化bf16フォールバックで学習は可能です（VRAM削減は維持、速度向上はなし）。
+- `--convrot_int8_bwd int8`（opt-in）を指定すると、backwardのgrad_xも融合int8 GEMMを通ります。高速ですが勾配がわずかに量子化されます。デフォルトの`bf16`は一時的に逆量子化する方式で、最も高精度です。
+- 適用範囲はfp8と同じく28個のメインブロックのみです。量子化された層もLoRA学習可能です（LoRA枝には回転前の入力が渡され、その勾配はbase量子化の影響を受けません）。
+- ComfyUI配布の事前量子化済みConvRot INT8チェックポイント（`weight` int8＋`weight_scale`＋`comfy_quant`）も`--convrot_int8`でそのまま読み込めます（ファイル側で量子化された層をそのまま使用）。ロード時LoRAマージにはbf16のbase重みが必要です（int8へのマージはエラーになります）。
+- `--blocks_to_swap`、`--gradient_checkpointing`と併用できます。`--compile`使用時は量子化されたLinearは自動的にコンパイル対象から除外されます。`--turbo_dit`との併用は現時点では未対応です。マルチGPU学習は未検証です。
+
+参考速度（20ステップの粗い計測。LoRA学習、1024x1024、batch size 1、`--flash_attn`、gradient checkpointing使用）:
+
+| GPU | bf16 | fp8_scaled | convrot_int8 |
+|---|---|---|---|
+| RTX 3090 | （載らない） | 7.1 s/step | 5.3 s/step |
+| RTX PRO 6000 Blackwell Max-Q | 2.0 s/step | 2.3 s/step | 1.9 s/step |
+
+loss curveはfp8/bf16基準とほぼ一致します（backward両モードとも）。`--convrot_int8_bwd int8`はgradient checkpointing使用時にはステップ速度の差がほぼ出ません（backwardの大半がforward再計算のため）。主にfp8非対応GPUでcheckpointingを使わない場合に有効です。fp8がbf16より遅いのは、K2のfp8経路がforwardごとにbf16へ逆量子化するため（scaled_mm不使用）です。ConvRotは真のint8 GEMMを実行するため、fp8非対応GPUで優位になります。
 
 </details>
 
@@ -247,6 +292,16 @@ A fox in the snow.  --w 1024 --h 1024 --s 8 --l 1 --d 0
 
 > **`--turbo_dit` cannot be combined with `--blocks_to_swap`.** Turbo sampling swaps the base weights in place, which is only safe without the block-swap offloader. If you use block swap, omit `--turbo_dit` and sample on the RAW model instead.
 
+**Alternative: `--turbo_lora`.** Pass `--turbo_lora path/to/turbo_lora.safetensors` instead of
+`--turbo_dit` to compose a Turbo LoRA live on top of RAW (`base + trainee_delta + turbo_delta`)
+rather than swapping in a full Turbo checkpoint. `--turbo_lora_multiplier` (default `1.0`)
+scales its delta. Built once at startup; toggled on/off around each sample pass. Mutually
+exclusive with `--turbo_dit`. Cannot be combined with `--turbo_dit_cache` (that flag requires `--turbo_dit`).
+
+This LoRA is a rank-extracted delta between the released raw and turbo checkpoints, not an
+official Krea artifact — it approximates the turbo weights, which is why the Turbo schedule
+(fixed `mu = 1.15`, CFG off, low step count) still applies.
+
 <details>
 <summary>日本語</summary>
 
@@ -262,6 +317,16 @@ A fox in the snow.  --w 1024 --h 1024 --s 8 --l 1 --d 0
 - **`--turbo_dit_cache`（常駐）**: Turboの重みを起動時に一度量子化してCPU RAMに常駐させ、サンプルごとにスワップインします。**高速**ですが、実行中ずっと **DiTサイズの約1倍** のCPU RAMを追加で使用します。
 
 > **`--turbo_dit`は`--blocks_to_swap`と併用できません。** Turboサンプリングはベースの重みをその場で入れ替えるため、block swapのオフローダーがない場合にのみ安全です。block swapを使う場合は`--turbo_dit`を省略し、RAWモデルでサンプリングしてください。
+
+**代替手段: `--turbo_lora`。** `--turbo_dit`の代わりに`--turbo_lora path/to/turbo_lora.safetensors`
+を指定すると、フルのTurboチェックポイントを入れ替える代わりに、RAWの上でTurbo LoRAをライブ合成します
+（`base + trainee_delta + turbo_delta`）。`--turbo_lora_multiplier`（デフォルト`1.0`）でdeltaの強さを
+調整できます。起動時に一度だけ構築され、各サンプルパスの前後で有効/無効を切り替えます。`--turbo_dit`
+とは併用できません。`--turbo_dit_cache`（`--turbo_dit`が必須のオプション）との併用もできません。
+
+このLoRAは公開されているraw/turboチェックポイント間から抽出したランク近似deltaであり、Krea公式のLoRA
+ではありません——turboの重みを近似しているため、Turboのスケジュール（固定`mu = 1.15`、CFGオフ、少ない
+ステップ数）がそのまま適用されます。
 
 </details>
 

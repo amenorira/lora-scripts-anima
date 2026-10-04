@@ -109,12 +109,20 @@ async def warm_startup_caches() -> None:
 async def lifespan(app: FastAPI):
     cache_task = None
     shape_cache_task = None
+    from backend.regularization.service import recover
+    await asyncio.to_thread(recover)
     tensorboard.start(
         enabled=os.environ.get("ANIMA_DISABLE_TENSORBOARD") != "1",
         port=int(os.environ.get("ANIMA_TENSORBOARD_PORT", "0")),
     )
     try:
         await task_monitor.start()
+        from backend.regularization import service as regularization
+        from backend.core.realtime import realtime_tasks
+        for run in await asyncio.to_thread(regularization.runs):
+            if run["status"] in {"created", "running", "stopping"}:
+                task_id = run["task_id"]
+                await realtime_tasks.register(task_id, "regularization", lambda task_id=task_id: regularization.task_snapshot(task_id))
         shape_cache_task = asyncio.create_task(warm_shape_preview())
         await report_runtime_banner()
         cache_task = asyncio.create_task(warm_startup_caches())

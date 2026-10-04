@@ -211,7 +211,11 @@ class Qwen3VLConditioner(torch.nn.Module):
             ).to(self.qwen.device, non_blocking=True)
             input_ids = torch.cat([inputs["input_ids"], suffix_ids], dim=1)
             mask = torch.cat([inputs["attention_mask"].bool(), suffix_mask], dim=1)
-            states = self.qwen(input_ids=input_ids, attention_mask=mask, output_hidden_states=True)
+            # The suffix follows the padding, so its rotary positions must continue from the last prompt token.
+            # transformers 4.x derived the positions from the attention mask for text-only input; 5.x uses the
+            # sequence index. Pass them explicitly (padded positions repeat the previous one, keeping them monotonic).
+            position_ids = (mask.long().cumsum(-1) - 1).clamp(min=0)
+            states = self.qwen(input_ids=input_ids, attention_mask=mask, position_ids=position_ids, output_hidden_states=True)
 
             hiddens = torch.stack([states.hidden_states[i] for i in self.select_layers], dim=2)
             hiddens = hiddens[:, prefix_idx:]

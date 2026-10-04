@@ -129,6 +129,7 @@ window.tagEditorMixin = {
   tagEditorSelected: [],
   tagEditorPage: 1,
   tagEditorPageSize: 60,
+  tagEditorGroupByDir: false,
   tagEditorContextMenu: null,
   tagEditorImageContextMenu: null,
   tagEditorPanelMenu: null,
@@ -424,6 +425,7 @@ window.tagEditorMixin = {
     params.set('sort_asc', filters.tagEditorSortAsc === false ? 'false' : 'true');
     params.set('sort_by2', filters.tagEditorSortBy2 || '');
     params.set('sort_asc2', filters.tagEditorSortAsc2 === false ? 'false' : 'true');
+    params.set('group_by_dir', filters.tagEditorGroupByDir ? 'true' : 'false');
     return params;
   },
 
@@ -526,6 +528,7 @@ window.tagEditorMixin = {
     if (resetPage) this.tagEditorPage = 1;
     if (this.tagEditorQuickFilter === 'modified') {
       var modified = this._teGetModified();
+      if (this.tagEditorGroupByDir) this._teGroupImagesByDir(modified);
       var size = Number(this.tagEditorPageSize) || 60;
       this.tagEditorFilteredTotal = modified.length;
       this.tagEditorServerTotalPages = Math.max(1, Math.ceil(modified.length / size));
@@ -943,7 +946,7 @@ window.tagEditorMixin = {
       this.tagEditorTagSelection.join(',') + '|' + this.tagEditorExcludedTags.join(',') + '|' +
       this.tagEditorTagLogic + '|' + this.tagEditorSortBy + '|' + this.tagEditorSortAsc + '|' +
       this.tagEditorSortBy2 + '|' + this.tagEditorSortAsc2 + '|' +
-      this.tagEditorUseRegex;
+      this.tagEditorUseRegex + '|' + this.tagEditorGroupByDir;
     if (cacheKey === this._teFilteredCacheKey && this._teCachedFiltered) return this._teCachedFiltered;
 
     var images = this.tagEditorImages.slice();
@@ -1040,10 +1043,38 @@ window.tagEditorMixin = {
 
     images = new Array(decorated.length);
     for (var ui = 0; ui < decorated.length; ui++) images[ui] = decorated[ui].img;
+    if (this.tagEditorGroupByDir) this._teGroupImagesByDir(images);
 
     this._teFilteredCacheKey = cacheKey;
     this._teCachedFiltered = images;
     return images;
+  },
+
+  tagEditorImageDirectory(img) {
+    var path = (img.rel_path || img.name || '').replace(/\\/g, '/');
+    var separator = path.lastIndexOf('/');
+    return separator < 0 ? '' : path.slice(0, separator);
+  },
+
+  _teGroupImagesByDir(images) {
+    var self = this;
+    return images.sort(function(a, b) {
+      var aDir = self.tagEditorImageDirectory(a);
+      var bDir = self.tagEditorImageDirectory(b);
+      return aDir < bDir ? -1 : aDir > bDir ? 1 : 0;
+    });
+  },
+
+  tagEditorToggleDirectoryGroups() {
+    this.tagEditorGroupByDir = !this.tagEditorGroupByDir;
+    this._teInvalidateFilter();
+    this.tagEditorSchedulePageFetch(true);
+  },
+
+  tagEditorIsDirectoryGroupStart(img, idx) {
+    if (!this.tagEditorGroupByDir) return false;
+    var previous = this.tagEditorGetPaged()[idx - 1];
+    return !previous || this.tagEditorImageDirectory(previous) !== this.tagEditorImageDirectory(img);
   },
 
   tagEditorGetPaged() {

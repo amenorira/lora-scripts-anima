@@ -387,12 +387,14 @@ window.realtimeMixin = {
       this.applyRealtimeMonitorSnapshot(snapshot, options && options.monitorVersions);
     }
     if (typeof this.applyRealtimeTaggerSnapshot === 'function') this.applyRealtimeTaggerSnapshot(snapshot);
+    if (typeof this.applyRealtimeRegularizationSnapshot === 'function') this.applyRealtimeRegularizationSnapshot(snapshot);
     if (typeof this.applyRealtimeEnvironmentSnapshot === 'function') this.applyRealtimeEnvironmentSnapshot(snapshot);
   },
 
   _dispatchRealtimeEvent(event) {
     if (typeof this.handleRealtimeMonitorEvent === 'function') this.handleRealtimeMonitorEvent(event);
     if (typeof this.handleRealtimeTaggerEvent === 'function') this.handleRealtimeTaggerEvent(event);
+    if (typeof this.handleRealtimeRegularizationEvent === 'function') this.handleRealtimeRegularizationEvent(event);
     if (typeof this.handleRealtimeEnvironmentEvent === 'function') this.handleRealtimeEnvironmentEvent(event);
   },
 

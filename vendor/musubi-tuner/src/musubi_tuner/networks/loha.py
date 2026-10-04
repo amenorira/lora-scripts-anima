@@ -89,7 +89,7 @@ class LoHaModule(torch.nn.Module):
         torch.nn.init.normal_(self.hada_w2_b, std=1.0)
 
         if type(alpha) == torch.Tensor:
-            alpha = alpha.detach().float().numpy()
+            alpha = alpha.detach().float().cpu().item()
         alpha = lora_dim if alpha is None or alpha == 0 else alpha
         self.scale = alpha / self.lora_dim
         self.register_buffer("alpha", torch.tensor(alpha))
@@ -99,6 +99,8 @@ class LoHaModule(torch.nn.Module):
         self.dropout = dropout
         self.rank_dropout = rank_dropout
         self.module_dropout = module_dropout
+        # honored by the training forward too, so set_enabled(False) yields the frozen base
+        self.enabled = True
 
     def apply_to(self):
         self.org_forward = self.org_module.forward
@@ -111,6 +113,9 @@ class LoHaModule(torch.nn.Module):
         return HadaWeight.apply(self.hada_w1_a, self.hada_w1_b, self.hada_w2_a, self.hada_w2_b, scale)
 
     def forward(self, x):
+        if not self.enabled:
+            return self.org_forward(x)
+
         org_forwarded = self.org_forward(x)
 
         # module dropout
@@ -149,7 +154,6 @@ class LoHaInfModule(LoHaModule):
         super().__init__(lora_name, org_module, multiplier, lora_dim, alpha)
 
         self.org_module_ref = [org_module]
-        self.enabled = True
         self.network: lora_module.LoRANetwork = None
 
     def set_network(self, network):

@@ -119,7 +119,7 @@ async def build_live_monitor_snapshot(
     connection indicator is not held hostage by a slow remote link; the
     dashboard explicitly asks that same snapshot endpoint for ``detail``.
     """
-    tasks = tm.dump() if tasks is None else tasks
+    tasks = tm.training_dump() if tasks is None else tasks
     active_statuses = {"CREATED", "RUNNING"}
     active = next(
         (
@@ -320,7 +320,7 @@ def _resolve_live_record(task_id: str = "", run_dir: str = "") -> dict | None:
         return load_run_record(run_dir)
     tid = task_id or ""
     if not tid:
-        tasks = tm.dump()
+        tasks = tm.training_dump()
         for t in reversed(tasks):
             if t.get("status") == "RUNNING":
                 tid = t.get("id", "")
@@ -331,7 +331,7 @@ def _resolve_live_record(task_id: str = "", run_dir: str = "") -> dict | None:
 @router.post("/monitor/stop")
 async def monitor_stop():
     """停止当前正在运行的训练任务"""
-    tasks = tm.dump()
+    tasks = tm.training_dump()
     running_task_id = None
     for t in tasks:
         if t.get("status") == "RUNNING":
@@ -352,7 +352,7 @@ async def monitor_history():
     history = await asyncio.to_thread(scan_history)
 
     # 获取当前运行中任务
-    tasks = tm.dump()
+    tasks = tm.training_dump()
     running = next(
         (task for task in reversed(tasks) if task.get("status") in {"CREATED", "RUNNING"}),
         None,
@@ -391,7 +391,7 @@ async def delete_history_run(request: Request):
     if not record:
         return {"status": "error", "message": "Run directory not found / 目录不存在"}
     tid = record.get("task_id")
-    if tid and any(t.get("id") == tid and t.get("status") in {"CREATED", "RUNNING"} for t in tm.dump()):
+    if tid and any(t.get("id") == tid and t.get("status") in {"CREATED", "RUNNING"} for t in tm.training_dump()):
         return {"status": "error", "message": "Cannot delete a running task / 无法删除运行中的任务"}
     if not await asyncio.to_thread(mark_run_deleted, run_dir):
         return {"status": "error", "message": "Failed to delete history / 删除历史失败"}

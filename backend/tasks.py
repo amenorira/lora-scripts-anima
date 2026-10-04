@@ -180,7 +180,10 @@ class Task:
 
     def snapshot(self) -> dict:
         with self.lock:
-            return {"id": self.task_id, "status": self.status.name}
+            result = {"id": self.task_id, "status": self.status.name}
+            if getattr(self, "kind", None):
+                result["kind"] = self.kind
+            return result
 
 
 class TaskManager:
@@ -301,6 +304,10 @@ class TaskManager:
         """全部任务的快照（线程安全），状态以枚举名（如 RUNNING）给出。"""
         with self._lock:
             return [task.snapshot() for task in self.tasks.values()]
+
+    def training_dump(self) -> List[Dict]:
+        """Training views exclude auxiliary workers while GPU ownership stays shared."""
+        return [task for task in self.dump() if task.get("kind", "training") == "training"]
 
 
 tm = TaskManager()

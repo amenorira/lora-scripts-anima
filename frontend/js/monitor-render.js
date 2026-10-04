@@ -618,9 +618,11 @@ window.monitorRenderMixin = {
       const path = root.querySelector('[data-summary-spark="' + key + '"]');
       if (!path) continue;
       const rate = field === 'remainingRate';
-      const points = telemetry.samples.filter(sample => Number.isFinite(sample[field]) && (rate || sample[field] >= 0))
-        .map(sample => ({ step: sample.observation, value: sample[field] }));
-      const minimumSpan = field === 'speedSec' ? .05 : 0;
+      const speed = field === 'speedSec';
+      const points = telemetry.samples.filter(sample => Number.isFinite(sample[field]) && (rate || (speed ? sample[field] > 0 : sample[field] >= 0)))
+        .map(sample => ({ step: sample.observation, value: speed ? 1 / sample[field] : sample[field] }))
+        .filter(point => Number.isFinite(point.value));
+      const minimumSpan = speed ? .001 : 0;
       const relativeSpan = field === 'speedSec' ? .005 : .02;
       // 正常倒计时的导数为 -1，固定在中线；扩大两侧量程以容纳实际变化，不裁掉峰值。
       const radius = rate ? Math.max(1, ...points.map(point => Math.abs(point.value + 1))) * 1.2 : 0;

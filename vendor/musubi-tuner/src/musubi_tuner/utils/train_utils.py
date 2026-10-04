@@ -61,6 +61,19 @@ def get_sanitized_config_or_none(args: argparse.Namespace):
     return filtered_args
 
 
+def reset_progress_bar_timing(progress_bar) -> None:
+    """Exclude the first completed step from tqdm rate and ETA calculations."""
+    if progress_bar.disable:
+        return
+
+    completed = progress_bar.n
+    progress_bar.reset()  # public API: resets start_t/last_print_t and the EMAs, but also zeroes n
+    progress_bar.initial = completed
+    progress_bar.n = completed
+    progress_bar.last_print_n = completed
+    progress_bar.refresh()
+
+
 class LossRecorder:
     def __init__(self):
         self.loss_list: list[float] = []

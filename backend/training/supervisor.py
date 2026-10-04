@@ -393,7 +393,7 @@ def terminate_train(task_id: str) -> bool:
 
 def get_train_status(task_id: str) -> dict:
     """获取训练状态"""
-    tasks = tm.dump()
+    tasks = tm.training_dump()
     for t in tasks:
         if t["id"] == task_id:
             return t

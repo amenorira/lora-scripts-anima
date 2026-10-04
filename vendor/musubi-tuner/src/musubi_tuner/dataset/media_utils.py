@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from bisect import bisect_left
 import glob
 from importlib.util import find_spec
+import math
 import os
 from typing import Optional, Union, TYPE_CHECKING
 
 import numpy as np
 from PIL import Image
+from musubi_tuner.utils import cv2_compat  # noqa: F401 - must be imported before `import cv2`
 import cv2
 import av
 
@@ -137,6 +140,145 @@ def resize_image_to_bucket(image: Union[Image.Image, np.ndarray], bucket_reso: t
     return image
 
 
+# A decoder may output frames up to this many positions away from their timestamp order (B-frame
+# reordering depth plus one); resample_frame_indices reorders such frames by timestamp, while a
+# timestamp stepping back further is a broken timeline.
+VIDEO_REORDER_TOLERANCE_FRAMES = 4
+
+
+def resample_frame_indices(
+    timestamps: list[float],
+    *,
+    source_frame_duration: float,
+    target_fps: float,
+    context: str = "",
+) -> list[int]:
+    """Maps decoded frame timestamps to nearest-frame indices on a fixed target-fps grid.
+
+    Used by fps_resample_mode="timestamps" to normalize videos of any (possibly variable)
+    frame rate to exactly target_fps, so that audio/video alignment is deterministic.
+    `timestamps` are in decoder output order; the returned indices refer to that order.
+
+    A decoder may hand out frames in an order that differs from their timestamps by a few
+    positions (a stray timestamp inside a B-frame group, or a decoder ordering by picture
+    order count while the file's timestamps disagree); presentation order is timestamp order,
+    so such frames are reordered by timestamp with a warning. A timestamp that steps back by
+    more than `VIDEO_REORDER_TOLERANCE_FRAMES` source frames is a broken timeline (a stream-copy
+    join, a timestamp wrap) and an error. `context` (the video path) only makes the messages
+    readable.
+    """
+    if not timestamps:
+        return []
+    if source_frame_duration <= 0 or target_fps <= 0:
+        raise ValueError("Video frame durations and target FPS must be positive")
+    suffix = f": {context}" if context else ""
+    order = list(range(len(timestamps)))
+    backward_steps = [index for index in range(1, len(timestamps)) if timestamps[index] < timestamps[index - 1]]
+    if backward_steps:
+        index = max(backward_steps, key=lambda index: timestamps[index - 1] - timestamps[index])
+        left, right = timestamps[index - 1], timestamps[index]
+        if left - right > VIDEO_REORDER_TOLERANCE_FRAMES * source_frame_duration:
+            raise ValueError(
+                f"Video timestamps must be nondecreasing: frame {index} at {right:.3f}s follows frame {index - 1}"
+                f" at {left:.3f}s{suffix}. Re-mux or re-encode the video so its frame timestamps are monotonic"
+                " (e.g. ffmpeg -i in.mp4 -fps_mode cfr -c:a copy out.mp4)."
+            )
+        index = backward_steps[0]
+        logger.warning(
+            f"Video frame {index} at {timestamps[index]:.3f}s was decoded after frame {index - 1} at"
+            f" {timestamps[index - 1]:.3f}s ({len(backward_steps)} such steps); frames are reordered by timestamp{suffix}."
+            " If the result stutters, re-encode the video (e.g. ffmpeg -i in.mp4 -fps_mode cfr -c:a copy out.mp4)."
+        )
+        order.sort(key=timestamps.__getitem__)  # stable: equal timestamps keep decode order
+        timestamps = [timestamps[index] for index in order]
+
+    origin = timestamps[0]
+    normalized = [timestamp - origin for timestamp in timestamps]
+    duration = normalized[-1] + source_frame_duration
+    target_count = max(1, math.ceil(duration * target_fps - 1e-9))
+    indices = []
+    for target_index in range(target_count):
+        target_time = target_index / target_fps
+        right = bisect_left(normalized, target_time)
+        if right == 0:
+            source_index = 0
+        elif right == len(normalized):
+            source_index = len(normalized) - 1
+        else:
+            left = right - 1
+            left_distance = target_time - normalized[left]
+            right_distance = normalized[right] - target_time
+            source_index = left if left_distance <= right_distance + 1e-12 else right
+        indices.append(order[source_index])
+    return indices
+
+
+def video_origin_seconds(video_path: str) -> Optional[float]:
+    """Timestamp of the earliest video frame: the origin of the frame grid that
+    fps_resample_mode="timestamps" builds, so anything aligned to that grid (embedded audio)
+    is placed relative to it. None if the file has no video stream or decodes no frame; a
+    frame without a timestamp sits at 0, as in the loader. Only the first few frames are
+    decoded: the loader reorders frames by timestamp within `VIDEO_REORDER_TOLERANCE_FRAMES`
+    positions, so the earliest of those is its origin."""
+    origin = None
+    with av.open(video_path) as container:
+        if not container.streams.video:
+            return None
+        for index, frame in enumerate(container.decode(container.streams.video[0])):
+            if frame.pts is None or frame.time_base is None:
+                return 0.0
+            timestamp = float(frame.pts * frame.time_base)
+            origin = timestamp if origin is None else min(origin, timestamp)
+            if index >= 2 * VIDEO_REORDER_TOLERANCE_FRAMES:
+                break
+    return origin
+
+
+def _load_video_timestamp_resampled(
+    video_path: str,
+    target_fps: float,
+    start_frame: Optional[int],
+    end_frame: Optional[int],
+    bucket_selector: Optional[BucketSelector],
+    bucket_reso: Optional[tuple[int, int]],
+) -> list[np.ndarray]:
+    if not os.path.isfile(video_path):
+        raise ValueError(f"fps_resample_mode='timestamps' requires a video file, not a directory: {video_path}")
+
+    with av.open(video_path) as container:
+        if not container.streams.video:
+            raise ValueError(f"Video source has no video stream: {video_path}")
+        stream = container.streams.video[0]
+        average_rate = float(stream.average_rate) if stream.average_rate is not None else target_fps
+        source_frame_duration = 1.0 / average_rate if average_rate > 0 else 1.0 / target_fps
+        frames = []
+        timestamps = []
+        for index, frame in enumerate(container.decode(stream)):
+            if frame.pts is not None and frame.time_base is not None:
+                timestamp = float(frame.pts * frame.time_base)
+            else:
+                timestamp = index * source_frame_duration
+            frames.append(frame.to_ndarray(format="rgb24"))
+            timestamps.append(timestamp)
+    if not frames:
+        raise ValueError(f"Video source decoded no frames: {video_path}")
+
+    indices = resample_frame_indices(
+        timestamps, source_frame_duration=source_frame_duration, target_fps=target_fps, context=video_path
+    )
+    indices = indices[slice(start_frame, end_frame)]
+
+    video = []
+    for index in indices:
+        frame = frames[index]
+        if bucket_selector is not None and bucket_reso is None:
+            bucket_reso = bucket_selector.get_bucket_resolution((frame.shape[1], frame.shape[0]))
+        if bucket_reso is not None:
+            frame = resize_image_to_bucket(frame, bucket_reso)
+        video.append(frame)
+    return video
+
+
 def load_video(
     video_path: str,
     start_frame: Optional[int] = None,
@@ -145,10 +287,22 @@ def load_video(
     bucket_reso: Optional[tuple[int, int]] = None,
     source_fps: Optional[float] = None,
     target_fps: Optional[float] = None,
+    fps_resample_mode: Optional[str] = None,
 ) -> list[np.ndarray]:
     """
     bucket_reso: if given, resize the video to the bucket resolution, (width, height)
+    fps_resample_mode: None (legacy source_fps/target_fps frame dropping) or "timestamps"
+        (PTS-based nearest-frame resampling to target_fps regardless of source fps)
     """
+    if fps_resample_mode is not None:
+        if fps_resample_mode != "timestamps":
+            raise ValueError(f"Unsupported fps_resample_mode: {fps_resample_mode}")
+        if target_fps is None:
+            raise ValueError("fps_resample_mode='timestamps' requires target_fps")
+        if source_fps is not None:
+            raise ValueError("fps_resample_mode='timestamps' does not use source_fps")
+        return _load_video_timestamp_resampled(video_path, target_fps, start_frame, end_frame, bucket_selector, bucket_reso)
+
     if source_fps is None or target_fps is None:
         if os.path.isfile(video_path):
             container = av.open(video_path)

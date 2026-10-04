@@ -16,6 +16,7 @@ from accelerate import Accelerator
 from safetensors.torch import load_file, save_file
 from safetensors import safe_open
 from PIL import Image
+from musubi_tuner.utils import cv2_compat  # noqa: F401 - must be imported before `import cv2`
 import cv2
 import numpy as np
 import torchvision.transforms.functional as TF
@@ -807,6 +808,8 @@ def merge_lora_weights(
             lycoris_net.merge_to(None, model, weights_sd, dtype=None, device=device)
         else:
             network = lora_module.create_arch_network_from_weights(lora_multiplier, weights_sd, unet=model, for_inference=True)
+            if not network.unet_loras:
+                raise ValueError(f"LoRA {lora_weight} contains no modules that match the model")
             network.merge_to(None, model, weights_sd, device=device, non_blocking=True)
 
         synchronize_device(device)

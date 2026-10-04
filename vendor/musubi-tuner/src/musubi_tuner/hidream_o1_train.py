@@ -48,6 +48,10 @@ class HiDreamO1Trainer(HiDreamO1NetworkTrainer):
             raise ValueError("dataset_config is required")
         if args.dit is None:
             raise ValueError("path to DiT model is required")
+        if args.output_dir is None:
+            raise ValueError("output_dir is required")
+        if args.output_name is None:
+            raise ValueError("output_name is required")
 
         if args.fp8_base or args.fp8_scaled:
             raise ValueError("HiDream-O1 full finetuning does not support --fp8_base / --fp8_scaled.")
@@ -527,8 +531,6 @@ class HiDreamO1Trainer(HiDreamO1NetworkTrainer):
                 keys_scaled, mean_norm, maximum_norm = None, None, None
 
                 if accelerator.sync_gradients:
-                    if global_step == 0:
-                        progress_bar.reset()
                     progress_bar.update(1)
                     global_step += 1
 
@@ -562,6 +564,8 @@ class HiDreamO1Trainer(HiDreamO1NetworkTrainer):
                         optimizer_train_fn()
 
                 current_loss = loss.detach().item()
+                if accelerator.sync_gradients and global_step == 1:
+                    train_utils.reset_progress_bar_timing(progress_bar)
                 loss_recorder.add(epoch=epoch, step=step, loss=current_loss)
                 avr_loss = loss_recorder.moving_average
                 progress_bar.set_postfix(**{"avr_loss": avr_loss})
