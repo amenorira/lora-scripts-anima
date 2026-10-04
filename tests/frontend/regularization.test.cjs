@@ -50,6 +50,7 @@ function fixture() {
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../frontend/js/monitor-logs.js'), 'utf8'), context);
   const app = Object.create(context.window.regularizationMixin);
   app.savedSettings = saved;
+  app.testWindow = context.window;
   app.flushTimers = () => { const pending = [...timers.values()]; timers.clear(); pending.forEach(fn => fn()); };
   app.regSettings = {seed:'-1', cfg:4, width:1024, height:768, size_mode:'bucket', extra_positive:''}; app.regDefaults = {...app.regSettings};
   app._regUndo = {}; app.regEdits = {}; app.regT = key => key;
@@ -81,6 +82,39 @@ test('source page jumps clamp boundaries and keep the displayed page on failure'
   await app.regSourcePage(1); assert.equal(app.regSourceOffset, 48);
   await app.regSourceGoPage(''); assert.equal(app.regSourceOffset, 48);
   await app.regSourceGoPage(-2); assert.equal(app.regSourceOffset, 0);
+});
+
+test('source details grow vertically first, widen only at viewport height, and pin without moving', () => {
+  const app = fixture(); Object.assign(app.testWindow, {innerWidth:1280, innerHeight:720});
+  const cards = app.regSourceCards(), ticks = [];
+  let contentArea = 200000;
+  const popup = {style:{}, get offsetWidth() { return parseFloat(this.style.width); },
+    get offsetHeight() { return Math.min(696, Math.ceil(contentArea / this.offsetWidth)); }};
+  const body = {scrollTop:0, get scrollHeight() { return Math.ceil(contentArea / popup.offsetWidth); },
+    get clientHeight() { return Math.min(694, this.scrollHeight); }};
+  popup.querySelector = () => body;
+  cards.$refs = {sourceDetail:popup}; cards.$nextTick = fn => ticks.push(fn);
+  const event = {clientX:1200,clientY:650,currentTarget:{getBoundingClientRect:() => ({right:100,top:100})}};
+  const source = {relative:'short.png'};
+  cards.showDetail(source, event); ticks.shift()();
+  assert.equal(popup.offsetWidth, 420);
+  const position = cards.detailStyle;
+  cards.showDetail(source, {currentTarget:event.currentTarget}); // focus before click
+  cards.showDetail(source, event, true);
+  assert.equal(cards.detailStyle, position);
+  assert.equal(cards.pinned, true);
+  assert.equal(ticks.length, 0);
+  cards.closeDetail(); contentArea = 500000;
+  cards.showDetail({relative:'long.png'}, event); ticks.shift()();
+  assert.ok(popup.offsetWidth > 420 && popup.offsetWidth <= 1256);
+  assert.equal(body.scrollHeight, body.clientHeight);
+  cards.closeDetail(); contentArea = 2000000;
+  cards.showDetail({relative:'overflow.png'}, event); ticks.shift()();
+  assert.equal(popup.offsetWidth, 1256);
+  assert.ok(body.scrollHeight > body.clientHeight);
+  cards.closeDetail();
+  cards.showDetail(source, event); cards.closeDetail(); ticks.shift()();
+  assert.equal(cards.detail, null);
 });
 
 test('prompt fields visibly migrate old blanks once and preserve later clearing', () => {

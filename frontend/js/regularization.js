@@ -15,7 +15,7 @@ window.regularizationMixin = {
   },
   regT(key) { return this.t('regularization.' + key); },
   regSourceCards() {
-    let observer, resizeTimer, requestedSize;
+    let observer, resizeTimer, requestedSize, detailVersion = 0, detailReady = false;
     return {
       detail: null, pinned: false, detailStyle: '', gridStyle: '',
       init() {
@@ -54,23 +54,46 @@ window.regularizationMixin = {
         this.closeDetail();
         void this.regSourcePage(event.key === 'ArrowLeft' ? -1 : 1);
       },
-      closeDetail() { this.detail = null; this.pinned = false; },
+      closeDetail() { ++detailVersion; detailReady = false; this.detail = null; this.pinned = false; },
       showDetail(source, event, pin = false) {
         if (this.pinned && !pin) return;
+        // Focus fires before click: keep the existing hover position when pinning.
+        if (this.detail === source) { if (pin) this.pinned = true; return; }
         this.detail = source; this.pinned = pin;
+        detailReady = false;
+        const version = ++detailVersion;
         const anchor = {clientX: event.clientX, clientY: event.clientY, currentTarget: event.currentTarget};
-        this.moveDetail(anchor);
-        this.$nextTick(() => this.moveDetail(anchor));
+        this.detailStyle = 'visibility:hidden;left:12px;top:12px';
+        this.$nextTick(() => {
+          if (version !== detailVersion || !this.detail) return;
+          const popup = this.$refs.sourceDetail;
+          if (!popup) return;
+          const body = popup.querySelector('.te-dict-hover-body');
+          const maxWidth = Math.max(1, window.innerWidth - 24);
+          const maxHeight = Math.max(1, window.innerHeight - 24);
+          // Widen long captions until they fit vertically, using the viewport as the limit.
+          let width = Math.min(420, maxWidth);
+          popup.style.maxHeight = `${maxHeight}px`;
+          popup.style.width = `${width}px`;
+          while (body.scrollHeight > body.clientHeight + 1 && width < maxWidth) {
+            width = Math.min(maxWidth, width + 80);
+            popup.style.width = `${width}px`;
+          }
+          body.scrollTop = 0;
+          this.detailStyle = `width:${width}px;max-height:${maxHeight}px;visibility:hidden`;
+          detailReady = true;
+          this.moveDetail(anchor);
+        });
       },
       moveDetail(event) {
-        if (!this.detail) return;
+        if (!this.detail || !detailReady) return;
         const box = event.currentTarget.getBoundingClientRect();
         const x = event.clientX || box.right, y = event.clientY || box.top;
         const popup = this.$refs.sourceDetail;
         const width = popup?.offsetWidth || 400, height = popup?.offsetHeight || 300;
         const left = Math.max(12, Math.min(x + 16 + width > window.innerWidth ? x - width - 16 : x + 16, window.innerWidth - width - 12));
         const top = Math.max(12, Math.min(y + 16, window.innerHeight - height - 12));
-        this.detailStyle = `left:${left}px;top:${top}px`;
+        this.detailStyle = `width:${width}px;max-height:${Math.max(1, window.innerHeight - 24)}px;left:${left}px;top:${top}px`;
       },
     };
   },

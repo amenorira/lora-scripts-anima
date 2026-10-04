@@ -38,7 +38,11 @@
 .reg-source img { display: block; width: 100%; height: 160px; object-fit: contain; background: var(--bg-surface); border-radius: var(--radius-sm); }
 .reg-source-name { display: block; margin-top: 8px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reg-source .reg-error { margin: 4px 0 0; padding: 4px 0; background: none; }
-.reg-source-tooltip { width: min(420px, calc(100vw - 24px)); max-height: min(520px, calc(100dvh - 24px)); pointer-events: none; font-family: var(--font-sans); color: var(--text-primary); }
+.reg-source-tooltip { width: min(420px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); box-sizing: border-box; pointer-events: none; font-family: var(--font-sans); color: var(--text-primary); }
+.reg-source-tooltip .te-dict-hover-body { max-height: calc(100dvh - 26px); box-sizing: border-box; }
+.reg-source-tooltip .reg-detail-close { visibility: hidden; }
+.reg-source-tooltip.is-pinned .reg-detail-close { visibility: visible; }
+.reg-source-tooltip.is-pinned .reg-detail-pin-hint { visibility: hidden; }
 .reg-source-tooltip.is-pinned { pointer-events: auto; }
 .reg-source-tooltip p { margin: 0; overflow-wrap: anywhere; font-size: 12px; line-height: 1.6; }
 .reg-source-detail-field { padding-top: 6px; }

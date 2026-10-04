@@ -37,11 +37,11 @@
         </article></template></div>
         <template x-teleport="body"><div x-ref="sourceDetail" class="te-dict-hover reg-source-tooltip" x-show="detail" x-cloak :class="{'is-pinned': pinned}" :style="detailStyle" :role="pinned ? 'dialog' : 'tooltip'" :aria-label="regT('captionDetails')" @click.outside="if (pinned) closeDetail()">
           <div class="te-dict-hover-body">
-            <div class="te-dict-hover-head"><strong class="te-dict-hover-name" x-text="detail?.relative"></strong><button class="btn-icon" x-show="pinned" @click="closeDetail()" :aria-label="regT('close')">×</button></div>
+            <div class="te-dict-hover-head"><strong class="te-dict-hover-name" x-text="detail?.relative"></strong><button class="btn-icon reg-detail-close" @click="closeDetail()" :aria-label="regT('close')">×</button></div>
             <p class="reg-help" x-text="regPreviewDirty ? regT('awaitValidation') : (detail?.width || '—') + ' × ' + (detail?.height || '—') + ' · ' + regT('imageCount') + ' ' + (detail?.count || 0) + (regSettings.expand_repeats ? ' · repeats ' + detail?.repeats : '')"></p>
             <template x-for="entry in [{label:'original', text:detail?.original_caption}, {label:'caption', text:detail?.caption}, {label:'prompt', text:detail?.prompt}, {label:'negative', text:regSettings.negative}]" :key="entry.label"><div class="reg-source-detail-field"><span class="te-dict-hover-key" x-text="regT(entry.label)"></span><p x-text="entry.text || '—'"></p></div></template>
             <p class="reg-error" x-show="detail?.reason" x-text="detail?.reason"></p>
-            <span class="reg-help" x-show="!pinned" x-text="regT('pinDetails')"></span>
+            <span class="reg-help reg-detail-pin-hint" x-text="regT('pinDetails')"></span>
           </div>
         </div></template>
       </section>
