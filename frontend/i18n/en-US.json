@@ -155,7 +155,7 @@
 		"reason": "Skip reason",
 		"source": "Source",
 		"logs": "Generation log",
-		"emptyPlan": "Captions and counts are checked before generation. Preview first if needed. New rounds keep existing images.",
+		"emptyPlan": "Adding training images with unchanged settings skips existing results and generates only the additions. Changing existing images, captions or settings creates a new round and keeps existing images.",
 		"results": "Inspect results",
 		"use": "Apply to training",
 		"resume": "Resume with original settings",

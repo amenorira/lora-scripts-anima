@@ -189,7 +189,7 @@ def identity(settings, root, sources):
     return config, digest({"settings": config, "sources": sources, "models": models})
 
 
-def choose_output(root, fingerprint, new_round=False):
+def choose_output(root, fingerprint, new_round=False, *, settings=None, sources=None):
     stem = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", root.name).rstrip(". ") or "dataset"
     base = "reg_" + stem
     existing = []
@@ -205,6 +205,14 @@ def choose_output(root, fingerprint, new_round=False):
                              "source_dir": manifest["settings"]["source_dir"]})
             if not new_round and manifest.get("fingerprint") == fingerprint:
                 return key, manifest, existing
+            if not new_round and settings is not None and sources is not None:
+                previous = manifest.get("sources", [])
+                current = {s["relative"]: s for s in sources}
+                # Only extend an unchanged plan. Recompute its identity to also
+                # check model file revisions, including for legacy manifests.
+                if (previous and all(current.get(s["relative"]) == s for s in previous)
+                        and identity(settings, root, previous)[1] == manifest.get("fingerprint")):
+                    return key, manifest, existing
         except (OSError, ValueError, KeyError):
             existing.append({"run_key": key, "completed": 0, "unrecognized": True})
         number += 1
@@ -244,6 +252,27 @@ def make_items(sources, seed):
                           "caption": source["caption"], "prompt": source["prompt"], "width": source["width"],
                           "height": source["height"], "seed": (seed + index * 6364136223846793005) % (2**63),
                           "status": "pending", "error": ""})
+    return items
+
+
+def extend_items(manifest, sources):
+    """Append new sources without renaming or reseeding any saved result."""
+    import copy
+    items = copy.deepcopy(manifest["items"])
+    previous = {s["relative"] for s in manifest["sources"]}
+    additions = make_items([s for s in sources if s["relative"] not in previous], manifest["master_seed"])
+    used = {storage.item_filename(item).casefold() for item in items}
+    used.update(item["filename"].casefold() for item in additions)
+    occupied = {storage.item_filename(item).casefold() for item in items}
+    counters = {}
+    index = max((item["index"] for item in items), default=0)
+    for item in additions:
+        index += 1
+        if item["filename"].casefold() in occupied:
+            item["filename"] = numbered_filename(Path(item["relative"]).stem, used, counters)
+        occupied.add(item["filename"].casefold())
+        item.update(index=index, seed=(manifest["master_seed"] + index * 6364136223846793005) % (2**63))
+        items.append(item)
     return items
 
 

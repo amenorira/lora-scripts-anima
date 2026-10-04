@@ -373,7 +373,8 @@ window.regularizationMixin = {
   async regGenerate() {
     if (this.regBusy || this.regRunning) return;
     this.regError = '';
-    if (!this.regPlan || this.regPlanDirty) await this.regScan();
+    // Files may have been added outside the app since the last preview.
+    await this.regScan();
     if (this.regError || !this.regPlan) return;
     if (!this.regPlan.total) { this.regReportError(this.regT('noUsableSources')); return; }
     if (this.regPlanConsumed || this.regPlan.total && !this.regPlan.pending) await this.regAgain();
@@ -445,6 +446,7 @@ window.regularizationMixin = {
       this.regRunKey = task.run_key; this.regLogs = []; localStorage.setItem('anima-reg-run', task.run_key);
       this.regApplyTask(await this.regRequest('/tasks/' + task.task_id));
       this.regPlanConsumed = true;
+      this.regNewRound = false;
       await this.regRefreshRuns();
     });
   },

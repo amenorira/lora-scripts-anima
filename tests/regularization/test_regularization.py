@@ -85,6 +85,60 @@ class GenerationTests(unittest.TestCase):
             with self.subTest(caption=caption):
                 self.assertEqual(planning.clean_caption(caption, ignore, exclude), expected)
 
+    def test_added_sources_extend_existing_run_without_touching_completed_pairs(self):
+        root, old = self.stored_run(source_names=True)
+        original = (root / "1_reg/a.png").read_bytes()
+        # A new, earlier-sorting source with the same stem must not rename a.png.
+        subset = self.source / "1_new"
+        subset.mkdir()
+        Image.new("RGB", (64, 64)).save(subset / "a.jpg")
+        (subset / "a.txt").write_text("new caption")
+        body = {"settings": old["settings"]}
+        plan = service.preview(body)
+        self.assertEqual((plan["run_key"], plan["completed"], plan["pending"]), (root.name, 1, 1))
+        def launch(task, output, manifest):
+            storage.save_manifest(output, manifest)
+            service.tm.release_reserved(task)
+            return manifest
+        with patch.object(service, "_launch", launch):
+            manifest = service.start(plan["token"])
+        self.assertEqual(manifest["items"][0], old["items"][0])
+        self.assertEqual(manifest["items"][1]["filename"], "a_001.png")
+        worker.run(root, FakeRunner)
+        self.assertEqual((root / "1_reg/a.png").read_bytes(), original)
+        self.assertEqual(service.preview(body)["pending"], 0)
+        self.assertNotEqual(service.preview(dict(body, new_round=True))["run_key"], root.name)
+
+    def test_same_folder_name_at_different_absolute_paths_does_not_reuse_run(self):
+        import shutil
+        root, old = self.stored_run()
+        other = self.root / "another_dataset" / self.source.name
+        shutil.copytree(self.source, other)
+        settings = dict(old["settings"], source_dir=str(other))
+        for add_image in (False, True):
+            with self.subTest(add_image=add_image):
+                if add_image:
+                    subset = other / "2_face"
+                    Image.new("RGB", (64, 64)).save(subset / "b.png")
+                    (subset / "b.txt").write_text("new caption")
+                plan = service.preview({"settings": settings})
+                self.assertNotEqual(plan["run_key"], root.name)
+                self.assertFalse(plan["resume"])
+                self.assertEqual(plan["completed"], 0)
+                self.assertEqual(plan["pending"], 2 if add_image else 1)
+
+    def test_additions_do_not_reuse_changed_settings_models_or_sources(self):
+        root, old = self.stored_run()
+        Image.new("RGB", (64, 64)).save(self.caption_path.with_name("b.png"))
+        self.caption_path.with_name("b.txt").write_text("new caption")
+        settings = old["settings"]
+        self.assertNotEqual(service.preview({"settings": dict(settings, steps=33)})["run_key"], root.name)
+        self.caption_path.write_text("changed caption")
+        self.assertNotEqual(service.preview({"settings": settings})["run_key"], root.name)
+        self.caption_path.write_text("trigger, Blue_Hair, 多词 标签, masterpiece\nignored line", encoding="utf-8")
+        Path(settings["dit"]).write_bytes(b"changed model")
+        self.assertNotEqual(service.preview({"settings": settings})["run_key"], root.name)
+
     def test_scan_preserves_source_and_generation_only_prefix(self):
         before = self.caption_path.read_bytes()
         settings = planning.Settings(**self.settings, ignore_first=1, exclude_tags="blue hair", extra_positive="masterpiece, best quality")

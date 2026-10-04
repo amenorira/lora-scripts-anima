@@ -22,6 +22,7 @@ test('generate checks changed settings then starts, and never starts after a fai
 test('generate creates another round after completion and reports empty plans', async () => {
   const app = fixture();
   app.regPlan = {total:1, pending:0};
+  app.regScan = async () => {};
   let rounds = 0; app.regAgain = async () => { rounds++; };
   await app.regGenerate();
   assert.equal(rounds, 1);
@@ -29,6 +30,22 @@ test('generate creates another round after completion and reports empty plans', 
   await app.regGenerate();
   assert.equal(rounds, 1);
   assert.equal(app.toasts.at(-1).message, 'noUsableSources');
+});
+
+test('generate rescans a completed plan and starts additions instead of another round', async () => {
+  const app = fixture();
+  app.regPlan = {total:1, pending:0};
+  app.regPlanConsumed = true;
+  const calls = [];
+  app.regScan = async () => {
+    calls.push('scan');
+    app.regPlan = {total:2, completed:1, pending:1};
+    app.regPlanConsumed = false;
+  };
+  app.regStart = async () => calls.push('start');
+  app.regAgain = async () => calls.push('again');
+  await app.regGenerate();
+  assert.deepEqual(calls, ['scan', 'start']);
 });
 
 test('polling errors use the existing toast once per repeated error', async () => {

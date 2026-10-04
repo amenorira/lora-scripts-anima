@@ -12,7 +12,7 @@ from PIL import Image
 from backend.constants import REPO_ROOT
 from backend.tasks import tm, TaskStatus, kill_proc_tree
 from . import storage
-from .planning import Settings, scan, identity, choose_output, make_items, random_seed, actual_prompt, clean_caption, numbered_filename
+from .planning import Settings, scan, identity, choose_output, make_items, extend_items, random_seed, actual_prompt, clean_caption, numbered_filename
 
 _lock = threading.RLock()
 _plans = {}
@@ -134,14 +134,14 @@ def preview(body):
     config, fingerprint = identity(settings, root, sources)
     new_round = bool(body.get("new_round", False))
     with _lock:
-        key, existing, occupied = choose_output(root, fingerprint, new_round)
+        key, existing, occupied = choose_output(root, fingerprint, new_round, settings=settings, sources=sources)
         if existing and not _live_process(existing, storage.run_path(key)):
             existing = copy.deepcopy(existing)
             _validate_pairs(storage.run_path(key), existing)
         previous = _plans.get(body.get("previous_token"))
         keep_seed = previous and previous["settings"]["seed"] == settings.seed and previous["settings"]["source_dir"] == str(root) and previous["new_round"] == new_round
         master = existing["master_seed"] if existing else settings.seed if settings.seed >= 0 else previous["master_seed"] if keep_seed else random_seed()
-        items = existing["items"] if existing else make_items(sources, master)
+        items = extend_items(existing, sources) if existing else make_items(sources, master)
         token = uuid.uuid4().hex
         plan = {"token": token, "settings": config, "fingerprint": fingerprint, "sources": sources,
                 "items": items, "master_seed": master, "run_key": key, "new_round": new_round,
@@ -226,7 +226,7 @@ def start(token):
             settings = Settings.model_validate(plan["settings"])
             source_root, sources = scan(settings, plan["overrides"])
             _, fingerprint = identity(settings, source_root, sources)
-            key, _, _ = choose_output(source_root, fingerprint, plan["new_round"])
+            key, _, _ = choose_output(source_root, fingerprint, plan["new_round"], settings=settings, sources=sources)
             root = storage.run_path(plan["run_key"])
             if fingerprint != plan["fingerprint"] or key != plan["run_key"] or _revision(root) != plan["revision"]:
                 raise PlanChanged(preview({"settings": plan["settings"], "overrides": plan["overrides"], "new_round": plan["new_round"], "previous_token": token}))
@@ -234,6 +234,8 @@ def start(token):
                 manifest = storage.read_manifest(root)
                 if _live_process(manifest, root):
                     raise RuntimeError("Previous worker is still active / 旧 worker 仍在运行")
+                manifest["items"] = extend_items(manifest, sources)
+                manifest.update(settings=plan["settings"], fingerprint=fingerprint, sources=sources)
                 _validate_pairs(root, manifest, repair=True)
                 manifest.pop("selection", None)
             else:
