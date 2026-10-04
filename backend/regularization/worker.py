@@ -16,7 +16,8 @@ import psutil
 import torch
 from PIL import Image, PngImagePlugin
 
-from backend.constants import SD_SCRIPTS_DIR
+from backend.constants import REPO_ROOT, SD_SCRIPTS_DIR
+from backend.launch_utils import app_version
 from .sampling import sample, sampling_sigmas, schedule
 from .storage import atomic_write, item_path, read_manifest, save_manifest, manifest_summary, save_progress
 
@@ -203,6 +204,7 @@ def run(root: Path, runner_factory=AnimaRunner):
     succeeded = failed = 0
     try:
         check()
+        software = f"lora-scripts-anima {os.environ.get('ANIMA_VERSION', '').strip() or app_version(REPO_ROOT)}"
         runner = runner_factory(manifest["settings"], report, check)
         manifest["runtime"] = {"torch": torch.__version__, "device": str(getattr(runner, "device", "test")),
                                "precision": str(getattr(runner, "dtype", manifest["settings"]["precision"])), "sampler_version": 2,
@@ -223,9 +225,11 @@ def run(root: Path, runner_factory=AnimaRunner):
                 image = runner.generate(item)
                 report("saving", "Saving / 保存")
                 info = PngImagePlugin.PngInfo()
+                info.add_text("Software", software)
                 info.add_text("parameters", f"{item['prompt']}\nNegative prompt: {manifest['settings']['negative']}\n"
                               f"Steps: {manifest['settings']['steps']}, Sampler: {manifest['settings']['sampler']}, "
                               f"Schedule type: {manifest['settings']['scheduler']}, CFG scale: {manifest['settings']['cfg']}, "
+                              f"Flow shift: {manifest['settings']['flow_shift']}, "
                               f"Seed: {item['seed']}, Size: {item['width']}x{item['height']}")
                 buffer = BytesIO()
                 image.save(buffer, format="PNG", pnginfo=info)
