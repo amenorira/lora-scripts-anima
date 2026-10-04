@@ -141,6 +141,7 @@
 		"scan": "预览标签与数量",
 		"start": "开始生成",
 		"stop": "停止",
+		"trainingBlocked": "训练正在占用 GPU，暂时无法生成正则图。",
 		"newRound": "另建一轮，保留已有图片",
 		"existing": "已有结果",
 		"output": "输出目录",

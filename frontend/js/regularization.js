@@ -172,7 +172,7 @@ window.regularizationMixin = {
     }
     const host = document.getElementById('regularizationWorkspaceHost');
     if (host && !host.dataset.mounted) {
-      const response = await fetch('/anima-ui/regularization-workspace.html?v=20261004-reg56');
+      const response = await fetch('/anima-ui/regularization-workspace.html?v=20261004-reg58');
       host.innerHTML = await response.text(); host.dataset.mounted = '1';
       Alpine.initTree(host);
     }
@@ -371,7 +371,7 @@ window.regularizationMixin = {
     catch (_) { this.toast(this.t('common.failed'), 'error'); }
   },
   async regGenerate() {
-    if (this.regBusy || this.regRunning) return;
+    if (this.regBusy || this.regRunning || this.trainingActive) return;
     this.regError = '';
     // Files may have been added outside the app since the last preview.
     await this.regScan();
@@ -440,7 +440,7 @@ window.regularizationMixin = {
     await this.regAction(() => this.regLoadSources(offset));
   },
   async regStart() {
-    if (!this.regPlan || this.regPlanDirty || this.regPlanConsumed || this.regRunning) return;
+    if (!this.regPlan || this.regPlanDirty || this.regPlanConsumed || this.regRunning || this.trainingActive) return;
     await this.regAction(async () => {
       const task = await this.regRequest('/tasks', { token: this.regPlan.token });
       this.regRunKey = task.run_key; this.regLogs = []; localStorage.setItem('anima-reg-run', task.run_key);
@@ -451,7 +451,7 @@ window.regularizationMixin = {
     });
   },
   async regAgain() {
-    if (!this.regPlan || this.regPlanDirty || this.regRunning || this.regBusy) return;
+    if (!this.regPlan || this.regPlanDirty || this.regRunning || this.regBusy || this.trainingActive) return;
     const fingerprint = this.regPlan.fingerprint;
     await this.regAction(async () => {
       this.regNewRound = true;
@@ -533,6 +533,7 @@ window.regularizationMixin = {
     if (key && key === this.regRunKey && !this.regRunning && !this.regRuns.some(run => run.run_key === key)) this.regClearRun();
   },
   async regResume(failedOnly = false) {
+    if (this.trainingActive || this.regRunning) return;
     if (this.regTab !== 'inspect' && this.regPlanDirty) { this.regReportError(this.regT('resumeDirty')); return; }
     await this.regAction(async () => {
       const task = await this.regRequest('/runs/' + encodeURIComponent(this.regRunKey) + '/resume', { failed_only: failedOnly });
@@ -621,6 +622,7 @@ window.regularizationMixin = {
   },
   regSourceImage(index) { return '/api/regularization/plans/' + this.regPlan?.token + '/preview/' + (this.regSourceOffset + index) + '?variant=thumb'; },
   async regMutate(item, action) {
+    if (this.trainingActive || this.regRunning) return;
     if (action === 'regenerate' && !window.confirm(this.regT('replaceHelp'))) return;
     await this.regAction(async () => {
       const result = await this.regRequest('/runs/' + encodeURIComponent(this.regRunKey) + '/items/' + item.index + '/' + action, {});

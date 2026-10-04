@@ -492,6 +492,10 @@ class GenerationTests(unittest.TestCase):
         root, _ = self.stored_run()
         reserved = service.tm.reserve_task()
         with self.assertRaises(RuntimeError):
+            service.start(service.preview({"settings": self.settings})["token"])
+        with self.assertRaises(RuntimeError):
+            service.mutate(root.name, 1, "regenerate")
+        with self.assertRaises(RuntimeError):
             service.mutate(root.name, 1, "exclude")
         with self.assertRaises(RuntimeError):
             service.resume(root.name)

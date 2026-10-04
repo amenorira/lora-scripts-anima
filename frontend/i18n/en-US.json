@@ -141,6 +141,7 @@
 		"scan": "Preview captions and count",
 		"start": "Start generation",
 		"stop": "Stop",
+		"trainingBlocked": "Training is using the GPU. Regularization image generation is unavailable.",
 		"newRound": "Create a new round and keep existing images",
 		"existing": "Existing results",
 		"output": "Output folder",

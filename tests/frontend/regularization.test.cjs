@@ -48,6 +48,31 @@ test('generate rescans a completed plan and starts additions instead of another 
   assert.deepEqual(calls, ['scan', 'start']);
 });
 
+test('training blocks every generation entry point before scanning or requesting', async () => {
+  const app = fixture();
+  app.trainingActive = true;
+  app.regPlan = {total:1, pending:1};
+  app.regTab = 'inspect';
+  app.regScan = async () => assert.fail('must not scan');
+  app.regRequest = async () => assert.fail('must not request');
+  await app.regGenerate();
+  await app.regStart();
+  await app.regAgain();
+  await app.regResume();
+  await app.regResume(true);
+  await app.regMutate({index:1}, 'regenerate');
+});
+
+test('training starting during a generation scan prevents launch', async () => {
+  const app = fixture();
+  app.regScan = async () => {
+    app.regPlan = {total:1, pending:1};
+    app.trainingActive = true;
+  };
+  app.regRequest = async () => assert.fail('must not launch');
+  await app.regGenerate();
+});
+
 test('polling errors use the existing toast once per repeated error', async () => {
   const app = fixture();
   app.regReportError('disconnected'); app.regReportError('disconnected');
