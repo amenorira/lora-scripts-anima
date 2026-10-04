@@ -4,7 +4,7 @@ window.regularizationMixin = {
   regSettings: {}, regMetadata: null, _regResultRequest: 0, _regScanTimer: null, _regScanVersion: 0,
   regTab: 'settings', regPlan: null, regSources: [], regSourceOffset: 0, regSourcePageSize: 12, regEdits: {}, regPlanDirty: false, regPreviewDirty: false, regPlanConsumed: false,
   regBusy: false, regError: '', regNewRound: false, regTask: null, regRunKey: '', regRuns: [],
-  regItems: [], regItemsTotal: 0, regOffset: 0, regFilter: 'all', regLogs: [], regLogsOpen: false,
+  regItems: [], regItemsTotal: 0, regOffset: 0, regFilter: 'all', regLogs: [], regLogsOpen: false, _regLogRequest: 0,
   regSelected: null, regTrainRoute: 'train-anima', regPendingTrainingPath: '', _regTopic: null, _regTimer: null, _regLoaded: false, _regRefreshing: false,
   get regRunning() { return ['created', 'running', 'stopping'].includes(this.regTask?.status); },
   get regTaskMatchesPlan() { return this.regRunning || !!this.regPlan && this.regTask?.output_path === this.regPlan.output_path; },
@@ -172,7 +172,7 @@ window.regularizationMixin = {
     }
     const host = document.getElementById('regularizationWorkspaceHost');
     if (host && !host.dataset.mounted) {
-      const response = await fetch('/anima-ui/regularization-workspace.html?v=20261004-reg53');
+      const response = await fetch('/anima-ui/regularization-workspace.html?v=20261004-reg56');
       host.innerHTML = await response.text(); host.dataset.mounted = '1';
       Alpine.initTree(host);
     }
@@ -353,13 +353,17 @@ window.regularizationMixin = {
   regStatusClass() { return this.regTask?.failed && !this.regRunning ? 'error' : {finished:'done',failed:'error',terminated:'cancelled'}[this.regTask?.status] || this.regTask?.status || 'idle'; },
   regVisibleLogs() {
     if (!this.regTaskMatchesPlan) return [];
-    const lines = this.taggerVisibleLogs.call({taggerTask:{logs:this.regLogs}, taggerLogsOpen:this.regLogsOpen});
-    return lines.map(line => {
+    const lines = this.taggerVisibleLogs.call({taggerTask:{logs:this.regLogs}, taggerLogsOpen:true});
+    const occurrences = new Map();
+    return lines.map((line, index) => {
+      const raw = this.regLogs[index];
+      const occurrence = occurrences.get(raw) || 0;
+      occurrences.set(raw, occurrence + 1);
       const record = this._parseLogRecord(line.message);
       const message = record?.message || line.message;
       const level = record?.level || '';
       return {time: (record?.timestamp || line.time)?.match(/\d{2}:\d{2}:\d{2}/)?.[0] || '',
-        message, level: /ERROR|CRITICAL/.test(level) || /Traceback|Error:/.test(message) ? 'error' : /WARN/.test(level) ? 'warning' : /Completed|已完成/.test(message) ? 'success' : line.level};
+        key: JSON.stringify([raw, occurrence]), message, level: /ERROR|CRITICAL/.test(level) || /Traceback|Error:/.test(message) ? 'error' : /WARN/.test(level) ? 'warning' : /Completed|已完成/.test(message) ? 'success' : line.level};
     });
   },
   async regCopyLogs() {
@@ -623,10 +627,12 @@ window.regularizationMixin = {
     });
   },
   async regLoadLogs() {
+    const request = ++this._regLogRequest;
     const key = this.regRunKey;
     if (!key) { this.regLogs = []; return; }
     const lines = await this.regRequest('/runs/' + encodeURIComponent(key) + '/logs');
-    if (key === this.regRunKey) this.regLogs = lines;
+    if (key === this.regRunKey && request === this._regLogRequest &&
+        (lines.length !== this.regLogs.length || lines.some((line, index) => line !== this.regLogs[index]))) this.regLogs = lines;
   },
   regImportTraining() {
     if (this.regRunning || this.regBusy) return;

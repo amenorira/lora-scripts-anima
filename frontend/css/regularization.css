@@ -12,7 +12,13 @@
 .reg-prompt-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
 .reg-prompt-grid textarea { box-sizing: border-box; resize: vertical; }
 .reg-help { color: var(--text-secondary); font-size: 12px; line-height: 1.7; }
-.reg-summary { min-width: 0; height: auto; min-height: 0; max-height: calc(100dvh - 160px); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.reg-summary { min-width: 0; height: auto; min-height: 0; max-height: none; }
+.reg-layout.reg-layout-logs { grid-template-columns: minmax(0, 1fr) clamp(360px, 42%, 640px); }
+.reg-layout-logs .reg-summary { position: static; }
+.reg-summary .tagger-action-log { flex: none; height: clamp(320px, 45dvh, 620px); min-height: 0; }
+.reg-summary .tagger-action-log.expanded { height: clamp(420px, 65dvh, 840px); min-height: 0; }
+.reg-summary .tagger-action-log > header { flex-shrink: 0; }
+.reg-summary .tagger-log-stream { scrollbar-gutter: stable; overscroll-behavior: contain; }
 .reg-summary > :not(.tagger-action-log) { flex-shrink: 0; }
 .reg-summary .reg-help { margin: 4px 0; }
 .reg-result-actions { display: flex; gap: 8px; }

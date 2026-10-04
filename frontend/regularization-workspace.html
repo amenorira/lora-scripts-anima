@@ -1,7 +1,7 @@
 <div class="regularization-workspace tagger-page-shell">
   <header class="page-header tagger-page-header"><div class="monitor-page-heading"><h1 class="page-title" x-text="regT('subtitle')"></h1></div><div id="regularizationResbar" class="monitor-resbar tagger-page-resbar"></div></header>
   <div class="reg-nav"><nav class="tagger-mode-tabs" :aria-label="regT('title')" x-effect="regTab; locale; $nextTick(() => _syncTaggerTabIndicator('.regularization-workspace .tagger-mode-tabs'))"><button type="button" :class="{active: regTab === 'settings'}" @click="regTab = 'settings'" x-text="regT('settings')"></button><button type="button" :class="{active: regTab === 'plan'}" @click="regShowPlan()" x-text="regT('detailedPlan')"></button><button type="button" :class="{active: regTab === 'inspect'}" @click="regInspect()" x-text="regT('inspect')"></button><span class="monitor-tab-indicator" aria-hidden="true"></span></nav></div>
-  <div x-show="regTab !== 'inspect'" class="reg-layout tagger-batch-layout" :class="{'reg-layout-plan': regTab === 'plan'}">
+  <div x-show="regTab !== 'inspect'" class="reg-layout tagger-batch-layout" :class="{'reg-layout-plan': regTab === 'plan', 'reg-layout-logs': regTab === 'settings' && regLogsOpen && regTaskMatchesPlan}">
     <div class="reg-form tagger-form-column">
       <fieldset x-show="regTab === 'settings'" :disabled="regRunning || regBusy">
         <template id="regPromptFields"><div class="reg-prompt-grid" x-data="regPromptSizing()">
@@ -65,7 +65,7 @@
         <div class="tagger-progress-track" role="progressbar" :aria-valuenow="Math.round(regProgress)" aria-valuemin="0" aria-valuemax="100"><i :style="{width: regProgress + '%'}"></i></div>
         <div class="tagger-task-file" :title="regTask?.output_path" x-text="regTask?.run_key"></div>
         <p class="reg-help" x-show="regTask?.failed" x-text="regT('failed') + ' ' + regTask?.failed"></p>
-        <p class="reg-help" x-show="regRunning && regTask?.steps" x-text="regT('steps') + ' ' + (regTask?.step || 0) + ' / ' + (regTask?.steps || 0)"></p>
+        <p class="reg-help" x-show="regRunning" :style="{visibility: regTask?.steps ? 'visible' : 'hidden'}" x-text="regT('steps') + ' ' + (regTask?.step || 0) + ' / ' + (regTask?.steps || 0)"></p>
       </div>
       <div class="reg-result-actions" x-show="regTaskMatchesPlan && regTask?.completed"><button type="button" class="tagger-secondary-button" @click="regInspect()" x-text="regT('results')"></button><button type="button" class="tagger-secondary-button" :disabled="regRunning || regBusy" @click="regUseForTraining()" x-text="regT('use')"></button></div>
       <p class="reg-help" x-show="regTaskMatchesPlan && !regRunning && regTask?.pending && regPlanDirty" x-text="regT('resumeDirty')"></p>
@@ -74,7 +74,7 @@
       <section class="tagger-action-log" x-show="regTaskMatchesPlan && (regRunning || regLogs.length || regTask?.error)" :class="{expanded: regLogsOpen}">
         <header><div><strong x-text="regT('logs')"></strong><span class="tagger-log-phase" :class="{running: regRunning}" x-text="regPhaseLabel()"></span></div><div><button type="button" x-show="regTaskMatchesPlan && regLogs.length" @click="regCopyLogs()" x-text="t('common.copy')"></button><button type="button" x-show="regTaskMatchesPlan && regLogs.length" @click="regLogsOpen = !regLogsOpen" x-text="regLogsOpen ? t('common.collapse') : t('common.expand')"></button></div></header>
         <div class="tagger-error-summary" x-show="regTaskMatchesPlan && regTask?.error"><strong x-text="t('tagger.error')"></strong><span x-text="regTask?.error"></span></div>
-        <div class="tagger-log-stream" x-data="{follow: true}" x-init="$watch('regRunKey', () => follow = true)" @scroll="follow = $el.scrollHeight - $el.scrollTop - $el.clientHeight < 24" x-effect="regLogs; regLogsOpen; $nextTick(() => {if (follow) $el.scrollTop = $el.scrollHeight})"><template x-for="(line, index) in regVisibleLogs()" :key="index"><div class="tagger-log-line" :class="[line.level, !line.time && 'untimed']"><time class="tagger-log-time" x-text="line.time"></time><code class="tagger-log-message" x-text="line.message"></code></div></template><div class="tagger-log-empty" x-show="!regTaskMatchesPlan || !regLogs.length" x-text="regT('logsEmpty')"></div></div>
+        <div class="tagger-log-stream" x-data="{follow: true}" x-init="$watch('regRunKey', () => follow = true)" @scroll="follow = $el.scrollHeight - $el.scrollTop - $el.clientHeight < 24" x-effect="regLogs; regLogsOpen; $nextTick(() => {if (follow) $el.scrollTop = $el.scrollHeight})"><template x-for="line in regVisibleLogs()" :key="line.key"><div class="tagger-log-line" :class="[line.level, !line.time && 'untimed']"><time class="tagger-log-time" x-text="line.time"></time><code class="tagger-log-message" x-text="line.message"></code></div></template><div class="tagger-log-empty" x-show="!regTaskMatchesPlan || !regLogs.length" x-text="regT('logsEmpty')"></div></div>
       </section>
     </aside>
   </div>

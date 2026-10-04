@@ -462,7 +462,7 @@ test('shared training stepper clamps bounds, avoids floating drift and undoes si
   assert.equal(app.regSettings.size_mode, 'bucket');
 });
 
-test('generation logs reuse timestamp parsing and preserve error details and tail limits', () => {
+test('generation logs preserve parsed details and stable rows when expanding or advancing the tail', () => {
   const app = fixture();
   app.regPlan = {output_path:'current'}; app.regTask = {status:'finished', output_path:'current'};
   app.regLogs = ['2026-10-04 00:10:11 INFO Completed / 已完成 reg_000001, seed=123', '2026-10-04 00:10:12 ERROR Image generation failed', 'Traceback: details', '[00:10:13] legacy message'];
@@ -471,9 +471,28 @@ test('generation logs reuse timestamp parsing and preserve error details and tai
   assert.equal(lines[1].level, 'error'); assert.equal(lines[2].message, 'Traceback: details');
   assert.equal(lines[2].time, ''); assert.equal(lines[3].time, '00:10:13');
   app.regLogs = Array.from({length:60}, (_,index)=>'INFO message ' + index);
-  assert.equal(app.regVisibleLogs().length, 32);
+  const before = app.regVisibleLogs();
+  assert.equal(before.length, 60);
   app.regLogsOpen = true;
   assert.equal(app.regVisibleLogs().length, 60);
+  assert.equal(app.regVisibleLogs()[0].key, before[0].key);
+  app.regLogs.shift(); app.regLogs.push('INFO message 60');
+  assert.equal(app.regVisibleLogs()[0].key, before[1].key);
+  app.regLogs = ['repeated', 'repeated'];
+  assert.notEqual(app.regVisibleLogs()[0].key, app.regVisibleLogs()[1].key);
+});
+
+test('log polling ignores unchanged payloads and out-of-order responses from the same run', async () => {
+  const app = fixture(); app.regRunKey = 'run'; app.regLogs = ['existing'];
+  const original = app.regLogs;
+  app.regRequest = async () => ['existing'];
+  await app.regLoadLogs(); assert.equal(app.regLogs, original);
+  const responses = [];
+  app.regRequest = () => new Promise(resolve => responses.push(resolve));
+  const older = app.regLoadLogs(), newer = app.regLoadLogs();
+  responses[1](['existing', 'new']); await newer;
+  responses[0](['existing']); await older;
+  assert.deepEqual(app.regLogs, ['existing', 'new']);
 });
 
 test('an old log response cannot overwrite a newly selected run', async () => {
