@@ -49,6 +49,7 @@ function fixture() {
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../frontend/js/tagger.js'), 'utf8'), context);
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../frontend/js/monitor-logs.js'), 'utf8'), context);
   const app = Object.create(context.window.regularizationMixin);
+  app.savedSettings = saved;
   app.flushTimers = () => { const pending = [...timers.values()]; timers.clear(); pending.forEach(fn => fn()); };
   app.regSettings = {seed:'-1', cfg:4, width:1024, height:768, size_mode:'bucket', extra_positive:''}; app.regDefaults = {...app.regSettings};
   app._regUndo = {}; app.regEdits = {}; app.regT = key => key;
@@ -80,6 +81,32 @@ test('source page jumps clamp boundaries and keep the displayed page on failure'
   await app.regSourcePage(1); assert.equal(app.regSourceOffset, 48);
   await app.regSourceGoPage(''); assert.equal(app.regSourceOffset, 48);
   await app.regSourceGoPage(-2); assert.equal(app.regSourceOffset, 0);
+});
+
+test('prompt fields visibly migrate old blanks once and preserve later clearing', () => {
+  const app = fixture();
+  app.regMetadata = {defaults: {extra_positive:'', negative:''}};
+  app.savedSettings.set('anima-reg-settings', JSON.stringify({extra_positive:'', negative:''}));
+  app.regInitSettings();
+  assert.equal(app.regSettings.extra_positive, 'masterpiece, best quality, score_7');
+  assert.equal(app.regSettings.negative, 'worst quality, low quality, score_1, score_2, score_3, artist name, blurry, jpeg artifacts, chromatic aberration');
+  assert.equal(app.regActualPrompt('1girl'), 'masterpiece, best quality, score_7, 1girl');
+  app.regSetField('extra_positive', '');
+  app.regSetField('negative', '');
+  app.regSettings = {};
+  app.regInitSettings();
+  assert.equal(app.regSettings.extra_positive, '');
+  assert.equal(app.regSettings.negative, '');
+  assert.equal(app.regActualPrompt('1girl'), '1girl');
+});
+
+test('prompt default migration preserves custom saved prompts', () => {
+  const app = fixture(); app.regSettings = {};
+  app.regMetadata = {defaults: {extra_positive:'', negative:''}};
+  app.savedSettings.set('anima-reg-settings', JSON.stringify({extra_positive:'custom positive', negative:'custom negative'}));
+  app.regInitSettings();
+  assert.equal(app.regSettings.extra_positive, 'custom positive');
+  assert.equal(app.regSettings.negative, 'custom negative');
 });
 
 test('prompt preview uses the same comma trimming as generation', () => {

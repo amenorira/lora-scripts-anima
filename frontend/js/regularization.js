@@ -121,15 +121,30 @@ window.regularizationMixin = {
     if (message !== this.regError) this.toast(message, 'error');
     this.regError = message;
   },
+  regInitSettings() {
+    const prompts = {
+      extra_positive: 'masterpiece, best quality, score_7',
+      negative: 'worst quality, low quality, score_1, score_2, score_3, artist name, blurry, jpeg artifacts, chromatic aberration',
+    };
+    this.regDefaults = { ...this.regMetadata.defaults, ...prompts };
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem('anima-reg-settings') || '{}'); } catch (_) {}
+    Object.assign(this.regSettings, this.regDefaults, saved, { ...this.regSettings });
+    // Migrate the old empty defaults once; subsequent deliberate clearing stays empty.
+    if (!localStorage.getItem('anima-reg-prompt-defaults-v1')) {
+      for (const [key, value] of Object.entries(prompts)) {
+        if (!this.regSettings[key]?.trim()) this.regSettings[key] = value;
+      }
+      localStorage.setItem('anima-reg-settings', JSON.stringify(this.regSettings));
+      localStorage.setItem('anima-reg-prompt-defaults-v1', '1');
+    }
+  },
   async buildRegularizationForm() {
     if (!this._regLoaded) {
       try {
         this.regMetadata = await this.regRequest('/metadata');
       } catch (error) { this.regReportError(error.message); return; }
-      this.regDefaults = { ...this.regMetadata.defaults };
-      let saved = {};
-      try { saved = JSON.parse(localStorage.getItem('anima-reg-settings') || '{}'); } catch (_) {}
-      Object.assign(this.regSettings, this.regMetadata.defaults, saved, { ...this.regSettings });
+      this.regInitSettings();
       this._regLoaded = true;
     }
     const host = document.getElementById('regularizationWorkspaceHost');
