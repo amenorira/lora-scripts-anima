@@ -1,10 +1,11 @@
-/* Anima regularization workspace: persistent jobs, paginated plans and results. */
+/* Anima regularization workspace: persistent jobs and shared scrolling galleries. */
 window.regularizationMixin = {
   regDefaults: null, regSectionCollapsed: { models: true, deviceOptions: true, bucketSettings: true }, _regUndo: {}, _regFields: {}, _regControlsLocale: '',
-  regSettings: {}, regMetadata: null, _regResultRequest: 0, _regScanTimer: null, _regScanVersion: 0,
-  regTab: 'settings', regPlan: null, regSources: [], regSourceOffset: 0, regSourcePageSize: 12, regEdits: {}, regPlanDirty: false, regPreviewDirty: false, regPlanConsumed: false,
+  regSettings: {}, regMetadata: null, _regResultRequest: 0, _regSourceRequest: 0, _regScanTimer: null, _regScanVersion: 0,
+  regTab: 'settings', regPlan: null, regSources: [], regEdits: {}, regPlanDirty: false, regPreviewDirty: false, regPlanConsumed: false,
   regBusy: false, regError: '', regNewRound: false, regTask: null, regRunKey: '', regRuns: [],
-  regItems: [], regItemsTotal: 0, regOffset: 0, regFilter: 'all', regLogs: [], regLogsOpen: false, _regLogRequest: 0,
+  regItems: [], regItemsTotal: 0, regFilter: 'all', regLogs: [], regLogsOpen: false, _regLogRequest: 0,
+  regGalleryLoading: '', regMoreError: '', _regMoreRequest: 0, _regResultRefresh: 0,
   regSelected: null, regTrainRoute: 'train-anima', regPendingTrainingPath: '', _regTopic: null, _regTimer: null, _regLoaded: false, _regRefreshing: false,
   get regRunning() { return ['created', 'running', 'stopping'].includes(this.regTask?.status); },
   get regTaskMatchesPlan() { return this.regRunning || !!this.regPlan && this.regTask?.output_path === this.regPlan.output_path; },
@@ -14,45 +15,43 @@ window.regularizationMixin = {
     return Math.min(100, 100 * ((this.regTask.completed || 0) + (this.regTask.excluded || 0) + partial) / this.regTask.total);
   },
   regT(key) { return this.t('regularization.' + key); },
-  regSourceCards() {
-    let observer, resizeTimer, requestedSize, detailVersion = 0, detailReady = false;
+  get regGalleryCount() { return this.regTab === 'plan' ? this.regSources.length : this.regItems.length; },
+  get regGalleryTotal() { return this.regTab === 'plan' ? this.regPlan?.source_count || 0 : this.regItemsTotal; },
+  get regHasMore() { return this.regGalleryCount < this.regGalleryTotal; },
+  get regCards() {
+    const plan = this.regTab === 'plan';
+    return (plan ? this.regSources : this.regItems).map((item, index) => ({
+      key: plan ? 'source:' + item.relative : 'result:' + item.index,
+      item, source: plan ? item : null,
+      filename: plan ? item.relative.split('/').pop() : item.filename,
+      label: plan ? this.regPreviewDirty ? this.regT('awaitValidation') : item.reason ? this.regT('invalid') : this.regT('imageCount') + ' ' + (item.count || 0) : this.regT(item.status),
+      caption: item.caption || '—', dimensions: (item.width || '—') + ' × ' + (item.height || '—'),
+      error: plan ? item.reason : item.error,
+      image: plan ? this.regSourceImage(index) : ['completed', 'excluded'].includes(item.status) ? this.regImage(item) : '',
+    }));
+  },
+  regGallery() {
+    let observer, detailVersion = 0, detailReady = false;
     return {
-      detail: null, pinned: false, detailStyle: '', gridStyle: '',
+      detail: null, pinned: false, detailStyle: '',
       init() {
-        for (const key of ['currentRoute', 'regTab', 'regSources', 'regSourceOffset']) this.$watch(key, () => this.closeDetail());
-        this.$watch('regSources', () => { requestedSize = undefined; this.queueLayout(); });
-        for (const key of ['currentRoute', 'regTab', 'regBusy', 'regPreviewDirty']) this.$watch(key, () => this.queueLayout());
+        for (const key of ['currentRoute', 'regTab', 'regPlan']) this.$watch(key, () => this.closeDetail());
+        this.$watch('regSources', () => { if (this.detail && !this.regSources.includes(this.detail)) this.closeDetail(); });
+        this.$watch('regTab', () => { this.regMoreError = ''; });
+        for (const key of ['currentRoute', 'regTab', 'regBusy', 'regPreviewDirty', 'regSources', 'regItems', 'regItemsTotal', 'regGalleryLoading', '_regResultRefresh']) this.$watch(key, () => this.$nextTick(() => this.checkMore()));
         this.$nextTick(() => {
-          observer = new ResizeObserver(() => this.queueLayout());
-          observer.observe(this.$el);
-          this.queueLayout();
+          observer = new IntersectionObserver(() => this.checkMore(), {rootMargin: '400px'});
+          observer.observe(this.$refs.galleryEnd);
+          this.checkMore();
         });
       },
-      destroy() { observer?.disconnect(); clearTimeout(resizeTimer); },
-      queueLayout() {
-        clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(() => this.fitGrid(), 150);
-      },
-      async fitGrid() {
-        if (this.currentRoute !== 'regularization' || this.regTab !== 'plan' || this.regBusy || this.regPreviewDirty) return;
-        const grid = this.$refs.sourceGrid;
-        if (!grid?.getClientRects().length) return;
-        const rect = grid.getBoundingClientRect();
-        const height = Math.max(160, window.innerHeight - rect.top - 48);
-        const columns = Math.max(1, Math.min(8, Math.floor((rect.width + 12) / 212)));
-        const rows = Math.max(1, Math.min(4, Math.floor((height + 12) / 220)));
-        const size = columns * rows;
-        if (requestedSize !== size) { requestedSize = size; await this.regResizeSourcePage(size); }
-        // Keep the old layout if loading the matching page size failed.
-        if (this.regSourcePageSize === size) this.gridStyle = `grid-template-columns:repeat(${columns},minmax(0,1fr));grid-template-rows:repeat(${rows},minmax(0,1fr));height:${height}px`;
-      },
-      onPageKey(event) {
-        if (this.currentRoute !== 'regularization' || this.regTab !== 'plan' || this.pinned || event.repeat || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-        if (event.target.closest('input, textarea, select, [contenteditable], [role="slider"], [role="combobox"], .anima-select, .modal-overlay')) return;
-        if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
-        event.preventDefault();
-        this.closeDetail();
-        void this.regSourcePage(event.key === 'ArrowLeft' ? -1 : 1);
+      destroy() { observer?.disconnect(); },
+      checkMore() {
+        if (this.currentRoute !== 'regularization' || this.regTab === 'settings' || this.regMoreError) return;
+        const end = this.$refs.galleryEnd;
+        if (!end?.getClientRects().length) return;
+        const rect = end.getBoundingClientRect();
+        if (rect.top <= window.innerHeight + 400 && rect.bottom >= 0) void this.regLoadMore();
       },
       closeDetail() { ++detailVersion; detailReady = false; this.detail = null; this.pinned = false; },
       showDetail(source, event, pin = false) {
@@ -127,7 +126,7 @@ window.regularizationMixin = {
     const response = await fetch('/api/regularization' + path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const result = await response.json();
     if (result.status === 'changed') {
-      this.regPlan = result.data; this.regPlanDirty = false; this.regPreviewDirty = false; this.regPlanConsumed = false; this.regSourceOffset = 0;
+      this.regPlan = result.data; this.regPlanDirty = false; this.regPreviewDirty = false; this.regPlanConsumed = false; this.regSources = [];
       await this.regLoadSources();
       throw new Error(this.regT('changed'));
     }
@@ -172,7 +171,7 @@ window.regularizationMixin = {
     }
     const host = document.getElementById('regularizationWorkspaceHost');
     if (host && !host.dataset.mounted) {
-      const response = await fetch('/anima-ui/regularization-workspace.html?v=20261004-reg58');
+      const response = await fetch('/anima-ui/regularization-workspace.html?v=20261005-reg-gallery2');
       host.innerHTML = await response.text(); host.dataset.mounted = '1';
       Alpine.initTree(host);
     }
@@ -234,7 +233,7 @@ window.regularizationMixin = {
     if (Object.is(this.regSettings[key], value)) return;
     this._regUndo[key] = this.regSettings[key];
     this.regSettings[key] = value;
-    if (key === 'source_dir') { this.regEdits = {}; this.regPlan = null; this.regSources = []; this.regSourceOffset = 0; this.regPlanConsumed = false; }
+    if (key === 'source_dir') { this.regEdits = {}; this.regPlan = null; this.regSources = []; this.regPlanConsumed = false; }
     if (key === 'extra_positive') for (const source of this.regSources) {
       source.prompt = this.regActualPrompt(source.caption);
     }
@@ -340,7 +339,7 @@ window.regularizationMixin = {
     if (this.regRunning && (!this.regPlan || this.regPlan.output_path !== this.regTask.output_path)) {
       await this.regAction(async () => {
         this.regPlan = await this.regRequest('/runs/' + encodeURIComponent(this.regRunKey) + '/plan');
-        this.regEdits = this.regPlan.overrides; this.regPlanConsumed = true; this.regPlanDirty = false; this.regPreviewDirty = false; this.regSourceOffset = 0;
+        this.regEdits = this.regPlan.overrides; this.regPlanConsumed = true; this.regPlanDirty = false; this.regPreviewDirty = false; this.regSources = [];
         await this.regLoadSources();
       });
     } else if (!this.regRunning && (!this.regPlan || this.regPreviewDirty)) await this.regScan();
@@ -389,14 +388,13 @@ window.regularizationMixin = {
       const plan = await this.regRequest('/plans', { settings: { ...this.regSettings }, overrides: { ...this.regEdits }, new_round: this.regNewRound,
         previous_token: this.regPlanConsumed ? undefined : this.regPlan?.token });
       if (version !== this._regScanVersion) return;
-      const size = this.regSourcePageSize;
-      const offset = Math.min(this.regSourceOffset, Math.max(0, Math.floor((plan.source_count - 1) / size) * size));
-      const page = await this.regRequest('/plans/' + plan.token + '/items?offset=' + offset + '&limit=' + size);
+      const page = await this.regFetchItems('/plans/' + plan.token + '/items', Math.max(24, this.regSources.length));
       if (version !== this._regScanVersion) return;
       this.regPlan = plan; this.regError = '';
       this.regPlanDirty = false; this.regPreviewDirty = false; this.regPlanConsumed = false;
-      this.regSourceOffset = offset;
+      ++this._regSourceRequest;
       this.regSources = this.regMapSources(page.items);
+      this.regMoreError = '';
       localStorage.setItem('anima-reg-settings', JSON.stringify(this.regSettings));
     };
     // Background previews must not disable the form while the user adjusts it.
@@ -404,12 +402,24 @@ window.regularizationMixin = {
       try { await scan(); } catch (error) { if (version === this._regScanVersion) this.regError = error.message; }
     } else await this.regAction(scan);
   },
-  get regSourcePageCount() { return Math.max(1, Math.ceil((this.regPlan?.source_count || 0) / this.regSourcePageSize)); },
-  async regResizeSourcePage(size) {
-    if (size === this.regSourcePageSize || this.regBusy || this.regPreviewDirty) return;
-    if (!this.regPlan) { this.regSourcePageSize = size; return; }
-    const offset = Math.floor(this.regSourceOffset / size) * size;
-    await this.regAction(() => this.regLoadSources(offset, size));
+  async regFetchItems(path, count = 24, offset = 0) {
+    const items = [];
+    let page;
+    do {
+      page = await this.regRequest(path + (path.includes('?') ? '&' : '?') + 'offset=' + (offset + items.length) + '&limit=' + Math.min(100, count - items.length));
+      items.push(...page.items);
+    } while (page.items.length && items.length < count && offset + items.length < page.total);
+    return {...page, items};
+  },
+  async regLoadMore(tab = this.regTab) {
+    if (this.regBusy || this.regGalleryLoading === tab || tab !== this.regTab || !this.regHasMore || tab === 'settings' || tab === 'plan' && this.regPreviewDirty || tab === 'inspect' && this._regResultRefresh) return;
+    const request = ++this._regMoreRequest;
+    this.regGalleryLoading = tab; this.regMoreError = '';
+    try {
+      if (tab === 'plan') await this.regLoadSources({append: true});
+      else await this.regLoadResults({append: true});
+    } catch (error) { if (tab === this.regTab && request === this._regMoreRequest) this.regMoreError = error.message; }
+    finally { if (request === this._regMoreRequest) this.regGalleryLoading = ''; }
   },
   regMapSources(items) {
     return items.map(source => {
@@ -420,24 +430,19 @@ window.regularizationMixin = {
   regActualPrompt(caption) {
     return [this.regSettings.extra_positive, caption].map(part => part.trim().replace(/^,+|,+$/g, '').trim()).filter(Boolean).join(', ');
   },
-  async regLoadSources(offset = this.regSourceOffset, size = this.regSourcePageSize) {
+  async regLoadSources({append = false} = {}) {
     if (!this.regPlan) return;
-    const token = this.regPlan.token, previousOffset = this.regSourceOffset;
-    const page = await this.regRequest('/plans/' + token + '/items?offset=' + offset + '&limit=' + size);
-    if (token !== this.regPlan?.token || previousOffset !== this.regSourceOffset) return false;
-    this.regSourceOffset = offset;
-    this.regSourcePageSize = size;
-    this.regSources = this.regMapSources(page.items);
+    const token = this.regPlan.token, version = this._regScanVersion, request = ++this._regSourceRequest;
+    const offset = append ? this.regSources.length : 0;
+    let page;
+    try { page = await this.regFetchItems('/plans/' + token + '/items', append ? 24 : Math.max(24, this.regSources.length), offset); }
+    catch (error) {
+      if (token !== this.regPlan?.token || version !== this._regScanVersion || request !== this._regSourceRequest) return false;
+      throw error;
+    }
+    if (token !== this.regPlan?.token || version !== this._regScanVersion || request !== this._regSourceRequest) return false;
+    this.regSources = append ? [...this.regSources, ...this.regMapSources(page.items)] : this.regMapSources(page.items);
     return true;
-  },
-  async regSourcePage(delta) {
-    await this.regSourceGoPage(Math.floor(this.regSourceOffset / this.regSourcePageSize) + 1 + delta);
-  },
-  async regSourceGoPage(value) {
-    if (this.regBusy || !this.regPlan || this.regPreviewDirty || String(value).trim() === '' || !Number.isFinite(Number(value))) return;
-    const offset = (Math.max(1, Math.min(this.regSourcePageCount, Math.trunc(Number(value)))) - 1) * this.regSourcePageSize;
-    if (offset === this.regSourceOffset) return;
-    await this.regAction(() => this.regLoadSources(offset));
   },
   async regStart() {
     if (!this.regPlan || this.regPlanDirty || this.regPlanConsumed || this.regRunning || this.trainingActive) return;
@@ -456,7 +461,7 @@ window.regularizationMixin = {
     await this.regAction(async () => {
       this.regNewRound = true;
       this.regPlan = await this.regRequest('/plans', {settings: this.regSettings, overrides: this.regEdits, new_round: true});
-      this.regPlanConsumed = false; this.regSourceOffset = 0;
+      this.regPlanConsumed = false;
       await this.regLoadSources();
       if (this.regPlan.fingerprint !== fingerprint) this.toast(this.regT('changed'));
     });
@@ -517,8 +522,9 @@ window.regularizationMixin = {
   regClearRun() {
     const outputPath = this.regTask?.output_path;
     ++this._regResultRequest;
+    this._regResultRefresh = 0;
     this.regRunKey = ''; this.regTask = null; this.regItems = []; this.regItemsTotal = 0;
-    this.regOffset = 0; this.regSelected = null; this.regLogs = []; this.regError = '';
+    this.regSelected = null; this.regLogs = []; this.regError = ''; this.regMoreError = '';
     if (this._regTopic) this.realtimeUnsubscribe(this._regTopic);
     this._regTopic = null; this.regSyncTimer();
     localStorage.removeItem('anima-reg-run');
@@ -543,7 +549,8 @@ window.regularizationMixin = {
   },
   async regSelectRun() {
     if (!this.regRunKey) { this.regClearRun(); return; }
-    this.regOffset = 0; this.regSelected = null; this.regLogs = []; this.regTask = null; this.regItems = []; this.regItemsTotal = 0;
+    ++this._regResultRequest;
+    this.regSelected = null; this.regLogs = []; this.regTask = null; this.regItems = []; this.regItemsTotal = 0; this.regMoreError = '';
     this.regSyncTimer();
     localStorage.setItem('anima-reg-run', this.regRunKey);
     await this.regAction(() => this.regLoadResults());
@@ -552,26 +559,37 @@ window.regularizationMixin = {
     this.regTab = 'inspect';
     await this.regAction(async () => { await this.regRefreshRuns(); if (this.regRunKey) await this.regLoadResults(); });
   },
-  async regLoadResults(offset = this.regOffset) {
+  async regSelectFilter() {
+    ++this._regResultRequest;
+    this.regItems = []; this.regItemsTotal = 0; this.regSelected = null; this.regMoreError = '';
+    await this.regAction(() => this.regLoadResults());
+  },
+  async regLoadResults({append = false} = {}) {
     if (!this.regRunKey) { this.regClearRun(); return; }
-    const key = this.regRunKey, previousOffset = this.regOffset, filter = this.regFilter, request = ++this._regResultRequest;
-    let page;
+    if (append && this._regResultRefresh) return false;
+    const key = this.regRunKey, filter = this.regFilter, request = ++this._regResultRequest;
+    const offset = append ? this.regItems.length : 0;
+    if (!append) this._regResultRefresh = request;
     try {
-      page = await this.regRequest('/runs/' + encodeURIComponent(key) + '/items?offset=' + offset + '&limit=24&status=' + filter);
-    } catch (error) {
-      if (key !== this.regRunKey || request !== this._regResultRequest) return;
-      // The directory may have been removed after the result list was fetched.
-      await this.regRefreshRuns();
-      if (key !== this.regRunKey) return;
-      throw error;
+      let page;
+      try {
+        page = await this.regFetchItems('/runs/' + encodeURIComponent(key) + '/items?status=' + filter, append ? 24 : Math.max(24, this.regItems.length), offset);
+      } catch (error) {
+        if (key !== this.regRunKey || filter !== this.regFilter || request !== this._regResultRequest) return false;
+        // The directory may have been removed after the result list was fetched.
+        await this.regRefreshRuns();
+        if (key !== this.regRunKey) return false;
+        throw error;
+      }
+      if (key !== this.regRunKey || filter !== this.regFilter || request !== this._regResultRequest) return false;
+      this.regItems = append ? [...this.regItems, ...page.items] : page.items;
+      this.regItemsTotal = page.total; this.regApplyTask(page.summary, false); this.regMoreError = '';
+      if (this.regRunning) Object.assign(this.regSettings, page.settings);
+      if (!append) await this.regLoadLogs();
+      return true;
+    } finally {
+      if (!append && this._regResultRefresh === request) this._regResultRefresh = 0;
     }
-    if (key !== this.regRunKey || previousOffset !== this.regOffset || filter !== this.regFilter || request !== this._regResultRequest) return;
-    const lastOffset = Math.max(0, Math.floor((page.total - 1) / 24) * 24);
-    if (offset > lastOffset) return this.regLoadResults(lastOffset);
-    this.regOffset = offset;
-    this.regItems = page.items; this.regItemsTotal = page.total; this.regApplyTask(page.summary, false);
-    if (this.regRunning) Object.assign(this.regSettings, page.settings);
-    await this.regLoadLogs();
   },
   async regReadRunSettings() {
     if (this.regRunning || this.regBusy || !this.regRunKey) return;
@@ -584,12 +602,6 @@ window.regularizationMixin = {
       this.regChanged(); this.regPlanDirty = false; this.regPreviewDirty = false; this.regTab = 'settings'; this.toast(this.regT('settingsLoaded'));
     });
   },
-  async regPage(delta) {
-    if (this.regBusy) return;
-    const lastOffset = Math.max(0, Math.floor((this.regItemsTotal - 1) / 24) * 24);
-    const offset = Math.max(0, Math.min(lastOffset, this.regOffset + delta * 24));
-    if (offset !== this.regOffset) await this.regAction(() => this.regLoadResults(offset));
-  },
   regImage(item, variant = 'thumb') { return '/api/regularization/runs/' + encodeURIComponent(this.regRunKey) + '/preview/' + item.index + '?variant=' + variant; },
   async regCopyOutputPath() {
     if (!this.regTask?.output_path) return;
@@ -601,7 +613,7 @@ window.regularizationMixin = {
     const position = this.regItems.findIndex(item => item.index === this.regSelected.index);
     const candidates = direction > 0 ? this.regItems.slice(position + 1) : this.regItems.slice(0, position);
     return candidates.some(item => ['completed', 'excluded'].includes(item.status)) ||
-      (direction > 0 ? this.regOffset + 24 < this.regItemsTotal : this.regOffset > 0);
+      (direction > 0 && this.regItems.length < this.regItemsTotal);
   },
   async regNavigateImage(direction) {
     if (this.regBusy || !this.regCanNavigateImage(direction)) return;
@@ -612,15 +624,15 @@ window.regularizationMixin = {
         const candidates = direction > 0 ? this.regItems.slice(position + 1) : this.regItems.slice(0, position).reverse();
         const next = candidates.find(item => ['completed', 'excluded'].includes(item.status));
         if (next) { this.regSelected = next; return; }
-        if (direction > 0 ? this.regOffset + 24 >= this.regItemsTotal : this.regOffset === 0) return;
-        const previousOffset = this.regOffset;
-        await this.regLoadResults(Math.max(0, this.regOffset + direction * 24));
-        if (previousOffset === this.regOffset) return;
-        position = direction > 0 ? -1 : this.regItems.length;
+        if (direction < 0 || this.regItems.length >= this.regItemsTotal) return;
+        const previousCount = this.regItems.length;
+        await this.regLoadResults({append: true});
+        if (previousCount === this.regItems.length) return;
+        position = previousCount - 1;
       }
     });
   },
-  regSourceImage(index) { return '/api/regularization/plans/' + this.regPlan?.token + '/preview/' + (this.regSourceOffset + index) + '?variant=thumb'; },
+  regSourceImage(index) { return '/api/regularization/plans/' + this.regPlan?.token + '/preview/' + index + '?variant=thumb'; },
   async regMutate(item, action) {
     if (this.trainingActive || this.regRunning) return;
     if (action === 'regenerate' && !window.confirm(this.regT('replaceHelp'))) return;
