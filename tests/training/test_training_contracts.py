@@ -5,6 +5,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from backend.training.adapter import adapt_config
 from backend.training.step_estimator import estimate_training_steps
 from backend.training.validation import validate_training_config
 from tests.helpers import config_from_field_defaults
@@ -27,6 +28,28 @@ def valid_anima_config() -> dict:
 
 
 class TrainingValidationTests(unittest.TestCase):
+    def test_image_augmentation_cache_contracts(self):
+        for profile, module in (("anima-lora", "networks.lora_anima"), ("sdxl-lora", "networks.lora")):
+            with self.subTest(profile=profile):
+                config = dict(valid_anima_config(), model_train_type=profile, network_module=module)
+                # Flipping remains compatible with both kinds of latent caching.
+                config["flip_aug"] = True
+                self.assertEqual(validate_training_config(config), [])
+                for cache_key in ("cache_latents", "cache_latents_to_disk"):
+                    conflicting = dict(config, random_crop=True, cache_latents=False, cache_latents_to_disk=False)
+                    conflicting[cache_key] = True
+                    errors = validate_training_config(conflicting)
+                    self.assertTrue(any("random_crop" in error and cache_key in error for error in errors), errors)
+
+                config.update(random_crop=True, cache_latents=False, cache_latents_to_disk=False)
+                self.assertEqual(validate_training_config(config), [])
+                adapted, warnings = adapt_config(config)
+                for key in ("flip_aug", "random_crop"):
+                    self.assertIs(adapted[key], True)
+                    self.assertFalse(any("Unknown field" in warning and key in warning for warning in warnings), warnings)
+                self.assertIs(adapted["cache_latents"], False)
+                self.assertIs(adapted["cache_latents_to_disk"], False)
+
     def test_rejects_unsafe_anima_values(self):
         cases = {
             "blocks_to_swap": 9,

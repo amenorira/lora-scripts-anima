@@ -52,3 +52,18 @@ test('scheduler previews export only the parameters used by the selected schedul
     }
   }
 });
+
+test('image augmentation presets export the effective cache settings for each sd-scripts profile', () => {
+  for (const [profile, module] of [['anima-lora', 'networks.lora_anima'], ['sdxl-lora', 'networks.lora']]) {
+    const flipped = preview(profile, module, { flip_aug: true }).text;
+    assert.match(flipped, /^flip_aug = true$/m);
+    assert.match(flipped, /^cache_latents = true$/m);
+    assert.match(flipped, /^cache_latents_to_disk = true$/m);
+    const cropped = preview(profile, module, { flip_aug: true, random_crop: true }).text;
+    assert.match(cropped, /^flip_aug = true$/m);
+    assert.match(cropped, /^random_crop = true$/m);
+    assert.match(cropped, /^cache_latents = false$/m);
+    assert.match(cropped, /^cache_latents_to_disk = false$/m);
+    assert.doesNotMatch(preview(profile, module).text, /^(flip_aug|random_crop) =/m);
+  }
+});

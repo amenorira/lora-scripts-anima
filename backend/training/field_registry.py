@@ -275,6 +275,9 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "min_bucket_reso", "type": "number", "default": 256, "section": "model", "desc_key": "field.min_bucket_reso", "target": "toml", "min": 64, "step": 64, "show_if": {"key": "enable_bucket", "eq": True}, "omit_default": True},
 {"key": "max_bucket_reso", "type": "number", "default": 2048, "section": "model", "desc_key": "field.max_bucket_reso", "target": "toml", "min": 256, "step": 64, "show_if": {"key": "enable_bucket", "eq": True}},
 {"key": "bucket_reso_steps", "type": "number", "default": 64, "section": "model", "desc_key": "field.bucket_reso_steps", "target": "toml", "min": 16, "step": 16, "constraints_by_group": {"sdxl": {"min": 32, "step": 32}, "anima": {"min": 16, "step": 16}}, "show_if": {"key": "enable_bucket", "eq": True}, "hint_key": "field.bucket_reso_stepsHint", "omit_default": True},
+# 图像增强与分桶参数相邻，但关闭分桶时仍可用。随机裁剪与两种图像缓存互斥。
+{"key": "flip_aug", "type": "toggle", "default": False, "section": "model", "desc_key": "field.flip_aug", "hint_key": "field.flip_augHint", "target": "toml", "omit_default": True},
+{"key": "random_crop", "type": "toggle", "default": False, "section": "model", "desc_key": "field.random_crop", "hint_key": "field.random_cropHint", "target": "toml", "omit_default": True},
 {"key": "v_parameterization", "type": "toggle", "default": False, "section": "model", "desc_key": "field.v_parameterization", "hint_key": "field.v_parameterizationHint", "target": "toml", "group": "sdxl"},
 # 与 v_parameterization 属于同一训练目标设置；保留条件显示，但不作为缩进子项。
 {"key": "zero_terminal_snr", "type": "toggle", "default": False, "section": "model", "desc_key": "field.zero_terminal_snr", "target": "toml", "group": "sdxl", "show_if": {"key": "v_parameterization", "eq": True}, "nested": False, "omit_default": True},
@@ -517,8 +520,8 @@ FIELDS: list[dict[str, Any]] = [
     # Anima: TF32 / cuDNN — Ampere+ GPU 几乎免费的加速
     {"key": "cuda_allow_tf32", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cuda_allow_tf32", "target": "toml", "group": "anima", "hint_key": "field.cuda_allow_tf32Hint"},
     {"key": "cuda_cudnn_benchmark", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cuda_cudnn_benchmark", "target": "toml", "group": "anima", "hint_key": "field.cuda_cudnn_benchmarkHint"},
-{"key": "cache_latents", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cache_latents", "target": "toml"},
-{"key": "cache_latents_to_disk", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cache_latents_to_disk", "hint_key": "field.cache_latents_to_diskHint", "target": "toml"},
+{"key": "cache_latents", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cache_latents", "target": "toml", "readonly_if": {"key": "random_crop", "eq": True, "reason_key": "field.cache_latentsLocked"}},
+{"key": "cache_latents_to_disk", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cache_latents_to_disk", "hint_key": "field.cache_latents_to_diskHint", "target": "toml", "readonly_if": {"key": "random_crop", "eq": True, "reason_key": "field.cache_latentsLocked"}},
 # 文本编码器输出缓存：默认开启（配合默认 network_train_unet_only=True，纯收益，大幅省显存提速）
 # cache_text_encoder_outputs 与 caption dropout/shuffle 互斥（sd-scripts is_text_encoder_output_cacheable
 # 在 shuffle_caption / caption_tag_dropout_rate>0 时返回 false → anima_train_network.py assert 失败）。

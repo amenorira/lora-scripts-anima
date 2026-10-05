@@ -27,6 +27,8 @@ window.trainingTomlMixin = {
       this._updateKrea2Toml();
       return;
     }
+    // Export the effective settings after imports, undo and field resets as well.
+    this._enforceImageAugmentationUiConstraints();
     const allSections = window.getVisibleSections(trainType);
     const fieldByKey = new Map(
       allSections.flatMap(section => (section.fields || []).map(field => [field.key, field]))

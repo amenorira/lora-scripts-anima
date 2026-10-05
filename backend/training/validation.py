@@ -487,6 +487,14 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
                     f"必须为 {required_step} 的正整数倍"
                 )
 
+    if config.get("random_crop") is True and (
+        config.get("cache_latents") is True or config.get("cache_latents_to_disk") is True
+    ):
+        errors.append(
+            "random_crop: incompatible with cache_latents / cache_latents_to_disk / "
+            "随机裁剪不能与图像编码缓存同时启用，请关闭内存和磁盘图像缓存"
+        )
+
     cache_text_outputs = config.get("cache_text_encoder_outputs") is True or config.get(
         "cache_text_encoder_outputs_to_disk"
     ) is True

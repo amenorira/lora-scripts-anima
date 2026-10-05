@@ -145,6 +145,36 @@ test('zero workers disable persistence while explicit disabled presets stay disa
   assert.equal(app.form.persistent_data_loader_workers, false);
 });
 
+test('random cropping disables both latent caches and they stay off until explicitly enabled', () => {
+  const app = makeForm();
+  app.toast = () => {};
+  Object.assign(app.form, { flip_aug: false, random_crop: false, cache_latents: true, cache_latents_to_disk: true });
+  app.setField('flip_aug', true);
+  assert.equal(app.form.cache_latents, true);
+  assert.equal(app.form.cache_latents_to_disk, true);
+
+  app.setField('random_crop', true);
+  for (const key of ['cache_latents', 'cache_latents_to_disk']) {
+    assert.equal(app.form[key], false);
+    app.setField(key, true);
+    assert.equal(app.form[key], false);
+    assert.equal(app._fieldSources[key], 'auto');
+  }
+  app.setField('random_crop', false);
+  assert.equal(app.form.cache_latents, false);
+  assert.equal(app.form.cache_latents_to_disk, false);
+  app.setField('cache_latents_to_disk', true);
+  assert.equal(app.form.cache_latents, true);
+  app.setField('cache_latents', false);
+  assert.equal(app.form.cache_latents_to_disk, false);
+
+  // A saved draft can contain both flags; normalize before displaying it.
+  Object.assign(app.form, { random_crop: true, cache_latents: true, cache_latents_to_disk: true });
+  app._applyInitialAutoValues();
+  assert.equal(app.form.cache_latents, false);
+  assert.equal(app.form.cache_latents_to_disk, false);
+});
+
 test('initial scheduler recommendations immediately hide unrelated child fields', () => {
   const app = makeForm();
   const updates = [];
