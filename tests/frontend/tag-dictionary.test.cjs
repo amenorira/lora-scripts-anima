@@ -179,7 +179,9 @@ function makeClient(options) {
   ctx.tagEditorSearchQuery = '';
   ctx.tagEditorSuggestions = [];
   ctx._teSuggestSeq = 0;
-  ctx._teLocalSuggestTags = [];
+  ctx.$nextTick = callback => callback();
+  context.innerWidth = 1280;
+  context.innerHeight = 900;
 
   context.TD_POLL_INTERVAL = 10;   // 轮询间隔直接写进 vm 上下文，测试不必真等 700ms
   ctx.currentRoute = opts.route || 'tagEditor';
@@ -310,26 +312,34 @@ test('dictionary failure degrades instead of breaking the editor', async () => {
   assert.equal(posted.filter(message => message.type === 'LOOKUP_BATCH').length, 0);
 });
 
-test('stale suggestion results are dropped by sequence', async () => {
+test('stale suggestions cannot replace the active field or reopen a closed list', async () => {
   const { ctx, posted } = makeClient({ status: [INSTALLED] });
   await initReady(ctx);
   ctx._tdHandleMessage({ type: 'READY_CORE', tagCount: 10 });
-  const applied = [];
-  ctx._teApplyDictSuggestions = (token, seq, results) => applied.push([token, seq, results.length]);
-  ctx.tagDictionarySuggest('长', 1, null);
-  await tick(160);
+  const input = value => ({ value, selectionStart: value.length,
+    getBoundingClientRect: () => ({ top: 400, bottom: 430, left: 0, width: 300 }) });
+  ctx.tagEditorGetSuggestions('single', input('长'));
+  await tick(120);
   const search = posted.filter(message => message.type === 'SUGGEST').at(-1);
   assert.equal(search.query, '长');
-  ctx._teSuggestSeq = 2; // 用户又敲了一个字
-  ctx._tdHandleMessage({ type: 'SUGGEST_RESULT', id: search.id, results: [{ canonical: 'long_hair' }], localTags: [], localResults: [] });
+  ctx.tagEditorGetSuggestions('add', input('长发'));
+  const result = { canonical: 'long_hair', animaTag: 'long hair', translation: '长发', category: 0, postCount: 6134076 };
+  ctx._tdHandleMessage({ type: 'SUGGEST_RESULT', id: search.id, results: [result], localTags: [], localResults: [] });
   await tick(10);
-  assert.deepEqual(applied, []);
-  ctx.tagDictionarySuggest('长发', 2, null);
-  await tick(160);
+  assert.equal(ctx.tagEditorSuggestions.length, 0);
+  await tick(120);
   const current = posted.filter(message => message.type === 'SUGGEST').at(-1);
-  ctx._tdHandleMessage({ type: 'SUGGEST_RESULT', id: current.id, results: [{ canonical: 'long_hair' }], localTags: [], localResults: [] });
+  ctx._tdHandleMessage({ type: 'SUGGEST_RESULT', id: current.id, results: [result], localTags: [], localResults: [] });
   await tick(10);
-  assert.deepEqual(applied, [['长发', 2, 1]]);
+  assert.equal(ctx._teSuggestField, 'add');
+  assert.equal(ctx.tagEditorSuggestions[0].count, 6134076);
+  ctx.tagEditorGetSuggestions('new', input('长发'));
+  await tick(120);
+  const closed = posted.filter(message => message.type === 'SUGGEST').at(-1);
+  ctx.tagEditorBlurSuggest();
+  ctx._tdHandleMessage({ type: 'SUGGEST_RESULT', id: closed.id, results: [result], localTags: [], localResults: [] });
+  await tick(220);
+  assert.equal(ctx.tagEditorSuggestions.length, 0);
 });
 
 test('worker returns capped search and exact local metadata in one suggestion response', () => {
@@ -342,7 +352,7 @@ test('worker returns capped search and exact local metadata in one suggestion re
     ['back_bow', '背后的蝴蝶结', 0, 43700, ''],
     ['gradient_background', '渐变背景', 0, 18700, '']
   ]);
-  self.onmessage({ data: { type: 'SUGGEST', id: 7, query: 'back', limit: 1, localTags: ['gradient background'] } });
+  self.onmessage({ data: { type: 'SUGGEST', id: 7, query: 'back', limit: 1, sourceTags: ['gradient background'] } });
   assert.equal(posted.length, 1);
   assert.equal(posted[0].type, 'SUGGEST_RESULT');
   assert.deepEqual(plain(posted[0].results).map(item => item.canonical), ['back_bow']);
@@ -352,6 +362,10 @@ test('worker returns capped search and exact local metadata in one suggestion re
     sourceTags: ['gradient background', 'blue eyes'] } });
   assert.deepEqual(plain(posted[1].localTags), ['gradient background']);
   assert.equal(posted[1].localResults[0].canonical, 'gradient_background');
+  self.onmessage({ data: { type: 'SUGGEST', id: 9, query: '渐变', limit: 20, existingOnly: true,
+    sourceTags: ['gradient_background', 'GRADIENT_BACKGROUND', 'blue eyes'] } });
+  assert.deepEqual(plain(posted[2].results), []);
+  assert.deepEqual(plain(posted[2].localTags), ['gradient_background']);
 });
 
 test('failed update keeps the active dictionary and offers retry', async () => {
@@ -423,13 +437,109 @@ test('worker restart releases pending tags and ignores old replies', async () =>
 
 test('new input invalidates old completion before the debounce fires', async () => {
   const { ctx } = makeClient();
-  const el = { selectionStart: 8, getBoundingClientRect: () => ({ top: 400, left: 0, width: 300 }) };
+  const el = { value: '  长发, 黑', selectionStart: 8 };
   const previous = ctx._teSuggestSeq;
-  ctx.tagEditorGetSuggestions('  长发, 黑', el);
+  ctx.tagEditorGetSuggestions('single', el);
   assert.ok(ctx._teSuggestSeq > previous);
-  ctx._teApplyDictSuggestions('old', previous, [{ animaTag: 'wrong', canonical: 'wrong' }], el);
   assert.equal(ctx.tagEditorSuggestions.length, 0);
   ctx._teCloseSuggestions();
   await tick(80);
+  assert.equal(ctx.tagEditorSuggestions.length, 0);
+});
+
+test('suggestions can load every match beyond the former local and dictionary limits', async () => {
+  const TD = loadLib();
+  const records = Array.from({ length: 75 }, (_, i) => [`hair_${i}`, `发型${i}`, 0, 1000 - i, '']);
+  const index = TD.createIndex(records);
+  assert.equal(TD.search(index, 'hair', 75).length, 75);
+  const { ctx } = makeClient();
+  ctx.tagEditorTagFreq = records.slice(0, 25).map(record => ({ tag: record[0].replaceAll('_', ' ') }));
+  const replies = [];
+  ctx.tagDictionaryComplete = async (query, options) => {
+    replies.push(options);
+    const localTags = TD.filterTags(index, options.sourceTags, query).slice(0, options.limit);
+    const localResults = localTags.map(tag => TD.lookup(index, tag).result);
+    ctx.tagDictionaryMetaFor = tag => TD.lookup(index, tag)?.result;
+    return { localTags, results: TD.search(index, query, options.limit), localResults };
+  };
+  const el = { value: 'hair', selectionStart: 4,
+    getBoundingClientRect: () => ({ top: 400, bottom: 430, left: 0, width: 300 }) };
+  ctx.tagEditorGetSuggestions('single', el);
+  await tick(120);
+  assert.equal(ctx.tagEditorSuggestions.length, 20);
+  assert.equal(ctx.tagEditorSuggestions[19].insert, 'hair 19');
+  assert.equal(ctx.tagEditorSuggestHasMore, true);
+  while (ctx.tagEditorSuggestHasMore) await ctx.tagEditorMoreSuggestions();
+  assert.equal(ctx.tagEditorSuggestions.length, 75);
+  assert.equal(ctx.tagEditorSuggestions[74].count, 926);
+  assert.equal(new Set(ctx.tagEditorSuggestions.map(item => item.insert)).size, 75);
+  assert.ok(replies.at(-1).limit > 50);
+});
+
+test('short prefixes include popular matches anywhere in the dictionary and remain fully pageable', () => {
+  const TD = loadLib();
+  const records = [['azzzzz', '', 0, 30000, ''],
+    ...Array.from({ length: 21000 }, (_, i) => [`a${String(i).padStart(5, '0')}`, '', 0, 21000 - i, ''])];
+  const index = TD.createIndex(records);
+  assert.equal(TD.search(index, 'a', 20)[0].canonical, 'azzzzz');
+  assert.equal(TD.search(index, 'a', records.length).length, records.length);
+});
+
+test('offline completion still loads all local matches and respects the selected scope', async () => {
+  const { ctx } = makeClient();
+  ctx.tagEditorTagFreq = Array.from({ length: 65 }, (_, i) => ({ tag: `custom_tag_${i}` }));
+  ctx.tagEditorGetSelectedStats = () => ctx.tagEditorTagFreq.slice(0, 3);
+  const el = { value: 'custom tag', selectionStart: 10,
+    getBoundingClientRect: () => ({ top: 80, bottom: 110, left: 1000, width: 150 }) };
+  ctx.tagEditorGetSuggestions('add', el);
+  await tick(120);
+  while (ctx.tagEditorSuggestHasMore) await ctx.tagEditorMoreSuggestions();
+  assert.equal(ctx.tagEditorSuggestions.length, 65);
+  assert.equal(ctx._teSuggestCoords.top, '114px');
+  ctx.tagEditorGetSuggestions('remove', el);
+  await tick(120);
+  assert.equal(ctx.tagEditorSuggestions.length, 3);
+  assert.equal(ctx.tagEditorSuggestHasMore, false);
+});
+
+test('all tag fields replace the token at the caret and share keyboard selection', async () => {
+  const { ctx } = makeClient();
+  for (const field of ['single', 'add', 'remove', 'old', 'new']) {
+    const key = { single: 'tagEditorAddInput', add: 'batchAddInput', remove: 'batchRemoveInput', old: 'batchOldTag', new: 'batchNewTag' }[field];
+    const val = field === 'old' || field === 'new' ? 'hair' : 'hair, solo';
+    ctx[key] = val;
+    let caret;
+    const el = { value: val, selectionStart: 2, focus() {}, setSelectionRange(pos) { caret = pos; } };
+    ctx.tagEditorGetSuggestions(field, el);
+    ctx.tagEditorSuggestions = [{ insert: 'long hair' }];
+    ctx.tagEditorSuggestIdx = 0;
+    const event = { key: 'Tab', preventDefault() {}, stopPropagation() {} };
+    ctx.tagEditorSuggestKeydown(event, field);
+    assert.equal(ctx[key], field === 'old' || field === 'new' ? 'long hair' : 'long hair, solo');
+    assert.equal(caret, 9);
+    assert.equal(ctx.tagEditorSuggestions.length, 0);
+  }
+  await tick(120);
+  assert.equal(ctx.tagEditorSuggestions.length, 0);
+});
+
+test('dictionary enrichment preserves the active tag while loading more keeps existing rows', async () => {
+  const { ctx } = makeClient();
+  ctx._teSuggestField = 'add';
+  ctx._teSuggestQuery = 'hair';
+  ctx.tagEditorTagFreq = [{ tag: 'long hair' }];
+  ctx._teSuggestInputEl = { getBoundingClientRect: () => ({ top: 400, bottom: 430, left: 0, width: 300 }) };
+  ctx._teSetSuggestions([{ insert: 'long hair' }, { insert: 'black hair' }], 20);
+  ctx.tagEditorSuggestIdx = 1;
+  ctx._teSetSuggestions([{ insert: 'hair' }, { insert: 'long hair' }, { insert: 'black hair' }], 20);
+  assert.equal(ctx.tagEditorSuggestIdx, 2);
+  let resolve;
+  ctx.tagDictionaryComplete = () => new Promise(done => { resolve = done; });
+  ctx.tagEditorSuggestHasMore = true;
+  const more = ctx.tagEditorMoreSuggestions();
+  assert.deepEqual(plain(ctx.tagEditorSuggestions).map(item => item.insert), ['hair', 'long hair', 'black hair']);
+  ctx._teCloseSuggestions();
+  resolve({ localTags: ['long hair'], results: [] });
+  await more;
   assert.equal(ctx.tagEditorSuggestions.length, 0);
 });

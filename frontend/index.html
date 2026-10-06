@@ -23,7 +23,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20261004-reg56">
+  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20261007-unified-suggest3">
   <link rel="stylesheet" href="/anima-ui/css/themes/light.css?v=20260919-dict17">
   <link rel="stylesheet" href="/anima-ui/css/themes/dark.css?v=20260924-monitor-time1">
   <link rel="stylesheet" href="/anima-ui/css/themes/comfy.css?v=20260923-sidebar1">
@@ -53,10 +53,10 @@
   <script src="/anima-ui/js/training-config-io.js?v=20260922-lifecycle2" defer></script>
   <script src="/anima-ui/js/tagger.js?v=20261004-reg56" defer></script>
   <script src="/anima-ui/js/regularization.js?v=20261005-reg-gallery2" defer></script>
-  <script src="/anima-ui/js/tag-editor.js?v=20260924-review5" defer></script>
+  <script src="/anima-ui/js/tag-editor.js?v=20261007-unified-suggest3" defer></script>
   <!-- Tag Editor 词典：lib 定义纯逻辑，client 持有 Worker 与缓存，hover 只挂事件委托 -->
-  <script src="/anima-ui/js/tag-dictionary-lib.js?v=20260920-escaped-tags1" defer></script>
-  <script src="/anima-ui/js/tag-dictionary.js?v=20260929-tagger-review22" defer></script>
+  <script src="/anima-ui/js/tag-dictionary-lib.js?v=20261007-unified-suggest3" defer></script>
+  <script src="/anima-ui/js/tag-dictionary.js?v=20261007-unified-suggest3" defer></script>
   <script src="/anima-ui/js/tag-hover-card.js?v=20260929-tagger-review22" defer></script>
   <script src="/anima-ui/js/app.js?v=20261004-reg56" defer></script>
   <script src="/anima-ui/js/vendor/alpine.min.js" defer></script>
@@ -1156,23 +1156,22 @@
                     <textarea class="te-editor-textarea" x-show="tagEditorDetailView === 'text'"
                       x-model="tagEditorDetailText" @input="tagEditorDetailTextChange()"></textarea>
                   </div>
-                  <div class="te-editor-add" x-show="!tagEditorQuickRemove && tagEditorDetailView === 'chip'"
-                    @resize.window="tagEditorRefreshSuggestPosition()">
+                  <div class="te-editor-add" x-show="!tagEditorQuickRemove && tagEditorDetailView === 'chip'">
                     <input type="text" x-model="tagEditorAddInput" :placeholder="t(tagDictionaryReady ? 'tagEditor.dictAddPlaceholder' : 'tagEditor.addTagPlaceholder')"
-                      role="combobox" aria-autocomplete="list" aria-controls="te-tag-suggestions"
-                      :aria-expanded="tagEditorSuggestions.length > 0"
-                      :aria-activedescendant="tagEditorSuggestIdx >= 0 ? 'te-tag-suggestion-' + tagEditorSuggestIdx : null"
-                      @keydown.enter="if (!$event.isComposing && $event.keyCode !== 229 && tagEditorSuggestIdx < 0) tagEditorAddTagToSelected()"
-                      @input="if (!$event.isComposing) tagEditorGetSuggestions($event.target.value, $event.target)"
-                      @compositionstart="_teCloseSuggestions()"
-                      @compositionend="tagEditorGetSuggestions($event.target.value, $event.target)"
-                      @focus="tagEditorGetSuggestions(tagEditorAddInput, $event.target)"
-                      @blur="tagEditorBlurSuggest()">
+                      x-bind="tagEditorSuggestBindings('single')">
                     <button @click="tagEditorAddTagToSelected()">+</button>
-                    <div id="te-tag-suggestions" role="listbox" class="te-suggest" x-show="tagEditorSuggestions.length > 0"
-                      :class="{ floating: _teSuggestCoords != null }"
-                      :style="_teSuggestCoords ? ('left:'+_teSuggestCoords.left+'px;bottom:'+_teSuggestCoords.bottom+'px;width:'+_teSuggestCoords.width+'px;max-height:'+_teSuggestCoords.maxHeight+'px') : ''">
-                      <template x-for="(s, sIdx) in tagEditorSuggestions" :key="sIdx">
+                  </div>
+                </div>
+              </div>
+              </div>
+              <!-- 所有标签输入共用一个补全列表；传送到 body，避免编辑面板裁切。 -->
+              <template x-teleport="body">
+                <div class="te-suggest" x-show="tagEditorSuggestions.length > 0" x-cloak
+                  :style="_teSuggestCoords || {}"
+                  @resize.window="tagEditorRefreshSuggestPosition()"
+                  @scroll.window.capture="tagEditorRefreshSuggestPosition($event)">
+                    <div id="te-tag-suggestions" role="listbox" :aria-label="t('tagEditor.addTagPlaceholder')">
+                      <template x-for="(s, sIdx) in tagEditorSuggestions" :key="s.insert">
                         <div class="te-suggest-item te-dict-item" :class="{ active: sIdx === tagEditorSuggestIdx }"
                           :data-tag="s.insert"
                           role="option" :id="'te-tag-suggestion-' + sIdx" :aria-selected="sIdx === tagEditorSuggestIdx"
@@ -1188,10 +1187,11 @@
                         </div>
                       </template>
                     </div>
-                  </div>
+                    <button type="button" class="te-suggest-more" tabindex="-1" x-show="tagEditorSuggestHasMore"
+                      :disabled="tagEditorSuggestLoading" @mousedown.prevent="tagEditorMoreSuggestions()"
+                      x-text="t(tagEditorSuggestLoading ? 'common.loading' : 'tagEditor.moreSuggestions')"></button>
                 </div>
-              </div>
-              </div>
+              </template>
               <div x-show="tagEditorSelected.length >= 2" class="te-editor-state">
                 <div class="te-editor-inner">
                   <div class="te-editor-head">
@@ -1209,62 +1209,29 @@
                   <div class="te-batch-section" x-show="!tagEditorQuickRemove && tagEditorBatchMode === 'add'">
                     <div class="te-batch-row">
                       <input type="text" x-model="batchAddInput" :placeholder="t('tagEditor.batchAddPlaceholder')"
-                        @input="if (!$event.isComposing) tagEditorBatchSuggest('add')" @compositionend="tagEditorBatchSuggest('add')" @focus="tagEditorBatchSuggest('add')"
-                        @blur="tagEditorBatchBlur()" @keydown="tagEditorBatchKeydown($event)">
+                        x-bind="tagEditorSuggestBindings('add')">
                       <div class="te-batch-pos">
                         <button :class="{ active: tagEditorBatchPos === 'front' }" @click="tagEditorBatchPos = 'front'" x-text="t('bulkAction.posFront')"></button>
                         <button :class="{ active: tagEditorBatchPos === 'back' }" @click="tagEditorBatchPos = 'back'" x-text="t('bulkAction.posBack')"></button>
                       </div>
                       <button @click="tagEditorBatchAdd()" :disabled="!batchAddInput.trim()" x-text="t('bulkAction.add')"></button>
-                      <div class="te-suggest" x-show="batchSuggestOpen === 'add'">
-                        <template x-for="(s, si) in batchSuggestItems" :key="s.insert">
-                          <div class="te-suggest-item te-dict-item" :class="{ active: si === batchSuggestIdx }" :data-tag="s.insert" @mousedown.prevent="tagEditorBatchSelectSuggestion(s)">
-                            <span class="te-dict-item-body"><span class="te-dict-item-name" :class="tagDictionaryCategoryClass(s.cat)" x-text="tagDictionaryDisplayName(s.label)"></span><span class="te-dict-item-zh" x-text="tagDictionaryTranslationVisible() ? s.sub : ''"></span></span>
-                          </div>
-                        </template>
-                      </div>
                     </div>
                   </div>
                   <div class="te-batch-section" x-show="!tagEditorQuickRemove && tagEditorBatchMode === 'remove'">
                     <div class="te-batch-row">
                       <input type="text" x-model="batchRemoveInput" :placeholder="t('tagEditor.batchRemovePlaceholder')"
-                        @input="if (!$event.isComposing) tagEditorBatchSuggest('remove')" @compositionend="tagEditorBatchSuggest('remove')" @focus="tagEditorBatchSuggest('remove')"
-                        @blur="tagEditorBatchBlur()" @keydown="tagEditorBatchKeydown($event)">
+                        x-bind="tagEditorSuggestBindings('remove')">
                       <button @click="tagEditorBatchRemove()" :disabled="!batchRemoveInput.trim()" x-text="t('bulkAction.removeTag')"></button>
-                      <div class="te-suggest" x-show="batchSuggestOpen === 'remove'">
-                        <template x-for="(s, si) in batchSuggestItems" :key="s.insert">
-                          <div class="te-suggest-item te-dict-item" :class="{ active: si === batchSuggestIdx }" :data-tag="s.insert" @mousedown.prevent="tagEditorBatchSelectSuggestion(s)">
-                            <span class="te-dict-item-body"><span class="te-dict-item-name" :class="tagDictionaryCategoryClass(s.cat)" x-text="tagDictionaryDisplayName(s.label)"></span><span class="te-dict-item-zh" x-text="tagDictionaryTranslationVisible() ? s.sub : ''"></span></span>
-                          </div>
-                        </template>
-                      </div>
                     </div>
                   </div>
                   <div class="te-batch-section" x-show="!tagEditorQuickRemove && tagEditorBatchMode === 'replace'">
                     <div class="te-batch-row">
                       <input type="text" x-model="batchOldTag" :placeholder="t('tagEditor.batchOldPlaceholder')"
-                        @input="if (!$event.isComposing) tagEditorBatchSuggest('old')" @compositionend="tagEditorBatchSuggest('old')" @focus="tagEditorBatchSuggest('old')"
-                        @blur="tagEditorBatchBlur()" @keydown="tagEditorBatchKeydown($event)">
+                        x-bind="tagEditorSuggestBindings('old')">
                       <span class="te-batch-arrow">&rarr;</span>
                       <input type="text" x-model="batchNewTag" :placeholder="t('tagEditor.batchPlaceholder2')"
-                        @input="if (!$event.isComposing) tagEditorBatchSuggest('new')" @compositionend="tagEditorBatchSuggest('new')" @focus="tagEditorBatchSuggest('new')"
-                        @blur="tagEditorBatchBlur()"
-                        @keydown="tagEditorBatchKeydown($event)">
+                        x-bind="tagEditorSuggestBindings('new')">
                       <button @click="tagEditorBatchReplace()" :disabled="!batchOldTag.trim() || !batchNewTag.trim()" x-text="t('bulkAction.replace')"></button>
-                      <div class="te-suggest" x-show="batchSuggestOpen === 'old'">
-                        <template x-for="(s, si) in batchSuggestItems" :key="s.insert">
-                          <div class="te-suggest-item te-dict-item" :class="{ active: si === batchSuggestIdx }" :data-tag="s.insert" @mousedown.prevent="tagEditorBatchSelectSuggestion(s)">
-                            <span class="te-dict-item-body"><span class="te-dict-item-name" :class="tagDictionaryCategoryClass(s.cat)" x-text="tagDictionaryDisplayName(s.label)"></span><span class="te-dict-item-zh" x-text="tagDictionaryTranslationVisible() ? s.sub : ''"></span></span>
-                          </div>
-                        </template>
-                      </div>
-                      <div class="te-suggest" x-show="batchSuggestOpen === 'new'">
-                        <template x-for="(s, si) in batchSuggestItems" :key="s.insert">
-                          <div class="te-suggest-item te-dict-item" :class="{ active: si === batchSuggestIdx }" :data-tag="s.insert" @mousedown.prevent="tagEditorBatchSelectSuggestion(s)">
-                            <span class="te-dict-item-body"><span class="te-dict-item-name" :class="tagDictionaryCategoryClass(s.cat)" x-text="tagDictionaryDisplayName(s.label)"></span><span class="te-dict-item-zh" x-text="tagDictionaryTranslationVisible() ? s.sub : ''"></span></span>
-                          </div>
-                        </template>
-                      </div>
                     </div>
                   </div>
                   <p class="te-batch-hint" x-show="!tagEditorQuickRemove && tagEditorBatchMode === 'add'" x-text="t('tagEditor.batchAddHint')"></p>

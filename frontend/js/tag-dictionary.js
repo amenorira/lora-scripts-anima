@@ -19,7 +19,7 @@
 
 // Worker 脚本的版本号：Worker 地址带 ?v= 才会命中一年 immutable 缓存，
 // 所以改了 tag-dictionary.worker.js 必须同时改这里（其余三个文件在 index.html 里带 ?v=）。
-var TD_ASSET_VERSION = '20260924-suggest-batch1';
+var TD_ASSET_VERSION = '20261007-unified-suggest3';
 var TD_BASE = '/api/tageditor/dictionary/asset/';
 var TD_STATUS_URL = '/api/tageditor/dictionary';
 var TD_INSTALL_URL = '/api/tageditor/dictionary/install';
@@ -116,7 +116,6 @@ function _td() {
       inflight: Object.create(null),
       details: new Map(),        // canonical → 条目 + description
       detailInflight: new Map(),
-      suggestTimer: null,
       hoverSeq: 0,
       hoverHideTimer: null
     };
@@ -697,21 +696,6 @@ window.tagDictionaryMixin = {
     });
   },
 
-  /* 补全下拉的词典部分。本地标签由 tag-editor.js 先给出，这里异步补词典结果，
-     旧输入的结果不能覆盖新输入（seq 守卫）。 */
-  tagDictionarySuggest(token, seq, inputEl) {
-    if (!this.tagDictionaryReady) return;
-    var state = _td();
-    if (state.suggestTimer) clearTimeout(state.suggestTimer);
-    var self = this;
-    state.suggestTimer = setTimeout(function () {
-      state.suggestTimer = null;
-      self.tagDictionaryComplete(token, { localTags: self._teLocalSuggestTags.slice() }).then(function (reply) {
-        if (reply && seq === self._teSuggestSeq) self._teApplyDictSuggestions(token, seq, reply.results, inputEl);
-      });
-    }, 140);
-  },
-
   tagDictionaryComplete(query, options) {
     if (!this.tagDictionaryReady) return Promise.resolve(null);
     var state = _td();
@@ -928,10 +912,8 @@ window.tagDictionaryMixin = {
   },
 
   tagDictionaryCleanup() {
-    var state = _td();
     this.tagDictionaryPanelOpen = false;
     this.tagDictionaryCloseHover();
     if (typeof this._teCloseSuggestions === 'function') this._teCloseSuggestions();
-    if (state.suggestTimer) { clearTimeout(state.suggestTimer); state.suggestTimer = null; }
   }
 };

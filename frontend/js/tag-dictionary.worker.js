@@ -9,7 +9,7 @@
      INIT        {base}                      加载 manifest + core，随后空闲加载 detail
      LOAD_DETAIL {}                          立即加载 detail（首次悬停时触发）
      LOOKUP_BATCH{id, tags[]}                当前图片全部标签一次查完
-     SUGGEST     {id, query, limit, localTags[] | sourceTags[]} 补全搜索及本地标签精确匹配
+     SUGGEST     {id, query, limit, sourceTags[], existingOnly} 补全搜索及本地标签精确匹配
      FILTER_TAGS {id, tags[], query}          标签列表筛选
      DETAIL      {id, tag}                   悬停说明
    回复（Worker → 主线程）：
@@ -117,10 +117,15 @@ function lookupBatch(msg) {
 }
 
 function suggest(msg) {
-  var localTags = msg.sourceTags
-    ? TD.filterTags(index, msg.sourceTags, msg.query).slice(0, msg.limit || 20)
-    : (msg.localTags || []);
-  post({ type: 'SUGGEST_RESULT', id: msg.id, results: TD.search(index, msg.query, msg.limit),
+  var seen = new Set();
+  var sourceTags = (msg.sourceTags || []).filter(function(tag) {
+    var key = tag.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  var localTags = TD.filterTags(index, sourceTags, msg.query).slice(0, msg.limit || 20);
+  post({ type: 'SUGGEST_RESULT', id: msg.id, results: msg.existingOnly ? [] : TD.search(index, msg.query, msg.limit),
     localTags: localTags, localResults: lookupTags(localTags) });
 }
 

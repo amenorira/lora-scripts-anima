@@ -3501,7 +3501,6 @@ body.te-preview-resizing, body.te-preview-resizing * { cursor: row-resize !impor
 .te-batch-row button { font-size: 10px; padding: 5px 8px; border: 1px solid var(--border-default); border-radius: var(--radius-control); background: var(--bg-input); color: var(--text-secondary); cursor: pointer; white-space: nowrap; font-weight: 600; }
 .te-batch-row button:hover { background: var(--accent-solid); color: #fff; border-color: var(--accent-solid); }
 .te-batch-row button:disabled { opacity: 0.35; pointer-events: none; }
-.te-batch-row .te-suggest { bottom: auto; top: calc(100% + 4px); max-height: min(360px, 50vh); }
 .te-batch-arrow { font-size: 12px; color: var(--text-tertiary); flex-shrink: 0; padding: 0 2px; }
 
 .te-batch-pos { display: flex; gap: 1px; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); flex-shrink: 0; }
@@ -3531,22 +3530,12 @@ body.te-preview-resizing, body.te-preview-resizing * { cursor: row-resize !impor
 
 /* ===== Shared Components ===== */
 .te-suggest {
-  position: absolute;
-  bottom: 100%;
-  left: 0;
-  right: 0;
+  position: fixed;
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-panel);
-  max-height: 160px;
   overflow-y: auto;
   z-index: 1000;
-}
-
-.te-suggest.floating {
-  position: fixed !important;
-  top: auto !important;
-  right: auto !important;
   min-width: 0;
   max-width: calc(100vw - 16px);
   box-shadow: 0 4px 12px rgba(0,0,0,0.3);
@@ -3556,6 +3545,10 @@ body.te-preview-resizing, body.te-preview-resizing * { cursor: row-resize !impor
   background: var(--accent-soft);
   color: var(--accent);
 }
+
+.te-suggest-more { width: 100%; padding: 8px; border: 0; border-top: 1px solid var(--border-default); background: var(--bg-surface); color: var(--accent); font: inherit; font-size: 11px; cursor: pointer; }
+.te-suggest-more:hover { background: var(--accent-soft); }
+.te-suggest-more:disabled { color: var(--text-tertiary); cursor: default; }
 
 .te-chip { display: inline-flex; align-items: center; gap: 1px; font-size: 10px; padding: 1px 6px; border-radius: var(--radius-control); font-weight: 500; }
 .te-chip.include { background: var(--accent-soft); color: var(--accent); }

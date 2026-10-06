@@ -1830,6 +1830,7 @@
 		"sort": "Sort",
 		"injectTrigger": "Trigger",
 		"addTagPlaceholder": "Add tag...",
+		"moreSuggestions": "Load more suggestions",
 		"batchPlaceholder": "Value",
 		"batchPlaceholder2": "Replace with",
 		"batchDone": "Batch operation complete",

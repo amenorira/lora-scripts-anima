@@ -1830,6 +1830,7 @@
 		"sort": "排序",
 		"injectTrigger": "触发词",
 		"addTagPlaceholder": "添加标签...",
+		"moreSuggestions": "加载更多候选",
 		"batchPlaceholder": "值",
 		"batchPlaceholder2": "替换为",
 		"batchDone": "批量操作完成",
