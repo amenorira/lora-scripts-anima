@@ -174,9 +174,9 @@ LoRA-Muon 将两个因子配对处理，目的是让更新更符合它们共同�
 | `weight_decay` | 通用界面字段，最终作为优化器参数传递 | `0` | 有限数且 `≥ 0`；同时要求 `learning_rate * weight_decay < 1` | 使用论文的分拆式解耦衰减。没有明确对照结果时保持 `0` |
 | `momentum` | `optimizer_args` | `0.9` | `0 ≤ momentum < 1` | 梯度的一阶指数移动平均。增大后更平滑，但对新梯度反应更慢 |
 | `ns_steps` | `optimizer_args` | `8` | 整数 `1–8` | 矩阵符号的 Polar Express / Newton–Schulz 迭代次数。减少会降低计算量，也会让近似更粗 |
-| `inv_sqrt_steps` | `optimizer_args` | `7` | 整数 `1–7` | Gram 逆平方根的迭代次数。通常保持默认 |
+| `inv_sqrt_steps` | `optimizer_args` | `7` | 整数 `1–7` | 常规 Gram 逆平方根路径的迭代次数；冷启动保护和特征值分解回退不使用这些迭代。通常保持默认 |
 | `msign_eps` | `optimizer_args` | `1e-20` | 有限数且 `≥ 0` | 矩阵符号归一化时的除零保护。通常不需要修改 |
-| `inv_sqrt_eps` | `optimizer_args` | `1e-5` | 有限数且 `≥ 0` | 给 Gram 矩阵加入正则项，降低奇异或接近奇异时的不稳定风险 |
+| `inv_sqrt_eps` | `optimizer_args` | `1e-5` | 有限数且 `≥ 0` | 用于 Gram 正则化，也参与冷启动阈值和特征值下限的计算；会影响更新行为，通常保持默认 |
 | `inv_sqrt_gamma` | `optimizer_args` | `1.001` | 有限数且 `> 0` | Gram 逆平方根迭代的阻尼系数。没有数值问题时保持默认 |
 | `gauge_rebalance` | `optimizer_args` | `false` | `true` / `false` | 是否定期重新平衡两个 LoRA 因子的尺度。这是数值调理功能，不是防止过拟合的正则化 |
 | `gauge_rebalance_alpha` | `optimizer_args` | `1.0` | `0 < alpha ≤ 1` | 重平衡强度的阻尼指数；越接近 `1`，单次调整越充分。仅在启用重平衡后有意义 |
@@ -188,16 +188,19 @@ LoRA-Muon 将两个因子配对处理，目的是让更新更符合它们共同�
 
 学习率从 `0.02` 开始，固定数据、rank、alpha、调度器和步数，按倍数向下或向上比较。先用短训练排除学习不足或损失尖峰，再缩小测试范围。
 
+Anima 主干 LoRA 的 `unet_lr` 若已填写，会覆盖该参数组的 `learning_rate`；使用正则匹配学习率 `reg_lrs` 时，匹配模块也使用自己的学习率。调参前先检查这些覆盖值，避免只修改总学习率却没有改变目标模块的实际学习率。
+
 #### 相关网络设置与兼容性
 
 `network_dim` 和 `network_alpha` 不是 LoRA-Muon 构造参数，也不要求相等：
 
 - `network_dim` 决定 LoRA rank。
 - `network_alpha / network_dim` 决定 LoRA 分支的前向缩放。
+- 优化器不会显式补偿这个前向缩放；比较不同 rank 时先保持 `alpha / dim` 一致，改变比例后需重新校准学习率。
 - `alpha=dim` 只表示前向缩放为 `1`，不是 LoRA-Muon 的算法要求。
 - 优化器要求同一模块的 `lora_down` 与 `lora_up` rank 维度匹配，并且以完整参数对传入。
 
-选择 LoRA-Muon 时，Anima 对未手动修改的字段推荐 `dim=16, alpha=16`，以减少参数量、动量状态和 Gram 计算量。手动输入、导入或已保存的值保持不变。
+可手动从 `dim=16, alpha=16` 开始，以减少参数量、动量状态和 Gram 计算量。切换到 LoRA-Muon 不会自动改写 rank 或 alpha。
 
 当前实现还有以下限制：
 
@@ -206,6 +209,7 @@ LoRA-Muon 将两个因子配对处理，目的是让更新更符合它们共同�
 - 不支持 LoKr、LoHa、DoRA 等 LyCORIS 网络结构。
 - 支持 Linear LoRA 和 Anima 使用的 Conv LoRA 形状。
 - FP16/BF16 参数的矩阵运算会在 FP32 中完成，再写回原参数精度；不需要额外设置 `dtype` 参数。
+- 一阶动量保持 FP32；恢复优化器状态时直接从检查点恢复到计算精度与当前参数设备，避免先降为 FP16/BF16 再转回 FP32。
 - 支持 sd-scripts 的外部学习率调度器；LoRA-Muon 本身不接管 scheduler 或 warmup。
 
 #### 计算原理

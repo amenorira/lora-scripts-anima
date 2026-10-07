@@ -174,9 +174,9 @@ LoRA-Muon processes the factors as a pair, with the aim of updating the weight c
 | `weight_decay` | Common UI field; ultimately passed as an optimizer argument | `0` | Finite number `≥ 0`; also requires `learning_rate * weight_decay < 1` | Uses the paper's split decoupled decay rule. Keep it at `0` unless a controlled comparison supports changing it |
 | `momentum` | `optimizer_args` | `0.9` | `0 ≤ momentum < 1` | Exponential moving average of gradients. Higher values are smoother but react more slowly |
 | `ns_steps` | `optimizer_args` | `8` | Integer `1–8` | Number of Polar Express / Newton–Schulz matrix-sign iterations. Lower values reduce compute but give a coarser approximation |
-| `inv_sqrt_steps` | `optimizer_args` | `7` | Integer `1–7` | Number of Gram inverse-root iterations. Normally leave it at the default |
+| `inv_sqrt_steps` | `optimizer_args` | `7` | Integer `1–7` | Number of iterations on the regular Gram inverse-root path; the cold-start guard and eigendecomposition fallback do not use these iterations. Normally leave it at the default |
 | `msign_eps` | `optimizer_args` | `1e-20` | Finite number `≥ 0` | Division-by-zero guard used during matrix-sign normalization |
-| `inv_sqrt_eps` | `optimizer_args` | `1e-5` | Finite number `≥ 0` | Regularizes Gram matrices when they are singular or nearly singular |
+| `inv_sqrt_eps` | `optimizer_args` | `1e-5` | Finite number `≥ 0` | Used for Gram regularization, the cold-start threshold, and the eigenvalue floor; it affects update behavior and should normally stay at the default |
 | `inv_sqrt_gamma` | `optimizer_args` | `1.001` | Finite number `> 0` | Damping used by the inverse-root iteration. Leave it unchanged unless investigating a numerical problem |
 | `gauge_rebalance` | `optimizer_args` | `false` | `true` / `false` | Periodically balances the scales of the two factors. This is a conditioning operation, not an overfitting regularizer |
 | `gauge_rebalance_alpha` | `optimizer_args` | `1.0` | `0 < alpha ≤ 1` | Damping exponent for rebalancing. Values closer to `1` apply a more complete adjustment. Relevant only when rebalancing is enabled |
@@ -188,16 +188,19 @@ For most users, `learning_rate` is the only parameter that needs initial tuning.
 
 Start at `0.02` and compare multiplicative increases or decreases with data, rank, alpha, schedule, and step count fixed. Use short runs to exclude underlearning and loss spikes, then narrow the range.
 
+For Anima backbone LoRA, a populated `unet_lr` overrides `learning_rate` for that parameter group. Modules matched by `reg_lrs` also use their own learning rate. Check these overrides before tuning so a change to the overall learning rate actually reaches the intended modules.
+
 #### Related network settings and compatibility
 
 `network_dim` and `network_alpha` are network settings, not LoRA-Muon constructor arguments, and they do not need to be equal:
 
 - `network_dim` sets the LoRA rank.
 - `network_alpha / network_dim` sets the forward scale of the LoRA branch.
+- The optimizer does not explicitly compensate for this forward scale. Keep `alpha / dim` fixed when comparing ranks, and recalibrate the learning rate after changing that ratio.
 - `alpha=dim` only makes the forward scale equal to `1`; LoRA-Muon does not require it.
 - Each module must provide a complete `lora_down` and `lora_up` pair with matching rank dimensions.
 
-Selecting LoRA-Muon recommends `dim=16, alpha=16` for untouched Anima fields to reduce parameters, momentum state, and Gram-matrix computation. Manual, imported, and saved values are preserved.
+You can manually start with `dim=16, alpha=16` to reduce parameters, momentum state, and Gram-matrix computation. Selecting LoRA-Muon does not automatically change rank or alpha.
 
 The current implementation has the following compatibility limits:
 
@@ -206,6 +209,7 @@ The current implementation has the following compatibility limits:
 - It does not support LyCORIS structures such as LoKr, LoHa, or DoRA.
 - It supports Linear LoRA and the Conv LoRA shapes used by Anima.
 - Matrix operations for FP16/BF16 parameters are performed in FP32 and written back to the original parameter dtype; no separate `dtype` option is required.
+- First moments remain in FP32. Optimizer-state restoration transfers them directly from the checkpoint to the working dtype and current parameter device, avoiding an intermediate FP16/BF16 cast.
 - Standard sd-scripts learning-rate schedulers remain supported. LoRA-Muon does not take ownership of the scheduler or warmup.
 
 #### Calculation details

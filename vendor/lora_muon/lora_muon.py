@@ -713,6 +713,60 @@ class LoRAMuon(Optimizer):
 
         super().__init__(groups, defaults)
 
+    def load_state_dict(self, state_dict: dict) -> None:
+        """Restore momenta in work precision without a lossy intermediate cast.
+
+        PyTorch normally casts floating optimizer state to the parameter dtype.
+        LoRA-Muon keeps its moments in FP32 (FP64 for double parameters), even
+        with FP16/BF16 factors. Casting back after the default loader would lose
+        checkpoint precision and could turn large finite moments into infinity.
+
+        Temporary hooks let the standard loader validate groups and run user
+        hooks as usual. Capture after user pre-hooks, and restore before user
+        post-hooks, without modifying the caller's checkpoint dictionaries.
+        """
+
+        saved_groups: list[dict] = []
+        saved_momenta: dict[object, Tensor] = {}
+
+        def preserve_momenta(optimizer, checkpoint):
+            nonlocal saved_groups
+            saved_groups = checkpoint["param_groups"]
+            state = dict(checkpoint["state"])
+            for group in saved_groups:
+                for param_id in group["params"]:
+                    values = state.get(param_id)
+                    if not isinstance(values, dict):
+                        continue
+                    momentum = values.get("momentum_buffer")
+                    if not isinstance(momentum, Tensor):
+                        continue
+                    saved_momenta[param_id] = momentum
+                    state[param_id] = {
+                        key: value for key, value in values.items()
+                        if key != "momentum_buffer"
+                    }
+            return {**checkpoint, "state": state}
+
+        def restore_momenta(optimizer):
+            for saved, current in zip(saved_groups, optimizer.param_groups):
+                for param_id, parameter in zip(saved["params"], current["params"]):
+                    momentum = saved_momenta.get(param_id)
+                    if momentum is not None:
+                        optimizer.state[parameter]["momentum_buffer"] = momentum.detach().to(
+                            device=parameter.device,
+                            dtype=_work_dtype(parameter),
+                            copy=True,
+                        )
+
+        pre_hook = self.register_load_state_dict_pre_hook(preserve_momenta)
+        post_hook = self.register_load_state_dict_post_hook(restore_momenta, prepend=True)
+        try:
+            super().load_state_dict(state_dict)
+        finally:
+            pre_hook.remove()
+            post_hook.remove()
+
     @staticmethod
     def _validate_hyperparameters(
         *,
