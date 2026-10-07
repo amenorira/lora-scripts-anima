@@ -45,10 +45,6 @@ LORA_MUON_FORM_ARGUMENTS = (
 LORA_MUON_LEGACY_FIELD_ALIASES = {
     f"lora_muon_{key}": key for key in LORA_MUON_FORM_ARGUMENTS
 }
-_LORA_MUON_CANONICAL_TO_LEGACY = {
-    canonical: legacy
-    for legacy, canonical in LORA_MUON_LEGACY_FIELD_ALIASES.items()
-}
 ADAN_OPTIMIZER_TYPE = "pytorch_optimizer.Adan"
 ADEMAMIX_OPTIMIZER_TYPE = "bitsandbytes.optim.AdEMAMix"
 ADEMAMIX8BIT_OPTIMIZER_TYPE = "bitsandbytes.optim.AdEMAMix8bit"
@@ -67,6 +63,80 @@ SCHEDULEFREE_OPTIMIZERS = frozenset(
 )
 
 _EMPTY_STRINGS = {"", "undefined", "null", "nan"}
+
+
+# Native defaults control the precedence of advanced arguments over unchanged
+# form fields. Product recommendations remain in optimizer_metadata; frontend
+# previews receive this contract through the generated field registry.
+OPTIMIZER_ARGUMENT_DEFAULTS: dict[str, dict[str, Any]] = {
+    "automagic_min_lr": {"vendor.automagic_optimizer.integration.Automagic3": 1e-8},
+    "automagic_max_lr": {"vendor.automagic_optimizer.integration.Automagic3": 1000},
+    "automagic_beta2": {"vendor.automagic_optimizer.integration.Automagic3": 0.999},
+    "automagic_clip_threshold": {"vendor.automagic_optimizer.integration.Automagic3": 1},
+    "automagic_polarity_history": {"vendor.automagic_optimizer.integration.Automagic3": 8},
+    "automagic_fused": {"vendor.automagic_optimizer.integration.Automagic3": False},
+    "betas": {"AdamW": (0.9, 0.999), "AdamW8bit": (0.9, 0.999), "PagedAdamW8bit": (0.9, 0.999), "pytorch_optimizer.StableAdamW": (0.9, 0.99), "Lion": (0.9, 0.99), "Lion8bit": (0.9, 0.99), "PagedLion8bit": (0.9, 0.99), "pytorch_optimizer.CAME": (0.9, 0.999, 0.9999), "vendor.emo_optimizer.emosens.EmoSens": (0.9, 0.995), "AdamWScheduleFree": (0.9, 0.999), "Prodigy": (0.9, 0.999), "prodigyplus.ProdigyPlusScheduleFree": (0.9, 0.99), "pytorch_optimizer.Adan": (0.98, 0.92, 0.99), "bitsandbytes.optim.AdEMAMix": (0.9, 0.999, 0.9999), "bitsandbytes.optim.AdEMAMix8bit": (0.9, 0.999, 0.9999), "pytorch_optimizer.LoRARite": (0.9, 0.999), "pytorch_optimizer.SOAP": (0.95, 0.95)},
+    "eps": {"AdamW": 1e-8, "AdamW8bit": 1e-8, "PagedAdamW8bit": 1e-8, "pytorch_optimizer.StableAdamW": 1e-8, "vendor.emo_optimizer.emosens.EmoSens": 1e-8, "vendor.automagic_optimizer.integration.Automagic3": 1e-30, "AdamWScheduleFree": 1e-8, "Prodigy": 1e-8, "prodigyplus.ProdigyPlusScheduleFree": 1e-8, "Muon": 1e-7, "pytorch_optimizer.Adan": 1e-8, "bitsandbytes.optim.AdEMAMix": 1e-8, "bitsandbytes.optim.AdEMAMix8bit": 1e-8, "pytorch_optimizer.LoRARite": 0.000001, "pytorch_optimizer.SOAP": 1e-8},
+    "weight_decay": {"AdamW": 0.01, "AdamW8bit": 0.01, "PagedAdamW8bit": 0.01, "pytorch_optimizer.StableAdamW": 0.01, "Lion": 0, "Lion8bit": 0, "PagedLion8bit": 0, "Prodigy": 0, "prodigyplus.ProdigyPlusScheduleFree": 0, "AdaFactor": 0, "pytorch_optimizer.CAME": 0, "AdamWScheduleFree": 0, "vendor.automagic_optimizer.integration.Automagic3": 0, "vendor.emo_optimizer.emosens.EmoSens": 0.01, "Muon": 0.1, "vendor.lora_muon.LoRA_Muon": 0, "pytorch_optimizer.Adan": 0.01, "bitsandbytes.optim.AdEMAMix": 0.01, "bitsandbytes.optim.AdEMAMix8bit": 0.01, "pytorch_optimizer.LoRARite": 0, "pytorch_optimizer.SOAP": 0.01},
+    "adan_weight_decouple": {"pytorch_optimizer.Adan": True},
+    "ademamix_alpha": {"bitsandbytes.optim.AdEMAMix": 5, "bitsandbytes.optim.AdEMAMix8bit": 5},
+    "lorarite_clip_unmagnified_grad": {"pytorch_optimizer.LoRARite": 1},
+    "muon_adjust_lr_fn": {"Muon": "match_rms_adamw"},
+    "muon_momentum": {"Muon": 0.95},
+    "muon_nesterov": {"Muon": True},
+    "muon_ns_steps": {"Muon": 5},
+    "muon_ns_coefficients": {"Muon": (3.4445, -4.775, 2.0315)},
+    "momentum": {"vendor.lora_muon.LoRA_Muon": 0.9},
+    "ns_steps": {"vendor.lora_muon.LoRA_Muon": 8},
+    "inv_sqrt_steps": {"vendor.lora_muon.LoRA_Muon": 7},
+    "msign_eps": {"vendor.lora_muon.LoRA_Muon": 1e-20},
+    "inv_sqrt_eps": {"vendor.lora_muon.LoRA_Muon": 0.00001},
+    "inv_sqrt_gamma": {"vendor.lora_muon.LoRA_Muon": 1.001},
+    "gauge_rebalance": {"vendor.lora_muon.LoRA_Muon": False},
+    "gauge_rebalance_alpha": {"vendor.lora_muon.LoRA_Muon": 1},
+    "gauge_rebalance_interval": {"vendor.lora_muon.LoRA_Muon": 1},
+    "gauge_power_steps": {"vendor.lora_muon.LoRA_Muon": 2},
+    "stopcoef": {"vendor.emo_optimizer.emosens.EmoSens": 0.04},
+    "notify": {"vendor.emo_optimizer.emosens.EmoSens": True},
+    "use_shadow": {"vendor.emo_optimizer.emosens.EmoSens": False},
+    "came_eps1": {"pytorch_optimizer.CAME": 1e-30},
+    "came_eps2": {"pytorch_optimizer.CAME": 1e-16},
+    "prodigy_d_coef": {"Prodigy": 1, "prodigyplus.ProdigyPlusScheduleFree": 1},
+    "prodigy_d0": {"Prodigy": 0.000001, "prodigyplus.ProdigyPlusScheduleFree": 0.000001},
+    "prodigy_safeguard_warmup": {"Prodigy": False},
+    "prodigyplus_use_stableadamw": {"prodigyplus.ProdigyPlusScheduleFree": True},
+    "d_limiter": {"prodigyplus.ProdigyPlusScheduleFree": True},
+    "schedulefree_c": {"prodigyplus.ProdigyPlusScheduleFree": 0},
+    "prodigy_steps": {"prodigyplus.ProdigyPlusScheduleFree": 0},
+    "use_speed": {"prodigyplus.ProdigyPlusScheduleFree": False},
+    "use_bias_correction": {"prodigyplus.ProdigyPlusScheduleFree": False},
+    "use_cautious": {"prodigyplus.ProdigyPlusScheduleFree": False},
+    "use_orthograd": {"prodigyplus.ProdigyPlusScheduleFree": False},
+    "factored": {"prodigyplus.ProdigyPlusScheduleFree": True},
+    "factored_fp32": {"prodigyplus.ProdigyPlusScheduleFree": True},
+    "split_groups": {"prodigyplus.ProdigyPlusScheduleFree": True},
+    "split_groups_mean": {"prodigyplus.ProdigyPlusScheduleFree": False},
+    "weight_decay_by_lr": {"prodigyplus.ProdigyPlusScheduleFree": True},
+    "schedulefree_warmup_steps": {"AdamWScheduleFree": 0},
+    "bnb_percentile_clipping": {"AdamW8bit": 100, "PagedAdamW8bit": 100, "Lion8bit": 100, "PagedLion8bit": 100},
+    "bnb_min_8bit_size": {"AdamW8bit": 4096, "PagedAdamW8bit": 4096, "Lion8bit": 4096, "PagedLion8bit": 4096},
+    "stableadamw_kahan_sum": {"pytorch_optimizer.StableAdamW": True},
+    "stableadamw_weight_decouple": {"pytorch_optimizer.StableAdamW": True},
+    "adafactor_relative_step": {"AdaFactor": True},
+    "adafactor_scale_parameter": {"AdaFactor": True},
+    "adafactor_warmup_init": {"AdaFactor": False},
+    "adafactor_clip_threshold": {"AdaFactor": 1},
+    "adafactor_eps": {"AdaFactor": (1e-30, 0.001)},
+    "came_weight_decouple": {"pytorch_optimizer.CAME": True},
+    "came_fixed_decay": {"pytorch_optimizer.CAME": False},
+    "came_clip_threshold": {"pytorch_optimizer.CAME": 1},
+    "came_ams_bound": {"pytorch_optimizer.CAME": False},
+    "max_precondition_dim": {"pytorch_optimizer.SOAP": 10000},
+    "precondition_frequency": {"pytorch_optimizer.SOAP": 10},
+    "normalize_gradient": {"pytorch_optimizer.SOAP": False},
+    "correct_bias": {"pytorch_optimizer.SOAP": True},
+    "precondition_1d": {"pytorch_optimizer.SOAP": False},
+}
 
 
 def is_empty_optimizer_value(value: Any) -> bool:
@@ -537,9 +607,13 @@ _EPS_OPTIMIZERS = _ADAM_OPTIMIZERS | frozenset(
 )
 
 FORM_ARGUMENTS: dict[str, FormArgument] = {
-    "weight_decay": FormArgument("weight_decay", frozenset(OPTIMIZER_CONTRACTS)),
+    **{
+        key: FormArgument(argument, frozenset({AUTOMAGIC_OPTIMIZER_TYPE}))
+        for key, argument in AUTOMAGIC_MERGED_ARG_MAP.items()
+    },
+    "weight_decay": FormArgument("weight_decay", frozenset(OPTIMIZER_CONTRACTS) | {AUTOMAGIC_OPTIMIZER_TYPE}),
     "betas": FormArgument("betas", _BETAS_OPTIMIZERS),
-    "eps": FormArgument("eps", _EPS_OPTIMIZERS),
+    "eps": FormArgument("eps", _EPS_OPTIMIZERS | {AUTOMAGIC_OPTIMIZER_TYPE}),
     "muon_momentum": FormArgument("momentum", frozenset({MUON_OPTIMIZER_TYPE})),
     "muon_nesterov": FormArgument("nesterov", frozenset({MUON_OPTIMIZER_TYPE})),
     "muon_ns_steps": FormArgument("ns_steps", frozenset({MUON_OPTIMIZER_TYPE})),
@@ -685,47 +759,41 @@ FORM_ARGUMENTS: dict[str, FormArgument] = {
 
 def _coerce_form_argument(value: Any) -> Any:
     """Interpret merged text fields exactly as sd-scripts interprets optimizer_args."""
-    if not isinstance(value, str):
-        return value
-    try:
-        return ast.literal_eval(value.strip())
-    except (SyntaxError, ValueError):
-        return value
+    if isinstance(value, str):
+        try:
+            value = ast.literal_eval(value.strip())
+        except (SyntaxError, ValueError):
+            return value
+    return tuple(value) if isinstance(value, list) else value
 
 
 def normalize_lora_muon_form_fields(config: dict[str, Any]) -> None:
     """Migrate pre-release lora_muon_* form keys to the canonical optimizer names."""
-    if str(config.get("optimizer_type", "")) != LORA_MUON_OPTIMIZER_TYPE:
-        return
     for legacy, canonical in LORA_MUON_LEGACY_FIELD_ALIASES.items():
-        if canonical not in config and legacy in config:
+        if (config.get("optimizer_type") == LORA_MUON_OPTIMIZER_TYPE
+                and canonical not in config and legacy in config):
             config[canonical] = config[legacy]
         config.pop(legacy, None)
 
 
-def _form_argument_value(
-    config: Mapping[str, Any], optimizer_type: str, form_key: str
-) -> Any:
-    if form_key in config:
-        return config.get(form_key)
-    if optimizer_type == LORA_MUON_OPTIMIZER_TYPE:
-        legacy = _LORA_MUON_CANONICAL_TO_LEGACY.get(form_key)
-        if legacy is not None:
-            return config.get(legacy)
-    return None
-
-
 def collect_optimizer_args(
-    config: Mapping[str, Any], parsed_args: Mapping[str, Any] | None = None
+    config: Mapping[str, Any], parsed_args: Mapping[str, Any]
 ) -> dict[str, Any]:
     optimizer_type = str(config.get("optimizer_type", ""))
-    result = dict(parsed_args or {})
+    result = dict(parsed_args)
     for form_key, mapping in FORM_ARGUMENTS.items():
         if optimizer_type not in mapping.optimizers:
             continue
-        value = _form_argument_value(config, optimizer_type, form_key)
+        value = config.get(form_key)
         if not is_empty_optimizer_value(value):
-            result[mapping.argument] = _coerce_form_argument(value)
+            value = _coerce_form_argument(value)
+            defaults = OPTIMIZER_ARGUMENT_DEFAULTS.get(form_key, {})
+            # A form value equal to the native default used to be omitted by the
+            # browser. Preserve advanced overrides while moving merging here.
+            if (mapping.argument in result and optimizer_type in defaults
+                    and value == defaults[optimizer_type]):
+                continue
+            result[mapping.argument] = value
     return result
 
 
@@ -808,7 +876,9 @@ def apply_ademamix_step_schedule(
         return warnings
     if not isinstance(total_steps, int) or total_steps <= 0:
         return warnings
-    args, _ = parse_optimizer_args(config)
+    args, errors = parse_optimizer_args(config)
+    if errors:
+        raise ValueError("\n".join(errors))
     for arg_key, form_key in (
         ("t_alpha", "ademamix_t_alpha"),
         ("t_beta3", "ademamix_t_beta3"),
@@ -817,19 +887,19 @@ def apply_ademamix_step_schedule(
             continue  # 用户显式设置（含 0=关闭调度）
         if arg_key in args:
             continue  # optimizer_args_custom 中已提供
-        _set_optimizer_arg(config, arg_key, total_steps)
+        args[arg_key] = total_steps
         warnings.append(
             f"AdEMAMix: {arg_key} auto-set to estimated total steps {total_steps} / "
             f"已按预估总步数自动设置为 {total_steps}"
         )
+    config["optimizer_args"] = [f"{key}={value!r}" for key, value in args.items()]
     return warnings
 
 
 def validate_optimizer_contract(
-    config: Mapping[str, Any], parsed_args: Mapping[str, Any]
+    config: Mapping[str, Any], args: Mapping[str, Any]
 ) -> list[str]:
     optimizer_type = str(config.get("optimizer_type", ""))
-    args = collect_optimizer_args(config, parsed_args)
     errors: list[str] = []
 
     if _is_effectively_enabled(config.get("fused_backward_pass")):
@@ -934,54 +1004,6 @@ def validate_optimizer_contract(
     return errors
 
 
-def _format_optimizer_value(value: Any) -> str:
-    if isinstance(value, bool):
-        return "True" if value else "False"
-    if value is None:
-        return "None"
-    if isinstance(value, list):
-        return repr(tuple(value))
-    return str(value)
-
-
-def _set_optimizer_arg(config: dict[str, Any], key: str, value: Any) -> None:
-    values = list(config.get("optimizer_args") or [])
-    prefix = f"{key}="
-    values = [item for item in values if not str(item).strip().startswith(prefix)]
-    formatted = (
-        repr(value)
-        if key == "adjust_lr_fn" and isinstance(value, str)
-        else _format_optimizer_value(value)
-    )
-    values.append(f"{key}={formatted}")
-    config["optimizer_args"] = values
-
-
-def _remove_optimizer_arg(config: dict[str, Any], key: str) -> None:
-    prefix = f"{key}="
-    values = [
-        item
-        for item in list(config.get("optimizer_args") or [])
-        if not str(item).strip().startswith(prefix)
-    ]
-    if values:
-        config["optimizer_args"] = values
-    else:
-        config.pop("optimizer_args", None)
-
-
-def _merge_form_arguments(config: dict[str, Any]) -> None:
-    optimizer_type = str(config.get("optimizer_type", ""))
-    for form_key, mapping in FORM_ARGUMENTS.items():
-        if optimizer_type not in mapping.optimizers:
-            continue
-        value = config.get(form_key)
-        if not is_empty_optimizer_value(value):
-            if mapping.argument == "ns_coefficients":
-                value = _coerce_form_argument(value)
-            _set_optimizer_arg(config, mapping.argument, value)
-
-
 def _numeric_value(value: Any, default: float = 0.0) -> float:
     try:
         number = float(value)
@@ -990,7 +1012,23 @@ def _numeric_value(value: Any, default: float = 0.0) -> float:
     return number if math.isfinite(number) else default
 
 
-def normalize_optimizer_config(config: dict[str, Any], warnings: list[str]) -> None:
+def get_automagic_fused_conflicts(
+    config: dict[str, Any], gpu_ids: Any = None
+) -> list[str]:
+    """Execution constraints shared by validation and optimizer adaptation."""
+    conflicts = []
+    if _numeric_value(config.get("gradient_accumulation_steps"), 1) != 1:
+        conflicts.append("gradient_accumulation_steps must be 1 / gradient_accumulation_steps 必须为 1")
+    if _numeric_value(config.get("max_grad_norm"), 1) != 0:
+        conflicts.append("max_grad_norm must be 0 / max_grad_norm 必须为 0")
+    if config.get("mixed_precision", "bf16") == "fp16":
+        conflicts.append("mixed_precision cannot be fp16 / mixed_precision 不能为 fp16")
+    if isinstance(gpu_ids, (list, tuple)) and len(gpu_ids) > 1:
+        conflicts.append("only one GPU is supported / 仅支持单卡")
+    return conflicts
+
+
+def normalize_optimizer_config(config: dict[str, Any], warnings: list[str], gpu_ids: Any = None) -> None:
     """Normalize safe product behavior after validation and before TOML output."""
     optimizer_type = str(config.get("optimizer_type", ""))
     normalize_lora_muon_form_fields(config)
@@ -1005,8 +1043,11 @@ def normalize_optimizer_config(config: dict[str, Any], warnings: list[str]) -> N
         and config.get("came_weight_decouple") is False
     ):
         config.pop("came_fixed_decay", None)
-    _merge_form_arguments(config)
-    args, _ = parse_optimizer_args(config)
+    parsed, errors = parse_optimizer_args(config)
+    if errors:
+        raise ValueError("\n".join(errors))
+    args = collect_optimizer_args(config, parsed)
+    config.pop("optimizer_args_custom", None)
 
     if optimizer_type in PRODIGY_OPTIMIZERS:
         for key in ("learning_rate", "unet_lr", "text_encoder_lr"):
@@ -1043,7 +1084,7 @@ def normalize_optimizer_config(config: dict[str, Any], warnings: list[str]) -> N
         warmup_init = args.get("warmup_init", False)
         if warmup_init and relative_step is False:
             relative_step = True
-            _set_optimizer_arg(config, "relative_step", True)
+            args["relative_step"] = True
             warnings.append(
                 "AdaFactor: relative_step enabled because warmup_init=True / "
                 "warmup_init=True 时已启用 relative_step"
@@ -1079,13 +1120,13 @@ def normalize_optimizer_config(config: dict[str, Any], warnings: list[str]) -> N
 
     if optimizer_type == PRODIGYPLUS_OPTIMIZER_TYPE:
         if _is_effectively_enabled(args.get("fused_back_pass")):
-            _set_optimizer_arg(config, "fused_back_pass", False)
+            args["fused_back_pass"] = False
             warnings.append(
                 "[Conflict] ProdigyPlus fused_back_pass disabled because regular "
                 "optimizer.step() is used / 当前训练器使用常规 optimizer.step()，已关闭"
             )
         if "fused_backward_pass" in args:
-            _remove_optimizer_arg(config, "fused_backward_pass")
+            del args["fused_backward_pass"]
             warnings.append(
                 "[Conflict] ProdigyPlus fused_backward_pass removed because it is not a "
                 "valid optimizer argument / 参数名无效，已移除"
@@ -1110,7 +1151,7 @@ def normalize_optimizer_config(config: dict[str, Any], warnings: list[str]) -> N
     if optimizer_type == PRODIGY_OPTIMIZER_TYPE:
         warmup_steps = _numeric_value(config.get("lr_warmup_steps"), 0.0)
         if warmup_steps > 0 and args.get("safeguard_warmup") is not True:
-            _set_optimizer_arg(config, "safeguard_warmup", True)
+            args["safeguard_warmup"] = True
             warnings.append(
                 "Prodigy: safeguard_warmup=True enabled for external warmup / "
                 "检测到预热，已启用 safeguard_warmup"
@@ -1125,3 +1166,51 @@ def normalize_optimizer_config(config: dict[str, Any], warnings: list[str]) -> N
                 "Prodigy: external gradient clipping can affect D estimation / "
                 "外部梯度裁剪可能影响 D 估计"
             )
+
+    if optimizer_type == EMOSENS_OPTIMIZER_TYPE:
+        config["lr_scheduler"] = "constant"
+        config["lr_warmup_steps"] = 0
+        if is_empty_optimizer_value(config.get("learning_rate")):
+            model_type = config.get("model_train_type", "sdxl-lora")
+            rate = 0.1 if model_type == "anima-lora" else 1.0
+            config["learning_rate"] = rate
+            warnings.append(f"EmoSens + {model_type}: learning_rate auto-adjusted to {rate} / learning_rate 已自动调整为 {rate}")
+        if any(not is_empty_optimizer_value(config.get(key)) for key in ("unet_lr", "text_encoder_lr")):
+            warnings.append(
+                "EmoSens: component learning rates have no effect; uses learning_rate for all params / "
+                "EmoSens 仅使用 learning_rate，分量学习率不会生效"
+            )
+        args.setdefault("weight_decay", 0.01)
+
+    if optimizer_type == AUTOMAGIC_OPTIMIZER_TYPE:
+        if "fused_guard" in args:
+            del args["fused_guard"]
+            warnings.append(
+                "[Conflict] Automagic3 fused_guard is reserved and was removed / "
+                "Automagic3 fused_guard 是内部参数，已移除"
+            )
+        fused = args.get("fused", False)
+        conflicts = get_automagic_fused_conflicts(config, gpu_ids) if fused else []
+        args["fused"] = bool(fused and not conflicts)
+        if conflicts:
+            warnings.append("[Conflict] Automagic3 fused disabled / fused 已自动关闭: " + "; ".join(conflicts))
+        if args["fused"]:
+            args["fused_guard"] = True
+        args.setdefault("max_lr", AUTOMAGIC_MAX_LR_DEFAULT)
+        if config.pop("full_bf16", False):
+            warnings.append(
+                "[Conflict] Automagic3 compatibility mode requires FP32 trainable parameters; "
+                "full_bf16 disabled / Automagic3 兼容模式要求可训练参数保持 FP32，已关闭 full_bf16"
+            )
+        if config.get("lr_scheduler") != "constant" or config.get("lr_warmup_steps") not in (None, 0):
+            warnings.append(
+                "Automagic3: external LR scheduling disabled; TensorBoard reads the optimizer's "
+                "adaptive LR directly / 已禁用外部学习率调度，TensorBoard 将直接读取优化器的实际自适应 LR"
+            )
+        config["lr_scheduler"] = "constant"
+        config["lr_warmup_steps"] = 0
+
+    if args:
+        config["optimizer_args"] = [f"{key}={value!r}" for key, value in args.items()]
+    else:
+        config.pop("optimizer_args", None)

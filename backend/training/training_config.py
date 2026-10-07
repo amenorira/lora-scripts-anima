@@ -352,8 +352,6 @@ def extract_training_form(document: dict[str, Any]) -> dict[str, Any]:
     visit(document.get("parameters") or {})
     flat["model_train_type"] = document["profile"]["id"]
     normalize_lora_muon_form_fields(flat)
-    for legacy in LORA_MUON_LEGACY_FIELD_ALIASES:
-        flat.pop(legacy, None)
     normalize_attention_config(flat)
     return flat
 
@@ -370,6 +368,7 @@ def build_training_config(
         raise TrainingConfigError("Training form snapshot must be an object")
     form = dict(form)
     normalize_attention_config(form)
+    normalize_lora_muon_form_fields(form)
     resolved_document_id = str(document_id or uuid4())
     try:
         UUID(resolved_document_id)

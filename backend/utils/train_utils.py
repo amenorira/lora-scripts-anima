@@ -15,8 +15,6 @@ from backend.log import log
 _IMAGE_EXTS = frozenset({".jpg", ".jpeg", ".png", ".webp"})
 # 数据集子目录命名："repeat_名称"，如 10_zkz
 _DATASET_DIR_RE = re.compile(r"^\d+_.+")
-# 采样 prompt 里的功能开关（--n 负面词 / --s 步数 / --l 权重 / --d 种子）
-_PROMPT_FLAGS = ("--n", "--s", "--l", "--d")
 
 
 def validate_model(model_name: str):
@@ -91,18 +89,3 @@ def count_images(path: str, recursive: bool = True, stop_after: Optional[int] = 
         if stop_after is not None and count >= stop_after:
             break
     return count
-
-
-def is_prompt_like(s: str) -> bool:
-    """判断采样串里是否带 --n/--s/--l/--d 这类功能开关。"""
-    return any(flag in s for flag in _PROMPT_FLAGS)
-
-
-_FLOAT_CONFIG_KEYS = ("guidance_scale", "sigmoid_scale", "discrete_flow_shift")
-
-
-def fix_config_types(config: dict) -> None:
-    """TOML/JSON 里可能被写成字符串的浮点参数，就地转回 float。"""
-    for key in _FLOAT_CONFIG_KEYS:
-        if key in config:
-            config[key] = float(config[key])

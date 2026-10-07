@@ -93,9 +93,6 @@ async def _read_json_object(
     """解析请求体为 JSON 对象；失败时返回与原调用方一致的错误响应。"""
     try:
         payload = await request.json()
-    except AttributeError:
-        # 测试替身可能只实现 .body()（如 _BodyRequest）；语义与 request.json() 等价。
-        payload = json.loads((await request.body()).decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
         if with_error_code:
             return None, APIResponseFail(
@@ -478,14 +475,8 @@ async def update_dataset_repeat(request: Request):
 
 
 def get_sample_prompts(config: dict):
-    """Extract and format sample prompt configuration."""
+    """Build prompt text; filesystem errors must abort preparation."""
     import random
-
-    # backward compatibility
-    if "positive_prompts" not in config and "sample_prompts" in config:
-        return None, config["sample_prompts"]
-
-    dataset_subdirs = [p for p in Path(config["train_data_dir"]).iterdir() if p.is_dir()]
 
     positive_prompts = config.get('positive_prompts', None)
     negative_prompts = config.get('negative_prompts', '')
@@ -498,6 +489,7 @@ def get_sample_prompts(config: dict):
     randomly_choice_prompt = config.get('randomly_choice_prompt', False)
 
     if randomly_choice_prompt:
+        dataset_subdirs = [p for p in Path(config["train_data_dir"]).iterdir() if p.is_dir()]
         if len(dataset_subdirs) != 1:
             raise ValueError(
                 'Multiple subdirectories found / 多子文件夹; '
@@ -508,12 +500,8 @@ def get_sample_prompts(config: dict):
         caption_files = sorted(dataset_subdirs[0].glob('*.txt'))
         if not caption_files:
             raise ValueError('No .txt files found in dataset directory / 数据集路径没有 txt 文件')
-        try:
-            seed_val = config.get("seed", 2333)
-            sample_prompt_file = random.Random(int(seed_val)).choice(caption_files)
-            positive_prompts = sample_prompt_file.read_text(encoding="utf-8")
-        except OSError:
-            log.error(f"Failed to read prompt file / 读取失败: {sample_prompt_file}")
+        sample_prompt_file = random.Random(int(config.get("seed", 2333))).choice(caption_files)
+        positive_prompts = sample_prompt_file.read_text(encoding="utf-8")
 
     # Sanitise negative prompt: replace newlines with ", " to keep --n on one line
     negative_prompts = negative_prompts.replace(chr(10), ", ") if negative_prompts else ""
@@ -532,10 +520,7 @@ def get_sample_prompts(config: dict):
     else:
         sample_prompts_arg = ''
 
-    if positive_prompts and not positive_prompts.strip():
-        positive_prompts = None
-
-    return positive_prompts, sample_prompts_arg
+    return sample_prompts_arg
 
 
 def _cleanup_autosave(autosave_dir: str, keep: int = 50) -> None:
@@ -605,7 +590,7 @@ def _krea2_error(errors: list[str], error_code: str = "krea2PreflightFailed"):
 async def _create_krea2_run(config, gpu_ids, timestamp, form_snapshot, reserved_task):
     """Prepare the musubi Krea 2 profile under the caller's reservation."""
 
-    snapshot_form = dict(form_snapshot) if isinstance(form_snapshot, dict) else dict(config)
+    snapshot_form = dict(form_snapshot)
     snapshot_form["model_train_type"] = KREA2_PROFILE_ID
 
     validation_errors = validate_krea2_config(config)
@@ -879,11 +864,7 @@ async def _create_toml_file_reserved(config: dict, reserved_task):
     if str(config.get("network_module") or "") == "lycoris.kohya":
         requested = str(config.get("lycoris_kernel_backend") or "auto")
         lycoris_kernel_backend, lycoris_kernel_warning = detect_lycoris_kernel_backend(requested)
-    try:
-        from backend.training import adapt_config, detect_attention_backend, validate_training_config
-    except ImportError as e:
-        log.error(f"[Adapter] Failed to import training adapter / 训练适配器导入失败: {e}")
-        return _training_error(message=f"Training adapter import error / 训练适配器导入错误: {e}")
+    from backend.training import adapt_config, detect_attention_backend, validate_training_config
 
     validation_errors = validate_training_config(config, gpu_ids=gpu_ids)
     if validation_errors:
@@ -894,25 +875,13 @@ async def _create_toml_file_reserved(config: dict, reserved_task):
     # ── TE 磁盘缓存一致性检查（按引擎）：改 caption/dropout 率不会让缓存失效，启动前提示 ──
     ignore_te_cache_warnings = bool(config.pop("ignore_te_cache_warnings", None))
     if profile.id in TE_CACHE_CHECK_PROFILES and not ignore_te_cache_warnings:
-        try:
-            te_cache_warnings = await _settled_to_thread(check_te_cache, config, profile.id)
-        except Exception as exc:
-            log.warning(f"[TE cache] staleness check failed / 缓存一致性检查失败: {exc}")
-            te_cache_warnings = []
+        te_cache_warnings = await _settled_to_thread(check_te_cache, config, profile.id)
         if te_cache_warnings:
             return _training_error(
                 message="Text encoder cache may be stale / 文本编码器缓存可能已过期",
                 data={"errorCode": "teCacheStale", "warnings": te_cache_warnings},
             )
-    try:
-        train_utils.fix_config_types(config)
-    except (TypeError, ValueError) as e:
-        return _training_error(message=f"Invalid numeric value / 数字参数无效: {e}")
-
-    if gpu_ids is None:
-        adapted_config, adapter_warnings = adapt_config(config)
-    else:
-        adapted_config, adapter_warnings = adapt_config(config, gpu_ids=gpu_ids)
+    adapted_config, adapter_warnings = adapt_config(config, gpu_ids=gpu_ids)
     for w in adapter_warnings:
         log.warning(f"[Adapter] {w}")
     config = adapted_config
@@ -924,15 +893,11 @@ async def _create_toml_file_reserved(config: dict, reserved_task):
         step_estimate = await _settled_to_thread(estimate_training_steps, estimate_config)
     except StepEstimateError as exc:
         return _training_error(message=f"Training step calculation failed / 训练步数计算失败: {exc}")
-    except Exception as exc:
-        log.exception("Failed to estimate training steps before launch / 启动前训练步数计算失败")
-        return _training_error(message=f"Training step calculation failed / 训练步数计算失败: {exc}")
 
     from backend.training.validation import validate_scheduler_step_budget
 
     scheduler_errors = validate_scheduler_step_budget(
-        config, int((step_estimate or {}).get("total_steps") or 0),
-        int((step_estimate or {}).get("gpu_processes") or 1),
+        config, step_estimate["total_steps"], step_estimate["gpu_processes"],
     )
     if scheduler_errors:
         return _training_error(
@@ -940,14 +905,12 @@ async def _create_toml_file_reserved(config: dict, reserved_task):
         )
 
     # AdEMAMix 的 α/β3 调度按预估总步数自动注入（仅在用户留空对应字段时）
-    try:
-        from backend.training.optimizer_contracts import apply_ademamix_step_schedule
+    from backend.training.optimizer_contracts import apply_ademamix_step_schedule
 
-        total_steps = int((step_estimate or {}).get("total_steps") or 0)
-        for w in apply_ademamix_step_schedule(config, total_steps):
-            log.warning(f"[Adapter] {w}")
-    except Exception as exc:
-        log.warning(f"[Adapter] AdEMAMix schedule injection skipped / AdEMAMix 调度注入跳过: {exc}")
+    schedule_warnings = apply_ademamix_step_schedule(config, step_estimate["total_steps"])
+    adapter_warnings.extend(schedule_warnings)
+    for warning in schedule_warnings:
+        log.warning(f"[Adapter] {warning}")
 
     if "attn_mode" in config:
         attn_requested = config.get("attn_mode", "torch")
@@ -1026,16 +989,15 @@ async def _create_toml_file_reserved(config: dict, reserved_task):
             return _training_error(message=f"VAE model not found / VAE 模型不存在: {vae_path}")
 
     sample_prompts_arg = ""
-    if "prompt_file" in _ui_config and _ui_config["prompt_file"].strip() != "":
-        prompt_file = _ui_config["prompt_file"].strip()
+    # Raw trainer TOMLs call the prompt file sample_prompts; the UI calls it prompt_file.
+    prompt_file = str(_ui_config.get("prompt_file") or _ui_config.get("sample_prompts") or "").strip()
+    if prompt_file:
         if not os.path.exists(prompt_file):
             return _training_error(message=f"Sample prompt file not found / 采样提示词文件不存在: {prompt_file}")
         config["sample_prompts"] = prompt_file
     else:
         try:
-            positive_prompt, sample_prompts_arg = get_sample_prompts(config=_ui_config)
-            if not positive_prompt or not train_utils.is_prompt_like(sample_prompts_arg):
-                sample_prompts_arg = ""
+            sample_prompts_arg = await _settled_to_thread(get_sample_prompts, _ui_config)
 
         except ValueError as e:
             log.error(f"Error while processing prompts / 处理采样提示词时出错: {e}")
@@ -1129,16 +1091,10 @@ async def _create_toml_file_reserved(config: dict, reserved_task):
     )
 
     # 将适配器警告附加到返回结果中（前端弹窗展示）
-    if result.get("status") == "success" and adapter_warnings:
-        if "data" not in result or not isinstance(result["data"], dict):
-            result["data"] = {}
+    if lycoris_kernel_warning:
+        adapter_warnings.append(lycoris_kernel_warning)
+    if result["status"] == "success" and adapter_warnings:
         result["data"]["warnings"] = adapter_warnings
-    if result.get("status") == "success" and lycoris_kernel_warning:
-        result.setdefault("data", {})
-        if not isinstance(result["data"], dict):
-            result["data"] = {}
-        result["data"].setdefault("warnings", [])
-        result["data"]["warnings"].append(lycoris_kernel_warning)
 
     return result
 

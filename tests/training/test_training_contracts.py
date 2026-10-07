@@ -1,12 +1,17 @@
+import ast
+import copy
 import tempfile
 import unittest
 from dataclasses import asdict
 from pathlib import Path
+from unittest.mock import patch
 
 from PIL import Image
 
+from backend.training.adapter import adapt_config
 from backend.training.step_estimator import estimate_training_steps
 from backend.training.validation import validate_training_config
+from backend.server.routes.training import get_sample_prompts
 from tests.helpers import config_from_field_defaults
 
 
@@ -27,6 +32,106 @@ def valid_anima_config() -> dict:
 
 
 class TrainingValidationTests(unittest.TestCase):
+    def test_input_normalization_uses_schema_types_instead_of_text_contents(self):
+        config = dict(valid_anima_config(), learning_rate="1e-4", unet_lr="2e-4", lora_muon_momentum=0.9,
+                      output_name="00123", positive_prompts="123", resolution="1024")
+        self.assertEqual(validate_training_config(config), [])
+        self.assertEqual(config["learning_rate"], 1e-4)
+        self.assertEqual(config["unet_lr"], 2e-4)
+        self.assertEqual(config["output_name"], "00123")
+        self.assertEqual(config["positive_prompts"], "123")
+        self.assertEqual(config["resolution"], "1024")
+        self.assertNotIn("lora_muon_momentum", config)
+        adapted, _ = adapt_config(config)
+        self.assertEqual(adapted["learning_rate"], 1e-4)
+        self.assertTrue(get_sample_prompts(config).startswith("123 --n "))
+
+    def test_explicit_sample_prompts_do_not_scan_the_dataset(self):
+        with patch.object(Path, "iterdir", side_effect=AssertionError("unnecessary dataset scan")):
+            text = get_sample_prompts({"positive_prompts": "first\n\nsecond", "negative_prompts": "bad\nblur"})
+        self.assertEqual(len(text.splitlines()), 2)
+        self.assertIn("first --n bad, blur", text)
+        self.assertEqual(get_sample_prompts({"positive_prompts": "   "}), "")
+
+    def test_unreadable_random_caption_aborts_instead_of_using_another_prompt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            subset = Path(directory) / "1_images"
+            subset.mkdir()
+            (subset / "image.txt").write_text("caption", encoding="utf-8")
+            with patch.object(Path, "read_text", side_effect=PermissionError("unreadable caption")):
+                with self.assertRaises(PermissionError):
+                    get_sample_prompts({"train_data_dir": directory, "randomly_choice_prompt": True,
+                                        "positive_prompts": "must not silently use this"})
+
+    def test_optimizer_custom_defaults_and_form_overrides_share_one_contract(self):
+        for eps in ("1e-8", "0.00000001", 1e-8):
+            config = dict(valid_anima_config(), optimizer_type="AdamW", eps=eps,
+                          optimizer_args=["eps=1e-6"], optimizer_args_custom="eps=1e-7")
+            self.assertEqual(validate_training_config(config), [])
+            adapted, _ = adapt_config(config)
+            args = {key: ast.literal_eval(value) for key, value in
+                    (item.split("=", 1) for item in adapted["optimizer_args"])}
+            self.assertEqual(args["eps"], 1e-7)
+            self.assertEqual(sum(item.startswith("eps=") for item in adapted["optimizer_args"]), 1)
+            config["eps"] = 1e-5
+            adapted, _ = adapt_config(config)
+            self.assertIn("eps=1e-05", adapted["optimizer_args"])
+
+    def test_invalid_advanced_optimizer_args_are_not_silently_discarded(self):
+        for custom in ("eps=unquoted", "missing_separator"):
+            config = dict(valid_anima_config(), optimizer_type="AdamW", optimizer_args_custom=custom)
+            self.assertTrue(any("optimizer_args" in error for error in validate_training_config(config)))
+            with self.assertRaises(ValueError):
+                adapt_config(config)
+
+    def test_sequence_default_representations_preserve_advanced_override(self):
+        for eps in ("1e-30, 1e-3", "(1e-30, 0.001)", "[1e-30, 0.001]", [1e-30, 0.001]):
+            config = dict(valid_anima_config(), optimizer_type="AdaFactor", adafactor_eps=eps,
+                          optimizer_args_custom="eps=(1e-20, 0.01)")
+            adapted, _ = adapt_config(config)
+            args = {key: ast.literal_eval(value) for key, value in
+                    (item.split("=", 1) for item in adapted["optimizer_args"])}
+            self.assertEqual(args["eps"], (1e-20, 0.01))
+
+    def test_validation_checks_effective_custom_args_even_with_default_form_values(self):
+        config = dict(valid_anima_config(), optimizer_type="AdamW", eps=1e-8,
+                      optimizer_args_custom="eps=-1")
+        self.assertTrue(any("eps" in error for error in validate_training_config(config)))
+        config = dict(valid_anima_config(), optimizer_type="AdaFactor", enable_loraplus=True,
+                      loraplus_lr_ratio=16, adafactor_warmup_init=False,
+                      optimizer_args_custom="warmup_init=True")
+        self.assertTrue(any("LoRA+" in error and "warmup_init" in error
+                            for error in validate_training_config(config)))
+
+    def test_adapter_does_not_mutate_input_argument_lists(self):
+        config = dict(valid_anima_config(), network_args=["rank_dropout=0.1"],
+                      network_args_custom="module_dropout=0.2", optimizer_args=["eps=1e-7"])
+        original = copy.deepcopy(config)
+        adapt_config(config)
+        self.assertEqual(config, original)
+
+    def test_image_augmentation_cache_contracts(self):
+        for profile, module in (("anima-lora", "networks.lora_anima"), ("sdxl-lora", "networks.lora")):
+            with self.subTest(profile=profile):
+                config = dict(valid_anima_config(), model_train_type=profile, network_module=module)
+                # Flipping remains compatible with both kinds of latent caching.
+                config["flip_aug"] = True
+                self.assertEqual(validate_training_config(config), [])
+                for cache_key in ("cache_latents", "cache_latents_to_disk"):
+                    conflicting = dict(config, random_crop=True, cache_latents=False, cache_latents_to_disk=False)
+                    conflicting[cache_key] = True
+                    errors = validate_training_config(conflicting)
+                    self.assertTrue(any("random_crop" in error and cache_key in error for error in errors), errors)
+
+                config.update(random_crop=True, cache_latents=False, cache_latents_to_disk=False)
+                self.assertEqual(validate_training_config(config), [])
+                adapted, warnings = adapt_config(config)
+                for key in ("flip_aug", "random_crop"):
+                    self.assertIs(adapted[key], True)
+                    self.assertFalse(any("Unknown field" in warning and key in warning for warning in warnings), warnings)
+                self.assertIs(adapted["cache_latents"], False)
+                self.assertIs(adapted["cache_latents_to_disk"], False)
+
     def test_rejects_unsafe_anima_values(self):
         cases = {
             "blocks_to_swap": 9,

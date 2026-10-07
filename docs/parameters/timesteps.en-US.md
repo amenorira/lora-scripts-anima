@@ -10,28 +10,33 @@ The following table provides a useful way to think about these ranges:
 | Medium | Connecting the overall image with local features | Consistency of identity, shape, and major features |
 | Low | Texture, linework, edges, and facial details | Hair strands, fabric texture, brushwork, and small accessories |
 
-These are overlapping tendencies, not separate capabilities. Identity, color, and structure depend on multiple timesteps. Sampling a range more often does not guarantee a corresponding improvement.
+These emphases overlap. Both character and style training need coverage across several noise ranges.
 
 Timestep sampling controls how often each noise level appears. Loss weighting controls how much a sampled prediction error contributes to the training loss. Both can change the emphasis of training, but at different stages.
 
 <!-- doc-anchor: quick-start -->
 ## Baseline configuration
 
-When no baseline run is available, the defaults for the selected training profile can serve as the reference configuration. Timestep controls are advanced tuning tools; dataset quality, captions, learning rate, and when to stop training usually have a more direct effect on training problems.
+Use the selected profile's defaults for an initial run. Tune timesteps when a baseline still lacks structure or detail, after checking data quality, captions, learning rate, and stopping point.
 
-The Anima LoRA default baseline is:
+<!-- doc-anchor: defaults -->
+### Profile defaults
 
-```toml
-timestep_sampling = "sigmoid"
-sigmoid_scale = 1.0
-weighting_scheme = "uniform"
-```
+| Training profile | Default sampling | Default distribution parameters | Default loss weighting |
+| --- | --- | --- | --- |
+| Anima | `sigmoid` | `sigmoid_scale=1.0` | `uniform` |
+| Krea 2 | `shift` | `sigmoid_scale=1.0`, `discrete_flow_shift=2.5` | `none` |
 
-Krea 2 defaults to `shift`, `sigmoid_scale=1.0`, `discrete_flow_shift=2.5`, and `weighting_scheme=none`, and that set is a fine baseline too.
+In the current implementations, `uniform` and `none` both mean that no extra per-timestep loss weighting is applied. Krea 2 uses `none` for compatibility with its backend and older configurations. After importing an old preset, rely on the values shown in the form and distribution preview.
 
-Both defaults cover a range of noise levels rather than focusing on detail or structure alone, which makes them reasonable starting points for character, style, and general concept LoRAs. All of these parameters live in the timestep/sampling section of the training form.
+Both defaults cover several noise ranges and suit initial character, style, and concept runs. Krea 2's fixed shift biases its distribution toward high noise. These controls are in the timestep/sampling section of the training form.
 
-> **Configuration note:** timestep settings are not a quality switch. Changing several timestep controls without a baseline makes the result hard to attribute. Run the defaults first; they give you a reference for later comparisons.
+| Goal | Control | Default |
+| --- | --- | --- |
+| Sample both extremes more often | `sigmoid_scale` | `1.0`; higher values spread samples toward both ends |
+| Favor higher or lower noise | `discrete_flow_shift` | Anima `1.0`, Krea 2 `2.5`; applies to `shift` and `sigma` only |
+| Give image subsets different noise ranges | `subset_timestep_offsets` | Unset; supported by selected Anima modes only |
+| Change the weight of sampled errors | `weighting_scheme` | Anima `uniform`, Krea 2 `none`; both use equal weights |
 
 <!-- doc-anchor: terminology -->
 ## Types of steps
@@ -44,7 +49,7 @@ The trainer uses the word “step” for three unrelated things:
 | Training timestep | How much noise was added to the current image | `timestep_sampling` |
 | Generation steps | How many denoising calculations are used to generate an image | `sample_steps` |
 
-For example, “training step 500” means the LoRA has received 500 optimizer updates. Noise timestep `t≈500` instead means the current sample is mixed with roughly half noise; the similar numbers are a coincidence. Images within the same optimizer update may also receive different noise timesteps.
+“Training step 500” means 500 optimizer updates. In Anima/Krea 2, noise timestep `t≈500` means the image and noise mixing coefficients are each about one half. Each image in an update gets its own sampled noise timestep.
 
 <!-- doc-anchor: visualizer -->
 ## Distribution preview
@@ -53,8 +58,6 @@ For example, “training step 500” means the LoRA has received 500 optimizer u
 
 This is a static illustration of an example configuration. Open **View timestep distribution** under the training timestep sampling field to inspect your own settings and switch between the base and overall training distributions. The sidebar shows sampling settings, base and current median timesteps, and loss weighting. Hover the curve to read values at a particular position.
 
-The preview shows how training samples and loss weights are distributed. It does not predict image quality.
-
 | Preview element | How to read it |
 | --- | --- |
 | Sampling curve | Over intervals of equal width, more area under the curve means that noise range is sampled more often |
@@ -62,26 +65,21 @@ The preview shows how training samples and loss weights are distributed. It does
 | Loss-weight curve | Shows the multiplier applied to a sample’s prediction error after it is sampled |
 | Reference resolution | Determines resolution-dependent shifts; it does not represent every bucket in the dataset |
 
-High noise tends to emphasize global structure and low noise local refinement, but these are not separate capabilities. Sampling, loss weights, and gradients all affect learning, so curve height is not a measure of parameter-update size. When a discrete noise table is used, a continuous curve is only a visualization of its approximate distribution.
+The curves show sampling frequency and loss weights, not update size or image quality. Discrete noise tables are visualized with a continuous approximation.
 
 The horizontal axis follows the physical denoising order of image generation: left is maximum noise `t≈1000` (pure noise, structure & composition stage), while right is clean `t≈0` (low noise, fine detail stage).
 
-The vertical axis displays the exact probability density <var>f</var>(<var>t</var>), while the weight polyline uses a logarithmic display scale. Uniform weighting applies the same loss weight to every timestep; it does not mean the observed loss stays constant.
+The vertical axis shows probability density <var>f</var>(<var>t</var>); the weight curve uses a logarithmic scale. Uniform weighting applies the same multiplier at every timestep. The observed loss still changes with prediction error.
 
-<div class="doc-equation doc-equation-compact" role="group" aria-label="Approximate influence of a noise region on training">
-  <div class="doc-equation-kicker">Simplified relationship, not an exact prediction</div>
-  <div class="doc-equation-expression">training influence ≈ sampling frequency × loss weight × current error</div>
-  <p>The current error changes with the image, caption, and stage of training. The preview therefore shows allocation, not a guaranteed amount of learning.</p>
-</div>
+The preview is calculated directly from the sampling and shift formulas, so refreshing produces the same result. Rounding can make the percentages total `99.9%` or `100.1%`. Opening it does not start training or edit the configuration.
 
-The preview curve is not a random simulation: it is computed directly from the active sampling algorithm and shift formulas, and looks the same on every refresh. Rounding can make the three percentages total `99.9%` or `100.1%`. Opening or refreshing the preview never starts training or edits the TOML configuration.
+<span id="dataset-guidance"></span>
+<span id="scenarios"></span>
 
-<!-- doc-anchor: dataset-guidance -->
-<!-- doc-anchor: scenarios -->
 <!-- doc-anchor: diagnosis -->
 ## Adjusting from training results
 
-Timestep tuning is most useful once a reference run is available. Without one, use the defaults for the current training profile. First identify what is missing, then check whether the training images actually contain that information.
+Check that the training images contain the missing features, then choose a direction from the table.
 
 | Observation | Check first | Direction to test |
 | --- | --- | --- |
@@ -91,50 +89,7 @@ Timestep tuning is most useful once a reference run is available. Without one, u
 | Repeated pose or background | Duplicate data and signs of overfitting | Check data and stopping point rather than immediately blaming a noise range |
 | A style changes colors but not shapes | Variety of subjects and compositions | Once coverage is adequate, compare a distribution with more emphasis on global structure |
 
-These are experimental directions, not diagnostic rules. Both characters and styles depend on several noise ranges: character training is not limited to facial detail, and style training is not limited to texture or brushwork.
-
-Change one timestep setting at a time. Keep the dataset, training budget, prompts, generation seeds, resolution, and LoRA inference weight fixed. Compare several generated samples rather than judging by one preview or a lower training loss.
-
-<!-- doc-anchor: flow-matching -->
-## How timesteps work
-
-This section describes the underlying flow-matching path. The formulas are not required for using the defaults; return here when you need to tune the related parameters.
-
-Before training, the VAE encodes each image into a latent — the representation the model actually operates on. Let <var>x</var> be the image latent, <var>ε</var> random noise, and <var>t</var> a normalized timestep. The noisy input is:
-
-<div class="doc-equation" role="group" aria-label="Flow-matching noisy input equation">
-  <div class="doc-equation-kicker">Input after adding noise</div>
-  <div class="doc-equation-expression"><var>x</var><sub>t</sub> = (1 − <var>t</var><span class="doc-math-close">)</span> · <var>x</var> + <var>t</var> · <var>ε</var></div>
-  <p>Smaller <var>t</var> stays closer to the image. Larger <var>t</var> moves closer to pure noise.</p>
-</div>
-
-| Timestep region | What the model sees | Effects that often become visible |
-| --- | --- | --- |
-| Low noise, `t≈0` | Most image information remains | Linework, texture, color, facial features, and clothing detail |
-| Mid noise, `t≈0.5` | Image and noise are strongly mixed | Balance among identity, style, shape, and detail |
-| High noise, `t≈1` | The input is close to pure noise | Subject semantics, silhouette, pose, composition, and global structure |
-
-This table is an intuition aid, not a strict division of model capabilities. Identity, detail, and composition span many timesteps, and the outcome still depends on the dataset, captions, and base model.
-
-The current Anima and Krea 2 implementations train the model to predict the direction from data toward noise:
-
-<div class="doc-equation doc-equation-compact" role="group" aria-label="Flow-matching training target">
-  <div class="doc-equation-kicker">Prediction target</div>
-  <div class="doc-equation-expression"><var>v</var> = <var>ε</var> − <var>x</var></div>
-  <p>Generation follows the learned path in reverse, starting from high noise and moving toward a clean image.</p>
-</div>
-
-Training code also uses <var>σ</var> for the noise mixing ratio — this is the sigma in weight names such as `sigma_sqrt` and `cosmap`. In the flow-matching paths covered here <var>σ</var> moves in the same direction as <var>t</var>: values near `0` are clean, values near `1` are close to pure noise. The UI presents this range as approximately `0–1000` timesteps.
-
-<!-- doc-anchor: defaults -->
-## Profile defaults
-
-| Training profile | Default sampling | Default distribution parameters | Default loss weighting |
-| --- | --- | --- | --- |
-| Anima | `sigmoid` | `sigmoid_scale=1.0` | `uniform` |
-| Krea 2 | `shift` | `sigmoid_scale=1.0`, `discrete_flow_shift=2.5` | `none` |
-
-In the current implementations, `uniform` and `none` both mean that no extra per-timestep loss weighting is applied. Krea 2 uses `none` for compatibility with its backend and older configurations. After importing an old preset, rely on the values shown in the form and distribution preview.
+Change one timestep setting per run and compare several generated samples. See Controlled comparisons for the full procedure.
 
 <!-- doc-anchor: sampling -->
 ## `timestep_sampling`: which timesteps appear most often
@@ -153,6 +108,8 @@ In the current implementations, `uniform` and `none` both mean that no extra per
 
 ### `sigmoid`
 
+With `sigmoid_scale=1.0` and no shift, the distribution is symmetric and concentrated around mid noise. Across the preview's three equal-width regions, the low-, mid-, and high-noise shares are about 24.4%, 51.2%, and 24.4%.
+
 Sigmoid sampling takes a standard normal random value and maps it into the `0–1` range:
 
 <div class="doc-equation" role="group" aria-label="Sigmoid timestep sampling equation">
@@ -161,31 +118,31 @@ Sigmoid sampling takes a standard normal random value and maps it into the `0–
   <p><var>s</var> is <code>sigmoid_scale</code>. Its default value is 1.0.</p>
 </div>
 
-With `sigmoid_scale=1.0`, the distribution is symmetric and clearly concentrated around mid noise. In the default 1024×1024 preview, the low, mid, and high regions are roughly 21%, 57%, and 21%; exact values vary slightly with settings and the region boundaries.
-
 ### `uniform`
 
 `uniform` samples evenly across the full timestep range. Compared with the default sigmoid distribution, it gives both the low- and high-noise endpoints substantially more training time.
 
-Even coverage is not automatically better. With a small or repetitive dataset, the extra endpoint training can also strengthen memorized backgrounds, fixed poses, and image artifacts.
+Compare it with sigmoid when both ends need more training coverage.
 
 ### `shift`
 
-`shift` first creates a sigmoid distribution, then uses `discrete_flow_shift` to move the whole distribution toward low or high noise. Use `shift` after you have a baseline and test images confirm the distribution should lean toward one end.
+`shift` applies `discrete_flow_shift` to a sigmoid distribution. Use it to move training emphasis toward lower or higher noise.
 
 ### `sigma`
 
 `sigma` selects entries from the training scheduler's discrete noise table, and `discrete_flow_shift` changes that table.
 
-When `weighting_scheme` is `logit_normal` or `mode`, it also changes where samples are drawn. With `sigma_sqrt` or `cosmap`, sampling keeps the ordinary density and only the loss weight changes afterward.
+`weighting_scheme=logit_normal` or `mode` changes how table indices are sampled. Other options sample indices uniformly. Since `discrete_flow_shift` changes the table's noise values, uniform indices do not imply uniform timesteps. `sigma_sqrt` and `cosmap` only change loss weights.
 
 ### `flux_shift` and `krea2_shift`
 
-These modes derive their shift from the current latent grid size, so higher resolutions can push the resulting distribution further toward high noise. They ignore the fixed `discrete_flow_shift` value.
+These modes compute a shift from the latent grid size. More grid positions bias sampling further toward high noise. Both ignore the fixed `discrete_flow_shift` value.
 
 When buckets are enabled, images with similar resolutions and aspect ratios are grouped together. Each bucket uses its own latent dimensions, so a preview at one reference resolution cannot represent every bucket in the dataset.
 
 ### `logsnr`
+
+`logit_mean` defaults to `0`: higher values favor low noise and lower values favor high noise. `logit_std` defaults to `1`: higher values spread samples out and lower values concentrate them. These names are shared with `sigma + logit_normal`, but the conversion formulas differ, so their values are not interchangeable.
 
 SNR is the ratio of signal strength to noise strength, and LogSNR is its logarithmic form. Higher LogSNR means a stronger image signal and less noise.
 
@@ -197,12 +154,10 @@ Krea 2 `logsnr` draws a LogSNR value from the distribution defined by `logit_mea
   <p><var>μ</var> is <code>logit_mean</code>; <var>σ</var> is <code>logit_std</code>.</p>
 </div>
 
-This mode shares parameter names with `sigma + logit_normal`, but the conversion path is different. Parameter signs do not fully describe the final direction; the distribution preview shows the converted result directly.
-
 <!-- doc-anchor: sigmoid-scale -->
 ## `sigmoid_scale`: how far the distribution spreads
 
-`sigmoid_scale` controls how widely timesteps are spread. With no timestep shift, smaller values concentrate sampling around medium noise levels. Higher values make both low- and high-noise timesteps more common.
+`sigmoid_scale` defaults to `1.0` and controls the spread. Raise it for more samples at both extremes; lower it to concentrate samples near the middle.
 
 | Adjustment | Distribution change | What it means for training |
 | --- | --- | --- |
@@ -211,12 +166,12 @@ This mode shares parameter names with `sigma + logit_normal`, but the conversion
 
 This table describes sigmoid sampling without an additional shift. When a fixed, resolution-dependent, or subset shift is applied, use the preview to check the resulting noise proportions.
 
-Increasing this setting does not selectively strengthen detail or composition. To move training toward one end of the noise range, adjust the timestep shift rather than only widening the distribution.
+To favor just one end of the noise range, adjust the timestep shift.
 
 <!-- doc-anchor: flow-shift -->
 ## `discrete_flow_shift`: moving the whole distribution
 
-A timestep shift moves sampling toward higher or lower noise levels. It changes which timesteps are sampled, not the loss weight of each sample.
+`discrete_flow_shift` moves sampling toward one end. It defaults to `1.0` for Anima and `2.5` for Krea 2. Higher values favor high noise; lower values favor low noise. Values must be greater than `0`. Applies only to `shift` and `sigma`.
 
 | `discrete_flow_shift` | Direction | Training emphasis to compare |
 | --- | --- | --- |
@@ -262,6 +217,14 @@ timestep_sampling = { offset = -0.25 }
 
 During training, the offset is carried with each image into the batch. Images from `10_face` use `-0.25`, while images from `3_full_body` use `0.20`; in a mixed batch, each image keeps its own subset's offset. Regularization data does not receive these offsets.
 
+### Supported modes and recommended range
+
+Subset offsets are supported by `sigmoid`, `shift`, and `flux_shift`. `uniform` and `sigma` do not read this value; if the value is passed through the API anyway, training still runs and the offset simply has no effect.
+
+Start within `-0.5` to `+0.5`: test small negative offsets for close-ups and textures, and small positive offsets for full-body or structural images. Larger absolute values push samples further toward one end. Adding a positive offset to an existing high-noise shift further reduces low-noise coverage.
+
+The preview shows the base distribution (all offsets zero), the overall distribution, or an individual subset. Adjust one subset at a time and keep the default run as a control. Offsets affect training sampling only; validation loss remains comparable when the other validation settings stay fixed.
+
 ### Where the offset is applied
 
 The offset is added to the normal random sample first. The result is then scaled by `sigmoid_scale` and passed through `sigmoid`; with `shift` or `flux_shift`, an additional overall remapping follows:
@@ -270,21 +233,7 @@ The offset is added to the normal random sample first. The result is then scaled
 timestep = sigmoid( sigmoid_scale × (random sample + offset) )
 ```
 
-In other words, before the sigmoid mapping, the distribution shifts as a whole by `offset × sigmoid_scale`.
-
-Subset offsets use a different convention: negative values favor low noise, positive values favor high noise, and 0 leaves the subset unchanged. For example, close-ups and full-body images can use different offsets, but image type alone does not establish which offset will work best.
-
-Shifting redistributes training opportunities. More low-noise training cannot supply detail that is missing from the source images, and more high-noise training cannot reveal the true unseen structure of a target for which the dataset lacks views.
-
-With `timestep_sampling=sigma`, `weighting_scheme=logit_normal` or `mode` also changes the sampled distribution, but it changes the base distribution shared by every subset, not the offset of a single subset. The `sigma` path never reads `subset_timestep_offsets`; weighting options that change the base distribution cannot substitute for a true per-subset offset.
-
-### Supported modes and recommended range
-
-Subset offsets are supported by `sigmoid`, `shift`, and `flux_shift`. `uniform` and `sigma` do not read this value; if the value is passed through the API anyway, training still runs and the offset simply has no effect.
-
-Start with values in the `-0.5` to `+0.5` range. Larger absolute values push the whole distribution toward one end; with `shift` or `flux_shift`, positive offsets can starve the low-noise side quickly. A small negative offset is a reasonable starting point for close-up and texture-heavy subsets, while full-body or structure-heavy subsets can be tested with a small positive value. These are experiment starting points, not fixed recipes.
-
-The UI preview can show the base distribution (all offsets zero), the overall training distribution, and an individual subset. Keep the default run as a control and adjust one subset offset at a time. Offsets affect training sampling only; validation stays unbiased so validation loss remains comparable.
+Negative offsets favor low noise, positive offsets favor high noise, and `0` preserves the original distribution. `sigmoid_scale` scales both the random sample and the offset.
 
 <!-- doc-anchor: weighting -->
 ## Sampling frequency and loss weight are separate controls
@@ -299,7 +248,7 @@ Sampling answers “How often is this noise level used?” Loss weighting answer
 | `logit_normal` | Sampling frequency in the `sigma` path | Does not add loss weights or enable logit-normal sampling in other paths |
 | `mode` | Sampling frequency in the `sigma` path | Does not add loss weights; `mode_scale` controls the distribution |
 
-Larger loss weights do not guarantee better identity or style fidelity. In particular, `sigma_sqrt` is a weighting rule, not a detail-enhancement switch.
+Keep `uniform` / `none` for an initial run. Test `sigma_sqrt` to give low-noise errors more weight, or `cosmap` to emphasize mid-noise errors.
 
 ### Exact weights for `sigma_sqrt` and `cosmap`
 
@@ -318,22 +267,21 @@ Larger loss weights do not guarantee better identity or style fidelity. In parti
 <!-- doc-anchor: logit-normal -->
 ### `logit_normal`, `logit_mean`, and `logit_std`
 
-These controls change sampling only when `timestep_sampling=sigma`.
+`weighting_scheme=logit_normal` applies only with `timestep_sampling=sigma`. In this mode:
 
-- `logit_mean=0`: the density is roughly symmetric.
-- Positive values usually shift the sampled timesteps toward low noise; negative values toward high noise.
-- Smaller `logit_std` values concentrate samples. Larger values spread them toward the endpoints.
+- `logit_mean` defaults to `0`, giving a symmetric distribution of table indices. Higher values favor low noise; lower values favor high noise.
+- `logit_std` defaults to `1`. Lower values concentrate samples; higher values spread them toward the endpoints.
 
-The scheduler shift also affects the final mapping, so use the preview to confirm the direction and strength. With `sigmoid + logit_normal`, logit-normal changes neither sampling nor loss weight.
+The scheduler's fixed shift determines the final distribution's position. With `sigmoid + logit_normal`, the latter changes neither sampling nor loss weights. Krea 2's `logsnr` reads these two values directly; see its sampling description.
 
 <!-- doc-anchor: mode -->
 ### `mode` and `mode_scale`
 
 `mode` changes sampling only when `timestep_sampling=sigma`. It does not add loss weighting.
 
-- `mode_scale=0`: close to uniform density.
-- Larger values: more samples gather around mid noise.
-- Default `1.29`: already has a clear mid-noise emphasis.
+- `mode_scale=0` samples noise-table indices uniformly.
+- Increasing it from `0` to the default `1.29` concentrates indices around the table's middle.
+- The fixed shift still changes the noise level represented by that middle. Keep `1.29` for an initial run.
 
 <!-- doc-anchor: compatibility -->
 ## Parameter activation matrix
@@ -355,7 +303,7 @@ The scheduler shift also affects the final mapping, so use the preview to confir
 SDXL does not use the Anima/Krea 2 flow-matching sampling options described above. The trainer provides two separate range controls for SDXL:
 
 - `min_timestep`: the lowest allowed noise timestep; blank uses `0`.
-- `max_timestep`: the highest allowed noise timestep; blank uses `1000`.
+- `max_timestep`: the exclusive upper bound; blank uses `1000`, giving the default range `0–999`.
 - Raising `min_timestep` removes the cleanest low-noise samples.
 - Lowering `max_timestep` removes the noisiest samples.
 
@@ -366,19 +314,12 @@ These parameters crop the allowed range. They are not equivalents of `sigmoid_sc
 <!-- doc-anchor: common-mistakes -->
 ## Common misconceptions
 
-1. `sigmoid + logit_normal` does not enable logit-normal sampling; it is active only with `sigma`.
-2. `discrete_flow_shift` is not used by every sampling mode.
-3. High noise does not automatically mean higher quality, and low noise does not guarantee better detail.
-4. Timestep tuning cannot create views, structures, or drawing rules missing from the dataset.
-5. `sample_flow_shift` is a generation-preview control, not a training timestep setting.
-6. The training `seed` changes the random sequence of sampled timesteps, but not the long-run theoretical distribution. The document preview evaluates the analytical PDF deterministically without random simulation, so changing the training seed does not change the chart.
-7. Batch size and GPU count do not change the theoretical distribution, although they affect short-run sampling variance.
-8. Timestep settings do not change the exported LoRA format or require an identically named sampler during inference.
-9. `subset_timestep_offsets` only works with `sigmoid`, `shift`, and `flux_shift`; it has no effect with `uniform` or `sigma`.
-10. Subset offsets are applied per image according to its subset, not once for the whole batch using the last subset value.
+- `sample_flow_shift` controls generation previews and does not change training timestep sampling.
+- The seed changes the sampled sequence, not the theoretical distribution shown in the preview. Batch size and GPU count affect short-run sampling variation.
+- Timestep settings do not change the LoRA file format or require a matching sampler at inference.
 
 <!-- doc-anchor: testing -->
-## Controlled comparison methodology
+## Controlled comparisons
 
 1. **Baseline:** one run uses the defaults for the selected profile.
 2. **Fixed controls:** the dataset, random seed, rank, alpha, learning rate, and total training steps remain unchanged.
@@ -388,12 +329,31 @@ These parameters crop the allowed range. They are not equivalents of `sigmoid_sc
 
 Training loss is a supporting signal, not a sufficient evaluation on its own. Whether a timestep configuration is better should be decided by controlled samples and the requirements of your actual use case.
 
+<!-- doc-anchor: flow-matching -->
+## How timesteps work
+
+Before training, the VAE encodes each image into a latent — the representation the model actually operates on. Let <var>x</var> be the image latent, <var>ε</var> random noise, and <var>t</var> a normalized timestep. The noisy input is:
+
+<div class="doc-equation" role="group" aria-label="Flow-matching noisy input equation">
+  <div class="doc-equation-kicker">Input after adding noise</div>
+  <div class="doc-equation-expression"><var>x</var><sub>t</sub> = (1 − <var>t</var><span class="doc-math-close">)</span> · <var>x</var> + <var>t</var> · <var>ε</var></div>
+  <p>Smaller <var>t</var> stays closer to the image. Larger <var>t</var> moves closer to pure noise.</p>
+</div>
+
+The current Anima and Krea 2 implementations train the model to predict the direction from data toward noise:
+
+<div class="doc-equation doc-equation-compact" role="group" aria-label="Flow-matching training target">
+  <div class="doc-equation-kicker">Prediction target</div>
+  <div class="doc-equation-expression"><var>v</var> = <var>ε</var> − <var>x</var></div>
+  <p>Generation follows the learned path in reverse, starting from high noise and moving toward a clean image.</p>
+</div>
+
+Training code also uses <var>σ</var> for the noise mixing ratio — this is the sigma in weight names such as `sigma_sqrt` and `cosmap`. In the flow-matching paths covered here <var>σ</var> moves in the same direction as <var>t</var>: values near `0` are clean, values near `1` are close to pure noise. The UI presents this range as approximately `0–1000` timesteps.
+
 <!-- doc-anchor: evidence -->
 ## Evidence and references
 
-Fact-checked on **2026-08-29**. Code links below are pinned to the reviewed revisions.
-
-**Implementation facts:** The formulas and parameter activation behavior in this guide reflect the training code and configuration wiring actually used in this project:
+The formulas and parameter relationships are implemented in the following local files. Pinned links below are retained as references:
 
 - The sd-scripts fork's `library/flux_train_utils.py`: `sigmoid`, `shift`, and `flux_shift` sampling, the `sigma_sqrt` and `cosmap` weighting formulas, and the `discrete_flow_shift` transform.
 - The Anima trainer's `anima_train_network.py`: reads per-sample subset offsets from batch `custom_attributes` and applies them only during training.
@@ -401,11 +361,7 @@ Fact-checked on **2026-08-29**. Code links below are pinned to the reviewed revi
 - `library/anima_train_utils.py`: Anima's sampling and loss-weighting dispatch.
 - The musubi-tuner fork's `src/musubi_tuner/training/trainer_base.py`: Krea 2's `krea2_shift` and `logsnr` sampling implementations.
 - The musubi-tuner fork's `src/musubi_tuner/training/timesteps.py`: the shared density and loss-weighting formulas.
-- The frontend distribution preview is implemented in `frontend/js/training-core.js` as a deterministic analytical PDF sampled at 120 points, with a separate loss-weight curve when applicable.
-
-**Model and upstream evidence:** The Anima and Krea 2 training paths use flow-matching noise and the training target `v = ε − x`. The `sigmoid` sampling scheme and the `discrete_flow_shift` transform come from [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis (SD3)](https://arxiv.org/abs/2403.03206). The empirical starting points for dataset sizes in this guide are this trainer's own suggestions; the `1.1–1.4` range for style training matches the official Anima example style LoRA, which uses `sigmoid_scale=1.3`.
-
-**Experience requiring local validation:** The exact `sigmoid_scale` values suggested for different dataset sizes, the tendencies described for few-shot characters and styles, and the intuitive division of low noise as detail and high noise as structure should be verified with a fixed-condition comparison on the target dataset.
+- `frontend/js/training-core.js`: analytical probability density and, where applicable, a separate loss-weight curve.
 
 References:
 

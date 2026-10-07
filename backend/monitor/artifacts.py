@@ -8,7 +8,6 @@ import os
 import re
 import threading
 import time
-import tomllib
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
@@ -16,7 +15,7 @@ from urllib.parse import quote
 
 from backend.constants import REPO_ROOT, OUTPUT_DIR
 from backend.image_preview import build_image_preview_url
-from backend.monitor.run_registry import import_legacy_external_runs, iter_run_records
+from backend.monitor.run_registry import import_legacy_external_runs, iter_run_records, read_run_config
 from backend.monitor.log_parser import clean_bytes, record_frames
 from backend.monitor.log_index import indexed_slice
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
@@ -182,29 +181,6 @@ def newest_previews(
 
 # ── 历史记录 ──────────────────────────────────────────────
 
-def _load_toml(path: Path) -> dict | None:
-    """用 tomllib 真实解析 TOML 文件，返回完整 dict（含数组/布尔/数字原生类型）。
-
-    替代早期手写 regex 解析器——旧版只能识别约 9 个硬编码 key 且对引号/数组处理粗糙，
-    导致历史记录与监控页只能显示极少参数。改用标准库 tomllib 后可拿到全部字段。
-    """
-    try:
-        with path.open("rb") as f:
-            return tomllib.load(f)
-    except (OSError, tomllib.TOMLDecodeError, Exception):
-        return None
-
-
-def _parse_toml_config(path: Path) -> dict | None:
-    """从 TOML 配置文件中解析全部参数（完整 dict）。
-
-    保留旧函数名以避免改动多个调用方；返回值从「9 个 key 的字符串 dict」
-    升级为「完整原生类型 dict」。所有消费方均通过 ``.get(key)`` 取值并自行
-    兜底/转字符串，因此类型变化向后兼容。
-    """
-    return _load_toml(path)
-
-
 def scan_history() -> list[dict]:
     """扫描内部运行记录；旧跨盘记录会先由 autosave 幂等导入。"""
     # Background warm-up and the first page request share one scan/migration.
@@ -231,7 +207,7 @@ def _scan_history() -> list[dict]:
         config_file = run_dir / "config.toml"
         if not config_file.is_file():
             continue
-        params = _parse_toml_config(config_file)
+        params = read_run_config(run_dir)
         if not params:
             continue
         try:

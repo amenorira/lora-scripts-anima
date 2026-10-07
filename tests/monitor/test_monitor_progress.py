@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,6 +11,29 @@ from backend.monitor import training
 
 
 class ProgressParsingTests(unittest.TestCase):
+    def test_new_tensorboard_steps_reload_immediately_even_with_unchanged_mtime(self):
+        from tensorboard.backend.event_processing import event_accumulator
+
+        accumulator = Mock()
+        with tempfile.TemporaryDirectory() as tmp_dir, patch.dict(training._tb_cache, clear=True), patch.object(
+            event_accumulator, "EventAccumulator", return_value=accumulator
+        ), patch.object(training.time, "time", return_value=100):
+            log_dir = Path(tmp_dir)
+            event_file = log_dir / "events.out.tfevents.test"
+            event_file.write_bytes(b"step 1")
+            stat = event_file.stat()
+            self.assertIs(training._get_cached_accumulator(log_dir), accumulator)
+            self.assertEqual(accumulator.Reload.call_count, 1)
+            training._get_cached_accumulator(log_dir)
+            self.assertEqual(accumulator.Reload.call_count, 1)
+            # 同一时刻写入下一步：缓存不得再等两秒；粗粒度 mtime 也由文件大小补足。
+            event_file.write_bytes(b"step 1\nstep 2")
+            os.utime(event_file, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+            training._get_cached_accumulator(log_dir)
+            self.assertEqual(accumulator.Reload.call_count, 2)
+            training._get_cached_accumulator(log_dir)
+            self.assertEqual(accumulator.Reload.call_count, 2)
+
     def test_sparklines_receive_raw_tail_instead_of_resampled_global_curve(self):
         events = [SimpleNamespace(step=step, value=1 + step % 7) for step in range(1000)]
         accumulator = Mock()

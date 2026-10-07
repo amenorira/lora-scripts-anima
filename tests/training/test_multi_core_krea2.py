@@ -15,14 +15,7 @@ from backend.training.musubi_krea2 import KREA2_FIELDS, build_krea2_dataset_conf
 from backend.server.routes import training as training_routes
 from backend.training import supervisor
 from backend.tasks import TaskManager
-
-
-class _BodyRequest:
-    def __init__(self, payload):
-        self.payload = payload
-
-    async def body(self):
-        return json.dumps(self.payload).encode("utf-8")
+from tests.helpers import json_request
 
 
 def krea2_config(root: Path) -> dict:
@@ -74,7 +67,7 @@ class Krea2PreparationLifecycleTests(unittest.TestCase):
                     return real_submit(executor, func, *args)
 
                 with patch.object(loop, "run_in_executor", side_effect=submit):
-                    request = asyncio.create_task(training_routes.create_krea2_cache(_BodyRequest(dict(config))))
+                    request = asyncio.create_task(training_routes.create_krea2_cache(json_request(dict(config))))
                     self.assertTrue(await asyncio.to_thread(settling.wait, 5))
                     self.assertIsNone(manager.reserve_task())
                     self.assertFalse(manager.begin_dataset_mutation())
@@ -82,7 +75,6 @@ class Krea2PreparationLifecycleTests(unittest.TestCase):
                     return await request
 
             with patch.object(training_routes, "tm", manager), \
-                 patch.object(supervisor, "tm", manager), \
                  patch.object(training_routes, "OUTPUT_DIR", root / "runs"), \
                  patch.object(training_routes, "krea2_preflight", return_value={"ok": True, "errors": [], "cache": {"ready": True}}), \
                  patch.object(training_routes, "mark_cache_manifest", side_effect=settle_manifest), \
@@ -117,7 +109,7 @@ class Krea2PreparationLifecycleTests(unittest.TestCase):
                         raise TimeoutError("cache preparation was not released")
 
                 async def exercise():
-                    request = asyncio.create_task(training_routes.create_krea2_cache(_BodyRequest(dict(config))))
+                    request = asyncio.create_task(training_routes.create_krea2_cache(json_request(dict(config))))
                     self.assertTrue(await asyncio.to_thread(entered.wait, 5))
                     task_id = next(iter(manager.tasks))
                     if cancellation == "stop":
@@ -164,7 +156,7 @@ class Krea2PreparationLifecycleTests(unittest.TestCase):
                 mark_cache_manifest(config, status)
 
             async def exercise():
-                request = asyncio.create_task(training_routes.create_krea2_cache(_BodyRequest(dict(config))))
+                request = asyncio.create_task(training_routes.create_krea2_cache(json_request(dict(config))))
                 self.assertTrue(await asyncio.to_thread(entered.wait, 5))
                 self.assertIsNone(manager.reserve_task())
                 release.set()
@@ -251,7 +243,7 @@ class Krea2CodecTests(unittest.TestCase):
                 training_routes, "tm", TaskManager()
             ):
                 result = asyncio.run(training_routes._prepare_training(
-                    training_routes._create_krea2_run, config, None, timestamp, None,
+                    training_routes._create_krea2_run, config, None, timestamp, dict(config),
                 ))
 
             run_dirs = list((root / "runs").glob(f"krea2_test_{timestamp}_*"))

@@ -96,6 +96,7 @@ function fixture() {
   app.flushTimers = () => { const pending = [...timers.values()]; timers.clear(); pending.forEach(fn => fn()); };
   app.regSettings = {seed:'-1', cfg:4, width:1024, height:768, size_mode:'bucket', extra_positive:''}; app.regDefaults = {...app.regSettings};
   app._regUndo = {}; app.regEdits = {}; app.regT = key => key;
+  app.regSources = []; app.regItems = [];
   app._regFields = {}; app.stepField = context.window.trainingCoreMixin.stepField;
   app.taggerVisibleLogs = context.window.taggerMixin.taggerVisibleLogs;
   app._parseLogRecord = context.window.monitorLogRenderMixin._parseLogRecord;
@@ -104,31 +105,37 @@ function fixture() {
   return app;
 }
 
-test('source page jumps clamp boundaries and keep the displayed page on failure', async () => {
-  const app = fixture(); app.regPlan = {token:'plan', source_count:59}; app.regSources = [{relative:'old'}];
+test('source scrolling appends once, preserves cards on failure and retries the same batch', async () => {
+  const app = fixture(); app.regTab = 'plan'; app.regPlan = {token:'plan', source_count:59};
+  const sources = Array.from({length:59}, (_,index) => ({relative:index + '.png',caption:'tag'}));
+  const urls = [];
+  app.regRequest = async url => {
+    urls.push(url); const query = new URL('http://local' + url).searchParams;
+    const offset = Number(query.get('offset')), limit = Number(query.get('limit'));
+    return {items:sources.slice(offset, offset + limit), total:sources.length};
+  };
+  await app.regLoadSources();
+  assert.equal(app.regSources.length, 24);
+  const read = app.regRequest;
   let finish;
   app.regRequest = () => new Promise(resolve => { finish = resolve; });
-  const next = app.regSourcePage(1);
-  assert.equal(app.regSourceOffset, 0);
-  await app.regSourcePage(1);
-  assert.equal(app.regSourceOffset, 0);
-  finish({items:[{relative:'new',caption:'tag'}]}); await next;
-  assert.equal(app.regSourceOffset, 12);
-  assert.equal(app.regSourcePageCount, 5);
+  const next = app.regLoadMore();
+  await app.regLoadMore();
+  assert.equal(app.regSources.length, 24);
+  finish({items:sources.slice(24,48),total:59}); await next;
+  assert.equal(app.regSources.length, 48);
+  assert.match(app.regSourceImage(24), /preview\/24\?variant=thumb$/);
   app.regRequest = async () => { throw new Error('network error'); };
-  await app.regSourcePage(1);
-  assert.equal(app.regSourceOffset, 12);
-  assert.equal(app.regSources[0].relative, 'new');
-  app.regRequest = async () => ({items:[]});
-  await app.regSourceGoPage(999); assert.equal(app.regSourceOffset, 48);
-  await app.regSourcePage(1); assert.equal(app.regSourceOffset, 48);
-  await app.regSourceGoPage(''); assert.equal(app.regSourceOffset, 48);
-  await app.regSourceGoPage(-2); assert.equal(app.regSourceOffset, 0);
+  await app.regLoadMore();
+  assert.equal(app.regSources.length, 48); assert.equal(app.regMoreError, 'network error');
+  app.regRequest = read; await app.regLoadMore();
+  assert.equal(app.regSources.length, 59); assert.equal(app.regMoreError, ''); assert.equal(app.regHasMore, false);
+  const reads = urls.length; await app.regLoadMore(); assert.equal(urls.length, reads);
 });
 
 test('source details grow vertically first, widen only at viewport height, and pin without moving', () => {
   const app = fixture(); Object.assign(app.testWindow, {innerWidth:1280, innerHeight:720});
-  const cards = app.regSourceCards(), ticks = [];
+  const cards = app.regGallery(), ticks = [];
   let contentArea = 200000;
   const popup = {style:{}, get offsetWidth() { return parseFloat(this.style.width); },
     get offsetHeight() { return Math.min(696, Math.ceil(contentArea / this.offsetWidth)); }};
@@ -194,44 +201,90 @@ test('prompt preview uses the same comma trimming as generation', () => {
   assert.equal(app.regSources[0].prompt, 'tag');
 });
 
-test('inspection pagination retains the old page on failure and clamps after filtering removes the last item', async () => {
-  const app = fixture(); app.regRunKey = 'run'; app.regItemsTotal = 49; app.regItems = [{index:1}];
+test('result scrolling preserves loaded cards on failure and refreshes the whole loaded prefix', async () => {
+  const app = fixture(); app.regTab = 'inspect'; app.regRunKey = 'run';
+  let items = Array.from({length:49}, (_,index)=>({index:index+1,status:'completed'}));
   app.regRefreshRuns = async () => {}; app.regLoadLogs = async () => {}; app.regApplyTask = () => {};
+  const read = async url => {
+    const query = new URL('http://local' + url).searchParams, offset = Number(query.get('offset'));
+    return {items:items.slice(offset,offset + Number(query.get('limit'))),total:items.length,summary:{}};
+  };
+  app.regRequest = read; await app.regLoadResults();
+  assert.equal(app.regItems.length, 24);
   app.regRequest = async () => { throw new Error('offline'); };
-  await app.regPage(1);
-  assert.equal(app.regOffset, 0); assert.equal(app.regItems[0].index, 1);
-  app.regOffset = 48;
-  const urls = [];
-  app.regRequest = async url => { urls.push(url); return {items:url.includes('offset=24') ? [{index:25}] : [],total:48,summary:{}}; };
+  await app.regLoadMore(); assert.equal(app.regItems.length, 24); assert.equal(app.regMoreError, 'offline');
+  app.regRequest = read; await app.regLoadMore(); await app.regLoadMore();
+  assert.equal(app.regItems.length, 49); assert.equal(app.regHasMore, false);
+  items = items.slice(0,48).map(item=>({...item,status:'excluded'}));
   await app.regLoadResults();
-  assert.equal(app.regOffset, 24); assert.equal(app.regItems[0].index, 25);
-  assert.equal(urls.length, 2);
+  assert.equal(app.regItems.length, 48); assert.equal(app.regItemsTotal, 48);
+  assert.ok(app.regItems.every(item=>item.status === 'excluded'));
 });
 
-test('responsive source page size keeps the previous first image within the new page', async () => {
-  const app = fixture(); app.regPlan = {token:'plan',source_count:59}; app.regSourceOffset = 24;
-  const urls = []; app.regRequest = async url => { urls.push(url); return {items:[]}; };
-  await app.regResizeSourcePage(10);
-  assert.equal(app.regSourcePageSize, 10); assert.equal(app.regSourceOffset, 20);
-  assert.equal(app.regSourcePageCount, 6); assert.match(urls[0], /offset=20&limit=10$/);
-  await app.regSourcePage(1); assert.equal(app.regSourceOffset, 30);
-  app.regRequest = async () => { throw new Error('offline'); };
-  await app.regResizeSourcePage(6);
-  assert.equal(app.regSourcePageSize, 10); assert.equal(app.regSourceOffset, 30);
+test('shared batch reader refreshes more than the backend limit without dropping loaded cards', async () => {
+  const app = fixture(), urls = [];
+  app.regRequest = async url => {
+    urls.push(url); const query = new URL('http://local' + url).searchParams;
+    const offset = Number(query.get('offset')), limit = Number(query.get('limit'));
+    return {items:Array.from({length:Math.min(limit,225-offset)}, (_,i)=>({index:offset+i})),total:225};
+  };
+  const page = await app.regFetchItems('/items?status=all', 225);
+  assert.equal(page.items.length, 225);
+  assert.equal(page.items[224].index, 224);
+  assert.match(urls[0], /offset=0&limit=100$/); assert.match(urls[1], /offset=100&limit=100$/); assert.match(urls[2], /offset=200&limit=25$/);
 });
 
-test('source arrow shortcuts ignore editors, pinned details, other tabs and held keys', () => {
-  const app = fixture(); const cards = app.regSourceCards();
-  Object.assign(cards, {currentRoute:'regularization',regTab:'plan'});
-  const pages = []; cards.regSourcePage = delta => { pages.push(delta); };
-  let prevented = 0;
-  const event = {key:'ArrowRight',target:{closest:()=>null},preventDefault(){prevented++;}};
-  cards.onPageKey(event); cards.onPageKey({...event,key:'ArrowLeft'});
-  cards.onPageKey({...event,target:{closest:()=>({})}});
-  cards.onPageKey({...event,repeat:true});
-  cards.pinned = true; cards.onPageKey(event);
-  cards.pinned = false; cards.regTab = 'settings'; cards.onPageKey(event);
-  assert.deepEqual(pages, [1,-1]); assert.equal(prevented, 2);
+test('scroll loading waits for a valid plan and discards an obsolete source response', async () => {
+  const app = fixture(); app.regTab = 'plan'; app.regPlan = {token:'old',source_count:50}; app.regSources = [{relative:'first.png',caption:'tag'}];
+  app.regRequest = async () => assert.fail('must not load');
+  app.regPreviewDirty = true; await app.regLoadMore();
+  app.regPreviewDirty = false; app.regBusy = true; await app.regLoadMore();
+  app.regBusy = false; app.regTab = 'settings'; await app.regLoadMore();
+  app.regTab = 'plan'; let finish;
+  app.regRequest = () => new Promise(resolve=>{finish=resolve;});
+  const loading = app.regLoadMore();
+  app.regPlan = {token:'new',source_count:1}; app.regSources = [{relative:'new.png',caption:'tag'}];
+  finish({items:Array.from({length:24},(_,i)=>({relative:'stale'+i+'.png',caption:'tag'})),total:50}); await loading;
+  assert.equal(app.regSources.length, 1); assert.equal(app.regSources[0].relative, 'new.png');
+});
+
+test('filter changes discard pending result batches and restart from the beginning', async () => {
+  const app = fixture(); app.regTab = 'inspect'; app.regRunKey = 'run'; app.regItemsTotal = 50;
+  app.regItems = [{index:1,status:'completed'}]; app.regLoadLogs = async()=>{}; app.regApplyTask = ()=>{};
+  let finish;
+  app.regRequest = () => new Promise(resolve=>{finish=resolve;});
+  const loading = app.regLoadMore();
+  app.regFilter = 'failed';
+  app.regRequest = async url => { assert.match(url, /status=failed&offset=0&limit=24$/); return {items:[{index:7,status:'failed'}],total:1,summary:{}}; };
+  await app.regSelectFilter();
+  finish({items:Array.from({length:24},(_,i)=>({index:i+2,status:'completed'})),total:50}); await loading;
+  assert.equal(app.regItems.length, 1); assert.equal(app.regItems[0].index, 7); assert.equal(app.regItemsTotal, 1);
+});
+
+test('a refresh supersedes an incremental request without duplicating result cards', async () => {
+  const app = fixture(); app.regTab = 'inspect'; app.regRunKey = 'run'; app.regItemsTotal = 50;
+  app.regItems = Array.from({length:24},(_,i)=>({index:i,status:'pending'}));
+  app.regLoadLogs = async()=>{}; app.regApplyTask = ()=>{};
+  let finish;
+  app.regRequest = () => new Promise(resolve=>{finish=resolve;});
+  const loading = app.regLoadMore();
+  app.regRequest = async()=>({items:app.regItems.map(item=>({...item,status:'completed'})),total:50,summary:{}});
+  await app.regLoadResults();
+  finish({items:Array.from({length:24},(_,i)=>({index:i+24,status:'pending'})),total:50}); await loading;
+  assert.equal(app.regItems.length, 24); assert.ok(app.regItems.every(item=>item.status === 'completed'));
+});
+
+test('incremental loading cannot supersede a pending task status refresh', async () => {
+  const app = fixture(); app.regTab = 'inspect'; app.regRunKey = 'run'; app.regItemsTotal = 50;
+  app.regItems = Array.from({length:24},(_,i)=>({index:i,status:'pending'}));
+  app.regLoadLogs = async()=>{}; app.regApplyTask = ()=>{};
+  let finish, requests = 0;
+  app.regRequest = () => { requests++; return new Promise(resolve=>{finish=resolve;}); };
+  const refresh = app.regLoadResults();
+  await app.regLoadMore(); await app.regLoadResults({append:true});
+  assert.equal(requests, 1);
+  finish({items:app.regItems.map(item=>({...item,status:'completed'})),total:50,summary:{}}); await refresh;
+  assert.ok(app.regItems.every(item=>item.status === 'completed'));
 });
 
 test('sampling, model and device edits retain dataset preview without requests, including opening plan tab', async () => {
@@ -307,24 +360,24 @@ test('automatic scan errors stay quiet but an explicit scan reports them', async
   assert.equal(app.toasts.at(-1).message, 'Incomplete path');
 });
 
-test('image preview skips unfinished images and navigates across pages', async () => {
+test('image preview skips unfinished images and loads more without replacing previous cards', async () => {
   const app = fixture(); app.regRunKey = 'reg_preview'; app.regItemsTotal = 26;
   const first = {index:1,status:'completed'}, last = {index:24,status:'excluded'}, next = {index:26,status:'completed'};
   app.regItems = [first, {index:2,status:'failed'}, last]; app.regSelected = first;
   assert.equal(app.regCanNavigateImage(-1), false);
   await app.regNavigateImage(1); assert.equal(app.regSelected.index, 24);
-  app.regLoadResults = async offset => { app.regOffset = offset; app.regItems = offset ? [{index:25,status:'pending'}, next] : [first, last]; };
+  app.regLoadResults = async ({append}) => { assert.equal(append,true); app.regItems = [...app.regItems, {index:25,status:'pending'}, next]; app.regItemsTotal = app.regItems.length; };
   await app.regNavigateImage(1); assert.equal(app.regSelected.index, 26);
   assert.equal(app.regCanNavigateImage(1), false);
   await app.regNavigateImage(-1); assert.equal(app.regSelected.index, 24);
-  assert.equal(app.regOffset, 0);
+  assert.equal(app.regItems[0], first);
 });
 
-test('closing preview during page fetch does not reopen it', async () => {
+test('closing preview during incremental fetch does not reopen it', async () => {
   const app = fixture(); app.regRunKey = 'reg_preview'; app.regItemsTotal = 25;
   app.regItems = [{index:24,status:'completed'}]; app.regSelected = app.regItems[0];
   let finish;
-  app.regLoadResults = offset => new Promise(resolve => { finish = () => { app.regOffset = offset; app.regItems = [{index:25,status:'completed'}]; resolve(); }; });
+  app.regLoadResults = () => new Promise(resolve => { finish = () => { app.regItems = [...app.regItems,{index:25,status:'completed'}]; resolve(); }; });
   const navigation = app.regNavigateImage(1);
   app.regSelected = null; finish(); await navigation;
   assert.equal(app.regSelected, null);
@@ -403,18 +456,18 @@ test('detailed plan scans once between tabs and updates changed caption rules', 
   assert.equal(scans, 2); assert.equal(app.regSettings.exclude_tags, 'blue hair');
 });
 
-test('plan refresh preserves the draft seed token and page, new rounds do not reuse it', async () => {
+test('plan refresh preserves the draft seed token and loaded range, new rounds do not reuse it', async () => {
   const app = fixture(); const bodies = [];
-  app.regPlan = {token:'old'}; app.regSourceOffset = 12;
-  app.regRequest = async (url, body) => { if (url !== '/plans') return {items:[]}; bodies.push(body); return {token:'updated', source_count:25}; };
+  app.regPlan = {token:'old'}; app.regSources = Array.from({length:48},(_,i)=>({relative:i+'.png',caption:'tag'}));
+  app.regRequest = async (url, body) => { if (url !== '/plans') { assert.match(url, /offset=0&limit=48$/); return {items:app.regSources,total:59}; } bodies.push(body); return {token:'updated', source_count:59}; };
   await app.regScan();
-  assert.equal(bodies[0].previous_token, 'old'); assert.equal(app.regSourceOffset, 12);
+  assert.equal(bodies[0].previous_token, 'old'); assert.equal(app.regSources.length, 48);
   app.regPlanConsumed = true; await app.regScan();
   assert.equal(bodies[1].previous_token, undefined);
 });
 
 test('refresh keeps the previous snapshot until both plan and sources succeed', async () => {
-  const app = fixture(); app.regPlan = {token:'old', source_count:59}; app.regSourceOffset = 12;
+  const app = fixture(); app.regPlan = {token:'old', source_count:59};
   app.regSources = [{relative:'old.png'}];
   let finish, signal;
   const requested = new Promise(resolve => { signal = resolve; });
@@ -427,11 +480,11 @@ test('refresh keeps the previous snapshot until both plan and sources succeed', 
   finish({items:[{relative:'new.png',caption:'tag'}]}); await refresh;
   assert.equal(app.regPlan.token, 'new');
   assert.equal(app.regSources[0].relative, 'new.png');
-  assert.equal(app.regSourceOffset, 12);
+  assert.equal(app.regSources.length, 1);
   app.regRequest = async url => { if (url === '/plans') return {token:'failed',source_count:1}; throw new Error('read failed'); };
   await app.regScan();
   assert.equal(app.regPlan.token, 'new');
-  assert.equal(app.regSourceOffset, 12);
+  assert.equal(app.regSources.length, 1);
   assert.equal(app.regSources[0].relative, 'new.png');
 });
 

@@ -7,12 +7,10 @@ import logging
 import re
 import threading
 import time
-import tomllib
 from pathlib import Path
 from typing import Any
 
 from backend.constants import OUTPUT_DIR
-from backend.constants import AUTOSAVE_DIR as CONFIG_AUTOSAVE
 from backend.training.field_registry import get_all_fields
 
 
@@ -24,10 +22,9 @@ logging.getLogger("tensorboard").setLevel(logging.WARNING)
 
 # ── TensorBoard Event 缓存 ─────────────────────────────────
 # 缓存 EventAccumulator 实例，按 log_dir 索引
-# 每次请求检查 event file mtime，仅在文件更新时重新 Reload
-_tb_cache: dict[str, tuple[float, float, str, Any]] = {}
+# 每次请求检查 event file 的时间与大小；新 step 写入后立即 Reload。
+_tb_cache: dict[str, tuple[float, tuple[str, int, int], str, Any]] = {}
 _tb_cache_lock = threading.Lock()
-_CACHE_TTL = 2.0  # 缓存有效期（秒），避免频繁 Reload
 
 # 增量读取用：按 (log_dir_str, tag) 追踪已推送的最大 step
 _last_seen_step: dict[tuple[str, str], int] = {}
@@ -39,12 +36,6 @@ _SCALAR_TAGS = (
     "loss/average", "loss/current", "loss/epoch_average", "loss/epoch",
     "lr/unet", "lr/textencoder", "lr/d*lr/unet", "lr/d*lr/textencoder",
 )
-
-# ── Autosave TOML glob 缓存 ─────────────────────────────────
-_autosave_glob_cache: tuple[float, list[Path]] | None = None
-_autosave_glob_cache_lock = threading.Lock()
-_AUTOSAVE_GLOB_TTL = 5.0  # 缓存有效期（秒），训练期间 autosave 不常变
-
 
 def _get_cached_accumulator(log_dir: Path) -> Any | None:
     """获取缓存的 EventAccumulator，若 event file 未变化则复用"""
@@ -61,31 +52,29 @@ def _get_cached_accumulator(log_dir: Path) -> Any | None:
         return None
 
     # 使用最新 event file 的所在目录（EventAccumulator 不递归搜索子目录）
-    ef_with_mtime = [(p, p.stat().st_mtime) for p in event_files]
-    ef_with_mtime.sort(key=lambda x: x[1], reverse=True)
-    latest_ef_path, latest_mtime = ef_with_mtime[0]
+    ef_with_stat = [(p, p.stat()) for p in event_files]
+    ef_with_stat.sort(key=lambda x: x[1].st_mtime_ns, reverse=True)
+    latest_ef_path, latest_stat = ef_with_stat[0]
+    stamp = (str(latest_ef_path), latest_stat.st_mtime_ns, latest_stat.st_size)
     event_dir = str(latest_ef_path.parent)  # 实际包含 event file 的目录
     now = time.time()
 
     with _tb_cache_lock:
         if log_dir_str in _tb_cache:
-            cache_time, cached_mtime, cached_event_dir, cached_ea = _tb_cache[log_dir_str]
-            if cached_event_dir == event_dir and (now - cache_time) < _CACHE_TTL:
-                return cached_ea
-
-            if cached_event_dir == event_dir and cached_mtime == latest_mtime:
-                _tb_cache[log_dir_str] = (now, cached_mtime, cached_event_dir, cached_ea)
+            _, cached_stamp, cached_event_dir, cached_ea = _tb_cache[log_dir_str]
+            if cached_event_dir == event_dir and cached_stamp == stamp:
+                _tb_cache[log_dir_str] = (now, stamp, cached_event_dir, cached_ea)
                 return cached_ea
 
             if cached_event_dir == event_dir:
                 try:
                     cached_ea.Reload()
-                    _tb_cache[log_dir_str] = (now, latest_mtime, event_dir, cached_ea)
+                    _tb_cache[log_dir_str] = (now, stamp, event_dir, cached_ea)
                     return cached_ea
                 except Exception:
                     _tb_cache.pop(log_dir_str, None)
 
-    # 缓存未命中或过期：创建新 accumulator
+    # 缓存未命中或日志目录切换：创建新 accumulator
     try:
         ea = event_accumulator.EventAccumulator(
             event_dir,
@@ -93,7 +82,7 @@ def _get_cached_accumulator(log_dir: Path) -> Any | None:
         )
         ea.Reload()
         with _tb_cache_lock:
-            _tb_cache[log_dir_str] = (now, latest_mtime, event_dir, ea)
+            _tb_cache[log_dir_str] = (now, stamp, event_dir, ea)
             # 清理过大的缓存（保留最近 3 个）
             if len(_tb_cache) > 3:
                 oldest = min(_tb_cache.keys(), key=lambda k: _tb_cache[k][0])
@@ -384,59 +373,7 @@ def parse_log_progress(lines: list[str]) -> dict:
     return info
 
 
-# ── 训练配置解析 (TOML) ────────────────────────────────────
-
-_latest_config_cache: dict[tuple[str | None, float], dict] = {}
-_MAX_CONFIG_CACHE = 32
-
-
-def _evict_config_cache() -> None:
-    """LRU 淘汰：保留最近 32 条缓存记录"""
-    if len(_latest_config_cache) <= _MAX_CONFIG_CACHE:
-        return
-    sorted_keys = sorted(_latest_config_cache.keys(), key=lambda k: k[1], reverse=True)
-    for key in sorted_keys[_MAX_CONFIG_CACHE:]:
-        del _latest_config_cache[key]
-
-
-def latest_train_config(task_id: str | None = None) -> dict:
-    """解析最新的 autosave TOML 配置"""
-    global _autosave_glob_cache
-    if not CONFIG_AUTOSAVE.exists():
-        return {}
-
-    now = time.time()
-    with _autosave_glob_cache_lock:
-        if _autosave_glob_cache and now - _autosave_glob_cache[0] < _AUTOSAVE_GLOB_TTL:
-            configs = _autosave_glob_cache[1]
-        else:
-            configs = sorted(
-                CONFIG_AUTOSAVE.glob("*.toml"),
-                key=lambda p: p.stat().st_mtime, reverse=True
-            )
-            _autosave_glob_cache = (now, configs)
-
-    if not configs:
-        return {}
-    latest_mtime = configs[0].stat().st_mtime
-    cache_key = (task_id, latest_mtime)
-    if cache_key in _latest_config_cache:
-        return _latest_config_cache[cache_key]
-    for cfg_path in configs[:3]:
-        try:
-            with cfg_path.open("rb") as f:
-                params = tomllib.load(f)
-        except (OSError, tomllib.TOMLDecodeError, Exception):
-            continue
-
-        if params:
-            _latest_config_cache[cache_key] = params
-            _evict_config_cache()
-            return params
-    return {}
-
-
-def _format_param_value(key: str, v: Any, field: dict | None) -> str:
+def _format_param_value(key: str, v: Any) -> str:
     """将 TOML 原生值格式化为展示字符串。
 
     - 布尔 → "true"/"false"（前端 toggle 字段会渲染为 ✓/✕ 徽标，此处保留可读文本兜底）
@@ -456,11 +393,6 @@ def _format_param_value(key: str, v: Any, field: dict | None) -> str:
     return str(v)
 
 
-# 预构建 registry 索引：key → field 元数据（仅 target=toml 且非 hidden 的字段）
-_REGISTRY_INDEX: dict[str, dict] = {
-    f["key"]: f for f in _REGISTRY_FIELDS
-    if f.get("target") == "toml" and not f.get("hidden")
-}
 # section 输出顺序（与 field_registry.get_fields_json 一致）
 _SECTION_ORDER = ["model", "network", "training", "optimizer",
                   "regularization", "caption", "performance", "save", "preview"]
@@ -483,7 +415,6 @@ def extract_train_params(config: dict) -> list[dict]:
         return []
 
     params: list[dict] = []
-    seen_keys: set[str] = set()
 
     # 1) registry 字段：按 section 顺序遍历，保证分组与字段顺序稳定
     #    hidden 字段（如 logging_dir/log_with）在前端表单不展示，但训练时仍写入
@@ -503,12 +434,11 @@ def extract_train_params(config: dict) -> list[dict]:
             entry = {
                 "key": key,
                 "desc_key": f.get("desc_key", ""),
-                "value": _format_param_value(key, v, f),
+                "value": _format_param_value(key, v),
                 "section": section,
                 "type": f.get("type", "text"),
             }
             params.append(entry)
-            seen_keys.add(key)
 
     # 2) network_args / optimizer_args：adapter 折叠的 LyCORIS/优化器子参数数组
     #    形如 ["algo=lokr", "preset=attn-mlp"] → 拆成独立条目，归入对应 section

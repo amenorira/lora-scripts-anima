@@ -104,7 +104,7 @@ def _inspect_network(form):
 
     if form.get("model_train_type") != "anima-lora":
         raise ValueError("Only Anima adapter training is supported / 仅支持 Anima 适配器训练")
-    config, _ = adapt_config(copy.deepcopy(form))
+    config, _ = adapt_config(form)
     module_name = config.get("network_module")
     if module_name not in SUPPORTED:
         raise ValueError("Unsupported custom network / 暂不支持此自定义网络")

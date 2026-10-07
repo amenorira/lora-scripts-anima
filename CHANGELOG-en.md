@@ -6,6 +6,38 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v26.1007.174925 - 2026-10-07
+
+This release improves training monitoring and diagnostic charts, refines caption editing and regularization image browsing, and aligns training configuration handling and Chinese and English parameter documentation.
+
+### Training Monitoring and Diagnostic Charts
+
+- Remove the fixed two-second cache wait when reading new TensorBoard samples to reduce Loss display latency.
+- Compare live Loss percentages against the previously displayed value so that batched samples do not produce changes inconsistent with the visible readings. Historical views continue to compare adjacent samples, with explicit labels for each comparison.
+- Preserve the remaining-time rate-of-change chart after completion, stopping, failure, and in historical views. Align run status, last iteration speed, and end-time displays.
+- Add a centered zero reference line and symmetric scaling to the recent-change diagnostic chart. Diagnostic curves scale to recent data and show the number of observations and Step range, making direction and magnitude easier to interpret.
+- Read monitoring parameters only from the corresponding run directory to avoid mixing in autosaved configurations from other runs.
+
+### Caption Editing and Regularization Image Browsing
+
+- Unify tag suggestions in single-image and multi-image editing, including candidate counts, translations, aliases, and loading more results to avoid omissions caused by fixed limits.
+- Improve keyboard insertion, cursor positioning, and selection during loading, and prevent stale queries from replacing the current suggestion list.
+- Use a shared card layout for regularization generation plans and image inspection, with square previews and consistent placement of filenames, captions, and dimensions.
+- Switch both views to progressive loading on scroll. Improve retries, filter changes, and task refreshes to prevent duplicate images or stale results in the list.
+
+### Training Configuration and Parameter Documentation
+
+- Unify optimizer argument merging and precedence so that interface previews, configuration exports, and actual training use consistent handling.
+- Interpret numeric values according to field semantics while preserving numeric-only prompts and filenames, and improve state handling when training preparation fails or is canceled.
+- Revise Chinese and English documentation for LoRA+, timesteps, optimizers, network parameters, AdaLN, and structure previews. Correct descriptions of argument forwarding, range endpoints, and defaults, and repair documentation anchors.
+- Update cache versions for training and monitoring scripts to fix inconsistent behavior caused by browsers retaining older scripts after an application update.
+
+### Other Improvements
+
+- Add random horizontal flip and random crop position options, with support for configuration saving, importing, and TOML export. Random cropping automatically disables and locks both in-memory and on-disk latent caches. Horizontal flipping does not automatically adjust left/right descriptions in captions.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1005.11852...v26.1007.174925)
+
 ## v26.1005.11852 - 2026-10-05
 
 This release introduces **Anima regularization image generation** from training captions, with incremental generation, resumable tasks, and result selection. Once reviewed, the results can be applied directly to the training configuration. It also improves caption editing and fixes the direction of the training-speed chart.

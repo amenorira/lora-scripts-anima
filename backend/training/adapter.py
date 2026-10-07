@@ -18,10 +18,7 @@ from typing import Any
 from backend.training.field_registry import (
     ADALN_INCLUDE_MODULES,
     ADALN_INCLUDE_PATTERN,
-    AUTOMAGIC_OPTIMIZER_TYPE,
-    EMOSENS_OPTIMIZER_TYPE,
     FIELDS,
-    LORAPLUS_NETWORK_MODULES,
     LORAPLUS_RATIO_KEYS,
     LYCORIS_COMMON_ARG_MAP,
     LYCORIS_KOHYA_ONLY_ARG_MAP,
@@ -32,12 +29,7 @@ from backend.training.field_registry import (
     loraplus_applies,
 )
 from backend.training import toml_writer
-from backend.training.optimizer_contracts import (
-    AUTOMAGIC_MAX_LR_DEFAULT,
-    AUTOMAGIC_MERGED_ARG_MAP,
-    normalize_optimizer_config,
-)
-from backend.training.validation import get_automagic_fused_conflicts
+from backend.training.optimizer_contracts import normalize_optimizer_config
 
 SUPPORTED_FIELDS = get_supported_fields()
 UI_ONLY_FIELDS = get_ui_only_fields()
@@ -146,7 +138,9 @@ def _merge_custom_args(source: dict, custom_key: str, target_key: str) -> None:
     existing = source.get(target_key)
     if isinstance(existing, str):
         existing = [existing]
-    elif not isinstance(existing, list):
+    elif isinstance(existing, list):
+        existing = list(existing)
+    else:
         existing = []
 
     for line in custom.strip().split("\n"):
@@ -262,11 +256,6 @@ def _write_lycoris_scope_preset_file(preset_name: str, exclude_name: list[str]) 
     return str(path)
 
 
-def _merge_include_patterns(network_args: list[str], pattern: str) -> list[str]:
-    """把 pattern 并入 network_args 中唯一的 include_patterns 项（不存在则新建）。"""
-    return _merge_keyed_pattern_args(network_args, "include_patterns", [pattern])
-
-
 def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str, Any], list[str]]:
     """
     将 UI JSON 配置转换为 sd-scripts TOML 配置。
@@ -308,12 +297,6 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
 
     # ── 1. 合并自定义参数 ──────────────────────────────────
     _merge_custom_args(source, "network_args_custom", "network_args")
-    _merge_custom_args(source, "optimizer_args_custom", "optimizer_args")
-    normalized_optimizer_args = _normalize_network_args(source.get("optimizer_args"))
-    if normalized_optimizer_args:
-        source["optimizer_args"] = normalized_optimizer_args
-    else:
-        source.pop("optimizer_args", None)
 
     # ── 2. 规范化 network_args ─────────────────────────────
     merged_network_args: list[str] = []
@@ -359,7 +342,7 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     train_adaln = source.pop("train_adaln", False) is True
     if train_adaln and source.get("network_module") in ADALN_INCLUDE_MODULES:
         network_args = list(source.get("network_args") or [])
-        source["network_args"] = _merge_include_patterns(network_args, ADALN_INCLUDE_PATTERN)
+        source["network_args"] = _merge_keyed_pattern_args(network_args, "include_patterns", [ADALN_INCLUDE_PATTERN])
 
     # ── 3. 原生模块字段 → network_args（按各模块实际支持的参数透传）──
     # sd-scripts 各 create_network 的真实消费面（已逐行核对）：
@@ -451,109 +434,7 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
         source["unet_lr"] = ""
 
     # ── 5.6. 通用优化器契约：参数合并 + 调度/裁剪规范化 ────────
-    normalize_optimizer_config(source, warnings)
-
-    # ── 5.6a. EmoSens 优化器：内部动态 LR + 模型感知 LR ───────
-    # 训练启动钩子会提供无操作 scheduler 接口，避免传统 scheduler 覆写 emoPulse。
-    if source.get("optimizer_type") == EMOSENS_OPTIMIZER_TYPE:
-        source["lr_scheduler"] = "constant"
-        source["lr_warmup_steps"] = 0
-        # 上游推荐 Anima/DiT LoRA 使用 0.1，SDXL LoRA 使用 1.0。
-        # 推荐值由前端按字段来源设置；后端不能把显式 1e-4 当作未填写。
-        model_type = source.get("model_train_type", "sdxl-lora")
-        emo_target = 0.1 if model_type == "anima-lora" else 1.0
-        lr = source.get("learning_rate")
-        should_set_recommended = _is_empty_value(lr)
-        if should_set_recommended:
-            source["learning_rate"] = emo_target
-            warnings.append(
-                f"EmoSens + {model_type}: learning_rate auto-adjusted to {emo_target} / "
-                f"learning_rate 已自动调整为 {emo_target}"
-            )
-        # 注：不主动改 unet_lr / text_encoder_lr——它们留空（默认）会自动回退到
-        # learning_rate（即 emo_target），这正是 EmoSens 推荐用法（全層同一 LR）。
-        # EmoSens 的 emoPulse（每步实际 lr）仅由 learning_rate（→emoScope）+ loss 决定，
-        # 每个 param_group 被初始化时拿到的分量 lr 会在第一步 step 后被 emoPulse 统一覆盖，
-        # 故手填的分量 lr 对 EmoSens 实际无效。若用户填了任意分量，仅作温和提示。
-        for _lr_key in ("unet_lr", "text_encoder_lr"):
-            if not _is_empty_value(source.get(_lr_key)):
-                warnings.append(
-                    f"EmoSens: {_lr_key} is set but has no effect (EmoSens uses learning_rate "
-                    f"as the single base rate for all params); consider clearing it / "
-                    f"EmoSens 仅以 learning_rate 作唯一样本生成动态 LR，分量 LR 不会生效，建议清空"
-                )
-                break  # 提一次即可
-        # weight_decay 兜底：EmoSens 官方默认 0.01，把产品默认值钉进 optimizer_args，
-        # 避免上游改默认值时实际训练值与界面显示的值悄悄不一致（写不进警告：
-        # 补的值同时等于界面默认和上游默认，正常流程下不改变任何训练行为）。
-        # 注意：前端已把 weight_decay 合并进 optimizer_args 并从顶层删除（merged 字段），
-        # 因此这里检查的是 optimizer_args 中是否已有 weight_decay= 项，而非顶层 weight_decay。
-        # 否则用户自定义值（如 0.02）会被追加的 0.01 覆盖（sd-scripts 顺序解析，后者生效）。
-        opt_args = source.get("optimizer_args")
-        if not isinstance(opt_args, list):
-            opt_args = []
-        has_wd = any(
-            isinstance(a, str) and a.strip().startswith("weight_decay=")
-            for a in opt_args
-        )
-        if not has_wd:
-            opt_args.append("weight_decay=0.01")
-            source["optimizer_args"] = opt_args
-
-    # ── 5.6b. Automagic3：兼容模式 + 优化器内部 LR ─────────
-    if source.get("optimizer_type") == AUTOMAGIC_OPTIMIZER_TYPE:
-        opt_args = list(source.get("optimizer_args") or [])
-        reserved_guard = any(item.strip().startswith("fused_guard=") for item in opt_args)
-        opt_args = [item for item in opt_args if not item.strip().startswith("fused_guard=")]
-        if reserved_guard:
-            warnings.append(
-                "[Conflict] Automagic3 fused_guard is reserved and was removed / "
-                "Automagic3 fused_guard 是内部参数，已移除"
-            )
-        for form_key, arg_key in AUTOMAGIC_MERGED_ARG_MAP.items():
-            value = source.pop(form_key, None)
-            if not _is_empty_value(value):
-                _set_key_value_arg(opt_args, arg_key, value)
-
-        fused_value = next(
-            (item.split("=", 1)[1].strip().lower() for item in opt_args if item.startswith("fused=")),
-            "false",
-        )
-        fused_requested = fused_value in {"true", "1"}
-        fused_conflicts = get_automagic_fused_conflicts(source, gpu_ids) if fused_requested else []
-        if fused_conflicts:
-            _set_key_value_arg(opt_args, "fused", False)
-            warnings.append(
-                "[Conflict] Automagic3 fused disabled / fused 已自动关闭: "
-                + "; ".join(fused_conflicts)
-            )
-        elif fused_requested:
-            _set_key_value_arg(opt_args, "fused", True)
-            _set_key_value_arg(opt_args, "fused_guard", True)
-        else:
-            _set_key_value_arg(opt_args, "fused", False)
-
-        if not any(item.startswith("max_lr=") for item in opt_args):
-            _set_key_value_arg(opt_args, "max_lr", AUTOMAGIC_MAX_LR_DEFAULT)
-        source["optimizer_args"] = _normalize_network_args(opt_args)
-
-        if source.pop("full_bf16", False):
-            warnings.append(
-                "[Conflict] Automagic3 compatibility mode requires FP32 trainable parameters; "
-                "full_bf16 disabled / Automagic3 兼容模式要求可训练参数保持 FP32，已关闭 full_bf16"
-            )
-
-        scheduler_changed = (
-            source.get("lr_scheduler") != "constant"
-            or source.get("lr_warmup_steps") not in (None, 0)
-        )
-        source["lr_scheduler"] = "constant"
-        source["lr_warmup_steps"] = 0
-        if scheduler_changed:
-            warnings.append(
-                "Automagic3: external LR scheduling disabled; TensorBoard reads the optimizer's "
-                "adaptive LR directly / 已禁用外部学习率调度，TensorBoard 将直接读取优化器的实际自适应 LR"
-            )
+    normalize_optimizer_config(source, warnings, gpu_ids)
 
     # ── 5.7. torch.compile 兼容性校验 ────────────────────
     # 注：Windows + inductor 的稳定性警告放在 5.11 之后，避免在 torch_compile

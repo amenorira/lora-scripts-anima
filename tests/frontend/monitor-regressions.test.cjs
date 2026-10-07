@@ -54,7 +54,7 @@ test('speed sparkline rises as iteration time falls while the displayed unit sta
     frames.push(a._rollingSparklineFrame(points, null, options));
     return frames.at(-1);
   };
-  a._patchSummaryTelemetry(root, key => key, false, { state: 'RUNNING' });
+  a._patchSummaryTelemetry(root, key => key, false);
   assert.equal(frames[0].coords.length, 2);
   assert.ok(frames[0].coords[1].y < frames[0].coords[0].y);
   assert.equal(frames[0].points[0].value, 1 / 8);
@@ -107,6 +107,55 @@ test('incremental task metrics update real Loss and LR paths without rebuilding 
   assert.equal(root.dataset.sparklineVersion, String(a.lossDataVersion));
   a.handleRealtimeTaskMetrics({ points: { 'lr/unet': [{ step: 1, value: .00006 }] } });
   assert.equal(a.monitorData.lr, '4.0000e-5');
+});
+
+test('live Loss follows arriving steps and compares batched updates with the last displayed reading', () => {
+  const a = app({ liveTaskId: 'A', currentRoute: 'monitor-dashboard', monitorData: { state: 'RUNNING' } });
+  const root = summaryRoot();
+  const render = () => a._patchOverviewStatus(root, a.monitorData, key => key === 'lossUpdatedAt' ? 'Step {n}' : key, false);
+  const metrics = points => a.handleRealtimeTaskMetrics({ points: { 'loss/current': points } });
+  render();
+  metrics([{ step: 137, value: .1 }, { step: 138, value: .08 }]);
+  render();
+  assert.equal(root.node('[data-summary-field="loss"]').textContent, '0.0800');
+  assert.equal(root.node('[data-summary-loss-change]').hidden, true);
+  metrics([{ step: 139, value: .0556 }, { step: 140, value: .0685 }]);
+  render();
+  assert.equal(root.node('[data-summary-field="loss"]').textContent, '0.0685');
+  assert.equal(root.node('[data-summary-field="loss-meta"]').textContent, 'Step 140');
+  assert.equal(root.node('[data-summary-loss-change]').dataset.direction, 'down');
+  assert.equal(root.node('[data-loss-delta]').textContent, '14.4%');
+  assert.equal(root.node('.m-change-caption').textContent, 'lossVsPreviousDisplay');
+  // 硬件/进度重绘、LR 更新、重复指标均不重置比较基准。
+  render();
+  a.handleRealtimeTaskMetrics({ points: { 'lr/unet': [{ step: 140, value: .0001 }] } });
+  metrics([{ step: 140, value: .0685 }]);
+  render();
+  assert.equal(root.node('[data-loss-delta]').textContent, '14.4%');
+  metrics([{ step: 141, value: .03425 }]);
+  render();
+  assert.equal(root.node('[data-loss-delta]').textContent, '50.0%');
+  a.liveTaskId = 'B';
+  a.lossSeries = [{ tag: 'loss/current', points: [{ step: 1, value: .5 }] }];
+  render();
+  assert.equal(root.node('[data-summary-loss-change]').hidden, true);
+});
+
+test('Loss history uses adjacent samples while zero and empty live baselines hide the change', () => {
+  const a = app({ selectedRunDir: 'output/history', runDetailData: { tensorboard_loss: [
+    { tag: 'loss/current', points: [{ step: 139, value: .0556 }, { step: 140, value: .0685 }] },
+  ] } });
+  const root = summaryRoot();
+  a._patchOverviewStatus(root, { state: 'FINISHED' }, key => key, true);
+  assert.equal(root.node('[data-summary-loss-change]').dataset.direction, 'up');
+  assert.equal(root.node('[data-loss-delta]').textContent, '23.2%');
+  assert.equal(root.node('.m-change-caption').textContent, 'lossVsPreviousSample');
+  a.selectedRunDir = null;
+  a.lossSeries = [{ tag: 'loss/current', points: [{ step: 1, value: 0 }] }];
+  a._patchOverviewStatus(root, { state: 'RUNNING' }, key => key, false);
+  a.lossSeries[0].points.push({ step: 2, value: .1 });
+  a._patchOverviewStatus(root, { state: 'RUNNING' }, key => key, false);
+  assert.equal(root.node('[data-summary-loss-change]').hidden, true);
 });
 
 test('elapsed clock advances independently while remaining time follows logs and terminal/history values stay fixed', ctx => {
@@ -169,6 +218,53 @@ test('local trends reveal small real changes, keep constants flat and recover af
   assert.ok(height(frame) > 5);
 });
 
+test('diagnostic change keeps zero centered and scales to positive, negative and crossing values without smoothing', () => {
+  const a = app();
+  for (const values of [[1, 3, 2], [-1, -3, -2], [-3, 0, 2], [0, 0, 0]]) {
+    const points = values.map((value, step) => ({ step, value }));
+    const bounds = a._diagnosticTrendBounds('change', points);
+    const frame = a._rollingSparklineFrame(points, null, { fixedBounds: bounds });
+    assert.equal(bounds.low, -bounds.high);
+    assert.deepEqual(frame.points, points);
+    assert.equal((frame.path.match(/L/g) || []).length, points.length - 1);
+    assert.doesNotMatch(frame.path, /[CQ]/);
+    frame.coords.forEach((point, index) => {
+      assert.ok(point.y >= 4 && point.y <= 30);
+      assert.ok(values[index] > 0 ? point.y < 17 : values[index] < 0 ? point.y > 17 : point.y === 17);
+    });
+  }
+  const wide = a._diagnosticTrendBounds('change', [{ value: 30 }, { value: -1 }]);
+  const narrow = a._diagnosticTrendBounds('change', [{ value: .1 }, { value: -.2 }]);
+  assert.ok(narrow.high < wide.high);
+  const volatility = [{ step: 1, value: 6.3 }, { step: 2, value: 6.5 }, { step: 3, value: 6.4 }];
+  const frame = a._rollingSparklineFrame(volatility, null, { fixedBounds: a._diagnosticTrendBounds('volatility', volatility) });
+  assert.ok(Math.max(...frame.coords.map(p => p.y)) - Math.min(...frame.coords.map(p => p.y)) > 20);
+  assert.equal(a._diagnosticTrendBounds('volatility', [{ value: 0 }]).low, 0);
+});
+
+test('diagnostic chart endpoints match displayed percentages and report their actual 40-sample step span', () => {
+  const points = Array.from({ length: 160 }, (_, index) => ({ step: 100 + index * 2, value: .1 + .015 * Math.sin(index * .3) }));
+  const a = app({ lossSeries: [{ tag: 'loss/average', points }] });
+  const root = summaryRoot();
+  const t = key => key === 'diagnosticTrendRange' ? '{n}: Step {first}–{last}' : key;
+  a._patchTrainingDiagnostics(root, t, { state: 'RUNNING' }, false);
+  const diagnostic = a._trainingDiagnostics();
+  for (const [key, value] of [['change', diagnostic.changePct], ['volatility', diagnostic.volatilityPct]]) {
+    const frame = root.node('[data-diagnostic-spark="' + key + '"]')._sparklineState;
+    assert.equal(frame.points.length, 40);
+    assert.equal(frame.points.at(-1).value, value);
+    assert.equal(root.node('[data-diagnostic-field="' + key + '"]').textContent, a._formatDiagnosticPercent(value, key === 'change'));
+    assert.equal(root.node('[data-diagnostic-field="' + key + '-range"]').textContent, '40: Step 340–418');
+    assert.equal(root.node('[data-diagnostic-point="' + key + '"]').y1, frame.coords.at(-1).y);
+  }
+  assert.equal(root.node('[data-diagnostic-zero]').visibility, 'visible');
+  a.lossSeries = [];
+  a.lossDataVersion++;
+  a._patchTrainingDiagnostics(root, t, { state: 'RUNNING' }, false);
+  assert.equal(root.node('[data-diagnostic-zero]').visibility, 'hidden');
+  assert.equal(root.node('[data-diagnostic-field="change-range"]').textContent, 'needsMorePoints');
+});
+
 test('speed and forecast retain same-step dips as new observations and ignore delayed log replay', () => {
   const a = app({ liveTaskId: 'A', monitorPerfSamples: [], logLines: [
     'steps: 10%|#| 10/100 [09:40<1:02:40, 6.32s/it]',
@@ -206,7 +302,7 @@ test('remaining-time derivative is flat for steady countdowns and rises when the
   const a = app({ liveTaskId: 'rate', monitorPerfSamples: [] }), root = summaryRoot();
   const report = (elapsed, eta) => {
     a._recordMonitorPerfSample({ step: 10, speed: '6 s/it', elapsed, eta });
-    a._patchSummaryTelemetry(root, key => key, false, { state: 'RUNNING', eta });
+    a._patchSummaryTelemetry(root, key => key, false);
     return root.node('[data-summary-spark="time"]')._sparklineState;
   };
   report('1:40', '3:20');
@@ -228,8 +324,98 @@ test('remaining-time derivative is flat for steady countdowns and rises when the
   frame = report('2:14', '2:55');
   assert.equal(frame.points.at(-1).value, -1);
   assert.ok(frame.coords.every(p => Number.isFinite(p.y) && p.y >= 4 && p.y <= 30));
-  a._patchSummaryTelemetry(root, key => key, true, { state: 'FINISHED' });
+  a._patchSummaryTelemetry(root, key => key, true);
   assert.equal(root.node('[data-summary-time-baseline]').visibility, 'hidden');
+});
+
+test('finished, stopped and failed runs retain the remaining-time rate curve alongside total duration, including history', () => {
+  for (const state of ['FINISHED', 'TERMINATED', 'FAILED']) {
+    const a = app({ liveTaskId: 'time-trend', monitorPerfSamples: [] });
+    for (const [step, elapsed, eta] of [[1, '14:40', '00:08'], [2, '14:42', '00:06'], [3, '14:44', '00:04']]) {
+      a._recordMonitorPerfSample({ step, elapsed, eta, speed: '2 s/it' });
+    }
+    const root = summaryRoot();
+    a._patchOverviewStatus(root, { state: 'RUNNING', elapsed: '14:44', eta: '00:04' }, key => key, false);
+    const original = root.node('[data-summary-spark="time"]')._sparklineState;
+    assert.deepEqual(original.points.map(point => point.value), [-1, -1]);
+    assert.ok(original.coords.every(point => point.y === 17));
+    const terminal = { state, elapsed: '14:44', train_result: { status: state, duration_sec: 884 } };
+    a._patchOverviewStatus(root, terminal, key => key, false);
+    assert.equal(root.node('[data-summary-field="time-label"]').textContent, 'totalDuration');
+    assert.equal(root.node('[data-summary-field="time"]').textContent, '14:44');
+    assert.equal(root.node('[data-summary-field="time-meta"]').textContent, 'timeTrendCaption');
+    assert.equal(root.node('[data-summary-spark="time"]').d, original.path);
+    assert.equal(root.node('[data-summary-time-baseline]').visibility, 'visible');
+    // 重新打开历史详情也计算同一条曲线，不依赖结束前的 DOM 缓存。
+    a.selectedRunDir = 'output/time-trend';
+    a.runDetailData = { ...terminal, perf_samples: a.monitorPerfSamples };
+    const historyRoot = summaryRoot();
+    a._patchOverviewStatus(historyRoot, a.runDetailData, key => key, true);
+    assert.equal(historyRoot.node('[data-summary-spark="time"]').d, original.path);
+    assert.equal(historyRoot.node('[data-summary-time-baseline]').visibility, 'visible');
+    assert.equal(historyRoot.node('[data-summary-field="time"]').textContent, '14:44');
+    assert.equal(historyRoot.node('[data-summary-field="time-meta"]').textContent, 'timeTrendCaption');
+  }
+});
+
+test('runs without enough remaining-time observations hide the time curve instead of plotting cumulative elapsed time', () => {
+  const a = app({ monitorPerfSamples: [
+    { observation: 1, elapsedSec: 880, remainingRate: null },
+    { observation: 2, elapsedSec: 882, remainingRate: null },
+    { observation: 3, elapsedSec: 884, remainingRate: -1 },
+  ] });
+  const root = summaryRoot();
+  a._patchOverviewStatus(root, { state: 'FINISHED', elapsed: '14:44' }, key => key, false);
+  assert.equal(root.node('[data-summary-spark="time"]').d, '');
+  assert.equal(root.node('[data-summary-spark="time"]').parentElement.hidden, '');
+  assert.equal(root.node('[data-summary-time-baseline]').visibility, 'hidden');
+  assert.equal(root.node('[data-summary-field="time-meta"]').textContent, '');
+});
+
+test('all metric curves retain their meaning from running to terminal states and history', () => {
+  for (const state of ['FINISHED', 'TERMINATED', 'FAILED']) {
+    const lossSeries = [
+      { tag: 'loss/current', points: Array.from({ length: 160 }, (_, step) => ({ step, value: .1 + .02 * Math.sin(step) })) },
+      { tag: 'loss/average', points: Array.from({ length: 160 }, (_, step) => ({ step, value: .1 + .002 * Math.sin(step / 5) })) },
+      { tag: 'lr/unet', points: [{ step: 158, value: .0001 }, { step: 159, value: .00009 }], latest: .00009 },
+    ];
+    const a = app({ liveTaskId: 'A', lossSeries, monitorPerfSamples: [] });
+    for (const [step, elapsed, eta] of [[157, '14:40', '00:08'], [158, '14:42', '00:06'], [159, '14:44', '00:04']]) {
+      a._recordMonitorPerfSample({ step, elapsed, eta, speed: '2 s/it' });
+    }
+    const progress = { state: 'RUNNING', step: 159, elapsed: '14:44', eta: '00:04', speed: '2 s/it' };
+    const root = summaryRoot();
+    const selectors = [
+      ...['loss', 'lr', 'speed', 'time'].map(key => '[data-summary-spark="' + key + '"]'),
+      ...['change', 'volatility', 'best', 'gap'].map(key => '[data-diagnostic-spark="' + key + '"]'),
+    ];
+    const curves = root => selectors.map(selector => root.node(selector).d);
+    const values = root => ['loss', 'lr', 'speed'].map(key => root.node('[data-summary-field="' + key + '"]').textContent);
+    a._patchOverviewStatus(root, progress, key => key, false);
+    const before = curves(root), readings = values(root);
+    assert.ok(before.every(path => path.startsWith('M')));
+    assert.equal(root.node('[data-summary-field="speed-meta"]').textContent, 'currentSpeed');
+    const result = { status: state === 'FINISHED' ? 'completed' : state.toLowerCase(), duration_sec: 884, ended_at: '2026-10-07T06:00:00Z' };
+    a._patchOverviewStatus(root, { ...progress, state, train_result: result }, key => key, false);
+    assert.deepEqual(curves(root), before);
+    assert.deepEqual(values(root), readings);
+    assert.equal(root.node('[data-summary-field="speed-meta"]').textContent, 'lastSpeed');
+    const timeMeta = root.node('[data-summary-field="time-meta"]').textContent;
+    assert.match(timeMeta, /^endedAt .*timeTrendCaption$/);
+    a.selectedRunDir = 'output/A';
+    // 历史结果覆盖旧进度中的 RUNNING；所有卡片均遵循同一个状态解释。
+    a.runDetailData = { ...progress, train_result: result, tensorboard_loss: lossSeries, perf_samples: a.monitorPerfSamples };
+    const history = summaryRoot();
+    a._patchOverviewStatus(history, a.runDetailData, key => key, true);
+    assert.deepEqual(curves(history), before);
+    assert.deepEqual(values(history), readings);
+    assert.equal(history.node('[data-summary-field="speed-meta"]').textContent, 'lastSpeed');
+    assert.equal(history.node('[data-summary-field="time"]').textContent, '14:44');
+    assert.equal(history.node('[data-summary-field="time-meta"]').textContent, timeMeta);
+    assert.match(a._renderOverviewTab(a.runDetailData, key => key, true), /noParamsHint/);
+    // 实时状态仍以任务轮询为准，旧的训练结果不能提前把正在运行的任务结束。
+    assert.equal(a._summaryStatus({ ...progress, train_result: result }, false).running, true);
+  }
 });
 
 test('late log backfill restores missing curve points and derivatives without replay drift', () => {

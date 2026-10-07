@@ -7,7 +7,7 @@ from importlib import import_module
 _EXPORTS = {
     **dict.fromkeys(("adapt_config", "SUPPORTED_FIELDS", "UI_ONLY_FIELDS", "MERGED_FIELDS"), "adapter"),
     **dict.fromkeys(("get_automagic_fused_conflicts", "get_emosens_conflicts", "validate_training_config"), "validation"),
-    **dict.fromkeys(("run_train", "terminate_train", "get_train_status", "detect_attention_backend"), "supervisor"),
+    **dict.fromkeys(("run_train", "detect_attention_backend"), "supervisor"),
 }
 __all__ = list(_EXPORTS)
 

@@ -2064,23 +2064,12 @@ window.trainingCoreMixin = {
       const numberAttrs = `${constraints.min !== undefined ? ` min="${this.escapeAttr(constraints.min)}"` : ''}${constraints.max !== undefined ? ` max="${this.escapeAttr(constraints.max)}"` : ''} step="${this.escapeAttr(sStep)}"`;
       inputHtml = `<div class="stepper"><button type="button" @click="stepField('${dataKey}', -${sStep})">−</button><input type="number" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)"${numberAttrs}${defaultOnBlur}${staticReadonlyAttrs}><button type="button" @click="stepField('${dataKey}', ${sStep})">+</button></div>`;
     } else {
-      // Text input: dynamic placeholder for optimizer merged fields (reactive via Alpine)
-      // Values sourced from window.OPTIMIZER_DEFAULTS (single source of truth in constants.js)
-      const _OPT_PH = window.OPTIMIZER_DEFAULTS || {};
-      const _phMap = _OPT_PH[dataKey];
-      if (_phMap) {
-        // Dynamic placeholder that updates when optimizer_type changes
-        const _phExpr = JSON.stringify(_phMap).replace(/"/g, '&quot;');
-        const _animaPhMap = dataKey === 'learning_rate'
-          ? this._optimizerAutoValueMap(field, 'anima-lora')
-          : null;
-        const _animaPhExpr = _animaPhMap
-          ? JSON.stringify(_animaPhMap).replace(/"/g, '&quot;')
-          : '';
-        const _phSource = dataKey === 'learning_rate'
-          ? `(form.model_train_type === 'anima-lora' ? (${_animaPhExpr || '{}'}) : (${_phExpr}))`
-          : `(${_phExpr})`;
-        inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" :placeholder="${_phSource}[form.optimizer_type] || ''"${staticReadonlyAttrs}>`;
+      // Placeholders use the same profile defaults and auto-value rules as the form.
+      const placeholders = this._optimizerAutoValueMap(field);
+      if (Object.keys(placeholders).length || field.argKey) {
+        const expression = JSON.stringify(placeholders).replace(/"/g, '&quot;');
+        const defaultValue = JSON.stringify(field.default ?? '').replace(/"/g, '&quot;');
+        inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" :placeholder="(${expression})[form.optimizer_type] ?? ${defaultValue}"${staticReadonlyAttrs}>`;
       } else if (field.omitDefault && field.default !== undefined && field.default !== '' && field.default !== null) {
         // omitDefault 字段：值==默认值时不传，输入框用淡色 placeholder 提示默认值
         const _phVal = String(field.default).replace(/"/g, '&quot;');
@@ -3419,10 +3408,23 @@ window.trainingCoreMixin = {
     }
   },
 
+  _enforceImageAugmentationUiConstraints() {
+    if (this.form.model_train_type === 'krea2-lora' || this.form.random_crop !== true) return;
+    // Also normalize imported presets, restored drafts and field resets.
+    // Leaving disk caching on would make the backend re-enable cache_latents.
+    for (const key of ['cache_latents', 'cache_latents_to_disk']) {
+      if (this.form[key] === true) {
+        this.form[key] = false;
+        this._setFieldSource(key, 'auto');
+      }
+    }
+  },
+
   /** Apply autoValue rules once based on current form state (no watcher side-effects). */
   _applyInitialAutoValues() {
     this._syncLrTimescaleDefault();
     this._enforceDataLoaderUiConstraints();
+    this._enforceImageAugmentationUiConstraints();
     if (!this._autoValueRules || this._autoValueRules.length === 0) return;
     const targets = new Set(this._autoValueRules.map(rule => rule.target));
     targets.forEach(target => {
@@ -3571,6 +3573,7 @@ window.trainingCoreMixin = {
 
   updateReadonlyStates() {
     this._enforceDataLoaderUiConstraints();
+    this._enforceImageAugmentationUiConstraints();
     const self = this;
     // 公用 apply 函数：根据 met 决定启用/解除 readonly 态（含告警文本注入）。
     // 由 [data-readonly-if-key]（单 key eq/neq）与 [data-readonly-if-any]（多 key，任一成立即锁定）复用。
@@ -3804,6 +3807,12 @@ window.trainingCoreMixin = {
       if (factor === 0) value = -1;
     }
 
+    if ((key === 'cache_latents' || key === 'cache_latents_to_disk') && value === true &&
+        this.form.model_train_type !== 'krea2-lora' && this.form.random_crop === true) {
+      this.toast(this.t('field.cache_latentsLocked'), 'warning');
+      return;
+    }
+
     if ((key === 'cache_text_encoder_outputs' || key === 'cache_text_encoder_outputs_to_disk') && value === true) {
       const hasShuffleConflict = this.form.shuffle_caption === true;
       const hasTagDropoutConflict = Number(this.form.caption_tag_dropout_rate || 0) > 0;
@@ -3840,6 +3849,15 @@ window.trainingCoreMixin = {
     if (key === 'cache_latents_to_disk' && oldVal !== true && value === true) {
       this.form.cache_latents = true;
       this._setFieldSource('cache_latents', 'auto');
+    }
+    if (key === 'cache_latents' && value === false && this.form.cache_latents_to_disk === true) {
+      this.form.cache_latents_to_disk = false;
+      this._setFieldSource('cache_latents_to_disk', 'auto');
+    }
+    if (key === 'random_crop' && value === true) {
+      const hadCache = this.form.cache_latents === true || this.form.cache_latents_to_disk === true;
+      this._enforceImageAugmentationUiConstraints();
+      if (hadCache) this.toast(this.t('field.random_cropCacheDisabled'), 'warning');
     }
     if (typeof this.queueTomlPreviewChange === 'function') this.queueTomlPreviewChange(key);
     if (key === 'train_data_dir') this._syncKrea2CacheDir();

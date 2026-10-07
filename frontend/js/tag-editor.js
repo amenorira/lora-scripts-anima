@@ -16,15 +16,7 @@ function _teParseTags(s, lower) {
   return out;
 }
 
-function _teSuggestFromFreq(freq, query, limit, onResult) {
-  var q = (query || '').toLowerCase();
-  if (!q) { onResult([]); return; }
-  var out = [];
-  for (var i = 0; i < freq.length && out.length < limit; i++) {
-    if (freq[i].tag.toLowerCase().indexOf(q) !== -1) out.push(freq[i].tag);
-  }
-  onResult(out);
-}
+var TE_SUGGEST_FIELDS = { single: 'tagEditorAddInput', add: 'batchAddInput', remove: 'batchRemoveInput', old: 'batchOldTag', new: 'batchNewTag' };
 
 function _teGetSuggestCoords(inputEl) {
   var rect = inputEl.getBoundingClientRect();
@@ -36,13 +28,15 @@ function _teGetSuggestCoords(inputEl) {
   var width = Math.min(Math.max(rect.width, 240), Math.max(0, viewportWidth - margin * 2));
   var maxLeft = Math.max(margin, viewportWidth - width - margin);
   var left = Math.min(Math.max(rect.left, margin), maxLeft);
-  var maxHeight = Math.max(0, Math.min(300, rect.top - gap - margin));
-  var bottom = Math.max(margin, viewportHeight - rect.top + gap);
+  var above = Math.max(0, rect.top - gap - margin);
+  var below = Math.max(0, viewportHeight - rect.bottom - gap - margin);
+  var openAbove = above >= below;
   return {
-    left: Math.round(left),
-    bottom: Math.round(bottom),
-    width: Math.round(width),
-    maxHeight: Math.floor(maxHeight)
+    left: Math.round(left) + 'px',
+    top: openAbove ? 'auto' : Math.round(rect.bottom + gap) + 'px',
+    bottom: openAbove ? Math.round(viewportHeight - rect.top + gap) + 'px' : 'auto',
+    width: Math.round(width) + 'px',
+    maxHeight: Math.floor(Math.min(300, openAbove ? above : below)) + 'px'
   };
 }
 
@@ -164,7 +158,11 @@ window.tagEditorMixin = {
   _teSuggestTimer: null,
   _teBlurTimer: null,
   _teSuggestSeq: 0,
-  _teLocalSuggestTags: [],
+  _teSuggestField: null,
+  _teSuggestQuery: '',
+  _teSuggestLimit: 20,
+  tagEditorSuggestHasMore: false,
+  tagEditorSuggestLoading: false,
   tagEditorDetailDragOverIdx: -1,
   tagEditorDetailDragSrcIdx: -1,
   tagEditorDetailDragOverPos: '',
@@ -177,11 +175,6 @@ window.tagEditorMixin = {
   batchOldTag: '',
   batchNewTag: '',
   tagEditorBatchPos: 'front',
-  batchSuggestOpen: null,
-  batchSuggestItems: [],
-  batchSuggestIdx: -1,
-  _teBatchSuggestTimer: null,
-  _teBatchBlurTimer: null,
 
   // ===== Clipboard =====
   tagEditorCopiedTags: [],
@@ -393,10 +386,7 @@ window.tagEditorMixin = {
     this.tagEditorStopPreviewResize();
     this.tagEditorCloseLightbox();
     this._teStopAutoSave();
-    if (this._teSuggestTimer) { clearTimeout(this._teSuggestTimer); this._teSuggestTimer = null; }
-    if (this._teBlurTimer) { clearTimeout(this._teBlurTimer); this._teBlurTimer = null; }
-    if (this._teBatchSuggestTimer) { clearTimeout(this._teBatchSuggestTimer); this._teBatchSuggestTimer = null; }
-    if (this._teBatchBlurTimer) { clearTimeout(this._teBatchBlurTimer); this._teBatchBlurTimer = null; }
+    this._teCloseSuggestions();
     if (this._teSearchDebounce) { clearTimeout(this._teSearchDebounce); this._teSearchDebounce = null; }
     if (this._teTagSearchDebounce) { clearTimeout(this._teTagSearchDebounce); this._teTagSearchDebounce = null; }
     this._teDiscardPendingTextEdits();
@@ -1618,8 +1608,6 @@ window.tagEditorMixin = {
     this.tagEditorCancelQuickRemove();
     this.tagEditorPanelMenu = null;
     this._teCloseSuggestions();
-    this.batchSuggestOpen = null;
-    this._teBatchSuggestSeq = (this._teBatchSuggestSeq || 0) + 1;
     if (this.tagEditorSelected.length === 1) {
       var img = this.tagEditorGetSelectedImg();
       if (img) {
@@ -1998,54 +1986,81 @@ window.tagEditorMixin = {
   },
 
   // ===== Autocomplete =====
-  _teMergeSuggestions(local, dictionary) {
-    return _teSuggestMerge(local, dictionary, TD_SUGGEST_LIMIT, tag => this.tagDictionaryMetaFor(tag));
+  tagEditorSuggestBindings(field) {
+    var suggest = event => this.tagEditorGetSuggestions(field, event.target);
+    return {
+      role: 'combobox',
+      'aria-autocomplete': 'list',
+      'aria-controls': 'te-tag-suggestions',
+      ':aria-expanded': () => this._teSuggestField === field && this.tagEditorSuggestions.length > 0,
+      ':aria-activedescendant': () => this._teSuggestField === field && this.tagEditorSuggestIdx >= 0 ? 'te-tag-suggestion-' + this.tagEditorSuggestIdx : null,
+      '@input': event => { if (!event.isComposing) suggest(event); },
+      '@compositionstart': () => this._teCloseSuggestions(),
+      '@compositionend': suggest,
+      '@focus': suggest,
+      '@click': suggest,
+      '@keyup': event => { if (!event.isComposing && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) suggest(event); },
+      '@blur': () => this.tagEditorBlurSuggest(),
+      '@keydown': event => this.tagEditorSuggestKeydown(event, field)
+    };
   },
 
-  tagEditorGetSuggestions(val, inputEl) {
-    var seq = ++this._teSuggestSeq;
-    if (this._teSuggestTimer) { clearTimeout(this._teSuggestTimer); this._teSuggestTimer = null; }
-    if (this._teBlurTimer) { clearTimeout(this._teBlurTimer); this._teBlurTimer = null; }
-    var v = val == null ? (this.tagEditorAddInput || '') : val;
-    if (!v.trim()) { this._teCloseSuggestions(); return; }
-    this.tagEditorSuggestions = [];
-    this.tagEditorSuggestIdx = -1;
-    this._teLocalSuggestTags = [];
+  _teMergeSuggestions(local, dictionary, limit) {
+    return _teSuggestMerge(local, dictionary, limit, tag => this.tagDictionaryMetaFor(tag));
+  },
+
+  tagEditorGetSuggestions(field, inputEl) {
+    this._teCloseSuggestions();
+    var key = TE_SUGGEST_FIELDS[field];
+    if (!key || !inputEl) return;
+    var val = inputEl.value;
+    var token = field === 'old' || field === 'new' ? val.trim() : _teGetCurrentToken(val, inputEl.selectionStart);
+    if (!token) return;
+    this._teSuggestField = field;
+    this._teSuggestInputEl = inputEl;
+    this._teSuggestQuery = token;
+    this._teSuggestLimit = TD_SUGGEST_LIMIT;
+    var seq = this._teSuggestSeq;
     var self = this;
-    var el = inputEl || document.querySelector('.te-editor-add input');
-    var pos = el ? el.selectionStart : v.length;
     this._teSuggestTimer = setTimeout(function() {
-      var token = _teGetCurrentToken(v, pos);
-      if (!token) { self._teCloseSuggestions(); return; }
-      self.tagEditorSuggestIdx = -1;
-      // 本地标签（当前数据集里出现过的）先出，词典结果随后补满
-      _teSuggestFromFreq(self.tagEditorTagFreq, token, 8, function(localTags) {
-        if (seq !== self._teSuggestSeq) return;
-        self._teLocalSuggestTags = localTags;
-        self._teSetSuggestions(self._teMergeSuggestions(localTags, null), el);
-      });
-      self.tagDictionarySuggest(token, seq, el);
-    }, 50);
+      self._teSuggestTimer = null;
+      self._teFetchSuggestions(seq);
+    }, 100);
   },
 
-  /* 词典结果比本地标签晚回来，只有 seq 仍是最新时才允许替换下拉内容。 */
-  _teApplyDictSuggestions(token, seq, results, inputEl) {
+  async _teFetchSuggestions(seq) {
+    var existingOnly = this._teSuggestField === 'remove' || this._teSuggestField === 'old';
+    var source = existingOnly ? this.tagEditorGetSelectedStats() : this.tagEditorTagFreq;
+    var tags = source.map(function(item) { return item.tag; });
+    var limit = this._teSuggestLimit;
+    var query = this._teSuggestQuery;
+    var key = TagDictionary.normalizeKey(query);
+    var local = tags.filter(function(tag) { return TagDictionary.normalizeKey(tag).includes(key); });
+    // 先显示本地结果；词典没安装或查询失败时，仍然可以查看全部本地匹配。
+    if (!this.tagEditorSuggestions.length) this._teSetSuggestions(this._teMergeSuggestions(local, [], limit + 1), limit);
+    this.tagEditorSuggestLoading = true;
+    var reply = await this.tagDictionaryComplete(query, { sourceTags: tags, existingOnly: existingOnly, limit: limit + 1 });
     if (seq !== this._teSuggestSeq) return;
-    this._teSetSuggestions(this._teMergeSuggestions(this._teLocalSuggestTags, results), inputEl || this._teSuggestInputEl);
+    this.tagEditorSuggestLoading = false;
+    this._teSetSuggestions(this._teMergeSuggestions(reply ? reply.localTags : local, reply ? reply.results : [], limit + 1), limit);
   },
 
-  _teSetSuggestions(items, el) {
-    this.tagEditorSuggestions = items;
-    if (this.tagEditorSuggestIdx >= items.length) this.tagEditorSuggestIdx = -1;
-    if (items.length > 0 && el) {
-      this._teSuggestCoords = _teGetSuggestCoords(el);
-      this._teSuggestInputEl = el;
-    } else {
-      this._teSuggestCoords = null;
-    }
+  _teSetSuggestions(items, limit) {
+    var active = this.tagEditorSuggestions[this.tagEditorSuggestIdx];
+    this.tagEditorSuggestHasMore = items.length > limit;
+    this.tagEditorSuggestions = items.slice(0, limit);
+    if (active) this.tagEditorSuggestIdx = this.tagEditorSuggestions.findIndex(function(item) { return item.insert === active.insert; });
+    this._teSuggestCoords = items.length && this._teSuggestInputEl ? _teGetSuggestCoords(this._teSuggestInputEl) : null;
   },
 
-  tagEditorRefreshSuggestPosition() {
+  async tagEditorMoreSuggestions() {
+    if (!this.tagEditorSuggestHasMore || this.tagEditorSuggestLoading) return;
+    this._teSuggestLimit += TD_SUGGEST_LIMIT;
+    await this._teFetchSuggestions(++this._teSuggestSeq);
+  },
+
+  tagEditorRefreshSuggestPosition(event) {
+    if (event && event.target.closest && event.target.closest('.te-suggest')) return;
     var self = this;
     this.$nextTick(function() {
       var el = self._teSuggestInputEl;
@@ -2064,17 +2079,24 @@ window.tagEditorMixin = {
     this.tagEditorSuggestions = [];
     this.tagEditorSuggestIdx = -1;
     this._teSuggestCoords = null;
+    this._teSuggestInputEl = null;
+    this._teSuggestField = null;
+    this._teSuggestQuery = '';
+    this.tagEditorSuggestHasMore = false;
+    this.tagEditorSuggestLoading = false;
   },
 
   _teScrollSuggestion() {
     this.$nextTick(function () {
-      var active = document.querySelector('.te-suggest-item.active');
+      var active = document.querySelector('#te-tag-suggestions .te-suggest-item.active');
       if (active) active.scrollIntoView({ block: 'nearest' });
     });
   },
 
   tagEditorBlurSuggest() {
     if (this._teSuggestTimer) { clearTimeout(this._teSuggestTimer); this._teSuggestTimer = null; }
+    this._teSuggestSeq++;
+    this.tagEditorSuggestLoading = false;
     var self = this;
     this._teBlurTimer = setTimeout(function() {
       self._teCloseSuggestions();
@@ -2085,27 +2107,70 @@ window.tagEditorMixin = {
     // 下拉条目可能是词典结果对象：插入的是 Anima 格式的 insert，不是别名也不是下划线原形
     var insert = (s && typeof s === 'object') ? (s.insert || '') : s;
     if (!insert) return;
-    var el = this._teSuggestInputEl || document.querySelector('.te-editor-add input');
-    var val = this.tagEditorAddInput || '';
+    var el = this._teSuggestInputEl;
+    var field = this._teSuggestField;
+    var key = TE_SUGGEST_FIELDS[field];
+    if (!key) return;
+    var val = this[key] || '';
     var pos = el ? el.selectionStart : val.length;
-    var result = _teReplaceToken(val, pos, insert);
-    this.tagEditorAddInput = result.text;
+    var result = field === 'old' || field === 'new' ? { text: insert, caretPos: insert.length } : _teReplaceToken(val, pos, insert);
+    this[key] = result.text;
     this._teCloseSuggestions();
     if (el) {
       var self = this;
-      setTimeout(function() { el.focus(); el.setSelectionRange(result.caretPos, result.caretPos); }, 10);
+      this.$nextTick(function() {
+        el.focus();
+        el.setSelectionRange(result.caretPos, result.caretPos);
+        self._teCloseSuggestions();
+      });
+    }
+  },
+
+  tagEditorSuggestKeydown(event, field) {
+    if (event.isComposing || event.keyCode === 229) return;
+    if (event.key === 'Escape') {
+      event.preventDefault(); event.stopPropagation();
+      this._teCloseSuggestions();
+      return;
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      if (!this.tagEditorSuggestions.length) return;
+      event.preventDefault(); event.stopPropagation();
+      if (event.key === 'ArrowDown' && this.tagEditorSuggestIdx === this.tagEditorSuggestions.length - 1 && this.tagEditorSuggestHasMore) {
+        var seq = this._teSuggestSeq;
+        var next = this.tagEditorSuggestIdx + 1;
+        this.tagEditorMoreSuggestions().then(() => {
+          if (this._teSuggestSeq === seq + 1 && this.tagEditorSuggestions[next]) {
+            this.tagEditorSuggestIdx = next;
+            this._teScrollSuggestion();
+          }
+        });
+        return;
+      }
+      var delta = event.key === 'ArrowDown' ? 1 : -1;
+      this.tagEditorSuggestIdx = Math.max(-1, Math.min(this.tagEditorSuggestions.length - 1, this.tagEditorSuggestIdx + delta));
+      this._teScrollSuggestion();
+      return;
+    }
+    if ((event.key === 'Enter' || (event.key === 'Tab' && !event.shiftKey)) && this.tagEditorSuggestions[this.tagEditorSuggestIdx]) {
+      event.preventDefault(); event.stopPropagation();
+      this.tagEditorSelectSuggestion(this.tagEditorSuggestions[this.tagEditorSuggestIdx]);
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault(); event.stopPropagation();
+      this._teCloseSuggestions();
+      if (field === 'single') this.tagEditorAddTagToSelected();
+      else if (this.tagEditorBatchMode === 'add') this.tagEditorBatchAdd();
+      else if (this.tagEditorBatchMode === 'remove') this.tagEditorBatchRemove();
+      else if (this.tagEditorBatchMode === 'replace') this.tagEditorBatchReplace();
     }
   },
 
   // ===== Batch Operations =====
   tagEditorSetBatchMode(mode) {
-    if (this._teBatchSuggestTimer) clearTimeout(this._teBatchSuggestTimer);
-    if (this._teBatchBlurTimer) clearTimeout(this._teBatchBlurTimer);
+    this._teCloseSuggestions();
     this.tagEditorBatchMode = mode;
-    this.batchSuggestOpen = null;
-    this.batchSuggestItems = [];
-    this.batchSuggestIdx = -1;
-    this._teBatchSuggestSeq = (this._teBatchSuggestSeq || 0) + 1;
   },
 
   tagEditorPrepareRemove(tag) {
@@ -2119,77 +2184,6 @@ window.tagEditorMixin = {
     return this.tagEditorGetSelectedStats().filter(function(item) {
       return filter === 'all' || (filter === 'shared' ? item.state === 'intersection' : item.state === 'partial');
     });
-  },
-
-  tagEditorBatchSuggest(field) {
-    if (this._teBatchSuggestTimer) { clearTimeout(this._teBatchSuggestTimer); this._teBatchSuggestTimer = null; }
-    if (this._teBatchBlurTimer) { clearTimeout(this._teBatchBlurTimer); this._teBatchBlurTimer = null; }
-    var seq = this._teBatchSuggestSeq = (this._teBatchSuggestSeq || 0) + 1;
-    var val = this[{ add:'batchAddInput', remove:'batchRemoveInput', old:'batchOldTag', new:'batchNewTag' }[field]];
-    this.batchSuggestItems = [];
-    this.batchSuggestIdx = -1;
-    if (!val || !val.trim()) { this.batchSuggestOpen = null; this.batchSuggestItems = []; return; }
-    var self = this;
-    var v = val.split(',').pop().trim().toLowerCase();
-    if (!v) { this.batchSuggestOpen = null; return; }
-    this._teBatchSuggestTimer = setTimeout(async function() {
-      var existingOnly = field === 'remove' || field === 'old';
-      var tags = (existingOnly ? self.tagEditorGetSelectedStats() : self.tagEditorTagFreq).map(function(item) { return item.tag; });
-      var local = tags.filter(function(tag) { return tag.toLowerCase().includes(v); });
-      var result = await self.tagDictionaryComplete(v, { sourceTags: tags });
-      if (seq !== self._teBatchSuggestSeq) return;
-      var items = self._teMergeSuggestions(result ? result.localTags : local, result ? result.results : []);
-      if (existingOnly) {
-        var allowed = new Set(tags);
-        items = items.filter(function(item) { return allowed.has(item.insert); });
-      }
-      self.batchSuggestItems = items;
-      self.batchSuggestOpen = items.length ? field : null;
-    }, 100);
-  },
-
-  tagEditorBatchBlur() {
-    if (this._teBatchSuggestTimer) { clearTimeout(this._teBatchSuggestTimer); this._teBatchSuggestTimer = null; }
-    var self = this;
-    this._teBatchBlurTimer = setTimeout(function() {
-      self.batchSuggestOpen = null;
-      self._teBatchSuggestSeq = (self._teBatchSuggestSeq || 0) + 1;
-    }, 200);
-  },
-
-  tagEditorBatchSelectSuggestion(s) {
-    var field = this.batchSuggestOpen;
-    var key = { add:'batchAddInput', remove:'batchRemoveInput', old:'batchOldTag', new:'batchNewTag' }[field];
-    if (!key) return;
-    var insert = typeof s === 'string' ? s : s.insert;
-    this[key] = field === 'add' || field === 'remove' ? _teReplaceToken(this[key], this[key].length, insert).text : insert;
-    this._teBatchSuggestSeq = (this._teBatchSuggestSeq || 0) + 1;
-    this.batchSuggestOpen = null;
-    this.batchSuggestItems = [];
-  },
-
-  tagEditorBatchKeydown(event) {
-    if (event.isComposing || event.keyCode === 229) return;
-    if (event.key === 'Escape') { event.stopPropagation(); this.tagEditorSetBatchMode(this.tagEditorBatchMode); }
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault(); event.stopPropagation();
-      var delta = event.key === 'ArrowDown' ? 1 : -1;
-      this.batchSuggestIdx = Math.max(0, Math.min(this.batchSuggestItems.length - 1, this.batchSuggestIdx + delta));
-      this.$nextTick(function() {
-        var active = Array.from(document.querySelectorAll('.te-batch-row .te-suggest-item.active')).find(function(el) { return el.offsetParent !== null; });
-        if (active) active.scrollIntoView({block:'nearest'});
-      });
-    }
-    if (event.key === 'Enter') {
-      event.preventDefault(); event.stopPropagation();
-      if (this.batchSuggestOpen && this.batchSuggestItems[this.batchSuggestIdx]) {
-        this.tagEditorBatchSelectSuggestion(this.batchSuggestItems[this.batchSuggestIdx]);
-        return;
-      }
-      if (this.tagEditorBatchMode === 'add') this.tagEditorBatchAdd();
-      else if (this.tagEditorBatchMode === 'remove') this.tagEditorBatchRemove();
-      else if (this.tagEditorBatchMode === 'replace') this.tagEditorBatchReplace();
-    }
   },
 
   tagEditorGetBatchTargets() {
@@ -3037,27 +3031,6 @@ window.tagEditorMixin = {
         e.preventDefault();
         this.tagEditorPasteTagsToSelected();
       }
-      return;
-    }
-    if (e.key === 'ArrowDown' && this.tagEditorSuggestions.length > 0
-        && this._teSuggestInputEl && e.target === this._teSuggestInputEl) {
-      e.preventDefault();
-      this.tagEditorSuggestIdx = Math.min(this.tagEditorSuggestIdx + 1, this.tagEditorSuggestions.length - 1);
-      this._teScrollSuggestion();
-      return;
-    }
-    if (e.key === 'ArrowUp' && this.tagEditorSuggestions.length > 0
-        && this._teSuggestInputEl && e.target === this._teSuggestInputEl) {
-      e.preventDefault();
-      this.tagEditorSuggestIdx = Math.max(this.tagEditorSuggestIdx - 1, -1);
-      this._teScrollSuggestion();
-      return;
-    }
-    if ((e.key === 'Enter' || e.key === 'Tab') && this.tagEditorSuggestions.length > 0 &&
-        this._teSuggestInputEl && e.target === this._teSuggestInputEl &&
-        this.tagEditorSuggestIdx >= 0 && this.tagEditorSuggestIdx < this.tagEditorSuggestions.length) {
-      e.preventDefault();
-      this.tagEditorSelectSuggestion(this.tagEditorSuggestions[this.tagEditorSuggestIdx]);
       return;
     }
     if (e.key === 'Escape') {

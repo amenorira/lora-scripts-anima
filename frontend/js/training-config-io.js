@@ -17,7 +17,7 @@ window.trainingConfigIoMixin = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          form: this._collectTrainingFormSnapshot ? this._collectTrainingFormSnapshot() : { ...(this.form || {}) },
+          form: this._collectTrainingFormSnapshot(),
           document_id: this._trainingDocumentId || null,
         }),
       });

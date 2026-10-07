@@ -24,6 +24,10 @@ class TrainingConfigYamlTests(unittest.TestCase):
                 "positive_prompts": "一名角色",
                 "sample_seed": 42,
                 "train_batch_size": 1,
+                "flip_aug": True,
+                "random_crop": True,
+                "cache_latents": False,
+                "cache_latents_to_disk": False,
                 "optimizer_type": LORA_MUON_OPTIMIZER_TYPE,
                 "network_dim": 16,
                 "network_alpha": 16,
@@ -46,6 +50,8 @@ class TrainingConfigYamlTests(unittest.TestCase):
         self.assertEqual(restored["positive_prompts"], "一名角色")
         self.assertEqual(loaded["parameters"]["training"]["train_batch_size"], 1)
         self.assertEqual(restored["train_batch_size"], 1)
+        for key, value in (("flip_aug", True), ("random_crop", True), ("cache_latents", False), ("cache_latents_to_disk", False)):
+            self.assertIs(restored[key], value)
         self.assertEqual(restored["network_dim"], 16)
         self.assertEqual(restored["network_alpha"], 16)
         self.assertEqual(restored["max_grad_norm"], 0)

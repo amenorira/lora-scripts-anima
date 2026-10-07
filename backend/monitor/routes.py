@@ -17,14 +17,15 @@ from fastapi import APIRouter, Query, Request
 
 from backend.monitor.training import (
     read_tensorboard_loss, parse_log_progress,
-    latest_train_config, extract_train_params,
+    extract_train_params,
 )
 from backend.monitor.artifacts import (
-    newest_previews, scan_history, _parse_toml_config,
+    newest_previews, scan_history,
     list_output_files, read_output_summary, enrich_model_files_with_loss,
     find_run_log_path, find_train_log_path, read_log_slice,
 )
 from backend.monitor.run_registry import (
+    read_run_config,
     find_run_record_by_task_id,
     load_run_record,
     mark_run_deleted,
@@ -190,7 +191,7 @@ async def build_live_monitor_snapshot(
     if record and record["artifact_available"]:
         result["output_count"] = (await asyncio.to_thread(read_output_summary, str(artifact_path)))["count"]
 
-    train_config = await asyncio.to_thread(latest_train_config, active_task_id or None)
+    train_config = await asyncio.to_thread(read_run_config, run_path) if run_path else {}
 
     # 预览只读取当前记录登记的产物目录，磁盘离线时返回空并保留明确状态。
     # ``0`` 是完整列表的显式约定；详细仪表盘只传轻量元数据，缩略图仍由
@@ -205,68 +206,11 @@ async def build_live_monitor_snapshot(
         False,
         record["run_dir"] if record else "",
     )
-    result["train_params"] = await asyncio.to_thread(
-        _extract_train_params_for_run, run_path, train_config
-    )
+    result["train_params"] = extract_train_params(train_config)
     if active_status == "RUNNING" and run_path:
         result.update(await asyncio.to_thread(_read_run_log_progress, run_path, log_tail_lines))
 
     return result
-
-
-def _fmt_summary_lr(v) -> str:
-    """格式化摘要中的学习率：小量值用科学计数法，其余去尾零。"""
-    if v is None or v == "" or v == "?":
-        return "?"
-    try:
-        n = float(v)
-    except (TypeError, ValueError):
-        return str(v)
-    if 0 < abs(n) < 0.001:
-        return f"{n:.2e}"
-    return str(n)
-
-
-def _last_config_from_autosave(train_config: dict) -> dict:
-    """从 autosave TOML 提取上次训练摘要（回退路径）"""
-    return {
-        "name": train_config.get("output_name", ""),
-        "model": Path(
-            train_config.get("pretrained_model_name_or_path", "")
-        ).name or "Unknown",
-        "lr": _fmt_summary_lr(train_config.get("learning_rate", "?")),
-        "dim": train_config.get("network_dim", "?"),
-        "epochs": train_config.get("max_train_epochs", "?"),
-    }
-
-
-def _resolve_run_config_params(run_dir: Path) -> dict | None:
-    """从 run_dir/config.toml 提取上次训练摘要（真实来源，优于 autosave）"""
-    config_file = run_dir / "config.toml"
-    if not config_file.exists():
-        return None
-    params = _parse_toml_config(config_file)
-    if not params:
-        return None
-    model_path = params.get("pretrained_model_name_or_path", "")
-    return {
-        "name": params.get("output_name", run_dir.name),
-        "model": Path(model_path).name if model_path else "Unknown",
-        "lr": _fmt_summary_lr(params.get("learning_rate", "?")),
-        "dim": params.get("network_dim", "?"),
-        "epochs": params.get("max_train_epochs", "?"),
-    }
-
-
-def _extract_train_params_for_run(run_dir: Path | None, autosave_config: dict) -> list[dict]:
-    """优先从 run_dir/config.toml 提取训练参数，回退到 autosave TOML"""
-    if run_dir is not None:
-        config_file = run_dir / "config.toml"
-        if config_file.exists():
-            params = _parse_toml_config(config_file)
-            if params:
-                return extract_train_params(params)
-    return extract_train_params(autosave_config)
 
 
 @router.get("/monitor/loss")
@@ -305,13 +249,6 @@ async def monitor_previews(
             "preview_enabled": record["preview_enabled"] if record else None,
         },
     }
-
-
-@router.get("/monitor/config")
-async def monitor_config():
-    train_config = await asyncio.to_thread(latest_train_config)
-    data = await asyncio.to_thread(extract_train_params, train_config)
-    return {"status": "success", "data": data}
 
 
 def _resolve_live_record(task_id: str = "", run_dir: str = "") -> dict | None:
@@ -360,8 +297,8 @@ async def monitor_history():
 
     # 仅为当前活跃任务补充训练参数；终态任务由 history 列表负责展示。
     if running:
-        train_config = await asyncio.to_thread(latest_train_config)
         record = await asyncio.to_thread(find_run_record_by_task_id, running.get("id", ""))
+        train_config = await asyncio.to_thread(read_run_config, record["run_path"]) if record else {}
         running["name"] = train_config.get("output_name", "")
         running["model"] = train_config.get("pretrained_model_name_or_path", "")
         running["lr"] = train_config.get("learning_rate", "?")
@@ -429,15 +366,10 @@ async def monitor_run_detail(run_dir: str = Query("")):
     }
 
     # ── 配置参数 ──
-    config_file = abs_run_dir / "config.toml"
-    if config_file.exists():
-        try:
-            params = _parse_toml_config(config_file)
-            if params:
-                result["config"] = params
-                result["train_params"] = extract_train_params(params)
-        except Exception:
-            pass
+    params = await asyncio.to_thread(read_run_config, abs_run_dir)
+    if params:
+        result["config"] = params
+        result["train_params"] = extract_train_params(params)
 
     # ── TensorBoard Loss/LR 图表 ──
     result["tensorboard_loss"] = await asyncio.to_thread(read_tensorboard_loss, run_dir=str(abs_run_dir))
@@ -750,10 +682,10 @@ async def get_config_from_run(run_dir: str = Query("")):
             except TrainingConfigError as exc:
                 yaml_warning = str(exc)
                 content = config_file.read_text(encoding="utf-8")
-                params = _parse_toml_config(config_file)
+                params = read_run_config(config_file.parent)
         else:
             content = config_file.read_text(encoding="utf-8")
-            params = _parse_toml_config(config_file)
+            params = read_run_config(config_file.parent)
         reusable_params = dict(params or {})
         # 非续训复用时恢复用户填写的输出根目录，避免继续嵌套上次时间戳目录。
         if not reusable_params.get("resume") and (

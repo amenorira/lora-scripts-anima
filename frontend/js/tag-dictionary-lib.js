@@ -25,9 +25,6 @@
   // core 记录字段下标（与 tools/dev/build_tag_dictionary.py 的输出一致）
   var F_CANONICAL = 0, F_TRANSLATION = 1, F_CATEGORY = 2, F_POST_COUNT = 3, F_ALIASES = 4;
 
-  // 单次前缀扫描的安全上限：命中再多也只保留这个数量，避免极端短前缀拖慢查询
-  var PREFIX_SCAN_LIMIT = 20000;
-
   // Decode one layer of caption escaping for display/lookup only. Keep unknown
   // escapes intact; this is not a general-purpose string or prompt parser.
   function displayTag(value) {
@@ -144,13 +141,13 @@
   }
 
   /* 二分定位前缀起点，再顺序扫出所有命中；结果按 id 升序（热门优先）。 */
-  function prefixMatches(order, keyOf, prefix, bucket, cap) {
+  function prefixMatches(order, keyOf, prefix, bucket) {
     var low = 0, high = order.length;
     while (low < high) {
       var mid = (low + high) >> 1;
       if (keyOf(order[mid]) < prefix) low = mid + 1; else high = mid;
     }
-    for (var i = low; i < order.length && bucket.length < cap; i++) {
+    for (var i = low; i < order.length; i++) {
       if (!keyOf(order[i]).startsWith(prefix)) break;
       bucket.push(order[i]);
     }
@@ -219,7 +216,7 @@
       prefix = keys[i];
       bucket = [];
       prefixMatches(index.canonicalOrder, function (id) { return index.canonicalKeys[id]; },
-        prefix, bucket, PREFIX_SCAN_LIMIT);
+        prefix, bucket);
       bucket.sort(ascending);
       for (pos = 0; pos < bucket.length && out.length < cap; pos++) {
         pushHit(out, ids, bucket[pos], 'canonical');
@@ -230,7 +227,7 @@
       bucket = [];
       prefixMatches(index.translationOrder, function (p) {
         return index.translationKeys[index.translationIds[p]];
-      }, prefix, bucket, PREFIX_SCAN_LIMIT);
+      }, prefix, bucket);
       list = bucket.map(function (p) { return index.translationIds[p]; }).sort(ascending);
       for (pos = 0; pos < list.length && out.length < cap; pos++) {
         pushHit(out, ids, list[pos], 'translation');
@@ -240,7 +237,7 @@
       prefix = keys[i];
       bucket = [];
       prefixMatches(index.aliasOrder, function (entry) { return index.aliasKeys[entry]; },
-        prefix, bucket, PREFIX_SCAN_LIMIT);
+        prefix, bucket);
       bucket.sort(function (a, b) { return index.aliasIds[a] - index.aliasIds[b]; });
       for (pos = 0; pos < bucket.length && out.length < cap; pos++) {
         pushAliasHit(index, out, ids, bucket[pos], 'alias');
@@ -274,7 +271,7 @@
      out 的顺序就是排序结果：同一层级内 id 升序 == 图片数降序
      （构建脚本已按图片数降序输出 records，见 createIndex 注释）。 */
   function search(index, query, limit) {
-    var max = Math.max(1, Math.min(Number(limit) || 20, 50));
+    var max = Math.max(1, Math.min(Number(limit) || 20, index.records.length));
     var keys = lookupKeys(query);
     if (!keys.length) return [];
 
