@@ -109,6 +109,53 @@ test('incremental task metrics update real Loss and LR paths without rebuilding 
   assert.equal(a.monitorData.lr, '4.0000e-5');
 });
 
+test('live Loss follows arriving steps and compares batched updates with the last displayed reading', () => {
+  const a = app({ liveTaskId: 'A', currentRoute: 'monitor-dashboard', monitorData: { state: 'RUNNING' } });
+  const root = summaryRoot();
+  const render = () => a._patchOverviewStatus(root, a.monitorData, key => key === 'lossUpdatedAt' ? 'Step {n}' : key, false);
+  const metrics = points => a.handleRealtimeTaskMetrics({ points: { 'loss/current': points } });
+  render();
+  metrics([{ step: 137, value: .1 }, { step: 138, value: .08 }]);
+  render();
+  assert.equal(root.node('[data-summary-field="loss"]').textContent, '0.0800');
+  assert.equal(root.node('[data-summary-loss-change]').hidden, true);
+  metrics([{ step: 139, value: .0556 }, { step: 140, value: .0685 }]);
+  render();
+  assert.equal(root.node('[data-summary-field="loss"]').textContent, '0.0685');
+  assert.equal(root.node('[data-summary-field="loss-meta"]').textContent, 'Step 140');
+  assert.equal(root.node('[data-summary-loss-change]').dataset.direction, 'down');
+  assert.equal(root.node('[data-loss-delta]').textContent, '14.4%');
+  // 硬件/进度重绘、LR 更新、重复指标均不重置比较基准。
+  render();
+  a.handleRealtimeTaskMetrics({ points: { 'lr/unet': [{ step: 140, value: .0001 }] } });
+  metrics([{ step: 140, value: .0685 }]);
+  render();
+  assert.equal(root.node('[data-loss-delta]').textContent, '14.4%');
+  metrics([{ step: 141, value: .03425 }]);
+  render();
+  assert.equal(root.node('[data-loss-delta]').textContent, '50.0%');
+  a.liveTaskId = 'B';
+  a.lossSeries = [{ tag: 'loss/current', points: [{ step: 1, value: .5 }] }];
+  render();
+  assert.equal(root.node('[data-summary-loss-change]').hidden, true);
+});
+
+test('Loss history uses adjacent samples while zero and empty live baselines hide the change', () => {
+  const a = app({ selectedRunDir: 'output/history', runDetailData: { tensorboard_loss: [
+    { tag: 'loss/current', points: [{ step: 139, value: .0556 }, { step: 140, value: .0685 }] },
+  ] } });
+  const root = summaryRoot();
+  a._patchOverviewStatus(root, { state: 'FINISHED' }, key => key, true);
+  assert.equal(root.node('[data-summary-loss-change]').dataset.direction, 'up');
+  assert.equal(root.node('[data-loss-delta]').textContent, '23.2%');
+  a.selectedRunDir = null;
+  a.lossSeries = [{ tag: 'loss/current', points: [{ step: 1, value: 0 }] }];
+  a._patchOverviewStatus(root, { state: 'RUNNING' }, key => key, false);
+  a.lossSeries[0].points.push({ step: 2, value: .1 });
+  a._patchOverviewStatus(root, { state: 'RUNNING' }, key => key, false);
+  assert.equal(root.node('[data-summary-loss-change]').hidden, true);
+});
+
 test('elapsed clock advances independently while remaining time follows logs and terminal/history values stay fixed', ctx => {
   let now = 1000;
   ctx.mock.method(performance, 'now', () => now);

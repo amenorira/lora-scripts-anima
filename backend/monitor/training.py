@@ -22,10 +22,9 @@ logging.getLogger("tensorboard").setLevel(logging.WARNING)
 
 # ── TensorBoard Event 缓存 ─────────────────────────────────
 # 缓存 EventAccumulator 实例，按 log_dir 索引
-# 每次请求检查 event file mtime，仅在文件更新时重新 Reload
-_tb_cache: dict[str, tuple[float, float, str, Any]] = {}
+# 每次请求检查 event file 的时间与大小；新 step 写入后立即 Reload。
+_tb_cache: dict[str, tuple[float, tuple[str, int, int], str, Any]] = {}
 _tb_cache_lock = threading.Lock()
-_CACHE_TTL = 2.0  # 缓存有效期（秒），避免频繁 Reload
 
 # 增量读取用：按 (log_dir_str, tag) 追踪已推送的最大 step
 _last_seen_step: dict[tuple[str, str], int] = {}
@@ -53,31 +52,29 @@ def _get_cached_accumulator(log_dir: Path) -> Any | None:
         return None
 
     # 使用最新 event file 的所在目录（EventAccumulator 不递归搜索子目录）
-    ef_with_mtime = [(p, p.stat().st_mtime) for p in event_files]
-    ef_with_mtime.sort(key=lambda x: x[1], reverse=True)
-    latest_ef_path, latest_mtime = ef_with_mtime[0]
+    ef_with_stat = [(p, p.stat()) for p in event_files]
+    ef_with_stat.sort(key=lambda x: x[1].st_mtime_ns, reverse=True)
+    latest_ef_path, latest_stat = ef_with_stat[0]
+    stamp = (str(latest_ef_path), latest_stat.st_mtime_ns, latest_stat.st_size)
     event_dir = str(latest_ef_path.parent)  # 实际包含 event file 的目录
     now = time.time()
 
     with _tb_cache_lock:
         if log_dir_str in _tb_cache:
-            cache_time, cached_mtime, cached_event_dir, cached_ea = _tb_cache[log_dir_str]
-            if cached_event_dir == event_dir and (now - cache_time) < _CACHE_TTL:
-                return cached_ea
-
-            if cached_event_dir == event_dir and cached_mtime == latest_mtime:
-                _tb_cache[log_dir_str] = (now, cached_mtime, cached_event_dir, cached_ea)
+            _, cached_stamp, cached_event_dir, cached_ea = _tb_cache[log_dir_str]
+            if cached_event_dir == event_dir and cached_stamp == stamp:
+                _tb_cache[log_dir_str] = (now, stamp, cached_event_dir, cached_ea)
                 return cached_ea
 
             if cached_event_dir == event_dir:
                 try:
                     cached_ea.Reload()
-                    _tb_cache[log_dir_str] = (now, latest_mtime, event_dir, cached_ea)
+                    _tb_cache[log_dir_str] = (now, stamp, event_dir, cached_ea)
                     return cached_ea
                 except Exception:
                     _tb_cache.pop(log_dir_str, None)
 
-    # 缓存未命中或过期：创建新 accumulator
+    # 缓存未命中或日志目录切换：创建新 accumulator
     try:
         ea = event_accumulator.EventAccumulator(
             event_dir,
@@ -85,7 +82,7 @@ def _get_cached_accumulator(log_dir: Path) -> Any | None:
         )
         ea.Reload()
         with _tb_cache_lock:
-            _tb_cache[log_dir_str] = (now, latest_mtime, event_dir, ea)
+            _tb_cache[log_dir_str] = (now, stamp, event_dir, ea)
             # 清理过大的缓存（保留最近 3 个）
             if len(_tb_cache) > 3:
                 oldest = min(_tb_cache.keys(), key=lambda k: _tb_cache[k][0])

@@ -476,6 +476,23 @@ window.monitorRenderMixin = {
     const lossPoints = this._cleanLossPoints(lossSeries && (lossSeries.diagnostic_points || lossSeries.points));
     const latestLoss = lossPoints[lossPoints.length - 1];
     set('loss', latestLoss ? this._formatDiagnosticValue(latestLoss.value) : (d.loss != null ? d.loss : '—'));
+    // 每次实际显示新采样时记录比较基准；批量到达的中间 step 不冒充上次读数。
+    const displayedLoss = root._displayedLoss;
+    const sameLossContext = displayedLoss?.context === motionContext;
+    if (isHistory || !sameLossContext || displayedLoss.point?.step !== latestLoss?.step || displayedLoss.point?.value !== latestLoss?.value) {
+      root._displayedLoss = {
+        context: motionContext,
+        point: latestLoss,
+        trend: this._summaryLossChange(lossSeries, isHistory ? undefined : (sameLossContext ? (displayedLoss.point ?? null) : null)),
+      };
+    }
+    const lossTrend = root._displayedLoss.trend;
+    const lossChange = root.querySelector('[data-summary-loss-change]');
+    if (lossChange) {
+      lossChange.hidden = !lossTrend;
+      if (lossTrend) this._patchLossChange(lossChange, lossTrend.percent, t, animate);
+    }
+    set('loss-meta', latestLoss ? t('lossUpdatedAt').replace('{n}', latestLoss.step) : t('recentLoss'));
     set('lr', this._formatLearningRate(lrLatest ?? d.lr, '—'));
     const lrRangeEl = root.querySelector('[data-summary-field="lr-range"]');
     if (lrRangeEl) {
@@ -501,15 +518,6 @@ window.monitorRenderMixin = {
           this._patchRollingSparkline(path, series?.diagnostic_points?.length ? series.diagnostic_points : (series?.points || []), animate, root.dataset.motionContext, { relativeSpan: path === lrPath ? .02 : .2 });
         }
       }
-      const lossTrend = this._summaryLossChange(lossSeries);
-      const lossChange = root.querySelector('[data-summary-loss-change]');
-      if (lossChange) {
-        lossChange.hidden = !lossTrend;
-        if (lossTrend) {
-          this._patchLossChange(lossChange, lossTrend.percent, t, animate);
-        }
-      }
-      set('loss-meta', latestLoss ? t('lossUpdatedAt').replace('{n}', latestLoss.step) : t('recentLoss'));
     }
     this._patchSummaryTelemetry(root, t, isHistory, d);
     this._patchTrainingDiagnostics(root, t, d, isHistory);
@@ -674,10 +682,12 @@ window.monitorRenderMixin = {
     return this.monitorLossSeries.find(item => item.tag === 'loss/current');
   },
 
-  _summaryLossChange(series) {
+  _summaryLossChange(series, previousPoint) {
     const points = this._cleanLossPoints(series && (series.diagnostic_points || series.points));
-    if (points.length < 2) return null;
-    const previous = points[points.length - 2].value;
+    const latest = points.at(-1);
+    const baseline = previousPoint === undefined ? points.at(-2) : previousPoint;
+    if (!latest || !baseline || latest.step < baseline.step) return null;
+    const previous = baseline.value;
     if (Math.abs(previous) < 1e-12) return null;
     const percent = (points[points.length - 1].value - previous) / Math.abs(previous) * 100;
     return Number.isFinite(percent) ? { percent } : null;
