@@ -18,9 +18,9 @@ from typing import Any
 
 from backend.core.realtime import realtime_hub, realtime_tasks, task_topic
 from backend.monitor.hardware import gpu_info, system_info
-from backend.monitor.training import parse_log_progress, latest_train_config, read_tensorboard_incremental
+from backend.monitor.training import parse_log_progress, read_tensorboard_incremental
 from backend.monitor.artifacts import find_train_log_path, newest_previews, read_output_summary, read_log_slice
-from backend.monitor.run_registry import find_run_record_by_task_id
+from backend.monitor.run_registry import find_run_record_by_task_id, read_run_config
 from backend.tasks import tm
 
 logger = logging.getLogger(__name__)
@@ -324,10 +324,10 @@ class TaskMonitor:
     async def _collect_task_data(self, task_id: str) -> None:
         """收集任务进度和日志增量"""
         try:
-            train_config = await asyncio.to_thread(latest_train_config, task_id)
             record = await asyncio.to_thread(find_run_record_by_task_id, task_id)
             run_dir = str(record["run_path"]) if record else None
             run_dir_path = Path(run_dir) if run_dir else None
+            train_config = await asyncio.to_thread(read_run_config, run_dir_path) if run_dir_path else {}
 
             # 增量索引只扫描追加内容，行号/进度条覆盖规则与 HTTP 分页一致。
             log_delta = await asyncio.to_thread(

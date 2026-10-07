@@ -78,7 +78,7 @@ window.trainingTomlMixin = {
         if (typeof v === 'boolean') { pushLine(section.key, `${k} = ${v}`); }
         else if (typeof v === 'number') { pushLine(section.key, `${k} = ${v}`); }
         else {
-          const coerced = this._isPathFieldRole(f.role) ? v : this._coerceNum(v);
+          const coerced = (f.valueType || f.type) === 'number' ? this._coerceNum(v) : v;
           if (coerced !== v) { pushLine(section.key, `${k} = ${coerced}`); }
           else { pushLine(section.key, `${k} = "${String(v).replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`); }
         }
@@ -99,28 +99,6 @@ window.trainingTomlMixin = {
     const netCustom = this.form.network_args_custom;
     if (netCustom && typeof netCustom === 'string') {
       netArgsArr.push(...netCustom.split('\n').map(s => s.trim()).filter(s => s && !isManagedLoraplusArg(s)));
-    }
-    // LoRA+ uses the exact sd-scripts network_args names. The product toggle is UI-only.
-    const setNetworkArg = (argKey, value) => {
-      const prefix = argKey + '=';
-      for (let i = netArgsArr.length - 1; i >= 0; i--) {
-        if (String(netArgsArr[i]).trim().startsWith(prefix)) netArgsArr.splice(i, 1);
-      }
-      netArgsArr.push(prefix + String(value));
-    };
-    const loraplusToggleField = fieldByKey.get('enable_loraplus');
-    const loraplusEnabled = this.form.enable_loraplus === true
-      && loraplusToggleField
-      && this._fieldShowIfMet(loraplusToggleField);
-    if (loraplusEnabled) {
-      LORAPLUS_ARG_KEYS.forEach(argKey => {
-        const ratioField = fieldByKey.get(argKey);
-        if (!ratioField || !this._fieldShowIfMet(ratioField)) return;
-        const value = this.form[argKey];
-        if (value === '' || value === null || value === undefined) return;
-        if (typeof value === 'number' && isNaN(value)) return;
-        setNetworkArg(argKey, value);
-      });
     }
     // AdaLN 调制层开关（Anima）→ include_patterns，与 adapter.py 2.6 节一致：
     // 用户在 network_args_custom 手写的同 key 项必须并集合成单条，
@@ -251,102 +229,10 @@ window.trainingTomlMixin = {
 
   _tomlPreviewArgTarget(key) {
     if (String(this.form && this.form.model_train_type || '') === 'krea2-lora') return null;
-    const networkArgs = {
-      loraplus_lr_ratio: 'loraplus_lr_ratio',
-      loraplus_unet_lr_ratio: 'loraplus_unet_lr_ratio',
-      loraplus_text_encoder_lr_ratio: 'loraplus_text_encoder_lr_ratio',
-      lycoris_algo: 'algo',
-      conv_dim: 'conv_dim',
-      conv_alpha: 'conv_alpha',
-      lokr_factor: 'factor',
-      use_tucker: 'use_tucker',
-      use_scalar: 'use_scalar',
-      decompose_both: 'decompose_both',
-      full_matrix: 'full_matrix',
-      train_norm: 'train_norm',
-      rank_dropout: 'rank_dropout',
-      module_dropout: 'module_dropout',
-      dropout: 'dropout',
-      dora_wd: 'dora_wd',
-      bypass_mode: 'bypass_mode',
-      rs_lora: 'rs_lora',
-      lycoris_preset: 'preset',
-      unbalanced_factorization: 'unbalanced_factorization',
-      wd_on_output: 'wd_on_output',
-    };
-    if (Object.prototype.hasOwnProperty.call(networkArgs, key)) {
-      return { paramKey: 'network_args', argKey: networkArgs[key] };
-    }
-    const optimizerArgs = {
-      weight_decay: 'weight_decay',
-      stopcoef: 'stopcoef',
-      notify: 'notify',
-      use_shadow: 'use_shadow',
-      prodigy_d_coef: 'd_coef',
-      prodigy_d0: 'd0',
-      prodigy_safeguard_warmup: 'safeguard_warmup',
-      prodigyplus_use_stableadamw: 'use_stableadamw',
-      d_limiter: 'd_limiter',
-      schedulefree_c: 'schedulefree_c',
-      prodigy_steps: 'prodigy_steps',
-      use_bias_correction: 'use_bias_correction',
-      use_speed: 'use_speed',
-      use_cautious: 'use_cautious',
-      use_orthograd: 'use_orthograd',
-      factored: 'factored',
-      factored_fp32: 'factored_fp32',
-      split_groups: 'split_groups',
-      split_groups_mean: 'split_groups_mean',
-      weight_decay_by_lr: 'weight_decay_by_lr',
-      schedulefree_warmup_steps: 'warmup_steps',
-      bnb_percentile_clipping: 'percentile_clipping',
-      bnb_min_8bit_size: 'min_8bit_size',
-      stableadamw_kahan_sum: 'kahan_sum',
-      stableadamw_weight_decouple: 'weight_decouple',
-      adafactor_relative_step: 'relative_step',
-      adafactor_scale_parameter: 'scale_parameter',
-      adafactor_warmup_init: 'warmup_init',
-      adafactor_clip_threshold: 'clip_threshold',
-      adafactor_eps: 'eps',
-      automagic_min_lr: 'min_lr',
-      automagic_max_lr: 'max_lr',
-      automagic_beta2: 'beta2',
-      automagic_clip_threshold: 'clip_threshold',
-      automagic_polarity_history: 'polarity_history',
-      automagic_fused: 'fused',
-      betas: 'betas',
-      eps: 'eps',
-      came_weight_decouple: 'weight_decouple',
-      came_fixed_decay: 'fixed_decay',
-      came_clip_threshold: 'clip_threshold',
-      came_ams_bound: 'ams_bound',
-      came_eps1: 'eps1',
-      came_eps2: 'eps2',
-      adan_weight_decouple: 'weight_decouple',
-      ademamix_alpha: 'alpha',
-      ademamix_t_alpha: 't_alpha',
-      ademamix_t_beta3: 't_beta3',
-      lorarite_clip_unmagnified_grad: 'clip_unmagnified_grad',
-      momentum: 'momentum',
-      ns_steps: 'ns_steps',
-      inv_sqrt_steps: 'inv_sqrt_steps',
-      msign_eps: 'msign_eps',
-      inv_sqrt_eps: 'inv_sqrt_eps',
-      inv_sqrt_gamma: 'inv_sqrt_gamma',
-      gauge_rebalance: 'gauge_rebalance',
-      gauge_rebalance_alpha: 'gauge_rebalance_alpha',
-      gauge_rebalance_interval: 'gauge_rebalance_interval',
-      gauge_power_steps: 'gauge_power_steps',
-      max_precondition_dim: 'max_precondition_dim',
-      precondition_frequency: 'precondition_frequency',
-      shampoo_beta: 'shampoo_beta',
-      normalize_gradient: 'normalize_gradient',
-      correct_bias: 'correct_bias',
-      precondition_1d: 'precondition_1d',
-    };
-    return Object.prototype.hasOwnProperty.call(optimizerArgs, key)
-      ? { paramKey: 'optimizer_args', argKey: optimizerArgs[key] }
-      : null;
+    const field = this.findFieldDef(key);
+    if (field?.networkArg) return { paramKey: 'network_args', argKey: field.networkArg };
+    if (field?.argKey) return { paramKey: 'optimizer_args', argKey: field.argKey };
+    return null;
   },
 
   _tomlParamValues(preview) {
@@ -522,7 +408,7 @@ window.trainingTomlMixin = {
     const valueToToml = (value, field) => {
       if (typeof value === 'boolean') return value ? 'true' : 'false';
       if (typeof value === 'number' && Number.isFinite(value)) return String(value);
-      const coerced = this._isPathFieldRole(field && field.role) ? value : this._coerceNum(value);
+      const coerced = (field.valueType || field.type) === 'number' ? this._coerceNum(value) : value;
       if (typeof coerced === 'number' && Number.isFinite(coerced)) return String(coerced);
       return quote(value);
     };
@@ -551,14 +437,16 @@ window.trainingTomlMixin = {
     this._tomlDebounceTimer = setTimeout(() => this.updateToml(), 250);
   },
 
-  _collectKrea2Payload() {
-    const payload = { model_train_type: 'krea2-lora' };
-    window.getVisibleSections('krea2-lora').forEach(section => {
+  _collectTrainingPayload() {
+    const profile = this.form.model_train_type || 'anima-lora';
+    const payload = { model_train_type: profile };
+    window.getVisibleSections(profile).forEach(section => {
       (section.fields || []).forEach(field => {
-        if (field.hidden || !this._fieldShowIfMet(field)) return;
+        if ((profile === 'krea2-lora' && field.hidden) || !this._fieldShowIfMet(field)) return;
         const value = this.form[field.key];
         if (value === '' || value === null || value === undefined) return;
-        payload[field.key] = this._isPathFieldRole(field.role) ? value : this._coerceNum(value);
+        if (field.omitDefault && String(value) === String(field.default)) return;
+        payload[field.key] = value;
       });
     });
     if (this.form.gpu_ids !== undefined && this.form.gpu_ids !== null) payload.gpu_ids = this.form.gpu_ids;
@@ -566,11 +454,7 @@ window.trainingTomlMixin = {
   },
 
   _collectTrainingFormSnapshot() {
-    try {
-      return JSON.parse(JSON.stringify(this.form || {}));
-    } catch (error) {
-      return { ...(this.form || {}) };
-    }
+    return JSON.parse(JSON.stringify(this.form));
   },
 
   // Helper: check if a field's showIf condition is met
@@ -595,140 +479,35 @@ window.trainingTomlMixin = {
     navigator.clipboard.writeText(this.tomlRaw).then(() => this.toast(this.t('common.copied')));
   },
 
-  _optimizerArgEqualsDefault(value, defaultValue) {
-    if (typeof value === 'boolean' || typeof defaultValue === 'boolean') {
-      return value === defaultValue;
-    }
-
-    const valueText = String(value).trim();
-    const defaultText = String(defaultValue).trim();
-    if (valueText === defaultText) return true;
-    if (!valueText || !defaultText || valueText.includes(',') || defaultText.includes(',')) {
-      return false;
-    }
-
-    const numericValue = Number(valueText);
-    const numericDefault = Number(defaultText);
-    return Number.isFinite(numericValue) && Number.isFinite(numericDefault) && numericValue === numericDefault;
-  },
-
   /**
-   * 组装 optimizer_args 数组（公共逻辑，TOML 预览和 startTraining 共用）。
-   * merged 字段仅在值 ≠ 优化器默认值时写入。
+   * Portable preview only. Submission keeps form fields; the backend owns merging.
+   * Emit explicit values, including defaults, so library defaults cannot change them.
    */
   _buildOptimizerArgs(form) {
-    const optArgs = [];
-    const optType = form.optimizer_type;
-
-    // 1. 用户自定义参数（直接透传，仅保留含 '=' 的行——sd-scripts 用 arg.split('=') 解析）
-    const optCustom = form.optimizer_args_custom;
-    if (optCustom && typeof optCustom === 'string') {
-      optArgs.push(...optCustom.split('\n').map(s => s.trim()).filter(s => s && s.includes('=')));
+    const args = new Map();
+    for (const line of (form.optimizer_args_custom || '').split('\n')) {
+      const separator = line.indexOf('=');
+      if (separator > 0) args.set(line.slice(0, separator).trim(), line.slice(separator + 1).trim());
     }
-
-    // 2. merged 字段规则：[formKey, argKey, defaultsByOptimizer]
-    //    defaults 中值为 null → 非空即写；值为 '' → 空则跳过
-    //    默认值取自 window.OPTIMIZER_DEFAULTS（单一数据源，与 training-core.js 共用）
-    const DEFS = window.OPTIMIZER_DEFAULTS || {};
-    const MERGED_RULES = [
-      { form: 'weight_decay', arg: 'weight_decay', defaults: Object.assign({ _fallback: null }, DEFS.weight_decay) },
-      { form: 'automagic_min_lr', arg: 'min_lr', defaults: DEFS.automagic_min_lr || { 'vendor.automagic_optimizer.integration.Automagic3': 1e-8 } },
-      { form: 'automagic_max_lr', arg: 'max_lr', defaults: DEFS.automagic_max_lr || { 'vendor.automagic_optimizer.integration.Automagic3': 1e3 } },
-      { form: 'automagic_beta2', arg: 'beta2', defaults: DEFS.automagic_beta2 || { 'vendor.automagic_optimizer.integration.Automagic3': 0.999 } },
-      { form: 'automagic_clip_threshold', arg: 'clip_threshold', defaults: DEFS.automagic_clip_threshold || { 'vendor.automagic_optimizer.integration.Automagic3': 1.0 } },
-      { form: 'automagic_polarity_history', arg: 'polarity_history', defaults: DEFS.automagic_polarity_history || { 'vendor.automagic_optimizer.integration.Automagic3': 8 } },
-      { form: 'automagic_fused', arg: 'fused', defaults: DEFS.automagic_fused || { 'vendor.automagic_optimizer.integration.Automagic3': false } },
-      { form: 'stopcoef', arg: 'stopcoef', defaults: DEFS.stopcoef || { 'vendor.emo_optimizer.emosens.EmoSens': 0.04 } },
-      { form: 'notify', arg: 'notify', defaults: DEFS.notify || { 'vendor.emo_optimizer.emosens.EmoSens': true } },
-      { form: 'use_shadow', arg: 'use_shadow', defaults: DEFS.use_shadow || { 'vendor.emo_optimizer.emosens.EmoSens': false } },
-      { form: 'prodigy_d_coef', arg: 'd_coef', defaults: DEFS.prodigy_d_coef || { 'Prodigy': '1.0', 'prodigyplus.ProdigyPlusScheduleFree': '1.0' } },
-      { form: 'prodigy_d0', arg: 'd0', defaults: DEFS.prodigy_d0 || { 'Prodigy': '1e-6', 'prodigyplus.ProdigyPlusScheduleFree': '1e-6' } },
-      { form: 'prodigy_safeguard_warmup', arg: 'safeguard_warmup', defaults: DEFS.prodigy_safeguard_warmup || { 'Prodigy': false } },
-      { form: 'prodigyplus_use_stableadamw', arg: 'use_stableadamw', defaults: DEFS.prodigyplus_use_stableadamw || { 'prodigyplus.ProdigyPlusScheduleFree': true } },
-      // ProdigyPlus 2.0 参数：默认值取库自身默认，界面值与库相同就不写进 optimizer_args
-      { form: 'd_limiter', arg: 'd_limiter', defaults: DEFS.d_limiter || { 'prodigyplus.ProdigyPlusScheduleFree': true } },
-      { form: 'schedulefree_c', arg: 'schedulefree_c', defaults: DEFS.schedulefree_c || { 'prodigyplus.ProdigyPlusScheduleFree': 0 } },
-      { form: 'prodigy_steps', arg: 'prodigy_steps', defaults: DEFS.prodigy_steps || { 'prodigyplus.ProdigyPlusScheduleFree': 0 } },
-      { form: 'use_bias_correction', arg: 'use_bias_correction', defaults: DEFS.use_bias_correction || { 'prodigyplus.ProdigyPlusScheduleFree': false } },
-      { form: 'use_speed', arg: 'use_speed', defaults: DEFS.use_speed || { 'prodigyplus.ProdigyPlusScheduleFree': false } },
-      { form: 'use_cautious', arg: 'use_cautious', defaults: DEFS.use_cautious || { 'prodigyplus.ProdigyPlusScheduleFree': false } },
-      { form: 'use_orthograd', arg: 'use_orthograd', defaults: DEFS.use_orthograd || { 'prodigyplus.ProdigyPlusScheduleFree': false } },
-      { form: 'factored', arg: 'factored', defaults: DEFS.factored || { 'prodigyplus.ProdigyPlusScheduleFree': true } },
-      { form: 'factored_fp32', arg: 'factored_fp32', defaults: DEFS.factored_fp32 || { 'prodigyplus.ProdigyPlusScheduleFree': true } },
-      { form: 'split_groups', arg: 'split_groups', defaults: DEFS.split_groups || { 'prodigyplus.ProdigyPlusScheduleFree': true } },
-      { form: 'split_groups_mean', arg: 'split_groups_mean', defaults: DEFS.split_groups_mean || { 'prodigyplus.ProdigyPlusScheduleFree': false } },
-      { form: 'weight_decay_by_lr', arg: 'weight_decay_by_lr', defaults: DEFS.weight_decay_by_lr || { 'prodigyplus.ProdigyPlusScheduleFree': true } },
-      { form: 'schedulefree_warmup_steps', arg: 'warmup_steps', defaults: DEFS.schedulefree_warmup_steps || { 'AdamWScheduleFree': 0 } },
-      { form: 'bnb_percentile_clipping', arg: 'percentile_clipping', defaults: DEFS.bnb_percentile_clipping || { 'AdamW8bit': 100, 'PagedAdamW8bit': 100, 'Lion8bit': 100, 'PagedLion8bit': 100 } },
-      { form: 'bnb_min_8bit_size', arg: 'min_8bit_size', defaults: DEFS.bnb_min_8bit_size || { 'AdamW8bit': 4096, 'PagedAdamW8bit': 4096, 'Lion8bit': 4096, 'PagedLion8bit': 4096 } },
-      { form: 'stableadamw_kahan_sum', arg: 'kahan_sum', defaults: DEFS.stableadamw_kahan_sum || { 'pytorch_optimizer.StableAdamW': true } },
-      { form: 'stableadamw_weight_decouple', arg: 'weight_decouple', defaults: DEFS.stableadamw_weight_decouple || { 'pytorch_optimizer.StableAdamW': true } },
-      { form: 'adafactor_relative_step', arg: 'relative_step', defaults: DEFS.adafactor_relative_step || { 'AdaFactor': true } },
-      { form: 'adafactor_scale_parameter', arg: 'scale_parameter', defaults: DEFS.adafactor_scale_parameter || { 'AdaFactor': true } },
-      { form: 'adafactor_warmup_init', arg: 'warmup_init', defaults: DEFS.adafactor_warmup_init || { 'AdaFactor': false } },
-      { form: 'adafactor_clip_threshold', arg: 'clip_threshold', defaults: DEFS.adafactor_clip_threshold || { 'AdaFactor': 1.0 } },
-      { form: 'adafactor_eps', arg: 'eps', defaults: DEFS.adafactor_eps || { 'AdaFactor': '1e-30, 1e-3' } },
-      { form: 'betas', arg: 'betas', defaults: DEFS.betas || {
-        'AdamW': '0.9,0.999', 'AdamW8bit': '0.9,0.999', 'PagedAdamW8bit': '0.9,0.999',
-        'pytorch_optimizer.StableAdamW': '0.9,0.99',
-        'Lion': '0.9,0.99', 'Lion8bit': '0.9,0.99', 'PagedLion8bit': '0.9,0.99',
-        'pytorch_optimizer.CAME': '0.9,0.999,0.9999',
-        'vendor.emo_optimizer.emosens.EmoSens': '0.9,0.995',
-        'AdamWScheduleFree': '0.9,0.999',
-        'Prodigy': '0.9,0.999', 'prodigyplus.ProdigyPlusScheduleFree': '0.9,0.99',
-      }},
-      { form: 'eps', arg: 'eps', defaults: DEFS.eps || {
-        'AdamW': '1e-8', 'AdamW8bit': '1e-8', 'PagedAdamW8bit': '1e-8',
-        'pytorch_optimizer.StableAdamW': '1e-8',
-        'vendor.emo_optimizer.emosens.EmoSens': '1e-8',
-        'AdamWScheduleFree': '1e-8',
-        'Prodigy': '1e-8', 'prodigyplus.ProdigyPlusScheduleFree': '1e-8',
-      }},
-      { form: 'came_weight_decouple', arg: 'weight_decouple', defaults: DEFS.came_weight_decouple || { 'pytorch_optimizer.CAME': true } },
-      { form: 'came_fixed_decay', arg: 'fixed_decay', defaults: DEFS.came_fixed_decay || { 'pytorch_optimizer.CAME': false } },
-      { form: 'came_clip_threshold', arg: 'clip_threshold', defaults: DEFS.came_clip_threshold || { 'pytorch_optimizer.CAME': 1.0 } },
-      { form: 'came_ams_bound', arg: 'ams_bound', defaults: DEFS.came_ams_bound || { 'pytorch_optimizer.CAME': false } },
-      { form: 'adan_weight_decouple', arg: 'weight_decouple', defaults: DEFS.adan_weight_decouple || { 'pytorch_optimizer.Adan': true } },
-      { form: 'ademamix_alpha', arg: 'alpha', defaults: DEFS.ademamix_alpha || { 'bitsandbytes.optim.AdEMAMix': 5.0, 'bitsandbytes.optim.AdEMAMix8bit': 5.0 } },
-      { form: 'ademamix_t_alpha', arg: 't_alpha', defaults: DEFS.ademamix_t_alpha || { 'bitsandbytes.optim.AdEMAMix': '', 'bitsandbytes.optim.AdEMAMix8bit': '' } },
-      { form: 'ademamix_t_beta3', arg: 't_beta3', defaults: DEFS.ademamix_t_beta3 || { 'bitsandbytes.optim.AdEMAMix': '', 'bitsandbytes.optim.AdEMAMix8bit': '' } },
-      { form: 'lorarite_clip_unmagnified_grad', arg: 'clip_unmagnified_grad', defaults: DEFS.lorarite_clip_unmagnified_grad || { 'pytorch_optimizer.LoRARite': 1.0 } },
-      { form: 'momentum', arg: 'momentum', defaults: DEFS.momentum || { 'vendor.lora_muon.LoRA_Muon': 0.9 } },
-      { form: 'ns_steps', arg: 'ns_steps', defaults: DEFS.ns_steps || { 'vendor.lora_muon.LoRA_Muon': 8 } },
-      { form: 'inv_sqrt_steps', arg: 'inv_sqrt_steps', defaults: DEFS.inv_sqrt_steps || { 'vendor.lora_muon.LoRA_Muon': 7 } },
-      { form: 'msign_eps', arg: 'msign_eps', defaults: DEFS.msign_eps || { 'vendor.lora_muon.LoRA_Muon': '1e-20' } },
-      { form: 'inv_sqrt_eps', arg: 'inv_sqrt_eps', defaults: DEFS.inv_sqrt_eps || { 'vendor.lora_muon.LoRA_Muon': '1e-5' } },
-      { form: 'inv_sqrt_gamma', arg: 'inv_sqrt_gamma', defaults: DEFS.inv_sqrt_gamma || { 'vendor.lora_muon.LoRA_Muon': '1.001' } },
-      { form: 'gauge_rebalance', arg: 'gauge_rebalance', defaults: DEFS.gauge_rebalance || { 'vendor.lora_muon.LoRA_Muon': false } },
-      { form: 'gauge_rebalance_alpha', arg: 'gauge_rebalance_alpha', defaults: DEFS.gauge_rebalance_alpha || { 'vendor.lora_muon.LoRA_Muon': 1.0 } },
-      { form: 'gauge_rebalance_interval', arg: 'gauge_rebalance_interval', defaults: DEFS.gauge_rebalance_interval || { 'vendor.lora_muon.LoRA_Muon': 1 } },
-      { form: 'gauge_power_steps', arg: 'gauge_power_steps', defaults: DEFS.gauge_power_steps || { 'vendor.lora_muon.LoRA_Muon': 2 } },
-      { form: 'came_eps1', arg: 'eps1', defaults: DEFS.came_eps1 || { 'pytorch_optimizer.CAME': '1e-30' } },
-      { form: 'came_eps2', arg: 'eps2', defaults: DEFS.came_eps2 || { 'pytorch_optimizer.CAME': '1e-16' } },
-      { form: 'max_precondition_dim', arg: 'max_precondition_dim', defaults: DEFS.max_precondition_dim || { 'pytorch_optimizer.SOAP': 10000 } },
-      { form: 'precondition_frequency', arg: 'precondition_frequency', defaults: DEFS.precondition_frequency || { 'pytorch_optimizer.SOAP': 10 } },
-      { form: 'shampoo_beta', arg: 'shampoo_beta', defaults: DEFS.shampoo_beta || { 'pytorch_optimizer.SOAP': '' } },
-      { form: 'normalize_gradient', arg: 'normalize_gradient', defaults: DEFS.normalize_gradient || { 'pytorch_optimizer.SOAP': false } },
-      { form: 'correct_bias', arg: 'correct_bias', defaults: DEFS.correct_bias || { 'pytorch_optimizer.SOAP': true } },
-      { form: 'precondition_1d', arg: 'precondition_1d', defaults: DEFS.precondition_1d || { 'pytorch_optimizer.SOAP': false } },
-    ];
-
-    for (const rule of MERGED_RULES) {
-      const val = form[rule.form];
-      if (val === undefined || val === null || val === '') continue;
-      // Skip fields whose showIf/showIfAny condition is not met (hidden fields)
-      const fieldDef = this.findFieldDef(rule.form);
-      if (fieldDef && !this._fieldShowIfMet(fieldDef)) continue;
-      const defVal = rule.defaults[optType] ?? rule.defaults._fallback;
-      if (defVal !== undefined && defVal !== null && this._optimizerArgEqualsDefault(val, defVal)) continue;
-      // optimizer_args 的值经 sd-scripts 的 ast.literal_eval 解析，
-      // 布尔必须用 Python 字面量 True/False（小写 true/false 会让 ast 崩溃）。
-      // 注意：network_args 的布尔仍用小写（各 network module 用 == "true" 比较，不走 ast）。
-      const formatted = typeof val === 'boolean' ? (val ? 'True' : 'False') : String(val);
-      optArgs.push(rule.arg + '=' + formatted);
+    for (const section of window.getVisibleSections(form.model_train_type || 'anima-lora')) {
+      for (const field of section.fields) {
+        if (!field.argKey || !this._fieldShowIfMet(field)) continue;
+        const val = form[field.key];
+        if (val === undefined || val === null || val === '') continue;
+        const defaultValue = field.optimizerDefaults?.[form.optimizer_type];
+        const comparable = Array.isArray(defaultValue)
+          ? String(val).replace(/[\[\]()]/g, '').split(',').filter(item => item.trim()).map(Number)
+          : typeof defaultValue === 'number' ? Number(val) : val;
+        const matchesDefault = Array.isArray(defaultValue)
+          ? comparable.length === defaultValue.length && comparable.every((item, i) => item === defaultValue[i])
+          : comparable === defaultValue;
+        if (args.has(field.argKey) && matchesDefault) continue;
+        const formatted = typeof val === 'boolean' ? (val ? 'True' : 'False')
+          : field.type === 'select' ? JSON.stringify(val) : String(val);
+        args.set(field.argKey, formatted);
+      }
     }
-
-    return optArgs;
+    return Array.from(args, ([key, value]) => key + '=' + value);
   },
 
   // ── Krea 2 cache pipeline ──────────────────────────────
@@ -745,7 +524,7 @@ window.trainingTomlMixin = {
       const response = await fetch('/api/training/krea2/cache', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(this._collectKrea2Payload()),
+        body: JSON.stringify(this._collectTrainingPayload()),
       });
       const data = await response.json();
       if (!response.ok || data.status !== 'success') {
@@ -772,133 +551,30 @@ window.trainingTomlMixin = {
       return;
     }
 
-    const trainType = this.form.model_train_type || 'anima-lora';
-
     this.trainingStarting = true;
-    const outputPathInfo = await this.refreshOutputPathInfo(true);
-    if (!outputPathInfo || !outputPathInfo.available || !outputPathInfo.writable || outputPathInfo.path_is_directory === false) {
-      this.toast(this.outputPathBlockingText(), 'error');
-      this.trainingStarting = false;
-      return;
-    }
-
-    const estimate = await this.refreshStepEstimate(true);
-    if (!estimate) {
-      this.toast(
-        this.stepEstimateErrorText() || this.t('stepEstimate.failed'),
-        'error'
-      );
-      this.trainingStarting = false;
-      return;
-    }
-
-    this.isTraining = true; this.isIdle = false;
-    this.statusText = this.t('common.training') + '...';
-
-    if (trainType === 'krea2-lora') {
-      const payload = this._collectKrea2Payload();
-      payload._form_state = this._collectTrainingFormSnapshot();
-      try {
-        const response = await fetch('/api/run', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        const data = await response.json();
-        if (!response.ok || data.status !== 'success') {
-          this.toast(data.message || 'Failed', 'error');
-          this._applyTaskView('IDLE');
-        } else {
-          this._acceptTrainingStart(data.data);
-          this.toast(this.t('common.trainingStarted'));
-        }
-      } catch (error) {
-        this.toast(this.t('common.requestFailed') + ': ' + error.message, 'error');
-        this._applyTaskView('IDLE');
-      }
-      this.trainingStarting = false;
-      return;
-    }
-
-    const validKeys = new Set(['model_train_type']);
-    const fieldDefMap = {}; // key → field def（查 omitDefault/default）
-    const allSections = window.getVisibleSections(trainType);
-    allSections.forEach(s => s.fields.forEach(f => {
-      fieldDefMap[f.key] = f;
-      if (this._fieldShowIfMet(f)) {
-        validKeys.add(f.key);
-      }
-    }));
-
-    const payload = {};
-    for (const [k, v] of Object.entries(this.form)) {
-      if (!validKeys.has(k)) continue;
-      if (v === '' || v === null || v === undefined) continue;
-      // omitDefault：值==默认值时不传（与预览一致，避免 sd-scripts 收到冗余的默认值）
-      const fd = fieldDefMap[k];
-      if (fd && fd.omitDefault && fd.default !== undefined && String(v) === String(fd.default)) continue;
-      payload[k] = v;
-    }
-    for (const [k, v] of Object.entries(payload)) {
-      const fd = fieldDefMap[k];
-      if (fd && this._isPathFieldRole(fd.role)) continue;
-      const coerced = this._coerceNum(v);
-      if (coerced !== v) { payload[k] = coerced; }
-    }
-
-    if (payload.sample_prompts && typeof payload.sample_prompts === 'string') {
-      const sp = payload.sample_prompts.trim();
-      if (sp) {
-        const nIdx = sp.indexOf(' --n ');
-        if (nIdx > 0) {
-          payload.positive_prompts = sp.substring(0, nIdx).trim();
-          const rest = sp.substring(nIdx + 5);
-          const wIdx = rest.indexOf(' --w '), hIdx = rest.indexOf(' --h '),
-                lIdx = rest.indexOf(' --l '), sIdx = rest.indexOf(' --s '), dIdx = rest.indexOf(' --d '),
-                fsIdx = rest.indexOf(' --fs ');
-          payload.negative_prompts = (wIdx > 0 ? rest.substring(0, wIdx) : rest).trim();
-          if (wIdx > 0) payload.sample_width = parseInt(rest.substring(wIdx + 5)) || 512;
-          if (hIdx > 0) payload.sample_height = parseInt(rest.substring(hIdx + 5)) || 512;
-          if (lIdx > 0) payload.sample_cfg = parseInt(rest.substring(lIdx + 5)) || 7;
-          if (sIdx > 0) payload.sample_steps = parseInt(rest.substring(sIdx + 5)) || 24;
-          if (dIdx > 0) payload.sample_seed = parseInt(rest.substring(dIdx + 5)) || 2333;
-          if (fsIdx > 0) payload.sample_flow_shift = parseFloat(rest.substring(fsIdx + 5)) || 3.0;
-        } else {
-          payload.positive_prompts = sp;
-        }
-      }
-      delete payload.sample_prompts;
-    }
-
-    // ── Build optimizer_args via shared function ──────────
-    const optArgs = this._buildOptimizerArgs(payload);
-    // Remove merged fields from top-level payload (they are now in optimizer_args)
-    for (const key of ['optimizer_args_custom','weight_decay','stopcoef','notify','use_shadow','prodigy_d_coef','prodigy_d0',
-                        'prodigy_safeguard_warmup','prodigyplus_use_stableadamw',
-                        'schedulefree_warmup_steps','adafactor_relative_step',
-                        'bnb_percentile_clipping','bnb_min_8bit_size',
-                        'stableadamw_kahan_sum','stableadamw_weight_decouple',
-                        'adafactor_scale_parameter','adafactor_warmup_init',
-                        'adafactor_clip_threshold','adafactor_eps',
-                        'automagic_min_lr','automagic_max_lr','automagic_beta2',
-                        'automagic_clip_threshold','automagic_polarity_history','automagic_fused',
-                        'betas','eps','came_weight_decouple','came_fixed_decay','came_clip_threshold',
-                        'came_ams_bound','came_eps1','came_eps2',
-                        'adan_weight_decouple','ademamix_alpha','ademamix_t_alpha','ademamix_t_beta3',
-                        'lorarite_clip_unmagnified_grad',
-                        'momentum','ns_steps','inv_sqrt_steps','msign_eps','inv_sqrt_eps','inv_sqrt_gamma',
-                        'gauge_rebalance','gauge_rebalance_alpha','gauge_rebalance_interval','gauge_power_steps']) {
-      delete payload[key];
-    }
-    if (optArgs.length > 0) payload.optimizer_args = optArgs;
-    payload._form_state = this._collectTrainingFormSnapshot();
-    // 一次性放行：用户在缓存过期弹窗里选择"使用旧缓存继续"后置位
-    if (this._ignoreTeCacheWarnings) {
-      payload.ignore_te_cache_warnings = true;
-      this._ignoreTeCacheWarnings = false;
-    }
-
     try {
+      const outputPathInfo = await this.refreshOutputPathInfo(true);
+      if (!outputPathInfo || !outputPathInfo.available || !outputPathInfo.writable || outputPathInfo.path_is_directory === false) {
+        this.toast(this.outputPathBlockingText(), 'error');
+        return;
+      }
+
+      const estimate = await this.refreshStepEstimate(true);
+      if (!estimate) {
+        this.toast(this.stepEstimateErrorText() || this.t('stepEstimate.failed'), 'error');
+        return;
+      }
+
+      this.isTraining = true; this.isIdle = false;
+      this.statusText = this.t('common.training') + '...';
+      const payload = this._collectTrainingPayload();
+      payload._form_state = this._collectTrainingFormSnapshot();
+      // 一次性放行：用户在缓存过期弹窗里选择"使用旧缓存继续"后置位
+      if (this._ignoreTeCacheWarnings) {
+        payload.ignore_te_cache_warnings = true;
+        this._ignoreTeCacheWarnings = false;
+      }
+
       const resp = await fetch('/api/run', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
       const data = await resp.json();
       if (!resp.ok || data.status !== 'success') {
@@ -922,8 +598,12 @@ window.trainingTomlMixin = {
           }, 500);
         }
       }
-    } catch(e) { this.toast(this.t('common.requestFailed')+': '+e.message, 'error'); this._applyTaskView('IDLE'); }
-    this.trainingStarting = false;
+    } catch(e) {
+      this.toast(this.t('common.requestFailed')+': '+e.message, 'error');
+      this._applyTaskView('IDLE');
+    } finally {
+      this.trainingStarting = false;
+    }
   },
 
   // ── TE 磁盘缓存过期弹窗：删除重建 或 按旧缓存继续 ──

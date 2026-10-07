@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from backend.log import log
-from backend.tasks import Task, tm
+from backend.tasks import Task
 from backend.constants import REPO_ROOT
 from backend.monitor.snapshot import save_config_snapshot
 from backend.training.core_registry import engine_pythonpaths, get_engine
@@ -379,25 +379,6 @@ def run_train(
             "engine_id": engine_id,
         },
     }
-
-
-def terminate_train(task_id: str) -> bool:
-    """终止训练"""
-    try:
-        tm.terminate_task(task_id)
-        return True
-    except Exception as e:
-        log.error(f"Failed to terminate training / 终止失败: {e}")
-        return False
-
-
-def get_train_status(task_id: str) -> dict:
-    """获取训练状态"""
-    tasks = tm.training_dump()
-    for t in tasks:
-        if t["id"] == task_id:
-            return t
-    return {"id": task_id, "status": "UNKNOWN"}
 
 
 def detect_attention_backend(requested: str) -> tuple[str, str]:

@@ -301,8 +301,7 @@ class TaskStateMachineTests(unittest.TestCase):
                     raise TimeoutError("test cleanup was not released")
 
             process.communicate.side_effect = communicate
-            with patch.object(supervisor, "tm", manager), \
-                 patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
+            with patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
                  patch.object(supervisor, "get_engine", return_value=Mock(python_executable=None)), \
                  patch.object(supervisor, "save_config_snapshot"), \
                  patch.object(supervisor, "_build_train_env", return_value={}), \
@@ -377,8 +376,7 @@ class TaskStateMachineTests(unittest.TestCase):
                 return future
 
             process.communicate.side_effect = communicate
-            with patch.object(supervisor, "tm", manager), \
-                 patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
+            with patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
                  patch.object(supervisor, "get_engine", return_value=Mock(python_executable=None)), \
                  patch.object(supervisor, "save_config_snapshot"), \
                  patch.object(supervisor, "_build_train_env", return_value={}), \
@@ -450,8 +448,7 @@ class TaskStateMachineTests(unittest.TestCase):
                     raise TimeoutError("callback was not released")
 
             process.communicate.side_effect = communicate
-            with patch.object(supervisor, "tm", manager), \
-                 patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
+            with patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
                  patch.object(supervisor, "get_engine", return_value=Mock(python_executable=None)), \
                  patch.object(supervisor, "save_config_snapshot"), \
                  patch.object(supervisor, "_build_train_env", return_value={}), \
@@ -508,8 +505,7 @@ class TaskStateMachineTests(unittest.TestCase):
                     raise TimeoutError("completion callback was not released")
                 musubi_krea2.mark_cache_manifest(old, status)
 
-            with patch.object(supervisor, "tm", manager), \
-                 patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
+            with patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
                  patch.object(supervisor, "get_engine", return_value=Mock(python_executable=None)), \
                  patch.object(supervisor, "save_config_snapshot"), \
                  patch.object(supervisor, "_build_train_env", return_value={}), \
@@ -568,8 +564,7 @@ class TaskStateMachineTests(unittest.TestCase):
                 supervisor, "_write_result_json",
                 side_effect=failed_result if failed_step == "result" else None,
             )
-            with patch.object(supervisor, "tm", manager), \
-                 patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
+            with patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
                  patch.object(supervisor, "get_engine", return_value=Mock(python_executable=None)), \
                  patch.object(supervisor, "save_config_snapshot"), \
                  patch.object(supervisor, "_build_train_env", return_value={}), \
@@ -606,8 +601,7 @@ class TaskStateMachineTests(unittest.TestCase):
         async def scenario(directory):
             manager = TaskManager()
             reserved = manager.reserve_task()
-            with patch.object(supervisor, "tm", manager), \
-                 patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
+            with patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
                  patch.object(supervisor, "get_engine", return_value=Mock(python_executable=None)), \
                  patch.object(supervisor, "save_config_snapshot"), \
                  patch.object(supervisor, "_build_train_env", return_value={}), \
@@ -644,8 +638,7 @@ class TaskStateMachineTests(unittest.TestCase):
                     worker_futures.append(future)
                 return future
 
-            with patch.object(supervisor, "tm", manager), \
-                 patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
+            with patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
                  patch.object(supervisor, "get_engine", return_value=Mock(python_executable=None)), \
                  patch.object(supervisor, "save_config_snapshot"), \
                  patch.object(supervisor, "_build_train_env", return_value={}), \
@@ -675,8 +668,7 @@ class TaskStateMachineTests(unittest.TestCase):
             with self.subTest(failed_step=failed_step), tempfile.TemporaryDirectory() as directory:
                 manager = TaskManager()
                 reserved = manager.reserve_task()
-                with patch.object(supervisor, "tm", manager), \
-                     patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
+                with patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
                      patch.object(supervisor, "get_engine", return_value=Mock(python_executable=None)), \
                      patch.object(supervisor, "save_config_snapshot"), \
                      patch.object(supervisor, "_build_train_env", return_value={}), \
@@ -698,8 +690,7 @@ class TaskStateMachineTests(unittest.TestCase):
             reserved = manager.reserve_task()
             loop_stub = Mock()
             loop_stub.run_in_executor.side_effect = RuntimeError("executor closed")
-            with patch.object(supervisor, "tm", manager), \
-                 patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
+            with patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
                  patch.object(supervisor, "get_engine", return_value=Mock(python_executable=None)), \
                  patch.object(supervisor, "save_config_snapshot"), \
                  patch.object(supervisor, "_build_train_env", return_value={}), \

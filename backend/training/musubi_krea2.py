@@ -375,6 +375,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
     {
         "key": "learning_rate",
         "type": "text",
+        "value_type": "number",
         "default": "1e-4",
         "section": "optimizer",
         "desc_key": "field.krea_learning_rate",
@@ -587,6 +588,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
     {
         "key": "lr_warmup_steps",
         "type": "text",
+        "value_type": "number",
         "default": "0",
         "section": "optimizer",
         "desc_key": "field.lr_warmup_steps",
@@ -605,6 +607,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
     {
         "key": "lr_decay_steps",
         "type": "text",
+        "value_type": "number",
         "default": "0",
         "section": "optimizer",
         "desc_key": "field.krea_lr_decay_steps",

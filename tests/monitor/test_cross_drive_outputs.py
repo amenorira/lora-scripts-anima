@@ -12,6 +12,7 @@ from unittest.mock import patch
 from backend.monitor import artifacts, routes, run_registry
 from backend.server.routes import training as training_routes
 from backend.tasks import TaskManager, TaskStatus
+from tests.helpers import json_request
 
 
 def _completed_launch(*_args, **kwargs):
@@ -21,14 +22,6 @@ def _completed_launch(*_args, **kwargs):
         task.status = TaskStatus.FINISHED
         task.finished_at = time.time()
     return {"status": "success", "data": {"task_id": task.task_id}}
-
-
-class _BodyRequest:
-    def __init__(self, payload: dict):
-        self._body = json.dumps(payload).encode("utf-8")
-
-    async def body(self) -> bytes:
-        return self._body
 
 
 class CrossDriveSandbox(unittest.TestCase):
@@ -72,6 +65,35 @@ class CrossDriveSandbox(unittest.TestCase):
 
 
 class RunRegistryTests(CrossDriveSandbox):
+    def test_live_monitor_uses_registered_run_instead_of_latest_autosave(self):
+        run = self.output / "active"
+        self._write_config(run / "config.toml", self.external, "active")
+        self._write_config(self.autosave / "unrelated.toml", self.external, "unrelated")
+        run_registry.write_run_record(run, artifact_dir=self.external, task_id="active-task")
+        with patch.object(routes, "read_tensorboard_loss", return_value=[]), \
+                patch.object(routes, "newest_previews", return_value=[]), \
+                patch.object(routes, "extract_train_params", side_effect=lambda config: config):
+            snapshot = asyncio.run(routes.build_live_monitor_snapshot(
+                tasks=[{"id": "active-task", "status": "CREATED"}]))
+            self.assertEqual(snapshot["train_params"]["output_name"], "active")
+            snapshot = asyncio.run(routes.build_live_monitor_snapshot(
+                tasks=[{"id": "preparing-task", "status": "CREATED"}]))
+            self.assertEqual(snapshot["train_params"], {})
+
+    def test_run_config_cache_is_scoped_by_run_and_refreshes_after_changes(self):
+        first, second = self.output / "first", self.output / "second"
+        self._write_config(first / "config.toml", self.external, "first")
+        self._write_config(second / "config.toml", self.external, "second")
+        self.assertEqual(run_registry.read_run_config(first)["output_name"], "first")
+        self.assertEqual(run_registry.read_run_config(second)["output_name"], "second")
+        self._write_config(first / "config.toml", self.external, "first-updated")
+        self.assertEqual(run_registry.read_run_config(first)["output_name"], "first-updated")
+        (first / "config.toml").unlink()
+        self.assertEqual(run_registry.read_run_config(first), {})
+        (first / "config.toml").write_text("invalid TOML", encoding="utf-8")
+        with self.assertLogs(level="WARNING"):
+            self.assertEqual(run_registry.read_run_config(first), {})
+
     def test_run_route_stop_during_file_preparation_returns_cancelled_and_releases_slot(self):
         entered, release = threading.Event(), threading.Event()
         payload = {
@@ -88,19 +110,18 @@ class RunRegistryTests(CrossDriveSandbox):
 
         with ExitStack() as stack:
             stack.enter_context(patch("backend.training.validate_training_config", return_value=[]))
-            stack.enter_context(patch("backend.training.adapt_config", side_effect=lambda value: (dict(value), [])))
-            stack.enter_context(patch.object(training_routes.train_utils, "fix_config_types"))
+            stack.enter_context(patch("backend.training.adapt_config", side_effect=lambda value, gpu_ids=None: (dict(value), [])))
             stack.enter_context(patch.object(training_routes.train_utils, "validate_data_dir", return_value=True))
             stack.enter_context(patch.object(training_routes.train_utils, "count_images", return_value=1))
             stack.enter_context(patch.object(training_routes.train_utils, "validate_model", return_value=(True, "")))
-            stack.enter_context(patch.object(training_routes, "estimate_training_steps", return_value={}))
-            stack.enter_context(patch.object(training_routes, "get_sample_prompts", return_value=(None, "")))
+            stack.enter_context(patch.object(training_routes, "estimate_training_steps", return_value={"total_steps": 10, "gpu_processes": 1}))
+            stack.enter_context(patch.object(training_routes, "get_sample_prompts", return_value=""))
             stack.enter_context(patch.object(training_routes, "AUTOSAVE_DIR", self.autosave))
             stack.enter_context(patch.object(training_routes, "write_training_config", side_effect=write_config))
             launch = stack.enter_context(patch.object(training_routes, "run_train"))
 
             async def exercise():
-                request = asyncio.create_task(training_routes.create_toml_file(_BodyRequest(dict(payload))))
+                request = asyncio.create_task(training_routes.create_toml_file(json_request(dict(payload))))
                 self.assertTrue(await asyncio.to_thread(entered.wait, 5))
                 task_id = next(iter(training_routes.tm.tasks))
                 training_routes.tm.terminate_task(task_id)
@@ -135,17 +156,16 @@ class RunRegistryTests(CrossDriveSandbox):
         def estimate(_config):
             entered.set()
             self.assertTrue(release.wait(5))
-            return {}
+            return {"total_steps": 10, "gpu_processes": 1}
 
         with ExitStack() as stack:
             stack.enter_context(patch("backend.training.validate_training_config", return_value=[]))
-            stack.enter_context(patch("backend.training.adapt_config", side_effect=lambda value: (dict(value), [])))
-            stack.enter_context(patch.object(training_routes.train_utils, "fix_config_types"))
+            stack.enter_context(patch("backend.training.adapt_config", side_effect=lambda value, gpu_ids=None: (dict(value), [])))
             stack.enter_context(patch.object(training_routes.train_utils, "validate_data_dir", return_value=True))
             stack.enter_context(patch.object(training_routes.train_utils, "count_images", return_value=1))
             stack.enter_context(patch.object(training_routes.train_utils, "validate_model", return_value=(True, "")))
             stack.enter_context(patch.object(training_routes, "estimate_training_steps", side_effect=estimate))
-            stack.enter_context(patch.object(training_routes, "get_sample_prompts", return_value=(None, "")))
+            stack.enter_context(patch.object(training_routes, "get_sample_prompts", return_value=""))
             stack.enter_context(patch.object(training_routes, "AUTOSAVE_DIR", self.autosave))
             stack.enter_context(patch.object(training_routes.os, "getcwd", return_value=str(self.root)))
             clock = stack.enter_context(patch.object(training_routes, "datetime"))
@@ -155,12 +175,12 @@ class RunRegistryTests(CrossDriveSandbox):
             ))
 
             async def exercise():
-                first = asyncio.create_task(training_routes.create_toml_file(_BodyRequest(dict(payload))))
+                first = asyncio.create_task(training_routes.create_toml_file(json_request(dict(payload))))
                 self.assertTrue(await asyncio.to_thread(entered.wait, 5))
-                blocked = await training_routes.create_toml_file(_BodyRequest({**payload, "output_name": "other"}))
+                blocked = await training_routes.create_toml_file(json_request({**payload, "output_name": "other"}))
                 release.set()
                 first_result = await first
-                second_result = await training_routes.create_toml_file(_BodyRequest(dict(payload)))
+                second_result = await training_routes.create_toml_file(json_request(dict(payload)))
                 return first_result, blocked, second_result
 
             first_result, blocked, second_result = asyncio.run(exercise())
@@ -307,7 +327,7 @@ class CrossDriveRouteTests(CrossDriveSandbox):
                 if resume:
                     payload["resume"] = resume
 
-                def _adapt_config(value):
+                def _adapt_config(value, gpu_ids=None):
                     adapted = dict(value)
                     adapted.pop("enable_preview", None)
                     return adapted, []
@@ -315,14 +335,13 @@ class CrossDriveRouteTests(CrossDriveSandbox):
                 with ExitStack() as stack:
                     stack.enter_context(patch("backend.training.validate_training_config", return_value=[]))
                     stack.enter_context(patch("backend.training.adapt_config", side_effect=_adapt_config))
-                    stack.enter_context(patch.object(training_routes.train_utils, "fix_config_types"))
                     stack.enter_context(patch.object(training_routes.train_utils, "validate_data_dir", return_value=True))
                     stack.enter_context(patch.object(training_routes.train_utils, "count_images", return_value=1))
                     stack.enter_context(
                         patch.object(training_routes.train_utils, "validate_model", return_value=(True, ""))
                     )
-                    stack.enter_context(patch.object(training_routes, "estimate_training_steps", return_value={}))
-                    stack.enter_context(patch.object(training_routes, "get_sample_prompts", return_value=(None, "")))
+                    stack.enter_context(patch.object(training_routes, "estimate_training_steps", return_value={"total_steps": 10, "gpu_processes": 1}))
+                    stack.enter_context(patch.object(training_routes, "get_sample_prompts", return_value=""))
                     stack.enter_context(patch.object(training_routes.os, "getcwd", return_value=str(self.root)))
                     stack.enter_context(
                         patch.object(training_routes, "AUTOSAVE_DIR", Path(self.root) / "config" / "autosave")
@@ -334,7 +353,7 @@ class CrossDriveRouteTests(CrossDriveSandbox):
                             side_effect=_completed_launch,
                         )
                     )
-                    result = asyncio.run(training_routes.create_toml_file(_BodyRequest(payload)))
+                    result = asyncio.run(training_routes.create_toml_file(json_request(payload)))
 
                 self.assertEqual(result["status"], "success")
                 call = run_train.call_args

@@ -10,14 +10,15 @@ from backend.training.field_registry import (
     EMOSENS_OPTIMIZER_TYPE,
     FIELDS,
     LORAPLUS_INCOMPATIBLE_OPTIMIZERS,
-    LORAPLUS_NETWORK_MODULES,
     LORAPLUS_RATIO_KEYS,
     loraplus_applies,
 )
 from backend.training.optimizer_contracts import (
     ADAFACTOR_OPTIMIZER_TYPE,
     AUTOMAGIC_MAX_LR_DEFAULT,
-    AUTOMAGIC_MERGED_ARG_MAP,
+    collect_optimizer_args,
+    get_automagic_fused_conflicts,
+    normalize_lora_muon_form_fields,
     parse_optimizer_args,
     validate_optimizer_contract,
 )
@@ -70,37 +71,6 @@ def _validate_resolution(value: Any, train_type: str) -> str | None:
     return None
 
 
-def get_automagic_fused_conflicts(
-    config: dict[str, Any], gpu_ids: Any = None
-) -> list[str]:
-    """Return execution modes that are unsafe for backward-hook updates."""
-    conflicts: list[str] = []
-
-    try:
-        accumulation = float(config.get("gradient_accumulation_steps", 1))
-    except (TypeError, ValueError):
-        accumulation = 1
-    if accumulation != 1:
-        conflicts.append(
-            "gradient_accumulation_steps must be 1 / gradient_accumulation_steps 必须为 1"
-        )
-
-    try:
-        max_grad_norm = float(config.get("max_grad_norm", 1.0))
-    except (TypeError, ValueError):
-        max_grad_norm = 0
-    if max_grad_norm != 0:
-        conflicts.append("max_grad_norm must be 0 / max_grad_norm 必须为 0")
-
-    if str(config.get("mixed_precision", "bf16")).lower() == "fp16":
-        conflicts.append("mixed_precision cannot be fp16 / mixed_precision 不能为 fp16")
-
-    if isinstance(gpu_ids, (list, tuple)) and len(gpu_ids) > 1:
-        conflicts.append("only one GPU is supported / 仅支持单卡")
-
-    return conflicts
-
-
 def get_emosens_conflicts(config: dict[str, Any], gpu_ids: Any = None) -> list[str]:
     """Return execution modes that do not preserve EmoSens ECC semantics."""
     conflicts: list[str] = []
@@ -142,19 +112,6 @@ def _validate_emosens(config: dict[str, Any], gpu_ids: Any = None) -> list[str]:
     return errors
 
 
-def _effective_optimizer_arg(
-    config: dict[str, Any],
-    parsed_args: dict[str, Any],
-    form_key: str,
-    arg_key: str,
-    default: Any,
-) -> Any:
-    value = config.get(form_key)
-    if not _is_empty(value):
-        return value
-    return parsed_args.get(arg_key, default)
-
-
 def _validate_loraplus(
     config: dict[str, Any], parsed_optimizer_args: dict[str, Any]
 ) -> list[str]:
@@ -182,20 +139,8 @@ def _validate_loraplus(
         )
 
     if optimizer_type == ADAFACTOR_OPTIMIZER_TYPE:
-        relative_step = _effective_optimizer_arg(
-            config,
-            parsed_optimizer_args,
-            "adafactor_relative_step",
-            "relative_step",
-            True,
-        )
-        warmup_init = _effective_optimizer_arg(
-            config,
-            parsed_optimizer_args,
-            "adafactor_warmup_init",
-            "warmup_init",
-            False,
-        )
+        relative_step = parsed_optimizer_args.get("relative_step", True)
+        warmup_init = parsed_optimizer_args.get("warmup_init", False)
         if relative_step is not False or warmup_init is True:
             errors.append(
                 "enable_loraplus: AdaFactor relative_step=True or warmup_init=True is "
@@ -208,12 +153,11 @@ def _validate_loraplus(
 
 
 def _validate_automagic(
-    config: dict[str, Any], parsed_args: dict[str, Any], gpu_ids: Any = None
+    config: dict[str, Any], args: dict[str, Any], gpu_ids: Any = None
 ) -> list[str]:
     if config.get("optimizer_type") != AUTOMAGIC_OPTIMIZER_TYPE:
         return []
 
-    args = dict(parsed_args)
     errors: list[str] = []
     supported_args = {
         "min_lr",
@@ -227,10 +171,6 @@ def _validate_automagic(
     }
     for key in sorted(args.keys() - supported_args):
         errors.append(f"Automagic3 optimizer_args: unsupported argument {key!r} / 不支持此参数")
-
-    for form_key, arg_key in AUTOMAGIC_MERGED_ARG_MAP.items():
-        if not _is_empty(config.get(form_key)):
-            args[arg_key] = config[form_key]
 
     defaults = {
         "min_lr": 1e-8,
@@ -391,6 +331,7 @@ def validate_scheduler_step_budget(config: dict[str, Any], total_steps: int, gpu
 
 def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> list[str]:
     """根据字段注册表与跨字段契约返回所有配置错误。"""
+    normalize_lora_muon_form_fields(config)
     errors: list[str] = []
     train_type = str(config.get("model_train_type", "sdxl-lora"))
     if train_type == "krea2-lora":
@@ -415,7 +356,7 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
                 errors.append(f"{key}: required / 必填")
             continue
 
-        if field.get("type") == "number":
+        if field.get("value_type", field.get("type")) == "number":
             if isinstance(value, bool):
                 errors.append(f"{key}: must be a number / 必须是数字")
                 continue
@@ -455,6 +396,7 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
 
     parsed_optimizer_args, optimizer_arg_errors = parse_optimizer_args(config)
     errors.extend(optimizer_arg_errors)
+    parsed_optimizer_args = collect_optimizer_args(config, parsed_optimizer_args)
     errors.extend(_validate_loraplus(config, parsed_optimizer_args))
 
     if not _is_empty(config.get("resolution")):

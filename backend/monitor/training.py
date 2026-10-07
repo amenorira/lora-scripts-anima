@@ -7,12 +7,10 @@ import logging
 import re
 import threading
 import time
-import tomllib
 from pathlib import Path
 from typing import Any
 
 from backend.constants import OUTPUT_DIR
-from backend.constants import AUTOSAVE_DIR as CONFIG_AUTOSAVE
 from backend.training.field_registry import get_all_fields
 
 
@@ -39,12 +37,6 @@ _SCALAR_TAGS = (
     "loss/average", "loss/current", "loss/epoch_average", "loss/epoch",
     "lr/unet", "lr/textencoder", "lr/d*lr/unet", "lr/d*lr/textencoder",
 )
-
-# ── Autosave TOML glob 缓存 ─────────────────────────────────
-_autosave_glob_cache: tuple[float, list[Path]] | None = None
-_autosave_glob_cache_lock = threading.Lock()
-_AUTOSAVE_GLOB_TTL = 5.0  # 缓存有效期（秒），训练期间 autosave 不常变
-
 
 def _get_cached_accumulator(log_dir: Path) -> Any | None:
     """获取缓存的 EventAccumulator，若 event file 未变化则复用"""
@@ -384,59 +376,7 @@ def parse_log_progress(lines: list[str]) -> dict:
     return info
 
 
-# ── 训练配置解析 (TOML) ────────────────────────────────────
-
-_latest_config_cache: dict[tuple[str | None, float], dict] = {}
-_MAX_CONFIG_CACHE = 32
-
-
-def _evict_config_cache() -> None:
-    """LRU 淘汰：保留最近 32 条缓存记录"""
-    if len(_latest_config_cache) <= _MAX_CONFIG_CACHE:
-        return
-    sorted_keys = sorted(_latest_config_cache.keys(), key=lambda k: k[1], reverse=True)
-    for key in sorted_keys[_MAX_CONFIG_CACHE:]:
-        del _latest_config_cache[key]
-
-
-def latest_train_config(task_id: str | None = None) -> dict:
-    """解析最新的 autosave TOML 配置"""
-    global _autosave_glob_cache
-    if not CONFIG_AUTOSAVE.exists():
-        return {}
-
-    now = time.time()
-    with _autosave_glob_cache_lock:
-        if _autosave_glob_cache and now - _autosave_glob_cache[0] < _AUTOSAVE_GLOB_TTL:
-            configs = _autosave_glob_cache[1]
-        else:
-            configs = sorted(
-                CONFIG_AUTOSAVE.glob("*.toml"),
-                key=lambda p: p.stat().st_mtime, reverse=True
-            )
-            _autosave_glob_cache = (now, configs)
-
-    if not configs:
-        return {}
-    latest_mtime = configs[0].stat().st_mtime
-    cache_key = (task_id, latest_mtime)
-    if cache_key in _latest_config_cache:
-        return _latest_config_cache[cache_key]
-    for cfg_path in configs[:3]:
-        try:
-            with cfg_path.open("rb") as f:
-                params = tomllib.load(f)
-        except (OSError, tomllib.TOMLDecodeError, Exception):
-            continue
-
-        if params:
-            _latest_config_cache[cache_key] = params
-            _evict_config_cache()
-            return params
-    return {}
-
-
-def _format_param_value(key: str, v: Any, field: dict | None) -> str:
+def _format_param_value(key: str, v: Any) -> str:
     """将 TOML 原生值格式化为展示字符串。
 
     - 布尔 → "true"/"false"（前端 toggle 字段会渲染为 ✓/✕ 徽标，此处保留可读文本兜底）
@@ -456,11 +396,6 @@ def _format_param_value(key: str, v: Any, field: dict | None) -> str:
     return str(v)
 
 
-# 预构建 registry 索引：key → field 元数据（仅 target=toml 且非 hidden 的字段）
-_REGISTRY_INDEX: dict[str, dict] = {
-    f["key"]: f for f in _REGISTRY_FIELDS
-    if f.get("target") == "toml" and not f.get("hidden")
-}
 # section 输出顺序（与 field_registry.get_fields_json 一致）
 _SECTION_ORDER = ["model", "network", "training", "optimizer",
                   "regularization", "caption", "performance", "save", "preview"]
@@ -483,7 +418,6 @@ def extract_train_params(config: dict) -> list[dict]:
         return []
 
     params: list[dict] = []
-    seen_keys: set[str] = set()
 
     # 1) registry 字段：按 section 顺序遍历，保证分组与字段顺序稳定
     #    hidden 字段（如 logging_dir/log_with）在前端表单不展示，但训练时仍写入
@@ -503,12 +437,11 @@ def extract_train_params(config: dict) -> list[dict]:
             entry = {
                 "key": key,
                 "desc_key": f.get("desc_key", ""),
-                "value": _format_param_value(key, v, f),
+                "value": _format_param_value(key, v),
                 "section": section,
                 "type": f.get("type", "text"),
             }
             params.append(entry)
-            seen_keys.add(key)
 
     # 2) network_args / optimizer_args：adapter 折叠的 LyCORIS/优化器子参数数组
     #    形如 ["algo=lokr", "preset=attn-mlp"] → 拆成独立条目，归入对应 section

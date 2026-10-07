@@ -17,7 +17,6 @@ from backend.training.optimizer_contracts import (
     ADAN_OPTIMIZER_TYPE,
     ADEMAMIX8BIT_OPTIMIZER_TYPE,
     ADEMAMIX_OPTIMIZER_TYPE,
-    AUTOMAGIC_MERGED_ARG_MAP,
     AUTOMAGIC_MAX_LR_DEFAULT_TEXT,
     AUTOMAGIC_OPTIMIZER_TYPE,
     CAME_OPTIMIZER_TYPE,
@@ -30,6 +29,7 @@ from backend.training.optimizer_contracts import (
     PRODIGYPLUS_OPTIMIZER_TYPE,
     SOAP_OPTIMIZER_TYPE,
     STABLE_ADAMW_OPTIMIZER_TYPE,
+    OPTIMIZER_ARGUMENT_DEFAULTS,
 )
 from backend.training.optimizer_metadata import (
     SD_OPTIMIZER_AUTO_VALUES,
@@ -405,9 +405,9 @@ FIELDS: list[dict[str, Any]] = [
 #   network_train_unet_only=True   → text_encoder_lr 置空（被排除的分量不写 TOML）
 #   network_train_text_encoder_only=True → unet_lr 置空
 {"key": "optimizer_type", "type": "select", "default": "AdamW8bit", "section": "optimizer", "desc_key": "field.optimizer_type", "target": "toml", "doc_slug": "optimizers", "doc_anchor": "optimizer-type", "groups": optimizer_groups(SD_SCRIPTS_PROFILE), "keep_children_position": True},
-{"key": "learning_rate", "type": "text", "default": "1e-4", "section": "optimizer", "desc_key": "field.learning_rate", "target": "toml", "hint_key_by": {"key": "optimizer_type", "values": {LORA_MUON_OPTIMIZER_TYPE: "field.learning_rateHint_lora_muon", EMOSENS_OPTIMIZER_TYPE: "field.learning_rateHint_emosens"}}, "doc_slug": "optimizers", "doc_anchor": "learning-rate", "auto_value": SD_OPTIMIZER_AUTO_VALUES["learning_rate"], "readonly_if": {"key": "optimizer_type", "eq": PRODIGY_OPTIMIZER_TYPE, "_or": [PRODIGYPLUS_OPTIMIZER_TYPE], "reason_key": "field.learning_rate_prodigyLocked"}},
-{"key": "unet_lr", "type": "text", "default": "", "section": "optimizer", "desc_key": "field.unet_lr", "hint_key_by": {"key": "optimizer_type", "values": {EMOSENS_OPTIMIZER_TYPE: "field.component_lrHint_emosens"}}, "target": "toml", "show_if": {"key": "network_train_text_encoder_only", "neq": True}, "auto_value": [{"watch": "optimizer_type", "when": PRODIGY_OPTIMIZER_TYPE, "set": "1.0"}, {"watch": "optimizer_type", "when": PRODIGYPLUS_OPTIMIZER_TYPE, "set": "1.0"}], "readonly_if": {"key": "optimizer_type", "eq": PRODIGY_OPTIMIZER_TYPE, "_or": [PRODIGYPLUS_OPTIMIZER_TYPE], "reason_key": "field.unet_lr_prodigyLocked"}, "omit_default": True},
-{"key": "text_encoder_lr", "type": "text", "default": "", "section": "optimizer", "desc_key": "field.text_encoder_lr", "hint_key_by": {"key": "optimizer_type", "values": {EMOSENS_OPTIMIZER_TYPE: "field.component_lrHint_emosens"}}, "target": "toml", "show_if": {"key": "network_train_unet_only", "neq": True}, "auto_value": [{"watch": "optimizer_type", "when": PRODIGY_OPTIMIZER_TYPE, "set": "1.0"}, {"watch": "optimizer_type", "when": PRODIGYPLUS_OPTIMIZER_TYPE, "set": "1.0"}], "readonly_if": {"key": "optimizer_type", "eq": PRODIGY_OPTIMIZER_TYPE, "_or": [PRODIGYPLUS_OPTIMIZER_TYPE], "reason_key": "field.text_encoder_lr_prodigyLocked"}, "omit_default": True},
+{"key": "learning_rate", "type": "text", "value_type": "number", "default": "1e-4", "section": "optimizer", "desc_key": "field.learning_rate", "target": "toml", "hint_key_by": {"key": "optimizer_type", "values": {LORA_MUON_OPTIMIZER_TYPE: "field.learning_rateHint_lora_muon", EMOSENS_OPTIMIZER_TYPE: "field.learning_rateHint_emosens"}}, "doc_slug": "optimizers", "doc_anchor": "learning-rate", "auto_value": SD_OPTIMIZER_AUTO_VALUES["learning_rate"], "readonly_if": {"key": "optimizer_type", "eq": PRODIGY_OPTIMIZER_TYPE, "_or": [PRODIGYPLUS_OPTIMIZER_TYPE], "reason_key": "field.learning_rate_prodigyLocked"}},
+{"key": "unet_lr", "type": "text", "value_type": "number", "default": "", "section": "optimizer", "desc_key": "field.unet_lr", "hint_key_by": {"key": "optimizer_type", "values": {EMOSENS_OPTIMIZER_TYPE: "field.component_lrHint_emosens"}}, "target": "toml", "show_if": {"key": "network_train_text_encoder_only", "neq": True}, "auto_value": [{"watch": "optimizer_type", "when": PRODIGY_OPTIMIZER_TYPE, "set": "1.0"}, {"watch": "optimizer_type", "when": PRODIGYPLUS_OPTIMIZER_TYPE, "set": "1.0"}], "readonly_if": {"key": "optimizer_type", "eq": PRODIGY_OPTIMIZER_TYPE, "_or": [PRODIGYPLUS_OPTIMIZER_TYPE], "reason_key": "field.unet_lr_prodigyLocked"}, "omit_default": True},
+{"key": "text_encoder_lr", "type": "text", "value_type": "number", "default": "", "section": "optimizer", "desc_key": "field.text_encoder_lr", "hint_key_by": {"key": "optimizer_type", "values": {EMOSENS_OPTIMIZER_TYPE: "field.component_lrHint_emosens"}}, "target": "toml", "show_if": {"key": "network_train_unet_only", "neq": True}, "auto_value": [{"watch": "optimizer_type", "when": PRODIGY_OPTIMIZER_TYPE, "set": "1.0"}, {"watch": "optimizer_type", "when": PRODIGYPLUS_OPTIMIZER_TYPE, "set": "1.0"}], "readonly_if": {"key": "optimizer_type", "eq": PRODIGY_OPTIMIZER_TYPE, "_or": [PRODIGYPLUS_OPTIMIZER_TYPE], "reason_key": "field.text_encoder_lr_prodigyLocked"}, "omit_default": True},
 {"key": "lr_scheduler", "type": "select", "default": "cosine_with_restarts", "section": "optimizer", "desc_key": "field.lr_scheduler", "hint_key": "field.lr_schedulerHint", "target": "toml", "doc_slug": "optimizers", "doc_anchor": "scheduler-warmup", "options": [{"v": "cosine_with_restarts", "l": "cosine_with_restarts", "dk": "opt.lr_scheduler_cosine_with_restarts"}, {"v": "cosine", "l": "cosine", "dk": "opt.lr_scheduler_cosine"}, {"v": "cosine_with_min_lr", "l": "cosine_with_min_lr", "dk": "opt.lr_scheduler_cosine_with_min_lr"}, {"v": "inverse_sqrt", "l": "inverse_sqrt", "dk": "opt.lr_scheduler_inverse_sqrt"}, {"v": "warmup_stable_decay", "l": "warmup_stable_decay", "dk": "opt.lr_scheduler_warmup_stable_decay"}, {"v": "linear", "l": "linear", "dk": "opt.lr_scheduler_linear"}, {"v": "polynomial", "l": "polynomial", "dk": "opt.lr_scheduler_polynomial"}, {"v": "constant", "l": "constant", "dk": "opt.lr_scheduler_constant"}, {"v": "constant_with_warmup", "l": "constant_with_warmup", "dk": "opt.lr_scheduler_constant_with_warmup"}], "auto_value": [{"watch": "optimizer_type", "when": PRODIGY_OPTIMIZER_TYPE, "set": "cosine", "set_if_default": True}, {"watch": "optimizer_type", "when": EMOSENS_OPTIMIZER_TYPE, "set": "constant"}, {"watch": "optimizer_type", "when": ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE, "set": "constant"}, {"watch": "optimizer_type", "when": PRODIGYPLUS_OPTIMIZER_TYPE, "set": "constant"}, {"watch": "optimizer_type", "when": AUTOMAGIC_OPTIMIZER_TYPE, "set": "constant"}, {"watch": {"optimizer_type": ADAFACTOR_OPTIMIZER_TYPE, "adafactor_relative_step": True}, "set": "constant"}, {"watch": "model_train_type", "when": "anima-lora", "set": "constant", "set_if_default": True}], "readonly_if_any": [{"key": "optimizer_type", "eq": EMOSENS_OPTIMIZER_TYPE}, {"key": "optimizer_type", "eq": ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE}, {"key": "optimizer_type", "eq": PRODIGYPLUS_OPTIMIZER_TYPE}, {"key": "optimizer_type", "eq": AUTOMAGIC_OPTIMIZER_TYPE}, [{"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}, {"key": "adafactor_relative_step", "eq": True}]], "readonly_reason_key": "field.lr_scheduler_locked"},
 {"key": "lr_warmup_steps", "type": "number", "default": 0, "section": "optimizer", "desc_key": "field.lr_warmup_steps", "hint_key": "field.lr_warmup_stepsHint", "target": "toml", "min": 0, "auto_value": [{"watch": "optimizer_type", "when": EMOSENS_OPTIMIZER_TYPE, "set": 0}, {"watch": "optimizer_type", "when": AUTOMAGIC_OPTIMIZER_TYPE, "set": 0}, {"watch": "optimizer_type", "when": ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE, "set": 0}, {"watch": "optimizer_type", "when": PRODIGYPLUS_OPTIMIZER_TYPE, "set": 0}, {"watch": {"optimizer_type": ADAFACTOR_OPTIMIZER_TYPE, "adafactor_relative_step": True}, "set": 0}], "readonly_if_any": [{"key": "optimizer_type", "eq": EMOSENS_OPTIMIZER_TYPE}, {"key": "optimizer_type", "eq": AUTOMAGIC_OPTIMIZER_TYPE}, {"key": "optimizer_type", "eq": ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE}, {"key": "optimizer_type", "eq": PRODIGYPLUS_OPTIMIZER_TYPE}, [{"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}, {"key": "adafactor_relative_step", "eq": True}]], "readonly_reason_key": "field.lr_warmup_steps_internalLocked", "omit_default": True, "doc_slug": "optimizers", "doc_anchor": "scheduler-warmup"},
 {"key": "lr_scheduler_num_cycles", "type": "number", "default": 1, "section": "optimizer", "desc_key": "field.lr_scheduler_num_cycles", "hint_key": "field.lr_scheduler_num_cyclesHint", "target": "toml", "min": 1, "step": 1, "show_if": {"key": "lr_scheduler", "eq": "cosine_with_restarts", "_or": ["cosine_with_min_lr", "warmup_stable_decay"]}, "omit_default": True},
@@ -726,15 +726,15 @@ def get_ui_only_fields() -> set[str]:
 
 # merged 字段 → 真正写进 optimizer_args 的参数名。界面按这个名字显示字段，
 # 而表单键（如 came_clip_threshold）只作为内部命名空间，不写进配置文件。
-# 映射来源：常规优化器走 FORM_ARGUMENTS，Automagic3 的顶层字段走它自己的映射表。
+# 所有优化器共用 FORM_ARGUMENTS，表单、校验和启动使用同一映射。
 _MERGED_ARG_NAMES: dict[str, str] = {
-    **{key: mapping.argument for key, mapping in FORM_ARGUMENTS.items()},
-    **AUTOMAGIC_MERGED_ARG_MAP,
+    key: mapping.argument for key, mapping in FORM_ARGUMENTS.items()
 }
 
 
 # snake_case → camelCase key mapping for frontend
 _FIELD_KEY_MAP = {
+    "value_type": "valueType",
     "desc_key": "descKey",
     "hint_key": "hintKey",
     "hint_key_by": "hintKeyBy",
@@ -841,7 +841,11 @@ def _to_camel(field: dict) -> dict:
         arg_name = _MERGED_ARG_NAMES.get(field.get("key"))
         if arg_name is not None:
             result["argKey"] = arg_name
+            result["optimizerDefaults"] = OPTIMIZER_ARGUMENT_DEFAULTS.get(field["key"], {})
     key = field.get("key")
+    if key in LORAPLUS_RATIO_KEYS:
+        result["networkArg"] = key
+        result["networkModules"] = [*LORAPLUS_NETWORK_MODULES, "lycoris.kohya"]
     if key in _NETWORK_ARG_MAP:
         result["networkArg"] = _NETWORK_ARG_MAP[key]
         result["networkModules"] = ["lycoris.kohya", *(

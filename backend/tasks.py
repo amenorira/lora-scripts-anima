@@ -290,10 +290,6 @@ class TaskManager:
         with self._lock:
             self._dataset_mutation = False
 
-    def add_task(self, task_id: str, task: Task) -> None:
-        with self._lock:
-            self.tasks[task_id] = task
-
     def terminate_task(self, task_id: str) -> None:
         with self._lock:
             task = self.tasks.get(task_id)

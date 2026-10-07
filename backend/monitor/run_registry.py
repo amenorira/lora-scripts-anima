@@ -15,6 +15,7 @@ import tempfile
 import tomllib
 import threading
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -168,16 +169,27 @@ def _load_json(path: Path) -> dict[str, Any] | None:
 
 
 def _config_output_dir(run_dir: Path) -> str | None:
-    config_file = run_dir / "config.toml"
-    if not config_file.is_file():
-        return None
+    value = read_run_config(run_dir).get("output_dir")
+    return str(value) if value else None
+
+
+@lru_cache(maxsize=32)
+def _read_config_revision(path: Path, mtime_ns: int, size: int) -> dict:
+    with path.open("rb") as handle:
+        return tomllib.load(handle)
+
+
+def read_run_config(run_dir: str | Path) -> dict:
+    """Read this run's immutable config; never substitute another run's autosave."""
+    path = Path(run_dir) / "config.toml"
     try:
-        with config_file.open("rb") as handle:
-            config = tomllib.load(handle)
-        value = config.get("output_dir")
-        return str(value) if value else None
-    except (OSError, tomllib.TOMLDecodeError):
-        return None
+        stat = path.stat()
+        return _read_config_revision(path, stat.st_mtime_ns, stat.st_size)
+    except FileNotFoundError:
+        return {}
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+        log.warning("Cannot read run configuration / 无法读取运行配置 %s: %s", path, exc)
+        return {}
 
 
 def _run_dir_holds_artifacts(run_dir: Path) -> bool:

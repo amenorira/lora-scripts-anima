@@ -1,6 +1,7 @@
 """Plan review, GPU ownership, recovery and reversible result inspection."""
 import copy
 import os
+import subprocess
 import threading
 import time
 import uuid
@@ -412,12 +413,8 @@ def cancel(task_id):
         if task and task.process:
             try:
                 task.process.wait(timeout=15)
-            except TimeoutError:
+            except subprocess.TimeoutExpired:
                 task.terminate()
-            except Exception as exc:
-                import subprocess
-                if isinstance(exc, subprocess.TimeoutExpired):
-                    task.terminate()
         else:
             process = _live_process(storage.read_manifest(root), root)
             if process:

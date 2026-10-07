@@ -1,7 +1,6 @@
 """数据集子集改名（repeat = 目录名数字前缀）的单元测试。"""
 
 import asyncio
-import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,14 +13,7 @@ from backend.training.dataset_repeat import (
     apply_subset_repeats,
 )
 from backend.training.sd_dataset_config import build_sd_scripts_dataset_config
-
-
-class _BodyRequest:
-    def __init__(self, payload):
-        self._body = json.dumps(payload).encode("utf-8")
-
-    async def body(self):
-        return self._body
+from tests.helpers import json_request
 
 
 class ApplySubsetRepeatsTests(unittest.TestCase):
@@ -127,7 +119,7 @@ class DatasetRepeatRouteTests(unittest.TestCase):
 
     def _post(self, payload):
         with patch.object(training_routes.tm, "dump", return_value=[]):
-            return asyncio.run(training_routes.update_dataset_repeat(_BodyRequest(payload)))
+            return asyncio.run(training_routes.update_dataset_repeat(json_request(payload)))
 
 
     def test_stopping_preparation_does_not_allow_dataset_rename(self):
@@ -153,7 +145,7 @@ class DatasetRepeatRouteTests(unittest.TestCase):
                 task_id = manager.dump()[0]["id"]
                 manager.terminate_task(task_id)
                 self.assertIs(manager.tasks[task_id].status, TaskStatus.CREATED)
-                blocked = await training_routes.update_dataset_repeat(_BodyRequest({
+                blocked = await training_routes.update_dataset_repeat(json_request({
                     "dir": str(self.train), "changes": [{"name": "5_cat", "repeats": 8}],
                 }))
                 self.assertEqual(blocked.data["errorCode"], "trainingActive")
@@ -176,7 +168,7 @@ class DatasetRepeatRouteTests(unittest.TestCase):
             return {"applied": []}
 
         async def exercise():
-            task = asyncio.create_task(training_routes.update_dataset_repeat(_BodyRequest({
+            task = asyncio.create_task(training_routes.update_dataset_repeat(json_request({
                 "dir": str(self.train), "changes": [{"name": "5_cat", "repeats": 8}],
             })))
             self.assertTrue(await asyncio.to_thread(entered.wait, 5))

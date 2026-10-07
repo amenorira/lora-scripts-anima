@@ -1,3 +1,4 @@
+import ast
 import unittest
 
 
@@ -148,8 +149,11 @@ class OptimizerAdapterTests(unittest.TestCase):
                 })
                 self.assertEqual(adapted["optimizer_type"], optimizer)
                 self.assertEqual(warnings, [])
+                actual = dict(item.split("=", 1) for item in adapted["optimizer_args"])
                 for argument in ["weight_decay=0", *expected]:
-                    self.assertIn(argument, adapted["optimizer_args"])
+                    key, literal = argument.split("=", 1)
+                    self.assertEqual(ast.literal_eval(actual[key]), ast.literal_eval(literal))
+                self.assertEqual(len(actual), len(adapted["optimizer_args"]))
                 self.assertFalse(any("lora_muon_" in argument for argument in adapted["optimizer_args"]))
         self.assertEqual(validate_training_config(valid_config(SOAP_OPTIMIZER_TYPE, "sdxl-lora")), [])
 
@@ -174,7 +178,8 @@ class OptimizerAdapterTests(unittest.TestCase):
         self.assertEqual(relative["lr_warmup_steps"], 0)
         self.assertEqual(relative["max_grad_norm"], 0)
         self.assertIn("relative_step=True", relative["optimizer_args"])
-        self.assertIn("eps=1e-30, 1e-3", relative["optimizer_args"])
+        args = dict(item.split("=", 1) for item in relative["optimizer_args"])
+        self.assertEqual(ast.literal_eval(args["eps"]), (1e-30, 1e-3))
         self.assertTrue(any("relative_step" in warning for warning in warnings), warnings)
 
         manual, _ = adapt_config(

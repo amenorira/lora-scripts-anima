@@ -1,5 +1,4 @@
 import asyncio
-import json
 import tempfile
 import time
 import tomllib
@@ -12,14 +11,7 @@ from backend.server.routes import training as training_routes
 from backend.tasks import TaskManager, TaskStatus
 from backend.training.sd_dataset_config import build_sd_scripts_dataset_config
 from backend.training.training_config import extract_training_form, load_training_config
-
-
-class _BodyRequest:
-    def __init__(self, payload):
-        self._body = json.dumps(payload).encode("utf-8")
-
-    async def body(self):
-        return self._body
+from tests.helpers import json_request
 
 
 class SubsetTimestepDatasetConfigTests(unittest.TestCase):
@@ -69,12 +61,11 @@ class SubsetTimestepDatasetConfigTests(unittest.TestCase):
             stack.enter_context(patch.object(training_routes, "OUTPUT_DIR", self.root / "runs"))
             stack.enter_context(patch("backend.training.validate_training_config", return_value=[]))
             stack.enter_context(patch("backend.training.adapt_config", side_effect=_adapt_config))
-            stack.enter_context(patch.object(training_routes.train_utils, "fix_config_types"))
             stack.enter_context(patch.object(training_routes.train_utils, "validate_data_dir", return_value=True))
             stack.enter_context(patch.object(training_routes.train_utils, "count_images", return_value=1))
             stack.enter_context(patch.object(training_routes.train_utils, "validate_model", return_value=(True, "")))
-            stack.enter_context(patch.object(training_routes, "estimate_training_steps", return_value={}))
-            stack.enter_context(patch.object(training_routes, "get_sample_prompts", return_value=(None, "")))
+            stack.enter_context(patch.object(training_routes, "estimate_training_steps", return_value={"total_steps": 10, "gpu_processes": 1}))
+            stack.enter_context(patch.object(training_routes, "get_sample_prompts", return_value=""))
             stack.enter_context(patch.object(training_routes.os, "getcwd", return_value=str(self.root)))
             stack.enter_context(patch.object(training_routes, "AUTOSAVE_DIR", self.root / "config" / "autosave"))
             def completed_launch(*_args, **kwargs):
@@ -91,7 +82,7 @@ class SubsetTimestepDatasetConfigTests(unittest.TestCase):
                     side_effect=completed_launch,
                 )
             )
-            result = asyncio.run(training_routes.create_toml_file(_BodyRequest(payload)))
+            result = asyncio.run(training_routes.create_toml_file(json_request(payload)))
 
         self.assertEqual(result["status"], "success")
         extra_args = run_train.call_args.kwargs["extra_args"]

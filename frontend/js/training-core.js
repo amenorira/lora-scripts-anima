@@ -2064,23 +2064,12 @@ window.trainingCoreMixin = {
       const numberAttrs = `${constraints.min !== undefined ? ` min="${this.escapeAttr(constraints.min)}"` : ''}${constraints.max !== undefined ? ` max="${this.escapeAttr(constraints.max)}"` : ''} step="${this.escapeAttr(sStep)}"`;
       inputHtml = `<div class="stepper"><button type="button" @click="stepField('${dataKey}', -${sStep})">−</button><input type="number" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)"${numberAttrs}${defaultOnBlur}${staticReadonlyAttrs}><button type="button" @click="stepField('${dataKey}', ${sStep})">+</button></div>`;
     } else {
-      // Text input: dynamic placeholder for optimizer merged fields (reactive via Alpine)
-      // Values sourced from window.OPTIMIZER_DEFAULTS (single source of truth in constants.js)
-      const _OPT_PH = window.OPTIMIZER_DEFAULTS || {};
-      const _phMap = _OPT_PH[dataKey];
-      if (_phMap) {
-        // Dynamic placeholder that updates when optimizer_type changes
-        const _phExpr = JSON.stringify(_phMap).replace(/"/g, '&quot;');
-        const _animaPhMap = dataKey === 'learning_rate'
-          ? this._optimizerAutoValueMap(field, 'anima-lora')
-          : null;
-        const _animaPhExpr = _animaPhMap
-          ? JSON.stringify(_animaPhMap).replace(/"/g, '&quot;')
-          : '';
-        const _phSource = dataKey === 'learning_rate'
-          ? `(form.model_train_type === 'anima-lora' ? (${_animaPhExpr || '{}'}) : (${_phExpr}))`
-          : `(${_phExpr})`;
-        inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" :placeholder="${_phSource}[form.optimizer_type] || ''"${staticReadonlyAttrs}>`;
+      // Placeholders use the same profile defaults and auto-value rules as the form.
+      const placeholders = this._optimizerAutoValueMap(field);
+      if (Object.keys(placeholders).length || field.argKey) {
+        const expression = JSON.stringify(placeholders).replace(/"/g, '&quot;');
+        const defaultValue = JSON.stringify(field.default ?? '').replace(/"/g, '&quot;');
+        inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" :placeholder="(${expression})[form.optimizer_type] ?? ${defaultValue}"${staticReadonlyAttrs}>`;
       } else if (field.omitDefault && field.default !== undefined && field.default !== '' && field.default !== null) {
         // omitDefault 字段：值==默认值时不传，输入框用淡色 placeholder 提示默认值
         const _phVal = String(field.default).replace(/"/g, '&quot;');
