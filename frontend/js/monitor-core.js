@@ -351,7 +351,7 @@ window.monitorCoreMixin = {
     if (this._statePollTimer) return;
     const poll = async () => {
       await this._pollTrainingState();
-      this._statePollTimer = setTimeout(poll, document.hidden ? 10000 : this.liveTaskId ? 1500 : 5000);
+      this._statePollTimer = setTimeout(poll, document.hidden ? 10000 : this.liveTaskId || this.regularizationActive ? 1500 : 5000);
     };
     this._statePollTimer = setTimeout(poll, 0);
   },
@@ -378,6 +378,7 @@ window.monitorCoreMixin = {
       this.realtimeSnapshot = snapshot;
       // WS 掉线时资源圆环仍有数据（状态轮询顺带带回硬件采样）。
       if (!this.realtimeReady && snapshot.hardware) this.handleRealtimeHardware(snapshot.hardware);
+      if (typeof this.applyRegularizationActivity === 'function') this.applyRegularizationActivity(snapshot, requestedAt);
       this._applyManagedTrainingState(snapshot, requestedAt);
     } catch (_) {
       // 后端不可达：保持最后已知状态；连接指示由探针/WS 状态机负责。

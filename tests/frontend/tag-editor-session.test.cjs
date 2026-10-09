@@ -4,6 +4,19 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 
+test('directory counts use the full server result and all local drafts across pages', () => {
+  const { app } = fixture();
+  const image = { path: '/b/one', rel_path: 'b/one.png', tags: '' };
+  app._teApplySessionPage({ page: 2, items: [image], directory_counts: { b: 10 } }, true);
+  assert.equal(app.tagEditorDirectoryImageCount(image), 10);
+  app.tagEditorQuickFilter = 'modified';
+  app._teGetModified = () => [image, { path: '/b/two', rel_path: 'b/two.png' }, { path: '/a/one', rel_path: 'a/one.png' }];
+  assert.equal(app.tagEditorDirectoryImageCount(image), 2);
+  app.tagEditorSessionId = '';
+  app.tagEditorGetFiltered = () => [image, { rel_path: 'b/two.png' }, { rel_path: 'b/nested/one.png' }];
+  assert.equal(app.tagEditorDirectoryImageCount(image), 2);
+});
+
 function fixture() {
   const pending = [];
   const context = { window: {}, URLSearchParams, AbortController, setTimeout, clearTimeout,

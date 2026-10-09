@@ -1,5 +1,8 @@
 {
 	"regularization": {
+		"model_type": "Model type",
+		"checkpoint": "SDXL checkpoint (UNet, dual CLIP and VAE)",
+		"sdxl_vae": "SDXL VAE (optional; blank uses checkpoint VAE)",
 		"title": "Regularization images",
 		"entry": "Generate regularization images",
 		"subtitle": "Generate regularization images from dataset captions",
@@ -24,7 +27,7 @@
 		"dataset": "Dataset",
 		"models": "Models",
 		"prompts": "Prompts and captions",
-		"importHelp": "Load dataset, models and buckets from the current Anima training settings. Prompts and sampling settings are kept.",
+		"importHelp": "Load dataset, models and buckets from the current Anima / SDXL training settings and select compatible sampling options.",
 		"bucketSettings": "Bucket details",
 		"noUsableSources": "No usable images. Add matching .txt captions or check the skip reasons in the detailed plan.",
 		"help": {
@@ -51,7 +54,7 @@
 		},
 		"options": {
 			"memory_mode": {
-				"auto": "Select inference precision, estimate block offloading, and choose the text encoding device from available VRAM. Very large images may still exceed VRAM.",
+				"auto": "Select inference precision and model offloading. SDXL encodes text on CPU, keeps the UNet on GPU when VRAM permits, otherwise offloads layers, and decodes with an FP32 VAE. Very large images may still exceed VRAM.",
 				"manual": "Set inference precision, block offloading, and the text encoding device yourself."
 			},
 			"sampler": {
@@ -189,7 +192,7 @@
 		"noResults": "No results yet",
 		"noMatches": "No images match this filter",
 		"imported": "Loaded current Anima training settings",
-		"onlyAnima": "Select Anima training settings first",
+		"onlyAnima": "Select Anima or SDXL training settings first",
 		"applied": "Regularization data enabled",
 		"changed": "The plan changed. Review it and click Start again",
 		"refresh": "Refresh"
@@ -320,7 +323,7 @@
 		"remainingTrendLabel": "Remaining-time rate: change in remaining time / change in elapsed time. The center line at −1 means one second less remaining per second; above it means a slower countdown, and a positive rate means remaining time is increasing",
 		"timeTrendCaption": "Chart: remaining-time rate",
 		"localTrendScaleHint": "The vertical axis scales to recent changes, magnifying small variations",
-		"diagnosticTrendRange": "Chart: last {n} calculations · Steps {first}–{last}",
+		"diagnosticTrendRange": "last {n} calculations Steps {first}–{last}",
 		"diagnosticChangeScaleHint": "Dashed line: zero. Positive above, negative below. The vertical scale adapts symmetrically around zero; the endpoint matches the current percentage",
 		"peakToFinal": "Peak → final",
 		"running": "Running",
@@ -1463,6 +1466,9 @@
 		"fileBrowserFailed": "File browser failed",
 		"cancel": "Cancel",
 		"backendConnected": "Backend connected",
+		"regularizationInProgress": "Generating reg images",
+		"regularizationBlocked": "Regularization images are being generated. Wait for completion or stop generation before starting.",
+		"viewGeneration": "View generation",
 		"backendDisconnected": "Backend disconnected",
 		"backendDisconnectedToast": "Backend connection lost",
 		"backendReconnectedToast": "Backend reconnected",

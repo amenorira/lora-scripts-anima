@@ -34,9 +34,9 @@
   </nav>
 
 
-  <div class="tagger-training-notice" x-show="trainingActive && !taggerModeIsApi()">
-    <span x-text="t('tagger.trainingBlocked', 'Training is using the GPU. Tagger is unavailable.')"></span>
-    <button @click="navigate('monitor-dashboard')"><span x-text="t('tagger.openMonitor', 'Open monitor')"></span><svg><use href="#ti-external"></use></svg></button>
+  <div class="tagger-training-notice" x-show="(trainingActive && !taggerModeIsApi()) || (regularizationActive && taggerSourceMode !== 'api-single')">
+    <span x-text="regularizationActive ? t('common.regularizationBlocked') : t('tagger.trainingBlocked', 'Training is using the GPU. Tagger is unavailable.')"></span>
+    <button @click="navigate(regularizationActive ? 'regularization' : 'monitor-dashboard')"><span x-text="regularizationActive ? t('common.viewGeneration') : t('tagger.openMonitor', 'Open monitor')"></span><svg><use href="#ti-external"></use></svg></button>
   </div>
 
   <template x-if="taggerSourceMode === 'folder'">

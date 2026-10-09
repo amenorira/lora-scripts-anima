@@ -97,6 +97,7 @@ window.tagEditorMixin = {
   tagEditorFilteredTotal: 0,
   tagEditorServerTotalPages: 1,
   tagEditorPageItems: [],
+  tagEditorDirectoryCounts: {},
   tagEditorNoTagCount: 0,
 
   // ===== Filters & Search =====
@@ -459,6 +460,7 @@ window.tagEditorMixin = {
   },
 
   _teApplySessionPage(data, reset) {
+    this.tagEditorDirectoryCounts = data.directory_counts || {};
     this.tagEditorPage = Number(data.page || 1);
     this.tagEditorFilteredTotal = Number(data.total || 0);
     this.tagEditorServerTotalPages = Number(data.total_pages || 1);
@@ -1065,6 +1067,18 @@ window.tagEditorMixin = {
     if (!this.tagEditorGroupByDir) return false;
     var previous = this.tagEditorGetPaged()[idx - 1];
     return !previous || this.tagEditorImageDirectory(previous) !== this.tagEditorImageDirectory(img);
+  },
+
+  tagEditorDirectoryImageCount(img) {
+    var directory = this.tagEditorImageDirectory(img);
+    if (this.tagEditorSessionId && this.tagEditorQuickFilter !== 'modified') {
+      return this.tagEditorDirectoryCounts[directory] || 0;
+    }
+    var images = this.tagEditorSessionId ? this._teGetModified() : this.tagEditorGetFiltered();
+    var self = this;
+    return images.reduce(function(count, image) {
+      return count + (self.tagEditorImageDirectory(image) === directory ? 1 : 0);
+    }, 0);
   },
 
   tagEditorGetPaged() {

@@ -303,7 +303,7 @@ async def _prepare_training(helper, *args):
     task = tm.reserve_task()
     if task is None:
         return _training_response(_training_error(
-            "Training or tagging task is active / 训练或打标任务正在运行",
+            "Training, tagging or generation task is active / 训练、打标或正则生成任务正在运行",
             {"errorCode": "taskActive"},
         ))
     preparation = _TrainingPreparation(task)

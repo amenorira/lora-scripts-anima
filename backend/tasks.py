@@ -305,5 +305,13 @@ class TaskManager:
         """Training views exclude auxiliary workers while GPU ownership stays shared."""
         return [task for task in self.dump() if task.get("kind", "training") == "training"]
 
+    def regularization_active(self) -> bool:
+        """Include preparation, stopping workers and workers recovered after restart."""
+        with self._lock:
+            return any(
+                task.get("kind") == "regularization" and task["status"] in {"CREATED", "RUNNING"}
+                for task in (value.snapshot() for value in self.tasks.values())
+            ) or any(owner.startswith("regularization-recovery:") for owner in self._external_claims)
+
 
 tm = TaskManager()

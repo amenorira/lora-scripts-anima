@@ -2255,7 +2255,7 @@ window.trainingCoreMixin = {
   _getEnvHint(dataKey) {
     switch (dataKey) {
       case 'enable_reg_data':
-        if (this.form.model_train_type !== 'anima-lora') return '';
+        if (!['anima-lora', 'sdxl-lora'].includes(this.form.model_train_type)) return '';
         return `<div class="timestep-preview-entry"><button type="button" class="btn btn-ghost btn-sm" @click="openRegularizationFromTraining()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1"/><path d="m21 15-5-5L5 21"/></svg><span x-text="regT('entry')"></span></button></div>`;
       case 'timestep_sampling':
         return `<div class="timestep-preview-entry">

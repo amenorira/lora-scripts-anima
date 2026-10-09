@@ -42,7 +42,7 @@ def _git_version() -> str:
 
 @router.get("/health")
 async def health_check():
-    """Lightweight connectivity check — returns OK + training active flag."""
+    """Lightweight connectivity check with training and generation activity."""
     tasks = tm.training_dump()
     active_task = next(
         (task for task in tasks if task.get("status") in {"CREATED", "RUNNING"}),
@@ -51,6 +51,7 @@ async def health_check():
     return {
         "status": "ok",
         "training_active": active_task is not None,
+        "regularization_active": tm.regularization_active(),
         "task_id": active_task["id"] if active_task else None,
     }
 

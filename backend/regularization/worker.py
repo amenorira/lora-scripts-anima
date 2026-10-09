@@ -1,4 +1,4 @@
-"""GPU-isolated Anima worker. Run with the project's venv, never the server process."""
+"""GPU-isolated generation worker. Run with the project's venv, never the server process."""
 import argparse
 import gc
 import logging
@@ -180,8 +180,15 @@ class AnimaRunner:
         return Image.fromarray(pixels)
 
 
-def run(root: Path, runner_factory=AnimaRunner):
+def run(root: Path, runner_factory=None):
     manifest = read_manifest(root)
+    model_type = manifest["settings"].get("model_type", "anima")
+    if runner_factory is None:
+        if model_type == "sdxl":
+            from .sdxl import SdxlRunner
+            runner_factory = SdxlRunner
+        else:
+            runner_factory = AnimaRunner
     manifest["worker"] = {"pid": os.getpid(), "created": psutil.Process().create_time()}
     manifest["status"] = "running"
     manifest["started_at"] = time.time()
@@ -210,7 +217,8 @@ def run(root: Path, runner_factory=AnimaRunner):
                                "precision": str(getattr(runner, "dtype", manifest["settings"]["precision"])), "sampler_version": 2,
                                "blocks_to_swap": getattr(runner, "blocks_to_swap", manifest["settings"]["blocks_to_swap"]),
                                "model_weight_dtype": str(getattr(runner, "model_dtype", "test")),
-                               "attention": "torch", "vae_implementation": "qwen_image_vae_2d", "vae_chunk_size": 64,
+                               "attention": "torch", "model_type": model_type,
+                               "vae_implementation": "sdxl" if model_type == "sdxl" else "qwen_image_vae_2d", "vae_chunk_size": 64,
                                "gpu": torch.cuda.get_device_name() if torch.cuda.is_available() else None}
         for item in manifest["items"]:
             if item["status"] not in {"pending", "failed", "running"}:
@@ -228,8 +236,8 @@ def run(root: Path, runner_factory=AnimaRunner):
                 info.add_text("Software", software)
                 info.add_text("parameters", f"{item['prompt']}\nNegative prompt: {manifest['settings']['negative']}\n"
                               f"Steps: {manifest['settings']['steps']}, Sampler: {manifest['settings']['sampler']}, "
-                              f"Schedule type: {manifest['settings']['scheduler']}, CFG scale: {manifest['settings']['cfg']}, "
-                              f"Flow shift: {manifest['settings']['flow_shift']}, "
+                              f"Schedule type: {manifest['settings']['scheduler']}, CFG scale: {manifest['settings']['cfg']}, " +
+                              (f"Flow shift: {manifest['settings']['flow_shift']}, " if model_type == "anima" else "Model type: SDXL, ") +
                               f"Seed: {item['seed']}, Size: {item['width']}x{item['height']}")
                 buffer = BytesIO()
                 image.save(buffer, format="PNG", pnginfo=info)

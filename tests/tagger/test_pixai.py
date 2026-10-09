@@ -66,7 +66,7 @@ class PixAITests(unittest.TestCase):
             with patch.object(workspace, "training_active", return_value=False), patch.object(
                 workspace.tm, "claim_external", return_value=False
             ) as claim:
-                with self.assertRaisesRegex(RuntimeError, "Training or tagging"):
+                with self.assertRaisesRegex(RuntimeError, "task is active"):
                     workspace.create_task({"model_id": "pixai-tagger-v1.0",
                                            "source_token": source["source_token"], "write_captions": False})
             claim.assert_called_once()

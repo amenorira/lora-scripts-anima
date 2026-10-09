@@ -65,6 +65,7 @@ async def _snapshot_payload(
             "instance_id": SERVER_INSTANCE_ID,
             "started_at": SERVER_STARTED_AT,
             "training_active": any(task.get("status") in active_statuses for task in managed_tasks),
+            "regularization_active": tm.regularization_active(),
         },
         "hardware": {
             "gpu": gpu,

@@ -664,7 +664,7 @@ def create_task(payload: dict) -> str:
         model_id = f"api:{config.model}"
     else:
         if training_active():
-            raise RuntimeError("Training is using the GPU / 训练任务正在使用 GPU")
+            raise RuntimeError("Training or generation is using the GPU / 训练或正则生成任务正在使用 GPU")
         model_id = str(payload.get("model_id") or "")
         if model_id not in MODEL_SPEC_BY_ID:
             raise ValueError("Unknown model / 未知模型")
@@ -730,7 +730,7 @@ def create_task(payload: dict) -> str:
         if engine != "api" or write_captions:
             owner = f"tagger:{task_id}"
             if not tm.claim_external(owner):
-                raise RuntimeError("Training or tagging task is active / 训练或反推任务正在运行")
+                raise RuntimeError("Training, tagging or generation task is active / 训练、打标或正则生成任务正在运行")
             task["resource_claim"] = owner
         else:
             owner = f"tagger-reader:{task_id}"

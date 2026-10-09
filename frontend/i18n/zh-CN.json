@@ -1,5 +1,8 @@
 {
 	"regularization": {
+		"model_type": "模型类型",
+		"checkpoint": "SDXL 完整模型（含 UNet、双 CLIP 和 VAE）",
+		"sdxl_vae": "SDXL VAE（可选，留空使用模型内置 VAE）",
 		"title": "正则图生成",
 		"entry": "生成正则图片",
 		"subtitle": "根据训练集标签生成正则图片",
@@ -24,7 +27,7 @@
 		"dataset": "数据集",
 		"models": "模型",
 		"prompts": "提示词与标签",
-		"importHelp": "读取当前 Anima 训练配置中的数据集、模型和分桶设置，不覆盖提示词及采样参数。",
+		"importHelp": "读取当前 Anima / SDXL 训练配置中的数据集、模型和分桶设置，自动选择兼容的采样选项。",
 		"bucketSettings": "分桶细节",
 		"noUsableSources": "没有可生成的图片，请补齐同名 .txt 标签，或在详细生成计划中检查跳过原因。",
 		"usableSources": "可用 {valid} / {total} 张源图",
@@ -53,7 +56,7 @@
 		},
 		"options": {
 			"memory_mode": {
-				"auto": "自动选择推理精度、估算模型卸载块数，并按可用显存选择文本编码设备。超大尺寸仍可能超出显存。",
+				"auto": "自动选择推理精度和模型卸载策略。SDXL 在 CPU 编码文本，显存充足时将 UNet 驻留显卡，否则按层卸载；VAE 使用 FP32。超大尺寸仍可能超出显存。",
 				"manual": "自行设置推理精度、模型卸载块数和文本编码设备。"
 			},
 			"sampler": {
@@ -189,7 +192,7 @@
 		"noResults": "还没有生成结果",
 		"noMatches": "当前筛选条件下没有图片",
 		"imported": "已读取当前 Anima 训练配置",
-		"onlyAnima": "请先选择 Anima 训练配置",
+		"onlyAnima": "请先选择 Anima 或 SDXL 训练配置",
 		"applied": "已启用正则数据",
 		"changed": "计划已变化，请检查后重新点击开始",
 		"refresh": "刷新"
@@ -320,7 +323,7 @@
 		"remainingTrendLabel": "剩余时间变化率：剩余时间变化 ÷ 已运行时间变化。中线 −1 表示每秒正常减少 1 秒；高于中线表示减少变慢，变化率大于 0 表示剩余时间增加",
 		"timeTrendCaption": "曲线：剩余时间变化率",
 		"localTrendScaleHint": "纵轴随近期变化自动缩放，小幅变化会放大显示",
-		"diagnosticTrendRange": "曲线：最近 {n} 次统计 · Step {first}–{last}",
+		"diagnosticTrendRange": "最近 {n} 次统计 Step {first}–{last}",
 		"diagnosticChangeScaleHint": "虚线为 0，上方为正、下方为负；纵轴围绕 0 对称自适应，折线末端对应当前百分比",
 		"peakToFinal": "峰值 → 最终",
 		"running": "运行中",
@@ -1463,6 +1466,9 @@
 		"fileBrowserFailed": "文件浏览失败",
 		"cancel": "取消",
 		"backendConnected": "后端已连接",
+		"regularizationInProgress": "正则图生成中",
+		"regularizationBlocked": "正则图正在生成，请等待完成或停止生成后再启动。",
+		"viewGeneration": "查看生成任务",
 		"backendDisconnected": "后端已断开",
 		"backendDisconnectedToast": "后端连接已断开",
 		"backendReconnectedToast": "后端已重新连接",

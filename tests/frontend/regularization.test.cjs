@@ -105,6 +105,100 @@ function fixture() {
   return app;
 }
 
+function activityFixture() {
+  let app;
+  const context = {
+    window: {}, document: {addEventListener: (_, callback) => callback(), hidden: false},
+    setTimeout, clearTimeout, setInterval, clearInterval,
+    localStorage: {getItem() {}, setItem() {}, removeItem() {}},
+    Alpine: {data: (_, factory) => { app = factory(); }}, AbortController,
+  };
+  for (const file of ['regularization', 'training-core', 'training-toml', 'tagger', 'monitor-core', 'app']) {
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname, `../../frontend/js/${file}.js`), 'utf8'), context);
+  }
+  app.t = key => key;
+  app.toast = () => {};
+  app.realtimeSubscribe = app.realtimeUnsubscribe = () => {};
+  app.realtimeState = 'online'; app.realtimeReady = true;
+  app.taggerSource = {total:1}; app.taggerSelectedModel = 'test-model';
+  app.setSnapshot = active => {
+    context.fetch = async () => ({ok:true, json:async () => ({status:'success', data:{
+      server:{regularization_active:active}, tasks:{managed:[]},
+    }})});
+  };
+  return app;
+}
+
+test('generation status blocks training and local tagging across routes, then releases them', async () => {
+  const app = activityFixture();
+  app.validateForm = () => assert.fail('blocked training must not prepare');
+  for (const route of ['home', 'train-anima', 'tagger']) {
+    app.currentRoute = route;
+    app.setSnapshot(true); await app._pollTrainingState();
+    assert.equal(app.backendStatusLabel, 'common.regularizationInProgress');
+    assert.equal(app.trainingActive, false);
+    assert.equal(app.isTraining, false);
+    assert.equal(app.taggerCanStart(), false);
+    await app.startTraining(); await app.prepareKrea2Cache();
+  }
+  app.taggerApiSettings = {baseUrl:'https://example.test', apiKey:'test', model:'test', promptText:'caption'};
+  app.taggerSourceMode = 'api-folder';
+  assert.equal(app.taggerApiCanStart(), false);
+  app.taggerSourceMode = 'api-single';
+  assert.equal(app.taggerApiCanStart(), true);
+  app.taggerSourceMode = 'api-folder';
+  // Route-local details can still contain the last running task after leaving.
+  app.regTask = {status:'running'};
+  app.setSnapshot(false); await app._pollTrainingState();
+  assert.equal(app.backendStatusLabel, 'common.backendConnected');
+  assert.equal(app.taggerCanStart(), true);
+  assert.equal(app.taggerApiCanStart(), true);
+  app.realtimeState = 'offline';
+  assert.equal(app.backendStatusLabel, 'common.backendDisconnected');
+});
+
+test('successful launch immediately blocks GPU entries even when the detail request fails', async () => {
+  const app = fixture();
+  app.regPlan = {token:'plan', pending:1};
+  app.regRequest = async url => {
+    if (url === '/tasks') return {task_id:'new', run_key:'reg_new'};
+    throw new Error('detail unavailable');
+  };
+  await app.regStart();
+  assert.equal(app.regularizationActive, true);
+  assert.equal(app.regRunning, true);
+  app.applyRegularizationActivity({server:{regularization_active:false}}, app._regActivityBoundaryAt - 1);
+  assert.equal(app.regularizationActive, true);
+  app.applyRegularizationActivity({server:{regularization_active:false}}, app._regActivityBoundaryAt + 1);
+  assert.equal(app.regularizationActive, false);
+});
+
+test('SDXL model switch removes incompatible flow sampling and block swap', () => {
+  const app = fixture();
+  Object.assign(app.regSettings, {model_type:'anima', sampler:'er_sde', scheduler:'flux2', blocks_to_swap:20});
+  app.regSetField('model_type', 'sdxl');
+  assert.equal(app.regSettings.sampler, 'euler_a');
+  assert.equal(app.regSettings.scheduler, 'normal');
+  assert.equal(app.regSettings.blocks_to_swap, 0);
+  app.regSetField('sampler', 'dpmpp_2m');
+  app.regSetField('scheduler', 'karras');
+  app.regSetField('sampler', 'euler_a');
+  assert.equal(app.regSettings.scheduler, 'normal');
+});
+
+test('SDXL training import uses checkpoint and optional VAE, preserving captions', () => {
+  const app = fixture();
+  app.form = {model_train_type:'sdxl-lora', train_data_dir:'train-xl', pretrained_model_name_or_path:'xl.safetensors', vae:''};
+  app.regSettings.extra_positive = 'custom';
+  app.regImportTraining();
+  assert.equal(app.regSettings.model_type, 'sdxl');
+  assert.equal(app.regSettings.checkpoint, 'xl.safetensors');
+  assert.equal(app.regSettings.sdxl_vae, '');
+  assert.equal(app.regSettings.scheduler, 'normal');
+  assert.equal(app.regSettings.extra_positive, 'custom');
+  assert.equal(app.regError, '');
+});
+
 test('source scrolling appends once, preserves cards on failure and retries the same batch', async () => {
   const app = fixture(); app.regTab = 'plan'; app.regPlan = {token:'plan', source_count:59};
   const sources = Array.from({length:59}, (_,index) => ({relative:index + '.png',caption:'tag'}));
