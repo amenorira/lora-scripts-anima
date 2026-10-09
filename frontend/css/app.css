@@ -3400,6 +3400,7 @@ input[type="range"]::-webkit-slider-thumb {
 .te-directory-heading { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; min-width: 0; padding: 8px 2px 6px; border-bottom: 1px solid var(--border-subtle); color: var(--text-secondary); font-size: 12px; font-weight: 600; }
 .te-directory-heading svg { flex-shrink: 0; }
 .te-directory-heading span { min-width: 0; overflow-wrap: anywhere; }
+.te-directory-heading .te-directory-count { flex-shrink: 0; margin-left: 4px; white-space: nowrap; color: var(--text-tertiary); font-size: 11px; font-weight: 400; }
 .te-selection-toolbar .te-topbar-btn.active { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 
 /* ===== Card ===== */

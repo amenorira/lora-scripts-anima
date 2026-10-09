@@ -105,6 +105,10 @@ class TagEditorSessionTests(unittest.TestCase):
                 self.assertEqual(first["total"], 37)
                 self.assertEqual(len(first["items"]), 30)
                 self.assertEqual(len(second["items"]), 7)
+                self.assertEqual(first["directory_counts"], {"": 2, "a": 15, "a/nested": 10, "b": 10})
+                self.assertEqual(second["directory_counts"], first["directory_counts"])
+                filtered = client.get(url, params={**grouped_params, "search": "three"}).json()["data"]
+                self.assertEqual(filtered["directory_counts"], {"": 1, "a": 7, "a/nested": 5, "b": 5})
                 self.assertEqual(directories, [""] * 2 + ["a"] * 15 + ["a/nested"] * 10 + ["b"] * 10)
                 for folder in set(directories):
                     self.assertEqual(

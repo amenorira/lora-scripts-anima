@@ -151,6 +151,11 @@ class DatasetSessionService:
         total_pages = max(1, (total + page_size - 1) // page_size)
         page = max(1, min(page, total_pages))
         start = (page - 1) * page_size
+        directory_counts = {}
+        if group_by_dir:
+            for item in items:
+                directory = str(item.get("rel_path", item.get("name", ""))).replace("\\", "/").rpartition("/")[0]
+                directory_counts[directory] = directory_counts.get(directory, 0) + 1
         page_items = []
         for item in items[start:start + page_size]:
             payload = dict(item)
@@ -171,6 +176,7 @@ class DatasetSessionService:
             "page": page,
             "page_size": page_size,
             "total_pages": total_pages,
+            "directory_counts": directory_counts,
             "generation": session.generation,
             "revision": session.revision,
         }
