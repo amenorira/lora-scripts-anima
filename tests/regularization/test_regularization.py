@@ -24,6 +24,49 @@ class FakeRunner:
 
 
 class GenerationTests(unittest.TestCase):
+    def test_sdxl_plan_needs_only_checkpoint_and_optional_vae(self):
+        settings = planning.Settings(**{**self.settings, "model_type": "sdxl", "checkpoint": self.settings["dit"],
+                                        "scheduler": "normal", "text_encoder": "missing", "vae": "missing"})
+        root, sources = planning.scan(settings)
+        config, fingerprint = planning.identity(settings, root, sources)
+        self.assertEqual(config["checkpoint"], self.settings["dit"])
+        settings.sdxl_vae = self.settings["vae"]
+        self.assertNotEqual(planning.identity(settings, root, sources)[1], fingerprint)
+        settings.checkpoint = "missing"
+        with self.assertRaisesRegex(ValueError, "Model not found"):
+            planning.identity(settings, root, sources)
+
+    def test_sdxl_rejects_flow_options_and_anima_block_swap(self):
+        for extra in ({"scheduler": "flux2"}, {"sampler": "er_sde"},
+                      {"sampler": "euler_a", "scheduler": "karras"},
+                      {"memory_mode": "manual", "blocks_to_swap": 2}):
+            with self.subTest(extra=extra), self.assertRaises(ValueError):
+                planning.Settings(model_type="sdxl", **{"scheduler": "normal", **extra})
+
+    def test_sdxl_scheduler_runs_supported_combinations(self):
+        from backend.regularization.sdxl import create_scheduler
+        for sampler in ("euler", "euler_a", "heun", "dpmpp_2m", "dpmpp_2m_sde"):
+            for schedule in (("normal",) if sampler == "euler_a" else ("normal", "karras", "exponential")):
+                with self.subTest(sampler=sampler, schedule=schedule):
+                    scheduler = create_scheduler({"sampler": sampler, "scheduler": schedule})
+                    scheduler.set_timesteps(4)
+                    latent = torch.ones(1, 4, 8, 8) * scheduler.init_noise_sigma
+                    for timestep in scheduler.timesteps:
+                        scheduler.scale_model_input(latent, timestep)
+                        latent = scheduler.step(torch.zeros_like(latent), timestep, latent).prev_sample
+                    self.assertTrue(torch.isfinite(latent).all())
+
+    def test_worker_dispatches_sdxl_and_writes_matching_metadata(self):
+        root, manifest = self.stored_run(status="pending")
+        manifest["settings"]["model_type"] = "sdxl"
+        storage.save_manifest(root, manifest)
+        with patch("backend.regularization.sdxl.SdxlRunner", FakeRunner):
+            self.assertEqual(worker.run(root), 0)
+        with Image.open(storage.item_path(root, manifest["items"][0])) as image:
+            self.assertIn("Model type: SDXL", image.info["parameters"])
+            self.assertNotIn("Flow shift", image.info["parameters"])
+        self.assertEqual(storage.read_manifest(root)["runtime"]["vae_implementation"], "sdxl")
+
     def test_automatic_offload_reserves_workspace_and_keeps_two_blocks(self):
         model = torch.nn.Module()
         model.blocks = torch.nn.ModuleList([torch.nn.Linear(8, 8, bias=False) for _ in range(6)])

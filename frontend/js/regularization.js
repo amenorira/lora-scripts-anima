@@ -171,7 +171,7 @@ window.regularizationMixin = {
     }
     const host = document.getElementById('regularizationWorkspaceHost');
     if (host && !host.dataset.mounted) {
-      const response = await fetch('/anima-ui/regularization-workspace.html?v=20261005-reg-gallery2');
+      const response = await fetch('/anima-ui/regularization-workspace.html?v=20261009-reg-sdxl');
       host.innerHTML = await response.text(); host.dataset.mounted = '1';
       Alpine.initTree(host);
     }
@@ -188,7 +188,8 @@ window.regularizationMixin = {
       localStorage.setItem('anima-reg-run', restored.run_key);
       if (this.regRunning) {
         const page = await this.regRequest('/runs/' + encodeURIComponent(this.regRunKey) + '/items?limit=1');
-        Object.assign(this.regSettings, page.settings, { seed: String(page.settings.seed) });
+        Object.assign(this.regSettings, this.regDefaults, page.settings, { seed: String(page.settings.seed) });
+        this.regRenderControls(true);
       }
       if (this.regTab === 'inspect') await this.regLoadResults();
       await this.regLoadLogs();
@@ -233,11 +234,19 @@ window.regularizationMixin = {
     if (Object.is(this.regSettings[key], value)) return;
     this._regUndo[key] = this.regSettings[key];
     this.regSettings[key] = value;
+    if (key === 'model_type' || key === 'sampler') this.regNormalizeModelSettings();
     if (key === 'source_dir') { this.regEdits = {}; this.regPlan = null; this.regSources = []; this.regPlanConsumed = false; }
     if (key === 'extra_positive') for (const source of this.regSources) {
       source.prompt = this.regActualPrompt(source.caption);
     }
     this.regChanged(key);
+    if (this._regLoaded && (key === 'model_type' || key === 'sampler')) this.regRenderControls(true);
+  },
+  regNormalizeModelSettings() {
+    if (this.regSettings.model_type !== 'sdxl') return;
+    if (this.regSettings.sampler === 'er_sde') this.regSettings.sampler = 'euler_a';
+    if (!['normal', 'karras', 'exponential'].includes(this.regSettings.scheduler) || this.regSettings.sampler === 'euler_a') this.regSettings.scheduler = 'normal';
+    this.regSettings.blocks_to_swap = 0;
   },
   regScheduleScan() {
     clearTimeout(this._regScanTimer); this._regScanTimer = null;
@@ -267,9 +276,9 @@ window.regularizationMixin = {
     this.regSectionCollapsed[key] = collapsed;
     this._animateCollapse(header.nextElementSibling, collapsed);
   },
-  regRenderControls() {
+  regRenderControls(force = false) {
     const host = document.getElementById('regTrainingControls');
-    if (!host || host.dataset.locale === this.locale) return;
+    if (!host || !force && host.dataset.locale === this.locale) return;
     if (host.dataset.locale) Alpine.destroyTree(host);
     // Reuse the training page's renderer and its actual controls. This scope
     // supplies generator values without changing the user's training form.
@@ -286,7 +295,10 @@ window.regularizationMixin = {
       return field(key, 'number', { min: schema.minimum, max: schema.maximum, step: schema.multipleOf ?? step });
     };
     const labels = { euler_a: 'euler_ancestral', bf16: 'BF16', fp16: 'FP16', auto: this.regT('autoSize'), manual: this.regT('manualMemory'), bucket: this.regT('bucket'), fixed: this.regT('fixed') };
-    const select = key => field(key, 'select', { options: this.regMetadata.fields[key].enum.map(v => ({v, l: labels[v] || v, dKey: `regularization.options.${key}.${v}`})) });
+    const select = key => field(key, 'select', { options: this.regMetadata.fields[key].enum.filter(v =>
+      this.regSettings.model_type !== 'sdxl' || (key !== 'sampler' || v !== 'er_sde') &&
+      (key !== 'scheduler' || (this.regSettings.sampler === 'euler_a' ? ['normal'] : ['normal', 'karras', 'exponential']).includes(v))
+    ).map(v => ({v, l: v === 'sdxl' ? 'SDXL' : v === 'anima' ? 'Anima' : labels[v] || v, ...(key === 'model_type' ? {} : {dKey: `regularization.options.${key}.${v}`})})) });
     const action = (label, click, icon, disabled = 'false') => `<button type="button" class="btn btn-secondary reg-control-action" @click="${click}" :disabled="${disabled}" :title="regT('${label}')" :aria-label="regT('${label}')"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg></button>`;
     const seedActions = action('randomSeed', "setField('seed', '-1')", '<path d="m3 7 3 0 12 10h3m-4-14 4 0v4M3 17h3l3-3m6-4 3-3h3m-4 10h4v-4"/>')
       + action('reuseSeed', "setField('seed', regTask.master_seed)", '<path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/>', 'regTask?.master_seed == null');
@@ -297,7 +309,7 @@ window.regularizationMixin = {
     const groups = [
       ['dataset', [field('source_dir', 'text', { role: 'file-folder', required: true,
         controlActions: `<button type="button" class="btn btn-secondary btn-sm" :disabled="regBusy || regRunning" :title="regT('importHelp')" @click="regImportTraining()" x-text="regT('import')"></button>` })]],
-      ['models', ['dit', 'text_encoder', 'vae'].map(key => field(key, 'text', { role: 'file-model', required: true }))],
+      ['models', [select('model_type'), ...['dit', 'text_encoder', 'vae', 'checkpoint', 'sdxl_vae'].map(key => field(key, 'text', { role: 'file-model', required: key !== 'sdxl_vae' }))]],
       ['prompts', [num('ignore_first'), field('exclude_tags')]],
       ['quantity', [select('sampler'), select('scheduler'), num('flow_shift', .1), num('steps'), num('cfg', .1),
         field('seed', 'text', { controlActions: seedActions })]],
@@ -319,8 +331,11 @@ window.regularizationMixin = {
         let show = '';
         if (['width', 'height'].includes(definition.key)) show = "form.size_mode === 'fixed'";
         if (['resolution', 'enable_bucket'].includes(definition.key)) show = "form.size_mode === 'bucket'";
-        if (definition.key === 'flow_shift') show = "form.scheduler !== 'flux2'";
+        if (definition.key === 'flow_shift') show = "form.model_type !== 'sdxl' && form.scheduler !== 'flux2'";
         if (['precision', 'blocks_to_swap', 'text_encoder_cpu'].includes(definition.key)) show = "form.memory_mode === 'manual'";
+        if (definition.key === 'blocks_to_swap') show += " && form.model_type !== 'sdxl'";
+        if (['dit', 'text_encoder', 'vae'].includes(definition.key)) show = "form.model_type !== 'sdxl'";
+        if (['checkpoint', 'sdxl_vae'].includes(definition.key)) show = "form.model_type === 'sdxl'";
         html += show ? '<div x-show="' + show + '" x-cloak>' + rendered + '</div>' : rendered;
       }
       if (title === 'size') html += '<div class="card reg-extra-options" :class="{\'card-collapsed\': regSectionCollapsed.bucketSettings}" x-show="form.size_mode === \'bucket\' && form.enable_bucket">' + sectionHeader('bucketSettings') + '<div class="card-body" :inert="!!regSectionCollapsed.bucketSettings">' + bucketFields.map(definition => this.renderField.call(scope, definition)).join('') + '</div></div>';
@@ -584,7 +599,11 @@ window.regularizationMixin = {
       if (key !== this.regRunKey || filter !== this.regFilter || request !== this._regResultRequest) return false;
       this.regItems = append ? [...this.regItems, ...page.items] : page.items;
       this.regItemsTotal = page.total; this.regApplyTask(page.summary, false); this.regMoreError = '';
-      if (this.regRunning) Object.assign(this.regSettings, page.settings);
+      if (this.regRunning) {
+        const model = this.regSettings.model_type;
+        Object.assign(this.regSettings, this.regDefaults, page.settings);
+        if (this._regLoaded && model !== this.regSettings.model_type) this.regRenderControls(true);
+      }
       if (!append) await this.regLoadLogs();
       return true;
     } finally {
@@ -597,7 +616,8 @@ window.regularizationMixin = {
       const key = this.regRunKey;
       const saved = await this.regRequest('/runs/' + encodeURIComponent(key) + '/settings');
       if (key !== this.regRunKey) return;
-      Object.assign(this.regSettings, saved.settings);
+      Object.assign(this.regSettings, this.regDefaults, saved.settings);
+      if (this._regLoaded) this.regRenderControls(true);
       this.regEdits = saved.overrides; this.regSources = []; this.regPlan = null; this.regPlanConsumed = false;
       this.regChanged(); this.regPlanDirty = false; this.regPreviewDirty = false; this.regTab = 'settings'; this.toast(this.regT('settingsLoaded'));
     });
@@ -660,8 +680,13 @@ window.regularizationMixin = {
       try { form = JSON.parse(localStorage.getItem('anima-form-' + this.regTrainRoute) || '{}'); } catch (_) {}
       if (!form?.model_train_type) form = this._buildFormDefaults('anima-lora');
     }
-    if (form.model_train_type !== 'anima-lora') { this.regReportError(this.regT('onlyAnima')); return; }
-    Object.assign(this.regSettings, { source_dir: form.train_data_dir, dit: form.pretrained_model_name_or_path, text_encoder: form.qwen3, vae: form.vae });
+    if (!['anima-lora', 'sdxl-lora'].includes(form.model_train_type)) { this.regReportError(this.regT('onlyAnima')); return; }
+    const sdxl = form.model_train_type === 'sdxl-lora';
+    Object.assign(this.regSettings, sdxl
+      ? {model_type: 'sdxl', source_dir: form.train_data_dir, checkpoint: form.pretrained_model_name_or_path, sdxl_vae: form.vae || ''}
+      : {model_type: 'anima', source_dir: form.train_data_dir, dit: form.pretrained_model_name_or_path, text_encoder: form.qwen3, vae: form.vae});
+    this.regNormalizeModelSettings();
+    if (this._regLoaded) this.regRenderControls(true);
     for (const key of ['resolution', 'enable_bucket', 'bucket_no_upscale', 'min_bucket_reso', 'max_bucket_reso', 'bucket_reso_steps']) {
       if (form[key] !== undefined) this.regSettings[key] = key === 'resolution' ? String(form[key]) : form[key];
     }
@@ -684,7 +709,7 @@ window.regularizationMixin = {
     if (!this.regPendingTrainingPath) return;
     const path = this.regPendingTrainingPath;
     this.regPendingTrainingPath = '';
-    if (this.form.model_train_type !== 'anima-lora') { this.regReportError(this.regT('onlyAnima')); return; }
+    if (!['anima-lora', 'sdxl-lora'].includes(this.form.model_train_type)) { this.regReportError(this.regT('onlyAnima')); return; }
     this.setField('reg_data_dir', path); this.setField('enable_reg_data', true);
     this.scheduleStepEstimate(); this.updateToml();
     if (typeof this.toast === 'function') this.toast(this.regT('applied'), 'success');

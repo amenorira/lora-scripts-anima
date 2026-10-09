@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal
 
 from PIL import Image
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from backend.constants import REPO_ROOT
 from . import storage
@@ -18,6 +18,9 @@ from . import storage
 class Settings(BaseModel):
     model_config = ConfigDict(validate_default=True, extra="forbid")
     source_dir: str = "./train"
+    model_type: Literal["anima", "sdxl"] = "anima"
+    checkpoint: str = ""
+    sdxl_vae: str = ""
     dit: str = "./models/anima-base-v1.0.safetensors"
     text_encoder: str = "./models/qwen_3_06b_base.safetensors"
     vae: str = "./models/qwen_image_vae.safetensors"
@@ -47,6 +50,17 @@ class Settings(BaseModel):
     blocks_to_swap: int = Field(0, ge=0, le=26)
     text_encoder_cpu: bool = True
     gpu_index: int = Field(0, ge=0, le=31)
+
+    @model_validator(mode="after")
+    def validate_sdxl(self):
+        if self.model_type == "sdxl":
+            if self.sampler == "er_sde" or self.scheduler not in {"normal", "karras", "exponential"}:
+                raise ValueError("SDXL supports Euler/Euler ancestral/Heun/DPM++ with normal, karras or exponential schedules / SDXL 请使用兼容的采样器和调度器")
+            if self.sampler == "euler_a" and self.scheduler != "normal":
+                raise ValueError("SDXL Euler ancestral requires normal schedule / SDXL Euler ancestral 请使用 normal 调度器")
+            if self.memory_mode == "manual" and self.blocks_to_swap:
+                raise ValueError("SDXL does not use Anima block swap / SDXL 不支持 Anima 块交换，请使用自动显存管理")
+        return self
 
 
 def metadata():
@@ -180,12 +194,17 @@ def scan(settings: Settings, overrides=None):
 def identity(settings, root, sources):
     config = settings.model_dump()
     config["source_dir"] = str(root)
-    for key in ("dit", "text_encoder", "vae"):
+    model_keys = ("checkpoint", "sdxl_vae") if settings.model_type == "sdxl" and settings.sdxl_vae.strip() else ("checkpoint",) if settings.model_type == "sdxl" else ("dit", "text_encoder", "vae")
+    # Preserve fingerprints of existing Anima jobs.
+    if settings.model_type == "anima":
+        for key in ("model_type", "checkpoint", "sdxl_vae"):
+            config.pop(key)
+    for key in model_keys:
         path = resolve_input(config[key])
         if not path.is_file():
             raise ValueError(f"Model not found / 模型不存在: {path}")
         config[key] = str(path)
-    models = [source_stamp(Path(config[k])) for k in ("dit", "text_encoder", "vae")]
+    models = [source_stamp(Path(config[k])) for k in model_keys]
     return config, digest({"settings": config, "sources": sources, "models": models})
 
 

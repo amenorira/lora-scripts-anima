@@ -105,6 +105,32 @@ function fixture() {
   return app;
 }
 
+test('SDXL model switch removes incompatible flow sampling and block swap', () => {
+  const app = fixture();
+  Object.assign(app.regSettings, {model_type:'anima', sampler:'er_sde', scheduler:'flux2', blocks_to_swap:20});
+  app.regSetField('model_type', 'sdxl');
+  assert.equal(app.regSettings.sampler, 'euler_a');
+  assert.equal(app.regSettings.scheduler, 'normal');
+  assert.equal(app.regSettings.blocks_to_swap, 0);
+  app.regSetField('sampler', 'dpmpp_2m');
+  app.regSetField('scheduler', 'karras');
+  app.regSetField('sampler', 'euler_a');
+  assert.equal(app.regSettings.scheduler, 'normal');
+});
+
+test('SDXL training import uses checkpoint and optional VAE, preserving captions', () => {
+  const app = fixture();
+  app.form = {model_train_type:'sdxl-lora', train_data_dir:'train-xl', pretrained_model_name_or_path:'xl.safetensors', vae:''};
+  app.regSettings.extra_positive = 'custom';
+  app.regImportTraining();
+  assert.equal(app.regSettings.model_type, 'sdxl');
+  assert.equal(app.regSettings.checkpoint, 'xl.safetensors');
+  assert.equal(app.regSettings.sdxl_vae, '');
+  assert.equal(app.regSettings.scheduler, 'normal');
+  assert.equal(app.regSettings.extra_positive, 'custom');
+  assert.equal(app.regError, '');
+});
+
 test('source scrolling appends once, preserves cards on failure and retries the same batch', async () => {
   const app = fixture(); app.regTab = 'plan'; app.regPlan = {token:'plan', source_count:59};
   const sources = Array.from({length:59}, (_,index) => ({relative:index + '.png',caption:'tag'}));
