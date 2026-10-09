@@ -323,7 +323,7 @@
 		"remainingTrendLabel": "Remaining-time rate: change in remaining time / change in elapsed time. The center line at −1 means one second less remaining per second; above it means a slower countdown, and a positive rate means remaining time is increasing",
 		"timeTrendCaption": "Chart: remaining-time rate",
 		"localTrendScaleHint": "The vertical axis scales to recent changes, magnifying small variations",
-		"diagnosticTrendRange": "Chart: last {n} calculations · Steps {first}–{last}",
+		"diagnosticTrendRange": "last {n} calculations Steps {first}–{last}",
 		"diagnosticChangeScaleHint": "Dashed line: zero. Positive above, negative below. The vertical scale adapts symmetrically around zero; the endpoint matches the current percentage",
 		"peakToFinal": "Peak → final",
 		"running": "Running",

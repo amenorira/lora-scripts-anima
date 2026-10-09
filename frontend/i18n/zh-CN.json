@@ -323,7 +323,7 @@
 		"remainingTrendLabel": "剩余时间变化率：剩余时间变化 ÷ 已运行时间变化。中线 −1 表示每秒正常减少 1 秒；高于中线表示减少变慢，变化率大于 0 表示剩余时间增加",
 		"timeTrendCaption": "曲线：剩余时间变化率",
 		"localTrendScaleHint": "纵轴随近期变化自动缩放，小幅变化会放大显示",
-		"diagnosticTrendRange": "曲线：最近 {n} 次统计 · Step {first}–{last}",
+		"diagnosticTrendRange": "最近 {n} 次统计 Step {first}–{last}",
 		"diagnosticChangeScaleHint": "虚线为 0，上方为正、下方为负；纵轴围绕 0 对称自适应，折线末端对应当前百分比",
 		"peakToFinal": "峰值 → 最终",
 		"running": "运行中",
