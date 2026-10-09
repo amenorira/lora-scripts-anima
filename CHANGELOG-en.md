@@ -6,6 +6,37 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v26.1009.225222 - 2026-10-09
+
+This release adds **SDXL support** to regularization image generation, improves generation status and task conflict handling, refines the caption editor, and fixes LoRA-Muon optimizer state restoration when resuming training with low-precision parameters.
+
+### SDXL Regularization Image Generation
+
+- Generate regularization images with a full SDXL checkpoint and an optional external VAE. Leave the VAE field empty to use the checkpoint's built-in VAE.
+- Import dataset, model, and bucket settings from the current SDXL training configuration and automatically select compatible sampling options.
+- Reuse the existing generation plan, incremental generation, task resumption, and result inspection workflows. Apply reviewed results directly to the SDXL training configuration.
+- Support automatic VRAM management and FP32 VAE decoding.
+
+### Generation Status and Task Conflict Handling
+
+- Show regularization generation activity in the sidebar across pages, with an entry point back to the generation task.
+- Disable training, Krea 2 cache preparation, local tagging, and API batch caption-writing actions while generation is active to reduce task and data conflicts.
+- Improve status synchronization during preparation, stopping, and task recovery after restart. Prevent delayed status updates or failed detail requests from incorrectly clearing the activity indicator.
+
+### Caption Editor
+
+- Show image counts for each subdirectory in the current filtered results, with consistent totals across pages.
+- Center the bottom pagination controls and move the modified-image count and draft-save status to the right.
+- Increase pagination button and text sizes, improve contrast, and refine hover and keyboard-focus styles.
+
+### Fixes and Documentation
+
+- Fix LoRA-Muon momentum state restoration when resuming training with FP16/BF16 parameters, avoiding precision loss and dtype mismatches.
+- Improve Chinese and English optimizer documentation for learning-rate overrides, alpha/rank scaling, and the scope of inverse-square-root parameters.
+- Simplify the observation-count and Step-range labels in training monitoring.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1007.174925...v26.1009.225222)
+
 ## v26.1007.174925 - 2026-10-07
 
 This release improves training monitoring and diagnostic charts, refines caption editing and regularization image browsing, and aligns training configuration handling and Chinese and English parameter documentation.
