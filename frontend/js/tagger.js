@@ -139,7 +139,7 @@ window.taggerMixin = {
     const host = document.getElementById('taggerWorkspaceHost');
     if (!host || host.dataset.mounted === '1') return;
     try {
-      const response = await fetch('/anima-ui/tagger-workspace.html?v=20261001-tagger-log2');
+      const response = await fetch('/anima-ui/tagger-workspace.html?v=20261009-reg-activity1');
       if (!response.ok) throw new Error('Workspace template unavailable');
       host.innerHTML = await response.text();
       host.dataset.mounted = '1';
@@ -374,6 +374,7 @@ window.taggerMixin = {
     const settings = this.taggerApiSettings;
     return !!(this.taggerSource && this.taggerSource.total
       && settings.baseUrl.trim() && settings.apiKey.trim() && settings.model.trim() && settings.promptText.trim()
+      && !(this.regularizationActive && this.taggerSourceMode === 'api-folder')
       && !this.taggerRunning && !this.taggerStarting && !this.taggerApiSingleRunning);
   },
 
@@ -682,7 +683,7 @@ window.taggerMixin = {
 
   taggerCanStart() {
     return !!(this.taggerSource && this.taggerSource.total && this.taggerSelectedModel
-      && !this.taggerRunning && !this.taggerStarting && !this.trainingActive);
+      && !this.taggerRunning && !this.taggerStarting && !this.trainingActive && !this.regularizationActive);
   },
 
   taggerStartLabel() {

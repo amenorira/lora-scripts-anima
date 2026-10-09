@@ -512,7 +512,7 @@ window.trainingTomlMixin = {
 
   // ── Krea 2 cache pipeline ──────────────────────────────
   async prepareKrea2Cache() {
-    if (this.isTraining || this.trainingStarting) return;
+    if (this.isTraining || this.trainingStarting || this.regularizationActive) return;
     if ((this.form.model_train_type || '') !== 'krea2-lora') return;
     if (!this.validateForm()) {
       this.toast(this.t('common.formErrors'), 'error');
@@ -543,7 +543,7 @@ window.trainingTomlMixin = {
 
   // ── Training ───────────────────────────────────────────
   async startTraining() {
-    if (this.isTraining || this.trainingStarting) return;
+    if (this.isTraining || this.trainingStarting || this.regularizationActive) return;
 
     // Form validation before starting
     if (!this.validateForm()) {

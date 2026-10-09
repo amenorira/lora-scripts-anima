@@ -66,7 +66,7 @@ async def run_interrogate(req: TaggerInterrogateRequest):
     task_id = str(uuid.uuid4())[:8]
     owner = f"legacy-tagger:{task_id}"
     if not tm.claim_external(owner):
-        return APIResponseFail(message="Training or tagging task is active / 训练或反推任务正在运行")
+        return APIResponseFail(message="Training, tagging or generation task is active / 训练、打标或正则生成任务正在运行")
     interrogator = available_interrogators.get(
         req.interrogator_model,
         available_interrogators[DEFAULT_MODEL_ID],
@@ -265,7 +265,7 @@ async def tagger_single_image(
     owner = f"single-tagger:{uuid.uuid4().hex}"
     if not tm.claim_external(owner):
         image.close()
-        return APIResponseFail(message="Training or tagging task is active / 训练或反推任务正在运行")
+        return APIResponseFail(message="Training, tagging or generation task is active / 训练、打标或正则生成任务正在运行")
 
     try:
         def _infer():

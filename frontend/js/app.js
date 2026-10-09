@@ -45,8 +45,15 @@ document.addEventListener('alpine:init', () => {
     backendDisconnectedDuration: '',
     _healthTimer: null,
     _disconnectedTimer: null,
-    // 训练状态（由 /api/health 返回，驱动侧栏连接指示器三态）
+    // 训练与正则生成状态由全局状态轮询同步。
       trainingActive: false,
+    get backendStatusLabel() {
+      if (this.realtimeState === 'offline') return this.t('common.backendDisconnected');
+      if (this.realtimeState === 'degraded' || this.realtimeState === 'connecting') return this.t('common.backendDelayed');
+      if (this.trainingActive) return this.t('common.trainingInProgress');
+      if (this.regularizationActive) return this.t('common.regularizationInProgress');
+      return this.t('common.backendConnected');
+    },
     // 本地系统文件选择器是否可用（无图形环境的 Linux 服务器上不可用，对应按钮直接隐藏）
     localPickerAvailable: true,
 

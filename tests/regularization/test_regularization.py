@@ -500,8 +500,22 @@ class GenerationTests(unittest.TestCase):
         task = service._reserve()
         self.assertEqual(service.tm.training_dump(), [])
         self.assertEqual(service.tm.dump()[0]["kind"], "regularization")
+        self.assertTrue(service.tm.regularization_active())
         self.assertIsNone(service.tm.reserve_task())
+        self.assertFalse(service.tm.claim_external("tagger:blocked"))
+        task.terminate()
+        self.assertTrue(service.tm.regularization_active())
         service.tm.release_reserved(task)
+        self.assertFalse(service.tm.regularization_active())
+        self.assertTrue(service.tm.claim_external("tagger:available"))
+        service.tm.release_external("tagger:available")
+
+        self.assertTrue(service.tm.claim_external("regularization-recovery:reg_test"))
+        self.assertTrue(service.tm.regularization_active())
+        self.assertIsNone(service.tm.reserve_task())
+        self.assertFalse(service.tm.claim_external("tagger:blocked"))
+        service.tm.release_external("regularization-recovery:reg_test")
+        self.assertFalse(service.tm.regularization_active())
 
     def test_caption_race_requires_second_start(self):
         plan = service.preview({"settings": self.settings})

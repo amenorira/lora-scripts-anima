@@ -4,13 +4,15 @@ import shutil
 import subprocess
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.core.realtime import RealtimeHub, _compact_task_snapshot
 from backend.server.routes import realtime as realtime_route
+from backend.server.routes import system as system_route
+from backend.tasks import TaskManager
 
 
 class RealtimeHubTests(unittest.IsolatedAsyncioTestCase):
@@ -33,6 +35,30 @@ class RealtimeHubTests(unittest.IsolatedAsyncioTestCase):
 
 
 class RealtimeRouteTests(unittest.TestCase):
+    def test_generation_activity_is_global_without_becoming_training(self):
+        manager = TaskManager()
+        task = manager.reserve_task()
+        task.kind = "regularization"
+        app = FastAPI()
+        app.include_router(realtime_route.router)
+        app.include_router(system_route.router, prefix="/api")
+        with patch.object(realtime_route, "tm", manager), patch.object(system_route, "tm", manager), patch.object(
+            realtime_route, "gpu_info", return_value={}
+        ), patch.object(realtime_route, "system_info", return_value={}), patch.object(
+            realtime_route, "build_live_monitor_snapshot", new=AsyncMock(return_value={})
+        ), TestClient(app) as client:
+            for active in (True, False):
+                with self.subTest(active=active):
+                    health = client.get("/api/health").json()
+                    snapshot = client.get("/api/realtime/snapshot").json()["data"]
+                    self.assertEqual(health["regularization_active"], active)
+                    self.assertEqual(snapshot["server"]["regularization_active"], active)
+                    self.assertFalse(health["training_active"])
+                    self.assertFalse(snapshot["server"]["training_active"])
+                    self.assertEqual(snapshot["tasks"]["managed"], [])
+                if active:
+                    manager.release_reserved(task)
+
     def test_structured_logs_keep_their_level_in_realtime_snapshots(self):
         entry = {"time": "21:00:21", "event": "done", "level": "success", "failed": 0}
         self.assertEqual(_compact_task_snapshot({"logs": ["legacy", entry]})["logs"], ["legacy", entry])

@@ -4,6 +4,7 @@ window.regularizationMixin = {
   regSettings: {}, regMetadata: null, _regResultRequest: 0, _regSourceRequest: 0, _regScanTimer: null, _regScanVersion: 0,
   regTab: 'settings', regPlan: null, regSources: [], regEdits: {}, regPlanDirty: false, regPreviewDirty: false, regPlanConsumed: false,
   regBusy: false, regError: '', regNewRound: false, regTask: null, regRunKey: '', regRuns: [],
+  regularizationActive: false, _regActivityBoundaryAt: 0,
   regItems: [], regItemsTotal: 0, regFilter: 'all', regLogs: [], regLogsOpen: false, _regLogRequest: 0,
   regGalleryLoading: '', regMoreError: '', _regMoreRequest: 0, _regResultRefresh: 0,
   regSelected: null, regTrainRoute: 'train-anima', regPendingTrainingPath: '', _regTopic: null, _regTimer: null, _regLoaded: false, _regRefreshing: false,
@@ -15,6 +16,16 @@ window.regularizationMixin = {
     return Math.min(100, 100 * ((this.regTask.completed || 0) + (this.regTask.excluded || 0) + partial) / this.regTask.total);
   },
   regT(key) { return this.t('regularization.' + key); },
+  applyRegularizationActivity(snapshot, requestedAt) {
+    // A poll issued before a local launch cannot release that launch's GPU state.
+    if (requestedAt < this._regActivityBoundaryAt) return;
+    this.regularizationActive = !!snapshot?.server?.regularization_active;
+  },
+  regAcceptStart(task) {
+    this.regularizationActive = true;
+    this._regActivityBoundaryAt = Date.now();
+    this.regApplyTask({ ...task, status: 'created', phase: 'loading' });
+  },
   get regGalleryCount() { return this.regTab === 'plan' ? this.regSources.length : this.regItems.length; },
   get regGalleryTotal() { return this.regTab === 'plan' ? this.regPlan?.source_count || 0 : this.regItemsTotal; },
   get regHasMore() { return this.regGalleryCount < this.regGalleryTotal; },
@@ -464,6 +475,7 @@ window.regularizationMixin = {
     await this.regAction(async () => {
       const task = await this.regRequest('/tasks', { token: this.regPlan.token });
       this.regRunKey = task.run_key; this.regLogs = []; localStorage.setItem('anima-reg-run', task.run_key);
+      this.regAcceptStart(task);
       this.regApplyTask(await this.regRequest('/tasks/' + task.task_id));
       this.regPlanConsumed = true;
       this.regNewRound = false;
@@ -558,6 +570,7 @@ window.regularizationMixin = {
     if (this.regTab !== 'inspect' && this.regPlanDirty) { this.regReportError(this.regT('resumeDirty')); return; }
     await this.regAction(async () => {
       const task = await this.regRequest('/runs/' + encodeURIComponent(this.regRunKey) + '/resume', { failed_only: failedOnly });
+      this.regAcceptStart(task);
       this.regApplyTask(await this.regRequest('/tasks/' + task.task_id));
       await this.regLoadResults();
     });
@@ -658,7 +671,10 @@ window.regularizationMixin = {
     if (action === 'regenerate' && !window.confirm(this.regT('replaceHelp'))) return;
     await this.regAction(async () => {
       const result = await this.regRequest('/runs/' + encodeURIComponent(this.regRunKey) + '/items/' + item.index + '/' + action, {});
-      if (action === 'regenerate') this.regApplyTask(await this.regRequest('/tasks/' + result.task_id));
+      if (action === 'regenerate') {
+        this.regAcceptStart(result);
+        this.regApplyTask(await this.regRequest('/tasks/' + result.task_id));
+      }
       await this.regLoadResults(); this.regSelected = null; this.regPlanDirty = true;
     });
   },
