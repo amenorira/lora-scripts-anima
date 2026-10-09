@@ -3599,21 +3599,23 @@ body.te-lightbox-open { overflow: hidden; }
 .te-drop-after::after { right: -3px; }
 
 /* ===== Status Bar ===== */
-.te-statusbar { flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 3px 8px; font-size: 10px; color: var(--text-tertiary); border-top: 1px solid var(--border-default); flex-wrap: wrap; min-height: 26px; }
+.te-statusbar { flex-shrink: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; padding: 3px 8px; font-size: 10px; color: var(--text-tertiary); border-top: 1px solid var(--border-default); min-height: 26px; }
+.te-status-summary, .te-status-save { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.te-status-save { justify-content: flex-end; }
 .te-status-item { display: flex; align-items: center; gap: 3px; }
 .te-status-item strong { color: var(--text-primary); font-weight: 600; font-variant-numeric: tabular-nums; font-family: var(--font-mono); }
 .te-status-sep { width: 1px; height: 12px; background: var(--border-default); }
 .te-status-muted { color: var(--text-tertiary); }
 .te-status-warn { color: var(--warning); }
-.te-status-spacer { flex: 1; }
 .te-status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
 .te-status-dot.warn { background: var(--warning); }
 
 /* ===== Pager ===== */
-.te-pager { display: flex; align-items: center; gap: 3px; }
-.te-pager > button { min-width: 24px; height: 22px; padding: 0 4px; border: 1px solid var(--border-default); border-radius: var(--radius-control); background: var(--bg-input); color: var(--text-tertiary); cursor: pointer; font-size: 10px; display: flex; align-items: center; justify-content: center; transition: background-color 0.1s, border-color 0.1s, color 0.1s; }
-.te-pager > button:hover { border-color: var(--accent); color: var(--accent); }
-.te-pager > button:disabled { opacity: 0.25; cursor: not-allowed; }
+.te-pager { display: flex; align-items: center; gap: 4px; }
+.te-pager > button, .te-pager .te-page-size-menu > summary { min-width: 28px; height: 26px; padding: 0 6px; border: 1px solid var(--border-input); border-radius: var(--radius-control); background: var(--bg-surface-raised); color: var(--text-primary); cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; justify-content: center; transition: background-color 0.1s, border-color 0.1s, color 0.1s; }
+.te-pager > button:not(:disabled):hover, .te-pager .te-page-size-menu > summary:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.te-pager > button:focus-visible, .te-pager .te-page-size-menu > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.te-pager > button:disabled { opacity: 0.45; cursor: not-allowed; }
 .te-pager > button.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); font-weight: 700; }
 .te-pager-ellipsis { padding: 0 2px; color: var(--text-tertiary); font-size: 10px; }
 .te-pager-label { font-size: 10px; color: var(--text-tertiary); white-space: nowrap; }

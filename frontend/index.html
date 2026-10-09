@@ -1266,39 +1266,29 @@
             </div>
           </div>
           <div class="te-statusbar">
-            <span class="te-status-item">
-              <strong x-text="tagEditorDatasetCount"></strong>
-              <span x-text="t('tagEditor.imageCount')"></span>
-            </span>
-            <span class="te-status-sep"></span>
-            <span class="te-status-item">
-              <strong x-text="tagEditorTagFreq.length"></strong>
-              <span x-text="t('tagEditor.tagCloud')"></span>
-            </span>
-            <template x-if="tagEditorFilteredCount() !== tagEditorDatasetCount">
-              <span class="te-status-item te-status-muted">
-                <span class="te-status-sep"></span>
-                <span x-text="t('tagEditor.filteredCount').replace('{n}', tagEditorFilteredCount())"></span>
-              </span>
-            </template>
-            <template x-if="tagEditorSelected.length > 0">
+            <div class="te-status-summary">
               <span class="te-status-item">
-                <span class="te-status-sep"></span>
-                <span x-text="t('tagEditor.selected').replace('{n}', tagEditorSelected.length)"></span>
+                <strong x-text="tagEditorDatasetCount"></strong>
+                <span x-text="t('tagEditor.imageCount')"></span>
               </span>
-            </template>
-            <span class="te-status-spacer"></span>
-            <template x-if="tagEditorModifiedCount() > 0">
-              <span class="te-status-item te-status-warn">
-                <span class="te-status-dot warn"></span>
-                <strong x-text="tagEditorModifiedCount()"></strong>
-                <span x-text="t('tagEditor.unsavedChanges')"></span>
+              <span class="te-status-sep"></span>
+              <span class="te-status-item">
+                <strong x-text="tagEditorTagFreq.length"></strong>
+                <span x-text="t('tagEditor.tagCloud')"></span>
               </span>
-            </template>
-            <template x-if="_teDraftSavedAt">
-              <span class="te-status-item te-status-muted" x-text="t('tagEditor.draftSavedAt').replace('{time}', _teDraftSavedAt)"></span>
-            </template>
-            <span class="te-status-spacer"></span>
+              <template x-if="tagEditorFilteredCount() !== tagEditorDatasetCount">
+                <span class="te-status-item te-status-muted">
+                  <span class="te-status-sep"></span>
+                  <span x-text="t('tagEditor.filteredCount').replace('{n}', tagEditorFilteredCount())"></span>
+                </span>
+              </template>
+              <template x-if="tagEditorSelected.length > 0">
+                <span class="te-status-item">
+                  <span class="te-status-sep"></span>
+                  <span x-text="t('tagEditor.selected').replace('{n}', tagEditorSelected.length)"></span>
+                </span>
+              </template>
+            </div>
             <div class="te-pager">
               <button @click="tagEditorFetchPage(1)" :disabled="tagEditorPage === 1">&laquo;</button>
               <button @click="tagEditorFetchPage(tagEditorPage - 1)" :disabled="tagEditorPage === 1">&lsaquo;</button>
@@ -1318,6 +1308,18 @@
                   </div>
                 </details>
               <span class="te-pager-label" x-text="t('tagEditor.perPage')"></span>
+            </div>
+            <div class="te-status-save">
+              <template x-if="tagEditorModifiedCount() > 0">
+                <span class="te-status-item te-status-warn">
+                  <span class="te-status-dot warn"></span>
+                  <strong x-text="tagEditorModifiedCount()"></strong>
+                  <span x-text="t('tagEditor.unsavedChanges')"></span>
+                </span>
+              </template>
+              <template x-if="_teDraftSavedAt">
+                <span class="te-status-item te-status-muted" x-text="t('tagEditor.draftSavedAt').replace('{time}', _teDraftSavedAt)"></span>
+              </template>
             </div>
           </div>
         </div>
