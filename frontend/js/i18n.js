@@ -2,23 +2,22 @@
    lora-scripts-anima UI — I18n System v3
    Loads the ACTIVE locale JSON synchronously at script execution
    time (before Alpine boots), so t() always has data for the active
-   language. The other locale is preloaded in the background, so a
+   language. Other locales are preloaded in the background, so a
    language switch is instant in practice; if the user switches before
    the preload finishes, setLocale falls back to a one-time blocking
-   load. This halves the startup blocking payload (192 KB → ~96 KB).
+   load. Only the active language blocks startup.
    To add a new language: drop a JSON file in i18n/ and add its
    code to the LOCALES array below.
    ================================================================ */
 
 const I18N = (() => {
   // ── Register available locales here ──────────────────────
-  const LOCALES = ['zh-CN', 'en-US'];
-  const MESSAGES_VERSION = '20261009-reg-activity1';
+  const LOCALES = ['zh-CN', 'en-US', 'ja-JP'];
+  const MESSAGES_VERSION = '20261010-ja4';
 
   let _locale = 'en-US';
   let _messages = null;
   const _cache = {};    // locale → messages (loaded so far)
-  let _loadingOther = null;  // async preload promise for the inactive locale
 
   // ── Synchronous JSON loader (blocks until data is ready) ─
   function _loadJSON(url) {
@@ -49,9 +48,9 @@ const I18N = (() => {
       .catch(function() { return null; });
   }
 
-  // ── Bootstrap: block on the ACTIVE locale only, preload the other ──
+  // ── Bootstrap: block on the ACTIVE locale only, preload the others ──
   // The active locale must be present before Alpine renders (t() is called
-  // by every x-text). The other locale is fetched in the background so a
+  // by every x-text). Other locales are fetched in the background so a
   // later language switch is instant in practice; if the user switches
   // before the preload finishes, setLocale falls back to a blocking load.
   function _bootstrap() {
@@ -60,27 +59,28 @@ const I18N = (() => {
       _cache[active] = _loadJSON('/anima-ui/i18n/' + active + '.json?v=' + MESSAGES_VERSION);
     } catch (e) {
       console.warn('[i18n] Failed to preload locale: ' + active, e);
+      if (active !== 'en-US') {
+        try {
+          _cache['en-US'] = _loadJSON('/anima-ui/i18n/en-US.json?v=' + MESSAGES_VERSION);
+        } catch (fallbackError) {
+          console.warn('[i18n] Failed to load fallback locale', fallbackError);
+        }
+      }
     }
-    const other = _otherLocale(active);
-    if (other) {
-      _loadingOther = _loadJSONAsync('/anima-ui/i18n/' + other + '.json?v=' + MESSAGES_VERSION)
+    LOCALES.filter(loc => loc !== active && !_cache[loc]).forEach(function(other) {
+      _loadJSONAsync('/anima-ui/i18n/' + other + '.json?v=' + MESSAGES_VERSION)
         .then(function(messages) {
           if (messages) _cache[other] = messages;
-          _loadingOther = null;
-          return messages;
         });
-    }
+    });
+  }
+
+  function _supportedLocale(loc) {
+    return LOCALES.includes(loc) ? loc : null;
   }
 
   function _activeLocale() {
-    return localStorage.getItem('anima-locale') || detectBrowserLocale() || 'en-US';
-  }
-
-  function _otherLocale(loc) {
-    for (let i = 0; i < LOCALES.length; i++) {
-      if (LOCALES[i] !== loc) return LOCALES[i];
-    }
-    return null;
+    return _supportedLocale(localStorage.getItem('anima-locale')) || detectBrowserLocale() || 'en-US';
   }
 
   /**
@@ -91,6 +91,7 @@ const I18N = (() => {
     const lang = (navigator.language || '').toLowerCase();
     if (lang.startsWith('zh')) return 'zh-CN';
     if (lang.startsWith('en')) return 'en-US';
+    if (lang.startsWith('ja')) return 'ja-JP';
     return null;
   }
 
@@ -101,7 +102,15 @@ const I18N = (() => {
    * Priority: explicit arg > localStorage > browser language > 'en-US'
    */
   function init(locale) {
-    _locale = locale || localStorage.getItem('anima-locale') || detectBrowserLocale() || 'en-US';
+    const requested = _supportedLocale(locale) || _activeLocale();
+    if (!_cache[requested]) {
+      try {
+        _cache[requested] = _loadJSON('/anima-ui/i18n/' + requested + '.json?v=' + MESSAGES_VERSION);
+      } catch (e) {
+        console.warn('[i18n] Failed to initialize locale: ' + requested, e);
+      }
+    }
+    _locale = _cache[requested] ? requested : 'en-US';
     _messages = _cache[_locale] || _cache['en-US'] || null;
   }
 
@@ -130,12 +139,14 @@ const I18N = (() => {
    * synchronously so the switch is still correct and complete.
    */
   function setLocale(loc) {
+    if (!_supportedLocale(loc)) return;
     if (loc === _locale) return;
     if (!_cache[loc]) {
       try {
         _cache[loc] = _loadJSON('/anima-ui/i18n/' + loc + '.json?v=' + MESSAGES_VERSION);
       } catch (e) {
         console.warn('[i18n] Failed to load locale: ' + loc, e);
+        return;
       }
     }
     _locale = loc;
@@ -149,7 +160,7 @@ const I18N = (() => {
    * Returns [{ code: 'zh-CN', name: '中文' }, ...]
    */
   function getAvailableLocales() {
-    const names = { 'zh-CN': '中文', 'en-US': 'English' };
+    const names = { 'zh-CN': '中文', 'en-US': 'English', 'ja-JP': '日本語' };
     return LOCALES.map(l => ({ code: l, name: names[l] || l }));
   }
 

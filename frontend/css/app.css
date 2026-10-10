@@ -3765,8 +3765,8 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-a
   font-size: 13px;
   font-weight: 650;
   line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 .docs-index-item-state {
   display: inline-flex;

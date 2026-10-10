@@ -21,7 +21,7 @@ from backend.server.models import APIResponseSuccess
 router = APIRouter()
 
 _DEFAULT_LOCALE = "zh-CN"
-_SUPPORTED_LOCALES = {"zh-CN", "en-US"}
+_SUPPORTED_LOCALES = {"zh-CN", "en-US", "ja-JP"}
 _DOC_ANCHOR_RE = re.compile(
     r"^\s*<!--\s*doc-anchor:\s*([A-Za-z0-9][A-Za-z0-9_-]*)\s*-->\s*$"
 )
@@ -34,14 +34,17 @@ _DOCUMENTS = {
         "titles": {
             "zh-CN": "优化器",
             "en-US": "Optimizers",
+            "ja-JP": "オプティマイザ",
         },
         "summaries": {
             "zh-CN": "面向 Anima 与 SDXL LoRA 的优化器选择、关键参数、场景起点和对照测试方法。",
             "en-US": "Optimizer choices, key controls, starting points, and comparison methods for Anima and SDXL LoRA training.",
+            "ja-JP": "Anima・SDXL の LoRA 学習におけるオプティマイザの選び方、主要パラメータ、初期設定と比較方法。",
         },
         "files": {
             "zh-CN": "parameters/optimizers.zh-CN.md",
             "en-US": "parameters/optimizers.en-US.md",
+            "ja-JP": "parameters/optimizers.ja-JP.md",
         },
     },
     "timesteps": {
@@ -50,66 +53,77 @@ _DOCUMENTS = {
         "titles": {
             "zh-CN": "时间步",
             "en-US": "Timesteps",
+            "ja-JP": "タイムステップ",
         },
         "summaries": {
             "zh-CN": "说明时间步采样、Loss 权重、参数生效关系，以及不同数据集与训练目标下的设置参考。",
             "en-US": "Reference for timestep sampling, loss weighting, parameter activation, dataset size, and LoRA training objectives.",
+            "ja-JP": "タイムステップのサンプリング、損失の重み付け、設定の適用条件と、データセット・学習目標に応じた設定の目安。",
         },
         "files": {
             "zh-CN": "parameters/timesteps.zh-CN.md",
             "en-US": "parameters/timesteps.en-US.md",
+            "ja-JP": "parameters/timesteps.ja-JP.md",
         },
     },
     "lora-plus": {
         "category": "network",
         "order": 10,
-        "titles": {"zh-CN": "LoRA+", "en-US": "LoRA+"},
+        "titles": {"zh-CN": "LoRA+", "en-US": "LoRA+", "ja-JP": "LoRA+"},
         "summaries": {
             "zh-CN": "LoRA+ 的原理、实际学习率、倍率参数、支持范围与兼容性。",
             "en-US": "LoRA+ mechanics, effective rates, ratio parameters, supported modules, and compatibility.",
+            "ja-JP": "LoRA+ の仕組み、実効学習率、倍率設定、対応モジュールと互換性。",
         },
         "files": {
             "zh-CN": "parameters/lora-plus.zh-CN.md",
             "en-US": "parameters/lora-plus.en-US.md",
+            "ja-JP": "parameters/lora-plus.ja-JP.md",
         },
     },
     "network-parameters": {
         "category": "network",
         "order": 15,
-        "titles": {"zh-CN": "网络参数", "en-US": "Network parameters"},
+        "titles": {"zh-CN": "网络参数", "en-US": "Network parameters", "ja-JP": "ネットワーク設定"},
         "summaries": {
             "zh-CN": "说明网络维度、Alpha、LoRA/LoHa/LoKr 表示、分解方式、Dropout 与结构预览。",
             "en-US": "Dimension, Alpha, LoRA/LoHa/LoKr representations, decomposition, dropout, and structure preview.",
+            "ja-JP": "次元数、Alpha、LoRA・LoHa・LoKr の表現、分解方法、ドロップアウトと構造プレビュー。",
         },
         "files": {
             "zh-CN": "parameters/network-parameters.zh-CN.md",
             "en-US": "parameters/network-parameters.en-US.md",
+            "ja-JP": "parameters/network-parameters.ja-JP.md",
         },
     },
     "matrix-preview": {
         "category": "network",
         "order": 30,
-        "titles": {"zh-CN": "矩阵结构与文件大小", "en-US": "Matrix Structure and File Size"},
+        "titles": {"zh-CN": "矩阵结构与文件大小", "en-US": "Matrix Structure and File Size", "ja-JP": "行列構造とファイルサイズ"},
         "summaries": {
             "zh-CN": "逐层矩阵、实际参数量、训练范围与权重文件大小估算。",
             "en-US": "Per-module matrices, parameter counts, training scope, and saved-weight size estimates.",
+            "ja-JP": "モジュールごとの行列構造、実際のパラメータ数、学習対象と重みファイルサイズの推定。",
         },
         "files": {
             "zh-CN": "parameters/matrix-preview.zh-CN.md",
             "en-US": "parameters/matrix-preview.en-US.md",
+            "ja-JP": "parameters/matrix-preview.ja-JP.md",
         },
     },
     "adaln": {
         "category": "network",
         "order": 20,
-        "titles": {"zh-CN": "AdaLN 调制层", "en-US": "AdaLN Modulation Layers"},
+        "titles": {"zh-CN": "AdaLN 调制层", "en-US": "AdaLN Modulation Layers", "ja-JP": "AdaLN 変調層"},
         "summaries": {
             "zh-CN": "AdaLN 调制层的作用、上游默认排除行为、训练影响与使用建议。",
             "en-US": "What the AdaLN modulation layers do, the upstream default exclusion, training impact, and recommendations.",
+            "ja-JP": "AdaLN 変調層の役割、上流実装での既定の除外、学習への影響と設定の目安。",
         },
         "files": {
             "zh-CN": "parameters/adaln.zh-CN.md",
             "en-US": "parameters/adaln.en-US.md",
+            "ja-JP": "parameters/adaln.ja-JP.md",
         },
     },
 }

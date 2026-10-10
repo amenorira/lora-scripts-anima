@@ -1245,6 +1245,12 @@ window.trainingCoreMixin = {
       panel = document.createElement('div');
       panel.className = 'train-type-panel';
       panel.dataset.trainType = trainType;
+      // 缓存面板会脱离 DOM，但其 x-for 等响应式表达式仍会运行。
+      // 保留应用作用域，让新建的子集行在脱离 DOM 时也能找到表单方法。
+      const alpine = window.Alpine;
+      if (alpine && typeof alpine.addScopeToNode === 'function') {
+        alpine.addScopeToNode(panel, {}, root);
+      }
       this._trainTypePanelCache.set(trainType, panel);
     }
     this._mutateTrainingPanels(() => {

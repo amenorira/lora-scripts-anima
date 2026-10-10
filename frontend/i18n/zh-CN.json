@@ -1425,6 +1425,12 @@
 		"footnote": "形状和参数来自当前配置实际构造的网络。文件估算包含张量与索引，不含可变训练元数据和优化器断点。图形采用对数比例，尺寸以数字为准。"
 	},
 	"common": {
+			"skipToContent": "跳到主要内容",
+			"pageLoading": "页面加载：{percent}%",
+			"changeTheme": "切换主题",
+			"changeLanguage": "切换语言",
+			"expandSidebar": "展开侧栏",
+			"collapseSidebar": "收起侧栏",
 		"startTraining": "开始训练",
 		"stopTraining": "终止训练",
 		"training": "训练中",

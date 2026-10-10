@@ -1425,6 +1425,12 @@
 		"footnote": "Shapes and counts come from the network constructed for this configuration. File estimates include tensors and their index, excluding variable training metadata and optimizer checkpoints. Shapes use a logarithmic scale; numeric dimensions are exact."
 	},
 	"common": {
+			"skipToContent": "Skip to main content",
+			"pageLoading": "Page loading: {percent}%",
+			"changeTheme": "Change theme",
+			"changeLanguage": "Change language",
+			"expandSidebar": "Expand sidebar",
+			"collapseSidebar": "Collapse sidebar",
 		"startTraining": "Start Training",
 		"stopTraining": "Stop Training",
 		"training": "Training",
