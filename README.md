@@ -18,7 +18,8 @@ _✨ 多训练核心 LoRA 工具：Anima、SDXL 与 Krea 2 ✨_
 </p>
 
 <p align="center">
-  <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-en.md">English</a>
+  <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-en.md">English</a> ·
+  <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-ja.md">日本語</a>
 </p>
 
 项目通过训练核心注册表隔离不同后端；**LyCORIS** 是通过 `lycoris.kohya` 挂载的可选适配器后端。
@@ -249,7 +250,7 @@ GUI 的 **环境** 标签页提供：
 # Linux: ./venv/bin/python -m unittest discover -s tests -t .
 ```
 
-测试按功能分类，统一入口包含独立 JavaScript 测试。分类、依赖和单独运行方法见 [tests/README.md](tests/README.md)；工具用途见 [tools/README.md](tools/README.md)。
+测试位于 `tests/`，按训练、监控、环境、打标、应用和前端分类；统一入口包含独立 JavaScript 测试。开发脚本位于 `tools/dev/`，`tools/` 还包含启动器和后端依赖的运行工具。
 
 ## 致谢
 

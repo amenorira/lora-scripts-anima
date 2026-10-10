@@ -18,7 +18,8 @@ A local GUI for LoRA training. Anima / SDXL use [kohya-ss/sd-scripts](https://gi
 </p>
 
 <p align="center">
-  <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README.md">中文</a>
+  <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README.md">中文</a> ·
+  <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-ja.md">日本語</a>
 </p>
 
 A training-core registry keeps each backend isolated; **LyCORIS** is an optional adapter backend mounted through `lycoris.kohya`.
@@ -247,7 +248,7 @@ Run the complete test suite (the tests use the standard-library unittest and nee
 # Linux: ./venv/bin/python -m unittest discover -s tests -t .
 ```
 
-Tests are grouped by feature. The common entrypoint also runs standalone JavaScript tests. See [tests/README.md](tests/README.md) for test groups and commands, and [tools/README.md](tools/README.md) for tool responsibilities.
+Tests live in `tests/`, grouped into training, monitoring, environment, tagging, application, and frontend categories. The common entrypoint also runs standalone JavaScript tests. Developer scripts live in `tools/dev/`; `tools/` also contains runtime tools used by the launcher and backend.
 
 ## Acknowledgements
 
