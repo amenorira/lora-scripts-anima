@@ -86,79 +86,10 @@ def _bounded_realtime_metrics(points: dict[str, list[dict]]) -> tuple[dict[str, 
 
 
 def _build_console_progress():
-    """构建控制台训练进度条（rich Progress），列：描述 | ASCII进度条 | 百分比 | 步数 | 速度 | 时间 | loss | lr | epoch。
+    """惰性加载单行进度条；终端缩放不影响训练监控。"""
+    from backend.monitor.console_progress import build_console_progress
 
-    与模型下载进度条独立实例，仅在训练时活跃。
-    """
-    from rich.progress import (BarColumn, Progress, ProgressColumn)
-    from rich.text import Text
-    from backend.log import COLORS
-
-    class _PlainBarColumn(BarColumn):
-        """纯 ASCII 进度条：# 已完成 / . 待完成。"""
-        def render(self, task):
-            if task.total is None or task.total == 0:
-                return Text("." * 20, style=COLORS["muted"])
-            pct = max(0.0, min(1.0, task.completed / task.total))
-            filled = int(round(20 * pct))
-            return Text("#" * filled + "." * (20 - filled), style=COLORS["muted"])
-
-    class _StepColumn(ProgressColumn):
-        """步数列：450/1000"""
-        def render(self, task):
-            completed = int(task.completed)
-            total = int(task.total) if task.total else 0
-            if total:
-                return Text(f"{completed}/{total}", style=COLORS["accent"])
-            return Text(f"{completed}", style=COLORS["accent"])
-
-    class _DescColumn(ProgressColumn):
-        """描述列：Training <output_name>。"""
-        def render(self, task):
-            return Text(task.description or "Training", style=COLORS["text"])
-
-    class _PctColumn(ProgressColumn):
-        """百分比列：右对齐 3 位。"""
-        def render(self, task):
-            if task.total:
-                pct = max(0.0, min(100.0, task.completed / task.total * 100))
-                return Text(f"{pct:>3.0f}%", style=COLORS["accent"])
-            return Text("--%", style=COLORS["muted"])
-
-    class _MetaColumn(ProgressColumn):
-        """附加元数据列：从 task.fields 取 loss/lr/epoch/elapsed/eta/speed 渲染。
-        缺失字段显示 --，保持单行紧凑。"""
-        def render(self, task):
-            fields = task.fields or {}
-            elapsed = fields.get("elapsed") or "--"
-            eta = fields.get("eta") or "--"
-            loss = fields.get("loss") or "--"
-            lr = fields.get("lr") or "--"
-            ep = fields.get("epoch") or "--"
-            speed = fields.get("speed") or ""
-            parts = [f"{elapsed}<{eta}", f"loss={loss}", f"lr={lr}", f"ep={ep}"]
-            if speed:
-                parts.append(speed)
-            return Text("  ".join(parts), style=COLORS["text"])
-
-    try:
-        from backend.log import console as _console
-    except Exception:
-        _console = None
-
-    return Progress(
-        _DescColumn(),
-        _PlainBarColumn(),
-        _PctColumn(),
-        _StepColumn(),
-        _MetaColumn(),
-        console=_console,
-        # transient=True：训练中任意外部 log（RichHandler 共用同一 console）会让 rich Live
-        # 暂停渲染进度条——transient=False 会定格保留该行，导致每次 log 后上面多一条不动的
-        # 残影进度条。transient=True 在暂停时清除当前行，log 在该行打印后进度条重新在原行
-        # 刷新，不留残影。训练结束时这条不再保留，最终完成信息由 supervisor._log_run_end 输出。
-        transient=True,
-    )
+    return build_console_progress()
 
 
 class TaskMonitor:
