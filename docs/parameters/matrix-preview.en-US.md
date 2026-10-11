@@ -22,7 +22,7 @@ The preview uses the training network constructors with fake tensors. It does no
 
 The estimate counts the tensors actually saved by the adapter at the selected save precision, then adds the safetensors tensor-index header. `fp16` / `bf16` use 2 bytes per element and `float` uses 4. Saved non-trainable tensors such as alpha are included, so file size is not simply the trainable parameter count multiplied by bytes per element.
 
-This is an estimate of the **LoRA weight file**, excluding the base model, optimizer state, training caches, and sample images. It is not a VRAM estimate. Training metadata adds more bytes, and other save formats can have different container overhead. The final file is authoritative.
+The estimate covers only the adapter weight file, excluding the base model, optimizer state, training caches, and previews. It uses safetensors packaging. Training metadata and other save formats add their own packaging overhead; check the saved file for its final size.
 
 To compare settings, hold the algorithm and scope fixed while changing rank, or hold rank fixed while comparing scopes. LoKr changes its file-size growth pattern when it switches from low-rank factors to full matrices. Check the resulting shapes and estimate after each change.
 

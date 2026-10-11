@@ -657,6 +657,16 @@ _field_by_key["bypass_mode"]["show_if"] = [
 
 # Titles identify the control; behavior, applicability, and defaults belong in hints.
 _FIELD_HINTS_BY_KEY = {
+    "train_data_dir": "field.train_data_dirHint",
+    "min_bucket_reso": "field.min_bucket_resoHint",
+    "max_bucket_reso": "field.max_bucket_resoHint",
+    "save_last_n_epochs_state": "field.save_last_n_epochs_stateHint",
+    "seed": "field.seedHint",
+    "adafactor_scale_parameter": "field.adafactor_scale_parameterHint",
+    "adafactor_clip_threshold": "field.adafactor_clip_thresholdHint",
+    "automagic_min_lr": "field.automagic_min_lrHint",
+    "automagic_beta2": "field.automagic_beta2Hint",
+    "caption_dropout_every_n_epochs": "field.caption_dropout_every_n_epochsHint",
     "pretrained_model_name_or_path": "field.pretrained_model_name_or_pathHint",
     "vae": "field.vaeHint",
     "learning_rate": "field.learning_rateHint",

@@ -2522,7 +2522,11 @@ window.trainingCoreMixin = {
     const weighting = String(source.weighting_scheme || 'uniform');
     const isKrea2 = String(source.model_train_type || '') === 'krea2-lora';
     const sigmoidScale = this._timestepPreviewNumber(source.sigmoid_scale, 1.0);
-    const flowShift = Math.max(0.0001, this._timestepPreviewNumber(source.discrete_flow_shift, 1.0));
+    const configuredFlowShift = Math.max(0.0001, this._timestepPreviewNumber(source.discrete_flow_shift, 1.0));
+    // The current Krea 2 scheduler leaves its sigma table unshifted.
+    const flowShift = isKrea2 && sampling === 'sigma'
+      ? 1.0
+      : configuredFlowShift;
     const logitMean = this._timestepPreviewNumber(source.logit_mean, 0.0);
     const logitStd = Math.max(0, this._timestepPreviewNumber(source.logit_std, 1.0));
     const modeScale = this._timestepPreviewNumber(source.mode_scale, 1.29);
@@ -2545,7 +2549,7 @@ window.trainingCoreMixin = {
     };
 
     let activeShift = 1.0;
-    if (sampling === 'shift' || (sampling === 'sigma' && isKrea2)) {
+    if (sampling === 'shift') {
       activeShift = flowShift;
     } else if (sampling === 'flux_shift') {
       activeShift = getShiftParam(4096);
@@ -2750,7 +2754,9 @@ window.trainingCoreMixin = {
     const baselineStats = computeStats(baselineCdf);
     const currentStats = currentCdf === baselineCdf ? baselineStats : computeStats(currentCdf);
     const notes = [];
-    if (!['shift', 'sigma'].includes(sampling) && !isKrea2 && Math.abs(flowShift - 1) > 1e-9) {
+    const shiftIgnored = Math.abs(configuredFlowShift - 1) > 1e-9
+      && (isKrea2 ? sampling !== 'shift' : !['shift', 'sigma'].includes(sampling));
+    if (shiftIgnored) {
       notes.push(this.t('timestepPreview.shiftIgnored'));
     }
     if (sampling === 'flux_shift') notes.push(this.t('timestepPreview.fluxShiftNote'));
@@ -2806,7 +2812,7 @@ window.trainingCoreMixin = {
       baselineMidPercent: baselineStats.mid,
       baselineHighPercent: baselineStats.high,
       compare: scope !== 'base' && densities.some((density, index) => Math.abs(density - baselineDensities[index]) > 1e-10),
-      warning: (!['shift', 'sigma'].includes(sampling) && !isKrea2 && Math.abs(flowShift - 1) > 1e-9)
+      warning: shiftIgnored
         || (['logit_normal', 'mode'].includes(weighting) && sampling !== 'sigma'),
       notes,
     };

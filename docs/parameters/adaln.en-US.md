@@ -5,28 +5,25 @@
 
 AdaLN adjusts feature scales, offsets, and branch strengths for the current noise level, adapting the model to each stage of denoising.
 
-Enabling AdaLN training extends the adapter to these modulation layers, which can affect shape, linework, color, and prompt response. Native Anima networks leave it off by default. Keep that default for character and concept LoRAs; test it for style training when the baseline needs a wider training scope.
+Enabling this option adds adapters for AdaLN modulation layers to the existing training scope, increasing the parameter count and weight-file size. Native Anima networks leave it off by default. It expands the trainable scope without changing timestep sampling.
+
+<!-- doc-anchor: effects -->
+## Changes to the training scope
 
 | Setting | Training scope | Effect |
 | --- | --- | --- |
 | Off | The attention, MLP, and other modules already selected | AdaLN parameters retain their base-model values |
 | On | Adds AdaLN modulation modules to that scope | More pathways can change, increasing parameters and file size |
 
-<!-- doc-anchor: effects -->
-## What training them changes
-
-AdaLN adds trainable modulation paths while leaving timestep sampling unchanged. Compare shape, linework, and overall style, and check that prompt control is preserved.
-
 <!-- doc-anchor: usage -->
-## Recommendations
+## Comparing on and off
 
-- Character and concept LoRAs: start with the default scope. Leave AdaLN off when target features are already learned well.
-- Style LoRAs: test a wider scope with the same data, learning rate, and seed, comparing runs with AdaLN on and off.
+To test the wider scope, keep data, learning rate, rank, seed, and total steps fixed and change only the AdaLN switch. Compare both target features and prompt control.
 
 <!-- doc-anchor: default-behavior -->
 ## Upstream default behavior
 
-When creating the LoRA network, sd-scripts applies a built-in exclusion regex — `.*(_modulation|_norm|_embedder|final_layer).*` — which excludes the modulation, norm, embedder, and final layers (`vendor/sd-scripts/networks/lora_anima.py`; LoHa/LoKr use the same Anima configuration through `network_base.py`). So a default LoRA touches attention and MLP only, and the timestep → scale/shift/gate mapping stays exactly as in the base model.
+Native Anima networks exclude layers matching `.*(_modulation|_norm|_embedder|final_layer).*` by default, including modulation, normalization, embedding, and output layers (`networks/lora_anima.py`; native LoHa / LoKr use the same configuration through `network_base.py`). Attention and MLP adapters still change predictions at different timesteps; leaving modulation layers untrained does not preserve the base model's entire denoising behavior.
 
 Enabling the toggle injects this into `network_args`:
 

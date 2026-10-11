@@ -56,9 +56,9 @@ _DOCUMENTS = {
             "ja-JP": "タイムステップ",
         },
         "summaries": {
-            "zh-CN": "说明时间步采样、Loss 权重、参数生效关系，以及不同数据集与训练目标下的设置参考。",
-            "en-US": "Reference for timestep sampling, loss weighting, parameter activation, dataset size, and LoRA training objectives.",
-            "ja-JP": "タイムステップのサンプリング、損失の重み付け、設定の適用条件と、データセット・学習目標に応じた設定の目安。",
+            "zh-CN": "时间步采样、损失权重、参数生效条件、分布预览与对照实验方法。",
+            "en-US": "Timestep sampling, loss weighting, parameter applicability, distribution preview, and controlled comparisons.",
+            "ja-JP": "タイムステップのサンプリング、損失の重み付け、設定の適用条件、分布プレビューと条件を揃えた比較方法。",
         },
         "files": {
             "zh-CN": "parameters/timesteps.zh-CN.md",
@@ -86,9 +86,9 @@ _DOCUMENTS = {
         "order": 15,
         "titles": {"zh-CN": "网络参数", "en-US": "Network parameters", "ja-JP": "ネットワーク設定"},
         "summaries": {
-            "zh-CN": "说明网络维度、Alpha、LoRA/LoHa/LoKr 表示、分解方式、Dropout 与结构预览。",
-            "en-US": "Dimension, Alpha, LoRA/LoHa/LoKr representations, decomposition, dropout, and structure preview.",
-            "ja-JP": "次元数、Alpha、LoRA・LoHa・LoKr の表現、分解方法、ドロップアウトと構造プレビュー。",
+            "zh-CN": "网络维度、Alpha、LoRA/LoHa/LoKr 表示、分解方式、Dropout、DoRA 与 Bypass 限制及结构预览。",
+            "en-US": "Dimension, Alpha, LoRA/LoHa/LoKr representations, decomposition, dropout, DoRA and Bypass restrictions, and structure preview.",
+            "ja-JP": "次元数、Alpha、LoRA・LoHa・LoKr の表現、分解方法、ドロップアウト、DoRA と Bypass の制限、構造プレビュー。",
         },
         "files": {
             "zh-CN": "parameters/network-parameters.zh-CN.md",

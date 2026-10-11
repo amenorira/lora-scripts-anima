@@ -80,6 +80,25 @@ test('narrow continuous distributions retain their probability mass and correct 
   }
 });
 
+test('Krea 2 sigma uses the unshifted scheduler table for every density', () => {
+  for (const weighting of ['none', 'logit_normal', 'mode', 'sigma_sqrt', 'cosmap']) {
+    for (const std of [0, 1]) {
+      const config = { model_train_type: 'krea2-lora', timestep_sampling: 'sigma', weighting_scheme: weighting, logit_mean: 2, logit_std: std };
+      const { data: base } = preview({ ...config, discrete_flow_shift: 1 });
+      const { data: shifted } = preview({ ...config, discrete_flow_shift: 2.5 });
+      assert.deepEqual(shifted.densities, base.densities);
+      assert.equal(shifted.median, base.median);
+      assert.equal(shifted.lowPercent, base.lowPercent);
+      assert.equal(shifted.highPercent, base.highPercent);
+      assert.equal(shifted.fixedTimestep, base.fixedTimestep);
+      assert.ok(shifted.notes.includes('timestepPreview.shiftIgnored'));
+    }
+  }
+  const config = { model_train_type: 'krea2-lora', timestep_sampling: 'shift' };
+  assert.notEqual(preview({ ...config, discrete_flow_shift: 1 }).data.median,
+    preview({ ...config, discrete_flow_shift: 2.5 }).data.median);
+});
+
 test('overall CDF respects subset sample weights and offsets', () => {
   const overrides = {
     timestepOffsetSubsets: () => [{ name: 'a', sample_count: 2 }, { name: 'b', sample_count: 0 }],
