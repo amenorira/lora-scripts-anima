@@ -231,7 +231,8 @@ def estimate_training_steps(config: dict[str, Any]) -> dict[str, Any]:
     subsets = _dataset_subsets(train_data_dir, glob_images)
     # 正则化数据（DreamBooth 正则）与训练数据同批参与训练：把 reg_data_dir 子集一并计入步数估算。
     # 与 sd-scripts 行为保持一致：reg 目录不存在时静默忽略（generate_dreambooth_subsets_config_by_subdirs）。
-    reg_data_value = config.get("reg_data_dir")
+    # UI 配置关闭正则时仍保留路径；训练适配后的原生配置则没有此开关。
+    reg_data_value = config.get("reg_data_dir") if config.get("enable_reg_data", True) else None
     if reg_data_value:
         reg_data_dir = Path(str(reg_data_value))
         if reg_data_dir.is_dir():

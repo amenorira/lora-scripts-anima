@@ -218,6 +218,44 @@ class TrainingStepEstimatorTests(unittest.TestCase):
                 [("2_outfit", 3, 2), ("5_character", 2, 5)],
             )
 
+    def test_regularization_toggle_ignores_retained_path_and_can_be_reenabled(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            train = root / "train"
+            reg = root / "reg"
+            self._write_images(train / "2_normal", 5, (512, 768))
+            self._write_images(train / "2_school", 5, (512, 512))
+            self._write_images(reg / "1_reg", 10, (768, 512))
+            for profile in ("anima-lora", "sdxl-lora"):
+                config = self._config(
+                    train, model_train_type=profile, reg_data_dir=str(reg),
+                    enable_bucket=True, train_batch_size=1,
+                    gradient_accumulation_steps=1, max_train_epochs=20,
+                )
+                for enabled, expected_steps, expected_samples in (
+                    (True, 800, 40), (False, 400, 20), (True, 800, 40),
+                ):
+                    with self.subTest(profile=profile, enabled=enabled):
+                        config["enable_reg_data"] = enabled
+                        estimate = estimate_training_steps(config)
+                        self.assertEqual(estimate["total_steps"], expected_steps)
+                        self.assertEqual(estimate["repeated_samples"], expected_samples)
+                        self.assertEqual(any(s["is_reg"] for s in estimate["subsets"]), enabled)
+                        self.assertEqual(config["reg_data_dir"], str(reg))
+
+    def test_native_config_without_regularization_toggle_still_counts_reg_images(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_images(root / "train" / "2_character", 1, (512, 512))
+            self._write_images(root / "reg" / "1_reg", 1, (512, 512))
+            config = self._config(
+                root / "train", reg_data_dir=str(root / "reg"),
+                train_batch_size=1, gradient_accumulation_steps=1, max_train_epochs=1,
+            )
+            estimate = estimate_training_steps(config)
+            self.assertEqual(estimate["total_steps"], 4)
+            self.assertEqual(estimate["repeated_samples"], 4)
+
     def test_bucket_batches_round_up_each_bucket_like_sd_scripts(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
