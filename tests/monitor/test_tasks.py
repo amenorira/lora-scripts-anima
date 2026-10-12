@@ -11,6 +11,8 @@ from unittest.mock import Mock, patch
 import psutil
 
 from backend.tasks import Task, TaskManager, TaskStatus
+from backend.training import supervisor
+from tests.helpers import stub_supervisor
 
 
 class TaskStateMachineTests(unittest.TestCase):
@@ -272,8 +274,6 @@ class TaskStateMachineTests(unittest.TestCase):
         self.assertIs(task.status, TaskStatus.TERMINATED)
 
     def test_supervisor_records_manual_stop_after_tree_cleanup(self):
-        from backend.training import supervisor
-
         async def scenario(directory):
             manager = TaskManager()
             reserved = manager.reserve_task()
@@ -301,13 +301,7 @@ class TaskStateMachineTests(unittest.TestCase):
                     raise TimeoutError("test cleanup was not released")
 
             process.communicate.side_effect = communicate
-            with patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
-                 patch.object(supervisor, "get_engine", return_value=Mock(python_executable=None)), \
-                 patch.object(supervisor, "save_config_snapshot"), \
-                 patch.object(supervisor, "_build_train_env", return_value={}), \
-                 patch.object(supervisor, "_read_run_meta", return_value={}), \
-                 patch.object(supervisor, "_log_run_start"), \
-                 patch.object(supervisor, "_log_run_end"), \
+            with stub_supervisor(), \
                  patch("backend.tasks.subprocess.Popen", return_value=process), \
                  patch("backend.tasks.kill_proc_tree", side_effect=cleanup):
                 response = supervisor.run_train(
@@ -345,8 +339,6 @@ class TaskStateMachineTests(unittest.TestCase):
             asyncio.run(scenario(directory))
 
     def test_supervisor_retry_after_worker_exit_releases_slot_once(self):
-        from backend.training import supervisor
-
         async def scenario(directory):
             manager = TaskManager()
             reserved = manager.reserve_task()
@@ -376,13 +368,7 @@ class TaskStateMachineTests(unittest.TestCase):
                 return future
 
             process.communicate.side_effect = communicate
-            with patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
-                 patch.object(supervisor, "get_engine", return_value=Mock(python_executable=None)), \
-                 patch.object(supervisor, "save_config_snapshot"), \
-                 patch.object(supervisor, "_build_train_env", return_value={}), \
-                 patch.object(supervisor, "_read_run_meta", return_value={}), \
-                 patch.object(supervisor, "_log_run_start"), \
-                 patch.object(supervisor, "_log_run_end"), \
+            with stub_supervisor(), \
                  patch.object(loop, "run_in_executor", side_effect=submit), \
                  patch("backend.tasks.subprocess.Popen", return_value=process), \
                  patch("backend.tasks.kill_proc_tree", side_effect=kill):
@@ -419,8 +405,6 @@ class TaskStateMachineTests(unittest.TestCase):
             asyncio.run(scenario(directory))
 
     def test_supervisor_retry_waits_for_blocked_completion_callback(self):
-        from backend.training import supervisor
-
         async def scenario(directory):
             manager = TaskManager()
             reserved = manager.reserve_task()
@@ -448,13 +432,7 @@ class TaskStateMachineTests(unittest.TestCase):
                     raise TimeoutError("callback was not released")
 
             process.communicate.side_effect = communicate
-            with patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
-                 patch.object(supervisor, "get_engine", return_value=Mock(python_executable=None)), \
-                 patch.object(supervisor, "save_config_snapshot"), \
-                 patch.object(supervisor, "_build_train_env", return_value={}), \
-                 patch.object(supervisor, "_read_run_meta", return_value={}), \
-                 patch.object(supervisor, "_log_run_start"), \
-                 patch.object(supervisor, "_log_run_end"), \
+            with stub_supervisor(), \
                  patch("backend.tasks.subprocess.Popen", return_value=process), \
                  patch("backend.tasks.kill_proc_tree", side_effect=kill):
                 response = supervisor.run_train(
@@ -487,7 +465,6 @@ class TaskStateMachineTests(unittest.TestCase):
             asyncio.run(scenario(directory))
 
     def test_supervisor_holds_slot_until_completion_callback_returns(self):
-        from backend.training import supervisor
         from backend.training import musubi_krea2
 
         async def scenario(directory):
@@ -505,13 +482,7 @@ class TaskStateMachineTests(unittest.TestCase):
                     raise TimeoutError("completion callback was not released")
                 musubi_krea2.mark_cache_manifest(old, status)
 
-            with patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
-                 patch.object(supervisor, "get_engine", return_value=Mock(python_executable=None)), \
-                 patch.object(supervisor, "save_config_snapshot"), \
-                 patch.object(supervisor, "_build_train_env", return_value={}), \
-                 patch.object(supervisor, "_read_run_meta", return_value={}), \
-                 patch.object(supervisor, "_log_run_start"), \
-                 patch.object(supervisor, "_log_run_end"), \
+            with stub_supervisor(), \
                  patch.object(musubi_krea2, "krea2_cache_fingerprint", side_effect=lambda config: config["fingerprint"]), \
                  patch("backend.tasks.subprocess.Popen", return_value=self._process(0)):
                 response = supervisor.run_train(
@@ -541,8 +512,6 @@ class TaskStateMachineTests(unittest.TestCase):
             asyncio.run(scenario(directory))
 
     def test_supervisor_settles_after_result_or_callback_failure(self):
-        from backend.training import supervisor
-
         async def scenario(directory, failed_step):
             manager = TaskManager()
             reserved = manager.reserve_task()
@@ -564,13 +533,7 @@ class TaskStateMachineTests(unittest.TestCase):
                 supervisor, "_write_result_json",
                 side_effect=failed_result if failed_step == "result" else None,
             )
-            with patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
-                 patch.object(supervisor, "get_engine", return_value=Mock(python_executable=None)), \
-                 patch.object(supervisor, "save_config_snapshot"), \
-                 patch.object(supervisor, "_build_train_env", return_value={}), \
-                 patch.object(supervisor, "_read_run_meta", return_value={}), \
-                 patch.object(supervisor, "_log_run_start"), \
-                 patch.object(supervisor, "_log_run_end"), \
+            with stub_supervisor(), \
                  result_writer, patch("backend.tasks.subprocess.Popen", return_value=self._process(0)):
                 response = supervisor.run_train(
                     "config.toml", run_dir=directory, reserved_task=reserved, on_complete=on_complete,
@@ -596,18 +559,10 @@ class TaskStateMachineTests(unittest.TestCase):
                 asyncio.run(scenario(directory, failed_step))
 
     def test_supervisor_log_open_failure_settles_reserved_slot(self):
-        from backend.training import supervisor
-
         async def scenario(directory):
             manager = TaskManager()
             reserved = manager.reserve_task()
-            with patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
-                 patch.object(supervisor, "get_engine", return_value=Mock(python_executable=None)), \
-                 patch.object(supervisor, "save_config_snapshot"), \
-                 patch.object(supervisor, "_build_train_env", return_value={}), \
-                 patch.object(supervisor, "_read_run_meta", return_value={}), \
-                 patch.object(supervisor, "_log_run_start"), \
-                 patch.object(supervisor, "_log_run_end"), \
+            with stub_supervisor(), \
                  patch.object(supervisor, "open", create=True, side_effect=PermissionError("log denied")):
                 response = supervisor.run_train("config.toml", run_dir=directory, reserved_task=reserved)
                 self.assertEqual(response["status"], "success")
@@ -622,8 +577,6 @@ class TaskStateMachineTests(unittest.TestCase):
             asyncio.run(scenario(directory))
 
     def test_supervisor_popen_failure_settles_after_callback(self):
-        from backend.training import supervisor
-
         async def scenario(directory):
             manager = TaskManager()
             reserved = manager.reserve_task()
@@ -638,13 +591,7 @@ class TaskStateMachineTests(unittest.TestCase):
                     worker_futures.append(future)
                 return future
 
-            with patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
-                 patch.object(supervisor, "get_engine", return_value=Mock(python_executable=None)), \
-                 patch.object(supervisor, "save_config_snapshot"), \
-                 patch.object(supervisor, "_build_train_env", return_value={}), \
-                 patch.object(supervisor, "_read_run_meta", return_value={}), \
-                 patch.object(supervisor, "_log_run_start"), \
-                 patch.object(supervisor, "_log_run_end"), \
+            with stub_supervisor(), \
                  patch.object(loop, "run_in_executor", side_effect=submit), \
                  patch("backend.tasks.subprocess.Popen", side_effect=OSError("start denied")):
                 response = supervisor.run_train(
@@ -662,17 +609,11 @@ class TaskStateMachineTests(unittest.TestCase):
             asyncio.run(scenario(directory))
 
     def test_supervisor_prelaunch_failures_leave_preparation_owner(self):
-        from backend.training import supervisor
-
         for failed_step in ("save_config_snapshot", "_build_train_env"):
             with self.subTest(failed_step=failed_step), tempfile.TemporaryDirectory() as directory:
                 manager = TaskManager()
                 reserved = manager.reserve_task()
-                with patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
-                     patch.object(supervisor, "get_engine", return_value=Mock(python_executable=None)), \
-                     patch.object(supervisor, "save_config_snapshot"), \
-                     patch.object(supervisor, "_build_train_env", return_value={}), \
-                     patch.object(supervisor, "_read_run_meta", return_value={}), \
+                with stub_supervisor(), \
                      patch.object(supervisor, failed_step, side_effect=OSError("prepare denied")):
                     response = supervisor.run_train("config.toml", run_dir=directory, reserved_task=reserved)
                 self.assertEqual(response["status"], "error")
@@ -683,18 +624,12 @@ class TaskStateMachineTests(unittest.TestCase):
                 self.assertIsNotNone(manager.reserve_task())
 
     def test_supervisor_executor_submission_failure_leaves_preparation_owner(self):
-        from backend.training import supervisor
-
         async def scenario(directory):
             manager = TaskManager()
             reserved = manager.reserve_task()
             loop_stub = Mock()
             loop_stub.run_in_executor.side_effect = RuntimeError("executor closed")
-            with patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
-                 patch.object(supervisor, "get_engine", return_value=Mock(python_executable=None)), \
-                 patch.object(supervisor, "save_config_snapshot"), \
-                 patch.object(supervisor, "_build_train_env", return_value={}), \
-                 patch.object(supervisor, "_read_run_meta", return_value={}), \
+            with stub_supervisor(), \
                  patch.object(supervisor.asyncio, "get_running_loop", return_value=loop_stub):
                 response = supervisor.run_train("config.toml", run_dir=directory, reserved_task=reserved)
             self.assertEqual(response["status"], "error")

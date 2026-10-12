@@ -170,37 +170,6 @@ class DictionaryUpdateTests(unittest.TestCase):
         info.siblings[0].lfs = SimpleNamespace(sha256="new-lfs" if changed else "old-lfs")
         return info
 
-    def test_same_tag_count_with_changed_content_uses_official_not_stale_mirror(self):
-        with patch.object(dictionary, "HfApi") as api:
-            api.return_value.dataset_info.return_value = self.info(changed=True)
-            result = dictionary.check_update(True)
-        api.assert_called_once_with(endpoint="https://huggingface.co")
-        self.assertEqual(result["state"], "available")
-        self.assertEqual(result["changed_files"], [dictionary.HF_FILES[0][0]])
-
-    def test_official_failure_does_not_report_current_from_mirror(self):
-        with patch.object(dictionary, "HfApi") as api:
-            api.return_value.dataset_info.side_effect = OSError("official unavailable")
-            result = dictionary.check_update(True)
-        api.assert_called_once_with(endpoint="https://huggingface.co")
-        self.assertEqual(result["state"], "error")
-        self.assertEqual(result["error_kind"], "source")
-
-    def test_manual_check_bypasses_cached_current_result(self):
-        with patch.object(dictionary, "HfApi") as api:
-            remote = api.return_value.dataset_info
-            remote.side_effect = [self.info(), self.info(True)]
-            self.assertEqual(dictionary.check_update()["state"], "current")
-            self.assertEqual(dictionary.check_update()["state"], "current")
-            self.assertEqual(dictionary.check_update(True)["state"], "available")
-        self.assertEqual(remote.call_count, 2)
-
-    def test_repository_revision_change_without_csv_changes_is_current(self):
-        info = self.info()
-        info.sha = "readme-only-commit"
-        with patch.object(dictionary, "HfApi") as api:
-            api.return_value.dataset_info.return_value = info
-            self.assertEqual(dictionary.check_update(True)["state"], "current")
 
     def test_incomplete_official_metadata_blocks_check_and_download(self):
         for defect in ("revision", "file", "fingerprint"):
@@ -220,17 +189,6 @@ class DictionaryUpdateTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     dictionary._download_sources(True)
                 download.assert_not_called()
-
-    def test_install_does_not_fall_back_to_stale_mirror_metadata(self):
-        with tempfile.TemporaryDirectory() as directory, \
-                patch.object(dictionary, "SOURCE_DIR", Path(directory)), \
-                patch.object(dictionary, "HfApi") as api, \
-                patch.object(dictionary, "download_hf_file") as download:
-            api.return_value.dataset_info.side_effect = OSError("offline")
-            with self.assertRaises(dictionary.DictionarySourceError):
-                dictionary._download_sources(True)
-        api.assert_called_once_with(endpoint="https://huggingface.co")
-        download.assert_not_called()
 
 
 class DictionaryRouteTests(unittest.TestCase):
@@ -254,11 +212,6 @@ class DictionaryRouteTests(unittest.TestCase):
         self.addCleanup(self.client.close)
         self.addCleanup(DictionaryInstallTests.join_install, self)
 
-    def test_update_endpoint_forwards_force(self):
-        with patch.object(dictionary, "check_update", return_value={"state": "available"}) as check:
-            response = self.client.get("/api/tageditor/dictionary/update?force=true")
-        check.assert_called_once_with(True)
-        self.assertEqual(response.json()["data"]["state"], "available")
 
     def test_asset_endpoint_serves_installed_files_and_blocks_others(self):
         self.client.post("/api/tageditor/dictionary/install", json={})

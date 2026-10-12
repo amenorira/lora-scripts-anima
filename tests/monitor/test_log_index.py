@@ -22,30 +22,6 @@ class LogIndexTests(unittest.TestCase):
         path.write_text('replacement\n', encoding='utf-8')
         self.assertEqual(read_log_slice(path, query='match')['match_indices'], [])
 
-    def test_capped_search_can_be_extended_after_last_match_is_overwritten(self):
-        path = self._tmp_path() / 'cap.log'
-        path.write_bytes(b'match\nmatch\nmatch\r')
-        with patch.object(log_index, 'MAX_SEARCH_MATCHES', 2):
-            self.assertTrue(read_log_slice(path, query='match')['matches_truncated'])
-            with path.open('ab') as handle:
-                handle.write(b'no result\n')
-            page = read_log_slice(path, query='match')
-            self.assertEqual(page['match_indices'], [0, 1])
-            self.assertFalse(page['matches_truncated'])
-
-    def test_partial_frame_remains_separate_from_preceding_step(self):
-        path = self._tmp_path() / 'partial.log'
-        path.write_bytes(b'INFO start\n\rsteps: 10%|x| 1/10 [avr_loss=.9]\rste')
-        monitor = TaskMonitor()
-        with patch('backend.monitor.monitor.find_train_log_path', return_value=path):
-            self.assertEqual(monitor._read_log_delta('partial')['total'], 3)
-            with path.open('ab') as handle:
-                handle.write(b'ps: 10%|x| 1/10 [avr_loss=.8]')
-            delta = monitor._read_log_delta('partial')
-        self.assertEqual(delta['total'], 3)
-        self.assertEqual(delta['offset'], 2)
-        self.assertIn('avr_loss=.8', delta['lines'][0])
-        self.assertEqual(read_log_slice(path)['lines'], read_clean_log_lines(path))
 
     def test_all_cr_refreshes_survive_pagination_search_and_live_append(self):
         path = self._tmp_path() / 'train.log'

@@ -11,22 +11,12 @@ from tests.helpers import config_from_field_defaults
 
 
 def valid_loraplus_config(optimizer_type: str = "AdamW") -> dict:
-    config = config_from_field_defaults()
-    config.update(
-        {
-            "model_train_type": "sdxl-lora",
-            "pretrained_model_name_or_path": "model.safetensors",
-            "train_data_dir": "train",
-            "resolution": "1024,1024",
-            "output_name": "test",
-            "output_dir": "output",
-            "network_module": "networks.lora",
-            "optimizer_type": optimizer_type,
-            "enable_loraplus": True,
-            "loraplus_lr_ratio": 2.0,
-        }
+    return config_from_field_defaults(
+        model_train_type="sdxl-lora", network_module="networks.lora",
+        pretrained_model_name_or_path="model.safetensors", train_data_dir="train",
+        resolution="1024,1024", output_name="test", output_dir="output", optimizer_type=optimizer_type,
+        enable_loraplus=True, loraplus_lr_ratio=2.0,
     )
-    return config
 
 
 class LoRAPlusAdapterTests(unittest.TestCase):

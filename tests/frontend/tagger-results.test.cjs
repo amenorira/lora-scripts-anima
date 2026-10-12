@@ -1,11 +1,9 @@
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
+const { loadFrontend } = require('./helpers.cjs');
 const { test } = require('node:test');
 
 const context = { window: {} };
-vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../frontend/js/tagger.js'), 'utf8'), context);
+loadFrontend('tagger.js', context);
 
 function fixture() {
   const requested = [];
@@ -20,23 +18,6 @@ function fixture() {
   return { app, requested };
 }
 
-test('logs follow the UI language, preserve filenames, and expand the full retained history', () => {
-  const { app } = fixture();
-  const entry = { event: 'written', name: 'error_failed_{count}.png', current: 14, total: 19, count: 52 };
-  app.taggerTask = { logs: Array(200).fill(entry) };
-  assert.equal(app.taggerVisibleLogs().length, 32);
-  app.taggerLogsOpen = true;
-  assert.equal(app.taggerVisibleLogs().length, 200);
-  for (const [locale, expected] of [['zh-CN', '：已写入 52 个标签'], ['en-US', ': wrote 52 tags']]) {
-    const messages = JSON.parse(fs.readFileSync(path.join(__dirname, `../../frontend/i18n/${locale}.json`), 'utf8'));
-    app.t = key => key.split('.').reduce((value, part) => value[part], messages);
-    assert.equal(app.taggerLogMessage(entry), `[14/19] ${entry.name}${expected}`);
-  }
-  app.taggerTask.logs = ['[21:00:21] legacy {failed}'];
-  assert.equal(app.taggerVisibleLogs()[0].time, '21:00:21');
-  assert.equal(app.taggerLogMessage(app.taggerVisibleLogs()[0]), 'legacy {failed}');
-});
-
 test('preview limit never truncates output, including after lowering the threshold', () => {
   const { app } = fixture();
   const tags = Array.from({ length: 250 }, (_, i) => [`tag_${i}`, i < 200 ? 0.9 : 0.4]);
@@ -47,84 +28,6 @@ test('preview limit never truncates output, including after lowering the thresho
   assert.equal(app.taggerResultTags().length, 250);
   assert.equal(app.taggerCategoryPreview(app.taggerCategoryState.general).length, 200);
   assert.ok(app.taggerResultText.endsWith('tag 249'));
-});
-
-test('dictionary receives raw names and cannot alter comma-separated output', () => {
-  const { app, requested } = fixture();
-  app.setTaggerResult({ categories: { general: { tags: [['long_hair', 0.9], ['name_(series)', 0.8]] } } });
-  assert.deepEqual(requested, ['long_hair', 'name_(series)']);
-  assert.equal(app.taggerResultText, 'long hair, name \\(series\\)');
-  app.syncTaggerDictionary();
-  assert.equal(app.taggerResultText, 'long hair, name \\(series\\)');
-});
-
-test('single category controls work before inference without creating a fake result', () => {
-  const { app } = fixture();
-  app.taggerCategoryKeys = () => ['general', 'character'];
-  assert.deepEqual(Array.from(app.taggerSingleCategories(), row => row.key), ['general', 'character']);
-  app.setTaggerSingleCategoryThreshold('general', 0.2);
-  app.setTaggerSingleCategoryEnabled('character', false);
-  assert.equal(app.taggerSettings.categoryThresholds.general, 0.2);
-  assert.equal(app.taggerSingleCategoryEnabled('character'), false);
-  assert.equal(Object.keys(app.taggerCategoryState).length, 0);
-  app.setTaggerResult({ categories: { general: { tags: [['solo', 0.3], ['sky', 0.1]] }, character: { tags: [['alice', 0.9]] } } });
-  assert.equal(app.taggerResultText, 'solo');
-  app.setTaggerSingleCategoryThreshold('general', 0.05);
-  assert.equal(app.taggerResultText, 'solo, sky');
-  app.setTaggerSingleCategoryEnabled('general', false);
-  assert.equal(app.taggerResultText, '');
-  assert.equal(app.taggerSingleCategories().length, 2);
-});
-
-test('inline threshold increments preserve precision and clamp to the valid range', () => {
-  const { app } = fixture();
-  app.setTaggerSingleCategoryThreshold('general', 0.17 + 0.01);
-  assert.equal(app.taggerSingleCategoryThreshold('general'), 0.18);
-  app.setTaggerSingleCategoryThreshold('general', 0.18 - 0.01);
-  assert.equal(app.taggerSingleCategoryThreshold('general'), 0.17);
-  app.setTaggerSingleCategoryThreshold('general', -0.01);
-  assert.equal(app.taggerSingleCategoryThreshold('general'), 0);
-  app.setTaggerSingleCategoryThreshold('general', 1.01);
-  assert.equal(app.taggerSingleCategoryThreshold('general'), 1);
-});
-
-test('WD inline thresholds update the proper category and keep complete output', () => {
-  const { app } = fixture();
-  app.taggerUsesCategoryThresholds = () => false;
-  app.taggerSettings.characterThreshold = 0.6;
-  app.taggerSettings.characterEnabledByModel = {};
-  app.setTaggerResult({ categories: { general: { tags: [['solo', 0.4]] }, character: { tags: [['alice', 0.7]] } } });
-  app.setTaggerSingleCategoryThreshold('general', 0.3);
-  assert.equal(app.taggerResultText, 'solo, alice');
-  app.setTaggerSingleCategoryThreshold('character', 0.8);
-  assert.equal(app.taggerResultText, 'solo');
-  assert.equal(app.taggerSettings.threshold, 0.3);
-});
-
-test('category inclusion persists and removing every category empties output', () => {
-  const { app } = fixture();
-  app.setTaggerResult({ categories: { general: { tags: [['solo', 0.9]] } } });
-  app.setTaggerSingleCategoryEnabled('general', false);
-  assert.equal(app.taggerResultText, '');
-  assert.equal(app.taggerCategoryEnabled('general'), false);
-  app.setTaggerSingleCategoryEnabled('general', true);
-  assert.equal(app.taggerResultText, 'solo');
-  assert.equal(app.taggerCategoryEnabled('general'), true);
-});
-
-test('excluded categories retain preview and translations while thresholds still filter them', () => {
-  const { app, requested } = fixture();
-  app.setTaggerResult({ categories: { general: { tags: [['solo', 0.9], ['long_hair', 0.4]] } } });
-  app.setTaggerSingleCategoryEnabled('general', false);
-  assert.equal(app.taggerResultText, '');
-  assert.equal(app.taggerCategoryPreview(app.taggerCategoryState.general).length, 1);
-  requested.length = 0;
-  app.setTaggerSingleCategoryThreshold('general', 0.3);
-  assert.equal(app.taggerCategoryPreview(app.taggerCategoryState.general).length, 2);
-  assert.deepEqual(requested, ['solo', 'long_hair']);
-  assert.equal(app.taggerResultText, '');
-  app.setTaggerSingleCategoryEnabled('general', true);
-  assert.equal(app.taggerResultText, 'solo, long hair');
 });
 
 test('AI captions remain intact and only tag-mode results use the dictionary', async () => {

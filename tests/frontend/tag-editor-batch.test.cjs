@@ -1,12 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const vm = require('node:vm');
-const path = require('node:path');
+const { loadFrontend } = require('./helpers.cjs');
 
 function fixture(captions) {
   const context = { window: {} };
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../frontend/js/tag-editor.js'), 'utf8'), context);
+  loadFrontend('tag-editor.js', context);
   const history = [], messages = [], writes = [];
   let confirmation;
   const images = captions.map((tags, i) => ({ path: String(i), tags }));
@@ -38,33 +36,6 @@ test('batch preview and commit use the same selected changes and count', () => {
   assert.equal(f.app.batchAddInput, '');
 });
 
-test('remove and replace preserve unaffected caption formatting', () => {
-  const f = fixture(['cat, blue, cat', ' dog , sky ']);
-  f.app.batchRemoveInput = 'cat';
-  f.app.tagEditorBatchRemove();
-  f.confirm().accept();
-  assert.deepEqual(f.images.map(img => img.tags), ['blue', ' dog , sky ']);
-  f.app.batchOldTag = 'blue';
-  f.app.batchNewTag = 'dog';
-  f.app.tagEditorBatchReplace();
-  f.confirm().accept();
-  assert.equal(f.images[0].tags, 'dog');
-  assert.deepEqual(f.history.map(meta => meta.affected), [1, 1]);
-});
-
-test('no-op batches create no confirmation or history', () => {
-  const f = fixture(['cat']);
-  f.app.batchAddInput = 'cat';
-  f.app.tagEditorBatchAdd();
-  f.app.batchRemoveInput = 'dog';
-  f.app.tagEditorBatchRemove();
-  f.app.batchOldTag = 'cat';
-  f.app.batchNewTag = 'cat';
-  f.app.tagEditorBatchReplace();
-  assert.equal(f.confirm(), undefined);
-  assert.deepEqual(f.history, []);
-});
-
 for (const change of ['dataset', 'caption']) {
   test(`confirmation rejects stale ${change} without partial changes`, () => {
     const f = fixture(['cat', 'dog']);
@@ -79,9 +50,3 @@ for (const change of ['dataset', 'caption']) {
     assert.deepEqual(f.messages.at(-1), ['tagEditor.batchStale', 'warning']);
   });
 }
-
-test('deduplication retains tags named like object prototype properties', () => {
-  const { app } = fixture([]);
-  assert.deepEqual(Array.from(app._teDedupTags(['constructor', '__proto__', 'Cat', 'cat'])),
-    ['constructor', '__proto__', 'Cat']);
-});

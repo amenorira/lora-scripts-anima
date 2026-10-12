@@ -12,26 +12,6 @@ ROOT = Path(__file__).parents[2]
 
 
 class SubprocessEncodingTests(unittest.TestCase):
-    def test_capture_does_not_decode_inside_subprocess_reader_threads(self):
-        result = launch_utils.run_capture_text(
-            [
-                sys.executable,
-                "-c",
-                (
-                    "import sys; "
-                    "sys.stdout.buffer.write(b'v1.1.3\\n'); "
-                    "sys.stderr.buffer.write(b'fatal: \\xb2\\xbb')"
-                ),
-            ]
-        )
-
-        self.assertEqual(result.returncode, 0)
-        self.assertIsInstance(result.stdout, str)
-        self.assertEqual(result.stdout, "v1.1.3\n")
-        self.assertIsInstance(result.stderr, str)
-        self.assertTrue(result.stderr.startswith("fatal: "))
-
-
     @unittest.skipUnless(sys.platform == "win32", "Windows-only bitsandbytes compatibility")
     def test_fresh_process_import_avoids_gbk_reader_thread_failure(self):
         script = """

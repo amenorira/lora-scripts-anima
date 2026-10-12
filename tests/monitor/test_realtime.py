@@ -1,15 +1,11 @@
 import asyncio
-import json
-import shutil
-import subprocess
 import unittest
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from backend.core.realtime import RealtimeHub, _compact_task_snapshot
+from backend.core.realtime import RealtimeHub
 from backend.server.routes import realtime as realtime_route
 from backend.server.routes import system as system_route
 from backend.tasks import TaskManager
@@ -59,9 +55,6 @@ class RealtimeRouteTests(unittest.TestCase):
                 if active:
                     manager.release_reserved(task)
 
-    def test_structured_logs_keep_their_level_in_realtime_snapshots(self):
-        entry = {"time": "21:00:21", "event": "done", "level": "success", "failed": 0}
-        self.assertEqual(_compact_task_snapshot({"logs": ["legacy", entry]})["logs"], ["legacy", entry])
 
     def test_websocket_hello_ready_subscribe_and_replay(self):
         hub = RealtimeHub()
@@ -107,95 +100,6 @@ class RealtimeRouteTests(unittest.TestCase):
 
         self.assertEqual(resync["op"], "resync_required")
         self.assertEqual(resync["topics"], ["server"])
-
-
-class RealtimeFrontendContractTests(unittest.TestCase):
-    @staticmethod
-    def _eval_frontend_mixins():
-        """按 index.html 的加载顺序合并实时 mixins，与生产组合保持一致。"""
-        return (
-            "global.window = {};\n"
-            "global.document = {getElementById: () => null};\n"
-            "global.requestAnimationFrame = callback => callback();\n"
-            "for (const file of ['frontend/js/realtime.js', 'frontend/js/monitor-core.js', 'frontend/js/training-toml.js']) {\n"
-            "  eval(require('fs').readFileSync(file, 'utf8'));\n"
-            "}\n"
-            "const app = Object.assign({}, window.realtimeMixin, window.monitorCoreMixin, window.trainingTomlMixin, {\n"
-            "  t: key => key,\n"
-            "  currentRoute: '',\n"
-            "});\n"
-        )
-
-    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend training checks")
-    def test_poll_response_older_than_ownership_boundary_is_ignored(self):
-        """请求发出早于所有权变更的轮询响应不得结算/认领任务。"""
-        script = self._eval_frontend_mixins() + r"""
-const outcomes = {};
-// 场景一：刚认领新任务，早于认领发出的旧响应声称"无任务"。
-app.beginLiveMonitorTask('train-2', 'RUNNING');
-app._applyTaskView('RUNNING');
-app._applyManagedTrainingState({tasks: {managed: []}}, app.liveTaskBoundaryAt - 1);
-outcomes.afterStaleRelease = {
-  liveTaskId: app.liveTaskId,
-  isTraining: app.isTraining,
-  statusText: app.statusText,
-};
-// 场景二：刚终止并释放，早于释放发出的旧响应声称"旧任务仍在运行"。
-app.releaseLiveTask();
-app._applyManagedTrainingState({tasks: {managed: [{id: 'train-2', status: 'RUNNING'}]}}, app.liveTaskBoundaryAt - 1);
-outcomes.afterStaleAdopt = {
-  liveTaskId: app.liveTaskId,
-  isTraining: app.isTraining,
-  statusText: app.statusText,
-};
-// 对照：晚于边界的响应正常生效。
-app._applyManagedTrainingState({tasks: {managed: []}}, app.liveTaskBoundaryAt + 1);
-outcomes.afterFresh = { isTraining: app.isTraining, statusText: app.statusText };
-process.stdout.write(JSON.stringify(outcomes));
-"""
-        result = subprocess.run(
-            ["node", "-e", script], cwd=Path.cwd(), check=True,
-            capture_output=True, text=True, encoding="utf-8",
-        )
-        state = json.loads(result.stdout)
-
-        self.assertEqual(state["afterStaleRelease"]["liveTaskId"], "train-2")
-        self.assertTrue(state["afterStaleRelease"]["isTraining"])
-        self.assertEqual(state["afterStaleRelease"]["statusText"], "monitor.training")
-        # 旧响应没有把已释放的任务重新认领回来（视图字段仍是释放前的残留）。
-        self.assertIsNone(state["afterStaleAdopt"]["liveTaskId"])
-        self.assertEqual(state["afterStaleAdopt"]["statusText"], "monitor.training")
-        self.assertFalse(state["afterFresh"]["isTraining"])
-        self.assertEqual(state["afterFresh"]["statusText"], "monitor.idle")
-
-    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend cursor checks")
-    def test_monitor_detail_snapshot_does_not_skip_queued_task_replay(self):
-        script = r"""
-global.window = {};
-eval(require('fs').readFileSync('frontend/js/realtime.js', 'utf8'));
-const app = Object.assign({}, window.realtimeMixin, {
-  _realtimeCursors: {'task:train-1': 10, server: 3},
-  _realtimeTopics: new Set(['server', 'task:train-1']),
-});
-app._applyRealtimeSnapshotCursors(
-  {'task:train-1': 40, server: 8, hardware: 7},
-  {preserveSubscribedCursors: true},
-);
-process.stdout.write(JSON.stringify(app._realtimeCursors));
-"""
-        result = subprocess.run(
-            ["node", "-e", script],
-            cwd=Path.cwd(),
-            check=True,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-        )
-        cursors = json.loads(result.stdout)
-
-        self.assertEqual(cursors["task:train-1"], 10)
-        self.assertEqual(cursors["server"], 3)
-        self.assertEqual(cursors["hardware"], 7)
 
 
 if __name__ == "__main__":

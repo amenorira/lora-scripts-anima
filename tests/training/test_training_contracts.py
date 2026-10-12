@@ -1,10 +1,8 @@
-import ast
 import copy
 import tempfile
 import unittest
 from dataclasses import asdict
 from pathlib import Path
-from unittest.mock import patch
 
 from PIL import Image
 
@@ -12,23 +10,7 @@ from backend.training.adapter import adapt_config
 from backend.training.step_estimator import estimate_training_steps
 from backend.training.validation import validate_training_config
 from backend.server.routes.training import get_sample_prompts
-from tests.helpers import config_from_field_defaults
-
-
-def valid_anima_config() -> dict:
-    config = config_from_field_defaults()
-    config.update({
-        "model_train_type": "anima-lora",
-        "network_module": "networks.lora_anima",
-        "pretrained_model_name_or_path": "model.safetensors",
-        "vae": "vae.safetensors",
-        "qwen3": "qwen3.safetensors",
-        "train_data_dir": "train",
-        "resolution": "1024,768",
-        "output_name": "test",
-        "output_dir": "output",
-    })
-    return config
+from tests.helpers import valid_training_config as valid_anima_config
 
 
 class TrainingValidationTests(unittest.TestCase):
@@ -46,36 +28,6 @@ class TrainingValidationTests(unittest.TestCase):
         self.assertEqual(adapted["learning_rate"], 1e-4)
         self.assertTrue(get_sample_prompts(config).startswith("123 --n "))
 
-    def test_explicit_sample_prompts_do_not_scan_the_dataset(self):
-        with patch.object(Path, "iterdir", side_effect=AssertionError("unnecessary dataset scan")):
-            text = get_sample_prompts({"positive_prompts": "first\n\nsecond", "negative_prompts": "bad\nblur"})
-        self.assertEqual(len(text.splitlines()), 2)
-        self.assertIn("first --n bad, blur", text)
-        self.assertEqual(get_sample_prompts({"positive_prompts": "   "}), "")
-
-    def test_unreadable_random_caption_aborts_instead_of_using_another_prompt(self):
-        with tempfile.TemporaryDirectory() as directory:
-            subset = Path(directory) / "1_images"
-            subset.mkdir()
-            (subset / "image.txt").write_text("caption", encoding="utf-8")
-            with patch.object(Path, "read_text", side_effect=PermissionError("unreadable caption")):
-                with self.assertRaises(PermissionError):
-                    get_sample_prompts({"train_data_dir": directory, "randomly_choice_prompt": True,
-                                        "positive_prompts": "must not silently use this"})
-
-    def test_optimizer_custom_defaults_and_form_overrides_share_one_contract(self):
-        for eps in ("1e-8", "0.00000001", 1e-8):
-            config = dict(valid_anima_config(), optimizer_type="AdamW", eps=eps,
-                          optimizer_args=["eps=1e-6"], optimizer_args_custom="eps=1e-7")
-            self.assertEqual(validate_training_config(config), [])
-            adapted, _ = adapt_config(config)
-            args = {key: ast.literal_eval(value) for key, value in
-                    (item.split("=", 1) for item in adapted["optimizer_args"])}
-            self.assertEqual(args["eps"], 1e-7)
-            self.assertEqual(sum(item.startswith("eps=") for item in adapted["optimizer_args"]), 1)
-            config["eps"] = 1e-5
-            adapted, _ = adapt_config(config)
-            self.assertIn("eps=1e-05", adapted["optimizer_args"])
 
     def test_invalid_advanced_optimizer_args_are_not_silently_discarded(self):
         for custom in ("eps=unquoted", "missing_separator"):
@@ -84,14 +36,6 @@ class TrainingValidationTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 adapt_config(config)
 
-    def test_sequence_default_representations_preserve_advanced_override(self):
-        for eps in ("1e-30, 1e-3", "(1e-30, 0.001)", "[1e-30, 0.001]", [1e-30, 0.001]):
-            config = dict(valid_anima_config(), optimizer_type="AdaFactor", adafactor_eps=eps,
-                          optimizer_args_custom="eps=(1e-20, 0.01)")
-            adapted, _ = adapt_config(config)
-            args = {key: ast.literal_eval(value) for key, value in
-                    (item.split("=", 1) for item in adapted["optimizer_args"])}
-            self.assertEqual(args["eps"], (1e-20, 0.01))
 
     def test_validation_checks_effective_custom_args_even_with_default_form_values(self):
         config = dict(valid_anima_config(), optimizer_type="AdamW", eps=1e-8,

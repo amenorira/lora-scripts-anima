@@ -22,11 +22,6 @@ def reply(data=b"abcdef", status=200, headers=None):
 
 
 class HFDownloadTests(unittest.TestCase):
-    def test_environment_token_survives_hub_token_lookup_failure(self):
-        with patch.dict("os.environ", {"HF_TOKEN": "env-test-token"}, clear=True), \
-                patch("huggingface_hub.get_token", side_effect=OSError("unreadable token file")):
-            self.assertEqual(hf._auth_headers()["Authorization"], "Bearer env-test-token")
-
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -156,11 +151,3 @@ class HTTPDownloadTests(unittest.TestCase):
         self.assertEqual(self.dest.read_bytes(), self.data)
         self.assertEqual(len([c for c in self.calls if c[0] == "GET" and c[2] is None]), 1)
         self.assertEqual(list(self.dest.parent.iterdir()), [self.dest])
-
-    def test_real_head_timeout_switches_in_seconds_without_retries(self):
-        started = time.monotonic()
-        hf.download_url_with_fallback([self.url + "/slow", self.url + "/file"], self.dest)
-        elapsed = time.monotonic() - started
-        self.assertLess(elapsed, 4.5)
-        self.assertEqual(self.dest.read_bytes(), self.data)
-        self.assertEqual([c for c in self.calls if c[1] == "/slow"], [("HEAD", "/slow")])

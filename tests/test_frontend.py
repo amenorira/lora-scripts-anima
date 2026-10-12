@@ -1,4 +1,4 @@
-"""Run the standalone JavaScript suite through the documented pytest entrypoint."""
+"""Run the standalone JavaScript suite through the unified unittest entrypoint."""
 import shutil
 import subprocess
 import unittest

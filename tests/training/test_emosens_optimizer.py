@@ -6,29 +6,14 @@ from pathlib import Path
 from backend.training.field_registry import EMOSENS_OPTIMIZER_TYPE
 from backend.training.supervisor import _build_train_env
 from backend.training.validation import validate_training_config
-from tests.helpers import config_from_field_defaults
+from tests.helpers import valid_training_config
 
 
 def valid_emosens_config() -> dict:
-    config = config_from_field_defaults()
-    config.update(
-        {
-            "model_train_type": "anima-lora",
-            "network_module": "networks.lora_anima",
-            "pretrained_model_name_or_path": "model.safetensors",
-            "vae": "vae.safetensors",
-            "qwen3": "qwen3.safetensors",
-            "train_data_dir": "train",
-            "resolution": "1024,768",
-            "output_name": "test",
-            "output_dir": "output",
-            "optimizer_type": EMOSENS_OPTIMIZER_TYPE,
-            "learning_rate": "0.1",
-            "gradient_accumulation_steps": 1,
-            "mixed_precision": "bf16",
-        }
+    return valid_training_config(
+        optimizer_type=EMOSENS_OPTIMIZER_TYPE, learning_rate="0.1",
+        gradient_accumulation_steps=1, mixed_precision="bf16",
     )
-    return config
 
 
 class EmoSensValidationTests(unittest.TestCase):

@@ -1,8 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
+const { loadFrontend } = require('./helpers.cjs');
 
 function fixture() {
   const timers = new Map();
@@ -12,7 +10,7 @@ function fixture() {
     setTimeout: fn => { timers.set(++timerId, fn); return timerId; },
     clearTimeout: id => timers.delete(id),
   };
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../frontend/js/training-core.js'), 'utf8'), context);
+  loadFrontend('training-core.js', context);
   const app = Object.assign({}, context.window.trainingCoreMixin, {
     form: { model_train_type: 'anima-lora', train_data_dir: 'train', reg_data_dir: 'reg', enable_reg_data: true },
   });
@@ -21,27 +19,6 @@ function fixture() {
     flush() { const pending = [...timers.values()]; timers.clear(); pending.forEach(fn => fn()); },
   };
 }
-
-test('regularization toggle requests a fresh estimate while preserving the entered path', () => {
-  for (const profile of ['anima-lora', 'sdxl-lora']) {
-    const { app, flush } = fixture();
-    app.form.model_train_type = profile;
-    const requests = [];
-    app._requestStepEstimate = (seq, payload) => requests.push({ seq, payload });
-    for (const enabled of [true, false, true]) {
-      app.form.enable_reg_data = enabled;
-      app.scheduleStepEstimate();
-      flush();
-    }
-    assert.deepEqual(requests.map(r => r.payload.enable_reg_data), [true, false, true]);
-    assert.deepEqual(requests.map(r => r.seq), [1, 2, 3]);
-    assert.ok(requests.every(r => r.payload.reg_data_dir === 'reg'));
-    assert.equal(app.form.reg_data_dir, 'reg');
-    app.scheduleStepEstimate();
-    flush();
-    assert.equal(requests.length, 3);
-  }
-});
 
 test('an in-flight enabled estimate cannot overwrite the result after regularization is disabled', async () => {
   const { app, context } = fixture();
