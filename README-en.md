@@ -136,16 +136,27 @@ Machines without an NVIDIA GPU still receive the complete GPU dependency environ
 
 1. On GitHub, choose **Code → Download ZIP**, fully extract it, and double-click `start.bat`.
 2. If `.git` is missing, the bootstrap asks to install Git for Windows and repair the folder as an updateable repository; choose the recommended option.
-3. Repair fetches the latest `main`. Source files that would be replaced are first saved to `bootstrap-backups/<timestamp>.zip`. The process excludes `venv`, models, outputs, caches, logs, and the entire user `config` directory, so they are never overwritten or cleaned.
+3. Repair fetches only `main`, without other branches or tags. Source files that would be replaced are first saved to `bootstrap-backups/<timestamp>.zip`. The process excludes `venv`, models, outputs, caches, logs, and the entire user `config` directory, so they are never overwritten or cleaned.
 4. After the source files are synchronized, the bootstrap restarts once, creates `venv`, and installs the training dependencies.
 
-A Git installation or repository-repair failure only produces a warning and does not block the trainer. Python or core dependency failures stop startup with a bilingual error.
+Git installation failures and repair failures before source synchronization only produce a warning, allowing the original ZIP to start and setup to be retried later. Failures after synchronization begins stop startup and retain backup details; resolve the error and run `start.bat` again to retry. Python or core dependency failures also stop startup with a bilingual error.
 
 ### Clone with Git
 
 ```sh
-git clone https://github.com/amenorira/lora-scripts-anima.git
+git clone --depth 1 --single-branch --branch main --no-tags https://github.com/amenorira/lora-scripts-anima.git
 cd lora-scripts-anima
+git config pull.ff only
+```
+
+This downloads the latest main and supports normal `git pull` updates. Fetch full history with `git fetch --unshallow` and tags with `git fetch --tags`, or omit the clone options for development.
+
+To use dev, run these commands once, then switch with `git switch main` / `git switch dev`:
+
+```sh
+git config --add remote.origin.fetch "+refs/heads/dev:refs/remotes/origin/dev"
+git fetch --no-tags origin
+git switch --track origin/dev
 ```
 
 ### Quick Start
@@ -172,12 +183,9 @@ All HTTP requests and realtime connections are same-origin with the current page
 
 ### Updating later
 
-After ZIP repair or `git clone`, right-click an empty area inside the project folder:
+On Windows, close the trainer, double-click **`update.bat`**, then run `start.bat` after success. You can also run `git pull` in the project folder. Updates fast-forward the current branch (main or dev); source edits, staged changes, or divergence stop the update. Starting the trainer does not update source files.
 
-- Choose Windows **Open in Terminal**, then run `git pull`; or
-- Choose **Git Bash Here**, then run `git pull`. On Windows 11 it may appear under **Show more options**.
-
-The repository allows fast-forward-only pulls. If tracked source files were edited manually, `git pull` stops and asks you to handle the local changes instead of overwriting them.
+When legacy sample prompts, Accelerate settings, and the cache version file stop being tracked, the updater backs them up and preserves their contents. Defaults live in `tools/defaults/`; startup creates only missing settings. If an older folder has no updater, run `& "new-ZIP-folder\update.bat" "--bootstrap-root=absolute-path-to-old-project"` in PowerShell to migrate without replacing its bootstrap or training environment.
 
 ## Training Parameter Guides
 

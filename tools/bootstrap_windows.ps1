@@ -452,30 +452,6 @@ function Find-GitExecutable {
     return $null
 }
 
-function Ensure-GitShellIntegration {
-    param([string]$GitExecutable)
-    try {
-        $gitRoot = Split-Path -Parent (Split-Path -Parent $GitExecutable)
-        $gitBash = Join-Path $gitRoot "git-bash.exe"
-        if (-not (Test-Path -LiteralPath $gitBash)) { return }
-
-        $entries = @(
-            @{ Key = "HKCU:\Software\Classes\Directory\shell\git_shell"; Target = "%1" },
-            @{ Key = "HKCU:\Software\Classes\Directory\Background\shell\git_shell"; Target = "%v." }
-        )
-        foreach ($entry in $entries) {
-            New-Item -Path $entry.Key -Force | Out-Null
-            Set-Item -Path $entry.Key -Value "Git Bash Here"
-            New-ItemProperty -Path $entry.Key -Name "Icon" -Value $gitBash -PropertyType String -Force | Out-Null
-            $commandKey = Join-Path $entry.Key "command"
-            New-Item -Path $commandKey -Force | Out-Null
-            Set-Item -Path $commandKey -Value ('"{0}" "--cd={1}"' -f $gitBash, $entry.Target)
-        }
-    } catch {
-        Write-Text "git_shell_warning" @($_.Exception.Message) -Color Yellow
-    }
-}
-
 function Install-GitForWindows {
     $git = Find-GitExecutable
     if ($git) { return $git }
@@ -498,7 +474,6 @@ function Install-GitForWindows {
         if ($wingetSucceeded) {
             $git = Find-GitExecutable
             if ($git) {
-                Ensure-GitShellIntegration $git
                 Write-Text "git_installed" -Color Green
                 return $git
             }
@@ -527,7 +502,6 @@ function Install-GitForWindows {
     }
     $git = Find-GitExecutable
     if (-not $git) { throw "git.exe was not found after installation" }
-    Ensure-GitShellIntegration $git
     Write-Text "git_installed" -Color Green
     return $git
 }
@@ -650,7 +624,8 @@ function New-BootstrapBackup {
         [string[]]$ObsoletePaths,
         [string]$RemoteCommit,
         [string]$RemoteUrl,
-        [string]$Branch
+        [string]$Branch,
+        [string]$Prefix = "source-before-git-repair"
     )
     $all = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
     foreach ($path in @($ChangedPaths) + @($ObsoletePaths)) {
@@ -666,10 +641,10 @@ function New-BootstrapBackup {
     }
     New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $zipPath = Join-Path $backupDir ("source-before-git-repair-{0}.zip" -f $stamp)
+    $zipPath = Join-Path $backupDir ("{0}-{1}.zip" -f $Prefix, $stamp)
     $counter = 1
     while (Test-Path -LiteralPath $zipPath) {
-        $zipPath = Join-Path $backupDir ("source-before-git-repair-{0}-{1}.zip" -f $stamp, $counter)
+        $zipPath = Join-Path $backupDir ("{0}-{1}-{2}.zip" -f $Prefix, $stamp, $counter)
         $counter++
     }
 
@@ -723,16 +698,20 @@ function Repair-GitRepository {
 
     $rootFull = [IO.Path]::GetFullPath($Root)
     $gitMarker = Join-Path $rootFull ".git"
+    $incompleteMarker = Join-Path $rootFull ".anima_tmp\git-repair-incomplete.json"
     if (Test-Path -LiteralPath $gitMarker) {
+        if (Test-Path -LiteralPath $incompleteMarker) {
+            throw (Get-Text "git_repair_incomplete" @($incompleteMarker))
+        }
         if (Test-RepositoryValid $rootFull $GitExecutable) {
             Write-Text "git_existing" -Color Green
             if (-not (Test-RepositoryOriginMatches $rootFull $GitExecutable $RemoteUrl)) {
                 Write-Text "git_origin_unknown" -Color Yellow
             }
-            return [pscustomobject]@{ Success = $true; Repaired = $false; Backup = $null }
+            return [pscustomobject]@{ Success = $true; Repaired = $false; Backup = $null; StartBlocked = $false }
         }
         Write-Text "git_corrupt" -Color Yellow
-        return [pscustomobject]@{ Success = $false; Repaired = $false; Backup = $null }
+        return [pscustomobject]@{ Success = $false; Repaired = $false; Backup = $null; StartBlocked = $false }
     }
     foreach ($sentinel in @("start.bat", "backend\gui.py")) {
         if (-not (Test-Path -LiteralPath (Join-Path $rootFull $sentinel))) {
@@ -754,6 +733,7 @@ function Repair-GitRepository {
     }
     $common = @("--git-dir=$tempGit", "--work-tree=$rootFull")
     $backup = $null
+    $sourceSyncStarted = $false
     try {
         try {
             Invoke-NativeLive $GitExecutable ($common + @("init", "-b", $Branch)) $rootFull "git init"
@@ -764,8 +744,10 @@ function Repair-GitRepository {
         Invoke-NativeLive $GitExecutable ($common + @("config", "core.autocrlf", "false")) $rootFull "git config"
         Invoke-NativeLive $GitExecutable ($common + @("config", "core.quotepath", "false")) $rootFull "git config"
         Invoke-NativeLive $GitExecutable ($common + @("remote", "add", "origin", $RemoteUrl)) $rootFull "git remote add"
-        Write-Text "git_fetch" -Color Cyan
-        Invoke-NativeLive $GitExecutable ($common + @("fetch", "--progress", "--tags", "origin", "+refs/heads/${Branch}:refs/remotes/origin/${Branch}")) $rootFull "git fetch"
+        Invoke-NativeLive $GitExecutable ($common + @("config", "remote.origin.fetch", "+refs/heads/${Branch}:refs/remotes/origin/${Branch}")) $rootFull "git config"
+        Invoke-NativeLive $GitExecutable ($common + @("config", "remote.origin.tagOpt", "--no-tags")) $rootFull "git config"
+        Write-Text "git_fetch" @($Branch) -Color Cyan
+        Invoke-NativeLive $GitExecutable ($common + @("fetch", "--progress", "--no-tags", "origin")) $rootFull "git fetch"
 
         $remoteRef = "refs/remotes/origin/$Branch"
         $remoteCommit = (@(Invoke-NativeCapture $GitExecutable ($common + @("rev-parse", $remoteRef)) $rootFull))[0]
@@ -802,6 +784,12 @@ function Repair-GitRepository {
 
         Write-Text "git_align" @($Branch) -Color Cyan
         $alignmentPathspec = @(Get-SourceAlignmentPathspec)
+        # Persist before touching source files, so a later launch cannot use
+        # a partially synchronized ZIP even when Git setup is skipped.
+        $repairState = [ordered]@{ backup = $backup; remote_commit = $remoteCommit; branch = $Branch } | ConvertTo-Json
+        Assert-NoReparseTraversal $rootFull $incompleteMarker
+        [IO.File]::WriteAllText($incompleteMarker, $repairState, $script:Utf8NoBom)
+        $sourceSyncStarted = $true
         Invoke-NativeLive $GitExecutable ($common + @("checkout", "--force", $remoteRef, "--") + $alignmentPathspec) $rootFull "git checkout source files"
         foreach ($relative in $obsolete) {
             $full = Get-SafeWorkspacePath $rootFull $relative
@@ -814,18 +802,19 @@ function Repair-GitRepository {
         Invoke-NativeLive $GitExecutable ($common + @("config", "pull.ff", "only")) $rootFull "git config pull.ff"
         Invoke-NativeLive $GitExecutable ($common + @("config", "fetch.prune", "true")) $rootFull "git config fetch.prune"
 
-        if (Test-Path -LiteralPath $gitMarker) { throw ".git appeared while repository repair was running" }
-        Move-Item -LiteralPath $tempGit -Destination $gitMarker
-        $tempGit = $null
-        $verify = @(Invoke-NativeCapture $GitExecutable @("-C", $rootFull, "rev-parse", "--abbrev-ref", "@{upstream}") $rootFull)
+        $verify = @(Invoke-NativeCapture $GitExecutable ($common + @("rev-parse", "--abbrev-ref", "@{upstream}")) $rootFull)
         if ($verify.Count -eq 0 -or $verify[0] -ne "origin/$Branch") {
             throw "Repository upstream verification failed"
         }
+        if (Test-Path -LiteralPath $gitMarker) { throw ".git appeared while repository repair was running" }
+        Move-Item -LiteralPath $tempGit -Destination $gitMarker
+        $tempGit = $null
+        Remove-Item -LiteralPath $incompleteMarker -Force
         Write-Text "git_repair_done" -Color Green
-        return [pscustomobject]@{ Success = $true; Repaired = $true; Backup = $backup }
+        return [pscustomobject]@{ Success = $true; Repaired = $true; Backup = $backup; StartBlocked = $false }
     } catch {
         Write-Text "git_repair_failed" @($_.Exception.Message) -Color Yellow
-        return [pscustomobject]@{ Success = $false; Repaired = $false; Backup = $backup }
+        return [pscustomobject]@{ Success = $false; Repaired = $false; Backup = $backup; StartBlocked = ($sourceSyncStarted -or (Test-Path -LiteralPath $incompleteMarker)) }
     } finally {
         if ($tempGit -and (Test-Path -LiteralPath $tempGit)) {
             $cleanup = [IO.Path]::GetFullPath($tempGit)
@@ -839,6 +828,11 @@ function Repair-GitRepository {
 function Invoke-OptionalGitBootstrap {
     $root = $script:RepositoryRoot
     $marker = Join-Path $root ".git"
+    $incompleteMarker = Join-Path $root ".anima_tmp\git-repair-incomplete.json"
+    $incomplete = Test-Path -LiteralPath $incompleteMarker
+    if ($incomplete -and (Test-Path -LiteralPath $marker)) {
+        throw (Get-Text "git_repair_incomplete" @($incompleteMarker))
+    }
     $git = Find-GitExecutable
     if (Test-Path -LiteralPath $marker) {
         if ($git) {
@@ -867,19 +861,101 @@ function Invoke-OptionalGitBootstrap {
 
     Write-Text "git_zip_detected" -Color Yellow
     if (-not (Confirm-RecommendedAction "git_setup_prompt")) {
+        if ($incomplete) { throw (Get-Text "git_repair_incomplete" @($incompleteMarker)) }
         Write-Text "git_skipped" -Color Yellow
         return $false
     }
     try {
         if (-not $git) { $git = Install-GitForWindows }
-        Ensure-GitShellIntegration $git
-        Write-Text "git_found" @($git) -Color Green
-        $result = Repair-GitRepository $root $git $script:RepositoryUrl $script:RepositoryBranch
-        return [bool]$result.Repaired
     } catch {
+        if ($incomplete) { throw (Get-Text "git_repair_incomplete" @($incompleteMarker)) }
         Write-Text "git_install_failed" @($_.Exception.Message) -Color Yellow
         return $false
     }
+    Write-Text "git_found" @($git) -Color Green
+    $result = Repair-GitRepository $root $git $script:RepositoryUrl $script:RepositoryBranch
+    if ($result.StartBlocked) { throw (Get-Text "git_repair_incomplete" @($incompleteMarker)) }
+    return [bool]$result.Repaired
+}
+
+function Merge-GitUpdate {
+    param([string]$Root, [string]$GitExecutable, [string]$RemoteRef, [string[]]$LegacyPaths)
+    $common = @("-C", $Root)
+    $merge = $common + @("merge", "--ff-only", "--no-edit", $RemoteRef)
+    if ($LegacyPaths.Count -eq 0) {
+        Invoke-NativeLive $GitExecutable $merge $Root "git fast-forward update"
+        return
+    }
+
+    # Only migrate the three former tracked settings when the target removes
+    # them. Reuse the ZIP backup; normal updates never copy user directories.
+    foreach ($relative in $LegacyPaths) {
+        $full = Get-SafeWorkspacePath $Root $relative
+        if ((Test-Path -LiteralPath $full) -and -not (Test-Path -LiteralPath $full -PathType Leaf)) { throw "User setting is a directory: $relative" }
+    }
+    $existing = @($LegacyPaths | Where-Object { Test-Path -LiteralPath (Get-SafeWorkspacePath $Root $_) -PathType Leaf })
+    $branch = $RemoteRef.Substring("refs/remotes/origin/".Length)
+    $backup = New-BootstrapBackup $Root $LegacyPaths @() $RemoteRef $script:RepositoryUrl $branch "user-settings-before-update"
+    Write-Text "git_backup" @($backup) -Color Green
+    $marker = Join-Path $Root ".anima_tmp\git-update-incomplete.json"
+    Assert-NoReparseTraversal $Root $marker
+    New-Item -ItemType Directory -Path (Split-Path -Parent $marker) -Force | Out-Null
+    [IO.File]::WriteAllText($marker, (@{ backup = $backup; files = $existing } | ConvertTo-Json), $script:Utf8NoBom)
+    try {
+        Invoke-NativeLive $GitExecutable ($common + @("checkout", "--force", "HEAD", "--") + $LegacyPaths) $Root "git checkout legacy settings"
+        Invoke-NativeLive $GitExecutable $merge $Root "git fast-forward update"
+    } finally {
+        $archive = $null
+        $restoreFailed = $false
+        try {
+            $archive = [IO.Compression.ZipFile]::OpenRead($backup)
+            foreach ($relative in $LegacyPaths) {
+                try {
+                    $full = Get-SafeWorkspacePath $Root $relative
+                    Assert-NoReparseTraversal $Root $full
+                    if ($existing -contains $relative) {
+                        New-Item -ItemType Directory -Path (Split-Path -Parent $full) -Force | Out-Null
+                        [IO.Compression.ZipFileExtensions]::ExtractToFile($archive.GetEntry($relative), $full, $true)
+                    } elseif (Test-Path -LiteralPath $full -PathType Leaf) {
+                        Remove-Item -LiteralPath $full -Force
+                    }
+                } catch { $restoreFailed = $true }
+            }
+        } catch { $restoreFailed = $true } finally { if ($archive) { $archive.Dispose() } }
+        if ($restoreFailed) { throw (Get-Text "git_update_restore_failed" @($marker)) }
+        Remove-Item -LiteralPath $marker -Force
+    }
+}
+
+function Update-GitRepository {
+    param([string]$Root, [string]$GitExecutable, [string]$RemoteUrl)
+    $repairMarker = Join-Path $Root ".anima_tmp\git-repair-incomplete.json"
+    $updateMarker = Join-Path $Root ".anima_tmp\git-update-incomplete.json"
+    if (Test-Path -LiteralPath $repairMarker) { throw (Get-Text "git_repair_incomplete" @($repairMarker)) }
+    if (Test-Path -LiteralPath $updateMarker) { throw (Get-Text "git_update_restore_failed" @($updateMarker)) }
+    if (-not (Test-RepositoryValid $Root $GitExecutable)) { throw (Get-Text "git_update_not_repo") }
+    if (-not (Test-RepositoryOriginMatches $Root $GitExecutable $RemoteUrl)) { throw (Get-Text "git_origin_unknown") }
+    $common = @("-c", "core.quotepath=false", "-C", $Root)
+    $branch = (@(Invoke-NativeCapture $GitExecutable ($common + @("symbolic-ref", "--quiet", "--short", "HEAD")) $Root))[0]
+    $upstream = (@(Invoke-NativeCapture $GitExecutable ($common + @("rev-parse", "--abbrev-ref", "@{upstream}")) $Root))[0]
+    if ($upstream -ne "origin/$branch") { throw (Get-Text "git_update_branch") }
+    $staged = @(Invoke-NativeCapture $GitExecutable ($common + @("diff", "--cached", "--name-only")) $Root)
+    $changed = @(Invoke-NativeCapture $GitExecutable ($common + @("diff", "--name-only", "HEAD", "--")) $Root | Where-Object { -not (Test-ProtectedUserPath $_) })
+    if ($staged.Count -gt 0 -or $changed.Count -gt 0) {
+        Write-Host ((@($staged) + @($changed) | Select-Object -Unique) -join "`n")
+        throw (Get-Text "git_update_local_changes")
+    }
+
+    Write-Text "git_update_start" @($branch) -Color Cyan
+    $remoteRef = "refs/remotes/origin/$branch"
+    Invoke-NativeLive $GitExecutable ($common + @("fetch", "--progress", "--no-tags", "origin", "+refs/heads/${branch}:$remoteRef")) $Root "git fetch"
+    $legacy = @(Invoke-NativeCapture $GitExecutable ($common + @("ls-files", "--", "config/sample_prompts.txt", "huggingface/accelerate/default_config.yaml", "huggingface/hub/version.txt")) $Root)
+    if ($legacy.Count -gt 0) {
+        $remaining = @(Invoke-NativeCapture $GitExecutable ($common + @("ls-tree", "--name-only", $remoteRef, "--") + $legacy) $Root)
+        $legacy = @($legacy | Where-Object { $remaining -notcontains $_ })
+    }
+    Merge-GitUpdate $Root $GitExecutable $remoteRef $legacy
+    Write-Text "git_update_done" -Color Green
 }
 
 function Test-CompatiblePython {
@@ -1042,6 +1118,8 @@ function Ensure-MusubiSharedRuntime {
 
 function Invoke-MainBootstrap {
     Set-Location $script:RepositoryRoot
+    $updateMarker = Join-Path $script:RepositoryRoot ".anima_tmp\git-update-incomplete.json"
+    if (Test-Path -LiteralPath $updateMarker) { throw (Get-Text "git_update_restore_failed" @($updateMarker)) }
     Start-StartupProgress
 
     $repaired = Invoke-OptionalGitBootstrap
@@ -1107,6 +1185,19 @@ try {
         if (-not $git) { throw "git.exe is required for the repair-git action" }
         $result = Repair-GitRepository $script:RepositoryRoot $git $script:RepositoryUrl $script:RepositoryBranch
         Write-Text "internal_action_done" -Color DarkGray
+        if ($result.Success) { exit 0 } else { exit 1 }
+    }
+    if ($script:Action -eq "update") {
+        Set-Location $script:RepositoryRoot
+        $git = Find-GitExecutable
+        if (-not $git) { $git = Install-GitForWindows }
+        if (-not (Test-Path -LiteralPath (Join-Path $script:RepositoryRoot ".git"))) {
+            $result = Repair-GitRepository $script:RepositoryRoot $git $script:RepositoryUrl $script:RepositoryBranch
+            if (-not $result.Success) { exit 1 }
+            Write-Text "git_update_done" -Color Green
+        } else {
+            Update-GitRepository $script:RepositoryRoot $git $script:RepositoryUrl
+        }
         exit 0
     }
     if ($script:Action -ne "run") { throw "Unknown bootstrap action: $($script:Action)" }
@@ -1115,6 +1206,10 @@ try {
     exit $script:BootstrapExitCode
 } catch {
     Stop-StartupProgress
-    Write-Text "fatal_error" @($_.Exception.Message) -Color Red
+    if ($script:Action -eq "update") {
+        Write-Text "git_update_failed" @($_.Exception.Message) -Color Red
+    } else {
+        Write-Text "fatal_error" @($_.Exception.Message) -Color Red
+    }
     exit 1
 }

@@ -136,16 +136,27 @@ NVIDIA GPU がない PC にも GPU 用の依存環境を一式インストール
 
 1. GitHub で **Code → Download ZIP** を選び、すべて展開してから `start.bat` をダブルクリックします。
 2. `.git` がない場合は、Git for Windows のインストールと、更新可能なリポジトリへの修復を確認する画面が出ます。推奨の選択肢を選んでください。
-3. 修復時には最新の `main` を取得します。置き換え対象のソースファイルは、先に `bootstrap-backups/<日時>.zip` に保存します。`venv`、モデル、出力、キャッシュ、ログ、ユーザー設定を含む `config` ディレクトリ全体は同期対象から除外し、上書きや削除は行いません。
+3. 修復時には `main` のみ取得し、他のブランチやタグは取得しません。置き換え対象のソースファイルは、先に `bootstrap-backups/<日時>.zip` に保存します。`venv`、モデル、出力、キャッシュ、ログ、ユーザー設定を含む `config` ディレクトリ全体は同期対象から除外し、上書きや削除は行いません。
 4. ソースの同期後、起動処理を一度再実行してから `venv` を作成し、学習用の依存パッケージをインストールします。
 
-Git のインストールやリポジトリの修復に失敗しても学習ツールの起動は続行し、次回起動時に再試行できます。Python または必須の依存パッケージのインストールに失敗した場合は停止し、二言語のエラーを表示します。
+Git のインストール、またはソース同期開始前の修復に失敗しても元の ZIP で起動を続行し、次回再試行できます。同期開始後に失敗した場合は起動を停止し、バックアップ情報を残します。エラーを解決してから `start.bat` を再実行してください。Python または必須の依存パッケージのインストール失敗時も停止し、二言語のエラーを表示します。
 
 ### Git でクローン
 
 ```sh
-git clone https://github.com/amenorira/lora-scripts-anima.git
+git clone --depth 1 --single-branch --branch main --no-tags https://github.com/amenorira/lora-scripts-anima.git
 cd lora-scripts-anima
+git config pull.ff only
+```
+
+最新の main のみ取得し、その後も通常の `git pull` で更新できます。完全な履歴は `git fetch --unshallow`、タグは `git fetch --tags` で取得できます。開発者はクローンのオプションを省略できます。
+
+dev を使う場合は次のコマンドを一度実行し、その後は `git switch main` / `git switch dev` で切り替えます。
+
+```sh
+git config --add remote.origin.fetch "+refs/heads/dev:refs/remotes/origin/dev"
+git fetch --no-tags origin
+git switch --track origin/dev
 ```
 
 ### クイックスタート
@@ -172,12 +183,9 @@ HTTP リクエストとリアルタイム接続は、常に現在のページと
 
 ### 更新方法
 
-ZIP 版のリポジトリ修復または `git clone` の完了後、プロジェクトフォルダーの何もない場所を右クリックし、次のいずれかを実行します。
+Windows では学習ツールを閉じて **`update.bat`** をダブルクリックし、成功後に `start.bat` を実行します。プロジェクト内で `git pull` も利用できます。現在のブランチ（main または dev）を快進更新し、ソースの変更、ステージ済みの変更、分岐がある場合は停止します。起動時にソースの自動更新は行いません。
 
-- Windows の **「ターミナルで開く」** を選び、`git pull` を実行する。
-- **Git Bash Here** を選び、`git pull` を実行する。Windows 11 では **「その他のオプションを確認」** 内にある場合があります。
-
-更新は fast-forward のみ許可します。ソースを手動で変更した場合は `git pull` が停止し、ローカルの変更への対応を求めます。自動で上書きはしません。
+旧版のサンプルプロンプト、Accelerate 設定、キャッシュのバージョンファイルが Git の追跡対象から外れる際は、先にバックアップし元の内容を保持します。既定のサンプルは `tools/defaults/` に置き、起動時には不足する設定だけを作成します。旧版に更新スクリプトがない場合は、PowerShell から `& "新ZIPフォルダー\update.bat" "--bootstrap-root=旧プロジェクトの絶対パス"` を実行すれば、旧起動スクリプトや学習環境を入れ替えずに移行できます。
 
 ## 学習パラメータガイド
 
