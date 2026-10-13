@@ -1,13 +1,13 @@
 # LoRA+
 
-> LoRA+ raises the learning rate of a selected parameter group to speed up learning without adding parameters. It is off by default. Start comparisons at the default ratio of `2.0`, and check whether the best checkpoint occurs earlier.
+> LoRA+ sets different learning rates for the adapter's two parameter groups without adding parameters. It is off by default; when enabled, the default ratio is `2.0`. The sections below explain the groups and their learning rates.
 
 <!-- doc-anchor: overview -->
 ## Quick overview
 
-LoRA+ gives the two parameter groups in a LoRA different learning rates to adjust how quickly they learn relative to each other. In standard LoRA, `lora_down` keeps the base learning rate, while `lora_up` uses that rate multiplied by the ratio.
+In standard LoRA, `lora_down` keeps the base learning rate, while `lora_up` uses that rate multiplied by the ratio.
 
-Higher ratios widen the gap between the two learning rates; `1.0` gives both groups the same rate. Excessive ratios can bring forward memorization of repeated backgrounds, clothing, or poses.
+Higher ratios widen the gap between the two learning rates; `1.0` gives both groups the same rate. The base rate and ratio together determine the resulting rate.
 
 For a base learning rate of `2e-5`:
 
@@ -22,26 +22,21 @@ Raising the base learning rate affects both groups. Raising the LoRA+ ratio affe
 <!-- doc-anchor: good-cases -->
 ## When LoRA+ is worth trying
 
-Test LoRA+ when a baseline run is stable but learns target features slowly. If loss already spikes, lower the base learning rate before comparing ratios.
-
-<!-- doc-anchor: effects -->
-## How LoRA+ affects different training targets
-
-Characters, styles, clothing, and concepts use the same grouping. Check how soon target features appear and how well they work in new poses and backgrounds. If fixed compositions appear earlier too, lower the ratio or stop sooner.
+After establishing a baseline without LoRA+, keep the base learning rate and other settings fixed and compare ratios `1` and `2`. Record results at matching steps and the step of each run's best result.
 
 <!-- doc-anchor: ratio-guidance -->
 ## Choosing a ratio
 
-Start at `2.0`. Compare `4.0` if learning remains slow; lower the ratio if overfitting appears earlier.
+The default ratio when enabled is `2.0`. Keep the base learning rate fixed when comparing ratios, and calculate the higher-rate group's learning rate using the table below.
 
 | Ratio | What it means | Notes |
 | --- | --- | --- |
 | `1.0` | Both groups use the same rate | No LoRA+ effect |
-| `2.0` | Higher-rate group gets 2× | The trainer default; a mild difference |
+| `2.0` | Higher-rate group gets 2× | The trainer default |
 | `4.0` | Higher-rate group gets 4× | Check the resulting effective rate against the base |
-| `8.0`–`16.0` | A much higher rate for the higher-rate group | More sensitive to base rate, stopping point, and repeated data |
+| `8.0`–`16.0` | Higher-rate group gets 8–16× | Calculate its actual learning rate before entering the ratio |
 
-The ratio of `16` in the paper and sd-scripts documentation comes from specific experiments. This trainer uses `2.0` as a milder starting point.
+The paper and sd-scripts documentation use `16` in their experiments; this trainer defaults to `2.0`. Compare those ratios together with their respective base learning rates.
 
 <!-- doc-anchor: parameters -->
 ## Trainer parameters
@@ -110,7 +105,9 @@ When `unet_lr` or `text_encoder_lr` is set, the calculation uses that component'
 <!-- doc-anchor: cautions -->
 ## Risks and limitations
 
-Combining a high base rate with a high ratio amplifies updates and increases the risk of early memorization. Save more frequently when testing higher ratios so earlier checkpoints remain available for comparison.
+The higher-rate group's learning rate is the base rate multiplied by the ratio. Save more frequently when comparing higher ratios. Check whether the best result occurs earlier and whether later checkpoints show fixed poses, backgrounds, or weaker prompt control.
+
+<span id="effects"></span>
 
 <!-- doc-anchor: testing -->
 ## Evaluating the result
@@ -135,7 +132,7 @@ When LoRA+ only brings the best result forward, its main benefit is fewer traini
 | CAME | Supported | Preserves separate per-group learning rates |
 | StableAdamW, Muon, Adan, AdEMAMix, AdEMAMix8bit, SOAP | Supported | Preserve separate per-group learning rates |
 | AdamWScheduleFree | Supported | Keeps the groups, but internal adjustments change the effective rates during training |
-| Automagic3 | Conditional | "Base LR × ratio" must stay within `min_lr` and `max_lr`; adaptive behavior can change the effective ratio |
+| Automagic3 | Conditional | Both initial group rates must lie within `min_lr` and `max_lr`. Each group adapts independently, so the initial ratio is not fixed during training |
 | AdaFactor | Manual-LR mode only | Both `relative_step` and `warmup_init` must be off. The default relative-step mode ignores per-group rates, so the UI disables and locks LoRA+ |
 | Prodigy, ProdigyPlus | Unsupported | The current sd-scripts path cannot reliably preserve separate per-group rates; both UI and backend reject the combination |
 | EmoSens | Unsupported | Updates every parameter with one global `emoPulse` and resets all groups to that rate each step, which removes the ratio |
@@ -144,7 +141,7 @@ When LoRA+ only brings the best result forward, its main benefit is fewer traini
 
 Switching to an incompatible mode turns LoRA+ off and shows the reason. Backend validation also rejects incompatible combinations from older presets or direct API calls.
 
-With a conventional scheduler, groups normally change by the same proportion and the initial ratio survives. Warmup shapes the overall rate at the start of training; it is not a ratio. For internally adaptive optimizers such as Schedule-Free and Automagic3, rely on the curves recorded during training.
+This trainer's conventional external schedulers apply the same multiplier to each group, preserving the initial ratio. Warmup changes the early learning rate without changing grouping. Internally adaptive optimizers also change step size; distinguish logged group rates from actual update scales.
 
 <!-- doc-anchor: support -->
 ## Supported network modules
@@ -164,7 +161,7 @@ Native LoHa and LoKr use their own group mappings. LyCORIS supports LoCon (`lora
 <!-- doc-anchor: tensorboard -->
 ## TensorBoard
 
-With LoRA+ enabled, sd-scripts records the base and higher-rate groups separately. A standard SDXL LoRA commonly produces:
+With LoRA+ enabled and both backbone and text encoder trained, standard SDXL LoRA records these group names:
 
 ```text
 lr/unet
@@ -173,7 +170,7 @@ lr/textencoder
 lr/textencoder plus
 ```
 
-The Anima text encoder is numbered and commonly produces:
+Anima numbers its text-encoder groups. Training that component records:
 
 ```text
 lr/textencoder 1
@@ -199,7 +196,7 @@ The weight change is `ΔW = (Alpha / rank) × B × A`, where A is `lora_down` an
 
 In the current sd-scripts implementation, `lora_down` is initialized with random values and `lora_up` starts at zero. On the first backward pass, `lora_down` receives a zero gradient because `lora_up` is still zero; once `lora_up` is updated, `lora_down` begins receiving a nonzero gradient. The two matrices therefore have different update dynamics early in training.
 
-Standard LoRA training usually gives both parameter groups the same learning rate. LoRA+ keeps the base rate for `lora_down` and raises the rate for `lora_up`:
+Without LoRA+, both groups use the same learning rate. With it enabled, `lora_down` keeps the base rate and `lora_up` multiplies it by the chosen ratio:
 
 <div class="doc-equation doc-equation-compact" role="group" aria-label="LoRA+ learning-rate equations">
   <div class="doc-equation-expression"><span class="doc-math-var">LR</span><sub>down</sub> = <span class="doc-math-var">LR</span><sub>base</sub></div>
@@ -217,7 +214,7 @@ Disable LoRA+ or lower the ratio to `1.0`, then check the base learning rate, re
 
 **How do I confirm that LoRA+ is actually active?**
 
-With LoRA+ enabled, TensorBoard shows two curves per component, such as `lr/unet` and `lr/unet plus`. With a conventional optimizer, the ratio between the two curves should be close to the configured ratio.
+When TensorBoard logging is enabled, inspect the base and plus curves for components being trained, such as `lr/unet` and `lr/unet plus`. With a conventional optimizer and both groups active, their ratio should match the configured ratio wherever the learning rate is nonzero. Independently adaptive group rates change with each group's state, so a fixed ratio is not a valid check.
 
 **Why did the trainer disable LoRA+ automatically?**
 

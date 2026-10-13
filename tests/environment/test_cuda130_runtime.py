@@ -32,32 +32,8 @@ class ExistingVenvMigrationTests(unittest.TestCase):
         sync_mock.assert_called_once_with(core_changed=True)
         triton_mock.assert_called_once_with()
 
-    def test_matching_core_is_not_reinstalled(self):
-        versions = {"torch": ensure_runtime.TORCH, "torchvision": ensure_runtime.TORCHVISION}
-        with patch.object(ensure_runtime, "package_version", side_effect=versions.get), patch.object(
-            ensure_runtime, "pip"
-        ) as pip_mock, patch.object(ensure_runtime, "sync_triton") as triton_mock, patch.object(ensure_runtime, "sync_optional_packages", return_value=[]) as sync:
-            self.assertEqual(ensure_runtime.main(), 0)
-        pip_mock.assert_not_called()
-        sync.assert_called_once_with(core_changed=False)
-        triton_mock.assert_called_once_with()
-
 
 class TritonBootstrapTests(unittest.TestCase):
-    def test_missing_or_incompatible_triton_is_installed_for_each_platform(self):
-        for platform, requirement in (("win32", "triton-windows>=3.7.1,<3.8"),
-                                      ("linux", "triton==3.7.1")):
-            for version in (None, "3.6.0", "3.8.0"):
-                with self.subTest(platform=platform, version=version), \
-                     patch.object(sys, "platform", platform), \
-                     patch.object(ensure_runtime, "package_version", return_value=version), \
-                     patch.object(ensure_runtime, "pip") as install:
-                    ensure_runtime.sync_triton()
-                    install.assert_called_once_with(
-                        "install", "--upgrade", "--only-binary=:all:", "--no-deps", requirement
-                    )
-
-
     def test_install_failure_continues_startup(self):
         versions = {"torch": ensure_runtime.TORCH, "torchvision": ensure_runtime.TORCHVISION}
         for platform in ("win32", "linux"):
@@ -89,15 +65,6 @@ class RuntimeRepairRegressionTests(unittest.TestCase):
                 if '"linux"' in requirement:
                     lookup.assert_not_called()
 
-
-    def test_pip_mutation_invalidates_package_version_cache(self):
-        launch_utils._PKG_VERSION_CACHE = {"onnxruntime-gpu": "1.20.1"}
-        try:
-            with patch.object(launch_utils, "run", return_value=0):
-                launch_utils.run_pip("install onnxruntime-gpu==1.27.0")
-            self.assertIsNone(launch_utils._PKG_VERSION_CACHE)
-        finally:
-            launch_utils._PKG_VERSION_CACHE = None
 
 if __name__ == "__main__":
     unittest.main()

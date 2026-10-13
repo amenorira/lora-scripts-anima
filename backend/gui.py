@@ -87,6 +87,9 @@ def _report_optional_accelerators() -> None:
 
 
 def launch(args: argparse.Namespace) -> None:
+    from backend.user_defaults import ensure_user_defaults
+
+    ensure_user_defaults()
     log.info(
         "Launch context: base=%s cwd=%s platform=%s python=%s executable=%s",
         base_dir_path(), os.getcwd(), platform.system(), platform.python_version(), sys.executable,

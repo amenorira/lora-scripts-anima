@@ -23,7 +23,6 @@ runtime/
 bootstrap-backups/
 
 config/*
-!config/sample_prompts.txt
 config/state.json
 config/autosave/
 config/presets/

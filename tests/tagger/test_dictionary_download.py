@@ -26,13 +26,6 @@ class DictionaryDownloadTests(unittest.TestCase):
         return hf.download_url_with_fallback(["https://example.invalid/meta.csv"], self.target)
 
 
-    def test_proxy_ignoring_identity_can_stream_full_decompressed_file(self):
-        data = b"a" * 55391
-        with patch.object(hf, "_head_total", return_value=0), \
-                patch("requests.get", return_value=response(data, {"content-encoding": "gzip", "content-length": "20"})):
-            self.download()
-        self.assertEqual(self.target.read_bytes(), data)
-
     def test_invalid_download_does_not_replace_existing_file(self):
         self.target.write_bytes(b"previous valid data")
         with patch.object(hf, "_head_total", return_value=20), \

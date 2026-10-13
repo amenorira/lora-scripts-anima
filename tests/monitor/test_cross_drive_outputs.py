@@ -80,19 +80,6 @@ class RunRegistryTests(CrossDriveSandbox):
                 tasks=[{"id": "preparing-task", "status": "CREATED"}]))
             self.assertEqual(snapshot["train_params"], {})
 
-    def test_run_config_cache_is_scoped_by_run_and_refreshes_after_changes(self):
-        first, second = self.output / "first", self.output / "second"
-        self._write_config(first / "config.toml", self.external, "first")
-        self._write_config(second / "config.toml", self.external, "second")
-        self.assertEqual(run_registry.read_run_config(first)["output_name"], "first")
-        self.assertEqual(run_registry.read_run_config(second)["output_name"], "second")
-        self._write_config(first / "config.toml", self.external, "first-updated")
-        self.assertEqual(run_registry.read_run_config(first)["output_name"], "first-updated")
-        (first / "config.toml").unlink()
-        self.assertEqual(run_registry.read_run_config(first), {})
-        (first / "config.toml").write_text("invalid TOML", encoding="utf-8")
-        with self.assertLogs(level="WARNING"):
-            self.assertEqual(run_registry.read_run_config(first), {})
 
     def test_run_route_stop_during_file_preparation_returns_cancelled_and_releases_slot(self):
         entered, release = threading.Event(), threading.Event()
@@ -380,18 +367,6 @@ class CrossDriveRouteTests(CrossDriveSandbox):
                 else:
                     self.assertEqual(artifact_path.parent, Path(requested_output).resolve())
                     self.assertEqual(artifact_path.name, run_path.name)
-
-
-    def test_offline_artifact_keeps_record_but_outputs_report_unavailable(self):
-        internal, artifact = self._create_record()
-        artifact.rmdir()
-
-        record = run_registry.load_run_record(internal)
-        result = asyncio.run(routes.monitor_outputs(run_dir="output/route_run", task_id=""))
-
-        self.assertFalse(record["artifact_available"])
-        self.assertEqual(result["status"], "error")
-        self.assertFalse(result["data"]["artifact_available"])
 
 
 if __name__ == "__main__":

@@ -7,27 +7,11 @@ from backend.training.field_registry import AUTOMAGIC_OPTIMIZER_TYPE
 from backend.training.validation import validate_training_config
 from tools.python_startup.lr_logging import read_learning_rates
 from vendor.automagic_optimizer.integration import Automagic3
-from tests.helpers import config_from_field_defaults
+from tests.helpers import valid_training_config
 
 
 def valid_automagic_config() -> dict:
-    config = config_from_field_defaults()
-    config.update(
-        {
-            "model_train_type": "anima-lora",
-            "network_module": "networks.lora_anima",
-            "pretrained_model_name_or_path": "model.safetensors",
-            "vae": "vae.safetensors",
-            "qwen3": "qwen3.safetensors",
-            "train_data_dir": "train",
-            "resolution": "1024,768",
-            "output_name": "test",
-            "output_dir": "output",
-            "optimizer_type": AUTOMAGIC_OPTIMIZER_TYPE,
-            "learning_rate": "1e-4",
-        }
-    )
-    return config
+    return valid_training_config(optimizer_type=AUTOMAGIC_OPTIMIZER_TYPE, learning_rate="1e-4")
 
 
 class AutomagicValidationTests(unittest.TestCase):

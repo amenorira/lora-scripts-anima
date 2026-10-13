@@ -30,6 +30,9 @@ _SCHEDULER_PARAMETER_MODES = {
     "lr_scheduler_timescale": {"inverse_sqrt"},
     "lr_scheduler_min_lr_ratio": {"cosine_with_min_lr", "warmup_stable_decay"},
     "lr_decay_steps": {"warmup_stable_decay"},
+    "warmup_type": {"warmup_stable_decay"},
+    "decay_type": {"warmup_stable_decay"},
+    "step_rules": {"piecewise_constant"},
 }
 
 
@@ -394,6 +397,9 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
             if allowed and value not in allowed:
                 errors.append(f"{key}: unsupported value {value!r} / 不支持的选项")
 
+    from backend.training.scheduler_config import validate_scheduler_config
+
+    errors.extend(validate_scheduler_config(config))
     parsed_optimizer_args, optimizer_arg_errors = parse_optimizer_args(config)
     errors.extend(optimizer_arg_errors)
     parsed_optimizer_args = collect_optimizer_args(config, parsed_optimizer_args)

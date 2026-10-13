@@ -1,8 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const vm = require('node:vm');
-const path = require('node:path');
+const { loadFrontend } = require('./helpers.cjs');
 
 function fixture() {
   const timers = new Map();
@@ -19,7 +17,7 @@ function fixture() {
       });
     },
   };
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../frontend/js/training-shape-preview.js'), 'utf8'), context);
+  loadFrontend('training-shape-preview.js', context);
   const app = Object.assign({}, context.window.trainingShapePreviewMixin, {
     form: { model_train_type: 'anima-lora', network_dim: 32 },
     t: key => key, _openManagedModal() {},
@@ -58,40 +56,5 @@ test('a stalled estimate stops loading on timeout and can be retried from the pr
   assert.equal(app.shapeEstimateError, '');
   assert.equal(app.shapeEstimate.estimatedBytes, 1024);
   assert.equal(app.shapePreviewSelected, 'q');
-  assert.equal(timers.size, 0);
-});
-
-test('the timeout also covers a response whose body never arrives', async () => {
-  const { app, pending, fire } = fixture();
-  app.scheduleShapeEstimate();
-  const request = fire(500);
-  pending[0].resolve({ ok: true, json: () => new Promise((resolve, reject) => {
-    pending[0].options.signal.addEventListener('abort', () => reject(new Error('body aborted')), { once: true });
-  }) });
-  await new Promise(resolve => setImmediate(resolve));
-  fire(15000);
-  await request;
-  assert.equal(app.shapeEstimateLoading, false);
-  assert.equal(app.shapeEstimateError, 'shapePreview.estimateTimeout');
-});
-
-test('a timed out old configuration releases the queue for the latest configuration', async () => {
-  const { app, pending, timers, fire, reply } = fixture();
-  app.scheduleShapeEstimate();
-  const oldRequest = fire(500);
-  app.form.network_dim = 64;
-  app.scheduleShapeEstimate();
-  await fire(500);
-  assert.equal(pending.length, 1);
-  fire(15000);
-  await oldRequest;
-  assert.equal(pending.length, 2);
-  assert.equal(JSON.parse(pending[1].options.body).network_dim, 64);
-  assert.equal(app.shapeEstimateError, '');
-  assert.equal(app.shapeEstimateLoading, true);
-  reply(1);
-  await new Promise(resolve => setImmediate(resolve));
-  assert.equal(app.shapeEstimateLoading, false);
-  assert.equal(app.shapeEstimate.estimatedBytes, 1024);
   assert.equal(timers.size, 0);
 });

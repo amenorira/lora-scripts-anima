@@ -812,7 +812,7 @@ window.trainingCoreMixin = {
 
   _stepEstimatePayload() {
     const keys = [
-      'model_train_type', 'train_data_dir', 'reg_data_dir', 'dataset_cache_dir', 'resolution', 'enable_bucket',
+      'model_train_type', 'train_data_dir', 'enable_reg_data', 'reg_data_dir', 'dataset_cache_dir', 'resolution', 'enable_bucket',
       'bucket_no_upscale', 'min_bucket_reso', 'max_bucket_reso', 'bucket_reso_steps',
       'krea_num_repeats', 'train_batch_size', 'gradient_accumulation_steps',
       'krea_training_duration_mode', 'max_train_epochs', 'max_train_steps', 'gpu_ids',
@@ -1245,6 +1245,12 @@ window.trainingCoreMixin = {
       panel = document.createElement('div');
       panel.className = 'train-type-panel';
       panel.dataset.trainType = trainType;
+      // 缓存面板会脱离 DOM，但其 x-for 等响应式表达式仍会运行。
+      // 保留应用作用域，让新建的子集行在脱离 DOM 时也能找到表单方法。
+      const alpine = window.Alpine;
+      if (alpine && typeof alpine.addScopeToNode === 'function') {
+        alpine.addScopeToNode(panel, {}, root);
+      }
       this._trainTypePanelCache.set(trainType, panel);
     }
     this._mutateTrainingPanels(() => {
@@ -2070,6 +2076,8 @@ window.trainingCoreMixin = {
         const expression = JSON.stringify(placeholders).replace(/"/g, '&quot;');
         const defaultValue = JSON.stringify(field.default ?? '').replace(/"/g, '&quot;');
         inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" :placeholder="(${expression})[form.optimizer_type] ?? ${defaultValue}"${staticReadonlyAttrs}>`;
+      } else if (field.placeholder) {
+        inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" placeholder="${this.escapeAttr(field.placeholder)}"${staticReadonlyAttrs}>`;
       } else if (field.omitDefault && field.default !== undefined && field.default !== '' && field.default !== null) {
         // omitDefault 字段：值==默认值时不传，输入框用淡色 placeholder 提示默认值
         const _phVal = String(field.default).replace(/"/g, '&quot;');
@@ -2516,7 +2524,11 @@ window.trainingCoreMixin = {
     const weighting = String(source.weighting_scheme || 'uniform');
     const isKrea2 = String(source.model_train_type || '') === 'krea2-lora';
     const sigmoidScale = this._timestepPreviewNumber(source.sigmoid_scale, 1.0);
-    const flowShift = Math.max(0.0001, this._timestepPreviewNumber(source.discrete_flow_shift, 1.0));
+    const configuredFlowShift = Math.max(0.0001, this._timestepPreviewNumber(source.discrete_flow_shift, 1.0));
+    // The current Krea 2 scheduler leaves its sigma table unshifted.
+    const flowShift = isKrea2 && sampling === 'sigma'
+      ? 1.0
+      : configuredFlowShift;
     const logitMean = this._timestepPreviewNumber(source.logit_mean, 0.0);
     const logitStd = Math.max(0, this._timestepPreviewNumber(source.logit_std, 1.0));
     const modeScale = this._timestepPreviewNumber(source.mode_scale, 1.29);
@@ -2539,7 +2551,7 @@ window.trainingCoreMixin = {
     };
 
     let activeShift = 1.0;
-    if (sampling === 'shift' || (sampling === 'sigma' && isKrea2)) {
+    if (sampling === 'shift') {
       activeShift = flowShift;
     } else if (sampling === 'flux_shift') {
       activeShift = getShiftParam(4096);
@@ -2744,7 +2756,9 @@ window.trainingCoreMixin = {
     const baselineStats = computeStats(baselineCdf);
     const currentStats = currentCdf === baselineCdf ? baselineStats : computeStats(currentCdf);
     const notes = [];
-    if (!['shift', 'sigma'].includes(sampling) && !isKrea2 && Math.abs(flowShift - 1) > 1e-9) {
+    const shiftIgnored = Math.abs(configuredFlowShift - 1) > 1e-9
+      && (isKrea2 ? sampling !== 'shift' : !['shift', 'sigma'].includes(sampling));
+    if (shiftIgnored) {
       notes.push(this.t('timestepPreview.shiftIgnored'));
     }
     if (sampling === 'flux_shift') notes.push(this.t('timestepPreview.fluxShiftNote'));
@@ -2800,7 +2814,7 @@ window.trainingCoreMixin = {
       baselineMidPercent: baselineStats.mid,
       baselineHighPercent: baselineStats.high,
       compare: scope !== 'base' && densities.some((density, index) => Math.abs(density - baselineDensities[index]) > 1e-10),
-      warning: (!['shift', 'sigma'].includes(sampling) && !isKrea2 && Math.abs(flowShift - 1) > 1e-9)
+      warning: shiftIgnored
         || (['logit_normal', 'mode'].includes(weighting) && sampling !== 'sigma'),
       notes,
     };
@@ -3940,6 +3954,7 @@ window.trainingCoreMixin = {
       'model_train_type', 'optimizer_type', 'learning_rate', 'unet_lr', 'text_encoder_lr',
       'lr_scheduler', 'lr_warmup_steps', 'lr_scheduler_num_cycles', 'lr_scheduler_power',
       'lr_decay_steps', 'lr_scheduler_timescale', 'lr_scheduler_min_lr_ratio',
+      'warmup_type', 'decay_type', 'step_rules',
       'network_train_unet_only', 'network_train_text_encoder_only', 'adafactor_relative_step'
     ].includes(key)) {
       if (key === 'model_train_type' && value === 'krea2-lora') {
@@ -4160,6 +4175,30 @@ window.trainingCoreMixin = {
   },
 
   // ── Validation ────────────────────────────────────────
+  _parseStepRules(value) {
+    if (typeof value !== 'string' || !value.trim()) return null;
+    const parts = value.split(',');
+    const numberPattern = /^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/;
+    const boundaries = [];
+    let previous = 0, finalMultiplier = 0;
+    for (let index = 0; index < parts.length; index++) {
+      const pair = parts[index].split(':').map(token => token.trim());
+      const last = index === parts.length - 1;
+      if (pair.length !== (last ? 1 : 2) || !numberPattern.test(pair[0])) return null;
+      const multiplier = Number(pair[0]);
+      if (!Number.isFinite(multiplier) || multiplier < 0) return null;
+      if (last) finalMultiplier = multiplier;
+      else {
+        if (!/^[0-9]+$/.test(pair[1])) return null;
+        const endStep = Number(pair[1]);
+        if (!Number.isSafeInteger(endStep) || endStep <= previous) return null;
+        boundaries.push({ endStep, multiplier });
+        previous = endStep;
+      }
+    }
+    return { boundaries, finalMultiplier };
+  },
+
   validateForm() {
     const errors = {};
     // Check all required fields
@@ -4206,6 +4245,11 @@ window.trainingCoreMixin = {
       if (!this.form.qwen3 || String(this.form.qwen3).trim() === '') {
         errors['qwen3'] = this.t('common.qwen3Required');
       }
+    }
+
+    if (this.form.model_train_type !== 'krea2-lora' && this.form.lr_scheduler === 'piecewise_constant'
+      && !this._parseStepRules(this.form.step_rules)) {
+      errors.step_rules = this.t('field.step_rulesError');
     }
 
     this.formErrors = errors;

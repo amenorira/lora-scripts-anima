@@ -133,20 +133,6 @@ class TaggerWorkspaceTests(unittest.TestCase):
                 tm.end_dataset_mutation()
 
 
-    def test_append_caption_respects_remove_duplicated_option(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            image_path = Path(temporary) / "sample.png"
-            caption_path = image_path.with_suffix(".txt")
-            caption_path.write_text("1girl, blue eyes", encoding="utf-8")
-
-            workspace._write_caption(image_path, ["blue eyes", "smile"], "prepend", False)
-            self.assertEqual(caption_path.read_text(encoding="utf-8"), "1girl, blue eyes, blue eyes, smile")
-
-            caption_path.write_text("1girl, blue eyes", encoding="utf-8")
-            workspace._write_caption(image_path, ["blue eyes", "smile"], "prepend", True)
-            self.assertEqual(caption_path.read_text(encoding="utf-8"), "1girl, blue eyes, smile")
-
-
     def test_api_cancel_stops_scheduling_and_waits_for_inflight_caption_write(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

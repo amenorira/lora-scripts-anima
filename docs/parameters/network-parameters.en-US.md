@@ -1,6 +1,6 @@
 # Network parameters
 
-Network settings control adapter capacity, training scope, and file size. For standard LoRA, start with `network_dim=32`, `network_alpha=32`, and zero dropout. Adjust rank when more capacity or a smaller file is needed. LoRA-Muon recommends `16/16` for dimension and Alpha when those fields have not been edited.
+Network settings determine the adapter's matrix structure, training scope, and weight-file size. Standard LoRA defaults to rank/Alpha `32/32` and dropout `0`. LoRA-Muon does not automatically change these to `16/16`; enter that combination manually if you want to use it.
 
 <!-- doc-anchor: dimension -->
 ## Network dimension
@@ -10,9 +10,9 @@ Network settings control adapter capacity, training scope, and file size. For st
 | Adjustment | What it provides | Cost or limitation |
 | --- | --- | --- |
 | Higher rank | A wider range of weight changes | More parameters, larger files, and more optimizer state |
-| Lower rank | Fewer parameters and smaller files | Less capacity to represent several complex features at once |
+| Lower rank | Fewer parameters and smaller files | Lower maximum rank of the represented weight change |
 
-The default is a useful starting point for characters, styles, and concepts. Raise rank when complex features remain underlearned after checking learning rate, duration, and captions. Dimensions have different meanings across algorithms; compare LoKr and LoRA by their actual parameter counts and matrix structures.
+For standard LoRA, increasing rank increases the parameter count of both factors. Lower rank to reduce file size. When comparing algorithms, inspect actual parameter counts in the structure preview rather than comparing rank values directly.
 
 <!-- doc-anchor: alpha -->
 ## Alpha
@@ -53,7 +53,7 @@ The basic form is `ΔW = scale × (W1 ⊗ W2)`. W1 and W2 jointly form the weigh
 
 `factor` determines their shape allocation. `dim` sets the intermediate rank when a factor is decomposed further. Factor is therefore not the standard LoRA rank, and it still matters in full-matrix mode.
 
-The UI field is `lokr_factor`; the network receives it as `factor`. The default, `-1`, automatically chooses a near-balanced dimension split. Leave it unchanged for an initial run, then compare explicit values when tuning file size.
+The UI field is `lokr_factor`; the network receives it as `factor`. `-1` selects a near-balanced dimension split automatically. An explicit value changes the dimensions of the two Kronecker factors; inspect their shapes and parameter counts after changing it.
 
 For illustration, consider one 2048×2048 weight layer with direct matrix factors, balanced factorization, and unbalanced factorization disabled:
 
@@ -87,20 +87,20 @@ When both factors are full matrices, dim overrides the entered Alpha. With `rs_l
 <!-- doc-anchor: unbalanced -->
 ## Unbalanced factorization
 
-Unbalanced factorization swaps how the two parts of the output dimension are allocated to the factors. This gives W1 and W2 different aspect ratios and can substantially change the parameter count.
+Unbalanced factorization swaps the two parts of the output dimension between factors, changing the aspect ratios of W1 and W2. Parameter count depends on the layer dimensions and decomposition mode; compare the actual counts before and after switching in the structure preview.
 
 `unbalanced_factorization` is off by default. Change it when comparing matrix shapes or compression options, and check both parameter count and scale.
 
 <!-- doc-anchor: dropout -->
 ## Network and caption dropout
 
-Network dropout randomly masks features or branches during training to reduce reliance on fixed combinations. Dropout rates default to `0`. If overfitting persists after checking training duration and repeated data, test a small rate. Higher rates strengthen regularization but slow learning; lower rates retain more training signal.
+Network dropout randomly masks features or branches during training and defaults to probability `0`. Higher probabilities omit more elements, channels, or branches from forward passes. If generated poses or backgrounds become fixed, compare earlier checkpoints before testing dropout separately.
 
 | Type and key | What is omitted | Main purpose |
 | --- | --- | --- |
 | Standard LoRA feature dropout `network_dropout` | Elements of intermediate features | Reduce reliance on fixed feature combinations |
 | Standard LoRA rank dropout `rank_dropout` | Low-rank channels | Reduce reliance on a few channels |
-| Module dropout `module_dropout` | An entire adapter branch | Use the base-model output for some training passes |
+| Module dropout `module_dropout` | A layer's entire adapter branch | That layer uses its base-model output when the branch is omitted |
 | Full-caption dropout `caption_dropout_rate` | All text conditioning | Include training without text; the image is still used |
 | Tag dropout `caption_tag_dropout_rate` | Individual tags | Reduce reliance on complete tag combinations |
 
@@ -114,6 +114,8 @@ For this project’s current LyCORIS LoKr, behavior also depends on the actual f
 | Weight reconstruction | Not used by this path | Masks output channels of the combined weight update |
 
 Module dropout works in both paths. Quantization and weight decomposition affect which path is selected; check the active path before adjusting feature or rank dropout.
+
+DoRA (`dora_wd`) requires applying its trainable magnitude. For ordinary Linear/Conv layers, the current LyCORIS LoCon, LoHa, and LoKr bypass paths do not apply that magnitude. Turn off `bypass_mode` when using DoRA so these layers reconstruct weights; feature dropout is not used in that path. FP8 weight-only LoKr is an exception: DoRA forces weight reconstruction even when Bypass is enabled. For the current FP8 weight-only layers, only LoKr supports DoRA; LoCon and LoHa do not create DoRA adapters on those layers.
 
 <!-- doc-anchor: preview -->
 ## Check the actual structure

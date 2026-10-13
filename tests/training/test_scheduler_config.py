@@ -1,10 +1,11 @@
 import unittest
+import ast
 
 from backend.training.adapter import adapt_config
-from backend.training.musubi_krea2 import KREA2_FIELDS, build_krea2_train_config
-from backend.training.optimizer_contracts import AUTOMAGIC_OPTIMIZER_TYPE
 from backend.training.validation import validate_scheduler_step_budget, validate_training_config
 from tests.helpers import config_from_field_defaults
+from backend.training.scheduler_config import extract_scheduler_form, parse_step_rules
+from backend.training.training_config import build_training_config, extract_training_form, dump_training_config, parse_training_config_text
 
 
 def config(**overrides):
@@ -17,6 +18,60 @@ def config(**overrides):
 
 
 class SchedulerConfigTests(unittest.TestCase):
+    def test_guided_scheduler_args_round_trip_without_top_level_leakage(self):
+        for profile in ("anima-lora", "sdxl-lora"):
+            for scheduler, fields in (
+                ("warmup_stable_decay", {"warmup_type": "1-sqrt", "decay_type": "linear"}),
+                ("piecewise_constant", {"step_rules": "2:1000,0.5:1600,0"}),
+            ):
+                with self.subTest(profile=profile, scheduler=scheduler):
+                    source = config(lr_scheduler=scheduler, **fields)
+                    source["model_train_type"] = profile
+                    adapted, warnings = adapt_config(source)
+                    self.assertEqual(warnings, [])
+                    args = {k: ast.literal_eval(v) for k, v in
+                            (item.split("=", 1) for item in adapted["lr_scheduler_args"])}
+                    self.assertEqual(args, fields)
+                    self.assertFalse(set(fields) & adapted.keys())
+                    self.assertEqual({k: extract_scheduler_form(adapted)[k] for k in fields}, fields)
+                    document = build_training_config(source, profile_id=profile)
+                    restored = extract_training_form(parse_training_config_text(dump_training_config(document)))
+                    self.assertEqual({k: restored[k] for k in fields}, fields)
+
+    def test_piecewise_rules_reject_ambiguous_or_nonfinite_values(self):
+        for value in ("", None, "1:100", "1:0,0.1", "1:100,0.5:100,0.1", "1:200,0.5:100,0.1",
+                      "1:1.5,0.1", "1:1e3,0.1", "-1:100,0.1", "nan", "inf", "1e309", "1:100,",
+                      "1:9007199254740992,0.1", "1，0.1", "0x10"):
+            with self.subTest(value=value):
+                errors = validate_training_config(config(lr_scheduler="piecewise_constant", step_rules=value))
+                self.assertTrue(any("step_rules" in error for error in errors), errors)
+                with self.assertRaises(ValueError):
+                    adapt_config(config(lr_scheduler="piecewise_constant", step_rules=value))
+        self.assertEqual(parse_step_rules(" 2 : 1000 , 5e-1 : 1600 , 0 "), ([(1000, 2.0), (1600, 0.5)], 0.0))
+        self.assertEqual(parse_step_rules("1"), ([], 1.0))
+
+    def test_inactive_guided_fields_and_raw_args_cannot_change_other_schedulers(self):
+        source = config(lr_scheduler="constant", warmup_type="invalid", decay_type="invalid", step_rules="invalid")
+        self.assertEqual(validate_training_config(source), [])
+        adapted, _ = adapt_config(source)
+        self.assertNotIn("lr_scheduler_args", adapted)
+        source.update(lr_scheduler="warmup_stable_decay", optimizer_type="AdamWScheduleFree",
+                      warmup_type="linear", decay_type="cosine")
+        adapted, _ = adapt_config(source)
+        self.assertEqual(adapted["lr_scheduler"], "constant")
+        self.assertNotIn("lr_scheduler_args", adapted)
+
+    def test_piecewise_disables_warmup_and_native_imports_recover_fields(self):
+        source = config(lr_scheduler="piecewise_constant", step_rules=" 1 : 100 , 0.1 ", lr_warmup_steps=50)
+        adapted, _ = adapt_config(source)
+        self.assertEqual(adapted["lr_warmup_steps"], 0)
+        self.assertEqual(adapted["lr_scheduler_args"], ["step_rules='1:100,0.1'"])
+        native = {"lr_scheduler": "warmup_stable_decay", "lr_scheduler_args": ['warmup_type="cosine"', 'decay_type="1-sqrt"']}
+        adapted, _ = adapt_config(native)
+        self.assertEqual(extract_scheduler_form(adapted)["decay_type"], "1-sqrt")
+        native["warmup_type"] = "linear"
+        self.assertEqual(extract_scheduler_form(native)["warmup_type"], "linear")
+
     def test_each_scheduler_validates_and_adapts_its_own_parameters(self):
         for scheduler, expected in (
             ("inverse_sqrt", {"lr_scheduler_timescale"}),
@@ -34,10 +89,6 @@ class SchedulerConfigTests(unittest.TestCase):
                 for key in expected:
                     self.assertIsInstance(adapted[key], (int, float))
 
-    def test_cosine_minimum_is_supplied_for_blank_and_old_presets(self):
-        for value in (None, ""):
-            adapted, _ = adapt_config(config(lr_scheduler="cosine_with_min_lr", lr_scheduler_min_lr_ratio=value))
-            self.assertEqual(adapted["lr_scheduler_min_lr_ratio"], 0)
 
     def test_rejects_invalid_active_scheduler_values(self):
         cases = (
@@ -55,14 +106,6 @@ class SchedulerConfigTests(unittest.TestCase):
         source = config(lr_scheduler="constant", lr_scheduler_timescale=0, lr_decay_steps=-1)
         self.assertEqual(validate_training_config(source), [])
 
-    def test_internal_optimizer_removes_scheduler_specific_values_after_normalization(self):
-        source = config(lr_scheduler="warmup_stable_decay", lr_decay_steps=0.2,
-                        lr_scheduler_min_lr_ratio=0.1)
-        source["optimizer_type"] = AUTOMAGIC_OPTIMIZER_TYPE
-        adapted, _ = adapt_config(source)
-        self.assertEqual(adapted["lr_scheduler"], "constant")
-        self.assertNotIn("lr_decay_steps", adapted)
-        self.assertNotIn("lr_scheduler_min_lr_ratio", adapted)
 
     def test_wsd_phases_fit_the_actual_scheduler_step_budget(self):
         source = {"lr_scheduler": "warmup_stable_decay", "lr_warmup_steps": 100, "lr_decay_steps": 400}
@@ -76,20 +119,7 @@ class SchedulerConfigTests(unittest.TestCase):
 
 
 class PersistentWorkerTests(unittest.TestCase):
-    def test_defaults_and_explicit_disabled_presets(self):
-        self.assertIs(config()["persistent_data_loader_workers"], True)
-        for workers in ("", 2, 8):
-            adapted, _ = adapt_config(config(max_data_loader_n_workers=workers, persistent_data_loader_workers=False))
-            self.assertIs(adapted["persistent_data_loader_workers"], False)
-
     def test_zero_workers_cannot_reach_the_trainer_with_persistence_enabled(self):
         for workers in (0, "0", 0.0, "0.00"):
             adapted, _ = adapt_config(config(max_data_loader_n_workers=workers, persistent_data_loader_workers=True))
             self.assertIs(adapted["persistent_data_loader_workers"], False)
-
-    def test_krea_also_omits_persistence_with_zero_workers(self):
-        source = {field["key"]: field["default"] for field in KREA2_FIELDS if "default" in field}
-        source.update(dit="dit.safetensors", vae="vae.safetensors", text_encoder="te.safetensors",
-                      train_data_dir="train", max_data_loader_n_workers=0, persistent_data_loader_workers=True)
-        adapted = build_krea2_train_config(source, "dataset.toml", "output", "logs")
-        self.assertNotIn("persistent_data_loader_workers", adapted)

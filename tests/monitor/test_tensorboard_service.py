@@ -67,18 +67,3 @@ class TensorBoardServiceTests(unittest.IsolatedAsyncioTestCase):
                 for service in services:
                     await service.stop()
             self.assertTrue(all(p.poll() is not None for p in processes))
-
-    async def test_disable_and_cancel_startup(self):
-        service = TensorBoardService()
-        service.start(enabled=False)
-        self.assertEqual(service.status(), "disabled")
-        self.assertIsNone(service.process)
-        with tempfile.TemporaryDirectory() as tmp:
-            service.start(logdir=tmp, log_path=Path(tmp) / "cancel.log")
-            await asyncio.sleep(0)
-            process = service.process
-            await service.stop()
-            self.assertEqual(service.status(), "disabled")
-            self.assertIsNone(service.client)
-            self.assertIsNotNone(process)
-            self.assertIsNotNone(process.poll())

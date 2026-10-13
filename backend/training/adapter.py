@@ -30,6 +30,7 @@ from backend.training.field_registry import (
 )
 from backend.training import toml_writer
 from backend.training.optimizer_contracts import normalize_optimizer_config
+from backend.training.scheduler_config import normalize_scheduler_config
 
 SUPPORTED_FIELDS = get_supported_fields()
 UI_ONLY_FIELDS = get_ui_only_fields()
@@ -564,10 +565,11 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
             source.pop(key, None)
     if scheduler == "cosine_with_min_lr" and _is_empty_value(source.get("lr_scheduler_min_lr_ratio")):
         source["lr_scheduler_min_lr_ratio"] = 0
+    normalize_scheduler_config(source)
 
     # ── 6. 主循环：白名单过滤 ─────────────────────────────
     # sd-scripts 内部字段，适配层透传不走警告
-    _INTERNAL_PASSTHROUGH = {"network_args", "optimizer_args"}
+    _INTERNAL_PASSTHROUGH = {"network_args", "optimizer_args", "lr_scheduler_args"}
     for key, value in source.items():
         # 跳过纯 UI 字段、合并字段、及已处理的 LyCORIS 字段
         if key in UI_ONLY_FIELDS or key in MERGED_FIELDS or key in LYCORIS_KOHYA_UI_FIELDS:

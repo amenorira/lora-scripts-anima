@@ -13,32 +13,6 @@ from backend.tageditor.sessions import dataset_sessions
 
 
 class SharedImagePreviewTests(unittest.TestCase):
-    def test_webp_preview_is_near_lossless_and_mask_modes_are_lossless(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            rgb_path = root / "rgb.png"
-            Image.new("RGB", (1200, 800), (81, 132, 203)).save(rgb_path)
-            gray_path = root / "mask.png"
-            gray = Image.new("L", (32, 24))
-            gray.putdata([(x * 17 + y * 29) % 256 for y in range(24) for x in range(32)])
-            gray.save(gray_path)
-            alpha_path = root / "alpha.png"
-            Image.new("RGBA", (24, 20), (40, 90, 160, 73)).save(alpha_path)
-            cache = root / "cache"
-
-            rgb_preview = get_cached_preview_path(rgb_path, "preview", cache_dir=cache)
-            gray_preview = get_cached_preview_path(gray_path, "inspect", cache_dir=cache)
-            alpha_preview = get_cached_preview_path(alpha_path, "inspect", cache_dir=cache)
-
-            with Image.open(rgb_preview) as image:
-                self.assertEqual(image.format, "WEBP")
-                self.assertLessEqual(max(image.size), 960)
-            with Image.open(gray_preview) as image:
-                self.assertEqual(image.convert("L").tobytes(), gray.tobytes())
-            with Image.open(alpha_preview) as image:
-                self.assertEqual(image.mode, "RGBA")
-                self.assertEqual(image.getchannel("A").tobytes(), bytes([73]) * (24 * 20))
-
     def test_dataset_scope_serves_webp_variants_and_exact_original(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

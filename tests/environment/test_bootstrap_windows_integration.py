@@ -1,28 +1,35 @@
+import ctypes
+import json
 import os
 import subprocess
 import tempfile
 import unittest
 import zipfile
+from contextlib import contextmanager
 from pathlib import Path
 
 
 ROOT = Path(__file__).parents[2]
-BOOTSTRAP = ROOT / "tools" / "bootstrap_windows.ps1"
+BOOTSTRAP = ROOT / "tools/bootstrap_windows.ps1"
+UPDATER_FILES = ("update.bat", "tools/bootstrap_windows.ps1", "tools/bootstrap_messages.json")
+SETTINGS = "config/sample_prompts.txt"
+ACCELERATE = "huggingface/accelerate/default_config.yaml"
+UPDATE_MARKER = ".anima_tmp/git-update-incomplete.json"
+REPAIR_MARKER = ".anima_tmp/git-repair-incomplete.json"
 
 
 @unittest.skipUnless(os.name == "nt", "Windows bootstrap integration tests")
 class WindowsBootstrapIntegrationTests(unittest.TestCase):
-    maxDiff = None
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="anima bootstrap ")
+        self.addCleanup(temporary.cleanup)
+        self.base = Path(temporary.name)
 
     def run_command(self, args, cwd=None, check=True):
         result = subprocess.run(
-            [str(arg) for arg in args],
-            cwd=cwd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
+            [str(arg) for arg in args], cwd=cwd, stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding="utf-8", errors="replace", timeout=60,
         )
         if check and result.returncode != 0:
             self.fail(f"command failed ({result.returncode}): {args}\n{result.stdout}")
@@ -31,209 +38,278 @@ class WindowsBootstrapIntegrationTests(unittest.TestCase):
     def git(self, cwd, *args, check=True):
         return self.run_command(["git", *args], cwd=cwd, check=check)
 
+    def commit(self, cwd):
+        return self.git(cwd, "commit", "-m", "test: 更新启动器测试历史", "-m", "- 构建集成测试所需的临时提交")
+
     def write(self, root, relative, content):
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        path.write_text(content, encoding="utf-8", newline="\n")
         return path
 
-    def create_remote_history(self, base):
-        remote = base / "远端 source repo"
-        remote.mkdir(parents=True)
+    def publish(self, remote, files=None, remove=()):
+        for relative in remove:
+            self.git(remote, "rm", "--", relative)
+        for relative, content in (files or {}).items():
+            self.write(remote, relative, content)
+            self.git(remote, "add", "-f", "--", relative)
+        self.commit(remote)
+
+    def prepare(self, *, repair=True, old_zip=False, updater=False):
+        remote = self.base / "远端 source repo"
+        remote.mkdir()
         self.git(remote, "init", "-b", "main")
         self.git(remote, "config", "user.name", "Bootstrap Test")
         self.git(remote, "config", "user.email", "bootstrap@example.invalid")
-        self.write(
-            remote,
-            ".gitignore",
-            "venv/\nmodels/\noutput/\nconfig/\n.anima_tmp/\nbootstrap-backups/\n",
-        )
-        self.write(remote, "start.bat", "@echo off\n")
-        self.write(remote, "backend/gui.py", "print('old')\n")
-        self.write(remote, "README.md", "old upstream\n")
-        self.write(remote, "中文文件.txt", "old unicode file\n")
-        self.write(remote, "obsolete.txt", "old tracked file\n")
-        protected_tracked = {
-            "cache/.keep": "old cache marker\n",
-            "config/user.toml": "old upstream config\n",
-            "huggingface/cache/version.txt": "old hf cache marker\n",
-            "logs/.keep": "old log marker\n",
+        files = {
+            ".gitignore": "venv/\nmodels/\noutput/\nconfig/\n.anima_tmp/\nbootstrap-backups/\n",
+            ".gitattributes": "* text=auto eol=lf\n",
+            "start.bat": "@echo off\n", "backend/gui.py": "print('old')\n",
+            "README.md": "old upstream\n", "中文文件.txt": "old unicode\n",
+            "obsolete.txt": "obsolete\n", SETTINGS: "old settings\n",
+            ACCELERATE: "old accelerate settings\n",
+            "huggingface/hub/version.txt": "old cache\n",
             "models/.gitkeep": "old model marker\n",
-            "output/.keep": "old output marker\n",
         }
-        for relative, content in protected_tracked.items():
+        for relative, content in files.items():
             self.write(remote, relative, content)
-        self.git(remote, "add", ".")
-        self.git(remote, "add", "-f", *protected_tracked)
-        self.git(remote, "commit", "-m", "initial")
-        old_commit = self.git(remote, "rev-parse", "HEAD").stdout.strip()
+        if updater:
+            for relative in UPDATER_FILES:
+                path = remote / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes((ROOT / relative).read_bytes())
+        self.git(remote, "add", "-f", ".")
+        self.commit(remote)
+        old = self.git(remote, "rev-parse", "HEAD").stdout.strip()
+        self.git(remote, "tag", "v-test", old)
+        self.git(remote, "branch", "dev", old)
+        self.publish(remote, {
+            "backend/gui.py": "print('latest')\n", "README.md": "latest upstream\n",
+            "中文文件.txt": "latest unicode\n", "latest.txt": "latest\n",
+            SETTINGS: "latest settings\n", "models/.gitkeep": "latest marker\n",
+            "models/remote-only.bin": "must not enter user models\n",
+        }, remove=("obsolete.txt",))
+        target = self.base / "下载目录 含空格"
+        archive = self.base / "source.zip"
+        self.git(remote, "archive", "--format=zip", "-o", archive, old if old_zip else "HEAD")
+        target.mkdir()
+        with zipfile.ZipFile(archive) as source:
+            source.extractall(target)
+        if repair:
+            self.action(target, remote, "repair-git")
+        return remote, target
 
-        self.write(remote, "backend/gui.py", "print('latest')\n")
-        self.write(remote, "README.md", "latest upstream\n")
-        self.write(remote, "中文文件.txt", "latest unicode file\n")
-        (remote / "obsolete.txt").unlink()
-        self.write(remote, "latest.txt", "latest file\n")
-        self.write(remote, "config/user.toml", "latest upstream config\n")
-        self.write(remote, "models/.gitkeep", "latest model marker\n")
-        self.write(remote, "models/remote-only.bin", "must not enter user models\n")
-        self.git(remote, "add", "-A")
-        self.git(remote, "add", "-f", "models/remote-only.bin")
-        self.git(remote, "commit", "-m", "latest")
-        return remote, old_commit
+    def action(self, target, remote, action, *, check=True, extra=()):
+        return self.run_command([
+            "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", BOOTSTRAP,
+            f"--bootstrap-action={action}", f"--bootstrap-root={target}",
+            f"--bootstrap-repository-url={remote}", "--bootstrap-assume-yes", *extra,
+        ], cwd=ROOT, check=check)
 
-    def extract_old_zip(self, remote, old_commit, target, archive):
-        self.git(remote, "archive", "--format=zip", "-o", archive, old_commit)
-        target.mkdir(parents=True)
-        with zipfile.ZipFile(archive) as source_zip:
-            source_zip.extractall(target)
+    def assert_start_blocked(self, target, remote):
+        result = self.action(target, remote, "run", check=False, extra=("--skip-git-setup", "--quiet"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("startup has stopped", result.stdout)
 
-    def run_repair(self, target, remote_url):
-        return self.run_command(
-            [
-                "powershell.exe",
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                BOOTSTRAP,
-                "--bootstrap-action=repair-git",
-                f"--bootstrap-root={target}",
-                f"--bootstrap-repository-url={remote_url}",
-                "--bootstrap-assume-yes",
-            ],
-            cwd=ROOT,
-        )
+    @contextmanager
+    def lock_file(self, path):
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                                     ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p]
+        kernel.CreateFileW.restype = ctypes.c_void_p
+        kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+        handle = kernel.CreateFileW(str(path), 0x80000000, 1, None, 3, 0, None)
+        self.assertNotEqual(handle, ctypes.c_void_p(-1).value)
+        try:
+            yield
+        finally:
+            kernel.CloseHandle(handle)
 
-    def test_old_zip_is_backed_up_aligned_and_can_pull(self):
-        with tempfile.TemporaryDirectory(prefix="anima bootstrap ") as temp:
-            base = Path(temp)
-            remote, old_commit = self.create_remote_history(base)
-            target = base / "下载目录 含空格"
-            archive = base / "old.zip"
-            self.extract_old_zip(remote, old_commit, target, archive)
+    def test_old_zip_backup_user_data_and_pull(self):
+        remote, target = self.prepare(repair=False, old_zip=True)
+        preserved = {
+            SETTINGS: "personal settings", ACCELERATE: "personal accelerate", "cache/user.bin": "cache",
+            "huggingface/hub/version.txt": "local cache", "logs/user.log": "log",
+            "venv/keep.txt": "venv", "models/keep.bin": "model", "output/keep.txt": "output",
+        }
+        for relative, content in {**preserved, "README.md": "edited source", "中文文件.txt": "edited unicode"}.items():
+            self.write(target, relative, content)
+        self.action(target, remote, "repair-git")
+        self.assertEqual(self.git(target, "rev-parse", "--abbrev-ref", "@{upstream}").stdout.strip(), "origin/main")
+        self.assertEqual((target / "README.md").read_text(), "latest upstream\n")
+        self.assertFalse((target / "obsolete.txt").exists())
+        self.assertFalse((target / "models/remote-only.bin").exists())
+        self.assertEqual((target / "models/.gitkeep").read_text(), "old model marker\n")
+        for relative, content in preserved.items():
+            self.assertEqual((target / relative).read_text(), content)
+        backups = list((target / "bootstrap-backups").glob("*.zip"))
+        self.assertEqual(len(backups), 1)
+        with zipfile.ZipFile(backups[0]) as backup:
+            self.assertEqual(backup.read("README.md"), b"edited source")
+            self.assertTrue({"obsolete.txt", "中文文件.txt", "bootstrap-manifest.json"}.issubset(backup.namelist()))
+        self.assertEqual(self.git(target, "config", "remote.origin.fetch").stdout.strip(), "+refs/heads/main:refs/remotes/origin/main")
+        self.assertEqual(self.git(target, "config", "remote.origin.tagOpt").stdout.strip(), "--no-tags")
+        self.publish(remote, {"after-repair.txt": "pull works\n"})
+        self.git(target, "pull")
+        self.assertTrue((target / "after-repair.txt").is_file())
+        self.assertEqual(self.git(target, "tag").stdout.strip(), "")
+        self.assertNotIn("origin/dev", self.git(target, "branch", "-r").stdout)
 
-            self.write(target, "README.md", "local customized source\n")
-            self.write(target, "中文文件.txt", "local unicode customization\n")
-            preserved = {
-                "cache/user.bin": "cache data",
-                "config/user.toml": "local user config",
-                "huggingface/cache/version.txt": "local hf cache data",
-                "logs/user.log": "log data",
-                "venv/keep.txt": "venv data",
-                "models/keep.bin": "model data",
-                "output/keep.txt": "output data",
-            }
-            for relative, content in preserved.items():
-                self.write(target, relative, content)
+    def test_existing_corrupt_and_fetch_failure_do_not_replace_files(self):
+        remote, target = self.prepare()
+        head = self.git(target, "rev-parse", "HEAD").stdout
+        result = self.action(target, self.base / "foreign", "repair-git")
+        self.assertIn("origin could not be confirmed", result.stdout)
+        self.assertEqual(self.git(target, "rev-parse", "HEAD").stdout, head)
+        for corrupt in (False, True):
+            root = self.base / str(corrupt)
+            self.write(root, "start.bat", "@echo off\n")
+            self.write(root, "backend/gui.py", "original\n")
+            if corrupt:
+                self.write(root, ".git/junk", "keep")
+            result = self.action(root, self.base / "missing", "repair-git", check=False)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual((root / "backend/gui.py").read_text(), "original\n")
+            self.assertFalse((root / REPAIR_MARKER).exists())
+            if corrupt:
+                self.assertEqual((root / ".git/junk").read_text(), "keep")
+            else:
+                self.assertFalse((root / ".git").exists())
 
-            local_source_bytes = (target / "README.md").read_bytes()
-            result = self.run_repair(target, remote)
-            self.assertIn("Repository repair complete", result.stdout)
-            self.assertTrue((target / ".git").is_dir())
-            self.assertEqual(self.git(target, "branch", "--show-current").stdout.strip(), "main")
-            self.assertEqual(
-                self.git(target, "rev-parse", "--abbrev-ref", "@{upstream}").stdout.strip(),
-                "origin/main",
-            )
-            self.assertEqual((target / "README.md").read_text(encoding="utf-8"), "latest upstream\n")
-            self.assertFalse((target / "obsolete.txt").exists())
-            self.assertTrue((target / "latest.txt").is_file())
-            self.assertEqual(
-                (target / "models/.gitkeep").read_text(encoding="utf-8"),
-                "old model marker\n",
-            )
-            self.assertFalse((target / "models/remote-only.bin").exists())
-            for relative, content in preserved.items():
-                self.assertEqual((target / relative).read_text(encoding="utf-8"), content)
+    def test_settings_migrate_once_then_normal_updates_and_pull_work(self):
+        remote, target = self.prepare()
+        personal = b"personal settings\r\n\x00"
+        for relative in (SETTINGS, ACCELERATE):
+            (target / relative).write_bytes(personal)
+        (target / "huggingface/hub/version.txt").unlink()
+        self.publish(remote, {"README.md": "migrated\n"}, remove=(SETTINGS, ACCELERATE, "huggingface/hub/version.txt"))
+        self.action(target, remote, "update")
+        for relative in (SETTINGS, ACCELERATE):
+            self.assertEqual((target / relative).read_bytes(), personal)
+        self.assertFalse((target / "huggingface/hub/version.txt").exists())
+        self.assertEqual(self.git(target, "ls-files", SETTINGS).stdout.strip(), "")
+        self.assertFalse((target / UPDATE_MARKER).exists())
+        backups = list((target / "bootstrap-backups").glob("user-settings-*.zip"))
+        self.assertEqual(len(backups), 1)
+        self.publish(remote, {"README.md": "normal update\n"})
+        self.action(target, remote, "update")
+        self.assertEqual(list((target / "bootstrap-backups").glob("user-settings-*.zip")), backups)
+        self.publish(remote, {"README.md": "pull update\n"})
+        self.git(target, "pull")
+        for relative in (SETTINGS, ACCELERATE):
+            self.assertEqual((target / relative).read_bytes(), personal)
+        self.assertEqual((target / "README.md").read_text(), "pull update\n")
 
-            backups = list((target / "bootstrap-backups").glob("*.zip"))
-            self.assertEqual(len(backups), 1)
-            with zipfile.ZipFile(backups[0]) as backup_zip:
-                names = set(backup_zip.namelist())
-                self.assertIn("README.md", names)
-                self.assertIn("中文文件.txt", names)
-                self.assertIn("obsolete.txt", names)
-                self.assertIn("bootstrap-manifest.json", names)
-                self.assertEqual(backup_zip.read("README.md"), local_source_bytes)
+    def test_source_edits_and_staged_work_stop_update(self):
+        remote, target = self.prepare()
+        head = self.git(target, "rev-parse", "HEAD").stdout
+        self.write(target, "README.md", "my source\n")
+        result = self.action(target, remote, "update", check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("modified locally", result.stdout)
+        self.assertEqual((target / "README.md").read_text(), "my source\n")
+        self.git(target, "checkout", "--", "README.md")
+        self.write(target, SETTINGS, "staged settings\n")
+        self.git(target, "add", "-f", SETTINGS)
+        staged = self.git(target, "diff", "--cached").stdout
+        self.assertNotEqual(self.action(target, remote, "update", check=False).returncode, 0)
+        self.assertEqual(self.git(target, "diff", "--cached").stdout, staged)
+        self.assertEqual(self.git(target, "rev-parse", "HEAD").stdout, head)
 
-            status = self.git(target, "status", "--porcelain").stdout.splitlines()
-            self.assertTrue(any(line.endswith(" config/user.toml") for line in status), status)
-            self.assertTrue(any(line.endswith(" models/.gitkeep") for line in status), status)
-            self.assertTrue(any(line.endswith(" models/remote-only.bin") for line in status), status)
+    def test_failed_merge_restores_migrating_settings(self):
+        remote, target = self.prepare()
+        self.write(target, SETTINGS, "personal\n")
+        self.write(target, "new-source.txt", "untracked personal file\n")
+        head = self.git(target, "rev-parse", "HEAD").stdout
+        self.publish(remote, {"new-source.txt": "upstream\n"}, remove=(SETTINGS,))
+        self.assertNotEqual(self.action(target, remote, "update", check=False).returncode, 0)
+        self.assertEqual((target / SETTINGS).read_text(), "personal\n")
+        self.assertEqual((target / "new-source.txt").read_text(), "untracked personal file\n")
+        self.assertEqual(self.git(target, "rev-parse", "HEAD").stdout, head)
+        self.assertFalse((target / UPDATE_MARKER).exists())
 
-            self.write(remote, "after-repair.txt", "pull works\n")
-            self.git(remote, "add", "after-repair.txt")
-            self.git(remote, "commit", "-m", "after repair")
+    def test_interrupted_repair_blocks_startup_and_can_retry(self):
+        remote, target = self.prepare(repair=False, old_zip=True)
+        with self.lock_file(target / "obsolete.txt"):
+            self.assertNotEqual(self.action(target, remote, "repair-git", check=False).returncode, 0)
+            self.assertTrue((target / REPAIR_MARKER).is_file())
+            self.assert_start_blocked(target, remote)
+        self.action(target, remote, "repair-git")
+        self.assertFalse((target / REPAIR_MARKER).exists())
+        self.assertFalse((target / "obsolete.txt").exists())
+
+    def test_failed_settings_restore_keeps_zip_and_blocks_startup(self):
+        remote, target = self.prepare()
+        self.write(target, SETTINGS, "personal\n")
+        self.publish(remote, remove=(SETTINGS,))
+        with self.lock_file(target / SETTINGS):
+            result = self.action(target, remote, "update", check=False)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("restoration did not finish", result.stdout)
+            state = json.loads((target / UPDATE_MARKER).read_text(encoding="utf-8"))
+            with zipfile.ZipFile(state["backup"]) as backup:
+                self.assertEqual(backup.read(SETTINGS), b"personal\n")
+            self.assert_start_blocked(target, remote)
+
+    def test_divergent_and_foreign_repositories_stop_update(self):
+        remote, target = self.prepare()
+        self.git(target, "config", "user.name", "Bootstrap Test")
+        self.git(target, "config", "user.email", "bootstrap@example.invalid")
+        self.publish(target, {"local.txt": "local\n"})
+        self.publish(remote, {"remote.txt": "remote\n"})
+        head = self.git(target, "rev-parse", "HEAD").stdout
+        result = self.action(target, remote, "update", check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("fast-forward", result.stdout)
+        self.assertNotEqual(self.action(target, self.base / "foreign", "update", check=False).returncode, 0)
+        self.assertEqual(self.git(target, "rev-parse", "HEAD").stdout, head)
+        self.assertEqual(self.git(target, "remote", "get-url", "origin").stdout.strip(), str(remote))
+
+    def test_shallow_clone_can_pull_switch_main_dev_and_update_each_branch(self):
+        remote, _ = self.prepare(repair=False)
+        target = self.base / "clone"
+        self.run_command(["git", "clone", "--depth", "1", "--single-branch", "--branch", "main", "--no-tags", remote.as_uri(), target])
+        self.assertEqual(self.git(target, "rev-list", "--count", "HEAD").stdout.strip(), "1")
+        for number in range(2):
+            self.publish(remote, {"README.md": f"main {number}\n"})
             self.git(target, "pull")
-            self.assertTrue((target / "after-repair.txt").is_file())
+            self.assertEqual((target / "README.md").read_text(), f"main {number}\n")
+        self.git(target, "config", "--add", "remote.origin.fetch", "+refs/heads/dev:refs/remotes/origin/dev")
+        self.git(target, "fetch", "--no-tags", "origin")
+        self.git(target, "switch", "--track", "origin/dev")
+        self.git(remote, "switch", "dev")
+        self.publish(remote, {"dev.txt": "updated dev\n"})
+        self.action(target, remote.as_uri(), "update")
+        self.assertEqual((target / "dev.txt").read_text(), "updated dev\n")
+        self.git(target, "switch", "main")
+        self.git(remote, "switch", "main")
+        self.publish(remote, {"README.md": "updated main\n"})
+        self.action(target, remote.as_uri(), "update")
+        self.assertEqual((target / "README.md").read_text(), "updated main\n")
+        self.git(target, "switch", "dev")
+        self.assertEqual((target / "dev.txt").read_text(), "updated dev\n")
+        self.assertEqual(self.git(target, "tag").stdout.strip(), "")
 
-    def test_existing_and_corrupt_git_entries_are_not_replaced(self):
-        with tempfile.TemporaryDirectory(prefix="anima bootstrap state ") as temp:
-            base = Path(temp)
-            existing = base / "existing repo"
-            existing.mkdir()
-            self.write(existing, "start.bat", "@echo off\n")
-            self.write(existing, "backend/gui.py", "print('existing')\n")
-            self.git(existing, "init", "-b", "main")
-            self.git(existing, "config", "user.name", "Bootstrap Test")
-            self.git(existing, "config", "user.email", "bootstrap@example.invalid")
-            self.git(existing, "add", ".")
-            self.git(existing, "commit", "-m", "existing")
-            before = self.git(existing, "rev-parse", "HEAD").stdout.strip()
-            existing_result = self.run_repair(existing, base / "missing remote")
-            self.assertIn("origin could not be confirmed", existing_result.stdout)
-            self.assertEqual(self.git(existing, "rev-parse", "HEAD").stdout.strip(), before)
-
-            corrupt = base / "corrupt zip"
-            corrupt.mkdir()
-            self.write(corrupt, "start.bat", "@echo off\n")
-            self.write(corrupt, "backend/gui.py", "print('corrupt')\n")
-            self.write(corrupt, ".git/junk", "do not delete\n")
-            result = self.run_repair(corrupt, base / "missing remote")
-            self.assertIn("not a valid repository", result.stdout)
-            self.assertEqual((corrupt / ".git/junk").read_text(encoding="utf-8"), "do not delete\n")
-
-    def test_fetch_failure_is_non_destructive(self):
-        with tempfile.TemporaryDirectory(prefix="anima bootstrap failure ") as temp:
-            target = Path(temp) / "zip source"
-            target.mkdir()
-            self.write(target, "start.bat", "@echo off\n")
-            self.write(target, "backend/gui.py", "print('unchanged')\n")
-            result = self.run_repair(target, Path(temp) / "remote does not exist")
-            self.assertIn("Repository repair failed", result.stdout)
-            self.assertFalse((target / ".git").exists())
-            self.assertEqual(
-                (target / "backend/gui.py").read_text(encoding="utf-8"),
-                "print('unchanged')\n",
-            )
-
-    def test_normal_bootstrap_returns_restart_code_after_zip_repair(self):
-        with tempfile.TemporaryDirectory(prefix="anima bootstrap restart ") as temp:
-            base = Path(temp)
-            remote, old_commit = self.create_remote_history(base)
-            target = base / "zip source"
-            self.extract_old_zip(remote, old_commit, target, base / "old.zip")
-
-            result = self.run_command(
-                [
-                    "powershell.exe",
-                    "-NoProfile",
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-File",
-                    BOOTSTRAP,
-                    f"--bootstrap-root={target}",
-                    f"--bootstrap-repository-url={remote}",
-                    "--setup-git",
-                    "--quiet",
-                ],
-                cwd=ROOT,
-                check=False,
-            )
-
-            self.assertEqual(result.returncode, 23, result.stdout)
-            self.assertTrue((target / ".git").is_dir())
-            self.assertIn("restarting the latest bootstrap", result.stdout)
+    def test_batch_entry_and_external_zip_can_update_old_folder(self):
+        remote, target = self.prepare(updater=True)
+        self.publish(remote, {"README.md": "batch update\n"})
+        command = ["cmd.exe", "/d", "/c", "call", target / "update.bat", f"--bootstrap-repository-url={remote}"]
+        self.run_command(command, cwd=self.base)
+        self.assertEqual((target / "README.md").read_text(), "batch update\n")
+        self.publish(remote, {"tools/bootstrap_windows.ps1": "# old bootstrap\n", "tools/bootstrap_messages.json": "{}\n"}, remove=("update.bat",))
+        self.git(target, "pull")
+        self.assertFalse((target / "update.bat").exists())
+        new_zip = self.base / "新 ZIP"
+        for relative in UPDATER_FILES:
+            path = new_zip / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes((ROOT / relative).read_bytes())
+        self.write(target, SETTINGS, "personal\n")
+        self.publish(remote, {"README.md": "external update\n"}, remove=(SETTINGS,))
+        command[4] = new_zip / "update.bat"
+        self.run_command([*command, f"--bootstrap-root={target}"], cwd=self.base)
+        self.assertEqual((target / SETTINGS).read_text(), "personal\n")
+        self.assertEqual((target / "README.md").read_text(), "external update\n")
 
 
 if __name__ == "__main__":

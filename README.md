@@ -18,7 +18,8 @@ _✨ 多训练核心 LoRA 工具：Anima、SDXL 与 Krea 2 ✨_
 </p>
 
 <p align="center">
-  <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-en.md">English</a>
+  <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-en.md">English</a> ·
+  <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-ja.md">日本語</a>
 </p>
 
 项目通过训练核心注册表隔离不同后端；**LyCORIS** 是通过 `lycoris.kohya` 挂载的可选适配器后端。
@@ -45,7 +46,7 @@ _✨ 多训练核心 LoRA 工具：Anima、SDXL 与 Krea 2 ✨_
 - **原生标签编辑器** — 内置图片标签编辑器，支持批量查找替换、去重、排序、清理等操作
 - **Tagger 工作台** — 集成 WD EVA02-Large、WD ViT-Large、CL Tagger、Camie Tagger 与 [PixAI Tagger v1.0](https://huggingface.co/pixai-labs/pixai-tagger-v1.0)，支持单图检查、分类阈值控制和批量标签写入；PixAI 使用本地 PyTorch 推理，支持风格分类，首次下载约 1.95 GB；另可对接 OpenAI 兼容（Chat Completions / Responses）或 Anthropic Messages 协议的 AI 打标
 - **EmoSens 自适应优化器** — 内置 EmoSens v3.9，对 Anima DiT 训练有更好的收敛效果
-- **国际化（i18n）** — 中英双语界面，支持浏览器语言自动检测并保存语言偏好
+- **国际化（i18n）** — 中文、英文和日语界面及内置指南，支持浏览器语言自动检测并保存语言偏好
 - **三种主题** — 浅色、深色与 ComfyUI 主题，支持跟随系统、手动切换
 - **后端连接状态指示器** — 实时显示前后端连接状态及断连时长
 - **慢速远程连接兼容** — 使用同源实时传输、弱网缩略图队列和版本化浏览器缓存，降低预览请求对实时状态传输的影响
@@ -137,16 +138,27 @@ lora-scripts-anima/
 
 1. 在 GitHub 点击 **Code → Download ZIP**，完整解压后双击 `start.bat`。
 2. 如果目录中没有 `.git`，启动器会询问是否安装 Git for Windows 并修复为可更新仓库；选择推荐项即可。
-3. 修复时会拉取最新 `main`。若 ZIP 源码与最新版不同，待替换的源码会先备份到 `bootstrap-backups/<时间>.zip`。`venv`、模型、输出、缓存、日志和整个 `config` 用户配置目录不会参与源码同步，也不会被覆盖或清理。
+3. 修复时只获取 `main` 分支，不获取其他分支和标签。若 ZIP 源码与最新版不同，待替换的源码会先备份到 `bootstrap-backups/<时间>.zip`。`venv`、模型、输出、缓存、日志和整个 `config` 用户配置目录不会参与源码同步，也不会被覆盖或清理。
 4. 源码同步完成后，启动器会自动重启一次，再创建 `venv` 并安装训练依赖。
 
-Git 安装或仓库修复失败不会阻止训练器启动，下次运行仍可重试。Python 或核心依赖安装失败时则会停止并显示双语错误。
+Git 安装或源码同步前的仓库修复失败不会阻止原 ZIP 启动，下次运行仍可重试。若源码同步开始后失败，会停止启动并保留备份记录；解决报错后重新运行 `start.bat` 重试，避免启动不完整的源码。Python 或核心依赖安装失败时也会停止并显示双语错误。
 
 ### 使用 Git 克隆
 
 ```sh
-git clone https://github.com/amenorira/lora-scripts-anima.git
+git clone --depth 1 --single-branch --branch main --no-tags https://github.com/amenorira/lora-scripts-anima.git
 cd lora-scripts-anima
+git config pull.ff only
+```
+
+仅下载最新 main，后续可正常 `git pull`。需要完整历史或标签时，分别运行 `git fetch --unshallow`、`git fetch --tags`；开发者也可省略克隆选项。
+
+首次切换 dev 时执行以下命令，之后用 `git switch main` / `git switch dev` 来回切换：
+
+```sh
+git config --add remote.origin.fetch "+refs/heads/dev:refs/remotes/origin/dev"
+git fetch --no-tags origin
+git switch --track origin/dev
 ```
 
 ### 快速开始
@@ -173,12 +185,9 @@ TensorBoard 子进程仅监听服务器回环地址，内部端口默认自动�
 
 ### 后续更新
 
-完成 ZIP 仓库修复或使用 `git clone` 后，在项目文件夹空白处右键：
+Windows 用户先关闭训练器，双击 **`update.bat`**，成功后运行 `start.bat`；也可在项目目录打开终端运行 `git pull`。更新当前分支（main 或 dev），仅允许快进；源码修改、暂存改动或分叉会停止更新。启动训练器不会自动更新源码。
 
-- 选择 Windows 的 **在终端中打开**，然后运行 `git pull`；或
-- 选择 **Git Bash Here** 后运行 `git pull`。Windows 11 中该菜单可能位于 **显示更多选项** 内。
-
-仓库仅允许快进更新。如果源码被手动修改，`git pull` 会停止并提示先处理本地改动，不会自动覆盖。
+旧版采样提示词、Accelerate 配置和缓存版本文件停止 Git 跟踪时，更新脚本会先备份，再迁移并保留原内容。默认示例在 `tools/defaults/`，启动只补建缺失配置。旧目录没有更新入口时，可在 PowerShell 运行 `& "新ZIP目录\update.bat" "--bootstrap-root=旧项目目录绝对路径"` 完成迁移，无需覆盖旧启动器或重装环境。
 
 ## 训练参数指南
 
@@ -249,7 +258,7 @@ GUI 的 **环境** 标签页提供：
 # Linux: ./venv/bin/python -m unittest discover -s tests -t .
 ```
 
-测试按功能分类，统一入口包含独立 JavaScript 测试。分类、依赖和单独运行方法见 [tests/README.md](tests/README.md)；工具用途见 [tools/README.md](tools/README.md)。
+测试位于 `tests/`，按训练、监控、环境、打标、应用和前端分类；统一入口包含独立 JavaScript 测试。开发脚本位于 `tools/dev/`，`tools/` 还包含启动器和后端依赖的运行工具。
 
 ## 致谢
 

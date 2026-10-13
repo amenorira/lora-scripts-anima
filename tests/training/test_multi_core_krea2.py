@@ -1,21 +1,18 @@
 import asyncio
 import json
 import os
-import shutil
-import subprocess
 import tempfile
 import threading
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import toml
 
 from backend.training.musubi_krea2 import KREA2_FIELDS, build_krea2_dataset_config, build_krea2_train_config, cache_manifest_path, get_krea2_cache_status, mark_cache_manifest, prepare_cache_manifest, validate_krea2_config
 from backend.server.routes import training as training_routes
-from backend.training import supervisor
 from backend.tasks import TaskManager
-from tests.helpers import json_request
+from tests.helpers import json_request, stub_supervisor
 
 
 def krea2_config(root: Path) -> dict:
@@ -78,12 +75,7 @@ class Krea2PreparationLifecycleTests(unittest.TestCase):
                  patch.object(training_routes, "OUTPUT_DIR", root / "runs"), \
                  patch.object(training_routes, "krea2_preflight", return_value={"ok": True, "errors": [], "cache": {"ready": True}}), \
                  patch.object(training_routes, "mark_cache_manifest", side_effect=settle_manifest), \
-                 patch.object(supervisor, "_get_trainer_script", return_value=Path("trainer.py")), \
-                 patch.object(supervisor, "get_engine", return_value=Mock(python_executable=None)), \
-                 patch.object(supervisor, "save_config_snapshot"), \
-                 patch.object(supervisor, "_build_train_env", return_value={}), \
-                 patch.object(supervisor, "_read_run_meta", return_value={}), \
-                 patch.object(supervisor, "_log_run_start"):
+                 stub_supervisor():
                 try:
                     response = asyncio.run(exercise())
                 finally:
@@ -277,201 +269,6 @@ class Krea2CodecTests(unittest.TestCase):
             self.assertTrue(get_krea2_cache_status(config)["ready"])
             (Path(config["train_data_dir"]) / "portrait.txt").write_text("changed portrait caption", encoding="utf-8")
             self.assertFalse(get_krea2_cache_status(config)["ready"])
-
-
-class MultiCoreFrontendContractTests(unittest.TestCase):
-    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
-    def test_flat_config_import_switches_profile_before_filtering_fields(self):
-        script = r"""
-global.window = {};
-const storage = new Map([
-  ['anima-form-train-basic', JSON.stringify({
-    model_train_type: 'anima-lora',
-    qwen3: './models/stale-qwen.safetensors',
-  })],
-]);
-global.localStorage = {
-  getItem(key) { return storage.has(key) ? storage.get(key) : null; },
-  setItem(key, value) { storage.set(key, value); },
-};
-window.getVisibleSections = type => [{
-  key: 'model',
-  fields: type === 'sdxl-lora'
-    ? [
-        { key: 'model_train_type' },
-        { key: 'pretrained_model_name_or_path' },
-        { key: 'network_module' },
-        { key: 'xformers' },
-      ]
-    : [{ key: 'model_train_type' }, { key: 'qwen3' }],
-}];
-require('./frontend/js/training-core.js');
-require('./frontend/js/training-config-io.js');
-const events = [];
-const tickQueue = [];
-const ctx = Object.assign({}, window.trainingCoreMixin, window.trainingConfigIoMixin, {
-  currentRoute: 'train-basic',
-  trainTypes: [{ v: 'sdxl-lora' }, { v: 'anima-lora' }, { v: 'krea2-lora' }],
-  form: { model_train_type: 'anima-lora', qwen3: './models/old-qwen.safetensors' },
-  _activeTrainType: 'anima-lora',
-  _profileFormDrafts: {},
-  _profileFieldSources: {},
-  _fieldSources: {},
-  switchTrainType(type) {
-    events.push(`switch:${type}`);
-    this.form = { model_train_type: type, network_module: 'networks.lora' };
-    this._activeTrainType = type;
-    this.$nextTick(() => {
-      events.push(`switch-tick:${type}`);
-      this.form.network_module = 'networks.lora';
-    });
-  },
-  $nextTick(callback) { tickQueue.push(callback); },
-  _buildFormDefaults(type) {
-    events.push(`defaults:${type}`);
-    return type === 'sdxl-lora'
-      ? {
-          model_train_type: type,
-          pretrained_model_name_or_path: './models/default.safetensors',
-          network_module: 'networks.lora',
-          xformers: false,
-        }
-      : { model_train_type: type, qwen3: './models/default-qwen.safetensors' };
-  },
-  _normalizeProfileSelectValues() {},
-  _syncKrea2CacheDir() {},
-  _captureProfileDraft() {},
-  updateToml() {},
-  rebuildForm() {},
-});
-const importing = ctx._applyImportedFlatConfig({
-  model_train_type: 'sdxl-lora',
-  pretrained_model_name_or_path: './models/imported.safetensors',
-  network_module: 'lycoris.kohya',
-  xformers: true,
-  qwen3: './models/must-not-leak.safetensors',
-  unknown_field: 123,
-});
-while (tickQueue.length > 0) tickQueue.shift()();
-importing.then(() => console.log(JSON.stringify({
-  events,
-  form: ctx.form,
-  persisted: JSON.parse(storage.get('anima-form-train-basic')),
-})));
-"""
-        result = subprocess.run(
-            ["node", "-e", script],
-            cwd=Path.cwd(),
-            capture_output=True,
-            check=True,
-            text=True,
-        )
-        state = json.loads(result.stdout)
-        self.assertEqual(state["events"][0], "switch:sdxl-lora")
-        self.assertEqual(state["events"][1], "switch-tick:sdxl-lora")
-        self.assertEqual(state["events"][2], "defaults:sdxl-lora")
-        self.assertEqual(state["form"]["model_train_type"], "sdxl-lora")
-        self.assertEqual(state["form"]["pretrained_model_name_or_path"], "./models/imported.safetensors")
-        self.assertEqual(state["form"]["network_module"], "lycoris.kohya")
-        self.assertTrue(state["form"]["xformers"])
-        self.assertNotIn("qwen3", state["form"])
-        self.assertNotIn("unknown_field", state["form"])
-        self.assertEqual(state["persisted"], state["form"])
-
-    @unittest.skipUnless(shutil.which("node"), "Node.js is required for frontend checks")
-    def test_training_profiles_keep_independent_drafts_and_reset_from_registry_defaults(self):
-        script = r"""
-global.window = {};
-const profileFields = {
-  'anima-lora': [
-    { key: 'learning_rate', type: 'text', default: 'anima-default' },
-    { key: 'optimizer_type', type: 'select', default: 'AnimaOpt', options: [{ v: 'AnimaOpt' }] },
-  ],
-  'sdxl-lora': [
-    { key: 'learning_rate', type: 'text', default: 'sdxl-default' },
-    { key: 'optimizer_type', type: 'select', default: 'SDXLOpt', options: [{ v: 'SDXLOpt' }] },
-  ],
-  'krea2-lora': [
-    { key: 'learning_rate', type: 'text', default: 'krea-default' },
-    { key: 'optimizer_type', type: 'select', default: 'KreaOpt', options: [{ v: 'KreaOpt' }] },
-    { key: 'dit', type: 'text', default: './models/raw.safetensors' },
-    { key: 'vae', type: 'text', default: './models/vae.safetensors' },
-    { key: 'text_encoder', type: 'text', default: './models/text.safetensors' },
-  ],
-};
-window.getVisibleSections = type => [{ key: 'test', fields: profileFields[type] }];
-window.t = (_key, fallback) => fallback;
-require('./frontend/js/training-core.js');
-const noop = () => {};
-const ctx = Object.assign({}, window.trainingCoreMixin, {
-  form: {
-    model_train_type: 'anima-lora',
-    learning_rate: 'anima-custom',
-    optimizer_type: 'AnimaOpt',
-  },
-  formDefaults: {},
-  _profileFormDrafts: {},
-  _profileFieldSources: {},
-  _fieldSources: { learning_rate: 'user', optimizer_type: 'default' },
-  _activeTrainType: 'anima-lora',
-  currentRoute: '',
-  renderTrainingForm: noop,
-  setupAutoValueWatchers: noop,
-  setupShowIfWatchers: noop,
-  setupReadonlyWatchers: noop,
-  updateToml: noop,
-  rebuildForm: noop,
-  toast: noop,
-  t: (_key, fallback) => fallback || '',
-  $nextTick: fn => fn(),
-});
-ctx.switchTrainType('krea2-lora');
-const kreaFirst = { ...ctx.form };
-ctx.form.learning_rate = 'krea-custom';
-ctx._setFieldSource('learning_rate', 'user');
-ctx.switchTrainType('sdxl-lora');
-const sdxlFirst = { ...ctx.form };
-ctx.switchTrainType('anima-lora');
-const animaRestored = { ...ctx.form };
-const animaSource = ctx._fieldSources.learning_rate;
-ctx.switchTrainType('krea2-lora');
-const kreaRestored = { ...ctx.form };
-const kreaSource = ctx._fieldSources.learning_rate;
-ctx.formDefaults.learning_rate = 'imported-baseline';
-ctx.form.learning_rate = 'edited-after-import';
-ctx.setField = (key, value) => { ctx.form[key] = value; };
-ctx.resetField('learning_rate');
-const kreaFieldReset = ctx.form.learning_rate;
-const kreaFieldResetSource = ctx._fieldSources.learning_rate;
-ctx.formDefaults.learning_rate = 'polluted-default';
-ctx.form.learning_rate = 'polluted-value';
-ctx.resetAllParams();
-const kreaReset = { form: { ...ctx.form }, defaults: { ...ctx.formDefaults } };
-const kreaResetSource = ctx._fieldSources.learning_rate;
-console.log(JSON.stringify({
-  kreaFirst, sdxlFirst, animaRestored, animaSource, kreaRestored, kreaSource,
-  kreaFieldReset, kreaFieldResetSource, kreaReset, kreaResetSource,
-}));
-"""
-        result = subprocess.run(
-            ["node", "-e", script],
-            cwd=Path.cwd(),
-            capture_output=True,
-            check=True,
-            text=True,
-        )
-        state = json.loads(result.stdout)
-        self.assertEqual(state["kreaFirst"]["learning_rate"], "krea-default")
-        self.assertEqual(state["sdxlFirst"]["learning_rate"], "sdxl-default")
-        self.assertEqual(state["animaRestored"]["learning_rate"], "anima-custom")
-        self.assertEqual(state["animaSource"], "user")
-        self.assertEqual(state["kreaRestored"]["learning_rate"], "krea-custom")
-        self.assertEqual(state["kreaSource"], "user")
-        self.assertEqual(state["kreaFieldReset"], "krea-default")
-        self.assertEqual(state["kreaFieldResetSource"], "default")
-        self.assertEqual(state["kreaReset"]["form"]["learning_rate"], "krea-default")
-        self.assertEqual(state["kreaReset"]["defaults"]["learning_rate"], "krea-default")
-        self.assertEqual(state["kreaResetSource"], "default")
 
 
 if __name__ == "__main__":

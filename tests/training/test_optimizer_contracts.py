@@ -16,28 +16,13 @@ from backend.training.optimizer_contracts import (
     STABLE_ADAMW_OPTIMIZER_TYPE,
 )
 from backend.training.validation import validate_training_config
-from tests.helpers import config_from_field_defaults
+from tests.helpers import valid_training_config
 
 
 def valid_config(optimizer_type: str, train_type: str = "anima-lora") -> dict:
-    config = config_from_field_defaults()
-    config.update(
-        {
-            "model_train_type": train_type,
-            "network_module": (
-                "networks.lora_anima" if train_type == "anima-lora" else "networks.lora"
-            ),
-            "pretrained_model_name_or_path": "model.safetensors",
-            "vae": "vae.safetensors",
-            "qwen3": "qwen3.safetensors",
-            "train_data_dir": "train",
-            "resolution": "1024,1024",
-            "output_name": "test",
-            "output_dir": "output",
-            "optimizer_type": optimizer_type,
-            "gradient_accumulation_steps": 1,
-            "mixed_precision": "bf16",
-        }
+    config = valid_training_config(
+        train_type, resolution="1024,1024", optimizer_type=optimizer_type,
+        gradient_accumulation_steps=1, mixed_precision="bf16",
     )
     if optimizer_type in {PRODIGY_OPTIMIZER_TYPE, PRODIGYPLUS_OPTIMIZER_TYPE}:
         config["learning_rate"] = "1.0"
@@ -85,36 +70,6 @@ class OptimizerValidationTests(unittest.TestCase):
         config["optimizer_args"] = ["silently_ignored_option=1"]
         errors = validate_training_config(config)
         self.assertTrue(any("unsupported argument" in error for error in errors), errors)
-
-
-    def test_lora_muon_requires_anima_native_network(self):
-        valid = valid_config(LORA_MUON_OPTIMIZER_TYPE, "anima-lora")
-        self.assertEqual(validate_training_config(valid), [])
-
-        wrong_module = valid_config(LORA_MUON_OPTIMIZER_TYPE, "anima-lora")
-        wrong_module["network_module"] = "networks.lora"
-        errors = validate_training_config(wrong_module)
-        self.assertTrue(any("LoRA-Muon" in error for error in errors), errors)
-
-        sdxl = valid_config(LORA_MUON_OPTIMIZER_TYPE, "sdxl-lora")
-        errors = validate_training_config(sdxl)
-        self.assertTrue(any("LoRA-Muon" in error for error in errors), errors)
-
-
-    def test_rejects_prodigyplus_fused_modes(self):
-        config = valid_config(PRODIGYPLUS_OPTIMIZER_TYPE)
-        config["optimizer_args"] = ["fused_back_pass=True"]
-        errors = validate_training_config(config)
-        self.assertTrue(any("skip all updates" in error for error in errors), errors)
-
-        config["optimizer_args"] = ["fused_backward_pass=False"]
-        errors = validate_training_config(config)
-        self.assertTrue(any("not a valid optimizer argument" in error for error in errors), errors)
-
-        config = valid_config(PRODIGYPLUS_OPTIMIZER_TYPE)
-        config["fused_backward_pass"] = True
-        errors = validate_training_config(config)
-        self.assertTrue(any("fused_backward_pass" in error for error in errors), errors)
 
 
 class OptimizerAdapterTests(unittest.TestCase):

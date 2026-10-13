@@ -9,11 +9,11 @@ Start with AdamW8bit. Compare StableAdamW for update spikes, or a Paged variant 
 
 | Main goal | Options to compare | What to inspect |
 | --- | --- | --- |
-| Establish a general baseline | AdamW8bit | Whether learning rate, duration, and data issues are easy to distinguish |
+| Establish a general baseline | AdamW8bit | Total steps, checkpoint stage, previews, peak VRAM, and time per step |
 | Reduce optimizer-state memory | 8-bit; Paged variants when needed | Peak memory and transfer overhead |
 | Handle update spikes or low-precision rounding | StableAdamW | Whether abnormal updates decrease, not just one final preview |
 | Compare factored statistics and update clipping | CAME | Stability, speed, and generated results |
-| Reduce manual step-size tuning | Prodigy family | Whether automatic estimates reach a useful range promptly |
+| Reduce manual step-size tuning | Prodigy family | Changes in D and the first checkpoint that adequately captures the target features |
 | Compare matrix update methods | Muon, SOAP | Learning speed and additional computation |
 | Compare methods designed for LoRA factors | LoRA-Muon, LoRA-RITE | Factor-pair compatibility and separately tuned learning rates |
 
@@ -22,24 +22,24 @@ Start with AdamW8bit. Compare StableAdamW for update spikes, or a Paged variant 
 
 | Optimizer | Primary purpose | Restrictions |
 | --- | --- | --- |
-| AdamW | Full-precision AdamW baseline | Uses more optimizer-state VRAM than the 8-bit builds |
+| AdamW | AdamW baseline with unquantized state | State follows the training parameter dtype; default FP32 state uses more memory than the 8-bit variant |
 | AdamW8bit | Everyday default | Small tensors keep FP32 state by design |
-| PagedAdamW8bit | When the regular 8-bit optimizer still does not fit | Only difference is paging; transfers between CPU and GPU may slow training |
-| StableAdamW | Gradient spikes, low-precision LoRA weights | Uses more state VRAM than AdamW8bit; does not prevent overfitting |
-| Lion | Symbolic-momentum optimizer for comparison | Works with a different LR range; tune it separately |
+| PagedAdamW8bit | When the regular 8-bit optimizer still does not fit | Uses AdamW8bit updates with paged state; paging adds CPU/GPU transfers |
+| StableAdamW | Update spikes, low-precision LoRA weights | State uses the training parameter dtype; internal clipping limits updates without changing data sampling or run length |
+| Lion | Sign-based momentum updates for comparison | Works with a different LR range; tune it separately |
 | Lion8bit | Lion with less state VRAM | Needs its own LR sweep |
-| PagedLion8bit | Lion8bit that also needs paging | Paging does not improve quality and may slow training |
+| PagedLion8bit | Lion8bit that also needs paging | Paging changes where momentum state is stored; active paging adds CPU/GPU transfers |
 | Prodigy | Optimizer-estimated update scale | Base LR must be `1.0`; not supported with LoRA+ here |
 | ProdigyPlusScheduleFree | Automatic step-size estimation and internal scheduling | External scheduler and warmup are ignored; compare against an established baseline |
-| Automagic3 | Experimental adaptive scheme | Test only against a solid baseline; requires gradient accumulation of 1; fp16 mixed precision and multi-GPU are not supported |
+| Automagic3 | Experimental adaptive scheme | Keeps trainable parameters in FP32. Only fused updates require gradient accumulation of 1, global gradient clipping of 0, no fp16 mixed precision, and a single GPU |
 | AdaFactor | Very tight optimizer memory | Relative-step mode takes over the LR and restricts LoRA+ |
-| CAME | Comparison when source images mix and update scale varies | Uses three betas and internal RMS clipping |
-| AdamWScheduleFree | Testing AdamW without an external scheduler | Supports internal warmup, but this project leaves `warmup_steps=0`; not a first choice for short runs |
+| CAME | Compare factorized state, residual-confidence scaling, and internal RMS clipping | Uses three betas; stores second moments by row and column for factorable tensors |
+| AdamWScheduleFree | Testing AdamW without an external scheduler | Uses internal warmup, default `warmup_steps=0`; evaluation and saving use averaged weights |
 | EmoSens | Experimental optimizer | Requires gradient accumulation of 1; fp16 mixed precision and multi-GPU are not supported; LoRA+ not supported |
 | Muon | Momentum orthogonalization for two-dimensional LoRA matrices | Anima LoRA only; uses PyTorch's native implementation; compare it with AdamW8bit under identical conditions |
 | LoRA-Muon | Spectral low-rank optimization designed for standard LoRA factor pairs | Supports only `anima-lora` with `networks.lora_anima`; incompatible with LoRA+ and LyCORIS networks such as LoKr and LoHa; requires separate learning-rate calibration |
 | Adan | Updates that incorporate changes between gradients | The project starts at half the AdamW learning rate; uses three betas |
-| AdEMAMix | Comparison for long runs or visibly noisy gradients | Benefit of the slow moving average is uncertain in short runs; alpha and ramp lengths should match the training length |
+| AdEMAMix | Use short- and long-term gradient averages together | alpha controls the long-term contribution; ramp lengths set when it reaches the target weight |
 | AdEMAMix8bit | AdEMAMix when optimizer-state memory is tight | Differs from the full-precision version mainly in state quantization |
 | LoRA-RITE | Trying an update rule designed for LoRA's structure | Anima LoRA and standard LoRA structure only; no LoRA+; uses its own clipping, `max_grad_norm` (global gradient clipping threshold) locks to 0 |
 | SOAP | Adam-style updates in a rotated coordinate system | Preconditioning adds memory and computation; the project caps preconditioned dimensions at `256` by default |
@@ -49,9 +49,9 @@ Memory notes above refer only to optimizer state. Peak usage also depends on res
 <!-- doc-anchor: stable-comparison -->
 ## AdamW8bit, CAME, StableAdamW: how they differ
 
-**AdamW8bit is the baseline.** It uses little state memory, is well understood, and makes it easy to isolate your learning rate, step count, and data issues. Use it unless you have a specific stability or memory concern.
+**AdamW8bit is this project's default.** It stores larger state tensors in 8-bit and smaller ones in FP32. Keep it for an initial run, then tune learning rate and total steps separately.
 
-**CAME uses factorized state with internal RMS clipping.** Use it to compare state storage and update stabilization. Clean and caption mixed-source datasets first.
+**CAME uses factorized state, residual-confidence scaling, and internal RMS clipping.** Mixed data sources alone are not a reason to select it. Record state memory, update behavior, and generated results when comparing it.
 
 **StableAdamW limits unusually large updates.** It supports standard schedulers, warmup, `max_grad_norm`, and LoRA+. Anima starts at `lr=2e-5`, `betas=(0.9, 0.99)`, `eps=1e-8`, and `weight_decay=0`; SDXL starts at `1e-4`. It uses more state memory than AdamW8bit and is mainly useful for update stability problems.
 
@@ -61,7 +61,7 @@ Memory notes above refer only to optimizer state. Peak usage also depends on res
 <!-- doc-anchor: learning-rate -->
 ### Learning rate
 
-Learning rate controls update size. Higher values speed up learning but increase the risk of loss spikes, rigid compositions, and weaker prompt control. Lower values make smaller updates and need more training steps.
+Learning rate sets the overall update scale. With the optimizer and other settings fixed, raising it enlarges the terms controlled by the learning rate; lowering it reduces them. Internally adaptive optimizers also compute their own step size. Use generated results from several checkpoints to find a usable range, rather than judging only by how quickly loss falls.
 
 The table lists project starting values. Optimizers use different update scales and need separate learning-rate tuning; these defaults are not dataset-specific optima.
 
@@ -79,7 +79,7 @@ The table lists project starting values. Optimizers use different update scales 
 | Lion / Lion8bit / PagedLion8bit | `5e-6` | Lion's guidance is roughly `3`–`10`× smaller than AdamW |
 | AdamWScheduleFree | `1e-4` | Schedule-Free guidance often `1`–`10`× higher than the base optimizer; treated as experimental on Anima |
 | Prodigy / ProdigyPlus | `1.0` | D-adaptation scale; not comparable to `2e-5` |
-| AdaFactor relative step | Controlled by the optimizer | With relative step off, Anima manual mode starts at `2e-5` |
+| AdaFactor relative step | Controlled by the optimizer; entered LR does not control updates | With both `relative_step` and `warmup_init` off, Anima manual mode starts at `2e-5` |
 | Automagic3 / EmoSens | `1e-4` / `0.1` | Internal dynamic-LR baseline values, not ordinary fixed LR |
 
 The Lion `5e-6` simply applies the paper's rule of thumb — roughly 3–10× smaller than AdamW. The paper also recommends scaling weight decay up by roughly 3–10×, which this project does not adopt, so this is not the complete official Lion recipe.
@@ -90,12 +90,18 @@ SDXL keeps its own generic baselines: `1e-4` for AdamW/StableAdamW, `1e-4` for C
 
 When a character locks in, colors bleed, or prompt adherence drops too early, lower the learning rate or reduce training steps. When the model underlearns, confirm the trigger word and useful step count before nudging the LR up. Lion's usable LR range is different from AdamW's; test it on its own.
 
+With `relative_step` enabled, AdaFactor computes the update step size from the update count. The entered learning rate initializes the scheduler proxy's display; it does not control updates, and the external scheduler does not apply. `scale_parameter` separately controls multiplication by the parameter RMS. Turn off both `relative_step` and `warmup_init` to use manual learning rates, an external scheduler, or LoRA+.
+
 <!-- doc-anchor: scheduler-warmup -->
 ### LR scheduler and warmup
 
-AdamW, AdamW8bit, StableAdamW, Lion, CAME, Muon, and LoRA-Muon run under the external scheduler. New Anima configurations default to `constant`, matching the upstream Anima examples and removing one variable from short runs. With the default `num_cycles=1`, `cosine_with_restarts` never actually restarts; restarts only occur when `num_cycles` is greater than 1. Existing hand-made configs keep working; to test warmup, `constant_with_warmup` is the simple option, and keep it under `5%` of total optimizer steps first.
+AdamW, AdamW8bit, StableAdamW, Lion, CAME, Muon, and LoRA-Muon run under the external scheduler. New Anima configurations default to `constant`, matching the upstream Anima examples and removing one variable from short runs. With the default `num_cycles=1`, `cosine_with_restarts` never actually restarts; restarts only occur when `num_cycles` is greater than 1. Existing hand-made configs keep working; to test warmup, `constant_with_warmup` is the simple option, and keep it at or below `5%` of total optimizer steps first.
 
 AdamWScheduleFree and ProdigyPlus manage their own schedule, so the UI forces the external scheduler to constant. AdamWScheduleFree's internal warmup is separate from `lr_warmup_steps`; ProdigyPlusScheduleFree exposes no comparable warmup setting.
+
+`warmup_stable_decay` (WSD) runs warmup → constant → final decay. `lr_warmup_steps` and `lr_decay_steps` accept integer counts or fractions below 1; the stable phase uses the remaining steps, and the two lengths must fit the total budget. `warmup_type` defaults to `linear` and `decay_type` to `cosine`; both support `linear`, `cosine`, and `1-sqrt`. The square-root warmup accelerates, while square-root decay slows down. The minimum LR ratio sets both the warmup start and decay end. Cycles only affect cosine decay; UI value `1` gives a single downward curve. A phase with length `0` is skipped.
+
+`piecewise_constant` uses one `step_rules` text input: `multiplier:cumulative_end_step,...,final_multiplier`. For example, `1:1000,0.5:1600,0.1` uses the base rate at steps 0–999, 50% at 1000–1599, and 10% from step 1600 onward. Boundaries must be increasing positive integers; multipliers must be finite and non-negative and may exceed 1. The last item has no boundary. Separate warmup is disabled, with `lr_warmup_steps` fixed at `0`. Boundaries use sd-scripts scheduler steps; the preview converts them to training steps for multiple processes. Rules with boundaries require a total-step estimate before rendering the staircase.
 
 Open **View learning-rate curve** under the schedule field to inspect warmup, decay, and restarts. The sidebar shows the selected component's effective learning rate and warmup steps. When training both the DiT and text encoder, switch components to inspect their curves separately. Check the estimation notice when total steps are not yet known. The curve represents scheduler output, not the optimizer's internal adaptive update magnitude.
 
@@ -142,20 +148,20 @@ Muon keeps one momentum state per parameter, compared with full-precision AdamW'
 
 #### Update scale
 
-- **Learning rate** (`learning_rate`, Anima default `2e-5`): Directly controls update size. Values that are too high can cause rapid overfitting, noisy loss, or unstable updates; values that are too low learn slowly. With the default scaling, an AdamW baseline is a useful starting point for comparison.
+- **Learning rate** (`learning_rate`, Anima default `2e-5`): controls the overall scale of the orthogonalized update. The form starts here with `match_rms_adamw` scaling. Retune after changing the scaling rule.
 - **Learning-rate scaling** (`adjust_lr_fn`, default `match_rms_adamw`): scales updates by matrix size so an AdamW learning rate is a useful starting point. Retune the rate after changing this rule.
-- **Weight decay** (`weight_decay`, default `0`): Higher values shrink the LoRA factors further. This may reduce overfitting or may weaken character learning. PyTorch Muon defaults to `0.1`; the trainer explicitly passes the value shown in the UI.
+- **Weight decay** (`weight_decay`, default `0`): shrinks LoRA factors during updates; `0` disables it. PyTorch defaults to `0.1`, but the trainer uses the form's value.
 
 #### Momentum
 
-- **Momentum coefficient** (`momentum`, default `0.95`): Higher values produce smoother updates but respond more slowly to new gradients; lower values are more sensitive to the current batch.
+- **Momentum coefficient** (`momentum`, default `0.95`): higher values retain a larger share of historical momentum and give the current gradient a smaller share.
 - **Nesterov momentum** (`nesterov`, enabled by default): Controls how the current gradient and momentum history are combined before orthogonalization. Disabling it changes the optimization path rather than just performance.
 
 #### Orthogonalization
 
 - **Iterations** (`ns_steps`, default `5`): more iterations cost more computation. This approximation is not designed to converge to exact orthogonalization through unlimited iteration. Keep `5` for ordinary training; adjust it when comparing compute costs.
-- **Iteration coefficients** (`ns_coefficients`, default `3.4445, -4.775, 2.0315`): Define the polynomial used by the Newton-Schulz iteration. Other values can degrade the approximation or cause numerical problems and are mainly useful in controlled experiments.
-- **Numerical stabilizer** (`eps`, default `1e-7`): Prevents division by very small values during normalization. It rarely affects normal training and is mainly relevant when investigating reproducible NaNs or abnormal amplification.
+- **Iteration coefficients** (`ns_coefficients`, default `3.4445, -4.775, 2.0315`): define the Newton-Schulz polynomial. Changing them changes the approximation algorithm; verify its numerical results together with the iteration count.
+- **Numerical stabilizer** (`eps`, default `1e-7`): sets a floor on the orthogonalization denominator to prevent division by zero. Adjust when investigating NaNs or abnormal amplification in this calculation.
 
 For a first comparison, swap AdamW8bit for Muon and keep data, rank, alpha, scheduler, step count, and learning rate unchanged. Once the run is stable, test LR or weight decay separately. Changing the NS coefficients and iteration count together makes the result difficult to interpret; adjust one at a time.
 
@@ -172,11 +178,11 @@ LoRA-Muon processes the factors as a pair, with the aim of updating the weight c
 | --- | --- | ---: | --- | --- |
 | `learning_rate` | Top-level training field; passed to the constructor as `lr` | Anima automatic recommendation: `0.02`; constructor: `0.1` | Finite number `≥ 0` | Controls the overall update scale. Tune this first; do not copy an AdamW learning rate directly |
 | `weight_decay` | Common UI field; ultimately passed as an optimizer argument | `0` | Finite number `≥ 0`; also requires `learning_rate * weight_decay < 1` | Uses the paper's split decoupled decay rule. Keep it at `0` unless a controlled comparison supports changing it |
-| `momentum` | `optimizer_args` | `0.9` | `0 ≤ momentum < 1` | Exponential moving average of gradients. Higher values are smoother but react more slowly |
+| `momentum` | `optimizer_args` | `0.9` | `0 ≤ momentum < 1` | Exponential moving average of gradients. Higher values retain more of the previous average and give less weight to the current gradient |
 | `ns_steps` | `optimizer_args` | `8` | Integer `1–8` | Number of Polar Express / Newton–Schulz matrix-sign iterations. Lower values reduce compute but give a coarser approximation |
-| `inv_sqrt_steps` | `optimizer_args` | `7` | Integer `1–7` | Number of iterations on the regular Gram inverse-root path; the cold-start guard and eigendecomposition fallback do not use these iterations. Normally leave it at the default |
-| `msign_eps` | `optimizer_args` | `1e-20` | Finite number `≥ 0` | Division-by-zero guard used during matrix-sign normalization |
-| `inv_sqrt_eps` | `optimizer_args` | `1e-5` | Finite number `≥ 0` | Used for Gram regularization, the cold-start threshold, and the eigenvalue floor; it affects update behavior and should normally stay at the default |
+| `inv_sqrt_steps` | `optimizer_args` | `7` | Integer `1–7` | Iterations on the regular Gram inverse-root path. Fewer iterations reduce matrix computation and change the approximation; the cold-start guard and eigendecomposition fallback do not use this count |
+| `msign_eps` | `optimizer_args` | `1e-20` | Finite number `≥ 0` | Added to the matrix-sign normalization denominator to prevent division by zero |
+| `inv_sqrt_eps` | `optimizer_args` | `1e-5` | Finite number `≥ 0` | Used for Gram regularization, the cold-start threshold, and the eigenvalue floor. Changing it alters factor-scale correction |
 | `inv_sqrt_gamma` | `optimizer_args` | `1.001` | Finite number `> 0` | Damping used by the inverse-root iteration. Leave it unchanged unless investigating a numerical problem |
 | `gauge_rebalance` | `optimizer_args` | `false` | `true` / `false` | Periodically balances the scales of the two factors. This is a conditioning operation, not an overfitting regularizer |
 | `gauge_rebalance_alpha` | `optimizer_args` | `1.0` | `0 < alpha ≤ 1` | Damping exponent for rebalancing. Values closer to `1` apply a more complete adjustment. Relevant only when rebalancing is enabled |
@@ -207,7 +213,7 @@ The current implementation has the following compatibility limits:
 - It supports only `model_train_type=anima-lora` with `network_module=networks.lora_anima`.
 - It is incompatible with LoRA+ because split parameter groups break complete `lora_down → lora_up` pairing.
 - It does not support LyCORIS structures such as LoKr, LoHa, or DoRA.
-- It supports Linear LoRA and the Conv LoRA shapes used by Anima.
+- It supports Linear LoRA and Conv LoRA whose up projection is 1×1. The current Anima DiT backbone uses Linear layers and does not use convolutional LoRA.
 - Matrix operations for FP16/BF16 parameters are performed in FP32 and written back to the original parameter dtype; no separate `dtype` option is required.
 - First moments remain in FP32. Optimizer-state restoration transfers them directly from the checkpoint to the working dtype and current parameter device, avoiding an intermediate FP16/BF16 cast.
 - Standard sd-scripts learning-rate schedulers remain supported. LoRA-Muon does not take ownership of the scheduler or warmup.
@@ -238,15 +244,15 @@ The paper calls `η` the trust-region radius. It bounds the spectral norm of the
 
 Adan tracks both gradients and changes between consecutive gradients. For Anima, start at `1e-5` and tune against learning speed, loss stability, and the best checkpoint.
 
-- **Betas** (default `0.98, 0.92, 0.99`): control the gradient average, the gradient-difference average, and the squared-gradient statistics respectively.
+- **Betas** (default `0.98, 0.92, 0.99`): control the gradient average, the average difference between consecutive gradients, and the squared statistics of `g + β2 × (g − previous gradient)`, respectively.
 - **Epsilon** (default `1e-8`): same semantics as AdamW.
-- **Weight decay** (`weight_decay`, default `0.01`) and **decoupled decay** (`weight_decouple`, on by default): when enabled, weights shrink by `1 − lr × weight_decay` before the update. When disabled, weights are divided by `1 + lr × weight_decay` after the update. Keep the defaults for ordinary training.
+- **Weight decay** (`weight_decay`, default `0.01`) and **decoupled decay** (`weight_decouple`, on by default): when enabled, weights shrink by `1 − lr × weight_decay` before the update. When disabled, weights are divided by `1 + lr × weight_decay` after the update. With `weight_decay=0`, neither mode applies decay.
 - Adan's own `max_grad_norm` argument stays `0` here; gradient clipping is handled by the `max_grad_norm` field (labeled global gradient clipping threshold in the UI).
 
 <!-- doc-anchor: ademamix-options -->
 ### AdEMAMix options
 
-AdEMAMix uses gradient trends from both shorter and longer time scales. Short-term trends respond quickly; long-term trends can smooth temporary fluctuations, but can also retain early directions that are no longer useful.
+AdEMAMix maintains short- and long-term gradient averages. Beta1 and Beta3 set their decay rates; Alpha sets the multiplier for long-term momentum in the update.
 
 | Parameter | What it controls | Effect of increasing it |
 | --- | --- | --- |
@@ -260,17 +266,17 @@ This optimizer's `alpha` is a mixing weight, separate from network Alpha. Start 
 `alpha` defaults to `5.0`; `0` removes the slow average from the update. `t_alpha` and `t_beta3` are empty by default and use the estimated total steps at launch, unless the corresponding value is already supplied in custom optimizer arguments. Set either to `0` to disable its ramp, or a positive integer to set the ramp duration. Alpha starts at 0, and β3 starts at β1.
 
 - **Betas** (default `0.9, 0.999, 0.9999`): control the short-term gradient average, squared-gradient average, and long-term gradient average. **Epsilon** defaults to `1e-8`. **Weight decay** defaults to `0.01` and scales with the learning rate.
-- The 8-bit variant stores all three states quantized, at roughly a quarter of the full-precision memory; tensors smaller than 4096 elements stay unquantized, which is expected.
+- For tensors meeting the quantization threshold, the 8-bit variant stores values in all three states at 1 byte each instead of 4, plus quantization scales and related data. This does not mean total training VRAM shrinks to a quarter. By default, tensors smaller than 4096 elements keep FP32 state.
 
 <!-- doc-anchor: lorarite-options -->
 ### LoRA-RITE options
 
 LoRA-RITE uses gradients with factor scaling removed and low-rank matrix preconditioning to reduce sensitivity to equivalent A/B representations. Start Anima at `1e-4` and compare with AdamW8bit.
 
-- **Learning rate** (Anima default `1e-4`): compare values within `5e-5`–`2e-4` initially. Higher rates learn faster; excessive rates cause loss spikes.
+- **Learning rate** (Anima default `1e-4`): initially compare values within `5e-5`–`2e-4`. Keep the data, rank, and step count fixed, then compare checkpoints using the same prompts and seeds.
 - **Betas** (default `0.9, 0.999`): the usual two.
 - **Epsilon** (default `1e-6`): note the semantics — this is a root epsilon, squared internally before use; do not carry over the Adam-style `1e-8`.
-- **Gradient clip threshold** (`clip_unmagnified_grad`, default `1.0`): suppresses the effect of occasional gradient spikes on the update; the default is sufficient in most cases. The norm is measured after removing the scaling induced by the LoRA factors. When this optimizer is selected, the UI's `max_grad_norm` (global gradient clipping threshold) locks to `0` and this setting takes over; `0` disables clipping.
+- **Gradient clip threshold** (`clip_unmagnified_grad`, default `1.0`): limits the gradient norm after removing the scaling induced by the LoRA factors. Lower positive values impose a stronger limit; `0` disables clipping. The UI locks `max_grad_norm` to `0` because this optimizer uses its own clipping rule.
 - Limits: Anima LoRA only; standard LoRA structure only (LyCORIS LoHa, LoKr, DoRA, etc. are not applicable); incompatible with LoRA+ (grouped learning rates break the A/B pairing assumption).
 - Cold-start note: with the usual zero-initialized up matrix, the first few steps mostly update the up matrix and the down matrix joins a few steps later. This is expected behavior, not a stall.
 
@@ -293,7 +299,7 @@ SOAP uses correlations between gradient directions to choose a coordinate basis,
 - **Epsilon** (default `1e-8`): added after the square root of the squared-gradient state, same semantics as AdamW.
 - **Weight decay** (default `0`): the library default is `0.01`; this project keeps its own `0` and writes it into the config explicitly. The implementation always uses decoupled, non-fixed decay, so there is no switch for it.
 - **Gradient clipping**: SOAP has no internal clipping, so the `max_grad_norm` field (global gradient clipping threshold) applies as usual. Its default of `1.0` matches sd-scripts' own default, so it is not written to the config, and nothing is locked for SOAP.
-- Statistics and basis matrices use memory proportional to axis length squared. In FP32, the pair uses about 2 MiB for a 512-dimensional axis and 8 MiB for 1024. Keep the `256` limit for ordinary training to avoid large matrices for Anima's 2048- and 8192-dimensional axes.
+- Statistics and basis matrices use memory proportional to axis length squared. In FP32, the pair uses about 2 MiB for a 512-dimensional axis and 8 MiB for 1024. The project's default limit is `256`; longer axes do not get these matrices.
 - SOAP's first update only builds the preconditioner state and does not change any weight; effective updates start on the second step. That is normal behavior of this implementation, not a stall.
 
 <!-- doc-anchor: prodigyplus-options -->
@@ -305,7 +311,7 @@ The Prodigy family estimates step size during training, while the learning-rate 
 | --- | --- | --- |
 | `D` | Estimated step-size scale | Updated during training; inspect it in the logs |
 | Learning-rate field | Multiplier used in step-size calculation | `1.0`; keep the default |
-| `d0` | Initial step-size estimate | `1e-6`; normally leave unchanged |
+| `d0` | Initial step-size estimate | `1e-6`; sets where D estimation begins, not a floor on the actual learning rate |
 | `d_coef` | Scale applied to step-size estimation | `1.0`; tune this first when adjusting automatic step size. Higher values raise the estimate |
 
 ProdigyPlusScheduleFree also maintains averaged weights for evaluation and saving. Averaging reduces reliance on the very last training state, but newly learned changes can take time to appear in the saved result.
@@ -314,18 +320,18 @@ ProdigyPlusScheduleFree also maintains averaged weights for evaluation and savin
 
 The logged group learning rate, `D × lr`, and the actual parameter update are different measures. Check what a curve records, then inspect generated samples from several training stages to assess learning.
 
-- **D growth limiter** (`d_limiter`, on by default): limits growth of the step-size estimate. With the default `d_coef=1`, `D` grows by at most about 19% per step. Test it off if growth is too slow, at the cost of greater exposure to one-step overestimates. SPEED uses its own limiter and ignores this setting.
+- **D growth limiter** (`d_limiter`, on by default): with `d_coef=1`, limits D growth to about `19%` per step. Disabling removes this cap. SPEED uses its own limiter and ignores this switch.
 - **Steps before D freezes** (`prodigy_steps`, default `0`): after this many steps `D` freezes at its current value and the estimation buffers are released. For the case where `D` has been verified and the second half should not change it; `0` keeps estimating throughout.
 - **Bias correction and automatic warmup** (`use_bias_correction`, off by default): selects a RAdam variant with bias correction and automatic warmup, slowing adjustment of `D`. If `D` stops growing after enabling it, compare with it off.
-- **SPEED estimator** (`use_speed`, off by default): raises `D` only when directional progress exceeds its previous peak. Uses less state and tolerates overall gradient rescaling. This is experimental; check stability when combining it with weight decay.
+- **SPEED estimator** (`use_speed`, off by default): raises `D` when directional progress reaches a historical peak, uses less state, and tolerates overall gradient rescaling. It is experimental; upstream warns when it is combined with nonzero weight decay.
 - **Cautious updates** (`use_cautious`, off by default): removes update components that disagree with the current gradient. This implementation masks the update directly, without a first-moment state. Enable it for a separate comparison of directional filtering.
 - **Orthogonal gradient updates** (`use_orthograd`, off by default): uses only the gradient component orthogonal to the current weight direction. Enable it when testing this constraint.
 
-- **Estimate D per parameter group** (`split_groups`, on by default): estimates step sizes separately for the text encoder and DiT. Disabling it gives all groups one shared estimate. Keep the default unless comparing global estimation.
+- **Estimate D per parameter group** (`split_groups`, on by default): each group estimates step size independently, such as separate text-encoder and DiT groups. Disabling it gives all groups one shared estimate.
 - **Share an averaged D across groups** (`split_groups_mean`, off by default): requires `split_groups`. Uses the harmonic mean of group estimates, multiplied by each group's learning rate. Test it when a shared adaptive scale is desired. Small estimates pull the mean down; with this option off, each group estimates and uses its own `D`.
 - **Factor second moments** (`factored`, on by default): approximates full second moments with row and column statistics to save memory. Compare full statistics by disabling it when investigating NaNs or stalled `D` growth.
-- **Keep factored statistics in FP32** (`factored_fp32`, on by default): reduces half-precision statistics error. Disabling it saves memory only with half-precision gradients. Normally leave it on.
-- **Scale weight decay with the learning rate** (`weight_decay_by_lr`, on by default): scales decay with the adaptive learning rate. Disabling it applies full decay at every step and can shrink weights excessively early in training. Normally leave it enabled.
+- **Keep factored statistics in FP32** (`factored_fp32`, on by default): stores row and column statistics in FP32 when enabled, or in the gradient dtype when disabled. Both modes use the same state storage with FP32 gradients.
+- **Scale weight decay with the learning rate** (`weight_decay_by_lr`, on by default): multiplies decay by the adaptive step size when enabled; otherwise applies the full decay coefficient each step. The modes use different numerical scales, so reassess weight_decay after switching.
 - **Internal update scaling** (`use_stableadamw`, exposed as `prodigyplus_use_stableadamw`, on by default): limits updates by their RMS. This option, or `eps=None` for Adam-atan2, locks global gradient clipping to `0`. Compare it disabled when investigating abnormal adaptive step sizes.
 - **Advanced options** (custom `optimizer_args`): `use_grams` and `use_adopt` are experimental update variants; `use_focus` targets noise at large step sizes and disables `factored` and Adam-atan2; `beta3` controls the moving average used to estimate `D` and defaults to √β2; `stochastic_rounding` affects BF16 weights only.
 
@@ -334,7 +340,7 @@ The logged group learning rate, `D × lr`, and the actual parameter update are d
 
 `max_grad_norm=1` is the common starting value; `0` disables clipping. Lower positive thresholds clip more strongly; higher thresholds allow larger gradients. StableAdamW supports it. LoRA-Muon recommends `0`; LoRA-RITE locks it to `0` and uses internal clipping.
 
-Combining `percentile_clipping=95` with a smaller `max_grad_norm` can clip the same update twice. Without log evidence, keep just one gentler clip.
+Percentile clipping and global gradient clipping are calculated separately. If both conditions trigger, both act on the same update. Change only one clipping setting at a time when comparing results.
 
 <!-- doc-anchor: percentile-clipping -->
 ### Percentile clipping
@@ -342,10 +348,10 @@ Combining `percentile_clipping=95` with a smaller `max_grad_norm` can clip the s
 Applies only to AdamW8bit, PagedAdamW8bit, Lion8bit, and PagedLion8bit.
 
 - `100`: off, and the default
-- `99`: a gentle experimental comparison
+- `99`: clips using the 99th percentile of recent gradient norms
 - `95`: a stronger experimental comparison, only after confirming actual gradient outliers
 
-Lower values clip more strongly. Test `99` when gradient spikes recur; aggressive clipping also weakens useful updates from rare outfits or expressions.
+Lower values clip more strongly. Test `99` when gradient spikes recur; a threshold that is too low also shrinks gradients from ordinary batches. Compare generated samples across several checkpoints to check whether learning is being suppressed.
 
 <!-- doc-anchor: min-8bit-size -->
 ### Minimum 8-bit tensor size (min_8bit_size)
@@ -357,7 +363,7 @@ Higher thresholds keep more state in FP32 and use more VRAM; lower thresholds qu
 <!-- doc-anchor: stableadamw-options -->
 ### StableAdamW-only options
 
-`kahan_sum=True` reduces rounding error with compensated summation, mainly for cases where the LoRA trainable weights themselves are FP16/BF16. The project leaves LoRA trainable weights at FP32 under `mixed_precision=bf16`; only `full_bf16` converts them. Without `full_bf16`, Kahan summation usually makes little difference.
+`kahan_sum=True` uses compensated summation to reduce rounding error, primarily for FP16/BF16 trainable LoRA weights. Selecting only `mixed_precision=bf16` leaves those weights in FP32; `full_bf16` converts them to BF16. Check trainable parameter precision rather than deciding from the mixed-precision setting alone.
 
 `weight_decouple=True` runs the AdamW-style decoupled decay. With `weight_decay=0` this switch has no effect, but keep it on so the setting behaves correctly if you later raise weight decay.
 
@@ -384,13 +390,13 @@ EmoSens adjusts the learning rate automatically as loss changes. Enter a multipl
 
 - **Stop-signal threshold** `stopcoef`: defaults to `0.04`. Suggests considering a stop when training has settled and recent average loss is at or below this value. Higher values make the hint easier to trigger. Values above `1` are allowed; `0` disables triggering.
 - **Show convergence hints** `notify`: on by default. The log message `[READY TO STOP]` suggests considering a stop; it does not end training. Compare nearby saved models before deciding whether to stop. Turning this switch off only hides the message and does not affect training.
-- **Enable shadow weights** `use_shadow`: off by default and usually unnecessary for ordinary training. Keeps an extra copy of the weights and blends it with the current weights when loss changes suddenly, using more GPU memory.
+- **Enable shadow weights** `use_shadow`: off by default. Keeps an extra copy of the weights and blends it with the current weights when loss changes suddenly, using more GPU memory.
 
 Other defaults match upstream: `betas=(0.9, 0.995)`, `eps=1e-8`, and `weight_decay=0.01`.
 
 **Limitations**
 
-Currently, use one GPU, gradient accumulation of `1`, and mixed precision set to `bf16` or `no`. Accumulation and fp16 change the loss value EmoSens reads, while multiple GPUs may calculate different learning rates. These combinations are therefore unsupported.
+Use one GPU, gradient accumulation of `1`, and mixed precision `bf16` or `no`. EmoSens computes its learning rate from training loss; this training path does not support gradient accumulation, FP16 loss scaling, or synchronization of multi-GPU estimates.
 
 The form locks the scheduler and warmup settings; you do not need to configure them. Global gradient clipping is still available. EmoSens uses one learning rate for all trained parameters, so LoRA+ is unsupported and separate U-Net / DiT or text encoder rates do not change their actual rates. To train just one component, use the corresponding training switch.
 
@@ -403,12 +409,12 @@ When resuming, keep the original learning-rate multiplier, convergence-hint sett
 <!-- doc-anchor: loraplus -->
 ### LoRA+
 
-LoRA+ works with most optimizers, including Muon and Automagic3. The exceptions are Prodigy, ProdigyPlus, EmoSens, LoRA-RITE, and LoRA-Muon (LoRA+'s grouped learning rates are incompatible with LoRA-RITE's A/B pairing and LoRA-Muon's joint update path); AdaFactor requires relative step to be turned off first.
+LoRA+ works with most optimizers, including Muon and Automagic3. The exceptions are Prodigy, ProdigyPlus, EmoSens, LoRA-RITE, and LoRA-Muon (LoRA+'s grouped learning rates are incompatible with LoRA-RITE's A/B pairing and LoRA-Muon's joint update path); AdaFactor requires both `relative_step` and `warmup_init` off.
 
 Recheck the LoRA+ ratio after switching optimizers. Automagic3 also requires the multiplied rate to stay between `min_lr` and `max_lr`. See Optimizers and schedulers in the LoRA+ guide for the full rules.
 
 <!-- doc-anchor: scenarios -->
-## By dataset type
+## What to check for each dataset type
 
 <!-- doc-anchor: one-image -->
 ### A lone illustration
@@ -418,37 +424,37 @@ For Anima, start AdamW8bit at `1e-5`–`2e-5` and save checkpoints more frequent
 <!-- doc-anchor: few-shot -->
 ### 2–5 images, few-shot
 
-Run the AdamW8bit baseline first. Compare CAME when sources differ substantially, or StableAdamW when loss or gradients spike. Short runs may end before internal schedules have much effect.
+Establish an AdamW8bit baseline and save frequently. Check each image for repeated poses, backgrounds, and outfits. If gradient spikes recur, compare clipping settings or StableAdamW separately.
 
 <!-- doc-anchor: galgame -->
 ### Galgame expression sets
 
-Compositions are usually rigid here, and AdamW8bit often suffices. Correct expression captions matter more than an optimizer swap, and the fixed background or standing pose should not become baked into the identity. If expressions are badly unbalanced, add one CAME comparison.
+Caption the expression, outfit, and pose of each illustration. If expression counts are uneven, check sampling counts by expression. Use new pose and background prompts to test whether identity is tied to the fixed composition.
 
 <!-- doc-anchor: dmm-mixed -->
 ### DMM cards, effects, companion characters mixed
 
-Remove or correctly caption companion characters, text, watermarks, effects, and the different forms, then compare AdamW8bit and CAME. If the log still shows instability, add a StableAdamW comparison. No optimizer can figure out which character in an image is the intended subject; that has to come from captions and data curation.
+Caption or remove companion characters, text, watermarks, and effects, and distinguish outfits and forms. Choose clipping or optimizer changes based on specific gradient or update-log problems; see Troubleshooting by symptom below.
 
 <!-- doc-anchor: mixed-quality -->
 ### Mixed-quality inputs
 
-Clean up blurred images, compressed screenshots, duplicate crops, and consecutive Live2D frames first. Control retained images through captions, grouping, and repeats. If gradient spikes remain, compare CAME or test `percentile_clipping=99` separately.
+Clean up blurred images, compressed screenshots, duplicate crops, and highly similar consecutive frames. Put retained sources in separate subsets and check their repeat counts. If gradient spikes recur, test `percentile_clipping=99` separately.
 
 <!-- doc-anchor: outfits-forms -->
 ### Multiple outfits and forms
 
-This scenario depends on accurate outfit/form tags and sane grouped sampling more than the optimizer. AdamW8bit, CAME, and StableAdamW all work; evaluate costume control, identity retention, and form mixing, not just how crisp one preview looks.
+Caption outfits and forms separately and check sampling counts for each subset. Generate with different outfit and form prompts, checking identity retention, outfit control, and color leakage between forms.
 
 <!-- doc-anchor: style-lora -->
 ### Style LoRAs
 
-Start with AdamW8bit there too. Generalization depends mostly on subject coverage and captions that separate content from style. StableAdamW can absorb a bad batch, but heavy clipping can also dilute rare stylistic traits.
+Use training images with varied subjects and compositions, and caption their content. Evaluate subjects absent from the dataset, checking whether linework, colors, and shape treatment carry over. Adjust clipping if update spikes occur.
 
 <!-- doc-anchor: vram -->
 ### When memory is tight
 
-Use AdamW8bit or Lion8bit first, and switch to paging only when there is confirmed memory pressure. When paging actually engages, the CPU–GPU state transfer can make the run slower. Keep `min_8bit_size` at `4096` to avoid quantizing many tiny tensors for negligible memory savings.
+Use an 8-bit optimizer when optimizer state does not fit; compare a Paged variant if it still does not fit. Active paging adds CPU/GPU state transfers. `min_8bit_size=4096` keeps smaller tensors' state in 32-bit.
 
 <!-- doc-anchor: starting-configs -->
 ## Conservative starting configs
@@ -456,19 +462,19 @@ Use AdamW8bit or Lion8bit first, and switch to paging only when there is confirm
 | Use | Optimizer and parameters | Other settings |
 | --- | --- | --- |
 | Anima general baseline | AdamW8bit, LR from the table above, `weight_decay=0.01` | constant scheduler, `max_grad_norm=1`, default rank/alpha, DiT only |
-| Anima mixed-source comparison | CAME, LR from the table above, otherwise defaults | constant, `max_grad_norm=1`; validate with a fixed condition |
+| Anima factorized-state comparison | CAME, LR from the table above, otherwise defaults | constant, `max_grad_norm=1`; record state memory and time per step |
 | Anima gradient-spike comparison | StableAdamW, LR from the table above, keep project stability defaults | Kahan on, constant, `max_grad_norm=1` |
-| Anima LoRA-Muon experiment | LoRA-Muon, LR from the table above, otherwise defaults | constant, `max_grad_norm=0`, start with the UI-recommended rank/alpha; change only the LR first |
+| Anima LoRA-Muon experiment | LoRA-Muon, LR from the table above, otherwise defaults | constant, `max_grad_norm=0`; rank/Alpha still default to `32/32`. Enter `16/16` manually if desired; fix rank/Alpha and vary only LR |
 | Anima Lion experiment | Lion or Lion8bit, LR from the table above | constant; not the full official Lion recipe |
-| Gentle 8-bit clipping | AdamW8bit with baseline params, `percentile_clipping=99` | nothing else changes |
+| 8-bit percentile-clipping comparison | AdamW8bit with baseline params, `percentile_clipping=99` | keep other settings fixed |
 
-Training for too long can bind a character to repeated poses, backgrounds, or clothing. Judge shorter training by the actual number of parameter updates, not repeat counts alone.
+When generated results begin repeating training poses, backgrounds, or outfits, compare earlier checkpoints. Judge shorter training by total updates, not repeat counts alone.
 
 | Condition | Effect of reducing repeats |
 | --- | --- |
-| Fixed epoch count | Usually reduces total image exposures and parameter updates |
-| Fixed total step count | Does not directly reduce updates; may change bucketing, shuffling, or subset sampling |
-| Repeats reduced for one subset only | May change that subset’s training weight relative to other subsets |
+| Fixed epoch count | Reduces image sampling count; recalculate updates from batches, accumulation, and bucket tails |
+| Fixed total step count | Leaves total updates unchanged; changes epoch size, shuffle cycle, and relative subset sampling counts |
+| Repeats reduced for one subset only | Lowers its sampling weight relative to other subsets; with just one subset, no between-subset ratio changes |
 
 For a complete accumulation window, effective batch size is batch size × accumulation steps × GPU count. Keep batch and accumulation settings fixed in comparisons to avoid changing bucket tails and sample combinations.
 
@@ -479,11 +485,11 @@ To address overfitting, start by considering a shorter total run or a lower lear
 
 | Symptom | Check first | Optimizer action worth trying |
 | --- | --- | --- |
-| Loss plateaus but previews are poor | Data, captions, preview prompt, checkpoint timing | Usually not an optimizer switch |
+| Loss plateaus but previews are poor | Data, captions, preview prompt, checkpoint timing | A loss plateau alone is not a reason to switch optimizers |
 | Isolated, reproducible loss or gradient spikes | The batch, its images, the LR | Compare StableAdamW, or test `percentile_clipping=99` alone |
 | NaN / Inf appears | Stop immediately; check LR, precision settings, bad data, and resume points | Only after those are ruled out, compare StableAdamW; do not mask a persistent problem with clipping |
 | Optimizer state overflows memory | Confirm the peak is state, not resolution, batch, or preview | Use 8-bit first, paged only if still tight |
-| Pose, background, or outfit memorized quickly | Steps, repeats, LR, data duplication | Reduce LR or shorten training; switching optimizers rarely fixes this |
+| Pose, background, or outfit memorized quickly | Steps, repeats, LR, data duplication | Compare earlier checkpoints, shorten training, and check duplicate images and fixed compositions |
 | Character traits never quite get learned | Trigger word, captions, useful steps, rank, targets | After checking those, raise the LR a bit |
 
 <!-- doc-anchor: ab-testing -->
@@ -499,10 +505,9 @@ Start each optimizer run from the same base model. Do not treat another optimize
 
 Prodigy, Muon, and LoRA-Muon use different update scales. Compare them with individually tuned rates and the same training budget; the result compares complete configurations.
 
-<!-- doc-anchor: limits -->
-## Scope
+<span id="limits"></span>
 
-Optimizers process gradients. They do not identify incorrect captions or automatically downweight poor images. Address memorized poses and backgrounds through data variety and stopping point first.
+Optimizers process gradients; they do not identify incorrect captions, intended subjects, or image quality levels. Use the dataset checks above and the troubleshooting table for update and memory issues.
 
 <!-- doc-anchor: faq -->
 ## Frequently asked questions
@@ -525,7 +530,7 @@ Prodigy, ProdigyPlus, EmoSens, LoRA-RITE, and LoRA-Muon do not support LoRA+. Ad
 
 **When training goes wrong, should I change the optimizer or inspect the data first?**
 
-Inspect the dataset, captions, repeats, learning rate, and stopping point first. Optimizers mainly affect convergence speed, state memory, and numerical stability; they are usually not the primary factor in character fidelity.
+Use Troubleshooting by symptom above. It gives separate check orders for data, run length, numerical errors, and optimizer-state memory.
 
 <!-- doc-anchor: evidence -->
 ## Evidence and references

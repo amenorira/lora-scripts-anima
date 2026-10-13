@@ -65,7 +65,7 @@ document.addEventListener('alpine:init', () => {
       // Keep <html lang> in sync with the active locale from the very first
       // paint (index.html defaults to lang="en"): screen readers and browser
       // translation/checking features rely on it.
-      document.documentElement.lang = this.locale === 'zh-CN' ? 'zh-CN' : 'en';
+      document.documentElement.lang = this.locale;
 
       let route = (window.location.hash || '#home').replace('#', '');
       if (!ROUTE_CONFIG[route]) route = 'home';
@@ -143,6 +143,7 @@ document.addEventListener('alpine:init', () => {
 
       window.addEventListener('locale-changed', () => {
         this.locale = I18N.getLocale();
+        document.documentElement.lang = this.locale;
         const r = this.currentRoute;
         const cfg = ROUTE_CONFIG[r] || {};
         if (cfg.titleKey) this.pageTitle = this.t(cfg.titleKey) || cfg.title || r;
@@ -515,8 +516,9 @@ document.addEventListener('alpine:init', () => {
 
     onLocaleChange() {
       I18N.setLocale(this.locale);
+      this.locale = I18N.getLocale();
       this.showLangDropdown = false;
-      document.documentElement.lang = this.locale === 'zh-CN' ? 'zh-CN' : 'en';
+      document.documentElement.lang = this.locale;
     },
 
     // ── Toast ──────────────────────────────────────────────
