@@ -179,6 +179,12 @@ async def parse_training_toml(req: TrainingTomlParseRequest):
                 "不再支持结构化预设文件，请导入扁平训练 TOML"
             )
         )
+    from backend.training.scheduler_config import extract_scheduler_form
+
+    try:
+        parsed = extract_scheduler_form(parsed)
+    except ValueError as exc:
+        return APIResponseFail(message=str(exc))
     return APIResponseSuccess(data={"data": parsed})
 
 available_scripts = [

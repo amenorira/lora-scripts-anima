@@ -2076,6 +2076,8 @@ window.trainingCoreMixin = {
         const expression = JSON.stringify(placeholders).replace(/"/g, '&quot;');
         const defaultValue = JSON.stringify(field.default ?? '').replace(/"/g, '&quot;');
         inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" :placeholder="(${expression})[form.optimizer_type] ?? ${defaultValue}"${staticReadonlyAttrs}>`;
+      } else if (field.placeholder) {
+        inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" placeholder="${this.escapeAttr(field.placeholder)}"${staticReadonlyAttrs}>`;
       } else if (field.omitDefault && field.default !== undefined && field.default !== '' && field.default !== null) {
         // omitDefault 字段：值==默认值时不传，输入框用淡色 placeholder 提示默认值
         const _phVal = String(field.default).replace(/"/g, '&quot;');
@@ -3952,6 +3954,7 @@ window.trainingCoreMixin = {
       'model_train_type', 'optimizer_type', 'learning_rate', 'unet_lr', 'text_encoder_lr',
       'lr_scheduler', 'lr_warmup_steps', 'lr_scheduler_num_cycles', 'lr_scheduler_power',
       'lr_decay_steps', 'lr_scheduler_timescale', 'lr_scheduler_min_lr_ratio',
+      'warmup_type', 'decay_type', 'step_rules',
       'network_train_unet_only', 'network_train_text_encoder_only', 'adafactor_relative_step'
     ].includes(key)) {
       if (key === 'model_train_type' && value === 'krea2-lora') {
@@ -4172,6 +4175,30 @@ window.trainingCoreMixin = {
   },
 
   // ── Validation ────────────────────────────────────────
+  _parseStepRules(value) {
+    if (typeof value !== 'string' || !value.trim()) return null;
+    const parts = value.split(',');
+    const numberPattern = /^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/;
+    const boundaries = [];
+    let previous = 0, finalMultiplier = 0;
+    for (let index = 0; index < parts.length; index++) {
+      const pair = parts[index].split(':').map(token => token.trim());
+      const last = index === parts.length - 1;
+      if (pair.length !== (last ? 1 : 2) || !numberPattern.test(pair[0])) return null;
+      const multiplier = Number(pair[0]);
+      if (!Number.isFinite(multiplier) || multiplier < 0) return null;
+      if (last) finalMultiplier = multiplier;
+      else {
+        if (!/^[0-9]+$/.test(pair[1])) return null;
+        const endStep = Number(pair[1]);
+        if (!Number.isSafeInteger(endStep) || endStep <= previous) return null;
+        boundaries.push({ endStep, multiplier });
+        previous = endStep;
+      }
+    }
+    return { boundaries, finalMultiplier };
+  },
+
   validateForm() {
     const errors = {};
     // Check all required fields
@@ -4218,6 +4245,11 @@ window.trainingCoreMixin = {
       if (!this.form.qwen3 || String(this.form.qwen3).trim() === '') {
         errors['qwen3'] = this.t('common.qwen3Required');
       }
+    }
+
+    if (this.form.model_train_type !== 'krea2-lora' && this.form.lr_scheduler === 'piecewise_constant'
+      && !this._parseStepRules(this.form.step_rules)) {
+      errors.step_rules = this.t('field.step_rulesError');
     }
 
     this.formErrors = errors;

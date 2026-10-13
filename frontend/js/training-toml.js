@@ -29,6 +29,7 @@ window.trainingTomlMixin = {
     }
     // Export the effective settings after imports, undo and field resets as well.
     this._enforceImageAugmentationUiConstraints();
+    if (this.form.lr_scheduler === 'piecewise_constant') this.form.lr_warmup_steps = 0;
     const allSections = window.getVisibleSections(trainType);
     const fieldByKey = new Map(
       allSections.flatMap(section => (section.fields || []).map(field => [field.key, field]))
@@ -151,6 +152,8 @@ window.trainingTomlMixin = {
       const quoted = optArgsArr.map(s => `"${s.replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`).join(', ');
       pushLine('optimizer', `optimizer_args = [${quoted}]`);
     }
+    const schedulerArgs = this._buildSchedulerArgs(this.form);
+    if (schedulerArgs.length > 0) pushLine('optimizer', `lr_scheduler_args = ${JSON.stringify(schedulerArgs)}`);
 
     // ── 按 section_order 拼接所有分组行 ─────────────────────────
     const lines = this._groupTomlSectionLines(allSections, sectionLines);
@@ -181,7 +184,7 @@ window.trainingTomlMixin = {
   },
 
   _highlightTomlValue(key, value) {
-    if ((key === 'network_args' || key === 'optimizer_args') && value.startsWith('[')) {
+    if (['network_args', 'optimizer_args', 'lr_scheduler_args'].includes(key) && value.startsWith('[')) {
       const parts = [];
       const pattern = /"((?:\\.|[^"\\])*)"/g;
       let cursor = 0;
@@ -231,6 +234,7 @@ window.trainingTomlMixin = {
     if (String(this.form && this.form.model_train_type || '') === 'krea2-lora') return null;
     const field = this.findFieldDef(key);
     if (field?.networkArg) return { paramKey: 'network_args', argKey: field.networkArg };
+    if (field?.schedulerArg) return { paramKey: 'lr_scheduler_args', argKey: field.schedulerArg };
     if (field?.argKey) return { paramKey: 'optimizer_args', argKey: field.argKey };
     return null;
   },
@@ -477,6 +481,19 @@ window.trainingTomlMixin = {
 
   copyToml() {
     navigator.clipboard.writeText(this.tomlRaw).then(() => this.toast(this.t('common.copied')));
+  },
+
+  // Guided fields become native scheduler args in the portable preview.
+  _buildSchedulerArgs(form) {
+    const fields = this._allSections().flatMap(section => section.fields || []);
+    return fields.filter(field => field.schedulerArg && this._fieldShowIfMet(field)).map(field => {
+      let value = form[field.key] ?? field.default;
+      if (field.key === 'step_rules') {
+        if (!String(value || '').trim()) return null;
+        value = String(value).split(',').map(part => part.split(':').map(token => token.trim()).join(':')).join(',');
+      }
+      return `${field.schedulerArg}=${JSON.stringify(value)}`;
+    }).filter(Boolean);
   },
 
   /**

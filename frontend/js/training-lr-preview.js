@@ -36,9 +36,20 @@ window.trainingLrPreviewMixin = {
     const { scheduler, warmupFraction, cycles, power, endRatio, minRatio, decayFraction, totalSteps, timescale } = params;
     const p = Math.max(0, Math.min(1, progress));
     if (scheduler === 'constant') return 1;
+    if (scheduler === 'piecewise_constant') {
+      if (!params.stepRules) return NaN;
+      for (const rule of params.stepRules.boundaries) {
+        if (p < rule.endStep / totalSteps) return rule.multiplier;
+      }
+      return params.stepRules.finalMultiplier;
+    }
     if (p < warmupFraction) {
       const ramp = p / warmupFraction;
-      return scheduler === 'warmup_stable_decay' ? minRatio + ramp * (1 - minRatio) : ramp;
+      if (scheduler !== 'warmup_stable_decay') return ramp;
+      const curve = params.warmupType || 'linear';
+      const factor = curve === 'cosine' ? 0.5 * (1 - Math.cos(Math.PI * ramp))
+        : curve === '1-sqrt' ? 1 - Math.sqrt(1 - ramp) : ramp;
+      return minRatio + factor * (1 - minRatio);
     }
     if (scheduler === 'constant_with_warmup') return 1;
     const decay = (p - warmupFraction) / Math.max(1e-9, 1 - warmupFraction);
@@ -53,7 +64,11 @@ window.trainingLrPreviewMixin = {
         if (p >= 1) return minRatio;
         if (p < 1 - decayFraction || decayFraction === 0) return 1;
         const progress = (p - (1 - decayFraction)) / decayFraction;
-        return minRatio + 0.5 * (1 + Math.cos(Math.PI * cycles * progress)) * (1 - minRatio);
+        const curve = params.decayType || 'cosine';
+        const factor = curve === 'linear' ? 1 - progress
+          : curve === '1-sqrt' ? 1 - Math.sqrt(progress)
+            : 0.5 * (1 + Math.cos(Math.PI * cycles * progress));
+        return minRatio + factor * (1 - minRatio);
       }
       case 'cosine_with_restarts':
         return p >= 1 ? 0 : 0.5 * (1 + Math.cos(Math.PI * ((decay * cycles) % 1)));
@@ -142,17 +157,19 @@ window.trainingLrPreviewMixin = {
     // Accelerate advances the sd-scripts scheduler once per training process.
     const estimatedSteps = !totalSteps && scheduler === 'inverse_sqrt' ? 10000 : 0;
     const schedulerSteps = (totalSteps || estimatedSteps) * Math.max(1, Number(this.stepEstimate?.gpu_processes) || 1);
-    const warmup = this._lrPreviewWarmup(source, schedulerSteps);
+    const warmup = this._lrPreviewWarmup(scheduler === 'piecewise_constant' ? { lr_warmup_steps: 0 } : source, schedulerSteps);
     const cycles = String(source.lr_scheduler_num_cycles ?? '').trim();
     const power = String(source.lr_scheduler_power ?? '').trim();
     const pointCount = 160;
-    const yUpper = 1.08;
     const optimizer = String(source.optimizer_type || '').toLowerCase();
     const internal = optimizer.endsWith('schedulefree') || optimizer.endsWith('.emosens')
       || optimizer.endsWith('automagic')
       || (optimizer === 'adafactor' && source.adafactor_relative_step !== false);
     const params = {
       scheduler, warmupFraction: warmup.fraction,
+      warmupType: source.warmup_type ?? 'linear',
+      decayType: source.decay_type ?? 'cosine',
+      stepRules: scheduler === 'piecewise_constant' ? this._parseStepRules(source.step_rules) : null,
       cycles: this._lrPreviewNumber(cycles || 1, 1),
       power: this._lrPreviewNumber(power || 1, 1),
       endRatio: 1e-7 / this._lrPreviewNumber(baseRateText, 0),
@@ -169,7 +186,7 @@ window.trainingLrPreviewMixin = {
     let unavailable = '';
     if (internal) unavailable = this.t('lrPreview.internalNote');
     else if (!['constant', 'constant_with_warmup', 'linear', 'cosine', 'cosine_with_restarts', 'polynomial',
-      'inverse_sqrt', 'cosine_with_min_lr', 'warmup_stable_decay'].includes(scheduler)) {
+      'inverse_sqrt', 'cosine_with_min_lr', 'warmup_stable_decay', 'piecewise_constant'].includes(scheduler)) {
       unavailable = this.t('lrPreview.unsupportedNote');
     } else if (!(chartRate > 0) || (scheduler === 'constant' && warmup.visible)
       || (scheduler === 'polynomial' && (!(params.endRatio > 0 && params.endRatio < 1)
@@ -181,19 +198,37 @@ window.trainingLrPreviewMixin = {
       || (scheduler === 'inverse_sqrt' && !(Number.isInteger(params.timescale) && params.timescale > 0))
       || (scheduler === 'warmup_stable_decay' && (!(decaySteps >= 0)
         || (decaySteps >= 1 && !Number.isInteger(decaySteps))
-        || warmup.fraction + params.decayFraction > 1))) {
+        || warmup.fraction + params.decayFraction > 1
+        || !['linear', 'cosine', '1-sqrt'].includes(params.warmupType)
+        || !['linear', 'cosine', '1-sqrt'].includes(params.decayType)))
+      || (scheduler === 'piecewise_constant' && !params.stepRules)) {
       unavailable = this.t('lrPreview.invalidNote');
     }
     if (!unavailable && !totalSteps && scheduler === 'warmup_stable_decay' && decaySteps >= 1) {
       unavailable = this.t('lrPreview.stepCountRequiredNote');
     }
+    if (!unavailable && !totalSteps && scheduler === 'piecewise_constant' && params.stepRules.boundaries.length) {
+      unavailable = this.t('lrPreview.stepCountRequiredNote');
+    }
     const evaluateMultiplier = progress => this._lrPreviewMultiplier(progress, params);
+    const peak = scheduler === 'piecewise_constant' && params.stepRules
+      ? Math.max(1, params.stepRules.finalMultiplier, ...params.stepRules.boundaries.map(rule => rule.multiplier)) : 1;
+    const yUpper = peak * 1.08;
     // A terminal scheduler jump is not a decay interval. Draw up to its left
     // limit; hover still reports the exact value at the completion boundary.
     const endpointJump = !unavailable && scheduler === 'warmup_stable_decay'
       && Math.abs(evaluateMultiplier(1 - 1e-10) - evaluateMultiplier(1)) > 1e-6;
     // Include exact warmup and restart boundaries; avoid diagonal restart ramps.
     const positions = new Set(Array.from({ length: pointCount }, (_, i) => i / (pointCount - 1)));
+    if (scheduler === 'piecewise_constant' && !unavailable) {
+      for (const rule of params.stepRules.boundaries) {
+        const boundary = rule.endStep / schedulerSteps;
+        if (boundary > 0 && boundary <= 1) {
+          positions.add(Math.max(0, boundary - 1e-10));
+          positions.add(boundary);
+        }
+      }
+    }
     if (warmup.fraction > 0 && warmup.fraction < 1) positions.add(warmup.fraction);
     // Small automatic timescales can produce a sharp initial decay. Sample
     // densely near warmup so the uniform grid does not flatten that bend.
@@ -272,10 +307,13 @@ window.trainingLrPreviewMixin = {
       params,
       unavailable,
       chartRate,
-      yTicks: [1, 0.75, 0.5, 0.25, 0].map((value, index) => ({
-        label: chartRate > 0 ? this._lrPreviewFormatRate(chartRate * value) : value.toFixed(index === 4 ? 0 : 2),
-        y: ((1 - value / yUpper) * 100).toFixed(2),
-      })),
+      yTicks: [1, 0.75, 0.5, 0.25, 0].map((fraction, index) => {
+        const value = fraction * peak;
+        return {
+          label: chartRate > 0 ? this._lrPreviewFormatRate(chartRate * value) : value.toFixed(index === 4 ? 0 : 2),
+          y: ((1 - value / yUpper) * 100).toFixed(2),
+        };
+      }),
       currentLinePath: curvePaths.linePath,
       currentAreaPath: curvePaths.areaPath,
       baselineLinePath: `M 0,${baselineY} L 100,${baselineY}`,

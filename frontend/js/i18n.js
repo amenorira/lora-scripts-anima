@@ -13,7 +13,7 @@
 const I18N = (() => {
   // ── Register available locales here ──────────────────────
   const LOCALES = ['zh-CN', 'en-US', 'ja-JP'];
-  const MESSAGES_VERSION = '20261010-ja4';
+  const MESSAGES_VERSION = '20261013-scheduler-curves1';
 
   let _locale = 'en-US';
   let _messages = null;

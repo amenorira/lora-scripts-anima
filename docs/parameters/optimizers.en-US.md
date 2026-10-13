@@ -99,6 +99,10 @@ AdamW, AdamW8bit, StableAdamW, Lion, CAME, Muon, and LoRA-Muon run under the ext
 
 AdamWScheduleFree and ProdigyPlus manage their own schedule, so the UI forces the external scheduler to constant. AdamWScheduleFree's internal warmup is separate from `lr_warmup_steps`; ProdigyPlusScheduleFree exposes no comparable warmup setting.
 
+`warmup_stable_decay` (WSD) runs warmup → constant → final decay. `lr_warmup_steps` and `lr_decay_steps` accept integer counts or fractions below 1; the stable phase uses the remaining steps, and the two lengths must fit the total budget. `warmup_type` defaults to `linear` and `decay_type` to `cosine`; both support `linear`, `cosine`, and `1-sqrt`. The square-root warmup accelerates, while square-root decay slows down. The minimum LR ratio sets both the warmup start and decay end. Cycles only affect cosine decay; UI value `1` gives a single downward curve. A phase with length `0` is skipped.
+
+`piecewise_constant` uses one `step_rules` text input: `multiplier:cumulative_end_step,...,final_multiplier`. For example, `1:1000,0.5:1600,0.1` uses the base rate at steps 0–999, 50% at 1000–1599, and 10% from step 1600 onward. Boundaries must be increasing positive integers; multipliers must be finite and non-negative and may exceed 1. The last item has no boundary. Separate warmup is disabled, with `lr_warmup_steps` fixed at `0`. Boundaries use sd-scripts scheduler steps; the preview converts them to training steps for multiple processes. Rules with boundaries require a total-step estimate before rendering the staircase.
+
 Open **View learning-rate curve** under the schedule field to inspect warmup, decay, and restarts. The sidebar shows the selected component's effective learning rate and warmup steps. When training both the DiT and text encoder, switch components to inspect their curves separately. Check the estimation notice when total steps are not yet known. The curve represents scheduler output, not the optimizer's internal adaptive update magnitude.
 
 ![Learning-rate curve in the ComfyUI theme: 10,000 steps, 500 warmup steps, and cosine decay](../images/lr-preview.en-US.png)

@@ -99,6 +99,10 @@ AdamW、AdamW8bit、StableAdamW、Lion、CAME、Muon 和 LoRA-Muon 都使用外�
 
 AdamWScheduleFree 和 ProdigyPlusScheduleFree 自己管理调度，界面会把外部调度器固定为 constant。AdamWScheduleFree 的内部预热与 `lr_warmup_steps` 是两回事；ProdigyPlusScheduleFree 没有暴露对应的可调预热参数。
 
+`warmup_stable_decay`（WSD）按“预热 → 恒定 → 末段衰减”运行。`lr_warmup_steps` 和 `lr_decay_steps` 可填整数步数或小于 1 的比例，恒定阶段自动取剩余步数，两段长度之和不能超过总步数。`warmup_type` 默认 `linear`，`decay_type` 默认 `cosine`，两者都支持 `linear`、`cosine`、`1-sqrt`。`1-sqrt` 预热前慢后快，衰减前快后慢。最低学习率比例同时决定预热起点和衰减终点；余弦周期数只影响 cosine 衰减，本界面设为 `1` 时单向下降。阶段长度为 `0` 时跳过该阶段。
+
+`piecewise_constant` 使用单行 `step_rules` 输入框。格式为 `倍率:累计结束步数,...,最后倍率`，例如 `1:1000,0.5:1600,0.1` 表示 0～999 步使用基础学习率，1000～1599 步使用基础值的 50%，1600 步起使用 10%。结束步数必须为递增正整数，倍率为有限非负数，允许大于 1；最后一项只填倍率。它不使用独立预热，界面将 `lr_warmup_steps` 固定为 `0`。规则步数按 sd-scripts 的调度器步数计算，多进程时预览会换算为训练步数。总步数未知时，有切换点的阶梯曲线需等待步数估算。
+
 在“学习率变化方式”下点击“查看学习率曲线”，可检查预热、衰减和重启的实际形状。侧栏显示当前组件的生效学习率与预热步数；同时训练 DiT 和文本编码器时，可切换组件查看各自曲线。总步数尚未确定时，请留意预览中的估算提示。曲线表示调度器输出，不预测优化器内部的自适应更新幅度。
 
 ![ComfyUI 主题下的学习率曲线：10,000 步、500 步预热与余弦衰减](../images/lr-preview.zh-CN.png)
