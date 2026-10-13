@@ -6,6 +6,37 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v26.1013.230134 - 2026-10-13
+
+This release adds **WSD curve options and piecewise constant learning-rate scheduling**, completes Japanese localization for the interface and documentation, improves Windows installation and updates, and fixes training-step estimates and terminal progress display.
+
+### Learning-Rate Scheduling
+
+- Choose `linear`, `cosine`, or `1-sqrt` curves for both the warmup and decay stages of WSD.
+- Add the `piecewise_constant` scheduler to set learning-rate multipliers at cumulative step boundaries.
+- Support configuration saving, importing, and TOML export, with matching curve previews and argument validation. Piecewise constant scheduling automatically disables separate warmup.
+
+### Japanese Support and Parameter Documentation
+
+- Add a complete Japanese interface, six built-in parameter guides, Japanese preview images, and a README, with automatic language detection, manual switching, and saved language preferences.
+- Revise Chinese, English, and Japanese training hints and documentation to clarify optimizer, LoRA+, AdaLN, DoRA, timestep sampling, and training-state restoration behavior and activation conditions.
+- Correct the Krea 2 sigma sampling distribution preview to match actual training behavior.
+- Fix Alpine scope errors that could occur in cached training forms after switching pages.
+
+### Windows Installation and Updates
+
+- Add a double-click `update.bat` entry point to update the current main or dev branch. Stop and show instructions when source changes or diverged branches prevent an update.
+- Fetch only the main branch when converting a ZIP installation into a Git repository, and recommend shallow clones to reduce the initial download size.
+- Move default configurations into a separate directory and create only missing user files at startup. Back up and preserve existing sample prompts and Accelerate configuration during migration.
+- Stop startup if source synchronization or configuration restoration fails, preserving backup records to avoid running incomplete source files.
+
+### Training Experience Fixes
+
+- Fix training-step estimates that still counted a retained regularization directory after regularization training was disabled.
+- Adapt terminal progress bars to the window width, prioritize step and loss metrics in narrow windows, and fix wrapped-line artifacts during repeated resizing.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1009.225222...v26.1013.230134)
+
 ## v26.1009.225222 - 2026-10-09
 
 This release adds **SDXL support** to regularization image generation, improves generation status and task conflict handling, refines the caption editor, and fixes LoRA-Muon optimizer state restoration when resuming training with low-precision parameters.
