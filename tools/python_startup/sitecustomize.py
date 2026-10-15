@@ -71,3 +71,9 @@ if os.environ.get("LORA_SCRIPTS_TRUE_LR_LOGGING") == "1":
     from tools.python_startup.lr_logging import install_import_hook
 
     install_import_hook()
+
+
+if os.environ.get("ANIMA_TRAIN_METRICS") == "1":
+    from tools.python_startup.training_metrics import install_import_hook as install_training_metrics
+
+    install_training_metrics()

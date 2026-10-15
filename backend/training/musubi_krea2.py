@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from backend.training.core_registry import MUSUBI_TUNER_DIR
+from backend.training.metrics_config import training_metric_fields
 from backend.training.musubi_runtime import MUSUBI_RUNTIME_PACKAGES, shared_runtime_status
 from backend.training.optimizer_metadata import (
     KREA2_OPTIMIZER_AUTO_VALUES,
@@ -1089,6 +1090,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "step": 1,
         "profiles": [KREA2_PROFILE_ID],
     },
+    *training_metric_fields(profiles=[KREA2_PROFILE_ID]),
     {
         "key": "save_state",
         "type": "toggle",

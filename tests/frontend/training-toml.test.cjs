@@ -98,3 +98,32 @@ test('native LoRA, LoHa, LoKr and LyCORIS serialize supported fields without top
     assert.doesNotMatch(text, /^(rank_dropout|conv_dim|conv_alpha|lokr_factor|use_tucker) =/m);
   }
 });
+
+test('TensorBoard switches default off, gate children, and stay out of engine TOML', () => {
+  const keys = ['log_grad_norm', 'log_grad_clipped', 'log_timestep_loss', 'log_timestep_count'];
+  for (const profile of ['anima-lora', 'sdxl-lora', 'krea2-lora']) {
+    const { app } = preview(profile, 'networks.lora_anima');
+    for (const key of keys) assert.equal(app.form[key], false, profile + ': ' + key);
+    for (const key of ['log_grad_clipped', 'log_timestep_count']) {
+      assert.equal(app._fieldShowIfMet(app.findFieldDef(key)), false);
+    }
+    app.form.log_grad_clipped = true;
+    app.form.log_timestep_count = true;
+    let payload = app._collectTrainingPayload();
+    assert.equal(payload.log_grad_norm, false);
+    assert.equal(payload.log_timestep_loss, false);
+    assert.equal(payload.log_grad_clipped, undefined);
+    assert.equal(payload.log_timestep_count, undefined);
+    // Keep child preferences in the saved form even while the parent is off.
+    assert.equal(app._collectTrainingFormSnapshot().log_grad_clipped, true);
+    app.form.log_grad_norm = true;
+    app.form.log_timestep_loss = true;
+    for (const key of ['log_grad_clipped', 'log_timestep_count']) {
+      assert.equal(app._fieldShowIfMet(app.findFieldDef(key)), true);
+    }
+    payload = app._collectTrainingPayload();
+    for (const key of keys) assert.equal(payload[key], true);
+    app.updateToml();
+    assert.doesNotMatch(app.tomlRaw, /^(log_grad_norm|log_grad_clipped|log_timestep_loss|log_timestep_count) =/m);
+  }
+});

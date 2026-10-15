@@ -423,7 +423,7 @@ window.trainingTomlMixin = {
 
     sections.forEach(section => {
       (section.fields || []).forEach(field => {
-        if (field.hidden || field.key === 'model_train_type' || !this._fieldShowIfMet(field)) return;
+        if (field.hidden || field.target === 'ui' || field.key === 'model_train_type' || !this._fieldShowIfMet(field)) return;
         const value = this.form[field.key];
         if (value === '' || value === null || value === undefined) return;
         sectionLines[section.key].push(`${field.key} = ${valueToToml(value, field)}`);

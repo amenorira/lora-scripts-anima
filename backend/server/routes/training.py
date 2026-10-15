@@ -23,6 +23,7 @@ from backend.training.core_registry import (
 )
 from backend.training.dataset_repeat import DatasetRepeatError, apply_subset_repeats
 from backend.training.supervisor import detect_lycoris_kernel_backend
+from backend.training.metrics_config import training_metrics_environment
 from backend.training.musubi_krea2 import (
     KREA2_CACHE_RUNNER_FILE,
     KREA2_PROFILE_ID,
@@ -686,6 +687,7 @@ async def _create_krea2_run(config, gpu_ids, timestamp, form_snapshot, reserved_
         output_base_dir=requested_output_dir,
         preview_enabled=False,
         engine_id="musubi_tuner",
+        extra_env=training_metrics_environment(config),
         run_metadata={
             "profile_id": KREA2_PROFILE_ID,
             "adapter_id": "musubi_lora",
@@ -1093,7 +1095,10 @@ async def _create_toml_file_reserved(config: dict, reserved_task):
             "profile_id": profile.id,
             "adapter_id": adapter_id,
         },
-        extra_env={"LYCORIS_KERNEL_BACKEND": lycoris_kernel_backend} if lycoris_kernel_backend else None,
+        extra_env={
+            **training_metrics_environment(_ui_config),
+            **({"LYCORIS_KERNEL_BACKEND": lycoris_kernel_backend} if lycoris_kernel_backend else {}),
+        },
     )
 
     # 将适配器警告附加到返回结果中（前端弹窗展示）
