@@ -16,7 +16,7 @@ KEYS = ("log_grad_norm", "log_grad_clipped", "log_timestep_loss", "log_timestep_
 
 
 class MetricsConfigTests(unittest.TestCase):
-    def test_all_defaults_are_off_and_children_are_nested_before_save_state(self):
+    def test_defaults_are_off_and_timestep_switches_are_independent(self):
         section = next(s for s in get_fields_json()["sections"] if s["key"] == "save")
         for profile in ("anima-lora", "sdxl-lora", "krea2-lora"):
             fields = [f for f in section["fields"] if
@@ -28,31 +28,45 @@ class MetricsConfigTests(unittest.TestCase):
                 self.assertEqual(indexed[key]["target"], "ui")
                 self.assertLess(keys.index(key), keys.index("save_state"))
             self.assertEqual(indexed["log_grad_clipped"]["showIf"], {"key": "log_grad_norm", "eq": True})
-            self.assertEqual(indexed["log_timestep_count"]["showIf"], {"key": "log_timestep_loss", "eq": True})
+            self.assertNotIn("showIf", indexed["log_timestep_count"])
 
     def test_flags_are_explicit_and_parent_gated_for_every_combination(self):
         self.assertEqual(set(training_metrics_environment({}).values()), {"0"})
         for values in itertools.product((False, True), repeat=4):
             grad, clip, loss, count = values
             env = training_metrics_environment(dict(zip(KEYS, values)))
-            self.assertEqual(env["ANIMA_TRAIN_METRICS"], str(int(grad or loss)))
+            self.assertEqual(env["ANIMA_TRAIN_METRICS"], str(int(grad or loss or count)))
             self.assertEqual(env["ANIMA_TRAIN_METRICS_GRAD_NORM"], str(int(grad)))
             self.assertEqual(env["ANIMA_TRAIN_METRICS_GRAD_CLIPPED"], str(int(grad and clip)))
             self.assertEqual(env["ANIMA_TRAIN_METRICS_TIMESTEP_LOSS"], str(int(loss)))
-            self.assertEqual(env["ANIMA_TRAIN_METRICS_TIMESTEP_COUNT"], str(int(loss and count)))
+            self.assertEqual(env["ANIMA_TRAIN_METRICS_TIMESTEP_COUNT"], str(int(count)))
         self.assertEqual(set(training_metrics_environment(dict.fromkeys(KEYS, "false")).values()), {"0"})
 
     def test_yaml_round_trip_preserves_enabled_and_disabled_children(self):
         for profile in ("anima-lora", "sdxl-lora", "krea2-lora"):
-            for child in (True, False):
-                form = dict(zip(KEYS, (True, child, True, child)), model_train_type=profile)
+            for loss, count in itertools.product((False, True), repeat=2):
+                form = dict(zip(KEYS, (True, count, loss, count)), model_train_type=profile)
                 document = build_training_config(form, profile_id=profile)
                 restored = extract_training_form(document)
                 for key in KEYS:
                     self.assertIs(restored[key], form[key])
                 save = document["parameters"]["save"]
-                self.assertEqual(save["log_grad_norm"]["options"]["log_grad_clipped"], child)
-                self.assertEqual(save["log_timestep_loss"]["options"]["log_timestep_count"], child)
+                self.assertEqual(save["log_grad_norm"]["options"]["log_grad_clipped"], count)
+                self.assertIs(save["log_timestep_loss"], loss)
+                self.assertIs(save["log_timestep_count"], count)
+
+    def test_legacy_nested_timestep_count_imports_as_independent_switch(self):
+        for profile in ("anima-lora", "sdxl-lora", "krea2-lora"):
+            for loss, count in itertools.product((False, True), repeat=2):
+                legacy = {"schema_version": 2, "profile": {"id": profile}, "parameters": {
+                    "save": {"log_timestep_loss": {"enabled": loss, "options": {"log_timestep_count": count}}},
+                }}
+                restored = extract_training_form(legacy)
+                self.assertIs(restored["log_timestep_loss"], loss)
+                self.assertIs(restored["log_timestep_count"], count)
+                saved = build_training_config(restored, profile_id=profile)["parameters"]["save"]
+                self.assertIs(saved["log_timestep_loss"], loss)
+                self.assertIs(saved["log_timestep_count"], count)
 
     def test_switches_never_leak_into_native_engine_configs(self):
         form = dict.fromkeys(KEYS, True)
@@ -74,8 +88,8 @@ class MetricsLaunchTests(unittest.IsolatedAsyncioTestCase):
         from tests.training.test_multi_core_krea2 import krea2_config
 
         for profile in ("anima-lora", "sdxl-lora", "krea2-lora"):
-            for parents in (False, True):
-                with self.subTest(profile=profile, parents=parents), tempfile.TemporaryDirectory() as directory:
+            for loss, count in itertools.product((False, True), repeat=2):
+                with self.subTest(profile=profile, loss=loss, count=count), tempfile.TemporaryDirectory() as directory:
                     root = Path(directory)
                     if profile == "krea2-lora":
                         form = krea2_config(root)
@@ -85,7 +99,7 @@ class MetricsLaunchTests(unittest.IsolatedAsyncioTestCase):
                             model_path = root / f"{key}.safetensors"
                             model_path.write_bytes(b"test fixture")
                             form[key] = str(model_path)
-                    form.update(zip(KEYS, (parents, True, parents, True)))
+                    form.update(zip(KEYS, (loss, True, loss, count)))
                     with ExitStack() as stack:
                         for name, value in (("tm", TaskManager()), ("OUTPUT_DIR", root / "runs"),
                                             ("AUTOSAVE_DIR", root / "autosave")):

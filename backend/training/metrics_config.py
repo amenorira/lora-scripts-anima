@@ -10,7 +10,7 @@ def training_metric_fields(*, profiles: list[str] | None = None) -> list[dict]:
         ("log_grad_norm", None),
         ("log_grad_clipped", "log_grad_norm"),
         ("log_timestep_loss", None),
-        ("log_timestep_count", "log_timestep_loss"),
+        ("log_timestep_count", None),
     ):
         field = {
             "key": key, "type": "toggle", "default": False, "section": "save",
@@ -27,11 +27,12 @@ def training_metric_fields(*, profiles: list[str] | None = None) -> list[dict]:
 def training_metrics_environment(config: Mapping[str, Any]) -> dict[str, str]:
     grad = config.get("log_grad_norm") is True
     timestep = config.get("log_timestep_loss") is True
+    count = config.get("log_timestep_count") is True
     flags = {
-        "ANIMA_TRAIN_METRICS": grad or timestep,
+        "ANIMA_TRAIN_METRICS": grad or timestep or count,
         "ANIMA_TRAIN_METRICS_GRAD_NORM": grad,
         "ANIMA_TRAIN_METRICS_GRAD_CLIPPED": grad and config.get("log_grad_clipped") is True,
         "ANIMA_TRAIN_METRICS_TIMESTEP_LOSS": timestep,
-        "ANIMA_TRAIN_METRICS_TIMESTEP_COUNT": timestep and config.get("log_timestep_count") is True,
+        "ANIMA_TRAIN_METRICS_TIMESTEP_COUNT": count,
     }
     return {key: "1" if enabled else "0" for key, enabled in flags.items()}

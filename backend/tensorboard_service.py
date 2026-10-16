@@ -120,11 +120,13 @@ service = TensorBoardService()
 
 def _serve():
     """TensorBoard binds port 0 itself, then publishes its actual bound URL."""
-    from tensorboard import program
+    from tensorboard import default, program
+    from backend.tensorboard_timesteps import TimestepPlugin, chart_assets_provider
     import threading
 
     endpoint, port, logdir = sys.argv[1:]
-    board = program.TensorBoard()
+    board = program.TensorBoard(plugins=[*default.get_plugins(), TimestepPlugin],
+                               assets_zip_provider=chart_assets_provider(PREFIX))
     board.configure(argv=["tensorboard", "--host", "127.0.0.1", "--port", port,
                           "--logdir", logdir, "--path_prefix", PREFIX])
     url = board.launch()

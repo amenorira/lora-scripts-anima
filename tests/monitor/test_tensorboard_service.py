@@ -14,6 +14,48 @@ from backend.server import proxy
 
 
 class TensorBoardServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_interactive_count_data_uses_exact_latest_integer_bins(self):
+        import numpy as np
+        from torch.utils.tensorboard import SummaryWriter
+        from tools.python_startup.training_metrics import TrainingMetrics
+
+        with tempfile.TemporaryDirectory() as tmp:
+            run = "counts-日本語 & test"
+            state = TrainingMetrics(grad_norm=False)
+            state.timestep_counts = np.zeros(1000, dtype=np.int64)
+            with SummaryWriter(str(Path(tmp) / run)) as writer:
+                for index, step in enumerate((3, 3, 4), 1):
+                    state.timestep_counts[123] += 2
+                    state.timestep_counts[999] = 2**25 + index
+                    state.distribution_dirty = True
+                    state.write_distribution(writer, step)
+            service = TensorBoardService()
+            try:
+                service.start(logdir=tmp, log_path=Path(tmp) / "tb.log")
+                await service.wait_started()
+                self.assertEqual(service.status(), "ready", service.error)
+                html = await service.client.get("/tensorboard/")
+                self.assertIn('/tensorboard/data/plugin/anima_timesteps/index.js', html.text)
+                script = await service.client.get("/tensorboard/data/plugin/anima_timesteps/index.js")
+                self.assertEqual(script.status_code, 200)
+                self.assertIn("barPath", script.text)
+                plugins = await service.client.get("/tensorboard/data/plugins_listing")
+                self.assertFalse(plugins.json()["anima_timesteps"]["enabled"])
+                runs = await service.client.get("/tensorboard/data/plugin/anima_timesteps/runs")
+                self.assertEqual(runs.json(), [run])
+                response = await service.client.get("/tensorboard/data/plugin/anima_timesteps/distribution", params={"run":run})
+                self.assertEqual(response.status_code, 200, response.text)
+                data = response.json()
+                self.assertEqual(data["step"], 4)
+                self.assertEqual(data["counts"][123], 6)
+                self.assertEqual(data["counts"][999], 2**25 + 3)
+                self.assertEqual(data["total"], 2**25 + 9)
+                self.assertEqual(len(data["counts"]), 1000)
+                missing = await service.client.get("/tensorboard/data/plugin/anima_timesteps/distribution", params={"run":"missing"})
+                self.assertEqual(missing.status_code, 404)
+            finally:
+                await service.stop()
+
     async def test_two_instances_proxy_assets_and_cleanup(self):
         with tempfile.TemporaryDirectory() as tmp:
             services = [TensorBoardService(), TensorBoardService()]

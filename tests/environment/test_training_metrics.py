@@ -1,5 +1,6 @@
 """Prove diagnostics preserve training and use the existing TensorBoard stream."""
 from contextlib import nullcontext
+import itertools
 import os
 from pathlib import Path
 import subprocess
@@ -19,6 +20,52 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class BucketTests(unittest.TestCase):
+    def test_histogram_counts_actual_samples_at_each_loss_record(self):
+        trainer = AnimaNetworkTrainer()
+        accelerator = FakeAccelerator(torch.nn.Parameter(torch.ones(1)))
+        tracker = accelerator.trackers[0]
+        with instrument_trainer(trainer, "sd_scripts", grad_norm=False) as metrics:
+            # Two accumulation microbatches share step 4. Each sample must
+            # count, even when its timestep repeats within the same batch.
+            for step, times in ((4, [0., .1, .1, 1.]), (4, [.1005, .1009]), (5, [.9])):
+                trainer.process_batch(torch.ones(len(times)), torch.tensor(times), accelerator)
+                trainer.process_batch(torch.ones(1), torch.tensor([.5]), accelerator, is_train=False)
+                tracker.log({"loss/validation": 1}, step=step)
+                tracker.log({"loss/current": 1}, step=step)
+            tracker.log({"loss/epoch_average": 1}, step=1)
+            tracker.log({"loss/current": 1}, step=6)  # No new training batch.
+            accelerator.end_training()
+            self.assertEqual(metrics.timestep_counts.sum(), 7)
+            self.assertEqual(metrics.timestep_counts[[0, 100, 500, 900, 999]].tolist(), [1, 4, 0, 1, 1])
+        self.assertEqual([image[0] for image in tracker.distributions], [4, 4, 5])
+        snapshots = [counts for _, counts in tracker.distributions]
+        self.assertEqual([int(counts.sum()) for counts in snapshots], [4, 6, 7])
+        self.assertEqual([int(counts[100]) for counts in snapshots], [2, 4, 4])
+        self.assertFalse(any(key.startswith("timestep/count/") for _, values in tracker.records for key in values))
+
+    def test_histogram_normalizes_engine_units_and_disabled_collection(self):
+        normalized = TrainingMetrics()
+        scaled = TrainingMetrics()
+        for state, times, scale in ((normalized, [0., .1234, .9999, 1.], 1),
+                                    (scaled, [0., 123.4, 999.9, 1000.], 1000)):
+            state.observe_loss(torch.ones(4), torch.tensor(times), scale)
+            state.batch_logs()
+        self.assertEqual(normalized.timestep_counts.tolist(), scaled.timestep_counts.tolist())
+        self.assertEqual(scaled.timestep_counts[[0, 123, 999]].tolist(), [1, 1, 2])
+        disabled = TrainingMetrics(timestep_count=False)
+        disabled.observe_loss(torch.ones(1), torch.tensor([.5]), 1)
+        disabled.batch_logs()
+        self.assertIsNone(disabled.pending_timesteps)
+        self.assertIsNone(disabled.timestep_counts)
+
+    def test_integer_timesteps_keep_their_exact_bins(self):
+        state = TrainingMetrics()
+        # Exhaust the 0..1000 integer range, including float32 round-trip
+        # regressions at 251, 253, 502, 506, and 511. Only 1000 clips to 999.
+        state.observe_loss(torch.ones(1001), torch.arange(1001), 1000)
+        state.batch_logs()
+        self.assertEqual(state.timestep_counts.tolist(), [1] * 999 + [2])
+
     def test_boundaries_sample_weighting_and_empty_buckets(self):
         state = TrainingMetrics()
         loss = torch.tensor([2., 4., 6., 8.], requires_grad=True)
@@ -26,15 +73,17 @@ class BucketTests(unittest.TestCase):
         self.assertFalse(state.totals.requires_grad)
         self.assertIsNone(state.totals.grad_fn)
         logs = state.batch_logs()
-        self.assertEqual([logs[f"timestep/count/{k}"] for k in ("low", "mid", "high")], [1, 1, 2])
+        self.assertEqual(state.timestep_counts.sum(), 4)
+        self.assertEqual(state.timestep_counts[[0, 333, 666, 999]].tolist(), [1, 1, 1, 1])
+        self.assertFalse(any(key.startswith("timestep/count/") for key in logs))
         self.assertEqual([logs[f"loss/timestep/{k}"] for k in ("low", "mid", "high")], [2, 4, 7])
         self.assertNotIn("train/grad_norm", logs)
         self.assertEqual(state.batch_logs(), {})
         state.observe_loss(torch.tensor([10.]), torch.tensor([900.]), 1000)
         next_batch = state.batch_logs()
-        self.assertEqual(next_batch["timestep/count/high"], 1)
         self.assertEqual(next_batch["loss/timestep/high"], 10)
-        self.assertEqual(next_batch["timestep/count/low"], 0)
+        self.assertEqual(state.timestep_counts[900], 1)
+        self.assertEqual(state.timestep_counts.sum(), 5)
         self.assertNotIn("loss/timestep/low", next_batch)
 
     def test_each_loss_point_uses_only_its_current_batch(self):
@@ -43,7 +92,8 @@ class BucketTests(unittest.TestCase):
         state.observe_loss(torch.tensor([999.]), torch.tensor([.1]), 1)
         state.observe_loss(torch.tensor([5.]), torch.tensor([.9]), 1)
         logs = state.batch_logs()
-        self.assertEqual(logs["timestep/count/low"], 0)
+        self.assertEqual(state.timestep_counts.sum(), 1)
+        self.assertEqual(state.timestep_counts[900], 1)
         self.assertNotIn("loss/timestep/low", logs)
         self.assertEqual(logs["loss/timestep/high"], 5)
 
@@ -60,10 +110,10 @@ class BucketTests(unittest.TestCase):
         self.assertEqual(logs["loss/timestep/average/low"], 2)
         self.assertAlmostEqual(logs["loss/timestep/average/mid"], 32 / 3)
         self.assertEqual(logs["loss/timestep/average/high"], 30)
-        self.assertEqual(logs["timestep/count/average/mid"], 3)
+        self.assertEqual(state.timestep_counts[500], 3)
         first_epoch = state.epoch_logs(1)
         self.assertAlmostEqual(first_epoch["loss/timestep/epoch/mid"], 32 / 3)
-        self.assertEqual(first_epoch["timestep/count/epoch/high"], 2)
+        self.assertEqual(state.timestep_counts[900], 2)
 
         # Like the original LossRecorder, epoch 2 replaces batch slot 0 while
         # retaining the preceding epoch's slot 1 until it too gets replaced.
@@ -73,7 +123,7 @@ class BucketTests(unittest.TestCase):
         self.assertNotIn("loss/timestep/average/low", logs)
         partial_epoch = state.epoch_logs(2)
         self.assertEqual(partial_epoch["loss/timestep/epoch/mid"], 100)
-        self.assertEqual(partial_epoch["timestep/count/epoch/high"], 0)
+        self.assertEqual(state.timestep_counts.sum(), 7)
         self.assertNotIn("loss/timestep/epoch/high", partial_epoch)
         self.assertEqual(state.epoch_logs(3), {})  # No stale values for an empty epoch.
 
@@ -81,7 +131,8 @@ class BucketTests(unittest.TestCase):
         self.assertEqual(logs["loss/timestep/average/low"], 6)
         self.assertEqual(logs["loss/timestep/average/mid"], 100)
         self.assertNotIn("loss/timestep/average/high", logs)
-        self.assertEqual(state.epoch_logs(2)["timestep/count/epoch/low"], 3)
+        self.assertEqual(state.timestep_counts[100], 4)
+        self.assertEqual(state.timestep_counts.sum(), 10)
         self.assertEqual(len(state.average.history), 12)
 
     def test_resumed_average_ignores_unobserved_batch_slots(self):
@@ -90,7 +141,7 @@ class BucketTests(unittest.TestCase):
         state.batch_position = (5, 2)
         logs = state.batch_logs(include_average=True)
         self.assertEqual(logs["loss/timestep/average/high"], 7)
-        self.assertEqual(logs["timestep/count/average/high"], 1)
+        self.assertEqual(state.timestep_counts.sum(), 1)
         self.assertEqual(state.epoch_logs(6)["loss/timestep/epoch/high"], 7)
         self.assertNotIn("loss/timestep/epoch/low", state.epoch_logs(6))
 
@@ -100,11 +151,21 @@ class FakeTracker:
 
     def __init__(self, directory=None):
         self.records = []
+        self.distributions = []
         if directory:
             from torch.utils.tensorboard import SummaryWriter
             self.writer = SummaryWriter(directory)
         else:
-            self.writer = None
+            self.writer = SimpleNamespace(
+                file_writer=SimpleNamespace(add_summary=self.capture_distribution),
+                add_scalar=lambda *a, **kw: None, flush=lambda: None, close=lambda: None,
+            )
+
+    def capture_distribution(self, summary, global_step=None):
+        from tensorboard.util.tensor_util import make_ndarray
+        value = summary.value[0]
+        assert value.metadata.plugin_data.plugin_name == "anima_timesteps"
+        self.distributions.append((global_step, make_ndarray(value.tensor)))
 
     def log(self, values, step=None, **kwargs):
         self.records.append((step, dict(values)))
@@ -230,11 +291,12 @@ class TrainingLoopTests(unittest.TestCase):
                     gradient_logs = [(s, v) for s, v in after[3].records if "train/grad_norm" in v]
                     self.assertEqual([s for s, _ in gradient_logs], [1, 2, 3])
                     self.assertEqual([v["train/grad_clipped"] for _, v in gradient_logs], [int(bool(clipping))] * 3)
-                    buckets = [(s, v) for s, v in after[3].records if "timestep/count/low" in v]
+                    buckets = [(s, v) for s, v in after[3].records if "loss/timestep/low" in v]
                     current = [(s, v) for s, v in after[3].records if "loss/current" in v]
                     self.assertEqual([s for s, _ in buckets], [0, 1, 1, 2, 2, 3])
                     self.assertEqual(buckets, current)
-                    self.assertEqual([v["timestep/count/low"] for _, v in buckets], [1] * 6)
+                    self.assertFalse(any(k.startswith("timestep/count/") for _, v in buckets for k in v))
+                    self.assertTrue(after[3].distributions)
                     for _, values in buckets:
                         self.assertAlmostEqual(
                             sum(values[f"loss/timestep/{k}"] for k in ("low", "mid", "high")) / 3,
@@ -255,14 +317,21 @@ class TrainingLoopTests(unittest.TestCase):
             self.assertEqual(len(list(Path(directory).glob("events.out.tfevents.*"))), 1)
             events = EventAccumulator(directory).Reload()
             for tag in ("loss/current", "lr/unet", "train/grad_norm", "train/grad_clipped",
-                        "loss/timestep/low", "loss/timestep/mid", "loss/timestep/high",
-                        "timestep/count/low", "timestep/count/mid", "timestep/count/high"):
+                        "loss/timestep/low", "loss/timestep/mid", "loss/timestep/high"):
                 self.assertIn(tag, events.Tags()["scalars"])
+            self.assertFalse(any(tag.startswith("timestep/count/") for tag in events.Tags()["scalars"]))
+            from tensorboard.util.tensor_util import make_ndarray
+            distributions = events.Tensors("timestep/distribution")
+            self.assertEqual([event.step for event in distributions], [0, 1, 1, 2, 2, 3])
+            counts = [make_ndarray(event.tensor_proto) for event in distributions]
+            self.assertEqual([int(value.sum()) for value in counts], [3, 6, 9, 12, 15, 18])
+            self.assertEqual(counts[-1][[100, 500, 900]].tolist(), [6, 6, 6])
+            self.assertEqual(counts[-1].dtype.name, "int64")
+            self.assertNotIn("timestep/distribution", events.Tags()["images"])
             for bucket in ("low", "mid", "high"):
                 self.assertEqual([v.step for v in events.Scalars(f"loss/timestep/average/{bucket}")],
                                  [v.step for v in events.Scalars("loss/average")])
                 self.assertEqual([v.step for v in events.Scalars(f"loss/timestep/epoch/{bucket}")], [1])
-                self.assertEqual(events.Scalars(f"timestep/count/epoch/{bucket}")[0].value, 6)
             self.assertEqual([v.step for v in events.Scalars("loss/timestep/low")], [0, 1, 1, 2, 2, 3])
             self.assertEqual([v.step for v in events.Scalars("loss/timestep/low")],
                              [v.step for v in events.Scalars("loss/current")])
@@ -286,7 +355,7 @@ class TrainingLoopTests(unittest.TestCase):
         self.assertEqual([step for step, _ in current], [0, 0, 1])
         for (_, values), bucket, expected in zip(current, ("low", "high", "mid"), (6., 12., 18.)):
             for key in ("low", "mid", "high"):
-                self.assertEqual(values[f"timestep/count/{key}"], int(key == bucket))
+                self.assertNotIn(f"timestep/count/{key}", values)
                 self.assertEqual(f"loss/timestep/{key}" in values, key == bucket)
             self.assertEqual(values[f"loss/timestep/{bucket}"], expected)
         for _, values in tracker.records:
@@ -306,8 +375,6 @@ class TrainingLoopTests(unittest.TestCase):
         self.assertFalse(any("train/grad_norm" in v or "loss/timestep/low" in v for _, v in non_main[3].records))
 
     def test_all_switch_combinations_enforce_parent_dependencies(self):
-        import itertools
-
         for engine in ("sd_scripts", "musubi_tuner"):
             baseline = self.run_loop(engine, instrument=False)
             for grad, clipped, loss, count in itertools.product((False, True), repeat=4):
@@ -320,22 +387,53 @@ class TrainingLoopTests(unittest.TestCase):
                     self.assertEqual("train/grad_clipped" in keys, grad and clipped)
                     for suffix in ("low", "average/low", "epoch/low"):
                         self.assertEqual(f"loss/timestep/{suffix}" in keys, loss)
-                        self.assertEqual(f"timestep/count/{suffix}" in keys, loss and count)
-                    torch.testing.assert_close(baseline[0], observed[0], rtol=0, atol=0)
+                        self.assertNotIn(f"timestep/count/{suffix}", keys)
+                    self.assertEqual(bool(observed[3].distributions), count)
+                    if count:
+                        snapshots = [counts for _, counts in observed[3].distributions]
+                        self.assertEqual([int(counts.sum()) for counts in snapshots], [3, 6, 9, 12, 15, 18])
+                        self.assertEqual(snapshots[-1][[100, 500, 900]].tolist(), [6, 6, 6])
+                    for before, after in zip((baseline[0], *baseline[1], *baseline[2]),
+                                             (observed[0], *observed[1], *observed[2])):
+                        torch.testing.assert_close(before, after, rtol=0, atol=0)
+
+    def test_count_only_skips_loss_buckets_and_loss_capture(self):
+        for engine in ("sd_scripts", "musubi_tuner"):
+            with self.subTest(engine=engine), patch.object(TrainingMetrics, "observe_loss") as loss, patch(
+                "tools.python_startup.training_metrics._loss_mean_capture"
+            ) as capture, patch("tools.python_startup.training_metrics._attach_loss_recorder") as recorder:
+                observed = self.run_loop(engine, grad_norm=False, timestep_loss=False, timestep_count=True)
+                loss.assert_not_called()
+                capture.assert_not_called()
+                recorder.assert_not_called()
+                self.assertEqual(int(observed[3].distributions[-1][1].sum()), 18)
+
+    def test_count_only_writes_real_events_without_loss_bucket_tags(self):
+        from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+        from tensorboard.util.tensor_util import make_ndarray
+
+        for engine in ("sd_scripts", "musubi_tuner"):
+            with self.subTest(engine=engine), tempfile.TemporaryDirectory() as directory:
+                self.run_loop(engine, grad_norm=False, timestep_loss=False, timestep_count=True, directory=directory)
+                events = EventAccumulator(directory).Reload()
+                self.assertFalse(any(tag.startswith("loss/timestep/") for tag in events.Tags()["scalars"]))
+                counts = events.Tensors("timestep/distribution")
+                self.assertEqual([event.step for event in counts], [0, 1, 1, 2, 2, 3])
+                self.assertEqual([int(make_ndarray(event.tensor_proto).sum()) for event in counts], [3, 6, 9, 12, 15, 18])
 
     def test_disabled_parents_skip_collection_and_installation(self):
         with patch.object(TrainingMetrics, "observe_loss") as collect, patch(
             "tools.python_startup.training_metrics._unclipped_norm"
         ) as norm, patch("tools.python_startup.training_metrics._loss_mean_capture") as capture:
             self.run_loop("musubi_tuner", grad_norm=False, grad_clipped=True,
-                          timestep_loss=False, timestep_count=True, clipping=0)
+                          timestep_loss=False, timestep_count=False, clipping=0)
             collect.assert_not_called()
             norm.assert_not_called()
             capture.assert_not_called()
         with patch.object(TrainingMetrics, "observe_loss") as collect, patch(
             "tools.python_startup.training_metrics._loss_mean_capture"
         ) as capture:
-            self.run_loop("musubi_tuner", grad_norm=True, timestep_loss=False)
+            self.run_loop("musubi_tuner", grad_norm=True, timestep_loss=False, timestep_count=False)
             collect.assert_not_called()
             capture.assert_not_called()
 
@@ -387,6 +485,15 @@ class TrainingLoopTests(unittest.TestCase):
         with patch.object(TrainingMetrics, "observe_loss", side_effect=RuntimeError("diagnostic failed")):
             observed = self.run_loop("sd_scripts")
         torch.testing.assert_close(baseline[0], observed[0], rtol=0, atol=0)
+        self.assertTrue(observed[4].ended)
+
+    def test_count_write_failure_does_not_repeat_or_abort_training(self):
+        baseline = self.run_loop("sd_scripts", instrument=False)
+        with patch.object(TrainingMetrics, "write_distribution", side_effect=RuntimeError("count write failed")):
+            observed = self.run_loop("sd_scripts")
+        torch.testing.assert_close(baseline[0], observed[0], rtol=0, atol=0)
+        self.assertEqual([step for step, values in observed[3].records if "loss/current" in values],
+                         [0, 1, 1, 2, 2, 3])
         self.assertTrue(observed[4].ended)
 
 
@@ -451,7 +558,7 @@ def run(kind, engine, dtype, enabled, clipping):
                 values = tracker.records[-1][1]
                 assert abs(values['train/grad_norm'] - expected_norm) < 1e-5
                 assert values['train/grad_clipped'] == int(bool(clipping) and expected_norm > clipping)
-                assert all(values[f'timestep/count/{bucket}'] == 1 for bucket in ('low', 'mid', 'high'))
+                assert not any(key.startswith('timestep/count/') for key in values)
             if kind == 'emosens':
                 assert raw._manual_loss == loss.item()
             history.append((loss.detach().clone(), gradient, model.weight.detach().clone(), copy.deepcopy(raw.state_dict())))
@@ -487,7 +594,8 @@ from accelerate import Accelerator
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 from tools.python_startup.training_metrics import instrument_trainer
 
-profile, directory = sys.argv[1:]
+profile, directory, mode = sys.argv[1:]
+count_only = mode == "count"
 if profile == "krea2":
     from musubi_tuner.training.trainer_base import NetworkTrainer
     from musubi_tuner.krea2_train_network import Krea2NetworkTrainer
@@ -553,7 +661,7 @@ reference_optimizer.step()
 recorder = LossRecorder()
 validation_recorder = LossRecorder()
 original_recorder_add = LossRecorder.add
-with instrument_trainer(trainer, engine) as metrics:
+with instrument_trainer(trainer, engine, grad_norm=not count_only, timestep_loss=not count_only) as metrics:
     for micro in range(2):
         with accelerator.accumulate(model):
             loss = batch_loss()
@@ -566,10 +674,12 @@ with instrument_trainer(trainer, engine) as metrics:
             optimizer.zero_grad(set_to_none=True)
         # Exercise each core's existing logging path and actual event writer.
         recorder.add(epoch=0, step=micro, loss=float(loss.detach()))
-        assert metrics.loss_recorder is recorder
-        assert metrics.batch_position == (0, micro)
+        if not count_only:
+            assert metrics.loss_recorder is recorder
+            assert metrics.batch_position == (0, micro)
         validation_recorder.add(epoch=10, step=999, loss=999.)
-        assert metrics.batch_position == (0, micro)
+        if not count_only:
+            assert metrics.batch_position == (0, micro)
         logs = {"loss/current": float(loss.detach()), "loss/average": recorder.moving_average, "lr/unet": .01}
         if engine == "sd_scripts":
             trainer.step_logging(accelerator, logs, (micro + 1) // 2, 1)
@@ -587,14 +697,17 @@ torch.testing.assert_close(model.weight.detach(), reference.detach(), rtol=0, at
 events_path = Path(directory) / "log"
 assert len(list(events_path.rglob("events.out.tfevents.*"))) == 1
 events = EventAccumulator(str(events_path)).Reload()
-assert events.Scalars("train/grad_norm")[0].step == 1
-assert abs(events.Scalars("train/grad_norm")[0].value - expected_norm) < 1e-3
+if not count_only:
+    assert events.Scalars("train/grad_norm")[0].step == 1
+    assert abs(events.Scalars("train/grad_norm")[0].value - expected_norm) < 1e-3
+else:
+    assert not any(tag.startswith(("loss/timestep/", "train/grad_")) for tag in events.Tags()["scalars"])
+    assert metrics.totals is None and len(metrics.average.history) == 0
 assert len(events.Scalars(epoch_tag)) == 1
-for bucket, expected in zip(("low", "mid", "high"), expected_values.detach().tolist()):
+for bucket, expected in ([] if count_only else zip(("low", "mid", "high"), expected_values.detach().tolist())):
     scalars = events.Scalars(f"loss/timestep/{bucket}")
     assert [scalar.step for scalar in scalars] == [0, 1]
     assert [scalar.step for scalar in scalars] == [scalar.step for scalar in events.Scalars("loss/current")]
-    assert [scalar.value for scalar in events.Scalars(f"timestep/count/{bucket}")] == [1, 1]
     for scalar in scalars:
         assert abs(scalar.value - expected) < 1e-5, (bucket, scalar.value, expected)
     average = events.Scalars(f"loss/timestep/average/{bucket}")
@@ -602,24 +715,28 @@ for bucket, expected in zip(("low", "mid", "high"), expected_values.detach().tol
     assert [scalar.step for scalar in average] == [scalar.step for scalar in events.Scalars("loss/average")]
     for scalar in average:
         assert abs(scalar.value - expected) < 1e-5
-    assert [scalar.value for scalar in events.Scalars(f"timestep/count/average/{bucket}")] == [1, 2]
     epoch_loss = events.Scalars(f"loss/timestep/epoch/{bucket}")
     assert len(epoch_loss) == 1 and epoch_loss[0].step == 1
     assert abs(epoch_loss[0].value - expected) < 1e-5
-    assert events.Scalars(f"timestep/count/epoch/{bucket}")[0].value == 2
+assert not any(tag.startswith("timestep/count/") for tag in events.Tags()["scalars"])
+assert [event.step for event in events.Tensors("timestep/distribution")] == [0, 1]
+assert "timestep/distribution" not in events.Tags()["images"]
+assert metrics.timestep_counts.sum() == 6
+assert metrics.timestep_counts[[100, 500, 900]].tolist() == [2, 2, 2]
 print("REAL_TRAINER_OK", profile)
 '''
-        for profile in ("anima", "sdxl", "krea2"):
-            with self.subTest(profile=profile), tempfile.TemporaryDirectory() as directory:
+        for profile, mode in itertools.product(("anima", "sdxl", "krea2"), ("both", "count")):
+            with self.subTest(profile=profile, mode=mode), tempfile.TemporaryDirectory() as directory:
                 engine = "musubi_tuner" if profile == "krea2" else "sd_scripts"
                 env = _build_train_env(directory, "metrics-real", engine_id=engine)
-                env.update(training_metrics_environment(dict.fromkeys(
-                    ("log_grad_norm", "log_grad_clipped", "log_timestep_loss", "log_timestep_count"), True
-                )))
+                env.update(training_metrics_environment({
+                    "log_grad_norm": mode == "both", "log_grad_clipped": mode == "both",
+                    "log_timestep_loss": mode == "both", "log_timestep_count": True,
+                }))
                 if engine == "sd_scripts":
                     env["PYTHONPATH"] += os.pathsep + str(ROOT / "vendor" / "sd-scripts")
                 result = subprocess.run(
-                    [sys.executable, "-c", script, profile, directory], cwd=ROOT, env=env,
+                    [sys.executable, "-c", script, profile, directory, mode], cwd=ROOT, env=env,
                     capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=90,
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

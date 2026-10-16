@@ -1,19 +1,9 @@
-"""Observational training diagnostics, written through the existing TB tracker.
+"""Read-only diagnostics for the main rank's training samples, excluding validation.
 
-No model passes, gradient edits, or optimizer updates are added. Loss buckets use
-the final weighted objective, not a second MSE calculation. Statistics cover the
-logging process's samples (the main rank on distributed runs), use fixed noise
-thirds [0, 1/3), [1/3, 2/3), [2/3, 1]. Each batch's loss buckets and counts are
-merged into its existing loss/current record at the same global_step, including
-accumulation microbatches. Average buckets follow the original LossRecorder's
-batch-slot window; epoch buckets include only samples processed in that epoch.
-All averages divide summed per-sample losses by actual bucket sample counts.
-Only six CPU doubles per batch slot are retained, never loss tensors or graphs.
-
-Application form switches become per-run ANIMA_TRAIN_METRICS_* flags. All default
-to disabled at the launcher boundary. Child flags require their respective
-parent. With clipping disabled, gradient norms require one extra reduction,
-without unscaling gradients in-place.
+Loss uses fixed noise thirds and sample-weighted batch, rolling and epoch means.
+Counts accumulate in 1000 bins since process start, including after a resume.
+Both follow loss/current through the existing TensorBoard writer, including
+accumulation microbatches. ANIMA_TRAIN_METRICS_* flags enable them independently.
 """
 from __future__ import annotations
 
@@ -30,6 +20,7 @@ _FLAG = "_anima_training_metrics"
 _IMPORT_FLAG = "_anima_training_metrics_import"
 _WARNED = False
 _BUCKETS = ("low", "mid", "high")
+_TIMESTEP_BINS = 1000
 
 
 def _warn(exc):
@@ -39,12 +30,10 @@ def _warn(exc):
         _WARNED = True
 
 
-def _bucket_logs(totals, suffix="", *, include_counts=True):
+def _bucket_logs(totals, suffix=""):
     logs = {}
     for index, bucket in enumerate(_BUCKETS):
         total, count = totals[index], totals[index + 3]
-        if include_counts:
-            logs[f"timestep/count/{suffix}{bucket}"] = int(count)
         if count:
             logs[f"loss/timestep/{suffix}{bucket}"] = total / count
     return logs
@@ -74,7 +63,7 @@ class TrainingMetrics:
         self.grad_norm = grad_norm
         self.grad_clipped = grad_norm and grad_clipped
         self.timestep_loss = timestep_loss
-        self.timestep_count = timestep_loss and timestep_count
+        self.timestep_count = timestep_count
         self.enabled = True
         self.totals = None
         self.step_finished = False
@@ -86,6 +75,19 @@ class TrainingMetrics:
         self.next_batch = 0
         self.average = _BucketWindow()
         self.epoch_totals = [0.0] * 6
+        self.pending_timesteps = None
+        self.timestep_counts = None
+        self.distribution_dirty = False
+
+    def observe_timesteps(self, timesteps, scale):
+        if not self.timestep_count:
+            return
+        import torch
+
+        # Convert directly to plot units; normalizing and scaling back can
+        # round integer timesteps such as 251 down to the preceding bin.
+        sampled = timesteps.detach().to(dtype=torch.float32).reshape(-1)
+        self.pending_timesteps = sampled * (_TIMESTEP_BINS / scale)
 
     def observe_loss(self, loss, timesteps, scale):
         if not self.timestep_loss:
@@ -94,7 +96,8 @@ class TrainingMetrics:
 
         with torch.no_grad():
             values = loss.detach().float().reshape(-1)
-            times = timesteps.detach().to(device=values.device, dtype=torch.float32).reshape(-1) / scale
+            sampled = timesteps.detach().to(device=values.device, dtype=torch.float32).reshape(-1)
+            times = sampled / scale
             if values.numel() != times.numel():
                 raise ValueError("per-sample loss and timestep sizes differ")
             boundaries = times.new_tensor([1 / 3, 2 / 3])
@@ -103,6 +106,7 @@ class TrainingMetrics:
             stats[0].scatter_add_(0, indices, values)
             stats[1].scatter_add_(0, indices, torch.ones_like(values))
             self.totals = stats
+            self.observe_timesteps(sampled, scale)
             self.batch_position = None
 
     def finish_step(self):
@@ -110,9 +114,29 @@ class TrainingMetrics:
 
     def loss_logs(self, include_average=False):
         logs = {}
-        if self.totals is not None:
-            sums, counts = self.totals.cpu().tolist()
-            totals = sums + counts
+        totals = None
+        if self.pending_timesteps is not None:
+            import numpy as np
+            import torch
+
+            # Share one device-to-host transfer when both switches are on.
+            # Count-only mode never computes or transfers loss bucket stats.
+            if self.totals is not None:
+                data = torch.cat((self.totals.reshape(-1), self.pending_timesteps)).cpu().numpy()
+                totals = data[:6].tolist()
+                sampled = data[6:]
+            else:
+                sampled = self.pending_timesteps.cpu().numpy()
+            bins = np.clip(sampled.astype(np.int64), 0, _TIMESTEP_BINS - 1)
+            counts = np.bincount(bins, minlength=_TIMESTEP_BINS)
+            if self.timestep_counts is None:
+                self.timestep_counts = counts
+            else:
+                self.timestep_counts += counts
+            self.distribution_dirty = True
+        elif self.totals is not None:
+            totals = self.totals.cpu().reshape(-1).tolist()
+        if totals is not None:
             epoch, step = self.batch_position or (self.epoch or 0, self.next_batch)
             if self.epoch != epoch:
                 self.epoch = epoch
@@ -121,10 +145,11 @@ class TrainingMetrics:
             for index, value in enumerate(totals):
                 self.epoch_totals[index] += value
             self.next_batch = step + 1
-            logs = _bucket_logs(totals, include_counts=self.timestep_count)
+            logs = _bucket_logs(totals)
             if include_average:
-                logs.update(_bucket_logs(self.average.totals, "average/", include_counts=self.timestep_count))
+                logs.update(_bucket_logs(self.average.totals, "average/"))
         self.totals = None
+        self.pending_timesteps = None
         self.batch_position = None
         return logs
 
@@ -132,7 +157,32 @@ class TrainingMetrics:
         # No samples from an empty/skipped epoch must reuse the previous epoch.
         if not self.timestep_loss or self.epoch is None or epoch_number != self.epoch + 1:
             return {}
-        return _bucket_logs(self.epoch_totals, "epoch/", include_counts=self.timestep_count)
+        return _bucket_logs(self.epoch_totals, "epoch/")
+
+    def write_distribution(self, writer, step=None):
+        if not self.distribution_dirty:
+            return
+        from tensorboard.compat.proto import summary_pb2, tensor_pb2, tensor_shape_pb2, types_pb2
+
+        counts = self.timestep_counts.astype("<i8", copy=False)
+        summary = summary_pb2.Summary(value=[summary_pb2.Summary.Value(
+            tag="timestep/distribution",
+            metadata=summary_pb2.SummaryMetadata(
+                data_class=summary_pb2.DATA_CLASS_TENSOR,
+                plugin_data=summary_pb2.SummaryMetadata.PluginData(
+                    plugin_name="anima_timesteps", content=b"1",
+                ),
+            ),
+            tensor=tensor_pb2.TensorProto(
+                dtype=types_pb2.DT_INT64,
+                tensor_shape=tensor_shape_pb2.TensorShapeProto(
+                    dim=[tensor_shape_pb2.TensorShapeProto.Dim(size=_TIMESTEP_BINS)],
+                ),
+                tensor_content=counts.tobytes(),
+            ),
+        )])
+        writer.file_writer.add_summary(summary, global_step=step)
+        self.distribution_dirty = False
 
     def batch_logs(self, include_average=False):
         logs = self.loss_logs(include_average)
@@ -160,6 +210,7 @@ def _observe(state, action):
         except Exception as exc:
             state.enabled = False
             state.totals = None
+            state.pending_timesteps = None
             state.pending_norm = None
             _warn(exc)
     return None
@@ -276,12 +327,15 @@ def _attach_accelerator(stack, accelerator, state):
             continue
         original_log = tracker.log
 
-        def make_log(original):
+        def make_log(original, tracker):
             @functools.wraps(original)
             def log(values, step=None, **kwargs):
                 extra = None
                 if state.enabled and "loss/current" in values:
                     extra = _observe(state, lambda: state.batch_logs("loss/average" in values))
+                    if state.timestep_count:
+                        # Write before the original log flushes the shared writer.
+                        _observe(state, lambda: state.write_distribution(tracker.writer, step))
                 elif state.enabled and ("loss/epoch_average" in values or "loss/epoch" in values):
                     extra = _observe(state, lambda: state.epoch_logs(step))
                 if extra:
@@ -289,15 +343,11 @@ def _attach_accelerator(stack, accelerator, state):
                 return original(values, step=step, **kwargs)
             return log
 
-        _replace(stack, tracker, "log", make_log(original_log))
+        _replace(stack, tracker, "log", make_log(original_log, tracker))
 
 
 def _loss_mean_capture():
-    """Observe musubi's existing final weighted reduction, only inside compute_loss.
-
-    Keeping the original function avoids duplicating the upstream loss formula.
-    This mode is never active during the transformer forward or backward.
-    """
+    """Capture musubi's weighted loss reduction only inside compute_loss."""
     import torch
     from torch.overrides import TorchFunctionMode
 
@@ -318,7 +368,7 @@ def instrument_trainer(trainer, engine, grad_norm=True, *, grad_clipped=True, ti
     """Install scoped instance hooks, including actual subclass loss overrides."""
     state = TrainingMetrics(grad_norm, grad_clipped=grad_clipped, timestep_loss=timestep_loss, timestep_count=timestep_count)
     with ExitStack() as stack:
-        if not state.grad_norm and not state.timestep_loss:
+        if not state.grad_norm and not state.timestep_loss and not state.timestep_count:
             yield state
             return
         if state.timestep_loss:
@@ -346,7 +396,7 @@ def instrument_trainer(trainer, engine, grad_norm=True, *, grad_clipped=True, ti
 
         _replace(stack, trainer, "process_batch", process_batch)
 
-        if state.timestep_loss and engine == "sd_scripts":
+        if (state.timestep_loss or state.timestep_count) and engine == "sd_scripts":
             original_loss = trainer.post_process_loss
             timestep_scale = 1.0 if any(cls.__name__ == "AnimaNetworkTrainer" for cls in type(trainer).__mro__) else 1000.0
 
@@ -354,17 +404,25 @@ def instrument_trainer(trainer, engine, grad_norm=True, *, grad_clipped=True, ti
             def post_process_loss(loss, args, timesteps, noise_scheduler):
                 result = original_loss(loss, args, timesteps, noise_scheduler)
                 if state.in_training_batch:
-                    _observe(state, lambda: state.observe_loss(result, timesteps, timestep_scale))
+                    if state.timestep_loss:
+                        _observe(state, lambda: state.observe_loss(result, timesteps, timestep_scale))
+                    else:
+                        _observe(state, lambda: state.observe_timesteps(timesteps, timestep_scale))
                 return result
 
             _replace(stack, trainer, "post_process_loss", post_process_loss)
-        elif state.timestep_loss:
+        elif state.timestep_loss or state.timestep_count:
             original_loss = trainer.compute_loss
 
             @functools.wraps(original_loss)
             def compute_loss(*args, **kwargs):
                 if not state.in_training_batch:
                     return original_loss(*args, **kwargs)
+                timesteps = kwargs.get("timesteps", args[2] if len(args) > 2 else None)
+                if not state.timestep_loss:
+                    result = original_loss(*args, **kwargs)
+                    _observe(state, lambda: state.observe_timesteps(timesteps, 1000.0))
+                    return result
                 capture = _observe(state, _loss_mean_capture)
                 if capture is None:
                     return original_loss(*args, **kwargs)
@@ -379,7 +437,6 @@ def instrument_trainer(trainer, engine, grad_norm=True, *, grad_clipped=True, ti
                     values = capture.pair[1]
                     dimensions = tuple(range(1, values.ndim))
                     per_sample = values.mean(dim=dimensions, dtype=torch.float32) if dimensions else values
-                    timesteps = kwargs.get("timesteps", args[2] if len(args) > 2 else None)
                     state.observe_loss(per_sample, timesteps, 1000.0)
 
                 _observe(state, collect)
