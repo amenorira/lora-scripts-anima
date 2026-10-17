@@ -8,11 +8,11 @@
   /* 原生控件（select 弹出列表、滚动条等）跟随浅色界面，不随 OS 深色 */
   color-scheme: light;
 
-  --accent: #3276d8;
+  --accent: #2d6bc4;
   --accent-solid: var(--accent);
-  --accent-hover: #2865bd;
-  --accent-soft: rgba(50, 118, 216, 0.11);
-  --accent-muted: rgba(50, 118, 216, 0.06);
+  --accent-hover: #2563b8;
+  --accent-soft: rgba(45, 107, 196, 0.12);
+  --accent-muted: rgba(45, 107, 196, 0.07);
   --danger: #dc2626;
   --danger-hover: #b91c1c;
   --danger-soft: rgba(220, 38, 38, 0.10);
@@ -43,22 +43,22 @@
   --bg-overlay: rgba(0,0,0,0.25);
 
   --text-primary: #1b1e23;
-  --text-secondary: #5f6670;
-  --text-tertiary: #8a919b;
+  --text-secondary: #4f5660;
+  --text-tertiary: #68707b;
   --text-sidebar: #30353c;
-  --text-sidebar-muted: #717985;
+  --text-sidebar-muted: #5f6670;
   --text-sidebar-active: #15181c;
   --text-preview: #1e1b18;
   --text-preview-key: #7c5cbf;
   --text-preview-eq: #7c5cbf;
   --text-preview-num: #d97706;
   --text-preview-str: #059669;
-  --text-preview-comment: #9d9790;
+  --text-preview-comment: #6f6a63;
   --toml-change-flash: rgba(255, 214, 92, 0.58);
 
-  --border-default: #d9dde3;
-  --border-input: #c8cdd5;
-  --border-focus: #3276d8;
+  --border-default: #c9ced6;
+  --border-input: #8f96a1;
+  --border-focus: #2d6bc4;
 
   --shadow-sm: none;
   --shadow-md: 0 6px 18px rgba(20, 24, 31, 0.10);
@@ -76,12 +76,7 @@
   --radius-sm: var(--radius-control);
   --radius-md: var(--radius-panel);
   --radius-lg: var(--radius-panel);
-  --radius-xl: var(--radius-panel);
 
-  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-
-  --bg-secondary: #f6f7f8;   /* alias: --bg-surface-raised */
-  --bg-tertiary: #eceef1;    /* alias: --bg-sunken */
   --surface-default: var(--bg-surface);
   --surface-2: var(--bg-surface-raised);
   --text-muted: var(--text-tertiary);
@@ -98,7 +93,6 @@
   --section-caption: #78716c;
   --state-changed: #d97706;
   --state-filled: #16a34a;
-  --diff-modified: #b58b00;
   --diff-added: #16884f;
   --diff-removed: #dc4c4c;
 }
@@ -107,6 +101,12 @@
 
 /* Theme icon: CSS-driven visibility (decoupled from Alpine x-show) */
 [data-theme="light"] .theme-icon-light { display: block; }
+
+/* Keep the connected page distinct from both the rail and its hover fill. */
+[data-theme="light"] .sidebar {
+  --sidebar-shell-bg: #e2e5eb;
+  --sidebar-tab-border: #adb5c1;
+}
 
 /* 实时日志：浅色用 VSCode light 配色（基底规则是深色系，见 app.css） */
 [data-theme="light"] .monitor-logs-container {

@@ -814,6 +814,20 @@ window.tagEditorMixin = {
 
   tagEditorInitLayout() {
     var self = this;
+    // At compact desktop widths the tag cloud overlays the grid instead of
+    // permanently consuming a column. Start collapsed so the image wall is usable.
+    if (window.matchMedia && window.matchMedia('(max-width: 1200px)').matches) {
+      this.tagEditorLeftCollapsed = true;
+    }
+    if (!this._teCompactMedia && window.matchMedia) {
+      this._teCompactMedia = window.matchMedia('(max-width: 1200px)');
+      this._teCompactListener = function(event) {
+        if (event.matches) self.tagEditorLeftCollapsed = true;
+      };
+      if (this._teCompactMedia.addEventListener) {
+        this._teCompactMedia.addEventListener('change', this._teCompactListener);
+      }
+    }
     this.$nextTick(function() {
       var grid = document.getElementById('teV3Grid');
       if (!grid) return;
@@ -831,7 +845,8 @@ window.tagEditorMixin = {
     var gap = parseFloat(style.columnGap) || 8;
     var padding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
     var available = Math.max(1, grid.clientWidth - padding);
-    var minSize = 160;
+    var compact = window.matchMedia && window.matchMedia('(max-width: 1200px)').matches;
+    var minSize = compact ? 148 : 160;
     var columns = Math.max(1, Math.floor((available + gap) / (minSize + gap)));
     var size = Math.max(minSize, Math.floor((available - gap * (columns - 1)) / columns));
     grid.style.setProperty('--te-card-size', size + 'px');
@@ -1174,12 +1189,6 @@ window.tagEditorMixin = {
 
   tagEditorSelectTag(tag) {
     this._teTagListToggle(this.tagEditorTagSelection, this.tagEditorExcludedTags, tag);
-    this._teInvalidateFilter();
-    this.tagEditorSchedulePageFetch(true);
-  },
-
-  tagEditorExcludeTag(tag) {
-    this._teTagListToggle(this.tagEditorExcludedTags, this.tagEditorTagSelection, tag);
     this._teInvalidateFilter();
     this.tagEditorSchedulePageFetch(true);
   },

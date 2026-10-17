@@ -3,17 +3,78 @@ import asyncio
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 from fastapi import FastAPI
 from starlette.middleware.gzip import GZipMiddleware
 
 from backend.tensorboard_service import TensorBoardService
+from backend import tensorboard_service
 from backend.server import proxy
 
 
 class TensorBoardServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_disabled_start_preserves_matching_user_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            saved = root / "anima-tensorboard-export" / "events.backup"
+            saved.parent.mkdir()
+            saved.write_text("user data", encoding="utf-8")
+            with patch.object(tensorboard_service, "ROOT", root):
+                service = TensorBoardService()
+                service.start(enabled=False)
+            self.assertEqual(saved.read_text(encoding="utf-8"), "user data")
+            self.assertEqual(service.status(), "disabled")
+
+    async def test_handshake_location_and_cleanup_across_startup_outcomes(self):
+        for outcome in ("ready", "failed", "cancelled"):
+            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                log_path = root / "custom-logs" / "tb.log"
+                log_path.parent.mkdir()
+                unrelated = log_path.parent / ".tensorboard-endpoint-unrelated.txt"
+                unrelated.write_text("another instance", encoding="utf-8")
+                saved = root / "anima-tensorboard-export"
+                saved.mkdir()
+                process = Mock()
+                process.poll.return_value = 1 if outcome == "failed" else None
+                published = []
+                launched = asyncio.Event()
+
+                def launch(command, **kwargs):
+                    endpoint = Path(command[3])
+                    published.extend((endpoint, Path(str(endpoint) + ".tmp")))
+                    target = published[0] if outcome == "ready" else published[1]
+                    target.write_text("http://127.0.0.1:12345/tensorboard/", encoding="utf-8")
+                    launched.set()
+                    return process
+
+                client = Mock()
+                client.get = AsyncMock(return_value=Mock())
+                client.aclose = AsyncMock()
+                service = TensorBoardService()
+                # Simulate tempfile falling back to the project root. The
+                # service must still use the explicitly selected log directory.
+                with patch.object(tensorboard_service, "ROOT", root), \
+                     patch.object(tempfile, "tempdir", str(root)), \
+                     patch.object(tensorboard_service.subprocess, "Popen", side_effect=launch), \
+                     patch.object(httpx, "AsyncClient", return_value=client):
+                    try:
+                        service.start(log_path=log_path)
+                        await asyncio.wait_for(launched.wait(), 5)
+                        if outcome != "cancelled":
+                            await service.wait_started()
+                            self.assertEqual(service.status(), outcome, service.error)
+                            self.assertTrue(all(not path.exists() for path in published))
+                    finally:
+                        await service.stop()
+                self.assertEqual(published[0].parent, log_path.parent)
+                self.assertTrue(all(not path.exists() for path in published))
+                self.assertEqual(unrelated.read_text(encoding="utf-8"), "another instance")
+                self.assertTrue(saved.is_dir())
+                self.assertFalse(list(root.glob(".tensorboard-endpoint-*")))
+
     async def test_interactive_count_data_uses_exact_latest_integer_bins(self):
         import numpy as np
         from torch.utils.tensorboard import SummaryWriter

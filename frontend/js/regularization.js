@@ -7,7 +7,7 @@ window.regularizationMixin = {
   regularizationActive: false, _regActivityBoundaryAt: 0,
   regItems: [], regItemsTotal: 0, regFilter: 'all', regLogs: [], regLogsOpen: false, _regLogRequest: 0,
   regGalleryLoading: '', regMoreError: '', _regMoreRequest: 0, _regResultRefresh: 0,
-  regSelected: null, regTrainRoute: 'train-anima', regPendingTrainingPath: '', _regTopic: null, _regTimer: null, _regLoaded: false, _regRefreshing: false,
+  regSelected: null, regTrainRoute: 'train-basic', regPendingTrainingPath: '', _regTopic: null, _regTimer: null, _regLoaded: false, _regRefreshing: false,
   get regRunning() { return ['created', 'running', 'stopping'].includes(this.regTask?.status); },
   get regTaskMatchesPlan() { return this.regRunning || !!this.regPlan && this.regTask?.output_path === this.regPlan.output_path; },
   get regProgress() {

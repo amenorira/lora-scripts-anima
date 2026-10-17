@@ -171,15 +171,15 @@ window.trainingTomlMixin = {
         return '<span class="toml-line toml-line-empty" aria-hidden="true">&nbsp;</span>';
       }
       if (line.startsWith('#')) {
-        return `<span class="toml-line"><span class="toml-line-content toml-comment">${this.esc(line)}</span></span>`;
+        return `<span class="toml-line"><span class="toml-line-content toml-comment">${this._tomlSoftBreaks(this.esc(line))}</span></span>`;
       }
       const eq = line.indexOf('=');
       if (eq === -1) {
-        return `<span class="toml-line"><span class="toml-line-content">${this.esc(line)}</span></span>`;
+        return `<span class="toml-line"><span class="toml-line-content">${this._tomlSoftBreaks(this.esc(line))}</span></span>`;
       }
       const key = line.substring(0, eq).trim();
       const val = line.substring(eq + 1).trim();
-      return `<span class="toml-line" data-param-key="${this._tomlEscapeAttr(key)}"><span class="toml-line-content"><span class="toml-key">${this.esc(key)}</span> <span class="toml-eq">=</span> ${this._highlightTomlValue(key, val)}</span></span>`;
+      return `<span class="toml-line" data-param-key="${this._tomlEscapeAttr(key)}"><span class="toml-line-content"><span class="toml-key">${this._tomlSoftBreaks(this.esc(key), true)}</span> <span class="toml-eq">=</span> ${this._highlightTomlValue(key, val)}</span></span>`;
     }).join('');
   },
 
@@ -191,21 +191,28 @@ window.trainingTomlMixin = {
       let match;
       while ((match = pattern.exec(value)) !== null) {
         if (match.index > cursor) {
-          parts.push(`<span class="toml-num">${this.esc(value.slice(cursor, match.index))}</span>`);
+          parts.push(`<span class="toml-num">${this._tomlSoftBreaks(this.esc(value.slice(cursor, match.index)))}</span>`);
         }
         const argKey = String(match[1]).split('=', 1)[0].trim();
-        parts.push(`<span class="toml-arg-token toml-str" data-toml-arg-key="${this._tomlEscapeAttr(argKey)}">${this.esc(match[0])}</span>`);
+        parts.push(`<span class="toml-arg-token toml-str" data-toml-arg-key="${this._tomlEscapeAttr(argKey)}">${this._tomlSoftBreaks(this.esc(match[0]))}</span>`);
         cursor = pattern.lastIndex;
       }
       if (cursor > 0) {
         if (cursor < value.length) {
-          parts.push(`<span class="toml-num">${this.esc(value.slice(cursor))}</span>`);
+          parts.push(`<span class="toml-num">${this._tomlSoftBreaks(this.esc(value.slice(cursor)))}</span>`);
         }
         return parts.join('');
       }
     }
     const valueClass = (value.startsWith('"') || value.startsWith("'")) ? 'toml-str' : 'toml-num';
-    return `<span class="${valueClass}">${this.esc(value)}</span>`;
+    return `<span class="${valueClass}">${this._tomlSoftBreaks(this.esc(value))}</span>`;
+  },
+
+  // Soft break opportunities keep long paths/argument lists readable without
+  // introducing a horizontal scrollbar. Copying still uses tomlRaw, not this HTML.
+  _tomlSoftBreaks(text, allowUnderscore) {
+    const pattern = allowUnderscore ? /([_.\/,=:])/g : /([\/,=:])/g;
+    return String(text).replace(pattern, '$1<wbr>');
   },
 
   _tomlEscapeAttr(value) {

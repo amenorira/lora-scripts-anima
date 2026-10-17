@@ -5,23 +5,6 @@
    动效统一使用 motion.css。与本应用不搭处做微调。
    ================================================================ */
 
-/* Inter 可变字体（拉丁子集，随主题加载；中文回落系统字体，与 ComfyUI 一致）。
-   字体文件见 frontend/assets/fonts/，许可证 OFL-Inter.txt */
-@font-face {
-  font-family: "Inter";
-  font-style: normal;
-  font-weight: 100 900;
-  font-display: swap;
-  src: url("../../assets/fonts/inter-latin-normal.woff2") format("woff2");
-}
-@font-face {
-  font-family: "Inter";
-  font-style: italic;
-  font-weight: 100 900;
-  font-display: swap;
-  src: url("../../assets/fonts/inter-latin-italic.woff2") format("woff2");
-}
-
 [data-theme="comfy"] {
   color-scheme: dark;
 
@@ -76,15 +59,13 @@
   --bg-canvas: #202121;
 
   /* PrimeVue Aura 圆角：control=md 6px，panel≈lg/xl 10px */
+  --radius-xs: 4px;
+  --radius-tile: 10px;
   --radius-control: 6px;
   --radius-panel: 10px;
   --radius-sm: var(--radius-control);
   --radius-md: var(--radius-panel);
   --radius-lg: var(--radius-panel);
-  --radius-xl: var(--radius-panel);
-
-  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-
 
   /* 状态色：jade/gold/coral */
   --success: #00cd72;
@@ -105,8 +86,6 @@
   --res-warn: #fd9903;
   --res-danger: #f75951;
 
-  --bg-secondary: #262729;   /* alias: --bg-surface-raised */
-  --bg-tertiary: #131315;    /* alias: --bg-sunken */
   --surface-default: var(--bg-surface);
   --surface-2: var(--bg-surface-raised);
   --text-muted: var(--text-tertiary);
@@ -123,7 +102,6 @@
   --section-caption: #78716c;
   --state-changed: #fd9903;
   --state-filled: #00cd72;
-  --diff-modified: #fd9903;
   --diff-added: #00cd72;
   --diff-removed: #f75951;
 
@@ -167,10 +145,8 @@
   background: var(--accent); color: #ffffff; border-color: var(--accent);
 }
 
-/* Sidebar: 对齐 ComfyUI 侧栏——hover #313235、选中静态 #3c3d42、
-   按压不回弹、图标不单独着主题色 */
-[data-theme="comfy"] .sidebar-item:hover { background: #313235; }
-[data-theme="comfy"] .sidebar-item.active { background: #3c3d42; }
+/* A raised sidebar lets the selected page merge into the darker workspace. */
+[data-theme="comfy"] .sidebar { --sidebar-shell-bg: var(--bg-surface); }
 [data-theme="comfy"] .sidebar-item.active .nav-icon { color: var(--text-sidebar-active); }
 [data-theme="comfy"] .sidebar-bottom { border-top-color: var(--border-subtle); }
 [data-theme="comfy"] .sidebar-header .brand-name { color: var(--text-sidebar-active); }
@@ -206,5 +182,3 @@
 [data-theme="comfy"] .env-log { background: var(--bg-input-action); color: var(--text-secondary); }
 [data-theme="comfy"] .env-msg-err  { background: color-mix(in srgb, var(--danger) 12%, transparent); border-color: color-mix(in srgb, var(--danger) 28%, var(--border-default)); }
 [data-theme="comfy"] .env-msg-info { background: color-mix(in srgb, var(--info) 12%, transparent); border-color: color-mix(in srgb, var(--info) 28%, var(--border-default)); }
-[data-theme="comfy"] .env-url-input { background: rgba(255, 255, 255, 0.06); border-color: var(--border-input); }
-[data-theme="comfy"] .env-url-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }

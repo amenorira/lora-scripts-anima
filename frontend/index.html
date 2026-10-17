@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>lora-scripts-anima</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/anima-ui/assets/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="64x64" href="/anima-ui/assets/favicon-64.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/anima-ui/assets/favicon-180.png">
   <link rel="icon" type="image/png" href="/favicon.png">
   <!-- Blocking script: set theme BEFORE any rendering to avoid flash -->
   <script>
@@ -23,19 +26,21 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20261010-ja4">
-  <link rel="stylesheet" href="/anima-ui/css/themes/light.css?v=20260919-dict17">
-  <link rel="stylesheet" href="/anima-ui/css/themes/dark.css?v=20260924-monitor-time1">
-  <link rel="stylesheet" href="/anima-ui/css/themes/comfy.css?v=20260923-sidebar1">
-  <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20261004-reg56">
-  <link rel="stylesheet" href="/anima-ui/css/regularization.css?v=20261005-reg-gallery2">
+  <link rel="preload" href="/anima-ui/assets/fonts/inter-latin-normal.woff2?v=20261017-ui16" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/anima-ui/css/fonts.css?v=20261017-ui16">
+  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20261017-ui25">
+  <link rel="stylesheet" href="/anima-ui/css/themes/light.css?v=20261017-ui23">
+  <link rel="stylesheet" href="/anima-ui/css/themes/dark.css?v=20261017-ui23">
+  <link rel="stylesheet" href="/anima-ui/css/themes/comfy.css?v=20261017-ui22">
+  <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20261017-ui16">
+  <link rel="stylesheet" href="/anima-ui/css/regularization.css?v=20261017-ui16">
   <link rel="stylesheet" href="/anima-ui/css/motion.css?v=20260923-sidebar1">
   <link rel="stylesheet" href="/anima-ui/css/tag-dictionary.css?v=20260929-tagger-review22">
   <script src="/anima-ui/js/i18n.js?v=20261015-training-metrics1" defer></script>
   <script src="/anima-ui/js/constants.js" defer></script>
   <script src="/anima-ui/js/utils.js?v=20260815-utils1" defer></script>
   <!-- Feature modules (order matters: config first, app last) -->
-  <script src="/anima-ui/js/config.js?v=20261015-training-metrics1" defer></script>
+  <script src="/anima-ui/js/config.js?v=20261017-ui16" defer></script>
   <script src="/anima-ui/js/anima-select.js?v=20260928-select-cleanup" defer></script>
   <script src="/anima-ui/js/realtime.js?v=20261004-reg56" defer></script>
   <script src="/anima-ui/js/monitor-logs.js?v=20261002-review-cache1" defer></script>
@@ -44,21 +49,21 @@
   <script src="/anima-ui/js/environment-core.js?v=20260929-dictionary-update2" defer></script>
   <script src="/anima-ui/js/environment-render.js?v=20260929-dictionary-copy" defer></script>
   <script src="/anima-ui/js/docs.js?v=20260909-docscreens17" defer></script>
-  <script src="/anima-ui/js/training-core.js?v=20261013-scheduler-curves1" defer></script>
+  <script src="/anima-ui/js/training-core.js?v=20261017-ui21" defer></script>
   <script src="/anima-ui/js/dataset-repeat.js?v=20260916-repeat18" defer></script>
   <script src="/anima-ui/js/training-lr-preview.js?v=20261013-scheduler-curves1" defer></script>
   <script src="/anima-ui/js/preview-select.js?v=20260928-select-scroll-persist" defer></script>
   <script src="/anima-ui/js/training-shape-preview.js?v=20261002-review-cache1" defer></script>
-  <script src="/anima-ui/js/training-toml.js?v=20261015-training-metrics1" defer></script>
+  <script src="/anima-ui/js/training-toml.js?v=20261017-ui16" defer></script>
   <script src="/anima-ui/js/training-config-io.js?v=20261007-training-monitor1" defer></script>
-  <script src="/anima-ui/js/tagger.js?v=20261009-reg-activity1" defer></script>
-  <script src="/anima-ui/js/regularization.js?v=20261009-reg-activity1" defer></script>
-  <script src="/anima-ui/js/tag-editor.js?v=20261007-unified-suggest3" defer></script>
+  <script src="/anima-ui/js/tagger.js?v=20261017-ui16" defer></script>
+  <script src="/anima-ui/js/regularization.js?v=20261017-ui16" defer></script>
+  <script src="/anima-ui/js/tag-editor.js?v=20261017-ui16" defer></script>
   <!-- Tag Editor 词典：lib 定义纯逻辑，client 持有 Worker 与缓存，hover 只挂事件委托 -->
   <script src="/anima-ui/js/tag-dictionary-lib.js?v=20261007-unified-suggest3" defer></script>
   <script src="/anima-ui/js/tag-dictionary.js?v=20261007-unified-suggest3" defer></script>
   <script src="/anima-ui/js/tag-hover-card.js?v=20260929-tagger-review22" defer></script>
-  <script src="/anima-ui/js/app.js?v=20261010-ja4" defer></script>
+  <script src="/anima-ui/js/app.js?v=20261017-ui16" defer></script>
   <script src="/anima-ui/js/vendor/alpine.min.js" defer></script>
 </head>
 <body x-data="animaApp()" x-cloak>
@@ -90,6 +95,7 @@
       <div class="sidebar-section-label" x-text="t('nav.monitor')">Monitor</div>
       <a class="sidebar-item" data-route="monitor-dashboard" data-group="monitor" :class="{ active: currentRoute === 'monitor-dashboard' }"
          @click="navigate('monitor-dashboard')" href="javascript:void(0)" :aria-current="currentRoute === 'monitor-dashboard' ? 'page' : null">
+        <span class="sidebar-tab-fill" aria-hidden="true"></span>
         <span class="nav-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
         </span>
@@ -98,6 +104,7 @@
 
       <a class="sidebar-item" data-route="tensorboard" data-group="monitor" :class="{ active: currentRoute === 'tensorboard' }"
          @click="navigate('tensorboard')" href="javascript:void(0)" :aria-current="currentRoute === 'tensorboard' ? 'page' : null">
+        <span class="sidebar-tab-fill" aria-hidden="true"></span>
         <span class="nav-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         </span>
@@ -108,6 +115,7 @@
       <div class="sidebar-section-label" x-text="t('nav.training')">Training</div>
       <a class="sidebar-item" data-route="train-*" data-group="training" :class="{ active: currentRoute && currentRoute.startsWith('train-') }"
          @click="navigate('train-basic')" href="javascript:void(0)" :aria-current="currentRoute && currentRoute.startsWith('train-') ? 'page' : null">
+        <span class="sidebar-tab-fill" aria-hidden="true"></span>
         <span class="nav-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
         </span>
@@ -115,6 +123,7 @@
       </a>
       <a class="sidebar-item" data-route="history" data-group="training" :class="{ active: currentRoute === 'history' }"
          @click="navigate('history')" href="javascript:void(0)" :aria-current="currentRoute === 'history' ? 'page' : null">
+        <span class="sidebar-tab-fill" aria-hidden="true"></span>
         <span class="nav-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         </span>
@@ -125,6 +134,7 @@
       <div class="sidebar-section-label" x-text="t('nav.documentation')">Documentation</div>
       <a class="sidebar-item" data-route="docs" data-group="docs" :class="{ active: currentRoute === 'docs' }"
          @click="navigate('docs')" href="javascript:void(0)" :aria-current="currentRoute === 'docs' ? 'page' : null">
+        <span class="sidebar-tab-fill" aria-hidden="true"></span>
         <span class="nav-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
         </span>
@@ -135,6 +145,7 @@
       <div class="sidebar-section-label" x-text="t('nav.tools')">Tools</div>
       <a class="sidebar-item" data-route="tagger" data-group="tools" :class="{ active: currentRoute === 'tagger' }"
          @click="navigate('tagger')" href="javascript:void(0)" :aria-current="currentRoute === 'tagger' ? 'page' : null">
+        <span class="sidebar-tab-fill" aria-hidden="true"></span>
         <span class="nav-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
         </span>
@@ -142,6 +153,7 @@
       </a>
       <a class="sidebar-item" data-route="tagEditor" data-group="tools" :class="{ active: currentRoute === 'tagEditor' }"
          @click="navigate('tagEditor')" href="javascript:void(0)" :aria-current="currentRoute === 'tagEditor' ? 'page' : null">
+        <span class="sidebar-tab-fill" aria-hidden="true"></span>
         <span class="nav-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         </span>
@@ -149,6 +161,7 @@
       </a>
       <a class="sidebar-item" data-route="regularization" data-group="tools" :class="{ active: currentRoute === 'regularization' }"
          @click="navigate('regularization')" href="javascript:void(0)" :aria-current="currentRoute === 'regularization' ? 'page' : null">
+        <span class="sidebar-tab-fill" aria-hidden="true"></span>
         <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1"/><path d="m21 15-5-5L5 21M16 3v6M13 6h6"/></svg></span>
         <span x-text="regT('title')">Regularization</span>
       </a>
@@ -157,6 +170,7 @@
       <div class="sidebar-section-label" x-text="t('nav.system')">System</div>
       <a class="sidebar-item" data-route="environment" data-group="system" :class="{ active: currentRoute === 'environment' }"
          @click="navigate('environment')" href="javascript:void(0)" :aria-current="currentRoute === 'environment' ? 'page' : null">
+        <span class="sidebar-tab-fill" aria-hidden="true"></span>
         <span class="nav-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
         </span>
@@ -164,6 +178,7 @@
       </a>
       <a class="sidebar-item" data-route="settings" data-group="system" :class="{ active: currentRoute === 'settings' }"
          @click="navigate('settings')" href="javascript:void(0)" :aria-current="currentRoute === 'settings' ? 'page' : null">
+        <span class="sidebar-tab-fill" aria-hidden="true"></span>
         <span class="nav-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </span>
@@ -221,7 +236,7 @@
   <!-- ── Main Content ─────────────────────────────────────── -->
   <div class="main-area">
     <main class="main-content" id="mainContent"
-          :class="{ 'main-fullscreen': currentRoute === 'tagEditor' || currentRoute === 'tensorboard' || currentRoute === 'monitor-dashboard', 'route-monitor-shell': currentRoute === 'monitor-dashboard', 'route-tagger-shell': currentRoute === 'tagger' || currentRoute === 'regularization', 'route-tagger-single': currentRoute === 'tagger' && ['single', 'api-single'].includes(taggerSourceMode), 'route-transitioning': routeTransitioning }"
+          :class="{ 'main-fullscreen': currentRoute === 'tagEditor' || currentRoute === 'tensorboard' || currentRoute === 'monitor-dashboard', 'route-monitor-shell': currentRoute === 'monitor-dashboard', 'route-tagger-shell': currentRoute === 'tagger' || currentRoute === 'regularization', 'route-tagger-single': currentRoute === 'tagger' && ['single', 'api-single'].includes(taggerSourceMode), 'route-training': currentRoute && currentRoute.startsWith('train-'), 'route-transitioning': routeTransitioning }"
               :aria-busy="routeTransitioning ? 'true' : 'false'">
 
       <!-- Route: Home -->
@@ -388,6 +403,52 @@
           </div>
         </div>
 
+        <div class="train-workbench">
+        <aside class="train-rail" x-show="sectionNavList.length > 0" x-cloak
+               :style="{ top: sectionRailTop + 'px' }"
+               @resize.window="positionSectionRail()"
+               @mouseenter="sectionNavOpen = true"
+               @mouseleave="sectionRailLeave()"
+               @focusin="sectionNavOpen = true"
+               @focusout="sectionRailFocusOut($event)"
+               @click.outside="sectionNavOpen = false" @keydown.escape.stop="sectionNavOpen = false">
+          <div class="train-rail-track" role="navigation" :aria-label="t('common.sectionNav')">
+            <template x-for="(s, idx) in sectionNavList" :key="s.key">
+              <button type="button" class="train-rail-segment"
+                      :class="{ active: activeSection === s.key, done: idx < activeSectionIndex }"
+                      :style="'--seg-color:' + s.color"
+                      @click="scrollToSection(s.key)"
+                      @keydown.up.prevent="focusAdjacentSectionSegment($event, -1)"
+                      @keydown.down.prevent="focusAdjacentSectionSegment($event, 1)"
+                      @keydown.home.prevent="focusSectionSegmentEdge($event, 'first')"
+                      @keydown.end.prevent="focusSectionSegmentEdge($event, 'last')"
+                      :title="String(idx + 1) + '. ' + s.title"
+                      :aria-label="String(idx + 1) + '. ' + s.title"
+                      :aria-current="activeSection === s.key ? 'location' : null"></button>
+            </template>
+          </div>
+          <div class="train-section-menu train-rail-menu" id="trainSectionMenu" x-show="sectionNavOpen" x-cloak role="menu"
+               :aria-label="t('common.sectionNav')"
+               x-transition:enter="train-section-menu--enter"
+               x-transition:enter-start="train-section-menu--enter-start"
+               x-transition:enter-end="train-section-menu--enter-end"
+               x-transition:leave="train-section-menu--leave"
+               x-transition:leave-start="train-section-menu--leave-start"
+               x-transition:leave-end="train-section-menu--leave-end">
+            <template x-for="(s, idx) in sectionNavList" :key="'menu-' + s.key">
+              <button type="button" class="train-section-menu-item"
+                      :class="{ active: activeSection === s.key, collapsed: s.collapsed }"
+                      :aria-current="activeSection === s.key ? 'true' : null"
+                      @click="scrollToSection(s.key)" role="menuitem">
+                <span class="train-section-menu-num" x-text="String(idx + 1)"></span>
+                <span class="train-section-menu-title" x-text="s.title"></span>
+                <span class="train-section-menu-state" x-show="s.collapsed" x-text="t('common.collapsed', '已收起')"></span>
+              </button>
+            </template>
+          </div>
+        </aside>
+
+        <div class="train-workbench-main">
         <!-- Train type selector -->
         <div class="train-tab-card">
           <div class="train-type-select-wrap">
@@ -397,7 +458,7 @@
                  @click.outside="close()"
                  @anima-select-change="setField('model_train_type', $event.detail.value)">
               <input type="hidden" x-ref="modelInput" :value="form.model_train_type">
-              <button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle($event)">
+              <button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle($event)" :aria-label="t('field.model_train_type') + '：' + selectedLabel" aria-haspopup="listbox" :aria-expanded="open ? 'true' : 'false'">
                 <span class="anima-select-trigger-text" x-text="selectedLabel"></span>
                 <svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                   <path d="m6 9 6 6 6-6"/>
@@ -428,25 +489,8 @@
         <form @submit.prevent="" id="trainForm">
           <div id="trainFormContent"></div>
         </form>
-
-        <!-- 左侧分组导航轨道：fixed 贴在参数区左边缘、垂直居中；
-             收起=一列彩色圆点，hover 展开覆盖在表单上方（不挤压布局）。
-             必须 x-teleport 到 body：路由入场动画会给祖先加 transform，
-             若留在动画容器内，fixed 会以该祖先为包含块，圆点短暂出现在页面中间。 -->
-        <template x-teleport="body">
-          <nav class="section-rail" :class="{ expanded: sectionRailHover }"
-               @mouseenter="sectionRailHover = true" @mouseleave="sectionRailHover = false"
-               x-show="currentRoute && currentRoute.startsWith('train-') && sectionNavList.length > 0" :aria-label="t('common.sectionNav')">
-            <template x-for="s in sectionNavList" :key="s.key">
-              <button type="button" class="section-rail-item"
-                      :class="{ active: activeSection === s.key, collapsed: s.collapsed }"
-                      @click="scrollToSection(s.key)" :title="s.title">
-                <span class="section-rail-dot" :style="'background:' + s.color"></span>
-                <span class="section-rail-label" x-text="s.title"></span>
-              </button>
-            </template>
-          </nav>
-        </template>
+        </div>
+        </div>
       </div>
 
       <!-- Route: Tagger -->
@@ -651,7 +695,7 @@
         <!-- Main -->
         <div x-show="tagEditorSessionId && !tagEditorLoading" class="te-shell" :inert="tagEditorSnapshotBusy" :aria-busy="tagEditorSnapshotBusy">
           <div class="te-topbar">
-            <button class="te-topbar-btn" @click="tagEditorLeftCollapsed = !tagEditorLeftCollapsed" :title="t('tagEditor.toggleTagCloud')">
+            <button class="te-topbar-btn" @click="tagEditorLeftCollapsed = !tagEditorLeftCollapsed" :title="t('tagEditor.toggleTagCloud')" :aria-label="t('tagEditor.toggleTagCloud')" :aria-expanded="!tagEditorLeftCollapsed ? 'true' : 'false'">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                 <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
               </svg>
@@ -666,7 +710,7 @@
                 <button class="btn btn-primary btn-sm" @click="tagEditorConfirmSwitch()" x-text="t('tagEditor.switchDataset')"></button>
               </div>
             </div>
-            <button class="te-topbar-btn" @click="tagEditorCloseDataset()" :title="t('tagEditor.closeDataset')">
+            <button class="te-topbar-btn" @click="tagEditorCloseDataset()" :title="t('tagEditor.closeDataset')" :aria-label="t('tagEditor.closeDataset')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
             </button>
             <div class="te-search-wrap">
@@ -675,13 +719,14 @@
                 @input="tagEditorSetSearch($event.target.value)"
                 @keydown.escape="tagEditorClearSearch()"
                 :class="{ 'te-input-error': tagEditorRegexError }">
-              <button class="te-search-clear" x-show="tagEditorSearchQuery" @click="tagEditorClearSearch()" :title="t('tagEditor.clearSearch')">&times;</button>
+              <button class="te-search-clear" x-show="tagEditorSearchQuery" @click="tagEditorClearSearch()" :title="t('tagEditor.clearSearch')" :aria-label="t('tagEditor.clearSearch')">&times;</button>
               <button class="te-regex-btn" :class="{ active: tagEditorUseRegex }"
                 @click="tagEditorUseRegex = !tagEditorUseRegex; _teValidateRegex(tagEditorSearchQuery); tagEditorSchedulePageFetch(true)"
-                x-text='".*"' :title="t('tagEditor.regexSearch')"></button>
+                x-text='".*"' :title="t('tagEditor.regexSearch')" :aria-label="t('tagEditor.regexSearch')" :aria-pressed="tagEditorUseRegex"></button>
               <span class="te-search-spinner" x-show="_teSearchLoading"></span>
               <div class="te-regex-error" x-show="tagEditorRegexError" x-text="t('tagEditor.regexError')"></div>
             </div>
+            <div class="te-topbar-secondary">
             <div class="te-filter-group">
               <button :class="{ active: tagEditorQuickFilter === 'all' }"
                 @click="tagEditorQuickFilter = 'all'; tagEditorSchedulePageFetch(true)">
@@ -710,7 +755,8 @@
                 </details>
               <button class="te-topbar-btn te-sort-dir"
                 @click="tagEditorSortAsc = !tagEditorSortAsc; tagEditorSchedulePageFetch(true)"
-                :title="tagEditorSortAsc ? t('tagEditor.sortAsc') : t('tagEditor.sortDesc')">
+                :title="tagEditorSortAsc ? t('tagEditor.sortAsc') : t('tagEditor.sortDesc')"
+                :aria-label="tagEditorSortAsc ? t('tagEditor.sortAsc') : t('tagEditor.sortDesc')">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                   :style="tagEditorSortAsc ? '' : 'transform:rotate(180deg)'">
                   <polyline points="18 15 12 9 6 15"/>
@@ -763,6 +809,7 @@
                 </div>
               </template>
             </div>
+            </div>
             <button class="te-save-btn" :class="{ dirty: tagEditorModifiedCount() > 0 }" @click="tagEditorSaveAll()">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
@@ -790,8 +837,9 @@
             :class="{ 'te-left-collapsed': tagEditorLeftCollapsed }"
             @pointermove.window="tagEditorResize($event)"
             @pointerup.window="tagEditorStopResize()"
-            @pointercancel.window="tagEditorStopResize()">
-            <div class="te-sidebar" :class="{ collapsed: tagEditorLeftCollapsed }">
+            @pointercancel.window="tagEditorStopResize()"
+            @keydown.escape="window.innerWidth <= 1200 && (tagEditorLeftCollapsed = true)">
+            <div class="te-sidebar" :class="{ collapsed: tagEditorLeftCollapsed }" :inert="tagEditorLeftCollapsed" :aria-hidden="tagEditorLeftCollapsed ? 'true' : null">
               <div class="te-sidebar-tabs">
                 <button class="te-sidebar-tab" :title="t('tagEditor.filterTagsHint')" :class="{ active: tagEditorSidebarTab === 'tags' }"
                   @click="tagEditorSidebarTab = 'tags'">
@@ -1369,9 +1417,6 @@
         </div>
       </div>
 
-      <!-- Route: About -->
-
-
     </main>
 
     <!-- ── Right Panel (TOML Preview + Actions) ───────────── -->
@@ -1418,13 +1463,6 @@
               <span class="start-blocked-link" x-text="regularizationActive ? t('common.viewGeneration') : t('training.goToMonitor')"></span>
             </div>
           </div>
-        </div>
-      </template>
-      <!-- Other tools -->
-      <template x-if="currentRoute === 'tools'">
-        <div class="panel-inner" style="display:flex;flex-direction:column;height:100%">
-          <div class="panel-header"><span>Tools</span></div>
-          <div class="panel-preview" style="color:var(--text-tertiary)">Select a tool from the sidebar</div>
         </div>
       </template>
     </div>

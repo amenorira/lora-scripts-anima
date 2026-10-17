@@ -3,6 +3,36 @@
    SPA router · Theme engine · Progress bar · Mixin assembly
    ================================================================ */
 
+// Legacy training routes were replaced by the train-type selector. Keep old
+// bookmarks working and copy their saved form/profile state before redirecting.
+const LEGACY_TRAIN_ROUTE_ALIASES = {
+  'train-master': 'train-basic',
+  'train-anima': 'train-basic',
+};
+
+function migrateLegacyTrainRoute(from, to) {
+  const suffixes = ['', 'profiles-', 'profile-sources-v1-'];
+  suffixes.forEach((suffix) => {
+    const oldKey = 'anima-form-' + suffix + from;
+    const newKey = 'anima-form-' + suffix + to;
+    try {
+      const oldValue = localStorage.getItem(oldKey);
+      if (oldValue !== null && localStorage.getItem(newKey) === null) {
+        localStorage.setItem(newKey, oldValue);
+      }
+    } catch (e) {
+      // localStorage may be unavailable in private/embedded contexts.
+    }
+  });
+}
+
+function normalizeTrainRoute(route) {
+  const target = LEGACY_TRAIN_ROUTE_ALIASES[route];
+  if (!target) return route;
+  migrateLegacyTrainRoute(route, target);
+  return target;
+}
+
 // ── Alpine App ─────────────────────────────────────────────
 document.addEventListener('alpine:init', () => {
 
@@ -68,6 +98,12 @@ document.addEventListener('alpine:init', () => {
       document.documentElement.lang = this.locale;
 
       let route = (window.location.hash || '#home').replace('#', '');
+      const normalizedRoute = normalizeTrainRoute(route);
+      if (normalizedRoute !== route) {
+        route = normalizedRoute;
+        const state = window.history.state || {};
+        window.history.replaceState({ ...state, animaRoute: route }, '', '#' + route);
+      }
       if (!ROUTE_CONFIG[route]) route = 'home';
       this.currentRoute = route;
       const historyState = window.history.state || {};
@@ -261,6 +297,12 @@ document.addEventListener('alpine:init', () => {
 
     handleRoute() {
       let route = (window.location.hash || '#home').replace('#', '');
+      const normalizedRoute = normalizeTrainRoute(route);
+      if (normalizedRoute !== route) {
+        route = normalizedRoute;
+        const state = window.history.state || {};
+        window.history.replaceState({ ...state, animaRoute: route }, '', '#' + route);
+      }
       if (!ROUTE_CONFIG[route]) route = 'home';
       if (route === this.currentRoute) {
         const currentState = window.history.state || {};

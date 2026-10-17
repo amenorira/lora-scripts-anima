@@ -19,7 +19,7 @@ class TensorBoardService:
         self.state = "disabled"
         self.error = ""
         self._task = None
-        self._directory = None
+        self._endpoint = None
 
     def start(self, *, enabled=True, port=0, logdir=None, log_path=None):
         self.error = ""
@@ -34,10 +34,19 @@ class TensorBoardService:
         from backend.log import log
 
         try:
-            self._directory = tempfile.TemporaryDirectory(prefix="anima-tensorboard-")
-            endpoint = Path(self._directory.name) / "endpoint"
             log_path = Path(log_path or ROOT / "logs" / "tensorboard.log")
             log_path.parent.mkdir(parents=True, exist_ok=True)
+            # tempfile's default directory can fall back to cwd when the system
+            # temp directories are unwritable. Always keep our handshake beside
+            # the log, and clean up only paths allocated by this instance.
+            # The child publishes atomically, so the path must not exist yet.
+            fd, endpoint_name = tempfile.mkstemp(
+                prefix=".tensorboard-endpoint-", suffix=".txt", dir=log_path.parent
+            )
+            os.close(fd)
+            os.unlink(endpoint_name)
+            endpoint = Path(endpoint_name)
+            self._endpoint = endpoint
             # The child inherits its own handle; the parent need not retain it.
             with log_path.open("ab", buffering=0) as output:
                 self.process = subprocess.Popen(
@@ -61,6 +70,7 @@ class TensorBoardService:
                         response = await self.client.get(PREFIX + "/data/environment", timeout=2)
                         response.raise_for_status()
                         response.json()
+                        self._cleanup_endpoint()
                         self.state = "ready"
                         log.info("TensorBoard internal URL: %s", self.client.base_url,
                                  extra={"console": False})
@@ -99,9 +109,19 @@ class TensorBoardService:
                     self.process.kill()
                     await asyncio.to_thread(self.process.wait)
             self.process = None
-        if self._directory is not None:
-            self._directory.cleanup()
-            self._directory = None
+        self._cleanup_endpoint()
+
+    def _cleanup_endpoint(self):
+        if self._endpoint is None:
+            return
+        # The child may have stopped between writing the URL and replacing the
+        # final file. Remove that instance's pending publication as well.
+        for path in (self._endpoint, Path(str(self._endpoint) + ".tmp")):
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        self._endpoint = None
 
     async def stop(self):
         if self._task is not None:

@@ -83,8 +83,6 @@ window.ROUTE_CONFIG = {
   'monitor-dashboard': { titleKey: 'nav.monitorDashboard' },
   'history': { titleKey: 'nav.history' },
   'train-basic': { titleKey: 'nav.loraTraining', trainType: 'anima-lora' },
-  'train-master': { titleKey: 'nav.loraTraining', trainType: 'anima-lora' },
-  'train-anima': { titleKey: 'nav.loraTraining', trainType: 'anima-lora' },
   'tagger': { titleKey: 'tagger.title' },
   'tagEditor': { titleKey: 'tagEditor.title' },
   'regularization': { titleKey: 'regularization.title' },

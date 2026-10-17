@@ -243,7 +243,7 @@ async def serve_index():
 
 
 async def serve_favicon():
-    return FileResponse("frontend/assets/favicon.png")
+    return FileResponse("frontend/assets/favicon-64.png")
 
 
 app.add_api_route("/favicon.png", serve_favicon, methods=["GET"], response_class=FileResponse)
