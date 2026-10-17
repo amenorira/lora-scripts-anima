@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import importlib.metadata
+import importlib.util
 import json
 import math
 from datetime import datetime, timezone
@@ -16,6 +17,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from backend.training.core_registry import MUSUBI_TUNER_DIR
+from backend.training.metrics_config import training_metric_fields
 from backend.training.musubi_runtime import MUSUBI_RUNTIME_PACKAGES, shared_runtime_status
 from backend.training.optimizer_metadata import (
     KREA2_OPTIMIZER_AUTO_VALUES,
@@ -40,7 +42,7 @@ KREA2_AUTO_CACHE_DIR_NAME = ".krea2-cache"
 KREA2_CACHE_MANIFEST_NAME = ".krea2-cache.json"
 _LEGACY_KREA2_CACHE_MANIFEST_NAMES = (".anima-krea2-cache.json",)
 
-_IMAGE_EXTENSIONS = {".bmp", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
+_IMAGE_EXTENSIONS = {".bmp", ".jpeg", ".jpg", ".png", ".webp", ".avif"}
 _ATTENTION_FLAGS = {
     "sdpa": "sdpa",
     "sage_attn": "sage_attn",
@@ -1089,6 +1091,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "step": 1,
         "profiles": [KREA2_PROFILE_ID],
     },
+    *training_metric_fields(profiles=[KREA2_PROFILE_ID]),
     {
         "key": "save_state",
         "type": "toggle",
@@ -1480,22 +1483,60 @@ def _selected_optional_optimizer_package(optimizer_type: Any) -> str | None:
     )
 
 
-def image_files(directory: str | Path, cache_dir: str | Path | None = None) -> list[Path]:
+def image_files(
+    directory: str | Path,
+    cache_dir: str | Path | None = None,
+    caption_extension: str = ".txt",
+) -> list[Path]:
+    """Find captioned images, matching musubi's supported image formats."""
     root = Path(directory)
     if not root.is_dir():
         return []
     excluded = Path(cache_dir).resolve() if cache_dir else None
+    extensions = set(_IMAGE_EXTENSIONS)
+    if any(importlib.util.find_spec(name) is not None for name in ("jxlpy", "pillow_jxl")):
+        extensions.add(".jxl")
+    patterns = {f"*{ext}" for ext in extensions | {ext.upper() for ext in extensions}}
+    caption_stems: dict[Path, set[str]] = {}
     paths: list[Path] = []
     for path in root.rglob("*"):
-        if not path.is_file() or path.suffix.lower() not in _IMAGE_EXTENSIONS:
+        if not path.is_file() or not any(path.match(pattern) for pattern in patterns):
             continue
         try:
             if excluded is not None and path.resolve().is_relative_to(excluded):
                 continue
         except OSError:
             continue
+        if path.parent not in caption_stems:
+            caption_stems[path.parent] = {
+                caption.stem for caption in path.parent.glob(f"*{caption_extension}") if caption.is_file()
+            }
+        # musubi compares stems case-sensitively even on Windows, where a
+        # with_suffix(...).is_file() check alone would accept differently cased names.
+        if path.stem not in caption_stems[path.parent]:
+            continue
         paths.append(path)
     return sorted(paths)
+
+
+def _krea2_dataset_groups(config: dict[str, Any]) -> list[tuple[Path, Path, list[Path]]]:
+    """Give each source directory its own cache namespace for musubi's flat reader."""
+    root = Path(str(config.get("train_data_dir") or ""))
+    cache = Path(str(config.get("dataset_cache_dir") or ""))
+    groups: dict[Path, list[Path]] = {}
+    for image in image_files(root, cache, str(config.get("caption_extension") or ".txt")):
+        groups.setdefault(image.parent, []).append(image)
+    result = []
+    for directory, images in sorted(groups.items()):
+        relative = directory.relative_to(root).as_posix()
+        # Retain the existing flat-dataset cache location. Subdirectories need
+        # separate namespaces: musubi names cache files using only image stems.
+        target = (
+            cache if directory == root
+            else cache / "subsets" / hashlib.sha256(relative.encode("utf-8")).hexdigest()
+        )
+        result.append((directory, target, images))
+    return result
 
 
 def _path_identity(path_value: Any) -> dict[str, Any]:
@@ -1513,7 +1554,7 @@ def krea2_cache_fingerprint(config: dict[str, Any]) -> str:
     cache_dir = config.get("dataset_cache_dir")
     root = Path(str(config.get("train_data_dir") or ""))
     entries: list[dict[str, Any]] = []
-    for image in image_files(root, cache_dir):
+    for image in image_files(root, cache_dir, str(config.get("caption_extension") or ".txt")):
         try:
             stat = image.stat()
         except OSError:
@@ -1537,7 +1578,7 @@ def krea2_cache_fingerprint(config: dict[str, Any]) -> str:
 
     width, height = parse_krea2_resolution(config.get("resolution", "1024,1024"))
     payload = {
-        "schema": 1,
+        "schema": 2,
         "dataset": entries,
         "resolution": [width, height],
         "enable_bucket": bool(config.get("enable_bucket", True)),
@@ -1613,16 +1654,23 @@ def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
     """Inspect cache files and their fingerprint without importing musubi."""
 
     cache_dir = Path(str(config.get("dataset_cache_dir") or ""))
-    images = image_files(config.get("train_data_dir") or "", cache_dir)
+    groups = _krea2_dataset_groups(config)
+    images = [image for _, _, group_images in groups for image in group_images]
     latent_files = []
     text_files = []
-    if cache_dir.is_dir():
-        latent_files = [
+    complete_groups = True
+    for _, group_cache, group_images in groups:
+        group_latents = [
             path
-            for path in cache_dir.glob("*_krea2.safetensors")
-            if not path.name.endswith("_krea2_te.safetensors")
+            for path in group_cache.glob("*_krea2.safetensors")
+            if path.is_file() and not path.name.endswith("_krea2_te.safetensors")
         ]
-        text_files = list(cache_dir.glob("*_krea2_te.safetensors"))
+        group_texts = [path for path in group_cache.glob("*_krea2_te.safetensors") if path.is_file()]
+        latent_files.extend(group_latents)
+        text_files.extend(group_texts)
+        complete_groups = complete_groups and (
+            len(group_latents) >= len(group_images) and len(group_texts) >= len(group_images)
+        )
 
     manifest, _ = _read_cache_manifest(cache_dir)
 
@@ -1640,6 +1688,7 @@ def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
         and stages.get("text_encoder") == "completed"
         and len(latent_files) >= expected
         and len(text_files) >= expected
+        and complete_groups
     )
     return {
         "cache_dir": str(cache_dir),
@@ -1952,10 +2001,11 @@ def build_krea2_dataset_config(config: dict[str, Any]) -> dict[str, Any]:
         },
         "datasets": [
             {
-                "image_directory": str(config["train_data_dir"]),
-                "cache_directory": str(config["dataset_cache_dir"]),
+                "image_directory": str(directory),
+                "cache_directory": str(cache),
                 "num_repeats": int(config.get("krea_num_repeats", 1)),
             }
+            for directory, cache, _ in _krea2_dataset_groups(config)
         ],
     }
 
@@ -2145,9 +2195,9 @@ def krea2_preflight(config: dict[str, Any], require_cache: bool = True) -> dict[
         if not turbo_path.is_file():
             errors.append(f"Krea 2 Turbo DiT not found / Turbo 模型文件不存在: {turbo_path}")
 
-    images = image_files(config.get("train_data_dir") or "", config.get("dataset_cache_dir"))
+    images = image_files(config.get("train_data_dir") or "", config.get("dataset_cache_dir"), str(config.get("caption_extension") or ".txt"))
     if not images:
-        errors.append("Dataset directory has no supported images / 数据集目录没有可用图片")
+        errors.append("Dataset has no supported images with matching captions / 数据集目录没有带同名标注的可用图片，请检查图片格式和标注扩展名")
 
     cache_status = get_krea2_cache_status(config)
     if require_cache and not cache_status["ready"]:
@@ -2166,9 +2216,10 @@ def estimate_krea2_steps(config: dict[str, Any]) -> dict[str, Any]:
         parse_krea2_resolution(config.get("resolution", "1024,1024"))
     except ValueError as exc:
         raise ValueError(f"resolution: {exc}") from exc
-    images = image_files(config["train_data_dir"], config.get("dataset_cache_dir"))
+    groups = _krea2_dataset_groups(config)
+    images = [image for _, _, group_images in groups for image in group_images]
     if not images:
-        raise ValueError("Dataset directory has no supported images / 数据集路径不存在或无图片")
+        raise ValueError("Dataset has no supported images with matching captions / 数据集路径不存在或没有带同名标注的可用图片")
 
     try:
         repeats = int(config.get("krea_num_repeats", 1))
@@ -2181,7 +2232,7 @@ def estimate_krea2_steps(config: dict[str, Any]) -> dict[str, Any]:
     gpu_ids = config.get("gpu_ids")
     gpu_processes = len(gpu_ids) if isinstance(gpu_ids, (list, tuple)) and gpu_ids else 1
     repeated_samples = len(images) * repeats
-    batches = math.ceil(repeated_samples / batch_size)
+    batches = sum(math.ceil(len(group_images) * repeats / batch_size) for _, _, group_images in groups)
     steps_per_epoch = math.ceil(batches / gpu_processes / accumulation)
     duration_mode = str(config.get("krea_training_duration_mode", "epochs"))
     if duration_mode == "steps":
@@ -2205,7 +2256,10 @@ def estimate_krea2_steps(config: dict[str, Any]) -> dict[str, Any]:
         "approximate": bool(config.get("enable_bucket", True)),
         "original_images": len(images),
         "repeated_samples": repeated_samples,
-        "subsets": [{"name": Path(config["train_data_dir"]).name, "image_count": len(images), "repeats": repeats}],
+        "subsets": [
+            {"name": directory.name, "image_count": len(group_images), "repeats": repeats}
+            for directory, _, group_images in groups
+        ],
         "enable_bucket": bool(config.get("enable_bucket", True)),
         "bucket_count": 1,
         "batches_per_epoch": batches,

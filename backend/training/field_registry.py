@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from backend.training.metrics_config import training_metric_fields
+
 from backend.training.optimizer_contracts import (
     ADAFACTOR_OPTIMIZER_TYPE,
     ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE,
@@ -566,6 +568,7 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "save_every_n_epochs", "type": "number", "default": 2, "section": "save", "desc_key": "field.save_every_n_epochs", "target": "toml", "min": 1},
     {"key": "save_every_n_steps", "type": "number", "default": "", "section": "save", "desc_key": "field.save_every_n_steps", "target": "toml", "min": 1, "hint_key": "field.save_every_n_stepsHint"},
     {"key": "save_last_n_epochs", "type": "number", "default": "", "section": "save", "desc_key": "field.save_last_n_epochs", "target": "toml", "min": 1, "hint_key": "field.save_last_n_epochsHint"},
+    *training_metric_fields(),
 {"key": "save_state", "type": "toggle", "default": False, "section": "save", "desc_key": "field.save_state", "target": "toml", "omit_default": True},
     {"key": "save_last_n_epochs_state", "type": "number", "default": "", "section": "save", "desc_key": "field.save_last_n_epochs_state", "target": "toml", "min": 1, "show_if": {"key": "save_state", "eq": True}},
     {"key": "save_state_on_train_end", "type": "toggle", "default": False, "section": "save", "desc_key": "field.save_state_on_train_end", "hint_key": "field.save_state_on_train_endHint", "target": "toml", "omit_default": True},

@@ -88,7 +88,7 @@
           </div>
           <div class="tagger-form-field" x-show="!taggerUsesCategoryThresholds()">
             <div class="tagger-field-info"><label x-text="t('tagger.threshold')"></label><p x-text="t('tagger.thresholdDesc')"></p></div>
-            <div class="tagger-field-control"><div class="stepper tagger-field-stepper"><button type="button" @click="taggerSettings.threshold = Number(Math.max(0, Number(taggerSettings.threshold) - 0.01).toFixed(2)); setTaggerCustomPreset()">&minus;</button><input type="number" min="0" max="1" step="0.01" x-model.number="taggerSettings.threshold" @change="setTaggerCustomPreset()"><button type="button" @click="taggerSettings.threshold = Number(Math.min(1, Number(taggerSettings.threshold) + 0.01).toFixed(2)); setTaggerCustomPreset()">+</button></div></div>
+            <div class="tagger-field-control"><div class="stepper tagger-field-stepper"><button type="button" @click="taggerSettings.threshold = Number(Math.max(0, Number(taggerSettings.threshold) - 0.01).toFixed(2)); setTaggerCustomPreset()">&minus;</button><input type="number" :aria-label="t('tagger.threshold')" min="0" max="1" step="0.01" x-model.number="taggerSettings.threshold" @change="setTaggerCustomPreset()"><button type="button" @click="taggerSettings.threshold = Number(Math.min(1, Number(taggerSettings.threshold) + 0.01).toFixed(2)); setTaggerCustomPreset()">+</button></div></div>
           </div>
           <div class="tagger-form-field" x-show="taggerSupportsCharacterToggle()">
             <div class="tagger-field-info"><label x-text="t('tagger.characterRecognition')"></label><p x-text="t('tagger.characterRecognitionDesc')"></p></div>
@@ -96,7 +96,7 @@
           </div>
           <div class="tagger-form-field" x-show="taggerSupportsCharacterToggle() && taggerCharacterEnabled()">
             <div class="tagger-field-info"><label x-text="t('tagger.characterThreshold')"></label><p x-text="t('tagger.characterThresholdDesc')"></p></div>
-            <div class="tagger-field-control"><div class="stepper tagger-field-stepper"><button type="button" @click="taggerSettings.characterThreshold = Number(Math.max(0, Number(taggerSettings.characterThreshold) - 0.01).toFixed(2)); setTaggerCustomPreset()">&minus;</button><input type="number" min="0" max="1" step="0.01" x-model.number="taggerSettings.characterThreshold" @change="setTaggerCustomPreset()"><button type="button" @click="taggerSettings.characterThreshold = Number(Math.min(1, Number(taggerSettings.characterThreshold) + 0.01).toFixed(2)); setTaggerCustomPreset()">+</button></div></div>
+            <div class="tagger-field-control"><div class="stepper tagger-field-stepper"><button type="button" @click="taggerSettings.characterThreshold = Number(Math.max(0, Number(taggerSettings.characterThreshold) - 0.01).toFixed(2)); setTaggerCustomPreset()">&minus;</button><input type="number" :aria-label="t('tagger.characterThreshold')" min="0" max="1" step="0.01" x-model.number="taggerSettings.characterThreshold" @change="setTaggerCustomPreset()"><button type="button" @click="taggerSettings.characterThreshold = Number(Math.min(1, Number(taggerSettings.characterThreshold) + 0.01).toFixed(2)); setTaggerCustomPreset()">+</button></div></div>
           </div>
           <div class="tagger-form-field" x-show="taggerUsesCategoryThresholds()">
             <div class="tagger-field-info"><label x-text="t('tagger.categoryThresholds')"></label><p x-text="t('tagger.categoryThresholdsDesc')"></p></div>
@@ -109,7 +109,7 @@
             </div>
           </div>
           <div class="tagger-category-settings" x-show="taggerUsesCategoryThresholds()">
-            <template x-for="key in taggerCategoryKeys()" :key="key"><div class="tagger-category-field"><label class="tagger-category-toggle"><span class="toggle"><input type="checkbox" :checked="taggerCategoryEnabled(key)" @change="setTaggerCategoryEnabled(key, $event.target.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></span><span x-text="taggerCategoryLabel(key)"></span></label><div class="tagger-category-controls"><div class="stepper tagger-field-stepper"><button type="button" @click="adjustTaggerCategoryThreshold(key, -0.01)">&minus;</button><input type="number" min="0" max="1" step="0.001" x-model.number="taggerSettings.categoryThresholds[key]" @change="updateTaggerCategorySetting(key)"><button type="button" @click="adjustTaggerCategoryThreshold(key, 0.01)">+</button></div></div></div></template>
+            <template x-for="key in taggerCategoryKeys()" :key="key"><div class="tagger-category-field"><label class="tagger-category-toggle"><span class="toggle"><input type="checkbox" :checked="taggerCategoryEnabled(key)" @change="setTaggerCategoryEnabled(key, $event.target.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></span><span x-text="taggerCategoryLabel(key)"></span></label><div class="tagger-category-controls"><div class="stepper tagger-field-stepper"><button type="button" @click="adjustTaggerCategoryThreshold(key, -0.01)">&minus;</button><input type="number" :aria-label="taggerCategoryLabel(key) + ' ' + t('tagger.threshold')" min="0" max="1" step="0.001" x-model.number="taggerSettings.categoryThresholds[key]" @change="updateTaggerCategorySetting(key)"><button type="button" @click="adjustTaggerCategoryThreshold(key, 0.01)">+</button></div></div></div></template>
           </div>
         </section>
 
@@ -339,7 +339,7 @@
           </div>
           <div class="tagger-form-field">
             <div class="tagger-field-info"><label x-text="t('tagger.apiConcurrency')"></label><p x-text="t('tagger.apiConcurrencyDesc')"></p></div>
-            <div class="tagger-field-control"><div class="stepper tagger-field-stepper"><button type="button" @click="taggerApiSettings.concurrency = Math.max(1, Number(taggerApiSettings.concurrency) - 1); saveTaggerApiSettings()">&minus;</button><input type="number" min="1" max="8" step="1" x-model.number="taggerApiSettings.concurrency" @change="taggerApiSettings.concurrency = Math.max(1, Math.min(8, Number(taggerApiSettings.concurrency) || 4)); saveTaggerApiSettings()"><button type="button" @click="taggerApiSettings.concurrency = Math.min(8, Number(taggerApiSettings.concurrency) + 1); saveTaggerApiSettings()">+</button></div></div>
+            <div class="tagger-field-control"><div class="stepper tagger-field-stepper"><button type="button" @click="taggerApiSettings.concurrency = Math.max(1, Number(taggerApiSettings.concurrency) - 1); saveTaggerApiSettings()">&minus;</button><input type="number" :aria-label="t('tagger.apiConcurrency')" min="1" max="8" step="1" x-model.number="taggerApiSettings.concurrency" @change="taggerApiSettings.concurrency = Math.max(1, Math.min(8, Number(taggerApiSettings.concurrency) || 4)); saveTaggerApiSettings()"><button type="button" @click="taggerApiSettings.concurrency = Math.min(8, Number(taggerApiSettings.concurrency) + 1); saveTaggerApiSettings()">+</button></div></div>
           </div>
         </section>
 

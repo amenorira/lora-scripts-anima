@@ -74,12 +74,9 @@
   --res-warn: #fbbf24;
   --res-danger: #f87171;
 
-  --bg-secondary: #353539;   /* alias: --bg-surface-raised */
-  --bg-tertiary: #222224;    /* alias: --bg-sunken */
   --surface-default: var(--bg-surface);
   --surface-2: var(--bg-surface-raised);
   --text-muted: var(--text-tertiary);
-
   --section-model: #4d94ff;
   --section-network: #10b981;
   --section-optimizer: #f59e0b;
@@ -91,7 +88,6 @@
   --section-caption: #78716c;
   --state-changed: #f59e0b;
   --state-filled: #4ade80;
-  --diff-modified: #e8d44d;
   --diff-added: #55e055;
   --diff-removed: #e05555;
 
@@ -126,9 +122,8 @@
 [data-theme="dark"] .te-sort-wrap select,
 [data-theme="dark"] .te-pager select { background-image: none; }
 
-/* Sidebar: hover 在暗色下补底色；激活项 hover 不再叠加 */
-[data-theme="dark"] .sidebar-item:hover { background: var(--hover-overlay); }
-[data-theme="dark"] .sidebar-item.active:hover { background: var(--active-overlay); }
+/* Sidebar paint is owned by the shared connected-tab layer in every state. */
+[data-theme="dark"] .sidebar { --sidebar-shell-bg: var(--bg-surface); }
 [data-theme="dark"] .sidebar-bottom { border-top-color: var(--border-subtle); }
 [data-theme="dark"] .sidebar-header .brand-name { color: var(--text-sidebar-active); }
 [data-theme="dark"] .sidebar-dropdown-menu button:hover { background: var(--hover-overlay); color: var(--text-sidebar-active); }
@@ -172,5 +167,3 @@
 [data-theme="dark"] .env-log { background: var(--bg-input); color: var(--text-secondary); }
 [data-theme="dark"] .env-msg-err  { background: color-mix(in srgb, var(--danger) 12%, transparent); border-color: color-mix(in srgb, var(--danger) 28%, var(--border-default)); }
 [data-theme="dark"] .env-msg-info { background: color-mix(in srgb, var(--info) 12%, transparent); border-color: color-mix(in srgb, var(--info) 28%, var(--border-default)); }
-[data-theme="dark"] .env-url-input { background: var(--bg-input); border-color: var(--border-input); }
-[data-theme="dark"] .env-url-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }

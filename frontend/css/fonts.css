@@ -1,0 +1,21 @@
+/* ================================================================
+   Global UI font — Inter (Latin subset)
+   The CJK fallback intentionally remains system-ui: the bundled file
+   covers Latin only, matching the ComfyUI skin's typography.
+   ================================================================ */
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../assets/fonts/inter-latin-normal.woff2?v=20261017-ui16") format("woff2");
+}
+
+@font-face {
+  font-family: "Inter";
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../assets/fonts/inter-latin-italic.woff2?v=20261017-ui16") format("woff2");
+}

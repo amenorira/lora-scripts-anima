@@ -1,4 +1,6 @@
+import ast
 import asyncio
+import glob
 import json
 import os
 import tempfile
@@ -9,7 +11,7 @@ from unittest.mock import patch
 
 import toml
 
-from backend.training.musubi_krea2 import KREA2_FIELDS, build_krea2_dataset_config, build_krea2_train_config, cache_manifest_path, get_krea2_cache_status, mark_cache_manifest, prepare_cache_manifest, validate_krea2_config
+from backend.training.musubi_krea2 import KREA2_FIELDS, build_krea2_dataset_config, build_krea2_train_config, cache_manifest_path, estimate_krea2_steps, get_krea2_cache_status, krea2_cache_fingerprint, krea2_preflight, mark_cache_manifest, prepare_cache_manifest, validate_krea2_config
 from backend.server.routes import training as training_routes
 from backend.tasks import TaskManager
 from tests.helpers import json_request, stub_supervisor
@@ -172,6 +174,76 @@ class Krea2PreparationLifecycleTests(unittest.TestCase):
 
 
 class Krea2CodecTests(unittest.TestCase):
+    def test_nested_images_get_separate_cache_directories(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = krea2_config(Path(temp_dir))
+            root = Path(config["train_data_dir"])
+            for name in ("a", "b/deep"):
+                directory = root / name
+                directory.mkdir(parents=True)
+                (directory / "portrait.png").write_bytes(b"image")
+                (directory / "portrait.txt").write_text("caption", encoding="utf-8")
+                (directory / "orphan.png").write_bytes(b"image")
+                (directory / "case.png").write_bytes(b"image")
+                (directory / "CASE.txt").write_text("caption", encoding="utf-8")
+            # Cache contents must never become training inputs.
+            cache = Path(config["dataset_cache_dir"])
+            cache.mkdir()
+            (cache / "ignored.png").write_bytes(b"image")
+            (cache / "ignored.txt").write_text("caption", encoding="utf-8")
+            datasets = build_krea2_dataset_config(config)["datasets"]
+            self.assertEqual(len(datasets), 3)
+            self.assertEqual(len({row["cache_directory"] for row in datasets}), 3)
+            self.assertEqual({row["image_directory"] for row in datasets}, {str(root), str(root / "a"), str(root / "b/deep")})
+            # Exercise upstream's real glob function without loading its GPU/media dependencies.
+            source = Path(__file__).resolve().parents[2] / "vendor/musubi-tuner/src/musubi_tuner/dataset/media_utils.py"
+            tree = ast.parse(source.read_text(encoding="utf-8"))
+            function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "glob_images")
+            extensions = next(node.value for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "IMAGE_EXTENSIONS" for target in node.targets))
+            namespace = {"glob": glob, "os": os, "IMAGE_EXTENSIONS": ast.literal_eval(extensions)}
+            exec(compile(ast.Module(body=[function], type_ignores=[]), str(source), "exec"), namespace)
+            upstream_images = [
+                image for row in datasets
+                for image in namespace["glob_images"](row["image_directory"], caption_extension=config["caption_extension"])
+            ]
+            self.assertEqual({Path(image) for image in upstream_images}, {root / "portrait.png", root / "a/portrait.png", root / "b/deep/portrait.png"})
+            self.assertEqual(estimate_krea2_steps(config)["original_images"], 3)
+            config["train_batch_size"] = 2
+            self.assertEqual(estimate_krea2_steps(config)["batches_per_epoch"], 3)
+            prepare_cache_manifest(config)
+            mark_cache_manifest(config, "completed")
+            for row in datasets:
+                target = Path(row["cache_directory"])
+                target.mkdir(parents=True, exist_ok=True)
+                (target / "portrait_0001x0001_krea2.safetensors").write_bytes(b"latent")
+                (target / "portrait_krea2_te.safetensors").write_bytes(b"text")
+            self.assertTrue(get_krea2_cache_status(config)["ready"])
+            # Extra files in one subset cannot hide missing files in another.
+            (cache / "extra_0001x0001_krea2.safetensors").write_bytes(b"latent")
+            (cache / "extra_krea2_te.safetensors").write_bytes(b"text")
+            (Path(datasets[-1]["cache_directory"]) / "portrait_krea2_te.safetensors").unlink()
+            self.assertFalse(get_krea2_cache_status(config)["ready"])
+
+    def test_caption_filter_and_custom_extension_are_shared(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = krea2_config(Path(temp_dir))
+            root = Path(config["train_data_dir"])
+            before = krea2_cache_fingerprint(config)
+            (root / "unlabelled.png").write_bytes(b"image")
+            (root / "unsupported.tiff").write_bytes(b"image")
+            (root / "unsupported.txt").write_text("caption", encoding="utf-8")
+            self.assertEqual(krea2_cache_fingerprint(config), before)
+            self.assertEqual(get_krea2_cache_status(config)["image_count"], 1)
+            config["caption_extension"] = ".caption"
+            with patch("backend.training.musubi_krea2.shared_runtime_status", return_value={"errors": []}):
+                result = krea2_preflight(config, require_cache=False)
+            self.assertTrue(any("同名标注" in error for error in result["errors"]))
+            self.assertEqual(build_krea2_dataset_config(config)["datasets"], [])
+            (root / "unlabelled.caption").write_text("caption", encoding="utf-8")
+            self.assertEqual(get_krea2_cache_status(config)["image_count"], 1)
+            self.assertEqual(estimate_krea2_steps(config)["original_images"], 1)
+            self.assertNotEqual(krea2_cache_fingerprint(config), before)
+
     def test_generates_separate_dataset_and_train_tomls(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

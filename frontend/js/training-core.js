@@ -40,11 +40,24 @@ window.trainingCoreMixin = {
   // 分组导航指示器（#1）：当前可见分组列表 + 滚动高亮的当前分组
   sectionNavList: [],
   activeSection: '',
-  sectionRailHover: false,
+  sectionNavOpen: false,
+  sectionRailTop: 16,
   _sectionScrollHandler: null,
-  _sectionMouseHandler: null,
-  _sidebarResizeObserver: null,
-  _sidebarResizeHandler: null,
+
+  get activeSectionIndex() {
+    const idx = this.sectionNavList.findIndex(s => s.key === this.activeSection);
+    return idx < 0 ? 0 : idx;
+  },
+
+  get activeSectionMeta() {
+    return this.sectionNavList[this.activeSectionIndex] || null;
+  },
+
+  get activeSectionNumberText() {
+    const total = this.sectionNavList.length;
+    if (!total) return '';
+    return String(this.activeSectionIndex + 1) + '/' + String(total);
+  },
 
   _formSaveTimer: null,
   _localeChangeHandler: null,
@@ -1319,7 +1332,7 @@ window.trainingCoreMixin = {
       html += `<svg class="card-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>`;
       html += `<span>${this.t(section.titleKey) || section.titleKey}</span>`;
       html += `</div>`;
-      html += `<div class="card-body">`;
+      html += `<div class="card-body" :inert="_sectionCollapsed['${section.key}']" :aria-hidden="_sectionCollapsed['${section.key}'] ? 'true' : null">`;
       if (section.key === 'training' && !targetId) html += this.renderStepEstimatePanel();
 
       // 按 FIELDS 顺序渲染字段：条件子项由 show_if 挂到触发字段下做层级缩进，不引入分组盒子。
@@ -1723,13 +1736,20 @@ window.trainingCoreMixin = {
       color: SECTION_COLORS[s.key] || 'var(--section-caption)',
       collapsed: !!this._sectionCollapsed[s.key],
     }));
-    // 默认激活第一个分组
-    if (this.sectionNavList.length && !this.activeSection) {
+    // 默认激活第一个分组；训练类型重建后若旧分组不存在，回退到第一个
+    if (this.sectionNavList.length && !this.sectionNavList.some(s => s.key === this.activeSection)) {
       this.activeSection = this.sectionNavList[0].key;
     }
+    this.sectionNavOpen = false;
     this._bindSectionScroll();
-    this._bindSectionMouse();
-    this._bindSidebarResize();
+    this.$nextTick(() => this.positionSectionRail());
+  },
+
+  // Position without transforming the text layer; snap to whole CSS pixels.
+  positionSectionRail() {
+    const rail = document.querySelector('.train-rail');
+    if (!rail || !rail.offsetHeight) return;
+    this.sectionRailTop = Math.max(16, Math.floor((window.innerHeight - rail.offsetHeight) / 2));
   },
 
   // 绑定主内容区滚动监听，更新当前可见分组（节流）
@@ -1751,84 +1771,73 @@ window.trainingCoreMixin = {
     this._updateActiveSection();
   },
 
-  // 鼠标进入分组时更新对应圆点，不读取整页卡片布局。
-  _bindSectionMouse() {
-    if (this._sectionMouseHandler) return;
-    this._sectionMouseHandler = (e) => {
-      const card = e.target.closest && e.target.closest('#trainFormContent .card[data-section]');
-      if (!card) return;
-      const section = card.getAttribute('data-section');
-      if (section && section !== this.activeSection) this.activeSection = section;
-    };
-    const scroller = document.querySelector('.main-content');
-    if (scroller) scroller.addEventListener('pointerover', this._sectionMouseHandler, { passive: true });
-  },
-
-  // 离开训练页时解绑滚动/鼠标/侧栏监听，避免泄漏
+  // 离开训练页时解绑滚动监听，避免泄漏
   stopSectionScroll() {
+    this.sectionNavOpen = false;
     if (this._sectionScrollHandler) {
       const scroller = document.querySelector('.main-content');
       if (scroller) scroller.removeEventListener('scroll', this._sectionScrollHandler);
       this._sectionScrollHandler = null;
     }
-    if (this._sectionMouseHandler) {
-      const scroller = document.querySelector('.main-content');
-      if (scroller) scroller.removeEventListener('pointerover', this._sectionMouseHandler);
-      this._sectionMouseHandler = null;
-    }
-    if (this._sidebarResizeObserver) {
-      this._sidebarResizeObserver.disconnect();
-      this._sidebarResizeObserver = null;
-    }
-    if (this._sidebarResizeHandler) {
-      window.removeEventListener('resize', this._sidebarResizeHandler);
-      this._sidebarResizeHandler = null;
-    }
-  },
-
-  // 监听侧栏宽度变化（手动收起/展开、响应式、初始），实时更新 rail 的 left，
-  // 使指示器始终贴在 main-content 左边缘。不依赖 --sidebar-w（手动收起不改该变量）。
-  _bindSidebarResize() {
-    if (this._sidebarResizeObserver) return;
-    const self = this;
-    const update = () => self._updateRailLeft();
-    // ResizeObserver 监听 .sidebar 宽度
-    const sidebar = document.querySelector('.sidebar');
-    if (sidebar && typeof ResizeObserver !== 'undefined') {
-      this._sidebarResizeObserver = new ResizeObserver(update);
-      this._sidebarResizeObserver.observe(sidebar);
-    }
-    // 窗口尺寸变化（响应式断点）兜底
-    window.addEventListener('resize', update);
-    this._sidebarResizeHandler = update;
-    // 初次定位
-    this._updateRailLeft();
-  },
-
-  _updateRailLeft() {
-    const sidebar = document.querySelector('.sidebar');
-    const rail = document.querySelector('.section-rail');
-    if (!sidebar || !rail) return;
-    const w = sidebar.getBoundingClientRect().width;
-    rail.style.left = Math.round(w + 10) + 'px';
   },
 
   _updateActiveSection() {
     const scroller = document.querySelector('.main-content');
     if (!scroller) return;
-    const offset = 80; // 顶部偏移阈值：分组标题进入此线以下即视为"当前"
+    // 竖向导轨不占表单横向空间；分组标题越过顶部 24px 即视为当前。
+    const offset = 24;
     const cards = document.querySelectorAll('#trainFormContent .card[data-section]');
+    // A short final section cannot reach the top threshold once scrolling is
+    // clamped at the end. Treat the scrollable form's bottom as that section.
+    const scrollRange = scroller.scrollHeight - scroller.clientHeight;
+    if (cards.length && scrollRange > 1 && scrollRange - scroller.scrollTop <= 2) {
+      this.activeSection = cards[cards.length - 1].getAttribute('data-section');
+      return;
+    }
+    const scrollerTop = scroller.getBoundingClientRect().top;
     let current = '';
     cards.forEach(card => {
       const rect = card.getBoundingClientRect();
       // 标题顶部越过偏移线 → 该分组为当前；取最后一个满足条件的
-      if (rect.top - scroller.getBoundingClientRect().top <= offset) {
+      if (rect.top - scrollerTop <= offset) {
         current = card.getAttribute('data-section');
       }
     });
     if (!current && cards.length) current = cards[0].getAttribute('data-section');
-    // 仅更新轨道圆点高亮（activeSection），不再给表单卡片加激活态样式
     if (current && current !== this.activeSection) this.activeSection = current;
+  },
+
+  // 竖向导轨：鼠标离开关闭；键盘焦点由 focusout 单独处理
+  sectionRailLeave() {
+    const rail = document.querySelector('.train-rail');
+    const focused = document.activeElement;
+    if (rail && focused && rail.contains(focused) && focused.matches(':focus-visible')) return;
+    this.sectionNavOpen = false;
+  },
+
+  sectionRailFocusOut(event) {
+    if (event && event.currentTarget && event.currentTarget.contains(event.relatedTarget)) return;
+    this.sectionNavOpen = false;
+  },
+
+  // 竖向导轨分段之间的键盘移动
+  focusAdjacentSectionSegment(event, delta) {
+    const track = event && event.currentTarget ? event.currentTarget.closest('.train-rail-track') : null;
+    if (!track) return;
+    const buttons = Array.from(track.querySelectorAll('.train-rail-segment'));
+    if (!buttons.length) return;
+    const current = buttons.indexOf(event.currentTarget);
+    const next = buttons[(current + delta + buttons.length) % buttons.length];
+    if (next) next.focus();
+  },
+
+  focusSectionSegmentEdge(event, edge) {
+    const track = event && event.currentTarget ? event.currentTarget.closest('.train-rail-track') : null;
+    if (!track) return;
+    const buttons = Array.from(track.querySelectorAll('.train-rail-segment'));
+    if (!buttons.length) return;
+    const next = edge === 'last' ? buttons[buttons.length - 1] : buttons[0];
+    if (next) next.focus();
   },
 
   // 点击导航项 → 平滑滚动到对应分组顶部
@@ -1838,9 +1847,17 @@ window.trainingCoreMixin = {
     if (!card || !scroller) return;
     // 若分组已收起，先展开（否则跳过去看不到内容）
     if (this._sectionCollapsed[key]) this.toggleSection(key);
-    const target = card.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 12;
-    scroller.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
-    this.activeSection = key;
+    const target = card.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 16;
+    const top = Math.min(Math.max(0, scroller.scrollHeight - scroller.clientHeight), Math.max(0, target));
+    // A no-op scroll emits no event. Select directly only in that case;
+    // otherwise the scroll observer owns highlighting throughout the motion.
+    if (Math.abs(scroller.scrollTop - top) <= 1) {
+      this.activeSection = key;
+      return;
+    }
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    scroller.scrollTo({ top, behavior: reduceMotion ? 'auto' : 'smooth' });
+    if (reduceMotion) this.activeSection = key;
   },
 
   _allSections() {
@@ -1971,15 +1988,6 @@ window.trainingCoreMixin = {
     return key ? this.t(key) : '';
   },
 
-  fieldHintText(fieldKey) {
-    const trainType = this.form.model_train_type || 'anima-lora';
-    return this._resolveFieldHintText(
-      this._fieldDefinition(fieldKey, trainType),
-      this.form,
-      trainType
-    );
-  },
-
   fieldHintOverrideText(fieldKey) {
     const trainType = this.form.model_train_type || 'anima-lora';
     return this._resolveFieldHintOverrideText(
@@ -2012,6 +2020,10 @@ window.trainingCoreMixin = {
     }
     const requiredMark = isRequired ? '<span class="field-required" aria-hidden="true">*</span>' : '';
     const dataKey = field.key;
+    const accessibleKey = field.argKey || dataKey;
+    const fieldAriaLabel = this.escapeAttr(`${accessibleKey}，${label}`);
+    const stepDownLabel = this.escapeAttr(`${accessibleKey} ${label} 减少`);
+    const stepUpLabel = this.escapeAttr(`${accessibleKey} ${label} 增加`);
     const isToggle = field.type === 'toggle';
     const isStaticReadonly = field.readonly === true;
     const staticReadonlyAttrs = isStaticReadonly ? ' readonly aria-readonly="true"' : '';
@@ -2021,7 +2033,7 @@ window.trainingCoreMixin = {
     // ── Generate input HTML ──
     let inputHtml = '';
     if (isToggle) {
-      inputHtml = `<label class="toggle"><input type="checkbox" :checked="form.${dataKey}" @change="setField('${dataKey}', $event.target.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>`;
+      inputHtml = `<label class="toggle"><input type="checkbox" aria-label="${fieldAriaLabel}" :checked="form.${dataKey}" @change="setField('${dataKey}', $event.target.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>`;
     } else if (field.type === 'select') {
       const fc = {};
       const self = this;
@@ -2054,11 +2066,11 @@ window.trainingCoreMixin = {
       } else {
         fc.options = [];
       }
-      const triggerHtml = `<button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle($event)"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button>`;
+      const triggerHtml = `<button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle($event)" aria-label="${fieldAriaLabel}" aria-haspopup="listbox" :aria-expanded="open ? 'true' : 'false'"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>`;
       const menuHtml = `<template x-if="open"><div class="anima-select-menu" :class="{ 'anima-select-menu-described': hasDescriptions, 'anima-select-menu-positioned': positioned }"><div class="anima-select-menu-scroll"><template x-for="(group, gIdx) in displayGroups" :key="gIdx"><div class="anima-select-group"><div class="anima-select-group-label" x-show="group.label" x-text="group.label"></div><template x-for="opt in group.options" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-content"><span class="anima-select-option-label" x-text="opt.l" :title="opt.l"></span><span class="anima-select-option-desc" x-show="opt.d" x-text="opt.d"></span></span><svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></div></template></div></template><div x-show="displayGroups.length === 0" style="padding:8px 12px;font-size:12px;color:var(--text-tertiary)">—</div></div></div></template>`;
-      inputHtml = `<div class="anima-select" x-data="animaSelect('${this.escJson(fc)}', '${this.escapeAttr(val ?? '')}')" @click.outside="close()" @anima-select-change="setField('${dataKey}', $event.detail.value)"><input type="hidden" x-ref="modelInput" :value="form.${dataKey}">${triggerHtml}${menuHtml}</div>`;
+      inputHtml = `<div class="anima-select" x-data="animaSelect('${this.escJson(fc)}', '${this.escapeAttr(val ?? '')}')" @click.outside="close()" @anima-select-change="setField('${dataKey}', $event.detail.value)"><input type="hidden" aria-hidden="true" tabindex="-1" x-ref="modelInput" :value="form.${dataKey}">${triggerHtml}${menuHtml}</div>`;
     } else if (field.type === 'textarea') {
-      inputHtml = `<textarea :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" rows="3"${staticReadonlyAttrs}></textarea>`;
+      inputHtml = `<textarea aria-label="${fieldAriaLabel}" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" rows="3"${staticReadonlyAttrs}></textarea>`;
       if (dataKey === "positive_prompts") {
         inputHtml += this._positivePromptCountHint(dataKey);
       }
@@ -2068,20 +2080,20 @@ window.trainingCoreMixin = {
       const defaultOnBlur = dataKey === 'lr_scheduler_timescale'
         ? ` x-data="{ editing: false }" x-effect="_syncLrTimescaleDefault(editing)" :class="{ 'is-default': ['default', 'auto'].includes(_fieldSources?.lr_scheduler_timescale) }" @focus="editing = true" @blur="editing = false; if (String(form.${dataKey} ?? '').trim() === '') resetField('${dataKey}')"` : '';
       const numberAttrs = `${constraints.min !== undefined ? ` min="${this.escapeAttr(constraints.min)}"` : ''}${constraints.max !== undefined ? ` max="${this.escapeAttr(constraints.max)}"` : ''} step="${this.escapeAttr(sStep)}"`;
-      inputHtml = `<div class="stepper"><button type="button" @click="stepField('${dataKey}', -${sStep})">−</button><input type="number" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)"${numberAttrs}${defaultOnBlur}${staticReadonlyAttrs}><button type="button" @click="stepField('${dataKey}', ${sStep})">+</button></div>`;
+      inputHtml = `<div class="stepper"><button type="button" aria-label="${stepDownLabel}" @click="stepField('${dataKey}', -${sStep})">−</button><input type="number" aria-label="${fieldAriaLabel}" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)"${numberAttrs}${defaultOnBlur}${staticReadonlyAttrs}><button type="button" aria-label="${stepUpLabel}" @click="stepField('${dataKey}', ${sStep})">+</button></div>`;
     } else {
       // Placeholders use the same profile defaults and auto-value rules as the form.
       const placeholders = this._optimizerAutoValueMap(field);
       if (Object.keys(placeholders).length || field.argKey) {
         const expression = JSON.stringify(placeholders).replace(/"/g, '&quot;');
         const defaultValue = JSON.stringify(field.default ?? '').replace(/"/g, '&quot;');
-        inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" :placeholder="(${expression})[form.optimizer_type] ?? ${defaultValue}"${staticReadonlyAttrs}>`;
+        inputHtml = `<input type="text" aria-label="${fieldAriaLabel}" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" :placeholder="(${expression})[form.optimizer_type] ?? ${defaultValue}"${staticReadonlyAttrs}>`;
       } else if (field.placeholder) {
-        inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" placeholder="${this.escapeAttr(field.placeholder)}"${staticReadonlyAttrs}>`;
+        inputHtml = `<input type="text" aria-label="${fieldAriaLabel}" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" placeholder="${this.escapeAttr(field.placeholder)}"${staticReadonlyAttrs}>`;
       } else if (field.omitDefault && field.default !== undefined && field.default !== '' && field.default !== null) {
         // omitDefault 字段：值==默认值时不传，输入框用淡色 placeholder 提示默认值
         const _phVal = String(field.default).replace(/"/g, '&quot;');
-        inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" placeholder="${_phVal}"${staticReadonlyAttrs}>`;
+        inputHtml = `<input type="text" aria-label="${fieldAriaLabel}" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" placeholder="${_phVal}"${staticReadonlyAttrs}>`;
       } else {
         // DEFAULT_DIM_KEYS 字段：值==schema 原始默认值时加 is-default class，CSS 淡色模拟 placeholder 视觉
         // （假留空——值仍保留，不触发必填校验失败、不影响训练流程；改值后 class 移除恢复正常字色）
@@ -2089,7 +2101,7 @@ window.trainingCoreMixin = {
         const _dimCls = (window.DEFAULT_DIM_KEYS && window.DEFAULT_DIM_KEYS.has(dataKey) && field.default !== undefined && field.default !== '' && field.default !== null)
           ? ` :class="{ 'is-default': String(form.${dataKey}) === String('${String(field.default).replace(/'/g, '\\x27')}') }"`
           : '';
-        inputHtml = `<input type="text" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)"${_dimCls}${staticReadonlyAttrs}>`;
+        inputHtml = `<input type="text" aria-label="${fieldAriaLabel}" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)"${_dimCls}${staticReadonlyAttrs}>`;
       }
     }
 
@@ -3677,12 +3689,6 @@ window.trainingCoreMixin = {
       return Number(v.trim());
     }
     return v;
-  },
-
-  /** file-* 角色的字段是路径，永不做数字转换——纯数字目录名（如 "2024"）
-   *  被转成 number 后会以整数写进 TOML，训练器拿到的就不是路径了。 */
-  _isPathFieldRole(role) {
-    return typeof role === 'string' && role.startsWith('file-');
   },
 
   _automagicFusedConflicts() {

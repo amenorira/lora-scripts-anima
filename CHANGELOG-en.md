@@ -6,6 +6,34 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v26.1017.223010 - 2026-10-17
+
+This release redesigns the sidebar and training-section navigation, unifies interface fonts, adds optional **TensorBoard training diagnostics and interactive timestep sampling distributions**, and fixes Krea 2 subdirectory caching and temporary-file cleanup.
+
+### Interface and Training Workbench
+
+- Use connected tabs in the sidebar, with improved selection, hover, and press feedback across Light, Dark, and ComfyUI themes. Remove momentary icon and border tinting during clicks.
+- Use the original ComfyUI theme's Inter font across all three themes. Refine parameter headings, descriptions, controls, and contrast, and add website icons in multiple sizes.
+- Redesign training-section navigation for clearer text, keyboard movement, and reduced-motion support. Fix the final Preview Sampling section failing to stay selected and highlighting flicker during navigation.
+- Improve wrapping of long paths and argument lists in the TOML preview while preserving copied and exported configuration contents.
+- Improve the caption editor and parameter documentation in narrow desktop windows. Open the tag cloud as an overlay and close it with Escape.
+- Preserve old training-page links and migrate saved form and profile state. Correct the main page's container structure.
+
+### TensorBoard Training Diagnostics
+
+- Add gradient-norm, timestep-loss, and timestep-distribution switches under Save & Logging for Anima, SDXL, and Krea 2 training. All are disabled by default.
+- Optionally record pre-clipping gradient norms and clipping indicators, plus current-batch, moving-average, and epoch-average losses for low-, mid-, and high-noise ranges.
+- Show cumulative counts of actual timestep samples in the built-in TensorBoard TIME SERIES view, using one-timestep bins with run filtering, distinct colors, hover values, zoom, and automatic refresh.
+- Keep distribution collection independent from timestep-loss collection. Skip collection when diagnostics are disabled and reuse the existing TensorBoard logging workflow.
+
+### Cache and Cleanup Fixes
+
+- Fix inconsistent image caching, caption counts, and training-step estimates for nested Krea 2 dataset directories. Prevent cache collisions between images with identical names in different directories.
+- Align image formats, caption extensions, and filename case matching with the training engine. Update cache fingerprints and completeness checks so that existing caches are revalidated.
+- Keep TensorBoard startup handshake files in the log directory to avoid creating folders in the project root when the system temporary directory is unavailable. Clean up only files owned by the current instance after successful, failed, or canceled startup.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1013.230134...v26.1017.223010)
+
 ## v26.1013.230134 - 2026-10-13
 
 This release adds **WSD curve options and piecewise constant learning-rate scheduling**, completes Japanese localization for the interface and documentation, improves Windows installation and updates, and fixes training-step estimates and terminal progress display.

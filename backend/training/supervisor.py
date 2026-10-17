@@ -119,6 +119,11 @@ def _build_train_env(
     env["ANIMA_TRAIN_LOG_LOCK"] = str((Path(run_dir or artifact_dir) / ".train-log.lock").resolve())
     env["ANIMA_TASK_ID"] = task_id
     env["ANIMA_TENSORBOARD_DIR"] = str((Path(run_dir or artifact_dir) / "log").resolve())
+    from backend.training.metrics_config import training_metrics_environment
+
+    # Per-run form choices override inherited process flags. Old configs and
+    # cache jobs have no switches, so all optional diagnostics start disabled.
+    env.update(training_metrics_environment({}))
     repo_root = str(REPO_ROOT)
     vendor_root = str(REPO_ROOT / "vendor")
     existing_pypath = env.get("PYTHONPATH", "")
