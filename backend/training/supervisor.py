@@ -146,9 +146,10 @@ def _build_train_env(
         new_paths.append(p)
     env["PYTHONPATH"] = os.pathsep.join(new_paths)
 
-    # 抑制 HuggingFace tokenizers 在 DataLoader fork 时刷屏的 "parallelism disabled" 警告
+    # Tokenizers' thread pool is unsafe to inherit through DataLoader fork.
+    # Disable its internal parallelism by default, preserving explicit overrides.
     if "TOKENIZERS_PARALLELISM" not in env:
-        env["TOKENIZERS_PARALLELISM"] = "true"
+        env["TOKENIZERS_PARALLELISM"] = "false"
 
     return env
 

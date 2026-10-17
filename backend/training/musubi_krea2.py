@@ -12,6 +12,9 @@ import importlib.metadata
 import importlib.util
 import json
 import math
+import os
+import re
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -1489,6 +1492,8 @@ def image_files(
     caption_extension: str = ".txt",
 ) -> list[Path]:
     """Find captioned images, matching musubi's supported image formats."""
+    if not str(directory):
+        return []
     root = Path(directory)
     if not root.is_dir():
         return []
@@ -1521,6 +1526,8 @@ def image_files(
 
 def _krea2_dataset_groups(config: dict[str, Any]) -> list[tuple[Path, Path, list[Path]]]:
     """Give each source directory its own cache namespace for musubi's flat reader."""
+    if not config.get("train_data_dir"):
+        return []
     root = Path(str(config.get("train_data_dir") or ""))
     cache = Path(str(config.get("dataset_cache_dir") or ""))
     groups: dict[Path, list[Path]] = {}
@@ -1539,6 +1546,22 @@ def _krea2_dataset_groups(config: dict[str, Any]) -> list[tuple[Path, Path, list
     return result
 
 
+def _krea2_cache_conflicts(groups: list[tuple[Path, Path, list[Path]]]) -> list[str]:
+    """Musubi drops image extensions; each directory must have unique cache keys."""
+    conflicts = []
+    for directory, _, images in groups:
+        by_key: dict[str, list[str]] = {}
+        for image in images:
+            by_key.setdefault(os.path.normcase(image.stem), []).append(image.name)
+        for names in by_key.values():
+            if len(names) > 1:
+                conflicts.append(
+                    "Images share a Krea 2 cache key; rename the conflicting files / "
+                    f"图片缓存名称冲突，请重命名同名图片: {directory}: {', '.join(names)}"
+                )
+    return conflicts
+
+
 def _path_identity(path_value: Any) -> dict[str, Any]:
     path = Path(str(path_value or ""))
     try:
@@ -1554,7 +1577,8 @@ def krea2_cache_fingerprint(config: dict[str, Any]) -> str:
     cache_dir = config.get("dataset_cache_dir")
     root = Path(str(config.get("train_data_dir") or ""))
     entries: list[dict[str, Any]] = []
-    for image in image_files(root, cache_dir, str(config.get("caption_extension") or ".txt")):
+    images = image_files(str(config.get("train_data_dir") or ""), cache_dir, str(config.get("caption_extension") or ".txt"))
+    for image in images:
         try:
             stat = image.stat()
         except OSError:
@@ -1644,7 +1668,16 @@ def mark_cache_manifest(config: dict[str, Any], status: str) -> None:
     manifest, _ = _read_cache_manifest(config["dataset_cache_dir"])
     if not manifest:
         manifest = prepare_cache_manifest(config)
-    stage_state = "completed" if status == "completed" else "failed"
+    completed = status == "completed"
+    if completed:
+        cache_status = get_krea2_cache_status(config)
+        completed = bool(
+            cache_status["image_count"]
+            and cache_status["fingerprint_matches"]
+            and cache_status["files_match"]
+            and not cache_status["conflicts"]
+        )
+    stage_state = "completed" if completed else "failed"
     manifest["finished_at"] = datetime.now(timezone.utc).isoformat()
     manifest["stages"] = {"latents": stage_state, "text_encoder": stage_state}
     path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1655,6 +1688,7 @@ def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
 
     cache_dir = Path(str(config.get("dataset_cache_dir") or ""))
     groups = _krea2_dataset_groups(config)
+    conflicts = _krea2_cache_conflicts(groups)
     images = [image for _, _, group_images in groups for image in group_images]
     latent_files = []
     text_files = []
@@ -1668,8 +1702,21 @@ def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
         group_texts = [path for path in group_cache.glob("*_krea2_te.safetensors") if path.is_file()]
         latent_files.extend(group_latents)
         text_files.extend(group_texts)
+        # The trainer scans every latent cache in this namespace. Counts alone
+        # allow unrelated entries to replace missing images, or duplicate sizes
+        # of one image to enter training. Require exactly one latent per key and
+        # exactly the current text-cache paths, including filesystem case rules.
+        expected_keys = Counter(os.path.normcase(image.stem) for image in group_images)
+        latent_keys = []
+        for path in group_latents:
+            match = re.fullmatch(r"(.+)_(\d{4,})x(\d{4,})_krea2\.safetensors", path.name)
+            if match and int(match[2]) > 0 and int(match[3]) > 0:
+                latent_keys.append(os.path.normcase(match[1]))
+        expected_texts = {group_cache / f"{image.stem}_krea2_te.safetensors" for image in group_images}
         complete_groups = complete_groups and (
-            len(group_latents) >= len(group_images) and len(group_texts) >= len(group_images)
+            len(latent_keys) == len(group_latents)
+            and Counter(latent_keys) == expected_keys
+            and set(group_texts) == expected_texts
         )
 
     manifest, _ = _read_cache_manifest(cache_dir)
@@ -1686,9 +1733,8 @@ def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
         and matches
         and stages.get("latents") == "completed"
         and stages.get("text_encoder") == "completed"
-        and len(latent_files) >= expected
-        and len(text_files) >= expected
         and complete_groups
+        and not conflicts
     )
     return {
         "cache_dir": str(cache_dir),
@@ -1697,6 +1743,8 @@ def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
         "text_encoder_count": len(text_files),
         "fingerprint_matches": matches,
         "stages": stages,
+        "files_match": complete_groups,
+        "conflicts": conflicts,
         "ready": ready,
     }
 
@@ -2200,6 +2248,7 @@ def krea2_preflight(config: dict[str, Any], require_cache: bool = True) -> dict[
         errors.append("Dataset has no supported images with matching captions / 数据集目录没有带同名标注的可用图片，请检查图片格式和标注扩展名")
 
     cache_status = get_krea2_cache_status(config)
+    errors.extend(cache_status["conflicts"])
     if require_cache and not cache_status["ready"]:
         errors.append(
             "Krea 2 latent/text caches are missing or stale; prepare both caches before training / "
