@@ -922,11 +922,11 @@ def validate_optimizer_contract(
 
     if (
         optimizer_type == MUON_OPTIMIZER_TYPE
-        and config.get("model_train_type") != "anima-lora"
+        and config.get("model_train_type") not in {"anima-lora", "moss-image-lora"}
     ):
         errors.append(
-            "Muon: currently supported only for Anima LoRA / "
-            "当前仅支持 Anima LoRA"
+            "Muon: currently supported only for Anima and MOSS-Image LoRA / "
+            "当前仅支持 Anima 和 MOSS-Image LoRA"
         )
 
     if optimizer_type == LORA_MUON_OPTIMIZER_TYPE and (

@@ -36,7 +36,7 @@
 | CAME | 比较因子化状态、残差置信度缩放和内部 RMS 裁剪 | 使用三个 beta；可因子化张量的二阶状态按行、列存储 |
 | AdamWScheduleFree | 测试不依赖外部 scheduler 的 AdamW | 使用内部 warmup，项目默认 `warmup_steps=0`；评估和保存使用平均权重 |
 | EmoSens | 项目实验性优化器 | 要求梯度累积为 1、禁用 mixed_precision=fp16、仅支持单卡，不支持 LoRA+ |
-| Muon | 对二维 LoRA 矩阵执行动量正交化 | 仅 Anima LoRA 可用；当前使用 PyTorch 原生实现；建议与 AdamW8bit 做同条件对照 |
+| Muon | 对二维 LoRA 矩阵执行动量正交化 | 支持 Anima 和 MOSS-Image LoRA；当前使用 PyTorch 原生实现；建议与 AdamW8bit 做同条件对照 |
 | LoRA-Muon | 针对标准 LoRA 因子分解的低秩谱下降优化器 | 仅支持 `anima-lora` 与 `networks.lora_anima`；不支持 LoRA+、LoKr、LoHa 等 LyCORIS 网络；学习率需要单独校准 |
 | Adan | 比较利用梯度变化趋势的更新方式 | 本项目初始学习率为 AdamW 的一半；使用三个 beta |
 | AdEMAMix | 同时使用短期和长期梯度平均 | alpha 决定长期动量贡献，缓升步数决定何时达到目标权重 |
@@ -143,6 +143,8 @@ beta 越高，对应统计保留历史越久、响应越慢；越低则更快跟
 ### Muon 参数
 
 Muon 先累积梯度动量，再对二维矩阵更新做近似正交化。它分别处理 `lora_down` 和 `lora_up`，适合比较矩阵更新方式对学习速度与结果的影响。
+
+MOSS-Image 使用 `networks.lora_generic`，DiT 和可选 text embedder 的 LoRA 参数均为二维矩阵，可直接使用 Muon，也支持 LoRA+ 和常规调度器。切换到 Muon 时，未手动修改的学习率使用 `1e-4`，对应 MOSS 默认 `rank=16, alpha=1`；`adjust_lr_fn=match_rms_adamw`、`weight_decay=0`。这些是工程起点，尚未做完整训练效果对照。LoRA-Muon 是独立优化器，仍仅支持 Anima。
 
 Muon 每个参数维护一组动量状态，少于全精度 AdamW 的两组状态，但每步增加矩阵乘法。比较时记录峰值显存和每步耗时。
 

@@ -56,6 +56,39 @@ test('MOSS only offers supported LoRA and places backward mode descriptions insi
   }
 });
 
+test('MOSS offers Muon and preserves its native arguments in preview, import and launch', async () => {
+  const { app } = application();
+  const choices = () => {
+    const html = app.renderField(app.findFieldDef('optimizer_type'));
+    const config = JSON.parse(Buffer.from(html.match(/animaSelect\('([^']+)'/)[1], 'base64').toString('utf8'));
+    return config.groups ? config.groups.flatMap(group => group.options) : config.options;
+  };
+  assert.ok(choices().some(option => option.v === 'Muon'));
+  assert.ok(!choices().some(option => option.v === 'vendor.lora_muon.LoRA_Muon'));
+  Object.assign(app.form, { optimizer_type: 'Muon', muon_momentum: 0.9, muon_ns_steps: 6,
+    muon_adjust_lr_fn: 'match_rms_adamw', eps: '1e-7', weight_decay: 0,
+    enable_loraplus: true, loraplus_lr_ratio: 2, train_text_embedder: true });
+  app.updateToml();
+  assert.match(app.tomlRaw, /^optimizer_type = "Muon"$/m);
+  assert.match(app.tomlRaw, /^learning_rate = 0.0001$/m);
+  assert.match(app.tomlRaw, /momentum=0.9/);
+  assert.match(app.tomlRaw, /ns_steps=6/);
+  const optimizerArgs = JSON.parse(app.tomlRaw.match(/^optimizer_args = (.+)$/m)[1]);
+  assert.ok(optimizerArgs.includes('adjust_lr_fn="match_rms_adamw"'));
+  const payload = app._collectTrainingPayload();
+  assert.equal(payload.optimizer_type, 'Muon');
+  assert.equal(payload.muon_ns_steps, 6);
+  assert.equal(payload.enable_loraplus, true);
+  Object.assign(app, { rebuildForm() {}, _persistProfileDrafts() {}, _persistProfileFieldSources() {} });
+  await app._applyImportedFlatConfig(payload);
+  assert.equal(app.form.optimizer_type, 'Muon');
+  assert.equal(app.form.muon_momentum, 0.9);
+  for (const profile of ['anima-lora', 'sdxl-lora', 'krea2-lora']) {
+    app.form = app._buildFormDefaults(profile);
+    assert.equal(choices().some(option => option.v === 'Muon'), profile === 'anima-lora', profile);
+  }
+});
+
 test('MOSS multiline prompts stay one sample and raw aliases cannot override the preview switch', () => {
   const { app } = application();
   app.form.network_args_custom = 'train_text_embedder=true\ntrain_llm_adapter=true';

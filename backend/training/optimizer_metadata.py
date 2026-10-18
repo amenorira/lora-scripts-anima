@@ -197,7 +197,8 @@ SD_SCRIPTS_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
         "opt.optimizer_type_Muon",
         GROUP_MATRIX,
         supports_eps=True,
-        train_group="anima",
+        # MOSS native LoRA (including its text embedder) contains only 2-D weights.
+        train_group=("anima", "moss_image"),
     ),
     OptimizerUIEntry(
         LORA_MUON_OPTIMIZER_TYPE,
@@ -372,7 +373,7 @@ def optimizer_groups(profile: str) -> list[dict[str, Any]]:
                 "dk": entry.description_key,
             }
             if entry.train_group is not None:
-                option["group"] = entry.train_group
+                option["group"] = list(entry.train_group) if isinstance(entry.train_group, tuple) else entry.train_group
             options.append(option)
         if options:
             groups.append({"label_key": group_key, "options": options})

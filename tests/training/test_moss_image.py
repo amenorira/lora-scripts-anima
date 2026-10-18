@@ -37,6 +37,32 @@ def moss_config(**overrides):
 
 
 class MossImageConfigTests(unittest.TestCase):
+    def test_muon_configuration_round_trip_and_profile_limits(self):
+        config = moss_config(optimizer_type="Muon", train_text_embedder=True,
+                             enable_loraplus=True, loraplus_lr_ratio=2,
+                             muon_momentum=0.9, muon_ns_steps=6,
+                             muon_adjust_lr_fn="match_rms_adamw", weight_decay=0)
+        self.assertEqual(validate_training_config(config), [])
+        restored = extract_training_form(build_training_config(config, profile_id=PROFILE_ID))
+        self.assertEqual(restored["optimizer_type"], "Muon")
+        adapted, warnings = adapt_config(restored)
+        self.assertFalse(warnings, warnings)
+        self.assertEqual(adapted["optimizer_type"], "Muon")
+        self.assertEqual(float(adapted["learning_rate"]), 1e-4)
+        self.assertIn("momentum=0.9", adapted["optimizer_args"])
+        self.assertIn("ns_steps=6", adapted["optimizer_args"])
+        self.assertIn("adjust_lr_fn='match_rms_adamw'", adapted["optimizer_args"])
+        self.assertIn("weight_decay=0", adapted["optimizer_args"])
+        self.assertIn("train_llm_adapter=True", adapted["network_args"])
+        self.assertIn("loraplus_lr_ratio=2", adapted["network_args"])
+        self.assertNotIn("muon_momentum", adapted)
+
+        for optimizer in ("vendor.lora_muon.LoRA_Muon", "pytorch_optimizer.LoRARite"):
+            with self.subTest(optimizer=optimizer):
+                self.assertTrue(validate_training_config(moss_config(optimizer_type=optimizer)))
+        config.update(model_train_type="sdxl-lora", network_module="networks.lora")
+        self.assertTrue(any("Muon:" in error for error in validate_training_config(config)))
+
     def test_select_choices_and_omitted_defaults_match_the_native_parser(self):
         from backend.training.step_estimator import _sd_dataset_helpers
         _sd_dataset_helpers()
