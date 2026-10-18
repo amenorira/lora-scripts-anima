@@ -9,6 +9,8 @@ tuning writes only to scratch the factory allocated.
 
 import json
 import os
+import threading
+import time
 from pathlib import Path
 
 import torch
@@ -20,7 +22,11 @@ SHORTLIST = 6
 ROW_BUCKET = 4096
 
 _CACHE: dict[tuple, TilePlan] = {}
+# First picks made with tuning off: process-only, never stored.
+_UNTIMED: dict[tuple, TilePlan] = {}
 _LOADED = False
+# set_tuning's value; None reads LYCORIS_KERNEL_TUNE.
+_TUNING: bool | None = None
 
 
 def bucket_tokens(t: int) -> int:
@@ -38,40 +44,82 @@ def _table_path() -> Path:
     return base / "tuning.json"
 
 
+def _read_table(path: Path) -> dict[tuple, TilePlan]:
+    rows: dict[tuple, TilePlan] = {}
+    if not path.exists():
+        return rows
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for row in json.load(fh):
+                rows[tuple(row["key"])] = TilePlan(**row["plan"])
+    except (OSError, ValueError, TypeError, KeyError):
+        pass
+    return rows
+
+
 def _load_table() -> None:
     global _LOADED
     if _LOADED:
         return
     _LOADED = True
-    path = _table_path()
-    if not path.exists():
-        return
-    try:
-        with open(path, encoding="utf-8") as fh:
-            for row in json.load(fh):
-                _CACHE[tuple(row["key"])] = TilePlan(**row["plan"])
-    except (OSError, ValueError, TypeError, KeyError):
-        pass
+    for key, plan in _read_table(_table_path()).items():
+        _CACHE.setdefault(key, plan)
 
 
 def _save_table() -> None:
+    """Merge with what is on disk now, then replace atomically.
+
+    Several processes (ranks, concurrent jobs) share one table: each keeps the
+    rows another wrote since it loaded, and a reader never sees a partial file.
+    """
     path = _table_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        rows = [{"key": list(k), "plan": v.as_dict()} for k, v in _CACHE.items()]
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump(rows, fh, indent=1)
     except OSError:
-        pass
+        return
+    merged = _read_table(path)
+    merged.update(_CACHE)
+    _write_rows(path, merged)
+
+
+REPLACE_TRIES = 20
+REPLACE_WAIT_S = 0.05
+
+
+def _write_rows(path: Path, rows: dict[tuple, TilePlan]) -> bool:
+    """Write the table through a temp file and an atomic replace. On Windows
+    the replace fails while another handle has the table open, so it is retried
+    for up to ``REPLACE_TRIES * REPLACE_WAIT_S`` s; the temp file never
+    outlives the call."""
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(
+                [{"key": list(k), "plan": v.as_dict()} for k, v in rows.items()],
+                fh,
+                indent=1,
+            )
+        for attempt in range(REPLACE_TRIES):
+            try:
+                os.replace(tmp, path)
+                return True
+            except PermissionError:
+                if attempt == REPLACE_TRIES - 1:
+                    return False
+                time.sleep(REPLACE_WAIT_S)
+    except OSError:
+        return False
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+    return False
 
 
 def _time(fn, warmup: int = 10, iters: int = 30, rounds: int = 3) -> float:
-    """Best of ``rounds`` passes, each the min of ``iters`` events.
-
-    The pick is made once and then cached for the life of the table, so a
-    single noisy pass would freeze a plan that is measurably worse: one pass
-    was observed selecting a plan 2x off the shortlist's best.
-    """
+    """Best of ``rounds`` passes, each the min of ``iters`` events, in ms."""
     for _ in range(warmup):
         fn()
     torch.cuda.synchronize()
@@ -89,7 +137,23 @@ def _time(fn, warmup: int = 10, iters: int = 30, rounds: int = 3) -> float:
 
 
 def tuning_enabled() -> bool:
+    """Whether a config missing from the table is timed: the value given to
+    ``set_tuning``, else ``LYCORIS_KERNEL_TUNE`` (``off`` / ``0`` disable;
+    default on)."""
+    if _TUNING is not None:
+        return _TUNING
     return os.environ.get("LYCORIS_KERNEL_TUNE", "on").lower() not in ("off", "0")
+
+
+def set_tuning(enabled: bool | None) -> bool | None:
+    """Turn config timing on or off for this process; ``None`` reads
+    ``LYCORIS_KERNEL_TUNE`` again. Returns the previous value, which
+    ``set_tuning`` restores."""
+    global _TUNING
+    if enabled is not None and not isinstance(enabled, bool):
+        raise TypeError(f"set_tuning expects a bool or None, got {enabled!r}")
+    prev, _TUNING = _TUNING, enabled
+    return prev
 
 
 def tuned(kernel: str, key: tuple, shortlist_fn, runner_factory) -> TilePlan:
@@ -97,18 +161,27 @@ def tuned(kernel: str, key: tuple, shortlist_fn, runner_factory) -> TilePlan:
 
     Cache-first: ``shortlist_fn`` (a thunk, or a plain list) is evaluated only
     on a miss, so steady-state calls never pay the python scoring loop. First
-    pick when timing is disabled, fails everywhere, or the list is singular.
+    pick when the list is singular or timing fails everywhere; with timing
+    disabled, the first pick is kept for the process and timed once timing is
+    enabled.
     """
     full_key = (resolve_device().name, kernel, *key)
     _load_table()
     if full_key in _CACHE:
         return _CACHE[full_key]
+    enabled = tuning_enabled()
+    if not enabled and full_key in _UNTIMED:
+        return _UNTIMED[full_key]
     shortlist = shortlist_fn() if callable(shortlist_fn) else shortlist_fn
     if not shortlist:
         raise ValueError(f"{kernel}: empty shortlist")
-    if len(shortlist) == 1 or not tuning_enabled():
+    if len(shortlist) == 1:
         best = shortlist[0]
         _CACHE[full_key] = best
+        return best
+    if not enabled:
+        best = shortlist[0]
+        _UNTIMED[full_key] = best
         return best
     best, best_ms = None, float("inf")
     for cand in shortlist:
@@ -126,3 +199,4 @@ def tuned(kernel: str, key: tuple, shortlist_fn, runner_factory) -> TilePlan:
 
 def clear() -> None:
     _CACHE.clear()
+    _UNTIMED.clear()
