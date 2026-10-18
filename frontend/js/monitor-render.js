@@ -1491,6 +1491,7 @@ window.monitorRenderMixin = {
     this._updatePreviewLightbox();
     if (!this._lightboxKeyHandler) {
       this._lightboxKeyHandler = (e) => {
+        if (e.defaultPrevented || e.target.closest?.('dialog[open]')) return;
         if (e.key === 'ArrowLeft') { e.preventDefault(); this.previewLightboxNav(-1); }
         else if (e.key === 'ArrowRight') { e.preventDefault(); this.previewLightboxNav(1); }
         else if (e.key === 'Escape') { this.closePreviewLightbox(); }

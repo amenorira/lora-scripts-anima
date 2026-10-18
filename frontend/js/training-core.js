@@ -80,12 +80,9 @@ window.trainingCoreMixin = {
   timestepPreviewOpen: false,
   timestepPreviewData: null,
   timestepPreviewScope: 'base',
-  timestepPreviewPreviousFocus: null,
   lrPreviewOpen: false,
   lrPreviewData: null,
-  lrPreviewPreviousFocus: null,
   lycorisModalOpen: false,
-  lycorisModalPreviousFocus: null,
   subsetTimestepOffsetDrafts: {},
   datasetRepeatDrafts: {},
   datasetRepeatApplying: false,
@@ -747,6 +744,7 @@ window.trainingCoreMixin = {
       self.scheduleOutputPathInfo();
       clearTimeout(self._formSaveTimer);
       self._formSaveTimer = setTimeout(() => {
+        self._formSaveTimer = null;
         self._captureProfileDraft(self._activeTrainType || self.form.model_train_type, self.form);
         self._persistProfileDrafts(r);
         self._persistProfileFieldSources(r);
@@ -1407,13 +1405,13 @@ window.trainingCoreMixin = {
 
   openLycorisConfig() {
     if (this.form.network_module !== 'lycoris.kohya') return;
-    this._openManagedModal('lycorisModalOpen', 'lycorisModalPreviousFocus', '.lycoris-modal-close', () => {
+    this._openManagedModal('lycorisModalOpen', () => {
       this.renderLycorisPanel();
     });
   },
 
   closeLycorisConfig() {
-    this._closeManagedModal('lycorisModalOpen', 'lycorisModalPreviousFocus');
+    this._closeManagedModal('lycorisModalOpen');
   },
 
   lycorisSummary() {
@@ -1458,22 +1456,15 @@ window.trainingCoreMixin = {
     return this.t(option.dk, option.l || text);
   },
 
-  _openManagedModal(stateKey, focusKey, focusSelector, afterOpen) {
-    const activeElement = typeof document !== 'undefined' ? document.activeElement : null;
-    this[focusKey] = activeElement && activeElement !== document.body ? activeElement : null;
+  _openManagedModal(stateKey, afterOpen) {
     this[stateKey] = true;
     this.$nextTick(() => {
       if (typeof afterOpen === 'function') afterOpen();
-      const target = typeof focusSelector === 'function'
-        ? focusSelector()
-        : (typeof document !== 'undefined' ? document.querySelector(focusSelector) : null);
-      target?.focus?.();
     });
   },
 
-  _closeManagedModal(stateKey, focusKey) {
+  _closeManagedModal(stateKey) {
     this[stateKey] = false;
-    this.$nextTick(() => this[focusKey]?.focus?.());
   },
 
   // LyCORIS 面板字段在主表单渲染时追加"非 lycoris.kohya"条件：原生
@@ -2121,7 +2112,7 @@ window.trainingCoreMixin = {
     const _resetSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
     const _undoSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>`;
     const _dotsSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>`;
-    const _menuPopupHtml = `<div class="field-menu-popup"><button type="button" @click="undoField('${dataKey}');_menuOpen=false">${_undoSvg}<span>${this.t('common.undoField')}</span></button><button type="button" @click="resetField('${dataKey}');_menuOpen=false">${_resetSvg}<span>${this.t('common.resetField')}</span></button></div>`;
+    const _menuPopupHtml = `<div class="field-menu-popup" x-ref="menu" x-show="open" :class="{ 'is-positioned': positioned }" :inert="!open" :id="$id('field-menu')" role="menu" :aria-label="t('common.fieldActions')" x-cloak><button type="button" role="menuitem" tabindex="-1" @click="undoField('${dataKey}');close()">${_undoSvg}<span>${this.t('common.undoField')}</span></button><button type="button" role="menuitem" tabindex="-1" @click="resetField('${dataKey}');close()">${_resetSvg}<span>${this.t('common.resetField')}</span></button></div>`;
 
     // ── Conditional display ──
     // LyCORIS 面板字段在主表单里只对原生模块（非 lycoris.kohya）显示；
@@ -2247,8 +2238,8 @@ window.trainingCoreMixin = {
       ? `'${String(field.default).replace(/'/g, '\\x27')}'`
       : 'undefined';
     const _filledExpr = `window.FILLED_INDICATOR_KEYS.has(${_filledKey}) && form.${dataKey} !== '' && form.${dataKey} !== null && form.${dataKey} !== undefined && String(form.${dataKey}) !== String(${_filledDefaultLit})`;
-    const fieldMenuHtml = isStaticReadonly ? '' : `<div class="field-menu-wrap">
-          <button type="button" class="btn-menu" :aria-label="t('common.fieldActions')" tabindex="-1">${_dotsSvg}</button>
+    const fieldMenuHtml = isStaticReadonly ? '' : `<div class="field-menu-wrap" x-data="actionMenu" x-id="['field-menu']" @keydown="key($event)" @click.outside="close(false)" @pointerenter="hoverEnter($event)" @pointerleave="hoverLeave()" @focusout="focusOut($event)">
+          <button type="button" class="btn-menu" x-ref="trigger" :aria-label="t('common.fieldActions')" aria-haspopup="menu" :aria-expanded="open" :aria-controls="$id('field-menu')" @click="toggle()">${_dotsSvg}</button>
           ${_menuPopupHtml}
         </div>`;
     const staticReadonlyClass = isStaticReadonly ? ' field-readonly' : '';
@@ -2458,13 +2449,13 @@ window.trainingCoreMixin = {
         <button type="button" class="btn-icon" @click="openTimestepPreview(${nameExpr})"${disabled} title="${this.escapeAttr(this.t('timestepOffset.previewSubset'))}" aria-label="${this.escapeAttr(this.t('timestepOffset.previewSubset'))}">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19V3"/></svg>
         </button>
-        <div class="field-menu-wrap subset-timestep-menu">
-          <button type="button" class="btn-menu" :aria-label="t('common.fieldActions')" title="${this.escapeAttr(this.t('common.fieldActions'))}">
+        <div class="field-menu-wrap subset-timestep-menu" x-data="actionMenu" x-id="['field-menu']" @keydown="key($event)" @click.outside="close(false)" @pointerenter="hoverEnter($event)" @pointerleave="hoverLeave()" @focusout="focusOut($event)">
+          <button type="button" class="btn-menu" x-ref="trigger" :aria-label="t('common.fieldActions')" title="${this.escapeAttr(this.t('common.fieldActions'))}" aria-haspopup="menu" :aria-expanded="open" :aria-controls="$id('field-menu')" @click="toggle()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
           </button>
-          <div class="field-menu-popup">
-            <button type="button" @click="undoSubsetTimestepOffset(${nameExpr})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg><span>${this.esc(this.t('common.undoField'))}</span></button>
-            <button type="button" @click="resetSubsetTimestepOffset(${nameExpr})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg><span>${this.esc(this.t('common.resetField'))}</span></button>
+          <div class="field-menu-popup" x-ref="menu" x-show="open" :class="{ 'is-positioned': positioned }" :inert="!open" :id="$id('field-menu')" role="menu" :aria-label="t('common.fieldActions')" x-cloak>
+            <button type="button" role="menuitem" tabindex="-1" @click="undoSubsetTimestepOffset(${nameExpr});close()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg><span>${this.esc(this.t('common.undoField'))}</span></button>
+            <button type="button" role="menuitem" tabindex="-1" @click="resetSubsetTimestepOffset(${nameExpr});close()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg><span>${this.esc(this.t('common.resetField'))}</span></button>
           </div>
         </div>
       </div>`;
@@ -2966,11 +2957,11 @@ window.trainingCoreMixin = {
     const available = new Set(this.timestepPreviewOptions().map(option => option.value));
     this.timestepPreviewScope = available.has(scope) ? scope : (available.has(this.timestepPreviewScope) ? this.timestepPreviewScope : 'base');
     this.timestepPreviewData = this._buildTimestepPreview(null, this.timestepPreviewScope);
-    this._openManagedModal('timestepPreviewOpen', 'timestepPreviewPreviousFocus', '.timestep-preview-close');
+    this._openManagedModal('timestepPreviewOpen');
   },
 
   closeTimestepPreview() {
-    this._closeManagedModal('timestepPreviewOpen', 'timestepPreviewPreviousFocus');
+    this._closeManagedModal('timestepPreviewOpen');
   },
 
   refreshTimestepPreview() {
@@ -3609,6 +3600,7 @@ window.trainingCoreMixin = {
         row.setAttribute('data-readonly-if-active', '1');
         row.classList.add('field-readonly');
         row.querySelectorAll('input, textarea, select').forEach(el => { el.disabled = true; });
+        row.querySelectorAll('.btn-menu, .anima-select-trigger').forEach(el => { el.disabled = true; });
         row.querySelectorAll('.stepper button').forEach(el => { el.disabled = true; });
         row.querySelectorAll('.field-actions .btn-icon').forEach(el => { el.disabled = true; el.style.pointerEvents = 'none'; });
         row.querySelectorAll('.anima-select').forEach(sel => { sel.style.pointerEvents = 'none'; sel.style.opacity = '0.55'; });
@@ -3628,6 +3620,7 @@ window.trainingCoreMixin = {
         row.removeAttribute('data-readonly-if-active');
         row.classList.remove('field-readonly');
         row.querySelectorAll('input, textarea, select').forEach(el => { el.disabled = false; });
+        row.querySelectorAll('.btn-menu, .anima-select-trigger').forEach(el => { el.disabled = false; });
         row.querySelectorAll('.stepper button').forEach(el => { el.disabled = false; });
         row.querySelectorAll('.field-actions .btn-icon').forEach(el => { el.disabled = false; el.style.pointerEvents = ''; });
         row.querySelectorAll('.anima-select').forEach(sel => { sel.style.pointerEvents = ''; sel.style.opacity = ''; });
@@ -4326,7 +4319,7 @@ window.trainingCoreMixin = {
       this.$nextTick(() => {
         if (requestSeq !== this._pickerRequestSeq) return;
         const input = document.getElementById('pickerFilterInput');
-        if (input) input.focus();
+        if (input && document.activeElement === document.querySelector('.picker-header .btn-icon')) input.focus();
         const active = document.querySelector('.picker-row.is-current');
         if (active) active.scrollIntoView({ block: 'center' });
       });

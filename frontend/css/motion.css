@@ -1,71 +1,100 @@
-/* Shared motion, independent of theme appearance.
-   Menu parameters match VS Code's modern contextview.ts:
-   250ms scale(.97) entrance / 150ms scale(.99) exit. */
+/* Shared timings and state transitions, independent of theme appearance. */
 :root {
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring: var(--ease-out);
   --duration-fast: 80ms;
   --duration-normal: 120ms;
   --duration-slow: 150ms;
+  --duration-menu-enter: 250ms;
+  --duration-menu-exit: 150ms;
+  --duration-dialog-enter: 180ms;
+  --duration-dialog-exit: 150ms;
+  --duration-toast-enter: 180ms;
+  --duration-toast-exit: 150ms;
+  --menu-scale-enter: .97;
+  --menu-scale-exit: .99;
 }
 @keyframes menu-open {
-  from { opacity: 0; transform: scale(0.97); }
+  from { opacity: 0; transform: scale(var(--menu-scale-enter)); }
   to { opacity: 1; transform: scale(1); }
 }
 .anima-select-menu-positioned {
-  animation: menu-open 250ms var(--ease-out) backwards;
+  animation: menu-open var(--duration-menu-enter) var(--ease-out) backwards;
 }
 /* x-show menus retain display until exit ends; @starting-style handles entrance.
    x-if selects use anima-select.js to defer DOM removal for their exit. */
-.sidebar-dropdown-menu, .preview-select-menu {
-  opacity: 0; transform: scale(0.99);
+.sidebar-dropdown-menu, .preview-select-menu, .field-menu-popup {
+  opacity: 0; transform: scale(var(--menu-scale-exit));
   transform-origin: bottom left;
-  transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out),
-    display 150ms allow-discrete;
+  transition: opacity var(--duration-menu-exit) var(--ease-out), transform var(--duration-menu-exit) var(--ease-out),
+    display var(--duration-menu-exit) allow-discrete;
 }
 .sidebar-dropdown.open .sidebar-dropdown-menu,
-.preview-select-menu:not([style*="display: none"]) {
-  opacity: 1; transform: scale(1); transition-duration: 250ms;
+.preview-select-menu:not([style*="display: none"]),
+.field-menu-popup.is-positioned:not([style*="display: none"]) {
+  opacity: 1; transform: scale(1); transition-duration: var(--duration-menu-enter);
 }
 .sidebar-dropdown:not(.open) .sidebar-dropdown-menu,
-.preview-select-menu[style*="display: none"] { pointer-events: none; }
+.preview-select-menu[style*="display: none"],
+.field-menu-popup[style*="display: none"],
+.field-menu-popup:not(.is-positioned) { pointer-events: none; }
 @starting-style {
   .sidebar-dropdown.open .sidebar-dropdown-menu,
-  .preview-select-menu:not([style*="display: none"]) { opacity: 0; transform: scale(0.97); }
+  .preview-select-menu:not([style*="display: none"]),
+  .field-menu-popup.is-positioned:not([style*="display: none"]) { opacity: 0; transform: scale(var(--menu-scale-enter)); }
 }
 /* Restore ComfyUI's short fade for content, without movement or scaling.
    The outgoing page stays visible until replacement; no separate fade-out. */
 .main-content.route-enter > div,
 .m-tab-panel.active,
 .tagger-batch-layout, .tagger-single-layout,
-.env-panel-in { animation: fade-in 150ms cubic-bezier(0, 0, 0.2, 1) backwards; }
+.env-panel-in { animation: fade-in var(--duration-slow) cubic-bezier(0, 0, 0.2, 1) backwards; }
 /* Animate only the outer page on navigation. Persistent tab panels animate on
    activation, never when their child content is refreshed. */
 .route-enter :is(.m-tab-panel, .tagger-batch-layout, .tagger-single-layout, .env-panel-in) {
   animation-duration: 0s;
 }
-/* Dialogs use the menu's gentle scale, with a slightly quicker entrance.
+/* Native dialogs own focus containment and background isolation.
    The resting transform is none so fixed descendants retain viewport anchoring. */
-.modal-overlay {
+dialog.modal-overlay {
   opacity: 0;
-  transition: opacity 150ms var(--ease-out), display 150ms allow-discrete;
+  transition: opacity var(--duration-dialog-exit) var(--ease-out),
+    display var(--duration-dialog-exit) allow-discrete, overlay var(--duration-dialog-exit) allow-discrete;
 }
-.modal-overlay > .modal {
-  opacity: 0; transform: scale(0.99);
-  transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out);
+dialog.modal-overlay > .modal {
+  opacity: 0; transform: scale(var(--menu-scale-exit));
+  transition: opacity var(--duration-dialog-exit) var(--ease-out), transform var(--duration-dialog-exit) var(--ease-out);
 }
-.modal-overlay:not([style*="display: none"]) { opacity: 1; }
-.modal-overlay:not([style*="display: none"]) > .modal {
-  opacity: 1; transform: none; transition-duration: 180ms;
+dialog.modal-overlay[open] { opacity: 1; }
+dialog.modal-overlay[open] > .modal {
+  opacity: 1; transform: none; transition-duration: var(--duration-dialog-enter);
 }
-.modal-overlay[style*="display: none"] { pointer-events: none; }
+dialog.modal-overlay:not([open]) { pointer-events: none; }
 @starting-style {
-  .modal-overlay:not([style*="display: none"]) { opacity: 0; }
-  .modal-overlay:not([style*="display: none"]) > .modal { opacity: 0; transform: scale(0.97); }
+  dialog.modal-overlay[open] { opacity: 0; }
+  dialog.modal-overlay[open] > .modal { opacity: 0; transform: scale(var(--menu-scale-enter)); }
 }
-/* Keep feedback short and consistent; functional spinners remain independent. */
+/* Feedback changes paint, never the position or size of a click target. */
+.toast { animation: toast-in var(--duration-toast-enter) var(--ease-out) both; }
+.toast.out { animation: toast-out var(--duration-toast-exit) var(--ease-out) forwards; pointer-events: none; }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes toast-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-4px); }
+}
 .sidebar-item:active { transform: none; }
-.monitor-tab-indicator, .env-tab-indicator { transition-duration: 180ms, 180ms, var(--duration-fast); }
+:is(.btn-icon, .bottom-btn, .btn-menu, .toast-close):active:not(:disabled) {
+  background: var(--active-overlay); transition-duration: 50ms;
+}
+.btn:active:not(:disabled) { opacity: .9; transition-duration: 50ms; }
+:is(.anima-select-trigger, .preview-select-trigger):focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+.monitor-tab-indicator, .env-tab-indicator { transition-duration: var(--duration-dialog-enter), var(--duration-dialog-enter), var(--duration-fast); }
 .anima-select-chevron { transition: none; }
 .toggle:active input:not(:disabled) + .toggle-track .toggle-thumb { width: 16px; }
 .toggle:active input:checked:not(:disabled) + .toggle-track .toggle-thumb { transform: translateX(16px); }

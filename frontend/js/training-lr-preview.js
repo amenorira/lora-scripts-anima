@@ -443,11 +443,11 @@ window.trainingLrPreviewMixin = {
   openLrPreview() {
     if (String(this.form?.model_train_type || '') === 'krea2-lora') return;
     this.lrPreviewData = this._buildLrPreview(null);
-    this._openManagedModal('lrPreviewOpen', 'lrPreviewPreviousFocus', '.lr-preview-close');
+    this._openManagedModal('lrPreviewOpen');
   },
 
   closeLrPreview() {
-    this._closeManagedModal('lrPreviewOpen', 'lrPreviewPreviousFocus');
+    this._closeManagedModal('lrPreviewOpen');
   },
 
   refreshLrPreview() {

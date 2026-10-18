@@ -1454,6 +1454,13 @@
 		"diagramAlt": "Weight decomposition diagram for the current configuration",
 		"footnote": "Shapes and counts come from the network constructed for this configuration. File estimates include tensors and their index, excluding variable training metadata and optimizer checkpoints. Shapes use a logarithmic scale; numeric dimensions are exact."
 	},
+	"notifications": {
+		"details": "Details",
+		"copy": "Copy details",
+		"copied": "Copied",
+		"copyFailed": "Copy failed; select and copy the details",
+		"dismiss": "Dismiss notification"
+	},
 	"common": {
 			"skipToContent": "Skip to main content",
 			"pageLoading": "Page loading: {percent}%",
@@ -1491,7 +1498,7 @@
 		"krea2ParameterPreview": "Krea 2 Parameter Preview",
 		"collapse": "Collapse",
 		"expand": "Expand",
-		"panelResizeHint": "Drag to resize; double-click to reset",
+		"panelResizeHint": "Drag or use the arrow keys to resize; double-click to reset",
 		"requestFailed": "Request failed",
 		"failed": "Failed",
 		"invalidToml": "No valid TOML keys",

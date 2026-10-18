@@ -115,7 +115,7 @@ window.trainingConfigIoMixin = {
         this._trainingDocumentId = d.data.document_id || null;
         this.toast(this.t('common.imported'));
       } catch (err) {
-        this.toast(this.t('common.parseError') + ': ' + err.message);
+        this.toast(this.t('common.parseError') + ': ' + err.message, 'error');
       }
     };
     reader.readAsText(file);

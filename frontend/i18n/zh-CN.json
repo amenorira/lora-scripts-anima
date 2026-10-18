@@ -1454,6 +1454,13 @@
 		"diagramAlt": "当前配置的权重分解示意图",
 		"footnote": "形状和参数来自当前配置实际构造的网络。文件估算包含张量与索引，不含可变训练元数据和优化器断点。图形采用对数比例，尺寸以数字为准。"
 	},
+	"notifications": {
+		"details": "查看详情",
+		"copy": "复制详情",
+		"copied": "已复制",
+		"copyFailed": "复制失败，请在详情中选择文字复制",
+		"dismiss": "关闭通知"
+	},
 	"common": {
 			"skipToContent": "跳到主要内容",
 			"pageLoading": "页面加载：{percent}%",
@@ -1491,7 +1498,7 @@
 		"krea2ParameterPreview": "Krea 2 参数预览",
 		"collapse": "收起",
 		"expand": "展开",
-		"panelResizeHint": "拖拽调整宽度，双击恢复默认",
+		"panelResizeHint": "拖拽或用左右方向键调整宽度，双击恢复默认",
 		"requestFailed": "请求失败",
 		"failed": "失败",
 		"invalidToml": "无有效TOML配置",

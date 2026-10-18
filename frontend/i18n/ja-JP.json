@@ -1454,6 +1454,13 @@
 		"diagramAlt": "現在の設定に基づく重みの分解図",
 		"footnote": "形状と個数は、この設定で構築したネットワークから取得します。サイズ推定にはテンソルと索引を含み、可変の学習メタデータとオプティマイザのチェックポイントは含みません。図の形状は対数スケールですが、寸法の数値は正確です。"
 	},
+	"notifications": {
+		"details": "詳細を表示",
+		"copy": "詳細をコピー",
+		"copied": "コピーしました",
+		"copyFailed": "コピーできません。詳細のテキストを選択してコピーしてください",
+		"dismiss": "通知を閉じる"
+	},
 	"common": {
 			"skipToContent": "メインコンテンツへ移動",
 			"pageLoading": "ページの読み込み：{percent}%",
@@ -1491,7 +1498,7 @@
 		"krea2ParameterPreview": "Krea 2 パラメータのプレビュー",
 		"collapse": "折りたたむ",
 		"expand": "展開",
-		"panelResizeHint": "ドラッグでサイズ変更・ダブルクリックでリセット",
+		"panelResizeHint": "ドラッグまたは左右キーで幅を変更・ダブルクリックでリセット",
 		"requestFailed": "リクエストが失敗しました",
 		"failed": "失敗",
 		"invalidToml": "有効な TOML のキーがありません",

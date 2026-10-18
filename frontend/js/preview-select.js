@@ -13,15 +13,21 @@ document.addEventListener('alpine:init', () => {
       };
       this.$watch('open', open => {
         if (open) window.addEventListener('scroll', this._scrollHandler, true);
-        else window.removeEventListener('scroll', this._scrollHandler, true);
+        else {
+          window.removeEventListener('scroll', this._scrollHandler, true);
+          window.AnimaUI?.unregisterPopup(this.$el);
+        }
       });
     },
     destroy() {
+      window.AnimaUI?.unregisterPopup(this.$el);
       window.removeEventListener('scroll', this._scrollHandler, true);
       if (this._positionFrame !== null) cancelAnimationFrame(this._positionFrame);
     },
     get selected() { return this.options.find(option => option.value === this.value) || this.options[0]; },
     show() {
+      window.AnimaUI?.settleDialog(this.$el);
+      window.AnimaUI?.registerPopup(this.$el, () => { this.open = false; });
       this.positionMenu(true);
       this.active = Math.max(0, this.options.findIndex(option => option.value === this.value));
       this.open = true;
