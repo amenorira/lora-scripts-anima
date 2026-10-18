@@ -375,7 +375,7 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "max_train_epochs", "type": "number", "default": 10, "section": "training", "desc_key": "field.max_train_epochs", "hint_key": "field.max_train_epochsHint", "target": "toml", "min": 1, "step": 1},
 {"key": "train_batch_size", "type": "number", "default": 1, "section": "training", "desc_key": "field.train_batch_size", "target": "toml", "min": 1, "hint_key": "field.train_batch_sizeHint", "omit_default": True},
 {"key": "gradient_accumulation_steps", "type": "number", "default": 1, "section": "training", "desc_key": "field.gradient_accumulation_steps", "target": "toml", "min": 1, "hint_key": "field.gradient_accumulation_stepsHint", "auto_value": [{"watch": "optimizer_type", "when": EMOSENS_OPTIMIZER_TYPE, "set": 1}], "readonly_if": {"key": "optimizer_type", "eq": EMOSENS_OPTIMIZER_TYPE, "reason_key": "field.gradient_accumulation_steps_emosensLocked"}, "omit_default": True},
-{"key": "gradient_checkpointing", "type": "toggle", "default": False, "section": "training", "desc_key": "field.gradient_checkpointing", "target": "toml", "hint_key": "field.gradient_checkpointingHint", "omit_default": True},
+{"key": "gradient_checkpointing", "type": "toggle", "default": False, "default_by_group": {"anima": True}, "section": "training", "desc_key": "field.gradient_checkpointing", "target": "toml", "hint_key": "field.gradient_checkpointingHint", "omit_default": True},
 {"key": "seed", "type": "number", "default": 1337, "section": "training", "desc_key": "field.seed", "target": "toml"},
 {"key": "mixed_precision", "type": "select", "default": "bf16", "section": "training", "desc_key": "field.mixed_precision", "hint_key": "field.mixed_precisionHint", "target": "toml", "options": [{"v": "bf16", "l": "bf16", "dk": "opt.mixed_precision_bf16"}, {"v": "fp16", "l": "fp16", "dk": "opt.mixed_precision_fp16"}, {"v": "no", "l": "no", "dk": "opt.mixed_precision_no"}]},
     # full_bf16: 将模型 + Network 全部参数 cast 为 bf16，消除 autocast 与 compile/LoRA 交互的 dtype 不一致问题。
@@ -541,8 +541,9 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "no_half_vae", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.no_half_vae", "target": "toml", "group": "sdxl", "omit_default": True},
 {"key": "lowram", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.lowram", "target": "toml", "omit_default": True},
     # Anima: VAE performance
+    {"key": "qwen_image_vae_2d", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.qwen_image_vae_2d", "hint_key": "field.qwen_image_vae_2dHint", "target": "toml", "group": "anima"},
     {"key": "vae_chunk_size", "type": "number", "default": "", "section": "performance", "desc_key": "field.vae_chunk_size", "target": "toml", "min": 2, "step": 2, "group": "anima", "hint_key": "field.vae_chunk_sizeHint"},
-    {"key": "vae_disable_cache", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.vae_disable_cache", "target": "toml", "group": "anima"},
+    {"key": "vae_disable_cache", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.vae_disable_cache", "target": "toml", "group": "anima", "readonly_if": {"key": "qwen_image_vae_2d", "eq": True, "reason_key": "field.vae_disable_cache2dLocked"}},
     {"key": "vae_batch_size", "type": "number", "default": "", "section": "performance", "desc_key": "field.vae_batch_size", "target": "toml", "min": 1, "step": 1, "hint_key": "field.vae_batch_sizeHint"},
     {"key": "blocks_to_swap", "type": "number", "section": "performance", "desc_key": "field.blocks_to_swap", "target": "toml", "min": 0, "max": 26, "step": 1, "group": "anima", "hint_key": "field.blocks_to_swapHint"},
     # 两种激活卸载与换块互斥，由 option_contracts 在校验和适配入口共同检查。
@@ -560,7 +561,7 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "compile_cache_size_limit", "type": "number", "default": "", "section": "performance", "desc_key": "field.compile_cache_size_limit", "target": "toml", "group": "anima", "show_if": {"key": "compile", "eq": True}, "hint_key": "field.compile_cache_size_limitHint"},
     # DataLoader
     {"key": "persistent_data_loader_workers", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.persistent_data_loader_workers", "target": "toml", "hint_key": "field.persistent_data_loader_workersHint", "readonly_if": {"key": "max_data_loader_n_workers", "eq": 0, "reason_key": "field.persistent_data_loader_workersLocked"}},
-    {"key": "max_data_loader_n_workers", "type": "number", "default": "", "section": "performance", "desc_key": "field.max_data_loader_n_workers", "target": "toml", "min": 0, "step": 1, "hint_key": "field.max_data_loader_n_workersHint"},
+    {"key": "max_data_loader_n_workers", "type": "number", "default": "", "default_by_group": {"anima": 2}, "section": "performance", "desc_key": "field.max_data_loader_n_workers", "target": "toml", "min": 0, "step": 1, "hint_key": "field.max_data_loader_n_workersHint"},
 # ── Save ──
 {"key": "output_name", "type": "text", "default": "my_lora", "section": "save", "desc_key": "field.output_name", "target": "toml", "required": True},
 {"key": "output_dir", "type": "text", "default": "./output", "section": "save", "desc_key": "field.output_dir", "target": "toml", "role": "file-folder", "required": True},
