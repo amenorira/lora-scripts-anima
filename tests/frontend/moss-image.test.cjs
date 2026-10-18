@@ -82,7 +82,11 @@ test('MOSS starts with isolated models, native LoRA and its own training and sam
   assert.equal(app.form.discrete_flow_shift, 1);
   assert.equal(app.form.weighting_scheme, 'logit_normal');
   assert.equal(app.form.network_dim, 16);
-  assert.equal(app.form.network_alpha, 16);
+  assert.equal(app.form.network_alpha, 1);
+  assert.equal(app.form.learning_rate, '1e-4');
+  assert.equal(app.form.unet_lr, '');
+  assert.equal(app.form.max_data_loader_n_workers, 2);
+  assert.equal(app.form.persistent_data_loader_workers, true);
   assert.equal(app.form.enable_multiline_caption, true);
   assert.equal(app.form.train_text_embedder, false);
   assert.equal(app.form.convrot_int8, false);
@@ -98,6 +102,8 @@ test('MOSS starts with isolated models, native LoRA and its own training and sam
     assert.equal(keys.has(key), false, key);
   }
   assert.equal(app._buildFormDefaults('anima-lora').network_module, 'networks.lora_anima');
+  assert.equal(app._buildFormDefaults('anima-lora').network_alpha, 32);
+  assert.equal(app._buildFormDefaults('sdxl-lora').network_alpha, 32);
   assert.equal(app._buildFormDefaults('krea2-lora').network_module, 'networks.lora_krea2');
 });
 
@@ -113,11 +119,18 @@ test('MOSS preview and launch preserve explicit distribution defaults and disabl
   assert.match(app.tomlRaw, /^sample_uncond_skip_layers = ""$/m);
   assert.match(app.tomlRaw, /^logit_mean = -1.09$/m);
   assert.match(app.tomlRaw, /^logit_std = 0.95$/m);
+  assert.match(app.tomlRaw, /^network_alpha = 1$/m);
+  assert.match(app.tomlRaw, /^learning_rate = 0.0001$/m);
+  assert.match(app.tomlRaw, /^max_data_loader_n_workers = 2$/m);
   assert.match(app.tomlRaw, /train_llm_adapter=true/);
   assert.match(app.tomlRaw, /rank_dropout=0.1/);
   const payload = app._collectTrainingPayload();
   assert.equal(payload.sample_uncond_skip_layers, '');
   assert.equal(payload.logit_mean, -1.09);
+  assert.equal(payload.network_alpha, 1);
+  assert.equal(Number(payload.learning_rate), 1e-4);
+  assert.equal(payload.unet_lr, undefined);
+  assert.equal(payload.max_data_loader_n_workers, 2);
   assert.equal(payload.positive_prompts, 'first line\nsecond line');
   assert.equal(payload.train_text_embedder, true);
   assert.equal(payload.qwen3, undefined);
@@ -183,6 +196,7 @@ test('restored native MOSS arguments survive form import and the next launch pay
   Object.assign(app, { rebuildForm() {}, _persistProfileDrafts() {}, _persistProfileFieldSources() {} });
   await app._applyImportedFlatConfig({ model_train_type: 'moss-image-lora',
     train_text_embedder: true, rank_dropout: 0.2, enable_loraplus: true, loraplus_lr_ratio: 4,
+    network_alpha: 16, learning_rate: '5e-5', unet_lr: '3e-5', max_data_loader_n_workers: 0,
     network_args_custom: 'network_reg_dims=layers.*=8' });
   assert.match(app.tomlRaw, /train_llm_adapter=true/);
   assert.match(app.tomlRaw, /rank_dropout=0.2/);
@@ -192,6 +206,13 @@ test('restored native MOSS arguments survive form import and the next launch pay
   assert.equal(payload.train_text_embedder, true);
   assert.equal(payload.rank_dropout, 0.2);
   assert.equal(payload.loraplus_lr_ratio, 4);
+  assert.equal(payload.network_alpha, 16);
+  assert.equal(Number(payload.learning_rate), 5e-5);
+  assert.equal(Number(payload.unet_lr), 3e-5);
+  assert.equal(payload.max_data_loader_n_workers, 0);
+  const restored = app._profileFormFromDraft('moss-image-lora', app._buildFormDefaults('moss-image-lora'), app.form);
+  assert.equal(restored.network_alpha, 16);
+  assert.equal(restored.learning_rate, '5e-5');
 });
 
 test('importing a component-only LoRA+ ratio keeps the global multiplier unset', async () => {

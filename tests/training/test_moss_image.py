@@ -106,6 +106,11 @@ class MossImageConfigTests(unittest.TestCase):
         self.assertTrue(any(value.startswith("loraplus_lr_ratio=") for value in adapted["network_args"]))
         self.assertEqual(adapted["sample_uncond_skip_layers"], "")
         self.assertEqual(adapted["logit_mean"], -1.09)
+        self.assertEqual(adapted["network_dim"], 16)
+        self.assertEqual(adapted["network_alpha"], 1)
+        self.assertEqual(float(adapted["learning_rate"]), 1e-4)
+        self.assertNotIn("unet_lr", adapted)
+        self.assertEqual(adapted["max_data_loader_n_workers"], 2)
 
         from backend.training.step_estimator import _sd_dataset_helpers
         _sd_dataset_helpers()
@@ -137,6 +142,9 @@ class MossImageConfigTests(unittest.TestCase):
                     "convrot_int8_text_encoder", "convrot_int8_bwd", "sample_uncond_skip_layers"):
             with self.subTest(key=key):
                 self.assertEqual(getattr(loaded, key), config[key])
+        self.assertEqual(loaded.network_alpha, 1)
+        self.assertEqual(float(loaded.learning_rate), 1e-4)
+        self.assertEqual(loaded.max_data_loader_n_workers, 2)
 
     def test_anima_and_sdxl_parameters_do_not_leak(self):
         adapted, _ = adapt_config(moss_config(qwen3="anima.safetensors", qwen3_max_token_length=512,
@@ -218,10 +226,12 @@ class MossImageConfigTests(unittest.TestCase):
 
     def test_yaml_round_trip_preserves_profile_and_empty_skip_layers(self):
         original = moss_config(enable_preview=True, sample_uncond_skip_layers="", train_text_embedder=True,
+                               network_alpha=16, learning_rate="5e-5", unet_lr="3e-5", max_data_loader_n_workers=0,
                                convrot_int8=True, positive_prompts="第一行\n第二行")
         restored = extract_training_form(build_training_config(original, profile_id=PROFILE_ID))
         for key in ("sample_uncond_skip_layers", "train_text_embedder", "convrot_int8",
-                    "positive_prompts", "text_encoder", "model_train_type", "moss_max_token_length"):
+                    "positive_prompts", "text_encoder", "model_train_type", "moss_max_token_length",
+                    "network_alpha", "learning_rate", "unet_lr", "max_data_loader_n_workers"):
             self.assertEqual(restored[key], original[key])
 
     def test_sampling_preserves_multiline_and_layout_delimiters(self):

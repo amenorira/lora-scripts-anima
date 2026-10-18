@@ -64,7 +64,9 @@ SHARED_FIELDS = {
 }
 DEFAULTS = {
     "pretrained_model_name_or_path": "", "vae": "", "network_module": "networks.lora_generic",
-    "gradient_checkpointing": True, "network_dim": 16, "network_alpha": 16,
+    # Keep the guide's alpha/LR pair together; higher alpha needs LR retuning.
+    "gradient_checkpointing": True, "network_dim": 16, "network_alpha": 1,
+    "learning_rate": "1e-4", "max_data_loader_n_workers": 2,
     "timestep_sampling": "sigma", "weighting_scheme": "logit_normal",
     "logit_mean": -1.09, "logit_std": 0.95, "lr_scheduler": "constant",
     "sample_width": 1024, "sample_height": 1024, "sample_steps": 50,
