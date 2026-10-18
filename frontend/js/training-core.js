@@ -108,6 +108,7 @@ window.trainingCoreMixin = {
 
   trainTypes: [
     { v: 'anima-lora', l: 'Anima LoRA', dk: 'opt.model_train_type_anima-lora' },
+    { v: 'moss-image-lora', l: 'MOSS-Image LoRA', dk: 'opt.model_train_type_moss-image-lora' },
     { v: 'sdxl-lora', l: 'SDXL LoRA', dk: 'opt.model_train_type_sdxl-lora' },
     { v: 'krea2-lora', l: 'Krea 2 LoRA (musubi-tuner)', dk: 'opt.model_train_type_krea2-lora' },
   ],
@@ -252,9 +253,8 @@ window.trainingCoreMixin = {
 
     // A runtime profile owns its network module. Krea's module is musubi
     // specific and must never inherit an sd-scripts or LyCORIS selection.
-    const targetMod = v === 'anima-lora'
-      ? 'networks.lora_anima'
-      : (v === 'krea2-lora' ? 'networks.lora_krea2' : 'networks.lora');
+    const targetMod = v === 'moss-image-lora' && ['networks.lora_generic', 'networks.loha', 'networks.lokr'].includes(this.form.network_module)
+      ? this.form.network_module : this._defaultNetworkModule(v);
     if (this.form.network_module !== targetMod) this.form.network_module = targetMod;
     this._syncKrea2CacheDir();
     this._captureProfileDraft(v, this.form, newDefaults);
@@ -279,6 +279,14 @@ window.trainingCoreMixin = {
   },
 
   // 构建指定训练类型的字段默认值字典（与 buildTrainForm 共用逻辑）。
+  _defaultNetworkModule(trainType) {
+    return ({
+      'anima-lora': 'networks.lora_anima',
+      'moss-image-lora': 'networks.lora_generic',
+      'krea2-lora': 'networks.lora_krea2',
+    })[trainType] || 'networks.lora';
+  },
+
   _buildFormDefaults(trainType) {
     const defaults = {};
     const allSections = window.getVisibleSections(trainType);
@@ -298,6 +306,7 @@ window.trainingCoreMixin = {
     defaults.model_train_type = trainType;
     // Adjust network_module default based on train type
     if (trainType === 'anima-lora') defaults.network_module = 'networks.lora_anima';
+    else if (trainType === 'moss-image-lora') defaults.network_module = 'networks.lora_generic';
     else if (trainType === 'krea2-lora') defaults.network_module = 'networks.lora_krea2';
     return defaults;
   },
@@ -695,10 +704,14 @@ window.trainingCoreMixin = {
     if (this.form.model_train_type === 'krea2-lora') {
       this.form.network_module = 'networks.lora_krea2';
       this._applyKrea2ModelDefaults(this.form, defaults);
+    } else if (this.form.model_train_type === 'moss-image-lora' && !['networks.lora_generic', 'networks.loha', 'networks.lokr'].includes(this.form.network_module)) {
+      this.form.network_module = 'networks.lora_generic';
     } else if (this.form.model_train_type === 'anima-lora' && this.form.network_module === 'networks.lora') {
       this.form.network_module = 'networks.lora_anima';
-    } else if (this.form.model_train_type !== 'anima-lora' && this.form.network_module === 'networks.lora_anima') {
+    } else if (this.form.model_train_type !== 'anima-lora' && ['networks.lora_anima', 'networks.lora_generic'].includes(this.form.network_module)) {
+      if (this.form.model_train_type !== 'moss-image-lora') {
       this.form.network_module = 'networks.lora';
+      }
     }
     this.formDefaults = { ...defaults };
     this.regApplyPendingTrainingPath?.();
@@ -1289,9 +1302,9 @@ window.trainingCoreMixin = {
         defaults.dataset_cache_dir = cacheDir;
       }
       this._normalizeProfileSelectValues(trainType, defaults, warmForm);
-      warmForm.network_module = trainType === 'anima-lora'
-        ? 'networks.lora_anima'
-        : (trainType === 'krea2-lora' ? 'networks.lora_krea2' : 'networks.lora');
+      if (trainType !== 'moss-image-lora' || !['networks.lora_generic', 'networks.loha', 'networks.lokr'].includes(warmForm.network_module)) {
+        warmForm.network_module = this._defaultNetworkModule(trainType);
+      }
       this.form = warmForm;
       this.formDefaults = { ...defaults };
       this._activeTrainType = trainType;
@@ -1926,7 +1939,7 @@ window.trainingCoreMixin = {
 
   _resolveFieldBaseHintKey(field, trainType) {
     if (!field || !field.hintKey) return '';
-    const suffix = trainType === 'anima-lora' ? '_anima' : (trainType === 'sdxl-lora' ? '_sdxl' : '');
+    const suffix = trainType === 'moss-image-lora' ? '_moss' : (trainType === 'anima-lora' ? '_anima' : (trainType === 'sdxl-lora' ? '_sdxl' : ''));
     if (suffix) {
       const specificKey = field.hintKey + suffix;
       const specific = this.t(specificKey);
@@ -1991,7 +2004,7 @@ window.trainingCoreMixin = {
   renderField(field) {
     const val = this.form[field.key];
     const trainType = this.form.model_train_type || 'anima-lora';
-    const trainTypeSuffix = trainType === 'anima-lora' ? '_anima' : (trainType === 'sdxl-lora' ? '_sdxl' : '');
+    const trainTypeSuffix = trainType === 'moss-image-lora' ? '_moss' : (trainType === 'anima-lora' ? '_anima' : (trainType === 'sdxl-lora' ? '_sdxl' : ''));
 
     // Try train-type-specific desc key first, then fall back to default
     // Only use if the i18n key actually exists (to avoid showing "field.qwen3_anima" etc.)
@@ -2350,7 +2363,7 @@ window.trainingCoreMixin = {
   },
 
   _reconcileSubsetTimestepOffsets() {
-    if (!this.form || this.form.model_train_type !== 'anima-lora') return;
+    if (!this.form || !['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type)) return;
     const validNames = new Set(this.timestepOffsetSubsets().map(subset => subset.name));
     const current = this.form.subset_timestep_offsets;
     const clean = {};
@@ -3918,6 +3931,14 @@ window.trainingCoreMixin = {
       this.form['network_train_unet_only'] = false;
       _setLRField('unet_lr', '');
     }
+    if (this.form.model_train_type === 'moss-image-lora' && (
+      (key === 'network_train_unet_only' && value === false) ||
+      (key === 'network_train_text_encoder_only' && value === true) ||
+      (key === 'caption_dropout_every_n_epochs' && Number(value) > 0)
+    )) {
+      this.form.cache_text_encoder_outputs = false;
+      this.form.cache_text_encoder_outputs_to_disk = false;
+    }
     // When enabling cache_text_encoder_outputs, force network_train_unet_only = true
     if (key === 'cache_text_encoder_outputs' && value === true) {
       this.form['network_train_unet_only'] = true;
@@ -4122,9 +4143,7 @@ window.trainingCoreMixin = {
     this._normalizeProfileSelectValues(currentTrainType, profileDefaults);
 
     // Adjust network_module based on train type
-    const targetNetworkModule = currentTrainType === 'anima-lora'
-      ? 'networks.lora_anima'
-      : (currentTrainType === 'krea2-lora' ? 'networks.lora_krea2' : 'networks.lora');
+    const targetNetworkModule = this._defaultNetworkModule(currentTrainType);
     this.form.network_module = targetNetworkModule;
     this._applyInitialAutoValues();
     this._activeTrainType = currentTrainType;
@@ -4409,7 +4428,7 @@ window.trainingCoreMixin = {
     const trainType = this.form.model_train_type || 'anima-lora';
     const field = this._fieldDefinition(key, trainType);
     if (!field || !field.descKey) return key || '';
-    const suffix = trainType === 'anima-lora' ? '_anima' : (trainType === 'sdxl-lora' ? '_sdxl' : '');
+    const suffix = trainType === 'moss-image-lora' ? '_moss' : (trainType === 'anima-lora' ? '_anima' : (trainType === 'sdxl-lora' ? '_sdxl' : ''));
     const specific = this.t(field.descKey + suffix);
     if (specific && specific !== field.descKey + suffix) return specific;
     return this.t(field.descKey) || key || '';

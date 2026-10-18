@@ -6,7 +6,7 @@
    ================================================================ */
 
 // 训练类型 → 字段分组映射（config.js 与 training-core.js 共用）
-window.TRAIN_GROUP_MAP = { 'sdxl-lora': 'sdxl', 'anima-lora': 'anima', 'krea2-lora': 'krea2' };
+window.TRAIN_GROUP_MAP = { 'sdxl-lora': 'sdxl', 'anima-lora': 'anima', 'krea2-lora': 'krea2', 'moss-image-lora': 'moss_image' };
 
 window.utilsMixin = {
   // Canonical HTML escape (text content & "-delimited attributes).

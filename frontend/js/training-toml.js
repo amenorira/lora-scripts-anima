@@ -63,7 +63,7 @@ window.trainingTomlMixin = {
         if (k === 'sample_prompts' || k.startsWith('_')) continue;
 
         const v = this.form[k];
-        if (v === '' || v === null || v === undefined) continue;
+        if ((v === '' && !f.keepEmpty) || v === null || v === undefined) continue;
 
         // omitDefault：值==默认值时不传/不显示（仅 registry default == sd-scripts default 的字段标记）
         if (f.omitDefault && f.default !== undefined && String(v) === String(f.default)) continue;
@@ -403,6 +403,7 @@ window.trainingTomlMixin = {
     const titleKeys = {
       'sdxl-lora': ['common.sdxlParameterPreview', 'SDXL Parameter Preview'],
       'anima-lora': ['common.animaParameterPreview', 'Anima Parameter Preview'],
+      'moss-image-lora': ['common.mossParameterPreview', 'MOSS-Image Parameter Preview'],
       'krea2-lora': ['common.krea2ParameterPreview', 'Krea 2 Parameter Preview'],
     };
     const [key, fallback] = titleKeys[trainType] || ['common.tomlPreview', 'Parameter Preview'];
@@ -432,7 +433,7 @@ window.trainingTomlMixin = {
       (section.fields || []).forEach(field => {
         if (field.hidden || field.target === 'ui' || field.key === 'model_train_type' || !this._fieldShowIfMet(field)) return;
         const value = this.form[field.key];
-        if (value === '' || value === null || value === undefined) return;
+        if ((value === '' && !field.keepEmpty) || value === null || value === undefined) return;
         sectionLines[section.key].push(`${field.key} = ${valueToToml(value, field)}`);
       });
     });
@@ -455,7 +456,7 @@ window.trainingTomlMixin = {
       (section.fields || []).forEach(field => {
         if ((profile === 'krea2-lora' && field.hidden) || !this._fieldShowIfMet(field)) return;
         const value = this.form[field.key];
-        if (value === '' || value === null || value === undefined) return;
+        if ((value === '' && !field.keepEmpty) || value === null || value === undefined) return;
         if (field.omitDefault && String(value) === String(field.default)) return;
         payload[field.key] = value;
       });
