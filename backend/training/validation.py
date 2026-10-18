@@ -24,7 +24,7 @@ from backend.training.optimizer_contracts import (
 )
 
 
-_TRAIN_TYPE_GROUP = {"sdxl-lora": "sdxl", "anima-lora": "anima", "krea2-lora": "krea2"}
+_TRAIN_TYPE_GROUP = {"sdxl-lora": "sdxl", "anima-lora": "anima", "krea2-lora": "krea2", "moss-image-lora": "moss_image"}
 _EMPTY_STRINGS = {"", "undefined", "null", "nan"}
 _SCHEDULER_PARAMETER_MODES = {
     "lr_scheduler_timescale": {"inverse_sqrt"},
@@ -68,7 +68,7 @@ def _validate_resolution(value: Any, train_type: str) -> str | None:
     if len(parts) not in (1, 2) or any(not part.isdigit() for part in parts):
         return "resolution must be one or two positive integers, e.g. 1024,1024 / 分辨率格式应为正整数，如 1024,1024"
     dimensions = [int(part) for part in parts]
-    step = 16 if train_type == "anima-lora" else 32
+    step = 16 if train_type in ("anima-lora", "moss-image-lora") else 32
     if any(dimension <= 0 or dimension % step != 0 for dimension in dimensions):
         return f"resolution must use positive multiples of {step} / 分辨率必须为 {step} 的正整数倍"
     return None
@@ -349,6 +349,7 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
     for field in FIELDS:
         if not _applies_to_group(field, group):
             continue
+        field = {**field, **field.get("constraints_by_group", {}).get(group, {})}
         key = field["key"]
         if key in _SCHEDULER_PARAMETER_MODES and config.get("lr_scheduler") not in _SCHEDULER_PARAMETER_MODES[key]:
             continue
@@ -423,7 +424,7 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
         except (TypeError, ValueError):
             pass
         else:
-            required_step = 16 if train_type == "anima-lora" else 32
+            required_step = 16 if train_type in ("anima-lora", "moss-image-lora") else 32
             if (
                 not math.isfinite(bucket_step_number)
                 or not bucket_step_number.is_integer()
@@ -491,5 +492,9 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
     errors.extend(validate_optimizer_contract(config, parsed_optimizer_args))
     errors.extend(_validate_automagic(config, parsed_optimizer_args, gpu_ids))
     errors.extend(_validate_emosens(config, gpu_ids))
+    if train_type == "moss-image-lora":
+        from backend.training.moss_image import validate_config
+
+        errors.extend(validate_config(config))
 
     return errors

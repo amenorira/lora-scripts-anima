@@ -43,7 +43,7 @@ MERGED_FIELDS = {f["key"] for f in FIELDS if f.get("target") == "merged"}
 # 若残留进入提交会经 sd-scripts argparse 接住、train_network.py:555-559 把 argv 默认值/原值刷进元数据，
 # 产生看似"启用了噪声正则化"的误导。此处按 model_train_type 兜底剔除不匹配 group 的字段。
 _FIELD_GROUP_MAP = {f["key"]: f.get("group") for f in FIELDS}
-_TRAIN_TYPE_GROUP = {"sdxl-lora": "sdxl", "anima-lora": "anima"}
+_TRAIN_TYPE_GROUP = {"sdxl-lora": "sdxl", "anima-lora": "anima", "moss-image-lora": "moss_image"}
 
 # ── 已知的可显示警告的 Anima 前缀字段 ─────────────────────────
 ANIMA_KNOWN_PREFIX = {"anima_"}
@@ -264,6 +264,19 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     返回 (adapted_config, warnings)
     """
     source = config.copy()
+    is_moss = source.get("model_train_type") == "moss-image-lora"
+    if is_moss:
+        from backend.training.moss_image import validate_config
+
+        source.pop("vae_use_2d", None)
+        for key in list(source):
+            group = _FIELD_GROUP_MAP.get(key)
+            if group and group != "all" and "moss_image" not in (group if isinstance(group, list) else [group]):
+                source.pop(key)
+        source.setdefault("network_module", "networks.lora_generic")
+        errors = validate_config(source)
+        if errors:
+            raise ValueError("\n".join(errors))
     from backend.training.attention_config import normalize_attention_config
 
     normalize_attention_config(source)
@@ -300,6 +313,11 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     _merge_custom_args(source, "network_args_custom", "network_args")
 
     # ── 2. 规范化 network_args ─────────────────────────────
+    train_text_embedder = source.pop("train_text_embedder", None)
+    if is_moss and train_text_embedder is not None:
+        network_args = list(source.get("network_args") or [])
+        _set_key_value_arg(network_args, "train_llm_adapter", train_text_embedder is True)
+        source["network_args"] = network_args
     merged_network_args: list[str] = []
     if isinstance(source.get("network_args"), list):
         merged_network_args.extend(source["network_args"])
@@ -341,7 +359,7 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     # 正则并入 network_args（豁免上游默认排除）；模块不在支持集合内（或 SDXL 配置
     # 残留了该字段）时只剥离不注入——对无 adaln_modulation 模块的架构正则本也不命中。
     train_adaln = source.pop("train_adaln", False) is True
-    if train_adaln and source.get("network_module") in ADALN_INCLUDE_MODULES:
+    if train_adaln and not is_moss and source.get("network_module") in ADALN_INCLUDE_MODULES:
         network_args = list(source.get("network_args") or [])
         source["network_args"] = _merge_keyed_pattern_args(network_args, "include_patterns", [ADALN_INCLUDE_PATTERN])
 
@@ -482,7 +500,7 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
             "compile（块级编译）与 torch_compile（accelerate 版）不可同时使用，已关闭 torch_compile"
         )
     # compile 与 blocks_to_swap 不兼容（编译后的图无法中途换块）
-    if source.get("compile"):
+    if source.get("compile") and not is_moss:
         blocks = source.get("blocks_to_swap", 0) or 0
         if blocks > 0:
             source["compile"] = False
@@ -571,6 +589,9 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     # sd-scripts 内部字段，适配层透传不走警告
     _INTERNAL_PASSTHROUGH = {"network_args", "optimizer_args", "lr_scheduler_args"}
     for key, value in source.items():
+        if is_moss and key == "sample_uncond_skip_layers" and value == "":
+            adapted[key] = ""
+            continue
         # 跳过纯 UI 字段、合并字段、及已处理的 LyCORIS 字段
         if key in UI_ONLY_FIELDS or key in MERGED_FIELDS or key in LYCORIS_KOHYA_UI_FIELDS:
             continue

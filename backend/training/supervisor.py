@@ -499,7 +499,9 @@ def _read_run_meta(run_dir: Path, trainer_file: str) -> dict:
     import re
     meta = {"output_name": "", "model": "", "train_type": "", "epochs": "", "total_steps": ""}
     # 训练类型从 trainer_file 推断
-    if "anima" in trainer_file:
+    if "moss_image" in trainer_file:
+        meta["train_type"] = "moss-image-lora"
+    elif "anima" in trainer_file:
         meta["train_type"] = "anima-lora"
     elif "sdxl" in trainer_file:
         meta["train_type"] = "sdxl-lora"

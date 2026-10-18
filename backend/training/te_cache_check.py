@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 # 各引擎 TE 输出磁盘缓存的描述：npz 后缀 + 是否存 dropout 率快照（目前仅 Anima
 # 的 npz 布局带 caption_dropout_rate 键）。新引擎接入时加一行描述即可。
 ENGINE_TE_CACHES = {
+    "moss-image-lora": {"suffix": "_moss_te.npz", "rate_snapshot": True},
     "anima-lora": {"suffix": "_anima_te.npz", "rate_snapshot": True},
     "sdxl-lora": {"suffix": "_te_outputs.npz", "rate_snapshot": False},
 }

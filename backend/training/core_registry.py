@@ -95,7 +95,7 @@ ENGINES: dict[str, TrainingEngine] = {
         root=SD_SCRIPTS_DIR,
         pythonpath=(),
         uses_sd_scripts_hooks=True,
-        description="Existing SDXL and Anima trainer runtime.",
+        description="SDXL, Anima and MOSS-Image trainer runtime.",
     ),
     "musubi_tuner": TrainingEngine(
         id="musubi_tuner",
@@ -138,6 +138,15 @@ PROFILES: dict[str, TrainingProfile] = {
         adapter_id="musubi_lora",
         group="krea2",
         description="musubi-tuner Krea 2 RAW DiT LoRA profile.",
+    ),
+    "moss-image-lora": TrainingProfile(
+        id="moss-image-lora",
+        engine_id="sd_scripts",
+        label="MOSS-Image LoRA",
+        trainer_file="./vendor/sd-scripts/moss_image_train_network.py",
+        adapter_id="sd_native",
+        group="moss_image",
+        description="sd-scripts MOSS-Image native LoRA profile.",
     ),
 }
 
@@ -215,6 +224,10 @@ def resolve_training_profile(config: dict[str, Any]) -> TrainingProfile:
     # LyCORIS is independently selectable in the product, but deliberately
     # remains mounted on sd-scripts rather than becoming a duplicate runtime.
     requested_adapter = str(config.get("adapter_id") or "")
+    if profile.id == "moss-image-lora" and (
+        requested_adapter == "lycoris" or config.get("network_module") == "lycoris.kohya"
+    ):
+        raise TrainingProfileError("MOSS-Image currently supports native sd-scripts networks only / MOSS 暂不支持 LyCORIS")
     adapter_id = requested_adapter or profile.adapter_id
     if profile.engine_id == "sd_scripts" and config.get("network_module") == "lycoris.kohya":
         if requested_adapter and requested_adapter != "lycoris":

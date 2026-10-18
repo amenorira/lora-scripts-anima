@@ -67,7 +67,7 @@ _UniqueKeySafeLoader.add_constructor(
 
 
 def _visible_sections(profile_id: str) -> list[dict[str, Any]]:
-    group_map = {"sdxl-lora": "sdxl", "anima-lora": "anima", "krea2-lora": "krea2"}
+    group_map = {"sdxl-lora": "sdxl", "anima-lora": "anima", "krea2-lora": "krea2", "moss-image-lora": "moss_image"}
     target_group = group_map.get(profile_id, "all")
     target_by_key = {}
     for raw_field in get_all_fields():
@@ -228,7 +228,7 @@ def group_training_form(
             continue
         if field.get("hidden") and field.get("_target") != "ui":
             continue
-        if not _field_is_active(field, form) or _is_empty_value(value):
+        if not _field_is_active(field, form) or (_is_empty_value(value) and not (value == "" and field.get("keepEmpty"))):
             continue
         # Application YAML is a versioned form snapshot. Keep active defaults
         # explicit so importing an older document cannot silently adopt newer

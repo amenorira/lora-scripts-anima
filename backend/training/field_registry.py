@@ -102,6 +102,7 @@ NATIVE_NETWORK_ARG_MAP = {
     for module, keys in {
         "networks.lora": ("conv_dim", "conv_alpha", "rank_dropout", "module_dropout"),
         "networks.lora_anima": ("rank_dropout", "module_dropout"),
+        "networks.lora_generic": ("rank_dropout", "module_dropout"),
         "networks.loha": ("conv_dim", "conv_alpha", "rank_dropout", "module_dropout", "use_tucker"),
         "networks.lokr": tuple(LYCORIS_COMMON_ARG_MAP),
     }.items()
@@ -110,6 +111,7 @@ NATIVE_NETWORK_ARG_MAP = {
 LORAPLUS_NETWORK_MODULES = (
     "networks.lora",
     "networks.lora_anima",
+    "networks.lora_generic",
     "networks.loha",
     "networks.lokr",
 )
@@ -619,6 +621,10 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "sample_flow_shift", "type": "number", "default": 3.0, "section": "preview", "desc_key": "field.sample_flow_shift", "hint_key": "field.sample_flow_shiftHint", "target": "ui", "group": "anima", "step": 0.05, "show_if": {"key": "enable_preview", "eq": True}},
 ]
 
+from backend.training.moss_image import extend_fields as _extend_moss_fields
+
+_extend_moss_fields(FIELDS)
+
 # LyCORIS 弹窗布局元数据。字段定义仍是唯一配置来源；这里仅声明独立编辑器中的
 # 信息架构和稳定顺序，避免前端再维护一份字段清单或靠 show_if 关系猜测顺序。
 _LYCORIS_PANEL_LAYOUT = {
@@ -750,6 +756,8 @@ _MERGED_ARG_NAMES: dict[str, str] = {
 
 # snake_case → camelCase key mapping for frontend
 _FIELD_KEY_MAP = {
+    "keep_empty": "keepEmpty",
+    "default_by_group": "defaultByGroup",
     "value_type": "valueType",
     "desc_key": "descKey",
     "hint_key": "hintKey",
@@ -868,6 +876,9 @@ def _to_camel(field: dict) -> dict:
         result["networkModules"] = ["lycoris.kohya", *(
             module for module, mapping in NATIVE_NETWORK_ARG_MAP.items() if key in mapping
         )]
+    if key == "train_text_embedder":
+        result["networkArg"] = "train_llm_adapter"
+        result["networkModules"] = ["networks.lora_generic", "networks.loha", "networks.lokr"]
     return result
 
 
