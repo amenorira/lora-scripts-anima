@@ -405,7 +405,7 @@ window.environmentRenderMixin = {
     if (this.xfBusy) {
       const head = this._renderRowHead('xf', open, {
         name: 'xformers',
-        desc: T('xfHint','Memory-efficient attention (optional)'),
+        desc: T('xfHint','Memory-efficient attention'),
         version: '', badge: `<span class="env-badge env-badge-loading">${T('installing','Installing...')}</span>`,
         action: `<button type="button" class="btn btn-sm btn-ghost env-head-btn" disabled>${T('installing','Installing...')}</button>`,
         detailKey: 'xf', detailLabel: T('details','Details'),
@@ -424,7 +424,7 @@ window.environmentRenderMixin = {
     const headBtn = `<button type="button" class="btn btn-sm ${xfInstalled ? 'btn-ghost' : 'btn-secondary'} env-head-btn" data-env-action="xf">${xfInstalled ? T('reinstall','Reinstall') : T('install','Install')}</button>`;
     const head = this._renderRowHead('xf', open, {
       name: 'xformers',
-      desc: T('xfHint','Memory-efficient attention (optional)'),
+      desc: T('xfHint','Memory-efficient attention'),
       version, badge, action: headBtn,
       detailKey: 'xf', detailLabel: T('details','Details'),
     });
