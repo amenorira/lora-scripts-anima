@@ -261,6 +261,8 @@ Run the complete test suite (the tests use the standard-library unittest and nee
 
 Tests live in `tests/`, grouped into training, monitoring, environment, tagging, application, and frontend categories. The common entrypoint also runs standalone JavaScript tests. Developer scripts live in `tools/dev/`; `tools/` also contains runtime tools used by the launcher and backend.
 
+Runtime temporary files, generated LyCORIS presets, and compiler caches default to `cache/runtime/`. Test temporary files, compiler caches, and pytest's cache live under `cache/tests/`. Explicit compiler-cache paths are preserved. Keep diagnostic scripts, screenshots, and developer logs under `cache/dev/<task>/`.
+
 ## Acknowledgements
 
 - [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Anima / SDXL / MOSS-Image training engine

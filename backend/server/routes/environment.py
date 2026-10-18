@@ -15,6 +15,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Request
 
 from backend.constants import REPO_ROOT, SD_MODELS_DIR
+from tools.runtime_paths import runtime_cache_dir
 from backend.core.realtime import realtime_tasks
 from backend.log import log
 from backend.server.routes.flash_attention import router as flash_attention_router
@@ -129,6 +130,7 @@ def _start_install_job(cmd: list[str], max_retries: int = 2) -> str:
         prefix="anima_install_",
         mode="w",
         encoding="utf-8",
+        dir=runtime_cache_dir("install"),
     )
     with _install_jobs_lock:
         _install_jobs[job_id] = {

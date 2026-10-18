@@ -1,5 +1,6 @@
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -60,9 +61,10 @@ for lr, ceiling in [(0.1, 3e-4), (1.0, 3e-3), (10.0, 3e-3), (1e-5, 3e-7)]:
     assert opt.param_groups[0]['lr'] == resumed.param_groups[0]['lr']
 print('verified')
 """
-        result = subprocess.run([sys.executable, "-c", script], cwd=Path.cwd(),
-                                env=_build_train_env("artifacts", "task-id"),
-                                capture_output=True, timeout=60)
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run([sys.executable, "-c", script], cwd=Path.cwd(),
+                                    env=_build_train_env(str(Path(directory) / "artifacts"), "task-id"),
+                                    capture_output=True, timeout=60)
         self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8", errors="replace"))
         self.assertIn(b"verified", result.stdout)
 

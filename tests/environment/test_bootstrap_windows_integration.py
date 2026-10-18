@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import tempfile
+import time
 import unittest
 import zipfile
 from contextlib import contextmanager
@@ -22,8 +23,22 @@ REPAIR_MARKER = ".anima_tmp/git-repair-incomplete.json"
 class WindowsBootstrapIntegrationTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="anima bootstrap ")
-        self.addCleanup(temporary.cleanup)
+        self.addCleanup(self.cleanup_directory, temporary)
         self.base = Path(temporary.name)
+
+    @staticmethod
+    def cleanup_directory(temporary):
+        # Windows can briefly report a sharing violation after a subprocess
+        # exits. Keep cleanup strict, retrying only WinError 32 for at most 3s.
+        deadline = time.monotonic() + 3
+        while True:
+            try:
+                temporary.cleanup()
+                return
+            except PermissionError as error:
+                if getattr(error, "winerror", None) != 32 or time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.05)
 
     def run_command(self, args, cwd=None, check=True):
         result = subprocess.run(

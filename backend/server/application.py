@@ -4,6 +4,10 @@ import os
 import sys
 from contextlib import asynccontextmanager
 
+from tools.runtime_paths import configure_runtime_paths
+
+configure_runtime_paths()
+
 import fastapi.middleware.cors as fastapi_cors
 from fastapi import FastAPI
 from fastapi.responses import FileResponse

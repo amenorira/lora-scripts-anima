@@ -263,6 +263,8 @@ GUI 的 **环境** 标签页提供：
 
 测试位于 `tests/`，按训练、监控、环境、打标、应用和前端分类；统一入口包含独立 JavaScript 测试。开发脚本位于 `tools/dev/`，`tools/` 还包含启动器和后端依赖的运行工具。
 
+运行时临时文件、LyCORIS 预设和编译缓存默认归入 `cache/runtime/`；测试临时文件及编译缓存归入 `cache/tests/`，pytest 缓存也位于其中。显式设置的编译缓存路径会保留。诊断脚本、截图和开发日志应放入 `cache/dev/<任务名>/`。
+
 ## 致谢
 
 - [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Anima / SDXL / MOSS-Image 训练引擎

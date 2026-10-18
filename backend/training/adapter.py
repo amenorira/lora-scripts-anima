@@ -10,9 +10,10 @@ import ast
 import hashlib
 import math
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any
+
+from tools.runtime_paths import runtime_cache_dir
 
 # ── 字段集：从统一注册表派生（Single Source of Truth）──────
 from backend.training.field_registry import (
@@ -261,7 +262,7 @@ def _write_lycoris_scope_preset_file(preset_name: str, exclude_name: list[str]) 
     content = toml_writer.dumps(preset)
     digest = hashlib.sha1(content.encode("utf-8")).hexdigest()[:8]
     path = (
-        Path(tempfile.gettempdir())
+        runtime_cache_dir("lycoris")
         / f"anima_lycoris_preset_{preset_name}_{digest}.toml"
     )
     path.write_text(content, encoding="utf-8")
