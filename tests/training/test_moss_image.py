@@ -180,6 +180,42 @@ class MossImageConfigTests(unittest.TestCase):
             (root / "model-00002-of-00002.safetensors").touch()
             self.assertEqual(validate_model_files(paths), [])
 
+    def test_quantized_models_reject_premerging_lora(self):
+        for flag in ("convrot_int8", "convrot_int8_text_encoder"):
+            for weights in ("prior.safetensors", ["prior.safetensors"]):
+                with self.subTest(flag=flag, weights=weights):
+                    config = moss_config(**{flag: True}, base_weights=weights)
+                    self.assertTrue(any("base_weights" in error for error in validate_training_config(config)))
+                    with self.assertRaises(ValueError):
+                        adapt_config(config)
+            self.assertEqual(validate_training_config(moss_config(**{flag: True}, base_weights="")), [])
+        self.assertEqual(validate_training_config(moss_config(base_weights="prior.safetensors")), [])
+
+    def test_premerge_preflight_detects_quantization_in_any_model_shard(self):
+        import numpy as np
+        from safetensors.numpy import save_file
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = moss_config(base_weights=["prior.safetensors"])
+            for key in ("pretrained_model_name_or_path", "text_encoder", "vae"):
+                path = root / f"{key}.safetensors"
+                save_file({"layer.weight": np.ones((2, 2), dtype=np.float32)}, str(path))
+                config[key] = str(path)
+            self.assertEqual(validate_model_files(config), [])
+            for key in ("pretrained_model_name_or_path", "text_encoder"):
+                original = config[key]
+                shards = [root / f"{key}-{index:05d}-of-00002.safetensors" for index in (1, 2)]
+                save_file({"layer.weight": np.ones((2, 2), dtype=np.float32)}, str(shards[0]))
+                save_file({"layer.comfy_quant": np.array([123, 125], dtype=np.uint8)}, str(shards[1]))
+                config[key] = str(shards[0])
+                with self.subTest(key=key):
+                    self.assertTrue(any("base_weights" in error for error in validate_model_files(config)))
+                    self.assertEqual(validate_model_files({**config, "base_weights": ""}), [])
+                config[key] = original
+            Path(config["pretrained_model_name_or_path"]).write_bytes(b"invalid header")
+            self.assertTrue(any("Cannot inspect" in error for error in validate_model_files(config)))
+
     def test_multiline_candidate_preflight_uses_real_dataset_captions(self):
         with tempfile.TemporaryDirectory() as directory:
             subset = Path(directory) / "1_character"

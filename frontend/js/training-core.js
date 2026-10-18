@@ -3988,6 +3988,9 @@ window.trainingCoreMixin = {
     if (this.formErrors && this.formErrors[key]) {
       this.formErrors[key] = null;
     }
+    if (this.form.model_train_type === 'moss-image-lora') {
+      this.formErrors = { ...this.formErrors, base_weights: null, ...this._mossOptionErrors() };
+    }
     this.updateTomlDebounced();
   },
 
@@ -4216,6 +4219,18 @@ window.trainingCoreMixin = {
     return { boundaries, finalMultiplier };
   },
 
+  _mossOptionErrors() {
+    if (this.form.model_train_type !== 'moss-image-lora') return {};
+    const errors = {};
+    const weights = this.form.base_weights;
+    const hasWeights = (Array.isArray(weights) ? weights : String(weights || '').split(','))
+      .some(value => String(value).trim());
+    if (hasWeights && (this.form.convrot_int8 || this.form.convrot_int8_text_encoder)) {
+      errors.base_weights = this.t('field.base_weightsConvrotConflict');
+    }
+    return errors;
+  },
+
   validateForm() {
     const errors = {};
     // Check all required fields
@@ -4268,6 +4283,7 @@ window.trainingCoreMixin = {
       && !this._parseStepRules(this.form.step_rules)) {
       errors.step_rules = this.t('field.step_rulesError');
     }
+    Object.assign(errors, this._mossOptionErrors());
 
     this.formErrors = errors;
     const hasErrors = Object.keys(errors).length > 0;

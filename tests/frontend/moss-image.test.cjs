@@ -123,3 +123,24 @@ test('MOSS preview and launch preserve explicit distribution defaults and disabl
   assert.equal(payload.qwen3, undefined);
   assert.equal(payload.engine_id, undefined);
 });
+
+test('MOSS validation rejects LoRA pre-merging into either INT8 model without changing the form', () => {
+  const { app } = application();
+  Object.assign(app.form, { pretrained_model_name_or_path: 'dit.safetensors',
+    text_encoder: 'te.safetensors', vae: 'vae.safetensors', base_weights: 'prior.safetensors' });
+  app.$nextTick = () => {};
+  for (const flag of ['convrot_int8', 'convrot_int8_text_encoder']) {
+    app.form[flag] = true;
+    assert.equal(app.validateForm(), false);
+    assert.match(app.formErrors.base_weights, /ConvRot INT8/);
+    assert.equal(app.form.base_weights, 'prior.safetensors');
+    app.form[flag] = false;
+  }
+  assert.equal(app.validateForm(), true);
+  app.form.convrot_int8 = true;
+  app.form.base_weights = '';
+  assert.equal(app.validateForm(), true);
+  app.form.model_train_type = 'anima-lora';
+  app.form.base_weights = 'prior.safetensors';
+  assert.deepEqual(Object.keys(app._mossOptionErrors()), []);
+});
