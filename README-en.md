@@ -2,9 +2,9 @@
 
 # lora-scripts-anima
 
-_✨ Multi-backend LoRA Training Tool: Anima, SDXL, and Krea 2 ✨_
+_✨ Multi-backend LoRA Training Tool: Anima, SDXL, MOSS-Image, and Krea 2 ✨_
 
-A local GUI for LoRA training. Anima / SDXL use [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) (in `vendor/sd-scripts/`), while **Krea 2 LoRA** uses [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner).
+A local GUI for LoRA training with training configuration, image tagging, caption editing, and real-time monitoring. Anima / SDXL / MOSS-Image use [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts), Krea 2 uses [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner), and [LyCORIS](https://github.com/KohakuBlueleaf/LyCORIS) adds training algorithms for Anima / SDXL.
 
 </div>
 
@@ -22,7 +22,7 @@ A local GUI for LoRA training. Anima / SDXL use [kohya-ss/sd-scripts](https://gi
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-ja.md">日本語</a>
 </p>
 
-A training-core registry keeps each backend isolated; **LyCORIS** is an optional adapter backend mounted through `lycoris.kohya`.
+Anima / SDXL support native LoRA, LoHa, and LoKr, plus **LyCORIS** LoCon / LoHa / LoKr through `lycoris.kohya`. MOSS-Image and Krea 2 use their respective native LoRA modules.
 
 ### Supported Model Types
 
@@ -30,7 +30,10 @@ A training-core registry keeps each backend isolated; **LyCORIS** is an optional
 |---------------|------------|
 | LoRA | SDXL |
 | **LoRA** | **Anima** (Qwen3 + T5 dual encoder) |
+| **LoRA** | **MOSS-Image** (sd-scripts) |
 | **LoRA** | **Krea 2 RAW DiT** (musubi-tuner) |
+
+> ℹ️ MOSS-Image currently supports only native `networks.lora_generic`; LoHa, LoKr, and LyCORIS are unavailable. The UI keeps the Qwen text encoder frozen, with a separate option to train the text embedder inside the DiT.
 
 > ℹ️ Krea 2 requires both latent and Qwen3-VL text-encoder caches before training. The UI verifies that they are complete and still match the images, captions, and models before a run can start.
 
@@ -79,7 +82,7 @@ The entry also shows the **estimated weight-file size**, updating with the algor
 
 ```
 lora-scripts-anima/
-├── vendor/sd-scripts/          ← Anima / SDXL training engine (pinned upstream snapshot)
+├── vendor/sd-scripts/          ← Anima / SDXL / MOSS-Image training engine (pinned upstream snapshot)
 ├── vendor/musubi-tuner/        ← Krea 2 core (pinned upstream snapshot)
 ├── vendor/lycoris/             ← LyCORIS adapter backend (pinned upstream snapshot)
 ├── vendor/emo_optimizer/       ← EmoSens adaptive optimizer
@@ -122,7 +125,7 @@ lora-scripts-anima/
 | RTX 40 (Ada) | 2.12.1 | 13.0 |
 | RTX 50 (Blackwell) | 2.12.1 | 13.0 |
 
-After updating the project, existing older `venv` installations (including Torch 2.10 + cu130) upgrade on the next launch to PyTorch 2.12.1 + cu130 and torchvision 0.27.1. Installed xformers moves to 0.0.35, and Triton to the 3.7 series. Existing external FlashAttention packages are left installed but are no longer loaded by the trainer. bitsandbytes retains its CUDA 13 compatibility check, and ONNX Runtime GPU stays at 1.27.0. Optional packages are not added if absent.
+After updating the project, older `venv` installations (including Torch 2.10 + cu130) upgrade on the next launch to PyTorch 2.12.1 + cu130 and torchvision 0.27.1. Installed xformers moves to 0.0.35, and Triton to the 3.7 series. bitsandbytes retains its CUDA 13 compatibility check, and ONNX Runtime GPU stays at 1.27.0. FlashAttention can be installed from Environment; existing versions are not automatically upgraded or removed.
 
 Machines without an NVIDIA GPU still receive the complete GPU dependency environment and can run the GUI. Training itself requires an NVIDIA GPU.
 
@@ -216,9 +219,9 @@ Detailed training parameter documentation lives in `docs/parameters/`:
 
 ## Attention Acceleration
 
-Anima defaults to `torch` and Krea2 to `sdpa`. Native PyTorch SDPA selects suitable accelerated kernels, including built-in FlashAttention, without external `flash-attn`.
+Anima / MOSS defaults to `torch` and Krea2 to `sdpa`. SDPA selects available kernels based on the PyTorch build and input; Windows builds may not include built-in FlashAttention.
 
-Legacy `flash` / `flash_attn` configurations automatically migrate to native SDPA. Project processes no longer load external FlashAttention. Existing packages remain in the venv without automatic upgrades or uninstallation, and incompatible old wheels no longer trigger repeated import warnings. PyTorch's built-in acceleration is unaffected.
+For external FlashAttention 2, install it from Environment and select `attn_mode=flash` for Anima / MOSS after installation completes. The installer matches Python, PyTorch, CUDA and platform, and installs only the extension without replacing PyTorch. Krea2's legacy `flash_attn` setting still maps to `sdpa`.
 
 ## EmoSens Adaptive Optimizer
 
@@ -260,8 +263,9 @@ Tests live in `tests/`, grouped into training, monitoring, environment, tagging,
 
 ## Acknowledgements
 
-- [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Anima / SDXL training engine
+- [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Anima / SDXL / MOSS-Image training engine
 - [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) — Krea 2 training core
+- [**LyCORIS**](https://github.com/KohakuBlueleaf/LyCORIS) — LoCon / LoHa / LoKr training algorithms and adapter support
 - [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) — Early design reference
 
 ## License

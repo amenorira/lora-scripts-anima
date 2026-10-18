@@ -59,7 +59,9 @@ window.trainingConfigIoMixin = {
         (section.fields || []).forEach(field => validKeys.add(field.key));
       });
       const imported = {};
-      Object.entries(parsed).forEach(([key, value]) => {
+      this._lastConfigImportIgnoredFields = Object.keys(parsed).filter(key => !validKeys.has(key));
+      const migrated = this._migrateSdOptionModes ? this._migrateSdOptionModes(parsed, importedType) : parsed;
+      Object.entries(migrated).forEach(([key, value]) => {
         if (validKeys.has(key)) imported[key] = value;
       });
       this.form = { ...defaults, ...imported, model_train_type: importedType };
@@ -99,13 +101,14 @@ window.trainingConfigIoMixin = {
   handleConfigFileImport(event) {
     const file = event.target.files[0];
     if (!file) return;
+    const modelTrainType = this.form?.model_train_type || 'anima-lora';
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
         const r = await fetch('/api/training/parse-config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: e.target.result })
+          body: JSON.stringify({ content: e.target.result, model_train_type: modelTrainType })
         });
         const d = await r.json();
         if (d.status !== 'success') throw new Error(d.message || this.t('common.parseError'));
@@ -113,9 +116,14 @@ window.trainingConfigIoMixin = {
         if (Object.keys(parsed).length === 0) throw new Error(this.t('common.invalidToml'));
         await this._applyImportedFlatConfig(parsed);
         this._trainingDocumentId = d.data.document_id || null;
-        this.toast(this.t('common.imported'));
+        const ignored = this._lastConfigImportIgnoredFields || [];
+        if (ignored.length) {
+          this.toast(this.t('common.importedWithIgnoredFields').replace('{fields}', ignored.join(', ')), 'warning');
+        } else {
+          this.toast(this.t('common.imported'));
+        }
       } catch (err) {
-        this.toast(this.t('common.parseError') + ': ' + err.message);
+        this.toast(this.t('common.parseError') + ': ' + err.message, 'error');
       }
     };
     reader.readAsText(file);

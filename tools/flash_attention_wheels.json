@@ -1,0 +1,12 @@
+[
+  {
+    "url": "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.26/flash_attn-2.8.3%2Bcu130torch2.12-cp312-cp312-win_amd64.whl",
+    "size": 239438951,
+    "sha256": "450845c81ec65b191fea4500761af1af031f559897e3298cb8d12d5fc03ca9d8"
+  },
+  {
+    "url": "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.17/flash_attn-2.8.3%2Bcu130torch2.12-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+    "size": 242369266,
+    "sha256": "f35734191c596daa9d4b5f31a639ed57a5d8411c762337220b6590284e191b26"
+  }
+]

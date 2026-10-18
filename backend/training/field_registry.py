@@ -102,6 +102,7 @@ NATIVE_NETWORK_ARG_MAP = {
     for module, keys in {
         "networks.lora": ("conv_dim", "conv_alpha", "rank_dropout", "module_dropout"),
         "networks.lora_anima": ("rank_dropout", "module_dropout"),
+        "networks.lora_generic": ("rank_dropout", "module_dropout"),
         "networks.loha": ("conv_dim", "conv_alpha", "rank_dropout", "module_dropout", "use_tucker"),
         "networks.lokr": tuple(LYCORIS_COMMON_ARG_MAP),
     }.items()
@@ -110,6 +111,7 @@ NATIVE_NETWORK_ARG_MAP = {
 LORAPLUS_NETWORK_MODULES = (
     "networks.lora",
     "networks.lora_anima",
+    "networks.lora_generic",
     "networks.loha",
     "networks.lokr",
 )
@@ -370,10 +372,10 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "base_weights_multiplier", "type": "text", "default": "", "section": "network", "desc_key": "field.base_weights_multiplier", "target": "toml", "hint_key": "field.base_weights_multiplierHint", "show_if": {"key": "base_weights", "neq": ""}},
     {"key": "network_args_custom", "type": "textarea", "default": "", "section": "network", "desc_key": "field.network_args_custom", "target": "ui", "hint_key": "field.network_args_customHint"},
 # ── Training Core ──
-{"key": "max_train_epochs", "type": "number", "default": 10, "section": "training", "desc_key": "field.max_train_epochs", "hint_key": "field.max_train_epochsHint", "target": "toml", "min": 1},
+{"key": "max_train_epochs", "type": "number", "default": 10, "section": "training", "desc_key": "field.max_train_epochs", "hint_key": "field.max_train_epochsHint", "target": "toml", "min": 1, "step": 1},
 {"key": "train_batch_size", "type": "number", "default": 1, "section": "training", "desc_key": "field.train_batch_size", "target": "toml", "min": 1, "hint_key": "field.train_batch_sizeHint", "omit_default": True},
 {"key": "gradient_accumulation_steps", "type": "number", "default": 1, "section": "training", "desc_key": "field.gradient_accumulation_steps", "target": "toml", "min": 1, "hint_key": "field.gradient_accumulation_stepsHint", "auto_value": [{"watch": "optimizer_type", "when": EMOSENS_OPTIMIZER_TYPE, "set": 1}], "readonly_if": {"key": "optimizer_type", "eq": EMOSENS_OPTIMIZER_TYPE, "reason_key": "field.gradient_accumulation_steps_emosensLocked"}, "omit_default": True},
-{"key": "gradient_checkpointing", "type": "toggle", "default": False, "section": "training", "desc_key": "field.gradient_checkpointing", "target": "toml", "hint_key": "field.gradient_checkpointingHint", "omit_default": True},
+{"key": "gradient_checkpointing", "type": "toggle", "default": False, "default_by_group": {"anima": True}, "section": "training", "desc_key": "field.gradient_checkpointing", "target": "toml", "hint_key": "field.gradient_checkpointingHint", "omit_default": True},
 {"key": "seed", "type": "number", "default": 1337, "section": "training", "desc_key": "field.seed", "target": "toml"},
 {"key": "mixed_precision", "type": "select", "default": "bf16", "section": "training", "desc_key": "field.mixed_precision", "hint_key": "field.mixed_precisionHint", "target": "toml", "options": [{"v": "bf16", "l": "bf16", "dk": "opt.mixed_precision_bf16"}, {"v": "fp16", "l": "fp16", "dk": "opt.mixed_precision_fp16"}, {"v": "no", "l": "no", "dk": "opt.mixed_precision_no"}]},
     # full_bf16: 将模型 + Network 全部参数 cast 为 bf16，消除 autocast 与 compile/LoRA 交互的 dtype 不一致问题。
@@ -388,7 +390,7 @@ FIELDS: list[dict[str, Any]] = [
     # 对 show_if 数组从尾部取父键（会取到 timestep_sampling），故必须显式 layout_parent，
     # 否则三个字段会被提到 weighting_scheme 之前、把它挤到时间步分组末尾。
     {"key": "logit_mean", "type": "number", "default": 0.0, "section": "training", "desc_key": "field.logit_mean", "hint_key": "field.logit_meanHint", "target": "toml", "step": 0.01, "group": "anima", "layout_parent": "weighting_scheme", "show_if": [{"key": "weighting_scheme", "eq": "logit_normal"}, {"key": "timestep_sampling", "eq": "sigma"}], "omit_default": True, "doc_slug": "timesteps", "doc_anchor": "logit-normal"},
-    {"key": "logit_std", "type": "number", "default": 1.0, "section": "training", "desc_key": "field.logit_std", "hint_key": "field.logit_stdHint", "target": "toml", "step": 0.01, "group": "anima", "layout_parent": "weighting_scheme", "show_if": [{"key": "weighting_scheme", "eq": "logit_normal"}, {"key": "timestep_sampling", "eq": "sigma"}], "omit_default": True, "doc_slug": "timesteps", "doc_anchor": "logit-normal"},
+    {"key": "logit_std", "type": "number", "default": 1.0, "section": "training", "desc_key": "field.logit_std", "hint_key": "field.logit_stdHint", "target": "toml", "min": 0, "step": 0.01, "group": "anima", "layout_parent": "weighting_scheme", "show_if": [{"key": "weighting_scheme", "eq": "logit_normal"}, {"key": "timestep_sampling", "eq": "sigma"}], "omit_default": True, "doc_slug": "timesteps", "doc_anchor": "logit-normal"},
     {"key": "mode_scale", "type": "number", "default": 1.29, "section": "training", "desc_key": "field.mode_scale", "hint_key": "field.mode_scaleHint", "target": "toml", "step": 0.01, "group": "anima", "layout_parent": "weighting_scheme", "show_if": [{"key": "weighting_scheme", "eq": "mode"}, {"key": "timestep_sampling", "eq": "sigma"}], "omit_default": True, "doc_slug": "timesteps", "doc_anchor": "mode"},
     {"key": "subset_timestep_offsets", "type": "hidden", "default": {}, "section": "training", "desc_key": "field.subset_timestep_offsets", "target": "ui", "group": "anima", "hidden": True},
     # SDXL/SD3: 时间步范围控制（对 Anima flow-matching 训练无效，故划归 sdxl 组）
@@ -503,7 +505,7 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "optimizer_args_custom", "type": "textarea", "default": "", "section": "optimizer", "desc_key": "field.optimizer_args_custom", "target": "ui", "hint_key": "field.optimizer_args_customHint"},
 # ── Regularization & Loss ──
 {"key": "loss_type", "type": "select", "default": "l2", "section": "regularization", "desc_key": "field.loss_type", "target": "toml", "options": [{"v": "l2", "l": "L2", "dk": "opt.loss_type_l2"}, {"v": "l1", "l": "L1", "dk": "opt.loss_type_l1"}, {"v": "huber", "l": "Huber", "dk": "opt.loss_type_huber"}, {"v": "smooth_l1", "l": "Smooth L1", "dk": "opt.loss_type_smooth_l1"}], "omit_default": True},
-{"key": "huber_schedule", "type": "select", "default": "exponential", "section": "regularization", "desc_key": "field.huber_schedule", "target": "toml", "show_if": {"key": "loss_type", "eq": "huber", "_or": ["smooth_l1"]}, "options": [{"v": "snr", "l": "SNR", "dk": "opt.huber_schedule_snr", "group": "sdxl"}, {"v": "constant", "l": "constant", "dk": "opt.huber_schedule_constant"}, {"v": "exponential", "l": "exponential", "dk": "opt.huber_schedule_exponential"}], "omit_default": True},
+{"key": "huber_schedule", "type": "select", "default": "exponential", "section": "regularization", "desc_key": "field.huber_schedule", "target": "toml", "show_if": {"key": "loss_type", "eq": "huber", "_or": ["smooth_l1"]}, "options": [{"v": "snr", "l": "SNR", "dk": "opt.huber_schedule_snr", "group": "sdxl"}, {"v": "constant", "l": "constant", "dk": "opt.huber_schedule_constant"}, {"v": "exponential", "l": "exponential", "dk": "opt.huber_schedule_exponential"}]},
 {"key": "huber_c", "type": "number", "default": 0.1, "section": "regularization", "desc_key": "field.huber_c", "target": "toml", "step": 0.01, "show_if": {"key": "loss_type", "eq": "huber", "_or": ["smooth_l1"]}, "omit_default": True},
 {"key": "huber_scale", "type": "number", "default": 1.0, "section": "regularization", "desc_key": "field.huber_scale", "target": "toml", "step": 0.1, "show_if": {"key": "loss_type", "eq": "huber", "_or": ["smooth_l1"]}, "omit_default": True},
 # 噪声/损失正则化族（仅 SDXL 路径消费；Anima 走 rectified-flow，flux_train_utils.get_noisy_model_input_and_timesteps
@@ -520,7 +522,7 @@ FIELDS: list[dict[str, Any]] = [
 # ── Performance & Cache ──
 {"key": "xformers", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.xformers", "target": "toml", "group": "sdxl"},
 {"key": "sdpa", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.sdpa", "target": "toml", "group": "sdxl", "omit_default": True},
-{"key": "attn_mode", "type": "select", "default": "torch", "section": "performance", "desc_key": "field.attn_mode", "target": "toml", "group": "anima", "options": [{"v": "torch", "l": "torch", "dk": "opt.attn_mode_torch"}, {"v": "xformers", "l": "xformers", "dk": "opt.attn_mode_xformers"}]},
+{"key": "attn_mode", "type": "select", "default": "torch", "section": "performance", "desc_key": "field.attn_mode", "target": "toml", "group": "anima", "options": [{"v": "torch", "l": "torch", "dk": "opt.attn_mode_torch"}, {"v": "flash", "l": "flash", "dk": "opt.attn_mode_flash"}, {"v": "xformers", "l": "xformers", "dk": "opt.attn_mode_xformers"}]},
 {"key": "split_attn", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.split_attn", "target": "toml", "group": "anima", "auto_value": [{"watch": "attn_mode", "when": "xformers", "set": True, "set_if_default": True}]},
     # Anima: TF32 / cuDNN — Ampere+ GPU 几乎免费的加速
     {"key": "cuda_allow_tf32", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cuda_allow_tf32", "target": "toml", "group": "anima", "hint_key": "field.cuda_allow_tf32Hint"},
@@ -539,18 +541,18 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "no_half_vae", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.no_half_vae", "target": "toml", "group": "sdxl", "omit_default": True},
 {"key": "lowram", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.lowram", "target": "toml", "omit_default": True},
     # Anima: VAE performance
+    {"key": "qwen_image_vae_2d", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.qwen_image_vae_2d", "hint_key": "field.qwen_image_vae_2dHint", "target": "toml", "group": "anima"},
     {"key": "vae_chunk_size", "type": "number", "default": "", "section": "performance", "desc_key": "field.vae_chunk_size", "target": "toml", "min": 2, "step": 2, "group": "anima", "hint_key": "field.vae_chunk_sizeHint"},
-    {"key": "vae_disable_cache", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.vae_disable_cache", "target": "toml", "group": "anima"},
+    {"key": "vae_disable_cache", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.vae_disable_cache", "target": "toml", "group": "anima", "readonly_if": {"key": "qwen_image_vae_2d", "eq": True, "reason_key": "field.vae_disable_cache2dLocked"}},
     {"key": "vae_batch_size", "type": "number", "default": "", "section": "performance", "desc_key": "field.vae_batch_size", "target": "toml", "min": 1, "step": 1, "hint_key": "field.vae_batch_sizeHint"},
-    {"key": "blocks_to_swap", "type": "number", "section": "performance", "desc_key": "field.blocks_to_swap", "target": "toml", "min": 0, "max": 8, "step": 1, "group": "anima", "hint_key": "field.blocks_to_swapHint"},
-    # cpu_offload_checkpointing：梯度检查点时把张量卸载到 CPU 省显存（与 unsloth_offload_checkpointing 互斥）。
-    # adapter.py 已有互斥校验，此前 registry 无字段导致该校验为死代码，此处补全。
+    {"key": "blocks_to_swap", "type": "number", "section": "performance", "desc_key": "field.blocks_to_swap", "target": "toml", "min": 0, "max": 26, "step": 1, "group": "anima", "hint_key": "field.blocks_to_swapHint"},
+    # 两种激活卸载与换块互斥，由 option_contracts 在校验和适配入口共同检查。
     {"key": "cpu_offload_checkpointing", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.cpu_offload_checkpointing", "target": "toml", "group": "anima", "hint_key": "field.cpu_offload_checkpointingHint", "omit_default": True},
     {"key": "unsloth_offload_checkpointing", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.unsloth_offload_checkpointing", "target": "toml", "group": "anima", "hint_key": "field.unsloth_offload_checkpointingHint", "omit_default": True},
     # torch.compile（通用 accelerate 版，SDXL 用；Anima 请用下方 compile 系列）
     {"key": "torch_compile", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.torch_compile", "target": "toml", "group": "sdxl", "hint_key": "field.torch_compileHint"},
     {"key": "dynamo_backend", "type": "select", "default": "inductor", "section": "performance", "desc_key": "field.dynamo_backend", "target": "toml", "show_if": {"key": "torch_compile", "eq": True}, "hint_key": "field.dynamo_backendHint", "group": "sdxl", "options": [{"v": "inductor", "l": "inductor", "dk": "opt.dynamo_backend_inductor"}, {"v": "eager", "l": "eager", "dk": "opt.dynamo_backend_eager"}, {"v": "cudagraphs", "l": "cudagraphs", "dk": "opt.dynamo_backend_cudagraphs"}]},
-    # Anima 专用 per-block torch.compile（需 Triton；与 torch_compile / blocks_to_swap 互斥，adapter 会校验）
+    # Anima/MOSS 块级编译可与换块并用，但必须关闭 fullgraph。
     {"key": "compile", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.compile", "target": "toml", "group": "anima", "hint_key": "field.compileHint"},
     {"key": "compile_backend", "type": "select", "default": "inductor", "section": "performance", "desc_key": "field.compile_backend", "target": "toml", "group": "anima", "show_if": {"key": "compile", "eq": True}, "options": [{"v": "inductor", "l": "inductor", "dk": "opt.compile_backend_inductor"}, {"v": "eager", "l": "eager", "dk": "opt.compile_backend_eager"}, {"v": "cudagraphs", "l": "cudagraphs", "dk": "opt.compile_backend_cudagraphs"}]},
     {"key": "compile_mode", "type": "select", "default": "default", "section": "performance", "desc_key": "field.compile_mode", "target": "toml", "group": "anima", "show_if": {"key": "compile", "eq": True}, "options": [{"v": "default", "l": "default", "dk": "opt.compile_mode_default"}, {"v": "reduce-overhead", "l": "reduce-overhead", "dk": "opt.compile_mode_reduce_overhead"}, {"v": "max-autotune", "l": "max-autotune", "dk": "opt.compile_mode_max_autotune"}, {"v": "max-autotune-no-cudagraphs", "l": "max-autotune-no-cudagraphs", "dk": "opt.compile_mode_max_autotune_no_cudagraphs"}]},
@@ -559,7 +561,7 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "compile_cache_size_limit", "type": "number", "default": "", "section": "performance", "desc_key": "field.compile_cache_size_limit", "target": "toml", "group": "anima", "show_if": {"key": "compile", "eq": True}, "hint_key": "field.compile_cache_size_limitHint"},
     # DataLoader
     {"key": "persistent_data_loader_workers", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.persistent_data_loader_workers", "target": "toml", "hint_key": "field.persistent_data_loader_workersHint", "readonly_if": {"key": "max_data_loader_n_workers", "eq": 0, "reason_key": "field.persistent_data_loader_workersLocked"}},
-    {"key": "max_data_loader_n_workers", "type": "number", "default": "", "section": "performance", "desc_key": "field.max_data_loader_n_workers", "target": "toml", "min": 0, "step": 1, "hint_key": "field.max_data_loader_n_workersHint"},
+    {"key": "max_data_loader_n_workers", "type": "number", "default": "", "default_by_group": {"anima": 2}, "section": "performance", "desc_key": "field.max_data_loader_n_workers", "target": "toml", "min": 0, "step": 1, "hint_key": "field.max_data_loader_n_workersHint"},
 # ── Save ──
 {"key": "output_name", "type": "text", "default": "my_lora", "section": "save", "desc_key": "field.output_name", "target": "toml", "required": True},
 {"key": "output_dir", "type": "text", "default": "./output", "section": "save", "desc_key": "field.output_dir", "target": "toml", "role": "file-folder", "required": True},
@@ -605,19 +607,24 @@ FIELDS: list[dict[str, Any]] = [
         {"v": "dpm_2_a", "l": "dpm_2_a", "dk": "opt.sample_sampler_dpm_2_a"},
         {"v": "pndm", "l": "pndm", "dk": "opt.sample_sampler_pndm"},
     ]},
-    {"key": "sample_every_n_epochs", "type": "number", "default": 2, "section": "preview", "desc_key": "field.sample_every_n_epochs", "target": "toml", "min": 1, "show_if": {"key": "enable_preview", "eq": True}},
-    {"key": "sample_every_n_steps", "type": "number", "default": "", "section": "preview", "desc_key": "field.sample_every_n_steps", "target": "toml", "min": 1, "show_if": {"key": "enable_preview", "eq": True}},
+    {"key": "sample_interval_mode", "type": "select", "default": "epochs", "section": "preview", "desc_key": "field.sample_interval_mode", "target": "ui", "show_if": {"key": "enable_preview", "eq": True}, "options": [{"v": "epochs", "l": "epochs", "label_key": "opt.interval_epochs"}, {"v": "steps", "l": "steps", "label_key": "opt.interval_steps"}, {"v": "none", "l": "none", "label_key": "opt.interval_none"}]},
+    {"key": "sample_every_n_epochs", "type": "number", "default": 2, "section": "preview", "desc_key": "field.sample_every_n_epochs", "target": "toml", "min": 1, "step": 1, "layout_parent": "sample_interval_mode", "show_if": [{"key": "enable_preview", "eq": True}, {"key": "sample_interval_mode", "eq": "epochs"}]},
+    {"key": "sample_every_n_steps", "type": "number", "default": 100, "section": "preview", "desc_key": "field.sample_every_n_steps", "target": "toml", "min": 1, "step": 1, "layout_parent": "sample_interval_mode", "show_if": [{"key": "enable_preview", "eq": True}, {"key": "sample_interval_mode", "eq": "steps"}]},
     {"key": "sample_at_first", "type": "toggle", "default": False, "section": "preview", "desc_key": "field.sample_at_first", "target": "toml", "omit_default": True, "show_if": {"key": "enable_preview", "eq": True}},
     {"key": "sample_cfg", "type": "number", "default": 7, "section": "preview", "desc_key": "field.sample_cfg", "target": "ui", "min": 1, "max": 30, "step": 0.5, "hint_key": "field.sample_cfgHint", "show_if": {"key": "enable_preview", "eq": True}},
 # 预览分辨率默认 1024（SDXL/Anima 训练基准），原 512 在高分辨率模型下采样不具代表性
     {"key": "sample_width", "type": "number", "default": 1024, "section": "preview", "desc_key": "field.sample_width", "target": "ui", "hint_key": "field.sampleResolutionHint", "show_if": {"key": "enable_preview", "eq": True}},
     {"key": "sample_height", "type": "number", "default": 1024, "section": "preview", "desc_key": "field.sample_height", "target": "ui", "hint_key": "field.sampleResolutionHint", "show_if": {"key": "enable_preview", "eq": True}},
     {"key": "sample_seed", "type": "number", "default": 2333, "section": "preview", "desc_key": "field.sample_seed", "target": "ui", "hint_key": "field.sample_seedHint", "show_if": {"key": "enable_preview", "eq": True}},
-    {"key": "sample_steps", "type": "number", "default": 24, "section": "preview", "desc_key": "field.sample_steps", "target": "ui", "hint_key": "field.sample_stepsHint", "show_if": {"key": "enable_preview", "eq": True}},
+    {"key": "sample_steps", "type": "number", "default": 24, "section": "preview", "desc_key": "field.sample_steps", "target": "ui", "min": 1, "step": 1, "hint_key": "field.sample_stepsHint", "show_if": {"key": "enable_preview", "eq": True}},
     # Anima flow-match 采样时间表 shift（类比 Karras 的 sigma 偏移）。
     # 由 get_sample_prompts 拼成 --fs 传入 sd-scripts；SDXL 不读，故 group:anima 仅 Anima 显示。
-    {"key": "sample_flow_shift", "type": "number", "default": 3.0, "section": "preview", "desc_key": "field.sample_flow_shift", "hint_key": "field.sample_flow_shiftHint", "target": "ui", "group": "anima", "step": 0.05, "show_if": {"key": "enable_preview", "eq": True}},
+    {"key": "sample_flow_shift", "type": "number", "default": 3.0, "section": "preview", "desc_key": "field.sample_flow_shift", "hint_key": "field.sample_flow_shiftHint", "target": "ui", "group": "anima", "min": 0.01, "step": 0.05, "show_if": {"key": "enable_preview", "eq": True}},
 ]
+
+from backend.training.moss_image import extend_fields as _extend_moss_fields
+
+_extend_moss_fields(FIELDS)
 
 # LyCORIS 弹窗布局元数据。字段定义仍是唯一配置来源；这里仅声明独立编辑器中的
 # 信息架构和稳定顺序，避免前端再维护一份字段清单或靠 show_if 关系猜测顺序。
@@ -750,6 +757,8 @@ _MERGED_ARG_NAMES: dict[str, str] = {
 
 # snake_case → camelCase key mapping for frontend
 _FIELD_KEY_MAP = {
+    "keep_empty": "keepEmpty",
+    "default_by_group": "defaultByGroup",
     "value_type": "valueType",
     "desc_key": "descKey",
     "hint_key": "hintKey",
@@ -868,6 +877,9 @@ def _to_camel(field: dict) -> dict:
         result["networkModules"] = ["lycoris.kohya", *(
             module for module, mapping in NATIVE_NETWORK_ARG_MAP.items() if key in mapping
         )]
+    if key == "train_text_embedder":
+        result["networkArg"] = "train_llm_adapter"
+        result["networkModules"] = ["networks.lora_generic"]
     return result
 
 

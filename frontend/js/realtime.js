@@ -471,7 +471,10 @@ window.realtimeMixin = {
       this.backendDisconnectedDuration = '';
       if (this._disconnectedTimer) { clearInterval(this._disconnectedTimer); this._disconnectedTimer = null; }
       if (this._realtimeHealthTimer) { clearInterval(this._realtimeHealthTimer); this._realtimeHealthTimer = null; }
-      if (wasOffline) this.toast(this.t('common.backendReconnectedToast'), 'success');
+      if (wasOffline) {
+        window.AnimaUI?.dismissNotification('backend-disconnected');
+        this.toast(this.t('common.backendReconnectedToast'), 'success');
+      }
       if (typeof this.setPreviewMediaPaused === 'function') this.setPreviewMediaPaused(false);
       return;
     }
@@ -489,7 +492,7 @@ window.realtimeMixin = {
         this.backendDisconnectedAt = Date.now();
         if (typeof this._updateDisconnectedDuration === 'function') this._updateDisconnectedDuration();
         if (!this._disconnectedTimer) this._disconnectedTimer = setInterval(() => this._updateDisconnectedDuration(), 1000);
-        this.toast(this.t('common.backendDisconnectedToast'), 'error');
+        this.toast(this.t('common.backendDisconnectedToast'), 'error', { key: 'backend-disconnected' });
       }
     }
   },

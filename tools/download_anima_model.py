@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """训练模型下载工具（薄封装）。
 
-从 Hugging Face Hub 下载 lora-scripts-anima 所需的 Anima / Krea 2 模型文件
+从 Hugging Face Hub 下载 lora-scripts-anima 所需的 Anima / Krea 2 / MOSS-Image 模型文件
 落到本地 `models/` 目录，供训练直接 `pretrained_model_name_or_path` 等字段引用。
 
 本文件只保留产品模型清单、批量下载编排、本地扫描和 CLI，
@@ -34,12 +34,12 @@ from backend.utils.hf_download import download_hf_file, cleanup_temp  # noqa: E4
 
 
 # ── Anima 核心文件清单 ──
-# (HF repo 内路径, 本地文件名, 用途说明)
+# (HF repo 内路径, 本地文件名, 用途说明, 三语言文案键)
 # HF 仓库里文件在 split_files/ 子目录下，本地统一落到 models/ 根目录。
-ANIMA_FILES: list[tuple[str, str, str]] = [
-    ("split_files/diffusion_models/anima-base-v1.0.safetensors", "anima-base-v1.0.safetensors", "底模 / Base diffusion model"),
-    ("split_files/text_encoders/qwen_3_06b_base.safetensors",   "qwen_3_06b_base.safetensors",   "Text encoder (Qwen3-0.6B)"),
-    ("split_files/vae/qwen_image_vae.safetensors",               "qwen_image_vae.safetensors",     "VAE"),
+_ANIMA_FILES: list[tuple[str, str, str, str]] = [
+    ("split_files/diffusion_models/anima-base-v1.0.safetensors", "anima-base-v1.0.safetensors", "底模 / Base diffusion model", "animaBase"),
+    ("split_files/text_encoders/qwen_3_06b_base.safetensors",   "qwen_3_06b_base.safetensors",   "Text encoder (Qwen3-0.6B)", "animaEncoder"),
+    ("split_files/vae/qwen_image_vae.safetensors",               "qwen_image_vae.safetensors",     "VAE", "animaVae"),
 ]
 
 # anima_comparison.json 是 ComfyUI 工作流文件，训练不需要，不下。
@@ -47,28 +47,46 @@ ANIMA_FILES: list[tuple[str, str, str]] = [
 # HF 仓库
 ANIMA_REPO_ID = "circlestone-labs/Anima"
 KREA2_REPO_ID = "Comfy-Org/Krea-2"
+MOSS_REPO_ID = "Comfy-Org/MOSS-Image"
 
-KREA2_FILES: list[tuple[str, str, str]] = [
+_KREA2_FILES: list[tuple[str, str, str, str]] = [
     (
         "diffusion_models/krea2_raw_fp8_scaled.safetensors",
         "krea2_raw_fp8_scaled.safetensors",
         "Krea 2 训练底模 / Training model",
+        "kreaRaw",
     ),
     (
         "diffusion_models/krea2_turbo_fp8_scaled.safetensors",
         "krea2_turbo_fp8_scaled.safetensors",
         "Krea 2 推理模型 / Inference model",
+        "kreaTurbo",
     ),
     (
         "text_encoders/qwen3vl_4b_fp8_scaled.safetensors",
         "qwen3vl_4b_fp8_scaled.safetensors",
         "文本编码器 / Text encoder (Qwen3-VL-4B FP8 scaled)",
+        "kreaEncoder",
     ),
     (
         "vae/qwen_image_vae.safetensors",
         "qwen_image_vae.safetensors",
         "VAE（与 Anima 共用本地文件） / Shared with Anima",
+        "kreaVae",
     ),
+]
+
+# (HF 路径, 本地文件名, 日志说明, 三语言文案键)
+# 只列训练核心兼容的格式；W4A8 GPTQ 文本编码器不受支持。
+MOSS_FILES: list[tuple[str, str, str, str]] = [
+    ("diffusion_models/moss_image_base_bf16.safetensors", "moss_image_base_bf16.safetensors", "MOSS-Image Base BF16", "mossBaseBf16"),
+    ("diffusion_models/moss_image_base_int8_convrot.safetensors", "moss_image_base_int8_convrot.safetensors", "MOSS-Image Base ConvRot INT8", "mossBaseInt8"),
+    ("diffusion_models/moss_image_sft_bf16.safetensors", "moss_image_sft_bf16.safetensors", "MOSS-Image SFT BF16", "mossSftBf16"),
+    ("diffusion_models/moss_image_sft_int8_convrot.safetensors", "moss_image_sft_int8_convrot.safetensors", "MOSS-Image SFT ConvRot INT8", "mossSftInt8"),
+    ("text_encoders/qwen3.5_9b_bf16.safetensors", "qwen3.5_9b_bf16.safetensors", "Qwen3.5-9B BF16", "mossTextBf16"),
+    ("text_encoders/qwen3.5_9b_int8_convrot.safetensors", "qwen3.5_9b_int8_convrot.safetensors", "Qwen3.5-9B ConvRot INT8", "mossTextInt8"),
+    ("vae/flux2-vae.safetensors", "flux2-vae.safetensors", "FLUX.2 VAE", "mossVae"),
+    ("vae/flux2-vae_small.safetensors", "flux2-vae_small.safetensors", "FLUX.2 Small VAE", "mossVaeSmall"),
 ]
 
 # ── 附加模型（自用 HF 仓库，与 ame-la/train_use_models 的 index.json 保持对应）──
@@ -85,14 +103,50 @@ TRAIN_USE_FILES: list[tuple[str, str, str, str, str, str]] = [
     ),
 ]
 
-# (HF repo, HF 路径, 本地文件名, 用途说明, UI 分组 [, 原始出处页面])
+# (HF repo, HF 路径, 本地文件名, 用途说明, UI 分组 [, 原始出处页面, 三语言文案键])
 MODEL_FILES: list[tuple] = [
-    (ANIMA_REPO_ID, hf_path, local_name, desc, "Anima")
-    for hf_path, local_name, desc in ANIMA_FILES
-] + [
-    (KREA2_REPO_ID, hf_path, local_name, desc, "Krea 2")
-    for hf_path, local_name, desc in KREA2_FILES
+    (repo_id, hf_path, local_name, desc, group, None, f"environment.animaModel.{desc_key}")
+    for repo_id, group, files in (
+        (ANIMA_REPO_ID, "Anima", _ANIMA_FILES),
+        (KREA2_REPO_ID, "Krea 2", _KREA2_FILES),
+        (MOSS_REPO_ID, "MOSS-Image", MOSS_FILES),
+    )
+    for hf_path, local_name, desc, desc_key in files
 ] + TRAIN_USE_FILES
+
+# 保持下载函数和 CLI 使用的三元组格式，翻译键只供模型清单 UI 使用。
+ANIMA_FILES = [item[:3] for item in _ANIMA_FILES]
+KREA2_FILES = [item[:3] for item in _KREA2_FILES]
+
+
+# Hugging Face 文件元数据快照（2026-10-18）；调整下载清单时同步维护。
+# 仅用于下载前展示，保持本地状态查询离线可用；不用于判断文件是否完整。
+MODEL_DOWNLOAD_SIZES: dict[str, dict[str, int]] = {
+    ANIMA_REPO_ID: {
+        "split_files/diffusion_models/anima-base-v1.0.safetensors": 4_182_218_328,
+        "split_files/text_encoders/qwen_3_06b_base.safetensors": 1_192_135_096,
+        "split_files/vae/qwen_image_vae.safetensors": 253_806_246,
+    },
+    KREA2_REPO_ID: {
+        "diffusion_models/krea2_raw_fp8_scaled.safetensors": 13_141_730_784,
+        "diffusion_models/krea2_turbo_fp8_scaled.safetensors": 13_141_730_784,
+        "text_encoders/qwen3vl_4b_fp8_scaled.safetensors": 5_242_467_968,
+        "vae/qwen_image_vae.safetensors": 253_806_246,
+    },
+    MOSS_REPO_ID: {
+        "diffusion_models/moss_image_base_bf16.safetensors": 10_164_655_808,
+        "diffusion_models/moss_image_base_int8_convrot.safetensors": 5_413_698_958,
+        "diffusion_models/moss_image_sft_bf16.safetensors": 10_164_655_808,
+        "diffusion_models/moss_image_sft_int8_convrot.safetensors": 5_413_698_958,
+        "text_encoders/qwen3.5_9b_bf16.safetensors": 19_306_312_328,
+        "text_encoders/qwen3.5_9b_int8_convrot.safetensors": 9_748_121_532,
+        "vae/flux2-vae.safetensors": 336_211_292,
+        "vae/flux2-vae_small.safetensors": 249_521_340,
+    },
+    "ame-la/train_use_models": {
+        "any-anima-for-lora-training/anyAnimaForLora_102.safetensors": 4_182_219_262,
+    },
+}
 
 
 def _normalize_file(
@@ -106,7 +160,7 @@ def _normalize_file(
     if len(item) == 4:
         repo, hf_path, local_name, desc = item
         return repo, hf_path, local_name, desc
-    # 5 元组或 6 元组（group / source_page 仅 UI 用，下载时不需要）
+    # 后续字段仅用于 UI，下载时不需要。
     repo, hf_path, local_name, desc = item[0], item[1], item[2], item[3]
     return repo, hf_path, local_name, desc
 
@@ -232,18 +286,28 @@ def list_local_model_files(dest_dir: Path) -> list[dict]:
     for item in MODEL_FILES:
         repo_id, hf_path, local_name, desc, group = item[:5]
         source_page = item[5] if len(item) > 5 else None
+        component_type = next(
+            (kind for folder, kind in (("diffusion_models", "model"), ("text_encoders", "encoder"), ("vae", "vae"))
+             if folder in Path(hf_path).parts),
+            "model" if group == "Train Use" else "other",
+        )
         path = dest_dir / local_name
         exists = path.exists() and path.is_file()
+        size_bytes = path.stat().st_size if exists else 0
         out.append(
             {
                 "filename": local_name,
                 "desc": desc,
+                "desc_key": item[6] if len(item) > 6 else None,
                 "group": group,
+                "component_type": component_type,
                 "repo_id": repo_id,
                 "source_url": f"https://huggingface.co/{repo_id}/blob/main/{hf_path}",
                 "source_page": source_page,
                 "exists": exists,
-                "size_gb": round(path.stat().st_size / (1024**3), 2) if exists else 0,
+                "size_bytes": size_bytes,
+                "size_gb": round(size_bytes / (1024**3), 2),
+                "download_size_bytes": MODEL_DOWNLOAD_SIZES.get(repo_id, {}).get(hf_path),
             }
         )
     return out

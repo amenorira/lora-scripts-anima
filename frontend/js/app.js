@@ -47,8 +47,6 @@ document.addEventListener('alpine:init', () => {
     pageTitle: 'lora-scripts-anima',
     locale: 'en-US',
     i18nReady: true,
-    showThemeDropdown: false,
-    showLangDropdown: false,
     sidebarCollapsed: false,
     _routeScrollPositions: {},
     routeTransitioning: false,
@@ -62,7 +60,9 @@ document.addEventListener('alpine:init', () => {
     _progressInterval: null,
     _progressResetTimer: null,
     _progressFinishTimer: null,
+    _progressDelayTimer: null,
     _progressStartTime: 0,
+    _progressVisibleAt: 0,
     _progressSeq: 0,
 
     // UI Settings
@@ -164,13 +164,6 @@ document.addEventListener('alpine:init', () => {
         }
       });
 
-      document.addEventListener('click', (e) => {
-        if (!e.target.closest('.sidebar-dropdown')) {
-          this.showThemeDropdown = false;
-          this.showLangDropdown = false;
-        }
-      });
-
       window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
         if (this.theme === 'auto') this.resolveTheme();
       });
@@ -213,7 +206,6 @@ document.addEventListener('alpine:init', () => {
     setTheme(t) {
       if (this.theme === t) return;
       this.theme = t;
-      this.showThemeDropdown = false;
 
       const apply = () => {
         this.resolveTheme();
@@ -237,44 +229,53 @@ document.addEventListener('alpine:init', () => {
       clearInterval(this._progressInterval);
       clearTimeout(this._progressResetTimer);
       clearTimeout(this._progressFinishTimer);
+      clearTimeout(this._progressDelayTimer);
       const progressSeq = ++this._progressSeq;
       this._progressStartTime = Date.now();
-      // Start above zero so Alpine can paint the bar before a heavy route mounts.
-      this.progressPercent = 8;
+      this._progressVisibleAt = 0;
+      this.progressPercent = 0;
       var stages = (window.UI_CONSTANTS && window.UI_CONSTANTS.PROGRESS_STAGES) || [{ duration: 300, max: 30 }, { duration: 1700, max: 65 }, { duration: Infinity, max: 90 }];
       var t1 = stages[0].duration, m1 = stages[0].max;
       var t2 = stages[1].duration, m2 = stages[1].max;
       var maxPct = stages[2].max;
 
-      this._progressInterval = setInterval(() => {
+      // Fast local navigation needs no flash of simulated progress. Actual
+      // training progress is independent of this route/loading indicator.
+      this._progressDelayTimer = setTimeout(() => {
         if (progressSeq !== this._progressSeq) return;
-        var elapsed = Date.now() - this._progressStartTime;
-        if (elapsed < t1) {
-          this.progressPercent = Math.max(8, Math.round((elapsed / t1) * m1));
-        } else if (elapsed < t1 + t2) {
-          this.progressPercent = Math.round(m1 + ((elapsed - t1) / t2) * (m2 - m1));
-        } else {
-          this.progressPercent = Math.round(m2 + ((elapsed - t1 - t2) / (elapsed - t1 - t2 + 200)) * (maxPct - m2));
-        }
-        if (this.progressPercent > maxPct) this.progressPercent = maxPct;
-      }, 80);
+        this._progressVisibleAt = Date.now();
+        this.progressPercent = 8;
+        this._progressInterval = setInterval(() => {
+          if (progressSeq !== this._progressSeq) return;
+          var elapsed = Date.now() - this._progressStartTime;
+          if (elapsed < t1) {
+            this.progressPercent = Math.max(8, Math.round((elapsed / t1) * m1));
+          } else if (elapsed < t1 + t2) {
+            this.progressPercent = Math.round(m1 + ((elapsed - t1) / t2) * (m2 - m1));
+          } else {
+            this.progressPercent = Math.round(m2 + ((elapsed - t1 - t2) / (elapsed - t1 - t2 + 200)) * (maxPct - m2));
+          }
+          if (this.progressPercent > maxPct) this.progressPercent = maxPct;
+        }, 80);
+      }, 180);
     },
 
     finishProgress() {
       clearInterval(this._progressInterval);
       this._progressInterval = null;
       clearTimeout(this._progressFinishTimer);
+      clearTimeout(this._progressDelayTimer);
+      if (this.progressPercent === 0) return;
       const progressSeq = this._progressSeq;
-      const elapsed = Date.now() - this._progressStartTime;
       const complete = () => {
         if (progressSeq !== this._progressSeq) return;
         this.progressPercent = 100;
         this._progressResetTimer = setTimeout(() => {
           if (progressSeq === this._progressSeq) this.progressPercent = 0;
-        }, 520);
+        }, 200);
       };
       // Prevent a sub-frame flash while still keeping route feedback crisp.
-      this._progressFinishTimer = setTimeout(complete, Math.max(0, 160 - elapsed));
+      this._progressFinishTimer = setTimeout(complete, Math.max(0, 120 - (Date.now() - this._progressVisibleAt)));
     },
 
     // ── Routing ─────────────────────────────────────────────
@@ -559,40 +560,12 @@ document.addEventListener('alpine:init', () => {
     onLocaleChange() {
       I18N.setLocale(this.locale);
       this.locale = I18N.getLocale();
-      this.showLangDropdown = false;
       document.documentElement.lang = this.locale;
     },
 
     // ── Toast ──────────────────────────────────────────────
-    toast(message, type) {
-      const c = document.getElementById('toastContainer');
-      const el = document.createElement('div');
-      el.className = 'toast';
-      el.setAttribute('role', type === 'error' ? 'alert' : 'status');
-      el.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
-      if (type) {
-        el.classList.add(type);
-        var icon;
-        if (type === 'error') {
-          icon = '<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><line x1="12" y1="7.5" x2="12" y2="13"/><line x1="12" y1="16.5" x2="12.01" y2="16.5"/></svg>';
-        } else if (type === 'warning') {
-          icon = '<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
-        } else {
-          icon = '<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="8 12 11 15 16.5 9.5"/></svg>';
-        }
-        el.innerHTML = icon + '<span></span>';
-        el.querySelector('span').textContent = message;
-      } else {
-        const messageEl = document.createElement('span');
-        messageEl.textContent = message;
-        el.appendChild(messageEl);
-      }
-      c.appendChild(el);
-      const displayDuration = type === 'error' ? 4800 : type === 'warning' ? 3600 : 2800;
-      setTimeout(function() {
-        el.classList.add('out');
-        setTimeout(function() { if (el.parentNode) el.remove(); }, 140);
-      }, displayDuration);
+    toast(message, type, options = {}) {
+      return window.AnimaUI.notify(message, type, options, (key, fallback) => this.t(key, fallback));
     },
 
     // ── Backend disconnect duration (realtime.js owns connectivity) ─
@@ -621,13 +594,13 @@ document.addEventListener('alpine:init', () => {
     },
 
     // Home hero "Release" badge: use the real version from /api/version
-    // (e.g. "v26.925.80307-4-g3dc39b4f" → "v26.925.80307").
+    // (e.g. "v26.1017.13c72-4-g3dc39b4f" → "v26.1017.13c72").
     // Keep loading/unknown states explicit instead of showing an old release.
     displayVersion() {
       const v = String(this.version || '');
       if (!v || v === '...') return '...';
       if (v === 'dev') return 'dev';
-      const m = v.match(/^v?\d+\.\d+\.\d+/);
+      const m = v.match(/^v?\d+\.\d+\.(?:[0-9a-f]{5}|\d+)(?=-|$)/);
       return m ? m[0] : v;
     },
 
@@ -643,6 +616,7 @@ document.addEventListener('alpine:init', () => {
 
     _applyPanelWidth(px) {
       document.documentElement.style.setProperty('--panel-w', px + 'px');
+      document.getElementById('panelResizer')?.setAttribute('aria-valuenow', String(Math.round(px)));
     },
 
     _panelMaxWidth() {
@@ -659,6 +633,29 @@ document.addEventListener('alpine:init', () => {
       // 保存的宽度已由 index.html 的 blocking 脚本在首帧前应用到 --panel-w，这里无需再设。
 
       const clamp = (w) => Math.max(this._PANEL_MIN_W, Math.min(this._panelMaxWidth(), w));
+      const syncSize = () => {
+        const width = document.getElementById('rightPanel')?.getBoundingClientRect().width;
+        resizer.setAttribute('aria-valuemax', String(this._panelMaxWidth()));
+        if (width > 0) {
+          resizer.setAttribute('aria-valuenow', String(Math.round(width)));
+        }
+      };
+      const panel = document.getElementById('rightPanel');
+      if (panel && typeof ResizeObserver !== 'undefined') {
+        const observer = new ResizeObserver(syncSize);
+        observer.observe(panel);
+      }
+      window.addEventListener('resize', syncSize);
+      syncSize();
+      resizer.addEventListener('keydown', (event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        const current = document.getElementById('rightPanel').getBoundingClientRect().width;
+        const width = clamp(event.key === 'Home' ? this._PANEL_MIN_W : event.key === 'End'
+          ? this._panelMaxWidth() : current + (event.key === 'ArrowLeft' ? 8 : -8));
+        this._applyPanelWidth(width);
+        localStorage.setItem(this._PANEL_STORAGE_KEY, String(width));
+      });
 
       const onMove = (e) => {
         const panel = document.getElementById('rightPanel');

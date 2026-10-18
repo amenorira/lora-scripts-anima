@@ -186,6 +186,22 @@ async def parse_training_toml(req: TrainingTomlParseRequest):
         parsed = extract_scheduler_form(parsed)
     except ValueError as exc:
         return APIResponseFail(message=str(exc))
+    # Native trainer TOMLs omit the application's profile selector. Prefer an
+    # explicit selector, then MOSS-specific fields, then the current UI profile.
+    imported_type = parsed.get("model_train_type")
+    if not imported_type:
+        if parsed.get("network_module") == "networks.lora_generic" or "moss_max_token_length" in parsed:
+            imported_type = "moss-image-lora"
+        else:
+            imported_type = req.model_train_type
+    if imported_type == "moss-image-lora":
+        from backend.training.moss_image import extract_form
+
+        try:
+            parsed["model_train_type"] = imported_type
+            parsed = extract_form(parsed)
+        except ValueError as exc:
+            return APIResponseFail(message=str(exc))
     return APIResponseSuccess(data={"data": parsed})
 
 available_scripts = [
@@ -487,12 +503,13 @@ def get_sample_prompts(config: dict):
 
     positive_prompts = config.get('positive_prompts', None)
     negative_prompts = config.get('negative_prompts', '')
-    sample_width = config.get('sample_width', 512)
-    sample_height = config.get('sample_height', 512)
-    sample_cfg = config.get('sample_cfg', 7)
+    is_moss = config.get('model_train_type') == 'moss-image-lora'
+    sample_width = config.get('sample_width', 1024 if is_moss else 512)
+    sample_height = config.get('sample_height', 1024 if is_moss else 512)
+    sample_cfg = config.get('sample_cfg', 3.0 if is_moss else 7)
     sample_seed = config.get('sample_seed', 2333)
-    sample_steps = config.get('sample_steps', 24)
-    sample_flow_shift = config.get('sample_flow_shift', 3.0)
+    sample_steps = config.get('sample_steps', 50 if is_moss else 24)
+    sample_flow_shift = config.get('sample_flow_shift', 5.0 if is_moss else 3.0)
     randomly_choice_prompt = config.get('randomly_choice_prompt', False)
 
     if randomly_choice_prompt:
@@ -509,6 +526,18 @@ def get_sample_prompts(config: dict):
             raise ValueError('No .txt files found in dataset directory / 数据集路径没有 txt 文件')
         sample_prompt_file = random.Random(int(config.get("seed", 2333))).choice(caption_files)
         positive_prompts = sample_prompt_file.read_text(encoding="utf-8")
+
+    if is_moss:
+        import json
+
+        if not positive_prompts or not positive_prompts.strip():
+            return ''
+        return json.dumps([{
+            "prompt": positive_prompts, "negative_prompt": negative_prompts or "",
+            "width": sample_width, "height": sample_height,
+            "scale": sample_cfg, "sample_steps": sample_steps,
+            "seed": sample_seed, "flow_shift": sample_flow_shift,
+        }], ensure_ascii=False)
 
     # Sanitise negative prompt: replace newlines with ", " to keep --n on one line
     negative_prompts = negative_prompts.replace(chr(10), ", ") if negative_prompts else ""
@@ -775,8 +804,8 @@ async def _create_krea2_cache_reserved(config: dict, reserved_task):
     except OSError as exc:
         return _training_error(message=f"Failed to initialize Krea 2 cache / 初始化 Krea 2 缓存失败: {exc}")
 
-    def _cache_finished(status: str) -> None:
-        mark_cache_manifest(config, status)
+    def _finalize_cache(status: str) -> str | None:
+        return mark_cache_manifest(config, status)
 
     result = reserved_task.launch(
         str(dataset_config_file),
@@ -808,7 +837,7 @@ async def _create_krea2_cache_reserved(config: dict, reserved_task):
             "dataset_config": str(dataset_config_file),
             "cache_dir": str(cache_dir),
         },
-        on_complete=_cache_finished,
+        finalize_result=_finalize_cache,
     )
     if result.get("status") != "success":
         return result
@@ -850,7 +879,7 @@ async def _create_toml_file_reserved(config: dict, reserved_task):
         )
     except ValueError as exc:
         return _training_error(message=str(exc))
-    if profile.id != "anima-lora":
+    if profile.id not in ("anima-lora", "moss-image-lora"):
         subset_timestep_offsets = {}
 
     # Keep the legacy sd-scripts adapter input byte-for-byte compatible. Core
@@ -923,6 +952,8 @@ async def _create_toml_file_reserved(config: dict, reserved_task):
     if "attn_mode" in config:
         attn_requested = config.get("attn_mode", "torch")
         attn_actual, attn_warning = detect_attention_backend(attn_requested)
+        if attn_requested == "flash" and attn_actual != "flash":
+            return _training_error(message=attn_warning)
         if attn_warning:
             log.warning(f"[Attn] {attn_warning}")
             config["attn_mode"] = attn_actual
@@ -996,6 +1027,21 @@ async def _create_toml_file_reserved(config: dict, reserved_task):
         if not os.path.exists(vae_path):
             return _training_error(message=f"VAE model not found / VAE 模型不存在: {vae_path}")
 
+    if model_train_type == "moss-image-lora":
+        from backend.training.moss_image import validate_captions, validate_model_files
+
+        model_errors = await _settled_to_thread(validate_model_files, config)
+        if model_errors:
+            return _training_error(message="\n".join(model_errors))
+        caption_errors = await _settled_to_thread(validate_captions, config)
+        if caption_errors:
+            return _training_error(message="\n".join(caption_errors))
+        if config.get("convrot_int8_bwd") == "int8":
+            from library.convrot_int8_kernels import HAS_TRITON
+
+            if not HAS_TRITON:
+                return _training_error(message="ConvRot INT8 backward requires CUDA and Triton / INT8 反向需要 CUDA 与 Triton")
+
     sample_prompts_arg = ""
     # Raw trainer TOMLs call the prompt file sample_prompts; the UI calls it prompt_file.
     prompt_file = str(_ui_config.get("prompt_file") or _ui_config.get("sample_prompts") or "").strip()
@@ -1034,7 +1080,7 @@ async def _create_toml_file_reserved(config: dict, reserved_task):
     config["logging_dir"] = str(internal_run_dir / "log")
 
     if sample_prompts_arg:
-        prompts_path = internal_run_dir / "prompts.txt"
+        prompts_path = internal_run_dir / ("prompts.json" if model_train_type == "moss-image-lora" else "prompts.txt")
         prompts_path.write_text(sample_prompts_arg, encoding="utf-8")
         config["sample_prompts"] = str(prompts_path)
         log.info(f"Sample prompts written / 采样 prompt 已写入: {prompts_path}")
@@ -1097,6 +1143,7 @@ async def _create_toml_file_reserved(config: dict, reserved_task):
         },
         extra_env={
             **training_metrics_environment(_ui_config),
+            "ANIMA_ENABLE_FLASH_ATTN": "1" if config.get("attn_mode") == "flash" else "0",
             **({"LYCORIS_KERNEL_BACKEND": lycoris_kernel_backend} if lycoris_kernel_backend else {}),
         },
     )

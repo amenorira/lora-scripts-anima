@@ -80,12 +80,9 @@ window.trainingCoreMixin = {
   timestepPreviewOpen: false,
   timestepPreviewData: null,
   timestepPreviewScope: 'base',
-  timestepPreviewPreviousFocus: null,
   lrPreviewOpen: false,
   lrPreviewData: null,
-  lrPreviewPreviousFocus: null,
   lycorisModalOpen: false,
-  lycorisModalPreviousFocus: null,
   subsetTimestepOffsetDrafts: {},
   datasetRepeatDrafts: {},
   datasetRepeatApplying: false,
@@ -111,6 +108,7 @@ window.trainingCoreMixin = {
 
   trainTypes: [
     { v: 'anima-lora', l: 'Anima LoRA', dk: 'opt.model_train_type_anima-lora' },
+    { v: 'moss-image-lora', l: 'MOSS-Image LoRA', dk: 'opt.model_train_type_moss-image-lora' },
     { v: 'sdxl-lora', l: 'SDXL LoRA', dk: 'opt.model_train_type_sdxl-lora' },
     { v: 'krea2-lora', l: 'Krea 2 LoRA (musubi-tuner)', dk: 'opt.model_train_type_krea2-lora' },
   ],
@@ -255,9 +253,7 @@ window.trainingCoreMixin = {
 
     // A runtime profile owns its network module. Krea's module is musubi
     // specific and must never inherit an sd-scripts or LyCORIS selection.
-    const targetMod = v === 'anima-lora'
-      ? 'networks.lora_anima'
-      : (v === 'krea2-lora' ? 'networks.lora_krea2' : 'networks.lora');
+    const targetMod = this._defaultNetworkModule(v);
     if (this.form.network_module !== targetMod) this.form.network_module = targetMod;
     this._syncKrea2CacheDir();
     this._captureProfileDraft(v, this.form, newDefaults);
@@ -282,6 +278,14 @@ window.trainingCoreMixin = {
   },
 
   // 构建指定训练类型的字段默认值字典（与 buildTrainForm 共用逻辑）。
+  _defaultNetworkModule(trainType) {
+    return ({
+      'anima-lora': 'networks.lora_anima',
+      'moss-image-lora': 'networks.lora_generic',
+      'krea2-lora': 'networks.lora_krea2',
+    })[trainType] || 'networks.lora';
+  },
+
   _buildFormDefaults(trainType) {
     const defaults = {};
     const allSections = window.getVisibleSections(trainType);
@@ -299,9 +303,7 @@ window.trainingCoreMixin = {
       }
     }); });
     defaults.model_train_type = trainType;
-    // Adjust network_module default based on train type
-    if (trainType === 'anima-lora') defaults.network_module = 'networks.lora_anima';
-    else if (trainType === 'krea2-lora') defaults.network_module = 'networks.lora_krea2';
+    defaults.network_module = this._defaultNetworkModule(trainType);
     return defaults;
   },
 
@@ -467,9 +469,9 @@ window.trainingCoreMixin = {
   },
 
   _profileFormFromDraft(trainType, defaults = this._buildFormDefaults(trainType), source = null) {
-    const draft = this._normalizeLegacyLoraMuonForm(
+    const draft = this._migrateSdOptionModes(this._normalizeLegacyLoraMuonForm(
       source || this._profileFormDrafts[trainType] || {}
-    );
+    ), trainType);
     const clean = { ...defaults };
     Object.keys(defaults).forEach(key => {
       if (Object.prototype.hasOwnProperty.call(draft, key)) clean[key] = draft[key];
@@ -480,6 +482,29 @@ window.trainingCoreMixin = {
     }
     clean.model_train_type = trainType;
     return clean;
+  },
+
+  _migrateSdOptionModes(source, trainType) {
+    const values = { ...source };
+    if (trainType === 'krea2-lora') return values;
+    const has = key => values[key] !== undefined && values[key] !== null && values[key] !== '';
+    if (!has('sample_interval_mode')) {
+      const specified = ['sample_every_n_epochs', 'sample_every_n_steps'].some(key => Object.hasOwn(values, key));
+      values.sample_interval_mode = has('sample_every_n_epochs') ? 'epochs'
+        : has('sample_every_n_steps') ? 'steps' : specified ? 'none' : 'epochs';
+    }
+    if (values.cpu_offload_checkpointing || values.unsloth_offload_checkpointing) values.gradient_checkpointing = true;
+    return values;
+  },
+
+  _enforceCheckpointingUiConstraints(changedKey) {
+    if (this.form.model_train_type === 'krea2-lora') return;
+    if (changedKey === 'gradient_checkpointing' && this.form.gradient_checkpointing === false) {
+      this.form.cpu_offload_checkpointing = false;
+      this.form.unsloth_offload_checkpointing = false;
+    } else if (this.form.cpu_offload_checkpointing || this.form.unsloth_offload_checkpointing) {
+      this.form.gradient_checkpointing = true;
+    }
   },
 
   _captureProfileDraft(trainType, source = this.form, defaults = this._buildFormDefaults(trainType)) {
@@ -523,7 +548,9 @@ window.trainingCoreMixin = {
     window.getVisibleSections(trainType).forEach(section => {
       section.fields.forEach(field => {
         if (field.type !== 'select' || !Array.isArray(field.options) || !field.options.length) return;
-        const validValues = field.options.map(option => option.v);
+        const group = window.TRAIN_GROUP_MAP?.[trainType];
+        const validValues = field.options.filter(option => !group || !option.group || option.group === 'all'
+          || (Array.isArray(option.group) ? option.group.includes(group) : option.group === group)).map(option => option.v);
         if (!validValues.includes(target[field.key])) {
           target[field.key] = defaults[field.key] ?? validValues[0];
         }
@@ -698,9 +725,11 @@ window.trainingCoreMixin = {
     if (this.form.model_train_type === 'krea2-lora') {
       this.form.network_module = 'networks.lora_krea2';
       this._applyKrea2ModelDefaults(this.form, defaults);
+    } else if (this.form.model_train_type === 'moss-image-lora') {
+      this.form.network_module = 'networks.lora_generic';
     } else if (this.form.model_train_type === 'anima-lora' && this.form.network_module === 'networks.lora') {
       this.form.network_module = 'networks.lora_anima';
-    } else if (this.form.model_train_type !== 'anima-lora' && this.form.network_module === 'networks.lora_anima') {
+    } else if (this.form.model_train_type !== 'anima-lora' && ['networks.lora_anima', 'networks.lora_generic'].includes(this.form.network_module)) {
       this.form.network_module = 'networks.lora';
     }
     this.formDefaults = { ...defaults };
@@ -747,6 +776,7 @@ window.trainingCoreMixin = {
       self.scheduleOutputPathInfo();
       clearTimeout(self._formSaveTimer);
       self._formSaveTimer = setTimeout(() => {
+        self._formSaveTimer = null;
         self._captureProfileDraft(self._activeTrainType || self.form.model_train_type, self.form);
         self._persistProfileDrafts(r);
         self._persistProfileFieldSources(r);
@@ -818,6 +848,7 @@ window.trainingCoreMixin = {
     // 非阻塞静默刷新可管理扩展的环境状态，
     // 供 renderField 联动提示调用；不 await，不阻塞表单首屏。
     this.xfRefresh(true).catch(() => {});
+    if (typeof this.faRefresh === 'function') this.faRefresh(true).catch(() => {});
     if (typeof this.tritonRefresh === 'function') this.tritonRefresh(true).catch(() => {});
 
     this.scheduleStepEstimate();
@@ -1291,9 +1322,7 @@ window.trainingCoreMixin = {
         defaults.dataset_cache_dir = cacheDir;
       }
       this._normalizeProfileSelectValues(trainType, defaults, warmForm);
-      warmForm.network_module = trainType === 'anima-lora'
-        ? 'networks.lora_anima'
-        : (trainType === 'krea2-lora' ? 'networks.lora_krea2' : 'networks.lora');
+      warmForm.network_module = this._defaultNetworkModule(trainType);
       this.form = warmForm;
       this.formDefaults = { ...defaults };
       this._activeTrainType = trainType;
@@ -1407,13 +1436,13 @@ window.trainingCoreMixin = {
 
   openLycorisConfig() {
     if (this.form.network_module !== 'lycoris.kohya') return;
-    this._openManagedModal('lycorisModalOpen', 'lycorisModalPreviousFocus', '.lycoris-modal-close', () => {
+    this._openManagedModal('lycorisModalOpen', () => {
       this.renderLycorisPanel();
     });
   },
 
   closeLycorisConfig() {
-    this._closeManagedModal('lycorisModalOpen', 'lycorisModalPreviousFocus');
+    this._closeManagedModal('lycorisModalOpen');
   },
 
   lycorisSummary() {
@@ -1458,22 +1487,15 @@ window.trainingCoreMixin = {
     return this.t(option.dk, option.l || text);
   },
 
-  _openManagedModal(stateKey, focusKey, focusSelector, afterOpen) {
-    const activeElement = typeof document !== 'undefined' ? document.activeElement : null;
-    this[focusKey] = activeElement && activeElement !== document.body ? activeElement : null;
+  _openManagedModal(stateKey, afterOpen) {
     this[stateKey] = true;
     this.$nextTick(() => {
       if (typeof afterOpen === 'function') afterOpen();
-      const target = typeof focusSelector === 'function'
-        ? focusSelector()
-        : (typeof document !== 'undefined' ? document.querySelector(focusSelector) : null);
-      target?.focus?.();
     });
   },
 
-  _closeManagedModal(stateKey, focusKey) {
+  _closeManagedModal(stateKey) {
     this[stateKey] = false;
-    this.$nextTick(() => this[focusKey]?.focus?.());
   },
 
   // LyCORIS 面板字段在主表单渲染时追加"非 lycoris.kohya"条件：原生
@@ -1935,7 +1957,7 @@ window.trainingCoreMixin = {
 
   _resolveFieldBaseHintKey(field, trainType) {
     if (!field || !field.hintKey) return '';
-    const suffix = trainType === 'anima-lora' ? '_anima' : (trainType === 'sdxl-lora' ? '_sdxl' : '');
+    const suffix = trainType === 'moss-image-lora' ? '_moss' : (trainType === 'anima-lora' ? '_anima' : (trainType === 'sdxl-lora' ? '_sdxl' : ''));
     if (suffix) {
       const specificKey = field.hintKey + suffix;
       const specific = this.t(specificKey);
@@ -2000,7 +2022,7 @@ window.trainingCoreMixin = {
   renderField(field) {
     const val = this.form[field.key];
     const trainType = this.form.model_train_type || 'anima-lora';
-    const trainTypeSuffix = trainType === 'anima-lora' ? '_anima' : (trainType === 'sdxl-lora' ? '_sdxl' : '');
+    const trainTypeSuffix = trainType === 'moss-image-lora' ? '_moss' : (trainType === 'anima-lora' ? '_anima' : (trainType === 'sdxl-lora' ? '_sdxl' : ''));
 
     // Try train-type-specific desc key first, then fall back to default
     // Only use if the i18n key actually exists (to avoid showing "field.qwen3_anima" etc.)
@@ -2041,7 +2063,7 @@ window.trainingCoreMixin = {
       const currentGroup = window.TRAIN_GROUP_MAP[currentTrainType] || 'all';
 
       const resolveOption = (o) => {
-        const cloned = { v: o.v, l: o.l };
+        const cloned = { v: o.v, l: o.labelKey ? self.t(o.labelKey, o.l) : o.l };
         if (o.dKey) { cloned.d = self.t(o.dKey); }
         else if (o.d) { cloned.d = o.d; }
         return cloned;
@@ -2121,7 +2143,7 @@ window.trainingCoreMixin = {
     const _resetSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
     const _undoSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>`;
     const _dotsSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>`;
-    const _menuPopupHtml = `<div class="field-menu-popup"><button type="button" @click="undoField('${dataKey}');_menuOpen=false">${_undoSvg}<span>${this.t('common.undoField')}</span></button><button type="button" @click="resetField('${dataKey}');_menuOpen=false">${_resetSvg}<span>${this.t('common.resetField')}</span></button></div>`;
+    const _menuPopupHtml = `<div class="field-menu-popup" x-ref="menu" x-show="open" :class="{ 'is-positioned': positioned }" :inert="!open" :id="$id('field-menu')" role="menu" :aria-label="t('common.fieldActions')" x-cloak><button type="button" role="menuitem" tabindex="-1" @click="undoField('${dataKey}');close()">${_undoSvg}<span>${this.t('common.undoField')}</span></button><button type="button" role="menuitem" tabindex="-1" @click="resetField('${dataKey}');close()">${_resetSvg}<span>${this.t('common.resetField')}</span></button></div>`;
 
     // ── Conditional display ──
     // LyCORIS 面板字段在主表单里只对原生模块（非 lycoris.kohya）显示；
@@ -2247,13 +2269,15 @@ window.trainingCoreMixin = {
       ? `'${String(field.default).replace(/'/g, '\\x27')}'`
       : 'undefined';
     const _filledExpr = `window.FILLED_INDICATOR_KEYS.has(${_filledKey}) && form.${dataKey} !== '' && form.${dataKey} !== null && form.${dataKey} !== undefined && String(form.${dataKey}) !== String(${_filledDefaultLit})`;
-    const fieldMenuHtml = isStaticReadonly ? '' : `<div class="field-menu-wrap">
-          <button type="button" class="btn-menu" :aria-label="t('common.fieldActions')" tabindex="-1">${_dotsSvg}</button>
+    const fieldMenuHtml = isStaticReadonly ? '' : `<div class="field-menu-wrap" x-data="actionMenu" x-id="['field-menu']" @keydown="key($event)" @click.outside="close(false)" @pointerenter="hoverEnter($event)" @pointerleave="hoverLeave()" @focusout="focusOut($event)">
+          <button type="button" class="btn-menu" x-ref="trigger" :aria-label="t('common.fieldActions')" aria-haspopup="menu" :aria-expanded="open" :aria-controls="$id('field-menu')" @click="toggle()">${_dotsSvg}</button>
           ${_menuPopupHtml}
         </div>`;
     const staticReadonlyClass = isStaticReadonly ? ' field-readonly' : '';
     const hintOverrideExpr = `fieldHintOverrideText('${this.escapeAttr(dataKey)}')`;
-    const hintHtml = field.hintKeyBy
+    const hintHtml = dataKey === 'attn_mode'
+      ? `<div class="field-hint" x-text="t('opt.attn_mode_' + form.attn_mode)">${this.esc(this.t('opt.attn_mode_' + val))}</div>`
+      : field.hintKeyBy
       ? `${baseHint ? `<div class="field-hint">${baseHint}</div>` : ''}<div class="field-hint field-hint-warn" x-show="${hintOverrideExpr}" x-text="${hintOverrideExpr}" x-cloak></div>`
       : (hint ? `<div class="field-hint">${hint}</div>` : '');
     return `<div class="field${condClass}${nestedClass}${staticReadonlyClass}" :class="{ 'field-changed': String(form.${dataKey}) !== String(formDefaults.${dataKey}), 'field-filled': ${_filledExpr} }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}${nestLevelAttr}>
@@ -2295,7 +2319,8 @@ window.trainingCoreMixin = {
       case 'network_module':
         return this._shapePreviewEntry();
       case 'attn_mode':
-        return `<div x-show="xfStatus && !xfStatus.installed && form.attn_mode==='xformers'" class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')}</div>`;
+        return `<div x-show="faStatus && !faStatus.installed && form.attn_mode==='flash'" x-cloak class="field-hint field-hint-warn">${this.t('environment.envHintFlashNotInstalled')}</div>`
+          + `<div x-show="xfStatus && !xfStatus.installed && form.attn_mode==='xformers'" x-cloak class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')}</div>`;
       case 'xformers':
         return `<div x-show="xfStatus && !xfStatus.installed && form.xformers" class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')}</div>`;
       case 'compile':
@@ -2359,7 +2384,7 @@ window.trainingCoreMixin = {
   },
 
   _reconcileSubsetTimestepOffsets() {
-    if (!this.form || this.form.model_train_type !== 'anima-lora') return;
+    if (!this.form || !['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type)) return;
     const validNames = new Set(this.timestepOffsetSubsets().map(subset => subset.name));
     const current = this.form.subset_timestep_offsets;
     const clean = {};
@@ -2458,13 +2483,13 @@ window.trainingCoreMixin = {
         <button type="button" class="btn-icon" @click="openTimestepPreview(${nameExpr})"${disabled} title="${this.escapeAttr(this.t('timestepOffset.previewSubset'))}" aria-label="${this.escapeAttr(this.t('timestepOffset.previewSubset'))}">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19V3"/></svg>
         </button>
-        <div class="field-menu-wrap subset-timestep-menu">
-          <button type="button" class="btn-menu" :aria-label="t('common.fieldActions')" title="${this.escapeAttr(this.t('common.fieldActions'))}">
+        <div class="field-menu-wrap subset-timestep-menu" x-data="actionMenu" x-id="['field-menu']" @keydown="key($event)" @click.outside="close(false)" @pointerenter="hoverEnter($event)" @pointerleave="hoverLeave()" @focusout="focusOut($event)">
+          <button type="button" class="btn-menu" x-ref="trigger" :aria-label="t('common.fieldActions')" title="${this.escapeAttr(this.t('common.fieldActions'))}" aria-haspopup="menu" :aria-expanded="open" :aria-controls="$id('field-menu')" @click="toggle()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
           </button>
-          <div class="field-menu-popup">
-            <button type="button" @click="undoSubsetTimestepOffset(${nameExpr})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg><span>${this.esc(this.t('common.undoField'))}</span></button>
-            <button type="button" @click="resetSubsetTimestepOffset(${nameExpr})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg><span>${this.esc(this.t('common.resetField'))}</span></button>
+          <div class="field-menu-popup" x-ref="menu" x-show="open" :class="{ 'is-positioned': positioned }" :inert="!open" :id="$id('field-menu')" role="menu" :aria-label="t('common.fieldActions')" x-cloak>
+            <button type="button" role="menuitem" tabindex="-1" @click="undoSubsetTimestepOffset(${nameExpr});close()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg><span>${this.esc(this.t('common.undoField'))}</span></button>
+            <button type="button" role="menuitem" tabindex="-1" @click="resetSubsetTimestepOffset(${nameExpr});close()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg><span>${this.esc(this.t('common.resetField'))}</span></button>
           </div>
         </div>
       </div>`;
@@ -2553,9 +2578,11 @@ window.trainingCoreMixin = {
 
     const inverseShift = (sigma, shift) => sigma / (shift + (1 - shift) * sigma);
 
-    // Anima and Krea 2 both use VAE f8 latents with 2x2 DiT patch packing.
-    const latentH = Math.floor(height / 8);
-    const latentW = Math.floor(width / 8);
+    // MOSS has already patchified the VAE f8 latents to f16 before calling
+    // the shared sampler, which then derives its shift from (h / 2) * (w / 2).
+    const latentCompression = source.model_train_type === 'moss-image-lora' ? 16 : 8;
+    const latentH = Math.floor(height / latentCompression);
+    const latentW = Math.floor(width / latentCompression);
     const tokenCount = Math.floor(latentH / 2) * Math.floor(latentW / 2);
     const getShiftParam = maxTokens => {
       const mu = 0.5 + ((1.15 - 0.5) / (maxTokens - 256)) * (tokenCount - 256);
@@ -2966,11 +2993,11 @@ window.trainingCoreMixin = {
     const available = new Set(this.timestepPreviewOptions().map(option => option.value));
     this.timestepPreviewScope = available.has(scope) ? scope : (available.has(this.timestepPreviewScope) ? this.timestepPreviewScope : 'base');
     this.timestepPreviewData = this._buildTimestepPreview(null, this.timestepPreviewScope);
-    this._openManagedModal('timestepPreviewOpen', 'timestepPreviewPreviousFocus', '.timestep-preview-close');
+    this._openManagedModal('timestepPreviewOpen');
   },
 
   closeTimestepPreview() {
-    this._closeManagedModal('timestepPreviewOpen', 'timestepPreviewPreviousFocus');
+    this._closeManagedModal('timestepPreviewOpen');
   },
 
   refreshTimestepPreview() {
@@ -2986,6 +3013,7 @@ window.trainingCoreMixin = {
 
   // positive prompts line count hint: real-time sample count below textarea
   _positivePromptCountHint(dataKey) {
+    if (this.form.model_train_type === 'moss-image-lora') return '';
     var h = [];
     h.push('<div class="field-hint field-hint-warn" x-show="(form.');
     h.push(dataKey);
@@ -3446,11 +3474,24 @@ window.trainingCoreMixin = {
     }
   },
 
+  _enforceMossTextEncoderFreeze() {
+    if (this.form.model_train_type !== 'moss-image-lora') return;
+    const fixed = { network_train_unet_only: true, network_train_text_encoder_only: false,
+      text_encoder_lr: '', loraplus_text_encoder_lr_ratio: '' };
+    for (const [key, value] of Object.entries(fixed)) {
+      if (this.form[key] !== value) {
+        this.form[key] = value;
+        this._setFieldSource(key, 'auto');
+      }
+    }
+  },
+
   /** Apply autoValue rules once based on current form state (no watcher side-effects). */
   _applyInitialAutoValues() {
     this._syncLrTimescaleDefault();
     this._enforceDataLoaderUiConstraints();
     this._enforceImageAugmentationUiConstraints();
+    this._enforceMossTextEncoderFreeze();
     if (!this._autoValueRules || this._autoValueRules.length === 0) return;
     const targets = new Set(this._autoValueRules.map(rule => rule.target));
     targets.forEach(target => {
@@ -3600,6 +3641,7 @@ window.trainingCoreMixin = {
   updateReadonlyStates() {
     this._enforceDataLoaderUiConstraints();
     this._enforceImageAugmentationUiConstraints();
+    this._enforceMossTextEncoderFreeze();
     const self = this;
     // 公用 apply 函数：根据 met 决定启用/解除 readonly 态（含告警文本注入）。
     // 由 [data-readonly-if-key]（单 key eq/neq）与 [data-readonly-if-any]（多 key，任一成立即锁定）复用。
@@ -3609,6 +3651,7 @@ window.trainingCoreMixin = {
         row.setAttribute('data-readonly-if-active', '1');
         row.classList.add('field-readonly');
         row.querySelectorAll('input, textarea, select').forEach(el => { el.disabled = true; });
+        row.querySelectorAll('.btn-menu, .anima-select-trigger').forEach(el => { el.disabled = true; });
         row.querySelectorAll('.stepper button').forEach(el => { el.disabled = true; });
         row.querySelectorAll('.field-actions .btn-icon').forEach(el => { el.disabled = true; el.style.pointerEvents = 'none'; });
         row.querySelectorAll('.anima-select').forEach(sel => { sel.style.pointerEvents = 'none'; sel.style.opacity = '0.55'; });
@@ -3628,6 +3671,7 @@ window.trainingCoreMixin = {
         row.removeAttribute('data-readonly-if-active');
         row.classList.remove('field-readonly');
         row.querySelectorAll('input, textarea, select').forEach(el => { el.disabled = false; });
+        row.querySelectorAll('.btn-menu, .anima-select-trigger').forEach(el => { el.disabled = false; });
         row.querySelectorAll('.stepper button').forEach(el => { el.disabled = false; });
         row.querySelectorAll('.field-actions .btn-icon').forEach(el => { el.disabled = false; el.style.pointerEvents = ''; });
         row.querySelectorAll('.anima-select').forEach(sel => { sel.style.pointerEvents = ''; sel.style.opacity = ''; });
@@ -3772,6 +3816,11 @@ window.trainingCoreMixin = {
 
   setField(key, value) {
     if (key.startsWith('reg__')) { this.regSetField(key.slice(5), value); return; }
+    if (this.form.model_train_type === 'moss-image-lora'
+        && ['network_train_unet_only', 'network_train_text_encoder_only', 'text_encoder_lr', 'loraplus_text_encoder_lr_ratio'].includes(key)) {
+      this._enforceMossTextEncoderFreeze();
+      return;
+    }
     if (key === 'dataset_cache_dir' && this.form.model_train_type === 'krea2-lora') {
       value = this._deriveKrea2CacheDir(this.form.train_data_dir);
     }
@@ -3837,7 +3886,8 @@ window.trainingCoreMixin = {
       const hasShuffleConflict = this.form.shuffle_caption === true;
       const hasTagDropoutConflict = Number(this.form.caption_tag_dropout_rate || 0) > 0;
       const hasSdxlDropoutConflict = this.form.model_train_type === 'sdxl-lora' && Number(this.form.caption_dropout_rate || 0) > 0;
-      if (hasShuffleConflict || hasTagDropoutConflict || hasSdxlDropoutConflict) {
+      const hasMossEpochDropoutConflict = this.form.model_train_type === 'moss-image-lora' && Number(this.form.caption_dropout_every_n_epochs || 0) > 0;
+      if (hasShuffleConflict || hasTagDropoutConflict || hasSdxlDropoutConflict || hasMossEpochDropoutConflict) {
         this.toast(this.t('field.cache_text_encoder_outputsLocked'), 'warning');
         this.form[key] = false;
         return;
@@ -3854,6 +3904,9 @@ window.trainingCoreMixin = {
 
     this.form[key] = value;
     this._setFieldSource(key, 'user');
+    if (['gradient_checkpointing', 'cpu_offload_checkpointing', 'unsloth_offload_checkpointing'].includes(key)) {
+      this._enforceCheckpointingUiConstraints(key);
+    }
     if (key === 'max_data_loader_n_workers' || key === 'persistent_data_loader_workers') {
       this._enforceDataLoaderUiConstraints();
     }
@@ -3925,6 +3978,11 @@ window.trainingCoreMixin = {
       this.form['network_train_unet_only'] = false;
       _setLRField('unet_lr', '');
     }
+    if (this.form.model_train_type === 'moss-image-lora'
+        && key === 'caption_dropout_every_n_epochs' && Number(value) > 0) {
+      this.form.cache_text_encoder_outputs = false;
+      this.form.cache_text_encoder_outputs_to_disk = false;
+    }
     // When enabling cache_text_encoder_outputs, force network_train_unet_only = true
     if (key === 'cache_text_encoder_outputs' && value === true) {
       this.form['network_train_unet_only'] = true;
@@ -3974,6 +4032,14 @@ window.trainingCoreMixin = {
     // focused input after its first corrected keystroke.
     if (this.formErrors && this.formErrors[key]) {
       this.formErrors[key] = null;
+    }
+    if (this.form.model_train_type === 'moss-image-lora') {
+      this.formErrors = { ...this.formErrors, base_weights: null, compile_fullgraph: null, positive_prompts: null, ...this._mossOptionErrors() };
+    }
+    if (['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type)
+      && ['cpu_offload_checkpointing', 'unsloth_offload_checkpointing', 'blocks_to_swap', 'gradient_checkpointing', 'compile', 'compile_fullgraph'].includes(key)) {
+      this.formErrors = { ...this.formErrors, unsloth_offload_checkpointing: null, blocks_to_swap: null,
+        compile_fullgraph: null, ...this._checkpointOffloadErrors(), ...this._mossOptionErrors() };
     }
     this.updateTomlDebounced();
   },
@@ -4129,9 +4195,7 @@ window.trainingCoreMixin = {
     this._normalizeProfileSelectValues(currentTrainType, profileDefaults);
 
     // Adjust network_module based on train type
-    const targetNetworkModule = currentTrainType === 'anima-lora'
-      ? 'networks.lora_anima'
-      : (currentTrainType === 'krea2-lora' ? 'networks.lora_krea2' : 'networks.lora');
+    const targetNetworkModule = this._defaultNetworkModule(currentTrainType);
     this.form.network_module = targetNetworkModule;
     this._applyInitialAutoValues();
     this._activeTrainType = currentTrainType;
@@ -4205,6 +4269,41 @@ window.trainingCoreMixin = {
     return { boundaries, finalMultiplier };
   },
 
+  _checkpointOffloadErrors() {
+    if (!['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type)) return {};
+    const errors = {};
+    const cpu = this.form.cpu_offload_checkpointing, unsloth = this.form.unsloth_offload_checkpointing;
+    const swapping = Number(this.form.blocks_to_swap || 0) > 0;
+    if (cpu && unsloth) errors.unsloth_offload_checkpointing = this.t('field.checkpointOffloadConflict');
+    if (swapping && (cpu || unsloth)) errors.blocks_to_swap = this.t('field.blockSwapOffloadConflict');
+    if (swapping && this.form.compile && this.form.compile_fullgraph) {
+      errors.compile_fullgraph = this.t('field.blockSwapFullgraphConflict');
+    }
+    return errors;
+  },
+
+  _mossOptionErrors() {
+    if (this.form.model_train_type !== 'moss-image-lora') return {};
+    const errors = {};
+    if (this.form.enable_preview && (this.form.sample_at_first || this.form.sample_interval_mode !== 'none')
+      && !String(this.form.positive_prompts || '').trim()) {
+      errors.positive_prompts = this.t('common.previewPromptRequired');
+    }
+    const weights = this.form.base_weights;
+    const hasWeights = (Array.isArray(weights) ? weights : String(weights || '').split(','))
+      .some(value => String(value).trim());
+    if (hasWeights && (this.form.convrot_int8 || this.form.convrot_int8_text_encoder)) {
+      errors.base_weights = this.t('field.base_weightsConvrotConflict');
+    }
+    if (this.form.compile && this.form.compile_fullgraph && (
+      Number(this.form.blocks_to_swap || 0) > 0 || this.form.convrot_int8
+      || this.form.split_attn || this.form.attn_mode === 'xformers'
+    )) {
+      errors.compile_fullgraph = this.t('field.compile_fullgraphMossConflict');
+    }
+    return errors;
+  },
+
   validateForm() {
     const errors = {};
     // Check all required fields
@@ -4212,10 +4311,22 @@ window.trainingCoreMixin = {
     const sections = this._allSections();
     for (const section of sections) {
       for (const field of section.fields) {
+        if (typeof this._fieldShowIfMet === 'function' && !this._fieldShowIfMet(field)) continue;
+        const val = this.form[field.key];
+        if (field.type === 'number' && val !== undefined && val !== null && val !== '') {
+          const number = Number(val), constraints = this._numberConstraints(field);
+          const step = Number(constraints.step), base = Number(constraints.min || 0);
+          if (!Number.isFinite(number) || typeof val === 'boolean'
+            || (constraints.min !== undefined && number < constraints.min)
+            || (constraints.max !== undefined && number > constraints.max)
+            || (Number.isInteger(step) && step > 0 && (!Number.isInteger(number)
+              || Math.abs((number - base) / step - Math.round((number - base) / step)) > 1e-9))) {
+            errors[field.key] = this.t('common.invalidNumericValue');
+          }
+        }
         const isFieldRequired = field.required ||
           (field.requiredGroups && Array.isArray(field.requiredGroups) && field.requiredGroups.includes(currentGroup));
         if (!isFieldRequired) continue;
-        const val = this.form[field.key];
         if (val === undefined || val === null || val === '') {
           errors[field.key] = this.t('common.fieldRequired');
         }
@@ -4256,6 +4367,11 @@ window.trainingCoreMixin = {
     if (this.form.model_train_type !== 'krea2-lora' && this.form.lr_scheduler === 'piecewise_constant'
       && !this._parseStepRules(this.form.step_rules)) {
       errors.step_rules = this.t('field.step_rulesError');
+    }
+    Object.assign(errors, this._checkpointOffloadErrors(), this._mossOptionErrors());
+    if (this.form.model_train_type !== 'krea2-lora' && this.form.enable_preview && this.form.sample_interval_mode !== 'none') {
+      const key = this.form.sample_interval_mode === 'steps' ? 'sample_every_n_steps' : 'sample_every_n_epochs';
+      if (this.form[key] === '' || this.form[key] === null || this.form[key] === undefined) errors[key] = this.t('common.fieldRequired');
     }
 
     this.formErrors = errors;
@@ -4326,7 +4442,7 @@ window.trainingCoreMixin = {
       this.$nextTick(() => {
         if (requestSeq !== this._pickerRequestSeq) return;
         const input = document.getElementById('pickerFilterInput');
-        if (input) input.focus();
+        if (input && document.activeElement === document.querySelector('.picker-header .btn-icon')) input.focus();
         const active = document.querySelector('.picker-row.is-current');
         if (active) active.scrollIntoView({ block: 'center' });
       });
@@ -4416,7 +4532,7 @@ window.trainingCoreMixin = {
     const trainType = this.form.model_train_type || 'anima-lora';
     const field = this._fieldDefinition(key, trainType);
     if (!field || !field.descKey) return key || '';
-    const suffix = trainType === 'anima-lora' ? '_anima' : (trainType === 'sdxl-lora' ? '_sdxl' : '');
+    const suffix = trainType === 'moss-image-lora' ? '_moss' : (trainType === 'anima-lora' ? '_anima' : (trainType === 'sdxl-lora' ? '_sdxl' : ''));
     const specific = this.t(field.descKey + suffix);
     if (specific && specific !== field.descKey + suffix) return specific;
     return this.t(field.descKey) || key || '';

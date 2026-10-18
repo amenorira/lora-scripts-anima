@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 import ast
 import asyncio
 import glob
@@ -7,13 +8,13 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import toml
 
 from backend.training.musubi_krea2 import KREA2_FIELDS, build_krea2_dataset_config, build_krea2_train_config, cache_manifest_path, estimate_krea2_steps, get_krea2_cache_status, krea2_cache_fingerprint, krea2_preflight, mark_cache_manifest, prepare_cache_manifest, validate_krea2_config
 from backend.server.routes import training as training_routes
-from backend.tasks import TaskManager
+from backend.tasks import TaskManager, TaskStatus
 from tests.helpers import json_request, stub_supervisor
 
 
@@ -43,6 +44,71 @@ def krea2_config(root: Path) -> dict:
 
 
 class Krea2PreparationLifecycleTests(unittest.TestCase):
+    def test_cache_final_validation_settles_manifest_result_and_task_together(self):
+        async def exercise(root, defect):
+            config = krea2_config(root)
+            manager = TaskManager()
+            process = Mock(args=["cache"], returncode=0)
+            worker_futures = []
+            loop = asyncio.get_running_loop()
+            submit = loop.run_in_executor
+
+            def capture_worker(executor, func, *args):
+                future = submit(executor, func, *args)
+                if getattr(func, "__name__", "") == "_run":
+                    worker_futures.append(future)
+                return future
+
+            def encode(**_kwargs):
+                cache = Path(config["dataset_cache_dir"])
+                (cache / "portrait_0001x0001_krea2.safetensors").write_bytes(b"latent")
+                if defect != "missing":
+                    (cache / "portrait_krea2_te.safetensors").write_bytes(b"text")
+                if defect == "extra":
+                    (cache / "foreign_0001x0001_krea2.safetensors").write_bytes(b"old")
+                elif defect == "dataset":
+                    (Path(config["train_data_dir"]) / "portrait.txt").write_text("changed", encoding="utf-8")
+                return None, None
+
+            process.communicate.side_effect = encode
+            validation = patch(
+                "backend.training.musubi_krea2.get_krea2_cache_status", side_effect=OSError("cache unreadable"),
+            ) if defect == "validation" else nullcontext()
+            with patch.object(training_routes, "tm", manager), \
+                 patch.object(training_routes, "OUTPUT_DIR", root / "runs"), \
+                 patch.object(training_routes, "krea2_preflight", return_value={"ok": True, "errors": []}), \
+                 patch.object(loop, "run_in_executor", side_effect=capture_worker), \
+                 patch("backend.tasks.subprocess.Popen", return_value=process), \
+                 stub_supervisor(), validation:
+                response = await training_routes.create_krea2_cache(json_request(dict(config)))
+                self.assertEqual(response["status"], "success")
+                self.assertEqual(len(worker_futures), 1)
+                await asyncio.wait_for(worker_futures[0], 5)
+
+            run_dir, = (root / "runs").iterdir()
+            result = json.loads((run_dir / "result.json").read_text(encoding="utf-8"))
+            manifest = json.loads(cache_manifest_path(config["dataset_cache_dir"]).read_text(encoding="utf-8"))
+            task, = manager.tasks.values()
+            completed = defect is None
+            expected = "completed" if completed else "failed"
+            self.assertEqual(result["exit_code"], 0)
+            self.assertEqual(result["status"], expected)
+            self.assertEqual(manifest["stages"], {"latents": expected, "text_encoder": expected})
+            self.assertIs(task.status, TaskStatus.FINISHED if completed else TaskStatus.FAILED)
+            self.assertEqual(get_krea2_cache_status(config)["ready"], completed)
+            if completed:
+                self.assertIsNone(result["error"])
+            else:
+                error = {"dataset": "发生变化", "validation": "cache unreadable"}.get(defect, "缓存文件")
+                self.assertIn(error, result["error"])
+                self.assertEqual(manifest["error"], result["error"])
+                self.assertIn(result["error"], (run_dir / "error.log").read_text(encoding="utf-8"))
+            self.assertIsNotNone(manager.reserve_task())
+
+        for defect in (None, "missing", "extra", "dataset", "validation"):
+            with self.subTest(defect=defect), tempfile.TemporaryDirectory() as directory:
+                asyncio.run(exercise(Path(directory), defect))
+
     def test_real_launcher_rejection_keeps_slot_through_manifest_rollback(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -211,12 +277,12 @@ class Krea2CodecTests(unittest.TestCase):
             config["train_batch_size"] = 2
             self.assertEqual(estimate_krea2_steps(config)["batches_per_epoch"], 3)
             prepare_cache_manifest(config)
-            mark_cache_manifest(config, "completed")
             for row in datasets:
                 target = Path(row["cache_directory"])
                 target.mkdir(parents=True, exist_ok=True)
                 (target / "portrait_0001x0001_krea2.safetensors").write_bytes(b"latent")
                 (target / "portrait_krea2_te.safetensors").write_bytes(b"text")
+            mark_cache_manifest(config, "completed")
             self.assertTrue(get_krea2_cache_status(config)["ready"])
             # Extra files in one subset cannot hide missing files in another.
             (cache / "extra_0001x0001_krea2.safetensors").write_bytes(b"latent")
@@ -341,6 +407,119 @@ class Krea2CodecTests(unittest.TestCase):
             self.assertTrue(get_krea2_cache_status(config)["ready"])
             (Path(config["train_data_dir"]) / "portrait.txt").write_text("changed portrait caption", encoding="utf-8")
             self.assertFalse(get_krea2_cache_status(config)["ready"])
+
+    def test_cache_files_must_correspond_to_current_images(self):
+        for mismatch in ("replacement", "extra", "duplicate_size", "text", "malformed"):
+            with self.subTest(mismatch=mismatch), tempfile.TemporaryDirectory() as temp_dir:
+                config = krea2_config(Path(temp_dir))
+                cache = Path(config["dataset_cache_dir"])
+                cache.mkdir()
+                latent = cache / "portrait_0001x0001_krea2.safetensors"
+                text = cache / "portrait_krea2_te.safetensors"
+                latent.write_bytes(b"latent")
+                text.write_bytes(b"text")
+                prepare_cache_manifest(config)
+                mark_cache_manifest(config, "completed")
+                self.assertTrue(get_krea2_cache_status(config)["ready"])
+                if mismatch == "replacement":
+                    latent.rename(cache / "foreign_0001x0001_krea2.safetensors")
+                    text.rename(cache / "foreign_krea2_te.safetensors")
+                elif mismatch == "extra":
+                    (cache / "foreign_0001x0001_krea2.safetensors").write_bytes(b"latent")
+                    (cache / "foreign_krea2_te.safetensors").write_bytes(b"text")
+                elif mismatch == "duplicate_size":
+                    (cache / "portrait_0002x0002_krea2.safetensors").write_bytes(b"latent")
+                elif mismatch == "text":
+                    text.rename(cache / "foreign_krea2_te.safetensors")
+                else:
+                    latent.rename(cache / "portrait_badsize_krea2.safetensors")
+                status = get_krea2_cache_status(config)
+                self.assertTrue(status["fingerprint_matches"])
+                self.assertFalse(status["files_match"])
+                self.assertFalse(status["ready"])
+                # A zero process exit code cannot certify an invalid cache set.
+                mark_cache_manifest(config, "completed")
+                self.assertEqual(get_krea2_cache_status(config)["stages"], {
+                    "latents": "failed", "text_encoder": "failed",
+                })
+
+    def test_same_stem_images_are_rejected_before_cache_launch(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = krea2_config(Path(temp_dir))
+            (Path(config["train_data_dir"]) / "portrait.jpg").write_bytes(b"image")
+            with patch("backend.training.musubi_krea2.shared_runtime_status", return_value={"errors": []}), \
+                 patch.object(training_routes, "tm", TaskManager()), \
+                 patch.object(training_routes, "run_train") as launch:
+                for require_cache in (False, True):
+                    result = krea2_preflight(config, require_cache=require_cache)
+                    self.assertFalse(result["ok"])
+                    conflict = next(error for error in result["errors"] if "缓存名称冲突" in error)
+                    self.assertIn("portrait.png", conflict)
+                    self.assertIn("portrait.jpg", conflict)
+                response = asyncio.run(training_routes.create_krea2_cache(json_request(dict(config))))
+            self.assertEqual(response.status, "fail")
+            launch.assert_not_called()
+            self.assertFalse(cache_manifest_path(config["dataset_cache_dir"]).exists())
+
+    def test_deleted_image_caches_block_readiness_until_rebuilt(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = krea2_config(Path(temp_dir))
+            train = Path(config["train_data_dir"])
+            cache = Path(config["dataset_cache_dir"])
+            cache.mkdir()
+            for stem in ("portrait", "removed"):
+                (train / f"{stem}.png").write_bytes(b"image")
+                (train / f"{stem}.txt").write_text("caption", encoding="utf-8")
+                (cache / f"{stem}_0001x0001_krea2.safetensors").write_bytes(b"latent")
+                (cache / f"{stem}_krea2_te.safetensors").write_bytes(b"text")
+            prepare_cache_manifest(config)
+            mark_cache_manifest(config, "completed")
+            self.assertTrue(get_krea2_cache_status(config)["ready"])
+            (train / "removed.png").unlink()
+            (train / "removed.txt").unlink()
+            self.assertFalse(get_krea2_cache_status(config)["ready"])
+            prepare_cache_manifest(config)
+            mark_cache_manifest(config, "completed")
+            self.assertFalse(get_krea2_cache_status(config)["ready"])
+            # Model the upstream cleanup; other architectures and namespaces
+            # are outside the active dataset's flat cache reader.
+            for path in cache.glob("removed_*.safetensors"):
+                path.unlink()
+            (cache / "foreign_anima.safetensors").write_bytes(b"unrelated")
+            unused = cache / "subsets" / "unused"
+            unused.mkdir(parents=True)
+            (unused / "removed_0001x0001_krea2.safetensors").write_bytes(b"old subset")
+            mark_cache_manifest(config, "completed")
+            self.assertTrue(get_krea2_cache_status(config)["ready"])
+            self.assertTrue((cache / "foreign_anima.safetensors").exists())
+            self.assertTrue((unused / "removed_0001x0001_krea2.safetensors").exists())
+
+    def test_cache_completion_rejects_dataset_changes_during_encoding(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = krea2_config(Path(temp_dir))
+            cache = Path(config["dataset_cache_dir"])
+            cache.mkdir()
+            prepare_cache_manifest(config)
+            (cache / "portrait_0001x0001_krea2.safetensors").write_bytes(b"latent")
+            (cache / "portrait_krea2_te.safetensors").write_bytes(b"text")
+            (Path(config["train_data_dir"]) / "portrait.txt").write_text("changed", encoding="utf-8")
+            mark_cache_manifest(config, "completed")
+            status = get_krea2_cache_status(config)
+            self.assertTrue(status["files_match"])
+            self.assertFalse(status["fingerprint_matches"])
+            self.assertFalse(status["ready"])
+            self.assertEqual(status["stages"], {"latents": "failed", "text_encoder": "failed"})
+
+    def test_missing_dataset_path_never_scans_the_working_directory(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = {"dataset_cache_dir": temp_dir}
+            with patch.object(Path, "rglob", side_effect=AssertionError("unexpected dataset scan")):
+                prepare_cache_manifest(config)
+                mark_cache_manifest(config, "completed")
+                status = get_krea2_cache_status(config)
+            self.assertEqual(status["image_count"], 0)
+            self.assertFalse(status["ready"])
+            self.assertEqual(status["stages"], {"latents": "failed", "text_encoder": "failed"})
 
 
 if __name__ == "__main__":

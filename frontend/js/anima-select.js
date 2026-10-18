@@ -41,6 +41,7 @@ document.addEventListener('alpine:init', () => {
     _listboxId: `anima-select-listbox-${++nextListboxId}`,
     _positionFrame: null,
     _closeAnimation: null,
+    _reopenAnimation: null,
     // Declare instance-owned handlers: Alpine otherwise assigns new keys to
     // the outer scope, letting sibling selects overwrite each other's handlers.
     _scrollHandler: null,
@@ -78,6 +79,7 @@ document.addEventListener('alpine:init', () => {
           window.addEventListener('resize', this._resizeHandler);
           this.$nextTick(() => { if (this.open) this.positionMenu(); });
         } else {
+          window.AnimaUI?.unregisterPopup(this.$el);
           window.removeEventListener('scroll', this._scrollHandler, true);
           window.removeEventListener('resize', this._resizeHandler);
         }
@@ -124,7 +126,9 @@ document.addEventListener('alpine:init', () => {
     },
 
     destroy() {
+      window.AnimaUI?.unregisterPopup(this.$el);
       if (this._closeAnimation) this._closeAnimation.cancel();
+      if (this._reopenAnimation) this._reopenAnimation.cancel();
       if (this._keyHandler) {
         this.$el.removeEventListener('keydown', this._keyHandler);
       }
@@ -146,16 +150,30 @@ document.addEventListener('alpine:init', () => {
       if (!motion || !menu || !menu.animate) { this.open = false; return; }
       // Keep x-if mounted until exit finishes. Inert prevents duplicate selections.
       const style = getComputedStyle(menu);
+      const from = { opacity: style.opacity, transform: style.transform };
+      if (this._reopenAnimation) { this._reopenAnimation.cancel(); this._reopenAnimation = null; }
       menu.inert = true;
+      this.$el.querySelector('.anima-select-trigger')?.setAttribute('aria-expanded', 'false');
       const animation = menu.animate([
-        { opacity: style.opacity, transform: style.transform },
-        { opacity: 0, transform: 'scale(0.99)' }
-      ], { duration: 150, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'forwards' });
+        from,
+        { opacity: 0, transform: `scale(${style.getPropertyValue('--menu-scale-exit').trim() || '.99'})` }
+      ], { duration: parseFloat(style.getPropertyValue('--duration-menu-exit')) || 150,
+        easing: style.getPropertyValue('--ease-out').trim() || 'ease-out', fill: 'forwards' });
       this._closeAnimation = animation;
       animation.onfinish = () => {
         this.open = false;
         this._closeAnimation = null;
       };
+    },
+
+    dismiss() {
+      if (this._closeAnimation) {
+        this._closeAnimation.onfinish = null;
+        this._closeAnimation.cancel();
+        this._closeAnimation = null;
+      }
+      if (this._reopenAnimation) { this._reopenAnimation.cancel(); this._reopenAnimation = null; }
+      this.open = false;
     },
 
     _enabledIndices() {
@@ -200,21 +218,45 @@ document.addEventListener('alpine:init', () => {
     show(key) {
       const enabled = this._enabledIndices();
       if (!enabled.length) return;
+      window.AnimaUI?.settleDialog(this.$el);
+      window.AnimaUI?.registerPopup(this.$el, () => this.dismiss());
+      if (this._closeAnimation) {
+        const menu = this.$el.querySelector('.anima-select-menu');
+        const style = menu && getComputedStyle(menu);
+        const from = style && { opacity: style.opacity, transform: style.transform };
+        this._closeAnimation.onfinish = null;
+        this._closeAnimation.cancel();
+        this._closeAnimation = null;
+        if (menu) {
+          menu.inert = false;
+          if (from && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            this._reopenAnimation = menu.animate([from, { opacity: 1, transform: 'scale(1)' }], {
+              duration: parseFloat(style.getPropertyValue('--duration-menu-enter')) || 250,
+              easing: style.getPropertyValue('--ease-out').trim() || 'ease-out',
+            });
+          }
+        }
+        this.$el.querySelector('.anima-select-trigger')?.setAttribute('aria-expanded', 'true');
+      }
       const selected = enabled.find(index => String(this.flatOptions[index].v) === String(this.value));
       if (key === 'Home') this.activeIndex = enabled[0];
       else if (key === 'End') this.activeIndex = enabled[enabled.length - 1];
       else this.activeIndex = selected === undefined
         ? (key === 'ArrowUp' ? enabled[enabled.length - 1] : enabled[0]) : selected;
       this.open = true;
+      this.$nextTick(() => { if (this.open) this._syncOptionA11y(); });
     },
 
     onKeydown(event) {
       if (!event.target.closest('.anima-select-trigger') || event.target.disabled) return;
-      if (this._closeAnimation) return;
       const key = event.key;
+      if (this._closeAnimation && ['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter', ' '].includes(key)) {
+        event.preventDefault(); this.show(key); return;
+      }
       if (key === 'Escape') {
-        if (this.open) {
+        if (this.open && !this._closeAnimation) {
           event.preventDefault();
+          event.stopPropagation();
           this.close();
           event.target.focus();
         }
@@ -266,7 +308,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     toggle() {
-      if (this.open) this.close();
+      if (this.open && !this._closeAnimation) this.close();
       else this.show();
     },
 

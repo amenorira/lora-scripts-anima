@@ -6,6 +6,52 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v26.1019.00e13 - 2026-10-19
+
+This release adds **MOSS-Image LoRA training**, compatible model downloads, and ConvRot INT8 support. It also improves Anima's default VRAM settings, introduces **on-demand FlashAttention 2 installation**, and refines environment management, interface interactions, and pre-training checks.
+
+### MOSS-Image Training
+
+- Add a dedicated training entry with model selection, configuration import and export, image and text caching, and preview generation during training. Support multiple caption candidates and multiline sampling prompts.
+- Offer BF16 and ConvRot INT8 versions of the Base and SFT models and Qwen text encoder, plus standard and Small VAE options, so users can choose components for their VRAM capacity and intended use.
+- Align default training settings with the upstream release guide. Currently support native LoRA, keep the Qwen text encoder frozen as officially recommended, and allow optional training of the text embedding layers inside the DiT.
+- Check compatibility between quantization, compilation, block swapping, and LoRA pre-merging before startup. Preserve LoRA+ and other network arguments when importing native TOML configurations, and align the timestep distribution preview with actual sampling.
+
+### Anima VRAM Improvements and Optional Acceleration
+
+- Enable the image-specific **2D VAE** by default for Anima, reusing existing weights without an additional download. Use equivalent 2D computation for individual images to reduce the time and VRAM required for image cache preparation and preview generation, with an option to switch back to the original 3D VAE.
+- Enable gradient checkpointing by default for Anima to trade additional computation for lower VRAM usage; users with sufficient VRAM can disable it. Set the default number of data-loading workers to 2 for Anima and MOSS.
+- Add **FlashAttention 2** as an attention option for Anima and MOSS. Environment management matches prebuilt packages to the current runtime, supports direct or mirrored downloads, resumption, and integrity checks, and automatically verifies CUDA forward and backward computation after installation.
+
+### Model Library and Environment Management
+
+- Reorganize the environment page for wide and narrow desktop windows, with component versions, installation status, and actions presented together.
+- Show missing components and readiness by required model, text encoder, and VAE categories, and clarify the purpose of different weights to help users choose a suitable combination.
+- Show expected file sizes before downloading and actual local sizes for downloaded models to help plan downloads and disk space.
+- Improve feedback for failed status queries, connections, download progress, and tag dictionary updates, making active, completed, and failed states clearer.
+
+### Training Configuration, Preview, and Cache Fixes
+
+- Replace preview interval settings with explicit choices for epochs, steps, or disabling periodic previews, while keeping the initial preview independently available. Export and launch with only the active interval, and fix stale settings triggering sampling after previews are disabled.
+- Check prompts before starting MOSS training with previews enabled to prevent sampling failures caused by blank input. Add boundary checks for sampling steps, timestep shifts, and related settings.
+- Link checkpoint offloading with gradient checkpointing automatically, and improve conflict messages for CPU offloading, Unsloth offloading, and block swapping. Align Anima's block-swapping limit with the upstream maximum of 26 while preserving valid combinations with ordinary block-level compilation.
+- Strengthen Krea 2 cache checks to detect conflicting image names, missing or extra caches, and dataset changes. Include final validation in the task outcome so incomplete caches are not reported as successful.
+- Fix the Huber loss schedule falling back to a default that is unsupported for flow-matching.
+
+### Interface Interactions and Training Diagnostics
+
+- Improve keyboard operation and positioning near window edges for parameter, theme, and language menus. Unify dialog focus management and let Escape close nested menus one level at a time to reduce unintended dialog dismissal and lost focus.
+- Keep error notifications visible until dismissed and support copying details. Pause ordinary notification timeouts while hovered or focused to give users time to read them.
+- Improve default-value readability, desktop split panels, loading feedback, and autosave status. Fix checkbox ticks showing through disabled switches and simplify repetitive Chinese, English, and Japanese descriptions.
+- Add snapshots of cumulative timestep sampling distributions every 100 training steps in TensorBoard, as well as at epoch end, step-based checkpoint saves, and training completion, so distribution changes remain visible during long epochs.
+
+### Training Engine Updates
+
+- Upgrade **sd-scripts to the v0.12.1 release**, including MOSS-Image, ConvRot INT8, multiline captions, and related cache handling.
+- Upgrade **LyCORIS to v4.1.2**, incorporating fused-kernel and tuning improvements and a fix for kernel tuning altering the random-number generator state.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1017.223010...v26.1019.00e13)
+
 ## v26.1017.223010 - 2026-10-17
 
 This release redesigns the sidebar and training-section navigation, unifies interface fonts, adds optional **TensorBoard training diagnostics and interactive timestep sampling distributions**, and fixes Krea 2 subdirectory caching and temporary-file cleanup.

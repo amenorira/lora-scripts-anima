@@ -43,7 +43,7 @@ MERGED_FIELDS = {f["key"] for f in FIELDS if f.get("target") == "merged"}
 # 若残留进入提交会经 sd-scripts argparse 接住、train_network.py:555-559 把 argv 默认值/原值刷进元数据，
 # 产生看似"启用了噪声正则化"的误导。此处按 model_train_type 兜底剔除不匹配 group 的字段。
 _FIELD_GROUP_MAP = {f["key"]: f.get("group") for f in FIELDS}
-_TRAIN_TYPE_GROUP = {"sdxl-lora": "sdxl", "anima-lora": "anima"}
+_TRAIN_TYPE_GROUP = {"sdxl-lora": "sdxl", "anima-lora": "anima", "moss-image-lora": "moss_image"}
 
 # ── 已知的可显示警告的 Anima 前缀字段 ─────────────────────────
 ANIMA_KNOWN_PREFIX = {"anima_"}
@@ -54,6 +54,17 @@ LYCORIS_KOHYA_UI_FIELDS = (
     | set(LYCORIS_KOHYA_ONLY_ARG_MAP.keys())
     | set(LYCORIS_KOHYA_SPECIFIC_ARG_MAP.keys())
 )
+
+
+def _filter_model_fields(source: dict[str, Any]) -> None:
+    """移除其他训练类型的字段，避免历史表单残留进入 TOML。"""
+    train_group = _TRAIN_TYPE_GROUP.get(str(source.get("model_train_type", "")))
+    if not train_group:
+        return
+    for key in list(source):
+        group = _FIELD_GROUP_MAP.get(key)
+        if group and group != "all" and train_group not in (group if isinstance(group, list) else [group]):
+            source.pop(key)
 
 
 def _is_empty_value(value: Any) -> bool:
@@ -264,6 +275,22 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     返回 (adapted_config, warnings)
     """
     source = config.copy()
+    from backend.training.option_contracts import normalize_sd_options, validate_sd_option_dependencies
+
+    option_errors = validate_sd_option_dependencies(source)
+    if option_errors:
+        raise ValueError("\n".join(option_errors))
+    normalize_sd_options(source)
+    is_moss = source.get("model_train_type") == "moss-image-lora"
+    if is_moss:
+        from backend.training.moss_image import validate_config
+
+        source.pop("vae_use_2d", None)
+        _filter_model_fields(source)
+        source.setdefault("network_module", "networks.lora_generic")
+        errors = validate_config(source)
+        if errors:
+            raise ValueError("\n".join(errors))
     from backend.training.attention_config import normalize_attention_config
 
     normalize_attention_config(source)
@@ -300,6 +327,12 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     _merge_custom_args(source, "network_args_custom", "network_args")
 
     # ── 2. 规范化 network_args ─────────────────────────────
+    train_text_embedder = source.pop("train_text_embedder", None)
+    if is_moss and train_text_embedder is not None:
+        network_args = _remove_key_value_args(list(source.get("network_args") or []),
+                                              {"train_llm_adapter", "train_text_embedder"})
+        _set_key_value_arg(network_args, "train_llm_adapter", train_text_embedder is True)
+        source["network_args"] = network_args
     merged_network_args: list[str] = []
     if isinstance(source.get("network_args"), list):
         merged_network_args.extend(source["network_args"])
@@ -341,7 +374,7 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     # 正则并入 network_args（豁免上游默认排除）；模块不在支持集合内（或 SDXL 配置
     # 残留了该字段）时只剥离不注入——对无 adaln_modulation 模块的架构正则本也不命中。
     train_adaln = source.pop("train_adaln", False) is True
-    if train_adaln and source.get("network_module") in ADALN_INCLUDE_MODULES:
+    if train_adaln and not is_moss and source.get("network_module") in ADALN_INCLUDE_MODULES:
         network_args = list(source.get("network_args") or [])
         source["network_args"] = _merge_keyed_pattern_args(network_args, "include_patterns", [ADALN_INCLUDE_PATTERN])
 
@@ -481,15 +514,8 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
             "cannot be used together; disabling torch_compile / "
             "compile（块级编译）与 torch_compile（accelerate 版）不可同时使用，已关闭 torch_compile"
         )
-    # compile 与 blocks_to_swap 不兼容（编译后的图无法中途换块）
-    if source.get("compile"):
-        blocks = source.get("blocks_to_swap", 0) or 0
-        if blocks > 0:
-            source["compile"] = False
-            warnings.append(
-                "[Conflict] compile is incompatible with blocks_to_swap; "
-                "disabling compile / compile 与 blocks_to_swap 不兼容，已自动关闭 compile"
-            )
+    # Anima/MOSS 的块级 compile 支持换块（上游将换块 Linear 留在 eager）。
+    # 只有 fullgraph 与换块互斥，已由入口处的依赖校验拦截。
     # compile_fullgraph 与 split_attn 不兼容（anima_train_network.py assert）
     # 注意：split_attn 可能被 5.9 的 attn_mode==xformers 自动开启，故此处仍需兜底。
     if source.get("compile_fullgraph") and source.get("split_attn"):
@@ -499,25 +525,6 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
             "disabling compile_fullgraph / "
             "compile_fullgraph 与 split_attn 不可同时使用，已关闭 compile_fullgraph"
         )
-
-    # ── 5.11. unsloth_offload_checkpointing 互斥校验 ──
-    # anima_train_network.py 明确：不可与 cpu_offload_checkpointing 或 blocks_to_swap 同用
-    if source.get("unsloth_offload_checkpointing"):
-        if source.get("cpu_offload_checkpointing"):
-            source["cpu_offload_checkpointing"] = False
-            warnings.append(
-                "[Conflict] unsloth_offload_checkpointing and cpu_offload_checkpointing "
-                "cannot be used together; disabling cpu_offload_checkpointing / "
-                "unsloth_offload_checkpointing 与 cpu_offload_checkpointing 不可同时使用，已关闭后者"
-            )
-        blocks = source.get("blocks_to_swap", 0) or 0
-        if blocks > 0:
-            source["unsloth_offload_checkpointing"] = False
-            warnings.append(
-                "[Conflict] unsloth_offload_checkpointing and blocks_to_swap "
-                "cannot be used together; disabling unsloth_offload_checkpointing / "
-                "unsloth_offload_checkpointing 与 blocks_to_swap 不可同时使用，已关闭前者"
-            )
 
     # ── 5.12. adaptive_noise_scale 依赖 noise_offset ──
     # sd-scripts verify_training_args: adaptive_noise_scale requires noise_offset
@@ -540,19 +547,9 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
                 "consider switching to eager / Windows 上 inductor 后端可能不稳定，建议切换为 eager"
             )
 
-    # ── 5.14. 按 train_type 兜底过滤 group 不匹配字段 ───────────
-    # 前端 getVisibleSections 已按 group 字段过滤，此处为后端防线：防历史 form 残留值或裸 POST 旁路
-    # 把 SDXL-only 死参数（noise_offset/min_snr/multires_noise_* 等）带入 anima 训练。
-    # 不报警（正常流程根本不该有）；仅在 group 不匹配时静默 pop，避免污染 TOML 与训练产物元数据。
-    train_group = _TRAIN_TYPE_GROUP.get(str(source.get("model_train_type", "")))
-    if train_group:
-        for key in list(source.keys()):
-            field_group = _FIELD_GROUP_MAP.get(key)
-            if not field_group or field_group == "all":
-                continue
-            groups = [field_group] if isinstance(field_group, str) else list(field_group)
-            if train_group not in groups:
-                source.pop(key, None)
+    # MOSS 已在专属校验前过滤；其他训练类型保留归一化后的过滤时机。
+    if not is_moss:
+        _filter_model_fields(source)
 
     # Filter after optimizer normalization, which may force a constant scheduler.
     scheduler = source.get("lr_scheduler", "constant")
@@ -567,10 +564,18 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
         source["lr_scheduler_min_lr_ratio"] = 0
     normalize_scheduler_config(source)
 
+    # Older forms omitted the UI default, but upstream defaults to SNR, which
+    # flow-matching schedulers do not support. Preserve explicit user choices.
+    if source.get("loss_type") in ("huber", "smooth_l1") and _is_empty_value(source.get("huber_schedule")):
+        source["huber_schedule"] = next(field["default"] for field in FIELDS if field["key"] == "huber_schedule")
+
     # ── 6. 主循环：白名单过滤 ─────────────────────────────
     # sd-scripts 内部字段，适配层透传不走警告
     _INTERNAL_PASSTHROUGH = {"network_args", "optimizer_args", "lr_scheduler_args"}
     for key, value in source.items():
+        if is_moss and key == "sample_uncond_skip_layers" and value == "":
+            adapted[key] = ""
+            continue
         # 跳过纯 UI 字段、合并字段、及已处理的 LyCORIS 字段
         if key in UI_ONLY_FIELDS or key in MERGED_FIELDS or key in LYCORIS_KOHYA_UI_FIELDS:
             continue

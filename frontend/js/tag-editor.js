@@ -2977,6 +2977,7 @@ window.tagEditorMixin = {
 
   // ===== Keyboard Shortcuts =====
   tagEditorHandleKeydown(e) {
+    if (e.defaultPrevented || e.target.closest?.('dialog[open]')) return;
     if (this.tagEditorSnapshotBusy) return;
     // Only active when tag editor is the current route
     if (this.currentRoute !== 'tagEditor') return;

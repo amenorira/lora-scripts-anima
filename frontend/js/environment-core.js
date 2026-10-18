@@ -4,12 +4,14 @@
    ================================================================ */
 
 window.environmentCoreMixin = {
+  faStatus: null, faBusy: false, faError: null, faSource: 'auto',
+  faInstallJobId: null, faInstallLog: '', faInstallElapsed: 0, faProgress: null,
   // ── xformers State ───────────────────────────────────
   xfStatus: null, xfBusy: false, xfError: null,
   xfInstallJobId: null, xfInstallLog: '', xfInstallElapsed: 0,
 
   // ── sd-scripts State ────────────────────────────────
-  sdStatus: null,
+  sdStatus: null, sdError: null,
 
   // ── Multi-core Registry State ───────────────────────
   trainingCores: null, trainingCoresError: null,
@@ -78,13 +80,18 @@ window.environmentCoreMixin = {
     switch (slotId) {
       case 'dictionary': return !!this.tagDictionaryInstalling;
       case 'xf': return !!this.xfBusy;
+      case 'fa': return !!this.faBusy;
       case 'triton': return !!this.tritonBusy;
       case 'sd': return false;
       case 'lycoris':
       case 'musubi': return false;
       case 'animaModel':
       case 'krea2':
-      case 'trainUse': return false;
+      case 'moss':
+      case 'trainUse': {
+        const groups = { animaModel: 'Anima', krea2: 'Krea 2', moss: 'MOSS-Image', trainUse: 'Train Use' };
+        return !!this.animaModelBusy && this.animaModelProgress?.group === groups[slotId];
+      }
       case 'animaModelLog': return !!this.animaModelLogOpen;
       default: return false;
     }
@@ -138,6 +145,7 @@ window.environmentCoreMixin = {
     const tracked = snapshot && snapshot.tasks && snapshot.tasks.tracked || [];
     const slots = {
       'xformers-install': 'xf',
+      'flash-attn-install': 'fa',
       'triton-install': 'triton',
       'model-download': 'animaModel',
     };
@@ -154,15 +162,16 @@ window.environmentCoreMixin = {
   },
 
   resetRealtimeEnvironmentState() {
-    const slots = ['xf', 'triton', 'animaModel'];
-    const hadTasks = !!(this.xfBusy || this.tritonBusy || this.animaModelBusy || this.xfInstallJobId || this.tritonInstallJobId || this.animaModelJobId);
+    const slots = ['xf', 'fa', 'triton', 'animaModel'];
+    const hadTasks = !!(this.faBusy || this.faInstallJobId || this.xfBusy || this.tritonBusy || this.animaModelBusy || this.xfInstallJobId || this.tritonInstallJobId || this.animaModelJobId);
     slots.forEach(slot => this._setEnvironmentRealtimeTask(slot, null));
     const unknown = this.t('monitor.taskStateUnknown');
     if (this.xfBusy || this.xfInstallJobId) this.xfError = unknown;
+    if (this.faBusy || this.faInstallJobId) this.faError = unknown;
     if (this.tritonBusy || this.tritonInstallJobId) this.tritonError = unknown;
     if (this.animaModelBusy || this.animaModelJobId) this.animaModelError = unknown;
-    this.xfBusy = this.tritonBusy = this.animaModelBusy = false;
-    this.xfInstallJobId = this.tritonInstallJobId = this.animaModelJobId = null;
+    this.faBusy = this.xfBusy = this.tritonBusy = this.animaModelBusy = false;
+    this.faInstallJobId = this.xfInstallJobId = this.tritonInstallJobId = this.animaModelJobId = null;
     this.scheduleEnvironmentRender();
     return hadTasks;
   },
@@ -171,7 +180,11 @@ window.environmentCoreMixin = {
     const terminal = ['FINISHED', 'FAILED', 'TERMINATED'].includes(normalizedStatus) || !!data.done;
     const failed = normalizedStatus === 'FAILED' || data.success === false || data.returncode != null && data.returncode !== 0
       || (data.progress && (data.progress.stage === 'error' || data.progress.phase === 'error'));
-    if (slot === 'xf') {
+    if (slot === 'fa') {
+      this.faInstallLog = data.lines || this.faInstallLog;
+      this.faInstallElapsed = data.elapsed || 0;
+      this.faProgress = data.progress || this.faProgress;
+    } else if (slot === 'xf') {
       this.xfInstallLog = data.lines || this.xfInstallLog;
       this.xfInstallElapsed = data.elapsed || 0;
     } else if (slot === 'triton') {
@@ -197,8 +210,11 @@ window.environmentCoreMixin = {
     this[busyKey] = false;
     this[idKey] = null;
     this._setEnvironmentRealtimeTask(slot, null);
-    const fallback = this.t('environment.installFailed');
-    if (slot === 'xf') {
+    const fallback = this.t(slot === 'animaModel' ? 'environment.animaModel.failed' : 'environment.installFailed');
+    if (slot === 'fa') {
+      await this.faRefresh(true);
+      if (failed) this.faError = data.error || data.lines || fallback;
+    } else if (slot === 'xf') {
       const msg = failed ? (data.error || data.lines || fallback) : null;
       await this.xfRefresh(true).catch(() => {});
       if (failed) this.xfError = msg;
@@ -208,7 +224,7 @@ window.environmentCoreMixin = {
       if (failed) this.tritonError = msg;
     } else if (slot === 'animaModel') {
       const msg = failed ? ((data.progress || {}).error || (Array.isArray(data.log) && data.log[data.log.length - 1]) || fallback) : null;
-      if (failed) this.toast(this.t('environment.installFailed'), 'error');
+      if (failed) this.toast(fallback, 'error');
       await this.animaModelRefresh(true).catch(() => {});
       if (failed) this.animaModelError = msg;
     }
@@ -319,11 +335,16 @@ window.environmentCoreMixin = {
       return;
     }
     const needsXf = !this.xfStatus, needsSd = !this.sdStatus, needsCores = !this.trainingCores, needsTriton = !this.tritonStatus,
-          needsAnimaModel = !this.animaModelStatus;
-    if (needsXf || needsSd || needsCores || needsTriton || needsAnimaModel) {
+          needsAnimaModel = !this.animaModelStatus, needsFa = !this.faStatus;
+    if (needsXf || needsSd || needsCores || needsTriton || needsAnimaModel || needsFa) {
       // Render the full skeleton immediately, then load in a small queue.
       // This avoids stacking cold imports and disk scans while telemetry is active.
       const loaders = [];
+      if (needsFa) loaders.push(this._environmentJsonLoader(
+        '/api/flash-attn/status',
+        data => { this.faStatus = data; this.faError = null; },
+        error => { this.faStatus = null; this.faError = String(error); },
+      ));
       if (needsXf) {
         this.xfError = null;
         loaders.push(this._environmentJsonLoader(
@@ -334,13 +355,13 @@ window.environmentCoreMixin = {
       }
       if (needsTriton) loaders.push(this._environmentJsonLoader(
         '/api/triton/status',
-        data => { this.tritonStatus = data; },
-        () => { this.tritonStatus = null; },
+        data => { this.tritonStatus = data; this.tritonError = null; },
+        error => { this.tritonStatus = null; this.tritonError = String(error); },
       ));
       if (needsSd) loaders.push(this._environmentJsonLoader(
         '/api/sd-scripts/status',
-        data => { this.sdStatus = data; },
-        () => { this.sdStatus = null; },
+        data => { this.sdStatus = data; this.sdError = null; },
+        error => { this.sdStatus = null; this.sdError = String(error); },
       ));
       if (needsAnimaModel) {
         this.animaModelError = null;
@@ -386,9 +407,38 @@ window.environmentCoreMixin = {
     this.renderEnvironment(); this.finishProgress();
   },
 
+  async faRefresh(silent) {
+    try {
+      const response = await fetch('/api/flash-attn/status');
+      if (!response.ok) throw new Error(this.t('environment.loadFailed'));
+      this.faStatus = await response.json();
+      this.faError = null;
+    } catch (error) { this.faError = String(error); }
+    if (silent) this.scheduleEnvironmentRender(); else this.renderEnvironment();
+  },
+
+  async faInstall() {
+    if (this.faBusy) return;
+    this.faBusy = true; this.faError = null; this.faInstallLog = ''; this.faInstallElapsed = 0;
+    this.faProgress = { stage: 'resolving' };
+    this._envForceOpen('fa'); this.renderEnvironment();
+    try {
+      const response = await fetch('/api/flash-attn/install', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: this.faSource }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success || !result.job_id) throw new Error(result.message || this.t('environment.installFailed'));
+      this.faInstallJobId = result.job_id;
+      this._setEnvironmentRealtimeTask('fa', result.job_id);
+    } catch (error) {
+      this.faBusy = false; this.faError = String(error); this.renderEnvironment();
+    }
+  },
+
   // ── xformers Methods ────────────────────────────────
   async xfRefresh(silent) { this.xfError = null;
-    try { const r = await fetch('/api/xformers/status'); this.xfStatus = await r.json(); } catch (e) { this.xfError = String(e); this.xfStatus = null; }
+    try { const r = await fetch('/api/xformers/status'); if (!r.ok) throw new Error('HTTP ' + r.status); this.xfStatus = await r.json(); } catch (e) { this.xfError = String(e); this.xfStatus = null; }
     if (silent) this.scheduleEnvironmentRender(); else { this.renderEnvironment(); this.finishProgress(); }
   },
   async xfInstall() { this.xfBusy = true; this.xfError = null; this.xfInstallLog = ''; this.xfInstallElapsed = 0; this._envForceOpen('xf'); this.startProgress(); this.renderEnvironment();
@@ -401,7 +451,7 @@ window.environmentCoreMixin = {
   // ── Triton Methods ──────────────────────────────────
   async tritonRefresh(silent) {
     this.tritonError = null;
-    try { const r = await fetch('/api/triton/status'); this.tritonStatus = await r.json(); } catch (_) { this.tritonStatus = null; }
+    try { const r = await fetch('/api/triton/status'); if (!r.ok) throw new Error('HTTP ' + r.status); this.tritonStatus = await r.json(); } catch (e) { this.tritonError = String(e); this.tritonStatus = null; }
     if (silent) this.scheduleEnvironmentRender(); else { this.renderEnvironment(); this.finishProgress(); }
   },
 
@@ -411,8 +461,8 @@ window.environmentCoreMixin = {
       const r = await fetch('/api/triton/install', { method: 'POST' });
       const result = await r.json();
       if (result.success && result.job_id) { this.tritonInstallJobId = result.job_id; this._setEnvironmentRealtimeTask('triton', result.job_id); }
-      else { this.tritonBusy = false; this.toast(this.t('environment.installFailed'), 'error'); this.finishProgress(); this.renderEnvironment(); }
-    } catch (e) { this.tritonBusy = false; this.toast(String(e), 'error'); this.finishProgress(); this.renderEnvironment(); }
+      else { this.tritonBusy = false; this.tritonError = result.error || result.message || this.t('environment.installFailed'); this.toast(this.tritonError, 'error'); this.finishProgress(); this.renderEnvironment(); }
+    } catch (e) { this.tritonBusy = false; this.tritonError = String(e); this.toast(this.tritonError, 'error'); this.finishProgress(); this.renderEnvironment(); }
   },
 
   // ── Anima 模型下载 Methods ──────────────────────────
@@ -420,9 +470,10 @@ window.environmentCoreMixin = {
     this.animaModelError = null;
     // 手动刷新时清掉过期任务进度：旧 progress 残留（phase='done'+batch）会让
     // 手动删除的文件被误报为"失败"（bug 3）。silent（任务收尾）时保留，供失败行标红。
-    if (!silent) { this.animaModelProgress = null; this.animaModelAggregate = null; }
+    if (!silent && !this.animaModelBusy) { this.animaModelProgress = null; this.animaModelAggregate = null; }
     try {
       const r = await fetch('/api/anima-model/status');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
       const data = await r.json();
       this.animaModelStatus = data.files || null;
       this.animaModelDestDir = data.dest_dir || 'models/';
@@ -432,13 +483,17 @@ window.environmentCoreMixin = {
 
   async animaModelDownload(file, group) {
     if (this.animaModelBusy) return; // 防止重复点击
+    // 界面只允许逐文件下载，拦截陈旧入口的空文件批量调用。
+    if (!file) return;
     this.animaModelBusy = true; this.animaModelError = null;
-    this.animaModelLog = ''; this.animaModelProgress = null;
+    this.animaModelLog = '';
+    this.animaModelProgress = { group: group || (this.animaModelStatus || []).find(f => f.filename === file)?.group, filename: file, batch: [file], phase: 'connecting', file_index: 0, file_total: 1 };
     this.animaModelAggregate = null;
     this.animaModelLogOpen = false;  // 新任务默认收起日志，用户可手动展开
     if (group === 'Krea 2') this._envForceOpen('krea2');
     else if (group === 'Anima') this._envForceOpen('animaModel');
     else if (group === 'Train Use') this._envForceOpen('trainUse');
+    else if (group === 'MOSS-Image') this._envForceOpen('moss');
     else { this._envForceOpen('animaModel'); this._envForceOpen('krea2'); }
     this.startProgress(); this.renderEnvironment();
     try {
@@ -452,7 +507,7 @@ window.environmentCoreMixin = {
         this._setEnvironmentRealtimeTask('animaModel', result.job_id);
       } else {
         this.animaModelBusy = false;
-        this.animaModelError = result.message || this.t('environment.installFailed');
+        this.animaModelError = result.message || this.t('environment.animaModel.failed');
         this.finishProgress(); this.renderEnvironment();
       }
     } catch (e) {
@@ -483,17 +538,21 @@ window.environmentCoreMixin = {
 
   // Hero「全部刷新」：并行静默刷新各组件状态
   async _envRefreshAll() {
+    if (this.environmentLoading) return;
+    this.environmentLoading = true;
+    this.renderEnvironment();
     const tasks = [
       this.tagDictionaryRefreshStatus().then(status => {
         if (status && ['downloading', 'building'].includes(status.status)) this._tdPollInstall();
         else if (status?.installed) return this.tagDictionaryCheckUpdate(true);
       }),
       this.xfRefresh(true).catch(() => {}),
+      this.faRefresh(true),
       this.tritonRefresh(true).catch(() => {}),
       this.animaModelRefresh(true).catch(() => {}),
       (async () => {
-        try { const r = await fetch('/api/sd-scripts/status'); this.sdStatus = await r.json(); }
-        catch (_) { this.sdStatus = null; }
+        try { const r = await fetch('/api/sd-scripts/status'); if (!r.ok) throw new Error('HTTP ' + r.status); this.sdStatus = await r.json(); this.sdError = null; }
+        catch (e) { this.sdStatus = null; this.sdError = String(e); }
       })(),
       (async () => {
         try {
@@ -504,15 +563,15 @@ window.environmentCoreMixin = {
         } catch (e) { this.trainingCoresError = String(e && e.message || e); this.trainingCores = null; }
       })(),
     ];
-    await Promise.allSettled(tasks);
-    this.renderEnvironment();
+    try { await Promise.allSettled(tasks); }
+    finally { this.environmentLoading = false; this.renderEnvironment(); }
   },
 
   // 由后端 progress dict 计算批量整体进度（前端展示"第 i/n 个 · pct%"）。
   // 策略：已完成文件按 100% 计，当前文件按其 pct 计，未到的按 0% 计，再除以总数。
   _computeAnimaAggregate(p) {
     if (!p) return null;
-    const fileTotal = p.file_total || (this.animaModelStatus ? this.animaModelStatus.length : 0) || 1;
+    const fileTotal = p.file_total || p.batch?.length || 1;
     const fileIndex = (p.file_index != null) ? p.file_index : 0;
     const batch = Array.isArray(p.batch) ? p.batch : null;
     // 当前文件百分比

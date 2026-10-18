@@ -33,6 +33,9 @@ class TrainingConfigYamlTests(unittest.TestCase):
                 "network_alpha": 16,
                 "max_grad_norm": 0,
                 "inv_sqrt_steps": 5,
+                "qwen_image_vae_2d": False,
+                "gradient_checkpointing": False,
+                "max_data_loader_n_workers": 0,
             },
             profile_id="anima-lora",
         )
@@ -56,6 +59,9 @@ class TrainingConfigYamlTests(unittest.TestCase):
         self.assertEqual(restored["network_alpha"], 16)
         self.assertEqual(restored["max_grad_norm"], 0)
         self.assertEqual(restored["inv_sqrt_steps"], 5)
+        self.assertIs(restored["qwen_image_vae_2d"], False)
+        self.assertIs(restored["gradient_checkpointing"], False)
+        self.assertEqual(restored["max_data_loader_n_workers"], 0)
         self.assertNotIn("runtime", loaded)
 
     def test_duplicate_keys_are_rejected(self):

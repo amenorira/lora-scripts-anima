@@ -39,6 +39,25 @@ class TaskStateMachineTests(unittest.TestCase):
         self.assertIs(task.status, TaskStatus.FINISHED)
         self.assertEqual(task.finished_at, finished_at)
 
+    def test_business_failure_survives_process_exit_and_repeated_settlement(self):
+        for exit_first in (False, True):
+            with self.subTest(exit_first=exit_first):
+                task = Task("invalid-result", ["trainer"])
+                with patch("backend.tasks.subprocess.Popen", return_value=self._process(0)):
+                    task.execute()
+                    if exit_first:
+                        task.communicate()
+                    task.complete_work(failed=True)
+                    if not exit_first:
+                        self.assertIs(task.status, TaskStatus.RUNNING)
+                        task.complete_work()
+                        task.communicate()
+                    finished_at = task.finished_at
+                    task.complete_work()
+                self.assertIs(task.status, TaskStatus.FAILED)
+                self.assertEqual(task.process.returncode, 0)
+                self.assertEqual(task.finished_at, finished_at)
+
     def test_termination_wins_over_later_process_cleanup(self):
         task = Task("terminated", ["trainer"])
         process = self._process(0)
@@ -48,7 +67,7 @@ class TaskStateMachineTests(unittest.TestCase):
             task.execute()
             task.terminate()
             task.communicate()
-            task.complete_work()
+            task.complete_work(failed=True)
 
         self.assertIs(task.status, TaskStatus.TERMINATED)
 
@@ -557,6 +576,76 @@ class TaskStateMachineTests(unittest.TestCase):
         for failed_step in ("result", "callback"):
             with self.subTest(failed_step=failed_step), tempfile.TemporaryDirectory() as directory:
                 asyncio.run(scenario(directory, failed_step))
+
+    def test_supervisor_finalization_precedes_results_and_preserves_stop_or_process_failure(self):
+        async def scenario(directory, outcome):
+            manager = TaskManager()
+            reserved = manager.reserve_task()
+            process = self._process(3 if outcome == "process" else 0)
+            entered, release = threading.Event(), threading.Event()
+            finalized, callbacks = [], []
+            worker_futures = []
+            loop = asyncio.get_running_loop()
+            submit = loop.run_in_executor
+
+            def capture_worker(executor, func, *args):
+                future = submit(executor, func, *args)
+                if getattr(func, "__name__", "") == "_run":
+                    worker_futures.append(future)
+                return future
+
+            def finalize_result(status):
+                finalized.append(status)
+                entered.set()
+                if not release.wait(5):
+                    raise TimeoutError("finalization was not released")
+                if outcome == "exception":
+                    raise OSError("validation denied")
+                return "Cache files do not match / 缓存文件不匹配"
+
+            def communicate(**_kwargs):
+                if outcome == "stop":
+                    reserved.terminate()
+                return b"", b""
+
+            process.communicate.side_effect = communicate
+            with stub_supervisor(), \
+                 patch.object(loop, "run_in_executor", side_effect=capture_worker), \
+                 patch("backend.tasks.subprocess.Popen", return_value=process), \
+                 patch("backend.tasks.kill_proc_tree"):
+                response = supervisor.run_train(
+                    "config.toml", run_dir=directory, reserved_task=reserved,
+                    finalize_result=finalize_result, on_complete=callbacks.append,
+                )
+                self.assertEqual(response["status"], "success")
+                try:
+                    self.assertTrue(await asyncio.to_thread(entered.wait, 5))
+                    self.assertIs(reserved.status, TaskStatus.RUNNING)
+                    self.assertFalse((Path(directory) / "result.json").exists())
+                    self.assertIsNone(manager.reserve_task())
+                    self.assertFalse(manager.begin_dataset_mutation())
+                finally:
+                    release.set()
+                await asyncio.wait_for(worker_futures[0], 5)
+
+            expected = "terminated" if outcome == "stop" else "failed"
+            result = json.loads((Path(directory) / "result.json").read_text(encoding="utf-8"))
+            self.assertEqual(result["status"], expected)
+            self.assertEqual(result["exit_code"], process.returncode)
+            self.assertEqual(callbacks, [expected])
+            self.assertEqual(finalized, [expected if outcome in ("stop", "process") else "completed"])
+            error = {
+                "process": "exit code 3",
+                "stop": "Training terminated",
+                "exception": "validation denied",
+            }.get(outcome, "缓存文件不匹配")
+            self.assertIn(error, result["error"])
+            self.assertIs(reserved.status, TaskStatus.TERMINATED if outcome == "stop" else TaskStatus.FAILED)
+            self.assertIsNotNone(manager.reserve_task())
+
+        for outcome in ("invalid", "exception", "process", "stop"):
+            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as directory:
+                asyncio.run(scenario(directory, outcome))
 
     def test_supervisor_log_open_failure_settles_reserved_slot(self):
         async def scenario(directory):

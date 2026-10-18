@@ -84,3 +84,4 @@ class TeCacheDeleteRequest(BaseModel):
 
 class TrainingTomlParseRequest(BaseModel):
     content: str
+    model_train_type: str | None = None

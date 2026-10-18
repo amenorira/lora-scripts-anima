@@ -2,8 +2,10 @@
 
 Loss uses fixed noise thirds and sample-weighted batch, rolling and epoch means.
 Counts accumulate in 1000 bins since process start, including after a resume.
-Both follow loss/current through the existing TensorBoard writer, including
-accumulation microbatches. ANIMA_TRAIN_METRICS_* flags enable them independently.
+Loss follows loss/current, including accumulation microbatches. Counts are
+snapshotted every 100 optimizer steps, at epoch ends, successful checkpoints,
+and before the writer closes.
+ANIMA_TRAIN_METRICS_* flags enable them independently.
 """
 from __future__ import annotations
 
@@ -21,6 +23,7 @@ _IMPORT_FLAG = "_anima_training_metrics_import"
 _WARNED = False
 _BUCKETS = ("low", "mid", "high")
 _TIMESTEP_BINS = 1000
+_DISTRIBUTION_INTERVAL = 100
 
 
 def _warn(exc):
@@ -78,6 +81,9 @@ class TrainingMetrics:
         self.pending_timesteps = None
         self.timestep_counts = None
         self.distribution_dirty = False
+        self.distribution_step = None
+        self.distribution_snapshot_step = None
+        self.checkpoint_pending = False
 
     def observe_timesteps(self, timesteps, scale):
         if not self.timestep_count:
@@ -182,7 +188,9 @@ class TrainingMetrics:
             ),
         )])
         writer.file_writer.add_summary(summary, global_step=step)
+        self.distribution_snapshot_step = step
         self.distribution_dirty = False
+        self.checkpoint_pending = False
 
     def batch_logs(self, include_average=False):
         logs = self.loss_logs(include_average)
@@ -333,17 +341,63 @@ def _attach_accelerator(stack, accelerator, state):
                 extra = None
                 if state.enabled and "loss/current" in values:
                     extra = _observe(state, lambda: state.batch_logs("loss/average" in values))
+                    state.distribution_step = step
                     if state.timestep_count:
-                        # Write before the original log flushes the shared writer.
-                        _observe(state, lambda: state.write_distribution(tracker.writer, step))
+                        # Both trainers save step checkpoints before logging the
+                        # current loss. Include that batch before the snapshot.
+                        periodic = (
+                            accelerator.sync_gradients
+                            and step is not None
+                            and step > 0
+                            and step % _DISTRIBUTION_INTERVAL == 0
+                            and step != state.distribution_snapshot_step
+                        )
+                        if state.checkpoint_pending or periodic:
+                            _observe(state, lambda: state.write_distribution(tracker.writer, step))
                 elif state.enabled and ("loss/epoch_average" in values or "loss/epoch" in values):
                     extra = _observe(state, lambda: state.epoch_logs(step))
+                    if state.timestep_count:
+                        # Epoch loss is indexed by epoch; tensors always use the
+                        # last optimizer step, keeping checkpoint events ordered.
+                        _observe(state, lambda: state.write_distribution(tracker.writer, state.distribution_step))
                 if extra:
                     values = {**values, **extra}
                 return original(values, step=step, **kwargs)
             return log
 
         _replace(stack, tracker, "log", make_log(original_log, tracker))
+
+    if state.timestep_count:
+        original_end = accelerator.end_training
+
+        @functools.wraps(original_end)
+        def end_training(*args, **kwargs):
+            # Accelerate closes tracker writers here. Never defer the last
+            # snapshot to context teardown or to the final model save afterward.
+            for tracker in accelerator.trackers:
+                if tracker.name == "tensorboard":
+                    _observe(state, lambda: state.write_distribution(tracker.writer, state.distribution_step))
+            return original_end(*args, **kwargs)
+
+        _replace(stack, accelerator, "end_training", end_training)
+
+
+def _attach_checkpoint_saves(stack, trainer, engine, state):
+    name = "_save_model" if engine == "sd_scripts" else "on_post_save"
+    original = getattr(trainer, name, None)
+    if not callable(original):
+        return
+
+    @functools.wraps(original)
+    def save(*args, **kwargs):
+        result = original(*args, **kwargs)
+        # Epoch saves already follow the epoch log; final saves follow writer
+        # shutdown. Only step saves still have an unlogged training batch.
+        if state.enabled and state.pending_timesteps is not None:
+            state.checkpoint_pending = True
+        return result
+
+    _replace(stack, trainer, name, save)
 
 
 def _loss_mean_capture():
@@ -373,6 +427,8 @@ def instrument_trainer(trainer, engine, grad_norm=True, *, grad_clipped=True, ti
             return
         if state.timestep_loss:
             _observe(state, lambda: _attach_loss_recorder(stack, state, engine))
+        if state.timestep_count:
+            _observe(state, lambda: _attach_checkpoint_saves(stack, trainer, engine, state))
         attached = False
         original_batch = trainer.process_batch
         batch_signature = inspect.signature(original_batch)

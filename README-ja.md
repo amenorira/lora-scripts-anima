@@ -2,9 +2,9 @@
 
 # lora-scripts-anima
 
-_✨ 複数の学習エンジンに対応した LoRA ツール：Anima、SDXL、Krea 2 ✨_
+_✨ 複数の学習エンジンに対応した LoRA ツール：Anima、SDXL、MOSS-Image、Krea 2 ✨_
 
-ローカルで動作する LoRA 学習用 GUI です。Anima / SDXL には [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts)（`vendor/sd-scripts/`）、**Krea 2 LoRA** には [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) を使用します。
+学習設定、画像のタグ付け、キャプション編集、リアルタイム監視を統合した、ローカルで動作する LoRA 学習用 GUI です。Anima / SDXL / MOSS-Image には [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts)、Krea 2 には [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) を使用し、[LyCORIS](https://github.com/KohakuBlueleaf/LyCORIS) により Anima / SDXL の学習アルゴリズムを拡張します。
 
 </div>
 
@@ -22,7 +22,7 @@ _✨ 複数の学習エンジンに対応した LoRA ツール：Anima、SDXL、
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-en.md">English</a>
 </p>
 
-学習エンジンのレジストリによって各バックエンドを分離しています。**LyCORIS** は `lycoris.kohya` を通じて利用するオプションのアダプターバックエンドです。
+Anima / SDXL はネイティブの LoRA・LoHa・LoKr と、`lycoris.kohya` 経由の **LyCORIS** LoCon / LoHa / LoKr に対応します。MOSS-Image と Krea 2 はそれぞれ専用のネイティブ LoRA モジュールを使用します。
 
 ### 対応モデル
 
@@ -30,7 +30,10 @@ _✨ 複数の学習エンジンに対応した LoRA ツール：Anima、SDXL、
 |----------|--------------|
 | LoRA | SDXL |
 | **LoRA** | **Anima**（Qwen3 + T5 のデュアルエンコーダー） |
+| **LoRA** | **MOSS-Image**（sd-scripts） |
 | **LoRA** | **Krea 2 RAW DiT**（musubi-tuner） |
+
+> ℹ️ MOSS-Image は現在、ネイティブの `networks.lora_generic` のみ対応し、LoHa・LoKr・LyCORIS は利用できません。UI では Qwen テキストエンコーダーを固定し、DiT 内のテキスト埋め込み層の学習を個別に選択できます。
 
 > ℹ️ Krea 2 では、学習前に latent と Qwen3-VL テキストエンコーダー出力の両方をキャッシュする必要があります。学習開始前に、キャッシュが揃っているか、画像・キャプション・モデルと一致しているかを GUI が確認します。
 
@@ -79,7 +82,7 @@ Anima 学習では、学習ネットワークモジュールの設定から **�
 
 ```
 lora-scripts-anima/
-├── vendor/sd-scripts/          ← Anima / SDXL 学習エンジン（固定した上流スナップショット）
+├── vendor/sd-scripts/          ← Anima / SDXL / MOSS-Image 学習エンジン（固定した上流スナップショット）
 ├── vendor/musubi-tuner/        ← Krea 2 学習エンジン（固定した上流スナップショット）
 ├── vendor/lycoris/             ← LyCORIS アダプターバックエンド（固定した上流スナップショット）
 ├── vendor/emo_optimizer/       ← EmoSens 適応型オプティマイザー
@@ -122,7 +125,7 @@ lora-scripts-anima/
 | RTX 40（Ada） | 2.12.1 | 13.0 |
 | RTX 50（Blackwell） | 2.12.1 | 13.0 |
 
-プロジェクトの更新後、旧バージョンの `venv`（Torch 2.10 + cu130 を含む）は次回起動時に PyTorch 2.12.1 + cu130 と torchvision 0.27.1 に自動更新されます。インストール済みの xformers は 0.0.35、Triton は 3.7 系に更新されます。外部 FlashAttention はインストールされたまま残りますが、学習プロセスでは読み込みません。bitsandbytes の CUDA 13 互換性チェックは継続し、ONNX Runtime GPU は 1.27.0 のままです。未インストールのオプションライブラリは自動追加しません。
+プロジェクトの更新後、旧バージョンの `venv`（Torch 2.10 + cu130 を含む）は次回起動時に PyTorch 2.12.1 + cu130 と torchvision 0.27.1 に自動更新されます。インストール済みの xformers は 0.0.35、Triton は 3.7 系に更新されます。FlashAttention は環境管理で必要に応じてインストールできます。既存のバージョンを自動更新・削除することはありません。bitsandbytes の CUDA 13 互換性チェックは継続し、ONNX Runtime GPU は 1.27.0 のままです。未インストールのオプションライブラリは自動追加しません。
 
 NVIDIA GPU がない PC にも GPU 用の依存環境を一式インストールし、GUI を起動できます。ただし、学習には NVIDIA GPU が必要です。
 
@@ -216,9 +219,9 @@ Windows では学習ツールを閉じて **`update.bat`** をダブルクリッ
 
 ## Attention の高速化
 
-Anima の既定値は `torch`、Krea2 は `sdpa` です。PyTorch 標準の SDPA が内蔵 FlashAttention を含む適切な高速化カーネルを自動選択するため、外部の `flash-attn` は不要です。
+Anima / MOSS の既定値は `torch`、Krea2 は `sdpa` です。SDPA は PyTorch のビルドと入力に応じて利用可能なカーネルを選択します。Windows 版に内蔵 FlashAttention が含まれているとは限りません。
 
-旧設定の `flash` / `flash_attn` は標準の SDPA に自動変換します。プロジェクトの実行プロセスは外部 FlashAttention を読み込みません。既存のパッケージは venv に残し、自動更新や削除は行いません。互換性のない旧パッケージによる読み込み警告も繰り返し表示しません。PyTorch 内蔵の高速化には影響しません。
+外部 FlashAttention 2 は「環境管理」でインストールし、完了後に Anima / MOSS の `attn_mode` を `flash` に設定します。インストーラーは Python・PyTorch・CUDA・プラットフォームを照合し、PyTorch を変更せず拡張機能だけをインストールします。Krea2 の旧 `flash_attn` 設定は引き続き `sdpa` に変換します。
 
 ## EmoSens 適応型オプティマイザー
 
@@ -261,8 +264,9 @@ GUI の **「環境」** タブで次の情報や機能を利用できます。
 
 ## 謝辞
 
-- [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Anima / SDXL 学習エンジン
+- [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Anima / SDXL / MOSS-Image 学習エンジン
 - [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) — Krea 2 学習エンジン
+- [**LyCORIS**](https://github.com/KohakuBlueleaf/LyCORIS) — LoCon / LoHa / LoKr の学習アルゴリズムとアダプター
 - [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) — 初期設計の参考
 
 ## ライセンス

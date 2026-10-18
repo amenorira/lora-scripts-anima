@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class BucketTests(unittest.TestCase):
-    def test_histogram_counts_actual_samples_at_each_loss_record(self):
+    def test_histogram_counts_each_microbatch_but_only_snapshots_at_epoch_end(self):
         trainer = AnimaNetworkTrainer()
         accelerator = FakeAccelerator(torch.nn.Parameter(torch.ones(1)))
         tracker = accelerator.trackers[0]
@@ -32,15 +32,16 @@ class BucketTests(unittest.TestCase):
                 trainer.process_batch(torch.ones(1), torch.tensor([.5]), accelerator, is_train=False)
                 tracker.log({"loss/validation": 1}, step=step)
                 tracker.log({"loss/current": 1}, step=step)
+                self.assertEqual(tracker.distributions, [])
             tracker.log({"loss/epoch_average": 1}, step=1)
             tracker.log({"loss/current": 1}, step=6)  # No new training batch.
             accelerator.end_training()
             self.assertEqual(metrics.timestep_counts.sum(), 7)
             self.assertEqual(metrics.timestep_counts[[0, 100, 500, 900, 999]].tolist(), [1, 4, 0, 1, 1])
-        self.assertEqual([image[0] for image in tracker.distributions], [4, 4, 5])
+        self.assertEqual([image[0] for image in tracker.distributions], [5])
         snapshots = [counts for _, counts in tracker.distributions]
-        self.assertEqual([int(counts.sum()) for counts in snapshots], [4, 6, 7])
-        self.assertEqual([int(counts[100]) for counts in snapshots], [2, 4, 4])
+        self.assertEqual([int(counts.sum()) for counts in snapshots], [7])
+        self.assertEqual([int(counts[100]) for counts in snapshots], [4])
         self.assertFalse(any(key.startswith("timestep/count/") for _, values in tracker.records for key in values))
 
     def test_histogram_normalizes_engine_units_and_disabled_collection(self):
@@ -213,6 +214,9 @@ class FakeAccelerator:
 
 
 class SdTrainer:
+    def _save_model(self, *, steps):
+        return steps
+
     def process_batch(self, loss, timesteps, accelerator, args=None, is_train=True):
         return self.post_process_loss(loss, args, timesteps, None).mean()
 
@@ -226,6 +230,9 @@ class AnimaNetworkTrainer(SdTrainer):
 
 
 class MusubiTrainer:
+    def on_post_save(self):
+        return "saved"
+
     def process_batch(self, loss, timesteps, accelerator):
         return self.compute_loss(None, loss, timesteps, None, None, None, 0)[0]
 
@@ -236,7 +243,7 @@ class MusubiTrainer:
 
 class TrainingLoopTests(unittest.TestCase):
     def run_loop(self, engine, instrument=True, clipping=1, main=True, grad_norm=True, directory=None,
-                 grad_clipped=True, timestep_loss=True, timestep_count=True):
+                 grad_clipped=True, timestep_loss=True, timestep_count=True, checkpoint_steps=()):
         parameter = torch.nn.Parameter(torch.tensor([1., 2.]))
         tracker = FakeTracker(directory)
         accelerator = FakeAccelerator(parameter, tracker, main)
@@ -265,6 +272,12 @@ class TrainingLoopTests(unittest.TestCase):
                 optimizer = accelerator._optimizers[0]
                 optimizer.step()
                 optimizer.zero_grad()
+                update = (micro + 1) // 2
+                if main and accelerator.sync_gradients and update in checkpoint_steps:
+                    if engine == "sd_scripts":
+                        self.assertEqual(trainer._save_model(steps=update), update)
+                    else:
+                        self.assertEqual(trainer.on_post_save(), "saved")
                 tracker.log({"loss/current": float(loss.detach()),
                              "loss/average": sum(float(v) for v in losses) / len(losses),
                              "lr/unet": .01}, step=(micro + 1) // 2)
@@ -322,9 +335,9 @@ class TrainingLoopTests(unittest.TestCase):
             self.assertFalse(any(tag.startswith("timestep/count/") for tag in events.Tags()["scalars"]))
             from tensorboard.util.tensor_util import make_ndarray
             distributions = events.Tensors("timestep/distribution")
-            self.assertEqual([event.step for event in distributions], [0, 1, 1, 2, 2, 3])
+            self.assertEqual([event.step for event in distributions], [3])
             counts = [make_ndarray(event.tensor_proto) for event in distributions]
-            self.assertEqual([int(value.sum()) for value in counts], [3, 6, 9, 12, 15, 18])
+            self.assertEqual([int(value.sum()) for value in counts], [18])
             self.assertEqual(counts[-1][[100, 500, 900]].tolist(), [6, 6, 6])
             self.assertEqual(counts[-1].dtype.name, "int64")
             self.assertNotIn("timestep/distribution", events.Tags()["images"])
@@ -391,7 +404,7 @@ class TrainingLoopTests(unittest.TestCase):
                     self.assertEqual(bool(observed[3].distributions), count)
                     if count:
                         snapshots = [counts for _, counts in observed[3].distributions]
-                        self.assertEqual([int(counts.sum()) for counts in snapshots], [3, 6, 9, 12, 15, 18])
+                        self.assertEqual([int(counts.sum()) for counts in snapshots], [18])
                         self.assertEqual(snapshots[-1][[100, 500, 900]].tolist(), [6, 6, 6])
                     for before, after in zip((baseline[0], *baseline[1], *baseline[2]),
                                              (observed[0], *observed[1], *observed[2])):
@@ -418,8 +431,73 @@ class TrainingLoopTests(unittest.TestCase):
                 events = EventAccumulator(directory).Reload()
                 self.assertFalse(any(tag.startswith("loss/timestep/") for tag in events.Tags()["scalars"]))
                 counts = events.Tensors("timestep/distribution")
-                self.assertEqual([event.step for event in counts], [0, 1, 1, 2, 2, 3])
-                self.assertEqual([int(make_ndarray(event.tensor_proto).sum()) for event in counts], [3, 6, 9, 12, 15, 18])
+                self.assertEqual([event.step for event in counts], [3])
+                self.assertEqual([int(make_ndarray(event.tensor_proto).sum()) for event in counts], [18])
+
+    def test_checkpoint_snapshots_include_the_saved_batch_without_microbatch_duplicates(self):
+        from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+        from tensorboard.util.tensor_util import make_ndarray
+
+        for engine, loss in itertools.product(("sd_scripts", "musubi_tuner"), (False, True)):
+            with self.subTest(engine=engine, loss=loss), tempfile.TemporaryDirectory() as directory:
+                self.run_loop(engine, grad_norm=False, timestep_loss=loss, directory=directory, checkpoint_steps=(2, 3))
+                events = EventAccumulator(directory).Reload().Tensors("timestep/distribution")
+                self.assertEqual([event.step for event in events], [2, 3])
+                self.assertEqual([int(make_ndarray(event.tensor_proto).sum()) for event in events], [12, 18])
+
+    def test_long_epoch_periodic_snapshots_count_all_microbatches_and_deduplicate_milestones(self):
+        for engine, loss, milestones in itertools.product(("sd_scripts", "musubi_tuner"), (False, True), (False, True)):
+            with self.subTest(engine=engine, loss=loss, milestones=milestones):
+                accelerator = FakeAccelerator(torch.nn.Parameter(torch.ones(1)))
+                tracker = accelerator.trackers[0]
+                trainer = AnimaNetworkTrainer() if engine == "sd_scripts" else MusubiTrainer()
+                with instrument_trainer(trainer, engine, grad_norm=False, timestep_loss=loss) as metrics:
+                    for micro in range(500):
+                        accelerator.sync_gradients = (micro + 1) % 2 == 0
+                        step = (micro + 1) // 2
+                        values = torch.ones(3) if engine == "sd_scripts" else torch.ones(3, 1)
+                        times = torch.tensor([.1, .5, .9]) * (1 if engine == "sd_scripts" else 1000)
+                        trainer.process_batch(values, times, accelerator)
+                        if milestones and micro == 399:  # Checkpoint and periodic trigger coincide at step 200.
+                            if engine == "sd_scripts":
+                                trainer._save_model(steps=step)
+                            else:
+                                trainer.on_post_save()
+                        tracker.log({"loss/current": 1}, step=step)
+                        if micro == 199:
+                            self.assertEqual([step for step, _ in tracker.distributions], [100])
+                            if milestones:
+                                tracker.log({"loss/epoch_average" if engine == "sd_scripts" else "loss/epoch": 1}, step=1)
+                            tracker.log({"loss/current": 1}, step=step)  # Same step, no new samples.
+                    self.assertEqual([step for step, _ in tracker.distributions], [100, 200])
+                    self.assertEqual([int(counts.sum()) for _, counts in tracker.distributions], [600, 1200])
+                    self.assertEqual(metrics.timestep_counts.sum(), 1500)
+                    accelerator.end_training()
+                self.assertEqual([step for step, _ in tracker.distributions], [100, 200, 250])
+                self.assertEqual([int(counts.sum()) for _, counts in tracker.distributions], [600, 1200, 1500])
+                self.assertEqual(tracker.distributions[-1][1][[100, 500, 900]].tolist(), [500, 500, 500])
+
+    def test_epoch_snapshots_are_cumulative_and_final_flush_precedes_writer_close(self):
+        from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+        from tensorboard.util.tensor_util import make_ndarray
+
+        for engine in ("sd_scripts", "musubi_tuner"):
+            with self.subTest(engine=engine), tempfile.TemporaryDirectory() as directory:
+                tracker = FakeTracker(directory)
+                accelerator = FakeAccelerator(torch.nn.Parameter(torch.ones(1)), tracker)
+                trainer = AnimaNetworkTrainer() if engine == "sd_scripts" else MusubiTrainer()
+                with instrument_trainer(trainer, engine, grad_norm=False, timestep_loss=False):
+                    for step in range(1, 4):
+                        values = torch.ones(3) if engine == "sd_scripts" else torch.ones(3, 1)
+                        times = torch.tensor([.1, .5, .9]) * (1 if engine == "sd_scripts" else 1000)
+                        trainer.process_batch(values, times, accelerator)
+                        tracker.log({"loss/current": 1}, step=step)
+                        if step < 3:
+                            tracker.log({"loss/epoch_average": 1}, step=step)
+                    accelerator.end_training()  # No epoch log for the last partial epoch.
+                events = EventAccumulator(directory).Reload().Tensors("timestep/distribution")
+                self.assertEqual([event.step for event in events], [1, 2, 3])
+                self.assertEqual([int(make_ndarray(event.tensor_proto).sum()) for event in events], [3, 6, 9])
 
     def test_disabled_parents_skip_collection_and_installation(self):
         with patch.object(TrainingMetrics, "observe_loss") as collect, patch(
@@ -498,6 +576,17 @@ class TrainingLoopTests(unittest.TestCase):
 
 
 class StartupTests(unittest.TestCase):
+    def test_tokenizer_parallelism_defaults_off_and_preserves_explicit_settings(self):
+        from backend.training.supervisor import _build_train_env
+
+        for engine in ("sd_scripts", "musubi_tuner"):
+            with self.subTest(engine=engine), patch.dict(os.environ):
+                os.environ.pop("TOKENIZERS_PARALLELISM", None)
+                self.assertEqual(_build_train_env("output", "test", engine_id=engine)["TOKENIZERS_PARALLELISM"], "false")
+                for value in ("true", "false", "0"):
+                    os.environ["TOKENIZERS_PARALLELISM"] = value
+                    self.assertEqual(_build_train_env("output", "test", engine_id=engine)["TOKENIZERS_PARALLELISM"], value)
+
     def test_real_ppsf_and_emosens_preserve_updates_and_optimizer_state(self):
         # EmoSens installs a global backward hook: keep this proof isolated.
         # Use real AcceleratedOptimizer wrappers, including PPSF's no-clip path.
@@ -719,7 +808,7 @@ for bucket, expected in ([] if count_only else zip(("low", "mid", "high"), expec
     assert len(epoch_loss) == 1 and epoch_loss[0].step == 1
     assert abs(epoch_loss[0].value - expected) < 1e-5
 assert not any(tag.startswith("timestep/count/") for tag in events.Tags()["scalars"])
-assert [event.step for event in events.Tensors("timestep/distribution")] == [0, 1]
+assert [event.step for event in events.Tensors("timestep/distribution")] == [1]
 assert "timestep/distribution" not in events.Tags()["images"]
 assert metrics.timestep_counts.sum() == 6
 assert metrics.timestep_counts[[100, 500, 900]].tolist() == [2, 2, 2]

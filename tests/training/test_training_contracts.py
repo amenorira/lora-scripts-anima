@@ -1,6 +1,7 @@
 import copy
 import tempfile
 import unittest
+from unittest.mock import patch
 from dataclasses import asdict
 from pathlib import Path
 
@@ -14,6 +15,49 @@ from tests.helpers import valid_training_config as valid_anima_config
 
 
 class TrainingValidationTests(unittest.TestCase):
+    def test_anima_performance_flags_reach_native_parser_and_vae_loader(self):
+        from backend.training import toml_writer
+        from backend.training.step_estimator import _sd_dataset_helpers
+        _sd_dataset_helpers()
+        from anima_train_network import setup_parser
+        from library.args import read_config_from_file
+        from library.anima_train_utils import load_qwen_image_vae
+
+        for enabled in (True, False):
+            with self.subTest(enabled=enabled), tempfile.TemporaryDirectory() as directory:
+                config = dict(valid_anima_config(), qwen_image_vae_2d=enabled,
+                              gradient_checkpointing=enabled, max_data_loader_n_workers=2 if enabled else 0)
+                self.assertEqual(validate_training_config(config), [])
+                adapted, _ = adapt_config(config)
+                self.assertIs(adapted["qwen_image_vae_2d"], enabled)
+                self.assertIs(adapted["gradient_checkpointing"], enabled)
+                path = Path(directory) / "training.toml"
+                path.write_text(toml_writer.dumps(adapted), encoding="utf-8")
+                parser = setup_parser()
+                argv = ["anima_train_network.py", "--config_file", str(path)]
+                with patch("sys.argv", argv):
+                    args = read_config_from_file(parser.parse_args(argv[1:]), parser)
+                self.assertIs(args.qwen_image_vae_2d, enabled)
+                self.assertIs(args.gradient_checkpointing, enabled)
+                self.assertEqual(args.max_data_loader_n_workers, 2 if enabled else 0)
+                if not enabled:
+                    self.assertFalse(args.persistent_data_loader_workers)
+                module = "qwen_image_autoencoder_kl_2d" if enabled else "qwen_image_autoencoder_kl"
+                with patch(f"library.{module}.load_vae") as loader:
+                    self.assertIs(load_qwen_image_vae(args, device="cpu"), loader.return_value)
+                    loader.assert_called_once_with(args.vae, device="cpu", disable_mmap=True,
+                                                   spatial_chunk_size=args.vae_chunk_size,
+                                                   disable_cache=args.vae_disable_cache)
+
+    def test_anima_2d_vae_option_is_filtered_from_other_trainers(self):
+        for profile in ("sdxl-lora", "moss-image-lora"):
+            with self.subTest(profile=profile):
+                config = dict(valid_anima_config(), model_train_type=profile, qwen_image_vae_2d=True)
+                if profile == "moss-image-lora":
+                    config.update(network_module="networks.lora_generic", text_encoder="te.safetensors")
+                adapted, _ = adapt_config(config)
+                self.assertNotIn("qwen_image_vae_2d", adapted)
+
     def test_input_normalization_uses_schema_types_instead_of_text_contents(self):
         config = dict(valid_anima_config(), learning_rate="1e-4", unet_lr="2e-4", lora_muon_momentum=0.9,
                       output_name="00123", positive_prompts="123", resolution="1024")
@@ -78,7 +122,7 @@ class TrainingValidationTests(unittest.TestCase):
 
     def test_rejects_unsafe_anima_values(self):
         cases = {
-            "blocks_to_swap": 9,
+            "blocks_to_swap": 27,
             "rank_dropout": 1,
             "caption_dropout_rate": 1.01,
             "caption_tag_dropout_rate": -0.01,

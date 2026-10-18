@@ -10,8 +10,9 @@ npz 后缀与键布局来自 vendor/sd-scripts：
 - strategy_anima.py: *_anima_te.npz = [prompt_embeds, attn_mask, t5_input_ids,
   t5_attn_mask, caption_dropout_rate]，有效性检查只认键存在，不校验内容
 - strategy_sdxl.py:  *_te_outputs.npz = [hidden_state1, hidden_state2, pool2]
-- 两个引擎缓存时都使用原始 info.caption（不走 process_caption），dropout 率
-  快照、caption 前后缀、整轮丢弃只在实时编码路径生效。
+- 上游 dev 自 35cdee6 起在缓存前应用确定性的 caption 处理（含前后缀）；
+  修改处理参数后，已有磁盘缓存仍不会自动失效。随机处理不在缓存阶段执行，
+  Anima 的 dropout 率使用缓存快照，整轮丢弃仍依赖实时编码路径。
 Krea2 (musubi-tuner) 的缓存走独立的预检/清单流程，不在此检查。
 """
 
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 # 各引擎 TE 输出磁盘缓存的描述：npz 后缀 + 是否存 dropout 率快照（目前仅 Anima
 # 的 npz 布局带 caption_dropout_rate 键）。新引擎接入时加一行描述即可。
 ENGINE_TE_CACHES = {
+    "moss-image-lora": {"suffix": "_moss_te.npz", "rate_snapshot": True},
     "anima-lora": {"suffix": "_anima_te.npz", "rate_snapshot": True},
     "sdxl-lora": {"suffix": "_te_outputs.npz", "rate_snapshot": False},
 }

@@ -290,6 +290,17 @@ class WindowsBootstrapIntegrationTests(unittest.TestCase):
         self.assertEqual((target / "dev.txt").read_text(), "updated dev\n")
         self.assertEqual(self.git(target, "tag").stdout.strip(), "")
 
+    def test_update_accepts_old_and_hexadecimal_versions(self):
+        remote, target = self.prepare()
+        for version in ("2.20.5", "26.1017.223010", "26.1017.13c72", "26.1018.00001"):
+            with self.subTest(version=version):
+                self.publish(remote, {"VERSION": version + "\n"})
+                self.git(remote, "tag", "v" + version)
+                self.action(target, remote, "update")
+                self.assertEqual((target / "VERSION").read_text(), version + "\n")
+                head = self.git(target, "rev-parse", "HEAD").stdout
+                self.assertEqual(head, self.git(remote, "rev-parse", "HEAD").stdout)
+
     def test_batch_entry_and_external_zip_can_update_old_folder(self):
         remote, target = self.prepare(updater=True)
         self.publish(remote, {"README.md": "batch update\n"})

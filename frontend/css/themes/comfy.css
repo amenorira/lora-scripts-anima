@@ -71,6 +71,9 @@
   --success: #00cd72;
   --warning: #fd9903;
   --info: #31b9f4;
+  --env-component-model: #83b7f2;
+  --env-component-encoder: #bfa3e8;
+  --env-component-vae: #78cbbb;
 
   /* Danbooru 标签分类色（Tag Editor 词典）：跟随 ComfyUI 深色调 */
   --tag-general: #6b9fe8;
@@ -181,4 +184,3 @@
 /* 环境管理 */
 [data-theme="comfy"] .env-log { background: var(--bg-input-action); color: var(--text-secondary); }
 [data-theme="comfy"] .env-msg-err  { background: color-mix(in srgb, var(--danger) 12%, transparent); border-color: color-mix(in srgb, var(--danger) 28%, var(--border-default)); }
-[data-theme="comfy"] .env-msg-info { background: color-mix(in srgb, var(--info) 12%, transparent); border-color: color-mix(in srgb, var(--info) 28%, var(--border-default)); }
