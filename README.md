@@ -2,9 +2,9 @@
 
 # lora-scripts-anima
 
-_✨ 多训练核心 LoRA 工具：Anima、SDXL 与 Krea 2 ✨_
+_✨ 多训练核心 LoRA 工具：Anima、SDXL、MOSS-Image 与 Krea 2 ✨_
 
-面向本地运行的 LoRA 训练 GUI。Anima / SDXL 使用 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts)（位于 `vendor/sd-scripts/`），**Krea 2 LoRA** 使用 [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner)。
+面向本地运行的 LoRA 训练 GUI，集成训练配置、数据打标、标签编辑与实时监控。Anima / SDXL / MOSS-Image 使用 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts)，Krea 2 使用 [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner)，并通过 [LyCORIS](https://github.com/KohakuBlueleaf/LyCORIS) 扩展 Anima / SDXL 的训练算法。
 
 </div>
 
@@ -22,7 +22,7 @@ _✨ 多训练核心 LoRA 工具：Anima、SDXL 与 Krea 2 ✨_
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-ja.md">日本語</a>
 </p>
 
-项目通过训练核心注册表隔离不同后端；**LyCORIS** 是通过 `lycoris.kohya` 挂载的可选适配器后端。
+Anima / SDXL 支持原生 LoRA、LoHa、LoKr，以及通过 `lycoris.kohya` 接入的 **LyCORIS** LoCon / LoHa / LoKr；MOSS-Image 和 Krea 2 使用各自的原生 LoRA 模块。
 
 ### 支持的模型类型
 
@@ -30,7 +30,10 @@ _✨ 多训练核心 LoRA 工具：Anima、SDXL 与 Krea 2 ✨_
 |---------|------|
 | LoRA | SDXL |
 | **LoRA** | **Anima**（Qwen3 + T5 双编码器） |
+| **LoRA** | **MOSS-Image**（sd-scripts） |
 | **LoRA** | **Krea 2 RAW DiT**（musubi-tuner） |
+
+> ℹ️ MOSS-Image 目前仅支持原生 `networks.lora_generic`，暂不支持 LoHa、LoKr 或 LyCORIS；界面固定冻结 Qwen 文本编码器，可单独选择训练 DiT 内的文本嵌入层。
 
 > ℹ️ Krea 2 在训练前必须生成 latent 与 Qwen3-VL 文本编码输出两类缓存。界面会在“开始训练”前验证缓存是否完整、且是否仍与图片、标签和模型匹配。
 
@@ -79,7 +82,7 @@ Anima 训练下，在 **训练网络模块** 下点击「结构预览」。按�
 
 ```
 lora-scripts-anima/
-├── vendor/sd-scripts/          ← Anima / SDXL 训练引擎（固定上游快照）
+├── vendor/sd-scripts/          ← Anima / SDXL / MOSS-Image 训练引擎（固定上游快照）
 ├── vendor/musubi-tuner/        ← Krea 2 训练核心（固定上游快照）
 ├── vendor/lycoris/             ← LyCORIS 适配器后端（固定上游快照）
 ├── vendor/emo_optimizer/       ← EmoSens 自适应优化器
@@ -262,8 +265,9 @@ GUI 的 **环境** 标签页提供：
 
 ## 致谢
 
-- [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Anima / SDXL 训练引擎
+- [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Anima / SDXL / MOSS-Image 训练引擎
 - [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) — Krea 2 训练核心
+- [**LyCORIS**](https://github.com/KohakuBlueleaf/LyCORIS) — LoCon / LoHa / LoKr 训练算法与适配器支持
 - [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) — 早期设计参考
 
 ## 许可证

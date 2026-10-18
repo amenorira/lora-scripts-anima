@@ -2,9 +2,9 @@
 
 # lora-scripts-anima
 
-_✨ 複数の学習エンジンに対応した LoRA ツール：Anima、SDXL、Krea 2 ✨_
+_✨ 複数の学習エンジンに対応した LoRA ツール：Anima、SDXL、MOSS-Image、Krea 2 ✨_
 
-ローカルで動作する LoRA 学習用 GUI です。Anima / SDXL には [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts)（`vendor/sd-scripts/`）、**Krea 2 LoRA** には [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) を使用します。
+学習設定、画像のタグ付け、キャプション編集、リアルタイム監視を統合した、ローカルで動作する LoRA 学習用 GUI です。Anima / SDXL / MOSS-Image には [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts)、Krea 2 には [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) を使用し、[LyCORIS](https://github.com/KohakuBlueleaf/LyCORIS) により Anima / SDXL の学習アルゴリズムを拡張します。
 
 </div>
 
@@ -22,7 +22,7 @@ _✨ 複数の学習エンジンに対応した LoRA ツール：Anima、SDXL、
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-en.md">English</a>
 </p>
 
-学習エンジンのレジストリによって各バックエンドを分離しています。**LyCORIS** は `lycoris.kohya` を通じて利用するオプションのアダプターバックエンドです。
+Anima / SDXL はネイティブの LoRA・LoHa・LoKr と、`lycoris.kohya` 経由の **LyCORIS** LoCon / LoHa / LoKr に対応します。MOSS-Image と Krea 2 はそれぞれ専用のネイティブ LoRA モジュールを使用します。
 
 ### 対応モデル
 
@@ -30,7 +30,10 @@ _✨ 複数の学習エンジンに対応した LoRA ツール：Anima、SDXL、
 |----------|--------------|
 | LoRA | SDXL |
 | **LoRA** | **Anima**（Qwen3 + T5 のデュアルエンコーダー） |
+| **LoRA** | **MOSS-Image**（sd-scripts） |
 | **LoRA** | **Krea 2 RAW DiT**（musubi-tuner） |
+
+> ℹ️ MOSS-Image は現在、ネイティブの `networks.lora_generic` のみ対応し、LoHa・LoKr・LyCORIS は利用できません。UI では Qwen テキストエンコーダーを固定し、DiT 内のテキスト埋め込み層の学習を個別に選択できます。
 
 > ℹ️ Krea 2 では、学習前に latent と Qwen3-VL テキストエンコーダー出力の両方をキャッシュする必要があります。学習開始前に、キャッシュが揃っているか、画像・キャプション・モデルと一致しているかを GUI が確認します。
 
@@ -79,7 +82,7 @@ Anima 学習では、学習ネットワークモジュールの設定から **�
 
 ```
 lora-scripts-anima/
-├── vendor/sd-scripts/          ← Anima / SDXL 学習エンジン（固定した上流スナップショット）
+├── vendor/sd-scripts/          ← Anima / SDXL / MOSS-Image 学習エンジン（固定した上流スナップショット）
 ├── vendor/musubi-tuner/        ← Krea 2 学習エンジン（固定した上流スナップショット）
 ├── vendor/lycoris/             ← LyCORIS アダプターバックエンド（固定した上流スナップショット）
 ├── vendor/emo_optimizer/       ← EmoSens 適応型オプティマイザー
@@ -261,8 +264,9 @@ GUI の **「環境」** タブで次の情報や機能を利用できます。
 
 ## 謝辞
 
-- [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Anima / SDXL 学習エンジン
+- [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Anima / SDXL / MOSS-Image 学習エンジン
 - [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) — Krea 2 学習エンジン
+- [**LyCORIS**](https://github.com/KohakuBlueleaf/LyCORIS) — LoCon / LoHa / LoKr の学習アルゴリズムとアダプター
 - [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) — 初期設計の参考
 
 ## ライセンス

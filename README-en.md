@@ -2,9 +2,9 @@
 
 # lora-scripts-anima
 
-_✨ Multi-backend LoRA Training Tool: Anima, SDXL, and Krea 2 ✨_
+_✨ Multi-backend LoRA Training Tool: Anima, SDXL, MOSS-Image, and Krea 2 ✨_
 
-A local GUI for LoRA training. Anima / SDXL use [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) (in `vendor/sd-scripts/`), while **Krea 2 LoRA** uses [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner).
+A local GUI for LoRA training with training configuration, image tagging, caption editing, and real-time monitoring. Anima / SDXL / MOSS-Image use [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts), Krea 2 uses [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner), and [LyCORIS](https://github.com/KohakuBlueleaf/LyCORIS) adds training algorithms for Anima / SDXL.
 
 </div>
 
@@ -22,7 +22,7 @@ A local GUI for LoRA training. Anima / SDXL use [kohya-ss/sd-scripts](https://gi
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-ja.md">日本語</a>
 </p>
 
-A training-core registry keeps each backend isolated; **LyCORIS** is an optional adapter backend mounted through `lycoris.kohya`.
+Anima / SDXL support native LoRA, LoHa, and LoKr, plus **LyCORIS** LoCon / LoHa / LoKr through `lycoris.kohya`. MOSS-Image and Krea 2 use their respective native LoRA modules.
 
 ### Supported Model Types
 
@@ -30,7 +30,10 @@ A training-core registry keeps each backend isolated; **LyCORIS** is an optional
 |---------------|------------|
 | LoRA | SDXL |
 | **LoRA** | **Anima** (Qwen3 + T5 dual encoder) |
+| **LoRA** | **MOSS-Image** (sd-scripts) |
 | **LoRA** | **Krea 2 RAW DiT** (musubi-tuner) |
+
+> ℹ️ MOSS-Image currently supports only native `networks.lora_generic`; LoHa, LoKr, and LyCORIS are unavailable. The UI keeps the Qwen text encoder frozen, with a separate option to train the text embedder inside the DiT.
 
 > ℹ️ Krea 2 requires both latent and Qwen3-VL text-encoder caches before training. The UI verifies that they are complete and still match the images, captions, and models before a run can start.
 
@@ -79,7 +82,7 @@ The entry also shows the **estimated weight-file size**, updating with the algor
 
 ```
 lora-scripts-anima/
-├── vendor/sd-scripts/          ← Anima / SDXL training engine (pinned upstream snapshot)
+├── vendor/sd-scripts/          ← Anima / SDXL / MOSS-Image training engine (pinned upstream snapshot)
 ├── vendor/musubi-tuner/        ← Krea 2 core (pinned upstream snapshot)
 ├── vendor/lycoris/             ← LyCORIS adapter backend (pinned upstream snapshot)
 ├── vendor/emo_optimizer/       ← EmoSens adaptive optimizer
@@ -260,8 +263,9 @@ Tests live in `tests/`, grouped into training, monitoring, environment, tagging,
 
 ## Acknowledgements
 
-- [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Anima / SDXL training engine
+- [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Anima / SDXL / MOSS-Image training engine
 - [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) — Krea 2 training core
+- [**LyCORIS**](https://github.com/KohakuBlueleaf/LyCORIS) — LoCon / LoHa / LoKr training algorithms and adapter support
 - [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) — Early design reference
 
 ## License
