@@ -372,7 +372,7 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "base_weights_multiplier", "type": "text", "default": "", "section": "network", "desc_key": "field.base_weights_multiplier", "target": "toml", "hint_key": "field.base_weights_multiplierHint", "show_if": {"key": "base_weights", "neq": ""}},
     {"key": "network_args_custom", "type": "textarea", "default": "", "section": "network", "desc_key": "field.network_args_custom", "target": "ui", "hint_key": "field.network_args_customHint"},
 # ── Training Core ──
-{"key": "max_train_epochs", "type": "number", "default": 10, "section": "training", "desc_key": "field.max_train_epochs", "hint_key": "field.max_train_epochsHint", "target": "toml", "min": 1},
+{"key": "max_train_epochs", "type": "number", "default": 10, "section": "training", "desc_key": "field.max_train_epochs", "hint_key": "field.max_train_epochsHint", "target": "toml", "min": 1, "step": 1},
 {"key": "train_batch_size", "type": "number", "default": 1, "section": "training", "desc_key": "field.train_batch_size", "target": "toml", "min": 1, "hint_key": "field.train_batch_sizeHint", "omit_default": True},
 {"key": "gradient_accumulation_steps", "type": "number", "default": 1, "section": "training", "desc_key": "field.gradient_accumulation_steps", "target": "toml", "min": 1, "hint_key": "field.gradient_accumulation_stepsHint", "auto_value": [{"watch": "optimizer_type", "when": EMOSENS_OPTIMIZER_TYPE, "set": 1}], "readonly_if": {"key": "optimizer_type", "eq": EMOSENS_OPTIMIZER_TYPE, "reason_key": "field.gradient_accumulation_steps_emosensLocked"}, "omit_default": True},
 {"key": "gradient_checkpointing", "type": "toggle", "default": False, "section": "training", "desc_key": "field.gradient_checkpointing", "target": "toml", "hint_key": "field.gradient_checkpointingHint", "omit_default": True},
@@ -390,7 +390,7 @@ FIELDS: list[dict[str, Any]] = [
     # 对 show_if 数组从尾部取父键（会取到 timestep_sampling），故必须显式 layout_parent，
     # 否则三个字段会被提到 weighting_scheme 之前、把它挤到时间步分组末尾。
     {"key": "logit_mean", "type": "number", "default": 0.0, "section": "training", "desc_key": "field.logit_mean", "hint_key": "field.logit_meanHint", "target": "toml", "step": 0.01, "group": "anima", "layout_parent": "weighting_scheme", "show_if": [{"key": "weighting_scheme", "eq": "logit_normal"}, {"key": "timestep_sampling", "eq": "sigma"}], "omit_default": True, "doc_slug": "timesteps", "doc_anchor": "logit-normal"},
-    {"key": "logit_std", "type": "number", "default": 1.0, "section": "training", "desc_key": "field.logit_std", "hint_key": "field.logit_stdHint", "target": "toml", "step": 0.01, "group": "anima", "layout_parent": "weighting_scheme", "show_if": [{"key": "weighting_scheme", "eq": "logit_normal"}, {"key": "timestep_sampling", "eq": "sigma"}], "omit_default": True, "doc_slug": "timesteps", "doc_anchor": "logit-normal"},
+    {"key": "logit_std", "type": "number", "default": 1.0, "section": "training", "desc_key": "field.logit_std", "hint_key": "field.logit_stdHint", "target": "toml", "min": 0, "step": 0.01, "group": "anima", "layout_parent": "weighting_scheme", "show_if": [{"key": "weighting_scheme", "eq": "logit_normal"}, {"key": "timestep_sampling", "eq": "sigma"}], "omit_default": True, "doc_slug": "timesteps", "doc_anchor": "logit-normal"},
     {"key": "mode_scale", "type": "number", "default": 1.29, "section": "training", "desc_key": "field.mode_scale", "hint_key": "field.mode_scaleHint", "target": "toml", "step": 0.01, "group": "anima", "layout_parent": "weighting_scheme", "show_if": [{"key": "weighting_scheme", "eq": "mode"}, {"key": "timestep_sampling", "eq": "sigma"}], "omit_default": True, "doc_slug": "timesteps", "doc_anchor": "mode"},
     {"key": "subset_timestep_offsets", "type": "hidden", "default": {}, "section": "training", "desc_key": "field.subset_timestep_offsets", "target": "ui", "group": "anima", "hidden": True},
     # SDXL/SD3: 时间步范围控制（对 Anima flow-matching 训练无效，故划归 sdxl 组）
@@ -607,18 +607,19 @@ FIELDS: list[dict[str, Any]] = [
         {"v": "dpm_2_a", "l": "dpm_2_a", "dk": "opt.sample_sampler_dpm_2_a"},
         {"v": "pndm", "l": "pndm", "dk": "opt.sample_sampler_pndm"},
     ]},
-    {"key": "sample_every_n_epochs", "type": "number", "default": 2, "section": "preview", "desc_key": "field.sample_every_n_epochs", "target": "toml", "min": 1, "show_if": {"key": "enable_preview", "eq": True}},
-    {"key": "sample_every_n_steps", "type": "number", "default": "", "section": "preview", "desc_key": "field.sample_every_n_steps", "target": "toml", "min": 1, "show_if": {"key": "enable_preview", "eq": True}},
+    {"key": "sample_interval_mode", "type": "select", "default": "epochs", "section": "preview", "desc_key": "field.sample_interval_mode", "target": "ui", "show_if": {"key": "enable_preview", "eq": True}, "options": [{"v": "epochs", "l": "epochs", "label_key": "opt.interval_epochs"}, {"v": "steps", "l": "steps", "label_key": "opt.interval_steps"}, {"v": "none", "l": "none", "label_key": "opt.interval_none"}]},
+    {"key": "sample_every_n_epochs", "type": "number", "default": 2, "section": "preview", "desc_key": "field.sample_every_n_epochs", "target": "toml", "min": 1, "step": 1, "layout_parent": "sample_interval_mode", "show_if": [{"key": "enable_preview", "eq": True}, {"key": "sample_interval_mode", "eq": "epochs"}]},
+    {"key": "sample_every_n_steps", "type": "number", "default": 100, "section": "preview", "desc_key": "field.sample_every_n_steps", "target": "toml", "min": 1, "step": 1, "layout_parent": "sample_interval_mode", "show_if": [{"key": "enable_preview", "eq": True}, {"key": "sample_interval_mode", "eq": "steps"}]},
     {"key": "sample_at_first", "type": "toggle", "default": False, "section": "preview", "desc_key": "field.sample_at_first", "target": "toml", "omit_default": True, "show_if": {"key": "enable_preview", "eq": True}},
     {"key": "sample_cfg", "type": "number", "default": 7, "section": "preview", "desc_key": "field.sample_cfg", "target": "ui", "min": 1, "max": 30, "step": 0.5, "hint_key": "field.sample_cfgHint", "show_if": {"key": "enable_preview", "eq": True}},
 # 预览分辨率默认 1024（SDXL/Anima 训练基准），原 512 在高分辨率模型下采样不具代表性
     {"key": "sample_width", "type": "number", "default": 1024, "section": "preview", "desc_key": "field.sample_width", "target": "ui", "hint_key": "field.sampleResolutionHint", "show_if": {"key": "enable_preview", "eq": True}},
     {"key": "sample_height", "type": "number", "default": 1024, "section": "preview", "desc_key": "field.sample_height", "target": "ui", "hint_key": "field.sampleResolutionHint", "show_if": {"key": "enable_preview", "eq": True}},
     {"key": "sample_seed", "type": "number", "default": 2333, "section": "preview", "desc_key": "field.sample_seed", "target": "ui", "hint_key": "field.sample_seedHint", "show_if": {"key": "enable_preview", "eq": True}},
-    {"key": "sample_steps", "type": "number", "default": 24, "section": "preview", "desc_key": "field.sample_steps", "target": "ui", "hint_key": "field.sample_stepsHint", "show_if": {"key": "enable_preview", "eq": True}},
+    {"key": "sample_steps", "type": "number", "default": 24, "section": "preview", "desc_key": "field.sample_steps", "target": "ui", "min": 1, "step": 1, "hint_key": "field.sample_stepsHint", "show_if": {"key": "enable_preview", "eq": True}},
     # Anima flow-match 采样时间表 shift（类比 Karras 的 sigma 偏移）。
     # 由 get_sample_prompts 拼成 --fs 传入 sd-scripts；SDXL 不读，故 group:anima 仅 Anima 显示。
-    {"key": "sample_flow_shift", "type": "number", "default": 3.0, "section": "preview", "desc_key": "field.sample_flow_shift", "hint_key": "field.sample_flow_shiftHint", "target": "ui", "group": "anima", "step": 0.05, "show_if": {"key": "enable_preview", "eq": True}},
+    {"key": "sample_flow_shift", "type": "number", "default": 3.0, "section": "preview", "desc_key": "field.sample_flow_shift", "hint_key": "field.sample_flow_shiftHint", "target": "ui", "group": "anima", "min": 0.01, "step": 0.05, "show_if": {"key": "enable_preview", "eq": True}},
 ]
 
 from backend.training.moss_image import extend_fields as _extend_moss_fields

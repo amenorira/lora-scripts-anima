@@ -204,3 +204,88 @@ test('importing a component-only LoRA+ ratio keeps the global multiplier unset',
   assert.doesNotMatch(app.tomlRaw, /loraplus_lr_ratio=|loraplus_unet_lr_ratio=/);
   assert.equal(app._collectTrainingPayload().loraplus_lr_ratio, undefined);
 });
+
+test('preview schedule selects one native interval and retains inactive form values', () => {
+  const { app } = application();
+  for (const profile of ['anima-lora', 'sdxl-lora', 'moss-image-lora']) {
+    app.form = app._buildFormDefaults(profile);
+    Object.assign(app.form, { enable_preview: true, sample_at_first: true,
+      sample_every_n_epochs: 3, sample_every_n_steps: 120 });
+    const html = app.renderField(app.findFieldDef('sample_interval_mode'));
+    const options = JSON.parse(Buffer.from(html.match(/animaSelect\('([^']+)'/)[1], 'base64').toString('utf8'));
+    assert.deepEqual(options.options.map(option => option.l), ['按轮数', '按步数', '关闭定期预览']);
+    for (const mode of ['epochs', 'steps', 'none', 'epochs']) {
+      app.form.sample_interval_mode = mode;
+      app.updateToml();
+      const payload = app._collectTrainingPayload();
+      assert.equal(payload.sample_every_n_epochs, mode === 'epochs' ? 3 : undefined);
+      assert.equal(payload.sample_every_n_steps, mode === 'steps' ? 120 : undefined);
+      assert.equal(payload.sample_at_first, true);
+      assert.equal(app.form.sample_every_n_epochs, 3);
+      assert.equal(app.form.sample_every_n_steps, 120);
+      assert.equal(/^sample_every_n_epochs =/m.test(app.tomlRaw), mode === 'epochs');
+      assert.equal(/^sample_every_n_steps =/m.test(app.tomlRaw), mode === 'steps');
+      assert.doesNotMatch(app.tomlRaw, /^sample_interval_mode =/m);
+    }
+    app.form.enable_preview = false;
+    const payload = app._collectTrainingPayload();
+    assert.equal(payload.sample_every_n_epochs, undefined);
+    assert.equal(payload.sample_every_n_steps, undefined);
+    assert.equal(payload.sample_at_first, undefined);
+  }
+});
+
+test('native imports and old drafts infer the effective preview interval without default overrides', async () => {
+  const { app } = application();
+  Object.assign(app, { rebuildForm() {}, _persistProfileDrafts() {}, _persistProfileFieldSources() {} });
+  for (const [intervals, mode] of [
+    [{ sample_every_n_steps: 120 }, 'steps'],
+    [{ sample_every_n_steps: 120, sample_every_n_epochs: 3 }, 'epochs'],
+    [{ sample_every_n_steps: '', sample_every_n_epochs: '' }, 'none'],
+  ]) {
+    await app._applyImportedFlatConfig({ model_train_type: 'moss-image-lora', enable_preview: true, ...intervals });
+    assert.equal(app.form.sample_interval_mode, mode);
+    const restored = app._profileFormFromDraft('moss-image-lora', app._buildFormDefaults('moss-image-lora'), intervals);
+    assert.equal(restored.sample_interval_mode, mode);
+    if (mode === 'steps') assert.equal(app._collectTrainingPayload().sample_every_n_epochs, undefined);
+  }
+  await app._applyImportedFlatConfig({ model_train_type: 'moss-image-lora', max_train_steps: 300, validation_split: 0.1 });
+  assert.deepEqual(Array.from(app._lastConfigImportIgnoredFields), ['max_train_steps', 'validation_split']);
+  assert.equal(app.form.max_train_steps, undefined);
+  assert.equal(app.form.max_train_epochs, 10);
+});
+
+test('checkpoint offload enables checkpointing and switching checkpointing off clears both offloads', () => {
+  const { app } = application();
+  Object.assign(app, { formDefaults: {}, pushHistory() {}, updateToml() {}, updateTomlDebounced() {}, showConditionalFields() {},
+    queueTomlPreviewChange() {}, requestLrPreviewRefresh() {}, scheduleStepEstimate() {} });
+  for (const key of ['cpu_offload_checkpointing', 'unsloth_offload_checkpointing']) {
+    app.form.gradient_checkpointing = false;
+    app.setField(key, true);
+    assert.equal(app.form.gradient_checkpointing, true);
+    app.setField('gradient_checkpointing', false);
+    assert.equal(app.form.cpu_offload_checkpointing, false);
+    assert.equal(app.form.unsloth_offload_checkpointing, false);
+  }
+  const restored = app._profileFormFromDraft('moss-image-lora', app._buildFormDefaults('moss-image-lora'), {
+    gradient_checkpointing: false, cpu_offload_checkpointing: true,
+  });
+  assert.equal(restored.gradient_checkpointing, true);
+});
+
+test('imported invalid preview and timestep numbers fail validation before launch', () => {
+  const { app } = application();
+  app.$nextTick = () => {};
+  Object.assign(app.form, { pretrained_model_name_or_path: 'dit.safetensors', text_encoder: 'te.safetensors',
+    vae: 'vae.safetensors', enable_preview: true, sample_interval_mode: 'steps' });
+  for (const [key, value] of [['sample_steps', 0], ['sample_steps', 1.5], ['sample_flow_shift', 0],
+    ['logit_std', -0.1], ['sample_every_n_steps', 0], ['sample_every_n_steps', '']]) {
+    const original = app.form[key];
+    app.form[key] = value;
+    assert.equal(app.validateForm(), false, key);
+    assert.ok(app.formErrors[key], key);
+    app.form[key] = original;
+  }
+  app.form.logit_std = 0;
+  assert.equal(app.validateForm(), true);
+});

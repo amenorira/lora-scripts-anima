@@ -345,6 +345,10 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
 
         return validate_krea2_config(config)
     group = _TRAIN_TYPE_GROUP.get(train_type)
+    from backend.training.option_contracts import normalize_sd_options, validate_sd_option_dependencies
+
+    errors.extend(validate_sd_option_dependencies(config))
+    normalize_sd_options(config)
 
     for field in FIELDS:
         if not _applies_to_group(field, group):

@@ -119,3 +119,22 @@ test('native TOML import sends the profile selected when the file was opened', a
   assert.equal(imported.train_text_embedder, true);
   assert.equal(imported.rank_dropout, 0.2);
 });
+
+test('file import reports unsupported fields instead of a plain success toast', async () => {
+  let reader, notice;
+  const { window } = loadFrontend('training-config-io', {
+    window: {},
+    FileReader: class { constructor() { reader = this; } readAsText() {} },
+    fetch: async () => ({ json: async () => ({ status: 'success', data: { data: { max_train_steps: 300 } } }) }),
+  });
+  const app = Object.assign({}, window.trainingConfigIoMixin, {
+    form: { model_train_type: 'moss-image-lora' },
+    async _applyImportedFlatConfig() { this._lastConfigImportIgnoredFields = ['max_train_steps', 'validation_split']; },
+    toast: (text, level) => { notice = { text, level }; },
+    t: key => key === 'common.importedWithIgnoredFields' ? 'Not applied: {fields}' : key,
+  });
+  app.handleConfigFileImport({ target: { files: [{}], value: 'config.toml' } });
+  await reader.onload({ target: { result: 'max_train_steps = 300' } });
+  assert.equal(notice.level, 'warning');
+  assert.match(notice.text, /max_train_steps, validation_split/);
+});

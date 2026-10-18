@@ -472,9 +472,9 @@ window.trainingCoreMixin = {
   },
 
   _profileFormFromDraft(trainType, defaults = this._buildFormDefaults(trainType), source = null) {
-    const draft = this._normalizeLegacyLoraMuonForm(
+    const draft = this._migrateSdOptionModes(this._normalizeLegacyLoraMuonForm(
       source || this._profileFormDrafts[trainType] || {}
-    );
+    ), trainType);
     const clean = { ...defaults };
     Object.keys(defaults).forEach(key => {
       if (Object.prototype.hasOwnProperty.call(draft, key)) clean[key] = draft[key];
@@ -485,6 +485,29 @@ window.trainingCoreMixin = {
     }
     clean.model_train_type = trainType;
     return clean;
+  },
+
+  _migrateSdOptionModes(source, trainType) {
+    const values = { ...source };
+    if (trainType === 'krea2-lora') return values;
+    const has = key => values[key] !== undefined && values[key] !== null && values[key] !== '';
+    if (!has('sample_interval_mode')) {
+      const specified = ['sample_every_n_epochs', 'sample_every_n_steps'].some(key => Object.hasOwn(values, key));
+      values.sample_interval_mode = has('sample_every_n_epochs') ? 'epochs'
+        : has('sample_every_n_steps') ? 'steps' : specified ? 'none' : 'epochs';
+    }
+    if (values.cpu_offload_checkpointing || values.unsloth_offload_checkpointing) values.gradient_checkpointing = true;
+    return values;
+  },
+
+  _enforceCheckpointingUiConstraints(changedKey) {
+    if (this.form.model_train_type === 'krea2-lora') return;
+    if (changedKey === 'gradient_checkpointing' && this.form.gradient_checkpointing === false) {
+      this.form.cpu_offload_checkpointing = false;
+      this.form.unsloth_offload_checkpointing = false;
+    } else if (this.form.cpu_offload_checkpointing || this.form.unsloth_offload_checkpointing) {
+      this.form.gradient_checkpointing = true;
+    }
   },
 
   _captureProfileDraft(trainType, source = this.form, defaults = this._buildFormDefaults(trainType)) {
@@ -2042,7 +2065,7 @@ window.trainingCoreMixin = {
       const currentGroup = window.TRAIN_GROUP_MAP[currentTrainType] || 'all';
 
       const resolveOption = (o) => {
-        const cloned = { v: o.v, l: o.l };
+        const cloned = { v: o.v, l: o.labelKey ? self.t(o.labelKey, o.l) : o.l };
         if (o.dKey) { cloned.d = self.t(o.dKey); }
         else if (o.d) { cloned.d = o.d; }
         return cloned;
@@ -3861,6 +3884,9 @@ window.trainingCoreMixin = {
 
     this.form[key] = value;
     this._setFieldSource(key, 'user');
+    if (['gradient_checkpointing', 'cpu_offload_checkpointing', 'unsloth_offload_checkpointing'].includes(key)) {
+      this._enforceCheckpointingUiConstraints(key);
+    }
     if (key === 'max_data_loader_n_workers' || key === 'persistent_data_loader_workers') {
       this._enforceDataLoaderUiConstraints();
     }
@@ -4246,10 +4272,22 @@ window.trainingCoreMixin = {
     const sections = this._allSections();
     for (const section of sections) {
       for (const field of section.fields) {
+        if (typeof this._fieldShowIfMet === 'function' && !this._fieldShowIfMet(field)) continue;
+        const val = this.form[field.key];
+        if (field.type === 'number' && val !== undefined && val !== null && val !== '') {
+          const number = Number(val), constraints = this._numberConstraints(field);
+          const step = Number(constraints.step), base = Number(constraints.min || 0);
+          if (!Number.isFinite(number) || typeof val === 'boolean'
+            || (constraints.min !== undefined && number < constraints.min)
+            || (constraints.max !== undefined && number > constraints.max)
+            || (Number.isInteger(step) && step > 0 && (!Number.isInteger(number)
+              || Math.abs((number - base) / step - Math.round((number - base) / step)) > 1e-9))) {
+            errors[field.key] = this.t('common.invalidNumericValue');
+          }
+        }
         const isFieldRequired = field.required ||
           (field.requiredGroups && Array.isArray(field.requiredGroups) && field.requiredGroups.includes(currentGroup));
         if (!isFieldRequired) continue;
-        const val = this.form[field.key];
         if (val === undefined || val === null || val === '') {
           errors[field.key] = this.t('common.fieldRequired');
         }
@@ -4292,6 +4330,10 @@ window.trainingCoreMixin = {
       errors.step_rules = this.t('field.step_rulesError');
     }
     Object.assign(errors, this._mossOptionErrors());
+    if (this.form.model_train_type !== 'krea2-lora' && this.form.enable_preview && this.form.sample_interval_mode !== 'none') {
+      const key = this.form.sample_interval_mode === 'steps' ? 'sample_every_n_steps' : 'sample_every_n_epochs';
+      if (this.form[key] === '' || this.form[key] === null || this.form[key] === undefined) errors[key] = this.t('common.fieldRequired');
+    }
 
     this.formErrors = errors;
     const hasErrors = Object.keys(errors).length > 0;

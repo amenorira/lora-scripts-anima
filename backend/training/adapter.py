@@ -264,6 +264,12 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     返回 (adapted_config, warnings)
     """
     source = config.copy()
+    from backend.training.option_contracts import normalize_sd_options, validate_sd_option_dependencies
+
+    option_errors = validate_sd_option_dependencies(source)
+    if option_errors:
+        raise ValueError("\n".join(option_errors))
+    normalize_sd_options(source)
     is_moss = source.get("model_train_type") == "moss-image-lora"
     if is_moss:
         from backend.training.moss_image import validate_config

@@ -29,6 +29,7 @@ window.trainingTomlMixin = {
     }
     // Export the effective settings after imports, undo and field resets as well.
     this._enforceImageAugmentationUiConstraints();
+    this._enforceCheckpointingUiConstraints?.();
     if (this.form.lr_scheduler === 'piecewise_constant') this.form.lr_warmup_steps = 0;
     const allSections = window.getVisibleSections(trainType);
     const fieldByKey = new Map(
@@ -451,6 +452,7 @@ window.trainingTomlMixin = {
   },
 
   _collectTrainingPayload() {
+    this._enforceCheckpointingUiConstraints?.();
     const profile = this.form.model_train_type || 'anima-lora';
     const payload = { model_train_type: profile };
     window.getVisibleSections(profile).forEach(section => {
