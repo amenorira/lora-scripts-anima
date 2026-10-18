@@ -116,6 +116,9 @@ class MetricsLaunchTests(unittest.IsolatedAsyncioTestCase):
                         launch = stack.enter_context(patch.object(routes, "run_train", return_value={"status": "success"}))
                         result = await routes._prepare_training(routes._create_toml_file_reserved, dict(form))
                     self.assertEqual(result["status"], "success", result)
-                    self.assertEqual(launch.call_args.kwargs["extra_env"], training_metrics_environment(form))
+                    expected_env = training_metrics_environment(form)
+                    if profile != "krea2-lora":
+                        expected_env["ANIMA_ENABLE_FLASH_ATTN"] = "0"
+                    self.assertEqual(launch.call_args.kwargs["extra_env"], expected_env)
                     native = tomllib.loads(Path(launch.call_args.args[0]).read_text(encoding="utf-8"))
                     self.assertFalse(set(KEYS) & native.keys())
