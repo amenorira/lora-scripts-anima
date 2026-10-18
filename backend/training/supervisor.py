@@ -105,6 +105,7 @@ def _build_train_env(
     env["PYTHONUNBUFFERED"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
+    env["ANIMA_ENABLE_FLASH_ATTN"] = "0"
     # Training output is a file, even when the launcher forces terminal colors.
     env["TTY_COMPATIBLE"] = "0"
     env["PYTHONWARNINGS"] = (
@@ -412,8 +413,14 @@ def detect_attention_backend(requested: str) -> tuple[str, str]:
 
     返回: (actual_backend, warning_message)
     """
-    if requested in ("torch", "sdpa", "flash"):
+    if requested in ("torch", "sdpa"):
         return "torch", ""
+    if requested == "flash":
+        from tools.flash_attention import package_version
+
+        if not package_version("flash-attn"):
+            return "torch", "FlashAttention is not installed. Install it in Environment first / FlashAttention 未安装，请先在环境管理中安装"
+        return "flash", ""
     available = _detect_available_attn()
 
     if requested in available:

@@ -125,7 +125,7 @@ lora-scripts-anima/
 | RTX 40 系 (Ada) | 2.12.1 | 13.0 |
 | RTX 50 系 (Blackwell) | 2.12.1 | 13.0 |
 
-更新项目代码后，已有旧版 `venv`（包括 Torch 2.10 + cu130）会在下次启动时自动升级到 PyTorch 2.12.1 + cu130、torchvision 0.27.1。已安装的 xformers 同步到 0.0.35，旧的外部 FlashAttention 保留但不再加载，Triton 同步到 3.7 系列；bitsandbytes 保持 CUDA 13 兼容检查，ONNX Runtime GPU 保持 1.27.0。未安装的可选库不会自动新增。
+更新项目代码后，已有旧版 `venv`（包括 Torch 2.10 + cu130）会在下次启动时自动升级到 PyTorch 2.12.1 + cu130、torchvision 0.27.1。已安装的 xformers 同步到 0.0.35，Triton 同步到 3.7 系列；bitsandbytes 保持 CUDA 13 兼容检查，ONNX Runtime GPU 保持 1.27.0。FlashAttention 可在环境管理中按需安装，旧包不会自动升级或卸载。
 
 无 NVIDIA 显卡的机器仍会安装完整的 GPU 依赖环境并可正常运行 GUI，但训练功能需要 NVIDIA 显卡。
 
@@ -221,9 +221,9 @@ Windows 用户先关闭训练器，双击 **`update.bat`**，成功后运行 `st
 
 ## 注意力加速
 
-Anima 默认使用 `torch`，Krea2 默认使用 `sdpa`。PyTorch 原生 SDPA 自动选择适用的加速内核，包括内置 FlashAttention，无需外部 `flash-attn`。
+Anima / MOSS 默认使用 `torch`，Krea2 默认使用 `sdpa`。SDPA 根据当前 PyTorch 构建和输入选择可用内核；Windows 安装包不一定包含内置 FlashAttention。
 
-旧配置中的 `flash` / `flash_attn` 会自动转为原生 SDPA。项目运行进程不再加载外部 FlashAttention；以前安装的包保留在 venv 中，不会自动升级或卸载，也不会因旧包无法加载而反复提示。此行为不影响 PyTorch 内置加速。
+使用独立 FlashAttention 2：在「环境管理」中安装完成后，将 Anima / MOSS 的 `attn_mode` 设为 `flash`。安装器匹配 Python、PyTorch、CUDA 和平台，只安装扩展，不更换 PyTorch。Krea2 的旧 `flash_attn` 配置仍转为 `sdpa`。
 
 ## EmoSens 自适应优化器
 

@@ -4957,6 +4957,9 @@ input:disabled, select:disabled, textarea:disabled { opacity: var(--disabled-opa
 .env-actions {
   display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap;
 }
+.env-download-source { display: flex; align-items: center; gap: 10px; margin-right: auto; color: var(--text-secondary); font-size: 12px; }
+.env-download-source .anima-select { width: 156px; }
+.env-download-source .anima-select-trigger { min-height: 32px; padding: 6px 10px; font-size: 12px; }
 
 /* ── Links inside env ────────────────────────────────────── */
 .env-link {

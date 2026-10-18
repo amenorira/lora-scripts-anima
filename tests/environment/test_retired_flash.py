@@ -7,6 +7,19 @@ import unittest
 
 
 class RetiredFlashTests(unittest.TestCase):
+    def test_explicit_flash_run_can_load_the_extension(self):
+        root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory) / "flash_attn"
+            package.mkdir()
+            (package / "__init__.py").write_text("loaded = True\n", encoding="utf-8")
+            env = os.environ.copy()
+            env["ANIMA_ENABLE_FLASH_ATTN"] = "1"
+            env["PYTHONPATH"] = os.pathsep.join([str(root / "tools/python_startup"), str(root), directory])
+            result = subprocess.run([sys.executable, "-c", "import flash_attn; assert flash_attn.loaded"],
+                cwd=root, env=env, capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_broken_package_is_never_executed_in_training_processes(self):
         root = Path(__file__).resolve().parents[2]
         with tempfile.TemporaryDirectory() as directory:

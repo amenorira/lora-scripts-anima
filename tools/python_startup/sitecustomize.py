@@ -6,9 +6,10 @@ import os
 import subprocess
 import sys
 
-# Leave installed files untouched. Vendor optional imports must not load the
-# retired external extension, even when an old wheel remains in this venv.
-sys.modules["flash_attn"] = None
+# Load the optional CUDA extension only in explicitly selected training/probe
+# processes. A stale wheel must not break otherwise independent SDPA runs.
+if os.environ.get("ANIMA_ENABLE_FLASH_ATTN") != "1":
+    sys.modules["flash_attn"] = None
 
 
 _BNB_GAUDI_PROBE = "pip list | grep habana-torch-plugin"

@@ -17,8 +17,10 @@ from fastapi import APIRouter, Request
 from backend.constants import REPO_ROOT, SD_MODELS_DIR
 from backend.core.realtime import realtime_tasks
 from backend.log import log
+from backend.server.routes.flash_attention import router as flash_attention_router
 
 router = APIRouter()
+router.include_router(flash_attention_router)
 
 _JOB_TTL_SECONDS = 600
 

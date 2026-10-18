@@ -47,6 +47,7 @@ window.environmentRenderMixin = {
     const slots = {
       overview: this._renderOverview(T),
       xf: this._renderXfRow(T),
+      fa: this._renderFaRow(T),
       triton: this._renderTritonRow(T),
       sd: this._renderSdRow(T),
       lycoris: this._renderLycorisRow(T),
@@ -88,6 +89,7 @@ window.environmentRenderMixin = {
       +       '<div class="env-section-title" data-env-title="accel"></div>'
       +       '<div class="env-column-head" data-env-columns></div>'
       +       '<div data-env-slot="xf"></div>'
+      +       '<div data-env-slot="fa"></div>'
       +       '<div data-env-slot="triton"></div>'
       +     '</div>'
       +     '<div class="env-col" data-env-anchor-target="core">'
@@ -259,8 +261,8 @@ window.environmentRenderMixin = {
   _renderOverview(T) {
     const xfOk = !!(this.xfStatus && this.xfStatus.installed);
     const trOk = !!(this.tritonStatus && this.tritonStatus.installed);
-    const accelReady = !!(this.xfStatus && this.tritonStatus);
-    const accelDone = [xfOk, trOk].filter(Boolean).length;
+    const accelReady = !!(this.xfStatus && this.tritonStatus && this.faStatus);
+    const accelDone = [xfOk, trOk, !!this.faStatus?.installed].filter(Boolean).length;
 
     const sdEngine = this.trainingCores?.engines?.find(i => i.id === 'sd_scripts');
     const sdOk = sdEngine ? !!sdEngine.available : !!this.sdStatus?.local;
@@ -276,10 +278,10 @@ window.environmentRenderMixin = {
     const modelDone = new Set(files.filter(f => f.exists).map(f => f.dest_path || f.filename)).size;
 
     const dictionaryState = this.tagDictionaryDataState?.();
-    const hasError = !!(this.xfError || this.tritonError || this.sdError || this.trainingCoresError || this.animaModelError
+    const hasError = !!(this.faError || this.xfError || this.tritonError || this.sdError || this.trainingCoresError || this.animaModelError
       || ['failed', 'error'].includes(dictionaryState) || this.tagDictionaryServer?.update?.state === 'error');
     const allLoaded = accelReady && coreReady && modelsReady && dictionaryState !== 'checking';
-    const working = this.xfBusy || this.tritonBusy || this.animaModelBusy || dictionaryState === 'installing';
+    const working = this.faBusy || this.xfBusy || this.tritonBusy || this.animaModelBusy || dictionaryState === 'installing';
 
     // 完成查询不等于能运行所有训练：只报告查询与任务状态。
     let heroState, heroTitle, heroSub;
@@ -338,7 +340,7 @@ window.environmentRenderMixin = {
   //  共享行头：组件用四列，模型/数据用紧凑摘要；操作和详情始终相邻。
   // ═══════════════════════════════════════════════════════
   _renderRowHead(slotId, open, parts) {
-    const component = ['xf', 'triton', 'sd', 'lycoris', 'musubi'].includes(slotId);
+    const component = ['xf', 'fa', 'triton', 'sd', 'lycoris', 'musubi'].includes(slotId);
     return `<div class="env-row-head${component ? ' env-component-head' : ' env-summary-head'}" role="button" tabindex="0" aria-expanded="${open ? 'true' : 'false'}" data-env-toggle="${slotId}">`
       + `<div class="env-flow-main">`
       +   `<span class="env-row-name">${parts.name}</span>`
@@ -446,6 +448,56 @@ window.environmentRenderMixin = {
   },
 
   // ═══════════════════════════════════════════════════════
+  //  FlashAttention
+  _renderFaRow(T) {
+    const status = this.faStatus;
+    const open = this._envCardOpen('fa');
+    const error = this.faError;
+    const state = this.faBusy ? 'loading' : error ? 'err' : !status ? 'loading' : status.installed ? 'ok' : 'muted';
+    const key = this.faBusy ? 'installing' : error ? 'operationFailed' : !status ? 'loadingShort'
+      : status.installed ? 'installed' : 'optionalNotInstalled';
+    const disabled = this.faBusy || !status?.can_install;
+    const head = this._renderRowHead('fa', open, {
+      name: 'FlashAttention 2', desc: T('fa.hint'),
+      version: status?.version ? `<span class="env-row-version" title="${this.escapeAttr(status.version)}">v${this.esc(status.version.split('+')[0])}</span>` : '',
+      badge: `<span class="env-badge env-badge-${state}">${this.esc(T(key))}</span>`,
+      action: status?.installed ? '' : `<button type="button" class="btn btn-sm btn-secondary env-head-btn" data-env-action="fa-install" ${disabled ? 'disabled' : ''}>${this.esc(T('install'))}</button>`,
+      detailKey: 'fa', detailLabel: T('details'),
+    });
+    let body = `<div class="env-msg env-msg-info">${this.esc(T('fa.usage'))}</div>`;
+    if (status) {
+      const env = status.env || {};
+      body += this._renderDetailGroup(T('envLabel'), this.esc(`Python ${env.python || '—'} · PyTorch ${env.torch || '—'} · CUDA ${env.cuda || '—'}`));
+      if (!status.can_install) body += `<div class="env-msg">${this.esc(T(status.has_wheel ? 'fa.unsupported' : 'fa.noWheel'))}</div>`;
+    }
+    if (error) body += this._renderErrorBar(T, error, 'faInstallLog');
+    if (this.faBusy) {
+      const p = this.faProgress || {};
+      body += this._renderProgressPanel({
+        stage: p.stage === 'downloading' ? 'downloading' : 'working',
+        stageLabel: T(p.stage === 'downloading' ? 'downloading' : 'fa.stage.' + (p.stage || 'resolving')),
+        pct: p.total ? Math.min(100, Math.floor((p.downloaded || 0) * 100 / p.total)) : 0,
+        downloadedBytes: p.downloaded, totalBytes: p.total, speedMB: (p.speed || 0) / 1048576,
+        elapsed: this.faInstallElapsed,
+      });
+    }
+    const sources = { options: ['auto', 'direct', 'mirror'].map(v => ({ v, l: T('fa.source_' + v) })) };
+    body += `<div class="env-actions"><div class="env-download-source"><span>${this.esc(T('fa.source'))}</span>
+      <div class="anima-select" x-data="animaSelect('${this.escJson(sources)}', '${this.escapeAttr(this.faSource)}')" @click.outside="close()" @anima-select-change="faSource = $event.detail.value">
+        <button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle()" aria-label="${this.escapeAttr(T('fa.source'))}" ${this.faBusy ? 'disabled' : ''}>
+          <span class="anima-select-trigger-text" x-text="selectedLabel">${this.esc(T('fa.source_' + this.faSource))}</span>
+          <svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <template x-if="open"><div class="anima-select-menu" :class="{ 'anima-select-menu-positioned': positioned }"><div class="anima-select-menu-scroll">
+          <template x-for="opt in flatOptions" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-label" x-text="opt.l"></span><svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg></div></template>
+        </div></div></template>
+      </div></div>`
+      + (status?.installed ? `<button type="button" class="btn btn-sm btn-ghost" data-env-action="fa-install" ${disabled ? 'disabled' : ''}>${this.esc(T('reinstall'))}</button>` : '')
+      + `<button type="button" class="btn btn-sm btn-ghost" data-env-action="fa-refresh" ${this.faBusy ? 'disabled' : ''}>${this.esc(T('refresh'))}</button></div>`;
+    if (this.faInstallLog) body += this._renderLog(this.faInstallLog);
+    return this._renderRow('fa', state, open, head, body);
+  },
+
   //  xformers 行
   // ═══════════════════════════════════════════════════════
   _renderXfRow(T) {
@@ -1016,6 +1068,8 @@ window.environmentRenderMixin = {
       btn.addEventListener('click', () => {
         const act = btn.dataset.envAction;
         if (act === 'xf') a.xfInstall();
+        else if (act === 'fa-install') a.faInstall();
+        else if (act === 'fa-refresh') a.faRefresh();
         else if (act === 'triton') a.tritonInstall();
         else if (act === 'dictionary') a.tagDictionaryDataAction();
         else if (act === 'dictionary-check') a.tagDictionaryCheckUpdate(true);

@@ -952,6 +952,8 @@ async def _create_toml_file_reserved(config: dict, reserved_task):
     if "attn_mode" in config:
         attn_requested = config.get("attn_mode", "torch")
         attn_actual, attn_warning = detect_attention_backend(attn_requested)
+        if attn_requested == "flash" and attn_actual != "flash":
+            return _training_error(message=attn_warning)
         if attn_warning:
             log.warning(f"[Attn] {attn_warning}")
             config["attn_mode"] = attn_actual
@@ -1141,6 +1143,7 @@ async def _create_toml_file_reserved(config: dict, reserved_task):
         },
         extra_env={
             **training_metrics_environment(_ui_config),
+            "ANIMA_ENABLE_FLASH_ATTN": "1" if config.get("attn_mode") == "flash" else "0",
             **({"LYCORIS_KERNEL_BACKEND": lycoris_kernel_backend} if lycoris_kernel_backend else {}),
         },
     )

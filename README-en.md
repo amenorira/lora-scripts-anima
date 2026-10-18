@@ -125,7 +125,7 @@ lora-scripts-anima/
 | RTX 40 (Ada) | 2.12.1 | 13.0 |
 | RTX 50 (Blackwell) | 2.12.1 | 13.0 |
 
-After updating the project, existing older `venv` installations (including Torch 2.10 + cu130) upgrade on the next launch to PyTorch 2.12.1 + cu130 and torchvision 0.27.1. Installed xformers moves to 0.0.35, and Triton to the 3.7 series. Existing external FlashAttention packages are left installed but are no longer loaded by the trainer. bitsandbytes retains its CUDA 13 compatibility check, and ONNX Runtime GPU stays at 1.27.0. Optional packages are not added if absent.
+After updating the project, older `venv` installations (including Torch 2.10 + cu130) upgrade on the next launch to PyTorch 2.12.1 + cu130 and torchvision 0.27.1. Installed xformers moves to 0.0.35, and Triton to the 3.7 series. bitsandbytes retains its CUDA 13 compatibility check, and ONNX Runtime GPU stays at 1.27.0. FlashAttention can be installed from Environment; existing versions are not automatically upgraded or removed.
 
 Machines without an NVIDIA GPU still receive the complete GPU dependency environment and can run the GUI. Training itself requires an NVIDIA GPU.
 
@@ -219,9 +219,9 @@ Detailed training parameter documentation lives in `docs/parameters/`:
 
 ## Attention Acceleration
 
-Anima defaults to `torch` and Krea2 to `sdpa`. Native PyTorch SDPA selects suitable accelerated kernels, including built-in FlashAttention, without external `flash-attn`.
+Anima / MOSS defaults to `torch` and Krea2 to `sdpa`. SDPA selects available kernels based on the PyTorch build and input; Windows builds may not include built-in FlashAttention.
 
-Legacy `flash` / `flash_attn` configurations automatically migrate to native SDPA. Project processes no longer load external FlashAttention. Existing packages remain in the venv without automatic upgrades or uninstallation, and incompatible old wheels no longer trigger repeated import warnings. PyTorch's built-in acceleration is unaffected.
+For external FlashAttention 2, install it from Environment and select `attn_mode=flash` for Anima / MOSS after installation completes. The installer matches Python, PyTorch, CUDA and platform, and installs only the extension without replacing PyTorch. Krea2's legacy `flash_attn` setting still maps to `sdpa`.
 
 ## EmoSens Adaptive Optimizer
 

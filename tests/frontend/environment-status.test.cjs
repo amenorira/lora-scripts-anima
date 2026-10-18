@@ -15,10 +15,11 @@ const translate = app => key => app.t('environment.' + key);
 
 test('completed detection never promises training readiness; failures and active jobs stay visible', () => {
   const app = createApp();
-  Object.assign(app, { xfStatus: { installed: false }, tritonStatus: { installed: false },
+  Object.assign(app, { xfStatus: { installed: false }, tritonStatus: { installed: false }, faStatus: { installed: true },
     sdStatus: {}, trainingCores: { engines: [], adapters: [] }, animaModelStatus: [], tagDictionaryServer: { installed: false } });
   const T = translate(app);
   assert.match(app._renderOverview(T), /检测完成/);
+  assert.match(app._renderOverview(T), /性能加速 可用 1 项/);
   assert.doesNotMatch(app._renderOverview(T), /运行正常|0\/3|0\/8/);
   assert.doesNotMatch(app._renderSdRow(T), /加载中/);
   assert.doesNotMatch(app._renderLycorisRow(T), /加载中/);

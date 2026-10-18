@@ -4,6 +4,8 @@
    ================================================================ */
 
 window.environmentCoreMixin = {
+  faStatus: null, faBusy: false, faError: null, faSource: 'auto',
+  faInstallJobId: null, faInstallLog: '', faInstallElapsed: 0, faProgress: null,
   // ── xformers State ───────────────────────────────────
   xfStatus: null, xfBusy: false, xfError: null,
   xfInstallJobId: null, xfInstallLog: '', xfInstallElapsed: 0,
@@ -78,6 +80,7 @@ window.environmentCoreMixin = {
     switch (slotId) {
       case 'dictionary': return !!this.tagDictionaryInstalling;
       case 'xf': return !!this.xfBusy;
+      case 'fa': return !!this.faBusy;
       case 'triton': return !!this.tritonBusy;
       case 'sd': return false;
       case 'lycoris':
@@ -142,6 +145,7 @@ window.environmentCoreMixin = {
     const tracked = snapshot && snapshot.tasks && snapshot.tasks.tracked || [];
     const slots = {
       'xformers-install': 'xf',
+      'flash-attn-install': 'fa',
       'triton-install': 'triton',
       'model-download': 'animaModel',
     };
@@ -158,15 +162,16 @@ window.environmentCoreMixin = {
   },
 
   resetRealtimeEnvironmentState() {
-    const slots = ['xf', 'triton', 'animaModel'];
-    const hadTasks = !!(this.xfBusy || this.tritonBusy || this.animaModelBusy || this.xfInstallJobId || this.tritonInstallJobId || this.animaModelJobId);
+    const slots = ['xf', 'fa', 'triton', 'animaModel'];
+    const hadTasks = !!(this.faBusy || this.faInstallJobId || this.xfBusy || this.tritonBusy || this.animaModelBusy || this.xfInstallJobId || this.tritonInstallJobId || this.animaModelJobId);
     slots.forEach(slot => this._setEnvironmentRealtimeTask(slot, null));
     const unknown = this.t('monitor.taskStateUnknown');
     if (this.xfBusy || this.xfInstallJobId) this.xfError = unknown;
+    if (this.faBusy || this.faInstallJobId) this.faError = unknown;
     if (this.tritonBusy || this.tritonInstallJobId) this.tritonError = unknown;
     if (this.animaModelBusy || this.animaModelJobId) this.animaModelError = unknown;
-    this.xfBusy = this.tritonBusy = this.animaModelBusy = false;
-    this.xfInstallJobId = this.tritonInstallJobId = this.animaModelJobId = null;
+    this.faBusy = this.xfBusy = this.tritonBusy = this.animaModelBusy = false;
+    this.faInstallJobId = this.xfInstallJobId = this.tritonInstallJobId = this.animaModelJobId = null;
     this.scheduleEnvironmentRender();
     return hadTasks;
   },
@@ -175,7 +180,11 @@ window.environmentCoreMixin = {
     const terminal = ['FINISHED', 'FAILED', 'TERMINATED'].includes(normalizedStatus) || !!data.done;
     const failed = normalizedStatus === 'FAILED' || data.success === false || data.returncode != null && data.returncode !== 0
       || (data.progress && (data.progress.stage === 'error' || data.progress.phase === 'error'));
-    if (slot === 'xf') {
+    if (slot === 'fa') {
+      this.faInstallLog = data.lines || this.faInstallLog;
+      this.faInstallElapsed = data.elapsed || 0;
+      this.faProgress = data.progress || this.faProgress;
+    } else if (slot === 'xf') {
       this.xfInstallLog = data.lines || this.xfInstallLog;
       this.xfInstallElapsed = data.elapsed || 0;
     } else if (slot === 'triton') {
@@ -202,7 +211,10 @@ window.environmentCoreMixin = {
     this[idKey] = null;
     this._setEnvironmentRealtimeTask(slot, null);
     const fallback = this.t(slot === 'animaModel' ? 'environment.animaModel.failed' : 'environment.installFailed');
-    if (slot === 'xf') {
+    if (slot === 'fa') {
+      await this.faRefresh(true);
+      if (failed) this.faError = data.error || data.lines || fallback;
+    } else if (slot === 'xf') {
       const msg = failed ? (data.error || data.lines || fallback) : null;
       await this.xfRefresh(true).catch(() => {});
       if (failed) this.xfError = msg;
@@ -323,11 +335,16 @@ window.environmentCoreMixin = {
       return;
     }
     const needsXf = !this.xfStatus, needsSd = !this.sdStatus, needsCores = !this.trainingCores, needsTriton = !this.tritonStatus,
-          needsAnimaModel = !this.animaModelStatus;
-    if (needsXf || needsSd || needsCores || needsTriton || needsAnimaModel) {
+          needsAnimaModel = !this.animaModelStatus, needsFa = !this.faStatus;
+    if (needsXf || needsSd || needsCores || needsTriton || needsAnimaModel || needsFa) {
       // Render the full skeleton immediately, then load in a small queue.
       // This avoids stacking cold imports and disk scans while telemetry is active.
       const loaders = [];
+      if (needsFa) loaders.push(this._environmentJsonLoader(
+        '/api/flash-attn/status',
+        data => { this.faStatus = data; this.faError = null; },
+        error => { this.faStatus = null; this.faError = String(error); },
+      ));
       if (needsXf) {
         this.xfError = null;
         loaders.push(this._environmentJsonLoader(
@@ -388,6 +405,35 @@ window.environmentCoreMixin = {
       }
     }
     this.renderEnvironment(); this.finishProgress();
+  },
+
+  async faRefresh(silent) {
+    try {
+      const response = await fetch('/api/flash-attn/status');
+      if (!response.ok) throw new Error(this.t('environment.loadFailed'));
+      this.faStatus = await response.json();
+      this.faError = null;
+    } catch (error) { this.faError = String(error); }
+    if (silent) this.scheduleEnvironmentRender(); else this.renderEnvironment();
+  },
+
+  async faInstall() {
+    if (this.faBusy) return;
+    this.faBusy = true; this.faError = null; this.faInstallLog = ''; this.faInstallElapsed = 0;
+    this.faProgress = { stage: 'resolving' };
+    this._envForceOpen('fa'); this.renderEnvironment();
+    try {
+      const response = await fetch('/api/flash-attn/install', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: this.faSource }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success || !result.job_id) throw new Error(result.message || this.t('environment.installFailed'));
+      this.faInstallJobId = result.job_id;
+      this._setEnvironmentRealtimeTask('fa', result.job_id);
+    } catch (error) {
+      this.faBusy = false; this.faError = String(error); this.renderEnvironment();
+    }
   },
 
   // ── xformers Methods ────────────────────────────────
@@ -501,6 +547,7 @@ window.environmentCoreMixin = {
         else if (status?.installed) return this.tagDictionaryCheckUpdate(true);
       }),
       this.xfRefresh(true).catch(() => {}),
+      this.faRefresh(true),
       this.tritonRefresh(true).catch(() => {}),
       this.animaModelRefresh(true).catch(() => {}),
       (async () => {

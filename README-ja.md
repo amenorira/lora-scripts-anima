@@ -125,7 +125,7 @@ lora-scripts-anima/
 | RTX 40（Ada） | 2.12.1 | 13.0 |
 | RTX 50（Blackwell） | 2.12.1 | 13.0 |
 
-プロジェクトの更新後、旧バージョンの `venv`（Torch 2.10 + cu130 を含む）は次回起動時に PyTorch 2.12.1 + cu130 と torchvision 0.27.1 に自動更新されます。インストール済みの xformers は 0.0.35、Triton は 3.7 系に更新されます。外部 FlashAttention はインストールされたまま残りますが、学習プロセスでは読み込みません。bitsandbytes の CUDA 13 互換性チェックは継続し、ONNX Runtime GPU は 1.27.0 のままです。未インストールのオプションライブラリは自動追加しません。
+プロジェクトの更新後、旧バージョンの `venv`（Torch 2.10 + cu130 を含む）は次回起動時に PyTorch 2.12.1 + cu130 と torchvision 0.27.1 に自動更新されます。インストール済みの xformers は 0.0.35、Triton は 3.7 系に更新されます。FlashAttention は環境管理で必要に応じてインストールできます。既存のバージョンを自動更新・削除することはありません。bitsandbytes の CUDA 13 互換性チェックは継続し、ONNX Runtime GPU は 1.27.0 のままです。未インストールのオプションライブラリは自動追加しません。
 
 NVIDIA GPU がない PC にも GPU 用の依存環境を一式インストールし、GUI を起動できます。ただし、学習には NVIDIA GPU が必要です。
 
@@ -219,9 +219,9 @@ Windows では学習ツールを閉じて **`update.bat`** をダブルクリッ
 
 ## Attention の高速化
 
-Anima の既定値は `torch`、Krea2 は `sdpa` です。PyTorch 標準の SDPA が内蔵 FlashAttention を含む適切な高速化カーネルを自動選択するため、外部の `flash-attn` は不要です。
+Anima / MOSS の既定値は `torch`、Krea2 は `sdpa` です。SDPA は PyTorch のビルドと入力に応じて利用可能なカーネルを選択します。Windows 版に内蔵 FlashAttention が含まれているとは限りません。
 
-旧設定の `flash` / `flash_attn` は標準の SDPA に自動変換します。プロジェクトの実行プロセスは外部 FlashAttention を読み込みません。既存のパッケージは venv に残し、自動更新や削除は行いません。互換性のない旧パッケージによる読み込み警告も繰り返し表示しません。PyTorch 内蔵の高速化には影響しません。
+外部 FlashAttention 2 は「環境管理」でインストールし、完了後に Anima / MOSS の `attn_mode` を `flash` に設定します。インストーラーは Python・PyTorch・CUDA・プラットフォームを照合し、PyTorch を変更せず拡張機能だけをインストールします。Krea2 の旧 `flash_attn` 設定は引き続き `sdpa` に変換します。
 
 ## EmoSens 適応型オプティマイザー
 

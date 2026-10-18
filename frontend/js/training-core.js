@@ -851,6 +851,7 @@ window.trainingCoreMixin = {
     // 非阻塞静默刷新可管理扩展的环境状态，
     // 供 renderField 联动提示调用；不 await，不阻塞表单首屏。
     this.xfRefresh(true).catch(() => {});
+    if (typeof this.faRefresh === 'function') this.faRefresh(true).catch(() => {});
     if (typeof this.tritonRefresh === 'function') this.tritonRefresh(true).catch(() => {});
 
     this.scheduleStepEstimate();
@@ -2277,7 +2278,9 @@ window.trainingCoreMixin = {
         </div>`;
     const staticReadonlyClass = isStaticReadonly ? ' field-readonly' : '';
     const hintOverrideExpr = `fieldHintOverrideText('${this.escapeAttr(dataKey)}')`;
-    const hintHtml = field.hintKeyBy
+    const hintHtml = dataKey === 'attn_mode'
+      ? `<div class="field-hint" x-text="t('opt.attn_mode_' + form.attn_mode)">${this.esc(this.t('opt.attn_mode_' + val))}</div>`
+      : field.hintKeyBy
       ? `${baseHint ? `<div class="field-hint">${baseHint}</div>` : ''}<div class="field-hint field-hint-warn" x-show="${hintOverrideExpr}" x-text="${hintOverrideExpr}" x-cloak></div>`
       : (hint ? `<div class="field-hint">${hint}</div>` : '');
     return `<div class="field${condClass}${nestedClass}${staticReadonlyClass}" :class="{ 'field-changed': String(form.${dataKey}) !== String(formDefaults.${dataKey}), 'field-filled': ${_filledExpr} }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}${nestLevelAttr}>
@@ -2319,7 +2322,8 @@ window.trainingCoreMixin = {
       case 'network_module':
         return this._shapePreviewEntry();
       case 'attn_mode':
-        return `<div x-show="xfStatus && !xfStatus.installed && form.attn_mode==='xformers'" class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')}</div>`;
+        return `<div x-show="faStatus && !faStatus.installed && form.attn_mode==='flash'" x-cloak class="field-hint field-hint-warn">${this.t('environment.envHintFlashNotInstalled')}</div>`
+          + `<div x-show="xfStatus && !xfStatus.installed && form.attn_mode==='xformers'" x-cloak class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')}</div>`;
       case 'xformers':
         return `<div x-show="xfStatus && !xfStatus.installed && form.xformers" class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')}</div>`;
       case 'compile':
