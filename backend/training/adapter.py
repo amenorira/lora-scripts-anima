@@ -506,15 +506,8 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
             "cannot be used together; disabling torch_compile / "
             "compile（块级编译）与 torch_compile（accelerate 版）不可同时使用，已关闭 torch_compile"
         )
-    # compile 与 blocks_to_swap 不兼容（编译后的图无法中途换块）
-    if source.get("compile") and not is_moss:
-        blocks = source.get("blocks_to_swap", 0) or 0
-        if blocks > 0:
-            source["compile"] = False
-            warnings.append(
-                "[Conflict] compile is incompatible with blocks_to_swap; "
-                "disabling compile / compile 与 blocks_to_swap 不兼容，已自动关闭 compile"
-            )
+    # Anima/MOSS 的块级 compile 支持换块（上游将换块 Linear 留在 eager）。
+    # 只有 fullgraph 与换块互斥，已由入口处的依赖校验拦截。
     # compile_fullgraph 与 split_attn 不兼容（anima_train_network.py assert）
     # 注意：split_attn 可能被 5.9 的 attn_mode==xformers 自动开启，故此处仍需兜底。
     if source.get("compile_fullgraph") and source.get("split_attn"):
@@ -524,25 +517,6 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
             "disabling compile_fullgraph / "
             "compile_fullgraph 与 split_attn 不可同时使用，已关闭 compile_fullgraph"
         )
-
-    # ── 5.11. unsloth_offload_checkpointing 互斥校验 ──
-    # anima_train_network.py 明确：不可与 cpu_offload_checkpointing 或 blocks_to_swap 同用
-    if source.get("unsloth_offload_checkpointing"):
-        if source.get("cpu_offload_checkpointing"):
-            source["cpu_offload_checkpointing"] = False
-            warnings.append(
-                "[Conflict] unsloth_offload_checkpointing and cpu_offload_checkpointing "
-                "cannot be used together; disabling cpu_offload_checkpointing / "
-                "unsloth_offload_checkpointing 与 cpu_offload_checkpointing 不可同时使用，已关闭后者"
-            )
-        blocks = source.get("blocks_to_swap", 0) or 0
-        if blocks > 0:
-            source["unsloth_offload_checkpointing"] = False
-            warnings.append(
-                "[Conflict] unsloth_offload_checkpointing and blocks_to_swap "
-                "cannot be used together; disabling unsloth_offload_checkpointing / "
-                "unsloth_offload_checkpointing 与 blocks_to_swap 不可同时使用，已关闭前者"
-            )
 
     # ── 5.12. adaptive_noise_scale 依赖 noise_offset ──
     # sd-scripts verify_training_args: adaptive_noise_scale requires noise_offset

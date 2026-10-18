@@ -146,21 +146,10 @@ def validate_config(config: dict[str, Any]) -> list[str]:
         errors.append("MOSS-Image: token warmup requires disabling Text Encoder caching / Token 预热需要关闭文本缓存")
     if config.get("enable_multiline_caption") and not str(config.get("multiline_caption_separator", "---===---")).strip():
         errors.append("multiline_caption_separator: cannot be empty / 多行描述分隔符不能为空")
-    blocks = config.get("blocks_to_swap") or 0
-    try:
-        swapping = float(blocks) > 0
-    except (TypeError, ValueError):
-        swapping = False
-    if swapping and (config.get("cpu_offload_checkpointing") or config.get("unsloth_offload_checkpointing")):
-        errors.append("MOSS-Image: blocks_to_swap cannot be combined with checkpoint offloading / 换块与激活卸载不能同时启用")
-    if config.get("cpu_offload_checkpointing") and config.get("unsloth_offload_checkpointing"):
-        errors.append("MOSS-Image: CPU and Unsloth checkpoint offloading are mutually exclusive / 两种激活卸载不可同时启用")
     if config.get("compile") and config.get("torch_compile"):
         errors.append("MOSS-Image: compile and torch_compile are mutually exclusive / 两种编译模式不可同时启用")
     if config.get("compile") and config.get("compile_fullgraph") and (config.get("split_attn") or config.get("attn_mode") == "xformers"):
         errors.append("MOSS-Image: compile_fullgraph cannot be combined with split_attn / 完整图编译与分割注意力不兼容")
-    if config.get("compile") and config.get("compile_fullgraph") and swapping:
-        errors.append("MOSS-Image: compile_fullgraph cannot be combined with blocks_to_swap; disable fullgraph / 完整图编译不能与换块并用；请关闭完整图编译")
     if any(config.get(key) for key in ("fp8_base", "fp8_base_unet", "fp8_scaled")):
         errors.append("MOSS-Image: FP8 is unsupported; use ConvRot INT8 / 不支持 FP8，请使用 ConvRot INT8")
     errors.extend(_validate_quantized_options(config))

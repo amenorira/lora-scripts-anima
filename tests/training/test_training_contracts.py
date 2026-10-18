@@ -78,7 +78,7 @@ class TrainingValidationTests(unittest.TestCase):
 
     def test_rejects_unsafe_anima_values(self):
         cases = {
-            "blocks_to_swap": 9,
+            "blocks_to_swap": 27,
             "rank_dropout": 1,
             "caption_dropout_rate": 1.01,
             "caption_tag_dropout_rate": -0.01,

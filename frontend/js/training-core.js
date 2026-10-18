@@ -4019,6 +4019,11 @@ window.trainingCoreMixin = {
     if (this.form.model_train_type === 'moss-image-lora') {
       this.formErrors = { ...this.formErrors, base_weights: null, compile_fullgraph: null, positive_prompts: null, ...this._mossOptionErrors() };
     }
+    if (['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type)
+      && ['cpu_offload_checkpointing', 'unsloth_offload_checkpointing', 'blocks_to_swap', 'gradient_checkpointing', 'compile', 'compile_fullgraph'].includes(key)) {
+      this.formErrors = { ...this.formErrors, unsloth_offload_checkpointing: null, blocks_to_swap: null,
+        compile_fullgraph: null, ...this._checkpointOffloadErrors(), ...this._mossOptionErrors() };
+    }
     this.updateTomlDebounced();
   },
 
@@ -4247,6 +4252,19 @@ window.trainingCoreMixin = {
     return { boundaries, finalMultiplier };
   },
 
+  _checkpointOffloadErrors() {
+    if (!['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type)) return {};
+    const errors = {};
+    const cpu = this.form.cpu_offload_checkpointing, unsloth = this.form.unsloth_offload_checkpointing;
+    const swapping = Number(this.form.blocks_to_swap || 0) > 0;
+    if (cpu && unsloth) errors.unsloth_offload_checkpointing = this.t('field.checkpointOffloadConflict');
+    if (swapping && (cpu || unsloth)) errors.blocks_to_swap = this.t('field.blockSwapOffloadConflict');
+    if (swapping && this.form.compile && this.form.compile_fullgraph) {
+      errors.compile_fullgraph = this.t('field.blockSwapFullgraphConflict');
+    }
+    return errors;
+  },
+
   _mossOptionErrors() {
     if (this.form.model_train_type !== 'moss-image-lora') return {};
     const errors = {};
@@ -4333,7 +4351,7 @@ window.trainingCoreMixin = {
       && !this._parseStepRules(this.form.step_rules)) {
       errors.step_rules = this.t('field.step_rulesError');
     }
-    Object.assign(errors, this._mossOptionErrors());
+    Object.assign(errors, this._checkpointOffloadErrors(), this._mossOptionErrors());
     if (this.form.model_train_type !== 'krea2-lora' && this.form.enable_preview && this.form.sample_interval_mode !== 'none') {
       const key = this.form.sample_interval_mode === 'steps' ? 'sample_every_n_steps' : 'sample_every_n_epochs';
       if (this.form[key] === '' || this.form[key] === null || this.form[key] === undefined) errors[key] = this.t('common.fieldRequired');

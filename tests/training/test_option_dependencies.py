@@ -98,6 +98,29 @@ class OptionDependencyTests(unittest.TestCase):
                     self.assertEqual(validate_training_config(config), [])
                     self.assertTrue(config["gradient_checkpointing"])
 
+    def test_anima_and_moss_reject_conflicting_offloads_without_silent_changes(self):
+        for builder, maximum in ((valid_training_config, 26), (moss_config, 40)):
+            for options in ({"cpu_offload_checkpointing": True, "unsloth_offload_checkpointing": True},
+                            {"cpu_offload_checkpointing": True, "blocks_to_swap": 1},
+                            {"unsloth_offload_checkpointing": True, "blocks_to_swap": 1},
+                            {"compile": True, "compile_fullgraph": True, "blocks_to_swap": 1}):
+                with self.subTest(profile=builder.__name__, options=options):
+                    config = {**builder(), **options}
+                    original = copy.deepcopy(config)
+                    self.assertTrue(validate_training_config(copy.deepcopy(config)))
+                    with self.assertRaises(ValueError):
+                        adapt_config(config)
+                    self.assertEqual(config, original)
+            for blocks in (0, 9, maximum):
+                config = {**builder(), "blocks_to_swap": blocks, "compile": True, "compile_fullgraph": False}
+                with self.subTest(profile=builder.__name__, blocks=blocks):
+                    self.assertEqual(validate_training_config(config), [])
+                    adapted, warnings = adapt_config(config)
+                    self.assertTrue(adapted["compile"])
+                    self.assertEqual(adapted["blocks_to_swap"], blocks)
+                    self.assertFalse(any("disabling compile" in warning for warning in warnings))
+            self.assertTrue(validate_training_config({**builder(), "blocks_to_swap": maximum + 1}))
+
     def test_preview_and_distribution_bounds_reject_invalid_imports(self):
         for key, value in (("sample_steps", 0), ("sample_steps", 1.5), ("sample_flow_shift", 0),
                            ("logit_std", -0.1), ("sample_every_n_steps", 0)):

@@ -307,3 +307,41 @@ test('MOSS rejects blank scheduled and initial previews but allows disabled prev
   Object.assign(app.form, { enable_preview: false, sample_interval_mode: 'epochs', sample_at_first: true });
   assert.equal(app.validateForm(), true);
 });
+
+test('offload controls match each architecture and block conflicting Anima/MOSS combinations', () => {
+  const { app, window } = application();
+  app.$nextTick = () => {};
+  const controls = ['blocks_to_swap', 'cpu_offload_checkpointing', 'unsloth_offload_checkpointing',
+    'gradient_checkpointing_cpu_offload', 'use_pinned_memory_for_block_swap', 'block_swap_h2d_only', 'block_swap_ring_size'];
+  for (const [profile, expected] of [
+    ['sdxl-lora', []],
+    ['anima-lora', controls.slice(0, 3)],
+    ['moss-image-lora', controls.slice(0, 3)],
+    ['krea2-lora', [controls[0], ...controls.slice(3)]],
+  ]) {
+    const keys = new Set(window.getVisibleSections(profile).flatMap(section => section.fields.map(field => field.key)));
+    assert.deepEqual(controls.filter(key => keys.has(key)), expected, profile);
+  }
+  for (const [profile, maximum] of [['anima-lora', 26], ['moss-image-lora', 40]]) {
+    app.form = app._buildFormDefaults(profile);
+    Object.assign(app.form, { pretrained_model_name_or_path: 'dit.safetensors', text_encoder: 'te.safetensors',
+      qwen3: 'te.safetensors', vae: 'vae.safetensors' });
+    assert.equal(app._numberConstraints(app.findFieldDef('blocks_to_swap')).max, maximum);
+    const original = { ...app.form };
+    for (const [options, error] of [
+      [{ cpu_offload_checkpointing: true, unsloth_offload_checkpointing: true }, 'unsloth_offload_checkpointing'],
+      [{ cpu_offload_checkpointing: true, blocks_to_swap: 1 }, 'blocks_to_swap'],
+      [{ unsloth_offload_checkpointing: true, blocks_to_swap: 1 }, 'blocks_to_swap'],
+      [{ compile: true, compile_fullgraph: true, blocks_to_swap: 1 }, 'compile_fullgraph'],
+    ]) {
+      app.form = { ...original, ...options };
+      assert.equal(app.validateForm(), false, profile + JSON.stringify(options));
+      assert.ok(app.formErrors[error]);
+    }
+    app.form = { ...original, blocks_to_swap: maximum, compile: true };
+    assert.equal(app.validateForm(), true);
+    app.updateToml();
+    assert.equal(app._collectTrainingPayload().blocks_to_swap, maximum);
+    assert.equal(app._collectTrainingPayload().compile, true);
+  }
+});

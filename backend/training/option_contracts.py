@@ -28,6 +28,19 @@ def normalize_sd_options(config: dict) -> None:
 
 def validate_sd_option_dependencies(config: dict) -> list[str]:
     errors = []
+    if config.get("model_train_type") in ("anima-lora", "moss-image-lora"):
+        cpu = bool(config.get("cpu_offload_checkpointing"))
+        unsloth = bool(config.get("unsloth_offload_checkpointing"))
+        try:
+            swapping = float(config.get("blocks_to_swap") or 0) > 0
+        except (TypeError, ValueError):
+            swapping = False  # Numeric validation reports the invalid value.
+        if cpu and unsloth:
+            errors.append("cpu_offload_checkpointing / unsloth_offload_checkpointing: mutually exclusive / 两种激活卸载不能同时启用")
+        if swapping and (cpu or unsloth):
+            errors.append("blocks_to_swap: cannot be combined with checkpoint offloading / 换块不能与 CPU 或 Unsloth 激活卸载同时启用")
+        if swapping and config.get("compile") and config.get("compile_fullgraph"):
+            errors.append("compile_fullgraph: cannot be combined with blocks_to_swap; disable fullgraph / 完整图编译不能与换块并用；请关闭完整图编译")
     if config.get("enable_preview") and config.get("sample_interval_mode") in ("epochs", "steps"):
         key = "sample_every_n_steps" if sample_interval_mode(config) == "steps" else "sample_every_n_epochs"
         if not _present(config.get(key)):
