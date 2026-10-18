@@ -9,10 +9,10 @@ const T = (_key, fallback) => fallback;
 test('untagged cores show a blue branch and commit link with consistent details', () => {
   const meta = { repo: 'kohya-ss/sd-scripts', local_branch: 'dev', local_commit: '61fde69fc035413fb1472c20c02c441c6d558ee6', tag: '' };
   const head = app._renderCoreHeadParts(T, meta);
-  assert.match(head.version, /dev · 61fde69/);
+  assert.match(head.version, /dev 61fde69/);
   assert.match(head.version, /class="env-row-version env-link"/);
   assert.match(head.version, /\/commit\/61fde69fc035413fb1472c20c02c441c6d558ee6/);
-  assert.match(app._renderCoreRepositoryDetails(T, meta, meta.repo), /dev · 61fde69/);
+  assert.match(app._renderCoreRepositoryDetails(T, meta, meta.repo), /dev 61fde69/);
 });
 
 test('tagged cores preserve release labels and missing metadata never invents a version', () => {

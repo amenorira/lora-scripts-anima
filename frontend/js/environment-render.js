@@ -454,7 +454,7 @@ window.environmentRenderMixin = {
     const commit = String(meta.local_commit || '');
     const release = meta.describe || meta.tag || meta.version;
     const branch = meta.local_branch && meta.local_branch !== 'HEAD' ? meta.local_branch : '';
-    const label = release || (commit ? [branch, commit.slice(0, 7)].filter(Boolean).join(' · ') : branch);
+    const label = release || (commit ? [branch, commit.slice(0, 7)].filter(Boolean).join(' ') : branch);
     const repoUrl = `https://github.com/${meta.repo}`;
     const url = commit ? `${repoUrl}/commit/${encodeURIComponent(commit)}`
       : meta.tag ? `${repoUrl}/releases/tag/${encodeURIComponent(meta.tag)}`
