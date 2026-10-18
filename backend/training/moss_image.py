@@ -154,6 +154,8 @@ def validate_config(config: dict[str, Any]) -> list[str]:
         errors.append("MOSS-Image: compile and torch_compile are mutually exclusive / 两种编译模式不可同时启用")
     if config.get("compile") and config.get("compile_fullgraph") and (config.get("split_attn") or config.get("attn_mode") == "xformers"):
         errors.append("MOSS-Image: compile_fullgraph cannot be combined with split_attn / 完整图编译与分割注意力不兼容")
+    if config.get("compile") and config.get("compile_fullgraph") and swapping:
+        errors.append("MOSS-Image: compile_fullgraph cannot be combined with blocks_to_swap; disable fullgraph / 完整图编译不能与换块并用；请关闭完整图编译")
     if any(config.get(key) for key in ("fp8_base", "fp8_base_unet", "fp8_scaled")):
         errors.append("MOSS-Image: FP8 is unsupported; use ConvRot INT8 / 不支持 FP8，请使用 ConvRot INT8")
     errors.extend(_validate_quantized_options(config))
@@ -186,12 +188,15 @@ def _has_base_weights(config: dict[str, Any]) -> bool:
 def _validate_quantized_options(
     config: dict[str, Any], *, dit_quantized: bool = False, text_encoder_quantized: bool = False,
 ) -> list[str]:
+    errors = []
     dit_quantized = dit_quantized or bool(config.get("convrot_int8"))
     text_encoder_quantized = text_encoder_quantized or bool(config.get("convrot_int8_text_encoder"))
     if _has_base_weights(config) and (dit_quantized or text_encoder_quantized):
-        return ["MOSS-Image: base_weights cannot be merged into ConvRot INT8 models; use unquantized checkpoints and disable both ConvRot options / "
-                "预合并 LoRA 不支持 ConvRot INT8 模型；请使用未量化权重并关闭两个 ConvRot 开关"]
-    return []
+        errors.append("MOSS-Image: base_weights cannot be merged into ConvRot INT8 models; use unquantized checkpoints and disable both ConvRot options / "
+                      "预合并 LoRA 不支持 ConvRot INT8 模型；请使用未量化权重并关闭两个 ConvRot 开关")
+    if config.get("compile") and config.get("compile_fullgraph") and dit_quantized:
+        errors.append("MOSS-Image: compile_fullgraph cannot be used with a ConvRot INT8 DiT; disable fullgraph / 完整图编译不支持 ConvRot INT8 DiT；请关闭完整图编译")
+    return errors
 
 
 def _checkpoint_is_quantized(paths: list[Path]) -> bool:
@@ -262,12 +267,14 @@ def validate_model_files(config: dict[str, Any]) -> list[str]:
     tokenizer = str(config.get("tokenizer_cache_dir") or "").strip()
     if tokenizer and not Path(tokenizer).is_dir():
         errors.append("tokenizer_cache_dir: directory not found / 分词器目录不存在")
-    if not errors and _has_base_weights(config):
+    premerge = _has_base_weights(config)
+    fullgraph = config.get("compile") and config.get("compile_fullgraph")
+    if not errors and (premerge or fullgraph):
         try:
             errors.extend(_validate_quantized_options(
                 config,
                 dit_quantized=_checkpoint_is_quantized(model_paths["pretrained_model_name_or_path"]),
-                text_encoder_quantized=_checkpoint_is_quantized(model_paths["text_encoder"]),
+                text_encoder_quantized=premerge and _checkpoint_is_quantized(model_paths["text_encoder"]),
             ))
         except Exception as exc:
             errors.append(f"Cannot inspect checkpoint quantization / 无法检查权重量化信息: {exc}")

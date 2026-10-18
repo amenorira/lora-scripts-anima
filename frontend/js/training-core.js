@@ -3989,7 +3989,7 @@ window.trainingCoreMixin = {
       this.formErrors[key] = null;
     }
     if (this.form.model_train_type === 'moss-image-lora') {
-      this.formErrors = { ...this.formErrors, base_weights: null, ...this._mossOptionErrors() };
+      this.formErrors = { ...this.formErrors, base_weights: null, compile_fullgraph: null, ...this._mossOptionErrors() };
     }
     this.updateTomlDebounced();
   },
@@ -4227,6 +4227,12 @@ window.trainingCoreMixin = {
       .some(value => String(value).trim());
     if (hasWeights && (this.form.convrot_int8 || this.form.convrot_int8_text_encoder)) {
       errors.base_weights = this.t('field.base_weightsConvrotConflict');
+    }
+    if (this.form.compile && this.form.compile_fullgraph && (
+      Number(this.form.blocks_to_swap || 0) > 0 || this.form.convrot_int8
+      || this.form.split_attn || this.form.attn_mode === 'xformers'
+    )) {
+      errors.compile_fullgraph = this.t('field.compile_fullgraphMossConflict');
     }
     return errors;
   },

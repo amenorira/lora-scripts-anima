@@ -609,6 +609,7 @@
 		"sdScriptsNote": "Uses the same bucket and ceiling rules as sd-scripts; recalculated before training starts."
 	},
 	"field": {
+		"compile_fullgraphMossConflict": "Fullgraph cannot be combined with block swapping, DiT ConvRot INT8, or split attention. Turn off fullgraph.",
 		"base_weightsConvrotConflict": "LoRA pre-merging is not supported with ConvRot INT8 models. Use unquantized checkpoints and turn off both ConvRot options.",
 		"pretrained_model_name_or_path_moss": "MOSS-Image DiT weights",
 		"attn_mode_moss": "MOSS attention implementation",

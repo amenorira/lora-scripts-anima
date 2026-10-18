@@ -129,6 +129,39 @@ class MossImageConfigTests(unittest.TestCase):
             network_train_unet_only=False, cache_text_encoder_outputs=False,
             cache_text_encoder_outputs_to_disk=False)), [])
 
+    def test_fullgraph_rejects_graph_breaks_but_keeps_partial_compile_available(self):
+        for options in ({"blocks_to_swap": 1}, {"convrot_int8": True},
+                        {"split_attn": True}, {"attn_mode": "xformers"}):
+            config = moss_config(compile=True, compile_fullgraph=True, **options)
+            with self.subTest(options=options):
+                self.assertTrue(any("compile_fullgraph" in error for error in validate_training_config(config)))
+                with self.assertRaises(ValueError):
+                    adapt_config(config)
+                config["compile_fullgraph"] = False
+                self.assertEqual(validate_training_config(config), [])
+                adapted, _ = adapt_config(config)
+                self.assertIs(adapted["compile"], True)
+        self.assertEqual(validate_training_config(moss_config(
+            compile=True, compile_fullgraph=True, convrot_int8_text_encoder=True)), [])
+
+    def test_fullgraph_preflight_detects_prequantized_dit_but_allows_quantized_text_encoder(self):
+        import numpy as np
+        from safetensors.numpy import save_file
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = moss_config(compile=True, compile_fullgraph=True)
+            for key in ("pretrained_model_name_or_path", "text_encoder", "vae"):
+                path = root / f"{key}.safetensors"
+                save_file({"layer.weight": np.ones((2, 2), dtype=np.float32)}, str(path))
+                config[key] = str(path)
+            save_file({"layer.comfy_quant": np.array([123, 125], dtype=np.uint8)}, config["text_encoder"])
+            self.assertEqual(validate_model_files(config), [])
+            save_file({"layer.comfy_quant": np.array([123, 125], dtype=np.uint8)}, config["pretrained_model_name_or_path"])
+            self.assertTrue(any("compile_fullgraph" in error for error in validate_model_files(config)))
+            config["compile_fullgraph"] = False
+            self.assertEqual(validate_model_files(config), [])
+
     def test_yaml_round_trip_preserves_profile_and_empty_skip_layers(self):
         original = moss_config(enable_preview=True, sample_uncond_skip_layers="", train_text_embedder=True,
                                convrot_int8=True, positive_prompts="第一行\n第二行")

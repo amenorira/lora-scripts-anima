@@ -144,3 +144,23 @@ test('MOSS validation rejects LoRA pre-merging into either INT8 model without ch
   app.form.base_weights = 'prior.safetensors';
   assert.deepEqual(Object.keys(app._mossOptionErrors()), []);
 });
+
+test('MOSS fullgraph validation preserves compatible compilation choices', () => {
+  const { app } = application();
+  Object.assign(app.form, { pretrained_model_name_or_path: 'dit.safetensors',
+    text_encoder: 'te.safetensors', vae: 'vae.safetensors', compile: true, compile_fullgraph: true });
+  app.$nextTick = () => {};
+  for (const options of [{ blocks_to_swap: 1 }, { convrot_int8: true }, { split_attn: true }, { attn_mode: 'xformers' }]) {
+    const original = { ...app.form };
+    Object.assign(app.form, options);
+    assert.equal(app.validateForm(), false);
+    assert.match(app.formErrors.compile_fullgraph, /完整图编译/);
+    assert.equal(app.form.compile_fullgraph, true);
+    app.form.compile_fullgraph = false;
+    assert.equal(app.validateForm(), true);
+    assert.equal(app.form.compile, true);
+    app.form = original;
+  }
+  app.form.convrot_int8_text_encoder = true;
+  assert.equal(app.validateForm(), true);
+});
