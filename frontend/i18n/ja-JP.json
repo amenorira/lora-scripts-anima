@@ -1571,6 +1571,7 @@
 		"adapterWarnings": "設定の警告",
 		"fieldRequired": "この項目は必須です",
 		"invalidNumericValue": "指定範囲内の数値を入力してください。整数指定の項目では小数は使えません",
+		"previewPromptRequired": "プレビューを生成するには、プロンプトを入力してください。",
 		"formErrors": "学習開始前に入力エラーを修正してください",
 		"minBucketResoError": "最小解像度は最大解像度以下にしてください",
 		"minTimestepError": "最小タイムステップは最大値未満にしてください",

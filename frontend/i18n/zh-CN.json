@@ -1571,6 +1571,7 @@
 		"adapterWarnings": "配置警告",
 		"fieldRequired": "此字段为必填项",
 		"invalidNumericValue": "请输入符合此项范围和整数要求的数值",
+		"previewPromptRequired": "生成预览前，请填写一条提示词。",
 		"formErrors": "请在开始训练前修正表单错误",
 		"minBucketResoError": "最小分辨率不能超过最大分辨率",
 		"minTimestepError": "最小时间步必须小于最大时间步",

@@ -277,7 +277,7 @@ test('imported invalid preview and timestep numbers fail validation before launc
   const { app } = application();
   app.$nextTick = () => {};
   Object.assign(app.form, { pretrained_model_name_or_path: 'dit.safetensors', text_encoder: 'te.safetensors',
-    vae: 'vae.safetensors', enable_preview: true, sample_interval_mode: 'steps' });
+    vae: 'vae.safetensors', enable_preview: true, positive_prompts: 'test', sample_interval_mode: 'steps' });
   for (const [key, value] of [['sample_steps', 0], ['sample_steps', 1.5], ['sample_flow_shift', 0],
     ['logit_std', -0.1], ['sample_every_n_steps', 0], ['sample_every_n_steps', '']]) {
     const original = app.form[key];
@@ -287,5 +287,23 @@ test('imported invalid preview and timestep numbers fail validation before launc
     app.form[key] = original;
   }
   app.form.logit_std = 0;
+  assert.equal(app.validateForm(), true);
+});
+
+test('MOSS rejects blank scheduled and initial previews but allows disabled previews', () => {
+  const { app } = application();
+  app.$nextTick = () => {};
+  Object.assign(app.form, { pretrained_model_name_or_path: 'dit.safetensors', text_encoder: 'te.safetensors',
+    vae: 'vae.safetensors', enable_preview: true });
+  for (const [mode, first] of [['epochs', false], ['steps', false], ['none', true]]) {
+    Object.assign(app.form, { sample_interval_mode: mode, sample_at_first: first, positive_prompts: ' \n\t ' });
+    assert.equal(app.validateForm(), false);
+    assert.match(app.formErrors.positive_prompts, /提示词/);
+    app.form.positive_prompts = 'first line\nsecond line';
+    assert.equal(app.validateForm(), true);
+  }
+  Object.assign(app.form, { sample_interval_mode: 'none', sample_at_first: false, positive_prompts: '' });
+  assert.equal(app.validateForm(), true);
+  Object.assign(app.form, { enable_preview: false, sample_interval_mode: 'epochs', sample_at_first: true });
   assert.equal(app.validateForm(), true);
 });

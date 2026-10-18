@@ -4017,7 +4017,7 @@ window.trainingCoreMixin = {
       this.formErrors[key] = null;
     }
     if (this.form.model_train_type === 'moss-image-lora') {
-      this.formErrors = { ...this.formErrors, base_weights: null, compile_fullgraph: null, ...this._mossOptionErrors() };
+      this.formErrors = { ...this.formErrors, base_weights: null, compile_fullgraph: null, positive_prompts: null, ...this._mossOptionErrors() };
     }
     this.updateTomlDebounced();
   },
@@ -4250,6 +4250,10 @@ window.trainingCoreMixin = {
   _mossOptionErrors() {
     if (this.form.model_train_type !== 'moss-image-lora') return {};
     const errors = {};
+    if (this.form.enable_preview && (this.form.sample_at_first || this.form.sample_interval_mode !== 'none')
+      && !String(this.form.positive_prompts || '').trim()) {
+      errors.positive_prompts = this.t('common.previewPromptRequired');
+    }
     const weights = this.form.base_weights;
     const hasWeights = (Array.isArray(weights) ? weights : String(weights || '').split(','))
       .some(value => String(value).trim());

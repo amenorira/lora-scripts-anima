@@ -32,4 +32,18 @@ def validate_sd_option_dependencies(config: dict) -> list[str]:
         key = "sample_every_n_steps" if sample_interval_mode(config) == "steps" else "sample_every_n_epochs"
         if not _present(config.get(key)):
             errors.append(f"{key}: required for the selected preview interval / 请填写所选模式的预览间隔")
+    # Native TOMLs have no enable_preview selector. Check their effective
+    # schedule too, before the MOSS sampler can receive sample_prompts=None.
+    mode = sample_interval_mode(config)
+    scheduled = mode in ("epochs", "steps") and _present(config.get(
+        "sample_every_n_steps" if mode == "steps" else "sample_every_n_epochs"
+    ))
+    if (config.get("model_train_type") == "moss-image-lora"
+            and config.get("enable_preview") is not False
+            and (config.get("sample_at_first") or scheduled)
+            and not config.get("randomly_choice_prompt")
+            and not any(str(config.get(key) or "").strip() for key in (
+                "positive_prompts", "prompt_file", "sample_prompts"
+            ))):
+        errors.append("positive_prompts: MOSS preview requires a prompt or prompt file / MOSS 预览需要填写提示词或指定提示词文件")
     return errors
