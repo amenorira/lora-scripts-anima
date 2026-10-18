@@ -12,7 +12,10 @@ test('untagged cores show a blue branch and commit link with consistent details'
   assert.match(head.version, /dev 61fde69/);
   assert.match(head.version, /class="env-row-version env-link"/);
   assert.match(head.version, /\/commit\/61fde69fc035413fb1472c20c02c441c6d558ee6/);
-  assert.match(app._renderCoreRepositoryDetails(T, meta, meta.repo), /dev 61fde69/);
+  const details = app._renderCoreRepositoryDetails(T, meta, meta.repo);
+  assert.match(details, /<dd>dev<\/dd>/);
+  assert.match(details, /<code>61fde69<\/code>/);
+  assert.doesNotMatch(details, /dev 61fde69/, 'details keep branch and commit once, without a duplicate combined version');
 });
 
 test('tagged cores preserve release labels and missing metadata never invents a version', () => {

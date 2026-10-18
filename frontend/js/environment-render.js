@@ -7,16 +7,21 @@
    之后每帧按槽位比对 HTML，只替换变化的槽位 → 进度 tick 不再
    摧毁整页 DOM，折叠动画、输入焦点、日志滚动位置全部存活。
 
-   布局：Hero（全宽）→ 运行环境（双列独立堆叠）→ 模型文件（组并排）。
+   布局：限宽总览 → 运行环境（自适应双面板）/ 模型库（自适应双列）/ 数据下载。
    组件以"行 + 行内展开详情"取代旧 details 卡片墙；健康组件只占一行。
    ================================================================ */
 
 // 模型分组 → 槽位 / 标题 / 无文件时回退仓库（与后端 MODEL_FILES 的 group 字段对应）
 const ENV_MODEL_GROUPS = {
   'Anima': { slot: 'animaModel', titleKey: 'animaModel.animaTitle', titleFallback: 'Anima Models', fallbackRepo: 'circlestone-labs/Anima' },
-  'Krea 2': { slot: 'krea2', titleKey: 'animaModel.krea2Title', titleFallback: 'Krea 2 Models', fallbackRepo: 'Comfy-Org/Krea-2' },
-  'MOSS-Image': { slot: 'moss', titleKey: 'animaModel.mossTitle', titleFallback: 'MOSS-Image Models', fallbackRepo: 'Comfy-Org/MOSS-Image', noteKey: 'animaModel.mossNote' },
-  'Train Use': { slot: 'trainUse', titleKey: 'animaModel.trainUseTitle', titleFallback: 'Additional Models', fallbackRepo: 'ame-la/train_use_models' },
+  'Krea 2': { slot: 'krea2', titleKey: 'animaModel.krea2Title', titleFallback: 'Krea 2 Models', fallbackRepo: 'Comfy-Org/Krea-2', trainingModel: 'krea2_raw_fp8_scaled.safetensors' },
+  'MOSS-Image': { slot: 'moss', titleKey: 'animaModel.mossTitle', titleFallback: 'MOSS-Image Models', fallbackRepo: 'Comfy-Org/MOSS-Image', noteKey: 'animaModel.mossNote', noteDetails: ['animaModel.mossTrainingNote', 'animaModel.mossTokenizerNote'] },
+  'Train Use': { slot: 'trainUse', titleKey: 'animaModel.trainUseTitle', titleFallback: 'Additional Models', fallbackRepo: 'ame-la/train_use_models', requiredComponents: ['model'] },
+};
+const ENV_MODEL_COMPONENT_KEYS = { model: 'componentModel', encoder: 'componentEncoder', vae: 'componentVae', other: 'componentOther' };
+const ENV_MODEL_DESCRIPTION_KEYS = {
+  'Anima': { 'anima-base-v1.0.safetensors': 'animaBase', 'qwen_3_06b_base.safetensors': 'animaEncoder', 'qwen_image_vae.safetensors': 'animaVae' },
+  'Krea 2': { 'krea2_raw_fp8_scaled.safetensors': 'kreaRaw', 'krea2_turbo_fp8_scaled.safetensors': 'kreaTurbo', 'qwen3vl_4b_fp8_scaled.safetensors': 'kreaEncoder', 'qwen_image_vae.safetensors': 'kreaVae' },
 };
 
 window.environmentRenderMixin = {
@@ -31,6 +36,7 @@ window.environmentRenderMixin = {
     this._ensureEnvSkeleton(el, T);
     this._updateEnvSectionTitles(el, T);
     this._syncEnvTabDom(el);
+    this._observeEnvModelLayout(el.querySelector('.env-models-grid'));
     if (!this._envTabsBound && el.querySelector('[data-env-tabs]')) {
       this._envTabsBound = true;
       el.querySelectorAll('[data-env-tab]').forEach(btn => {
@@ -80,11 +86,13 @@ window.environmentRenderMixin = {
       +   '<div class="env-env-grid">'
       +     '<div class="env-col" data-env-anchor-target="accel">'
       +       '<div class="env-section-title" data-env-title="accel"></div>'
+      +       '<div class="env-column-head" data-env-columns></div>'
       +       '<div data-env-slot="xf"></div>'
       +       '<div data-env-slot="triton"></div>'
       +     '</div>'
       +     '<div class="env-col" data-env-anchor-target="core">'
       +       '<div class="env-section-title" data-env-title="core"></div>'
+      +       '<div class="env-column-head" data-env-columns></div>'
       +       '<div data-env-slot="sd"></div>'
       +       '<div data-env-slot="lycoris"></div>'
       +       '<div data-env-slot="musubi"></div>'
@@ -110,11 +118,40 @@ window.environmentRenderMixin = {
       + '</div>';
   },
 
+  _observeEnvModelLayout(grid) {
+    if (this._envModelLayoutGrid === grid) return;
+    this._envModelLayoutRO?.disconnect();
+    this._envModelLayoutGrid = grid;
+    const slots = Array.from(grid.children);
+    const columns = [document.createElement('div'), document.createElement('div')];
+    columns.forEach(column => { column.className = 'env-model-column'; });
+    let currentColumns = 1;
+    this._envModelLayoutRO = new ResizeObserver(() => {
+      if (!grid.getClientRects().length) return;
+      const columnCount = Number(getComputedStyle(grid).getPropertyValue('--env-model-columns')) || 1;
+      if (columnCount === currentColumns) return;
+      currentColumns = columnCount;
+      const focused = grid.contains(document.activeElement) ? document.activeElement : null;
+      // 双列各自堆叠，展开只影响本列；窄窗口恢复原始顺序及键盘顺序。
+      // 仅在跨越断点时移动原节点，不重建内容、事件或展开状态。
+      if (columnCount === 2) {
+        grid.append(...columns);
+        slots.forEach((slot, index) => columns[index % 2].append(slot));
+      } else {
+        grid.append(...slots);
+        columns.forEach(column => column.remove());
+      }
+      if (focused && document.activeElement !== focused) focused.focus({ preventScroll: true });
+    });
+    this._envModelLayoutRO.observe(grid);
+  },
+
   // Tab 状态同步到 DOM（隐藏面板 + active 按钮 + 面板淡入动画）
   _syncEnvTabDom(el) {
     const tab = ['models', 'data'].includes(this.environmentTab) ? this.environmentTab : 'env';
     el.querySelectorAll('[data-env-tab]').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.envTab === tab);
+      btn.setAttribute('aria-selected', btn.dataset.envTab === tab ? 'true' : 'false');
     });
     el.querySelectorAll('[data-env-tab-panel]').forEach(p => {
       p.hidden = p.dataset.envTabPanel !== tab;
@@ -184,6 +221,16 @@ window.environmentRenderMixin = {
     set('core', T('sectionCore', 'Training Core'));
     set('models', T('sectionModels', 'Models'));
     set('data', T('sectionData', 'Downloads'));
+    const tabLabels = { env: T('envTabEnv', 'Environment'), models: T('envTabModels', 'Models'), data: T('envTabData', 'Downloads') };
+    el.querySelectorAll('[data-env-tab]').forEach(btn => {
+      const label = tabLabels[btn.dataset.envTab];
+      if (btn.textContent !== label) btn.textContent = label;
+    });
+    const columns = ['columnComponent', 'columnVersion', 'columnStatus', 'columnActions'];
+    const columnHtml = columns.map(key => `<span>${this.esc(T(key))}</span>`).join('');
+    el.querySelectorAll('[data-env-columns]').forEach(node => {
+      if (node.innerHTML !== columnHtml) node.innerHTML = columnHtml;
+    });
     const dataNote = el.querySelector('[data-env-note="data"]');
     const dataNoteText = T('sectionDataNote', 'Available offline after download');
     if (dataNote && dataNote.textContent !== dataNoteText) dataNote.textContent = dataNoteText;
@@ -215,7 +262,8 @@ window.environmentRenderMixin = {
     const accelReady = !!(this.xfStatus && this.tritonStatus);
     const accelDone = [xfOk, trOk].filter(Boolean).length;
 
-    const sdOk = !!(this.sdStatus && this.sdStatus.local);
+    const sdEngine = this.trainingCores?.engines?.find(i => i.id === 'sd_scripts');
+    const sdOk = sdEngine ? !!sdEngine.available : !!this.sdStatus?.local;
     const lyAdapter = this.trainingCores && (this.trainingCores.adapters || []).find(i => i.id === 'lycoris');
     const muEngine = this.trainingCores && (this.trainingCores.engines || []).find(i => i.id === 'musubi_tuner');
     const lyOk = !!(lyAdapter && lyAdapter.available);
@@ -225,40 +273,41 @@ window.environmentRenderMixin = {
 
     const files = this.animaModelStatus || [];
     const modelsReady = !!this.animaModelStatus;
-    const modelDone = files.filter(f => f.exists).length;
-    const modelTotal = files.length;
+    const modelDone = new Set(files.filter(f => f.exists).map(f => f.dest_path || f.filename)).size;
 
-    const hasError = !!(this.xfError || this.tritonError || this.trainingCoresError || this.animaModelError);
-    const allLoaded = accelReady && coreReady && modelsReady;
+    const dictionaryState = this.tagDictionaryDataState?.();
+    const hasError = !!(this.xfError || this.tritonError || this.sdError || this.trainingCoresError || this.animaModelError
+      || ['failed', 'error'].includes(dictionaryState) || this.tagDictionaryServer?.update?.state === 'error');
+    const allLoaded = accelReady && coreReady && modelsReady && dictionaryState !== 'checking';
+    const working = this.xfBusy || this.tritonBusy || this.animaModelBusy || dictionaryState === 'installing';
 
-    // 三态 Hero：加载中 / 有真实错误（红）/ 运行正常（绿）。
-    // 未安装、未下载、未配置都是可选增强的中性状态，不进 Hero 状态机。
+    // 完成查询不等于能运行所有训练：只报告查询与任务状态。
     let heroState, heroTitle, heroSub;
     if (hasError) {
       heroState = 'err';
       heroTitle = T('overview.needsAttention', 'Needs attention');
       heroSub = T('overview.subError', 'Check the highlighted rows for error details.');
-    } else if (!allLoaded) {
+    } else if (!allLoaded || this.environmentLoading || working) {
       heroState = 'loading';
-      heroTitle = T('overview.checking', 'Checking environment...');
+      heroTitle = working ? T('overview.working', 'Task in progress') : T('overview.checking', 'Checking environment...');
       heroSub = '';
     } else {
       heroState = 'ok';
-      heroTitle = T('overview.allReady', 'Running normally');
-      heroSub = T('overview.subReady', 'Acceleration libraries and models are optional enhancements — install them as needed.');
+      heroTitle = T('overview.checked', 'Check complete');
+      heroSub = '';
     }
 
-    // 控制面板式摘要行：纯文字计数（加速 x/3 · 核心 x/3 · 模型 x/y），不做可点芯片
-    const summary = (done, total, ready, label) => {
-      const num = ready ? `${done}/${ready ? total : '–'}` : '–';
+    // 模型只统计本地文件，不把可选变体总数表现成待完成目标。
+    const summary = (done, key, ready, label) => {
+      const num = ready ? T(key).replace('{count}', done) : '–';
       return `<span>${label} ${num}</span>`;
     };
     const summaryHtml = `<div class="env-hero-summary">`
-      + summary(accelDone, 2, accelReady, T('overview.accel', 'Acceleration'))
+      + summary(accelDone, 'overview.availableCount', accelReady, T('overview.accel', 'Acceleration'))
       + `<span class="env-summary-sep">·</span>`
-      + summary(coreDone, 3, coreReady, T('overview.core', 'Training core'))
+      + summary(coreDone, 'overview.availableCount', coreReady, T('overview.core', 'Training core'))
       + `<span class="env-summary-sep">·</span>`
-      + summary(modelDone, modelTotal, modelsReady, T('overview.models', 'Models'))
+      + `<span>${T('overview.models', 'Models')} ${modelsReady ? this.esc(T('animaModel.localFileCount', '{count} local files').replace('{count}', modelDone)) : '–'}</span>`
       + `</div>`;
 
     // 加载态：spinner + 文案并入 Hero 标题行（页面级仅此一个加载指示，
@@ -280,23 +329,24 @@ window.environmentRenderMixin = {
       +   `<button type="button" class="btn btn-sm btn-ghost env-toggle-all" data-env-toggle-all="close">${T('envCollapseAll','Collapse all')}</button>`
       +   `<button class="btn btn-sm btn-secondary env-refresh-all" data-env-refresh-all ${this.environmentLoading ? 'disabled' : ''}>`
       +     `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>`
-      +     `<span>${T('refreshAll', 'Refresh all')}</span></button>`
+      +     `<span>${this.environmentLoading ? T('refreshing', 'Refreshing...') : T('refreshAll', 'Refresh all')}</span></button>`
       + `</div>`
       + `</section>`;
   },
 
   // ═══════════════════════════════════════════════════════
-  //  行组件（自然语言流式）：首行 名称+状态+版本，次行 次级说明，
-  //  末行 主操作 + 详情文字链接；整行可点击展开（链接/按钮不触发）
+  //  共享行头：组件用四列，模型/数据用紧凑摘要；操作和详情始终相邻。
   // ═══════════════════════════════════════════════════════
   _renderRowHead(slotId, open, parts) {
-    return `<div class="env-row-head" role="button" tabindex="0" aria-expanded="${open ? 'true' : 'false'}" data-env-toggle="${slotId}">`
+    const component = ['xf', 'triton', 'sd', 'lycoris', 'musubi'].includes(slotId);
+    return `<div class="env-row-head${component ? ' env-component-head' : ' env-summary-head'}" role="button" tabindex="0" aria-expanded="${open ? 'true' : 'false'}" data-env-toggle="${slotId}">`
       + `<div class="env-flow-main">`
       +   `<span class="env-row-name">${parts.name}</span>`
-      +   (parts.badge || '')
-      +   (parts.version || '')
+      +   (!component ? (parts.badge || '') : '')
+      +   (parts.desc ? `<div class="env-row-desc">${parts.desc}</div>` : '')
       + `</div>`
-      + (parts.desc ? `<div class="env-row-desc">${parts.desc}</div>` : '')
+      + `<div class="env-row-meta">${parts.version || (component ? '<span class="env-text-dim">—</span>' : '')}</div>`
+      + (component ? `<div class="env-row-status">${parts.badge || ''}</div>` : '')
       + `<div class="env-row-ops">`
       +   (parts.action || '')
       +   (parts.detailKey
@@ -310,13 +360,13 @@ window.environmentRenderMixin = {
     const hasBody = !!bodyHtml;
     return `<div class="env-trow env-trow-${state}${open && hasBody ? ' env-open' : ''}" data-env-row="${slotId}">`
       + headHtml
-      + (hasBody ? `<div class="env-row-body" data-env-body="${slotId}"><div class="env-row-body-inner">${bodyHtml}</div></div>` : '')
+      + (hasBody ? `<div class="env-row-body" data-env-body="${slotId}"${open ? '' : ' inert'}><div class="env-row-body-inner">${bodyHtml}</div></div>` : '')
       + `</div>`;
   },
 
   // 错误条：常驻显示失败原因 + 可选"复制日志"按钮
   _renderErrorBar(T, msg, logKey) {
-    const copyBtn = logKey
+    const copyBtn = logKey && this[logKey]
       ? `<button class="btn btn-ghost btn-sm env-copy-log" data-env-copy="${logKey}">${T('copyLog', 'Copy log')}</button>`
       : '';
     return `<div class="env-msg env-msg-err env-errorbar"><pre>${this.esc(msg)}</pre>${copyBtn}</div>`;
@@ -355,9 +405,9 @@ window.environmentRenderMixin = {
       bar = `<div class="env-progress-bar env-progress-indeterminate"><div></div></div>`;
       meta = `<span class="env-progress-stage">${T('downloading','Downloading')}</span><span class="env-progress-meta-r">${(opts.speedMB||0).toFixed(1)} MB/s · ${this._humanBytes(opts.downloadedBytes||0)}</span>`;
     } else if (stage === 'connecting') {
-      const idx = opts.fileIndex || '?', tt = opts.fileTotal || '?';
+      const fileCount = opts.fileTotal > 1 ? ` ${opts.fileIndex || 1}/${opts.fileTotal}` : '';
       bar = `<div class="env-progress-bar env-progress-indeterminate"><div></div></div>`;
-      meta = `<span class="env-progress-stage">${T('connecting','Connecting')} ${idx}/${tt}</span>`;
+      meta = `<span class="env-progress-stage">${T('connecting','Connecting')}${fileCount}</span>`;
     } else {
       // installing / working
       const stageLabel = opts.stageLabel || (stage === 'installing' ? T('stageInstalling','Installing…') : T('installingHint','Working…'));
@@ -391,7 +441,7 @@ window.environmentRenderMixin = {
       + `<div class="env-sub-head" role="button" tabindex="0" aria-expanded="${open ? 'true' : 'false'}" data-env-sub-head="${key}">`
       + `<span class="env-sub-arrow" aria-hidden="true"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 6 15 12 9 18"/></svg></span>`
       + `<span>${label}</span></div>`
-      + `<div class="env-sub-body"><div class="env-sub-body-inner">${innerHtml}</div></div>`
+      + `<div class="env-sub-body"${open ? '' : ' inert'}><div class="env-sub-body-inner">${innerHtml}</div></div>`
       + `</div>`;
   },
 
@@ -407,21 +457,20 @@ window.environmentRenderMixin = {
         name: 'xformers',
         desc: T('xfHint','Memory-efficient attention'),
         version: '', badge: `<span class="env-badge env-badge-loading">${T('installing','Installing...')}</span>`,
-        action: `<button type="button" class="btn btn-sm btn-ghost env-head-btn" disabled>${T('installing','Installing...')}</button>`,
         detailKey: 'xf', detailLabel: T('details','Details'),
       });
-      const body = this._renderProgressPanel({ stage: 'working', elapsed: this.xfInstallElapsed, label: T('xfInstallingHint','Downloading...') })
+      const body = this._renderProgressPanel({ stage: 'working', elapsed: this.xfInstallElapsed, stageLabel: T('xfInstallingHint','Downloading...') })
         + this._renderLog(this.xfInstallLog);
       return this._renderRow('xf', 'loading', open, head, body);
     }
 
     const state = this.xfError ? 'err' : !xs ? 'loading' : xfInstalled ? 'ok' : 'muted';
-    const badge = this.xfError ? `<span class="env-badge env-badge-err">${T('loadFailed','Load failed')}</span>`
+    const badge = this.xfError ? `<span class="env-badge env-badge-err">${T('operationFailed','Operation failed')}</span>`
       : !xs ? `<span class="env-badge env-badge-loading">${T('loadingShort','Loading…')}</span>`
       : xfInstalled ? `<span class="env-badge env-badge-ok">${T('installed','Installed')}</span>`
       : `<span class="env-badge env-badge-muted">${T('optionalNotInstalled','Optional · Not installed')}</span>`;
     const version = xfInstalled && xs.version ? `<span class="env-row-version">v${this.esc(xs.version)}</span>` : '';
-    const headBtn = `<button type="button" class="btn btn-sm ${xfInstalled ? 'btn-ghost' : 'btn-secondary'} env-head-btn" data-env-action="xf">${xfInstalled ? T('reinstall','Reinstall') : T('install','Install')}</button>`;
+    const headBtn = xs ? `<button type="button" class="btn btn-sm ${xfInstalled ? 'btn-ghost' : 'btn-secondary'} env-head-btn" data-env-action="xf">${xfInstalled ? T('reinstall','Reinstall') : T('install','Install')}</button>` : '';
     const head = this._renderRowHead('xf', open, {
       name: 'xformers',
       desc: T('xfHint','Memory-efficient attention'),
@@ -442,8 +491,8 @@ window.environmentRenderMixin = {
 
       if (!xfInstalled) body += `<div class="env-msg env-msg-info">${T('xfInstallInfo','Installs latest compatible version from PyPI.')}</div>`;
 
-      body += `<div class="env-actions"><button id="xf-install-btn" class="btn btn-sm btn-secondary" ${this.xfBusy?'disabled':''}>${xfInstalled?T('reinstall','Reinstall'):T('xfInstallBtn','Install via PyPI')}</button>${this._renderRefreshBtn('xf-refresh-btn', this.xfBusy)}</div>`;
     }
+    body += `<div class="env-actions">${this._renderRefreshBtn('xf-refresh-btn', this.xfBusy)}</div>`;
 
     return this._renderRow('xf', state, open, head, body);
   },
@@ -465,9 +514,9 @@ window.environmentRenderMixin = {
     return { label, url };
   },
 
-  _renderCoreHeadParts(T, meta, available = true, error = null) {
+  _renderCoreHeadParts(T, meta, available = true, error = null, loaded = !!meta) {
     if (error) return { version: '', badge: `<span class="env-badge env-badge-err">${T('loadFailed', 'Load failed')}</span>` };
-    if (!meta) return { version: '', badge: `<span class="env-badge env-badge-loading">${T('loadingShort','Loading…')}</span>` };
+    if (!loaded) return { version: '', badge: `<span class="env-badge env-badge-loading">${T('loadingShort','Loading…')}</span>` };
     if (!available) return { version: '', badge: `<span class="env-badge env-badge-muted">${T('coreNotReady', 'Not configured')}</span>` };
     const info = this._coreVersionInfo(meta);
     const version = info.label
@@ -479,18 +528,15 @@ window.environmentRenderMixin = {
     const repo = meta?.repo || fallbackRepo;
     const repoUrl = `https://github.com/${repo}`;
     const info = this._coreVersionInfo({ ...meta, repo });
-    const versionHtml = info.label
-      ? `<span class="env-env-item">Version <a href="${this.escapeAttr(info.url)}" target="_blank" rel="noopener" class="env-link"><code>${this.esc(info.label)}</code></a></span>`
-      : null;
+    const item = (key, html) => `<div><dt>${this.esc(T(key))}</dt><dd>${html}</dd></div>`;
     const verItems = [
-      `<span class="env-env-item">Repo <a href="${repoUrl}" target="_blank" rel="noopener" class="env-link">${this.esc(repo)} &#8599;</a></span>`,
-      meta?.local_branch ? `<span class="env-env-item">Branch <em>${this.esc(meta.local_branch)}</em></span>` : null,
-      versionHtml,
-      meta?.local_commit ? `<span class="env-env-item">Commit <a href="${repoUrl}/commit/${this.escapeAttr(meta.local_commit)}" target="_blank" rel="noopener" class="env-link"><code>${this.esc(meta.local_commit.slice(0,7))}</code></a></span>` : null,
-      meta?.sync_date ? `<span class="env-env-item">Sync <span class="env-text-dim">${this.esc(meta.sync_date)}</span></span>` : null,
-    ].filter(Boolean);
-    return this._renderDetailGroup(T('verLabel','Ver'), verItems.join(' &middot; '))
-      + `<div class="env-actions"><a href="${repoUrl}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">${T('sdScriptsOpenRepo','Open repo')} &#8599;</a></div>`;
+      item('repositoryLabel', `<a href="${repoUrl}" target="_blank" rel="noopener" class="env-link">${this.esc(repo)} &#8599;</a>`),
+      meta?.local_branch ? item('branchLabel', this.esc(meta.local_branch)) : '',
+      meta?.describe || meta?.tag || meta?.version ? item('columnVersion', `<a href="${this.escapeAttr(info.url)}" target="_blank" rel="noopener" class="env-link"><code>${this.esc(info.label)}</code></a>`) : '',
+      meta?.local_commit ? item('commitLabel', `<a href="${repoUrl}/commit/${this.escapeAttr(meta.local_commit)}" target="_blank" rel="noopener" class="env-link"><code>${this.esc(meta.local_commit.slice(0,7))}</code></a>`) : '',
+      meta?.sync_date ? item('syncLabel', this.esc(meta.sync_date)) : '',
+    ];
+    return `<dl class="env-repo-details">${verItems.join('')}</dl>`;
   },
 
   /* 数据下载：Danbooru 中文词典。数据不进仓库，这里负责下载/更新与进度；
@@ -502,14 +548,16 @@ window.environmentRenderMixin = {
 
     const badgeState = dataState === 'installed' && this.tagDictionaryCheckingUpdate ? 'checking'
       : dataState === 'installed' && server?.update?.state === 'available' ? 'checking'
-      : dataState === 'installed' && ['error', 'unknown'].includes(server?.update?.state) ? 'absent' : dataState;
+      : dataState === 'installed' && server?.update?.state === 'error' ? 'error'
+      : dataState === 'installed' && server?.update?.state === 'unknown' ? 'absent' : dataState;
     const badgeClass = {
       installing: 'env-badge-loading', installed: 'env-badge-ok', checking: 'env-badge-loading',
       failed: 'env-badge-err', error: 'env-badge-err', absent: '',
     }[badgeState] || '';
     const updateKey = { available: 'dictUpdateAvailable', current: 'dictUpToDate',
       unknown: 'dictUpdateUnknown', error: 'dictCheckFailed' }[server?.update?.state];
-    const badgeText = dataState === 'installing' ? this.tagDictionaryInstallText()
+    const badgeText = (this.tagDictionaryStatusError || !server) && ['failed', 'error'].includes(dataState) ? T('loadFailed')
+      : dataState === 'installing' ? this.tagDictionaryInstallText()
       : server?.status === 'failed' ? T(server.installed ? 'dictUpdateFailed' : 'dictDownloadFailed')
       : this.tagDictionaryCheckingUpdate ? T('dictCheckingUpdate')
       : dataState === 'installed' && updateKey ? T(updateKey) : this.tagDictionaryDataLabel();
@@ -528,7 +576,7 @@ window.environmentRenderMixin = {
         + `${this.esc(this.tagDictionaryDataActionLabel())}</button>`
       : '';
 
-    if (server?.installed && dataState !== 'installing') {
+    if (server?.installed && dataState === 'installed') {
       action += `<button class="btn btn-sm btn-ghost" data-env-action="dictionary-redownload"${this.tagDictionaryCheckingUpdate ? ' disabled' : ''}>${this.esc(T('dictRedownload'))}</button>`;
     }
 
@@ -540,7 +588,7 @@ window.environmentRenderMixin = {
     });
 
     return this._renderRow('dictionary', dataState === 'installing' ? 'loading'
-      : ['failed', 'error'].includes(dataState) ? 'err' : (dataState === 'installed' ? 'ok' : 'muted'), open, head,
+      : ['failed', 'error'].includes(badgeState) ? 'err' : (dataState === 'installed' ? 'ok' : 'muted'), open, head,
       this._renderDictionaryBody(T, dataState));
   },
 
@@ -577,7 +625,7 @@ window.environmentRenderMixin = {
       }
     }
     if (dataState === 'failed' || dataState === 'error') {
-      const reason = T(server.error_kind === 'source' ? 'dictErrorSource'
+      const reason = this.tagDictionaryStatusError || !this.tagDictionaryServer ? this.t('tagEditor.dictStatusUnavailable') : T(server.error_kind === 'source' ? 'dictErrorSource'
         : server.error_kind === 'integrity' ? 'dictErrorIntegrity'
         : server.error_kind === 'build' ? 'dictErrorBuild' : 'dictErrorDownload');
       body += `<div class="env-msg env-msg-err">${current ? this.esc(current) + '：' : ''}${this.esc(reason)}</div>`;
@@ -611,15 +659,18 @@ window.environmentRenderMixin = {
   _renderSdRow(T) {
     const sd = this.sdStatus; const sdLocal = sd?.local || null;
     const open = this._envCardOpen('sd');
-    const state = !sd ? 'loading' : 'ok';
-    const parts = this._renderCoreHeadParts(T, sd ? sdLocal : null);
+    const error = this.sdError || this.trainingCoresError;
+    const engine = this.trainingCores?.engines?.find(item => item.id === 'sd_scripts');
+    const available = engine ? !!engine.available : !!sdLocal;
+    const state = error ? 'err' : !sd ? 'loading' : available ? 'ok' : 'muted';
+    const parts = this._renderCoreHeadParts(T, sdLocal, available, error, !!sd);
     const head = this._renderRowHead('sd', open, {
       name: T('sdScriptsTitle','sd-scripts'),
       desc: T('sdScriptsDesc','kohya-ss/sd-scripts'),
       version: parts.version, badge: parts.badge,
       detailKey: 'sd', detailLabel: T('details','Details'),
     });
-    const body = sd ? this._renderCoreRepositoryDetails(T, sdLocal, 'kohya-ss/sd-scripts') : '';
+    const body = (error ? this._renderErrorBar(T, error, null) : '') + (sd ? this._renderCoreRepositoryDetails(T, sdLocal, 'kohya-ss/sd-scripts') : '');
     return this._renderRow('sd', state, open, head, body);
   },
 
@@ -630,7 +681,7 @@ window.environmentRenderMixin = {
     const available = !!adapter?.available;
     const state = error ? 'err' : !registry ? 'loading' : available ? 'ok' : 'muted';
     const open = this._envCardOpen('lycoris');
-    const parts = this._renderCoreHeadParts(T, adapter?.version || null, available, error);
+    const parts = this._renderCoreHeadParts(T, adapter?.version || null, available, error, !!registry);
     const head = this._renderRowHead('lycoris', open, {
       name: 'LyCORIS',
       desc: T('lycorisDesc', 'LoRA adapter core'),
@@ -650,7 +701,7 @@ window.environmentRenderMixin = {
     const available = !!engine?.available;
     const state = error ? 'err' : !registry ? 'loading' : available ? 'ok' : 'muted';
     const open = this._envCardOpen('musubi');
-    const parts = this._renderCoreHeadParts(T, engine?.version || null, available, error);
+    const parts = this._renderCoreHeadParts(T, engine?.version || null, available, error, !!registry);
     const head = this._renderRowHead('musubi', open, {
       name: 'musubi-tuner',
       desc: T('musubiDesc', 'Krea 2 training core'),
@@ -680,25 +731,24 @@ window.environmentRenderMixin = {
         name: 'Triton',
         desc: T('tritonDesc','GPU compile backend for torch.compile'),
         version: '', badge: `<span class="env-badge env-badge-loading">${T('installing','Installing...')}</span>`,
-        action: `<button type="button" class="btn btn-sm btn-ghost env-head-btn" disabled>${T('installing','Installing...')}</button>`,
         detailKey: 'triton', detailLabel: T('details','Details'),
       });
-      const body = this._renderProgressPanel({ stage: 'working', elapsed: this.tritonInstallElapsed, label: T('tritonInstallingHint','Downloading...') })
+      const body = this._renderProgressPanel({ stage: 'working', elapsed: this.tritonInstallElapsed, stageLabel: T('tritonInstallingHint','Downloading...') })
         + this._renderLog(this.tritonInstallLog);
       return this._renderRow('triton', 'loading', open, head, body);
     }
 
     const state = this.tritonError ? 'err' : !tr ? 'loading' : tr.installed ? 'ok' : 'muted';
     const badge = this.tritonError
-      ? `<span class="env-badge env-badge-err">${T('loadFailed','Load failed')}</span>`
+      ? `<span class="env-badge env-badge-err">${T('operationFailed','Operation failed')}</span>`
       : !tr
         ? `<span class="env-badge env-badge-loading">${T('loadingShort','Loading…')}</span>`
         : tr.installed
           ? `<span class="env-badge env-badge-ok">${T('tritonInstalled','Installed')}</span>`
-          : `<span class="env-badge env-badge-muted">${T('optionalNotInstalled','Optional · Not installed')}</span>`;
+          : `<span class="env-badge env-badge-muted">${T('notInstalled','Not installed')}</span>`;
     const version = tr && tr.installed && tr.version
       ? `<span class="env-row-version">v${this.esc(tr.version)}${tr.package ? ' · ' + this.esc(tr.package) : ''}</span>` : '';
-    const headBtn = `<button type="button" class="btn btn-sm ${tr?.installed ? 'btn-ghost' : 'btn-secondary'} env-head-btn" data-env-action="triton">${tr?.installed ? T('reinstall','Reinstall') : T('install','Install')}</button>`;
+    const headBtn = tr ? `<button type="button" class="btn btn-sm ${tr?.installed ? 'btn-ghost' : 'btn-secondary'} env-head-btn" data-env-action="triton">${tr?.installed ? T('reinstall','Reinstall') : T('install','Install')}</button>` : '';
     const head = this._renderRowHead('triton', open, {
       name: 'Triton',
       desc: T('tritonDesc','GPU compile backend for torch.compile'),
@@ -712,18 +762,34 @@ window.environmentRenderMixin = {
     if (tr) {
       if (tr.installed) {
         body += this._renderDetailGroup(T('verLabel','Ver'), `<span class="env-env-item">${this.esc(tr.package||'triton')} <em>v${this.esc(tr.version||'?')}</em></span>`);
-        body += `<div class="env-actions"><button id="triton-reinstall-btn" class="btn btn-sm btn-secondary" ${this.tritonBusy?'disabled':''}>${T('reinstall','Reinstall')}</button>${this._renderRefreshBtn('triton-refresh-btn', this.tritonBusy)}</div>`;
       } else {
         body += `<div class="env-msg env-msg-info">${T('tritonInstallInfo','Enables DiT per-block compilation. Windows installs a triton-windows version matched to PyTorch; Linux installs triton.')}</div>`;
-        body += `<div class="env-actions"><button id="triton-install-btn" class="btn btn-sm btn-secondary" ${this.tritonBusy?'disabled':''}>${T('tritonInstallBtn','Install')}</button>${this._renderRefreshBtn('triton-refresh-btn', this.tritonBusy)}</div>`;
       }
     }
+    body += `<div class="env-actions">${this._renderRefreshBtn('triton-refresh-btn', this.tritonBusy)}</div>`;
     return this._renderRow('triton', state, open, head, body);
   },
 
   // ═══════════════════════════════════════════════════════
   //  模型组（Anima / Krea 2）：组头统计 + 文件行 + 日志子折叠
   // ═══════════════════════════════════════════════════════
+  _envModelFileComponent(file) {
+    if (Object.hasOwn(ENV_MODEL_COMPONENT_KEYS, file.component_type)) return file.component_type;
+    // 兼容尚未重启的后端：使用目录用途，不猜测文件名或翻译后的说明。
+    const folders = (file.source_url || '').split('/');
+    if (folders.includes('diffusion_models') || file.group === 'Train Use') return 'model';
+    if (folders.includes('text_encoders')) return 'encoder';
+    if (folders.includes('vae')) return 'vae';
+    return 'other';
+  },
+
+  _envModelMissingComponents(files, modelGroup) {
+    const view = ENV_MODEL_GROUPS[modelGroup] || {};
+    return (view.requiredComponents || ['model', 'encoder', 'vae']).filter(kind =>
+      !files.some(file => file.exists && this._envModelFileComponent(file) === kind
+        && (kind !== 'model' || !view.trainingModel || file.filename === view.trainingModel)));
+  },
+
   _renderModelGroup(T, modelGroup) {
     const files = (this.animaModelStatus || []).filter(file => file.group === modelGroup);
     const progress = this.animaModelProgress;
@@ -733,9 +799,9 @@ window.environmentRenderMixin = {
     const destDir = this.animaModelDestDir || 'models/';
     const p = progress || {};
     const curFile = p.filename || '';
-    const batch = Array.isArray(p.batch) ? p.batch : null;
+    const batch = Array.isArray(p.batch) ? p.batch : (curFile ? [curFile] : []);
     const phase = p.phase || '';
-    const groupTask = !p.group || p.group === 'all' || p.group === modelGroup;
+    const groupTask = !this.animaModelStatus || !p.group || p.group === 'all' || p.group === modelGroup;
     const groupBusy = busy && groupTask;
     const groupError = error && groupTask ? error : null;
     const view = ENV_MODEL_GROUPS[modelGroup] || { slot: 'animaModel', titleKey: 'animaModel.animaTitle', titleFallback: 'Anima Models', fallbackRepo: 'circlestone-labs/Anima' };
@@ -743,49 +809,50 @@ window.environmentRenderMixin = {
     const open = this._envCardOpen(slotId);
     const title = T(view.titleKey, view.titleFallback);
 
-    const allReady = files.length > 0 && files.every(f => f.exists);
-    const state = groupError ? 'err' : !files.length ? 'loading' : allReady ? 'ok' : groupBusy ? 'loading' : 'muted';
-    // 未齐全不是警告：组头已有 x/y 计数，不再出徽标
+    const missing = this._envModelMissingComponents(files, modelGroup);
+    const componentsReady = files.length > 0 && missing.length === 0;
+    const state = groupError ? 'err' : !files.length || groupBusy ? 'loading' : componentsReady ? 'ok' : 'muted';
     const badge = groupError
-      ? `<span class="env-badge env-badge-err">${T('loadFailed','Load failed')}</span>`
+      ? `<span class="env-badge env-badge-err">${T('operationFailed','Operation failed')}</span>`
       : !files.length
         ? `<span class="env-badge env-badge-loading">${T('loadingShort','Loading…')}</span>`
-        : allReady
-          ? `<span class="env-badge env-badge-ok">${T('animaModel.allReady','All ready')}</span>`
-          : groupBusy
-            ? `<span class="env-badge env-badge-loading">${T('animaModel.downloading','Downloading')}</span>`
+        : groupBusy
+          ? `<span class="env-badge env-badge-loading">${T('animaModel.downloading','Downloading')}</span>`
+          : componentsReady
+            ? `<span class="env-badge env-badge-ok">${modelGroup === 'Train Use' ? T('animaModel.downloaded','Downloaded') : T('animaModel.componentsReady','Components available')}</span>`
             : '';
 
-    // 组头统计：x/y 已下载 · 合计大小
+    // 按必需组件判断齐备；同类下载多个变体不会抵消缺少的另一类。
     const doneFiles = files.filter(f => f.exists);
-    const totalBytes = doneFiles.reduce((sum, f) => sum + (f.size_gb || 0) * 1073741824, 0);
-    const countText = totalBytes > 0
-      ? T('animaModel.downloadedCount','{x}/{y} downloaded · {size}').replace('{x}', doneFiles.length).replace('{y}', files.length).replace('{size}', this._humanBytes(totalBytes))
-      : `${doneFiles.length}/${files.length}`;
+    const totalBytes = doneFiles.reduce((sum, f) => sum + (f.size_bytes ?? (f.size_gb || 0) * 1073741824), 0);
+    const missingNames = missing.map(kind => T('animaModel.' + (kind === 'model' && view.trainingModel ? 'componentTrainingModel' : ENV_MODEL_COMPONENT_KEYS[kind])));
+    const countText = !doneFiles.length
+      ? T('animaModel.notDownloaded', 'Not downloaded')
+      : missing.length
+        ? T('animaModel.missingComponents', 'Missing: {components}').replace('{components}', missingNames.join(' / '))
+        : T('animaModel.localSize', 'Local files · {size}').replace('{size}', this._humanBytes(totalBytes));
     const countHtml = files.length
       ? `<span class="env-mgroup-count">${countText}</span>`
       : '';
 
-    // 组头操作：只有主按钮（下载全部 / 重新下载全部）；刷新已有 Hero 全局，仓库在文件名链接
-    const hasMissing = files.some(f => !f.exists);
-    const dlAllLabel = groupBusy
-      ? T('animaModel.downloading','Downloading...')
-      : (hasMissing ? T('animaModel.downloadAll','Download All') : T('animaModel.downloadAllAgain','Re-download All'));
-    const actionHtml = files.length
-      ? `<button class="btn btn-sm btn-secondary env-model-dl-all" data-group="${this.escapeAttr(modelGroup)}" ${busy?'disabled':''}>${dlAllLabel}</button>`
-      : '';
-
+    // 下载入口仅放在具体文件旁，组头只负责展开列表。
     const head = this._renderRowHead(slotId, open, {
-      name: title, version: countHtml, badge, action: actionHtml,
+      name: title, version: countHtml, badge,
       detailKey: slotId, detailLabel: T('animaModel.filesLabel','Files'),
     });
 
     let body = '';
     if (groupError) body += this._renderErrorBar(T, groupError, 'animaModelLog');
-    if (view.noteKey) body += `<div class="env-msg env-msg-info">${this.esc(T(view.noteKey))}</div>`;
+    if (view.noteKey) {
+      body += `<aside class="env-download-note">
+        <h3>${this.esc(T('animaModel.downloadGuide','Download guide'))}</h3>
+        <p class="env-download-note-lead">${this.esc(T(view.noteKey))}</p>
+        ${(view.noteDetails || []).map(key => `<p>${this.esc(T(key))}</p>`).join('')}
+      </aside>`;
+    }
 
     // 整体批量进度（下载中显示）
-    if (groupBusy && aggregate) {
+    if (groupBusy && aggregate && aggregate.fileTotal > 1) {
       const fileOf = T('animaModel.fileOf','File {i}/{n}').replace('{i}', aggregate.fileIndex).replace('{n}', aggregate.fileTotal);
       body += `<div class="env-model-aggregate">
         <div class="env-progress-bar"><div style="width:${aggregate.pct}%"></div></div>
@@ -796,10 +863,18 @@ window.environmentRenderMixin = {
       </div>`;
     }
 
-    // 文件行
+    // 按组件用途归组；仅给分类标题着色，文件与下载状态仍沿用原有样式。
+    const groupedFiles = Object.keys(ENV_MODEL_COMPONENT_KEYS).map(kind => ({
+      kind, files: files.filter(file => this._envModelFileComponent(file) === kind),
+    })).filter(group => group.files.length);
     body += `<div class="env-file-list">`;
-    for (const f of files) {
-      const inBatch = !batch || batch.includes(f.filename);
+    for (const component of groupedFiles) {
+      body += `<section class="env-file-section" data-env-component="${component.kind}">
+        <div class="env-file-section-head">
+          <h4 class="env-component-label env-component-${component.kind}">${this.esc(T('animaModel.' + ENV_MODEL_COMPONENT_KEYS[component.kind]))}</h4>
+        </div>`;
+      for (const f of component.files) {
+      const inBatch = batch.includes(f.filename);
       const isCurrent = groupBusy && curFile === f.filename;
       const isQueued = groupBusy && inBatch && !isCurrent;
       let statusHtml = '', actionHtml = '', rowCls = 'env-file', progressHtml = '';
@@ -821,7 +896,7 @@ window.environmentRenderMixin = {
         progressHtml = `<div class="env-file-progress">
             <div class="env-progress-bar env-progress-indeterminate"><div></div></div>
             <div class="env-progress-meta">
-              <span class="env-progress-stage">${T('animaModel.connecting','Connecting')} ${idx}/${tt}</span>
+              <span class="env-progress-stage">${T('animaModel.connecting','Connecting')}${p.file_total > 1 ? ` ${idx}/${tt}` : ''}</span>
             </div>
           </div>`;
       } else if (isQueued) {
@@ -850,6 +925,9 @@ window.environmentRenderMixin = {
 
       const sizeHtml = f.exists ? `<span class="env-file-size">${this._humanBytes((f.size_gb||0)*1073741824)}</span>` : '';
       const destPath = f.dest_path || (destDir + f.filename);
+      const descriptionKey = ENV_MODEL_DESCRIPTION_KEYS[modelGroup]?.[f.filename];
+      const description = f.desc_key ? this.t(f.desc_key, f.desc)
+        : descriptionKey ? T('animaModel.' + descriptionKey) : f.desc || '';
       const originHtml = f.source_page
         ? ` <a href="${this.escapeAttr(f.source_page)}" target="_blank" rel="noopener" class="env-link" title="${T('animaModel.openOriginalPage','Open the original model page')}">${T('animaModel.originalPage','Original page')} &#8599;</a>`
         : '';
@@ -860,9 +938,11 @@ window.environmentRenderMixin = {
           <span class="env-file-status">${statusHtml}</span>
           <span class="env-file-action">${actionHtml}</span>
         </div>
-        <div class="env-file-sub">${this.esc(f.desc_key ? this.t(f.desc_key, f.desc) : (f.desc || ''))}${originHtml}<span class="env-file-dest">${this.esc(destPath)}</span></div>
+        <div class="env-file-sub">${this.esc(description)}${originHtml}<span class="env-file-dest">${this.esc(destPath)}</span></div>
         ${progressHtml}
       </div>`;
+      }
+      body += '</section>';
     }
 
     if (!files.length) {
@@ -877,7 +957,7 @@ window.environmentRenderMixin = {
 
     return `<div class="env-mgroup env-row-${state}${open ? ' env-open' : ''}" data-env-row="${slotId}">`
       + head
-      + `<div class="env-row-body" data-env-body="${slotId}"><div class="env-row-body-inner">${body}</div></div>`
+      + `<div class="env-row-body" data-env-body="${slotId}"${open ? '' : ' inert'}><div class="env-row-body-inner">${body}</div></div>`
       + `</div>`;
   },
 
@@ -901,7 +981,21 @@ window.environmentRenderMixin = {
     else if (slot === 'animaModel' || slot === 'krea2' || slot === 'moss' || slot === 'trainUse') this._bindModelGroupEvents(host);
   },
 
-  // 行尾"详情"按钮：显式开合行下展开面板（行本身不再可点击）
+  // 所有展开入口共用状态同步，隐藏内容不能留在键盘焦点顺序里。
+  _setEnvRowExpanded(row, open) {
+    row.classList.toggle('env-open', open);
+    row.querySelectorAll('[data-env-toggle], [data-env-detail]').forEach(control => {
+      control.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    this._envSetCardOpen(row.dataset.envRow, open);
+    const body = row.querySelector('[data-env-body]');
+    if (body) {
+      body.inert = !open;
+      this._animateCollapse(body, !open);
+    }
+  },
+
+  // 行尾"详情"按钮：与点击行头保持一致。
   _bindDetailToggles(host) {
     const a = window.__anima || this;
     host.querySelectorAll('[data-env-detail]').forEach(btn => {
@@ -909,12 +1003,8 @@ window.environmentRenderMixin = {
         const key = btn.dataset.envDetail;
         const row = host.querySelector('[data-env-row="' + key + '"]');
         if (!row) return;
-        const body = row.querySelector('[data-env-body]');
         const open = !row.classList.contains('env-open');
-        row.classList.toggle('env-open', open);
-        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-        a._envSetCardOpen(key, open);
-        if (body) a._animateCollapse(body, !open);
+        a._setEnvRowExpanded(row, open);
       });
     });
   },
@@ -939,17 +1029,13 @@ window.environmentRenderMixin = {
   _bindRowToggle(host) {
     const a = window.__anima || this;
     host.querySelectorAll('[data-env-toggle]').forEach(head => {
-      const slotId = head.dataset.envToggle;
       const doToggle = () => {
         const row = head.parentElement;
         if (!row) return;
         const body = row.querySelector('[data-env-body]');
         if (!body) return;
         const open = !row.classList.contains('env-open');
-        row.classList.toggle('env-open', open);
-        head.setAttribute('aria-expanded', open ? 'true' : 'false');
-        a._envSetCardOpen(slotId, open);
-        a._animateCollapse(body, !open);
+        a._setEnvRowExpanded(row, open);
       };
       head.addEventListener('click', e => {
         if (e.target.closest('a, button, input, select, textarea')) return;
@@ -974,7 +1060,10 @@ window.environmentRenderMixin = {
         wrap.classList.toggle('env-open', open);
         head.setAttribute('aria-expanded', open ? 'true' : 'false');
         if (key === 'animaModelLog') a._envSetCardOpen('animaModelLog', open);
-        if (body) a._animateCollapse(body, !open);
+        if (body) {
+          body.inert = !open;
+          a._animateCollapse(body, !open);
+        }
         if (open && key === 'animaModelLog') {
           const pre = wrap.querySelector('.env-log');
           if (pre) pre.scrollTop = pre.scrollHeight;
@@ -1017,15 +1106,7 @@ window.environmentRenderMixin = {
     panel.querySelectorAll('.env-trow[data-env-row], .env-mgroup[data-env-row]').forEach(row => {
       // 已处于目标状态的行跳过：不重播动画，也不重复写覆盖
       if (row.classList.contains('env-open') === open) return;
-      const key = row.dataset.envRow;
-      const body = row.querySelector('[data-env-body]');
-      row.classList.toggle('env-open', open);
-      const head = row.querySelector('[data-env-toggle]');
-      if (head) head.setAttribute('aria-expanded', open ? 'true' : 'false');
-      const link = row.querySelector('[data-env-detail="' + key + '"]');
-      if (link) link.setAttribute('aria-expanded', open ? 'true' : 'false');
-      this._envSetCardOpen(key, open);
-      if (body) this._animateCollapse(body, !open);
+      this._setEnvRowExpanded(row, open);
     });
   },
 
@@ -1043,9 +1124,6 @@ window.environmentRenderMixin = {
 
   _bindModelGroupEvents(host) {
     const a = window.__anima || this;
-    host.querySelectorAll('.env-model-dl-all[data-group]').forEach(btn => {
-      btn.addEventListener('click', () => a.animaModelDownload(null, btn.dataset.group));
-    });
     host.querySelectorAll('.env-model-refresh').forEach(btn => {
       btn.addEventListener('click', () => a.animaModelRefresh());
     });

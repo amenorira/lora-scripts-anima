@@ -249,6 +249,11 @@ def list_local_model_files(dest_dir: Path) -> list[dict]:
     for item in MODEL_FILES:
         repo_id, hf_path, local_name, desc, group = item[:5]
         source_page = item[5] if len(item) > 5 else None
+        component_type = next(
+            (kind for folder, kind in (("diffusion_models", "model"), ("text_encoders", "encoder"), ("vae", "vae"))
+             if folder in Path(hf_path).parts),
+            "model" if group == "Train Use" else "other",
+        )
         path = dest_dir / local_name
         exists = path.exists() and path.is_file()
         out.append(
@@ -257,6 +262,7 @@ def list_local_model_files(dest_dir: Path) -> list[dict]:
                 "desc": desc,
                 "desc_key": item[6] if len(item) > 6 else None,
                 "group": group,
+                "component_type": component_type,
                 "repo_id": repo_id,
                 "source_url": f"https://huggingface.co/{repo_id}/blob/main/{hf_path}",
                 "source_page": source_page,

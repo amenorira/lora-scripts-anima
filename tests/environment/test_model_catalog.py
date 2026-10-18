@@ -18,6 +18,8 @@ class MossModelCatalogTests(unittest.TestCase):
         self.assertEqual(sum(item["filename"].startswith("moss_image_") for item in entries), 4)
         self.assertEqual(sum(item["filename"].startswith("qwen3.5_") for item in entries), 2)
         self.assertEqual(sum(item["filename"].startswith("flux2-vae") for item in entries), 2)
+        self.assertEqual([item["component_type"] for item in entries],
+                         ["model"] * 4 + ["encoder"] * 2 + ["vae"] * 2)
         for locale in ("zh-CN", "en-US", "ja-JP"):
             messages = json.loads((root / f"frontend/i18n/{locale}.json").read_text(encoding="utf-8"))
             for item in entries:

@@ -58,6 +58,9 @@
   --success: #34d399;
   --warning: #f59e0b;
   --info: #60a5fa;
+  --env-component-model: #8db8f0;
+  --env-component-encoder: #c5a4eb;
+  --env-component-vae: #7bcabb;
 
   /* Danbooru 标签分类色（Tag Editor 词典）：深色底提高明度 */
   --tag-general: #6ba7f0;
@@ -166,4 +169,3 @@
 /* 环境管理 */
 [data-theme="dark"] .env-log { background: var(--bg-input); color: var(--text-secondary); }
 [data-theme="dark"] .env-msg-err  { background: color-mix(in srgb, var(--danger) 12%, transparent); border-color: color-mix(in srgb, var(--danger) 28%, var(--border-default)); }
-[data-theme="dark"] .env-msg-info { background: color-mix(in srgb, var(--info) 12%, transparent); border-color: color-mix(in srgb, var(--info) 28%, var(--border-default)); }

@@ -197,6 +197,7 @@ window.tagDictionaryMixin = {
   tagDictionaryReconnecting: false,
   _tagDictionaryCheckGeneration: 0,
   tagDictionaryInstallError: '',
+  tagDictionaryStatusError: false,
   tagDictionaryServer: null,      // 后端返回的安装状态：数据版本、标签数、体积、进度
   tagDictionaryPanelOpen: false,
   tagDictionaryShowTranslation: true,
@@ -206,6 +207,7 @@ window.tagDictionaryMixin = {
   /* 安装状态与 Worker 状态分开：环境页不用加载整个词典。 */
   tagDictionaryDataState() {
     if (this.tagDictionaryInstalling) return 'installing';
+    if (this.tagDictionaryStatusError) return 'error';
     if (this.tagDictionaryInstallError) return 'error';
     var server = this.tagDictionaryServer;
     // 状态都问不到（后端不通）时别再显示"读取中"：那会一直转下去
@@ -238,8 +240,9 @@ window.tagDictionaryMixin = {
   /* 环境管理页的主按钮：只管数据，下载/更新/重试 */
   tagDictionaryDataActionLabel() {
     var kind = this.tagDictionaryDataState();
+    if (!this.tagDictionaryServer || this.tagDictionaryStatusError) return this.t('environment.refresh');
     if (kind === 'installed') return this.t(this.tagDictionaryServer.update?.state === 'available'
-      || this.tagDictionaryServer.update?.state === 'unknown' ? 'tagEditor.dictUpdate' : 'environment.dictCheckUpdate');
+      ? 'tagEditor.dictUpdate' : 'environment.dictCheckUpdate');
     if (kind === 'failed' || kind === 'error') return this.t('tagEditor.dictRetry');
     return this.t('tagEditor.dictInstall');
   },
@@ -250,8 +253,14 @@ window.tagDictionaryMixin = {
   },
 
   tagDictionaryDataAction() {
+    if (!this.tagDictionaryServer || this.tagDictionaryStatusError) {
+      return this.tagDictionaryRefreshStatus().then(status => {
+        this.tagDictionaryFailed = !status;
+        this._tdRefreshPanelRow();
+      });
+    }
     if (this.tagDictionaryDataState() === 'installed'
-      && !['available', 'unknown'].includes(this.tagDictionaryServer.update?.state)) {
+      && this.tagDictionaryServer.update?.state !== 'available') {
       return this.tagDictionaryCheckUpdate(true);
     }
     this.tagDictionaryInstallError = '';
@@ -362,7 +371,8 @@ window.tagDictionaryMixin = {
     state.statusRequest = fetch(TD_STATUS_URL, { signal: AbortSignal.timeout(10000) })
       .then(function (response) { return response.ok ? response.json() : null; })
       .then(function (payload) {
-        if (!payload || payload.status !== 'success') return null;
+        if (!payload || payload.status !== 'success') throw new Error('dictionary status unavailable');
+        self.tagDictionaryStatusError = false;
         self.tagDictionaryServer = payload.data;
         if (payload.data.status === 'downloading' || payload.data.status === 'building') {
           self.tagDictionaryInstalling = true;
@@ -370,7 +380,11 @@ window.tagDictionaryMixin = {
         self._tdRefreshPanelRow();
         return payload.data;
       })
-      .catch(function () { return null; })
+      .catch(function () {
+        self.tagDictionaryStatusError = true;
+        self._tdRefreshPanelRow();
+        return null;
+      })
       .finally(function () { state.statusRequest = null; });
     return state.statusRequest;
   },

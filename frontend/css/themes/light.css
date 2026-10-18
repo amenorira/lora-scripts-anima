@@ -19,6 +19,9 @@
   --success: #10b981;
   --warning: #ea580c;
   --info: #3b82f6;
+  --env-component-model: #245da8;
+  --env-component-encoder: #7747a8;
+  --env-component-vae: #167066;
 
   /* Danbooru 标签分类色（Tag Editor 词典）：文字对比度按浅色底调过 */
   --tag-general: #1f6fd0;
