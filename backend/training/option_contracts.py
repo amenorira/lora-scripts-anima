@@ -18,7 +18,9 @@ def sample_interval_mode(config: dict) -> str:
 
 def normalize_sd_options(config: dict) -> None:
     """Keep only effective CLI options; selectors themselves remain UI-only."""
-    interval = sample_interval_mode(config)
+    interval = "none" if config.get("enable_preview") is False else sample_interval_mode(config)
+    if config.get("enable_preview") is False:
+        config.pop("sample_at_first", None)
     for key, active in (("sample_every_n_epochs", "epochs"), ("sample_every_n_steps", "steps")):
         if interval != active:
             config.pop(key, None)

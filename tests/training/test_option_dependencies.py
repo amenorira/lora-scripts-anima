@@ -37,6 +37,30 @@ class OptionDependencyTests(unittest.TestCase):
                 self.assertEqual(validate_training_config(supplied), [])
                 adapt_config(supplied)
 
+    def test_disabled_preview_clears_stale_native_triggers(self):
+        for profile in ("anima-lora", "sdxl-lora", "moss-image-lora"):
+            config = moss_config() if profile == "moss-image-lora" else valid_training_config(profile)
+            config.update(enable_preview=False, sample_every_n_epochs=2,
+                          sample_every_n_steps=100, sample_at_first=True)
+            original = copy.deepcopy(config)
+            adapted, _ = adapt_config(config)
+            self.assertEqual(config, original)
+            for key in ("sample_at_first", "sample_every_n_epochs", "sample_every_n_steps"):
+                self.assertNotIn(key, adapted)
+            self.assertEqual(validate_training_config(config), [])
+            if profile == "moss-image-lora":
+                from backend.training.step_estimator import _sd_dataset_helpers
+                _sd_dataset_helpers()
+                from library import moss_image_train_utils
+                from moss_image_train_network import setup_parser
+                args = setup_parser().parse_args([])
+                vars(args).update(adapted)
+                self.assertIsNone(args.sample_prompts)
+                with patch.object(moss_image_train_utils.os.path, "isfile") as prompt_check:
+                    for epoch, steps in ((0, 0), (None, 100), (2, 100)):
+                        moss_image_train_utils.sample_images(None, args, epoch, steps, None, None, None, None, None)
+                prompt_check.assert_not_called()
+
     def test_preview_modes_emit_only_the_selected_interval(self):
         for profile in ("anima-lora", "sdxl-lora", "moss-image-lora"):
             for mode, expected in (("epochs", {"sample_every_n_epochs": 2}),
