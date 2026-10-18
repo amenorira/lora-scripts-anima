@@ -9,7 +9,7 @@ from typing import Any
 
 PROFILE_ID = "moss-image-lora"
 GROUP = "moss_image"
-NETWORK_MODULES = ("networks.lora_generic", "networks.loha", "networks.lokr")
+NETWORK_MODULES = ("networks.lora_generic",)
 
 
 def extract_form(config: dict[str, Any]) -> dict[str, Any]:
@@ -18,6 +18,7 @@ def extract_form(config: dict[str, Any]) -> dict[str, Any]:
     known = {"rank_dropout", "module_dropout", "loraplus_lr_ratio",
              "loraplus_unet_lr_ratio", "loraplus_text_encoder_lr_ratio"}
     extra = []
+    parsed = {}
     arguments = result.pop("network_args", []) or []
     if not isinstance(arguments, list) or any(not isinstance(item, str) for item in arguments):
         raise ValueError("network_args must be a string array / network_args 必须为字符串数组")
@@ -31,14 +32,17 @@ def extract_form(config: dict[str, Any]) -> dict[str, Any]:
             value = {"true": True, "false": False}[raw.lower()] if raw.lower() in ("true", "false") else ast.literal_eval(raw)
         except (ValueError, SyntaxError):
             value = raw
-        if key in ("train_llm_adapter", "train_text_embedder"):
-            result.setdefault("train_text_embedder", value)
-        elif key in known:
-            result.setdefault(key, value)
-            if key.startswith("loraplus_"):
-                result.setdefault("enable_loraplus", True)
+        if key in known or key in ("train_llm_adapter", "train_text_embedder"):
+            parsed[key] = value
         else:
             extra.append(str(item))
+    aliases = ("train_llm_adapter", "train_text_embedder")
+    if any(key in parsed for key in aliases):
+        result.setdefault("train_text_embedder", any(str(parsed.get(key)).lower() == "true" for key in aliases))
+    for key in known & parsed.keys():
+        result.setdefault(key, parsed[key])
+        if key.startswith("loraplus_"):
+            result.setdefault("enable_loraplus", True)
     if extra:
         existing = str(result.get("network_args_custom") or "")
         result["network_args_custom"] = "\n".join(filter(None, [existing, *extra]))
@@ -93,7 +97,7 @@ def extend_fields(fields: list[dict[str, Any]]) -> None:
         "dk": "opt.network_module_networks_lora_generic", "group": GROUP,
     })
     for option in by_key["network_module"]["options"]:
-        if option["v"] == "lycoris.kohya":
+        if option["v"] in ("networks.loha", "networks.lokr", "lycoris.kohya"):
             option["group"] = ["anima", "sdxl"]
     for key in ("conv_dim", "conv_alpha", "use_tucker"):
         by_key[key]["group"] = ["anima", "sdxl"]
@@ -110,7 +114,10 @@ def extend_fields(fields: list[dict[str, Any]]) -> None:
         ("cache_text_encoder_outputs_to_disk", {"key": "convrot_int8", "type": "toggle", "default": False, "section": "performance"}),
         ("cache_text_encoder_outputs_to_disk", {"key": "text_encoder_batch_size", "type": "number", "default": 1, "min": 1, "step": 1, "section": "performance"}),
         ("convrot_int8", {"key": "convrot_int8_text_encoder", "type": "toggle", "default": False, "section": "performance"}),
-        ("convrot_int8_text_encoder", {"key": "convrot_int8_bwd", "type": "select", "default": "bf16", "section": "performance", "options": [{"v": "bf16", "l": "bf16"}, {"v": "int8", "l": "int8"}]}),
+        ("convrot_int8_text_encoder", {"key": "convrot_int8_bwd", "type": "select", "default": "bf16", "section": "performance", "options": [
+            {"v": "bf16", "l": "bf16", "dk": "opt.convrot_int8_bwd_bf16"},
+            {"v": "int8", "l": "int8", "dk": "opt.convrot_int8_bwd_int8"},
+        ]}),
         ("sample_flow_shift", {"key": "sample_uncond_skip_layers", "type": "text", "default": "22", "section": "preview", "keep_empty": True, "show_if": {"key": "enable_preview", "eq": True}}),
     ]
     for after, field in additions:
@@ -124,7 +131,7 @@ def extend_fields(fields: list[dict[str, Any]]) -> None:
 def validate_config(config: dict[str, Any]) -> list[str]:
     errors = []
     if config.get("network_module") not in NETWORK_MODULES:
-        errors.append("MOSS-Image: use networks.lora_generic, networks.loha or networks.lokr / 请选择 MOSS 支持的原生网络模块")
+        errors.append("MOSS-Image: only networks.lora_generic is supported / MOSS 目前仅支持原生 LoRA；LoHa、LoKr 和 LyCORIS 暂不可用")
     cache = config.get("cache_text_encoder_outputs") is True or config.get("cache_text_encoder_outputs_to_disk") is True
     if cache and (config.get("network_train_unet_only") is not True or config.get("network_train_text_encoder_only") is True):
         errors.append("MOSS-Image: Text Encoder caching requires network_train_unet_only / 文本缓存要求仅训练 DiT")
@@ -176,22 +183,23 @@ def validate_captions(config: dict[str, Any]) -> list[str]:
 
     _, glob_images, _ = _sd_dataset_helpers()
     from library.dataset import split_caption_candidates
+    from library.dreambooth_dataset import read_caption
 
     cache = config.get("cache_text_encoder_outputs") or config.get("cache_text_encoder_outputs_to_disk")
     separator = str(config.get("multiline_caption_separator", "---===---"))
     errors = []
     for subset in build_sd_scripts_dataset_config(config, {})["datasets"][0]["subsets"]:
         for image in glob_images(subset["image_dir"], "*"):
-            caption = Path(image).with_suffix(str(config.get("caption_extension") or ".txt"))
-            if not caption.is_file():
-                continue
             try:
-                candidates = split_caption_candidates(caption.read_text(encoding="utf-8"), separator)
-            except (OSError, UnicodeError, ValueError) as exc:
-                errors.append(f"Invalid caption / 描述文件无效: {caption}: {exc}")
+                caption = read_caption(str(image), str(config.get("caption_extension") or ".txt"), False, True)
+                if caption is None:
+                    continue
+                candidates = split_caption_candidates(caption, separator)
+            except (OSError, UnicodeError, ValueError, AssertionError) as exc:
+                errors.append(f"Invalid caption for image / 图片描述无效: {image}: {exc}")
                 return errors
             if cache and len(candidates) > 1:
-                errors.append(f"Multiple caption candidates require disabling both Text Encoder caches / 多候选描述需要关闭内存和磁盘文本缓存: {caption}")
+                errors.append(f"Multiple caption candidates require disabling both Text Encoder caches / 多候选描述需要关闭内存和磁盘文本缓存: {image}")
                 return errors
     return errors
 

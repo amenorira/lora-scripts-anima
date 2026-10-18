@@ -94,7 +94,8 @@ window.trainingTomlMixin = {
     ];
     const isManagedLoraplusArg = item => {
       const key = String(item).split('=', 1)[0].trim();
-      return LORAPLUS_ARG_KEYS.includes(key);
+      return LORAPLUS_ARG_KEYS.includes(key) || (trainType === 'moss-image-lora'
+        && ['train_llm_adapter', 'train_text_embedder'].includes(key));
     };
     const netArgsArr = [];
     const netCustom = this.form.network_args_custom;

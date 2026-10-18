@@ -878,7 +878,7 @@ def _to_camel(field: dict) -> dict:
         )]
     if key == "train_text_embedder":
         result["networkArg"] = "train_llm_adapter"
-        result["networkModules"] = ["networks.lora_generic", "networks.loha", "networks.lokr"]
+        result["networkModules"] = ["networks.lora_generic"]
     return result
 
 

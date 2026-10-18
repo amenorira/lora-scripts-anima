@@ -1,22 +1,25 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { loadFrontend } = require('./helpers.cjs');
+const { loadFrontend, readRepo } = require('./helpers.cjs');
 
 function application() {
-  const context = loadFrontend(['constants', 'utils', 'config', 'training-core', 'training-toml'], {
-    window: { t: (_key, fallback) => fallback }, document: { getElementById: () => null },
+  const messages = JSON.parse(readRepo('frontend/i18n/zh-CN.json'));
+  const t = (key, fallback) => key.split('.').reduce((value, part) => value?.[part], messages) || fallback || key;
+  const context = loadFrontend(['constants', 'utils', 'config', 'training-core', 'training-shape-preview', 'training-toml'], {
+    window: { t }, document: { getElementById: () => null },
     fetch: async () => { throw new Error('Use generated schema'); },
     setTimeout, clearTimeout,
+    btoa, TextEncoder,
   });
   const w = context.window;
-  const app = Object.assign({}, w.utilsMixin, w.trainingCoreMixin, w.trainingTomlMixin, {
-    t: key => key, _renderTomlPreview() {},
+  const app = Object.assign({}, w.utilsMixin, w.trainingCoreMixin, w.trainingShapePreviewMixin, w.trainingTomlMixin, {
+    t, _renderTomlPreview() {},
   });
   app.form = app._buildFormDefaults('moss-image-lora');
   return { app, window: w };
 }
 
-test('MOSS retains its selected native algorithm across profile switches', () => {
+test('MOSS discards unsupported saved algorithms across profile switches', () => {
   const { app } = application();
   Object.assign(app, {
     formDefaults: {}, _profileFormDrafts: {}, _profileFieldSources: {},
@@ -29,8 +32,39 @@ test('MOSS retains its selected native algorithm across profile switches', () =>
     app.switchTrainType('anima-lora');
     assert.equal(app.form.network_module, 'networks.lora_anima');
     app.switchTrainType('moss-image-lora');
-    assert.equal(app.form.network_module, module);
+    assert.equal(app.form.network_module, 'networks.lora_generic');
   }
+});
+
+test('MOSS only offers supported LoRA and places backward mode descriptions inside options', () => {
+  const { app } = application();
+  const options = html => Buffer.from(html.match(/animaSelect\('([^']+)'/)[1], 'base64').toString('utf8');
+  const network = app.renderField(app.findFieldDef('network_module'));
+  assert.match(options(network), /networks.lora_generic/);
+  assert.doesNotMatch(options(network), /networks\.(loha|lokr)/);
+  const backward = app.renderField(app.findFieldDef('convrot_int8_bwd'));
+  assert.match(options(backward), /梯度精度更高/);
+  assert.match(options(backward), /需要 CUDA 和 Triton/);
+  assert.match(backward, /anima-select-option-desc/);
+  for (const profile of ['anima-lora', 'sdxl-lora']) {
+    app.form = app._buildFormDefaults(profile);
+    const html = app.renderField(app.findFieldDef('network_module'));
+    assert.match(options(html), /networks.loha/);
+    assert.match(options(html), /networks.lokr/);
+    assert.match(options(html), /lycoris.kohya/);
+    assert.doesNotMatch(options(html), /networks.lora_generic/);
+  }
+});
+
+test('MOSS multiline prompts stay one sample and raw aliases cannot override the preview switch', () => {
+  const { app } = application();
+  app.form.network_args_custom = 'train_text_embedder=true\ntrain_llm_adapter=true';
+  app.updateToml();
+  assert.doesNotMatch(app.tomlRaw, /train_text_embedder=true|train_llm_adapter=true/);
+  assert.match(app.tomlRaw, /train_llm_adapter=false/);
+  assert.equal(app._positivePromptCountHint('positive_prompts'), '');
+  app.form.model_train_type = 'anima-lora';
+  assert.match(app._positivePromptCountHint('positive_prompts'), /samplePromptsCountHint/);
 });
 
 test('MOSS starts with isolated models, native LoRA and its own training and sampling defaults', () => {
@@ -44,6 +78,17 @@ test('MOSS starts with isolated models, native LoRA and its own training and sam
   assert.equal(app.form.gradient_checkpointing, true);
   assert.equal(app.form.timestep_sampling, 'sigma');
   assert.equal(app.form.logit_mean, -1.09);
+  assert.equal(app.form.logit_std, 0.95);
+  assert.equal(app.form.discrete_flow_shift, 1);
+  assert.equal(app.form.weighting_scheme, 'logit_normal');
+  assert.equal(app.form.network_dim, 16);
+  assert.equal(app.form.network_alpha, 16);
+  assert.equal(app.form.enable_multiline_caption, true);
+  assert.equal(app.form.train_text_embedder, false);
+  assert.equal(app.form.convrot_int8, false);
+  assert.equal(app.form.convrot_int8_text_encoder, false);
+  assert.equal(app.form.convrot_int8_bwd, 'bf16');
+  assert.equal(app.form.sample_uncond_skip_layers, '22');
   assert.equal(app.form.sample_steps, 50);
   assert.equal(app.form.sample_cfg, 3);
   assert.equal(app.form.sample_flow_shift, 5);

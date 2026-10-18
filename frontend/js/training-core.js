@@ -253,8 +253,7 @@ window.trainingCoreMixin = {
 
     // A runtime profile owns its network module. Krea's module is musubi
     // specific and must never inherit an sd-scripts or LyCORIS selection.
-    const targetMod = v === 'moss-image-lora' && ['networks.lora_generic', 'networks.loha', 'networks.lokr'].includes(this.form.network_module)
-      ? this.form.network_module : this._defaultNetworkModule(v);
+    const targetMod = this._defaultNetworkModule(v);
     if (this.form.network_module !== targetMod) this.form.network_module = targetMod;
     this._syncKrea2CacheDir();
     this._captureProfileDraft(v, this.form, newDefaults);
@@ -529,7 +528,9 @@ window.trainingCoreMixin = {
     window.getVisibleSections(trainType).forEach(section => {
       section.fields.forEach(field => {
         if (field.type !== 'select' || !Array.isArray(field.options) || !field.options.length) return;
-        const validValues = field.options.map(option => option.v);
+        const group = window.TRAIN_GROUP_MAP?.[trainType];
+        const validValues = field.options.filter(option => !group || !option.group || option.group === 'all'
+          || (Array.isArray(option.group) ? option.group.includes(group) : option.group === group)).map(option => option.v);
         if (!validValues.includes(target[field.key])) {
           target[field.key] = defaults[field.key] ?? validValues[0];
         }
@@ -704,14 +705,12 @@ window.trainingCoreMixin = {
     if (this.form.model_train_type === 'krea2-lora') {
       this.form.network_module = 'networks.lora_krea2';
       this._applyKrea2ModelDefaults(this.form, defaults);
-    } else if (this.form.model_train_type === 'moss-image-lora' && !['networks.lora_generic', 'networks.loha', 'networks.lokr'].includes(this.form.network_module)) {
+    } else if (this.form.model_train_type === 'moss-image-lora') {
       this.form.network_module = 'networks.lora_generic';
     } else if (this.form.model_train_type === 'anima-lora' && this.form.network_module === 'networks.lora') {
       this.form.network_module = 'networks.lora_anima';
     } else if (this.form.model_train_type !== 'anima-lora' && ['networks.lora_anima', 'networks.lora_generic'].includes(this.form.network_module)) {
-      if (this.form.model_train_type !== 'moss-image-lora') {
       this.form.network_module = 'networks.lora';
-      }
     }
     this.formDefaults = { ...defaults };
     this.regApplyPendingTrainingPath?.();
@@ -1302,9 +1301,7 @@ window.trainingCoreMixin = {
         defaults.dataset_cache_dir = cacheDir;
       }
       this._normalizeProfileSelectValues(trainType, defaults, warmForm);
-      if (trainType !== 'moss-image-lora' || !['networks.lora_generic', 'networks.loha', 'networks.lokr'].includes(warmForm.network_module)) {
-        warmForm.network_module = this._defaultNetworkModule(trainType);
-      }
+      warmForm.network_module = this._defaultNetworkModule(trainType);
       this.form = warmForm;
       this.formDefaults = { ...defaults };
       this._activeTrainType = trainType;
@@ -2990,6 +2987,7 @@ window.trainingCoreMixin = {
 
   // positive prompts line count hint: real-time sample count below textarea
   _positivePromptCountHint(dataKey) {
+    if (this.form.model_train_type === 'moss-image-lora') return '';
     var h = [];
     h.push('<div class="field-hint field-hint-warn" x-show="(form.');
     h.push(dataKey);
@@ -3843,7 +3841,8 @@ window.trainingCoreMixin = {
       const hasShuffleConflict = this.form.shuffle_caption === true;
       const hasTagDropoutConflict = Number(this.form.caption_tag_dropout_rate || 0) > 0;
       const hasSdxlDropoutConflict = this.form.model_train_type === 'sdxl-lora' && Number(this.form.caption_dropout_rate || 0) > 0;
-      if (hasShuffleConflict || hasTagDropoutConflict || hasSdxlDropoutConflict) {
+      const hasMossEpochDropoutConflict = this.form.model_train_type === 'moss-image-lora' && Number(this.form.caption_dropout_every_n_epochs || 0) > 0;
+      if (hasShuffleConflict || hasTagDropoutConflict || hasSdxlDropoutConflict || hasMossEpochDropoutConflict) {
         this.toast(this.t('field.cache_text_encoder_outputsLocked'), 'warning');
         this.form[key] = false;
         return;

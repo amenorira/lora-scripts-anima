@@ -315,7 +315,8 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     # ── 2. 规范化 network_args ─────────────────────────────
     train_text_embedder = source.pop("train_text_embedder", None)
     if is_moss and train_text_embedder is not None:
-        network_args = list(source.get("network_args") or [])
+        network_args = _remove_key_value_args(list(source.get("network_args") or []),
+                                              {"train_llm_adapter", "train_text_embedder"})
         _set_key_value_arg(network_args, "train_llm_adapter", train_text_embedder is True)
         source["network_args"] = network_args
     merged_network_args: list[str] = []

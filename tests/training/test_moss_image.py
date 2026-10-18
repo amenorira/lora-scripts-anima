@@ -60,6 +60,30 @@ class MossImageConfigTests(unittest.TestCase):
         supported = {action.dest for action in parser._actions}
         self.assertEqual(set(adapted) - supported, set())
 
+    def test_ui_defaults_survive_native_toml_loading(self):
+        from backend.training import toml_writer
+        from backend.training.step_estimator import _sd_dataset_helpers
+        _sd_dataset_helpers()
+        from library.args import read_config_from_file
+        from moss_image_train_network import setup_parser
+
+        config = moss_config()
+        adapted, _ = adapt_config(config)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "training.toml"
+            path.write_text(toml_writer.dumps(adapted), encoding="utf-8")
+            parser = setup_parser()
+            argv = ["moss_image_train_network.py", "--config_file", str(path)]
+            with patch("sys.argv", argv):
+                loaded = read_config_from_file(parser.parse_args(argv[1:]), parser)
+        for key in ("network_dim", "network_alpha", "network_module", "gradient_checkpointing",
+                    "timestep_sampling", "weighting_scheme", "logit_mean", "logit_std",
+                    "discrete_flow_shift", "lr_scheduler", "mixed_precision", "moss_max_token_length",
+                    "enable_multiline_caption", "multiline_caption_separator", "convrot_int8",
+                    "convrot_int8_text_encoder", "convrot_int8_bwd", "sample_uncond_skip_layers"):
+            with self.subTest(key=key):
+                self.assertEqual(getattr(loaded, key), config[key])
+
     def test_anima_and_sdxl_parameters_do_not_leak(self):
         adapted, _ = adapt_config(moss_config(qwen3="anima.safetensors", qwen3_max_token_length=512,
                                              vae_use_2d=True, min_snr_gamma=5, noise_offset=0.1))
@@ -76,6 +100,11 @@ class MossImageConfigTests(unittest.TestCase):
             resolve_training_profile(config)
         with self.assertRaises(ValueError):
             adapt_config(config)
+        for module in ("networks.loha", "networks.lokr"):
+            with self.subTest(module=module):
+                self.assertTrue(validate_training_config(moss_config(network_module=module)))
+                with self.assertRaises(ValueError):
+                    adapt_config(moss_config(network_module=module))
 
     def test_bounds_and_compile_block_swap_contract(self):
         self.assertEqual(validate_training_config(moss_config(blocks_to_swap=40, resolution="1040,768")), [])
@@ -128,6 +157,16 @@ class MossImageConfigTests(unittest.TestCase):
         self.assertIn("train_llm_adapter=True", adapted["network_args"])
         self.assertIn("network_reg_dims=layers.*=8", adapted["network_args"])
 
+    def test_embedder_aliases_round_trip_and_ui_can_disable_raw_alias(self):
+        restored = extract_form({"network_args": ["train_llm_adapter=False", "train_text_embedder=True",
+                                                  "rank_dropout=0.1", "rank_dropout=0.2"]})
+        self.assertIs(restored["train_text_embedder"], True)
+        self.assertEqual(restored["rank_dropout"], 0.2)
+        adapted, _ = adapt_config(moss_config(train_text_embedder=False,
+                                              network_args_custom="train_text_embedder=true"))
+        self.assertNotIn("train_text_embedder=true", adapted["network_args"])
+        self.assertIn("train_llm_adapter=False", adapted["network_args"])
+
     def test_shard_preflight_checks_all_required_files(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -155,6 +194,17 @@ class MossImageConfigTests(unittest.TestCase):
             config.update(cache_text_encoder_outputs=False, cache_text_encoder_outputs_to_disk=False)
             self.assertEqual(validate_captions(config), [])
 
+    def test_caption_preflight_matches_upstream_face_crop_fallback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            subset = Path(directory) / "1_character"
+            subset.mkdir()
+            Image.new("RGB", (16, 16)).save(subset / "image_0_0_16_16.png")
+            caption = subset / "image.txt"
+            caption.write_text("first\n---===---\nsecond", encoding="utf-8")
+            self.assertTrue(validate_captions(moss_config(train_data_dir=directory)))
+            caption.write_text("", encoding="utf-8")
+            self.assertTrue(validate_captions(moss_config(train_data_dir=directory)))
+
     def test_moss_te_cache_is_checked_and_deleted_without_touching_latents(self):
         import numpy as np
         with tempfile.TemporaryDirectory() as directory:
@@ -171,13 +221,39 @@ class MossImageConfigTests(unittest.TestCase):
 
 
 class MossImageNativeNetworkTests(unittest.TestCase):
+    def test_embedder_weights_reload_for_supported_network(self):
+        import torch
+        from backend.training.step_estimator import _sd_dataset_helpers
+        _sd_dataset_helpers()
+        from library.moss_image_models import MossImage
+
+        def model():
+            return MossImage(dim=64, ffn_dim=96, num_heads=4, num_layers=2,
+                             text_dim=24, freq_dim=16, latent_channels=8)
+
+        for module_name in ("networks.lora_generic",):
+            with self.subTest(module=module_name), tempfile.TemporaryDirectory() as directory:
+                module = importlib.import_module(module_name)
+                source = model()
+                network = module.create_network(1.0, 4, 4, None, [None], source, train_llm_adapter="true")
+                self.assertTrue(any("text_embedder" in layer.lora_name for layer in network.unet_loras))
+                network.apply_to([None], source, apply_text_encoder=False)
+                path = str(Path(directory) / "network.safetensors")
+                network.save_weights(path, torch.float32, {})
+                for inference in (False, True):
+                    target = model()
+                    restored, weights = module.create_network_from_weights(1.0, path, None, [None], target,
+                                                                           for_inference=inference)
+                    restored.apply_to([None], target, apply_text_encoder=False)
+                    restored.load_state_dict(weights, strict=True)
+
     def test_small_native_networks_produce_gradients(self):
         import torch
         from backend.training.step_estimator import _sd_dataset_helpers
         _sd_dataset_helpers()
         from library.moss_image_models import MossImage
 
-        for module_name in ("networks.lora_generic", "networks.loha", "networks.lokr"):
+        for module_name in ("networks.lora_generic",):
             with self.subTest(module=module_name):
                 torch.manual_seed(42)
                 model = MossImage(dim=64, ffn_dim=96, num_heads=4, num_layers=2,
