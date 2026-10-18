@@ -303,10 +303,7 @@ window.trainingCoreMixin = {
       }
     }); });
     defaults.model_train_type = trainType;
-    // Adjust network_module default based on train type
-    if (trainType === 'anima-lora') defaults.network_module = 'networks.lora_anima';
-    else if (trainType === 'moss-image-lora') defaults.network_module = 'networks.lora_generic';
-    else if (trainType === 'krea2-lora') defaults.network_module = 'networks.lora_krea2';
+    defaults.network_module = this._defaultNetworkModule(trainType);
     return defaults;
   },
 

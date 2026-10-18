@@ -19,10 +19,6 @@ const ENV_MODEL_GROUPS = {
   'Train Use': { slot: 'trainUse', titleKey: 'animaModel.trainUseTitle', titleFallback: 'Additional Models', fallbackRepo: 'ame-la/train_use_models', requiredComponents: ['model'] },
 };
 const ENV_MODEL_COMPONENT_KEYS = { model: 'componentModel', encoder: 'componentEncoder', vae: 'componentVae', other: 'componentOther' };
-const ENV_MODEL_DESCRIPTION_KEYS = {
-  'Anima': { 'anima-base-v1.0.safetensors': 'animaBase', 'qwen_3_06b_base.safetensors': 'animaEncoder', 'qwen_image_vae.safetensors': 'animaVae' },
-  'Krea 2': { 'krea2_raw_fp8_scaled.safetensors': 'kreaRaw', 'krea2_turbo_fp8_scaled.safetensors': 'kreaTurbo', 'qwen3vl_4b_fp8_scaled.safetensors': 'kreaEncoder', 'qwen_image_vae.safetensors': 'kreaVae' },
-};
 
 window.environmentRenderMixin = {
   renderEnvironment() {
@@ -977,9 +973,7 @@ window.environmentRenderMixin = {
 
       const sizeHtml = f.exists ? `<span class="env-file-size">${this._humanBytes((f.size_gb||0)*1073741824)}</span>` : '';
       const destPath = f.dest_path || (destDir + f.filename);
-      const descriptionKey = ENV_MODEL_DESCRIPTION_KEYS[modelGroup]?.[f.filename];
-      const description = f.desc_key ? this.t(f.desc_key, f.desc)
-        : descriptionKey ? T('animaModel.' + descriptionKey) : f.desc || '';
+      const description = f.desc_key ? this.t(f.desc_key, f.desc) : f.desc || '';
       const originHtml = f.source_page
         ? ` <a href="${this.escapeAttr(f.source_page)}" target="_blank" rel="noopener" class="env-link" title="${T('animaModel.openOriginalPage','Open the original model page')}">${T('animaModel.originalPage','Original page')} &#8599;</a>`
         : '';
@@ -1188,16 +1182,11 @@ window.environmentRenderMixin = {
 
   _bindXfEvents(el) {
     const a = window.__anima || this;
-    const xfInstallBtn = el.querySelector('#xf-install-btn'), xfRefreshBtn = el.querySelector('#xf-refresh-btn');
-    if (xfInstallBtn) xfInstallBtn.addEventListener('click', () => a.xfInstall());
-    if (xfRefreshBtn) xfRefreshBtn.addEventListener('click', () => a.xfRefresh());
+    el.querySelector('#xf-refresh-btn')?.addEventListener('click', () => a.xfRefresh());
   },
 
   _bindTritonEvents(el) {
     const a = window.__anima || this;
-    const installBtn = el.querySelector('#triton-install-btn'), reinstallBtn = el.querySelector('#triton-reinstall-btn'), refreshBtn = el.querySelector('#triton-refresh-btn');
-    if (installBtn) installBtn.addEventListener('click', () => a.tritonInstall());
-    if (reinstallBtn) reinstallBtn.addEventListener('click', () => a.tritonInstall());
-    if (refreshBtn) refreshBtn.addEventListener('click', () => a.tritonRefresh());
+    el.querySelector('#triton-refresh-btn')?.addEventListener('click', () => a.tritonRefresh());
   },
 };

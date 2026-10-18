@@ -56,6 +56,17 @@ LYCORIS_KOHYA_UI_FIELDS = (
 )
 
 
+def _filter_model_fields(source: dict[str, Any]) -> None:
+    """移除其他训练类型的字段，避免历史表单残留进入 TOML。"""
+    train_group = _TRAIN_TYPE_GROUP.get(str(source.get("model_train_type", "")))
+    if not train_group:
+        return
+    for key in list(source):
+        group = _FIELD_GROUP_MAP.get(key)
+        if group and group != "all" and train_group not in (group if isinstance(group, list) else [group]):
+            source.pop(key)
+
+
 def _is_empty_value(value: Any) -> bool:
     """检测空值/无效值：None、NaN、空字符串、'undefined'、'null'
     注意：布尔值 False 不是空值，toggle 关闭时应显式传入 false"""
@@ -275,10 +286,7 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
         from backend.training.moss_image import validate_config
 
         source.pop("vae_use_2d", None)
-        for key in list(source):
-            group = _FIELD_GROUP_MAP.get(key)
-            if group and group != "all" and "moss_image" not in (group if isinstance(group, list) else [group]):
-                source.pop(key)
+        _filter_model_fields(source)
         source.setdefault("network_module", "networks.lora_generic")
         errors = validate_config(source)
         if errors:
@@ -539,19 +547,9 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
                 "consider switching to eager / Windows 上 inductor 后端可能不稳定，建议切换为 eager"
             )
 
-    # ── 5.14. 按 train_type 兜底过滤 group 不匹配字段 ───────────
-    # 前端 getVisibleSections 已按 group 字段过滤，此处为后端防线：防历史 form 残留值或裸 POST 旁路
-    # 把 SDXL-only 死参数（noise_offset/min_snr/multires_noise_* 等）带入 anima 训练。
-    # 不报警（正常流程根本不该有）；仅在 group 不匹配时静默 pop，避免污染 TOML 与训练产物元数据。
-    train_group = _TRAIN_TYPE_GROUP.get(str(source.get("model_train_type", "")))
-    if train_group:
-        for key in list(source.keys()):
-            field_group = _FIELD_GROUP_MAP.get(key)
-            if not field_group or field_group == "all":
-                continue
-            groups = [field_group] if isinstance(field_group, str) else list(field_group)
-            if train_group not in groups:
-                source.pop(key, None)
+    # MOSS 已在专属校验前过滤；其他训练类型保留归一化后的过滤时机。
+    if not is_moss:
+        _filter_model_fields(source)
 
     # Filter after optimizer normalization, which may force a constant scheduler.
     scheduler = source.get("lr_scheduler", "constant")

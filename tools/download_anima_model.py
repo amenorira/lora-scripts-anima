@@ -34,12 +34,12 @@ from backend.utils.hf_download import download_hf_file, cleanup_temp  # noqa: E4
 
 
 # ── Anima 核心文件清单 ──
-# (HF repo 内路径, 本地文件名, 用途说明)
+# (HF repo 内路径, 本地文件名, 用途说明, 三语言文案键)
 # HF 仓库里文件在 split_files/ 子目录下，本地统一落到 models/ 根目录。
-ANIMA_FILES: list[tuple[str, str, str]] = [
-    ("split_files/diffusion_models/anima-base-v1.0.safetensors", "anima-base-v1.0.safetensors", "底模 / Base diffusion model"),
-    ("split_files/text_encoders/qwen_3_06b_base.safetensors",   "qwen_3_06b_base.safetensors",   "Text encoder (Qwen3-0.6B)"),
-    ("split_files/vae/qwen_image_vae.safetensors",               "qwen_image_vae.safetensors",     "VAE"),
+_ANIMA_FILES: list[tuple[str, str, str, str]] = [
+    ("split_files/diffusion_models/anima-base-v1.0.safetensors", "anima-base-v1.0.safetensors", "底模 / Base diffusion model", "animaBase"),
+    ("split_files/text_encoders/qwen_3_06b_base.safetensors",   "qwen_3_06b_base.safetensors",   "Text encoder (Qwen3-0.6B)", "animaEncoder"),
+    ("split_files/vae/qwen_image_vae.safetensors",               "qwen_image_vae.safetensors",     "VAE", "animaVae"),
 ]
 
 # anima_comparison.json 是 ComfyUI 工作流文件，训练不需要，不下。
@@ -49,26 +49,30 @@ ANIMA_REPO_ID = "circlestone-labs/Anima"
 KREA2_REPO_ID = "Comfy-Org/Krea-2"
 MOSS_REPO_ID = "Comfy-Org/MOSS-Image"
 
-KREA2_FILES: list[tuple[str, str, str]] = [
+_KREA2_FILES: list[tuple[str, str, str, str]] = [
     (
         "diffusion_models/krea2_raw_fp8_scaled.safetensors",
         "krea2_raw_fp8_scaled.safetensors",
         "Krea 2 训练底模 / Training model",
+        "kreaRaw",
     ),
     (
         "diffusion_models/krea2_turbo_fp8_scaled.safetensors",
         "krea2_turbo_fp8_scaled.safetensors",
         "Krea 2 推理模型 / Inference model",
+        "kreaTurbo",
     ),
     (
         "text_encoders/qwen3vl_4b_fp8_scaled.safetensors",
         "qwen3vl_4b_fp8_scaled.safetensors",
         "文本编码器 / Text encoder (Qwen3-VL-4B FP8 scaled)",
+        "kreaEncoder",
     ),
     (
         "vae/qwen_image_vae.safetensors",
         "qwen_image_vae.safetensors",
         "VAE（与 Anima 共用本地文件） / Shared with Anima",
+        "kreaVae",
     ),
 ]
 
@@ -101,15 +105,18 @@ TRAIN_USE_FILES: list[tuple[str, str, str, str, str, str]] = [
 
 # (HF repo, HF 路径, 本地文件名, 用途说明, UI 分组 [, 原始出处页面, 三语言文案键])
 MODEL_FILES: list[tuple] = [
-    (ANIMA_REPO_ID, hf_path, local_name, desc, "Anima")
-    for hf_path, local_name, desc in ANIMA_FILES
-] + [
-    (KREA2_REPO_ID, hf_path, local_name, desc, "Krea 2")
-    for hf_path, local_name, desc in KREA2_FILES
-] + [
-    (MOSS_REPO_ID, hf_path, local_name, desc, "MOSS-Image", None, f"environment.animaModel.{desc_key}")
-    for hf_path, local_name, desc, desc_key in MOSS_FILES
+    (repo_id, hf_path, local_name, desc, group, None, f"environment.animaModel.{desc_key}")
+    for repo_id, group, files in (
+        (ANIMA_REPO_ID, "Anima", _ANIMA_FILES),
+        (KREA2_REPO_ID, "Krea 2", _KREA2_FILES),
+        (MOSS_REPO_ID, "MOSS-Image", MOSS_FILES),
+    )
+    for hf_path, local_name, desc, desc_key in files
 ] + TRAIN_USE_FILES
+
+# 保持下载函数和 CLI 使用的三元组格式，翻译键只供模型清单 UI 使用。
+ANIMA_FILES = [item[:3] for item in _ANIMA_FILES]
+KREA2_FILES = [item[:3] for item in _KREA2_FILES]
 
 
 def _normalize_file(
