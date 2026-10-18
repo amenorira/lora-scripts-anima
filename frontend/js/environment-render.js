@@ -15,6 +15,7 @@
 const ENV_MODEL_GROUPS = {
   'Anima': { slot: 'animaModel', titleKey: 'animaModel.animaTitle', titleFallback: 'Anima Models', fallbackRepo: 'circlestone-labs/Anima' },
   'Krea 2': { slot: 'krea2', titleKey: 'animaModel.krea2Title', titleFallback: 'Krea 2 Models', fallbackRepo: 'Comfy-Org/Krea-2' },
+  'MOSS-Image': { slot: 'moss', titleKey: 'animaModel.mossTitle', titleFallback: 'MOSS-Image Models', fallbackRepo: 'Comfy-Org/MOSS-Image', noteKey: 'animaModel.mossNote' },
   'Train Use': { slot: 'trainUse', titleKey: 'animaModel.trainUseTitle', titleFallback: 'Additional Models', fallbackRepo: 'ame-la/train_use_models' },
 };
 
@@ -46,6 +47,7 @@ window.environmentRenderMixin = {
       musubi: this._renderMusubiRow(T),
       animaModel: this._renderModelGroup(T, 'Anima'),
       krea2: this._renderModelGroup(T, 'Krea 2'),
+      moss: this._renderModelGroup(T, 'MOSS-Image'),
       trainUse: this._renderModelGroup(T, 'Train Use'),
       dictionary: this._renderDictionaryRow(T),
     };
@@ -101,6 +103,7 @@ window.environmentRenderMixin = {
       +     '<div class="env-models-grid">'
       +       '<div data-env-slot="animaModel"></div>'
       +       '<div data-env-slot="krea2"></div>'
+      +       '<div data-env-slot="moss"></div>'
       +       '<div data-env-slot="trainUse"></div>'
       +     '</div>'
       +   '</div>'
@@ -779,6 +782,7 @@ window.environmentRenderMixin = {
 
     let body = '';
     if (groupError) body += this._renderErrorBar(T, groupError, 'animaModelLog');
+    if (view.noteKey) body += `<div class="env-msg env-msg-info">${this.esc(T(view.noteKey))}</div>`;
 
     // 整体批量进度（下载中显示）
     if (groupBusy && aggregate) {
@@ -856,7 +860,7 @@ window.environmentRenderMixin = {
           <span class="env-file-status">${statusHtml}</span>
           <span class="env-file-action">${actionHtml}</span>
         </div>
-        <div class="env-file-sub">${this.esc(f.desc || '')}${originHtml}<span class="env-file-dest">${this.esc(destPath)}</span></div>
+        <div class="env-file-sub">${this.esc(f.desc_key ? this.t(f.desc_key, f.desc) : (f.desc || ''))}${originHtml}<span class="env-file-dest">${this.esc(destPath)}</span></div>
         ${progressHtml}
       </div>`;
     }
@@ -894,7 +898,7 @@ window.environmentRenderMixin = {
     if (slot === 'overview') this._bindOverviewEvents(host);
     else if (slot === 'xf') this._bindXfEvents(host);
     else if (slot === 'triton') this._bindTritonEvents(host);
-    else if (slot === 'animaModel' || slot === 'krea2' || slot === 'trainUse') this._bindModelGroupEvents(host);
+    else if (slot === 'animaModel' || slot === 'krea2' || slot === 'moss' || slot === 'trainUse') this._bindModelGroupEvents(host);
   },
 
   // 行尾"详情"按钮：显式开合行下展开面板（行本身不再可点击）

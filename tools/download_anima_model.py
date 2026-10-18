@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """训练模型下载工具（薄封装）。
 
-从 Hugging Face Hub 下载 lora-scripts-anima 所需的 Anima / Krea 2 模型文件
+从 Hugging Face Hub 下载 lora-scripts-anima 所需的 Anima / Krea 2 / MOSS-Image 模型文件
 落到本地 `models/` 目录，供训练直接 `pretrained_model_name_or_path` 等字段引用。
 
 本文件只保留产品模型清单、批量下载编排、本地扫描和 CLI，
@@ -47,6 +47,7 @@ ANIMA_FILES: list[tuple[str, str, str]] = [
 # HF 仓库
 ANIMA_REPO_ID = "circlestone-labs/Anima"
 KREA2_REPO_ID = "Comfy-Org/Krea-2"
+MOSS_REPO_ID = "Comfy-Org/MOSS-Image"
 
 KREA2_FILES: list[tuple[str, str, str]] = [
     (
@@ -71,6 +72,19 @@ KREA2_FILES: list[tuple[str, str, str]] = [
     ),
 ]
 
+# (HF 路径, 本地文件名, 日志说明, 三语言文案键)
+# 只列训练核心兼容的格式；W4A8 GPTQ 文本编码器不受支持。
+MOSS_FILES: list[tuple[str, str, str, str]] = [
+    ("diffusion_models/moss_image_base_bf16.safetensors", "moss_image_base_bf16.safetensors", "MOSS-Image Base BF16", "mossBaseBf16"),
+    ("diffusion_models/moss_image_base_int8_convrot.safetensors", "moss_image_base_int8_convrot.safetensors", "MOSS-Image Base ConvRot INT8", "mossBaseInt8"),
+    ("diffusion_models/moss_image_sft_bf16.safetensors", "moss_image_sft_bf16.safetensors", "MOSS-Image SFT BF16", "mossSftBf16"),
+    ("diffusion_models/moss_image_sft_int8_convrot.safetensors", "moss_image_sft_int8_convrot.safetensors", "MOSS-Image SFT ConvRot INT8", "mossSftInt8"),
+    ("text_encoders/qwen3.5_9b_bf16.safetensors", "qwen3.5_9b_bf16.safetensors", "Qwen3.5-9B BF16", "mossTextBf16"),
+    ("text_encoders/qwen3.5_9b_int8_convrot.safetensors", "qwen3.5_9b_int8_convrot.safetensors", "Qwen3.5-9B ConvRot INT8", "mossTextInt8"),
+    ("vae/flux2-vae.safetensors", "flux2-vae.safetensors", "FLUX.2 VAE", "mossVae"),
+    ("vae/flux2-vae_small.safetensors", "flux2-vae_small.safetensors", "FLUX.2 Small VAE", "mossVaeSmall"),
+]
+
 # ── 附加模型（自用 HF 仓库，与 ame-la/train_use_models 的 index.json 保持对应）──
 # 前置字段同 MODEL_FILES： (HF repo, HF 路径, 本地文件名, 用途说明, UI 分组)
 # 最后一列是可选字段：原始出处页面（Civitai 等），无则省略。
@@ -85,13 +99,16 @@ TRAIN_USE_FILES: list[tuple[str, str, str, str, str, str]] = [
     ),
 ]
 
-# (HF repo, HF 路径, 本地文件名, 用途说明, UI 分组 [, 原始出处页面])
+# (HF repo, HF 路径, 本地文件名, 用途说明, UI 分组 [, 原始出处页面, 三语言文案键])
 MODEL_FILES: list[tuple] = [
     (ANIMA_REPO_ID, hf_path, local_name, desc, "Anima")
     for hf_path, local_name, desc in ANIMA_FILES
 ] + [
     (KREA2_REPO_ID, hf_path, local_name, desc, "Krea 2")
     for hf_path, local_name, desc in KREA2_FILES
+] + [
+    (MOSS_REPO_ID, hf_path, local_name, desc, "MOSS-Image", None, f"environment.animaModel.{desc_key}")
+    for hf_path, local_name, desc, desc_key in MOSS_FILES
 ] + TRAIN_USE_FILES
 
 
@@ -106,7 +123,7 @@ def _normalize_file(
     if len(item) == 4:
         repo, hf_path, local_name, desc = item
         return repo, hf_path, local_name, desc
-    # 5 元组或 6 元组（group / source_page 仅 UI 用，下载时不需要）
+    # 后续字段仅用于 UI，下载时不需要。
     repo, hf_path, local_name, desc = item[0], item[1], item[2], item[3]
     return repo, hf_path, local_name, desc
 
@@ -238,6 +255,7 @@ def list_local_model_files(dest_dir: Path) -> list[dict]:
             {
                 "filename": local_name,
                 "desc": desc,
+                "desc_key": item[6] if len(item) > 6 else None,
                 "group": group,
                 "repo_id": repo_id,
                 "source_url": f"https://huggingface.co/{repo_id}/blob/main/{hf_path}",
