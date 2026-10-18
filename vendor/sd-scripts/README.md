@@ -47,6 +47,19 @@ If you find this project helpful, please consider supporting its development via
 
 ### Change History
 
+- **Changes planned for the next release:** The following are the main changes planned for the next release. Please note that these changes may be subject to change without notice before the release.
+    - Added `enable_multiline_caption` subset option (`--enable_multiline_caption`) to use captions containing line breaks as they are, for models with LLM-based text encoders (Anima, Lumina, HunyuanImage, etc.).
+        - Lines starting with `multiline_caption_separator` (default `---===---`) separate multiple caption candidates for one image, and one candidate is chosen randomly at each step. In metadata files for fine tuning, `caption` can also be a list of strings. For details, please refer to [the dataset config documentation](./docs/config_README-en.md#captions-with-line-breaks-and-multiple-caption-candidates-enable_multiline_caption--true).
+        - In `.txt` sample prompt files, `\n` (backslash + n) is now converted to a line break.
+        - Fixed `caption_prefix` / `caption_suffix` being added only to the first / last line of multi-line captions (with `enable_wildcard`, the prefix was attached only to the first line and the suffix only to the last line; without it, the suffix was lost).
+    - Fixed `caption_prefix` / `caption_suffix`, `secondary_separator` and the first-line truncation of multi-line captions not being applied when caching Text Encoder outputs (`--cache_text_encoder_outputs`); the raw caption was encoded. [Issue #2453](https://github.com/kohya-ss/sd-scripts/issues/2453)
+        - If you use these options with `--cache_text_encoder_outputs_to_disk`, delete the existing cache files (`*_te.npz` etc.) so that they are re-created with the processed captions.
+        - `enable_wildcard` cannot be applied to cached outputs (the caption is encoded as is); a warning is now shown in that case.
+        - For custom caching strategies: `TextEncoderOutputsCachingStrategy.cache_batch_outputs` now receives the processed captions as an additional `captions` argument.
+    - When a custom LR scheduler is specified with `--lr_scheduler_type`, the total number of training steps and the number of warmup steps computed by sd-scripts are now passed to the scheduler as `num_training_steps` and `num_warmup_steps`. [Issue #2444](https://github.com/kohya-ss/sd-scripts/issues/2444)
+        - They are passed only when the scheduler's constructor has arguments with these exact names, and values given explicitly with `--lr_scheduler_args` take priority. Schedulers with differently named arguments (e.g. `total_steps`) are not affected; specify them with `--lr_scheduler_args` as before.
+        - Note that a custom scheduler that has `num_training_steps` but was used without specifying it in `--lr_scheduler_args` previously ran with its default value, and now uses the actual number of training steps. Similarly, `--lr_warmup_steps` is now passed to a scheduler that has `num_warmup_steps` (previously it caused an error).
+
 - **Version 0.12.0 (2026-09-24):**
     - Added support for Windows on ARM64 (e.g. NVIDIA RTX Spark PCs). [PR #2430](https://github.com/kohya-ss/sd-scripts/pull/2430), [PR #2431](https://github.com/kohya-ss/sd-scripts/pull/2431), [PR #2433](https://github.com/kohya-ss/sd-scripts/pull/2433)
         - `opencv-python` is now optional (a Pillow/NumPy fallback is used when it is missing), and `requirements.txt` selects the packages that have Windows ARM64 wheels automatically. For details, please refer to [Installing without OpenCV / Windows on ARM64](#installing-without-opencv--windows-on-arm64).
