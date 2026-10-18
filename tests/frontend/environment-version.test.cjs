@@ -22,3 +22,25 @@ test('tagged cores preserve release labels and missing metadata never invents a 
   assert.equal(app._renderCoreHeadParts(T, null).version, '');
   assert.equal(app._renderCoreHeadParts(T, {}, false).version, '');
 });
+
+test('release badge preserves old and hexadecimal versions and strips Git build suffixes', () => {
+  let register, factory;
+  loadFrontend('app', {
+    window: {},
+    document: { addEventListener(_, callback) { register = callback; } },
+    Alpine: { data(_, callback) { factory = callback; } },
+  });
+  register();
+  const app = factory();
+  for (const version of ['v2.20.5', 'v26.925.80307', 'v26.1017.223010',
+    'v26.1017.13c72', 'v26.1018.00000', '26.1018.00001', 'v26.1018.0000a']) {
+    app.version = version;
+    assert.equal(app.displayVersion(), version);
+    app.version = version + '-4-g3dc39b4f';
+    assert.equal(app.displayVersion(), version);
+  }
+  for (const version of ['...', 'dev', '3dc39b4f', '<none>']) {
+    app.version = version;
+    assert.equal(app.displayVersion(), version);
+  }
+});

@@ -594,13 +594,13 @@ document.addEventListener('alpine:init', () => {
     },
 
     // Home hero "Release" badge: use the real version from /api/version
-    // (e.g. "v26.925.80307-4-g3dc39b4f" → "v26.925.80307").
+    // (e.g. "v26.1017.13c72-4-g3dc39b4f" → "v26.1017.13c72").
     // Keep loading/unknown states explicit instead of showing an old release.
     displayVersion() {
       const v = String(this.version || '');
       if (!v || v === '...') return '...';
       if (v === 'dev') return 'dev';
-      const m = v.match(/^v?\d+\.\d+\.\d+/);
+      const m = v.match(/^v?\d+\.\d+\.(?:[0-9a-f]{5}|\d+)(?=-|$)/);
       return m ? m[0] : v;
     },
 
