@@ -91,3 +91,31 @@ test('training profiles keep independent drafts and reset from registry defaults
   assert.equal(app.formDefaults.learning_rate, 'krea-default');
   assert.equal(app._fieldSources.learning_rate, 'default');
 });
+
+test('native TOML import sends the profile selected when the file was opened', async () => {
+  let reader, request, imported;
+  const { window } = loadFrontend('training-config-io', {
+    window: {},
+    FileReader: class {
+      constructor() { reader = this; }
+      readAsText() {}
+    },
+    fetch: async (_url, options) => {
+      request = JSON.parse(options.body);
+      return { json: async () => ({ status: 'success', data: { data: {
+        model_train_type: 'moss-image-lora', train_text_embedder: true, rank_dropout: 0.2,
+      } } }) };
+    },
+  });
+  const app = Object.assign({}, window.trainingConfigIoMixin, {
+    form: { model_train_type: 'moss-image-lora' },
+    _applyImportedFlatConfig: async form => { imported = form; },
+    toast() {}, t: key => key,
+  });
+  app.handleConfigFileImport({ target: { files: [{}], value: 'config.toml' } });
+  app.form.model_train_type = 'anima-lora';
+  await reader.onload({ target: { result: 'network_args = ["train_llm_adapter=True"]' } });
+  assert.equal(request.model_train_type, 'moss-image-lora');
+  assert.equal(imported.train_text_embedder, true);
+  assert.equal(imported.rank_dropout, 0.2);
+});

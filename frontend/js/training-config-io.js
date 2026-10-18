@@ -99,13 +99,14 @@ window.trainingConfigIoMixin = {
   handleConfigFileImport(event) {
     const file = event.target.files[0];
     if (!file) return;
+    const modelTrainType = this.form?.model_train_type || 'anima-lora';
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
         const r = await fetch('/api/training/parse-config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: e.target.result })
+          body: JSON.stringify({ content: e.target.result, model_train_type: modelTrainType })
         });
         const d = await r.json();
         if (d.status !== 'success') throw new Error(d.message || this.t('common.parseError'));

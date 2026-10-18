@@ -186,10 +186,19 @@ async def parse_training_toml(req: TrainingTomlParseRequest):
         parsed = extract_scheduler_form(parsed)
     except ValueError as exc:
         return APIResponseFail(message=str(exc))
-    if parsed.get("model_train_type") == "moss-image-lora":
+    # Native trainer TOMLs omit the application's profile selector. Prefer an
+    # explicit selector, then MOSS-specific fields, then the current UI profile.
+    imported_type = parsed.get("model_train_type")
+    if not imported_type:
+        if parsed.get("network_module") == "networks.lora_generic" or "moss_max_token_length" in parsed:
+            imported_type = "moss-image-lora"
+        else:
+            imported_type = req.model_train_type
+    if imported_type == "moss-image-lora":
         from backend.training.moss_image import extract_form
 
         try:
+            parsed["model_train_type"] = imported_type
             parsed = extract_form(parsed)
         except ValueError as exc:
             return APIResponseFail(message=str(exc))

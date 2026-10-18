@@ -5,14 +5,14 @@ const { loadFrontend, readRepo } = require('./helpers.cjs');
 function application() {
   const messages = JSON.parse(readRepo('frontend/i18n/zh-CN.json'));
   const t = (key, fallback) => key.split('.').reduce((value, part) => value?.[part], messages) || fallback || key;
-  const context = loadFrontend(['constants', 'utils', 'config', 'training-core', 'training-shape-preview', 'training-toml'], {
+  const context = loadFrontend(['constants', 'utils', 'config', 'training-core', 'training-shape-preview', 'training-toml', 'training-config-io'], {
     window: { t }, document: { getElementById: () => null },
     fetch: async () => { throw new Error('Use generated schema'); },
     setTimeout, clearTimeout,
     btoa, TextEncoder,
   });
   const w = context.window;
-  const app = Object.assign({}, w.utilsMixin, w.trainingCoreMixin, w.trainingShapePreviewMixin, w.trainingTomlMixin, {
+  const app = Object.assign({}, w.utilsMixin, w.trainingCoreMixin, w.trainingShapePreviewMixin, w.trainingTomlMixin, w.trainingConfigIoMixin, {
     t, _renderTomlPreview() {},
   });
   app.form = app._buildFormDefaults('moss-image-lora');
@@ -163,4 +163,20 @@ test('MOSS fullgraph validation preserves compatible compilation choices', () =>
   }
   app.form.convrot_int8_text_encoder = true;
   assert.equal(app.validateForm(), true);
+});
+
+test('restored native MOSS arguments survive form import and the next launch payload', async () => {
+  const { app } = application();
+  Object.assign(app, { rebuildForm() {}, _persistProfileDrafts() {}, _persistProfileFieldSources() {} });
+  await app._applyImportedFlatConfig({ model_train_type: 'moss-image-lora',
+    train_text_embedder: true, rank_dropout: 0.2, enable_loraplus: true, loraplus_lr_ratio: 4,
+    network_args_custom: 'network_reg_dims=layers.*=8' });
+  assert.match(app.tomlRaw, /train_llm_adapter=true/);
+  assert.match(app.tomlRaw, /rank_dropout=0.2/);
+  assert.match(app.tomlRaw, /loraplus_lr_ratio=4/);
+  assert.match(app.tomlRaw, /network_reg_dims=layers\.\*=8/);
+  const payload = app._collectTrainingPayload();
+  assert.equal(payload.train_text_embedder, true);
+  assert.equal(payload.rank_dropout, 0.2);
+  assert.equal(payload.loraplus_lr_ratio, 4);
 });
