@@ -2554,9 +2554,11 @@ window.trainingCoreMixin = {
 
     const inverseShift = (sigma, shift) => sigma / (shift + (1 - shift) * sigma);
 
-    // Anima and Krea 2 both use VAE f8 latents with 2x2 DiT patch packing.
-    const latentH = Math.floor(height / 8);
-    const latentW = Math.floor(width / 8);
+    // MOSS has already patchified the VAE f8 latents to f16 before calling
+    // the shared sampler, which then derives its shift from (h / 2) * (w / 2).
+    const latentCompression = source.model_train_type === 'moss-image-lora' ? 16 : 8;
+    const latentH = Math.floor(height / latentCompression);
+    const latentW = Math.floor(width / latentCompression);
     const tokenCount = Math.floor(latentH / 2) * Math.floor(latentW / 2);
     const getShiftParam = maxTokens => {
       const mu = 0.5 + ((1.15 - 0.5) / (maxTokens - 256)) * (tokenCount - 256);
