@@ -4,10 +4,10 @@
 
 [upstream]
 repo = "kohya-ss/sd-scripts"
-branch = "dev"
-commit = "61fde69fc035413fb1472c20c02c441c6d558ee6"
-sync_date = "2026-10-18T17:29:00+08:00"
-tag = ""
+branch = "main"
+commit = "04ca541746b7667b27eab230db067579f682895e"
+sync_date = "2026-10-18T20:25:32+08:00"
+tag = "v0.12.1"
 last_check = "2026-10-18"
 
 [local]
