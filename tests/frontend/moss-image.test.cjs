@@ -193,3 +193,14 @@ test('restored native MOSS arguments survive form import and the next launch pay
   assert.equal(payload.rank_dropout, 0.2);
   assert.equal(payload.loraplus_lr_ratio, 4);
 });
+
+test('importing a component-only LoRA+ ratio keeps the global multiplier unset', async () => {
+  const { app } = application();
+  Object.assign(app, { rebuildForm() {}, _persistProfileDrafts() {}, _persistProfileFieldSources() {} });
+  await app._applyImportedFlatConfig({ model_train_type: 'moss-image-lora',
+    enable_loraplus: true, loraplus_lr_ratio: '', loraplus_unet_lr_ratio: '',
+    loraplus_text_encoder_lr_ratio: 4 });
+  assert.match(app.tomlRaw, /loraplus_text_encoder_lr_ratio=4/);
+  assert.doesNotMatch(app.tomlRaw, /loraplus_lr_ratio=|loraplus_unet_lr_ratio=/);
+  assert.equal(app._collectTrainingPayload().loraplus_lr_ratio, undefined);
+});

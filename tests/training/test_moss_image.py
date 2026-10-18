@@ -344,6 +344,27 @@ class MossImageConfigTests(unittest.TestCase):
 
 
 class MossImageNativeNetworkTests(unittest.TestCase):
+    def test_component_only_loraplus_import_preserves_actual_optimizer_rates(self):
+        from backend.training.step_estimator import _sd_dataset_helpers
+        _sd_dataset_helpers()
+        from library.moss_image_models import MossImage
+        from networks import lora_generic
+
+        for key in ("loraplus_unet_lr_ratio", "loraplus_text_encoder_lr_ratio"):
+            with self.subTest(key=key):
+                restored = extract_form({"network_args": [f"{key}=4"]})
+                self.assertEqual(restored["loraplus_lr_ratio"], "")
+                adapted, _ = adapt_config(moss_config(**restored))
+                kwargs = dict(argument.split("=", 1) for argument in adapted["network_args"])
+                self.assertNotIn("loraplus_lr_ratio", kwargs)
+                model = MossImage(dim=64, ffn_dim=96, num_heads=4, num_layers=1,
+                                  text_dim=24, freq_dim=16, latent_channels=8)
+                network = lora_generic.create_network(1.0, 4, 4, None, [None], model, **kwargs)
+                network.apply_to([None], model, apply_text_encoder=False)
+                groups, _ = network.prepare_optimizer_params_with_multiple_te_lrs(None, None, 1e-4)
+                expected = {1e-4, 4e-4} if key == "loraplus_unet_lr_ratio" else {1e-4}
+                self.assertEqual({group["lr"] for group in groups}, expected)
+
     def test_embedder_weights_reload_for_supported_network(self):
         import torch
         from backend.training.step_estimator import _sd_dataset_helpers

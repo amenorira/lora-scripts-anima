@@ -41,8 +41,13 @@ def extract_form(config: dict[str, Any]) -> dict[str, Any]:
         result.setdefault("train_text_embedder", any(str(parsed.get(key)).lower() == "true" for key in aliases))
     for key in known & parsed.keys():
         result.setdefault(key, parsed[key])
-        if key.startswith("loraplus_"):
-            result.setdefault("enable_loraplus", True)
+    ratios = {key for key in known if key.startswith("loraplus_")}
+    if ratios & parsed.keys():
+        result.setdefault("enable_loraplus", True)
+        # Native per-component ratios do not imply a global multiplier. Blank
+        # fields prevent form defaults (global 2x) from changing the other part.
+        for key in ratios:
+            result.setdefault(key, "")
     if extra:
         existing = str(result.get("network_args_custom") or "")
         result["network_args_custom"] = "\n".join(filter(None, [existing, *extra]))
