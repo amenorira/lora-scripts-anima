@@ -971,7 +971,8 @@ window.environmentRenderMixin = {
         actionHtml = `<button class="btn btn-sm btn-secondary env-model-dl" data-group="${this.escapeAttr(modelGroup)}" data-file="${this.escapeAttr(f.filename)}" ${busy?'disabled':''}>${T('animaModel.download','Download')}</button>`;
       }
 
-      const sizeHtml = f.exists ? `<span class="env-file-size">${this._humanBytes((f.size_gb||0)*1073741824)}</span>` : '';
+      const sizeBytes = f.exists ? (f.size_bytes ?? (f.size_gb || 0) * 1073741824) : f.download_size_bytes;
+      const sizeHtml = `<span class="env-file-size">${Number.isFinite(sizeBytes) && sizeBytes >= 0 ? this._humanBytes(sizeBytes) : '—'}</span>`;
       const destPath = f.dest_path || (destDir + f.filename);
       const description = f.desc_key ? this.t(f.desc_key, f.desc) : f.desc || '';
       const originHtml = f.source_page

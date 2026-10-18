@@ -119,6 +119,36 @@ ANIMA_FILES = [item[:3] for item in _ANIMA_FILES]
 KREA2_FILES = [item[:3] for item in _KREA2_FILES]
 
 
+# Hugging Face 文件元数据快照（2026-10-18）；调整下载清单时同步维护。
+# 仅用于下载前展示，保持本地状态查询离线可用；不用于判断文件是否完整。
+MODEL_DOWNLOAD_SIZES: dict[str, dict[str, int]] = {
+    ANIMA_REPO_ID: {
+        "split_files/diffusion_models/anima-base-v1.0.safetensors": 4_182_218_328,
+        "split_files/text_encoders/qwen_3_06b_base.safetensors": 1_192_135_096,
+        "split_files/vae/qwen_image_vae.safetensors": 253_806_246,
+    },
+    KREA2_REPO_ID: {
+        "diffusion_models/krea2_raw_fp8_scaled.safetensors": 13_141_730_784,
+        "diffusion_models/krea2_turbo_fp8_scaled.safetensors": 13_141_730_784,
+        "text_encoders/qwen3vl_4b_fp8_scaled.safetensors": 5_242_467_968,
+        "vae/qwen_image_vae.safetensors": 253_806_246,
+    },
+    MOSS_REPO_ID: {
+        "diffusion_models/moss_image_base_bf16.safetensors": 10_164_655_808,
+        "diffusion_models/moss_image_base_int8_convrot.safetensors": 5_413_698_958,
+        "diffusion_models/moss_image_sft_bf16.safetensors": 10_164_655_808,
+        "diffusion_models/moss_image_sft_int8_convrot.safetensors": 5_413_698_958,
+        "text_encoders/qwen3.5_9b_bf16.safetensors": 19_306_312_328,
+        "text_encoders/qwen3.5_9b_int8_convrot.safetensors": 9_748_121_532,
+        "vae/flux2-vae.safetensors": 336_211_292,
+        "vae/flux2-vae_small.safetensors": 249_521_340,
+    },
+    "ame-la/train_use_models": {
+        "any-anima-for-lora-training/anyAnimaForLora_102.safetensors": 4_182_219_262,
+    },
+}
+
+
 def _normalize_file(
     item: tuple[str, str, str] | tuple[str, str, str, str] | tuple[str, str, str, str, str],
     default_repo_id: str,
@@ -263,6 +293,7 @@ def list_local_model_files(dest_dir: Path) -> list[dict]:
         )
         path = dest_dir / local_name
         exists = path.exists() and path.is_file()
+        size_bytes = path.stat().st_size if exists else 0
         out.append(
             {
                 "filename": local_name,
@@ -274,7 +305,9 @@ def list_local_model_files(dest_dir: Path) -> list[dict]:
                 "source_url": f"https://huggingface.co/{repo_id}/blob/main/{hf_path}",
                 "source_page": source_page,
                 "exists": exists,
-                "size_gb": round(path.stat().st_size / (1024**3), 2) if exists else 0,
+                "size_bytes": size_bytes,
+                "size_gb": round(size_bytes / (1024**3), 2),
+                "download_size_bytes": MODEL_DOWNLOAD_SIZES.get(repo_id, {}).get(hf_path),
             }
         )
     return out
