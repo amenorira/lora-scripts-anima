@@ -586,6 +586,11 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
         source["lr_scheduler_min_lr_ratio"] = 0
     normalize_scheduler_config(source)
 
+    # Older forms omitted the UI default, but upstream defaults to SNR, which
+    # flow-matching schedulers do not support. Preserve explicit user choices.
+    if source.get("loss_type") in ("huber", "smooth_l1") and _is_empty_value(source.get("huber_schedule")):
+        source["huber_schedule"] = next(field["default"] for field in FIELDS if field["key"] == "huber_schedule")
+
     # ── 6. 主循环：白名单过滤 ─────────────────────────────
     # sd-scripts 内部字段，适配层透传不走警告
     _INTERNAL_PASSTHROUGH = {"network_args", "optimizer_args", "lr_scheduler_args"}

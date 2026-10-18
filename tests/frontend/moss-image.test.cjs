@@ -145,6 +145,19 @@ test('MOSS validation rejects LoRA pre-merging into either INT8 model without ch
   assert.deepEqual(Object.keys(app._mossOptionErrors()), []);
 });
 
+test('Huber defaults are exported explicitly instead of falling back to the native SNR schedule', () => {
+  const { app } = application();
+  for (const profile of ['moss-image-lora', 'anima-lora', 'sdxl-lora']) {
+    app.form = app._buildFormDefaults(profile);
+    for (const loss of ['huber', 'smooth_l1']) {
+      app.form.loss_type = loss;
+      app.updateToml();
+      assert.match(app.tomlRaw, /^huber_schedule = "exponential"$/m);
+      assert.equal(app._collectTrainingPayload().huber_schedule, 'exponential');
+    }
+  }
+});
+
 test('MOSS fullgraph validation preserves compatible compilation choices', () => {
   const { app } = application();
   Object.assign(app.form, { pretrained_model_name_or_path: 'dit.safetensors',

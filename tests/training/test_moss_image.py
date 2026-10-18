@@ -37,6 +37,60 @@ def moss_config(**overrides):
 
 
 class MossImageConfigTests(unittest.TestCase):
+    def test_select_choices_and_omitted_defaults_match_the_native_parser(self):
+        from backend.training.step_estimator import _sd_dataset_helpers
+        _sd_dataset_helpers()
+        from moss_image_train_network import setup_parser
+        actions = {action.dest: action for action in setup_parser()._actions}
+
+        def applies(item):
+            group = item.get("group")
+            return not group or group == "all" or GROUP in (group if isinstance(group, list) else [group])
+
+        for field in FIELDS:
+            if not applies(field) or field.get("target") != "toml":
+                continue
+            with self.subTest(field=field["key"]):
+                self.assertIn(field["key"], actions)
+                action = actions[field["key"]]
+                if action.choices:
+                    for option in field.get("options", []):
+                        if applies(option):
+                            self.assertIn(option["v"], action.choices)
+                # Profile overrides are always emitted; empty UI values mean unset.
+                if field.get("omit_default") and GROUP not in field.get("default_by_group", {}):
+                    default = field.get("default")
+                    if default not in (None, ""):
+                        self.assertEqual(default, action.default)
+
+    def test_exposed_losses_work_with_the_moss_scheduler(self):
+        import torch
+        from backend.training.step_estimator import _sd_dataset_helpers
+        _sd_dataset_helpers()
+        from library import loss as loss_util
+        from moss_image_train_network import MossImageNetworkTrainer, setup_parser
+        for loss in ("l1", "l2", "huber", "smooth_l1"):
+            for schedule in (None, "constant", "exponential"):
+                with self.subTest(loss=loss, schedule=schedule):
+                    config = moss_config(loss_type=loss)
+                    config.pop("huber_schedule")
+                    if schedule is not None:
+                        config["huber_schedule"] = schedule
+                    adapted, _ = adapt_config(config)
+                    args = setup_parser().parse_args([])
+                    vars(args).update(adapted)
+                    if loss in ("huber", "smooth_l1"):
+                        self.assertEqual(args.huber_schedule, schedule or "exponential")
+                    timesteps = torch.tensor([10.0, 500.0, 999.0])
+                    scheduler = MossImageNetworkTrainer().get_noise_scheduler(args, "cpu")
+                    threshold = loss_util.get_huber_threshold_if_needed(args, timesteps, scheduler)
+                    prediction = torch.ones(3, 1, 2, 2, requires_grad=True)
+                    value = loss_util.conditional_loss(prediction, torch.zeros_like(prediction), loss, "mean", threshold)
+                    value.backward()
+                    self.assertTrue(torch.isfinite(value))
+                    self.assertTrue(torch.isfinite(prediction.grad).all())
+        self.assertTrue(validate_training_config(moss_config(loss_type="huber", huber_schedule="snr")))
+
     def test_profile_defaults_and_native_arguments_reach_upstream_parser(self):
         config = moss_config(train_text_embedder=True, rank_dropout=0.1,
                              sample_uncond_skip_layers="", enable_loraplus=True)
