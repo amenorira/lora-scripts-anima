@@ -449,33 +449,35 @@ window.environmentRenderMixin = {
   //  训练核心行（sd-scripts / LyCORIS / musubi-tuner）
   // ═══════════════════════════════════════════════════════
   // 行头右侧：版本号（mono，链 GitHub）+ 状态徽标。
+  _coreVersionInfo(meta) {
+    if (!meta) return { label: '', url: '' };
+    const commit = String(meta.local_commit || '');
+    const release = meta.describe || meta.tag || meta.version;
+    const branch = meta.local_branch && meta.local_branch !== 'HEAD' ? meta.local_branch : '';
+    const label = release || (commit ? [branch, commit.slice(0, 7)].filter(Boolean).join(' · ') : branch);
+    const repoUrl = `https://github.com/${meta.repo}`;
+    const url = commit ? `${repoUrl}/commit/${encodeURIComponent(commit)}`
+      : meta.tag ? `${repoUrl}/releases/tag/${encodeURIComponent(meta.tag)}`
+      : branch ? `${repoUrl}/tree/${encodeURIComponent(branch)}` : repoUrl;
+    return { label, url };
+  },
+
   _renderCoreHeadParts(T, meta, available = true, error = null) {
     if (error) return { version: '', badge: `<span class="env-badge env-badge-err">${T('loadFailed', 'Load failed')}</span>` };
     if (!meta) return { version: '', badge: `<span class="env-badge env-badge-loading">${T('loadingShort','Loading…')}</span>` };
     if (!available) return { version: '', badge: `<span class="env-badge env-badge-muted">${T('coreNotReady', 'Not configured')}</span>` };
-    const displayVersion = meta.describe || meta.tag;
-    let version = '';
-    if (displayVersion) {
-      const repoUrl = `https://github.com/${meta.repo}`;
-      const versionUrl = meta.local_commit
-        ? `${repoUrl}/commit/${this.escapeAttr(meta.local_commit)}`
-        : `${repoUrl}/releases/tag/${this.escapeAttr(meta.tag)}`;
-      version = `<a href="${versionUrl}" target="_blank" rel="noopener" class="env-row-version env-link"><code>${this.esc(displayVersion)}</code></a>`;
-    } else if (meta.local_commit) {
-      version = `<span class="env-row-version"><code>${this.esc(meta.local_commit.slice(0,7))}</code></span>`;
-    }
+    const info = this._coreVersionInfo(meta);
+    const version = info.label
+      ? `<a href="${this.escapeAttr(info.url)}" target="_blank" rel="noopener" class="env-row-version env-link"><code>${this.esc(info.label)}</code></a>` : '';
     return { version, badge: `<span class="env-badge env-badge-ok">${T('coreReady','Ready')}</span>` };
   },
 
   _renderCoreRepositoryDetails(T, meta, fallbackRepo) {
     const repo = meta?.repo || fallbackRepo;
     const repoUrl = `https://github.com/${repo}`;
-    const displayVersion = meta?.describe || meta?.tag;
-    const versionUrl = meta?.local_commit
-      ? `${repoUrl}/commit/${this.escapeAttr(meta.local_commit)}`
-      : (meta?.tag ? `${repoUrl}/releases/tag/${this.escapeAttr(meta.tag)}` : null);
-    const versionHtml = displayVersion
-      ? `<span class="env-env-item">Version ${versionUrl ? `<a href="${versionUrl}" target="_blank" rel="noopener" class="env-link"><code>${this.esc(displayVersion)}</code></a>` : `<code>${this.esc(displayVersion)}</code>`}</span>`
+    const info = this._coreVersionInfo({ ...meta, repo });
+    const versionHtml = info.label
+      ? `<span class="env-env-item">Version <a href="${this.escapeAttr(info.url)}" target="_blank" rel="noopener" class="env-link"><code>${this.esc(info.label)}</code></a></span>`
       : null;
     const verItems = [
       `<span class="env-env-item">Repo <a href="${repoUrl}" target="_blank" rel="noopener" class="env-link">${this.esc(repo)} &#8599;</a></span>`,

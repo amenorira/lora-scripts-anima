@@ -1,0 +1,24 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { loadFrontend } = require('./helpers.cjs');
+
+const { window } = loadFrontend(['utils', 'training-core', 'environment-render'], { window: {} });
+const app = Object.assign({}, window.utilsMixin, window.trainingCoreMixin, window.environmentRenderMixin);
+const T = (_key, fallback) => fallback;
+
+test('untagged cores show a blue branch and commit link with consistent details', () => {
+  const meta = { repo: 'kohya-ss/sd-scripts', local_branch: 'dev', local_commit: '61fde69fc035413fb1472c20c02c441c6d558ee6', tag: '' };
+  const head = app._renderCoreHeadParts(T, meta);
+  assert.match(head.version, /dev · 61fde69/);
+  assert.match(head.version, /class="env-row-version env-link"/);
+  assert.match(head.version, /\/commit\/61fde69fc035413fb1472c20c02c441c6d558ee6/);
+  assert.match(app._renderCoreRepositoryDetails(T, meta, meta.repo), /dev · 61fde69/);
+});
+
+test('tagged cores preserve release labels and missing metadata never invents a version', () => {
+  assert.match(app._renderCoreHeadParts(T, { repo: 'KohakuBlueleaf/LyCORIS', tag: 'v4.1.2' }).version, /releases\/tag\/v4.1.2/);
+  assert.match(app._renderCoreHeadParts(T, { repo: 'kohya-ss/musubi-tuner', tag: 'v0.3.6', local_commit: 'abc123456' }).version, />v0.3.6</);
+  assert.equal(app._renderCoreHeadParts(T, {}).version, '');
+  assert.equal(app._renderCoreHeadParts(T, null).version, '');
+  assert.equal(app._renderCoreHeadParts(T, {}, false).version, '');
+});

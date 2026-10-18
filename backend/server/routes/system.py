@@ -353,7 +353,7 @@ def _read_sd_scripts_version() -> dict:
                         elif key.strip() == "branch":
                             info["local_branch"] = value
                         elif key.strip() == "commit" and value and value != "UNKNOWN":
-                            info["local_commit"] = value[:8]
+                            info["local_commit"] = value
                         elif key.strip() == "sync_date":
                             info["sync_date"] = value
                         elif key.strip() == "tag":
