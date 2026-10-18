@@ -1661,26 +1661,37 @@ def prepare_cache_manifest(config: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
-def mark_cache_manifest(config: dict[str, Any], status: str) -> None:
-    """Mark a full two-stage cache pipeline completed or failed."""
+def mark_cache_manifest(config: dict[str, Any], status: str) -> str | None:
+    """Settle both cache stages and return any completion validation error."""
 
     path = cache_manifest_path(config["dataset_cache_dir"])
     manifest, _ = _read_cache_manifest(config["dataset_cache_dir"])
     if not manifest:
         manifest = prepare_cache_manifest(config)
-    completed = status == "completed"
-    if completed:
-        cache_status = get_krea2_cache_status(config)
-        completed = bool(
-            cache_status["image_count"]
-            and cache_status["fingerprint_matches"]
-            and cache_status["files_match"]
-            and not cache_status["conflicts"]
-        )
-    stage_state = "completed" if completed else "failed"
+    errors = []
+    if status == "completed":
+        try:
+            cache_status = get_krea2_cache_status(config)
+            if not cache_status["image_count"]:
+                errors.append("Dataset has no captioned images / 数据集没有带标注的可用图片")
+            if not cache_status["fingerprint_matches"]:
+                errors.append("Dataset or cache inputs changed during caching; rebuild the cache / 缓存生成期间数据集或缓存输入发生变化，请重新生成缓存")
+            if not cache_status["files_match"]:
+                errors.append(
+                    "Cache files do not match the dataset / 缓存文件缺失、多余、重复或名称不匹配 "
+                    f"(images={cache_status['image_count']}, latents={cache_status['latent_count']}, "
+                    f"text={cache_status['text_encoder_count']})"
+                )
+            errors.extend(cache_status["conflicts"])
+        except Exception as exc:
+            errors.append(f"Failed to validate Krea 2 cache / Krea 2 缓存校验失败: {exc}")
+    error = "; ".join(errors) or None
+    stage_state = "completed" if status == "completed" and not error else "failed"
     manifest["finished_at"] = datetime.now(timezone.utc).isoformat()
     manifest["stages"] = {"latents": stage_state, "text_encoder": stage_state}
+    manifest["error"] = error
     path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    return error
 
 
 def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:

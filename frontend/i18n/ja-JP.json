@@ -743,7 +743,7 @@
 		"log_timestep_loss": "ノイズ区間別 loss/timestep を記録",
 		"log_timestep_lossHint": "低・中・高ノイズ区間のバッチ損失、移動平均、エポック平均を、対応する通常の loss と同時に記録します。",
 		"log_timestep_count": "timestep サンプリング分布を記録",
-		"log_timestep_countHint": "内蔵 TensorBoard の TIME SERIES で表示し、ホバーとズームに対応します。ビン幅は 1 timestep。起動後のメインプロセスの学習サンプルを累積し、各 epoch の終了時、ステップ単位の checkpoint 保存時、学習終了時に累積スナップショットを書き込みます。",
+		"log_timestep_countHint": "内蔵 TensorBoard の TIME SERIES で表示し、ホバーとズームに対応します。ビン幅は 1 timestep。起動後のメインプロセスの学習サンプルを累積し、100 ステップごと、および各 epoch の終了時、ステップ単位の checkpoint 保存時、学習終了時に累積スナップショットを書き込みます。",
 		"save_state": "再開用の学習状態を保存",
 		"save_stateHint": "再開用に重み・オプティマイザ・スケジューラ・乱数の状態を保存します。LoRA の重みだけの保存では、オプティマイザなどの状態を復元できません。",
 		"save_last_n_epochs_state": "エポック単位で保存した学習状態の保持数",

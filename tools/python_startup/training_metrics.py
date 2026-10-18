@@ -3,7 +3,8 @@
 Loss uses fixed noise thirds and sample-weighted batch, rolling and epoch means.
 Counts accumulate in 1000 bins since process start, including after a resume.
 Loss follows loss/current, including accumulation microbatches. Counts are
-snapshotted at epoch ends, successful checkpoints and before the writer closes.
+snapshotted every 100 optimizer steps, at epoch ends, successful checkpoints,
+and before the writer closes.
 ANIMA_TRAIN_METRICS_* flags enable them independently.
 """
 from __future__ import annotations
@@ -22,6 +23,7 @@ _IMPORT_FLAG = "_anima_training_metrics_import"
 _WARNED = False
 _BUCKETS = ("low", "mid", "high")
 _TIMESTEP_BINS = 1000
+_DISTRIBUTION_INTERVAL = 100
 
 
 def _warn(exc):
@@ -80,6 +82,7 @@ class TrainingMetrics:
         self.timestep_counts = None
         self.distribution_dirty = False
         self.distribution_step = None
+        self.distribution_snapshot_step = None
         self.checkpoint_pending = False
 
     def observe_timesteps(self, timesteps, scale):
@@ -185,6 +188,7 @@ class TrainingMetrics:
             ),
         )])
         writer.file_writer.add_summary(summary, global_step=step)
+        self.distribution_snapshot_step = step
         self.distribution_dirty = False
         self.checkpoint_pending = False
 
@@ -341,7 +345,14 @@ def _attach_accelerator(stack, accelerator, state):
                     if state.timestep_count:
                         # Both trainers save step checkpoints before logging the
                         # current loss. Include that batch before the snapshot.
-                        if state.checkpoint_pending:
+                        periodic = (
+                            accelerator.sync_gradients
+                            and step is not None
+                            and step > 0
+                            and step % _DISTRIBUTION_INTERVAL == 0
+                            and step != state.distribution_snapshot_step
+                        )
+                        if state.checkpoint_pending or periodic:
                             _observe(state, lambda: state.write_distribution(tracker.writer, step))
                 elif state.enabled and ("loss/epoch_average" in values or "loss/epoch" in values):
                     extra = _observe(state, lambda: state.epoch_logs(step))

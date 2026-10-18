@@ -73,6 +73,7 @@ class Task:
         self._termination_complete = False
         self._exit_collected = False
         self._work_complete = False
+        self._work_failed = False
 
     def configure_reserved(self, command: List[str]) -> None:
         """Hand a reserved slot to the launcher without opening a second slot."""
@@ -86,10 +87,11 @@ class Task:
         with self.lock:
             return self._terminate_requested
 
-    def complete_work(self) -> None:
-        """Signal that preparation or worker callbacks are done, then try to release the slot."""
+    def complete_work(self, *, failed: bool = False) -> None:
+        """Settle owner work, including optional result validation, then release the slot."""
         with self._termination_lock:
             with self.lock:
+                self._work_failed = self._work_failed or failed
                 self._work_complete = True
             self._publish_terminal_if_ready_locked()
 
@@ -106,7 +108,11 @@ class Task:
             elif self.process is None:
                 self.status = TaskStatus.FAILED
             elif self._exit_collected:
-                self.status = TaskStatus.FINISHED if self.process.returncode == 0 else TaskStatus.FAILED
+                self.status = (
+                    TaskStatus.FINISHED
+                    if self.process.returncode == 0 and not self._work_failed
+                    else TaskStatus.FAILED
+                )
             else:
                 return
             self.finished_at = time.time()

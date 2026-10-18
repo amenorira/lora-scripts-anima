@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 import ast
 import asyncio
 import glob
@@ -7,13 +8,13 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import toml
 
 from backend.training.musubi_krea2 import KREA2_FIELDS, build_krea2_dataset_config, build_krea2_train_config, cache_manifest_path, estimate_krea2_steps, get_krea2_cache_status, krea2_cache_fingerprint, krea2_preflight, mark_cache_manifest, prepare_cache_manifest, validate_krea2_config
 from backend.server.routes import training as training_routes
-from backend.tasks import TaskManager
+from backend.tasks import TaskManager, TaskStatus
 from tests.helpers import json_request, stub_supervisor
 
 
@@ -43,6 +44,71 @@ def krea2_config(root: Path) -> dict:
 
 
 class Krea2PreparationLifecycleTests(unittest.TestCase):
+    def test_cache_final_validation_settles_manifest_result_and_task_together(self):
+        async def exercise(root, defect):
+            config = krea2_config(root)
+            manager = TaskManager()
+            process = Mock(args=["cache"], returncode=0)
+            worker_futures = []
+            loop = asyncio.get_running_loop()
+            submit = loop.run_in_executor
+
+            def capture_worker(executor, func, *args):
+                future = submit(executor, func, *args)
+                if getattr(func, "__name__", "") == "_run":
+                    worker_futures.append(future)
+                return future
+
+            def encode(**_kwargs):
+                cache = Path(config["dataset_cache_dir"])
+                (cache / "portrait_0001x0001_krea2.safetensors").write_bytes(b"latent")
+                if defect != "missing":
+                    (cache / "portrait_krea2_te.safetensors").write_bytes(b"text")
+                if defect == "extra":
+                    (cache / "foreign_0001x0001_krea2.safetensors").write_bytes(b"old")
+                elif defect == "dataset":
+                    (Path(config["train_data_dir"]) / "portrait.txt").write_text("changed", encoding="utf-8")
+                return None, None
+
+            process.communicate.side_effect = encode
+            validation = patch(
+                "backend.training.musubi_krea2.get_krea2_cache_status", side_effect=OSError("cache unreadable"),
+            ) if defect == "validation" else nullcontext()
+            with patch.object(training_routes, "tm", manager), \
+                 patch.object(training_routes, "OUTPUT_DIR", root / "runs"), \
+                 patch.object(training_routes, "krea2_preflight", return_value={"ok": True, "errors": []}), \
+                 patch.object(loop, "run_in_executor", side_effect=capture_worker), \
+                 patch("backend.tasks.subprocess.Popen", return_value=process), \
+                 stub_supervisor(), validation:
+                response = await training_routes.create_krea2_cache(json_request(dict(config)))
+                self.assertEqual(response["status"], "success")
+                self.assertEqual(len(worker_futures), 1)
+                await asyncio.wait_for(worker_futures[0], 5)
+
+            run_dir, = (root / "runs").iterdir()
+            result = json.loads((run_dir / "result.json").read_text(encoding="utf-8"))
+            manifest = json.loads(cache_manifest_path(config["dataset_cache_dir"]).read_text(encoding="utf-8"))
+            task, = manager.tasks.values()
+            completed = defect is None
+            expected = "completed" if completed else "failed"
+            self.assertEqual(result["exit_code"], 0)
+            self.assertEqual(result["status"], expected)
+            self.assertEqual(manifest["stages"], {"latents": expected, "text_encoder": expected})
+            self.assertIs(task.status, TaskStatus.FINISHED if completed else TaskStatus.FAILED)
+            self.assertEqual(get_krea2_cache_status(config)["ready"], completed)
+            if completed:
+                self.assertIsNone(result["error"])
+            else:
+                error = {"dataset": "发生变化", "validation": "cache unreadable"}.get(defect, "缓存文件")
+                self.assertIn(error, result["error"])
+                self.assertEqual(manifest["error"], result["error"])
+                self.assertIn(result["error"], (run_dir / "error.log").read_text(encoding="utf-8"))
+            self.assertIsNotNone(manager.reserve_task())
+
+        for defect in (None, "missing", "extra", "dataset", "validation"):
+            with self.subTest(defect=defect), tempfile.TemporaryDirectory() as directory:
+                asyncio.run(exercise(Path(directory), defect))
+
     def test_real_launcher_rejection_keeps_slot_through_manifest_rollback(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

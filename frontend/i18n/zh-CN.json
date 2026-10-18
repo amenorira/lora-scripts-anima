@@ -743,7 +743,7 @@
 		"log_timestep_loss": "记录分区损失 loss/timestep",
 		"log_timestep_lossHint": "按低、中、高噪声区间记录当前 batch、滑动平均和 epoch 平均 loss，跟随对应的普通 loss 一起写入 TensorBoard。",
 		"log_timestep_count": "记录 timestep 采样分布",
-		"log_timestep_countHint": "在内置 TensorBoard 的 TIME SERIES 查看，支持悬停和缩放。按 1 timestep 分箱，累计本次启动后的主进程训练样本；每轮结束、按步保存 checkpoint 及训练结束时写入累计快照。",
+		"log_timestep_countHint": "在内置 TensorBoard 的 TIME SERIES 查看，支持悬停和缩放。按 1 timestep 分箱，累计本次启动后的主进程训练样本；每 100 次参数更新、每轮结束、按步保存 checkpoint 及训练结束时写入累计快照。",
 		"save_state": "保存可恢复的训练状态",
 		"save_stateHint": "保存权重、优化器、调度器和随机数状态，供恢复训练使用。只保存 LoRA 权重无法恢复优化器等状态。",
 			"save_last_n_epochs_state": "按轮保存的训练状态保留数量",

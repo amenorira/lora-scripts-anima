@@ -775,8 +775,8 @@ async def _create_krea2_cache_reserved(config: dict, reserved_task):
     except OSError as exc:
         return _training_error(message=f"Failed to initialize Krea 2 cache / 初始化 Krea 2 缓存失败: {exc}")
 
-    def _cache_finished(status: str) -> None:
-        mark_cache_manifest(config, status)
+    def _finalize_cache(status: str) -> str | None:
+        return mark_cache_manifest(config, status)
 
     result = reserved_task.launch(
         str(dataset_config_file),
@@ -808,7 +808,7 @@ async def _create_krea2_cache_reserved(config: dict, reserved_task):
             "dataset_config": str(dataset_config_file),
             "cache_dir": str(cache_dir),
         },
-        on_complete=_cache_finished,
+        finalize_result=_finalize_cache,
     )
     if result.get("status") != "success":
         return result

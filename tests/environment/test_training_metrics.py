@@ -445,6 +445,38 @@ class TrainingLoopTests(unittest.TestCase):
                 self.assertEqual([event.step for event in events], [2, 3])
                 self.assertEqual([int(make_ndarray(event.tensor_proto).sum()) for event in events], [12, 18])
 
+    def test_long_epoch_periodic_snapshots_count_all_microbatches_and_deduplicate_milestones(self):
+        for engine, loss, milestones in itertools.product(("sd_scripts", "musubi_tuner"), (False, True), (False, True)):
+            with self.subTest(engine=engine, loss=loss, milestones=milestones):
+                accelerator = FakeAccelerator(torch.nn.Parameter(torch.ones(1)))
+                tracker = accelerator.trackers[0]
+                trainer = AnimaNetworkTrainer() if engine == "sd_scripts" else MusubiTrainer()
+                with instrument_trainer(trainer, engine, grad_norm=False, timestep_loss=loss) as metrics:
+                    for micro in range(500):
+                        accelerator.sync_gradients = (micro + 1) % 2 == 0
+                        step = (micro + 1) // 2
+                        values = torch.ones(3) if engine == "sd_scripts" else torch.ones(3, 1)
+                        times = torch.tensor([.1, .5, .9]) * (1 if engine == "sd_scripts" else 1000)
+                        trainer.process_batch(values, times, accelerator)
+                        if milestones and micro == 399:  # Checkpoint and periodic trigger coincide at step 200.
+                            if engine == "sd_scripts":
+                                trainer._save_model(steps=step)
+                            else:
+                                trainer.on_post_save()
+                        tracker.log({"loss/current": 1}, step=step)
+                        if micro == 199:
+                            self.assertEqual([step for step, _ in tracker.distributions], [100])
+                            if milestones:
+                                tracker.log({"loss/epoch_average" if engine == "sd_scripts" else "loss/epoch": 1}, step=1)
+                            tracker.log({"loss/current": 1}, step=step)  # Same step, no new samples.
+                    self.assertEqual([step for step, _ in tracker.distributions], [100, 200])
+                    self.assertEqual([int(counts.sum()) for _, counts in tracker.distributions], [600, 1200])
+                    self.assertEqual(metrics.timestep_counts.sum(), 1500)
+                    accelerator.end_training()
+                self.assertEqual([step for step, _ in tracker.distributions], [100, 200, 250])
+                self.assertEqual([int(counts.sum()) for _, counts in tracker.distributions], [600, 1200, 1500])
+                self.assertEqual(tracker.distributions[-1][1][[100, 500, 900]].tolist(), [500, 500, 500])
+
     def test_epoch_snapshots_are_cumulative_and_final_flush_precedes_writer_close(self):
         from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
         from tensorboard.util.tensor_util import make_ndarray

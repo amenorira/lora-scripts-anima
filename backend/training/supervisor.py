@@ -183,11 +183,13 @@ def run_train(
     extra_env: Optional[dict[str, str]] = None,
     *,
     reserved_task: Task,
+    finalize_result: Optional[Callable[[str], str | None]] = None,
 ) -> dict:
     """
     启动训练子进程。
 
     返回: {"status": "success", "data": {"task_id": ...}}
+    finalize_result 在写入结果前结算业务产物，返回失败原因或 None；不覆盖进程失败和终止状态。
     """
     script = _get_trainer_script(trainer_file)
     engine = get_engine(engine_id)
@@ -307,6 +309,7 @@ def run_train(
         exit_code = -1
         status = "error"
         error_msg = ""
+        validation_failed = False
 
         try:
             # 打开日志文件用于捕获 stdout
@@ -332,8 +335,24 @@ def run_train(
                 "Training exception / 训练异常 (task=%s): %s",
                 task_id_short, e, exc_info=True,
             )
-        duration = time.time() - start_time
         try:
+            if finalize_result is not None:
+                try:
+                    finalization_error = finalize_result(status)
+                except Exception as exc:
+                    finalization_error = f"Task result finalization failed / 任务结果校验或结算失败: {exc}"
+                    log.exception("Failed to finalize task result / 无法结算任务结果")
+                if finalization_error and status == "completed":
+                    status = "failed"
+                    validation_failed = True
+                    error_msg = finalization_error[:500]
+                    log.error("Task result validation failed / 任务结果校验失败 (task=%s): %s", task_id_short, error_msg)
+                    try:
+                        with log_file.open("a", encoding="utf-8", errors="backslashreplace") as lf:
+                            lf.write(f"\n{error_msg}\n")
+                    except OSError:
+                        log.exception("Failed to append validation error / 无法追加校验错误日志")
+            duration = time.time() - start_time
             # ── B: 写入结构化训练结果 ────────────────────────
             try:
                 _write_result_json(run_path, task_id, status, exit_code, error_msg, duration)
@@ -355,7 +374,7 @@ def run_train(
             _log_run_end(status, run_meta, duration, exit_code, task_id_short)
         finally:
             # The worker owns the slot through results, callbacks, and log settlement.
-            task.complete_work()
+            task.complete_work(failed=validation_failed)
 
     try:
         task_handle = asyncio.get_running_loop().run_in_executor(None, _run)
