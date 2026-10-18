@@ -198,11 +198,48 @@ test('importing a component-only LoRA+ ratio keeps the global multiplier unset',
   const { app } = application();
   Object.assign(app, { rebuildForm() {}, _persistProfileDrafts() {}, _persistProfileFieldSources() {} });
   await app._applyImportedFlatConfig({ model_train_type: 'moss-image-lora',
-    enable_loraplus: true, loraplus_lr_ratio: '', loraplus_unet_lr_ratio: '',
-    loraplus_text_encoder_lr_ratio: 4 });
-  assert.match(app.tomlRaw, /loraplus_text_encoder_lr_ratio=4/);
-  assert.doesNotMatch(app.tomlRaw, /loraplus_lr_ratio=|loraplus_unet_lr_ratio=/);
+    enable_loraplus: true, loraplus_lr_ratio: '', loraplus_unet_lr_ratio: 4,
+    loraplus_text_encoder_lr_ratio: '' });
+  assert.match(app.tomlRaw, /loraplus_unet_lr_ratio=4/);
+  assert.doesNotMatch(app.tomlRaw, /loraplus_lr_ratio=|loraplus_text_encoder_lr_ratio=/);
   assert.equal(app._collectTrainingPayload().loraplus_lr_ratio, undefined);
+});
+
+test('MOSS freezes Qwen across imports, edits, exports and launch while preserving DiT text layers', async () => {
+  const { app } = application();
+  Object.assign(app, { rebuildForm() {}, _persistProfileDrafts() {}, _persistProfileFieldSources() {} });
+  const unsafe = { network_train_unet_only: false, network_train_text_encoder_only: true,
+    text_encoder_lr: 0.001, loraplus_text_encoder_lr_ratio: 4 };
+  await app._applyImportedFlatConfig({ model_train_type: 'moss-image-lora', ...unsafe,
+    train_text_embedder: true, enable_loraplus: true });
+  assert.equal(app.form.network_train_unet_only, true);
+  assert.equal(app.form.network_train_text_encoder_only, false);
+  assert.equal(app.form.text_encoder_lr, '');
+  assert.equal(app.form.loraplus_text_encoder_lr_ratio, '');
+  assert.equal(app._fieldShowIfMet(app.findFieldDef('loraplus_text_encoder_lr_ratio')), false);
+  for (const key of ['network_train_unet_only', 'network_train_text_encoder_only']) {
+    assert.match(app.renderField(app.findFieldDef(key)), /data-readonly-if-active="1"/);
+  }
+  for (const [key, value] of Object.entries(unsafe)) app.setField(key, value);
+  assert.equal(app.form.network_train_unet_only, true);
+  assert.equal(app.form.network_train_text_encoder_only, false);
+  assert.match(app.tomlRaw, /^network_train_unet_only = true$/m);
+  assert.match(app.tomlRaw, /train_llm_adapter=true/);
+  assert.doesNotMatch(app.tomlRaw, /text_encoder_lr\s*=|loraplus_text_encoder_lr_ratio=/);
+  // Guard the final payload even if an old history entry restored unsafe values.
+  Object.assign(app.form, unsafe);
+  const payload = app._collectTrainingPayload();
+  assert.equal(payload.network_train_unet_only, true);
+  assert.notEqual(payload.network_train_text_encoder_only, true);
+  assert.equal(payload.text_encoder_lr, undefined);
+  assert.equal(payload.loraplus_text_encoder_lr_ratio, undefined);
+  assert.equal(payload.train_text_embedder, true);
+  for (const profile of ['anima-lora', 'sdxl-lora']) {
+    app.form = { ...app._buildFormDefaults(profile), ...unsafe };
+    app._enforceMossTextEncoderFreeze();
+    assert.equal(app.form.network_train_text_encoder_only, true);
+    assert.doesNotMatch(app.renderField(app.findFieldDef('network_train_unet_only')), /data-readonly-if-active="1"/);
+  }
 });
 
 test('preview schedule selects one native interval and retains inactive form values', () => {

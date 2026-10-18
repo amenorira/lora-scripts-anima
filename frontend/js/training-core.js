@@ -3473,11 +3473,24 @@ window.trainingCoreMixin = {
     }
   },
 
+  _enforceMossTextEncoderFreeze() {
+    if (this.form.model_train_type !== 'moss-image-lora') return;
+    const fixed = { network_train_unet_only: true, network_train_text_encoder_only: false,
+      text_encoder_lr: '', loraplus_text_encoder_lr_ratio: '' };
+    for (const [key, value] of Object.entries(fixed)) {
+      if (this.form[key] !== value) {
+        this.form[key] = value;
+        this._setFieldSource(key, 'auto');
+      }
+    }
+  },
+
   /** Apply autoValue rules once based on current form state (no watcher side-effects). */
   _applyInitialAutoValues() {
     this._syncLrTimescaleDefault();
     this._enforceDataLoaderUiConstraints();
     this._enforceImageAugmentationUiConstraints();
+    this._enforceMossTextEncoderFreeze();
     if (!this._autoValueRules || this._autoValueRules.length === 0) return;
     const targets = new Set(this._autoValueRules.map(rule => rule.target));
     targets.forEach(target => {
@@ -3627,6 +3640,7 @@ window.trainingCoreMixin = {
   updateReadonlyStates() {
     this._enforceDataLoaderUiConstraints();
     this._enforceImageAugmentationUiConstraints();
+    this._enforceMossTextEncoderFreeze();
     const self = this;
     // 公用 apply 函数：根据 met 决定启用/解除 readonly 态（含告警文本注入）。
     // 由 [data-readonly-if-key]（单 key eq/neq）与 [data-readonly-if-any]（多 key，任一成立即锁定）复用。
@@ -3801,6 +3815,11 @@ window.trainingCoreMixin = {
 
   setField(key, value) {
     if (key.startsWith('reg__')) { this.regSetField(key.slice(5), value); return; }
+    if (this.form.model_train_type === 'moss-image-lora'
+        && ['network_train_unet_only', 'network_train_text_encoder_only', 'text_encoder_lr', 'loraplus_text_encoder_lr_ratio'].includes(key)) {
+      this._enforceMossTextEncoderFreeze();
+      return;
+    }
     if (key === 'dataset_cache_dir' && this.form.model_train_type === 'krea2-lora') {
       value = this._deriveKrea2CacheDir(this.form.train_data_dir);
     }
@@ -3958,11 +3977,8 @@ window.trainingCoreMixin = {
       this.form['network_train_unet_only'] = false;
       _setLRField('unet_lr', '');
     }
-    if (this.form.model_train_type === 'moss-image-lora' && (
-      (key === 'network_train_unet_only' && value === false) ||
-      (key === 'network_train_text_encoder_only' && value === true) ||
-      (key === 'caption_dropout_every_n_epochs' && Number(value) > 0)
-    )) {
+    if (this.form.model_train_type === 'moss-image-lora'
+        && key === 'caption_dropout_every_n_epochs' && Number(value) > 0) {
       this.form.cache_text_encoder_outputs = false;
       this.form.cache_text_encoder_outputs_to_disk = false;
     }

@@ -88,6 +88,15 @@ def extend_fields(fields: list[dict[str, Any]]) -> None:
     for key in ("bucket_reso_steps",):
         by_key[key].setdefault("constraints_by_group", {})[GROUP] = {"min": 16, "step": 16}
     by_key["blocks_to_swap"].setdefault("constraints_by_group", {})[GROUP] = {"max": 40}
+    # Product UI follows OpenMOSS's recommendation to keep Qwen frozen.
+    # The native trainer remains unchanged; DiT text-embedder LoRA is separate.
+    for key in ("network_train_unet_only", "network_train_text_encoder_only"):
+        by_key[key]["readonly_if"] = {
+            "key": "model_train_type", "eq": PROFILE_ID,
+            "reason_key": "field.mossTextEncoderFrozen",
+        }
+    for conditions in by_key["loraplus_text_encoder_lr_ratio"]["show_if_any"]:
+        conditions.append({"key": "model_train_type", "neq": PROFILE_ID})
     by_key["vae"]["requiredGroups"].append(GROUP)
     for key in ("cache_text_encoder_outputs", "cache_text_encoder_outputs_to_disk"):
         by_key[key].setdefault("readonly_if_any", []).append([
