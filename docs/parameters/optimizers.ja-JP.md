@@ -80,7 +80,7 @@
 | AdamWScheduleFree | `1e-4` | Schedule-Free の目安は元の方式の `1`〜`10` 倍。Anima では実験的な値 |
 | Prodigy / ProdigyPlus | `1.0` | D 適応の倍率で、`2e-5` とは直接比較できない |
 | AdaFactor 相対ステップ | オプティマイザが管理。入力した学習率は更新に使わない | `relative_step` と `warmup_init` を両方オフにした Anima の手動設定は `2e-5` から開始 |
-| Automagic3 / EmoSens | `1e-4` / `0.1` | 内部で変動する学習率の基準値。通常の固定学習率とは異なる |
+| Automagic3 / EmoSens | `1e-4` / Transformer LoRA `0.1`、U-Net LoRA `1.0` | 内部で変動する学習率の基準値。通常の固定学習率とは異なる |
 
 Lion の `5e-6` は、論文の「AdamW の約 1/3〜1/10」という目安を使った値です。論文では重み減衰も約 3〜10 倍にすることを推奨していますが、本ツールは採用していません。公式の設定一式ではありません。
 
@@ -385,7 +385,9 @@ AdamWScheduleFree は内部の `warmup_steps` を使い、外部の `lr_warmup_s
 
 ### EmoSens v3.9.3
 
-EmoSens は損失の変化に応じて学習率を自動調整します。`learning_rate` には倍率を指定し、Anima LoRA は `0.1`、SDXL LoRA は `1.0` から始めます。実際の学習率は変動し、学習ログで確認できます。
+EmoSens は損失の変化に応じて学習率を自動調整します。`learning_rate` には倍率を指定します。上流のアーキテクチャ分類に従い、Transformer / DiT LoRA（Anima、MOSS-Image など）は `0.1`、U-Net LoRA（SDXL など）は `1.0` から始めます。実際の学習率は変動し、学習ログで確認できます。
+
+[上流の推奨値](https://github.com/muooon/EmoSens)は全量ファインチューニングも区別しており、Transformer / DiT は `0.01`、U-Net は `0.1` から始めます。現在のトレーナーは LoRA プロファイルのみを提供するため、全量ファインチューニングの倍率を LoRA の既定値にしないでください。これらは上流が示す開始値であり、本プロジェクトで全モデルの最適値として検証したものではありません。
 
 **主な設定**
 

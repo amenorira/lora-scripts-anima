@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from backend.training.field_registry import EMOSENS_OPTIMIZER_TYPE
+from backend.training.optimizer_contracts import normalize_optimizer_config
 from backend.training.supervisor import _build_train_env
 from backend.training.validation import validate_training_config
 from tests.helpers import valid_training_config
@@ -18,6 +19,24 @@ def valid_emosens_config() -> dict:
 
 
 class EmoSensValidationTests(unittest.TestCase):
+    def test_empty_learning_rate_uses_architecture_recommendation(self):
+        for profile, expected in (("anima-lora", 0.1), ("moss-image-lora", 0.1), ("sdxl-lora", 1.0)):
+            for empty in (None, ""):
+                with self.subTest(profile=profile, empty=empty):
+                    config = valid_emosens_config()
+                    config.update(model_train_type=profile, learning_rate=empty)
+                    normalize_optimizer_config(config, [])
+                    self.assertEqual(config["learning_rate"], expected)
+
+    def test_explicit_learning_rate_is_preserved(self):
+        for profile in ("anima-lora", "moss-image-lora", "sdxl-lora"):
+            for rate in ("0.03", "0.1", "1.0"):
+                with self.subTest(profile=profile, rate=rate):
+                    config = valid_emosens_config()
+                    config.update(model_train_type=profile, learning_rate=rate)
+                    normalize_optimizer_config(config, [])
+                    self.assertEqual(config["learning_rate"], rate)
+
     def test_rejects_unsupported_execution_modes(self):
         cases = (
             ({"gradient_accumulation_steps": 2}, [0], "gradient_accumulation_steps"),

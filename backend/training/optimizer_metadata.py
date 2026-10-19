@@ -13,6 +13,7 @@ from backend.training.optimizer_contracts import (
     AUTOMAGIC_OPTIMIZER_TYPE,
     CAME_OPTIMIZER_TYPE,
     EMOSENS_OPTIMIZER_TYPE,
+    EMOSENS_TRANSFORMER_LORA_PROFILES,
     LORA_MUON_OPTIMIZER_TYPE,
     LORARITE_OPTIMIZER_TYPE,
     MUON_OPTIMIZER_TYPE,
@@ -541,14 +542,17 @@ SD_OPTIMIZER_AUTO_VALUES: dict[str, list[dict[str, Any]]] = {
             "set": "2e-5",
             "set_if_default": True,
         },
-        {
-            "watch": {
-                "optimizer_type": EMOSENS_OPTIMIZER_TYPE,
-                "model_train_type": "anima-lora",
-            },
-            "set": "0.1",
-            "set_if_default": True,
-        },
+        *[
+            {
+                "watch": {
+                    "optimizer_type": EMOSENS_OPTIMIZER_TYPE,
+                    "model_train_type": profile,
+                },
+                "set": "0.1",
+                "set_if_default": True,
+            }
+            for profile in EMOSENS_TRANSFORMER_LORA_PROFILES
+        ],
         {
             "watch": "optimizer_type",
             "when": EMOSENS_OPTIMIZER_TYPE,

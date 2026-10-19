@@ -22,6 +22,9 @@ AUTOMAGIC_MERGED_ARG_MAP: dict[str, str] = {
     "weight_decay": "weight_decay",
 }
 EMOSENS_OPTIMIZER_TYPE = "vendor.emo_optimizer.emosens.EmoSens"
+# Supported Transformer/DiT LoRA profiles share upstream's 0.1 multiplier;
+# U-Net LoRA uses 1.0. Keep UI recommendations and empty-value fallback aligned.
+EMOSENS_TRANSFORMER_LORA_PROFILES = ("anima-lora", "moss-image-lora")
 PRODIGY_OPTIMIZER_TYPE = "Prodigy"
 PRODIGYPLUS_OPTIMIZER_TYPE = "prodigyplus.ProdigyPlusScheduleFree"
 ADAFACTOR_OPTIMIZER_TYPE = "AdaFactor"
@@ -1173,7 +1176,7 @@ def normalize_optimizer_config(config: dict[str, Any], warnings: list[str], gpu_
         config["lr_warmup_steps"] = 0
         if is_empty_optimizer_value(config.get("learning_rate")):
             model_type = config.get("model_train_type", "sdxl-lora")
-            rate = 0.1 if model_type == "anima-lora" else 1.0
+            rate = 0.1 if model_type in EMOSENS_TRANSFORMER_LORA_PROFILES else 1.0
             config["learning_rate"] = rate
             warnings.append(f"EmoSens + {model_type}: learning_rate auto-adjusted to {rate} / learning_rate 已自动调整为 {rate}")
         if any(not is_empty_optimizer_value(config.get(key)) for key in ("unet_lr", "text_encoder_lr")):

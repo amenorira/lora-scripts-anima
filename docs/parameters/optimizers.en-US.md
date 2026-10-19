@@ -80,7 +80,7 @@ The table lists project starting values. Optimizers use different update scales 
 | AdamWScheduleFree | `1e-4` | Schedule-Free guidance often `1`–`10`× higher than the base optimizer; treated as experimental on Anima |
 | Prodigy / ProdigyPlus | `1.0` | D-adaptation scale; not comparable to `2e-5` |
 | AdaFactor relative step | Controlled by the optimizer; entered LR does not control updates | With both `relative_step` and `warmup_init` off, Anima manual mode starts at `2e-5` |
-| Automagic3 / EmoSens | `1e-4` / `0.1` | Internal dynamic-LR baseline values, not ordinary fixed LR |
+| Automagic3 / EmoSens | `1e-4` / Transformer LoRA `0.1`, U-Net LoRA `1.0` | Internal dynamic-LR baseline values, not ordinary fixed LR |
 
 The Lion `5e-6` simply applies the paper's rule of thumb — roughly 3–10× smaller than AdamW. The paper also recommends scaling weight decay up by roughly 3–10×, which this project does not adopt, so this is not the complete official Lion recipe.
 
@@ -388,7 +388,9 @@ Stochastic rounding reduces the drift from low-precision updates that consistent
 
 ### EmoSens v3.9.3
 
-EmoSens adjusts the learning rate automatically as loss changes. Enter a multiplier in `learning_rate`: start with `0.1` for Anima LoRA or `1.0` for SDXL LoRA. The actual rate changes during training and is shown in the training logs.
+EmoSens adjusts the learning rate automatically as loss changes. Enter a multiplier in `learning_rate`. Following upstream's architecture categories, start with `0.1` for Transformer / DiT LoRA (such as Anima and MOSS-Image) or `1.0` for U-Net LoRA (such as SDXL). The actual rate changes during training and is shown in the training logs.
+
+[Upstream recommendations](https://github.com/muooon/EmoSens) also distinguish full fine-tuning: start with `0.01` for Transformer / DiT or `0.1` for U-Net. This trainer currently offers only LoRA profiles, so full fine-tuning multipliers should not become LoRA defaults. These are upstream starting points, not optimal values validated by this project for every model.
 
 **Common settings**
 

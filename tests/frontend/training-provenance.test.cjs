@@ -2,15 +2,15 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { loadFrontend } = require('./helpers.cjs');
 
-function makeForm() {
+function makeForm(profile = 'anima-lora') {
   const context = loadFrontend(['config', 'training-core'], {
-    window: { TRAIN_GROUP_MAP: { 'anima-lora': 'anima' } },
+    window: { TRAIN_GROUP_MAP: { 'anima-lora': 'anima', 'moss-image-lora': 'moss_image', 'sdxl-lora': 'sdxl' } },
   });
-  const fields = context.window.getVisibleSections('anima-lora').flatMap(s => s.fields || []);
+  const fields = context.window.getVisibleSections(profile).flatMap(s => s.fields || []);
   const selected = fields.filter(f => ['learning_rate', 'lr_scheduler'].includes(f.key));
   const noop = () => {};
   return Object.assign({}, context.window.trainingCoreMixin, {
-    form: { model_train_type: 'anima-lora', optimizer_type: 'AdamW8bit', learning_rate: '1e-4', lr_scheduler: 'cosine_with_restarts' },
+    form: { model_train_type: profile, optimizer_type: 'AdamW8bit', learning_rate: '1e-4', lr_scheduler: 'cosine_with_restarts' },
     formDefaults: Object.fromEntries(selected.map(f => [f.key, f.default])),
     formErrors: {}, _fieldSources: { learning_rate: 'default', lr_scheduler: 'default' },
     _profileFieldSources: {}, persistCalls: 0,
@@ -23,6 +23,20 @@ function makeForm() {
     _persistProfileFieldSources() { this.persistCalls += 1; },
   });
 }
+
+test('EmoSens recommends by architecture and preserves explicit multipliers until reset', () => {
+  for (const [profile, rate] of [['anima-lora', '0.1'], ['moss-image-lora', '0.1'], ['sdxl-lora', '1.0']]) {
+    const app = makeForm(profile);
+    app.setField('optimizer_type', 'vendor.emo_optimizer.emosens.EmoSens');
+    app._applyInitialAutoValues();
+    assert.equal(app.form.learning_rate, rate, profile);
+    app.setField('learning_rate', '0.03');
+    app._applyInitialAutoValues();
+    assert.equal(app.form.learning_rate, '0.03', profile);
+    app.resetField('learning_rate');
+    assert.equal(app.form.learning_rate, rate, profile);
+  }
+});
 
 test('optimizer transitions preserve user values, including an unchanged input, until reset', () => {
   const app = makeForm();

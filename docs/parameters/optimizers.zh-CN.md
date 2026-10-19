@@ -80,7 +80,7 @@
 | AdamWScheduleFree | `1e-4` | 官方建议常比基准优化器高 `1`～`10` 倍；Anima 缺少充分验证，按实验方案使用 |
 | Prodigy / ProdigyPlus | `1.0` | D-adaptation 缩放基准，不能与 `2e-5` 直接比较 |
 | AdaFactor relative step | 由优化器接管，输入 LR 不控制更新 | 关闭 `relative_step` 和 `warmup_init` 后，Anima 手动模式从 `2e-5` 开始 |
-| Automagic3 / EmoSens | `1e-4` / `0.1` | 算法内部动态 LR 的基准值，不是普通固定 LR |
+| Automagic3 / EmoSens | `1e-4` / Transformer LoRA `0.1`、U-Net LoRA `1.0` | 算法内部动态 LR 的基准值，不是普通固定 LR |
 
 Lion 的 `5e-6` 只沿用了官方给出的“LR 比 AdamW 小约 3～10 倍”这一比例。官方还建议同时把 weight decay 增大 3～10 倍，本项目未沿用，因此这不是完整的官方 Lion 配方。
 
@@ -388,7 +388,9 @@ AdamWScheduleFree 使用内部 `warmup_steps`，外部 `lr_warmup_steps` 无效�
 
 ### EmoSens v3.9.3
 
-EmoSens 会根据损失的变化自动调整学习率。使用时，在 `learning_rate` 中填写倍率：Anima LoRA 可从 `0.1` 开始，SDXL LoRA 可从 `1.0` 开始。训练中的实际学习率会持续变化，可以在训练日志中查看。
+EmoSens 会根据损失的变化自动调整学习率。使用时，在 `learning_rate` 中填写倍率。按上游的架构分类，Transformer / DiT LoRA（如 Anima、MOSS-Image）建议从 `0.1` 开始，U-Net LoRA（如 SDXL）从 `1.0` 开始。训练中的实际学习率会持续变化，可以在训练日志中查看。
+
+[上游建议](https://github.com/muooon/EmoSens)还区分了全量微调：Transformer / DiT 全量微调从 `0.01` 开始，U-Net 全量微调从 `0.1` 开始。当前训练器只提供 LoRA 训练档，不应把全量微调的倍率套用为 LoRA 默认值。这些倍率是上游起始建议，并非每个模型都经过本项目验证的最优值。
 
 **常用设置**
 

@@ -917,7 +917,7 @@
 		"notifyHint": "停止時期の提案をログに表示します。学習を自動終了することはありません。",
 		"use_shadow": "シャドウ重みを使用",
 		"use_shadowHint": "重みのコピーを保持し、損失が急変したときに現在の重みと混合します。コピーの保持に追加の VRAM を使います。",
-		"learning_rateHint_emosens": "ここには倍率を指定します。実際の学習率は EmoSens が自動調整します。Anima LoRA は 0.1、SDXL LoRA は 1.0 から試してください。再開時は元の値を保持します。",
+		"learning_rateHint_emosens": "ここには倍率を指定します。実際の学習率は EmoSens が自動調整します。Transformer / DiT LoRA（Anima、MOSS-Image など）は 0.1、U-Net LoRA（SDXL など）は 1.0 から試してください。再開時は元の値を保持します。",
 		"component_lrHint_emosens": "EmoSens は全コンポーネントで同じ学習率を使うため、この欄では実際の学習率は変わりません。学習対象はバックボーンのみ・テキストエンコーダのみのスイッチで選択してください。",
 		"prodigy_d_coef": "Prodigy のステップサイズ推定係数",
 		"prodigy_d_coefHint": "自動推定値 D の計算に使います。既定値は 1.0。推定尺度を変える値で、最終的な学習率に直接掛ける倍率ではありません。",

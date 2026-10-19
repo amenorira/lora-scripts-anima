@@ -917,7 +917,7 @@
 		"notifyHint": "Displays suggestions in the log about when to stop. Does not end training automatically.",
 		"use_shadow": "Enable shadow weights",
 		"use_shadowHint": "Keeps an extra copy of the weights and blends it with the current weights when loss changes suddenly. The extra copy uses more GPU memory.",
-		"learning_rateHint_emosens": "Enter a multiplier here; EmoSens adjusts the actual learning rate automatically. Start with 0.1 for Anima LoRA or 1.0 for SDXL LoRA. Keep the original value when resuming.",
+		"learning_rateHint_emosens": "Enter a multiplier here; EmoSens adjusts the actual learning rate automatically. Start with 0.1 for Transformer / DiT LoRA (such as Anima and MOSS-Image) or 1.0 for U-Net LoRA (such as SDXL). Keep the original value when resuming.",
 		"component_lrHint_emosens": "EmoSens uses one learning rate for all components, so this field does not change the component's actual rate. Use the backbone-only or text-encoder-only switches to choose what to train.",
 		"prodigy_d_coef": "Prodigy step-size estimate coefficient",
 		"prodigy_d_coefHint": "Used in the automatic D estimate. Default: 1.0. Changes the estimate scale rather than directly multiplying the final learning rate.",
