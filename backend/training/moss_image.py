@@ -128,7 +128,7 @@ def extend_fields(fields: list[dict[str, Any]]) -> None:
     additions = [
         ("qwen3", {"key": "text_encoder", "type": "text", "default": "", "section": "model", "role": "file-model", "required": True}),
         ("text_encoder", {"key": "tokenizer_cache_dir", "type": "text", "default": "", "section": "model", "role": "file-folder"}),
-        ("train_adaln", {"key": "train_text_embedder", "type": "toggle", "default": False, "section": "network", "target": "ui"}),
+        ("train_adaln", {"key": "train_text_embedder", "type": "toggle", "default": False, "section": "network", "target": "ui", "doc_slug": "network-parameters", "doc_anchor": "moss-text-embedder"}),
         ("qwen3_max_token_length", {"key": "moss_max_token_length", "type": "number", "default": 4096, "section": "caption", "min": 1, "max": 4096, "step": 1}),
         ("moss_max_token_length", {"key": "enable_multiline_caption", "type": "toggle", "default": True, "section": "caption"}),
         ("enable_multiline_caption", {"key": "multiline_caption_separator", "type": "text", "default": "---===---", "section": "caption", "show_if": {"key": "enable_multiline_caption", "eq": True}}),

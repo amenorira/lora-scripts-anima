@@ -383,6 +383,13 @@ AdamWScheduleFree は内部の `warmup_steps` を使い、外部の `lr_warmup_s
 
 低精度の更新が同じ方向に丸められ続けることによる偏りを減らします。ProdigyPlus はライブラリの既定値を使い、本ツールに独立した切り替え項目はありません。データ拡張ではなく、数値計算の処理です。
 
+<!-- doc-anchor: automagic-lr -->
+### Automagic3 の開始学習率と上下限
+
+`learning_rate` は制御器の開始値です。その後は各群が更新方向の履歴から学習率を調整します。[採用中の上流コード](https://github.com/ostris/ai-toolkit/blob/c2864bba48a6f94ab1171d9df47b1335f8306355/toolkit/optimizers/automagic3.py)は、既定の `max_lr=1e3` を目標値ではなく数値保護の上限としています。上昇を制限するには `max_lr` を下げ、下降は `min_lr` で制限します。
+
+本プロジェクトでは、個別学習率や LoRA+ 倍率を含む各群の開始値が `[min_lr, max_lr]` の範囲内である必要があります。外部スケジューラとウォームアップはこの自動調整に使いません。
+
 ### EmoSens v3.9.3
 
 EmoSens は損失の変化に応じて学習率を自動調整します。`learning_rate` には倍率を指定します。上流のアーキテクチャ分類に従い、Transformer / DiT LoRA（Anima、MOSS-Image など）は `0.1`、U-Net LoRA（SDXL など）は `1.0` から始めます。実際の学習率は変動し、学習ログで確認できます。

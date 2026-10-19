@@ -4,6 +4,13 @@ Network settings determine the adapter's matrix structure, training scope, and w
 
 MOSS-Image defaults to rank/Alpha `16/1` and offers native `networks.lora_generic`, `networks.loha`, and `networks.lokr`. All three support rank/module dropout, LoRA+, regex rank/learning-rate settings, and optional DiT text projection and refiner training; Qwen stays frozen. LoKr also exposes `lokr_factor`. MOSS targets linear layers, so convolution rank/alpha and Tucker controls are hidden; `lycoris.kohya` is unavailable. Equal ranks across algorithms do not imply equal parameter counts: inspect the matrices and scaling in the structure preview and tune learning rates separately.
 
+<!-- doc-anchor: moss-text-embedder -->
+## MOSS text projection and refiner blocks
+
+`train_text_embedder` defaults to off. Enabling it adds adapters using the selected LoRA / LoHa / LoKr algorithm to the DiT text input projection and two refiner blocks. Qwen stays frozen, so text caching remains available.
+
+These modules inherit the backbone learning rate. To set a separate rate, enter `network_reg_lrs=.*text_embedder.*=5e-5` in custom network arguments. `5e-5` is a syntax example; whether it lowers the rate depends on the current backbone value. EmoSens does not use group-specific learning rates, so this override does not change its actual step size.
+
 <!-- doc-anchor: dimension -->
 ## Network dimension
 

@@ -4,6 +4,13 @@
 
 MOSS-Image 的配置默认 Rank / Alpha 为 `16/1`，可选择原生 `networks.lora_generic`、`networks.loha` 或 `networks.lokr`。三者支持 rank/module dropout、LoRA+、正则 rank/学习率设置，以及可选的 DiT 文本投影与细化层；Qwen 文本编码器保持冻结。LoKr 额外支持 `lokr_factor`。MOSS 的目标层均为线性层，因此界面不显示卷积 rank/alpha 和 Tucker 分解参数，也不开放 `lycoris.kohya`。不同算法的相同 rank 不代表相同参数量，请用结构预览核对矩阵和缩放，并单独调整学习率。
 
+<!-- doc-anchor: moss-text-embedder -->
+## MOSS 文本投影与细化层
+
+`train_text_embedder` 默认关闭。开启后，按所选 LoRA / LoHa / LoKr 算法，为 DiT 的文本输入投影和两个细化块增加适配器。Qwen 文本编码器仍冻结，因此可继续使用文本缓存。
+
+这部分默认使用主干学习率。需要单独指定时，在自定义网络参数中填写 `network_reg_lrs=.*text_embedder.*=5e-5`。`5e-5` 仅为语法示例，是否降低学习率取决于当前主干值；EmoSens 不使用分组学习率，这条覆盖规则对它的实际步长无效。
+
 <!-- doc-anchor: dimension -->
 ## 网络维度
 

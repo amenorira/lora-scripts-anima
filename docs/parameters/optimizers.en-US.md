@@ -386,6 +386,13 @@ AdamWScheduleFree uses internal `warmup_steps`; external `lr_warmup_steps` is in
 
 Stochastic rounding reduces the drift from low-precision updates that consistently round in the same direction. ProdigyPlus carries the library default; this trainer adds no separate switch. It is a numerical detail, not data augmentation.
 
+<!-- doc-anchor: automagic-lr -->
+### Automagic3 starting rate and bounds
+
+`learning_rate` initializes the controller; each parameter group then adapts its rate from update-direction history. The [vendored upstream source](https://github.com/ostris/ai-toolkit/blob/c2864bba48a6f94ab1171d9df47b1335f8306355/toolkit/optimizers/automagic3.py) describes `max_lr=1e3` as a numerical guard, not a target. Lower `max_lr` to constrain growth; `min_lr` bounds decreases.
+
+This project requires every starting group rate, including component overrides and LoRA+ scaling, to lie within `[min_lr, max_lr]`. External scheduling and warmup do not control this adaptation.
+
 ### EmoSens v3.9.3
 
 EmoSens adjusts the learning rate automatically as loss changes. Enter a multiplier in `learning_rate`. Following upstream's architecture categories, start with `0.1` for Transformer / DiT LoRA (such as Anima and MOSS-Image) or `1.0` for U-Net LoRA (such as SDXL). The actual rate changes during training and is shown in the training logs.

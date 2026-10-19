@@ -1966,6 +1966,11 @@ window.trainingCoreMixin = {
 
   _resolveFieldHintOverrideKey(field, values) {
     if (!field) return '';
+    if (field.key === 'learning_rate' && values?.optimizer_type === 'AdaFactor') {
+      return values.adafactor_relative_step !== false || values.adafactor_warmup_init === true
+        ? 'field.learning_rateHint_adafactor_relative'
+        : 'field.learning_rateHint_adafactor_manual';
+    }
     if (field.key === 'network_alpha' && this._hasFullLokrFactors(values)) {
       return 'field.network_alphaHint_lokr_full';
     }
@@ -1998,21 +2003,12 @@ window.trainingCoreMixin = {
     return key ? this.t(key) : '';
   },
 
-  _resolveFieldBaseHintText(field, trainType) {
-    const key = this._resolveFieldBaseHintKey(field, trainType);
-    return key ? this.t(key) : '';
-  },
-
-  _resolveFieldHintOverrideText(field, values) {
-    const key = this._resolveFieldHintOverrideKey(field, values);
-    return key ? this.t(key) : '';
-  },
-
-  fieldHintOverrideText(fieldKey) {
+  fieldHintText(fieldKey) {
     const trainType = this.form.model_train_type || 'anima-lora';
-    return this._resolveFieldHintOverrideText(
+    return this._resolveFieldHintText(
       this._fieldDefinition(fieldKey, trainType),
-      this.form
+      this.form,
+      trainType
     );
   },
 
@@ -2029,7 +2025,6 @@ window.trainingCoreMixin = {
     const hasSpecificLabel = specificLabel && specificLabel !== descKeyWithSuffix;
     const label = hasSpecificLabel ? specificLabel : (this.t(field.descKey) || field.descKey || field.key);
     const hint = this._resolveFieldHintText(field, this.form, trainType);
-    const baseHint = this._resolveFieldBaseHintText(field, trainType);
     const docLink = field.docSlug
       ? `<button type="button" class="field-doc-link" @click.stop="openParameterDoc('${this.escapeAttr(field.docSlug)}','${this.escapeAttr(field.docAnchor || '')}')" title="${this.escapeAttr(this.t('docs.openGuide'))}" aria-label="${this.escapeAttr(this.t('docs.openGuide'))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg><span>${this.esc(this.t('docs.openGuide'))}</span></button>`
       : '';
@@ -2272,11 +2267,11 @@ window.trainingCoreMixin = {
           ${_menuPopupHtml}
         </div>`;
     const staticReadonlyClass = isStaticReadonly ? ' field-readonly' : '';
-    const hintOverrideExpr = `fieldHintOverrideText('${this.escapeAttr(dataKey)}')`;
+    const hintExpr = `fieldHintText('${this.escapeAttr(dataKey)}')`;
     const hintHtml = dataKey === 'attn_mode'
       ? `<div class="field-hint" x-text="t('opt.attn_mode_' + form.attn_mode)">${this.esc(this.t('opt.attn_mode_' + val))}</div>`
       : field.hintKeyBy
-      ? `${baseHint ? `<div class="field-hint">${baseHint}</div>` : ''}<div class="field-hint field-hint-warn" x-show="${hintOverrideExpr}" x-text="${hintOverrideExpr}" x-cloak></div>`
+      ? `<div class="field-hint" x-show="${hintExpr}" x-text="${hintExpr}">${this.esc(hint)}</div>`
       : (hint ? `<div class="field-hint">${hint}</div>` : '');
     return `<div class="field${condClass}${nestedClass}${staticReadonlyClass}" :class="{ 'field-changed': String(form.${dataKey}) !== String(formDefaults.${dataKey}), 'field-filled': ${_filledExpr} }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}${nestLevelAttr}>
       <div class="field-row">
