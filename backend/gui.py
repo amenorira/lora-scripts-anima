@@ -9,10 +9,6 @@ import os
 import platform
 import sys
 
-from tools.runtime_paths import configure_runtime_paths
-
-configure_runtime_paths()
-
 # 项目启动兼容性补丁必须先于 ML 依赖导入
 if sys.platform == "win32":
     from tools.python_startup import sitecustomize as _sitecustomize  # noqa: F401

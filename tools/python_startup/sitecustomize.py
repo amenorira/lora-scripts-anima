@@ -3,20 +3,8 @@ from __future__ import annotations
 
 import importlib.metadata
 import os
-from pathlib import Path
 import subprocess
 import sys
-
-# Launchers expose only this hooks directory through PYTHONPATH. During site
-# initialization, Python has not yet added cwd (or the script directory) to
-# sys.path, so project imports must be rooted in this file's location first.
-_PROJECT_ROOT = str(Path(__file__).resolve().parents[2])
-if _PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, _PROJECT_ROOT)
-
-from tools.runtime_paths import configure_runtime_paths
-
-configure_runtime_paths()
 
 # Load the optional CUDA extension only in explicitly selected training/probe
 # processes. A stale wheel must not break otherwise independent SDPA runs.

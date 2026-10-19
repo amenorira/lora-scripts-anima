@@ -261,7 +261,7 @@ Run the complete test suite (the tests use the standard-library unittest and nee
 
 Tests live in `tests/`, grouped into training, monitoring, environment, tagging, application, and frontend categories. The common entrypoint also runs standalone JavaScript tests. Developer scripts live in `tools/dev/`; `tools/` also contains runtime tools used by the launcher and backend.
 
-Runtime temporary files, generated LyCORIS presets, and compiler caches default to `cache/runtime/`. Test temporary files, compiler caches, and pytest's cache live under `cache/tests/`. Explicit compiler-cache paths are preserved. Keep diagnostic scripts, screenshots, and developer logs under `cache/dev/<task>/`.
+Generated LyCORIS presets, installation logs, and temporary download ZIPs live under `cache/runtime/`. Normal startup and training retain the system temporary directory and each dependency's existing cache settings. Test temporary files and default compiler caches live under `cache/tests/`; explicit compiler-cache paths are preserved. Keep diagnostic scripts, screenshots, and developer logs under `cache/dev/<task>/`.
 
 ## Acknowledgements
 

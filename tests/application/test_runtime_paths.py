@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -10,25 +11,37 @@ from tools import runtime_paths
 
 
 class RuntimePathTests(unittest.TestCase):
-    def test_startup_hook_works_with_only_the_launcher_pythonpath(self):
+    def test_startup_hook_preserves_normal_temporary_and_compiler_paths(self):
         env = os.environ.copy()
         # No extra project-root entry or trailing separator to hide startup bugs.
         env["PYTHONPATH"] = str(runtime_paths.ROOT / "tools/python_startup")
-        result = subprocess.run(
-            [sys.executable, "-c", "import sys, tempfile; "
-             "assert 'sitecustomize' in sys.modules; print(tempfile.gettempdir())"],
-            cwd=runtime_paths.ROOT, env=env, capture_output=True,
-            text=True, encoding="utf-8", timeout=15,
-        )
+        keys = ("TEMP", "TMP", "TMPDIR", "TORCHINDUCTOR_CACHE_DIR", "TORCH_EXTENSIONS_DIR",
+                "TRITON_CACHE_DIR", "LYCORIS_KERNEL_CACHE_DIR", "CUDA_CACHE_PATH", "XDG_CACHE_HOME")
+        for key in (*keys, "ANIMA_TEMP_DIR"):
+            env.pop(key, None)
+        with tempfile.TemporaryDirectory() as directory:
+            env.update({key: directory for key in ("TEMP", "TMP", "TMPDIR")})
+            env["TORCHINDUCTOR_CACHE_DIR"] = str(Path(directory) / "custom-inductor")
+            script = (
+                "import json, os, sys, tempfile; assert 'sitecustomize' in sys.modules; "
+                f"print(json.dumps({{key: os.environ.get(key) for key in {keys!r}}})); "
+                "print(tempfile.gettempdir())"
+            )
+            result = subprocess.run(
+                [sys.executable, "-c", script], cwd=runtime_paths.ROOT, env=env,
+                capture_output=True, text=True, encoding="utf-8", timeout=15,
+            )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stderr, "")
-        self.assertEqual(Path(result.stdout.strip()), Path(tempfile.gettempdir()))
+        paths, temporary = result.stdout.splitlines()
+        self.assertEqual(json.loads(paths), {key: env.get(key) for key in keys})
+        self.assertEqual(Path(temporary), Path(directory))
 
     def test_temporary_files_and_children_do_not_fall_back_to_working_directory(self):
         with tempfile.TemporaryDirectory() as directory:
             project = Path(directory)
             with patch.dict(os.environ, {}, clear=True), patch.object(tempfile, "tempdir", str(Path.cwd())):
-                runtime_paths.configure_runtime_paths(testing=True, root=project)
+                runtime_paths.configure_test_paths(root=project)
                 expected = (project / "cache/tests/tmp").resolve()
                 with tempfile.NamedTemporaryFile() as handle:
                     self.assertEqual(Path(handle.name).parent, expected)
@@ -39,20 +52,19 @@ class RuntimePathTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(Path(result.stdout.strip()), expected)
 
-    def test_explicit_compiler_caches_and_inherited_temporary_directory_are_preserved(self):
+    def test_test_setup_preserves_explicit_compiler_caches(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             values = {
-                "ANIMA_TEMP_DIR": str(root / "parent-tmp"),
                 "TORCHINDUCTOR_CACHE_DIR": str(root / "custom-inductor"),
                 "TRITON_CACHE_DIR": str(root / "custom-triton"),
                 "LYCORIS_KERNEL_CACHE_DIR": str(root / "custom-lycoris"),
             }
             with patch.dict(os.environ, values, clear=True), patch.object(tempfile, "tempdir", None):
-                runtime_paths.configure_runtime_paths(root=root)
+                runtime_paths.configure_test_paths(root=root)
                 for key, value in values.items():
                     self.assertEqual(os.environ[key], value)
-                self.assertEqual(Path(tempfile.gettempdir()), root / "parent-tmp")
+                self.assertEqual(Path(tempfile.gettempdir()), root / "cache/tests/tmp")
                 self.assertTrue(Path(os.environ["XDG_CACHE_HOME"]).is_relative_to(root / "cache"))
 
     def test_lycoris_presets_have_a_stable_managed_path_even_if_tempfile_falls_back(self):

@@ -1,4 +1,4 @@
-"""Keep disposable runtime files in the project's managed cache tree."""
+"""Explicit project scratch directories and opt-in test cache isolation."""
 from __future__ import annotations
 
 import os
@@ -16,21 +16,14 @@ def runtime_cache_dir(*parts: str) -> Path:
     return directory
 
 
-def configure_runtime_paths(*, testing: bool = False, root: Path | None = None) -> None:
-    """Configure before ML imports; children inherit the same explicit paths.
-
-    Python otherwise silently falls back to cwd if system temporary directories
-    are unwritable. A managed directory must succeed rather than polluting cwd.
-    User-selected compiler/cache directories remain authoritative.
-    """
+def configure_test_paths(*, root: Path | None = None) -> None:
+    """Isolate test/diagnostic files; never called by application startup."""
     project = root if root is not None else ROOT
-    cache = project / "cache" / ("tests" if testing else "runtime")
-    inherited = os.environ.get("ANIMA_TEMP_DIR") if not testing else None
-    temporary = Path(inherited) if inherited else cache / "tmp"
-    temporary = temporary.resolve()
+    cache = project / "cache" / "tests"
+    temporary = (cache / "tmp").resolve()
     temporary.mkdir(parents=True, exist_ok=True)
     tempfile.tempdir = str(temporary)
-    for key in ("ANIMA_TEMP_DIR", "TMPDIR", "TEMP", "TMP"):
+    for key in ("TMPDIR", "TEMP", "TMP"):
         os.environ[key] = str(temporary)
     for key, relative in (
         ("TORCHINDUCTOR_CACHE_DIR", "torchinductor"),
