@@ -6,6 +6,18 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v26.1019.08dd0 - 2026-10-19
+
+This release adds **native LoHa, LoKr, and Muon optimizer support for MOSS-Image**, introduces matrix structure previews and weight file size estimates, and improves training parameter compatibility checks and temporary file management.
+
+- **More MOSS-Image training algorithms**: Choose native LoRA, LoHa, or LoKr, with LoRA+, configuration import and export, and LoKr factor settings. All three algorithms can optionally train the text projection and refinement layers inside the DiT, while the Qwen text encoder remains frozen.
+- **Muon optimizer support for MOSS-Image**: Use Muon with all three native algorithms, together with LoRA+ and standard learning rate schedulers. The defaults provide a starting point for training; compare and adjust them for each dataset.
+- **MOSS matrix structure previews**: Inspect actual matrix shapes, rank, scaling, and parameter counts for attention, MLP, and optional text layers, including the matrix combinations used by LoHa and LoKr. Estimate weight file sizes from the algorithm, training scope, and save precision without loading base model weights or starting training. These estimates do not represent VRAM requirements.
+- **Improved Muon parameter checks**: Require `0 ≤ momentum < 1` and reject LyCORIS combinations using `use_scalar` or `train_norm` that introduce non-2D parameters before training starts. Checks cover form fields, imported configurations, and custom arguments.
+- **Temporary files and documentation**: Store generated LyCORIS presets, installation logs, and temporary download ZIPs under `cache/runtime/`, and test temporary files and default compilation caches under `cache/tests/`. Update Chinese, English, and Japanese interface hints, READMEs, and parameter guides.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1019.00e13...v26.1019.08dd0)
+
 ## v26.1019.00e13 - 2026-10-19
 
 This release adds **MOSS-Image LoRA training**, compatible model downloads, and ConvRot INT8 support. It also improves Anima's default VRAM settings, introduces **on-demand FlashAttention 2 installation**, and refines environment management, interface interactions, and pre-training checks.

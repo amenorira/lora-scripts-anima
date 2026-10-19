@@ -582,7 +582,9 @@ async def download_outputs(run_dir: str = Query(""), task_id: str = Query(""), f
     # 打包 ZIP 到临时文件（在独立线程池中，不阻塞事件循环）
     # 使用 ZIP_STORED（不压缩）：模型文件已高度优化，DEFLATE 几乎无效且耗时
     def _build_zip(run_dir_path: Path, paths: list[str]) -> Path:
-        tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+        from tools.runtime_paths import runtime_cache_dir
+
+        tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False, dir=runtime_cache_dir("downloads"))
         tmp.close()
         dst = Path(tmp.name)
         try:

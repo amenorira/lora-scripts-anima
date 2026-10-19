@@ -15,6 +15,7 @@
 ## 重要约定
 
 - **必须使用 venv**：项目运行在 `venv/` 虚拟环境。任何 Python 命令（版本检查、测试、pip 等）都必须通过 `venv\Scripts\python.exe`（Windows）或 `venv/bin/python`（Linux）执行，**禁止使用系统 Python**。系统 Python 可能版本不同或缺少关键依赖（如 CUDA torch）。
+- **开发产物统一归入 cache**：诊断脚本、截图、测试日志和临时提交说明放入 `cache/dev/<任务名>/`，禁止散落在项目根目录；`.anima_tmp/` 仅供 Windows 启动器保存恢复状态。测试使用统一入口，临时文件与编译缓存默认进入 `cache/tests/`；独立诊断脚本使用 `tempfile` 前可调用 `tools.runtime_paths.configure_test_paths()`，该配置仅用于测试和诊断，不得接入正常启动或训练流程。
 - **PyTorch 环境**：训练环境可能安装了特定 CUDA 版本的 PyTorch（当前默认如 `2.10.0+cu130`），版本号和依赖关系以 venv 中实际安装为准。
 - **提交信息使用中文**：所有 git commit message 必须用中文撰写（可使用 Conventional Commits 前缀，如 `feat: 新增 xxx`、`fix: 修复 xxx`），禁止纯英文提交信息。
 - **提交正文使用真实换行**：多行 commit body 必须包含实际换行和中文项目符号，禁止把 `\\n` 作为字面量写入提交信息；优先使用提交模板文件或 shell 的多行字符串传入正文。

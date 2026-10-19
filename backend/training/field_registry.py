@@ -622,7 +622,7 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "sample_flow_shift", "type": "number", "default": 3.0, "section": "preview", "desc_key": "field.sample_flow_shift", "hint_key": "field.sample_flow_shiftHint", "target": "ui", "group": "anima", "min": 0.01, "step": 0.05, "show_if": {"key": "enable_preview", "eq": True}},
 ]
 
-from backend.training.moss_image import extend_fields as _extend_moss_fields
+from backend.training.moss_image import NETWORK_MODULES as MOSS_NETWORK_MODULES, extend_fields as _extend_moss_fields
 
 _extend_moss_fields(FIELDS)
 
@@ -879,7 +879,7 @@ def _to_camel(field: dict) -> dict:
         )]
     if key == "train_text_embedder":
         result["networkArg"] = "train_llm_adapter"
-        result["networkModules"] = ["networks.lora_generic"]
+        result["networkModules"] = list(MOSS_NETWORK_MODULES)
     return result
 
 

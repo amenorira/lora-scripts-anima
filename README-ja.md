@@ -22,7 +22,7 @@ _✨ 複数の学習エンジンに対応した LoRA ツール：Anima、SDXL、
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-en.md">English</a>
 </p>
 
-Anima / SDXL はネイティブの LoRA・LoHa・LoKr と、`lycoris.kohya` 経由の **LyCORIS** LoCon / LoHa / LoKr に対応します。MOSS-Image と Krea 2 はそれぞれ専用のネイティブ LoRA モジュールを使用します。
+Anima / SDXL / MOSS-Image はネイティブの LoRA・LoHa・LoKr に対応します。Anima / SDXL は `lycoris.kohya` 経由の **LyCORIS** LoCon / LoHa / LoKr にも対応します。Krea 2 は専用のネイティブ LoRA モジュールを使用します。
 
 ### 対応モデル
 
@@ -30,10 +30,10 @@ Anima / SDXL はネイティブの LoRA・LoHa・LoKr と、`lycoris.kohya` 経�
 |----------|--------------|
 | LoRA | SDXL |
 | **LoRA** | **Anima**（Qwen3 + T5 のデュアルエンコーダー） |
-| **LoRA** | **MOSS-Image**（sd-scripts） |
+| **LoRA / LoHa / LoKr** | **MOSS-Image**（sd-scripts） |
 | **LoRA** | **Krea 2 RAW DiT**（musubi-tuner） |
 
-> ℹ️ MOSS-Image は現在、ネイティブの `networks.lora_generic` のみ対応し、LoHa・LoKr・LyCORIS は利用できません。UI では Qwen テキストエンコーダーを固定し、DiT 内のテキスト埋め込み層の学習を個別に選択できます。
+> ℹ️ MOSS-Image はネイティブの `networks.lora_generic`・`networks.loha`・`networks.lokr` に対応し、`lycoris.kohya` には非対応です。3 つの方式すべてで DiT 内のテキスト投影層と Refiner の学習を選択できます。UI では Qwen テキストエンコーダーを凍結します。
 
 > ℹ️ Krea 2 では、学習前に latent と Qwen3-VL テキストエンコーダー出力の両方をキャッシュする必要があります。学習開始前に、キャッシュが揃っているか、画像・キャプション・モデルと一致しているかを GUI が確認します。
 
@@ -72,7 +72,7 @@ Anima / SDXL はネイティブの LoRA・LoHa・LoKr と、`lycoris.kohya` 経�
 
 ### 行列構造
 
-Anima 学習では、学習ネットワークモジュールの設定から **「構造プレビュー」** を開けます。実際のネットワーク構築結果に基づき、LoRA / LoCon、LoHa、LoKr の行列の組み合わせを表示します。Attention、MLP などのモジュールを切り替え、層ごとの形状、実効 rank / alpha、スケーリング、該当する層数、パラメータ数を確認できます。
+Anima または MOSS-Image 学習では、学習ネットワークモジュールの設定から **「構造プレビュー」** を開けます。Anima は LoRA / LoCon、LoHa、LoKr に、MOSS-Image は任意の DiT テキスト投影層と Refiner を含むネイティブ LoRA / LoHa / LoKr に対応します。実際のネットワーク構築結果に基づいて行列の組み合わせを表示し、Attention、MLP などのモジュールを切り替えて、層ごとの形状、実効 rank / alpha、スケーリング、該当する層数、パラメータ数を確認できます。
 
 同じ場所に **推定重みファイルサイズ** も表示され、アルゴリズム、rank、学習範囲、保存精度に応じて自動更新されます。仮想テンソルを使用するため、ベースモデルの読み込みや学習の開始は不要です。推定には保存テンソルと safetensors のインデックスを含みますが、VRAM 使用量を表すものではありません。詳しくは[行列構造とファイルサイズのガイド](docs/parameters/matrix-preview.ja-JP.md)を参照してください。
 
@@ -261,6 +261,8 @@ GUI の **「環境」** タブで次の情報や機能を利用できます。
 ```
 
 テストは `tests/` にあり、学習、監視、環境、タグ付け、アプリケーション、フロントエンドに分類されています。共通の実行コマンドには独立した JavaScript テストも含まれます。開発用スクリプトは `tools/dev/` にあります。`tools/` には起動処理やバックエンドが使用する実行ツールも含まれます。
+
+生成された LyCORIS プリセット、インストールログ、ダウンロード用の一時 ZIP は `cache/runtime/` に保存されます。通常の起動と学習では、システムの一時ディレクトリと各依存ライブラリの既存のキャッシュ設定を維持します。テスト用の一時ファイルと既定のコンパイルキャッシュは `cache/tests/` に保存され、明示的なキャッシュパスは維持されます。診断スクリプト、スクリーンショット、開発ログは `cache/dev/<タスク名>/` に保存してください。
 
 ## 謝辞
 

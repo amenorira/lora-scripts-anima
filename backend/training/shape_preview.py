@@ -1,4 +1,4 @@
-"""Inspect the actual Anima network constructors without allocating model weights."""
+"""Inspect actual adapter network constructors without allocating model weights."""
 import ast
 import asyncio
 import copy
@@ -15,8 +15,13 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
+from backend.training.moss_image import NETWORK_MODULES as MOSS_NETWORK_MODULES
+
 ROOT = Path(__file__).resolve().parents[2]
-SUPPORTED = {"networks.lora_anima", "networks.loha", "networks.lokr", "lycoris.kohya"}
+SUPPORTED = {
+    "anima-lora": {"networks.lora_anima", "networks.loha", "networks.lokr", "lycoris.kohya"},
+    "moss-image-lora": set(MOSS_NETWORK_MODULES),
+}
 _pool = None
 
 
@@ -102,12 +107,15 @@ def _inspect_network(form):
     """Runs in a dedicated CPU worker; FakeTensorMode also handles DoRA initialization."""
     from backend.training.adapter import adapt_config
 
-    if form.get("model_train_type") != "anima-lora":
-        raise ValueError("Only Anima adapter training is supported / 仅支持 Anima 适配器训练")
+    train_type = form.get("model_train_type")
+    if train_type not in SUPPORTED:
+        raise ValueError("Only Anima and MOSS-Image adapter training is supported / 仅支持 Anima 和 MOSS-Image 适配器训练")
     config, _ = adapt_config(form)
     module_name = config.get("network_module")
-    if module_name not in SUPPORTED:
+    if module_name not in SUPPORTED[train_type]:
         raise ValueError("Unsupported custom network / 暂不支持此自定义网络")
+    if train_type == "moss-image-lora" and not config.get("network_train_unet_only"):
+        raise ValueError("MOSS-Image preview requires a frozen text encoder / MOSS-Image 结构预览要求冻结文本编码器")
     if config.get("dim_from_weights"):
         raise ValueError("Dimensions from checkpoint cannot be estimated / 暂不支持从已有权重推导结构")
     if config.get("save_model_as", "safetensors") != "safetensors":
@@ -118,7 +126,6 @@ def _inspect_network(form):
             sys.path.insert(0, str(path))
     import torch
     from torch._subclasses.fake_tensor import FakeTensorMode
-    from library.anima_models import Anima
 
     network_module = importlib.import_module(module_name)
     kwargs = dict(item.split("=", 1) for item in config.get("network_args", []) if "=" in item)
@@ -133,7 +140,14 @@ def _inspect_network(form):
     # PyTorch 2.12 trunc_normal_ checks sampled values, which fake tensors lack.
     # This isolated shape-only worker needs no random weight values.
     with FakeTensorMode(), patch.object(torch.nn.init, "trunc_normal_", lambda tensor, *args, **kwargs: tensor):
-        model = Anima(**_anima_config())
+        if train_type == "moss-image-lora":
+            from library.moss_image_models import MOSS_IMAGE_CONFIG, MossImage
+
+            model = MossImage(**MOSS_IMAGE_CONFIG, attn_mode="torch", split_attn=False)
+        else:
+            from library.anima_models import Anima
+
+            model = Anima(**_anima_config())
         originals = {id(m): (name, m) for name, m in model.named_modules()}
         text_encoders = []
         if not config.get("network_train_unet_only"):

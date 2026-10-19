@@ -36,7 +36,7 @@ Start with AdamW8bit. Compare StableAdamW for update spikes, or a Paged variant 
 | CAME | Compare factorized state, residual-confidence scaling, and internal RMS clipping | Uses three betas; stores second moments by row and column for factorable tensors |
 | AdamWScheduleFree | Testing AdamW without an external scheduler | Uses internal warmup, default `warmup_steps=0`; evaluation and saving use averaged weights |
 | EmoSens | Experimental optimizer | Requires gradient accumulation of 1; fp16 mixed precision and multi-GPU are not supported; LoRA+ not supported |
-| Muon | Momentum orthogonalization for two-dimensional LoRA matrices | Anima LoRA only; uses PyTorch's native implementation; compare it with AdamW8bit under identical conditions |
+| Muon | Momentum orthogonalization for two-dimensional LoRA matrices | Supports Anima and MOSS-Image LoRA; uses PyTorch's native implementation; compare it with AdamW8bit under identical conditions |
 | LoRA-Muon | Spectral low-rank optimization designed for standard LoRA factor pairs | Supports only `anima-lora` with `networks.lora_anima`; incompatible with LoRA+ and LyCORIS networks such as LoKr and LoHa; requires separate learning-rate calibration |
 | Adan | Updates that incorporate changes between gradients | The project starts at half the AdamW learning rate; uses three betas |
 | AdEMAMix | Use short- and long-term gradient averages together | alpha controls the long-term contribution; ramp lengths set when it reaches the target weight |
@@ -144,6 +144,10 @@ Higher weight decay shrinks weights more strongly and can prevent target feature
 
 Muon accumulates gradient momentum and approximately orthogonalizes updates for two-dimensional matrices. It processes `lora_down` and `lora_up` separately. Use it to compare how matrix-based updates affect learning speed and results.
 
+MOSS-Image's native `networks.lora_generic`, `networks.loha`, and `networks.lokr` use two-dimensional trainable parameters for the DiT and optional text embedder. They support Muon, including LoRA+ and standard schedulers. Selecting Muon sets an unedited learning rate to `1e-4`, paired with MOSS defaults of `rank=16, alpha=1`, `adjust_lr_fn=match_rms_adamw`, and `weight_decay=0`. These are engineering starting points without a full training-quality comparison. The separate LoRA-Muon optimizer remains Anima-only.
+
+Muon only supports two-dimensional parameters. With `lycoris.kohya`, disable `use_scalar` and `train_norm`, which introduce scalar or one-dimensional parameters. This restriction is checked for form values, imported configurations, and custom `network_args`.
+
 Muon keeps one momentum state per parameter, compared with full-precision AdamW's two states, but adds matrix multiplications at each step. Record peak VRAM and time per step when comparing them.
 
 #### Update scale
@@ -154,7 +158,7 @@ Muon keeps one momentum state per parameter, compared with full-precision AdamW'
 
 #### Momentum
 
-- **Momentum coefficient** (`momentum`, default `0.95`): higher values retain a larger share of historical momentum and give the current gradient a smaller share.
+- **Momentum coefficient** (`momentum`, default `0.95`): must satisfy `0 ≤ momentum < 1`. Higher values retain a larger share of historical momentum and give the current gradient a smaller share. A value of `1` stops gradient updates and is rejected.
 - **Nesterov momentum** (`nesterov`, enabled by default): Controls how the current gradient and momentum history are combined before orthogonalization. Disabling it changes the optimization path rather than just performance.
 
 #### Orthogonalization

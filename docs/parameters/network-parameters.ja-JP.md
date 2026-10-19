@@ -2,6 +2,8 @@
 
 ネットワーク設定はアダプタの行列構造、学習範囲、重みファイルのサイズを決めます。標準 LoRA の既定値は Rank / Alpha が `32/32`、ドロップアウトが `0` です。LoRA-Muon は自動で `16/16` に変えません。この組み合わせを使う場合は手動で指定してください。
 
+MOSS-Image の既定の Rank / Alpha は `16/1` で、ネイティブの `networks.lora_generic`・`networks.loha`・`networks.lokr` を選択できます。3 方式とも rank/module dropout、LoRA+、正規表現による rank・学習率設定、任意の DiT テキスト投影層と Refiner の学習に対応し、Qwen は凍結します。LoKr には `lokr_factor` もあります。MOSS の対象は線形層のため、畳み込みの rank/alpha と Tucker 分解は非表示で、`lycoris.kohya` も利用できません。同じ rank でも方式によってパラメータ数は異なるため、構造プレビューで行列とスケールを確認し、学習率を個別に調整してください。
+
 <!-- doc-anchor: dimension -->
 ## ネットワークの次元数
 

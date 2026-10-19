@@ -251,9 +251,9 @@ window.trainingCoreMixin = {
     this.formDefaults = { ...newDefaults };
     this._activeTrainType = v;
 
-    // A runtime profile owns its network module. Krea's module is musubi
-    // specific and must never inherit an sd-scripts or LyCORIS selection.
-    const targetMod = this._defaultNetworkModule(v);
+    // Keep the validated MOSS algorithm from its own draft. Krea's module
+    // is musubi-specific and must never inherit an sd-scripts selection.
+    const targetMod = v === 'moss-image-lora' ? this.form.network_module : this._defaultNetworkModule(v);
     if (this.form.network_module !== targetMod) this.form.network_module = targetMod;
     this._syncKrea2CacheDir();
     this._captureProfileDraft(v, this.form, newDefaults);
@@ -725,11 +725,9 @@ window.trainingCoreMixin = {
     if (this.form.model_train_type === 'krea2-lora') {
       this.form.network_module = 'networks.lora_krea2';
       this._applyKrea2ModelDefaults(this.form, defaults);
-    } else if (this.form.model_train_type === 'moss-image-lora') {
-      this.form.network_module = 'networks.lora_generic';
     } else if (this.form.model_train_type === 'anima-lora' && this.form.network_module === 'networks.lora') {
       this.form.network_module = 'networks.lora_anima';
-    } else if (this.form.model_train_type !== 'anima-lora' && ['networks.lora_anima', 'networks.lora_generic'].includes(this.form.network_module)) {
+    } else if (this.form.model_train_type === 'sdxl-lora' && ['networks.lora_anima', 'networks.lora_generic'].includes(this.form.network_module)) {
       this.form.network_module = 'networks.lora';
     }
     this.formDefaults = { ...defaults };
@@ -1322,7 +1320,7 @@ window.trainingCoreMixin = {
         defaults.dataset_cache_dir = cacheDir;
       }
       this._normalizeProfileSelectValues(trainType, defaults, warmForm);
-      warmForm.network_module = this._defaultNetworkModule(trainType);
+      if (trainType !== 'moss-image-lora') warmForm.network_module = this._defaultNetworkModule(trainType);
       this.form = warmForm;
       this.formDefaults = { ...defaults };
       this._activeTrainType = trainType;
@@ -4304,6 +4302,23 @@ window.trainingCoreMixin = {
     return errors;
   },
 
+  _muonOptionErrors() {
+    if (this.form.optimizer_type !== 'Muon') return {};
+    const errors = {};
+    const rawMomentum = this.form.muon_momentum;
+    if (rawMomentum !== undefined && rawMomentum !== null && rawMomentum !== '') {
+      const momentum = Number(rawMomentum);
+      if (!Number.isFinite(momentum) || momentum < 0 || momentum >= 1) {
+        errors.muon_momentum = this.t('field.muonMomentumRangeError');
+      }
+    }
+    if (this.form.network_module !== 'lycoris.kohya') return errors;
+    for (const key of ['use_scalar', 'train_norm']) {
+      if (this.form[key] === true) errors[key] = this.t('field.muonNonMatrixConflict');
+    }
+    return errors;
+  },
+
   validateForm() {
     const errors = {};
     // Check all required fields
@@ -4368,7 +4383,7 @@ window.trainingCoreMixin = {
       && !this._parseStepRules(this.form.step_rules)) {
       errors.step_rules = this.t('field.step_rulesError');
     }
-    Object.assign(errors, this._checkpointOffloadErrors(), this._mossOptionErrors());
+    Object.assign(errors, this._checkpointOffloadErrors(), this._mossOptionErrors(), this._muonOptionErrors());
     if (this.form.model_train_type !== 'krea2-lora' && this.form.enable_preview && this.form.sample_interval_mode !== 'none') {
       const key = this.form.sample_interval_mode === 'steps' ? 'sample_every_n_steps' : 'sample_every_n_epochs';
       if (this.form[key] === '' || this.form[key] === null || this.form[key] === undefined) errors[key] = this.t('common.fieldRequired');

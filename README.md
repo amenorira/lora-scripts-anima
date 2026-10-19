@@ -22,7 +22,7 @@ _✨ 多训练核心 LoRA 工具：Anima、SDXL、MOSS-Image 与 Krea 2 ✨_
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-ja.md">日本語</a>
 </p>
 
-Anima / SDXL 支持原生 LoRA、LoHa、LoKr，以及通过 `lycoris.kohya` 接入的 **LyCORIS** LoCon / LoHa / LoKr；MOSS-Image 和 Krea 2 使用各自的原生 LoRA 模块。
+Anima / SDXL / MOSS-Image 支持原生 LoRA、LoHa、LoKr；Anima / SDXL 还支持通过 `lycoris.kohya` 接入的 **LyCORIS** LoCon / LoHa / LoKr。Krea 2 使用专用的原生 LoRA 模块。
 
 ### 支持的模型类型
 
@@ -30,10 +30,10 @@ Anima / SDXL 支持原生 LoRA、LoHa、LoKr，以及通过 `lycoris.kohya` 接�
 |---------|------|
 | LoRA | SDXL |
 | **LoRA** | **Anima**（Qwen3 + T5 双编码器） |
-| **LoRA** | **MOSS-Image**（sd-scripts） |
+| **LoRA / LoHa / LoKr** | **MOSS-Image**（sd-scripts） |
 | **LoRA** | **Krea 2 RAW DiT**（musubi-tuner） |
 
-> ℹ️ MOSS-Image 目前仅支持原生 `networks.lora_generic`，暂不支持 LoHa、LoKr 或 LyCORIS；界面固定冻结 Qwen 文本编码器，可单独选择训练 DiT 内的文本嵌入层。
+> ℹ️ MOSS-Image 支持原生 `networks.lora_generic`、`networks.loha`、`networks.lokr`，暂不支持 `lycoris.kohya`。三种算法均可单独选择训练 DiT 内的文本投影与细化层；界面固定冻结 Qwen 文本编码器。
 
 > ℹ️ Krea 2 在训练前必须生成 latent 与 Qwen3-VL 文本编码输出两类缓存。界面会在“开始训练”前验证缓存是否完整、且是否仍与图片、标签和模型匹配。
 
@@ -72,7 +72,7 @@ Anima / SDXL 支持原生 LoRA、LoHa、LoKr，以及通过 `lycoris.kohya` 接�
 
 ### 矩阵结构预览
 
-Anima 训练下，在 **训练网络模块** 下点击「结构预览」。按实际网络构造结果展示 LoRA / LoCon、LoHa 和 LoKr 的矩阵组合，可切换注意力、MLP 等模块，查看逐层形状、生效 rank / alpha、缩放、匹配层数和参数统计。
+Anima 或 MOSS-Image 训练下，在 **训练网络模块** 下点击「结构预览」。Anima 支持 LoRA / LoCon、LoHa 和 LoKr，MOSS-Image 支持原生 LoRA / LoHa / LoKr，包含可选的 DiT 文本投影与细化层。按实际网络构造结果展示矩阵组合，可切换注意力、MLP 等模块，查看逐层形状、生效 rank / alpha、缩放、匹配层数和参数统计。
 
 入口同时显示 **预计权重文件大小**，随算法、rank、训练范围和保存精度自动更新。估算使用虚拟张量，无需加载底模或启动训练；统计实际保存张量与 safetensors 索引开销，不代表显存需求。详见[矩阵结构与文件大小指南](docs/parameters/matrix-preview.zh-CN.md)。
 
@@ -262,6 +262,8 @@ GUI 的 **环境** 标签页提供：
 ```
 
 测试位于 `tests/`，按训练、监控、环境、打标、应用和前端分类；统一入口包含独立 JavaScript 测试。开发脚本位于 `tools/dev/`，`tools/` 还包含启动器和后端依赖的运行工具。
+
+生成的 LyCORIS 预设、安装日志和下载临时 ZIP 放入 `cache/runtime/`；正常启动和训练保留系统临时目录及各依赖原有的缓存配置。测试临时文件及默认编译缓存归入 `cache/tests/`，显式设置的编译缓存路径会保留。诊断脚本、截图和开发日志应放入 `cache/dev/<任务名>/`。
 
 ## 致谢
 

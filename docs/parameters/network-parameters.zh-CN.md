@@ -2,6 +2,8 @@
 
 网络参数决定适配器的矩阵结构、训练范围和权重文件大小。标准 LoRA 默认 Rank / Alpha 为 `32/32`，丢弃率为 `0`。LoRA-Muon 不自动改为 `16/16`；需要该组合时手动填写。
 
+MOSS-Image 的配置默认 Rank / Alpha 为 `16/1`，可选择原生 `networks.lora_generic`、`networks.loha` 或 `networks.lokr`。三者支持 rank/module dropout、LoRA+、正则 rank/学习率设置，以及可选的 DiT 文本投影与细化层；Qwen 文本编码器保持冻结。LoKr 额外支持 `lokr_factor`。MOSS 的目标层均为线性层，因此界面不显示卷积 rank/alpha 和 Tucker 分解参数，也不开放 `lycoris.kohya`。不同算法的相同 rank 不代表相同参数量，请用结构预览核对矩阵和缩放，并单独调整学习率。
+
 <!-- doc-anchor: dimension -->
 ## 网络维度
 

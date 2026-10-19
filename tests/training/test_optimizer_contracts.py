@@ -71,6 +71,81 @@ class OptimizerValidationTests(unittest.TestCase):
         errors = validate_training_config(config)
         self.assertTrue(any("unsupported argument" in error for error in errors), errors)
 
+    def test_muon_momentum_boundaries_for_form_and_advanced_arguments(self):
+        for momentum in (-0.1, 0, 0.95, 0.9999999, 1, 1.1):
+            for source in ("form", "args", "custom"):
+                with self.subTest(momentum=momentum, source=source):
+                    config = valid_config(MUON_OPTIMIZER_TYPE)
+                    if source == "form":
+                        config["muon_momentum"] = momentum
+                    elif source == "args":
+                        config["optimizer_args"] = [f"momentum={momentum}"]
+                    else:
+                        config["optimizer_args_custom"] = f"momentum={momentum}"
+                    errors = validate_training_config(config)
+                    if 0 <= momentum < 1:
+                        self.assertEqual(errors, [])
+                    else:
+                        self.assertTrue(any("momentum" in error for error in errors), errors)
+        config = valid_config("AdamW")
+        config["muon_momentum"] = 1.1
+        self.assertEqual(validate_training_config(config), [])
+
+    def test_muon_rejects_lycoris_non_matrix_options(self):
+        for algo in ("lora", "loha", "lokr"):
+            for key in ("use_scalar", "train_norm"):
+                for source in ("form", "args", "custom"):
+                    with self.subTest(algo=algo, key=key, source=source):
+                        config = valid_config(MUON_OPTIMIZER_TYPE)
+                        config.update(network_module="lycoris.kohya", lycoris_algo=algo)
+                        if source == "form":
+                            config[key] = True
+                        else:
+                            config.pop(key)
+                            if source == "args":
+                                config["network_args"] = [f"{key}=true"]
+                            else:
+                                config["network_args_custom"] = f"{key}=true"
+                        errors = validate_training_config(config)
+                        self.assertTrue(any("Muon" in error and key in error and "non-2D" in error
+                                            for error in errors), errors)
+
+    def test_muon_network_validation_matches_adapted_arguments(self):
+        for key in ("use_scalar", "train_norm"):
+            cases = (
+                ({"network_args": [f"{key}=true", f"{key}=false"]}, False),
+                ({"network_args": [f"{key}=false", f"{key}=true"]}, True),
+                ({"network_args": [f"{key}=false"], "network_args_custom": f"{key}=true"}, True),
+                ({"network_args": [f"{key}=true"], "network_args_custom": f"{key}=false"}, False),
+                ({key: False, "network_args_custom": f"{key}=true"}, False),
+                ({key: True, "network_args_custom": f"{key}=false"}, True),
+                ({"network_args": [f" {key} = FALSE ", f"{key}=NaN"]}, False),
+                ({"network_args_custom": f"{key}=0"}, True),
+            )
+            for values, enabled in cases:
+                with self.subTest(key=key, values=values):
+                    config = valid_config(MUON_OPTIMIZER_TYPE)
+                    config.update(network_module="lycoris.kohya", lycoris_algo="lora")
+                    config.pop(key)
+                    config.update(values)
+                    adapted, _ = adapt_config(config)
+                    args = dict(item.split("=", 1) for item in adapted["network_args"])
+                    self.assertEqual(args[key].lower() != "false", enabled)
+                    errors = validate_training_config(config)
+                    self.assertEqual(any("non-2D" in error for error in errors), enabled, errors)
+
+    def test_muon_preserves_compatible_networks_and_other_optimizers(self):
+        for network in ("networks.lora_anima", "networks.loha", "networks.lokr", "lycoris.kohya"):
+            for algo in ("lora", "loha", "lokr"):
+                with self.subTest(network=network, algo=algo):
+                    config = valid_config(MUON_OPTIMIZER_TYPE)
+                    config.update(network_module=network, lycoris_algo=algo)
+                    self.assertEqual(validate_training_config(config), [])
+        for optimizer, network in (("AdamW", "lycoris.kohya"), (MUON_OPTIMIZER_TYPE, "networks.lora_anima")):
+            config = valid_config(optimizer)
+            config.update(network_module=network, use_scalar=True, train_norm=True)
+            self.assertEqual(validate_training_config(config), [])
+
 
 class OptimizerAdapterTests(unittest.TestCase):
     def test_optimizer_argument_serialization(self):
