@@ -130,3 +130,18 @@ DoRA (`dora_wd`) requires applying its trainable magnitude. For ordinary Linear/
 ## Check the actual structure
 
 After changing dimension, factor, full-matrix mode, or unbalanced factorization, inspect the matrices, parameter count, and scale in the structure preview. To compare results, keep generation prompts and seeds fixed and check both fidelity and behavior in new settings.
+
+<!-- doc-anchor: krea-targets -->
+## Krea 2: default targets and filtering
+
+Upstream defaults to rank/alpha 32 and all 264 DiT Linear layers: main-block attention, MLPs, the text-fusion transformer, and projection MLPs. Text fusion belongs to the DiT; the Qwen text encoder stays frozen and cached. Modulation and RMSNorm parameters are raw tensors, not Linear modules, so LoRA never wraps them and no exclusion is needed.
+
+The upstream long-run example narrows training to main-block attention (140 Linear layers) and suggests a higher rank. To use that scope, enter this line in Network arguments:
+
+```text
+exclude_patterns=['.*\.mlp\..*','first','last\.linear','tmlp\..*','txtmlp\..*','tproj\.1','txtfusion\..*']
+```
+
+For an arbitrary subset, start with `exclude_patterns=['.*']`, then add targets back with `include_patterns=[...]`. Use one parameter per line. Adding include rules alone does not remove layers already included by default.
+
+[Krea 2 upstream guide](https://github.com/kohya-ss/musubi-tuner/blob/f8a1b03794a49239a3539015075f5123d6c07d66/docs/krea2.md#lora-target-layers--loraの対象レイヤー)

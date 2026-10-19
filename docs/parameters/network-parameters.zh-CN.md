@@ -130,3 +130,18 @@ DoRA（`dora_wd`）需要应用可训练的幅度参数。当前 LyCORIS 的普�
 ## 用结构预览核对配置
 
 修改维度、factor、完整矩阵或不平衡分解后，可在结构预览中检查实际矩阵、参数量和缩放。需要比较结果时，保留同一组生成提示词和种子，并同时检查还原度与在新场景中的表现。
+
+<!-- doc-anchor: krea-targets -->
+## Krea 2：默认训练范围与筛选
+
+上游默认 rank/alpha 为 32，覆盖 DiT 的全部 264 个 Linear 层：主块 attention、MLP、文本融合 transformer 和投影 MLP。这里的文本融合层属于 DiT，Qwen 文本编码器仍冻结并使用缓存。调制和 RMSNorm 参数是原始张量，不是 Linear，因此不会被 LoRA 包装，无需另写排除规则。
+
+上游的长训练示例缩小到主块 attention（140 个 Linear），并建议配合更高 rank。要采用该范围，在“网络附加参数”中填写以下一行：
+
+```text
+exclude_patterns=['.*\.mlp\..*','first','last\.linear','tmlp\..*','txtmlp\..*','tproj\.1','txtfusion\..*']
+```
+
+任意自定义子集可先设置 `exclude_patterns=['.*']`，再用 `include_patterns=[...]` 加回目标层。每个参数单独一行；只添加 include 规则不会自动排除默认已包含的层。
+
+[Krea 2 upstream guide](https://github.com/kohya-ss/musubi-tuner/blob/f8a1b03794a49239a3539015075f5123d6c07d66/docs/krea2.md#lora-target-layers--loraの対象レイヤー)

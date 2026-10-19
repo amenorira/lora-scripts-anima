@@ -302,6 +302,8 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "network",
         "desc_key": "field.krea_network_args",
         "hint_key": "field.krea_network_argsHint",
+        "doc_slug": "network-parameters",
+        "doc_anchor": "krea-targets",
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -387,6 +389,10 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "optimizer",
         "desc_key": "field.krea_learning_rate",
         "hint_key": "field.krea_learning_rateHint",
+        "hint_key_by": {"key": "optimizer_type", "values": {
+            "prodigyopt.Prodigy": "field.learning_rateHint_prodigy",
+            _KREA2_PRODIGYPLUS_OPTIMIZER: "field.learning_rateHint_prodigy",
+        }},
         "required": True,
         "auto_value": KREA2_OPTIMIZER_AUTO_VALUES["learning_rate"],
         "profiles": [KREA2_PROFILE_ID],
@@ -630,6 +636,11 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "optimizer",
         "desc_key": "field.lr_scheduler_num_cycles",
         "hint_key": "field.krea_lr_scheduler_num_cyclesHint",
+        "hint_key_by": {"key": "lr_scheduler", "values": {
+            "cosine_with_restarts": "field.lr_scheduler_num_cyclesHint_restarts",
+            "cosine_with_min_lr": "field.lr_scheduler_num_cyclesHint",
+            "warmup_stable_decay": "field.lr_scheduler_num_cyclesHint_wsd",
+        }},
         "min": 1,
         "step": 1,
         "show_if": {
@@ -669,6 +680,11 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "optimizer",
         "desc_key": "field.krea_lr_scheduler_min_lr_ratio",
         "hint_key": "field.krea_lr_scheduler_min_lr_ratioHint",
+        "hint_key_by": {"key": "lr_scheduler", "values": {
+            "cosine_with_min_lr": "field.lr_scheduler_min_lr_ratioHint",
+            "warmup_stable_decay": "field.lr_scheduler_min_lr_ratioHint_wsd",
+            "rex": "field.krea_lr_scheduler_min_lr_ratioHint_rex",
+        }},
         "min": 0,
         "max": 1,
         "step": 0.001,
@@ -1216,6 +1232,8 @@ _KREA2_SHARED_HINTS_BY_KEY = {
     "discrete_flow_shift": "field.krea_discrete_flow_shiftHint",
     "sigmoid_scale": "field.sigmoid_scaleHint",
     "save_state": "field.save_stateHint",
+    "save_precision": "field.save_precisionHint",
+    "max_train_epochs": "field.max_train_epochsHint",
     "lr_scheduler_power": "field.lr_scheduler_powerHint",
     "krea_prodigy_d0": "field.krea_prodigy_d0Hint",
 }

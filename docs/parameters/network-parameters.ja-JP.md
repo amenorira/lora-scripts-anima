@@ -130,3 +130,18 @@ DoRA（`dora_wd`）は学習可能な大きさを重みに適用する必要が�
 ## 実際の構造を確認
 
 次元数・factor・Full Matrix・非対称な因子分割を変更したら、構造プレビューで行列・パラメータ数・スケールを確認します。結果の比較では生成プロンプトとシードを固定し、再現度と新しい条件での動作の両方を確認してください。
+
+<!-- doc-anchor: krea-targets -->
+## Krea 2：既定の学習対象と絞り込み
+
+上流の既定値は rank/alpha 32 で、主ブロックの attention・MLP・テキスト融合 transformer・投影 MLP を含む DiT の全 264 個の Linear 層が対象です。テキスト融合は DiT 内の処理で、Qwen テキストエンコーダーは固定され、キャッシュを使います。変調と RMSNorm のパラメータは Linear ではなく生のテンソルなので、LoRA の対象外であり、除外指定は不要です。
+
+上流の長期学習例では、主ブロックの attention（140 個の Linear）に絞り、より高い rank を提案しています。この範囲を使うには「ネットワーク追加引数」に次の 1 行を入力します。
+
+```text
+exclude_patterns=['.*\.mlp\..*','first','last\.linear','tmlp\..*','txtmlp\..*','tproj\.1','txtfusion\..*']
+```
+
+任意の部分集合には `exclude_patterns=['.*']` で全体を外してから、`include_patterns=[...]` で対象を戻します。各パラメータは別の行に指定します。include の追加だけでは、既定で含まれる層は除外されません。
+
+[Krea 2 upstream guide](https://github.com/kohya-ss/musubi-tuner/blob/f8a1b03794a49239a3539015075f5123d6c07d66/docs/krea2.md#lora-target-layers--loraの対象レイヤー)

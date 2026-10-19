@@ -84,6 +84,55 @@ test('algorithm hints respect the active network and retain the full-factor Alph
   assert.equal(app.fieldHintText('network_alpha'), app.t('field.network_alphaHint'));
 });
 
+test('Krea guidance uses its own AdaFactor settings and scheduler defaults', () => {
+  for (const locale of ['zh-CN', 'en-US', 'ja-JP']) {
+    const app = application(locale, 'krea2-lora');
+    app.form.optimizer_type = 'AdaFactor';
+    for (const [relative, warmup, mode] of [
+      [true, false, 'relative'], [false, true, 'relative'], [false, false, 'manual'],
+    ]) {
+      Object.assign(app.form, {
+        krea_adafactor_relative_step: relative, krea_adafactor_warmup_init: warmup,
+        adafactor_relative_step: !relative, adafactor_warmup_init: !warmup,
+      });
+      assert.equal(app.fieldHintText('learning_rate'), app.t(`field.learning_rateHint_adafactor_${mode}`));
+    }
+    assert.ok(app.renderField(app.findFieldDef('learning_rate')).includes('x-text="fieldHintText(\'learning_rate\')"'));
+    app.form.optimizer_type = 'prodigyopt.Prodigy';
+    assert.equal(app.fieldHintText('learning_rate'), app.t('field.learning_rateHint_prodigy'));
+    for (const [scheduler, cycleKey, minimumKey] of [
+      ['cosine_with_restarts', 'lr_scheduler_num_cyclesHint_restarts', 'krea_lr_scheduler_min_lr_ratioHint'],
+      ['cosine_with_min_lr', 'lr_scheduler_num_cyclesHint', 'lr_scheduler_min_lr_ratioHint'],
+      ['warmup_stable_decay', 'lr_scheduler_num_cyclesHint_wsd', 'lr_scheduler_min_lr_ratioHint_wsd'],
+      ['rex', 'krea_lr_scheduler_num_cyclesHint', 'krea_lr_scheduler_min_lr_ratioHint_rex'],
+    ]) {
+      app.form.lr_scheduler = scheduler;
+      for (const [field, key] of [['lr_scheduler_num_cycles', cycleKey], ['lr_scheduler_min_lr_ratio', minimumKey]]) {
+        const translated = app.t(`field.${key}`);
+        assert.notEqual(translated, `field.${key}`);
+        assert.equal(app.fieldHintText(field), translated);
+      }
+    }
+  }
+});
+
+test('loss and target-layer hints open their detailed guide in every locale', () => {
+  for (const locale of ['zh-CN', 'en-US', 'ja-JP']) {
+    for (const [profile, key, slug, anchor] of [
+      ['sdxl-lora', 'min_snr_gamma', 'timesteps', 'sdxl-loss'],
+      ['sdxl-lora', 'debiased_estimation_loss', 'timesteps', 'sdxl-loss'],
+      ['krea2-lora', 'network_args_custom', 'network-parameters', 'krea-targets'],
+    ]) {
+      const app = application(locale, profile);
+      const field = app.findFieldDef(key);
+      assert.ok(field, `${profile}: ${key}`);
+      assert.equal(field.docSlug, slug);
+      assert.equal(field.docAnchor, anchor);
+      assert.ok(readRepo(`docs/parameters/${slug}.${locale}.md`).includes(`<!-- doc-anchor: ${anchor} -->`));
+    }
+  }
+});
+
 test('MOSS text embedder guidance links to the detailed rate override in every locale', () => {
   const app = application();
   const field = app.findFieldDef('train_text_embedder');

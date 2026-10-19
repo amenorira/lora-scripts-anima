@@ -1967,7 +1967,8 @@ window.trainingCoreMixin = {
   _resolveFieldHintOverrideKey(field, values) {
     if (!field) return '';
     if (field.key === 'learning_rate' && values?.optimizer_type === 'AdaFactor') {
-      return values.adafactor_relative_step !== false || values.adafactor_warmup_init === true
+      const prefix = values.model_train_type === 'krea2-lora' ? 'krea_' : '';
+      return values[`${prefix}adafactor_relative_step`] !== false || values[`${prefix}adafactor_warmup_init`] === true
         ? 'field.learning_rateHint_adafactor_relative'
         : 'field.learning_rateHint_adafactor_manual';
     }
