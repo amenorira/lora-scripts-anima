@@ -146,6 +146,8 @@ Muon 先累积梯度动量，再对二维矩阵更新做近似正交化。它分
 
 MOSS-Image 使用 `networks.lora_generic`，DiT 和可选 text embedder 的 LoRA 参数均为二维矩阵，可直接使用 Muon，也支持 LoRA+ 和常规调度器。切换到 Muon 时，未手动修改的学习率使用 `1e-4`，对应 MOSS 默认 `rank=16, alpha=1`；`adjust_lr_fn=match_rms_adamw`、`weight_decay=0`。这些是工程起点，尚未做完整训练效果对照。LoRA-Muon 是独立优化器，仍仅支持 Anima。
 
+Muon 只支持二维参数。搭配 `lycoris.kohya` 时必须关闭 `use_scalar` 和 `train_norm`，它们会引入标量或一维参数；表单、导入配置和自定义 `network_args` 都会检查此限制。
+
 Muon 每个参数维护一组动量状态，少于全精度 AdamW 的两组状态，但每步增加矩阵乘法。比较时记录峰值显存和每步耗时。
 
 #### 更新幅度
@@ -156,7 +158,7 @@ Muon 每个参数维护一组动量状态，少于全精度 AdamW 的两组状�
 
 #### 动量
 
-- **动量系数**（`momentum`，默认 `0.95`）：值越大，历史动量保留比例越高，当前梯度进入动量的比例越小。
+- **动量系数**（`momentum`，默认 `0.95`）：必须满足 `0 ≤ momentum < 1`。值越大，历史动量保留比例越高，当前梯度进入动量的比例越小；`1` 会停止梯度更新，因此不允许使用。
 - **Nesterov 动量**（`nesterov`，默认开启）：决定正交化前如何组合当前梯度和历史动量。关闭后会改变优化轨迹，不是单纯的性能开关。
 
 #### 正交化

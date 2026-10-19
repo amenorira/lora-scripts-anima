@@ -146,6 +146,8 @@ Muon accumulates gradient momentum and approximately orthogonalizes updates for 
 
 MOSS-Image uses `networks.lora_generic`; both DiT LoRA and optional text embedder LoRA have two-dimensional parameters and can use Muon directly, including LoRA+ and standard schedulers. Selecting Muon sets an unedited learning rate to `1e-4`, paired with MOSS defaults of `rank=16, alpha=1`, `adjust_lr_fn=match_rms_adamw`, and `weight_decay=0`. These are engineering starting points without a full training-quality comparison. The separate LoRA-Muon optimizer remains Anima-only.
 
+Muon only supports two-dimensional parameters. With `lycoris.kohya`, disable `use_scalar` and `train_norm`, which introduce scalar or one-dimensional parameters. This restriction is checked for form values, imported configurations, and custom `network_args`.
+
 Muon keeps one momentum state per parameter, compared with full-precision AdamW's two states, but adds matrix multiplications at each step. Record peak VRAM and time per step when comparing them.
 
 #### Update scale
@@ -156,7 +158,7 @@ Muon keeps one momentum state per parameter, compared with full-precision AdamW'
 
 #### Momentum
 
-- **Momentum coefficient** (`momentum`, default `0.95`): higher values retain a larger share of historical momentum and give the current gradient a smaller share.
+- **Momentum coefficient** (`momentum`, default `0.95`): must satisfy `0 ≤ momentum < 1`. Higher values retain a larger share of historical momentum and give the current gradient a smaller share. A value of `1` stops gradient updates and is rejected.
 - **Nesterov momentum** (`nesterov`, enabled by default): Controls how the current gradient and momentum history are combined before orthogonalization. Disabling it changes the optimization path rather than just performance.
 
 #### Orthogonalization

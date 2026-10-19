@@ -422,7 +422,8 @@ _EMOSENS_ARGS = {
 
 _MUON_ARGS = {
     "weight_decay": _NON_NEGATIVE,
-    "momentum": _NON_NEGATIVE,
+    # PyTorch accepts >= 1, but its EMA then stops updating or reverses gradients.
+    "momentum": _number(0.0, 1.0, maximum_inclusive=False),
     "nesterov": _boolean(),
     "ns_coefficients": ArgumentSpec(
         kind="sequence",

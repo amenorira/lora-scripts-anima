@@ -4304,6 +4304,23 @@ window.trainingCoreMixin = {
     return errors;
   },
 
+  _muonOptionErrors() {
+    if (this.form.optimizer_type !== 'Muon') return {};
+    const errors = {};
+    const rawMomentum = this.form.muon_momentum;
+    if (rawMomentum !== undefined && rawMomentum !== null && rawMomentum !== '') {
+      const momentum = Number(rawMomentum);
+      if (!Number.isFinite(momentum) || momentum < 0 || momentum >= 1) {
+        errors.muon_momentum = this.t('field.muonMomentumRangeError');
+      }
+    }
+    if (this.form.network_module !== 'lycoris.kohya') return errors;
+    for (const key of ['use_scalar', 'train_norm']) {
+      if (this.form[key] === true) errors[key] = this.t('field.muonNonMatrixConflict');
+    }
+    return errors;
+  },
+
   validateForm() {
     const errors = {};
     // Check all required fields
@@ -4368,7 +4385,7 @@ window.trainingCoreMixin = {
       && !this._parseStepRules(this.form.step_rules)) {
       errors.step_rules = this.t('field.step_rulesError');
     }
-    Object.assign(errors, this._checkpointOffloadErrors(), this._mossOptionErrors());
+    Object.assign(errors, this._checkpointOffloadErrors(), this._mossOptionErrors(), this._muonOptionErrors());
     if (this.form.model_train_type !== 'krea2-lora' && this.form.enable_preview && this.form.sample_interval_mode !== 'none') {
       const key = this.form.sample_interval_mode === 'steps' ? 'sample_every_n_steps' : 'sample_every_n_epochs';
       if (this.form[key] === '' || this.form[key] === null || this.form[key] === undefined) errors[key] = this.t('common.fieldRequired');

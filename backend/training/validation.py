@@ -16,6 +16,7 @@ from backend.training.field_registry import (
 from backend.training.optimizer_contracts import (
     ADAFACTOR_OPTIMIZER_TYPE,
     AUTOMAGIC_MAX_LR_DEFAULT,
+    MUON_OPTIMIZER_TYPE,
     collect_optimizer_args,
     get_automagic_fused_conflicts,
     normalize_lora_muon_form_fields,
@@ -113,6 +114,35 @@ def _validate_emosens(config: dict[str, Any], gpu_ids: Any = None) -> list[str]:
                 "使用 EmoSens 时必须为有限正数"
             )
     return errors
+
+
+def _validate_muon_network(config: dict[str, Any]) -> list[str]:
+    if (config.get("optimizer_type") != MUON_OPTIMIZER_TYPE
+            or config.get("network_module") != "lycoris.kohya"):
+        return []
+
+    # Use the adapter's normalization and precedence: raw args, custom lines,
+    # then explicit UI values (including False). Do not import a training model.
+    from backend.training.adapter import (
+        _merge_custom_args, _merge_network_fields, _normalize_network_args,
+    )
+
+    source = dict(config)
+    _merge_custom_args(source, "network_args_custom", "network_args")
+    network_args = _normalize_network_args(source.get("network_args"))
+    fields = {"train_norm": "train_norm"}
+    if str(source.get("lycoris_algo") or "lora").lower() in {"lora", "loha", "lokr"}:
+        fields["use_scalar"] = "use_scalar"
+    _merge_network_fields(source, network_args, fields)
+    effective_args = dict(item.split("=", 1) for item in _normalize_network_args(network_args))
+
+    # LyCORIS str_bool treats every supplied value except "false" as enabled.
+    return [
+        f"Muon: {key} introduces non-2D parameters; disable it or choose another optimizer / "
+        f"{key} 会引入非二维参数，请关闭该选项或更换优化器"
+        for key in ("use_scalar", "train_norm")
+        if key in effective_args and effective_args[key].lower() != "false"
+    ]
 
 
 def _validate_loraplus(
@@ -494,6 +524,7 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
             errors.append("base_weights_multiplier: count must match base_weights / 数量必须与基底权重一致")
 
     errors.extend(validate_optimizer_contract(config, parsed_optimizer_args))
+    errors.extend(_validate_muon_network(config))
     errors.extend(_validate_automagic(config, parsed_optimizer_args, gpu_ids))
     errors.extend(_validate_emosens(config, gpu_ids))
     if train_type == "moss-image-lora":
