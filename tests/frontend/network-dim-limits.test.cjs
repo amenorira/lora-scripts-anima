@@ -23,7 +23,7 @@ function application(profile = 'anima-lora') {
   return app;
 }
 
-test('network_dim and network_alpha accept ranks above 256 for every training profile', () => {
+test('network dimension, scaling and upstream-backed numeric ranges are not arbitrarily capped', () => {
   for (const profile of ['anima-lora', 'sdxl-lora', 'moss-image-lora', 'krea2-lora']) {
     const app = application(profile);
     for (const key of ['network_dim', 'network_alpha']) {
@@ -37,8 +37,33 @@ test('network_dim and network_alpha accept ranks above 256 for every training pr
       app.stepField(key, 1);
       assert.equal(app.form[key], 513, `${profile}: ${key} stepper should continue past 256`);
     }
+    app.setField('network_alpha', 0.5);
+    assert.equal(app.form.network_alpha, 0.5, `${profile}: fractional Alpha should be preserved`);
     app.validateForm();
     assert.equal(app.formErrors.network_dim, undefined);
     assert.equal(app.formErrors.network_alpha, undefined);
   }
+
+  const app = application();
+  const dropout = app.findFieldDef('network_dropout');
+  assert.equal(dropout.max, 1);
+  app.setField('network_dropout', 1);
+  assert.equal(app.form.network_dropout, 1, 'dropout=1 is documented upstream as dropping all neurons');
+
+  const convAlpha = app.findFieldDef('conv_alpha');
+  assert.equal(convAlpha.step, 0.01);
+  app.setField('conv_alpha', 0.25);
+  assert.equal(app.form.conv_alpha, 0.25, 'conv_alpha should accept fractional scaling');
+
+  const sampleCfg = app.findFieldDef('sample_cfg');
+  assert.equal(sampleCfg.max, undefined);
+  assert.doesNotMatch(app.renderField(sampleCfg), /\bmax="/);
+  app.setField('sample_cfg', 50);
+  assert.equal(app.form.sample_cfg, 50, 'sample CFG should not stop at 30');
+
+  const muonSteps = app.findFieldDef('muon_ns_steps');
+  assert.equal(muonSteps.max, undefined);
+  assert.doesNotMatch(app.renderField(muonSteps), /\bmax="/);
+  app.setField('muon_ns_steps', 100);
+  assert.equal(app.form.muon_ns_steps, 100, 'Muon NS iterations should not stop at 99');
 });

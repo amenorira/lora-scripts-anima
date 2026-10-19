@@ -435,7 +435,7 @@ _MUON_ARGS = {
         item_maximum=None,
     ),
     "eps": _POSITIVE,
-    "ns_steps": _integer(1, 99),
+    "ns_steps": _integer(1),
     "adjust_lr_fn": _choice(None, "original", "match_rms_adamw"),
 }
 

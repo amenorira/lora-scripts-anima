@@ -46,7 +46,6 @@ class OptimizerValidationTests(unittest.TestCase):
             ("Lion8bit", {"bnb_percentile_clipping": 101}, "percentile_clipping"),
             ("PagedAdamW8bit", {"bnb_min_8bit_size": -1}, "min_8bit_size"),
             (MUON_OPTIMIZER_TYPE, {"muon_ns_steps": 0}, "ns_steps"),
-            (MUON_OPTIMIZER_TYPE, {"muon_ns_steps": 100}, "ns_steps"),
             (MUON_OPTIMIZER_TYPE, {"muon_ns_coefficients": "1, 2"}, "exactly 3"),
             (MUON_OPTIMIZER_TYPE, {"muon_adjust_lr_fn": "unknown"}, "one of"),
             (LORA_MUON_OPTIMIZER_TYPE, {"ns_steps": 0}, "ns_steps"),
@@ -64,6 +63,20 @@ class OptimizerValidationTests(unittest.TestCase):
                 config.update(updates)
                 errors = validate_training_config(config)
                 self.assertTrue(any(expected in error for error in errors), errors)
+
+    def test_muon_ns_steps_has_no_arbitrary_upper_bound(self):
+        config = valid_config(MUON_OPTIMIZER_TYPE)
+        config["muon_ns_steps"] = 100
+        self.assertEqual(validate_training_config(config), [])
+        adapted, _ = adapt_config(config)
+        self.assertIn("ns_steps=100", adapted["optimizer_args"])
+
+    def test_network_scaling_accepts_fractional_alpha_and_full_dropout(self):
+        config = valid_config("AdamW")
+        config.update({"network_alpha": 0.5, "network_dropout": 1.0})
+        self.assertEqual(validate_training_config(config), [])
+        self.assertEqual(config["network_alpha"], 0.5)
+        self.assertEqual(config["network_dropout"], 1.0)
 
     def test_rejects_unknown_arguments_for_known_optimizers(self):
         config = valid_config("AdamW")

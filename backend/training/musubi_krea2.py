@@ -277,8 +277,8 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": 32,
         "section": "network",
         "desc_key": "field.network_alpha",
-        "min": 1,
-        "step": 1,
+        "min": 0,
+        "step": 0.01,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -289,7 +289,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "desc_key": "field.network_dropout",
         "hint_key": "field.network_dropoutHint",
         "min": 0,
-        "max": 0.5,
+        "max": 1,
         "step": 0.01,
         "profiles": [KREA2_PROFILE_ID],
     },
@@ -1871,7 +1871,6 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
 
     for key, minimum in (
         ("network_dim", 1),
-        ("network_alpha", 1),
         ("train_batch_size", 1),
         ("gradient_accumulation_steps", 1),
         ("krea_num_repeats", 1),
@@ -1899,6 +1898,7 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
 
     for key, minimum in (
         ("network_dropout", 0.0),
+        ("network_alpha", 0.0),
         ("discrete_flow_shift", 0.01),
         ("learning_rate", 0.0),
         ("max_grad_norm", 0.0),
@@ -1909,8 +1909,8 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
         if key == "lr_scheduler_power" and str(config.get("lr_scheduler", "constant")) != "polynomial":
             continue
         number = _as_float(config, key, errors, minimum)
-        if key == "network_dropout" and number is not None and number > 0.5:
-            errors.append("network_dropout: must be <= 0.5 / 不能大于 0.5")
+        if key == "network_dropout" and number is not None and number > 1.0:
+            errors.append("network_dropout: must be <= 1 / 不能大于 1")
         if key == "learning_rate" and number is not None and number <= 0:
             errors.append("learning_rate: must be > 0 / 必须大于 0")
     if not _is_empty(config.get("sigmoid_scale")):
@@ -2117,7 +2117,7 @@ def build_krea2_train_config(
         "dataset_config": str(dataset_config_path),
         "network_module": KREA2_NETWORK_MODULE,
         "network_dim": int(config["network_dim"]),
-        "network_alpha": int(config["network_alpha"]),
+        "network_alpha": float(config["network_alpha"]),
         "network_dropout": float(config.get("network_dropout", 0)),
         "gradient_accumulation_steps": int(config["gradient_accumulation_steps"]),
         "gradient_checkpointing": bool(config.get("gradient_checkpointing", False)),
