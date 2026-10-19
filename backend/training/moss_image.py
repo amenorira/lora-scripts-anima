@@ -9,7 +9,7 @@ from typing import Any
 
 PROFILE_ID = "moss-image-lora"
 GROUP = "moss_image"
-NETWORK_MODULES = ("networks.lora_generic",)
+NETWORK_MODULES = ("networks.lora_generic", "networks.loha", "networks.lokr")
 
 
 def extract_form(config: dict[str, Any]) -> dict[str, Any]:
@@ -17,6 +17,9 @@ def extract_form(config: dict[str, Any]) -> dict[str, Any]:
     result = dict(config)
     known = {"rank_dropout", "module_dropout", "loraplus_lr_ratio",
              "loraplus_unet_lr_ratio", "loraplus_text_encoder_lr_ratio"}
+    argument_fields = {key: key for key in known}
+    if result.get("network_module") == "networks.lokr":
+        argument_fields["factor"] = "lokr_factor"
     extra = []
     parsed = {}
     arguments = result.pop("network_args", []) or []
@@ -32,15 +35,15 @@ def extract_form(config: dict[str, Any]) -> dict[str, Any]:
             value = {"true": True, "false": False}[raw.lower()] if raw.lower() in ("true", "false") else ast.literal_eval(raw)
         except (ValueError, SyntaxError):
             value = raw
-        if key in known or key in ("train_llm_adapter", "train_text_embedder"):
+        if key in argument_fields or key in ("train_llm_adapter", "train_text_embedder"):
             parsed[key] = value
         else:
             extra.append(str(item))
     aliases = ("train_llm_adapter", "train_text_embedder")
     if any(key in parsed for key in aliases):
         result.setdefault("train_text_embedder", any(str(parsed.get(key)).lower() == "true" for key in aliases))
-    for key in known & parsed.keys():
-        result.setdefault(key, parsed[key])
+    for key in argument_fields.keys() & parsed.keys():
+        result.setdefault(argument_fields[key], parsed[key])
     ratios = {key for key in known if key.startswith("loraplus_")}
     if ratios & parsed.keys():
         result.setdefault("enable_loraplus", True)
@@ -91,7 +94,7 @@ def extend_fields(fields: list[dict[str, Any]]) -> None:
         by_key[key].setdefault("constraints_by_group", {})[GROUP] = {"min": 16, "step": 16}
     by_key["blocks_to_swap"].setdefault("constraints_by_group", {})[GROUP] = {"max": 40}
     # Product UI follows OpenMOSS's recommendation to keep Qwen frozen.
-    # The native trainer remains unchanged; DiT text-embedder LoRA is separate.
+    # DiT text-embedder adapters are separate from the frozen text encoder.
     for key in ("network_train_unet_only", "network_train_text_encoder_only"):
         by_key[key]["readonly_if"] = {
             "key": "model_train_type", "eq": PROFILE_ID,
@@ -113,7 +116,9 @@ def extend_fields(fields: list[dict[str, Any]]) -> None:
         "dk": "opt.network_module_networks_lora_generic", "group": GROUP,
     })
     for option in by_key["network_module"]["options"]:
-        if option["v"] in ("networks.loha", "networks.lokr", "lycoris.kohya"):
+        if option["v"] in ("networks.loha", "networks.lokr"):
+            option["group"] = ["anima", "sdxl", GROUP]
+        elif option["v"] == "lycoris.kohya":
             option["group"] = ["anima", "sdxl"]
     for key in ("conv_dim", "conv_alpha", "use_tucker"):
         by_key[key]["group"] = ["anima", "sdxl"]
@@ -147,7 +152,7 @@ def extend_fields(fields: list[dict[str, Any]]) -> None:
 def validate_config(config: dict[str, Any]) -> list[str]:
     errors = []
     if config.get("network_module") not in NETWORK_MODULES:
-        errors.append("MOSS-Image: only networks.lora_generic is supported / MOSS 目前仅支持原生 LoRA；LoHa、LoKr 和 LyCORIS 暂不可用")
+        errors.append("MOSS-Image: only networks.lora_generic, networks.loha and networks.lokr are supported / MOSS 仅支持原生 LoRA、LoHa 和 LoKr；暂不支持 LyCORIS")
     cache = config.get("cache_text_encoder_outputs") is True or config.get("cache_text_encoder_outputs_to_disk") is True
     if cache and (config.get("network_train_unet_only") is not True or config.get("network_train_text_encoder_only") is True):
         errors.append("MOSS-Image: Text Encoder caching requires network_train_unet_only / 文本缓存要求仅训练 DiT")

@@ -135,3 +135,66 @@ test('MOSS fused projections and DiT text layers render with localized families 
     }
   }
 });
+
+test('MOSS LoHa and both LoKr modes render their actual matrices in all locales', () => {
+  for (const locale of ['zh-CN', 'en-US', 'ja-JP']) {
+    const messages = JSON.parse(readRepo(`frontend/i18n/${locale}.json`)).shapePreview;
+    const context = loadFrontend(['utils', 'training-core', 'preview-select', 'training-shape-preview'], {
+      window: {}, document: { addEventListener() {} },
+    });
+    const app = Object.assign({}, context.window.utilsMixin, context.window.trainingShapePreviewMixin, {
+      escapeAttr: context.window.trainingCoreMixin.escapeAttr,
+      form: { model_train_type: 'moss-image-lora' },
+      t: key => key.startsWith('shapePreview.') ? messages[key.slice('shapePreview.'.length)] || key : key,
+    });
+    for (const name of ['layers.*.proj.q', 'text_embedder.blocks.*.qkv']) {
+      const inDim = 3072, outDim = name.includes('qkv') ? 9216 : 3072;
+      const variants = [
+        { algo: 'loha', rank: 16, alpha: 1, scale: 1 / 16, shapes: {
+          hada_w1_a: [outDim, 16], hada_w1_b: [16, inDim], hada_w2_a: [outDim, 16], hada_w2_b: [16, inDim], alpha: [],
+        } },
+        { algo: 'lokr', rank: 16, alpha: 1, scale: 1 / 16, factor: 8, w2Full: false, shapes: {
+          lokr_w1: [8, 8], lokr_w2_a: [outDim / 8, 16], lokr_w2_b: [16, inDim / 8], alpha: [],
+        } },
+        { algo: 'lokr', rank: 256, alpha: 256, scale: 1, factor: 8, w2Full: true, shapes: {
+          lokr_w1: [8, 8], lokr_w2: [outDim / 8, inDim / 8], alpha: [],
+        } },
+      ];
+      for (const variant of variants) {
+        const params = Object.entries(variant.shapes).filter(([key]) => key !== 'alpha')
+          .reduce((sum, [, shape]) => sum + shape.reduce((a, b) => a * b, 1), 0);
+        const group = { id: name, name, in: inDim, out: outDim, count: 2, params,
+          weightBytes: (params + 1) * 2, paths: [name], ...variant };
+        app.shapeEstimate = { groups: [group], module: `networks.${variant.algo}`, params: params * 2,
+          estimatedBytes: group.weightBytes * 2 + 1024, moduleCount: 2, precision: 'bf16',
+          fullW2Count: variant.w2Full ? 2 : 0 };
+        app.shapePreviewSelected = name;
+        const html = app.shapePreviewHtml();
+        assert.match(html, variant.algo === 'loha' ? /LoHa/ : /LoKr/);
+        assert.ok(html.includes(variant.algo === 'loha' ? `${outDim} × 16` : `${outDim / 8} ×`));
+        assert.ok(html.includes(variant.algo === 'loha' ? messages.legendHadamard : messages.legendKron));
+        assert.doesNotMatch(html, /undefined|NaN|shapePreview\./);
+      }
+    }
+  }
+});
+
+test('changing the MOSS algorithm or LoKr factor refreshes the estimate payload', async () => {
+  const { app, pending, fire, reply } = fixture();
+  app.form = { model_train_type: 'moss-image-lora', network_module: 'networks.loha',
+    train_text_embedder: true, network_dim: 16, network_alpha: 1 };
+  for (const [module, factor] of [['networks.loha', -1], ['networks.lokr', -1], ['networks.lokr', 8]]) {
+    Object.assign(app.form, { network_module: module, lokr_factor: factor });
+    app.scheduleShapeEstimate();
+    assert.equal(app.shapeEstimate, null);
+    const request = fire(500);
+    const index = pending.length - 1;
+    const payload = JSON.parse(pending[index].options.body);
+    assert.equal(payload.network_module, module);
+    assert.equal(payload.lokr_factor, factor);
+    assert.equal(payload.train_text_embedder, true);
+    reply(index, [{ id: 'q', name: 'layers.*.proj.q' }]);
+    await request;
+  }
+  assert.equal(pending.length, 3);
+});

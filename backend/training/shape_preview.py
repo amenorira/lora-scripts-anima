@@ -15,10 +15,12 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
+from backend.training.moss_image import NETWORK_MODULES as MOSS_NETWORK_MODULES
+
 ROOT = Path(__file__).resolve().parents[2]
 SUPPORTED = {
     "anima-lora": {"networks.lora_anima", "networks.loha", "networks.lokr", "lycoris.kohya"},
-    "moss-image-lora": {"networks.lora_generic"},
+    "moss-image-lora": set(MOSS_NETWORK_MODULES),
 }
 _pool = None
 

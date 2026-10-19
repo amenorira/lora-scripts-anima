@@ -146,7 +146,7 @@ PROFILES: dict[str, TrainingProfile] = {
         trainer_file="./vendor/sd-scripts/moss_image_train_network.py",
         adapter_id="sd_native",
         group="moss_image",
-        description="sd-scripts MOSS-Image native LoRA profile.",
+        description="sd-scripts MOSS-Image native LoRA / LoHa / LoKr profile.",
     ),
 }
 

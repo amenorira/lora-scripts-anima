@@ -7,9 +7,9 @@ For Anima or MOSS-Image training, open **Structure preview** under **Training ne
 
 ![LoKr matrix structure and file-size estimate in the ComfyUI theme](../images/shape-preview.en-US.png)
 
-The preview uses the training network constructors with fake tensors. It does not load base-model weights or start training. It currently supports native Anima LoRA / LoHa / LoKr, LyCORIS LoCon / LoHa / LoKr, and native MOSS-Image LoRA.
+The preview uses the training network constructors with fake tensors. It does not load base-model weights or start training. It supports native LoRA / LoHa / LoKr for Anima and MOSS-Image, plus LyCORIS LoCon / LoHa / LoKr for Anima.
 
-MOSS-Image includes the attention and MLP projections in its 42 main blocks by default, totaling 252 LoRA modules. Enabling text embedder training adds 11 modules from the DiT text input projection and two text refiner blocks; the frozen Qwen text encoder is excluded. Fused QKV and MLP expansion/gate projections are shown with their actual combined dimensions.
+All three native MOSS-Image algorithms include the attention and MLP projections in its 42 main blocks by default, totaling 252 adapter modules. Enabling **Train text projection and refiners** adds 11 modules from the DiT text input projection and two text refiner blocks; the frozen Qwen text encoder is excluded. Fused QKV and MLP expansion/gate projections use their actual combined dimensions. LoHa shows the element-wise product of two low-rank products. LoKr shows the Kronecker factors and whether W2 uses low-rank or full-matrix storage, based on the actual factor and rank. Rank overrides and exclusion patterns can change the module count.
 
 | Preview item | Meaning |
 | --- | --- |

@@ -144,7 +144,7 @@ AdamWScheduleFree と ProdigyPlus は内部でスケジュールを管理する�
 
 Muon は勾配のモメンタムを蓄積し、2 次元行列の更新を近似的に直交化します。`lora_down` と `lora_up` を別々に処理します。行列に基づく更新が学習速度と結果に与える影響を比較できます。
 
-MOSS-Image は `networks.lora_generic` を使います。DiT と任意の text embedder の LoRA パラメータはすべて 2 次元なので、Muon を直接利用でき、LoRA+ と通常のスケジューラにも対応します。Muon 選択時、未編集の学習率は `1e-4` となり、MOSS の既定値 `rank=16, alpha=1`、`adjust_lr_fn=match_rms_adamw`、`weight_decay=0` と組み合わせます。これらは開始値であり、完全な学習での品質比較は未実施です。別のオプティマイザである LoRA-Muon は引き続き Anima のみ対応します。
+MOSS-Image のネイティブ `networks.lora_generic`・`networks.loha`・`networks.lokr` は、DiT と任意の text embedder に 2 次元の学習パラメータを使います。Muon を利用でき、LoRA+ と通常のスケジューラにも対応します。Muon 選択時、未編集の学習率は `1e-4` となり、MOSS の既定値 `rank=16, alpha=1`、`adjust_lr_fn=match_rms_adamw`、`weight_decay=0` と組み合わせます。これらは開始値であり、完全な学習での品質比較は未実施です。別のオプティマイザである LoRA-Muon は引き続き Anima のみ対応します。
 
 Muon は 2 次元のパラメータのみ対応しています。`lycoris.kohya` では、スカラーや 1 次元パラメータを追加する `use_scalar` と `train_norm` を無効にしてください。フォーム、インポートした設定、カスタム `network_args` のいずれも検証します。
 

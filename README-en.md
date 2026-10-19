@@ -22,7 +22,7 @@ A local GUI for LoRA training with training configuration, image tagging, captio
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-ja.md">日本語</a>
 </p>
 
-Anima / SDXL support native LoRA, LoHa, and LoKr, plus **LyCORIS** LoCon / LoHa / LoKr through `lycoris.kohya`. MOSS-Image and Krea 2 use their respective native LoRA modules.
+Anima / SDXL / MOSS-Image support native LoRA, LoHa, and LoKr. Anima / SDXL also support **LyCORIS** LoCon / LoHa / LoKr through `lycoris.kohya`. Krea 2 uses its dedicated native LoRA module.
 
 ### Supported Model Types
 
@@ -30,10 +30,10 @@ Anima / SDXL support native LoRA, LoHa, and LoKr, plus **LyCORIS** LoCon / LoHa 
 |---------------|------------|
 | LoRA | SDXL |
 | **LoRA** | **Anima** (Qwen3 + T5 dual encoder) |
-| **LoRA** | **MOSS-Image** (sd-scripts) |
+| **LoRA / LoHa / LoKr** | **MOSS-Image** (sd-scripts) |
 | **LoRA** | **Krea 2 RAW DiT** (musubi-tuner) |
 
-> ℹ️ MOSS-Image currently supports only native `networks.lora_generic`; LoHa, LoKr, and LyCORIS are unavailable. The UI keeps the Qwen text encoder frozen, with a separate option to train the text embedder inside the DiT.
+> ℹ️ MOSS-Image supports native `networks.lora_generic`, `networks.loha`, and `networks.lokr`; `lycoris.kohya` is unavailable. All three algorithms can optionally train the text projection and refiner layers inside the DiT. The UI keeps the Qwen text encoder frozen.
 
 > ℹ️ Krea 2 requires both latent and Qwen3-VL text-encoder caches before training. The UI verifies that they are complete and still match the images, captions, and models before a run can start.
 
@@ -72,7 +72,7 @@ Open **View learning-rate curve** under the schedule field to inspect warmup, de
 
 ### Matrix structure
 
-For Anima or MOSS-Image training, open **Structure preview** under **Training network module**. Anima supports LoRA / LoCon, LoHa, and LoKr; MOSS-Image supports native LoRA, including its optional DiT text embedder. The diagram reflects actual network construction. Switch between attention, MLP, and other modules to inspect tensor shapes, effective rank / alpha, scaling, matching layer counts, and parameter statistics.
+For Anima or MOSS-Image training, open **Structure preview** under **Training network module**. Anima supports LoRA / LoCon, LoHa, and LoKr; MOSS-Image supports native LoRA / LoHa / LoKr, including its optional DiT text projection and refiner layers. The diagram reflects actual network construction. Switch between attention, MLP, and other modules to inspect tensor shapes, effective rank / alpha, scaling, matching layer counts, and parameter statistics.
 
 The entry also shows the **estimated weight-file size**, updating with the algorithm, rank, training scope, and save precision. Fake tensors make this possible without loading base-model weights or starting training. The estimate includes saved tensors and the safetensors index, and is not a VRAM estimate. See the [matrix structure and file-size guide](docs/parameters/matrix-preview.en-US.md).
 

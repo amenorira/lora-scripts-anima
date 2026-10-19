@@ -7,9 +7,9 @@ Anima 或 MOSS-Image 训练中，在“训练网络模块”下点击“结构�
 
 ![ComfyUI 主题下的 LoKr 矩阵结构与文件大小估算](../images/shape-preview.zh-CN.png)
 
-预览根据训练时使用的网络构造器和虚拟张量生成，不加载底模权重，也不启动训练。当前支持 Anima 的原生 LoRA / LoHa / LoKr、LyCORIS 的 LoCon / LoHa / LoKr，以及 MOSS-Image 的原生 LoRA。
+预览根据训练时使用的网络构造器和虚拟张量生成，不加载底模权重，也不启动训练。当前支持 Anima 和 MOSS-Image 的原生 LoRA / LoHa / LoKr，以及 Anima 的 LyCORIS LoCon / LoHa / LoKr。
 
-MOSS-Image 默认统计 42 个主干块中的注意力投影与 MLP，共 252 个 LoRA 模块。开启“训练文本嵌入层”后，还会计入 DiT 内的文本输入投影和两个文本细化块，共增加 11 个模块；冻结的 Qwen 文本编码器不计入。合并的 QKV、MLP 升维与门控投影按实际合并矩阵展示。
+MOSS-Image 的三种原生算法默认统计 42 个主干块中的注意力投影与 MLP，共 252 个适配器模块。开启“训练文本投影与细化层”后，还会计入 DiT 内的文本输入投影和两个文本细化块，共增加 11 个模块；冻结的 Qwen 文本编码器不计入。合并的 QKV、MLP 升维与门控投影按实际合并矩阵展示。LoHa 展示两组低秩乘积的逐元素乘法；LoKr 按实际 factor 和 rank 展示 Kronecker 因子，以及 W2 的低秩或完整矩阵模式。正则指定 rank 或排除模块后，以实际构造数量为准。
 
 | 预览内容 | 说明 |
 | --- | --- |

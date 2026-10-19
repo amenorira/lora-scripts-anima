@@ -188,11 +188,44 @@ class MossImageConfigTests(unittest.TestCase):
             resolve_training_profile(config)
         with self.assertRaises(ValueError):
             adapt_config(config)
+
+    def test_native_algorithms_round_trip_through_yaml_and_trainer_toml(self):
         for module in ("networks.loha", "networks.lokr"):
             with self.subTest(module=module):
-                self.assertTrue(validate_training_config(moss_config(network_module=module)))
-                with self.assertRaises(ValueError):
-                    adapt_config(moss_config(network_module=module))
+                original = moss_config(network_module=module, train_text_embedder=True,
+                                       rank_dropout=0.1, module_dropout=0.2, lokr_factor=8,
+                                       enable_loraplus=True, loraplus_lr_ratio=4)
+                self.assertEqual(validate_training_config(original), [])
+                profile = resolve_training_profile(dict(original))
+                self.assertTrue(profile.trainer_file.endswith("moss_image_train_network.py"))
+                restored = extract_training_form(build_training_config(original, profile_id=PROFILE_ID))
+                adapted, warnings = adapt_config(restored)
+                self.assertFalse(warnings, warnings)
+                self.assertEqual(adapted["network_module"], module)
+                for argument in ("train_llm_adapter=True", "rank_dropout=0.1", "module_dropout=0.2",
+                                 "loraplus_lr_ratio=4"):
+                    self.assertIn(argument, adapted["network_args"])
+                self.assertEqual("factor=8" in adapted["network_args"], module == "networks.lokr")
+                imported = extract_form(adapted)
+                self.assertEqual(imported["train_text_embedder"], True)
+                if module == "networks.lokr":
+                    self.assertEqual(imported["lokr_factor"], 8)
+                    # Editing the imported factor must replace, not compete with, the raw argument.
+                    self.assertNotIn("factor=8", imported.get("network_args_custom", ""))
+                    imported["lokr_factor"] = 4
+                readapted, _ = adapt_config(moss_config(**imported))
+                self.assertEqual(readapted["network_module"], module)
+                if module == "networks.lokr":
+                    self.assertIn("factor=4", readapted["network_args"])
+                    self.assertNotIn("factor=8", readapted["network_args"])
+
+    def test_native_import_keeps_advanced_convolution_arguments(self):
+        imported = extract_form({"network_module": "networks.loha", "network_args": [
+            "conv_dim=4", "conv_alpha=2", "use_tucker=True", "network_reg_dims=layers.*=8",
+        ]})
+        adapted, _ = adapt_config(moss_config(**imported))
+        for argument in ("conv_dim=4", "conv_alpha=2", "use_tucker=True", "network_reg_dims=layers.*=8"):
+            self.assertIn(argument, adapted["network_args"])
 
     def test_bounds_and_compile_block_swap_contract(self):
         self.assertEqual(validate_training_config(moss_config(blocks_to_swap=40, resolution="1040,768")), [])

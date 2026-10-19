@@ -251,9 +251,9 @@ window.trainingCoreMixin = {
     this.formDefaults = { ...newDefaults };
     this._activeTrainType = v;
 
-    // A runtime profile owns its network module. Krea's module is musubi
-    // specific and must never inherit an sd-scripts or LyCORIS selection.
-    const targetMod = this._defaultNetworkModule(v);
+    // Keep the validated MOSS algorithm from its own draft. Krea's module
+    // is musubi-specific and must never inherit an sd-scripts selection.
+    const targetMod = v === 'moss-image-lora' ? this.form.network_module : this._defaultNetworkModule(v);
     if (this.form.network_module !== targetMod) this.form.network_module = targetMod;
     this._syncKrea2CacheDir();
     this._captureProfileDraft(v, this.form, newDefaults);
@@ -725,11 +725,9 @@ window.trainingCoreMixin = {
     if (this.form.model_train_type === 'krea2-lora') {
       this.form.network_module = 'networks.lora_krea2';
       this._applyKrea2ModelDefaults(this.form, defaults);
-    } else if (this.form.model_train_type === 'moss-image-lora') {
-      this.form.network_module = 'networks.lora_generic';
     } else if (this.form.model_train_type === 'anima-lora' && this.form.network_module === 'networks.lora') {
       this.form.network_module = 'networks.lora_anima';
-    } else if (this.form.model_train_type !== 'anima-lora' && ['networks.lora_anima', 'networks.lora_generic'].includes(this.form.network_module)) {
+    } else if (this.form.model_train_type === 'sdxl-lora' && ['networks.lora_anima', 'networks.lora_generic'].includes(this.form.network_module)) {
       this.form.network_module = 'networks.lora';
     }
     this.formDefaults = { ...defaults };
@@ -1322,7 +1320,7 @@ window.trainingCoreMixin = {
         defaults.dataset_cache_dir = cacheDir;
       }
       this._normalizeProfileSelectValues(trainType, defaults, warmForm);
-      warmForm.network_module = this._defaultNetworkModule(trainType);
+      if (trainType !== 'moss-image-lora') warmForm.network_module = this._defaultNetworkModule(trainType);
       this.form = warmForm;
       this.formDefaults = { ...defaults };
       this._activeTrainType = trainType;

@@ -2,6 +2,8 @@
 
 Network settings determine the adapter's matrix structure, training scope, and weight-file size. Standard LoRA defaults to rank/Alpha `32/32` and dropout `0`. LoRA-Muon does not automatically change these to `16/16`; enter that combination manually if you want to use it.
 
+MOSS-Image defaults to rank/Alpha `16/1` and offers native `networks.lora_generic`, `networks.loha`, and `networks.lokr`. All three support rank/module dropout, LoRA+, regex rank/learning-rate settings, and optional DiT text projection and refiner training; Qwen stays frozen. LoKr also exposes `lokr_factor`. MOSS targets linear layers, so convolution rank/alpha and Tucker controls are hidden; `lycoris.kohya` is unavailable. Equal ranks across algorithms do not imply equal parameter counts: inspect the matrices and scaling in the structure preview and tune learning rates separately.
+
 <!-- doc-anchor: dimension -->
 ## Network dimension
 

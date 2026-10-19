@@ -144,7 +144,7 @@ beta 越高，对应统计保留历史越久、响应越慢；越低则更快跟
 
 Muon 先累积梯度动量，再对二维矩阵更新做近似正交化。它分别处理 `lora_down` 和 `lora_up`，适合比较矩阵更新方式对学习速度与结果的影响。
 
-MOSS-Image 使用 `networks.lora_generic`，DiT 和可选 text embedder 的 LoRA 参数均为二维矩阵，可直接使用 Muon，也支持 LoRA+ 和常规调度器。切换到 Muon 时，未手动修改的学习率使用 `1e-4`，对应 MOSS 默认 `rank=16, alpha=1`；`adjust_lr_fn=match_rms_adamw`、`weight_decay=0`。这些是工程起点，尚未做完整训练效果对照。LoRA-Muon 是独立优化器，仍仅支持 Anima。
+MOSS-Image 的原生 `networks.lora_generic`、`networks.loha` 和 `networks.lokr` 在 DiT 及可选 text embedder 上均使用二维可训练参数，可使用 Muon，也支持 LoRA+ 和常规调度器。切换到 Muon 时，未手动修改的学习率使用 `1e-4`，对应 MOSS 默认 `rank=16, alpha=1`；`adjust_lr_fn=match_rms_adamw`、`weight_decay=0`。这些是工程起点，尚未做完整训练效果对照。LoRA-Muon 是独立优化器，仍仅支持 Anima。
 
 Muon 只支持二维参数。搭配 `lycoris.kohya` 时必须关闭 `use_scalar` 和 `train_norm`，它们会引入标量或一维参数；表单、导入配置和自定义 `network_args` 都会检查此限制。
 

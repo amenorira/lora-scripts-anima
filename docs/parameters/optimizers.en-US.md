@@ -144,7 +144,7 @@ Higher weight decay shrinks weights more strongly and can prevent target feature
 
 Muon accumulates gradient momentum and approximately orthogonalizes updates for two-dimensional matrices. It processes `lora_down` and `lora_up` separately. Use it to compare how matrix-based updates affect learning speed and results.
 
-MOSS-Image uses `networks.lora_generic`; both DiT LoRA and optional text embedder LoRA have two-dimensional parameters and can use Muon directly, including LoRA+ and standard schedulers. Selecting Muon sets an unedited learning rate to `1e-4`, paired with MOSS defaults of `rank=16, alpha=1`, `adjust_lr_fn=match_rms_adamw`, and `weight_decay=0`. These are engineering starting points without a full training-quality comparison. The separate LoRA-Muon optimizer remains Anima-only.
+MOSS-Image's native `networks.lora_generic`, `networks.loha`, and `networks.lokr` use two-dimensional trainable parameters for the DiT and optional text embedder. They support Muon, including LoRA+ and standard schedulers. Selecting Muon sets an unedited learning rate to `1e-4`, paired with MOSS defaults of `rank=16, alpha=1`, `adjust_lr_fn=match_rms_adamw`, and `weight_decay=0`. These are engineering starting points without a full training-quality comparison. The separate LoRA-Muon optimizer remains Anima-only.
 
 Muon only supports two-dimensional parameters. With `lycoris.kohya`, disable `use_scalar` and `train_norm`, which introduce scalar or one-dimensional parameters. This restriction is checked for form values, imported configurations, and custom `network_args`.
 
