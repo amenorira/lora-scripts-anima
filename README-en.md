@@ -72,7 +72,7 @@ Open **View learning-rate curve** under the schedule field to inspect warmup, de
 
 ### Matrix structure
 
-For Anima training, open **Structure preview** under **Training network module**. The diagram reflects actual network construction for LoRA / LoCon, LoHa, and LoKr. Switch between attention, MLP, and other modules to inspect tensor shapes, effective rank / alpha, scaling, matching layer counts, and parameter statistics.
+For Anima or MOSS-Image training, open **Structure preview** under **Training network module**. Anima supports LoRA / LoCon, LoHa, and LoKr; MOSS-Image supports native LoRA, including its optional DiT text embedder. The diagram reflects actual network construction. Switch between attention, MLP, and other modules to inspect tensor shapes, effective rank / alpha, scaling, matching layer counts, and parameter statistics.
 
 The entry also shows the **estimated weight-file size**, updating with the algorithm, rank, training scope, and save precision. Fake tensors make this possible without loading base-model weights or starting training. The estimate includes saved tensors and the safetensors index, and is not a VRAM estimate. See the [matrix structure and file-size guide](docs/parameters/matrix-preview.en-US.md).
 

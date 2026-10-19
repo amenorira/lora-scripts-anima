@@ -11,7 +11,7 @@ window.trainingShapePreviewMixin = {
   _shapeEstimateBusy: false,
 
   shapePreviewSupported() {
-    return String((this.form && this.form.model_train_type) || '') === 'anima-lora';
+    return ['anima-lora', 'moss-image-lora'].includes(this.form?.model_train_type);
   },
 
   // 入口按钮由 training-core.js 的 _getEnvHint('network_module') 追加到字段下方。
@@ -30,7 +30,7 @@ window.trainingShapePreviewMixin = {
     const payload = {};
     Object.entries(this.form || {}).forEach(([key, value]) => {
       if (key === 'qwen3') payload[key] = value;
-      if (/^(network_|lycoris_|train_adaln$|train_llm_adapter$|model_train_type$|save_precision$|save_model_as$|full_bf16$|full_fp16$|dim_from_weights$|cache_text_encoder_outputs$|conv_|lokr_|use_|dora_|wd_|rs_lora$|decompose_both$|full_matrix$|unbalanced_factorization$|rank_dropout$|module_dropout$|optimizer_type$)/.test(key)) payload[key] = value;
+      if (/^(network_|lycoris_|train_adaln$|train_llm_adapter$|train_text_embedder$|model_train_type$|save_precision$|save_model_as$|full_bf16$|full_fp16$|dim_from_weights$|cache_text_encoder_outputs$|conv_|lokr_|use_|dora_|wd_|rs_lora$|decompose_both$|full_matrix$|unbalanced_factorization$|rank_dropout$|module_dropout$|optimizer_type$)/.test(key)) payload[key] = value;
     });
     return payload;
   },
@@ -68,6 +68,7 @@ window.trainingShapePreviewMixin = {
       this.shapeEstimate = result.data;
       const groups = result.data.groups;
       this.shapePreviewSelected = groups.find(g => g.name === 'blocks.*.self_attn.q_proj')?.id
+        || groups.find(g => g.name === 'layers.*.proj.q')?.id
         || groups.find(g => g.name.startsWith('blocks.*.self_attn.'))?.id || groups[0]?.id || '';
     } catch (error) {
       if (signature === this._shapeEstimateSignature) {
@@ -472,6 +473,19 @@ window.trainingShapePreviewMixin = {
 
   _shapeModuleLabel(group) {
     const t = key => this.t(`shapePreview.${key}`);
+    if (/^(layers\.\*\.proj\.|text_embedder\.)/.test(group.name)) {
+      const textEmbedder = group.name.startsWith('text_embedder.');
+      const path = group.name.replace(/^(layers\.\*\.proj\.|text_embedder\.(?:blocks\.\*\.)?)/, '');
+      const family = path.startsWith('ffn_') ? 'MLP' : t('selfAttention');
+      const labels = {
+        q: t('qProjection'), k: t('kProjection'), v: t('vProjection'), o: t('outputProjection'),
+        qkv: t('qkvProjection'), proj: t('outputProjection'),
+        ffn_up: t('mlpExpand'), ffn_gate: t('mlpGate'),
+        ffn_up_gate: t('mlpExpandGate'), ffn_down: t('mlpContract'),
+      };
+      if (group.name === 'text_embedder.proj') return { family: t('textEmbedder'), label: t('inputProjection') };
+      return { family: textEmbedder ? `${t('textEmbedder')} / ${family}` : family, label: labels[path] || path };
+    }
     let path = group.name.replace(/^blocks\.\*\./, '');
     let family = t('otherModules');
     const families = [

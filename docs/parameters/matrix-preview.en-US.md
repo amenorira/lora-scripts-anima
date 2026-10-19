@@ -1,13 +1,15 @@
 # Matrix Structure and File Size
 
-For Anima training, open **Structure preview** under **Training network module** to inspect the adapter matrices constructed by the current settings. The entry also shows the estimated weight-file size, making it easier to compare rank, algorithms, and training scopes.
+For Anima or MOSS-Image training, open **Structure preview** under **Training network module** to inspect the adapter matrices constructed by the current settings. The entry also shows the estimated weight-file size, making it easier to compare rank, algorithms, and training scopes.
 
 <!-- doc-anchor: overview -->
 ## Inspect actual modules
 
 ![LoKr matrix structure and file-size estimate in the ComfyUI theme](../images/shape-preview.en-US.png)
 
-The preview uses the training network constructors with fake tensors. It does not load base-model weights or start training. It currently supports native Anima LoRA / LoHa / LoKr and LyCORIS LoCon / LoHa / LoKr.
+The preview uses the training network constructors with fake tensors. It does not load base-model weights or start training. It currently supports native Anima LoRA / LoHa / LoKr, LyCORIS LoCon / LoHa / LoKr, and native MOSS-Image LoRA.
+
+MOSS-Image includes the attention and MLP projections in its 42 main blocks by default, totaling 252 LoRA modules. Enabling text embedder training adds 11 modules from the DiT text input projection and two text refiner blocks; the frozen Qwen text encoder is excluded. Fused QKV and MLP expansion/gate projections are shown with their actual combined dimensions.
 
 | Preview item | Meaning |
 | --- | --- |

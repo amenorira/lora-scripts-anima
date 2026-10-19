@@ -72,7 +72,7 @@ Anima / SDXL 支持原生 LoRA、LoHa、LoKr，以及通过 `lycoris.kohya` 接�
 
 ### 矩阵结构预览
 
-Anima 训练下，在 **训练网络模块** 下点击「结构预览」。按实际网络构造结果展示 LoRA / LoCon、LoHa 和 LoKr 的矩阵组合，可切换注意力、MLP 等模块，查看逐层形状、生效 rank / alpha、缩放、匹配层数和参数统计。
+Anima 或 MOSS-Image 训练下，在 **训练网络模块** 下点击「结构预览」。Anima 支持 LoRA / LoCon、LoHa 和 LoKr，MOSS-Image 支持原生 LoRA，包含可选的 DiT 文本嵌入层。按实际网络构造结果展示矩阵组合，可切换注意力、MLP 等模块，查看逐层形状、生效 rank / alpha、缩放、匹配层数和参数统计。
 
 入口同时显示 **预计权重文件大小**，随算法、rank、训练范围和保存精度自动更新。估算使用虚拟张量，无需加载底模或启动训练；统计实际保存张量与 safetensors 索引开销，不代表显存需求。详见[矩阵结构与文件大小指南](docs/parameters/matrix-preview.zh-CN.md)。
 
