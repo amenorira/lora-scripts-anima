@@ -291,7 +291,7 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "network_train_unet_only", "type": "toggle", "default": True, "section": "network", "desc_key": "field.network_train_unet_only", "target": "toml"},
 {"key": "network_train_text_encoder_only", "type": "toggle", "default": False, "section": "network", "desc_key": "field.network_train_text_encoder_only", "target": "toml", "omit_default": True},
 {"key": "network_dim", "type": "number", "default": 32, "section": "network", "desc_key": "field.network_dim", "hint_key": "field.network_dimHint", "hint_key_by": {"key": "optimizer_type", "values": {LORA_MUON_OPTIMIZER_TYPE: "field.network_dimHint_lora_muon"}}, "target": "toml", "min": 1, "step": 1, "doc_slug": "network-parameters", "doc_anchor": "dimension"},
-{"key": "network_alpha", "type": "number", "default": 32, "section": "network", "desc_key": "field.network_alpha", "hint_key": "field.network_alphaHint", "hint_key_by": {"key": "optimizer_type", "values": {LORA_MUON_OPTIMIZER_TYPE: "field.network_alphaHint_lora_muon"}}, "target": "toml", "min": 0, "step": 0.01, "doc_slug": "network-parameters", "doc_anchor": "alpha"},
+{"key": "network_alpha", "type": "number", "default": 32, "section": "network", "desc_key": "field.network_alpha", "hint_key": "field.network_alphaHint", "hint_key_by": {"key": "optimizer_type", "values": {LORA_MUON_OPTIMIZER_TYPE: "field.network_alphaHint_lora_muon"}}, "target": "toml", "min": 1, "step": 1, "doc_slug": "network-parameters", "doc_anchor": "alpha"},
 {"key": "network_weights", "type": "text", "default": "", "section": "network", "desc_key": "field.network_weights", "hint_key": "field.network_weightsHint", "target": "toml", "role": "file-model-saved"},
 {"key": "dim_from_weights", "type": "toggle", "default": False, "section": "network", "desc_key": "field.dim_from_weights", "target": "toml", "show_if": {"key": "network_weights", "neq": ""}, "hint_key": "field.dim_from_weightsHint"},
 # network_dropout 是 train_network.py 顶层 CLI（:1930），对所有 module 自动经 neuron_dropout= 兜底传入
@@ -334,7 +334,7 @@ FIELDS: list[dict[str, Any]] = [
     #   networks.loha / networks.lokr 同样读取；lycoris.kohya 通用（kohya.py:42-43）。
     #   networks.lora_anima 不支持（create_network 不读 conv_dim，create_modules Linear/Conv2d 共用 lora_dim）。
     {"key": "conv_dim", "type": "number", "section": "network", "desc_key": "field.conv_dim", "target": "ui", "min": 0, "show_if": {"key": "network_module", "eq": "networks.lora", "_or": ["networks.loha", "networks.lokr", "lycoris.kohya"]}, "hint_key": "field.conv_dimHintNative", "hint_key_panel": "field.conv_dimHint"},
-    {"key": "conv_alpha", "type": "number", "section": "network", "desc_key": "field.conv_alpha", "target": "ui", "min": 0, "step": 0.01, "show_if": {"key": "network_module", "eq": "networks.lora", "_or": ["networks.loha", "networks.lokr", "lycoris.kohya"]}, "hint_key": "field.conv_alphaHintNative", "hint_key_panel": "field.conv_alphaHint"},
+    {"key": "conv_alpha", "type": "number", "section": "network", "desc_key": "field.conv_alpha", "target": "ui", "min": 0, "show_if": {"key": "network_module", "eq": "networks.lora", "_or": ["networks.loha", "networks.lokr", "lycoris.kohya"]}, "hint_key": "field.conv_alphaHintNative", "hint_key_panel": "field.conv_alphaHint"},
     # lokr_factor → sd-scripts factor：仅 LoKr 算法消费（vendor lokr.py 读 kwargs["factor"]；
     # vendor loha.py 不读；lycoris 仅 LokrModule.__init__ 有 factor 参数）。
     # 故显示条件为 OR-of-ANDs：原生 networks.lokr，或 lycoris.kohya + algo=lokr。

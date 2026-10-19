@@ -277,8 +277,8 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": 32,
         "section": "network",
         "desc_key": "field.network_alpha",
-        "min": 0,
-        "step": 0.01,
+        "min": 1,
+        "step": 1,
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -1253,16 +1253,23 @@ def krea2_auto_cache_dir(train_data_dir: Any) -> str:
 
 def _as_int(config: dict[str, Any], key: str, errors: list[str], minimum: int = 0) -> int | None:
     value = config.get(key)
+    if isinstance(value, bool):
+        errors.append(f"{key}: must be an integer / 必须是整数")
+        return None
     try:
-        number = int(value)
+        number = float(value)
     except (TypeError, ValueError):
         errors.append(f"{key}: must be an integer / 必须是整数")
         return None
-    if isinstance(value, bool) or number < minimum:
+    if not math.isfinite(number) or not number.is_integer():
+        errors.append(f"{key}: must be an integer / 必须是整数")
+        return None
+    integer = int(number)
+    if integer < minimum:
         errors.append(f"{key}: must be >= {minimum} / 不能小于 {minimum}")
         return None
-    config[key] = number
-    return number
+    config[key] = integer
+    return integer
 
 
 def _as_float(
@@ -1871,6 +1878,7 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
 
     for key, minimum in (
         ("network_dim", 1),
+        ("network_alpha", 1),
         ("train_batch_size", 1),
         ("gradient_accumulation_steps", 1),
         ("krea_num_repeats", 1),
@@ -1898,7 +1906,6 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
 
     for key, minimum in (
         ("network_dropout", 0.0),
-        ("network_alpha", 0.0),
         ("discrete_flow_shift", 0.01),
         ("learning_rate", 0.0),
         ("max_grad_norm", 0.0),
@@ -2117,7 +2124,7 @@ def build_krea2_train_config(
         "dataset_config": str(dataset_config_path),
         "network_module": KREA2_NETWORK_MODULE,
         "network_dim": int(config["network_dim"]),
-        "network_alpha": float(config["network_alpha"]),
+        "network_alpha": int(config["network_alpha"]),
         "network_dropout": float(config.get("network_dropout", 0)),
         "gradient_accumulation_steps": int(config["gradient_accumulation_steps"]),
         "gradient_checkpointing": bool(config.get("gradient_checkpointing", False)),

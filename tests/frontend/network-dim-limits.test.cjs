@@ -37,8 +37,13 @@ test('network dimension, scaling and upstream-backed numeric ranges are not arbi
       app.stepField(key, 1);
       assert.equal(app.form[key], 513, `${profile}: ${key} stepper should continue past 256`);
     }
+    const alphaField = app.findFieldDef('network_alpha');
+    assert.equal(alphaField.min, 1, `${profile}: Alpha minimum should be 1`);
+    assert.equal(alphaField.step, 1, `${profile}: Alpha should step by 1`);
     app.setField('network_alpha', 0.5);
-    assert.equal(app.form.network_alpha, 0.5, `${profile}: fractional Alpha should be preserved`);
+    assert.equal(app.form.network_alpha, 1, `${profile}: Alpha should be clamped to its minimum`);
+    app.setField('network_alpha', 512);
+    assert.equal(app.form.network_alpha, 512, `${profile}: Alpha should still accept values above 256`);
     app.validateForm();
     assert.equal(app.formErrors.network_dim, undefined);
     assert.equal(app.formErrors.network_alpha, undefined);
@@ -49,11 +54,6 @@ test('network dimension, scaling and upstream-backed numeric ranges are not arbi
   assert.equal(dropout.max, 1);
   app.setField('network_dropout', 1);
   assert.equal(app.form.network_dropout, 1, 'dropout=1 is documented upstream as dropping all neurons');
-
-  const convAlpha = app.findFieldDef('conv_alpha');
-  assert.equal(convAlpha.step, 0.01);
-  app.setField('conv_alpha', 0.25);
-  assert.equal(app.form.conv_alpha, 0.25, 'conv_alpha should accept fractional scaling');
 
   const sampleCfg = app.findFieldDef('sample_cfg');
   assert.equal(sampleCfg.max, undefined);

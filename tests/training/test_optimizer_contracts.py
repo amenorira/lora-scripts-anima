@@ -71,12 +71,17 @@ class OptimizerValidationTests(unittest.TestCase):
         adapted, _ = adapt_config(config)
         self.assertIn("ns_steps=100", adapted["optimizer_args"])
 
-    def test_network_scaling_accepts_fractional_alpha_and_full_dropout(self):
+    def test_network_alpha_is_integer_and_full_dropout_is_allowed(self):
         config = valid_config("AdamW")
-        config.update({"network_alpha": 0.5, "network_dropout": 1.0})
+        config.update({"network_alpha": 2, "network_dropout": 1.0})
         self.assertEqual(validate_training_config(config), [])
-        self.assertEqual(config["network_alpha"], 0.5)
+        self.assertEqual(config["network_alpha"], 2)
         self.assertEqual(config["network_dropout"], 1.0)
+
+        config["network_alpha"] = 0.5
+        errors = validate_training_config(config)
+        self.assertTrue(any("network_alpha" in error for error in errors), errors)
+        self.assertTrue(any("step 1" in error for error in errors), errors)
 
     def test_rejects_unknown_arguments_for_known_optimizers(self):
         config = valid_config("AdamW")

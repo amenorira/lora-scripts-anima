@@ -314,14 +314,18 @@ class Krea2CodecTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             config = krea2_config(root)
-            config.update({"network_alpha": 0.5, "network_dropout": 1.0})
+            config.update({"network_alpha": 2, "network_dropout": 1.0})
 
             self.assertEqual(validate_krea2_config(config), [])
             dataset = build_krea2_dataset_config(config)
             train = build_krea2_train_config(config, root / "run" / "dataset.toml", root / "artifact", root / "run" / "log")
 
+            config["network_alpha"] = 1.5
+            errors = validate_krea2_config(config)
+            self.assertTrue(any("network_alpha" in error and "整数" in error for error in errors), errors)
+
         self.assertEqual(dataset["general"]["resolution"], [1024, 1024])
-        self.assertEqual(train["network_alpha"], 0.5)
+        self.assertEqual(train["network_alpha"], 2)
         self.assertEqual(train["network_dropout"], 1.0)
         self.assertEqual(dataset["datasets"][0]["cache_directory"], config["dataset_cache_dir"])
         self.assertEqual(train["network_module"], "networks.lora_krea2")
