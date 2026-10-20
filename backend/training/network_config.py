@@ -49,7 +49,8 @@ def extract_network_form(config: dict[str, Any], *, model_train_type: str = "ani
             groups = field.get("group", "all")
             groups = groups if isinstance(groups, list) else [groups]
             if module in field.get("networkModules", []) and ("all" in groups or group in groups):
-                fields[field["networkArg"]] = field
+                argument = field.get("networkArgByModule", {}).get(module, field["networkArg"])
+                fields[argument] = field
 
     arguments = result.pop("network_args", [])
     if not isinstance(arguments, list) or any(not isinstance(item, str) for item in arguments):
@@ -61,7 +62,7 @@ def extract_network_form(config: dict[str, Any], *, model_train_type: str = "ani
     for item in arguments:
         key, separator, raw = item.partition("=")
         key = key.strip()
-        if separator and (key in fields or (group == "moss_image" and key == "train_text_embedder")):
+        if separator and (key in fields or (group == "moss_image" and key in ("train_text_embedder", "train_llm_adapter"))):
             parsed[key] = _argument_value(raw)
         else:
             extra.append(item)

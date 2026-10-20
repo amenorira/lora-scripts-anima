@@ -333,7 +333,12 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     if is_moss and train_text_embedder is not None:
         network_args = _remove_key_value_args(list(source.get("network_args") or []),
                                               {"train_llm_adapter", "train_text_embedder"})
-        _set_key_value_arg(network_args, "train_llm_adapter", train_text_embedder is True)
+        # Omit the disabled default after removing both aliases so stale custom
+        # arguments cannot override the switch. LoHa/LoKr still require the alias.
+        if train_text_embedder is True:
+            argument = ("train_text_embedder" if source.get("network_module") == "networks.lora_generic"
+                        else "train_llm_adapter")
+            _set_key_value_arg(network_args, argument, True)
         source["network_args"] = network_args
     merged_network_args: list[str] = []
     if isinstance(source.get("network_args"), list):

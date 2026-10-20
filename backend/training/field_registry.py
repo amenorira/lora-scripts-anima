@@ -878,7 +878,11 @@ def _to_camel(field: dict) -> dict:
             module for module, mapping in NATIVE_NETWORK_ARG_MAP.items() if key in mapping
         )]
     if key == "train_text_embedder":
-        result["networkArg"] = "train_llm_adapter"
+        result["networkArg"] = "train_text_embedder"
+        # These native modules currently only consume the shared Anima name.
+        result["networkArgByModule"] = {
+            module: "train_llm_adapter" for module in ("networks.loha", "networks.lokr")
+        }
         result["networkModules"] = list(MOSS_NETWORK_MODULES)
     return result
 
