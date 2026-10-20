@@ -1,9 +1,9 @@
 """Vision API engine for the Tagger workspace.
 
 Supports three request protocols: OpenAI Chat Completions, OpenAI Responses,
-and Anthropic Messages. Sends one request per image (base64 PNG or JPEG) so tags
-stay attributable, with retry/backoff for transient failures. The API key is
-kept in memory only and never written to disk or logs.
+and Anthropic Messages. Sends one request per image (base64 PNG or JPEG),
+validates MOSS JSON and retries transient failures. Credentials are excluded
+from task snapshots and logs.
 """
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ import io
 import json
 import math
 import os
-import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -21,21 +20,17 @@ from typing import Any
 import httpx
 from PIL import Image, ImageOps
 
-DEFAULT_TIMEOUT = 120.0
+DEFAULT_TIMEOUT = 600.0
 MAX_RETRIES = 3
 MIN_CONCURRENCY = 1
 MAX_CONCURRENCY = 128
-DEFAULT_MAX_TOKENS = 1024
-DEFAULT_TEMPERATURE = 0.2
+DEFAULT_MAX_TOKENS = 16384
+DEFAULT_TEMPERATURE = 1.0
 PROTOCOL_CHAT = "chat-completions"
 PROTOCOL_RESPONSES = "responses"
 PROTOCOL_ANTHROPIC = "anthropic"
 PROTOCOLS = (PROTOCOL_CHAT, PROTOCOL_RESPONSES, PROTOCOL_ANTHROPIC)
 ANTHROPIC_VERSION = "2023-06-01"
-
-_TAG_SPLIT_PATTERN = re.compile(r"[,，、;；\n]")
-_TAG_BULLET_PATTERN = re.compile(r"^(?:[-*•]+|\d+[.)、])\s*")
-
 
 class ApiAuthError(RuntimeError):
     """Authentication/authorization failure (401/403). Abort the whole task."""
@@ -55,16 +50,15 @@ class ApiConfig:
     api_key: str
     model: str
     prompt: str
-    parse_mode: str = "tags"  # tags | caption | multi-caption
     protocol: str = PROTOCOL_CHAT  # PROTOCOL_CHAT | PROTOCOL_RESPONSES | PROTOCOL_ANTHROPIC
-    max_edge: int = 1280
-    concurrency: int = 4
+    max_edge: int = 1536
+    concurrency: int = 1
     max_tokens: int = DEFAULT_MAX_TOKENS
     temperature: float = DEFAULT_TEMPERATURE
     timeout: float = DEFAULT_TIMEOUT
     top_p: float | None = None
     max_retries: int = MAX_RETRIES
-    jpeg_quality: int | None = 90
+    jpeg_quality: int | None = None
     extra_body: dict = field(default_factory=dict)
 
 
@@ -87,9 +81,6 @@ def validate_config(payload: dict[str, Any]) -> ApiConfig:
     prompt = str(payload.get("prompt") or "").strip()
     if not prompt:
         raise ValueError("Prompt is required / 请填写提示词")
-    parse_mode = str(payload.get("parse_mode") or "tags").strip()
-    if parse_mode not in {"tags", "caption", "multi-caption"}:
-        raise ValueError("Invalid parse mode / 无效的输出解析方式")
     protocol = str(payload.get("protocol") or PROTOCOL_CHAT).strip()
     if protocol not in PROTOCOLS:
         raise ValueError("Invalid API protocol / 无效的接口协议")
@@ -104,16 +95,15 @@ def validate_config(payload: dict[str, Any]) -> ApiConfig:
         extra = json.loads(extra)
     if not isinstance(extra, dict):
         raise ValueError("Extra body must be a JSON object / 附加请求参数必须是 JSON 对象")
-    jpeg = payload.get("jpeg_quality", 90)
+    jpeg = payload.get("jpeg_quality")
     return ApiConfig(
         base_url=base_url,
         api_key=api_key,
         model=model,
         prompt=prompt,
-        parse_mode=parse_mode,
         protocol=protocol,
-        max_edge=_clamp_int(payload.get("max_edge"), 1280, 0, 65536),
-        concurrency=_clamp_int(payload.get("concurrency"), 4, MIN_CONCURRENCY, MAX_CONCURRENCY),
+        max_edge=_clamp_int(payload.get("max_edge"), 1536, 0, 65536),
+        concurrency=_clamp_int(payload.get("concurrency"), 1, MIN_CONCURRENCY, MAX_CONCURRENCY),
         max_tokens=_clamp_int(payload.get("max_tokens"), DEFAULT_MAX_TOKENS, 1, 1048576),
         temperature=number("temperature", DEFAULT_TEMPERATURE, 0, 2),
         timeout=number("timeout", DEFAULT_TIMEOUT, .1, 86400),
@@ -247,29 +237,11 @@ def encode_image(image: Image.Image, max_edge: int, jpeg_quality: int | None = 9
     return ("data:image/png;base64," if jpeg_quality is None else "data:image/jpeg;base64,") + base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
-def parse_response_text(text: str, parse_mode: str) -> list[str]:
-    cleaned = str(text or "").strip()
-    if not cleaned:
-        return []
-    if parse_mode == "caption":
-        return [cleaned]
-    if parse_mode == "multi-caption":
-        from tools.caption_images_moss import extract_json_object, validate_response
-        value = extract_json_object(cleaned)
-        validate_response(value)
-        return [value["caption"][key] for key in ("long", "medium", "short")]
-    tags: list[str] = []
-    seen: set[str] = set()
-    for part in _TAG_SPLIT_PATTERN.split(cleaned):
-        tag = _TAG_BULLET_PATTERN.sub("", part.strip().strip('"').strip())
-        if not tag:
-            continue
-        key = tag.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        tags.append(tag)
-    return tags
+def parse_response_text(text: str) -> dict:
+    from tools.caption_images_moss import extract_json_object, validate_response
+    result = extract_json_object(text)
+    validate_response(result)
+    return result
 
 
 def _extract_content(body: dict[str, Any], protocol: str = PROTOCOL_CHAT) -> str:
@@ -313,8 +285,8 @@ def interrogate(
     client: httpx.Client | None = None,
     cancel_event: threading.Event | None = None,
     metadata: dict | None = None,
-) -> tuple[list[str], str]:
-    """Tag one image. Returns (parsed tags, raw response text)."""
+) -> tuple[dict, str]:
+    """Return the validated MOSS JSON and original response text."""
     data_url = encode_image(image, config.max_edge, config.jpeg_quality)
     payload = _build_payload(config, data_url)
     headers = _auth_headers(config.api_key, config.protocol)
@@ -353,7 +325,7 @@ def interrogate(
                 try:
                     body = response.json()
                     raw = _extract_content(body, config.protocol)
-                    parsed = parse_response_text(raw, config.parse_mode)
+                    parsed = parse_response_text(raw)
                 except Exception as exc:
                     last_error = ApiTransientError(f"Malformed response / 响应格式无效: {str(exc)[:200]}")
                 else:

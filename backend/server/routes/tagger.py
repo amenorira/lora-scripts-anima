@@ -2,7 +2,6 @@
 
 import asyncio
 import os
-import time
 import uuid
 from io import BytesIO
 from pathlib import Path
@@ -23,8 +22,7 @@ from backend.tagger.interrogator import (
     on_interrogate,
 )
 from backend.tagger.interrogators.base import CATEGORY_LABELS
-from backend.tagger import api_engine
-from backend.tagger import captioning
+from backend.tagger import captioning, api_engine
 from backend.tagger.registry import DEFAULT_MODEL_ID, MODEL_SPEC_BY_ID, model_payload
 from backend.tagger.workspace import (
     cancel_task as cancel_workspace_task,
@@ -38,7 +36,6 @@ from backend.tagger.workspace import (
     task_items,
     task_snapshot,
     training_active,
-    _finalize_api_tags,
 )
 from backend.tasks import tm
 
@@ -154,6 +151,7 @@ async def tagger_scan_source(request: Request):
             str(body.get("path") or ""),
             bool(body.get("recursive", True)),
             str(body.get("caption_extension") or ".txt"),
+            body.get("caption_options"),
         )
         return APIResponseSuccess(data=result)
     except Exception as exc:
@@ -302,63 +300,15 @@ async def tagger_single_image(
 
 @router.post("/tagger/api/test")
 async def tagger_api_test(request: Request):
-    """Probe GET {base_url}/models to verify connectivity and credentials."""
+    """Verify connectivity and fetch models using the selected API protocol."""
     body = await request.json()
-    protocol = str(body.get("protocol") or api_engine.PROTOCOL_CHAT)
-    if protocol not in api_engine.PROTOCOLS:
-        protocol = api_engine.PROTOCOL_CHAT
     try:
         models = await asyncio.to_thread(
             api_engine.list_models,
             str(body.get("base_url") or ""),
-            str(body.get("api_key") or ((os.environ.get("OPENAI_API_KEY") or "none") if body.get("use_environment_key") else "")),
-            protocol,
+            str(body.get("api_key") or os.environ.get("OPENAI_API_KEY") or "none"),
+            str(body.get("protocol") or api_engine.PROTOCOL_CHAT),
         )
         return APIResponseSuccess(data={"models": models[:100], "count": len(models)})
     except Exception as exc:
         return APIResponseFail(message=str(exc))
-
-
-@router.post("/tagger/api/single")
-async def tagger_api_single_image(request: Request):
-    """Single-image tagging via an OpenAI-compatible vision API.
-
-    No GPU involved, so it stays available while training is running.
-    """
-    body = await request.json()
-    try:
-        api_payload = dict(body.get("api") or {})
-        api_payload["prompt"] = captioning.resolve_prompt((body.get("options") or {}).get("captioning") or {}, api_payload.get("prompt") or "")
-        config = api_engine.validate_config(api_payload)
-        path = source_item(str(body.get("source_token") or ""), int(body.get("index") or 0))
-    except Exception as exc:
-        return APIResponseFail(message=str(exc))
-
-    def _infer():
-        options = dict(body.get("options") or {})
-        if options.get("captioning"):
-            caption_options = captioning.validate_options(dict(options["captioning"], mode="regenerate"), config.parse_mode)
-            runtime = captioning.prepare_runtime(caption_options, path.parent, config.prompt)
-            outcome = captioning.process(config, path, runtime)
-            return outcome["result"]["tags"], outcome["result"]["raw"], outcome["result"]["text"]
-        with Image.open(path) as opened:
-            image = opened.copy()
-        try:
-            tags, raw = api_engine.interrogate(config, image)
-            return tags, raw, None
-        finally:
-            image.close()
-
-    started = time.monotonic()
-    try:
-        tags_raw, raw_text, caption_text = await asyncio.to_thread(_infer)
-    except Exception as exc:
-        return APIResponseFail(message=f"{type(exc).__name__}: {str(exc)[:240]}")
-    tags = tags_raw if caption_text is not None else _finalize_api_tags(tags_raw, dict(body.get("options") or {}))
-    return APIResponseSuccess(data={
-        "model": config.model,
-        "tags": tags,
-        "text": caption_text if caption_text is not None else ", ".join(tags),
-        "raw": raw_text,
-        "elapsed": round(time.monotonic() - started, 2),
-    })

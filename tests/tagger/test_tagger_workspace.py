@@ -3,8 +3,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from PIL import Image
 
@@ -92,30 +91,25 @@ class TaggerWorkspaceTests(unittest.TestCase):
             release = threading.Event()
             started = []
             started_lock = threading.Lock()
-            client = MagicMock()
-            config = SimpleNamespace(model="fake", base_url="http://localhost", concurrency=2)
-
-            def slow_tag(_cancel, _config, _client, index, path, *_args):
+            def slow_tag(_config, path, _runtime, *, cancel_event, index):
                 with started_lock:
                     started.append(index)
                     if len(started) == 2:
                         both_started.set()
                 self.assertTrue(release.wait(5))
-                path.with_suffix(".txt").write_text(f"tag {index}", encoding="utf-8")
-                return {"status": "success", "tag_count": 1, "result": {"index": index, "text": f"tag {index}"}}
+                if cancel_event.is_set():
+                    raise InterruptedError("cancelled")
+                self.fail("Cancellation should reach the in-flight image")
 
-            with patch.object(workspace.api_engine, "validate_config", return_value=config), patch.object(
-                workspace.api_engine, "create_client", return_value=client,
-            ), patch.object(workspace, "_api_tag_one", side_effect=slow_tag):
+            with patch.object(workspace.captioning, "process", side_effect=slow_tag):
                 task_id = workspace.create_task({
-                    "engine": "api", "api": {}, "source_token": source["source_token"],
+                    "engine": "api", "api": {"base_url":"http://localhost/v1", "model":"fake", "max_workers":2}, "source_token": source["source_token"],
                     "write_captions": True,
                 })
                 self.assertTrue(both_started.wait(5))
                 self.assertTrue(workspace.cancel_task(task_id))
                 self.assertEqual(workspace.task_snapshot(task_id)["status"], "cancelling")
                 self.assertIsNone(tm.reserve_task())
-                client.close.assert_not_called()
                 with started_lock:
                     self.assertEqual(len(started), 2)
                 release.set()
@@ -123,10 +117,9 @@ class TaggerWorkspaceTests(unittest.TestCase):
 
             self.assertEqual(result["status"], "cancelled")
             self.assertEqual(result["logs"][-1]["level"], "warning")
-            self.assertEqual(result["success"], 2)
+            self.assertEqual(result["success"], 0)
             self.assertEqual(len(started), 2)
-            self.assertEqual(len(list(root.glob("*.txt"))), 2)
-            client.close.assert_called_once()
+            self.assertEqual(len(list(root.glob("*.txt"))), 0)
             reservation = tm.reserve_task()
             self.assertIsNotNone(reservation)
             tm.release_reserved(reservation)
@@ -157,6 +150,25 @@ class TaggerWorkspaceTests(unittest.TestCase):
                     workspace.create_task(payload)
                 release.set()
                 self.assertEqual(self._wait(task_id)["status"], "done")
+            reservation = tm.reserve_task()
+            self.assertIsNotNone(reservation)
+            tm.release_reserved(reservation)
+
+    def test_api_auth_failure_stops_new_requests_and_releases_training_slot(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for index in range(4):
+                self._image(root / f"{index}.png")
+            source = workspace.scan_source(str(root))
+            with patch.object(workspace.captioning, "process", side_effect=workspace.api_engine.ApiAuthError("invalid key")) as process:
+                task_id = workspace.create_task({
+                    "engine": "api", "source_token": source["source_token"],
+                    "api": {"base_url":"http://localhost/v1", "model":"fake", "max_workers":1},
+                })
+                result = self._wait(task_id)
+            self.assertEqual(result["status"], "error")
+            self.assertIn("鉴权失败", result["error_detail"])
+            self.assertEqual(process.call_count, 1)
             reservation = tm.reserve_task()
             self.assertIsNotNone(reservation)
             tm.release_reserved(reservation)
