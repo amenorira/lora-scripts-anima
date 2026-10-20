@@ -2578,7 +2578,7 @@
 		"customPrompt": "自定义提示词",
 		"templateHelp": "支持 {{reference}}、{{knowledge}} 和 {{#knowledge}}…{{/knowledge}}。响应须包含 caption.long、medium、short；未写占位符时自动追加参考和知识。",
 		"exportSettings": "导出设置（高级）",
-		"trainingHelp": "训练时开启多行标注，保持标注扩展名和候选分隔符一致。当前训练器使用多个候选时需关闭文本编码器输出缓存。",
+		"trainingHelp": "训练时开启多行标注，保持标注扩展名和候选分隔符一致。多个候选也可缓存文本编码器输出；使用旧格式缓存时请手动重建。",
 		"run": "运行任务",
 		"sourceCounts": "扫描时：参考文件 {references} · 结果 JSON {sidecars}",
 		"cancelHelp": "停止后不再发送新请求；已发送的请求可能需要等待返回，当前图片未保存的结果会丢弃。",

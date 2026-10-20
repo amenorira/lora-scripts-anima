@@ -2578,7 +2578,7 @@
 		"customPrompt": "カスタムプロンプト",
 		"templateHelp": "{{reference}}、{{knowledge}}、{{#knowledge}}…{{/knowledge}} 対応。応答は caption.long・medium・short が必須。プレースホルダー省略時は参照・知識を末尾に追加。",
 		"exportSettings": "出力設定（詳細）",
-		"trainingHelp": "学習では複数行キャプションを有効にし、拡張子と区切りを一致させてください。現状、複数候補ではテキストエンコーダー出力キャッシュを無効にする必要があります。",
+		"trainingHelp": "学習では複数行キャプションを有効にし、拡張子と区切りを一致させてください。複数候補でもテキストエンコーダー出力をキャッシュできます。旧形式のキャッシュは手動で再作成してください。",
 		"run": "タスクを実行",
 		"sourceCounts": "スキャン時：参照 {references} · 結果 JSON {sidecars}",
 		"cancelHelp": "停止すると新規送信を止めます。実行中の応答は時間がかかる場合があり、未保存の結果は破棄されます。",

@@ -2578,7 +2578,7 @@
 		"customPrompt": "Custom prompt",
 		"templateHelp": "Supports {{reference}}, {{knowledge}} and {{#knowledge}}…{{/knowledge}}. Response must contain caption.long, medium and short. Missing placeholders append reference and knowledge automatically.",
 		"exportSettings": "Export settings (advanced)",
-		"trainingHelp": "Enable multiline captions and match the extension and separator in training. Multiple candidates currently require disabling text encoder output caching.",
+		"trainingHelp": "Enable multiline captions and match the extension and separator in training. Text encoder outputs can also be cached for multiple candidates; rebuild legacy caches manually.",
 		"run": "Run task",
 		"sourceCounts": "At scan: reference files {references} · Result JSON {sidecars}",
 		"cancelHelp": "Stopping prevents new requests. An in-flight request may take time to return; unsaved results are discarded.",
