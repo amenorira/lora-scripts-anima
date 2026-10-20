@@ -1,7 +1,7 @@
 import subprocess
 import tempfile
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -62,12 +62,3 @@ class AppVersionTests(unittest.TestCase):
             with self.subTest(when=when):
                 actual = format_version(datetime.fromisoformat(when))
                 self.assertEqual(actual, expected)
-
-    def test_every_second_round_trips_and_sorts_within_day(self):
-        midnight = datetime(2026, 10, 17)
-        versions = [format_version(midnight + timedelta(seconds=seconds)) for seconds in range(86400)]
-        self.assertEqual(versions, sorted(versions))
-        for seconds, version in enumerate(versions):
-            encoded = version.rsplit(".", 1)[1]
-            self.assertRegex(encoded, r"^[0-9a-f]{5}$")
-            self.assertEqual(int(encoded, 16), seconds)

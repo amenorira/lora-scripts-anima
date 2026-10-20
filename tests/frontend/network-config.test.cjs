@@ -22,7 +22,7 @@ function application(profile, values = {}) {
 
 function python(code, input) {
   const executable = path.join(ROOT, 'venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
-  const result = spawnSync(executable, ['-X', 'utf8', '-c', `
+  const result = spawnSync(executable, ['-B', '-X', 'utf8', '-c', `
 import json, sys
 from tools.runtime_paths import configure_test_paths
 configure_test_paths()

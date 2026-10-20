@@ -252,19 +252,6 @@ GUI 的 **环境** 标签页提供：
 - Flash Attention 安装状态检测与一键安装
 - 候选 wheel 列表预览
 
-## 开发测试
-
-运行完整测试套件（测试基于标准库 unittest，无需安装额外依赖；需 PATH 中的 Node.js 与 Git，仅开发需要，不影响训练运行时）：
-
-```
-.\venv\Scripts\python.exe -m unittest discover -s tests -t .
-# Linux: ./venv/bin/python -m unittest discover -s tests -t .
-```
-
-测试位于 `tests/`，按训练、监控、环境、打标、应用和前端分类；统一入口包含独立 JavaScript 测试。开发脚本位于 `tools/dev/`，`tools/` 还包含启动器和后端依赖的运行工具。
-
-生成的 LyCORIS 预设、安装日志和下载临时 ZIP 放入 `cache/runtime/`；正常启动和训练保留系统临时目录及各依赖原有的缓存配置。测试临时文件及默认编译缓存归入 `cache/tests/`，显式设置的编译缓存路径会保留。诊断脚本、截图和开发日志应放入 `cache/dev/<任务名>/`。
-
 ## 致谢
 
 - [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Anima / SDXL / MOSS-Image 训练引擎

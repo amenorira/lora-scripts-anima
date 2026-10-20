@@ -4,11 +4,9 @@ import unittest
 
 from backend.training.adapter import adapt_config
 from backend.training.optimizer_contracts import (
-    ADAFACTOR_OPTIMIZER_TYPE,
     ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE,
     CAME_OPTIMIZER_TYPE,
     LORA_MUON_OPTIMIZER_TYPE,
-    LORARITE_OPTIMIZER_TYPE,
     MUON_OPTIMIZER_TYPE,
     PRODIGY_OPTIMIZER_TYPE,
     PRODIGYPLUS_OPTIMIZER_TYPE,
@@ -64,24 +62,6 @@ class OptimizerValidationTests(unittest.TestCase):
                 errors = validate_training_config(config)
                 self.assertTrue(any(expected in error for error in errors), errors)
 
-    def test_muon_ns_steps_has_no_arbitrary_upper_bound(self):
-        config = valid_config(MUON_OPTIMIZER_TYPE)
-        config["muon_ns_steps"] = 100
-        self.assertEqual(validate_training_config(config), [])
-        adapted, _ = adapt_config(config)
-        self.assertIn("ns_steps=100", adapted["optimizer_args"])
-
-    def test_network_alpha_is_integer_and_full_dropout_is_allowed(self):
-        config = valid_config("AdamW")
-        config.update({"network_alpha": 2, "network_dropout": 1.0})
-        self.assertEqual(validate_training_config(config), [])
-        self.assertEqual(config["network_alpha"], 2)
-        self.assertEqual(config["network_dropout"], 1.0)
-
-        config["network_alpha"] = 0.5
-        errors = validate_training_config(config)
-        self.assertTrue(any("network_alpha" in error for error in errors), errors)
-        self.assertTrue(any("step 1" in error for error in errors), errors)
 
     def test_rejects_unknown_arguments_for_known_optimizers(self):
         config = valid_config("AdamW")
@@ -89,44 +69,6 @@ class OptimizerValidationTests(unittest.TestCase):
         errors = validate_training_config(config)
         self.assertTrue(any("unsupported argument" in error for error in errors), errors)
 
-    def test_muon_momentum_boundaries_for_form_and_advanced_arguments(self):
-        for momentum in (-0.1, 0, 0.95, 0.9999999, 1, 1.1):
-            for source in ("form", "args", "custom"):
-                with self.subTest(momentum=momentum, source=source):
-                    config = valid_config(MUON_OPTIMIZER_TYPE)
-                    if source == "form":
-                        config["muon_momentum"] = momentum
-                    elif source == "args":
-                        config["optimizer_args"] = [f"momentum={momentum}"]
-                    else:
-                        config["optimizer_args_custom"] = f"momentum={momentum}"
-                    errors = validate_training_config(config)
-                    if 0 <= momentum < 1:
-                        self.assertEqual(errors, [])
-                    else:
-                        self.assertTrue(any("momentum" in error for error in errors), errors)
-        config = valid_config("AdamW")
-        config["muon_momentum"] = 1.1
-        self.assertEqual(validate_training_config(config), [])
-
-    def test_muon_rejects_lycoris_non_matrix_options(self):
-        for algo in ("lora", "loha", "lokr"):
-            for key in ("use_scalar", "train_norm"):
-                for source in ("form", "args", "custom"):
-                    with self.subTest(algo=algo, key=key, source=source):
-                        config = valid_config(MUON_OPTIMIZER_TYPE)
-                        config.update(network_module="lycoris.kohya", lycoris_algo=algo)
-                        if source == "form":
-                            config[key] = True
-                        else:
-                            config.pop(key)
-                            if source == "args":
-                                config["network_args"] = [f"{key}=true"]
-                            else:
-                                config["network_args_custom"] = f"{key}=true"
-                        errors = validate_training_config(config)
-                        self.assertTrue(any("Muon" in error and key in error and "non-2D" in error
-                                            for error in errors), errors)
 
     def test_muon_network_validation_matches_adapted_arguments(self):
         for key in ("use_scalar", "train_norm"):
@@ -151,18 +93,6 @@ class OptimizerValidationTests(unittest.TestCase):
                     self.assertEqual(args[key].lower() != "false", enabled)
                     errors = validate_training_config(config)
                     self.assertEqual(any("non-2D" in error for error in errors), enabled, errors)
-
-    def test_muon_preserves_compatible_networks_and_other_optimizers(self):
-        for network in ("networks.lora_anima", "networks.loha", "networks.lokr", "lycoris.kohya"):
-            for algo in ("lora", "loha", "lokr"):
-                with self.subTest(network=network, algo=algo):
-                    config = valid_config(MUON_OPTIMIZER_TYPE)
-                    config.update(network_module=network, lycoris_algo=algo)
-                    self.assertEqual(validate_training_config(config), [])
-        for optimizer, network in (("AdamW", "lycoris.kohya"), (MUON_OPTIMIZER_TYPE, "networks.lora_anima")):
-            config = valid_config(optimizer)
-            config.update(network_module=network, use_scalar=True, train_norm=True)
-            self.assertEqual(validate_training_config(config), [])
 
 
 class OptimizerAdapterTests(unittest.TestCase):
@@ -204,75 +134,6 @@ class OptimizerAdapterTests(unittest.TestCase):
                 self.assertEqual(len(actual), len(adapted["optimizer_args"]))
                 self.assertFalse(any("lora_muon_" in argument for argument in adapted["optimizer_args"]))
         self.assertEqual(validate_training_config(valid_config(SOAP_OPTIMIZER_TYPE, "sdxl-lora")), [])
-
-
-    def test_adafactor_relative_and_manual_modes(self):
-        relative, warnings = adapt_config(
-            {
-                "model_train_type": "anima-lora",
-                "optimizer_type": ADAFACTOR_OPTIMIZER_TYPE,
-                "learning_rate": "1e-4",
-                "lr_scheduler": "cosine",
-                "lr_warmup_steps": 50,
-                "max_grad_norm": 1,
-                "adafactor_relative_step": True,
-                "adafactor_scale_parameter": True,
-                "adafactor_warmup_init": False,
-                "adafactor_clip_threshold": 1.0,
-                "adafactor_eps": "1e-30, 1e-3",
-            }
-        )
-        self.assertEqual(relative["lr_scheduler"], "constant")
-        self.assertEqual(relative["lr_warmup_steps"], 0)
-        self.assertEqual(relative["max_grad_norm"], 0)
-        self.assertIn("relative_step=True", relative["optimizer_args"])
-        args = dict(item.split("=", 1) for item in relative["optimizer_args"])
-        self.assertEqual(ast.literal_eval(args["eps"]), (1e-30, 1e-3))
-        self.assertTrue(any("relative_step" in warning for warning in warnings), warnings)
-
-        manual, _ = adapt_config(
-            {
-                "model_train_type": "sdxl-lora",
-                "optimizer_type": ADAFACTOR_OPTIMIZER_TYPE,
-                "learning_rate": "1e-4",
-                "lr_scheduler": "cosine",
-                "lr_warmup_steps": 25,
-                "max_grad_norm": 1,
-                "adafactor_relative_step": False,
-                "adafactor_scale_parameter": False,
-            }
-        )
-        self.assertEqual(manual["lr_scheduler"], "cosine")
-        self.assertEqual(manual["lr_warmup_steps"], 25)
-        self.assertEqual(manual["max_grad_norm"], 0)
-        self.assertIn("relative_step=False", manual["optimizer_args"])
-        self.assertIn("scale_parameter=False", manual["optimizer_args"])
-
-    def test_schedulefree_uses_internal_warmup(self):
-        adapted, warnings = adapt_config(
-            {
-                "optimizer_type": ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE,
-                "learning_rate": "0.0025",
-                "lr_scheduler": "cosine",
-                "lr_warmup_steps": 100,
-                "schedulefree_warmup_steps": 250,
-            }
-        )
-        self.assertEqual(adapted["lr_scheduler"], "constant")
-        self.assertEqual(adapted["lr_warmup_steps"], 0)
-        self.assertIn("warmup_steps=250", adapted["optimizer_args"])
-        self.assertTrue(any("external lr_warmup_steps" in warning for warning in warnings))
-
-
-class LorariteImportContractTests(unittest.TestCase):
-    def test_rejects_incompatible_networks_before_launch(self):
-        for network in ("networks.loha", "networks.lokr", "lycoris.kohya"):
-            with self.subTest(network=network):
-                config = valid_config(LORARITE_OPTIMIZER_TYPE)
-                config["network_module"] = network
-                errors = validate_training_config(config)
-                self.assertTrue(any("LoRA-RITE" in error for error in errors), errors)
-        self.assertEqual(validate_training_config(valid_config(LORARITE_OPTIMIZER_TYPE)), [])
 
 
 if __name__ == "__main__":

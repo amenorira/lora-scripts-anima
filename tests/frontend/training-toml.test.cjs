@@ -74,6 +74,8 @@ test('every optimizer preview agrees with the backend argument contract', () => 
   const python = path.join(ROOT, 'venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
   const script = `
 import ast, json, sys
+from tools.runtime_paths import configure_test_paths
+configure_test_paths()
 from backend.training.adapter import adapt_config
 def parse(items):
     return {key: ast.literal_eval(value) for key, value in (item.split('=', 1) for item in items)}
@@ -83,7 +85,7 @@ for case in json.load(sys.stdin):
     for key, value in parse(case['preview']).items():
         assert key in actual and actual[key] == value, (case['payload']['optimizer_type'], key, value, actual)
 `;
-  const result = require('node:child_process').spawnSync(python, ['-c', script], {
+  const result = require('node:child_process').spawnSync(python, ['-B', '-c', script], {
     cwd: ROOT, input: JSON.stringify(cases), encoding: 'utf8', timeout: 30000,
   });
   assert.equal(result.status, 0, result.stderr || String(result.error));
