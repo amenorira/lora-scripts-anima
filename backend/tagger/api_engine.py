@@ -1,7 +1,7 @@
 """Vision API engine for the Tagger workspace.
 
 Supports three request protocols: OpenAI Chat Completions, OpenAI Responses,
-and Anthropic Messages. Sends one request per image (base64 JPEG) so tags
+and Anthropic Messages. Sends one request per image (base64 PNG or JPEG) so tags
 stay attributable, with retry/backoff for transient failures. The API key is
 kept in memory only and never written to disk or logs.
 """
@@ -9,21 +9,22 @@ from __future__ import annotations
 
 import base64
 import io
+import json
+import math
+import os
 import re
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
-from PIL import Image
+from PIL import Image, ImageOps
 
 DEFAULT_TIMEOUT = 120.0
 MAX_RETRIES = 3
 MIN_CONCURRENCY = 1
-MAX_CONCURRENCY = 8
-MIN_MAX_EDGE = 256
-MAX_MAX_EDGE = 4096
+MAX_CONCURRENCY = 128
 DEFAULT_MAX_TOKENS = 1024
 DEFAULT_TEMPERATURE = 0.2
 PROTOCOL_CHAT = "chat-completions"
@@ -54,13 +55,17 @@ class ApiConfig:
     api_key: str
     model: str
     prompt: str
-    parse_mode: str = "tags"  # "tags" | "caption"
+    parse_mode: str = "tags"  # tags | caption | multi-caption
     protocol: str = PROTOCOL_CHAT  # PROTOCOL_CHAT | PROTOCOL_RESPONSES | PROTOCOL_ANTHROPIC
     max_edge: int = 1280
     concurrency: int = 4
     max_tokens: int = DEFAULT_MAX_TOKENS
     temperature: float = DEFAULT_TEMPERATURE
     timeout: float = DEFAULT_TIMEOUT
+    top_p: float | None = None
+    max_retries: int = MAX_RETRIES
+    jpeg_quality: int | None = 90
+    extra_body: dict = field(default_factory=dict)
 
 
 def _clamp_int(value: Any, default: int, low: int, high: int) -> int:
@@ -75,9 +80,7 @@ def validate_config(payload: dict[str, Any]) -> ApiConfig:
     base_url = str(payload.get("base_url") or "").strip().rstrip("/")
     if not base_url.lower().startswith(("http://", "https://")):
         raise ValueError("API base URL must start with http(s):// / API 地址必须以 http(s):// 开头")
-    api_key = str(payload.get("api_key") or "").strip()
-    if not api_key:
-        raise ValueError("API key is required / 请填写 API 密钥")
+    api_key = str(payload.get("api_key") or os.environ.get("OPENAI_API_KEY") or "none").strip()
     model = str(payload.get("model") or "").strip()
     if not model:
         raise ValueError("Model name is required / 请填写模型名称")
@@ -85,11 +88,23 @@ def validate_config(payload: dict[str, Any]) -> ApiConfig:
     if not prompt:
         raise ValueError("Prompt is required / 请填写提示词")
     parse_mode = str(payload.get("parse_mode") or "tags").strip()
-    if parse_mode not in {"tags", "caption"}:
+    if parse_mode not in {"tags", "caption", "multi-caption"}:
         raise ValueError("Invalid parse mode / 无效的输出解析方式")
     protocol = str(payload.get("protocol") or PROTOCOL_CHAT).strip()
     if protocol not in PROTOCOLS:
         raise ValueError("Invalid API protocol / 无效的接口协议")
+    def number(key, default, low, high):
+        value = float(payload.get(key, default))
+        if not math.isfinite(value) or not low <= value <= high:
+            raise ValueError(f"Invalid {key} / 参数 {key} 超出范围")
+        return value
+
+    extra = payload.get("extra_body") or {}
+    if isinstance(extra, str):
+        extra = json.loads(extra)
+    if not isinstance(extra, dict):
+        raise ValueError("Extra body must be a JSON object / 附加请求参数必须是 JSON 对象")
+    jpeg = payload.get("jpeg_quality", 90)
     return ApiConfig(
         base_url=base_url,
         api_key=api_key,
@@ -97,10 +112,15 @@ def validate_config(payload: dict[str, Any]) -> ApiConfig:
         prompt=prompt,
         parse_mode=parse_mode,
         protocol=protocol,
-        max_edge=_clamp_int(payload.get("max_edge"), 1280, MIN_MAX_EDGE, MAX_MAX_EDGE),
+        max_edge=_clamp_int(payload.get("max_edge"), 1280, 0, 65536),
         concurrency=_clamp_int(payload.get("concurrency"), 4, MIN_CONCURRENCY, MAX_CONCURRENCY),
-        max_tokens=_clamp_int(payload.get("max_tokens"), DEFAULT_MAX_TOKENS, 64, 8192),
-        timeout=float(payload.get("timeout") or DEFAULT_TIMEOUT),
+        max_tokens=_clamp_int(payload.get("max_tokens"), DEFAULT_MAX_TOKENS, 1, 1048576),
+        temperature=number("temperature", DEFAULT_TEMPERATURE, 0, 2),
+        timeout=number("timeout", DEFAULT_TIMEOUT, .1, 86400),
+        top_p=number("top_p", .95, 0, 1) if payload.get("top_p") is not None else None,
+        max_retries=_clamp_int(payload.get("max_retries"), MAX_RETRIES, 0, 100),
+        jpeg_quality=None if jpeg in {None, ""} else int(number("jpeg_quality", 90, 1, 100)),
+        extra_body=extra,
     )
 
 
@@ -125,11 +145,17 @@ def _auth_headers(api_key: str, protocol: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {api_key}"}
 
 
+def _request_options(payload: dict, config: ApiConfig) -> dict:
+    if config.top_p is not None:
+        payload["top_p"] = config.top_p
+    return payload | config.extra_body
+
+
 def _build_payload(config: ApiConfig, data_url: str) -> dict[str, Any]:
     if config.protocol == PROTOCOL_ANTHROPIC:
         # data_url is "data:image/jpeg;base64,<...>"; Anthropic wants raw base64.
         image_data = data_url.split(",", 1)[1] if "," in data_url else data_url
-        return {
+        return _request_options({
             "model": config.model,
             "max_tokens": config.max_tokens,
             "temperature": config.temperature,
@@ -139,15 +165,15 @@ def _build_payload(config: ApiConfig, data_url: str) -> dict[str, Any]:
                     "content": [
                         {
                             "type": "image",
-                            "source": {"type": "base64", "media_type": "image/jpeg", "data": image_data},
+                            "source": {"type": "base64", "media_type": data_url.split(":", 1)[1].split(";", 1)[0], "data": image_data},
                         },
                         {"type": "text", "text": config.prompt},
                     ],
                 }
             ],
-        }
+        }, config)
     if config.protocol == PROTOCOL_RESPONSES:
-        return {
+        return _request_options({
             "model": config.model,
             "input": [
                 {
@@ -160,8 +186,8 @@ def _build_payload(config: ApiConfig, data_url: str) -> dict[str, Any]:
             ],
             "max_output_tokens": config.max_tokens,
             "temperature": config.temperature,
-        }
-    return {
+        }, config)
+    return _request_options({
         "model": config.model,
         "messages": [
             {
@@ -175,7 +201,7 @@ def _build_payload(config: ApiConfig, data_url: str) -> dict[str, Any]:
         "max_tokens": config.max_tokens,
         "temperature": config.temperature,
         "stream": False,
-    }
+    }, config)
 
 
 def models_url(base_url: str) -> str:
@@ -200,19 +226,25 @@ def _flatten_alpha(image: Image.Image) -> Image.Image:
     return background
 
 
-def encode_image(image: Image.Image, max_edge: int) -> str:
-    """Resize to max_edge on the longest side and return a JPEG data URL."""
-    work = _flatten_alpha(image)
+def encode_image(image: Image.Image, max_edge: int, jpeg_quality: int | None = 90) -> str:
+    """Honor image orientation, resize and encode the request copy."""
+    with ImageOps.exif_transpose(image) as oriented:
+        work = _flatten_alpha(oriented)
     width, height = work.size
     longest = max(width, height)
-    if longest > max_edge:
+    if max_edge > 0 and longest > max_edge:
         scale = max_edge / longest
-        work = work.resize((max(1, round(width * scale)), max(1, round(height * scale))), Image.LANCZOS)
+        resized = work.resize((max(1, round(width * scale)), max(1, round(height * scale))), Image.LANCZOS)
+        work.close()
+        work = resized
     buffer = io.BytesIO()
-    work.save(buffer, format="JPEG", quality=90)
+    if jpeg_quality is None:
+        work.save(buffer, format="PNG")
+    else:
+        work.save(buffer, format="JPEG", quality=jpeg_quality)
     if work is not image:
         work.close()
-    return "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+    return ("data:image/png;base64," if jpeg_quality is None else "data:image/jpeg;base64,") + base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
 def parse_response_text(text: str, parse_mode: str) -> list[str]:
@@ -220,7 +252,12 @@ def parse_response_text(text: str, parse_mode: str) -> list[str]:
     if not cleaned:
         return []
     if parse_mode == "caption":
-        return [re.sub(r"\s+", " ", cleaned)]
+        return [cleaned]
+    if parse_mode == "multi-caption":
+        from tools.caption_images_moss import extract_json_object, validate_response
+        value = extract_json_object(cleaned)
+        validate_response(value)
+        return [value["caption"][key] for key in ("long", "medium", "short")]
     tags: list[str] = []
     seen: set[str] = set()
     for part in _TAG_SPLIT_PATTERN.split(cleaned):
@@ -275,16 +312,17 @@ def interrogate(
     image: Image.Image,
     client: httpx.Client | None = None,
     cancel_event: threading.Event | None = None,
+    metadata: dict | None = None,
 ) -> tuple[list[str], str]:
     """Tag one image. Returns (parsed tags, raw response text)."""
-    data_url = encode_image(image, config.max_edge)
+    data_url = encode_image(image, config.max_edge, config.jpeg_quality)
     payload = _build_payload(config, data_url)
     headers = _auth_headers(config.api_key, config.protocol)
     own_client = client is None
     http_client = client or create_client(config)
     last_error: Exception = ApiTransientError("Request failed / 请求失败")
     try:
-        for attempt in range(MAX_RETRIES + 1):
+        for attempt in range(config.max_retries + 1):
             if cancel_event is not None and cancel_event.is_set():
                 raise InterruptedError("cancelled")
             try:
@@ -303,23 +341,34 @@ def interrogate(
                     except ValueError:
                         pass
                     last_error = ApiTransientError(f"HTTP {status}: {response.text[:200]}")
-                    if attempt < MAX_RETRIES:
-                        time.sleep(wait if wait is not None else min(2.0 * (2 ** attempt), 30.0))
+                    if attempt < config.max_retries:
+                        delay = wait if wait is not None else min(2.0 * (2 ** attempt), 30.0)
+                        if cancel_event is not None:
+                            if cancel_event.wait(max(0, delay)): raise InterruptedError("cancelled")
+                        else:
+                            time.sleep(max(0, delay))
                     continue
                 if status >= 400:
                     raise ApiBadRequestError(f"HTTP {status}: {response.text[:300]}")
                 try:
-                    raw = _extract_content(response.json(), config.protocol)
-                except ApiTransientError:
-                    raise
+                    body = response.json()
+                    raw = _extract_content(body, config.protocol)
+                    parsed = parse_response_text(raw, config.parse_mode)
                 except Exception as exc:
-                    raise ApiTransientError(f"Malformed response: {type(exc).__name__}") from exc
-                if not raw:
-                    last_error = ApiTransientError("Empty response from model / 模型返回为空")
+                    last_error = ApiTransientError(f"Malformed response / 响应格式无效: {str(exc)[:200]}")
                 else:
-                    return parse_response_text(raw, config.parse_mode), raw
-            if attempt < MAX_RETRIES:
-                time.sleep(min(2.0 * (2 ** attempt), 30.0))
+                    if raw and parsed:
+                        if metadata is not None:
+                            choices = body.get("choices") or [{}]
+                            metadata.update(usage=body.get("usage"), finish_reason=choices[0].get("finish_reason") or body.get("stop_reason"), attempts=attempt + 1)
+                        return parsed, raw
+                    last_error = ApiTransientError("Empty response from model / 模型返回为空")
+            if attempt < config.max_retries:
+                delay = min(2.0 * (2 ** attempt), 30.0)
+                if cancel_event is not None:
+                    if cancel_event.wait(delay): raise InterruptedError("cancelled")
+                else:
+                    time.sleep(delay)
         raise last_error
     finally:
         if own_client:

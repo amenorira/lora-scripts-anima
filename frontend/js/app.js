@@ -180,10 +180,6 @@ document.addEventListener('alpine:init', () => {
         document.title = this.pageTitle + ' | lora-scripts-anima';
         this.buildRouteContent();
         if (r === 'monitor-dashboard' && typeof this.renderDashboard === 'function') this.renderDashboard();
-        // tagger 模式 tab 文本随语言变化，指示条需重算位置
-        if (r === 'tagger' && typeof this._syncTaggerTabIndicator === 'function') {
-          requestAnimationFrame(() => this._syncTaggerTabIndicator());
-        }
       });
 
       this.startRealtime();
@@ -444,16 +440,11 @@ document.addEventListener('alpine:init', () => {
         }
       }
       // Stop rendering a tagger task when leaving; the backend task continues.
-      if (r !== 'tagger' && this.taggerRunning) {
-        this.taggerRunning = false;
-        this.taggerTaskId = null;
-        if (typeof this._setTaggerRealtimeTask === 'function') this._setTaggerRealtimeTask(null);
-      }
-      if (r !== 'tagger' && typeof this.stopTaggerWorkspace === 'function') this.stopTaggerWorkspace();
+      if (!['tagger', 'ai-captioning'].includes(r) && typeof this.stopTaggerWorkspace === 'function') this.stopTaggerWorkspace();
       if (r !== 'regularization' && typeof this.stopRegularizationWorkspace === 'function') this.stopRegularizationWorkspace();
       if (r && r.startsWith('train-')) {
         this.buildTrainForm();
-      } else if (r === 'tagger') {
+      } else if (['tagger', 'ai-captioning'].includes(r)) {
         this.buildTaggerForm();
       } else if (r === 'regularization') {
         this.buildRegularizationForm();
@@ -708,6 +699,7 @@ document.addEventListener('alpine:init', () => {
     window.trainingTomlMixin,
     window.trainingConfigIoMixin,
     window.taggerMixin,
+    window.captionOptionsMixin,
     window.regularizationMixin,
     window.tagEditorMixin,
     window.tagDictionaryMixin,

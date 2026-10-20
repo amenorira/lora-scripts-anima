@@ -1,0 +1,35 @@
+/* AI annotation shares training form controls and the Tagger task sidebar. */
+#taggerWorkspaceHost { width: 100%; }
+.tagger-page-shell { min-width: 0; }
+.caption-settings { min-width: 0; margin: 0; padding: 0; border: 0; }
+.caption-batch-layout .tagger-log-message { white-space: pre-wrap; overflow-wrap: anywhere; }
+.caption-batch-layout .tagger-api-note { white-space: normal; overflow-wrap: anywhere; }
+.caption-form { min-width: 0; }
+.caption-form .field-input-row > input,
+.caption-form .field-input-wrap > input { width: 100%; max-width: none; margin: 0; }
+.caption-form .field-input-row > .anima-select { width: 100%; min-width: 0; }
+.caption-form .field-control > .anima-select { width: 220px; min-width: 0; }
+.caption-form .field-control > input { width: 220px; }
+.caption-form .field-input-wrap input { padding-right: 36px; }
+.caption-form .field-input-wrap .field-input-actions { right: 3px; }
+.caption-form .card-header:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.caption-form .caption-prompt-editor .card-header,
+.caption-form .caption-prompt-file .card-header { font-size: 13px; padding-top: 12px; }
+.caption-form .caption-prompt-editor .card-header::before,
+.caption-form .caption-prompt-file .card-header::before { display: none; }
+.caption-form .caption-prompt-editor .card-body,
+.caption-form .caption-prompt-file .card-body { padding-left: 12px; }
+.caption-candidates { display: flex; flex-wrap: wrap; gap: 12px 24px; padding: 4px 0; }
+.caption-candidates label { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
+.caption-output-example { overflow-wrap: anywhere; }
+.caption-connection-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding-top: 8px; }
+.caption-form :is(input, button, textarea):disabled { opacity: .5; cursor: not-allowed; }
+.caption-batch-layout .tagger-action-panel { height: auto; min-height: 0; }
+.caption-batch-layout .tagger-action-log { flex: none; height: clamp(260px, 38vh, 520px); min-height: 0; }
+.caption-batch-layout .tagger-action-log.expanded { height: clamp(360px, 65vh, 800px); }
+@container (max-width: 540px) {
+  .caption-form .field-row { flex-wrap: wrap; }
+  .caption-form .field-info { flex-basis: 210px; }
+  .caption-form .field-control { margin-left: auto; max-width: 100%; }
+  .caption-form .field-control > .anima-select { width: min(220px, 100%); }
+}

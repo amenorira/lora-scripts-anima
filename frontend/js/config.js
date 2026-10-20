@@ -89,6 +89,7 @@ window.ROUTE_CONFIG = {
   'history': { titleKey: 'nav.history' },
   'train-basic': { titleKey: 'nav.loraTraining', trainType: 'anima-lora' },
   'tagger': { titleKey: 'tagger.title' },
+  'ai-captioning': { titleKey: 'moss.pageTitle' },
   'tagEditor': { titleKey: 'tagEditor.title' },
   'regularization': { titleKey: 'regularization.title' },
   'environment': { titleKey: 'environment.title' },

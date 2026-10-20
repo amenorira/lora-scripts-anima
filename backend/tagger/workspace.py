@@ -17,6 +17,7 @@ from PIL import Image, UnidentifiedImageError
 
 from backend.log import log
 from backend.tagger import api_engine
+from backend.tagger import captioning
 from backend.tagger.interrogator import (
     available_interrogators,
     gpu_inference_lock,
@@ -74,7 +75,7 @@ def _enumerate_images(path: Path, recursive: bool) -> list[Path]:
     return sorted((item for item in iterator if _is_image(item)), key=lambda item: str(item).lower())
 
 
-def scan_source(path_value: str, recursive: bool = True) -> dict:
+def scan_source(path_value: str, recursive: bool = True, caption_extension: str = ".txt") -> dict:
     _cleanup()
     path = Path(path_value).expanduser().resolve()
     if not path.exists():
@@ -83,13 +84,17 @@ def scan_source(path_value: str, recursive: bool = True) -> dict:
         raise ValueError("Filesystem root is not allowed / 不允许选择磁盘根目录")
     images = _enumerate_images(path, recursive)
     token = uuid.uuid4().hex[:16]
-    caption_count = sum(1 for image in images if image.with_suffix(".txt").is_file())
+    caption_extension = "." + str(caption_extension).strip().lstrip(".")
+    if caption_extension == "." or any(c in caption_extension for c in '/\\\r\n'):
+        raise ValueError("Invalid caption extension / 无效的标注扩展名")
+    caption_count = sum(1 for image in images if image.with_suffix(caption_extension).is_file())
     directories = len({image.parent for image in images})
     source = {
         "token": token,
         "root": str(path),
         "kind": "file" if path.is_file() else "folder",
         "recursive": recursive,
+        "caption_extension": caption_extension,
         "paths": images,
         "created_at": time.time(),
     }
@@ -104,7 +109,7 @@ def scan_source(path_value: str, recursive: bool = True) -> dict:
         "with_caption": caption_count,
         "without_caption": len(images) - caption_count,
         "items": [
-            {"index": index, "name": image.name, "path": str(image), "has_caption": image.with_suffix(".txt").is_file()}
+            {"index": index, "name": image.name, "path": str(image), "has_caption": image.with_suffix(caption_extension).is_file()}
             for index, image in enumerate(images[:_MAX_RECENT_ITEMS])
         ],
         "items_truncated": len(images) > _MAX_RECENT_ITEMS,
@@ -157,7 +162,7 @@ def source_items(source_token: str, offset: int = 0, limit: int = 120) -> dict:
                 "index": start + index,
                 "name": path.name,
                 "path": str(path),
-                "has_caption": path.with_suffix(".txt").is_file(),
+                "has_caption": path.with_suffix(source.get("caption_extension", ".txt")).is_file(),
                 "status": "pending",
             }
             for index, path in enumerate(page)
@@ -191,10 +196,13 @@ def _record_task_item(task: dict, index: int, outcome: dict) -> None:
         task["current_file"] = item["name"]
         if "result" in outcome:
             task["current_result"] = task["results"][index] = outcome["result"]
-        event = "written" if status == "success" and task["write_captions"] else status
+        event = outcome.get("event") or ("written" if status == "success" and task["write_captions"] else status)
+        if outcome.get("prompt"):
+            task["check_prompt"] = outcome["prompt"]
         _task_log(task, event, {"skipped": "warning", "failed": "error"}.get(status, "info"),
                   current=task["current"], total=task["total"], name=item["name"],
-                  count=outcome.get("tag_count", 0), error=outcome.get("error", ""))
+                  count=outcome.get("tag_count", 0), error=outcome.get("error", ""),
+                  reference=outcome.get("reference", False), knowledge=outcome.get("knowledge", 0))
 
 
 def _finish_task(task: dict, status: str, error: str = "") -> None:
@@ -208,6 +216,8 @@ def _finish_task(task: dict, status: str, error: str = "") -> None:
                  "warning" if task["failed"] or status == "cancelled" else "success")
         _task_log(task, status, level, elapsed=f"{max(0.0, time.time() - task['started_at']):.1f}",
                   success=task["success"], skipped=task["skipped"], failed=task["failed"], error=error)
+        if task.get("check_prompt"):
+            _task_log(task, "prompt", message=task["check_prompt"])
 
 
 def _task_snapshot_unlocked(task: dict) -> dict:
@@ -231,6 +241,8 @@ def _task_snapshot_unlocked(task: dict) -> dict:
         "source_root": task["source_root"],
         "model_id": task["model_id"],
         "engine": task.get("engine", "onnx"),
+        "parse_mode": (task.get("api_payload") or {}).get("parse_mode", "tags"),
+        "caption_options": (task.get("options") or {}).get("captioning"),
         "logs": list(task["logs"]),
         "error_detail": task.get("error_detail"),
         "current_result": task.get("current_result"),
@@ -391,6 +403,9 @@ def _api_tag_one(
     if cancel_event.is_set():
         return {"status": "aborted"}
     try:
+        if options.get("_caption_runtime"):
+            return captioning.process(config, path, options["_caption_runtime"], client=client,
+                                      cancel_event=cancel_event, write=write_captions, index=index)
         existing = ""
         if write_captions and conflict == "ignore":
             caption = path.with_suffix(".txt")
@@ -438,11 +453,13 @@ def _run_api_task(
     write_captions: bool,
     config: api_engine.ApiConfig,
 ) -> None:
+    caption_options = options.get("captioning") or {}
+    offline_phase = "caption_check" if caption_options.get("dry_run") else "caption_export" if caption_options.get("mode") == "export" else ""
     with task["lock"]:
         task["started_at"] = time.time()
         task["status"] = "cancelling" if task["cancel_event"].is_set() else "running"
-        task["phase"] = "api_request"
-    _task_log(task, "api_start", "phase", total=len(paths), model=config.model,
+        task["phase"] = offline_phase or "api_request"
+    _task_log(task, offline_phase or "api_start", "phase", total=len(paths), model=config.model,
               endpoint=config.base_url, concurrency=config.concurrency)
     client = None
     pool = None
@@ -450,7 +467,12 @@ def _run_api_task(
     task_error = None
     try:
         if not task["cancel_event"].is_set():
-            client = api_engine.create_client(config)
+            if options.get("captioning"):
+                root = Path(task["source_root"])
+                options = dict(options, _caption_runtime=captioning.prepare_runtime(options["captioning"], root if root.is_dir() else root.parent, config.prompt))
+            offline = options.get("captioning", {}).get("mode") == "export" or options.get("captioning", {}).get("dry_run")
+            if not offline:
+                client = api_engine.create_client(config)
             pool = ThreadPoolExecutor(max_workers=config.concurrency, thread_name_prefix=f"tagger-api-{task['id']}")
             pending = {}
             source = iter(enumerate(paths))
@@ -660,7 +682,13 @@ def create_task(payload: dict) -> str:
         raise ValueError("Unknown engine / 未知引擎")
     config: api_engine.ApiConfig | None = None
     if engine == "api":
-        config = api_engine.validate_config(dict(payload.get("api") or {}))
+        api_payload = dict(payload.get("api") or {})
+        caption_options = dict((payload.get("options") or {}).get("captioning") or {})
+        if caption_options.get("mode") == "export" or caption_options.get("dry_run"):
+            api_payload = {"base_url": "http://localhost/v1", "model": api_payload.get("model") or "offline", "prompt": api_payload.get("prompt") or (captioning.upstream.DEFAULT_PROMPT if api_payload.get("parse_mode") == "multi-caption" else "Describe the image."), "parse_mode": api_payload.get("parse_mode", "tags")}
+        if caption_options.get("mode") != "export":
+            api_payload["prompt"] = captioning.resolve_prompt(caption_options, api_payload.get("prompt") or "")
+        config = api_engine.validate_config(api_payload)
         model_id = f"api:{config.model}"
     else:
         if training_active():
@@ -685,6 +713,8 @@ def create_task(payload: dict) -> str:
     if conflict not in {"ignore", "copy", "prepend"}:
         raise ValueError("Invalid caption conflict action / 无效的标签冲突策略")
     options = dict(payload.get("options") or {})
+    if engine == "api" and options.get("captioning"):
+        options["captioning"] = captioning.validate_options(options["captioning"], config.parse_mode)
     if model_id == "pixai-tagger-v1.0":
         from backend.tagger.interrogators.pixai import PixAITaggerInterrogator
 

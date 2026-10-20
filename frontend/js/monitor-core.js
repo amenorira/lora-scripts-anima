@@ -813,7 +813,7 @@ window.monitorCoreMixin = {
 
     if (!this.selectedRunDir && this.currentRoute === 'monitor-dashboard') {
       this.scheduleRender();
-    } else if (this.currentRoute === 'tagger' && typeof this.renderTaggerResourceBar === 'function') {
+    } else if (['tagger', 'ai-captioning'].includes(this.currentRoute) && typeof this.renderTaggerResourceBar === 'function') {
       this.renderTaggerResourceBar();
     } else if (this.currentRoute === 'regularization') {
       this.renderRegularizationResourceBar();

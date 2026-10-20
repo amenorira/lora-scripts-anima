@@ -220,7 +220,7 @@ window.regularizationMixin = {
     if (this._regTopic) this.realtimeUnsubscribe(this._regTopic);
     this._regTopic = null;
     // Other route builders subscribe after this route has released hardware.
-    if (this.currentRoute !== 'tagger' && !this.currentRoute.startsWith('monitor-')) this.realtimeUnsubscribe('hardware');
+    if (!['tagger', 'ai-captioning'].includes(this.currentRoute) && !this.currentRoute.startsWith('monitor-')) this.realtimeUnsubscribe('hardware');
   },
   renderRegularizationResourceBar() {
     this._renderResourceBar('regularizationResbar', this.gpuInfo, this.sysInfo, (key, fallback) => this.t('monitor.' + key, fallback), this.locale);

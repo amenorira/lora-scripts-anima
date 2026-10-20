@@ -24,6 +24,7 @@ from backend.tagger.interrogator import (
 )
 from backend.tagger.interrogators.base import CATEGORY_LABELS
 from backend.tagger import api_engine
+from backend.tagger import captioning
 from backend.tagger.registry import DEFAULT_MODEL_ID, MODEL_SPEC_BY_ID, model_payload
 from backend.tagger.workspace import (
     cancel_task as cancel_workspace_task,
@@ -42,6 +43,11 @@ from backend.tagger.workspace import (
 from backend.tasks import tm
 
 router = APIRouter()
+
+
+@router.get("/tagger/api/caption-template")
+async def caption_template():
+    return APIResponseSuccess(data={"prompt": captioning.upstream.DEFAULT_PROMPT})
 
 
 def _copy_upload(stream, target: Path) -> None:
@@ -147,6 +153,7 @@ async def tagger_scan_source(request: Request):
             scan_source,
             str(body.get("path") or ""),
             bool(body.get("recursive", True)),
+            str(body.get("caption_extension") or ".txt"),
         )
         return APIResponseSuccess(data=result)
     except Exception as exc:
@@ -304,7 +311,7 @@ async def tagger_api_test(request: Request):
         models = await asyncio.to_thread(
             api_engine.list_models,
             str(body.get("base_url") or ""),
-            str(body.get("api_key") or ""),
+            str(body.get("api_key") or ((os.environ.get("OPENAI_API_KEY") or "none") if body.get("use_environment_key") else "")),
             protocol,
         )
         return APIResponseSuccess(data={"models": models[:100], "count": len(models)})
@@ -320,29 +327,38 @@ async def tagger_api_single_image(request: Request):
     """
     body = await request.json()
     try:
-        config = api_engine.validate_config(dict(body.get("api") or {}))
+        api_payload = dict(body.get("api") or {})
+        api_payload["prompt"] = captioning.resolve_prompt((body.get("options") or {}).get("captioning") or {}, api_payload.get("prompt") or "")
+        config = api_engine.validate_config(api_payload)
         path = source_item(str(body.get("source_token") or ""), int(body.get("index") or 0))
     except Exception as exc:
         return APIResponseFail(message=str(exc))
 
     def _infer():
+        options = dict(body.get("options") or {})
+        if options.get("captioning"):
+            caption_options = captioning.validate_options(dict(options["captioning"], mode="regenerate"), config.parse_mode)
+            runtime = captioning.prepare_runtime(caption_options, path.parent, config.prompt)
+            outcome = captioning.process(config, path, runtime)
+            return outcome["result"]["tags"], outcome["result"]["raw"], outcome["result"]["text"]
         with Image.open(path) as opened:
             image = opened.copy()
         try:
-            return api_engine.interrogate(config, image)
+            tags, raw = api_engine.interrogate(config, image)
+            return tags, raw, None
         finally:
             image.close()
 
     started = time.monotonic()
     try:
-        tags_raw, raw_text = await asyncio.to_thread(_infer)
+        tags_raw, raw_text, caption_text = await asyncio.to_thread(_infer)
     except Exception as exc:
         return APIResponseFail(message=f"{type(exc).__name__}: {str(exc)[:240]}")
-    tags = _finalize_api_tags(tags_raw, dict(body.get("options") or {}))
+    tags = tags_raw if caption_text is not None else _finalize_api_tags(tags_raw, dict(body.get("options") or {}))
     return APIResponseSuccess(data={
         "model": config.model,
         "tags": tags,
-        "text": ", ".join(tags),
+        "text": caption_text if caption_text is not None else ", ".join(tags),
         "raw": raw_text,
         "elapsed": round(time.monotonic() - started, 2),
     })
