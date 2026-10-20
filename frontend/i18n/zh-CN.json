@@ -1850,8 +1850,6 @@
 		"apiPromptBuiltinGroup": "内置预设",
 		"apiPromptUserGroup": "自定义预设",
 		"apiPromptPresetBooru": "Booru 标签",
-		"apiPromptPresetCaption": "自然语言简述",
-		"apiPromptPresetDetailed": "详细描述",
 		"apiPromptPlaceholder": "输入发送给视觉模型的提示词...",
 		"apiPromptSaveAs": "另存为预设",
 		"apiPromptRename": "重命名",
@@ -1901,7 +1899,10 @@
 		},
 		"apiParseMulti": "MOSS 多候选描述",
 		"apiParseMultiDesc": "可参考已有 tags 文件，结合图片补充生成长、中、短三种描述。",
-		"apiPromptPresetMulti": "长／中／短描述（原脚本提示词）"
+		"apiPromptPresetMulti": "MOSS 长／中／短描述",
+		"apiPromptPresetBooruDesc": "生成以逗号分隔的 Booru 风格英文标签，多词标签使用下划线连接。",
+		"apiPromptPresetMultiDesc": "基于 Kohya 的 caption_images_moss 脚本提示词，结合图片与可选的 tags 参考，一次生成长、中、短三种描述。",
+		"apiPromptPresetUserDesc": "使用你保存的自定义提示词及其输出格式，可展开下方编辑区查看或修改。"
 	},
 	"tagEditor": {
 		"dictTitle": "标签词典",

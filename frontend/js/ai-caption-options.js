@@ -43,8 +43,9 @@ window.captionOptionsMixin = {
 
   applyCaptionFormat(format) {
     this.taggerApiSettings.parseMode = format;
-    if (!this.taggerApiPresetIsUser()) {
-      this.selectTaggerApiPromptPreset({tags: 'booru', caption: 'caption', 'multi-caption': 'multi'}[format]);
+    const preset = {tags: 'booru', 'multi-caption': 'multi'}[format];
+    if (preset && !this.taggerApiPresetIsUser()) {
+      this.selectTaggerApiPromptPreset(preset);
     }
     this.applyCaptionDefaults(format);
     this.saveTaggerApiSettings();

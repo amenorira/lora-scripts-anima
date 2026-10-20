@@ -1850,8 +1850,6 @@
 		"apiPromptBuiltinGroup": "内蔵プリセット",
 		"apiPromptUserGroup": "カスタムプリセット",
 		"apiPromptPresetBooru": "Booru タグ",
-		"apiPromptPresetCaption": "短いキャプション",
-		"apiPromptPresetDetailed": "詳しい説明",
 		"apiPromptPlaceholder": "画像対応モデルに送るプロンプト…",
 		"apiPromptSaveAs": "プリセットとして保存",
 		"apiPromptRename": "名前を変更",
@@ -1901,7 +1899,10 @@
 		},
 		"apiParseMulti": "MOSS 複数キャプション",
 		"apiParseMultiDesc": "画像から長・中・短の3種類の説明を生成します。既存の tags ファイルも参照できます。",
-		"apiPromptPresetMulti": "長・中・短（原スクリプトのプロンプト）"
+		"apiPromptPresetMulti": "MOSS 長・中・短の説明",
+		"apiPromptPresetBooruDesc": "Booru 形式の英語タグをカンマ区切りで生成します。複数語のタグはアンダースコアで連結します。",
+		"apiPromptPresetMultiDesc": "Kohya 作の caption_images_moss スクリプトのプロンプトを使用。画像と任意の参照タグから、長・中・短の説明を一度に生成します。",
+		"apiPromptPresetUserDesc": "保存したカスタムプロンプトと出力形式を使用します。下の編集欄で確認・変更できます。"
 	},
 	"tagEditor": {
 		"dictTitle": "タグ辞書",

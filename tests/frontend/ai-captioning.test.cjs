@@ -89,6 +89,30 @@ test('output format updates built-in prompts while retaining a custom prompt', (
   assert.equal(app.taggerApiSettings.promptText, 'Keep this template');
 });
 
+test('prompt options contain only Booru and MOSS built-ins with descriptions', () => {
+  const {app} = harness();
+  assert.deepEqual(Array.from(app.taggerApiBuiltinPrompts(), preset => preset.id), ['booru', 'multi']);
+  app.taggerApiUserPresets = [{id:'user-custom', name:'Custom', text:'Custom prompt', parseMode:'tags'}];
+  const groups = app.taggerApiPromptSelectConfig().groups;
+  assert.equal(groups.length, 2);
+  assert(groups.flatMap(group => group.options).every(option => option.d));
+  app.selectTaggerApiPromptPreset('multi');
+  assert.equal(app.taggerApiPresetDescription(), 'tagger.apiPromptPresetMultiDesc');
+});
+
+test('removed natural-language built-ins fall back without deleting custom presets', () => {
+  for (const id of ['caption', 'detailed']) {
+    const {app, storage} = harness();
+    storage.set('anima-tagger-api-settings', JSON.stringify({promptPresetId:id, promptText:'Removed built-in text', parseMode:'caption'}));
+    storage.set('anima-tagger-api-prompts', JSON.stringify([{id:'user-custom', name:'Keep', text:'Keep my prompt', parseMode:'caption'}]));
+    app._loadTaggerApiSettings();
+    assert.equal(app.taggerApiSettings.promptPresetId, 'booru');
+    assert.equal(app.taggerApiSettings.parseMode, 'tags');
+    assert.equal(app.taggerApiSettings.promptText, app.TAGGER_API_BUILTIN_PROMPT_TEXTS.booru);
+    assert.equal(app.taggerApiUserPresets[0].text, 'Keep my prompt');
+  }
+});
+
 test('image transfer format controls whether JPEG quality applies', () => {
   const {app} = harness();
   assert.equal(app.captionImageFormat(), 'png');

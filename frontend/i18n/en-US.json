@@ -1850,8 +1850,6 @@
 		"apiPromptBuiltinGroup": "Built-in presets",
 		"apiPromptUserGroup": "Custom presets",
 		"apiPromptPresetBooru": "Booru tags",
-		"apiPromptPresetCaption": "Short caption",
-		"apiPromptPresetDetailed": "Detailed description",
 		"apiPromptPlaceholder": "Prompt sent to the vision model...",
 		"apiPromptSaveAs": "Save as preset",
 		"apiPromptRename": "Rename",
@@ -1901,7 +1899,10 @@
 		},
 		"apiParseMulti": "MOSS multi-caption",
 		"apiParseMultiDesc": "Generate long, medium and short descriptions from the image, optionally using existing tags files as a reference.",
-		"apiPromptPresetMulti": "Long / medium / short (original script prompt)"
+		"apiPromptPresetMulti": "MOSS long / medium / short",
+		"apiPromptPresetBooruDesc": "Generate comma-separated Booru-style English tags, with underscores joining words within a tag.",
+		"apiPromptPresetMultiDesc": "Based on the prompt from Kohya's caption_images_moss script. Generate long, medium and short descriptions in one response, using the image and optional reference tags.",
+		"apiPromptPresetUserDesc": "Use your saved custom prompt and its output format. Expand the editor below to view or edit it."
 	},
 	"tagEditor": {
 		"dictTitle": "Tag dictionary",

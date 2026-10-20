@@ -95,11 +95,9 @@ window.taggerMixin = {
 
   TAGGER_API_BUILTIN_PROMPT_TEXTS: {
     booru: 'Describe this anime image as a comma-separated list of Danbooru-style tags covering the subject, appearance, clothing, pose, expression, background, composition and quality. Output only the tag list in lowercase, using underscores for multi-word tags. No explanations and no full sentences.',
-    caption: 'Write a concise natural-language caption for this image in one or two sentences. Output only the caption text.',
-    detailed: 'Describe this image in detail, covering the subject, appearance, clothing, pose, expression, environment, lighting and art style. Output only the description text.',
     multi: '',
   },
-  TAGGER_API_BUILTIN_PROMPT_MODES: { booru: 'tags', caption: 'caption', detailed: 'caption', multi: 'multi-caption' },
+  TAGGER_API_BUILTIN_PROMPT_MODES: { booru: 'tags', multi: 'multi-caption' },
 
   async buildTaggerForm() {
     const route = this.currentRoute;
@@ -155,7 +153,7 @@ window.taggerMixin = {
     const host = document.getElementById('taggerWorkspaceHost');
     if (!host || host.dataset.mounted === '1') return;
     try {
-      const response = await fetch('/anima-ui/tagger-workspace.html?v=20261020-caption-layout4');
+      const response = await fetch('/anima-ui/tagger-workspace.html?v=20261020-caption-presets1');
       if (!response.ok) throw new Error('Workspace template unavailable');
       host.innerHTML = await response.text();
       host.dataset.mounted = '1';
@@ -219,6 +217,11 @@ window.taggerMixin = {
         ? presets.filter(preset => preset && preset.id && preset.name && typeof preset.text === 'string')
         : [];
     } catch (_) {}
+    if (['caption', 'detailed'].includes(this.taggerApiSettings.promptPresetId)) {
+      Object.assign(this.taggerApiSettings, {
+        promptPresetId: 'booru', parseMode: 'tags', promptText: this.TAGGER_API_BUILTIN_PROMPT_TEXTS.booru,
+      });
+    }
     if (!this.taggerApiAllPrompts().some(preset => preset.id === this.taggerApiSettings.promptPresetId)) {
       this.taggerApiSettings.promptPresetId = 'booru';
     }
@@ -275,6 +278,7 @@ window.taggerMixin = {
     return Object.keys(this.TAGGER_API_BUILTIN_PROMPT_TEXTS).map(id => ({
       id,
       name: this.t('tagger.apiPromptPreset' + id.charAt(0).toUpperCase() + id.slice(1)),
+      description: this.t('tagger.apiPromptPreset' + id.charAt(0).toUpperCase() + id.slice(1) + 'Desc'),
       text: this.TAGGER_API_BUILTIN_PROMPT_TEXTS[id],
       parseMode: this.TAGGER_API_BUILTIN_PROMPT_MODES[id] || 'tags',
       builtin: true,
@@ -295,14 +299,19 @@ window.taggerMixin = {
     return preset ? preset.name : this.t('tagger.apiPromptPreset');
   },
 
+  taggerApiPresetDescription() {
+    const preset = this.taggerApiAllPrompts().find(item => item.id === this.taggerApiSettings.promptPresetId);
+    return preset?.description || (preset ? this.t('tagger.apiPromptPresetUserDesc') : '');
+  },
+
   taggerApiPresetIsUser() {
     return this.taggerApiUserPresets.some(preset => preset.id === this.taggerApiSettings.promptPresetId);
   },
 
   taggerApiPromptSelectConfig() {
     return { groups: [
-      { label: this.t('tagger.apiPromptBuiltinGroup'), options: this.taggerApiBuiltinPrompts().map(preset => ({ v: preset.id, l: preset.name })) },
-      { label: this.t('tagger.apiPromptUserGroup'), options: this.taggerApiUserPresets.map(preset => ({ v: preset.id, l: preset.name })) },
+      { label: this.t('tagger.apiPromptBuiltinGroup'), options: this.taggerApiBuiltinPrompts().map(preset => ({ v: preset.id, l: preset.name, d: preset.description })) },
+      { label: this.t('tagger.apiPromptUserGroup'), options: this.taggerApiUserPresets.map(preset => ({ v: preset.id, l: preset.name, d: this.t('tagger.apiPromptPresetUserDesc') })) },
     ].filter(group => group.options.length) };
   },
 
