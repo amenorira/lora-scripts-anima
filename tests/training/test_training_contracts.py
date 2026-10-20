@@ -12,6 +12,19 @@ from tests.helpers import valid_training_config as valid_anima_config
 
 
 class TrainingValidationTests(unittest.TestCase):
+    def test_epoch_caption_dropout_rejects_both_text_cache_modes(self):
+        from backend.training.option_contracts import validate_sd_option_dependencies
+
+        for profile in ("anima-lora", "sdxl-lora", "moss-image-lora"):
+            for cache_key in ("cache_text_encoder_outputs", "cache_text_encoder_outputs_to_disk"):
+                config = {"model_train_type": profile, "caption_dropout_every_n_epochs": 2, cache_key: True}
+                self.assertTrue(any("caption_dropout_every_n_epochs" in error
+                                    for error in validate_sd_option_dependencies(config)))
+                config[cache_key] = False
+                self.assertEqual(validate_sd_option_dependencies(config), [])
+                config.update({cache_key: True, "caption_dropout_every_n_epochs": "0"})
+                self.assertEqual(validate_sd_option_dependencies(config), [])
+
     def test_input_normalization_uses_schema_types_instead_of_text_contents(self):
         config = dict(valid_anima_config(), learning_rate="1e-4", unet_lr="2e-4", lora_muon_momentum=0.9,
                       output_name="00123", positive_prompts="123", resolution="1024")

@@ -58,11 +58,6 @@ def extend_fields(fields: list[dict[str, Any]]) -> None:
     for conditions in by_key["loraplus_text_encoder_lr_ratio"]["show_if_any"]:
         conditions.append({"key": "model_train_type", "neq": PROFILE_ID})
     by_key["vae"]["requiredGroups"].append(GROUP)
-    for key in ("cache_text_encoder_outputs", "cache_text_encoder_outputs_to_disk"):
-        by_key[key].setdefault("readonly_if_any", []).append([
-            {"key": "model_train_type", "eq": PROFILE_ID},
-            {"key": "caption_dropout_every_n_epochs", "neq": 0},
-        ])
     by_key["model_train_type"]["options"].append({
         "v": PROFILE_ID, "l": "MOSS-Image LoRA", "dk": "opt.model_train_type_moss-image-lora",
     })

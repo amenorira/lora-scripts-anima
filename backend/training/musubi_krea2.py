@@ -456,6 +456,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "step": 0.05,
         "section": "training",
         "desc_key": "field.sigmoid_scale",
+        "hint_key": "field.krea_sigmoid_scaleHint",
         "show_if": {"key": "timestep_sampling", "eq": "sigmoid", "_or": ["shift", "krea2_shift"]},
         "profiles": [KREA2_PROFILE_ID],
         "doc_slug": "timesteps",

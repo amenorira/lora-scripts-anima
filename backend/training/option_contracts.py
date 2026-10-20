@@ -30,6 +30,12 @@ def normalize_sd_options(config: dict) -> None:
 
 def validate_sd_option_dependencies(config: dict) -> list[str]:
     errors = []
+    try:
+        epoch_dropout = float(config.get("caption_dropout_every_n_epochs") or 0) > 0
+    except (TypeError, ValueError):
+        epoch_dropout = False  # Numeric validation reports invalid values.
+    if (config.get("cache_text_encoder_outputs") or config.get("cache_text_encoder_outputs_to_disk")) and epoch_dropout:
+        errors.append("caption_dropout_every_n_epochs: requires disabling both Text Encoder caches / 按轮丢弃标注需要关闭内存和磁盘文本缓存")
     if config.get("model_train_type") in ("anima-lora", "moss-image-lora"):
         cpu = bool(config.get("cpu_offload_checkpointing"))
         unsloth = bool(config.get("unsloth_offload_checkpointing"))

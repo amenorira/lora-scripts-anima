@@ -260,7 +260,7 @@ FIELDS: list[dict[str, Any]] = [
 # 三个底模路径默认指向环境管理页可下载的 Anima 核心文件（见 tools/download_anima_model.py）。
 # 用户下载后即可直接开训，无需手动填写；路径与 ANIMA_FILES 的本地文件名保持一致。
 {"key": "pretrained_model_name_or_path", "type": "text", "default": "./models/anima-base-v1.0.safetensors", "section": "model", "desc_key": "field.pretrained_model_name_or_path", "target": "toml", "role": "file-model", "required": True},
-{"key": "vae", "type": "text", "default": "./models/qwen_image_vae.safetensors", "section": "model", "desc_key": "field.vae", "target": "toml", "role": "file-model", "requiredGroups": ["anima"]},
+{"key": "vae", "type": "text", "default": "./models/qwen_image_vae.safetensors", "default_by_group": {"sdxl": ""}, "section": "model", "desc_key": "field.vae", "target": "toml", "role": "file-model", "requiredGroups": ["anima"]},
 {"key": "qwen3", "type": "text", "default": "./models/qwen_3_06b_base.safetensors", "section": "model", "desc_key": "field.qwen3", "hint_key": "field.qwen3Hint", "target": "toml", "role": "file-model", "group": "anima", "required": True},
 {"key": "train_data_dir", "type": "text", "default": "./train", "section": "model", "desc_key": "field.train_data_dir", "target": "toml", "role": "file-folder", "required": True},
 # ── 正则化数据（DreamBooth 正则）──
@@ -523,7 +523,7 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "xformers", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.xformers", "target": "toml", "group": "sdxl"},
 {"key": "sdpa", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.sdpa", "target": "toml", "group": "sdxl", "omit_default": True},
 {"key": "attn_mode", "type": "select", "default": "torch", "section": "performance", "desc_key": "field.attn_mode", "target": "toml", "group": "anima", "options": [{"v": "torch", "l": "torch", "dk": "opt.attn_mode_torch"}, {"v": "flash", "l": "flash", "dk": "opt.attn_mode_flash"}, {"v": "xformers", "l": "xformers", "dk": "opt.attn_mode_xformers"}]},
-{"key": "split_attn", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.split_attn", "target": "toml", "group": "anima", "auto_value": [{"watch": "attn_mode", "when": "xformers", "set": True, "set_if_default": True}]},
+{"key": "split_attn", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.split_attn", "target": "toml", "group": "anima", "auto_value": [{"watch": "attn_mode", "when": "xformers", "set": True, "set_if_default": True}], "readonly_if": {"key": "attn_mode", "eq": "xformers", "reason_key": "field.split_attnXformersLocked"}},
     # Anima: TF32 / cuDNN — Ampere+ GPU 几乎免费的加速
     {"key": "cuda_allow_tf32", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cuda_allow_tf32", "target": "toml", "group": "anima", "hint_key": "field.cuda_allow_tf32Hint"},
     {"key": "cuda_cudnn_benchmark", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cuda_cudnn_benchmark", "target": "toml", "group": "anima", "hint_key": "field.cuda_cudnn_benchmarkHint"},
@@ -534,10 +534,10 @@ FIELDS: list[dict[str, Any]] = [
 # 在 shuffle_caption / caption_tag_dropout_rate>0 时返回 false → anima_train_network.py assert 失败）。
 # 双重保护：前端 setField 联动自动关 cache（caption 互斥项激活时）+ readonly_if_any 锁定防用户回开
 # （任一互斥项激活期间 cache 开关灰显，光自动关不够，用户还能手动再开回 true）。
-{"key": "cache_text_encoder_outputs", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cache_text_encoder_outputs", "target": "toml", "hint_key": "field.cache_text_encoder_outputsHint", "readonly_if_any": [{"key": "shuffle_caption", "eq": True}, {"key": "caption_tag_dropout_rate", "neq": 0}, [{"key": "model_train_type", "eq": "sdxl-lora"}, {"key": "caption_dropout_rate", "neq": 0}]], "readonly_reason_key": "field.cache_text_encoder_outputsLocked"},
+{"key": "cache_text_encoder_outputs", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cache_text_encoder_outputs", "target": "toml", "hint_key": "field.cache_text_encoder_outputsHint", "readonly_if_any": [{"key": "shuffle_caption", "eq": True}, {"key": "caption_tag_dropout_rate", "neq": 0}, {"key": "caption_dropout_every_n_epochs", "neq": 0}, [{"key": "model_train_type", "eq": "sdxl-lora"}, {"key": "caption_dropout_rate", "neq": 0}]], "readonly_reason_key": "field.cache_text_encoder_outputsLocked"},
 # to_disk 联动 cache=true 已由 sd-scripts 后端兜底（anima_train_network.py:56-58），前端 auto_value 规则
 # 曾经 watch 自身导致用户把 to_disk 切回 false 时把 cache 复位为 default=True（switchTrainType 后被偷开），删除。
-{"key": "cache_text_encoder_outputs_to_disk", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.cache_text_encoder_outputs_to_disk", "hint_key": "field.cache_text_encoder_outputs_to_diskHint", "target": "toml", "readonly_if_any": [{"key": "shuffle_caption", "eq": True}, {"key": "caption_tag_dropout_rate", "neq": 0}, [{"key": "model_train_type", "eq": "sdxl-lora"}, {"key": "caption_dropout_rate", "neq": 0}]], "readonly_reason_key": "field.cache_text_encoder_outputsLocked"},
+{"key": "cache_text_encoder_outputs_to_disk", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.cache_text_encoder_outputs_to_disk", "hint_key": "field.cache_text_encoder_outputs_to_diskHint", "target": "toml", "readonly_if_any": [{"key": "shuffle_caption", "eq": True}, {"key": "caption_tag_dropout_rate", "neq": 0}, {"key": "caption_dropout_every_n_epochs", "neq": 0}, [{"key": "model_train_type", "eq": "sdxl-lora"}, {"key": "caption_dropout_rate", "neq": 0}]], "readonly_reason_key": "field.cache_text_encoder_outputsLocked"},
 {"key": "no_half_vae", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.no_half_vae", "target": "toml", "group": "sdxl", "omit_default": True},
 {"key": "lowram", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.lowram", "target": "toml", "omit_default": True},
     # Anima: VAE performance
