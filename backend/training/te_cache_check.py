@@ -14,6 +14,8 @@ npz 后缀与键布局来自 vendor/sd-scripts：
   修改处理参数后，已有磁盘缓存仍不会自动失效。随机处理不在缓存阶段执行，
   Anima 的 dropout 率使用缓存快照，整轮丢弃仍依赖实时编码路径。
 Krea2 (musubi-tuner) 的缓存走独立的预检/清单流程，不在此检查。
+MOSS v0.12.2 新格式保存候选描述文本，在未跳过缓存检查时自动重建变化的描述。
+旧格式单候选缓存没有文本快照，仍需沿用修改时间提示；dropout 率检查不变。
 """
 
 from __future__ import annotations
@@ -88,7 +90,7 @@ def check_te_cache(config: dict, profile_id: str) -> list[dict]:
     if not npz_files:
         return []
 
-    warnings: list[str] = []
+    warnings: list[dict] = []
 
     # dropout 率快照 vs 本次配置：训练按快照丢弃，配置值被静默忽略（仅 Anima 的
     # npz 存快照；SDXL 上游直接拒绝 rate+缓存组合，不存在此问题）
@@ -128,6 +130,17 @@ def check_te_cache(config: dict, profile_id: str) -> list[dict]:
         caption_mtime = _safe_mtime(caption_path)
         npz_mtime = _safe_mtime(npz_path)
         if caption_mtime is not None and npz_mtime is not None and caption_mtime > npz_mtime:
+            if profile_id == "moss-image-lora" and not config.get("skip_cache_check"):
+                import numpy as np
+
+                try:
+                    with np.load(npz_path, allow_pickle=False) as data:
+                        if "num_candidates" in data:
+                            # The upstream validity check compares processed captions and
+                            # rebuilds this format. Legacy files lack that text snapshot.
+                            continue
+                except Exception as exc:
+                    logger.debug(f"[TE cache] unreadable npz {npz_path}: {exc}")
             modified_count += 1
     if modified_count:
         warnings.append({"code": "captionModified", "count": modified_count})

@@ -495,7 +495,7 @@ window.trainingCoreMixin = {
       values.sample_interval_mode = has('sample_every_n_epochs') ? 'epochs'
         : has('sample_every_n_steps') ? 'steps' : specified ? 'none' : 'epochs';
     }
-    if (values.cpu_offload_checkpointing || values.unsloth_offload_checkpointing) values.gradient_checkpointing = true;
+    if (values.cpu_offload_checkpointing || values.unsloth_offload_checkpointing || values.block_swap_h2d_only) values.gradient_checkpointing = true;
     return values;
   },
 
@@ -504,7 +504,8 @@ window.trainingCoreMixin = {
     if (changedKey === 'gradient_checkpointing' && this.form.gradient_checkpointing === false) {
       this.form.cpu_offload_checkpointing = false;
       this.form.unsloth_offload_checkpointing = false;
-    } else if (this.form.cpu_offload_checkpointing || this.form.unsloth_offload_checkpointing) {
+      this.form.block_swap_h2d_only = false;
+    } else if (this.form.cpu_offload_checkpointing || this.form.unsloth_offload_checkpointing || this.form.block_swap_h2d_only) {
       this.form.gradient_checkpointing = true;
     }
   },
@@ -3482,6 +3483,9 @@ window.trainingCoreMixin = {
       return;
     }
     if (!['anima-lora', 'moss-image-lora', 'sdxl-lora'].includes(this.form.model_train_type)) return;
+    if (['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type) && this.form.block_swap_h2d_only) {
+      this.form.gradient_checkpointing = true;
+    }
     if (this.form.model_train_type === 'sdxl-lora' && this.form.xformers && this.form.sdpa) {
       this.form.sdpa = false;
     }
@@ -3927,7 +3931,7 @@ window.trainingCoreMixin = {
 
     this.form[key] = value;
     this._setFieldSource(key, 'user');
-    if (['gradient_checkpointing', 'cpu_offload_checkpointing', 'unsloth_offload_checkpointing'].includes(key)) {
+    if (['gradient_checkpointing', 'cpu_offload_checkpointing', 'unsloth_offload_checkpointing', 'block_swap_h2d_only'].includes(key)) {
       this._enforceCheckpointingUiConstraints(key);
     }
     if (key === 'max_data_loader_n_workers' || key === 'persistent_data_loader_workers') {
@@ -4009,6 +4013,10 @@ window.trainingCoreMixin = {
       this.form.cache_text_encoder_outputs_to_disk = false;
     }
     if (key === 'attn_mode' && value === 'xformers') this.form.split_attn = true;
+    if (key === 'blocks_to_swap' && Number(value || 0) === 0
+        && ['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type)) {
+      this.form.block_swap_h2d_only = false;
+    }
     if (this.form.model_train_type === 'sdxl-lora' && value === true && ['xformers', 'sdpa'].includes(key)) {
       this.form[key === 'xformers' ? 'sdpa' : 'xformers'] = false;
     }
@@ -4315,6 +4323,7 @@ window.trainingCoreMixin = {
     const errors = {};
     const cpu = this.form.cpu_offload_checkpointing, unsloth = this.form.unsloth_offload_checkpointing;
     const swapping = Number(this.form.blocks_to_swap || 0) > 0;
+    if (this.form.block_swap_h2d_only && !swapping) errors.block_swap_h2d_only = this.t('field.blockSwapH2dRequiresBlocks');
     if (cpu && unsloth) errors.unsloth_offload_checkpointing = this.t('field.checkpointOffloadConflict');
     if (swapping && (cpu || unsloth)) errors.blocks_to_swap = this.t('field.blockSwapOffloadConflict');
     if (swapping && this.form.compile && this.form.compile_fullgraph) {
