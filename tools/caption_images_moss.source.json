@@ -1,0 +1,7 @@
+{
+  "author": "kohya-ss",
+  "source": "https://gist.github.com/kohya-ss/6bd9bd21247361e24c25c4c038efaa96",
+  "revision": "042cea82a90e21e09586ca1a2e796ea322cbed3d",
+  "sha256": "26443bb207cdb5b61a4dce81cb7870e59d3b102b355117464d4b6951498a4a04",
+  "note": "Unmodified upstream script. backend/tagger/captioning.py reuses its prompt, knowledge loader, JSON validation and candidate exporter within the shared AI annotation pipeline."
+}

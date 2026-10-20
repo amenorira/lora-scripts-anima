@@ -1,8 +1,10 @@
 import asyncio
 import unittest
+import yaml
 
 from backend.server.models import TrainingTomlParseRequest
 from backend.server.routes.training import parse_training_toml
+from backend.training.training_config import build_training_config
 
 
 class TrainingTomlParseTests(unittest.TestCase):
@@ -43,8 +45,36 @@ class TrainingTomlParseTests(unittest.TestCase):
             response = self._parse(
                 f'model_train_type = "{profile}"\nnetwork_args = ["rank_dropout=0.2"]', "moss-image-lora")
             self.assertEqual(response.data["data"], {
-                "model_train_type": profile, "network_args": ["rank_dropout=0.2"],
+                "model_train_type": profile,
+                **({"network_args": ["rank_dropout=0.2"]} if profile == "krea2-lora" else {"rank_dropout": 0.2}),
             })
+
+    def test_anima_native_import_restores_controls_and_preserves_unknown_arguments(self):
+        response = self._parse('''network_module = "lycoris.kohya"
+network_args = ["algo=lokr", "preset=attn-mlp", "train_llm_adapter=true", "factor=8", "network_reg_dims=blocks.*=4"]
+''', "anima-lora")
+        self.assertEqual(response.status, "success")
+        self.assertEqual(response.data["data"], {
+            "model_train_type": "anima-lora", "network_module": "lycoris.kohya",
+            "lycoris_algo": "lokr", "lycoris_preset": "attn-mlp", "train_llm_adapter": True,
+            "lokr_factor": 8, "network_args_custom": "network_reg_dims=blocks.*=4",
+        })
+
+    def test_anima_import_rejects_empty_target_presets_before_frontend_normalization(self):
+        for preset in ("attn-only", "unet-convblock-only"):
+            for setting in (f'network_args = ["preset={preset}"]', f'lycoris_preset = "{preset}"'):
+                response = self._parse('network_module = "lycoris.kohya"\n' + setting, "anima-lora")
+                self.assertEqual(response.status, "fail")
+                self.assertIn(preset, response.message)
+                response = self._parse('network_module = "lycoris.kohya"\n' + setting, "sdxl-lora")
+                self.assertEqual(response.status, "success")
+
+    def test_yaml_import_also_rejects_incompatible_presets(self):
+        document = build_training_config({"network_module": "lycoris.kohya", "lycoris_preset": "attn-only"},
+                                         profile_id="anima-lora")
+        response = self._parse(yaml.safe_dump(document, sort_keys=False))
+        self.assertEqual(response.status, "fail")
+        self.assertIn("attn-only", response.message)
 
     def test_moss_import_context_rejects_malformed_native_arguments(self):
         response = self._parse('network_args = "rank_dropout=0.2"', "moss-image-lora")

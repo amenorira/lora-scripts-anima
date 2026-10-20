@@ -4,6 +4,13 @@ Network settings determine the adapter's matrix structure, training scope, and w
 
 MOSS-Image defaults to rank/Alpha `16/1` and offers native `networks.lora_generic`, `networks.loha`, and `networks.lokr`. All three support rank/module dropout, LoRA+, regex rank/learning-rate settings, and optional DiT text projection and refiner training; Qwen stays frozen. LoKr also exposes `lokr_factor`. MOSS targets linear layers, so convolution rank/alpha and Tucker controls are hidden; `lycoris.kohya` is unavailable. Equal ranks across algorithms do not imply equal parameter counts: inspect the matrices and scaling in the structure preview and tune learning rates separately.
 
+<!-- doc-anchor: moss-text-embedder -->
+## MOSS text projection and refiner blocks
+
+`train_text_embedder` defaults to off. Enabling it adds adapters using the selected LoRA / LoHa / LoKr algorithm to the DiT text input projection and two refiner blocks. Qwen stays frozen, so text caching remains available.
+
+These modules inherit the backbone learning rate. To set a separate rate, enter `network_reg_lrs=.*text_embedder.*=5e-5` in custom network arguments. `5e-5` is a syntax example; whether it lowers the rate depends on the current backbone value. EmoSens does not use group-specific learning rates, so this override does not change its actual step size.
+
 <!-- doc-anchor: dimension -->
 ## Network dimension
 
@@ -123,3 +130,18 @@ DoRA (`dora_wd`) requires applying its trainable magnitude. For ordinary Linear/
 ## Check the actual structure
 
 After changing dimension, factor, full-matrix mode, or unbalanced factorization, inspect the matrices, parameter count, and scale in the structure preview. To compare results, keep generation prompts and seeds fixed and check both fidelity and behavior in new settings.
+
+<!-- doc-anchor: krea-targets -->
+## Krea 2: default targets and filtering
+
+Upstream defaults to rank/alpha 32 and all 264 DiT Linear layers: main-block attention, MLPs, the text-fusion transformer, and projection MLPs. Text fusion belongs to the DiT; the Qwen text encoder stays frozen and cached. Modulation and RMSNorm parameters are raw tensors, not Linear modules, so LoRA never wraps them and no exclusion is needed.
+
+The upstream long-run example narrows training to main-block attention (140 Linear layers) and suggests a higher rank. To use that scope, enter this line in Network arguments:
+
+```text
+exclude_patterns=['.*\.mlp\..*','first','last\.linear','tmlp\..*','txtmlp\..*','tproj\.1','txtfusion\..*']
+```
+
+For an arbitrary subset, start with `exclude_patterns=['.*']`, then add targets back with `include_patterns=[...]`. Use one parameter per line. Adding include rules alone does not remove layers already included by default.
+
+[Krea 2 upstream guide](https://github.com/kohya-ss/musubi-tuner/blob/f8a1b03794a49239a3539015075f5123d6c07d66/docs/krea2.md#lora-target-layers--loraの対象レイヤー)

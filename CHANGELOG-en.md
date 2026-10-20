@@ -6,6 +6,32 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v26.1021.0083e - 2026-10-21
+
+This release improves the **MOSS-Image multiple-caption workflow**: a dedicated directory-based AI captioning page saves results for later export, and training can cache multiple caption candidates. It also adds block-swapping controls for Anima and MOSS, updates the training engines, and fixes configuration and parameter interactions.
+
+### MOSS AI Captioning
+
+- **Dedicated AI captioning page**: Generate long, medium, and short descriptions for images in a directory. Read matching tag files as references and combine global text or files with directory-level and per-image knowledge. The default prompt and candidate format are based on Kohya's `caption_images_moss` script.
+- **Separate generation from export**: Save the complete result JSON alongside caption files containing the selected candidates. Later, change the candidate selection or output format and fill missing captions from JSON without calling the model again. Regeneration and overwriting are available when needed. Checks now cover reference/output path conflicts, empty selections, and existing captions.
+- **Model connections and task controls**: Support Chat Completions, Responses, and Anthropic Messages, with image transfer format, concurrency, timeout, retry, and generation settings. Inspect inputs without calling the model, and track, stop, or diagnose batch tasks through progress and error logs.
+
+### Training and Memory Management
+
+- **MOSS multiple-candidate text caching**: Cache text encoder outputs for each caption candidate and select a candidate at random during training. The new disk cache checks caption and prefix/suffix changes. Rebuild legacy caches, or caches used with validity checks disabled, manually. The AI captioning page no longer incorrectly asks users to disable text caching.
+- **Anima and MOSS block-swapping controls**: Choose GPU-bound weight transfers, set the number of GPU weight buffers, and optionally use pinned memory to balance VRAM, system memory, and transfer overhead. GPU-bound transfers require CUDA and gradient checkpointing and can increase buffer VRAM use.
+- **Training engine updates**: Update sd-scripts to v0.12.2 and LyCORIS to v4.1.3, and adapt regularization image generation to the updated block-swapping interface.
+
+### Configuration, Parameters, and Interface Fixes
+
+- Align network parameters across the form, TOML import/export, matrix structure preview, and training launch. Fix MOSS text-projection module mapping when switching between LoRA, LoHa, and LoKr while accepting aliases from existing configurations.
+- Fix interactions between text-layer training and caching, epoch-based caption dropout, SDXL attention options, and Anima offloading. Conflict messages now follow edits, imports, resets, and model changes without clearing unrelated server errors.
+- Remove artificial caps on network rank, selected dropout settings, Muon steps, and preview CFG; restore integer input and validation for Alpha. Correct the recommended EmoSens learning-rate ratio for MOSS and refine Chinese, English, and Japanese parameter guidance.
+
+**Upgrade note**: AI captioning now centers on the MOSS image-directory workflow. The generic single-image captioning and Booru output entries have been removed. Rebuild legacy MOSS text encoder disk caches manually.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1019.08dd0...v26.1021.0083e)
+
 ## v26.1019.08dd0 - 2026-10-19
 
 This release adds **native LoHa, LoKr, and Muon optimizer support for MOSS-Image**, introduces matrix structure previews and weight file size estimates, and improves training parameter compatibility checks and temporary file management.

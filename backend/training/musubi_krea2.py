@@ -268,7 +268,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "network",
         "desc_key": "field.network_dim",
         "min": 1,
-        "max": 256,
         "step": 1,
         "profiles": [KREA2_PROFILE_ID],
     },
@@ -279,7 +278,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "network",
         "desc_key": "field.network_alpha",
         "min": 1,
-        "max": 256,
         "step": 1,
         "profiles": [KREA2_PROFILE_ID],
     },
@@ -291,7 +289,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "desc_key": "field.network_dropout",
         "hint_key": "field.network_dropoutHint",
         "min": 0,
-        "max": 0.5,
+        "max": 1,
         "step": 0.01,
         "profiles": [KREA2_PROFILE_ID],
     },
@@ -302,6 +300,8 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "network",
         "desc_key": "field.krea_network_args",
         "hint_key": "field.krea_network_argsHint",
+        "doc_slug": "network-parameters",
+        "doc_anchor": "krea-targets",
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -387,6 +387,10 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "optimizer",
         "desc_key": "field.krea_learning_rate",
         "hint_key": "field.krea_learning_rateHint",
+        "hint_key_by": {"key": "optimizer_type", "values": {
+            "prodigyopt.Prodigy": "field.learning_rateHint_prodigy",
+            _KREA2_PRODIGYPLUS_OPTIMIZER: "field.learning_rateHint_prodigy",
+        }},
         "required": True,
         "auto_value": KREA2_OPTIMIZER_AUTO_VALUES["learning_rate"],
         "profiles": [KREA2_PROFILE_ID],
@@ -452,6 +456,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "step": 0.05,
         "section": "training",
         "desc_key": "field.sigmoid_scale",
+        "hint_key": "field.krea_sigmoid_scaleHint",
         "show_if": {"key": "timestep_sampling", "eq": "sigmoid", "_or": ["shift", "krea2_shift"]},
         "profiles": [KREA2_PROFILE_ID],
         "doc_slug": "timesteps",
@@ -630,6 +635,11 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "optimizer",
         "desc_key": "field.lr_scheduler_num_cycles",
         "hint_key": "field.krea_lr_scheduler_num_cyclesHint",
+        "hint_key_by": {"key": "lr_scheduler", "values": {
+            "cosine_with_restarts": "field.lr_scheduler_num_cyclesHint_restarts",
+            "cosine_with_min_lr": "field.lr_scheduler_num_cyclesHint",
+            "warmup_stable_decay": "field.lr_scheduler_num_cyclesHint_wsd",
+        }},
         "min": 1,
         "step": 1,
         "show_if": {
@@ -669,6 +679,11 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "optimizer",
         "desc_key": "field.krea_lr_scheduler_min_lr_ratio",
         "hint_key": "field.krea_lr_scheduler_min_lr_ratioHint",
+        "hint_key_by": {"key": "lr_scheduler", "values": {
+            "cosine_with_min_lr": "field.lr_scheduler_min_lr_ratioHint",
+            "warmup_stable_decay": "field.lr_scheduler_min_lr_ratioHint_wsd",
+            "rex": "field.krea_lr_scheduler_min_lr_ratioHint_rex",
+        }},
         "min": 0,
         "max": 1,
         "step": 0.001,
@@ -1216,6 +1231,8 @@ _KREA2_SHARED_HINTS_BY_KEY = {
     "discrete_flow_shift": "field.krea_discrete_flow_shiftHint",
     "sigmoid_scale": "field.sigmoid_scaleHint",
     "save_state": "field.save_stateHint",
+    "save_precision": "field.save_precisionHint",
+    "max_train_epochs": "field.max_train_epochsHint",
     "lr_scheduler_power": "field.lr_scheduler_powerHint",
     "krea_prodigy_d0": "field.krea_prodigy_d0Hint",
 }
@@ -1237,16 +1254,23 @@ def krea2_auto_cache_dir(train_data_dir: Any) -> str:
 
 def _as_int(config: dict[str, Any], key: str, errors: list[str], minimum: int = 0) -> int | None:
     value = config.get(key)
+    if isinstance(value, bool):
+        errors.append(f"{key}: must be an integer / 必须是整数")
+        return None
     try:
-        number = int(value)
+        number = float(value)
     except (TypeError, ValueError):
         errors.append(f"{key}: must be an integer / 必须是整数")
         return None
-    if isinstance(value, bool) or number < minimum:
+    if not math.isfinite(number) or not number.is_integer():
+        errors.append(f"{key}: must be an integer / 必须是整数")
+        return None
+    integer = int(number)
+    if integer < minimum:
         errors.append(f"{key}: must be >= {minimum} / 不能小于 {minimum}")
         return None
-    config[key] = number
-    return number
+    config[key] = integer
+    return integer
 
 
 def _as_float(
@@ -1893,8 +1917,8 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
         if key == "lr_scheduler_power" and str(config.get("lr_scheduler", "constant")) != "polynomial":
             continue
         number = _as_float(config, key, errors, minimum)
-        if key == "network_dropout" and number is not None and number > 0.5:
-            errors.append("network_dropout: must be <= 0.5 / 不能大于 0.5")
+        if key == "network_dropout" and number is not None and number > 1.0:
+            errors.append("network_dropout: must be <= 1 / 不能大于 1")
         if key == "learning_rate" and number is not None and number <= 0:
             errors.append("learning_rate: must be > 0 / 必须大于 0")
     if not _is_empty(config.get("sigmoid_scale")):

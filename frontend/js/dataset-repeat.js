@@ -286,6 +286,7 @@ window.datasetRepeatMixin = {
   },
 
   renderDatasetSubsets() {
+    if (this.form.model_train_type === 'krea2-lora') return '';
     return `<div class="dataset-subset-panel" :class="{ 'is-locked': datasetRepeatLocked() }">
       <div class="dataset-subset-header">
         <div>

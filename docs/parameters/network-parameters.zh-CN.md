@@ -4,6 +4,13 @@
 
 MOSS-Image 的配置默认 Rank / Alpha 为 `16/1`，可选择原生 `networks.lora_generic`、`networks.loha` 或 `networks.lokr`。三者支持 rank/module dropout、LoRA+、正则 rank/学习率设置，以及可选的 DiT 文本投影与细化层；Qwen 文本编码器保持冻结。LoKr 额外支持 `lokr_factor`。MOSS 的目标层均为线性层，因此界面不显示卷积 rank/alpha 和 Tucker 分解参数，也不开放 `lycoris.kohya`。不同算法的相同 rank 不代表相同参数量，请用结构预览核对矩阵和缩放，并单独调整学习率。
 
+<!-- doc-anchor: moss-text-embedder -->
+## MOSS 文本投影与细化层
+
+`train_text_embedder` 默认关闭。开启后，按所选 LoRA / LoHa / LoKr 算法，为 DiT 的文本输入投影和两个细化块增加适配器。Qwen 文本编码器仍冻结，因此可继续使用文本缓存。
+
+这部分默认使用主干学习率。需要单独指定时，在自定义网络参数中填写 `network_reg_lrs=.*text_embedder.*=5e-5`。`5e-5` 仅为语法示例，是否降低学习率取决于当前主干值；EmoSens 不使用分组学习率，这条覆盖规则对它的实际步长无效。
+
 <!-- doc-anchor: dimension -->
 ## 网络维度
 
@@ -123,3 +130,18 @@ DoRA（`dora_wd`）需要应用可训练的幅度参数。当前 LyCORIS 的普�
 ## 用结构预览核对配置
 
 修改维度、factor、完整矩阵或不平衡分解后，可在结构预览中检查实际矩阵、参数量和缩放。需要比较结果时，保留同一组生成提示词和种子，并同时检查还原度与在新场景中的表现。
+
+<!-- doc-anchor: krea-targets -->
+## Krea 2：默认训练范围与筛选
+
+上游默认 rank/alpha 为 32，覆盖 DiT 的全部 264 个 Linear 层：主块 attention、MLP、文本融合 transformer 和投影 MLP。这里的文本融合层属于 DiT，Qwen 文本编码器仍冻结并使用缓存。调制和 RMSNorm 参数是原始张量，不是 Linear，因此不会被 LoRA 包装，无需另写排除规则。
+
+上游的长训练示例缩小到主块 attention（140 个 Linear），并建议配合更高 rank。要采用该范围，在“网络附加参数”中填写以下一行：
+
+```text
+exclude_patterns=['.*\.mlp\..*','first','last\.linear','tmlp\..*','txtmlp\..*','tproj\.1','txtfusion\..*']
+```
+
+任意自定义子集可先设置 `exclude_patterns=['.*']`，再用 `include_patterns=[...]` 加回目标层。每个参数单独一行；只添加 include 规则不会自动排除默认已包含的层。
+
+[Krea 2 upstream guide](https://github.com/kohya-ss/musubi-tuner/blob/f8a1b03794a49239a3539015075f5123d6c07d66/docs/krea2.md#lora-target-layers--loraの対象レイヤー)

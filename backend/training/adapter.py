@@ -32,6 +32,7 @@ from backend.training.field_registry import (
 from backend.training import toml_writer
 from backend.training.optimizer_contracts import normalize_optimizer_config
 from backend.training.scheduler_config import normalize_scheduler_config
+from backend.training.network_config import validate_network_preset
 
 SUPPORTED_FIELDS = get_supported_fields()
 UI_ONLY_FIELDS = get_ui_only_fields()
@@ -332,7 +333,12 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     if is_moss and train_text_embedder is not None:
         network_args = _remove_key_value_args(list(source.get("network_args") or []),
                                               {"train_llm_adapter", "train_text_embedder"})
-        _set_key_value_arg(network_args, "train_llm_adapter", train_text_embedder is True)
+        # Omit the disabled default after removing both aliases so stale custom
+        # arguments cannot override the switch. LoHa/LoKr still require the alias.
+        if train_text_embedder is True:
+            argument = ("train_text_embedder" if source.get("network_module") == "networks.lora_generic"
+                        else "train_llm_adapter")
+            _set_key_value_arg(network_args, argument, True)
         source["network_args"] = network_args
     merged_network_args: list[str] = []
     if isinstance(source.get("network_args"), list):
@@ -383,12 +389,14 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     # sd-scripts 各 create_network 的真实消费面（已逐行核对）：
     #   - networks.lora：conv_dim/conv_alpha（LoCon：3x3 Conv2d 专属 rank，lora.py:435/939-957）、
     #     rank_dropout/module_dropout（lora.py:469-474）。不读 use_tucker/factor。
-    #   - networks.lora_anima：仅 rank_dropout/module_dropout（lora_anima.py:40-46）。
+    #   - networks.lora_anima：rank_dropout/module_dropout 与 train_llm_adapter。
     #     不读 conv_dim/conv_alpha（create_modules 无 conv_lora_dim 分支，Linear 与 Conv2d 共用 lora_dim）。
     #   - networks.loha / networks.lokr：全支持（含 use_tucker；lokr 额外 factor）。
+    # train_llm_adapter 表单字段仅用于 Anima；MOSS 使用上方独立的 train_text_embedder 映射。
     if source.get("network_module") in NATIVE_NETWORK_ARG_MAP:
         network_args = list(source.get("network_args") or [])
-        _merge_network_fields(source, network_args, NATIVE_NETWORK_ARG_MAP[source["network_module"]])
+        excluded = {"train_llm_adapter"} if source.get("model_train_type") != "anima-lora" else set()
+        _merge_network_fields(source, network_args, NATIVE_NETWORK_ARG_MAP[source["network_module"]], excluded)
         if network_args:
             source["network_args"] = network_args
 
@@ -445,6 +453,8 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
             source["network_args"] = network_args
         else:
             source.pop("network_args", None)
+
+    validate_network_preset(source)
 
     # ── 5.5. 互斥字段校验 ────────────────────────────────
     # network_train_unet_only 和 network_train_text_encoder_only 互斥

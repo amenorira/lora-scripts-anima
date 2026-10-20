@@ -145,6 +145,8 @@ async def export_training_config(request: Request):
 @router.post("/training/parse-config")
 async def parse_training_toml(req: TrainingTomlParseRequest):
     """Parse a YAML application config or a legacy flat TOML config."""
+    from backend.training.network_config import extract_network_form, validate_network_preset
+
     first_content_line = next(
         (
             line.strip()
@@ -157,6 +159,7 @@ async def parse_training_toml(req: TrainingTomlParseRequest):
         try:
             document = parse_training_config_text(req.content, allowed_kinds={"training", "preset"})
             form = extract_training_form(document)
+            validate_network_preset(form)
             return APIResponseSuccess(
                 data={
                     "data": form,
@@ -167,6 +170,8 @@ async def parse_training_toml(req: TrainingTomlParseRequest):
             )
         except TrainingConfigError as exc:
             return APIResponseFail(message=f"Invalid YAML / YAML 解析失败: {exc}")
+        except ValueError as exc:
+            return APIResponseFail(message=str(exc))
     try:
         parsed = toml.loads(req.content)
     except toml.TomlDecodeError as exc:
@@ -194,14 +199,12 @@ async def parse_training_toml(req: TrainingTomlParseRequest):
             imported_type = "moss-image-lora"
         else:
             imported_type = req.model_train_type
-    if imported_type == "moss-image-lora":
-        from backend.training.moss_image import extract_form
-
-        try:
+    try:
+        if imported_type:
             parsed["model_train_type"] = imported_type
-            parsed = extract_form(parsed)
-        except ValueError as exc:
-            return APIResponseFail(message=str(exc))
+        parsed = extract_network_form(parsed, model_train_type=imported_type or "anima-lora")
+    except ValueError as exc:
+        return APIResponseFail(message=str(exc))
     return APIResponseSuccess(data={"data": parsed})
 
 available_scripts = [

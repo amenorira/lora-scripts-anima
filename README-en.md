@@ -250,19 +250,6 @@ The GUI **Environment** tab provides:
 - Flash Attention installation status with one-click install
 - Candidate wheel list preview
 
-## Development & Testing
-
-Run the complete test suite (the tests use the standard-library unittest and need no extra installation; Node.js and Git must be on PATH; they do not affect the training runtime):
-
-```
-.\venv\Scripts\python.exe -m unittest discover -s tests -t .
-# Linux: ./venv/bin/python -m unittest discover -s tests -t .
-```
-
-Tests live in `tests/`, grouped into training, monitoring, environment, tagging, application, and frontend categories. The common entrypoint also runs standalone JavaScript tests. Developer scripts live in `tools/dev/`; `tools/` also contains runtime tools used by the launcher and backend.
-
-Generated LyCORIS presets, installation logs, and temporary download ZIPs live under `cache/runtime/`. Normal startup and training retain the system temporary directory and each dependency's existing cache settings. Test temporary files and default compiler caches live under `cache/tests/`; explicit compiler-cache paths are preserved. Keep diagnostic scripts, screenshots, and developer logs under `cache/dev/<task>/`.
-
 ## Acknowledgements
 
 - [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Anima / SDXL / MOSS-Image training engine

@@ -655,7 +655,7 @@ window.tagDictionaryMixin = {
   tagDictionarySyncChips() {
     this.tagDictionaryCloseHover();
     if (!this.tagDictionaryReady) return;
-    if (this.currentRoute === 'tagger') {
+    if (['tagger', 'ai-captioning'].includes(this.currentRoute)) {
       this.syncTaggerDictionary();
       return;
     }

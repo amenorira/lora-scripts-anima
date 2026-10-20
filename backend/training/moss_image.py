@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import math
-import ast
 from pathlib import Path
 import re
 from typing import Any
@@ -11,50 +10,6 @@ PROFILE_ID = "moss-image-lora"
 GROUP = "moss_image"
 NETWORK_MODULES = ("networks.lora_generic", "networks.loha", "networks.lokr")
 
-
-def extract_form(config: dict[str, Any]) -> dict[str, Any]:
-    """Restore native network arguments when importing a MOSS trainer TOML."""
-    result = dict(config)
-    known = {"rank_dropout", "module_dropout", "loraplus_lr_ratio",
-             "loraplus_unet_lr_ratio", "loraplus_text_encoder_lr_ratio"}
-    argument_fields = {key: key for key in known}
-    if result.get("network_module") == "networks.lokr":
-        argument_fields["factor"] = "lokr_factor"
-    extra = []
-    parsed = {}
-    arguments = result.pop("network_args", []) or []
-    if not isinstance(arguments, list) or any(not isinstance(item, str) for item in arguments):
-        raise ValueError("network_args must be a string array / network_args 必须为字符串数组")
-    for item in arguments:
-        key, separator, raw = str(item).partition("=")
-        key, raw = key.strip(), raw.strip()
-        if not separator:
-            extra.append(str(item))
-            continue
-        try:
-            value = {"true": True, "false": False}[raw.lower()] if raw.lower() in ("true", "false") else ast.literal_eval(raw)
-        except (ValueError, SyntaxError):
-            value = raw
-        if key in argument_fields or key in ("train_llm_adapter", "train_text_embedder"):
-            parsed[key] = value
-        else:
-            extra.append(str(item))
-    aliases = ("train_llm_adapter", "train_text_embedder")
-    if any(key in parsed for key in aliases):
-        result.setdefault("train_text_embedder", any(str(parsed.get(key)).lower() == "true" for key in aliases))
-    for key in argument_fields.keys() & parsed.keys():
-        result.setdefault(argument_fields[key], parsed[key])
-    ratios = {key for key in known if key.startswith("loraplus_")}
-    if ratios & parsed.keys():
-        result.setdefault("enable_loraplus", True)
-        # Native per-component ratios do not imply a global multiplier. Blank
-        # fields prevent form defaults (global 2x) from changing the other part.
-        for key in ratios:
-            result.setdefault(key, "")
-    if extra:
-        existing = str(result.get("network_args_custom") or "")
-        result["network_args_custom"] = "\n".join(filter(None, [existing, *extra]))
-    return result
 
 # These use the same upstream implementations as Anima, without its model-specific VAE/TE options.
 SHARED_FIELDS = {
@@ -103,11 +58,6 @@ def extend_fields(fields: list[dict[str, Any]]) -> None:
     for conditions in by_key["loraplus_text_encoder_lr_ratio"]["show_if_any"]:
         conditions.append({"key": "model_train_type", "neq": PROFILE_ID})
     by_key["vae"]["requiredGroups"].append(GROUP)
-    for key in ("cache_text_encoder_outputs", "cache_text_encoder_outputs_to_disk"):
-        by_key[key].setdefault("readonly_if_any", []).append([
-            {"key": "model_train_type", "eq": PROFILE_ID},
-            {"key": "caption_dropout_every_n_epochs", "neq": 0},
-        ])
     by_key["model_train_type"]["options"].append({
         "v": PROFILE_ID, "l": "MOSS-Image LoRA", "dk": "opt.model_train_type_moss-image-lora",
     })
@@ -128,7 +78,7 @@ def extend_fields(fields: list[dict[str, Any]]) -> None:
     additions = [
         ("qwen3", {"key": "text_encoder", "type": "text", "default": "", "section": "model", "role": "file-model", "required": True}),
         ("text_encoder", {"key": "tokenizer_cache_dir", "type": "text", "default": "", "section": "model", "role": "file-folder"}),
-        ("train_adaln", {"key": "train_text_embedder", "type": "toggle", "default": False, "section": "network", "target": "ui"}),
+        ("train_adaln", {"key": "train_text_embedder", "type": "toggle", "default": False, "omit_default": True, "section": "network", "target": "ui", "doc_slug": "network-parameters", "doc_anchor": "moss-text-embedder"}),
         ("qwen3_max_token_length", {"key": "moss_max_token_length", "type": "number", "default": 4096, "section": "caption", "min": 1, "max": 4096, "step": 1}),
         ("moss_max_token_length", {"key": "enable_multiline_caption", "type": "toggle", "default": True, "section": "caption"}),
         ("enable_multiline_caption", {"key": "multiline_caption_separator", "type": "text", "default": "---===---", "section": "caption", "show_if": {"key": "enable_multiline_caption", "eq": True}}),
@@ -231,7 +181,6 @@ def validate_captions(config: dict[str, Any]) -> list[str]:
     from library.dataset import split_caption_candidates
     from library.dreambooth_dataset import read_caption
 
-    cache = config.get("cache_text_encoder_outputs") or config.get("cache_text_encoder_outputs_to_disk")
     separator = str(config.get("multiline_caption_separator", "---===---"))
     errors = []
     for subset in build_sd_scripts_dataset_config(config, {})["datasets"][0]["subsets"]:
@@ -240,12 +189,10 @@ def validate_captions(config: dict[str, Any]) -> list[str]:
                 caption = read_caption(str(image), str(config.get("caption_extension") or ".txt"), False, True)
                 if caption is None:
                     continue
-                candidates = split_caption_candidates(caption, separator)
+                # Validate the separator structure; v0.12.2 caches every candidate.
+                split_caption_candidates(caption, separator)
             except (OSError, UnicodeError, ValueError, AssertionError) as exc:
                 errors.append(f"Invalid caption for image / 图片描述无效: {image}: {exc}")
-                return errors
-            if cache and len(candidates) > 1:
-                errors.append(f"Multiple caption candidates require disabling both Text Encoder caches / 多候选描述需要关闭内存和磁盘文本缓存: {image}")
                 return errors
     return errors
 

@@ -251,19 +251,6 @@ GUI の **「環境」** タブで次の情報や機能を利用できます。
 - Flash Attention のインストール状態の確認とワンクリックインストール
 - インストール候補の wheel 一覧のプレビュー
 
-## 開発とテスト
-
-テスト全体を実行するには、次のコマンドを使用します。テストは標準ライブラリの unittest を使用し、追加パッケージは不要です。Node.js と Git が PATH に必要ですが、これらは開発用で、学習の実行環境には影響しません。
-
-```
-.\venv\Scripts\python.exe -m unittest discover -s tests -t .
-# Linux: ./venv/bin/python -m unittest discover -s tests -t .
-```
-
-テストは `tests/` にあり、学習、監視、環境、タグ付け、アプリケーション、フロントエンドに分類されています。共通の実行コマンドには独立した JavaScript テストも含まれます。開発用スクリプトは `tools/dev/` にあります。`tools/` には起動処理やバックエンドが使用する実行ツールも含まれます。
-
-生成された LyCORIS プリセット、インストールログ、ダウンロード用の一時 ZIP は `cache/runtime/` に保存されます。通常の起動と学習では、システムの一時ディレクトリと各依存ライブラリの既存のキャッシュ設定を維持します。テスト用の一時ファイルと既定のコンパイルキャッシュは `cache/tests/` に保存され、明示的なキャッシュパスは維持されます。診断スクリプト、スクリーンショット、開発ログは `cache/dev/<タスク名>/` に保存してください。
-
 ## 謝辞
 
 - [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Anima / SDXL / MOSS-Image 学習エンジン

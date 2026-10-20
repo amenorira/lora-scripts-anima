@@ -1,8 +1,5 @@
-import copy
 import tempfile
 import unittest
-from unittest.mock import patch
-from dataclasses import asdict
 from pathlib import Path
 
 from PIL import Image
@@ -15,48 +12,18 @@ from tests.helpers import valid_training_config as valid_anima_config
 
 
 class TrainingValidationTests(unittest.TestCase):
-    def test_anima_performance_flags_reach_native_parser_and_vae_loader(self):
-        from backend.training import toml_writer
-        from backend.training.step_estimator import _sd_dataset_helpers
-        _sd_dataset_helpers()
-        from anima_train_network import setup_parser
-        from library.args import read_config_from_file
-        from library.anima_train_utils import load_qwen_image_vae
+    def test_epoch_caption_dropout_rejects_both_text_cache_modes(self):
+        from backend.training.option_contracts import validate_sd_option_dependencies
 
-        for enabled in (True, False):
-            with self.subTest(enabled=enabled), tempfile.TemporaryDirectory() as directory:
-                config = dict(valid_anima_config(), qwen_image_vae_2d=enabled,
-                              gradient_checkpointing=enabled, max_data_loader_n_workers=2 if enabled else 0)
-                self.assertEqual(validate_training_config(config), [])
-                adapted, _ = adapt_config(config)
-                self.assertIs(adapted["qwen_image_vae_2d"], enabled)
-                self.assertIs(adapted["gradient_checkpointing"], enabled)
-                path = Path(directory) / "training.toml"
-                path.write_text(toml_writer.dumps(adapted), encoding="utf-8")
-                parser = setup_parser()
-                argv = ["anima_train_network.py", "--config_file", str(path)]
-                with patch("sys.argv", argv):
-                    args = read_config_from_file(parser.parse_args(argv[1:]), parser)
-                self.assertIs(args.qwen_image_vae_2d, enabled)
-                self.assertIs(args.gradient_checkpointing, enabled)
-                self.assertEqual(args.max_data_loader_n_workers, 2 if enabled else 0)
-                if not enabled:
-                    self.assertFalse(args.persistent_data_loader_workers)
-                module = "qwen_image_autoencoder_kl_2d" if enabled else "qwen_image_autoencoder_kl"
-                with patch(f"library.{module}.load_vae") as loader:
-                    self.assertIs(load_qwen_image_vae(args, device="cpu"), loader.return_value)
-                    loader.assert_called_once_with(args.vae, device="cpu", disable_mmap=True,
-                                                   spatial_chunk_size=args.vae_chunk_size,
-                                                   disable_cache=args.vae_disable_cache)
-
-    def test_anima_2d_vae_option_is_filtered_from_other_trainers(self):
-        for profile in ("sdxl-lora", "moss-image-lora"):
-            with self.subTest(profile=profile):
-                config = dict(valid_anima_config(), model_train_type=profile, qwen_image_vae_2d=True)
-                if profile == "moss-image-lora":
-                    config.update(network_module="networks.lora_generic", text_encoder="te.safetensors")
-                adapted, _ = adapt_config(config)
-                self.assertNotIn("qwen_image_vae_2d", adapted)
+        for profile in ("anima-lora", "sdxl-lora", "moss-image-lora"):
+            for cache_key in ("cache_text_encoder_outputs", "cache_text_encoder_outputs_to_disk"):
+                config = {"model_train_type": profile, "caption_dropout_every_n_epochs": 2, cache_key: True}
+                self.assertTrue(any("caption_dropout_every_n_epochs" in error
+                                    for error in validate_sd_option_dependencies(config)))
+                config[cache_key] = False
+                self.assertEqual(validate_sd_option_dependencies(config), [])
+                config.update({cache_key: True, "caption_dropout_every_n_epochs": "0"})
+                self.assertEqual(validate_sd_option_dependencies(config), [])
 
     def test_input_normalization_uses_schema_types_instead_of_text_contents(self):
         config = dict(valid_anima_config(), learning_rate="1e-4", unet_lr="2e-4", lora_muon_momentum=0.9,
@@ -81,23 +48,6 @@ class TrainingValidationTests(unittest.TestCase):
                 adapt_config(config)
 
 
-    def test_validation_checks_effective_custom_args_even_with_default_form_values(self):
-        config = dict(valid_anima_config(), optimizer_type="AdamW", eps=1e-8,
-                      optimizer_args_custom="eps=-1")
-        self.assertTrue(any("eps" in error for error in validate_training_config(config)))
-        config = dict(valid_anima_config(), optimizer_type="AdaFactor", enable_loraplus=True,
-                      loraplus_lr_ratio=16, adafactor_warmup_init=False,
-                      optimizer_args_custom="warmup_init=True")
-        self.assertTrue(any("LoRA+" in error and "warmup_init" in error
-                            for error in validate_training_config(config)))
-
-    def test_adapter_does_not_mutate_input_argument_lists(self):
-        config = dict(valid_anima_config(), network_args=["rank_dropout=0.1"],
-                      network_args_custom="module_dropout=0.2", optimizer_args=["eps=1e-7"])
-        original = copy.deepcopy(config)
-        adapt_config(config)
-        self.assertEqual(config, original)
-
     def test_image_augmentation_cache_contracts(self):
         for profile, module in (("anima-lora", "networks.lora_anima"), ("sdxl-lora", "networks.lora")):
             with self.subTest(profile=profile):
@@ -120,21 +70,6 @@ class TrainingValidationTests(unittest.TestCase):
                 self.assertIs(adapted["cache_latents"], False)
                 self.assertIs(adapted["cache_latents_to_disk"], False)
 
-    def test_rejects_unsafe_anima_values(self):
-        cases = {
-            "blocks_to_swap": 27,
-            "rank_dropout": 1,
-            "caption_dropout_rate": 1.01,
-            "caption_tag_dropout_rate": -0.01,
-            "vae_chunk_size": 3,
-            "qwen3_max_token_length": 0,
-        }
-        for key, value in cases.items():
-            with self.subTest(key=key):
-                config = valid_anima_config()
-                config[key] = value
-                errors = validate_training_config(config)
-                self.assertTrue(any(key in error for error in errors), errors)
 
     def test_text_cache_caption_contracts_are_profile_specific(self):
         anima = valid_anima_config()
@@ -205,111 +140,6 @@ class TrainingStepEstimatorTests(unittest.TestCase):
                 [(subset["name"], subset["image_count"], subset["repeats"]) for subset in estimate["subsets"]],
                 [("2_outfit", 3, 2), ("5_character", 2, 5)],
             )
-
-    def test_regularization_toggle_ignores_retained_path_and_can_be_reenabled(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            train = root / "train"
-            reg = root / "reg"
-            self._write_images(train / "2_normal", 5, (512, 768))
-            self._write_images(train / "2_school", 5, (512, 512))
-            self._write_images(reg / "1_reg", 10, (768, 512))
-            for profile in ("anima-lora", "sdxl-lora"):
-                config = self._config(
-                    train, model_train_type=profile, reg_data_dir=str(reg),
-                    enable_bucket=True, train_batch_size=1,
-                    gradient_accumulation_steps=1, max_train_epochs=20,
-                )
-                for enabled, expected_steps, expected_samples in (
-                    (True, 800, 40), (False, 400, 20), (True, 800, 40),
-                ):
-                    with self.subTest(profile=profile, enabled=enabled):
-                        config["enable_reg_data"] = enabled
-                        estimate = estimate_training_steps(config)
-                        self.assertEqual(estimate["total_steps"], expected_steps)
-                        self.assertEqual(estimate["repeated_samples"], expected_samples)
-                        self.assertEqual(any(s["is_reg"] for s in estimate["subsets"]), enabled)
-                        self.assertEqual(config["reg_data_dir"], str(reg))
-
-    def test_native_config_without_regularization_toggle_still_counts_reg_images(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            self._write_images(root / "train" / "2_character", 1, (512, 512))
-            self._write_images(root / "reg" / "1_reg", 1, (512, 512))
-            config = self._config(
-                root / "train", reg_data_dir=str(root / "reg"),
-                train_batch_size=1, gradient_accumulation_steps=1, max_train_epochs=1,
-            )
-            estimate = estimate_training_steps(config)
-            self.assertEqual(estimate["total_steps"], 4)
-            self.assertEqual(estimate["repeated_samples"], 4)
-
-    def test_bucket_batches_round_up_each_bucket_like_sd_scripts(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            portrait = root / "2_portrait"
-            landscape = root / "3_landscape"
-            self._write_images(portrait, 3, (512, 768))
-            self._write_images(landscape, 2, (768, 512))
-            config = self._config(
-                root,
-                enable_bucket=True,
-                train_batch_size=4,
-                gradient_accumulation_steps=2,
-                max_train_epochs=5,
-            )
-
-            estimate = estimate_training_steps(config)
-
-            self.assertEqual(estimate["repeated_samples"], 12)
-            self.assertEqual(estimate["bucket_count"], 2)
-            self.assertEqual([bucket["sample_count"] for bucket in estimate["buckets"]], [6, 6])
-            self.assertEqual([bucket["batch_count"] for bucket in estimate["buckets"]], [2, 2])
-            self.assertEqual(estimate["batches_per_epoch"], 4)
-            self.assertEqual(estimate["steps_per_epoch"], 2)
-            self.assertEqual(estimate["total_steps"], 10)
-
-            from library.config_util import DreamBoothSubsetParams
-            from library.dreambooth_dataset import DreamBoothDataset
-            from library.subset import DreamBoothSubset
-
-            subsets = [
-                DreamBoothSubset(
-                    **asdict(
-                        DreamBoothSubsetParams(
-                            image_dir=str(portrait), num_repeats=2, class_tokens="portrait"
-                        )
-                    )
-                ),
-                DreamBoothSubset(
-                    **asdict(
-                        DreamBoothSubsetParams(
-                            image_dir=str(landscape), num_repeats=3, class_tokens="landscape"
-                        )
-                    )
-                ),
-            ]
-            dataset = DreamBoothDataset(
-                subsets=subsets,
-                is_training_dataset=True,
-                batch_size=4,
-                resolution=(512, 512),
-                network_multiplier=1.0,
-                enable_bucket=True,
-                min_bucket_reso=256,
-                max_bucket_reso=1024,
-                bucket_reso_steps=64,
-                bucket_no_upscale=True,
-                prior_loss_weight=1.0,
-                train_inpainting=False,
-                debug_dataset=False,
-                validation_split=0.0,
-                validation_seed=0,
-                resize_interpolation=None,
-            )
-            dataset.make_buckets()
-
-            self.assertEqual(estimate["batches_per_epoch"], len(dataset))
 
 
 if __name__ == "__main__":

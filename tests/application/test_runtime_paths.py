@@ -52,20 +52,48 @@ class RuntimePathTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(Path(result.stdout.strip()), expected)
 
-    def test_test_setup_preserves_explicit_compiler_caches(self):
+    def test_test_setup_isolates_inherited_compiler_caches_and_bytecode(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             values = {
-                "TORCHINDUCTOR_CACHE_DIR": str(root / "custom-inductor"),
+                "TORCHINDUCTOR_CACHE_DIR": "torchinductor_lou",
                 "TRITON_CACHE_DIR": str(root / "custom-triton"),
                 "LYCORIS_KERNEL_CACHE_DIR": str(root / "custom-lycoris"),
             }
             with patch.dict(os.environ, values, clear=True), patch.object(tempfile, "tempdir", None):
                 runtime_paths.configure_test_paths(root=root)
-                for key, value in values.items():
-                    self.assertEqual(os.environ[key], value)
+                for key in values:
+                    self.assertTrue(Path(os.environ[key]).is_relative_to(root / "cache/tests"))
+                self.assertTrue(sys.dont_write_bytecode)
+                self.assertEqual(os.environ["PYTHONDONTWRITEBYTECODE"], "1")
                 self.assertEqual(Path(tempfile.gettempdir()), root / "cache/tests/tmp")
                 self.assertTrue(Path(os.environ["XDG_CACHE_HOME"]).is_relative_to(root / "cache"))
+
+    def test_entrypoint_isolates_paths_before_test_imports(self):
+        with tempfile.TemporaryDirectory() as directory:
+            probe = Path(directory) / "test_probe.py"
+            probe.write_text(
+                "import os, pathlib, sys, tempfile, unittest\n"
+                "from tools.runtime_paths import ROOT\n"
+                "class Probe(unittest.TestCase):\n"
+                " def test_paths(self):\n"
+                "  base = ROOT / 'cache/tests'\n"
+                "  assert pathlib.Path(tempfile.gettempdir()).is_relative_to(base)\n"
+                "  assert pathlib.Path(os.environ['TORCHINDUCTOR_CACHE_DIR']).is_relative_to(base)\n"
+                "  assert sys.dont_write_bytecode\n",
+                encoding="utf-8",
+            )
+            env = os.environ.copy()
+            env.pop("PYTHONDONTWRITEBYTECODE", None)
+            env["TORCHINDUCTOR_CACHE_DIR"] = "torchinductor_lou"
+            env["PYTHONPATH"] = directory
+            result = subprocess.run(
+                [sys.executable, str(runtime_paths.ROOT / "tools/dev/run_tests.py"), "test_probe"],
+                cwd=directory, env=env, capture_output=True, text=True, encoding="utf-8", timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertFalse((Path(directory) / "__pycache__").exists())
+            self.assertFalse((Path(directory) / "torchinductor_lou").exists())
 
     def test_lycoris_presets_have_a_stable_managed_path_even_if_tempfile_falls_back(self):
         from backend.training.adapter import _write_lycoris_scope_preset_file

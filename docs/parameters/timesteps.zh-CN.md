@@ -2,7 +2,7 @@
 
 训练时，每张图片会抽取一个噪声时间步，再按该时间步混合原图潜变量与噪声。高时间步对应更多噪声，低时间步保留更多原图信息。
 
-Anima / Krea 2 使用 flow matching，归一化时间步同时决定混合系数：
+Anima/MOSS / Krea 2 使用 flow matching，归一化时间步同时决定混合系数：
 
 | 噪声范围 | 输入中的信息 | 对采样设置的含义 |
 | --- | --- | --- |
@@ -25,18 +25,18 @@ Anima / Krea 2 使用 flow matching，归一化时间步同时决定混合系数
 | 训练类型 | 默认采样方式 | 默认分布参数 | 默认 Loss 权重 |
 | --- | --- | --- | --- |
 | Anima | `sigmoid` | `sigmoid_scale=1.0` | `uniform` |
+| MOSS | `sigma` | `logit_mean=-1.09`, `logit_std=0.95`, `discrete_flow_shift=1.0` | `logit_normal` (1) |
 | Krea 2 | `shift` | `sigmoid_scale=1.0`、`discrete_flow_shift=2.5` | `none` |
 
 在当前实现中，`uniform` 和 `none` 都表示不额外改变不同时间步的 Loss 权重。Krea 2 保留 `none` 是为了兼容训练后端和旧配置。导入旧预设后，以界面实际显示的参数和分布图为准。
 
-两组默认值都覆盖多个噪声范围；Krea 2 的固定偏移使分布更偏向高噪声。参数位于训练表单的“时间步/采样”区域。
+MOSS 默认沿用上游验证配置。这里的 `logit_normal` 改变离散噪声表索引的抽样分布，Loss 权重仍为 1；负均值偏向高噪声。它近似预训练分布，但没有复现官方在 0.95 处截断和混入 1% 均匀样本的细节。上游还提供 `shift + discrete_flow_shift=3` 作为较简单的近似方案；切换时需一起调整采样方式和偏移。
 
 | 调整目标 | 优先查看的参数 | 默认选择 |
 | --- | --- | --- |
 | 同时增加高、低噪声采样 | `sigmoid_scale` | `1.0`；增大后分布向两端展开 |
-| 整体偏向高噪声或低噪声 | `discrete_flow_shift` | Anima `1.0`，Krea 2 `2.5`；在 `shift` 和 Anima 的 `sigma` 下生效 |
-| 为不同图片组分配不同噪声范围 | `subset_timestep_offsets` | 不设置；仅 Anima 的指定模式支持 |
-| 调整抽样后的误差权重 | `weighting_scheme` | Anima `uniform`，Krea 2 `none`，均为等权重 |
+| 整体偏向高噪声或低噪声 | `discrete_flow_shift` | Anima/MOSS `1.0`，Krea 2 `2.5`；在 `shift` 和 Anima/MOSS 的 `sigma` 下生效 |
+| 为不同图片组分配不同噪声范围 | `subset_timestep_offsets` | 不设置；仅 Anima/MOSS 的指定模式支持 |
 
 <!-- doc-anchor: terminology -->
 ## 三种“步”的区别
@@ -49,7 +49,7 @@ Anima / Krea 2 使用 flow matching，归一化时间步同时决定混合系数
 | 训练时间步 | 当前图片被加入了多少噪声 | `timestep_sampling` |
 | 生成采样步数 | 采样器的去噪步数；不同采样器每步的模型计算次数不同 | `sample_steps` |
 
-例如，“训练到第 500 步”表示 LoRA 已更新 500 次；Anima/Krea 2 的噪声时间步 `t≈500` 表示原图与噪声的混合系数各约为一半。同一次更新中的图片会分别抽取噪声时间步。
+例如，“训练到第 500 步”表示 LoRA 已更新 500 次；Anima/MOSS/Krea 2 的噪声时间步 `t≈500` 表示原图与噪声的混合系数各约为一半。同一次更新中的图片会分别抽取噪声时间步。
 
 <!-- doc-anchor: visualizer -->
 ## 分布预览说明
@@ -98,11 +98,11 @@ Anima / Krea 2 使用 flow matching，归一化时间步同时决定混合系数
 
 | 选项 | 它会怎样抽取时间步 | 可用训练类型 |
 | --- | --- | --- |
-| `sigmoid` | 以中噪声为主，同时保留两端 | Anima、Krea 2 |
-| `uniform` | 在完整范围内均匀抽取 | Anima、Krea 2 |
-| `shift` | 对 sigmoid 抽样结果应用固定 flow shift 非线性映射 | Anima、Krea 2 |
-| `sigma` | 按训练 scheduler 的离散噪声表抽取 | Anima、Krea 2 |
-| `flux_shift` | 根据当前分辨率计算 FLUX 风格的 shift | Anima |
+| `sigmoid` | 以中噪声为主，同时保留两端 | Anima/MOSS、Krea 2 |
+| `uniform` | 在完整范围内均匀抽取 | Anima/MOSS、Krea 2 |
+| `shift` | 对 sigmoid 抽样结果应用固定 flow shift 非线性映射 | Anima/MOSS、Krea 2 |
+| `sigma` | 按训练 scheduler 的离散噪声表抽取 | Anima/MOSS、Krea 2 |
+| `flux_shift` | 根据当前分辨率计算 FLUX 风格的 shift | Anima/MOSS |
 | `krea2_shift` | 根据当前分辨率计算 Krea 2 的 shift | Krea 2 |
 | `logsnr` | 从 LogSNR 分布转换出时间步 | Krea 2 |
 
@@ -130,9 +130,9 @@ Anima / Krea 2 使用 flow matching，归一化时间步同时决定混合系数
 
 ### `sigma`
 
-`sigma` 从训练 scheduler 的离散噪声表中选择时间步。Anima 会将 `discrete_flow_shift` 应用到这张表；当前 Krea 2 训练器使用未偏移的表，不读取此值。
+`sigma` 从训练 scheduler 的离散噪声表中选择时间步。Anima/MOSS 会将 `discrete_flow_shift` 应用到这张表；当前 Krea 2 训练器使用未偏移的表，不读取此值。
 
-`weighting_scheme=logit_normal` 或 `mode` 会改变噪声表索引的抽样分布；其余选项均匀抽取索引。Anima 的表应用偏移后，即使索引均匀，最终时间步也不均匀；Krea 2 的未偏移表则是等间隔的。`sigma_sqrt` 和 `cosmap` 只改变损失权重。
+`weighting_scheme=logit_normal` 或 `mode` 会改变噪声表索引的抽样分布；其余选项均匀抽取索引。Anima/MOSS 的表应用偏移后，即使索引均匀，最终时间步也不均匀；Krea 2 的未偏移表则是等间隔的。`sigma_sqrt` 和 `cosmap` 只改变损失权重。
 
 ### `flux_shift` 与 `krea2_shift`
 
@@ -171,7 +171,7 @@ Krea 2 的 `logsnr` 先根据 `logit_mean` 和 `logit_std` 生成 LogSNR，再�
 <!-- doc-anchor: flow-shift -->
 ## `discrete_flow_shift`：调整高、低噪声占比
 
-`discrete_flow_shift` 将采样重点移向一侧。Anima 默认 `1.0`，Krea 2 默认 `2.5`。增大偏向高噪声，减小偏向低噪声；值必须大于 `0`。Anima 在 `shift` 和 `sigma` 中使用，Krea 2 仅在 `shift` 中使用。
+`discrete_flow_shift` 将采样重点移向一侧。Anima/MOSS 默认 `1.0`，Krea 2 默认 `2.5`。增大偏向高噪声，减小偏向低噪声；值必须大于 `0`。Anima/MOSS 在 `shift` 和 `sigma` 中使用，Krea 2 仅在 `shift` 中使用。
 
 | `discrete_flow_shift` | 变化方向 | 相对基础分布的变化 |
 | --- | --- | --- |
@@ -192,7 +192,7 @@ Krea 2 的 `logsnr` 先根据 `logit_mean` 和 `logit_std` 生成 LogSNR，再�
 <!-- doc-anchor: subset-offsets -->
 ## 按子集设置时间步偏移
 
-`subset_timestep_offsets` 为不同训练子集设置独立采样偏移。偏移加在 sigmoid 映射前的正态随机值上，因此改变分布的形状和噪声占比。仅 **Anima** 支持。
+`subset_timestep_offsets` 为不同训练子集设置独立采样偏移。偏移加在 sigmoid 映射前的正态随机值上，因此改变分布的形状和噪声占比。仅 **Anima/MOSS** 支持。
 
 训练目录中每个以“数字_”开头的子文件夹（例如 `10_face`、`3_full_body`）会被识别为一个子集，开头的数字是重复次数。界面和 API 中，这个设置是“子集名称 → 偏移值”的映射，而不是一个全局值。最小操作流程：
 
@@ -269,10 +269,10 @@ timestep_sampling = { offset = -0.25 }
 
 `weighting_scheme=logit_normal` 仅在 `timestep_sampling=sigma` 时生效。此时：
 
-- `logit_mean` 默认 `0`：噪声表索引的分布对称。增大偏向低噪声，减小偏向高噪声。
-- `logit_std` 默认 `1`：越小越集中，越大越向两端展开。
+- `logit_mean=0` 时，噪声表索引的分布对称。增大偏向低噪声，减小偏向高噪声；MOSS 默认 `-1.09`。
+- `logit_std` 越小越集中，越大越向两端展开。Anima 默认 `1`，MOSS 默认 `0.95`。
 
-Anima 的 scheduler 偏移也会改变最终噪声强度；Krea 2 的 `sigma` 表不做偏移。选择 `sigmoid + logit_normal` 时，后者不改变采样或损失权重。Krea 2 的 `logsnr` 直接读取这两个数值，见其采样说明。
+Anima/MOSS 的 scheduler 偏移也会改变最终噪声强度；Krea 2 的 `sigma` 表不做偏移。选择 `sigmoid + logit_normal` 时，后者不改变采样或损失权重。Krea 2 的 `logsnr` 直接读取这两个数值，见其采样说明。
 
 <!-- doc-anchor: mode -->
 ### `mode` 与 `mode_scale`
@@ -281,7 +281,7 @@ Anima 的 scheduler 偏移也会改变最终噪声强度；Krea 2 的 `sigma` �
 
 - `mode_scale=0`：均匀抽取噪声表索引。
 - 从 `0` 增至默认 `1.29`：索引向表的中段集中。
-- Anima 的 `discrete_flow_shift` 还会改变表中段对应的噪声强度；Krea 2 的 `sigma` 忽略 `discrete_flow_shift`，但仍使用 `mode_scale`。初次使用保留 `mode_scale=1.29`。
+- Anima/MOSS 的 `discrete_flow_shift` 还会改变表中段对应的噪声强度；Krea 2 的 `sigma` 忽略 `discrete_flow_shift`，但仍使用 `mode_scale`。初次使用保留 `mode_scale=1.29`。
 
 <!-- doc-anchor: compatibility -->
 ## 参数生效关系
@@ -289,7 +289,7 @@ Anima 的 scheduler 偏移也会改变最终噪声强度；Krea 2 的 `sigma` �
 | 参数 | sigmoid | uniform | shift | sigma | flux/krea shift | logsnr |
 | --- | --- | --- | --- | --- | --- | --- |
 | `sigmoid_scale` | 生效 | 忽略 | 生效 | 忽略 | 生效 | 忽略 |
-| `discrete_flow_shift` | 忽略 | 忽略 | 生效 | 仅 Anima | 忽略 | 忽略 |
+| `discrete_flow_shift` | 忽略 | 忽略 | 生效 | 仅 Anima/MOSS | 忽略 | 忽略 |
 | `logit_mean/std` | 忽略 | 忽略 | 忽略 | 仅影响 `logit_normal` 分布 | 忽略 | 直接生效 |
 | `mode_scale` | 忽略 | 忽略 | 忽略 | 仅影响 `mode` 分布 | 忽略 | 忽略 |
 | `subset_timestep_offsets` | 生效 | 忽略 | 生效 | 忽略 | 仅 `flux_shift` 生效 | 忽略 |
@@ -300,7 +300,7 @@ Anima 的 scheduler 偏移也会改变最终噪声强度；Krea 2 的 `sigma` �
 <!-- doc-anchor: sdxl-range -->
 ## SDXL 的 `min_timestep` 与 `max_timestep`
 
-SDXL 不使用前面介绍的 Anima/Krea 2 流匹配采样选项，本训练器为 SDXL 提供两个独立的范围参数：
+SDXL 不使用前面介绍的 Anima/MOSS/Krea 2 流匹配采样选项，本训练器为 SDXL 提供两个独立的范围参数：
 
 - `min_timestep`：允许抽取的最低噪声时间步，留空时使用 `0`。
 - `max_timestep`：抽样范围的上限（不包含该值），留空时使用 `1000`，即默认抽取 `0～999`。
@@ -317,6 +317,22 @@ SDXL 不使用前面介绍的 Anima/Krea 2 流匹配采样选项，本训练器�
 - `sample_flow_shift` 控制生成预览，不改变训练时间步分布。
 - seed 改变实际抽样顺序，不改变预览中的理论分布；batch size 和 GPU 数量会影响短训练的抽样波动。
 - 时间步设置不改变 LoRA 文件格式，推理时无需使用同名采样方式。
+
+<!-- doc-anchor: sdxl-loss -->
+## SDXL：损失权重与加噪的关系
+
+Min-SNR 和去偏估计都改变抽样后的损失权重，不改变时间步被抽到的概率。两项同时开启时按顺序相乘，不是互相替代。
+
+设当前时间步的信噪比为 SNR，去偏估计使用 S = min(SNR, 1000)：
+
+| 预测目标 | Min-SNR 权重 | 去偏估计权重 |
+| --- | --- | --- |
+| 噪声预测 | min(SNR, γ) / SNR | 1 / √S |
+| v-prediction | min(SNR, γ) / (SNR + 1) | 1 / (S + 1) |
+
+`min_snr_gamma` 留空或 0 关闭 Min-SNR。对比这些选项时固定预测目标和时间步范围，否则无法单独判断权重变化的影响。
+
+噪声偏移与多分辨率噪声改变的是输入噪声：先加噪声偏移，再叠加低分辨率噪声并归一化。两者可以同时开启。多分辨率迭代数是上限，某一边降到 1 像素时会提前结束；折扣系数控制各层贡献。
 
 <!-- doc-anchor: testing -->
 ## 对照实验方法
@@ -340,7 +356,7 @@ SDXL 不使用前面介绍的 Anima/Krea 2 流匹配采样选项，本训练器�
   <p><var>t</var> 越小，输入越接近原图；<var>t</var> 越大，输入越接近纯噪声。</p>
 </div>
 
-当前 Anima 和 Krea 2 的训练目标都是预测从原图指向噪声的流动方向：
+当前 Anima/MOSS 和 Krea 2 的训练目标都是预测从原图指向噪声的流动方向：
 
 <div class="doc-equation doc-equation-compact" role="group" aria-label="Flow matching 训练目标">
   <div class="doc-equation-kicker">模型需要预测的方向</div>
@@ -376,3 +392,7 @@ SDXL 不使用前面介绍的 Anima/Krea 2 流匹配采样选项，本训练器�
 - [Anima 官方示例画风 LoRA：Greg Rutkowski Style - Anima（Civitai，发布者为 Anima 模型作者 Circlestone Labs）](https://civitai.com/models/2536147/greg-rutkowski-style-anima)
 - [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis](https://arxiv.org/abs/2403.03206)
 - [Flow Matching for Generative Modeling](https://arxiv.org/abs/2210.02747)
+
+- [MOSS-Image upstream guide](https://github.com/kohya-ss/sd-scripts/blob/04ca541746b7667b27eab230db067579f682895e/docs/moss_image_train_network.md#72-training-settings--学習設定)
+- [SDXL loss weights](https://github.com/kohya-ss/sd-scripts/blob/04ca541746b7667b27eab230db067579f682895e/library/custom_train_functions.py)
+- [Noise augmentation order](https://github.com/kohya-ss/sd-scripts/blob/04ca541746b7667b27eab230db067579f682895e/library/loss.py)

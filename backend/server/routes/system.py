@@ -137,6 +137,11 @@ async def pick_file(picker_type: str):
             return open_file_selector("", "Select file", model_file_kinds)
 
         coro = asyncio.get_event_loop().run_in_executor(_tk_executor, _pick)
+    elif picker_type == "text-file":
+        def _pick_text():
+            return open_file_selector("", "Select text file", [("text files", "*.txt;*.md"), ("all files", "*.*")])
+
+        coro = asyncio.get_event_loop().run_in_executor(_tk_executor, _pick_text)
     elif picker_type == "image-file":
         file_types = [
             ("images", "*.png;*.jpg;*.jpeg;*.webp;*.bmp;*.gif;*.tif;*.tiff;*.avif"),

@@ -27,12 +27,13 @@ window.trainingShapePreviewMixin = {
   },
 
   _shapeEstimatePayload() {
-    const payload = {};
-    Object.entries(this.form || {}).forEach(([key, value]) => {
-      if (key === 'qwen3') payload[key] = value;
-      if (/^(network_|lycoris_|train_adaln$|train_llm_adapter$|train_text_embedder$|model_train_type$|save_precision$|save_model_as$|full_bf16$|full_fp16$|dim_from_weights$|cache_text_encoder_outputs$|conv_|lokr_|use_|dora_|wd_|rs_lora$|decompose_both$|full_matrix$|unbalanced_factorization$|rank_dropout$|module_dropout$|optimizer_type$)/.test(key)) payload[key] = value;
-    });
-    return payload;
+    const config = this._collectTrainingPayload();
+    const keys = window.getVisibleSections(config.model_train_type)
+      .filter(section => section.key === 'network')
+      .flatMap(section => section.fields.map(field => field.key));
+    keys.push('model_train_type', 'qwen3', 'save_precision', 'save_model_as',
+      'full_bf16', 'full_fp16', 'cache_text_encoder_outputs', 'optimizer_type');
+    return Object.fromEntries(keys.filter(key => key in config).map(key => [key, config[key]]));
   },
 
   scheduleShapeEstimate() {

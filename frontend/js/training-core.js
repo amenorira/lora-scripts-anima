@@ -25,6 +25,7 @@ window.trainingCoreMixin = {
   formHistory: [],
   formHistoryIdx: -1,
   formErrors: {},
+  _trainingOptionErrorMessages: null,
   _profileFormDrafts: {},
   _profileFieldSources: {},
   _fieldSources: {},
@@ -263,6 +264,7 @@ window.trainingCoreMixin = {
     this.formHistoryIdx = 0;
 
     // Re-render form with new train type
+    this._refreshTrainingOptionErrors();
     this.renderTrainingForm(v, null);
     this._scheduleProfileFieldWatchers(v);
     this.updateToml();
@@ -493,7 +495,7 @@ window.trainingCoreMixin = {
       values.sample_interval_mode = has('sample_every_n_epochs') ? 'epochs'
         : has('sample_every_n_steps') ? 'steps' : specified ? 'none' : 'epochs';
     }
-    if (values.cpu_offload_checkpointing || values.unsloth_offload_checkpointing) values.gradient_checkpointing = true;
+    if (values.cpu_offload_checkpointing || values.unsloth_offload_checkpointing || values.block_swap_h2d_only) values.gradient_checkpointing = true;
     return values;
   },
 
@@ -502,7 +504,8 @@ window.trainingCoreMixin = {
     if (changedKey === 'gradient_checkpointing' && this.form.gradient_checkpointing === false) {
       this.form.cpu_offload_checkpointing = false;
       this.form.unsloth_offload_checkpointing = false;
-    } else if (this.form.cpu_offload_checkpointing || this.form.unsloth_offload_checkpointing) {
+      this.form.block_swap_h2d_only = false;
+    } else if (this.form.cpu_offload_checkpointing || this.form.unsloth_offload_checkpointing || this.form.block_swap_h2d_only) {
       this.form.gradient_checkpointing = true;
     }
   },
@@ -801,6 +804,7 @@ window.trainingCoreMixin = {
       const tt2 = self.trainTypes.find(t => t.v === self.form.model_train_type);
       self.currentTrainTypeDesc = tt2 ? window.t(tt2.dk, tt2.l) : '';
       const activeType = self.form.model_train_type || 'anima-lora';
+      self._refreshTrainingOptionErrors();
       self._destroyTrainTypePanelCache();
       self.renderTrainingForm(activeType, null, true);
       self._warmTrainTypePanels(activeType);
@@ -1966,6 +1970,12 @@ window.trainingCoreMixin = {
 
   _resolveFieldHintOverrideKey(field, values) {
     if (!field) return '';
+    if (field.key === 'learning_rate' && values?.optimizer_type === 'AdaFactor') {
+      const prefix = values.model_train_type === 'krea2-lora' ? 'krea_' : '';
+      return values[`${prefix}adafactor_relative_step`] !== false || values[`${prefix}adafactor_warmup_init`] === true
+        ? 'field.learning_rateHint_adafactor_relative'
+        : 'field.learning_rateHint_adafactor_manual';
+    }
     if (field.key === 'network_alpha' && this._hasFullLokrFactors(values)) {
       return 'field.network_alphaHint_lokr_full';
     }
@@ -1998,21 +2008,12 @@ window.trainingCoreMixin = {
     return key ? this.t(key) : '';
   },
 
-  _resolveFieldBaseHintText(field, trainType) {
-    const key = this._resolveFieldBaseHintKey(field, trainType);
-    return key ? this.t(key) : '';
-  },
-
-  _resolveFieldHintOverrideText(field, values) {
-    const key = this._resolveFieldHintOverrideKey(field, values);
-    return key ? this.t(key) : '';
-  },
-
-  fieldHintOverrideText(fieldKey) {
+  fieldHintText(fieldKey) {
     const trainType = this.form.model_train_type || 'anima-lora';
-    return this._resolveFieldHintOverrideText(
+    return this._resolveFieldHintText(
       this._fieldDefinition(fieldKey, trainType),
-      this.form
+      this.form,
+      trainType
     );
   },
 
@@ -2029,7 +2030,6 @@ window.trainingCoreMixin = {
     const hasSpecificLabel = specificLabel && specificLabel !== descKeyWithSuffix;
     const label = hasSpecificLabel ? specificLabel : (this.t(field.descKey) || field.descKey || field.key);
     const hint = this._resolveFieldHintText(field, this.form, trainType);
-    const baseHint = this._resolveFieldBaseHintText(field, trainType);
     const docLink = field.docSlug
       ? `<button type="button" class="field-doc-link" @click.stop="openParameterDoc('${this.escapeAttr(field.docSlug)}','${this.escapeAttr(field.docAnchor || '')}')" title="${this.escapeAttr(this.t('docs.openGuide'))}" aria-label="${this.escapeAttr(this.t('docs.openGuide'))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg><span>${this.esc(this.t('docs.openGuide'))}</span></button>`
       : '';
@@ -2272,11 +2272,11 @@ window.trainingCoreMixin = {
           ${_menuPopupHtml}
         </div>`;
     const staticReadonlyClass = isStaticReadonly ? ' field-readonly' : '';
-    const hintOverrideExpr = `fieldHintOverrideText('${this.escapeAttr(dataKey)}')`;
+    const hintExpr = `fieldHintText('${this.escapeAttr(dataKey)}')`;
     const hintHtml = dataKey === 'attn_mode'
       ? `<div class="field-hint" x-text="t('opt.attn_mode_' + form.attn_mode)">${this.esc(this.t('opt.attn_mode_' + val))}</div>`
       : field.hintKeyBy
-      ? `${baseHint ? `<div class="field-hint">${baseHint}</div>` : ''}<div class="field-hint field-hint-warn" x-show="${hintOverrideExpr}" x-text="${hintOverrideExpr}" x-cloak></div>`
+      ? `<div class="field-hint" x-show="${hintExpr}" x-text="${hintExpr}">${this.esc(hint)}</div>`
       : (hint ? `<div class="field-hint">${hint}</div>` : '');
     return `<div class="field${condClass}${nestedClass}${staticReadonlyClass}" :class="{ 'field-changed': String(form.${dataKey}) !== String(formDefaults.${dataKey}), 'field-filled': ${_filledExpr} }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}${nestLevelAttr}>
       <div class="field-row">
@@ -2341,10 +2341,12 @@ window.trainingCoreMixin = {
   },
 
   timestepOffsetSupported() {
-    return ['sigmoid', 'shift', 'flux_shift'].includes(String(this.form.timestep_sampling || ''));
+    return ['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type)
+      && ['sigmoid', 'shift', 'flux_shift'].includes(String(this.form.timestep_sampling || ''));
   },
 
   timestepOffsetSubsets() {
+    if (!['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type)) return [];
     return ((this.stepEstimate && this.stepEstimate.subsets) || []).filter(subset => !subset.is_reg);
   },
 
@@ -2461,6 +2463,7 @@ window.trainingCoreMixin = {
   },
 
   renderSubsetTimestepOffsets() {
+    if (!['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type)) return '';
     const supported = this.timestepOffsetSupported();
     const subsets = this.timestepOffsetSubsets();
     const disabled = ' :disabled="!timestepOffsetSupported()"';
@@ -3472,6 +3475,28 @@ window.trainingCoreMixin = {
     }
   },
 
+  _enforceSharedTrainingUiConstraints() {
+    if (this.form.model_train_type === 'krea2-lora') {
+      if (this.form.block_swap_h2d_only || this.form.gradient_checkpointing_cpu_offload) {
+        this.form.gradient_checkpointing = true;
+      }
+      return;
+    }
+    if (!['anima-lora', 'moss-image-lora', 'sdxl-lora'].includes(this.form.model_train_type)) return;
+    if (['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type) && this.form.block_swap_h2d_only) {
+      this.form.gradient_checkpointing = true;
+    }
+    if (this.form.model_train_type === 'sdxl-lora' && this.form.xformers && this.form.sdpa) {
+      this.form.sdpa = false;
+    }
+    if (this.form.attn_mode === 'xformers') this.form.split_attn = true;
+    if (this.form.network_train_unet_only === false || this.form.network_train_text_encoder_only === true
+        || Number(this.form.caption_dropout_every_n_epochs || 0) > 0) {
+      this.form.cache_text_encoder_outputs = false;
+      this.form.cache_text_encoder_outputs_to_disk = false;
+    }
+  },
+
   _enforceMossTextEncoderFreeze() {
     if (this.form.model_train_type !== 'moss-image-lora') return;
     const fixed = { network_train_unet_only: true, network_train_text_encoder_only: false,
@@ -3490,10 +3515,11 @@ window.trainingCoreMixin = {
     this._enforceDataLoaderUiConstraints();
     this._enforceImageAugmentationUiConstraints();
     this._enforceMossTextEncoderFreeze();
-    if (!this._autoValueRules || this._autoValueRules.length === 0) return;
-    const targets = new Set(this._autoValueRules.map(rule => rule.target));
+    this._enforceSharedTrainingUiConstraints();
+    const rules = Array.isArray(this._autoValueRules) ? this._autoValueRules : [];
+    const targets = new Set(rules.map(rule => rule.target));
     targets.forEach(target => {
-      const matched = this._autoValueRules.find(
+      const matched = rules.find(
         rule => rule.target === target && this._matchAutoValueRule(rule)
       );
       if (matched && matched.set !== null && matched.set !== undefined) {
@@ -3507,6 +3533,7 @@ window.trainingCoreMixin = {
         }
       }
     });
+    this._refreshTrainingOptionErrors();
   },
 
   setupAutoValueWatchers() {
@@ -3640,6 +3667,7 @@ window.trainingCoreMixin = {
     this._enforceDataLoaderUiConstraints();
     this._enforceImageAugmentationUiConstraints();
     this._enforceMossTextEncoderFreeze();
+    this._enforceSharedTrainingUiConstraints();
     const self = this;
     // 公用 apply 函数：根据 met 决定启用/解除 readonly 态（含告警文本注入）。
     // 由 [data-readonly-if-key]（单 key eq/neq）与 [data-readonly-if-any]（多 key，任一成立即锁定）复用。
@@ -3814,6 +3842,7 @@ window.trainingCoreMixin = {
 
   setField(key, value) {
     if (key.startsWith('reg__')) { this.regSetField(key.slice(5), value); return; }
+    if (key === 'split_attn' && this.form.attn_mode === 'xformers') value = true;
     if (this.form.model_train_type === 'moss-image-lora'
         && ['network_train_unet_only', 'network_train_text_encoder_only', 'text_encoder_lr', 'loraplus_text_encoder_lr_ratio'].includes(key)) {
       this._enforceMossTextEncoderFreeze();
@@ -3884,8 +3913,8 @@ window.trainingCoreMixin = {
       const hasShuffleConflict = this.form.shuffle_caption === true;
       const hasTagDropoutConflict = Number(this.form.caption_tag_dropout_rate || 0) > 0;
       const hasSdxlDropoutConflict = this.form.model_train_type === 'sdxl-lora' && Number(this.form.caption_dropout_rate || 0) > 0;
-      const hasMossEpochDropoutConflict = this.form.model_train_type === 'moss-image-lora' && Number(this.form.caption_dropout_every_n_epochs || 0) > 0;
-      if (hasShuffleConflict || hasTagDropoutConflict || hasSdxlDropoutConflict || hasMossEpochDropoutConflict) {
+      const hasEpochDropoutConflict = Number(this.form.caption_dropout_every_n_epochs || 0) > 0;
+      if (hasShuffleConflict || hasTagDropoutConflict || hasSdxlDropoutConflict || hasEpochDropoutConflict) {
         this.toast(this.t('field.cache_text_encoder_outputsLocked'), 'warning');
         this.form[key] = false;
         return;
@@ -3902,7 +3931,7 @@ window.trainingCoreMixin = {
 
     this.form[key] = value;
     this._setFieldSource(key, 'user');
-    if (['gradient_checkpointing', 'cpu_offload_checkpointing', 'unsloth_offload_checkpointing'].includes(key)) {
+    if (['gradient_checkpointing', 'cpu_offload_checkpointing', 'unsloth_offload_checkpointing', 'block_swap_h2d_only'].includes(key)) {
       this._enforceCheckpointingUiConstraints(key);
     }
     if (key === 'max_data_loader_n_workers' || key === 'persistent_data_loader_workers') {
@@ -3976,10 +4005,27 @@ window.trainingCoreMixin = {
       this.form['network_train_unet_only'] = false;
       _setLRField('unet_lr', '');
     }
-    if (this.form.model_train_type === 'moss-image-lora'
-        && key === 'caption_dropout_every_n_epochs' && Number(value) > 0) {
+    // The latest training-scope choice must not be silently reversed by cache normalization at launch.
+    if ((key === 'network_train_unet_only' && value === false)
+        || (key === 'network_train_text_encoder_only' && value === true)
+        || (key === 'caption_dropout_every_n_epochs' && Number(value) > 0)) {
       this.form.cache_text_encoder_outputs = false;
       this.form.cache_text_encoder_outputs_to_disk = false;
+    }
+    if (key === 'attn_mode' && value === 'xformers') this.form.split_attn = true;
+    if (key === 'blocks_to_swap' && Number(value || 0) === 0
+        && ['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type)) {
+      this.form.block_swap_h2d_only = false;
+    }
+    if (this.form.model_train_type === 'sdxl-lora' && value === true && ['xformers', 'sdpa'].includes(key)) {
+      this.form[key === 'xformers' ? 'sdpa' : 'xformers'] = false;
+    }
+    if (this.form.model_train_type === 'krea2-lora') {
+      if (key === 'block_swap_h2d_only' && value === true) this.form.gradient_checkpointing = true;
+      if (key === 'gradient_checkpointing' && value === false) {
+        this.form.block_swap_h2d_only = false;
+        this.form.gradient_checkpointing_cpu_offload = false;
+      }
     }
     // When enabling cache_text_encoder_outputs, force network_train_unet_only = true
     if (key === 'cache_text_encoder_outputs' && value === true) {
@@ -4031,14 +4077,7 @@ window.trainingCoreMixin = {
     if (this.formErrors && this.formErrors[key]) {
       this.formErrors[key] = null;
     }
-    if (this.form.model_train_type === 'moss-image-lora') {
-      this.formErrors = { ...this.formErrors, base_weights: null, compile_fullgraph: null, positive_prompts: null, ...this._mossOptionErrors() };
-    }
-    if (['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type)
-      && ['cpu_offload_checkpointing', 'unsloth_offload_checkpointing', 'blocks_to_swap', 'gradient_checkpointing', 'compile', 'compile_fullgraph'].includes(key)) {
-      this.formErrors = { ...this.formErrors, unsloth_offload_checkpointing: null, blocks_to_swap: null,
-        compile_fullgraph: null, ...this._checkpointOffloadErrors(), ...this._mossOptionErrors() };
-    }
+    this._refreshTrainingOptionErrors();
     this.updateTomlDebounced();
   },
 
@@ -4267,17 +4306,43 @@ window.trainingCoreMixin = {
     return { boundaries, finalMultiplier };
   },
 
+  _refreshTrainingOptionErrors() {
+    const errors = { ...this.formErrors };
+    // Only clear messages we still own; a server error may have replaced the same field's message.
+    Object.entries(this._trainingOptionErrorMessages || {}).forEach(([key, message]) => {
+      if (errors[key] === message) errors[key] = null;
+    });
+    const current = { ...this._checkpointOffloadErrors(), ...this._mossOptionErrors(),
+      ...this._kreaOptionErrors(), ...this._muonOptionErrors() };
+    this._trainingOptionErrorMessages = current;
+    this.formErrors = { ...errors, ...current };
+  },
+
   _checkpointOffloadErrors() {
     if (!['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type)) return {};
     const errors = {};
     const cpu = this.form.cpu_offload_checkpointing, unsloth = this.form.unsloth_offload_checkpointing;
     const swapping = Number(this.form.blocks_to_swap || 0) > 0;
+    if (this.form.block_swap_h2d_only && !swapping) errors.block_swap_h2d_only = this.t('field.blockSwapH2dRequiresBlocks');
     if (cpu && unsloth) errors.unsloth_offload_checkpointing = this.t('field.checkpointOffloadConflict');
     if (swapping && (cpu || unsloth)) errors.blocks_to_swap = this.t('field.blockSwapOffloadConflict');
     if (swapping && this.form.compile && this.form.compile_fullgraph) {
       errors.compile_fullgraph = this.t('field.blockSwapFullgraphConflict');
     }
+    if (this.form.compile && this.form.compile_fullgraph
+        && (this.form.split_attn || this.form.attn_mode === 'xformers')) {
+      errors.compile_fullgraph = this.t('field.compile_fullgraphAttentionConflict');
+    }
     return errors;
+  },
+
+  _kreaOptionErrors() {
+    if (this.form.model_train_type !== 'krea2-lora') return {};
+    if (this.form.enable_krea_samples && String(this.form.turbo_dit || '').trim()
+        && Number(this.form.blocks_to_swap || 0) > 0) {
+      return { turbo_dit: this.t('field.kreaTurboBlockSwapConflict') };
+    }
+    return {};
   },
 
   _mossOptionErrors() {
@@ -4383,7 +4448,7 @@ window.trainingCoreMixin = {
       && !this._parseStepRules(this.form.step_rules)) {
       errors.step_rules = this.t('field.step_rulesError');
     }
-    Object.assign(errors, this._checkpointOffloadErrors(), this._mossOptionErrors(), this._muonOptionErrors());
+    Object.assign(errors, this._checkpointOffloadErrors(), this._mossOptionErrors(), this._kreaOptionErrors(), this._muonOptionErrors());
     if (this.form.model_train_type !== 'krea2-lora' && this.form.enable_preview && this.form.sample_interval_mode !== 'none') {
       const key = this.form.sample_interval_mode === 'steps' ? 'sample_every_n_steps' : 'sample_every_n_epochs';
       if (this.form[key] === '' || this.form[key] === null || this.form[key] === undefined) errors[key] = this.t('common.fieldRequired');

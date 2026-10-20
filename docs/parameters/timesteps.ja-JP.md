@@ -2,7 +2,7 @@
 
 学習では、画像ごとにノイズのタイムステップを選び、その値に応じて画像の潜在表現とノイズを混ぜます。高いタイムステップはノイズを多く含み、低いタイムステップは元画像の情報を多く残します。
 
-Anima / Krea 2 はフローマッチングを使い、正規化したタイムステップが混合係数を決めます。
+Anima/MOSS / Krea 2 はフローマッチングを使い、正規化したタイムステップが混合係数を決めます。
 
 | ノイズ量 | 入力に含まれる情報 | サンプリング設定との関係 |
 | --- | --- | --- |
@@ -25,18 +25,18 @@ Anima / Krea 2 はフローマッチングを使い、正規化したタイム�
 | 学習プロファイル | サンプリング | 分布パラメータ | 損失の重み付け |
 | --- | --- | --- | --- |
 | Anima | `sigmoid` | `sigmoid_scale=1.0` | `uniform` |
+| MOSS | `sigma` | `logit_mean=-1.09`, `logit_std=0.95`, `discrete_flow_shift=1.0` | `logit_normal` (1) |
 | Krea 2 | `shift` | `sigmoid_scale=1.0`, `discrete_flow_shift=2.5` | `none` |
 
 現在の実装では、`uniform` と `none` はどちらも、タイムステップごとの追加の損失重み付けを行いません。Krea 2 の `none` は、バックエンドと旧設定との互換性のために使われています。古いプリセットを読み込んだ場合は、フォームと分布プレビューに表示される値を確認してください。
 
-どちらの既定値も複数のノイズ範囲を含みます。Krea 2 の固定シフトは高ノイズ側の割合を増やします。学習フォームのタイムステップ／サンプリング設定で確認できます。
+MOSS の既定値は上流の検証設定に合わせています。この `logit_normal` は離散ノイズ表のインデックスの抽出分布を変え、損失重みは 1 のままです。負の平均は高ノイズ側に偏ります。事前学習の近似であり、公式の 0.95 での打ち切りと 1% の一様サンプル混合は再現しません。上流は簡単な近似として `shift + discrete_flow_shift=3` も示しています。切り替える際は方式とシフトを一緒に変更してください。
 
 | 目的 | 調整する項目 | 既定値 |
 | --- | --- | --- |
 | 両端をより多くサンプリングする | `sigmoid_scale` | `1.0`。大きくすると両端に広がる |
-| 高ノイズまたは低ノイズを増やす | `discrete_flow_shift` | Anima は `1.0`、Krea 2 は `2.5`。`shift` と Anima の `sigma` で有効 |
-| サブセットごとにノイズ範囲を変える | `subset_timestep_offsets` | 未設定。Anima の一部のモードのみ対応 |
-| 選ばれた入力の誤差の重みを変える | `weighting_scheme` | Anima は `uniform`、Krea 2 は `none`。どちらも等しい重み |
+| 高ノイズまたは低ノイズを増やす | `discrete_flow_shift` | Anima/MOSS は `1.0`、Krea 2 は `2.5`。`shift` と Anima/MOSS の `sigma` で有効 |
+| サブセットごとにノイズ範囲を変える | `subset_timestep_offsets` | 未設定。Anima/MOSS の一部のモードのみ対応 |
 
 <!-- doc-anchor: terminology -->
 ## 3 種類の「ステップ」
@@ -49,7 +49,7 @@ Anima / Krea 2 はフローマッチングを使い、正規化したタイム�
 | 学習タイムステップ | 現在の画像に加えるノイズ量 | `timestep_sampling` |
 | 生成ステップ数 | サンプラーのノイズ除去ステップ数。1 ステップのモデル計算回数はサンプラーで異なる | `sample_steps` |
 
-「学習ステップ 500」は、オプティマイザによる更新が 500 回行われたことを表します。Anima／Krea 2 のノイズタイムステップ `t≈500` は、画像とノイズの混合係数がそれぞれ約半分であることを表します。1 回の更新でも、画像ごとにタイムステップが選ばれます。
+「学習ステップ 500」は、オプティマイザによる更新が 500 回行われたことを表します。Anima/MOSS／Krea 2 のノイズタイムステップ `t≈500` は、画像とノイズの混合係数がそれぞれ約半分であることを表します。1 回の更新でも、画像ごとにタイムステップが選ばれます。
 
 <!-- doc-anchor: visualizer -->
 ## 分布プレビュー
@@ -98,11 +98,11 @@ Anima / Krea 2 はフローマッチングを使い、正規化したタイム�
 
 | 選択肢 | 動作 | 対応モデル |
 | --- | --- | --- |
-| `sigmoid` | 中ノイズを多く選び、両端も含む | Anima、Krea 2 |
-| `uniform` | 全範囲を均等に選ぶ | Anima、Krea 2 |
-| `shift` | sigmoid の抽出値に固定の非線形フローシフトを適用する | Anima、Krea 2 |
-| `sigma` | 学習スケジューラの離散ノイズ表から選ぶ | Anima、Krea 2 |
-| `flux_shift` | 現在の解像度から FLUX 式のシフトを計算する | Anima |
+| `sigmoid` | 中ノイズを多く選び、両端も含む | Anima/MOSS、Krea 2 |
+| `uniform` | 全範囲を均等に選ぶ | Anima/MOSS、Krea 2 |
+| `shift` | sigmoid の抽出値に固定の非線形フローシフトを適用する | Anima/MOSS、Krea 2 |
+| `sigma` | 学習スケジューラの離散ノイズ表から選ぶ | Anima/MOSS、Krea 2 |
+| `flux_shift` | 現在の解像度から FLUX 式のシフトを計算する | Anima/MOSS |
 | `krea2_shift` | 現在の解像度から Krea 2 式のシフトを計算する | Krea 2 |
 | `logsnr` | LogSNR の分布をタイムステップに変換する | Krea 2 |
 
@@ -130,9 +130,9 @@ sigmoid 分布に `discrete_flow_shift` を適用し、低ノイズ側または�
 
 ### `sigma`
 
-学習スケジューラの離散ノイズ表から値を選びます。Anima は `discrete_flow_shift` を表に適用します。現在の Krea 2 トレーナーはシフトなしの表を使い、この値を読みません。
+学習スケジューラの離散ノイズ表から値を選びます。Anima/MOSS は `discrete_flow_shift` を表に適用します。現在の Krea 2 トレーナーはシフトなしの表を使い、この値を読みません。
 
-`weighting_scheme=logit_normal` または `mode` は、表のインデックスを選ぶ頻度を変えます。それ以外はインデックスを均等に選びます。Anima では表にシフトを適用すると、インデックスが均等でもタイムステップは不均等になります。Krea 2 のシフトなしの表は等間隔です。`sigma_sqrt` と `cosmap` は損失の重みだけを変えます。
+`weighting_scheme=logit_normal` または `mode` は、表のインデックスを選ぶ頻度を変えます。それ以外はインデックスを均等に選びます。Anima/MOSS では表にシフトを適用すると、インデックスが均等でもタイムステップは不均等になります。Krea 2 のシフトなしの表は等間隔です。`sigma_sqrt` と `cosmap` は損失の重みだけを変えます。
 
 ### `flux_shift` と `krea2_shift`
 
@@ -171,7 +171,7 @@ Krea 2 の `logsnr` は、`logit_mean` と `logit_std` で定義した分布か�
 <!-- doc-anchor: flow-shift -->
 ## `discrete_flow_shift`：高・低ノイズの割合を調整
 
-既定値は Anima が `1.0`、Krea 2 が `2.5` です。大きくすると高ノイズ、小さくすると低ノイズが増えます。`0` より大きい値を指定してください。Anima は `shift` と `sigma`、Krea 2 は `shift` だけで使います。
+既定値は Anima/MOSS が `1.0`、Krea 2 が `2.5` です。大きくすると高ノイズ、小さくすると低ノイズが増えます。`0` より大きい値を指定してください。Anima/MOSS は `shift` と `sigma`、Krea 2 は `shift` だけで使います。
 
 | 値 | 変化の方向 | 基本分布からの変化 |
 | --- | --- | --- |
@@ -192,7 +192,7 @@ Krea 2 の `logsnr` は、`logit_mean` と `logit_std` で定義した分布か�
 <!-- doc-anchor: subset-offsets -->
 ## サブセット別のタイムステップオフセット
 
-`subset_timestep_offsets` は、サブセットごとに独立したサンプリング偏移を指定します。sigmoid 変換前の正規乱数に加えるため、分布の形状とノイズの割合が変わります。**Anima のみ**対応します。
+`subset_timestep_offsets` は、サブセットごとに独立したサンプリング偏移を指定します。sigmoid 変換前の正規乱数に加えるため、分布の形状とノイズの割合が変わります。**Anima/MOSS のみ**対応します。
 
 サブセットは、数字とアンダースコアで始まるサブフォルダです（例：`10_face`、`3_full_body`）。先頭の数字はリピート回数です。UI と API では、全体に 1 つの値を指定するのではなく、サブセット名とオフセットの対応を指定します。
 
@@ -269,10 +269,10 @@ timestep = sigmoid( sigmoid_scale × (random sample + offset) )
 
 `weighting_scheme=logit_normal` は、`timestep_sampling=sigma` のときだけ有効です。
 
-- `logit_mean` の既定値は `0`。表のインデックスが対称に分布します。大きくすると低ノイズ、小さくすると高ノイズが増えます。
-- `logit_std` の既定値は `1`。小さくすると集中し、大きくすると両端へ広がります。
+- `logit_mean=0` では表のインデックスが対称に分布します。大きくすると低ノイズ、小さくすると高ノイズが増えます。MOSS の既定値は `-1.09` です。
+- `logit_std` は小さくすると集中し、大きくすると両端へ広がります。Anima の既定値は `1`、MOSS は `0.95` です。
 
-Anima ではスケジューラのシフトも最終的なノイズ量を変えます。Krea 2 の `sigma` の表にはシフトを適用しません。`sigmoid + logit_normal` では、後者は頻度にも重みにも作用しません。Krea 2 の `logsnr` はこの 2 つの値を直接読むため、該当する説明を参照してください。
+Anima/MOSS ではスケジューラのシフトも最終的なノイズ量を変えます。Krea 2 の `sigma` の表にはシフトを適用しません。`sigmoid + logit_normal` では、後者は頻度にも重みにも作用しません。Krea 2 の `logsnr` はこの 2 つの値を直接読むため、該当する説明を参照してください。
 
 <!-- doc-anchor: mode -->
 ### `mode` と `mode_scale`
@@ -281,7 +281,7 @@ Anima ではスケジューラのシフトも最終的なノイズ量を変え�
 
 - `mode_scale=0`：ノイズ表のインデックスを均等に選びます。
 - `0` から既定値 `1.29` へ大きくすると、表の中央付近に集中します。
-- Anima は `discrete_flow_shift` で表の中央が表すノイズ量も変わります。Krea 2 の `sigma` は `discrete_flow_shift` を無視しますが、`mode_scale` は使います。最初は `mode_scale=1.29` を使ってください。
+- Anima/MOSS は `discrete_flow_shift` で表の中央が表すノイズ量も変わります。Krea 2 の `sigma` は `discrete_flow_shift` を無視しますが、`mode_scale` は使います。最初は `mode_scale=1.29` を使ってください。
 
 <!-- doc-anchor: compatibility -->
 ## パラメータの有効範囲
@@ -289,7 +289,7 @@ Anima ではスケジューラのシフトも最終的なノイズ量を変え�
 | パラメータ | sigmoid | uniform | shift | sigma | flux/krea shift | logsnr |
 | --- | --- | --- | --- | --- | --- | --- |
 | `sigmoid_scale` | 有効 | 無効 | 有効 | 無効 | 有効 | 無効 |
-| `discrete_flow_shift` | 無効 | 無効 | 有効 | Anima のみ | 無効 | 無効 |
+| `discrete_flow_shift` | 無効 | 無効 | 有効 | Anima/MOSS のみ | 無効 | 無効 |
 | `logit_mean/std` | 無効 | 無効 | 無効 | `logit_normal` の密度のみ | 無効 | 直接使用 |
 | `mode_scale` | 無効 | 無効 | 無効 | `mode` の密度のみ | 無効 | 無効 |
 | `subset_timestep_offsets` | 有効 | 無効 | 有効 | 無効 | `flux_shift` のみ | 無効 |
@@ -300,7 +300,7 @@ Anima ではスケジューラのシフトも最終的なノイズ量を変え�
 <!-- doc-anchor: sdxl-range -->
 ## SDXL の `min_timestep` と `max_timestep`
 
-SDXL は、上記の Anima／Krea 2 用フローマッチング設定を使いません。代わりに、範囲を指定する項目があります。
+SDXL は、上記の Anima/MOSS／Krea 2 用フローマッチング設定を使いません。代わりに、範囲を指定する項目があります。
 
 - `min_timestep`：許可する最小タイムステップ。空欄は `0`。
 - `max_timestep`：上限。この値自体は含みません。空欄は `1000` で、既定範囲は `0–999`。
@@ -317,6 +317,22 @@ SDXL は、上記の Anima／Krea 2 用フローマッチング設定を使い�
 - `sample_flow_shift` は生成プレビュー用で、学習タイムステップを変えません。
 - シードは選ばれる乱数列を変えます。プレビューの理論分布は変えません。バッチサイズと GPU 数は短い学習でのばらつきに影響します。
 - タイムステップ設定は LoRA のファイル形式を変えません。推論時に同じサンプラーを使う必要もありません。
+
+<!-- doc-anchor: sdxl-loss -->
+## SDXL：損失重みとノイズ追加の関係
+
+Min-SNR と去偏推定は、タイムステップの抽出確率ではなく、抽出後の損失を変えます。両方有効なら重みが乗算されます。
+
+対象タイムステップの信号対雑音比を SNR とし、去偏推定には S = min(SNR, 1000) を使います。
+
+| 予測対象 | Min-SNR の重み | 去偏推定の重み |
+| --- | --- | --- |
+| ノイズ予測 | min(SNR, γ) / SNR | 1 / √S |
+| v-prediction | min(SNR, γ) / (SNR + 1) | 1 / (S + 1) |
+
+`min_snr_gamma` が空欄または 0 なら Min-SNR は無効です。比較時は予測対象とタイムステップ範囲を固定してください。
+
+ノイズオフセットと多解像度ノイズは入力ノイズを変えます。先にオフセットを加え、その後に低解像度ノイズを重ねて正規化します。両方有効にできます。反復数は上限で、いずれかの辺が 1 ピクセルになると早期終了します。割引係数は各層の寄与を調整します。
 
 <!-- doc-anchor: testing -->
 ## 条件を揃えた比較
@@ -340,7 +356,7 @@ SDXL は、上記の Anima／Krea 2 用フローマッチング設定を使い�
   <p><var>t</var> が小さいほど元画像に近く、大きいほど純粋なノイズに近くなります。</p>
 </div>
 
-現在の Anima と Krea 2 は、データからノイズへ向かう方向を予測するように学習します。
+現在の Anima/MOSS と Krea 2 は、データからノイズへ向かう方向を予測するように学習します。
 
 <div class="doc-equation doc-equation-compact" role="group" aria-label="フローマッチングの学習対象">
   <div class="doc-equation-kicker">予測対象</div>
@@ -376,3 +392,7 @@ SDXL は、上記の Anima／Krea 2 用フローマッチング設定を使い�
 - [Anima 開発元 Circlestone Labs の公式作例 LoRA：Greg Rutkowski Style - Anima](https://civitai.com/models/2536147/greg-rutkowski-style-anima)
 - [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis](https://arxiv.org/abs/2403.03206)
 - [Flow Matching for Generative Modeling](https://arxiv.org/abs/2210.02747)
+
+- [MOSS-Image upstream guide](https://github.com/kohya-ss/sd-scripts/blob/04ca541746b7667b27eab230db067579f682895e/docs/moss_image_train_network.md#72-training-settings--学習設定)
+- [SDXL loss weights](https://github.com/kohya-ss/sd-scripts/blob/04ca541746b7667b27eab230db067579f682895e/library/custom_train_functions.py)
+- [Noise augmentation order](https://github.com/kohya-ss/sd-scripts/blob/04ca541746b7667b27eab230db067579f682895e/library/loss.py)

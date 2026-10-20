@@ -152,6 +152,7 @@ network_args = ["loraplus_text_encoder_lr_ratio=2.0"]
 | --- | --- | --- |
 | `networks.lora` | `lora_up` | 標準 LoRA+ のグループ分け |
 | `networks.lora_anima` | `lora_up` | Anima 向け標準 LoRA+ |
+| `networks.lora_generic` | `lora_up` | MOSS 向け標準 LoRA+ |
 | `networks.loha` | `hada_w2_a` | sd-scripts の LoHa 向け拡張 |
 | `networks.lokr` | `lokr_w1` | sd-scripts の LoKr 向け拡張 |
 | `lycoris.kohya`（LoCon / algo `lora` のみ） | `lora_up` など | LyCORIS は `lora_up` という名前で分類する。他のアルゴリズム（LoHa・LoKr など）は一致せず、倍率の効果なし |

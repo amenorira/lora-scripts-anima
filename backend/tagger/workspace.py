@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-import re
+from contextlib import ExitStack
 import tempfile
 import threading
 import time
@@ -16,7 +16,7 @@ from typing import Any
 from PIL import Image, UnidentifiedImageError
 
 from backend.log import log
-from backend.tagger import api_engine
+from backend.tagger import captioning, api_engine
 from backend.tagger.interrogator import (
     available_interrogators,
     gpu_inference_lock,
@@ -74,7 +74,7 @@ def _enumerate_images(path: Path, recursive: bool) -> list[Path]:
     return sorted((item for item in iterator if _is_image(item)), key=lambda item: str(item).lower())
 
 
-def scan_source(path_value: str, recursive: bool = True) -> dict:
+def scan_source(path_value: str, recursive: bool = True, caption_extension: str = ".txt", caption_options: dict | None = None) -> dict:
     _cleanup()
     path = Path(path_value).expanduser().resolve()
     if not path.exists():
@@ -83,13 +83,17 @@ def scan_source(path_value: str, recursive: bool = True) -> dict:
         raise ValueError("Filesystem root is not allowed / 不允许选择磁盘根目录")
     images = _enumerate_images(path, recursive)
     token = uuid.uuid4().hex[:16]
-    caption_count = sum(1 for image in images if image.with_suffix(".txt").is_file())
+    caption_extension = "." + str(caption_extension).strip().lstrip(".")
+    if caption_extension == "." or any(c in caption_extension for c in '/\\\r\n'):
+        raise ValueError("Invalid caption extension / 无效的标注扩展名")
+    caption_count = sum(1 for image in images if image.with_suffix(caption_extension).is_file())
     directories = len({image.parent for image in images})
     source = {
         "token": token,
         "root": str(path),
         "kind": "file" if path.is_file() else "folder",
         "recursive": recursive,
+        "caption_extension": caption_extension,
         "paths": images,
         "created_at": time.time(),
     }
@@ -104,10 +108,11 @@ def scan_source(path_value: str, recursive: bool = True) -> dict:
         "with_caption": caption_count,
         "without_caption": len(images) - caption_count,
         "items": [
-            {"index": index, "name": image.name, "path": str(image), "has_caption": image.with_suffix(".txt").is_file()}
+            {"index": index, "name": image.name, "path": str(image), "has_caption": image.with_suffix(caption_extension).is_file()}
             for index, image in enumerate(images[:_MAX_RECENT_ITEMS])
         ],
         "items_truncated": len(images) > _MAX_RECENT_ITEMS,
+        **(captioning.probe_outputs(images, caption_extension, caption_options) if caption_options is not None else {}),
     }
 
 
@@ -157,7 +162,7 @@ def source_items(source_token: str, offset: int = 0, limit: int = 120) -> dict:
                 "index": start + index,
                 "name": path.name,
                 "path": str(path),
-                "has_caption": path.with_suffix(".txt").is_file(),
+                "has_caption": path.with_suffix(source.get("caption_extension", ".txt")).is_file(),
                 "status": "pending",
             }
             for index, path in enumerate(page)
@@ -191,10 +196,13 @@ def _record_task_item(task: dict, index: int, outcome: dict) -> None:
         task["current_file"] = item["name"]
         if "result" in outcome:
             task["current_result"] = task["results"][index] = outcome["result"]
-        event = "written" if status == "success" and task["write_captions"] else status
+        event = outcome.get("event") or ("written" if status == "success" and task["write_captions"] else status)
+        if outcome.get("prompt"):
+            task["check_prompt"] = outcome["prompt"]
         _task_log(task, event, {"skipped": "warning", "failed": "error"}.get(status, "info"),
                   current=task["current"], total=task["total"], name=item["name"],
-                  count=outcome.get("tag_count", 0), error=outcome.get("error", ""))
+                  count=outcome.get("tag_count", 0), error=outcome.get("error", ""),
+                  reference=outcome.get("reference", False), knowledge=outcome.get("knowledge", 0))
 
 
 def _finish_task(task: dict, status: str, error: str = "") -> None:
@@ -208,6 +216,8 @@ def _finish_task(task: dict, status: str, error: str = "") -> None:
                  "warning" if task["failed"] or status == "cancelled" else "success")
         _task_log(task, status, level, elapsed=f"{max(0.0, time.time() - task['started_at']):.1f}",
                   success=task["success"], skipped=task["skipped"], failed=task["failed"], error=error)
+        if task.get("check_prompt"):
+            _task_log(task, "prompt", message=task["check_prompt"])
 
 
 def _task_snapshot_unlocked(task: dict) -> dict:
@@ -231,6 +241,7 @@ def _task_snapshot_unlocked(task: dict) -> dict:
         "source_root": task["source_root"],
         "model_id": task["model_id"],
         "engine": task.get("engine", "onnx"),
+        "caption_options": (task.get("options") or {}).get("captioning"),
         "logs": list(task["logs"]),
         "error_detail": task.get("error_detail"),
         "current_result": task.get("current_result"),
@@ -351,107 +362,36 @@ def _write_caption(path: Path, tags: list[str], conflict: str, remove_duplicated
     return "success"
 
 
-def _finalize_api_tags(tags: list[str], options: dict) -> list[str]:
-    """Apply additional/exclude/dedupe/underscore/escape to API-parsed tags."""
-    excludes = {tag.strip().lower() for tag in split_str(str(options.get("exclude_tags", "")))}
-    replace_underscore = bool(options.get("replace_underscore", True))
-    escape = bool(options.get("escape_tag", False))
-    dedupe = bool(options.get("remove_duplicated", True))
-    result: list[str] = []
-    seen: set[str] = set()
-    for tag in split_str(str(options.get("additional_tags", ""))) + list(tags):
-        if tag.strip().lower() in excludes:
-            continue
-        value = tag.strip()
-        if replace_underscore:
-            value = value.replace("_", " ")
-        if escape:
-            value = re.sub(r"([\\()])", r"\\\1", value)
-        if not value:
-            continue
-        key = value.lower()
-        if dedupe and key in seen:
-            continue
-        seen.add(key)
-        result.append(value)
-    return result
-
-
-def _api_tag_one(
-    cancel_event: threading.Event,
-    config: api_engine.ApiConfig,
-    client: Any,
-    index: int,
-    path: Path,
-    options: dict,
-    conflict: str,
-    write_captions: bool,
-) -> dict:
-    """Worker body for API tasks. Never raises except ApiAuthError (task-fatal)."""
-    if cancel_event.is_set():
-        return {"status": "aborted"}
+def _caption_one(task: dict, config, path: Path, runtime: dict, index: int) -> dict:
     try:
-        existing = ""
-        if write_captions and conflict == "ignore":
-            caption = path.with_suffix(".txt")
-            existing = caption.read_text(encoding="utf-8", errors="ignore").strip() if caption.is_file() else ""
-        if existing:
-            tags = [part.strip() for part in existing.split(",") if part.strip()]
-            return {
-                "status": "skipped",
-                "tag_count": len(tags),
-                "result": {
-                    "index": index, "name": path.name, "path": str(path),
-                    "tags": tags, "text": existing, "categories": {},
-                },
-            }
-        with Image.open(path) as opened:
-            image = opened.copy()
-        tags_raw, raw_text = api_engine.interrogate(config, image, client=client, cancel_event=cancel_event)
-        image.close()
-        if cancel_event.is_set():
-            return {"status": "aborted"}
-        tags = _finalize_api_tags(tags_raw, options)
-        outcome = "success"
-        if write_captions:
-            outcome = _write_caption(path, tags, conflict, bool(options.get("remove_duplicated", True)))
-        result = {
-            "index": index, "name": path.name, "path": str(path),
-            "tags": tags, "text": ", ".join(tags), "categories": {}, "raw": raw_text,
-        }
-        return {"status": outcome, "tag_count": len(tags), "result": result}
+        return captioning.process(config, path, runtime, cancel_event=task["cancel_event"], index=index)
     except api_engine.ApiAuthError:
         raise
     except InterruptedError:
         return {"status": "aborted"}
-    except UnidentifiedImageError:
-        return {"status": "failed", "error": "Unsupported image"}
     except Exception as exc:
-        return {"status": "failed", "error": f"{type(exc).__name__}: {str(exc)[:240]}"}
+        if runtime["options"].get("verbose"):
+            log.exception("MOSS caption failed / MOSS 描述生成失败")
+        return {"status": "failed", "error": f"{type(exc).__name__}: {str(exc)[:2000]}"}
 
 
-def _run_api_task(
-    task: dict,
-    paths: list[Path],
-    options: dict,
-    conflict: str,
-    write_captions: bool,
-    config: api_engine.ApiConfig,
-) -> None:
+def _run_api_task(task: dict, paths: list[Path], options: dict, config) -> None:
+    settings = options["captioning"]
+    phase = "caption_check" if settings["dry_run"] else "caption_export" if settings["mode"] == "export" else "api_request"
     with task["lock"]:
         task["started_at"] = time.time()
         task["status"] = "cancelling" if task["cancel_event"].is_set() else "running"
-        task["phase"] = "api_request"
-    _task_log(task, "api_start", "phase", total=len(paths), model=config.model,
+        task["phase"] = phase
+    _task_log(task, "api_start" if phase == "api_request" else phase, "phase", total=len(paths), model=config.model,
               endpoint=config.base_url, concurrency=config.concurrency)
-    client = None
-    pool = None
-    auth_error = None
-    task_error = None
+    error = ""
     try:
-        if not task["cancel_event"].is_set():
-            client = api_engine.create_client(config)
-            pool = ThreadPoolExecutor(max_workers=config.concurrency, thread_name_prefix=f"tagger-api-{task['id']}")
+        root = Path(task["source_root"])
+        runtime = captioning.prepare_runtime(settings, root)
+        with ExitStack() as stack:
+            if settings["mode"] == "generate" and not settings["dry_run"]:
+                runtime["client"] = stack.enter_context(api_engine.create_client(config))
+            pool = stack.enter_context(ThreadPoolExecutor(max_workers=config.concurrency, thread_name_prefix=f"moss-{task['id']}"))
             pending = {}
             source = iter(enumerate(paths))
 
@@ -461,49 +401,28 @@ def _run_api_task(
                         index, path = next(source)
                     except StopIteration:
                         break
-                    future = pool.submit(
-                        _api_tag_one, task["cancel_event"], config, client, index, path,
-                        options, conflict, write_captions,
-                    )
-                    pending[future] = (index, path)
+                    pending[pool.submit(_caption_one, task, config, path, runtime, index)] = index
 
             fill_pending()
             while pending:
-                completed, _ = wait(tuple(pending), timeout=0.1, return_when=FIRST_COMPLETED)
+                completed, _ = wait(tuple(pending), timeout=.1, return_when=FIRST_COMPLETED)
                 for future in completed:
-                    index, path = pending.pop(future)
+                    index = pending.pop(future)
                     try:
                         outcome = future.result()
                     except api_engine.ApiAuthError as exc:
-                        auth_error = f"API authentication failed / API 鉴权失败: {str(exc)[:240]}"
+                        error = f"API authentication failed / API 鉴权失败: {str(exc)[:500]}"
                         task["cancel_event"].set()
                         continue
-                    except Exception as exc:
-                        outcome = {"status": "failed", "error": f"{type(exc).__name__}: {str(exc)[:240]}"}
-                    status = outcome["status"]
-                    if status == "aborted":
-                        continue
-                    _record_task_item(task, index, outcome)
+                    if outcome["status"] != "aborted":
+                        _record_task_item(task, index, outcome)
                 fill_pending()
     except Exception as exc:
-        log.exception("Tagger API task failed / 打标 API 任务失败")
-        task_error = str(exc)[:500]
+        log.exception("MOSS task failed / MOSS 任务失败")
+        error = str(exc)[:2000]
     finally:
-        task["cancel_event"].set()
-        settle_error = None
-        try:
-            if pool is not None:
-                pool.shutdown(wait=True, cancel_futures=True)
-        except Exception as exc:
-            settle_error = str(exc)[:500]
-        try:
-            if client is not None:
-                client.close()
-        except Exception as exc:
-            settle_error = settle_error or str(exc)[:500]
         with task["lock"]:
-            error = auth_error or task_error or settle_error or ""
-            cancelled = task["status"] == "cancelling" or task["current"] < task["total"]
+            cancelled = task["cancel_event"].is_set() or task["current"] < task["total"]
         _finish_task(task, "error" if error else "cancelled" if cancelled else "done", error)
 
 
@@ -658,9 +577,11 @@ def create_task(payload: dict) -> str:
     engine = str(payload.get("engine") or "onnx")
     if engine not in {"onnx", "pytorch", "api"}:
         raise ValueError("Unknown engine / 未知引擎")
-    config: api_engine.ApiConfig | None = None
+    options = dict(payload.get("options") or {})
+    config = None
     if engine == "api":
-        config = api_engine.validate_config(dict(payload.get("api") or {}))
+        options["captioning"] = captioning.validate_options(options.get("captioning") or {})
+        config = captioning.validate_config(dict(payload.get("api") or {}), options["captioning"])
         model_id = f"api:{config.model}"
     else:
         if training_active():
@@ -679,17 +600,18 @@ def create_task(payload: dict) -> str:
         paths = list(source["paths"])
         source_kind = source["kind"]
         source_root = source["root"]
+    if engine == "api" and source_kind != "folder":
+        raise ValueError("MOSS requires an image directory / MOSS 标注请选择图片目录")
     if not paths:
         raise ValueError("No supported images found / 没有找到支持的图片")
     conflict = str(payload.get("conflict") or "ignore")
     if conflict not in {"ignore", "copy", "prepend"}:
         raise ValueError("Invalid caption conflict action / 无效的标签冲突策略")
-    options = dict(payload.get("options") or {})
     if model_id == "pixai-tagger-v1.0":
         from backend.tagger.interrogators.pixai import PixAITaggerInterrogator
 
         PixAITaggerInterrogator.validate_precision(options.get("precision", "auto"))
-    write_captions = bool(payload.get("write_captions", source_kind == "folder"))
+    write_captions = not options["captioning"]["dry_run"] if engine == "api" else bool(payload.get("write_captions", source_kind == "folder"))
     task_id = uuid.uuid4().hex[:12]
     task = {
         "id": task_id,
@@ -742,7 +664,7 @@ def create_task(payload: dict) -> str:
         if engine == "api":
             threading.Thread(
                 target=_run_api_task,
-                args=(task, paths, options, conflict, write_captions, config),
+                args=(task, paths, options, config),
                 daemon=True,
                 name=f"tagger-{task_id}",
             ).start()

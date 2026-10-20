@@ -2,7 +2,7 @@
 
 During training, each image gets a sampled noise timestep, which determines how its latent is mixed with noise. Higher timesteps contain more noise; lower timesteps retain more original image information.
 
-Anima and Krea 2 use flow matching, where the normalized timestep sets the mixing coefficients:
+Anima/MOSS and Krea 2 use flow matching, where the normalized timestep sets the mixing coefficients:
 
 | Noise range | Information in the input | Meaning for sampling settings |
 | --- | --- | --- |
@@ -25,18 +25,18 @@ Keep the selected profile's default distribution for an initial run. To test its
 | Training profile | Default sampling | Default distribution parameters | Default loss weighting |
 | --- | --- | --- | --- |
 | Anima | `sigmoid` | `sigmoid_scale=1.0` | `uniform` |
+| MOSS | `sigma` | `logit_mean=-1.09`, `logit_std=0.95`, `discrete_flow_shift=1.0` | `logit_normal` (1) |
 | Krea 2 | `shift` | `sigmoid_scale=1.0`, `discrete_flow_shift=2.5` | `none` |
 
 In the current implementations, `uniform` and `none` both mean that no extra per-timestep loss weighting is applied. Krea 2 uses `none` for compatibility with its backend and older configurations. After importing an old preset, rely on the values shown in the form and distribution preview.
 
-Both defaults cover several noise ranges. Krea 2's fixed shift favors high noise. Find these controls in the timestep/sampling section of the training form.
+MOSS defaults follow the upstream validation setup. Here `logit_normal` changes how discrete noise-table indices are sampled; loss weights stay at 1. The negative mean favors high noise. This approximates pre-training but does not reproduce the official truncation at 0.95 or 1% uniform mixture. Upstream also offers `shift + discrete_flow_shift=3` as a simpler approximation; switch both sampling mode and shift together.
 
 | Goal | Control | Default |
 | --- | --- | --- |
 | Sample both extremes more often | `sigmoid_scale` | `1.0`; higher values spread samples toward both ends |
-| Favor higher or lower noise | `discrete_flow_shift` | Anima `1.0`, Krea 2 `2.5`; used by `shift`, and by Anima's `sigma` |
-| Give image subsets different noise ranges | `subset_timestep_offsets` | Unset; supported by selected Anima modes only |
-| Change the weight of sampled errors | `weighting_scheme` | Anima `uniform`, Krea 2 `none`; both use equal weights |
+| Favor higher or lower noise | `discrete_flow_shift` | Anima/MOSS `1.0`, Krea 2 `2.5`; used by `shift`, and by Anima/MOSS's `sigma` |
+| Give image subsets different noise ranges | `subset_timestep_offsets` | Unset; supported by selected Anima/MOSS modes only |
 
 <!-- doc-anchor: terminology -->
 ## Types of steps
@@ -49,7 +49,7 @@ The trainer uses the word “step” for three unrelated things:
 | Training timestep | How much noise was added to the current image | `timestep_sampling` |
 | Generation steps | Sampler denoising steps; model evaluations per step depend on the sampler | `sample_steps` |
 
-“Training step 500” means 500 optimizer updates. In Anima/Krea 2, noise timestep `t≈500` means the image and noise mixing coefficients are each about one half. Each image in an update gets its own sampled noise timestep.
+“Training step 500” means 500 optimizer updates. In Anima/MOSS/Krea 2, noise timestep `t≈500` means the image and noise mixing coefficients are each about one half. Each image in an update gets its own sampled noise timestep.
 
 <!-- doc-anchor: visualizer -->
 ## Distribution preview
@@ -98,11 +98,11 @@ Change one timestep setting per run and compare several generated samples. See C
 
 | Option | Sampling behavior | Available for |
 | --- | --- | --- |
-| `sigmoid` | Emphasizes mid noise while retaining both endpoints | Anima, Krea 2 |
-| `uniform` | Samples evenly across the full range | Anima, Krea 2 |
-| `shift` | Applies a fixed nonlinear flow-shift mapping to sigmoid samples | Anima, Krea 2 |
-| `sigma` | Samples from the training scheduler's discrete noise table | Anima, Krea 2 |
-| `flux_shift` | Computes a FLUX-style shift from the current resolution | Anima |
+| `sigmoid` | Emphasizes mid noise while retaining both endpoints | Anima/MOSS, Krea 2 |
+| `uniform` | Samples evenly across the full range | Anima/MOSS, Krea 2 |
+| `shift` | Applies a fixed nonlinear flow-shift mapping to sigmoid samples | Anima/MOSS, Krea 2 |
+| `sigma` | Samples from the training scheduler's discrete noise table | Anima/MOSS, Krea 2 |
+| `flux_shift` | Computes a FLUX-style shift from the current resolution | Anima/MOSS |
 | `krea2_shift` | Computes a Krea 2 shift from the current resolution | Krea 2 |
 | `logsnr` | Converts a LogSNR distribution into timesteps | Krea 2 |
 
@@ -130,9 +130,9 @@ Compare it with sigmoid when both ends need more training coverage.
 
 ### `sigma`
 
-`sigma` selects entries from the training scheduler's discrete noise table. Anima applies `discrete_flow_shift` to this table; the current Krea 2 trainer uses an unshifted table and ignores that value.
+`sigma` selects entries from the training scheduler's discrete noise table. Anima/MOSS applies `discrete_flow_shift` to this table; the current Krea 2 trainer uses an unshifted table and ignores that value.
 
-`weighting_scheme=logit_normal` or `mode` changes how table indices are sampled. Other options sample indices uniformly. In Anima, shifting the table makes the resulting timesteps nonuniform even with uniform indices. Krea 2's unshifted table has evenly spaced timesteps. `sigma_sqrt` and `cosmap` only change loss weights.
+`weighting_scheme=logit_normal` or `mode` changes how table indices are sampled. Other options sample indices uniformly. In Anima/MOSS, shifting the table makes the resulting timesteps nonuniform even with uniform indices. Krea 2's unshifted table has evenly spaced timesteps. `sigma_sqrt` and `cosmap` only change loss weights.
 
 ### `flux_shift` and `krea2_shift`
 
@@ -171,7 +171,7 @@ To favor just one end of the noise range, adjust the timestep shift.
 <!-- doc-anchor: flow-shift -->
 ## `discrete_flow_shift`: changing high- and low-noise shares
 
-`discrete_flow_shift` moves sampling toward one end. It defaults to `1.0` for Anima and `2.5` for Krea 2. Higher values favor high noise; lower values favor low noise. Values must be greater than `0`. Anima uses it in `shift` and `sigma`; Krea 2 uses it only in `shift`.
+`discrete_flow_shift` moves sampling toward one end. It defaults to `1.0` for Anima/MOSS and `2.5` for Krea 2. Higher values favor high noise; lower values favor low noise. Values must be greater than `0`. Anima/MOSS uses it in `shift` and `sigma`; Krea 2 uses it only in `shift`.
 
 | `discrete_flow_shift` | Direction | Change from the base distribution |
 | --- | --- | --- |
@@ -192,7 +192,7 @@ Let <var>s</var> be the shift value. The transform is:
 <!-- doc-anchor: subset-offsets -->
 ## Per-subset timestep offsets
 
-`subset_timestep_offsets` sets an independent sampling offset for each training subset. The offset is added to the normal random sample before the sigmoid mapping, changing distribution shape and noise shares. Supported by **Anima only**.
+`subset_timestep_offsets` sets an independent sampling offset for each training subset. The offset is added to the normal random sample before the sigmoid mapping, changing distribution shape and noise shares. Supported by **Anima/MOSS only**.
 
 A subset is a subfolder whose name starts with a number followed by an underscore (for example `10_face` and `3_full_body`); the leading number is the repeat count. In the UI and API, the setting is a mapping from subset name to offset, not one global value. A minimal setup takes three steps:
 
@@ -269,10 +269,10 @@ Keep `uniform` / `none` for an initial run. Test `sigma_sqrt` to give low-noise 
 
 `weighting_scheme=logit_normal` applies only with `timestep_sampling=sigma`. In this mode:
 
-- `logit_mean` defaults to `0`, giving a symmetric distribution of table indices. Higher values favor low noise; lower values favor high noise.
-- `logit_std` defaults to `1`. Lower values concentrate samples; higher values spread them toward the endpoints.
+- `logit_mean=0` gives a symmetric distribution of table indices. Higher values favor low noise; lower values favor high noise. MOSS defaults to `-1.09`.
+- Lower `logit_std` concentrates samples; higher values spread them toward the endpoints. Anima defaults to `1`, MOSS to `0.95`.
 
-Anima's scheduler shift also changes the resulting noise levels; Krea 2's `sigma` table is unshifted. With `sigmoid + logit_normal`, the latter changes neither sampling nor loss weights. Krea 2's `logsnr` reads these two values directly; see its sampling description.
+Anima/MOSS's scheduler shift also changes the resulting noise levels; Krea 2's `sigma` table is unshifted. With `sigmoid + logit_normal`, the latter changes neither sampling nor loss weights. Krea 2's `logsnr` reads these two values directly; see its sampling description.
 
 <!-- doc-anchor: mode -->
 ### `mode` and `mode_scale`
@@ -281,7 +281,7 @@ Anima's scheduler shift also changes the resulting noise levels; Krea 2's `sigma
 
 - `mode_scale=0` samples noise-table indices uniformly.
 - Increasing it from `0` to the default `1.29` concentrates indices around the table's middle.
-- In Anima, `discrete_flow_shift` also changes the noise level represented by the table's middle. Krea 2's `sigma` ignores `discrete_flow_shift` but still uses `mode_scale`. Keep `mode_scale=1.29` for an initial run.
+- In Anima/MOSS, `discrete_flow_shift` also changes the noise level represented by the table's middle. Krea 2's `sigma` ignores `discrete_flow_shift` but still uses `mode_scale`. Keep `mode_scale=1.29` for an initial run.
 
 <!-- doc-anchor: compatibility -->
 ## Parameter activation matrix
@@ -289,7 +289,7 @@ Anima's scheduler shift also changes the resulting noise levels; Krea 2's `sigma
 | Parameter | sigmoid | uniform | shift | sigma | flux/krea shift | logsnr |
 | --- | --- | --- | --- | --- | --- | --- |
 | `sigmoid_scale` | Used | Ignored | Used | Ignored | Used | Ignored |
-| `discrete_flow_shift` | Ignored | Ignored | Used | Anima only | Ignored | Ignored |
+| `discrete_flow_shift` | Ignored | Ignored | Used | Anima/MOSS only | Ignored | Ignored |
 | `logit_mean/std` | Ignored | Ignored | Ignored | `logit_normal` density only | Ignored | Used directly |
 | `mode_scale` | Ignored | Ignored | Ignored | `mode` density only | Ignored | Ignored |
 | `subset_timestep_offsets` | Used | Ignored | Used | Ignored | Only `flux_shift` | Ignored |
@@ -300,7 +300,7 @@ Anima's scheduler shift also changes the resulting noise levels; Krea 2's `sigma
 <!-- doc-anchor: sdxl-range -->
 ## SDXL `min_timestep` and `max_timestep`
 
-SDXL does not use the Anima/Krea 2 flow-matching sampling options described above. The trainer provides two separate range controls for SDXL:
+SDXL does not use the Anima/MOSS/Krea 2 flow-matching sampling options described above. The trainer provides two separate range controls for SDXL:
 
 - `min_timestep`: the lowest allowed noise timestep; blank uses `0`.
 - `max_timestep`: the exclusive upper bound; blank uses `1000`, giving the default range `0–999`.
@@ -317,6 +317,22 @@ These parameters crop the allowed range. They are not equivalents of `sigmoid_sc
 - `sample_flow_shift` controls generation previews and does not change training timestep sampling.
 - The seed changes the sampled sequence, not the theoretical distribution shown in the preview. Batch size and GPU count affect short-run sampling variation.
 - Timestep settings do not change the LoRA file format or require a matching sampler at inference.
+
+<!-- doc-anchor: sdxl-loss -->
+## SDXL: loss weights and noise augmentation
+
+Min-SNR and debiased estimation change the loss after sampling, not the probability of sampling a timestep. When both are enabled, their weights multiply.
+
+Let SNR be the sampled timestep's signal-to-noise ratio. Debiased estimation uses S = min(SNR, 1000):
+
+| Prediction target | Min-SNR weight | Debiased weight |
+| --- | --- | --- |
+| Noise prediction | min(SNR, γ) / SNR | 1 / √S |
+| v-prediction | min(SNR, γ) / (SNR + 1) | 1 / (S + 1) |
+
+Blank or 0 for `min_snr_gamma` disables Min-SNR. Keep the prediction target and timestep range fixed when comparing these weights.
+
+Noise offset and multiresolution noise modify the input noise: offset is applied first, then lower-resolution noise is added and normalized. Both can be enabled. The iteration count is an upper bound; processing stops early when one side reaches 1 pixel. The discount controls each layer's contribution.
 
 <!-- doc-anchor: testing -->
 ## Controlled comparisons
@@ -340,7 +356,7 @@ Before training, the VAE encodes each image into a latent — the representation
   <p>Smaller <var>t</var> stays closer to the image. Larger <var>t</var> moves closer to pure noise.</p>
 </div>
 
-The current Anima and Krea 2 implementations train the model to predict the direction from data toward noise:
+The current Anima/MOSS and Krea 2 implementations train the model to predict the direction from data toward noise:
 
 <div class="doc-equation doc-equation-compact" role="group" aria-label="Flow-matching training target">
   <div class="doc-equation-kicker">Prediction target</div>
@@ -376,3 +392,7 @@ References:
 - [Official Anima example style LoRA: Greg Rutkowski Style - Anima (Civitai, published by Circlestone Labs, the Anima model authors)](https://civitai.com/models/2536147/greg-rutkowski-style-anima)
 - [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis](https://arxiv.org/abs/2403.03206)
 - [Flow Matching for Generative Modeling](https://arxiv.org/abs/2210.02747)
+
+- [MOSS-Image upstream guide](https://github.com/kohya-ss/sd-scripts/blob/04ca541746b7667b27eab230db067579f682895e/docs/moss_image_train_network.md#72-training-settings--学習設定)
+- [SDXL loss weights](https://github.com/kohya-ss/sd-scripts/blob/04ca541746b7667b27eab230db067579f682895e/library/custom_train_functions.py)
+- [Noise augmentation order](https://github.com/kohya-ss/sd-scripts/blob/04ca541746b7667b27eab230db067579f682895e/library/loss.py)

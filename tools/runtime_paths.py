@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import sys
 import tempfile
 
 
@@ -18,6 +19,9 @@ def runtime_cache_dir(*parts: str) -> Path:
 
 def configure_test_paths(*, root: Path | None = None) -> None:
     """Isolate test/diagnostic files; never called by application startup."""
+    # Apply to this interpreter and children, including Node-spawned Python.
+    sys.dont_write_bytecode = True
+    os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
     project = root if root is not None else ROOT
     cache = project / "cache" / "tests"
     temporary = (cache / "tmp").resolve()
@@ -33,4 +37,5 @@ def configure_test_paths(*, root: Path | None = None) -> None:
         ("CUDA_CACHE_PATH", "cuda"),
         ("XDG_CACHE_HOME", "xdg"),
     ):
-        os.environ.setdefault(key, str((cache / relative).resolve()))
+        # Tests must not inherit a training cache (or a relative path in cwd).
+        os.environ[key] = str((cache / relative).resolve())

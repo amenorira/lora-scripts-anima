@@ -80,7 +80,7 @@
 | AdamWScheduleFree | `1e-4` | 官方建议常比基准优化器高 `1`～`10` 倍；Anima 缺少充分验证，按实验方案使用 |
 | Prodigy / ProdigyPlus | `1.0` | D-adaptation 缩放基准，不能与 `2e-5` 直接比较 |
 | AdaFactor relative step | 由优化器接管，输入 LR 不控制更新 | 关闭 `relative_step` 和 `warmup_init` 后，Anima 手动模式从 `2e-5` 开始 |
-| Automagic3 / EmoSens | `1e-4` / `0.1` | 算法内部动态 LR 的基准值，不是普通固定 LR |
+| Automagic3 / EmoSens | `1e-4` / Transformer LoRA `0.1`、U-Net LoRA `1.0` | 算法内部动态 LR 的基准值，不是普通固定 LR |
 
 Lion 的 `5e-6` 只沿用了官方给出的“LR 比 AdamW 小约 3～10 倍”这一比例。官方还建议同时把 weight decay 增大 3～10 倍，本项目未沿用，因此这不是完整的官方 Lion 配方。
 
@@ -386,9 +386,18 @@ AdamWScheduleFree 使用内部 `warmup_steps`，外部 `lr_warmup_steps` 无效�
 
 随机舍入减少低精度更新长期朝同一方向取整造成的误差。ProdigyPlus 沿用库默认行为，本训练器不另加开关。它属于数值处理，不是数据增强。
 
+<!-- doc-anchor: automagic-lr -->
+### Automagic3 的起始学习率与边界
+
+`learning_rate` 是控制器的起点；每个参数组根据更新方向的历史自动调节学习率。[当前采用的上游源码](https://github.com/ostris/ai-toolkit/blob/c2864bba48a6f94ab1171d9df47b1335f8306355/toolkit/optimizers/automagic3.py)明确将默认 `max_lr=1e3` 作为数值保护边界，而非目标学习率。需要约束增长时降低 `max_lr`；`min_lr` 则限制下降范围。
+
+本项目要求每组的起始学习率位于 `[min_lr, max_lr]`，包括组件独立学习率和 LoRA+ 倍率形成的分组值。外部调度与预热不参与这套内部调节。
+
 ### EmoSens v3.9.3
 
-EmoSens 会根据损失的变化自动调整学习率。使用时，在 `learning_rate` 中填写倍率：Anima LoRA 可从 `0.1` 开始，SDXL LoRA 可从 `1.0` 开始。训练中的实际学习率会持续变化，可以在训练日志中查看。
+EmoSens 会根据损失的变化自动调整学习率。使用时，在 `learning_rate` 中填写倍率。按上游的架构分类，Transformer / DiT LoRA（如 Anima、MOSS-Image）建议从 `0.1` 开始，U-Net LoRA（如 SDXL）从 `1.0` 开始。训练中的实际学习率会持续变化，可以在训练日志中查看。
+
+[上游建议](https://github.com/muooon/EmoSens)还区分了全量微调：Transformer / DiT 全量微调从 `0.01` 开始，U-Net 全量微调从 `0.1` 开始。当前训练器只提供 LoRA 训练档，不应把全量微调的倍率套用为 LoRA 默认值。这些倍率是上游起始建议，并非每个模型都经过本项目验证的最优值。
 
 **常用设置**
 

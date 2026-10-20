@@ -129,7 +129,8 @@ window.trainingTomlMixin = {
       // 默认值已在收集阶段（omitDefault）过滤，此处剩下的都是用户显式设置的非默认值。
       if (v === null || v === undefined || v === '') continue;
       if (typeof v === 'number' && isNaN(v)) continue;
-      const argKey = fieldByKey.get(k).networkArg;
+      const field = fieldByKey.get(k);
+      const argKey = field.networkArgByModule?.[networkModule] || field.networkArg;
       const val = typeof v === 'boolean' ? String(v).toLowerCase() : String(v);
       netArgsArr.push(`${argKey}=${val}`);
     }
@@ -243,7 +244,10 @@ window.trainingTomlMixin = {
   _tomlPreviewArgTarget(key) {
     if (String(this.form && this.form.model_train_type || '') === 'krea2-lora') return null;
     const field = this.findFieldDef(key);
-    if (field?.networkArg) return { paramKey: 'network_args', argKey: field.networkArg };
+    if (field?.networkArg) return {
+      paramKey: 'network_args',
+      argKey: field.networkArgByModule?.[this.form.network_module] || field.networkArg,
+    };
     if (field?.schedulerArg) return { paramKey: 'lr_scheduler_args', argKey: field.schedulerArg };
     if (field?.argKey) return { paramKey: 'optimizer_args', argKey: field.argKey };
     return null;
@@ -462,7 +466,10 @@ window.trainingTomlMixin = {
         if ((profile === 'krea2-lora' && field.hidden) || !this._fieldShowIfMet(field)) return;
         const value = this.form[field.key];
         if ((value === '' && !field.keepEmpty) || value === null || value === undefined) return;
-        if (field.omitDefault && String(value) === String(field.default)) return;
+        // MOSS needs the explicit off state at the adaptation boundary to remove
+        // both advanced aliases; only the generated trainer TOML omits it.
+        if (field.omitDefault && field.key !== 'train_text_embedder'
+          && String(value) === String(field.default)) return;
         payload[field.key] = value;
       });
     });

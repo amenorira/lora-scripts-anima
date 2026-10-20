@@ -72,7 +72,11 @@ class AnimaRunner:
             # this is not a guarantee for arbitrary resolutions or concurrent apps.
             self.blocks_to_swap = automatic_swap_count(self.model, torch.cuda.mem_get_info(self.device)[0], 3 * 1024**3)
         if self.blocks_to_swap:
-            self.model.enable_block_swap(self.blocks_to_swap, self.device)
+            from library.custom_offloading_utils import BlockSwapConfig
+
+            self.model.enable_block_swap(
+                self.blocks_to_swap, BlockSwapConfig(self.device, supports_backward=False)
+            )
             self.model.move_to_device_except_swap_blocks(self.device)
             self.model.switch_block_swap_for_inference()
         else:
