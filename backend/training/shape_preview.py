@@ -180,6 +180,8 @@ def _inspect_network(form):
         total_params = 0
         full_count = 0
         adapters = ([] if config.get("network_train_text_encoder_only") else network.unet_loras) + network.text_encoder_loras
+        if not adapters:
+            raise ValueError("No adapter modules matched / 当前配置没有匹配到可训练的适配器模块")
         for adapter in adapters:
             original = getattr(adapter, "org_module", None)
             if original is None:

@@ -11,14 +11,15 @@ function fixture() {
     setTimeout(callback, delay) { timers.set(++timerId, { callback, delay }); return timerId; },
     clearTimeout(id) { timers.delete(id); },
     fetch(url, options) {
+      if (url === '/api/fields') return Promise.reject(new Error('Use generated schema'));
       return new Promise((resolve, reject) => {
         pending.push({ url, options, resolve, reject });
         options.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
       });
     },
   };
-  loadFrontend('training-shape-preview.js', context);
-  const app = Object.assign({}, context.window.trainingShapePreviewMixin, {
+  loadFrontend(['constants', 'utils', 'config', 'training-core', 'training-toml', 'training-shape-preview'], context);
+  const app = Object.assign({}, context.window.trainingCoreMixin, context.window.trainingTomlMixin, context.window.trainingShapePreviewMixin, {
     form: { model_train_type: 'anima-lora', network_dim: 32 },
     t: key => key, _openManagedModal() {},
   });
@@ -191,7 +192,7 @@ test('changing the MOSS algorithm or LoKr factor refreshes the estimate payload'
     const index = pending.length - 1;
     const payload = JSON.parse(pending[index].options.body);
     assert.equal(payload.network_module, module);
-    assert.equal(payload.lokr_factor, factor);
+    assert.equal(payload.lokr_factor, module === 'networks.lokr' && factor !== -1 ? factor : undefined);
     assert.equal(payload.train_text_embedder, true);
     reply(index, [{ id: 'q', name: 'layers.*.proj.q' }]);
     await request;

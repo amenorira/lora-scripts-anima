@@ -129,3 +129,7 @@ class ShapePreviewTests(unittest.TestCase):
         self.assertGreater(result["moduleCount"], 0)
         self.assertTrue(any(row["name"] == "blocks.*.self_attn.q_proj" for row in result["groups"]))
         self.assertGreater(result["estimatedBytes"], result["weightBytes"])
+
+    def test_empty_module_selection_reports_an_error_instead_of_a_zero_estimate(self):
+        with self.assertRaisesRegex(ValueError, "No adapter modules matched"):
+            inspect_network(moss_form(network_args_custom="exclude_patterns=['.*']"))

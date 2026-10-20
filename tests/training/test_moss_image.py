@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from functools import partial
 from contextlib import ExitStack
 from unittest.mock import patch
 
@@ -12,12 +13,15 @@ from backend.training.adapter import adapt_config
 from backend.training.core_registry import resolve_training_profile, TrainingProfileError
 from backend.training.field_registry import FIELDS
 from backend.training.moss_image import (
-    DEFAULTS, GROUP, PROFILE_ID, extract_form, validate_captions, validate_model_files,
+    DEFAULTS, GROUP, PROFILE_ID, validate_captions, validate_model_files,
 )
+from backend.training.network_config import extract_network_form
 from backend.training.te_cache_check import check_te_cache, delete_te_cache
 from backend.training.training_config import build_training_config, extract_training_form
 from backend.training.validation import validate_training_config
 from backend.server.routes.training import get_sample_prompts
+
+extract_form = partial(extract_network_form, model_train_type=PROFILE_ID)
 
 
 def moss_config(**overrides):

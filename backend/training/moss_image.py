@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import math
-import ast
 from pathlib import Path
 import re
 from typing import Any
@@ -11,50 +10,6 @@ PROFILE_ID = "moss-image-lora"
 GROUP = "moss_image"
 NETWORK_MODULES = ("networks.lora_generic", "networks.loha", "networks.lokr")
 
-
-def extract_form(config: dict[str, Any]) -> dict[str, Any]:
-    """Restore native network arguments when importing a MOSS trainer TOML."""
-    result = dict(config)
-    known = {"rank_dropout", "module_dropout", "loraplus_lr_ratio",
-             "loraplus_unet_lr_ratio", "loraplus_text_encoder_lr_ratio"}
-    argument_fields = {key: key for key in known}
-    if result.get("network_module") == "networks.lokr":
-        argument_fields["factor"] = "lokr_factor"
-    extra = []
-    parsed = {}
-    arguments = result.pop("network_args", []) or []
-    if not isinstance(arguments, list) or any(not isinstance(item, str) for item in arguments):
-        raise ValueError("network_args must be a string array / network_args 必须为字符串数组")
-    for item in arguments:
-        key, separator, raw = str(item).partition("=")
-        key, raw = key.strip(), raw.strip()
-        if not separator:
-            extra.append(str(item))
-            continue
-        try:
-            value = {"true": True, "false": False}[raw.lower()] if raw.lower() in ("true", "false") else ast.literal_eval(raw)
-        except (ValueError, SyntaxError):
-            value = raw
-        if key in argument_fields or key in ("train_llm_adapter", "train_text_embedder"):
-            parsed[key] = value
-        else:
-            extra.append(str(item))
-    aliases = ("train_llm_adapter", "train_text_embedder")
-    if any(key in parsed for key in aliases):
-        result.setdefault("train_text_embedder", any(str(parsed.get(key)).lower() == "true" for key in aliases))
-    for key in argument_fields.keys() & parsed.keys():
-        result.setdefault(argument_fields[key], parsed[key])
-    ratios = {key for key in known if key.startswith("loraplus_")}
-    if ratios & parsed.keys():
-        result.setdefault("enable_loraplus", True)
-        # Native per-component ratios do not imply a global multiplier. Blank
-        # fields prevent form defaults (global 2x) from changing the other part.
-        for key in ratios:
-            result.setdefault(key, "")
-    if extra:
-        existing = str(result.get("network_args_custom") or "")
-        result["network_args_custom"] = "\n".join(filter(None, [existing, *extra]))
-    return result
 
 # These use the same upstream implementations as Anima, without its model-specific VAE/TE options.
 SHARED_FIELDS = {

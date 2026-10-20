@@ -152,6 +152,7 @@ LoRA+ 的效果需要区分学习速度和最终质量。
 | --- | --- | --- |
 | `networks.lora` | `lora_up` | 标准 LoRA+ 分组 |
 | `networks.lora_anima` | `lora_up` | Anima 使用的标准 LoRA+ 分组 |
+| `networks.lora_generic` | `lora_up` | MOSS 使用的标准 LoRA+ 分组 |
 | `networks.loha` | `hada_w2_a` | sd-scripts 对 LoHa 的扩展映射 |
 | `networks.lokr` | `lokr_w1` | sd-scripts 对 LoKr 的扩展映射 |
 | `lycoris.kohya`（仅 LoCon/算法 lora） | `lora_up` 等 | LyCORIS 适配层按参数名 `lora_up` 分组；其余 LyCORIS 算法（LoHa/LoKr 等）参数名不命中该分组，不起作用 |
