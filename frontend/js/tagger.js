@@ -887,13 +887,6 @@ window.taggerMixin = {
     return this.taggerSettings.replaceUnderscore ? value.replace(/_/g, ' ') : value;
   },
 
-  taggerResultTags() {
-    return String(this.taggerResultText || '')
-      .split(',')
-      .map(value => value.trim())
-      .filter(Boolean);
-  },
-
   taggerVisibleCategoryTags() {
     const values = [];
     const seen = new Set();

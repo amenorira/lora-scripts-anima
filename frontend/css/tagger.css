@@ -23,7 +23,6 @@
 .tagger-form-card:first-child > h2 { padding-top: 0; }
 .tagger-form-card > h2 small { margin-left: auto; color: var(--text-tertiary); font-family: inherit; font-size: 11.5px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .tagger-form-card > h2 button { margin-left: auto; padding: 2px 5px; border: 0; background: transparent; color: var(--text-secondary); font-size: 10px; cursor: pointer; }
-.tagger-section-note { padding: 5px 10px 7px; color: var(--text-tertiary); font-size: 10.5px; line-height: 1.5; }
 .tagger-form-field { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(220px, 320px); align-items: center; gap: 16px; min-height: 58px; margin: 0 -8px; padding: 8px 8px 8px 10px; border: 0; border-radius: var(--radius-control); transition: background-color var(--duration-fast) ease; }
 .tagger-form-field:hover { background: var(--hover-overlay); }
 .tagger-form-field-stacked { grid-template-columns: minmax(0, 1fr); gap: 7px; }
@@ -209,8 +208,6 @@ body.tagger-single-resizing, body.tagger-single-resizing * { cursor: col-resize 
 .tagger-api-test-result.ok { color: var(--success); }
 .tagger-api-test-result.fail { color: var(--danger); }
 /* 模型名组合框：整行占满；整体触发器即输入框外壳，内部输入框去边框，右侧挂下拉按钮 */
-.tagger-form-field-stacked .tagger-field-control { justify-content: flex-start; align-items: flex-start; }
-.tagger-form-field-stacked .tagger-field-control > .anima-select { width: 100%; margin-left: 0; }
 .tagger-api-model-combo { padding: 0 4px 0 0; justify-content: flex-start; cursor: text; }
 .tagger-api-model-combo:focus-within { border-color: var(--border-focus); box-shadow: 0 0 0 2px var(--accent-soft); }
 .tagger-api-model-combo .tagger-text-input { flex: 1 1 auto; min-width: 0; max-width: none; margin-left: 0; border: 0; background: transparent; box-shadow: none; }

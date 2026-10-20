@@ -5,12 +5,12 @@
 [upstream]
 repo = "KohakuBlueleaf/LyCORIS"
 branch = "main"
-commit = "23f49a0f2554971123ec011f8e3979a169a2cc09"
-sync_date = "2026-10-18T17:39:40+08:00"
-tag = "v4.1.2"
-version = "4.1.2"
-describe = "v4.1.2"
-last_check = "2026-10-18"
+commit = "7abd5709f74f9159246ff9c6cc83bc0d5118b639"
+sync_date = "2026-10-20T23:34:49+08:00"
+tag = "v4.1.3"
+version = "4.1.3"
+describe = "v4.1.3"
+last_check = "2026-10-20"
 
 [local]
 # vendor/lycoris is the upstream repository's lycoris/ package subtree.

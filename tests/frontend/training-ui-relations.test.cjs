@@ -102,6 +102,27 @@ test('Krea upload-only swapping follows gradient checkpointing and Turbo conflic
   assert.equal(app.formErrors.turbo_dit, null);
 });
 
+test('Anima and MOSS upload-only swapping round-trips UI dependencies without affecting Krea', () => {
+  for (const profile of ['anima-lora', 'moss-image-lora']) {
+    const app = application(profile, { gradient_checkpointing: false, blocks_to_swap: 3 });
+    app.setField('block_swap_h2d_only', true);
+    assert.equal(app.form.gradient_checkpointing, true);
+    app.setField('gradient_checkpointing', false);
+    assert.equal(app.form.block_swap_h2d_only, false);
+    app.setField('block_swap_h2d_only', true);
+    app.setField('blocks_to_swap', 0);
+    assert.equal(app.form.block_swap_h2d_only, false);
+    app.form.block_swap_h2d_only = true;
+    app.form.gradient_checkpointing = false;
+    app._enforceSharedTrainingUiConstraints();
+    app._refreshTrainingOptionErrors();
+    assert.equal(app.form.gradient_checkpointing, true);
+    assert.equal(app.formErrors.block_swap_h2d_only, 'field.blockSwapH2dRequiresBlocks');
+    app.setField('blocks_to_swap', 2);
+    assert.equal(app.formErrors.block_swap_h2d_only, null);
+  }
+});
+
 test('SDXL starts with its bundled VAE instead of inheriting a Qwen-Image VAE', () => {
   assert.equal(application('sdxl-lora').form.vae, '');
   assert.equal(application('anima-lora').form.vae, './models/qwen_image_vae.safetensors');

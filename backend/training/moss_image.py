@@ -181,7 +181,6 @@ def validate_captions(config: dict[str, Any]) -> list[str]:
     from library.dataset import split_caption_candidates
     from library.dreambooth_dataset import read_caption
 
-    cache = config.get("cache_text_encoder_outputs") or config.get("cache_text_encoder_outputs_to_disk")
     separator = str(config.get("multiline_caption_separator", "---===---"))
     errors = []
     for subset in build_sd_scripts_dataset_config(config, {})["datasets"][0]["subsets"]:
@@ -190,12 +189,10 @@ def validate_captions(config: dict[str, Any]) -> list[str]:
                 caption = read_caption(str(image), str(config.get("caption_extension") or ".txt"), False, True)
                 if caption is None:
                     continue
-                candidates = split_caption_candidates(caption, separator)
+                # Validate the separator structure; v0.12.2 caches every candidate.
+                split_caption_candidates(caption, separator)
             except (OSError, UnicodeError, ValueError, AssertionError) as exc:
                 errors.append(f"Invalid caption for image / 图片描述无效: {image}: {exc}")
-                return errors
-            if cache and len(candidates) > 1:
-                errors.append(f"Multiple caption candidates require disabling both Text Encoder caches / 多候选描述需要关闭内存和磁盘文本缓存: {image}")
                 return errors
     return errors
 
