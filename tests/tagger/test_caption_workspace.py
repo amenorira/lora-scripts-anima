@@ -351,7 +351,7 @@ class CaptionWorkspaceTests(unittest.TestCase):
         _, data = self.run_task(token, mode="export")
         self.assertEqual(data["written"], 1)
         image.with_suffix(".txt").unlink()
-        with patch.object(workspace, "_local_tags", return_value=(["test_tag"], {})):
+        with patch.object(workspace, "_load_local_model"), patch.object(workspace, "_local_tags", return_value=(["test_tag"], {})):
             task_id = workspace.create_task({"source_token": token, "model_id": "camie-tagger-v2"})
             self.assertEqual(self.wait(task_id)["written"], 2)
         self.assertEqual(image.with_suffix(".txt").read_text(encoding="utf-8"), "test_tag")

@@ -4,7 +4,6 @@ from __future__ import annotations
 import os
 import json
 from contextlib import ExitStack
-import tempfile
 import threading
 import time
 import uuid
@@ -26,6 +25,7 @@ from backend.tagger.interrogator import (
 )
 from backend.tagger.interrogators.base import CATEGORY_LABELS, Interrogator
 from backend.tagger.registry import MODEL_SPEC_BY_ID
+from backend.tagger.writing import atomic_write_text
 from backend.tasks import tm
 
 _IMAGE_EXTENSIONS = {
@@ -531,6 +531,18 @@ def task_check_prompt(task_id: str) -> dict:
         return {"prompt": task.get("check_prompt", ""), "path": task.get("check_prompt_image", "")}
 
 
+def _load_local_model(model_id: str, options: dict) -> None:
+    interrogator = available_interrogators[model_id]
+    with gpu_inference_lock:
+        if getattr(interrogator, "model", None) is None:
+            if model_id == "pixai-tagger-v1.0":
+                interrogator.load(precision=options.get("precision", "auto"))
+            else:
+                interrogator.load()
+        elif model_id == "pixai-tagger-v1.0":
+            interrogator._configure_precision(options.get("precision", "auto"))
+
+
 def _local_tags(model_id: str, image: Image.Image, options: dict, *, full_categories: bool = False) -> tuple[list[str], dict]:
     interrogator = available_interrogators[model_id]
     with gpu_inference_lock:
@@ -586,7 +598,8 @@ def _existing_caption(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="ignore").strip() if path.is_file() else ""
 
 
-def _write_caption(path: Path, tags: list[str], conflict: str, remove_duplicated: bool = True) -> str:
+def _write_caption(path: Path, tags: list[str], conflict: str, remove_duplicated: bool = True,
+                   *, cancel_event: threading.Event | None = None) -> str:
     output = path.with_suffix(".txt")
     existing = _existing_caption(output)
     if existing and conflict == "ignore":
@@ -598,18 +611,7 @@ def _write_caption(path: Path, tags: list[str], conflict: str, remove_duplicated
             combined = list(OrderedDict.fromkeys(combined))
         generated = ", ".join(combined)
     output.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{output.name}.", suffix=".tmp", dir=str(output.parent))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
-            handle.write(generated)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, output)
-    finally:
-        try:
-            os.unlink(temporary)
-        except FileNotFoundError:
-            pass
+    atomic_write_text(output, generated, cancel_event=cancel_event)
     return "success"
 
 
@@ -722,14 +724,22 @@ def _start_image_prefetch(paths: list[Path], skip_existing: bool, stop_event: th
 
 
 def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write_captions: bool) -> None:
+    def set_phase(phase: str) -> None:
+        with task["lock"]:
+            if task["cancel_event"].is_set():
+                raise InterruptedError("cancelled")
+            task["phase"] = phase
+            task["updated_at"] = time.time()
+
     with task["lock"]:
         task["started_at"] = time.time()
         task["status"] = "cancelling" if task["cancel_event"].is_set() else "running"
-        task["phase"] = "created"
+        task["phase"] = "cancelling" if task["cancel_event"].is_set() else "created"
     spec = None
     prefetch_stop = threading.Event()
     producer = None
     model_ready = False
+    first_inference_done = False
     final_status = "done"
     final_error = ""
     try:
@@ -759,22 +769,34 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
                 _record_task_item(task, index, {"status": "skipped", "tag_count": len(tags), "result": result})
                 continue
             with task["lock"]:
-                task["phase"] = "inference" if model_ready else "loading_model"
                 task["current_file"] = path.name
                 task["items"][index]["status"] = "running"
                 task["updated_at"] = time.time()
+            writing = False
             try:
                 if decode_error:
                     raise decode_error
                 if not model_ready:
+                    set_phase("loading_model")
                     _task_log(task, "loading", "phase", model=spec.name)
-                tags, categories = _local_tags(spec.id, image, options, full_categories=not write_captions)
-                if not model_ready:
+                    started = time.perf_counter()
+                    _load_local_model(spec.id, options)
+                    set_phase("first_inference")
                     model_ready = True
-                    _task_log(task, "ready", model=spec.name)
+                    _task_log(task, "ready", model=spec.name, elapsed=f"{time.perf_counter() - started:.1f}")
                     if spec.id == "pixai-tagger-v1.0":
                         label = available_interrogators[spec.id].precision_label
                         _task_log(task, "precision", precision=label, requested=options.get("precision", "auto"))
+                set_phase("inference" if first_inference_done else "first_inference")
+                started = time.perf_counter()
+                if not first_inference_done:
+                    _task_log(task, "first_inference", "phase", name=path.name)
+                tags, categories = _local_tags(spec.id, image, options, full_categories=not write_captions)
+                if task["cancel_event"].is_set():
+                    raise InterruptedError("cancelled")
+                if not first_inference_done:
+                    first_inference_done = True
+                    _task_log(task, "first_inference_done", elapsed=f"{time.perf_counter() - started:.1f}")
                 result = {
                     "index": index,
                     "name": path.name,
@@ -785,20 +807,30 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
                 }
                 outcome = "success"
                 if write_captions:
-                    with task["lock"]:
-                        task["phase"] = "writing"
+                    set_phase("writing")
+                    writing = True
                     outcome = _write_caption(
                         path,
                         tags,
                         conflict,
                         bool(options.get("remove_duplicated", False)),
+                        cancel_event=task["cancel_event"],
                     )
                 _record_task_item(task, index, {"status": outcome, "tag_count": len(tags), "result": result})
+            except InterruptedError:
+                if not task["cancel_event"].is_set():
+                    raise
+                final_status = "cancelled"
+                break
             except UnidentifiedImageError:
                 _record_task_item(task, index, {"status": "failed", "error": "Unsupported image / 不支持的图片"})
             except Exception as exc:
                 message = f"{type(exc).__name__}: {str(exc)[:240]}"
                 _record_task_item(task, index, {"status": "failed", "error": message})
+                if writing and isinstance(exc, OSError):
+                    raise RuntimeError(
+                        f"Caption write failed / 标签写入失败: {path.with_suffix('.txt')}: {message}"
+                    ) from exc
                 if "out of memory" in str(exc).lower() or (
                     "cuda" in str(exc).lower() and "memory" in str(exc).lower()
                 ):
@@ -1029,7 +1061,7 @@ def cancel_task(task_id: str) -> bool:
             task["status"] = "cancelling"
             task["phase"] = "cancelling"
             task["updated_at"] = time.time()
-    task["cancel_event"].set()
+        task["cancel_event"].set()
     return True
 
 

@@ -7,11 +7,11 @@ import json
 import os
 import stat
 from pathlib import Path
-import tempfile
 import time
 from PIL import Image
 
 from backend.tagger import api_engine
+from backend.tagger.writing import atomic_write_text
 
 from tools import caption_images_moss as upstream
 
@@ -300,16 +300,6 @@ def preview(config: api_engine.ApiConfig, path: Path, options: dict, *, cancel_e
             "prompt": prompt, "raw": raw, **info, "elapsed": round(time.monotonic() - started, 2)}
 
 
-def _atomic_write(path: Path, text: str) -> None:
-    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(text)
-        os.replace(temporary, path)
-    finally:
-        Path(temporary).unlink(missing_ok=True)
-
-
 def process(config: api_engine.ApiConfig, path: Path, runtime: dict, *, cancel_event=None) -> dict:
     options = runtime["options"]
     output, sidecar, reference_path = output_files(path, options)
@@ -359,6 +349,6 @@ def process(config: api_engine.ApiConfig, path: Path, runtime: dict, *, cancel_e
         return outcome(status="checked", event="checked", planned_action="reuse")
     check_cancelled()
     if not reuse:
-        _atomic_write(sidecar, json.dumps(old, ensure_ascii=False, indent=2) + "\n")
-    _atomic_write(output, text)
+        atomic_write_text(sidecar, json.dumps(old, ensure_ascii=False, indent=2) + "\n", cancel_event=cancel_event)
+    atomic_write_text(output, text, cancel_event=cancel_event)
     return outcome(event="reused" if reuse else "caption_written", planned_action="reuse" if reuse else "request")
