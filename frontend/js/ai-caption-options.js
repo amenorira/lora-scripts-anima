@@ -43,6 +43,7 @@ window.captionOptionsMixin = {
   saveCaptionOptions() {
     localStorage.setItem('anima-moss-workflow', JSON.stringify({options:this.captionOptions, api:this.taggerApiSettings}));
     if (this.taggerSourceMode === 'api-folder') localStorage.setItem('anima-ai-source-path', this.taggerSourcePath);
+    this.captionOptionsChanged?.();
   },
 
   async loadCaptionTemplate() {
@@ -75,10 +76,6 @@ window.captionOptionsMixin = {
     return '';
   },
 
-  captionModeConfig() {
-    return {options:['generate','export'].map(v => ({v, l:this.t('caption.task_' + v), d:this.t('caption.task_' + v + 'Help')}))};
-  },
-
   captionPromptConfig() {
     return {options:['default','text','file'].map(v => ({v,l:this.t('caption.prompt_' + v),d:this.t('caption.prompt_' + v + 'Help')}))};
   },
@@ -101,22 +98,23 @@ window.captionOptionsMixin = {
   },
 
   captionCanCheck() {
-    return !!(this.taggerSource?.total && !this.captionOffline() && this.captionPromptReady() && this.captionSelectedCandidates().length
-      && !this.captionReferenceConflict() && !this.taggerRunning && !this.taggerStarting && !this.taggerScanning);
+    return !!(this.taggerSourceMode !== 'api-single' && this.taggerSource?.total && (this.captionOffline() || this.captionPromptReady()) && this.captionSelectedCandidates().length
+      && !this.captionReferenceConflict() && !this.captionPlanError && !this.captionPreviewBusy && !this.taggerHasActiveTask() && !this.taggerStarting && !this.taggerScanning);
   },
 
   taggerApiCanStart() {
     const s = this.taggerApiSettings;
     return !!(this.taggerSource?.total && this.captionSelectedCandidates().length && !this.captionReferenceConflict()
       && (this.captionOffline() || (s.baseUrl.trim() && s.model.trim() && this.captionPromptReady()))
-      && !this.regularizationActive && !this.taggerRunning && !this.taggerStarting && !this.taggerScanning);
+      && this.taggerSourceMode !== 'api-single' && !this.trainingActive && !this.regularizationActive
+      && !this.captionPlanError && !this.captionPreviewBusy && !this.taggerHasActiveTask() && !this.taggerStarting && !this.taggerScanning);
   },
-
-  taggerApiModelConfig() { return {options:this.taggerApiModelSuggestions.map(v => ({v,l:v}))}; },
 
   captionProtocolConfig() {
     return {options:[['chat-completions','Chat'],['responses','Responses'],['anthropic','Anthropic']].map(([v,key]) => ({v,l:this.t('tagger.apiProtocol'+key),d:this.t('tagger.apiProtocol'+key+'Desc')}))};
   },
+
+  taggerApiModelConfig() { return {options:this.taggerApiModelSuggestions.map(v => ({v,l:v}))}; },
 
   async testTaggerApiConnection() {
     if (this.taggerApiTesting || !this.taggerApiSettings.baseUrl.trim()) return;
@@ -131,25 +129,44 @@ window.captionOptionsMixin = {
     finally { this.taggerApiTesting = false; }
   },
 
-  async startApiTagger(dryRun = false) {
+  async startApiTagger(dryRun = false, approval = '') {
     if (dryRun ? !this.captionCanCheck() : !this.taggerApiCanStart()) return;
-    this._clearTaggerResultState(true);
+    const route = this.currentRoute, mode = this.taggerSourceMode;
+    const source = this.taggerSource, token = source.source_token;
+    const options = {...this.captionOptions,candidates:[...this.captionOptions.candidates]};
+    const api = this.captionApiPayload(), candidates = this.captionSelectedCandidates();
+    const settings = JSON.stringify([options,api]);
+    const stillCurrent = () => this.currentRoute === route && this.taggerSourceMode === mode
+      && this.taggerSource?.source_token === token
+      && JSON.stringify([this.captionOptions,this.captionApiPayload()]) === settings;
     this.taggerStarting = true;
     this.saveCaptionOptions();
     try {
-      const s = this.taggerApiSettings;
-      const payload = {engine:'api',source_token:this.taggerSource.source_token,
-        api:{...s,base_url:s.baseUrl,api_key:s.apiKey},options:{captioning:{...this.captionOptions,candidates:this.captionSelectedCandidates(),dry_run:dryRun}}};
-      delete payload.api.baseUrl; delete payload.api.apiKey;
+      clearTimeout(this._captionRefreshTimer);
+      const data = await this.refreshCaptionPlan({source,options});
+      // Navigation can replace the shared Tagger source while planning is in flight.
+      if (!stillCurrent()) return;
+      if (!data) throw new Error(this.captionPlanError || this.t('common.failed'));
+      const plan = data.plan;
+      const signature = JSON.stringify([token,options,plan]);
+      if (!dryRun && plan && (plan.overwrite_captions || plan.overwrite_json || plan.overwrite_references) && signature !== approval) {
+        const message = this.t('caption.overwriteConfirm').replace('{captions}',plan.overwrite_captions).replace('{json}',plan.overwrite_json).replace('{references}',plan.overwrite_references);
+        this.openConfirm(this.t('caption.overwriteExisting'),message,() => {
+          if (stillCurrent()) return this.startApiTagger(false,signature);
+        },this.t('caption.overwriteExisting'),{danger:true});
+        return;
+      }
+      this._clearTaggerResultState(true);
+      const payload = {engine:'api',source_token:token,
+        api,options:{captioning:{...options,candidates,dry_run:dryRun}}};
       const body = await (await fetch('/api/tagger/tasks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})).json();
       if (body.status !== 'success') throw new Error(body.message);
-      this.attachTaggerTask(body.data.task_id);
+      this.attachTaggerTask(body.data.task_id, mode);
     } catch (error) { this.toast(error.message, 'error'); }
     finally { this.taggerStarting = false; }
   },
 
   captionImageFormat() { return this.taggerApiSettings.jpeg_quality === '' ? 'png' : 'jpeg'; },
-  captionImageFormatConfig() { return {options:[{v:'png',l:'PNG',d:this.t('caption.imageFormat_png')},{v:'jpeg',l:'JPEG',d:this.t('caption.imageFormat_jpeg')}]}; },
   setCaptionImageFormat(format) {
     this.taggerApiSettings.jpeg_quality = format === 'png' ? '' : (Number(this.taggerApiSettings.jpeg_quality) || 90);
     this.saveCaptionOptions();

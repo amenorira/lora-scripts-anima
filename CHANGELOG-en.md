@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Split AI annotation into three peer workspaces: Batch annotation, Single image, and Annotation overview. MOSS preview reuses Tagger uploads, drag and drop, paste, and image previews without writing captions or JSON, and can run alongside training or regularization generation.
+- Add filesystem-based filters, filename search, 60-image pages with lazy thumbnails, and read-only details. Merge task states by image path so retry subset indices cannot be confused with directory indices.
+- Make preflight follow the actual generation, reuse, and skip policy, with separate checked and written counters. Load effective prompts on demand instead of streaming them in logs. Add candidate ordering, overwrite confirmations with file counts, and conflicting output-name detection.
+- Improve cancellation settling, workspace and task recovery, scan refresh, desktop layouts in all three themes, and Chinese, English, and Japanese copy while preserving local Tagger workflows.
+- Centralize background task state and fix recovery across workspace switches and page reloads, including cancellation before preview dispatch. Separate read-only browsing from write planning, isolate individual file read failures, remove full captions from live task state, and reuse shared controls and styles.
+
 ## v26.1021.0083e - 2026-10-21
 
 This release improves the **MOSS-Image multiple-caption workflow**: a dedicated directory-based AI captioning page saves results for later export, and training can cache multiple caption candidates. It also adds block-swapping controls for Anima and MOSS, updates the training engines, and fixes configuration and parameter interactions.

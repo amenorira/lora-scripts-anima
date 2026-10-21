@@ -1,0 +1,426 @@
+/* Navigation, read-only overview and synchronous MOSS preview. Sources/media remain in tagger.js. */
+window.captionWorkspaceMixin = {
+  captionTab: 'batch',
+  captionPreviewStatus: 'idle',
+  get captionPreviewBusy() { return this.captionPreviewStatus !== 'idle'; },
+  get captionPreviewCancelling() { return this.captionPreviewStatus === 'cancelling'; },
+  captionPreviewRequestId: '',
+  captionPreviewError: '',
+  captionSingleResult: null,
+  captionExternalTaggerBusy: false,
+  captionOverviewItems: [],
+  captionOverviewCounts: {},
+  captionOverviewPlan: null,
+  captionPlanError: '',
+  captionOverviewSettings: null,
+  captionOverviewTotal: 0,
+  captionOverviewOffset: 0,
+  captionOverviewFilter: 'all',
+  captionOverviewQuery: '',
+  captionOverviewLoading: false,
+  captionOverviewError: '',
+  captionOverviewDetail: null,
+  captionDetailLoading: false,
+  captionDetailError: '',
+  captionDetailNarrow: false,
+  captionPromptOpen: false,
+  captionCheckPrompt: '',
+  captionCheckPromptPath: '',
+  _captionOverviewRequest: 0,
+  _captionOverviewInFlight: false,
+  _captionDetailRequest: 0,
+  _captionOptionsFingerprint: '',
+  _captionPlanRequest: 0,
+  _captionPromptRequest: 0,
+  _captionDetailFocus: null,
+
+  captionBatchState() {
+    const state = this.taggerSourceMode === 'api-folder'
+      ? {source:this.taggerSource,sourcePath:this.taggerSourcePath,taskId:this.taggerTaskId}
+      : this._taggerModeStates['api-folder'] || {};
+    return {...state,task:this.taggerTaskById(state.taskId)};
+  },
+  captionBatchRunning() {
+    return this.taggerTaskActive(this.captionBatchState().taskId);
+  },
+  async initCaptionWorkspace(isCurrent = () => this.currentRoute === 'ai-captioning') {
+    await this.syncCaptionPreviewState(isCurrent);
+    if (!isCurrent()) return;
+    const tab = ['batch','single','overview'].includes(this.captionTab) ? this.captionTab : 'batch';
+    await this.selectCaptionTab(tab, false);
+    if (!isCurrent()) return;
+    if (this.taggerSourceMode === 'api-folder' && !this.taggerSourcePath) {
+      this.taggerSourcePath = localStorage.getItem('anima-ai-source-path') || '';
+      if (this.taggerSourcePath) await this.scanTaggerSource({quiet:true});
+    }
+    if (isCurrent() && this.captionBatchState().source) void this.refreshCaptionPlan();
+  },
+  stopCaptionWorkspace() {
+    clearTimeout(this._captionRefreshTimer);
+    clearTimeout(this._captionBusyTimer);
+    ++this._captionOverviewRequest;
+    ++this._captionPlanRequest;
+    ++this._captionPromptRequest;
+    this._captionOverviewInFlight = false;
+    this.captionOverviewLoading = false;
+    ++this._captionDetailRequest;
+    this.closeCaptionDetail();
+    this.captionPromptOpen = false;
+    if (this.captionPreviewBusy && !this.captionPreviewCancelling) void this.cancelCaptionPreview();
+  },
+  async selectCaptionTab(tab, focus = true) {
+    if (!['batch','single','overview'].includes(tab) || this.captionPreviewBusy || this.taggerStarting || this.taggerScanning) return;
+    if (tab !== this.captionTab) ++this._captionPromptRequest;
+    const mode = tab === 'single' ? 'api-single' : 'api-folder';
+    await this.selectTaggerSourceMode(mode, {allowActive:true});
+    this.captionTab = tab;
+    localStorage.setItem('anima-ai-tab', tab);
+    this.closeCaptionDetail();
+    if (tab === 'overview') void this.refreshCaptionOverview();
+    if (tab === 'single') void this.syncCaptionPreviewState();
+    if (focus) this.$nextTick?.(() => document.getElementById('caption-tab-' + tab)?.focus());
+  },
+  captionTabKey(event) {
+    const tabs = ['batch','single','overview'];
+    let i = tabs.indexOf(this.captionTab);
+    if (event.key === 'ArrowRight') i = (i + 1) % 3;
+    else if (event.key === 'ArrowLeft') i = (i + 2) % 3;
+    else if (event.key === 'Home') i = 0;
+    else if (event.key === 'End') i = 2;
+    else return;
+    event.preventDefault();
+    void this.selectCaptionTab(tabs[i]);
+  },
+  captionSourceChanged(mode) {
+    if (mode === 'api-single') { this.captionSingleResult = null; this.captionPreviewError = ''; }
+    if (mode !== 'api-folder') return;
+    ++this._captionPromptRequest;
+    this.captionOverviewOffset = 0;
+    this.captionOverviewItems = [];
+    const batch = this.captionBatchState();
+    this.captionOverviewCounts = batch.source || {};
+    this.captionOverviewPlan = null;
+    this.captionPlanError = '';
+    this.captionOverviewSettings = null;
+    this.captionOverviewError = '';
+    if (this.captionOverviewFilter === 'failed' && !batch.taskId) this.captionOverviewFilter = 'all';
+    this.closeCaptionDetail();
+    if (mode === this.taggerSourceMode) localStorage.setItem('anima-ai-source-path', batch.sourcePath || '');
+    if (batch.source) void this.refreshCaptionPlan();
+  },
+  captionOptionsChanged() {
+    const o = this.captionOptions;
+    const fingerprint = JSON.stringify([o.caption_extension,o.reference_extension,o.sidecar_suffix,o.separator,o.recursive,o.mode,o.overwrite,o.candidates,
+      o.knowledge_file,o.prompt_source,o.prompt_file,o.dir_knowledge_name,o.knowledge_suffix]);
+    if (fingerprint === this._captionOptionsFingerprint) return;
+    const old = this._captionOptionsFingerprint;
+    this._captionOptionsFingerprint = fingerprint;
+    ++this._captionPlanRequest;
+    ++this._captionOverviewRequest;
+    this.captionOverviewLoading = false;
+    this._captionOverviewInFlight = false;
+    this.captionOverviewPlan = null;
+    this.captionPlanError = '';
+    this.captionCheckPrompt = '';
+    this.closeCaptionDetail();
+    if (old && !this.taggerScanning && this.captionBatchState().source) {
+      clearTimeout(this._captionRefreshTimer);
+      this._captionRefreshTimer = setTimeout(() => {
+        void this.refreshCaptionPlan();
+        if (this.captionTab === 'overview') void this.refreshCaptionOverview();
+      }, 250);
+    }
+  },
+  captionCandidateRows(single = false) {
+    return [...this.captionOptions.candidates, ...['original','long','medium','short'].filter(n => !this.captionOptions.candidates.includes(n))]
+      .filter(n => n !== 'original' || (!single && (this.captionOffline() || this.captionOptions.reference_extension.trim())));
+  },
+  toggleCaptionCandidate(name, enabled) {
+    const names = this.captionOptions.candidates.filter(n => n !== name);
+    if (enabled) names.push(name);
+    this.captionOptions.candidates = names;
+    this.saveCaptionOptions();
+  },
+  moveCaptionCandidate(name, delta) {
+    const names = [...this.captionOptions.candidates];
+    const i = names.indexOf(name), next = i + delta;
+    if (i < 0 || next < 0 || next >= names.length) return;
+    [names[i],names[next]] = [names[next],names[i]];
+    this.captionOptions.candidates = names;
+    this.saveCaptionOptions();
+  },
+  captionOutputSkeleton() {
+    return this.captionSelectedCandidates().map(n => `${this.captionOptions.separator} # ${n}`).join('\n');
+  },
+  captionRequestChanges() {
+    const defaults = {max_workers:1,max_image_size:1536,jpeg_quality:'',max_tokens:16384,temperature:1,top_p:.95,timeout:600,max_retries:3,extra_body:'{}'};
+    return Object.keys(defaults).filter(k => String(defaults[k]) !== String(this.taggerApiSettings[k])).length;
+  },
+  captionPrecheckStale() {
+    const saved = this.captionBatchState().task?.caption_options;
+    return !!(saved?.dry_run && Object.keys(this.captionOptions).some(key => key !== 'dry_run' && JSON.stringify(this.captionOptions[key]) !== JSON.stringify(saved[key])));
+  },
+  captionApiPayload() {
+    const {baseUrl,apiKey,...settings} = this.taggerApiSettings;
+    return {...settings,base_url:baseUrl,api_key:apiKey};
+  },
+  captionPreviewCanStart() {
+    return !!(this.taggerSourceMode === 'api-single' && this.taggerSource?.total === 1 && this.captionPromptReady()
+      && this.captionOptions.candidates.some(n => n !== 'original') && this.taggerApiSettings.baseUrl.trim() && this.taggerApiSettings.model.trim()
+      && !this.captionPreviewBusy && !this.taggerHasActiveTask() && !this.captionExternalTaggerBusy && !this.taggerScanning);
+  },
+  async syncCaptionPreviewState(isCurrent = () => true) {
+    try {
+      const body = await (await fetch('/api/tagger/caption/preview-state')).json();
+      if (!isCurrent() || body.status !== 'success') return;
+      this.captionExternalTaggerBusy = !!body.data.tagger_busy;
+      clearTimeout(this._captionBusyTimer);
+      if (body.data.tagger_busy && !body.data.active && this.currentRoute === 'ai-captioning' && this.captionTab === 'single') {
+        this._captionBusyTimer = setTimeout(() => void this.syncCaptionPreviewState(),1000);
+      }
+      if (body.data.active && !this.captionPreviewBusy) {
+        this.captionPreviewStatus = body.data.phase;
+        this.captionPreviewRequestId = body.data.request_id;
+        void this.waitCaptionPreviewSettled();
+      }
+    } catch (_) {}
+  },
+  async waitCaptionPreviewSettled() {
+    const id = this.captionPreviewRequestId;
+    // A lost network connection cannot prove the server released its gate.
+    while (id === this.captionPreviewRequestId && this.captionPreviewBusy) {
+      try {
+        const body = await (await fetch('/api/tagger/caption/preview-state')).json();
+        if (body.status === 'success' && (!body.data.active || body.data.request_id !== id)) {
+          this.captionPreviewStatus = 'idle';
+          this.captionExternalTaggerBusy = !!body.data.tagger_busy;
+          break;
+        }
+      } catch (_) {}
+      await new Promise(resolve => setTimeout(resolve, 800));
+    }
+  },
+  async startCaptionPreview() {
+    if (this.currentRoute !== 'ai-captioning' || this.taggerSourceMode !== 'api-single' || !this.taggerSource) return;
+    const source = this.taggerSource.source_token, version = this._taggerFormVersion;
+    const options = {...this.captionOptions,candidates:[...this.captionOptions.candidates]};
+    const api = this.captionApiPayload(), settings = JSON.stringify([options,api]);
+    const isCurrent = () => this.currentRoute === 'ai-captioning' && version === this._taggerFormVersion
+      && this.taggerSourceMode === 'api-single' && this.taggerSource?.source_token === source
+      && JSON.stringify([this.captionOptions,this.captionApiPayload()]) === settings;
+    await this.syncCaptionPreviewState(isCurrent);
+    if (!isCurrent() || !this.captionPreviewCanStart()) return;
+    const id = 'caption-' + crypto.randomUUID();
+    this.captionPreviewRequestId = id;
+    this.captionPreviewStatus = 'preparing';
+    this.captionSingleResult = null;
+    this.captionPreviewError = '';
+    this.saveCaptionOptions();
+    try {
+      const body = await (await fetch('/api/tagger/caption/preview', {method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({source_token:source,index:0,request_id:id,api,captioning:options})})).json();
+      if (isCurrent() && !this.captionPreviewCancelling) {
+        if (body.status !== 'success') throw new Error(body.message);
+        this.captionSingleResult = body.data;
+      }
+    } catch (error) {
+      if (isCurrent() && !this.captionPreviewCancelling) this.captionPreviewError = error.message || String(error);
+    } finally {
+      // A failed HTTP response cannot establish whether the worker released its gate.
+      await this.waitCaptionPreviewSettled();
+    }
+  },
+  async cancelCaptionPreview() {
+    if (!this.captionPreviewBusy || this.captionPreviewCancelling) return;
+    const id = this.captionPreviewRequestId;
+    this.captionPreviewStatus = 'cancelling';
+    // The cancel HTTP request can reach the server before the preview POST.
+    // Retry until acknowledged or the original request has actually settled.
+    while (id === this.captionPreviewRequestId && this.captionPreviewBusy) {
+      try {
+        const body = await (await fetch('/api/tagger/caption/preview-cancel', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({request_id:id})})).json();
+        if (body.data?.cancelling) return;
+      } catch (_) {}
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+  },
+  captionOutputParams(settings = this.captionOptions) {
+    return new URLSearchParams(Object.fromEntries(['caption_extension','reference_extension','sidecar_suffix','separator'].map(key => [key,settings[key]])));
+  },
+  captionAnnotationParams({refresh=false} = {}) {
+    const params = this.captionOutputParams();
+    for (const [key,value] of Object.entries({offset:this.captionOverviewOffset,limit:60,status:this.captionOverviewFilter,q:this.captionOverviewQuery,
+      refresh,task_id:this.captionBatchState().taskId || ''})) params.set(key,String(value));
+    return params;
+  },
+  async refreshCaptionPlan({source = this.captionBatchState().source, options = this.captionOptions} = {}) {
+    if (!source?.source_token) return null;
+    const token = source.source_token, request = ++this._captionPlanRequest;
+    this.captionPlanError = '';
+    try {
+      const body = await (await fetch(`/api/tagger/source/${encodeURIComponent(token)}/caption-plan`, {method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(options)})).json();
+      if (request !== this._captionPlanRequest || token !== this.captionBatchState().source?.source_token) return null;
+      if (body.status !== 'success') throw new Error(body.message);
+      this.captionOverviewPlan = body.data.plan;
+      this.captionOverviewCounts = body.data.counts;
+      source.total = body.data.counts.total;
+      return body.data;
+    } catch (error) {
+      if (request === this._captionPlanRequest && token === this.captionBatchState().source?.source_token) {
+        this.captionOverviewPlan = null;
+        this.captionPlanError = error.message || String(error);
+      }
+      return null;
+    }
+  },
+  async refreshCaptionOverview(options = {}) {
+    const source = this.captionBatchState().source;
+    if (!source?.source_token) return null;
+    const token = source.source_token, request = ++this._captionOverviewRequest;
+    this._captionOverviewInFlight = true;
+    if (!options.silent) this.captionOverviewLoading = true;
+    this.captionOverviewError = '';
+    try {
+      const body = await (await fetch(`/api/tagger/source/${encodeURIComponent(token)}/annotations?${this.captionAnnotationParams(options)}`)).json();
+      if (request !== this._captionOverviewRequest || token !== this.captionBatchState().source?.source_token) return null;
+      if (body.status !== 'success') throw new Error(body.message);
+      const data = body.data;
+      this.captionOverviewCounts = data.counts;
+      source.total = data.counts.total;
+      this.captionOverviewSettings = data.settings;
+      this.captionOverviewItems = data.items || [];
+      this.captionOverviewTotal = data.total;
+      this.captionOverviewOffset = data.offset;
+      return data;
+    } catch (error) {
+      if (request === this._captionOverviewRequest) this.captionOverviewError = error.message || String(error);
+      return null;
+    } finally {
+      if (request === this._captionOverviewRequest) {
+        this.captionOverviewLoading = false;
+        this._captionOverviewInFlight = false;
+      }
+    }
+  },
+  async rescanCaptionOverview() {
+    if (this.currentRoute !== 'ai-captioning' || this.taggerSourceMode !== 'api-folder' || this.captionOverviewLoading) return;
+    this.closeCaptionDetail();
+    const batch = this.captionBatchState(), version = this._taggerFormVersion, tab = this.captionTab;
+    const isCurrent = () => this.currentRoute === 'ai-captioning' && version === this._taggerFormVersion
+      && this.taggerSourceMode === 'api-folder' && this.captionTab === tab;
+    const sameSource = () => this.captionBatchState().source?.source_token === batch.source?.source_token
+      && this.captionBatchState().sourcePath === batch.sourcePath;
+    if (batch.source) {
+      const pending = this.refreshCaptionOverview({refresh:true}), request = this._captionOverviewRequest;
+      const result = await pending;
+      // A discarded response is not a reason to recover an expired source.
+      if (!isCurrent() || !sameSource() || request !== this._captionOverviewRequest) return;
+      if (result) { void this.refreshCaptionPlan(); return; }
+    }
+    if (isCurrent() && sameSource() && !this.captionBatchRunning() && batch.sourcePath) {
+      await this.scanTaggerSource();
+      if (isCurrent()) await this.refreshCaptionOverview();
+    }
+  },
+  setCaptionOverviewFilter(filter) {
+    this.captionOverviewFilter = filter;
+    this.captionOverviewOffset = 0;
+    this.closeCaptionDetail();
+    void this.refreshCaptionOverview();
+  },
+  captionOverviewSearch() {
+    this.captionOverviewOffset = 0;
+    this.closeCaptionDetail();
+    void this.refreshCaptionOverview();
+  },
+  captionOverviewPage(delta) {
+    this.captionOverviewOffset = Math.max(0,this.captionOverviewOffset + delta * 60);
+    this.closeCaptionDetail();
+    void this.refreshCaptionOverview();
+    document.querySelector('.caption-overview-grid')?.scrollTo({top:0});
+  },
+  captionTaskUpdated(data, previous, terminal) {
+    if (this.currentRoute !== 'ai-captioning') return;
+    if (terminal && previous?.status !== data.status) {
+      this.captionCheckPrompt = '';
+      void this.refreshCaptionPlan();
+      if (this.captionTab === 'overview') void this.refreshCaptionOverview({silent:true});
+    } else if (this.captionTab === 'overview' && !this._captionOverviewInFlight && Date.now() - (this._captionLiveRefresh || 0) > 1200) {
+      this._captionLiveRefresh = Date.now();
+      void this.refreshCaptionOverview({silent:true});
+    }
+  },
+  async openCaptionDetail(item, element) {
+    const source = this.captionBatchState().source, request = ++this._captionDetailRequest;
+    if (!source) return;
+    this._captionDetailFocus = element;
+    this.captionOverviewDetail = {index:item.index,name:item.name,path:item.path};
+    this.captionDetailLoading = true;
+    this.captionDetailError = '';
+    try {
+      const body = await (await fetch(`/api/tagger/source/${encodeURIComponent(source.source_token)}/annotations/${item.index}?${this.captionOutputParams(this.captionOverviewSettings || this.captionOptions)}`)).json();
+      if (request !== this._captionDetailRequest) return;
+      if (body.status !== 'success') throw new Error(body.message);
+      this.captionOverviewDetail = body.data;
+    } catch (error) { if (request === this._captionDetailRequest) this.captionDetailError = error.message || String(error); }
+    finally { if (request === this._captionDetailRequest) this.captionDetailLoading = false; }
+    this.$nextTick?.(() => document.querySelector('.caption-overview-detail .caption-detail-close')?.focus());
+  },
+  closeCaptionDetail() {
+    ++this._captionDetailRequest;
+    this.captionOverviewDetail = null;
+    this.captionDetailLoading = false;
+    this._captionDetailFocus?.focus?.();
+    this._captionDetailFocus = null;
+  },
+  captionDetailKey(event) {
+    if (event.key !== 'Tab' || !this.captionDetailNarrow) return;
+    const controls = [...event.currentTarget.querySelectorAll('button:not(:disabled),summary,[tabindex="0"]')].filter(el => el.getClientRects().length);
+    const first = controls[0], last = controls[controls.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+  },
+  captionOverviewImage(index, variant = 'thumb') {
+    const source = this.captionBatchState().source;
+    if (!source) return '';
+    const item = this.captionOverviewItems.find(item => item.index === index) || this.captionOverviewDetail;
+    return '/api/image-preview?' + new URLSearchParams({scope:'tagger',source_token:source.source_token,index:String(index),variant,
+      identity:item?.path || '',version:item?.image_version || ''});
+  },
+  async showCaptionCheckPrompt() {
+    const batch = this.captionBatchState();
+    if (this.currentRoute !== 'ai-captioning' || !batch.taskId) return;
+    const request = ++this._captionPromptRequest, version = this._taggerFormVersion;
+    const mode = this.taggerSourceMode, tab = this.captionTab, token = batch.source?.source_token;
+    const isCurrent = () => {
+      const current = this.captionBatchState();
+      return request === this._captionPromptRequest && version === this._taggerFormVersion
+        && this.currentRoute === 'ai-captioning' && this.taggerSourceMode === mode && this.captionTab === tab
+        && current.taskId === batch.taskId && current.source?.source_token === token && current.sourcePath === batch.sourcePath;
+    };
+    try {
+      const body = await (await fetch(`/api/tagger/tasks/${encodeURIComponent(batch.taskId)}/check-prompt`)).json();
+      if (!isCurrent()) return;
+      if (body.status !== 'success') throw new Error(body.message);
+      this.captionCheckPrompt = body.data.prompt;
+      this.captionCheckPromptPath = body.data.path;
+      this.captionPromptOpen = true;
+    } catch (error) { if (isCurrent()) this.toast(error.message,'error'); }
+  },
+};
+
+// Candidate selection and clipboard handling are shared by preview and detail.
+window.captionCandidateViewer = read => ({
+  candidate: '',
+  captionViewerNames() { return Object.keys(read()?.candidates || {}); },
+  captionViewerText() {
+    const data = read();
+    const names = this.captionViewerNames();
+    return data?.candidates?.[names.includes(this.candidate) ? this.candidate : names[0]] || data?.text || '';
+  },
+  async captionViewerCopy() {
+    try { await navigator.clipboard.writeText(this.captionViewerText()); this.toast(this.t('tagger.copied')); }
+    catch (_) { this.toast(this.t('common.failed'),'error'); }
+  },
+});

@@ -86,7 +86,8 @@ class CaptioningTests(unittest.TestCase):
         with patch.object(api_engine, "interrogate") as interrogate:
             self.assertEqual(captioning.process(config, self.image, runtime)["event"], "missing_json")
             self.seed_json()
-            self.assertEqual(captioning.process(config, self.image, runtime)["result"]["text"], "---===--- # medium\nMedium description\n")
+            self.assertEqual(captioning.process(config, self.image, runtime)["event"], "reused")
+            self.assertEqual(self.image.with_suffix(".txt").read_text(encoding="utf-8"), "---===--- # medium\nMedium description\n")
             self.assertEqual(captioning.process(config, self.image, runtime)["status"], "skipped")
             interrogate.assert_not_called()
 
@@ -99,7 +100,7 @@ class CaptioningTests(unittest.TestCase):
 
     def test_input_check_never_calls_model_or_changes_files(self):
         self.image.with_suffix(".txt").write_text("existing", encoding="utf-8")
-        options = captioning.validate_options({"dry_run": True, "knowledge": "Known character"})
+        options = captioning.validate_options({"dry_run": True, "overwrite": True, "knowledge": "Known character"})
         with patch.object(api_engine, "interrogate") as interrogate:
             result = captioning.process(captioning.validate_config({}, options), self.image, captioning.prepare_runtime(options, self.root))
         self.assertEqual(result["event"], "checked")

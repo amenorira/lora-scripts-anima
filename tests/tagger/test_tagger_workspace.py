@@ -91,9 +91,9 @@ class TaggerWorkspaceTests(unittest.TestCase):
             release = threading.Event()
             started = []
             started_lock = threading.Lock()
-            def slow_tag(_config, path, _runtime, *, cancel_event, index):
+            def slow_tag(_config, path, _runtime, *, cancel_event):
                 with started_lock:
-                    started.append(index)
+                    started.append(path)
                     if len(started) == 2:
                         both_started.set()
                 self.assertTrue(release.wait(5))
@@ -120,6 +120,7 @@ class TaggerWorkspaceTests(unittest.TestCase):
             self.assertEqual(result["success"], 0)
             self.assertEqual(len(started), 2)
             self.assertEqual(len(list(root.glob("*.txt"))), 0)
+            self.assertEqual({item["status"] for item in workspace.task_items(task_id)["items"]}, {"cancelled"})
             reservation = tm.reserve_task()
             self.assertIsNotNone(reservation)
             tm.release_reserved(reservation)

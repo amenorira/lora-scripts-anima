@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Caption desktop scrolling regression</title>
+<style>
+  body { margin: 16px; font: 14px system-ui; }
+  iframe { display: block; border: 1px solid #888; }
+  pre { white-space: pre-wrap; }
+</style>
+<h1>Caption desktop scrolling regression</h1>
+<p>Serve with <code>venv/Scripts/python.exe -B tools/dev/check_caption_layout.py</code>.
+  Tests use the production page, templates, Alpine bindings and styles; no model requests are made.</p>
+<pre id="results" role="status">Running…</pre>
+<iframe title="Production caption workspace" src="/anima-ui/#ai-captioning" style="width:1280px;height:720px"></iframe>
+<script>
+(async () => {
+  const frame = document.querySelector('iframe'), results = document.querySelector('#results');
+  const lines = [];
+  const waitFor = async (condition, message) => {
+    const deadline = Date.now() + 15000;
+    while (!condition()) {
+      if (Date.now() > deadline) throw new Error(message);
+      await new Promise(resolve => setTimeout(resolve, 30));
+    }
+  };
+  const assert = (value, message) => { if (!value) throw new Error(message); };
+  const settle = () => new Promise(resolve => frame.contentWindow.requestAnimationFrame(() => frame.contentWindow.requestAnimationFrame(resolve)));
+  try {
+    await waitFor(() => frame.contentDocument?.querySelector('#caption-tab-single'), 'Workspace did not mount');
+    const doc = frame.contentDocument;
+    await waitFor(() => !doc.querySelector('#caption-tab-single').disabled, 'Workspace is busy');
+    doc.querySelector('#caption-tab-single').click();
+    await waitFor(() => doc.querySelector('#caption-tab-single').getAttribute('aria-selected') === 'true', 'Single tab did not activate');
+    // Long preview and expanded settings exercise both independent scroll panes.
+    frame.contentWindow.Alpine.$data(doc.body).captionSingleResult = {
+      candidates:{long:'A long preview paragraph.\n'.repeat(100)}, text:'Preview',
+      prompt:'Fixture prompt',raw:'Fixture response',model:'fixture',elapsed:0,attempts:1,
+    };
+    for (const theme of ['light','dark','comfy']) {
+      doc.documentElement.dataset.theme = theme;
+      for (const [width,height] of [[1280,720],[1024,768],[1440,900]]) {
+        frame.style.width = width + 'px';frame.style.height = height + 'px';
+        for (const expanded of [false,true]) {
+          doc.querySelectorAll('.caption-settings-column .caption-disclosure').forEach(el => { el.open = expanded; });
+          await settle();
+          const left = doc.querySelector('.caption-single-main'), right = doc.querySelector('.caption-single-layout .caption-settings-column');
+          const label = `${theme} ${width}×${height} ${expanded ? 'expanded' : 'collapsed'}`;
+          for (const [name,pane] of [['preview',left],['settings',right]]) {
+            const rect = pane.getBoundingClientRect();
+            assert(rect.height > 100 && rect.top >= 0 && rect.bottom <= height + 1, `${label}: ${name} pane escapes viewport`);
+            pane.scrollTop = 0;
+            if (pane.scrollHeight > pane.clientHeight + 1) {
+              pane.scrollTop = pane.scrollHeight;
+              assert(pane.scrollTop > 0, `${label}: ${name} pane cannot scroll`);
+            }
+          }
+          await settle();
+          const candidates = [...right.querySelectorAll('.caption-candidate-order input')];
+          const last = candidates[candidates.length - 1].getBoundingClientRect();
+          const bounds = right.getBoundingClientRect();
+          assert(last.top >= bounds.top && last.bottom <= bounds.bottom + 1, `${label}: bottom candidate is unreachable`);
+          assert(left.querySelector('.caption-candidate-text').getBoundingClientRect().bottom <= left.getBoundingClientRect().bottom + 1,
+            `${label}: preview output is unreachable`);
+          lines.push('PASS ' + label);results.textContent = lines.join('\n');
+        }
+      }
+    }
+    results.textContent += '\nPASS: 18 desktop layout scenarios';
+    document.documentElement.dataset.testStatus = 'passed';
+  } catch (error) {
+    results.textContent = [...lines,'FAIL: ' + error.message].join('\n');
+    document.documentElement.dataset.testStatus = 'failed';
+  }
+})();
+</script>
+</html>

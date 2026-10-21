@@ -205,6 +205,13 @@ def create_client(config: ApiConfig) -> httpx.Client:
     return httpx.Client(timeout=config.timeout, follow_redirects=True)
 
 
+def _error_text(response, key: str, limit: int = 300) -> str:
+    text = response.text
+    if key and key != "none":
+        text = text.replace(key, "[redacted]")
+    return text[:limit]
+
+
 def _flatten_alpha(image: Image.Image) -> Image.Image:
     has_alpha = image.mode in ("RGBA", "LA", "PA") or (image.mode == "P" and "transparency" in image.info)
     if not has_alpha:
@@ -304,7 +311,7 @@ def interrogate(
             else:
                 status = response.status_code
                 if status in (401, 403):
-                    raise ApiAuthError(f"HTTP {status}: {response.text[:200]}")
+                    raise ApiAuthError(f"HTTP {status}: {_error_text(response, config.api_key)}")
                 if status == 429 or status >= 500:
                     wait: float | None = None
                     retry_after = response.headers.get("Retry-After", "")
@@ -312,7 +319,7 @@ def interrogate(
                         wait = min(float(retry_after), 60.0)
                     except ValueError:
                         pass
-                    last_error = ApiTransientError(f"HTTP {status}: {response.text[:200]}")
+                    last_error = ApiTransientError(f"HTTP {status}: {_error_text(response, config.api_key)}")
                     if attempt < config.max_retries:
                         delay = wait if wait is not None else min(2.0 * (2 ** attempt), 30.0)
                         if cancel_event is not None:
@@ -321,7 +328,7 @@ def interrogate(
                             time.sleep(max(0, delay))
                     continue
                 if status >= 400:
-                    raise ApiBadRequestError(f"HTTP {status}: {response.text[:300]}")
+                    raise ApiBadRequestError(f"HTTP {status}: {_error_text(response, config.api_key)}")
                 try:
                     body = response.json()
                     raw = _extract_content(body, config.protocol)
@@ -370,9 +377,9 @@ def list_models(
         except (httpx.TimeoutException, httpx.TransportError) as exc:
             raise ApiTransientError(f"Network error: {type(exc).__name__}") from exc
     if response.status_code in (401, 403):
-        raise ApiAuthError(f"HTTP {response.status_code}: {response.text[:200]}")
+        raise ApiAuthError(f"HTTP {response.status_code}: {_error_text(response, key)}")
     if response.status_code >= 400:
-        raise ApiBadRequestError(f"HTTP {response.status_code}: {response.text[:300]}")
+        raise ApiBadRequestError(f"HTTP {response.status_code}: {_error_text(response, key)}")
     try:
         data = response.json().get("data") or []
     except Exception as exc:

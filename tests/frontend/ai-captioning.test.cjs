@@ -1,15 +1,17 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {loadFrontend, response, deferred} = require('./helpers.cjs');
+const {loadFrontend, response, deferred, composeMixins} = require('./helpers.cjs');
 
 function harness() {
   const storage = new Map();
-  const context = loadFrontend(['tagger', 'ai-caption-options'], {
+  const context = loadFrontend(['tagger', 'ai-caption-options', 'caption-workspace'], {
     window: {}, localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
     setTimeout:()=>1,clearTimeout:()=>{},requestAnimationFrame:fn=>fn(),document:{querySelector:()=>null,body:{classList:{remove(){}}}},
     fetch:async()=>response({task_id:null}),
   });
-  const app = {...context.window.taggerMixin,...context.window.captionOptionsMixin};
+  const app = composeMixins(context.window.taggerMixin,context.window.captionOptionsMixin);
+  app.captionApiPayload = context.window.captionWorkspaceMixin.captionApiPayload;
+  app.refreshCaptionPlan = async()=>({plan:{}});
   app.taggerSettings={...app.taggerSettings};app.taggerApiSettings={...app.taggerApiSettings};
   app.captionOptions={...app.captionOptions,candidates:['original','long','medium','short']};
   app._taggerModeStates={folder:null,single:null,'api-folder':null};
@@ -46,7 +48,7 @@ test('AI route ignores local active tasks and restores its own options',async()=
 test('export needs no model; generation checks active prompt, conflict and task state',()=>{
   const {app}=harness();app.taggerSource={total:1};assert.equal(app.taggerApiCanStart(),false);
   app.captionOptions.mode='export';assert.equal(app.taggerApiCanStart(),true);
-  app.taggerRunning=true;assert.equal(app.taggerApiCanStart(),false);app.taggerRunning=false;
+  app.taggerTaskId='busy';app._taggerTasks.busy={status:'running'};assert.equal(app.taggerApiCanStart(),false);app._clearTaggerTask();
   app.captionOptions.mode='generate';Object.assign(app.taggerApiSettings,{baseUrl:'http://local/v1',model:'mine'});
   assert.equal(app.taggerApiCanStart(),true);app.captionOptions.reference_extension='.txt';assert.equal(app.taggerApiCanStart(),false);
   app.captionOptions.overwrite=true;assert.equal(app.taggerApiCanStart(),true);
@@ -61,7 +63,7 @@ test('input check needs no connection and inactive prompt inputs do not block it
   app.captionDefaultPrompt='MOSS JSON template';app.setCaptionPromptSource('text');
   assert.equal(app.captionCanCheck(),true);assert.equal(app.captionOptions.prompt_text,'MOSS JSON template');
   app.setCaptionPromptSource('default');app.captionOptions.prompt_file='';assert.equal(app.captionCanCheck(),true);
-  app.captionOptions.mode='export';assert.equal(app.captionCanCheck(),false);
+  app.captionOptions.mode='export';assert.equal(app.captionCanCheck(),true);
 });
 
 test('tasks send only fixed caption workflow and use existing API transport settings',async()=>{
