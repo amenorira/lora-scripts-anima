@@ -125,7 +125,7 @@ window.taggerMixin = {
         const response = await fetch('/anima-ui/tagger-workspace.html?v=20261021-caption-workspaces6');
         if (!response.ok) throw new Error('Workspace template unavailable');
         host.innerHTML = await response.text();
-        const captionTemplate = await fetch('/anima-ui/caption-workspace.html?v=20261021-caption-workspaces6');
+        const captionTemplate = await fetch('/anima-ui/caption-workspace.html?v=20261021-copy-clarity1');
         if (!captionTemplate.ok) throw new Error('Caption workspace unavailable');
         host.querySelector('#captionWorkspaceMount').outerHTML = await captionTemplate.text();
         host.dataset.mounted = '1';

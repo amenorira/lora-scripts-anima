@@ -267,7 +267,7 @@ window.trainingShapePreviewMixin = {
     size.push({ label: t('shapePreview.groupSize'), value: this._shapePreviewBytes(group.weightBytes * group.count), hint: t('shapePreview.sizeHelp') });
     structure.push({
       label: t('shapePreview.exampleLayer'),
-      value: `${this._shapePreviewCount(inDim)} → ${this._shapePreviewCount(outDim)}`,
+      value: t('shapePreview.dimensions').replace('{input}', this._shapePreviewCount(inDim)).replace('{output}', this._shapePreviewCount(outDim)),
     });
     size.push({
       label: t('shapePreview.trainableParams'),
@@ -535,8 +535,9 @@ window.trainingShapePreviewMixin = {
       const variant = estimate.groups.some(other => other.id !== group.id && other.name === group.name)
         ? ` · ${group.algo} R${group.rank} · ${group.paths[0]}` : '';
       if (!families.has(family)) families.set(family, []);
-      families.get(family).push({ value: group.id, family, label, detail: `${group.in} → ${group.out}${variant}`,
-        selectedLabel: `${family === label ? family : `${family} / ${label}`} · ${group.in} → ${group.out}${variant}` });
+      const dimensions = this.t('shapePreview.dimensions').replace('{input}', group.in).replace('{output}', group.out);
+      families.get(family).push({ value: group.id, family, label, detail: `${dimensions}${variant}`,
+        selectedLabel: `${family === label ? family : `${family} / ${label}`} · ${dimensions}${variant}` });
     }
     const options = [...families.values()].flat();
     const selector = `<div class="shape-preview-selector" @preview-select="selectShapePreview($event.detail)"><span>${this.esc(this.t('shapePreview.selectModule'))}</span>${window.previewSelectHtml(options, this.shapePreviewSelected, this.t('shapePreview.selectModule'))}</div>`;

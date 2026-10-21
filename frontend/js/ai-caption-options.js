@@ -55,6 +55,10 @@ window.captionOptionsMixin = {
 
   captionOffline() { return this.captionOptions.mode === 'export'; },
 
+  captionOverwriteLabel() {
+    return this.t('caption.overwrite_' + this.captionOptions.mode);
+  },
+
   captionReferenceExtension(settings = this.captionOptions) {
     return String(settings.reference_extension || '').trim() || '.txt';
   },
@@ -153,9 +157,9 @@ window.captionOptionsMixin = {
       const signature = JSON.stringify([token,options,plan]);
       if (!dryRun && plan && (plan.overwrite_captions || plan.overwrite_json || plan.overwrite_references) && signature !== approval) {
         const message = this.t('caption.overwriteConfirm').replace('{captions}',plan.overwrite_captions).replace('{json}',plan.overwrite_json).replace('{references}',plan.overwrite_references);
-        this.openConfirm(this.t('caption.overwriteExisting'),message,() => {
+        this.openConfirm(this.captionOverwriteLabel(),message,() => {
           if (stillCurrent()) return this.startApiTagger(false,signature);
-        },this.t('caption.overwriteExisting'),{danger:true});
+        },this.captionOverwriteLabel(),{danger:true});
         return;
       }
       this._clearTaggerResultState(true);
@@ -185,8 +189,8 @@ window.captionOptionsMixin = {
   },
   captionOutputExample() {
     const o = this.captionOptions;
-    return this.captionOffline()
-      ? 'image' + o.sidecar_suffix + ' → image' + o.caption_extension
-      : 'image.png → image' + o.sidecar_suffix + ' + image' + o.caption_extension;
+    return this.t(this.captionOffline() ? 'caption.outputExampleExport' : 'caption.outputExampleGenerate')
+      .replace('{caption}', 'image' + o.caption_extension)
+      .replace('{json}', 'image' + o.sidecar_suffix);
   },
 };
