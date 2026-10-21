@@ -189,7 +189,7 @@ async def list_tagger_source_items(source_token: str, offset: int = 0, limit: in
         return APIResponseFail(message=str(exc))
 
 
-def annotation_options(caption_extension: str = ".txt", reference_extension: str = ".tags",
+def annotation_options(caption_extension: str = ".txt", reference_extension: str = ".txt",
                        sidecar_suffix: str = "_caption.json", separator: str = "---===---") -> dict:
     return dict(caption_extension=caption_extension, reference_extension=reference_extension,
                 sidecar_suffix=sidecar_suffix, separator=separator)

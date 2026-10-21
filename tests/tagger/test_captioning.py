@@ -52,7 +52,7 @@ class CaptioningTests(unittest.TestCase):
         self.image.with_suffix(".tags").write_text("original tags", encoding="utf-8")
         (self.root / "_knowledge.txt").write_text("Directory identity", encoding="utf-8")
         (self.root / "sample_knowledge.txt").write_text("Image identity", encoding="utf-8")
-        config, runtime = self.config(), self.runtime(knowledge="Shared identity")
+        config, runtime = self.config(), self.runtime(reference_extension=".tags", knowledge="Shared identity")
         with patch.object(api_engine, "create_client", return_value=self.client()):
             self.assertEqual(captioning.process(config, self.image, runtime)["status"], "success")
         data = json.loads((self.root / "sample_caption.json").read_text(encoding="utf-8"))
@@ -72,13 +72,37 @@ class CaptioningTests(unittest.TestCase):
 
     def test_overwrite_retains_original_when_reference_equals_output(self):
         self.image.with_suffix(".txt").write_text("original tags", encoding="utf-8")
-        runtime = self.runtime(overwrite=True, reference_extension=".txt")
-        for _ in range(2):
+        runtime = self.runtime(overwrite=True)
+        self.assertEqual(runtime["options"]["reference_extension"], ".txt")
+        for reference_extension in ("", "   "):
+            runtime = self.runtime(overwrite=True, reference_extension=reference_extension)
+            self.assertEqual(runtime["options"]["reference_extension"], ".txt")
             with patch.object(api_engine, "create_client", return_value=self.client()):
                 captioning.process(self.config(), self.image, runtime)
             data = json.loads((self.root / "sample_caption.json").read_text(encoding="utf-8"))
             self.assertEqual(data["reference"], "original tags")
+            self.assertIn("original tags", data["prompt"])
+            self.assertEqual(captioning.parse_caption_text(self.image.with_suffix(".txt").read_text(encoding="utf-8"))["original"], "original tags")
         self.assertEqual(len(self.calls), 2)
+
+    def test_default_txt_reference_skips_existing_and_generates_missing_only(self):
+        self.image.with_suffix(".txt").write_text("local tagger output", encoding="utf-8")
+        missing = self.root / "missing.png"
+        Image.new("RGB", (48, 32)).save(missing)
+        runtime = self.runtime(reference_extension="")
+        settings = runtime["options"]
+        states = [captioning.output_state(path, settings) for path in (self.image, missing)]
+        plan = captioning.execution_plan(states, settings)
+        self.assertEqual((plan["requests"], plan["skipped"], plan["overwrite_captions"]), (1, 1, 0))
+        with patch.object(api_engine, "create_client", return_value=self.client()):
+            self.assertEqual(captioning.process(self.config(), self.image, runtime)["status"], "skipped")
+            self.assertEqual(captioning.process(self.config(), missing, runtime)["status"], "success")
+        self.assertEqual(self.image.with_suffix(".txt").read_text(encoding="utf-8"), "local tagger output")
+        self.assertFalse((self.root / "sample_caption.json").exists())
+        missing_data = json.loads((self.root / "missing_caption.json").read_text(encoding="utf-8"))
+        self.assertIsNone(missing_data["reference"])
+        self.assertNotIn("original", captioning.parse_caption_text(missing.with_suffix(".txt").read_text(encoding="utf-8")))
+        self.assertEqual(len(self.calls), 1)
 
     def test_export_requires_no_model_and_preserves_existing_output_by_default(self):
         config = captioning.validate_config({}, captioning.validate_options({"mode": "export"}))
@@ -120,7 +144,7 @@ class CaptioningTests(unittest.TestCase):
                 self.assertIn("image/png", json.dumps(body))
 
     def test_invalid_output_settings_and_legacy_json_are_rejected(self):
-        for options in ({"caption_extension": ".png"}, {"caption_extension": ".json"}, {"sidecar_suffix": "../result.json"}, {"candidates": []}, {"reference_extension": ".txt"}):
+        for options in ({"caption_extension": ".png"}, {"caption_extension": ".json"}, {"sidecar_suffix": "../result.json"}, {"candidates": []}):
             with self.subTest(options=options), self.assertRaises(ValueError):
                 captioning.validate_options(options)
         self.seed_json(parse_mode="tags")
@@ -137,7 +161,7 @@ class CaptioningTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             captioning.validate_options({"prompt_source": "file"})
         self.image.with_suffix(".tags").write_text("reference tags", encoding="utf-8")
-        result = captioning.process(self.config(), self.image, self.runtime(dry_run=True, prompt_source="text", prompt_text="Custom", knowledge="Known character"))
+        result = captioning.process(self.config(), self.image, self.runtime(reference_extension=".tags", dry_run=True, prompt_source="text", prompt_text="Custom", knowledge="Known character"))
         self.assertIn("reference tags", result["prompt"])
         self.assertIn("Known character", result["prompt"])
 
@@ -166,7 +190,7 @@ class CaptioningTests(unittest.TestCase):
         self.image.with_suffix(".tags").write_text("tags", encoding="utf-8")
         self.image.with_suffix(".caption").write_text("ordinary caption", encoding="utf-8")
         self.seed_json()
-        source = workspace.scan_source(str(self.root), caption_extension=".caption", caption_options={})
+        source = workspace.scan_source(str(self.root), caption_extension=".caption", caption_options={"reference_extension": ".tags"})
         self.assertEqual((source["with_caption"], source["references"], source["sidecars"], source["ordinary_outputs"]), (1, 1, 1, 1))
         self.assertTrue(workspace.source_items(source["source_token"])["items"][0]["has_caption"])
         self.image.with_suffix(".caption").write_text("---===--- # long\nDescription\n", encoding="utf-8")

@@ -4,7 +4,7 @@ window.captionOptionsMixin = {
   captionDefaultPrompt: '',
   captionOptions: {
     mode: 'generate', overwrite: false, recursive: true,
-    reference_extension: '.tags', caption_extension: '.txt', sidecar_suffix: '_caption.json', separator: '---===---',
+    reference_extension: '', caption_extension: '.txt', sidecar_suffix: '_caption.json', separator: '---===---',
     candidates: ['original', 'long', 'medium', 'short'], knowledge: '', knowledge_file: '',
     dir_knowledge_name: '_knowledge.txt', knowledge_suffix: '_knowledge.txt',
     prompt_source: 'default', prompt_text: '', prompt_file: '', verbose: false,
@@ -33,7 +33,6 @@ window.captionOptionsMixin = {
         const options = JSON.parse(localStorage.getItem('anima-ai-caption-options') || '{}');
         for (const key of ['baseUrl','apiKey','model','protocol']) if (key in api) this.taggerApiSettings[key] = api[key];
         for (const key of ['reference_extension','caption_extension','sidecar_suffix','separator','knowledge','knowledge_file','dir_knowledge_name','knowledge_suffix','candidates']) if (key in options) this.captionOptions[key] = options[key];
-        if (!this.captionOptions.reference_extension) this.captionOptions.reference_extension = '.tags';
         if (options.prompt_file) Object.assign(this.captionOptions, {prompt_source:'file', prompt_file:options.prompt_file});
         if (!api.modelSelectionVersion && ['deepseek-v4-flash-vision-exp','gpt-4o-mini','claude-sonnet-4-5','Qwen/Qwen2.5-VL-72B-Instruct','qwen-vl-max'].includes(api.model)) this.taggerApiSettings.model = '';
       }
@@ -56,8 +55,12 @@ window.captionOptionsMixin = {
 
   captionOffline() { return this.captionOptions.mode === 'export'; },
 
+  captionReferenceExtension(settings = this.captionOptions) {
+    return String(settings.reference_extension || '').trim() || '.txt';
+  },
+
   captionSelectedCandidates() {
-    return this.captionOptions.candidates.filter(name => name !== 'original' || this.captionOffline() || !!this.captionOptions.reference_extension.trim());
+    return [...this.captionOptions.candidates];
   },
 
   setCaptionTaskMode(mode) {
@@ -70,7 +73,6 @@ window.captionOptionsMixin = {
   captionStartHint() {
     if (!this.taggerSource?.total) return this.t('caption.selectDirectory');
     if (!this.captionSelectedCandidates().length) return this.t('caption.chooseCandidate');
-    if (this.captionReferenceConflict()) return this.t('caption.referenceConflict');
     if (!this.captionOffline() && !this.captionPromptReady()) return this.t('caption.completePrompt');
     if (!this.captionOffline() && (!this.taggerApiSettings.baseUrl.trim() || !this.taggerApiSettings.model.trim())) return this.t('caption.completeConnection');
     return '';
@@ -91,20 +93,20 @@ window.captionOptionsMixin = {
     return o.prompt_source === 'default' || (o.prompt_source === 'text' ? !!o.prompt_text.trim() : !!o.prompt_file.trim());
   },
 
-  captionReferenceConflict() {
+  captionReferenceWillBeSkipped() {
     const o = this.captionOptions;
-    return !this.captionOffline() && !o.overwrite && !!o.reference_extension.trim()
-      && o.reference_extension.replace(/^\.+/, '').toLowerCase() === o.caption_extension.replace(/^\.+/, '').toLowerCase();
+    return !this.captionOffline() && !o.overwrite
+      && this.captionReferenceExtension().replace(/^\.+/, '').toLowerCase() === o.caption_extension.replace(/^\.+/, '').toLowerCase();
   },
 
   captionCanCheck() {
     return !!(this.taggerSourceMode !== 'api-single' && this.taggerSource?.total && (this.captionOffline() || this.captionPromptReady()) && this.captionSelectedCandidates().length
-      && !this.captionReferenceConflict() && !this.captionPlanError && !this.captionPreviewBusy && !this.taggerHasActiveTask() && !this.taggerStarting && !this.taggerScanning);
+      && !this.captionPlanError && !this.captionPreviewBusy && !this.taggerHasActiveTask() && !this.taggerStarting && !this.taggerScanning);
   },
 
   taggerApiCanStart() {
     const s = this.taggerApiSettings;
-    return !!(this.taggerSource?.total && this.captionSelectedCandidates().length && !this.captionReferenceConflict()
+    return !!(this.taggerSource?.total && this.captionSelectedCandidates().length
       && (this.captionOffline() || (s.baseUrl.trim() && s.model.trim() && this.captionPromptReady()))
       && this.taggerSourceMode !== 'api-single' && !this.trainingActive && !this.regularizationActive
       && !this.captionPlanError && !this.captionPreviewBusy && !this.taggerHasActiveTask() && !this.taggerStarting && !this.taggerScanning);

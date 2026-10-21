@@ -133,7 +133,7 @@ window.captionWorkspaceMixin = {
   },
   captionCandidateRows(single = false) {
     return [...this.captionOptions.candidates, ...['original','long','medium','short'].filter(n => !this.captionOptions.candidates.includes(n))]
-      .filter(n => n !== 'original' || (!single && (this.captionOffline() || this.captionOptions.reference_extension.trim())));
+      .filter(n => n !== 'original' || !single);
   },
   toggleCaptionCandidate(name, enabled) {
     const names = this.captionOptions.candidates.filter(n => n !== name);
@@ -158,7 +158,9 @@ window.captionWorkspaceMixin = {
   },
   captionPrecheckStale() {
     const saved = this.captionBatchState().task?.caption_options;
-    return !!(saved?.dry_run && Object.keys(this.captionOptions).some(key => key !== 'dry_run' && JSON.stringify(this.captionOptions[key]) !== JSON.stringify(saved[key])));
+    return !!(saved?.dry_run && Object.keys(this.captionOptions).some(key => key !== 'dry_run' && (key === 'reference_extension'
+      ? this.captionReferenceExtension() !== this.captionReferenceExtension(saved)
+      : JSON.stringify(this.captionOptions[key]) !== JSON.stringify(saved[key]))));
   },
   captionApiPayload() {
     const {baseUrl,apiKey,...settings} = this.taggerApiSettings;

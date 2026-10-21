@@ -212,6 +212,7 @@ test('candidate reorder is sent as selected order; preview removes original only
   const {app}=harness();app.moveCaptionCandidate('short',-1);assert.deepEqual([...app.captionOptions.candidates],['original','long','short','medium']);
   app.toggleCaptionCandidate('long',false);app.moveCaptionCandidate('short',-1);assert.deepEqual([...app.captionOptions.candidates],['short','original','medium']);
   assert.equal(app.captionOutputSkeleton(),'---===--- # short\n---===--- # original\n---===--- # medium');
+  assert.ok(app.captionCandidateRows().includes('original'));
   assert.deepEqual([...app.captionCandidateRows(true)],['short','medium','long']);
 });
 
@@ -471,8 +472,8 @@ test('AI realtime does not also poll the removed task results list',()=>{
   assert.equal(reads,1);
 });
 
-test('preflight becomes stale after a prompt or policy change',()=>{
-  const {app}=harness();app.taggerTaskId='check';app._taggerTasks.check={caption_options:{...app.captionOptions,dry_run:true}};
+test('preflight accepts normalized blank reference and becomes stale after a prompt change',()=>{
+  const {app}=harness();app.taggerTaskId='check';app._taggerTasks.check={caption_options:{...app.captionOptions,reference_extension:'.txt',dry_run:true}};
   assert.equal(app.captionPrecheckStale(),false);app.captionOptions.knowledge='Changed';assert.equal(app.captionPrecheckStale(),true);
 });
 

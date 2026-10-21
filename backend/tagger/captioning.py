@@ -27,16 +27,13 @@ def _name(value: str, label: str, empty: bool = False) -> str:
 def validate_options(value: dict) -> dict:
     options = {
         "mode": "generate", "overwrite": False, "recursive": True,
-        "reference_extension": ".tags", "caption_extension": ".txt", "sidecar_suffix": "_caption.json",
+        "reference_extension": ".txt", "caption_extension": ".txt", "sidecar_suffix": "_caption.json",
         "candidates": ["original", "long", "medium", "short"], "separator": "---===---",
         "knowledge": "", "knowledge_file": "", "dir_knowledge_name": "_knowledge.txt", "knowledge_suffix": "_knowledge.txt",
         "prompt_source": "default", "prompt_text": "", "prompt_file": "", "dry_run": False, "verbose": False,
     }
     options.update({key: value[key] for key in options if key in value})
     options.update(plan_options(options))
-    extension = options["caption_extension"]
-    if options["mode"] == "generate" and not options["overwrite"] and extension.lower() == options["reference_extension"].lower():
-        raise ValueError("Use different reference/output extensions, or select Overwrite existing / 请更改参考或输出扩展名，或选择“覆盖已有”")
     names = options["candidates"]
     if not isinstance(names, list) or not names or any(name not in {"original", "long", "medium", "short"} for name in names) or len(names) != len(set(names)):
         raise ValueError("Select at least one valid candidate / 请至少选择一种有效的导出候选")
@@ -89,10 +86,12 @@ def prepare_runtime(options: dict, root: Path) -> dict:
 def output_options(value: dict | None = None, extension: str = ".txt") -> dict:
     """File reading settings, independent of generation and write policy."""
     value = value or {}
-    settings = {"caption_extension": extension, "reference_extension": value.get("reference_extension", ".tags"),
+    settings = {"caption_extension": extension, "reference_extension": value.get("reference_extension", ".txt"),
                 "sidecar_suffix": str(value.get("sidecar_suffix", "_caption.json")), "separator": str(value.get("separator", "---===---")).strip()}
     for key in ("caption_extension", "reference_extension"):
         text = str(settings[key]).strip()
+        if key == "reference_extension" and not text:
+            text = ".txt"
         settings[key] = _name("." + text.lstrip("."), key) if text else ""
     if not settings["caption_extension"] or settings["caption_extension"].lower() in upstream.IMAGE_EXTENSIONS | {".avif", ".json"}:
         raise ValueError("Caption extension must not replace an image or JSON / 标注扩展名不能覆盖图片或 JSON")
