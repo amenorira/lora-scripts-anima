@@ -107,11 +107,35 @@ window.captionOptionsMixin = {
   },
 
   captionStartHint() {
-    if (!this.taggerSource?.total) return this.t('caption.selectDirectory');
+    if (!this.taggerSource) return this.captionSourceError ? '' : this.t('caption.selectDirectory');
+    if (!this.taggerSource.total) return this.t('caption.noImages');
     if (!this.captionSelectedCandidates().length) return this.t('caption.chooseCandidate');
     if (!this.captionOffline() && !this.captionPromptReady()) return this.t('caption.completePrompt');
     if (!this.captionOffline() && (!this.taggerApiSettings.baseUrl.trim() || !this.taggerApiSettings.model.trim())) return this.t('caption.completeConnection');
     return '';
+  },
+
+  captionOutputExample() {
+    const extension = String(this.captionOptions.caption_extension || '').trim().replace(/^\.+/, '');
+    return this.t(this.captionOffline() ? 'caption.outputExampleExport' : 'caption.outputExampleGenerate')
+      .replace('{caption}', 'image.' + extension)
+      .replace('{json}', 'image' + this.captionOptions.sidecar_suffix);
+  },
+
+  captionErrorMessage(error) {
+    const text = String(error?.message || error || this.t('common.failed'));
+    const match = text.match(/^HTTP (\d+):\s*(\{[\s\S]*\})$/);
+    if (match) {
+      try {
+        const body = JSON.parse(match[2]), detail = body.error?.message || body.message || body.error;
+        if (typeof detail === 'string' && detail.trim()) return this.t('caption.serviceError').replace('{status}',match[1]).replace('{message}',() => detail);
+      } catch (_) {}
+    }
+    const separator = text.indexOf(' / ');
+    if (this.locale === 'zh-CN' && !text.startsWith('HTTP ') && separator >= 0 && /[\u3400-\u9fff]/.test(text.slice(separator + 3))) {
+      return text.slice(separator + 3);
+    }
+    return text;
   },
 
   captionPromptConfig() {
@@ -157,7 +181,7 @@ window.captionOptionsMixin = {
       if (body.status !== 'success') throw new Error(body.message);
       this.taggerApiModelSuggestions = body.data?.models || [];
       this.taggerApiTestInfo = {state:'ok',text:this.t('tagger.apiTestOk').replace('{count}',String(body.data?.count || 0))};
-    } catch (error) { this.taggerApiTestInfo = {state:'fail',text:String(error.message || error)}; }
+    } catch (error) { this.taggerApiTestInfo = {state:'fail',text:this.captionErrorMessage(error)}; }
     finally { this.taggerApiTesting = false; }
   },
 
@@ -182,10 +206,10 @@ window.captionOptionsMixin = {
       const plan = data.plan;
       const signature = JSON.stringify([token,options,plan]);
       if (!dryRun && plan && (plan.overwrite_captions || plan.overwrite_json || plan.overwrite_references) && signature !== approval) {
-        const message = this.t('caption.overwriteConfirm').replace('{captions}',plan.overwrite_captions).replace('{json}',plan.overwrite_json).replace('{references}',plan.overwrite_references);
-        this.openConfirm(this.captionOverwriteLabel(),message,() => {
+        const message = this.t(this.captionOffline() ? 'caption.exportOverwriteConfirm' : 'caption.overwriteConfirm').replace('{captions}',plan.overwrite_captions).replace('{json}',plan.overwrite_json).replace('{references}',plan.overwrite_references);
+        this.openConfirm(this.t('caption.confirmOverwriteFiles'),message,() => {
           if (stillCurrent()) return this.startApiTagger(false,signature);
-        },this.captionOverwriteLabel(),{danger:true});
+        },this.t('caption.continueOverwrite'),{danger:true});
         return;
       }
       this._clearTaggerResultState(true);

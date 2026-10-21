@@ -81,6 +81,7 @@ window.tagEditorMixin = {
   tagEditorSaving: false,
   tagEditorLoadedDir: '',
   tagEditorPendingDir: '',
+  tagEditorOpenPath: '',
   tagEditorSwitchOpen: false,
   tagEditorTimeline: [],
   tagEditorRightWidth: 340,
@@ -553,6 +554,8 @@ window.tagEditorMixin = {
     this.tagEditorCancelQuickRemove();
     this.tagEditorPanelMenu = null;
     var loadOptions = arguments.length > 1 && arguments[1] ? arguments[1] : {};
+    var openPath = this.tagEditorOpenPath;
+    this.tagEditorOpenPath = '';
     var self = this;
     // 词典只在真正进入 Tag Editor 时才加载：问状态，数据已装就拉起唯一那个 Worker
     this.tagDictionaryInit();
@@ -647,6 +650,14 @@ window.tagEditorMixin = {
           await this.tagEditorFetchPage(this.tagEditorPage, { force: true });
         }
         if (epoch !== this._teLoadEpoch || controller.signal.aborted) return;
+        if (openPath && this._teFindByPath(openPath)) {
+          this.tagEditorSelected = [openPath];
+          this._teLastSelected = this.tagEditorGetFiltered().findIndex(function(image) { return image.path === openPath; });
+          this._updateEditorPanel();
+          this.$nextTick?.(() => {
+            if (epoch === this._teLoadEpoch && this.currentRoute === 'tagEditor' && this.tagEditorSelected[0] === openPath) this._teFocusEditorInput();
+          });
+        }
         this.tagEditorLoadSnapshots(epoch);
         this._teCheckDraft();
         this._teStartAutoSave();

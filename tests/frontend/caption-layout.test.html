@@ -1,75 +1,184 @@
 <!doctype html>
 <html lang="en">
 <meta charset="utf-8">
-<title>Caption desktop scrolling regression</title>
-<style>
-  body { margin: 16px; font: 14px system-ui; }
-  iframe { display: block; border: 1px solid #888; }
-  pre { white-space: pre-wrap; }
-</style>
-<h1>Caption desktop scrolling regression</h1>
-<p>Serve with <code>venv/Scripts/python.exe -B tools/dev/check_caption_layout.py</code>.
-  Tests use the production page, templates, Alpine bindings and styles; no model requests are made.</p>
+<title>Caption desktop workspace regression</title>
+<style>body { margin: 16px; font: 14px system-ui; } iframe { display: block; border: 1px solid #888; } pre { white-space: pre-wrap; }</style>
+<h1>Caption desktop workspace regression</h1>
+<p>Production templates, Alpine, dialogs and styles with isolated image/caption fixtures. No model calls or caption writes.</p>
 <pre id="results" role="status">Running…</pre>
 <iframe title="Production caption workspace" src="/anima-ui/#ai-captioning" style="width:1280px;height:720px"></iframe>
 <script>
 (async () => {
-  const frame = document.querySelector('iframe'), results = document.querySelector('#results');
-  const lines = [];
-  const waitFor = async (condition, message) => {
+  const frame = document.querySelector('iframe'), results = document.querySelector('#results'), lines = [];
+  const savedTab = localStorage.getItem('anima-ai-tab');
+  const viewports = [[800,600],[853,480],[900,700],[960,540],[1024,768],[1280,720],[1440,900]];
+  const assert = (value,message) => { if (!value) throw new Error(message); };
+  const waitFor = async (condition,message) => {
     const deadline = Date.now() + 15000;
     while (!condition()) {
       if (Date.now() > deadline) throw new Error(message);
-      await new Promise(resolve => setTimeout(resolve, 30));
+      await new Promise(resolve => setTimeout(resolve,30));
     }
   };
-  const assert = (value, message) => { if (!value) throw new Error(message); };
-  const settle = () => new Promise(resolve => frame.contentWindow.requestAnimationFrame(() => frame.contentWindow.requestAnimationFrame(resolve)));
+  const settle = async () => {
+    await frame.contentWindow.Alpine.nextTick();
+    await new Promise(resolve => frame.contentWindow.requestAnimationFrame(() => frame.contentWindow.requestAnimationFrame(resolve)));
+    frame.contentDocument.getAnimations().forEach(animation => { if (animation.effect?.getTiming().iterations !== Infinity) animation.finish(); });
+  };
+  const pass = message => { lines.push('PASS ' + message); results.textContent = lines.join('\n'); };
+  const assertControlAlignment = (doc,label) => {
+    const toggleRows = [];
+    for (const control of doc.querySelectorAll('.caption-candidate-order .toggle-track')) {
+      const box = control.getBoundingClientRect();
+      if (!box.height) continue;
+      const center = box.top + box.height / 2;
+      const row = toggleRows.find(values => Math.abs(values[0] - center) < box.height);
+      if (row) {
+        assert(Math.abs(row[0] - center) < 1, label + ': candidate switches have different baselines');
+        row.push(center);
+      } else toggleRows.push([center]);
+    }
+    const rows = [], heights = [];
+    for (const field of doc.querySelectorAll('.caption-request-settings .caption-parameter-grid > .field')) {
+      const box = field.getBoundingClientRect();
+      const control = field.querySelector('.stepper,.anima-select-trigger');
+      if (!box.height || !control) continue;
+      const bounds = control.getBoundingClientRect();
+      heights.push(bounds.height);
+      const row = rows.find(value => Math.abs(value.top - box.top) < 1);
+      if (row) assert(Math.abs(row.controlTop - bounds.top) < 1, label + ': wrapped labels misalign parameter controls');
+      else rows.push({top:box.top,controlTop:bounds.top});
+    }
+    assert(heights.length > 0 && Math.max(...heights) - Math.min(...heights) < 1, label + ': number and select controls have different heights');
+  };
   try {
     await waitFor(() => frame.contentDocument?.querySelector('#caption-tab-single'), 'Workspace did not mount');
-    const doc = frame.contentDocument;
+    const doc = frame.contentDocument, win = frame.contentWindow;
+    const app = win.Alpine.$data(doc.body);
     await waitFor(() => !doc.querySelector('#caption-tab-single').disabled, 'Workspace is busy');
-    doc.querySelector('#caption-tab-single').click();
-    await waitFor(() => doc.querySelector('#caption-tab-single').getAttribute('aria-selected') === 'true', 'Single tab did not activate');
-    // Long preview and expanded settings exercise both independent scroll panes.
-    frame.contentWindow.Alpine.$data(doc.body).captionSingleResult = {
-      candidates:{long:'A long preview paragraph.\n'.repeat(100)}, text:'Preview',
-      prompt:'Fixture prompt',raw:'Fixture response',model:'fixture',elapsed:0,attempts:1,
-    };
     for (const theme of ['light','dark','comfy']) {
       doc.documentElement.dataset.theme = theme;
-      for (const [width,height] of [[1280,720],[1024,768],[1440,900]]) {
-        frame.style.width = width + 'px';frame.style.height = height + 'px';
-        for (const expanded of [false,true]) {
-          doc.querySelectorAll('.caption-settings-column .caption-disclosure').forEach(el => { el.open = expanded; });
+      for (const [width,height] of viewports) {
+        frame.style.width = width + 'px'; frame.style.height = height + 'px';
+        for (const tab of ['single','batch']) {
+          await waitFor(() => !doc.querySelector('#caption-tab-' + tab).disabled, 'Workspace is busy before switching');
+          doc.querySelector('#caption-tab-' + tab).click();
+          await waitFor(() => doc.querySelector('#caption-tab-' + tab).getAttribute('aria-selected') === 'true', 'Tab did not activate');
+          app.captionSingleResult = {candidates:{long:'A long preview paragraph.\n'.repeat(100)},prompt:'Fixture prompt',raw:'Fixture response'};
           await settle();
-          const left = doc.querySelector('.caption-single-main'), right = doc.querySelector('.caption-single-layout .caption-settings-column');
-          const label = `${theme} ${width}×${height} ${expanded ? 'expanded' : 'collapsed'}`;
-          for (const [name,pane] of [['preview',left],['settings',right]]) {
-            const rect = pane.getBoundingClientRect();
-            assert(rect.height > 100 && rect.top >= 0 && rect.bottom <= height + 1, `${label}: ${name} pane escapes viewport`);
-            pane.scrollTop = 0;
-            if (pane.scrollHeight > pane.clientHeight + 1) {
-              pane.scrollTop = pane.scrollHeight;
-              assert(pane.scrollTop > 0, `${label}: ${name} pane cannot scroll`);
-            }
+          const label = `${theme} ${width}×${height} ${tab}`;
+          assert(doc.documentElement.scrollWidth <= width + 1, label + ': page overflows the viewport');
+          assertControlAlignment(doc,label);
+          assert(doc.querySelectorAll('.caption-settings details').length === 0, label + ': configuration has collapsible sections');
+          const panes = tab === 'single'
+            ? [doc.querySelector('.caption-single-main'),doc.querySelector('.caption-single-layout .caption-settings-column')]
+            : [...doc.querySelectorAll('.caption-batch-layout > .caption-settings-column,.caption-batch-layout > .tagger-action-panel')];
+          for (const pane of panes) {
+            const bounds = pane.getBoundingClientRect();
+            assert(bounds.height > 100 && bounds.top >= 0 && bounds.bottom <= height + 1, label + ': pane escapes viewport');
+            assert(pane.scrollWidth <= pane.clientWidth + 1, label + ': horizontal overflow');
+            pane.scrollTop = pane.scrollHeight;
+            assert(pane.scrollHeight <= pane.clientHeight + 1 || pane.scrollTop > 0, label + ': pane cannot scroll');
           }
           await settle();
-          const candidates = [...right.querySelectorAll('.caption-candidate-order input')];
-          const last = candidates[candidates.length - 1].getBoundingClientRect();
-          const bounds = right.getBoundingClientRect();
-          assert(last.top >= bounds.top && last.bottom <= bounds.bottom + 1, `${label}: bottom candidate is unreachable`);
-          assert(left.querySelector('.caption-candidate-text').getBoundingClientRect().bottom <= left.getBoundingClientRect().bottom + 1,
-            `${label}: preview output is unreachable`);
-          lines.push('PASS ' + label);results.textContent = lines.join('\n');
+          if (tab === 'single') {
+            const left = panes[0],right = panes[1];
+            const candidateRows = right.querySelectorAll('.caption-candidate-order > .field');
+            const candidateControl = candidateRows[candidateRows.length - 1];
+            candidateControl.scrollIntoView({block:'center'}); await settle();
+            const last = candidateControl.getBoundingClientRect();
+            assert(last.bottom <= right.getBoundingClientRect().bottom + 1 && last.top >= right.getBoundingClientRect().top, label + ': candidate controls unreachable');
+            assert(left.querySelector('.caption-candidate-text').getBoundingClientRect().bottom <= left.getBoundingClientRect().bottom + 1, label + ': long preview unreachable');
+          }
+          pass(label);
         }
       }
     }
-    results.textContent += '\nPASS: 18 desktop layout scenarios';
+    // Fixtures isolate layout tests from the user's dataset and remote services.
+    app.refreshCaptionOverview = async () => null;
+    app.refreshCaptionPlan = async () => null;
+    // An independently running real task must not replace these layout fixtures.
+    app.handleRealtimeTaggerEvent = () => {};
+    app.applyRealtimeTaggerSnapshot = () => {};
+    await waitFor(() => !doc.querySelector('#caption-tab-overview').disabled, 'Workspace is busy before overview');
+    doc.querySelector('#caption-tab-overview').click();
+    await waitFor(() => app.captionTab === 'overview', 'Overview did not activate');
+    app.taggerTaskId = null;
+    app.taggerSource = {source_token:'layout-fixture',kind:'folder',path:'C:/layout-fixtures',total:30};
+    app.taggerSourcePath = 'C:/layout-fixtures';
+    const items = Array.from({length:30},(_,index) => ({index,name:index + '_long_image_name_長いファイル名.png',relative:index + '_long_image_name_長いファイル名.png',path:`C:/layout-fixtures/${index}.png`,image_version:'1',caption_kind:'moss',caption_excerpt:'Caption summary / 标注摘要',sidecar_error:index === 2 ? 'Invalid record fixture' : ''}));
+    const text = 'Long caption with visible detail. 中英混排与长标注阅读。\n'.repeat(100);
+    app.captionOverviewImage = index => index === 3 ? 'data:image/png;base64,AA==' : 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${index % 3 === 0 ? 1600 : 400}" height="${index % 3 === 1 ? 1200 : 400}"><rect width="100%" height="100%" fill="#789496"/><circle cx="200" cy="200" r="140" fill="#d8bd99"/></svg>`);
+    const originalFetch = win.fetch.bind(win);
+    win.fetch = async (url,options) => {
+      const match = String(url).match(/source\/layout-fixture\/annotations\/(\d+)\?/);
+      if (!match) return originalFetch(url,options);
+      return {json:async () => ({status:'success',data:{...items[Number(match[1])],candidates:{original:'original, tags',long:text,medium:'Medium caption',short:'Short caption'},reference:'Reference fixture',sidecar:{prompt:text,raw:text,knowledge:'Knowledge fixture'}}})};
+    };
+    app.captionOverviewItems = items; app.captionOverviewTotal = 30; app.captionOverviewOffset = 0;
+    app.captionOverviewCounts = {total:30,invalid_json:1}; app.captionOverviewQuery = ''; app.captionOverviewFilter = 'all';
+    for (const theme of ['light','dark','comfy']) {
+      doc.documentElement.dataset.theme = theme;
+      for (const [width,height] of viewports) {
+        frame.style.width = width + 'px'; frame.style.height = height + 'px';
+        const label = `${theme} ${width}×${height} library/review`;
+        await settle();
+        const grid = doc.querySelector('.caption-overview-grid');
+        assert(grid.scrollWidth <= grid.clientWidth + 1 && doc.documentElement.scrollWidth <= width + 1, label + ': library overflow');
+        const firstTile = grid.querySelector('.caption-overview-item'), gridStyle = win.getComputedStyle(grid);
+        assert(firstTile.getBoundingClientRect().height + parseFloat(gridStyle.paddingTop) + parseFloat(gridStyle.paddingBottom) <= grid.clientHeight + 1, label + ': a complete image tile cannot fit vertically');
+        assert(!doc.querySelector('.caption-overview-pagination nav').getClientRects().length, label + ': pointless pagination');
+        grid.scrollTop = 160;
+        const before = grid.getBoundingClientRect(), scrollBefore = grid.scrollTop;
+        const origin = grid.querySelector('.caption-overview-item'); origin.focus({preventScroll:true}); origin.click();
+        await waitFor(() => doc.querySelector('.caption-review-dialog').open && !app.captionDetailLoading, 'Review did not open');
+        await waitFor(() => doc.querySelector('.caption-detail-image img').classList.contains('loaded'), label + ': loaded image is invisible');
+        await settle();
+        const dialog = doc.querySelector('.caption-review'),header = doc.querySelector('.caption-review-heading'),scroller = doc.querySelector('.caption-review-scroll');
+        const bounds = dialog.getBoundingClientRect(),headerTop = header.getBoundingClientRect().top;
+        assert(bounds.left >= 0 && bounds.right <= width + 1 && bounds.top >= 0 && bounds.bottom <= height + 1, label + ': review escapes viewport');
+        assert(dialog.scrollHeight <= dialog.clientHeight + 1, label + ': outer review is scrollable');
+        assert(Math.abs(grid.getBoundingClientRect().width - before.width) < 1 && grid.scrollTop === scrollBefore, label + ': opening review reflows library');
+        const sections = doc.querySelectorAll('.caption-review-sections button');
+        for (const view of [0,1,2]) {
+          sections[view].click();
+          if (!view) doc.querySelectorAll('.caption-review-candidates .caption-candidate-tabs button')[1].click();
+          await settle();
+          scroller.scrollTop = scroller.scrollHeight;
+          assert(scroller.scrollTop > 0, label + ': long content cannot scroll');
+          assert(scroller.scrollWidth <= scroller.clientWidth + 1, label + ': review content overflows horizontally');
+          assert(Math.abs(header.getBoundingClientRect().top - headerTop) < 1, label + ': header moved with content');
+          assert(doc.querySelector('.caption-detail-image').getBoundingClientRect().top >= header.getBoundingClientRect().bottom, label + ': image overlaps header');
+        }
+        const stageWidth = doc.querySelector('.caption-detail-image').getBoundingClientRect().width;
+        doc.querySelector('.caption-image-focus').click(); await settle();
+        assert(doc.querySelector('.caption-detail-image').getBoundingClientRect().width > stageWidth, label + ': focus image does not expand');
+        doc.querySelector('.caption-image-focus').click();
+        await app.navigateCaptionDetail(1); await settle();
+        assert(app.captionOverviewDetail.index === 1 && app.captionDetailPosition() === '2 / 30', label + ': sequential navigation failed');
+        assert(scroller.scrollTop === 0, label + ': next image retained stale scroll position');
+        await app.navigateCaptionDetail(1); await settle();
+        assert(app.captionOverviewDetail.index === 2, label + ': square image navigation failed');
+        await app.navigateCaptionDetail(1); await settle();
+        await waitFor(() => doc.querySelector('.caption-detail-image .caption-thumb-fallback').getClientRects().length, label + ': broken image has no fallback');
+        doc.querySelector('.caption-detail-close').click(); await settle();
+        assert(!doc.querySelector('.caption-review-dialog').open && doc.activeElement === origin, label + ': close did not restore focus');
+        assert(grid.scrollTop === scrollBefore, label + ': close changed library position');
+        pass(label);
+      }
+    }
+    app.captionOverviewTotal = 120; await settle();
+    assert(doc.querySelector('.caption-overview-pagination nav').getClientRects().length, 'Multiple pages have no navigation');
+    app.captionOverviewItems = []; app.captionOverviewTotal = 0; app.captionOverviewQuery = 'no-match'; await settle();
+    assert([...doc.querySelectorAll('.caption-empty')].some(el => el.getClientRects().length && el.textContent.includes(app.t('caption.noMatches'))), 'Missing empty-search feedback');
+    pass('pagination and empty search');
+    results.textContent += `\nPASS: ${lines.length} desktop scenarios`;
     document.documentElement.dataset.testStatus = 'passed';
   } catch (error) {
     results.textContent = [...lines,'FAIL: ' + error.message].join('\n');
     document.documentElement.dataset.testStatus = 'failed';
+  } finally {
+    if (savedTab === null) localStorage.removeItem('anima-ai-tab'); else localStorage.setItem('anima-ai-tab',savedTab);
   }
 })();
 </script>

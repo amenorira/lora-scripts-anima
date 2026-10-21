@@ -21,10 +21,14 @@ window.captionWorkspaceMixin = {
   captionOverviewQuery: '',
   captionOverviewLoading: false,
   captionOverviewError: '',
+  captionSourceError: '',
   captionOverviewDetail: null,
   captionDetailLoading: false,
   captionDetailError: '',
-  captionDetailNarrow: false,
+  captionGridDensity: 'comfortable',
+  captionLastReviewedPath: '',
+  captionDetailView: 'caption',
+  captionReviewImageOnly: false,
   captionPromptOpen: false,
   captionCheckPrompt: '',
   captionCheckPromptPath: '',
@@ -73,12 +77,13 @@ window.captionWorkspaceMixin = {
   },
   async selectCaptionTab(tab, focus = true) {
     if (!['batch','single','overview'].includes(tab) || this.captionPreviewBusy || this.taggerStarting || this.taggerScanning) return;
-    if (tab !== this.captionTab) ++this._captionPromptRequest;
+    const changed = tab !== this.captionTab;
+    if (changed) ++this._captionPromptRequest;
     const mode = tab === 'single' ? 'api-single' : 'api-folder';
     await this.selectTaggerSourceMode(mode, {allowActive:true});
     this.captionTab = tab;
     localStorage.setItem('anima-ai-tab', tab);
-    this.closeCaptionDetail();
+    if (changed || focus) this.closeCaptionDetail();
     if (tab === 'overview') void this.refreshCaptionOverview();
     if (tab === 'single') void this.syncCaptionPreviewState();
     if (focus) this.$nextTick?.(() => document.getElementById('caption-tab-' + tab)?.focus());
@@ -97,6 +102,7 @@ window.captionWorkspaceMixin = {
   captionSourceChanged(mode) {
     if (mode === 'api-single') { this.captionSingleResult = null; this.captionPreviewError = ''; }
     if (mode !== 'api-folder') return;
+    this.captionSourceError = '';
     ++this._captionPlanRequest;
     this.captionPlanLoading = false;
     ++this._captionPromptRequest;
@@ -104,6 +110,8 @@ window.captionWorkspaceMixin = {
     this.captionCheckPrompt = '';
     this.captionPromptOpen = false;
     this.captionOverviewItems = [];
+    this.captionOverviewTotal = 0;
+    this.captionLastReviewedPath = '';
     const batch = this.captionBatchState();
     if (!batch.source || batch.source.path !== this._captionPlanSourcePath) {
       this.captionOverviewCounts = batch.source || {};
@@ -180,6 +188,12 @@ window.captionWorkspaceMixin = {
       && this.captionOptions.candidates.some(n => n !== 'original') && this.taggerApiSettings.baseUrl.trim() && this.taggerApiSettings.model.trim()
       && !this.captionPreviewBusy && !this.taggerHasActiveTask() && !this.captionExternalTaggerBusy && !this.taggerScanning);
   },
+  captionPreviewStartHint() {
+    if (!this.captionOptions.candidates.some(name => name !== 'original')) return this.t('caption.chooseDescription');
+    if (!this.captionPromptReady()) return this.t('caption.completePrompt');
+    if (!this.taggerApiSettings.baseUrl.trim() || !this.taggerApiSettings.model.trim()) return this.t('caption.completeConnection');
+    return '';
+  },
   async syncCaptionPreviewState(isCurrent = () => true) {
     try {
       const body = await (await fetch('/api/tagger/caption/preview-state')).json();
@@ -235,7 +249,7 @@ window.captionWorkspaceMixin = {
         this.captionSingleResult = body.data;
       }
     } catch (error) {
-      if (isCurrent() && !this.captionPreviewCancelling) this.captionPreviewError = error.message || String(error);
+      if (isCurrent() && !this.captionPreviewCancelling) this.captionPreviewError = this.captionErrorMessage(error);
     } finally {
       // A failed HTTP response cannot establish whether the worker released its gate.
       await this.waitCaptionPreviewSettled();
@@ -344,6 +358,65 @@ window.captionWorkspaceMixin = {
     this.closeCaptionDetail();
     void this.refreshCaptionOverview();
   },
+  resetCaptionOverviewFilters() {
+    this.captionOverviewQuery = '';
+    this.setCaptionOverviewFilter('all');
+  },
+  captionEditorAvailable() {
+    const source = this.captionBatchState().source;
+    const settings = this.captionOverviewSettings || this.captionOptions;
+    return source?.kind === 'folder' && String(settings.caption_extension || '').trim().replace(/^\.+/,'').toLowerCase() === 'txt';
+  },
+  openCaptionEditor(item = null) {
+    if (!this.captionEditorAvailable() || this.captionBatchRunning()) return;
+    this.tagEditorDetailView = 'text';
+    this.tagEditorOpenPath = item?.path || '';
+    this.tagEditorSearchQuery = item ? item.relative || item.name : '';
+    this.tagEditorUseRegex = false;
+    this.tagEditorQuickFilter = 'all';
+    this.tagEditorTagSearch = '';
+    this.tagEditorTagSelection = [];
+    this.tagEditorExcludedTags = [];
+    this.closeCaptionDetail();
+    this.openTaggerDatasetInEditor();
+  },
+  captionSourceName() {
+    return (this.captionBatchState().source?.path || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || '';
+  },
+  captionFilterCount(filter) {
+    if (filter === 'all') return this.captionBatchState().source?.total || 0;
+    if (filter === 'failed') return this.captionBatchState().task?.failed || 0;
+    return this.captionOverviewCounts[{missing:'missing_outputs',missing_json:'missing_json',invalid_json:'invalid_json',ordinary:'ordinary_outputs'}[filter]] || 0;
+  },
+  captionOverviewSummary() {
+    if (this.captionOverviewTotal > 60) return this.t('caption.pageRange')
+      .replace('{start}',this.captionOverviewOffset + 1).replace('{end}',Math.min(this.captionOverviewTotal,this.captionOverviewOffset + 60)).replace('{total}',this.captionOverviewTotal);
+    if (this.captionOverviewQuery || this.captionOverviewFilter !== 'all') return this.t('caption.filteredCount')
+      .replace('{count}',this.captionOverviewTotal).replace('{total}',this.captionBatchState().source?.total || 0);
+    return this.t('caption.imageCount').replace('{count}',this.captionOverviewTotal);
+  },
+  captionItemTone(item) {
+    if (item.read_error || item.sidecar_error || item.caption_kind === 'unreadable' || item.task?.status === 'failed') return 'danger';
+    if (item.caption_kind === 'missing') return 'warning';
+    return 'running';
+  },
+  captionItemStatus(item) {
+    if (item.read_error || item.caption_kind === 'unreadable') return this.t('caption.kind_unreadable');
+    if (item.sidecar_error) return this.t('caption.invalidRecord');
+    if (item.task?.status === 'failed' || item.task?.status === 'running') return this.t('caption.state_' + item.task.status);
+    if (item.caption_kind === 'missing') return this.t('caption.kind_missing');
+    return '';
+  },
+  captionGridKey(event) {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const items = [...event.currentTarget.querySelectorAll('.caption-overview-item')];
+    const index = items.indexOf(event.target.closest('.caption-overview-item'));
+    if (index < 0 || this.captionOverviewLoading) return;
+    const columns = Math.max(1,getComputedStyle(event.currentTarget).gridTemplateColumns.split(' ').length);
+    const delta = {ArrowLeft:-1,ArrowRight:1,ArrowUp:-columns,ArrowDown:columns}[event.key];
+    const target = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : delta ? Math.max(0,Math.min(items.length - 1,index + delta)) : -1;
+    if (target >= 0) { event.preventDefault(); items[target]?.focus({preventScroll:true}); items[target]?.scrollIntoView({block:'nearest'}); }
+  },
   captionOverviewSearch() {
     this.captionOverviewOffset = 0;
     this.closeCaptionDetail();
@@ -366,11 +439,43 @@ window.captionWorkspaceMixin = {
       void this.refreshCaptionOverview({silent:true});
     }
   },
+  captionDetailPosition() {
+    const index = this.captionOverviewItems.findIndex(item => item.path === this.captionOverviewDetail?.path);
+    return index < 0 ? '' : `${this.captionOverviewOffset + index + 1} / ${this.captionOverviewTotal}`;
+  },
+  captionDetailNeighbors() {
+    const index = this.captionOverviewItems.findIndex(item => item.path === this.captionOverviewDetail?.path);
+    const start = Math.max(0,Math.min(index - 3,this.captionOverviewItems.length - 7));
+    return this.captionOverviewItems.slice(start,start + 7);
+  },
+  captionCanNavigateDetail(delta) {
+    const index = this.captionOverviewItems.findIndex(item => item.path === this.captionOverviewDetail?.path);
+    return !!this.captionOverviewDetail && !this.captionDetailLoading && !this.captionOverviewLoading
+      && index >= 0 && this.captionOverviewOffset + index + delta >= 0
+      && this.captionOverviewOffset + index + delta < this.captionOverviewTotal;
+  },
+  async navigateCaptionDetail(delta) {
+    if (!this.captionCanNavigateDetail(delta)) return;
+    const index = this.captionOverviewItems.findIndex(item => item.path === this.captionOverviewDetail.path);
+    let target = index + delta;
+    if (target < 0 || target >= this.captionOverviewItems.length) {
+      const request = this._captionDetailRequest, offset = this.captionOverviewOffset;
+      this.captionOverviewOffset = Math.max(0, offset + delta * 60);
+      const result = await this.refreshCaptionOverview();
+      if (request !== this._captionDetailRequest || !this.captionOverviewDetail) return;
+      if (!result) { this.captionOverviewOffset = offset; return; }
+      target = delta > 0 ? 0 : this.captionOverviewItems.length - 1;
+    }
+    const item = this.captionOverviewItems[target];
+    if (item) await this.openCaptionDetail(item, null);
+  },
   async openCaptionDetail(item, element) {
     const source = this.captionBatchState().source, request = ++this._captionDetailRequest;
     if (!source) return;
-    this._captionDetailFocus = element;
-    this.captionOverviewDetail = {index:item.index,name:item.name,path:item.path};
+    if (element) this._captionDetailFocus = element;
+    if (!this.captionOverviewDetail) { this.captionDetailView = 'caption'; this.captionReviewImageOnly = false; }
+    this.captionLastReviewedPath = item.path;
+    this.captionOverviewDetail = {index:item.index,name:item.name,path:item.path,image_version:item.image_version};
     this.captionDetailLoading = true;
     this.captionDetailError = '';
     try {
@@ -380,21 +485,41 @@ window.captionWorkspaceMixin = {
       this.captionOverviewDetail = body.data;
     } catch (error) { if (request === this._captionDetailRequest) this.captionDetailError = error.message || String(error); }
     finally { if (request === this._captionDetailRequest) this.captionDetailLoading = false; }
-    this.$nextTick?.(() => document.querySelector('.caption-overview-detail .caption-detail-close')?.focus());
   },
   closeCaptionDetail() {
     ++this._captionDetailRequest;
+    const path = this.captionOverviewDetail?.path;
+    const wasOpen = !!this.captionOverviewDetail;
     this.captionOverviewDetail = null;
     this.captionDetailLoading = false;
-    this._captionDetailFocus?.focus?.();
+    if (wasOpen && this._captionDetailFocus?.isConnected !== false) this._captionDetailFocus?.focus?.({preventScroll:true});
+    else if (wasOpen) this.$nextTick?.(() => {
+      const index = this.captionOverviewItems.findIndex(item => item.path === path);
+      const target = document.querySelectorAll?.('.caption-overview-item')?.[index];
+      target?.focus({preventScroll:true});
+      target?.scrollIntoView?.({block:'nearest'});
+    });
     this._captionDetailFocus = null;
   },
   captionDetailKey(event) {
-    if (event.key !== 'Tab' || !this.captionDetailNarrow) return;
-    const controls = [...event.currentTarget.querySelectorAll('button:not(:disabled),summary,[tabindex="0"]')].filter(el => el.getClientRects().length);
-    const first = controls[0], last = controls[controls.length - 1];
-    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    if (['ArrowLeft','ArrowRight'].includes(event.key) && !event.altKey && !event.ctrlKey && !event.metaKey
+      && !event.target?.closest?.('input,textarea,select,[contenteditable="true"],.caption-candidate-tabs,.caption-review-sections')) {
+      const delta = event.key === 'ArrowLeft' ? -1 : 1;
+      if (this.captionCanNavigateDetail(delta)) { event.preventDefault(); void this.navigateCaptionDetail(delta); }
+      return;
+    }
+  },
+  captionReviewTabKey(event) {
+    const views = ['caption','context','record'];
+    let index = views.indexOf(this.captionDetailView);
+    if (event.key === 'ArrowRight') index = (index + 1) % views.length;
+    else if (event.key === 'ArrowLeft') index = (index + views.length - 1) % views.length;
+    else if (event.key === 'Home') index = 0;
+    else if (event.key === 'End') index = views.length - 1;
+    else return;
+    event.preventDefault();
+    this.captionDetailView = views[index];
+    this.$nextTick?.(() => document.getElementById('caption-review-tab-' + this.captionDetailView)?.focus({preventScroll:true}));
   },
   captionOverviewImage(index, variant = 'thumb') {
     const source = this.captionBatchState().source;
@@ -423,16 +548,38 @@ window.captionWorkspaceMixin = {
       this.captionPromptOpen = true;
     } catch (error) { if (isCurrent()) this.toast(error.message,'error'); }
   },
+  showCaptionDefaultPrompt() {
+    this.captionCheckPromptPath = '';
+    this.captionCheckPrompt = this.captionDefaultPrompt;
+    this.captionPromptOpen = true;
+  },
 };
 
 // Candidate selection and clipboard handling are shared by preview and detail.
 window.captionCandidateViewer = read => ({
   candidate: '',
+  _captionRevealFrame: null,
+  destroy() { window.cancelAnimationFrame(this._captionRevealFrame); },
   captionViewerNames() { return ['original','long','medium','short'].filter(name => Object.hasOwn(read()?.candidates || {},name)); },
   captionViewerText() {
     const data = read();
     const names = this.captionViewerNames();
     return data?.candidates?.[names.includes(this.candidate) ? this.candidate : names[0]] || data?.text || '';
+  },
+  captionViewerReveal(element) {
+    element.scrollTop = 0;
+    window.cancelAnimationFrame(this._captionRevealFrame);
+    // Alpine defers x-show visibility until the next frame. Reset after that
+    // layout too, so the newly visible long section cannot restore its old offset.
+    this._captionRevealFrame = window.requestAnimationFrame(() => {
+      this._captionRevealFrame = null;
+      if (!element.isConnected) return;
+      element.scrollTop = 0;
+      if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        element.getAnimations().forEach(animation => animation.cancel());
+        element.animate([{opacity:.35},{opacity:1}],{duration:120,easing:'ease-out'});
+      }
+    });
   },
   async captionViewerCopy() {
     try { await navigator.clipboard.writeText(this.captionViewerText()); this.toast(this.t('tagger.copied')); }

@@ -125,7 +125,7 @@ window.taggerMixin = {
         const response = await fetch('/anima-ui/tagger-workspace.html?v=20261021-caption-workspaces6');
         if (!response.ok) throw new Error('Workspace template unavailable');
         host.innerHTML = await response.text();
-        const captionTemplate = await fetch('/anima-ui/caption-workspace.html?v=20261021-caption-design3');
+        const captionTemplate = await fetch('/anima-ui/caption-workspace.html?v=20261022-caption-form15');
         if (!captionTemplate.ok) throw new Error('Caption workspace unavailable');
         host.querySelector('#captionWorkspaceMount').outerHTML = await captionTemplate.text();
         host.dataset.mounted = '1';
@@ -741,6 +741,7 @@ window.taggerMixin = {
     const scanVersion = Number(this._taggerSourceScanVersion || 0) + 1;
     this._taggerSourceScanVersion = scanVersion;
     this.taggerScanning = true;
+    if (mode === 'api-folder') this.captionSourceError = '';
     try {
       const recursive = this.taggerModeIsApi() ? this.captionOptions.recursive !== false : this.taggerSettings.recursive;
       const response = await fetch('/api/tagger/source/scan', {
@@ -754,7 +755,10 @@ window.taggerMixin = {
       if (scanVersion !== this._taggerSourceScanVersion || path !== this.taggerSourcePath.trim() || mode !== this.taggerSourceMode || route !== this.currentRoute) return;
       this.setTaggerSource(body.data);
     } catch (error) {
-      if (scanVersion === this._taggerSourceScanVersion && !options.quiet) this.toast(error.message, 'error');
+      if (scanVersion === this._taggerSourceScanVersion && mode === this.taggerSourceMode && route === this.currentRoute && path === this.taggerSourcePath.trim()) {
+        if (route === 'ai-captioning' && mode === 'api-folder') this.captionSourceError = this.captionErrorMessage?.(error) || error.message || String(error);
+        else if (!options.quiet) this.toast(error.message, 'error');
+      }
     } finally {
       if (scanVersion === this._taggerSourceScanVersion) this.taggerScanning = false;
     }

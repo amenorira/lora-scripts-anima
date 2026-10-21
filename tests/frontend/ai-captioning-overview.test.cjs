@@ -208,11 +208,144 @@ test('filter/search/page transitions retain server limit and clear stale details
   app.captionOverviewPage(1);assert.equal(app.captionOverviewOffset,60);app.captionOverviewSearch();assert.equal(app.captionOverviewOffset,0);assert.equal(calls,3);
 });
 
+test('clearing an empty search resets both filters in one request',()=>{
+  const {app}=harness();let calls=0;
+  app.captionOverviewQuery='no match';app.captionOverviewFilter='missing';app.captionOverviewOffset=60;
+  app.captionOverviewDetail={path:'old'};app.refreshCaptionOverview=async()=>{calls++;};
+  app.resetCaptionOverviewFilters();
+  assert.equal(app.captionOverviewQuery,'');assert.equal(app.captionOverviewFilter,'all');
+  assert.equal(app.captionOverviewOffset,0);assert.equal(app.captionOverviewDetail,null);assert.equal(calls,1);
+});
+
+test('sequential detail review follows the visible filtered order and keeps focus on navigation',async()=>{
+  const {app,context}=harness();let focusMoves=0;
+  app.taggerSource={source_token:'batch',kind:'folder',total:100};
+  app.captionOverviewItems=[{path:'dataset/b.png',name:'b.png',index:9},{path:'dataset/a.png',name:'a.png',index:2}];
+  app.captionOverviewOffset=60;app.captionOverviewTotal=62;app.captionOverviewFilter='missing';
+  context.document.querySelector=()=>({focus(){focusMoves++;}});
+  context.fetch=async url=>response({...app.captionOverviewItems.find(item=>url.includes(`/annotations/${item.index}?`)),text:'Caption'});
+  const origin={focus(){}};await app.openCaptionDetail(app.captionOverviewItems[0],origin);
+  assert.equal(app.captionDetailPosition(),'61 / 62');assert.equal(app.captionCanNavigateDetail(-1),true);
+  await app.navigateCaptionDetail(1);
+  assert.equal(app.captionOverviewDetail.index,2);assert.equal(app.captionDetailPosition(),'62 / 62');
+  assert.equal(app.captionOverviewFilter,'missing');assert.equal(app._captionDetailFocus,origin);
+  assert.equal(focusMoves,0);assert.equal(app.captionCanNavigateDetail(1),false);
+  app.captionDetailLoading=true;assert.equal(app.captionCanNavigateDetail(-1),false);
+});
+
+test('sequential review crosses server pages without clearing the active filter',async()=>{
+  const {app,context}=harness();
+  app.taggerSource={source_token:'batch',kind:'folder',total:61};
+  app.captionOverviewItems=Array.from({length:60},(_,index)=>({index,path:`${index}.png`,name:`${index}.png`}));
+  app.captionOverviewDetail=app.captionOverviewItems[59];app.captionOverviewTotal=61;app.captionOverviewFilter='missing';
+  context.fetch=async url=>url.includes('/annotations?')
+    ? response({items:[{index:90,path:'last.png',name:'last.png'}],offset:60,total:61,counts:{total:100}})
+    : response({index:90,path:'last.png',name:'last.png',text:'Last caption'});
+  await app.navigateCaptionDetail(1);
+  assert.equal(app.captionOverviewDetail.path,'last.png');assert.equal(app.captionOverviewOffset,60);
+  assert.equal(app.captionDetailPosition(),'61 / 61');assert.equal(app.captionCanNavigateDetail(1),false);
+  assert.equal(app.captionOverviewFilter,'missing');
+});
+
+test('API error messages expose service text while retaining status and non-JSON diagnostics',()=>{
+  const {app}=harness();app.t=key=>key==='caption.serviceError'?'Service {status}: {message}':key;
+  assert.equal(app.captionErrorMessage(new Error('HTTP 400: {"error":{"message":"Unknown model"}}')),'Service 400: Unknown model');
+  assert.equal(app.captionErrorMessage(new Error('HTTP 502: upstream unavailable')),'HTTP 502: upstream unavailable');
+  assert.equal(app.captionErrorMessage(new Error('HTTP 500: {truncated')),'HTTP 500: {truncated');
+  app.locale='zh-CN';
+  assert.equal(app.captionErrorMessage(new Error('Source does not exist / 输入路径不存在')),'输入路径不存在');
+});
+
+test('quiet directory scans expose a persistent field error and distinguish empty folders',async()=>{
+  const {app,context}=harness();app.taggerSourcePath='dataset';app.refreshCaptionPlan=async()=>{};
+  let toasts=0;app.toast=()=>{toasts++;};
+  context.fetch=async()=>({json:async()=>({status:'fail',message:'Directory not found'})});
+  await app.scanTaggerSource({quiet:true});
+  assert.equal(app.captionSourceError,'Directory not found');assert.equal(toasts,0);
+  assert.equal(app.taggerApiCanStart(),false);
+  context.fetch=async()=>response({kind:'folder',path:'dataset',source_token:'empty',total:0,items:[]});
+  await app.scanTaggerSource({quiet:true});
+  assert.equal(app.captionSourceError,'');assert.equal(app.captionStartHint(),'caption.noImages');
+});
+
+test('directory errors from a previous route cannot appear in the current workspace',async()=>{
+  const {app,context}=harness(),pending=deferred();app.taggerSourcePath='old';context.fetch=()=>pending.promise;
+  const scanning=app.scanTaggerSource({quiet:true});app.currentRoute='tagger';
+  pending.resolve({json:async()=>({status:'fail',message:'Old failure'})});await scanning;
+  assert.equal(app.captionSourceError,'');
+});
+
+test('closed or superseded detail loads cannot move keyboard focus',async()=>{
+  const {app,context}=harness(),pending=deferred();let focusMoves=0;
+  app.taggerSource={source_token:'batch'};
+  context.document.querySelector=()=>({focus(){focusMoves++;}});context.fetch=()=>pending.promise;
+  const opening=app.openCaptionDetail({path:'a.png',index:0},null);app.closeCaptionDetail();
+  pending.resolve(response({path:'a.png',text:'Late result'}));await opening;
+  assert.equal(app.captionOverviewDetail,null);assert.equal(focusMoves,0);
+});
+
+test('same-tab initialization preserves a review opened immediately after returning from the editor',async()=>{
+  const {app}=harness();app.captionTab='overview';
+  const detail={path:'dataset/a.png',index:0};app.captionOverviewDetail=detail;
+  app.refreshCaptionOverview=async()=>{};
+  await app.selectCaptionTab('overview',false);
+  assert.equal(app.captionOverviewDetail,detail);
+  await app.selectCaptionTab('overview');
+  assert.equal(app.captionOverviewDetail,null);
+});
+
+test('editor entry only opens the file format supported by the existing editor',()=>{
+  const {app}=harness();let route;app.navigate=value=>{route=value;};app.taggerSource={source_token:'batch',kind:'folder',path:'dataset'};
+  assert.equal(app.captionEditorAvailable(),true);
+  app.openCaptionEditor();assert.equal(route,'tagEditor');assert.equal(app.tagEditorDir,'dataset');assert.equal(app.tagEditorDetailView,'text');
+  route='';app.tagEditorDetailView='chip';
+  app.captionOptions.caption_extension='.caption';assert.equal(app.captionEditorAvailable(),false);
+  app.openCaptionEditor();assert.equal(route,'');assert.equal(app.tagEditorDetailView,'chip');
+  app.captionOverviewSettings={caption_extension:' TXT '};assert.equal(app.captionEditorAvailable(),true);
+  app.taggerSource=null;assert.equal(app.captionEditorAvailable(),false);
+});
+
 test('candidate switches retain canonical order after disabling and enabling',()=>{
   const {app}=harness();app.toggleCaptionCandidate('long',false);assert.deepEqual([...app.captionOptions.candidates],['original','medium','short']);
   app.toggleCaptionCandidate('long',true);assert.deepEqual([...app.captionOptions.candidates],['original','long','medium','short']);
   assert.ok(app.captionCandidateRows().includes('original'));
   assert.deepEqual([...app.captionCandidateRows(true)],['long','medium','short']);
+});
+
+test('library badges prioritize actionable problems without repeating normal caption types',()=>{
+  const {app}=harness();
+  assert.equal(app.captionItemStatus({caption_kind:'moss',task:{status:'success'}}),'');
+  assert.equal(app.captionItemStatus({caption_kind:'ordinary'}),'');
+  assert.equal(app.captionItemStatus({caption_kind:'missing'}),'caption.kind_missing');
+  assert.equal(app.captionItemTone({caption_kind:'missing'}),'warning');
+  assert.equal(app.captionItemStatus({caption_kind:'moss',sidecar_error:'Broken JSON',task:{status:'running'}}),'caption.invalidRecord');
+  assert.equal(app.captionItemTone({sidecar_error:'Broken JSON'}),'danger');
+  assert.equal(app.captionItemStatus({read_error:'Unreadable',sidecar_error:'Broken JSON'}),'caption.kind_unreadable');
+  assert.equal(app.captionItemStatus({task:{status:'failed'}}),'caption.state_failed');
+});
+
+test('review filmstrip follows filtered order and stays bounded at both ends',()=>{
+  const {app}=harness();app.captionOverviewItems=Array.from({length:20},(_,index)=>({path:`${index}.png`,index}));
+  for (const [index,first,last] of [[0,0,6],[10,7,13],[19,13,19]]) {
+    app.captionOverviewDetail=app.captionOverviewItems[index];
+    const neighbors=app.captionDetailNeighbors();
+    assert.equal(neighbors.length,7);assert.equal(neighbors[0].index,first);assert.equal(neighbors.at(-1).index,last);
+  }
+  app.captionOverviewItems=app.captionOverviewItems.slice(0,2);app.captionOverviewDetail=app.captionOverviewItems[0];
+  assert.equal(app.captionDetailNeighbors().length,2);
+});
+
+test('single-image editor entry resets stale filters and targets the current image',()=>{
+  const {app}=harness();app.taggerSource={kind:'folder',path:'dataset'};
+  app.captionOverviewDetail={path:'dataset/sub/a.png',name:'a.png',relative:'sub/a.png'};
+  app.tagEditorSearchQuery='old';app.tagEditorUseRegex=true;app.tagEditorQuickFilter='modified';
+  app.tagEditorTagSearch='old';app.tagEditorTagSelection=['old'];app.tagEditorExcludedTags=['old'];app.navigate=()=>{};
+  app.openCaptionEditor(app.captionOverviewDetail);
+  assert.equal(app.tagEditorSearchQuery,'sub/a.png');assert.equal(app.tagEditorUseRegex,false);
+  assert.equal(app.tagEditorOpenPath,'dataset/sub/a.png');
+  assert.equal(app.tagEditorQuickFilter,'all');assert.equal(app.tagEditorTagSearch,'');
+  assert.deepEqual([...app.tagEditorTagSelection],[]);assert.deepEqual([...app.tagEditorExcludedTags],[]);
+  assert.equal(app.captionOverviewDetail,null);assert.equal(app.tagEditorDir,'dataset');
 });
 
 test('content and logging switches preserve plan, gallery, detail and checked prompt',()=>{
