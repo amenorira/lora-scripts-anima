@@ -208,12 +208,54 @@ test('filter/search/page transitions retain server limit and clear stale details
   app.captionOverviewPage(1);assert.equal(app.captionOverviewOffset,60);app.captionOverviewSearch();assert.equal(app.captionOverviewOffset,0);assert.equal(calls,3);
 });
 
-test('candidate reorder is sent as selected order; preview removes original only on server',()=>{
-  const {app}=harness();app.moveCaptionCandidate('short',-1);assert.deepEqual([...app.captionOptions.candidates],['original','long','short','medium']);
-  app.toggleCaptionCandidate('long',false);app.moveCaptionCandidate('short',-1);assert.deepEqual([...app.captionOptions.candidates],['short','original','medium']);
-  assert.equal(app.captionOutputSkeleton(),'---===--- # short\n---===--- # original\n---===--- # medium');
+test('candidate switches retain canonical order after disabling and enabling',()=>{
+  const {app}=harness();app.toggleCaptionCandidate('long',false);assert.deepEqual([...app.captionOptions.candidates],['original','medium','short']);
+  app.toggleCaptionCandidate('long',true);assert.deepEqual([...app.captionOptions.candidates],['original','long','medium','short']);
   assert.ok(app.captionCandidateRows().includes('original'));
-  assert.deepEqual([...app.captionCandidateRows(true)],['short','medium','long']);
+  assert.deepEqual([...app.captionCandidateRows(true)],['long','medium','short']);
+});
+
+test('content and logging switches preserve plan, gallery, detail and checked prompt',()=>{
+  const {app,context}=harness();app.taggerSource={source_token:'batch',path:'dataset',total:10};
+  app.captionOptionsChanged({initialize:true});
+  const plan={requests:10,writes:10},detail={path:'dataset/a.png'};
+  app.captionOverviewPlan=plan;app.captionOverviewDetail=detail;app.captionCheckPrompt='checked';
+  let timers=0;context.setTimeout=()=>{timers++;return 1;};
+  for(let i=0;i<20;i++) app.toggleCaptionCandidate('original',i%2===0);
+  app.captionOptions.verbose=true;app.saveCaptionOptions();
+  assert.equal(timers,0);assert.equal(app.captionOverviewPlan,plan);assert.equal(app.captionOverviewDetail,detail);
+  assert.equal(app.captionCheckPrompt,'checked');assert.equal(app.captionPlanLoading,false);
+  app.captionOptions.knowledge='new identity';app.saveCaptionOptions();
+  assert.equal(app.captionCheckPrompt,'');assert.equal(app.captionOverviewDetail,detail);assert.equal(timers,0);
+});
+
+test('rapid recursive changes debounce one source scan and retain visible plan',()=>{
+  const {app,context}=harness();app.taggerSource={source_token:'batch',path:'dataset',total:10};app.taggerSourcePath='dataset';
+  app.captionOptionsChanged({initialize:true});const plan={requests:10,writes:10};app.captionOverviewPlan=plan;
+  const timers=new Map();let id=0,scans=0;context.setTimeout=fn=>{timers.set(++id,fn);return id;};context.clearTimeout=key=>timers.delete(key);
+  app.scanTaggerSource=async()=>{scans++;};
+  for(let i=0;i<20;i++){app.captionOptions.recursive=i%2===0;app.scheduleTaggerSourceScan();app.saveCaptionOptions();}
+  assert.equal(timers.size,1);assert.equal(app.captionOverviewPlan,plan);
+  [...timers.values()][0]();assert.equal(scans,1);
+});
+
+test('newer plan owns pending state and older response cannot replace it',async()=>{
+  const {app,context}=harness();app.taggerSource={source_token:'batch',path:'dataset',total:10};
+  const oldPlan={requests:10};app.captionOverviewPlan=oldPlan;
+  const first=deferred(),second=deferred();let calls=0;context.fetch=()=>++calls===1?first.promise:second.promise;
+  const one=app.refreshCaptionPlan(),two=app.refreshCaptionPlan();assert.equal(app.captionOverviewPlan,oldPlan);assert.equal(app.captionPlanLoading,true);
+  second.resolve(response({plan:{requests:4},counts:{total:10}}));await two;
+  first.resolve(response({plan:{requests:99},counts:{total:99}}));await one;
+  assert.equal(app.captionOverviewPlan.requests,4);assert.equal(app.captionPlanLoading,false);assert.equal(app.taggerSource.total,10);
+});
+
+test('settings restore supports both loaded values and factory defaults',()=>{
+  const {app}=harness();app.taggerApiSettings.max_workers=4;app.loadCaptionOptions();
+  app.taggerApiSettings.max_workers=9;assert.equal(app.captionFieldChanged('api','max_workers'),true);
+  app.restoreCaptionField('api','max_workers');assert.equal(app.taggerApiSettings.max_workers,1);assert.equal(app.captionFieldChanged('api','max_workers'),false);
+  app.restoreCaptionField('api','max_workers',true);assert.equal(app.taggerApiSettings.max_workers,4);
+  app.captionOptions.candidates=['short','long'];app.restoreCaptionField('options','candidates');
+  assert.deepEqual([...app.captionOptions.candidates],['original','long','medium','short']);
 });
 
 test('preflight counts are refreshed before overwrite confirmation and a changed plan reconfirms',async()=>{
@@ -474,6 +516,8 @@ test('AI realtime does not also poll the removed task results list',()=>{
 
 test('preflight accepts normalized blank reference and becomes stale after a prompt change',()=>{
   const {app}=harness();app.taggerTaskId='check';app._taggerTasks.check={caption_options:{...app.captionOptions,reference_extension:'.txt',dry_run:true}};
+  app.captionOptions.candidates=['long','short'];app.captionOptions.verbose=true;assert.equal(app.captionPrecheckStale(),false);
+  app.captionOptions.candidates=['original'];assert.equal(app.captionPrecheckStale(),true);app.captionOptions.candidates=['long'];
   assert.equal(app.captionPrecheckStale(),false);app.captionOptions.knowledge='Changed';assert.equal(app.captionPrecheckStale(),true);
 });
 

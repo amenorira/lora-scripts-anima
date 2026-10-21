@@ -85,7 +85,7 @@ class CaptioningTests(unittest.TestCase):
             self.assertEqual(captioning.parse_caption_text(self.image.with_suffix(".txt").read_text(encoding="utf-8"))["original"], "original tags")
         self.assertEqual(len(self.calls), 2)
 
-    def test_default_txt_reference_skips_existing_and_generates_missing_only(self):
+    def test_default_txt_is_reference_and_missing_records_generate(self):
         self.image.with_suffix(".txt").write_text("local tagger output", encoding="utf-8")
         missing = self.root / "missing.png"
         Image.new("RGB", (48, 32)).save(missing)
@@ -93,16 +93,66 @@ class CaptioningTests(unittest.TestCase):
         settings = runtime["options"]
         states = [captioning.output_state(path, settings) for path in (self.image, missing)]
         plan = captioning.execution_plan(states, settings)
-        self.assertEqual((plan["requests"], plan["skipped"], plan["overwrite_captions"]), (1, 1, 0))
-        with patch.object(api_engine, "create_client", return_value=self.client()):
-            self.assertEqual(captioning.process(self.config(), self.image, runtime)["status"], "skipped")
+        self.assertEqual((plan["requests"], plan["skipped"], plan["overwrite_captions"]), (2, 0, 1))
+        with patch.object(api_engine, "create_client", side_effect=lambda *_: self.client()):
+            self.assertEqual(captioning.process(self.config(), self.image, runtime)["status"], "success")
             self.assertEqual(captioning.process(self.config(), missing, runtime)["status"], "success")
-        self.assertEqual(self.image.with_suffix(".txt").read_text(encoding="utf-8"), "local tagger output")
-        self.assertFalse((self.root / "sample_caption.json").exists())
+        self.assertEqual(captioning.parse_caption_text(self.image.with_suffix(".txt").read_text(encoding="utf-8"))["original"], "local tagger output")
+        self.assertEqual(json.loads((self.root / "sample_caption.json").read_text(encoding="utf-8"))["reference"], "local tagger output")
         missing_data = json.loads((self.root / "missing_caption.json").read_text(encoding="utf-8"))
         self.assertIsNone(missing_data["reference"])
         self.assertNotIn("original", captioning.parse_caption_text(missing.with_suffix(".txt").read_text(encoding="utf-8")))
-        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(len(self.calls), 2)
+
+    def test_invalid_records_fail_without_requests_or_writes(self):
+        sidecar = self.root / "sample_caption.json"
+        caption = self.image.with_suffix(".txt")
+        caption.write_text("local tags", encoding="utf-8")
+        bad_records = [b"{", b"[]", b"{}", b'{"response":{"caption":{"long":"x"}}}',
+            json.dumps({"response": RESPONSE, "version": 2}).encode(),
+            json.dumps({"response": RESPONSE, "image": "other.png"}).encode(),
+            json.dumps({"response": RESPONSE, "reference": []}).encode(),
+            json.dumps({"response": RESPONSE, "parse_mode": "tags"}).encode(),
+            json.dumps({"response": RESPONSE, "reference": "bad"}).encode().replace(b"bad", b"\xff")]
+        for contents in bad_records:
+            with self.subTest(contents=contents):
+                sidecar.write_bytes(contents)
+                runtime = self.runtime()
+                state = captioning.output_state(self.image, runtime["options"])
+                self.assertTrue(state["sidecar_error"])
+                self.assertEqual(captioning.execution_plan([state], runtime["options"])["failed"], 1)
+                with patch.object(api_engine, "interrogate") as call:
+                    with self.assertRaisesRegex(ValueError, "Invalid result JSON"):
+                        captioning.process(self.config(), self.image, runtime)
+                    call.assert_not_called()
+                self.assertEqual(sidecar.read_bytes(), contents)
+                self.assertEqual(caption.read_text(encoding="utf-8"), "local tags")
+
+    def test_only_explicit_regeneration_repairs_invalid_record(self):
+        sidecar = self.root / "sample_caption.json"
+        sidecar.write_text("{broken", encoding="utf-8")
+        self.image.with_suffix(".txt").write_text("local tags", encoding="utf-8")
+        with patch.object(api_engine, "interrogate", return_value=(RESPONSE, json.dumps(RESPONSE))) as call:
+            captioning.process(self.config(), self.image, self.runtime(overwrite=True))
+            self.assertEqual(call.call_count, 1)
+        record = captioning.read_result(sidecar, self.image)
+        self.assertEqual(record["reference"], "local tags")
+        before = {p.name: p.read_bytes() for p in self.root.iterdir()}
+        with patch.object(api_engine, "interrogate") as call:
+            self.assertEqual(captioning.process(self.config(), self.image, self.runtime())["status"], "skipped")
+            call.assert_not_called()
+        self.assertEqual(before, {p.name: p.read_bytes() for p in self.root.iterdir()})
+
+    def test_unreadable_record_cannot_trigger_paid_regeneration(self):
+        self.seed_json()
+        with patch.object(captioning, "read_result", side_effect=PermissionError("record denied")), patch.object(api_engine, "interrogate") as call:
+            with self.assertRaises(PermissionError):
+                captioning.process(self.config(), self.image, self.runtime(overwrite=True))
+            call.assert_not_called()
+
+    def test_candidate_order_is_fixed_for_saved_custom_orders(self):
+        options = captioning.validate_options({"candidates": ["short", "original", "long"]})
+        self.assertEqual(options["candidates"], ["original", "long", "short"])
 
     def test_export_requires_no_model_and_preserves_existing_output_by_default(self):
         config = captioning.validate_config({}, captioning.validate_options({"mode": "export"}))

@@ -1,19 +1,14 @@
 /* MOSS directory workflow, using the shared Tagger task/source lifecycle. */
+window.captionFieldDefaults = {
+  options: {mode:'generate',overwrite:false,recursive:true,reference_extension:'',caption_extension:'.txt',sidecar_suffix:'_caption.json',separator:'---===---',
+    candidates:['original','long','medium','short'],knowledge:'',knowledge_file:'',dir_knowledge_name:'_knowledge.txt',knowledge_suffix:'_knowledge.txt',prompt_source:'default',prompt_text:'',prompt_file:'',verbose:false},
+  api: {baseUrl:'',apiKey:'',model:'',protocol:'chat-completions',max_workers:1,max_image_size:1536,jpeg_quality:'',max_tokens:16384,temperature:1,top_p:.95,timeout:600,max_retries:3,extra_body:'{}'},
+};
 window.captionOptionsMixin = {
   _captionOptionsLoaded: false,
   captionDefaultPrompt: '',
-  captionOptions: {
-    mode: 'generate', overwrite: false, recursive: true,
-    reference_extension: '', caption_extension: '.txt', sidecar_suffix: '_caption.json', separator: '---===---',
-    candidates: ['original', 'long', 'medium', 'short'], knowledge: '', knowledge_file: '',
-    dir_knowledge_name: '_knowledge.txt', knowledge_suffix: '_knowledge.txt',
-    prompt_source: 'default', prompt_text: '', prompt_file: '', verbose: false,
-  },
-  taggerApiSettings: {
-    baseUrl: '', apiKey: '', model: '', protocol: 'chat-completions',
-    max_workers: 1, max_image_size: 1536, jpeg_quality: '', max_tokens: 16384,
-    temperature: 1, top_p: .95, timeout: 600, max_retries: 3, extra_body: '{}',
-  },
+  captionOptions: JSON.parse(JSON.stringify(window.captionFieldDefaults.options)),
+  taggerApiSettings: {...window.captionFieldDefaults.api},
   taggerApiModelSuggestions: [],
   taggerApiShowKey: false,
   taggerApiTesting: false,
@@ -37,6 +32,35 @@ window.captionOptionsMixin = {
         if (!api.modelSelectionVersion && ['deepseek-v4-flash-vision-exp','gpt-4o-mini','claude-sonnet-4-5','Qwen/Qwen2.5-VL-72B-Instruct','qwen-vl-max'].includes(api.model)) this.taggerApiSettings.model = '';
       }
     } catch (_) {}
+    if (!Array.isArray(this.captionOptions.candidates)) this.captionOptions.candidates = [...window.captionFieldDefaults.options.candidates];
+    this.captionOptions.candidates = ['original','long','medium','short'].filter(name => this.captionOptions.candidates.includes(name));
+    this._captionInitialFields = JSON.parse(JSON.stringify({options:this.captionOptions,api:this.taggerApiSettings}));
+    this.captionOptionsChanged?.({initialize:true});
+  },
+
+  captionFieldChanged(scope, key) {
+    const values = scope === 'api' ? this.taggerApiSettings : this.captionOptions;
+    const value = values[key], original = window.captionFieldDefaults[scope]?.[key];
+    return Array.isArray(value) ? JSON.stringify(value) !== JSON.stringify(original) : String(value) !== String(original);
+  },
+
+  restoreCaptionField(scope, key, undo = false) {
+    const defaults = window.captionFieldDefaults[scope];
+    if (!defaults || !Object.hasOwn(defaults,key)) return;
+    const value = undo ? this._captionInitialFields?.[scope]?.[key] ?? defaults[key] : defaults[key];
+    (scope === 'api' ? this.taggerApiSettings : this.captionOptions)[key] = JSON.parse(JSON.stringify(value));
+    if (scope === 'options' && key === 'recursive') this.scheduleTaggerSourceScan();
+    this.saveCaptionOptions();
+  },
+
+  captionFieldMenu(scope, key) {
+    if (!window.captionFieldDefaults[scope] || !Object.hasOwn(window.captionFieldDefaults[scope],key)) return '';
+    return `<div class="field-menu-wrap" x-data="actionMenu" x-id="['field-menu']" @keydown="key($event)" @click.outside="close(false)" @pointerenter="hoverEnter($event)" @pointerleave="hoverLeave()" @focusout="focusOut($event)">
+      <button type="button" class="btn-menu" x-ref="trigger" :aria-label="t('common.fieldActions')" aria-haspopup="menu" :aria-expanded="open" :aria-controls="$id('field-menu')" @click="toggle()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>
+      <div class="field-menu-popup" x-ref="menu" x-show="open" :class="{'is-positioned':positioned}" :inert="!open" :id="$id('field-menu')" role="menu" :aria-label="t('common.fieldActions')" x-cloak>
+        <button type="button" role="menuitem" tabindex="-1" @click="restoreCaptionField('${scope}','${key}',true);close()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg><span x-text="t('common.undoField')"></span></button>
+        <button type="button" role="menuitem" tabindex="-1" @click="restoreCaptionField('${scope}','${key}');close()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg><span x-text="t('common.resetField')"></span></button>
+      </div></div>`;
   },
 
   saveCaptionOptions() {
@@ -74,6 +98,14 @@ window.captionOptionsMixin = {
     this.saveCaptionOptions();
   },
 
+  captionTaskConfig() {
+    return {options:['generate','export'].map(v => ({v,l:this.t('caption.task_' + v),d:this.t('caption.task_' + v + 'Help')}))};
+  },
+
+  captionImageFormatConfig() {
+    return {options:['png','jpeg'].map(v => ({v,l:v.toUpperCase(),d:this.t('caption.imageFormat_' + v)}))};
+  },
+
   captionStartHint() {
     if (!this.taggerSource?.total) return this.t('caption.selectDirectory');
     if (!this.captionSelectedCandidates().length) return this.t('caption.chooseCandidate');
@@ -97,15 +129,9 @@ window.captionOptionsMixin = {
     return o.prompt_source === 'default' || (o.prompt_source === 'text' ? !!o.prompt_text.trim() : !!o.prompt_file.trim());
   },
 
-  captionReferenceWillBeSkipped() {
-    const o = this.captionOptions;
-    return !this.captionOffline() && !o.overwrite
-      && this.captionReferenceExtension().replace(/^\.+/, '').toLowerCase() === o.caption_extension.replace(/^\.+/, '').toLowerCase();
-  },
-
   captionCanCheck() {
     return !!(this.taggerSourceMode !== 'api-single' && this.taggerSource?.total && (this.captionOffline() || this.captionPromptReady()) && this.captionSelectedCandidates().length
-      && !this.captionPlanError && !this.captionPreviewBusy && !this.taggerHasActiveTask() && !this.taggerStarting && !this.taggerScanning);
+      && !this.captionPlanError && !this.captionPlanLoading && !this._taggerSourceScanTimer && !this.captionPreviewBusy && !this.taggerHasActiveTask() && !this.taggerStarting && !this.taggerScanning);
   },
 
   taggerApiCanStart() {
@@ -113,7 +139,7 @@ window.captionOptionsMixin = {
     return !!(this.taggerSource?.total && this.captionSelectedCandidates().length
       && (this.captionOffline() || (s.baseUrl.trim() && s.model.trim() && this.captionPromptReady()))
       && this.taggerSourceMode !== 'api-single' && !this.trainingActive && !this.regularizationActive
-      && !this.captionPlanError && !this.captionPreviewBusy && !this.taggerHasActiveTask() && !this.taggerStarting && !this.taggerScanning);
+      && !this.captionPlanError && !this.captionPlanLoading && !this._taggerSourceScanTimer && !this.captionPreviewBusy && !this.taggerHasActiveTask() && !this.taggerStarting && !this.taggerScanning);
   },
 
   captionProtocolConfig() {
@@ -186,11 +212,5 @@ window.captionOptionsMixin = {
       const body = await (await fetch('/api/pick_file?picker_type=text-file')).json();
       if (body.status === 'success' && body.data?.path) { this.captionOptions[key] = body.data.path; this.saveCaptionOptions(); }
     } catch (_) { this.toast(this.t('common.localPickerNA')); }
-  },
-  captionOutputExample() {
-    const o = this.captionOptions;
-    return this.t(this.captionOffline() ? 'caption.outputExampleExport' : 'caption.outputExampleGenerate')
-      .replace('{caption}', 'image' + o.caption_extension)
-      .replace('{json}', 'image' + o.sidecar_suffix);
   },
 };

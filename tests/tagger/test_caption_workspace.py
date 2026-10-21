@@ -69,7 +69,7 @@ class CaptionWorkspaceTests(unittest.TestCase):
             with patch.object(api_engine, "interrogate", side_effect=respond):
                 result = workspace.preview_caption({"source_token": source["source_token"], "api": self.api,
                     "captioning": {"knowledge": "Shared only", "candidates": ["short", "long"]}})
-            self.assertEqual(list(result["candidates"]), ["short", "long"])
+            self.assertEqual(list(result["candidates"]), ["long", "short"])
             self.assertEqual(result["attempts"], 1)
             self.assertEqual(before, {p.name: p.read_bytes() for p in self.root.iterdir()})
             self.assertFalse(workspace.preview_state()["active"])
@@ -140,17 +140,34 @@ class CaptionWorkspaceTests(unittest.TestCase):
         self.image.with_suffix(".txt").write_text("ordinary", encoding="utf-8")
         self.sidecar(reused)
         source = self.scan()
-        expected = [("generate", False, (1,1,1,2)), ("generate", True, (3,0,0,3)),
+        expected = [("generate", False, (2,1,0,3)), ("generate", True, (3,0,0,3)),
                     ("export", False, (0,1,2,1)), ("export", True, (0,1,2,1))]
         for mode, overwrite, plan in expected:
             result = workspace.caption_plan(source["source_token"], {"mode":mode,"overwrite":overwrite})
             self.assertEqual(tuple(result["plan"][key] for key in ("requests","reused","skipped","writes")),plan)
         counts = result["counts"]
-        self.assertEqual((counts["ordinary_outputs"],counts["missing_outputs"],counts["missing_json"],counts["reusable"],counts["requestable"]),(1,2,2,1,1))
+        self.assertEqual((counts["ordinary_outputs"],counts["missing_outputs"],counts["missing_json"],counts["reusable"],counts["requestable"]),(1,2,2,1,2))
         missing.with_suffix(".txt").write_text("---===--- # short\nNew caption\n",encoding="utf-8")
         result = workspace.annotations(source["source_token"],status="missing")
         self.assertEqual([item["name"] for item in result["items"]],["01.png"])
         self.assertEqual(result["counts"]["moss_outputs"],1)
+
+    def test_invalid_record_filter_plan_and_task_failures(self):
+        self.image.with_suffix(".txt").write_text("existing tags", encoding="utf-8")
+        sidecar = self.sidecar(response={"caption": {"long": "incomplete"}})
+        token = self.scan()["source_token"]
+        page = workspace.annotations(token, status="invalid_json")
+        self.assertEqual(page["total"], 1)
+        self.assertEqual(page["counts"]["invalid_json"], 1)
+        self.assertTrue(page["items"][0]["sidecar_error"])
+        plan = workspace.caption_plan(token, {})["plan"]
+        self.assertEqual((plan["failed"], plan["requests"], plan["writes"]), (1, 0, 0))
+        before = sidecar.read_bytes()
+        with patch.object(api_engine, "interrogate") as call:
+            _, result = self.run_task(token)
+            call.assert_not_called()
+        self.assertEqual((result["failed"], result["written"]), (1, 0))
+        self.assertEqual(sidecar.read_bytes(), before)
 
     def test_pagination_search_reads_only_page_and_detail_allowlist(self):
         for i in range(1, 125):
@@ -206,14 +223,14 @@ class CaptionWorkspaceTests(unittest.TestCase):
         before = {p.name:p.read_bytes() for p in self.root.iterdir()}
         with patch.object(api_engine,"interrogate") as call:
             task_id,data = self.run_task(source["source_token"],dry_run=True)
-        self.assertEqual((data["success"],data["skipped"],data["checked"],data["written"],data["reused"]),(0,1,2,0,0))
-        self.assertEqual(data["plan"],{"requests":1,"reused":1,"skipped":1,"writes":2})
+        self.assertEqual((data["success"],data["skipped"],data["checked"],data["written"],data["reused"]),(0,0,3,0,0))
+        self.assertEqual(data["plan"],{"requests":2,"reused":1,"skipped":0,"writes":3})
         self.assertTrue(data["has_check_prompt"])
         self.assertTrue(workspace.task_check_prompt(task_id)["prompt"])
         self.assertNotIn("check_prompt",data)
         self.assertFalse(any(line["event"] == "prompt" for line in data["logs"]))
         self.assertEqual(before,{p.name:p.read_bytes() for p in self.root.iterdir()})
-        self.assertEqual([item["event"] for item in workspace.task_items(task_id)["items"]],["skipped","checked","checked"])
+        self.assertEqual([item["event"] for item in workspace.task_items(task_id)["items"]],["checked","checked","checked"])
         call.assert_not_called()
 
     def test_dry_run_export_checks_json_without_writing(self):
@@ -337,6 +354,7 @@ class CaptionWorkspaceTests(unittest.TestCase):
             self.assertEqual(plan["status"], "fail")
             self.assertIn("Conflicting", plan["message"])
             self.image.with_suffix(".txt").write_text("existing", encoding="utf-8")
+            self.sidecar()
             plan = client.post(f"/api/tagger/source/{token}/caption-plan", json={}).json()
             self.assertEqual(plan["data"]["plan"]["writes"], 0)
             _, result = self.run_task(token)

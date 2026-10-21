@@ -37,6 +37,7 @@ def validate_options(value: dict) -> dict:
     names = options["candidates"]
     if not isinstance(names, list) or not names or any(name not in {"original", "long", "medium", "short"} for name in names) or len(names) != len(set(names)):
         raise ValueError("Select at least one valid candidate / 请至少选择一种有效的导出候选")
+    options["candidates"] = [name for name in ("original", "long", "medium", "short") if name in names]
     if options["mode"] == "generate":
         if options["prompt_source"] not in {"default", "text", "file"}:
             raise ValueError("Invalid prompt source / 无效的提示词来源")
@@ -147,16 +148,38 @@ def parse_caption_text(text: str, separator: str = "---===---") -> dict[str, str
     return {name: "\n".join(lines).strip() for name, lines in sections.items()}
 
 
-def read_bounded(path: Path, limit: int = 512 * 1024) -> str:
+def read_bounded(path: Path, limit: int = 512 * 1024, *, errors: str = "replace") -> str:
     with path.open("rb") as handle:
         data = handle.read(limit + 1)
     if len(data) > limit:
         raise ValueError("Annotation file is too large / 标注文件过大")
-    return data.decode("utf-8-sig", errors="replace")
+    return data.decode("utf-8-sig", errors=errors)
 
 
 def is_reparse(info) -> bool:
     return stat.S_ISLNK(info.st_mode) or bool(getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+
+
+def read_result(sidecar: Path, image: Path) -> dict:
+    """Only compatible, validated MOSS records count as completed generation."""
+    try:
+        data = json.loads(read_bounded(sidecar, 2 * 1024 * 1024, errors="strict"))
+        if not isinstance(data, dict):
+            raise ValueError("Result JSON must be an object / 结果 JSON 必须是对象")
+        if data.get("parse_mode", "multi-caption") != "multi-caption":
+            raise ValueError("Not a MOSS result JSON / 不是 MOSS 生成记录")
+        if "version" in data and (type(data["version"]) is not int or data["version"] != 1):
+            raise ValueError("Unsupported result version / 不支持的生成记录版本")
+        if "image" in data and data["image"] != image.name:
+            raise ValueError("Image name does not match / 生成记录与图片文件名不匹配")
+        if data.get("reference") is not None and not isinstance(data["reference"], str):
+            raise ValueError("Reference must be text / 参考原文必须是文本")
+        if not isinstance(data.get("response"), dict):
+            raise ValueError("Missing response object / 缺少模型回复对象")
+        upstream.validate_response(data["response"])
+        return data
+    except ValueError as exc:
+        raise ValueError(f"Invalid result JSON / 生成记录 JSON 无效: {sidecar.name}: {exc}") from exc
 
 
 def output_state(path: Path, options: dict, cached: dict | None = None, *, parent: Path | None = None) -> dict:
@@ -192,14 +215,25 @@ def output_state(path: Path, options: dict, cached: dict | None = None, *, paren
             kind = "unreadable"
     def present(stamp):
         return None if stamp is False else stamp is not None
+    sidecar_valid = False
+    sidecar_error = ""
+    if fingerprint[1]:
+        try:
+            read_result(sidecar, path)
+            sidecar_valid = True
+        except (ValueError, OSError) as exc:
+            sidecar_error = str(exc)
+            if isinstance(exc, OSError):
+                errors.append(str(exc))
     return {"fingerprint": fingerprint, "has_caption": present(fingerprint[0]),
             "has_sidecar": present(fingerprint[1]), "has_reference": present(fingerprint[2]),
+            "sidecar_valid": sidecar_valid, "sidecar_error": sidecar_error,
             "caption_kind": kind, "updated_at": fingerprint[0][0] / 1e9 if fingerprint[0] else None,
             **({"read_error": "\n".join(errors)} if errors else {})}
 
 
 def output_counts(states: list[dict]) -> dict:
-    counts = {key: 0 for key in ("outputs", "moss_outputs", "ordinary_outputs", "missing_outputs", "unreadable_outputs", "references", "sidecars", "missing_json", "reusable", "requestable")}
+    counts = {key: 0 for key in ("outputs", "moss_outputs", "ordinary_outputs", "missing_outputs", "unreadable_outputs", "references", "sidecars", "missing_json", "invalid_json", "reusable", "requestable")}
     counts["total"] = len(states)
     for state in states:
         counts["outputs"] += state["has_caption"] is True
@@ -207,17 +241,18 @@ def output_counts(states: list[dict]) -> dict:
         counts["references"] += state["has_reference"] is True
         counts["sidecars"] += state["has_sidecar"] is True
         counts["missing_json"] += state["has_sidecar"] is False
-        if state["caption_kind"] == "missing":
-            counts["reusable" if state["has_sidecar"] else "requestable"] += 1
+        counts["invalid_json"] += bool(state.get("sidecar_error"))
+        counts["reusable"] += state.get("sidecar_valid", False) and not state["has_caption"]
+        counts["requestable"] += state["has_sidecar"] is False
     return counts
 
 
 def execution_plan(states: list[dict], options: dict) -> dict:
-    plan = {key: 0 for key in ("requests", "reused", "skipped", "writes", "overwrite_captions", "overwrite_json", "overwrite_references")}
+    plan = {key: 0 for key in ("requests", "reused", "skipped", "failed", "writes", "overwrite_captions", "overwrite_json", "overwrite_references")}
     for state in states:
         action = planned_action(state, options)
-        plan[{"request": "requests", "reuse": "reused", "skip": "skipped"}[action]] += 1
-        if action != "skip":
+        plan[{"request": "requests", "reuse": "reused", "skip": "skipped", "fail": "failed"}[action]] += 1
+        if action not in {"skip", "fail"}:
             plan["writes"] += 1
             plan["overwrite_captions"] += state["has_caption"]
             plan["overwrite_json"] += action == "request" and state["has_sidecar"]
@@ -226,11 +261,16 @@ def execution_plan(states: list[dict], options: dict) -> dict:
 
 
 def planned_action(state: dict, options: dict) -> str:
-    if not options["overwrite"] and state["has_caption"]:
-        return "skip"
+    regenerate = options["mode"] == "generate" and options["overwrite"]
+    if state.get("sidecar_error") and not regenerate:
+        return "fail"
     if options["mode"] == "export":
-        return "reuse" if state["has_sidecar"] else "skip"
-    return "reuse" if state["has_sidecar"] and not options["overwrite"] else "request"
+        if state["has_caption"] and not options["overwrite"]:
+            return "skip"
+        return "reuse" if state.get("sidecar_valid") else "skip"
+    if not regenerate and state.get("sidecar_valid"):
+        return "skip" if state["has_caption"] else "reuse"
+    return "request"
 
 
 def validate_write_targets(paths: list[Path], targets: list[Path], protected: list[Path] = ()) -> None:
@@ -248,12 +288,10 @@ def validate_output_targets(paths: list[Path], options: dict, states: list[dict]
     targets = []
     requests = []
     for path, state in zip(paths, states):
-        if state["has_caption"] and not options["overwrite"]:
-            continue
         if state["has_caption"] is None or state["has_sidecar"] is None:
             raise ValueError(state["read_error"])
         action = planned_action(state, options)
-        if action == "skip":
+        if action in {"skip", "fail"}:
             continue
         output, sidecar, _ = output_files(path, options)
         targets.extend([output, sidecar] if action == "request" else [output])
@@ -312,22 +350,24 @@ def process(config: api_engine.ApiConfig, path: Path, runtime: dict, *, cancel_e
         return {"status": status, **({"event": event} if event else {}), **extra}
 
     check_cancelled()
-    if not options["overwrite"] and output.is_file():
+    old = None
+    if sidecar.is_file():
+        try:
+            old = read_result(sidecar, path)
+        except ValueError:
+            if options["mode"] != "generate" or not options["overwrite"]:
+                raise
+    if not options["overwrite"] and output.is_file() and (options["mode"] == "export" or old is not None):
         return outcome(status="skipped", event="skipped", planned_action="skip")
-    old = json.loads(read_bounded(sidecar, 2 * 1024 * 1024)) if sidecar.is_file() else None
     if options["mode"] == "export" and old is None:
         return outcome(status="skipped", event="missing_json", planned_action="skip")
     reuse = old is not None and (options["mode"] == "export" or not options["overwrite"])
     if reuse:
-        if old.get("parse_mode", "multi-caption") != "multi-caption":
-            raise ValueError("Not a MOSS result JSON / 此 JSON 不是 MOSS 多候选结果，请重新生成")
         response, reference = old["response"], old.get("reference") or ""
     else:
         reference = upstream.read_text(reference_path) if reference_path and reference_path.is_file() else ""
         if any(upstream.is_separator_line(line, options["separator"]) for line in reference.splitlines()):
-            if old is None:
-                raise ValueError("Reference already contains MOSS output but original JSON is missing / 参考文件已是多候选结果，但缺少保存原文的 JSON")
-            reference = old.get("reference") or ""
+            reference = (old.get("reference") or "") if old is not None else parse_caption_text(reference, options["separator"]).get("original", "")
         prompt, knowledge = build_prompt(runtime, path, reference)
         if not reference and options["candidates"] == ["original"]:
             raise ValueError("No selected candidate has content / 没有参考标注时请选择长、中或短描述")

@@ -12,6 +12,8 @@ window.captionWorkspaceMixin = {
   captionOverviewCounts: {},
   captionOverviewPlan: null,
   captionPlanError: '',
+  captionPlanLoading: false,
+  _captionPlanSourcePath: '',
   captionOverviewSettings: null,
   captionOverviewTotal: 0,
   captionOverviewOffset: 0,
@@ -63,6 +65,7 @@ window.captionWorkspaceMixin = {
     ++this._captionPromptRequest;
     this._captionOverviewInFlight = false;
     this.captionOverviewLoading = false;
+    this.captionPlanLoading = false;
     ++this._captionDetailRequest;
     this.closeCaptionDetail();
     this.captionPromptOpen = false;
@@ -94,12 +97,18 @@ window.captionWorkspaceMixin = {
   captionSourceChanged(mode) {
     if (mode === 'api-single') { this.captionSingleResult = null; this.captionPreviewError = ''; }
     if (mode !== 'api-folder') return;
+    ++this._captionPlanRequest;
+    this.captionPlanLoading = false;
     ++this._captionPromptRequest;
     this.captionOverviewOffset = 0;
+    this.captionCheckPrompt = '';
+    this.captionPromptOpen = false;
     this.captionOverviewItems = [];
     const batch = this.captionBatchState();
-    this.captionOverviewCounts = batch.source || {};
-    this.captionOverviewPlan = null;
+    if (!batch.source || batch.source.path !== this._captionPlanSourcePath) {
+      this.captionOverviewCounts = batch.source || {};
+      this.captionOverviewPlan = null;
+    }
     this.captionPlanError = '';
     this.captionOverviewSettings = null;
     this.captionOverviewError = '';
@@ -108,59 +117,59 @@ window.captionWorkspaceMixin = {
     if (mode === this.taggerSourceMode) localStorage.setItem('anima-ai-source-path', batch.sourcePath || '');
     if (batch.source) void this.refreshCaptionPlan();
   },
-  captionOptionsChanged() {
+  captionOptionsChanged({initialize = false} = {}) {
     const o = this.captionOptions;
-    const fingerprint = JSON.stringify([o.caption_extension,o.reference_extension,o.sidecar_suffix,o.separator,o.recursive,o.mode,o.overwrite,o.candidates,
-      o.knowledge_file,o.prompt_source,o.prompt_file,o.dir_knowledge_name,o.knowledge_suffix]);
-    if (fingerprint === this._captionOptionsFingerprint) return;
-    const old = this._captionOptionsFingerprint;
+    const outputFingerprint = JSON.stringify([o.caption_extension,o.reference_extension,o.sidecar_suffix,o.separator]);
+    const fingerprint = JSON.stringify([outputFingerprint,o.mode,o.overwrite,o.knowledge_file,
+      o.prompt_source === 'file' ? o.prompt_file : '',o.dir_knowledge_name,o.knowledge_suffix]);
+    const promptFingerprint = JSON.stringify([o.knowledge,o.knowledge_file,o.dir_knowledge_name,o.knowledge_suffix,
+      o.prompt_source,o.prompt_text,o.prompt_file,o.reference_extension]);
+    const planChanged = fingerprint !== this._captionOptionsFingerprint;
+    const outputChanged = outputFingerprint !== this._captionOutputFingerprint;
+    const promptChanged = promptFingerprint !== this._captionPromptFingerprint;
     this._captionOptionsFingerprint = fingerprint;
+    this._captionOutputFingerprint = outputFingerprint;
+    this._captionPromptFingerprint = promptFingerprint;
+    if (initialize) return;
+    if (promptChanged || planChanged) {
+      ++this._captionPromptRequest;
+      this.captionCheckPrompt = '';
+      this.captionPromptOpen = false;
+    }
+    if (!planChanged && !outputChanged) return;
     ++this._captionPlanRequest;
-    ++this._captionOverviewRequest;
-    this.captionOverviewLoading = false;
-    this._captionOverviewInFlight = false;
-    this.captionOverviewPlan = null;
     this.captionPlanError = '';
-    this.captionCheckPrompt = '';
-    this.closeCaptionDetail();
-    if (old && !this.taggerScanning && this.captionBatchState().source) {
+    if (outputChanged) {
+      ++this._captionOverviewRequest;
+      this.captionOverviewLoading = false;
+      this._captionOverviewInFlight = false;
+      this.closeCaptionDetail();
+    }
+    if (!this.taggerStarting && !this.taggerScanning && !this._taggerSourceScanTimer && this.captionBatchState().source) {
+      this.captionPlanLoading = true;
       clearTimeout(this._captionRefreshTimer);
       this._captionRefreshTimer = setTimeout(() => {
         void this.refreshCaptionPlan();
-        if (this.captionTab === 'overview') void this.refreshCaptionOverview();
+        if (outputChanged && this.captionTab === 'overview') void this.refreshCaptionOverview();
       }, 250);
     }
   },
   captionCandidateRows(single = false) {
-    return [...this.captionOptions.candidates, ...['original','long','medium','short'].filter(n => !this.captionOptions.candidates.includes(n))]
+    return ['original','long','medium','short']
       .filter(n => n !== 'original' || !single);
   },
   toggleCaptionCandidate(name, enabled) {
     const names = this.captionOptions.candidates.filter(n => n !== name);
     if (enabled) names.push(name);
-    this.captionOptions.candidates = names;
+    this.captionOptions.candidates = ['original','long','medium','short'].filter(n => names.includes(n));
     this.saveCaptionOptions();
-  },
-  moveCaptionCandidate(name, delta) {
-    const names = [...this.captionOptions.candidates];
-    const i = names.indexOf(name), next = i + delta;
-    if (i < 0 || next < 0 || next >= names.length) return;
-    [names[i],names[next]] = [names[next],names[i]];
-    this.captionOptions.candidates = names;
-    this.saveCaptionOptions();
-  },
-  captionOutputSkeleton() {
-    return this.captionSelectedCandidates().map(n => `${this.captionOptions.separator} # ${n}`).join('\n');
-  },
-  captionRequestChanges() {
-    const defaults = {max_workers:1,max_image_size:1536,jpeg_quality:'',max_tokens:16384,temperature:1,top_p:.95,timeout:600,max_retries:3,extra_body:'{}'};
-    return Object.keys(defaults).filter(k => String(defaults[k]) !== String(this.taggerApiSettings[k])).length;
   },
   captionPrecheckStale() {
     const saved = this.captionBatchState().task?.caption_options;
-    return !!(saved?.dry_run && Object.keys(this.captionOptions).some(key => key !== 'dry_run' && (key === 'reference_extension'
+    const hasDescription = options => options.candidates?.some(name => name !== 'original');
+    return !!(saved?.dry_run && (hasDescription(saved) !== hasDescription(this.captionOptions) || Object.keys(this.captionOptions).some(key => !['dry_run','verbose','candidates'].includes(key) && (key === 'reference_extension'
       ? this.captionReferenceExtension() !== this.captionReferenceExtension(saved)
-      : JSON.stringify(this.captionOptions[key]) !== JSON.stringify(saved[key]))));
+      : JSON.stringify(this.captionOptions[key]) !== JSON.stringify(saved[key])))));
   },
   captionApiPayload() {
     const {baseUrl,apiKey,...settings} = this.taggerApiSettings;
@@ -258,13 +267,15 @@ window.captionWorkspaceMixin = {
   async refreshCaptionPlan({source = this.captionBatchState().source, options = this.captionOptions} = {}) {
     if (!source?.source_token) return null;
     const token = source.source_token, request = ++this._captionPlanRequest;
+    this.captionPlanLoading = true;
     this.captionPlanError = '';
     try {
       const body = await (await fetch(`/api/tagger/source/${encodeURIComponent(token)}/caption-plan`, {method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify(options)})).json();
       if (request !== this._captionPlanRequest || token !== this.captionBatchState().source?.source_token) return null;
       if (body.status !== 'success') throw new Error(body.message);
-      this.captionOverviewPlan = body.data.plan;
+      if (JSON.stringify(this.captionOverviewPlan) !== JSON.stringify(body.data.plan)) this.captionOverviewPlan = body.data.plan;
+      this._captionPlanSourcePath = source.path;
       this.captionOverviewCounts = body.data.counts;
       source.total = body.data.counts.total;
       return body.data;
@@ -274,6 +285,8 @@ window.captionWorkspaceMixin = {
         this.captionPlanError = error.message || String(error);
       }
       return null;
+    } finally {
+      if (request === this._captionPlanRequest) this.captionPlanLoading = false;
     }
   },
   async refreshCaptionOverview(options = {}) {
@@ -415,7 +428,7 @@ window.captionWorkspaceMixin = {
 // Candidate selection and clipboard handling are shared by preview and detail.
 window.captionCandidateViewer = read => ({
   candidate: '',
-  captionViewerNames() { return Object.keys(read()?.candidates || {}); },
+  captionViewerNames() { return ['original','long','medium','short'].filter(name => Object.hasOwn(read()?.candidates || {},name)); },
   captionViewerText() {
     const data = read();
     const names = this.captionViewerNames();

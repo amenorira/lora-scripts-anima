@@ -51,10 +51,9 @@ test('export needs no model; generation checks active prompt and task state',()=
   app.taggerTaskId='busy';app._taggerTasks.busy={status:'running'};assert.equal(app.taggerApiCanStart(),false);app._clearTaggerTask();
   app.captionOptions.mode='generate';Object.assign(app.taggerApiSettings,{baseUrl:'http://local/v1',model:'mine'});
   assert.equal(app.captionOptions.reference_extension,'');assert.equal(app.captionReferenceExtension(),'.txt');
-  assert.equal(app.taggerApiCanStart(),true);assert.equal(app.captionReferenceWillBeSkipped(),true);
+  assert.equal(app.taggerApiCanStart(),true);
   assert.equal(app.captionStartHint(),'');assert.equal(app.captionCanCheck(),true);
   app.captionOptions.overwrite=true;assert.equal(app.taggerApiCanStart(),true);
-  assert.equal(app.captionReferenceWillBeSkipped(),false);
   app.captionOptions.prompt_source='file';assert.equal(app.taggerApiCanStart(),false);
   app.captionOptions.prompt_file='prompt.txt';assert.equal(app.taggerApiCanStart(),true);
   app.captionOptions.candidates=[];assert.equal(app.taggerApiCanStart(),false);
@@ -131,7 +130,6 @@ test('blank or whitespace reference extension uses txt without hiding original',
     app.captionOptions.reference_extension=reference;app.captionOptions.candidates=['original'];
     assert.equal(app.captionReferenceExtension(),'.txt');assert.equal(app.captionSelectedCandidates()[0],'original');
     assert.equal(app.taggerApiCanStart(),true);assert.equal(app.captionCanCheck(),true);
-    assert.equal(app.captionReferenceWillBeSkipped(),true);
   }
   app.setCaptionTaskMode('export');assert.equal(app.taggerApiCanStart(),true);
 });

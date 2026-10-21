@@ -209,7 +209,7 @@ def annotations(token: str, offset=0, limit=60, status="all", q="", refresh=Fals
     source = _get_source(token)
     if source["kind"] != "folder":
         raise ValueError("Overview requires a directory / 总览仅支持批量目录")
-    if status not in {"all", "missing", "missing_json", "ordinary", "failed"}:
+    if status not in {"all", "missing", "missing_json", "invalid_json", "ordinary", "failed"}:
         raise ValueError("Invalid annotation filter / 无效的标注筛选")
     settings = captioning.output_options(options, options.get("caption_extension", ".txt")) if options is not None else source["caption_options"]
     with source["annotation_lock"]:
@@ -233,6 +233,7 @@ def annotations(token: str, offset=0, limit=60, status="all", q="", refresh=Fals
             if query and query not in relative.casefold():
                 continue
             if ((status == "missing" and state["caption_kind"] != "missing") or (status == "missing_json" and state["has_sidecar"] is not False)
+                    or (status == "invalid_json" and not state.get("sidecar_error"))
                     or (status == "ordinary" and state["caption_kind"] != "ordinary") or (status == "failed" and live.get("status") != "failed")):
                 continue
             selected.append((index, path, relative, state, live))
@@ -266,9 +267,7 @@ def annotation_detail(token: str, index: int, options: dict | None = None) -> di
         content = _annotation_text(path, settings, state)
         sidecar_error = ""
         try:
-            data = json.loads(captioning.read_bounded(sidecar, 2 * 1024 * 1024)) if state["has_sidecar"] else {}
-            if not isinstance(data, dict):
-                raise ValueError("Result JSON must be an object / 结果 JSON 必须是对象")
+            data = captioning.read_result(sidecar, path) if state["has_sidecar"] else {}
         except (OSError, ValueError) as exc:
             data = {}
             sidecar_error = str(exc)
