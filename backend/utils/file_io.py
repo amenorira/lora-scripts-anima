@@ -15,7 +15,7 @@ def atomic_write_text(
             raise InterruptedError("cancelled")
 
     check_cancelled()
-    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    temporary = path.with_name(f".{uuid.uuid4().hex}.tmp")
     # Open outside the cleanup block: if creation fails, we do not own the path.
     # In particular, never retry PermissionError or remove a colliding file.
     handle = temporary.open("x", encoding="utf-8", errors=errors, newline="\n")

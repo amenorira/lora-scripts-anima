@@ -9,6 +9,15 @@ from backend.utils import file_io as writing
 
 
 class CaptionWritingTests(unittest.TestCase):
+    def test_tag_editor_replaces_long_caption_filename(self):
+        from backend.tageditor.core import restore_caption_state
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / ("a" * 220 + ".txt")
+            output.write_text("original", encoding="utf-8")
+            restore_caption_state(output, True, "replacement")
+            self.assertEqual(output.read_text(encoding="utf-8"), "replacement")
+            self.assertEqual(list(output.parent.iterdir()), [output])
+
     def test_tag_editor_preserves_replacement_encoding_and_line_endings(self):
         from backend.tageditor.core import restore_caption_state
         with tempfile.TemporaryDirectory() as temporary:
@@ -30,7 +39,7 @@ class CaptionWritingTests(unittest.TestCase):
     def test_collision_does_not_remove_someone_elses_file(self):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "sample.txt"
-            collision = output.with_name(".sample.txt.collision.tmp")
+            collision = output.with_name(".collision.tmp")
             collision.write_text("someone else", encoding="utf-8")
             with patch.object(writing.uuid, "uuid4", return_value=SimpleNamespace(hex="collision")):
                 with self.assertRaises(FileExistsError):
