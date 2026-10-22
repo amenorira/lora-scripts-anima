@@ -42,6 +42,28 @@ def krea2_config(root: Path) -> dict:
 
 
 class Krea2PreparationLifecycleTests(unittest.TestCase):
+    def test_cache_status_enumerates_once_and_prunes_cache_subtrees(self):
+        from backend.training import musubi_krea2 as krea
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = krea2_config(Path(temp_dir))
+            cache = Path(config["dataset_cache_dir"])
+            cache.mkdir()
+            (cache / "ignored.png").touch()
+            (cache / "ignored.txt").touch()
+            visited = []
+            real_walk = krea.os.walk
+            def walk(*args, **kwargs):
+                for entry in real_walk(*args, **kwargs):
+                    visited.append(Path(entry[0]))
+                    yield entry
+            with patch.object(krea.os, "walk", side_effect=walk), patch.object(krea, "image_files", wraps=krea.image_files) as scan:
+                status = krea.get_krea2_cache_status(config)
+                self.assertEqual(status["image_count"], 1)
+                scan.assert_called_once()
+            self.assertNotIn(cache, visited)
+            images = krea.image_files(config["train_data_dir"], cache)
+            self.assertEqual(krea.krea2_cache_fingerprint(config), krea.krea2_cache_fingerprint(config, images))
+
     def test_real_launcher_rejection_keeps_slot_through_manifest_rollback(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

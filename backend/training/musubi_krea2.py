@@ -1248,25 +1248,21 @@ def image_files(
     if any(importlib.util.find_spec(name) is not None for name in ("jxlpy", "pillow_jxl")):
         extensions.add(".jxl")
     patterns = {f"*{ext}" for ext in extensions | {ext.upper() for ext in extensions}}
-    caption_stems: dict[Path, set[str]] = {}
     paths: list[Path] = []
-    for path in root.rglob("*"):
-        if not path.is_file() or not any(path.match(pattern) for pattern in patterns):
-            continue
-        try:
-            if excluded is not None and path.resolve().is_relative_to(excluded):
-                continue
-        except OSError:
-            continue
-        if path.parent not in caption_stems:
-            caption_stems[path.parent] = {
-                caption.stem for caption in path.parent.glob(f"*{caption_extension}") if caption.is_file()
-            }
-        # musubi compares stems case-sensitively even on Windows, where a
-        # with_suffix(...).is_file() check alone would accept differently cased names.
-        if path.stem not in caption_stems[path.parent]:
-            continue
-        paths.append(path)
+    if excluded is not None and root.resolve().is_relative_to(excluded):
+        return []
+    for directory, subdirs, filenames in os.walk(root):
+        parent = Path(directory)
+        if excluded is not None:
+            subdirs[:] = [name for name in subdirs if not (parent / name).resolve().is_relative_to(excluded)]
+        captions = {Path(name).stem for name in filenames
+                    if Path(name).match(f"*{caption_extension}") and (parent / name).is_file()}
+        for name in filenames:
+            path = parent / name
+            # Match musubi's case-sensitive stems even on Windows.
+            if path.stem in captions and any(path.match(pattern) for pattern in patterns) and path.is_file():
+                if excluded is None or not path.resolve().is_relative_to(excluded):
+                    paths.append(path)
     return sorted(paths)
 
 
@@ -1317,14 +1313,15 @@ def _path_identity(path_value: Any) -> dict[str, Any]:
     return {"path": str(path.resolve()), "size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
 
 
-def krea2_cache_fingerprint(config: dict[str, Any]) -> str:
+def krea2_cache_fingerprint(config: dict[str, Any], images: list[Path] | None = None) -> str:
     """Fingerprint inputs that make Krea latent or text caches stale."""
 
     cache_dir = config.get("dataset_cache_dir")
     root = Path(str(config.get("train_data_dir") or ""))
     entries: list[dict[str, Any]] = []
-    images = image_files(str(config.get("train_data_dir") or ""), cache_dir, str(config.get("caption_extension") or ".txt"))
-    for image in images:
+    if images is None:
+        images = image_files(str(config.get("train_data_dir") or ""), cache_dir, str(config.get("caption_extension") or ".txt"))
+    for image in sorted(images):
         try:
             stat = image.stat()
         except OSError:
@@ -1479,7 +1476,7 @@ def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
     manifest, _ = _read_cache_manifest(cache_dir)
 
     try:
-        fingerprint = krea2_cache_fingerprint(config)
+        fingerprint = krea2_cache_fingerprint(config, images)
     except (TypeError, ValueError):
         fingerprint = ""
     matches = bool(fingerprint and manifest.get("fingerprint") == fingerprint)
@@ -2005,11 +2002,10 @@ def krea2_preflight(config: dict[str, Any], require_cache: bool = True) -> dict[
         if not turbo_path.is_file():
             errors.append(f"Krea 2 Turbo DiT not found / Turbo 模型文件不存在: {turbo_path}")
 
-    images = image_files(config.get("train_data_dir") or "", config.get("dataset_cache_dir"), str(config.get("caption_extension") or ".txt"))
-    if not images:
+    cache_status = get_krea2_cache_status(config)
+    if not cache_status["image_count"]:
         errors.append("Dataset has no supported images with matching captions / 数据集目录没有带同名标注的可用图片，请检查图片格式和标注扩展名")
 
-    cache_status = get_krea2_cache_status(config)
     errors.extend(cache_status["conflicts"])
     if require_cache and not cache_status["ready"]:
         errors.append(
