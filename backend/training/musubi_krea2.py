@@ -1075,14 +1075,6 @@ def parse_krea2_resolution(value: Any) -> tuple[int, int]:
     return width, height
 
 
-def _split_args(value: Any) -> list[str]:
-    if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
-    if not isinstance(value, str):
-        return []
-    return [line.strip() for line in value.splitlines() if line.strip()]
-
-
 def _normalize_numeric_literal(
     config: dict[str, Any],
     key: str,
