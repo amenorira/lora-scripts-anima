@@ -364,7 +364,7 @@ window.monitorCoreMixin = {
     try {
       const controller = new AbortController();
       timeout = setTimeout(() => controller.abort(), 4000);
-      const response = await fetch('/api/realtime/snapshot', { cache: 'no-store', signal: controller.signal });
+      const response = await fetch('/api/realtime/state?hardware=' + !this.realtimeReady, { cache: 'no-store', signal: controller.signal });
       if (!response.ok) return;
       const body = await response.json();
       if (body.status !== 'success' || !body.data) return;
@@ -375,7 +375,6 @@ window.monitorCoreMixin = {
         this._saveRealtimeInstanceId();
         this._handleRealtimeServerRestart();
       }
-      this.realtimeSnapshot = snapshot;
       // WS 掉线时资源圆环仍有数据（状态轮询顺带带回硬件采样）。
       if (!this.realtimeReady && snapshot.hardware) this.handleRealtimeHardware(snapshot.hardware);
       if (typeof this.applyRegularizationActivity === 'function') this.applyRegularizationActivity(snapshot, requestedAt);

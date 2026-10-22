@@ -53,6 +53,19 @@ class RealtimeHubTests(unittest.IsolatedAsyncioTestCase):
 
 
 class RealtimeRouteTests(unittest.TestCase):
+    def test_state_poll_does_not_collect_monitor_or_hardware_unless_requested(self):
+        with patch.object(realtime_route, "gpu_info", return_value={}) as gpu, patch.object(
+            realtime_route, "system_info", return_value={}
+        ) as system, patch.object(realtime_route, "build_live_monitor_snapshot", new=AsyncMock()) as monitor:
+            data = asyncio.run(realtime_route.realtime_state())["data"]
+            self.assertIn("managed", data["tasks"])
+            self.assertNotIn("hardware", data)
+            gpu.assert_not_called()
+            system.assert_not_called()
+            monitor.assert_not_called()
+            self.assertIn("hardware", asyncio.run(realtime_route.realtime_state(hardware=True))["data"])
+            gpu.assert_called_once_with()
+
     def test_generation_activity_is_global_without_becoming_training(self):
         manager = TaskManager()
         task = manager.reserve_task()

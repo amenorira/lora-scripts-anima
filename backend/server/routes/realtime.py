@@ -33,6 +33,31 @@ def _valid_topic(topic: Any) -> bool:
     )
 
 
+def _managed_state() -> dict[str, Any]:
+    tasks = tm.training_dump()
+    return {
+        "server_instance_id": SERVER_INSTANCE_ID,
+        "started_at": SERVER_STARTED_AT,
+        "server": {
+            "instance_id": SERVER_INSTANCE_ID,
+            "started_at": SERVER_STARTED_AT,
+            "training_active": any(task.get("status") in {"CREATED", "RUNNING"} for task in tasks),
+            "regularization_active": tm.regularization_active(),
+        },
+        "tasks": {"managed": tasks},
+    }
+
+
+@router.get("/api/realtime/state")
+async def realtime_state(hardware: bool = False) -> dict[str, Any]:
+    """Small lifecycle reconciliation; hardware is optional for disconnected clients."""
+    data = _managed_state()
+    if hardware:
+        gpu, system = await asyncio.gather(asyncio.to_thread(gpu_info), asyncio.to_thread(system_info))
+        data["hardware"] = {"gpu": gpu, "system": system, "sampled_at": time.time()}
+    return {"status": "success", "data": data}
+
+
 async def _snapshot_payload(
     *,
     monitor_detail: bool = False,
@@ -43,13 +68,13 @@ async def _snapshot_payload(
     # accidentally skipped, and the task list read below is then guaranteed to
     # include every change up to the captured cursors.
     cursors = await realtime_hub.cursors()
-    managed_tasks = tm.training_dump()
+    state = _managed_state()
     gpu, system, tracked_tasks, monitor = await asyncio.gather(
         asyncio.to_thread(gpu_info, True),
         asyncio.to_thread(system_info, True),
         realtime_tasks.snapshot(),
         build_live_monitor_snapshot(
-            tasks=managed_tasks,
+            tasks=state["tasks"]["managed"],
             detail=monitor_detail,
             preview_limit=preview_limit,
         ),
@@ -57,23 +82,15 @@ async def _snapshot_payload(
     sampled_at = time.time()
     monitor["gpu"] = gpu
     monitor["system"] = system
-    active_statuses = {"CREATED", "RUNNING"}
     return {
-        "server_instance_id": SERVER_INSTANCE_ID,
-        "started_at": SERVER_STARTED_AT,
-        "server": {
-            "instance_id": SERVER_INSTANCE_ID,
-            "started_at": SERVER_STARTED_AT,
-            "training_active": any(task.get("status") in active_statuses for task in managed_tasks),
-            "regularization_active": tm.regularization_active(),
-        },
+        **state,
         "hardware": {
             "gpu": gpu,
             "system": system,
             "sampled_at": sampled_at,
         },
         "tasks": {
-            "managed": managed_tasks,
+            **state["tasks"],
             "tracked": tracked_tasks,
         },
         "cursors": cursors,
