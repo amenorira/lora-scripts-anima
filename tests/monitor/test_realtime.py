@@ -12,6 +12,25 @@ from backend.tasks import TaskManager
 
 
 class RealtimeHubTests(unittest.IsolatedAsyncioTestCase):
+    async def test_periodic_expiry_preserves_subscribers_without_scanning_on_ordinary_events(self):
+        hub = RealtimeHub()
+        await hub.publish("task:finished", "task.result", {"status": "FINISHED"})
+        queue, _, _ = await hub.subscribe("task:finished", 1)
+        with patch.object(hub, "_prune", wraps=hub._prune) as prune:
+            for index in range(20):
+                await hub.publish("hardware", "hardware.sample", {"index": index})
+                await hub.cursors()
+            prune.assert_not_called()
+            with patch("backend.core.realtime.time.time", return_value=10**12):
+                await hub.prune()
+                self.assertIn("task:finished", await hub.cursors())
+                await hub.unsubscribe("task:finished", queue)
+                await hub.prune()
+                self.assertNotIn("task:finished", await hub.cursors())
+        _, replay, resync = await hub.subscribe("task:finished", 1)
+        self.assertTrue(resync)
+        self.assertEqual(replay, [])
+
     async def test_terminal_topics_expire_without_resetting_reused_sequences(self):
         hub = RealtimeHub()
         await hub.publish("task:old", "task.result", {"status": "FINISHED"})

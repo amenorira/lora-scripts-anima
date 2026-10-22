@@ -127,14 +127,6 @@ class RealtimeHub:
             self._history.pop(topic, None)
             self._history_bytes.pop(topic, None)
             self._terminal_topics.pop(topic, None)
-        total = sum(self._history_bytes.values())
-        if total > _MAX_TOTAL_HISTORY_BYTES:
-            for topic in sorted(self._history, key=lambda key: self._history[key][0]["emitted_at"] if self._history[key] else now):
-                history = self._history[topic]
-                while history and total > _MAX_TOTAL_HISTORY_BYTES:
-                    size = _json_size(history.popleft())
-                    self._history_bytes[topic] -= size
-                    total -= size
 
     async def prune(self) -> None:
         async with self._lock:
@@ -165,9 +157,20 @@ class RealtimeHub:
             if topic.startswith("task:") and event_type in {"task.status", "task.result"}:
                 if payload.get("status") in {"FINISHED", "FAILED", "TERMINATED"}:
                     self._terminal_topics.setdefault(topic, emitted_at)
+                    if len(self._terminal_topics) > _MAX_TERMINAL_TOPICS:
+                        self._prune()
                 else:
                     self._terminal_topics.pop(topic, None)
-            self._prune()
+
+            # Enforce capacity at its only growth point; the monitor owns TTL scans.
+            total = sum(self._history_bytes.values())
+            if total > _MAX_TOTAL_HISTORY_BYTES:
+                for oldest_topic in sorted(self._history, key=lambda key: self._history[key][0]["emitted_at"] if self._history[key] else emitted_at):
+                    history = self._history[oldest_topic]
+                    while history and total > _MAX_TOTAL_HISTORY_BYTES:
+                        size = _json_size(history.popleft())
+                        self._history_bytes[oldest_topic] -= size
+                        total -= size
 
             subscribers = list(self._subscribers.get(topic, ()))
 
@@ -225,7 +228,6 @@ class RealtimeHub:
             resume_seq = 0
 
         async with self._lock:
-            self._prune()
             history = self._history.get(topic, deque())
             latest_seq = self._next_seq.get(topic, 0)
             replay: list[dict[str, Any]] = []
@@ -254,7 +256,6 @@ class RealtimeHub:
             subscribers.discard(queue)
             if not subscribers:
                 self._subscribers.pop(topic, None)
-            self._prune()
 
     async def subscriber_count(self, topic: str) -> int:
         async with self._lock:
@@ -269,7 +270,6 @@ class RealtimeHub:
         or metric points that are already in it.
         """
         async with self._lock:
-            self._prune()
             return dict(self._next_seq)
 
 
