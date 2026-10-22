@@ -1138,12 +1138,9 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(0, 0, 0, 0.08);
   transform-origin: left center;
   transition: transform var(--duration-normal) var(--ease-out),
-              width var(--duration-fast) var(--ease-out),
               box-shadow var(--duration-normal) var(--ease-out);
 }
 .toggle input:checked + .toggle-track .toggle-thumb { transform: translateX(16px); }
-.toggle:active input:not(:disabled) + .toggle-track .toggle-thumb { width: 19px; }
-.toggle:active input:checked:not(:disabled) + .toggle-track .toggle-thumb { transform: translateX(13px); }
 .toggle input:focus-visible + .toggle-track {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

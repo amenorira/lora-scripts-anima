@@ -96,8 +96,6 @@ dialog.modal-overlay:not([open]) { pointer-events: none; }
 }
 .monitor-tab-indicator, .env-tab-indicator { transition-duration: var(--duration-dialog-enter), var(--duration-dialog-enter), var(--duration-fast); }
 .anima-select-chevron { transition: none; }
-.toggle:active input:not(:disabled) + .toggle-track .toggle-thumb { width: 16px; }
-.toggle:active input:checked:not(:disabled) + .toggle-track .toggle-thumb { transform: translateX(16px); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
