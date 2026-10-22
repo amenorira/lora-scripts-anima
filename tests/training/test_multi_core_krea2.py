@@ -1,3 +1,4 @@
+import ast
 import asyncio
 import json
 import tempfile
@@ -112,6 +113,35 @@ class Krea2PreparationLifecycleTests(unittest.TestCase):
 
 
 class Krea2CodecTests(unittest.TestCase):
+    def test_adafactor_rejects_non_boolean_controls(self):
+        defaults = {field["key"]: field["default"] for field in KREA2_FIELDS if "default" in field}
+        for key in ("krea_adafactor_relative_step", "krea_adafactor_scale_parameter", "krea_adafactor_warmup_init"):
+            for value in (None, "", "False", "True", 0, 1, [], {}):
+                with self.subTest(key=key, value=value):
+                    config = {**defaults, "optimizer_type": "AdaFactor", key: value}
+                    errors = validate_krea2_config(config)
+                    self.assertTrue(any(key in error and "布尔值" in error for error in errors), errors)
+
+    def test_adafactor_defaults_and_booleans_match_exported_scheduler(self):
+        defaults = {field["key"]: field["default"] for field in KREA2_FIELDS if "default" in field}
+        for use_defaults in (True, False):
+            with self.subTest(use_defaults=use_defaults):
+                config = {**defaults, "optimizer_type": "AdaFactor", "lr_scheduler": "cosine"}
+                for name in ("relative_step", "scale_parameter", "warmup_init"):
+                    key = f"krea_adafactor_{name}"
+                    if use_defaults:
+                        config.pop(key)
+                    else:
+                        config[key] = False
+                self.assertEqual(validate_krea2_config(config), [])
+                native = build_krea2_train_config(config, "dataset.toml", "output", "logs")
+                arguments = {key: ast.literal_eval(value) for key, value in
+                             (item.split("=", 1) for item in native["optimizer_args"])}
+                self.assertIs(arguments["relative_step"], use_defaults)
+                self.assertIs(arguments["scale_parameter"], use_defaults)
+                self.assertIs(arguments["warmup_init"], False)
+                self.assertEqual(native["lr_scheduler"], "constant" if use_defaults else "cosine")
+
     def test_generates_separate_dataset_and_train_tomls(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

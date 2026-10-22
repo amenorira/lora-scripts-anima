@@ -1542,7 +1542,11 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
         config["krea_training_duration_mode"] = duration_mode
 
     optimizer_type = _normalize_krea2_optimizer_type(config, errors)
-    adafactor_relative_step = bool(config.get("krea_adafactor_relative_step", True))
+    if optimizer_type == "AdaFactor":
+        for key in ("krea_adafactor_relative_step", "krea_adafactor_scale_parameter", "krea_adafactor_warmup_init"):
+            if not isinstance(config[key], bool):
+                errors.append(f"{key}: must be true or false / 必须是布尔值")
+    adafactor_relative_step = config["krea_adafactor_relative_step"] is True
 
     # musubi's trainer returns an internal dummy scheduler for ScheduleFree,
     # and switches to its own AdafactorSchedule in relative-step mode.  Keep
