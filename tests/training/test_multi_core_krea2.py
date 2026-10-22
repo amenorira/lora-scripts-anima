@@ -113,6 +113,38 @@ class Krea2PreparationLifecycleTests(unittest.TestCase):
 
 
 class Krea2CodecTests(unittest.TestCase):
+    def test_adafactor_warmup_requires_relative_step(self):
+        defaults = {field["key"]: field["default"] for field in KREA2_FIELDS if "default" in field}
+        for optimizer in ("AdaFactor", "adafactor", "AdamW"):
+            for relative_step, warmup_init in ((False, False), (False, True), (True, False), (True, True)):
+                with self.subTest(optimizer=optimizer, relative_step=relative_step, warmup_init=warmup_init):
+                    config = {**defaults, "optimizer_type": optimizer, "lr_scheduler": "cosine",
+                              "krea_adafactor_relative_step": relative_step, "krea_adafactor_warmup_init": warmup_init}
+                    errors = validate_krea2_config(config)
+                    if optimizer != "AdamW" and warmup_init and not relative_step:
+                        self.assertTrue(any("krea_adafactor_warmup_init" in error and
+                                            "krea_adafactor_relative_step" in error for error in errors), errors)
+                        self.assertIs(config["krea_adafactor_relative_step"], False)
+                        self.assertEqual(config["lr_scheduler"], "cosine")
+                    else:
+                        self.assertEqual(errors, [])
+                        native = build_krea2_train_config(config, "dataset.toml", "output", "logs")
+                        expected_scheduler = "constant" if optimizer != "AdamW" and relative_step else "cosine"
+                        self.assertEqual(native["lr_scheduler"], expected_scheduler)
+                        if optimizer != "AdamW":
+                            self.assertIn(f"relative_step={relative_step}", native["optimizer_args"])
+                            self.assertIn(f"warmup_init={warmup_init}", native["optimizer_args"])
+
+    def test_adafactor_conflict_stops_training_before_preflight(self):
+        config = {field["key"]: field["default"] for field in KREA2_FIELDS if "default" in field}
+        config.update(optimizer_type="AdaFactor", krea_adafactor_relative_step=False, krea_adafactor_warmup_init=True)
+        with patch.object(training_routes, "krea2_preflight", side_effect=AssertionError("preflight must not run")) as preflight:
+            response = asyncio.run(training_routes._create_krea2_run(config, None, "test", dict(config), None))
+        self.assertEqual(response["status"], "error")
+        self.assertEqual(response["data"]["errorCode"], "invalidKrea2Config")
+        self.assertIn("krea_adafactor_warmup_init", response["message"])
+        preflight.assert_not_called()
+
     def test_adafactor_rejects_non_boolean_controls(self):
         defaults = {field["key"]: field["default"] for field in KREA2_FIELDS if "default" in field}
         for key in ("krea_adafactor_relative_step", "krea_adafactor_scale_parameter", "krea_adafactor_warmup_init"):

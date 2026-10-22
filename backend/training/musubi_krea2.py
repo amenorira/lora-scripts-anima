@@ -1546,6 +1546,11 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
         for key in ("krea_adafactor_relative_step", "krea_adafactor_scale_parameter", "krea_adafactor_warmup_init"):
             if not isinstance(config[key], bool):
                 errors.append(f"{key}: must be true or false / 必须是布尔值")
+        if config["krea_adafactor_warmup_init"] is True and config["krea_adafactor_relative_step"] is False:
+            errors.append(
+                "krea_adafactor_warmup_init: requires krea_adafactor_relative_step=True "
+                "/ 启用预热初始化时必须启用相对步长"
+            )
     adafactor_relative_step = config["krea_adafactor_relative_step"] is True
 
     # musubi's trainer returns an internal dummy scheduler for ScheduleFree,
