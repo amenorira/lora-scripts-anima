@@ -894,6 +894,18 @@ def _to_camel(field: dict) -> dict:
 _fields_json_cache: dict | None = None
 
 
+def field_applies_to_profile(field: dict, profile_id: str) -> bool:
+    """Shared profile visibility for form persistence and runtime descriptions."""
+    profiles = field.get("profiles")
+    if isinstance(profiles, list):
+        return profile_id in profiles
+    if profile_id == "krea2-lora":
+        return field.get("key") == "model_train_type"
+    group = field.get("group")
+    target = {"sdxl-lora": "sdxl", "anima-lora": "anima", "moss-image-lora": "moss_image"}.get(profile_id)
+    return not group or group == "all" or (target is not None and (target in group if isinstance(group, list) else group == target))
+
+
 def get_all_fields() -> list[dict]:
     """Return every frontend field, including profile-scoped external cores.
 

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.constants import OUTPUT_DIR
-from backend.training.field_registry import get_all_fields
+from backend.training.field_registry import get_all_fields, field_applies_to_profile
 
 
 _REGISTRY_FIELDS = get_all_fields()
@@ -398,7 +398,7 @@ _SECTION_ORDER = ["model", "network", "training", "optimizer",
                   "regularization", "caption", "performance", "save", "preview"]
 
 
-def extract_train_params(config: dict) -> list[dict]:
+def extract_train_params(config: dict, profile_id: str = "") -> list[dict]:
     """从 TOML 配置提取结构化训练参数，按 registry 分组输出。
 
     返回条目格式（供前端分组渲染 + 本地化标签）::
@@ -415,18 +415,24 @@ def extract_train_params(config: dict) -> list[dict]:
         return []
 
     params: list[dict] = []
+    profile_id = profile_id or config.get("model_train_type", "")
+    if not profile_id and "dit" in config and "text_encoder" in config:
+        profile_id = "krea2-lora"
+    seen = set()
 
     # 1) registry 字段：按 section 顺序遍历，保证分组与字段顺序稳定
     #    hidden 字段（如 logging_dir/log_with）在前端表单不展示，但训练时仍写入
     #    config.toml 并实际生效——只要 config 里存在且非空就显示，避免遗漏生效配置。
     for section in _SECTION_ORDER:
         for f in _REGISTRY_FIELDS:
-            if f.get("target") != "toml":
+            if not field_applies_to_profile(f, profile_id):
+                continue
+            if profile_id != "krea2-lora" and f.get("target") != "toml":
                 continue
             if f["section"] != section:
                 continue
             key = f["key"]
-            if key not in config:
+            if key not in config or key in seen:
                 continue
             v = config[key]
             if v is None or v == "":
@@ -439,6 +445,13 @@ def extract_train_params(config: dict) -> list[dict]:
                 "type": f.get("type", "text"),
             }
             params.append(entry)
+            seen.add(key)
+
+    # Runtime-only and legacy fields remain inspectable without guessing a label.
+    for key, value in config.items():
+        if key not in seen and key not in {"network_args", "optimizer_args"} and value is not None and value != "":
+            params.append({"key": key, "desc_key": "", "label_raw": key,
+                           "value": _format_param_value(key, value), "section": "misc", "type": "text"})
 
     # 2) network_args / optimizer_args：adapter 折叠的 LyCORIS/优化器子参数数组
     #    形如 ["algo=lokr", "preset=attn-mlp"] → 拆成独立条目，归入对应 section

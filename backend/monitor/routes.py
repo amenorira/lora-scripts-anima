@@ -206,7 +206,7 @@ async def build_live_monitor_snapshot(
         False,
         record["run_dir"] if record else "",
     )
-    result["train_params"] = extract_train_params(train_config)
+    result["train_params"] = extract_train_params(train_config, ((record or {}).get("extra") or {}).get("profile_id", ""))
     if active_status == "RUNNING" and run_path:
         result.update(await asyncio.to_thread(_read_run_log_progress, run_path, log_tail_lines))
 
@@ -369,7 +369,7 @@ async def monitor_run_detail(run_dir: str = Query("")):
     params = await asyncio.to_thread(read_run_config, abs_run_dir)
     if params:
         result["config"] = params
-        result["train_params"] = extract_train_params(params)
+        result["train_params"] = extract_train_params(params, (record.get("extra") or {}).get("profile_id", ""))
 
     # ── TensorBoard Loss/LR 图表 ──
     result["tensorboard_loss"] = await asyncio.to_thread(read_tensorboard_loss, run_dir=str(abs_run_dir))

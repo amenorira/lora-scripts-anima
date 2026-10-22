@@ -72,7 +72,7 @@ class RunRegistryTests(CrossDriveSandbox):
         run_registry.write_run_record(run, artifact_dir=self.external, task_id="active-task")
         with patch.object(routes, "read_tensorboard_loss", return_value=[]), \
                 patch.object(routes, "newest_previews", return_value=[]), \
-                patch.object(routes, "extract_train_params", side_effect=lambda config: config):
+                patch.object(routes, "extract_train_params", side_effect=lambda config, profile_id="": config):
             snapshot = asyncio.run(routes.build_live_monitor_snapshot(
                 tasks=[{"id": "active-task", "status": "CREATED"}]))
             self.assertEqual(snapshot["train_params"]["output_name"], "active")
