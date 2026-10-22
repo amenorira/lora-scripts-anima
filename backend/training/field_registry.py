@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from backend.training.core_registry import PROFILES
 from backend.training.lycoris_layout import apply_lycoris_panel_layout
 from backend.training.shared_fields import shared_training_field
 from backend.training.metrics_config import training_metric_fields
@@ -902,7 +903,8 @@ def field_applies_to_profile(field: dict, profile_id: str) -> bool:
     if profile_id == "krea2-lora":
         return field.get("key") == "model_train_type"
     group = field.get("group")
-    target = {"sdxl-lora": "sdxl", "anima-lora": "anima", "moss-image-lora": "moss_image"}.get(profile_id)
+    profile = PROFILES.get(profile_id)
+    target = profile.group if profile else None
     return not group or group == "all" or (target is not None and (target in group if isinstance(group, list) else group == target))
 
 
