@@ -500,12 +500,12 @@ window.trainingCoreMixin = {
   },
 
   _enforceCheckpointingUiConstraints(changedKey) {
-    if (this.form.model_train_type === 'krea2-lora') return;
+    const dependentKeys = this.form.model_train_type === 'krea2-lora'
+      ? ['block_swap_h2d_only', 'gradient_checkpointing_cpu_offload']
+      : ['cpu_offload_checkpointing', 'unsloth_offload_checkpointing', 'block_swap_h2d_only'];
     if (changedKey === 'gradient_checkpointing' && this.form.gradient_checkpointing === false) {
-      this.form.cpu_offload_checkpointing = false;
-      this.form.unsloth_offload_checkpointing = false;
-      this.form.block_swap_h2d_only = false;
-    } else if (this.form.cpu_offload_checkpointing || this.form.unsloth_offload_checkpointing || this.form.block_swap_h2d_only) {
+      dependentKeys.forEach(key => { this.form[key] = false; });
+    } else if (dependentKeys.some(key => this.form[key])) {
       this.form.gradient_checkpointing = true;
     }
   },
@@ -3493,18 +3493,13 @@ window.trainingCoreMixin = {
   },
 
   _enforceSharedTrainingUiConstraints() {
+    this._enforceCheckpointingUiConstraints();
     if (this.form.model_train_type === 'krea2-lora') {
       if (this.form.network_module === 'lycoris.kohya' && this.form.fp8_base) this.form.bypass_mode = true;
       else if (this.form.network_module === 'lycoris.kohya' && this.form.dora_wd) this.form.bypass_mode = false;
-      if (this.form.block_swap_h2d_only || this.form.gradient_checkpointing_cpu_offload) {
-        this.form.gradient_checkpointing = true;
-      }
       return;
     }
     if (!['anima-lora', 'moss-image-lora', 'sdxl-lora'].includes(this.form.model_train_type)) return;
-    if (['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type) && this.form.block_swap_h2d_only) {
-      this.form.gradient_checkpointing = true;
-    }
     if (this.form.model_train_type === 'sdxl-lora' && this.form.xformers && this.form.sdpa) {
       this.form.sdpa = false;
     }
@@ -3950,7 +3945,8 @@ window.trainingCoreMixin = {
 
     this.form[key] = value;
     this._setFieldSource(key, 'user');
-    if (['gradient_checkpointing', 'cpu_offload_checkpointing', 'unsloth_offload_checkpointing', 'block_swap_h2d_only'].includes(key)) {
+    if (['gradient_checkpointing', 'cpu_offload_checkpointing', 'unsloth_offload_checkpointing',
+      'gradient_checkpointing_cpu_offload', 'block_swap_h2d_only'].includes(key)) {
       this._enforceCheckpointingUiConstraints(key);
     }
     if (key === 'max_data_loader_n_workers' || key === 'persistent_data_loader_workers') {
@@ -4038,13 +4034,6 @@ window.trainingCoreMixin = {
     }
     if (this.form.model_train_type === 'sdxl-lora' && value === true && ['xformers', 'sdpa'].includes(key)) {
       this.form[key === 'xformers' ? 'sdpa' : 'xformers'] = false;
-    }
-    if (this.form.model_train_type === 'krea2-lora') {
-      if (key === 'block_swap_h2d_only' && value === true) this.form.gradient_checkpointing = true;
-      if (key === 'gradient_checkpointing' && value === false) {
-        this.form.block_swap_h2d_only = false;
-        this.form.gradient_checkpointing_cpu_offload = false;
-      }
     }
     // When enabling cache_text_encoder_outputs, force network_train_unet_only = true
     if (key === 'cache_text_encoder_outputs' && value === true) {
@@ -4338,11 +4327,13 @@ window.trainingCoreMixin = {
   },
 
   _checkpointOffloadErrors() {
-    if (!['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type)) return {};
+    if (!['anima-lora', 'moss-image-lora', 'krea2-lora'].includes(this.form.model_train_type)) return {};
     const errors = {};
-    const cpu = this.form.cpu_offload_checkpointing, unsloth = this.form.unsloth_offload_checkpointing;
     const swapping = Number(this.form.blocks_to_swap || 0) > 0;
     if (this.form.block_swap_h2d_only && !swapping) errors.block_swap_h2d_only = this.t('field.blockSwapH2dRequiresBlocks');
+    // Musubi uses different offload and compile paths; only the H2D prerequisite is shared.
+    if (this.form.model_train_type === 'krea2-lora') return errors;
+    const cpu = this.form.cpu_offload_checkpointing, unsloth = this.form.unsloth_offload_checkpointing;
     if (cpu && unsloth) errors.unsloth_offload_checkpointing = this.t('field.checkpointOffloadConflict');
     if (swapping && (cpu || unsloth)) errors.blocks_to_swap = this.t('field.blockSwapOffloadConflict');
     if (swapping && this.form.compile && this.form.compile_fullgraph) {

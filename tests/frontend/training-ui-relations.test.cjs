@@ -92,6 +92,12 @@ test('Krea upload-only swapping follows gradient checkpointing and Turbo conflic
   assert.equal(app.form.gradient_checkpointing, true);
   app.setField('gradient_checkpointing', false);
   assert.equal(app.form.block_swap_h2d_only, false);
+  app.setField('gradient_checkpointing_cpu_offload', true);
+  assert.equal(app.form.gradient_checkpointing, true);
+  app.setField('gradient_checkpointing', false);
+  assert.equal(app.form.gradient_checkpointing_cpu_offload, false);
+  assert.equal(Object.hasOwn(app.form, 'cpu_offload_checkpointing'), false);
+  assert.equal(Object.hasOwn(app.form, 'unsloth_offload_checkpointing'), false);
   app.setField('enable_krea_samples', true);
   app.setField('turbo_dit', './models/turbo.safetensors');
   assert.equal(app.formErrors.turbo_dit, 'field.kreaTurboBlockSwapConflict');
@@ -102,8 +108,8 @@ test('Krea upload-only swapping follows gradient checkpointing and Turbo conflic
   assert.equal(app.formErrors.turbo_dit, null);
 });
 
-test('Anima and MOSS upload-only swapping round-trips UI dependencies without affecting Krea', () => {
-  for (const profile of ['anima-lora', 'moss-image-lora']) {
+test('all block-swap profiles enforce the same upload-only prerequisites on edits and restored drafts', () => {
+  for (const profile of ['anima-lora', 'moss-image-lora', 'krea2-lora']) {
     const app = application(profile, { gradient_checkpointing: false, blocks_to_swap: 3 });
     app.setField('block_swap_h2d_only', true);
     assert.equal(app.form.gradient_checkpointing, true);

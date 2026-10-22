@@ -43,10 +43,12 @@ class TrainingTomlParseTests(unittest.TestCase):
     def test_explicit_profile_takes_precedence_over_import_context(self):
         for profile in ("anima-lora", "sdxl-lora", "krea2-lora"):
             response = self._parse(
-                f'model_train_type = "{profile}"\nnetwork_args = ["rank_dropout=0.2"]', "moss-image-lora")
+                f'model_train_type = "{profile}"\n'
+                'network_args = ["rank_dropout=0.2", "network_reg_dims=blocks.*=4"]', "moss-image-lora")
+            self.assertEqual(response.status, "success")
             self.assertEqual(response.data["data"], {
-                "model_train_type": profile,
-                **({"network_args": ["rank_dropout=0.2"]} if profile == "krea2-lora" else {"rank_dropout": 0.2}),
+                "model_train_type": profile, "rank_dropout": 0.2,
+                "network_args_custom": "network_reg_dims=blocks.*=4",
             })
 
     def test_anima_native_import_restores_controls_and_preserves_unknown_arguments(self):

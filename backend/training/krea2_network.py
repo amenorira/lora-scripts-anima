@@ -11,6 +11,9 @@ import re
 from pathlib import Path
 from typing import Any
 
+from backend.training.lycoris_layout import apply_lycoris_panel_layout
+from backend.training.shared_fields import shared_training_field
+
 KREA2_NETWORK_MODULE = "networks.lora_krea2"
 KREA2_LYCORIS_MODULE = "lycoris.kohya"
 KREA2_NETWORK_MODULES = (KREA2_NETWORK_MODULE, KREA2_LYCORIS_MODULE)
@@ -19,15 +22,16 @@ KREA2_PRESET_FILENAME = "krea2-network.toml"
 _LYCORIS = {"key": "network_module", "eq": KREA2_LYCORIS_MODULE}
 
 
-def _field(key, kind, default, *, group=None, **extra):
+def _field(key, kind, default, **extra):
     return {"key": key, "type": kind, "default": default, "section": "network",
             "desc_key": f"field.{key}", "profiles": ["krea2-lora"],
-            **({"lycoris_group": group} if group else {}), **extra}
+            **extra}
 
 
 KREA2_NETWORK_FIELDS = [
-    _field("lycoris_algo", "select", "lokr", group="basic", show_if=_LYCORIS,
-           options=[{"v": v, "l": label} for v, label in (("lokr", "LoKr"), ("loha", "LoHa"))]),
+    _field("lycoris_algo", "select", "lokr", show_if=_LYCORIS,
+           options=[{"v": v, "l": label, "dk": f"opt.lycoris_algo_{v}"}
+                    for v, label in (("lokr", "LoKr"), ("loha", "LoHa"))]),
     _field("krea_target_mode", "select", "all", desc_key="field.krea_target_mode",
            hint_key="field.krea_target_modeHint", nested=False,
            doc_slug="network-parameters", doc_anchor="krea-targets",
@@ -36,32 +40,40 @@ KREA2_NETWORK_FIELDS = [
            show_if={"key": "krea_target_mode", "eq": "custom"}),
     _field("krea_target_exclude", "textarea", "", hint_key="field.krea_target_excludeHint",
            show_if={"key": "krea_target_mode", "eq": "custom"}),
-    _field("rank_dropout", "number", 0, min=0, max=0.99, step=0.01,
-           group="regularization", hint_key="field.krea_rank_dropoutHint",
-           show_if_any=[[{"key": "network_module", "eq": KREA2_NETWORK_MODULE}],
-                        [_LYCORIS, {"key": "lycoris_algo", "eq": "loha"}]]),
-    _field("module_dropout", "number", 0, min=0, max=1, step=0.01,
-           group="regularization", hint_key="field.module_dropoutHint"),
-    _field("lokr_factor", "number", -1, group="algorithm", min=-1, step=1,
-           show_if=[_LYCORIS, {"key": "lycoris_algo", "eq": "lokr"}], hint_key="field.krea_lokr_factorHint"),
-    *[_field(key, "toggle", False, group="algorithm", show_if=[_LYCORIS, {"key": "lycoris_algo", "eq": "lokr"},
+    shared_training_field('rank_dropout',
+        default=0,
+        hint_key="field.krea_rank_dropoutHint",
+        show_if_any=[[{"key": "network_module", "eq": KREA2_NETWORK_MODULE}],
+                        [_LYCORIS, {"key": "lycoris_algo", "eq": "loha"}]],
+        profiles=['krea2-lora'],
+    ),
+    shared_training_field('module_dropout', default=0, profiles=['krea2-lora']),
+    shared_training_field('lokr_factor',
+        default=-1,
+        show_if=[_LYCORIS, {"key": "lycoris_algo", "eq": "lokr"}],
+        hint_key="field.krea_lokr_factorHint",
+        profiles=['krea2-lora'],
+    ),
+    # full_matrix controls availability, not nesting: these algorithm options are siblings.
+    *[_field(key, "toggle", False, nested=False,
+             show_if=[_LYCORIS, {"key": "lycoris_algo", "eq": "lokr"},
              *([{"key": "full_matrix", "eq": False}] if key == "decompose_both" else [])],
              hint_key=f"field.krea_{key}Hint" if key != "full_matrix" else "field.full_matrixHint")
       for key in ("decompose_both", "full_matrix", "unbalanced_factorization")],
-    *[_field(key, "toggle", False, group="advanced", show_if=_LYCORIS, hint_key=f"field.{key}Hint")
+    *[_field(key, "toggle", False, show_if=_LYCORIS, hint_key=f"field.{key}Hint")
       for key in ("use_scalar", "rs_lora", "dora_wd")],
-    _field("wd_on_output", "toggle", True, group="advanced",
+    _field("wd_on_output", "toggle", True,
            show_if=[_LYCORIS, {"key": "dora_wd", "eq": True}], hint_key="field.wd_on_outputHint"),
-    _field("bypass_mode", "toggle", False, group="advanced", show_if=_LYCORIS,
+    _field("bypass_mode", "toggle", False, show_if=_LYCORIS,
            hint_key="field.krea_bypass_modeHint",
            auto_value=[{"watch": "fp8_base", "when": True, "set": True},
                        {"watch": "dora_wd", "when": True, "set": False}],
            readonly_if_any=[{"key": "fp8_base", "eq": True}, {"key": "dora_wd", "eq": True}],
            readonly_reason_key="field.krea_bypass_modeHint"),
-    _field("lycoris_kernel_backend", "select", "auto", group="advanced", show_if=_LYCORIS,
-           hint_key="field.lycoris_kernel_backendHint",
-           options=[{"v": v, "l": v} for v in ("auto", "triton", "tilelang", "compile", "torch")]),
+    shared_training_field('lycoris_kernel_backend', default="auto", profiles=['krea2-lora']),
 ]
+
+apply_lycoris_panel_layout(KREA2_NETWORK_FIELDS)
 
 _LYCORIS_ARGS = {"lokr_factor": "factor", **{key: key for key in (
     "decompose_both", "full_matrix", "unbalanced_factorization", "use_scalar",

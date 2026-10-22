@@ -62,6 +62,15 @@ test('Krea2 portable preview and import preserve targets, algorithm and FlashAtt
   assert.doesNotMatch(app.tomlRaw, /^network_dropout =/m);
 });
 
+test('Krea2 preserves the no-upscale cache setting in payloads when bucketing is disabled', () => {
+  for (const bucket_no_upscale of [false, true]) {
+    const { app } = application({ enable_bucket: false, bucket_no_upscale });
+    const payload = app._collectTrainingPayload();
+    assert.equal(payload.enable_bucket, false);
+    assert.equal(payload.bucket_no_upscale, bucket_no_upscale);
+  }
+});
+
 test('FP8 enforces bypass and warns about DoRA; swap controls retain checkpoint dependency', () => {
   const { app } = application({ network_module: 'lycoris.kohya', fp8_base: true, dora_wd: true,
     block_swap_h2d_only: true, gradient_checkpointing: false });
