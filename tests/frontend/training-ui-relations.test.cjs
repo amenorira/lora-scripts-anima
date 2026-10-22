@@ -4,7 +4,7 @@ const { loadFrontend } = require('./helpers.cjs');
 
 function application(profile, values = {}) {
   const { window: w } = loadFrontend(['constants', 'utils', 'config', 'training-core', 'dataset-repeat', 'training-config-io'], {
-    window: {}, document: { getElementById: () => null }, btoa, TextEncoder,
+    window: {}, document: { getElementById: () => null }, btoa, TextEncoder, clearTimeout,
   });
   w.t = key => key;
   const app = Object.assign({}, w.utilsMixin, w.trainingCoreMixin, w.datasetRepeatMixin, w.trainingConfigIoMixin, {

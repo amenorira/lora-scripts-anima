@@ -33,7 +33,7 @@ window.trainingCoreMixin = {
 
   // 分组折叠状态，响应式驱动 UI
   _sectionCollapsed: {},
-  _trainTypePanelCache: null,
+  _trainTypePanel: null,
   _trainFieldsRevision: 0,
   _profileWatcherSetupHandle: null,
   _profileWatcherSetupUsesIdle: false,
@@ -154,9 +154,9 @@ window.trainingCoreMixin = {
   },
 
   _trainTypePanelIsReady(trainType) {
-    if (!(this._trainTypePanelCache instanceof Map)) return false;
-    const panel = this._trainTypePanelCache.get(trainType);
+    const panel = this._trainTypePanel;
     return !!panel
+      && panel.dataset.trainType === trainType
       && panel.getAttribute('data-panel-ready') === '1'
       && panel.dataset.panelLocale === String(this.locale || '')
       && panel.dataset.fieldsRevision === String(this._trainFieldsRevision || 0);
@@ -170,8 +170,7 @@ window.trainingCoreMixin = {
   },
 
   _scheduleTrainTypeSwitch(value) {
-    // 三套表单在进入页面时已完成初始化。缓存命中时直接换面板，不再人为等待
-    // 两个 animation frame；昂贵的字段 watcher 在换屏后空闲阶段恢复。
+    // Reuse the mounted profile only; other profiles keep data drafts, not effects.
     if (this._trainTypePanelIsReady(value)) {
       this._cancelScheduledTrainTypeSwitch();
       this._commitTrainTypeSwitch(value);
@@ -234,6 +233,16 @@ window.trainingCoreMixin = {
     // 旧类型的字段 watcher 若留到 form 整体替换之后再释放，会先针对新对象
     // 执行一轮旧规则（显隐扫描、只读刷新、自动值联动），造成重复渲染。
     this._clearProfileFieldWatchers();
+    if (v !== this._activeTrainType) {
+      this._destroyTrainTypePanel();
+      clearTimeout(this._stepEstimateTimer);
+      this._stepEstimateTimer = null;
+      this._stepEstimateRequestSeq += 1;
+      this._stepEstimateSignature = '';
+      this.stepEstimate = null;
+      this.stepEstimateError = null;
+      this.stepEstimateLoading = false;
+    }
 
     // 每个训练类型拥有独立草稿。切出时保存当前类型，第一次切入新类型时从
     // 该类型的 registry 默认值创建；切回来时仅恢复它自己的字段，避免同名
@@ -657,7 +666,7 @@ window.trainingCoreMixin = {
     this._conditionalMotionEpoch += 1;
     this.stopSectionScroll();
 
-    this._destroyTrainTypePanelCache();
+    this._destroyTrainTypePanel();
     const container = document.getElementById('trainFormContent');
     if (container) container.replaceChildren();
     this.sectionNavList = [];
@@ -751,7 +760,6 @@ window.trainingCoreMixin = {
     this.buildSectionNav();
 
     this.renderTrainingForm(trainType, null);
-    this._warmTrainTypePanels(trainType);
     this._trainFormMountedRoute = r;
     this._trainFormLocale = this.locale;
     // Clean up previous watchers（防御：过滤非函数元素，避免 w is not a function 崩溃）
@@ -804,9 +812,8 @@ window.trainingCoreMixin = {
       self.currentTrainTypeDesc = tt2 ? window.t(tt2.dk, tt2.l) : '';
       const activeType = self.form.model_train_type || 'anima-lora';
       self._refreshTrainingOptionErrors();
-      self._destroyTrainTypePanelCache();
+      self._destroyTrainTypePanel();
       self.renderTrainingForm(activeType, null, true);
-      self._warmTrainTypePanels(activeType);
       self._trainFormLocale = self.locale;
     };
     window.addEventListener('locale-changed', self._localeChangeHandler);
@@ -832,9 +839,8 @@ window.trainingCoreMixin = {
       if (activeType === 'krea2-lora') self._applyKrea2ModelDefaults(self.form, freshDefaults);
       self.formDefaults = { ...freshDefaults };
       self._syncKrea2CacheDir();
-      self._destroyTrainTypePanelCache();
+      self._destroyTrainTypePanel();
       self.renderTrainingForm(activeType, null, true);
-      self._warmTrainTypePanels(activeType);
       self.setupAutoValueWatchers();
       self.setupShowIfWatchers();
       self.setupReadonlyWatchers();
@@ -1253,87 +1259,33 @@ window.trainingCoreMixin = {
     }
   },
 
-  _destroyTrainTypePanelCache() {
-    if (!(this._trainTypePanelCache instanceof Map)) {
-      this._trainTypePanelCache = null;
-      return;
-    }
+  _destroyTrainTypePanel() {
+    const panel = this._trainTypePanel;
+    if (!panel) return;
     const alpine = window.Alpine;
     this._mutateTrainingPanels(() => {
-      this._trainTypePanelCache.forEach(panel => {
-        if (alpine && typeof alpine.destroyTree === 'function') {
-          Array.from(panel.children).forEach(child => alpine.destroyTree(child));
-        }
-        panel.remove();
-      });
+      if (alpine && typeof alpine.destroyTree === 'function') alpine.destroyTree(panel);
+      panel.remove();
     });
-    this._trainTypePanelCache.clear();
-    this._trainTypePanelCache = null;
+    this._trainTypePanel = null;
   },
 
   _activateTrainTypePanel(root, trainType) {
-    if (!(this._trainTypePanelCache instanceof Map)) this._trainTypePanelCache = new Map();
-
-    // 兼容热更新前已直接渲染在根容器中的旧结构。
-    const legacyChildren = Array.from(root.children).filter(
-      child => !child.classList.contains('train-type-panel')
-    );
-    if (legacyChildren.length > 0) {
-      this._replaceTrainingFormHtml(root, '');
-      this._trainTypePanelCache.clear();
+    let panel = this._trainTypePanel;
+    if (panel && panel.dataset.trainType !== trainType) {
+      this._destroyTrainTypePanel();
+      panel = null;
     }
-
-    const activePanel = root.querySelector(':scope > .train-type-panel');
-
-    let panel = this._trainTypePanelCache.get(trainType);
     if (!panel) {
       panel = document.createElement('div');
       panel.className = 'train-type-panel';
       panel.dataset.trainType = trainType;
-      // 缓存面板会脱离 DOM，但其 x-for 等响应式表达式仍会运行。
-      // 保留应用作用域，让新建的子集行在脱离 DOM 时也能找到表单方法。
-      const alpine = window.Alpine;
-      if (alpine && typeof alpine.addScopeToNode === 'function') {
-        alpine.addScopeToNode(panel, {}, root);
-      }
-      this._trainTypePanelCache.set(trainType, panel);
+      this._trainTypePanel = panel;
     }
     this._mutateTrainingPanels(() => {
-      if (activePanel && activePanel !== panel) activePanel.remove();
       if (panel.parentElement !== root) root.appendChild(panel);
     });
     return panel;
-  },
-
-  _warmTrainTypePanels(activeType) {
-    const root = document.getElementById('trainFormContent');
-    if (!root) return;
-    const originalForm = this.form;
-    const originalDefaults = this.formDefaults;
-    const originalActiveType = this._activeTrainType;
-
-    this.trainTypes.forEach(({ v: trainType }) => {
-      if (trainType === activeType || this._trainTypePanelIsReady(trainType)) return;
-      const defaults = this._buildFormDefaults(trainType);
-      const warmForm = this._profileFormFromDraft(trainType, defaults);
-      if (trainType === 'krea2-lora') {
-        this._applyKrea2ModelDefaults(warmForm, defaults);
-        const cacheDir = this._deriveKrea2CacheDir(warmForm.train_data_dir);
-        warmForm.dataset_cache_dir = cacheDir;
-        defaults.dataset_cache_dir = cacheDir;
-      }
-      this._normalizeProfileSelectValues(trainType, defaults, warmForm);
-      if (!['moss-image-lora', 'krea2-lora'].includes(trainType)) warmForm.network_module = this._defaultNetworkModule(trainType);
-      this.form = warmForm;
-      this.formDefaults = { ...defaults };
-      this._activeTrainType = trainType;
-      this.renderTrainingForm(trainType, null, true);
-    });
-
-    this.form = originalForm;
-    this.formDefaults = originalDefaults;
-    this._activeTrainType = originalActiveType;
-    this.renderTrainingForm(activeType, null);
   },
 
   renderTrainingForm(trainType, targetId, force = false) {
