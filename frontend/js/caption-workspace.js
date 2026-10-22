@@ -371,8 +371,9 @@ window.captionWorkspaceMixin = {
     if (!this.captionEditorAvailable() || this.captionBatchRunning()) return;
     this.tagEditorDetailView = 'text';
     this.tagEditorOpenPath = item?.path || '';
-    this.tagEditorSearchQuery = item ? item.relative || item.name : '';
-    this.tagEditorUseRegex = false;
+    const relative = (item?.relative || item?.name || '').replace(/\\/g,'/');
+    this.tagEditorSearchQuery = item ? '^' + relative.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + '$' : '';
+    this.tagEditorUseRegex = !!item;
     this.tagEditorQuickFilter = 'all';
     this.tagEditorTagSearch = '';
     this.tagEditorTagSelection = [];

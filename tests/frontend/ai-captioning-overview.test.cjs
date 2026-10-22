@@ -341,12 +341,63 @@ test('single-image editor entry resets stale filters and targets the current ima
   app.tagEditorSearchQuery='old';app.tagEditorUseRegex=true;app.tagEditorQuickFilter='modified';
   app.tagEditorTagSearch='old';app.tagEditorTagSelection=['old'];app.tagEditorExcludedTags=['old'];app.navigate=()=>{};
   app.openCaptionEditor(app.captionOverviewDetail);
-  assert.equal(app.tagEditorSearchQuery,'sub/a.png');assert.equal(app.tagEditorUseRegex,false);
+  assert.equal(app.tagEditorSearchQuery,'^sub/a\\.png$');assert.equal(app.tagEditorUseRegex,true);
   assert.equal(app.tagEditorOpenPath,'dataset/sub/a.png');
   assert.equal(app.tagEditorQuickFilter,'all');assert.equal(app.tagEditorTagSearch,'');
   assert.deepEqual([...app.tagEditorTagSelection],[]);assert.deepEqual([...app.tagEditorExcludedTags],[]);
   assert.equal(app.captionOverviewDetail,null);assert.equal(app.tagEditorDir,'dataset');
 });
+
+for (const separator of ['/','\\']) {
+  test(`editor jump selects a same-named image beyond page one with ${JSON.stringify(separator)} paths`,async()=>{
+    const {app,context}=harness();
+    loadFrontend('tag-editor',context);
+    Object.defineProperties(app,Object.getOwnPropertyDescriptors(context.window.tagEditorMixin));
+    context.AbortController=AbortController;
+    const root='C:/dataset';
+    const images=Array.from({length:61},(_,index)=>({
+      name:'image[1].png',rel_path:`${String(index).padStart(2,'0')}/image[1].png`,
+      path:`${root}/${String(index).padStart(2,'0')}/image[1].png`.replaceAll('/',separator),tags:'',
+    }));
+    const target=images[60];
+    images.push({...target,path:'other',rel_path:'copy/' + target.rel_path});
+    const detail={index:60,name:target.name,path:target.path,relative:target.rel_path.replaceAll('/',separator)};
+    app.taggerSource={source_token:'batch',kind:'folder',path:root.replaceAll('/',separator)};
+    app.navigate=route=>{app.currentRoute=route;};
+    let selectedPanel=0,focused=0,pageRequests=0;
+    for (const name of ['tagDictionaryEnsureWorker','tagEditorCancelQuickRemove','_teStopAutoSave',
+      '_teDiscardPendingTextEdits','startProgress','finishProgress','_tdRequestChips',
+      'tagEditorLoadSnapshots','_teCheckDraft','_teStartAutoSave']) app[name]=()=>{};
+    app._updateEditorPanel=()=>{selectedPanel++;};
+    app._teFocusEditorInput=()=>{focused++;};
+    app.toast=message=>assert.fail(message);
+    context.fetch=async(url,options)=>{
+      if(url.includes('/annotations/60?')) return response(detail);
+      if(url==='/api/tageditor/sessions') {
+        assert.equal(JSON.parse(options.body).dir,app.tagEditorDir);
+        return response({session_id:'editor',dir:app.tagEditorDir,count:images.length,tags:[],page:1,
+          page_size:60,total:images.length,total_pages:2,items:images.slice(0,60)});
+      }
+      if(url.startsWith('/api/tageditor/sessions/editor/images?')) {
+        pageRequests++;
+        const params=new URLSearchParams(url.split('?')[1]);
+        assert.equal(params.get('use_regex'),'true');
+        const pattern=new RegExp(params.get('search'),'i');
+        const matches=images.filter(image=>pattern.test(image.rel_path) || pattern.test(image.tags));
+        return response({page:1,total:matches.length,total_pages:Math.max(1,Math.ceil(matches.length/60)),items:matches.slice(0,60)});
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    };
+    await app.openCaptionDetail({index:60,name:target.name,path:target.path},null);
+    app.openCaptionEditor(app.captionOverviewDetail);
+    await app.tagEditorLoad(app.tagEditorDir);
+    assert.equal(pageRequests,1);
+    assert.equal(app.tagEditorFilteredTotal,1);
+    assert.deepEqual(Array.from(app.tagEditorPageItems,image=>image.path),[target.path]);
+    assert.deepEqual(Array.from(app.tagEditorSelected),[target.path]);
+    assert.equal(selectedPanel,1);assert.equal(focused,1);
+  });
+}
 
 test('content and logging switches preserve plan, gallery, detail and checked prompt',()=>{
   const {app,context}=harness();app.taggerSource={source_token:'batch',path:'dataset',total:10};

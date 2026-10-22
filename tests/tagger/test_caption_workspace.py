@@ -1,6 +1,7 @@
 """Filesystem, synchronous preview and task integration for the MOSS workspaces."""
 import asyncio
 import json
+import re
 import tempfile
 import threading
 import time
@@ -15,6 +16,8 @@ from PIL import Image
 
 from backend.server.routes.tagger import router
 from backend.tagger import api_engine, captioning, workspace
+from backend.tageditor.routes import router as editor_router
+from backend.tageditor.sessions import dataset_sessions
 from backend.tasks import tm
 from tests.tagger.test_captioning import RESPONSE
 
@@ -187,6 +190,30 @@ class CaptionWorkspaceTests(unittest.TestCase):
         self.assertEqual(detail["sidecar"]["knowledge"],"Identity")
         self.assertNotIn("api_key",detail["sidecar"])
         self.assertNotIn("secret",detail["sidecar"])
+
+    def test_detail_locates_same_named_image_beyond_first_editor_page(self):
+        for index in range(61):
+            (self.root / f"{index:02d}").mkdir()
+            self.add_image(f"{index:02d}/image[1].png")
+        source = self.scan()
+        app = FastAPI()
+        app.include_router(router, prefix="/api")
+        app.include_router(editor_router, prefix="/api")
+        with TestClient(app) as client:
+            page = client.get(f"/api/tagger/source/{source['source_token']}/annotations", params={"offset": 60}).json()["data"]
+            target = next(item for item in page["items"] if item["relative"] == "60/image[1].png")
+            detail = client.get(f"/api/tagger/source/{source['source_token']}/annotations/{target['index']}").json()["data"]
+            self.assertEqual(detail["relative"], target["relative"])
+            session = client.post("/api/tageditor/sessions", json={"dir": str(self.root), "page_size": 60}).json()["data"]
+            self.addCleanup(dataset_sessions.delete, session["session_id"])
+            self.assertNotIn(detail["path"], [item["path"] for item in session["items"]])
+            endpoint = f"/api/tageditor/sessions/{session['session_id']}/images"
+            by_name = client.get(endpoint, params={"search": detail["name"]}).json()["data"]
+            self.assertEqual(by_name["total"], 61)
+            self.assertNotIn(detail["path"], [item["path"] for item in by_name["items"]])
+            exact = client.get(endpoint, params={"search": "^" + re.escape(detail["relative"]) + "$", "use_regex": True}).json()["data"]
+            self.assertEqual(exact["total"], 1)
+            self.assertEqual([item["path"] for item in exact["items"]], [detail["path"]])
 
     def test_rescan_new_files_configuration_and_empty_directory(self):
         source = self.scan()

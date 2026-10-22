@@ -228,7 +228,7 @@ def annotations(token: str, offset=0, limit=60, status="all", q="", refresh=Fals
         root = Path(source["root"])
         query = str(q).casefold()[:512]
         for index, (path, state) in enumerate(zip(source["paths"], states)):
-            relative = str(path.relative_to(root))
+            relative = path.relative_to(root).as_posix()
             live = task_states.get(os.path.normcase(str(path)), {})
             if query and query not in relative.casefold():
                 continue
@@ -278,7 +278,8 @@ def annotation_detail(token: str, index: int, options: dict | None = None) -> di
         except (OSError, ValueError) as exc:
             reference_text = ""
             state["read_error"] = str(exc)
-        return {"index": index, "name": path.name, "path": str(path), "image_version": str(path.stat().st_mtime_ns), **{k: v for k, v in state.items() if k != "fingerprint"},
+        relative = path.relative_to(Path(source["root"])).as_posix() if source["kind"] == "folder" else path.name
+        return {"index": index, "name": path.name, "path": str(path), "relative": relative, "image_version": str(path.stat().st_mtime_ns), **{k: v for k, v in state.items() if k != "fingerprint"},
                 **content, "reference": reference_text, "sidecar": metadata, "sidecar_error": sidecar_error}
 
 
