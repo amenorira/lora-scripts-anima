@@ -197,9 +197,9 @@ def annotation_options(caption_extension: str = ".txt", reference_extension: str
 
 @router.get("/tagger/source/{source_token}/annotations")
 async def list_annotations(source_token: str, offset: int = 0, limit: int = 60, status: str = "all", q: str = "",
-                           refresh: bool = False, task_id: str = "", options: dict = Depends(annotation_options)):
+                           refresh: bool = False, task_id: str = "", cached: bool = False, options: dict = Depends(annotation_options)):
     try:
-        return APIResponseSuccess(data=await asyncio.to_thread(workspace.annotations, source_token, offset, limit, status, q, refresh, options, task_id))
+        return APIResponseSuccess(data=await asyncio.to_thread(workspace.annotations, source_token, offset, limit, status, q, refresh, options, task_id, cached))
     except Exception as exc:
         return APIResponseFail(message=str(exc))
 

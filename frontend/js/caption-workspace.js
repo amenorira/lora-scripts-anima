@@ -275,7 +275,7 @@ window.captionWorkspaceMixin = {
   captionAnnotationParams({refresh=false} = {}) {
     const params = this.captionOutputParams();
     for (const [key,value] of Object.entries({offset:this.captionOverviewOffset,limit:60,status:this.captionOverviewFilter,q:this.captionOverviewQuery,
-      refresh,task_id:this.captionBatchState().taskId || ''})) params.set(key,String(value));
+      refresh,cached:!refresh,task_id:this.captionBatchState().taskId || ''})) params.set(key,String(value));
     return params;
   },
   async refreshCaptionPlan({source = this.captionBatchState().source, options = this.captionOptions} = {}) {

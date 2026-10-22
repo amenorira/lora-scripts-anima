@@ -155,6 +155,25 @@ class CaptionWorkspaceTests(unittest.TestCase):
         self.assertEqual([item["name"] for item in result["items"]],["01.png"])
         self.assertEqual(result["counts"]["moss_outputs"],1)
 
+    def test_overview_reuses_recent_stats_but_plan_and_refresh_are_always_fresh(self):
+        token = self.scan()["source_token"]
+        with patch.object(captioning, "output_state", wraps=captioning.output_state) as state:
+            workspace.annotations(token, cached=True)
+            state.assert_not_called()
+            self.image.with_suffix(".txt").write_text("external", encoding="utf-8")
+            result = workspace.annotations(token, cached=True, refresh=True)
+            self.assertEqual(result["counts"]["ordinary_outputs"], 1)
+            self.assertEqual(state.call_count, 1)
+            source = workspace._get_source(token)
+            source["annotation_dirty"].add(str(self.image))
+            workspace.annotations(token, cached=True)
+            self.assertEqual(state.call_count, 2)
+            workspace.caption_plan(token, {})
+            self.assertEqual(state.call_count, 3)
+            source["annotation_checked_at"] -= 6
+            workspace.annotations(token, cached=True)
+            self.assertEqual(state.call_count, 4)
+
     def test_invalid_record_filter_plan_and_task_failures(self):
         self.image.with_suffix(".txt").write_text("existing tags", encoding="utf-8")
         sidecar = self.sidecar(response={"caption": {"long": "incomplete"}})

@@ -167,15 +167,22 @@ def _get_source(token: str) -> dict:
     return source
 
 
-def _annotation_states(source: dict, settings: dict) -> tuple[list[dict], dict]:
-    # Stat every output so external edits and completed writes invalidate the cache.
-    # Only changed caption headers are read; JSON bodies are read on detail only.
+def _annotation_states(source: dict, settings: dict, *, cached: bool = False) -> tuple[list[dict], dict]:
+    # Plans/default callers always stat every output. Overview callers may reuse
+    # a five-second snapshot; completed task items invalidate just their paths.
     with source["annotation_lock"]:
         cache = source["annotation_cache"]
+        now = time.monotonic()
+        reuse = (cached and source.get("annotation_settings") == settings
+                 and now - source.get("annotation_checked_at", -float("inf")) < 5.0)
+        dirty = source.setdefault("annotation_dirty", set())
         states = []
         root = Path(source["root"]).resolve()
         parents = {}
         for index, path in enumerate(source["paths"]):
+            if reuse and str(path) in cache and str(path) not in dirty:
+                states.append(cache[str(path)])
+                continue
             if source["kind"] in {"file", "upload"}:
                 _source_path(source, index)
             parent = parents.get(path.parent)
@@ -195,6 +202,10 @@ def _annotation_states(source: dict, settings: dict) -> tuple[list[dict], dict]:
             state = captioning.output_state(path, settings, cache.get(str(path)), parent=parent)
             cache[str(path)] = state
             states.append(state)
+        dirty.clear()
+        if not reuse:
+            source["annotation_checked_at"] = now
+            source["annotation_settings"] = dict(settings)
         return states, captioning.output_counts(states)
 
 
@@ -205,7 +216,7 @@ def _annotation_text(path: Path, settings: dict, state: dict) -> dict:
             "candidate_lengths": {key: len(value) for key, value in candidates.items()}}
 
 
-def annotations(token: str, offset=0, limit=60, status="all", q="", refresh=False, options=None, task_id="") -> dict:
+def annotations(token: str, offset=0, limit=60, status="all", q="", refresh=False, options=None, task_id="", cached=False) -> dict:
     source = _get_source(token)
     if source["kind"] != "folder":
         raise ValueError("Overview requires a directory / 总览仅支持批量目录")
@@ -216,7 +227,7 @@ def annotations(token: str, offset=0, limit=60, status="all", q="", refresh=Fals
         if refresh and not source.get("subset"):
             source["paths"] = _enumerate_images(Path(source["root"]), source["recursive"])
             source["annotation_cache"] = {}
-        states, counts = _annotation_states(source, settings)
+        states, counts = _annotation_states(source, settings, cached=cached and not refresh)
         task_states = {}
         if task_id:
             with _tasks_lock:
@@ -432,6 +443,15 @@ def _record_task_item(task: dict, index: int, outcome: dict) -> None:
                   current=task["current"], total=task["total"], name=item["name"],
                   count=outcome.get("tag_count", 0), error=outcome.get("error", ""),
                   reference=outcome.get("reference", False), knowledge=outcome.get("knowledge", 0))
+    # Do not take annotation locks while holding the task lock: overview reads
+    # acquire them in the opposite order. External edits are rechecked within 5s.
+    path = Path(item["path"])
+    with _sources_lock:
+        sources = list(_sources.values())
+    for source in sources:
+        if path.is_relative_to(Path(source["root"])):
+            with source["annotation_lock"]:
+                source.setdefault("annotation_dirty", set()).add(str(path))
 
 
 def _finish_task(task: dict, status: str, error: str = "") -> None:
