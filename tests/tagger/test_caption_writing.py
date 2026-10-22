@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from backend.tagger import writing
+from backend.utils import file_io as writing
 
 
 class CaptionWritingTests(unittest.TestCase):

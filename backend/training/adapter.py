@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from tools.runtime_paths import runtime_cache_dir
+from backend.utils.file_io import atomic_write_text
 
 # ── 字段集：从统一注册表派生（Single Source of Truth）──────
 from backend.training.field_registry import (
@@ -244,14 +245,8 @@ def _pop_keyed_arg_list(values: list[str], key: str) -> list[str]:
     return patterns
 
 
-def _write_lycoris_scope_preset_file(preset_name: str, exclude_name: list[str]) -> str:
-    """
-    生成含 exclude_name 的匿名预设文件（LyCORIS 预设机制唯一入口）。
-
-    上游 kohya.create_network 只在预设文件里消费 exclude_name（kwargs 不认），
-    故 scope 细化时把内置预设全集 + exclude_name 落盘为临时文件，network_args 的
-    preset 参数改指向该文件。内容相同则复用同一路径，避免累积。
-    """
+def _lycoris_scope_preset_content(preset_name: str, exclude_name: list[str]) -> str:
+    """Build the upstream preset without creating or changing a file."""
     vendor_root = Path(__file__).resolve().parents[2] / "vendor"
     if str(vendor_root) not in sys.path:
         sys.path.insert(0, str(vendor_root))
@@ -260,13 +255,23 @@ def _write_lycoris_scope_preset_file(preset_name: str, exclude_name: list[str]) 
     if preset_name not in PRESET:
         raise ValueError(f"Unknown LyCORIS preset: {preset_name!r}")
     preset = {**PRESET[preset_name], "exclude_name": list(exclude_name)}
-    content = toml_writer.dumps(preset)
+    return toml_writer.dumps(preset)
+
+
+def _write_lycoris_scope_preset_file(preset_name: str, exclude_name: list[str]) -> str:
+    """Materialize once: upstream consumes scope exclusions only from a preset file."""
+    content = _lycoris_scope_preset_content(preset_name, exclude_name)
     digest = hashlib.sha1(content.encode("utf-8")).hexdigest()[:8]
     path = (
         runtime_cache_dir("lycoris")
         / f"anima_lycoris_preset_{preset_name}_{digest}.toml"
     )
-    path.write_text(content, encoding="utf-8")
+    try:
+        if path.read_text(encoding="utf-8") == content:
+            return str(path)
+    except (FileNotFoundError, UnicodeDecodeError):
+        pass
+    atomic_write_text(path, content)
     return str(path)
 
 

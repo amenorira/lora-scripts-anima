@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-import tempfile
+from backend.utils.file_io import atomic_write_text
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -387,24 +387,7 @@ def write_training_config(path: str | Path, document: dict[str, Any]) -> None:
     """Atomically write a generated training YAML document."""
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    content = dump_training_config(document)
-    temp_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            newline="\n",
-            prefix=f".{target.name}.",
-            suffix=".tmp",
-            dir=target.parent,
-            delete=False,
-        ) as handle:
-            handle.write(content)
-            temp_path = Path(handle.name)
-        os.replace(temp_path, target)
-    finally:
-        if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
+    atomic_write_text(target, dump_training_config(document))
 
 
 def _validate_training_document(

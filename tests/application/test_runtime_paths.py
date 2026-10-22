@@ -102,7 +102,23 @@ class RuntimePathTests(unittest.TestCase):
             root = Path(directory)
             with patch.object(runtime_paths, "ROOT", root), patch.object(tempfile, "tempdir", str(Path.cwd())):
                 first = _write_lycoris_scope_preset_file("attn-mlp", ["scope_probe"])
-                second = _write_lycoris_scope_preset_file("attn-mlp", ["scope_probe"])
+                with patch("backend.training.adapter.atomic_write_text", side_effect=AssertionError("unchanged preset rewritten")):
+                    second = _write_lycoris_scope_preset_file("attn-mlp", ["scope_probe"])
                 self.assertEqual(first, second)
                 self.assertTrue(Path(first).is_relative_to(root / "cache/runtime/lycoris"))
                 self.assertIn("scope_probe", Path(first).read_text(encoding="utf-8"))
+
+    def test_lycoris_preset_repair_and_failed_replace_preserve_existing_bytes(self):
+        from backend.training.adapter import _write_lycoris_scope_preset_file
+
+        with tempfile.TemporaryDirectory() as directory, patch.object(runtime_paths, "ROOT", Path(directory)):
+            target = Path(_write_lycoris_scope_preset_file("attn-mlp", ["scope_probe"]))
+            expected = target.read_bytes()
+            target.write_bytes(b"broken")
+            with patch("backend.utils.file_io.os.replace", side_effect=PermissionError("in use")):
+                with self.assertRaises(PermissionError):
+                    _write_lycoris_scope_preset_file("attn-mlp", ["scope_probe"])
+            self.assertEqual(target.read_bytes(), b"broken")
+            self.assertEqual(list(target.parent.glob("*.tmp")), [])
+            _write_lycoris_scope_preset_file("attn-mlp", ["scope_probe"])
+            self.assertEqual(target.read_bytes(), expected)
