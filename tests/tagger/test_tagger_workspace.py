@@ -8,7 +8,7 @@ from unittest.mock import patch
 from PIL import Image
 
 from backend.tagger import workspace
-from backend.tagger import writing
+from backend.utils import file_io as writing
 from backend.tasks import tm
 
 
