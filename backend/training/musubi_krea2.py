@@ -1835,9 +1835,7 @@ def build_krea2_train_config(
         result["max_train_steps"] = int(config["max_train_steps"])
     else:
         result["max_train_epochs"] = int(config["max_train_epochs"])
-    if result["timestep_sampling"] == "shift":
-        result["discrete_flow_shift"] = float(config.get("discrete_flow_shift", 2.5))
-    if result["timestep_sampling"] == "sigma":
+    if result["timestep_sampling"] in {"shift", "sigma"}:
         result["discrete_flow_shift"] = float(config.get("discrete_flow_shift", 2.5))
     if result["timestep_sampling"] in {"sigmoid", "shift", "krea2_shift"}:
         result["sigmoid_scale"] = float(config.get("sigmoid_scale", 1.0))
