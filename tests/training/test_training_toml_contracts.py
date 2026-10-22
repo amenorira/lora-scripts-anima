@@ -20,6 +20,36 @@ class TrainingTomlParseTests(unittest.TestCase):
         self.assertEqual(response.status, "fail")
         self.assertIn("Invalid TOML", response.message)
 
+    def test_native_optimizer_arguments_survive_import_for_all_profiles(self):
+        from backend.training.optimizer_contracts import collect_optimizer_args, parse_optimizer_args
+        for profile in ("anima-lora", "sdxl-lora", "moss-image-lora", "krea2-lora"):
+            with self.subTest(profile=profile):
+                response = self._parse('optimizer_type = "AdamW"\n'
+                    'optimizer_args = ["weight_decay=0.123", "betas=(0.8, 0.95)", "foreach=None"]', profile)
+                self.assertEqual(response.status, "success")
+                form = response.data["data"]
+                self.assertNotIn("optimizer_args", form)
+                self.assertEqual(form["weight_decay"], 0.123)
+                self.assertEqual(form["betas"], "(0.8, 0.95)")
+                parsed, errors = parse_optimizer_args(form)
+                self.assertEqual(errors, [])
+                self.assertEqual(collect_optimizer_args(form, parsed),
+                    {"weight_decay": 0.123, "betas": (0.8, 0.95), "foreach": None})
+
+    def test_optimizer_import_preserves_specific_mappings_and_custom_precedence(self):
+        response = self._parse('optimizer_type = "Muon"\n'
+            'optimizer_args = ["momentum=0.8", "nesterov=False"]\n'
+            'optimizer_args_custom = "momentum=0.7"', "anima-lora")
+        self.assertEqual(response.status, "success")
+        self.assertEqual(response.data["data"]["muon_momentum"], 0.7)
+        self.assertIs(response.data["data"]["muon_nesterov"], False)
+        self.assertEqual(response.data["data"]["optimizer_args_custom"], "")
+
+    def test_malformed_optimizer_arguments_are_rejected(self):
+        response = self._parse('optimizer_args = ["betas=invalid"]')
+        self.assertEqual(response.status, "fail")
+        self.assertIn("optimizer_args", response.message)
+
     def test_native_moss_import_restores_network_arguments_without_app_selector(self):
         arguments = ('network_args = ["train_llm_adapter=True", "rank_dropout=0.2", '
                      '"loraplus_lr_ratio=4", "network_reg_dims=layers.*=8"]\n')

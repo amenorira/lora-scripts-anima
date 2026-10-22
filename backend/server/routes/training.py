@@ -191,9 +191,10 @@ async def parse_training_toml(req: TrainingTomlParseRequest):
             )
         )
     from backend.training.scheduler_config import extract_scheduler_form
+    from backend.training.optimizer_contracts import extract_optimizer_form
 
     try:
-        parsed = extract_scheduler_form(parsed)
+        parsed = extract_optimizer_form(extract_scheduler_form(parsed))
     except ValueError as exc:
         return APIResponseFail(message=str(exc))
     # Native trainer TOMLs omit the application's profile selector. Prefer an
