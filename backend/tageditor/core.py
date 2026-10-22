@@ -42,15 +42,25 @@ def caption_candidates(img_path: Path) -> list[Path]:
     return [img_path.with_suffix(ext) for ext in CAPTION_EXTENSIONS if img_path.with_suffix(ext).exists()]
 
 
-def caption_revision(cap_path: Path) -> str:
-    """Return a stable optimistic-concurrency token for a caption file."""
+def read_caption_snapshot(cap_path: Path) -> tuple[str, str, int]:
+    """Read text and its revision from one handle; never hide unreadable files."""
     try:
-        data = cap_path.read_bytes()
-        stat = cap_path.stat()
+        with cap_path.open("rb") as handle:
+            before = os.fstat(handle.fileno())
+            data = handle.read()
+            stat = os.fstat(handle.fileno())
     except FileNotFoundError:
-        return "missing"
+        return "", "missing", 0
+    if (before.st_mtime_ns, before.st_size) != (stat.st_mtime_ns, stat.st_size):
+        raise OSError(f"Caption changed while reading / 读取期间标签发生变化: {cap_path}")
     digest = hashlib.sha1(data).hexdigest()
-    return f"{stat.st_mtime_ns}:{stat.st_size}:{digest}"
+    text = data.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n").strip()
+    return text, f"{stat.st_mtime_ns}:{stat.st_size}:{digest}", stat.st_mtime_ns
+
+
+def caption_revision(cap_path: Path) -> str:
+    """Return the same revision used by caption snapshots and save conflicts."""
+    return read_caption_snapshot(cap_path)[1]
 
 
 def _atomic_write_text(path: Path, text: str) -> None:
@@ -114,7 +124,7 @@ def _build_image_entry(p: Path, base_dir: Path) -> dict:
     """构建单张图片的条目字典（scan_dataset / scan_selected_images 共用）。"""
     candidates = caption_candidates(p)
     cap = candidates[0] if candidates else None
-    tags = read_tags(cap) if cap else ""
+    tags, revision, modified_ns = read_caption_snapshot(cap) if cap else ("", "missing", 0)
     try:
         rel = str(p.relative_to(base_dir)).replace("\\", "/")
     except ValueError:
@@ -124,11 +134,11 @@ def _build_image_entry(p: Path, base_dir: Path) -> dict:
         "path": str(p),
         "rel_path": rel,
         "tags": tags,
-        "has_caption": cap is not None,
+        "has_caption": revision != "missing",
         "caption_path": str(cap) if cap else str(p.with_suffix(CAPTION_EXTENSIONS[0])),
-        "caption_revision": caption_revision(cap) if cap else "missing",
+        "caption_revision": revision,
         "caption_conflict": len(candidates) > 1,
-        "modified_ns": max(p.stat().st_mtime_ns, cap.stat().st_mtime_ns if cap else 0),
+        "modified_ns": max(p.stat().st_mtime_ns, modified_ns),
     }
 
 

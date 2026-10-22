@@ -8,7 +8,7 @@ from backend.tageditor.core import (
     caption_candidates,
     caption_revision,
     dataset_lock,
-    read_tags,
+    read_caption_snapshot,
     restore_caption_state,
     write_tags,
 )
@@ -61,9 +61,12 @@ def save_caption_transaction(
                 failed.append({"path": str(image_path), "reason": "同时存在 .txt 与 .caption，请先解决冲突"})
                 continue
             caption_path = candidates[0] if candidates else image_path.with_suffix(".txt")
-            before_exists = caption_path.exists()
-            before_text = read_tags(caption_path) if before_exists else ""
-            current_revision = caption_revision(caption_path)
+            try:
+                before_text, current_revision, _ = read_caption_snapshot(caption_path)
+            except OSError as exc:
+                failed.append({"path": str(image_path), "reason": str(exc)})
+                continue
+            before_exists = current_revision != "missing"
             expected_revision = item.get("expected_revision")
             if expected_revision is not None and expected_revision != current_revision:
                 conflicts.append({"path": str(image_path), "reason": "标签文件已被外部修改", "revision": current_revision})
@@ -179,7 +182,7 @@ def restore_timeline_event(dataset_dir: Path, event_id: str) -> dict:
             if not _within(target, dataset_dir):
                 raise ValueError("Timeline contains an out-of-bounds path / 时间线包含越界路径")
             current_exists = target.exists()
-            current_text = read_tags(target) if current_exists else ""
+            current_text = read_caption_snapshot(target)[0] if current_exists else ""
             expected_exists = bool(source["after_exists"])
             expected_text = source["after_text"] or ""
             if current_exists != expected_exists or (current_exists and current_text != expected_text):
@@ -191,7 +194,7 @@ def restore_timeline_event(dataset_dir: Path, event_id: str) -> dict:
             if not _within(target, dataset_dir):
                 raise ValueError("Timeline contains an out-of-bounds path / 时间线包含越界路径")
             current_exists = target.exists()
-            current_text = read_tags(target) if current_exists else ""
+            current_text = read_caption_snapshot(target)[0] if current_exists else ""
             desired_exists = bool(source["before_exists"])
             desired_text = source["before_text"] or ""
             try:
@@ -228,7 +231,7 @@ def restore_legacy_backups(dataset_dir: Path) -> dict:
             if not _within(target, dataset_dir):
                 continue
             before_exists = target.exists()
-            before_text = read_tags(target) if before_exists else ""
+            before_text = read_caption_snapshot(target)[0] if before_exists else ""
             after_text = backup.read_text(encoding="utf-8")
             if before_exists and before_text == after_text:
                 continue
