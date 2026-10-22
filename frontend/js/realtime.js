@@ -28,7 +28,6 @@ window.realtimeMixin = {
   _realtimeInboundChain: null,
   _realtimeSnapshotPromise: null,
   _realtimeSnapshotAbort: null,
-  _realtimeCursorsStorageKey: 'anima-realtime-cursors',
   _realtimeInstanceStorageKey: 'anima-realtime-instance-id',
 
   startRealtime() {
@@ -206,7 +205,6 @@ window.realtimeMixin = {
       }
       if (!this._realtimeCursors) this._realtimeCursors = {};
       this._realtimeCursors[topic] = seq;
-      this._saveRealtimeCursors();
     }
     if (this.realtimeReady) this._setRealtimeState('online');
     this._dispatchRealtimeEvent(message);
@@ -282,7 +280,6 @@ window.realtimeMixin = {
     if (!this._realtimeCursors) this._realtimeCursors = {};
     if (topics.length) topics.forEach(topic => delete this._realtimeCursors[topic]);
     else this._realtimeCursors = {};
-    this._saveRealtimeCursors();
     const ok = await this._refreshRealtimeSnapshot(this.realtimeInstanceId, socket, { monitorDetail: false });
     if (!ok && !this._realtimeStopped && (!socket || this.realtimeSocket === socket)) {
       this._setRealtimeState('degraded');
@@ -339,7 +336,6 @@ window.realtimeMixin = {
         this.realtimeInstanceId = nextId || this.realtimeInstanceId;
         this._saveRealtimeInstanceId();
         this._applyRealtimeSnapshotCursors(snapshot.cursors || {}, options);
-        this._saveRealtimeCursors();
         // A dashboard-only detail request may finish after the user leaves
         // that page. Keep the current transport snapshot/cursors, but never
         // let that stale detail overwrite live monitor state off-page.
@@ -407,7 +403,6 @@ window.realtimeMixin = {
     // reuse old task/log/curve/hardware state during the transition.
     this.realtimeSnapshot = null;
     this._realtimeCursors = {};
-    this._saveRealtimeCursors();
     let hadLiveTask = false;
     if (typeof this.resetRealtimeMonitorState === 'function') hadLiveTask = !!this.resetRealtimeMonitorState() || hadLiveTask;
     if (typeof this.resetRealtimeTrainingState === 'function') hadLiveTask = !!this.resetRealtimeTrainingState() || hadLiveTask;
@@ -501,14 +496,9 @@ window.realtimeMixin = {
   },
 
   _loadRealtimeState() {
-    try { this._realtimeCursors = JSON.parse(sessionStorage.getItem(this._realtimeCursorsStorageKey) || '{}') || {}; }
-    catch (_) { this._realtimeCursors = {}; }
+    this._realtimeCursors = {};
     try { this.realtimeInstanceId = sessionStorage.getItem(this._realtimeInstanceStorageKey) || this.realtimeInstanceId || null; }
     catch (_) {}
-  },
-
-  _saveRealtimeCursors() {
-    try { sessionStorage.setItem(this._realtimeCursorsStorageKey, JSON.stringify(this._realtimeCursors || {})); } catch (_) {}
   },
 
   _saveRealtimeInstanceId() {
