@@ -20,6 +20,10 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from backend.training.core_registry import MUSUBI_TUNER_DIR
+from backend.training.krea2_network import (
+    KREA2_NETWORK_MODULE, KREA2_LYCORIS_MODULE, KREA2_NETWORK_FIELDS,
+    KREA2_PRESET_FILENAME, build_krea2_network_args, validate_krea2_network,
+)
 from backend.training.metrics_config import training_metric_fields
 from backend.training.musubi_runtime import MUSUBI_RUNTIME_PACKAGES, shared_runtime_status
 from backend.training.optimizer_metadata import (
@@ -40,7 +44,6 @@ from backend.training.optimizer_metadata import (
 KREA2_TRAINER_FILE = "./vendor/musubi-tuner/krea2_train_network.py"
 KREA2_CACHE_RUNNER_FILE = "./backend/training/krea2_cache_runner.py"
 KREA2_PROFILE_ID = "krea2-lora"
-KREA2_NETWORK_MODULE = "networks.lora_krea2"
 KREA2_AUTO_CACHE_DIR_NAME = ".krea2-cache"
 KREA2_CACHE_MANIFEST_NAME = ".krea2-cache.json"
 _LEGACY_KREA2_CACHE_MANIFEST_NAMES = (".anima-krea2-cache.json",)
@@ -48,6 +51,7 @@ _LEGACY_KREA2_CACHE_MANIFEST_NAMES = (".anima-krea2-cache.json",)
 _IMAGE_EXTENSIONS = {".bmp", ".jpeg", ".jpg", ".png", ".webp", ".avif"}
 _ATTENTION_FLAGS = {
     "sdpa": "sdpa",
+    "flash_attn": "flash_attn",
     "sage_attn": "sage_attn",
     "xformers": "xformers",
 }
@@ -257,7 +261,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": KREA2_NETWORK_MODULE,
         "section": "network",
         "desc_key": "field.network_module",
-        "options": [{"v": KREA2_NETWORK_MODULE, "l": KREA2_NETWORK_MODULE}],
+        "options": [{"v": KREA2_NETWORK_MODULE, "l": "LoRA"}, {"v": KREA2_LYCORIS_MODULE, "l": "LyCORIS (LoKr / LoHa)"}],
         "required": True,
         "profiles": [KREA2_PROFILE_ID],
     },
@@ -291,8 +295,10 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "min": 0,
         "max": 1,
         "step": 0.01,
+        "show_if": {"key": "network_module", "eq": KREA2_NETWORK_MODULE},
         "profiles": [KREA2_PROFILE_ID],
     },
+    *KREA2_NETWORK_FIELDS,
     {
         "key": "network_args_custom",
         "type": "textarea",
@@ -858,6 +864,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "desc_key": "field.krea_attention_backend",
         "options": [
             {"v": "sdpa", "l": "SDPA", "dk": "opt.krea_attention_sdpa"},
+            {"v": "flash_attn", "l": "FlashAttention", "dk": "opt.krea_attention_flash_attn"},
             {"v": "sage_attn", "l": "SageAttention", "dk": "opt.krea_attention_sage_attn"},
             {"v": "xformers", "l": "xFormers", "dk": "opt.krea_attention_xformers"},
         ],
@@ -1840,12 +1847,7 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
         if _is_empty(config.get(key)):
             errors.append(f"{key}: required / 必填")
 
-    if config.get("network_module", KREA2_NETWORK_MODULE) != KREA2_NETWORK_MODULE:
-        errors.append(
-            f"network_module: Krea 2 requires {KREA2_NETWORK_MODULE} / Krea 2 必须使用指定 LoRA 模块"
-        )
-    else:
-        config["network_module"] = KREA2_NETWORK_MODULE
+    errors.extend(validate_krea2_network(config))
 
     try:
         width, height = parse_krea2_resolution(config.get("resolution", ""))
@@ -2105,6 +2107,9 @@ def build_krea2_train_config(
 
     config = dict(config)
     normalize_attention_config(config)
+    network_errors = validate_krea2_network(config)
+    if network_errors:
+        raise ValueError("; ".join(network_errors))
 
     optimizer_type = str(config.get("optimizer_type", "adamw8bit"))
     # Normal launch paths call validate_krea2_config first, but keep this
@@ -2123,7 +2128,7 @@ def build_krea2_train_config(
         "dit": str(config["dit"]),
         "vae": str(config["vae"]),
         "dataset_config": str(dataset_config_path),
-        "network_module": KREA2_NETWORK_MODULE,
+        "network_module": config["network_module"],
         "network_dim": int(config["network_dim"]),
         "network_alpha": int(config["network_alpha"]),
         "network_dropout": float(config.get("network_dropout", 0)),
@@ -2144,6 +2149,8 @@ def build_krea2_train_config(
         "save_every_n_epochs": int(config.get("save_every_n_epochs", 1)),
         "max_data_loader_n_workers": int(config.get("max_data_loader_n_workers", 2)),
     }
+    if config["network_module"] == KREA2_LYCORIS_MODULE:
+        result.pop("network_dropout", None)
     if str(config.get("krea_training_duration_mode", "epochs")) == "steps":
         result["max_train_steps"] = int(config["max_train_steps"])
     else:
@@ -2222,7 +2229,7 @@ def build_krea2_train_config(
     if attention != "sdpa":
         result["split_attn"] = True
 
-    network_args = _split_args(config.get("network_args_custom"))
+    network_args = build_krea2_network_args(config, Path(dataset_config_path).parent / KREA2_PRESET_FILENAME)
     if network_args:
         result["network_args"] = network_args
     optimizer_args = _build_krea2_optimizer_args(config)
@@ -2258,6 +2265,11 @@ def krea2_preflight(config: dict[str, Any], require_cache: bool = True) -> dict[
 
     runtime = shared_runtime_status()
     errors.extend(runtime["errors"])
+    if config.get("krea_attention_backend") == "flash_attn":
+        from backend.training.supervisor import detect_attention_backend
+        actual, warning = detect_attention_backend("flash")
+        if actual != "flash":
+            errors.append(warning)
 
     optional_optimizer_package = _selected_optional_optimizer_package(config.get("optimizer_type"))
     if optional_optimizer_package:

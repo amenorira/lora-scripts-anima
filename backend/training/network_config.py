@@ -36,7 +36,8 @@ def extract_network_form(config: dict[str, Any], *, model_train_type: str = "ani
     result = dict(config)
     profile = result.get("model_train_type") or model_train_type
     if profile == "krea2-lora":
-        return result
+        from backend.training.krea2_network import extract_krea2_network_form
+        return extract_krea2_network_form(result)
     group = {"anima-lora": "anima", "sdxl-lora": "sdxl", "moss-image-lora": "moss_image"}.get(profile)
     if group is None:
         raise ValueError(f"Unsupported model_train_type: {profile}")

@@ -136,12 +136,20 @@ DoRA（`dora_wd`）需要应用可训练的幅度参数。当前 LyCORIS 的普�
 
 上游默认 rank/alpha 为 32，覆盖 DiT 的全部 264 个 Linear 层：主块 attention、MLP、文本融合 transformer 和投影 MLP。这里的文本融合层属于 DiT，Qwen 文本编码器仍冻结并使用缓存。调制和 RMSNorm 参数是原始张量，不是 Linear，因此不会被 LoRA 包装，无需另写排除规则。
 
-上游的长训练示例缩小到主块 attention（140 个 Linear），并建议配合更高 rank。要采用该范围，在“网络附加参数”中填写以下一行：
+Krea2 可选择原生 LoRA，或通过 LyCORIS 配置面板选择 LoKr、LoHa。三者共用“训练目标层”选项：全部 Linear（264 层）、主干 Attention（140 层）、主干 Attention + MLP（224 层）、自定义正则。全部 Linear 会覆盖通用 LyCORIS 预设遗漏的输入输出、时间投影及文本融合投影层。
+
+自定义正则每行一项，对原始 Linear 层名完整匹配；排除优先于包含。例如，包含 `blocks\.[0-9]+\.attn\..*` 选择主干注意力，包含 `.*` 并排除 `txtfusion\..*` 则去掉文本融合层。没有匹配目标时，启动前会报错。
+
+LyCORIS 面板沿用 Anima 的 factor、Full Matrix、双方分解、非平衡分解、标量、rsLoRA、DoRA、旁路模式和内核后端选项，并按算法显示适用项。Krea2 没有可训练的卷积目标，因此不提供 Conv/Tucker；LoKr/LoHa 的普通 dropout 未实现，不提供该项。LoKr 当前路径的 rank dropout 也未可靠实现，改用 module dropout；LoHa 和原生 LoRA 仍可使用 rank dropout。
+
+FP8 底模会强制 LyCORIS 使用旁路模式；当前 Krea2 FP8 路径不支持 DoRA，DoRA 也不能与旁路模式同时启用。保存或迁移配置请使用 `training.yaml`，运行目录中的目标预设由程序自动生成。
+
+旧版原生 LoRA 的“网络附加参数”仍兼容下列写法，但须将目标范围保留为“全部 Linear”；新配置建议直接选择目标范围：
 
 ```text
 exclude_patterns=['.*\.mlp\..*','first','last\.linear','tmlp\..*','txtmlp\..*','tproj\.1','txtfusion\..*']
 ```
 
-任意自定义子集可先设置 `exclude_patterns=['.*']`，再用 `include_patterns=[...]` 加回目标层。每个参数单独一行；只添加 include 规则不会自动排除默认已包含的层。
+旧版原生参数中，`include_patterns` 会加回匹配层，不会自动排除默认目标。LyCORIS 请使用目标范围和参数控件，避免将原生 LoRA 参数混入 LyCORIS。
 
 [Krea 2 upstream guide](https://github.com/kohya-ss/musubi-tuner/blob/f8a1b03794a49239a3539015075f5123d6c07d66/docs/krea2.md#lora-target-layers--loraの対象レイヤー)

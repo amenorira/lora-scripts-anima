@@ -24,6 +24,9 @@ from backend.training.core_registry import (
 from backend.training.dataset_repeat import DatasetRepeatError, apply_subset_repeats
 from backend.training.supervisor import detect_lycoris_kernel_backend
 from backend.training.metrics_config import training_metrics_environment
+from backend.training.krea2_network import (
+    KREA2_LYCORIS_MODULE, KREA2_PRESET_FILENAME, build_krea2_network_preset,
+)
 from backend.training.musubi_krea2 import (
     KREA2_CACHE_RUNNER_FILE,
     KREA2_PROFILE_ID,
@@ -159,6 +162,8 @@ async def parse_training_toml(req: TrainingTomlParseRequest):
         try:
             document = parse_training_config_text(req.content, allowed_kinds={"training", "preset"})
             form = extract_training_form(document)
+            if form.get("model_train_type") == KREA2_PROFILE_ID:
+                form = extract_network_form(form)
             validate_network_preset(form)
             return APIResponseSuccess(
                 data={
@@ -681,6 +686,15 @@ async def _create_krea2_run(config, gpu_ids, timestamp, form_snapshot, reserved_
         internal_run_dir / "log",
         sample_prompts_file,
     )
+    network_preset = None
+    network_env = {"ANIMA_ENABLE_FLASH_ATTN": "1" if config.get("krea_attention_backend") == "flash_attn" else "0"}
+    network_warning = ""
+    if config["network_module"] == KREA2_LYCORIS_MODULE:
+        network_preset = build_krea2_network_preset(config)
+        kernel, network_warning = await _settled_to_thread(
+            detect_lycoris_kernel_backend, str(config.get("lycoris_kernel_backend") or "auto")
+        )
+        network_env["LYCORIS_KERNEL_BACKEND"] = kernel
 
     AUTOSAVE_DIR.mkdir(parents=True, exist_ok=True)
     _cleanup_autosave(str(AUTOSAVE_DIR), keep=50)
@@ -698,6 +712,8 @@ async def _create_krea2_run(config, gpu_ids, timestamp, form_snapshot, reserved_
         (internal_run_dir / "config.toml").write_text(train_toml, encoding="utf-8")
         write_training_config(internal_run_dir / TRAINING_CONFIG_NAME, training_document)
         dataset_config_file.write_text(dataset_toml, encoding="utf-8")
+        if network_preset is not None:
+            (internal_run_dir / KREA2_PRESET_FILENAME).write_text(toml_writer.dumps(network_preset), encoding="utf-8")
         if sample_prompts_file is not None:
             prompts = str(config["krea_sample_prompts"]).replace("\r\n", "\n").replace("\r", "\n").rstrip()
             sample_prompts_file.write_text(prompts + "\n", encoding="utf-8")
@@ -709,7 +725,7 @@ async def _create_krea2_run(config, gpu_ids, timestamp, form_snapshot, reserved_
 
     await _settled_to_thread(_write_run_files)
 
-    return reserved_task.launch(
+    result = reserved_task.launch(
         str(toml_file),
         KREA2_TRAINER_FILE,
         gpu_ids,
@@ -719,14 +735,17 @@ async def _create_krea2_run(config, gpu_ids, timestamp, form_snapshot, reserved_
         output_base_dir=requested_output_dir,
         preview_enabled=False,
         engine_id="musubi_tuner",
-        extra_env=training_metrics_environment(config),
+        extra_env={**training_metrics_environment(config), **network_env},
         run_metadata={
             "profile_id": KREA2_PROFILE_ID,
-            "adapter_id": "musubi_lora",
+            "adapter_id": config["adapter_id"],
             "dataset_config": str(dataset_config_file),
             "sample_prompts": str(sample_prompts_file) if sample_prompts_file is not None else None,
         },
     )
+    if network_warning and result.get("status") == "success":
+        result.setdefault("data", {}).setdefault("warnings", []).append(network_warning)
+    return result
 
 
 @router.get("/training/cores")

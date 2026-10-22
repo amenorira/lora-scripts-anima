@@ -254,7 +254,7 @@ window.trainingCoreMixin = {
 
     // Keep the validated MOSS algorithm from its own draft. Krea's module
     // is musubi-specific and must never inherit an sd-scripts selection.
-    const targetMod = v === 'moss-image-lora' ? this.form.network_module : this._defaultNetworkModule(v);
+    const targetMod = ['moss-image-lora', 'krea2-lora'].includes(v) ? this.form.network_module : this._defaultNetworkModule(v);
     if (this.form.network_module !== targetMod) this.form.network_module = targetMod;
     this._syncKrea2CacheDir();
     this._captureProfileDraft(v, this.form, newDefaults);
@@ -726,7 +726,6 @@ window.trainingCoreMixin = {
     this._normalizeProfileSelectValues(this.form.model_train_type, defaults);
     // Fix incompatible network_module after merge
     if (this.form.model_train_type === 'krea2-lora') {
-      this.form.network_module = 'networks.lora_krea2';
       this._applyKrea2ModelDefaults(this.form, defaults);
     } else if (this.form.model_train_type === 'anima-lora' && this.form.network_module === 'networks.lora') {
       this.form.network_module = 'networks.lora_anima';
@@ -1324,7 +1323,7 @@ window.trainingCoreMixin = {
         defaults.dataset_cache_dir = cacheDir;
       }
       this._normalizeProfileSelectValues(trainType, defaults, warmForm);
-      if (trainType !== 'moss-image-lora') warmForm.network_module = this._defaultNetworkModule(trainType);
+      if (!['moss-image-lora', 'krea2-lora'].includes(trainType)) warmForm.network_module = this._defaultNetworkModule(trainType);
       this.form = warmForm;
       this.formDefaults = { ...defaults };
       this._activeTrainType = trainType;
@@ -1450,7 +1449,9 @@ window.trainingCoreMixin = {
   lycorisSummary() {
     if (this.form.network_module !== 'lycoris.kohya') return '';
     const algo = this.form.lycoris_algo || 'lora';
-    const preset = this.form.lycoris_preset || 'full';
+    const preset = this.form.model_train_type === 'krea2-lora'
+      ? this.t(`opt.krea_target_${this.form.krea_target_mode || 'all'}`)
+      : (this.form.lycoris_preset || 'full');
     const rank = this.form.network_dim ?? '—';
     const alpha = this.form.network_alpha ?? '—';
     // dora_wd 切换算法后可能残留 true，但实际仅 lora/loha/lokr 消费（adapter 会 pop），摘要需同门控
@@ -1508,7 +1509,7 @@ window.trainingCoreMixin = {
     const mainOnly = { key: 'network_module', neq: 'lycoris.kohya' };
     const showIf = Array.isArray(field.showIf)
       ? field.showIf.concat(mainOnly)
-      : (field.showIf ? [field.showIf, mainOnly] : field.showIf);
+      : (field.showIf ? [field.showIf, mainOnly] : (field.showIfAny ? undefined : [mainOnly]));
     const showIfAny = field.showIfAny
       ? field.showIfAny.map(group => group.concat(mainOnly))
       : field.showIfAny;
@@ -1525,6 +1526,18 @@ window.trainingCoreMixin = {
     const f = this.form;
     const algo = String(f.lycoris_algo || 'lora').toLowerCase();
     const lines = [`algo = "${algo}"`];
+    if (f.model_train_type === 'krea2-lora') {
+      lines.push(`krea_target_mode = ${JSON.stringify(f.krea_target_mode || 'all')}`);
+      const fields = (window.getVisibleSections('krea2-lora') || []).flatMap(s => s.fields || []);
+      for (const field of fields) {
+        if (!this._fieldShowIfMet(field) || ['lycoris_algo', 'network_args_custom'].includes(field.key)) continue;
+        if (!field.lycorisGroup && !['rank_dropout', 'module_dropout', 'krea_target_include', 'krea_target_exclude'].includes(field.key)) continue;
+        const value = f[field.key];
+        if (value === undefined || value === null || value === '') continue;
+        lines.push(`${field.networkArg || field.key} = ${JSON.stringify(value)}`);
+      }
+      return lines.join('\n');
+    }
     const preset = String(f.lycoris_preset || 'full');
     if (preset !== 'full') lines.push(`preset = "${preset}"`);
     if (f.lycoris_preset === 'attn-mlp' && f.lycoris_anima_sd_default === true) {
@@ -1590,7 +1603,8 @@ window.trainingCoreMixin = {
     if (f.train_llm_adapter) notes.push(this.t('field.lycorisNoteTrainLlmAdapter'));
     // Full Matrix 的自动触发条件取决于每一层经过 factor 分解后的尺寸，
     // 前端没有完整模型结构时不能用固定 rank（例如 16）做静态判定。
-    if (f.lycoris_algo === 'lokr' && Number(f.network_dim || 0) > 0) notes.push(this.t('field.lycorisNoteDimFullMatrix'));
+    if (f.lycoris_algo === 'lokr' && Number(f.network_dim || 0) > 0) notes.push(this.t(
+      f.model_train_type === 'krea2-lora' ? 'field.krea_lokr_rankHint' : 'field.lycorisNoteDimFullMatrix'));
     return notes.join('\n');
   },
 
@@ -2319,6 +2333,9 @@ window.trainingCoreMixin = {
       case 'attn_mode':
         return `<div x-show="faStatus && !faStatus.installed && form.attn_mode==='flash'" x-cloak class="field-hint field-hint-warn">${this.t('environment.envHintFlashNotInstalled')}</div>`
           + `<div x-show="xfStatus && !xfStatus.installed && form.attn_mode==='xformers'" x-cloak class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')}</div>`;
+      case 'krea_attention_backend':
+        return `<div x-show="faStatus && !faStatus.installed && form.krea_attention_backend==='flash_attn'" x-cloak class="field-hint field-hint-warn">${this.t('environment.envHintFlashNotInstalled')}</div>`
+          + `<div x-show="xfStatus && !xfStatus.installed && form.krea_attention_backend==='xformers'" x-cloak class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')}</div>`;
       case 'xformers':
         return `<div x-show="xfStatus && !xfStatus.installed && form.xformers" class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')}</div>`;
       case 'compile':
@@ -3477,6 +3494,8 @@ window.trainingCoreMixin = {
 
   _enforceSharedTrainingUiConstraints() {
     if (this.form.model_train_type === 'krea2-lora') {
+      if (this.form.network_module === 'lycoris.kohya' && this.form.fp8_base) this.form.bypass_mode = true;
+      else if (this.form.network_module === 'lycoris.kohya' && this.form.dora_wd) this.form.bypass_mode = false;
       if (this.form.block_swap_h2d_only || this.form.gradient_checkpointing_cpu_offload) {
         this.form.gradient_checkpointing = true;
       }
@@ -4014,7 +4033,7 @@ window.trainingCoreMixin = {
     }
     if (key === 'attn_mode' && value === 'xformers') this.form.split_attn = true;
     if (key === 'blocks_to_swap' && Number(value || 0) === 0
-        && ['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type)) {
+        && ['anima-lora', 'moss-image-lora', 'krea2-lora'].includes(this.form.model_train_type)) {
       this.form.block_swap_h2d_only = false;
     }
     if (this.form.model_train_type === 'sdxl-lora' && value === true && ['xformers', 'sdpa'].includes(key)) {
@@ -4338,11 +4357,22 @@ window.trainingCoreMixin = {
 
   _kreaOptionErrors() {
     if (this.form.model_train_type !== 'krea2-lora') return {};
+    const errors = {};
+    if (this.form.network_module === 'lycoris.kohya' && this.form.fp8_base && this.form.dora_wd) {
+      errors.dora_wd = this.t('field.krea_dora_fp8Conflict');
+    }
+    if (this.form.krea_target_mode === 'custom' && !String(this.form.krea_target_include || '').trim()) {
+      errors.krea_target_include = this.t('common.fieldRequired');
+    }
+    if (this.form.network_module === 'lycoris.kohya' && this.form.lycoris_algo === 'lokr'
+      && (Number(this.form.lokr_factor) === 0 || Number(this.form.lokr_factor) < -1)) {
+      errors.lokr_factor = this.t('field.krea_factorRangeError');
+    }
     if (this.form.enable_krea_samples && String(this.form.turbo_dit || '').trim()
         && Number(this.form.blocks_to_swap || 0) > 0) {
-      return { turbo_dit: this.t('field.kreaTurboBlockSwapConflict') };
+      errors.turbo_dit = this.t('field.kreaTurboBlockSwapConflict');
     }
-    return {};
+    return errors;
   },
 
   _mossOptionErrors() {

@@ -173,6 +173,14 @@ ADAPTERS: dict[str, TrainingAdapter] = {
         description="Krea 2 LoRA network implemented by musubi-tuner.",
         network_module="networks.lora_krea2",
     ),
+    "musubi_lycoris": TrainingAdapter(
+        id="musubi_lycoris",
+        host_engine_id="musubi_tuner",
+        label="Krea 2 LyCORIS",
+        description="Krea 2 LoKr / LoHa through musubi-tuner's LyCORIS compatibility entry.",
+        network_module="lycoris.kohya",
+        mounted=True,
+    ),
 }
 
 
@@ -236,11 +244,12 @@ def resolve_training_profile(config: dict[str, Any]) -> TrainingProfile:
             )
         adapter_id = "lycoris"
     if profile.id == "krea2-lora":
-        if requested_adapter and requested_adapter != "musubi_lora":
+        inferred_adapter = "musubi_lycoris" if config.get("network_module") == "lycoris.kohya" else "musubi_lora"
+        if requested_adapter and requested_adapter not in {"musubi_lora", "musubi_lycoris"}:
             raise TrainingProfileError(
-                "Krea 2 requires the musubi LoRA adapter / Krea 2 必须使用 musubi LoRA 适配器核心"
+                "Krea 2 requires a musubi adapter / Krea 2 必须使用 musubi 适配器核心"
             )
-        adapter_id = "musubi_lora"
+        adapter_id = requested_adapter or inferred_adapter
 
     adapter = get_adapter(adapter_id)
     if adapter.host_engine_id != profile.engine_id:
@@ -303,7 +312,7 @@ def profile_payload() -> dict[str, Any]:
     for adapter in ADAPTERS.values():
         item = asdict(adapter)
         item["available"] = engine_availability[adapter.host_engine_id]
-        if adapter.id == "lycoris":
+        if adapter.id in {"lycoris", "musubi_lycoris"}:
             item["version"] = _vendor_version("lycoris")
         adapters.append(item)
 
