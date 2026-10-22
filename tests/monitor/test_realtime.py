@@ -12,6 +12,28 @@ from backend.tasks import TaskManager
 
 
 class RealtimeHubTests(unittest.IsolatedAsyncioTestCase):
+    async def test_terminal_topics_expire_without_resetting_reused_sequences(self):
+        hub = RealtimeHub()
+        await hub.publish("task:old", "task.result", {"status": "FINISHED"})
+        await hub.publish("task:active", "task.status", {"status": "RUNNING"})
+        with patch("backend.core.realtime.time.time", return_value=10**12):
+            await hub.prune()
+        self.assertNotIn("task:old", await hub.cursors())
+        self.assertIn("task:active", await hub.cursors())
+        queue, replay, resync = await hub.subscribe("task:old", 1)
+        self.assertTrue(resync)
+        self.assertEqual(replay, [])
+        event = await hub.publish("task:old", "task.status", {"status": "RUNNING"})
+        self.assertGreater(event["seq"], 1)
+
+    async def test_terminal_count_and_global_history_budget_are_bounded(self):
+        hub = RealtimeHub()
+        with patch("backend.core.realtime._MAX_TERMINAL_TOPICS", 4), patch("backend.core.realtime._MAX_TOTAL_HISTORY_BYTES", 1024):
+            for index in range(20):
+                await hub.publish(f"task:{index}", "task.result", {"status": "FINISHED", "log": "x" * 500})
+            self.assertLessEqual(len(await hub.cursors()), 4)
+            self.assertLessEqual(sum(hub._history_bytes.values()), 1024)
+
     async def test_slow_subscriber_queue_is_bounded_and_keeps_newest_events(self):
         hub = RealtimeHub()
         queue, _, _ = await hub.subscribe("hardware")

@@ -366,6 +366,9 @@ window.realtimeMixin = {
     if (!this._realtimeCursors) this._realtimeCursors = {};
     const preserveSubscribed = !!(options && options.preserveSubscribedCursors);
     const subscribed = this._realtimeTopics || new Set();
+    for (const topic of Object.keys(this._realtimeCursors)) {
+      if (!subscribed.has(topic) && !Object.prototype.hasOwnProperty.call(snapshotCursors, topic)) delete this._realtimeCursors[topic];
+    }
     for (const [topic, seq] of Object.entries(snapshotCursors || {})) {
       // A dashboard detail snapshot is fetched while task replay is already
       // queued on the WebSocket. Advancing that subscribed topic here would

@@ -32,3 +32,12 @@ test('monitor detail snapshot does not skip queued task replay', () => {
   app._applyRealtimeSnapshotCursors({ 'task:train-1': 40, server: 8, hardware: 7 }, { preserveSubscribedCursors: true });
   assert.deepEqual(JSON.parse(JSON.stringify(app._realtimeCursors)), { 'task:train-1': 10, server: 3, hardware: 7 });
 });
+
+test('snapshot drops expired cursors while preserving subscribed replay positions', () => {
+  const { window } = loadFrontend('realtime');
+  const app = Object.assign({}, window.realtimeMixin, {
+    _realtimeCursors: { 'task:old': 3, 'task:live': 8 }, _realtimeTopics: new Set(['task:live']),
+  });
+  app._applyRealtimeSnapshotCursors({ server: 2 }, { preserveSubscribedCursors: true });
+  assert.deepEqual(JSON.parse(JSON.stringify(app._realtimeCursors)), { 'task:live': 8, server: 2 });
+});
