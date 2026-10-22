@@ -11,12 +11,9 @@ import time as _time
 _nvml_ready = False
 
 _cpu_name_cache: str | None = None
-_gpu_sample: dict | None = None
-_gpu_sample_lock = threading.Lock()
-_sys_sample: dict | None = None
-_sys_sample_lock = threading.Lock()
+_samples: dict[str, tuple[float, dict | None]] = {}
+_sample_lock = threading.Lock()
 _SAMPLE_TTL = 5.0
-_sample_started = False
 
 
 def _ensure_nvml() -> bool:
@@ -33,29 +30,16 @@ def _ensure_nvml() -> bool:
         return False
 
 
-def _start_sampler():
-    global _sample_started
-    if _sample_started:
-        return
-    _sample_started = True
-
-    def _sample():
-        global _gpu_sample, _sys_sample
-        while True:
-            try:
-                with _gpu_sample_lock:
-                    _gpu_sample = _gpu_info_raw()
-            except Exception:
-                pass
-            try:
-                with _sys_sample_lock:
-                    _sys_sample = _sys_info_raw()
-            except Exception:
-                pass
-            _time.sleep(_SAMPLE_TTL)
-
-    t = threading.Thread(target=_sample, daemon=True)
-    t.start()
+def _read_sample(kind, reader, force):
+    """Coalesce concurrent consumers; sample only while telemetry is requested."""
+    with _sample_lock:
+        now = _time.monotonic()
+        cached = _samples.get(kind)
+        ttl = 1.0 if force else _SAMPLE_TTL
+        if cached is None or now - cached[0] >= ttl:
+            cached = (now, reader())
+            _samples[kind] = cached
+        return cached[1]
 
 
 def _gpu_info_raw() -> dict | None:
@@ -106,23 +90,8 @@ def _gpu_info_raw() -> dict | None:
 
 
 def gpu_info(force: bool = False) -> dict | None:
-    """Return GPU telemetry.
-
-    ``force=True`` is used only while a visible realtime hardware subscriber
-    exists.  It makes the monitor's one-second cadence a real sample cadence,
-    rather than repeatedly broadcasting a five-second cached value.
-    """
-    global _gpu_sample
-    _start_sampler()
-    if force:
-        sample = _gpu_info_raw()
-        with _gpu_sample_lock:
-            _gpu_sample = sample
-        return sample
-    with _gpu_sample_lock:
-        if _gpu_sample is not None:
-            return _gpu_sample
-    return _gpu_info_raw()
+    """Return shared telemetry; force requests one-second rather than five-second freshness."""
+    return _read_sample("gpu", _gpu_info_raw, force)
 
 
 def _get_cpu_name() -> str:
@@ -175,14 +144,4 @@ def _sys_info_raw() -> dict | None:
 
 def system_info(force: bool = False) -> dict | None:
     """Return system telemetry; see :func:`gpu_info` for ``force`` semantics."""
-    global _sys_sample
-    _start_sampler()
-    if force:
-        sample = _sys_info_raw()
-        with _sys_sample_lock:
-            _sys_sample = sample
-        return sample
-    with _sys_sample_lock:
-        if _sys_sample is not None:
-            return _sys_sample
-    return _sys_info_raw()
+    return _read_sample("system", _sys_info_raw, force)

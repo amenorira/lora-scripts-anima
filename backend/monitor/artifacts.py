@@ -295,25 +295,6 @@ def parse_checkpoint(name: str) -> dict | None:
 _LOSS_EPOCH_AVG = "loss/epoch_average"
 
 
-def _find_nearest_point(points: list[dict], target_step: int) -> float | None:
-    """在已按 step 升序的 points 中找离 target_step 最近的点的 value。"""
-    if not points:
-        return None
-    lo, hi = 0, len(points) - 1
-    # 二分找左边界
-    while lo < hi:
-        mid = (lo + hi) >> 1
-        if points[mid]["step"] < target_step:
-            lo = mid + 1
-        else:
-            hi = mid
-    # lo 是首个 step >= target 的点；比较 lo 与 lo-1 谁更近
-    best_idx = lo
-    if lo > 0 and abs(points[lo - 1]["step"] - target_step) <= abs(points[lo]["step"] - target_step):
-        best_idx = lo - 1
-    return points[best_idx]["value"]
-
-
 def enrich_model_files_with_loss(files: list[dict], tb_series: list[dict], run_dir: str = "") -> list[dict]:
     """给 list_output_files 的结果中 model 类文件补充对应 loss。
     

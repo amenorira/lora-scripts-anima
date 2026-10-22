@@ -242,7 +242,10 @@ async def tag_autocomplete(
 
 @router.post("/tageditor/filter")
 async def filter_images(data: dict):
-    """按标签过滤图片"""
+    """Legacy filter: exact tag case, tag-only search and simultaneous ALL/ANY groups.
+
+    These semantics differ from session search; keep this public compatibility route.
+    """
     dir_path = data.get("dir", "")
     if not dir_path:
         return {"status": "error", "message": "Dataset directory path required / 请指定数据集目录路径"}
@@ -302,8 +305,7 @@ async def save_image_tags(data: dict):
 async def save_all_tags(data: dict):
     """批量保存所有修改过的标签
 
-    前端约定在 payload 里附带 dir（数据集目录），用于路径归属校验（A11）。
-    未附带时回退为不校验以保持向后兼容。
+    payload 必须附带有效的 dir（数据集目录），用于路径归属校验。
     """
     images = data.get("images", [])
     if not images:

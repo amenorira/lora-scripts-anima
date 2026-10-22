@@ -136,12 +136,20 @@ DoRA（`dora_wd`）は学習可能な大きさを重みに適用する必要が�
 
 上流の既定値は rank/alpha 32 で、主ブロックの attention・MLP・テキスト融合 transformer・投影 MLP を含む DiT の全 264 個の Linear 層が対象です。テキスト融合は DiT 内の処理で、Qwen テキストエンコーダーは固定され、キャッシュを使います。変調と RMSNorm のパラメータは Linear ではなく生のテンソルなので、LoRA の対象外であり、除外指定は不要です。
 
-上流の長期学習例では、主ブロックの attention（140 個の Linear）に絞り、より高い rank を提案しています。この範囲を使うには「ネットワーク追加引数」に次の 1 行を入力します。
+Krea2 では標準 LoRA または LyCORIS の LoKr / LoHa を選択できます。対象範囲は共通で、全 Linear（264 層）、主幹 Attention（140 層）、主幹 Attention + MLP（224 層）、カスタム正規表現を選べます。全 Linear は汎用 LyCORIS プリセットに含まれない入出力・時間投影・テキスト融合投影も含みます。
+
+カスタム正規表現は 1 行に 1 つ、元の Linear 層名に完全一致させます。除外を優先します。`blocks\.[0-9]+\.attn\..*` で主幹 Attention を選択できます。対象が空の場合は開始前にエラーとなります。
+
+LyCORIS パネルは Anima と同様の factor、Full Matrix、両側分解、非対称分解、scalar、rsLoRA、DoRA、バイパス、カーネル設定を使い、適用可能な項目のみ表示します。Conv/Tucker と未実装の通常 dropout は提供しません。現在の LoKr の rank dropout は信頼できないため module dropout を使用してください。LoHa と標準 LoRA では rank dropout を使用できます。
+
+FP8 ではバイパスが自動的に有効になります。DoRA は FP8 とバイパスを両方無効にする必要があります。設定の保存・移行には `training.yaml` を使います。実行時の対象プリセットは自動生成されます。
+
+従来の標準 LoRA の追加引数は「全 Linear」で引き続き使用できます。新しい設定では対象範囲の選択を推奨します。
 
 ```text
 exclude_patterns=['.*\.mlp\..*','first','last\.linear','tmlp\..*','txtmlp\..*','tproj\.1','txtfusion\..*']
 ```
 
-任意の部分集合には `exclude_patterns=['.*']` で全体を外してから、`include_patterns=[...]` で対象を戻します。各パラメータは別の行に指定します。include の追加だけでは、既定で含まれる層は除外されません。
+従来の標準引数の `include_patterns` は対象を戻しますが、既定の対象を除外しません。LyCORIS では対象範囲と対応する設定項目を使用してください。
 
 [Krea 2 upstream guide](https://github.com/kohya-ss/musubi-tuner/blob/f8a1b03794a49239a3539015075f5123d6c07d66/docs/krea2.md#lora-target-layers--loraの対象レイヤー)

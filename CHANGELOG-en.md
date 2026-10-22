@@ -4,7 +4,36 @@
 
 All notable changes to this project are documented in this file.
 
-## Unreleased
+## v26.1022.13b14 - 2026-10-22
+
+This release reorganizes the **AI captioning workspaces**, adds **LyCORIS LoKr, LoHa, and training target selection for Krea 2**, reduces background overhead in the training interface and live monitoring, and fixes configuration import, tag saving, and task recovery issues.
+
+### AI Captioning and Tag Editing
+
+- Split AI captioning into Batch annotation, Single image, and Annotation overview workspaces. Single-image mode supports uploads, drag and drop, and pasted images. MOSS results are preview-only without writing captions or JSON, and can run alongside training or regularization image generation. Local Tagger batch and single-image entries are also available.
+- Add a directory annotation overview with file-status filters, filename search, 60-image thumbnail pages, and read-only details, with links to open specific images in the tag editor.
+- Improve existing-caption references and JSON reuse. A blank reference extension defaults to the matching `.txt` file, and the original reference text is preserved in the result JSON. Distinguish regeneration from JSON export and show affected file counts before overwriting.
+- Make preflight follow the actual generation, reuse, and skip policy, detecting conflicting output names and damaged JSON before execution. Fix state recovery after retries, workspace switches, page reloads, and task cancellation.
+- Reorganize configuration sections, overview cards, and detail layouts for narrow desktop windows and higher zoom levels. Fix controls shifting when status markers appear, and update Chinese, English, and Japanese copy.
+
+### Krea 2 Training
+
+- Add **LyCORIS LoKr and LoHa** with dedicated parameter panels, configuration saving and migration, FlashAttention installation detection, and LyCORIS kernel backend options.
+- Native LoRA, LoKr, and LoHa can target all Linear layers, backbone Attention, backbone Attention + MLP, or custom layers selected with regular expressions.
+- Improve compatibility checks for FP8, DoRA, bypass mode, and dropout, reporting unsupported combinations before training starts.
+- Fix optimizer parameters being lost during import. Strengthen validation of AdaFactor boolean options and warmup combinations so training behavior matches the configuration.
+
+### Performance and Reliability
+
+- Mount training forms on demand and release old bindings when switching models, while retaining each model's independent parameter draft to reduce background reactive work.
+- Read training scalars incrementally, share hardware samples, and streamline status polling. Bound historical event storage and reduce repeated scans and browser storage writes.
+- Reuse file status in the annotation overview and dataset scans for Krea 2, reducing repeated reads during pagination, automatic refresh, and cache preflight checks.
+- Fix concurrent overwrite risks when saving tags. Preserve undo history and recovery drafts if history archiving fails, and report rollback failures explicitly.
+- Fix local tagging getting stuck after write failures or stop requests, saving failures with long filenames, incorrect cross-page editing links for images with the same name, and YAML configuration import depending on key order.
+
+**Usage note**: Save or migrate Krea 2 LyCORIS configurations using `training.yaml`. FP8 base models force bypass mode, which currently cannot be combined with DoRA.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1021.0083e...v26.1022.13b14)
 
 ## v26.1021.0083e - 2026-10-21
 

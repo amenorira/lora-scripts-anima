@@ -27,4 +27,10 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-module.exports = { ROOT, readRepo, readFrontend, loadFrontend, loadGlobalFrontend, response, deferred };
+function composeMixins(...sources) {
+  const app = {};
+  for (const source of sources) Object.defineProperties(app,Object.getOwnPropertyDescriptors(source));
+  return app;
+}
+
+module.exports = { ROOT, readRepo, readFrontend, loadFrontend, loadGlobalFrontend, response, deferred, composeMixins };

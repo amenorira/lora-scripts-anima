@@ -20,7 +20,13 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from backend.training.core_registry import MUSUBI_TUNER_DIR
+from backend.training.shared_fields import shared_training_field
+from backend.training.krea2_network import (
+    KREA2_NETWORK_MODULE, KREA2_LYCORIS_MODULE, KREA2_NETWORK_FIELDS,
+    KREA2_PRESET_FILENAME, build_krea2_network_args, validate_krea2_network,
+)
 from backend.training.metrics_config import training_metric_fields
+from backend.training.optimizer_contracts import FormArgument, collect_optimizer_args, extract_optimizer_form
 from backend.training.musubi_runtime import MUSUBI_RUNTIME_PACKAGES, shared_runtime_status
 from backend.training.optimizer_metadata import (
     KREA2_OPTIMIZER_AUTO_VALUES,
@@ -40,7 +46,6 @@ from backend.training.optimizer_metadata import (
 KREA2_TRAINER_FILE = "./vendor/musubi-tuner/krea2_train_network.py"
 KREA2_CACHE_RUNNER_FILE = "./backend/training/krea2_cache_runner.py"
 KREA2_PROFILE_ID = "krea2-lora"
-KREA2_NETWORK_MODULE = "networks.lora_krea2"
 KREA2_AUTO_CACHE_DIR_NAME = ".krea2-cache"
 KREA2_CACHE_MANIFEST_NAME = ".krea2-cache.json"
 _LEGACY_KREA2_CACHE_MANIFEST_NAMES = (".anima-krea2-cache.json",)
@@ -48,6 +53,7 @@ _LEGACY_KREA2_CACHE_MANIFEST_NAMES = (".anima-krea2-cache.json",)
 _IMAGE_EXTENSIONS = {".bmp", ".jpeg", ".jpg", ".png", ".webp", ".avif"}
 _ATTENTION_FLAGS = {
     "sdpa": "sdpa",
+    "flash_attn": "flash_attn",
     "sage_attn": "sage_attn",
     "xformers": "xformers",
 }
@@ -129,6 +135,19 @@ _KREA2_HIDDEN_LEGACY_OPTIMIZERS = frozenset(
     {"torch.optim.Adam", "torch.optim.RAdam", "torch.optim.NAdam", "torch.optim.SGD"}
 )
 _KREA2_CURATED_OPTIMIZERS = _KREA2_VISIBLE_OPTIMIZERS | _KREA2_HIDDEN_LEGACY_OPTIMIZERS
+_KREA2_OPTIMIZER_ARGUMENTS = {
+    "krea_optimizer_weight_decay": FormArgument("weight_decay", _KREA2_CURATED_OPTIMIZERS),
+    "krea_optimizer_betas": FormArgument("betas", _KREA2_BETA_OPTIMIZERS),
+    "krea_optimizer_eps": FormArgument("eps", _KREA2_EPS_OPTIMIZERS),
+    "krea_prodigy_d_coef": FormArgument("d_coef", _KREA2_PRODIGY_OPTIMIZERS),
+    "krea_prodigy_d0": FormArgument("d0", _KREA2_PRODIGY_OPTIMIZERS),
+    "krea_prodigyplus_use_stableadamw": FormArgument("use_stableadamw", {_KREA2_PRODIGYPLUS_OPTIMIZER}),
+    "krea_schedulefree_warmup_steps": FormArgument("warmup_steps", _KREA2_SCHEDULEFREE_WARMUP_OPTIMIZERS),
+    **{
+        f"krea_adafactor_{key}": FormArgument(key, {"AdaFactor"})
+        for key in ("relative_step", "scale_parameter", "warmup_init", "clip_threshold", "eps")
+    },
+}
 _KREA2_OPTIONAL_OPTIMIZER_PACKAGES = {
     "pytorch_optimizer.": "pytorch-optimizer",
     "prodigyopt.": "prodigyopt",
@@ -222,24 +241,9 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "required": True,
         "profiles": [KREA2_PROFILE_ID],
     },
-    {
-        "key": "enable_bucket",
-        "type": "toggle",
-        "default": True,
-        "section": "model",
-        "desc_key": "field.enable_bucket",
-        "hint_key": "field.enable_bucketHint",
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "bucket_no_upscale",
-        "type": "toggle",
-        "default": True,
-        "section": "model",
-        "desc_key": "field.bucket_no_upscale",
-        "hint_key": "field.bucket_no_upscaleHint",
-        "profiles": [KREA2_PROFILE_ID],
-    },
+    shared_training_field('enable_bucket', default=True, profiles=[KREA2_PROFILE_ID]),
+    # The cache fingerprint includes this flag even without buckets. Keep its value in the UI payload.
+    shared_training_field('bucket_no_upscale', default=True, show_if=None, profiles=[KREA2_PROFILE_ID]),
     {
         "key": "krea_num_repeats",
         "type": "number",
@@ -257,42 +261,21 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": KREA2_NETWORK_MODULE,
         "section": "network",
         "desc_key": "field.network_module",
-        "options": [{"v": KREA2_NETWORK_MODULE, "l": KREA2_NETWORK_MODULE}],
+        "options": [
+            {"v": KREA2_NETWORK_MODULE, "l": "LoRA", "dk": "opt.krea_network_module_lora"},
+            {"v": KREA2_LYCORIS_MODULE, "l": "LyCORIS (LoKr / LoHa)", "dk": "opt.krea_network_module_lycoris"},
+        ],
         "required": True,
         "profiles": [KREA2_PROFILE_ID],
     },
-    {
-        "key": "network_dim",
-        "type": "number",
-        "default": 32,
-        "section": "network",
-        "desc_key": "field.network_dim",
-        "min": 1,
-        "step": 1,
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "network_alpha",
-        "type": "number",
-        "default": 32,
-        "section": "network",
-        "desc_key": "field.network_alpha",
-        "min": 1,
-        "step": 1,
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "network_dropout",
-        "type": "number",
-        "default": 0,
-        "section": "network",
-        "desc_key": "field.network_dropout",
-        "hint_key": "field.network_dropoutHint",
-        "min": 0,
-        "max": 1,
-        "step": 0.01,
-        "profiles": [KREA2_PROFILE_ID],
-    },
+    shared_training_field('network_dim', default=32, profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('network_alpha', default=32, profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('network_dropout',
+        default=0,
+        show_if={"key": "network_module", "eq": KREA2_NETWORK_MODULE},
+        profiles=[KREA2_PROFILE_ID],
+    ),
+    *KREA2_NETWORK_FIELDS,
     {
         "key": "network_args_custom",
         "type": "textarea",
@@ -311,8 +294,8 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "training",
         "desc_key": "field.krea_training_duration_mode",
         "options": [
-            {"v": "epochs", "l": "epochs"},
-            {"v": "steps", "l": "steps"},
+            {"v": "epochs", "l": "epochs", "dk": "opt.krea_training_duration_epochs"},
+            {"v": "steps", "l": "steps", "dk": "opt.krea_training_duration_steps"},
         ],
         "profiles": [KREA2_PROFILE_ID],
     },
@@ -338,37 +321,9 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "show_if": {"key": "krea_training_duration_mode", "eq": "steps"},
         "profiles": [KREA2_PROFILE_ID],
     },
-    {
-        "key": "train_batch_size",
-        "type": "number",
-        "default": 1,
-        "section": "training",
-        "desc_key": "field.train_batch_size",
-        "hint_key": "field.train_batch_sizeHint",
-        "min": 1,
-        "step": 1,
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "gradient_accumulation_steps",
-        "type": "number",
-        "default": 1,
-        "section": "training",
-        "desc_key": "field.gradient_accumulation_steps",
-        "hint_key": "field.gradient_accumulation_stepsHint",
-        "min": 1,
-        "step": 1,
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "gradient_checkpointing",
-        "type": "toggle",
-        "default": True,
-        "section": "training",
-        "desc_key": "field.gradient_checkpointing",
-        "hint_key": "field.gradient_checkpointingHint",
-        "profiles": [KREA2_PROFILE_ID],
-    },
+    shared_training_field('train_batch_size', default=1, step=1, profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('gradient_accumulation_steps', default=1, step=1, profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('gradient_checkpointing', default=True, profiles=[KREA2_PROFILE_ID]),
     {
         "key": "gradient_checkpointing_cpu_offload",
         "type": "toggle",
@@ -395,29 +350,8 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "auto_value": KREA2_OPTIMIZER_AUTO_VALUES["learning_rate"],
         "profiles": [KREA2_PROFILE_ID],
     },
-    {
-        "key": "seed",
-        "type": "number",
-        "default": 42,
-        "section": "training",
-        "desc_key": "field.seed",
-        "hint_key": "field.seedHint",
-        "step": 1,
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "mixed_precision",
-        "type": "select",
-        "default": "bf16",
-        "section": "training",
-        "desc_key": "field.mixed_precision",
-        "options": [
-            {"v": "bf16", "l": "bf16"},
-            {"v": "fp16", "l": "fp16"},
-            {"v": "no", "l": "no"},
-        ],
-        "profiles": [KREA2_PROFILE_ID],
-    },
+    shared_training_field('seed', default=42, step=1, profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('mixed_precision', default="bf16", profiles=[KREA2_PROFILE_ID]),
     {
         "key": "timestep_sampling",
         "type": "select",
@@ -858,6 +792,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "desc_key": "field.krea_attention_backend",
         "options": [
             {"v": "sdpa", "l": "SDPA", "dk": "opt.krea_attention_sdpa"},
+            {"v": "flash_attn", "l": "FlashAttention", "dk": "opt.krea_attention_flash_attn"},
             {"v": "sage_attn", "l": "SageAttention", "dk": "opt.krea_attention_sage_attn"},
             {"v": "xformers", "l": "xFormers", "dk": "opt.krea_attention_xformers"},
         ],
@@ -895,21 +830,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "show_if": {"key": "blocks_to_swap", "neq": 0},
         "profiles": [KREA2_PROFILE_ID],
     },
-    {
-        "key": "block_swap_ring_size",
-        "type": "number",
-        "default": 2,
-        "section": "performance",
-        "desc_key": "field.krea_block_swap_ring_size",
-        "hint_key": "field.krea_block_swap_ring_sizeHint",
-        "min": 1,
-        "step": 1,
-        "show_if": [
-            {"key": "blocks_to_swap", "neq": 0},
-            {"key": "block_swap_h2d_only", "eq": True},
-        ],
-        "profiles": [KREA2_PROFILE_ID],
-    },
+    shared_training_field('block_swap_ring_size', default=2, profiles=[KREA2_PROFILE_ID]),
     {
         "key": "fp8_base",
         "type": "toggle",
@@ -928,105 +849,15 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "hint_key": "field.krea_compileHint",
         "profiles": [KREA2_PROFILE_ID],
     },
-    {
-        "key": "compile_backend",
-        "type": "select",
-        "default": "inductor",
-        "section": "performance",
-        "desc_key": "field.compile_backend",
-        "show_if": {"key": "compile", "eq": True},
-        "options": [
-            {"v": "inductor", "l": "inductor"},
-            {"v": "eager", "l": "eager"},
-            {"v": "cudagraphs", "l": "cudagraphs"},
-        ],
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "compile_mode",
-        "type": "select",
-        "default": "default",
-        "section": "performance",
-        "desc_key": "field.compile_mode",
-        "show_if": {"key": "compile", "eq": True},
-        "options": [
-            {"v": "default", "l": "default"},
-            {"v": "reduce-overhead", "l": "reduce-overhead"},
-            {"v": "max-autotune", "l": "max-autotune"},
-            {"v": "max-autotune-no-cudagraphs", "l": "max-autotune-no-cudagraphs"},
-        ],
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "compile_dynamic",
-        "type": "select",
-        "default": "auto",
-        "section": "performance",
-        "desc_key": "field.compile_dynamic",
-        "show_if": {"key": "compile", "eq": True},
-        "options": [
-            {"v": "auto", "l": "auto"},
-            {"v": "true", "l": "true"},
-            {"v": "false", "l": "false"},
-        ],
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "compile_fullgraph",
-        "type": "toggle",
-        "default": False,
-        "section": "performance",
-        "desc_key": "field.compile_fullgraph",
-        "show_if": {"key": "compile", "eq": True},
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "compile_cache_size_limit",
-        "type": "number",
-        "default": "",
-        "section": "performance",
-        "desc_key": "field.compile_cache_size_limit",
-        "min": 1,
-        "step": 1,
-        "show_if": {"key": "compile", "eq": True},
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "persistent_data_loader_workers",
-        "type": "toggle",
-        "default": True,
-        "section": "performance",
-        "desc_key": "field.persistent_data_loader_workers",
-        "hint_key": "field.persistent_data_loader_workersHint",
-        "readonly_if": {"key": "max_data_loader_n_workers", "eq": 0, "reason_key": "field.persistent_data_loader_workersLocked"},
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "max_data_loader_n_workers",
-        "type": "number",
-        "default": 2,
-        "section": "performance",
-        "desc_key": "field.max_data_loader_n_workers",
-        "min": 0,
-        "step": 1,
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "cuda_allow_tf32",
-        "type": "toggle",
-        "default": False,
-        "section": "performance",
-        "desc_key": "field.cuda_allow_tf32",
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "cuda_cudnn_benchmark",
-        "type": "toggle",
-        "default": False,
-        "section": "performance",
-        "desc_key": "field.cuda_cudnn_benchmark",
-        "profiles": [KREA2_PROFILE_ID],
-    },
+    shared_training_field('compile_backend', default="inductor", profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('compile_mode', default="default", profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('compile_dynamic', default="auto", profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('compile_fullgraph', default=False, profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('compile_cache_size_limit', default="", min=1, step=1, profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('persistent_data_loader_workers', default=True, profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('max_data_loader_n_workers', default=2, profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('cuda_allow_tf32', default=False, profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('cuda_cudnn_benchmark', default=False, profiles=[KREA2_PROFILE_ID]),
     {
         "key": "text_cache_batch_size",
         "type": "number",
@@ -1038,116 +869,26 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "step": 1,
         "profiles": [KREA2_PROFILE_ID],
     },
-    {
-        "key": "output_name",
-        "type": "text",
-        "default": "krea2_lora",
-        "section": "save",
-        "desc_key": "field.output_name",
-        "required": True,
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "output_dir",
-        "type": "text",
-        "default": "./output",
-        "section": "save",
-        "desc_key": "field.output_dir",
-        "role": "file-folder",
-        "required": True,
-        "profiles": [KREA2_PROFILE_ID],
-    },
+    shared_training_field('output_name', default="krea2_lora", profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('output_dir', default="./output", profiles=[KREA2_PROFILE_ID]),
     {
         "key": "save_model_as",
         "type": "select",
         "default": "safetensors",
         "section": "save",
         "desc_key": "field.save_model_as",
-        "options": [{"v": "safetensors", "l": "safetensors"}],
+        "options": [{"v": "safetensors", "l": "safetensors", "dk": "opt.save_model_as_safetensors"}],
         "profiles": [KREA2_PROFILE_ID],
     },
-    {
-        "key": "save_precision",
-        "type": "select",
-        "default": "bf16",
-        "section": "save",
-        "desc_key": "field.save_precision",
-        "options": [
-            {"v": "bf16", "l": "bf16"},
-            {"v": "fp16", "l": "fp16"},
-            {"v": "float", "l": "float"},
-        ],
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "save_every_n_epochs",
-        "type": "number",
-        "default": 1,
-        "section": "save",
-        "desc_key": "field.save_every_n_epochs",
-        "min": 1,
-        "step": 1,
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "save_every_n_steps",
-        "type": "number",
-        "default": "",
-        "section": "save",
-        "desc_key": "field.save_every_n_steps",
-        "min": 1,
-        "step": 1,
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "save_last_n_epochs",
-        "type": "number",
-        "default": "",
-        "section": "save",
-        "desc_key": "field.save_last_n_epochs",
-        "min": 1,
-        "step": 1,
-        "profiles": [KREA2_PROFILE_ID],
-    },
+    shared_training_field('save_precision', default="bf16", profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('save_every_n_epochs', default=1, step=1, profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('save_every_n_steps', default="", step=1, profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('save_last_n_epochs', default="", step=1, profiles=[KREA2_PROFILE_ID]),
     *training_metric_fields(profiles=[KREA2_PROFILE_ID]),
-    {
-        "key": "save_state",
-        "type": "toggle",
-        "default": False,
-        "section": "save",
-        "desc_key": "field.save_state",
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "save_last_n_epochs_state",
-        "type": "number",
-        "default": "",
-        "section": "save",
-        "desc_key": "field.save_last_n_epochs_state",
-        "hint_key": "field.save_last_n_epochs_stateHint",
-        "min": 1,
-        "step": 1,
-        "show_if": {"key": "save_state", "eq": True},
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "save_state_on_train_end",
-        "type": "toggle",
-        "default": False,
-        "section": "save",
-        "desc_key": "field.save_state_on_train_end",
-        "hint_key": "field.save_state_on_train_endHint",
-        "profiles": [KREA2_PROFILE_ID],
-    },
-    {
-        "key": "resume",
-        "type": "text",
-        "default": "",
-        "section": "save",
-        "desc_key": "field.resume",
-        "role": "file-folder",
-        "profiles": [KREA2_PROFILE_ID],
-    },
+    shared_training_field('save_state', default=False, profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('save_last_n_epochs_state', default="", step=1, profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('save_state_on_train_end', default=False, profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('resume', default="", section="save", profiles=[KREA2_PROFILE_ID]),
     {
         "key": "enable_krea_samples",
         "type": "toggle",
@@ -1224,14 +965,14 @@ KREA2_FIELDS: list[dict[str, Any]] = [
     },
 ]
 
+_KREA2_OPTIMIZER_DEFAULTS = {
+    field["key"]: field["default"] for field in KREA2_FIELDS
+    if field["key"] in _KREA2_OPTIMIZER_ARGUMENTS and field["default"] != ""
+}
+
 _KREA2_SHARED_HINTS_BY_KEY = {
-    "network_dim": "field.network_dimHint",
-    "network_alpha": "field.network_alphaHint",
-    "mixed_precision": "field.mixed_precisionHint",
     "discrete_flow_shift": "field.krea_discrete_flow_shiftHint",
     "sigmoid_scale": "field.sigmoid_scaleHint",
-    "save_state": "field.save_stateHint",
-    "save_precision": "field.save_precisionHint",
     "max_train_epochs": "field.max_train_epochsHint",
     "lr_scheduler_power": "field.lr_scheduler_powerHint",
     "krea_prodigy_d0": "field.krea_prodigy_d0Hint",
@@ -1334,14 +1075,6 @@ def parse_krea2_resolution(value: Any) -> tuple[int, int]:
     return width, height
 
 
-def _split_args(value: Any) -> list[str]:
-    if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
-    if not isinstance(value, str):
-        return []
-    return [line.strip() for line in value.splitlines() if line.strip()]
-
-
 def _normalize_numeric_literal(
     config: dict[str, Any],
     key: str,
@@ -1408,68 +1141,29 @@ def _normalize_numeric_tuple(
     return numbers
 
 
-def _replace_musubi_arg(arguments: list[str], key: str, literal: str) -> None:
-    """Set a guided argument, overriding the same key from raw advanced text."""
-
-    prefix = f"{key}="
-    arguments[:] = [item for item in arguments if not item.lstrip().startswith(prefix)]
-    arguments.append(f"{key}={literal}")
-
-
 def _build_krea2_optimizer_args(config: dict[str, Any]) -> list[str]:
-    """Build optimizer args only from the audited guided Krea controls."""
+    """Use the same profile-specific mapping for native import and export."""
+    values = {**_KREA2_OPTIMIZER_DEFAULTS, "optimizer_type": "adamw8bit", **config}
+    arguments = collect_optimizer_args(values, {}, mappings=_KREA2_OPTIMIZER_ARGUMENTS)
+    if arguments.get("warmup_steps") == 0:
+        arguments.pop("warmup_steps")
+    return [f"{key}={value!r}" for key, value in arguments.items()]
 
-    arguments: list[str] = []
-    optimizer_type = str(config.get("optimizer_type") or "adamw8bit")
 
-    if not _is_empty(config.get("krea_optimizer_weight_decay")):
-        _replace_musubi_arg(arguments, "weight_decay", repr(float(config["krea_optimizer_weight_decay"])))
-    if optimizer_type in _KREA2_BETA_OPTIMIZERS and not _is_empty(config.get("krea_optimizer_betas")):
-        _replace_musubi_arg(arguments, "betas", repr(tuple(config["krea_optimizer_betas"])))
-    if optimizer_type in _KREA2_EPS_OPTIMIZERS and not _is_empty(config.get("krea_optimizer_eps")):
-        _replace_musubi_arg(arguments, "eps", repr(float(config["krea_optimizer_eps"])))
-
-    if optimizer_type in _KREA2_PRODIGY_OPTIMIZERS:
-        _replace_musubi_arg(arguments, "d_coef", repr(float(config.get("krea_prodigy_d_coef", 1.0))))
-        _replace_musubi_arg(arguments, "d0", repr(float(config.get("krea_prodigy_d0", 1e-6))))
-        if optimizer_type == _KREA2_PRODIGYPLUS_OPTIMIZER:
-            _replace_musubi_arg(
-                arguments,
-                "use_stableadamw",
-                "True" if bool(config.get("krea_prodigyplus_use_stableadamw", True)) else "False",
-            )
-    elif optimizer_type == "AdaFactor":
-        _replace_musubi_arg(
-            arguments,
-            "relative_step",
-            "True" if bool(config.get("krea_adafactor_relative_step", True)) else "False",
-        )
-        _replace_musubi_arg(
-            arguments,
-            "scale_parameter",
-            "True" if bool(config.get("krea_adafactor_scale_parameter", True)) else "False",
-        )
-        _replace_musubi_arg(
-            arguments,
-            "warmup_init",
-            "True" if bool(config.get("krea_adafactor_warmup_init", False)) else "False",
-        )
-        _replace_musubi_arg(
-            arguments,
-            "clip_threshold",
-            repr(float(config.get("krea_adafactor_clip_threshold", 1.0))),
-        )
-        _replace_musubi_arg(
-            arguments,
-            "eps",
-            repr(tuple(config.get("krea_adafactor_eps", (1e-30, 1e-3)))),
-        )
-    elif optimizer_type in _KREA2_SCHEDULEFREE_WARMUP_OPTIMIZERS and int(
-        config.get("krea_schedulefree_warmup_steps", 0)
-    ):
-        _replace_musubi_arg(arguments, "warmup_steps", str(int(config["krea_schedulefree_warmup_steps"])))
-
-    return arguments
+def extract_krea2_optimizer_form(config: dict[str, Any]) -> dict[str, Any]:
+    """Restore supported controls; never silently discard unsupported native kwargs."""
+    if "optimizer_args" not in config and not config.get("optimizer_args_custom"):
+        return dict(config)
+    form = {"optimizer_type": "adamw8bit", "optimizer_args": [], **config}
+    errors: list[str] = []
+    _normalize_krea2_optimizer_type(form, errors)
+    if errors:
+        raise ValueError("; ".join(errors))
+    form = extract_optimizer_form(form, mappings=_KREA2_OPTIMIZER_ARGUMENTS)
+    extra = form.pop("optimizer_args_custom", "")
+    if extra:
+        raise ValueError(f"optimizer_args: unsupported Krea 2 arguments / Krea 2 不支持这些参数: {extra}")
+    return form
 
 
 def _normalize_krea2_optimizer_type(config: dict[str, Any], errors: list[str]) -> str:
@@ -1526,25 +1220,21 @@ def image_files(
     if any(importlib.util.find_spec(name) is not None for name in ("jxlpy", "pillow_jxl")):
         extensions.add(".jxl")
     patterns = {f"*{ext}" for ext in extensions | {ext.upper() for ext in extensions}}
-    caption_stems: dict[Path, set[str]] = {}
     paths: list[Path] = []
-    for path in root.rglob("*"):
-        if not path.is_file() or not any(path.match(pattern) for pattern in patterns):
-            continue
-        try:
-            if excluded is not None and path.resolve().is_relative_to(excluded):
-                continue
-        except OSError:
-            continue
-        if path.parent not in caption_stems:
-            caption_stems[path.parent] = {
-                caption.stem for caption in path.parent.glob(f"*{caption_extension}") if caption.is_file()
-            }
-        # musubi compares stems case-sensitively even on Windows, where a
-        # with_suffix(...).is_file() check alone would accept differently cased names.
-        if path.stem not in caption_stems[path.parent]:
-            continue
-        paths.append(path)
+    if excluded is not None and root.resolve().is_relative_to(excluded):
+        return []
+    for directory, subdirs, filenames in os.walk(root):
+        parent = Path(directory)
+        if excluded is not None:
+            subdirs[:] = [name for name in subdirs if not (parent / name).resolve().is_relative_to(excluded)]
+        captions = {Path(name).stem for name in filenames
+                    if Path(name).match(f"*{caption_extension}") and (parent / name).is_file()}
+        for name in filenames:
+            path = parent / name
+            # Match musubi's case-sensitive stems even on Windows.
+            if path.stem in captions and any(path.match(pattern) for pattern in patterns) and path.is_file():
+                if excluded is None or not path.resolve().is_relative_to(excluded):
+                    paths.append(path)
     return sorted(paths)
 
 
@@ -1595,14 +1285,15 @@ def _path_identity(path_value: Any) -> dict[str, Any]:
     return {"path": str(path.resolve()), "size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
 
 
-def krea2_cache_fingerprint(config: dict[str, Any]) -> str:
+def krea2_cache_fingerprint(config: dict[str, Any], images: list[Path] | None = None) -> str:
     """Fingerprint inputs that make Krea latent or text caches stale."""
 
     cache_dir = config.get("dataset_cache_dir")
     root = Path(str(config.get("train_data_dir") or ""))
     entries: list[dict[str, Any]] = []
-    images = image_files(str(config.get("train_data_dir") or ""), cache_dir, str(config.get("caption_extension") or ".txt"))
-    for image in images:
+    if images is None:
+        images = image_files(str(config.get("train_data_dir") or ""), cache_dir, str(config.get("caption_extension") or ".txt"))
+    for image in sorted(images):
         try:
             stat = image.stat()
         except OSError:
@@ -1757,7 +1448,7 @@ def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
     manifest, _ = _read_cache_manifest(cache_dir)
 
     try:
-        fingerprint = krea2_cache_fingerprint(config)
+        fingerprint = krea2_cache_fingerprint(config, images)
     except (TypeError, ValueError):
         fingerprint = ""
     matches = bool(fingerprint and manifest.get("fingerprint") == fingerprint)
@@ -1802,15 +1493,7 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
         "lr_decay_steps": 0,
         "lr_scheduler_num_cycles": 1,
         "lr_scheduler_power": 1.0,
-        "krea_prodigy_d_coef": "1.0",
-        "krea_prodigy_d0": "1e-6",
-        "krea_prodigyplus_use_stableadamw": True,
-        "krea_schedulefree_warmup_steps": 0,
-        "krea_adafactor_relative_step": True,
-        "krea_adafactor_scale_parameter": True,
-        "krea_adafactor_warmup_init": False,
-        "krea_adafactor_clip_threshold": 1.0,
-        "krea_adafactor_eps": "1e-30, 1e-3",
+        **_KREA2_OPTIMIZER_DEFAULTS,
         "compile_mode": "default",
         "compile_dynamic": "auto",
         "block_swap_ring_size": 2,
@@ -1840,12 +1523,7 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
         if _is_empty(config.get(key)):
             errors.append(f"{key}: required / 必填")
 
-    if config.get("network_module", KREA2_NETWORK_MODULE) != KREA2_NETWORK_MODULE:
-        errors.append(
-            f"network_module: Krea 2 requires {KREA2_NETWORK_MODULE} / Krea 2 必须使用指定 LoRA 模块"
-        )
-    else:
-        config["network_module"] = KREA2_NETWORK_MODULE
+    errors.extend(validate_krea2_network(config))
 
     try:
         width, height = parse_krea2_resolution(config.get("resolution", ""))
@@ -1864,7 +1542,16 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
         config["krea_training_duration_mode"] = duration_mode
 
     optimizer_type = _normalize_krea2_optimizer_type(config, errors)
-    adafactor_relative_step = bool(config.get("krea_adafactor_relative_step", True))
+    if optimizer_type == "AdaFactor":
+        for key in ("krea_adafactor_relative_step", "krea_adafactor_scale_parameter", "krea_adafactor_warmup_init"):
+            if not isinstance(config[key], bool):
+                errors.append(f"{key}: must be true or false / 必须是布尔值")
+        if config["krea_adafactor_warmup_init"] is True and config["krea_adafactor_relative_step"] is False:
+            errors.append(
+                "krea_adafactor_warmup_init: requires krea_adafactor_relative_step=True "
+                "/ 启用预热初始化时必须启用相对步长"
+            )
+    adafactor_relative_step = config["krea_adafactor_relative_step"] is True
 
     # musubi's trainer returns an internal dummy scheduler for ScheduleFree,
     # and switches to its own AdafactorSchedule in relative-step mode.  Keep
@@ -2105,6 +1792,9 @@ def build_krea2_train_config(
 
     config = dict(config)
     normalize_attention_config(config)
+    network_errors = validate_krea2_network(config)
+    if network_errors:
+        raise ValueError("; ".join(network_errors))
 
     optimizer_type = str(config.get("optimizer_type", "adamw8bit"))
     # Normal launch paths call validate_krea2_config first, but keep this
@@ -2123,7 +1813,7 @@ def build_krea2_train_config(
         "dit": str(config["dit"]),
         "vae": str(config["vae"]),
         "dataset_config": str(dataset_config_path),
-        "network_module": KREA2_NETWORK_MODULE,
+        "network_module": config["network_module"],
         "network_dim": int(config["network_dim"]),
         "network_alpha": int(config["network_alpha"]),
         "network_dropout": float(config.get("network_dropout", 0)),
@@ -2144,13 +1834,13 @@ def build_krea2_train_config(
         "save_every_n_epochs": int(config.get("save_every_n_epochs", 1)),
         "max_data_loader_n_workers": int(config.get("max_data_loader_n_workers", 2)),
     }
+    if config["network_module"] == KREA2_LYCORIS_MODULE:
+        result.pop("network_dropout", None)
     if str(config.get("krea_training_duration_mode", "epochs")) == "steps":
         result["max_train_steps"] = int(config["max_train_steps"])
     else:
         result["max_train_epochs"] = int(config["max_train_epochs"])
-    if result["timestep_sampling"] == "shift":
-        result["discrete_flow_shift"] = float(config.get("discrete_flow_shift", 2.5))
-    if result["timestep_sampling"] == "sigma":
+    if result["timestep_sampling"] in {"shift", "sigma"}:
         result["discrete_flow_shift"] = float(config.get("discrete_flow_shift", 2.5))
     if result["timestep_sampling"] in {"sigmoid", "shift", "krea2_shift"}:
         result["sigmoid_scale"] = float(config.get("sigmoid_scale", 1.0))
@@ -2222,7 +1912,7 @@ def build_krea2_train_config(
     if attention != "sdpa":
         result["split_attn"] = True
 
-    network_args = _split_args(config.get("network_args_custom"))
+    network_args = build_krea2_network_args(config, Path(dataset_config_path).parent / KREA2_PRESET_FILENAME)
     if network_args:
         result["network_args"] = network_args
     optimizer_args = _build_krea2_optimizer_args(config)
@@ -2258,6 +1948,11 @@ def krea2_preflight(config: dict[str, Any], require_cache: bool = True) -> dict[
 
     runtime = shared_runtime_status()
     errors.extend(runtime["errors"])
+    if config.get("krea_attention_backend") == "flash_attn":
+        from backend.training.supervisor import detect_attention_backend
+        actual, warning = detect_attention_backend("flash")
+        if actual != "flash":
+            errors.append(warning)
 
     optional_optimizer_package = _selected_optional_optimizer_package(config.get("optimizer_type"))
     if optional_optimizer_package:
@@ -2278,11 +1973,10 @@ def krea2_preflight(config: dict[str, Any], require_cache: bool = True) -> dict[
         if not turbo_path.is_file():
             errors.append(f"Krea 2 Turbo DiT not found / Turbo 模型文件不存在: {turbo_path}")
 
-    images = image_files(config.get("train_data_dir") or "", config.get("dataset_cache_dir"), str(config.get("caption_extension") or ".txt"))
-    if not images:
+    cache_status = get_krea2_cache_status(config)
+    if not cache_status["image_count"]:
         errors.append("Dataset has no supported images with matching captions / 数据集目录没有带同名标注的可用图片，请检查图片格式和标注扩展名")
 
-    cache_status = get_krea2_cache_status(config)
     errors.extend(cache_status["conflicts"])
     if require_cache and not cache_status["ready"]:
         errors.append(

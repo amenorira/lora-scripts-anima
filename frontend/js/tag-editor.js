@@ -81,6 +81,7 @@ window.tagEditorMixin = {
   tagEditorSaving: false,
   tagEditorLoadedDir: '',
   tagEditorPendingDir: '',
+  tagEditorOpenPath: '',
   tagEditorSwitchOpen: false,
   tagEditorTimeline: [],
   tagEditorRightWidth: 340,
@@ -553,6 +554,8 @@ window.tagEditorMixin = {
     this.tagEditorCancelQuickRemove();
     this.tagEditorPanelMenu = null;
     var loadOptions = arguments.length > 1 && arguments[1] ? arguments[1] : {};
+    var openPath = this.tagEditorOpenPath;
+    this.tagEditorOpenPath = '';
     var self = this;
     // 词典只在真正进入 Tag Editor 时才加载：问状态，数据已装就拉起唯一那个 Worker
     this.tagDictionaryInit();
@@ -647,6 +650,14 @@ window.tagEditorMixin = {
           await this.tagEditorFetchPage(this.tagEditorPage, { force: true });
         }
         if (epoch !== this._teLoadEpoch || controller.signal.aborted) return;
+        if (openPath && this._teFindByPath(openPath)) {
+          this.tagEditorSelected = [openPath];
+          this._teLastSelected = this.tagEditorGetFiltered().findIndex(function(image) { return image.path === openPath; });
+          this._updateEditorPanel();
+          this.$nextTick?.(() => {
+            if (epoch === this._teLoadEpoch && this.currentRoute === 'tagEditor' && this.tagEditorSelected[0] === openPath) this._teFocusEditorInput();
+          });
+        }
         this.tagEditorLoadSnapshots(epoch);
         this._teCheckDraft();
         this._teStartAutoSave();
@@ -2716,6 +2727,8 @@ window.tagEditorMixin = {
     var writtenCount = 0;
     var failedItems = [];
     var saveErrorMessage = '';
+    var timelineWarning = '';
+    var rollbackFailed = [];
     var payload = modified.map(function(img) {
       return {
         path: img.path,
@@ -2738,6 +2751,17 @@ window.tagEditorMixin = {
         failedItems = modified.map(function(img) { return { path: img.path, reason: saveErrorMessage }; });
       } else {
         var data = j.data || {};
+        timelineWarning = data.timeline_warning || '';
+        rollbackFailed = data.rollback_failed || [];
+        if (timelineWarning) {
+          // Null history values refer to the old baseline, which is about to change.
+          this.tagEditorHistory.forEach(function(entry) {
+            Object.entries(entry.changes || {}).forEach(function([path, change]) {
+              if (change.before == null) change.before = self.tagEditorOriginal[path] || '';
+              if (change.after == null) change.after = self.tagEditorOriginal[path] || '';
+            });
+          });
+        }
         var successfulPaths = (data.saved_paths || []).concat(data.skipped_paths || []);
         var successfulLookup = {};
         successfulPaths.forEach(function(path) { successfulLookup[path] = true; });
@@ -2771,7 +2795,7 @@ window.tagEditorMixin = {
     var hadHistory = this.tagEditorHistory.length > 0;
     this._teRecountModified();
     this.tagEditorModified = this._teModifiedCount > 0;
-    if (processedCount > 0 || this._teModifiedCount === 0) {
+    if (!timelineWarning && !rollbackFailed.length && (processedCount > 0 || this._teModifiedCount === 0)) {
       this.tagEditorHistory = [];
       this.tagEditorHistoryIdx = -1;
       this.tagEditorHistoryDetailIdx = -1;
@@ -2786,7 +2810,12 @@ window.tagEditorMixin = {
       }
       this._teHistoryState = remainingState;
     }
-    if (failedItems.length > 0 || this._teModifiedCount > 0) {
+    if (timelineWarning || rollbackFailed.length) {
+      var warning = timelineWarning ? this.t('tagEditor.timelineSaveFailed').replace('{error}', timelineWarning) : '';
+      if (rollbackFailed.length) warning += (warning ? '\n' : '') + this.t('tagEditor.rollbackFailed').replace('{paths}', rollbackFailed.join(', '));
+      this.toast(warning, 'warning');
+      this._teSaveDraft();
+    } else if (failedItems.length > 0 || this._teModifiedCount > 0) {
       if (processedCount === 0 && saveErrorMessage) {
         this.toast(saveErrorMessage, 'error');
       } else {

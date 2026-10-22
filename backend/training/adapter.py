@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any
 
 from tools.runtime_paths import runtime_cache_dir
+from backend.utils.file_io import atomic_write_text
+from backend.training.core_registry import PROFILES
 
 # ── 字段集：从统一注册表派生（Single Source of Truth）──────
 from backend.training.field_registry import (
@@ -27,10 +29,12 @@ from backend.training.field_registry import (
     NATIVE_NETWORK_ARG_MAP,
     get_supported_fields,
     get_ui_only_fields,
+    field_applies_to_profile,
     loraplus_applies,
 )
 from backend.training import toml_writer
 from backend.training.optimizer_contracts import normalize_optimizer_config
+from backend.training.optimizer_contracts import is_empty_optimizer_value as _is_empty_value
 from backend.training.scheduler_config import normalize_scheduler_config
 from backend.training.network_config import validate_network_preset
 
@@ -39,13 +43,8 @@ UI_ONLY_FIELDS = get_ui_only_fields()
 # merged 字段应由 UI 层合并进父字段（如 weight_decay→optimizer_args），adapter 不直接透传
 MERGED_FIELDS = {f["key"] for f in FIELDS if f.get("target") == "merged"}
 
-# 字段 group→train_type 兜底过滤映射（防前端绕过/历史 form 残留）。
-# group 为 str 或 list；值 "all"（或缺省）对所有 train_type 通用。
-# 仅 SDXL 路径消费的字段（noise_offset/min_snr_gamma/multires_noise_* 等）对 anima-lora 是死参数，
-# 若残留进入提交会经 sd-scripts argparse 接住、train_network.py:555-559 把 argv 默认值/原值刷进元数据，
-# 产生看似"启用了噪声正则化"的误导。此处按 model_train_type 兜底剔除不匹配 group 的字段。
-_FIELD_GROUP_MAP = {f["key"]: f.get("group") for f in FIELDS}
-_TRAIN_TYPE_GROUP = {"sdxl-lora": "sdxl", "anima-lora": "anima", "moss-image-lora": "moss_image"}
+# Filter historical form leftovers using the same profile rules as persistence.
+_FIELDS_BY_KEY = {f["key"]: f for f in FIELDS}
 
 # ── 已知的可显示警告的 Anima 前缀字段 ─────────────────────────
 ANIMA_KNOWN_PREFIX = {"anima_"}
@@ -60,27 +59,12 @@ LYCORIS_KOHYA_UI_FIELDS = (
 
 def _filter_model_fields(source: dict[str, Any]) -> None:
     """移除其他训练类型的字段，避免历史表单残留进入 TOML。"""
-    train_group = _TRAIN_TYPE_GROUP.get(str(source.get("model_train_type", "")))
-    if not train_group:
+    profile = PROFILES.get(str(source.get("model_train_type", "")))
+    if profile is None or profile.engine_id != "sd_scripts":
         return
     for key in list(source):
-        group = _FIELD_GROUP_MAP.get(key)
-        if group and group != "all" and train_group not in (group if isinstance(group, list) else [group]):
+        if not field_applies_to_profile(_FIELDS_BY_KEY.get(key, {}), profile.id):
             source.pop(key)
-
-
-def _is_empty_value(value: Any) -> bool:
-    """检测空值/无效值：None、NaN、空字符串、'undefined'、'null'
-    注意：布尔值 False 不是空值，toggle 关闭时应显式传入 false"""
-    if value is None:
-        return True
-    if isinstance(value, bool):
-        return False
-    if isinstance(value, float) and math.isnan(value):
-        return True
-    if isinstance(value, str) and value.strip().lower() in {"", "undefined", "null", "nan"}:
-        return True
-    return False
 
 
 def _normalize_network_args(values: Any) -> list[str]:
@@ -244,14 +228,8 @@ def _pop_keyed_arg_list(values: list[str], key: str) -> list[str]:
     return patterns
 
 
-def _write_lycoris_scope_preset_file(preset_name: str, exclude_name: list[str]) -> str:
-    """
-    生成含 exclude_name 的匿名预设文件（LyCORIS 预设机制唯一入口）。
-
-    上游 kohya.create_network 只在预设文件里消费 exclude_name（kwargs 不认），
-    故 scope 细化时把内置预设全集 + exclude_name 落盘为临时文件，network_args 的
-    preset 参数改指向该文件。内容相同则复用同一路径，避免累积。
-    """
+def _lycoris_scope_preset_content(preset_name: str, exclude_name: list[str]) -> str:
+    """Build the upstream preset without creating or changing a file."""
     vendor_root = Path(__file__).resolve().parents[2] / "vendor"
     if str(vendor_root) not in sys.path:
         sys.path.insert(0, str(vendor_root))
@@ -260,13 +238,23 @@ def _write_lycoris_scope_preset_file(preset_name: str, exclude_name: list[str]) 
     if preset_name not in PRESET:
         raise ValueError(f"Unknown LyCORIS preset: {preset_name!r}")
     preset = {**PRESET[preset_name], "exclude_name": list(exclude_name)}
-    content = toml_writer.dumps(preset)
+    return toml_writer.dumps(preset)
+
+
+def _write_lycoris_scope_preset_file(preset_name: str, exclude_name: list[str]) -> str:
+    """Materialize once: upstream consumes scope exclusions only from a preset file."""
+    content = _lycoris_scope_preset_content(preset_name, exclude_name)
     digest = hashlib.sha1(content.encode("utf-8")).hexdigest()[:8]
     path = (
         runtime_cache_dir("lycoris")
         / f"anima_lycoris_preset_{preset_name}_{digest}.toml"
     )
-    path.write_text(content, encoding="utf-8")
+    try:
+        if path.read_text(encoding="utf-8") == content:
+            return str(path)
+    except (FileNotFoundError, UnicodeDecodeError):
+        pass
+    atomic_write_text(path, content)
     return str(path)
 
 

@@ -136,12 +136,20 @@ After changing dimension, factor, full-matrix mode, or unbalanced factorization,
 
 Upstream defaults to rank/alpha 32 and all 264 DiT Linear layers: main-block attention, MLPs, the text-fusion transformer, and projection MLPs. Text fusion belongs to the DiT; the Qwen text encoder stays frozen and cached. Modulation and RMSNorm parameters are raw tensors, not Linear modules, so LoRA never wraps them and no exclusion is needed.
 
-The upstream long-run example narrows training to main-block attention (140 Linear layers) and suggests a higher rank. To use that scope, enter this line in Network arguments:
+Krea2 offers native LoRA and LyCORIS LoKr / LoHa, using the same target selector: All Linear (264), Main Attention (140), Main Attention + MLP (224), or custom regexes. All Linear includes input/output, time and text-fusion projections omitted by generic LyCORIS block presets.
+
+Custom regexes fully match original Linear layer names, one per line; exclusions take precedence. Include `blocks\.[0-9]+\.attn\..*` for main attention, or include `.*` and exclude `txtfusion\..*` to omit text fusion. Empty selections fail before launch.
+
+The LyCORIS panel follows Anima's factor, full-matrix, decompose-both, unbalanced factorization, scalar, rsLoRA, DoRA, bypass and kernel controls, showing only applicable settings. Conv/Tucker and ordinary LoKr/LoHa dropout are omitted because they do not apply here. Current LoKr rank dropout is not reliable; use module dropout. LoHa and native LoRA retain rank dropout.
+
+FP8 base weights force LyCORIS bypass mode. DoRA requires both FP8 and bypass to be off. Save portable settings as `training.yaml`; the per-run target preset is generated automatically.
+
+Legacy native LoRA Network arguments remain supported under All Linear. New configurations should use the target selector:
 
 ```text
 exclude_patterns=['.*\.mlp\..*','first','last\.linear','tmlp\..*','txtmlp\..*','tproj\.1','txtfusion\..*']
 ```
 
-For an arbitrary subset, start with `exclude_patterns=['.*']`, then add targets back with `include_patterns=[...]`. Use one parameter per line. Adding include rules alone does not remove layers already included by default.
+In legacy native arguments, `include_patterns` adds matching layers back and does not remove default targets. For LyCORIS, use the target selector and guided controls.
 
 [Krea 2 upstream guide](https://github.com/kohya-ss/musubi-tuner/blob/f8a1b03794a49239a3539015075f5123d6c07d66/docs/krea2.md#lora-target-layers--loraの対象レイヤー)

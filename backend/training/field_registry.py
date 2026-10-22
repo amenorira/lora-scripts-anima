@@ -5,12 +5,16 @@
 是否传递给 sd-scripts、条件显示规则、训练类型适用性、自动填值规则等。
 前后端共享此定义。
 
+与 Musubi 语义一致的基础控件复用 shared_fields；默认值和适用范围仍由各训练配置定义。
 添加新字段只需在此文件中新增一条记录，无需修改 adapter.py 或 config.js。
 """
 from __future__ import annotations
 
 from typing import Any
 
+from backend.training.core_registry import PROFILES
+from backend.training.lycoris_layout import apply_lycoris_panel_layout
+from backend.training.shared_fields import shared_training_field
 from backend.training.metrics_config import training_metric_fields
 
 from backend.training.optimizer_contracts import (
@@ -272,10 +276,10 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "enable_reg_data", "type": "toggle", "default": False, "section": "model", "desc_key": "field.enable_reg_data", "hint_key": "field.enable_reg_dataHint", "target": "ui"},
 {"key": "reg_data_dir", "type": "text", "default": "", "section": "model", "desc_key": "field.reg_data_dir", "hint_key": "field.reg_data_dirHint", "target": "toml", "role": "file-folder", "omit_default": True, "show_if": {"key": "enable_reg_data", "eq": True}},
 {"key": "prior_loss_weight", "type": "number", "default": 1.0, "section": "model", "desc_key": "field.prior_loss_weight", "hint_key": "field.prior_loss_weightHint", "target": "toml", "min": 0, "step": 0.1, "show_if": {"key": "enable_reg_data", "eq": True}, "omit_default": True},
-{"key": "resume", "type": "text", "default": "", "section": "model", "desc_key": "field.resume", "hint_key": "field.resumeHint", "target": "toml", "role": "file-folder"},
+shared_training_field('resume', default="", target="toml"),
 {"key": "resolution", "type": "text", "default": "1024,1024", "section": "model", "desc_key": "field.resolution", "target": "toml", "hint_key": "field.resolutionHint", "required": True},
-{"key": "enable_bucket", "type": "toggle", "default": True, "section": "model", "desc_key": "field.enable_bucket", "target": "toml", "hint_key": "field.enable_bucketHint"},
-{"key": "bucket_no_upscale", "type": "toggle", "default": True, "section": "model", "desc_key": "field.bucket_no_upscale", "target": "toml", "hint_key": "field.bucket_no_upscaleHint", "show_if": {"key": "enable_bucket", "eq": True}},
+shared_training_field('enable_bucket', default=True, target="toml"),
+shared_training_field('bucket_no_upscale', default=True, target="toml"),
 {"key": "min_bucket_reso", "type": "number", "default": 256, "section": "model", "desc_key": "field.min_bucket_reso", "target": "toml", "min": 64, "step": 64, "show_if": {"key": "enable_bucket", "eq": True}, "omit_default": True},
 {"key": "max_bucket_reso", "type": "number", "default": 2048, "section": "model", "desc_key": "field.max_bucket_reso", "target": "toml", "min": 256, "step": 64, "show_if": {"key": "enable_bucket", "eq": True}},
 {"key": "bucket_reso_steps", "type": "number", "default": 64, "section": "model", "desc_key": "field.bucket_reso_steps", "target": "toml", "min": 16, "step": 16, "constraints_by_group": {"sdxl": {"min": 32, "step": 32}, "anima": {"min": 16, "step": 16}}, "show_if": {"key": "enable_bucket", "eq": True}, "hint_key": "field.bucket_reso_stepsHint", "omit_default": True},
@@ -290,8 +294,16 @@ FIELDS: list[dict[str, Any]] = [
 # show_if 子参数紧随触发源展开（A1 重排），按层级缩进渲染，不引入额外的分组盒子。
 {"key": "network_train_unet_only", "type": "toggle", "default": True, "section": "network", "desc_key": "field.network_train_unet_only", "target": "toml"},
 {"key": "network_train_text_encoder_only", "type": "toggle", "default": False, "section": "network", "desc_key": "field.network_train_text_encoder_only", "target": "toml", "omit_default": True},
-{"key": "network_dim", "type": "number", "default": 32, "section": "network", "desc_key": "field.network_dim", "hint_key": "field.network_dimHint", "hint_key_by": {"key": "optimizer_type", "values": {LORA_MUON_OPTIMIZER_TYPE: "field.network_dimHint_lora_muon"}}, "target": "toml", "min": 1, "step": 1, "doc_slug": "network-parameters", "doc_anchor": "dimension"},
-{"key": "network_alpha", "type": "number", "default": 32, "section": "network", "desc_key": "field.network_alpha", "hint_key": "field.network_alphaHint", "hint_key_by": {"key": "optimizer_type", "values": {LORA_MUON_OPTIMIZER_TYPE: "field.network_alphaHint_lora_muon"}}, "target": "toml", "min": 1, "step": 1, "doc_slug": "network-parameters", "doc_anchor": "alpha"},
+shared_training_field('network_dim',
+    default=32,
+    hint_key_by={"key": "optimizer_type", "values": {LORA_MUON_OPTIMIZER_TYPE: "field.network_dimHint_lora_muon"}},
+    target="toml",
+),
+shared_training_field('network_alpha',
+    default=32,
+    hint_key_by={"key": "optimizer_type", "values": {LORA_MUON_OPTIMIZER_TYPE: "field.network_alphaHint_lora_muon"}},
+    target="toml",
+),
 {"key": "network_weights", "type": "text", "default": "", "section": "network", "desc_key": "field.network_weights", "hint_key": "field.network_weightsHint", "target": "toml", "role": "file-model-saved"},
 {"key": "dim_from_weights", "type": "toggle", "default": False, "section": "network", "desc_key": "field.dim_from_weights", "target": "toml", "show_if": {"key": "network_weights", "neq": ""}, "hint_key": "field.dim_from_weightsHint"},
 # network_dropout 是 train_network.py 顶层 CLI（:1930），对所有 module 自动经 neuron_dropout= 兜底传入
@@ -299,7 +311,7 @@ FIELDS: list[dict[str, Any]] = [
 # （lora.py:423 / lora_anima.py:232 / loha.py:406 / lokr.py:400）。LyCORIS 与下方专用 dropout 同槽
 # （train_network.py:1081 "dropout in net_kwargs" 检测：专用 dropout 在 network_args 中先占槽 → network_dropout 不再注入）。
 # 故为顶层 Network 参数，不带 show_if（与 network_dim/network_alpha 同级），对所有模块可见。
-{"key": "network_dropout", "type": "number", "default": 0, "section": "network", "desc_key": "field.network_dropout", "target": "toml", "min": 0, "max": 1, "step": 0.01, "hint_key": "field.network_dropoutHint", "doc_slug": "network-parameters", "doc_anchor": "dropout"},
+shared_training_field('network_dropout', default=0, target="toml"),
 # ── 算法开关：network_module（选不同模块后，下列子参数紧随其后展开）──
 {"key": "network_module", "type": "select", "default": "networks.lora", "section": "network", "desc_key": "field.network_module", "target": "toml", "doc_slug": "network-parameters", "doc_anchor": "algorithms", "options": [{"v": "networks.lora_anima", "l": "networks.lora_anima", "dk": "opt.network_module_networks_lora_anima", "group": "anima"}, {"v": "networks.lora", "l": "networks.lora", "dk": "opt.network_module_networks_lora", "group": "sdxl"}, {"v": "networks.loha", "l": "networks.loha", "dk": "opt.network_module_networks_loha"}, {"v": "networks.lokr", "l": "networks.lokr", "dk": "opt.network_module_networks_lokr"}, {"v": "lycoris.kohya", "l": "lycoris.kohya", "dk": "opt.network_module_lycoris_kohya"}]},
     # ── 平级开关（nested: False）：与 network_module 同级渲染，仅显隐与其联动 ──
@@ -328,7 +340,7 @@ FIELDS: list[dict[str, Any]] = [
     # 环境变量读取（kernels/dispatch.py:58 / select.py:78），是进程级开关而非 network_args
     # —— /run 路由把它转为训练子进程环境变量，target 保持 ui 不进 TOML。
     # 不可用后端由探测函数回退 auto 并提示（与 attn_mode 降级同模式）。
-    {"key": "lycoris_kernel_backend", "type": "select", "default": "auto", "section": "network", "desc_key": "field.lycoris_kernel_backend", "target": "ui", "show_if": {"key": "network_module", "eq": "lycoris.kohya"}, "hint_key": "field.lycoris_kernel_backendHint", "options": [{"v": "auto", "l": "auto", "dk": "opt.lycoris_kernel_backend_auto"}, {"v": "triton", "l": "triton", "dk": "opt.lycoris_kernel_backend_triton"}, {"v": "tilelang", "l": "tilelang", "dk": "opt.lycoris_kernel_backend_tilelang"}, {"v": "compile", "l": "compile", "dk": "opt.lycoris_kernel_backend_compile"}, {"v": "torch", "l": "torch", "dk": "opt.lycoris_kernel_backend_torch"}]},
+    shared_training_field('lycoris_kernel_backend', default="auto", target="ui"),
     # conv_dim/conv_alpha（LoCon：给 3x3 Conv2d 单独设秩）支持面：
     #   networks.lora 完整支持（lora.py:435 读取 / 939-957 create_modules 对 3x3 Conv2d 启用 conv_lora_dim）；
     #   networks.loha / networks.lokr 同样读取；lycoris.kohya 通用（kohya.py:42-43）。
@@ -338,12 +350,24 @@ FIELDS: list[dict[str, Any]] = [
     # lokr_factor → sd-scripts factor：仅 LoKr 算法消费（vendor lokr.py 读 kwargs["factor"]；
     # vendor loha.py 不读；lycoris 仅 LokrModule.__init__ 有 factor 参数）。
     # 故显示条件为 OR-of-ANDs：原生 networks.lokr，或 lycoris.kohya + algo=lokr。
-    {"key": "lokr_factor", "type": "number", "default": -1, "section": "network", "desc_key": "field.lokr_factor", "target": "ui", "min": -1, "step": 1, "show_if_any": [[{"key": "network_module", "eq": "networks.lokr"}], [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lokr"}]], "hint_key": "field.lokr_factorHint", "doc_slug": "network-parameters", "doc_anchor": "lokr-factor", "omit_default": True},
+    shared_training_field('lokr_factor',
+        default=-1,
+        target="ui",
+        show_if_any=[[{"key": "network_module", "eq": "networks.lokr"}], [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_algo", "eq": "lokr"}]],
+        omit_default=True,
+    ),
     # rank_dropout/module_dropout：四个原生模块 + lycoris.kohya 均从 kwargs 读取并消费
     # （lora.py:469-474 / lora_anima.py:40-46 / loha.py:48-53 / lokr.py:48-53 / kohya.py:45-46）。
     # 与 neuron dropout (network_dropout) 为不同正则化手段，可叠加。
-    {"key": "rank_dropout", "type": "number", "section": "network", "desc_key": "field.rank_dropout", "target": "ui", "min": 0, "max": 0.99, "step": 0.01, "show_if": {"key": "network_module", "eq": "networks.lora", "_or": ["networks.lora_anima", "networks.loha", "networks.lokr", "lycoris.kohya"]}, "hint_key": "field.rank_dropoutHint", "hint_key_by": {"key": "lycoris_algo", "values": {"lokr": "field.rank_dropoutHint_lokr"}}, "doc_slug": "network-parameters", "doc_anchor": "dropout"},
-    {"key": "module_dropout", "type": "number", "section": "network", "desc_key": "field.module_dropout", "target": "ui", "min": 0, "max": 1, "step": 0.01, "show_if": {"key": "network_module", "eq": "networks.lora", "_or": ["networks.lora_anima", "networks.loha", "networks.lokr", "lycoris.kohya"]}, "hint_key": "field.module_dropoutHint", "doc_slug": "network-parameters", "doc_anchor": "dropout"},
+    shared_training_field('rank_dropout',
+        target="ui",
+        show_if={"key": "network_module", "eq": "networks.lora", "_or": ["networks.lora_anima", "networks.loha", "networks.lokr", "lycoris.kohya"]},
+        hint_key_by={"key": "lycoris_algo", "values": {"lokr": "field.rank_dropoutHint_lokr"}},
+    ),
+    shared_training_field('module_dropout',
+        target="ui",
+        show_if={"key": "network_module", "eq": "networks.lora", "_or": ["networks.lora_anima", "networks.loha", "networks.lokr", "lycoris.kohya"]},
+    ),
     # use_tucker：仅 Conv2d 3x3+ 的 Tucker 分解有效。原生 loha/lokr 模块消费；
     # lycoris 仅 LoCon/Loha/Lokr 模块消费。
     # 故显示条件为 OR-of-ANDs：原生 loha/lokr，或 lycoris.kohya + algo∈{lora,loha,lokr}。
@@ -373,11 +397,22 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "network_args_custom", "type": "textarea", "default": "", "section": "network", "desc_key": "field.network_args_custom", "target": "ui", "hint_key": "field.network_args_customHint"},
 # ── Training Core ──
 {"key": "max_train_epochs", "type": "number", "default": 10, "section": "training", "desc_key": "field.max_train_epochs", "hint_key": "field.max_train_epochsHint", "target": "toml", "min": 1, "step": 1},
-{"key": "train_batch_size", "type": "number", "default": 1, "section": "training", "desc_key": "field.train_batch_size", "target": "toml", "min": 1, "hint_key": "field.train_batch_sizeHint", "omit_default": True},
-{"key": "gradient_accumulation_steps", "type": "number", "default": 1, "section": "training", "desc_key": "field.gradient_accumulation_steps", "target": "toml", "min": 1, "hint_key": "field.gradient_accumulation_stepsHint", "auto_value": [{"watch": "optimizer_type", "when": EMOSENS_OPTIMIZER_TYPE, "set": 1}], "readonly_if": {"key": "optimizer_type", "eq": EMOSENS_OPTIMIZER_TYPE, "reason_key": "field.gradient_accumulation_steps_emosensLocked"}, "omit_default": True},
-{"key": "gradient_checkpointing", "type": "toggle", "default": False, "default_by_group": {"anima": True}, "section": "training", "desc_key": "field.gradient_checkpointing", "target": "toml", "hint_key": "field.gradient_checkpointingHint", "omit_default": True},
-{"key": "seed", "type": "number", "default": 1337, "section": "training", "desc_key": "field.seed", "target": "toml"},
-{"key": "mixed_precision", "type": "select", "default": "bf16", "section": "training", "desc_key": "field.mixed_precision", "hint_key": "field.mixed_precisionHint", "target": "toml", "options": [{"v": "bf16", "l": "bf16", "dk": "opt.mixed_precision_bf16"}, {"v": "fp16", "l": "fp16", "dk": "opt.mixed_precision_fp16"}, {"v": "no", "l": "no", "dk": "opt.mixed_precision_no"}]},
+shared_training_field('train_batch_size', default=1, target="toml", omit_default=True),
+shared_training_field('gradient_accumulation_steps',
+    default=1,
+    target="toml",
+    auto_value=[{"watch": "optimizer_type", "when": EMOSENS_OPTIMIZER_TYPE, "set": 1}],
+    readonly_if={"key": "optimizer_type", "eq": EMOSENS_OPTIMIZER_TYPE, "reason_key": "field.gradient_accumulation_steps_emosensLocked"},
+    omit_default=True,
+),
+shared_training_field('gradient_checkpointing',
+    default=False,
+    default_by_group={"anima": True},
+    target="toml",
+    omit_default=True,
+),
+shared_training_field('seed', default=1337, target="toml"),
+shared_training_field('mixed_precision', default="bf16", target="toml"),
     # full_bf16: 将模型 + Network 全部参数 cast 为 bf16，消除 autocast 与 compile/LoRA 交互的 dtype 不一致问题。
     # 与 mixed_precision=bf16 搭配使用；仅在选择 bf16 时显示。默认关闭（标准 mixed precision 行为）。
     {"key": "full_bf16", "type": "toggle", "default": False, "section": "training", "desc_key": "field.full_bf16", "hint_key": "field.full_bf16Hint", "target": "toml", "show_if": {"key": "mixed_precision", "eq": "bf16"}, "auto_value": [{"watch": "optimizer_type", "when": AUTOMAGIC_OPTIMIZER_TYPE, "set": False}], "readonly_if": {"key": "optimizer_type", "eq": AUTOMAGIC_OPTIMIZER_TYPE, "reason_key": "field.full_bf16_automagicLocked"}, "omit_default": True},
@@ -525,8 +560,8 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "attn_mode", "type": "select", "default": "torch", "section": "performance", "desc_key": "field.attn_mode", "target": "toml", "group": "anima", "options": [{"v": "torch", "l": "torch", "dk": "opt.attn_mode_torch"}, {"v": "flash", "l": "flash", "dk": "opt.attn_mode_flash"}, {"v": "xformers", "l": "xformers", "dk": "opt.attn_mode_xformers"}]},
 {"key": "split_attn", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.split_attn", "target": "toml", "group": "anima", "auto_value": [{"watch": "attn_mode", "when": "xformers", "set": True, "set_if_default": True}], "readonly_if": {"key": "attn_mode", "eq": "xformers", "reason_key": "field.split_attnXformersLocked"}},
     # Anima: TF32 / cuDNN — Ampere+ GPU 几乎免费的加速
-    {"key": "cuda_allow_tf32", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cuda_allow_tf32", "target": "toml", "group": "anima", "hint_key": "field.cuda_allow_tf32Hint"},
-    {"key": "cuda_cudnn_benchmark", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cuda_cudnn_benchmark", "target": "toml", "group": "anima", "hint_key": "field.cuda_cudnn_benchmarkHint"},
+    shared_training_field('cuda_allow_tf32', default=True, target="toml", group="anima"),
+    shared_training_field('cuda_cudnn_benchmark', default=True, target="toml", group="anima"),
 {"key": "cache_latents", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cache_latents", "target": "toml", "readonly_if": {"key": "random_crop", "eq": True, "reason_key": "field.cache_latentsLocked"}},
 {"key": "cache_latents_to_disk", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.cache_latents_to_disk", "hint_key": "field.cache_latents_to_diskHint", "target": "toml", "readonly_if": {"key": "random_crop", "eq": True, "reason_key": "field.cache_latentsLocked"}},
 # 文本编码器输出缓存：默认开启（配合默认 network_train_unet_only=True，纯收益，大幅省显存提速）
@@ -547,7 +582,7 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "vae_batch_size", "type": "number", "default": "", "section": "performance", "desc_key": "field.vae_batch_size", "target": "toml", "min": 1, "step": 1, "hint_key": "field.vae_batch_sizeHint"},
     {"key": "blocks_to_swap", "type": "number", "section": "performance", "desc_key": "field.blocks_to_swap", "target": "toml", "min": 0, "max": 26, "step": 1, "group": "anima", "hint_key": "field.blocks_to_swapHint"},
     {"key": "block_swap_h2d_only", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.block_swap_h2d_only", "hint_key": "field.block_swap_h2d_onlyHint", "target": "toml", "group": ["anima", "moss_image"], "show_if": {"key": "blocks_to_swap", "neq": 0}, "omit_default": True},
-    {"key": "block_swap_ring_size", "type": "number", "default": 2, "min": 1, "step": 1, "section": "performance", "desc_key": "field.block_swap_ring_size", "hint_key": "field.block_swap_ring_sizeHint", "target": "toml", "group": ["anima", "moss_image"], "show_if": [{"key": "blocks_to_swap", "neq": 0}, {"key": "block_swap_h2d_only", "eq": True}]},
+    shared_training_field('block_swap_ring_size', default=2, target="toml", group=["anima", "moss_image"]),
     {"key": "use_pinned_memory_for_block_swap", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.use_pinned_memory_for_block_swap", "hint_key": "field.use_pinned_memory_for_block_swapHint", "target": "toml", "group": ["anima", "moss_image"], "show_if": [{"key": "blocks_to_swap", "neq": 0}, {"key": "block_swap_h2d_only", "eq": True}], "omit_default": True},
     # 两种激活卸载与换块互斥，由 option_contracts 在校验和适配入口共同检查。
     {"key": "cpu_offload_checkpointing", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.cpu_offload_checkpointing", "target": "toml", "group": "anima", "hint_key": "field.cpu_offload_checkpointingHint", "omit_default": True},
@@ -557,26 +592,26 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "dynamo_backend", "type": "select", "default": "inductor", "section": "performance", "desc_key": "field.dynamo_backend", "target": "toml", "show_if": {"key": "torch_compile", "eq": True}, "hint_key": "field.dynamo_backendHint", "group": "sdxl", "options": [{"v": "inductor", "l": "inductor", "dk": "opt.dynamo_backend_inductor"}, {"v": "eager", "l": "eager", "dk": "opt.dynamo_backend_eager"}, {"v": "cudagraphs", "l": "cudagraphs", "dk": "opt.dynamo_backend_cudagraphs"}]},
     # Anima/MOSS 块级编译可与换块并用，但必须关闭 fullgraph。
     {"key": "compile", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.compile", "target": "toml", "group": "anima", "hint_key": "field.compileHint"},
-    {"key": "compile_backend", "type": "select", "default": "inductor", "section": "performance", "desc_key": "field.compile_backend", "target": "toml", "group": "anima", "show_if": {"key": "compile", "eq": True}, "options": [{"v": "inductor", "l": "inductor", "dk": "opt.compile_backend_inductor"}, {"v": "eager", "l": "eager", "dk": "opt.compile_backend_eager"}, {"v": "cudagraphs", "l": "cudagraphs", "dk": "opt.compile_backend_cudagraphs"}]},
-    {"key": "compile_mode", "type": "select", "default": "default", "section": "performance", "desc_key": "field.compile_mode", "target": "toml", "group": "anima", "show_if": {"key": "compile", "eq": True}, "options": [{"v": "default", "l": "default", "dk": "opt.compile_mode_default"}, {"v": "reduce-overhead", "l": "reduce-overhead", "dk": "opt.compile_mode_reduce_overhead"}, {"v": "max-autotune", "l": "max-autotune", "dk": "opt.compile_mode_max_autotune"}, {"v": "max-autotune-no-cudagraphs", "l": "max-autotune-no-cudagraphs", "dk": "opt.compile_mode_max_autotune_no_cudagraphs"}]},
-    {"key": "compile_dynamic", "type": "select", "default": "auto", "section": "performance", "desc_key": "field.compile_dynamic", "target": "toml", "group": "anima", "show_if": {"key": "compile", "eq": True}, "options": [{"v": "auto", "l": "auto", "dk": "opt.compile_dynamic_auto"}, {"v": "true", "l": "true", "dk": "opt.compile_dynamic_true"}, {"v": "false", "l": "false", "dk": "opt.compile_dynamic_false"}]},
-    {"key": "compile_fullgraph", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.compile_fullgraph", "target": "toml", "group": "anima", "show_if": {"key": "compile", "eq": True}},
-    {"key": "compile_cache_size_limit", "type": "number", "default": "", "section": "performance", "desc_key": "field.compile_cache_size_limit", "target": "toml", "group": "anima", "show_if": {"key": "compile", "eq": True}, "hint_key": "field.compile_cache_size_limitHint"},
+    shared_training_field('compile_backend', default="inductor", target="toml", group="anima"),
+    shared_training_field('compile_mode', default="default", target="toml", group="anima"),
+    shared_training_field('compile_dynamic', default="auto", target="toml", group="anima"),
+    shared_training_field('compile_fullgraph', default=False, target="toml", group="anima"),
+    shared_training_field('compile_cache_size_limit', default="", target="toml", group="anima"),
     # DataLoader
-    {"key": "persistent_data_loader_workers", "type": "toggle", "default": True, "section": "performance", "desc_key": "field.persistent_data_loader_workers", "target": "toml", "hint_key": "field.persistent_data_loader_workersHint", "readonly_if": {"key": "max_data_loader_n_workers", "eq": 0, "reason_key": "field.persistent_data_loader_workersLocked"}},
-    {"key": "max_data_loader_n_workers", "type": "number", "default": "", "default_by_group": {"anima": 2}, "section": "performance", "desc_key": "field.max_data_loader_n_workers", "target": "toml", "min": 0, "step": 1, "hint_key": "field.max_data_loader_n_workersHint"},
+    shared_training_field('persistent_data_loader_workers', default=True, target="toml"),
+    shared_training_field('max_data_loader_n_workers', default="", default_by_group={"anima": 2}, target="toml"),
 # ── Save ──
-{"key": "output_name", "type": "text", "default": "my_lora", "section": "save", "desc_key": "field.output_name", "target": "toml", "required": True},
-{"key": "output_dir", "type": "text", "default": "./output", "section": "save", "desc_key": "field.output_dir", "target": "toml", "role": "file-folder", "required": True},
+shared_training_field('output_name', default="my_lora", target="toml"),
+shared_training_field('output_dir', default="./output", target="toml"),
 {"key": "save_model_as", "type": "select", "default": "safetensors", "section": "save", "desc_key": "field.save_model_as", "target": "toml", "options": [{"v": "safetensors", "l": "safetensors", "dk": "opt.save_model_as_safetensors"}, {"v": "pt", "l": "pt", "dk": "opt.save_model_as_pt"}, {"v": "ckpt", "l": "ckpt", "dk": "opt.save_model_as_ckpt"}]},
-{"key": "save_precision", "type": "select", "default": "bf16", "section": "save", "desc_key": "field.save_precision", "hint_key": "field.save_precisionHint", "target": "toml", "options": [{"v": "bf16", "l": "bf16", "dk": "opt.save_precision_bf16"}, {"v": "fp16", "l": "fp16", "dk": "opt.save_precision_fp16"}, {"v": "float", "l": "float", "dk": "opt.save_precision_float"}]},
-{"key": "save_every_n_epochs", "type": "number", "default": 2, "section": "save", "desc_key": "field.save_every_n_epochs", "target": "toml", "min": 1},
-    {"key": "save_every_n_steps", "type": "number", "default": "", "section": "save", "desc_key": "field.save_every_n_steps", "target": "toml", "min": 1, "hint_key": "field.save_every_n_stepsHint"},
-    {"key": "save_last_n_epochs", "type": "number", "default": "", "section": "save", "desc_key": "field.save_last_n_epochs", "target": "toml", "min": 1, "hint_key": "field.save_last_n_epochsHint"},
+shared_training_field('save_precision', default="bf16", target="toml"),
+shared_training_field('save_every_n_epochs', default=2, target="toml"),
+    shared_training_field('save_every_n_steps', default="", target="toml"),
+    shared_training_field('save_last_n_epochs', default="", target="toml"),
     *training_metric_fields(),
-{"key": "save_state", "type": "toggle", "default": False, "section": "save", "desc_key": "field.save_state", "target": "toml", "omit_default": True},
-    {"key": "save_last_n_epochs_state", "type": "number", "default": "", "section": "save", "desc_key": "field.save_last_n_epochs_state", "target": "toml", "min": 1, "show_if": {"key": "save_state", "eq": True}},
-    {"key": "save_state_on_train_end", "type": "toggle", "default": False, "section": "save", "desc_key": "field.save_state_on_train_end", "hint_key": "field.save_state_on_train_endHint", "target": "toml", "omit_default": True},
+shared_training_field('save_state', default=False, target="toml", omit_default=True),
+    shared_training_field('save_last_n_epochs_state', default="", target="toml"),
+    shared_training_field('save_state_on_train_end', default=False, target="toml", omit_default=True),
 {"key": "logging_dir", "type": "text", "default": "./logs", "section": "save", "desc_key": "field.logging_dir", "target": "toml", "hidden": True},
 {"key": "log_with", "type": "select", "default": "tensorboard", "section": "save", "desc_key": "field.log_with", "target": "toml", "hidden": True, "options": [{"v": "tensorboard", "l": "TensorBoard", "dk": "opt.log_with_tensorboard"}, {"v": "wandb", "l": "Weights & Biases", "dk": "opt.log_with_wandb"}, {"v": "all", "l": "TensorBoard + WandB", "dk": "opt.log_with_all"}]},
 # ── Caption ──
@@ -629,37 +664,8 @@ from backend.training.moss_image import NETWORK_MODULES as MOSS_NETWORK_MODULES,
 
 _extend_moss_fields(FIELDS)
 
-# LyCORIS 弹窗布局元数据。字段定义仍是唯一配置来源；这里仅声明独立编辑器中的
-# 信息架构和稳定顺序，避免前端再维护一份字段清单或靠 show_if 关系猜测顺序。
-_LYCORIS_PANEL_LAYOUT = {
-    "lycoris_algo": ("basic", 10),
-    "lycoris_preset": ("basic", 20),
-    "lycoris_anima_sd_default": ("basic", 22),
-    "lycoris_anima_train_adaln": ("basic", 23),
-    "lycoris_kernel_backend": ("basic", 25),
-    "conv_dim": ("basic", 30),
-    "conv_alpha": ("basic", 40),
-    "dropout": ("regularization", 10),
-    "rank_dropout": ("regularization", 20),
-    "module_dropout": ("regularization", 30),
-    "lokr_factor": ("algorithm", 10),
-    "decompose_both": ("algorithm", 20),
-    "full_matrix": ("algorithm", 30),
-    "unbalanced_factorization": ("algorithm", 40),
-    "use_tucker": ("advanced", 10),
-    "use_scalar": ("advanced", 20),
-    "dora_wd": ("advanced", 30),
-    "wd_on_output": ("advanced", 40),
-    "rs_lora": ("advanced", 50),
-    "bypass_mode": ("advanced", 60),
-    "train_norm": ("advanced", 70),
-    "train_llm_adapter": ("advanced", 80),
-}
-
-for _field in FIELDS:
-    _layout = _LYCORIS_PANEL_LAYOUT.get(_field["key"])
-    if _layout:
-        _field["lycoris_group"], _field["lycoris_order"] = _layout
+# 各训练配置共用弹窗的分组与稳定顺序；字段支持面和参数语义仍由各自定义。
+apply_lycoris_panel_layout(FIELDS)
 
 # Constraints that depend on LyCORIS semantics rather than generic control type.
 _field_by_key = {field["key"]: field for field in FIELDS}
@@ -676,8 +682,6 @@ _FIELD_HINTS_BY_KEY = {
     "train_data_dir": "field.train_data_dirHint",
     "min_bucket_reso": "field.min_bucket_resoHint",
     "max_bucket_reso": "field.max_bucket_resoHint",
-    "save_last_n_epochs_state": "field.save_last_n_epochs_stateHint",
-    "seed": "field.seedHint",
     "adafactor_scale_parameter": "field.adafactor_scale_parameterHint",
     "adafactor_clip_threshold": "field.adafactor_clip_thresholdHint",
     "automagic_min_lr": "field.automagic_min_lrHint",
@@ -701,7 +705,6 @@ _FIELD_HINTS_BY_KEY = {
     "split_attn": "field.split_attnHint",
     "no_half_vae": "field.no_half_vaeHint",
     "vae_disable_cache": "field.vae_disable_cacheHint",
-    "save_state": "field.save_stateHint",
     "shuffle_caption": "field.shuffle_captionHint",
     "keep_tokens": "field.keep_tokensHint",
     "weighted_captions": "field.weighted_captionsHint",
@@ -715,7 +718,6 @@ _FIELD_HINTS_BY_KEY = {
     "bypass_mode": "field.bypass_modeHint",
     "cache_latents": "field.cache_latentsHint",
     "lowram": "field.lowramHint",
-    "compile_fullgraph": "field.compile_fullgraphHint",
     "prodigy_d_coef": "field.prodigy_d_coefHint",
     "debiased_estimation_loss": "field.debiased_estimation_lossHint",
     "noise_offset_random_strength": "field.noise_offset_random_strengthHint",
@@ -891,6 +893,19 @@ def _to_camel(field: dict) -> dict:
 
 
 _fields_json_cache: dict | None = None
+
+
+def field_applies_to_profile(field: dict, profile_id: str) -> bool:
+    """Shared profile visibility for form persistence and runtime descriptions."""
+    profiles = field.get("profiles")
+    if isinstance(profiles, list):
+        return profile_id in profiles
+    if profile_id == "krea2-lora":
+        return field.get("key") == "model_train_type"
+    group = field.get("group")
+    profile = PROFILES.get(profile_id)
+    target = profile.group if profile else None
+    return not group or group == "all" or (target is not None and (target in group if isinstance(group, list) else group == target))
 
 
 def get_all_fields() -> list[dict]:

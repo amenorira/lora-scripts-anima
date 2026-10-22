@@ -11,7 +11,6 @@ import json
 import logging
 import os
 import shutil
-import tempfile
 import tomllib
 import threading
 from datetime import datetime
@@ -20,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.constants import AUTOSAVE_DIR, OUTPUT_DIR, REPO_ROOT
+from backend.utils.file_io import atomic_write_text
 
 
 log = logging.getLogger(__name__)
@@ -110,19 +110,7 @@ def write_output_dir_reference(run_dir: str | Path, artifact_dir: str | Path) ->
 
 def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(data, handle, indent=2, ensure_ascii=False)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temp_name, path)
-    except Exception:
-        try:
-            os.unlink(temp_name)
-        except OSError:
-            pass
-        raise
+    atomic_write_text(path, json.dumps(data, indent=2, ensure_ascii=False))
 
 
 def write_run_record(

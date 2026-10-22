@@ -5,11 +5,13 @@ from dataclasses import replace
 from datetime import datetime
 import json
 import os
+import stat
 from pathlib import Path
-import tempfile
+import time
 from PIL import Image
 
 from backend.tagger import api_engine
+from backend.utils.file_io import atomic_write_text
 
 from tools import caption_images_moss as upstream
 
@@ -25,32 +27,17 @@ def _name(value: str, label: str, empty: bool = False) -> str:
 def validate_options(value: dict) -> dict:
     options = {
         "mode": "generate", "overwrite": False, "recursive": True,
-        "reference_extension": ".tags", "caption_extension": ".txt", "sidecar_suffix": "_caption.json",
+        "reference_extension": ".txt", "caption_extension": ".txt", "sidecar_suffix": "_caption.json",
         "candidates": ["original", "long", "medium", "short"], "separator": "---===---",
         "knowledge": "", "knowledge_file": "", "dir_knowledge_name": "_knowledge.txt", "knowledge_suffix": "_knowledge.txt",
         "prompt_source": "default", "prompt_text": "", "prompt_file": "", "dry_run": False, "verbose": False,
     }
     options.update({key: value[key] for key in options if key in value})
-    if options["mode"] not in {"generate", "export"}:
-        raise ValueError("Invalid task / 请选择生成描述或从 JSON 导出")
-    for key in ("caption_extension", "reference_extension"):
-        text = str(options[key]).strip()
-        options[key] = _name("." + text.lstrip("."), key) if text else ""
-    extension = options["caption_extension"]
-    if not extension or extension.lower() in upstream.IMAGE_EXTENSIONS | {".avif", ".json"}:
-        raise ValueError("Caption extension must not replace an image or JSON / 标注扩展名不能覆盖图片或 JSON")
-    if options["mode"] == "generate" and not options["overwrite"] and extension.lower() == options["reference_extension"].lower():
-        raise ValueError("Use different reference/output extensions, or enable regeneration / 参考与输出扩展名相同时，请开启重新生成已有结果")
-    for key in ("sidecar_suffix", "dir_knowledge_name", "knowledge_suffix"):
-        options[key] = _name(str(options[key]), key, empty=key != "sidecar_suffix")
-    if not options["sidecar_suffix"].lower().endswith(".json"):
-        raise ValueError("JSON suffix must end with .json / 结果 JSON 后缀必须以 .json 结尾")
-    separator = str(options["separator"])
-    if not separator.strip() or any(c in separator for c in "\r\n\x00"):
-        raise ValueError("Separator must be one nonempty line / 分隔符必须是非空单行文本")
+    options.update(plan_options(options))
     names = options["candidates"]
     if not isinstance(names, list) or not names or any(name not in {"original", "long", "medium", "short"} for name in names) or len(names) != len(set(names)):
         raise ValueError("Select at least one valid candidate / 请至少选择一种有效的导出候选")
+    options["candidates"] = [name for name in ("original", "long", "medium", "short") if name in names]
     if options["mode"] == "generate":
         if options["prompt_source"] not in {"default", "text", "file"}:
             raise ValueError("Invalid prompt source / 无效的提示词来源")
@@ -97,75 +84,295 @@ def prepare_runtime(options: dict, root: Path) -> dict:
     return {"options": options, "loader": upstream.KnowledgeLoader(root, common, options["dir_knowledge_name"], options["knowledge_suffix"]), "template": resolve_prompt(options)}
 
 
-def probe_outputs(paths: list[Path], extension: str, options: dict) -> dict:
-    reference = str(options.get("reference_extension", ".tags")).strip()
-    reference = _name("." + reference.lstrip("."), "reference_extension") if reference else ""
-    suffix = _name(str(options.get("sidecar_suffix", "_caption.json")), "sidecar_suffix")
-    separator = str(options.get("separator") or "---===---")
-    counts = {"references": 0, "sidecars": 0, "ordinary_outputs": 0}
-    for path in paths:
-        counts["references"] += bool(reference and path.with_suffix(reference).is_file())
-        counts["sidecars"] += path.with_name(path.stem + suffix).is_file()
-        output = path.with_suffix(extension)
-        if output.is_file():
-            try:
-                with output.open(encoding="utf-8-sig", errors="replace") as handle:
-                    first = handle.readline(4096)
-                counts["ordinary_outputs"] += not upstream.is_separator_line(first, separator)
-            except OSError:
-                counts["ordinary_outputs"] += 1
+def output_options(value: dict | None = None, extension: str = ".txt") -> dict:
+    """File reading settings, independent of generation and write policy."""
+    value = value or {}
+    settings = {"caption_extension": extension, "reference_extension": value.get("reference_extension", ".txt"),
+                "sidecar_suffix": str(value.get("sidecar_suffix", "_caption.json")), "separator": str(value.get("separator", "---===---")).strip()}
+    for key in ("caption_extension", "reference_extension"):
+        text = str(settings[key]).strip()
+        if key == "reference_extension" and not text:
+            text = ".txt"
+        settings[key] = _name("." + text.lstrip("."), key) if text else ""
+    if not settings["caption_extension"] or settings["caption_extension"].lower() in upstream.IMAGE_EXTENSIONS | {".avif", ".json"}:
+        raise ValueError("Caption extension must not replace an image or JSON / 标注扩展名不能覆盖图片或 JSON")
+    _name(settings["sidecar_suffix"], "sidecar_suffix")
+    if not settings["sidecar_suffix"].lower().endswith(".json"):
+        raise ValueError("JSON suffix must end with .json / 结果 JSON 后缀必须以 .json 结尾")
+    if not settings["separator"] or any(c in settings["separator"] for c in "\r\n\x00"):
+        raise ValueError("Separator must be one nonempty line / 分隔符必须是非空单行文本")
+    return settings
+
+
+def plan_options(value: dict) -> dict:
+    settings = output_options(value, value.get("caption_extension", ".txt"))
+    settings.update({key: value.get(key, default) for key, default in {
+        "mode": "generate", "overwrite": False, "knowledge_file": "", "prompt_file": "", "prompt_source": "default",
+        "dir_knowledge_name": "_knowledge.txt", "knowledge_suffix": "_knowledge.txt",
+    }.items()})
+    if settings["mode"] not in {"generate", "export"}:
+        raise ValueError("Invalid task / 请选择生成描述或从 JSON 导出")
+    for key in ("dir_knowledge_name", "knowledge_suffix"):
+        settings[key] = _name(str(settings[key]), key, empty=True)
+    return settings
+
+
+def related_file(path: Path, target: Path, *, parent: Path | None = None) -> Path:
+    if target.resolve().parent != (parent if parent is not None else path.resolve().parent):
+        raise ValueError("Annotation escaped source scope / 标注文件超出输入源范围")
+    return target
+
+
+def output_files(path: Path, options: dict, *, check_scope: bool = True) -> tuple[Path, Path, Path | None]:
+    files = (path.with_suffix(options["caption_extension"]), path.with_name(path.stem + options["sidecar_suffix"]),
+             path.with_suffix(options["reference_extension"]) if options["reference_extension"] else None)
+    if not check_scope:
+        return files
+    parent = path.resolve().parent
+    return tuple(related_file(path, file, parent=parent) if file else None for file in files)
+
+
+def parse_caption_text(text: str, separator: str = "---===---") -> dict[str, str]:
+    """Read the same named sections emitted by upstream.build_caption_text."""
+    sections: dict[str, list[str]] = {}
+    current = None
+    for line in text.lstrip("\ufeff").splitlines():
+        if line.strip().startswith(separator + " # "):
+            name = line.strip()[len(separator + " # "):].strip()
+            if name in {"original", "long", "medium", "short"}:
+                current = name
+                sections.setdefault(name, [])
+                continue
+        if current is not None:
+            sections[current].append(line)
+    return {name: "\n".join(lines).strip() for name, lines in sections.items()}
+
+
+def read_bounded(path: Path, limit: int = 512 * 1024, *, errors: str = "replace") -> str:
+    with path.open("rb") as handle:
+        data = handle.read(limit + 1)
+    if len(data) > limit:
+        raise ValueError("Annotation file is too large / 标注文件过大")
+    return data.decode("utf-8-sig", errors=errors)
+
+
+def is_reparse(info) -> bool:
+    return stat.S_ISLNK(info.st_mode) or bool(getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+
+
+def read_result(sidecar: Path, image: Path) -> dict:
+    """Only compatible, validated MOSS records count as completed generation."""
+    try:
+        data = json.loads(read_bounded(sidecar, 2 * 1024 * 1024, errors="strict"))
+        if not isinstance(data, dict):
+            raise ValueError("Result JSON must be an object / 结果 JSON 必须是对象")
+        if data.get("parse_mode", "multi-caption") != "multi-caption":
+            raise ValueError("Not a MOSS result JSON / 不是 MOSS 生成记录")
+        if "version" in data and (type(data["version"]) is not int or data["version"] != 1):
+            raise ValueError("Unsupported result version / 不支持的生成记录版本")
+        if "image" in data and data["image"] != image.name:
+            raise ValueError("Image name does not match / 生成记录与图片文件名不匹配")
+        if data.get("reference") is not None and not isinstance(data["reference"], str):
+            raise ValueError("Reference must be text / 参考原文必须是文本")
+        if not isinstance(data.get("response"), dict):
+            raise ValueError("Missing response object / 缺少模型回复对象")
+        upstream.validate_response(data["response"])
+        return data
+    except ValueError as exc:
+        raise ValueError(f"Invalid result JSON / 生成记录 JSON 无效: {sidecar.name}: {exc}") from exc
+
+
+def output_state(path: Path, options: dict, cached: dict | None = None, *, parent: Path | None = None) -> dict:
+    # The workspace validates each distinct parent directory once per scan.
+    # lstat detects links before following them; ordinary and missing outputs
+    # need no expensive realpath walk on Windows.
+    parent = path.resolve().parent if parent is None else parent
+    output, sidecar, reference = output_files(path, options, check_scope=False)
+    errors = []
+    def stamp(file):
+        try:
+            info = file.lstat() if file else None
+            if info and is_reparse(info):
+                related_file(path, file, parent=parent)
+                info = file.stat()
+            return (info.st_mtime_ns, info.st_size) if info and stat.S_ISREG(info.st_mode) else None
+        except FileNotFoundError:
+            return None
+        except (OSError, ValueError) as exc:
+            errors.append(str(exc))
+            return False
+    fingerprint = (stamp(output), stamp(sidecar), stamp(reference), tuple(options[key] for key in ("caption_extension", "sidecar_suffix", "reference_extension", "separator")))
+    if cached and not cached.get("read_error") and cached.get("fingerprint") == fingerprint:
+        return cached
+    kind = "unreadable" if fingerprint[0] is False else "missing"
+    if fingerprint[0]:
+        try:
+            with output.open(encoding="utf-8-sig", errors="replace") as handle:
+                first = handle.readline(4096).strip()
+            kind = "moss" if first in {options["separator"] + " # " + n for n in ("original", "long", "medium", "short")} else "ordinary"
+        except OSError as exc:
+            errors.append(str(exc))
+            kind = "unreadable"
+    def present(stamp):
+        return None if stamp is False else stamp is not None
+    sidecar_valid = False
+    sidecar_error = ""
+    if fingerprint[1]:
+        try:
+            read_result(sidecar, path)
+            sidecar_valid = True
+        except (ValueError, OSError) as exc:
+            sidecar_error = str(exc)
+            if isinstance(exc, OSError):
+                errors.append(str(exc))
+    return {"fingerprint": fingerprint, "has_caption": present(fingerprint[0]),
+            "has_sidecar": present(fingerprint[1]), "has_reference": present(fingerprint[2]),
+            "sidecar_valid": sidecar_valid, "sidecar_error": sidecar_error,
+            "caption_kind": kind, "updated_at": fingerprint[0][0] / 1e9 if fingerprint[0] else None,
+            **({"read_error": "\n".join(errors)} if errors else {})}
+
+
+def output_counts(states: list[dict]) -> dict:
+    counts = {key: 0 for key in ("outputs", "moss_outputs", "ordinary_outputs", "missing_outputs", "unreadable_outputs", "references", "sidecars", "missing_json", "invalid_json", "reusable", "requestable")}
+    counts["total"] = len(states)
+    for state in states:
+        counts["outputs"] += state["has_caption"] is True
+        counts[state["caption_kind"] + "_outputs"] += 1
+        counts["references"] += state["has_reference"] is True
+        counts["sidecars"] += state["has_sidecar"] is True
+        counts["missing_json"] += state["has_sidecar"] is False
+        counts["invalid_json"] += bool(state.get("sidecar_error"))
+        counts["reusable"] += state.get("sidecar_valid", False) and not state["has_caption"]
+        counts["requestable"] += state["has_sidecar"] is False
     return counts
 
 
-def _atomic_write(path: Path, text: str) -> None:
-    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(text)
-        os.replace(temporary, path)
-    finally:
-        Path(temporary).unlink(missing_ok=True)
+def execution_plan(states: list[dict], options: dict) -> dict:
+    plan = {key: 0 for key in ("requests", "reused", "skipped", "failed", "writes", "overwrite_captions", "overwrite_json", "overwrite_references")}
+    for state in states:
+        action = planned_action(state, options)
+        plan[{"request": "requests", "reuse": "reused", "skip": "skipped", "fail": "failed"}[action]] += 1
+        if action not in {"skip", "fail"}:
+            plan["writes"] += 1
+            plan["overwrite_captions"] += state["has_caption"]
+            plan["overwrite_json"] += action == "request" and state["has_sidecar"]
+            plan["overwrite_references"] += bool(state["has_reference"] and options["reference_extension"].lower() == options["caption_extension"].lower())
+    return plan
 
 
-def process(config: api_engine.ApiConfig, path: Path, runtime: dict, *, cancel_event=None, index=0) -> dict:
+def planned_action(state: dict, options: dict) -> str:
+    regenerate = options["mode"] == "generate" and options["overwrite"]
+    if state.get("sidecar_error") and not regenerate:
+        return "fail"
+    if options["mode"] == "export":
+        if state["has_caption"] and not options["overwrite"]:
+            return "skip"
+        return "reuse" if state.get("sidecar_valid") else "skip"
+    if not regenerate and state.get("sidecar_valid"):
+        return "skip" if state["has_caption"] else "reuse"
+    return "request"
+
+
+def validate_write_targets(paths: list[Path], targets: list[Path], protected: list[Path] = ()) -> None:
+    """Check the files this operation will actually write."""
+    protected = {os.path.normcase(str(path.resolve())) for path in [*paths, *protected]}
+    seen = set()
+    for target in targets:
+        key = os.path.normcase(str(target.resolve()))
+        if key in seen or key in protected:
+            raise ValueError(f"Conflicting output filenames / 图片输出文件名冲突: {target.name}")
+        seen.add(key)
+
+
+def validate_output_targets(paths: list[Path], options: dict, states: list[dict]) -> None:
+    targets = []
+    requests = []
+    for path, state in zip(paths, states):
+        if state["has_caption"] is None or state["has_sidecar"] is None:
+            raise ValueError(state["read_error"])
+        action = planned_action(state, options)
+        if action in {"skip", "fail"}:
+            continue
+        output, sidecar, _ = output_files(path, options)
+        targets.extend([output, sidecar] if action == "request" else [output])
+        if action == "request":
+            requests.append(path)
+    protected = []
+    if requests:
+        for key in ("knowledge_file", "prompt_file"):
+            if options.get(key) and (key != "prompt_file" or options.get("prompt_source") == "file"):
+                protected.append(Path(options[key]).expanduser())
+        for path in requests:
+            for name in (options.get("dir_knowledge_name"), path.stem + options["knowledge_suffix"] if options.get("knowledge_suffix") else ""):
+                if name:
+                    protected.append(path.with_name(name))
+    validate_write_targets(paths, targets, protected)
+
+
+def build_prompt(runtime: dict, path: Path, reference: str = "") -> tuple[str, str]:
+    knowledge = runtime["loader"].for_image(path)
+    template = runtime["template"]
+    prompt = upstream.build_prompt(template, reference, knowledge)
+    if reference and "{{reference}}" not in template:
+        prompt += "\n\nReference caption (use only claims supported by the image):\n" + reference
+    if knowledge and "{{knowledge}}" not in template:
+        prompt += "\n\nKnowledge for identifying visible content only:\n" + knowledge
+    return prompt, knowledge
+
+
+def preview(config: api_engine.ApiConfig, path: Path, options: dict, *, cancel_event=None) -> dict:
+    if not any(name != "original" for name in options["candidates"]):
+        raise ValueError("No selected candidate has content / 请选择长、中或短描述")
+    started = time.monotonic()
+    runtime = prepare_runtime({**options, "mode": "generate", "dir_knowledge_name": "", "knowledge_suffix": ""}, path.parent)
+    prompt, _ = build_prompt(runtime, path)
+    info = {}
+    with Image.open(path) as image:
+        response, raw = api_engine.interrogate(replace(config, prompt=prompt), image, cancel_event=cancel_event, metadata=info)
+    if cancel_event is not None and cancel_event.is_set():
+        raise InterruptedError("cancelled")
+    candidates = dict(upstream.collect_candidates([n for n in options["candidates"] if n != "original"], response, ""))
+    if not candidates:
+        raise ValueError("No selected candidate has content / 请选择长、中或短描述")
+    return {"model": config.model, "candidates": candidates, "text": upstream.build_caption_text(list(candidates.items()), options["separator"]),
+            "prompt": prompt, "raw": raw, **info, "elapsed": round(time.monotonic() - started, 2)}
+
+
+def process(config: api_engine.ApiConfig, path: Path, runtime: dict, *, cancel_event=None) -> dict:
     options = runtime["options"]
-    output = path.with_suffix(options["caption_extension"])
-    sidecar = path.with_name(path.stem + options["sidecar_suffix"])
+    output, sidecar, reference_path = output_files(path, options)
 
     def check_cancelled():
         if cancel_event is not None and cancel_event.is_set():
             raise InterruptedError("cancelled")
 
-    def outcome(text="", *, status="success", event=None, **extra):
-        return {"status": status, "tag_count": 0, "result": {"index": index, "name": path.name, "path": str(path), "text": text, "tags": [], "categories": {}}, **({"event": event} if event else {}), **extra}
+    def outcome(*, status="success", event=None, **extra):
+        return {"status": status, **({"event": event} if event else {}), **extra}
 
     check_cancelled()
-    if not options["dry_run"] and not options["overwrite"] and output.is_file():
-        return outcome(status="skipped")
-    old = json.loads(sidecar.read_text(encoding="utf-8")) if sidecar.is_file() and not options["dry_run"] else None
+    old = None
+    if sidecar.is_file():
+        try:
+            old = read_result(sidecar, path)
+        except ValueError:
+            if options["mode"] != "generate" or not options["overwrite"]:
+                raise
+    if not options["overwrite"] and output.is_file() and (options["mode"] == "export" or old is not None):
+        return outcome(status="skipped", event="skipped", planned_action="skip")
     if options["mode"] == "export" and old is None:
-        return outcome(status="skipped", event="missing_json")
+        return outcome(status="skipped", event="missing_json", planned_action="skip")
     reuse = old is not None and (options["mode"] == "export" or not options["overwrite"])
     if reuse:
-        if old.get("parse_mode", "multi-caption") != "multi-caption":
-            raise ValueError("Not a MOSS result JSON / 此 JSON 不是 MOSS 多候选结果，请重新生成")
         response, reference = old["response"], old.get("reference") or ""
     else:
-        reference_path = path.with_suffix(options["reference_extension"]) if options["reference_extension"] else None
         reference = upstream.read_text(reference_path) if reference_path and reference_path.is_file() else ""
         if any(upstream.is_separator_line(line, options["separator"]) for line in reference.splitlines()):
-            if old is None:
-                raise ValueError("Reference already contains MOSS output but original JSON is missing / 参考文件已是多候选结果，但缺少保存原文的 JSON")
-            reference = old.get("reference") or ""
-        knowledge = runtime["loader"].for_image(path)
-        template = runtime["template"]
-        prompt = upstream.build_prompt(template, reference, knowledge)
-        if reference and "{{reference}}" not in template:
-            prompt += "\n\nReference caption (use only claims supported by the image):\n" + reference
-        if knowledge and "{{knowledge}}" not in template:
-            prompt += "\n\nKnowledge for identifying visible content only:\n" + knowledge
+            reference = (old.get("reference") or "") if old is not None else parse_caption_text(reference, options["separator"]).get("original", "")
+        prompt, knowledge = build_prompt(runtime, path, reference)
+        if not reference and options["candidates"] == ["original"]:
+            raise ValueError("No selected candidate has content / 没有参考标注时请选择长、中或短描述")
         if options["dry_run"]:
-            return outcome(event="checked", prompt=prompt if index == 0 else "", reference=bool(reference), knowledge=len(knowledge))
+            return outcome(status="checked", event="checked", prompt=prompt, planned_action="request", reference=bool(reference), knowledge=len(knowledge))
         check_cancelled()
         info = {}
         with Image.open(path) as image:
@@ -178,8 +385,10 @@ def process(config: api_engine.ApiConfig, path: Path, runtime: dict, *, cancel_e
     text = upstream.build_caption_text(upstream.collect_candidates(options["candidates"], response, reference), options["separator"])
     if not text.strip():
         raise ValueError("No selected candidate has content / 所选候选没有内容；没有参考标注时请选择长、中或短描述")
+    if options["dry_run"]:
+        return outcome(status="checked", event="checked", planned_action="reuse")
     check_cancelled()
     if not reuse:
-        _atomic_write(sidecar, json.dumps(old, ensure_ascii=False, indent=2) + "\n")
-    _atomic_write(output, text)
-    return outcome(text, event="reused" if reuse else "caption_written")
+        atomic_write_text(sidecar, json.dumps(old, ensure_ascii=False, indent=2) + "\n", cancel_event=cancel_event)
+    atomic_write_text(output, text, cancel_event=cancel_event)
+    return outcome(event="reused" if reuse else "caption_written", planned_action="reuse" if reuse else "request")

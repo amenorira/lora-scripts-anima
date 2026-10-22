@@ -139,7 +139,7 @@ def _build_train_env(
         # vendor/ as a whole before it: sd-scripts also owns a top-level
         # library package and can shadow musubi imports.
         env.pop("LORA_SCRIPTS_TRUE_LR_LOGGING", None)
-        new_paths = [str(path) for path in engine_pythonpaths(engine_id)] + [startup_hooks, repo_root]
+        new_paths = [str(path) for path in engine_pythonpaths(engine_id)] + [startup_hooks, repo_root, vendor_root]
 
     for p in existing_pypath.split(os.pathsep):
         if not p or p == vendor_root or p in new_paths:

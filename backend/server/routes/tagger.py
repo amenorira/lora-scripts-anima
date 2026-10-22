@@ -6,7 +6,7 @@ import uuid
 from io import BytesIO
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from PIL import Image, UnidentifiedImageError
 
 from backend.async_utils import settled_to_thread
@@ -23,6 +23,7 @@ from backend.tagger.interrogator import (
 )
 from backend.tagger.interrogators.base import CATEGORY_LABELS
 from backend.tagger import captioning, api_engine
+from backend.tagger import workspace
 from backend.tagger.registry import DEFAULT_MODEL_ID, MODEL_SPEC_BY_ID, model_payload
 from backend.tagger.workspace import (
     cancel_task as cancel_workspace_task,
@@ -37,7 +38,6 @@ from backend.tagger.workspace import (
     task_snapshot,
     training_active,
 )
-from backend.tasks import tm
 
 router = APIRouter()
 
@@ -68,8 +68,10 @@ _MODEL_DISPLAY_NAMES = {key: spec.name for key, spec in MODEL_SPEC_BY_ID.items()
 async def run_interrogate(req: TaggerInterrogateRequest):
     task_id = str(uuid.uuid4())[:8]
     owner = f"legacy-tagger:{task_id}"
-    if not tm.claim_external(owner):
-        return APIResponseFail(message="Training, tagging or generation task is active / 训练、打标或正则生成任务正在运行")
+    try:
+        workspace.claim_direct_tagger(owner)
+    except RuntimeError as exc:
+        return APIResponseFail(message=str(exc))
     interrogator = available_interrogators.get(
         req.interrogator_model,
         available_interrogators[DEFAULT_MODEL_ID],
@@ -113,12 +115,12 @@ async def run_interrogate(req: TaggerInterrogateRequest):
                 **postprocess_options,
             )
         finally:
-            tm.release_external(owner)
+            workspace.release_direct_tagger(owner)
 
     try:
         asyncio.create_task(_run_claimed())
     except Exception:
-        tm.release_external(owner)
+        workspace.release_direct_tagger(owner)
         raise
     await realtime_tasks.register(
         task_id,
@@ -187,6 +189,70 @@ async def list_tagger_source_items(source_token: str, offset: int = 0, limit: in
         return APIResponseFail(message=str(exc))
 
 
+def annotation_options(caption_extension: str = ".txt", reference_extension: str = ".txt",
+                       sidecar_suffix: str = "_caption.json", separator: str = "---===---") -> dict:
+    return dict(caption_extension=caption_extension, reference_extension=reference_extension,
+                sidecar_suffix=sidecar_suffix, separator=separator)
+
+
+@router.get("/tagger/source/{source_token}/annotations")
+async def list_annotations(source_token: str, offset: int = 0, limit: int = 60, status: str = "all", q: str = "",
+                           refresh: bool = False, task_id: str = "", cached: bool = False, options: dict = Depends(annotation_options)):
+    try:
+        return APIResponseSuccess(data=await asyncio.to_thread(workspace.annotations, source_token, offset, limit, status, q, refresh, options, task_id, cached))
+    except Exception as exc:
+        return APIResponseFail(message=str(exc))
+
+
+@router.get("/tagger/source/{source_token}/annotations/{index}")
+async def get_annotation(source_token: str, index: int, options: dict = Depends(annotation_options)):
+    try:
+        return APIResponseSuccess(data=await asyncio.to_thread(workspace.annotation_detail, source_token, index, options))
+    except Exception as exc:
+        return APIResponseFail(message=str(exc))
+
+
+@router.post("/tagger/source/{source_token}/caption-plan")
+async def get_caption_plan(source_token: str, request: Request):
+    try:
+        options = await request.json()
+        return APIResponseSuccess(data=await asyncio.to_thread(workspace.caption_plan, source_token, options))
+    except Exception as exc:
+        return APIResponseFail(message=str(exc))
+
+
+@router.get("/tagger/caption/preview-state")
+async def caption_preview_state():
+    return APIResponseSuccess(data=workspace.preview_state())
+
+
+@router.post("/tagger/caption/preview-cancel")
+async def cancel_caption_preview(request: Request):
+    body = await request.json()
+    return APIResponseSuccess(data={"cancelling": workspace.cancel_preview(str(body.get("request_id") or ""))})
+
+
+@router.post("/tagger/caption/preview")
+async def caption_preview(request: Request):
+    body = await request.json()
+    preview = None
+    try:
+        preview = workspace.prepare_preview(body)
+        return APIResponseSuccess(data=await settled_to_thread(workspace.preview_caption, body, preview))
+    except InterruptedError:
+        return APIResponseFail(message="Preview cancelled / 预览已取消")
+    except Exception as exc:
+        message = str(exc)
+        key = str((body.get("api") or {}).get("api_key") or "")
+        if key:
+            message = message.replace(key, "[redacted]")
+        return APIResponseFail(message=message[:2000])
+    finally:
+        # settled_to_thread waits for the worker's HTTP client before releasing.
+        if preview is not None:
+            workspace.release_direct_tagger(preview["request_id"])
+
+
 @router.post("/tagger/tasks")
 async def start_tagger_workspace_task(request: Request):
     try:
@@ -239,6 +305,14 @@ async def list_tagger_workspace_items(task_id: str, offset: int = 0, limit: int 
         return APIResponseFail(message=str(exc))
 
 
+@router.get("/tagger/tasks/{task_id}/check-prompt")
+async def get_check_prompt(task_id: str):
+    try:
+        return APIResponseSuccess(data=workspace.task_check_prompt(task_id))
+    except Exception as exc:
+        return APIResponseFail(message=str(exc))
+
+
 @router.get("/tagger/tasks/active")
 async def active_tagger_workspace_task():
     return APIResponseSuccess(data={"task_id": latest_active_task_id()})
@@ -268,9 +342,11 @@ async def tagger_single_image(
         return APIResponseFail(message=f"Unknown model: {interrogator_model} / 未知模型: {interrogator_model}")
 
     owner = f"single-tagger:{uuid.uuid4().hex}"
-    if not tm.claim_external(owner):
+    try:
+        workspace.claim_direct_tagger(owner)
+    except RuntimeError as exc:
         image.close()
-        return APIResponseFail(message="Training, tagging or generation task is active / 训练、打标或正则生成任务正在运行")
+        return APIResponseFail(message=str(exc))
 
     try:
         def _infer():
@@ -282,7 +358,7 @@ async def tagger_single_image(
         log.exception("Single-image inference failed / 单张推理失败")
         return APIResponseFail(message=f"Inference failed / 推理失败: {str(exc)[:200]}")
     finally:
-        tm.release_external(owner)
+        workspace.release_direct_tagger(owner)
         image.close()
 
     categories = {

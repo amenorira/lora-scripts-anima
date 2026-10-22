@@ -8,7 +8,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from backend.server import app
-from backend.tageditor.core import caption_revision, get_cached_scan_dataset
+from backend.tageditor.core import caption_revision, get_cached_scan_dataset, read_caption_snapshot
 from backend.tageditor.repository import save_caption_transaction, restore_timeline_event
 from backend.tageditor.sessions import DatasetSessionService
 from backend.tageditor.snapshots import create_snapshot, restore_snapshot
@@ -16,6 +16,31 @@ from backend.tageditor.timeline import TimelineStore
 
 
 class TagEditorTransactionTests(unittest.TestCase):
+    def test_snapshot_detects_in_place_changes_during_read(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as temp_dir:
+            caption = Path(temp_dir) / "a.txt"
+            caption.write_text("old", encoding="utf-8")
+            with patch("backend.tageditor.core.os.fstat", side_effect=[
+                SimpleNamespace(st_mtime_ns=1, st_size=3),
+                SimpleNamespace(st_mtime_ns=2, st_size=3),
+            ]):
+                with self.assertRaisesRegex(OSError, "changed while reading"):
+                    read_caption_snapshot(caption)
+
+    def test_unreadable_caption_aborts_without_overwriting(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            image = root / "a.png"
+            image.touch()
+            caption = image.with_suffix(".txt")
+            caption.write_text("original", encoding="utf-8")
+            with patch("backend.tageditor.repository.read_caption_snapshot", side_effect=PermissionError("denied")):
+                result = save_caption_transaction(root, [{"path": str(image), "tags": "new"}])
+            self.assertTrue(result["aborted"])
+            self.assertIn("denied", result["failed"][0]["reason"])
+            self.assertEqual(caption.read_text(encoding="utf-8"), "original")
+
     def test_transaction_rolls_back_all_applied_files(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

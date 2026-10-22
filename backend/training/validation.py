@@ -5,6 +5,7 @@ import math
 import re
 from typing import Any
 
+from backend.training.core_registry import PROFILES
 from backend.training.field_registry import (
     AUTOMAGIC_OPTIMIZER_TYPE,
     EMOSENS_OPTIMIZER_TYPE,
@@ -12,6 +13,7 @@ from backend.training.field_registry import (
     LORAPLUS_INCOMPATIBLE_OPTIMIZERS,
     LORAPLUS_RATIO_KEYS,
     loraplus_applies,
+    field_applies_to_profile,
 )
 from backend.training.optimizer_contracts import (
     ADAFACTOR_OPTIMIZER_TYPE,
@@ -19,14 +21,13 @@ from backend.training.optimizer_contracts import (
     MUON_OPTIMIZER_TYPE,
     collect_optimizer_args,
     get_automagic_fused_conflicts,
+    is_empty_optimizer_value as _is_empty,
     normalize_lora_muon_form_fields,
     parse_optimizer_args,
     validate_optimizer_contract,
 )
 
 
-_TRAIN_TYPE_GROUP = {"sdxl-lora": "sdxl", "anima-lora": "anima", "krea2-lora": "krea2", "moss-image-lora": "moss_image"}
-_EMPTY_STRINGS = {"", "undefined", "null", "nan"}
 _SCHEDULER_PARAMETER_MODES = {
     "lr_scheduler_timescale": {"inverse_sqrt"},
     "lr_scheduler_min_lr_ratio": {"cosine_with_min_lr", "warmup_stable_decay"},
@@ -37,30 +38,14 @@ _SCHEDULER_PARAMETER_MODES = {
 }
 
 
-def _is_empty(value: Any) -> bool:
-    if value is None:
-        return True
-    if isinstance(value, str):
-        return value.strip().lower() in _EMPTY_STRINGS
-    return isinstance(value, float) and math.isnan(value)
-
-
-def _applies_to_group(field: dict[str, Any], group: str | None) -> bool:
-    field_group = field.get("group")
-    if not field_group or field_group == "all" or group is None:
-        return True
-    groups = field_group if isinstance(field_group, list) else [field_group]
-    return group in groups
-
-
-def _select_values(field: dict[str, Any], group: str | None) -> set[Any]:
+def _select_values(field: dict[str, Any], profile_id: str) -> set[Any]:
     options = list(field.get("options") or [])
     for option_group in field.get("groups") or []:
         options.extend(option_group.get("options") or [])
     return {
         option.get("v")
         for option in options
-        if "v" in option and _applies_to_group(option, group)
+        if "v" in option and (profile_id not in PROFILES or field_applies_to_profile(option, profile_id))
     }
 
 
@@ -374,14 +359,15 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
         from backend.training.musubi_krea2 import validate_krea2_config
 
         return validate_krea2_config(config)
-    group = _TRAIN_TYPE_GROUP.get(train_type)
+    profile = PROFILES.get(train_type)
+    group = profile.group if profile else None
     from backend.training.option_contracts import normalize_sd_options, validate_sd_option_dependencies
 
     errors.extend(validate_sd_option_dependencies(config))
     normalize_sd_options(config)
 
     for field in FIELDS:
-        if not _applies_to_group(field, group):
+        if profile is not None and not field_applies_to_profile(field, train_type):
             continue
         field = {**field, **field.get("constraints_by_group", {}).get(group, {})}
         key = field["key"]
@@ -424,7 +410,7 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
             errors.append(f"{key}: must be true or false / 必须是布尔值")
 
         if field.get("type") == "select":
-            allowed = _select_values(field, group)
+            allowed = _select_values(field, train_type)
             equivalent = next((candidate for candidate in allowed if str(candidate) == str(value)), None)
             if equivalent is not None:
                 config[key] = equivalent

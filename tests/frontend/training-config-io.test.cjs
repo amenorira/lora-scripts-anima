@@ -67,7 +67,11 @@ test('training profiles keep independent drafts and reset from registry defaults
     renderTrainingForm() {}, setupAutoValueWatchers() {}, setupShowIfWatchers() {}, setupReadonlyWatchers() {},
     updateToml() {}, rebuildForm() {}, toast() {}, t: (_key, fallback) => fallback || '', $nextTick: fn => fn(),
   });
+  app.stepEstimate = { subsets: [{ name: 'old-profile' }] };
+  const previousRequest = app._stepEstimateRequestSeq;
   app.switchTrainType('krea2-lora');
+  assert.equal(app.stepEstimate, null);
+  assert.ok(app._stepEstimateRequestSeq > previousRequest);
   assert.equal(app.form.learning_rate, 'krea-default');
   app.form.learning_rate = 'krea-custom';
   app._setFieldSource('learning_rate', 'user');

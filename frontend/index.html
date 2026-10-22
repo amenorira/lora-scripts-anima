@@ -27,46 +27,47 @@
   </script>
   <link rel="preload" href="/anima-ui/assets/fonts/inter-latin-normal.woff2?v=20261017-ui16" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/anima-ui/css/fonts.css?v=20261017-ui16">
-  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20261020-caption-layout4">
+  <link rel="stylesheet" href="/anima-ui/css/app.css?v=20261022-quality-toggle1">
   <link rel="stylesheet" href="/anima-ui/css/themes/light.css?v=20261018-env-readiness">
   <link rel="stylesheet" href="/anima-ui/css/themes/dark.css?v=20261018-env-readiness">
   <link rel="stylesheet" href="/anima-ui/css/themes/comfy.css?v=20261018-env-readiness">
   <link rel="stylesheet" href="/anima-ui/css/tagger.css?v=20261021-training-caption1">
-  <link rel="stylesheet" href="/anima-ui/css/ai-captioning.css?v=20261020-moss-workflow2">
+  <link rel="stylesheet" href="/anima-ui/css/ai-captioning.css?v=20261022-caption-form16">
   <link rel="stylesheet" href="/anima-ui/css/regularization.css?v=20261017-ui16">
-  <link rel="stylesheet" href="/anima-ui/css/motion.css?v=20261018-ui8">
+  <link rel="stylesheet" href="/anima-ui/css/motion.css?v=20261022-quality-toggle1">
   <link rel="stylesheet" href="/anima-ui/css/tag-dictionary.css?v=20260929-tagger-review22">
-  <script src="/anima-ui/js/i18n.js?v=20261021-training-caption2" defer></script>
+  <script src="/anima-ui/js/i18n.js?v=20261022-quality-final1" defer></script>
   <script src="/anima-ui/js/constants.js" defer></script>
   <script src="/anima-ui/js/utils.js?v=20261018-moss2" defer></script>
   <script src="/anima-ui/js/ui-interactions.js?v=20261018-ui8" defer></script>
   <script src="/anima-ui/js/notifications.js?v=20261018-ui8" defer></script>
   <!-- Feature modules (order matters: config first, app last) -->
-  <script src="/anima-ui/js/config.js?v=20261020-training-upstream1" defer></script>
+  <script src="/anima-ui/js/config.js?v=20261022-krea-lycoris2" defer></script>
   <script src="/anima-ui/js/anima-select.js?v=20261018-ui8" defer></script>
-  <script src="/anima-ui/js/realtime.js?v=20261018-ui8" defer></script>
+  <script src="/anima-ui/js/realtime.js?v=20261022-cursors-memory1" defer></script>
   <script src="/anima-ui/js/monitor-logs.js?v=20261002-review-cache1" defer></script>
-  <script src="/anima-ui/js/monitor-core.js?v=20261020-caption-layout4" defer></script>
+  <script src="/anima-ui/js/monitor-core.js?v=20261022-quality-final1" defer></script>
   <script src="/anima-ui/js/monitor-render.js?v=20261018-ui8" defer></script>
   <script src="/anima-ui/js/environment-core.js?v=20261019-env-audit" defer></script>
   <script src="/anima-ui/js/environment-render.js?v=20261019-model-sizes" defer></script>
   <script src="/anima-ui/js/docs.js?v=20260909-docscreens17" defer></script>
-  <script src="/anima-ui/js/training-core.js?v=20261020-training-upstream1" defer></script>
+  <script src="/anima-ui/js/training-core.js?v=20261022-quality-final1" defer></script>
   <script src="/anima-ui/js/dataset-repeat.js?v=20261020-parameter-relations1" defer></script>
   <script src="/anima-ui/js/training-lr-preview.js?v=20261018-ui8" defer></script>
   <script src="/anima-ui/js/preview-select.js?v=20261018-ui8" defer></script>
-  <script src="/anima-ui/js/training-shape-preview.js?v=20261019-moss-native" defer></script>
+  <script src="/anima-ui/js/training-shape-preview.js?v=20261021-copy-clarity1" defer></script>
   <script src="/anima-ui/js/training-toml.js?v=20261020-parameter-relations1" defer></script>
   <script src="/anima-ui/js/training-config-io.js?v=20261018-option-deps" defer></script>
-  <script src="/anima-ui/js/ai-caption-options.js?v=20261020-moss-workflow2" defer></script>
-  <script src="/anima-ui/js/tagger.js?v=20261021-training-caption1" defer></script>
+  <script src="/anima-ui/js/ai-caption-options.js?v=20261022-caption-form15" defer></script>
+  <script src="/anima-ui/js/caption-workspace.js?v=20261022-quality-final1" defer></script>
+  <script src="/anima-ui/js/tagger.js?v=20261022-caption-form15" defer></script>
   <script src="/anima-ui/js/regularization.js?v=20261020-caption-layout4" defer></script>
-  <script src="/anima-ui/js/tag-editor.js?v=20261018-ui8" defer></script>
+  <script src="/anima-ui/js/tag-editor.js?v=20261022-quality-final1" defer></script>
   <!-- Tag Editor 词典：lib 定义纯逻辑，client 持有 Worker 与缓存，hover 只挂事件委托 -->
   <script src="/anima-ui/js/tag-dictionary-lib.js?v=20261007-unified-suggest3" defer></script>
   <script src="/anima-ui/js/tag-dictionary.js?v=20261020-caption-layout4" defer></script>
   <script src="/anima-ui/js/tag-hover-card.js?v=20260929-tagger-review22" defer></script>
-  <script src="/anima-ui/js/app.js?v=20261020-caption-layout4" defer></script>
+  <script src="/anima-ui/js/app.js?v=20261021-caption-workspaces6" defer></script>
   <script src="/anima-ui/js/vendor/alpine.min.js" defer></script>
 </head>
 <body x-data="animaApp()" x-cloak>
@@ -245,7 +246,7 @@
   <!-- ── Main Content ─────────────────────────────────────── -->
   <div class="main-area">
     <main class="main-content" id="mainContent" tabindex="-1"
-          :class="{ 'main-fullscreen': currentRoute === 'tagEditor' || currentRoute === 'tensorboard' || currentRoute === 'monitor-dashboard', 'route-monitor-shell': currentRoute === 'monitor-dashboard', 'route-tagger-shell': ['tagger', 'ai-captioning', 'regularization'].includes(currentRoute), 'route-tagger-single': ['tagger', 'ai-captioning'].includes(currentRoute) && taggerSourceMode === 'single', 'route-training': currentRoute && currentRoute.startsWith('train-'), 'route-transitioning': routeTransitioning }"
+          :class="{ 'main-fullscreen': currentRoute === 'tagEditor' || currentRoute === 'tensorboard' || currentRoute === 'monitor-dashboard', 'route-monitor-shell': currentRoute === 'monitor-dashboard', 'route-tagger-shell': ['tagger', 'ai-captioning', 'regularization'].includes(currentRoute), 'route-tagger-single': ['tagger', 'ai-captioning'].includes(currentRoute) && taggerSourceMode.endsWith('single'), 'route-caption-shell': currentRoute === 'ai-captioning', 'route-caption-overview': currentRoute === 'ai-captioning' && captionTab === 'overview', 'route-training': currentRoute && currentRoute.startsWith('train-'), 'route-transitioning': routeTransitioning }"
               :aria-busy="routeTransitioning ? 'true' : 'false'">
 
       <!-- Route: Home -->
@@ -728,11 +729,13 @@
                 @input="tagEditorSetSearch($event.target.value)"
                 @keydown.escape="tagEditorClearSearch()"
                 :class="{ 'te-input-error': tagEditorRegexError }">
-              <button class="te-search-clear" x-show="tagEditorSearchQuery" @click="tagEditorClearSearch()" :title="t('tagEditor.clearSearch')" :aria-label="t('tagEditor.clearSearch')">&times;</button>
+              <div class="te-search-actions">
+              <span class="te-search-spinner" x-show="_teSearchLoading" aria-hidden="true"></span>
+              <button type="button" class="te-search-clear" x-show="tagEditorSearchQuery" @click="tagEditorClearSearch()" :title="t('tagEditor.clearSearch')" :aria-label="t('tagEditor.clearSearch')">&times;</button>
               <button class="te-regex-btn" :class="{ active: tagEditorUseRegex }"
                 @click="tagEditorUseRegex = !tagEditorUseRegex; _teValidateRegex(tagEditorSearchQuery); tagEditorSchedulePageFetch(true)"
                 x-text='".*"' :title="t('tagEditor.regexSearch')" :aria-label="t('tagEditor.regexSearch')" :aria-pressed="tagEditorUseRegex"></button>
-              <span class="te-search-spinner" x-show="_teSearchLoading"></span>
+              </div>
               <div class="te-regex-error" x-show="tagEditorRegexError" x-text="t('tagEditor.regexError')"></div>
             </div>
             <div class="te-topbar-secondary">

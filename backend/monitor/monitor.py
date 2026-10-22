@@ -207,6 +207,10 @@ class TaskMonitor:
     async def _check_all_tasks(self) -> None:
         """检查所有任务状态"""
         tasks = tm.training_dump()
+        retained_ids = {task.get("id") for task in tasks}
+        for task_id in set(self._last_status) - retained_ids:
+            self._cleanup_task(task_id)
+            self._last_status.pop(task_id, None)
         
         for task_data in tasks:
             task_id = task_data.get("id")
@@ -248,6 +252,7 @@ class TaskMonitor:
         
         # 现有打标、下载和环境安装任务通过注册表桥接到同一个实时通道。
         await realtime_tasks.poll()
+        await realtime_hub.prune()
 
         # 收集硬件信息（仅在有可见订阅时以 1 Hz 真实采样）
         await self._collect_hardware()

@@ -1,15 +1,17 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {loadFrontend, response, deferred} = require('./helpers.cjs');
+const {loadFrontend, response, deferred, composeMixins} = require('./helpers.cjs');
 
 function harness() {
   const storage = new Map();
-  const context = loadFrontend(['tagger', 'ai-caption-options'], {
+  const context = loadFrontend(['tagger', 'ai-caption-options', 'caption-workspace'], {
     window: {}, localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
     setTimeout:()=>1,clearTimeout:()=>{},requestAnimationFrame:fn=>fn(),document:{querySelector:()=>null,body:{classList:{remove(){}}}},
     fetch:async()=>response({task_id:null}),
   });
-  const app = {...context.window.taggerMixin,...context.window.captionOptionsMixin};
+  const app = composeMixins(context.window.taggerMixin,context.window.captionOptionsMixin);
+  app.captionApiPayload = context.window.captionWorkspaceMixin.captionApiPayload;
+  app.refreshCaptionPlan = async()=>({plan:{}});
   app.taggerSettings={...app.taggerSettings};app.taggerApiSettings={...app.taggerApiSettings};
   app.captionOptions={...app.captionOptions,candidates:['original','long','medium','short']};
   app._taggerModeStates={folder:null,single:null,'api-folder':null};
@@ -43,12 +45,14 @@ test('AI route ignores local active tasks and restores its own options',async()=
   assert.equal(app.captionOptions.mode,'export');assert.equal(app.captionOptions.overwrite,true);assert.equal(app.taggerRunning,true);
 });
 
-test('export needs no model; generation checks active prompt, conflict and task state',()=>{
+test('export needs no model; generation checks active prompt and task state',()=>{
   const {app}=harness();app.taggerSource={total:1};assert.equal(app.taggerApiCanStart(),false);
   app.captionOptions.mode='export';assert.equal(app.taggerApiCanStart(),true);
-  app.taggerRunning=true;assert.equal(app.taggerApiCanStart(),false);app.taggerRunning=false;
+  app.taggerTaskId='busy';app._taggerTasks.busy={status:'running'};assert.equal(app.taggerApiCanStart(),false);app._clearTaggerTask();
   app.captionOptions.mode='generate';Object.assign(app.taggerApiSettings,{baseUrl:'http://local/v1',model:'mine'});
-  assert.equal(app.taggerApiCanStart(),true);app.captionOptions.reference_extension='.txt';assert.equal(app.taggerApiCanStart(),false);
+  assert.equal(app.captionOptions.reference_extension,'');assert.equal(app.captionReferenceExtension(),'.txt');
+  assert.equal(app.taggerApiCanStart(),true);
+  assert.equal(app.captionStartHint(),'');assert.equal(app.captionCanCheck(),true);
   app.captionOptions.overwrite=true;assert.equal(app.taggerApiCanStart(),true);
   app.captionOptions.prompt_source='file';assert.equal(app.taggerApiCanStart(),false);
   app.captionOptions.prompt_file='prompt.txt';assert.equal(app.taggerApiCanStart(),true);
@@ -61,7 +65,7 @@ test('input check needs no connection and inactive prompt inputs do not block it
   app.captionDefaultPrompt='MOSS JSON template';app.setCaptionPromptSource('text');
   assert.equal(app.captionCanCheck(),true);assert.equal(app.captionOptions.prompt_text,'MOSS JSON template');
   app.setCaptionPromptSource('default');app.captionOptions.prompt_file='';assert.equal(app.captionCanCheck(),true);
-  app.captionOptions.mode='export';assert.equal(app.captionCanCheck(),false);
+  app.captionOptions.mode='export';assert.equal(app.captionCanCheck(),true);
 });
 
 test('tasks send only fixed caption workflow and use existing API transport settings',async()=>{
@@ -80,7 +84,19 @@ test('migration retains useful settings but does not restore obsolete modes or t
   storage.set('anima-ai-caption-options',JSON.stringify({mode:'regenerate',reference_extension:'.tags',knowledge:'Known',save_json:false}));
   app.loadCaptionOptions();assert.equal(app.taggerApiSettings.model,'my-model');assert.equal(app.taggerApiSettings.protocol,'responses');
   assert.equal(app.captionOptions.mode,'generate');assert.equal(app.captionOptions.knowledge,'Known');
+  assert.equal(app.captionOptions.reference_extension,'.tags');
   assert.equal(app.taggerApiSettings.additionalTags,undefined);assert.equal(app.taggerApiSettings.parseMode,undefined);assert.equal(app.captionOptions.save_json,undefined);
+});
+
+test('saved reference inputs preserve custom extensions and blank uses txt',()=>{
+  for(const key of ['anima-moss-workflow','anima-ai-caption-options']){
+    for(const reference_extension of ['', '.tags', '.caption']){
+      const {app,storage}=harness(),options={reference_extension};
+      storage.set(key,JSON.stringify(key==='anima-moss-workflow'?{options}:options));
+      app.loadCaptionOptions();assert.equal(app.captionOptions.reference_extension,reference_extension);
+      assert.equal(app.captionReferenceExtension(),reference_extension || '.txt');
+    }
+  }
 });
 
 test('model list never selects the first result or fills a default model',async()=>{
@@ -108,10 +124,13 @@ test('switching task clears overwrite so an export choice cannot trigger regener
   assert.equal(app.captionOptions.overwrite,false);
 });
 
-test('hidden original candidate cannot enable generation without a reference extension',()=>{
+test('blank or whitespace reference extension uses txt without hiding original',()=>{
   const {app}=harness();app.taggerSource={total:1};Object.assign(app.taggerApiSettings,{baseUrl:'http://local',model:'mine'});
-  app.captionOptions.reference_extension='';app.captionOptions.candidates=['original'];
-  assert.equal(app.taggerApiCanStart(),false);assert.equal(app.captionCanCheck(),false);
+  for(const reference of ['', '   ', '.txt']){
+    app.captionOptions.reference_extension=reference;app.captionOptions.candidates=['original'];
+    assert.equal(app.captionReferenceExtension(),'.txt');assert.equal(app.captionSelectedCandidates()[0],'original');
+    assert.equal(app.taggerApiCanStart(),true);assert.equal(app.captionCanCheck(),true);
+  }
   app.setCaptionTaskMode('export');assert.equal(app.taggerApiCanStart(),true);
 });
 

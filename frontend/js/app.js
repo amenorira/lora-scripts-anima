@@ -700,6 +700,7 @@ document.addEventListener('alpine:init', () => {
     window.trainingConfigIoMixin,
     window.taggerMixin,
     window.captionOptionsMixin,
+    window.captionWorkspaceMixin,
     window.regularizationMixin,
     window.tagEditorMixin,
     window.tagDictionaryMixin,

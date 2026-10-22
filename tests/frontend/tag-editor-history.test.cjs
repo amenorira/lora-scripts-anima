@@ -36,8 +36,37 @@ function makeClient() {
 
   ctx.currentRoute = 'tagEditor';
 
-  return { ctx };
+  return { ctx, context };
 }
+
+test('archive and rollback failures preserve history and never report archived success', async () => {
+  for (const failure of ['timeline', 'rollback']) {
+    const { ctx, context } = makeClient();
+    const notices = [];
+    ctx.toast = message => notices.push(message);
+    ctx.tagEditorDir = ctx.tagEditorLoadedDir = '/dataset';
+    ctx.tagEditorImages = [{ path: 'a', tags: 'new' }];
+    ctx.tagEditorOriginal = { a: 'old' };
+    ctx.tagEditorHistory = [{ changes: { a: { before: null, after: 'new' } } }];
+    ctx.tagEditorHistoryIdx = 0;
+    ctx._teRecountModified = () => { ctx._teModifiedCount = failure === 'timeline' ? 0 : 1; };
+    ctx._teSaveDraft = () => {};
+    ctx._teRemoveDraft = () => assert.fail('failure must not discard the recovery draft');
+    ctx.tagEditorLoadSnapshots = () => {};
+    ctx.tagEditorReloadSessionPage = async () => {};
+    context.fetch = async () => ({ json: async () => ({ status: 'success', data: failure === 'timeline'
+      ? { saved: 1, saved_paths: ['a'], timeline_warning: 'disk full' }
+      : { saved: 0, rollback_failed: ['a'], failed: [{ path: 'a' }] } }) });
+    await ctx._doSaveAll(ctx.tagEditorImages);
+    assert.equal(ctx.tagEditorHistory.length, 1);
+    assert.equal(notices.length, 1);
+    assert.equal(notices[0], failure === 'timeline' ? 'tagEditor.timelineSaveFailed' : 'tagEditor.rollbackFailed');
+    if (failure === 'timeline') {
+      assert.equal(ctx.tagEditorOriginal.a, 'new');
+      assert.equal(ctx.tagEditorHistory[0].changes.a.before, 'old');
+    }
+  }
+});
 
 test('no-op history updates preserve redo and edits after undo start a new step', () => {
   const { ctx } = makeClient();

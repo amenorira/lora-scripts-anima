@@ -8,9 +8,10 @@ window.taggerMixin = {
   taggerSource: null,
   taggerScanning: false,
   taggerStarting: false,
-  taggerRunning: false,
   taggerTaskId: null,
-  taggerTask: null,
+  _taggerTasks: {},
+  get taggerTask() { return this.taggerTaskById(this.taggerTaskId); },
+  get taggerRunning() { return this.taggerTaskActive(this.taggerTaskId); },
   taggerItems: [],
   taggerItemsTotal: 0,
   taggerSelectedIndex: 0,
@@ -54,48 +55,57 @@ window.taggerMixin = {
   _taggerPreviewObjectUrl: null,
   _taggerLoadedResultKey: '',
   _taggerRouteInitialized: false,
-  _taggerModeStates: { folder: null, single: null, 'api-folder': null },
+  _taggerFormVersion: 0,
+  _taggerMountPromise: null,
+  _taggerModeStates: { folder: null, single: null, 'api-folder': null, 'api-single': null },
 
   async buildTaggerForm() {
     const route = this.currentRoute;
+    const version = ++this._taggerFormVersion;
+    const isCurrent = () => this.currentRoute === route && version === this._taggerFormVersion;
     await this._mountTaggerWorkspace();
-    if (this.currentRoute !== route) return;
+    if (!isCurrent()) return;
     this.tagDictionaryInit();
     this._loadTaggerSettings();
     this.loadCaptionOptions();
     const ai = this.currentRoute === 'ai-captioning';
-    const allowed = ai ? ['api-folder'] : ['folder', 'single'];
-    const savedMode = ai ? 'api-folder' : localStorage.getItem('anima-tagger-mode');
+    const allowed = ai ? ['api-folder', 'api-single'] : ['folder', 'single'];
+    if (ai) this.captionTab = localStorage.getItem('anima-ai-tab') || 'batch';
+    const savedMode = ai ? (this.captionTab === 'single' ? 'api-single' : 'api-folder') : localStorage.getItem('anima-tagger-mode');
     if (!allowed.includes(this.taggerSourceMode) || (!this._taggerRouteInitialized && allowed.includes(savedMode) && savedMode !== this.taggerSourceMode)) {
       this._taggerModeStates[this.taggerSourceMode] = this._captureTaggerModeState();
-      this._setTaggerRealtimeTask(null);
-      this.taggerRunning = false;
       this.taggerSourceMode = allowed.includes(savedMode) ? savedMode : allowed[0];
       this._restoreTaggerModeState(this._taggerModeStates[this.taggerSourceMode]);
+      this._taggerModeStates[this.taggerSourceMode] = null;
     }
     this._taggerRouteInitialized = true;
     this.realtimeSubscribe('hardware');
     this.renderTaggerResourceBar();
     if (!ai) await this.loadTaggerModels();
     if (ai) await this.loadCaptionTemplate();
-    if (this.currentRoute !== route) return;
-    const stored = localStorage.getItem(this._taggerTaskStorageKey());
+    if (!isCurrent()) return;
+    const stored = localStorage.getItem(ai ? 'anima-ai-tagger-task-id' : this._taggerTaskStorageKey());
     let taskId = '';
     try {
       const response = await fetch('/api/tagger/tasks/active');
       const body = await response.json();
       taskId = body.status === 'success' && body.data ? body.data.task_id || '' : '';
     } catch (_) {}
-    if (this.currentRoute !== route) return;
+    if (!isCurrent()) return;
     taskId = taskId || stored || '';
     if (taskId) {
       const restored = await this.restoreTaggerTask(taskId);
+      if (!isCurrent()) return;
       if (!restored && stored && stored !== taskId) await this.restoreTaggerTask(stored);
     }
+    if (!isCurrent()) return;
     if (ai && this.taggerSourceMode === 'api-folder' && !this.taggerSourcePath) {
       this.taggerSourcePath = localStorage.getItem('anima-ai-source-path') || '';
-      if (this.taggerSourcePath) void this.scanTaggerSource({quiet: true});
+      if (this.taggerSourcePath) await this.scanTaggerSource({quiet: true});
     }
+    if (!isCurrent()) return;
+    if (ai) await this.initCaptionWorkspace?.(isCurrent);
+    if (!isCurrent()) return;
     this.syncTaggerDictionary();
   },
 
@@ -108,28 +118,39 @@ window.taggerMixin = {
   async _mountTaggerWorkspace() {
     const host = document.getElementById('taggerWorkspaceHost');
     if (!host || host.dataset.mounted === '1') return;
+    if (this._taggerMountPromise) return this._taggerMountPromise;
+    // Both routes share this host; navigation must join its pending mount.
+    this._taggerMountPromise = (async () => {
+      try {
+        const response = await fetch('/anima-ui/tagger-workspace.html?v=20261021-caption-workspaces6');
+        if (!response.ok) throw new Error('Workspace template unavailable');
+        host.innerHTML = await response.text();
+        const captionTemplate = await fetch('/anima-ui/caption-workspace.html?v=20261022-caption-form15');
+        if (!captionTemplate.ok) throw new Error('Caption workspace unavailable');
+        host.querySelector('#captionWorkspaceMount').outerHTML = await captionTemplate.text();
+        host.dataset.mounted = '1';
+        if (window.Alpine) Alpine.initTree(host);
+      } catch (error) {
+        host.textContent = error.message;
+      }
+    })();
     try {
-      const response = await fetch('/anima-ui/tagger-workspace.html?v=20261020-moss-workflow2');
-      if (!response.ok) throw new Error('Workspace template unavailable');
-      host.innerHTML = await response.text();
-      host.dataset.mounted = '1';
-      if (window.Alpine) Alpine.initTree(host);
-    } catch (error) {
-      host.textContent = error.message;
+      await this._taggerMountPromise;
+    } finally {
+      this._taggerMountPromise = null;
     }
   },
 
   stopTaggerWorkspace() {
+    ++this._taggerFormVersion;
+    this.stopCaptionWorkspace?.();
     this.tagDictionaryCleanup();
     this.realtimeUnsubscribe('hardware');
-    this._setTaggerRealtimeTask(null);
     this.stopTaggerSingleResize();
-    this._releaseTaggerPreview();
-    Object.values(this._taggerModeStates).forEach(state => {
-      if (!state?.previewObjectUrl) return;
-      URL.revokeObjectURL(state.previewObjectUrl);
-      state.previewObjectUrl = null;
-    });
+    // Source states retain their upload URLs until replaced or cleared.
+    clearTimeout(this._taggerSourceScanTimer);
+    this._taggerSourceScanVersion = Number(this._taggerSourceScanVersion || 0) + 1;
+    this.taggerScanning = false;
   },
 
   _loadTaggerSettings() {
@@ -149,8 +170,29 @@ window.taggerMixin = {
     return String(this.taggerSourceMode).startsWith('api-');
   },
 
-  _taggerTaskStorageKey() {
-    return this.currentRoute === 'ai-captioning' ? 'anima-ai-tagger-task-id' : 'anima-tagger-task-id';
+  _taggerTaskStorageKey(mode = this.taggerSourceMode) {
+    if (mode === 'api-single') return null;
+    return mode === 'api-folder' ? 'anima-ai-tagger-task-id' : 'anima-tagger-task-id';
+  },
+
+  taggerTaskById(id) { return id ? this._taggerTasks[id] || null : null; },
+  taggerTaskActive(id) { return ['created','running','cancelling'].includes(this.taggerTaskById(id)?.status); },
+  taggerHasActiveTask() { return Object.keys(this._taggerTasks).some(id => this.taggerTaskActive(id)); },
+
+  _pruneTaggerTasks() {
+    const retained = new Set([this.taggerTaskId, ...Object.values(this._taggerModeStates).map(state => state?.taskId)]);
+    for (const id of Object.keys(this._taggerTasks)) if (!retained.has(id)) delete this._taggerTasks[id];
+  },
+
+  _clearTaggerTask(mode = this.taggerSourceMode) {
+    const state = mode === this.taggerSourceMode ? null : this._taggerModeStates[mode];
+    const id = mode === this.taggerSourceMode ? this.taggerTaskId : state?.taskId;
+    if (mode === this.taggerSourceMode) this.taggerTaskId = null;
+    else if (state) state.taskId = null;
+    const key = this._taggerTaskStorageKey(mode);
+    if (key && id && localStorage.getItem(key) === id) localStorage.removeItem(key);
+    if (this._taggerRealtimeTopic === 'task:' + id) this._setTaggerRealtimeTask(null);
+    this._pruneTaggerTasks();
   },
 
   async loadTaggerModels() {
@@ -354,7 +396,9 @@ window.taggerMixin = {
     localStorage.setItem('anima-tagger-model', this.taggerSelectedModel || '');
     if (resetPreset) {
       this._clearTaggerResultState(true);
-      Object.values(this._taggerModeStates).forEach(state => this._clearStoredTaggerResult(state));
+      ['folder','single'].forEach(mode => this._clearStoredTaggerResult(this._taggerModeStates[mode]));
+      localStorage.removeItem('anima-tagger-task-id');
+      this._pruneTaggerTasks();
     }
     const allowed = this.taggerPresetOptions().map(option => option[0]);
     let preset = this.taggerSettings.preset;
@@ -372,7 +416,7 @@ window.taggerMixin = {
 
   taggerCanStart() {
     return !!(this.taggerSource && this.taggerSource.total && this.taggerSelectedModel
-      && !this.taggerRunning && !this.taggerStarting && !this.trainingActive && !this.regularizationActive);
+      && !this.taggerHasActiveTask() && !this.taggerStarting && !this.captionPreviewBusy && !this.trainingActive && !this.regularizationActive);
   },
 
   taggerStartLabel() {
@@ -463,9 +507,11 @@ window.taggerMixin = {
     return Object.fromEntries(this.taggerCategoryKeys().map(key => [key, this.taggerCategoryEnabled(key)]));
   },
 
-  async selectTaggerSourceMode(mode) {
-    if (this.taggerRunning || this.taggerStarting || this.taggerScanning
-      || !['folder', 'single', 'api-folder'].includes(mode) || mode === this.taggerSourceMode) return;
+  async selectTaggerSourceMode(mode, {allowActive = false} = {}) {
+    if ((!allowActive && this.taggerRunning) || this.taggerStarting || this.taggerScanning
+      || !['folder', 'single', 'api-folder', 'api-single'].includes(mode) || mode === this.taggerSourceMode) return;
+    this._taggerSourceScanVersion = Number(this._taggerSourceScanVersion || 0) + 1;
+    clearTimeout(this._taggerSourceScanTimer);
     this.stopTaggerSingleResize();
     this._taggerModeStates[this.taggerSourceMode] = this._captureTaggerModeState();
     this.taggerSourceMode = mode;
@@ -508,7 +554,6 @@ window.taggerMixin = {
       sourcePath: this.taggerSourcePath,
       source: this.taggerSource,
       taskId: this.taggerTaskId,
-      task: this.taggerTask,
       items: this.taggerItems,
       itemsTotal: this.taggerItemsTotal,
       selectedIndex: this.taggerSelectedIndex,
@@ -526,7 +571,6 @@ window.taggerMixin = {
     this.taggerSourcePath = state?.sourcePath || '';
     this.taggerSource = state?.source || null;
     this.taggerTaskId = state?.taskId || null;
-    this.taggerTask = state?.task || null;
     this.taggerItems = state?.items || [];
     this.taggerItemsTotal = Number(state?.itemsTotal || 0);
     this.taggerSelectedIndex = Number(state?.selectedIndex || 0);
@@ -538,23 +582,22 @@ window.taggerMixin = {
     this.syncTaggerDictionary();
     this.taggerFailedOnly = !!state?.failedOnly;
     this.taggerLogsOpen = !!state?.logsOpen;
-    if (this.taggerTaskId) localStorage.setItem(this._taggerTaskStorageKey(), this.taggerTaskId);
-    else localStorage.removeItem(this._taggerTaskStorageKey());
   },
 
   clearTaggerSource() {
-    if (this.taggerRunning || this.taggerStarting || this.taggerScanning) return;
+    if (this.taggerRunning || this.taggerStarting || this.taggerScanning || this.captionPreviewBusy) return;
     this.stopTaggerSingleResize();
+    this._clearTaggerTask();
     this._taggerModeStates[this.taggerSourceMode] = null;
     this._releaseTaggerPreview();
     this._restoreTaggerModeState(null);
     this.resetTaggerPreview();
+    this.captionSourceChanged?.(this.taggerSourceMode);
   },
 
   _clearStoredTaggerResult(state) {
     if (!state) return;
     state.taskId = null;
-    state.task = null;
     state.resultText = '';
     state.resultCategories = {};
     state.categoryState = {};
@@ -575,9 +618,7 @@ window.taggerMixin = {
     this.taggerCategoryState = {};
     this._taggerLoadedResultKey = '';
     if (!clearTask) return;
-    this._setTaggerRealtimeTask(null);
-    this.taggerTaskId = null;
-    this.taggerTask = null;
+    this._clearTaggerTask();
     this.taggerItems = this.taggerItems.map(item => {
       const next = Object.assign({}, item, { status: 'pending' });
       delete next.result;
@@ -585,10 +626,10 @@ window.taggerMixin = {
       delete next.error;
       return next;
     });
-    localStorage.removeItem(this._taggerTaskStorageKey());
   },
 
   async pickTaggerSource() {
+    if (this.taggerRunning || this.taggerStarting || this.taggerScanning || this.captionPreviewBusy) return;
     try {
       const picker = this.taggerSourceMode.endsWith('single') ? 'image-file' : 'folder';
       const response = await fetch('/api/pick_file?picker_type=' + picker);
@@ -601,6 +642,7 @@ window.taggerMixin = {
   },
 
   scheduleTaggerSourceScan() {
+    if (this.taggerRunning || this.taggerStarting || this.captionPreviewBusy) return;
     if (this._taggerSourceScanTimer) clearTimeout(this._taggerSourceScanTimer);
     this._taggerSourceScanTimer = null;
     this._taggerSourceScanVersion = Number(this._taggerSourceScanVersion || 0) + 1;
@@ -616,6 +658,10 @@ window.taggerMixin = {
       this.taggerResultCategories = {};
       this.taggerCategoryState = {};
       this._taggerLoadedResultKey = '';
+      if (this.taggerSourceMode === 'api-folder') {
+        this._clearTaggerResultState(true);
+        this.captionSourceChanged?.(this.taggerSourceMode);
+      }
     }
     if (!path || this.taggerRunning) return;
 
@@ -633,7 +679,7 @@ window.taggerMixin = {
 
   async handleTaggerPaste(event) {
     if (event.defaultPrevented || !['tagger', 'ai-captioning'].includes(this.currentRoute) || !this.taggerSourceMode.endsWith('single')) return;
-    if (this.taggerRunning || this.taggerStarting || this.taggerScanning) return;
+    if (this.taggerRunning || this.taggerStarting || this.taggerScanning || this.captionPreviewBusy) return;
     const target = event.target;
     if (target?.isContentEditable || target?.closest?.('input, textarea, select')) return;
 
@@ -659,22 +705,30 @@ window.taggerMixin = {
   },
 
   async uploadTaggerFile(file) {
-    if (!file || !file.type.startsWith('image/')) return;
+    if (!file || !file.type.startsWith('image/') || this.taggerRunning || this.taggerStarting || this.taggerScanning || this.captionPreviewBusy) return;
+    const mode = this.taggerSourceMode, route = this.currentRoute;
+    const version = this._taggerSourceScanVersion = Number(this._taggerSourceScanVersion || 0) + 1;
     this.taggerScanning = true;
-    this._releaseTaggerPreview();
-    this._taggerPreviewObjectUrl = URL.createObjectURL(file);
-    this.taggerSourcePath = file.name;
+    const previewUrl = URL.createObjectURL(file);
+    let installed = false;
     try {
       const data = new FormData();
       data.append('file', file, file.name);
       const response = await fetch('/api/tagger/uploads', { method: 'POST', body: data });
       const body = await response.json();
       if (body.status !== 'success') throw new Error(body.message || 'Upload failed');
+      if (version !== this._taggerSourceScanVersion || mode !== this.taggerSourceMode || route !== this.currentRoute) return;
       body.data.display_name = file.name || this.t('tagger.singleImage');
+      this._releaseTaggerPreview();
+      this._taggerPreviewObjectUrl = previewUrl;
+      installed = true;
       this.setTaggerSource(body.data);
     } catch (error) {
-      this.toast(error.message, 'error');
-    } finally { this.taggerScanning = false; }
+      if (version === this._taggerSourceScanVersion && route === this.currentRoute) this.toast(error.message, 'error');
+    } finally {
+      if (!installed) URL.revokeObjectURL(previewUrl);
+      if (version === this._taggerSourceScanVersion) this.taggerScanning = false;
+    }
   },
 
   async scanTaggerSource(options = {}) {
@@ -687,6 +741,7 @@ window.taggerMixin = {
     const scanVersion = Number(this._taggerSourceScanVersion || 0) + 1;
     this._taggerSourceScanVersion = scanVersion;
     this.taggerScanning = true;
+    if (mode === 'api-folder') this.captionSourceError = '';
     try {
       const recursive = this.taggerModeIsApi() ? this.captionOptions.recursive !== false : this.taggerSettings.recursive;
       const response = await fetch('/api/tagger/source/scan', {
@@ -695,10 +750,15 @@ window.taggerMixin = {
       });
       const body = await response.json();
       if (body.status !== 'success') throw new Error(body.message || 'Scan failed');
+      if (mode.endsWith('single') && !['file','upload'].includes(body.data.kind)) throw new Error(this.t('caption.singleFileRequired'));
+      if (mode === 'api-folder' && body.data.kind !== 'folder') throw new Error(this.t('caption.selectDirectory'));
       if (scanVersion !== this._taggerSourceScanVersion || path !== this.taggerSourcePath.trim() || mode !== this.taggerSourceMode || route !== this.currentRoute) return;
       this.setTaggerSource(body.data);
     } catch (error) {
-      if (scanVersion === this._taggerSourceScanVersion && !options.quiet) this.toast(error.message, 'error');
+      if (scanVersion === this._taggerSourceScanVersion && mode === this.taggerSourceMode && route === this.currentRoute && path === this.taggerSourcePath.trim()) {
+        if (route === 'ai-captioning' && mode === 'api-folder') this.captionSourceError = this.captionErrorMessage?.(error) || error.message || String(error);
+        else if (!options.quiet) this.toast(error.message, 'error');
+      }
     } finally {
       if (scanVersion === this._taggerSourceScanVersion) this.taggerScanning = false;
     }
@@ -706,9 +766,7 @@ window.taggerMixin = {
 
   setTaggerSource(source) {
     if (!this.taggerRunning) {
-      this.taggerTaskId = null;
-      this.taggerTask = null;
-      localStorage.removeItem(this._taggerTaskStorageKey());
+      this._clearTaggerTask();
     }
     this.taggerSource = source;
     this.taggerSourcePath = source.display_name || source.path || this.taggerSourcePath;
@@ -721,6 +779,7 @@ window.taggerMixin = {
     this._taggerLoadedResultKey = '';
     this.resetTaggerPreview();
     this.saveTaggerSettings();
+    this.captionSourceChanged?.(this.taggerSourceMode);
   },
 
   taggerPreviewUrl(index) {
@@ -997,10 +1056,13 @@ window.taggerMixin = {
     finally { this.taggerStarting = false; }
   },
 
-  attachTaggerTask(taskId) {
-    this.taggerTaskId = taskId;
-    this.taggerRunning = true;
-    localStorage.setItem(this._taggerTaskStorageKey(), taskId);
+  attachTaggerTask(taskId, mode = this.taggerSourceMode) {
+    if (mode === this.taggerSourceMode) this.taggerTaskId = taskId;
+    else (this._taggerModeStates[mode] ||= {}).taskId = taskId;
+    this._taggerTasks[taskId] = {status:'created',engine:mode.startsWith('api-') ? 'api' : this.taggerModel()?.engine,
+      _mode:mode};
+    localStorage.setItem(this._taggerTaskStorageKey(mode), taskId);
+    this._pruneTaggerTasks();
     this._setTaggerRealtimeTask(taskId);
   },
 
@@ -1009,24 +1071,26 @@ window.taggerMixin = {
     try {
       const response = await fetch(`/api/tagger/tasks/${encodeURIComponent(taskId)}/status`);
       const body = await response.json();
-      if (body.status !== 'success') throw new Error(body.message || 'Task unavailable');
       if (this.currentRoute !== route) return false;
+      if (body.status !== 'success') {
+        const key = route === 'ai-captioning' ? 'anima-ai-tagger-task-id' : 'anima-tagger-task-id';
+        if (localStorage.getItem(key) === taskId) localStorage.removeItem(key);
+        return false;
+      }
       if ((body.data.engine === 'api') !== (this.currentRoute === 'ai-captioning')) return false;
-      const expectedMode = body.data.engine === 'api' ? 'api-folder' : (body.data.source_kind === 'folder' ? 'folder' : 'single');
-      if (this.taggerSourceMode !== expectedMode) {
-        this._taggerModeStates[this.taggerSourceMode] = this._captureTaggerModeState();
-        this.taggerSourceMode = expectedMode;
+      this.applyTaggerTaskSnapshot(body.data, '', taskId);
+      const mode = this.taggerTaskById(taskId)._mode;
+      localStorage.setItem(this._taggerTaskStorageKey(mode), taskId);
+      if (body.data.engine === 'api' && this.taggerTaskActive(taskId)) {
+        if (body.data.caption_options) {
+          const {dry_run, ...settings} = body.data.caption_options;
+          this.captionOptions = Object.assign({}, this.captionOptions, settings);
+        }
       }
-      this.taggerTaskId = taskId;
-      localStorage.setItem(this._taggerTaskStorageKey(), taskId);
-      this.applyTaggerTaskSnapshot(body.data, '');
-      if (body.data.engine === 'api' && this.taggerRunning) {
-        if (body.data.caption_options) this.captionOptions = Object.assign({}, this.captionOptions, body.data.caption_options);
-      }
-      if (this.taggerRunning) this._setTaggerRealtimeTask(taskId);
-      await this.refreshTaggerItems(true);
+      if (this.taggerTaskActive(taskId)) this._setTaggerRealtimeTask(taskId);
+      if (body.data.engine !== 'api' && mode === this.taggerSourceMode) await this.refreshTaggerItems(true);
       return true;
-    } catch (_) { localStorage.removeItem(this._taggerTaskStorageKey()); return false; }
+    } catch (_) { return false; }
   },
 
   _setTaggerRealtimeTask(taskId) {
@@ -1043,47 +1107,86 @@ window.taggerMixin = {
     if (!this._taggerRealtimeTopic || event.topic !== this._taggerRealtimeTopic) return;
     if (!['task.status', 'task.progress', 'task.result'].includes(event.type)) return;
     const envelope = event.payload || {};
-    this.applyTaggerTaskSnapshot(envelope.data || {}, envelope.status || '');
+    this.applyTaggerTaskSnapshot(envelope.data || {}, envelope.status || '', envelope.task_id || event.topic.slice(5));
   },
 
   applyRealtimeTaggerSnapshot(snapshot) {
-    if (!this.taggerTaskId || !snapshot || !snapshot.tasks) return;
-    const task = (snapshot.tasks.tracked || []).find(item => item.task_id === this.taggerTaskId);
-    if (task) this.applyTaggerTaskSnapshot(task.data || {}, task.status || '');
+    const ids = new Set([this.taggerTaskId, ...Object.values(this._taggerModeStates).map(state => state?.taskId)]);
+    for (const task of snapshot?.tasks?.tracked || []) {
+      if (ids.has(task.task_id)) this.applyTaggerTaskSnapshot(task.data || {}, task.status || '', task.task_id);
+    }
   },
 
   resetRealtimeTaggerState() {
-    const active = !!this.taggerRunning;
+    const active = this.taggerHasActiveTask();
     this._setTaggerRealtimeTask(null);
-    this.taggerRunning = false;
+    this._taggerTasks = {};
+    this.taggerTaskId = null;
+    this.taggerSource = null;
+    this.taggerItems = [];
+    this.taggerItemsTotal = 0;
+    this.taggerResultText = '';
+    this.taggerResultCategories = {};
+    this.taggerCategoryState = {};
+    for (const state of Object.values(this._taggerModeStates)) {
+      if (!state) continue;
+      this._clearStoredTaggerResult(state);
+      state.source = null;
+      state.items = [];
+      state.itemsTotal = 0;
+    }
+    localStorage.removeItem('anima-ai-tagger-task-id');
+    localStorage.removeItem('anima-tagger-task-id');
+    this.captionExternalTaggerBusy = false;
+    this.captionSourceChanged?.('api-folder');
     return active;
   },
 
-  applyTaggerTaskSnapshot(data, normalizedStatus) {
-    this.taggerTask = data;
-    if (data.source_token && (!this.taggerSource || this.taggerSource.source_token !== data.source_token)) {
-      this.taggerSource = { source_token: data.source_token, kind: data.source_kind, total: data.total, path: data.source_root || '' };
+  applyTaggerTaskSnapshot(data, normalizedStatus, taskId = this.taggerTaskId) {
+    if (!taskId) return;
+    const previous = this.taggerTaskById(taskId);
+    // The registry's initial CREATED frame contains no snapshot. It cannot
+    // replace a snapshot already restored by HTTP or a reconnect bootstrap.
+    if (!Object.keys(data).length && previous?.status && previous.status !== 'created') return;
+    const status = data.status || {CREATED:'created',RUNNING:'running',FINISHED:'done',FAILED:'error',TERMINATED:'cancelled'}[normalizedStatus] || previous?.status;
+    data = {...previous,...data,status};
+    const mode = data.engine === 'api' ? 'api-folder' : data.source_kind ? (data.source_kind === 'folder' ? 'folder' : 'single') : previous?._mode || this.taggerSourceMode;
+    data._mode = mode;
+    this._taggerTasks[taskId] = data;
+    const current = mode === this.taggerSourceMode;
+    const state = current ? null : (this._taggerModeStates[mode] ||= {});
+    if (current) this.taggerTaskId = taskId;
+    else state.taskId = taskId;
+    let source = current ? this.taggerSource : state.source;
+    const sourceToken = data.engine === 'api' ? data.overview_source_token || data.source_token : data.source_token;
+    if (sourceToken && (!source || source.source_token !== sourceToken)) {
+      source = {source_token:sourceToken,kind:data.source_kind,total:data.total,path:data.source_root || ''};
     }
-    if (data.source_root) {
-      this.taggerSource.path = data.source_root;
-      this.taggerSourcePath = data.source_root;
+    if (source && data.source_root) source.path = data.source_root;
+    if (current) {
+      this.taggerSource = source || null;
+      if (data.source_root) this.taggerSourcePath = data.source_root;
+    } else {
+      state.source = source;
+      if (data.source_root) state.sourcePath = data.source_root;
     }
-    const terminal = ['FINISHED', 'FAILED', 'TERMINATED'].includes(normalizedStatus) || ['done', 'error', 'cancelled'].includes(data.status);
-    this.taggerRunning = !terminal;
-    if (data.current_result && data.current_result.index === this.taggerSelectedIndex) {
+    const terminal = ['done','error','cancelled'].includes(status);
+    if (current && data.engine !== 'api' && data.current_result && data.current_result.index === this.taggerSelectedIndex) {
       this.setTaggerResult(data.current_result, false);
     }
     const now = Date.now();
     // Completion must fetch results even when a recent progress event was throttled.
     // Large candidate lists are deliberately omitted from realtime frames.
-    if (terminal || now - this._taggerLastItemsFetch > 800) {
+    if (current && data.engine !== 'api' && (terminal || now - this._taggerLastItemsFetch > 800)) {
       this._taggerLastItemsFetch = now;
       void this.refreshTaggerItems(false);
     }
     if (terminal) {
-      this._setTaggerRealtimeTask(null);
-      if (data.status === 'done') this.toast(this.t('tagger.completed'));
+      if (this._taggerRealtimeTopic === 'task:' + taskId) this._setTaggerRealtimeTask(null);
+      if (status === 'done' && previous?.status !== status) this.toast(this.t('tagger.completed'));
     }
+    if (data.engine === 'api') this.captionTaskUpdated?.(data, previous, terminal);
+    this._pruneTaggerTasks();
   },
 
   async refreshTaggerItems(reset) {
@@ -1126,11 +1229,12 @@ window.taggerMixin = {
 
   async retryFailedTagger() {
     if (!this.taggerTaskId || !this.taggerTask || !this.taggerTask.failed) return;
+    const taskId = this.taggerTaskId, mode = this.taggerSourceMode;
     try {
-      const response = await fetch(`/api/tagger/tasks/${encodeURIComponent(this.taggerTaskId)}/retry`, { method: 'POST' });
+      const response = await fetch(`/api/tagger/tasks/${encodeURIComponent(taskId)}/retry`, { method: 'POST' });
       const body = await response.json();
       if (body.status !== 'success') throw new Error(body.message || 'Retry failed');
-      this.attachTaggerTask(body.data.task_id);
+      this.attachTaggerTask(body.data.task_id, mode);
     } catch (error) { this.toast(error.message, 'error'); }
   },
 
@@ -1176,6 +1280,9 @@ window.taggerMixin = {
   },
 
   taggerLogMessage(line) {
+    if (this.taggerTask?.engine === 'api' && ['done','cancelled'].includes(line.event)) {
+      return this.t('caption.taskSummary').replace(/\{(\w+)\}/g,(_,key) => line[key] ?? '');
+    }
     return line.message ?? this.t('tagger.log.' + line.event, line.event)
       .replace(/\{(\w+)\}/g, (_, key) => line[key] ?? '');
   },

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-import tempfile
+from backend.utils.file_io import atomic_write_text
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -12,7 +12,7 @@ import yaml
 
 from backend.training.attention_config import normalize_attention_config
 
-from backend.training.field_registry import get_all_fields, get_fields_json
+from backend.training.field_registry import get_all_fields, get_fields_json, field_applies_to_profile
 from backend.training.optimizer_contracts import (
     LORA_MUON_LEGACY_FIELD_ALIASES,
     normalize_lora_muon_form_fields,
@@ -67,8 +67,6 @@ _UniqueKeySafeLoader.add_constructor(
 
 
 def _visible_sections(profile_id: str) -> list[dict[str, Any]]:
-    group_map = {"sdxl-lora": "sdxl", "anima-lora": "anima", "krea2-lora": "krea2", "moss-image-lora": "moss_image"}
-    target_group = group_map.get(profile_id, "all")
     target_by_key = {}
     for raw_field in get_all_fields():
         target_by_key.setdefault(str(raw_field.get("key")), raw_field.get("target"))
@@ -77,21 +75,7 @@ def _visible_sections(profile_id: str) -> list[dict[str, Any]]:
         fields = []
         for field in section.get("fields", []):
             field = {**field, "_target": target_by_key.get(str(field.get("key")))}
-            profiles = field.get("profiles")
-            if isinstance(profiles, list):
-                if profile_id in profiles:
-                    fields.append(field)
-                continue
-            if profile_id == "krea2-lora":
-                if field.get("key") == "model_train_type":
-                    fields.append(field)
-                continue
-            group = field.get("group")
-            if not group or group == "all":
-                fields.append(field)
-            elif isinstance(group, list) and target_group in group:
-                fields.append(field)
-            elif group == target_group:
+            if field_applies_to_profile(field, profile_id):
                 fields.append(field)
         if fields:
             result.append({"key": section["key"], "fields": fields})
@@ -403,24 +387,7 @@ def write_training_config(path: str | Path, document: dict[str, Any]) -> None:
     """Atomically write a generated training YAML document."""
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    content = dump_training_config(document)
-    temp_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            newline="\n",
-            prefix=f".{target.name}.",
-            suffix=".tmp",
-            dir=target.parent,
-            delete=False,
-        ) as handle:
-            handle.write(content)
-            temp_path = Path(handle.name)
-        os.replace(temp_path, target)
-    finally:
-        if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
+    atomic_write_text(target, dump_training_config(document))
 
 
 def _validate_training_document(

@@ -4,7 +4,8 @@ from __future__ import annotations
 import ast
 from typing import Any
 
-from backend.training.field_registry import FIELDS, LORAPLUS_RATIO_KEYS, get_fields_json
+from backend.training.core_registry import PROFILES
+from backend.training.field_registry import FIELDS, LORAPLUS_RATIO_KEYS, get_fields_json, field_applies_to_profile
 
 
 def _argument_value(raw: str) -> Any:
@@ -36,19 +37,18 @@ def extract_network_form(config: dict[str, Any], *, model_train_type: str = "ani
     result = dict(config)
     profile = result.get("model_train_type") or model_train_type
     if profile == "krea2-lora":
-        return result
-    group = {"anima-lora": "anima", "sdxl-lora": "sdxl", "moss-image-lora": "moss_image"}.get(profile)
-    if group is None:
+        from backend.training.krea2_network import extract_krea2_network_form
+        return extract_krea2_network_form(result)
+    if profile not in PROFILES:
         raise ValueError(f"Unsupported model_train_type: {profile}")
+    group = PROFILES[profile].group
     module = result.get("network_module") or {
         "anima": "networks.lora_anima", "sdxl": "networks.lora", "moss_image": "networks.lora_generic",
     }[group]
     fields = {}
     for section in get_fields_json()["sections"]:
         for field in section["fields"]:
-            groups = field.get("group", "all")
-            groups = groups if isinstance(groups, list) else [groups]
-            if module in field.get("networkModules", []) and ("all" in groups or group in groups):
+            if module in field.get("networkModules", []) and field_applies_to_profile(field, profile):
                 argument = field.get("networkArgByModule", {}).get(module, field["networkArg"])
                 fields[argument] = field
 

@@ -33,7 +33,7 @@ window.trainingCoreMixin = {
 
   // 分组折叠状态，响应式驱动 UI
   _sectionCollapsed: {},
-  _trainTypePanelCache: null,
+  _trainTypePanel: null,
   _trainFieldsRevision: 0,
   _profileWatcherSetupHandle: null,
   _profileWatcherSetupUsesIdle: false,
@@ -154,9 +154,9 @@ window.trainingCoreMixin = {
   },
 
   _trainTypePanelIsReady(trainType) {
-    if (!(this._trainTypePanelCache instanceof Map)) return false;
-    const panel = this._trainTypePanelCache.get(trainType);
+    const panel = this._trainTypePanel;
     return !!panel
+      && panel.dataset.trainType === trainType
       && panel.getAttribute('data-panel-ready') === '1'
       && panel.dataset.panelLocale === String(this.locale || '')
       && panel.dataset.fieldsRevision === String(this._trainFieldsRevision || 0);
@@ -170,8 +170,7 @@ window.trainingCoreMixin = {
   },
 
   _scheduleTrainTypeSwitch(value) {
-    // 三套表单在进入页面时已完成初始化。缓存命中时直接换面板，不再人为等待
-    // 两个 animation frame；昂贵的字段 watcher 在换屏后空闲阶段恢复。
+    // Reuse the mounted profile only; other profiles keep data drafts, not effects.
     if (this._trainTypePanelIsReady(value)) {
       this._cancelScheduledTrainTypeSwitch();
       this._commitTrainTypeSwitch(value);
@@ -234,6 +233,16 @@ window.trainingCoreMixin = {
     // 旧类型的字段 watcher 若留到 form 整体替换之后再释放，会先针对新对象
     // 执行一轮旧规则（显隐扫描、只读刷新、自动值联动），造成重复渲染。
     this._clearProfileFieldWatchers();
+    if (v !== this._activeTrainType) {
+      this._destroyTrainTypePanel();
+      clearTimeout(this._stepEstimateTimer);
+      this._stepEstimateTimer = null;
+      this._stepEstimateRequestSeq += 1;
+      this._stepEstimateSignature = '';
+      this.stepEstimate = null;
+      this.stepEstimateError = null;
+      this.stepEstimateLoading = false;
+    }
 
     // 每个训练类型拥有独立草稿。切出时保存当前类型，第一次切入新类型时从
     // 该类型的 registry 默认值创建；切回来时仅恢复它自己的字段，避免同名
@@ -254,7 +263,7 @@ window.trainingCoreMixin = {
 
     // Keep the validated MOSS algorithm from its own draft. Krea's module
     // is musubi-specific and must never inherit an sd-scripts selection.
-    const targetMod = v === 'moss-image-lora' ? this.form.network_module : this._defaultNetworkModule(v);
+    const targetMod = ['moss-image-lora', 'krea2-lora'].includes(v) ? this.form.network_module : this._defaultNetworkModule(v);
     if (this.form.network_module !== targetMod) this.form.network_module = targetMod;
     this._syncKrea2CacheDir();
     this._captureProfileDraft(v, this.form, newDefaults);
@@ -500,12 +509,12 @@ window.trainingCoreMixin = {
   },
 
   _enforceCheckpointingUiConstraints(changedKey) {
-    if (this.form.model_train_type === 'krea2-lora') return;
+    const dependentKeys = this.form.model_train_type === 'krea2-lora'
+      ? ['block_swap_h2d_only', 'gradient_checkpointing_cpu_offload']
+      : ['cpu_offload_checkpointing', 'unsloth_offload_checkpointing', 'block_swap_h2d_only'];
     if (changedKey === 'gradient_checkpointing' && this.form.gradient_checkpointing === false) {
-      this.form.cpu_offload_checkpointing = false;
-      this.form.unsloth_offload_checkpointing = false;
-      this.form.block_swap_h2d_only = false;
-    } else if (this.form.cpu_offload_checkpointing || this.form.unsloth_offload_checkpointing || this.form.block_swap_h2d_only) {
+      dependentKeys.forEach(key => { this.form[key] = false; });
+    } else if (dependentKeys.some(key => this.form[key])) {
       this.form.gradient_checkpointing = true;
     }
   },
@@ -657,7 +666,7 @@ window.trainingCoreMixin = {
     this._conditionalMotionEpoch += 1;
     this.stopSectionScroll();
 
-    this._destroyTrainTypePanelCache();
+    this._destroyTrainTypePanel();
     const container = document.getElementById('trainFormContent');
     if (container) container.replaceChildren();
     this.sectionNavList = [];
@@ -726,7 +735,6 @@ window.trainingCoreMixin = {
     this._normalizeProfileSelectValues(this.form.model_train_type, defaults);
     // Fix incompatible network_module after merge
     if (this.form.model_train_type === 'krea2-lora') {
-      this.form.network_module = 'networks.lora_krea2';
       this._applyKrea2ModelDefaults(this.form, defaults);
     } else if (this.form.model_train_type === 'anima-lora' && this.form.network_module === 'networks.lora') {
       this.form.network_module = 'networks.lora_anima';
@@ -752,7 +760,6 @@ window.trainingCoreMixin = {
     this.buildSectionNav();
 
     this.renderTrainingForm(trainType, null);
-    this._warmTrainTypePanels(trainType);
     this._trainFormMountedRoute = r;
     this._trainFormLocale = this.locale;
     // Clean up previous watchers（防御：过滤非函数元素，避免 w is not a function 崩溃）
@@ -805,9 +812,8 @@ window.trainingCoreMixin = {
       self.currentTrainTypeDesc = tt2 ? window.t(tt2.dk, tt2.l) : '';
       const activeType = self.form.model_train_type || 'anima-lora';
       self._refreshTrainingOptionErrors();
-      self._destroyTrainTypePanelCache();
+      self._destroyTrainTypePanel();
       self.renderTrainingForm(activeType, null, true);
-      self._warmTrainTypePanels(activeType);
       self._trainFormLocale = self.locale;
     };
     window.addEventListener('locale-changed', self._localeChangeHandler);
@@ -833,9 +839,8 @@ window.trainingCoreMixin = {
       if (activeType === 'krea2-lora') self._applyKrea2ModelDefaults(self.form, freshDefaults);
       self.formDefaults = { ...freshDefaults };
       self._syncKrea2CacheDir();
-      self._destroyTrainTypePanelCache();
+      self._destroyTrainTypePanel();
       self.renderTrainingForm(activeType, null, true);
-      self._warmTrainTypePanels(activeType);
       self.setupAutoValueWatchers();
       self.setupShowIfWatchers();
       self.setupReadonlyWatchers();
@@ -1254,87 +1259,33 @@ window.trainingCoreMixin = {
     }
   },
 
-  _destroyTrainTypePanelCache() {
-    if (!(this._trainTypePanelCache instanceof Map)) {
-      this._trainTypePanelCache = null;
-      return;
-    }
+  _destroyTrainTypePanel() {
+    const panel = this._trainTypePanel;
+    if (!panel) return;
     const alpine = window.Alpine;
     this._mutateTrainingPanels(() => {
-      this._trainTypePanelCache.forEach(panel => {
-        if (alpine && typeof alpine.destroyTree === 'function') {
-          Array.from(panel.children).forEach(child => alpine.destroyTree(child));
-        }
-        panel.remove();
-      });
+      if (alpine && typeof alpine.destroyTree === 'function') alpine.destroyTree(panel);
+      panel.remove();
     });
-    this._trainTypePanelCache.clear();
-    this._trainTypePanelCache = null;
+    this._trainTypePanel = null;
   },
 
   _activateTrainTypePanel(root, trainType) {
-    if (!(this._trainTypePanelCache instanceof Map)) this._trainTypePanelCache = new Map();
-
-    // 兼容热更新前已直接渲染在根容器中的旧结构。
-    const legacyChildren = Array.from(root.children).filter(
-      child => !child.classList.contains('train-type-panel')
-    );
-    if (legacyChildren.length > 0) {
-      this._replaceTrainingFormHtml(root, '');
-      this._trainTypePanelCache.clear();
+    let panel = this._trainTypePanel;
+    if (panel && panel.dataset.trainType !== trainType) {
+      this._destroyTrainTypePanel();
+      panel = null;
     }
-
-    const activePanel = root.querySelector(':scope > .train-type-panel');
-
-    let panel = this._trainTypePanelCache.get(trainType);
     if (!panel) {
       panel = document.createElement('div');
       panel.className = 'train-type-panel';
       panel.dataset.trainType = trainType;
-      // 缓存面板会脱离 DOM，但其 x-for 等响应式表达式仍会运行。
-      // 保留应用作用域，让新建的子集行在脱离 DOM 时也能找到表单方法。
-      const alpine = window.Alpine;
-      if (alpine && typeof alpine.addScopeToNode === 'function') {
-        alpine.addScopeToNode(panel, {}, root);
-      }
-      this._trainTypePanelCache.set(trainType, panel);
+      this._trainTypePanel = panel;
     }
     this._mutateTrainingPanels(() => {
-      if (activePanel && activePanel !== panel) activePanel.remove();
       if (panel.parentElement !== root) root.appendChild(panel);
     });
     return panel;
-  },
-
-  _warmTrainTypePanels(activeType) {
-    const root = document.getElementById('trainFormContent');
-    if (!root) return;
-    const originalForm = this.form;
-    const originalDefaults = this.formDefaults;
-    const originalActiveType = this._activeTrainType;
-
-    this.trainTypes.forEach(({ v: trainType }) => {
-      if (trainType === activeType || this._trainTypePanelIsReady(trainType)) return;
-      const defaults = this._buildFormDefaults(trainType);
-      const warmForm = this._profileFormFromDraft(trainType, defaults);
-      if (trainType === 'krea2-lora') {
-        this._applyKrea2ModelDefaults(warmForm, defaults);
-        const cacheDir = this._deriveKrea2CacheDir(warmForm.train_data_dir);
-        warmForm.dataset_cache_dir = cacheDir;
-        defaults.dataset_cache_dir = cacheDir;
-      }
-      this._normalizeProfileSelectValues(trainType, defaults, warmForm);
-      if (trainType !== 'moss-image-lora') warmForm.network_module = this._defaultNetworkModule(trainType);
-      this.form = warmForm;
-      this.formDefaults = { ...defaults };
-      this._activeTrainType = trainType;
-      this.renderTrainingForm(trainType, null, true);
-    });
-
-    this.form = originalForm;
-    this.formDefaults = originalDefaults;
-    this._activeTrainType = originalActiveType;
-    this.renderTrainingForm(activeType, null);
   },
 
   renderTrainingForm(trainType, targetId, force = false) {
@@ -1450,7 +1401,9 @@ window.trainingCoreMixin = {
   lycorisSummary() {
     if (this.form.network_module !== 'lycoris.kohya') return '';
     const algo = this.form.lycoris_algo || 'lora';
-    const preset = this.form.lycoris_preset || 'full';
+    const preset = this.form.model_train_type === 'krea2-lora'
+      ? this.t(`opt.krea_target_${this.form.krea_target_mode || 'all'}`)
+      : (this.form.lycoris_preset || 'full');
     const rank = this.form.network_dim ?? '—';
     const alpha = this.form.network_alpha ?? '—';
     // dora_wd 切换算法后可能残留 true，但实际仅 lora/loha/lokr 消费（adapter 会 pop），摘要需同门控
@@ -1508,7 +1461,7 @@ window.trainingCoreMixin = {
     const mainOnly = { key: 'network_module', neq: 'lycoris.kohya' };
     const showIf = Array.isArray(field.showIf)
       ? field.showIf.concat(mainOnly)
-      : (field.showIf ? [field.showIf, mainOnly] : field.showIf);
+      : (field.showIf ? [field.showIf, mainOnly] : (field.showIfAny ? undefined : [mainOnly]));
     const showIfAny = field.showIfAny
       ? field.showIfAny.map(group => group.concat(mainOnly))
       : field.showIfAny;
@@ -1525,6 +1478,18 @@ window.trainingCoreMixin = {
     const f = this.form;
     const algo = String(f.lycoris_algo || 'lora').toLowerCase();
     const lines = [`algo = "${algo}"`];
+    if (f.model_train_type === 'krea2-lora') {
+      lines.push(`krea_target_mode = ${JSON.stringify(f.krea_target_mode || 'all')}`);
+      const fields = (window.getVisibleSections('krea2-lora') || []).flatMap(s => s.fields || []);
+      for (const field of fields) {
+        if (!this._fieldShowIfMet(field) || ['lycoris_algo', 'network_args_custom'].includes(field.key)) continue;
+        if (!field.lycorisGroup && !['rank_dropout', 'module_dropout', 'krea_target_include', 'krea_target_exclude'].includes(field.key)) continue;
+        const value = f[field.key];
+        if (value === undefined || value === null || value === '') continue;
+        lines.push(`${field.networkArg || field.key} = ${JSON.stringify(value)}`);
+      }
+      return lines.join('\n');
+    }
     const preset = String(f.lycoris_preset || 'full');
     if (preset !== 'full') lines.push(`preset = "${preset}"`);
     if (f.lycoris_preset === 'attn-mlp' && f.lycoris_anima_sd_default === true) {
@@ -1590,7 +1555,8 @@ window.trainingCoreMixin = {
     if (f.train_llm_adapter) notes.push(this.t('field.lycorisNoteTrainLlmAdapter'));
     // Full Matrix 的自动触发条件取决于每一层经过 factor 分解后的尺寸，
     // 前端没有完整模型结构时不能用固定 rank（例如 16）做静态判定。
-    if (f.lycoris_algo === 'lokr' && Number(f.network_dim || 0) > 0) notes.push(this.t('field.lycorisNoteDimFullMatrix'));
+    if (f.lycoris_algo === 'lokr' && Number(f.network_dim || 0) > 0) notes.push(this.t(
+      f.model_train_type === 'krea2-lora' ? 'field.krea_lokr_rankHint' : 'field.lycorisNoteDimFullMatrix'));
     return notes.join('\n');
   },
 
@@ -2319,6 +2285,9 @@ window.trainingCoreMixin = {
       case 'attn_mode':
         return `<div x-show="faStatus && !faStatus.installed && form.attn_mode==='flash'" x-cloak class="field-hint field-hint-warn">${this.t('environment.envHintFlashNotInstalled')}</div>`
           + `<div x-show="xfStatus && !xfStatus.installed && form.attn_mode==='xformers'" x-cloak class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')}</div>`;
+      case 'krea_attention_backend':
+        return `<div x-show="faStatus && !faStatus.installed && form.krea_attention_backend==='flash_attn'" x-cloak class="field-hint field-hint-warn">${this.t('environment.envHintFlashNotInstalled')}</div>`
+          + `<div x-show="xfStatus && !xfStatus.installed && form.krea_attention_backend==='xformers'" x-cloak class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')}</div>`;
       case 'xformers':
         return `<div x-show="xfStatus && !xfStatus.installed && form.xformers" class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')}</div>`;
       case 'compile':
@@ -3476,16 +3445,13 @@ window.trainingCoreMixin = {
   },
 
   _enforceSharedTrainingUiConstraints() {
+    this._enforceCheckpointingUiConstraints();
     if (this.form.model_train_type === 'krea2-lora') {
-      if (this.form.block_swap_h2d_only || this.form.gradient_checkpointing_cpu_offload) {
-        this.form.gradient_checkpointing = true;
-      }
+      if (this.form.network_module === 'lycoris.kohya' && this.form.fp8_base) this.form.bypass_mode = true;
+      else if (this.form.network_module === 'lycoris.kohya' && this.form.dora_wd) this.form.bypass_mode = false;
       return;
     }
     if (!['anima-lora', 'moss-image-lora', 'sdxl-lora'].includes(this.form.model_train_type)) return;
-    if (['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type) && this.form.block_swap_h2d_only) {
-      this.form.gradient_checkpointing = true;
-    }
     if (this.form.model_train_type === 'sdxl-lora' && this.form.xformers && this.form.sdpa) {
       this.form.sdpa = false;
     }
@@ -3931,7 +3897,8 @@ window.trainingCoreMixin = {
 
     this.form[key] = value;
     this._setFieldSource(key, 'user');
-    if (['gradient_checkpointing', 'cpu_offload_checkpointing', 'unsloth_offload_checkpointing', 'block_swap_h2d_only'].includes(key)) {
+    if (['gradient_checkpointing', 'cpu_offload_checkpointing', 'unsloth_offload_checkpointing',
+      'gradient_checkpointing_cpu_offload', 'block_swap_h2d_only'].includes(key)) {
       this._enforceCheckpointingUiConstraints(key);
     }
     if (key === 'max_data_loader_n_workers' || key === 'persistent_data_loader_workers') {
@@ -4014,18 +3981,11 @@ window.trainingCoreMixin = {
     }
     if (key === 'attn_mode' && value === 'xformers') this.form.split_attn = true;
     if (key === 'blocks_to_swap' && Number(value || 0) === 0
-        && ['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type)) {
+        && ['anima-lora', 'moss-image-lora', 'krea2-lora'].includes(this.form.model_train_type)) {
       this.form.block_swap_h2d_only = false;
     }
     if (this.form.model_train_type === 'sdxl-lora' && value === true && ['xformers', 'sdpa'].includes(key)) {
       this.form[key === 'xformers' ? 'sdpa' : 'xformers'] = false;
-    }
-    if (this.form.model_train_type === 'krea2-lora') {
-      if (key === 'block_swap_h2d_only' && value === true) this.form.gradient_checkpointing = true;
-      if (key === 'gradient_checkpointing' && value === false) {
-        this.form.block_swap_h2d_only = false;
-        this.form.gradient_checkpointing_cpu_offload = false;
-      }
     }
     // When enabling cache_text_encoder_outputs, force network_train_unet_only = true
     if (key === 'cache_text_encoder_outputs' && value === true) {
@@ -4319,11 +4279,13 @@ window.trainingCoreMixin = {
   },
 
   _checkpointOffloadErrors() {
-    if (!['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type)) return {};
+    if (!['anima-lora', 'moss-image-lora', 'krea2-lora'].includes(this.form.model_train_type)) return {};
     const errors = {};
-    const cpu = this.form.cpu_offload_checkpointing, unsloth = this.form.unsloth_offload_checkpointing;
     const swapping = Number(this.form.blocks_to_swap || 0) > 0;
     if (this.form.block_swap_h2d_only && !swapping) errors.block_swap_h2d_only = this.t('field.blockSwapH2dRequiresBlocks');
+    // Musubi uses different offload and compile paths; only the H2D prerequisite is shared.
+    if (this.form.model_train_type === 'krea2-lora') return errors;
+    const cpu = this.form.cpu_offload_checkpointing, unsloth = this.form.unsloth_offload_checkpointing;
     if (cpu && unsloth) errors.unsloth_offload_checkpointing = this.t('field.checkpointOffloadConflict');
     if (swapping && (cpu || unsloth)) errors.blocks_to_swap = this.t('field.blockSwapOffloadConflict');
     if (swapping && this.form.compile && this.form.compile_fullgraph) {
@@ -4338,11 +4300,22 @@ window.trainingCoreMixin = {
 
   _kreaOptionErrors() {
     if (this.form.model_train_type !== 'krea2-lora') return {};
+    const errors = {};
+    if (this.form.network_module === 'lycoris.kohya' && this.form.fp8_base && this.form.dora_wd) {
+      errors.dora_wd = this.t('field.krea_dora_fp8Conflict');
+    }
+    if (this.form.krea_target_mode === 'custom' && !String(this.form.krea_target_include || '').trim()) {
+      errors.krea_target_include = this.t('common.fieldRequired');
+    }
+    if (this.form.network_module === 'lycoris.kohya' && this.form.lycoris_algo === 'lokr'
+      && (Number(this.form.lokr_factor) === 0 || Number(this.form.lokr_factor) < -1)) {
+      errors.lokr_factor = this.t('field.krea_factorRangeError');
+    }
     if (this.form.enable_krea_samples && String(this.form.turbo_dit || '').trim()
         && Number(this.form.blocks_to_swap || 0) > 0) {
-      return { turbo_dit: this.t('field.kreaTurboBlockSwapConflict') };
+      errors.turbo_dit = this.t('field.kreaTurboBlockSwapConflict');
     }
-    return {};
+    return errors;
   },
 
   _mossOptionErrors() {

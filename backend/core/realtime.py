@@ -23,6 +23,8 @@ SERVER_STARTED_AT = time.time()
 
 _MAX_HISTORY_EVENTS = 256
 _MAX_HISTORY_BYTES = 5 * 1024 * 1024
+_MAX_TOTAL_HISTORY_BYTES = 32 * 1024 * 1024
+_MAX_TERMINAL_TOPICS = 128
 _MAX_SUBSCRIBER_QUEUE = 64
 _TERMINAL_TASK_TTL = 600.0
 _MAX_TASK_LOG_ITEMS = 100
@@ -108,12 +110,33 @@ class RealtimeHub:
         self._history: dict[str, deque[dict[str, Any]]] = defaultdict(deque)
         self._history_bytes: dict[str, int] = defaultdict(int)
         self._next_seq: dict[str, int] = defaultdict(int)
+        self._terminal_topics: dict[str, float] = {}
+        self._sequence_floor = 0
+
+    def _prune(self) -> None:
+        """Called under the hub lock; live subscriptions keep their sequence."""
+        now = time.time()
+        removable = [(topic, ended) for topic, ended in self._terminal_topics.items()
+                     if not self._subscribers.get(topic)]
+        removable.sort(key=lambda item: item[1])
+        overflow = max(0, len(removable) - _MAX_TERMINAL_TOPICS)
+        for index, (topic, ended) in enumerate(removable):
+            if index >= overflow and now - ended <= _TERMINAL_TASK_TTL:
+                continue
+            self._sequence_floor = max(self._sequence_floor, self._next_seq.pop(topic, 0))
+            self._history.pop(topic, None)
+            self._history_bytes.pop(topic, None)
+            self._terminal_topics.pop(topic, None)
+
+    async def prune(self) -> None:
+        async with self._lock:
+            self._prune()
 
     async def publish(self, topic: str, event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         """Publish one canonical event without ever blocking a producer."""
         emitted_at = time.time()
         async with self._lock:
-            self._next_seq[topic] += 1
+            self._next_seq[topic] = self._next_seq.get(topic, self._sequence_floor) + 1
             event: dict[str, Any] = {
                 "op": "event",
                 "topic": topic,
@@ -130,6 +153,24 @@ class RealtimeHub:
                 or self._history_bytes[topic] > _MAX_HISTORY_BYTES
             ):
                 self._history_bytes[topic] -= _json_size(history.popleft())
+
+            if topic.startswith("task:") and event_type in {"task.status", "task.result"}:
+                if payload.get("status") in {"FINISHED", "FAILED", "TERMINATED"}:
+                    self._terminal_topics.setdefault(topic, emitted_at)
+                    if len(self._terminal_topics) > _MAX_TERMINAL_TOPICS:
+                        self._prune()
+                else:
+                    self._terminal_topics.pop(topic, None)
+
+            # Enforce capacity at its only growth point; the monitor owns TTL scans.
+            total = sum(self._history_bytes.values())
+            if total > _MAX_TOTAL_HISTORY_BYTES:
+                for oldest_topic in sorted(self._history, key=lambda key: self._history[key][0]["emitted_at"] if self._history[key] else emitted_at):
+                    history = self._history[oldest_topic]
+                    while history and total > _MAX_TOTAL_HISTORY_BYTES:
+                        size = _json_size(history.popleft())
+                        self._history_bytes[oldest_topic] -= size
+                        total -= size
 
             subscribers = list(self._subscribers.get(topic, ()))
 
@@ -190,7 +231,7 @@ class RealtimeHub:
             history = self._history.get(topic, deque())
             latest_seq = self._next_seq.get(topic, 0)
             replay: list[dict[str, Any]] = []
-            resync_required = False
+            resync_required = bool(resume_seq and not latest_seq)
 
             if latest_seq:
                 if resume_seq > latest_seq:
