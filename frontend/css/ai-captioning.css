@@ -44,7 +44,9 @@
 .caption-field-actions:empty { display: none; }
 .caption-form .btn-menu { opacity: .4; border-color: transparent; background: transparent; }
 .caption-form .field:hover .btn-menu, .caption-form .btn-menu:focus-visible, .caption-form .btn-menu[aria-expanded="true"] { opacity: 1; }
-.caption-form .field.field-changed .field-key::after { display: inline-block; width: 4px; height: 4px; margin: 0 0 2px 6px; border-radius: 50%; background: var(--state-changed); content: ''; }
+/* Reserve the change marker even at the default value so controls and wrapped labels stay put. */
+.caption-form .field-key::after { display: inline-block; width: 4px; height: 4px; margin: 0 0 2px 6px; border-radius: 50%; background: var(--state-changed); content: ''; visibility: hidden; }
+.caption-form .field.field-changed .field-key::after { visibility: visible; }
 .caption-input-options { display: grid; grid-template-columns: minmax(0,300px) 140px; column-gap: 24px; max-width: 464px; }
 .caption-reference-notes { margin-top: -8px; }
 .caption-reference-notes .field-hint { margin: 0; color: var(--text-tertiary); }

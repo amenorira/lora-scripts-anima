@@ -51,6 +51,33 @@
     }
     assert(heights.length > 0 && Math.max(...heights) - Math.min(...heights) < 1, label + ': number and select controls have different heights');
   };
+  const assertChangeIndicatorStability = async (doc,label) => {
+    const fields = [...doc.querySelectorAll('.caption-form .field')].filter(field => field.querySelector('.field-key') && field.getClientRects().length);
+    const changed = fields.map(field => field.classList.contains('field-changed'));
+    const elements = [...doc.querySelectorAll('.caption-form .field,.caption-form .field-key,.caption-form .field-control,.caption-field-actions,.caption-form .toggle-track')];
+    const bounds = () => elements.map(element => {
+      const box = element.getBoundingClientRect();
+      return [box.x,box.y,box.width,box.height];
+    });
+    try {
+      fields.forEach(field => field.classList.remove('field-changed'));
+      await settle();
+      const before = bounds();
+      fields.forEach(field => field.classList.add('field-changed'));
+      await settle();
+      const after = bounds();
+      elements.forEach((element,index) => assert(before[index].every((value,axis) => Math.abs(value - after[index][axis]) < .1),
+        label + ': change indicator moves ' + (element.id || element.className)));
+      fields.forEach(field => field.classList.remove('field-changed'));
+      await settle();
+      const restored = bounds();
+      elements.forEach((element,index) => assert(before[index].every((value,axis) => Math.abs(value - restored[index][axis]) < .1),
+        label + ': removing change indicator moves ' + (element.id || element.className)));
+    } finally {
+      fields.forEach((field,index) => field.classList.toggle('field-changed',changed[index]));
+      await settle();
+    }
+  };
   try {
     await waitFor(() => frame.contentDocument?.querySelector('#caption-tab-single'), 'Workspace did not mount');
     const doc = frame.contentDocument, win = frame.contentWindow;
@@ -69,6 +96,7 @@
           const label = `${theme} ${width}×${height} ${tab}`;
           assert(doc.documentElement.scrollWidth <= width + 1, label + ': page overflows the viewport');
           assertControlAlignment(doc,label);
+          await assertChangeIndicatorStability(doc,label);
           assert(doc.querySelectorAll('.caption-settings details').length === 0, label + ': configuration has collapsible sections');
           const panes = tab === 'single'
             ? [doc.querySelector('.caption-single-main'),doc.querySelector('.caption-single-layout .caption-settings-column')]
