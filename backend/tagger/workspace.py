@@ -175,12 +175,11 @@ def _annotation_states(source: dict, settings: dict, *, cached: bool = False) ->
         now = time.monotonic()
         reuse = (cached and source.get("annotation_settings") == settings
                  and now - source.get("annotation_checked_at", -float("inf")) < 5.0)
-        dirty = source.setdefault("annotation_dirty", set())
         states = []
         root = Path(source["root"]).resolve()
         parents = {}
         for index, path in enumerate(source["paths"]):
-            if reuse and str(path) in cache and str(path) not in dirty:
+            if reuse and str(path) in cache:
                 states.append(cache[str(path)])
                 continue
             if source["kind"] in {"file", "upload"}:
@@ -202,7 +201,6 @@ def _annotation_states(source: dict, settings: dict, *, cached: bool = False) ->
             state = captioning.output_state(path, settings, cache.get(str(path)), parent=parent)
             cache[str(path)] = state
             states.append(state)
-        dirty.clear()
         if not reuse:
             source["annotation_checked_at"] = now
             source["annotation_settings"] = dict(settings)
@@ -451,7 +449,7 @@ def _record_task_item(task: dict, index: int, outcome: dict) -> None:
     for source in sources:
         if path.is_relative_to(Path(source["root"])):
             with source["annotation_lock"]:
-                source.setdefault("annotation_dirty", set()).add(str(path))
+                source["annotation_cache"].pop(str(path), None)
 
 
 def _finish_task(task: dict, status: str, error: str = "") -> None:

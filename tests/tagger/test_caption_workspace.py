@@ -165,7 +165,10 @@ class CaptionWorkspaceTests(unittest.TestCase):
             self.assertEqual(result["counts"]["ordinary_outputs"], 1)
             self.assertEqual(state.call_count, 1)
             source = workspace._get_source(token)
-            source["annotation_dirty"].add(str(self.image))
+            task = {"lock": threading.RLock(), "success": 0, "current": 0, "written": 0,
+                    "write_captions": True, "total": 1, "logs": [],
+                    "items": [{"path": str(self.image), "name": self.image.name}]}
+            workspace._record_task_item(task, 0, {"status": "success"})
             workspace.annotations(token, cached=True)
             self.assertEqual(state.call_count, 2)
             workspace.caption_plan(token, {})
