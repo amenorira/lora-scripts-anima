@@ -184,10 +184,6 @@ async def parse_training_toml(req: TrainingTomlParseRequest):
     from backend.training.scheduler_config import extract_scheduler_form
     from backend.training.optimizer_contracts import extract_optimizer_form
 
-    try:
-        parsed = extract_optimizer_form(extract_scheduler_form(parsed))
-    except ValueError as exc:
-        return APIResponseFail(message=str(exc))
     # Native trainer TOMLs omit the application's profile selector. Prefer an
     # explicit selector, then MOSS-specific fields, then the current UI profile.
     imported_type = parsed.get("model_train_type")
@@ -199,6 +195,12 @@ async def parse_training_toml(req: TrainingTomlParseRequest):
     try:
         if imported_type:
             parsed["model_train_type"] = imported_type
+        parsed = extract_scheduler_form(parsed)
+        if imported_type == KREA2_PROFILE_ID:
+            from backend.training.musubi_krea2 import extract_krea2_optimizer_form
+            parsed = extract_krea2_optimizer_form(parsed)
+        else:
+            parsed = extract_optimizer_form(parsed)
         parsed = extract_network_form(parsed, model_train_type=imported_type or "anima-lora")
     except ValueError as exc:
         return APIResponseFail(message=str(exc))

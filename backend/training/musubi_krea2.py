@@ -26,6 +26,7 @@ from backend.training.krea2_network import (
     KREA2_PRESET_FILENAME, build_krea2_network_args, validate_krea2_network,
 )
 from backend.training.metrics_config import training_metric_fields
+from backend.training.optimizer_contracts import FormArgument, collect_optimizer_args, extract_optimizer_form
 from backend.training.musubi_runtime import MUSUBI_RUNTIME_PACKAGES, shared_runtime_status
 from backend.training.optimizer_metadata import (
     KREA2_OPTIMIZER_AUTO_VALUES,
@@ -134,6 +135,19 @@ _KREA2_HIDDEN_LEGACY_OPTIMIZERS = frozenset(
     {"torch.optim.Adam", "torch.optim.RAdam", "torch.optim.NAdam", "torch.optim.SGD"}
 )
 _KREA2_CURATED_OPTIMIZERS = _KREA2_VISIBLE_OPTIMIZERS | _KREA2_HIDDEN_LEGACY_OPTIMIZERS
+_KREA2_OPTIMIZER_ARGUMENTS = {
+    "krea_optimizer_weight_decay": FormArgument("weight_decay", _KREA2_CURATED_OPTIMIZERS),
+    "krea_optimizer_betas": FormArgument("betas", _KREA2_BETA_OPTIMIZERS),
+    "krea_optimizer_eps": FormArgument("eps", _KREA2_EPS_OPTIMIZERS),
+    "krea_prodigy_d_coef": FormArgument("d_coef", _KREA2_PRODIGY_OPTIMIZERS),
+    "krea_prodigy_d0": FormArgument("d0", _KREA2_PRODIGY_OPTIMIZERS),
+    "krea_prodigyplus_use_stableadamw": FormArgument("use_stableadamw", {_KREA2_PRODIGYPLUS_OPTIMIZER}),
+    "krea_schedulefree_warmup_steps": FormArgument("warmup_steps", _KREA2_SCHEDULEFREE_WARMUP_OPTIMIZERS),
+    **{
+        f"krea_adafactor_{key}": FormArgument(key, {"AdaFactor"})
+        for key in ("relative_step", "scale_parameter", "warmup_init", "clip_threshold", "eps")
+    },
+}
 _KREA2_OPTIONAL_OPTIMIZER_PACKAGES = {
     "pytorch_optimizer.": "pytorch-optimizer",
     "prodigyopt.": "prodigyopt",
@@ -951,6 +965,11 @@ KREA2_FIELDS: list[dict[str, Any]] = [
     },
 ]
 
+_KREA2_OPTIMIZER_DEFAULTS = {
+    field["key"]: field["default"] for field in KREA2_FIELDS
+    if field["key"] in _KREA2_OPTIMIZER_ARGUMENTS and field["default"] != ""
+}
+
 _KREA2_SHARED_HINTS_BY_KEY = {
     "discrete_flow_shift": "field.krea_discrete_flow_shiftHint",
     "sigmoid_scale": "field.sigmoid_scaleHint",
@@ -1130,68 +1149,29 @@ def _normalize_numeric_tuple(
     return numbers
 
 
-def _replace_musubi_arg(arguments: list[str], key: str, literal: str) -> None:
-    """Set a guided argument, overriding the same key from raw advanced text."""
-
-    prefix = f"{key}="
-    arguments[:] = [item for item in arguments if not item.lstrip().startswith(prefix)]
-    arguments.append(f"{key}={literal}")
-
-
 def _build_krea2_optimizer_args(config: dict[str, Any]) -> list[str]:
-    """Build optimizer args only from the audited guided Krea controls."""
+    """Use the same profile-specific mapping for native import and export."""
+    values = {**_KREA2_OPTIMIZER_DEFAULTS, "optimizer_type": "adamw8bit", **config}
+    arguments = collect_optimizer_args(values, {}, mappings=_KREA2_OPTIMIZER_ARGUMENTS)
+    if arguments.get("warmup_steps") == 0:
+        arguments.pop("warmup_steps")
+    return [f"{key}={value!r}" for key, value in arguments.items()]
 
-    arguments: list[str] = []
-    optimizer_type = str(config.get("optimizer_type") or "adamw8bit")
 
-    if not _is_empty(config.get("krea_optimizer_weight_decay")):
-        _replace_musubi_arg(arguments, "weight_decay", repr(float(config["krea_optimizer_weight_decay"])))
-    if optimizer_type in _KREA2_BETA_OPTIMIZERS and not _is_empty(config.get("krea_optimizer_betas")):
-        _replace_musubi_arg(arguments, "betas", repr(tuple(config["krea_optimizer_betas"])))
-    if optimizer_type in _KREA2_EPS_OPTIMIZERS and not _is_empty(config.get("krea_optimizer_eps")):
-        _replace_musubi_arg(arguments, "eps", repr(float(config["krea_optimizer_eps"])))
-
-    if optimizer_type in _KREA2_PRODIGY_OPTIMIZERS:
-        _replace_musubi_arg(arguments, "d_coef", repr(float(config.get("krea_prodigy_d_coef", 1.0))))
-        _replace_musubi_arg(arguments, "d0", repr(float(config.get("krea_prodigy_d0", 1e-6))))
-        if optimizer_type == _KREA2_PRODIGYPLUS_OPTIMIZER:
-            _replace_musubi_arg(
-                arguments,
-                "use_stableadamw",
-                "True" if bool(config.get("krea_prodigyplus_use_stableadamw", True)) else "False",
-            )
-    elif optimizer_type == "AdaFactor":
-        _replace_musubi_arg(
-            arguments,
-            "relative_step",
-            "True" if bool(config.get("krea_adafactor_relative_step", True)) else "False",
-        )
-        _replace_musubi_arg(
-            arguments,
-            "scale_parameter",
-            "True" if bool(config.get("krea_adafactor_scale_parameter", True)) else "False",
-        )
-        _replace_musubi_arg(
-            arguments,
-            "warmup_init",
-            "True" if bool(config.get("krea_adafactor_warmup_init", False)) else "False",
-        )
-        _replace_musubi_arg(
-            arguments,
-            "clip_threshold",
-            repr(float(config.get("krea_adafactor_clip_threshold", 1.0))),
-        )
-        _replace_musubi_arg(
-            arguments,
-            "eps",
-            repr(tuple(config.get("krea_adafactor_eps", (1e-30, 1e-3)))),
-        )
-    elif optimizer_type in _KREA2_SCHEDULEFREE_WARMUP_OPTIMIZERS and int(
-        config.get("krea_schedulefree_warmup_steps", 0)
-    ):
-        _replace_musubi_arg(arguments, "warmup_steps", str(int(config["krea_schedulefree_warmup_steps"])))
-
-    return arguments
+def extract_krea2_optimizer_form(config: dict[str, Any]) -> dict[str, Any]:
+    """Restore supported controls; never silently discard unsupported native kwargs."""
+    if "optimizer_args" not in config and not config.get("optimizer_args_custom"):
+        return dict(config)
+    form = {"optimizer_type": "adamw8bit", "optimizer_args": [], **config}
+    errors: list[str] = []
+    _normalize_krea2_optimizer_type(form, errors)
+    if errors:
+        raise ValueError("; ".join(errors))
+    form = extract_optimizer_form(form, mappings=_KREA2_OPTIMIZER_ARGUMENTS)
+    extra = form.pop("optimizer_args_custom", "")
+    if extra:
+        raise ValueError(f"optimizer_args: unsupported Krea 2 arguments / Krea 2 不支持这些参数: {extra}")
+    return form
 
 
 def _normalize_krea2_optimizer_type(config: dict[str, Any], errors: list[str]) -> str:
@@ -1521,15 +1501,7 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
         "lr_decay_steps": 0,
         "lr_scheduler_num_cycles": 1,
         "lr_scheduler_power": 1.0,
-        "krea_prodigy_d_coef": "1.0",
-        "krea_prodigy_d0": "1e-6",
-        "krea_prodigyplus_use_stableadamw": True,
-        "krea_schedulefree_warmup_steps": 0,
-        "krea_adafactor_relative_step": True,
-        "krea_adafactor_scale_parameter": True,
-        "krea_adafactor_warmup_init": False,
-        "krea_adafactor_clip_threshold": 1.0,
-        "krea_adafactor_eps": "1e-30, 1e-3",
+        **_KREA2_OPTIMIZER_DEFAULTS,
         "compile_mode": "default",
         "compile_dynamic": "auto",
         "block_swap_ring_size": 2,

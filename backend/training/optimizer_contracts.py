@@ -781,11 +781,12 @@ def normalize_lora_muon_form_fields(config: dict[str, Any]) -> None:
 
 
 def collect_optimizer_args(
-    config: Mapping[str, Any], parsed_args: Mapping[str, Any]
+    config: Mapping[str, Any], parsed_args: Mapping[str, Any],
+    *, mappings: Mapping[str, FormArgument] = FORM_ARGUMENTS,
 ) -> dict[str, Any]:
     optimizer_type = str(config.get("optimizer_type", ""))
     result = dict(parsed_args)
-    for form_key, mapping in FORM_ARGUMENTS.items():
+    for form_key, mapping in mappings.items():
         if optimizer_type not in mapping.optimizers:
             continue
         value = config.get(form_key)
@@ -801,7 +802,9 @@ def collect_optimizer_args(
     return result
 
 
-def extract_optimizer_form(config: Mapping[str, Any]) -> dict[str, Any]:
+def extract_optimizer_form(
+    config: Mapping[str, Any], *, mappings: Mapping[str, FormArgument] = FORM_ARGUMENTS,
+) -> dict[str, Any]:
     """Restore native arguments using the same mappings and precedence as export."""
     form = dict(config)
     if "optimizer_args" not in form:
@@ -809,9 +812,9 @@ def extract_optimizer_form(config: Mapping[str, Any]) -> dict[str, Any]:
     parsed, errors = parse_optimizer_args(form)
     if errors:
         raise ValueError("; ".join(errors))
-    arguments = collect_optimizer_args(form, parsed)
+    arguments = collect_optimizer_args(form, parsed, mappings=mappings)
     optimizer_type = str(form.get("optimizer_type", ""))
-    for key, mapping in FORM_ARGUMENTS.items():
+    for key, mapping in mappings.items():
         if optimizer_type not in mapping.optimizers or mapping.argument not in arguments:
             continue
         value = arguments[mapping.argument]
