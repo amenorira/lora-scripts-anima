@@ -26,10 +26,9 @@ logging.getLogger("tensorboard").setLevel(logging.WARNING)
 _tb_cache: dict[str, tuple[float, tuple[str, int, int], str, Any]] = {}
 _tb_cache_lock = threading.Lock()
 
-# 增量读取用：按 (log_dir_str, tag) 追踪已推送的最大 step
-_last_seen_step: dict[tuple[str, str], int] = {}
-_last_seen_step_lock = threading.Lock()
-_MAX_SEEN_ENTRIES = 200  # 防止无限增长
+# Live readers retain file cursors and new points, not the complete scalar history.
+_tb_live_cache: dict[str, tuple] = {}
+_tb_live_lock = threading.Lock()
 
 # 监控面板采集的 TensorBoard scalar 标签（全量与增量读取共用）
 _SCALAR_TAGS = (
@@ -37,18 +36,19 @@ _SCALAR_TAGS = (
     "lr/unet", "lr/textencoder", "lr/d*lr/unet", "lr/d*lr/textencoder",
 )
 
-def _get_cached_accumulator(log_dir: Path) -> Any | None:
+def _get_cached_accumulator(log_dir: Path, *, incremental: bool = False) -> Any | None:
     """获取缓存的 EventAccumulator，若 event file 未变化则复用"""
     try:
         from tensorboard.backend.event_processing import event_accumulator
     except Exception:
         return None
 
+    cache = _tb_live_cache if incremental else _tb_cache
     log_dir_str = str(log_dir)
     event_files = list(log_dir.rglob("events.out.tfevents.*"))
     if not event_files:
         with _tb_cache_lock:
-            _tb_cache.pop(log_dir_str, None)
+            cache.pop(log_dir_str, None)
         return None
 
     # 使用最新 event file 的所在目录（EventAccumulator 不递归搜索子目录）
@@ -60,33 +60,49 @@ def _get_cached_accumulator(log_dir: Path) -> Any | None:
     now = time.time()
 
     with _tb_cache_lock:
-        if log_dir_str in _tb_cache:
-            _, cached_stamp, cached_event_dir, cached_ea = _tb_cache[log_dir_str]
+        if log_dir_str in cache:
+            _, cached_stamp, cached_event_dir, cached_ea = cache[log_dir_str]
             if cached_event_dir == event_dir and cached_stamp == stamp:
-                _tb_cache[log_dir_str] = (now, stamp, cached_event_dir, cached_ea)
+                cache[log_dir_str] = (now, stamp, cached_event_dir, cached_ea)
                 return cached_ea
 
             if cached_event_dir == event_dir:
                 try:
                     cached_ea.Reload()
-                    _tb_cache[log_dir_str] = (now, stamp, event_dir, cached_ea)
+                    cache[log_dir_str] = (now, stamp, event_dir, cached_ea)
                     return cached_ea
                 except Exception:
-                    _tb_cache.pop(log_dir_str, None)
+                    cache.pop(log_dir_str, None)
 
     # 缓存未命中或日志目录切换：创建新 accumulator
     try:
-        ea = event_accumulator.EventAccumulator(
+        accumulator_type = event_accumulator.EventAccumulator
+        if incremental:
+            class LiveAccumulator(accumulator_type):
+                def __init__(self, *args, **kwargs):
+                    super().__init__(*args, **kwargs)
+                    self.pending = {}
+                    self.last_steps = {}
+
+                def _ProcessScalar(self, tag, wall_time, step, scalar):
+                    # Keep the existing monotonic-step delivery contract. TensorBoard
+                    # owns file parsing, rotation and partial-record recovery.
+                    if tag in _SCALAR_TAGS and step > self.last_steps.get(tag, -1):
+                        self.pending.setdefault(tag, []).append({"step": int(step), "value": float(scalar)})
+                        self.last_steps[tag] = step
+
+            accumulator_type = LiveAccumulator
+        ea = accumulator_type(
             event_dir,
             size_guidance={event_accumulator.SCALARS: 0},
         )
         ea.Reload()
         with _tb_cache_lock:
-            _tb_cache[log_dir_str] = (now, stamp, event_dir, ea)
+            cache[log_dir_str] = (now, stamp, event_dir, ea)
             # 清理过大的缓存（保留最近 3 个）
-            if len(_tb_cache) > 3:
-                oldest = min(_tb_cache.keys(), key=lambda k: _tb_cache[k][0])
-                del _tb_cache[oldest]
+            if len(cache) > 3:
+                oldest = min(cache, key=lambda k: cache[k][0])
+                del cache[oldest]
         return ea
     except Exception:
         return None
@@ -236,55 +252,13 @@ def read_tensorboard_incremental(run_dir: str | None = None) -> dict[str, list[d
             if log_sub.is_dir():
                 log_dirs.append(log_sub)
 
-    scalar_tags = _SCALAR_TAGS
-
-    result: dict[str, list[dict]] = {}
-
-    for log_dir in log_dirs[:1]:
-        ea = _get_cached_accumulator(log_dir)
-        if ea is None:
-            continue
-
-        log_dir_str = str(log_dir)
-        try:
-            available = set(ea.Tags().get("scalars", []))
-        except Exception:
-            continue
-
-        for tag in scalar_tags:
-            if tag not in available:
-                continue
-            try:
-                events = ea.Scalars(tag)
-            except Exception:
-                continue
-
-            with _last_seen_step_lock:
-                last_step = _last_seen_step.get((log_dir_str, tag), -1)
-            new_points = [
-                {"step": int(e.step), "value": float(e.value)}
-                for e in events
-                if int(e.step) > last_step
-            ]
-            if not new_points:
-                continue
-
-            result[tag] = new_points
-            # 更新 last_seen_step（线程安全）
-            max_step = max(p["step"] for p in new_points)
-            with _last_seen_step_lock:
-                _last_seen_step[(log_dir_str, tag)] = max_step
-
-    # 清理过大的追踪字典（LRU 淘汰最旧的条目）
-    with _last_seen_step_lock:
-        if len(_last_seen_step) > _MAX_SEEN_ENTRIES:
-            # 单次 O(n) 找到最小值，避免 O(n log n) 排序
-            overflow = len(_last_seen_step) - _MAX_SEEN_ENTRIES
-            for _ in range(overflow):
-                oldest_key = min(_last_seen_step, key=lambda k: _last_seen_step[k])
-                del _last_seen_step[oldest_key]
-
-    return result
+    with _tb_live_lock:
+        for log_dir in log_dirs[:1]:
+            ea = _get_cached_accumulator(log_dir, incremental=True)
+            if ea is not None:
+                pending, ea.pending = ea.pending, {}
+                return pending
+    return {}
 
 
 # ── 训练日志解析 ───────────────────────────────────────────
