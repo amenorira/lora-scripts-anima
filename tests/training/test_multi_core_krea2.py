@@ -7,6 +7,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 from backend.training.musubi_krea2 import (
     KREA2_FIELDS, build_krea2_dataset_config, build_krea2_train_config,
     cache_manifest_path, get_krea2_cache_status, krea2_preflight,
@@ -135,15 +138,54 @@ class Krea2CodecTests(unittest.TestCase):
                             self.assertIn(f"relative_step={relative_step}", native["optimizer_args"])
                             self.assertIn(f"warmup_init={warmup_init}", native["optimizer_args"])
 
-    def test_adafactor_conflict_stops_training_before_preflight(self):
+    def test_adafactor_conflict_at_run_endpoint_releases_task_slot(self):
         config = {field["key"]: field["default"] for field in KREA2_FIELDS if "default" in field}
-        config.update(optimizer_type="AdaFactor", krea_adafactor_relative_step=False, krea_adafactor_warmup_init=True)
-        with patch.object(training_routes, "krea2_preflight", side_effect=AssertionError("preflight must not run")) as preflight:
-            response = asyncio.run(training_routes._create_krea2_run(config, None, "test", dict(config), None))
-        self.assertEqual(response["status"], "error")
-        self.assertEqual(response["data"]["errorCode"], "invalidKrea2Config")
-        self.assertIn("krea_adafactor_warmup_init", response["message"])
+        config.update(model_train_type="krea2-lora", optimizer_type="AdaFactor",
+                      krea_adafactor_relative_step=False, krea_adafactor_warmup_init=True)
+        app = FastAPI()
+        app.include_router(training_routes.router, prefix="/api")
+        manager = TaskManager(max_concurrent=1)
+        with patch.object(training_routes, "tm", manager), \
+             patch.object(training_routes, "krea2_preflight", side_effect=AssertionError("preflight must not run")) as preflight, \
+             patch.object(training_routes, "_prepare_run_directories") as prepare, \
+             patch.object(training_routes, "run_train") as launch, TestClient(app) as client:
+            response = client.post("/api/run", json=config)
+        self.assertEqual(response.status_code, 200)
+        result = response.json()
+        self.assertEqual(result["status"], "fail")
+        self.assertEqual(result["data"]["errorCode"], "invalidKrea2Config")
+        self.assertIn("krea_adafactor_warmup_init", result["message"])
         preflight.assert_not_called()
+        prepare.assert_not_called()
+        launch.assert_not_called()
+        reserved = manager.reserve_task()
+        self.assertIsNotNone(reserved, "Rejected configuration must release the training slot")
+        manager.release_reserved(reserved)
+
+    def test_adafactor_single_missing_boolean_uses_its_default(self):
+        defaults = {field["key"]: field["default"] for field in KREA2_FIELDS if "default" in field}
+        boolean_defaults = {"relative_step": True, "scale_parameter": True, "warmup_init": False}
+        for missing, default in boolean_defaults.items():
+            for relative_step, warmup_init in ((False, False), (False, True), (True, False), (True, True)):
+                with self.subTest(missing=missing, relative_step=relative_step, warmup_init=warmup_init):
+                    expected = {"relative_step": relative_step, "scale_parameter": False, "warmup_init": warmup_init}
+                    config = {**defaults, "optimizer_type": "AdaFactor", "lr_scheduler": "cosine",
+                              **{f"krea_adafactor_{key}": value for key, value in expected.items()}}
+                    config.pop(f"krea_adafactor_{missing}")
+                    expected[missing] = default
+                    errors = validate_krea2_config(config)
+                    for key, value in expected.items():
+                        self.assertIs(config[f"krea_adafactor_{key}"], value)
+                    if expected["warmup_init"] and not expected["relative_step"]:
+                        self.assertTrue(any("krea_adafactor_warmup_init" in error and
+                                            "krea_adafactor_relative_step" in error for error in errors), errors)
+                    else:
+                        self.assertEqual(errors, [])
+                        native = build_krea2_train_config(config, "dataset.toml", "output", "logs")
+                        arguments = {key: ast.literal_eval(value) for key, value in
+                                     (item.split("=", 1) for item in native["optimizer_args"])}
+                        self.assertEqual({key: arguments[key] for key in expected}, expected)
+                        self.assertEqual(native["lr_scheduler"], "constant" if expected["relative_step"] else "cosine")
 
     def test_adafactor_rejects_non_boolean_controls(self):
         defaults = {field["key"]: field["default"] for field in KREA2_FIELDS if "default" in field}
