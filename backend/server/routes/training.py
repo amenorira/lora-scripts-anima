@@ -150,17 +150,12 @@ async def parse_training_toml(req: TrainingTomlParseRequest):
     """Parse a YAML application config or a legacy flat TOML config."""
     from backend.training.network_config import extract_network_form, validate_network_preset
 
-    first_content_line = next(
-        (
-            line.strip()
-            for line in req.content.splitlines()
-            if line.strip() and not line.lstrip().startswith("#") and line.strip() != "---"
-        ),
-        "",
-    )
-    if first_content_line.startswith("kind:"):
+    content = req.content.lstrip("\ufeff")
+    try:
+        parsed = toml.loads(content)
+    except toml.TomlDecodeError as toml_error:
         try:
-            document = parse_training_config_text(req.content, allowed_kinds={"training", "preset"})
+            document = parse_training_config_text(content, allowed_kinds={"training", "preset"})
             form = extract_training_form(document)
             if form.get("model_train_type") == KREA2_PROFILE_ID:
                 form = extract_network_form(form)
@@ -174,13 +169,9 @@ async def parse_training_toml(req: TrainingTomlParseRequest):
                 }
             )
         except TrainingConfigError as exc:
-            return APIResponseFail(message=f"Invalid YAML / YAML 解析失败: {exc}")
+            return APIResponseFail(message=f"Invalid TOML / YAML 配置解析失败: TOML: {toml_error}; YAML: {exc}")
         except ValueError as exc:
             return APIResponseFail(message=str(exc))
-    try:
-        parsed = toml.loads(req.content)
-    except toml.TomlDecodeError as exc:
-        return APIResponseFail(message=f"Invalid TOML / TOML 解析失败: {exc}")
     if not isinstance(parsed, dict):
         return APIResponseFail(message="Invalid training config / 训练配置结构无效")
     if "metadata" in parsed or "data" in parsed:

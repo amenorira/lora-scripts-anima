@@ -108,6 +108,18 @@ network_args = ["algo=lokr", "preset=attn-mlp", "train_llm_adapter=true", "facto
         self.assertEqual(response.status, "fail")
         self.assertIn("attn-only", response.message)
 
+    def test_yaml_import_is_independent_of_key_order_comments_and_bom(self):
+        document = build_training_config({"learning_rate": 0.001}, profile_id="anima-lora")
+        reordered = {key: document[key] for key in reversed(document)}
+        for content in (yaml.safe_dump(reordered, sort_keys=False),
+                        "\ufeff# exported configuration\n---\n" + yaml.safe_dump(reordered, sort_keys=False),
+                        yaml.safe_dump(document, sort_keys=False).replace("kind:", '"kind":')):
+            with self.subTest(content=content[:80]):
+                response = self._parse(content)
+                self.assertEqual(response.status, "success", response.message)
+                self.assertEqual(response.data["format"], "yaml")
+                self.assertEqual(response.data["data"]["learning_rate"], 0.001)
+
     def test_moss_import_context_rejects_malformed_native_arguments(self):
         response = self._parse('network_args = "rank_dropout=0.2"', "moss-image-lora")
         self.assertEqual(response.status, "fail")
