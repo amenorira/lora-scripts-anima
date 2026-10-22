@@ -2727,6 +2727,8 @@ window.tagEditorMixin = {
     var writtenCount = 0;
     var failedItems = [];
     var saveErrorMessage = '';
+    var timelineWarning = '';
+    var rollbackFailed = [];
     var payload = modified.map(function(img) {
       return {
         path: img.path,
@@ -2749,6 +2751,17 @@ window.tagEditorMixin = {
         failedItems = modified.map(function(img) { return { path: img.path, reason: saveErrorMessage }; });
       } else {
         var data = j.data || {};
+        timelineWarning = data.timeline_warning || '';
+        rollbackFailed = data.rollback_failed || [];
+        if (timelineWarning) {
+          // Null history values refer to the old baseline, which is about to change.
+          this.tagEditorHistory.forEach(function(entry) {
+            Object.entries(entry.changes || {}).forEach(function([path, change]) {
+              if (change.before == null) change.before = self.tagEditorOriginal[path] || '';
+              if (change.after == null) change.after = self.tagEditorOriginal[path] || '';
+            });
+          });
+        }
         var successfulPaths = (data.saved_paths || []).concat(data.skipped_paths || []);
         var successfulLookup = {};
         successfulPaths.forEach(function(path) { successfulLookup[path] = true; });
@@ -2782,7 +2795,7 @@ window.tagEditorMixin = {
     var hadHistory = this.tagEditorHistory.length > 0;
     this._teRecountModified();
     this.tagEditorModified = this._teModifiedCount > 0;
-    if (processedCount > 0 || this._teModifiedCount === 0) {
+    if (!timelineWarning && !rollbackFailed.length && (processedCount > 0 || this._teModifiedCount === 0)) {
       this.tagEditorHistory = [];
       this.tagEditorHistoryIdx = -1;
       this.tagEditorHistoryDetailIdx = -1;
@@ -2797,7 +2810,12 @@ window.tagEditorMixin = {
       }
       this._teHistoryState = remainingState;
     }
-    if (failedItems.length > 0 || this._teModifiedCount > 0) {
+    if (timelineWarning || rollbackFailed.length) {
+      var warning = timelineWarning ? this.t('tagEditor.timelineSaveFailed').replace('{error}', timelineWarning) : '';
+      if (rollbackFailed.length) warning += (warning ? '\n' : '') + this.t('tagEditor.rollbackFailed').replace('{paths}', rollbackFailed.join(', '));
+      this.toast(warning, 'warning');
+      this._teSaveDraft();
+    } else if (failedItems.length > 0 || this._teModifiedCount > 0) {
       if (processedCount === 0 && saveErrorMessage) {
         this.toast(saveErrorMessage, 'error');
       } else {

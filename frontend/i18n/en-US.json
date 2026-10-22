@@ -2111,6 +2111,8 @@
 		"historyHintSaved": "Changes written to files. Reverting affects only the files in that event, not the entire dataset.",
 		"historyFuture": "undone",
 		"savedArchived": "Saved — edit history archived to timeline",
+		"timelineSaveFailed": "Captions saved, but history could not be archived: {error}. Undo history is retained on this page; keep it open.",
+		"rollbackFailed": "Rollback failed for these files. Their disk contents may have changed; reload and review: {paths}",
 		"batchAddPlaceholder": "Tags, separated by commas",
 		"batchRemovePlaceholder": "Tag to remove",
 		"batchOldPlaceholder": "Original tag",

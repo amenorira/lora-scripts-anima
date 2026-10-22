@@ -2111,6 +2111,8 @@
 		"historyHintSaved": "记录已写入文件的更改。撤销只还原该次涉及的文件，不是整个数据集的历史版本。",
 		"historyFuture": "已撤销",
 		"savedArchived": "已保存，编辑历史已归档至时间线",
+		"timelineSaveFailed": "标签已保存，但历史归档失败：{error}。本页撤销记录已保留，请勿关闭页面。",
+		"rollbackFailed": "以下文件回滚失败，磁盘内容可能已变化，请重新加载并核对：{paths}",
 		"batchAddPlaceholder": "输入标签或中文，逗号分隔",
 		"batchRemovePlaceholder": "要移除的标签",
 		"batchOldPlaceholder": "原标签",

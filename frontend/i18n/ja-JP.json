@@ -2111,6 +2111,8 @@
 		"historyHintSaved": "ファイルに保存した変更です。戻す場合はその操作の対象ファイルだけに適用し、データセット全体には適用しません。",
 		"historyFuture": "取り消し済み",
 		"savedArchived": "保存しました。編集履歴をタイムラインに記録しました",
+		"timelineSaveFailed": "タグは保存されましたが、履歴の記録に失敗しました：{error}。このページの取り消し履歴は保持されています。ページを閉じないでください。",
+		"rollbackFailed": "次のファイルの復元に失敗しました。ディスク上の内容が変更されている可能性があります。再読み込みして確認してください：{paths}",
 		"batchAddPlaceholder": "カンマ区切りのタグ",
 		"batchRemovePlaceholder": "除去するタグ",
 		"batchOldPlaceholder": "元のタグ",
