@@ -7,7 +7,9 @@ import threading
 import uuid
 
 
-def atomic_write_text(path: Path, text: str, *, cancel_event: threading.Event | None = None) -> None:
+def atomic_write_text(
+    path: Path, text: str, *, cancel_event: threading.Event | None = None, errors: str = "strict",
+) -> None:
     def check_cancelled() -> None:
         if cancel_event is not None and cancel_event.is_set():
             raise InterruptedError("cancelled")
@@ -16,7 +18,7 @@ def atomic_write_text(path: Path, text: str, *, cancel_event: threading.Event | 
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     # Open outside the cleanup block: if creation fails, we do not own the path.
     # In particular, never retry PermissionError or remove a colliding file.
-    handle = temporary.open("x", encoding="utf-8", newline="\n")
+    handle = temporary.open("x", encoding="utf-8", errors=errors, newline="\n")
     try:
         with handle:
             check_cancelled()

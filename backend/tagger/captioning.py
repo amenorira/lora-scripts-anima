@@ -11,7 +11,7 @@ import time
 from PIL import Image
 
 from backend.tagger import api_engine
-from backend.tagger.writing import atomic_write_text
+from backend.utils.file_io import atomic_write_text
 
 from tools import caption_images_moss as upstream
 

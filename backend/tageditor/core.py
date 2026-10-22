@@ -6,13 +6,13 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
-import tempfile
 import threading
 from collections import Counter
 from contextlib import contextmanager
 from pathlib import Path
 
 from backend.constants import REPO_ROOT
+from backend.utils.file_io import atomic_write_text
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 CAPTION_EXTENSIONS = (".txt", ".caption")
 _dataset_locks: dict[str, threading.RLock] = {}
@@ -65,17 +65,7 @@ def caption_revision(cap_path: Path) -> str:
 
 def _atomic_write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
-    temp_path = Path(temp_name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", errors="replace", newline="") as handle:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temp_path, path)
-    except Exception:
-        temp_path.unlink(missing_ok=True)
-        raise
+    atomic_write_text(path, text, errors="replace")
 
 
 def restore_caption_state(cap_path: Path, existed: bool, text: str) -> None:

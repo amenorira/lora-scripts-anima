@@ -9,6 +9,13 @@ from backend.utils import file_io as writing
 
 
 class CaptionWritingTests(unittest.TestCase):
+    def test_tag_editor_preserves_replacement_encoding_and_line_endings(self):
+        from backend.tageditor.core import restore_caption_state
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "nested" / "sample.txt"
+            restore_caption_state(output, True, "标签\r\nline\n\ud800")
+            self.assertEqual(output.read_bytes(), "标签\r\nline\n?".encode("utf-8"))
+
     def test_permission_denied_is_reported_after_one_creation_attempt(self):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "sample.txt"

@@ -25,7 +25,7 @@ from backend.tagger.interrogator import (
 )
 from backend.tagger.interrogators.base import CATEGORY_LABELS, Interrogator
 from backend.tagger.registry import MODEL_SPEC_BY_ID
-from backend.tagger.writing import atomic_write_text
+from backend.utils.file_io import atomic_write_text
 from backend.tasks import tm
 
 _IMAGE_EXTENSIONS = {
