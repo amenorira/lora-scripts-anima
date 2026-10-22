@@ -34,6 +34,7 @@ from backend.training.field_registry import (
 )
 from backend.training import toml_writer
 from backend.training.optimizer_contracts import normalize_optimizer_config
+from backend.training.optimizer_contracts import is_empty_optimizer_value as _is_empty_value
 from backend.training.scheduler_config import normalize_scheduler_config
 from backend.training.network_config import validate_network_preset
 
@@ -64,20 +65,6 @@ def _filter_model_fields(source: dict[str, Any]) -> None:
     for key in list(source):
         if not field_applies_to_profile(_FIELDS_BY_KEY.get(key, {}), profile.id):
             source.pop(key)
-
-
-def _is_empty_value(value: Any) -> bool:
-    """检测空值/无效值：None、NaN、空字符串、'undefined'、'null'
-    注意：布尔值 False 不是空值，toggle 关闭时应显式传入 false"""
-    if value is None:
-        return True
-    if isinstance(value, bool):
-        return False
-    if isinstance(value, float) and math.isnan(value):
-        return True
-    if isinstance(value, str) and value.strip().lower() in {"", "undefined", "null", "nan"}:
-        return True
-    return False
 
 
 def _normalize_network_args(values: Any) -> list[str]:

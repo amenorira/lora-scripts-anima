@@ -21,13 +21,13 @@ from backend.training.optimizer_contracts import (
     MUON_OPTIMIZER_TYPE,
     collect_optimizer_args,
     get_automagic_fused_conflicts,
+    is_empty_optimizer_value as _is_empty,
     normalize_lora_muon_form_fields,
     parse_optimizer_args,
     validate_optimizer_contract,
 )
 
 
-_EMPTY_STRINGS = {"", "undefined", "null", "nan"}
 _SCHEDULER_PARAMETER_MODES = {
     "lr_scheduler_timescale": {"inverse_sqrt"},
     "lr_scheduler_min_lr_ratio": {"cosine_with_min_lr", "warmup_stable_decay"},
@@ -36,14 +36,6 @@ _SCHEDULER_PARAMETER_MODES = {
     "decay_type": {"warmup_stable_decay"},
     "step_rules": {"piecewise_constant"},
 }
-
-
-def _is_empty(value: Any) -> bool:
-    if value is None:
-        return True
-    if isinstance(value, str):
-        return value.strip().lower() in _EMPTY_STRINGS
-    return isinstance(value, float) and math.isnan(value)
 
 
 def _select_values(field: dict[str, Any], profile_id: str) -> set[Any]:
