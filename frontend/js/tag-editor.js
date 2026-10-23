@@ -3561,7 +3561,9 @@ window.tagEditorMixin = {
     if (this.tagEditorSnapshotBusy || this._teDraftRestoreBusy) return;
     // Only active when tag editor is the current route
     if (this.currentRoute !== 'tagEditor') return;
-    if (e.isComposing || e.keyCode === 229) return;
+    if (e.isComposing || e.keyCode === 229 || e.target?.composing) return;
+    // 内联输入的组合标记也要隔离冒泡的 Escape，避免全局 blur 间接触发重命名。
+    if (e.target?.id === 'te-inline-edit-input' && this.tagEditorInlineEdit?.composing) return;
     if (this.tagEditorShortcutsOpen) return;
     if (e.target.closest && e.target.closest('#teDictHover')) {
       if (e.key === 'Escape') this.tagDictionaryCloseHover();

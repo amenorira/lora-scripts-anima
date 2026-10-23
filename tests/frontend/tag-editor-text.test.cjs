@@ -196,3 +196,29 @@ test('ordinary Escape cancels rename without a blur confirmation', async () => {
   await app.tagEditorFinishInlineEdit({type: 'blur', target: {value: 'changed'}});
   assert.equal(confirmations.length, 0);
 });
+
+test('composing Escape cannot bubble into global blur and schedule a rename', async () => {
+  for (const flag of ['target', 'state']) {
+    const {app, confirmations} = renameFixture();
+    app.currentRoute = 'tagEditor';
+    let blurred = false;
+    const target = {
+      id: 'te-inline-edit-input', tagName: 'INPUT', value: 'prefixzhong',
+      closest: selector => selector.startsWith('input,') ? target : null,
+      blur() { blurred = true; void app.tagEditorFinishInlineEdit({type: 'blur', target}); },
+    };
+    if (flag === 'target') target.composing = true;
+    else app.tagEditorInlineEdit.composing = true;
+    const event = {type: 'keydown', key: 'Escape', target, preventDefault() { this.defaultPrevented = true; }};
+    app.tagEditorCancelInlineEdit(event);
+    app.tagEditorHandleKeydown(event);
+    assert.equal(blurred, false, flag);
+    assert.equal(event.defaultPrevented, undefined, 'leave native candidate cancellation intact');
+    target.value = 'prefix中文'; target.composing = false;
+    await app.tagEditorInlineCompositionEnd({target});
+    assert.equal(confirmations.length, 0);
+    assert.equal(app.tagEditorInlineEdit.newTag, 'prefix中文');
+    app.tagEditorCancelInlineEdit({type: 'keydown'});
+    assert.equal(app.tagEditorInlineEdit, null);
+  }
+});
