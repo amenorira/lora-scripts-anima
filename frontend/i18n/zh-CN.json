@@ -1893,6 +1893,9 @@
 		}
 	},
 	"tagEditor": {
+		"toggleTextSidebar": "切换历史侧栏",
+		"closeSidebar": "关闭侧栏",
+		"activeFilters": "{n} 项活动筛选",
 		"selectImage": "选择图片：{name}",
 		"resizeRightPanel": "拖动调整编辑面板宽度，双击重置",
 		"selectedOutsidePage": "{n} 已选中 · 当前页外 {outside}",

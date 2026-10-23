@@ -1893,6 +1893,9 @@
 		}
 	},
 	"tagEditor": {
+		"toggleTextSidebar": "Toggle history sidebar",
+		"closeSidebar": "Close sidebar",
+		"activeFilters": "{n} active filters",
 		"selectImage": "Select image: {name}",
 		"resizeRightPanel": "Drag to resize the editor; double-click to reset",
 		"selectedOutsidePage": "{n} selected · {outside} outside this page",

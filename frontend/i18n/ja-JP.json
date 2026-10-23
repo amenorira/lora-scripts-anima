@@ -1893,6 +1893,9 @@
 		}
 	},
 	"tagEditor": {
+		"toggleTextSidebar": "履歴サイドバーを切り替え",
+		"closeSidebar": "サイドバーを閉じる",
+		"activeFilters": "有効なフィルター {n} 件",
 		"selectImage": "画像を選択：{name}",
 		"resizeRightPanel": "ドラッグで編集パネルの幅を調整、ダブルクリックでリセット",
 		"selectedOutsidePage": "{n} 件選択中 · このページ外 {outside} 件",

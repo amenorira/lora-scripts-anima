@@ -34,3 +34,11 @@ test('cards shrink to fit the visible column at its lower bound',()=>{
   app._teUpdateGridCardSize({clientWidth:126,style:{setProperty:(_name,value)=>{size=parseInt(value);}}});
   assert.equal(size,110);
 });
+
+test('collapsed sidebar filter feedback counts the active search and tag constraints',()=>{
+  const {app}=fixture();
+  assert.equal(app.tagEditorActiveFilterCount(),0);
+  app.tagEditorTagSelection=['cat'];app.tagEditorExcludedTags=['blue'];
+  app.tagEditorSearchQuery='portrait';app.tagEditorQuickFilter='modified';
+  assert.equal(app.tagEditorActiveFilterCount(),4);
+});

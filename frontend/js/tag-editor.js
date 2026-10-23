@@ -879,6 +879,17 @@ window.tagEditorMixin = {
     return '--te-right-w:' + layout.right + 'px;--te-left-w:' + layout.left + 'px';
   },
 
+  tagEditorActiveFilterCount() {
+    return this.tagEditorTagSelection.length + this.tagEditorExcludedTags.length
+      + (this.tagEditorSearchQuery ? 1 : 0) + (this.tagEditorQuickFilter !== 'all' ? 1 : 0);
+  },
+
+  tagEditorCloseSidebar() {
+    if (this.tagEditorLeftCollapsed) return;
+    this.tagEditorLeftCollapsed = true;
+    this.$nextTick(() => document.getElementById('te-sidebar-toggle')?.focus());
+  },
+
   tagEditorStopResize() {
     if (!this.tagEditorResizing) return;
     this.tagEditorResizing = false;

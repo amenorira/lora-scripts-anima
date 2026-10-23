@@ -705,10 +705,11 @@
         <!-- Main -->
         <div x-show="tagEditorSessionId && !tagEditorLoading" class="te-shell" :inert="tagEditorSnapshotBusy || _teDraftRestoreBusy" :aria-busy="tagEditorSnapshotBusy || _teDraftRestoreBusy">
           <div class="te-topbar">
-            <button class="te-topbar-btn" @click="tagEditorLeftCollapsed = !tagEditorLeftCollapsed" :title="t('tagEditor.toggleTagCloud')" :aria-label="t('tagEditor.toggleTagCloud')" :aria-expanded="!tagEditorLeftCollapsed ? 'true' : 'false'">
+            <button id="te-sidebar-toggle" class="te-topbar-btn" @click="tagEditorLeftCollapsed = !tagEditorLeftCollapsed" :title="t(tagEditorAllowsTagOps() ? 'tagEditor.toggleTagCloud' : 'tagEditor.toggleTextSidebar')" :aria-label="t(tagEditorAllowsTagOps() ? 'tagEditor.toggleTagCloud' : 'tagEditor.toggleTextSidebar')" :aria-expanded="!tagEditorLeftCollapsed ? 'true' : 'false'" aria-controls="te-sidebar">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                 <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
               </svg>
+              <span class="te-badge" x-show="tagEditorLeftCollapsed && tagEditorActiveFilterCount()" :title="t('tagEditor.activeFilters').replace('{n}', tagEditorActiveFilterCount())" :aria-label="t('tagEditor.activeFilters').replace('{n}', tagEditorActiveFilterCount())" x-text="tagEditorActiveFilterCount()"></span>
             </button>
             <div class="te-dataset-controls">
               <button class="te-topbar-btn te-dataset-button" @click="tagEditorRequestSwitch()" :title="t('tagEditor.switchDataset')">
@@ -779,7 +780,7 @@
                 </svg>
               </button>
             </div>
-            <span class="te-topbar-sep"></span>
+            <span class="te-topbar-sep" x-show="tagEditorAllowsTagOps()"></span>
             <div class="te-dict-controls" x-show="tagEditorAllowsTagOps()" @click.outside="tagDictionaryPanelOpen = false">
               <button class="te-topbar-btn te-dict-btn"
                 :class="{ active: tagDictionaryPanelOpen, busy: tagDictionaryStatus() === 'installing' || tagDictionaryStatus() === 'loading' }"
@@ -855,8 +856,11 @@
             @pointermove.window="tagEditorResize($event)"
             @pointerup.window="tagEditorStopResize()"
             @pointercancel.window="tagEditorStopResize()"
-            @keydown.escape="window.innerWidth <= 1200 && (tagEditorLeftCollapsed = true)">
-            <div class="te-sidebar" :class="{ collapsed: tagEditorLeftCollapsed }" :inert="tagEditorLeftCollapsed" :aria-hidden="tagEditorLeftCollapsed ? 'true' : null">
+            @keydown.escape="tagEditorCompactLayout && tagEditorCloseSidebar()">
+            <div id="te-sidebar" class="te-sidebar" :class="{ collapsed: tagEditorLeftCollapsed }" :inert="tagEditorLeftCollapsed" :aria-hidden="tagEditorLeftCollapsed ? 'true' : null">
+              <div class="te-sidebar-close" x-show="tagEditorCompactLayout">
+                <button class="te-topbar-btn" @click="tagEditorCloseSidebar()" x-text="t('tagEditor.closeSidebar')"></button>
+              </div>
               <div class="te-sidebar-tabs">
                 <button class="te-sidebar-tab" x-show="tagEditorAllowsTagOps()" :title="t('tagEditor.filterTagsHint')" :class="{ active: tagEditorSidebarTab === 'tags' }"
                   @click="tagEditorSidebarTab = 'tags'">

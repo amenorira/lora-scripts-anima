@@ -3427,9 +3427,19 @@ input[type="range"]::-webkit-slider-thumb {
 /* ── Tag Editor ────────────────────────────────────────── */
 
 /* ===== Shell & Topbar ===== */
-.te-shell { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
-.te-topbar { flex-shrink: 0; display: flex; align-items: center; gap: 6px; padding: 6px 8px; flex-wrap: wrap; min-height: 34px; border-bottom: 1px solid var(--border-default); }
-.te-topbar-secondary { display: contents; }
+.te-shell { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; container-type: inline-size; }
+.te-topbar { flex-shrink: 0; display: grid; grid-template-columns: auto minmax(100px, 1fr) auto minmax(180px, 240px) auto auto auto; align-items: center; gap: 6px; padding: 6px 8px; min-height: 34px; border-bottom: 1px solid var(--border-default); }
+.te-topbar-secondary { grid-column: 5; grid-row: 1; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.te-topbar > .te-save-btn { grid-column: 6; grid-row: 1; }
+.te-topbar > details.te-menu { grid-column: 7; grid-row: 1; }
+.te-topbar button { white-space: nowrap; }
+.te-topbar .te-dataset-button { width: 100%; max-width: none; }
+@container (max-width: 1380px) {
+  .te-topbar { grid-template-columns: auto minmax(100px, 1fr) auto minmax(180px, 1fr) auto auto; }
+  .te-topbar > .te-save-btn { grid-column: 5; }
+  .te-topbar > details.te-menu { grid-column: 6; }
+  .te-topbar-secondary { grid-column: 1 / -1; grid-row: 2; flex-wrap: wrap; padding-top: 6px; border-top: 1px solid var(--border-subtle); }
+}
 .te-topbar-btn { height: 28px; padding: 0 8px; font-size: 11px; border: 1px solid var(--border-default); border-radius: var(--radius-control); background: var(--bg-input); color: var(--text-secondary); cursor: pointer; display: inline-flex; align-items: center; gap: 3px; transition: border-color 0.1s, color 0.1s; }
 .te-topbar-btn:hover { border-color: var(--accent); color: var(--accent); }
 .te-topbar-btn:disabled { opacity: var(--disabled-opacity); cursor: not-allowed; }
@@ -3495,18 +3505,6 @@ input[type="range"]::-webkit-slider-thumb {
 
 /* Compact desktop widths: keep the tag cloud available without squeezing the grid. */
 @media (max-width: 1200px) {
-  .te-topbar > .te-save-btn,
-  .te-topbar > details.te-menu { order: 1; }
-  .te-topbar-secondary {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    flex: 1 0 100%;
-    order: 2;
-    gap: 6px;
-    padding-top: 6px;
-    border-top: 1px solid var(--border-subtle);
-  }
   .te-main {
     position: relative;
     grid-template-columns: 0 0 minmax(0, 1fr) 8px var(--te-right-w, 340px);
@@ -3526,6 +3524,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .te-sidebar-tabs { display: flex; flex-shrink: 0; border-bottom: 1px solid var(--border-default); }
+.te-sidebar-close { display: flex; justify-content: flex-end; padding: 6px; flex-shrink: 0; border-bottom: 1px solid var(--border-subtle); }
 .te-sidebar-tab { flex: 1; display: flex; align-items: center; justify-content: center; gap: 4px; padding: 6px 4px; font-size: 11px; font-weight: 600; border: none; border-bottom: 2px solid transparent; background: transparent; color: var(--text-tertiary); cursor: pointer; }
 .te-sidebar-tab:hover { color: var(--text-secondary); background: var(--hover-overlay); }
 .te-sidebar-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
@@ -3693,7 +3692,8 @@ body.te-resizing, body.te-resizing * { cursor: col-resize !important; user-selec
 .te-preview-divider:hover::after, .te-preview-divider:focus-visible::after { background: var(--accent); }
 body.te-preview-resizing, body.te-preview-resizing * { cursor: row-resize !important; user-select: none !important; }
 
-.te-editor-toolbar { display: flex; align-items: center; gap: 6px; padding: 4px 12px; flex-shrink: 0; border-bottom: 1px solid var(--border-default); }
+.te-editor-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 12px; flex-shrink: 0; border-bottom: 1px solid var(--border-default); }
+.te-editor-toolbar > button { flex-shrink: 0; white-space: nowrap; }
 
 .te-editor-body { flex: 1; overflow-y: auto; padding: 8px 12px; min-height: 0; display: flex; flex-direction: column; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: var(--border-default) transparent; }
 .te-editor-body::-webkit-scrollbar { width: 4px; }
