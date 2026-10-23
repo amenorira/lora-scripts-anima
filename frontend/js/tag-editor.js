@@ -2775,6 +2775,25 @@ window.tagEditorMixin = {
     this._teDiffReorderExpanded = {};
   },
 
+  _teHistoryTextExcerpt(text) {
+    // 展示用的原文前缀；历史内容、换行和空白均不改写。
+    var end = Math.min(text.length, 360), lines = 0;
+    for (var i = 0; i < end; i++) {
+      if (text[i] !== '\r' && text[i] !== '\n') continue;
+      if (++lines === 6) { end = i; break; }
+      if (text[i] === '\r' && text[i + 1] === '\n') i++;
+    }
+    // 不把 CRLF 或 Unicode 代理对切成两半。
+    if (end < text.length && ((text[end - 1] === '\r' && text[end] === '\n')
+      || (/[\uD800-\uDBFF]/.test(text[end - 1]) && /[\uDC00-\uDFFF]/.test(text[end])))) end--;
+    return text.slice(0, end);
+  },
+
+  _teHistoryTextTruncated(diff) {
+    return this._teHistoryTextExcerpt(diff.beforeText) !== diff.beforeText
+      || this._teHistoryTextExcerpt(diff.afterText) !== diff.afterText;
+  },
+
   _teGetHistoryDiff(stepIdx) {
     // D7: 缓存 diff 结果，切换 step 才重算
     if (stepIdx === this._teCachedDiffKey && this._teCachedDiffResult) return this._teCachedDiffResult;

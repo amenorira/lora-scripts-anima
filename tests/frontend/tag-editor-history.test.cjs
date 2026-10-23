@@ -54,6 +54,23 @@ function draftClient(storage) {
   return {ctx,context,tick:()=>autosave()};
 }
 
+test('history excerpts preserve exact prefixes without changing raw history or splitting CRLF and emoji',()=>{
+  const {ctx}=makeClient();
+  const short='\uFEFF  原文， punctuation.\r\n\r\n  ';
+  assert.equal(ctx._teHistoryTextExcerpt(short),short);
+  for (const raw of [short.repeat(30),'x'.repeat(359)+'\r\nend','x'.repeat(359)+'🌸end']) {
+    const diff=Object.freeze({beforeText:raw,afterText:raw+'\r\n  changed  '});
+    const excerpt=ctx._teHistoryTextExcerpt(raw);
+    assert.ok(raw.startsWith(excerpt));assert.ok(excerpt.length<=360);
+    assert.equal(/[\uD800-\uDBFF]$/.test(excerpt),false);
+    assert.equal(excerpt.endsWith('\r'),false);
+    assert.equal(ctx._teHistoryTextTruncated(diff),true);
+    assert.equal(diff.beforeText,raw);assert.equal(diff.afterText,raw+'\r\n  changed  ');
+  }
+  assert.equal(ctx._teHistoryTextTruncated({beforeText:short,afterText:''}),false);
+  assert.equal(ctx._teHistoryTextExcerpt('1\r\n2\r3\n4\r\n5\n6\n7'),'1\r\n2\r3\n4\r\n5\n6');
+});
+
 test('autosaved edits undone to the baseline cannot reappear on the next visit; redo remains recoverable',()=>{
   const {ctx,context,tick}=draftClient();
   context.localStorage.setItem('tagEditor_draft_/other','keep');

@@ -999,8 +999,12 @@
                         <div class="te-history-diff-name" x-text="d.name"></div>
                         <template x-if="d.kind === 'text'">
                           <div class="te-history-text-diff">
-                            <span x-text="t('tagEditor.textBefore')"></span><pre x-text="d.beforeText"></pre>
-                            <span x-text="t('tagEditor.textAfter')"></span><pre x-text="d.afterText"></pre>
+                            <button class="te-topbar-btn te-history-text-toggle" x-show="_teHistoryTextTruncated(d)"
+                              :aria-expanded="!!_teDiffExpanded[d.path]" @click="_teDiffExpanded[d.path] = !_teDiffExpanded[d.path]"
+                              x-text="t(_teDiffExpanded[d.path] ? 'tagEditor.collapseText' : 'tagEditor.expandText')"></button>
+                            <span x-text="t('tagEditor.textBefore')"></span><pre x-text="_teDiffExpanded[d.path] ? d.beforeText : _teHistoryTextExcerpt(d.beforeText)"></pre>
+                            <span x-text="t('tagEditor.textAfter')"></span><pre x-text="_teDiffExpanded[d.path] ? d.afterText : _teHistoryTextExcerpt(d.afterText)"></pre>
+                            <span class="te-history-excerpt-hint" x-show="!_teDiffExpanded[d.path] && _teHistoryTextTruncated(d)" x-text="t('tagEditor.textExcerptHint')"></span>
                           </div>
                         </template>
                         <div class="te-history-diff-tags" x-show="d.kind !== 'text'">
@@ -1166,7 +1170,7 @@
               @keydown.left.prevent="tagEditorAdjustRightWidth(8)"
               @keydown.right.prevent="tagEditorAdjustRightWidth(-8)"
               @dblclick="tagEditorRightWidth = 340; tagEditorAdjustRightWidth(0)"></div>
-            <div class="te-editor" tabindex="-1" :class="{ 'is-idle': tagEditorSelected.length === 0, 'is-removing': tagEditorQuickRemove }" @contextmenu="tagEditorPanelContext($event)">
+            <div class="te-editor" tabindex="-1" :class="{ 'is-idle': tagEditorSelected.length === 0, 'is-removing': tagEditorQuickRemove, 'is-description': !tagEditorAllowsTagOps() }" @contextmenu="tagEditorPanelContext($event)">
               <div class="te-editor-empty" x-show="tagEditorSelected.length === 0 && tagEditorImages.length > 0 && !tagEditorLoading">
                 <span x-text="t('tagEditor.noImageSelected')"></span>
               </div>
