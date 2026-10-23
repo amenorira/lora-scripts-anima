@@ -1893,6 +1893,8 @@
 		}
 	},
 	"tagEditor": {
+		"selectedOutsidePage": "{n} 已选中 · 当前页外 {outside}",
+		"batchOutsidePage": "其中 {n} 张不在当前页（包括其他页或被筛选隐藏的图片）。",
 		"draftUnresolved": "还有 {n} 项草稿因文件缺失、外部修改或当前编辑冲突未恢复，内容已保留。",
 		"draftRestoreFailed": "草稿恢复失败，草稿已保留，可稍后重试。",
 		"retryDraft": "重试草稿恢复",
@@ -1979,7 +1981,7 @@
 		"resizeLeftPanel": "拖动调整标签面板宽度，双击重置",
 		"selectFiltered": "选择全部筛选结果",
 		"selectNone": "全不选",
-		"selectInvert": "反选",
+		"selectInvert": "反选当前页",
 		"selected": "{n} 已选中",
 		"noTag": "无标签",
 		"modified": "已修改",

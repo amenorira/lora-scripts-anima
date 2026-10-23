@@ -7,7 +7,7 @@ function fixture(captions) {
   loadFrontend('tag-editor.js', context);
   const history = [], messages = [], writes = [];
   let confirmation;
-  const images = captions.map((tags, i) => ({ path: String(i), tags }));
+  const images = captions.map((tags, i) => ({ path: String(i), name: String(i), tags }));
   const app = Object.assign({}, context.window.tagEditorMixin, {
     tagEditorImages: images, tagEditorSelected: images.map(img => img.path),
     _teLoadEpoch: 1, _teFlushAllPendingTextEdits() {},
@@ -50,3 +50,12 @@ for (const change of ['dataset', 'caption']) {
     assert.deepEqual(f.messages.at(-1), ['tagEditor.batchStale', 'warning']);
   });
 }
+
+test('batch confirmation discloses selected images outside the current page',()=>{
+  const f=fixture(['cat','dog']);
+  f.app.tagEditorSessionId='test';f.app.tagEditorPageItems=[f.images[0]];
+  f.app.t=key=>key==='tagEditor.batchOutsidePage' ? '{n} outside this page' : key;
+  f.app.batchAddInput='blue';f.app.tagEditorBatchAdd();
+  assert.match(f.confirm().message,/1 outside this page/);
+  f.confirm().accept();assert.deepEqual(f.writes,['0','1']);
+});

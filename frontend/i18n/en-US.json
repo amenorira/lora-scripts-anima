@@ -1893,6 +1893,8 @@
 		}
 	},
 	"tagEditor": {
+		"selectedOutsidePage": "{n} selected · {outside} outside this page",
+		"batchOutsidePage": "{n} selected images are outside this page, including other pages or images hidden by filters.",
 		"draftUnresolved": "{n} draft items remain unresolved due to missing files, external changes or current edits. Their contents have been kept.",
 		"draftRestoreFailed": "Draft recovery failed. The draft has been kept for retry.",
 		"retryDraft": "Retry draft recovery",
@@ -1979,7 +1981,7 @@
 		"resizeLeftPanel": "Drag to resize the tag panel; double-click to reset",
 		"selectFiltered": "Select All Results",
 		"selectNone": "Deselect All",
-		"selectInvert": "Invert",
+		"selectInvert": "Invert page",
 		"selected": "{n} selected",
 		"noTag": "No Tag",
 		"modified": "Modified",

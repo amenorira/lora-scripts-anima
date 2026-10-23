@@ -320,7 +320,7 @@ test('timeline restore refuses unsaved edits and stale dataset confirmations', (
 test('removing bracket escapes changes only selected captions and supports undo and redo', () => {
   const { ctx } = makeClient();
   const raw = String.raw`star \(symbol\),  custom\name, foo \\(bar\\)`;
-  ctx.tagEditorImages = [{ path: 'a', tags: raw }, { path: 'b', tags: raw }, { path: 'c', tags: 'solo' }];
+  ctx.tagEditorImages = [{ path: 'a', name: 'a', tags: raw }, { path: 'b', name: 'b', tags: raw }, { path: 'c', name: 'c', tags: 'solo' }];
   ctx.tagEditorOriginal = { a: raw, b: raw, c: 'solo' };
   ctx.tagEditorSelected = ['a', 'c'];
   ctx.tagEditorHistory = [];

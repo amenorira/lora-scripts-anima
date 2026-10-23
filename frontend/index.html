@@ -1077,10 +1077,10 @@
               <div class="te-selection-toolbar" @click.stop>
                 <button class="te-topbar-btn" @click="tagEditorSelectFiltered()" :disabled="!tagEditorFilteredCount() || _teSearchLoading" x-text="t('tagEditor.selectFiltered')"></button>
                 <button class="te-topbar-btn" @click="tagEditorSelectAll()" :disabled="!tagEditorFilteredCount()" x-text="t('tagEditor.selectPage')"></button>
-                <button class="te-topbar-btn" @click="_teFlushAllPendingTextEdits(); tagEditorSelected = []; _updateEditorPanel()" :disabled="!tagEditorSelected.length" x-text="t('tagEditor.selectNone')"></button>
+                <button class="te-topbar-btn" @click="tagEditorClearSelection()" :disabled="!tagEditorSelected.length" x-text="t('tagEditor.selectNone')"></button>
                 <button class="te-topbar-btn" @click="tagEditorSelectInvert()" :disabled="!tagEditorFilteredCount()" x-text="t('tagEditor.selectInvert')"></button>
                 <button class="te-topbar-btn" :class="{ active: tagEditorGroupByDir }" :aria-pressed="tagEditorGroupByDir" @click="tagEditorToggleDirectoryGroups()" :disabled="tagEditorLoading || _teSearchLoading" x-text="t('tagEditor.groupByDirectory')"></button>
-                <span class="te-selection-count" x-text="t('tagEditor.selected').replace('{n}', tagEditorSelected.length)"></span>
+                <span class="te-selection-count" x-text="tagEditorSelectionLabel()"></span>
                 <div class="te-sidebar-undo">
                   <button @click="tagEditorUndo()" :disabled="tagEditorHistoryIdx < 0" :title="t('tagEditor.undoHint')">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1270,7 +1270,7 @@
               <div x-show="tagEditorSelected.length >= 2" class="te-editor-state">
                 <div class="te-editor-inner">
                   <div class="te-editor-head">
-                    <span x-text="t('tagEditor.selected').replace('{n}', tagEditorSelected.length)"></span>
+                    <span x-text="tagEditorSelectionLabel()"></span>
                     <button class="te-topbar-btn" x-show="tagEditorAllowsTagOps()" :aria-pressed="tagEditorQuickRemove" @click="tagEditorQuickRemove ? tagEditorCancelQuickRemove() : tagEditorStartQuickRemove()" x-text="t('tagEditor.quickRemove')"></button>
                     <button class="te-topbar-btn" x-show="tagEditorQuickRemove" @click="tagEditorApplyQuickRemove()" :disabled="!tagEditorRemovalTags.length" x-text="t('tagEditor.applyRemoval') + ' (' + tagEditorRemovalTags.length + ')'"></button>
                   </div>
@@ -1363,7 +1363,7 @@
               <template x-if="tagEditorSelected.length > 0">
                 <span class="te-status-item">
                   <span class="te-status-sep"></span>
-                  <span x-text="t('tagEditor.selected').replace('{n}', tagEditorSelected.length)"></span>
+                  <span x-text="tagEditorSelectionLabel()"></span>
                 </span>
               </template>
             </div>
