@@ -278,6 +278,7 @@ window.tagEditorMixin = {
   _teEditVersions: null,
   _teCaptionRevisions: null,
   _teModifiedRefreshPending: false,
+  _teSessionRecovery: null,
   // ===== Internal Utilities =====
   _teInvalidateFilter() {
     this._teFilteredCacheKey = '';
@@ -427,6 +428,7 @@ window.tagEditorMixin = {
   },
   // ===== Lifecycle =====
   tagEditorCleanup() {
+    this._teSessionRecovery = null;
     this._teLastSelected = null;
     this._teLoadEpoch++;
     this.tagEditorSaving = this._teIsSaving = false;
@@ -611,9 +613,15 @@ window.tagEditorMixin = {
   },
 
   async tagEditorReloadSessionPage(page) {
+    this._teFlushAllPendingTextEdits();
     var drafts = {};
     var self = this;
-    this._teGetModified().forEach(function(img) {
+    var paths = new Set(this.tagEditorSelected);
+    this._teGetModified().forEach(img => paths.add(img.path));
+    this.tagEditorHistory.forEach(item => Object.keys(item.changes || this._teSnapOf(item)).forEach(path => paths.add(path)));
+    paths.forEach(function(path) {
+      var img = self._teFindByPath(path);
+      if (!img) return;
       drafts[img.path] = {
         image: Object.assign({}, img),
         original: self.tagEditorOriginal[img.path],
@@ -621,7 +629,14 @@ window.tagEditorMixin = {
         captionRevision: self._teCaptionRevisions ? self._teCaptionRevisions[img.path] : 'missing'
       };
     });
-    await this.tagEditorLoad(this.tagEditorLoadedDir || this.tagEditorDir, { preserveDrafts: drafts, targetPage: page || 1 });
+    this._teSessionRecovery = {
+      dir: this.tagEditorLoadedDir || this.tagEditorDir, preserveDrafts: drafts, targetPage: page || 1,
+      history: this.tagEditorHistory.slice(), historyIdx: this.tagEditorHistoryIdx,
+      historyState: Object.assign({}, this._teHistoryState), selected: this.tagEditorSelected.slice(),
+      anchor: this._teLastSelected, include: this.tagEditorTagSelection.slice(), exclude: this.tagEditorExcludedTags.slice(),
+      remainder: this._teDraftRemainder.slice(), mode: this.tagEditorWorkMode, detailView: this.tagEditorDetailView
+    };
+    await this.tagEditorLoad(this._teSessionRecovery.dir);
   },
 
   tagEditorAllowsTagOps() {
@@ -703,6 +718,10 @@ window.tagEditorMixin = {
       this.finishProgress();
       return;
     }
+    // 重建失败后，普通“加载”重试仍须沿用内存中的正文和历史；切换数据集则丢弃该上下文。
+    if (this._teSessionRecovery && this._teSessionRecovery.dir !== d) this._teSessionRecovery = null;
+    var recovery = this._teSessionRecovery;
+    if (recovery) loadOptions = recovery;
     var epoch = ++this._teLoadEpoch;
     this.tagEditorSaving = this._teIsSaving = false;
     this.tagEditorSnapshotBusy = false;
@@ -735,7 +754,7 @@ window.tagEditorMixin = {
         this.tagEditorLoadedDir = this.tagEditorDir;
         this._teDraftRemainder = [];
         this._teDraftRestoreBusy = false;
-        this._teRestoreWorkMode(this.tagEditorDir, requestedMode);
+        this._teRestoreWorkMode(this.tagEditorDir, recovery ? recovery.mode : requestedMode);
         if (this.tagEditorAllowsTagOps()) {
           this.tagDictionaryInit();
           this.tagDictionaryEnsureWorker();
@@ -786,14 +805,31 @@ window.tagEditorMixin = {
             self._teEditVersions[path] = draft.editVersion;
             self._teCaptionRevisions[path] = draft.captionRevision;
             img.tags = draft.image.tags;
+            self._teUpdateFreq(draft.original, img.tags);
           }
         });
+        if (recovery) {
+          this.tagEditorHistory = recovery.history;
+          this.tagEditorHistoryIdx = recovery.historyIdx;
+          this._teHistoryState = recovery.historyState;
+          this.tagEditorSelected = recovery.selected;
+          this.tagEditorTagSelection = recovery.include;
+          this.tagEditorExcludedTags = recovery.exclude;
+          this._teDraftRemainder = recovery.remainder;
+          this.tagEditorDetailView = recovery.detailView;
+          this._teInvalidateDiff();
+          this._updateEditorPanel();
+        }
         this._teRecountModified();
         this.tagEditorModified = this._teModifiedCount > 0;
         if (this._teSessionQueryKey(this.tagEditorPage) !== this._teSessionQueryKey(Number(j.data.page || 1), false)) {
           await this.tagEditorFetchPage(this.tagEditorPage, { force: true });
         }
         if (epoch !== this._teLoadEpoch || controller.signal.aborted) return;
+        if (recovery) {
+          this._teLastSelected = recovery.anchor;
+          if (this._teSessionRecovery === recovery) this._teSessionRecovery = null;
+        }
         if (openPath && this._teFindByPath(openPath)) {
           this.tagEditorSelected = [openPath];
           this._teLastSelected = openPath;
@@ -803,7 +839,7 @@ window.tagEditorMixin = {
           });
         }
         this.tagEditorLoadSnapshots(epoch);
-        this._teCheckDraft();
+        if (!recovery) this._teCheckDraft();
         this._teStartAutoSave();
       } else {
         this.toast(j.message || this.t('common.error'), 'error');
