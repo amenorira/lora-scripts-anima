@@ -131,14 +131,24 @@ class DatasetSessionService:
              search: str = "", use_regex: bool = False, quick_filter: str = "all",
              include_tags: tuple[str, ...] = (), exclude_tags: tuple[str, ...] = (),
              tag_logic: str = "AND", sort_by: str = "name", sort_asc: bool = True,
-             sort_by2: str = "", sort_asc2: bool = True, group_by_dir: bool = False) -> dict:
+             sort_by2: str = "", sort_asc2: bool = True, group_by_dir: bool = False,
+             caption_overrides: dict[str, str] | None = None) -> dict:
         session = self.get(session_id)
         query = (search, use_regex, quick_filter, tuple(include_tags), tuple(exclude_tags),
                  tag_logic, sort_by, sort_asc, sort_by2, sort_asc2, group_by_dir)
-        with self._lock:
-            items = session.queries.get(query)
-            if items is not None:
-                session.queries.move_to_end(query)
+        items = None
+        if caption_overrides:
+            # 请求内的工作正文只参与查询，不修改扫描基线、修订号或共享查询缓存。
+            working = replace(session, images=tuple(
+                {**item, "tags": caption_overrides[item["path"]]} if item["path"] in caption_overrides else item
+                for item in session.images
+            ))
+            items = self._filter_images(working, *query)
+        else:
+            with self._lock:
+                items = session.queries.get(query)
+                if items is not None:
+                    session.queries.move_to_end(query)
         if items is None:
             items = self._filter_images(session, *query)
             with self._lock:

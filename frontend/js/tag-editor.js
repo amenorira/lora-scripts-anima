@@ -279,6 +279,7 @@ window.tagEditorMixin = {
   _teCaptionRevisions: null,
   _teModifiedRefreshPending: false,
   _teSessionRecovery: null,
+  _teCaptionQueryVersion: 0,
   // ===== Internal Utilities =====
   _teInvalidateFilter() {
     this._teFilteredCacheKey = '';
@@ -478,7 +479,25 @@ window.tagEditorMixin = {
   },
 
   _teSessionQueryKey(page, useFilters = true) {
-    return this._teSessionQuery(page, useFilters).toString();
+    return this._teSessionQuery(page, useFilters).toString() + '&caption_version=' + this._teCaptionQueryVersion;
+  },
+
+  _teCaptionQueryOptions(signal, useOverrides = true) {
+    var overrides = {};
+    if (useOverrides) this._teGetModified().forEach(img => { overrides[img.path] = img.tags; });
+    return Object.keys(overrides).length ? {
+      signal, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(overrides)
+    } : { signal };
+  },
+
+  _teInvalidateCaptionQuery() {
+    this._teCaptionQueryVersion++;
+    this._tePageCache = {};
+    if (this.tagEditorSessionId && !this.tagEditorLoading && this.tagEditorQuickFilter !== 'modified' &&
+        (this.tagEditorSearchQuery || this.tagEditorQuickFilter === 'notag' || this.tagEditorTagSelection.length ||
+         this.tagEditorExcludedTags.length || this.tagEditorSortBy === 'tagCount' || this.tagEditorSortBy2 === 'tagCount')) {
+      this.tagEditorSchedulePageFetch(false);
+    }
   },
 
   _teCancelPageFetch() {
@@ -554,9 +573,10 @@ window.tagEditorMixin = {
     this._tePageAbort = controller;
     this._teSearchLoading = true;
     try {
-      var response = await fetch('/api/tageditor/sessions/' + encodeURIComponent(this.tagEditorSessionId) + '/images?' + this._teSessionQuery(targetPage).toString(), { signal: controller.signal });
+      var response = await fetch('/api/tageditor/sessions/' + encodeURIComponent(this.tagEditorSessionId) + '/images?' + this._teSessionQuery(targetPage).toString(), this._teCaptionQueryOptions(controller.signal));
       var payload = await response.json();
       if (epoch !== this._tePageEpoch || controller.signal.aborted) return false;
+      if (cacheKey !== this._teSessionQueryKey(targetPage)) return false;
       // 导航失效时连分页状态也不能覆盖；仅在选中图片前检查已经太晚。
       if (options?.isCurrent && !options.isCurrent()) return false;
       if (payload.status !== 'success') {
@@ -821,6 +841,7 @@ window.tagEditorMixin = {
           this._updateEditorPanel();
         }
         this._teRecountModified();
+        this._teInvalidateCaptionQuery();
         this.tagEditorModified = this._teModifiedCount > 0;
         if (this._teSessionQueryKey(this.tagEditorPage) !== this._teSessionQueryKey(Number(j.data.page || 1), false)) {
           await this.tagEditorFetchPage(this.tagEditorPage, { force: true });
@@ -1374,7 +1395,10 @@ window.tagEditorMixin = {
   },
 
   tagEditorGetQuickCount(type) {
-    if (this.tagEditorSessionId && type === 'notag') return this.tagEditorNoTagCount;
+    if (this.tagEditorSessionId && type === 'notag') {
+      return this.tagEditorNoTagCount + this._teGetModified().reduce((delta, img) =>
+        delta + Number(!img.tags.trim()) - Number(!(this.tagEditorOriginal[img.path] || '').trim()), 0);
+    }
     if (this.tagEditorSessionId && type === 'modified') return this._teModifiedCount;
     var images = this._teCachedFiltered || this.tagEditorImages;
     if (type === 'notag') {
@@ -1721,6 +1745,7 @@ window.tagEditorMixin = {
       }
     };
     var base = this._teSessionQuery(1, useCurrentFilters);
+    var requestOptions = this._teCaptionQueryOptions(controller.signal, useCurrentFilters);
     base.set('page_size', '240');
     var all = [];
     var totalPages = 1;
@@ -1729,7 +1754,7 @@ window.tagEditorMixin = {
       for (var page = 1; page <= totalPages; page++) {
         assertCurrent();
         base.set('page', String(page));
-        var response = await fetch('/api/tageditor/sessions/' + encodeURIComponent(sessionId) + '/images?' + base.toString(), { signal: controller.signal });
+        var response = await fetch('/api/tageditor/sessions/' + encodeURIComponent(sessionId) + '/images?' + base.toString(), requestOptions);
         var payload = await response.json();
         assertCurrent();
         if (payload.status !== 'success') throw new Error(payload.message || this.t('common.error'));
@@ -3028,6 +3053,7 @@ window.tagEditorMixin = {
     var modified = this._teGetModified();
     for (var i = 0; i < modified.length; i++) state[modified[i].path] = modified[i].tags;
     this._teHistoryState = state;
+    this._teInvalidateCaptionQuery();
     this._teInvalidateFilter();
     this.tagEditorDetailText = _teInputText(this.tagEditorGetSelectedImg()?.tags);
     this._updateEditorPanel();
@@ -3067,6 +3093,7 @@ window.tagEditorMixin = {
     if (!this._teEditVersions) this._teEditVersions = {};
     this._teEditVersions[img.path] = (this._teEditVersions[img.path] || 0) + 1;
     var isMod = newTagsStr !== this.tagEditorOriginal[img.path];
+    this._teInvalidateCaptionQuery();
     if (wasMod !== isMod) {
       this._teBumpModified(isMod ? 1 : -1);
     }
@@ -3178,6 +3205,7 @@ window.tagEditorMixin = {
         modified.forEach(function(img) {
           var savedPayload = payloadByPath[img.path];
           if (successfulLookup[img.path] && savedPayload) {
+            self.tagEditorNoTagCount += Number(!savedPayload.tags.trim()) - Number(!(self.tagEditorOriginal[img.path] || '').trim());
             self.tagEditorOriginal[img.path] = savedPayload.tags;
           }
         });
@@ -3204,6 +3232,7 @@ window.tagEditorMixin = {
     if (saveEpoch !== this._teSaveEpoch || loadEpoch !== this._teLoadEpoch) return;
     var hadHistory = this.tagEditorHistory.length > 0;
     this._teRecountModified();
+    this._teInvalidateCaptionQuery();
     this.tagEditorModified = this._teModifiedCount > 0;
     this._teInvalidateFilter();
     if (!timelineWarning && !rollbackFailed.length && this._teModifiedCount === 0) {

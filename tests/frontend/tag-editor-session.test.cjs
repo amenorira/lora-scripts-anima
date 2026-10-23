@@ -75,3 +75,63 @@ test('bulk paging keeps drafts and visible page, and uses one fixed session', as
   assert.ok(pending.every(p => p.url.includes('/sessions/A/images?')));
   assert.equal(app._teAllAbort, null);
 });
+
+test('normal pages query sparse raw drafts without advancing the saved baseline', async () => {
+  const { app, pending, reply } = fixture();
+  app._teMergeSessionItems([{ path: '/a', tags: '\uFEFF  old\r\n', caption_revision: 'original' }, { path: '/b', tags: 'clean' }], true);
+  const raw = '\uFEFF  新正文\r\n\r\n';
+  app.tagEditorImages[0].tags = raw;
+  app.tagEditorSearchQuery = '新正文';
+  const request = app.tagEditorFetchPage(1, { force: true });
+  assert.equal(pending[0].options.method, 'POST');
+  assert.deepEqual(JSON.parse(pending[0].options.body), { '/a': raw });
+  reply(0, { total: 1, items: [{ path: '/a', tags: raw }] });
+  assert.equal(await request, true);
+  assert.equal(app.tagEditorOriginal['/a'], '\uFEFF  old\r\n');
+  assert.equal(app._teCaptionRevisions['/a'], 'original');
+  assert.equal(app.tagEditorPageItems[0].tags, raw);
+});
+
+test('caption changes invalidate page caches and late responses, including undo to clean', async () => {
+  const { app, pending, reply } = fixture();
+  app._teMergeSessionItems([{ path: '/a', tags: 'old' }], true);
+  app._teUpdateFreq = app.tagDictionarySyncChips = app._teRemoveDraft = () => {};
+  const oldKey = app._teSessionQueryKey(1);
+  const request = app.tagEditorFetchPage(2, { force: true });
+  app._teUpdateImageTags(app.tagEditorImages[0], 'new');
+  assert.notEqual(app._teSessionQueryKey(1), oldKey);
+  assert.deepEqual(Object.keys(app._tePageCache), []);
+  reply(0, { items: [{ path: '/stale', tags: 'old' }] });
+  assert.equal(await request, false);
+  app._teUpdateImageTags(app.tagEditorImages[0], 'old');
+  const clean = app.tagEditorFetchPage(1);
+  assert.equal(pending[1].options.method, undefined);
+  reply(1, { items: [{ path: '/a', tags: 'old' }] });
+  assert.equal(await clean, true);
+});
+
+test('filtered bulk selection uses one caption snapshot and rejects edits between pages', async () => {
+  const { app, pending, reply } = fixture();
+  app._teMergeSessionItems([{ path: '/a', tags: 'old' }], true);
+  app.tagEditorImages[0].tags = 'draft';
+  const request = app._teFetchAllSessionItems(true);
+  assert.deepEqual(JSON.parse(pending[0].options.body), { '/a': 'draft' });
+  reply(0, { total_pages: 2, generation: 1, items: [{ path: '/a', tags: 'draft' }] });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(pending[1].options.body, pending[0].options.body);
+  app._teInvalidateCaptionQuery();
+  reply(1, { total_pages: 2, generation: 1, items: [] });
+  await assert.rejects(request, { name: 'AbortError' });
+});
+
+test('no-caption count includes current edits and undo without a full dataset download', () => {
+  const { app } = fixture();
+  app._teMergeSessionItems([{ path: '/a', tags: 'old' }, { path: '/b', tags: '' }], true);
+  app.tagEditorNoTagCount = 10;
+  app.tagEditorImages[0].tags = ' \r\n';
+  assert.equal(app.tagEditorGetQuickCount('notag'), 11);
+  app.tagEditorImages[1].tags = 'new';
+  assert.equal(app.tagEditorGetQuickCount('notag'), 10);
+  app.tagEditorImages[0].tags = 'old';
+  assert.equal(app.tagEditorGetQuickCount('notag'), 9);
+});

@@ -149,6 +149,53 @@ class TagEditorTransactionTests(unittest.TestCase):
 
 
 class TagEditorSessionTests(unittest.TestCase):
+    def test_unsaved_caption_queries_are_request_scoped_and_preserve_raw_baselines(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            raw = "\ufeff  cat, dog\r\n"
+            for index in range(35):
+                image = root / f"img-{index:02}.png"
+                image.touch()
+                image.with_suffix(".txt").write_bytes(raw.encode("utf-8"))
+            service = DatasetSessionService()
+            session = service.create(temp_dir)
+            paths = [item["path"] for item in session.images]
+            overrides = {path: "new, blue, sky" for path in paths}
+            overrides[paths[0]] = ""
+            overrides[str(root.parent / "outside.png")] = "new"
+            client = TestClient(app)
+            url = f"/api/tageditor/sessions/{session.id}/images"
+            with patch("backend.tageditor.routes.dataset_sessions", service):
+                baseline = client.get(url, params={"search": "new"}).json()["data"]
+                self.assertEqual(baseline["total"], 0)
+                queries = dict(service.get(session.id).queries)
+                for params, total in [
+                    ({"search": "new"}, 34),
+                    ({"search": "^new,", "use_regex": True}, 34),
+                    ({"include_tags": "new\x1fsky"}, 34),
+                    ({"include_tags": "missing\x1fsky", "tag_logic": "OR"}, 34),
+                    ({"exclude_tags": "blue"}, 1),
+                    ({"quick_filter": "notag"}, 1),
+                ]:
+                    with self.subTest(params=params):
+                        result = client.post(url, params={**params, "page_size": 30, "group_by_dir": True}, json=overrides).json()
+                        self.assertEqual(result["status"], "success")
+                        self.assertEqual(result["data"]["total"], total)
+                        self.assertEqual(result["data"]["directory_counts"], {"": total})
+                        self.assertEqual(result["data"]["revision"], session.revision)
+                second = client.post(url, params={"search": "new", "page_size": 30, "page": 2}, json=overrides).json()["data"]
+                self.assertEqual(len(second["items"]), 4)
+                sorted_page = client.post(url, params={"sort_by": "tagCount"}, json=overrides).json()["data"]
+                self.assertEqual(sorted_page["items"][0]["tags"], "")
+                self.assertEqual(dict(service.get(session.id).queries), queries)
+                self.assertEqual(client.get(url, params={"search": "new"}).json()["data"]["total"], 0)
+                self.assertEqual(client.post(url, params={"search": "[", "use_regex": True}, json=overrides).json()["status"], "error")
+                self.assertEqual(client.post(url, json={paths[0]: {"bad": "value"}}).status_code, 422)
+                client.delete(f"/api/tageditor/sessions/{session.id}")
+                self.assertEqual(client.post(url, json=overrides).json()["code"], "session_expired")
+            self.assertTrue(all(item["tags"] == raw for item in session.images))
+            self.assertEqual((root / "img-00.txt").read_bytes(), raw.encode("utf-8"))
+
     def test_refresh_cannot_resurrect_deleted_session(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             service = DatasetSessionService()
