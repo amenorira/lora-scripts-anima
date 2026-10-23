@@ -262,8 +262,8 @@ FIELDS: list[dict[str, Any]] = [
 # ── Model ──
 {"key": "model_train_type", "type": "select", "default": "sdxl-lora", "section": "model", "desc_key": "field.model_train_type", "target": "ui", "hidden": True, "options": [{"v": "sdxl-lora", "l": "SDXL LoRA", "dk": "opt.model_train_type_sdxl-lora"}, {"v": "anima-lora", "l": "Anima LoRA", "dk": "opt.model_train_type_anima-lora"}, {"v": "krea2-lora", "l": "Krea 2 LoRA", "dk": "opt.model_train_type_krea2-lora"}]},
 # 三个底模路径默认指向环境管理页可下载的 Anima 核心文件（见 tools/download_anima_model.py）。
-# 用户下载后即可直接开训，无需手动填写；路径与 ANIMA_FILES 的本地文件名保持一致。
-{"key": "pretrained_model_name_or_path", "type": "text", "default": "./models/anima-base-v1.0.safetensors", "section": "model", "desc_key": "field.pretrained_model_name_or_path", "target": "toml", "role": "file-model", "required": True},
+# Anima 用户下载后即可直接开训；SDXL 底模由用户选择，VAE 留空使用底模内置权重。
+{"key": "pretrained_model_name_or_path", "type": "text", "default": "./models/anima-base-v1.0.safetensors", "default_by_group": {"sdxl": ""}, "section": "model", "desc_key": "field.pretrained_model_name_or_path", "target": "toml", "role": "file-model", "required": True},
 {"key": "vae", "type": "text", "default": "./models/qwen_image_vae.safetensors", "default_by_group": {"sdxl": ""}, "section": "model", "desc_key": "field.vae", "target": "toml", "role": "file-model", "requiredGroups": ["anima"]},
 {"key": "qwen3", "type": "text", "default": "./models/qwen_3_06b_base.safetensors", "section": "model", "desc_key": "field.qwen3", "hint_key": "field.qwen3Hint", "target": "toml", "role": "file-model", "group": "anima", "required": True},
 {"key": "train_data_dir", "type": "text", "default": "./train", "section": "model", "desc_key": "field.train_data_dir", "target": "toml", "role": "file-folder", "required": True},

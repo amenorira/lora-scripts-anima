@@ -130,6 +130,8 @@ test('all block-swap profiles enforce the same upload-only prerequisites on edit
 });
 
 test('SDXL starts with its bundled VAE instead of inheriting a Qwen-Image VAE', () => {
+  assert.equal(application('sdxl-lora').form.pretrained_model_name_or_path, '');
+  assert.equal(application('anima-lora').form.pretrained_model_name_or_path, './models/anima-base-v1.0.safetensors');
   assert.equal(application('sdxl-lora').form.vae, '');
   assert.equal(application('anima-lora').form.vae, './models/qwen_image_vae.safetensors');
 });
