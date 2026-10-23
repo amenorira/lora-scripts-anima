@@ -161,6 +161,9 @@ window.tagEditorMixin = {
   tagEditorImageContextMenu: null,
   tagEditorPanelMenu: null,
   _tePanelMenuTrigger: null,
+  _teTagMenuTrigger: null,
+  _teImageMenuTrigger: null,
+  _teMenuFocusRequest: 0,
   tagEditorQuickRemove: false,
   tagEditorRemovalTags: [],
   tagEditorLeftCollapsed: false,
@@ -1403,6 +1406,7 @@ window.tagEditorMixin = {
     this.tagEditorPanelMenu = null;
     this.tagEditorContextMenu = { x: x, y: y, tag: tag };
     this.tagDictionaryCloseHover();
+    this._teFocusMenu('tagEditorContextMenu', '_teTagMenuTrigger', 'teTagMenu', e);
   },
 
   tagEditorCtxInclude() {
@@ -1412,7 +1416,7 @@ window.tagEditorMixin = {
       this._teInvalidateFilter();
       this.tagEditorSchedulePageFetch(true);
     }
-    this.tagEditorContextMenu = null;
+    this.tagEditorCloseTagMenu();
   },
 
   tagEditorCtxExclude() {
@@ -1422,7 +1426,7 @@ window.tagEditorMixin = {
       this._teInvalidateFilter();
       this.tagEditorSchedulePageFetch(true);
     }
-    this.tagEditorContextMenu = null;
+    this.tagEditorCloseTagMenu();
   },
 
   tagEditorCtxCopy() {
@@ -1432,13 +1436,13 @@ window.tagEditorMixin = {
       navigator.clipboard.writeText(tag).catch(function() {});
       this.toast(this.t('tagEditor.singleTagCopied').replace('{tag}', tag));
     }
-    this.tagEditorContextMenu = null;
+    this.tagEditorCloseTagMenu();
   },
 
   tagEditorCtxAddAll() {
     if (!this.tagEditorAllowsTagOps()) return;
     var tag = this.tagEditorContextMenu && this.tagEditorContextMenu.tag;
-    this.tagEditorContextMenu = null;
+    this.tagEditorCloseTagMenu(false);
     if (!tag) return;
     var self = this;
     var modeEpoch = this._teModeEpoch;
@@ -1466,7 +1470,7 @@ window.tagEditorMixin = {
   tagEditorCtxDeleteTag() {
     if (!this.tagEditorAllowsTagOps()) return;
     var tag = this.tagEditorContextMenu && this.tagEditorContextMenu.tag;
-    this.tagEditorContextMenu = null;
+    this.tagEditorCloseTagMenu(false);
     if (!tag) return;
     var self = this;
     var modeEpoch = this._teModeEpoch;
@@ -1514,12 +1518,14 @@ window.tagEditorMixin = {
     this.tagEditorPanelMenu = null;
     this.tagEditorImageContextMenu = { x: x, y: y, image: img };
     this.tagDictionaryCloseHover();
+    this._teFocusMenu('tagEditorImageContextMenu', '_teImageMenuTrigger', 'teImageMenu', e);
   },
 
   tagEditorCtxViewImage() {
     var img = this.tagEditorImageContextMenu && this.tagEditorImageContextMenu.image;
-    this.tagEditorImageContextMenu = null;
-    if (img) this.tagEditorOpenLightbox(img);
+    var trigger = this._teImageMenuTrigger;
+    this.tagEditorCloseImageMenu(false);
+    if (img) this.tagEditorOpenLightbox(img, trigger);
   },
 
   tagEditorOriginalUrl(img) {
@@ -1775,6 +1781,7 @@ window.tagEditorMixin = {
   },
 
   tagEditorCardEnter(img, idx, e) {
+    if (e.target !== e.currentTarget) return;
     // 焦点在已单选的本卡上时，Enter 视为“开始编辑”聚焦添加框；否则保持选中切换语义
     if (this.tagEditorSelected.length === 1 && this.tagEditorSelected[0] === img.path) {
       if (this._teFocusEditorInput()) {
@@ -1941,7 +1948,6 @@ window.tagEditorMixin = {
     event.stopPropagation();
     var tag = event.target.closest('.te-editor-tag[data-tag], .te-selected-tag[data-tag]');
     var anchor = event.target.getBoundingClientRect();
-    this._tePanelMenuTrigger = event.target.closest('[tabindex], button') || event.currentTarget;
     this.tagEditorPanelMenu = {
       tag: tag ? tag.dataset.tag : null,
       preview: !!event.target.closest('.te-editor-preview'),
@@ -1951,10 +1957,16 @@ window.tagEditorMixin = {
     this.tagEditorContextMenu = null;
     this.tagEditorImageContextMenu = null;
     this.tagDictionaryCloseHover();
-    var state = this.tagEditorPanelMenu;
+    this._teFocusMenu('tagEditorPanelMenu', '_tePanelMenuTrigger', 'tePanelMenu', event);
+  },
+
+  _teFocusMenu(stateKey, triggerKey, id, event) {
+    this[triggerKey] = event.target?.closest?.('[tabindex], button') || event.currentTarget?.querySelector?.('button, [tabindex]') || event.currentTarget;
+    var state = this[stateKey], epoch = this._teLoadEpoch;
+    var request = ++this._teMenuFocusRequest;
     this.$nextTick(() => {
-      if (this.tagEditorPanelMenu !== state) return;
-      var menu = document.getElementById('tePanelMenu');
+      if (this[stateKey] !== state || epoch !== this._teLoadEpoch || request !== this._teMenuFocusRequest || this.currentRoute !== 'tagEditor') return;
+      var menu = document.getElementById(id);
       (this._teVisibleMenuButtons(menu)[0] || menu)?.focus();
     });
   },
@@ -1964,18 +1976,33 @@ window.tagEditorMixin = {
   },
 
   tagEditorClosePanelMenu(restoreFocus = true) {
-    var trigger = this._tePanelMenuTrigger;
+    this._teCloseMenu('tagEditorPanelMenu', '_tePanelMenuTrigger', restoreFocus);
+  },
+
+  tagEditorCloseTagMenu(restoreFocus = true) {
+    this._teCloseMenu('tagEditorContextMenu', '_teTagMenuTrigger', restoreFocus);
+  },
+
+  tagEditorCloseImageMenu(restoreFocus = true) {
+    this._teCloseMenu('tagEditorImageContextMenu', '_teImageMenuTrigger', restoreFocus);
+  },
+
+  _teCloseMenu(stateKey, triggerKey, restoreFocus) {
+    if (!this[stateKey]) return;
+    var trigger = this[triggerKey];
     var epoch = this._teLoadEpoch;
-    this.tagEditorPanelMenu = null;
-    this._tePanelMenuTrigger = null;
+    var request = ++this._teMenuFocusRequest;
+    this[stateKey] = null;
+    this[triggerKey] = null;
     if (restoreFocus) this.$nextTick(() => {
-      if (epoch === this._teLoadEpoch && this.currentRoute === 'tagEditor' && trigger?.isConnected && trigger.getClientRects().length) trigger.focus();
+      if (epoch === this._teLoadEpoch && request === this._teMenuFocusRequest && this.currentRoute === 'tagEditor' && !this.tagEditorLightboxOpen && !this.tagEditorShortcutsOpen && !this.showConfirmModal && trigger?.isConnected && trigger.getClientRects().length) trigger.focus();
     });
   },
 
   async tagEditorPanelAction(action) {
     var menu = this.tagEditorPanelMenu;
     if (!menu) return;
+    var trigger = this._tePanelMenuTrigger;
     this.tagEditorClosePanelMenu(action !== 'view');
     if (!this.tagEditorAllowsTagOps() && ['copy', 'remove', 'filter', 'quick'].includes(action)) return;
     if (action === 'copy') {
@@ -1992,7 +2019,7 @@ window.tagEditorMixin = {
       this._teInvalidateFilter();
       this.tagEditorSchedulePageFetch(true);
     } else if (action === 'quick') this.tagEditorStartQuickRemove();
-    else if (action === 'view') this.tagEditorOpenLightbox(this.tagEditorGetSelectedImg());
+    else if (action === 'view') this.tagEditorOpenLightbox(this.tagEditorGetSelectedImg(), trigger);
     else if (action === 'revert') this.tagEditorRevertSelectedImage();
     else if (action === 'undo') this.tagEditorUndo();
     else if (action === 'redo') this.tagEditorRedo();
@@ -2001,6 +2028,15 @@ window.tagEditorMixin = {
   tagEditorPanelMenuKeydown(event) {
     // 菜单使用自己的键盘交互，不触发页面级翻图或“开始编辑”。
     event.stopPropagation();
+    if (event.key === 'Tab') {
+      var trigger = this.tagEditorPanelMenu ? this._tePanelMenuTrigger
+        : this.tagEditorContextMenu ? this._teTagMenuTrigger : this._teImageMenuTrigger;
+      this.tagEditorClosePanelMenu(false);
+      this.tagEditorCloseTagMenu(false);
+      this.tagEditorCloseImageMenu(false);
+      if (trigger?.isConnected && trigger.getClientRects().length) trigger.focus();
+      return;
+    }
     var buttons = this._teVisibleMenuButtons(event.currentTarget);
     var index = buttons.indexOf(document.activeElement);
     if (!buttons.length || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
@@ -3442,6 +3478,15 @@ window.tagEditorMixin = {
       }
       return;
     }
+    if (this.tagEditorPanelMenu || this.tagEditorContextMenu || this.tagEditorImageContextMenu) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        this.tagEditorClosePanelMenu();
+        this.tagEditorCloseTagMenu();
+        this.tagEditorCloseImageMenu();
+      }
+      return;
+    }
     if (modifier && (e.key === 's' || e.key === 'S')) {
       if (editableTarget && !e.target.closest?.('.te-editor-textarea')) return;
       e.preventDefault();
@@ -3542,7 +3587,7 @@ window.tagEditorMixin = {
     }
     if (e.key === 'Tab' && !modifier) {
       var card = e.target && typeof e.target.closest === 'function' ? e.target.closest('.te-card') : null;
-      if (card && !e.shiftKey) {
+      if (card && e.target === card && !e.shiftKey) {
         if (this._teFocusEditorInput()) {
           e.preventDefault();
           return;

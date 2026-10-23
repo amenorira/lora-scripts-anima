@@ -515,7 +515,7 @@
       <div x-show="currentRoute === 'tagEditor'" x-cloak
         x-init="tagEditorRestorePanelWidth(); tagEditorInitLayout()"
         @keydown.window="tagEditorHandleKeydown($event)"
-        @click="tagEditorContextMenu = null; tagEditorImageContextMenu = null; tagEditorPanelMenu = null">
+        @click="tagEditorCloseTagMenu(false); tagEditorCloseImageMenu(false); tagEditorClosePanelMenu(false)">
 
         <!-- Saving overlay -->
         <div x-show="tagEditorSaving" class="te-saving-overlay" x-transition>
@@ -599,12 +599,12 @@
           <button role="menuitem" :disabled="tagEditorHistoryIdx >= tagEditorHistory.length - 1" @click="tagEditorPanelAction('redo')" x-text="t('tagEditor.redoHint')"></button>
           <button role="menuitem" x-show="tagEditorSelected.length === 1 && !tagEditorPanelMenu?.tag" :disabled="!tagEditorCanRevertSelectedImage()" @click="tagEditorPanelAction('revert')" x-text="t('tagEditor.revertImage')"></button>
         </div>
-        <div x-show="tagEditorContextMenu" class="te-ctx" role="menu"
+        <div id="teTagMenu" x-show="tagEditorContextMenu" class="te-ctx" role="menu" tabindex="-1"
           :style="'left:' + (tagEditorContextMenu?.x || 0) + 'px; top:' + (tagEditorContextMenu?.y || 0) + 'px'"
-          @click.outside="tagEditorContextMenu = null" @keydown="tagEditorPanelMenuKeydown($event)" @keydown.escape.prevent.stop="tagEditorContextMenu = null">
+          @click.outside="tagEditorCloseTagMenu(false)" @keydown="tagEditorPanelMenuKeydown($event)" @keydown.escape.prevent.stop="tagEditorCloseTagMenu()">
           <button role="menuitem" class="te-ctx-item" @click="tagEditorCtxInclude()" x-text="t('tagEditor.contextInclude')"></button>
           <button role="menuitem" class="te-ctx-item" @click="tagEditorCtxExclude()" x-text="t('tagEditor.contextExclude')"></button>
-          <button role="menuitem" class="te-ctx-item" @click="tagEditorStartInlineEdit(tagEditorContextMenu.tag, $event); tagEditorContextMenu = null" x-text="t('tagEditor.inlineEditHint')"></button>
+          <button role="menuitem" class="te-ctx-item" @click="tagEditorStartInlineEdit(tagEditorContextMenu.tag, $event); tagEditorCloseTagMenu(false)" x-text="t('tagEditor.inlineEditHint')"></button>
           <div class="te-ctx-divider"></div>
           <button role="menuitem" class="te-ctx-item" @click="tagEditorCtxCopy()" x-text="t('tagEditor.contextCopy')"></button>
           <button role="menuitem" class="te-ctx-item" @click="tagEditorCtxAddAll()" x-text="t('tagEditor.contextAddAll')"></button>
@@ -613,10 +613,10 @@
         </div>
 
         <!-- Image context menu -->
-        <div x-show="tagEditorImageContextMenu" class="te-ctx te-image-ctx"
+        <div id="teImageMenu" x-show="tagEditorImageContextMenu" class="te-ctx te-image-ctx" role="menu" tabindex="-1"
           :style="'left:' + (tagEditorImageContextMenu?.x || 0) + 'px; top:' + (tagEditorImageContextMenu?.y || 0) + 'px'"
-          @click.outside="tagEditorImageContextMenu = null" @keydown="tagEditorPanelMenuKeydown($event)" @keydown.escape.prevent.stop="tagEditorImageContextMenu = null">
-          <button class="te-ctx-item te-ctx-button" @click="tagEditorCtxViewImage()">
+          @click.outside="tagEditorCloseImageMenu(false)" @keydown="tagEditorPanelMenuKeydown($event)" @keydown.escape.prevent.stop="tagEditorCloseImageMenu()">
+          <button role="menuitem" class="te-ctx-item te-ctx-button" @click="tagEditorCtxViewImage()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
             <span x-text="t('tagEditor.viewOriginal')"></span>
           </button>
@@ -1129,8 +1129,8 @@
                     @dblclick="tagEditorCardDblClick(img, idx, $event)"
                     @contextmenu.prevent.stop="tagEditorImageCtx($event, img)"
                     tabindex="0"
-                    @keydown.enter="tagEditorCardEnter(img, idx, $event)"
-                    @keydown.space.prevent="tagEditorCardClick(img, idx, $event)">
+                    @keydown.enter.self="tagEditorCardEnter(img, idx, $event)"
+                    @keydown.space.self.prevent="tagEditorCardClick(img, idx, $event)">
                     <div class="te-card-thumb">
                       <div class="te-card-skeleton"></div>
                       <img :src="img.thumbnail" :alt="img.rel_path || img.name" loading="lazy" decoding="async" width="320" height="320"
