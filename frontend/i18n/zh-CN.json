@@ -1893,6 +1893,8 @@
 		}
 	},
 	"tagEditor": {
+		"selectImage": "选择图片：{name}",
+		"resizeRightPanel": "拖动调整编辑面板宽度，双击重置",
 		"selectedOutsidePage": "{n} 已选中 · 当前页外 {outside}",
 		"batchOutsidePage": "其中 {n} 张不在当前页（包括其他页或被筛选隐藏的图片）。",
 		"draftUnresolved": "还有 {n} 项草稿因文件缺失、外部修改或当前编辑冲突未恢复，内容已保留。",

@@ -160,6 +160,7 @@ window.tagEditorMixin = {
   tagEditorContextMenu: null,
   tagEditorImageContextMenu: null,
   tagEditorPanelMenu: null,
+  _tePanelMenuTrigger: null,
   tagEditorQuickRemove: false,
   tagEditorRemovalTags: [],
   tagEditorLeftCollapsed: false,
@@ -1895,6 +1896,7 @@ window.tagEditorMixin = {
     event.stopPropagation();
     var tag = event.target.closest('.te-editor-tag[data-tag], .te-selected-tag[data-tag]');
     var anchor = event.target.getBoundingClientRect();
+    this._tePanelMenuTrigger = event.target.closest('[tabindex], button') || event.currentTarget;
     this.tagEditorPanelMenu = {
       tag: tag ? tag.dataset.tag : null,
       preview: !!event.target.closest('.te-editor-preview'),
@@ -1904,13 +1906,32 @@ window.tagEditorMixin = {
     this.tagEditorContextMenu = null;
     this.tagEditorImageContextMenu = null;
     this.tagDictionaryCloseHover();
-    this.$nextTick(function() { document.querySelector('#tePanelMenu button:not([disabled])')?.focus(); });
+    var state = this.tagEditorPanelMenu;
+    this.$nextTick(() => {
+      if (this.tagEditorPanelMenu !== state) return;
+      var menu = document.getElementById('tePanelMenu');
+      (this._teVisibleMenuButtons(menu)[0] || menu)?.focus();
+    });
+  },
+
+  _teVisibleMenuButtons(menu) {
+    return Array.from(menu?.querySelectorAll('button') || []).filter(button => !button.disabled && button.getClientRects().length);
+  },
+
+  tagEditorClosePanelMenu(restoreFocus = true) {
+    var trigger = this._tePanelMenuTrigger;
+    var epoch = this._teLoadEpoch;
+    this.tagEditorPanelMenu = null;
+    this._tePanelMenuTrigger = null;
+    if (restoreFocus) this.$nextTick(() => {
+      if (epoch === this._teLoadEpoch && this.currentRoute === 'tagEditor' && trigger?.isConnected && trigger.getClientRects().length) trigger.focus();
+    });
   },
 
   async tagEditorPanelAction(action) {
     var menu = this.tagEditorPanelMenu;
     if (!menu) return;
-    this.tagEditorPanelMenu = null;
+    this.tagEditorClosePanelMenu(action !== 'view');
     if (!this.tagEditorAllowsTagOps() && ['copy', 'remove', 'filter', 'quick'].includes(action)) return;
     if (action === 'copy') {
       var text = menu.tag || (this.tagEditorSelected.length === 1 ? this.tagEditorGetSelectedImg()?.tags : this.tagEditorGetSelectedStats().map(function(item) { return item.tag; }).join(', '));
@@ -1933,11 +1954,13 @@ window.tagEditorMixin = {
   },
 
   tagEditorPanelMenuKeydown(event) {
-    var buttons = Array.from(event.currentTarget.querySelectorAll('button')).filter(function(button) { return !button.disabled && button.getClientRects().length; });
+    var buttons = this._teVisibleMenuButtons(event.currentTarget);
     var index = buttons.indexOf(document.activeElement);
     if (!buttons.length || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault();
-    var next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+    var next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+      : index < 0 ? (event.key === 'ArrowDown' ? 0 : buttons.length - 1)
+      : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
     buttons[next].focus();
   },
 
@@ -3377,7 +3400,7 @@ window.tagEditorMixin = {
       return;
     }
     if (e.key === 'Escape') {
-      if (this.tagEditorPanelMenu) { this.tagEditorPanelMenu = null; return; }
+      if (this.tagEditorPanelMenu) { this.tagEditorClosePanelMenu(); return; }
       if (this.tagEditorQuickRemove) { this.tagEditorCancelQuickRemove(); return; }
       if (this.tagEditorSuggestions.length) {
         e.preventDefault();

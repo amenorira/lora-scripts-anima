@@ -1893,6 +1893,8 @@
 		}
 	},
 	"tagEditor": {
+		"selectImage": "Select image: {name}",
+		"resizeRightPanel": "Drag to resize the editor; double-click to reset",
 		"selectedOutsidePage": "{n} selected · {outside} outside this page",
 		"batchOutsidePage": "{n} selected images are outside this page, including other pages or images hidden by filters.",
 		"draftUnresolved": "{n} draft items remain unresolved due to missing files, external changes or current edits. Their contents have been kept.",

@@ -586,9 +586,9 @@
         </div>
 
         <!-- Context menu -->
-        <div id="tePanelMenu" x-show="tagEditorPanelMenu" class="te-ctx te-panel-menu" role="menu"
+        <div id="tePanelMenu" x-show="tagEditorPanelMenu" class="te-ctx te-panel-menu" role="menu" tabindex="-1"
           :style="'left:' + (tagEditorPanelMenu?.x || 0) + 'px; top:' + (tagEditorPanelMenu?.y || 0) + 'px'"
-          @keydown="tagEditorPanelMenuKeydown($event)" @click.outside="tagEditorPanelMenu = null" @keydown.escape.prevent.stop="tagEditorPanelMenu = null">
+          @keydown="tagEditorPanelMenuKeydown($event)" @click.outside="tagEditorClosePanelMenu(false)" @keydown.escape.prevent.stop="tagEditorClosePanelMenu()">
           <button role="menuitem" x-show="tagEditorAllowsTagOps()" @click="tagEditorPanelAction('copy')" x-text="t(tagEditorPanelMenu?.tag ? 'tagEditor.contextCopy' : 'tagEditor.copyTags')"></button>
           <button role="menuitem" x-show="tagEditorPanelMenu?.tag" @click="tagEditorPanelAction('filter')" x-text="t('tagEditor.contextInclude')"></button>
           <button role="menuitem" x-show="tagEditorPanelMenu?.tag" @click="tagEditorPanelAction('remove')" x-text="t(tagEditorQuickRemove ? 'tagEditor.toggleRemoval' : 'bulkAction.removeTag')"></button>
@@ -1132,6 +1132,7 @@
                     </div>
                     <div class="te-card-check" @click.stop>
                       <input type="checkbox" :checked="tagEditorSelected.includes(img.path)"
+                        :aria-label="t('tagEditor.selectImage').replace('{name}', img.rel_path || img.name)"
                         @change="tagEditorToggleSelect(img.path, $event)">
                     </div>
                     <div class="te-card-mod" x-show="img.tags !== tagEditorOriginal[img.path]" :title="t('tagEditor.modified')">
@@ -1155,12 +1156,13 @@
             </div>
             <div class="te-editor-divider" :class="{ dragging: tagEditorResizing && _teResizeSide === 'right' }"
               role="separator" aria-orientation="vertical" aria-valuemin="280" aria-valuemax="520"
+              :aria-label="t('tagEditor.resizeRightPanel')" :title="t('tagEditor.resizeRightPanel')"
               :aria-valuenow="Math.round(tagEditorPanelLayout().right)" tabindex="0"
               @pointerdown.prevent="tagEditorStartResize($event)"
               @keydown.left.prevent="tagEditorAdjustRightWidth(8)"
               @keydown.right.prevent="tagEditorAdjustRightWidth(-8)"
               @dblclick="tagEditorRightWidth = 340; tagEditorAdjustRightWidth(0)"></div>
-            <div class="te-editor" :class="{ 'is-idle': tagEditorSelected.length === 0, 'is-removing': tagEditorQuickRemove }" @contextmenu="tagEditorPanelContext($event)">
+            <div class="te-editor" tabindex="-1" :class="{ 'is-idle': tagEditorSelected.length === 0, 'is-removing': tagEditorQuickRemove }" @contextmenu="tagEditorPanelContext($event)">
               <div class="te-editor-empty" x-show="tagEditorSelected.length === 0 && tagEditorImages.length > 0 && !tagEditorLoading">
                 <span x-text="t('tagEditor.noImageSelected')"></span>
               </div>

@@ -3636,11 +3636,13 @@ input[type="range"]::-webkit-slider-thumb {
 .te-card { width: 100%; min-width: 0; height: 100%; border: 2px solid var(--border-default); border-radius: var(--radius-panel); background: var(--bg-surface); position: relative; cursor: pointer; overflow: hidden; transition: border-color 0.1s; contain: layout paint; }
 .te-card:hover { border-color: var(--text-tertiary); }
 .te-card.selected { border-color: var(--accent); }
+.te-card:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
 .te-card.modified { box-shadow: inset 0 3px 0 0 var(--warning); }
 .te-card-thumb { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: var(--bg-preview); }
 .te-card-thumb img { width: 100%; height: 100%; object-fit: contain; }
 .te-card-check { position: absolute; top: 4px; left: 4px; z-index: 3; opacity: 0; transition: opacity 0.1s; }
 .te-card:hover .te-card-check,
+.te-card:focus-within .te-card-check,
 .te-card.selected .te-card-check { opacity: 1; }
 .te-card-check input[type=checkbox] { width: 14px; height: 14px; border-radius: 2px; border: 2px solid rgba(255,255,255,0.7); background: rgba(0,0,0,0.25); accent-color: var(--accent); cursor: pointer; appearance: none; -webkit-appearance: none; position: relative; }
 .te-card-check input[type=checkbox]:checked { background: var(--accent-solid); border-color: var(--accent-solid); }
@@ -3649,7 +3651,7 @@ input[type="range"]::-webkit-slider-thumb {
 .te-card-nocap { position: absolute; top: 4px; left: 4px; z-index: 3; color: var(--danger, #e53e3e); opacity: 0.85; }
 .te-card.te-card-no-cap { outline: 1px dashed var(--text-muted); outline-offset: -3px; }
 .te-card-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 4px 6px; background: rgba(0,0,0,0.55); z-index: 2; opacity: 0; transition: opacity 0.1s; pointer-events: none; }
-.te-card:hover .te-card-overlay { opacity: 1; }
+.te-card:hover .te-card-overlay, .te-card:focus-within .te-card-overlay { opacity: 1; }
 .te-card-name { font-size: 10px; color: rgba(255,255,255,0.9); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .te-card-tags { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 2px; }
 .te-card-tag { font-size: 9px; padding: 0 4px; border-radius: var(--radius-control); background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.8); white-space: nowrap; }
