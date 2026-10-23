@@ -2229,17 +2229,20 @@ window.tagEditorMixin = {
     if (!img) return;
     var tags = _teParseTags(img.tags);
     if (srcIdx >= tags.length) return;
+    var originalTags = tags.slice();
     var moving = tags.splice(srcIdx, 1)[0];
     var destIdx = tags.length;
     var dropTarget = e.target.closest('.te-editor-tag');
     if (dropTarget && dropTarget.dataset.ti != null) {
       var dropIdx = parseInt(dropTarget.dataset.ti, 10);
       if (!isNaN(dropIdx)) {
+        if (dropIdx === srcIdx) return;
         var adjIdx = dropIdx > srcIdx ? dropIdx - 1 : dropIdx;
         destIdx = dropPos === 'after' ? adjIdx + 1 : adjIdx;
       }
     }
     tags.splice(destIdx, 0, moving);
+    if (tags.every((tag, index) => tag === originalTags[index])) return;
     this._teUpdateImageTags(img, tags.join(', '));
     this._tePushHistory({ type: 'reorder', desc: this.t('tagEditor.historyStepReorder') + ' · ' + moving + ' @' + this._teImageLabel(img), affected: 1 });
   },

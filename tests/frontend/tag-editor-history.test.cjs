@@ -54,6 +54,38 @@ function draftClient(storage) {
   return {ctx,context,tick:()=>autosave()};
 }
 
+test('dropping in the same tag position preserves raw bytes, versions, drafts and history', () => {
+  for (const [source, target, pos, raw] of [
+    [0, 0, 'before'], [0, 0, 'after'], [0, 1, 'before'], [1, 0, 'after'], [1, null, 'after'],
+    [0, 1, 'after', '\uFEFF  cat,  cat\r\n'],
+  ]) {
+    const {ctx, context} = draftClient();
+    const original = raw || '\uFEFF  cat,  dog\r\n';
+    ctx.tagEditorImages[0].tags = ctx.tagEditorOriginal.a = original;
+    ctx._teEditVersions = {a: 7};
+    context.localStorage.setItem('tagEditor_draft_/dataset', 'keep');
+    ctx.tagEditorDetailDragSrcIdx = source; ctx.tagEditorDetailDragOverPos = pos;
+    ctx.tagEditorDetailDrop({preventDefault() {}, target: {closest: () => target == null ? null : {dataset: {ti: String(target)}}}});
+    assert.equal(ctx.tagEditorImages[0].tags, original);
+    assert.equal(ctx._teEditVersions.a, 7);
+    assert.equal(ctx.tagEditorHistory.length, 0);
+    assert.equal(ctx.tagEditorModifiedCount(), 0);
+    assert.equal(context.localStorage.getItem('tagEditor_draft_/dataset'), 'keep');
+  }
+});
+
+test('a real reorder still records one step and restores exact original text on undo', () => {
+  const {ctx} = draftClient();
+  const original = '\uFEFF  cat,  dog\r\n';
+  ctx.tagEditorImages[0].tags = ctx.tagEditorOriginal.a = original;
+  ctx.tagEditorDetailDragSrcIdx = 0; ctx.tagEditorDetailDragOverPos = 'after';
+  ctx.tagEditorDetailDrop({preventDefault() {}, target: {closest: () => ({dataset: {ti: '1'}})}});
+  assert.equal(ctx.tagEditorImages[0].tags, 'dog, cat');
+  assert.equal(ctx.tagEditorHistory.length, 1);
+  ctx.tagEditorUndo(); assert.equal(ctx.tagEditorImages[0].tags, original);
+  ctx.tagEditorRedo(); assert.equal(ctx.tagEditorImages[0].tags, 'dog, cat');
+});
+
 test('history excerpts preserve exact prefixes without changing raw history or splitting CRLF and emoji',()=>{
   const {ctx}=makeClient();
   const short='\uFEFF  原文， punctuation.\r\n\r\n  ';
