@@ -88,3 +88,46 @@ test('clearing and retyping retains the original BOM and newline convention', ()
   app._teFlushAllPendingTextEdits();
   assert.equal(app.tagEditorImages[0].tags, '\uFEFFnew\r\nparagraph\r\n');
 });
+
+test('text history displays complete before and after text, including whitespace-only changes', () => {
+  const { app } = fixture('  first, second\r\n\r\n');
+  app.tagEditorDetailText = ' first, second\n\n';
+  app.tagEditorDetailTextChange(); app._teFlushAllPendingTextEdits();
+  const diff = app._teGetHistoryDiff(0)[0];
+  assert.equal(diff.kind, 'text');
+  assert.equal(diff.beforeText, '  first, second\r\n\r\n');
+  assert.equal(diff.afterText, ' first, second\r\n\r\n');
+  assert.equal(diff.added.length, 0);
+  assert.equal(app.tagEditorDetailText, ' first, second\n\n');
+  app.tagEditorUndo();
+  app.tagEditorDetailText = 'branched\n\n'; app.tagEditorDetailTextChange();
+  app._teFlushAllPendingTextEdits();
+  assert.equal(app.tagEditorHistory.length, 1);
+  app.tagEditorRedo(); assert.equal(app.tagEditorImages[0].tags, 'branched\r\n\r\n');
+});
+
+test('IME commits completed text once and pending input is recorded before switching view', () => {
+  const { app } = fixture('原文');
+  const target = {value:'原文zhong',composing:true};
+  app.tagEditorDetailTextChange({target,isComposing:true});
+  assert.equal(app.tagEditorImages[0].tags, '原文');
+  target.value = '原文中文'; target.composing = false;
+  app.tagEditorDetailTextChange({target});
+  app.tagEditorSetDetailView('chip');
+  assert.equal(app.tagEditorHistory.length, 1);
+  assert.equal(app.tagEditorImages[0].tags, '原文中文');
+  app.tagEditorUndo(); assert.equal(app.tagEditorImages[0].tags, '原文');
+  app.tagEditorRedo(); assert.equal(app.tagEditorImages[0].tags, '原文中文');
+});
+
+test('textarea keeps native undo shortcuts while Ctrl+S commits the current text', () => {
+  const { app } = fixture(); app.currentRoute = 'tagEditor';
+  const target = {tagName:'TEXTAREA',isContentEditable:false, closest: selector => selector === '.te-editor-textarea' ? target : null};
+  const event = key => ({key,ctrlKey:true,target,preventDefault() {this.prevented=true;}});
+  app.tagEditorUndo = app.tagEditorRedo = () => assert.fail('textarea undo belongs to the browser');
+  const undo = event('z'); app.tagEditorHandleKeydown(undo); assert.equal(undo.prevented, undefined);
+  const redo = {...event('z'),shiftKey:true}; app.tagEditorHandleKeydown(redo); assert.equal(redo.prevented, undefined);
+  let saved = false; app.tagEditorSaveAll = () => {saved=true;};
+  const save = event('s'); app.tagEditorHandleKeydown(save);
+  assert.equal(save.prevented, true); assert.equal(saved, true);
+});

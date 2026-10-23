@@ -1893,6 +1893,8 @@
 		}
 	},
 	"tagEditor": {
+		"textBefore": "変更前",
+		"textAfter": "変更後",
 		"workMode": "編集モード",
 		"modeTags": "タグ",
 		"modeText": "説明文",

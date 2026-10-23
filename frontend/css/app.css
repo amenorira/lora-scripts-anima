@@ -5294,3 +5294,15 @@ input:disabled, select:disabled, textarea:disabled { opacity: var(--disabled-opa
 .te-snapshot-actions button:hover {
   color: var(--accent);
 }
+.te-history-text-diff pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow: auto;
+  margin: 4px 0 10px;
+  padding: 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  font: inherit;
+}

@@ -992,7 +992,13 @@
                     <template x-for="d in _teGetHistoryDiff(tagEditorHistoryDetailIdx)" :key="d.path">
                       <div class="te-history-diff-item">
                         <div class="te-history-diff-name" x-text="d.name"></div>
-                        <div class="te-history-diff-tags">
+                        <template x-if="d.kind === 'text'">
+                          <div class="te-history-text-diff">
+                            <span x-text="t('tagEditor.textBefore')"></span><pre x-text="d.beforeText"></pre>
+                            <span x-text="t('tagEditor.textAfter')"></span><pre x-text="d.afterText"></pre>
+                          </div>
+                        </template>
+                        <div class="te-history-diff-tags" x-show="d.kind !== 'text'">
                           <template x-for="tag in d.added" :key="'add-' + tag">
                             <span class="te-tag-ch added">+<span x-text="tag"></span></span>
                           </template>
@@ -1221,7 +1227,8 @@
                       </template>
                     </div>
                     <textarea class="te-editor-textarea" x-show="tagEditorDetailView === 'text'" :aria-label="t('tagEditor.captionText')"
-                      x-model="tagEditorDetailText" @input="tagEditorDetailTextChange()"></textarea>
+                      x-model="tagEditorDetailText" @input="tagEditorDetailTextChange($event)"
+                      @compositionend="tagEditorDetailTextChange($event)" @blur="_teFlushAllPendingTextEdits()"></textarea>
                   </div>
                   <div class="te-editor-add" x-show="tagEditorAllowsTagOps() && !tagEditorQuickRemove && tagEditorDetailView === 'chip'">
                     <input type="text" x-model="tagEditorAddInput" :placeholder="t(tagDictionaryReady ? 'tagEditor.dictAddPlaceholder' : 'tagEditor.addTagPlaceholder')"

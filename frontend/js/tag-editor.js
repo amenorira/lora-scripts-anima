@@ -26,6 +26,7 @@ function _teTextFromInput(value, previous, original) {
   if (bom && !value.startsWith(bom)) value = bom + value;
   var normalize = function(s) { return s.replace(/\r\n|\r/g, '\n'); };
   if (normalize(previous) === normalize(value)) return previous;
+  if (normalize(format) === normalize(value)) return format;
   var oldLines = previous.split(/\r\n|\r|\n/);
   var endings = previous.match(/\r\n|\r|\n/g) || [];
   var lines = value.split(/\r\n|\r|\n/);
@@ -40,6 +41,10 @@ function _teTextFromInput(value, previous, original) {
       : index >= lines.length - suffix ? oldLines.length - (lines.length - index) : -1;
     return line + (endings[oldIndex] || fallback);
   }).join('');
+}
+
+function _teInputText(raw) {
+  return (raw || '').replace(/\r\n|\r/g, '\n');
 }
 
 function _teGetSuggestCoords(inputEl) {
@@ -1750,7 +1755,7 @@ window.tagEditorMixin = {
     if (this.tagEditorSelected.length === 1) {
       var img = this.tagEditorGetSelectedImg();
       if (img) {
-        this.tagEditorDetailText = img.tags || '';
+        this.tagEditorDetailText = _teInputText(img.tags);
       }
     }
     this.tagDictionarySyncChips();
@@ -2008,9 +2013,13 @@ window.tagEditorMixin = {
     this.tagEditorSetDetailView('text');
   },
 
-  tagEditorDetailTextChange() {
+  tagEditorDetailTextChange(event) {
+    // Alpine defers x-model during IME composition. Commit the completed input,
+    // never the stale model or a half-composed candidate.
+    if (event && (event.isComposing || event.target?.composing)) return;
     var img = this.tagEditorGetSelectedImg();
     if (!img) return;
+    if (event && event.target) this.tagEditorDetailText = event.target.value;
     var self = this;
     var path = img.path;
     if (this._tePendingTextEdits[path]) {
@@ -2574,6 +2583,7 @@ window.tagEditorMixin = {
     if (branched) this.tagEditorHistory = this.tagEditorHistory.slice(0, this.tagEditorHistoryIdx + 1);
     this.tagEditorHistoryDetailIdx = -1;
     var finalMeta = meta ? Object.assign({}, meta) : { type: 'edit', desc: this.t('tagEditor.historyStepText'), affected: changedPaths.length };
+    finalMeta.contentMode = this.tagEditorWorkMode;
     delete finalMeta.paths;
     // D2: 合并连续细步（同类型 + 同 path + 1.2s 内的 text/reorder/add）合并为一步，避免历史膨胀
     var now = Date.now();
@@ -2677,7 +2687,8 @@ window.tagEditorMixin = {
         var change = historyItem.changes[path];
         var beforeTags = change.before == null ? (selfDirect.tagEditorOriginal[path] || '') : change.before;
         var afterTags = change.after == null ? (selfDirect.tagEditorOriginal[path] || '') : change.after;
-        var itemDiff = selfDirect._teBuildTagDiff(path, beforeTags, afterTags);
+        var itemDiff = selfDirect._teBuildTagDiff(path, beforeTags, afterTags,
+          historyItem.meta?.type === 'text' || historyItem.meta?.contentMode === 'text');
         if (itemDiff) directDiff.push(itemDiff);
       });
       directDiff.sort(function(a, b) { return a.name.localeCompare(b.name); });
@@ -2706,7 +2717,13 @@ window.tagEditorMixin = {
     return diff;
   },
 
-  _teBuildTagDiff(path, beforeTags, afterTags) {
+  _teBuildTagDiff(path, beforeTags, afterTags, textEdit) {
+    if (beforeTags === afterTags) return null;
+    if (textEdit || !this.tagEditorAllowsTagOps()) {
+      var image = this._teFindByPath(path);
+      return { path: path, name: image ? this._teImageLabel(image) : path, kind: 'text',
+        beforeText: beforeTags, afterText: afterTags, added: [], removed: [], unchanged: [] };
+    }
     var beforeList = _teParseTags(beforeTags);
     var afterList = _teParseTags(afterTags);
     var added = afterList.filter(function(tag) { return beforeList.indexOf(tag) === -1; });
@@ -2742,7 +2759,7 @@ window.tagEditorMixin = {
     for (var j = 0; j < modified.length; j++) state[modified[j].path] = modified[j].tags;
     this._teHistoryState = state;
     this._teInvalidateFilter();
-    this.tagEditorDetailText = this.tagEditorGetSelectedImg()?.tags || '';
+    this.tagEditorDetailText = _teInputText(this.tagEditorGetSelectedImg()?.tags);
     this._updateEditorPanel();
   },
 
@@ -2773,7 +2790,7 @@ window.tagEditorMixin = {
     for (var i = 0; i < modified.length; i++) state[modified[i].path] = modified[i].tags;
     this._teHistoryState = state;
     this._teInvalidateFilter();
-    this.tagEditorDetailText = this.tagEditorGetSelectedImg()?.tags || '';
+    this.tagEditorDetailText = _teInputText(this.tagEditorGetSelectedImg()?.tags);
     this._updateEditorPanel();
   },
 
@@ -2822,7 +2839,9 @@ window.tagEditorMixin = {
     this._teInvalidateFilter();
     // Only update detail text if the image being edited is currently selected
     if (this.tagEditorSelected.length === 1 && this.tagEditorSelected[0] === img.path) {
-      this.tagEditorDetailText = newTagsStr;
+      // Keep x-model equal to the textarea's LF value so Alpine does not reset
+      // the DOM value (and native undo/caret) on every CRLF keystroke.
+      this.tagEditorDetailText = _teInputText(newTagsStr);
     }
     this._teUpdateFreq(oldTags, newTagsStr);
     this.tagDictionarySyncChips();
@@ -3187,7 +3206,7 @@ window.tagEditorMixin = {
       return;
     }
     if (modifier && (e.key === 's' || e.key === 'S')) {
-      if (editableTarget) return;
+      if (editableTarget && !e.target.closest?.('.te-editor-textarea')) return;
       e.preventDefault();
       this.tagEditorSaveAll();
       return;

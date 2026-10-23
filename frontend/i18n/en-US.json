@@ -1893,6 +1893,8 @@
 		}
 	},
 	"tagEditor": {
+		"textBefore": "Before",
+		"textAfter": "After",
 		"workMode": "Editing mode",
 		"modeTags": "Tags",
 		"modeText": "Description",
