@@ -1,7 +1,7 @@
 // Caption editing, stale confirmations, and undo/redo regressions.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { loadFrontend } = require('./helpers.cjs');
+const { loadFrontend, deferred } = require('./helpers.cjs');
 
 // Caption edits and history need an isolated editor, without a dictionary worker.
 
@@ -332,6 +332,58 @@ test('timeline restore refuses unsaved edits and stale dataset confirmations', (
   ctx._teLoadEpoch++;
   confirm();
   assert.equal(ctx.tagEditorSnapshotBusy, false);
+});
+
+test('legacy backup restore protects unsaved text, history and recovery drafts',()=>{
+  const {ctx,context,tick}=draftClient();
+  const raw='\uFEFF  未保存正文\r\n\r\n  ';
+  ctx._teUpdateImageTags(ctx.tagEditorImages[0],raw);ctx._tePushHistory({type:'text'});tick();
+  const draft=context.localStorage.getItem('tagEditor_draft_/dataset');
+  const history=JSON.stringify(ctx.tagEditorHistory);
+  ctx.openConfirm=()=>assert.fail('dirty captions must not offer destructive restore');
+  ctx.tagEditorRestoreBackup();
+  assert.equal(ctx.tagEditorImages[0].tags,raw);
+  assert.equal(JSON.stringify(ctx.tagEditorHistory),history);
+  assert.equal(context.localStorage.getItem('tagEditor_draft_/dataset'),draft);
+});
+
+test('backup confirmation rechecks edits, saves and the dataset before submitting',()=>{
+  for(const change of ['edit','save','dataset']) {
+    const {ctx}=makeClient();let accept;
+    ctx.openConfirm=(_title,_message,action)=>{accept=action;};
+    ctx.tagEditorRestoreBackup();assert.equal(typeof accept,'function');
+    if(change==='edit') ctx.tagEditorModified=true;
+    if(change==='save') ctx._teIsSaving=true;
+    if(change==='dataset') ctx._teLoadEpoch++;
+    accept();assert.equal(ctx.tagEditorSnapshotBusy,false);
+  }
+});
+
+test('backup responses cannot reload a newer dataset or release its busy state',async()=>{
+  const {ctx,context}=makeClient();const pending=deferred();let accept,request;
+  ctx.tagEditorLoadedDir='/dataset';ctx.tagEditorDir='/uncommitted-path';
+  ctx.openConfirm=(_title,_message,action)=>{accept=action;};
+  ctx.tagEditorLoad=()=>assert.fail('stale backup response must not reload');
+  context.fetch=(url,options)=>{request={url,...options};return pending.promise;};
+  ctx.tagEditorRestoreBackup();const operation=accept();
+  assert.equal(ctx.tagEditorSnapshotBusy,true);
+  assert.equal(request.url,'/api/tageditor/restore-backup');
+  assert.deepEqual(JSON.parse(request.body),{dir:'/dataset'});
+  ctx._teLoadEpoch++;ctx.tagEditorLoadedDir='/new-dataset';
+  pending.resolve({json:async()=>({status:'success'})});await operation;
+  assert.equal(ctx.tagEditorSnapshotBusy,true);
+});
+
+test('backup failure releases busy state, preserves history and allows retry',async()=>{
+  const {ctx,context}=makeClient();let accept;const notices=[];
+  ctx.tagEditorHistory=[{changes:{a:{before:'old',after:'new'}}}];ctx.tagEditorHistoryIdx=-1;
+  const history=JSON.stringify(ctx.tagEditorHistory);
+  ctx.openConfirm=(_title,_message,action)=>{accept=action;};ctx.toast=msg=>notices.push(msg);
+  ctx.tagEditorLoad=()=>assert.fail('failed restore must not reload');
+  context.fetch=async()=>{throw new Error('offline');};
+  ctx.tagEditorRestoreBackup();await accept();
+  assert.equal(ctx.tagEditorSnapshotBusy,false);assert.equal(JSON.stringify(ctx.tagEditorHistory),history);
+  assert.deepEqual(notices,['offline']);
 });
 
 test('removing bracket escapes changes only selected captions and supports undo and redo', () => {

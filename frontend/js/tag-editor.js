@@ -417,6 +417,7 @@ window.tagEditorMixin = {
     this._teLastSelected = null;
     this._teLoadEpoch++;
     this.tagEditorSaving = this._teIsSaving = false;
+    this.tagEditorSnapshotBusy = false;
     if (this._teLoadAbort) { this._teLoadAbort.abort(); this._teLoadAbort = null; }
     this._teCancelPageFetch();
     if (this._teAllAbort) { this._teAllAbort.abort(); this._teAllAbort = null; }
@@ -670,6 +671,7 @@ window.tagEditorMixin = {
     }
     var epoch = ++this._teLoadEpoch;
     this.tagEditorSaving = this._teIsSaving = false;
+    this.tagEditorSnapshotBusy = false;
     if (this._teLoadAbort) this._teLoadAbort.abort();
     this._teCancelPageFetch();
     if (this._teAllAbort) { this._teAllAbort.abort(); this._teAllAbort = null; }
@@ -1468,21 +1470,8 @@ window.tagEditorMixin = {
 
   // ===== Restore from .bak backup =====
   tagEditorRestoreBackup() {
-    var self = this;
-    this.openConfirm(this.t('tagEditor.backupRestoreConfirmTitle'), this.t('tagEditor.restoreConfirm'), function() {
-      fetch('/api/tageditor/restore-backup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dir: self.tagEditorDir })
-      }).then(function(r) { return r.json(); }).then(function(j) {
-        if (j.status === 'success') {
-          self.toast(self.t('tagEditor.restored'));
-          self.tagEditorLoad(self.tagEditorDir);
-        } else {
-          self.toast(j.message || self.t('common.error'), 'error');
-        }
-      });
-    }, this.t('common.confirm'));
+    if (!this._teCanRestoreCaptions()) return;
+    this._teTimelineAction(null, 'backup', 'backupRestoreConfirmTitle', 'restoreConfirm', 'restored');
   },
 
   // ===== Card Interactions =====
@@ -2981,7 +2970,7 @@ window.tagEditorMixin = {
 
   // ===== Save =====
   async tagEditorSaveAll() {
-    if (this._teIsSaving || this._teDraftRestoreBusy) return;
+    if (this._teIsSaving || this._teDraftRestoreBusy || this.tagEditorSnapshotBusy) return;
     this._teFlushAllPendingTextEdits();
     var modified = this._teGetModified();
     if (modified.length === 0) { this.toast(this.t('tagEditor.batchNoChanges')); return; }
@@ -3000,7 +2989,7 @@ window.tagEditorMixin = {
   },
 
   async _doSaveAll(modified) {
-    if (this._teIsSaving || this._teDraftRestoreBusy) return;
+    if (this._teIsSaving || this._teDraftRestoreBusy || this.tagEditorSnapshotBusy) return;
     this._teFlushAllPendingTextEdits();
     // Persist the pre-save baseline even when the first save precedes autosave.
     this._teSaveDraft();
@@ -3161,12 +3150,17 @@ window.tagEditorMixin = {
       });
   },
 
-  tagEditorRestoreSnapshot(sid) {
+  _teCanRestoreCaptions() {
     this._teFlushAllPendingTextEdits();
-    if (this.tagEditorModified) {
+    if (this.tagEditorModified || this._teIsSaving || this._teDraftRestoreBusy) {
       this.toast(this.t('tagEditor.timelineUnsaved'), 'warning');
-      return;
+      return false;
     }
+    return true;
+  },
+
+  tagEditorRestoreSnapshot(sid) {
+    if (!this._teCanRestoreCaptions()) return;
     this._teTimelineAction(sid, 'restore', 'snapshotRestoreConfirmTitle', 'snapshotRestoreConfirm', 'snapshotRestored');
   },
 
@@ -3184,27 +3178,31 @@ window.tagEditorMixin = {
     var self = this;
     var epoch = this._teLoadEpoch;
     var dir = this.tagEditorLoadedDir || this.tagEditorDir;
+    var restoring = action === 'restore' || action === 'backup';
     var snapshot = this.tagEditorSnapshots.find(function(item) { return item.id === sid; });
     var description = this.t('tagEditor.' + message);
     if (snapshot) description = this._teFormatSnapshotTime(snapshot.timestamp) + ' · ' + this.t('tagEditor.historyStepImages').replace('{n}', snapshot.file_count) + '\n\n' + description;
     this.openConfirm(this.t('tagEditor.' + title), description, function() {
       if (epoch !== self._teLoadEpoch || self.tagEditorSnapshotBusy) return;
-      if (action === 'restore' && (self.tagEditorModified || self._teIsSaving)) {
-        self.toast(self.t('tagEditor.timelineUnsaved'), 'warning');
-        return;
-      }
+      if (restoring && !self._teCanRestoreCaptions()) return;
       self.tagEditorSnapshotBusy = true;
       var path = '/api/tageditor/timeline' + (sid ? '/' + encodeURIComponent(sid) : '') + (action === 'restore' ? '/restore' : '');
-      fetch(path + '?dataset_dir=' + encodeURIComponent(dir), { method: action === 'restore' ? 'POST' : 'DELETE' })
+      var url = path + '?dataset_dir=' + encodeURIComponent(dir);
+      var options = { method: action === 'restore' ? 'POST' : 'DELETE' };
+      if (action === 'backup') {
+        url = '/api/tageditor/restore-backup';
+        options = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dir: dir }) };
+      }
+      return fetch(url, options)
         .then(function(r) { return r.json(); }).then(function(j) {
           if (epoch !== self._teLoadEpoch) return;
           if (j.status !== 'success') throw new Error(j.message || self.t('common.error'));
           self.toast(self.t('tagEditor.' + success));
-          if (action === 'restore') self.tagEditorLoad(dir);
+          if (restoring) return self.tagEditorLoad(dir);
           else self.tagEditorLoadSnapshots(epoch);
         }).catch(function(err) {
           if (epoch === self._teLoadEpoch) self.toast(err.message || self.t('common.error'), 'error');
-        }).finally(function() { self.tagEditorSnapshotBusy = false; });
+        }).finally(function() { if (epoch === self._teLoadEpoch) self.tagEditorSnapshotBusy = false; });
     }, this.t('common.confirm'));
   },
 
