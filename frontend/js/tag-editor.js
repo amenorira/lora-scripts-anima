@@ -535,6 +535,7 @@ window.tagEditorMixin = {
     this._teLastSelected = null;
     this._teCancelPageFetch();
     if (!this.tagEditorSessionId) return false;
+    if (options?.isCurrent && !options.isCurrent()) return false;
     var targetPage = Math.max(1, Number(page || this.tagEditorPage || 1));
     if (this.tagEditorQuickFilter === 'modified') {
       this.tagEditorPage = targetPage;
@@ -554,6 +555,8 @@ window.tagEditorMixin = {
       var response = await fetch('/api/tageditor/sessions/' + encodeURIComponent(this.tagEditorSessionId) + '/images?' + this._teSessionQuery(targetPage).toString(), { signal: controller.signal });
       var payload = await response.json();
       if (epoch !== this._tePageEpoch || controller.signal.aborted) return false;
+      // 导航失效时连分页状态也不能覆盖；仅在选中图片前检查已经太晚。
+      if (options?.isCurrent && !options.isCurrent()) return false;
       if (payload.status !== 'success') {
         if (payload.code === 'session_expired') {
           await this.tagEditorReloadSessionPage(targetPage);
@@ -2255,10 +2258,11 @@ window.tagEditorMixin = {
       var nextPage = this.tagEditorPage + (dir < 0 ? -1 : 1);
       if (nextPage < 1 || nextPage > this.tagEditorTotalPages()) return;
       var query = this._teSessionQueryKey(nextPage);
-      var loaded = await this.tagEditorFetchPage(nextPage);
-      if (!loaded || request !== this._teNavRequest || epoch !== this._teLoadEpoch || session !== this.tagEditorSessionId
-        || this.tagEditorSelected.length !== 1 || this.tagEditorSelected[0] !== selected || this.tagEditorPage !== nextPage
-        || query !== this._teSessionQueryKey(nextPage)) return;
+      var isCurrent = () => request === this._teNavRequest && epoch === this._teLoadEpoch && session === this.tagEditorSessionId
+        && this.tagEditorSelected.length === 1 && this.tagEditorSelected[0] === selected
+        && query === this._teSessionQueryKey(nextPage);
+      var loaded = await this.tagEditorFetchPage(nextPage, { isCurrent: isCurrent });
+      if (!loaded || !isCurrent() || this.tagEditorPage !== nextPage) return;
       var nextItems = this.tagEditorGetPaged();
       var next = dir < 0 ? nextItems[nextItems.length - 1] : nextItems[0];
       if (next) {
