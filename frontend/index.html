@@ -1113,7 +1113,7 @@
                   </svg>
                 </div>
                 <div class="te-empty-title" x-text="t('tagEditor.emptySearch')"></div>
-                <button class="btn btn-ghost btn-sm" @click="tagEditorSearchQuery = ''; tagEditorTagSelection = []; tagEditorExcludedTags = []; tagEditorQuickFilter = 'all'; tagEditorSchedulePageFetch(true)" x-text="t('tagEditor.clearFilter')"></button>
+                <button class="btn btn-ghost btn-sm" @click="tagEditorClearFilters()" x-text="t('tagEditor.clearFilter')"></button>
               </div>
               <div class="te-grid" id="teV3Grid" :class="{ 'is-grouped': tagEditorGroupByDir }" x-show="tagEditorFilteredCount() > 0">
                 <template x-for="(img, idx) in tagEditorGetPaged()" :key="img.path">

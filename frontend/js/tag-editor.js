@@ -1181,6 +1181,13 @@ window.tagEditorMixin = {
     this.tagEditorSearchQuery = '';
     this.tagEditorSchedulePageFetch(true);
   },
+  tagEditorClearFilters() {
+    this.tagEditorTagSelection = [];
+    this.tagEditorExcludedTags = [];
+    this.tagEditorQuickFilter = 'all';
+    this._teInvalidateFilter();
+    this.tagEditorClearSearch();
+  },
   tagEditorSetTagSearch(val) {
     if (this._teTagSearchDebounce) clearTimeout(this._teTagSearchDebounce);
     var seq = this._teTagSearchSeq = (this._teTagSearchSeq || 0) + 1;
