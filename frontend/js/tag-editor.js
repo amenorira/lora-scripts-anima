@@ -2624,6 +2624,7 @@ window.tagEditorMixin = {
 
   _teApplyCheckpoint(checkpoint) {
     var self = this;
+    var wasModified = this.tagEditorModified;
     var hasAnyMod = false;
     this.tagEditorImages.forEach(function(img) {
       if (checkpoint.hasOwnProperty(img.path)) {
@@ -2642,6 +2643,7 @@ window.tagEditorMixin = {
     });
     this.tagEditorModified = hasAnyMod;
     this._teRecountModified();
+    if (wasModified && !hasAnyMod && !this._teIsSaving) this._teRemoveDraft();
     var state = {};
     var modified = this._teGetModified();
     for (var i = 0; i < modified.length; i++) state[modified[i].path] = modified[i].tags;
@@ -2688,6 +2690,10 @@ window.tagEditorMixin = {
       this._teBumpModified(isMod ? 1 : -1);
     }
     this.tagEditorModified = this._teModifiedCount > 0;
+    // An explicit edit/undo back to the disk baseline retires this session's
+    // draft. Do not do this in the idle autosave path: an unopened recovery
+    // draft must survive loading a clean dataset or dismissing its prompt.
+    if (wasMod && !this.tagEditorModified && !this._teIsSaving) this._teRemoveDraft();
     this._teInvalidateFilter();
     // Only update detail text if the image being edited is currently selected
     if (this.tagEditorSelected.length === 1 && this.tagEditorSelected[0] === img.path) {
@@ -2986,6 +2992,7 @@ window.tagEditorMixin = {
     try {
       var key = 'tagEditor_draft_' + this.tagEditorDir;
       localStorage.removeItem(key);
+      this._teDraftSavedAt = '';
     } catch (e) { /* ignore */ }
   },
 
