@@ -850,7 +850,7 @@
             </div></details>
           </div>
           <div class="te-main" data-te-main="active"
-            :style="'--te-right-w:' + tagEditorRightWidth + 'px;--te-left-w:' + tagEditorLeftWidth + 'px'"
+            :style="tagEditorPanelStyle()"
             :class="{ 'te-left-collapsed': tagEditorLeftCollapsed }"
             @pointermove.window="tagEditorResize($event)"
             @pointerup.window="tagEditorStopResize()"
@@ -1068,7 +1068,7 @@
               :class="{ dragging: tagEditorResizing && _teResizeSide === 'left' }"
               role="separator" aria-orientation="vertical" aria-valuemin="180" aria-valuemax="420"
               :aria-label="t('tagEditor.resizeLeftPanel')" :title="t('tagEditor.resizeLeftPanel')"
-              :aria-valuenow="Math.round(tagEditorLeftWidth)" tabindex="0"
+              :aria-valuenow="Math.round(tagEditorPanelLayout().left)" tabindex="0"
               @pointerdown.prevent="tagEditorStartResize($event, 'left')"
               @keydown.left.prevent="tagEditorAdjustLeftWidth(-8)"
               @keydown.right.prevent="tagEditorAdjustLeftWidth(8)"
@@ -1155,7 +1155,7 @@
             </div>
             <div class="te-editor-divider" :class="{ dragging: tagEditorResizing && _teResizeSide === 'right' }"
               role="separator" aria-orientation="vertical" aria-valuemin="280" aria-valuemax="520"
-              :aria-valuenow="Math.round(tagEditorRightWidth)" tabindex="0"
+              :aria-valuenow="Math.round(tagEditorPanelLayout().right)" tabindex="0"
               @pointerdown.prevent="tagEditorStartResize($event)"
               @keydown.left.prevent="tagEditorAdjustRightWidth(8)"
               @keydown.right.prevent="tagEditorAdjustRightWidth(-8)"

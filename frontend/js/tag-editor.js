@@ -115,6 +115,8 @@ window.tagEditorMixin = {
   tagEditorTimeline: [],
   tagEditorRightWidth: 340,
   tagEditorLeftWidth: 260,
+  _teLayoutWidth: 0,
+  tagEditorCompactLayout: false,
   _teResizeSide: 'right',
   tagEditorPreviewRatio: 0.5,
   _tePreviewDrag: null,
@@ -851,11 +853,29 @@ window.tagEditorMixin = {
   tagEditorSetPanelWidth(side, width) {
     var left = side === 'left';
     var main = document.querySelector('.te-main[data-te-main="active"]');
-    var other = left ? this.tagEditorRightWidth : (this.tagEditorLeftCollapsed ? 0 : this.tagEditorLeftWidth);
+    var layout = this.tagEditorPanelLayout();
+    var other = left ? layout.right : (this.tagEditorLeftCollapsed || this.tagEditorCompactLayout ? 0 : layout.left);
     var min = left ? 180 : 280;
     var max = left ? 420 : 520;
-    if (main && main.clientWidth) max = Math.min(max, Math.max(min, main.clientWidth - other - 196));
+    if (main && main.clientWidth) max = Math.min(max, Math.max(min, main.clientWidth - other - 216));
     this[left ? 'tagEditorLeftWidth' : 'tagEditorRightWidth'] = Math.max(min, Math.min(max, width));
+  },
+
+  tagEditorPanelLayout() {
+    var left = this.tagEditorLeftWidth, right = this.tagEditorRightWidth;
+    var width = this._teLayoutWidth;
+    var hasLeft = !this.tagEditorLeftCollapsed && !this.tagEditorCompactLayout;
+    if (width > 0) {
+      // Keep a usable image column; fitting never changes the saved preference.
+      if (hasLeft) left = Math.max(180, Math.min(left, width - right - 216));
+      right = Math.max(280, Math.min(right, width - (hasLeft ? left + 16 : 8) - 200));
+    }
+    return { left: left, right: right };
+  },
+
+  tagEditorPanelStyle() {
+    var layout = this.tagEditorPanelLayout();
+    return '--te-right-w:' + layout.right + 'px;--te-left-w:' + layout.left + 'px';
   },
 
   tagEditorStopResize() {
@@ -868,13 +888,13 @@ window.tagEditorMixin = {
   },
 
   tagEditorAdjustRightWidth(delta) {
-    this.tagEditorSetPanelWidth('right', this.tagEditorRightWidth + delta);
+    this.tagEditorSetPanelWidth('right', this.tagEditorPanelLayout().right + delta);
     try { localStorage.setItem('tagEditor_rightWidth', String(Math.round(this.tagEditorRightWidth))); } catch (e) {}
     this.tagEditorRefreshSuggestPosition();
   },
 
   tagEditorAdjustLeftWidth(delta) {
-    this.tagEditorSetPanelWidth('left', this.tagEditorLeftWidth + delta);
+    this.tagEditorSetPanelWidth('left', this.tagEditorPanelLayout().left + delta);
     try { localStorage.setItem('tagEditor_leftWidth', String(Math.round(this.tagEditorLeftWidth))); } catch (e) {}
   },
 
@@ -933,11 +953,13 @@ window.tagEditorMixin = {
     // At compact desktop widths the tag cloud overlays the grid instead of
     // permanently consuming a column. Start collapsed so the image wall is usable.
     if (window.matchMedia && window.matchMedia('(max-width: 1200px)').matches) {
+      this.tagEditorCompactLayout = true;
       this.tagEditorLeftCollapsed = true;
     }
     if (!this._teCompactMedia && window.matchMedia) {
       this._teCompactMedia = window.matchMedia('(max-width: 1200px)');
       this._teCompactListener = function(event) {
+        self.tagEditorCompactLayout = event.matches;
         if (event.matches) self.tagEditorLeftCollapsed = true;
       };
       if (this._teCompactMedia.addEventListener) {
@@ -947,10 +969,15 @@ window.tagEditorMixin = {
     this.$nextTick(function() {
       var grid = document.getElementById('teV3Grid');
       if (!grid) return;
+      var main = grid.closest('.te-main');
       if (self._teGridResizeObserver) self._teGridResizeObserver.disconnect();
-      var update = function() { self._teUpdateGridCardSize(grid); };
+      var update = function() {
+        if (main && main.clientWidth > 0) self._teLayoutWidth = main.clientWidth;
+        self._teUpdateGridCardSize(grid);
+      };
       self._teGridResizeObserver = new ResizeObserver(update);
       self._teGridResizeObserver.observe(grid);
+      if (main) self._teGridResizeObserver.observe(main);
       update();
     });
   },
@@ -964,7 +991,7 @@ window.tagEditorMixin = {
     var compact = window.matchMedia && window.matchMedia('(max-width: 1200px)').matches;
     var minSize = compact ? 148 : 160;
     var columns = Math.max(1, Math.floor((available + gap) / (minSize + gap)));
-    var size = Math.max(minSize, Math.floor((available - gap * (columns - 1)) / columns));
+    var size = Math.min(available, Math.max(minSize, Math.floor((available - gap * (columns - 1)) / columns)));
     grid.style.setProperty('--te-card-size', size + 'px');
   },
 
