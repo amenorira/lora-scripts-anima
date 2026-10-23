@@ -175,7 +175,7 @@ def scan_selected_images(dir_path: Path, selected_paths: set[str]) -> list[dict]
 
 def tag_list(tags_str: str) -> list[str]:
     """逗号分隔字符串 → 去空格的标签列表"""
-    return [t.strip() for t in tags_str.split(",") if t.strip()]
+    return [t.strip() for t in tags_str.lstrip("\ufeff").split(",") if t.strip()]
 
 
 def tag_str(tag_list: list[str]) -> str:

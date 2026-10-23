@@ -27,6 +27,8 @@ function fixture() {
 
 test('session recovery flushes text history and preserves raw undo/redo and selection off page', async () => {
   const { app, raw } = fixture();
+  app.tagEditorImages[0].preview = '/api/image-preview?scope=dataset&session_id=old&path=a.png&variant=preview&size=960';
+  app.tagEditorImages[0].thumbnail = '/api/image-preview?scope=dataset&session_id=old&path=a.png&variant=thumb&size=320';
   app.tagEditorDetailTextChange({ target: { value: '  edited\n' } });
   const edited = app.tagEditorImages[0].tags;
   assert.equal(app.tagEditorHistory.length, 0);
@@ -35,6 +37,11 @@ test('session recovery flushes text history and preserves raw undo/redo and sele
   assert.equal(app.tagEditorHistory.length, 1);
   assert.deepEqual(Array.from(app.tagEditorSelected), ['a']);
   assert.equal(app.tagEditorGetSelectedImg().tags, edited);
+  for (const field of ['preview', 'thumbnail']) {
+    const params = new URLSearchParams(app.tagEditorGetSelectedImg()[field].split('?')[1]);
+    assert.equal(params.get('session_id'), 'new');
+    assert.equal(params.get('path'), 'a.png');
+  }
   assert.equal(app._teCaptionRevisions.a, 'a1');
   assert.equal(app._teDraftRemainder[0].tags, 'pending');
   app.tagEditorUndo();

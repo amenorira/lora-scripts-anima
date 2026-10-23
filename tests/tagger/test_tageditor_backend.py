@@ -160,18 +160,19 @@ class TagEditorSessionTests(unittest.TestCase):
             service = DatasetSessionService()
             session = service.create(temp_dir)
             paths = [item["path"] for item in session.images]
-            overrides = {path: "new, blue, sky" for path in paths}
-            overrides[paths[0]] = ""
+            overrides = {path: "\ufeff  new, blue, sky\r\n" for path in paths}
+            overrides[paths[0]] = "\ufeff \r\n"
             overrides[str(root.parent / "outside.png")] = "new"
             client = TestClient(app)
             url = f"/api/tageditor/sessions/{session.id}/images"
             with patch("backend.tageditor.routes.dataset_sessions", service):
                 baseline = client.get(url, params={"search": "new"}).json()["data"]
                 self.assertEqual(baseline["total"], 0)
+                self.assertEqual(client.get(url, params={"include_tags": "cat"}).json()["data"]["total"], 35)
                 queries = dict(service.get(session.id).queries)
                 for params, total in [
                     ({"search": "new"}, 34),
-                    ({"search": "^new,", "use_regex": True}, 34),
+                    ({"search": "new,", "use_regex": True}, 34),
                     ({"include_tags": "new\x1fsky"}, 34),
                     ({"include_tags": "missing\x1fsky", "tag_logic": "OR"}, 34),
                     ({"exclude_tags": "blue"}, 1),
@@ -186,7 +187,7 @@ class TagEditorSessionTests(unittest.TestCase):
                 second = client.post(url, params={"search": "new", "page_size": 30, "page": 2}, json=overrides).json()["data"]
                 self.assertEqual(len(second["items"]), 4)
                 sorted_page = client.post(url, params={"sort_by": "tagCount"}, json=overrides).json()["data"]
-                self.assertEqual(sorted_page["items"][0]["tags"], "")
+                self.assertEqual(sorted_page["items"][0]["tags"], "\ufeff \r\n")
                 self.assertEqual(dict(service.get(session.id).queries), queries)
                 self.assertEqual(client.get(url, params={"search": "new"}).json()["data"]["total"], 0)
                 self.assertEqual(client.post(url, params={"search": "[", "use_regex": True}, json=overrides).json()["status"], "error")
@@ -195,6 +196,19 @@ class TagEditorSessionTests(unittest.TestCase):
                 self.assertEqual(client.post(url, json=overrides).json()["code"], "session_expired")
             self.assertTrue(all(item["tags"] == raw for item in session.images))
             self.assertEqual((root / "img-00.txt").read_bytes(), raw.encode("utf-8"))
+
+    def test_session_initial_empty_count_ignores_bom_without_changing_text(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "empty.png").touch()
+            raw = "\ufeff \r\n"
+            (root / "empty.txt").write_bytes(raw.encode("utf-8"))
+            client = TestClient(app)
+            data = client.post("/api/tageditor/sessions", json={"dir": temp_dir}).json()["data"]
+            self.assertEqual(data["no_tag_count"], 1)
+            self.assertEqual(data["tags"], [])
+            self.assertEqual(data["items"][0]["tags"], raw)
+            client.delete(f"/api/tageditor/sessions/{data['session_id']}")
 
     def test_refresh_cannot_resurrect_deleted_session(self):
         with tempfile.TemporaryDirectory() as temp_dir:

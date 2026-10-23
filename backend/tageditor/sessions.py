@@ -197,7 +197,7 @@ class DatasetSessionService:
                        group_by_dir=False):
         items = list(session.images)
         if quick_filter == "notag":
-            items = [item for item in items if not str(item.get("tags", "")).strip()]
+            items = [item for item in items if not str(item.get("tags", "")).lstrip("\ufeff").strip()]
         if search:
             if use_regex:
                 try:

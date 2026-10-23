@@ -28,5 +28,5 @@ test('clear filters cancels pending search, resets invalid regex and schedules o
   assert.equal(app.tagEditorImages[0].tags, raw);
   assert.equal(app.tagEditorHistory, history);
   assert.deepEqual(app.tagEditorSelected, ['a']);
-  assert.match(readRepo('frontend/index.html'), /@click="tagEditorClearFilters\(\)"/);
+  assert.match(readRepo('frontend/index.html'), /@click\.stop="tagEditorClearFilters\(\)"/);
 });

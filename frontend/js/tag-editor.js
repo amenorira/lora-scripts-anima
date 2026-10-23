@@ -817,6 +817,15 @@ window.tagEditorMixin = {
           var img = self._teFindByPath(path);
           if (!img && draft && draft.image) {
             img = Object.assign({}, draft.image);
+            // 页外图片尚未取得新分页元数据，预览地址也要迁移到新会话。
+            ['thumbnail', 'preview'].forEach(function(field) {
+              if (!img[field]) return;
+              var parts = img[field].split('?');
+              var params = new URLSearchParams(parts[1] || '');
+              if (params.get('scope') !== 'dataset') return;
+              params.set('session_id', self.tagEditorSessionId);
+              img[field] = parts[0] + '?' + params.toString();
+            });
             self.tagEditorImages.push(img);
             self._tePathIndex[path] = img;
           }

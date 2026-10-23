@@ -127,7 +127,7 @@ async def create_dataset_session(data: dict):
                 "dir_name": session.directory.name or str(session.directory),
                 "recursive": session.recursive,
                 "count": len(session.images),
-                "no_tag_count": sum(1 for item in session.images if not str(item.get("tags", "")).strip()),
+                "no_tag_count": sum(1 for item in session.images if not str(item.get("tags", "")).lstrip("\ufeff").strip()),
                 "tags": list(session.tags),
                 **page,
             },
