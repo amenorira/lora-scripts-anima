@@ -528,8 +528,9 @@
         </div>
 
         <!-- Shortcuts help -->
-        <div x-show="tagEditorShortcutsOpen" class="te-shortcuts" role="dialog" aria-modal="true"
-          :aria-label="t('tagEditor.shortcutHelpTitle')" @click.self="tagEditorShortcutsOpen = false" x-transition>
+        <dialog x-dialog="tagEditorShortcutsOpen" class="te-shortcuts"
+          :aria-label="t('tagEditor.shortcutHelpTitle')" @click.self="tagEditorShortcutsOpen = false"
+          @dialog-close="tagEditorShortcutsOpen = false" x-cloak>
           <div class="te-shortcuts-box">
             <h3 class="te-shortcuts-title" x-text="t('tagEditor.shortcutHelpTitle')"></h3>
             <div class="te-shortcuts-list">
@@ -537,13 +538,14 @@
                 <div class="te-shortcuts-row"><kbd x-text="row.k"></kbd><span x-text="row.d"></span></div>
               </template>
             </div>
+            <button class="te-topbar-btn te-shortcuts-close" data-dialog-autofocus @click="tagEditorShortcutsOpen = false" x-text="t('common.close')"></button>
           </div>
-        </div>
+        </dialog>
 
         <!-- Image lightbox -->
-        <div x-show="tagEditorLightboxOpen" class="te-lightbox" role="dialog" aria-modal="true"
+        <dialog id="teLightbox" x-dialog="tagEditorLightboxOpen" class="te-lightbox"
           :aria-label="tagEditorLightboxImage?.rel_path || tagEditorLightboxImage?.name || t('tagEditor.viewOriginal')"
-          @click.self="tagEditorCloseLightbox()" x-transition>
+          @click.self="tagEditorCloseLightbox()" @dialog-close="tagEditorCloseLightbox()" x-cloak>
           <div class="te-lightbox-topbar">
             <span class="te-lightbox-name"
               x-text="tagEditorLightboxImage?.rel_path || tagEditorLightboxImage?.name || ''"
@@ -559,7 +561,7 @@
                 :title="t('tagEditor.zoomIn')" :aria-label="t('tagEditor.zoomIn')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
               </button>
-              <button class="te-lightbox-close" @click="tagEditorCloseLightbox()" :title="t('common.close')" :aria-label="t('common.close')">
+              <button class="te-lightbox-close" data-dialog-autofocus @click="tagEditorCloseLightbox()" :title="t('common.close')" :aria-label="t('common.close')">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>
@@ -583,7 +585,7 @@
             @click.stop="tagEditorLightboxNav(1)" :title="t('tagEditor.nextImage')">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
           </button>
-        </div>
+        </dialog>
 
         <!-- Context menu -->
         <div id="tePanelMenu" x-show="tagEditorPanelMenu" class="te-ctx te-panel-menu" role="menu" tabindex="-1"
@@ -846,7 +848,7 @@
             <button class="te-topbar-btn" @click="tagEditorDownloadZip()" x-text="t('tagEditor.downloadZip')"></button>
             <button class="te-topbar-btn" @click="tagEditorRestoreBackup()" x-text="t('tagEditor.restoreBackup')"></button>
             <button class="te-topbar-btn" x-show="tagEditorAllowsTagOps()" @click="tagEditorRemoveBracketEscapes()" :disabled="!tagEditorSelected.length" :title="t('tagEditor.unescapeHint')" x-text="t('tagEditor.unescapeBrackets')"></button>
-            <button class="te-topbar-btn" @click="tagEditorShortcutsOpen = true"
+            <button class="te-topbar-btn" @click="tagEditorOpenShortcuts($event)"
               x-text="t('tagEditor.shortcutHelpTitle')"></button>
             </div></details>
           </div>

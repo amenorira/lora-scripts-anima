@@ -440,6 +440,7 @@ window.tagEditorMixin = {
     this.tagEditorStopResize();
     this.tagEditorStopPreviewResize();
     this.tagEditorCloseLightbox();
+    this.tagEditorShortcutsOpen = false;
     this._teStopAutoSave();
     this._teCloseSuggestions();
     if (this._teSearchDebounce) { clearTimeout(this._teSearchDebounce); this._teSearchDebounce = null; }
@@ -679,6 +680,7 @@ window.tagEditorMixin = {
 
   async tagEditorLoad(dir) {
     if (this.tagEditorLightboxOpen) this.tagEditorCloseLightbox();
+    this.tagEditorShortcutsOpen = false;
     this._teLastSelected = null;
     this.tagEditorCancelQuickRemove();
     this.tagEditorPanelMenu = null;
@@ -1544,9 +1546,11 @@ window.tagEditorMixin = {
     return '/api/image-preview?' + params.toString();
   },
 
-  tagEditorOpenLightbox(img) {
+  tagEditorOpenLightbox(img, trigger) {
     if (!img) return;
     this._teFlushAllPendingTextEdits();
+    // 原生弹窗记录实际触发控件，避免将稍后隐藏的菜单项作为返回焦点。
+    if (!this.tagEditorLightboxOpen && trigger?.isConnected && trigger.getClientRects().length) trigger.focus();
     if (!this.tagEditorLightboxOpen) this._teLightboxPreviousSelection = this.tagEditorSelected.slice();
     this.tagEditorSelected = [img.path];
     this._updateEditorPanel();
@@ -1554,10 +1558,6 @@ window.tagEditorMixin = {
     this.tagEditorImageContextMenu = null;
     document.body.classList.add('te-lightbox-open');
     this._teLoadLightboxImage(img);
-    this.$nextTick(() => {
-      if (!this.tagEditorLightboxOpen) return;
-      document.querySelector('.te-lightbox-close')?.focus();
-    });
   },
 
   _teLoadLightboxImage(img) {
@@ -1795,7 +1795,7 @@ window.tagEditorMixin = {
   tagEditorCardDblClick(img, idx, e) {
     // 双击卡片 = 查看大图（聚焦添加框用 Enter 键，见 tagEditorHandleKeydown）
     if (e) e.preventDefault();
-    this.tagEditorOpenLightbox(img);
+    this.tagEditorOpenLightbox(img, e?.currentTarget);
   },
 
   tagEditorToggleSelect(path, e) {
@@ -3437,12 +3437,22 @@ window.tagEditorMixin = {
   },
 
   // ===== Keyboard Shortcuts =====
+  tagEditorOpenShortcuts(event) {
+    var trigger = event?.currentTarget?.closest('details')?.querySelector('summary') || event?.currentTarget;
+    trigger?.focus();
+    this.tagEditorShortcutsOpen = true;
+  },
+
   tagEditorHandleKeydown(e) {
-    if (e.defaultPrevented || e.target.closest?.('dialog[open]')) return;
+    if (e.defaultPrevented) return;
+    var dialog = e.target?.closest?.('dialog[open]');
+    // 大图保留自身翻页/缩放快捷键，其余原生弹窗自行处理键盘与焦点。
+    if (dialog && dialog.id !== 'teLightbox') return;
     if (this.tagEditorSnapshotBusy || this._teDraftRestoreBusy) return;
     // Only active when tag editor is the current route
     if (this.currentRoute !== 'tagEditor') return;
     if (e.isComposing || e.keyCode === 229) return;
+    if (this.tagEditorShortcutsOpen) return;
     if (e.target.closest && e.target.closest('#teDictHover')) {
       if (e.key === 'Escape') this.tagDictionaryCloseHover();
       return;

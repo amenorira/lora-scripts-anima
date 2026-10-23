@@ -3548,6 +3548,10 @@ input[type="range"]::-webkit-slider-thumb {
 .te-logic-btns button.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 
 .te-shortcuts { position: fixed; inset: 0; z-index: 3500; background: rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; }
+dialog.te-shortcuts, dialog.te-lightbox { width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; }
+dialog.te-shortcuts:not([open]), dialog.te-lightbox:not([open]) { display: none; }
+dialog.te-shortcuts::backdrop, dialog.te-lightbox::backdrop { background: transparent; }
+.te-shortcuts-close { margin-top: 12px; }
 .te-shortcuts-box { min-width: 340px; max-width: 90vw; padding: 16px 18px; border: 1px solid var(--border-default); border-radius: var(--radius-panel); background: var(--bg-surface); box-shadow: var(--shadow-lg); }
 .te-shortcuts-title { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--text-primary); }
 .te-shortcuts-list { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; align-items: center; }
