@@ -1893,6 +1893,9 @@
 		}
 	},
 	"tagEditor": {
+		"draftUnresolved": "ファイルの欠落、外部変更、または編集中の内容との競合により、{n} 件を復元できませんでした。下書きは保持されています。",
+		"draftRestoreFailed": "下書きの復元に失敗しました。下書きは保持されており、再試行できます。",
+		"retryDraft": "下書きの復元を再試行",
 		"textBefore": "変更前",
 		"textAfter": "変更後",
 		"workMode": "編集モード",

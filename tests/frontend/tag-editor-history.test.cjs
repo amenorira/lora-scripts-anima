@@ -81,6 +81,87 @@ test('direct text reversion and legacy history checkpoints also retire a saved d
   }
 });
 
+test('draft recovery loads missing pages, preserves raw text and supports undo/redo', async () => {
+  const {ctx,context,tick}=draftClient();
+  ctx._teCaptionRevisions={a:'r-a'};
+  ctx._teEditVersions={};
+  const raw='  跨页,  描述\r\n\r\n末段  \r\n';
+  context.localStorage.setItem('tagEditor_draft_/dataset',JSON.stringify({version:2,items:[
+    {path:'a',tags:'new a',original:'solo',revision:'r-a'},
+    {path:'b',tags:raw,original:'old b',revision:'r-b'}
+  ],pending:[]}));
+  let loaded=0, recover;
+  ctx._teEnsureAllImagesLoaded=async()=>{
+    loaded++;ctx._teMergeSessionItems([{path:'b',tags:'old b',caption_revision:'r-b'}],false);
+  };
+  ctx.openConfirm=(_title,_message,action)=>{recover=action;};ctx._teCheckDraft();await recover();
+  assert.equal(loaded,1);assert.equal(ctx._teFindByPath('b').tags,raw);
+  assert.equal(ctx.tagEditorModifiedCount(),2);assert.equal(ctx.tagEditorHistory.length,1);
+  tick();assert.equal(JSON.parse(context.localStorage.getItem('tagEditor_draft_/dataset')).items[1].revision,'r-b');
+  ctx.tagEditorUndo();assert.equal(ctx._teFindByPath('b').tags,'old b');
+  assert.equal(context.localStorage.getItem('tagEditor_draft_/dataset'),null);
+  ctx.tagEditorRedo();assert.equal(ctx._teFindByPath('b').tags,raw);
+});
+
+test('missing paths and revision conflicts survive recovery, autosave and clean edits', async () => {
+  const {ctx,context,tick}=draftClient();ctx._teCaptionRevisions={a:'external'};
+  const data=[{path:'a',tags:'my draft',original:'solo',revision:'old'}, {path:'missing',tags:'keep me',original:'old'}];
+  context.localStorage.setItem('tagEditor_draft_/dataset',JSON.stringify(data));
+  ctx._teEnsureAllImagesLoaded=async()=>{};
+  let recover;ctx.openConfirm=(_title,_message,action)=>{recover=action;};ctx._teCheckDraft();await recover();
+  assert.equal(ctx.tagEditorImages[0].tags,'solo');assert.equal(ctx._teDraftRemainder.length,2);
+  ctx._teUpdateImageTags(ctx.tagEditorImages[0],'new edit');tick();
+  let stored=JSON.parse(context.localStorage.getItem('tagEditor_draft_/dataset'));
+  assert.equal(stored.items[0].tags,'new edit');assert.equal(stored.pending[0].tags,'my draft');
+  ctx._teUpdateImageTags(ctx.tagEditorImages[0],'solo');
+  stored=JSON.parse(context.localStorage.getItem('tagEditor_draft_/dataset'));
+  assert.equal(stored.pending.length,2);assert.equal(stored.items.length,0);
+});
+
+test('stale draft confirmations and navigation during paging do not change the next dataset', async () => {
+  for (const duringLoad of [false,true]) {
+    const {ctx,context}=draftClient();
+    const raw=JSON.stringify([{path:'b',tags:'draft b',original:'old b'}]);
+    context.localStorage.setItem('tagEditor_draft_/dataset',raw);
+    let recover,finish;ctx.openConfirm=(_title,_message,action)=>{recover=action;};
+    ctx._teEnsureAllImagesLoaded=()=>new Promise(resolve=>{finish=resolve;});
+    ctx._teCheckDraft();
+    const request=duringLoad ? recover() : null;
+    ctx._teLoadEpoch++;ctx.tagEditorDir=ctx.tagEditorLoadedDir='/other';
+    ctx.tagEditorImages=[{path:'b',tags:'other'}];ctx.tagEditorOriginal={b:'other'};ctx._teRebuildPathIndex();
+    if (duringLoad) {finish();await request;} else await recover();
+    assert.equal(ctx.tagEditorImages[0].tags,'other');
+    assert.equal(context.localStorage.getItem('tagEditor_draft_/dataset'),raw);
+  }
+});
+
+test('paging failure preserves the draft and an edit during paging is never overwritten', async () => {
+  const {ctx,context}=draftClient();
+  const raw=JSON.stringify([{path:'a',tags:'recovery',original:'solo'},{path:'b',tags:'draft b',original:'old b'}]);
+  context.localStorage.setItem('tagEditor_draft_/dataset',raw);
+  let recover;ctx.openConfirm=(_title,_message,action)=>{recover=action;};ctx._teCheckDraft();
+  ctx._teEnsureAllImagesLoaded=async()=>{throw new Error('offline');};await recover();
+  assert.equal(context.localStorage.getItem('tagEditor_draft_/dataset'),raw);assert.equal(ctx._teDraftRestoreBusy,false);
+  ctx._teEnsureAllImagesLoaded=async()=>{ctx._teUpdateImageTags(ctx.tagEditorImages[0],'typed meanwhile');};
+  await recover();assert.equal(ctx.tagEditorImages[0].tags,'typed meanwhile');assert.equal(ctx._teDraftRemainder.length,2);
+});
+
+test('timeline failure before autosave retains the old baseline for recoverable undo', async () => {
+  const {ctx,context}=draftClient();
+  ctx._teUpdateImageTags(ctx.tagEditorImages[0],'saved new');ctx._tePushHistory({type:'text'});
+  context.fetch=async()=>({json:async()=>({status:'success',data:{saved:1,saved_paths:['a'],revisions:{a:'new-revision'},timeline_warning:'disk full'}})});
+  ctx.tagEditorLoadSnapshots=()=>{};ctx.tagEditorReloadSessionPage=async()=>{};
+  await ctx._doSaveAll(ctx.tagEditorImages);
+  const stored=JSON.parse(context.localStorage.getItem('tagEditor_draft_/dataset'));
+  assert.equal(stored.pending[0].original,'solo');assert.equal(stored.pending[0].tags,'saved new');
+  const next=draftClient(context.localStorage);
+  next.ctx.tagEditorImages[0].tags=next.ctx.tagEditorOriginal.a='saved new';
+  next.ctx._teCaptionRevisions={a:'new-revision'};
+  let recover;next.ctx.openConfirm=(_title,_message,action)=>{recover=action;};next.ctx._teCheckDraft();await recover();
+  next.ctx.tagEditorUndo();assert.equal(next.ctx.tagEditorImages[0].tags,'solo');
+  assert.equal(next.ctx.tagEditorModified,true);
+});
+
 test('idle autosave preserves a deferred recovery draft and save failures preserve edited content',async()=>{
   const {ctx,context,tick}=draftClient();
   const pending=JSON.stringify([{path:'a',tags:'recover me',original:'solo'}]);
@@ -90,7 +171,7 @@ test('idle autosave preserves a deferred recovery draft and save failures preser
   ctx._teUpdateImageTags(ctx.tagEditorImages[0],'new edit');tick();
   context.fetch=async()=>{throw new Error('offline');};
   await ctx._doSaveAll(ctx.tagEditorImages);
-  assert.equal(JSON.parse(context.localStorage.getItem('tagEditor_draft_/dataset'))[0].tags,'new edit');
+  assert.equal(JSON.parse(context.localStorage.getItem('tagEditor_draft_/dataset')).items[0].tags,'new edit');
   assert.equal(ctx.tagEditorModified,true);
 });
 

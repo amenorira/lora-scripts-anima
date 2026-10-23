@@ -1893,6 +1893,9 @@
 		}
 	},
 	"tagEditor": {
+		"draftUnresolved": "{n} draft items remain unresolved due to missing files, external changes or current edits. Their contents have been kept.",
+		"draftRestoreFailed": "Draft recovery failed. The draft has been kept for retry.",
+		"retryDraft": "Retry draft recovery",
 		"textBefore": "Before",
 		"textAfter": "After",
 		"workMode": "Editing mode",

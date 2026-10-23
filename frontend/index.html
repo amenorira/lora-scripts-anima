@@ -703,7 +703,7 @@
         </div>
 
         <!-- Main -->
-        <div x-show="tagEditorSessionId && !tagEditorLoading" class="te-shell" :inert="tagEditorSnapshotBusy" :aria-busy="tagEditorSnapshotBusy">
+        <div x-show="tagEditorSessionId && !tagEditorLoading" class="te-shell" :inert="tagEditorSnapshotBusy || _teDraftRestoreBusy" :aria-busy="tagEditorSnapshotBusy || _teDraftRestoreBusy">
           <div class="te-topbar">
             <button class="te-topbar-btn" @click="tagEditorLeftCollapsed = !tagEditorLeftCollapsed" :title="t('tagEditor.toggleTagCloud')" :aria-label="t('tagEditor.toggleTagCloud')" :aria-expanded="!tagEditorLeftCollapsed ? 'true' : 'false'">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -840,6 +840,7 @@
             <summary class="te-topbar-btn" x-text="t('tagEditor.moreMenu')"></summary>
             <div class="te-menu-items te-menu-end" @click="$el.parentElement.open = false">
             <button class="te-topbar-btn" @click="tagEditorReloadDir()" x-text="t('tagEditor.rescanDataset')"></button>
+            <button class="te-topbar-btn" x-show="_teDraftRemainder.length" @click="_teCheckDraft()" x-text="t('tagEditor.retryDraft')"></button>
             <button class="te-topbar-btn" @click="tagEditorToggleRecursive()" :aria-pressed="tagEditorRecursive"><span x-text="tagEditorRecursive ? '✓' : '　'"></span><span x-text="t('tagEditor.recursive')"></span></button>
             <button class="te-topbar-btn" @click="tagEditorDownloadZip()" x-text="t('tagEditor.downloadZip')"></button>
             <button class="te-topbar-btn" @click="tagEditorRestoreBackup()" x-text="t('tagEditor.restoreBackup')"></button>

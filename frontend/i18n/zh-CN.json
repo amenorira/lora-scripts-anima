@@ -1893,6 +1893,9 @@
 		}
 	},
 	"tagEditor": {
+		"draftUnresolved": "还有 {n} 项草稿因文件缺失、外部修改或当前编辑冲突未恢复，内容已保留。",
+		"draftRestoreFailed": "草稿恢复失败，草稿已保留，可稍后重试。",
+		"retryDraft": "重试草稿恢复",
 		"textBefore": "修改前",
 		"textAfter": "修改后",
 		"workMode": "编辑模式",
