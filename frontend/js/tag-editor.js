@@ -274,6 +274,7 @@ window.tagEditorMixin = {
   _teSaveEpoch: 0,
   _teEditVersions: null,
   _teCaptionRevisions: null,
+  _teModifiedRefreshPending: false,
   // ===== Internal Utilities =====
   _teInvalidateFilter() {
     this._teFilteredCacheKey = '';
@@ -282,6 +283,14 @@ window.tagEditorMixin = {
     this._teQuickCountMod = undefined;
     this._teCachedSelectedStatsKey = '';
     this._teCachedSelectedStats = null;
+    if (this.tagEditorSessionId && this.tagEditorQuickFilter === 'modified' && !this._teModifiedRefreshPending) {
+      // 合并同一次批量编辑中的刷新，避免每改一张都重新筛选整个集合。
+      this._teModifiedRefreshPending = true;
+      Promise.resolve().then(() => {
+        this._teModifiedRefreshPending = false;
+        if (this.tagEditorSessionId && this.tagEditorQuickFilter === 'modified') this._teRefreshModifiedPage();
+      });
+    }
   },
   _teInvalidateFreq() {
     this._teFreqCacheKey = '';
@@ -568,13 +577,7 @@ window.tagEditorMixin = {
     if (this._teAllAbort) this._teAllAbort.abort();
     if (resetPage) this.tagEditorPage = 1;
     if (this.tagEditorQuickFilter === 'modified') {
-      var modified = this._teGetModified();
-      if (this.tagEditorGroupByDir) this._teGroupImagesByDir(modified);
-      var size = Number(this.tagEditorPageSize) || 60;
-      this.tagEditorFilteredTotal = modified.length;
-      this.tagEditorServerTotalPages = Math.max(1, Math.ceil(modified.length / size));
-      var start = (this.tagEditorPage - 1) * size;
-      this.tagEditorPageItems = modified.slice(start, start + size);
+      this._teRefreshModifiedPage();
       return;
     }
     var self = this;
@@ -582,6 +585,22 @@ window.tagEditorMixin = {
       self._tePageFetchTimer = null;
       self.tagEditorFetchPage(self.tagEditorPage, { force: true });
     }, 80);
+  },
+
+  _teRefreshModifiedPage() {
+    var modified = this._teFilterImages(this._teGetModified());
+    var size = Math.max(1, Number(this.tagEditorPageSize) || 60);
+    this.tagEditorFilteredTotal = modified.length;
+    this.tagEditorServerTotalPages = Math.max(1, Math.ceil(modified.length / size));
+    this.tagEditorPage = Math.max(1, Math.min(this.tagEditorServerTotalPages, Number(this.tagEditorPage) || 1));
+    var start = (this.tagEditorPage - 1) * size;
+    this.tagEditorPageItems = modified.slice(start, start + size);
+    var counts = Object.create(null);
+    for (var img of modified) {
+      var dir = this.tagEditorImageDirectory(img);
+      counts[dir] = (counts[dir] || 0) + 1;
+    }
+    this.tagEditorDirectoryCounts = counts;
   },
 
   async tagEditorReloadSessionPage(page) {
@@ -1130,7 +1149,14 @@ window.tagEditorMixin = {
       this.tagEditorUseRegex + '|' + this.tagEditorGroupByDir;
     if (cacheKey === this._teFilteredCacheKey && this._teCachedFiltered) return this._teCachedFiltered;
 
-    var images = this.tagEditorImages.slice();
+    var images = this._teFilterImages(this.tagEditorImages);
+    this._teFilteredCacheKey = cacheKey;
+    this._teCachedFiltered = images;
+    return images;
+  },
+
+  _teFilterImages(source) {
+    var images = source.slice();
 
     if (this.tagEditorQuickFilter === 'notag') {
       images = images.filter(function(img) { return !img.tags || img.tags.trim() === ''; });
@@ -1226,8 +1252,6 @@ window.tagEditorMixin = {
     for (var ui = 0; ui < decorated.length; ui++) images[ui] = decorated[ui].img;
     if (this.tagEditorGroupByDir) this._teGroupImagesByDir(images);
 
-    this._teFilteredCacheKey = cacheKey;
-    this._teCachedFiltered = images;
     return images;
   },
 
@@ -1260,10 +1284,10 @@ window.tagEditorMixin = {
 
   tagEditorDirectoryImageCount(img) {
     var directory = this.tagEditorImageDirectory(img);
-    if (this.tagEditorSessionId && this.tagEditorQuickFilter !== 'modified') {
+    if (this.tagEditorSessionId) {
       return this.tagEditorDirectoryCounts[directory] || 0;
     }
-    var images = this.tagEditorSessionId ? this._teGetModified() : this.tagEditorGetFiltered();
+    var images = this.tagEditorGetFiltered();
     var self = this;
     return images.reduce(function(count, image) {
       return count + (self.tagEditorImageDirectory(image) === directory ? 1 : 0);
@@ -1635,7 +1659,7 @@ window.tagEditorMixin = {
   },
 
   async _teFetchAllSessionItems(useCurrentFilters) {
-    if (useCurrentFilters && this.tagEditorQuickFilter === 'modified') return this._teGetModified().slice();
+    if (useCurrentFilters && this.tagEditorQuickFilter === 'modified') return this._teFilterImages(this._teGetModified());
     if (!this.tagEditorSessionId) return this.tagEditorGetFiltered().slice();
     if (this._teAllAbort) this._teAllAbort.abort();
     var controller = new AbortController();

@@ -21,7 +21,7 @@ test('switching to modified filter immediately invalidates pending page', async 
   const { app, reply } = fixture();
   const request = app.tagEditorFetchPage(2);
   app.tagEditorQuickFilter = 'modified';
-  app._teGetModified = () => [{ path: '/draft' }];
+  app._teGetModified = () => [{ path: '/draft', name: 'draft.png', tags: 'draft' }];
   app.tagEditorSchedulePageFetch(true);
   reply(0, { page: 2, items: [{ path: '/old' }] });
   await request;
