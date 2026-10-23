@@ -182,7 +182,7 @@ window.regularizationMixin = {
     }
     const host = document.getElementById('regularizationWorkspaceHost');
     if (host && !host.dataset.mounted) {
-      const response = await fetch('/anima-ui/regularization-workspace.html?v=20261009-reg-sdxl');
+      const response = await fetch('/anima-ui/regularization-workspace.html');
       host.innerHTML = await response.text(); host.dataset.mounted = '1';
       Alpine.initTree(host);
     }

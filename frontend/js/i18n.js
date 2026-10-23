@@ -13,7 +13,6 @@
 const I18N = (() => {
   // ── Register available locales here ──────────────────────
   const LOCALES = ['zh-CN', 'en-US', 'ja-JP'];
-  const MESSAGES_VERSION = '20261023-moss-accel2';
 
   let _locale = 'en-US';
   let _messages = null;
@@ -56,19 +55,19 @@ const I18N = (() => {
   function _bootstrap() {
     const active = _activeLocale();
     try {
-      _cache[active] = _loadJSON('/anima-ui/i18n/' + active + '.json?v=' + MESSAGES_VERSION);
+      _cache[active] = _loadJSON('/anima-ui/i18n/' + active + '.json');
     } catch (e) {
       console.warn('[i18n] Failed to preload locale: ' + active, e);
       if (active !== 'en-US') {
         try {
-          _cache['en-US'] = _loadJSON('/anima-ui/i18n/en-US.json?v=' + MESSAGES_VERSION);
+          _cache['en-US'] = _loadJSON('/anima-ui/i18n/en-US.json');
         } catch (fallbackError) {
           console.warn('[i18n] Failed to load fallback locale', fallbackError);
         }
       }
     }
     LOCALES.filter(loc => loc !== active && !_cache[loc]).forEach(function(other) {
-      _loadJSONAsync('/anima-ui/i18n/' + other + '.json?v=' + MESSAGES_VERSION)
+      _loadJSONAsync('/anima-ui/i18n/' + other + '.json')
         .then(function(messages) {
           if (messages) _cache[other] = messages;
         });
@@ -105,7 +104,7 @@ const I18N = (() => {
     const requested = _supportedLocale(locale) || _activeLocale();
     if (!_cache[requested]) {
       try {
-        _cache[requested] = _loadJSON('/anima-ui/i18n/' + requested + '.json?v=' + MESSAGES_VERSION);
+        _cache[requested] = _loadJSON('/anima-ui/i18n/' + requested + '.json');
       } catch (e) {
         console.warn('[i18n] Failed to initialize locale: ' + requested, e);
       }
@@ -143,7 +142,7 @@ const I18N = (() => {
     if (loc === _locale) return;
     if (!_cache[loc]) {
       try {
-        _cache[loc] = _loadJSON('/anima-ui/i18n/' + loc + '.json?v=' + MESSAGES_VERSION);
+        _cache[loc] = _loadJSON('/anima-ui/i18n/' + loc + '.json');
       } catch (e) {
         console.warn('[i18n] Failed to load locale: ' + loc, e);
         return;
