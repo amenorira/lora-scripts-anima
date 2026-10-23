@@ -589,12 +589,12 @@
         <div id="tePanelMenu" x-show="tagEditorPanelMenu" class="te-ctx te-panel-menu" role="menu"
           :style="'left:' + (tagEditorPanelMenu?.x || 0) + 'px; top:' + (tagEditorPanelMenu?.y || 0) + 'px'"
           @keydown="tagEditorPanelMenuKeydown($event)" @click.outside="tagEditorPanelMenu = null" @keydown.escape.prevent.stop="tagEditorPanelMenu = null">
-          <button role="menuitem" @click="tagEditorPanelAction('copy')" x-text="t(tagEditorPanelMenu?.tag ? 'tagEditor.contextCopy' : 'tagEditor.copyTags')"></button>
+          <button role="menuitem" x-show="tagEditorAllowsTagOps()" @click="tagEditorPanelAction('copy')" x-text="t(tagEditorPanelMenu?.tag ? 'tagEditor.contextCopy' : 'tagEditor.copyTags')"></button>
           <button role="menuitem" x-show="tagEditorPanelMenu?.tag" @click="tagEditorPanelAction('filter')" x-text="t('tagEditor.contextInclude')"></button>
           <button role="menuitem" x-show="tagEditorPanelMenu?.tag" @click="tagEditorPanelAction('remove')" x-text="t(tagEditorQuickRemove ? 'tagEditor.toggleRemoval' : 'bulkAction.removeTag')"></button>
           <button role="menuitem" x-show="tagEditorPanelMenu?.preview" @click="tagEditorPanelAction('view')" x-text="t('tagEditor.viewOriginal')"></button>
           <div class="te-ctx-divider"></div>
-          <button role="menuitem" :disabled="tagEditorQuickRemove" @click="tagEditorPanelAction('quick')" x-text="t('tagEditor.quickRemove')"></button>
+          <button role="menuitem" x-show="tagEditorAllowsTagOps()" :disabled="tagEditorQuickRemove" @click="tagEditorPanelAction('quick')" x-text="t('tagEditor.quickRemove')"></button>
           <button role="menuitem" :disabled="tagEditorHistoryIdx < 0" @click="tagEditorPanelAction('undo')" x-text="t('tagEditor.undoHint')"></button>
           <button role="menuitem" :disabled="tagEditorHistoryIdx >= tagEditorHistory.length - 1" @click="tagEditorPanelAction('redo')" x-text="t('tagEditor.redoHint')"></button>
           <button role="menuitem" x-show="tagEditorSelected.length === 1 && !tagEditorPanelMenu?.tag" :disabled="!tagEditorCanRevertSelectedImage()" @click="tagEditorPanelAction('revert')" x-text="t('tagEditor.revertImage')"></button>
@@ -739,6 +739,10 @@
               <div class="te-regex-error" x-show="tagEditorRegexError" x-text="t('tagEditor.regexError')"></div>
             </div>
             <div class="te-topbar-secondary">
+            <div class="te-editor-view" role="group" :aria-label="t('tagEditor.workMode')">
+              <button :class="{ active: tagEditorWorkMode === 'tags' }" :aria-pressed="tagEditorWorkMode === 'tags'" @click="tagEditorSetWorkMode('tags')" x-text="t('tagEditor.modeTags')"></button>
+              <button :class="{ active: tagEditorWorkMode === 'text' }" :aria-pressed="tagEditorWorkMode === 'text'" @click="tagEditorSetWorkMode('text')" x-text="t('tagEditor.modeText')"></button>
+            </div>
             <div class="te-filter-group">
               <button :class="{ active: tagEditorQuickFilter === 'all' }"
                 @click="tagEditorQuickFilter = 'all'; tagEditorSchedulePageFetch(true)">
@@ -761,7 +765,7 @@
                   <summary class="te-topbar-btn" :aria-label="t('tagEditor.sort')"><span x-text="([{v: 'name', l: t('tagEditor.sortName')}, {v: 'tagCount', l: t('tagEditor.sortTagCount')}, {v: 'modified', l: t('tagEditor.modified')}]).find(opt => opt.v === String(tagEditorSortBy))?.l"></span></summary>
                   <div class="te-menu-items" @click="$el.parentElement.open = false">
                     <template x-for="opt in [{v: 'name', l: t('tagEditor.sortName')}, {v: 'tagCount', l: t('tagEditor.sortTagCount')}, {v: 'modified', l: t('tagEditor.modified')}]" :key="opt.v">
-                      <button type="button" class="te-topbar-btn" @click="tagEditorSortBy = opt.v; tagEditorSchedulePageFetch(true)" :aria-current="String(tagEditorSortBy) === opt.v ? 'true' : null"><span x-text="opt.l"></span><span class="te-menu-check" aria-hidden="true" x-text="String(tagEditorSortBy) === opt.v ? '✓' : ''"></span></button>
+                      <button type="button" class="te-topbar-btn" x-show="tagEditorAllowsTagOps() || opt.v !== 'tagCount'" @click="tagEditorSortBy = opt.v; tagEditorSchedulePageFetch(true)" :aria-current="String(tagEditorSortBy) === opt.v ? 'true' : null"><span x-text="opt.l"></span><span class="te-menu-check" aria-hidden="true" x-text="String(tagEditorSortBy) === opt.v ? '✓' : ''"></span></button>
                     </template>
                   </div>
                 </details>
@@ -776,7 +780,7 @@
               </button>
             </div>
             <span class="te-topbar-sep"></span>
-            <div class="te-dict-controls" @click.outside="tagDictionaryPanelOpen = false">
+            <div class="te-dict-controls" x-show="tagEditorAllowsTagOps()" @click.outside="tagDictionaryPanelOpen = false">
               <button class="te-topbar-btn te-dict-btn"
                 :class="{ active: tagDictionaryPanelOpen, busy: tagDictionaryStatus() === 'installing' || tagDictionaryStatus() === 'loading' }"
                 @click.stop="tagDictionaryPanelOpen = !tagDictionaryPanelOpen"
@@ -839,7 +843,7 @@
             <button class="te-topbar-btn" @click="tagEditorToggleRecursive()" :aria-pressed="tagEditorRecursive"><span x-text="tagEditorRecursive ? '✓' : '　'"></span><span x-text="t('tagEditor.recursive')"></span></button>
             <button class="te-topbar-btn" @click="tagEditorDownloadZip()" x-text="t('tagEditor.downloadZip')"></button>
             <button class="te-topbar-btn" @click="tagEditorRestoreBackup()" x-text="t('tagEditor.restoreBackup')"></button>
-            <button class="te-topbar-btn" @click="tagEditorRemoveBracketEscapes()" :disabled="!tagEditorSelected.length" :title="t('tagEditor.unescapeHint')" x-text="t('tagEditor.unescapeBrackets')"></button>
+            <button class="te-topbar-btn" x-show="tagEditorAllowsTagOps()" @click="tagEditorRemoveBracketEscapes()" :disabled="!tagEditorSelected.length" :title="t('tagEditor.unescapeHint')" x-text="t('tagEditor.unescapeBrackets')"></button>
             <button class="te-topbar-btn" @click="tagEditorShortcutsOpen = true"
               x-text="t('tagEditor.shortcutHelpTitle')"></button>
             </div></details>
@@ -853,7 +857,7 @@
             @keydown.escape="window.innerWidth <= 1200 && (tagEditorLeftCollapsed = true)">
             <div class="te-sidebar" :class="{ collapsed: tagEditorLeftCollapsed }" :inert="tagEditorLeftCollapsed" :aria-hidden="tagEditorLeftCollapsed ? 'true' : null">
               <div class="te-sidebar-tabs">
-                <button class="te-sidebar-tab" :title="t('tagEditor.filterTagsHint')" :class="{ active: tagEditorSidebarTab === 'tags' }"
+                <button class="te-sidebar-tab" x-show="tagEditorAllowsTagOps()" :title="t('tagEditor.filterTagsHint')" :class="{ active: tagEditorSidebarTab === 'tags' }"
                   @click="tagEditorSidebarTab = 'tags'">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/>
@@ -876,7 +880,7 @@
                   <span x-text="t('tagEditor.historyTabSnapshots')"></span>
                 </button>
               </div>
-              <div class="te-sidebar-body" x-show="tagEditorSidebarTab === 'tags'">
+              <div class="te-sidebar-body" x-show="tagEditorAllowsTagOps() && tagEditorSidebarTab === 'tags'">
                 <div class="te-sidebar-search">
                   <input type="text" :value="tagEditorTagSearch"
                     :placeholder="t('tagEditor.searchTags')"
@@ -1132,7 +1136,7 @@
                     <div class="te-card-overlay">
                       <div class="te-card-name" x-text="img.rel_path || img.name" :title="img.rel_path || img.name"></div>
                       <div class="te-card-tags" x-show="img.tags">
-                        <template x-for="tag in (img.tags || '').split(',').slice(0, 3)" :key="tag">
+                        <template x-for="(tag, index) in (tagEditorAllowsTagOps() ? (img.tags || '').split(',').slice(0, 3) : [(img.tags || '').slice(0, 120)])" :key="index">
                           <span class="te-card-tag" x-text="tag.trim()"></span>
                         </template>
                       </div>
@@ -1177,11 +1181,11 @@
                       :alt="tagEditorGetSelectedImg()?.rel_path || tagEditorGetSelectedImg()?.name" draggable="false">
                   </div>
                   <div class="te-editor-toolbar">
-                    <div class="te-editor-view">
-                      <button :class="{ active: tagEditorDetailView === 'chip' && !tagEditorQuickRemove }" @click="tagEditorCancelQuickRemove(); tagEditorDetailView = 'chip'" x-text="t('tagEditor.viewChip')"></button>
-                      <button :class="{ active: tagEditorDetailView === 'text' && !tagEditorQuickRemove }" @click="tagEditorCancelQuickRemove(); tagEditorDetailView = 'text'" x-text="t('tagEditor.viewText')"></button>
+                    <div class="te-editor-view" x-show="tagEditorAllowsTagOps()">
+                      <button :class="{ active: tagEditorDetailView === 'chip' && !tagEditorQuickRemove }" @click="tagEditorSetDetailView('chip')" x-text="t('tagEditor.viewChip')"></button>
+                      <button :class="{ active: tagEditorDetailView === 'text' && !tagEditorQuickRemove }" @click="tagEditorSetDetailView('text')" x-text="t('tagEditor.viewText')"></button>
                     </div>
-                    <button class="te-topbar-btn" :aria-pressed="tagEditorQuickRemove" @click="tagEditorQuickRemove ? tagEditorCancelQuickRemove() : tagEditorStartQuickRemove()" x-text="t('tagEditor.quickRemove')"></button>
+                    <button class="te-topbar-btn" x-show="tagEditorAllowsTagOps()" :aria-pressed="tagEditorQuickRemove" @click="tagEditorQuickRemove ? tagEditorCancelQuickRemove() : tagEditorStartQuickRemove()" x-text="t('tagEditor.quickRemove')"></button>
                     <button class="te-topbar-btn" x-show="tagEditorQuickRemove" @click="tagEditorApplyQuickRemove()" :disabled="!tagEditorRemovalTags.length" x-text="t('tagEditor.applyRemoval') + ' (' + tagEditorRemovalTags.length + ')'"></button>
                     <button class="te-editor-revert" x-show="!tagEditorQuickRemove" @click="tagEditorRevertSelectedImage()"
                       :disabled="!tagEditorCanRevertSelectedImage()" x-text="t('tagEditor.revertImage')"></button>
@@ -1196,7 +1200,8 @@
                     @dblclick="tagEditorSetPreviewRatio(0.5, true)"></div>
                   <div class="te-editor-lower">
                   <div class="te-editor-body">
-                    <div class="te-editor-tags" x-show="tagEditorDetailView === 'chip'" @dragover.prevent="tagEditorDetailDragOver($event)" @drop="tagEditorDetailDrop($event)">
+                    <p class="te-batch-hint" x-show="!tagEditorAllowsTagOps()" x-text="t('tagEditor.textModeHint')"></p>
+                    <div class="te-editor-tags" x-show="tagEditorAllowsTagOps() && tagEditorDetailView === 'chip'" @dragover.prevent="tagEditorDetailDragOver($event)" @drop="tagEditorDetailDrop($event)">
                       <template x-for="(tag, ti) in tagEditorGetSelectedTags()" :key="tag + '-' + ti">
                         <span class="te-editor-tag" :draggable="!tagEditorQuickRemove" :data-ti="ti" :data-tag="tag" tabindex="0"
                           :role="tagEditorQuickRemove ? 'checkbox' : null" :aria-checked="tagEditorQuickRemove ? tagEditorRemovalTags.includes(tag) : null"
@@ -1215,10 +1220,10 @@
                         </span>
                       </template>
                     </div>
-                    <textarea class="te-editor-textarea" x-show="tagEditorDetailView === 'text'"
+                    <textarea class="te-editor-textarea" x-show="tagEditorDetailView === 'text'" :aria-label="t('tagEditor.captionText')"
                       x-model="tagEditorDetailText" @input="tagEditorDetailTextChange()"></textarea>
                   </div>
-                  <div class="te-editor-add" x-show="!tagEditorQuickRemove && tagEditorDetailView === 'chip'">
+                  <div class="te-editor-add" x-show="tagEditorAllowsTagOps() && !tagEditorQuickRemove && tagEditorDetailView === 'chip'">
                     <input type="text" x-model="tagEditorAddInput" :placeholder="t(tagDictionaryReady ? 'tagEditor.dictAddPlaceholder' : 'tagEditor.addTagPlaceholder')"
                       x-bind="tagEditorSuggestBindings('single')">
                     <button @click="tagEditorAddTagToSelected()">+</button>
@@ -1258,10 +1263,12 @@
                 <div class="te-editor-inner">
                   <div class="te-editor-head">
                     <span x-text="t('tagEditor.selected').replace('{n}', tagEditorSelected.length)"></span>
-                    <button class="te-topbar-btn" :aria-pressed="tagEditorQuickRemove" @click="tagEditorQuickRemove ? tagEditorCancelQuickRemove() : tagEditorStartQuickRemove()" x-text="t('tagEditor.quickRemove')"></button>
+                    <button class="te-topbar-btn" x-show="tagEditorAllowsTagOps()" :aria-pressed="tagEditorQuickRemove" @click="tagEditorQuickRemove ? tagEditorCancelQuickRemove() : tagEditorStartQuickRemove()" x-text="t('tagEditor.quickRemove')"></button>
                     <button class="te-topbar-btn" x-show="tagEditorQuickRemove" @click="tagEditorApplyQuickRemove()" :disabled="!tagEditorRemovalTags.length" x-text="t('tagEditor.applyRemoval') + ' (' + tagEditorRemovalTags.length + ')'"></button>
                   </div>
                   <div class="te-editor-body">
+                  <p class="te-batch-hint" x-show="!tagEditorAllowsTagOps()" x-text="t('tagEditor.textMultiHint')"></p>
+                  <div x-show="tagEditorAllowsTagOps()">
                   <p class="te-batch-hint" x-text="t('tagEditor.selectedOnlyHint')"></p>
                   <div class="te-batch-mode" x-show="!tagEditorQuickRemove" role="group" :aria-label="t('tagEditor.batchOperation')">
                     <button :class="{ active: tagEditorBatchMode === 'add' }" @click="tagEditorSetBatchMode('add')" x-text="t('bulkAction.add')"></button>
@@ -1323,6 +1330,7 @@
                     </div>
                   </template>
                   </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1334,7 +1342,7 @@
                 <span x-text="t('tagEditor.imageCount')"></span>
               </span>
               <span class="te-status-sep"></span>
-              <span class="te-status-item">
+              <span class="te-status-item" x-show="tagEditorAllowsTagOps()">
                 <strong x-text="tagEditorTagFreq.length"></strong>
                 <span x-text="t('tagEditor.tagCloud')"></span>
               </span>

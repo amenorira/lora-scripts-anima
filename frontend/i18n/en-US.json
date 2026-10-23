@@ -1893,6 +1893,12 @@
 		}
 	},
 	"tagEditor": {
+		"workMode": "Editing mode",
+		"modeTags": "Tags",
+		"modeText": "Description",
+		"captionText": "Caption text",
+		"textModeHint": "Edit the original text, keeping punctuation and paragraphs.",
+		"textMultiHint": "Edit descriptions one image at a time; save all changes together.",
 		"dictTitle": "Tag dictionary",
 		"dictButton": "Tag dictionary",
 		"selectMenu": "Select images",

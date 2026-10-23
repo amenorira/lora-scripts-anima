@@ -370,6 +370,7 @@ window.captionWorkspaceMixin = {
   openCaptionEditor(item = null) {
     if (!this.captionEditorAvailable() || this.captionBatchRunning()) return;
     this.tagEditorDetailView = 'text';
+    this.tagEditorRequestedMode = 'text';
     this.tagEditorOpenPath = item?.path || '';
     const relative = (item?.relative || item?.name || '').replace(/\\/g,'/');
     this.tagEditorSearchQuery = item ? '^' + relative.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + '$' : '';

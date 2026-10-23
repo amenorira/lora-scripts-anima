@@ -1893,6 +1893,12 @@
 		}
 	},
 	"tagEditor": {
+		"workMode": "編集モード",
+		"modeTags": "タグ",
+		"modeText": "説明文",
+		"captionText": "キャプション原文",
+		"textModeHint": "句読点と段落を保ちながら原文を編集します。",
+		"textMultiHint": "説明文は画像ごとに編集し、変更をまとめて保存できます。",
 		"dictTitle": "タグ辞書",
 		"dictButton": "タグ辞書",
 		"selectMenu": "画像を選択",

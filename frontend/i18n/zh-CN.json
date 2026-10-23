@@ -1893,6 +1893,12 @@
 		}
 	},
 	"tagEditor": {
+		"workMode": "编辑模式",
+		"modeTags": "标签",
+		"modeText": "描述文本",
+		"captionText": "标注原文",
+		"textModeHint": "按原文编辑，保留标点与段落。",
+		"textMultiHint": "描述模式下请逐张编辑；可统一保存所有修改。",
 		"dictTitle": "标签词典",
 		"dictButton": "标签词典",
 		"selectMenu": "选择图片",
