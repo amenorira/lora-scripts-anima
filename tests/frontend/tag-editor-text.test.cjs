@@ -131,3 +131,68 @@ test('textarea keeps native undo shortcuts while Ctrl+S commits the current text
   const save = event('s'); app.tagEditorHandleKeydown(save);
   assert.equal(save.prevented, true); assert.equal(saved, true);
 });
+
+function renameFixture() {
+  const f = fixture('\uFEFF  cat, dog\r\n');
+  f.app.tagEditorInlineEdit = {oldTag: 'cat', newTag: 'prefix'};
+  f.app.$nextTick = callback => Promise.resolve().then(callback);
+  f.confirmations = [];
+  f.app._teConfirmTagBatch = (message, accept) => f.confirmations.push({message, accept});
+  return f;
+}
+
+test('inline rename ignores composing Enter and Escape for all supported IME signals', async () => {
+  for (const flag of ['isComposing', 'target', 'keyCode', 'state']) {
+    const {app, confirmations} = renameFixture();
+    const edit = app.tagEditorInlineEdit;
+    const event = {type: 'keydown', target: {value: 'prefix中文'}};
+    if (flag === 'target') event.target.composing = true;
+    else if (flag === 'state') edit.composing = true;
+    else event[flag] = flag === 'keyCode' ? 229 : true;
+    await app.tagEditorFinishInlineEdit(event);
+    assert.equal(app.tagEditorInlineEdit, edit, flag);
+    app.tagEditorCancelInlineEdit(event);
+    assert.equal(app.tagEditorInlineEdit, edit, flag);
+    assert.equal(confirmations.length, 0);
+    assert.equal(app.tagEditorHistory.length, 0);
+  }
+});
+
+test('inline rename takes completed DOM text and confirmation retains raw undo/redo', async () => {
+  const {app, confirmations} = renameFixture();
+  const raw = app.tagEditorImages[0].tags;
+  const target = {value: 'prefix中文'};
+  await app.tagEditorFinishInlineEdit({type: 'keydown', target});
+  await app.tagEditorFinishInlineEdit({type: 'blur', target});
+  assert.equal(confirmations.length, 1);
+  assert.match(confirmations[0].message, /cat → prefix中文$/);
+  assert.equal(app.tagEditorImages[0].tags, raw);
+  confirmations[0].accept();
+  assert.equal(app.tagEditorImages[0].tags, 'prefix中文, dog');
+  app.tagEditorUndo(); assert.equal(app.tagEditorImages[0].tags, raw);
+  app.tagEditorRedo(); assert.equal(app.tagEditorImages[0].tags, 'prefix中文, dog');
+});
+
+test('blur during composition waits for final text and cannot commit a superseded editor', async () => {
+  for (const superseded of [false, true]) {
+    const {app, confirmations} = renameFixture();
+    const target = {value: 'prefixzhong', composing: true};
+    app.tagEditorInlineEdit.composing = true;
+    await app.tagEditorFinishInlineEdit({type: 'blur', target});
+    assert.equal(confirmations.length, 0);
+    target.value = 'prefix中文'; target.composing = false;
+    const end = app.tagEditorInlineCompositionEnd({target});
+    if (superseded) app.tagEditorInlineEdit = null;
+    await end;
+    await Promise.resolve();
+    assert.equal(confirmations.length, superseded ? 0 : 1);
+    if (!superseded) assert.match(confirmations[0].message, /cat → prefix中文$/);
+  }
+});
+
+test('ordinary Escape cancels rename without a blur confirmation', async () => {
+  const {app, confirmations} = renameFixture();
+  app.tagEditorCancelInlineEdit({type: 'keydown'});
+  await app.tagEditorFinishInlineEdit({type: 'blur', target: {value: 'changed'}});
+  assert.equal(confirmations.length, 0);
+});

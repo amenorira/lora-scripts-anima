@@ -2616,11 +2616,33 @@ window.tagEditorMixin = {
     });
   },
 
-  async tagEditorFinishInlineEdit() {
+  _teInlineEditIsComposing(event) {
+    return this.tagEditorInlineEdit?.composing || event?.isComposing || event?.target?.composing || event?.keyCode === 229;
+  },
+
+  tagEditorInlineCompositionEnd(event) {
+    var edit = this.tagEditorInlineEdit;
+    if (!edit) return;
+    edit.composing = false;
+    edit.newTag = event.target.value;
+    if (edit.finishAfterComposition) {
+      // 等 Alpine 完成组合输入同步；期间切换模式或关闭编辑器时不再提交。
+      return this.$nextTick(() => {
+        if (this.tagEditorInlineEdit === edit) return this.tagEditorFinishInlineEdit(event);
+      });
+    }
+  },
+
+  async tagEditorFinishInlineEdit(event) {
     if (!this.tagEditorAllowsTagOps()) return;
     if (!this.tagEditorInlineEdit) return;
+    if (this._teInlineEditIsComposing(event)) {
+      if (event?.type === 'blur') this.tagEditorInlineEdit.finishAfterComposition = true;
+      return;
+    }
+    if (event?.type === 'keydown') { event.preventDefault?.(); event.stopPropagation?.(); }
     var oldTag = this.tagEditorInlineEdit.oldTag;
-    var newTag = this.tagEditorInlineEdit.newTag.trim();
+    var newTag = (event?.target ? event.target.value : this.tagEditorInlineEdit.newTag).trim();
     this.tagEditorInlineEdit = null;
     if (!newTag || oldTag === newTag) return;
 
@@ -2645,7 +2667,9 @@ window.tagEditorMixin = {
     });
   },
 
-  tagEditorCancelInlineEdit() {
+  tagEditorCancelInlineEdit(event) {
+    if (this._teInlineEditIsComposing(event)) return;
+    if (event?.type === 'keydown') { event.preventDefault?.(); event.stopPropagation?.(); }
     this.tagEditorInlineEdit = null;
   },
 

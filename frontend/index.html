@@ -942,9 +942,11 @@
                     <template x-if="tagEditorInlineEdit && tagEditorInlineEdit.oldTag === item.tag">
                       <input id="te-inline-edit-input" type="text" class="te-inline-edit-input"
                         x-model="tagEditorInlineEdit.newTag"
-                        @keydown.enter="tagEditorFinishInlineEdit()"
-                        @keydown.escape="tagEditorCancelInlineEdit()"
-                        @blur="tagEditorFinishInlineEdit()"
+                        @compositionstart="tagEditorInlineEdit.composing = true"
+                        @compositionend="tagEditorInlineCompositionEnd($event)"
+                        @keydown.enter="tagEditorFinishInlineEdit($event)"
+                        @keydown.escape="tagEditorCancelInlineEdit($event)"
+                        @blur="tagEditorFinishInlineEdit($event)"
                         @click.stop>
                       </template>
                     <button class="te-tag-name te-tag-label" x-show="!tagEditorInlineEdit || tagEditorInlineEdit.oldTag !== item.tag"
