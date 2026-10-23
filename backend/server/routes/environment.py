@@ -19,9 +19,11 @@ from tools.runtime_paths import runtime_cache_dir
 from backend.core.realtime import realtime_tasks
 from backend.log import log
 from backend.server.routes.flash_attention import router as flash_attention_router
+from backend.server.routes.moss_acceleration import router as moss_acceleration_router
 
 router = APIRouter()
 router.include_router(flash_attention_router)
+router.include_router(moss_acceleration_router)
 
 _JOB_TTL_SECONDS = 600
 

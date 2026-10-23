@@ -1,0 +1,32 @@
+[
+  {
+    "name": "flash_linear_attention-0.5.2-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/90/d2/2070e3cf2148c5cce99ca4876633c4b7b89ec085323600bd3d47aeacd306/flash_linear_attention-0.5.2-py3-none-any.whl",
+    "size": 399590,
+    "sha256": "dcf405d81f5426393b59037097aa700d0f4a841465d5028d5aa543f4502f2400"
+  },
+  {
+    "name": "fla_core-0.5.2-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/2d/ed/dfe19c4da779957eb6a42a26812f9b4e2280bf757a17a71933ff59ffcb98/fla_core-0.5.2-py3-none-any.whl",
+    "size": 819225,
+    "sha256": "5e830c85bad3d0d34677f98ac7074d08687a3756f0f0499d95ceb96eb6920761"
+  },
+  {
+    "name": "causal_conv1d-1.7.0+cu13torch2.12cxx11abiTRUE-cp312-cp312-linux_aarch64.whl",
+    "url": "https://github.com/unslothai/unsloth/releases/download/prebuilt-wheels-cu13/causal_conv1d-1.7.0%2Bcu13torch2.12cxx11abiTRUE-cp312-cp312-linux_aarch64.whl",
+    "size": 41710664,
+    "sha256": "1e0be45441cfc33a1d995b16cb48753a26e3484f85edc1f57cdc7b84791f4a27"
+  },
+  {
+    "name": "causal_conv1d-1.7.0+cu13torch2.12cxx11abiTRUE-cp312-cp312-linux_x86_64.whl",
+    "url": "https://github.com/unslothai/unsloth/releases/download/prebuilt-wheels-cu13/causal_conv1d-1.7.0%2Bcu13torch2.12cxx11abiTRUE-cp312-cp312-linux_x86_64.whl",
+    "size": 29171741,
+    "sha256": "d22db06e3d9a522c7c2df3a18d9ef58227f3bf88565dd5f9b587e9a2c949e015"
+  },
+  {
+    "name": "causal_conv1d-1.7.0+cu13torch2.12cxx11abiTRUE-cp312-cp312-win_amd64.whl",
+    "url": "https://github.com/unslothai/unsloth/releases/download/prebuilt-wheels-cu13/causal_conv1d-1.7.0%2Bcu13torch2.12cxx11abiTRUE-cp312-cp312-win_amd64.whl",
+    "size": 25843230,
+    "sha256": "4145a7250294b91b3058d8d09d74a3e55b8b349ee36f60d6f3410ff411d09f30"
+  }
+]

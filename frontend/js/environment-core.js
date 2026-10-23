@@ -19,6 +19,8 @@ window.environmentCoreMixin = {
   // ── Triton State ─────────────────────────────────────
   tritonStatus: null, tritonBusy: false, tritonError: null,
   tritonInstallJobId: null, tritonInstallLog: '', tritonInstallElapsed: 0,
+  mossAccelStatus: null, mossAccelBusy: false, mossAccelError: null,
+  mossAccelInstallJobId: null, mossAccelInstallLog: '', mossAccelInstallElapsed: 0,
 
   // ── 模型下载 State ──────────────────────────────────
   animaModelStatus: null,   // models/ 下已有文件清单 [{filename, desc, exists, size_gb, dest_path}]
@@ -82,6 +84,7 @@ window.environmentCoreMixin = {
       case 'xf': return !!this.xfBusy;
       case 'fa': return !!this.faBusy;
       case 'triton': return !!this.tritonBusy;
+      case 'mossAccel': return !!this.mossAccelBusy;
       case 'sd': return false;
       case 'lycoris':
       case 'musubi': return false;
@@ -147,6 +150,7 @@ window.environmentCoreMixin = {
       'xformers-install': 'xf',
       'flash-attn-install': 'fa',
       'triton-install': 'triton',
+      'moss-acceleration-install': 'mossAccel',
       'model-download': 'animaModel',
     };
     for (const task of tracked) {
@@ -162,16 +166,17 @@ window.environmentCoreMixin = {
   },
 
   resetRealtimeEnvironmentState() {
-    const slots = ['xf', 'fa', 'triton', 'animaModel'];
-    const hadTasks = !!(this.faBusy || this.faInstallJobId || this.xfBusy || this.tritonBusy || this.animaModelBusy || this.xfInstallJobId || this.tritonInstallJobId || this.animaModelJobId);
+    const slots = ['xf', 'fa', 'triton', 'mossAccel', 'animaModel'];
+    const hadTasks = slots.some(slot => this[slot + 'Busy'] || this[slot === 'animaModel' ? 'animaModelJobId' : slot + 'InstallJobId']);
     slots.forEach(slot => this._setEnvironmentRealtimeTask(slot, null));
     const unknown = this.t('monitor.taskStateUnknown');
     if (this.xfBusy || this.xfInstallJobId) this.xfError = unknown;
     if (this.faBusy || this.faInstallJobId) this.faError = unknown;
     if (this.tritonBusy || this.tritonInstallJobId) this.tritonError = unknown;
+    if (this.mossAccelBusy || this.mossAccelInstallJobId) this.mossAccelError = unknown;
     if (this.animaModelBusy || this.animaModelJobId) this.animaModelError = unknown;
-    this.faBusy = this.xfBusy = this.tritonBusy = this.animaModelBusy = false;
-    this.faInstallJobId = this.xfInstallJobId = this.tritonInstallJobId = this.animaModelJobId = null;
+    this.faBusy = this.xfBusy = this.tritonBusy = this.mossAccelBusy = this.animaModelBusy = false;
+    this.faInstallJobId = this.xfInstallJobId = this.tritonInstallJobId = this.mossAccelInstallJobId = this.animaModelJobId = null;
     this.scheduleEnvironmentRender();
     return hadTasks;
   },
@@ -190,6 +195,9 @@ window.environmentCoreMixin = {
     } else if (slot === 'triton') {
       this.tritonInstallLog = data.lines || this.tritonInstallLog;
       this.tritonInstallElapsed = data.elapsed || 0;
+    } else if (slot === 'mossAccel') {
+      this.mossAccelInstallLog = data.lines || this.mossAccelInstallLog;
+      this.mossAccelInstallElapsed = data.elapsed || 0;
     } else if (slot === 'animaModel') {
       this.animaModelProgress = data.progress || this.animaModelProgress;
       this.animaModelLog = Array.isArray(data.log) ? data.log.join('\n') : (data.log || this.animaModelLog);
@@ -227,6 +235,9 @@ window.environmentCoreMixin = {
       if (failed) this.toast(fallback, 'error');
       await this.animaModelRefresh(true).catch(() => {});
       if (failed) this.animaModelError = msg;
+    } else if (slot === 'mossAccel') {
+      await this.mossAccelRefresh(true);
+      if (failed) this.mossAccelError = data.error || data.lines || fallback;
     }
     this.finishProgress();
     this.scheduleEnvironmentRender();
@@ -335,8 +346,8 @@ window.environmentCoreMixin = {
       return;
     }
     const needsXf = !this.xfStatus, needsSd = !this.sdStatus, needsCores = !this.trainingCores, needsTriton = !this.tritonStatus,
-          needsAnimaModel = !this.animaModelStatus, needsFa = !this.faStatus;
-    if (needsXf || needsSd || needsCores || needsTriton || needsAnimaModel || needsFa) {
+          needsAnimaModel = !this.animaModelStatus, needsFa = !this.faStatus, needsMossAccel = !this.mossAccelStatus;
+    if (needsXf || needsSd || needsCores || needsTriton || needsAnimaModel || needsFa || needsMossAccel) {
       // Render the full skeleton immediately, then load in a small queue.
       // This avoids stacking cold imports and disk scans while telemetry is active.
       const loaders = [];
@@ -357,6 +368,11 @@ window.environmentCoreMixin = {
         '/api/triton/status',
         data => { this.tritonStatus = data; this.tritonError = null; },
         error => { this.tritonStatus = null; this.tritonError = String(error); },
+      ));
+      if (needsMossAccel) loaders.push(this._environmentJsonLoader(
+        '/api/moss-acceleration/status',
+        data => { this.mossAccelStatus = data; this.mossAccelError = null; },
+        error => { this.mossAccelStatus = null; this.mossAccelError = String(error); },
       ));
       if (needsSd) loaders.push(this._environmentJsonLoader(
         '/api/sd-scripts/status',
@@ -465,6 +481,45 @@ window.environmentCoreMixin = {
     } catch (e) { this.tritonBusy = false; this.tritonError = String(e); this.toast(this.tritonError, 'error'); this.finishProgress(); this.renderEnvironment(); }
   },
 
+  async mossAccelRefresh(silent) {
+    this.mossAccelError = null;
+    try {
+      const response = await fetch('/api/moss-acceleration/status');
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      this.mossAccelStatus = await response.json();
+    } catch (error) { this.mossAccelStatus = null; this.mossAccelError = String(error); }
+    if (silent) this.scheduleEnvironmentRender(); else this.renderEnvironment();
+  },
+
+  async mossAccelInstall() {
+    this.mossAccelBusy = true; this.mossAccelError = null;
+    this.mossAccelInstallLog = ''; this.mossAccelInstallElapsed = 0;
+    this._envForceOpen('mossAccel'); this.startProgress(); this.renderEnvironment();
+    try {
+      const response = await fetch('/api/moss-acceleration/install', { method: 'POST' });
+      const result = await response.json();
+      if (!response.ok || !result.success || !result.job_id) throw new Error(result.message || this.t('environment.installFailed'));
+      this.mossAccelInstallJobId = result.job_id;
+      this._setEnvironmentRealtimeTask('mossAccel', result.job_id);
+    } catch (error) {
+      this.mossAccelBusy = false; this.mossAccelError = String(error);
+      this.finishProgress(); this.renderEnvironment();
+    }
+  },
+
+  async mossAccelSetEnabled(enabled) {
+    this.mossAccelError = null;
+    try {
+      const response = await fetch('/api/moss-acceleration/enabled', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.message || this.t('environment.installFailed'));
+      this.mossAccelStatus = result.data;
+    } catch (error) { this.mossAccelError = String(error); }
+    this.renderEnvironment();
+  },
+
   // ── Anima 模型下载 Methods ──────────────────────────
   async animaModelRefresh(silent) {
     this.animaModelError = null;
@@ -549,6 +604,7 @@ window.environmentCoreMixin = {
       this.xfRefresh(true).catch(() => {}),
       this.faRefresh(true),
       this.tritonRefresh(true).catch(() => {}),
+      this.mossAccelRefresh(true),
       this.animaModelRefresh(true).catch(() => {}),
       (async () => {
         try { const r = await fetch('/api/sd-scripts/status'); if (!r.ok) throw new Error('HTTP ' + r.status); this.sdStatus = await r.json(); this.sdError = null; }

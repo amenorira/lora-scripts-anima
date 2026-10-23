@@ -95,6 +95,7 @@ def _build_train_env(
     task_id: str,
     run_dir: str | None = None,
     engine_id: str = "sd_scripts",
+    trainer_file: str = "",
 ) -> dict:
     """构建训练子进程的环境变量"""
     env = os.environ.copy()
@@ -140,6 +141,12 @@ def _build_train_env(
         # library package and can shadow musubi imports.
         env.pop("LORA_SCRIPTS_TRUE_LR_LOGGING", None)
         new_paths = [str(path) for path in engine_pythonpaths(engine_id)] + [startup_hooks, repo_root, vendor_root]
+
+    if engine.uses_sd_scripts_hooks and Path(trainer_file).name == "moss_image_train_network.py":
+        from tools.moss_acceleration import training_pythonpath
+
+        if moss_site := training_pythonpath():
+            new_paths.append(moss_site)
 
     for p in existing_pypath.split(os.pathsep):
         if not p or p == vendor_root or p in new_paths:
@@ -290,6 +297,7 @@ def run_train(
             task_id=task_id,
             run_dir=control_dir,
             engine_id=engine_id,
+            trainer_file=trainer_file,
         )
         env.update(env_extra)
         if extra_env:
