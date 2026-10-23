@@ -2705,15 +2705,13 @@ window.tagEditorMixin = {
     this._teConfirmBatchScope('add', function(before) {
       var tags = _teParseTags(before);
       var existing = new Set(tags);
-      var changed = false;
+      var added = [];
       newTags.forEach(function(t) {
         if (existing.has(t)) return;
         existing.add(t);
-        if (pos === 'front') tags.unshift(t);
-        else tags.push(t);
-        changed = true;
+        added.push(t);
       });
-      return changed ? tags.join(', ') : before;
+      return added.length ? (pos === 'front' ? added.concat(tags) : tags.concat(added)).join(', ') : before;
     }, 'batchAdd', '+ ' + newTags.join(', '), function() {
       self.batchAddInput = '';
     });

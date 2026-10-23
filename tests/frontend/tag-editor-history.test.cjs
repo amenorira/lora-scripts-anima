@@ -86,6 +86,19 @@ test('a real reorder still records one step and restores exact original text on 
   ctx.tagEditorRedo(); assert.equal(ctx.tagEditorImages[0].tags, 'dog, cat');
 });
 
+test('batch prepend remains one history step with exact raw undo and ordered redo', () => {
+  const {ctx} = draftClient();
+  const original = '\uFEFF  cat,  dog\r\n';
+  ctx.tagEditorImages[0].tags = ctx.tagEditorOriginal.a = original;
+  ctx._teConfirmBatch = (_message, accept) => accept();
+  ctx.batchAddInput = 'alpha, beta, alpha';
+  ctx.tagEditorBatchAdd();
+  assert.equal(ctx.tagEditorImages[0].tags, 'alpha, beta, cat, dog');
+  assert.equal(ctx.tagEditorHistory.length, 1);
+  ctx.tagEditorUndo(); assert.equal(ctx.tagEditorImages[0].tags, original);
+  ctx.tagEditorRedo(); assert.equal(ctx.tagEditorImages[0].tags, 'alpha, beta, cat, dog');
+});
+
 test('history excerpts preserve exact prefixes without changing raw history or splitting CRLF and emoji',()=>{
   const {ctx}=makeClient();
   const short='\uFEFF  原文， punctuation.\r\n\r\n  ';
