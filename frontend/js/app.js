@@ -378,6 +378,7 @@ document.addEventListener('alpine:init', () => {
     _commitRoute(route, prev, transitionSeq) {
       const mainContent = document.getElementById('mainContent');
       if (mainContent) this._routeScrollPositions[prev] = mainContent.scrollTop;
+      if (prev === 'ai-captioning' && route !== prev) this.resetTaggerApiTest();
       // Cleanup tag editor resources when leaving
       if (prev === 'tagEditor' && typeof this.tagEditorCleanup === 'function') {
         this.tagEditorCleanup();
