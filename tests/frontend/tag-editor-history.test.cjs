@@ -162,6 +162,83 @@ test('timeline failure before autosave retains the old baseline for recoverable 
   assert.equal(next.ctx.tagEditorModified,true);
 });
 
+test('edits and undo during a save remain dirty against the text actually written to disk', async () => {
+  for (const action of ['undo', 'type']) {
+    const {ctx,context}=draftClient();
+    const original='\uFEFF  原文\r\n\r\n';
+    const saved=original.replace('原文','已发送');
+    const typed=original.replace('原文','继续输入');
+    ctx.tagEditorImages[0].tags=ctx.tagEditorOriginal.a=original;
+    ctx._teCaptionRevisions={a:'old-revision'};
+    ctx._teUpdateImageTags(ctx.tagEditorImages[0],saved);ctx._tePushHistory({type:'text'});
+    let finish;
+    context.fetch=()=>new Promise(resolve=>{finish=resolve;});
+    ctx.tagEditorLoadSnapshots=()=>{};
+    ctx.tagEditorReloadSessionPage=()=>assert.fail('unsaved edits must not be reloaded');
+    const request=ctx._doSaveAll(ctx.tagEditorImages);
+    if (action==='undo') ctx.tagEditorUndo();
+    else {ctx.tagEditorDetailText=typed.replace(/\r\n/g,'\n');ctx.tagEditorDetailTextChange();}
+    finish({json:async()=>({status:'success',data:{saved:1,saved_paths:['a'],revisions:{a:'new-revision'}}})});
+    await request;
+    const expected=action==='undo' ? original : typed;
+    assert.equal(ctx.tagEditorImages[0].tags,expected);
+    assert.equal(ctx.tagEditorOriginal.a,saved);
+    assert.equal(ctx.tagEditorModified,true);
+    const draft=JSON.parse(context.localStorage.getItem('tagEditor_draft_/dataset')).items[0];
+    assert.equal(draft.tags,expected);assert.equal(draft.original,saved);assert.equal(draft.revision,'new-revision');
+    const next=draftClient(context.localStorage);
+    next.ctx.tagEditorImages[0].tags=next.ctx.tagEditorOriginal.a=saved;
+    next.ctx._teCaptionRevisions={a:'new-revision'};
+    let recover;next.ctx.openConfirm=(_title,_message,callback)=>{recover=callback;};
+    next.ctx._teCheckDraft();await recover();
+    assert.equal(next.ctx.tagEditorImages[0].tags,expected);
+    next.ctx.tagEditorUndo();assert.equal(next.ctx.tagEditorImages[0].tags,saved);
+    if (action==='undo') {
+      ctx.tagEditorRedo();assert.equal(ctx.tagEditorImages[0].tags,saved);assert.equal(ctx.tagEditorModified,false);
+      ctx.tagEditorUndo();assert.equal(ctx.tagEditorImages[0].tags,original);assert.equal(ctx.tagEditorModified,true);
+    } else {
+      ctx.tagEditorUndo();assert.equal(ctx.tagEditorImages[0].tags,original);
+      ctx.tagEditorRedo();assert.equal(ctx.tagEditorImages[0].tags,typed);
+    }
+  }
+});
+
+test('repeated save commands share one in-flight request', async () => {
+  const {ctx,context}=draftClient();
+  ctx._teUpdateImageTags(ctx.tagEditorImages[0],'new');
+  let finish,calls=0;
+  context.fetch=()=>{calls++;return new Promise(resolve=>{finish=resolve;});};
+  ctx.tagEditorLoadSnapshots=()=>{};ctx.tagEditorReloadSessionPage=async()=>{};
+  const request=ctx._doSaveAll(ctx.tagEditorImages);
+  ctx.tagEditorSaveAll();ctx._doSaveAll(ctx.tagEditorImages);
+  assert.equal(calls,1);assert.equal(ctx._teIsSaving,true);
+  finish({json:async()=>({status:'success',data:{saved:1,saved_paths:['a']}})});
+  await request;assert.equal(ctx._teIsSaving,false);
+});
+
+test('a save confirmation from a previous dataset cannot submit its captions', () => {
+  const {ctx,context}=draftClient();
+  ctx.tagEditorImages=Array.from({length:6},(_,i)=>({path:String(i),tags:'new'}));
+  ctx.tagEditorOriginal={};
+  let confirm,calls=0;ctx._teConfirmBatch=(_message,callback)=>{confirm=callback;};
+  context.fetch=()=>{calls++;return new Promise(()=>{});};
+  ctx.tagEditorSaveAll();
+  ctx._teLoadEpoch++;ctx.tagEditorDir=ctx.tagEditorLoadedDir='/other';
+  confirm();assert.equal(calls,0);assert.equal(ctx._teIsSaving,false);
+});
+
+test('an old save response cannot clear the next dataset save state', async () => {
+  const {ctx,context}=draftClient();
+  ctx._teUpdateImageTags(ctx.tagEditorImages[0],'new');
+  let finish;context.fetch=()=>new Promise(resolve=>{finish=resolve;});
+  const request=ctx._doSaveAll(ctx.tagEditorImages);
+  ctx._teLoadEpoch++;ctx._teSaveEpoch++;ctx.tagEditorDir=ctx.tagEditorLoadedDir='/other';
+  ctx._teIsSaving=ctx.tagEditorSaving=true;ctx._teSaveProgress=42;
+  finish({json:async()=>({status:'success',data:{saved:1,saved_paths:['a']}})});
+  await request;
+  assert.equal(ctx._teIsSaving,true);assert.equal(ctx.tagEditorSaving,true);assert.equal(ctx._teSaveProgress,42);
+});
+
 test('idle autosave preserves a deferred recovery draft and save failures preserve edited content',async()=>{
   const {ctx,context,tick}=draftClient();
   const pending=JSON.stringify([{path:'a',tags:'recover me',original:'solo'}]);

@@ -412,6 +412,7 @@ window.tagEditorMixin = {
   // ===== Lifecycle =====
   tagEditorCleanup() {
     this._teLoadEpoch++;
+    this.tagEditorSaving = this._teIsSaving = false;
     if (this._teLoadAbort) { this._teLoadAbort.abort(); this._teLoadAbort = null; }
     this._teCancelPageFetch();
     if (this._teAllAbort) { this._teAllAbort.abort(); this._teAllAbort = null; }
@@ -661,6 +662,7 @@ window.tagEditorMixin = {
       return;
     }
     var epoch = ++this._teLoadEpoch;
+    this.tagEditorSaving = this._teIsSaving = false;
     if (this._teLoadAbort) this._teLoadAbort.abort();
     this._teCancelPageFetch();
     if (this._teAllAbort) { this._teAllAbort.abort(); this._teAllAbort = null; }
@@ -2857,20 +2859,26 @@ window.tagEditorMixin = {
 
   // ===== Save =====
   async tagEditorSaveAll() {
+    if (this._teIsSaving || this._teDraftRestoreBusy) return;
     this._teFlushAllPendingTextEdits();
     var modified = this._teGetModified();
     if (modified.length === 0) { this.toast(this.t('tagEditor.batchNoChanges')); return; }
     var self2 = this;
+    var epoch = this._teLoadEpoch;
+    var saveDir = this.tagEditorLoadedDir || this.tagEditorDir;
     // C4: 小批量（≤5 张）跳过确认，减少打断；大批量仍确认
     if (modified.length > 5) {
-      this._teConfirmBatch(this.t('tagEditor.batchConfirmAll').replace('{n}', modified.length), function() { self2._doSaveAll(modified); });
+      this._teConfirmBatch(this.t('tagEditor.batchConfirmAll').replace('{n}', modified.length), function() {
+        if (epoch !== self2._teLoadEpoch || saveDir !== (self2.tagEditorLoadedDir || self2.tagEditorDir)) return;
+        return self2._doSaveAll(modified);
+      });
     } else {
-      this._doSaveAll(modified);
+      return this._doSaveAll(modified);
     }
   },
 
   async _doSaveAll(modified) {
-    if (this._teDraftRestoreBusy) return;
+    if (this._teIsSaving || this._teDraftRestoreBusy) return;
     this._teFlushAllPendingTextEdits();
     // Persist the pre-save baseline even when the first save precedes autosave.
     this._teSaveDraft();
@@ -2918,23 +2926,25 @@ window.tagEditorMixin = {
               revision: data.revisions?.[item.path]
             });
           });
-          // Null history values refer to the old baseline, which is about to change.
-          this.tagEditorHistory.forEach(function(entry) {
-            Object.entries(entry.changes || {}).forEach(function([path, change]) {
-              if (change.before == null) change.before = self.tagEditorOriginal[path] || '';
-              if (change.after == null) change.after = self.tagEditorOriginal[path] || '';
-            });
-          });
         }
         var successfulPaths = (data.saved_paths || []).concat(data.skipped_paths || []);
         var successfulLookup = {};
         successfulPaths.forEach(function(path) { successfulLookup[path] = true; });
+        // Input can continue while the request is in flight. Record it against
+        // the old baseline before advancing that baseline to the saved payload.
+        this._teFlushAllPendingTextEdits();
+        this.tagEditorHistory.forEach(function(entry) {
+          Object.entries(entry.changes || {}).forEach(function([path, change]) {
+            if (!successfulLookup[path]) return;
+            if (change.before == null) change.before = self.tagEditorOriginal[path] || '';
+            if (change.after == null) change.after = self.tagEditorOriginal[path] || '';
+          });
+        });
         var payloadByPath = {};
         payload.forEach(function(item) { payloadByPath[item.path] = item; });
         modified.forEach(function(img) {
           var savedPayload = payloadByPath[img.path];
-          if (successfulLookup[img.path] && savedPayload &&
-              ((self._teEditVersions && self._teEditVersions[img.path]) || 0) === savedPayload.edit_version) {
+          if (successfulLookup[img.path] && savedPayload) {
             self.tagEditorOriginal[img.path] = savedPayload.tags;
           }
         });
@@ -2951,19 +2961,24 @@ window.tagEditorMixin = {
       saveErrorMessage = this.t('common.networkError');
       failedItems = modified.map(function(img) { return { path: img.path, reason: saveErrorMessage }; });
     } finally {
-      this.tagEditorSaving = false;
-      this._teIsSaving = false;
-      this._teSaveProgress = 0;
+      if (saveEpoch === this._teSaveEpoch && loadEpoch === this._teLoadEpoch) {
+        this.tagEditorSaving = false;
+        this._teIsSaving = false;
+        this._teSaveProgress = 0;
+      }
     }
 
+    if (saveEpoch !== this._teSaveEpoch || loadEpoch !== this._teLoadEpoch) return;
     var hadHistory = this.tagEditorHistory.length > 0;
     this._teRecountModified();
     this.tagEditorModified = this._teModifiedCount > 0;
-    if (!timelineWarning && !rollbackFailed.length && (processedCount > 0 || this._teModifiedCount === 0)) {
+    this._teInvalidateFilter();
+    if (!timelineWarning && !rollbackFailed.length && this._teModifiedCount === 0) {
       this.tagEditorHistory = [];
       this.tagEditorHistoryIdx = -1;
       this.tagEditorHistoryDetailIdx = -1;
     }
+    this._teInvalidateDiff();
     if (this._teModifiedCount === 0) {
       this._teHistoryState = {};
     } else if (processedCount > 0) {
