@@ -1972,6 +1972,8 @@ window.tagEditorMixin = {
   },
 
   tagEditorPanelMenuKeydown(event) {
+    // 菜单使用自己的键盘交互，不触发页面级翻图或“开始编辑”。
+    event.stopPropagation();
     var buttons = this._teVisibleMenuButtons(event.currentTarget);
     var index = buttons.indexOf(document.activeElement);
     if (!buttons.length || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
@@ -3486,9 +3488,10 @@ window.tagEditorMixin = {
       return;
     }
     if (e.key === 'Enter' && !modifier && !editableTarget && this.tagEditorSelected.length === 1) {
-      // 卡片上的 Enter 由 tagEditorCardEnter 处理；其余区域 Enter 聚焦添加框，补全键盘流
+      // 保留按钮、链接和展开控件的原生激活；空白区域 Enter 仍用于开始编辑。
       var enterCard = e.target && typeof e.target.closest === 'function' ? e.target.closest('.te-card') : null;
-      if (!enterCard && this._teFocusEditorInput()) {
+      var enterControl = e.target?.closest?.('button, a[href], summary, [role="button"], [role="menuitem"]');
+      if (!enterCard && !enterControl && this._teFocusEditorInput()) {
         e.preventDefault();
         return;
       }

@@ -24,7 +24,7 @@ function fixture() {
 test('context menu focuses visible enabled actions and Escape restores its trigger',()=>{
   const f=fixture();f.open();f.flush();
   assert.equal(f.context.document.activeElement,f.first);
-  f.app.tagEditorPanelMenuKeydown({currentTarget:f.menu,key:'ArrowUp',preventDefault(){}});
+  f.app.tagEditorPanelMenuKeydown({currentTarget:f.menu,key:'ArrowUp',preventDefault(){},stopPropagation(){}});
   assert.equal(f.context.document.activeElement,f.last);
   f.app.tagEditorClosePanelMenu();f.flush();
   assert.equal(f.context.document.activeElement,f.trigger);
@@ -49,4 +49,26 @@ test('closing the compact sidebar consumes Escape without clearing selection or 
   assert.equal(f.app.tagEditorLeftCollapsed,false);
   f.app.tagEditorCloseSidebar();f.app._teLoadEpoch++;f.flush();
   assert.equal(f.context.document.activeElement,null);
+});
+
+test('menu activation and horizontal arrows stay within the menu without blocking native activation',()=>{
+  for (const key of ['Enter',' ','ArrowLeft','ArrowRight']) {
+    const f=fixture();f.open();f.flush();
+    let stopped=false,prevented=false;
+    f.app.tagEditorPanelMenuKeydown({currentTarget:f.menu,key,
+      preventDefault(){prevented=true;},stopPropagation(){stopped=true;}});
+    assert.equal(stopped,true);assert.equal(prevented,false);
+    assert.equal(f.context.document.activeElement,f.first);
+  }
+});
+
+test('Enter activates focused controls while blank-space Enter still starts caption editing',()=>{
+  for (const nativeControl of [true,false]) {
+    const f=fixture();let focusCount=0,prevented=false;
+    f.app._teFocusEditorInput=()=>{focusCount++;return true;};
+    const target={closest(selector){return nativeControl && selector.includes('summary') ? this : null;}};
+    f.app.tagEditorHandleKeydown({key:'Enter',target,preventDefault(){prevented=true;}});
+    assert.equal(focusCount,nativeControl?0:1);
+    assert.equal(prevented,!nativeControl);
+  }
 });
