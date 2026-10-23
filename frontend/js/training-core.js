@@ -2022,6 +2022,7 @@ window.trainingCoreMixin = {
       inputHtml = `<label class="toggle"><input type="checkbox" aria-label="${fieldAriaLabel}" :checked="form.${dataKey}" @change="setField('${dataKey}', $event.target.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>`;
     } else if (field.type === 'select') {
       const fc = {};
+      const selectAlign = field.selectAlign === 'left' ? 'left' : 'right';
       const self = this;
       const currentTrainType = this.form.model_train_type || 'anima-lora';
       const currentGroup = window.TRAIN_GROUP_MAP[currentTrainType] || 'all';
@@ -2054,7 +2055,7 @@ window.trainingCoreMixin = {
       }
       const triggerHtml = `<button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle($event)" aria-label="${fieldAriaLabel}" aria-haspopup="listbox" :aria-expanded="open ? 'true' : 'false'"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>`;
       const menuHtml = `<template x-if="open"><div class="anima-select-menu" :class="{ 'anima-select-menu-described': hasDescriptions, 'anima-select-menu-positioned': positioned }"><div class="anima-select-menu-scroll"><template x-for="(group, gIdx) in displayGroups" :key="gIdx"><div class="anima-select-group"><div class="anima-select-group-label" x-show="group.label" x-text="group.label"></div><template x-for="opt in group.options" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-content"><span class="anima-select-option-label" x-text="opt.l" :title="opt.l"></span><span class="anima-select-option-desc" x-show="opt.d" x-text="opt.d"></span></span><svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></div></template></div></template><div x-show="displayGroups.length === 0" style="padding:8px 12px;font-size:12px;color:var(--text-tertiary)">—</div></div></div></template>`;
-      inputHtml = `<div class="anima-select" x-data="animaSelect('${this.escJson(fc)}', '${this.escapeAttr(val ?? '')}')" @click.outside="close()" @anima-select-change="setField('${dataKey}', $event.detail.value)"><input type="hidden" aria-hidden="true" tabindex="-1" x-ref="modelInput" :value="form.${dataKey}">${triggerHtml}${menuHtml}</div>`;
+      inputHtml = `<div class="anima-select" x-data="animaSelect('${this.escJson(fc)}', '${this.escapeAttr(val ?? '')}', {align:'${selectAlign}'})" @click.outside="close()" @anima-select-change="setField('${dataKey}', $event.detail.value)"><input type="hidden" aria-hidden="true" tabindex="-1" x-ref="modelInput" :value="form.${dataKey}">${triggerHtml}${menuHtml}</div>`;
     } else if (field.type === 'textarea') {
       inputHtml = `<textarea aria-label="${fieldAriaLabel}" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" rows="3"${staticReadonlyAttrs}></textarea>`;
       if (dataKey === "positive_prompts") {

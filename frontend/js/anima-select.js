@@ -5,7 +5,7 @@
 
 document.addEventListener('alpine:init', () => {
   let nextListboxId = 0;
-  Alpine.data('animaSelect', (fieldConfigJson, initialValue) => {
+  Alpine.data('animaSelect', (fieldConfigJson, initialValue, { align = 'left' } = {}) => {
     // Most field configs are static. A function may be supplied by workspaces
     // whose options arrive asynchronously (for example the Tagger registry).
     const fieldConfigFactory = typeof fieldConfigJson === 'function' ? fieldConfigJson : null;
@@ -345,8 +345,8 @@ document.addEventListener('alpine:init', () => {
         if (menuScroll) menuScroll.style.maxHeight = `${Math.max(0, Math.min(maxScrollHeight, availableHeight - 2))}px`;
       }
       const openUp = this._openUp;
-      // 带说明的宽菜单向左展开，避免侵入右侧预览栏；紧凑菜单保持左对齐。
-      let left = this.hasDescriptions ? r.right - width : r.left;
+      // 对齐方向由调用方配置，空间不足时统一避让视口边缘。
+      let left = align === 'right' ? r.right - width : r.left;
       if (left + width > vw - 8) left = vw - width - 8;
       if (left < 8) left = 8;
       menu.style.position = 'fixed';

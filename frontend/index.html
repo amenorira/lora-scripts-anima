@@ -464,7 +464,7 @@
           <div class="train-type-select-wrap">
             <label class="train-type-label" x-text="t('field.model_train_type', 'Training Type')"></label>
             <div class="anima-select" style="min-width:200px"
-                 x-data="animaSelect(() => ({options: trainTypes.map(tt => ({v: tt.v, l: tt.l, d: t(tt.dk, '')}))}), form.model_train_type)"
+                 x-data="animaSelect(() => ({options: trainTypes.map(tt => ({v: tt.v, l: tt.l, d: t(tt.dk, '')}))}), form.model_train_type, {align:'right'})"
                  @click.outside="close()"
                  @anima-select-change="setField('model_train_type', $event.detail.value)">
               <input type="hidden" x-ref="modelInput" :value="form.model_train_type">
