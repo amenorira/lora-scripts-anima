@@ -165,6 +165,7 @@ window.tagEditorMixin = {
   tagEditorRemovalTags: [],
   tagEditorLeftCollapsed: false,
   _teLastSelected: null,
+  _teNavRequest: 0,
 
   // ===== Image Lightbox =====
   tagEditorLightboxOpen: false,
@@ -520,17 +521,17 @@ window.tagEditorMixin = {
   async tagEditorFetchPage(page, options) {
     this._teLastSelected = null;
     this._teCancelPageFetch();
-    if (!this.tagEditorSessionId) return;
+    if (!this.tagEditorSessionId) return false;
     var targetPage = Math.max(1, Number(page || this.tagEditorPage || 1));
     if (this.tagEditorQuickFilter === 'modified') {
       this.tagEditorPage = targetPage;
       this.tagEditorSchedulePageFetch(false);
-      return;
+      return true;
     }
     var cacheKey = this._teSessionQueryKey(targetPage);
     if (!(options && options.force) && this._tePageCache && this._tePageCache[cacheKey]) {
       this._teApplySessionPage(this._tePageCache[cacheKey], false);
-      return;
+      return true;
     }
     var epoch = this._tePageEpoch;
     var controller = new AbortController();
@@ -539,13 +540,17 @@ window.tagEditorMixin = {
     try {
       var response = await fetch('/api/tageditor/sessions/' + encodeURIComponent(this.tagEditorSessionId) + '/images?' + this._teSessionQuery(targetPage).toString(), { signal: controller.signal });
       var payload = await response.json();
-      if (epoch !== this._tePageEpoch || controller.signal.aborted) return;
+      if (epoch !== this._tePageEpoch || controller.signal.aborted) return false;
       if (payload.status !== 'success') {
-        if (payload.code === 'session_expired') return this.tagEditorReloadSessionPage(targetPage);
+        if (payload.code === 'session_expired') {
+          await this.tagEditorReloadSessionPage(targetPage);
+          return false;
+        }
         this.toast(payload.message || this.t('common.error'), 'error');
-        return;
+        return false;
       }
       this._teApplySessionPage(payload.data || {}, false);
+      return true;
     } catch (e) {
       if (epoch === this._tePageEpoch && !controller.signal.aborted && (!e || e.name !== 'AbortError')) this.toast(this.t('common.networkError'), 'error');
     } finally {
@@ -554,6 +559,7 @@ window.tagEditorMixin = {
         this._tePageAbort = null;
       }
     }
+    return false;
   },
 
   tagEditorSchedulePageFetch(resetPage) {
@@ -650,6 +656,7 @@ window.tagEditorMixin = {
   },
 
   async tagEditorLoad(dir) {
+    if (this.tagEditorLightboxOpen) this.tagEditorCloseLightbox();
     this._teLastSelected = null;
     this.tagEditorCancelQuickRemove();
     this.tagEditorPanelMenu = null;
@@ -1509,32 +1516,38 @@ window.tagEditorMixin = {
 
   tagEditorOpenLightbox(img) {
     if (!img) return;
+    this._teFlushAllPendingTextEdits();
     if (!this.tagEditorLightboxOpen) this._teLightboxPreviousSelection = this.tagEditorSelected.slice();
     this.tagEditorSelected = [img.path];
     this._updateEditorPanel();
+    this.tagEditorLightboxOpen = true;
+    this.tagEditorImageContextMenu = null;
+    document.body.classList.add('te-lightbox-open');
+    this._teLoadLightboxImage(img);
+    this.$nextTick(() => {
+      if (!this.tagEditorLightboxOpen) return;
+      document.querySelector('.te-lightbox-close')?.focus();
+    });
+  },
+
+  _teLoadLightboxImage(img) {
     this.tagEditorLightboxImage = img;
     this.tagEditorLightboxSrc = img.preview || img.thumbnail || '';
     this.tagEditorLightboxLoading = true;
-    this.tagEditorLightboxOpen = true;
-    this.tagEditorImageContextMenu = null;
     this.tagEditorResetLightbox();
-    document.body.classList.add('te-lightbox-open');
     var self = this;
+    var epoch = this._teLoadEpoch;
     var request = ++this._teLightboxRequest;
     var original = new Image();
     original.src = this.tagEditorOriginalUrl(img);
     original.decode().then(function() {
-      if (request !== self._teLightboxRequest || !self.tagEditorLightboxOpen) return;
+      if (epoch !== self._teLoadEpoch || request !== self._teLightboxRequest || !self.tagEditorLightboxOpen) return;
       self.tagEditorLightboxSrc = original.src;
       self.tagEditorLightboxLoading = false;
     }).catch(function() {
-      if (request !== self._teLightboxRequest || !self.tagEditorLightboxOpen) return;
+      if (epoch !== self._teLoadEpoch || request !== self._teLightboxRequest || !self.tagEditorLightboxOpen) return;
       self.tagEditorLightboxLoading = false;
       self.toast(self.t('common.networkError'), 'error');
-    });
-    this.$nextTick(function() {
-      var closeButton = document.querySelector('.te-lightbox-close');
-      if (closeButton) closeButton.focus();
     });
   },
 
@@ -1613,12 +1626,12 @@ window.tagEditorMixin = {
   },
 
   async tagEditorLightboxNav(dir) {
-    await this.tagEditorNavDetail(dir);
-    var img = this.tagEditorGetSelectedImg();
-    if (!img) return;
-    this.tagEditorLightboxImage = img;
-    this.tagEditorLightboxLoading = true;
-    this.tagEditorResetLightbox();
+    if (!this.tagEditorLightboxOpen) return;
+    var request = this._teLightboxRequest, epoch = this._teLoadEpoch;
+    var img = await this.tagEditorNavDetail(dir);
+    if (!img || !this.tagEditorLightboxOpen || epoch !== this._teLoadEpoch || request !== this._teLightboxRequest
+      || this.tagEditorSelected.length !== 1 || this.tagEditorSelected[0] !== img.path) return;
+    this._teLoadLightboxImage(img);
   },
 
   async _teFetchAllSessionItems(useCurrentFilters) {
@@ -1822,6 +1835,7 @@ window.tagEditorMixin = {
   },
 
   _updateEditorPanel() {
+    ++this._teNavRequest;
     this.tagEditorCancelQuickRemove();
     this.tagEditorPanelMenu = null;
     this._teCloseSuggestions();
@@ -2164,6 +2178,9 @@ window.tagEditorMixin = {
   async tagEditorNavDetail(dir) {
     if (this.tagEditorSelected.length !== 1) return;
     this._teFlushAllPendingTextEdits();
+    var request = ++this._teNavRequest;
+    var epoch = this._teLoadEpoch, session = this.tagEditorSessionId;
+    var selected = this.tagEditorSelected[0];
     var filtered = this.tagEditorGetFiltered();
     var currentIdx = this._teFindCurrentFilteredIdx();
     if (currentIdx < 0) return;
@@ -2172,18 +2189,23 @@ window.tagEditorMixin = {
       this.tagEditorSelected = [filtered[newIdx].path];
       this._updateEditorPanel();
       this._teScrollSelectedIntoView();
-      return;
+      return filtered[newIdx];
     }
     if (this.tagEditorSessionId) {
       var nextPage = this.tagEditorPage + (dir < 0 ? -1 : 1);
       if (nextPage < 1 || nextPage > this.tagEditorTotalPages()) return;
-      await this.tagEditorFetchPage(nextPage);
+      var query = this._teSessionQueryKey(nextPage);
+      var loaded = await this.tagEditorFetchPage(nextPage);
+      if (!loaded || request !== this._teNavRequest || epoch !== this._teLoadEpoch || session !== this.tagEditorSessionId
+        || this.tagEditorSelected.length !== 1 || this.tagEditorSelected[0] !== selected || this.tagEditorPage !== nextPage
+        || query !== this._teSessionQueryKey(nextPage)) return;
       var nextItems = this.tagEditorGetPaged();
       var next = dir < 0 ? nextItems[nextItems.length - 1] : nextItems[0];
       if (next) {
         this.tagEditorSelected = [next.path];
         this._updateEditorPanel();
         this._teScrollSelectedIntoView();
+        return next;
       }
     }
   },
