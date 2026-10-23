@@ -18,6 +18,30 @@ function _teParseTags(s, lower) {
 
 var TE_SUGGEST_FIELDS = { single: 'tagEditorAddInput', add: 'batchAddInput', remove: 'batchRemoveInput', old: 'batchOldTag', new: 'batchNewTag' };
 
+// Textareas expose LF even for CRLF files. Keep file formatting in the single
+// authoritative caption string; untouched lines retain their original endings.
+function _teTextFromInput(value, previous, original) {
+  var format = original == null ? previous : original;
+  var bom = format.startsWith('\uFEFF') ? '\uFEFF' : '';
+  if (bom && !value.startsWith(bom)) value = bom + value;
+  var normalize = function(s) { return s.replace(/\r\n|\r/g, '\n'); };
+  if (normalize(previous) === normalize(value)) return previous;
+  var oldLines = previous.split(/\r\n|\r|\n/);
+  var endings = previous.match(/\r\n|\r|\n/g) || [];
+  var lines = value.split(/\r\n|\r|\n/);
+  var prefix = 0, suffix = 0;
+  while (prefix < Math.min(lines.length, oldLines.length) && lines[prefix] === oldLines[prefix]) prefix++;
+  while (suffix < Math.min(lines.length, oldLines.length) - prefix &&
+      lines[lines.length - 1 - suffix] === oldLines[oldLines.length - 1 - suffix]) suffix++;
+  var fallback = endings[0] || (format.match(/\r\n|\r|\n/) || [])[0] || '\n';
+  return lines.map(function(line, index) {
+    if (index === lines.length - 1) return line;
+    var oldIndex = index < prefix || lines.length === oldLines.length ? index
+      : index >= lines.length - suffix ? oldLines.length - (lines.length - index) : -1;
+    return line + (endings[oldIndex] || fallback);
+  }).join('');
+}
+
 function _teGetSuggestCoords(inputEl) {
   var rect = inputEl.getBoundingClientRect();
   var viewportWidth = window.innerWidth || document.documentElement.clientWidth;
@@ -1905,7 +1929,7 @@ window.tagEditorMixin = {
       delete this._tePendingTextEdits[path];
     }
     // 文本内容立即进入编辑状态，只有历史记录防抖，避免快速保存或切图时丢失最后一次输入。
-    this._teUpdateImageTags(img, this.tagEditorDetailText, { deferTextHistory: true });
+    this._teUpdateImageTags(img, _teTextFromInput(this.tagEditorDetailText, img.tags || '', this.tagEditorOriginal[img.path]), { deferTextHistory: true });
     this._tePendingTextEdits[path] = setTimeout(function() {
       self._teFlushPendingTextEdit(path);
     }, 500);

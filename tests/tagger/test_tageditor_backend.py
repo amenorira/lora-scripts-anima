@@ -16,6 +16,51 @@ from backend.tageditor.timeline import TimelineStore
 
 
 class TagEditorTransactionTests(unittest.TestCase):
+    def test_raw_text_round_trip_noop_and_timeline_restore(self):
+        for extension in (".txt", ".caption"):
+            with self.subTest(extension=extension), tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                image = root / "a.png"
+                image.touch()
+                caption = image.with_suffix(extension)
+                original = "\ufeff  描述,  with spaces\r\n\r\n---===--- # long\n  尾段\r\n  "
+                caption.write_bytes(original.encode("utf-8"))
+                before_stat = caption.stat().st_mtime_ns
+                text, revision, _ = read_caption_snapshot(caption)
+                self.assertEqual(text, original)
+                store = TimelineStore(root / "timeline.sqlite3")
+                with patch("backend.tageditor.repository.timeline_store", store):
+                    noop = save_caption_transaction(root, [{"path": str(image), "tags": text, "expected_revision": revision}])
+                    self.assertEqual(noop["saved"], 0)
+                    self.assertEqual(caption.stat().st_mtime_ns, before_stat)
+                    edited = original.replace("尾段", "新尾段, with commas")
+                    saved = save_caption_transaction(root, [{"path": str(image), "tags": edited, "expected_revision": revision}])
+                    self.assertEqual(caption.read_bytes(), edited.encode("utf-8"))
+                    changes = store.changes_for(saved["timeline_event"]["id"], root)
+                    self.assertEqual(changes[0]["before_text"], original)
+                    self.assertEqual(changes[0]["after_text"], edited)
+                    restore_timeline_event(root, saved["timeline_event"]["id"])
+                self.assertEqual(caption.read_bytes(), original.encode("utf-8"))
+
+    def test_failed_transaction_restores_raw_bytes_and_invalid_utf8_is_not_overwritten(self):
+        from backend.tageditor.core import write_tags
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            images = [root / "a.png", root / "b.png"]
+            for image in images:
+                image.touch()
+            caption = images[0].with_suffix(".txt")
+            original = b"\xef\xbb\xbf  first\r\n\r\nlast  \r\n"
+            caption.write_bytes(original)
+            result = save_caption_transaction(root, [{"path": str(image), "tags": "new"} for image in images],
+                writer=lambda path, text: write_tags(path, text) if path == caption else False)
+            self.assertTrue(result["rolled_back"])
+            self.assertEqual(caption.read_bytes(), original)
+            caption.write_bytes(b"invalid\xff")
+            result = save_caption_transaction(root, [{"path": str(images[0]), "tags": "new"}])
+            self.assertTrue(result["aborted"])
+            self.assertEqual(caption.read_bytes(), b"invalid\xff")
+
     def test_snapshot_detects_in_place_changes_during_read(self):
         from types import SimpleNamespace
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -239,7 +284,8 @@ class TagEditorSnapshotCompatibilityTests(unittest.TestCase):
             first.write_text("  original a\n\n", encoding="utf-8")
             second.write_text("original b", encoding="utf-8")
             snapshot = create_snapshot(str(root))
-            first.write_text("changed a", encoding="utf-8")
+            raw_before = b"\xef\xbb\xbf  changed a\r\n\r\nlast  \n"
+            first.write_bytes(raw_before)
             second.write_text("changed b", encoding="utf-8")
 
             from backend.tageditor import snapshots as snapshot_module
@@ -257,7 +303,7 @@ class TagEditorSnapshotCompatibilityTests(unittest.TestCase):
                 with self.assertRaisesRegex(OSError, "injected failure"):
                     restore_snapshot(str(root), snapshot["id"])
 
-            self.assertEqual(first.read_text(encoding="utf-8"), "changed a")
+            self.assertEqual(first.read_bytes(), raw_before)
             self.assertEqual(second.read_text(encoding="utf-8"), "changed b")
 
 
