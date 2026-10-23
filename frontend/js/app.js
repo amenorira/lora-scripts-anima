@@ -275,6 +275,13 @@ document.addEventListener('alpine:init', () => {
     },
 
     // ── Routing ─────────────────────────────────────────────
+    focusMainContent() {
+      const main = document.getElementById('mainContent');
+      if (!main) return;
+      main.focus({ preventScroll: true });
+      main.scrollTop = 0;
+    },
+
     navigate(route) {
       if (!ROUTE_CONFIG[route] || route === this.currentRoute) {
         return;

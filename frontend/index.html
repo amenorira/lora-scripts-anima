@@ -72,7 +72,7 @@
 </head>
 <body x-data="animaApp()" x-cloak>
 
-<a href="#mainContent" class="skip-link" x-text="t('common.skipToContent')">Skip to main content</a>
+<a href="#mainContent" class="skip-link" @keydown.enter.stop @click.prevent="focusMainContent()" x-text="t('common.skipToContent')">Skip to main content</a>
 
 <!-- ── Top Progress Bar (determinate 0→100%) ──────────── -->
 <div class="page-progress" :class="{ active: progressPercent > 0 && progressPercent < 100, done: progressPercent >= 100 }" role="progressbar" :aria-valuenow="progressPercent" aria-valuemin="0" aria-valuemax="100" :aria-label="t('common.pageLoading').replace('{percent}', progressPercent)">
