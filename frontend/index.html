@@ -856,7 +856,7 @@
             @pointermove.window="tagEditorResize($event)"
             @pointerup.window="tagEditorStopResize()"
             @pointercancel.window="tagEditorStopResize()"
-            @keydown.escape="tagEditorCompactLayout && tagEditorCloseSidebar()">
+            @keydown.escape="tagEditorCompactLayout && tagEditorCloseSidebar($event)">
             <div id="te-sidebar" class="te-sidebar" :class="{ collapsed: tagEditorLeftCollapsed }" :inert="tagEditorLeftCollapsed" :aria-hidden="tagEditorLeftCollapsed ? 'true' : null">
               <div class="te-sidebar-close" x-show="tagEditorCompactLayout">
                 <button class="te-topbar-btn" @click="tagEditorCloseSidebar()" x-text="t('tagEditor.closeSidebar')"></button>

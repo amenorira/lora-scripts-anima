@@ -884,10 +884,17 @@ window.tagEditorMixin = {
       + (this.tagEditorSearchQuery ? 1 : 0) + (this.tagEditorQuickFilter !== 'all' ? 1 : 0);
   },
 
-  tagEditorCloseSidebar() {
-    if (this.tagEditorLeftCollapsed) return;
+  tagEditorCloseSidebar(event) {
+    if (this.tagEditorLeftCollapsed || event?.isComposing || event?.keyCode === 229) return;
+    event?.preventDefault();
+    event?.stopPropagation();
     this.tagEditorLeftCollapsed = true;
-    this.$nextTick(() => document.getElementById('te-sidebar-toggle')?.focus());
+    var epoch = this._teLoadEpoch;
+    this.$nextTick(() => {
+      if (epoch !== this._teLoadEpoch || this.currentRoute !== 'tagEditor') return;
+      var toggle = document.getElementById('te-sidebar-toggle');
+      if (toggle?.getClientRects().length) toggle.focus();
+    });
   },
 
   tagEditorStopResize() {
