@@ -97,8 +97,8 @@
     <div class="sidebar-nav">
       <!-- Monitor -->
       <div class="sidebar-section-label" x-text="t('nav.monitor')">Monitor</div>
-      <a class="sidebar-item" data-route="monitor-dashboard" data-group="monitor" :class="{ active: currentRoute === 'monitor-dashboard' }"
-         @click="navigate('monitor-dashboard')" href="javascript:void(0)" :aria-current="currentRoute === 'monitor-dashboard' ? 'page' : null">
+      <a class="sidebar-item" data-route="monitor-dashboard" data-group="monitor" :class="{ active: currentRoute === 'monitor-dashboard' && !selectedRunDir }"
+         @click="navigate('monitor-dashboard')" href="javascript:void(0)" :aria-current="currentRoute === 'monitor-dashboard' && !selectedRunDir ? 'page' : null">
         <span class="sidebar-tab-fill" aria-hidden="true"></span>
         <span class="nav-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
@@ -125,8 +125,8 @@
         </span>
         <span x-text="t('nav.loraTraining')">LoRA Training</span>
       </a>
-      <a class="sidebar-item" data-route="history" data-group="training" :class="{ active: currentRoute === 'history' }"
-         @click="navigate('history')" href="javascript:void(0)" :aria-current="currentRoute === 'history' ? 'page' : null">
+      <a class="sidebar-item" data-route="history" data-group="training" :class="{ active: currentRoute === 'history' || (currentRoute === 'monitor-dashboard' && selectedRunDir) }"
+         @click="navigate('history')" href="javascript:void(0)" :aria-current="currentRoute === 'history' || (currentRoute === 'monitor-dashboard' && selectedRunDir) ? 'page' : null">
         <span class="sidebar-tab-fill" aria-hidden="true"></span>
         <span class="nav-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -286,7 +286,7 @@
         <div class="monitor-sticky-stack">
           <div class="page-header">
             <div class="monitor-page-heading">
-              <h1 class="page-title" x-text="t('nav.monitorDashboard')">Training Dashboard</h1>
+              <h1 class="page-title" x-text="t(selectedRunDir ? 'monitor.historyDetail' : 'nav.monitorDashboard')">Training Dashboard</h1>
             </div>
             <!-- 页头右侧资源监控（仅实时模式；历史模式自动隐藏） -->
             <div id="monitorResbar" class="monitor-resbar" x-show="!selectedRunDir" x-cloak></div>
@@ -328,11 +328,29 @@
       </div>
 
       <!-- Route: History -->
-      <div x-show="currentRoute === 'history'" x-cloak>
+      <div x-show="currentRoute === 'history'" x-cloak class="route-history">
         <div class="page-header">
           <h1 class="page-title" x-text="t('nav.history')">Training History</h1>
+          <button class="btn btn-sm btn-secondary" :disabled="historyLoading" @click="loadHistory()" x-text="t(historyLoading ? 'monitor.loading' : 'monitor.refreshHistory')"></button>
         </div>
-        <div id="historyList" class="history-list"></div>
+        <p class="hist-intro" x-text="t('monitor.historyIntro')"></p>
+        <div class="hist-toolbar">
+          <input type="search" class="hist-search" x-model="historySearch" :placeholder="t('monitor.searchHistory')" :aria-label="t('monitor.searchHistory')" @input.debounce.200ms="renderHistory()">
+          <div class="hist-filters" role="group" :aria-label="t('monitor.historyStatusFilter')">
+            <template x-for="filter in [['all','logLevelAll'], ['completed','statusCompleted'], ['failed','statusFailed'], ['terminated','statusTerminated'], ['unknown','statusUnknown']]" :key="filter[0]">
+              <button type="button" class="hist-filter-btn" :class="{active:historyFilter===filter[0]}" :aria-pressed="historyFilter===filter[0]" @click="historyFilter=filter[0];renderHistory()" x-text="t('monitor.'+filter[1])"></button>
+            </template>
+          </div>
+        </div>
+        <div class="hist-results" role="status" aria-live="polite">
+          <span x-text="t('monitor.historyCount').replace('{shown}', filteredHistoryItems.length).replace('{total}', historyItems.length)"></span>
+          <button class="hist-action" x-show="historySearch || historyFilter !== 'all'" @click="clearHistoryFilters()" x-text="t('monitor.clearHistoryFilters')"></button>
+        </div>
+        <div class="hist-load-error" role="alert" x-show="historyError" x-cloak>
+          <span x-text="historyError"></span>
+          <button class="btn btn-sm btn-secondary" :disabled="historyLoading" @click="loadHistory()" x-text="t('monitor.refreshHistory')"></button>
+        </div>
+        <div id="historyList" class="history-list" :aria-busy="historyLoading"></div>
       </div>
 
       <!-- Route: TensorBoard -->
@@ -413,6 +431,11 @@
           </div>
         </div>
 
+        <div class="history-reuse-notice" x-show="historyReuseSource" x-cloak role="status">
+          <div class="history-reuse-text"><span x-text="t('monitor.historyReuseNotice').replace('{name}', historyReuseSource)"></span><small x-show="historyReuseWarning" x-text="historyReuseWarning"></small></div>
+          <button class="btn btn-sm btn-secondary" :disabled="!!historyReuseBusy" @click="undoHistoryReuse()" x-text="t(historyReuseBusy === 'undo' ? 'monitor.restoringConfig' : 'monitor.undoHistoryReuse')"></button>
+          <button class="btn-icon" :disabled="!!historyReuseBusy" @click="dismissHistoryReuse()" :aria-label="t('common.close')">×</button>
+        </div>
         <div class="train-workbench">
         <aside class="train-rail" x-show="sectionNavList.length > 0" x-cloak
                :style="{ top: sectionRailTop + 'px' }"
@@ -1807,13 +1830,22 @@
 </dialog>
 
 <!-- ── Config Snapshot Modal ───────────────────────────── -->
-<dialog class="modal-overlay" x-dialog="configSnapshotOpen" @click.self="configSnapshotOpen = false" @dialog-close="configSnapshotOpen = false" :aria-label="t('monitor.configSnapshot')" x-cloak>
-  <div class="modal" style="max-width:700px">
+<dialog class="modal-overlay" x-dialog="configSnapshotOpen" @click.self="closeSnapshotModal()" @dialog-close="closeSnapshotModal()" :aria-label="t('monitor.configSnapshot')" x-cloak>
+  <div class="modal config-snapshot-modal">
     <div class="modal-header">
-      <span x-text="t('monitor.configSnapshot')">Config Snapshot</span>
-      <button class="btn-icon" @click="configSnapshotOpen = false" :aria-label="t('common.close')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      <div class="snapshot-heading"><span x-text="t('monitor.configSnapshot')">Config Snapshot</span><small x-text="_currentSnapshot?.name || configSnapshotRunDir" :title="configSnapshotRunDir"></small></div>
+      <button class="btn-icon" data-dialog-autofocus @click="closeSnapshotModal()" :aria-label="t('common.close')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
-    <div class="modal-body" id="configSnapshotContent"></div>
+    <div class="modal-body" id="configSnapshotBody" :aria-busy="configSnapshotLoading">
+      <div class="snapshot-state" x-show="configSnapshotLoading" role="status"><span class="snapshot-spinner" aria-hidden="true"></span><p x-text="t('monitor.loading')"></p></div>
+      <div class="snapshot-state snapshot-state-error" x-show="configSnapshotError" role="alert"><p x-text="configSnapshotError"></p><button class="btn btn-secondary" @click="viewSnapshot(configSnapshotRunDir)" x-text="t('monitor.retryLoad')"></button></div>
+      <div id="configSnapshotContent" x-show="!configSnapshotLoading && !configSnapshotError"></div>
+    </div>
+    <div class="modal-footer snapshot-footer">
+      <span x-text="t('monitor.snapshotCopyHint')"></span>
+      <button class="btn btn-sm btn-secondary" :disabled="!_currentSnapshot?.content || configSnapshotLoading" @click="copyConfigContent()" x-text="t('monitor.copyConfig')"></button>
+      <button class="btn btn-sm btn-primary" :disabled="!_currentSnapshot?.reuse_params || !!historyReuseBusy || configSnapshotLoading" @click="reuseConfigFromSnapshot(configSnapshotRunDir)" x-text="t('monitor.reuseConfig')"></button>
+    </div>
   </div>
 </dialog>
 

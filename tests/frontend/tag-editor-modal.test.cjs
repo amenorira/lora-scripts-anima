@@ -54,6 +54,19 @@ test('closing before autofocus cancels the old dialog opening and hidden trigger
   f.close();f.flush();assert.equal(f.document.activeElement,main);
 });
 
+test('a dialog restores focus to a refreshed opener with the same identity', () => {
+  const f = fixture('help');
+  f.trigger.id = 'history-config';
+  f.trigger.setAttribute('id', f.trigger.id);
+  f.open(); f.flush();
+  f.trigger.remove();
+  const replacement = new f.Element('button');
+  replacement.setAttribute('id', 'history-config');
+  f.document.body.append(replacement);
+  f.close(); f.flush();
+  assert.equal(f.document.activeElement, replacement);
+});
+
 test('help isolates background shortcuts before the native dialog has opened',()=>{
   const f=fixture('help');f.open();
   f.app.tagEditorHandleKeydown({key:'a',ctrlKey:true,target:f.trigger});

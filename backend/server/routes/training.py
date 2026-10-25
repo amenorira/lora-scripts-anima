@@ -181,27 +181,9 @@ async def parse_training_toml(req: TrainingTomlParseRequest):
                 "不再支持结构化预设文件，请导入扁平训练 TOML"
             )
         )
-    from backend.training.scheduler_config import extract_scheduler_form
-    from backend.training.optimizer_contracts import extract_optimizer_form
-
-    # Native trainer TOMLs omit the application's profile selector. Prefer an
-    # explicit selector, then MOSS-specific fields, then the current UI profile.
-    imported_type = parsed.get("model_train_type")
-    if not imported_type:
-        if parsed.get("network_module") == "networks.lora_generic" or "moss_max_token_length" in parsed:
-            imported_type = "moss-image-lora"
-        else:
-            imported_type = req.model_train_type
+    from backend.training.config_import import import_native_training_form
     try:
-        if imported_type:
-            parsed["model_train_type"] = imported_type
-        parsed = extract_scheduler_form(parsed)
-        if imported_type == KREA2_PROFILE_ID:
-            from backend.training.musubi_krea2 import extract_krea2_optimizer_form
-            parsed = extract_krea2_optimizer_form(parsed)
-        else:
-            parsed = extract_optimizer_form(parsed)
-        parsed = extract_network_form(parsed, model_train_type=imported_type or "anima-lora")
+        parsed = import_native_training_form(parsed, profile_id=req.model_train_type or "anima-lora")
     except ValueError as exc:
         return APIResponseFail(message=str(exc))
     return APIResponseSuccess(data={"data": parsed})

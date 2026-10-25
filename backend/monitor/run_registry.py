@@ -28,6 +28,24 @@ RUN_META_NAME = "task_meta.json"
 RUN_SCHEMA_VERSION = 2
 _task_paths: dict[str, Path] = {}
 _task_paths_lock = threading.RLock()
+_delete_lock = threading.Lock()
+
+
+class RunDeletionError(OSError):
+    """Monitoring files remain; keep the record visible for a retry."""
+
+
+def normalize_run_status(value: Any) -> str:
+    return {
+        "completed": "completed", "finished": "completed",
+        "failed": "failed", "error": "failed", "timeout": "failed",
+        "terminated": "terminated",
+    }.get(str(value or "").lower(), "unknown")
+
+
+def _invalidate_history() -> None:
+    from backend.monitor.artifacts import invalidate_history_cache
+    invalidate_history_cache()
 
 
 def _remember_task_path(task_id: str, path: Path) -> None:
@@ -122,6 +140,7 @@ def write_run_record(
     autosave_file: str | Path | None = None,
     imported: bool = False,
     extra: dict[str, Any] | None = None,
+    created_at: str | None = None,
 ) -> dict[str, Any]:
     """写入版本化运行记录并返回记录内容。"""
     internal = resolve_internal_run_dir(run_dir)
@@ -137,12 +156,15 @@ def write_run_record(
         "artifact_dir": artifact_dir_ref(artifact),
         "output_base_dir": str(output_base_dir) if output_base_dir is not None else str(artifact.parent),
         "autosave_file": str(autosave_file) if autosave_file else "",
-        "created_at": datetime.now().isoformat(),
+        "created_at": created_at or datetime.now().isoformat(),
         "imported": bool(imported),
         "deleted": False,
         "extra": extra or {},
     }
+    if imported:
+        record["imported_at"] = datetime.now().isoformat()
     _atomic_write_json(internal / RUN_META_NAME, record)
+    _invalidate_history()
     if task_id:
         _remember_task_path(task_id, internal)
     return record
@@ -152,7 +174,7 @@ def _load_json(path: Path) -> dict[str, Any] | None:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         return data if isinstance(data, dict) else None
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return None
 
 
@@ -211,12 +233,13 @@ def load_run_record(
         return None
 
     meta = _load_json(internal / RUN_META_NAME) or {}
+    extra = meta.get("extra") if isinstance(meta.get("extra"), dict) else {}
     if meta.get("deleted") and not include_deleted:
         return None
 
     artifact_raw = meta.get("artifact_dir")
     if not artifact_raw:
-        artifact_raw = (meta.get("extra") or {}).get("output_dir")
+        artifact_raw = extra.get("output_dir")
     if not artifact_raw:
         artifact_raw = _config_output_dir(internal)
     if not artifact_raw:
@@ -246,10 +269,9 @@ def load_run_record(
         artifact_external = artifact.resolve() != internal.resolve()
     except OSError:
         artifact_external = artifact != internal
-    extra = meta.get("extra") if isinstance(meta.get("extra"), dict) else {}
-
     return {
         **meta,
+        "extra": extra,
         "schema_version": schema_version,
         "task_id": meta.get("task_id"),
         "run_dir": run_dir_ref(internal),
@@ -272,7 +294,11 @@ def iter_run_records(*, include_deleted: bool = False) -> list[dict[str, Any]]:
     for candidate in OUTPUT_DIR.iterdir():
         if not candidate.is_dir() or candidate.name.startswith((".", "__")):
             continue
-        record = load_run_record(candidate, include_deleted=include_deleted)
+        try:
+            record = load_run_record(candidate, include_deleted=include_deleted)
+        except (OSError, TypeError, ValueError) as exc:
+            log.warning("Skipping unreadable run record %s: %s", candidate, exc)
+            continue
         if record:
             records.append(record)
     return records
@@ -315,34 +341,63 @@ def resolve_artifact_file(run_dir: str | Path, relative_path: str | Path) -> Pat
 
 def mark_run_deleted(run_dir: str | Path) -> bool:
     """删除内部监控数据但保留模型、断点和 sample/，并写入防重导标记。"""
+    with _delete_lock:
+        try:
+            return _delete_run_files(run_dir)
+        finally:
+            _invalidate_history()
+
+
+def _delete_run_files(run_dir: str | Path) -> bool:
     record = load_run_record(run_dir, include_deleted=True)
     if not record:
         return False
+    if record.get("deleted"):
+        return True
     internal = Path(record["run_path"])
     artifact = Path(record["artifact_path"])
-
+    tombstone = {
+        key: value for key, value in record.items()
+        if key not in {"run_path", "artifact_path", "artifact_available"}
+    }
+    started_at = record.get("snapshot_time") or record.get("created_at")
+    if record.get("imported") and not record.get("imported_at"):
+        tombstone["imported_at"] = record.get("created_at") or datetime.now().isoformat()
+        config_path = internal / "config.toml"
+        if config_path.is_file():
+            started_at = datetime.fromtimestamp(config_path.stat().st_mtime).isoformat()
+    # Persist enough to display and retry a partially cleaned record, including
+    # when config.toml was removed before another file failed.
+    tombstone.update({
+        "deletion_pending": True,
+        "deletion_config": record.get("deletion_config") or read_run_config(internal),
+        "deletion_result": record.get("deletion_result") or _load_json(internal / "result.json") or {},
+        "created_at": started_at or datetime.fromtimestamp(internal.stat().st_mtime).isoformat(),
+    })
+    _atomic_write_json(internal / RUN_META_NAME, tombstone)
+    failures = []
     for name in _CONTROL_FILES:
         try:
             (internal / name).unlink(missing_ok=True)
         except OSError:
-            pass
+            failures.append(name)
     for log_file in internal.glob("train_*.log"):
         try:
             log_file.unlink(missing_ok=True)
         except OSError:
-            pass
+            failures.append(log_file.name)
     for directory in (internal / "log", internal / "logs"):
         if directory.is_dir():
             try:
                 shutil.rmtree(directory)
             except OSError:
-                pass
-
-    tombstone = {
-        key: value
-        for key, value in record.items()
-        if key not in {"run_path", "artifact_path", "artifact_available"}
-    }
+                failures.append(directory.name)
+    if failures:
+        tombstone["deletion_errors"] = failures
+        _atomic_write_json(internal / RUN_META_NAME, tombstone)
+        raise RunDeletionError("Some files could not be removed / 部分文件无法删除，请关闭占用程序后重试: " + ", ".join(failures))
+    for key in ("deletion_pending", "deletion_config", "deletion_result", "deletion_errors"):
+        tombstone.pop(key, None)
     tombstone.update({
         "schema_version": RUN_SCHEMA_VERSION,
         "run_dir": run_dir_ref(internal),
@@ -454,6 +509,11 @@ def import_legacy_external_runs(limit: int = 50) -> dict[str, int]:
         internal = OUTPUT_DIR / _safe_import_name(artifact)
         _copy_legacy_control_files(artifact, internal, autosave)
         old_meta = _load_json(artifact / RUN_META_NAME) or {}
+        old_extra = old_meta.get("extra") if isinstance(old_meta.get("extra"), dict) else {}
+        source_config = artifact / "config.toml"
+        started_at = old_meta.get("created_at") or old_meta.get("snapshot_time") or datetime.fromtimestamp(
+            (source_config if source_config.is_file() else autosave).stat().st_mtime
+        ).isoformat()
         write_run_record(
             internal,
             artifact_dir=artifact,
@@ -461,7 +521,8 @@ def import_legacy_external_runs(limit: int = 50) -> dict[str, int]:
             output_base_dir=str(artifact.parent),
             autosave_file=autosave,
             imported=True,
-            extra={"legacy_source": str(artifact)},
+            extra={**old_extra, "legacy_source": str(artifact)},
+            created_at=started_at,
         )
         known_artifacts.add(key)
         stats["imported"] += 1

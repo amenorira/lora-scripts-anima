@@ -29,6 +29,8 @@ from backend.monitor.run_registry import (
     find_run_record_by_task_id,
     load_run_record,
     mark_run_deleted,
+    RunDeletionError,
+    normalize_run_status,
     resolve_artifact_file,
 )
 from backend.training.training_config import (
@@ -38,6 +40,7 @@ from backend.training.training_config import (
     load_training_config,
 )
 from backend.tasks import tm
+from backend.training.config_import import infer_training_profile, import_native_training_form
 
 router = APIRouter()
 
@@ -65,7 +68,7 @@ def _read_train_result(run_dir_path: Path, *, allow_mtime_fallback: bool = True)
         if (
             allow_mtime_fallback
             and not result.get("ended_at")
-            and str(result.get("status", "")).lower() in {"completed", "finished", "failed", "terminated"}
+            and normalize_run_status(result.get("status")) != "unknown"
         ):
             result["ended_at"] = datetime.fromtimestamp(
                 result_file.stat().st_mtime, timezone.utc
@@ -284,12 +287,17 @@ async def monitor_stop():
 
 
 @router.get("/monitor/history")
-async def monitor_history():
+async def monitor_history(refresh: bool = False):
     """训练记录：运行中任务 + 历史训练记录"""
+    if refresh:
+        from backend.monitor.artifacts import invalidate_history_cache
+        invalidate_history_cache()
     history = await asyncio.to_thread(scan_history)
 
     # 获取当前运行中任务
     tasks = tm.training_dump()
+    active_ids = {task.get("id") for task in tasks if task.get("status") in {"CREATED", "RUNNING"}}
+    history = [item for item in history if not item.get("task_id") or item["task_id"] not in active_ids]
     running = next(
         (task for task in reversed(tasks) if task.get("status") in {"CREATED", "RUNNING"}),
         None,
@@ -320,8 +328,8 @@ async def delete_history_run(request: Request):
         body = await request.json()
     except Exception:
         return {"status": "error", "message": "Invalid request body"}
-    run_dir = (body or {}).get("run_dir", "")
-    if not run_dir:
+    run_dir = body.get("run_dir", "") if isinstance(body, dict) else ""
+    if not isinstance(run_dir, str) or not run_dir:
         return {"status": "error", "message": "run_dir is required"}
 
     record = await asyncio.to_thread(load_run_record, run_dir, include_deleted=True)
@@ -330,8 +338,11 @@ async def delete_history_run(request: Request):
     tid = record.get("task_id")
     if tid and any(t.get("id") == tid and t.get("status") in {"CREATED", "RUNNING"} for t in tm.training_dump()):
         return {"status": "error", "message": "Cannot delete a running task / 无法删除运行中的任务"}
-    if not await asyncio.to_thread(mark_run_deleted, run_dir):
-        return {"status": "error", "message": "Failed to delete history / 删除历史失败"}
+    try:
+        if not await asyncio.to_thread(mark_run_deleted, run_dir):
+            return {"status": "error", "message": "Failed to delete history / 删除历史失败"}
+    except (RunDeletionError, OSError) as exc:
+        return {"status": "error", "message": str(exc), "data": {"retryable": True}}
 
     # 失效历史缓存
     from backend.monitor.artifacts import invalidate_history_cache
@@ -663,6 +674,8 @@ async def get_config_from_run(run_dir: str = Query("")):
     record = await asyncio.to_thread(load_run_record, run_dir)
     if not record:
         return {"status": "error", "message": "Run directory not found"}
+    if record.get("deletion_pending"):
+        return {"status": "error", "message": "Cleanup incomplete; retry deletion / 此记录已部分清理，请重试删除"}
     abs_run_dir = Path(record["run_path"])
     
     config_file = abs_run_dir / "config.toml"
@@ -688,17 +701,32 @@ async def get_config_from_run(run_dir: str = Query("")):
         else:
             content = config_file.read_text(encoding="utf-8")
             params = read_run_config(config_file.parent)
-        reusable_params = dict(params or {})
-        # 非续训复用时恢复用户填写的输出根目录，避免继续嵌套上次时间戳目录。
-        if not reusable_params.get("resume") and (
-            config_format == "toml" or not reusable_params.get("output_dir")
-        ):
-            reusable_params["output_dir"] = record["output_base_dir"]
+        reuse_error = None
+        reusable_params = None
+        try:
+            if config_format == "toml":
+                reusable_params = import_native_training_form(params, profile_id=infer_training_profile(params, record))
+            else:
+                from backend.training.network_config import extract_network_form, validate_network_preset
+                reusable_params = dict(params)
+                if reusable_params.get("model_train_type") == "krea2-lora":
+                    reusable_params = extract_network_form(reusable_params)
+                validate_network_preset(reusable_params)
+            # Copy as a new run. Resuming is an explicit action on the training page.
+            reusable_params["resume"] = ""
+            if config_format == "toml" or params.get("resume") or not reusable_params.get("output_dir"):
+                reusable_params["output_dir"] = record["output_base_dir"]
+        except ValueError as exc:
+            reusable_params = None
+            reuse_error = str(exc)
         return {
             "status": "success",
             "data": {
                 "content": content,
-                "params": reusable_params,
+                "params": params,
+                "reuse_params": reusable_params,
+                "reuse_error": reuse_error,
+                "name": params.get("output_name", abs_run_dir.name),
                 "config_format": config_format,
                 "schema_version": schema_version,
                 "config_warning": yaml_warning,

@@ -5,6 +5,7 @@ const {uiHarness} = require('./ui-helpers.cjs');
 
 function harness() {
   const ui=uiHarness();
+  ui.context.URLSearchParams = URLSearchParams;
   loadFrontend(['constants','config','app'],ui.context);
   ui.context.ROUTE_CONFIG=ui.context.window.ROUTE_CONFIG;
   ui.listeners.get('alpine:init')();
@@ -45,4 +46,37 @@ test('normal routes and back history retain their existing behavior after using 
   app.currentRoute='tagEditor';app._teHasUnsavedEdits=()=>true;
   let confirm;app.t=k=>k;app._teConfirmUnsaved=(_message,action)=>{confirm=action;};
   app.navigate('docs');assert.equal(app.currentRoute,'tagEditor');assert.equal(typeof confirm,'function');
+});
+
+test('history detail navigation preserves run identity and can return to live on the same route', () => {
+  const {app,context}=harness(), mounted=[];
+  context.window.location={hash:'#history'};
+  context.window.history={state:{},pushState(state,_title,url){this.state=state;context.window.location.hash=url;}};
+  app.currentRoute='history';
+  app._scheduleRoute=route=>{mounted.push(route);app.currentRoute=route;};
+  app.navigate('monitor-dashboard',{run:'output/a b'});
+  assert.equal(context.window.location.hash,'#monitor-dashboard?run=output%2Fa+b');
+  app.selectedRunDir='output/a b';
+  app.navigate('monitor-dashboard');
+  assert.equal(context.window.location.hash,'#monitor-dashboard');
+  assert.equal(mounted.length,2);
+  context.window.location.hash='#monitor-dashboard?run=output%2Fc&tab=logs';
+  app.handleRoute();
+  assert.equal(mounted.length,3);
+  let restored;
+  Object.assign(app,{viewRunDetail:(...args)=>{restored=args;},startMonitorRealtime(){},startProgress(){}});
+  app.buildRouteContent();
+  assert.deepEqual(restored,['output/c',true,'logs']);
+});
+
+test('history detail tab changes in the URL update the panel without reloading the run', () => {
+  const {app, context} = harness();
+  context.window.location = {hash: '#monitor-dashboard?run=output%2Fa&tab=outputs'};
+  context.window.history = {state: {}};
+  Object.assign(app, {currentRoute: 'monitor-dashboard', selectedRunDir: 'output/a', monitorTab: 'logs',
+    setMonitorTab(tab) { this.monitorTab = tab; },
+    _scheduleRoute() { assert.fail('same run must keep its loaded data'); },
+  });
+  app.handleRoute();
+  assert.equal(app.monitorTab, 'outputs');
 });

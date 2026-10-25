@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import threading
@@ -15,7 +16,9 @@ from urllib.parse import quote
 
 from backend.constants import REPO_ROOT, OUTPUT_DIR
 from backend.image_preview import build_image_preview_url
-from backend.monitor.run_registry import import_legacy_external_runs, iter_run_records, read_run_config
+from backend.monitor.run_registry import import_legacy_external_runs, iter_run_records, read_run_config, normalize_run_status
+from backend.training.config_import import infer_training_profile
+from backend.training.core_registry import PROFILES
 from backend.monitor.log_parser import clean_bytes, record_frames
 from backend.monitor.log_index import indexed_slice
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
@@ -203,57 +206,89 @@ def _scan_history() -> list[dict]:
         pass
     history: list[dict] = []
     for record in iter_run_records():
-        run_dir = Path(record["run_path"])
-        config_file = run_dir / "config.toml"
-        if not config_file.is_file():
-            continue
-        params = read_run_config(run_dir)
-        if not params:
-            continue
         try:
-            st = config_file.stat()
-        except OSError:
-            continue
-
-        status = ""
-        duration = ""
-        result_file = run_dir / "result.json"
-        if result_file.exists():
-            try:
-                result_data = json.loads(result_file.read_text(encoding="utf-8"))
-                status = result_data.get("status", "")
-                duration = result_data.get("duration_str", "")
-            except (OSError, json.JSONDecodeError):
-                pass
-
-        model_path = params.get("pretrained_model_name_or_path", "")
-        history.append({
-            "time": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M"),
-            "timestamp": st.st_mtime,
-            "run_dir": record["run_dir"],
-            "artifact_dir": record["artifact_dir"],
-            "artifact_available": record["artifact_available"],
-            "artifact_external": record["artifact_external"],
-            "preview_enabled": record["preview_enabled"],
-            "imported": record["imported"],
-            "config_file": config_file.name,
-            "name": params.get("output_name", run_dir.name),
-            "model": Path(model_path).name if model_path else "Unknown",
-            "lr": params.get("learning_rate", "?"),
-            "dim": params.get("network_dim", "?"),
-            "alpha": params.get("network_alpha", ""),
-            "epochs": params.get("max_train_epochs", "?"),
-            "dataset": params.get("train_data_dir", ""),
-            "status": status,
-            "duration": duration,
-        })
+            item = _history_item(record)
+            if item:
+                history.append(item)
+        except (OSError, TypeError, ValueError) as exc:
+            logging.getLogger(__name__).warning("Skipping unreadable history %s: %s", record.get("run_dir"), exc)
 
     history.sort(key=lambda item: item.get("timestamp", 0), reverse=True)
-
     with _history_cache_lock:
         if generation == _history_cache_generation:
             _history_cache = (time.time(), history)
     return history
+
+
+def _history_item(record: dict) -> dict | None:
+    run_dir = Path(record["run_path"])
+    config_file = run_dir / "config.toml"
+    params = record.get("deletion_config") if record.get("deletion_pending") else read_run_config(run_dir)
+    if not isinstance(params, dict) or not params:
+        return None
+    # Older migrations stamped created_at with import time; their copied config
+    # retains the original mtime. New records distinguish imported_at explicitly.
+    created_at = record.get("created_at")
+    if record.get("imported") and not record.get("imported_at"):
+        created_at = None
+    try:
+        timestamp = datetime.fromisoformat(record.get("snapshot_time") or created_at or "").timestamp()
+    except (ValueError, TypeError):
+        timestamp = config_file.stat().st_mtime if config_file.exists() else run_dir.stat().st_mtime
+
+    result_data = record.get("deletion_result") or {}
+    warning = ""
+    result_file = run_dir / "result.json"
+    try:
+        if result_file.exists():
+            result_data = json.loads(result_file.read_text(encoding="utf-8"))
+        if not isinstance(result_data, dict):
+            raise ValueError("result.json must contain an object")
+    except (OSError, UnicodeDecodeError, ValueError):
+        result_data = {}
+        warning = "result_unreadable"
+
+    model_path = params.get("pretrained_model_name_or_path") or params.get("dit", "")
+    try:
+        profile_id = infer_training_profile(params, record)
+    except ValueError:
+        profile_id = None
+    profile = PROFILES.get(profile_id)
+    network_args = params.get("network_args", [])
+    algorithm = ""
+    for arg in network_args if isinstance(network_args, list) else []:
+        if isinstance(arg, str) and arg.partition("=")[0].strip() == "algo":
+            algorithm = arg.partition("=")[2].strip()
+    network = algorithm or str(params.get("network_module", "")).rsplit(".", 1)[-1]
+    network = {"lora": "LoRA", "lora_anima": "LoRA", "lora_generic": "LoRA",
+               "lokr": "LoKr", "loha": "LoHa", "kohya": "LyCORIS"}.get(network, network)
+    return {
+        "time": datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M"),
+        "timestamp": timestamp,
+        "task_id": record.get("task_id"),
+        "run_dir": record["run_dir"],
+        "artifact_dir": record["artifact_dir"],
+        "artifact_available": record["artifact_available"],
+        "artifact_external": record["artifact_external"],
+        "preview_enabled": record["preview_enabled"],
+        "imported": record["imported"],
+        "config_file": config_file.name,
+        "name": params.get("output_name", run_dir.name),
+        "model": Path(model_path).name if model_path else "Unknown",
+        "lr": params.get("learning_rate", "?"),
+        "dim": params.get("network_dim", "?"),
+        "alpha": params.get("network_alpha", ""),
+        "epochs": params.get("max_train_epochs", "?"),
+        "dataset": params.get("train_data_dir", ""),
+        "status": normalize_run_status(result_data.get("status")),
+        "duration": result_data.get("duration_str", ""),
+        "profile_id": profile_id,
+        "profile_label": profile.label.removesuffix(" LoRA") if profile else "",
+        "network": network,
+        "optimizer": str(params.get("optimizer_type", "")).rsplit(".", 1)[-1],
+        "warning": warning,
+        "deletion_pending": bool(record.get("deletion_pending")),
+    }
 
 
 # ── Checkpoint 解析（文件名 → epoch/step 编号）──────────────

@@ -466,10 +466,10 @@ def _write_result_json(
             "error": error_msg if error_msg else None,
         }
         result_path = run_dir / "result.json"
-        result_path.write_text(
-            json.dumps(result, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        from backend.utils.file_io import atomic_write_text
+        from backend.monitor.artifacts import invalidate_history_cache
+        atomic_write_text(result_path, json.dumps(result, indent=2, ensure_ascii=False))
+        invalidate_history_cache()
     except OSError as e:
         log.warning(f"Failed to write result.json / 写入失败: {e}")
 

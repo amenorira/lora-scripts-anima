@@ -90,8 +90,10 @@
           // never steal focus from a second dialog opened by the same action.
           nextTick(() => {
             if (current !== sequence || requested || document.querySelector('dialog[open]')) return;
-            if (previousFocus?.isConnected && previousFocus.getClientRects().length) {
-              previousFocus.focus({ preventScroll: true });
+            const opener = previousFocus?.isConnected ? previousFocus
+              : previousFocus?.id ? document.getElementById(previousFocus.id) : null;
+            if (opener && !opener.disabled && opener.getClientRects().length) {
+              opener.focus({ preventScroll: true });
             } else if (document.activeElement === document.body) {
               document.getElementById('mainContent')?.focus({ preventScroll: true });
             }
