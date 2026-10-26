@@ -236,8 +236,9 @@ class Krea2CodecTests(unittest.TestCase):
             train = build_krea2_train_config(config, root / "run" / "dataset.toml", root / "artifact", root / "run" / "log")
 
             config["network_alpha"] = 1.5
-            errors = validate_krea2_config(config)
-            self.assertTrue(any("network_alpha" in error and "整数" in error for error in errors), errors)
+            self.assertEqual(validate_krea2_config(config), [])
+            fractional = build_krea2_train_config(config, "dataset.toml", "output", "logs")
+            self.assertEqual(fractional["network_alpha"], 1.5)
 
         self.assertEqual(dataset["general"]["resolution"], [1024, 1024])
         self.assertEqual(train["network_alpha"], 2)

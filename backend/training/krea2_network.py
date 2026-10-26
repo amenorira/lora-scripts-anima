@@ -7,6 +7,7 @@ which LyCORIS' generic block presets omit. No vendor changes are required.
 from __future__ import annotations
 
 import ast
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,8 @@ KREA2_NETWORK_MODULES = (KREA2_NETWORK_MODULE, KREA2_LYCORIS_MODULE)
 KREA2_TARGET_MODES = ("all", "attention", "attention_mlp", "custom")
 KREA2_PRESET_FILENAME = "krea2-network.toml"
 _LYCORIS = {"key": "network_module", "eq": KREA2_LYCORIS_MODULE}
+_LORA_PLUS = [[{"key": "network_module", "eq": KREA2_NETWORK_MODULE}],
+              [_LYCORIS, {"key": "lycoris_algo", "eq": "lora"}]]
 
 
 def _field(key, kind, default, **extra):
@@ -29,9 +32,18 @@ def _field(key, kind, default, **extra):
 
 
 KREA2_NETWORK_FIELDS = [
+    _field("enable_loraplus", "toggle", False, show_if_any=_LORA_PLUS,
+           hint_key="field.krea_enable_loraplusHint"),
+    _field("loraplus_lr_ratio", "number", 2.0, min=0.01, step=0.1,
+           show_if_any=[[*conditions, {"key": "enable_loraplus", "eq": True}] for conditions in _LORA_PLUS],
+           layout_parent="enable_loraplus", hint_key="field.loraplus_lr_ratioHint_standard_lora"),
     _field("lycoris_algo", "select", "lokr", show_if=_LYCORIS,
            options=[{"v": v, "l": label, "dk": f"opt.lycoris_algo_{v}"}
-                    for v, label in (("lokr", "LoKr"), ("loha", "LoHa"))]),
+                    for v, label in (("lokr", "LoKr"), ("loha", "LoHa"))]
+                   + [{"v": "lora", "l": "LoCon", "dk": "opt.krea_lycoris_algo_locon"}]),
+    _field("dropout", "number", 0, min=0, max=0.5, step=0.01,
+           desc_key="field.lycoris_dropout", hint_key="field.krea_locon_dropoutHint",
+           show_if=[_LYCORIS, {"key": "lycoris_algo", "eq": "lora"}]),
     _field("krea_target_mode", "select", "all", desc_key="field.krea_target_mode",
            hint_key="field.krea_target_modeHint", nested=False,
            doc_slug="network-parameters", doc_anchor="krea-targets",
@@ -44,7 +56,7 @@ KREA2_NETWORK_FIELDS = [
         default=0,
         hint_key="field.krea_rank_dropoutHint",
         show_if_any=[[{"key": "network_module", "eq": KREA2_NETWORK_MODULE}],
-                        [_LYCORIS, {"key": "lycoris_algo", "eq": "loha"}]],
+                        [_LYCORIS, {"key": "lycoris_algo", "eq": "loha", "_or": ["lora"]}]],
         profiles=['krea2-lora'],
     ),
     shared_training_field('module_dropout', default=0, profiles=['krea2-lora']),
@@ -67,8 +79,9 @@ KREA2_NETWORK_FIELDS = [
     _field("bypass_mode", "toggle", False, show_if=_LYCORIS,
            hint_key="field.krea_bypass_modeHint",
            auto_value=[{"watch": "fp8_base", "when": True, "set": True},
+                       {"watch": "convrot_int8", "when": True, "set": True},
                        {"watch": "dora_wd", "when": True, "set": False}],
-           readonly_if_any=[{"key": "fp8_base", "eq": True}, {"key": "dora_wd", "eq": True}],
+           readonly_if_any=[{"key": "fp8_base", "eq": True}, {"key": "convrot_int8", "eq": True}, {"key": "dora_wd", "eq": True}],
            readonly_reason_key="field.krea_bypass_modeHint"),
     shared_training_field('lycoris_kernel_backend', default="auto", profiles=['krea2-lora']),
 ]
@@ -79,7 +92,7 @@ _LYCORIS_ARGS = {"lokr_factor": "factor", **{key: key for key in (
     "decompose_both", "full_matrix", "unbalanced_factorization", "use_scalar",
     "rs_lora", "dora_wd", "wd_on_output", "bypass_mode")}}
 _LOKR_ONLY = {"lokr_factor", "decompose_both", "full_matrix", "unbalanced_factorization"}
-_MANAGED_ARGS = {"algo", "preset", "rank_dropout", "module_dropout", *_LYCORIS_ARGS.values()}
+_MANAGED_ARGS = {"algo", "preset", "dropout", "rank_dropout", "module_dropout", "loraplus_lr_ratio", *_LYCORIS_ARGS.values()}
 _NETWORK_DEFAULTS = {field["key"]: field["default"] for field in KREA2_NETWORK_FIELDS}
 
 
@@ -133,6 +146,9 @@ def validate_krea2_network(config: dict) -> list[str]:
         key = key.strip()
         if separator and key in {"rank_dropout", "module_dropout"}:
             legacy_dropout[key] = value.strip()
+        elif separator and key == "loraplus_lr_ratio":
+            config["enable_loraplus"] = True
+            config["loraplus_lr_ratio"] = value.strip()
         else:
             remaining.append(arg)
     if config.get("network_args_custom"):
@@ -148,6 +164,18 @@ def validate_krea2_network(config: dict) -> list[str]:
         if field["type"] == "toggle" and not isinstance(config[field["key"]], bool):
             errors.append(f"{field['key']}: must be boolean / 必须为布尔值")
     config.setdefault("network_dropout", 0)
+    if config["enable_loraplus"]:
+        if module == KREA2_LYCORIS_MODULE and config["lycoris_algo"] != "lora":
+            errors.append("enable_loraplus: select native LoRA or LoCon / LoRA+ 需要选择原生 LoRA 或 LoCon")
+        try:
+            ratio = float(config["loraplus_lr_ratio"])
+            if isinstance(config["loraplus_lr_ratio"], bool) or not math.isfinite(ratio) or ratio <= 0:
+                raise ValueError()
+            config["loraplus_lr_ratio"] = ratio
+        except (TypeError, ValueError):
+            errors.append("loraplus_lr_ratio: must be positive / 必须为正数")
+        if config.get("dim_from_weights"):
+            errors.append("dim_from_weights: LoRA+ requires a manually configured network structure / 使用 LoRA+ 时请手动设置 Rank 和 Alpha")
     if config["krea_target_mode"] not in KREA2_TARGET_MODES:
         errors.append("krea_target_mode: unsupported value / 不支持的目标层选项")
     else:
@@ -165,8 +193,21 @@ def validate_krea2_network(config: dict) -> list[str]:
         except (ValueError, TypeError):
             errors.append(f"{key}: invalid probability / 概率超出有效范围")
     if module == KREA2_LYCORIS_MODULE:
-        if config["lycoris_algo"] not in ("loha", "lokr"):
-            errors.append("lycoris_algo: Krea 2 supports LoHa / LoKr only / Krea 2 仅支持 LoHa、LoKr")
+        if config["lycoris_algo"] not in ("lora", "loha", "lokr"):
+            errors.append("lycoris_algo: choose LoCon, LoHa or LoKr / 请选择 LoCon、LoHa 或 LoKr")
+        if config["lycoris_algo"] == "lora":
+            try:
+                dropout = float(config["dropout"])
+                if isinstance(config["dropout"], bool) or not 0 <= dropout <= 0.5:
+                    raise ValueError()
+                config["dropout"] = dropout
+                if dropout > 0:
+                    if config.get("dora_wd"):
+                        errors.append("dropout: LoCon DoRA ignores neuron dropout; set it to 0 / LoCon 的 DoRA 路径不使用神经元丢弃，请设为 0")
+                    else:
+                        config["bypass_mode"] = True
+            except (TypeError, ValueError):
+                errors.append("dropout: must be between 0 and 0.5 / 必须在 0 到 0.5 之间")
         if config["lycoris_kernel_backend"] not in ("auto", "torch", "triton", "tilelang", "compile"):
             errors.append("lycoris_kernel_backend: unsupported value / 不支持的内核后端")
         if config["lycoris_algo"] == "lokr":
@@ -177,10 +218,10 @@ def validate_krea2_network(config: dict) -> list[str]:
                 config["lokr_factor"] = int(value)
             except (ValueError, TypeError, OverflowError):
                 errors.append("lokr_factor: use -1 or a positive integer / 必须为 -1 或正整数")
-        if config.get("fp8_base"):
+        if config.get("fp8_base") or config.get("convrot_int8"):
             config["bypass_mode"] = True
             if config.get("dora_wd"):
-                errors.append("dora_wd: disable FP8 to use DoRA / DoRA 需要关闭 FP8")
+                errors.append("dora_wd: disable base quantization to use DoRA / DoRA 需要关闭 FP8 和 ConvRot INT8")
         if config.get("dora_wd") and config.get("bypass_mode"):
             errors.append("dora_wd: requires bypass_mode=False / DoRA 需要关闭旁路模式")
         if config["lycoris_algo"] == "lokr" and config.get("rank_dropout"):
@@ -223,11 +264,13 @@ def build_krea2_network_args(config: dict, preset_path: str | Path) -> list[str]
             if key == "decompose_both" and (config.get("full_matrix") or not config.get(key)):
                 continue
             value = config.get(key, _NETWORK_DEFAULTS[key])
-            if key == "bypass_mode" and config.get("fp8_base"):
+            if key == "bypass_mode" and (config.get("fp8_base") or config.get("convrot_int8")):
                 value = True
             args.append(f"{argument}={value}")
     elif config.get("krea_target_mode", "all") != "all":
         args += ["exclude_patterns=['.*']", f"include_patterns={list(map(re.escape, selected_targets(config)))!r}"]
+    if config.get("enable_loraplus"):
+        args.append(f"loraplus_lr_ratio={float(config['loraplus_lr_ratio'])}")
     for key in ("rank_dropout", "module_dropout"):
         if config.get(key):
             args.append(f"{key}={float(config[key])}")
@@ -237,11 +280,13 @@ def build_krea2_network_args(config: dict, preset_path: str | Path) -> list[str]
 def extract_krea2_network_form(config: dict) -> dict:
     """Restore guided controls from native args without losing old LoRA filters."""
     result = dict(config)
+    if result.get("network_module") == KREA2_LYCORIS_MODULE and "network_dropout" in result:
+        result.setdefault("dropout", result.pop("network_dropout"))
     native = result.pop("network_args", [])
     if not isinstance(native, list) or any(not isinstance(arg, str) for arg in native):
         raise ValueError("network_args must be a string array / 必须为字符串数组")
     inverse = {value: key for key, value in _LYCORIS_ARGS.items()}
-    inverse.update(algo="lycoris_algo", rank_dropout="rank_dropout", module_dropout="module_dropout")
+    inverse.update(algo="lycoris_algo", rank_dropout="rank_dropout", module_dropout="module_dropout", loraplus_lr_ratio="loraplus_lr_ratio")
     extras, parsed = [], {}
     for arg in [*native, *_lines(result.pop("network_args_custom", ""))]:
         key, separator, raw = arg.partition("=")
@@ -252,6 +297,8 @@ def extract_krea2_network_form(config: dict) -> dict:
             except (ValueError, SyntaxError):
                 value = {"true": True, "false": False}.get(raw.strip().lower(), raw.strip())
             parsed[inverse[key]] = value
+            if key == "loraplus_lr_ratio":
+                parsed["enable_loraplus"] = True
         elif key == "preset":
             raise ValueError("preset: import the portable training.yaml to restore Krea 2 target layers / 请导入 training.yaml 恢复 Krea 2 目标层设置")
         else:

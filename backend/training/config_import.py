@@ -13,6 +13,8 @@ def infer_training_profile(params: dict, metadata: dict | None = None) -> str | 
             raise ValueError(f"Unknown training profile / 未知训练类型: {explicit}")
         return explicit
     trainer = PurePosixPath(str(extra.get("trainer_file", "")).replace("\\", "/")).name
+    if trainer == "krea2_train_network.py":
+        return "krea2-lora"
     for profile_id, profile in PROFILES.items():
         if trainer and trainer == PurePosixPath(profile.trainer_file).name:
             return profile_id
@@ -35,6 +37,8 @@ def import_native_training_form(params: dict, *, profile_id: str | None = None) 
     if imported_type == "krea2-lora":
         from backend.training.musubi_krea2 import extract_krea2_optimizer_form
         form = extract_krea2_optimizer_form(form)
+        if "split_attn" in form:
+            form.setdefault("krea_split_attn", "true" if form.pop("split_attn") else "false")
     else:
         form = extract_optimizer_form(form)
     return extract_network_form(form, model_train_type=imported_type)

@@ -1,7 +1,7 @@
 """Product-level optimizer metadata shared by training profiles."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from backend.training.optimizer_contracts import (
@@ -247,101 +247,20 @@ SD_SCRIPTS_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
     ),
 )
 
-KREA2_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
-    OptimizerUIEntry(
-        "adamw8bit",
-        "AdamW 8-bit",
-        "opt.optimizer_type_AdamW8bit",
-        GROUP_BASELINE,
-        2,
-        BETA_HINT_ADAM,
-        True,
-    ),
-    OptimizerUIEntry(
-        "AdamW",
-        "AdamW",
-        "opt.optimizer_type_AdamW",
-        GROUP_BASELINE,
-        2,
-        BETA_HINT_ADAM,
-        True,
-    ),
-    OptimizerUIEntry(
-        "bitsandbytes.optim.PagedAdamW8bit",
-        "PagedAdamW8bit",
-        "opt.optimizer_type_PagedAdamW8bit",
-        GROUP_BASELINE,
-        2,
-        BETA_HINT_ADAM,
-        True,
-    ),
-    OptimizerUIEntry(
-        "bitsandbytes.optim.Lion8bit",
-        "Lion8bit",
-        "opt.optimizer_type_Lion8bit",
-        GROUP_FAST,
-        2,
-        BETA_HINT_LION,
-    ),
-    OptimizerUIEntry(
-        "bitsandbytes.optim.PagedLion8bit",
-        "PagedLion8bit",
-        "opt.optimizer_type_PagedLion8bit",
-        GROUP_FAST,
-        2,
-        BETA_HINT_LION,
-    ),
-    OptimizerUIEntry(
-        "pytorch_optimizer.Lion",
-        "Lion",
-        "opt.optimizer_type_Lion",
-        GROUP_FAST,
-        2,
-        BETA_HINT_LION,
-    ),
-    OptimizerUIEntry(
-        ADAFACTOR_OPTIMIZER_TYPE,
-        "AdaFactor",
-        "opt.optimizer_type_AdaFactor",
-        GROUP_AUTOLR,
-    ),
-    OptimizerUIEntry(
-        CAME_OPTIMIZER_TYPE,
-        "CAME",
-        "opt.optimizer_type_CAME",
-        GROUP_STABLE,
-        3,
-        BETA_HINT_CAME,
-    ),
-    OptimizerUIEntry(
-        KREA2_PRODIGY_OPTIMIZER_TYPE,
-        "Prodigy",
-        "opt.optimizer_type_Prodigy",
-        GROUP_AUTOLR,
-        2,
-        BETA_HINT_PRODIGY,
-        True,
-    ),
-    OptimizerUIEntry(
-        KREA2_PRODIGYPLUS_OPTIMIZER_TYPE,
-        "ProdigyPlusScheduleFree",
-        "opt.optimizer_type_ProdigyPlus",
-        GROUP_AUTOLR,
-        2,
-        BETA_HINT_SCHEDULEFREE,
-        True,
-        "internal",
-    ),
-    OptimizerUIEntry(
-        KREA2_SCHEDULEFREE_OPTIMIZER_TYPE,
-        "AdamWScheduleFree",
-        "opt.optimizer_type_AdamWScheduleFree",
-        GROUP_AUTOLR,
-        2,
-        BETA_HINT_SCHEDULEFREE,
-        True,
-        "internal",
-    ),
+# Musubi resolves non-builtin optimizers by their importable class path.
+KREA2_OPTIMIZER_SELECTORS = {
+    "AdamW8bit": "adamw8bit",
+    "PagedAdamW8bit": "bitsandbytes.optim.PagedAdamW8bit",
+    "Lion": "pytorch_optimizer.Lion",
+    "Lion8bit": "bitsandbytes.optim.Lion8bit",
+    "PagedLion8bit": "bitsandbytes.optim.PagedLion8bit",
+    PRODIGY_OPTIMIZER_TYPE: KREA2_PRODIGY_OPTIMIZER_TYPE,
+    ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE: KREA2_SCHEDULEFREE_OPTIMIZER_TYPE,
+    MUON_OPTIMIZER_TYPE: "torch.optim.Muon",
+}
+KREA2_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = tuple(
+    replace(entry, selector=KREA2_OPTIMIZER_SELECTORS.get(entry.selector, entry.selector), train_group=None)
+    for entry in SD_SCRIPTS_OPTIMIZERS
 )
 
 
@@ -349,7 +268,9 @@ def optimizer_entries(profile: str) -> tuple[OptimizerUIEntry, ...]:
     if profile == SD_SCRIPTS_PROFILE:
         return SD_SCRIPTS_OPTIMIZERS
     if profile == KREA2_PROFILE:
-        return KREA2_OPTIMIZERS
+        shared = {entry.description_key: (index, entry.label) for index, entry in enumerate(SD_SCRIPTS_OPTIMIZERS)}
+        return tuple(replace(entry, label=shared[entry.description_key][1]) for entry in sorted(
+            KREA2_OPTIMIZERS, key=lambda entry: shared[entry.description_key][0]))
     raise KeyError(f"unknown optimizer profile: {profile}")
 
 

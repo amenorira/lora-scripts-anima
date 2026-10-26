@@ -613,6 +613,7 @@ async def _create_krea2_run(config, gpu_ids, timestamp, form_snapshot, reserved_
     snapshot_form = dict(form_snapshot)
     snapshot_form["model_train_type"] = KREA2_PROFILE_ID
 
+    config["gpu_ids"] = gpu_ids
     validation_errors = validate_krea2_config(config)
     if validation_errors:
         return _krea2_error(validation_errors, "invalidKrea2Config")

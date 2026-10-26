@@ -497,7 +497,18 @@ window.trainingCoreMixin = {
 
   _migrateSdOptionModes(source, trainType) {
     const values = { ...source };
-    if (trainType === 'krea2-lora') return values;
+    if (trainType === 'krea2-lora') {
+      if (typeof values.network_args_custom === 'string') {
+        values.network_args_custom = values.network_args_custom.split(/\r?\n/).filter(line => {
+          const match = line.match(/^\s*loraplus_lr_ratio\s*=\s*([^\s]+)\s*$/);
+          if (!match || !Number.isFinite(Number(match[1])) || Number(match[1]) <= 0) return true;
+          values.enable_loraplus = true;
+          values.loraplus_lr_ratio = Number(match[1]);
+          return false;
+        }).join('\n');
+      }
+      return values;
+    }
     const has = key => values[key] !== undefined && values[key] !== null && values[key] !== '';
     if (!has('sample_interval_mode')) {
       const specified = ['sample_every_n_epochs', 'sample_every_n_steps'].some(key => Object.hasOwn(values, key));
@@ -3448,8 +3459,10 @@ window.trainingCoreMixin = {
   _enforceSharedTrainingUiConstraints() {
     this._enforceCheckpointingUiConstraints();
     if (this.form.model_train_type === 'krea2-lora') {
-      if (this.form.network_module === 'lycoris.kohya' && this.form.fp8_base) this.form.bypass_mode = true;
+      if (this.form.network_module === 'lycoris.kohya' && (this.form.fp8_base || this.form.convrot_int8)) this.form.bypass_mode = true;
       else if (this.form.network_module === 'lycoris.kohya' && this.form.dora_wd) this.form.bypass_mode = false;
+      else if (this.form.network_module === 'lycoris.kohya' && this.form.lycoris_algo === 'lora'
+        && Number(this.form.dropout || 0) > 0) this.form.bypass_mode = true;
       return;
     }
     if (!['anima-lora', 'moss-image-lora', 'sdxl-lora'].includes(this.form.model_train_type)) return;
@@ -3820,13 +3833,13 @@ window.trainingCoreMixin = {
     }
     const loraMuonType = 'vendor.lora_muon.LoRA_Muon';
     const loraMuonNetwork = 'networks.lora_anima';
-    if (key === 'optimizer_type' && value === loraMuonType &&
+    if (this.form.model_train_type !== 'krea2-lora' && key === 'optimizer_type' && value === loraMuonType &&
         this.form.network_module !== loraMuonNetwork) {
       this.form.network_module = loraMuonNetwork;
       this._setFieldSource('network_module', 'auto');
       this.toast(this.t('field.lora_muonNetworkAutoSelected'), 'warning');
     }
-    if (key === 'network_module' && value !== loraMuonNetwork &&
+    if (this.form.model_train_type !== 'krea2-lora' && key === 'network_module' && value !== loraMuonNetwork &&
         this.form.optimizer_type === loraMuonType) {
       this.form.optimizer_type = 'AdamW8bit';
       this._setFieldSource('optimizer_type', 'auto');
@@ -4132,8 +4145,10 @@ window.trainingCoreMixin = {
 
   _defaultLrTimescale() {
     const warmup = Number(this.form.lr_warmup_steps) || 0;
-    const steps = Number(this.stepEstimate?.total_steps) || 10000;
-    const processes = Math.max(1, Number(this.stepEstimate?.gpu_processes) || 1);
+    const explicitSteps = this.form.model_train_type === 'krea2-lora' && this.form.krea_training_duration_mode === 'steps';
+    const steps = Number(explicitSteps ? this.form.max_train_steps : this.stepEstimate?.total_steps) || 10000;
+    const processes = Math.max(1, Number(this.stepEstimate?.gpu_processes)
+      || (Array.isArray(this.form.gpu_ids) ? this.form.gpu_ids.length : 1));
     const warmupSteps = warmup > 0 && warmup < 1 ? Math.floor(warmup * steps * processes) : warmup;
     return warmupSteps > 0 ? warmupSteps : 10000;
   },
@@ -4302,8 +4317,25 @@ window.trainingCoreMixin = {
   _kreaOptionErrors() {
     if (this.form.model_train_type !== 'krea2-lora') return {};
     const errors = {};
-    if (this.form.network_module === 'lycoris.kohya' && this.form.fp8_base && this.form.dora_wd) {
+    if (this.form.krea_attention_backend === 'xformers' && this.form.krea_split_attn === 'false') {
+      errors.krea_split_attn = this.t('field.split_attnXformersLocked');
+    }
+    if ((this.form.network_module === 'networks.lora_krea2' || this.form.lycoris_algo === 'lora')
+        && this.form.enable_loraplus && this.form.dim_from_weights) {
+      errors.dim_from_weights = this.t('field.krea_loraplus_structureConflict');
+    }
+    if (this.form.network_module === 'lycoris.kohya' && (this.form.fp8_base || this.form.convrot_int8) && this.form.dora_wd) {
       errors.dora_wd = this.t('field.krea_dora_fp8Conflict');
+    }
+    if (this.form.network_module === 'lycoris.kohya' && this.form.lycoris_algo === 'lora'
+      && this.form.dora_wd && Number(this.form.dropout || 0) > 0) {
+      errors.dropout = this.t('field.krea_locon_dropoutHint');
+    }
+    if (['vendor.lora_muon.LoRA_Muon', 'pytorch_optimizer.LoRARite'].includes(this.form.optimizer_type)) {
+      if (this.form.network_module === 'lycoris.kohya'
+        && (this.form.lycoris_algo !== 'lora' || this.form.use_scalar || this.form.dora_wd)) {
+        errors.optimizer_type = this.t('field.krea_paired_optimizerHint');
+      }
     }
     if (this.form.krea_target_mode === 'custom' && !String(this.form.krea_target_include || '').trim()) {
       errors.krea_target_include = this.t('common.fieldRequired');
@@ -4315,6 +4347,14 @@ window.trainingCoreMixin = {
     if (this.form.enable_krea_samples && String(this.form.turbo_dit || '').trim()
         && Number(this.form.blocks_to_swap || 0) > 0) {
       errors.turbo_dit = this.t('field.kreaTurboBlockSwapConflict');
+    }
+    if (this.form.fp8_base && this.form.convrot_int8) errors.convrot_int8 = this.t('field.kreaQuantizationConflict');
+    if (this.form.enable_krea_samples && String(this.form.turbo_dit || '').trim()) {
+      if (this.form.convrot_int8) errors.turbo_dit = this.t('field.kreaTurboQuantizationConflict');
+      if (String(this.form.turbo_lora || '').trim()) errors.turbo_lora = this.t('field.kreaTurboSourceConflict');
+    }
+    if (!(Number(this.form.min_timestep ?? 0) < Number(this.form.max_timestep ?? 1000))) {
+      errors.max_timestep = this.t('field.kreaTimestepRangeError');
     }
     return errors;
   },
@@ -4342,7 +4382,7 @@ window.trainingCoreMixin = {
   },
 
   _muonOptionErrors() {
-    if (this.form.optimizer_type !== 'Muon') return {};
+    if (!['Muon', 'torch.optim.Muon'].includes(this.form.optimizer_type)) return {};
     const errors = {};
     const rawMomentum = this.form.muon_momentum;
     if (rawMomentum !== undefined && rawMomentum !== null && rawMomentum !== '') {
@@ -4418,7 +4458,7 @@ window.trainingCoreMixin = {
       }
     }
 
-    if (this.form.model_train_type !== 'krea2-lora' && this.form.lr_scheduler === 'piecewise_constant'
+    if (this.form.lr_scheduler === 'piecewise_constant'
       && !this._parseStepRules(this.form.step_rules)) {
       errors.step_rules = this.t('field.step_rulesError');
     }

@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 from backend.training.core_registry import PROFILES
@@ -771,6 +772,7 @@ _FIELD_KEY_MAP = {
     "show_if": "showIf",
     "show_if_any": "showIfAny",
     "label_key": "labelKey",
+    "arg_key": "argKey",
     "dk": "dKey",
     "auto_value": "autoValue",
     "readonly_if": "readonlyIf",
@@ -922,7 +924,78 @@ def get_all_fields() -> list[dict]:
     """
     from backend.training.musubi_krea2 import KREA2_FIELDS
 
-    return [*KREA2_FIELDS, *FIELDS]
+    return [*_krea2_ui_fields(KREA2_FIELDS), *FIELDS]
+
+
+def _krea2_ui_fields(fields: list[dict]) -> list[dict]:
+    """Align equivalent presentation while preserving Musubi values and conditions."""
+    from backend.training.musubi_krea2 import _KREA2_OPTIMIZER_ARGUMENTS
+
+    aliases = {
+        "dit": "pretrained_model_name_or_path", "text_encoder": "qwen3",
+        "krea_optimizer_weight_decay": "weight_decay", "krea_optimizer_betas": "betas",
+        "krea_optimizer_eps": "eps", "krea_prodigy_d_coef": "prodigy_d_coef", "krea_prodigy_d0": "prodigy_d0",
+        "krea_prodigyplus_use_stableadamw": "prodigyplus_use_stableadamw",
+        "krea_schedulefree_warmup_steps": "schedulefree_warmup_steps",
+        "krea_attention_backend": "attn_mode", "krea_split_attn": "split_attn",
+        "enable_krea_samples": "enable_preview", "krea_sample_prompts": "positive_prompts",
+        **{f"krea_adafactor_{key}": f"adafactor_{key}" for key in
+           ("relative_step", "scale_parameter", "warmup_init", "clip_threshold", "eps")},
+    }
+    # New Krea-only controls sit beside their corresponding shared control.
+    anchors = {
+        "dataset_cache_dir": ("train_data_dir", 0.1), "caption_extension": ("train_data_dir", 0.2),
+        "krea_num_repeats": ("train_data_dir", 0.3), "krea_target_mode": ("network_module", 0.1),
+        "krea_target_include": ("network_module", 0.2), "krea_target_exclude": ("network_module", 0.3),
+        "krea_training_duration_mode": ("max_train_epochs", -0.1), "max_train_steps": ("max_train_epochs", 0.1),
+        "gradient_checkpointing_cpu_offload": ("gradient_checkpointing", 0.1),
+        "preserve_distribution_shape": ("max_timestep", 0.1), "num_timestep_buckets": ("max_timestep", 0.2),
+        "krea_adamw_fused": ("optimizer_type", 0.1),
+        "krea_latent_cache_device": ("cache_latents", 0),
+        "krea_latent_cache_batch_size": ("cache_latents", 0.1),
+        "krea_cache_vae_tiling": ("cache_latents", 0.2),
+        "krea_text_cache_device": ("cache_text_encoder_outputs", 0),
+        "text_cache_batch_size": ("cache_text_encoder_outputs", 0.1),
+        "krea_cache_num_workers": ("cache_text_encoder_outputs", 0.2),
+        "krea_cache_reuse": ("cache_text_encoder_outputs", 0.3),
+        "fp8_base": ("convrot_int8", -0.1),
+        "turbo_dit": ("sample_flow_shift", 0.1), "turbo_dit_cache": ("sample_flow_shift", 0.2),
+        "turbo_lora": ("sample_flow_shift", 0.3), "turbo_lora_multiplier": ("sample_flow_shift", 0.4),
+        "save_last_n_steps": ("save_every_n_steps", 0.1), "save_last_n_steps_state": ("save_last_n_epochs_state", 0.1),
+    }
+    references = {field["key"]: field for field in FIELDS}
+    order = {field["key"]: index for index, field in enumerate(FIELDS)}
+    # Match equivalent options by meaning when the two engines use different values.
+    option_aliases = {
+        "network_module": {"networks.lora_krea2": "networks.lora_anima"},
+        "krea_attention_backend": {"sdpa": "torch", "flash_attn": "flash"},
+        "weighting_scheme": {"none": "uniform"},
+    }
+    result = deepcopy(fields)
+    positions = {}
+    for index, field in enumerate(result):
+        key = field["key"]
+        if key in _KREA2_OPTIMIZER_ARGUMENTS:
+            field["arg_key"] = _KREA2_OPTIMIZER_ARGUMENTS[key].argument
+        shared_key = aliases.get(key, key)
+        reference = references.get(shared_key)
+        if reference:
+            # Model components and whole-DiT compilation have profile-specific names.
+            if key not in {"dit", "vae", "text_encoder", "compile", "krea_attention_backend", "krea_split_attn",
+                           "enable_krea_samples", "krea_sample_prompts"}:
+                field["desc_key"] = reference["desc_key"]
+            for metadata in ("doc_slug", "doc_anchor", "keep_children_position"):
+                if metadata in reference:
+                    field.setdefault(metadata, reference[metadata])
+            if key == "resume":
+                field["section"] = reference["section"]
+            option_order = {o["v"]: i for i, o in enumerate(reference.get("options", []))}
+            if option_order and field.get("options"):
+                field["options"].sort(key=lambda o: option_order.get(
+                    option_aliases.get(key, {}).get(o["v"], o["v"]), len(option_order)))
+        anchor, offset = anchors.get(key, (shared_key, 0))
+        positions[key] = order.get(anchor, len(order) + index) + offset
+    return sorted(result, key=lambda f: positions[f["key"]])
 
 
 def get_fields_json() -> dict:
