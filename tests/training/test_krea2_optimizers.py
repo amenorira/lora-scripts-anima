@@ -94,12 +94,19 @@ class Krea2OptimizerTests(unittest.TestCase):
             self.assertEqual(validate_krea2_config(form), [])
             self.assertTrue(form['bypass_mode'])
             native = build_krea2_train_config(form, 'dataset.toml', 'output', 'log')
-            self.assertEqual(native['network_dropout'], 0.2)
+            self.assertNotIn('network_dropout', native)
+            self.assertIn('dropout=0.2', native['network_args'])
             self.assertIn('bypass_mode=True', native['network_args'])
             self.assertIn('loraplus_lr_ratio=3.0', native['network_args'])
             restored = import_native_training_form({'network_module': 'lycoris.kohya', 'network_args': ['algo=lora'],
                 'network_dropout': 0.2}, profile_id='krea2-lora')
             self.assertEqual(restored['dropout'], 0.2)
+            for extra in ({}, {'network_dropout': 0.1}, {'dropout': 0.3}):
+                with self.subTest(extra=extra):
+                    restored = import_native_training_form({'network_module': 'lycoris.kohya',
+                        'network_args': ['algo=lora', 'dropout=0.2'], **extra}, profile_id='krea2-lora')
+                    self.assertEqual(restored['dropout'], extra.get('dropout', 0.2))
+                    self.assertNotIn('network_dropout', restored)
             form['dora_wd'] = True
             self.assertTrue(any('dropout' in error for error in validate_krea2_config(form)))
             for optimizer in ('vendor.automagic_optimizer.integration.Automagic3', 'vendor.emo_optimizer.emosens.EmoSens'):

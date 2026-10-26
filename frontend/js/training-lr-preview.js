@@ -47,15 +47,17 @@ window.trainingLrPreviewMixin = {
     if (scheduler === 'constant') return 1;
     if (scheduler === 'rex') {
       // Musubi RexLR uses one-based warmup and a special completion step.
+      // These branches use shared absolute rates, while decay scales each group.
+      const absoluteRateScale = params.rexAbsoluteRateScale ?? 1;
       const step = Math.round(p * totalSteps);
       const warmupSteps = Math.round(warmupFraction * totalSteps);
-      if (warmupSteps === 1 && step === 1) return minRatio;
+      if (warmupSteps === 1 && step === 1) return minRatio * absoluteRateScale;
       if (warmupSteps > 1 && step >= 1 && step <= warmupSteps - 1) {
-        return minRatio + (1 - minRatio) * (step - 1) / (warmupSteps - 1);
+        return (minRatio + (1 - minRatio) * (step - 1) / (warmupSteps - 1)) * absoluteRateScale;
       }
       const remaining = totalSteps - warmupSteps;
       const after = step - warmupSteps;
-      if (after >= remaining || after === -1 || remaining <= 0) return minRatio;
+      if (after >= remaining || after === -1 || remaining <= 0) return minRatio * absoluteRateScale;
       const z = (remaining - ((after % remaining + remaining) % remaining)) / remaining;
       return minRatio + (1 - minRatio) * z / (0.1 + 0.9 * z);
     }
@@ -175,8 +177,8 @@ window.trainingLrPreviewMixin = {
     const chartRateText = chartUnet
       ? (unetRateText || baseRateText)
       : (textEncoderRateText || baseRateText);
-    const chartRate = this._lrPreviewNumber(chartRateText, 0)
-      * (loraUp ? this._lrPreviewNumber(source.loraplus_lr_ratio, 0) : 1);
+    const groupRateScale = loraUp ? this._lrPreviewNumber(source.loraplus_lr_ratio, 0) : 1;
+    const chartRate = this._lrPreviewNumber(chartRateText, 0) * groupRateScale;
     const totalSteps = isKrea2 && source.krea_training_duration_mode === 'steps'
       ? Math.max(0, Number(source.max_train_steps) || 0)
       : this.stepEstimate && Number(this.stepEstimate.total_steps || 0) > 0
@@ -197,6 +199,7 @@ window.trainingLrPreviewMixin = {
       || (optimizer === 'adafactor' && source[isKrea2 ? 'krea_adafactor_relative_step' : 'adafactor_relative_step'] !== false);
     const params = {
       scheduler, warmupFraction: warmup.fraction,
+      rexAbsoluteRateScale: 1 / groupRateScale,
       warmupType: source.warmup_type ?? 'linear',
       decayType: source.decay_type ?? 'cosine',
       stepRules: scheduler === 'piecewise_constant' ? this._parseStepRules(source.step_rules) : null,
@@ -246,8 +249,12 @@ window.trainingLrPreviewMixin = {
     }
     if (!unavailable && !totalSteps && scheduler === 'rex') unavailable = stepCountRequiredNote;
     const evaluateMultiplier = progress => this._lrPreviewMultiplier(progress, params);
-    const peak = scheduler === 'piecewise_constant' && params.stepRules
+    let peak = scheduler === 'piecewise_constant' && params.stepRules
       ? Math.max(1, params.stepRules.finalMultiplier, ...params.stepRules.boundaries.map(rule => rule.multiplier)) : 1;
+    if (scheduler === 'rex' && !unavailable) {
+      peak = Math.max(peak, evaluateMultiplier(1),
+        evaluateMultiplier(Math.max(0, warmup.fraction - 1 / schedulerSteps)));
+    }
     const yUpper = peak * 1.08;
     // A terminal scheduler jump is not a decay interval. Draw up to its left
     // limit; hover still reports the exact value at the completion boundary.

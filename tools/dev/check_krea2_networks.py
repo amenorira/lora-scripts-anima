@@ -156,6 +156,9 @@ def main():
             trainer = Krea2Trainer()
             network = trainer._build_network(args, accelerator, base, None, dtype).to(device=device, dtype=dtype)
             assert {layer.lora_name for layer in network.unet_loras} == expected_targets
+            if name == "locon-dropout":
+                assert all(isinstance(layer.dropout, torch.nn.Dropout) and layer.dropout.p == form["dropout"]
+                           for layer in network.unet_loras)
             if name == "lokr-decompose":
                 assert any(not layer.use_w1 for layer in network.unet_loras)
             elif name == "lokr-no-decompose":

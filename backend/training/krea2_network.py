@@ -254,6 +254,9 @@ def build_krea2_network_args(config: dict, preset_path: str | Path) -> list[str]
     args = _lines(config.get("network_args_custom"))
     if config.get("network_module", KREA2_NETWORK_MODULE) == KREA2_LYCORIS_MODULE:
         args += [f"algo={config.get('lycoris_algo', 'lokr')}", f"preset={Path(preset_path).as_posix()}"]
+        # Musubi's generic builder passes only network_args to LyCORIS.
+        if config.get("lycoris_algo") == "lora":
+            args.append(f"dropout={float(config.get('dropout', 0))}")
         for key, argument in _LYCORIS_ARGS.items():
             if key in _LOKR_ONLY and config.get("lycoris_algo", "lokr") != "lokr":
                 continue
@@ -280,13 +283,12 @@ def build_krea2_network_args(config: dict, preset_path: str | Path) -> list[str]
 def extract_krea2_network_form(config: dict) -> dict:
     """Restore guided controls from native args without losing old LoRA filters."""
     result = dict(config)
-    if result.get("network_module") == KREA2_LYCORIS_MODULE and "network_dropout" in result:
-        result.setdefault("dropout", result.pop("network_dropout"))
     native = result.pop("network_args", [])
     if not isinstance(native, list) or any(not isinstance(arg, str) for arg in native):
         raise ValueError("network_args must be a string array / 必须为字符串数组")
     inverse = {value: key for key, value in _LYCORIS_ARGS.items()}
-    inverse.update(algo="lycoris_algo", rank_dropout="rank_dropout", module_dropout="module_dropout", loraplus_lr_ratio="loraplus_lr_ratio")
+    inverse.update(algo="lycoris_algo", dropout="dropout", rank_dropout="rank_dropout",
+                   module_dropout="module_dropout", loraplus_lr_ratio="loraplus_lr_ratio")
     extras, parsed = [], {}
     for arg in [*native, *_lines(result.pop("network_args_custom", ""))]:
         key, separator, raw = arg.partition("=")
@@ -307,4 +309,6 @@ def extract_krea2_network_form(config: dict) -> dict:
         result["network_args_custom"] = "\n".join(extras)
     for key, value in parsed.items():
         result.setdefault(key, value)
+    if result.get("network_module") == KREA2_LYCORIS_MODULE and "network_dropout" in result:
+        result.setdefault("dropout", result.pop("network_dropout"))
     return result

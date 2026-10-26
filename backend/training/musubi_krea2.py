@@ -2023,10 +2023,7 @@ def build_krea2_train_config(
         "max_data_loader_n_workers": int(config.get("max_data_loader_n_workers", 2)),
     }
     if config["network_module"] == KREA2_LYCORIS_MODULE:
-        if config.get("lycoris_algo") == "lora":
-            result["network_dropout"] = float(config.get("dropout", 0))
-        else:
-            result.pop("network_dropout", None)
+        result.pop("network_dropout", None)
     if str(config.get("krea_training_duration_mode", "epochs")) == "steps":
         result["max_train_steps"] = int(config["max_train_steps"])
     else:

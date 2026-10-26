@@ -116,6 +116,16 @@ test('every Krea scheduler preview agrees with the real Musubi scheduler at ever
   }));
   cases.push(...[0, 1, 20].map(lr_warmup_steps => ({ lr_scheduler: 'rex', lr_warmup_steps,
     lr_scheduler_min_lr_ratio: 0.2, gpu_ids: [0] })));
+  for (const loraplus_lr_ratio of [4, 0.25]) {
+    for (const lr_warmup_steps of [0, 1, 4, 100]) {
+      for (const gpu_ids of [[0], [0, 1]]) {
+        cases.push({ lr_scheduler: 'rex', lr_warmup_steps, enable_loraplus: true,
+          loraplus_lr_ratio, gpu_ids });
+      }
+    }
+    cases.push({ lr_scheduler: 'rex', lr_warmup_steps: 4, enable_loraplus: true,
+      loraplus_lr_ratio, lr_scheduler_min_lr_ratio: 0.5, gpu_ids: [0] });
+  }
   const executable = path.join(ROOT, 'venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
   const result = spawnSync(executable, ['-B', '-c', `
 import json, sys
@@ -137,11 +147,15 @@ for case in json.load(sys.stdin):
     args = setup_parser_common().parse_args([])
     for key, value in native.items(): setattr(args, key, value)
     processes = len(case['gpu_ids'])
-    optimizer = torch.optim.AdamW([torch.nn.Parameter(torch.ones(1))], lr=1e-4)
+    groups = [{'params': [torch.nn.Parameter(torch.ones(1))], 'lr': form['learning_rate']}]
+    if form.get('enable_loraplus'):
+        groups.append({'params': [torch.nn.Parameter(torch.ones(1))],
+                       'lr': form['learning_rate'] * form['loraplus_lr_ratio']})
+    optimizer = torch.optim.AdamW(groups, lr=form['learning_rate'])
     scheduler = NetworkTrainer().get_lr_scheduler(args, optimizer, processes)
     rates = []
     for step in range(100 * processes + 1):
-        if step % processes == 0: rates.append(scheduler.get_last_lr()[0] / 1e-4)
+        if step % processes == 0: rates.append(scheduler.get_last_lr())
         optimizer.step()
         scheduler.step()
     results.append(rates)
@@ -151,11 +165,17 @@ print(json.dumps(results))
   const expected = JSON.parse(result.stdout.trim().split(/\r?\n/).at(-1));
   cases.forEach((values, index) => {
     const { app } = application({ ...values, optimizer_type: 'AdamW', krea_training_duration_mode: 'steps', max_train_steps: 100 });
-    const preview = app._buildLrPreview();
-    assert.equal(preview.unavailable, '', values.lr_scheduler);
-    expected[index].forEach((rate, step) => {
-      const actual = app._lrPreviewMultiplier(step / 100, preview.params);
-      assert.ok(Math.abs(actual - rate) < 1e-8, `${values.lr_scheduler} step ${step}: ${actual} != ${rate}`);
+    app.lrPreviewComponents().forEach((component, group) => {
+      app.lrPreviewComponent = component.value;
+      const preview = app._buildLrPreview();
+      assert.equal(preview.unavailable, '', values.lr_scheduler);
+      const axisMax = Number(preview.yTicks[0].label);
+      expected[index].forEach((rates, step) => {
+        const actual = preview.chartRate * app._lrPreviewMultiplier(step / 100, preview.params);
+        assert.ok(Math.abs(actual - rates[group]) < 1e-12,
+          `${JSON.stringify(values)} ${component.value} step ${step}: ${actual} != ${rates[group]}`);
+        assert.ok(actual <= axisMax * 1.001, `${component.value} step ${step} exceeds chart axis`);
+      });
     });
   });
 });
