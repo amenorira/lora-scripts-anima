@@ -1,13 +1,15 @@
 # LoRA+
 
-> LoRA+ 为适配器的两组参数设置不同学习率，不增加参数量。默认关闭，开启后的默认倍率为 `2.0`。具体分组和实际学习率见下方说明。
+> LoRA+ 为适配器的两组参数设置不同学习率，参数量保持不变。默认关闭，开启后的默认倍率为 `2.0`。
+
+支持 SDXL、Anima、MOSS-Image 的适用网络，以及 Krea 2 的原生 LoRA 和 LyCORIS LoCon。各网络的分组见“支持范围”，优化器限制见兼容表。
 
 <!-- doc-anchor: overview -->
 ## 快速理解
 
 标准 LoRA 中，`lora_down` 保持基础学习率，`lora_up` 使用基础学习率乘以倍率。
 
-倍率越高，两组学习率的差距越大；设为 `1.0` 时两组相同。实际学习率由基础值与倍率共同决定。
+倍率为 `1.0` 时两组学习率相同。Krea 2 还允许小于 `1` 的正倍率，此时 `lora_up` 的学习率低于基础值。
 
 以基础学习率 `2e-5` 为例：
 
@@ -17,7 +19,7 @@
 | 2 | `2e-5` | `4e-5` |
 | 4 | `2e-5` | `8e-5` |
 
-提高基础学习率会同时影响两组参数；提高 LoRA+ 倍率只提高指定参数组。两者不是相同的调整。
+提高基础学习率会同时影响两组参数；提高 LoRA+ 倍率只提高指定参数组。
 
 <!-- doc-anchor: good-cases -->
 ## 什么时候值得试
@@ -27,43 +29,31 @@
 <!-- doc-anchor: ratio-guidance -->
 ## 倍率选多少
 
-开启后默认倍率为 `2.0`。比较其他倍率时保持基础学习率不变，先按下表计算高倍率组的实际学习率。
-
-| 倍率 | 实际含义 | 注意事项 |
-| --- | --- | --- |
-| `1.0` | 两组学习率相同 | 没有 LoRA+ 效果 |
-| `2.0` | 高倍率组为 2 倍 | 本训练器默认值 |
-| `4.0` | 高倍率组为 4 倍 | 需结合基础学习率判断实际强度 |
-| `8.0`～`16.0` | 高倍率组为 8～16 倍 | 填写前先计算实际学习率 |
+从默认倍率 `2.0` 开始，与等学习率基准 `1.0` 比较。测试其他倍率时保持基础学习率不变，按上方示例计算应用倍率后的学习率。
 
 论文和 sd-scripts 文档中的 `16` 是相应实验使用的倍率，本训练器默认使用 `2.0`。两者应结合各自基础学习率比较。
 
 <!-- doc-anchor: parameters -->
 ## 训练器参数
 
-“启用 LoRA+”是本训练器的总开关。它只决定是否把下面的倍率参数写入训练配置，开关本身不是训练命令参数。
+“启用 LoRA+”关闭时不输出倍率，开启后使用界面的倍率字段。SDXL、Anima、MOSS-Image 的自定义网络参数中的同名 `loraplus_*` 项会被清理，以界面值为准。Krea 2 导入旧配置时，会将附加参数中的全局倍率迁移到界面字段。
 
-开关关闭时不输出倍率。开启时只使用界面倍率字段；高级“自定义网络参数”中的同名 `loraplus_*` 项会被清理，不能覆盖界面值。
-
-以下示例展示导出训练 TOML 的写法。倍率属于 `network_args`；设置多个倍率时，合并到同一个列表中。界面配置仍使用对应的倍率字段。
+以下示例展示导出训练 TOML 的写法。倍率属于 `network_args`；设置多个倍率时，合并到同一个列表中。Krea 2 仅提供全局倍率，使用 LoRA+ 时需手动配置 Rank 和 Alpha，并关闭“从权重推导维度”。
 
 <!-- doc-anchor: loraplus-lr-ratio -->
 ### `loraplus_lr_ratio`
 
-全局倍率。UNet/DiT 和文本编码器未设置单独倍率时使用该值。界面默认 `2.0`，最小 `1.0`，步进为 `0.5`。
+全局倍率，默认 `2.0`。UNet/DiT 和文本编码器的单独倍率留空时使用该值。
 
-```toml
-network_args = ["loraplus_lr_ratio=2.0"]
-```
+| 训练类型 | 界面最小值 | 步进 |
+| --- | --- | --- |
+| SDXL、Anima、MOSS-Image | `1.0` | `0.5` |
+| Krea 2 | `0.01` | `0.1` |
 
 <!-- doc-anchor: loraplus-unet-lr-ratio -->
 ### `loraplus_unet_lr_ratio`
 
-只覆盖 UNet/DiT 的倍率，默认留空并使用全局值。Anima 沿用 `unet` 参数名，实际对应 DiT 主干。
-
-```toml
-network_args = ["loraplus_unet_lr_ratio=2.0"]
-```
+只覆盖 UNet/DiT 的倍率，默认留空并使用全局值。Anima、MOSS-Image 沿用 `unet` 参数名，实际对应 DiT 主干。该字段用于 sd-scripts 训练路径。
 
 仅训练文本编码器时，此参数无效。
 
@@ -72,28 +62,36 @@ network_args = ["loraplus_unet_lr_ratio=2.0"]
 
 只覆盖文本编码器 LoRA 参数的倍率，默认留空并使用全局值。
 
-```toml
-network_args = ["loraplus_text_encoder_lr_ratio=2.0"]
-```
+仅在文本编码器参与训练时生效。“仅训练 UNet”或文本编码器输出缓存会使其无效。MOSS-Image、Krea 2 的文本编码器保持冻结。调整后检查触发词响应和其他提示词的控制力。
 
-仅在文本编码器参与训练时生效。“仅训练 UNet”或文本编码器输出缓存会使其无效。调整后重点检查触发词响应和其他提示词的控制力。
-
-两处都留空的组件不使用 LoRA+。
+倍率按“组件倍率 → 全局倍率 → 关闭该组件的 LoRA+”依次回退：
 
 | 训练部分 | 优先使用 | 留空时使用 |
 | --- | --- | --- |
 | 主干网络 | 主干 LoRA+ 倍率 | 全局 LoRA+ 倍率 |
 | 文本编码器 | 文本编码器 LoRA+ 倍率 | 全局 LoRA+ 倍率 |
 
+sd-scripts 的多倍率导出示例：
+
+```toml
+network_args = [
+  "loraplus_lr_ratio=2.0",
+  "loraplus_unet_lr_ratio=3.0",
+  "loraplus_text_encoder_lr_ratio=1.5",
+]
+```
+
 <!-- doc-anchor: effective-lr -->
 ## 实际学习率
 
-倍率要结合基础学习率来看。训练器先确定每个训练部分的基础学习率，再对高倍率组应用倍率：
+sd-scripts 路径先确定各组件的基础学习率，再对指定参数组应用倍率：
 
 | 训练部分 | 优先读取 | 为空时回退到 |
 | --- | --- | --- |
 | UNet/DiT | `unet_lr` | `learning_rate` |
 | 文本编码器 | `text_encoder_lr` | `learning_rate` |
+
+Krea 2 使用 `learning_rate` 作为 DiT 的基础学习率。
 
 单独填写 `unet_lr` 或 `text_encoder_lr` 时，对应组件按自己的学习率计算。例如 `learning_rate=1e-4`、`unet_lr=8e-5`、UNet/DiT 倍率为 `2.0` 时：
 
@@ -105,7 +103,7 @@ network_args = ["loraplus_text_encoder_lr_ratio=2.0"]
 <!-- doc-anchor: cautions -->
 ## 风险与限制
 
-高倍率组的学习率由基础值与倍率相乘得到。比较较高倍率时，缩短保存间隔，检查最佳结果是否提前，以及后续检查点是否出现固定姿势、背景或提示词控制下降。
+比较较高倍率时，缩短保存间隔，检查最佳结果是否提前，以及后续检查点是否出现固定姿势、背景或提示词控制下降。
 
 <span id="effects"></span>
 
@@ -127,7 +125,7 @@ LoRA+ 的效果需要区分学习速度和最终质量。
 
 | 优化器 | LoRA+ 状态 | 说明 |
 | --- | --- | --- |
-| AdamW、AdamW8bit、PagedAdamW8bit | 支持 | 保留不同参数组的独立学习率，倍率关系直观易懂 |
+| AdamW、AdamW8bit、PagedAdamW8bit | 支持 | 保留不同参数组的独立学习率 |
 | Lion、Lion8bit、PagedLion8bit | 支持 | 保留不同参数组的独立学习率 |
 | CAME | 支持 | 保留不同参数组的独立学习率 |
 | StableAdamW、Muon、Adan、AdEMAMix、AdEMAMix8bit、SOAP | 支持 | 保留不同参数组的独立学习率 |
@@ -148,16 +146,17 @@ LoRA+ 的效果需要区分学习速度和最终质量。
 
 以下网络模块提供 LoRA+ 开关：
 
-| 网络模块 | 高学习率参数 | 说明 |
+| 网络模块 | 应用倍率的参数 | 说明 |
 | --- | --- | --- |
 | `networks.lora` | `lora_up` | 标准 LoRA+ 分组 |
 | `networks.lora_anima` | `lora_up` | Anima 使用的标准 LoRA+ 分组 |
 | `networks.lora_generic` | `lora_up` | MOSS 使用的标准 LoRA+ 分组 |
+| `networks.lora_krea2` | `lora_up` | Krea 2 原生 LoRA 分组 |
 | `networks.loha` | `hada_w2_a` | sd-scripts 对 LoHa 的扩展映射 |
 | `networks.lokr` | `lokr_w1` | sd-scripts 对 LoKr 的扩展映射 |
-| `lycoris.kohya`（仅 LoCon/算法 lora） | `lora_up` 等 | LyCORIS 适配层按参数名 `lora_up` 分组；其余 LyCORIS 算法（LoHa/LoKr 等）参数名不命中该分组，不起作用 |
+| `lycoris.kohya`（仅 LoCon/算法 `lora`） | `lora_up` 等 | Anima、Krea 2 的 LoCon 按参数名 `lora_up` 分组 |
 
-原生 LoHa、LoKr 使用各自的分组映射；LyCORIS 仅支持 LoCon（`lora`）。Krea 2（`networks.lora_krea2`，musubi-tuner 路径）不提供 LoRA+ 开关。
+sd-scripts 的原生 LoHa、LoKr 使用各自的分组映射。LyCORIS 的 LoRA+ 仅支持 LoCon（`lora`）。
 
 <!-- doc-anchor: tensorboard -->
 ## TensorBoard 记录
@@ -171,6 +170,8 @@ lr/textencoder
 lr/textencoder plus
 ```
 
+Krea 2 仅训练 DiT，启用 LoRA+ 后记录 `lr/unet` 与 `lr/unet plus`。
+
 Anima 的文本编码器组名带编号；训练该组件时记录：
 
 ```text
@@ -178,9 +179,7 @@ lr/textencoder 1
 lr/textencoder 1 plus
 ```
 
-名称中的 `plus` 表示高倍率参数组。使用分块学习率或其他多组参数配置时，名称和曲线数量还会增加。
-
-普通优化器可用两组曲线核对倍率。内部自适应或 Schedule-Free 优化器还会调整实际更新，应同时查看专用指标与生成结果。
+名称中的 `plus` 表示应用倍率的参数组。使用分块学习率或其他多组参数配置时，名称和曲线数量还会增加。核对倍率的方法见下方常见问题。
 
 <!-- doc-anchor: mechanism -->
 ## 技术原理
@@ -204,8 +203,6 @@ lr/textencoder 1 plus
   <div class="doc-equation-expression"><span class="doc-math-var">LR</span><sub>up</sub> = <span class="doc-math-var">LR</span><sub>base</sub> · <span class="doc-math-var">ratio</span></div>
 </div>
 
-倍率改变的是每次更新的幅度，而不是参数开始更新的时刻。倍率为 `1.0` 时，两组学习率仍然相同。
-
 <!-- doc-anchor: faq -->
 ## 常见问题
 
@@ -215,20 +212,12 @@ lr/textencoder 1 plus
 
 **怎么确认 LoRA+ 真的生效了？**
 
-启用 TensorBoard 记录后，查看参与训练组件的基础组与 plus 组曲线，例如 `lr/unet` 与 `lr/unet plus`。常规优化器在两组都训练且学习率非零的区间，曲线比率应与设定倍率一致；自适应分组学习率则按各组状态变化，不能用固定比率判断。
-
-**为什么界面自动关闭了 LoRA+？**
-
-请查看“优化器与调度器”兼容表；界面会按当前组合自动关闭并显示原因，后端也会拒绝不兼容配置。
-
-**只训练文本编码器时，LoRA+ 还有用吗？**
-
-会生效，但只作用于文本编码器。文本编码器的单独倍率优先，留空时使用全局倍率。
+启用 TensorBoard 记录后，查看参与训练组件的基础组与 plus 组曲线，例如 `lr/unet` 与 `lr/unet plus`。常规优化器在两组都训练且学习率非零的区间，曲线比率应与设定倍率一致。自适应分组学习率按各组状态变化，需逐组查看曲线，并结合专用指标和生成结果评估。
 
 <!-- doc-anchor: references -->
 ## 依据与参考资料
 
-配置传递与兼容性以 `backend/training/adapter.py`、`optimizer_contracts.py` 为准；参数分组、初始化与日志名称见 vendor 中的 `networks/lora.py`、`lora_anima.py`、`network_base.py`。下列固定提交链接保留为实现参考：
+sd-scripts 的配置传递见 `backend/training/adapter.py`；Krea 2 的倍率与网络限制见 `krea2_network.py`、`krea2_optimizers.py`。优化器兼容性见 `optimizer_contracts.py`。参数分组、初始化与日志名称见 vendor 中的 `networks/lora.py`、`lora_anima.py`、`network_base.py`。下列链接固定到对应提交：
 
 - [本项目 sd-scripts fork：`train_network_advanced.md`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/docs/train_network_advanced.md)
 - [本项目 sd-scripts fork：`loha_lokr.md`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/docs/loha_lokr.md)

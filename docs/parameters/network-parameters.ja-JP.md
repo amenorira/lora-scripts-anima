@@ -1,32 +1,39 @@
 # ネットワーク設定
 
-ネットワーク設定はアダプタの行列構造、学習範囲、重みファイルのサイズを決めます。標準 LoRA の既定値は Rank / Alpha が `32/32`、ドロップアウトが `0` です。LoRA-Muon は自動で `16/16` に変えません。この組み合わせを使う場合は手動で指定してください。
+ネットワーク設定はアダプタの行列構造、学習範囲、重みファイルのサイズを決めます。新規設定のドロップアウトは `0` で、Rank / Alpha は次の既定値を使います。
 
-MOSS-Image の既定の Rank / Alpha は `16/1` で、ネイティブの `networks.lora_generic`・`networks.loha`・`networks.lokr` を選択できます。3 方式とも rank/module dropout、LoRA+、正規表現による rank・学習率設定、任意の DiT テキスト投影層と Refiner の学習に対応し、Qwen は凍結します。LoKr には `lokr_factor` もあります。MOSS の対象は線形層のため、畳み込みの rank/alpha と Tucker 分解は非表示で、`lycoris.kohya` も利用できません。同じ rank でも方式によってパラメータ数は異なるため、構造プレビューで行列とスケールを確認し、学習率を個別に調整してください。
+| 学習プロファイル | 既定の Rank / Alpha |
+| --- | --- |
+| Anima、SDXL、Krea 2 | `32/32` |
+| MOSS-Image | `16/1` |
+
+MOSS-Image はネイティブの `networks.lora_generic`・`networks.loha`・`networks.lokr` を選択できます。3 方式とも rank/module dropout、LoRA+、正規表現による rank・学習率設定、任意の DiT テキスト投影層と Refiner の学習に対応し、Qwen は凍結します。LoKr には `lokr_factor` もあります。
+
+MOSS の対象は線形層で、画面には線形層用の設定と上記 3 つのネイティブモジュールを提供します。同じ rank でも方式ごとにパラメータ数やスケールが異なるため、構造プレビューで確認してください。
 
 <!-- doc-anchor: moss-text-embedder -->
 ## MOSS のテキスト投影層と Refiner
 
 `train_text_embedder` の既定はオフです。有効にすると、選択した LoRA / LoHa / LoKr 方式で DiT のテキスト入力投影層と 2 つの Refiner にアダプタを追加します。Qwen は凍結したままなので、テキストキャッシュも利用できます。
 
-これらの層は主幹の学習率を使います。個別に指定する場合は、カスタムネットワーク引数に `network_reg_lrs=.*text_embedder.*=5e-5` を入力します。`5e-5` は構文例で、低くなるかは主幹の値によります。EmoSens は群別の学習率を使わないため、この指定は実際のステップ幅に影響しません。
+これらの層は主幹の学習率を使います。対象層を `5e-5` にする場合は、カスタムネットワーク引数に `network_reg_lrs=.*text_embedder.*=5e-5` を入力します。EmoSens は全パラメータに共通の学習率を使うため、この上書きは無効です。
 
 <!-- doc-anchor: dimension -->
 ## ネットワークの次元数
 
-`network_dim`（既定値 `32`）はランクとも呼ばれ、標準 LoRA の 2 行列の中間次元を指定します。高いほど表現できる重みの変化が広がり、ファイルも大きくなります。
+`network_dim` はランクとも呼ばれ、標準 LoRA の 2 行列の中間次元を指定します。既定値は冒頭のプロファイル表を参照してください。
 
 | 調整 | 得られる効果 | 代価・制限 |
 | --- | --- | --- |
 | ランクを上げる | 表現できる重みの変化が広がる | パラメータ・ファイルサイズ・オプティマイザの状態が増加 |
 | ランクを下げる | パラメータとファイルを削減 | 表現できる重み増分の最大ランクが下がる |
 
-標準 LoRA では Rank を上げると、両因子のパラメータ数が増えます。ファイルを小さくするには Rank を下げてください。アルゴリズム同士の比較では Rank の数値だけを比べず、構造プレビューで実際のパラメータ数を確認します。
+アルゴリズム同士の規模は、構造プレビューに表示する実際のパラメータ数で比較してください。
 
 <!-- doc-anchor: alpha -->
 ## Alpha
 
-`network_alpha`（既定値 `32`）は分岐のスケールを調整します。標準 LoRA の式は次のとおりです。
+`network_alpha` は分岐のスケールを調整します。既定値は冒頭のプロファイル表を参照してください。標準 LoRA の式は次のとおりです。
 
 ```text
 ΔW = (Alpha / rank) × B × A
@@ -50,7 +57,7 @@ MOSS-Image の既定の Rank / Alpha は `16/1` で、ネイティブの `networ
 | アルゴリズム | 表現 | 設定との関係 |
 | --- | --- | --- |
 | LoRA | 2 つの低ランク行列の積 | ランクが中間次元を直接指定 |
-| LoHa | 2 つの低ランク行列積の要素ごとの積 | 同じ次元数でも LoRA と同じ表現空間にはならない |
+| LoHa | 2 つの低ランク行列積の要素ごとの積 | 次元数は各低ランク行列積の中間次元を指定 |
 | LoKr | 2 因子の Kronecker 積。因子自体も低ランクにできる | factor と次元数は異なる段階の分解を調整 |
 
 まず標準 LoRA から始めます。LoHa・LoKr と比較する際は、構造プレビューでパラメータ数を確認し、同じプロンプトとシードで再現度と新しい条件への対応を評価してください。
@@ -58,13 +65,13 @@ MOSS-Image の既定の Rank / Alpha は `16/1` で、ネイティブの `networ
 <!-- doc-anchor: lokr-factor -->
 ## LoKr の factor
 
-基本形は `ΔW = scale × (W1 ⊗ W2)` です。W1 と W2 は共同で重みの変化を表し、入力行列・出力行列に分かれているわけではありません。
+基本形は `ΔW = scale × (W1 ⊗ W2)` です。W1 と W2 の Kronecker 積が共同で重みの変化を表します。
 
-`factor` は両因子への形状の割り当て、`dim` は因子をさらに分解する際の中間ランクを指定します。factor は標準 LoRA のランクとは異なり、Full Matrix モードでも有効です。
+`factor` は両因子への形状の割り当てを指定し、Full Matrix モードでも有効です。`dim` は因子をさらに分解する際の中間ランクを指定します。
 
 画面の `lokr_factor` はネットワークに `factor` として渡します。`-1` は均等に近い次元分割を自動選択します。値を指定すると 2 つの Kronecker 因子のサイズが変わるため、変更後に構造プレビューで形状とパラメータ数を確認してください。
 
-例として、2048×2048 の重み層を完全な行列の因子で表し、均等な分割を使い、非対称な因子分割を無効にした場合を示します。
+例として、2048×2048 の重み層を完全な行列の因子と均等な分割で表した場合を示します。
 
 | Factor | W1 の形状 | W2 の形状 | 両因子のパラメータ数 |
 | --- | --- | --- | --- |
@@ -76,7 +83,7 @@ MOSS-Image の既定の Rank / Alpha は `16/1` で、ネイティブの `networ
 <!-- doc-anchor: full-matrix -->
 ## 完全な行列と両因子の分解
 
-LyCORIS LoKr の既定値は `full_matrix=false`、`decompose_both=false` です。`full_matrix` をオンにすると W1・W2 を直接保持し、`decompose_both` を無視します。オフでも dim が形状ごとのしきい値に達すると直接保持に切り替わります。因子を圧縮するには `decompose_both`、両方の完全な因子を直接学習するには `full_matrix` を試してください。
+LyCORIS LoKr の既定値は `full_matrix=false`、`decompose_both=false` です。`full_matrix` をオンにすると W1・W2 を直接保持し、`decompose_both` を無視します。オフでも dim が形状ごとのしきい値に達すると直接保持に切り替わります。
 
 | 設定 | W1 | W2 |
 | --- | --- | --- |
@@ -91,7 +98,7 @@ LyCORIS LoKr の既定値は `full_matrix=false`、`decompose_both=false` です
 | `rs_lora=false` | dim に設定 | 1 |
 | `rs_lora=true` | dim に設定 | √dim |
 
-両因子が完全な行列の場合、dim が入力した Alpha を上書きします。`rs_lora` がオンなら dim はスケールにも影響します。本プロジェクトの LyCORIS LoKr に適用する規則で、実際の値は構造プレビューに表示します。
+このスケール規則は本プロジェクトの LyCORIS LoKr に適用されます。実際の値は構造プレビューで確認してください。
 
 <!-- doc-anchor: unbalanced -->
 ## 非対称な因子分割
@@ -124,7 +131,15 @@ LyCORIS LoKr の既定値は `full_matrix=false`、`decompose_both=false` です
 
 モジュールドロップアウトは両方の経路で使えます。量子化と重み分解の設定で経路が変わるため、特徴・ランクのドロップアウトを調整する前に使用経路を確認してください。
 
-DoRA（`dora_wd`）は学習可能な大きさを重みに適用する必要があります。現在の LyCORIS の LoCon・LoHa・LoKr は、通常の Linear/Conv 層の Bypass 経路ではこの大きさを適用しません。DoRA を使う場合は `bypass_mode` をオフにして重み再構成の経路を使ってください。この経路では特徴ドロップアウトを使いません。FP8 weight-only LoKr は例外で、DoRA を有効にすると Bypass がオンでも重みを再構成します。現在の FP8 weight-only 層で DoRA に対応するのは LoKr だけです。LoCon と LoHa はこれらの層に DoRA アダプタを作成しません。
+Anima の LyCORIS DoRA（`dora_wd`）は、層の種類に応じて次の経路を使います。
+
+| 層の種類 | DoRA の使用条件 |
+| --- | --- |
+| 通常の Linear/Conv：LoCon、LoHa、LoKr | `bypass_mode` をオフにし、重み再構成で学習可能な大きさを適用。この経路では特徴ドロップアウトは無効 |
+| FP8 weight-only：LoKr | DoRA を有効にすると Bypass 設定を上書きし、重みを再構成 |
+| FP8 weight-only：LoCon、LoHa | 現在の実装は、これらの層の DoRA アダプタ作成に未対応 |
+
+Krea 2 の量子化とバイパスの制約は、後述の専用節を参照してください。
 
 <!-- doc-anchor: preview -->
 ## 実際の構造を確認
@@ -134,15 +149,24 @@ DoRA（`dora_wd`）は学習可能な大きさを重みに適用する必要が�
 <!-- doc-anchor: krea-targets -->
 ## Krea 2：既定の学習対象と絞り込み
 
-上流の既定値は rank/alpha 32 で、主ブロックの attention・MLP・テキスト融合 transformer・投影 MLP を含む DiT の全 264 個の Linear 層が対象です。テキスト融合は DiT 内の処理で、Qwen テキストエンコーダーは固定され、キャッシュを使います。変調と RMSNorm のパラメータは Linear ではなく生のテンソルなので、LoRA の対象外であり、除外指定は不要です。
+既定の Rank / Alpha は `32/32` で、主ブロックの attention・MLP・テキスト融合 transformer・投影 MLP を含む DiT の全 264 個の Linear 層が対象です。テキスト融合は DiT 内の処理で、Qwen テキストエンコーダは凍結し、キャッシュを使います。変調と RMSNorm は生のテンソルを使い、自動的に Linear LoRA の対象範囲外になります。
 
-Krea2 では標準 LoRA または LyCORIS の LoKr / LoHa を選択できます。対象範囲は共通で、全 Linear（264 層）、主幹 Attention（140 層）、主幹 Attention + MLP（224 層）、カスタム正規表現を選べます。全 Linear は汎用 LyCORIS プリセットに含まれない入出力・時間投影・テキスト融合投影も含みます。
+Krea 2 はネイティブ LoRA または LyCORIS の LoCon / LoKr / LoHa を選択できます。4 方式で対象範囲は共通です。全 Linear（264 層）、主幹 Attention（140 層）、主幹 Attention + MLP（224 層）、カスタム正規表現を選べます。全 Linear は入出力・時間投影・テキスト融合投影も含みます。
 
-カスタム正規表現は 1 行に 1 つ、元の Linear 層名に完全一致させます。除外を優先します。`blocks\.[0-9]+\.attn\..*` で主幹 Attention を選択できます。対象が空の場合は開始前にエラーとなります。
+カスタム正規表現は 1 行に 1 つ、元の Linear 層名に完全一致させます。除外を優先します。`blocks\.[0-9]+\.attn\..*` で主幹 Attention を選択できます。`.*` を含めて `txtfusion\..*` を除外すると、テキスト融合層を対象から外せます。対象が空の場合は開始前にエラーとなります。
 
-LyCORIS パネルは Anima と同様の factor、Full Matrix、両側分解、非対称分解、scalar、rsLoRA、DoRA、バイパス、カーネル設定を使い、適用可能な項目のみ表示します。Conv/Tucker と未実装の通常 dropout は提供しません。現在の LoKr の rank dropout は信頼できないため module dropout を使用してください。LoHa と標準 LoRA では rank dropout を使用できます。
+LyCORIS パネルは、各方式に適用する factor、Full Matrix、両因子分解、非対称分解、scalar、rsLoRA、DoRA、バイパス、カーネル設定を表示します。Krea 2 の学習対象は線形層です。
 
-FP8 ではバイパスが自動的に有効になります。DoRA は FP8 とバイパスを両方無効にする必要があります。設定の保存・移行には `training.yaml` を使います。実行時の対象プリセットは自動生成されます。
+| 方式 | ドロップアウトと LoRA+ の対応 |
+| --- | --- |
+| ネイティブ LoRA | rank/module dropout と LoRA+ |
+| LyCORIS LoCon | 通常の dropout、rank/module dropout、LoRA+。通常の dropout が正ならバイパスを有効化。DoRA は通常の dropout を `0` に設定 |
+| LyCORIS LoHa | rank/module dropout |
+| LyCORIS LoKr | 現在の経路は module dropout のみ |
+
+FP8 または ConvRot INT8 のベース重みは、LyCORIS のバイパスを強制的に有効にします。DoRA を使うには、両方の量子化と `bypass_mode` を無効にしてください。
+
+設定の保存・移行には `training.yaml` を使います。実行時の対象プリセットは自動生成されます。
 
 従来の標準 LoRA の追加引数は「全 Linear」で引き続き使用できます。新しい設定では対象範囲の選択を推奨します。
 
@@ -152,4 +176,4 @@ exclude_patterns=['.*\.mlp\..*','first','last\.linear','tmlp\..*','txtmlp\..*','
 
 従来の標準引数の `include_patterns` は対象を戻しますが、既定の対象を除外しません。LyCORIS では対象範囲と対応する設定項目を使用してください。
 
-[Krea 2 upstream guide](https://github.com/kohya-ss/musubi-tuner/blob/f8a1b03794a49239a3539015075f5123d6c07d66/docs/krea2.md#lora-target-layers--loraの対象レイヤー)
+[Krea 2 の上流ガイド](https://github.com/kohya-ss/musubi-tuner/blob/f8a1b03794a49239a3539015075f5123d6c07d66/docs/krea2.md#lora-target-layers--loraの対象レイヤー)

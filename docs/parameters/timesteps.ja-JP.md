@@ -2,7 +2,7 @@
 
 学習では、画像ごとにノイズのタイムステップを選び、その値に応じて画像の潜在表現とノイズを混ぜます。高いタイムステップはノイズを多く含み、低いタイムステップは元画像の情報を多く残します。
 
-Anima/MOSS / Krea 2 はフローマッチングを使い、正規化したタイムステップが混合係数を決めます。
+Anima、MOSS-Image、Krea 2 はフローマッチングを使い、正規化したタイムステップが混合係数を決めます。
 
 | ノイズ量 | 入力に含まれる情報 | サンプリング設定との関係 |
 | --- | --- | --- |
@@ -10,27 +10,27 @@ Anima/MOSS / Krea 2 はフローマッチングを使い、正規化したタイ
 | 中 | 画像とノイズの両方を多く含む | ここに集中させると、両端の学習回数が減る |
 | 低 | 画像の係数が大きく、ノイズの係数が小さい | 割合を増やすと、低ノイズ入力での学習回数が増える |
 
-ノイズ区間は、キャラクターの同一性、全体構造、質感などの目標に一対一で対応しません。特定の特徴が不足していることだけで、サンプリングの方向は決められません。
+キャラクターの同一性、全体構造、質感の学習には複数のノイズ区間が関わります。サンプリングを調整する前に、データ、解像度、学習範囲を確認してください。
 
-タイムステップのサンプリングは、各ノイズ量を使う頻度を決めます。損失の重み付けは、選ばれた入力の予測誤差が学習損失に寄与する大きさを決めます。どちらも学習の重点を変えますが、作用する段階が異なります。
+タイムステップのサンプリングは各ノイズ量を使う頻度、損失の重み付けは抽出後の予測誤差の寄与を決めます。
 
 <!-- doc-anchor: quick-start -->
 ## 基準となる設定
 
-初回は選んだ学習プロファイルの既定分布を使ってください。分布の影響を調べる際は、データ、学習率、総ステップ数を固定し、サンプリング設定を 1 つずつ変えます。
+初回は選んだ学習プロファイルの既定分布を使ってください。
 
 <!-- doc-anchor: defaults -->
 ### プロファイルの既定値
 
-| 学習プロファイル | サンプリング | 分布パラメータ | 損失の重み付け |
+| 学習プロファイル | サンプリング | 分布パラメータ | `weighting_scheme` と作用 |
 | --- | --- | --- | --- |
-| Anima | `sigmoid` | `sigmoid_scale=1.0` | `uniform` |
-| MOSS | `sigma` | `logit_mean=-1.09`, `logit_std=0.95`, `discrete_flow_shift=1.0` | `logit_normal` (1) |
-| Krea 2 | `shift` | `sigmoid_scale=1.0`, `discrete_flow_shift=2.5` | `none` |
+| Anima | `sigmoid` | `sigmoid_scale=1.0` | `uniform`：損失の倍率は 1 |
+| MOSS-Image | `sigma` | `logit_mean=-1.09`, `logit_std=0.95`, `discrete_flow_shift=1.0` | `logit_normal`：logit-normal 分布で抽出、損失の倍率は 1 |
+| Krea 2 | `shift` | `sigmoid_scale=1.0`, `discrete_flow_shift=2.5` | `none`：損失の倍率は 1 |
 
-現在の実装では、`uniform` と `none` はどちらも、タイムステップごとの追加の損失重み付けを行いません。Krea 2 の `none` は、バックエンドと旧設定との互換性のために使われています。古いプリセットを読み込んだ場合は、フォームと分布プレビューに表示される値を確認してください。
+`uniform` と `none` は、どちらも損失の倍率を 1 にします。古いプリセットを読み込んだ場合は、フォームと分布プレビューに表示される値を確認してください。
 
-MOSS の既定値は上流の検証設定に合わせています。この `logit_normal` は離散ノイズ表のインデックスの抽出分布を変え、損失重みは 1 のままです。負の平均は高ノイズ側に偏ります。事前学習の近似であり、公式の 0.95 での打ち切りと 1% の一様サンプル混合は再現しません。上流は簡単な近似として `shift + discrete_flow_shift=3` も示しています。切り替える際は方式とシフトを一緒に変更してください。
+MOSS-Image の既定値は、平均が負の logit-normal 分布でインデックスを抽出し、高ノイズ側へ偏らせて事前学習を近似します。公式設定は追加で 0.95 での打ち切りと 1% の一様サンプル混合を使います。上流は簡単な近似として `shift + discrete_flow_shift=3` も示しています。切り替える際は方式とシフトを一緒に変更してください。
 
 | 目的 | 調整する項目 | 既定値 |
 | --- | --- | --- |
@@ -49,7 +49,7 @@ MOSS の既定値は上流の検証設定に合わせています。この `logi
 | 学習タイムステップ | 現在の画像に加えるノイズ量 | `timestep_sampling` |
 | 生成ステップ数 | サンプラーのノイズ除去ステップ数。1 ステップのモデル計算回数はサンプラーで異なる | `sample_steps` |
 
-「学習ステップ 500」は、オプティマイザによる更新が 500 回行われたことを表します。Anima/MOSS／Krea 2 のノイズタイムステップ `t≈500` は、画像とノイズの混合係数がそれぞれ約半分であることを表します。1 回の更新でも、画像ごとにタイムステップが選ばれます。
+「学習ステップ 500」は、オプティマイザによる更新が 500 回行われたことを表します。本文の式は正規化した `t∈[0,1]` を使い、画面はおよそ `T=1000t` で表示します。`T≈500` は画像とノイズの混合係数がそれぞれ約半分です。1 回の更新でも、画像ごとにタイムステップが選ばれます。
 
 <!-- doc-anchor: visualizer -->
 ## 分布プレビュー
@@ -63,15 +63,15 @@ MOSS の既定値は上流の検証設定に合わせています。この `logi
 | サンプリング曲線 | 幅が同じ区間では、曲線の下の面積が大きいほど、そのノイズ範囲が多く選ばれる |
 | 高・中・低ノイズの割合 | 各区間が総サンプリング回数に占める見込みの割合 |
 | 損失重みの曲線 | 入力が選ばれた後、その予測誤差に掛ける倍率 |
-| 参照解像度 | 解像度に応じたシフトの計算に使う。データセット内のすべてのバケットを表すものではない |
+| 参照解像度 | 現在のグラフで解像度に応じたシフトを計算する寸法 |
 
-曲線が示すのは、サンプリング頻度と損失の重みです。更新量や画質は示しません。離散的なノイズ表は、連続分布で近似して表示します。
+曲線ではサンプリング頻度と損失の重みを読み取れます。更新量と画質は学習ログとチェックポイントの生成画像で評価してください。離散的なノイズ表は連続分布で近似して表示します。
 
-横軸は画像生成のノイズ除去順で、左端が最大ノイズ `t≈1000`、右端が低ノイズ `t≈0` です。学習ではこの順に進めず、画像ごとにタイムステップを抽出します。
+横軸は画像生成のノイズ除去順で、左端が最大ノイズ `T≈1000`、右端が低ノイズ `T≈0` です。学習では画像ごとにタイムステップを抽出します。
 
 縦軸は確率密度 <var>f</var>(<var>t</var>) を表し、重みの曲線は対数目盛を使います。均一な重み付けでは、すべてのタイムステップに同じ倍率を掛けます。実際の損失は予測誤差によって変わります。
 
-プレビューはサンプリングとシフトの式から直接計算するため、更新しても同じ結果になります。丸めにより、割合の合計が `99.9%` または `100.1%` になる場合があります。プレビューを開いても、学習は開始されず、設定も変更されません。
+丸めにより、割合の合計が `99.9%` または `100.1%` になる場合があります。
 
 <span id="dataset-guidance"></span>
 <span id="scenarios"></span>
@@ -79,17 +79,13 @@ MOSS の既定値は上流の検証設定に合わせています。この `logi
 <!-- doc-anchor: diagnosis -->
 ## 学習結果に応じた調整
 
-下の表はデータと設定を確認するためのものです。生成画像の特徴不足だけでは、どのノイズ区間を増やすべきかは判断できません。
-
 | 症状 | 先に確認する点 | 試す調整 |
 | --- | --- | --- |
 | シルエットや体の比率が弱い | 全身画像と必要な視点の有無 | データを補い、分布を固定して複数の学習段階のチェックポイントを比較する |
 | 質感、線、装飾品が不足する | 元画像と学習解像度で細部が保たれるか | 前処理による細部の損失を確認し、分布を固定して解像度・学習範囲・ステップ数を調べる |
 | 全体と細部の両方が弱い | 学習不足、学習対象の範囲が適切か | 分布を固定し、学習率、学習時間、学習範囲を確認する |
-| 同じポーズや背景が繰り返される | 重複画像と過学習の兆候 | ノイズ範囲を変える前に、データと終了時点を確認する |
-| 画風が色だけに反映され、形状に反映されない | 被写体と構図の多様性 | まず被写体と構図を補う。この症状だけではタイムステップ分布を選べない |
-
-1 回の学習で変えるタイムステップ設定は 1 つにし、複数の生成画像で比較してください。詳しい手順は「条件を揃えた比較」を参照してください。
+| 同じポーズや背景が繰り返される | 重複画像と過学習の兆候 | 分布を固定し、データと終了時点を確認する |
+| 画風が色だけに反映され、形状に反映されない | 被写体と構図の多様性 | 被写体と構図を補ってからチェックポイントを比較する |
 
 <!-- doc-anchor: sampling -->
 ## `timestep_sampling`：ノイズ量を選ぶ頻度
@@ -122,8 +118,6 @@ MOSS の既定値は上流の検証設定に合わせています。この `logi
 
 タイムステップの全範囲を均等に選びます。既定の sigmoid 分布より、低ノイズと高ノイズの両端を多く学習します。
 
-両端の学習機会を増やしたい場合に、sigmoid と比較してください。
-
 ### `shift`
 
 sigmoid 分布に `discrete_flow_shift` を適用し、低ノイズ側または高ノイズ側へ重点を移します。
@@ -138,7 +132,7 @@ sigmoid 分布に `discrete_flow_shift` を適用し、低ノイズ側または�
 
 潜在空間のグリッドサイズからシフトを計算します。グリッドの位置数が多いほど、高ノイズ側の割合が増えます。どちらも固定値 `discrete_flow_shift` は使いません。
 
-バケットを有効にすると、解像度や縦横比の近い画像がまとめられます。バケットごとに潜在空間の寸法が異なるため、1 つの参照解像度のプレビューでは、すべてのバケットを表せません。
+バケットを有効にすると、解像度や縦横比の近い画像がまとめられます。各バケットは自分の潜在空間の寸法で分布を計算し、プレビューは現在の参照解像度の結果を表示します。
 
 ### `logsnr`
 
@@ -187,14 +181,14 @@ Krea 2 の `logsnr` は、`logit_mean` と `logit_std` で定義した分布か�
   <p><var>s</var> は <code>discrete_flow_shift</code> です。</p>
 </div>
 
-`flux_shift` と `krea2_shift` は、この固定値を読まず、解像度から独自のシフトを計算します。
+`flux_shift` と `krea2_shift` は、解像度に応じた独自のシフトを使います。
 
 <!-- doc-anchor: subset-offsets -->
 ## サブセット別のタイムステップオフセット
 
 `subset_timestep_offsets` は、サブセットごとに独立したサンプリング偏移を指定します。sigmoid 変換前の正規乱数に加えるため、分布の形状とノイズの割合が変わります。**Anima/MOSS のみ**対応します。
 
-サブセットは、数字とアンダースコアで始まるサブフォルダです（例：`10_face`、`3_full_body`）。先頭の数字はリピート回数です。UI と API では、全体に 1 つの値を指定するのではなく、サブセット名とオフセットの対応を指定します。
+サブセットは、数字とアンダースコアで始まるサブフォルダです（例：`10_group_a`、`3_group_b`）。先頭の数字はリピート回数です。サブセット名とオフセットの対応表を次の手順で入力します。
 
 1. 数字とアンダースコアで始まるフォルダを作り、内容ごとに画像を分けます。
 2. UI の対応表にフォルダ名とオフセットを入力します。
@@ -203,25 +197,25 @@ Krea 2 の `logsnr` は、`logit_mean` と `logit_std` で定義した分布か�
 対応表の例：
 
 ```json
-{"10_face": -0.25, "3_full_body": 0.20}
+{"10_group_a": -0.25, "3_group_b": 0.20}
 ```
 
 学習開始時に、バックエンドが別の `dataset.toml` を書き出します。この項目はメインの学習設定には入りません。
 
 ```toml
 [[datasets.subsets]]
-image_dir = ".../10_face"
+image_dir = ".../10_group_a"
 [datasets.subsets.custom_attributes]
 timestep_sampling = { offset = -0.25 }
 ```
 
-オフセットは各画像とともにバッチへ渡されます。`10_face` の画像は `-0.25`、`3_full_body` は `0.20` を使い、同じバッチに混在しても画像ごとの値を保ちます。正則化データには適用されません。
+オフセットは各画像とともにバッチへ渡されます。`10_group_a` の画像は `-0.25`、`3_group_b` は `0.20` を使い、同じバッチに混在しても画像ごとの値を保ちます。正則化データには適用されません。
 
 ### 対応モードと推奨範囲
 
-`sigmoid`、`shift`、`flux_shift` で有効です。`uniform` と `sigma` はこの値を読みません。API から渡しても学習は実行されますが、オフセットは作用しません。
+`sigmoid`、`shift`、`flux_shift` で有効です。`uniform` と `sigma` はこの値を無視します。
 
-まず `-0.5`～`+0.5` の範囲で調整してください。負の値は低ノイズ、正の値は高ノイズを増やします。すでに高ノイズへシフトしている場合、正の偏移は低ノイズをさらに減らします。アップか全身かだけで値を決めず、分布プレビューで割合を確認してください。
+まず `-0.5`～`+0.5` の範囲で調整してください。負の値は低ノイズ、正の値は高ノイズを増やします。すでに高ノイズへシフトしている場合、正の偏移は低ノイズをさらに減らします。分布プレビューで各サブセットのノイズ割合を確認してください。
 
 プレビューでは、基本分布（全オフセットが 0）、全体の分布、各サブセットを確認できます。1 つずつ調整し、既定値の学習結果と比較してください。オフセットは学習時のサンプリングだけに作用します。他の検証設定が同じなら、検証損失を比較できます。
 
@@ -233,22 +227,22 @@ timestep_sampling = { offset = -0.25 }
 timestep = sigmoid( sigmoid_scale × (random sample + offset) )
 ```
 
-負の値は低ノイズ、正の値は高ノイズを増やし、`0` は元の分布を保ちます。`sigmoid_scale` は乱数とオフセットの両方に掛かります。
+`0` は元の分布を保ちます。`sigmoid_scale` は乱数とオフセットの両方に掛かります。
 
 <!-- doc-anchor: weighting -->
 ## サンプリング頻度と損失の重み
 
-サンプリングは「そのノイズ量を何回使うか」、損失の重み付けは「選ばれた後、その予測誤差をどれだけ重視するか」を決めます。低ノイズを多く選ぶ方法と、その損失の重みを増やす方法は、どちらも低ノイズ側を重視できますが、別の調整です。
+`weighting_scheme` の作用はサンプリング経路で決まります。`sigma` の `logit_normal` と `mode` は抽出頻度、`sigma_sqrt` と `cosmap` は抽出後の損失重みを制御します。
 
 | 方式 | 変わるもの | 意味 |
 | --- | --- | --- |
 | `uniform` / `none` | 追加の重み付けなし | 全タイムステップの損失重みは同じ。頻度はサンプリング方式で決まる |
 | `sigma_sqrt` | 低ノイズの重みを増やす | 低ノイズの課題を重視する。ノイズが 0 に近いと重みが急増するため、更新の安定性を確認する |
-| `cosmap` | 中ノイズの相対的な重みを増やす | 両端の重みを相対的に下げる。サンプリング頻度は変えない |
-| `logit_normal` | `sigma` のサンプリング頻度 | 損失重みは追加しない。他のモードを logit-normal サンプリングにはしない |
-| `mode` | `sigma` のサンプリング頻度 | 損失重みは追加しない。`mode_scale` が分布を調整する |
+| `cosmap` | 中ノイズの相対的な重みを増やす | 両端の重みを相対的に下げる。頻度は現在の抽出方式に従う |
+| `logit_normal` | `sigma` のサンプリング頻度 | 損失の倍率は 1。`sigma` 経路でのみ有効 |
+| `mode` | `sigma` のサンプリング頻度 | 損失の倍率は 1。`mode_scale` が分布を調整 |
 
-最初は `uniform` / `none` を使ってください。低ノイズの誤差を重視したいなら `sigma_sqrt`、中ノイズを重視したいなら `cosmap` を比較します。
+初回は各プロファイルの既定値を使います。Anima は `uniform`、MOSS-Image は `logit_normal`、Krea 2 は `none` です。低ノイズの誤差を重視したいなら `sigma_sqrt`、中ノイズを重視したいなら `cosmap` を比較します。
 
 ### `sigma_sqrt` と `cosmap` の重み
 
@@ -277,7 +271,7 @@ Anima/MOSS ではスケジューラのシフトも最終的なノイズ量を変
 <!-- doc-anchor: mode -->
 ### `mode` と `mode_scale`
 
-`mode` は `timestep_sampling=sigma` のときだけ頻度を変えます。損失重みは追加しません。
+`mode` は `timestep_sampling=sigma` のときに頻度を変え、損失の倍率は 1 です。
 
 - `mode_scale=0`：ノイズ表のインデックスを均等に選びます。
 - `0` から既定値 `1.29` へ大きくすると、表の中央付近に集中します。
@@ -295,7 +289,7 @@ Anima/MOSS ではスケジューラのシフトも最終的なノイズ量を変
 | `subset_timestep_offsets` | 有効 | 無効 | 有効 | 無効 | `flux_shift` のみ | 無効 |
 | `sigma_sqrt/cosmap` の重み | 有効 | 有効 | 有効 | 有効 | 有効 | 有効 |
 
-「無効」は、学習コードがその値を読まないことを表します。設定に残っていても作用しません。フォームでは無効な項目を隠すか注記し、プレビューでは無効な組み合わせを知らせます。
+「無効」は現在の学習経路でその項目を使わないことを表します。フォームでは無効な項目を隠すか注記し、プレビューでも知らせます。
 
 <!-- doc-anchor: sdxl-range -->
 ## SDXL の `min_timestep` と `max_timestep`
@@ -307,21 +301,21 @@ SDXL は、上記の Anima/MOSS／Krea 2 用フローマッチング設定を使
 - `min_timestep` を上げると、ノイズの少ないサンプルを除外します。
 - `max_timestep` を下げると、ノイズの多いサンプルを除外します。
 
-これらは許可範囲を狭める設定で、`sigmoid_scale` や `discrete_flow_shift` に相当するものではありません。既定値は全範囲を使います。片側を意図的に除外する実験で調整してください。
+この 2 項目は抽出を許可する範囲を狭めます。既定値は全範囲を使い、特定のノイズ端点を除外する際に調整します。
 
-`min_snr_gamma`、`v_parameterization`、`zero_terminal_snr` も SDXL のノイズ学習に関係しますが、それぞれ損失の重み、予測対象、スケジューラの動作を変えます。ここで説明したフローマッチングの分布とは異なります。
+SDXL の `min_snr_gamma`、`v_parameterization`、`zero_terminal_snr` は、それぞれ損失の重み、予測対象、スケジューラの動作を制御します。
 
 <!-- doc-anchor: common-mistakes -->
 ## よくある誤解
 
 - `sample_flow_shift` は生成プレビュー用で、学習タイムステップを変えません。
-- シードは選ばれる乱数列を変えます。プレビューの理論分布は変えません。バッチサイズと GPU 数は短い学習でのばらつきに影響します。
-- タイムステップ設定は LoRA のファイル形式を変えません。推論時に同じサンプラーを使う必要もありません。
+- シードは抽出する乱数列を決め、プレビューは抽出式の理論分布を示します。バッチサイズと GPU 数は短い学習でのばらつきに影響します。
+- 学習タイムステップは学習時に使う設定です。推論サンプラーは生成の目的に合わせて選べます。
 
 <!-- doc-anchor: sdxl-loss -->
 ## SDXL：損失重みとノイズ追加の関係
 
-Min-SNR と去偏推定は、タイムステップの抽出確率ではなく、抽出後の損失を変えます。両方有効なら重みが乗算されます。
+Min-SNR と去偏推定は抽出後の損失重みに作用します。両方有効なら重みが乗算され、抽出頻度はタイムステップのサンプリング設定で決まります。
 
 対象タイムステップの信号対雑音比を SNR とし、去偏推定には S = min(SNR, 1000) を使います。
 
@@ -343,7 +337,7 @@ Min-SNR と去偏推定は、タイムステップの抽出確率ではなく、
 4. **比較条件**：同じ学習ステップのチェックポイントを使い、プロンプト、生成シード、解像度、推論時の LoRA 強度を揃えます。
 5. **評価項目**：再現性、背景の混入、構図の固定化、プロンプトへの追従、学習画像にない被写体や構図への対応を確認します。
 
-学習損失は補助的な指標です。それだけで良し悪しを判断せず、条件を揃えた生成画像と実際の用途で評価してください。
+条件を揃えた生成画像と実際の用途を主な評価基準にし、学習損失は補助的な指標として使ってください。
 
 <!-- doc-anchor: flow-matching -->
 ## タイムステップの仕組み
@@ -369,30 +363,19 @@ Min-SNR と去偏推定は、タイムステップの抽出確率ではなく、
 <!-- doc-anchor: evidence -->
 ## 実装と参考資料
 
-式とパラメータの関係は、次のローカルファイルで確認できます。下のリンクは参照するリビジョンを固定しています。
+実装の参照先です。リンクはリビジョンを固定しています。
 
-- sd-scripts フォークの `library/flux_train_utils.py`：`sigmoid`、`shift`、`flux_shift` のサンプリング、`sigma_sqrt` と `cosmap` の重み、`discrete_flow_shift` の変換。
-- Anima の `anima_train_network.py`：バッチの `custom_attributes` から画像ごとのオフセットを読み、学習時だけ適用。
-- `backend/training/sd_dataset_config.py` と `backend/server/routes/training.py`：オフセットを検証し、別の `dataset.toml` を書き出して、`--dataset_config` で学習コードへ渡す。
-- `library/anima_train_utils.py`：Anima のサンプリングと損失重み付けの振り分け。
-- musubi-tuner フォークの `src/musubi_tuner/training/trainer_base.py`：Krea 2 の `krea2_shift` と `logsnr`。
-- musubi-tuner フォークの `src/musubi_tuner/training/timesteps.py`：共通の密度と損失重みの式。
-- `frontend/js/training-core.js`：確率密度の解析的な計算と、必要に応じた損失重みの曲線。
-
-参考資料：
-
-- [本プロジェクトの sd-scripts：`library/flux_train_utils.py`](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/sd-scripts/library/flux_train_utils.py)
-- [本プロジェクトの Anima 学習コード：`anima_train_network.py`](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/sd-scripts/anima_train_network.py)
-- [本プロジェクトのデータセット設定：`backend/training/sd_dataset_config.py`](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/backend/training/sd_dataset_config.py)
-- [本プロジェクトの sd-scripts：`library/anima_train_utils.py`](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/sd-scripts/library/anima_train_utils.py)
-- [本プロジェクトの musubi-tuner：`training/timesteps.py`](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/musubi-tuner/src/musubi_tuner/training/timesteps.py)
-- [本プロジェクトの musubi-tuner：`training/trainer_base.py`](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/musubi-tuner/src/musubi_tuner/training/trainer_base.py)
-- [本プロジェクトのフロントエンド：`training-core.js`](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/frontend/js/training-core.js)
+- [`library/flux_train_utils.py`](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/sd-scripts/library/flux_train_utils.py)：`sigmoid`・`shift`・`flux_shift` の抽出、`sigma_sqrt`・`cosmap` の重み、固定シフトの変換。
+- [`anima_train_network.py`](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/sd-scripts/anima_train_network.py)：学習時にバッチの `custom_attributes` から画像ごとのオフセットを取得。
+- [`backend/training/sd_dataset_config.py`](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/backend/training/sd_dataset_config.py)：`backend/server/routes/training.py` と共にオフセットを検証し、`dataset.toml` を生成して学習コードへ渡す。
+- [`library/anima_train_utils.py`](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/sd-scripts/library/anima_train_utils.py)：Anima のサンプリングと損失重み付けの振り分け。
+- [`training/timesteps.py`](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/musubi-tuner/src/musubi_tuner/training/timesteps.py)：共通の密度と損失重みの式。
+- [`training/trainer_base.py`](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/musubi-tuner/src/musubi_tuner/training/trainer_base.py)：Krea 2 の `krea2_shift`・`logsnr` などの抽出。
+- [`frontend/js/training-core.js`](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/frontend/js/training-core.js)：確率密度の解析計算と損失重みの曲線。
 - [Anima 公式モデルカード](https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md)
-- [Anima 開発元 Circlestone Labs の公式作例 LoRA：Greg Rutkowski Style - Anima](https://civitai.com/models/2536147/greg-rutkowski-style-anima)
 - [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis](https://arxiv.org/abs/2403.03206)
 - [Flow Matching for Generative Modeling](https://arxiv.org/abs/2210.02747)
 
-- [MOSS-Image upstream guide](https://github.com/kohya-ss/sd-scripts/blob/04ca541746b7667b27eab230db067579f682895e/docs/moss_image_train_network.md#72-training-settings--学習設定)
-- [SDXL loss weights](https://github.com/kohya-ss/sd-scripts/blob/04ca541746b7667b27eab230db067579f682895e/library/custom_train_functions.py)
-- [Noise augmentation order](https://github.com/kohya-ss/sd-scripts/blob/04ca541746b7667b27eab230db067579f682895e/library/loss.py)
+- [MOSS-Image の上流ガイド](https://github.com/kohya-ss/sd-scripts/blob/04ca541746b7667b27eab230db067579f682895e/docs/moss_image_train_network.md#72-training-settings--学習設定)
+- [SDXL の損失重み](https://github.com/kohya-ss/sd-scripts/blob/04ca541746b7667b27eab230db067579f682895e/library/custom_train_functions.py)
+- [ノイズ追加の順序](https://github.com/kohya-ss/sd-scripts/blob/04ca541746b7667b27eab230db067579f682895e/library/loss.py)
