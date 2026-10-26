@@ -1661,7 +1661,6 @@
     <div class="modal-header">
       <div>
         <div x-text="t('timestepPreview.title')">Timestep distribution</div>
-        <div class="timestep-preview-subtitle" x-text="t('timestepPreview.subtitle')"></div>
       </div>
       <button class="btn-icon timestep-preview-close" @click="closeTimestepPreview()" :aria-label="t('common.close')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -1738,14 +1737,13 @@
   </div>
 </dialog>
 
-<!-- ── sd-scripts Learning-Rate Curve Preview ──────────── -->
+<!-- ── Learning-Rate Curve Preview ──────────── -->
 <dialog class="modal-overlay" x-dialog="lrPreviewOpen" @click.self="closeLrPreview()"
         @dialog-close="closeLrPreview()" :aria-label="t('lrPreview.title')" x-cloak>
   <div class="modal lr-preview-modal modal-workbench modal-workbench--lr">
     <div class="modal-header">
       <div>
         <div x-text="t('lrPreview.title')">Learning-rate curve</div>
-        <div class="lr-preview-subtitle" x-text="t('lrPreview.subtitle')"></div>
       </div>
       <button class="btn-icon lr-preview-close" @click="closeLrPreview()" :aria-label="t('common.close')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -1790,7 +1788,6 @@
             <div><span aria-hidden="true">•</span><span x-text="note"></span></div>
           </template>
         </div>
-        <p class="lr-preview-footnote" x-text="t('lrPreview.footnote')"></p>
       </div>
       <div class="lr-layout-chart"
            tabindex="0" role="group" :aria-label="t('lrPreview.title')" @keydown="onPreviewChartKey($event, 'lr')"
@@ -1812,7 +1809,6 @@
     <div class="modal-header">
       <div>
         <div x-text="t('shapePreview.title')">Matrix structure preview</div>
-        <div class="shape-preview-subtitle" x-text="t('shapePreview.subtitle')"></div>
       </div>
       <button type="button" class="btn-icon shape-preview-close" @click="closeShapePreview()" :aria-label="t('common.close')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>

@@ -111,7 +111,7 @@ window.trainingCoreMixin = {
     { v: 'anima-lora', l: 'Anima LoRA', dk: 'opt.model_train_type_anima-lora' },
     { v: 'moss-image-lora', l: 'MOSS-Image LoRA', dk: 'opt.model_train_type_moss-image-lora' },
     { v: 'sdxl-lora', l: 'SDXL LoRA', dk: 'opt.model_train_type_sdxl-lora' },
-    { v: 'krea2-lora', l: 'Krea 2 LoRA (musubi-tuner)', dk: 'opt.model_train_type_krea2-lora' },
+    { v: 'krea2-lora', l: 'Krea 2 LoRA', dk: 'opt.model_train_type_krea2-lora' },
   ],
   currentTrainTypeDesc: '',
   currentTrainTypeLabel: 'Anima LoRA',

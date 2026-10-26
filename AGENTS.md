@@ -30,3 +30,4 @@
   4. 执行 `gh release create v<版本> --verify-tag --title v<版本> --notes-file <发布说明文件>`。正文使用自然语言，首行必须为：
      `**English release notes:** [CHANGELOG-en.md](https://github.com/amenorira/lora-scripts-anima/blob/main/CHANGELOG-en.md) · 中文更新日志：[CHANGELOG.md](https://github.com/amenorira/lora-scripts-anima/blob/main/CHANGELOG.md)`
 - **桌面端优先**：本项目是桌面训练器，不要求移动端界面适配。前端布局、交互和视觉验证以常规桌面窗口及桌面窄窗口为准，无需针对手机视口单独设计或测试。
+- **说明文案简洁具体**：直接说明作用、取值和必要限制，避免空话、重复标题和无关免责声明。是否保留括号、英文原名或中文释义，应按实际用途判断；矩阵结构预览等需要对照模型结构、代码或论文的界面，沿用“原名（中文释义）”。精简时保留操作方法、适用条件、必要示例及结果含义，避免用“不是……而是……”“不代表”等句式制造无关对比。
