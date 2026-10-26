@@ -14,7 +14,7 @@
 // 模型分组 → 槽位 / 标题 / 无文件时回退仓库（与后端 MODEL_FILES 的 group 字段对应）
 const ENV_MODEL_GROUPS = {
   'Anima': { slot: 'animaModel', titleKey: 'animaModel.animaTitle', titleFallback: 'Anima Models', fallbackRepo: 'circlestone-labs/Anima' },
-  'Krea 2': { slot: 'krea2', titleKey: 'animaModel.krea2Title', titleFallback: 'Krea 2 Models', fallbackRepo: 'Comfy-Org/Krea-2', trainingModel: 'krea2_raw_fp8_scaled.safetensors' },
+  'Krea 2': { slot: 'krea2', titleKey: 'animaModel.krea2Title', titleFallback: 'Krea 2 Models', fallbackRepo: 'Comfy-Org/Krea-2', trainingModel: 'krea2_raw_bf16.safetensors' },
   'MOSS-Image': { slot: 'moss', titleKey: 'animaModel.mossTitle', titleFallback: 'MOSS-Image Models', fallbackRepo: 'Comfy-Org/MOSS-Image', noteKey: 'animaModel.mossNote', noteDetails: ['animaModel.mossTrainingNote', 'animaModel.mossTokenizerNote'] },
   'Train Use': { slot: 'trainUse', titleKey: 'animaModel.trainUseTitle', titleFallback: 'Additional Models', fallbackRepo: 'ame-la/train_use_models', requiredComponents: ['model'] },
 };

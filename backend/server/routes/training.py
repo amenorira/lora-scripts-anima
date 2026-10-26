@@ -791,11 +791,13 @@ async def _create_krea2_cache_reserved(config: dict, reserved_task):
         )
 
     dataset_config_file = run_dir / "dataset.toml"
+    cache_request_file = run_dir / "cache-request.json"
     dataset_toml = toml_writer.dumps(build_krea2_dataset_config(config))
     try:
         await reserved_task.prepare_cache_manifest(config)
         def _write_cache_files():
             dataset_config_file.write_text(dataset_toml, encoding="utf-8")
+            cache_request_file.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
             _write_run_info(str(run_dir), config, "krea2-cache", timestamp, False)
             write_output_dir_reference(str(run_dir), str(cache_dir))
         await _settled_to_thread(_write_cache_files)
@@ -821,6 +823,17 @@ async def _create_krea2_cache_reserved(config: dict, reserved_task):
             str(config["text_encoder"]),
             "--text-cache-batch-size",
             str(config.get("text_cache_batch_size", 1)),
+            "--latent-cache-batch-size",
+            str(config.get("krea_latent_cache_batch_size", 1)),
+            "--latent-device",
+            str(config.get("krea_latent_cache_device", "auto")),
+            "--text-device",
+            str(config.get("krea_text_cache_device", "auto")),
+            "--num-workers",
+            str(config.get("krea_cache_num_workers", 2)),
+            "--request-file",
+            str(cache_request_file),
+            *(["--vae-tiling"] if config.get("krea_cache_vae_tiling") else []),
         ],
         run_dir=str(run_dir),
         artifact_dir=str(run_dir),

@@ -49,6 +49,8 @@ KREA2_PROFILE_ID = "krea2-lora"
 KREA2_AUTO_CACHE_DIR_NAME = ".krea2-cache"
 KREA2_CACHE_MANIFEST_NAME = ".krea2-cache.json"
 _LEGACY_KREA2_CACHE_MANIFEST_NAMES = (".anima-krea2-cache.json",)
+# Musubi uses its short architecture ID in filenames; "krea2" is metadata only.
+_KREA2_CACHE_ARCHITECTURE = "kr2"
 
 _IMAGE_EXTENSIONS = {".bmp", ".jpeg", ".jpg", ".png", ".webp", ".avif"}
 _ATTENTION_FLAGS = {
@@ -169,7 +171,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
     {
         "key": "dit",
         "type": "text",
-        "default": "./models/krea2_raw_fp8_scaled.safetensors",
+        "default": "./models/krea2_raw_bf16.safetensors",
         "section": "model",
         "desc_key": "field.krea_dit",
         "hint_key": "field.krea_ditHint",
@@ -191,7 +193,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
     {
         "key": "text_encoder",
         "type": "text",
-        "default": "./models/qwen3vl_4b_fp8_scaled.safetensors",
+        "default": "./models/qwen3vl_4b_bf16.safetensors",
         "section": "model",
         "desc_key": "field.krea_text_encoder",
         "hint_key": "field.krea_text_encoderHint",
@@ -241,9 +243,10 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "required": True,
         "profiles": [KREA2_PROFILE_ID],
     },
-    shared_training_field('enable_bucket', default=True, profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('enable_bucket', default=True, hint_key='field.krea_enable_bucketHint', profiles=[KREA2_PROFILE_ID]),
     # The cache fingerprint includes this flag even without buckets. Keep its value in the UI payload.
-    shared_training_field('bucket_no_upscale', default=True, show_if=None, profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('bucket_no_upscale', default=True, show_if=None,
+                          hint_key='field.krea_bucket_no_upscaleHint', profiles=[KREA2_PROFILE_ID]),
     {
         "key": "krea_num_repeats",
         "type": "number",
@@ -965,6 +968,24 @@ KREA2_FIELDS: list[dict[str, Any]] = [
     },
 ]
 
+
+def _krea_field(key, kind, default, section, **metadata):
+    return {"key": key, "type": kind, "default": default, "section": section,
+            "desc_key": f"field.{key}", "profiles": [KREA2_PROFILE_ID], **metadata}
+
+
+KREA2_FIELDS += [
+    *[_krea_field(key, "select", "auto", "performance", hint_key=f"field.{key}Hint",
+                  options=[{"v": value, "l": value, "label_key": f"opt.krea_cache_device_{value}"} for value in ("auto", "cuda", "cpu")])
+      for key in ("krea_latent_cache_device", "krea_text_cache_device")],
+    _krea_field("krea_latent_cache_batch_size", "number", 1, "performance", min=1, step=1,
+                hint_key="field.krea_latent_cache_batch_sizeHint"),
+    _krea_field("krea_cache_num_workers", "number", 2, "performance", min=1, step=1,
+                hint_key="field.krea_cache_num_workersHint"),
+    _krea_field("krea_cache_reuse", "toggle", True, "performance", hint_key="field.krea_cache_reuseHint"),
+    _krea_field("krea_cache_vae_tiling", "toggle", False, "performance", hint_key="field.krea_cache_vae_tilingHint"),
+]
+
 _KREA2_OPTIMIZER_DEFAULTS = {
     field["key"]: field["default"] for field in KREA2_FIELDS
     if field["key"] in _KREA2_OPTIMIZER_ARGUMENTS and field["default"] != ""
@@ -1285,8 +1306,8 @@ def _path_identity(path_value: Any) -> dict[str, Any]:
     return {"path": str(path.resolve()), "size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
 
 
-def krea2_cache_fingerprint(config: dict[str, Any], images: list[Path] | None = None) -> str:
-    """Fingerprint inputs that make Krea latent or text caches stale."""
+def _krea2_cache_inputs(config: dict[str, Any], images: list[Path] | None = None) -> dict:
+    """Describe the inputs that determine cache contents."""
 
     cache_dir = config.get("dataset_cache_dir")
     root = Path(str(config.get("train_data_dir") or ""))
@@ -1326,7 +1347,14 @@ def krea2_cache_fingerprint(config: dict[str, Any], images: list[Path] | None = 
         "vae": _path_identity(config.get("vae")),
         "text_encoder": _path_identity(config.get("text_encoder")),
     }
-    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    if config.get("krea_cache_vae_tiling"):
+        payload["vae_tiling"] = True
+    return payload
+
+
+def krea2_cache_fingerprint(config: dict[str, Any], images: list[Path] | None = None) -> str:
+    encoded = json.dumps(_krea2_cache_inputs(config, images), ensure_ascii=False,
+                         separators=(",", ":"), sort_keys=True).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -1359,25 +1387,31 @@ def _read_cache_manifest(cache_dir: str | Path) -> tuple[dict[str, Any], Path]:
 
 def prepare_cache_manifest(config: dict[str, Any]) -> dict[str, Any]:
     """Persist a pending cache request before the worker process starts."""
+    from backend.training.krea2_cache_state import stage_fingerprints, reusable_stages, write_manifest
 
     cache_dir = Path(str(config["dataset_cache_dir"]))
     cache_dir.mkdir(parents=True, exist_ok=True)
+    previous, _ = _read_cache_manifest(cache_dir)
+    fingerprints = stage_fingerprints(config)
+    reuse = reusable_stages(config, previous, get_krea2_cache_status(config), fingerprints)
     payload = {
-        "schema": 1,
+        "schema": 2,
         "profile": KREA2_PROFILE_ID,
         "fingerprint": krea2_cache_fingerprint(config),
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "stages": {"latents": "pending", "text_encoder": "pending"},
+        "stage_fingerprints": fingerprints,
+        "stages": {stage: "completed" if reuse[stage] else "pending" for stage in reuse},
+        "outputs": {stage: previous["outputs"][stage] for stage in reuse if reuse[stage]},
     }
-    cache_manifest_path(cache_dir).write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    write_manifest(cache_manifest_path(cache_dir), payload)
     return payload
 
 
 def mark_cache_manifest(config: dict[str, Any], status: str) -> str | None:
     """Settle both cache stages and return any completion validation error."""
+    from backend.training.krea2_cache_state import (
+        STAGES, collect_stage_outputs, reusable_stages, stage_fingerprints, write_manifest,
+    )
 
     path = cache_manifest_path(config["dataset_cache_dir"])
     manifest, _ = _read_cache_manifest(config["dataset_cache_dir"])
@@ -1397,20 +1431,36 @@ def mark_cache_manifest(config: dict[str, Any], status: str) -> str | None:
                     f"(images={cache_status['image_count']}, latents={cache_status['latent_count']}, "
                     f"text={cache_status['text_encoder_count']})"
                 )
+            for stage in STAGES:
+                if (manifest.get("stages", {}).get(stage) == "completed"
+                        and "outputs" in manifest and not cache_status["stage_outputs_match"][stage]):
+                    errors.append(f"{stage}: cache outputs changed after completion / 阶段完成后缓存文件发生变化")
             errors.extend(cache_status["conflicts"])
+            if not errors:
+                manifest["outputs"] = {stage: collect_stage_outputs(config, stage) for stage in STAGES}
+                manifest["stage_fingerprints"] = stage_fingerprints(config)
         except Exception as exc:
             errors.append(f"Failed to validate Krea 2 cache / Krea 2 缓存校验失败: {exc}")
     error = "; ".join(errors) or None
-    stage_state = "completed" if status == "completed" and not error else "failed"
+    succeeded = status == "completed" and not error
+    if succeeded:
+        manifest["stages"] = dict.fromkeys(STAGES, "completed")
+    else:
+        try:
+            reusable = reusable_stages({**config, "krea_cache_reuse": True}, manifest,
+                                       get_krea2_cache_status(config), stage_fingerprints(config))
+        except (OSError, TypeError, ValueError):
+            reusable = dict.fromkeys(STAGES, False)
+        manifest["stages"] = {stage: "completed" if reusable[stage] else "failed" for stage in STAGES}
     manifest["finished_at"] = datetime.now(timezone.utc).isoformat()
-    manifest["stages"] = {"latents": stage_state, "text_encoder": stage_state}
     manifest["error"] = error
-    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_manifest(path, manifest)
     return error
 
 
 def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
     """Inspect cache files and their fingerprint without importing musubi."""
+    from backend.training.krea2_cache_state import outputs_match
 
     cache_dir = Path(str(config.get("dataset_cache_dir") or ""))
     groups = _krea2_dataset_groups(config)
@@ -1418,14 +1468,14 @@ def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
     images = [image for _, _, group_images in groups for image in group_images]
     latent_files = []
     text_files = []
-    complete_groups = True
+    complete_latents = complete_texts = True
     for _, group_cache, group_images in groups:
         group_latents = [
             path
-            for path in group_cache.glob("*_krea2.safetensors")
-            if path.is_file() and not path.name.endswith("_krea2_te.safetensors")
+            for path in group_cache.glob(f"*_{_KREA2_CACHE_ARCHITECTURE}.safetensors")
+            if path.is_file()
         ]
-        group_texts = [path for path in group_cache.glob("*_krea2_te.safetensors") if path.is_file()]
+        group_texts = [path for path in group_cache.glob(f"*_{_KREA2_CACHE_ARCHITECTURE}_te.safetensors") if path.is_file()]
         latent_files.extend(group_latents)
         text_files.extend(group_texts)
         # The trainer scans every latent cache in this namespace. Counts alone
@@ -1435,17 +1485,23 @@ def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
         expected_keys = Counter(os.path.normcase(image.stem) for image in group_images)
         latent_keys = []
         for path in group_latents:
-            match = re.fullmatch(r"(.+)_(\d{4,})x(\d{4,})_krea2\.safetensors", path.name)
+            match = re.fullmatch(rf"(.+)_(\d{{4,}})x(\d{{4,}})_{_KREA2_CACHE_ARCHITECTURE}\.safetensors", path.name)
             if match and int(match[2]) > 0 and int(match[3]) > 0:
                 latent_keys.append(os.path.normcase(match[1]))
-        expected_texts = {group_cache / f"{image.stem}_krea2_te.safetensors" for image in group_images}
-        complete_groups = complete_groups and (
+        expected_texts = {group_cache / f"{image.stem}_{_KREA2_CACHE_ARCHITECTURE}_te.safetensors" for image in group_images}
+        complete_latents = complete_latents and (
             len(latent_keys) == len(group_latents)
             and Counter(latent_keys) == expected_keys
-            and set(group_texts) == expected_texts
         )
+        complete_texts = complete_texts and set(group_texts) == expected_texts
 
     manifest, _ = _read_cache_manifest(cache_dir)
+    recorded_outputs = manifest.get("outputs") if isinstance(manifest.get("outputs"), dict) else {}
+    stage_outputs_match = {
+        stage: outputs_match(cache_dir, files, recorded_outputs.get(stage))
+        for stage, files in (("latents", latent_files), ("text_encoder", text_files))
+    }
+    complete_groups = complete_latents and complete_texts
 
     try:
         fingerprint = krea2_cache_fingerprint(config, images)
@@ -1460,6 +1516,7 @@ def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
         and stages.get("latents") == "completed"
         and stages.get("text_encoder") == "completed"
         and complete_groups
+        and ("outputs" not in manifest or all(stage_outputs_match.values()))
         and not conflicts
     )
     return {
@@ -1470,6 +1527,8 @@ def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
         "fingerprint_matches": matches,
         "stages": stages,
         "files_match": complete_groups,
+        "stage_files_match": {"latents": complete_latents, "text_encoder": complete_texts},
+        "stage_outputs_match": stage_outputs_match,
         "conflicts": conflicts,
         "ready": ready,
     }
@@ -1499,6 +1558,9 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
         "block_swap_ring_size": 2,
         "enable_krea_samples": False,
         "sample_every_n_epochs": 1,
+        "krea_latent_cache_device": "auto", "krea_text_cache_device": "auto",
+        "krea_latent_cache_batch_size": 1, "krea_cache_num_workers": 2,
+        "krea_cache_reuse": True, "krea_cache_vae_tiling": False,
     }.items():
         config.setdefault(key, default)
 
@@ -1510,6 +1572,12 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
         config["dataset_cache_dir"] = automatic_cache_dir
 
     errors: list[str] = []
+    for key in ("krea_latent_cache_device", "krea_text_cache_device"):
+        if config[key] not in ("auto", "cuda", "cpu"):
+            errors.append(f"{key}: choose auto, cuda or cpu / 请选择自动、GPU 或 CPU")
+    for key in ("krea_cache_reuse", "krea_cache_vae_tiling"):
+        if not isinstance(config[key], bool):
+            errors.append(f"{key}: must be boolean / 必须为布尔值")
     for key in (
         "dit",
         "vae",
@@ -1573,6 +1641,8 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
         ("blocks_to_swap", 0),
         ("max_data_loader_n_workers", 0),
         ("text_cache_batch_size", 1),
+        ("krea_latent_cache_batch_size", 1),
+        ("krea_cache_num_workers", 1),
     ):
         _as_int(config, key, errors, minimum)
     if duration_mode == "steps":
@@ -1935,6 +2005,31 @@ def build_krea2_train_config(
     return result
 
 
+def _krea2_checkpoint_format_errors(path: Path, key: str, config: dict) -> list[str]:
+    """Read tensor metadata only; never load multi-GB weights during preflight."""
+    try:
+        with path.open("rb") as stream:
+            header_size = int.from_bytes(stream.read(8), "little")
+            if not 2 <= header_size <= 16 * 1024 * 1024:
+                return []  # The model loader reports malformed/non-safetensors files.
+            header = json.loads(stream.read(header_size))
+        tensors = {name: tensor for name, tensor in header.items()
+                   if name != "__metadata__" and isinstance(tensor, dict)}
+    except (OSError, ValueError, AttributeError):
+        return []
+    dtypes = {tensor.get("dtype") for tensor in tensors.values()}
+    if any(str(dtype).startswith("F8") for dtype in dtypes) and (
+        key == "text_encoder" or any(name.endswith((".scale_weight", ".weight_scale", ".comfy_quant")) for name in tensors)
+    ):
+        return [f"{key}: this Krea 2 loader cannot read pre-scaled FP8 checkpoints; select BF16 weights"
+                " (DiT FP8 quantization can be enabled in the form) / 当前 Krea 2 加载器不支持预量化 scaled FP8 文件，"
+                "请选择 BF16 权重；DiT 可在界面启用训练时 FP8 量化"]
+    if "I8" in dtypes and (key != "dit" or not config.get("convrot_int8")):
+        return [f"{key}: INT8 weights require the DiT ConvRot INT8 path; use BF16 for other components / "
+                "INT8 权重需要 DiT 的 ConvRot INT8 路径，其他组件请使用 BF16"]
+    return []
+
+
 def krea2_preflight(config: dict[str, Any], require_cache: bool = True) -> dict[str, Any]:
     """Check runtime, dependency, local model and cache readiness before launch."""
 
@@ -1968,10 +2063,14 @@ def krea2_preflight(config: dict[str, Any], require_cache: bool = True) -> dict[
         path = Path(str(config.get(key) or ""))
         if not path.is_file():
             errors.append(f"{label} not found / 模型文件不存在: {path}")
+        elif key != "vae":
+            errors.extend(_krea2_checkpoint_format_errors(path, key, config))
     if require_cache and bool(config.get("enable_krea_samples", False)) and not _is_empty(config.get("turbo_dit")):
         turbo_path = Path(str(config["turbo_dit"]))
         if not turbo_path.is_file():
             errors.append(f"Krea 2 Turbo DiT not found / Turbo 模型文件不存在: {turbo_path}")
+        else:
+            errors.extend(_krea2_checkpoint_format_errors(turbo_path, "turbo_dit", config))
 
     cache_status = get_krea2_cache_status(config)
     if not cache_status["image_count"]:
