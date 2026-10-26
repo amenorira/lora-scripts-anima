@@ -51,7 +51,7 @@ class TrainingTomlParseTests(unittest.TestCase):
         from backend.training.musubi_krea2 import KREA2_FIELDS, build_krea2_train_config, validate_krea2_config
 
         cases = [
-            ("AdamW", {"weight_decay": 0.123, "betas": (0.8, 0.95), "eps": 1e-7}),
+            ("AdamW", {"weight_decay": 0.123, "betas": (0.8, 0.95), "eps": 1e-7, "foreach": None}),
             ("adamw8bit", {"weight_decay": 0.123, "betas": (0.8, 0.95)}),
             ("Prodigy", {"d_coef": 2.0, "d0": 1e-5}),
             ("prodigyplus.ProdigyPlusScheduleFree", {"use_stableadamw": False, "d_coef": 2.0}),
@@ -75,19 +75,30 @@ class TrainingTomlParseTests(unittest.TestCase):
                           (item.split("=", 1) for item in native.get("optimizer_args", []))}
                 self.assertEqual({key: actual[key] for key in expected}, expected)
 
-    def test_krea_optimizer_import_precedence_and_unsupported_arguments(self):
+    def test_krea_optimizer_import_preserves_explicit_field_precedence(self):
         response = self._parse('optimizer_type = "AdamW"\noptimizer_args = ["weight_decay=0.1"]\n'
                                'optimizer_args_custom = "weight_decay=0.2"\nkrea_optimizer_weight_decay = 0.3', "krea2-lora")
+        self.assertEqual(response.status, "success", response.message)
         self.assertEqual(response.data["data"]["krea_optimizer_weight_decay"], 0.3)
-        for arguments in ('["foreach=None"]', '["weight_decay=None"]', '["betas=invalid"]'):
-            response = self._parse(f'optimizer_type = "AdamW"\noptimizer_args = {arguments}', "krea2-lora")
-            self.assertEqual(response.status, "fail")
-            self.assertIn("optimizer_args", response.message)
+
+    def test_krea_invalid_optimizer_value_survives_import_and_fails_training_validation(self):
+        from backend.training.musubi_krea2 import KREA2_FIELDS, validate_krea2_config
+
+        response = self._parse('optimizer_type = "AdamW"\noptimizer_args = ["weight_decay=None"]', "krea2-lora")
+        self.assertEqual(response.status, "success", response.message)
+        imported = response.data["data"]
+        self.assertEqual(imported["optimizer_args_custom"], "weight_decay=None")
+        defaults = {field["key"]: field["default"] for field in KREA2_FIELDS if "default" in field}
+        errors = validate_krea2_config({**defaults, **imported})
+        self.assertTrue(any("optimizer_args weight_decay: must be a number" in error for error in errors), errors)
 
     def test_malformed_optimizer_arguments_are_rejected(self):
-        response = self._parse('optimizer_args = ["betas=invalid"]')
-        self.assertEqual(response.status, "fail")
-        self.assertIn("optimizer_args", response.message)
+        for profile in (None, "krea2-lora"):
+            with self.subTest(profile=profile):
+                response = self._parse('optimizer_args = ["betas=invalid"]', profile)
+                self.assertEqual(response.status, "fail")
+                self.assertIn("optimizer_args", response.message)
+                self.assertIn("betas", response.message)
 
     def test_native_moss_import_restores_network_arguments_without_app_selector(self):
         arguments = ('network_args = ["train_llm_adapter=True", "rank_dropout=0.2", '

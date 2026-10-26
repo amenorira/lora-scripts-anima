@@ -2550,7 +2550,6 @@
 		"krea_target_attention_mlp": "Main Attention + MLP (224 layers)",
 		"krea_target_custom": "Custom regex",
 		"krea_attention_flash_attn": "FlashAttention; install in Environment, with installation checked before training",
-		"krea_attention_sage_attn": "Requires a compatible SageAttention installation",
 		"krea_attention_xformers": "Requires xformers",
 		"loss_type_l1": "Mean absolute error. Doubling an error doubles its loss contribution.",
 		"loss_type_l2": "Mean squared error. Doubling an error quadruples its loss contribution.",

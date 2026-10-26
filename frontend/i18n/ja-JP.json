@@ -2550,7 +2550,6 @@
 		"krea_target_attention_mlp": "主幹 Attention + MLP（224 層）",
 		"krea_target_custom": "カスタム正規表現",
 		"krea_attention_flash_attn": "FlashAttention。環境管理からインストールし、学習前に導入状態を確認します",
-		"krea_attention_sage_attn": "互換性のある SageAttention が必要",
 		"krea_attention_xformers": "xformers が必要",
 		"loss_type_l1": "誤差の絶対値の平均です。誤差が 2 倍になると、その損失も 2 倍になります。",
 		"loss_type_l2": "誤差の二乗の平均です。誤差が 2 倍になると、その損失は 4 倍になります。",

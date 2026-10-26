@@ -16,6 +16,26 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class Krea2UIContractsTests(unittest.TestCase):
+    def test_compute_modes_validate_before_native_export(self):
+        defaults = {field["key"]: field["default"] for field in KREA2_FIELDS}
+        for changes, message in (
+            ({"mixed_precision": "no"}, "mixed_precision: Krea 2 requires bf16 or fp16"),
+            ({"krea_attention_backend": "sage_attn"}, "SageAttention does not support Krea 2 training"),
+        ):
+            with self.subTest(changes=changes):
+                form = {**defaults, **changes}
+                self.assertTrue(any(message in error for error in validate_krea2_config(form)))
+                with self.assertRaisesRegex(ValueError, message):
+                    build_krea2_train_config(form, "dataset.toml", "output", "log")
+        for precision in ("bf16", "fp16"):
+            for attention in ("sdpa", "flash_attn", "xformers"):
+                with self.subTest(precision=precision, attention=attention):
+                    form = {**defaults, "mixed_precision": precision, "krea_attention_backend": attention}
+                    self.assertEqual(validate_krea2_config(form), [])
+                    native = build_krea2_train_config(form, "dataset.toml", "output", "log")
+                    self.assertEqual(native["mixed_precision"], precision)
+                    self.assertIs(native[attention], True)
+
     def test_fused_adamw_split_attention_and_loraplus_round_trip(self):
         with tempfile.TemporaryDirectory() as temp:
             base = krea2_config(Path(temp))

@@ -138,10 +138,16 @@ class Krea2CodecTests(unittest.TestCase):
                             self.assertIn(f"relative_step={relative_step}", native["optimizer_args"])
                             self.assertIn(f"warmup_init={warmup_init}", native["optimizer_args"])
 
-    def test_adafactor_conflict_at_run_endpoint_releases_task_slot(self):
-        config = {field["key"]: field["default"] for field in KREA2_FIELDS if "default" in field}
-        config.update(model_train_type="krea2-lora", optimizer_type="AdaFactor",
-                      krea_adafactor_relative_step=False, krea_adafactor_warmup_init=True)
+    def test_invalid_runtime_options_are_rejected_before_preflight_and_release_task_slot(self):
+        defaults = {field["key"]: field["default"] for field in KREA2_FIELDS if "default" in field}
+        cases = (
+            ({"optimizer_type": "AdaFactor", "krea_adafactor_relative_step": False,
+              "krea_adafactor_warmup_init": True}, "krea_adafactor_warmup_init"),
+            ({"mixed_precision": "no"}, "bf16 或 fp16"),
+            ({"krea_attention_backend": "sage_attn"}, "训练不支持 SageAttention"),
+            ({"optimizer_type": "AdamW", "optimizer_args_custom": "weight_decay=None"},
+             "optimizer_args weight_decay: must be a number"),
+        )
         app = FastAPI()
         app.include_router(training_routes.router, prefix="/api")
         manager = TaskManager(max_concurrent=1)
@@ -149,18 +155,22 @@ class Krea2CodecTests(unittest.TestCase):
              patch.object(training_routes, "krea2_preflight", side_effect=AssertionError("preflight must not run")) as preflight, \
              patch.object(training_routes, "_prepare_run_directories") as prepare, \
              patch.object(training_routes, "run_train") as launch, TestClient(app) as client:
-            response = client.post("/api/run", json=config)
-        self.assertEqual(response.status_code, 200)
-        result = response.json()
-        self.assertEqual(result["status"], "fail")
-        self.assertEqual(result["data"]["errorCode"], "invalidKrea2Config")
-        self.assertIn("krea_adafactor_warmup_init", result["message"])
+            for endpoint in ("/api/run", "/api/training/krea2/cache"):
+                for changes, message in cases:
+                    with self.subTest(endpoint=endpoint, changes=changes):
+                        config = {**defaults, "model_train_type": "krea2-lora", **changes}
+                        response = client.post(endpoint, json=config)
+                        self.assertEqual(response.status_code, 200)
+                        result = response.json()
+                        self.assertEqual(result["status"], "fail")
+                        self.assertEqual(result["data"]["errorCode"], "invalidKrea2Config")
+                        self.assertIn(message, result["message"])
+                        reserved = manager.reserve_task()
+                        self.assertIsNotNone(reserved, "Rejected configuration must release the training slot")
+                        manager.release_reserved(reserved)
         preflight.assert_not_called()
         prepare.assert_not_called()
         launch.assert_not_called()
-        reserved = manager.reserve_task()
-        self.assertIsNotNone(reserved, "Rejected configuration must release the training slot")
-        manager.release_reserved(reserved)
 
     def test_adafactor_single_missing_boolean_uses_its_default(self):
         defaults = {field["key"]: field["default"] for field in KREA2_FIELDS if "default" in field}

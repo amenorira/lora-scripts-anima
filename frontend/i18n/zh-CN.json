@@ -2550,7 +2550,6 @@
 		"krea_target_attention_mlp": "主干 Attention + MLP（224 层）",
 		"krea_target_custom": "自定义正则",
 		"krea_attention_flash_attn": "FlashAttention；通过环境管理安装，训练前检查安装状态",
-		"krea_attention_sage_attn": "需自行安装兼容的 SageAttention",
 		"krea_attention_xformers": "需安装 xformers",
 		"loss_type_l1": "使用误差绝对值的平均值。误差翻倍时，该项损失翻倍。",
 		"loss_type_l2": "使用误差平方的平均值。误差翻倍时，该项损失变为四倍。",

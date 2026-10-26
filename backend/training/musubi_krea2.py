@@ -61,9 +61,9 @@ _IMAGE_EXTENSIONS = {".bmp", ".jpeg", ".jpg", ".png", ".webp", ".avif"}
 _ATTENTION_FLAGS = {
     "sdpa": "sdpa",
     "flash_attn": "flash_attn",
-    "sage_attn": "sage_attn",
     "xformers": "xformers",
 }
+_KREA2_MIXED_PRECISIONS = ("bf16", "fp16")
 _KREA2_TRAINING_DURATIONS = {"epochs", "steps"}
 _KREA2_LR_SCHEDULERS = {
     "constant",
@@ -363,7 +363,9 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "profiles": [KREA2_PROFILE_ID],
     },
     shared_training_field('seed', default=42, step=1, profiles=[KREA2_PROFILE_ID]),
-    shared_training_field('mixed_precision', default="bf16", profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('mixed_precision', default="bf16", profiles=[KREA2_PROFILE_ID],
+        options=[{"v": value, "l": value, "dk": f"opt.mixed_precision_{value}"}
+                 for value in _KREA2_MIXED_PRECISIONS]),
     {
         "key": "timestep_sampling",
         "type": "select",
@@ -809,7 +811,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "options": [
             {"v": "sdpa", "l": "SDPA", "dk": "opt.krea_attention_sdpa"},
             {"v": "flash_attn", "l": "FlashAttention", "dk": "opt.krea_attention_flash_attn"},
-            {"v": "sage_attn", "l": "SageAttention", "dk": "opt.krea_attention_sage_attn"},
             {"v": "xformers", "l": "xFormers", "dk": "opt.krea_attention_xformers"},
         ],
         "profiles": [KREA2_PROFILE_ID],
@@ -1588,6 +1589,26 @@ def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _validate_krea2_compute_options(config: dict[str, Any]) -> list[str]:
+    """Keep unsupported execution modes out of both launch and native export."""
+    errors = []
+    if str(config.get("mixed_precision", "bf16")) not in _KREA2_MIXED_PRECISIONS:
+        errors.append(
+            "mixed_precision: Krea 2 requires bf16 or fp16 because the DiT uses BF16 weights "
+            "/ Krea 2 主模型使用 BF16 权重，混合精度请选择 bf16 或 fp16"
+        )
+    attention = str(config.get("krea_attention_backend", "sdpa"))
+    if attention == "sage_attn":
+        errors.append(
+            "krea_attention_backend: SageAttention does not support Krea 2 training; "
+            "select SDPA, FlashAttention or xFormers "
+            "/ Krea 2 训练不支持 SageAttention，请选择 SDPA、FlashAttention 或 xFormers"
+        )
+    elif attention not in _ATTENTION_FLAGS:
+        errors.append("krea_attention_backend: unsupported value / 不支持的选项")
+    return errors
+
+
 def validate_krea2_config(config: dict[str, Any]) -> list[str]:
     """Validate and normalize the strict Krea 2 UI payload."""
     from backend.training.attention_config import normalize_attention_config
@@ -1627,7 +1648,7 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
     if automatic_cache_dir:
         config["dataset_cache_dir"] = automatic_cache_dir
 
-    errors: list[str] = []
+    errors = _validate_krea2_compute_options(config)
     for key in ("krea_latent_cache_device", "krea_text_cache_device"):
         if config[key] not in ("auto", "cuda", "cpu"):
             errors.append(f"{key}: choose auto, cuda or cpu / 请选择自动、GPU 或 CPU")
@@ -1862,8 +1883,6 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
     if not _is_empty(config.get("compile_cache_size_limit")):
         _as_int(config, "compile_cache_size_limit", errors, 1)
 
-    if str(config.get("mixed_precision", "bf16")) not in {"bf16", "fp16", "no"}:
-        errors.append("mixed_precision: unsupported value / 不支持的选项")
     if str(config.get("timestep_sampling", "shift")) not in {
         "uniform", "sigmoid", "sigma", "shift", "flux_shift", "krea2_shift", "logsnr"
     }:
@@ -1872,8 +1891,6 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
         "none", "sigma_sqrt", "cosmap", "logit_normal", "mode"
     }:
         errors.append("weighting_scheme: unsupported value / 不支持的选项")
-    if str(config.get("krea_attention_backend", "sdpa")) not in _ATTENTION_FLAGS:
-        errors.append("krea_attention_backend: unsupported value / 不支持的选项")
     if str(config.get("lr_scheduler", "constant")) not in _KREA2_LR_SCHEDULERS:
         errors.append("lr_scheduler: unsupported value / 不支持的选项")
     if str(config.get("lr_scheduler", "constant")) == "adafactor":
@@ -1963,9 +1980,9 @@ def build_krea2_train_config(
 
     config = dict(config)
     normalize_attention_config(config)
-    network_errors = validate_krea2_network(config)
-    if network_errors:
-        raise ValueError("; ".join(network_errors))
+    errors = _validate_krea2_compute_options(config) + validate_krea2_network(config)
+    if errors:
+        raise ValueError("; ".join(errors))
 
     optimizer_type = str(config.get("optimizer_type", "adamw8bit"))
     # Normal launch paths call validate_krea2_config first, but keep this

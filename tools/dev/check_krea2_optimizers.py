@@ -51,7 +51,8 @@ def main():
                 form.update(optimizer_type=entry.selector, network_dim=64, network_alpha=32,
                             krea_target_mode='attention', krea_training_duration_mode='steps', max_train_steps=4,
                             krea_adafactor_relative_step=False, learning_rate='1e-3', max_grad_norm=0,
-                            mixed_precision='bf16' if device.type == 'cuda' else 'no')
+                            mixed_precision='bf16')
+                # Keep the form production-valid; CPU probes use FP32 via the accelerator above.
                 if 'Prodigy' in entry.selector:
                     form['learning_rate'] = '1.0'
                 if entry.label == 'EmoSens':

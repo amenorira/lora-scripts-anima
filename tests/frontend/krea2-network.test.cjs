@@ -18,6 +18,24 @@ function application(values = {}) {
   return { app, w };
 }
 
+test('Krea2 compute choices and legacy imports stay within supported runtime modes', async () => {
+  const { app, w } = application();
+  const fields = w.getVisibleSections('krea2-lora').flatMap(s => s.fields);
+  assert.deepEqual(Array.from(fields.find(f => f.key === 'mixed_precision').options, o => o.v), ['bf16', 'fp16']);
+  assert.deepEqual(Array.from(fields.find(f => f.key === 'krea_attention_backend').options, o => o.v),
+    ['sdpa', 'flash_attn', 'xformers']);
+  const anima = w.getVisibleSections('anima-lora').flatMap(s => s.fields);
+  assert.ok(anima.find(f => f.key === 'mixed_precision').options.some(o => o.v === 'no'));
+
+  await app._applyImportedFlatConfig({ model_train_type: 'krea2-lora',
+    mixed_precision: 'no', krea_attention_backend: 'sage_attn' });
+  const payload = app._collectTrainingPayload();
+  assert.equal(payload.mixed_precision, 'bf16');
+  assert.equal(payload.krea_attention_backend, 'sdpa');
+  assert.match(app.tomlRaw, /^mixed_precision = "bf16"/m);
+  assert.match(app.tomlRaw, /^krea_attention_backend = "sdpa"/m);
+});
+
 test('Krea2 exposes scoped LyCORIS controls and algorithm-specific payloads', () => {
   const { app, w } = application({ network_module: 'lycoris.kohya', lycoris_algo: 'lokr',
     full_matrix: true, lokr_factor: 8, rank_dropout: 0.2, module_dropout: 0.1 });
