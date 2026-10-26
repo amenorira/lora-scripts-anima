@@ -18,6 +18,35 @@ function _teParseTags(s, lower) {
 
 var TE_SUGGEST_FIELDS = { single: 'tagEditorAddInput', add: 'batchAddInput', remove: 'batchRemoveInput', old: 'batchOldTag', new: 'batchNewTag' };
 
+// Textareas expose LF even for CRLF files. Keep file formatting in the single
+// authoritative caption string; untouched lines retain their original endings.
+function _teTextFromInput(value, previous, original) {
+  var format = original == null ? previous : original;
+  var bom = format.startsWith('\uFEFF') ? '\uFEFF' : '';
+  if (bom && !value.startsWith(bom)) value = bom + value;
+  var normalize = function(s) { return s.replace(/\r\n|\r/g, '\n'); };
+  if (normalize(previous) === normalize(value)) return previous;
+  if (normalize(format) === normalize(value)) return format;
+  var oldLines = previous.split(/\r\n|\r|\n/);
+  var endings = previous.match(/\r\n|\r|\n/g) || [];
+  var lines = value.split(/\r\n|\r|\n/);
+  var prefix = 0, suffix = 0;
+  while (prefix < Math.min(lines.length, oldLines.length) && lines[prefix] === oldLines[prefix]) prefix++;
+  while (suffix < Math.min(lines.length, oldLines.length) - prefix &&
+      lines[lines.length - 1 - suffix] === oldLines[oldLines.length - 1 - suffix]) suffix++;
+  var fallback = endings[0] || (format.match(/\r\n|\r|\n/) || [])[0] || '\n';
+  return lines.map(function(line, index) {
+    if (index === lines.length - 1) return line;
+    var oldIndex = index < prefix || lines.length === oldLines.length ? index
+      : index >= lines.length - suffix ? oldLines.length - (lines.length - index) : -1;
+    return line + (endings[oldIndex] || fallback);
+  }).join('');
+}
+
+function _teInputText(raw) {
+  return (raw || '').replace(/\r\n|\r/g, '\n');
+}
+
 function _teGetSuggestCoords(inputEl) {
   var rect = inputEl.getBoundingClientRect();
   var viewportWidth = window.innerWidth || document.documentElement.clientWidth;
@@ -86,6 +115,8 @@ window.tagEditorMixin = {
   tagEditorTimeline: [],
   tagEditorRightWidth: 340,
   tagEditorLeftWidth: 260,
+  _teLayoutWidth: 0,
+  tagEditorCompactLayout: false,
   _teResizeSide: 'right',
   tagEditorPreviewRatio: 0.5,
   _tePreviewDrag: null,
@@ -129,10 +160,15 @@ window.tagEditorMixin = {
   tagEditorContextMenu: null,
   tagEditorImageContextMenu: null,
   tagEditorPanelMenu: null,
+  _tePanelMenuTrigger: null,
+  _teTagMenuTrigger: null,
+  _teImageMenuTrigger: null,
+  _teMenuFocusRequest: 0,
   tagEditorQuickRemove: false,
   tagEditorRemovalTags: [],
   tagEditorLeftCollapsed: false,
   _teLastSelected: null,
+  _teNavRequest: 0,
 
   // ===== Image Lightbox =====
   tagEditorLightboxOpen: false,
@@ -150,6 +186,9 @@ window.tagEditorMixin = {
   _teLightboxPreviousSelection: null,
 
   // ===== Right Panel Editor =====
+  tagEditorWorkMode: 'tags',
+  tagEditorRequestedMode: '',
+  _teModeEpoch: 0,
   tagEditorDetailView: 'chip',
   tagEditorDetailText: '',
   tagEditorAddInput: '',
@@ -203,6 +242,8 @@ window.tagEditorMixin = {
   // ===== Auto-save =====
   _teAutoSaveInterval: null,
   _tePendingTextEdits: {},
+  _teDraftRemainder: [],
+  _teDraftRestoreBusy: false,
   _teDraftSavedAt: '',
 
   // ===== Cache =====
@@ -236,6 +277,9 @@ window.tagEditorMixin = {
   _teSaveEpoch: 0,
   _teEditVersions: null,
   _teCaptionRevisions: null,
+  _teModifiedRefreshPending: false,
+  _teSessionRecovery: null,
+  _teCaptionQueryVersion: 0,
   // ===== Internal Utilities =====
   _teInvalidateFilter() {
     this._teFilteredCacheKey = '';
@@ -244,6 +288,14 @@ window.tagEditorMixin = {
     this._teQuickCountMod = undefined;
     this._teCachedSelectedStatsKey = '';
     this._teCachedSelectedStats = null;
+    if (this.tagEditorSessionId && this.tagEditorQuickFilter === 'modified' && !this._teModifiedRefreshPending) {
+      // 合并同一次批量编辑中的刷新，避免每改一张都重新筛选整个集合。
+      this._teModifiedRefreshPending = true;
+      Promise.resolve().then(() => {
+        this._teModifiedRefreshPending = false;
+        if (this.tagEditorSessionId && this.tagEditorQuickFilter === 'modified') this._teRefreshModifiedPage();
+      });
+    }
   },
   _teInvalidateFreq() {
     this._teFreqCacheKey = '';
@@ -377,7 +429,11 @@ window.tagEditorMixin = {
   },
   // ===== Lifecycle =====
   tagEditorCleanup() {
+    this._teSessionRecovery = null;
+    this._teLastSelected = null;
     this._teLoadEpoch++;
+    this.tagEditorSaving = this._teIsSaving = false;
+    this.tagEditorSnapshotBusy = false;
     if (this._teLoadAbort) { this._teLoadAbort.abort(); this._teLoadAbort = null; }
     this._teCancelPageFetch();
     if (this._teAllAbort) { this._teAllAbort.abort(); this._teAllAbort = null; }
@@ -387,6 +443,7 @@ window.tagEditorMixin = {
     this.tagEditorStopResize();
     this.tagEditorStopPreviewResize();
     this.tagEditorCloseLightbox();
+    this.tagEditorShortcutsOpen = false;
     this._teStopAutoSave();
     this._teCloseSuggestions();
     if (this._teSearchDebounce) { clearTimeout(this._teSearchDebounce); this._teSearchDebounce = null; }
@@ -422,7 +479,25 @@ window.tagEditorMixin = {
   },
 
   _teSessionQueryKey(page, useFilters = true) {
-    return this._teSessionQuery(page, useFilters).toString();
+    return this._teSessionQuery(page, useFilters).toString() + '&caption_version=' + this._teCaptionQueryVersion;
+  },
+
+  _teCaptionQueryOptions(signal, useOverrides = true) {
+    var overrides = {};
+    if (useOverrides) this._teGetModified().forEach(img => { overrides[img.path] = img.tags; });
+    return Object.keys(overrides).length ? {
+      signal, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(overrides)
+    } : { signal };
+  },
+
+  _teInvalidateCaptionQuery() {
+    this._teCaptionQueryVersion++;
+    this._tePageCache = {};
+    if (this.tagEditorSessionId && !this.tagEditorLoading && this.tagEditorQuickFilter !== 'modified' &&
+        (this.tagEditorSearchQuery || this.tagEditorQuickFilter === 'notag' || this.tagEditorTagSelection.length ||
+         this.tagEditorExcludedTags.length || this.tagEditorSortBy === 'tagCount' || this.tagEditorSortBy2 === 'tagCount')) {
+      this.tagEditorSchedulePageFetch(false);
+    }
   },
 
   _teCancelPageFetch() {
@@ -478,33 +553,42 @@ window.tagEditorMixin = {
   },
 
   async tagEditorFetchPage(page, options) {
+    this._teLastSelected = null;
     this._teCancelPageFetch();
-    if (!this.tagEditorSessionId) return;
+    if (!this.tagEditorSessionId) return false;
+    if (options?.isCurrent && !options.isCurrent()) return false;
     var targetPage = Math.max(1, Number(page || this.tagEditorPage || 1));
     if (this.tagEditorQuickFilter === 'modified') {
       this.tagEditorPage = targetPage;
       this.tagEditorSchedulePageFetch(false);
-      return;
+      return true;
     }
     var cacheKey = this._teSessionQueryKey(targetPage);
     if (!(options && options.force) && this._tePageCache && this._tePageCache[cacheKey]) {
       this._teApplySessionPage(this._tePageCache[cacheKey], false);
-      return;
+      return true;
     }
     var epoch = this._tePageEpoch;
     var controller = new AbortController();
     this._tePageAbort = controller;
     this._teSearchLoading = true;
     try {
-      var response = await fetch('/api/tageditor/sessions/' + encodeURIComponent(this.tagEditorSessionId) + '/images?' + this._teSessionQuery(targetPage).toString(), { signal: controller.signal });
+      var response = await fetch('/api/tageditor/sessions/' + encodeURIComponent(this.tagEditorSessionId) + '/images?' + this._teSessionQuery(targetPage).toString(), this._teCaptionQueryOptions(controller.signal));
       var payload = await response.json();
-      if (epoch !== this._tePageEpoch || controller.signal.aborted) return;
+      if (epoch !== this._tePageEpoch || controller.signal.aborted) return false;
+      if (cacheKey !== this._teSessionQueryKey(targetPage)) return false;
+      // 导航失效时连分页状态也不能覆盖；仅在选中图片前检查已经太晚。
+      if (options?.isCurrent && !options.isCurrent()) return false;
       if (payload.status !== 'success') {
-        if (payload.code === 'session_expired') return this.tagEditorReloadSessionPage(targetPage);
+        if (payload.code === 'session_expired') {
+          await this.tagEditorReloadSessionPage(targetPage);
+          return false;
+        }
         this.toast(payload.message || this.t('common.error'), 'error');
-        return;
+        return false;
       }
       this._teApplySessionPage(payload.data || {}, false);
+      return true;
     } catch (e) {
       if (epoch === this._tePageEpoch && !controller.signal.aborted && (!e || e.name !== 'AbortError')) this.toast(this.t('common.networkError'), 'error');
     } finally {
@@ -513,20 +597,16 @@ window.tagEditorMixin = {
         this._tePageAbort = null;
       }
     }
+    return false;
   },
 
   tagEditorSchedulePageFetch(resetPage) {
+    this._teLastSelected = null;
     this._teCancelPageFetch();
     if (this._teAllAbort) this._teAllAbort.abort();
     if (resetPage) this.tagEditorPage = 1;
     if (this.tagEditorQuickFilter === 'modified') {
-      var modified = this._teGetModified();
-      if (this.tagEditorGroupByDir) this._teGroupImagesByDir(modified);
-      var size = Number(this.tagEditorPageSize) || 60;
-      this.tagEditorFilteredTotal = modified.length;
-      this.tagEditorServerTotalPages = Math.max(1, Math.ceil(modified.length / size));
-      var start = (this.tagEditorPage - 1) * size;
-      this.tagEditorPageItems = modified.slice(start, start + size);
+      this._teRefreshModifiedPage();
       return;
     }
     var self = this;
@@ -536,10 +616,32 @@ window.tagEditorMixin = {
     }, 80);
   },
 
+  _teRefreshModifiedPage() {
+    var modified = this._teFilterImages(this._teGetModified());
+    var size = Math.max(1, Number(this.tagEditorPageSize) || 60);
+    this.tagEditorFilteredTotal = modified.length;
+    this.tagEditorServerTotalPages = Math.max(1, Math.ceil(modified.length / size));
+    this.tagEditorPage = Math.max(1, Math.min(this.tagEditorServerTotalPages, Number(this.tagEditorPage) || 1));
+    var start = (this.tagEditorPage - 1) * size;
+    this.tagEditorPageItems = modified.slice(start, start + size);
+    var counts = Object.create(null);
+    for (var img of modified) {
+      var dir = this.tagEditorImageDirectory(img);
+      counts[dir] = (counts[dir] || 0) + 1;
+    }
+    this.tagEditorDirectoryCounts = counts;
+  },
+
   async tagEditorReloadSessionPage(page) {
+    this._teFlushAllPendingTextEdits();
     var drafts = {};
     var self = this;
-    this._teGetModified().forEach(function(img) {
+    var paths = new Set(this.tagEditorSelected);
+    this._teGetModified().forEach(img => paths.add(img.path));
+    this.tagEditorHistory.forEach(item => Object.keys(item.changes || this._teSnapOf(item)).forEach(path => paths.add(path)));
+    paths.forEach(function(path) {
+      var img = self._teFindByPath(path);
+      if (!img) return;
       drafts[img.path] = {
         image: Object.assign({}, img),
         original: self.tagEditorOriginal[img.path],
@@ -547,19 +649,85 @@ window.tagEditorMixin = {
         captionRevision: self._teCaptionRevisions ? self._teCaptionRevisions[img.path] : 'missing'
       };
     });
-    await this.tagEditorLoad(this.tagEditorLoadedDir || this.tagEditorDir, { preserveDrafts: drafts, targetPage: page || 1 });
+    this._teSessionRecovery = {
+      dir: this.tagEditorLoadedDir || this.tagEditorDir, preserveDrafts: drafts, targetPage: page || 1,
+      history: this.tagEditorHistory.slice(), historyIdx: this.tagEditorHistoryIdx,
+      historyState: Object.assign({}, this._teHistoryState), selected: this.tagEditorSelected.slice(),
+      anchor: this._teLastSelected, include: this.tagEditorTagSelection.slice(), exclude: this.tagEditorExcludedTags.slice(),
+      remainder: this._teDraftRemainder.slice(), mode: this.tagEditorWorkMode, detailView: this.tagEditorDetailView
+    };
+    await this.tagEditorLoad(this._teSessionRecovery.dir);
+  },
+
+  tagEditorAllowsTagOps() {
+    return this.tagEditorWorkMode !== 'text';
+  },
+
+  _teRestoreWorkMode(dir, requested) {
+    var mode = requested;
+    if (!mode) {
+      try { mode = localStorage.getItem('tagEditor_mode_' + dir); } catch (_) {}
+    }
+    this.tagEditorSetWorkMode(mode === 'text' ? 'text' : 'tags', false);
+    if (requested) this._teRememberWorkMode(dir);
+  },
+
+  _teRememberWorkMode(dir) {
+    if (!dir) return;
+    try { localStorage.setItem('tagEditor_mode_' + dir, this.tagEditorWorkMode); } catch (_) {}
+  },
+
+  tagEditorSetWorkMode(mode, refresh = true) {
+    if (!['tags', 'text'].includes(mode)) return;
+    this._teFlushAllPendingTextEdits();
+    var changed = mode !== this.tagEditorWorkMode;
+    this.tagEditorWorkMode = mode;
+    this._teModeEpoch++;
+    this.tagEditorCancelQuickRemove();
+    this.tagEditorInlineEdit = this.tagEditorContextMenu = this.tagEditorPanelMenu = null;
+    this._teCloseSuggestions();
+    this.tagDictionaryCloseHover?.();
+    this.tagDictionaryPanelOpen = false;
+    this._teInvalidateDiff();
+    if (mode === 'text') {
+      this.tagEditorDetailView = 'text';
+      if (this.tagEditorSidebarTab === 'tags') this.tagEditorSidebarTab = 'history';
+      this.tagEditorTagSelection = [];
+      this.tagEditorExcludedTags = [];
+      this.tagEditorTagSearch = '';
+      if (this.tagEditorSortBy === 'tagCount') this.tagEditorSortBy = 'name';
+      if (this.tagEditorSortBy2 === 'tagCount') this.tagEditorSortBy2 = '';
+      this._teClearFreqData();
+    }
+    if (refresh) {
+      this._teRememberWorkMode(this.tagEditorLoadedDir || this.tagEditorDir);
+      if (changed && mode === 'tags') {
+        this.tagDictionaryInit?.(); this.tagDictionaryEnsureWorker?.();
+        void this.tagEditorLoadTagFreq();
+      }
+      this._teInvalidateFilter();
+      if (changed && this.tagEditorSessionId) this.tagEditorSchedulePageFetch(true);
+    }
+  },
+
+  tagEditorSetDetailView(view) {
+    this._teFlushAllPendingTextEdits();
+    this.tagEditorCancelQuickRemove();
+    this.tagEditorDetailView = this.tagEditorAllowsTagOps() && view === 'chip' ? 'chip' : 'text';
   },
 
   async tagEditorLoad(dir) {
+    if (this.tagEditorLightboxOpen) this.tagEditorCloseLightbox();
+    this.tagEditorShortcutsOpen = false;
+    this._teLastSelected = null;
     this.tagEditorCancelQuickRemove();
     this.tagEditorPanelMenu = null;
     var loadOptions = arguments.length > 1 && arguments[1] ? arguments[1] : {};
     var openPath = this.tagEditorOpenPath;
     this.tagEditorOpenPath = '';
     var self = this;
-    // 词典只在真正进入 Tag Editor 时才加载：问状态，数据已装就拉起唯一那个 Worker
-    this.tagDictionaryInit();
-    this.tagDictionaryEnsureWorker();
+    var requestedMode = this.tagEditorRequestedMode;
+    this.tagEditorRequestedMode = '';
     if (!dir && !this.tagEditorDir) {
       var cached = null;
       try { cached = sessionStorage.getItem('tagEditor_lastDir'); } catch (e) {}
@@ -570,7 +738,13 @@ window.tagEditorMixin = {
       this.finishProgress();
       return;
     }
+    // 重建失败后，普通“加载”重试仍须沿用内存中的正文和历史；切换数据集则丢弃该上下文。
+    if (this._teSessionRecovery && this._teSessionRecovery.dir !== d) this._teSessionRecovery = null;
+    var recovery = this._teSessionRecovery;
+    if (recovery) loadOptions = recovery;
     var epoch = ++this._teLoadEpoch;
+    this.tagEditorSaving = this._teIsSaving = false;
+    this.tagEditorSnapshotBusy = false;
     if (this._teLoadAbort) this._teLoadAbort.abort();
     this._teCancelPageFetch();
     if (this._teAllAbort) { this._teAllAbort.abort(); this._teAllAbort = null; }
@@ -598,6 +772,13 @@ window.tagEditorMixin = {
         try { sessionStorage.setItem('tagEditor_lastDir', d); } catch (e) {}
         this.tagEditorDir = j.data.dir || d;
         this.tagEditorLoadedDir = this.tagEditorDir;
+        this._teDraftRemainder = [];
+        this._teDraftRestoreBusy = false;
+        this._teRestoreWorkMode(this.tagEditorDir, recovery ? recovery.mode : requestedMode);
+        if (this.tagEditorAllowsTagOps()) {
+          this.tagDictionaryInit();
+          this.tagDictionaryEnsureWorker();
+        }
         this.tagEditorPendingDir = this.tagEditorDir;
         this.tagEditorSwitchOpen = false;
         this.tagEditorSessionId = j.data.session_id || '';
@@ -620,7 +801,9 @@ window.tagEditorMixin = {
         this._teSearchLoading = false;
         this.tagEditorRegexError = false;
         this._teDraftSavedAt = '';
-        if (Array.isArray(j.data.tags)) {
+        if (!this.tagEditorAllowsTagOps()) {
+          this._teClearFreqData();
+        } else if (Array.isArray(j.data.tags)) {
           this.tagEditorTagFreq = j.data.tags;
           this.tagEditorMaxFreq = this.tagEditorTagFreq.length > 0 ? this.tagEditorTagFreq[0].count : 0;
           this._teRebuildFreqIndex();
@@ -634,6 +817,15 @@ window.tagEditorMixin = {
           var img = self._teFindByPath(path);
           if (!img && draft && draft.image) {
             img = Object.assign({}, draft.image);
+            // 页外图片尚未取得新分页元数据，预览地址也要迁移到新会话。
+            ['thumbnail', 'preview'].forEach(function(field) {
+              if (!img[field]) return;
+              var parts = img[field].split('?');
+              var params = new URLSearchParams(parts[1] || '');
+              if (params.get('scope') !== 'dataset') return;
+              params.set('session_id', self.tagEditorSessionId);
+              img[field] = parts[0] + '?' + params.toString();
+            });
             self.tagEditorImages.push(img);
             self._tePathIndex[path] = img;
           }
@@ -642,24 +834,42 @@ window.tagEditorMixin = {
             self._teEditVersions[path] = draft.editVersion;
             self._teCaptionRevisions[path] = draft.captionRevision;
             img.tags = draft.image.tags;
+            self._teUpdateFreq(draft.original, img.tags);
           }
         });
+        if (recovery) {
+          this.tagEditorHistory = recovery.history;
+          this.tagEditorHistoryIdx = recovery.historyIdx;
+          this._teHistoryState = recovery.historyState;
+          this.tagEditorSelected = recovery.selected;
+          this.tagEditorTagSelection = recovery.include;
+          this.tagEditorExcludedTags = recovery.exclude;
+          this._teDraftRemainder = recovery.remainder;
+          this.tagEditorDetailView = recovery.detailView;
+          this._teInvalidateDiff();
+          this._updateEditorPanel();
+        }
         this._teRecountModified();
+        this._teInvalidateCaptionQuery();
         this.tagEditorModified = this._teModifiedCount > 0;
         if (this._teSessionQueryKey(this.tagEditorPage) !== this._teSessionQueryKey(Number(j.data.page || 1), false)) {
           await this.tagEditorFetchPage(this.tagEditorPage, { force: true });
         }
         if (epoch !== this._teLoadEpoch || controller.signal.aborted) return;
+        if (recovery) {
+          this._teLastSelected = recovery.anchor;
+          if (this._teSessionRecovery === recovery) this._teSessionRecovery = null;
+        }
         if (openPath && this._teFindByPath(openPath)) {
           this.tagEditorSelected = [openPath];
-          this._teLastSelected = this.tagEditorGetFiltered().findIndex(function(image) { return image.path === openPath; });
+          this._teLastSelected = openPath;
           this._updateEditorPanel();
           this.$nextTick?.(() => {
             if (epoch === this._teLoadEpoch && this.currentRoute === 'tagEditor' && this.tagEditorSelected[0] === openPath) this._teFocusEditorInput();
           });
         }
         this.tagEditorLoadSnapshots(epoch);
-        this._teCheckDraft();
+        if (!recovery) this._teCheckDraft();
         this._teStartAutoSave();
       } else {
         this.toast(j.message || this.t('common.error'), 'error');
@@ -746,11 +956,47 @@ window.tagEditorMixin = {
   tagEditorSetPanelWidth(side, width) {
     var left = side === 'left';
     var main = document.querySelector('.te-main[data-te-main="active"]');
-    var other = left ? this.tagEditorRightWidth : (this.tagEditorLeftCollapsed ? 0 : this.tagEditorLeftWidth);
+    var layout = this.tagEditorPanelLayout();
+    var other = left ? layout.right : (this.tagEditorLeftCollapsed || this.tagEditorCompactLayout ? 0 : layout.left);
     var min = left ? 180 : 280;
     var max = left ? 420 : 520;
-    if (main && main.clientWidth) max = Math.min(max, Math.max(min, main.clientWidth - other - 196));
+    if (main && main.clientWidth) max = Math.min(max, Math.max(min, main.clientWidth - other - 216));
     this[left ? 'tagEditorLeftWidth' : 'tagEditorRightWidth'] = Math.max(min, Math.min(max, width));
+  },
+
+  tagEditorPanelLayout() {
+    var left = this.tagEditorLeftWidth, right = this.tagEditorRightWidth;
+    var width = this._teLayoutWidth;
+    var hasLeft = !this.tagEditorLeftCollapsed && !this.tagEditorCompactLayout;
+    if (width > 0) {
+      // Keep a usable image column; fitting never changes the saved preference.
+      if (hasLeft) left = Math.max(180, Math.min(left, width - right - 216));
+      right = Math.max(280, Math.min(right, width - (hasLeft ? left + 16 : 8) - 200));
+    }
+    return { left: left, right: right };
+  },
+
+  tagEditorPanelStyle() {
+    var layout = this.tagEditorPanelLayout();
+    return '--te-right-w:' + layout.right + 'px;--te-left-w:' + layout.left + 'px';
+  },
+
+  tagEditorActiveFilterCount() {
+    return this.tagEditorTagSelection.length + this.tagEditorExcludedTags.length
+      + (this.tagEditorSearchQuery ? 1 : 0) + (this.tagEditorQuickFilter !== 'all' ? 1 : 0);
+  },
+
+  tagEditorCloseSidebar(event) {
+    if (this.tagEditorLeftCollapsed || event?.isComposing || event?.keyCode === 229) return;
+    event?.preventDefault();
+    event?.stopPropagation();
+    this.tagEditorLeftCollapsed = true;
+    var epoch = this._teLoadEpoch;
+    this.$nextTick(() => {
+      if (epoch !== this._teLoadEpoch || this.currentRoute !== 'tagEditor') return;
+      var toggle = document.getElementById('te-sidebar-toggle');
+      if (toggle?.getClientRects().length) toggle.focus();
+    });
   },
 
   tagEditorStopResize() {
@@ -763,13 +1009,13 @@ window.tagEditorMixin = {
   },
 
   tagEditorAdjustRightWidth(delta) {
-    this.tagEditorSetPanelWidth('right', this.tagEditorRightWidth + delta);
+    this.tagEditorSetPanelWidth('right', this.tagEditorPanelLayout().right + delta);
     try { localStorage.setItem('tagEditor_rightWidth', String(Math.round(this.tagEditorRightWidth))); } catch (e) {}
     this.tagEditorRefreshSuggestPosition();
   },
 
   tagEditorAdjustLeftWidth(delta) {
-    this.tagEditorSetPanelWidth('left', this.tagEditorLeftWidth + delta);
+    this.tagEditorSetPanelWidth('left', this.tagEditorPanelLayout().left + delta);
     try { localStorage.setItem('tagEditor_leftWidth', String(Math.round(this.tagEditorLeftWidth))); } catch (e) {}
   },
 
@@ -828,11 +1074,13 @@ window.tagEditorMixin = {
     // At compact desktop widths the tag cloud overlays the grid instead of
     // permanently consuming a column. Start collapsed so the image wall is usable.
     if (window.matchMedia && window.matchMedia('(max-width: 1200px)').matches) {
+      this.tagEditorCompactLayout = true;
       this.tagEditorLeftCollapsed = true;
     }
     if (!this._teCompactMedia && window.matchMedia) {
       this._teCompactMedia = window.matchMedia('(max-width: 1200px)');
       this._teCompactListener = function(event) {
+        self.tagEditorCompactLayout = event.matches;
         if (event.matches) self.tagEditorLeftCollapsed = true;
       };
       if (this._teCompactMedia.addEventListener) {
@@ -842,10 +1090,15 @@ window.tagEditorMixin = {
     this.$nextTick(function() {
       var grid = document.getElementById('teV3Grid');
       if (!grid) return;
+      var main = grid.closest('.te-main');
       if (self._teGridResizeObserver) self._teGridResizeObserver.disconnect();
-      var update = function() { self._teUpdateGridCardSize(grid); };
+      var update = function() {
+        if (main && main.clientWidth > 0) self._teLayoutWidth = main.clientWidth;
+        self._teUpdateGridCardSize(grid);
+      };
       self._teGridResizeObserver = new ResizeObserver(update);
       self._teGridResizeObserver.observe(grid);
+      if (main) self._teGridResizeObserver.observe(main);
       update();
     });
   },
@@ -859,25 +1112,28 @@ window.tagEditorMixin = {
     var compact = window.matchMedia && window.matchMedia('(max-width: 1200px)').matches;
     var minSize = compact ? 148 : 160;
     var columns = Math.max(1, Math.floor((available + gap) / (minSize + gap)));
-    var size = Math.max(minSize, Math.floor((available - gap * (columns - 1)) / columns));
+    var size = Math.min(available, Math.max(minSize, Math.floor((available - gap * (columns - 1)) / columns)));
     grid.style.setProperty('--te-card-size', size + 'px');
   },
 
   async tagEditorLoadTagFreq() {
-    if (!this.tagEditorDir) return;
+    if (!this.tagEditorDir || !this.tagEditorAllowsTagOps()) return;
+    var epoch = this._teLoadEpoch, modeEpoch = this._teModeEpoch;
     try {
       var r = await fetch('/api/tageditor/tags?dir=' + encodeURIComponent(this.tagEditorDir) + '&recursive=' + (this.tagEditorRecursive ? 'true' : 'false'));
       var j = await r.json();
+      if (epoch !== this._teLoadEpoch || modeEpoch !== this._teModeEpoch) return;
       if (j.status === 'success') {
         this.tagEditorTagFreq = j.data.tags || [];
         this.tagEditorMaxFreq = this.tagEditorTagFreq.length > 0 ? this.tagEditorTagFreq[0].count : 0;
         this._teRebuildFreqIndex();
+        this._teGetModified().forEach(img => this._teUpdateFreq(this.tagEditorOriginal[img.path] || '', img.tags));
         this._teInvalidateFreq();
       } else {
         this._teClearFreqData();
       }
     } catch (e) {
-      this._teClearFreqData();
+      if (epoch === this._teLoadEpoch && modeEpoch === this._teModeEpoch) this._teClearFreqData();
     }
   },
 
@@ -934,6 +1190,13 @@ window.tagEditorMixin = {
     this.tagEditorSearchQuery = '';
     this.tagEditorSchedulePageFetch(true);
   },
+  tagEditorClearFilters() {
+    this.tagEditorTagSelection = [];
+    this.tagEditorExcludedTags = [];
+    this.tagEditorQuickFilter = 'all';
+    this._teInvalidateFilter();
+    this.tagEditorClearSearch();
+  },
   tagEditorSetTagSearch(val) {
     if (this._teTagSearchDebounce) clearTimeout(this._teTagSearchDebounce);
     var seq = this._teTagSearchSeq = (this._teTagSearchSeq || 0) + 1;
@@ -967,7 +1230,14 @@ window.tagEditorMixin = {
       this.tagEditorUseRegex + '|' + this.tagEditorGroupByDir;
     if (cacheKey === this._teFilteredCacheKey && this._teCachedFiltered) return this._teCachedFiltered;
 
-    var images = this.tagEditorImages.slice();
+    var images = this._teFilterImages(this.tagEditorImages);
+    this._teFilteredCacheKey = cacheKey;
+    this._teCachedFiltered = images;
+    return images;
+  },
+
+  _teFilterImages(source) {
+    var images = source.slice();
 
     if (this.tagEditorQuickFilter === 'notag') {
       images = images.filter(function(img) { return !img.tags || img.tags.trim() === ''; });
@@ -1063,8 +1333,6 @@ window.tagEditorMixin = {
     for (var ui = 0; ui < decorated.length; ui++) images[ui] = decorated[ui].img;
     if (this.tagEditorGroupByDir) this._teGroupImagesByDir(images);
 
-    this._teFilteredCacheKey = cacheKey;
-    this._teCachedFiltered = images;
     return images;
   },
 
@@ -1097,10 +1365,10 @@ window.tagEditorMixin = {
 
   tagEditorDirectoryImageCount(img) {
     var directory = this.tagEditorImageDirectory(img);
-    if (this.tagEditorSessionId && this.tagEditorQuickFilter !== 'modified') {
+    if (this.tagEditorSessionId) {
       return this.tagEditorDirectoryCounts[directory] || 0;
     }
-    var images = this.tagEditorSessionId ? this._teGetModified() : this.tagEditorGetFiltered();
+    var images = this.tagEditorGetFiltered();
     var self = this;
     return images.reduce(function(count, image) {
       return count + (self.tagEditorImageDirectory(image) === directory ? 1 : 0);
@@ -1143,7 +1411,10 @@ window.tagEditorMixin = {
   },
 
   tagEditorGetQuickCount(type) {
-    if (this.tagEditorSessionId && type === 'notag') return this.tagEditorNoTagCount;
+    if (this.tagEditorSessionId && type === 'notag') {
+      return this.tagEditorNoTagCount + this._teGetModified().reduce((delta, img) =>
+        delta + Number(!img.tags.trim()) - Number(!(this.tagEditorOriginal[img.path] || '').trim()), 0);
+    }
     if (this.tagEditorSessionId && type === 'modified') return this._teModifiedCount;
     var images = this._teCachedFiltered || this.tagEditorImages;
     if (type === 'notag') {
@@ -1170,6 +1441,7 @@ window.tagEditorMixin = {
 
   // ===== Tag Cloud =====
   tagEditorGetFilteredTagFreq() {
+    if (!this.tagEditorAllowsTagOps()) return [];
     var cacheKey = this.tagEditorTagSearch + '|' + this.tagEditorTagSortBy + '|' + this.tagEditorTagSortAsc;
     if (cacheKey === this._teFreqCacheKey && this._teCachedFreqResult) return this._teCachedFreqResult;
 
@@ -1199,12 +1471,14 @@ window.tagEditorMixin = {
   },
 
   tagEditorSelectTag(tag) {
+    if (!this.tagEditorAllowsTagOps()) return;
     this._teTagListToggle(this.tagEditorTagSelection, this.tagEditorExcludedTags, tag);
     this._teInvalidateFilter();
     this.tagEditorSchedulePageFetch(true);
   },
 
   tagEditorTagCtx(e, tag) {
+    if (!this.tagEditorAllowsTagOps()) return;
     // Reserve space for the shared menu sizing and rename action.
     var menuW = 220, menuH = 230;
     var x = Math.min(e.clientX, window.innerWidth - menuW - 4);
@@ -1213,48 +1487,55 @@ window.tagEditorMixin = {
     this.tagEditorPanelMenu = null;
     this.tagEditorContextMenu = { x: x, y: y, tag: tag };
     this.tagDictionaryCloseHover();
+    this._teFocusMenu('tagEditorContextMenu', '_teTagMenuTrigger', 'teTagMenu', e);
   },
 
   tagEditorCtxInclude() {
+    if (!this.tagEditorAllowsTagOps()) return;
     var tag = this.tagEditorContextMenu && this.tagEditorContextMenu.tag;
     if (tag && this._teTagListToggle(this.tagEditorTagSelection, this.tagEditorExcludedTags, tag)) {
       this._teInvalidateFilter();
       this.tagEditorSchedulePageFetch(true);
     }
-    this.tagEditorContextMenu = null;
+    this.tagEditorCloseTagMenu();
   },
 
   tagEditorCtxExclude() {
+    if (!this.tagEditorAllowsTagOps()) return;
     var tag = this.tagEditorContextMenu && this.tagEditorContextMenu.tag;
     if (tag && this._teTagListToggle(this.tagEditorExcludedTags, this.tagEditorTagSelection, tag)) {
       this._teInvalidateFilter();
       this.tagEditorSchedulePageFetch(true);
     }
-    this.tagEditorContextMenu = null;
+    this.tagEditorCloseTagMenu();
   },
 
   tagEditorCtxCopy() {
+    if (!this.tagEditorAllowsTagOps()) return;
     var tag = this.tagEditorContextMenu && this.tagEditorContextMenu.tag;
     if (tag) {
       navigator.clipboard.writeText(tag).catch(function() {});
       this.toast(this.t('tagEditor.singleTagCopied').replace('{tag}', tag));
     }
-    this.tagEditorContextMenu = null;
+    this.tagEditorCloseTagMenu();
   },
 
   tagEditorCtxAddAll() {
+    if (!this.tagEditorAllowsTagOps()) return;
     var tag = this.tagEditorContextMenu && this.tagEditorContextMenu.tag;
-    this.tagEditorContextMenu = null;
+    this.tagEditorCloseTagMenu(false);
     if (!tag) return;
     var self = this;
+    var modeEpoch = this._teModeEpoch;
     // B6: 给"加入全部"加二次确认（DeleteTag 已有），避免误点难撤销
-    this._teConfirmBatch(
+    this._teConfirmTagBatch(
       this.t('tagEditor.ctxAddAllConfirm').replace('{tag}', tag).replace('{n}', this.tagEditorDatasetCount || this.tagEditorImages.length),
       async function() {
         var affected = 0;
         var images;
         try { images = await self._teEnsureAllImagesLoaded(); }
         catch (e) { if (e.name !== 'AbortError') self.toast(e.message || self.t('common.networkError'), 'error'); return; }
+        if (!self.tagEditorAllowsTagOps() || modeEpoch !== self._teModeEpoch) return;
         images.forEach(function(img) {
           var tags = _teParseTags(img.tags);
           if (tags.indexOf(tag) === -1) {
@@ -1268,17 +1549,20 @@ window.tagEditorMixin = {
   },
 
   tagEditorCtxDeleteTag() {
+    if (!this.tagEditorAllowsTagOps()) return;
     var tag = this.tagEditorContextMenu && this.tagEditorContextMenu.tag;
-    this.tagEditorContextMenu = null;
+    this.tagEditorCloseTagMenu(false);
     if (!tag) return;
     var self = this;
-    this._teConfirmBatch(
+    var modeEpoch = this._teModeEpoch;
+    this._teConfirmTagBatch(
       this.t('tagEditor.deleteTagConfirm').replace('{tag}', tag),
       async function() {
         var affected = 0;
         var images;
         try { images = await self._teEnsureAllImagesLoaded(); }
         catch (e) { if (e.name !== 'AbortError') self.toast(e.message || self.t('common.networkError'), 'error'); return; }
+        if (!self.tagEditorAllowsTagOps() || modeEpoch !== self._teModeEpoch) return;
         images.forEach(function(img) {
           var tags = _teParseTags(img.tags);
           var idx = tags.indexOf(tag);
@@ -1302,21 +1586,8 @@ window.tagEditorMixin = {
 
   // ===== Restore from .bak backup =====
   tagEditorRestoreBackup() {
-    var self = this;
-    this.openConfirm(this.t('tagEditor.backupRestoreConfirmTitle'), this.t('tagEditor.restoreConfirm'), function() {
-      fetch('/api/tageditor/restore-backup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dir: self.tagEditorDir })
-      }).then(function(r) { return r.json(); }).then(function(j) {
-        if (j.status === 'success') {
-          self.toast(self.t('tagEditor.restored'));
-          self.tagEditorLoad(self.tagEditorDir);
-        } else {
-          self.toast(j.message || self.t('common.error'), 'error');
-        }
-      });
-    }, this.t('common.confirm'));
+    if (!this._teCanRestoreCaptions()) return;
+    this._teTimelineAction(null, 'backup', 'backupRestoreConfirmTitle', 'restoreConfirm', 'restored');
   },
 
   // ===== Card Interactions =====
@@ -1328,12 +1599,14 @@ window.tagEditorMixin = {
     this.tagEditorPanelMenu = null;
     this.tagEditorImageContextMenu = { x: x, y: y, image: img };
     this.tagDictionaryCloseHover();
+    this._teFocusMenu('tagEditorImageContextMenu', '_teImageMenuTrigger', 'teImageMenu', e);
   },
 
   tagEditorCtxViewImage() {
     var img = this.tagEditorImageContextMenu && this.tagEditorImageContextMenu.image;
-    this.tagEditorImageContextMenu = null;
-    if (img) this.tagEditorOpenLightbox(img);
+    var trigger = this._teImageMenuTrigger;
+    this.tagEditorCloseImageMenu(false);
+    if (img) this.tagEditorOpenLightbox(img, trigger);
   },
 
   tagEditorOriginalUrl(img) {
@@ -1352,34 +1625,38 @@ window.tagEditorMixin = {
     return '/api/image-preview?' + params.toString();
   },
 
-  tagEditorOpenLightbox(img) {
+  tagEditorOpenLightbox(img, trigger) {
     if (!img) return;
+    this._teFlushAllPendingTextEdits();
+    // 原生弹窗记录实际触发控件，避免将稍后隐藏的菜单项作为返回焦点。
+    if (!this.tagEditorLightboxOpen && trigger?.isConnected && trigger.getClientRects().length) trigger.focus();
     if (!this.tagEditorLightboxOpen) this._teLightboxPreviousSelection = this.tagEditorSelected.slice();
     this.tagEditorSelected = [img.path];
     this._updateEditorPanel();
+    this.tagEditorLightboxOpen = true;
+    this.tagEditorImageContextMenu = null;
+    document.body.classList.add('te-lightbox-open');
+    this._teLoadLightboxImage(img);
+  },
+
+  _teLoadLightboxImage(img) {
     this.tagEditorLightboxImage = img;
     this.tagEditorLightboxSrc = img.preview || img.thumbnail || '';
     this.tagEditorLightboxLoading = true;
-    this.tagEditorLightboxOpen = true;
-    this.tagEditorImageContextMenu = null;
     this.tagEditorResetLightbox();
-    document.body.classList.add('te-lightbox-open');
     var self = this;
+    var epoch = this._teLoadEpoch;
     var request = ++this._teLightboxRequest;
     var original = new Image();
     original.src = this.tagEditorOriginalUrl(img);
     original.decode().then(function() {
-      if (request !== self._teLightboxRequest || !self.tagEditorLightboxOpen) return;
+      if (epoch !== self._teLoadEpoch || request !== self._teLightboxRequest || !self.tagEditorLightboxOpen) return;
       self.tagEditorLightboxSrc = original.src;
       self.tagEditorLightboxLoading = false;
     }).catch(function() {
-      if (request !== self._teLightboxRequest || !self.tagEditorLightboxOpen) return;
+      if (epoch !== self._teLoadEpoch || request !== self._teLightboxRequest || !self.tagEditorLightboxOpen) return;
       self.tagEditorLightboxLoading = false;
       self.toast(self.t('common.networkError'), 'error');
-    });
-    this.$nextTick(function() {
-      var closeButton = document.querySelector('.te-lightbox-close');
-      if (closeButton) closeButton.focus();
     });
   },
 
@@ -1458,16 +1735,16 @@ window.tagEditorMixin = {
   },
 
   async tagEditorLightboxNav(dir) {
-    await this.tagEditorNavDetail(dir);
-    var img = this.tagEditorGetSelectedImg();
-    if (!img) return;
-    this.tagEditorLightboxImage = img;
-    this.tagEditorLightboxLoading = true;
-    this.tagEditorResetLightbox();
+    if (!this.tagEditorLightboxOpen) return;
+    var request = this._teLightboxRequest, epoch = this._teLoadEpoch;
+    var img = await this.tagEditorNavDetail(dir);
+    if (!img || !this.tagEditorLightboxOpen || epoch !== this._teLoadEpoch || request !== this._teLightboxRequest
+      || this.tagEditorSelected.length !== 1 || this.tagEditorSelected[0] !== img.path) return;
+    this._teLoadLightboxImage(img);
   },
 
   async _teFetchAllSessionItems(useCurrentFilters) {
-    if (useCurrentFilters && this.tagEditorQuickFilter === 'modified') return this._teGetModified().slice();
+    if (useCurrentFilters && this.tagEditorQuickFilter === 'modified') return this._teFilterImages(this._teGetModified());
     if (!this.tagEditorSessionId) return this.tagEditorGetFiltered().slice();
     if (this._teAllAbort) this._teAllAbort.abort();
     var controller = new AbortController();
@@ -1484,6 +1761,7 @@ window.tagEditorMixin = {
       }
     };
     var base = this._teSessionQuery(1, useCurrentFilters);
+    var requestOptions = this._teCaptionQueryOptions(controller.signal, useCurrentFilters);
     base.set('page_size', '240');
     var all = [];
     var totalPages = 1;
@@ -1492,7 +1770,7 @@ window.tagEditorMixin = {
       for (var page = 1; page <= totalPages; page++) {
         assertCurrent();
         base.set('page', String(page));
-        var response = await fetch('/api/tageditor/sessions/' + encodeURIComponent(sessionId) + '/images?' + base.toString(), { signal: controller.signal });
+        var response = await fetch('/api/tageditor/sessions/' + encodeURIComponent(sessionId) + '/images?' + base.toString(), requestOptions);
         var payload = await response.json();
         assertCurrent();
         if (payload.status !== 'success') throw new Error(payload.message || this.t('common.error'));
@@ -1529,15 +1807,22 @@ window.tagEditorMixin = {
 
   tagEditorGridBgClick(e) {
     if (!e.target.closest('.te-card') && !e.target.closest('.te-editor')) {
-      this._teFlushAllPendingTextEdits();
-      this.tagEditorSelected = [];
+      this.tagEditorClearSelection();
     }
+  },
+
+  tagEditorClearSelection() {
+    this._teFlushAllPendingTextEdits();
+    this.tagEditorSelected = [];
+    this._teLastSelected = null;
+    this._updateEditorPanel();
   },
 
   tagEditorCardClick(img, idx, e) {
     this._teFlushAllPendingTextEdits();
-    var filtered = this.tagEditorGetFiltered();
-    var globalIdx = idx;
+    var filtered = this.tagEditorGetPaged();
+    var currentIdx = filtered.findIndex(item => item.path === img.path);
+    var anchorIdx = filtered.findIndex(item => item.path === this._teLastSelected);
 
     if (e.ctrlKey || e.metaKey) {
       var existsIdx = this.tagEditorSelected.indexOf(img.path);
@@ -1546,11 +1831,11 @@ window.tagEditorMixin = {
       } else {
         this.tagEditorSelected.splice(existsIdx, 1);
       }
-    } else if (e.shiftKey && this._teLastSelected !== null) {
-      var lastIdx = this._teLastSelected;
-      var start2 = Math.min(lastIdx, globalIdx);
-      var end2 = Math.max(lastIdx, globalIdx);
-      this.tagEditorSelected = [];
+    } else if (e.shiftKey && anchorIdx >= 0 && currentIdx >= 0) {
+      var start2 = Math.min(anchorIdx, currentIdx);
+      var end2 = Math.max(anchorIdx, currentIdx);
+      var visible = new Set(filtered.map(item => item.path));
+      this.tagEditorSelected = this.tagEditorSelected.filter(path => !visible.has(path));
       for (var i = start2; i <= end2; i++) {
         if (filtered[i]) this.tagEditorSelected.push(filtered[i].path);
       }
@@ -1561,7 +1846,7 @@ window.tagEditorMixin = {
         this.tagEditorSelected = [img.path];
       }
     }
-    this._teLastSelected = globalIdx;
+    this._teLastSelected = img.path;
     this._updateEditorPanel();
   },
 
@@ -1576,6 +1861,7 @@ window.tagEditorMixin = {
   },
 
   tagEditorCardEnter(img, idx, e) {
+    if (e.target !== e.currentTarget) return;
     // 焦点在已单选的本卡上时，Enter 视为“开始编辑”聚焦添加框；否则保持选中切换语义
     if (this.tagEditorSelected.length === 1 && this.tagEditorSelected[0] === img.path) {
       if (this._teFocusEditorInput()) {
@@ -1589,7 +1875,7 @@ window.tagEditorMixin = {
   tagEditorCardDblClick(img, idx, e) {
     // 双击卡片 = 查看大图（聚焦添加框用 Enter 键，见 tagEditorHandleKeydown）
     if (e) e.preventDefault();
-    this.tagEditorOpenLightbox(img);
+    this.tagEditorOpenLightbox(img, e?.currentTarget);
   },
 
   tagEditorToggleSelect(path, e) {
@@ -1600,12 +1886,14 @@ window.tagEditorMixin = {
     } else {
       this.tagEditorSelected.splice(idx, 1);
     }
+    this._teLastSelected = path;
     this._updateEditorPanel();
   },
 
   tagEditorSelectAll() {
     this._teFlushAllPendingTextEdits();
-    this.tagEditorSelected = this.tagEditorGetPaged().map(function(img) { return img.path; });
+    this.tagEditorSelected = Array.from(new Set(this.tagEditorSelected.concat(this.tagEditorGetPaged().map(img => img.path))));
+    this._teLastSelected = null;
     this._updateEditorPanel();
   },
 
@@ -1616,6 +1904,7 @@ window.tagEditorMixin = {
       this._teSearchLoading = true;
       var filtered = await this._teFetchAllSessionItems(true);
       this.tagEditorSelected = filtered.map(function(img) { return img.path; });
+      this._teLastSelected = null;
       this._teCachedSelectedStatsKey = '';
       this._teCachedSelectedStats = null;
       this._updateEditorPanel();
@@ -1630,22 +1919,41 @@ window.tagEditorMixin = {
     this._teFlushAllPendingTextEdits();
     var filtered = this.tagEditorGetPaged();
     var sel = this.tagEditorSelected;
-    this.tagEditorSelected = [];
+    var visible = new Set(filtered.map(img => img.path));
+    this.tagEditorSelected = sel.filter(path => !visible.has(path));
     for (var i = 0; i < filtered.length; i++) {
       var p = filtered[i].path;
       if (sel.indexOf(p) === -1) this.tagEditorSelected.push(p);
     }
+    this._teLastSelected = null;
     this._updateEditorPanel();
   },
 
+  tagEditorOutsidePageCount(paths = this.tagEditorSelected) {
+    var visible = new Set(this.tagEditorGetPaged().map(img => img.path));
+    return paths.filter(path => !visible.has(path)).length;
+  },
+
+  tagEditorSelectionLabel() {
+    var outside = this.tagEditorOutsidePageCount();
+    return this.t(outside ? 'tagEditor.selectedOutsidePage' : 'tagEditor.selected')
+      .replace('{n}', this.tagEditorSelected.length).replace('{outside}', outside);
+  },
+
+  _teOutsidePageHint(paths) {
+    var count = this.tagEditorOutsidePageCount(paths);
+    return count ? '\n' + this.t('tagEditor.batchOutsidePage').replace('{n}', count) : '';
+  },
+
   _updateEditorPanel() {
+    ++this._teNavRequest;
     this.tagEditorCancelQuickRemove();
     this.tagEditorPanelMenu = null;
     this._teCloseSuggestions();
     if (this.tagEditorSelected.length === 1) {
       var img = this.tagEditorGetSelectedImg();
       if (img) {
-        this.tagEditorDetailText = img.tags || '';
+        this.tagEditorDetailText = _teInputText(img.tags);
       }
     }
     this.tagDictionarySyncChips();
@@ -1657,6 +1965,7 @@ window.tagEditorMixin = {
   },
 
   tagEditorGetSelectedTags() {
+    if (!this.tagEditorAllowsTagOps()) return [];
     var img = this.tagEditorGetSelectedImg();
     if (!img || !img.tags) return [];
     return _teParseTags(img.tags);
@@ -1678,6 +1987,7 @@ window.tagEditorMixin = {
   },
 
   tagEditorStartQuickRemove() {
+    if (!this.tagEditorAllowsTagOps()) return;
     if (!this.tagEditorSelected.length) return;
     this._teFlushAllPendingTextEdits();
     this.tagEditorQuickRemove = true;
@@ -1694,6 +2004,7 @@ window.tagEditorMixin = {
   },
 
   tagEditorApplyQuickRemove() {
+    if (!this.tagEditorAllowsTagOps()) return;
     if (!this.tagEditorQuickRemove || !this.tagEditorRemovalTags.length) return;
     var removed = new Set(this.tagEditorRemovalTags);
     var targets = this.tagEditorGetBatchTargets();
@@ -1726,13 +2037,54 @@ window.tagEditorMixin = {
     this.tagEditorContextMenu = null;
     this.tagEditorImageContextMenu = null;
     this.tagDictionaryCloseHover();
-    this.$nextTick(function() { document.querySelector('#tePanelMenu button:not([disabled])')?.focus(); });
+    this._teFocusMenu('tagEditorPanelMenu', '_tePanelMenuTrigger', 'tePanelMenu', event);
+  },
+
+  _teFocusMenu(stateKey, triggerKey, id, event) {
+    this[triggerKey] = event.target?.closest?.('[tabindex], button') || event.currentTarget?.querySelector?.('button, [tabindex]') || event.currentTarget;
+    var state = this[stateKey], epoch = this._teLoadEpoch;
+    var request = ++this._teMenuFocusRequest;
+    this.$nextTick(() => {
+      if (this[stateKey] !== state || epoch !== this._teLoadEpoch || request !== this._teMenuFocusRequest || this.currentRoute !== 'tagEditor') return;
+      var menu = document.getElementById(id);
+      (this._teVisibleMenuButtons(menu)[0] || menu)?.focus();
+    });
+  },
+
+  _teVisibleMenuButtons(menu) {
+    return Array.from(menu?.querySelectorAll('button') || []).filter(button => !button.disabled && button.getClientRects().length);
+  },
+
+  tagEditorClosePanelMenu(restoreFocus = true) {
+    this._teCloseMenu('tagEditorPanelMenu', '_tePanelMenuTrigger', restoreFocus);
+  },
+
+  tagEditorCloseTagMenu(restoreFocus = true) {
+    this._teCloseMenu('tagEditorContextMenu', '_teTagMenuTrigger', restoreFocus);
+  },
+
+  tagEditorCloseImageMenu(restoreFocus = true) {
+    this._teCloseMenu('tagEditorImageContextMenu', '_teImageMenuTrigger', restoreFocus);
+  },
+
+  _teCloseMenu(stateKey, triggerKey, restoreFocus) {
+    if (!this[stateKey]) return;
+    var trigger = this[triggerKey];
+    var epoch = this._teLoadEpoch;
+    var request = ++this._teMenuFocusRequest;
+    this[stateKey] = null;
+    this[triggerKey] = null;
+    if (restoreFocus) this.$nextTick(() => {
+      if (epoch === this._teLoadEpoch && request === this._teMenuFocusRequest && this.currentRoute === 'tagEditor' && !this.tagEditorLightboxOpen && !this.tagEditorShortcutsOpen && !this.showConfirmModal && trigger?.isConnected && trigger.getClientRects().length) trigger.focus();
+    });
   },
 
   async tagEditorPanelAction(action) {
     var menu = this.tagEditorPanelMenu;
     if (!menu) return;
-    this.tagEditorPanelMenu = null;
+    var trigger = this._tePanelMenuTrigger;
+    this.tagEditorClosePanelMenu(action !== 'view');
+    if (!this.tagEditorAllowsTagOps() && ['copy', 'remove', 'filter', 'quick'].includes(action)) return;
     if (action === 'copy') {
       var text = menu.tag || (this.tagEditorSelected.length === 1 ? this.tagEditorGetSelectedImg()?.tags : this.tagEditorGetSelectedStats().map(function(item) { return item.tag; }).join(', '));
       try { await navigator.clipboard.writeText(text || ''); this.toast(this.t('tagEditor.tagsCopied').replace('{n}', _teParseTags(text || '').length)); }
@@ -1747,22 +2099,36 @@ window.tagEditorMixin = {
       this._teInvalidateFilter();
       this.tagEditorSchedulePageFetch(true);
     } else if (action === 'quick') this.tagEditorStartQuickRemove();
-    else if (action === 'view') this.tagEditorOpenLightbox(this.tagEditorGetSelectedImg());
+    else if (action === 'view') this.tagEditorOpenLightbox(this.tagEditorGetSelectedImg(), trigger);
     else if (action === 'revert') this.tagEditorRevertSelectedImage();
     else if (action === 'undo') this.tagEditorUndo();
     else if (action === 'redo') this.tagEditorRedo();
   },
 
   tagEditorPanelMenuKeydown(event) {
-    var buttons = Array.from(event.currentTarget.querySelectorAll('button')).filter(function(button) { return !button.disabled && button.getClientRects().length; });
+    // 菜单使用自己的键盘交互，不触发页面级翻图或“开始编辑”。
+    event.stopPropagation();
+    if (event.key === 'Tab') {
+      var trigger = this.tagEditorPanelMenu ? this._tePanelMenuTrigger
+        : this.tagEditorContextMenu ? this._teTagMenuTrigger : this._teImageMenuTrigger;
+      this.tagEditorClosePanelMenu(false);
+      this.tagEditorCloseTagMenu(false);
+      this.tagEditorCloseImageMenu(false);
+      if (trigger?.isConnected && trigger.getClientRects().length) trigger.focus();
+      return;
+    }
+    var buttons = this._teVisibleMenuButtons(event.currentTarget);
     var index = buttons.indexOf(document.activeElement);
     if (!buttons.length || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault();
-    var next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+    var next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+      : index < 0 ? (event.key === 'ArrowDown' ? 0 : buttons.length - 1)
+      : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
     buttons[next].focus();
   },
 
   tagEditorAddTagToSelected() {
+    if (!this.tagEditorAllowsTagOps()) return;
     var val = this.tagEditorAddInput.trim();
     if (!val || this.tagEditorSelected.length !== 1) return;
     var img = this.tagEditorGetSelectedImg();
@@ -1783,6 +2149,7 @@ window.tagEditorMixin = {
   },
 
   tagEditorRemoveTagFromSelected(tag) {
+    if (!this.tagEditorAllowsTagOps()) return;
     if (this.tagEditorSelected.length !== 1) return;
     var img = this.tagEditorGetSelectedImg();
     if (!img) return;
@@ -1813,6 +2180,7 @@ window.tagEditorMixin = {
   },
 
   tagEditorDetailDragStart(e, idx) {
+    if (!this.tagEditorAllowsTagOps()) return;
     this.tagEditorDetailDragSrcIdx = idx;
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', '');
@@ -1865,6 +2233,7 @@ window.tagEditorMixin = {
   },
 
   tagEditorDetailDrop(e) {
+    if (!this.tagEditorAllowsTagOps()) return;
     e.preventDefault();
     var srcIdx = this.tagEditorDetailDragSrcIdx;
     var dropPos = this.tagEditorDetailDragOverPos;
@@ -1876,28 +2245,35 @@ window.tagEditorMixin = {
     if (!img) return;
     var tags = _teParseTags(img.tags);
     if (srcIdx >= tags.length) return;
+    var originalTags = tags.slice();
     var moving = tags.splice(srcIdx, 1)[0];
     var destIdx = tags.length;
     var dropTarget = e.target.closest('.te-editor-tag');
     if (dropTarget && dropTarget.dataset.ti != null) {
       var dropIdx = parseInt(dropTarget.dataset.ti, 10);
       if (!isNaN(dropIdx)) {
+        if (dropIdx === srcIdx) return;
         var adjIdx = dropIdx > srcIdx ? dropIdx - 1 : dropIdx;
         destIdx = dropPos === 'after' ? adjIdx + 1 : adjIdx;
       }
     }
     tags.splice(destIdx, 0, moving);
+    if (tags.every((tag, index) => tag === originalTags[index])) return;
     this._teUpdateImageTags(img, tags.join(', '));
     this._tePushHistory({ type: 'reorder', desc: this.t('tagEditor.historyStepReorder') + ' · ' + moving + ' @' + this._teImageLabel(img), affected: 1 });
   },
 
   tagEditorDetailEditTag(ti) {
-    this.tagEditorDetailView = 'text';
+    this.tagEditorSetDetailView('text');
   },
 
-  tagEditorDetailTextChange() {
+  tagEditorDetailTextChange(event) {
+    // Alpine defers x-model during IME composition. Commit the completed input,
+    // never the stale model or a half-composed candidate.
+    if (event && (event.isComposing || event.target?.composing)) return;
     var img = this.tagEditorGetSelectedImg();
     if (!img) return;
+    if (event && event.target) this.tagEditorDetailText = event.target.value;
     var self = this;
     var path = img.path;
     if (this._tePendingTextEdits[path]) {
@@ -1905,13 +2281,14 @@ window.tagEditorMixin = {
       delete this._tePendingTextEdits[path];
     }
     // 文本内容立即进入编辑状态，只有历史记录防抖，避免快速保存或切图时丢失最后一次输入。
-    this._teUpdateImageTags(img, this.tagEditorDetailText, { deferTextHistory: true });
+    this._teUpdateImageTags(img, _teTextFromInput(this.tagEditorDetailText, img.tags || '', this.tagEditorOriginal[img.path]), { deferTextHistory: true });
     this._tePendingTextEdits[path] = setTimeout(function() {
       self._teFlushPendingTextEdit(path);
     }, 500);
   },
 
   tagEditorCopySelectedTags() {
+    if (!this.tagEditorAllowsTagOps()) return;
     var img = this.tagEditorGetSelectedImg();
     if (!img) return;
     var tags = _teParseTags(img.tags);
@@ -1920,6 +2297,7 @@ window.tagEditorMixin = {
   },
 
   tagEditorPasteTagsToSelected() {
+    if (!this.tagEditorAllowsTagOps()) return;
     if (this.tagEditorCopiedTags.length === 0) return;
     if (this.tagEditorSelected.length !== 1) {
       this.toast(this.t('tagEditor.selectOneImage'), 'warning');
@@ -1943,6 +2321,9 @@ window.tagEditorMixin = {
   async tagEditorNavDetail(dir) {
     if (this.tagEditorSelected.length !== 1) return;
     this._teFlushAllPendingTextEdits();
+    var request = ++this._teNavRequest;
+    var epoch = this._teLoadEpoch, session = this.tagEditorSessionId;
+    var selected = this.tagEditorSelected[0];
     var filtered = this.tagEditorGetFiltered();
     var currentIdx = this._teFindCurrentFilteredIdx();
     if (currentIdx < 0) return;
@@ -1951,18 +2332,24 @@ window.tagEditorMixin = {
       this.tagEditorSelected = [filtered[newIdx].path];
       this._updateEditorPanel();
       this._teScrollSelectedIntoView();
-      return;
+      return filtered[newIdx];
     }
     if (this.tagEditorSessionId) {
       var nextPage = this.tagEditorPage + (dir < 0 ? -1 : 1);
       if (nextPage < 1 || nextPage > this.tagEditorTotalPages()) return;
-      await this.tagEditorFetchPage(nextPage);
+      var query = this._teSessionQueryKey(nextPage);
+      var isCurrent = () => request === this._teNavRequest && epoch === this._teLoadEpoch && session === this.tagEditorSessionId
+        && this.tagEditorSelected.length === 1 && this.tagEditorSelected[0] === selected
+        && query === this._teSessionQueryKey(nextPage);
+      var loaded = await this.tagEditorFetchPage(nextPage, { isCurrent: isCurrent });
+      if (!loaded || !isCurrent() || this.tagEditorPage !== nextPage) return;
       var nextItems = this.tagEditorGetPaged();
       var next = dir < 0 ? nextItems[nextItems.length - 1] : nextItems[0];
       if (next) {
         this.tagEditorSelected = [next.path];
         this._updateEditorPanel();
         this._teScrollSelectedIntoView();
+        return next;
       }
     }
   },
@@ -2044,6 +2431,7 @@ window.tagEditorMixin = {
   },
 
   tagEditorGetSuggestions(field, inputEl) {
+    if (!this.tagEditorAllowsTagOps()) return;
     this._teCloseSuggestions();
     var key = TE_SUGGEST_FIELDS[field];
     if (!key || !inputEl) return;
@@ -2138,6 +2526,7 @@ window.tagEditorMixin = {
   },
 
   tagEditorSelectSuggestion(s) {
+    if (!this.tagEditorAllowsTagOps()) return;
     // 下拉条目可能是词典结果对象：插入的是 Anima 格式的 insert，不是别名也不是下划线原形
     var insert = (s && typeof s === 'object') ? (s.insert || '') : s;
     if (!insert) return;
@@ -2227,6 +2616,7 @@ window.tagEditorMixin = {
 
   // ===== Inline Tag Editing =====
   tagEditorStartInlineEdit(tag, event) {
+    if (!this.tagEditorAllowsTagOps()) return;
     event.stopPropagation();
     this.tagEditorInlineEdit = { oldTag: tag, newTag: tag };
     this.$nextTick(function() {
@@ -2235,22 +2625,47 @@ window.tagEditorMixin = {
     });
   },
 
-  async tagEditorFinishInlineEdit() {
+  _teInlineEditIsComposing(event) {
+    return this.tagEditorInlineEdit?.composing || event?.isComposing || event?.target?.composing || event?.keyCode === 229;
+  },
+
+  tagEditorInlineCompositionEnd(event) {
+    var edit = this.tagEditorInlineEdit;
+    if (!edit) return;
+    edit.composing = false;
+    edit.newTag = event.target.value;
+    if (edit.finishAfterComposition) {
+      // 等 Alpine 完成组合输入同步；期间切换模式或关闭编辑器时不再提交。
+      return this.$nextTick(() => {
+        if (this.tagEditorInlineEdit === edit) return this.tagEditorFinishInlineEdit(event);
+      });
+    }
+  },
+
+  async tagEditorFinishInlineEdit(event) {
+    if (!this.tagEditorAllowsTagOps()) return;
     if (!this.tagEditorInlineEdit) return;
+    if (this._teInlineEditIsComposing(event)) {
+      if (event?.type === 'blur') this.tagEditorInlineEdit.finishAfterComposition = true;
+      return;
+    }
+    if (event?.type === 'keydown') { event.preventDefault?.(); event.stopPropagation?.(); }
     var oldTag = this.tagEditorInlineEdit.oldTag;
-    var newTag = this.tagEditorInlineEdit.newTag.trim();
+    var newTag = (event?.target ? event.target.value : this.tagEditorInlineEdit.newTag).trim();
     this.tagEditorInlineEdit = null;
     if (!newTag || oldTag === newTag) return;
 
     // 左侧重命名作用于整个数据集，确认时明确范围，失去焦点不会直接修改图片。
     var self = this;
+    var modeEpoch = this._teModeEpoch;
     var images;
     try { images = await this._teEnsureAllImagesLoaded(); }
     catch (e) { if (e.name !== 'AbortError') this.toast(e.message || this.t('common.networkError'), 'error'); return; }
+    if (!this.tagEditorAllowsTagOps() || modeEpoch !== this._teModeEpoch) return;
     var targets = images.filter(function(img) { return _teParseTags(img.tags).includes(oldTag); });
     if (!targets.length) { this.toast(this.t('tagEditor.inlineRenameNone'), 'warning'); return; }
     var message = this.t('tagEditor.globalRenameConfirm').replace('{n}', targets.length) + '\n' + oldTag + ' → ' + newTag;
-    this._teConfirmBatch(message, function() {
+    this._teConfirmTagBatch(message, function() {
       targets.forEach(function(img) {
         var tags = _teParseTags(img.tags).map(function(tag) { return tag === oldTag ? newTag : tag; });
         self._teUpdateImageTags(img, self._teDedupTags(tags).join(', '));
@@ -2261,11 +2676,14 @@ window.tagEditorMixin = {
     });
   },
 
-  tagEditorCancelInlineEdit() {
+  tagEditorCancelInlineEdit(event) {
+    if (this._teInlineEditIsComposing(event)) return;
+    if (event?.type === 'keydown') { event.preventDefault?.(); event.stopPropagation?.(); }
     this.tagEditorInlineEdit = null;
   },
 
   _teConfirmBatchScope(action, transform, type, description, onDone) {
+    if (!this.tagEditorAllowsTagOps()) return;
     this._teFlushAllPendingTextEdits();
     var targets = this.tagEditorGetBatchTargets();
     var count = targets.length;
@@ -2281,9 +2699,10 @@ window.tagEditorMixin = {
     }).filter(function(change) { return change.before !== change.after; });
     if (!changes.length) { this.toast(this.t('tagEditor.batchNoChanges')); return; }
     msg += '\n' + this.t('tagEditor.batchPreviewDiff').replace('{n}', changes.length) + ' · ' + description;
+    msg += this._teOutsidePageHint(targets.map(img => img.path));
     var epoch = this._teLoadEpoch;
     var self = this;
-    this._teConfirmBatch(msg, function() {
+    this._teConfirmTagBatch(msg, function() {
       if (epoch !== self._teLoadEpoch || changes.some(function(change) { return change.img.tags !== change.before; })) {
         self.toast(self.t('tagEditor.batchStale'), 'warning');
         return;
@@ -2296,6 +2715,7 @@ window.tagEditorMixin = {
   },
 
   tagEditorRemoveBracketEscapes() {
+    if (!this.tagEditorAllowsTagOps()) return;
     this._teFlushAllPendingTextEdits();
     var changes = this.tagEditorGetBatchTargets().map(function(img) {
       var before = String(img.tags || '');
@@ -2304,7 +2724,7 @@ window.tagEditorMixin = {
     if (!changes.length) { this.toast(this.t('tagEditor.batchNoChanges')); return; }
     var epoch = this._teLoadEpoch;
     var self = this;
-    this._teConfirmBatch(this.t('tagEditor.unescapeConfirm').replace('{n}', changes.length), function() {
+    this._teConfirmTagBatch(this.t('tagEditor.unescapeConfirm').replace('{n}', changes.length) + this._teOutsidePageHint(changes.map(change => change.img.path)), function() {
       if (epoch !== self._teLoadEpoch || changes.some(function(change) { return change.img.tags !== change.before; })) {
         self.toast(self.t('tagEditor.unescapeStale'), 'warning');
         return;
@@ -2325,15 +2745,13 @@ window.tagEditorMixin = {
     this._teConfirmBatchScope('add', function(before) {
       var tags = _teParseTags(before);
       var existing = new Set(tags);
-      var changed = false;
+      var added = [];
       newTags.forEach(function(t) {
         if (existing.has(t)) return;
         existing.add(t);
-        if (pos === 'front') tags.unshift(t);
-        else tags.push(t);
-        changed = true;
+        added.push(t);
       });
-      return changed ? tags.join(', ') : before;
+      return added.length ? (pos === 'front' ? added.concat(tags) : tags.concat(added)).join(', ') : before;
     }, 'batchAdd', '+ ' + newTags.join(', '), function() {
       self.batchAddInput = '';
     });
@@ -2372,6 +2790,7 @@ window.tagEditorMixin = {
   },
 
   tagEditorGetSelectedStats() {
+    if (!this.tagEditorAllowsTagOps()) return [];
     if (this.tagEditorSelected.length < 2) {
       this._teCachedSelectedStatsKey = '';
       this._teCachedSelectedStats = null;
@@ -2450,6 +2869,7 @@ window.tagEditorMixin = {
     if (branched) this.tagEditorHistory = this.tagEditorHistory.slice(0, this.tagEditorHistoryIdx + 1);
     this.tagEditorHistoryDetailIdx = -1;
     var finalMeta = meta ? Object.assign({}, meta) : { type: 'edit', desc: this.t('tagEditor.historyStepText'), affected: changedPaths.length };
+    finalMeta.contentMode = this.tagEditorWorkMode;
     delete finalMeta.paths;
     // D2: 合并连续细步（同类型 + 同 path + 1.2s 内的 text/reorder/add）合并为一步，避免历史膨胀
     var now = Date.now();
@@ -2541,6 +2961,25 @@ window.tagEditorMixin = {
     this._teDiffReorderExpanded = {};
   },
 
+  _teHistoryTextExcerpt(text) {
+    // 展示用的原文前缀；历史内容、换行和空白均不改写。
+    var end = Math.min(text.length, 360), lines = 0;
+    for (var i = 0; i < end; i++) {
+      if (text[i] !== '\r' && text[i] !== '\n') continue;
+      if (++lines === 6) { end = i; break; }
+      if (text[i] === '\r' && text[i + 1] === '\n') i++;
+    }
+    // 不把 CRLF 或 Unicode 代理对切成两半。
+    if (end < text.length && ((text[end - 1] === '\r' && text[end] === '\n')
+      || (/[\uD800-\uDBFF]/.test(text[end - 1]) && /[\uDC00-\uDFFF]/.test(text[end])))) end--;
+    return text.slice(0, end);
+  },
+
+  _teHistoryTextTruncated(diff) {
+    return this._teHistoryTextExcerpt(diff.beforeText) !== diff.beforeText
+      || this._teHistoryTextExcerpt(diff.afterText) !== diff.afterText;
+  },
+
   _teGetHistoryDiff(stepIdx) {
     // D7: 缓存 diff 结果，切换 step 才重算
     if (stepIdx === this._teCachedDiffKey && this._teCachedDiffResult) return this._teCachedDiffResult;
@@ -2553,7 +2992,8 @@ window.tagEditorMixin = {
         var change = historyItem.changes[path];
         var beforeTags = change.before == null ? (selfDirect.tagEditorOriginal[path] || '') : change.before;
         var afterTags = change.after == null ? (selfDirect.tagEditorOriginal[path] || '') : change.after;
-        var itemDiff = selfDirect._teBuildTagDiff(path, beforeTags, afterTags);
+        var itemDiff = selfDirect._teBuildTagDiff(path, beforeTags, afterTags,
+          historyItem.meta?.type === 'text' || historyItem.meta?.contentMode === 'text');
         if (itemDiff) directDiff.push(itemDiff);
       });
       directDiff.sort(function(a, b) { return a.name.localeCompare(b.name); });
@@ -2582,7 +3022,13 @@ window.tagEditorMixin = {
     return diff;
   },
 
-  _teBuildTagDiff(path, beforeTags, afterTags) {
+  _teBuildTagDiff(path, beforeTags, afterTags, textEdit) {
+    if (beforeTags === afterTags) return null;
+    if (textEdit || !this.tagEditorAllowsTagOps()) {
+      var image = this._teFindByPath(path);
+      return { path: path, name: image ? this._teImageLabel(image) : path, kind: 'text',
+        beforeText: beforeTags, afterText: afterTags, added: [], removed: [], unchanged: [] };
+    }
     var beforeList = _teParseTags(beforeTags);
     var afterList = _teParseTags(afterTags);
     var added = afterList.filter(function(tag) { return beforeList.indexOf(tag) === -1; });
@@ -2618,12 +3064,13 @@ window.tagEditorMixin = {
     for (var j = 0; j < modified.length; j++) state[modified[j].path] = modified[j].tags;
     this._teHistoryState = state;
     this._teInvalidateFilter();
-    this.tagEditorDetailText = this.tagEditorGetSelectedImg()?.tags || '';
+    this.tagEditorDetailText = _teInputText(this.tagEditorGetSelectedImg()?.tags);
     this._updateEditorPanel();
   },
 
   _teApplyCheckpoint(checkpoint) {
     var self = this;
+    var wasModified = this.tagEditorModified;
     var hasAnyMod = false;
     this.tagEditorImages.forEach(function(img) {
       if (checkpoint.hasOwnProperty(img.path)) {
@@ -2642,16 +3089,19 @@ window.tagEditorMixin = {
     });
     this.tagEditorModified = hasAnyMod;
     this._teRecountModified();
+    if (wasModified && !hasAnyMod && !this._teIsSaving) this._teRemoveDraft();
     var state = {};
     var modified = this._teGetModified();
     for (var i = 0; i < modified.length; i++) state[modified[i].path] = modified[i].tags;
     this._teHistoryState = state;
+    this._teInvalidateCaptionQuery();
     this._teInvalidateFilter();
-    this.tagEditorDetailText = this.tagEditorGetSelectedImg()?.tags || '';
+    this.tagEditorDetailText = _teInputText(this.tagEditorGetSelectedImg()?.tags);
     this._updateEditorPanel();
   },
 
   _teUpdateFreq(oldTags, newTags) {
+    if (!this.tagEditorAllowsTagOps()) return;
     var oldList = _teParseTags(oldTags);
     var newList = _teParseTags(newTags);
     var newSet = new Set(newList);
@@ -2684,14 +3134,21 @@ window.tagEditorMixin = {
     if (!this._teEditVersions) this._teEditVersions = {};
     this._teEditVersions[img.path] = (this._teEditVersions[img.path] || 0) + 1;
     var isMod = newTagsStr !== this.tagEditorOriginal[img.path];
+    this._teInvalidateCaptionQuery();
     if (wasMod !== isMod) {
       this._teBumpModified(isMod ? 1 : -1);
     }
     this.tagEditorModified = this._teModifiedCount > 0;
+    // An explicit edit/undo back to the disk baseline retires this session's
+    // draft. Do not do this in the idle autosave path: an unopened recovery
+    // draft must survive loading a clean dataset or dismissing its prompt.
+    if (wasMod && !this.tagEditorModified && !this._teIsSaving) this._teRemoveDraft();
     this._teInvalidateFilter();
     // Only update detail text if the image being edited is currently selected
     if (this.tagEditorSelected.length === 1 && this.tagEditorSelected[0] === img.path) {
-      this.tagEditorDetailText = newTagsStr;
+      // Keep x-model equal to the textarea's LF value so Alpine does not reset
+      // the DOM value (and native undo/caret) on every CRLF keystroke.
+      this.tagEditorDetailText = _teInputText(newTagsStr);
     }
     this._teUpdateFreq(oldTags, newTagsStr);
     this.tagDictionarySyncChips();
@@ -2703,19 +3160,29 @@ window.tagEditorMixin = {
 
   // ===== Save =====
   async tagEditorSaveAll() {
+    if (this._teIsSaving || this._teDraftRestoreBusy || this.tagEditorSnapshotBusy) return;
     this._teFlushAllPendingTextEdits();
     var modified = this._teGetModified();
     if (modified.length === 0) { this.toast(this.t('tagEditor.batchNoChanges')); return; }
     var self2 = this;
+    var epoch = this._teLoadEpoch;
+    var saveDir = this.tagEditorLoadedDir || this.tagEditorDir;
     // C4: 小批量（≤5 张）跳过确认，减少打断；大批量仍确认
     if (modified.length > 5) {
-      this._teConfirmBatch(this.t('tagEditor.batchConfirmAll').replace('{n}', modified.length), function() { self2._doSaveAll(modified); });
+      this._teConfirmBatch(this.t('tagEditor.batchConfirmAll').replace('{n}', modified.length), function() {
+        if (epoch !== self2._teLoadEpoch || saveDir !== (self2.tagEditorLoadedDir || self2.tagEditorDir)) return;
+        return self2._doSaveAll(modified);
+      });
     } else {
-      this._doSaveAll(modified);
+      return this._doSaveAll(modified);
     }
   },
 
   async _doSaveAll(modified) {
+    if (this._teIsSaving || this._teDraftRestoreBusy || this.tagEditorSnapshotBusy) return;
+    this._teFlushAllPendingTextEdits();
+    // Persist the pre-save baseline even when the first save precedes autosave.
+    this._teSaveDraft();
     this.tagEditorSaving = true;
     this._teIsSaving = true;
     this._teSaveProgress = 0;
@@ -2754,23 +3221,32 @@ window.tagEditorMixin = {
         timelineWarning = data.timeline_warning || '';
         rollbackFailed = data.rollback_failed || [];
         if (timelineWarning) {
-          // Null history values refer to the old baseline, which is about to change.
-          this.tagEditorHistory.forEach(function(entry) {
-            Object.entries(entry.changes || {}).forEach(function([path, change]) {
-              if (change.before == null) change.before = self.tagEditorOriginal[path] || '';
-              if (change.after == null) change.after = self.tagEditorOriginal[path] || '';
+          payload.forEach(function(item) {
+            if ((data.saved_paths || []).includes(item.path)) self._teDraftRemainder.push({
+              path: item.path, tags: item.tags, original: self.tagEditorOriginal[item.path],
+              revision: data.revisions?.[item.path]
             });
           });
         }
         var successfulPaths = (data.saved_paths || []).concat(data.skipped_paths || []);
         var successfulLookup = {};
         successfulPaths.forEach(function(path) { successfulLookup[path] = true; });
+        // Input can continue while the request is in flight. Record it against
+        // the old baseline before advancing that baseline to the saved payload.
+        this._teFlushAllPendingTextEdits();
+        this.tagEditorHistory.forEach(function(entry) {
+          Object.entries(entry.changes || {}).forEach(function([path, change]) {
+            if (!successfulLookup[path]) return;
+            if (change.before == null) change.before = self.tagEditorOriginal[path] || '';
+            if (change.after == null) change.after = self.tagEditorOriginal[path] || '';
+          });
+        });
         var payloadByPath = {};
         payload.forEach(function(item) { payloadByPath[item.path] = item; });
         modified.forEach(function(img) {
           var savedPayload = payloadByPath[img.path];
-          if (successfulLookup[img.path] && savedPayload &&
-              ((self._teEditVersions && self._teEditVersions[img.path]) || 0) === savedPayload.edit_version) {
+          if (successfulLookup[img.path] && savedPayload) {
+            self.tagEditorNoTagCount += Number(!savedPayload.tags.trim()) - Number(!(self.tagEditorOriginal[img.path] || '').trim());
             self.tagEditorOriginal[img.path] = savedPayload.tags;
           }
         });
@@ -2787,19 +3263,25 @@ window.tagEditorMixin = {
       saveErrorMessage = this.t('common.networkError');
       failedItems = modified.map(function(img) { return { path: img.path, reason: saveErrorMessage }; });
     } finally {
-      this.tagEditorSaving = false;
-      this._teIsSaving = false;
-      this._teSaveProgress = 0;
+      if (saveEpoch === this._teSaveEpoch && loadEpoch === this._teLoadEpoch) {
+        this.tagEditorSaving = false;
+        this._teIsSaving = false;
+        this._teSaveProgress = 0;
+      }
     }
 
+    if (saveEpoch !== this._teSaveEpoch || loadEpoch !== this._teLoadEpoch) return;
     var hadHistory = this.tagEditorHistory.length > 0;
     this._teRecountModified();
+    this._teInvalidateCaptionQuery();
     this.tagEditorModified = this._teModifiedCount > 0;
-    if (!timelineWarning && !rollbackFailed.length && (processedCount > 0 || this._teModifiedCount === 0)) {
+    this._teInvalidateFilter();
+    if (!timelineWarning && !rollbackFailed.length && this._teModifiedCount === 0) {
       this.tagEditorHistory = [];
       this.tagEditorHistoryIdx = -1;
       this.tagEditorHistoryDetailIdx = -1;
     }
+    this._teInvalidateDiff();
     if (this._teModifiedCount === 0) {
       this._teHistoryState = {};
     } else if (processedCount > 0) {
@@ -2814,7 +3296,7 @@ window.tagEditorMixin = {
       var warning = timelineWarning ? this.t('tagEditor.timelineSaveFailed').replace('{error}', timelineWarning) : '';
       if (rollbackFailed.length) warning += (warning ? '\n' : '') + this.t('tagEditor.rollbackFailed').replace('{paths}', rollbackFailed.join(', '));
       this.toast(warning, 'warning');
-      this._teSaveDraft();
+      this._teSaveDraft(true);
     } else if (failedItems.length > 0 || this._teModifiedCount > 0) {
       if (processedCount === 0 && saveErrorMessage) {
         this.toast(saveErrorMessage, 'error');
@@ -2860,12 +3342,17 @@ window.tagEditorMixin = {
       });
   },
 
-  tagEditorRestoreSnapshot(sid) {
+  _teCanRestoreCaptions() {
     this._teFlushAllPendingTextEdits();
-    if (this.tagEditorModified) {
+    if (this.tagEditorModified || this._teIsSaving || this._teDraftRestoreBusy) {
       this.toast(this.t('tagEditor.timelineUnsaved'), 'warning');
-      return;
+      return false;
     }
+    return true;
+  },
+
+  tagEditorRestoreSnapshot(sid) {
+    if (!this._teCanRestoreCaptions()) return;
     this._teTimelineAction(sid, 'restore', 'snapshotRestoreConfirmTitle', 'snapshotRestoreConfirm', 'snapshotRestored');
   },
 
@@ -2883,27 +3370,31 @@ window.tagEditorMixin = {
     var self = this;
     var epoch = this._teLoadEpoch;
     var dir = this.tagEditorLoadedDir || this.tagEditorDir;
+    var restoring = action === 'restore' || action === 'backup';
     var snapshot = this.tagEditorSnapshots.find(function(item) { return item.id === sid; });
     var description = this.t('tagEditor.' + message);
     if (snapshot) description = this._teFormatSnapshotTime(snapshot.timestamp) + ' · ' + this.t('tagEditor.historyStepImages').replace('{n}', snapshot.file_count) + '\n\n' + description;
     this.openConfirm(this.t('tagEditor.' + title), description, function() {
       if (epoch !== self._teLoadEpoch || self.tagEditorSnapshotBusy) return;
-      if (action === 'restore' && (self.tagEditorModified || self._teIsSaving)) {
-        self.toast(self.t('tagEditor.timelineUnsaved'), 'warning');
-        return;
-      }
+      if (restoring && !self._teCanRestoreCaptions()) return;
       self.tagEditorSnapshotBusy = true;
       var path = '/api/tageditor/timeline' + (sid ? '/' + encodeURIComponent(sid) : '') + (action === 'restore' ? '/restore' : '');
-      fetch(path + '?dataset_dir=' + encodeURIComponent(dir), { method: action === 'restore' ? 'POST' : 'DELETE' })
+      var url = path + '?dataset_dir=' + encodeURIComponent(dir);
+      var options = { method: action === 'restore' ? 'POST' : 'DELETE' };
+      if (action === 'backup') {
+        url = '/api/tageditor/restore-backup';
+        options = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dir: dir }) };
+      }
+      return fetch(url, options)
         .then(function(r) { return r.json(); }).then(function(j) {
           if (epoch !== self._teLoadEpoch) return;
           if (j.status !== 'success') throw new Error(j.message || self.t('common.error'));
           self.toast(self.t('tagEditor.' + success));
-          if (action === 'restore') self.tagEditorLoad(dir);
+          if (restoring) return self.tagEditorLoad(dir);
           else self.tagEditorLoadSnapshots(epoch);
         }).catch(function(err) {
           if (epoch === self._teLoadEpoch) self.toast(err.message || self.t('common.error'), 'error');
-        }).finally(function() { self.tagEditorSnapshotBusy = false; });
+        }).finally(function() { if (epoch === self._teLoadEpoch) self.tagEditorSnapshotBusy = false; });
     }, this.t('common.confirm'));
   },
 
@@ -2931,18 +3422,17 @@ window.tagEditorMixin = {
     if (this._teAutoSaveInterval) { clearInterval(this._teAutoSaveInterval); this._teAutoSaveInterval = null; }
   },
 
-  _teSaveDraft() {
-    if (!this.tagEditorModified || this._teIsSaving) return;
+  _teSaveDraft(forcePending = false) {
+    if (this._teIsSaving || this._teDraftRestoreBusy || (!this.tagEditorModified && !(forcePending && this._teDraftRemainder.length))) return;
     try {
-      var key = 'tagEditor_draft_' + this.tagEditorDir;
+      var key = 'tagEditor_draft_' + (this.tagEditorLoadedDir || this.tagEditorDir);
       var orig = this.tagEditorOriginal;
+      var revisions = this._teCaptionRevisions || {};
       var data = this._teGetModified()
         .map(function(img) {
-          return { path: img.path, tags: img.tags, original: orig[img.path] };
+          return { path: img.path, tags: img.tags, original: orig[img.path], revision: revisions[img.path] };
         });
-      if (data.length > 0) {
-        localStorage.setItem(key, JSON.stringify(data));
-      }
+      localStorage.setItem(key, JSON.stringify({ version: 2, items: data, pending: this._teDraftRemainder }));
       this._teDraftSavedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     } catch (e) {
       this.toast(this.t('tagEditor.draftSaveFailed'), 'warning');
@@ -2950,32 +3440,74 @@ window.tagEditorMixin = {
   },
 
   _teCheckDraft() {
+    if (this._teDraftRestoreBusy || this._teIsSaving) return;
     try {
-      var key = 'tagEditor_draft_' + this.tagEditorDir;
+      var dir = this.tagEditorLoadedDir || this.tagEditorDir;
+      var epoch = this._teLoadEpoch;
+      var key = 'tagEditor_draft_' + dir;
       var raw = localStorage.getItem(key);
       if (raw) {
-        var data = JSON.parse(raw);
+        var stored = JSON.parse(raw);
+        var data = Array.isArray(stored) ? stored : stored.version === 2 ? (stored.items || []).concat(stored.pending || []) : [];
+        data = data.filter(function(item) { return item && typeof item.path === 'string' && typeof item.tags === 'string'; });
         if (data && data.length > 0) {
           var self = this;
-          this._teConfirmUnsaved(this.t('tagEditor.draftFound'), function() {
-            data.forEach(function(item) {
-              var img = self._teFindByPath(item.path);
-              if (img) {
-                img.tags = item.tags;
-                self.tagEditorOriginal[img.path] = Object.prototype.hasOwnProperty.call(item, 'original')
-                  ? item.original
-                  : item.tags;
+          this._teDraftRemainder = data;
+          this._teConfirmUnsaved(this.t('tagEditor.draftFound'), async function() {
+            var isCurrent = () => epoch === self._teLoadEpoch && dir === (self.tagEditorLoadedDir || self.tagEditorDir) && self.currentRoute === 'tagEditor';
+            if (!isCurrent() || self._teIsSaving || self._teDraftRestoreBusy) return;
+            self._teFlushAllPendingTextEdits();
+            self._teDraftRestoreBusy = true;
+            try {
+              if (data.some(item => !self._teFindByPath(item.path))) await self._teEnsureAllImagesLoaded();
+              if (!isCurrent()) return;
+              var remaining = [], changes = {}, seen = new Set();
+              data.forEach(function(item) {
+                var identity = JSON.stringify([item.path, item.tags, item.original, item.revision]);
+                if (seen.has(identity)) return;
+                seen.add(identity);
+                var img = self._teFindByPath(item.path);
+                // Never replace an in-session edit or an externally changed baseline.
+                if (!img || img.tags !== self.tagEditorOriginal[item.path]) {
+                  if (!img || img.tags !== item.tags) remaining.push(item);
+                  return;
+                }
+                var alreadySaved = img.tags === item.tags;
+                var matches = item.revision != null ? item.revision === self._teCaptionRevisions?.[item.path]
+                  : typeof item.original === 'string' && item.original === img.tags;
+                if (!alreadySaved && !matches) { remaining.push(item); return; }
+                var before = alreadySaved && typeof item.original === 'string' ? item.original : img.tags;
+                if (before !== item.tags) changes[item.path] = { before: before, after: item.tags };
+                if (!alreadySaved) self._teUpdateImageTags(img, item.tags);
+              });
+              self._teDraftRemainder = remaining;
+              self._teRecountModified();
+              self.tagEditorModified = self._teModifiedCount > 0;
+              if (Object.keys(changes).length) {
+                self.tagEditorHistory = self.tagEditorHistory.slice(0, self.tagEditorHistoryIdx + 1);
+                self.tagEditorHistory.push({
+                  meta: { type: 'restoreDraft', contentMode: 'text', desc: self.t('tagEditor.autoSaveRestored'), affected: Object.keys(changes).length },
+                  changes: changes, _ts: Date.now()
+                });
+                if (self.tagEditorHistory.length > 200) self.tagEditorHistory.shift();
+                self.tagEditorHistoryIdx = self.tagEditorHistory.length - 1;
               }
-            });
-            self.tagEditorModified = true;
-            self._teRecountModified();
-            self._teRemoveDraft();
-            var restoredState = {};
-            var restoredModified = self._teGetModified();
-            for (var i = 0; i < restoredModified.length; i++) restoredState[restoredModified[i].path] = restoredModified[i].tags;
-            self._teHistoryState = restoredState;
-            self._teInvalidateFilter();
-            self.toast(self.t('tagEditor.autoSaveRestored'));
+              var restoredState = {};
+              var restoredModified = self._teGetModified();
+              for (var i = 0; i < restoredModified.length; i++) restoredState[restoredModified[i].path] = restoredModified[i].tags;
+              self._teHistoryState = restoredState;
+              self._teInvalidateFilter();
+              self._teInvalidateDiff();
+              self._updateEditorPanel();
+              self._teDraftRestoreBusy = false;
+              if (self.tagEditorModified || remaining.length) self._teSaveDraft(true);
+              else self._teRemoveDraft();
+              self.toast(remaining.length ? self.t('tagEditor.draftUnresolved').replace('{n}', remaining.length) : self.t('tagEditor.autoSaveRestored'), remaining.length ? 'warning' : undefined);
+            } catch (error) {
+              if (isCurrent()) self.toast(self.t('tagEditor.draftRestoreFailed'), 'warning');
+            } finally {
+              if (isCurrent()) self._teDraftRestoreBusy = false;
+            }
           });
         }
       }
@@ -2984,8 +3516,10 @@ window.tagEditorMixin = {
 
   _teRemoveDraft() {
     try {
-      var key = 'tagEditor_draft_' + this.tagEditorDir;
-      localStorage.removeItem(key);
+      var key = 'tagEditor_draft_' + (this.tagEditorLoadedDir || this.tagEditorDir);
+      if (this._teDraftRemainder.length) localStorage.setItem(key, JSON.stringify({ version: 2, items: [], pending: this._teDraftRemainder }));
+      else localStorage.removeItem(key);
+      this._teDraftSavedAt = '';
     } catch (e) { /* ignore */ }
   },
 
@@ -2998,6 +3532,14 @@ window.tagEditorMixin = {
     this.openConfirm(this.t('tagEditor.batchEditConfirmTitle'), msg, cb, this.t('common.confirm'));
   },
 
+  _teConfirmTagBatch(msg, cb) {
+    var epoch = this._teLoadEpoch, modeEpoch = this._teModeEpoch;
+    this._teConfirmBatch(msg, () => {
+      if (epoch === this._teLoadEpoch && modeEpoch === this._teModeEpoch && this.tagEditorAllowsTagOps()) return cb();
+      this.toast(this.t('tagEditor.batchStale'), 'warning');
+    });
+  },
+
   _teHasUnsavedEdits() {
     if (this.currentRoute !== 'tagEditor') return false;
     this._teFlushAllPendingTextEdits();
@@ -3005,12 +3547,24 @@ window.tagEditorMixin = {
   },
 
   // ===== Keyboard Shortcuts =====
+  tagEditorOpenShortcuts(event) {
+    var trigger = event?.currentTarget?.closest('details')?.querySelector('summary') || event?.currentTarget;
+    trigger?.focus();
+    this.tagEditorShortcutsOpen = true;
+  },
+
   tagEditorHandleKeydown(e) {
-    if (e.defaultPrevented || e.target.closest?.('dialog[open]')) return;
-    if (this.tagEditorSnapshotBusy) return;
+    if (e.defaultPrevented) return;
+    var dialog = e.target?.closest?.('dialog[open]');
+    // 大图保留自身翻页/缩放快捷键，其余原生弹窗自行处理键盘与焦点。
+    if (dialog && dialog.id !== 'teLightbox') return;
+    if (this.tagEditorSnapshotBusy || this._teDraftRestoreBusy) return;
     // Only active when tag editor is the current route
     if (this.currentRoute !== 'tagEditor') return;
-    if (e.isComposing || e.keyCode === 229) return;
+    if (e.isComposing || e.keyCode === 229 || e.target?.composing) return;
+    // 内联输入的组合标记也要隔离冒泡的 Escape，避免全局 blur 间接触发重命名。
+    if (e.target?.id === 'te-inline-edit-input' && this.tagEditorInlineEdit?.composing) return;
+    if (this.tagEditorShortcutsOpen) return;
     if (e.target.closest && e.target.closest('#teDictHover')) {
       if (e.key === 'Escape') this.tagDictionaryCloseHover();
       return;
@@ -3046,8 +3600,17 @@ window.tagEditorMixin = {
       }
       return;
     }
+    if (this.tagEditorPanelMenu || this.tagEditorContextMenu || this.tagEditorImageContextMenu) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        this.tagEditorClosePanelMenu();
+        this.tagEditorCloseTagMenu();
+        this.tagEditorCloseImageMenu();
+      }
+      return;
+    }
     if (modifier && (e.key === 's' || e.key === 'S')) {
-      if (editableTarget) return;
+      if (editableTarget && !e.target.closest?.('.te-editor-textarea')) return;
       e.preventDefault();
       this.tagEditorSaveAll();
       return;
@@ -3087,7 +3650,7 @@ window.tagEditorMixin = {
       return;
     }
     if (e.key === 'Escape') {
-      if (this.tagEditorPanelMenu) { this.tagEditorPanelMenu = null; return; }
+      if (this.tagEditorPanelMenu) { this.tagEditorClosePanelMenu(); return; }
       if (this.tagEditorQuickRemove) { this.tagEditorCancelQuickRemove(); return; }
       if (this.tagEditorSuggestions.length) {
         e.preventDefault();
@@ -3118,8 +3681,7 @@ window.tagEditorMixin = {
         return;
       }
       if (this.tagEditorSelected.length > 0) {
-        this._teFlushAllPendingTextEdits();
-        this.tagEditorSelected = [];
+        this.tagEditorClearSelection();
       }
       return;
     }
@@ -3137,16 +3699,17 @@ window.tagEditorMixin = {
       return;
     }
     if (e.key === 'Enter' && !modifier && !editableTarget && this.tagEditorSelected.length === 1) {
-      // 卡片上的 Enter 由 tagEditorCardEnter 处理；其余区域 Enter 聚焦添加框，补全键盘流
+      // 保留按钮、链接和展开控件的原生激活；空白区域 Enter 仍用于开始编辑。
       var enterCard = e.target && typeof e.target.closest === 'function' ? e.target.closest('.te-card') : null;
-      if (!enterCard && this._teFocusEditorInput()) {
+      var enterControl = e.target?.closest?.('button, a[href], summary, [role="button"], [role="menuitem"]');
+      if (!enterCard && !enterControl && this._teFocusEditorInput()) {
         e.preventDefault();
         return;
       }
     }
     if (e.key === 'Tab' && !modifier) {
       var card = e.target && typeof e.target.closest === 'function' ? e.target.closest('.te-card') : null;
-      if (card && !e.shiftKey) {
+      if (card && e.target === card && !e.shiftKey) {
         if (this._teFocusEditorInput()) {
           e.preventDefault();
           return;

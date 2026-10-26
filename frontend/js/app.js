@@ -97,7 +97,7 @@ document.addEventListener('alpine:init', () => {
       // translation/checking features rely on it.
       document.documentElement.lang = this.locale;
 
-      let route = (window.location.hash || '#home').replace('#', '');
+      let route = (window.location.hash || '#home').replace('#', '').split('?')[0];
       const normalizedRoute = normalizeTrainRoute(route);
       if (normalizedRoute !== route) {
         route = normalizedRoute;
@@ -275,13 +275,21 @@ document.addEventListener('alpine:init', () => {
     },
 
     // ── Routing ─────────────────────────────────────────────
-    navigate(route) {
-      if (!ROUTE_CONFIG[route] || route === this.currentRoute) {
+    focusMainContent() {
+      const main = document.getElementById('mainContent');
+      if (!main) return;
+      main.focus({ preventScroll: true });
+      main.scrollTop = 0;
+    },
+
+    navigate(route, params) {
+      const hash = '#' + route + (params ? '?' + new URLSearchParams(params).toString() : '');
+      if (!ROUTE_CONFIG[route] || (route === this.currentRoute && window.location.hash === hash)) {
         return;
       }
       const commit = () => {
         const nextIndex = this._historyIndex + 1;
-        window.history.pushState({ ...(window.history.state || {}), animaRoute: route, animaIndex: nextIndex }, '', '#' + route);
+        window.history.pushState({ ...(window.history.state || {}), animaRoute: route, animaIndex: nextIndex }, '', hash);
         this._historyIndex = nextIndex;
         this._scheduleRoute(route);
       };
@@ -293,7 +301,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     handleRoute() {
-      let route = (window.location.hash || '#home').replace('#', '');
+      let route = (window.location.hash || '#home').replace('#', '').split('?')[0];
       const normalizedRoute = normalizeTrainRoute(route);
       if (normalizedRoute !== route) {
         route = normalizedRoute;
@@ -301,7 +309,12 @@ document.addEventListener('alpine:init', () => {
         window.history.replaceState({ ...state, animaRoute: route }, '', '#' + route);
       }
       if (!ROUTE_CONFIG[route]) route = 'home';
-      if (route === this.currentRoute) {
+      const requestedRun = route === 'monitor-dashboard' ? new URLSearchParams((window.location.hash.split('?')[1] || '')).get('run') : null;
+      if (route === this.currentRoute && (route !== 'monitor-dashboard' || (requestedRun || null) === (this.selectedRunDir || null))) {
+        if (requestedRun) {
+          const tab = new URLSearchParams(window.location.hash.split('?')[1] || '').get('tab') || 'overview';
+          if (tab !== this.monitorTab) this.setMonitorTab(tab);
+        }
         const currentState = window.history.state || {};
         if (currentState.animaRoute === route && Number.isInteger(currentState.animaIndex)) {
           this._historyIndex = currentState.animaIndex;
@@ -356,6 +369,7 @@ document.addEventListener('alpine:init', () => {
 
     _scheduleRoute(route) {
       const prev = this.currentRoute;
+      this.cancelHistoryInteractions?.();
       const transitionSeq = ++this._routeTransitionSeq;
       this._pendingRoute = route;
       if (!this.routeTransitioning) {
@@ -378,6 +392,7 @@ document.addEventListener('alpine:init', () => {
     _commitRoute(route, prev, transitionSeq) {
       const mainContent = document.getElementById('mainContent');
       if (mainContent) this._routeScrollPositions[prev] = mainContent.scrollTop;
+      if (prev === 'ai-captioning' && route !== prev) this.resetTaggerApiTest();
       // Cleanup tag editor resources when leaving
       if (prev === 'tagEditor' && typeof this.tagEditorCleanup === 'function') {
         this.tagEditorCleanup();
@@ -430,6 +445,7 @@ document.addEventListener('alpine:init', () => {
       const r = this.currentRoute;
       const routeTransition = !!(options && options.routeTransition);
       let progressManagedByRoute = false;
+      if (r !== 'history') this.stopHistoryRefresh?.();
       if (!r.startsWith('monitor-')) {
         this.stopMonitorRealtime();
         if ((this.selectedRunDir || this.runDetailData) && typeof this.resetRunDetailState === 'function') {
@@ -455,12 +471,17 @@ document.addEventListener('alpine:init', () => {
         this.loadUISettings();
       } else if (r === 'monitor-dashboard') {
         if (!routeTransition) this.startProgress();
+        const query = new URLSearchParams(window.location.hash.split('?')[1] || '');
+        const runDir = query.get('run');
+        if (runDir) this.viewRunDetail(runDir, true, query.get('tab') || 'overview');
+        else if (this.selectedRunDir) this.resetRunDetailState();
         this.startMonitorRealtime();
         progressManagedByRoute = true;
         // The dashboard hydrates from the shared realtime snapshot.
       } else if (r === 'history') {
         if (!routeTransition) this.startProgress();
         this.loadHistory();
+        this.startHistoryRefresh();
         progressManagedByRoute = true;
       } else if (r === 'environment') {
         if (!routeTransition) this.startProgress();

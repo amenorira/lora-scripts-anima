@@ -2,7 +2,7 @@
 
 训练时，每张图片会抽取一个噪声时间步，再按该时间步混合原图潜变量与噪声。高时间步对应更多噪声，低时间步保留更多原图信息。
 
-Anima/MOSS / Krea 2 使用 flow matching，归一化时间步同时决定混合系数：
+Anima、MOSS-Image 和 Krea 2 使用 flow matching，归一化时间步同时决定混合系数：
 
 | 噪声范围 | 输入中的信息 | 对采样设置的含义 |
 | --- | --- | --- |
@@ -10,27 +10,27 @@ Anima/MOSS / Krea 2 使用 flow matching，归一化时间步同时决定混合�
 | 中等噪声 | 原图与噪声都占较大比例 | 集中抽样会减少两端的训练次数 |
 | 低噪声 | 原图系数较大，噪声系数较小 | 增加占比会增加低噪声输入的训练次数 |
 
-噪声区间不与“人物身份”“整体结构”“纹理”等目标一一对应，不能仅凭缺少某种特征决定采样方向。
+人物身份、整体结构和纹理的学习涉及多个噪声区间。调整采样方向前，先检查数据、分辨率和训练范围。
 
-时间步采样决定这些噪声强度出现的频率，损失加权决定抽到样本后，预测误差在训练损失中占多大权重。两者都能改变训练侧重点，但作用环节不同。
+时间步采样决定各噪声强度出现的频率，损失加权决定抽样后预测误差的权重。
 
 <!-- doc-anchor: quick-start -->
 ## 基础设置
 
-初次训练保留当前训练类型的默认分布。需要检验分布影响时，固定数据、学习率和总步数，一次只改变一个采样设置。
+初次训练保留当前训练类型的默认分布。
 
 <!-- doc-anchor: defaults -->
 ### 当前训练类型的默认值
 
-| 训练类型 | 默认采样方式 | 默认分布参数 | 默认 Loss 权重 |
+| 训练类型 | 默认采样方式 | 默认分布参数 | `weighting_scheme` 与作用 |
 | --- | --- | --- | --- |
-| Anima | `sigmoid` | `sigmoid_scale=1.0` | `uniform` |
-| MOSS | `sigma` | `logit_mean=-1.09`, `logit_std=0.95`, `discrete_flow_shift=1.0` | `logit_normal` (1) |
-| Krea 2 | `shift` | `sigmoid_scale=1.0`、`discrete_flow_shift=2.5` | `none` |
+| Anima | `sigmoid` | `sigmoid_scale=1.0` | `uniform`：损失乘数为 1 |
+| MOSS-Image | `sigma` | `logit_mean=-1.09`, `logit_std=0.95`, `discrete_flow_shift=1.0` | `logit_normal`：按 logit-normal 分布抽样，损失乘数为 1 |
+| Krea 2 | `shift` | `sigmoid_scale=1.0`、`discrete_flow_shift=2.5` | `none`：损失乘数为 1 |
 
-在当前实现中，`uniform` 和 `none` 都表示不额外改变不同时间步的 Loss 权重。Krea 2 保留 `none` 是为了兼容训练后端和旧配置。导入旧预设后，以界面实际显示的参数和分布图为准。
+`uniform` 和 `none` 的损失乘数均为 1。导入旧预设后，以界面显示的参数和分布图为准。
 
-MOSS 默认沿用上游验证配置。这里的 `logit_normal` 改变离散噪声表索引的抽样分布，Loss 权重仍为 1；负均值偏向高噪声。它近似预训练分布，但没有复现官方在 0.95 处截断和混入 1% 均匀样本的细节。上游还提供 `shift + discrete_flow_shift=3` 作为较简单的近似方案；切换时需一起调整采样方式和偏移。
+MOSS-Image 默认使用负均值的 logit-normal 索引抽样，偏向高噪声，近似预训练分布。官方配置还包含 0.95 处截断和 1% 均匀样本混合。上游另提供 `shift + discrete_flow_shift=3` 作为较简单的近似方案；切换时需一起调整采样方式和偏移。
 
 | 调整目标 | 优先查看的参数 | 默认选择 |
 | --- | --- | --- |
@@ -49,7 +49,7 @@ MOSS 默认沿用上游验证配置。这里的 `logit_normal` 改变离散噪�
 | 训练时间步 | 当前图片被加入了多少噪声 | `timestep_sampling` |
 | 生成采样步数 | 采样器的去噪步数；不同采样器每步的模型计算次数不同 | `sample_steps` |
 
-例如，“训练到第 500 步”表示 LoRA 已更新 500 次；Anima/MOSS/Krea 2 的噪声时间步 `t≈500` 表示原图与噪声的混合系数各约为一半。同一次更新中的图片会分别抽取噪声时间步。
+例如，“训练到第 500 步”表示 LoRA 已更新 500 次。本文公式使用归一化时间步 `t∈[0,1]`，界面约按 `T=1000t` 显示；`T≈500` 对应原图与噪声的混合系数各约为一半。同一次更新中的图片会分别抽取噪声时间步。
 
 <!-- doc-anchor: visualizer -->
 ## 分布预览说明
@@ -63,15 +63,15 @@ MOSS 默认沿用上游验证配置。这里的 `logit_normal` 改变离散噪�
 | 采样曲线 | 在相同宽度的区间内，曲线下的面积越大，该噪声范围越常被抽到 |
 | 高、中、低噪声占比 | 各区间预计占总采样次数的比例 |
 | 损失权重曲线 | 样本被抽到后，它的预测误差还会乘上多大权重 |
-| 当前参考分辨率 | 用来计算分辨率相关偏移；不能代表所有分桶的实际分布 |
+| 当前参考分辨率 | 当前图表用于计算分辨率相关偏移的尺寸 |
 
-曲线表示采样频率与损失权重，不表示参数更新量或画质。离散噪声表以连续曲线近似展示。
+曲线用于读取采样频率与损失权重。参数更新和生成质量需结合训练日志与检查点图像评估。离散噪声表以连续曲线近似展示。
 
-横轴按生成时的去噪顺序排列：左侧为最大噪声时间步 `t≈1000`，右侧为低噪声时间步 `t≈0`。训练抽样没有按这个顺序逐步进行，每张图片独立抽取时间步。
+横轴按生成时的去噪顺序排列：左侧为最大噪声时间步 `T≈1000`，右侧为低噪声时间步 `T≈0`。训练时每张图片独立抽取时间步。
 
 纵轴展示概率密度 <var>f</var>(<var>t</var>)，权重折线使用对数刻度。均匀加权表示每个时间步的误差乘以相同权重，实际损失仍随预测误差变化。
 
-预览按采样算法与偏移公式直接计算，刷新结果相同。百分比因四舍五入合计可为 `99.9%` 或 `100.1%`。打开预览不会启动训练或修改配置。
+百分比因四舍五入合计可为 `99.9%` 或 `100.1%`。
 
 <span id="dataset-guidance"></span>
 <span id="scenarios"></span>
@@ -79,17 +79,13 @@ MOSS 默认沿用上游验证配置。这里的 `logit_normal` 改变离散噪�
 <!-- doc-anchor: diagnosis -->
 ## 根据训练结果调整
 
-下表用于排查数据和配置问题。单凭生成结果缺少某种特征，不能确定应增加哪一段噪声采样。
-
 | 观察到的情况 | 先确认 | 可测试的方向 |
 | --- | --- | --- |
 | 轮廓和全身比例不足 | 是否有足够的全身图与必要视角 | 先补足数据；保留当前分布，比较多个训练阶段的检查点 |
 | 纹理、线条或小装饰不足 | 原图与训练分辨率是否保留这些细节 | 先确认细节未在预处理中丢失；固定分布后检查分辨率、训练范围与训练长度 |
 | 局部与整体都未学充分 | 是否整体欠拟合，或训练范围设置不合适 | 先保留时间步分布，检查学习率、训练长度与训练范围 |
-| 固定姿势或背景反复出现 | 数据是否重复，是否已经过拟合 | 先检查数据与停止时机，不直接把问题归因于某个噪声范围 |
-| 画风只有配色，缺少形体特点 | 数据是否覆盖不同主体与构图 | 先补足主体和构图；此现象不直接对应某种时间步分布 |
-
-每组实验只改变一个时间步设置，并比较多组生成结果；完整流程见“对照实验方法”。
+| 固定姿势或背景反复出现 | 数据是否重复，是否已经过拟合 | 保留当前分布，先检查数据与停止时机 |
+| 画风只有配色，缺少形体特点 | 数据是否覆盖不同主体与构图 | 先补足主体和构图，再比较检查点 |
 
 <!-- doc-anchor: sampling -->
 ## `timestep_sampling`：决定哪些时间步更常出现
@@ -122,8 +118,6 @@ MOSS 默认沿用上游验证配置。这里的 `logit_normal` 改变离散噪�
 
 `uniform` 在完整时间范围内均匀抽取。和默认 sigmoid 相比，它会明显增加低噪声与高噪声两端的训练次数。
 
-需要同时增加两端训练机会时，可与默认 sigmoid 比较。
-
 ### `shift`
 
 `shift` 在 sigmoid 分布上应用 `discrete_flow_shift`，适合将训练重点移向低噪声或高噪声。
@@ -138,7 +132,7 @@ MOSS 默认沿用上游验证配置。这里的 `logit_normal` 改变离散噪�
 
 这两种方式根据当前 latent 网格大小计算 shift：网格中的位置越多，分布越偏向高噪声。它们不读取固定的 `discrete_flow_shift`。
 
-开启 bucket 后，相近分辨率和宽高比的图片会分组训练。每个 bucket 都按自己的 latent 尺寸计算分布，因此文档图表中的参考分辨率不能代表数据集里的所有 bucket。
+开启 bucket 后，相近分辨率和宽高比的图片会分组训练。每个 bucket 按自己的 latent 尺寸计算分布；预览显示当前参考分辨率对应的结果。
 
 ### `logsnr`
 
@@ -187,14 +181,14 @@ Krea 2 的 `logsnr` 先根据 `logit_mean` 和 `logit_std` 生成 LogSNR，再�
   <p><var>s</var> 对应 <code>discrete_flow_shift</code>。</p>
 </div>
 
-`flux_shift` 和 `krea2_shift` 根据分辨率计算自己的偏移，不读取这个固定值。
+`flux_shift` 和 `krea2_shift` 使用各自的分辨率相关偏移。
 
 <!-- doc-anchor: subset-offsets -->
 ## 按子集设置时间步偏移
 
 `subset_timestep_offsets` 为不同训练子集设置独立采样偏移。偏移加在 sigmoid 映射前的正态随机值上，因此改变分布的形状和噪声占比。仅 **Anima/MOSS** 支持。
 
-训练目录中每个以“数字_”开头的子文件夹（例如 `10_face`、`3_full_body`）会被识别为一个子集，开头的数字是重复次数。界面和 API 中，这个设置是“子集名称 → 偏移值”的映射，而不是一个全局值。最小操作流程：
+训练目录中每个以“数字_”开头的子文件夹（例如 `10_group_a`、`3_group_b`）会被识别为一个子集，开头的数字是重复次数。按“子集名称 → 偏移值”填写，操作如下：
 
 1. 在训练目录下建立以“数字_”开头的子集目录，并按内容把图片放入对应目录。
 2. 在界面的“子集偏移”映射里填入子集目录名和偏移值。
@@ -203,25 +197,25 @@ Krea 2 的 `logsnr` 先根据 `logit_mean` 和 `logit_std` 生成 LogSNR，再�
 映射的写法如下：
 
 ```json
-{"10_face": -0.25, "3_full_body": 0.20}
+{"10_group_a": -0.25, "3_group_b": 0.20}
 ```
 
 启动训练时，后端会为它单独生成一份 `dataset.toml`；这个界面字段本身不写进主训练配置：
 
 ```toml
 [[datasets.subsets]]
-image_dir = ".../10_face"
+image_dir = ".../10_group_a"
 [datasets.subsets.custom_attributes]
 timestep_sampling = { offset = -0.25 }
 ```
 
-训练时，偏移值会跟着每张图片进入 batch。来自 `10_face` 的图片使用 `-0.25`，来自 `3_full_body` 的图片使用 `0.20`；同一个 batch 混合多个子集时也不会互相覆盖。正则化数据不会应用这个设置。
+训练时，偏移值会跟着每张图片进入 batch。来自 `10_group_a` 的图片使用 `-0.25`，来自 `3_group_b` 的图片使用 `0.20`；同一个 batch 混合多个子集时也不会互相覆盖。正则化数据不会应用这个设置。
 
 ### 支持的模式与推荐范围
 
-子集偏移只在 `sigmoid`、`shift` 和 `flux_shift` 中生效。`uniform` 和 `sigma` 不读取这个偏移；即使通过 API 传入该值，训练也会正常运行，只是它不会生效。
+子集偏移只在 `sigmoid`、`shift` 和 `flux_shift` 中生效。`uniform` 和 `sigma` 会忽略此值。
 
-从 `-0.5～+0.5` 开始调整。负值增加低噪声采样，正值增加高噪声采样；已有高噪声 shift 时，正偏移会进一步减少低噪声样本。按分布预览确认比例，不按“特写 / 全身”直接指定偏移。
+从 `-0.5～+0.5` 开始调整。负值增加低噪声采样，正值增加高噪声采样；已有高噪声 shift 时，正偏移会进一步减少低噪声样本。按分布预览确认各子集的噪声比例。
 
 分布预览支持基础分布（所有偏移为 0）、整体训练分布和单个子集分布。一次调整一个子集，并保留默认配置作为对照。偏移只作用于训练采样；其他验证设置不变时，验证损失可直接比较。
 
@@ -233,22 +227,22 @@ timestep_sampling = { offset = -0.25 }
 时间步 = sigmoid( sigmoid_scale × (随机采样值 + 偏移) )
 ```
 
-负偏移增加低噪声采样，正偏移增加高噪声采样，`0` 保持原分布。`sigmoid_scale` 同时缩放随机采样值和偏移量。
+`0` 保持原分布。`sigmoid_scale` 同时缩放随机采样值和偏移量。
 
 <!-- doc-anchor: weighting -->
 ## 采样频率与 Loss 权重
 
-采样回答“这个噪声强度多久出现一次”，损失加权回答“出现以后，这次误差占多大权重”。例如，让低噪声样本更常出现和增大低噪声样本的误差权重，都能增加对这类任务的关注，但不是同一种设置。
+`weighting_scheme` 的作用取决于采样路径：`sigma` 下的 `logit_normal`、`mode` 控制抽样频率，`sigma_sqrt`、`cosmap` 控制抽样后的损失权重。
 
 | 方案 | 改变什么 | 含义 |
 | --- | --- | --- |
 | `uniform` / `none` | 不增加额外损失权重 | 各时间步按相同权重计算误差；采样频率仍由采样方式决定 |
 | `sigma_sqrt` | 增大低噪声的损失权重 | 更重视低噪声任务，但接近零噪声时权重会快速增大，需要留意更新稳定性 |
-| `cosmap` | 相对提高中等噪声的损失权重 | 相对降低两端的权重，不改变被抽到的频率 |
-| `logit_normal` | 改变 `sigma` 路径的采样频率 | 不额外改变损失权重；其他采样路径不会因此启用 logit-normal 抽样 |
-| `mode` | 改变 `sigma` 路径的采样频率 | 不额外改变损失权重；分布由 `mode_scale` 控制 |
+| `cosmap` | 相对提高中等噪声的损失权重 | 相对降低两端的权重；采样频率沿用当前采样方式 |
+| `logit_normal` | 改变 `sigma` 路径的采样频率 | 损失乘数为 1；仅在 `sigma` 路径生效 |
+| `mode` | 改变 `sigma` 路径的采样频率 | 损失乘数为 1；分布由 `mode_scale` 控制 |
 
-初次训练保留 `uniform` / `none`。需要增加低噪声误差的影响时测试 `sigma_sqrt`，需要侧重中噪声时测试 `cosmap`。
+初次训练保留当前类型的默认值：Anima 使用 `uniform`，MOSS-Image 使用 `logit_normal`，Krea 2 使用 `none`。需要增加低噪声误差的影响时测试 `sigma_sqrt`，需要侧重中噪声时测试 `cosmap`。
 
 ### `sigma_sqrt` 与 `cosmap` 的精确权重
 
@@ -277,7 +271,7 @@ Anima/MOSS 的 scheduler 偏移也会改变最终噪声强度；Krea 2 的 `sigm
 <!-- doc-anchor: mode -->
 ### `mode` 与 `mode_scale`
 
-`mode` 只会在 `timestep_sampling=sigma` 时改变抽样分布，不会增加 Loss 权重。
+`mode` 在 `timestep_sampling=sigma` 时改变抽样分布，损失乘数为 1。
 
 - `mode_scale=0`：均匀抽取噪声表索引。
 - 从 `0` 增至默认 `1.29`：索引向表的中段集中。
@@ -295,7 +289,7 @@ Anima/MOSS 的 scheduler 偏移也会改变最终噪声强度；Krea 2 的 `sigm
 | `subset_timestep_offsets` | 生效 | 忽略 | 生效 | 忽略 | 仅 `flux_shift` 生效 | 忽略 |
 | `sigma_sqrt/cosmap` 权重 | 生效 | 生效 | 生效 | 生效 | 生效 | 生效 |
 
-“忽略”表示训练代码不会读取这个参数，配置文件里即使保留了数值也不会暗中生效。界面会隐藏或标注当前组合中无效的字段，分布预览也会提示被忽略的设置。
+“忽略”表示当前训练路径不读取该参数。界面会隐藏或标注无效字段，分布预览也会提示被忽略的设置。
 
 <!-- doc-anchor: sdxl-range -->
 ## SDXL 的 `min_timestep` 与 `max_timestep`
@@ -307,21 +301,21 @@ SDXL 不使用前面介绍的 Anima/MOSS/Krea 2 流匹配采样选项，本训�
 - 提高 `min_timestep`：排除最干净的低噪声样本。
 - 降低 `max_timestep`：排除噪声最高的样本。
 
-它们只是裁剪允许抽取的范围，不等同于 `sigmoid_scale` 或 `discrete_flow_shift`。默认配置使用完整范围，只有需要排除特定噪声端点的实验才需要调整。
+这两个参数裁剪允许抽取的时间步范围。默认使用完整范围；需要排除特定噪声端点时再调整。
 
-`min_snr_gamma`、`v_parameterization` 和 `zero_terminal_snr` 也与 SDXL 的噪声训练有关，但分别控制 Loss 重加权、预测目标和 scheduler 行为，不属于本文介绍的流匹配分布参数。
+SDXL 的 `min_snr_gamma`、`v_parameterization` 和 `zero_terminal_snr` 分别控制损失重加权、预测目标和 scheduler 行为。
 
 <!-- doc-anchor: common-mistakes -->
 ## 常见误区
 
 - `sample_flow_shift` 控制生成预览，不改变训练时间步分布。
-- seed 改变实际抽样顺序，不改变预览中的理论分布；batch size 和 GPU 数量会影响短训练的抽样波动。
-- 时间步设置不改变 LoRA 文件格式，推理时无需使用同名采样方式。
+- seed 决定实际抽样序列，预览显示采样公式的理论分布；batch size 和 GPU 数量会影响短训练的抽样波动。
+- 训练时间步设置用于训练过程，推理采样器可按生成需求选择。
 
 <!-- doc-anchor: sdxl-loss -->
 ## SDXL：损失权重与加噪的关系
 
-Min-SNR 和去偏估计都改变抽样后的损失权重，不改变时间步被抽到的概率。两项同时开启时按顺序相乘，不是互相替代。
+Min-SNR 和去偏估计作用于抽样后的损失权重。两项同时开启时，权重按顺序相乘；抽样频率由时间步采样设置决定。
 
 设当前时间步的信噪比为 SNR，去偏估计使用 S = min(SNR, 1000)：
 
@@ -343,7 +337,7 @@ Min-SNR 和去偏估计都改变抽样后的损失权重，不改变时间步被
 4. **同条件对比：** 取相同训练步数处的检查点，并使用相同的提示词、生成种子、分辨率和推理 LoRA 权重。
 5. **评估维度：** 身份或画风还原、背景泄漏、构图僵化、提示词服从度，以及在未见场景中的表现。
 
-训练 Loss 只能作为辅助信息。某组时间步设置是否更好，最终应由固定条件下的多组生成图和实际使用目标决定。
+以固定条件下的多组生成图和实际使用目标为主要评估依据，训练损失作为辅助信息。
 
 <!-- doc-anchor: flow-matching -->
 ## 时间步的工作原理
@@ -369,30 +363,19 @@ Min-SNR 和去偏估计都改变抽样后的损失权重，不改变时间步被
 <!-- doc-anchor: evidence -->
 ## 依据与参考资料
 
-公式和参数关系对应以下本地实现；下方固定提交链接保留为参考：
+实现入口如下，链接固定到对应提交：
 
-- sd-scripts fork 的 `library/flux_train_utils.py`：`sigmoid`、`shift`、`flux_shift` 采样，`sigma_sqrt` 与 `cosmap` 权重公式，`discrete_flow_shift` 变换。
-- Anima 训练器的 `anima_train_network.py`：从 batch 的 `custom_attributes` 读取逐样本子集偏移，并且只在训练阶段应用。
-- 后端的 `backend/training/sd_dataset_config.py` 与 `backend/server/routes/training.py`：校验子集偏移、生成独立 `dataset.toml`，并通过 `--dataset_config` 传给训练器。
-- `library/anima_train_utils.py`：Anima 的采样与损失权重分发。
-- musubi-tuner fork 的 `src/musubi_tuner/training/trainer_base.py`：Krea 2 的 `krea2_shift`、`logsnr` 等采样实现。
-- `src/musubi_tuner/training/timesteps.py`：共享密度与损失权重公式。
-- 前端分布预览见 `frontend/js/training-core.js`：计算解析概率密度，并在适用时单独绘制损失权重曲线。
-
-参考资料：
-
-- [本项目 sd-scripts fork：`library/flux_train_utils.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/sd-scripts/library/flux_train_utils.py)
-- [本项目 Anima 训练器：`anima_train_network.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/sd-scripts/anima_train_network.py)
-- [本项目数据集配置适配器：`backend/training/sd_dataset_config.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/backend/training/sd_dataset_config.py)
-- [本项目 sd-scripts fork：`library/anima_train_utils.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/sd-scripts/library/anima_train_utils.py)
-- [本项目 musubi-tuner fork：`src/musubi_tuner/training/timesteps.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/musubi-tuner/src/musubi_tuner/training/timesteps.py)
-- [本项目 musubi-tuner fork：`src/musubi_tuner/training/trainer_base.py`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/musubi-tuner/src/musubi_tuner/training/trainer_base.py)
-- [本项目前端：`frontend/js/training-core.js`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/frontend/js/training-core.js)
+- [`library/flux_train_utils.py`](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/sd-scripts/library/flux_train_utils.py)：`sigmoid`、`shift`、`flux_shift` 采样，`sigma_sqrt`、`cosmap` 权重公式及固定偏移变换。
+- [`anima_train_network.py`](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/sd-scripts/anima_train_network.py)：从 batch 的 `custom_attributes` 读取逐样本子集偏移，仅在训练阶段应用。
+- [`backend/training/sd_dataset_config.py`](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/backend/training/sd_dataset_config.py)：与 `backend/server/routes/training.py` 一起校验子集偏移、生成 `dataset.toml` 并传给训练器。
+- [`library/anima_train_utils.py`](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/sd-scripts/library/anima_train_utils.py)：Anima 的采样与损失权重分发。
+- [`training/timesteps.py`](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/musubi-tuner/src/musubi_tuner/training/timesteps.py)：共享密度与损失权重公式。
+- [`training/trainer_base.py`](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/vendor/musubi-tuner/src/musubi_tuner/training/trainer_base.py)：Krea 2 的 `krea2_shift`、`logsnr` 等采样实现。
+- [`frontend/js/training-core.js`](https://github.com/amenorira/lora-scripts-anima/blob/11d0f7a348721b8688240dada0e172980b20a3b7/frontend/js/training-core.js)：解析概率密度与损失权重曲线。
 - [Anima 官方模型卡（固定提交）](https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md)
-- [Anima 官方示例画风 LoRA：Greg Rutkowski Style - Anima（Civitai，发布者为 Anima 模型作者 Circlestone Labs）](https://civitai.com/models/2536147/greg-rutkowski-style-anima)
 - [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis](https://arxiv.org/abs/2403.03206)
 - [Flow Matching for Generative Modeling](https://arxiv.org/abs/2210.02747)
 
-- [MOSS-Image upstream guide](https://github.com/kohya-ss/sd-scripts/blob/04ca541746b7667b27eab230db067579f682895e/docs/moss_image_train_network.md#72-training-settings--学習設定)
-- [SDXL loss weights](https://github.com/kohya-ss/sd-scripts/blob/04ca541746b7667b27eab230db067579f682895e/library/custom_train_functions.py)
-- [Noise augmentation order](https://github.com/kohya-ss/sd-scripts/blob/04ca541746b7667b27eab230db067579f682895e/library/loss.py)
+- [MOSS-Image 上游指南](https://github.com/kohya-ss/sd-scripts/blob/04ca541746b7667b27eab230db067579f682895e/docs/moss_image_train_network.md#72-training-settings--学習設定)
+- [SDXL 损失权重](https://github.com/kohya-ss/sd-scripts/blob/04ca541746b7667b27eab230db067579f682895e/library/custom_train_functions.py)
+- [噪声增强顺序](https://github.com/kohya-ss/sd-scripts/blob/04ca541746b7667b27eab230db067579f682895e/library/loss.py)

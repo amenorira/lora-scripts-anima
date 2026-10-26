@@ -222,15 +222,14 @@ window.monitorRenderMixin = {
     html += '<svg class="m-history-icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
     html += '<span class="m-history-label">' + this.esc(t('viewingHistory')) + '</span>';
     html += '<b class="m-history-name">' + this.esc(runName) + '</b>';
-    if (d.train_result) {
-      const st = d.train_result.status || '';
-      const stClass = st === 'completed' ? 'ok' : (st === 'failed' ? 'danger' : 'muted');
-      const stLabel = st === 'completed' ? t('statusCompleted') : (st === 'failed' ? t('statusFailed') : (st === 'terminated' ? t('statusTerminated') : (st === 'running' ? t('statusRunning') : st)));
-      html += '<span class="m-badge m-badge-' + stClass + '"><i aria-hidden="true"></i>' + this.esc(stLabel) + '</span>';
-    }
+    const state = this._summaryStatus(d, true).state;
+    const stClass = state === 'FINISHED' ? 'ok' : (state === 'FAILED' ? 'danger' : 'muted');
+    const stLabel = state === 'FINISHED' ? t('statusCompleted') : state === 'FAILED' ? t('statusFailed') : state === 'TERMINATED' ? t('statusTerminated') : t('statusUnknown');
+    html += '<span class="m-badge m-badge-' + stClass + '"><i aria-hidden="true"></i>' + this.esc(stLabel) + '</span>';
     if (d.artifact_available === false) html += '<span class="m-badge m-badge-danger"><i aria-hidden="true"></i>' + this.esc(t('artifactOffline')) + '</span>';
     html += '<div class="m-history-spacer"></div>';
-    html += '<button class="btn btn-sm" @click="clearRunDetail()">← ' + this.esc(t('backToLive')) + '</button>';
+    html += '<button class="btn btn-sm btn-secondary" @click="clearRunDetail()">' + this.esc(t('backToLive')) + '</button>';
+    html += '<button class="btn btn-sm" @click="navigate(\'history\')">← ' + this.esc(t('backToHistory')) + '</button>';
     html += '</div>';
     return html;
   },
@@ -324,6 +323,7 @@ window.monitorRenderMixin = {
           panel.classList.remove('no-enter-anim');
         }
         const input = panel.querySelector('.m-output-search-input');
+        const activeId = panel.contains(document.activeElement) ? document.activeElement.id : '';
         const focused = input && document.activeElement === input;
         const selection = focused ? [input.selectionStart, input.selectionEnd] : null;
         if (input) input.remove();
@@ -331,7 +331,13 @@ window.monitorRenderMixin = {
         const replacement = panel.querySelector('.m-output-search-input');
         if (input && replacement) {
           replacement.replaceWith(input);
+          input.value = this.outputSearch;
           if (focused) { input.focus({ preventScroll: true }); input.setSelectionRange(...selection); }
+        }
+        if (!focused && activeId) {
+          const target = document.getElementById(activeId);
+          if (target && !target.disabled) target.focus({ preventScroll: true });
+          else if (target?.disabled) panel.querySelector('.m-output-search-input')?.focus({ preventScroll: true });
         }
         const newScrollEl = panel.querySelector('.m-outputs-scroll');
         if (newScrollEl) newScrollEl.scrollTop = scrollTop;
@@ -581,7 +587,7 @@ window.monitorRenderMixin = {
     html += '<div class="m-overview-progress" role="progressbar" aria-label="' + this.esc(t('overallProgress')) + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i data-overview-progress></i></div>';
     html += '<div class="m-summary-progress-bottom"><span data-summary-field="epoch"></span></div></div>';
     html += '<div class="m-live-metrics">';
-    html += this._summaryTileHtml('loss', t('loss'), t('recentLoss'), t('localTrendScaleHint'));
+    html += this._summaryTileHtml('loss', t('currentLoss'), t('recentLoss'), t('localTrendScaleHint'));
     html += this._summaryTileHtml('lr', t('lr'), '', t('localTrendScaleHint'));
     html += this._summaryTileHtml('speed', t('speed'), t('currentSpeed'));
     html += this._summaryTileHtml('time', t('elapsed'), '');
@@ -591,12 +597,12 @@ window.monitorRenderMixin = {
 
   // 所有卡片共用生命周期解释；状态只影响文案与交互，不改变曲线的指标定义。
   _summaryStatus(d, isHistory) {
-    let state = d.state || 'IDLE';
+    let state = isHistory ? 'UNKNOWN' : (d.state || 'IDLE');
     if (isHistory && d.train_result && d.train_result.status) {
       const status = String(d.train_result.status).toUpperCase();
-      state = status === 'COMPLETED' ? 'FINISHED' : status;
+      state = { COMPLETED: 'FINISHED', FINISHED: 'FINISHED', ERROR: 'FAILED', TIMEOUT: 'FAILED', FAILED: 'FAILED', TERMINATED: 'TERMINATED' }[status] || 'UNKNOWN';
     }
-    return { state, running: state === 'RUNNING', completed: state === 'FINISHED', terminal: ['FINISHED', 'FAILED', 'TERMINATED'].includes(state) };
+    return { state, running: state === 'RUNNING', completed: state === 'FINISHED', terminal: isHistory || ['FINISHED', 'FAILED', 'TERMINATED'].includes(state) };
   },
 
   _summaryTileHtml(key, label, meta, scaleHint = '') {
@@ -1595,27 +1601,30 @@ window.monitorRenderMixin = {
     const runDir = this.currentOutputRunDir;
     const artifactUnavailable = !!runDir && (d.artifact_available === false || this.outputFilesError === 'artifactUnavailable');
     const canUseFiles = !!runDir && !artifactUnavailable && this.outputFiles.length > 0;
-    const visibleCount = this._visibleOutputFiles().length;
+    const visibleFiles = this._visibleOutputFiles();
+    const visibleCount = visibleFiles.length;
+    const selectedCount = this.selectedOutputFiles.length;
+    const hiddenSelected = selectedCount - visibleFiles.filter(f => this.outputFilesSelected[f.path]).length;
     let html = '<div class="m-section m-outputs-section">';
-    html += '<div class="m-view-header"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t('outputs')) + '</span>' + (this.outputFiles.length ? '<span class="m-logs-count">' + this.outputFiles.length + '</span>' : '') + '</div>';
-    html += '<div class="m-view-actions">';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="loadOutputFiles()"' + (!runDir ? ' disabled' : '') + '>' + this.esc(t('refresh')) + '</button>';
-    html += '<label class="m-output-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="m-output-search-input" type="search" value="' + this.esc(this.outputSearch) + '" placeholder="' + this.esc(t('searchOutputs')) + '" @input.debounce.180ms="setOutputSearch($event.target.value)"></label>';
+    html += '<div class="m-view-header"><div class="m-output-toolbar-top"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t('outputs')) + '</span>' + (this.outputFiles.length ? '<span class="m-logs-count">' + this.outputFiles.length + '</span>' : '') + '</div>';
+    html += '<button type="button" id="outputRefresh" class="btn btn-sm btn-secondary" @click="loadOutputFiles()"' + (!runDir || this.outputFilesLoading ? ' disabled' : '') + '>' + this.esc(t(this.outputFilesLoading ? 'loading' : 'refresh')) + '</button>';
+    html += '<div class="m-output-selection-tools"><span class="m-output-selection-count" role="status">' + this.esc(t('selected')) + ' <strong>' + selectedCount + '</strong> / ' + this.outputFiles.length;
+    if (hiddenSelected > 0) html += '<small>' + this.esc(t('hiddenSelectedOutputs').replace('{n}', hiddenSelected)) + '</small>';
+    html += '</span><button type="button" id="outputClearSelection" class="btn btn-sm btn-secondary" @click="deselectAllOutputFiles()"' + (!selectedCount ? ' disabled' : '') + '>' + this.esc(t('clearSelection')) + '</button>';
+    html += '<button type="button" id="outputDownload" class="btn btn-sm btn-primary m-output-download" @click="' + (selectedCount ? 'downloadSelectedOutputs()' : 'downloadAllOutputs()') + '"' + (!canUseFiles || this.outputFilesLoading ? ' disabled' : '') + '><span' + (selectedCount ? ' class="is-hidden"' : '') + '>' + this.esc(t('downloadAll')) + '</span><span' + (!selectedCount ? ' class="is-hidden"' : '') + '>' + this.esc(t('downloadSelected')) + '</span></button></div></div>';
+    html += '<div class="m-view-actions m-output-toolbar-filters">';
+    html += '<label class="m-output-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="m-output-search-input" type="search" value="' + this.esc(this.outputSearch) + '" aria-label="' + this.esc(t('searchOutputs')) + '" placeholder="' + this.esc(t('searchOutputs')) + '" @input.debounce.180ms="setOutputSearch($event.target.value)"></label>';
     html += '<div class="m-segmented" role="group" aria-label="' + this.esc(t('outputFilter')) + '">';
     [['all', t('filterAll')], ['models', t('filterModels')], ['others', t('filterOthers')]].forEach(item => {
-      html += '<button type="button" class="m-segmented-btn' + (this.outputFilter === item[0] ? ' active' : '') + '" @click="setOutputFilter(\'' + item[0] + '\')">' + this.esc(item[1]) + '</button>';
+      html += '<button type="button" id="outputFilter-' + item[0] + '" aria-pressed="' + (this.outputFilter === item[0]) + '" class="m-segmented-btn' + (this.outputFilter === item[0] ? ' active' : '') + '" @click="setOutputFilter(\'' + item[0] + '\')">' + this.esc(item[1]) + '</button>';
     });
     html += '</div>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="selectAllOutputFiles()"' + (!canUseFiles || !visibleCount ? ' disabled' : '') + '>' + this.esc(t('selectVisible')) + '</button>';
+    html += '<button type="button" id="outputSelectVisible" class="btn btn-sm btn-secondary" @click="selectAllOutputFiles()"' + (!canUseFiles || !visibleCount || this.outputFilesLoading ? ' disabled' : '') + '>' + this.esc(t('selectVisible')) + '</button>';
     if (d.artifact_dir) html += '<button type="button" class="btn btn-sm btn-secondary" @click="navigator.clipboard.writeText(currentArtifactData().artifact_dir).then(() => toast(t(\'common.copied\'))).catch(() => toast(t(\'common.failed\'), \'error\'))">' + this.esc(t('copyOutputPath')) + '</button>';
-    const selectedCount = this.selectedOutputFiles.length;
-    html += '<div class="m-output-selection-tools"><span class="m-output-selection-count" role="status">' + this.esc(t('selected')) + ' <strong>' + selectedCount + '</strong> / ' + this.outputFiles.length + '</span>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="deselectAllOutputFiles()"' + (!selectedCount ? ' disabled' : '') + '>' + this.esc(t('clearSelection')) + '</button>';
-    html += '<button type="button" class="btn btn-sm' + (selectedCount ? ' btn-primary' : '') + ' m-output-download" @click="' + (selectedCount ? 'downloadSelectedOutputs()' : 'downloadAllOutputs()') + '"' + (!canUseFiles ? ' disabled' : '') + '><span' + (selectedCount ? ' class="is-hidden"' : '') + '>' + this.esc(t('downloadAll')) + '</span><span' + (!selectedCount ? ' class="is-hidden"' : '') + '>' + this.esc(t('downloadSelected')) + '</span></button></div>';
     html += '</div></div>';
     html += this._artifactLocationHtml(t, d);
 
-    if (this.outputFilesLoading) {
+    if (this.outputFilesLoading && !this.outputFiles.length) {
       html += '<div class="dashboard-empty" style="padding:48px"><p>' + this.esc(t('loading')) + '</p></div>';
       html += '</div>';
       return html;
@@ -1645,7 +1654,8 @@ window.monitorRenderMixin = {
     const { models, others } = this._sortedOutputs();
 
     if (!models.length && !others.length) {
-      html += '<div class="dashboard-empty dashboard-empty-compact"><p>' + this.esc(t('noMatchingOutputs')) + '</p></div>';
+      html += '<div class="dashboard-empty dashboard-empty-compact"><p>' + this.esc(t('noMatchingOutputs')) + '</p><button class="btn btn-sm btn-secondary" @click="clearOutputFilters()">' + this.esc(t('clearHistoryFilters')) + '</button></div>';
+      return html + '</div></div>';
     }
 
     // ── 模型存档区（带 loss + 排序）──
@@ -1661,7 +1671,7 @@ window.monitorRenderMixin = {
         const fpJs = this.esc(this.escapeJsString(f.path));
         const isBest = f.path === bestPath;
         html += '<div class="output-item' + (isSelected ? ' selected' : '') + (isBest ? ' m-ckpt-best' : '') + '" @click="toggleOutputFile(\'' + fpJs + '\')">';
-        html += '<input type="checkbox" ' + (isSelected ? 'checked' : '') + ' @click.stop="toggleOutputFile(\'' + fpJs + '\')">';
+        html += '<input type="checkbox" id="outputSelect-' + this.esc(encodeURIComponent(f.path)) + '" aria-label="' + this.esc(t('selectOutputFile').replace('{name}', f.name)) + '" ' + (isSelected ? 'checked' : '') + ' @click.stop="toggleOutputFile(\'' + fpJs + '\')">';
         html += this._fileIconSvg(f);
         html += '<span class="output-name" title="' + this.esc(f.name) + '">' + this.esc(f.name) + (isBest ? '<small class="m-best-label">' + this.esc(t('lowestLoss')) + '</small>' : '') + '</span>';
         const badge = this._ckptBadgeHtml(f, t);
@@ -1674,7 +1684,7 @@ window.monitorRenderMixin = {
         html += '<span title="' + this.esc((f.loss_source || '') + (f.loss_step != null ? ' · step ' + f.loss_step : '')) + '" class="m-ckpt-loss' + (hasLoss ? '' : ' m-muted') + '"><b>' + this.esc(lossTxt) + '</b></span>';
         html += '<span class="output-size">' + this._formatFileSize(f.size) + '</span>';
         html += '<span class="output-time">' + this._formatFileTime(f.mtime) + '</span>';
-        html += '<button class="btn btn-sm btn-secondary output-dl-btn" @click.stop="downloadSingleOutput(\'' + fpJs + '\')" title="' + this.esc(t('common.download')) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
+        html += '<button class="btn btn-sm btn-secondary output-dl-btn" @click.stop="downloadSingleOutput(\'' + fpJs + '\')" aria-label="' + this.esc(t('common.download') + ': ' + f.name) + '" title="' + this.esc(t('common.download')) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
         html += '</div>';
       });
       html += '</div>';
@@ -1695,13 +1705,13 @@ window.monitorRenderMixin = {
         const extension = (f.name || '').includes('.') ? (f.name || '').split('.').pop().toUpperCase() : '';
         const fileType = f.is_lora ? 'LoRA' : (f.category || extension || '—');
         html += '<div class="output-item' + (isSelected ? ' selected' : '') + '" @click="toggleOutputFile(\'' + fpJs + '\')">';
-        html += '<input type="checkbox" ' + (isSelected ? 'checked' : '') + ' @click.stop="toggleOutputFile(\'' + fpJs + '\')">';
+        html += '<input type="checkbox" id="outputSelect-' + this.esc(encodeURIComponent(f.path)) + '" aria-label="' + this.esc(t('selectOutputFile').replace('{name}', f.name)) + '" ' + (isSelected ? 'checked' : '') + ' @click.stop="toggleOutputFile(\'' + fpJs + '\')">';
         html += this._fileIconSvg(f);
         html += '<span class="output-name" title="' + this.esc(f.name) + '">' + this.esc(f.name) + '</span>';
         html += '<span class="output-kind">' + this.esc(fileType) + '</span>';
         html += '<span class="output-size">' + this._formatFileSize(f.size) + '</span>';
         html += '<span class="output-time">' + this._formatFileTime(f.mtime) + '</span>';
-        html += '<button class="btn btn-sm btn-secondary output-dl-btn" @click.stop="downloadSingleOutput(\'' + fpJs + '\')" title="' + this.esc(t('common.download')) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
+        html += '<button class="btn btn-sm btn-secondary output-dl-btn" @click.stop="downloadSingleOutput(\'' + fpJs + '\')" aria-label="' + this.esc(t('common.download') + ': ' + f.name) + '" title="' + this.esc(t('common.download')) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
         html += '</div>';
       });
       html += '</div>';
@@ -1717,7 +1727,7 @@ window.monitorRenderMixin = {
     const activeKey = modelGroup ? this.outputModelSortKey : this.outputOtherSortKey;
     const activeDir = modelGroup ? this.outputModelSortDir : this.outputOtherSortDir;
     const active = activeKey === key;
-    let html = '<button type="button" class="output-table-sort' + (active ? ' active' : '') + '" @click="setOutputSort(\'' + group + '\',\'' + key + '\')">' + this.esc(label);
+    let html = '<button type="button" id="outputSort-' + group + '-' + key + '" aria-label="' + this.esc(label + (active ? ' · ' + this.t('monitor.' + (activeDir === 'asc' ? 'sortAscending' : 'sortDescending')) : '')) + '" class="output-table-sort' + (active ? ' active' : '') + '" @click="setOutputSort(\'' + group + '\',\'' + key + '\')">' + this.esc(label);
     if (active) html += '<span aria-hidden="true">' + (activeDir === 'asc' ? '↑' : '↓') + '</span>';
     return html + '</button>';
   },
@@ -1794,25 +1804,19 @@ window.monitorRenderMixin = {
   // ═══════════════════════════════════════════════════════════
   renderHistory() {
     const el = document.getElementById('historyList');
+    if (!el) return;
     try {
     const t = (k, fb) => this.tMonitor(k, fb);
     const hasRunning = this.runningTask && this._isActiveState(this.runningTask.status);
     const items = this.filteredHistoryItems;
     const hasHistory = items && items.length;
 
-    if (!hasRunning && !hasHistory && !(this.historyItems && this.historyItems.length)) {
-      el.innerHTML = 
-        '<div class="dashboard-empty" style="padding:48px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><p>' + this.esc(t('historyNoRecords')) + '</p><p class="m-empty-sub">' + this.esc(t('historyWillAppear')) + '</p></div>';
-      return;
-    }
-
     let html = '';
-    // Persistent diagnostic banner
     
     if (hasRunning) {
       const r = this.runningTask;
       html += '<div class="card history-card history-running">';
-      html += '<div class="card-header">' + this.esc(t('running')) + ' <span class="m-badge m-badge-ok badge-running"><i aria-hidden="true"></i>' + this.esc(t('training')) + '</span>';
+      html += '<div class="card-header">' + this.esc(t('running')) + ' <span class="m-badge m-badge-ok badge-running"><i aria-hidden="true"></i>' + this.esc(t(r.status === 'CREATED' ? 'created' : 'training')) + '</span>';
       if (r.artifact_available === false) html += '<span class="m-badge m-badge-danger"><i aria-hidden="true"></i>' + this.esc(t('artifactOffline')) + '</span>';
       html += '</div>';
       html += '<div class="hist-name"><b>' + this.esc(r.name || r.id || '') + '</b></div>';
@@ -1824,61 +1828,64 @@ window.monitorRenderMixin = {
       html += '</div>';
     }
 
-    if (this.historyItems && this.historyItems.length) {
-      html += '<div class="hist-toolbar">';
-      html += '<input type="text" class="hist-search" x-model="historySearch" placeholder="' + this.esc(t('searchHistory')) + '" @input.debounce.200ms="renderHistory()">';
-      const filters = [['all', t('logLevelAll')], ['completed', t('statusCompleted')], ['failed', t('statusFailed')], ['terminated', t('statusTerminated')]];
-      filters.forEach(f => {
-        html += '<button type="button" class="hist-filter-btn" :class="{active:historyFilter===\'' + f[0] + '\'}" @click="historyFilter=\'' + f[0] + '\';renderHistory()">' + this.esc(f[1]) + '</button>';
-      });
+    if (!hasHistory) {
+      const filtered = this.historySearch.trim() || this.historyFilter !== 'all';
+      html += '<div class="dashboard-empty hist-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg><p>' + this.esc(t(filtered ? 'historyNoMatches' : 'historyNoRecords')) + '</p><p class="m-empty-sub">' + this.esc(t(filtered ? 'historyChangeFilters' : 'historyWillAppear')) + '</p>';
+      if (filtered) html += '<button class="btn btn-sm btn-secondary" @click="clearHistoryFilters()">' + this.esc(t('clearHistoryFilters')) + '</button>';
       html += '</div>';
-
+    } else {
       if (hasRunning) html += '<div class="hist-section-label">' + this.esc(t('pastRuns')) + '</div>';
       html += '<div class="history-grid">';
       items.forEach(h => {
         const runDirJs = this.esc(this.escapeJsString(h.run_dir || ''));
+        const controlId = this.esc('history-' + encodeURIComponent(h.run_dir || ''));
         const artifactOffline = h.artifact_available === false;
+        const unavailable = h.deletion_pending ? ' disabled' : '';
         html += '<div class="card history-card' + (artifactOffline ? ' history-artifact-offline' : '') + '">';
         html += '<div class="hist-card-head">';
-        html += '<span class="hist-time">' + this.esc(h.time) + '</span>';
-        if (h.status) {
-          const statusColors = { completed: 'ok', failed: 'danger', error: 'danger', terminated: 'muted' };
-          const statusLabels = { completed: t('statusCompleted'), failed: t('statusFailed'), error: t('statusError'), terminated: t('statusTerminated') };
-          html += '<span class="m-badge m-badge-' + (statusColors[h.status] || 'muted') + '"><i aria-hidden="true"></i>' + this.esc(statusLabels[h.status] || h.status) + '</span>';
-        }
-        if (h.duration) html += '<span class="hist-duration">' + this.esc(this._formatMonitorDuration(h.duration)) + '</span>';
+        html += '<h2 class="hist-name" title="' + this.esc(h.name || '') + '">' + this.esc(h.name || '') + '</h2>';
+        const statusColors = { completed: 'ok', failed: 'danger', terminated: 'muted' };
+        const statusLabels = { completed: t('statusCompleted'), failed: t('statusFailed'), terminated: t('statusTerminated') };
+        html += '<span class="m-badge m-badge-' + (statusColors[h.status] || 'muted') + '"><i aria-hidden="true"></i>' + this.esc(statusLabels[h.status] || t('statusUnknown')) + '</span>';
         if (artifactOffline) html += '<span class="m-badge m-badge-danger"><i aria-hidden="true"></i>' + this.esc(t('artifactOffline')) + '</span>';
         html += '</div>';
-        html += '<div class="hist-card-body" @click="' + (h.run_dir ? 'viewRunDetail(\'' + runDirJs + '\')' : 'navigate(\'monitor-dashboard\')') + '">';
-        html += '<div class="hist-name"><b>' + this.esc(h.name || '') + '</b></div>';
-        html += '<div class="hist-meta">' + this.esc(t('historyModel')) + ': ' + this.esc(h.model || '') + '</div>';
-        html += '<div class="hist-meta">' + this.esc(t('historyLR')) + ': ' + this.esc(h.lr || '') + ' | ' + this.esc(t('historyDim')) + ': ' + this.esc(h.dim || '') + (h.alpha ? ' / α ' + this.esc(h.alpha) : '') + ' | ' + this.esc(t('historyEpochs')) + ': ' + this.esc(h.epochs || '') + '</div>';
-        if (h.dataset) html += '<div class="hist-dataset">' + this.esc(t('dataset')) + ': ' + this.esc(h.dataset) + '</div>';
+        html += '<div class="hist-card-body">';
+        html += '<div class="hist-timing"><time class="hist-time">' + this.esc(h.time) + '</time>';
+        if (h.duration) html += '<span class="hist-duration">' + this.esc(t('totalDuration')) + ' ' + this.esc(this._formatMonitorDuration(h.duration)) + '</span>';
+        html += '</div><div class="hist-tags">';
+        [h.profile_label, h.network, h.optimizer].filter(Boolean).forEach((label, i) => {
+          html += '<span class="hist-tag' + (i === 0 ? ' hist-tag-profile' : '') + '" title="' + this.esc(label) + '">' + this.esc(label) + '</span>';
+        });
+        html += '</div><div class="hist-meta hist-truncate" title="' + this.esc(h.model || '') + '">' + this.esc(t('historyModel')) + ' · ' + this.esc(h.model || '') + '</div>';
+        html += '<dl class="hist-stats">';
+        [[t('historyLR'), h.lr], [t('historyDim') + ' / α', String(h.dim ?? '—') + ' / ' + (h.alpha === '' ? '—' : h.alpha ?? '—')], [t('historyEpochs'), h.epochs]].forEach(([label, value]) => {
+          html += '<div><dt>' + this.esc(label) + '</dt><dd>' + this.esc(value ?? '—') + '</dd></div>';
+        });
+        html += '</dl>';
+        if (h.dataset) html += '<div class="hist-dataset hist-truncate" title="' + this.esc(h.dataset) + '">' + this.esc(t('dataset')) + ' · ' + this.esc(h.dataset) + '</div>';
         if (artifactOffline && h.artifact_dir) html += '<div class="hist-artifact is-offline">' + this.esc(h.artifact_dir) + '</div>';
+        if (h.deletion_pending || h.warning) html += '<p class="hist-warning">' + this.esc(t(h.deletion_pending ? 'historyCleanupPending' : 'historyResultUnreadable')) + '</p>';
         html += '</div>';
         if (h.run_dir) {
           html += '<div class="hist-actions">';
-          html += '<button class="hist-action hist-action-primary" @click.stop="viewRunDetail(\'' + runDirJs + '\')">' + this.esc(t('viewDetails')) + '</button>';
-          html += '<button class="hist-action hist-action-secondary" @click.stop="viewSnapshot(\'' + runDirJs + '\')">' + this.esc(t('viewConfig')) + '</button>';
-          html += '<button class="hist-action hist-action-secondary" @click.stop="reuseConfig(\'' + runDirJs + '\')">' + this.esc(t('reuseConfig')) + '</button>';
-          html += '<span class="hist-actions-spacer" aria-hidden="true"></span>';
+          html += '<button class="hist-action hist-action-primary" @click.stop="viewRunDetail(\'' + runDirJs + '\')"' + unavailable + '>' + this.esc(t('viewDetails')) + '</button>';
+          html += '<button id="' + controlId + '-config" class="hist-action hist-action-secondary" @click.stop="viewSnapshot(\'' + runDirJs + '\')"' + unavailable + '>' + this.esc(t('viewConfig')) + '</button>';
+          html += '<button id="' + controlId + '-reuse" class="hist-action hist-action-secondary" :disabled="!!historyReuseBusy || ' + !!h.deletion_pending + '" @click.stop="reuseConfig(\'' + runDirJs + '\')" x-text="t(historyReuseBusy === \'' + runDirJs + '\' ? \'monitor.copyingConfig\' : \'monitor.reuseConfig\')">' + this.esc(t('reuseConfig')) + '</button>';
+          html += '<div class="hist-icon-actions">';
           const downloadTitle = artifactOffline ? t('artifactOfflineHint') : t('downloadAll');
           html += '<button class="hist-action hist-action-icon hist-download" @click.stop="downloadRunOutputs(\'' + runDirJs + '\')" title="' + this.esc(downloadTitle) + '" aria-label="' + this.esc(downloadTitle) + '"' + (artifactOffline ? ' disabled' : '') + '><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
-          html += '<button class="hist-action hist-action-icon hist-delete" @click.stop="deleteHistoryRun(\'' + runDirJs + '\')" title="' + this.esc(t('deleteHistoryOnly')) + '" aria-label="' + this.esc(t('deleteHistoryOnly')) + '"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>';
-          html += '</div>';
+          const deleteLabel = t(h.deletion_pending ? 'retryCleanup' : 'deleteHistoryOnly');
+          html += '<button id="' + controlId + '-delete" class="hist-action hist-action-icon hist-delete" :disabled="!!historyDeleting" @click.stop="deleteHistoryRun(\'' + runDirJs + '\')" title="' + this.esc(deleteLabel) + '" aria-label="' + this.esc(deleteLabel) + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>';
+          html += '</div></div>';
         }
         html += '</div>';
       });
       html += '</div>';
     }
 
-    const search = el.querySelector('.hist-search');
-    const focused = search && document.activeElement === search;
-    const selection = focused ? [search.selectionStart, search.selectionEnd] : null;
-    if (search) search.remove();
+    const activeId = el.contains?.(document.activeElement) ? document.activeElement.id : '';
     el.innerHTML = html;
-    const replacement = el.querySelector('.hist-search');
-    if (search && replacement) { replacement.replaceWith(search); if (focused) { search.focus({ preventScroll: true }); search.setSelectionRange(...selection); } }
+    if (activeId) document.getElementById(activeId)?.focus({ preventScroll: true });
     } catch (e) {
       el.innerHTML = '<div class="dashboard-empty" style="padding:48px"><p>⚠ ' + (this.t ? this.t('monitor.historyRenderError') : 'Error displaying history. Check browser console (F12).') + '</p></div>';
     }
@@ -1889,25 +1896,37 @@ window.monitorRenderMixin = {
     this._triggerDownload('/api/monitor/outputs/download?run_dir=' + encodeURIComponent(runDir));
   },
 
-  async _fetchConfigSnapshot(runDir) {
-    const response = await fetch('/api/monitor/config-from-run?run_dir=' + encodeURIComponent(runDir));
+  async _fetchConfigSnapshot(runDir, signal) {
+    const response = await fetch('/api/monitor/config-from-run?run_dir=' + encodeURIComponent(runDir), { signal });
+    if (response.ok === false) throw new Error(this.t('monitor.configLoadError'));
     return response.json();
   },
 
   async viewSnapshot(runDir) {
+    if (!runDir) return;
     const t = (k, fb) => this.tMonitor(k, fb);
+    this._snapshotAbort?.abort();
+    this._snapshotAbort = new AbortController();
+    const seq = ++this._snapshotRequestSeq;
+    this.configSnapshotRunDir = runDir;
+    this._currentSnapshot = null;
+    this.configSnapshotError = '';
+    this.configSnapshotLoading = true;
+    this.configSnapshotOpen = true;
+    const body = document.getElementById('configSnapshotBody');
+    if (body) body.scrollTop = 0;
     try {
-      this.startProgress();
-      const j = await this._fetchConfigSnapshot(runDir);
-      if (j.status === 'success') {
-        this.showSnapshotModal(j.data);
-      } else {
-        this.toast(j.message || t('configLoadError'), 'error');
-      }
+      const j = await this._fetchConfigSnapshot(runDir, this._snapshotAbort.signal);
+      if (seq !== this._snapshotRequestSeq) return;
+      if (j.status !== 'success' || !j.data) throw new Error(j.message || t('configLoadError'));
+      this.showSnapshotModal(j.data);
     } catch (e) {
-      this.toast(t('configLoadError'), 'error');
+      if (seq === this._snapshotRequestSeq && e.name !== 'AbortError') this.configSnapshotError = t('configLoadError');
     } finally {
-      this.finishProgress();
+      if (seq === this._snapshotRequestSeq) {
+        this.configSnapshotLoading = false;
+        this._snapshotAbort = null;
+      }
     }
   },
 
@@ -1917,6 +1936,8 @@ window.monitorRenderMixin = {
     const t = (k, fb) => this.tMonitor(k, fb);
 
     let html = '';
+    html += '<p class="snapshot-run-path">' + this.esc(snapshot.run_dir || '') + '</p>';
+    if (snapshot.config_warning || snapshot.reuse_error) html += '<p class="hist-warning">' + this.esc(snapshot.reuse_error || snapshot.config_warning) + '</p>';
     if (snapshot.params) {
       const p = snapshot.params;
       // 关键参数高亮卡（与概览页同款）：模型取 basename，9 个核心字段
@@ -1926,7 +1947,7 @@ window.monitorRenderMixin = {
         { key: 'network_dim', labelKey: 'field.network_dim', short: 'historyDim' },
         { key: 'network_alpha', labelKey: 'field.network_alpha', short: 'historyAlpha' },
         { key: 'max_train_epochs', labelKey: 'field.max_train_epochs', short: 'historyEpochs' },
-        { key: 'optimizer_type', labelKey: 'field.optimizer_type', short: 'historyOptimizer' },
+        { key: 'optimizer_type', labelKey: 'field.optimizer_type', short: 'historyOptimizer', className: true },
         { key: 'train_batch_size', labelKey: 'field.train_batch_size', short: 'historyBatch' },
         { key: 'resolution', labelKey: 'field.resolution', short: 'historyResolution' },
         { key: 'seed', labelKey: 'field.seed', short: 'historySeed' },
@@ -1940,8 +1961,9 @@ window.monitorRenderMixin = {
           const parts = val.replace(/\\/g, '/').split('/');
           val = parts[parts.length - 1] || val;
         }
+        if (kd.className) val = val.split('.').pop();
         // 高亮卡 label 用 short key（简短），title 用 field.* 完整描述句
-        keyItems.push({ label: t(kd.short, kd.key), title: t(kd.labelKey, ''), value: val });
+        keyItems.push({ label: t(kd.short, kd.key), title: String(raw), value: val });
       });
       if (keyItems.length) {
         html += '<div class="param-keygrid" style="margin-bottom:16px">';
@@ -1953,49 +1975,125 @@ window.monitorRenderMixin = {
       }
     }
     if (snapshot.content) {
-      html += '<details open><summary class="m-details-summary">' + this.esc(t('rawConfig')) + '</summary>';
+      html += '<details open><summary class="m-details-summary">' + this.esc(t('rawConfig')) + ' <span class="hist-tag">' + this.esc((snapshot.config_format || 'toml').toUpperCase()) + '</span></summary>';
       html += '<pre class="m-config-pre">' + this.esc(snapshot.content) + '</pre></details>';
     }
-    html += '<div class="m-modal-footer"><button class="btn btn-sm btn-secondary" @click="copyConfigContent()">' + this.esc(t('copyConfig')) + '</button>';
-    html += '<button class="btn btn-sm" @click="reuseConfigFromSnapshot(\'' + this.esc(this.escapeJsString(snapshot.run_dir || '')) + '\')">' + this.esc(t('reuseConfig')) + '</button></div>';
 
     content.innerHTML = html;
+    const body = document.getElementById('configSnapshotBody');
+    if (body) body.scrollTop = 0;
+    content.scrollTop = 0;
     this._currentSnapshot = snapshot;
+    this.configSnapshotRunDir = snapshot.run_dir || this.configSnapshotRunDir;
+    this.configSnapshotLoading = false;
+    this.configSnapshotError = '';
     this.configSnapshotOpen = true;
   },
 
   closeSnapshotModal() {
+    ++this._snapshotRequestSeq;
+    this._snapshotAbort?.abort();
+    this._snapshotAbort = null;
     this.configSnapshotOpen = false;
+    this.configSnapshotLoading = false;
+  },
+
+  cancelHistoryInteractions() {
+    this.closeSnapshotModal();
+    // A fetched configuration can be cancelled. Once applying starts, let the
+    // form update finish atomically, but do not navigate away from the user's new page.
+    if (!this._historyReuseApplying) {
+      ++this._reuseRequestSeq;
+      this._reuseAbort?.abort();
+      this._reuseAbort = null;
+      this.historyReuseBusy = '';
+    }
+    if (this._previewReturnFocus) this.closePreviewLightbox();
   },
 
   copyConfigContent() {
     if (this._currentSnapshot && this._currentSnapshot.content) {
-      navigator.clipboard.writeText(this._currentSnapshot.content).then(() => this.toast(this.t('common.copied')));
+      navigator.clipboard.writeText(this._currentSnapshot.content).then(() => this.toast(this.t('common.copied'))).catch(() => this.toast(this.t('common.requestFailed'), 'error'));
     }
   },
 
-  async reuseConfig(runDir) {
+  async reuseConfig(runDir, snapshot = null) {
+    if (this.historyReuseBusy || !runDir) return;
     const t = (k, fb) => this.tMonitor(k, fb);
+    const seq = ++this._reuseRequestSeq;
+    const routeSeq = this._routeTransitionSeq;
+    this.historyReuseBusy = runDir;
+    this._reuseAbort = new AbortController();
     try {
       this.startProgress();
-      const j = await this._fetchConfigSnapshot(runDir);
-      if (j.status === 'success' && j.data.params) {
-        await this._applyConfigToTraining(j.data.params);
-        this.toast(t('configLoaded'), 'success');
-        this.navigate('train-basic');
-      } else {
-        this.toast(j.message || t('configLoadError'), 'error');
-      }
+      const j = snapshot ? { status: 'success', data: snapshot } : await this._fetchConfigSnapshot(runDir, this._reuseAbort.signal);
+      if (seq !== this._reuseRequestSeq) return;
+      if (j.status !== 'success' || !j.data?.reuse_params) throw new Error(j.data?.reuse_error || j.message || t('configLoadError'));
+      const undo = JSON.parse(JSON.stringify({
+        form: this.form, drafts: this._profileFormDrafts, sources: this._profileFieldSources,
+        fieldSources: this._fieldSources, documentId: this._trainingDocumentId,
+        formHistory: this.formHistory, formHistoryIdx: this.formHistoryIdx, formDefaults: this.formDefaults,
+      }));
+      this._historyReuseApplying = true;
+      await this._applyConfigToTraining(j.data.reuse_params);
+      this._trainingDocumentId = null;
+      this._historyReuseUndo = undo;
+      this.historyReuseSource = j.data.name || runDir;
+      const ignored = this._lastConfigImportIgnoredFields || [];
+      this.historyReuseWarning = [j.data.config_warning, ignored.length ? this.t('common.importedWithIgnoredFields').replace('{fields}', ignored.join(', ')) : ''].filter(Boolean).join('\n');
+      if (this.historyReuseWarning) this.toast(this.historyReuseWarning, 'warning');
+      else this.toast(t('configLoaded'), 'success');
+      if (routeSeq === this._routeTransitionSeq) this.navigate('train-basic');
     } catch (e) {
-      this.toast(t('configLoadError'), 'error');
+      if (seq === this._reuseRequestSeq && e.name !== 'AbortError') this.toast(e.message || t('configLoadError'), 'error');
     } finally {
-      this.finishProgress();
+      if (seq === this._reuseRequestSeq) {
+        this.historyReuseBusy = '';
+        this._historyReuseApplying = false;
+        this._reuseAbort = null;
+        this.finishProgress();
+      }
     }
   },
 
   reuseConfigFromSnapshot(runDir) {
+    const snapshot = this._currentSnapshot;
+    if (!snapshot?.reuse_params || this.historyReuseBusy) return;
     this.closeSnapshotModal();
-    if (runDir) this.reuseConfig(runDir);
+    if (runDir) this.reuseConfig(runDir, snapshot);
+  },
+
+  dismissHistoryReuse() {
+    this.historyReuseSource = '';
+    this.historyReuseWarning = '';
+    this._historyReuseUndo = null;
+  },
+
+  async undoHistoryReuse() {
+    const undo = this._historyReuseUndo;
+    if (!undo || this.historyReuseBusy) return;
+    this.historyReuseBusy = 'undo';
+    this._historyReuseApplying = true;
+    try {
+      await this._applyConfigToTraining(undo.form);
+      this._profileFormDrafts = undo.drafts || {};
+      this._profileFieldSources = undo.sources || {};
+      this._fieldSources = undo.fieldSources || {};
+      this._trainingDocumentId = undo.documentId || null;
+      if (undo.formDefaults) this.formDefaults = undo.formDefaults;
+      this.formHistory = undo.formHistory || [this.formDefaults];
+      this.formHistoryIdx = undo.formHistoryIdx ?? 0;
+      this._persistProfileDrafts?.();
+      this._persistProfileFieldSources?.();
+      this.rebuildForm?.();
+      this.dismissHistoryReuse();
+      this.toast(this.t('monitor.historyReuseUndone'), 'success');
+    } catch (e) {
+      this.toast(this.t('monitor.restoreConfigError'), 'error');
+    } finally {
+      this.historyReuseBusy = '';
+      this._historyReuseApplying = false;
+    }
   },
 
   async _applyConfigToTraining(params) {

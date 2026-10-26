@@ -13,6 +13,9 @@ window.captionOptionsMixin = {
   taggerApiShowKey: false,
   taggerApiTesting: false,
   taggerApiTestInfo: {state: '', text: ''},
+  _taggerApiConnectionFingerprint: '',
+  _taggerApiTestRequest: 0,
+  _taggerApiTestAbort: null,
 
   loadCaptionOptions() {
     if (this._captionOptionsLoaded) return;
@@ -64,6 +67,7 @@ window.captionOptionsMixin = {
   },
 
   saveCaptionOptions() {
+    this.syncTaggerApiConnection();
     localStorage.setItem('anima-moss-workflow', JSON.stringify({options:this.captionOptions, api:this.taggerApiSettings}));
     if (this.taggerSourceMode === 'api-folder') localStorage.setItem('anima-ai-source-path', this.taggerSourcePath);
     this.captionOptionsChanged?.();
@@ -172,17 +176,53 @@ window.captionOptionsMixin = {
 
   taggerApiModelConfig() { return {options:this.taggerApiModelSuggestions.map(v => ({v,l:v}))}; },
 
+  taggerApiConnectionFingerprint() {
+    const s = this.taggerApiSettings;
+    return JSON.stringify([s.baseUrl, s.apiKey, s.protocol]);
+  },
+
+  syncTaggerApiConnection() {
+    const fingerprint = this.taggerApiConnectionFingerprint();
+    if (fingerprint === this._taggerApiConnectionFingerprint) return;
+    this._taggerApiConnectionFingerprint = fingerprint;
+    this.resetTaggerApiTest();
+  },
+
+  resetTaggerApiTest() {
+    ++this._taggerApiTestRequest;
+    this._taggerApiTestAbort?.abort();
+    this._taggerApiTestAbort = null;
+    this.taggerApiTesting = false;
+    this.taggerApiTestInfo = {state:'',text:''};
+    this.taggerApiModelSuggestions = [];
+  },
+
   async testTaggerApiConnection() {
+    this.syncTaggerApiConnection();
     if (this.taggerApiTesting || !this.taggerApiSettings.baseUrl.trim()) return;
+    this.resetTaggerApiTest();
+    const request = this._taggerApiTestRequest;
+    const fingerprint = this.taggerApiConnectionFingerprint(), route = this.currentRoute;
+    const controller = new AbortController();
+    this._taggerApiTestAbort = controller;
+    const stillCurrent = () => request === this._taggerApiTestRequest
+      && fingerprint === this.taggerApiConnectionFingerprint() && route === this.currentRoute;
     this.taggerApiTesting = true;
     try {
       const s = this.taggerApiSettings;
-      const body = await (await fetch('/api/tagger/api/test', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_url:s.baseUrl,api_key:s.apiKey,protocol:s.protocol})})).json();
+      const body = await (await fetch('/api/tagger/api/test', {method:'POST', headers:{'Content-Type':'application/json'}, signal:controller.signal, body:JSON.stringify({base_url:s.baseUrl,api_key:s.apiKey,protocol:s.protocol})})).json();
+      if (!stillCurrent()) return;
       if (body.status !== 'success') throw new Error(body.message);
       this.taggerApiModelSuggestions = body.data?.models || [];
       this.taggerApiTestInfo = {state:'ok',text:this.t('tagger.apiTestOk').replace('{count}',String(body.data?.count || 0))};
-    } catch (error) { this.taggerApiTestInfo = {state:'fail',text:this.captionErrorMessage(error)}; }
-    finally { this.taggerApiTesting = false; }
+    } catch (error) {
+      if (stillCurrent()) this.taggerApiTestInfo = {state:'fail',text:this.captionErrorMessage(error)};
+    } finally {
+      if (request === this._taggerApiTestRequest) {
+        this.taggerApiTesting = false;
+        this._taggerApiTestAbort = null;
+      }
+    }
   },
 
   async startApiTagger(dryRun = false, approval = '') {

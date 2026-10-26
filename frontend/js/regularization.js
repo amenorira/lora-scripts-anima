@@ -182,7 +182,7 @@ window.regularizationMixin = {
     }
     const host = document.getElementById('regularizationWorkspaceHost');
     if (host && !host.dataset.mounted) {
-      const response = await fetch('/anima-ui/regularization-workspace.html?v=20261009-reg-sdxl');
+      const response = await fetch('/anima-ui/regularization-workspace.html');
       host.innerHTML = await response.text(); host.dataset.mounted = '1';
       Alpine.initTree(host);
     }
@@ -306,7 +306,7 @@ window.regularizationMixin = {
       return field(key, 'number', { min: schema.minimum, max: schema.maximum, step: schema.multipleOf ?? step });
     };
     const labels = { euler_a: 'euler_ancestral', bf16: 'BF16', fp16: 'FP16', auto: this.regT('autoSize'), manual: this.regT('manualMemory'), bucket: this.regT('bucket'), fixed: this.regT('fixed') };
-    const select = key => field(key, 'select', { options: this.regMetadata.fields[key].enum.filter(v =>
+    const select = key => field(key, 'select', { selectAlign: key === 'model_type' ? 'left' : 'right', options: this.regMetadata.fields[key].enum.filter(v =>
       this.regSettings.model_type !== 'sdxl' || (key !== 'sampler' || v !== 'er_sde') &&
       (key !== 'scheduler' || (this.regSettings.sampler === 'euler_a' ? ['normal'] : ['normal', 'karras', 'exponential']).includes(v))
     ).map(v => ({v, l: v === 'sdxl' ? 'SDXL' : v === 'anima' ? 'Anima' : labels[v] || v, ...(key === 'model_type' ? {} : {dKey: `regularization.options.${key}.${v}`})})) });

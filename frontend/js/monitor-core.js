@@ -15,7 +15,10 @@ window.monitorCoreMixin = {
   weakNetworkMode: true,
   _previewMediaQueue: [], _previewMediaAbort: null, _previewMediaLoading: false, _previewMediaPaused: false, _previewMediaObjectUrls: [], _previewMediaGeneration: 0,
   previewMetadataOpen: false, previewMetadataLoading: false, previewMetadata: null, previewMetadataError: '', _previewMetadataRequestSeq: 0, _previewMetadataAbort: null,
-  configSnapshotOpen: false,
+  configSnapshotOpen: false, configSnapshotLoading: false, configSnapshotError: '', configSnapshotRunDir: '',
+  _currentSnapshot: null, _snapshotRequestSeq: 0, _snapshotAbort: null, _reuseRequestSeq: 0, _reuseAbort: null,
+  historyReuseBusy: '', _historyReuseApplying: false,
+  historyReuseSource: '', historyReuseWarning: '', _historyReuseUndo: null,
   previewReference: null,
   logAutoScroll: true, logLines: [],
   _logContentVersion: 0, monitorTab: 'overview',
@@ -48,6 +51,8 @@ window.monitorCoreMixin = {
 
   // ── 历史页筛选状态 ──
   historySearch: '', historyFilter: 'all',  // all|completed|failed|terminated
+  historyLoading: false, historyError: '', historyDeleting: '',
+  _historyRequestSeq: 0, _historyTimer: null, _historyTaskSignature: null, _historyProgressPending: false,
 
   // ── 节流渲染：每帧最多渲染一次 Dashboard ──
   scheduleRender() {
@@ -63,6 +68,10 @@ window.monitorCoreMixin = {
     const tabs = ['overview', 'logs', 'samples', 'outputs'];
     if (!tabs.includes(tab)) return;
     this.monitorTab = tab;
+    if (this.selectedRunDir && window.location?.hash) {
+      const hash = '#monitor-dashboard?run=' + encodeURIComponent(this.selectedRunDir) + '&tab=' + tab;
+      window.history.replaceState(window.history.state, '', hash);
+    }
     this.renderDashboard();
     if (focusTab) {
       requestAnimationFrame(() => {
@@ -392,6 +401,11 @@ window.monitorCoreMixin = {
     // 这份任务列表既不能证明新任务存在，也不能证明旧任务已结束。
     if (requestedAt != null && requestedAt < (this.liveTaskBoundaryAt || 0)) return;
     const managed = snapshot && snapshot.tasks && snapshot.tasks.managed || [];
+    const historySignature = managed.filter(Boolean).map(task => task.id + ':' + task.status).join('|');
+    if (this.currentRoute === 'history' && this._historyTaskSignature !== null && this._historyTaskSignature !== historySignature) {
+      void this.loadHistory(true);
+    }
+    this._historyTaskSignature = historySignature;
     const active = managed.find(task => task && task.id
       && (task.status === 'CREATED' || task.status === 'RUNNING')) || null;
     const activeId = active ? active.id : '';
@@ -1107,19 +1121,52 @@ window.monitorCoreMixin = {
   },
 
   // ── History ────────────────────────────────────────────
-  async loadHistory() {
+  startHistoryRefresh() {
+    this.stopHistoryRefresh();
+    this._historyTimer = setInterval(() => {
+      if (this.currentRoute === 'history' && !document.hidden && !this.historyLoading && !this.historyDeleting) this.loadHistory(true);
+    }, 15000);
+  },
+
+  stopHistoryRefresh() {
+    if (this._historyTimer) clearInterval(this._historyTimer);
+    this._historyTimer = null;
+  },
+
+  clearHistoryFilters() {
+    this.historySearch = '';
+    this.historyFilter = 'all';
+    this.renderHistory();
+  },
+
+  async loadHistory(background = false) {
+    if (background && (this.configSnapshotOpen || this.showConfirmModal || this.historyDeleting || this.historyReuseBusy)) return;
+    const seq = ++this._historyRequestSeq;
+    if (!background) this._historyProgressPending = true;
+    this.historyLoading = true;
+    this.historyError = '';
     try {
-      const r = await fetch('/api/monitor/history');
+      const r = await fetch('/api/monitor/history' + (background ? '' : '?refresh=true'));
       const d = await r.json();
-      if (d.status==='success') {
-        this.runningTask = d.data.running || null;
-        this.historyItems = d.data.history || [];
+      if (seq !== this._historyRequestSeq) return;
+      if (d.status !== 'success') throw new Error(d.message || this.t('monitor.historyLoadError'));
+      const running = d.data.running || null;
+      const items = d.data.history || [];
+      if (!background || JSON.stringify([running, items]) !== JSON.stringify([this.runningTask, this.historyItems])) {
+        this.runningTask = running;
+        this.historyItems = items;
+        this.renderHistory();
       }
     } catch(e) {
-      this.toast(this.t('monitor.historyLoadError'), 'error');
+      if (seq === this._historyRequestSeq) this.historyError = e.message || this.t('monitor.historyLoadError');
     } finally {
-      try { this.renderHistory(); } catch (e) {}
-      this.finishProgress();
+      if (seq === this._historyRequestSeq) {
+        this.historyLoading = false;
+        if (this._historyProgressPending) {
+          this._historyProgressPending = false;
+          if (!this.currentRoute || this.currentRoute === 'history') this.finishProgress();
+        }
+      }
     }
   },
 
@@ -1129,17 +1176,21 @@ window.monitorCoreMixin = {
     return (this.historyItems||[]).filter(h => {
       if (filter !== 'all' && (h.status||'') !== filter) return false;
       if (!q) return true;
-      const hay = ((h.name||'') + ' ' + (h.model||'') + ' ' + (h.dataset||'') + ' ' + (h.time||'') + ' ' + (h.artifact_dir||'')).toLowerCase();
+      const hay = [h.name, h.model, h.dataset, h.time, h.artifact_dir, h.profile_label, h.network, h.optimizer].filter(Boolean).join(' ').toLowerCase();
       return hay.indexOf(q) !== -1;
     });
   },
 
   deleteHistoryRun(runDir) {
-    if (!runDir) return;
-    this.openConfirm(this.t('monitor.confirmDeleteRunTitle'), this.t('monitor.confirmDeleteRun'), () => this._deleteHistoryRun(runDir), this.t('common.confirm'), { danger: true });
+    if (!runDir || this.historyDeleting) return;
+    const record = this.historyItems.find(item => item.run_dir === runDir);
+    const identity = record ? [record.name, record.time].filter(Boolean).join(' · ') : runDir;
+    this.openConfirm(this.t('monitor.confirmDeleteRunTitle'), identity + '\n\n' + this.t('monitor.confirmDeleteRun'), () => this._deleteHistoryRun(runDir), this.t('monitor.confirmDeleteRunTitle'), { danger: true });
   },
 
   async _deleteHistoryRun(runDir) {
+    if (this.historyDeleting) return;
+    this.historyDeleting = runDir;
     try {
       this.startProgress();
       const r = await fetch('/api/monitor/history/delete', {
@@ -1149,18 +1200,25 @@ window.monitorCoreMixin = {
       const j = await r.json();
       if (j.status === 'success') {
         this.toast(this.t('monitor.runDeleted'), 'success');
-        await this.loadHistory();
       } else {
         this.toast(j.message || this.t('monitor.deleteFailed'), 'error');
       }
     } catch(e) {
       this.toast(this.t('monitor.deleteFailed'), 'error');
-    } finally { this.finishProgress(); }
+    } finally {
+      await this.loadHistory();
+      this.historyDeleting = '';
+      this.finishProgress();
+    }
   },
 
   // ── Run Detail (查看历史训练) ─────────────────────────
-  async viewRunDetail(runDir) {
+  async viewRunDetail(runDir, fromRoute = false, tab = 'overview') {
     /** 查看指定历史训练的详情（图表 + 日志 + 配置） */
+    if (!fromRoute) {
+      this.navigate('monitor-dashboard', { run: runDir });
+      return;
+    }
     this._runDetailRequestSeq++;
     this._logSliceRequestSeq++;
     this.logLines = [];
@@ -1184,11 +1242,12 @@ window.monitorCoreMixin = {
     this.runDetailLoading = true;
     this.runDetailError = '';
     this._resetOutputFilesForRun(runDir);
-    this.monitorTab = 'overview';
+    this.monitorTab = ['overview', 'logs', 'samples', 'outputs'].includes(tab) ? tab : 'overview';
     this.monitorParamQuery = '';
     this._shellBuilt = false;
     this._forceLogRebuild = true;
-    this.navigate('monitor-dashboard');
+    this.pageTitle = this.t('monitor.historyDetail');
+    document.title = this.pageTitle + ' | lora-scripts-anima';
     // 等待 DOM 就绪后拉取数据
     await this.$nextTick();
     await this._fetchRunDetail(runDir);
@@ -1267,11 +1326,7 @@ window.monitorCoreMixin = {
 
   clearRunDetail() {
     /** 返回实时监控模式 */
-    // 重建页面并显示保留的实时曲线，再补拉详情；当前任务订阅持续保留。
-    this.stopMonitorRealtime();
-    this.resetRunDetailState();
-    this.renderDashboard();
-    this.startMonitorRealtime();
+    this.navigate('monitor-dashboard');
   },
 
   // ── Output Files ──────────────────────────────────────
@@ -1294,6 +1349,7 @@ window.monitorCoreMixin = {
     const countVersion = this._outputCountVersion;
     this.outputFilesLoading = true;
     this.outputFilesError = '';
+    this.renderDashboard();
     try {
       const r = await fetch('/api/monitor/outputs?run_dir=' + encodeURIComponent(runDir));
       const j = await r.json();
@@ -1313,6 +1369,7 @@ window.monitorCoreMixin = {
         if (j.meta && j.meta.artifact_dir) target.artifact_dir = j.meta.artifact_dir;
       } else {
         this.outputFiles = [];
+        this.outputFilesSelected = {};
         this.outputFilesError = (j.data && j.data.artifact_available === false)
           ? 'artifactUnavailable'
           : 'loadFailed';
@@ -1325,6 +1382,7 @@ window.monitorCoreMixin = {
     } catch (e) {
       if (requestSeq !== this._outputFilesRequestSeq || runDir !== this.currentOutputRunDir) return;
       this.outputFiles = [];
+      this.outputFilesSelected = {};
       this.outputFilesError = 'loadFailed';
     } finally {
       if (requestSeq === this._outputFilesRequestSeq && runDir === this.currentOutputRunDir) {
@@ -1431,6 +1489,12 @@ window.monitorCoreMixin = {
 
   setOutputSearch(value) {
     this.outputSearch = String(value || '');
+    this.renderDashboard();
+  },
+
+  clearOutputFilters() {
+    this.outputSearch = '';
+    this.outputFilter = 'all';
     this.renderDashboard();
   },
 

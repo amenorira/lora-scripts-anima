@@ -16,11 +16,16 @@ from pathlib import Path
 from unittest.mock import patch
 
 from backend.training.moss_image import NETWORK_MODULES as MOSS_NETWORK_MODULES
+from backend.training.krea2_network import (
+    KREA2_NETWORK_MODULES, build_krea2_network_args, build_krea2_network_preset,
+    validate_krea2_network,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 SUPPORTED = {
     "anima-lora": {"networks.lora_anima", "networks.loha", "networks.lokr", "lycoris.kohya"},
     "moss-image-lora": set(MOSS_NETWORK_MODULES),
+    "krea2-lora": set(KREA2_NETWORK_MODULES),
 }
 _pool = None
 
@@ -80,6 +85,16 @@ def _capture_options(constructor):
     return wrapped
 
 
+def _krea2_config():
+    source = ROOT / "vendor/musubi-tuner/src/musubi_tuner/krea2/krea2_utils.py"
+    for node in ast.walk(ast.parse(source.read_text(encoding="utf-8"))):
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == "single_mmdit_large_wide" for target in node.targets
+        ):
+            return {kw.arg: ast.literal_eval(kw.value) for kw in node.value.keywords}
+    raise ValueError("Krea 2 architecture configuration was not found")
+
+
 def inspect_network(form):
     """Keep constructor chatter out of the console in the isolated preview worker."""
     previous_level = logging.root.manager.disable
@@ -109,8 +124,20 @@ def _inspect_network(form):
 
     train_type = form.get("model_train_type")
     if train_type not in SUPPORTED:
-        raise ValueError("Only Anima and MOSS-Image adapter training is supported / 仅支持 Anima 和 MOSS-Image 适配器训练")
-    config, _ = adapt_config(form)
+        raise ValueError("Unsupported training profile / 不支持此训练类型的结构预览")
+    is_krea2 = train_type == "krea2-lora"
+    if is_krea2:
+        config = dict(form)
+        errors = validate_krea2_network(config)
+        if errors:
+            raise ValueError("; ".join(errors))
+        config["network_args"] = build_krea2_network_args(config, "krea2-preview")
+        if config.get("network_module") == "lycoris.kohya":
+            config["network_dropout"] = config.get("dropout", 0) if config.get("lycoris_algo") == "lora" else 0
+        config["network_train_unet_only"] = True
+        config["network_train_text_encoder_only"] = False
+    else:
+        config, _ = adapt_config(form)
     module_name = config.get("network_module")
     if module_name not in SUPPORTED[train_type]:
         raise ValueError("Unsupported custom network / 暂不支持此自定义网络")
@@ -121,13 +148,17 @@ def _inspect_network(form):
     if config.get("save_model_as", "safetensors") != "safetensors":
         raise ValueError("File size estimation requires safetensors / 文件大小估算仅支持 safetensors")
 
-    for path in (ROOT / "vendor", ROOT / "vendor/sd-scripts"):
+    for path in (ROOT / "vendor", ROOT / "vendor/sd-scripts", ROOT / "vendor/musubi-tuner/src"):
         if str(path) not in sys.path:
             sys.path.insert(0, str(path))
     import torch
     from torch._subclasses.fake_tensor import FakeTensorMode
 
-    network_module = importlib.import_module(module_name)
+    # Use the qualified Musubi package: the same worker also loads sd-scripts'
+    # top-level networks package, which must not shadow Krea's native module.
+    import_name = "musubi_tuner.networks.lora_krea2" if module_name == "networks.lora_krea2" else module_name
+    network_module = importlib.import_module(import_name)
+    options_module = importlib.import_module("musubi_tuner.networks.lora") if module_name == "networks.lora_krea2" else network_module
     kwargs = dict(item.split("=", 1) for item in config.get("network_args", []) if "=" in item)
     rank = int(config.get("network_dim", 4))
     alpha = float(config.get("network_alpha", 1))
@@ -140,7 +171,11 @@ def _inspect_network(form):
     # PyTorch 2.12 trunc_normal_ checks sampled values, which fake tensors lack.
     # This isolated shape-only worker needs no random weight values.
     with FakeTensorMode(), patch.object(torch.nn.init, "trunc_normal_", lambda tensor, *args, **kwargs: tensor):
-        if train_type == "moss-image-lora":
+        if is_krea2:
+            from musubi_tuner.krea2.krea2_mmdit import SingleMMDiTConfig, SingleStreamDiT
+
+            model = SingleStreamDiT(SingleMMDiTConfig(**_krea2_config()))
+        elif train_type == "moss-image-lora":
             from library.moss_image_models import MOSS_IMAGE_CONFIG, MossImage
 
             model = MossImage(**MOSS_IMAGE_CONFIG, attn_mode="torch", split_attn=False)
@@ -169,17 +204,20 @@ def _inspect_network(form):
                             "TEXT_ENCODER_TARGET_REPLACE_MODULE", "TEXT_ENCODER_TARGET_REPLACE_NAME",
                             "MODULE_ALGO_MAP", "NAME_ALGO_MAP", "USE_FNMATCH", "TARGET_EXCLUDE_NAME"):
                     stack.enter_context(patch.object(cls, key, copy.deepcopy(getattr(cls, key))))
+                if is_krea2:
+                    stack.enter_context(patch.dict(network_module.PRESET, {kwargs["preset"]: build_krea2_network_preset(config)}))
             for class_name in ("LoRAModule", "LoConModule", "LoHaModule", "LohaModule", "LoKrModule", "LokrModule"):
-                cls = getattr(network_module, class_name, None)
+                cls = getattr(options_module, class_name, None)
                 if cls is not None:
                     stack.enter_context(patch.object(cls, "__init__", _capture_options(cls.__init__)))
-            network = network_module.create_network(1.0, rank, alpha, None, text_encoders, model, **kwargs)
+            factory = network_module.create_arch_network if module_name == "networks.lora_krea2" else network_module.create_network
+            network = factory(1.0, rank, alpha, None, text_encoders, model, **kwargs)
         groups = {}
         header = {}
         offset = 0
         total_params = 0
         full_count = 0
-        adapters = ([] if config.get("network_train_text_encoder_only") else network.unet_loras) + network.text_encoder_loras
+        adapters = ([] if config.get("network_train_text_encoder_only") else network.unet_loras) + getattr(network, "text_encoder_loras", [])
         if not adapters:
             raise ValueError("No adapter modules matched / 当前配置没有匹配到可训练的适配器模块")
         for adapter in adapters:

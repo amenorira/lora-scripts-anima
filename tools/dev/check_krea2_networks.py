@@ -26,6 +26,7 @@ def main():
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument("--block-swap", action="store_true")
     parser.add_argument("--flash", action="store_true")
+    parser.add_argument("--case", default="", help="Run one case by name")
     parser.add_argument("--kernel-backend", choices=("auto", "torch", "triton", "tilelang", "compile"), default="torch")
     options = parser.parse_args()
     os.environ["LYCORIS_KERNEL_BACKEND"] = options.kernel_backend
@@ -34,7 +35,7 @@ def main():
 
     import torch
     from musubi_tuner.krea2.krea2_mmdit import SingleMMDiTConfig, SingleStreamDiT
-    from musubi_tuner.krea2_train_network import Krea2NetworkTrainer, krea2_setup_parser, setup_parser_common
+    from backend.training.krea2_train import Krea2Trainer, krea2_setup_parser, setup_parser_common
     from musubi_tuner.modules.custom_offloading_utils import BlockSwapConfig
     from musubi_tuner.modules.fp8_optimization_utils import apply_fp8_monkey_patch
     from backend.training import toml_writer
@@ -54,6 +55,17 @@ def main():
 
     cases = [
         ("lora-attention", {"krea_target_mode": "attention"}),
+        ("locon-all", {"network_module": "lycoris.kohya", "lycoris_algo": "lora"}),
+        ("locon-plus", {"network_module": "lycoris.kohya", "lycoris_algo": "lora", "enable_loraplus": True,
+                        "loraplus_lr_ratio": 3}),
+        ("locon-dropout", {"network_module": "lycoris.kohya", "lycoris_algo": "lora", "dropout": 0.2,
+                           "rank_dropout": 0.1, "module_dropout": 0.1}),
+        ("locon-dora", {"network_module": "lycoris.kohya", "lycoris_algo": "lora", "dora_wd": True,
+                        "use_scalar": True, "rs_lora": True, "rank_dropout": 0.1,
+                        "krea_target_mode": "attention_mlp"}),
+        ("locon-custom", {"network_module": "lycoris.kohya", "lycoris_algo": "lora", "krea_target_mode": "custom",
+                          "krea_target_include": "first\nlast\\.linear\nblocks\\..*",
+                          "krea_target_exclude": ".*\\.mlp\\..*"}),
         ("lokr-all", {"network_module": "lycoris.kohya", "lycoris_algo": "lokr"}),
         ("loha-all", {"network_module": "lycoris.kohya", "lycoris_algo": "loha"}),
         ("loha-dora", {"network_module": "lycoris.kohya", "lycoris_algo": "loha", "dora_wd": True,
@@ -74,15 +86,18 @@ def main():
     ]
     if device.type == "cuda":
         cases += [(f"{algo}-fp8", {"network_module": "lycoris.kohya", "lycoris_algo": algo,
-                                   "fp8_base": True}) for algo in ("lokr", "loha")]
+                                   "fp8_base": True}) for algo in ("lora", "lokr", "loha")]
+        cases += [("locon-int8", {"network_module": "lycoris.kohya", "lycoris_algo": "lora", "convrot_int8": True})]
     if options.block_swap:
         assert device.type == "cuda", "Block swapping needs CUDA"
         cases += [(f"{algo}-swap-{'h2d' if h2d else 'standard'}", {
             "network_module": "lycoris.kohya", "lycoris_algo": algo, "blocks_to_swap": 1,
             "block_swap_h2d_only": h2d, "block_swap_ring_size": 2,
-            "use_pinned_memory_for_block_swap": True}) for algo in ("lokr", "loha") for h2d in (False, True)]
+            "use_pinned_memory_for_block_swap": True}) for algo in ("lora", "lokr", "loha") for h2d in (False, True)]
 
     for name, overrides in cases:
+        if options.case and options.case != name:
+            continue
         with tempfile.TemporaryDirectory() as temp:
             directory = Path(temp)
             form = {f["key"]: f["default"] for f in KREA2_FIELDS if "default" in f}
@@ -100,12 +115,23 @@ def main():
                 setattr(args, key, value)
             args.network_weights = None
             args.turbo_lora = None
+            dimensions = {**model_config, **({"features": 256, "txtdim": 256} if form.get("convrot_int8") else {})}
 
             def create_base():
                 torch.manual_seed(987)
-                base = SingleStreamDiT(SingleMMDiTConfig(**model_config, layers=4),
+                architecture = SingleMMDiTConfig(**dimensions, layers=4)
+                base = SingleStreamDiT(architecture,
                     attn_mode="flash" if options.flash else "torch", split_attn=bool(options.flash)).to(dtype=dtype)
                 base.requires_grad_(False)
+                if form.get("convrot_int8"):
+                    from safetensors.torch import save_file
+                    from musubi_tuner.krea2.krea2_utils import load_krea2_dit
+                    checkpoint = directory / "tiny-dit.safetensors"
+                    save_file(base.state_dict(), str(checkpoint))
+                    base = load_krea2_dit(str(checkpoint), device="cpu", dtype=dtype, config=architecture,
+                                         convrot_int8=True, convrot_int8_bwd=args.convrot_int8_bwd)
+                    base.requires_grad_(False)
+                    assert any(p.dtype == torch.int8 for p in base.parameters())
                 if form.get("fp8_base"):
                     sd = {}
                     for layer_name, layer in base.named_modules():
@@ -127,18 +153,23 @@ def main():
                 base.move_to_device_except_swap_blocks(device)
             else:
                 base.to(device)
-            trainer = Krea2NetworkTrainer()
+            trainer = Krea2Trainer()
             network = trainer._build_network(args, accelerator, base, None, dtype).to(device=device, dtype=dtype)
             assert {layer.lora_name for layer in network.unet_loras} == expected_targets
+            if name == "locon-dropout":
+                assert all(isinstance(layer.dropout, torch.nn.Dropout) and layer.dropout.p == form["dropout"]
+                           for layer in network.unet_loras)
             if name == "lokr-decompose":
                 assert any(not layer.use_w1 for layer in network.unet_loras)
             elif name == "lokr-no-decompose":
                 assert all(layer.use_w1 for layer in network.unet_loras)
             parameters, _ = network.prepare_optimizer_params(unet_lr=0.001)
+            if form.get("enable_loraplus"):
+                assert [group["lr"] for group in parameters] == [0.001, 0.003]
             optimizer = torch.optim.AdamW(parameters, lr=0.001)
             torch.manual_seed(543)
             inputs = (torch.randn(1, 4, 4, device=device, dtype=dtype),
-                      torch.randn(1, 2, 2, 32, device=device, dtype=dtype),
+                      torch.randn(1, 2, 2, dimensions["txtdim"], device=device, dtype=dtype),
                       torch.tensor([0.5], device=device), torch.zeros(1, 6, 3, device=device),
                       torch.ones(1, 6, device=device, dtype=torch.bool))
             losses = []
@@ -184,7 +215,9 @@ def main():
     report = {"device": str(device), "torch": torch.__version__, "flash": options.flash,
               "kernel_backend": options.kernel_backend,
               "full_model_target_names": len(actual_names), "cases": results}
+    assert results, f"Unknown case: {options.case}"
     suffix = f"-{options.kernel_backend}" if options.kernel_backend != "torch" else ""
+    suffix += f"-{options.case}" if options.case else ""
     (output / f"runtime-{options.device}{'-flash' if options.flash else ''}{suffix}.json").write_text(
         json.dumps(report, indent=2), encoding="utf-8")
     print(f"Passed {len(results)} cases", flush=True)

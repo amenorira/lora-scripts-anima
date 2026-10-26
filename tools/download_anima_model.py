@@ -51,21 +51,21 @@ MOSS_REPO_ID = "Comfy-Org/MOSS-Image"
 
 _KREA2_FILES: list[tuple[str, str, str, str]] = [
     (
-        "diffusion_models/krea2_raw_fp8_scaled.safetensors",
-        "krea2_raw_fp8_scaled.safetensors",
+        "diffusion_models/krea2_raw_bf16.safetensors",
+        "krea2_raw_bf16.safetensors",
         "Krea 2 训练底模 / Training model",
         "kreaRaw",
     ),
     (
-        "diffusion_models/krea2_turbo_fp8_scaled.safetensors",
-        "krea2_turbo_fp8_scaled.safetensors",
+        "diffusion_models/krea2_turbo_bf16.safetensors",
+        "krea2_turbo_bf16.safetensors",
         "Krea 2 推理模型 / Inference model",
         "kreaTurbo",
     ),
     (
-        "text_encoders/qwen3vl_4b_fp8_scaled.safetensors",
-        "qwen3vl_4b_fp8_scaled.safetensors",
-        "文本编码器 / Text encoder (Qwen3-VL-4B FP8 scaled)",
+        "text_encoders/qwen3vl_4b_bf16.safetensors",
+        "qwen3vl_4b_bf16.safetensors",
+        "文本编码器 / Text encoder (Qwen3-VL-4B BF16)",
         "kreaEncoder",
     ),
     (
@@ -128,9 +128,9 @@ MODEL_DOWNLOAD_SIZES: dict[str, dict[str, int]] = {
         "split_files/vae/qwen_image_vae.safetensors": 253_806_246,
     },
     KREA2_REPO_ID: {
-        "diffusion_models/krea2_raw_fp8_scaled.safetensors": 13_141_730_784,
-        "diffusion_models/krea2_turbo_fp8_scaled.safetensors": 13_141_730_784,
-        "text_encoders/qwen3vl_4b_fp8_scaled.safetensors": 5_242_467_968,
+        "diffusion_models/krea2_raw_bf16.safetensors": 26_283_332_608,
+        "diffusion_models/krea2_turbo_bf16.safetensors": 26_283_332_608,
+        "text_encoders/qwen3vl_4b_bf16.safetensors": 8_875_719_384,
         "vae/qwen_image_vae.safetensors": 253_806_246,
     },
     MOSS_REPO_ID: {

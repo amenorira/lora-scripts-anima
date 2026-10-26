@@ -115,6 +115,7 @@ window.trainingConfigIoMixin = {
         const parsed = d.data.data || {};
         if (Object.keys(parsed).length === 0) throw new Error(this.t('common.invalidToml'));
         await this._applyImportedFlatConfig(parsed);
+        this.dismissHistoryReuse?.();
         this._trainingDocumentId = d.data.document_id || null;
         const ignored = this._lastConfigImportIgnoredFields || [];
         if (ignored.length) {

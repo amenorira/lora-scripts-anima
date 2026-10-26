@@ -7,7 +7,7 @@ function harness() {
   const context = loadFrontend(['tagger', 'ai-caption-options', 'caption-workspace'], {
     window: {}, localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
     setTimeout:()=>1,clearTimeout:()=>{},requestAnimationFrame:fn=>fn(),document:{querySelector:()=>null,body:{classList:{remove(){}}}},
-    fetch:async()=>response({task_id:null}),
+    fetch:async()=>response({task_id:null}), AbortController,
   });
   const app = composeMixins(context.window.taggerMixin,context.window.captionOptionsMixin);
   app.captionApiPayload = context.window.captionWorkspaceMixin.captionApiPayload;
@@ -103,6 +103,60 @@ test('model list never selects the first result or fills a default model',async(
   const {app,context}=harness();app.loadCaptionOptions();assert.equal(app.taggerApiSettings.model,'');
   app.taggerApiSettings.baseUrl='http://local';context.fetch=async()=>response({models:['model1'],count:1});
   await app.testTaggerApiConnection();assert.equal(app.taggerApiSettings.model,'');assert.equal(app.taggerApiModelSuggestions[0],'model1');
+});
+
+test('connection changes cancel the old test and cannot overwrite a newer result',async()=>{
+  for (const [key,value] of [['baseUrl','http://b'],['apiKey','changed-key'],['protocol','responses']]) {
+    const {app,context}=harness();
+    app.currentRoute='ai-captioning';app.taggerApiSettings.baseUrl='http://a';
+    const old=deferred(),next=deferred();let calls=0,oldSignal;
+    context.fetch=(_url,options)=>{if (++calls===1) {oldSignal=options.signal;return old.promise;}return next.promise;};
+    const first=app.testTaggerApiConnection();
+    app.taggerApiSettings[key]=value;app.saveCaptionOptions();
+    assert.equal(oldSignal.aborted,true);assert.equal(app.taggerApiTesting,false);
+    const second=app.testTaggerApiConnection();
+    // Even an implementation that delivers a response after abort cannot commit it.
+    old.resolve(response({models:['old'],count:1}));await first;
+    assert.equal(app.taggerApiTesting,true);assert.equal(app.taggerApiTestInfo.state,'');
+    assert.equal(app.taggerApiModelSuggestions.length,0);
+    next.resolve(response({models:['new'],count:1}));await second;
+    assert.equal(app.taggerApiTesting,false);assert.equal(app.taggerApiTestInfo.state,'ok');
+    assert.equal(app.taggerApiModelSuggestions[0],'new');
+  }
+});
+
+test('completed connection results expire on edits but model and generation settings retain them',async()=>{
+  const {app,context}=harness();app.taggerApiSettings.baseUrl='http://a';
+  context.fetch=async()=>response({models:['model'],count:1});
+  await app.testTaggerApiConnection();
+  app.taggerApiSettings.model='chosen';app.taggerApiSettings.temperature=.5;app.saveCaptionOptions();
+  assert.equal(app.taggerApiTestInfo.state,'ok');assert.equal(app.taggerApiModelSuggestions[0],'model');
+  app.restoreCaptionField('api','baseUrl');
+  assert.equal(app.taggerApiTestInfo.state,'');assert.equal(app.taggerApiModelSuggestions.length,0);
+  assert.equal(app.taggerApiSettings.model,'chosen');
+});
+
+test('late errors and responses after leaving or changing connection stay invisible',async()=>{
+  for (const change of ['route','settings','leave-and-return']) {
+    const {app,context}=harness(),pending=deferred();
+    app.currentRoute='ai-captioning';app.taggerApiSettings.baseUrl='http://a';context.fetch=()=>pending.promise;
+    const test=app.testTaggerApiConnection();
+    if (change==='settings') app.taggerApiSettings.apiKey='different';
+    else if (change==='route') app.currentRoute='tagger';
+    else app.resetTaggerApiTest(); // Route cleanup also invalidates a later return to the same page.
+    pending.reject(new Error('old failure'));await test;
+    assert.equal(app.taggerApiTestInfo.state,'');assert.equal(app.taggerApiTesting,false);
+  }
+});
+
+test('a failed connection can be retried and retry clears obsolete suggestions',async()=>{
+  const {app,context}=harness();app.taggerApiSettings.baseUrl='http://a';
+  context.fetch=async()=>{throw new Error('offline');};await app.testTaggerApiConnection();
+  assert.equal(app.taggerApiTestInfo.state,'fail');assert.equal(app.taggerApiTesting,false);
+  const pending=deferred();context.fetch=()=>pending.promise;
+  const retry=app.testTaggerApiConnection();assert.equal(app.taggerApiTestInfo.state,'');
+  pending.resolve(response({models:['online'],count:1}));await retry;
+  assert.equal(app.taggerApiTestInfo.state,'ok');assert.equal(app.taggerApiModelSuggestions[0],'online');
 });
 
 test('legacy autofilled model is cleared but explicit selection persists',()=>{

@@ -28,7 +28,7 @@ def _is_within(path: Path, root: Path) -> bool:
 
 
 def _read_caption_exact(path: Path) -> str:
-    return path.read_text(encoding="utf-8", errors="replace")
+    return path.read_bytes().decode("utf-8")
 
 
 def create_snapshot(dataset_dir: str) -> dict:

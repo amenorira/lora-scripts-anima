@@ -11,7 +11,7 @@ window.trainingShapePreviewMixin = {
   _shapeEstimateBusy: false,
 
   shapePreviewSupported() {
-    return ['anima-lora', 'moss-image-lora'].includes(this.form?.model_train_type);
+    return ['anima-lora', 'moss-image-lora', 'krea2-lora'].includes(this.form?.model_train_type);
   },
 
   // 入口按钮由 training-core.js 的 _getEnvHint('network_module') 追加到字段下方。
@@ -32,7 +32,7 @@ window.trainingShapePreviewMixin = {
       .filter(section => section.key === 'network')
       .flatMap(section => section.fields.map(field => field.key));
     keys.push('model_train_type', 'qwen3', 'save_precision', 'save_model_as',
-      'full_bf16', 'full_fp16', 'cache_text_encoder_outputs', 'optimizer_type');
+      'full_bf16', 'full_fp16', 'cache_text_encoder_outputs', 'optimizer_type', 'fp8_base', 'convrot_int8');
     return Object.fromEntries(keys.filter(key => key in config).map(key => [key, config[key]]));
   },
 
@@ -69,6 +69,7 @@ window.trainingShapePreviewMixin = {
       this.shapeEstimate = result.data;
       const groups = result.data.groups;
       this.shapePreviewSelected = groups.find(g => g.name === 'blocks.*.self_attn.q_proj')?.id
+        || groups.find(g => g.name === 'blocks.*.attn.wq')?.id
         || groups.find(g => g.name === 'layers.*.proj.q')?.id
         || groups.find(g => g.name.startsWith('blocks.*.self_attn.'))?.id || groups[0]?.id || '';
     } catch (error) {
@@ -281,7 +282,7 @@ window.trainingShapePreviewMixin = {
     });
 
     const sections = [
-      { title: t('shapePreview.settingsSection'), detail: `${isLycoris ? 'LyCORIS' : 'sd-scripts'} · ${algoLabel}`, hint: module, rows: settings },
+      { title: t('shapePreview.settingsSection'), detail: `${isLycoris ? 'LyCORIS' : f.model_train_type === 'krea2-lora' ? 'musubi-tuner' : 'sd-scripts'} · ${algoLabel}`, hint: module, rows: settings },
       { title: t('shapePreview.structureSection'), rows: structure },
       { title: t('shapePreview.sizeSection'), rows: size },
     ];
@@ -474,6 +475,26 @@ window.trainingShapePreviewMixin = {
 
   _shapeModuleLabel(group) {
     const t = key => this.t(`shapePreview.${key}`);
+    if (this.form?.model_train_type === 'krea2-lora') {
+      let path = group.name.replace(/^blocks\.\*\./, '');
+      let prefix = '';
+      const fusion = path.match(/^txtfusion\.(layerwise_blocks|refiner_blocks)\.\*\.(.*)$/);
+      if (fusion) {
+        prefix = `${t(fusion[1] === 'layerwise_blocks' ? 'textFusion' : 'textRefiner')} / `;
+        path = fusion[2];
+      }
+      const projection = path.match(/^(attn|mlp)\.(.*)$/);
+      if (projection) {
+        const labels = { wq: t('qProjection'), wk: t('kProjection'), wv: t('vProjection'),
+          wo: t('outputProjection'), gate: t('mlpGate'), up: t('mlpExpand'), down: t('mlpContract') };
+        return { family: prefix + (projection[1] === 'attn' ? t('selfAttention') : 'MLP'),
+          label: labels[projection[2]] || projection[2] };
+      }
+      const families = { first: 'inputProjection', 'last.linear': 'finalLayer',
+        'tmlp.0': 'timeEmbedding', 'tmlp.2': 'timeEmbedding', 'tproj.1': 'timeProjection',
+        'txtmlp.1': 'textEmbedder', 'txtmlp.3': 'textEmbedder', 'txtfusion.projector': 'textFusion' };
+      return { family: t(families[path] || 'otherModules'), label: path };
+    }
     if (/^(layers\.\*\.proj\.|text_embedder\.)/.test(group.name)) {
       const textEmbedder = group.name.startsWith('text_embedder.');
       const path = group.name.replace(/^(layers\.\*\.proj\.|text_embedder\.(?:blocks\.\*\.)?)/, '');

@@ -166,7 +166,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 _IMMUTABLE_PREVIEW_PATHS = {"/api/image-preview", "/api/monitor/preview-metadata"}
 
-# 下载安装的词典资源：与 /anima-ui 同一套规则，内容文件带查询串换 immutable
+# 下载安装的词典内容文件带内容哈希，可长期缓存；manifest 仍需校验。
 _DICTIONARY_ASSET_PREFIX = "/api/tageditor/dictionary/asset/"
 
 
@@ -174,10 +174,9 @@ def apply_cache_policy(url: URL, headers: MutableHeaders) -> None:
     """按资源类型分级缓存策略：
 
     - 生成类预览走自身 ETag（慢速远程链路上不能再被 no-store 冲掉）
-    - 词典内容文件与 /anima-ui 版本化资源同规则；manifest 保持 revalidate
+    - 带内容哈希的词典内容文件长期缓存；manifest 保持 revalidate
     - /api/ 一律 revalidate（no-cache），稳定注册表靠各自 ETag 应答 304
-    - /anima-ui 带 ?v= 内容版本号的资源 immutable 缓存一年；index.html 本身
-      不版本化、保持 revalidate，由它引用新的版本化 URL
+    - 前端资源与 HTML 入口保持 revalidate，不能把手工查询串当成内容哈希
     - 图片/字体/图标短缓存；未版本化的 JS/CSS 不缓存
     """
     path = url.path
@@ -190,11 +189,8 @@ def apply_cache_policy(url: URL, headers: MutableHeaders) -> None:
             headers["Cache-Control"] = "no-cache, max-age=0"
     elif path.startswith("/api/"):
         headers["Cache-Control"] = "no-cache, max-age=0"
-    elif path.startswith("/anima-ui/"):
-        if url.query:
-            headers["Cache-Control"] = "public, max-age=31536000, immutable"
-        else:
-            headers["Cache-Control"] = "no-cache, max-age=0"
+    elif path.startswith("/anima-ui/") or headers.get("content-type", "").startswith("text/html"):
+        headers["Cache-Control"] = "no-cache, max-age=0"
     elif path.endswith((".png", ".ico", ".svg", ".woff2")):
         headers["Cache-Control"] = "public, max-age=3600"
     elif path.endswith((".js", ".css")):

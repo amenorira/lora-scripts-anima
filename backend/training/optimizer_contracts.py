@@ -954,32 +954,35 @@ def validate_optimizer_contract(
 
     if (
         optimizer_type == MUON_OPTIMIZER_TYPE
-        and config.get("model_train_type") not in {"anima-lora", "moss-image-lora"}
+        and config.get("model_train_type") not in {"anima-lora", "moss-image-lora", "krea2-lora"}
     ):
         errors.append(
-            "Muon: currently supported only for Anima and MOSS-Image LoRA / "
-            "当前仅支持 Anima 和 MOSS-Image LoRA"
+            "Muon: supported for Anima, MOSS-Image and Krea 2 LoRA / "
+            "支持 Anima、MOSS-Image 和 Krea 2 LoRA"
         )
 
-    if optimizer_type == LORA_MUON_OPTIMIZER_TYPE and (
+    krea_pair_network = config.get("model_train_type") == "krea2-lora" and (
+        config.get("network_module") == "networks.lora_krea2" or (
+            config.get("network_module") == "lycoris.kohya" and config.get("lycoris_algo") == "lora"))
+    if optimizer_type == LORA_MUON_OPTIMIZER_TYPE and not krea_pair_network and (
         config.get("model_train_type") != "anima-lora"
         or config.get("network_module") != "networks.lora_anima"
     ):
         errors.append(
-            "LoRA-Muon: currently supported only for anima-lora with networks.lora_anima / "
-            "LoRA-Muon 当前仅支持 anima-lora 与 networks.lora_anima"
+            "LoRA-Muon: use Anima native LoRA, Krea native LoRA or Krea LoCon / "
+            "LoRA-Muon 支持 Anima 原生 LoRA、Krea 原生 LoRA 和 Krea LoCon"
         )
 
     if (
-        optimizer_type == LORARITE_OPTIMIZER_TYPE
+        optimizer_type == LORARITE_OPTIMIZER_TYPE and not krea_pair_network
         and (
             config.get("model_train_type") != "anima-lora"
             or config.get("network_module") != "networks.lora_anima"
         )
     ):
         errors.append(
-            "LoRA-RITE: currently supported only for anima-lora with networks.lora_anima / "
-            "当前仅支持 anima-lora 与 networks.lora_anima"
+            "LoRA-RITE: use Anima native LoRA, Krea native LoRA or Krea LoCon / "
+            "LoRA-RITE 支持 Anima 原生 LoRA、Krea 原生 LoRA 和 Krea LoCon"
         )
 
     contract = OPTIMIZER_CONTRACTS.get(optimizer_type)

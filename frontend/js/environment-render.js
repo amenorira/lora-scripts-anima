@@ -14,7 +14,7 @@
 // 模型分组 → 槽位 / 标题 / 无文件时回退仓库（与后端 MODEL_FILES 的 group 字段对应）
 const ENV_MODEL_GROUPS = {
   'Anima': { slot: 'animaModel', titleKey: 'animaModel.animaTitle', titleFallback: 'Anima Models', fallbackRepo: 'circlestone-labs/Anima' },
-  'Krea 2': { slot: 'krea2', titleKey: 'animaModel.krea2Title', titleFallback: 'Krea 2 Models', fallbackRepo: 'Comfy-Org/Krea-2', trainingModel: 'krea2_raw_fp8_scaled.safetensors' },
+  'Krea 2': { slot: 'krea2', titleKey: 'animaModel.krea2Title', titleFallback: 'Krea 2 Models', fallbackRepo: 'Comfy-Org/Krea-2', trainingModel: 'krea2_raw_bf16.safetensors' },
   'MOSS-Image': { slot: 'moss', titleKey: 'animaModel.mossTitle', titleFallback: 'MOSS-Image Models', fallbackRepo: 'Comfy-Org/MOSS-Image', noteKey: 'animaModel.mossNote', noteDetails: ['animaModel.mossTrainingNote', 'animaModel.mossTokenizerNote'] },
   'Train Use': { slot: 'trainUse', titleKey: 'animaModel.trainUseTitle', titleFallback: 'Additional Models', fallbackRepo: 'ame-la/train_use_models', requiredComponents: ['model'] },
 };
@@ -45,6 +45,7 @@ window.environmentRenderMixin = {
       xf: this._renderXfRow(T),
       fa: this._renderFaRow(T),
       triton: this._renderTritonRow(T),
+      mossAccel: this._renderMossAccelRow(T),
       sd: this._renderSdRow(T),
       lycoris: this._renderLycorisRow(T),
       musubi: this._renderMusubiRow(T),
@@ -87,6 +88,7 @@ window.environmentRenderMixin = {
       +       '<div data-env-slot="xf"></div>'
       +       '<div data-env-slot="fa"></div>'
       +       '<div data-env-slot="triton"></div>'
+      +       '<div data-env-slot="mossAccel"></div>'
       +     '</div>'
       +     '<div class="env-col" data-env-anchor-target="core">'
       +       '<div class="env-section-title" data-env-title="core"></div>'
@@ -257,8 +259,8 @@ window.environmentRenderMixin = {
   _renderOverview(T) {
     const xfOk = !!(this.xfStatus && this.xfStatus.installed);
     const trOk = !!(this.tritonStatus && this.tritonStatus.installed);
-    const accelReady = !!(this.xfStatus && this.tritonStatus && this.faStatus);
-    const accelDone = [xfOk, trOk, !!this.faStatus?.installed].filter(Boolean).length;
+    const accelReady = !!(this.xfStatus && this.tritonStatus && this.faStatus && this.mossAccelStatus);
+    const accelDone = [xfOk, trOk, !!this.faStatus?.installed, !!this.mossAccelStatus?.enabled].filter(Boolean).length;
 
     const sdEngine = this.trainingCores?.engines?.find(i => i.id === 'sd_scripts');
     const sdOk = sdEngine ? !!sdEngine.available : !!this.sdStatus?.local;
@@ -274,10 +276,10 @@ window.environmentRenderMixin = {
     const modelDone = new Set(files.filter(f => f.exists).map(f => f.dest_path || f.filename)).size;
 
     const dictionaryState = this.tagDictionaryDataState?.();
-    const hasError = !!(this.faError || this.xfError || this.tritonError || this.sdError || this.trainingCoresError || this.animaModelError
+    const hasError = !!(this.faError || this.xfError || this.tritonError || this.mossAccelError || this.sdError || this.trainingCoresError || this.animaModelError
       || ['failed', 'error'].includes(dictionaryState) || this.tagDictionaryServer?.update?.state === 'error');
     const allLoaded = accelReady && coreReady && modelsReady && dictionaryState !== 'checking';
-    const working = this.faBusy || this.xfBusy || this.tritonBusy || this.animaModelBusy || dictionaryState === 'installing';
+    const working = this.faBusy || this.xfBusy || this.tritonBusy || this.mossAccelBusy || this.animaModelBusy || dictionaryState === 'installing';
 
     // 完成查询不等于能运行所有训练：只报告查询与任务状态。
     let heroState, heroTitle, heroSub;
@@ -336,7 +338,7 @@ window.environmentRenderMixin = {
   //  共享行头：组件用四列，模型/数据用紧凑摘要；操作和详情始终相邻。
   // ═══════════════════════════════════════════════════════
   _renderRowHead(slotId, open, parts) {
-    const component = ['xf', 'fa', 'triton', 'sd', 'lycoris', 'musubi'].includes(slotId);
+    const component = ['xf', 'fa', 'triton', 'mossAccel', 'sd', 'lycoris', 'musubi'].includes(slotId);
     return `<div class="env-row-head${component ? ' env-component-head' : ' env-summary-head'}" role="button" tabindex="0" aria-expanded="${open ? 'true' : 'false'}" data-env-toggle="${slotId}">`
       + `<div class="env-flow-main">`
       +   `<span class="env-row-name">${parts.name}</span>`
@@ -766,6 +768,44 @@ window.environmentRenderMixin = {
     return this._renderRow('musubi', state, open, head, body);
   },
 
+  _renderMossAccelRow(T) {
+    const status = this.mossAccelStatus;
+    const busy = this.mossAccelBusy;
+    const error = this.mossAccelError;
+    const open = this._envCardOpen('mossAccel');
+    const state = error ? 'err' : busy || !status ? 'loading' : status.enabled ? 'ok' : 'muted';
+    const label = error ? T('operationFailed') : busy ? T('mossAccelWorking') : !status ? T('loadingShort')
+      : status.enabled ? T('mossAccelEnabled') : status.reason ? T('mossAccelUnavailable')
+        : status.available ? T('mossAccelDisabled') : T('optionalNotInstalled');
+    let action = '';
+    if (!busy && status) {
+      const command = status.enabled ? 'disable' : status.available ? 'enable' : status.can_install ? 'install' : null;
+      if (command) action = `<button type="button" class="btn btn-sm btn-secondary env-head-btn" data-env-action="moss-accel-${command}">${T(command === 'install' ? 'mossAccelInstall' : command === 'enable' ? 'mossAccelEnable' : 'mossAccelDisable')}</button>`;
+    }
+    const head = this._renderRowHead('mossAccel', open, {
+      name: T('mossAccelTitle'), action,
+      version: '<span class="env-row-version">FLA 0.5.2 · Conv1D 1.7.0</span>',
+      badge: `<span class="env-badge env-badge-${state === 'loading' ? 'loading' : state === 'err' ? 'err' : state === 'ok' ? 'ok' : 'muted'}">${this.esc(label)}</span>`,
+      detailKey: 'mossAccel', detailLabel: T('details'),
+    });
+    let body = `<div class="env-msg env-msg-info">${this.esc(T('mossAccelDesc'))}</div>`
+      + this._renderDetailGroup('FLA', this.esc(T('mossAccelFlaInfo')))
+      + this._renderDetailGroup('Conv', this.esc(T('mossAccelConvInfo')))
+      + `<div class="env-msg">${this.esc(T('mossAccelBenefit'))}</div>`
+      + `<div class="env-msg env-msg-info">${this.esc(T('mossAccelInfo'))}</div>`;
+    if (error) body += this._renderErrorBar(T, error, 'mossAccelInstallLog');
+    if (busy) body += this._renderProgressPanel({ stage: 'working', elapsed: this.mossAccelInstallElapsed,
+      stageLabel: T('mossAccelVerifying') }) + this._renderLog(this.mossAccelInstallLog);
+    if (status?.reason) body += `<div class="env-msg env-msg-info">${this.esc(T('mossAccelReason_' + status.reason))}</div>`;
+    if (status?.verification?.gpu) body += this._renderDetailGroup('GPU', this.esc(status.verification.gpu));
+    if (!busy) {
+      body += `<div class="env-actions"><button type="button" class="btn btn-sm btn-ghost" data-env-action="moss-accel-refresh">${T('refresh')}</button>`;
+      if (status?.installed && status.can_install) body += `<button type="button" class="btn btn-sm btn-ghost" data-env-action="moss-accel-install">${T('mossAccelReinstall')}</button>`;
+      body += '</div>';
+    }
+    return this._renderRow('mossAccel', state, open, head, body);
+  },
+
   // ═══════════════════════════════════════════════════════
   //  Triton 行
   // ═══════════════════════════════════════════════════════
@@ -1066,6 +1106,10 @@ window.environmentRenderMixin = {
         else if (act === 'fa-install') a.faInstall();
         else if (act === 'fa-refresh') a.faRefresh();
         else if (act === 'triton') a.tritonInstall();
+        else if (act === 'moss-accel-install') a.mossAccelInstall();
+        else if (act === 'moss-accel-enable') a.mossAccelSetEnabled(true);
+        else if (act === 'moss-accel-disable') a.mossAccelSetEnabled(false);
+        else if (act === 'moss-accel-refresh') a.mossAccelRefresh();
         else if (act === 'dictionary') a.tagDictionaryDataAction();
         else if (act === 'dictionary-check') a.tagDictionaryCheckUpdate(true);
         else if (act === 'dictionary-redownload') a.tagDictionaryInstall(true);

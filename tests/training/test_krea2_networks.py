@@ -118,7 +118,7 @@ assert 'musubi-tuner' in importlib.util.find_spec('musubi_tuner').origin
     def test_invalid_and_ineffective_settings_fail_before_launch(self):
         cases = [({"network_module": "networks.lokr"}, "network_module"),
                  ({"network_module": []}, "network_module"),
-                 ({"lycoris_algo": "lora"}, "lycoris_algo"),
+                 ({"lycoris_algo": "unknown"}, "lycoris_algo"),
                  ({"lycoris_algo": []}, "lycoris_algo"),
                  ({"lycoris_kernel_backend": []}, "lycoris_kernel_backend"),
                  ({"lokr_factor": 0}, "lokr_factor"), ({"lokr_factor": 1.5}, "lokr_factor"),
@@ -127,7 +127,7 @@ assert 'musubi-tuner' in importlib.util.find_spec('musubi_tuner').origin
                  ({"krea_target_mode": "custom", "krea_target_include": "no-such-layer"}, "no Krea"),
                  ({"krea_target_mode": "custom", "krea_target_exclude": ".*"}, "no Krea"),
                  ({"network_args_custom": "preset=full"}, "managed"),
-                 ({"network_args_custom": "dropout=0.1"}, "unsupported"),
+                 ({"network_args_custom": "dropout=0.1"}, "managed"),
                  ({"network_args_custom": "use_tucker=True"}, "unsupported"),
                  ({"use_scalar": "false"}, "boolean"),
                  ({"fp8_base": True, "dora_wd": True}, "DoRA"),

@@ -26,7 +26,7 @@ import io
 import zipfile
 from pathlib import Path
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Body, Query
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from backend.tageditor.core import (
@@ -127,7 +127,7 @@ async def create_dataset_session(data: dict):
                 "dir_name": session.directory.name or str(session.directory),
                 "recursive": session.recursive,
                 "count": len(session.images),
-                "no_tag_count": sum(1 for item in session.images if not str(item.get("tags", "")).strip()),
+                "no_tag_count": sum(1 for item in session.images if not str(item.get("tags", "")).lstrip("\ufeff").strip()),
                 "tags": list(session.tags),
                 **page,
             },
@@ -137,6 +137,7 @@ async def create_dataset_session(data: dict):
 
 
 @router.get("/tageditor/sessions/{session_id}/images")
+@router.post("/tageditor/sessions/{session_id}/images")
 async def get_dataset_session_page(
     session_id: str,
     page: int = Query(1, ge=1),
@@ -152,6 +153,7 @@ async def get_dataset_session_page(
     sort_by2: str = Query(""),
     sort_asc2: bool = Query(True),
     group_by_dir: bool = Query(False),
+    caption_overrides: dict[str, str] | None = Body(None),
 ):
     try:
         data = await asyncio.to_thread(
@@ -170,6 +172,7 @@ async def get_dataset_session_page(
             sort_by2=sort_by2,
             sort_asc2=sort_asc2,
             group_by_dir=group_by_dir,
+            caption_overrides=caption_overrides,
         )
         return {"status": "success", "data": data}
     except KeyError:

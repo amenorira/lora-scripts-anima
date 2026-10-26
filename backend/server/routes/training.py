@@ -181,27 +181,9 @@ async def parse_training_toml(req: TrainingTomlParseRequest):
                 "不再支持结构化预设文件，请导入扁平训练 TOML"
             )
         )
-    from backend.training.scheduler_config import extract_scheduler_form
-    from backend.training.optimizer_contracts import extract_optimizer_form
-
-    # Native trainer TOMLs omit the application's profile selector. Prefer an
-    # explicit selector, then MOSS-specific fields, then the current UI profile.
-    imported_type = parsed.get("model_train_type")
-    if not imported_type:
-        if parsed.get("network_module") == "networks.lora_generic" or "moss_max_token_length" in parsed:
-            imported_type = "moss-image-lora"
-        else:
-            imported_type = req.model_train_type
+    from backend.training.config_import import import_native_training_form
     try:
-        if imported_type:
-            parsed["model_train_type"] = imported_type
-        parsed = extract_scheduler_form(parsed)
-        if imported_type == KREA2_PROFILE_ID:
-            from backend.training.musubi_krea2 import extract_krea2_optimizer_form
-            parsed = extract_krea2_optimizer_form(parsed)
-        else:
-            parsed = extract_optimizer_form(parsed)
-        parsed = extract_network_form(parsed, model_train_type=imported_type or "anima-lora")
+        parsed = import_native_training_form(parsed, profile_id=req.model_train_type or "anima-lora")
     except ValueError as exc:
         return APIResponseFail(message=str(exc))
     return APIResponseSuccess(data={"data": parsed})
@@ -631,6 +613,7 @@ async def _create_krea2_run(config, gpu_ids, timestamp, form_snapshot, reserved_
     snapshot_form = dict(form_snapshot)
     snapshot_form["model_train_type"] = KREA2_PROFILE_ID
 
+    config["gpu_ids"] = gpu_ids
     validation_errors = validate_krea2_config(config)
     if validation_errors:
         return _krea2_error(validation_errors, "invalidKrea2Config")
@@ -809,11 +792,13 @@ async def _create_krea2_cache_reserved(config: dict, reserved_task):
         )
 
     dataset_config_file = run_dir / "dataset.toml"
+    cache_request_file = run_dir / "cache-request.json"
     dataset_toml = toml_writer.dumps(build_krea2_dataset_config(config))
     try:
         await reserved_task.prepare_cache_manifest(config)
         def _write_cache_files():
             dataset_config_file.write_text(dataset_toml, encoding="utf-8")
+            cache_request_file.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
             _write_run_info(str(run_dir), config, "krea2-cache", timestamp, False)
             write_output_dir_reference(str(run_dir), str(cache_dir))
         await _settled_to_thread(_write_cache_files)
@@ -839,6 +824,17 @@ async def _create_krea2_cache_reserved(config: dict, reserved_task):
             str(config["text_encoder"]),
             "--text-cache-batch-size",
             str(config.get("text_cache_batch_size", 1)),
+            "--latent-cache-batch-size",
+            str(config.get("krea_latent_cache_batch_size", 1)),
+            "--latent-device",
+            str(config.get("krea_latent_cache_device", "auto")),
+            "--text-device",
+            str(config.get("krea_text_cache_device", "auto")),
+            "--num-workers",
+            str(config.get("krea_cache_num_workers", 2)),
+            "--request-file",
+            str(cache_request_file),
+            *(["--vae-tiling"] if config.get("krea_cache_vae_tiling") else []),
         ],
         run_dir=str(run_dir),
         artifact_dir=str(run_dir),

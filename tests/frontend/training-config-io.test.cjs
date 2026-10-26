@@ -2,6 +2,35 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { loadFrontend } = require('./helpers.cjs');
 
+test('real registry model defaults stay separate across all four profiles and field resets', () => {
+  const { window } = loadFrontend(['constants','utils','config','training-core'], {
+    window: {}, document: {getElementById: () => null}, setTimeout, clearTimeout,
+  });
+  window.t=(_key,fallback)=>fallback || '';
+  const app = Object.assign({}, window.utilsMixin, window.trainingCoreMixin, {
+    form: {model_train_type:'anima-lora',pretrained_model_name_or_path:'./custom-anima.safetensors'},
+    formDefaults:{}, _profileFormDrafts:{}, _profileFieldSources:{}, _fieldSources:{},
+    _activeTrainType:'anima-lora',currentRoute:'',
+    renderTrainingForm(){}, setupAutoValueWatchers(){}, setupShowIfWatchers(){}, setupReadonlyWatchers(){},
+    updateToml(){},rebuildForm(){},toast(){},t:(_key,fallback)=>fallback || '',$nextTick:fn=>fn(),
+  });
+  app.switchTrainType('sdxl-lora');
+  assert.equal(app.form.pretrained_model_name_or_path,'');
+  app.form.pretrained_model_name_or_path='./custom-sdxl.safetensors';
+  app.switchTrainType('krea2-lora');
+  assert.equal(app.form.pretrained_model_name_or_path,undefined);
+  assert.ok(app.form.dit);
+  app.switchTrainType('moss-image-lora');
+  assert.equal(app.form.pretrained_model_name_or_path,'');
+  app.switchTrainType('anima-lora');
+  assert.equal(app.form.pretrained_model_name_or_path,'./custom-anima.safetensors');
+  app.switchTrainType('sdxl-lora');
+  assert.equal(app.form.pretrained_model_name_or_path,'./custom-sdxl.safetensors');
+  app.setField=(key,value)=>{app.form[key]=value;};
+  app.resetField('pretrained_model_name_or_path');
+  assert.equal(app.form.pretrained_model_name_or_path,'');
+});
+
 test('flat config import switches profile before filtering fields', async () => {
   const storage = new Map([['anima-form-train-basic', JSON.stringify({
     model_train_type: 'anima-lora', qwen3: './models/stale-qwen.safetensors',

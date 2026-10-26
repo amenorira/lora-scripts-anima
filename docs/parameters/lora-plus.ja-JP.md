@@ -1,13 +1,15 @@
 # LoRA+
 
-> LoRA+ はアダプタの 2 つのパラメータ群に異なる学習率を設定します。パラメータ数は増えません。既定でオフ、有効化したときの既定倍率は `2.0` です。グループ分けと実際の学習率を以下で説明します。
+> LoRA+ はアダプタの 2 つのパラメータ群に異なる学習率を設定し、パラメータ数は維持します。既定でオフ、有効化したときの既定倍率は `2.0` です。
+
+SDXL、Anima、MOSS-Image の対応ネットワークと、Krea 2 のネイティブ LoRA・LyCORIS LoCon で使えます。グループ分けは「対応するネットワーク」、オプティマイザの制約は互換性の表を参照してください。
 
 <!-- doc-anchor: overview -->
 ## 概要
 
 標準 LoRA では `lora_down` が基本学習率を使い、`lora_up` が基本学習率に倍率を掛けた値を使います。
 
-高い倍率ほど学習率の差が広がり、`1.0` なら同じ学習率です。実際の学習率は基本値と倍率の両方で決まります。
+`1.0` なら両群で同じ学習率です。Krea 2 では `1` 未満の正の倍率も指定でき、その場合の `lora_up` は基本値より低い学習率になります。
 
 基本学習率が `2e-5` の例：
 
@@ -17,7 +19,7 @@
 | 2 | `2e-5` | `4e-5` |
 | 4 | `2e-5` | `8e-5` |
 
-基本学習率を上げると両群に影響します。LoRA+ の倍率を上げると指定した群だけに影響します。この 2 つは異なる調整です。
+基本学習率を上げると両群に影響します。LoRA+ の倍率を上げると指定した群だけに影響します。
 
 <!-- doc-anchor: good-cases -->
 ## 試す場面
@@ -27,43 +29,31 @@ LoRA+ を使わない基準の結果ができたら、基本学習率と他の�
 <!-- doc-anchor: ratio-guidance -->
 ## 倍率の選び方
 
-有効化したときの既定倍率は `2.0` です。他の倍率を比べる際は基本学習率を固定し、まず下の表で高倍率群の実際の学習率を計算してください。
-
-| 倍率 | 意味 | 注意点 |
-| --- | --- | --- |
-| `1.0` | 両群で同じ学習率 | LoRA+ の効果なし |
-| `2.0` | 高学習率の群が 2 倍 | 本ツールの既定値 |
-| `4.0` | 高学習率の群が 4 倍 | 基本値に対する実効学習率を確認 |
-| `8.0`–`16.0` | 高学習率の群が 8～16 倍 | 指定する前に実際の学習率を計算する |
+既定の倍率 `2.0` と、両群で同じ学習率の `1.0` を比較します。他の倍率を試す際は基本学習率を固定し、上の例に従って倍率適用後の学習率を計算してください。
 
 論文と sd-scripts 文書の `16` は、それぞれの実験で使った倍率です。本ツールの既定値は `2.0` です。比較する際は、それぞれの基本学習率も確認してください。
 
 <!-- doc-anchor: parameters -->
 ## 設定項目
 
-「LoRA+ を使用」は全体のスイッチです。下の倍率を学習設定に出力するかを決めるもので、スイッチ自体は学習引数ではありません。
+「LoRA+ を使用」がオフなら倍率を出力せず、オンなら専用の倍率欄を使います。SDXL、Anima、MOSS-Image は、追加引数の同名 `loraplus_*` を除去し、画面の値を優先します。Krea 2 は旧設定の追加引数にある共通倍率を画面の項目へ移行します。
 
-オフでは倍率を出力しません。オンでは専用の倍率欄だけを使います。ネットワークの追加引数に同じ `loraplus_*` を指定しても除去され、専用欄を上書きできません。
-
-以下はエクスポートされる学習用 TOML の例です。倍率は `network_args` に記述し、複数の倍率は 1 つのリストにまとめます。画面では専用欄を使ってください。
+以下はエクスポートされる学習用 TOML の例です。倍率は `network_args` に記述し、複数の倍率は 1 つのリストにまとめます。Krea 2 は共通倍率だけを提供します。LoRA+ を使う際は Rank と Alpha を手動で設定し、重みから次元を推定する設定をオフにしてください。
 
 <!-- doc-anchor: loraplus-lr-ratio -->
 ### `loraplus_lr_ratio`
 
-コンポーネント別の指定がない場合に引き継ぐ共通倍率です。既定値 `2.0`、画面での最小値 `1.0`、刻み幅 `0.5` です。
+共通倍率の既定値は `2.0` です。UNet/DiT とテキストエンコーダの個別倍率が空欄なら、この値を使います。
 
-```toml
-network_args = ["loraplus_lr_ratio=2.0"]
-```
+| 学習プロファイル | 画面の最小値 | 刻み幅 |
+| --- | --- | --- |
+| SDXL、Anima、MOSS-Image | `1.0` | `0.5` |
+| Krea 2 | `0.01` | `0.1` |
 
 <!-- doc-anchor: loraplus-unet-lr-ratio -->
 ### `loraplus_unet_lr_ratio`
 
-UNet/DiT の倍率を上書きします。既定は空欄で、共通倍率を引き継ぎます。Anima の DiT バックボーンにも `unet` というパラメータ名を使います。
-
-```toml
-network_args = ["loraplus_unet_lr_ratio=2.0"]
-```
+UNet/DiT の倍率を上書きします。既定は空欄で、共通倍率を引き継ぎます。Anima と MOSS-Image の DiT 主幹にも `unet` というパラメータ名を使います。この項目は sd-scripts 経路用です。
 
 テキストエンコーダだけを学習する場合は効果がありません。
 
@@ -72,28 +62,36 @@ network_args = ["loraplus_unet_lr_ratio=2.0"]
 
 テキストエンコーダの LoRA の倍率を上書きします。既定は空欄で、共通倍率を引き継ぎます。
 
-```toml
-network_args = ["loraplus_text_encoder_lr_ratio=2.0"]
-```
+テキストエンコーダを学習する場合だけ適用します。UNet のみの学習やテキストエンコーダ出力のキャッシュ使用時は無効です。MOSS-Image と Krea 2 のテキストエンコーダは凍結します。変更後はトリガーワードへの応答と、それ以外のプロンプトによる制御を確認してください。
 
-テキストエンコーダを学習する場合だけ適用します。UNet のみの学習やテキストエンコーダ出力のキャッシュ使用時は無効です。変更後はトリガーワードへの応答と、それ以外のプロンプトによる制御を確認してください。
-
-コンポーネント別の倍率と共通倍率のどちらもない場合、そのコンポーネントに LoRA+ は適用しません。
+倍率は「コンポーネント別 → 共通倍率 → そのコンポーネントの LoRA+ を無効」の順に決まります。
 
 | コンポーネント | 優先する設定 | 空欄の場合 |
 | --- | --- | --- |
 | バックボーン | バックボーンの LoRA+ 倍率 | LoRA+ の共通倍率 |
 | テキストエンコーダ | テキストエンコーダの LoRA+ 倍率 | LoRA+ の共通倍率 |
 
+sd-scripts で複数の倍率を出力する例：
+
+```toml
+network_args = [
+  "loraplus_lr_ratio=2.0",
+  "loraplus_unet_lr_ratio=3.0",
+  "loraplus_text_encoder_lr_ratio=1.5",
+]
+```
+
 <!-- doc-anchor: effective-lr -->
 ## 実効学習率
 
-倍率は基本学習率と合わせて判断します。まず学習するコンポーネントの基本学習率を決め、その高学習率グループに倍率を適用します。
+sd-scripts 経路では、各コンポーネントの基本学習率を決め、指定されたパラメータ群に倍率を適用します。
 
 | コンポーネント | 優先する基本学習率 | 空欄の場合 |
 | --- | --- | --- |
 | UNet/DiT | `unet_lr` | `learning_rate` |
 | テキストエンコーダ | `text_encoder_lr` | `learning_rate` |
+
+Krea 2 は `learning_rate` を DiT の基本学習率として使います。
 
 `unet_lr` または `text_encoder_lr` が指定されていれば、その値で計算します。例えば `learning_rate=1e-4`、`unet_lr=8e-5`、UNet/DiT の倍率 `2.0` の場合：
 
@@ -105,7 +103,7 @@ network_args = ["loraplus_text_encoder_lr_ratio=2.0"]
 <!-- doc-anchor: cautions -->
 ## リスクと制限
 
-高倍率群の学習率は、基本値と倍率を掛けた値です。高い倍率を比べる際は保存間隔を短くし、最良の結果が早まるか、後のチェックポイントでポーズや背景が固定されるか、プロンプトへの追従が低下するかを確認してください。
+高い倍率を比べる際は保存間隔を短くし、最良の結果が早まるか、後のチェックポイントでポーズや背景が固定されるか、プロンプトへの追従が低下するかを確認してください。
 
 <span id="effects"></span>
 
@@ -127,7 +125,7 @@ network_args = ["loraplus_text_encoder_lr_ratio=2.0"]
 
 | オプティマイザ | LoRA+ の対応 | 注意点 |
 | --- | --- | --- |
-| AdamW・AdamW8bit・PagedAdamW8bit | 対応 | 群別の学習率を保持するため、倍率を確認しやすい |
+| AdamW・AdamW8bit・PagedAdamW8bit | 対応 | 群別の学習率を保持 |
 | Lion・Lion8bit・PagedLion8bit | 対応 | 群別の学習率を保持 |
 | CAME | 対応 | 群別の学習率を保持 |
 | StableAdamW・Muon・Adan・AdEMAMix・AdEMAMix8bit・SOAP | 対応 | 群別の学習率を保持 |
@@ -148,16 +146,17 @@ network_args = ["loraplus_text_encoder_lr_ratio=2.0"]
 
 次のネットワークで LoRA+ スイッチを使えます。
 
-| ネットワーク | 高学習率のパラメータ | 注意点 |
+| ネットワーク | 倍率を適用するパラメータ | 注意点 |
 | --- | --- | --- |
 | `networks.lora` | `lora_up` | 標準 LoRA+ のグループ分け |
 | `networks.lora_anima` | `lora_up` | Anima 向け標準 LoRA+ |
 | `networks.lora_generic` | `lora_up` | MOSS 向け標準 LoRA+ |
+| `networks.lora_krea2` | `lora_up` | Krea 2 のネイティブ LoRA のグループ分け |
 | `networks.loha` | `hada_w2_a` | sd-scripts の LoHa 向け拡張 |
 | `networks.lokr` | `lokr_w1` | sd-scripts の LoKr 向け拡張 |
-| `lycoris.kohya`（LoCon / algo `lora` のみ） | `lora_up` など | LyCORIS は `lora_up` という名前で分類する。他のアルゴリズム（LoHa・LoKr など）は一致せず、倍率の効果なし |
+| `lycoris.kohya`（LoCon / algo `lora` のみ） | `lora_up` など | Anima と Krea 2 の LoCon は `lora_up` という名前で分類 |
 
-標準 LoHa・LoKr は独自のグループ分けを使います。LyCORIS は LoCon（`lora`）だけに対応します。Krea 2（`networks.lora_krea2`、musubi-tuner 経路）は LoRA+ を提供しません。
+sd-scripts のネイティブ LoHa・LoKr は独自のグループ分けを使います。LyCORIS の LoRA+ は LoCon（`lora`）だけに対応します。
 
 <!-- doc-anchor: tensorboard -->
 ## TensorBoard
@@ -171,6 +170,8 @@ lr/textencoder
 lr/textencoder plus
 ```
 
+Krea 2 は DiT のみを学習し、LoRA+ が有効なら `lr/unet` と `lr/unet plus` を記録します。
+
 Anima のテキストエンコーダ群には番号が付きます。このコンポーネントを学習すると、次の名前を記録します。
 
 ```text
@@ -178,9 +179,7 @@ lr/textencoder 1
 lr/textencoder 1 plus
 ```
 
-`plus` が高学習率群です。ブロック別学習率など複数群の設定では、名前と曲線が増えます。
-
-通常のオプティマイザでは 2 曲線の比で倍率を確認できます。適応型と Schedule-Free は内部でも更新を調整するため、専用の指標と生成サンプルも確認してください。
+`plus` は倍率を適用する群です。ブロック別学習率など複数群の設定では、名前と曲線が増えます。倍率の確認方法は下の「よくある質問」を参照してください。
 
 <!-- doc-anchor: mechanism -->
 ## 仕組み
@@ -204,8 +203,6 @@ LoRA+ がオフなら両群は同じ学習率です。オンでは `lora_down` �
   <div class="doc-equation-expression"><span class="doc-math-var">LR</span><sub>up</sub> = <span class="doc-math-var">LR</span><sub>base</sub> · <span class="doc-math-var">ratio</span></div>
 </div>
 
-倍率は更新の大きさを変え、更新が始まる時点は変えません。`1.0` なら両群で同じ学習率です。
-
 <!-- doc-anchor: faq -->
 ## よくある質問
 
@@ -215,20 +212,12 @@ LoRA+ がオフなら両群は同じ学習率です。オンでは `lora_down` �
 
 **実際に有効か確認するには？**
 
-TensorBoard の記録を有効にし、学習中のコンポーネントの基本群と plus 群の曲線（例：`lr/unet` と `lr/unet plus`）を確認します。通常のオプティマイザで両群を学習していれば、学習率がゼロでない区間の比率は設定した倍率と一致します。群ごとに学習率を適応させる方式は各群の状態に応じて変わるため、固定の比率では判定できません。
-
-**自動で無効になった理由は？**
-
-オプティマイザとスケジューラの互換性の表を確認してください。画面に理由を表示し、未対応の組み合わせはバックエンドでも拒否します。
-
-**テキストエンコーダだけの学習でも使えますか？**
-
-テキストエンコーダだけに適用します。専用の倍率を優先し、空欄なら共通倍率を引き継ぎます。
+TensorBoard の記録を有効にし、学習中のコンポーネントの基本群と plus 群の曲線（例：`lr/unet` と `lr/unet plus`）を確認します。通常のオプティマイザで両群を学習していれば、学習率がゼロでない区間の比率は設定した倍率と一致します。適応型の群別学習率は各群の状態で変わるため、群ごとの曲線を専用指標と生成結果に合わせて評価してください。
 
 <!-- doc-anchor: references -->
 ## 根拠と参考資料
 
-設定の処理と互換性は `backend/training/adapter.py` と `optimizer_contracts.py` で定義しています。グループ分け・初期化・ログ名は同梱の `networks/lora.py`・`lora_anima.py`・`network_base.py` に実装されています。以下は固定リビジョンの参照先です。
+sd-scripts の設定処理は `backend/training/adapter.py`、Krea 2 の倍率とネットワーク制約は `krea2_network.py`・`krea2_optimizers.py`、オプティマイザの互換性は `optimizer_contracts.py` に定義しています。グループ分け・初期化・ログ名は同梱の `networks/lora.py`・`lora_anima.py`・`network_base.py` に実装されています。以下のリンクはリビジョンを固定しています。
 
 - [本プロジェクトの sd-scripts フォーク：train_network_advanced.md（固定リビジョン）](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/docs/train_network_advanced.md)
 - [本プロジェクトの sd-scripts フォーク：loha_lokr.md（固定リビジョン）](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/docs/loha_lokr.md)

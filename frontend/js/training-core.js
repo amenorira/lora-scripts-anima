@@ -111,7 +111,7 @@ window.trainingCoreMixin = {
     { v: 'anima-lora', l: 'Anima LoRA', dk: 'opt.model_train_type_anima-lora' },
     { v: 'moss-image-lora', l: 'MOSS-Image LoRA', dk: 'opt.model_train_type_moss-image-lora' },
     { v: 'sdxl-lora', l: 'SDXL LoRA', dk: 'opt.model_train_type_sdxl-lora' },
-    { v: 'krea2-lora', l: 'Krea 2 LoRA (musubi-tuner)', dk: 'opt.model_train_type_krea2-lora' },
+    { v: 'krea2-lora', l: 'Krea 2 LoRA', dk: 'opt.model_train_type_krea2-lora' },
   ],
   currentTrainTypeDesc: '',
   currentTrainTypeLabel: 'Anima LoRA',
@@ -497,7 +497,18 @@ window.trainingCoreMixin = {
 
   _migrateSdOptionModes(source, trainType) {
     const values = { ...source };
-    if (trainType === 'krea2-lora') return values;
+    if (trainType === 'krea2-lora') {
+      if (typeof values.network_args_custom === 'string') {
+        values.network_args_custom = values.network_args_custom.split(/\r?\n/).filter(line => {
+          const match = line.match(/^\s*loraplus_lr_ratio\s*=\s*([^\s]+)\s*$/);
+          if (!match || !Number.isFinite(Number(match[1])) || Number(match[1]) <= 0) return true;
+          values.enable_loraplus = true;
+          values.loraplus_lr_ratio = Number(match[1]);
+          return false;
+        }).join('\n');
+      }
+      return values;
+    }
     const has = key => values[key] !== undefined && values[key] !== null && values[key] !== '';
     if (!has('sample_interval_mode')) {
       const specified = ['sample_every_n_epochs', 'sample_every_n_steps'].some(key => Object.hasOwn(values, key));
@@ -2022,6 +2033,7 @@ window.trainingCoreMixin = {
       inputHtml = `<label class="toggle"><input type="checkbox" aria-label="${fieldAriaLabel}" :checked="form.${dataKey}" @change="setField('${dataKey}', $event.target.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>`;
     } else if (field.type === 'select') {
       const fc = {};
+      const selectAlign = field.selectAlign === 'left' ? 'left' : 'right';
       const self = this;
       const currentTrainType = this.form.model_train_type || 'anima-lora';
       const currentGroup = window.TRAIN_GROUP_MAP[currentTrainType] || 'all';
@@ -2054,7 +2066,7 @@ window.trainingCoreMixin = {
       }
       const triggerHtml = `<button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle($event)" aria-label="${fieldAriaLabel}" aria-haspopup="listbox" :aria-expanded="open ? 'true' : 'false'"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>`;
       const menuHtml = `<template x-if="open"><div class="anima-select-menu" :class="{ 'anima-select-menu-described': hasDescriptions, 'anima-select-menu-positioned': positioned }"><div class="anima-select-menu-scroll"><template x-for="(group, gIdx) in displayGroups" :key="gIdx"><div class="anima-select-group"><div class="anima-select-group-label" x-show="group.label" x-text="group.label"></div><template x-for="opt in group.options" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-content"><span class="anima-select-option-label" x-text="opt.l" :title="opt.l"></span><span class="anima-select-option-desc" x-show="opt.d" x-text="opt.d"></span></span><svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></div></template></div></template><div x-show="displayGroups.length === 0" style="padding:8px 12px;font-size:12px;color:var(--text-tertiary)">—</div></div></div></template>`;
-      inputHtml = `<div class="anima-select" x-data="animaSelect('${this.escJson(fc)}', '${this.escapeAttr(val ?? '')}')" @click.outside="close()" @anima-select-change="setField('${dataKey}', $event.detail.value)"><input type="hidden" aria-hidden="true" tabindex="-1" x-ref="modelInput" :value="form.${dataKey}">${triggerHtml}${menuHtml}</div>`;
+      inputHtml = `<div class="anima-select" x-data="animaSelect('${this.escJson(fc)}', '${this.escapeAttr(val ?? '')}', {align:'${selectAlign}'})" @click.outside="close()" @anima-select-change="setField('${dataKey}', $event.detail.value)"><input type="hidden" aria-hidden="true" tabindex="-1" x-ref="modelInput" :value="form.${dataKey}">${triggerHtml}${menuHtml}</div>`;
     } else if (field.type === 'textarea') {
       inputHtml = `<textarea aria-label="${fieldAriaLabel}" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" rows="3"${staticReadonlyAttrs}></textarea>`;
       if (dataKey === "positive_prompts") {
@@ -2274,7 +2286,7 @@ window.trainingCoreMixin = {
           <span class="field-hint" x-text="t('timestepPreview.entryHint')"></span>
         </div>`;
       case 'lr_scheduler':
-        return `<div class="lr-preview-entry" x-show="form && form.model_train_type !== 'krea2-lora'">
+        return `<div class="lr-preview-entry">
           <button type="button" class="btn btn-ghost btn-sm" @click="openLrPreview()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19V3"/></svg>
             <span x-text="t('lrPreview.open')">View learning-rate curve</span>
@@ -2539,6 +2551,9 @@ window.trainingCoreMixin = {
     const logitMean = this._timestepPreviewNumber(source.logit_mean, 0.0);
     const logitStd = Math.max(0, this._timestepPreviewNumber(source.logit_std, 1.0));
     const modeScale = this._timestepPreviewNumber(source.mode_scale, 1.29);
+    const rangeMin = isKrea2 ? Math.max(0, Number(source.min_timestep || 0)) / 1000 : 0;
+    const rangeMax = isKrea2 ? Math.min(1000, Number(source.max_timestep ?? 1000)) / 1000 : 1;
+    const rangeWidth = rangeMax - rangeMin;
     const [width, height] = this._timestepPreviewResolution(source.resolution);
     const pointCount = 120;
     const sigmoid = value => 1 / (1 + Math.exp(-Math.max(-60, Math.min(60, value))));
@@ -2569,7 +2584,7 @@ window.trainingCoreMixin = {
     }
 
     const shiftSigma = (u, shift) => u * shift / (1 + (shift - 1) * u);
-    const schedulerSigma = u => shiftSigma(1 - Math.min(999, Math.floor(u * 1000)) / 1000, flowShift);
+    const schedulerSigma = u => shiftSigma(1 - Math.min(999, Math.floor((rangeMin + u * rangeWidth) * 1000)) / 1000, flowShift);
     let fixedSigma = null;
     if (['sigmoid', 'shift', 'flux_shift', 'krea2_shift'].includes(sampling) && sigmoidScale === 0) {
       fixedSigma = shiftSigma(0.5, activeShift);
@@ -2577,6 +2592,9 @@ window.trainingCoreMixin = {
       fixedSigma = schedulerSigma(sigmoid(logitMean));
     } else if (sampling === 'logsnr' && logitStd === 0) {
       fixedSigma = sigmoid(-logitMean / 2);
+    }
+    if (fixedSigma !== null && sampling !== 'sigma' && !source.preserve_distribution_shape) {
+      fixedSigma = rangeMin + fixedSigma * rangeWidth;
     }
 
     // Normal CDF approximation (absolute error < 7.5e-8).
@@ -2619,10 +2637,9 @@ window.trainingCoreMixin = {
       return mass;
     };
 
-    const evaluateCdf = (sigma, offset) => {
+    const unboundedCdf = (sigma, offset) => {
       if (sigma <= 0) return 0;
       if (sigma >= 1) return 1;
-      if (fixedSigma !== null) return sigma < fixedSigma ? 0 : 1;
       if (sampling === 'uniform') return sigma;
       if (sampling === 'sigma') {
         const s = inverseShift(sigma, flowShift);
@@ -2634,6 +2651,18 @@ window.trainingCoreMixin = {
       const appliedOffset = ['sigmoid', 'shift', 'flux_shift'].includes(sampling) ? offset : 0;
       const s = inverseShift(sigma, activeShift);
       return normalCdf((logit(s) - sigmoidScale * appliedOffset) / Math.abs(sigmoidScale));
+    };
+    const evaluateCdf = (sigma, offset) => {
+      if (fixedSigma !== null) return sigma < fixedSigma ? 0 : 1;
+      if (!isKrea2 || !(rangeWidth > 0)) return unboundedCdf(sigma, offset);
+      if (sampling === 'sigma') {
+        // Musubi ranges scheduler indices; its sigma table runs in reverse.
+        return unboundedCdf((sigma - (1 - rangeMax)) / rangeWidth, offset);
+      }
+      if (!source.preserve_distribution_shape) return unboundedCdf((sigma - rangeMin) / rangeWidth, offset);
+      const left = unboundedCdf(rangeMin, offset), mass = unboundedCdf(rangeMax, offset) - left;
+      if (!(mass > 0)) return unboundedCdf(sigma, offset);
+      return Math.max(0, Math.min(1, (unboundedCdf(sigma, offset) - left) / mass));
     };
 
     // Bin-average continuous density: differences of CDF values preserve all
@@ -2765,6 +2794,7 @@ window.trainingCoreMixin = {
     const baselineStats = computeStats(baselineCdf);
     const currentStats = currentCdf === baselineCdf ? baselineStats : computeStats(currentCdf);
     const notes = [];
+    if (isKrea2 && (rangeMin > 0 || rangeMax < 1)) notes.push(this.t('timestepPreview.kreaRangeNote'));
     const shiftIgnored = Math.abs(configuredFlowShift - 1) > 1e-9
       && (isKrea2 ? sampling !== 'shift' : !['shift', 'sigma'].includes(sampling));
     if (shiftIgnored) {
@@ -3447,8 +3477,10 @@ window.trainingCoreMixin = {
   _enforceSharedTrainingUiConstraints() {
     this._enforceCheckpointingUiConstraints();
     if (this.form.model_train_type === 'krea2-lora') {
-      if (this.form.network_module === 'lycoris.kohya' && this.form.fp8_base) this.form.bypass_mode = true;
+      if (this.form.network_module === 'lycoris.kohya' && (this.form.fp8_base || this.form.convrot_int8)) this.form.bypass_mode = true;
       else if (this.form.network_module === 'lycoris.kohya' && this.form.dora_wd) this.form.bypass_mode = false;
+      else if (this.form.network_module === 'lycoris.kohya' && this.form.lycoris_algo === 'lora'
+        && Number(this.form.dropout || 0) > 0) this.form.bypass_mode = true;
       return;
     }
     if (!['anima-lora', 'moss-image-lora', 'sdxl-lora'].includes(this.form.model_train_type)) return;
@@ -3819,13 +3851,13 @@ window.trainingCoreMixin = {
     }
     const loraMuonType = 'vendor.lora_muon.LoRA_Muon';
     const loraMuonNetwork = 'networks.lora_anima';
-    if (key === 'optimizer_type' && value === loraMuonType &&
+    if (this.form.model_train_type !== 'krea2-lora' && key === 'optimizer_type' && value === loraMuonType &&
         this.form.network_module !== loraMuonNetwork) {
       this.form.network_module = loraMuonNetwork;
       this._setFieldSource('network_module', 'auto');
       this.toast(this.t('field.lora_muonNetworkAutoSelected'), 'warning');
     }
-    if (key === 'network_module' && value !== loraMuonNetwork &&
+    if (this.form.model_train_type !== 'krea2-lora' && key === 'network_module' && value !== loraMuonNetwork &&
         this.form.optimizer_type === loraMuonType) {
       this.form.optimizer_type = 'AdamW8bit';
       this._setFieldSource('optimizer_type', 'auto');
@@ -3909,7 +3941,7 @@ window.trainingCoreMixin = {
     }
     if (this.timestepPreviewOpen && [
       'timestep_sampling', 'sigmoid_scale', 'discrete_flow_shift', 'weighting_scheme',
-      'logit_mean', 'logit_std', 'mode_scale', 'resolution'
+      'logit_mean', 'logit_std', 'mode_scale', 'resolution', 'min_timestep', 'max_timestep', 'preserve_distribution_shape'
     ].includes(key)) {
       this.refreshTimestepPreview();
     }
@@ -4023,13 +4055,11 @@ window.trainingCoreMixin = {
       'lr_scheduler', 'lr_warmup_steps', 'lr_scheduler_num_cycles', 'lr_scheduler_power',
       'lr_decay_steps', 'lr_scheduler_timescale', 'lr_scheduler_min_lr_ratio',
       'warmup_type', 'decay_type', 'step_rules',
-      'network_train_unet_only', 'network_train_text_encoder_only', 'adafactor_relative_step'
+      'network_module', 'lycoris_algo', 'enable_loraplus', 'loraplus_lr_ratio',
+      'network_train_unet_only', 'network_train_text_encoder_only', 'adafactor_relative_step',
+      'krea_adafactor_relative_step', 'krea_training_duration_mode', 'max_train_steps'
     ].includes(key)) {
-      if (key === 'model_train_type' && value === 'krea2-lora') {
-        this.closeLrPreview();
-      } else {
-        this.refreshLrPreview();
-      }
+      this.refreshLrPreview();
     }
 
     // The error node is reactive; rebuilding the form here would replace the
@@ -4131,8 +4161,10 @@ window.trainingCoreMixin = {
 
   _defaultLrTimescale() {
     const warmup = Number(this.form.lr_warmup_steps) || 0;
-    const steps = Number(this.stepEstimate?.total_steps) || 10000;
-    const processes = Math.max(1, Number(this.stepEstimate?.gpu_processes) || 1);
+    const explicitSteps = this.form.model_train_type === 'krea2-lora' && this.form.krea_training_duration_mode === 'steps';
+    const steps = Number(explicitSteps ? this.form.max_train_steps : this.stepEstimate?.total_steps) || 10000;
+    const processes = Math.max(1, Number(this.stepEstimate?.gpu_processes)
+      || (Array.isArray(this.form.gpu_ids) ? this.form.gpu_ids.length : 1));
     const warmupSteps = warmup > 0 && warmup < 1 ? Math.floor(warmup * steps * processes) : warmup;
     return warmupSteps > 0 ? warmupSteps : 10000;
   },
@@ -4301,8 +4333,25 @@ window.trainingCoreMixin = {
   _kreaOptionErrors() {
     if (this.form.model_train_type !== 'krea2-lora') return {};
     const errors = {};
-    if (this.form.network_module === 'lycoris.kohya' && this.form.fp8_base && this.form.dora_wd) {
+    if (this.form.krea_attention_backend === 'xformers' && this.form.krea_split_attn === 'false') {
+      errors.krea_split_attn = this.t('field.split_attnXformersLocked');
+    }
+    if ((this.form.network_module === 'networks.lora_krea2' || this.form.lycoris_algo === 'lora')
+        && this.form.enable_loraplus && this.form.dim_from_weights) {
+      errors.dim_from_weights = this.t('field.krea_loraplus_structureConflict');
+    }
+    if (this.form.network_module === 'lycoris.kohya' && (this.form.fp8_base || this.form.convrot_int8) && this.form.dora_wd) {
       errors.dora_wd = this.t('field.krea_dora_fp8Conflict');
+    }
+    if (this.form.network_module === 'lycoris.kohya' && this.form.lycoris_algo === 'lora'
+      && this.form.dora_wd && Number(this.form.dropout || 0) > 0) {
+      errors.dropout = this.t('field.krea_locon_dropoutHint');
+    }
+    if (['vendor.lora_muon.LoRA_Muon', 'pytorch_optimizer.LoRARite'].includes(this.form.optimizer_type)) {
+      if (this.form.network_module === 'lycoris.kohya'
+        && (this.form.lycoris_algo !== 'lora' || this.form.use_scalar || this.form.dora_wd)) {
+        errors.optimizer_type = this.t('field.krea_paired_optimizerHint');
+      }
     }
     if (this.form.krea_target_mode === 'custom' && !String(this.form.krea_target_include || '').trim()) {
       errors.krea_target_include = this.t('common.fieldRequired');
@@ -4314,6 +4363,14 @@ window.trainingCoreMixin = {
     if (this.form.enable_krea_samples && String(this.form.turbo_dit || '').trim()
         && Number(this.form.blocks_to_swap || 0) > 0) {
       errors.turbo_dit = this.t('field.kreaTurboBlockSwapConflict');
+    }
+    if (this.form.fp8_base && this.form.convrot_int8) errors.convrot_int8 = this.t('field.kreaQuantizationConflict');
+    if (this.form.enable_krea_samples && String(this.form.turbo_dit || '').trim()) {
+      if (this.form.convrot_int8) errors.turbo_dit = this.t('field.kreaTurboQuantizationConflict');
+      if (String(this.form.turbo_lora || '').trim()) errors.turbo_lora = this.t('field.kreaTurboSourceConflict');
+    }
+    if (!(Number(this.form.min_timestep ?? 0) < Number(this.form.max_timestep ?? 1000))) {
+      errors.max_timestep = this.t('field.kreaTimestepRangeError');
     }
     return errors;
   },
@@ -4341,7 +4398,7 @@ window.trainingCoreMixin = {
   },
 
   _muonOptionErrors() {
-    if (this.form.optimizer_type !== 'Muon') return {};
+    if (!['Muon', 'torch.optim.Muon'].includes(this.form.optimizer_type)) return {};
     const errors = {};
     const rawMomentum = this.form.muon_momentum;
     if (rawMomentum !== undefined && rawMomentum !== null && rawMomentum !== '') {
@@ -4417,7 +4474,7 @@ window.trainingCoreMixin = {
       }
     }
 
-    if (this.form.model_train_type !== 'krea2-lora' && this.form.lr_scheduler === 'piecewise_constant'
+    if (this.form.lr_scheduler === 'piecewise_constant'
       && !this._parseStepRules(this.form.step_rules)) {
       errors.step_rules = this.t('field.step_rulesError');
     }

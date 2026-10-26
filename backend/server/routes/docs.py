@@ -37,9 +37,9 @@ _DOCUMENTS = {
             "ja-JP": "オプティマイザ",
         },
         "summaries": {
-            "zh-CN": "面向 Anima 与 SDXL LoRA 的优化器选择、关键参数、场景起点和对照测试方法。",
-            "en-US": "Optimizer choices, key controls, starting points, and comparison methods for Anima and SDXL LoRA training.",
-            "ja-JP": "Anima・SDXL の LoRA 学習におけるオプティマイザの選び方、主要パラメータ、初期設定と比較方法。",
+            "zh-CN": "优化器选择、各训练类型的默认值、关键参数与对照方法。",
+            "en-US": "Optimizer choices, profile defaults, key controls, and comparison methods.",
+            "ja-JP": "オプティマイザの選び方、各プロファイルの既定値、主要設定と比較方法。",
         },
         "files": {
             "zh-CN": "parameters/optimizers.zh-CN.md",

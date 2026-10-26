@@ -17,9 +17,6 @@
    词典补全和悬停说明消失，Tag Editor 本身照常工作。
    ================================================================ */
 
-// Worker 脚本的版本号：Worker 地址带 ?v= 才会命中一年 immutable 缓存，
-// 所以改了 tag-dictionary.worker.js 必须同时改这里（其余三个文件在 index.html 里带 ?v=）。
-var TD_ASSET_VERSION = '20261007-unified-suggest3';
 var TD_BASE = '/api/tageditor/dictionary/asset/';
 var TD_STATUS_URL = '/api/tageditor/dictionary';
 var TD_INSTALL_URL = '/api/tageditor/dictionary/install';
@@ -523,7 +520,7 @@ window.tagDictionaryMixin = {
     state.status = 'loading';
     var self = this;
     try {
-      state.worker = new Worker('/anima-ui/js/tag-dictionary.worker.js?v=' + TD_ASSET_VERSION);
+      state.worker = new Worker('/anima-ui/js/tag-dictionary.worker.js');
     } catch (e) {
       this.tagDictionaryFailed = true;
       state.status = 'failed';

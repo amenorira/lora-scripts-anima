@@ -63,7 +63,7 @@ def save_caption_transaction(
             caption_path = candidates[0] if candidates else image_path.with_suffix(".txt")
             try:
                 before_text, current_revision, _ = read_caption_snapshot(caption_path)
-            except OSError as exc:
+            except (OSError, UnicodeError) as exc:
                 failed.append({"path": str(image_path), "reason": str(exc)})
                 continue
             before_exists = current_revision != "missing"
@@ -71,7 +71,7 @@ def save_caption_transaction(
             if expected_revision is not None and expected_revision != current_revision:
                 conflicts.append({"path": str(image_path), "reason": "标签文件已被外部修改", "revision": current_revision})
                 continue
-            after_text = str(item.get("tags", "")).strip()
+            after_text = str(item.get("tags", ""))
             if before_text == after_text:
                 skipped_paths.append(str(image_path))
                 revisions[str(image_path)] = current_revision
@@ -232,7 +232,7 @@ def restore_legacy_backups(dataset_dir: Path) -> dict:
                 continue
             before_exists = target.exists()
             before_text = read_caption_snapshot(target)[0] if before_exists else ""
-            after_text = backup.read_text(encoding="utf-8")
+            after_text = read_caption_snapshot(backup)[0]
             if before_exists and before_text == after_text:
                 continue
             changes.append({

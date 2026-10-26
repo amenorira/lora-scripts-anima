@@ -1,9 +1,18 @@
-// sd-scripts scheduler preview; composed into the training UI by app.js.
+// Scheduler preview for sd-scripts and Musubi; composed into the training UI by app.js.
 window.trainingLrPreviewMixin = {
   lrPreviewComponent: 'unet',
 
   lrPreviewComponents(values) {
     const source = values || this.form || {};
+    if (source.model_train_type === 'krea2-lora') {
+      const supportsLoraPlus = source.network_module === 'networks.lora_krea2'
+        || (source.network_module === 'lycoris.kohya' && source.lycoris_algo === 'lora');
+      if (supportsLoraPlus && source.enable_loraplus) {
+        return [{ value: 'unet', label: this.t('lrPreview.loraDownComponent') },
+          { value: 'unet_plus', label: this.t('lrPreview.loraUpComponent') }];
+      }
+      return [{ value: 'unet', label: 'DiT' }];
+    }
     const options = [];
     if (source.network_train_text_encoder_only !== true) options.push({ value: 'unet', label: 'DiT / U-Net' });
     if (source.network_train_unet_only !== true) options.push({ value: 'text', label: this.t('lrPreview.textEncoderComponent') });
@@ -36,6 +45,22 @@ window.trainingLrPreviewMixin = {
     const { scheduler, warmupFraction, cycles, power, endRatio, minRatio, decayFraction, totalSteps, timescale } = params;
     const p = Math.max(0, Math.min(1, progress));
     if (scheduler === 'constant') return 1;
+    if (scheduler === 'rex') {
+      // Musubi RexLR uses one-based warmup and a special completion step.
+      // These branches use shared absolute rates, while decay scales each group.
+      const absoluteRateScale = params.rexAbsoluteRateScale ?? 1;
+      const step = Math.round(p * totalSteps);
+      const warmupSteps = Math.round(warmupFraction * totalSteps);
+      if (warmupSteps === 1 && step === 1) return minRatio * absoluteRateScale;
+      if (warmupSteps > 1 && step >= 1 && step <= warmupSteps - 1) {
+        return (minRatio + (1 - minRatio) * (step - 1) / (warmupSteps - 1)) * absoluteRateScale;
+      }
+      const remaining = totalSteps - warmupSteps;
+      const after = step - warmupSteps;
+      if (after >= remaining || after === -1 || remaining <= 0) return minRatio * absoluteRateScale;
+      const z = (remaining - ((after % remaining + remaining) % remaining)) / remaining;
+      return minRatio + (1 - minRatio) * z / (0.1 + 0.9 * z);
+    }
     if (scheduler === 'piecewise_constant') {
       if (!params.stepRules) return NaN;
       for (const rule of params.stepRules.boundaries) {
@@ -134,51 +159,62 @@ window.trainingLrPreviewMixin = {
 
   _buildLrPreview(values) {
     const source = values || this.form || {};
+    const isKrea2 = source.model_train_type === 'krea2-lora';
     const scheduler = String(source.lr_scheduler || 'constant');
     const schedulerLabel = this._fieldOptionLabel('lr_scheduler', scheduler, scheduler);
     const optimizerLabel = this._fieldOptionLabel('optimizer_type', source.optimizer_type, source.optimizer_type);
     const baseRateText = String(source.learning_rate ?? '').trim();
-    const unetRateText = String(source.unet_lr ?? '').trim();
-    const trainTextEncoder = source.network_train_unet_only !== true;
+    const unetRateText = isKrea2 ? '' : String(source.unet_lr ?? '').trim();
+    const trainTextEncoder = !isKrea2 && source.network_train_unet_only !== true;
     const textEncoderRateText = String(source.text_encoder_lr ?? '').trim();
     const components = this.lrPreviewComponents(source);
     const selectedComponent = components.find(option => option.value === this.lrPreviewComponent)?.value || components[0]?.value;
-    const chartUnet = selectedComponent === 'unet';
+    const loraUp = isKrea2 && selectedComponent === 'unet_plus';
+    const chartUnet = selectedComponent === 'unet' || selectedComponent === 'unet_plus';
     const chartComponent = chartUnet
-      ? this.t('lrPreview.unetComponent', 'U-Net / DiT')
+      ? (isKrea2 ? components.find(option => option.value === selectedComponent)?.label : this.t('lrPreview.unetComponent', 'U-Net / DiT'))
       : (trainTextEncoder ? this.t('lrPreview.textEncoderComponent', 'Text Encoder') : this.t('lrPreview.learningRate'));
     const chartRateText = chartUnet
       ? (unetRateText || baseRateText)
       : (textEncoderRateText || baseRateText);
-    const chartRate = this._lrPreviewNumber(chartRateText, 0);
-    const totalSteps = this.stepEstimate && Number(this.stepEstimate.total_steps || 0) > 0
+    const groupRateScale = loraUp ? this._lrPreviewNumber(source.loraplus_lr_ratio, 0) : 1;
+    const chartRate = this._lrPreviewNumber(chartRateText, 0) * groupRateScale;
+    const totalSteps = isKrea2 && source.krea_training_duration_mode === 'steps'
+      ? Math.max(0, Number(source.max_train_steps) || 0)
+      : this.stepEstimate && Number(this.stepEstimate.total_steps || 0) > 0
       ? Number(this.stepEstimate.total_steps || 0)
       : 0;
-    // Accelerate advances the sd-scripts scheduler once per training process.
+    // Both trainers multiply the scheduler duration by the process count.
     const estimatedSteps = !totalSteps && scheduler === 'inverse_sqrt' ? 10000 : 0;
-    const schedulerSteps = (totalSteps || estimatedSteps) * Math.max(1, Number(this.stepEstimate?.gpu_processes) || 1);
-    const warmup = this._lrPreviewWarmup(scheduler === 'piecewise_constant' ? { lr_warmup_steps: 0 } : source, schedulerSteps);
+    const schedulerSteps = (totalSteps || estimatedSteps) * Math.max(1,
+      Number(this.stepEstimate?.gpu_processes) || (Array.isArray(source.gpu_ids) ? source.gpu_ids.length : 1));
+    const warmup = this._lrPreviewWarmup(scheduler === 'piecewise_constant' || (isKrea2 && scheduler === 'constant')
+      ? { lr_warmup_steps: 0 } : source, schedulerSteps);
     const cycles = String(source.lr_scheduler_num_cycles ?? '').trim();
     const power = String(source.lr_scheduler_power ?? '').trim();
     const pointCount = 160;
     const optimizer = String(source.optimizer_type || '').toLowerCase();
     const internal = optimizer.endsWith('schedulefree') || optimizer.endsWith('.emosens')
-      || optimizer.endsWith('automagic')
-      || (optimizer === 'adafactor' && source.adafactor_relative_step !== false);
+      || optimizer.endsWith('automagic') || optimizer.endsWith('automagic3')
+      || (optimizer === 'adafactor' && source[isKrea2 ? 'krea_adafactor_relative_step' : 'adafactor_relative_step'] !== false);
     const params = {
       scheduler, warmupFraction: warmup.fraction,
+      rexAbsoluteRateScale: 1 / groupRateScale,
       warmupType: source.warmup_type ?? 'linear',
       decayType: source.decay_type ?? 'cosine',
       stepRules: scheduler === 'piecewise_constant' ? this._parseStepRules(source.step_rules) : null,
       cycles: this._lrPreviewNumber(cycles || 1, 1),
       power: this._lrPreviewNumber(power || 1, 1),
       endRatio: 1e-7 / this._lrPreviewNumber(baseRateText, 0),
-      minRatio: this._lrPreviewNumber(source.lr_scheduler_min_lr_ratio ?? 0, NaN),
+      minRatio: String(source.lr_scheduler_min_lr_ratio ?? '').trim() === ''
+        ? (scheduler === 'rex' ? 0.01 : 0) : this._lrPreviewNumber(source.lr_scheduler_min_lr_ratio, NaN),
       totalSteps: schedulerSteps,
       timescale: String(source.lr_scheduler_timescale ?? '').trim() === ''
         ? (Math.floor(warmup.fraction * schedulerSteps) || 10000)
         : this._lrPreviewNumber(source.lr_scheduler_timescale, NaN),
     };
+    const stepCountRequiredNote = this.t(isKrea2
+      ? 'lrPreview.kreaStepCountRequiredNote' : 'lrPreview.stepCountRequiredNote');
     const decaySteps = this._lrPreviewNumber(source.lr_decay_steps ?? 0, NaN);
     params.decayFraction = decaySteps < 1
       ? (schedulerSteps > 0 ? Math.floor(decaySteps * schedulerSteps) / schedulerSteps : decaySteps)
@@ -186,14 +222,14 @@ window.trainingLrPreviewMixin = {
     let unavailable = '';
     if (internal) unavailable = this.t('lrPreview.internalNote');
     else if (!['constant', 'constant_with_warmup', 'linear', 'cosine', 'cosine_with_restarts', 'polynomial',
-      'inverse_sqrt', 'cosine_with_min_lr', 'warmup_stable_decay', 'piecewise_constant'].includes(scheduler)) {
+      'inverse_sqrt', 'cosine_with_min_lr', 'warmup_stable_decay', 'piecewise_constant', ...(isKrea2 ? ['rex'] : [])].includes(scheduler)) {
       unavailable = this.t('lrPreview.unsupportedNote');
     } else if (!(chartRate > 0) || (scheduler === 'constant' && warmup.visible)
       || (scheduler === 'polynomial' && (!(params.endRatio > 0 && params.endRatio < 1)
         || !(params.power > 0) || warmup.fraction === 1))
       || (['cosine_with_restarts', 'cosine_with_min_lr', 'warmup_stable_decay'].includes(scheduler)
         && !(Number.isInteger(params.cycles) && params.cycles >= 1))
-      || (['cosine_with_min_lr', 'warmup_stable_decay'].includes(scheduler)
+      || (['cosine_with_min_lr', 'warmup_stable_decay', 'rex'].includes(scheduler)
         && !(params.minRatio >= 0 && params.minRatio <= 1))
       || (scheduler === 'inverse_sqrt' && !(Number.isInteger(params.timescale) && params.timescale > 0))
       || (scheduler === 'warmup_stable_decay' && (!(decaySteps >= 0)
@@ -201,18 +237,24 @@ window.trainingLrPreviewMixin = {
         || warmup.fraction + params.decayFraction > 1
         || !['linear', 'cosine', '1-sqrt'].includes(params.warmupType)
         || !['linear', 'cosine', '1-sqrt'].includes(params.decayType)))
+      || (scheduler === 'rex' && warmup.fraction > 1)
       || (scheduler === 'piecewise_constant' && !params.stepRules)) {
       unavailable = this.t('lrPreview.invalidNote');
     }
     if (!unavailable && !totalSteps && scheduler === 'warmup_stable_decay' && decaySteps >= 1) {
-      unavailable = this.t('lrPreview.stepCountRequiredNote');
+      unavailable = stepCountRequiredNote;
     }
     if (!unavailable && !totalSteps && scheduler === 'piecewise_constant' && params.stepRules.boundaries.length) {
-      unavailable = this.t('lrPreview.stepCountRequiredNote');
+      unavailable = stepCountRequiredNote;
     }
+    if (!unavailable && !totalSteps && scheduler === 'rex') unavailable = stepCountRequiredNote;
     const evaluateMultiplier = progress => this._lrPreviewMultiplier(progress, params);
-    const peak = scheduler === 'piecewise_constant' && params.stepRules
+    let peak = scheduler === 'piecewise_constant' && params.stepRules
       ? Math.max(1, params.stepRules.finalMultiplier, ...params.stepRules.boundaries.map(rule => rule.multiplier)) : 1;
+    if (scheduler === 'rex' && !unavailable) {
+      peak = Math.max(peak, evaluateMultiplier(1),
+        evaluateMultiplier(Math.max(0, warmup.fraction - 1 / schedulerSteps)));
+    }
     const yUpper = peak * 1.08;
     // A terminal scheduler jump is not a decay interval. Draw up to its left
     // limit; hover still reports the exact value at the completion boundary.
@@ -220,6 +262,11 @@ window.trainingLrPreviewMixin = {
       && Math.abs(evaluateMultiplier(1 - 1e-10) - evaluateMultiplier(1)) > 1e-6;
     // Include exact warmup and restart boundaries; avoid diagonal restart ramps.
     const positions = new Set(Array.from({ length: pointCount }, (_, i) => i / (pointCount - 1)));
+    if (scheduler === 'rex' && !unavailable) {
+      for (const step of [1, Math.round(warmup.fraction * schedulerSteps) - 1, Math.round(warmup.fraction * schedulerSteps)]) {
+        if (step >= 0 && step <= schedulerSteps) positions.add(step / schedulerSteps);
+      }
+    }
     if (scheduler === 'piecewise_constant' && !unavailable) {
       for (const rule of params.stepRules.boundaries) {
         const boundary = rule.endStep / schedulerSteps;
@@ -269,12 +316,9 @@ window.trainingLrPreviewMixin = {
     });
     const notes = [];
     if (unavailable) notes.push(unavailable);
-    if (!unavailable) notes.push(this.t('lrPreview.baseGroupNote'));
+    if (!unavailable) notes.push(this.t(isKrea2 ? 'lrPreview.kreaBaseGroupNote' : 'lrPreview.baseGroupNote'));
     if (endpointJump) notes.push(this.t('lrPreview.endpointJumpNote'));
-    if (!internal && (optimizer.startsWith('prodigy') || optimizer === 'adafactor')) {
-      notes.push(this.t('lrPreview.adaptiveNote'));
-    }
-    if (!totalSteps) {
+    if (!totalSteps && !unavailable) {
       notes.push(this.t('lrPreview.noStepNote', 'Total steps are unavailable, so the x-axis shows 0–100% training progress.'));
       if (estimatedSteps) notes.push(this.t('lrPreview.estimatedStepsNote')
         .replace('{steps}', estimatedSteps.toLocaleString()));
@@ -292,7 +336,8 @@ window.trainingLrPreviewMixin = {
       component: selectedComponent,
       componentLabel: chartComponent,
       components,
-      rateSource: chartUnet ? (unetRateText ? 'unet_lr' : 'learning_rate') : (textEncoderRateText ? 'text_encoder_lr' : 'learning_rate'),
+      rateSource: loraUp ? 'learning_rate × loraplus_lr_ratio'
+        : chartUnet ? (unetRateText ? 'unet_lr' : 'learning_rate') : (textEncoderRateText ? 'text_encoder_lr' : 'learning_rate'),
       chartLabel: `${this.t('lrPreview.learningRateAxis', 'Learning rate')} · ${chartComponent}`,
       totalSteps,
       totalStepsText: totalSteps > 0 ? Number(totalSteps).toLocaleString() : '',
@@ -441,7 +486,6 @@ window.trainingLrPreviewMixin = {
   },
 
   openLrPreview() {
-    if (String(this.form?.model_train_type || '') === 'krea2-lora') return;
     this.lrPreviewData = this._buildLrPreview(null);
     this._openManagedModal('lrPreviewOpen');
   },
@@ -451,10 +495,6 @@ window.trainingLrPreviewMixin = {
   },
 
   refreshLrPreview() {
-    if (String(this.form?.model_train_type || '') === 'krea2-lora') {
-      this.closeLrPreview();
-      return;
-    }
     this.lrPreviewData = this._buildLrPreview(null);
   },
 

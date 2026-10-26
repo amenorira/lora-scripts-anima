@@ -26,7 +26,12 @@ from backend.training.krea2_network import (
     KREA2_PRESET_FILENAME, build_krea2_network_args, validate_krea2_network,
 )
 from backend.training.metrics_config import training_metric_fields
-from backend.training.optimizer_contracts import FormArgument, collect_optimizer_args, extract_optimizer_form
+from backend.training.scheduler_config import normalize_scheduler_config, validate_scheduler_config
+from backend.training.optimizer_contracts import FormArgument, extract_optimizer_form
+from backend.training.krea2_optimizers import (
+    ARGUMENTS as _SHARED_KREA2_OPTIMIZER_ARGUMENTS, collect_arguments as _collect_krea2_arguments,
+    extend_fields as _extend_optimizer_fields, validate_optimizer as _validate_krea2_optimizer,
+)
 from backend.training.musubi_runtime import MUSUBI_RUNTIME_PACKAGES, shared_runtime_status
 from backend.training.optimizer_metadata import (
     KREA2_OPTIMIZER_AUTO_VALUES,
@@ -43,20 +48,22 @@ from backend.training.optimizer_metadata import (
 )
 
 
-KREA2_TRAINER_FILE = "./vendor/musubi-tuner/krea2_train_network.py"
+KREA2_TRAINER_FILE = "./backend/training/krea2_train.py"
 KREA2_CACHE_RUNNER_FILE = "./backend/training/krea2_cache_runner.py"
 KREA2_PROFILE_ID = "krea2-lora"
 KREA2_AUTO_CACHE_DIR_NAME = ".krea2-cache"
 KREA2_CACHE_MANIFEST_NAME = ".krea2-cache.json"
 _LEGACY_KREA2_CACHE_MANIFEST_NAMES = (".anima-krea2-cache.json",)
+# Musubi uses its short architecture ID in filenames; "krea2" is metadata only.
+_KREA2_CACHE_ARCHITECTURE = "kr2"
 
 _IMAGE_EXTENSIONS = {".bmp", ".jpeg", ".jpg", ".png", ".webp", ".avif"}
 _ATTENTION_FLAGS = {
     "sdpa": "sdpa",
     "flash_attn": "flash_attn",
-    "sage_attn": "sage_attn",
     "xformers": "xformers",
 }
+_KREA2_MIXED_PRECISIONS = ("bf16", "fp16")
 _KREA2_TRAINING_DURATIONS = {"epochs", "steps"}
 _KREA2_LR_SCHEDULERS = {
     "constant",
@@ -68,6 +75,7 @@ _KREA2_LR_SCHEDULERS = {
     "inverse_sqrt",
     "cosine_with_min_lr",
     "warmup_stable_decay",
+    "piecewise_constant",
     # Kept for old saved presets.  musubi selects this internally for
     # AdaFactor relative-step mode; it is deliberately not offered as a
     # general UI scheduler.
@@ -114,6 +122,7 @@ _KREA2_EPS_OPTIMIZER_ORDER = tuple(
 _KREA2_MIN_LR_RATIO_SCHEDULERS = {"cosine_with_min_lr", "warmup_stable_decay", "rex"}
 _KREA2_NUM_CYCLES_SCHEDULERS = {"cosine_with_restarts", "cosine_with_min_lr", "warmup_stable_decay"}
 _KREA2_LEGACY_OPTIMIZER_ALIASES = {
+    **{entry.label.lower(): entry.selector for entry in optimizer_entries(KREA2_PROFILE)},
     # These bare values were valid selectors in the sd-scripts form, but
     # musubi resolves non-dotted names from torch.optim.  Translate only the
     # known values to their real musubi-importable class paths.
@@ -136,6 +145,8 @@ _KREA2_HIDDEN_LEGACY_OPTIMIZERS = frozenset(
 )
 _KREA2_CURATED_OPTIMIZERS = _KREA2_VISIBLE_OPTIMIZERS | _KREA2_HIDDEN_LEGACY_OPTIMIZERS
 _KREA2_OPTIMIZER_ARGUMENTS = {
+    **_SHARED_KREA2_OPTIMIZER_ARGUMENTS,
+    "krea_adamw_fused": FormArgument("fused", {"AdamW"}),
     "krea_optimizer_weight_decay": FormArgument("weight_decay", _KREA2_CURATED_OPTIMIZERS),
     "krea_optimizer_betas": FormArgument("betas", _KREA2_BETA_OPTIMIZERS),
     "krea_optimizer_eps": FormArgument("eps", _KREA2_EPS_OPTIMIZERS),
@@ -169,7 +180,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
     {
         "key": "dit",
         "type": "text",
-        "default": "./models/krea2_raw_fp8_scaled.safetensors",
+        "default": "./models/krea2_raw_bf16.safetensors",
         "section": "model",
         "desc_key": "field.krea_dit",
         "hint_key": "field.krea_ditHint",
@@ -191,7 +202,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
     {
         "key": "text_encoder",
         "type": "text",
-        "default": "./models/qwen3vl_4b_fp8_scaled.safetensors",
+        "default": "./models/qwen3vl_4b_bf16.safetensors",
         "section": "model",
         "desc_key": "field.krea_text_encoder",
         "hint_key": "field.krea_text_encoderHint",
@@ -241,9 +252,10 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "required": True,
         "profiles": [KREA2_PROFILE_ID],
     },
-    shared_training_field('enable_bucket', default=True, profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('enable_bucket', default=True, hint_key='field.krea_enable_bucketHint', profiles=[KREA2_PROFILE_ID]),
     # The cache fingerprint includes this flag even without buckets. Keep its value in the UI payload.
-    shared_training_field('bucket_no_upscale', default=True, show_if=None, profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('bucket_no_upscale', default=True, show_if=None,
+                          hint_key='field.krea_bucket_no_upscaleHint', profiles=[KREA2_PROFILE_ID]),
     {
         "key": "krea_num_repeats",
         "type": "number",
@@ -262,14 +274,14 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "network",
         "desc_key": "field.network_module",
         "options": [
-            {"v": KREA2_NETWORK_MODULE, "l": "LoRA", "dk": "opt.krea_network_module_lora"},
-            {"v": KREA2_LYCORIS_MODULE, "l": "LyCORIS (LoKr / LoHa)", "dk": "opt.krea_network_module_lycoris"},
+            {"v": KREA2_NETWORK_MODULE, "l": KREA2_NETWORK_MODULE, "dk": "opt.krea_network_module_lora"},
+            {"v": KREA2_LYCORIS_MODULE, "l": KREA2_LYCORIS_MODULE, "dk": "opt.krea_network_module_lycoris"},
         ],
         "required": True,
         "profiles": [KREA2_PROFILE_ID],
     },
     shared_training_field('network_dim', default=32, profiles=[KREA2_PROFILE_ID]),
-    shared_training_field('network_alpha', default=32, profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('network_alpha', default=32, min=0, step=0.1, profiles=[KREA2_PROFILE_ID]),
     shared_training_field('network_dropout',
         default=0,
         show_if={"key": "network_module", "eq": KREA2_NETWORK_MODULE},
@@ -351,7 +363,9 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "profiles": [KREA2_PROFILE_ID],
     },
     shared_training_field('seed', default=42, step=1, profiles=[KREA2_PROFILE_ID]),
-    shared_training_field('mixed_precision', default="bf16", profiles=[KREA2_PROFILE_ID]),
+    shared_training_field('mixed_precision', default="bf16", profiles=[KREA2_PROFILE_ID],
+        options=[{"v": value, "l": value, "dk": f"opt.mixed_precision_{value}"}
+                 for value in _KREA2_MIXED_PRECISIONS]),
     {
         "key": "timestep_sampling",
         "type": "select",
@@ -363,6 +377,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
             {"v": "sigmoid", "l": "sigmoid", "dk": "opt.krea_timestep_sampling_sigmoid"},
             {"v": "sigma", "l": "sigma", "dk": "opt.krea_timestep_sampling_sigma"},
             {"v": "shift", "l": "shift", "dk": "opt.krea_timestep_sampling_shift"},
+            {"v": "flux_shift", "l": "flux_shift", "dk": "opt.timestep_sampling_flux_shift"},
             {"v": "krea2_shift", "l": "krea2_shift", "dk": "opt.krea_timestep_sampling_krea2_shift"},
             {"v": "logsnr", "l": "logsnr", "dk": "opt.krea_timestep_sampling_logsnr"},
         ],
@@ -378,7 +393,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "desc_key": "field.discrete_flow_shift",
         "min": 0.01,
         "step": 0.05,
-        "show_if": {"key": "timestep_sampling", "eq": "shift", "_or": ["sigma"]},
+        "show_if": {"key": "timestep_sampling", "eq": "shift"},
         "profiles": [KREA2_PROFILE_ID],
         "doc_slug": "timesteps",
         "doc_anchor": "flow-shift",
@@ -391,7 +406,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "training",
         "desc_key": "field.sigmoid_scale",
         "hint_key": "field.krea_sigmoid_scaleHint",
-        "show_if": {"key": "timestep_sampling", "eq": "sigmoid", "_or": ["shift", "krea2_shift"]},
+        "show_if": {"key": "timestep_sampling", "eq": "sigmoid", "_or": ["shift", "flux_shift", "krea2_shift"]},
         "profiles": [KREA2_PROFILE_ID],
         "doc_slug": "timesteps",
         "doc_anchor": "sigmoid-scale",
@@ -511,6 +526,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
             {"v": "inverse_sqrt", "l": "inverse_sqrt", "dk": "opt.krea_lr_scheduler_inverse_sqrt"},
             {"v": "cosine_with_min_lr", "l": "cosine_with_min_lr", "dk": "opt.krea_lr_scheduler_cosine_with_min_lr"},
             {"v": "warmup_stable_decay", "l": "warmup_stable_decay", "dk": "opt.krea_lr_scheduler_warmup_stable_decay"},
+            {"v": "piecewise_constant", "l": "piecewise_constant", "dk": "opt.lr_scheduler_piecewise_constant"},
             {"v": "rex", "l": "rex", "dk": "opt.krea_lr_scheduler_rex"},
         ],
         "auto_value": [
@@ -540,8 +556,10 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "optimizer",
         "desc_key": "field.lr_warmup_steps",
         "hint_key": "field.krea_ratio_or_stepsHint",
-        "show_if": {"key": "lr_scheduler", "neq": "constant"},
+        "show_if": [{"key": "lr_scheduler", "neq": "constant"}, {"key": "lr_scheduler", "neq": "piecewise_constant"}],
         "auto_value": [
+            {"watch": "lr_scheduler", "when": "constant", "set": 0},
+            {"watch": "lr_scheduler", "when": "piecewise_constant", "set": 0},
             {"watch": "optimizer_type", "when": "schedulefree.AdamWScheduleFree", "set": 0},
             {"watch": "optimizer_type", "when": _KREA2_PRODIGYPLUS_OPTIMIZER, "set": 0},
             {
@@ -793,7 +811,6 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "options": [
             {"v": "sdpa", "l": "SDPA", "dk": "opt.krea_attention_sdpa"},
             {"v": "flash_attn", "l": "FlashAttention", "dk": "opt.krea_attention_flash_attn"},
-            {"v": "sage_attn", "l": "SageAttention", "dk": "opt.krea_attention_sage_attn"},
             {"v": "xformers", "l": "xFormers", "dk": "opt.krea_attention_xformers"},
         ],
         "profiles": [KREA2_PROFILE_ID],
@@ -964,6 +981,60 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "profiles": [KREA2_PROFILE_ID],
     },
 ]
+
+
+def _krea_field(key, kind, default, section, **metadata):
+    return {"key": key, "type": kind, "default": default, "section": section,
+            "desc_key": f"field.{key}", "profiles": [KREA2_PROFILE_ID], **metadata}
+
+
+KREA2_FIELDS += [
+    *[_krea_field(key, "select", "auto", "performance", hint_key=f"field.{key}Hint",
+                  options=[{"v": value, "l": value, "label_key": f"opt.krea_cache_device_{value}"} for value in ("auto", "cuda", "cpu")])
+      for key in ("krea_latent_cache_device", "krea_text_cache_device")],
+    _krea_field("krea_latent_cache_batch_size", "number", 1, "performance", min=1, step=1,
+                hint_key="field.krea_latent_cache_batch_sizeHint"),
+    _krea_field("krea_cache_num_workers", "number", 2, "performance", min=1, step=1,
+                hint_key="field.krea_cache_num_workersHint"),
+    _krea_field("krea_cache_reuse", "toggle", True, "performance", hint_key="field.krea_cache_reuseHint"),
+    _krea_field("krea_cache_vae_tiling", "toggle", False, "performance", hint_key="field.krea_cache_vae_tilingHint"),
+    _krea_field("krea_adamw_fused", "select", "auto", "optimizer", show_if={"key": "optimizer_type", "eq": "AdamW"},
+                hint_key="field.krea_adamw_fusedHint", options=[{"v": v, "l": v, "label_key": f"opt.krea_adamw_fused_{v}"}
+                                                             for v in ("auto", "true", "false")]),
+    _krea_field("krea_split_attn", "select", "auto", "performance", hint_key="field.krea_split_attnHint",
+                options=[{"v": v, "l": v, "label_key": f"opt.krea_split_attn_{v}"} for v in ("auto", "true", "false")]),
+    _krea_field("network_weights", "text", "", "network", role="file-model-saved", hint_key="field.network_weightsHint"),
+    _krea_field("dim_from_weights", "toggle", False, "network", hint_key="field.dim_from_weightsHint",
+                show_if=[{"key": "network_weights", "neq": ""}, {"key": "network_module", "eq": KREA2_NETWORK_MODULE}],
+                layout_parent="network_weights"),
+    _krea_field("scale_weight_norms", "number", "", "network", min=0, step=0.01, hint_key="field.scale_weight_normsHint"),
+    _krea_field("min_timestep", "number", 0, "training", min=0, max=999, step=1, hint_key="field.krea_timestep_rangeHint"),
+    _krea_field("max_timestep", "number", 1000, "training", min=1, max=1000, step=1, hint_key="field.krea_timestep_rangeHint"),
+    _krea_field("preserve_distribution_shape", "toggle", False, "training", hint_key="field.preserve_distribution_shapeHint",
+                show_if={"key": "timestep_sampling", "neq": "sigma"}, nested=False),
+    _krea_field("num_timestep_buckets", "number", "", "training", min=2, step=1, hint_key="field.num_timestep_bucketsHint",
+                show_if={"key": "timestep_sampling", "neq": "sigma"}, nested=False),
+    *[_krea_field(key, "select", default, "optimizer", hint_key=f"field.{key}Hint",
+                  show_if={"key": "lr_scheduler", "eq": "warmup_stable_decay"},
+                  options=[{"v": v, "l": v, "dk": f"opt.wsd_{prefix}_{v}"} for v in ("linear", "cosine", "1-sqrt")])
+      for key, default, prefix in (("warmup_type", "linear", "warmup"), ("decay_type", "cosine", "decay"))],
+    _krea_field("step_rules", "text", "", "optimizer", hint_key="field.step_rulesHint", placeholder="1:1000,0.5:1600,0.1",
+                show_if={"key": "lr_scheduler", "eq": "piecewise_constant"}),
+    _krea_field("convrot_int8", "toggle", False, "performance", hint_key="field.convrot_int8Hint"),
+    _krea_field("convrot_int8_bwd", "select", "bf16", "performance", hint_key="field.convrot_int8_bwdHint",
+                show_if={"key": "convrot_int8", "eq": True},
+                options=[{"v": v, "l": v, "dk": f"opt.convrot_int8_bwd_{v}"} for v in ("bf16", "int8")]),
+    _krea_field("save_last_n_steps", "number", "", "save", min=1, step=1, hint_key="field.save_last_n_stepsHint",
+                show_if={"key": "save_every_n_steps", "neq": ""}),
+    _krea_field("save_last_n_steps_state", "number", "", "save", min=1, step=1, hint_key="field.save_last_n_steps_stateHint",
+                show_if=[{"key": "save_state", "eq": True}, {"key": "save_every_n_steps", "neq": ""}], layout_parent="save_state"),
+    _krea_field("turbo_lora", "text", "", "preview", role="file-model-saved", hint_key="field.turbo_loraHint",
+                show_if={"key": "enable_krea_samples", "eq": True}),
+    _krea_field("turbo_lora_multiplier", "number", 1.0, "preview", step=0.05, hint_key="field.turbo_lora_multiplierHint",
+                show_if=[{"key": "enable_krea_samples", "eq": True}, {"key": "turbo_lora", "neq": ""}]),
+]
+
+_extend_optimizer_fields(KREA2_FIELDS)
 
 _KREA2_OPTIMIZER_DEFAULTS = {
     field["key"]: field["default"] for field in KREA2_FIELDS
@@ -1143,8 +1214,7 @@ def _normalize_numeric_tuple(
 
 def _build_krea2_optimizer_args(config: dict[str, Any]) -> list[str]:
     """Use the same profile-specific mapping for native import and export."""
-    values = {**_KREA2_OPTIMIZER_DEFAULTS, "optimizer_type": "adamw8bit", **config}
-    arguments = collect_optimizer_args(values, {}, mappings=_KREA2_OPTIMIZER_ARGUMENTS)
+    arguments = _collect_krea2_arguments(config, _KREA2_OPTIMIZER_DEFAULTS, _KREA2_OPTIMIZER_ARGUMENTS)
     if arguments.get("warmup_steps") == 0:
         arguments.pop("warmup_steps")
     return [f"{key}={value!r}" for key, value in arguments.items()]
@@ -1159,10 +1229,16 @@ def extract_krea2_optimizer_form(config: dict[str, Any]) -> dict[str, Any]:
     _normalize_krea2_optimizer_type(form, errors)
     if errors:
         raise ValueError("; ".join(errors))
+    if "krea_adamw_fused" in form:
+        form["krea_adamw_fused"] = {"auto": None, "true": True, "false": False}.get(form["krea_adamw_fused"], form["krea_adamw_fused"])
     form = extract_optimizer_form(form, mappings=_KREA2_OPTIMIZER_ARGUMENTS)
     extra = form.pop("optimizer_args_custom", "")
+    if form["optimizer_type"] == "AdamW":
+        extra = "\n".join(line for line in extra.splitlines() if line != "fused=None")
+    if "krea_adamw_fused" in form:
+        form["krea_adamw_fused"] = "true" if form["krea_adamw_fused"] is True else "false" if form["krea_adamw_fused"] is False else "auto"
     if extra:
-        raise ValueError(f"optimizer_args: unsupported Krea 2 arguments / Krea 2 不支持这些参数: {extra}")
+        form["optimizer_args_custom"] = extra
     return form
 
 
@@ -1285,8 +1361,8 @@ def _path_identity(path_value: Any) -> dict[str, Any]:
     return {"path": str(path.resolve()), "size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
 
 
-def krea2_cache_fingerprint(config: dict[str, Any], images: list[Path] | None = None) -> str:
-    """Fingerprint inputs that make Krea latent or text caches stale."""
+def _krea2_cache_inputs(config: dict[str, Any], images: list[Path] | None = None) -> dict:
+    """Describe the inputs that determine cache contents."""
 
     cache_dir = config.get("dataset_cache_dir")
     root = Path(str(config.get("train_data_dir") or ""))
@@ -1326,7 +1402,14 @@ def krea2_cache_fingerprint(config: dict[str, Any], images: list[Path] | None = 
         "vae": _path_identity(config.get("vae")),
         "text_encoder": _path_identity(config.get("text_encoder")),
     }
-    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    if config.get("krea_cache_vae_tiling"):
+        payload["vae_tiling"] = True
+    return payload
+
+
+def krea2_cache_fingerprint(config: dict[str, Any], images: list[Path] | None = None) -> str:
+    encoded = json.dumps(_krea2_cache_inputs(config, images), ensure_ascii=False,
+                         separators=(",", ":"), sort_keys=True).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -1359,25 +1442,31 @@ def _read_cache_manifest(cache_dir: str | Path) -> tuple[dict[str, Any], Path]:
 
 def prepare_cache_manifest(config: dict[str, Any]) -> dict[str, Any]:
     """Persist a pending cache request before the worker process starts."""
+    from backend.training.krea2_cache_state import stage_fingerprints, reusable_stages, write_manifest
 
     cache_dir = Path(str(config["dataset_cache_dir"]))
     cache_dir.mkdir(parents=True, exist_ok=True)
+    previous, _ = _read_cache_manifest(cache_dir)
+    fingerprints = stage_fingerprints(config)
+    reuse = reusable_stages(config, previous, get_krea2_cache_status(config), fingerprints)
     payload = {
-        "schema": 1,
+        "schema": 2,
         "profile": KREA2_PROFILE_ID,
         "fingerprint": krea2_cache_fingerprint(config),
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "stages": {"latents": "pending", "text_encoder": "pending"},
+        "stage_fingerprints": fingerprints,
+        "stages": {stage: "completed" if reuse[stage] else "pending" for stage in reuse},
+        "outputs": {stage: previous["outputs"][stage] for stage in reuse if reuse[stage]},
     }
-    cache_manifest_path(cache_dir).write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    write_manifest(cache_manifest_path(cache_dir), payload)
     return payload
 
 
 def mark_cache_manifest(config: dict[str, Any], status: str) -> str | None:
     """Settle both cache stages and return any completion validation error."""
+    from backend.training.krea2_cache_state import (
+        STAGES, collect_stage_outputs, reusable_stages, stage_fingerprints, write_manifest,
+    )
 
     path = cache_manifest_path(config["dataset_cache_dir"])
     manifest, _ = _read_cache_manifest(config["dataset_cache_dir"])
@@ -1397,20 +1486,36 @@ def mark_cache_manifest(config: dict[str, Any], status: str) -> str | None:
                     f"(images={cache_status['image_count']}, latents={cache_status['latent_count']}, "
                     f"text={cache_status['text_encoder_count']})"
                 )
+            for stage in STAGES:
+                if (manifest.get("stages", {}).get(stage) == "completed"
+                        and "outputs" in manifest and not cache_status["stage_outputs_match"][stage]):
+                    errors.append(f"{stage}: cache outputs changed after completion / 阶段完成后缓存文件发生变化")
             errors.extend(cache_status["conflicts"])
+            if not errors:
+                manifest["outputs"] = {stage: collect_stage_outputs(config, stage) for stage in STAGES}
+                manifest["stage_fingerprints"] = stage_fingerprints(config)
         except Exception as exc:
             errors.append(f"Failed to validate Krea 2 cache / Krea 2 缓存校验失败: {exc}")
     error = "; ".join(errors) or None
-    stage_state = "completed" if status == "completed" and not error else "failed"
+    succeeded = status == "completed" and not error
+    if succeeded:
+        manifest["stages"] = dict.fromkeys(STAGES, "completed")
+    else:
+        try:
+            reusable = reusable_stages({**config, "krea_cache_reuse": True}, manifest,
+                                       get_krea2_cache_status(config), stage_fingerprints(config))
+        except (OSError, TypeError, ValueError):
+            reusable = dict.fromkeys(STAGES, False)
+        manifest["stages"] = {stage: "completed" if reusable[stage] else "failed" for stage in STAGES}
     manifest["finished_at"] = datetime.now(timezone.utc).isoformat()
-    manifest["stages"] = {"latents": stage_state, "text_encoder": stage_state}
     manifest["error"] = error
-    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_manifest(path, manifest)
     return error
 
 
 def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
     """Inspect cache files and their fingerprint without importing musubi."""
+    from backend.training.krea2_cache_state import outputs_match
 
     cache_dir = Path(str(config.get("dataset_cache_dir") or ""))
     groups = _krea2_dataset_groups(config)
@@ -1418,14 +1523,14 @@ def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
     images = [image for _, _, group_images in groups for image in group_images]
     latent_files = []
     text_files = []
-    complete_groups = True
+    complete_latents = complete_texts = True
     for _, group_cache, group_images in groups:
         group_latents = [
             path
-            for path in group_cache.glob("*_krea2.safetensors")
-            if path.is_file() and not path.name.endswith("_krea2_te.safetensors")
+            for path in group_cache.glob(f"*_{_KREA2_CACHE_ARCHITECTURE}.safetensors")
+            if path.is_file()
         ]
-        group_texts = [path for path in group_cache.glob("*_krea2_te.safetensors") if path.is_file()]
+        group_texts = [path for path in group_cache.glob(f"*_{_KREA2_CACHE_ARCHITECTURE}_te.safetensors") if path.is_file()]
         latent_files.extend(group_latents)
         text_files.extend(group_texts)
         # The trainer scans every latent cache in this namespace. Counts alone
@@ -1435,17 +1540,23 @@ def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
         expected_keys = Counter(os.path.normcase(image.stem) for image in group_images)
         latent_keys = []
         for path in group_latents:
-            match = re.fullmatch(r"(.+)_(\d{4,})x(\d{4,})_krea2\.safetensors", path.name)
+            match = re.fullmatch(rf"(.+)_(\d{{4,}})x(\d{{4,}})_{_KREA2_CACHE_ARCHITECTURE}\.safetensors", path.name)
             if match and int(match[2]) > 0 and int(match[3]) > 0:
                 latent_keys.append(os.path.normcase(match[1]))
-        expected_texts = {group_cache / f"{image.stem}_krea2_te.safetensors" for image in group_images}
-        complete_groups = complete_groups and (
+        expected_texts = {group_cache / f"{image.stem}_{_KREA2_CACHE_ARCHITECTURE}_te.safetensors" for image in group_images}
+        complete_latents = complete_latents and (
             len(latent_keys) == len(group_latents)
             and Counter(latent_keys) == expected_keys
-            and set(group_texts) == expected_texts
         )
+        complete_texts = complete_texts and set(group_texts) == expected_texts
 
     manifest, _ = _read_cache_manifest(cache_dir)
+    recorded_outputs = manifest.get("outputs") if isinstance(manifest.get("outputs"), dict) else {}
+    stage_outputs_match = {
+        stage: outputs_match(cache_dir, files, recorded_outputs.get(stage))
+        for stage, files in (("latents", latent_files), ("text_encoder", text_files))
+    }
+    complete_groups = complete_latents and complete_texts
 
     try:
         fingerprint = krea2_cache_fingerprint(config, images)
@@ -1460,6 +1571,7 @@ def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
         and stages.get("latents") == "completed"
         and stages.get("text_encoder") == "completed"
         and complete_groups
+        and ("outputs" not in manifest or all(stage_outputs_match.values()))
         and not conflicts
     )
     return {
@@ -1470,9 +1582,31 @@ def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
         "fingerprint_matches": matches,
         "stages": stages,
         "files_match": complete_groups,
+        "stage_files_match": {"latents": complete_latents, "text_encoder": complete_texts},
+        "stage_outputs_match": stage_outputs_match,
         "conflicts": conflicts,
         "ready": ready,
     }
+
+
+def _validate_krea2_compute_options(config: dict[str, Any]) -> list[str]:
+    """Keep unsupported execution modes out of both launch and native export."""
+    errors = []
+    if str(config.get("mixed_precision", "bf16")) not in _KREA2_MIXED_PRECISIONS:
+        errors.append(
+            "mixed_precision: Krea 2 requires bf16 or fp16 because the DiT uses BF16 weights "
+            "/ Krea 2 主模型使用 BF16 权重，混合精度请选择 bf16 或 fp16"
+        )
+    attention = str(config.get("krea_attention_backend", "sdpa"))
+    if attention == "sage_attn":
+        errors.append(
+            "krea_attention_backend: SageAttention does not support Krea 2 training; "
+            "select SDPA, FlashAttention or xFormers "
+            "/ Krea 2 训练不支持 SageAttention，请选择 SDPA、FlashAttention 或 xFormers"
+        )
+    elif attention not in _ATTENTION_FLAGS:
+        errors.append("krea_attention_backend: unsupported value / 不支持的选项")
+    return errors
 
 
 def validate_krea2_config(config: dict[str, Any]) -> list[str]:
@@ -1499,6 +1633,11 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
         "block_swap_ring_size": 2,
         "enable_krea_samples": False,
         "sample_every_n_epochs": 1,
+        "min_timestep": 0,
+        "max_timestep": 1000,
+        "krea_latent_cache_device": "auto", "krea_text_cache_device": "auto",
+        "krea_latent_cache_batch_size": 1, "krea_cache_num_workers": 2,
+        "krea_cache_reuse": True, "krea_cache_vae_tiling": False, "krea_split_attn": "auto",
     }.items():
         config.setdefault(key, default)
 
@@ -1509,7 +1648,18 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
     if automatic_cache_dir:
         config["dataset_cache_dir"] = automatic_cache_dir
 
-    errors: list[str] = []
+    errors = _validate_krea2_compute_options(config)
+    for key in ("krea_latent_cache_device", "krea_text_cache_device"):
+        if config[key] not in ("auto", "cuda", "cpu"):
+            errors.append(f"{key}: choose auto, cuda or cpu / 请选择自动、GPU 或 CPU")
+    for key in ("krea_adamw_fused", "krea_split_attn"):
+        if config[key] not in ("auto", "true", "false"):
+            errors.append(f"{key}: unsupported value / 不支持的选项")
+    for key in ("krea_cache_reuse", "krea_cache_vae_tiling"):
+        if not isinstance(config[key], bool):
+            errors.append(f"{key}: must be boolean / 必须为布尔值")
+    if config.get("krea_attention_backend") == "xformers" and config["krea_split_attn"] == "false":
+        errors.append("krea_split_attn: xFormers requires split attention for Krea 2 / Krea 2 使用 xFormers 时需要拆分注意力")
     for key in (
         "dit",
         "vae",
@@ -1566,13 +1716,15 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
 
     for key, minimum in (
         ("network_dim", 1),
-        ("network_alpha", 1),
         ("train_batch_size", 1),
         ("gradient_accumulation_steps", 1),
         ("krea_num_repeats", 1),
         ("blocks_to_swap", 0),
         ("max_data_loader_n_workers", 0),
         ("text_cache_batch_size", 1),
+        ("krea_latent_cache_batch_size", 1),
+        ("krea_cache_num_workers", 1),
+        ("save_every_n_epochs", 1),
     ):
         _as_int(config, key, errors, minimum)
     if duration_mode == "steps":
@@ -1585,6 +1737,9 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
         ("save_every_n_steps", 1),
         ("save_last_n_epochs", 1),
         ("save_last_n_epochs_state", 1),
+        ("save_last_n_steps", 1),
+        ("save_last_n_steps_state", 1),
+        ("num_timestep_buckets", 2),
         ("sample_every_n_steps", 1),
     ):
         if not _is_empty(config.get(key)):
@@ -1594,12 +1749,13 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
 
     for key, minimum in (
         ("network_dropout", 0.0),
+        ("network_alpha", 0.0),
         ("discrete_flow_shift", 0.01),
         ("learning_rate", 0.0),
         ("max_grad_norm", 0.0),
         ("lr_scheduler_power", 0.01),
     ):
-        if key == "discrete_flow_shift" and config.get("timestep_sampling", "shift") not in {"shift", "sigma"}:
+        if key == "discrete_flow_shift" and config.get("timestep_sampling", "shift") != "shift":
             continue
         if key == "lr_scheduler_power" and str(config.get("lr_scheduler", "constant")) != "polynomial":
             continue
@@ -1611,6 +1767,17 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
     if not _is_empty(config.get("sigmoid_scale")):
         _as_float(config, "sigmoid_scale", errors)
     timestep_sampling = str(config.get("timestep_sampling", "shift"))
+    for key, default in (("min_timestep", 0), ("max_timestep", 1000)):
+        if _is_empty(config.get(key)):
+            config[key] = default
+    low = _as_int(config, "min_timestep", errors, 0)
+    high = _as_int(config, "max_timestep", errors, 1)
+    if low is not None and high is not None and not 0 <= low < high <= 1000:
+        errors.append("min_timestep/max_timestep: require 0 <= min < max <= 1000 / 时间步范围必须满足 0 ≤ 最小值 < 最大值 ≤ 1000")
+    if not _is_empty(config.get("scale_weight_norms")):
+        _as_float(config, "scale_weight_norms", errors, 0)
+    if config.get("dim_from_weights") and (not config.get("network_weights") or config.get("network_module") != KREA2_NETWORK_MODULE):
+        errors.append("dim_from_weights: requires native LoRA and network_weights / 从权重推导维度需要原生 LoRA 和初始权重")
     weighting_scheme = str(config.get("weighting_scheme", "none"))
     uses_logit_parameters = timestep_sampling == "logsnr" or (
         timestep_sampling == "sigma" and weighting_scheme == "logit_normal"
@@ -1627,6 +1794,9 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
         if not _is_empty(config.get(key)):
             _as_steps_or_ratio(config, key, errors)
     scheduler_name = str(config.get("lr_scheduler", "constant"))
+    errors.extend(validate_scheduler_config(config))
+    if scheduler_name == "piecewise_constant":
+        config["lr_warmup_steps"] = 0
     # get_cosine_with_min_lr_schedule_with_warmup rejects a missing floor;
     # use zero to match an ordinary cosine schedule for direct API callers and
     # old presets that naturally predate this guided field.
@@ -1667,21 +1837,15 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
     if not _is_empty(config.get("krea_optimizer_eps")):
         if optimizer_type not in _KREA2_EPS_OPTIMIZERS:
             errors.append("krea_optimizer_eps: not supported by the selected optimizer / 当前优化器不支持 eps")
+        elif optimizer_type == _KREA2_PRODIGYPLUS_OPTIMIZER and str(config["krea_optimizer_eps"]).strip() == "None":
+            config["krea_optimizer_eps"] = "None"
         else:
             _normalize_numeric_literal(config, "krea_optimizer_eps", errors, minimum=1e-30)
 
     if optimizer_type in _KREA2_PRODIGY_OPTIMIZERS:
+        config["learning_rate"] = 1.0
         _normalize_numeric_literal(config, "krea_prodigy_d_coef", errors, minimum=1e-30)
         _normalize_numeric_literal(config, "krea_prodigy_d0", errors, minimum=1e-30)
-        if optimizer_type == _KREA2_PRODIGYPLUS_OPTIMIZER:
-            config["krea_prodigyplus_use_stableadamw"] = bool(
-                config.get("krea_prodigyplus_use_stableadamw", True)
-            )
-            # ProdigyPlus' StableAdamW update scaling already handles this
-            # role.  Sending a second, external clip changes the intended
-            # update rule, so normalize old presets and direct callers too.
-            if config["krea_prodigyplus_use_stableadamw"]:
-                config["max_grad_norm"] = 0.0
 
     if optimizer_type == "AdaFactor":
         _as_float(config, "krea_adafactor_clip_threshold", errors, 0.00000001)
@@ -1695,6 +1859,19 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
     if optimizer_type in _KREA2_SCHEDULEFREE_WARMUP_OPTIMIZERS:
         _as_int(config, "krea_schedulefree_warmup_steps", errors, 0)
 
+    if optimizer_type in _KREA2_VISIBLE_OPTIMIZERS:
+        try:
+            arguments = _collect_krea2_arguments(config, _KREA2_OPTIMIZER_DEFAULTS, _KREA2_OPTIMIZER_ARGUMENTS)
+            errors.extend(_validate_krea2_optimizer(config, arguments, config.get("gpu_ids")))
+            if optimizer_type == _KREA2_PRODIGYPLUS_OPTIMIZER and (
+                arguments.get("use_stableadamw", True) is not False or arguments.get("eps", 1e-8) is None
+            ):
+                config["max_grad_norm"] = 0.0
+        except (TypeError, ValueError) as exc:
+            errors.append(f"optimizer_args: {exc}")
+        if optimizer_type in {"AdaFactor", "pytorch_optimizer.LoRARite"}:
+            config["max_grad_norm"] = 0.0
+
     for key, message in (
         ("krea_optimizer_custom_type", "custom optimizer classes are not supported / 不支持自定义优化器类"),
         ("krea_optimizer_args", "raw optimizer args are not supported; use the guided fields / 不支持原始优化器参数，请使用界面字段"),
@@ -1706,18 +1883,14 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
     if not _is_empty(config.get("compile_cache_size_limit")):
         _as_int(config, "compile_cache_size_limit", errors, 1)
 
-    if str(config.get("mixed_precision", "bf16")) not in {"bf16", "fp16", "no"}:
-        errors.append("mixed_precision: unsupported value / 不支持的选项")
     if str(config.get("timestep_sampling", "shift")) not in {
-        "uniform", "sigmoid", "sigma", "shift", "krea2_shift", "logsnr"
+        "uniform", "sigmoid", "sigma", "shift", "flux_shift", "krea2_shift", "logsnr"
     }:
         errors.append("timestep_sampling: unsupported value / 不支持的选项")
     if str(config.get("weighting_scheme", "none")) not in {
         "none", "sigma_sqrt", "cosmap", "logit_normal", "mode"
     }:
         errors.append("weighting_scheme: unsupported value / 不支持的选项")
-    if str(config.get("krea_attention_backend", "sdpa")) not in _ATTENTION_FLAGS:
-        errors.append("krea_attention_backend: unsupported value / 不支持的选项")
     if str(config.get("lr_scheduler", "constant")) not in _KREA2_LR_SCHEDULERS:
         errors.append("lr_scheduler: unsupported value / 不支持的选项")
     if str(config.get("lr_scheduler", "constant")) == "adafactor":
@@ -1733,6 +1906,13 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
     # readable, but normalize it from fp8_base so stale presets cannot express
     # the unsupported plain-FP8 combination.
     config["fp8_scaled"] = bool(config.get("fp8_base", False))
+    if str(config.get("save_precision", "bf16")) not in {"bf16", "fp16", "float"}:
+        errors.append("save_precision: unsupported value / 不支持的保存精度")
+    if config.get("convrot_int8"):
+        if config.get("fp8_base"):
+            errors.append("convrot_int8: cannot be combined with fp8_base / ConvRot INT8 与 FP8 不能同时启用")
+        if config.get("convrot_int8_bwd", "bf16") not in {"bf16", "int8"}:
+            errors.append("convrot_int8_bwd: expected bf16 or int8 / 请选择 bf16 或 int8")
     if config.get("gradient_checkpointing_cpu_offload") and not config.get("gradient_checkpointing"):
         errors.append(
             "gradient_checkpointing_cpu_offload: requires gradient_checkpointing / 必须同时启用 gradient_checkpointing"
@@ -1749,6 +1929,14 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
             errors.append("krea_sample_prompts: at least one non-comment prompt is required / 至少需要一条非注释提示词")
         _as_int(config, "sample_every_n_epochs", errors, 1)
         turbo_dit = str(config.get("turbo_dit") or "").strip()
+        turbo_lora = str(config.get("turbo_lora") or "").strip()
+        if turbo_dit and turbo_lora:
+            errors.append("turbo_lora: cannot be combined with turbo_dit / Turbo LoRA 与 Turbo DiT 不能同时使用")
+        if turbo_dit and config.get("convrot_int8"):
+            errors.append("turbo_dit: cannot be combined with convrot_int8 / Turbo DiT 暂不支持 ConvRot INT8")
+        if turbo_lora:
+            config.setdefault("turbo_lora_multiplier", 1.0)
+            _as_float(config, "turbo_lora_multiplier", errors)
         if config.get("turbo_dit_cache") and not turbo_dit:
             errors.append("turbo_dit_cache: requires turbo_dit / 必须先指定 Turbo DiT")
         if turbo_dit and int(config.get("blocks_to_swap") or 0) > 0:
@@ -1792,9 +1980,9 @@ def build_krea2_train_config(
 
     config = dict(config)
     normalize_attention_config(config)
-    network_errors = validate_krea2_network(config)
-    if network_errors:
-        raise ValueError("; ".join(network_errors))
+    errors = _validate_krea2_compute_options(config) + validate_krea2_network(config)
+    if errors:
+        raise ValueError("; ".join(errors))
 
     optimizer_type = str(config.get("optimizer_type", "adamw8bit"))
     # Normal launch paths call validate_krea2_config first, but keep this
@@ -1815,7 +2003,7 @@ def build_krea2_train_config(
         "dataset_config": str(dataset_config_path),
         "network_module": config["network_module"],
         "network_dim": int(config["network_dim"]),
-        "network_alpha": int(config["network_alpha"]),
+        "network_alpha": float(config["network_alpha"]),
         "network_dropout": float(config.get("network_dropout", 0)),
         "gradient_accumulation_steps": int(config["gradient_accumulation_steps"]),
         "gradient_checkpointing": bool(config.get("gradient_checkpointing", False)),
@@ -1840,10 +2028,24 @@ def build_krea2_train_config(
         result["max_train_steps"] = int(config["max_train_steps"])
     else:
         result["max_train_epochs"] = int(config["max_train_epochs"])
-    if result["timestep_sampling"] in {"shift", "sigma"}:
+    if result["timestep_sampling"] == "shift":
         result["discrete_flow_shift"] = float(config.get("discrete_flow_shift", 2.5))
-    if result["timestep_sampling"] in {"sigmoid", "shift", "krea2_shift"}:
+    if result["timestep_sampling"] in {"sigmoid", "shift", "flux_shift", "krea2_shift"}:
         result["sigmoid_scale"] = float(config.get("sigmoid_scale", 1.0))
+    for key in ("min_timestep", "max_timestep"):
+        if not _is_empty(config.get(key)):
+            result[key] = int(config[key])
+    if result["timestep_sampling"] != "sigma":
+        if config.get("preserve_distribution_shape"):
+            result["preserve_distribution_shape"] = True
+        if not _is_empty(config.get("num_timestep_buckets")):
+            result["num_timestep_buckets"] = int(config["num_timestep_buckets"])
+    if not _is_empty(config.get("network_weights")):
+        result["network_weights"] = str(config["network_weights"])
+        if config.get("dim_from_weights") and config["network_module"] == KREA2_NETWORK_MODULE:
+            result["dim_from_weights"] = True
+    if not _is_empty(config.get("scale_weight_norms")):
+        result["scale_weight_norms"] = float(config["scale_weight_norms"])
     uses_logit_parameters = result["timestep_sampling"] == "logsnr" or (
         result["timestep_sampling"] == "sigma"
         and result["weighting_scheme"] == "logit_normal"
@@ -1878,7 +2080,7 @@ def build_krea2_train_config(
         result["save_state_on_train_end"] = True
     if not _is_empty(config.get("resume")):
         result["resume"] = str(config["resume"])
-    for key in ("save_every_n_steps", "save_last_n_epochs", "save_last_n_epochs_state"):
+    for key in ("save_every_n_steps", "save_last_n_epochs", "save_last_n_epochs_state", "save_last_n_steps", "save_last_n_steps_state"):
         if not _is_empty(config.get(key)):
             result[key] = int(config[key])
     if int(config.get("blocks_to_swap", 0)) > 0:
@@ -1891,6 +2093,9 @@ def build_krea2_train_config(
     if bool(config.get("fp8_base", False)):
         result["fp8_base"] = True
         result["fp8_scaled"] = True
+    if config.get("convrot_int8"):
+        result["convrot_int8"] = True
+        result["convrot_int8_bwd"] = str(config.get("convrot_int8_bwd", "bf16"))
     if bool(config.get("compile", False)):
         result["compile"] = True
         result["compile_backend"] = str(config.get("compile_backend", "inductor"))
@@ -1909,8 +2114,7 @@ def build_krea2_train_config(
 
     attention = str(config.get("krea_attention_backend", "sdpa"))
     result[_ATTENTION_FLAGS[attention]] = True
-    if attention != "sdpa":
-        result["split_attn"] = True
+    result["split_attn"] = attention != "sdpa" if config.get("krea_split_attn", "auto") == "auto" else config["krea_split_attn"] == "true"
 
     network_args = build_krea2_network_args(config, Path(dataset_config_path).parent / KREA2_PRESET_FILENAME)
     if network_args:
@@ -1932,7 +2136,41 @@ def build_krea2_train_config(
             result["turbo_dit"] = str(config["turbo_dit"])
             if bool(config.get("turbo_dit_cache", False)):
                 result["turbo_dit_cache"] = True
+        if not _is_empty(config.get("turbo_lora")):
+            result["turbo_lora"] = str(config["turbo_lora"])
+            result["turbo_lora_multiplier"] = float(config.get("turbo_lora_multiplier", 1.0))
+    scheduler_config = {**result, **{key: config[key] for key in ("warmup_type", "decay_type", "step_rules") if key in config}}
+    normalize_scheduler_config(scheduler_config)
+    if "lr_scheduler_args" in scheduler_config:
+        result["lr_scheduler_args"] = scheduler_config["lr_scheduler_args"]
+    if result["lr_scheduler"] == "piecewise_constant":
+        result.pop("lr_warmup_steps", None)
     return result
+
+
+def _krea2_checkpoint_format_errors(path: Path, key: str, config: dict) -> list[str]:
+    """Read tensor metadata only; never load multi-GB weights during preflight."""
+    try:
+        with path.open("rb") as stream:
+            header_size = int.from_bytes(stream.read(8), "little")
+            if not 2 <= header_size <= 16 * 1024 * 1024:
+                return []  # The model loader reports malformed/non-safetensors files.
+            header = json.loads(stream.read(header_size))
+        tensors = {name: tensor for name, tensor in header.items()
+                   if name != "__metadata__" and isinstance(tensor, dict)}
+    except (OSError, ValueError, AttributeError):
+        return []
+    dtypes = {tensor.get("dtype") for tensor in tensors.values()}
+    if any(str(dtype).startswith("F8") for dtype in dtypes) and (
+        key == "text_encoder" or any(name.endswith((".scale_weight", ".weight_scale", ".comfy_quant")) for name in tensors)
+    ):
+        return [f"{key}: this Krea 2 loader cannot read pre-scaled FP8 checkpoints; select BF16 weights"
+                " (DiT FP8 quantization can be enabled in the form) / 当前 Krea 2 加载器不支持预量化 scaled FP8 文件，"
+                "请选择 BF16 权重；DiT 可在界面启用训练时 FP8 量化"]
+    if "I8" in dtypes and (key != "dit" or not config.get("convrot_int8")):
+        return [f"{key}: INT8 weights require the DiT ConvRot INT8 path; use BF16 for other components / "
+                "INT8 权重需要 DiT 的 ConvRot INT8 路径，其他组件请使用 BF16"]
+    return []
 
 
 def krea2_preflight(config: dict[str, Any], require_cache: bool = True) -> dict[str, Any]:
@@ -1968,10 +2206,19 @@ def krea2_preflight(config: dict[str, Any], require_cache: bool = True) -> dict[
         path = Path(str(config.get(key) or ""))
         if not path.is_file():
             errors.append(f"{label} not found / 模型文件不存在: {path}")
+        elif key != "vae":
+            errors.extend(_krea2_checkpoint_format_errors(path, key, config))
     if require_cache and bool(config.get("enable_krea_samples", False)) and not _is_empty(config.get("turbo_dit")):
         turbo_path = Path(str(config["turbo_dit"]))
         if not turbo_path.is_file():
             errors.append(f"Krea 2 Turbo DiT not found / Turbo 模型文件不存在: {turbo_path}")
+        else:
+            errors.extend(_krea2_checkpoint_format_errors(turbo_path, "turbo_dit", config))
+    for key in ("network_weights", "turbo_lora"):
+        if key == "turbo_lora" and not config.get("enable_krea_samples"):
+            continue
+        if not _is_empty(config.get(key)) and not Path(str(config[key])).is_file():
+            errors.append(f"{key}: weights not found / 权重文件不存在: {config[key]}")
 
     cache_status = get_krea2_cache_status(config)
     if not cache_status["image_count"]:

@@ -54,7 +54,9 @@ def read_caption_snapshot(cap_path: Path) -> tuple[str, str, int]:
     if (before.st_mtime_ns, before.st_size) != (stat.st_mtime_ns, stat.st_size):
         raise OSError(f"Caption changed while reading / 读取期间标签发生变化: {cap_path}")
     digest = hashlib.sha1(data).hexdigest()
-    text = data.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n").strip()
+    # The editor, transaction rollback and timeline share this exact text.
+    # Refuse invalid UTF-8 instead of overwriting undecodable bytes with U+FFFD.
+    text = data.decode("utf-8")
     return text, f"{stat.st_mtime_ns}:{stat.st_size}:{digest}", stat.st_mtime_ns
 
 
@@ -65,7 +67,7 @@ def caption_revision(cap_path: Path) -> str:
 
 def _atomic_write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(path, text, errors="replace")
+    atomic_write_text(path, text)
 
 
 def restore_caption_state(cap_path: Path, existed: bool, text: str) -> None:
@@ -89,7 +91,7 @@ def dataset_lock(dir_path: Path):
 def read_tags(cap_path: Path) -> str:
     """读取标签文件内容"""
     try:
-        return cap_path.read_text(encoding="utf-8", errors="replace").strip()
+        return read_caption_snapshot(cap_path)[0]
     except Exception:
         return ""
 
@@ -104,7 +106,7 @@ def write_tags(cap_path: Path, tags: str, create_backup: bool = False) -> bool:
                     shutil.copy2(cap_path, bak_path)
                 except Exception:
                     pass
-        _atomic_write_text(cap_path, tags.strip())
+        _atomic_write_text(cap_path, tags)
         return True
     except Exception:
         return False
@@ -173,7 +175,7 @@ def scan_selected_images(dir_path: Path, selected_paths: set[str]) -> list[dict]
 
 def tag_list(tags_str: str) -> list[str]:
     """逗号分隔字符串 → 去空格的标签列表"""
-    return [t.strip() for t in tags_str.split(",") if t.strip()]
+    return [t.strip() for t in tags_str.lstrip("\ufeff").split(",") if t.strip()]
 
 
 def tag_str(tag_list: list[str]) -> str:

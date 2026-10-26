@@ -122,10 +122,10 @@ window.taggerMixin = {
     // Both routes share this host; navigation must join its pending mount.
     this._taggerMountPromise = (async () => {
       try {
-        const response = await fetch('/anima-ui/tagger-workspace.html?v=20261021-caption-workspaces6');
+        const response = await fetch('/anima-ui/tagger-workspace.html');
         if (!response.ok) throw new Error('Workspace template unavailable');
         host.innerHTML = await response.text();
-        const captionTemplate = await fetch('/anima-ui/caption-workspace.html?v=20261022-caption-form15');
+        const captionTemplate = await fetch('/anima-ui/caption-workspace.html');
         if (!captionTemplate.ok) throw new Error('Caption workspace unavailable');
         host.querySelector('#captionWorkspaceMount').outerHTML = await captionTemplate.text();
         host.dataset.mounted = '1';
