@@ -1453,7 +1453,8 @@
 		"fixedDistribution": "Fixed timestep",
 		"fixedLabel": "Fixed timestep: {value}",
 		"footnote": "The distribution curve shows bin-average density of the continuous distribution; sigma percentages and medians use the discrete training timesteps. The loss-weight curve shows the weighting factor. When training at multiple resolutions, preview the main resolutions separately.",
-		"interpretationHint": "High-noise inputs retain less original image information; low-noise inputs retain more. The percentages show sampling frequency, not image quality or update magnitude."
+		"interpretationHint": "High-noise inputs retain less original image information; low-noise inputs retain more. The percentages show sampling frequency, not image quality or update magnitude.",
+		"kreaRangeNote": "Includes the timestep range. With shape preservation, the curve is truncated to that range. Very narrow ranges may make training fall back to the original distribution and sample outside the range."
 	},
 	"lrPreview": {
 		"component": "Chart component",
@@ -1465,12 +1466,12 @@
 		"multiplier": "Multiplier",
 		"internalNote": "This optimizer adjusts its learning rate during training; an external scheduler cannot predict its curve.",
 		"unsupportedNote": "Curve preview is unavailable for this scheduler.",
-		"stepCountRequiredNote": "This schedule needs a total training step count to draw its curve. Select a valid dataset first.",
-		"estimatedStepsNote": "Total steps are unavailable; this curve assumes {steps} training steps for illustration. It will use the actual step count once the dataset is loaded.",
+		"stepCountRequiredNote": "This scheduler needs the total training step count. Select a readable dataset and recalculate the training steps.",
+		"estimatedStepsNote": "Total steps are unknown. This estimate uses {steps} steps and updates when the dataset loads.",
 		"endpointJumpNote": "At completion, the scheduler jumps to the minimum learning rate. The curve omits this instantaneous jump; the readout at 100% still shows the final value.",
 		"invalidNote": "Check learning rate, warmup and scheduler parameters. constant requires zero warmup; polynomial requires a base learning rate above 1e-7.",
 		"adaptiveNote": "The curve shows the external scheduler rate; the optimizer also adjusts the update scale based on training state.",
-		"baseGroupNote": "Shows the learning rate schedule for the selected component’s base parameter group. It excludes LoRA+ ratios and per-layer settings, and does not show the optimizer’s actual update size.",
+		"baseGroupNote": "Shows the selected component's base learning rate, excluding LoRA+ ratios and per-layer rates. Update size also depends on gradients and the optimizer.",
 		"open": "View learning-rate curve",
 		"title": "Learning-rate curve preview",
 		"subtitle": "Drawn from the current sd-scripts settings",
@@ -1481,7 +1482,7 @@
 		"textEncoderComponent": "Text Encoder",
 		"totalSteps": "Total steps",
 		"warmup": "Warmup",
-		"cycles": "Restart cycles",
+		"cycles": "Cycles",
 		"power": "Decay power",
 		"learningRateAxis": "Learning rate",
 		"currentCurve": "Current curve",
@@ -1493,8 +1494,12 @@
 		"stepLabel": "{count} steps",
 		"chartAlt": "Actual learning-rate curve for the current configuration",
 		"noStepNote": "No total step count is available, so the x-axis shows 0–100% training progress.",
-		"estimatedWarmupNote": "No total step count is available; warmup is set to {steps}, so the curve renders it as 10% of training progress.",
-		"footnote": "The y-axis and hover readout show the scheduler learning rate for the displayed component."
+		"estimatedWarmupNote": "Total steps are unknown. Warmup is set to {steps}, so this preview uses 10% of training progress until the total is known.",
+		"footnote": "The y-axis and hover readout show the scheduler learning rate for the displayed component.",
+		"kreaStepCountRequiredNote": "This scheduler needs the total training step count. Select a readable dataset and recalculate, or choose steps as the training duration and enter the maximum training steps.",
+		"kreaBaseGroupNote": "Shows the DiT adapter's scheduled learning rate. Update size also depends on gradients and the optimizer.",
+		"loraDownComponent": "DiT · LoRA Down",
+		"loraUpComponent": "DiT · LoRA Up"
 	},
 	"timestepOffset": {
 		"title": "Per-subset sampling offsets",
@@ -1565,6 +1570,8 @@
 		"timeEmbedding": "Time embedding",
 		"textEncoder": "Text encoder",
 		"textEmbedder": "DiT text embedder",
+		"textFusion": "Text fusion",
+		"textRefiner": "Text refiner",
 		"qkvProjection": "Fused QKV projection",
 		"mlpGate": "Gate layer",
 		"mlpExpandGate": "Fused expansion and gate",

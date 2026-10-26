@@ -131,3 +131,35 @@ class Krea2UIContractsTests(unittest.TestCase):
             write_header({"blocks.0.attn.wq.weight": {"dtype": "I8"}, "blocks.0.attn.wq.comfy_quant": {"dtype": "U8"}})
             self.assertTrue(_krea2_checkpoint_format_errors(path, "dit", {}))
             self.assertEqual(_krea2_checkpoint_format_errors(path, "dit", {"convrot_int8": True}), [])
+
+    def test_real_shapes_match_target_selection_and_do_not_leak_between_profiles(self):
+        # The production worker imports both engines in one process. Exercise that
+        # exact boundary without adding their top-level packages to the test runner.
+        code = '''
+from tools.runtime_paths import configure_test_paths
+configure_test_paths()
+from backend.training.shape_preview import inspect_network
+from backend.training.krea2_network import selected_targets
+base = dict(model_train_type="anima-lora", network_module="networks.lora_anima", network_dim=4,
+            network_alpha=4, network_train_unet_only=True, save_precision="bf16")
+anima = inspect_network(base)
+krea = dict(base, model_train_type="krea2-lora", network_module="networks.lora_krea2", network_alpha=1.5)
+for mode in ("all", "attention", "attention_mlp", "custom"):
+    form = dict(krea, krea_target_mode=mode, krea_target_include=r"blocks\\.0\\..*", krea_target_exclude=r".*\\.mlp\\..*")
+    result = inspect_network(form)
+    names = {name for group in result["groups"] for name in group["paths"]}
+    assert names == set(selected_targets(form)), (mode, names)
+    assert result["moduleCount"] == len(names)
+    assert result["params"] == sum((g["in"] + g["out"]) * 4 * g["count"] for g in result["groups"])
+    assert all(g["alpha"] == 1.5 and g["scale"] == 1.5 / 4 for g in result["groups"])
+for algo in ("lora", "loha", "lokr"):
+    form = dict(krea, network_module="lycoris.kohya", lycoris_algo=algo, krea_target_mode="attention", dora_wd=True)
+    result = inspect_network(form)
+    assert result["moduleCount"] == 140
+    assert all(g["algo"] == algo and "dora_scale" in g["shapes"] for g in result["groups"])
+    assert result["estimatedBytes"] > result["weightBytes"] > 0
+assert inspect_network(base) == anima
+'''
+        result = subprocess.run([sys.executable, "-B", "-c", code], cwd=ROOT,
+                                capture_output=True, text=True, encoding="utf-8", timeout=90)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

@@ -2286,7 +2286,7 @@ window.trainingCoreMixin = {
           <span class="field-hint" x-text="t('timestepPreview.entryHint')"></span>
         </div>`;
       case 'lr_scheduler':
-        return `<div class="lr-preview-entry" x-show="form && form.model_train_type !== 'krea2-lora'">
+        return `<div class="lr-preview-entry">
           <button type="button" class="btn btn-ghost btn-sm" @click="openLrPreview()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19V3"/></svg>
             <span x-text="t('lrPreview.open')">View learning-rate curve</span>
@@ -2551,6 +2551,9 @@ window.trainingCoreMixin = {
     const logitMean = this._timestepPreviewNumber(source.logit_mean, 0.0);
     const logitStd = Math.max(0, this._timestepPreviewNumber(source.logit_std, 1.0));
     const modeScale = this._timestepPreviewNumber(source.mode_scale, 1.29);
+    const rangeMin = isKrea2 ? Math.max(0, Number(source.min_timestep || 0)) / 1000 : 0;
+    const rangeMax = isKrea2 ? Math.min(1000, Number(source.max_timestep ?? 1000)) / 1000 : 1;
+    const rangeWidth = rangeMax - rangeMin;
     const [width, height] = this._timestepPreviewResolution(source.resolution);
     const pointCount = 120;
     const sigmoid = value => 1 / (1 + Math.exp(-Math.max(-60, Math.min(60, value))));
@@ -2581,7 +2584,7 @@ window.trainingCoreMixin = {
     }
 
     const shiftSigma = (u, shift) => u * shift / (1 + (shift - 1) * u);
-    const schedulerSigma = u => shiftSigma(1 - Math.min(999, Math.floor(u * 1000)) / 1000, flowShift);
+    const schedulerSigma = u => shiftSigma(1 - Math.min(999, Math.floor((rangeMin + u * rangeWidth) * 1000)) / 1000, flowShift);
     let fixedSigma = null;
     if (['sigmoid', 'shift', 'flux_shift', 'krea2_shift'].includes(sampling) && sigmoidScale === 0) {
       fixedSigma = shiftSigma(0.5, activeShift);
@@ -2589,6 +2592,9 @@ window.trainingCoreMixin = {
       fixedSigma = schedulerSigma(sigmoid(logitMean));
     } else if (sampling === 'logsnr' && logitStd === 0) {
       fixedSigma = sigmoid(-logitMean / 2);
+    }
+    if (fixedSigma !== null && sampling !== 'sigma' && !source.preserve_distribution_shape) {
+      fixedSigma = rangeMin + fixedSigma * rangeWidth;
     }
 
     // Normal CDF approximation (absolute error < 7.5e-8).
@@ -2631,10 +2637,9 @@ window.trainingCoreMixin = {
       return mass;
     };
 
-    const evaluateCdf = (sigma, offset) => {
+    const unboundedCdf = (sigma, offset) => {
       if (sigma <= 0) return 0;
       if (sigma >= 1) return 1;
-      if (fixedSigma !== null) return sigma < fixedSigma ? 0 : 1;
       if (sampling === 'uniform') return sigma;
       if (sampling === 'sigma') {
         const s = inverseShift(sigma, flowShift);
@@ -2646,6 +2651,18 @@ window.trainingCoreMixin = {
       const appliedOffset = ['sigmoid', 'shift', 'flux_shift'].includes(sampling) ? offset : 0;
       const s = inverseShift(sigma, activeShift);
       return normalCdf((logit(s) - sigmoidScale * appliedOffset) / Math.abs(sigmoidScale));
+    };
+    const evaluateCdf = (sigma, offset) => {
+      if (fixedSigma !== null) return sigma < fixedSigma ? 0 : 1;
+      if (!isKrea2 || !(rangeWidth > 0)) return unboundedCdf(sigma, offset);
+      if (sampling === 'sigma') {
+        // Musubi ranges scheduler indices; its sigma table runs in reverse.
+        return unboundedCdf((sigma - (1 - rangeMax)) / rangeWidth, offset);
+      }
+      if (!source.preserve_distribution_shape) return unboundedCdf((sigma - rangeMin) / rangeWidth, offset);
+      const left = unboundedCdf(rangeMin, offset), mass = unboundedCdf(rangeMax, offset) - left;
+      if (!(mass > 0)) return unboundedCdf(sigma, offset);
+      return Math.max(0, Math.min(1, (unboundedCdf(sigma, offset) - left) / mass));
     };
 
     // Bin-average continuous density: differences of CDF values preserve all
@@ -2777,6 +2794,7 @@ window.trainingCoreMixin = {
     const baselineStats = computeStats(baselineCdf);
     const currentStats = currentCdf === baselineCdf ? baselineStats : computeStats(currentCdf);
     const notes = [];
+    if (isKrea2 && (rangeMin > 0 || rangeMax < 1)) notes.push(this.t('timestepPreview.kreaRangeNote'));
     const shiftIgnored = Math.abs(configuredFlowShift - 1) > 1e-9
       && (isKrea2 ? sampling !== 'shift' : !['shift', 'sigma'].includes(sampling));
     if (shiftIgnored) {
@@ -3923,7 +3941,7 @@ window.trainingCoreMixin = {
     }
     if (this.timestepPreviewOpen && [
       'timestep_sampling', 'sigmoid_scale', 'discrete_flow_shift', 'weighting_scheme',
-      'logit_mean', 'logit_std', 'mode_scale', 'resolution'
+      'logit_mean', 'logit_std', 'mode_scale', 'resolution', 'min_timestep', 'max_timestep', 'preserve_distribution_shape'
     ].includes(key)) {
       this.refreshTimestepPreview();
     }
@@ -4037,13 +4055,11 @@ window.trainingCoreMixin = {
       'lr_scheduler', 'lr_warmup_steps', 'lr_scheduler_num_cycles', 'lr_scheduler_power',
       'lr_decay_steps', 'lr_scheduler_timescale', 'lr_scheduler_min_lr_ratio',
       'warmup_type', 'decay_type', 'step_rules',
-      'network_train_unet_only', 'network_train_text_encoder_only', 'adafactor_relative_step'
+      'network_module', 'lycoris_algo', 'enable_loraplus', 'loraplus_lr_ratio',
+      'network_train_unet_only', 'network_train_text_encoder_only', 'adafactor_relative_step',
+      'krea_adafactor_relative_step', 'krea_training_duration_mode', 'max_train_steps'
     ].includes(key)) {
-      if (key === 'model_train_type' && value === 'krea2-lora') {
-        this.closeLrPreview();
-      } else {
-        this.refreshLrPreview();
-      }
+      this.refreshLrPreview();
     }
 
     // The error node is reactive; rebuilding the form here would replace the

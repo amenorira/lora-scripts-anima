@@ -1453,7 +1453,8 @@
 		"fixedDistribution": "固定时间步",
 		"fixedLabel": "固定时间步：{value}",
 		"footnote": "分布曲线展示连续分布的区间平均概率密度；sigma 的占比与中位数按训练的离散时间步计算。损失权重曲线表示对应的加权系数。使用多种训练分辨率时，请分别查看主要分辨率下的结果。",
-		"interpretationHint": "高噪声输入保留的原图信息较少，低噪声保留较多。图中占比表示采样频率，不表示画质或参数更新量。"
+		"interpretationHint": "高噪声输入保留的原图信息较少，低噪声保留较多。图中占比表示采样频率，不表示画质或参数更新量。",
+		"kreaRangeNote": "已计入时间步范围。开启保留分布形状时，曲线按指定范围截取；范围过窄可能使实际采样退回原始分布，出现范围外的时间步。"
 	},
 	"lrPreview": {
 		"component": "绘制组件",
@@ -1465,12 +1466,12 @@
 		"multiplier": "倍率",
 		"internalNote": "该优化器在训练过程中自行调整学习率，无法根据外部调度器预先绘制曲线。",
 		"unsupportedNote": "当前调度器不支持曲线预览。",
-		"stepCountRequiredNote": "此调度设置需要总训练步数才能绘制曲线，请先选择有效的数据集。",
-		"estimatedStepsNote": "尚无总步数；此曲线暂按 {steps} 个训练步数估算，仅供参考。读取数据集后会按实际步数重新绘制。",
+		"stepCountRequiredNote": "此调度器需要总训练步数。请选择可读取的数据集，并在“训练步数计算”中重新计算。",
+		"estimatedStepsNote": "总步数未知，暂按 {steps} 步估算。数据集读取完成后自动更新。",
 		"endpointJumpNote": "训练结束瞬间，调度器会跳至最低学习率；曲线不连接这个瞬时跳变，100% 处的读数仍显示结束值。",
 		"invalidNote": "当前参数无法生成有效曲线：请检查学习率、预热和调度参数。constant 不允许非零预热，polynomial 的基础学习率必须大于 1e-7。",
 		"adaptiveNote": "曲线仅表示外部调度学习率；优化器还会根据训练状态调整实际更新尺度。",
-		"baseGroupNote": "曲线表示所选组件基础参数组的学习率变化，不含 LoRA+ 倍率和逐层设置，也不表示优化器的实际更新幅度。",
+		"baseGroupNote": "显示所选组件基础参数组的学习率，不含 LoRA+ 倍率和逐层学习率设置。实际更新幅度还取决于梯度和优化器。",
 		"open": "查看学习率曲线",
 		"title": "学习率曲线预览",
 		"subtitle": "基于当前 sd-scripts 配置绘制",
@@ -1481,7 +1482,7 @@
 		"textEncoderComponent": "文本编码器",
 		"totalSteps": "总步数",
 		"warmup": "预热",
-		"cycles": "重启周期",
+		"cycles": "周期数",
 		"power": "衰减幂次",
 		"learningRateAxis": "学习率",
 		"currentCurve": "当前曲线",
@@ -1493,8 +1494,12 @@
 		"stepLabel": "{count}步",
 		"chartAlt": "当前配置的调度学习率曲线",
 		"noStepNote": "未读取到总步数，横轴按 0–100% 训练进度显示。",
-		"estimatedWarmupNote": "未读取到总步数；预热填写为 {steps}，曲线暂按训练进度的 10% 渲染。",
-		"footnote": "纵轴和悬浮读数显示当前分量的调度学习率。"
+		"estimatedWarmupNote": "总步数未知；预热设为 {steps}，暂按训练进度的 10% 绘制。总步数确定后按填写值重新计算。",
+		"footnote": "纵轴和悬浮读数显示当前分量的调度学习率。",
+		"kreaStepCountRequiredNote": "此调度器需要总训练步数。请选择可读取的数据集并重新计算，或将“训练时长单位”设为 steps（总步数），再填写“最大训练步数”。",
+		"kreaBaseGroupNote": "显示 DiT 适配器的调度学习率。实际更新幅度还取决于梯度和优化器。",
+		"loraDownComponent": "DiT · LoRA Down（降维矩阵）",
+		"loraUpComponent": "DiT · LoRA Up（升维矩阵）"
 	},
 	"timestepOffset": {
 		"title": "子集采样偏移",
@@ -1565,6 +1570,8 @@
 		"timeEmbedding": "Time Embedding（时间嵌入）",
 		"textEncoder": "Text Encoder（文本编码器）",
 		"textEmbedder": "DiT Text Embedder（文本嵌入层）",
+		"textFusion": "Text Fusion（文本融合层）",
+		"textRefiner": "Text Refiner（文本细化层）",
 		"qkvProjection": "QKV Projection（合并查询、键、值投影）",
 		"mlpGate": "Gate（门控层）",
 		"mlpExpandGate": "Expansion + Gate（合并升维与门控）",
