@@ -534,7 +534,6 @@
 		"historyDetail": "Training record details",
 		"backToHistory": "Back to records",
 		"refreshHistory": "Refresh records",
-		"historyIntro": "Review results and parameters, or copy a configuration to start a new training run.",
 		"historyStatusFilter": "Filter by training result",
 		"historyCount": "Showing {shown} of {total} records",
 		"historyNoMatches": "No matching records",

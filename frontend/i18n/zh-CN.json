@@ -534,7 +534,6 @@
 		"historyDetail": "训练记录详情",
 		"backToHistory": "返回训练记录",
 		"refreshHistory": "刷新记录",
-		"historyIntro": "回看训练结果、检查参数，或复制配置开始一次新训练。",
 		"historyStatusFilter": "按训练结果筛选",
 		"historyCount": "显示 {shown} / {total} 条历史记录",
 		"historyNoMatches": "没有符合条件的记录",

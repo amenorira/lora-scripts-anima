@@ -534,7 +534,6 @@
 		"historyDetail": "学習記録の詳細",
 		"backToHistory": "学習記録に戻る",
 		"refreshHistory": "記録を更新",
-		"historyIntro": "結果とパラメータを確認し、設定をコピーして新しい学習を始められます。",
 		"historyStatusFilter": "学習結果で絞り込む",
 		"historyCount": "{total} 件中 {shown} 件を表示",
 		"historyNoMatches": "条件に一致する記録がありません",

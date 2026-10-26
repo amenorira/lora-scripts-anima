@@ -3365,7 +3365,6 @@ input[type="range"]::-webkit-slider-thumb {
 
 /* ── 历史记录页 ── */
 .m-empty-sub { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
-.hist-intro { margin: -4px 0 20px; font-size: 13px; line-height: 1.6; color: var(--text-secondary); }
 .route-history > .page-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .route-history > .page-header .page-title { margin: 0; }
 .hist-filters { display: flex; gap: 6px; flex-wrap: wrap; }

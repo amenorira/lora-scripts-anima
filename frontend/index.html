@@ -333,7 +333,6 @@
           <h1 class="page-title" x-text="t('nav.history')">Training History</h1>
           <button class="btn btn-sm btn-secondary" :disabled="historyLoading" @click="loadHistory()" x-text="t(historyLoading ? 'monitor.loading' : 'monitor.refreshHistory')"></button>
         </div>
-        <p class="hist-intro" x-text="t('monitor.historyIntro')"></p>
         <div class="hist-toolbar">
           <input type="search" class="hist-search" x-model="historySearch" :placeholder="t('monitor.searchHistory')" :aria-label="t('monitor.searchHistory')" @input.debounce.200ms="renderHistory()">
           <div class="hist-filters" role="group" :aria-label="t('monitor.historyStatusFilter')">
