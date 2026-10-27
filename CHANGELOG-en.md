@@ -4,6 +4,15 @@
 
 All notable changes to this project are documented in this file.
 
+## v26.1027.13e93 - 2026-10-27
+
+This update fixes how timestep distribution preview curves are drawn at the chart boundaries.
+
+- Fix the ends of the sampling probability density curves, removing extra horizontal segments at the edges.
+- Fix the boundaries of the loss weighting curves so they follow their respective weighting formulas near the chart edges.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1027.0bf78...v26.1027.13e93)
+
 ## v26.1027.0bf78 - 2026-10-27
 
 This release upgrades the **sd-scripts training engine**, adds a timestep sampling method for Anima and MOSS-Image, and improves distribution previews and the AI captioning interface.
