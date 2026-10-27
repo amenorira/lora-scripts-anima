@@ -23,13 +23,13 @@
 .caption-form .field, .caption-form .field + .field { position: relative; padding: 0; margin: 0 0 18px; border: 0; background: transparent; }
 .caption-form .field:hover { background: transparent; }
 .caption-form .field-row { position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 7px; min-height: 0; padding: 0; }
-.caption-form .field-info { flex: none; min-width: 0; padding-right: 26px; }
+.caption-form .field-info { flex: none; min-width: 0; padding-right: 0; }
 .caption-form .field-row:not(:has(> .field-control > .toggle)) > .field-info { display: contents; }
-.caption-form .field-row:not(:has(> .field-control > .toggle)) .field-key { padding-right: 26px; }
+.caption-form .field-row:not(:has(> .field-control > .toggle)):has(> .caption-field-actions:not(:empty)) .field-key { padding-right: 26px; }
 .caption-form .field-row:not(:has(> .field-control > .toggle)) .field-desc { order: 2; margin-top: 0; }
 .caption-form .field-row:not(:has(> .field-control > .toggle)) .field-control { order: 1; }
 .caption-form .field-key { font-size: 12px; font-weight: 550; line-height: 18px; }
-.caption-form .field-desc { margin-top: 3px; font-size: 11.5px; line-height: 1.5; color: var(--text-tertiary); }
+.caption-form .field-desc { margin-top: 3px; font-size: 11.5px; line-height: 1.5; color: var(--text-tertiary); overflow-wrap: anywhere; }
 .caption-form .field-control { display: flex; flex: none; width: 100%; min-width: 0; max-width: none; margin: 0; }
 .caption-form .field-control > input, .caption-form .field-control > .anima-select { width: 100%; min-width: 0; max-width: none; }
 .caption-form .field-control > input, .caption-form .field-input-wrap > input, .caption-form .anima-select-trigger, .caption-form .stepper { height: var(--control-h-form); min-height: var(--control-h-form); }
@@ -47,15 +47,20 @@
 /* Reserve the change marker even at the default value so controls and wrapped labels stay put. */
 .caption-form .field-key::after { display: inline-block; width: 4px; height: 4px; margin: 0 0 2px 6px; border-radius: 50%; background: var(--state-changed); content: ''; visibility: hidden; }
 .caption-form .field.field-changed .field-key::after { visibility: visible; }
-.caption-input-options { display: grid; grid-template-columns: minmax(0,300px) 140px; column-gap: 24px; max-width: 464px; }
+/* Size fields for their labels independently of compact input widths; wrap whole fields when space runs out. */
+.caption-input-options { display: flex; flex-wrap: wrap; align-items: flex-start; column-gap: 24px; }
+.caption-input-options > .field { flex: 0 1 300px; min-width: 0; max-width: 100%; }
+.caption-input-options > .caption-reference-field { flex-basis: auto; width: max-content; }
 .caption-reference-notes { margin-top: -8px; }
 .caption-reference-notes .field-hint { margin: 0; color: var(--text-tertiary); }
 .caption-reference-notes .field-hint-warn { color: var(--warning); }
 .caption-form .caption-recursive-field { margin-top: -8px; }
-.caption-form .field:has(> .field-row > .field-control > .toggle) .field-row { flex-direction: row; align-items: center; gap: 12px; min-height: 28px; }
-.caption-form .field:has(> .field-row > .field-control > .toggle) .field-info { flex: 0 1 auto; padding-right: 0; }
-.caption-form .field:has(> .field-row > .field-control > .toggle) .field-control { width: auto; }
-.caption-form .field:has(> .field-row > .field-control > .toggle) .caption-field-actions { position: static; }
+.caption-form .field:has(> .field-row > .field-control > .toggle) .field-row { display: grid; grid-template-columns: minmax(0,max-content) max-content max-content minmax(0,1fr); align-items: center; row-gap: 7px; column-gap: 0; min-height: 28px; }
+.caption-form .field:has(> .field-row > .field-control > .toggle) .field-info { display: contents; }
+.caption-form .field:has(> .field-row > .field-control > .toggle) .field-key { grid-column: 1; grid-row: 1; }
+.caption-form .field:has(> .field-row > .field-control > .toggle) .field-control { grid-column: 2; grid-row: 1; width: auto; margin-left: 12px; }
+.caption-form .field:has(> .field-row > .field-control > .toggle) .caption-field-actions { position: static; grid-column: 3; grid-row: 1; margin-left: 12px; }
+.caption-form .field:has(> .field-row > .field-control > .toggle) .field-desc { grid-column: 1 / -1; grid-row: 2; min-width: 0; margin: 0; contain: inline-size; }
 .caption-connection-fields { display: grid; grid-template-columns: 190px minmax(0,1fr); column-gap: 20px; }
 .caption-connection-fields > .field:has(#caption-api-apiKey), .caption-connection-fields > .field:has(#caption-model) { grid-column: 1 / -1; }
 .caption-form .caption-model-row { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; }
@@ -68,15 +73,10 @@
 .caption-prompt-preview p { margin: 0; color: var(--text-tertiary); font-size: 12px; line-height: 1.6; }
 .caption-text-button { flex: none; padding: 2px 0; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; }
 .caption-text-button:hover { text-decoration: underline; text-underline-offset: 3px; }
-.caption-parameter-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 7px 24px; }
-.caption-form .caption-parameter-grid > .field { display: grid; grid-row: span 3; grid-template-columns: minmax(0,1fr); grid-template-rows: subgrid; margin: 0 0 11px; }
-.caption-form .caption-parameter-grid :is(.field-row,.field-info) { display: contents; }
-.caption-form .caption-parameter-grid .field-key { grid-row: 1; }
-.caption-form .caption-parameter-grid .field-control { grid-row: 2; align-self: start; }
-.caption-form .caption-parameter-grid .field-desc { grid-row: 3; }
-.caption-knowledge-rules .caption-parameter-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+/* Keep at least 240px per column for labels and descriptions, with at most three columns. */
+.caption-parameter-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,max(240px,calc((100% - 48px) / 3))),1fr)); column-gap: 24px; align-items: start; }
 .caption-knowledge-rules > .field-hint { margin-bottom: 12px; }
-.caption-workspace textarea { width: 100%; resize: vertical; font: 12px/1.65 var(--font-mono); }
+.caption-workspace textarea { width: 100%; min-width: 0; resize: vertical; font: 12px/1.65 var(--font-mono); }
 .caption-workspace textarea::-webkit-resizer { border: 0; background: linear-gradient(135deg,transparent 45%,var(--text-tertiary) 46% 54%,transparent 55%) right 3px bottom 3px / 6px 6px no-repeat, linear-gradient(135deg,transparent 45%,var(--text-tertiary) 46% 54%,transparent 55%) right 3px bottom 3px / 10px 10px no-repeat; }
 .caption-workspace :is(pre,.field-hint) { white-space: pre-wrap; overflow-wrap: anywhere; }
 .caption-workspace .field-hint { font-size: 11.5px; line-height: 1.6; }
@@ -261,12 +261,6 @@ dialog.caption-review-dialog[open] > .caption-review { transform: none; }
   .caption-overview-filters { grid-column: 1 / -1; grid-row: 2; }
   .caption-density-control { grid-column: 2; grid-row: 1; }
 }
-@container caption-fields (max-width:640px) {
-  .caption-parameter-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px 18px; }
-}
-@container caption-fields (max-width:330px) {
-  .caption-parameter-grid { grid-template-columns: minmax(0,1fr); }
-}
 @container caption-fields (max-width:430px) {
   .caption-batch-layout .caption-candidate-order { display: grid; grid-template-columns: repeat(2,max-content); }
   .caption-batch-layout .caption-candidate-order > .field { justify-content: space-between; min-width: 96px; }
@@ -274,17 +268,15 @@ dialog.caption-review-dialog[open] > .caption-review { transform: none; }
 @container caption-gallery (max-height:200px) {
   .caption-overview-grid { grid-template-columns: repeat(auto-fill,minmax(280px,1fr)); gap: 16px 14px; }
   .caption-overview-grid.is-compact { grid-template-columns: repeat(auto-fill,minmax(240px,1fr)); }
-  .caption-overview-item { display: grid; grid-template-columns: 100px minmax(0,1fr); grid-template-rows: 18px minmax(0,1fr); gap: 7px 12px; }
+  .caption-overview-item { display: grid; grid-template-columns: clamp(48px,calc(100cqh - 15px),100px) minmax(0,1fr); grid-template-rows: 18px minmax(0,1fr); gap: 7px 12px; }
   .caption-overview-thumb { grid-column: 1; grid-row: 1 / 3; align-self: start; max-height: none; }
   .caption-overview-item > strong { grid-column: 2; grid-row: 1; align-self: start; }
   .caption-overview-excerpt { grid-column: 2; grid-row: 2; align-self: start; -webkit-line-clamp: 3; min-height: 0; }
 }
 @container caption-form-column (max-width:540px) {
-  .caption-input-options { column-gap: 18px; }
   .caption-connection-fields { grid-template-columns: 160px minmax(0,1fr); column-gap: 18px; }
 }
 @container caption-form-column (max-width:420px) {
-  .caption-input-options { grid-template-columns: minmax(0,1fr); max-width: 300px; }
   .caption-connection-fields { display: block; }
   .caption-form .caption-model-row { flex-wrap: wrap; }
   .caption-form .caption-model-row > .anima-select { flex-basis: 100%; }
