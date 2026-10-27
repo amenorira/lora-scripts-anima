@@ -2763,26 +2763,29 @@ window.trainingCoreMixin = {
     }
 
     // Compute Loss Weighting Curve (matched from t=1000 down to t=0)
-    const logWeights = [];
-    for (let i = 0; i < pointCount; i += 1) {
-      const sigma = 1 - (i + 0.5) / pointCount;
+    const lossLogWeight = sigma => {
       let w = 1.0;
-      if (weighting === 'sigma_sqrt') w = sigma ** -2;
+      // The sigma_sqrt limit at zero is infinite; a finite off-screen point
+      // lets SVG clip the rising curve without drawing a flat cap at the top.
+      if (weighting === 'sigma_sqrt') w = Math.max(Number.EPSILON, sigma) ** -2;
       else if (weighting === 'cosmap') w = 2 / (Math.PI * (1 - 2 * sigma + 2 * sigma * sigma));
-      logWeights.push(Math.log1p(w));
-    }
+      return Math.log1p(w);
+    };
+    const logWeights = Array.from({ length: pointCount }, (_, i) => lossLogWeight(1 - (i + 0.5) / pointCount));
     const maxLogWeight = Math.max(...logWeights, 1);
 
     // Build SVG Coordinates (x: 0~100, y: 0~100) mapped directly to 0~100%
     const buildSvgPath = values => {
+      const densityY = val => Math.max(0, 100 - (Math.max(0, val) / yUpper) * 100).toFixed(2);
       const coords = values.map((val, idx) => {
         const x = ((idx + 0.5) / pointCount) * 100;
-        const y = 100 - (val / yUpper) * 100; // 0 maps strictly to 100% (bottom axis), yUpper maps to 0% (top)
-        return `${x.toFixed(2)},${Math.max(0, y).toFixed(2)}`;
+        return `${x.toFixed(2)},${densityY(val)}`;
       });
-      // Extend the edge bins to the bounds; interior points sit at bin centers.
-      coords.unshift(`0,${coords[0].split(',')[1]}`);
-      coords.push(`100,${coords[coords.length - 1].split(',')[1]}`);
+      // Extrapolate half a bin to each boundary along the adjacent segment.
+      // Repeating the edge bin's height would introduce an artificial flat stub.
+      coords.unshift(`0,${densityY(values[0] + (values[0] - values[1]) / 2)}`);
+      const last = values.length - 1;
+      coords.push(`100,${densityY(values[last] + (values[last] - values[last - 1]) / 2)}`);
       const linePath = 'M ' + coords.join(' L ');
       const areaPath = `M 0,100 L ${coords.join(' L ')} L 100,100 Z`;
       return { linePath, areaPath, coords };
@@ -2791,8 +2794,8 @@ window.trainingCoreMixin = {
     const currentSvg = buildSvgPath(densities);
     const baselineSvg = buildSvgPath(baselineDensities);
 
-    const weightPoints = logWeights.map((lw, idx) => {
-      const x = (((idx + 0.5) / pointCount) * 100).toFixed(2);
+    const weightPoints = [lossLogWeight(1), ...logWeights, lossLogWeight(0)].map((lw, idx) => {
+      const x = (idx === 0 ? 0 : idx === pointCount + 1 ? 100 : ((idx - 0.5) / pointCount) * 100).toFixed(2);
       const y = (100 - (lw * 100 / maxLogWeight)).toFixed(2);
       return `${x},${y}`;
     }).join(' ');
