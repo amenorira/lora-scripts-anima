@@ -902,8 +902,6 @@
 		"min_snr_gamma": "Min-SNR 損失重み付けの上限",
 		"weight_decay": "重み減衰",
 		"weight_decayHint": "更新時に学習対象の重みを縮小し、増大を抑えます。強すぎると学習を妨げます。0 で無効にします。",
-		"bnb_percentile_clipping": "8bit のパーセンタイルクリッピング",
-		"bnb_percentile_clippingHint": "直近の勾配ノルムに基づき、異常に大きな勾配を抑えます。小さいほど強く制限し、100 で無効にします。",
 		"bnb_min_8bit_size": "8bit 化するテンソルの最小要素数",
 		"bnb_min_8bit_sizeHint": "この要素数未満のパラメータテンソルは、オプティマイザの状態を 32bit で保持します。しきい値を上げると小さなテンソルの量子化が減り、メモリ使用量が増えます。",
 		"stableadamw_kahan_sum": "Kahan 加算",

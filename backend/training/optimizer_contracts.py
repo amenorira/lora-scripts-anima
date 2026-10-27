@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+import logging
 import math
 from dataclasses import dataclass, field
 from typing import Any, Mapping
@@ -121,7 +122,6 @@ OPTIMIZER_ARGUMENT_DEFAULTS: dict[str, dict[str, Any]] = {
     "split_groups_mean": {"prodigyplus.ProdigyPlusScheduleFree": False},
     "weight_decay_by_lr": {"prodigyplus.ProdigyPlusScheduleFree": True},
     "schedulefree_warmup_steps": {"AdamWScheduleFree": 0},
-    "bnb_percentile_clipping": {"AdamW8bit": 100, "PagedAdamW8bit": 100, "Lion8bit": 100, "PagedLion8bit": 100},
     "bnb_min_8bit_size": {"AdamW8bit": 4096, "PagedAdamW8bit": 4096, "Lion8bit": 4096, "PagedLion8bit": 4096},
     "stableadamw_kahan_sum": {"pytorch_optimizer.StableAdamW": True},
     "stableadamw_weight_decouple": {"pytorch_optimizer.StableAdamW": True},
@@ -297,7 +297,6 @@ _BNB_ADAMW_ARGS = {
     # signatures, but explicitly rejects every value except 32.
     "optim_bits": _choice(32),
     "min_8bit_size": _integer(0),
-    "percentile_clipping": _integer(1, 100),
     "block_wise": _boolean(),
 }
 
@@ -313,7 +312,6 @@ _BNB_LION_ARGS = {
     "betas": _BETAS_2,
     "weight_decay": _NON_NEGATIVE,
     "min_8bit_size": _integer(0),
-    "percentile_clipping": _integer(1, 100),
     "block_wise": _boolean(),
 }
 
@@ -651,10 +649,6 @@ FORM_ARGUMENTS: dict[str, FormArgument] = {
     "gauge_power_steps": FormArgument(
         "gauge_power_steps", frozenset({LORA_MUON_OPTIMIZER_TYPE})
     ),
-    "bnb_percentile_clipping": FormArgument(
-        "percentile_clipping",
-        frozenset({"AdamW8bit", "PagedAdamW8bit", "Lion8bit", "PagedLion8bit"}),
-    ),
     "bnb_min_8bit_size": FormArgument(
         "min_8bit_size",
         frozenset({"AdamW8bit", "PagedAdamW8bit", "Lion8bit", "PagedLion8bit"}),
@@ -783,9 +777,24 @@ def normalize_lora_muon_form_fields(config: dict[str, Any]) -> None:
 def collect_optimizer_args(
     config: Mapping[str, Any], parsed_args: Mapping[str, Any],
     *, mappings: Mapping[str, FormArgument] = FORM_ARGUMENTS,
+    warnings: list[str] | None = None,
 ) -> dict[str, Any]:
     optimizer_type = str(config.get("optimizer_type", ""))
     result = dict(parsed_args)
+    if (
+        optimizer_type.lower() in {"adamw8bit", "pagedadamw8bit", "lion8bit", "pagedlion8bit"}
+        or optimizer_type.startswith("bitsandbytes.optim.")
+    ):
+        # Retire the removed bitsandbytes API, including saved native/custom args.
+        legacy_value = result.pop("percentile_clipping", None)
+        form_value = _coerce_form_argument(config.get("bnb_percentile_clipping"))
+        if not is_empty_optimizer_value(form_value) and (legacy_value is None or form_value != 100):
+            legacy_value = form_value
+        if warnings is not None and not is_empty_optimizer_value(legacy_value) and legacy_value != 100:
+            warnings.append(
+                "percentile_clipping removed; percentile clipping is disabled / "
+                "percentile_clipping 已移除，百分位裁剪已停用"
+            )
     for form_key, mapping in mappings.items():
         if optimizer_type not in mapping.optimizers:
             continue
@@ -807,12 +816,20 @@ def extract_optimizer_form(
 ) -> dict[str, Any]:
     """Restore native arguments using the same mappings and precedence as export."""
     form = dict(config)
-    if "optimizer_args" not in form:
+    if (
+        "optimizer_args" not in form
+        and not form.get("optimizer_args_custom")
+        and "bnb_percentile_clipping" not in form
+    ):
         return form
     parsed, errors = parse_optimizer_args(form)
     if errors:
         raise ValueError("; ".join(errors))
-    arguments = collect_optimizer_args(form, parsed, mappings=mappings)
+    warnings: list[str] = []
+    arguments = collect_optimizer_args(form, parsed, mappings=mappings, warnings=warnings)
+    form.pop("bnb_percentile_clipping", None)
+    for warning in warnings:
+        logging.getLogger("anima-trainer").warning(warning)
     optimizer_type = str(form.get("optimizer_type", ""))
     for key, mapping in mappings.items():
         if optimizer_type not in mapping.optimizers or mapping.argument not in arguments:
@@ -1081,7 +1098,8 @@ def normalize_optimizer_config(config: dict[str, Any], warnings: list[str], gpu_
     parsed, errors = parse_optimizer_args(config)
     if errors:
         raise ValueError("\n".join(errors))
-    args = collect_optimizer_args(config, parsed)
+    args = collect_optimizer_args(config, parsed, warnings=warnings)
+    config.pop("bnb_percentile_clipping", None)
     config.pop("optimizer_args_custom", None)
 
     if optimizer_type in PRODIGY_OPTIMIZERS:

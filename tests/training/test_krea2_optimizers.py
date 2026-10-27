@@ -4,7 +4,7 @@ import tempfile
 import unittest
 
 from backend.training.config_import import import_native_training_form
-from backend.training.krea2_optimizers import ARGUMENTS, supports_bnb_percentile_clipping
+from backend.training.krea2_optimizers import ARGUMENTS
 from backend.training.musubi_krea2 import (
     KREA2_FIELDS, _build_krea2_optimizer_args, build_krea2_train_config, validate_krea2_config,
 )
@@ -13,13 +13,33 @@ from tests.training.test_multi_core_krea2 import krea2_config
 
 
 class Krea2OptimizerTests(unittest.TestCase):
+    def test_removed_bnb_clipping_is_cleaned_from_old_configs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = krea2_config(Path(directory))
+            for optimizer in ('adamw8bit', 'bitsandbytes.optim.PagedAdamW8bit',
+                              'bitsandbytes.optim.Lion8bit', 'bitsandbytes.optim.PagedLion8bit'):
+                for value in (100, 99):
+                    for legacy in ({'bnb_percentile_clipping': value},
+                                   {'optimizer_args': [f'percentile_clipping={value}']},
+                                   {'optimizer_args_custom': f'percentile_clipping={value}'}):
+                        with self.subTest(optimizer=optimizer, legacy=legacy):
+                            config = {**base, 'optimizer_type': optimizer, 'bnb_min_8bit_size': 128, **legacy}
+                            self.assertEqual(validate_krea2_config(config), [])
+                            capture = self.assertNoLogs if value == 100 else self.assertLogs
+                            with capture('anima-trainer', level='WARNING'):
+                                native = build_krea2_train_config(config, 'dataset.toml', 'output', 'log')
+                                restored = import_native_training_form(config, profile_id='krea2-lora')
+                            self.assertNotIn('bnb_percentile_clipping', native)
+                            self.assertIn('min_8bit_size=128', native['optimizer_args'])
+                            self.assertFalse(any('percentile_clipping' in arg for arg in native['optimizer_args']))
+                            self.assertNotIn('bnb_percentile_clipping', restored)
+                            self.assertNotIn('percentile_clipping', restored.get('optimizer_args_custom', ''))
+
     def test_all_shared_optimizers_and_controls_export_and_import(self):
         entries = optimizer_entries(KREA2_PROFILE)
         self.assertEqual([entry.label for entry in entries], [entry.label for entry in optimizer_entries(SD_SCRIPTS_PROFILE)])
         fields = {field['key']: field for field in KREA2_FIELDS}
         expected = set(ARGUMENTS)
-        if not supports_bnb_percentile_clipping():
-            expected.remove('bnb_percentile_clipping')
         self.assertTrue(expected <= fields.keys(), expected - fields.keys())
         with tempfile.TemporaryDirectory() as directory:
             base = krea2_config(Path(directory))

@@ -902,8 +902,6 @@
 		"min_snr_gamma": "Min-SNR Loss 重加权上限",
 		"weight_decay": "权重衰减",
 		"weight_decayHint": "在更新时收缩可训练权重，约束它们持续增大。过强会妨碍拟合；0 表示关闭。",
-		"bnb_percentile_clipping": "8-bit 百分位裁剪",
-		"bnb_percentile_clippingHint": "按近期梯度大小识别并缩小异常梯度。数值越低，裁剪越强；100 表示关闭。",
 		"bnb_min_8bit_size": "8-bit 最小张量大小",
 		"bnb_min_8bit_sizeHint": "小于此元素数的参数张量保留 32-bit 优化器状态。提高阈值可减少小张量量化，但会增加状态显存。",
 		"stableadamw_kahan_sum": "Kahan 求和",

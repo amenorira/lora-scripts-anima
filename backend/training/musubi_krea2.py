@@ -11,6 +11,7 @@ import hashlib
 import importlib.metadata
 import importlib.util
 import json
+import logging
 import math
 import os
 import re
@@ -1214,7 +1215,12 @@ def _normalize_numeric_tuple(
 
 def _build_krea2_optimizer_args(config: dict[str, Any]) -> list[str]:
     """Use the same profile-specific mapping for native import and export."""
-    arguments = _collect_krea2_arguments(config, _KREA2_OPTIMIZER_DEFAULTS, _KREA2_OPTIMIZER_ARGUMENTS)
+    warnings: list[str] = []
+    arguments = _collect_krea2_arguments(
+        config, _KREA2_OPTIMIZER_DEFAULTS, _KREA2_OPTIMIZER_ARGUMENTS, warnings=warnings
+    )
+    for warning in warnings:
+        logging.getLogger("anima-trainer").warning(warning)
     if arguments.get("warmup_steps") == 0:
         arguments.pop("warmup_steps")
     return [f"{key}={value!r}" for key, value in arguments.items()]
@@ -1222,7 +1228,11 @@ def _build_krea2_optimizer_args(config: dict[str, Any]) -> list[str]:
 
 def extract_krea2_optimizer_form(config: dict[str, Any]) -> dict[str, Any]:
     """Restore supported controls; never silently discard unsupported native kwargs."""
-    if "optimizer_args" not in config and not config.get("optimizer_args_custom"):
+    if (
+        "optimizer_args" not in config
+        and not config.get("optimizer_args_custom")
+        and "bnb_percentile_clipping" not in config
+    ):
         return dict(config)
     form = {"optimizer_type": "adamw8bit", "optimizer_args": [], **config}
     errors: list[str] = []

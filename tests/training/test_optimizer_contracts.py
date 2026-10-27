@@ -3,6 +3,7 @@ import unittest
 
 
 from backend.training.adapter import adapt_config
+from backend.training.config_import import import_native_training_form
 from backend.training.optimizer_contracts import (
     ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE,
     CAME_OPTIMIZER_TYPE,
@@ -40,8 +41,6 @@ class OptimizerValidationTests(unittest.TestCase):
             (STABLE_ADAMW_OPTIMIZER_TYPE, {"betas": "0.9, 1.0"}, "item 1"),
             (STABLE_ADAMW_OPTIMIZER_TYPE, {"eps": "-1e-8"}, "eps"),
             (STABLE_ADAMW_OPTIMIZER_TYPE, {"stableadamw_kahan_sum": "yes"}, "true or false"),
-            ("AdamW8bit", {"bnb_percentile_clipping": 0}, "percentile_clipping"),
-            ("Lion8bit", {"bnb_percentile_clipping": 101}, "percentile_clipping"),
             ("PagedAdamW8bit", {"bnb_min_8bit_size": -1}, "min_8bit_size"),
             (MUON_OPTIMIZER_TYPE, {"muon_ns_steps": 0}, "ns_steps"),
             (MUON_OPTIMIZER_TYPE, {"muon_ns_coefficients": "1, 2"}, "exactly 3"),
@@ -96,6 +95,38 @@ class OptimizerValidationTests(unittest.TestCase):
 
 
 class OptimizerAdapterTests(unittest.TestCase):
+    def test_removed_bnb_clipping_is_cleaned_from_old_configs(self):
+        cases = (
+            ({}, False),
+            ({"bnb_percentile_clipping": 100}, False),
+            ({"bnb_percentile_clipping": "99"}, True),
+            ({"optimizer_args": ["percentile_clipping=100"]}, False),
+            ({"optimizer_args": ["percentile_clipping=99"]}, True),
+            ({"optimizer_args_custom": "percentile_clipping=99"}, True),
+            ({"bnb_percentile_clipping": 100, "optimizer_args_custom": "percentile_clipping=99"}, True),
+        )
+        for optimizer in ("AdamW8bit", "PagedAdamW8bit", "Lion8bit", "PagedLion8bit"):
+            for updates, should_warn in cases:
+                with self.subTest(optimizer=optimizer, updates=updates):
+                    config = {**valid_config(optimizer), "bnb_min_8bit_size": 128, **updates}
+                    self.assertEqual(validate_training_config(config), [])
+                    adapted, warnings = adapt_config(config)
+                    self.assertNotIn("bnb_percentile_clipping", adapted)
+                    self.assertIn("min_8bit_size=128", adapted["optimizer_args"])
+                    self.assertFalse(any("percentile_clipping" in arg for arg in adapted["optimizer_args"]))
+                    self.assertEqual(any("percentile_clipping" in warning for warning in warnings), should_warn)
+                    capture = self.assertLogs if should_warn else self.assertNoLogs
+                    with capture("anima-trainer", level="WARNING"):
+                        restored = import_native_training_form(config)
+                    self.assertNotIn("bnb_percentile_clipping", restored)
+                    self.assertNotIn("percentile_clipping", restored.get("optimizer_args_custom", ""))
+
+    def test_custom_optimizer_retains_its_own_percentile_argument(self):
+        config = {**valid_config("custom.Optimizer"), "optimizer_args": ["percentile_clipping=99"]}
+        adapted, warnings = adapt_config(config)
+        self.assertIn("percentile_clipping=99", adapted["optimizer_args"])
+        self.assertFalse(any("percentile_clipping" in warning for warning in warnings))
+
     def test_optimizer_argument_serialization(self):
         cases = [
             (MUON_OPTIMIZER_TYPE, {

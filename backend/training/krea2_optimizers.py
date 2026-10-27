@@ -1,8 +1,5 @@
 """Krea optimizer controls share the established optimizer argument contracts."""
 from copy import deepcopy
-import ast
-import importlib.util
-from pathlib import Path
 
 from backend.training.optimizer_contracts import (
     FORM_ARGUMENTS, FormArgument, AUTOMAGIC_OPTIMIZER_TYPE, EMOSENS_OPTIMIZER_TYPE,
@@ -29,21 +26,6 @@ ARGUMENTS = {
 }
 
 
-def supports_bnb_percentile_clipping():
-    """Read constructor capabilities without importing torch into the UI codec."""
-    spec = importlib.util.find_spec('bitsandbytes')
-    if spec is None or not spec.origin:
-        return False
-    source = Path(spec.origin).parent / 'optim/adamw.py'
-    try:
-        module = ast.parse(source.read_text(encoding='utf-8'))
-        constructor = next(method for cls in module.body if isinstance(cls, ast.ClassDef) and cls.name == 'AdamW8bit'
-                           for method in cls.body if isinstance(method, ast.FunctionDef) and method.name == '__init__')
-        return any(arg.arg == 'percentile_clipping' for arg in constructor.args.args + constructor.args.kwonlyargs)
-    except (OSError, SyntaxError, StopIteration):
-        return False
-
-
 def translate_metadata(value):
     if isinstance(value, dict):
         return {FIELD_ALIASES.get(key, KREA2_OPTIMIZER_SELECTORS.get(key, key)): translate_metadata(item)
@@ -64,8 +46,6 @@ def extend_fields(fields):
     reference = {field['key']: field for field in FIELDS}
     existing = {field['key']: field for field in fields}
     for key in FORM_ARGUMENTS:
-        if key == 'bnb_percentile_clipping' and not supports_bnb_percentile_clipping():
-            continue
         mapped = FIELD_ALIASES.get(key, key)
         if mapped in existing:
             continue
@@ -112,8 +92,6 @@ def validate_optimizer(config, arguments, gpu_ids=None):
     errors = validate_optimizer_contract(canonical, arguments)
     errors += _validate_automagic(canonical, arguments, gpu_ids)
     errors += _validate_emosens(canonical, gpu_ids)
-    if 'percentile_clipping' in arguments and arguments['percentile_clipping'] != 100 and not supports_bnb_percentile_clipping():
-        errors.append('percentile_clipping: removed by the installed bitsandbytes; use 100 to disable / 当前 bitsandbytes 已移除此参数，请设为 100 关闭')
     optimizer = canonical['optimizer_type']
     is_lycoris = config.get('network_module') == 'lycoris.kohya'
     if optimizer in PAIRED_OPTIMIZERS and is_lycoris:
@@ -136,7 +114,7 @@ def validate_optimizer(config, arguments, gpu_ids=None):
     return errors
 
 
-def collect_arguments(config, defaults, mappings):
+def collect_arguments(config, defaults, mappings, *, warnings=None):
     values = {**defaults, 'optimizer_type': 'adamw8bit', **config}
     fused = values.get('krea_adamw_fused', 'auto')
     if fused not in ('auto', 'true', 'false'):
@@ -152,13 +130,11 @@ def collect_arguments(config, defaults, mappings):
             canonical[key] = values[mapped]
     canonical['optimizer_type'] = reverse.get(values['optimizer_type'], values['optimizer_type'])
     if canonical['optimizer_type'].startswith('torch.optim.'):
-        arguments = collect_optimizer_args(values, parsed, mappings=mappings)
+        arguments = collect_optimizer_args(values, parsed, mappings=mappings, warnings=warnings)
     else:
-        arguments = collect_optimizer_args(canonical, parsed)
+        arguments = collect_optimizer_args(canonical, parsed, warnings=warnings)
         if values['optimizer_type'] == 'AdamW' and values['krea_adamw_fused'] is not None:
             arguments['fused'] = values['krea_adamw_fused']
     if values['optimizer_type'] == 'pytorch_optimizer.CAME' and arguments.get('weight_decouple') is False:
         arguments.pop('fixed_decay', None)
-    if arguments.get('percentile_clipping') == 100 and not supports_bnb_percentile_clipping():
-        arguments.pop('percentile_clipping')
     return arguments

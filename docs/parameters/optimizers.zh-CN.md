@@ -366,21 +366,6 @@ ProdigyPlusScheduleFree 还维护供评估与保存使用的平均权重。平�
 
 `max_grad_norm=1` 是常用起点，`0` 关闭。降低正数阈值会加强裁剪，提高则允许更大的梯度。StableAdamW 可正常搭配；LoRA-Muon 推荐 `0`，LoRA-RITE 锁定为 `0` 并使用内部裁剪。
 
-百分位裁剪和全局梯度裁剪分别计算。两个条件同时触发时，同一次更新会先后受到两种裁剪；比较裁剪效果时一次只调整一种。
-
-<!-- doc-anchor: percentile-clipping -->
-### 百分位裁剪（percentile clipping）
-
-适用于 AdamW8bit、PagedAdamW8bit、Lion8bit、PagedLion8bit，要求当前 bitsandbytes 版本提供 `percentile_clipping` 参数。
-
-已移除该参数的版本无法使用百分位裁剪。Krea 2 会隐藏此项，并在启动前拒绝旧配置中的非默认值；此类配置应恢复为 `100`（关闭）。
-
-- `100`：关闭，也是默认值
-- `99`：使用近期梯度范数的第 99 百分位进行裁剪
-- `95`：较强的实验对照值，只在确认存在异常梯度后考虑
-
-数值越低裁剪越强。出现可复现的梯度尖峰时先测试 `99`；阈值过低也会缩小正常批次的梯度。比较多个检查点的生成结果，确认学习是否被过度抑制。
-
 <!-- doc-anchor: min-8bit-size -->
 ### 8-bit 状态最小张量尺寸（min_8bit_size）
 
@@ -503,7 +488,6 @@ Anima 用 AdamW8bit 从 `1e-5`～`2e-5` 开始，并提高检查点保存频率�
 | Anima 梯度尖峰对照 | StableAdamW，LR 用上方主表，保留项目默认稳定性参数 | Kahan 开启，constant，`max_grad_norm=1` |
 | Anima LoRA-Muon 实验 | LoRA-Muon，LR 用上方主表，其他参数保持默认 | constant，`max_grad_norm=0`；Rank / Alpha 默认仍为 `32/32`，需要 `16/16` 时手动填写；固定 Rank / Alpha，只调整学习率 |
 | Anima Lion 实验 | Lion / Lion8bit，LR 用上方主表 | constant；权重衰减按实验目标单独设置 |
-| 8-bit 百分位裁剪对照 | AdamW8bit，沿用基准参数，`percentile_clipping=99` | 需当前 bitsandbytes 支持此参数；其余设置保持不变 |
 
 生成结果开始反复出现训练图中的固定姿势、背景或服装时，比较更早的检查点。缩短训练以总更新次数为准：
 
@@ -521,7 +505,7 @@ Anima 用 AdamW8bit 从 `1e-5`～`2e-5` 开始，并提高检查点保存频率�
 | 现象 | 优先检查 | 可考虑的优化器调整 |
 | --- | --- | --- |
 | 损失值平稳，但预览质量差 | 数据、标注、预览提示词、检查点时机 | 完成左列检查后，再比较学习率与训练长度 |
-| 孤立且可复现的 loss 或梯度尖峰 | 对应批次、异常图片、学习率 | 对比 StableAdamW；当前 bitsandbytes 支持时，也可单独测试 `percentile_clipping=99` |
+| 孤立且可复现的 loss 或梯度尖峰 | 对应批次、异常图片、学习率 | 对比 StableAdamW，或单独调整全局梯度裁剪阈值 |
 | 出现 NaN / Inf | 立即停止；检查学习率、精度设置、异常数据和恢复点 | 排除配置或数据问题后再比较 StableAdamW；不要用裁剪掩盖持续性问题 |
 | 优化器状态导致显存不足 | 分别检查状态、分辨率、batch 和预览的显存占用 | 先用 8-bit；仍不足时再用 Paged 版本 |
 | 很快记住姿势、背景或服装 | 步数、repeats、学习率、数据重复 | 比较更早的检查点，缩短训练，并检查重复图片和固定构图的占比 |
