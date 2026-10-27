@@ -25,17 +25,17 @@ Keep the selected profile's default distribution for an initial run.
 | Training profile | Default sampling | Default distribution parameters | `weighting_scheme` and effect |
 | --- | --- | --- | --- |
 | Anima | `sigmoid` | `sigmoid_scale=1.0` | `uniform`: loss multiplier 1 |
-| MOSS-Image | `sigma` | `logit_mean=-1.09`, `logit_std=0.95`, `discrete_flow_shift=1.0` | `logit_normal`: logit-normal sampling, loss multiplier 1 |
+| MOSS-Image | `truncated_logit_normal` | `logit_mean=-1.09`, `logit_std=0.95`, `discrete_flow_shift=1.0`, `timestep_cutoff=0.95`, `timestep_uniform_ratio=0.01` | `uniform`: loss multiplier 1 |
 | Krea 2 | `shift` | `sigmoid_scale=1.0`, `discrete_flow_shift=2.5` | `none`: loss multiplier 1 |
 
 Both `uniform` and `none` use a loss multiplier of 1. After importing an old preset, check the values shown in the form and distribution preview.
 
-MOSS-Image defaults to logit-normal index sampling with a negative mean, favoring high noise as an approximation to pre-training. The official setup additionally truncates at 0.95 and mixes in 1% uniform samples. Upstream also offers `shift + discrete_flow_shift=3` as a simpler approximation; switch both sampling mode and shift together.
+New MOSS-Image configurations reproduce pre-training sampling with truncated logit-normal, a 0.95 cutoff and 1% uniform mixing. Existing configurations retain their values; `sigma + logit_normal` remains supported. Upstream also offers `shift + discrete_flow_shift=3` as a simpler approximation.
 
 | Goal | Control | Default |
 | --- | --- | --- |
 | Sample both extremes more often | `sigmoid_scale` | `1.0`; higher values spread samples toward both ends |
-| Favor higher or lower noise | `discrete_flow_shift` | Anima/MOSS `1.0`, Krea 2 `2.5`; used by `shift`, and by Anima/MOSS's `sigma` |
+| Favor higher or lower noise | `discrete_flow_shift` | Anima/MOSS `1.0`, Krea 2 `2.5`; used by `shift`, and by Anima/MOSS's `sigma` and `truncated_logit_normal` |
 | Give image subsets different noise ranges | `subset_timestep_offsets` | Unset; supported by selected Anima/MOSS modes only |
 
 <!-- doc-anchor: terminology -->
@@ -98,6 +98,7 @@ Rounding can make the percentages total `99.9%` or `100.1%`.
 | `uniform` | Samples evenly across the full range | Anima/MOSS, Krea 2 |
 | `shift` | Applies a fixed nonlinear flow-shift mapping to sigmoid samples | Anima/MOSS, Krea 2 |
 | `sigma` | Samples from the training scheduler's discrete noise table | Anima/MOSS, Krea 2 |
+| `truncated_logit_normal` | Truncates and rescales logit-normal samples, mixes uniform samples and maps to the noise grid | Anima/MOSS |
 | `flux_shift` | Computes a FLUX-style shift from the current resolution | Anima/MOSS |
 | `krea2_shift` | Computes a Krea 2 shift from the current resolution | Krea 2 |
 | `logsnr` | Converts a LogSNR distribution into timesteps | Krea 2 |
@@ -213,7 +214,7 @@ During training, the offset is carried with each image into the batch. Images fr
 
 ### Supported modes and recommended range
 
-Subset offsets are supported by `sigmoid`, `shift`, and `flux_shift`. The `uniform` and `sigma` paths ignore this value.
+Subset offsets are supported by `sigmoid`, `shift`, `flux_shift`, `truncated_logit_normal`, and `sigma + logit_normal`. The `uniform` path and other `sigma` schemes ignore this value.
 
 Start within `-0.5` to `+0.5`. Negative values increase low-noise sampling; positive values increase high-noise sampling. A positive offset on an existing high-noise shift further reduces low-noise coverage. Confirm each subset's noise proportions in the preview.
 
@@ -221,13 +222,25 @@ The preview shows the base distribution (all offsets zero), the overall distribu
 
 ### Where the offset is applied
 
-The offset is added to the normal random sample first. The result is then scaled by `sigmoid_scale` and passed through `sigmoid`; with `shift` or `flux_shift`, an additional overall remapping follows:
+In `sigmoid`, `shift`, and `flux_shift`, the offset is added to the normal random sample first, then scaled by `sigmoid_scale` and passed through `sigmoid`. The latter two modes apply another remapping:
 
 ```text
 timestep = sigmoid( sigmoid_scale × (random sample + offset) )
 ```
 
 `0` preserves the original distribution. `sigmoid_scale` scales both the random sample and the offset.
+
+In `sigma + logit_normal` and `truncated_logit_normal`, offsets act as `logit_mean - offset`, keeping positive offsets biased toward higher noise.
+
+<!-- doc-anchor: truncated-logit-normal -->
+### `truncated_logit_normal`: truncation and uniform mixing
+
+Available for Anima/MOSS. The logit-normal distribution uses `logit_mean` and `logit_std`, is truncated and rescaled to the full noise range, then mapped onto the 1000-point training grid.
+
+- `timestep_cutoff`: `(0, 1]`, default `0.95`. Rescaling after truncation preserves coverage of the high-noise end.
+- `timestep_uniform_ratio`: `[0, 1]`, default `0.01` for 1% uniform grid samples; `1` makes all samples uniform.
+- `logit_std` must be positive; `discrete_flow_shift` shifts the training grid.
+- This mode reads `logit_mean/std` directly. It does not require `weighting_scheme=logit_normal`; `sigma_sqrt/cosmap` still apply loss weights.
 
 <!-- doc-anchor: weighting -->
 ## Sampling frequency and loss weight
@@ -242,7 +255,7 @@ The effect of `weighting_scheme` depends on the sampling path. With `sigma`, `lo
 | `logit_normal` | Sampling frequency in the `sigma` path | Loss multiplier 1; active only in the `sigma` path |
 | `mode` | Sampling frequency in the `sigma` path | Loss multiplier 1; `mode_scale` controls the distribution |
 
-Keep the selected profile's default for an initial run: `uniform` for Anima, `logit_normal` for MOSS-Image, and `none` for Krea 2. Test `sigma_sqrt` to give low-noise errors more weight, or `cosmap` to emphasize mid-noise errors.
+Keep the selected profile's default for an initial run: `uniform` for Anima/MOSS and `none` for Krea 2. Test `sigma_sqrt` to give low-noise errors more weight, or `cosmap` to emphasize mid-noise errors.
 
 ### Exact weights for `sigma_sqrt` and `cosmap`
 
@@ -286,8 +299,10 @@ Anima/MOSS's scheduler shift also changes the resulting noise levels; Krea 2's `
 | `discrete_flow_shift` | Ignored | Ignored | Used | Anima/MOSS only | Ignored | Ignored |
 | `logit_mean/std` | Ignored | Ignored | Ignored | `logit_normal` density only | Ignored | Used directly |
 | `mode_scale` | Ignored | Ignored | Ignored | `mode` density only | Ignored | Ignored |
-| `subset_timestep_offsets` | Used | Ignored | Used | Ignored | Only `flux_shift` | Ignored |
+| `subset_timestep_offsets` | Used | Ignored | Used | Anima/MOSS with `logit_normal` | Only `flux_shift` | Ignored |
 | `sigma_sqrt/cosmap` weight | Used | Used | Used | Used | Used | Used |
+
+`truncated_logit_normal` uses `logit_mean/std`, `discrete_flow_shift`, subset offsets, and both truncation controls. It ignores `sigmoid_scale` and `mode_scale`.
 
 “Ignored” means the current training path leaves that parameter unused. The form hides or annotates inactive fields, and the preview warns about ignored combinations.
 

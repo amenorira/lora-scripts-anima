@@ -14,7 +14,7 @@ NETWORK_MODULES = ("networks.lora_generic", "networks.loha", "networks.lokr")
 # These use the same upstream implementations as Anima, without its model-specific VAE/TE options.
 SHARED_FIELDS = {
     "timestep_sampling", "sigmoid_scale", "discrete_flow_shift", "weighting_scheme",
-    "logit_mean", "logit_std", "mode_scale", "subset_timestep_offsets", "attn_mode",
+    "logit_mean", "logit_std", "timestep_cutoff", "timestep_uniform_ratio", "mode_scale", "subset_timestep_offsets", "attn_mode",
     "split_attn", "cuda_allow_tf32", "cuda_cudnn_benchmark", "blocks_to_swap",
     "cpu_offload_checkpointing", "unsloth_offload_checkpointing", "compile",
     "compile_backend", "compile_mode", "compile_dynamic", "compile_fullgraph",
@@ -25,7 +25,7 @@ DEFAULTS = {
     # Keep the guide's alpha/LR pair together; higher alpha needs LR retuning.
     "gradient_checkpointing": True, "network_dim": 16, "network_alpha": 1,
     "learning_rate": "1e-4", "max_data_loader_n_workers": 2,
-    "timestep_sampling": "sigma", "weighting_scheme": "logit_normal",
+    "timestep_sampling": "truncated_logit_normal", "weighting_scheme": "uniform",
     "logit_mean": -1.09, "logit_std": 0.95, "lr_scheduler": "constant",
     "sample_width": 1024, "sample_height": 1024, "sample_steps": 50,
     "sample_cfg": 3.0, "sample_flow_shift": 5.0,
@@ -154,8 +154,6 @@ def _validate_quantized_options(
     if _has_base_weights(config) and (dit_quantized or text_encoder_quantized):
         errors.append("MOSS-Image: base_weights cannot be merged into ConvRot INT8 models; use unquantized checkpoints and disable both ConvRot options / "
                       "预合并 LoRA 不支持 ConvRot INT8 模型；请使用未量化权重并关闭两个 ConvRot 开关")
-    if config.get("compile") and config.get("compile_fullgraph") and dit_quantized:
-        errors.append("MOSS-Image: compile_fullgraph cannot be used with a ConvRot INT8 DiT; disable fullgraph / 完整图编译不支持 ConvRot INT8 DiT；请关闭完整图编译")
     return errors
 
 
@@ -225,8 +223,7 @@ def validate_model_files(config: dict[str, Any]) -> list[str]:
     if tokenizer and not Path(tokenizer).is_dir():
         errors.append("tokenizer_cache_dir: directory not found / 分词器目录不存在")
     premerge = _has_base_weights(config)
-    fullgraph = config.get("compile") and config.get("compile_fullgraph")
-    if not errors and (premerge or fullgraph):
+    if not errors and premerge:
         try:
             errors.extend(_validate_quantized_options(
                 config,

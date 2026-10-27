@@ -1,4 +1,5 @@
 """Shared sd-scripts option dependencies, including legacy native configs."""
+import math
 from typing import Any
 
 
@@ -29,6 +30,9 @@ def normalize_sd_options(config: dict) -> None:
     if not config.get("block_swap_h2d_only"):
         config.pop("block_swap_ring_size", None)
         config.pop("use_pinned_memory_for_block_swap", None)
+    if config.get("timestep_sampling") != "truncated_logit_normal":
+        config.pop("timestep_cutoff", None)
+        config.pop("timestep_uniform_ratio", None)
 
 
 def validate_sd_option_dependencies(config: dict) -> list[str]:
@@ -42,6 +46,24 @@ def validate_sd_option_dependencies(config: dict) -> list[str]:
     if (config.get("cache_text_encoder_outputs") or config.get("cache_text_encoder_outputs_to_disk")) and epoch_dropout:
         errors.append("caption_dropout_every_n_epochs: requires disabling both Text Encoder caches / 按轮丢弃标注需要关闭内存和磁盘文本缓存")
     if config.get("model_train_type") in ("anima-lora", "moss-image-lora"):
+        if config.get("timestep_sampling") == "truncated_logit_normal":
+            for key, default, lower, upper in (
+                ("timestep_cutoff", 0.95, 0, 1),
+                ("timestep_uniform_ratio", 0.01, 0, 1),
+                ("logit_std", 1.0, 0, None),
+            ):
+                raw = config.get(key)
+                raw = default if raw is None or raw == "" else raw
+                try:
+                    value = float(raw)
+                    valid = not isinstance(raw, bool) and math.isfinite(value)
+                    valid = valid and (value >= lower if key == "timestep_uniform_ratio" else value > lower)
+                    valid = valid and (upper is None or value <= upper)
+                except (ValueError, TypeError, OverflowError):
+                    valid = False
+                if not valid:
+                    bounds = "[0, 1]" if key == "timestep_uniform_ratio" else "(0, 1]" if upper else "> 0"
+                    errors.append(f"{key}: truncated_logit_normal requires {bounds} / 截断采样要求取值为 {bounds}")
         cpu = bool(config.get("cpu_offload_checkpointing"))
         unsloth = bool(config.get("unsloth_offload_checkpointing"))
         try:

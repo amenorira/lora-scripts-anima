@@ -25,17 +25,17 @@ Anima、MOSS-Image、Krea 2 はフローマッチングを使い、正規化し�
 | 学習プロファイル | サンプリング | 分布パラメータ | `weighting_scheme` と作用 |
 | --- | --- | --- | --- |
 | Anima | `sigmoid` | `sigmoid_scale=1.0` | `uniform`：損失の倍率は 1 |
-| MOSS-Image | `sigma` | `logit_mean=-1.09`, `logit_std=0.95`, `discrete_flow_shift=1.0` | `logit_normal`：logit-normal 分布で抽出、損失の倍率は 1 |
+| MOSS-Image | `truncated_logit_normal` | `logit_mean=-1.09`, `logit_std=0.95`, `discrete_flow_shift=1.0`, `timestep_cutoff=0.95`, `timestep_uniform_ratio=0.01` | `uniform`：損失の倍率は 1 |
 | Krea 2 | `shift` | `sigmoid_scale=1.0`, `discrete_flow_shift=2.5` | `none`：損失の倍率は 1 |
 
 `uniform` と `none` は、どちらも損失の倍率を 1 にします。古いプリセットを読み込んだ場合は、フォームと分布プレビューに表示される値を確認してください。
 
-MOSS-Image の既定値は、平均が負の logit-normal 分布でインデックスを抽出し、高ノイズ側へ偏らせて事前学習を近似します。公式設定は追加で 0.95 での打ち切りと 1% の一様サンプル混合を使います。上流は簡単な近似として `shift + discrete_flow_shift=3` も示しています。切り替える際は方式とシフトを一緒に変更してください。
+MOSS-Image の新規設定は、0.95 での打ち切りと 1% の一様サンプルを含む truncated logit-normal で事前学習の抽出を再現します。既存設定の値は保持し、`sigma + logit_normal` も引き続き使えます。上流は簡単な近似として `shift + discrete_flow_shift=3` も示しています。
 
 | 目的 | 調整する項目 | 既定値 |
 | --- | --- | --- |
 | 両端をより多くサンプリングする | `sigmoid_scale` | `1.0`。大きくすると両端に広がる |
-| 高ノイズまたは低ノイズを増やす | `discrete_flow_shift` | Anima/MOSS は `1.0`、Krea 2 は `2.5`。`shift` と Anima/MOSS の `sigma` で有効 |
+| 高ノイズまたは低ノイズを増やす | `discrete_flow_shift` | Anima/MOSS は `1.0`、Krea 2 は `2.5`。`shift` と Anima/MOSS の `sigma`、`truncated_logit_normal` で有効 |
 | サブセットごとにノイズ範囲を変える | `subset_timestep_offsets` | 未設定。Anima/MOSS の一部のモードのみ対応 |
 
 <!-- doc-anchor: terminology -->
@@ -98,6 +98,7 @@ MOSS-Image の既定値は、平均が負の logit-normal 分布でインデッ�
 | `uniform` | 全範囲を均等に選ぶ | Anima/MOSS、Krea 2 |
 | `shift` | sigmoid の抽出値に固定の非線形フローシフトを適用する | Anima/MOSS、Krea 2 |
 | `sigma` | 学習スケジューラの離散ノイズ表から選ぶ | Anima/MOSS、Krea 2 |
+| `truncated_logit_normal` | logit-normal を打ち切り・再スケールし、一様サンプルと混ぜて離散表に写す | Anima/MOSS |
 | `flux_shift` | 現在の解像度から FLUX 式のシフトを計算する | Anima/MOSS |
 | `krea2_shift` | 現在の解像度から Krea 2 式のシフトを計算する | Krea 2 |
 | `logsnr` | LogSNR の分布をタイムステップに変換する | Krea 2 |
@@ -213,7 +214,7 @@ timestep_sampling = { offset = -0.25 }
 
 ### 対応モードと推奨範囲
 
-`sigmoid`、`shift`、`flux_shift` で有効です。`uniform` と `sigma` はこの値を無視します。
+`sigmoid`、`shift`、`flux_shift`、`truncated_logit_normal`、`sigma + logit_normal` で有効です。`uniform` と他の `sigma` 方式では無効です。
 
 まず `-0.5`～`+0.5` の範囲で調整してください。負の値は低ノイズ、正の値は高ノイズを増やします。すでに高ノイズへシフトしている場合、正の偏移は低ノイズをさらに減らします。分布プレビューで各サブセットのノイズ割合を確認してください。
 
@@ -221,13 +222,25 @@ timestep_sampling = { offset = -0.25 }
 
 ### オフセットを加える位置
 
-正規分布から取った乱数にオフセットを加え、`sigmoid_scale` を掛けてから `sigmoid` に通します。`shift` と `flux_shift` では、その後に分布全体を再変換します。
+`sigmoid`、`shift`、`flux_shift` では正規乱数にオフセットを加え、`sigmoid_scale` を掛けてから `sigmoid` に通します。後の 2 方式はさらに全体を再変換します。
 
 ```text
 timestep = sigmoid( sigmoid_scale × (random sample + offset) )
 ```
 
 `0` は元の分布を保ちます。`sigmoid_scale` は乱数とオフセットの両方に掛かります。
+
+`sigma + logit_normal` と `truncated_logit_normal` は `logit_mean - offset` として適用し、正の値を高ノイズ方向に保ちます。
+
+<!-- doc-anchor: truncated-logit-normal -->
+### `truncated_logit_normal`：打ち切りと一様混合
+
+Anima/MOSS で使用できます。`logit_mean` と `logit_std` の logit-normal 分布を打ち切り、全ノイズ範囲へ再スケールし、1000 点の学習グリッドに写します。
+
+- `timestep_cutoff`：範囲 `(0, 1]`、既定 `0.95`。再スケールにより高ノイズ端までカバーします。
+- `timestep_uniform_ratio`：範囲 `[0, 1]`、既定 `0.01` は 1% の一様抽出。`1` は全件を一様抽出します。
+- `logit_std` は正数が必要です。`discrete_flow_shift` は学習グリッドを変えます。
+- `logit_mean/std` を直接読みます。`weighting_scheme=logit_normal` は不要です。`sigma_sqrt/cosmap` の損失重みは適用できます。
 
 <!-- doc-anchor: weighting -->
 ## サンプリング頻度と損失の重み
@@ -242,7 +255,7 @@ timestep = sigmoid( sigmoid_scale × (random sample + offset) )
 | `logit_normal` | `sigma` のサンプリング頻度 | 損失の倍率は 1。`sigma` 経路でのみ有効 |
 | `mode` | `sigma` のサンプリング頻度 | 損失の倍率は 1。`mode_scale` が分布を調整 |
 
-初回は各プロファイルの既定値を使います。Anima は `uniform`、MOSS-Image は `logit_normal`、Krea 2 は `none` です。低ノイズの誤差を重視したいなら `sigma_sqrt`、中ノイズを重視したいなら `cosmap` を比較します。
+初回は各プロファイルの既定値を使います。Anima/MOSS は `uniform`、Krea 2 は `none` です。低ノイズの誤差を重視したいなら `sigma_sqrt`、中ノイズを重視したいなら `cosmap` を比較します。
 
 ### `sigma_sqrt` と `cosmap` の重み
 
@@ -286,8 +299,10 @@ Anima/MOSS ではスケジューラのシフトも最終的なノイズ量を変
 | `discrete_flow_shift` | 無効 | 無効 | 有効 | Anima/MOSS のみ | 無効 | 無効 |
 | `logit_mean/std` | 無効 | 無効 | 無効 | `logit_normal` の密度のみ | 無効 | 直接使用 |
 | `mode_scale` | 無効 | 無効 | 無効 | `mode` の密度のみ | 無効 | 無効 |
-| `subset_timestep_offsets` | 有効 | 無効 | 有効 | 無効 | `flux_shift` のみ | 無効 |
+| `subset_timestep_offsets` | 有効 | 無効 | 有効 | Anima/MOSS の `logit_normal` | `flux_shift` のみ | 無効 |
 | `sigma_sqrt/cosmap` の重み | 有効 | 有効 | 有効 | 有効 | 有効 | 有効 |
+
+`truncated_logit_normal` は `logit_mean/std`、`discrete_flow_shift`、サブセット偏移、2 つの打ち切り設定を使います。`sigmoid_scale` と `mode_scale` は無効です。
 
 「無効」は現在の学習経路でその項目を使わないことを表します。フォームでは無効な項目を隠すか注記し、プレビューでも知らせます。
 

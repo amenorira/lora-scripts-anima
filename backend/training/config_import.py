@@ -34,6 +34,11 @@ def import_native_training_form(params: dict, *, profile_id: str | None = None) 
     if not imported_type:
         raise ValueError("Cannot identify this run's training type / 无法识别此记录的训练类型，请从训练页手动导入配置")
     form = extract_scheduler_form({**params, "model_train_type": imported_type})
+    if imported_type == "moss-image-lora":
+        # Native TOML omissions mean argparse defaults, independent of our recommended preset.
+        for key, value in {"timestep_sampling": "sigmoid", "weighting_scheme": "uniform",
+                           "logit_mean": 0.0, "logit_std": 1.0}.items():
+            form.setdefault(key, value)
     if imported_type == "krea2-lora":
         from backend.training.musubi_krea2 import extract_krea2_optimizer_form
         form = extract_krea2_optimizer_form(form)

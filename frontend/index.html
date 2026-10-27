@@ -1696,6 +1696,12 @@
           <template x-if="timestepPreviewData && timestepPreviewData.modeScaleCard !== null">
             <span><small x-text="t('timestepPreview.modeScale')"></small><b x-text="timestepPreviewData && timestepPreviewData.modeScaleCard"></b></span>
           </template>
+          <template x-if="timestepPreviewData && timestepPreviewData.cutoffCard !== null">
+            <span><small x-text="t('field.timestep_cutoff')"></small><b x-text="timestepPreviewData.cutoffCard"></b></span>
+          </template>
+          <template x-if="timestepPreviewData && timestepPreviewData.uniformRatioCard !== null">
+            <span><small x-text="t('field.timestep_uniform_ratio')"></small><b x-text="timestepPreviewData.uniformRatioCard"></b></span>
+          </template>
           <span><small x-text="t('timestepPreview.offset')"></small><b x-text="timestepPreviewData ? timestepPreviewData.offsetText : '0'"></b></span>
           <span><small x-text="t('timestepPreview.resolution')"></small><b x-text="timestepPreviewData && timestepPreviewData.resolution"></b></span>
         </div>
