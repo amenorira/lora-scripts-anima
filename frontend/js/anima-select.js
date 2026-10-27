@@ -320,7 +320,27 @@ document.addEventListener('alpine:init', () => {
       });
     },
 
-    // 打开时确定方向和高度；之后只更新锚点，不挤压菜单或改变内部滚动范围。
+    _triggerVisible(trigger, rect) {
+      let left = 0, top = 0, right = window.innerWidth, bottom = window.innerHeight;
+      for (let parent = trigger.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
+        const style = getComputedStyle(parent);
+        const clipX = /^(auto|scroll|hidden|clip)$/.test(style.overflowX);
+        const clipY = /^(auto|scroll|hidden|clip)$/.test(style.overflowY);
+        if (!clipX && !clipY) continue;
+        const bounds = parent.getBoundingClientRect();
+        if (clipX) {
+          left = Math.max(left, bounds.left + parent.clientLeft);
+          right = Math.min(right, bounds.left + parent.clientLeft + parent.clientWidth);
+        }
+        if (clipY) {
+          top = Math.max(top, bounds.top + parent.clientTop);
+          bottom = Math.min(bottom, bounds.top + parent.clientTop + parent.clientHeight);
+        }
+      }
+      return rect.right > left && rect.left < right && rect.bottom > top && rect.top < bottom;
+    },
+
+    // 根据触发器的位置选择方向和可用高度，避免菜单覆盖触发器。
     positionMenu() {
       const root = this.$el;
       const trigger = root.querySelector('.anima-select-trigger');
@@ -328,6 +348,10 @@ document.addEventListener('alpine:init', () => {
       if (!trigger || !menu) return;
       const firstPosition = !this.positioned;
       const r = trigger.getBoundingClientRect();
+      if (!this._triggerVisible(trigger, r)) {
+        this.dismiss();
+        return;
+      }
       const vw = window.innerWidth;
       const vh = window.innerHeight;
       // 带说明的选项需要更宽的阅读区域；窄屏下仍由视口宽度兜底。
@@ -335,26 +359,26 @@ document.addEventListener('alpine:init', () => {
       menu.style.width = Math.round(width) + 'px';
       const menuScroll = menu.querySelector('.anima-select-menu-scroll');
       const maxScrollHeight = 520;
-      if (firstPosition) {
-        if (menuScroll) menuScroll.style.maxHeight = `${maxScrollHeight}px`;
-        const desiredHeight = Math.min(menu.scrollHeight, maxScrollHeight + 2);
-        const spaceBelow = Math.max(0, vh - r.bottom - 8);
-        const spaceAbove = Math.max(0, r.top - 8);
-        this._openUp = spaceBelow < desiredHeight && spaceAbove > spaceBelow;
-        const availableHeight = this._openUp ? spaceAbove : spaceBelow;
-        if (menuScroll) menuScroll.style.maxHeight = `${Math.max(0, Math.min(maxScrollHeight, availableHeight - 2))}px`;
-      }
+      const desiredHeight = Math.min(menuScroll ? menuScroll.scrollHeight : menu.scrollHeight, maxScrollHeight) + 2;
+      const spaceBelow = Math.max(0, vh - r.bottom - 12);
+      const spaceAbove = Math.max(0, r.top - 12);
+      this._openUp = spaceBelow < desiredHeight && spaceAbove > spaceBelow;
+      const availableHeight = this._openUp ? spaceAbove : spaceBelow;
+      const scrollMaxHeight = `${Math.max(0, Math.min(maxScrollHeight, availableHeight - 2))}px`;
+      const heightLimitChanged = menuScroll && menuScroll.style.maxHeight !== scrollMaxHeight;
+      if (heightLimitChanged) menuScroll.style.maxHeight = scrollMaxHeight;
       const openUp = this._openUp;
       // 对齐方向由调用方配置，空间不足时统一避让视口边缘。
       let left = align === 'right' ? r.right - width : r.left;
       if (left + width > vw - 8) left = vw - width - 8;
       if (left < 8) left = 8;
       menu.style.position = 'fixed';
-      menu.style.top = openUp ? 'auto' : Math.round(r.bottom + 4) + 'px';
-      menu.style.bottom = openUp ? Math.round(vh - r.top + 4) + 'px' : 'auto';
+      menu.style.top = openUp ? 'auto' : `${r.bottom + 4}px`;
+      menu.style.bottom = openUp ? `${vh - r.top + 4}px` : 'auto';
       menu.style.left = Math.round(left) + 'px';
       menu.style.right = 'auto';
       menu.style.transformOrigin = `${left < r.left ? 'right' : 'left'} ${openUp ? 'bottom' : 'top'}`;
+      // 重定位时保留用户在菜单中的滚动位置；键盘导航仍会自行滚动到活动项。
       if (firstPosition) this._syncOptionA11y();
       this.positioned = true;
     },
