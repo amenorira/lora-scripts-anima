@@ -4,6 +4,17 @@
 
 All notable changes to this project are documented in this file.
 
+## v26.1027.09879 - 2026-10-27
+
+This update fixes compatibility with bitsandbytes 8-bit optimizers.
+
+### Compatibility Fixes
+
+- Fix a training startup error with bitsandbytes 0.50.2 caused by the removed `percentile_clipping` argument in `AdamW8bit`. The fix also applies to `PagedAdamW8bit`, `Lion8bit`, and `PagedLion8bit` ([#1](https://github.com/amenorira/lora-scripts-anima/issues/1)).
+- Remove the 8-bit percentile clipping option from the training interface. Legacy settings are automatically removed when importing configurations or starting training. If a non-default value such as `99` was previously used, percentile clipping is disabled and a warning is issued. Global gradient clipping via `max_grad_norm` remains available.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1026.136b1...v26.1027.09879)
+
 ## v26.1026.136b1 - 2026-10-26
 
 This release expands **Krea 2 optimizers, LoCon support, and training previews**, adds optional **MOSS text acceleration** and a **description text mode** in the caption editor, and fixes cache reuse, draft recovery, and reuse of historical training configurations.

@@ -366,21 +366,6 @@ Before reading a curve, check whether it records group learning rate, `D × lr`,
 
 `max_grad_norm=1` is the common starting value; `0` disables clipping. Lower positive thresholds clip more strongly; higher thresholds allow larger gradients. StableAdamW supports it. LoRA-Muon recommends `0`; LoRA-RITE locks it to `0` and uses internal clipping.
 
-Percentile clipping and global gradient clipping are calculated separately. If both conditions trigger, both act on the same update. Change only one clipping setting at a time when comparing results.
-
-<!-- doc-anchor: percentile-clipping -->
-### Percentile clipping
-
-Applies to AdamW8bit, PagedAdamW8bit, Lion8bit, and PagedLion8bit when the installed bitsandbytes version provides `percentile_clipping`.
-
-Versions that removed this parameter cannot perform percentile clipping. Krea 2 hides the control and rejects nondefault values from older configurations before launch; restore those configurations to `100` (off).
-
-- `100`: off, and the default
-- `99`: clips using the 99th percentile of recent gradient norms
-- `95`: a stronger experimental comparison, only after confirming actual gradient outliers
-
-Lower values clip more strongly. Test `99` when gradient spikes recur; a threshold that is too low also shrinks gradients from ordinary batches. Compare generated samples across several checkpoints to check whether learning is being suppressed.
-
 <!-- doc-anchor: min-8bit-size -->
 ### Minimum 8-bit tensor size (min_8bit_size)
 
@@ -503,7 +488,6 @@ Use an 8-bit optimizer when optimizer state does not fit; compare a Paged varian
 | Anima gradient-spike comparison | StableAdamW, LR from the table above, keep project stability defaults | Kahan on, constant, `max_grad_norm=1` |
 | Anima LoRA-Muon experiment | LoRA-Muon, LR from the table above, otherwise defaults | constant, `max_grad_norm=0`; rank/Alpha still default to `32/32`. Enter `16/16` manually if desired; fix rank/Alpha and vary only LR |
 | Anima Lion experiment | Lion or Lion8bit, LR from the table above | constant; set weight decay for the comparison's purpose |
-| 8-bit percentile-clipping comparison | AdamW8bit with baseline params, `percentile_clipping=99` | requires bitsandbytes support for this parameter; keep other settings fixed |
 
 When generated results begin repeating training poses, backgrounds, or outfits, compare earlier checkpoints. Use total update count to judge changes in training length:
 
@@ -521,7 +505,7 @@ For a complete accumulation window, effective batch size is batch size × accumu
 | Symptom | Check first | Optimizer action worth trying |
 | --- | --- | --- |
 | Loss plateaus but previews are poor | Data, captions, preview prompt, checkpoint timing | Complete the checks on the left, then compare learning rate and training length |
-| Isolated, reproducible loss or gradient spikes | The batch, its images, the LR | Compare StableAdamW; if bitsandbytes supports it, also consider testing `percentile_clipping=99` alone |
+| Isolated, reproducible loss or gradient spikes | The batch, its images, the LR | Compare StableAdamW, or adjust the global gradient clipping threshold separately |
 | NaN / Inf appears | Stop immediately; check LR, precision settings, bad data, and resume points | Only after those are ruled out, compare StableAdamW; do not mask a persistent problem with clipping |
 | Optimizer state overflows memory | Check memory used by state, resolution, batch, and previews separately | Use 8-bit first, paged only if still tight |
 | Pose, background, or outfit memorized quickly | Steps, repeats, LR, data duplication | Compare earlier checkpoints, shorten training, and check duplicate images and fixed compositions |

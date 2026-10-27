@@ -902,8 +902,6 @@
 		"min_snr_gamma": "Min-SNR Loss reweighting cap",
 		"weight_decay": "Weight decay",
 		"weight_decayHint": "Shrinks trainable weights during updates to limit their growth. Excessive decay can hinder fitting. Set to 0 to disable.",
-		"bnb_percentile_clipping": "8-bit percentile clipping",
-		"bnb_percentile_clippingHint": "Uses recent gradient norms to scale down unusually large gradients. Lower values clip more strongly. Set to 100 to disable.",
 		"bnb_min_8bit_size": "Minimum 8-bit tensor size",
 		"bnb_min_8bit_sizeHint": "Parameter tensors below this element count keep 32-bit optimizer states. A higher threshold quantizes fewer small tensors but uses more memory.",
 		"stableadamw_kahan_sum": "Kahan summation",
