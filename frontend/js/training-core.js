@@ -497,6 +497,14 @@ window.trainingCoreMixin = {
 
   _migrateSdOptionModes(source, trainType) {
     const values = { ...source };
+    // Sparse application snapshots used the old MOSS preset. Native imports carry
+    // explicit argparse defaults from config_import.py before reaching this path.
+    if (trainType === 'moss-image-lora' && Object.keys(source).length) {
+      if (!values.timestep_sampling) values.timestep_sampling = 'sigma';
+      if (!values.weighting_scheme && values.timestep_sampling !== 'truncated_logit_normal') {
+        values.weighting_scheme = 'logit_normal';
+      }
+    }
     if (trainType === 'krea2-lora') {
       if (typeof values.network_args_custom === 'string') {
         values.network_args_custom = values.network_args_custom.split(/\r?\n/).filter(line => {
@@ -2309,6 +2317,7 @@ window.trainingCoreMixin = {
   },
 
   _timestepPreviewNumber(value, fallback) {
+    if (value == null || (typeof value === 'string' && !value.trim())) return fallback;
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
   },
@@ -2323,7 +2332,8 @@ window.trainingCoreMixin = {
 
   timestepOffsetSupported() {
     return ['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type)
-      && ['sigmoid', 'shift', 'flux_shift'].includes(String(this.form.timestep_sampling || ''));
+      && (['sigmoid', 'shift', 'flux_shift', 'truncated_logit_normal'].includes(String(this.form.timestep_sampling || ''))
+        || (this.form.timestep_sampling === 'sigma' && this.form.weighting_scheme === 'logit_normal'));
   },
 
   timestepOffsetSubsets() {
@@ -2542,6 +2552,7 @@ window.trainingCoreMixin = {
     const sampling = String(source.timestep_sampling || 'sigmoid');
     const weighting = String(source.weighting_scheme || 'uniform');
     const isKrea2 = String(source.model_train_type || '') === 'krea2-lora';
+    const truncated = !isKrea2 && sampling === 'truncated_logit_normal';
     const sigmoidScale = this._timestepPreviewNumber(source.sigmoid_scale, 1.0);
     const configuredFlowShift = Math.max(0.0001, this._timestepPreviewNumber(source.discrete_flow_shift, 1.0));
     // The current Krea 2 scheduler leaves its sigma table unshifted.
@@ -2550,6 +2561,8 @@ window.trainingCoreMixin = {
       : configuredFlowShift;
     const logitMean = this._timestepPreviewNumber(source.logit_mean, 0.0);
     const logitStd = Math.max(0, this._timestepPreviewNumber(source.logit_std, 1.0));
+    const cutoff = Math.max(Number.MIN_VALUE, Math.min(1, this._timestepPreviewNumber(source.timestep_cutoff, 0.95)));
+    const uniformRatio = Math.max(0, Math.min(1, this._timestepPreviewNumber(source.timestep_uniform_ratio, 0.01)));
     const modeScale = this._timestepPreviewNumber(source.mode_scale, 1.29);
     const rangeMin = isKrea2 ? Math.max(0, Number(source.min_timestep || 0)) / 1000 : 0;
     const rangeMax = isKrea2 ? Math.min(1000, Number(source.max_timestep ?? 1000)) / 1000 : 1;
@@ -2588,7 +2601,8 @@ window.trainingCoreMixin = {
     let fixedSigma = null;
     if (['sigmoid', 'shift', 'flux_shift', 'krea2_shift'].includes(sampling) && sigmoidScale === 0) {
       fixedSigma = shiftSigma(0.5, activeShift);
-    } else if (sampling === 'sigma' && weighting === 'logit_normal' && logitStd === 0) {
+    } else if (sampling === 'sigma' && weighting === 'logit_normal' && logitStd === 0 &&
+        (isKrea2 || scope === 'base' || !Object.values(source.subset_timestep_offsets || {}).some(Number))) {
       fixedSigma = schedulerSigma(sigmoid(logitMean));
     } else if (sampling === 'logsnr' && logitStd === 0) {
       fixedSigma = sigmoid(-logitMean / 2);
@@ -2644,8 +2658,33 @@ window.trainingCoreMixin = {
       if (sampling === 'sigma') {
         const s = inverseShift(sigma, flowShift);
         if (weighting === 'mode') return modeCdf(s);
-        if (weighting === 'logit_normal') return normalCdf((logit(s) + logitMean) / logitStd);
+        if (weighting === 'logit_normal') {
+          const mean = logitMean - (isKrea2 ? 0 : offset);
+          if (logitStd === 0) return sigma < schedulerSigma(sigmoid(mean)) ? 0 : 1;
+          return normalCdf((logit(s) + mean) / logitStd);
+        }
         return s;
+      }
+      if (truncated) {
+        // Smooth density for the chart; computeStats integrates these cell
+        // boundaries on the actual 1000-point grid used by ceil(S * 1000).
+        const s = inverseShift(sigma, flowShift);
+        if (s === 0) return 0;
+        const mean = logitMean - offset;
+        const std = Math.max(logitStd, 1e-12);
+        // The trainer computes the lower normal CDF in float64 and clamps its
+        // inverse-CDF input to 1 - 1e-12. In extreme tails this creates a point
+        // mass, potentially clipped to the last grid cell; mirror it here.
+        const lowerCdf = cutoff === 1 ? 0 : normalCdf((-logit(cutoff) - mean) / std);
+        const retainedMass = 1 - lowerCdf;
+        const maxNormalQuantile = 7.0344869100478356; // ndtri(1 - 1e-12)
+        const minSample = sigmoid(-(mean + std * maxNormalQuantile)) / cutoff;
+        let truncatedMass = 0;
+        if (s >= minSample) {
+          truncatedMass = lowerCdf >= 1 - 1e-12 ? 1
+            : Math.min(1, normalCdf((logit(cutoff * s) + mean) / std) / retainedMass);
+        }
+        return uniformRatio * s + (1 - uniformRatio) * truncatedMass;
       }
       if (sampling === 'logsnr') return normalCdf((2 * logit(sigma) + logitMean) / logitStd);
       const appliedOffset = ['sigmoid', 'shift', 'flux_shift'].includes(sampling) ? offset : 0;
@@ -2679,10 +2718,13 @@ window.trainingCoreMixin = {
     let offset = 0;
     const subsets = this.timestepOffsetSubsets();
     if (scope === 'overall' && subsets.length) {
-      const totalSamples = subsets.reduce((sum, subset) => sum + Number(subset.sample_count || 0), 0);
-      const components = subsets.map(subset => ({
-        weight: totalSamples ? Number(subset.sample_count || 0) / totalSamples : 1 / subsets.length,
-        offset: Number(this.subsetTimestepOffsetValue(subset.name) || 0),
+      // Regularization samples have no per-subset offset, but still take part
+      // in training and must contribute to the overall sampling distribution.
+      const allSubsets = ((this.stepEstimate && this.stepEstimate.subsets) || []);
+      const totalSamples = allSubsets.reduce((sum, subset) => sum + Number(subset.sample_count || 0), 0);
+      const components = allSubsets.map(subset => ({
+        weight: totalSamples ? Number(subset.sample_count || 0) / totalSamples : 1 / allSubsets.length,
+        offset: subset.is_reg ? 0 : Number(this.subsetTimestepOffsetValue(subset.name) || 0),
       }));
       currentCdf = sigma => components.reduce((sum, part) => sum + part.weight * evaluateCdf(sigma, part.offset), 0);
       scopeLabel = this.t('timestepPreview.overallDistribution');
@@ -2769,7 +2811,7 @@ window.trainingCoreMixin = {
       }
       let low = cdf(1 / 3), high = 1 - cdf(2 / 3);
       let medianSigma = bisect(cdf, 0.5);
-      if (sampling === 'sigma') {
+      if (sampling === 'sigma' || truncated) {
         low = 0;
         high = 0;
         let previous = 0;
@@ -2796,7 +2838,7 @@ window.trainingCoreMixin = {
     const notes = [];
     if (isKrea2 && (rangeMin > 0 || rangeMax < 1)) notes.push(this.t('timestepPreview.kreaRangeNote'));
     const shiftIgnored = Math.abs(configuredFlowShift - 1) > 1e-9
-      && (isKrea2 ? sampling !== 'shift' : !['shift', 'sigma'].includes(sampling));
+      && (isKrea2 ? sampling !== 'shift' : !['shift', 'sigma', 'truncated_logit_normal'].includes(sampling));
     if (shiftIgnored) {
       notes.push(this.t('timestepPreview.shiftIgnored'));
     }
@@ -2826,13 +2868,15 @@ window.trainingCoreMixin = {
       offset,
       offsetText,
       sigmoidScaleCard: sigmoidFamily ? fmtParam(sigmoidScale) : null,
-      flowShiftCard: sampling === 'shift' || sampling === 'sigma' ? fmtParam(flowShift) : null,
+      flowShiftCard: sampling === 'shift' || sampling === 'sigma' || truncated ? fmtParam(flowShift) : null,
       derivedShiftCard: sampling === 'flux_shift' || sampling === 'krea2_shift'
         ? fmtParam(Number(activeShift.toFixed(2))) : null,
-      logitMeanCard: sampling === 'logsnr' || (sampling === 'sigma' && weighting === 'logit_normal')
+      logitMeanCard: truncated || sampling === 'logsnr' || (sampling === 'sigma' && weighting === 'logit_normal')
         ? fmtParam(logitMean) : null,
-      logitStdCard: sampling === 'logsnr' || (sampling === 'sigma' && weighting === 'logit_normal')
+      logitStdCard: truncated || sampling === 'logsnr' || (sampling === 'sigma' && weighting === 'logit_normal')
         ? fmtParam(logitStd) : null,
+      cutoffCard: truncated ? fmtParam(cutoff) : null,
+      uniformRatioCard: truncated ? fmtParam(uniformRatio) : null,
       modeScaleCard: sampling === 'sigma' && weighting === 'mode' ? fmtParam(modeScale) : null,
       resolution: `${width} × ${height}`,
       fixedTimestep: fixedSigma === null ? null : Math.round(fixedSigma * 1000),
@@ -3936,12 +3980,12 @@ window.trainingCoreMixin = {
     if (key === 'max_data_loader_n_workers' || key === 'persistent_data_loader_workers') {
       this._enforceDataLoaderUiConstraints();
     }
-    if (key === 'timestep_sampling') {
+    if (['timestep_sampling', 'weighting_scheme'].includes(key)) {
       this._refreshSubsetTimestepEditor();
     }
     if (this.timestepPreviewOpen && [
       'timestep_sampling', 'sigmoid_scale', 'discrete_flow_shift', 'weighting_scheme',
-      'logit_mean', 'logit_std', 'mode_scale', 'resolution', 'min_timestep', 'max_timestep', 'preserve_distribution_shape'
+      'logit_mean', 'logit_std', 'timestep_cutoff', 'timestep_uniform_ratio', 'mode_scale', 'resolution', 'min_timestep', 'max_timestep', 'preserve_distribution_shape'
     ].includes(key)) {
       this.refreshTimestepPreview();
     }
@@ -4304,7 +4348,7 @@ window.trainingCoreMixin = {
     Object.entries(this._trainingOptionErrorMessages || {}).forEach(([key, message]) => {
       if (errors[key] === message) errors[key] = null;
     });
-    const current = { ...this._checkpointOffloadErrors(), ...this._mossOptionErrors(),
+    const current = { ...this._timestepOptionErrors(), ...this._checkpointOffloadErrors(), ...this._mossOptionErrors(),
       ...this._kreaOptionErrors(), ...this._muonOptionErrors() };
     this._trainingOptionErrorMessages = current;
     this.formErrors = { ...errors, ...current };
@@ -4326,6 +4370,22 @@ window.trainingCoreMixin = {
     if (this.form.compile && this.form.compile_fullgraph
         && (this.form.split_attn || this.form.attn_mode === 'xformers')) {
       errors.compile_fullgraph = this.t('field.compile_fullgraphAttentionConflict');
+    }
+    return errors;
+  },
+
+  _timestepOptionErrors() {
+    if (!['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type)
+      || this.form.timestep_sampling !== 'truncated_logit_normal') return {};
+    const errors = {};
+    for (const [key, fallback, maximum, inclusive] of [
+      ['timestep_cutoff', 0.95, 1, false], ['timestep_uniform_ratio', 0.01, 1, true], ['logit_std', 1, Infinity, false],
+    ]) {
+      const raw = this.form[key];
+      const value = raw === '' || raw == null ? fallback : Number(raw);
+      if (typeof raw === 'boolean' || !Number.isFinite(value) || (inclusive ? value < 0 : value <= 0) || value > maximum) {
+        errors[key] = this.t('field.' + (key === 'logit_std' ? 'truncatedLogitStdError' : key + 'Error'));
+      }
     }
     return errors;
   },
@@ -4389,7 +4449,7 @@ window.trainingCoreMixin = {
       errors.base_weights = this.t('field.base_weightsConvrotConflict');
     }
     if (this.form.compile && this.form.compile_fullgraph && (
-      Number(this.form.blocks_to_swap || 0) > 0 || this.form.convrot_int8
+      Number(this.form.blocks_to_swap || 0) > 0
       || this.form.split_attn || this.form.attn_mode === 'xformers'
     )) {
       errors.compile_fullgraph = this.t('field.compile_fullgraphMossConflict');
@@ -4478,7 +4538,7 @@ window.trainingCoreMixin = {
       && !this._parseStepRules(this.form.step_rules)) {
       errors.step_rules = this.t('field.step_rulesError');
     }
-    Object.assign(errors, this._checkpointOffloadErrors(), this._mossOptionErrors(), this._kreaOptionErrors(), this._muonOptionErrors());
+    Object.assign(errors, this._timestepOptionErrors(), this._checkpointOffloadErrors(), this._mossOptionErrors(), this._kreaOptionErrors(), this._muonOptionErrors());
     if (this.form.model_train_type !== 'krea2-lora' && this.form.enable_preview && this.form.sample_interval_mode !== 'none') {
       const key = this.form.sample_interval_mode === 'steps' ? 'sample_every_n_steps' : 'sample_every_n_epochs';
       if (this.form[key] === '' || this.form[key] === null || this.form[key] === undefined) errors[key] = this.t('common.fieldRequired');

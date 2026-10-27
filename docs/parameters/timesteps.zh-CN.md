@@ -25,17 +25,17 @@ Anima、MOSS-Image 和 Krea 2 使用 flow matching，归一化时间步同时决
 | 训练类型 | 默认采样方式 | 默认分布参数 | `weighting_scheme` 与作用 |
 | --- | --- | --- | --- |
 | Anima | `sigmoid` | `sigmoid_scale=1.0` | `uniform`：损失乘数为 1 |
-| MOSS-Image | `sigma` | `logit_mean=-1.09`, `logit_std=0.95`, `discrete_flow_shift=1.0` | `logit_normal`：按 logit-normal 分布抽样，损失乘数为 1 |
+| MOSS-Image | `truncated_logit_normal` | `logit_mean=-1.09`, `logit_std=0.95`, `discrete_flow_shift=1.0`, `timestep_cutoff=0.95`, `timestep_uniform_ratio=0.01` | `uniform`：损失乘数为 1 |
 | Krea 2 | `shift` | `sigmoid_scale=1.0`、`discrete_flow_shift=2.5` | `none`：损失乘数为 1 |
 
 `uniform` 和 `none` 的损失乘数均为 1。导入旧预设后，以界面显示的参数和分布图为准。
 
-MOSS-Image 默认使用负均值的 logit-normal 索引抽样，偏向高噪声，近似预训练分布。官方配置还包含 0.95 处截断和 1% 均匀样本混合。上游另提供 `shift + discrete_flow_shift=3` 作为较简单的近似方案；切换时需一起调整采样方式和偏移。
+MOSS-Image 新配置使用截断 logit-normal 采样，包含 0.95 处截断和 1% 均匀样本混合，复现预训练采样。已有配置保留原值；旧的 `sigma + logit_normal` 仍可使用。上游另提供 `shift + discrete_flow_shift=3` 作为较简单的近似方案。
 
 | 调整目标 | 优先查看的参数 | 默认选择 |
 | --- | --- | --- |
 | 同时增加高、低噪声采样 | `sigmoid_scale` | `1.0`；增大后分布向两端展开 |
-| 整体偏向高噪声或低噪声 | `discrete_flow_shift` | Anima/MOSS `1.0`，Krea 2 `2.5`；在 `shift` 和 Anima/MOSS 的 `sigma` 下生效 |
+| 整体偏向高噪声或低噪声 | `discrete_flow_shift` | Anima/MOSS `1.0`，Krea 2 `2.5`；在 `shift` 和 Anima/MOSS 的 `sigma`、`truncated_logit_normal` 下生效 |
 | 为不同图片组分配不同噪声范围 | `subset_timestep_offsets` | 不设置；仅 Anima/MOSS 的指定模式支持 |
 
 <!-- doc-anchor: terminology -->
@@ -98,6 +98,7 @@ MOSS-Image 默认使用负均值的 logit-normal 索引抽样，偏向高噪声�
 | `uniform` | 在完整范围内均匀抽取 | Anima/MOSS、Krea 2 |
 | `shift` | 对 sigmoid 抽样结果应用固定 flow shift 非线性映射 | Anima/MOSS、Krea 2 |
 | `sigma` | 按训练 scheduler 的离散噪声表抽取 | Anima/MOSS、Krea 2 |
+| `truncated_logit_normal` | 截断 logit-normal 后重新缩放，混入均匀样本，再映射到离散噪声表 | Anima/MOSS |
 | `flux_shift` | 根据当前分辨率计算 FLUX 风格的 shift | Anima/MOSS |
 | `krea2_shift` | 根据当前分辨率计算 Krea 2 的 shift | Krea 2 |
 | `logsnr` | 从 LogSNR 分布转换出时间步 | Krea 2 |
@@ -213,21 +214,35 @@ timestep_sampling = { offset = -0.25 }
 
 ### 支持的模式与推荐范围
 
-子集偏移只在 `sigmoid`、`shift` 和 `flux_shift` 中生效。`uniform` 和 `sigma` 会忽略此值。
+子集偏移在 `sigmoid`、`shift`、`flux_shift`、`truncated_logit_normal` 和 `sigma + logit_normal` 中生效。`uniform` 和其他 `sigma` 方案忽略此值。
 
 从 `-0.5～+0.5` 开始调整。负值增加低噪声采样，正值增加高噪声采样；已有高噪声 shift 时，正偏移会进一步减少低噪声样本。按分布预览确认各子集的噪声比例。
 
-分布预览支持基础分布（所有偏移为 0）、整体训练分布和单个子集分布。一次调整一个子集，并保留默认配置作为对照。偏移只作用于训练采样；其他验证设置不变时，验证损失可直接比较。
+分布预览支持基础分布（所有偏移为 0）、整体训练分布和单个子集分布。整体分布按样本数混合各子集，并将正则化样本计入基础分布。一次调整一个子集，并保留默认配置作为对照。偏移只作用于训练采样；其他验证设置不变时，验证损失可直接比较。
 
 ### 偏移加在哪里
 
-偏移先加在正态随机采样值上，再乘以 `sigmoid_scale` 并经过 `sigmoid` 变换；使用 `shift` 或 `flux_shift` 时，之后还会做一次整体映射：
+在 `sigmoid`、`shift` 和 `flux_shift` 中，偏移先加在正态随机值上，再乘以 `sigmoid_scale` 并经过 `sigmoid` 变换；后两者再做整体映射：
 
 ```text
 时间步 = sigmoid( sigmoid_scale × (随机采样值 + 偏移) )
 ```
 
 `0` 保持原分布。`sigmoid_scale` 同时缩放随机采样值和偏移量。
+
+在 `sigma + logit_normal` 和 `truncated_logit_normal` 中，偏移按 `logit_mean - offset` 应用，因此正值仍增加高噪声采样。
+
+<!-- doc-anchor: truncated-logit-normal -->
+### `truncated_logit_normal`：截断与均匀混合
+
+Anima/MOSS 可用。按 `logit_mean`、`logit_std` 生成 logit-normal 分布，截断后重新缩放到完整噪声范围，并映射到 1000 点训练网格。
+
+- `timestep_cutoff`：范围 `(0, 1]`，默认 `0.95`。截断后会重新缩放，最终仍覆盖高噪声端。
+- `timestep_uniform_ratio`：范围 `[0, 1]`，默认 `0.01`，即 1% 均匀网格样本；`1` 为全部均匀抽取。
+- `logit_std` 须大于 `0`；`discrete_flow_shift` 会改变训练网格。
+- `logit_mean/std` 直接控制此模式，无需选择 `weighting_scheme=logit_normal`。`sigma_sqrt/cosmap` 仍可增加损失权重。
+
+极小的截断阈值或极端均值、标准差可能触及训练器的浮点精度和反累积分布输入上限，使样本集中在少数网格点。预览考虑了这一限制；调整时请检查分布。
 
 <!-- doc-anchor: weighting -->
 ## 采样频率与 Loss 权重
@@ -242,7 +257,7 @@ timestep_sampling = { offset = -0.25 }
 | `logit_normal` | 改变 `sigma` 路径的采样频率 | 损失乘数为 1；仅在 `sigma` 路径生效 |
 | `mode` | 改变 `sigma` 路径的采样频率 | 损失乘数为 1；分布由 `mode_scale` 控制 |
 
-初次训练保留当前类型的默认值：Anima 使用 `uniform`，MOSS-Image 使用 `logit_normal`，Krea 2 使用 `none`。需要增加低噪声误差的影响时测试 `sigma_sqrt`，需要侧重中噪声时测试 `cosmap`。
+初次训练保留当前类型的默认值：Anima/MOSS 使用 `uniform`，Krea 2 使用 `none`。需要增加低噪声误差的影响时测试 `sigma_sqrt`，需要侧重中噪声时测试 `cosmap`。
 
 ### `sigma_sqrt` 与 `cosmap` 的精确权重
 
@@ -286,8 +301,10 @@ Anima/MOSS 的 scheduler 偏移也会改变最终噪声强度；Krea 2 的 `sigm
 | `discrete_flow_shift` | 忽略 | 忽略 | 生效 | 仅 Anima/MOSS | 忽略 | 忽略 |
 | `logit_mean/std` | 忽略 | 忽略 | 忽略 | 仅影响 `logit_normal` 分布 | 忽略 | 直接生效 |
 | `mode_scale` | 忽略 | 忽略 | 忽略 | 仅影响 `mode` 分布 | 忽略 | 忽略 |
-| `subset_timestep_offsets` | 生效 | 忽略 | 生效 | 忽略 | 仅 `flux_shift` 生效 | 忽略 |
+| `subset_timestep_offsets` | 生效 | 忽略 | 生效 | Anima/MOSS 的 `logit_normal` 生效 | 仅 `flux_shift` 生效 | 忽略 |
 | `sigma_sqrt/cosmap` 权重 | 生效 | 生效 | 生效 | 生效 | 生效 | 生效 |
+
+`truncated_logit_normal` 使用 `logit_mean/std`、`discrete_flow_shift`、子集偏移及两个截断参数；忽略 `sigmoid_scale`、`mode_scale`。
 
 “忽略”表示当前训练路径不读取该参数。界面会隐藏或标注无效字段，分布预览也会提示被忽略的设置。
 

@@ -4,6 +4,25 @@
 
 All notable changes to this project are documented in this file.
 
+## v26.1027.0bf78 - 2026-10-27
+
+This release upgrades the **sd-scripts training engine**, adds a timestep sampling method for Anima and MOSS-Image, and improves distribution previews and the AI captioning interface.
+
+### Training Engine and Timestep Sampling
+
+- **Upgrade sd-scripts to v0.12.3**, including upstream kernel, compilation, and INT8 performance improvements. Remove the outdated restriction on full-graph compilation with INT8.
+- Add **truncated Logit-Normal sampling** for Anima and MOSS-Image, with controls for the cutoff and uniform sampling mixture ratio.
+- Use truncated Logit-Normal sampling by default in new MOSS-Image configurations to reproduce the pretraining sampling settings. Existing configurations retain their parameters.
+- Improve timestep distribution previews and statistics for discrete sampling and subset offsets. Fix preview boundaries under extreme truncation and include regularization data in the overall training distribution according to sample counts.
+- Update timestep sampling descriptions and default-value guidance in Chinese, English, and Japanese.
+
+### Interface Improvements
+
+- Improve field alignment, multiline text boxes, and narrow desktop layouts in the AI captioning page. Fix thumbnail clipping at some window sizes.
+- Improve dropdown positioning and scrolling: avoid covering the trigger button, preserve the list's scroll position, and close the menu when the button scrolls out of view.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1027.09879...v26.1027.0bf78)
+
 ## v26.1027.09879 - 2026-10-27
 
 This update fixes compatibility with bitsandbytes 8-bit optimizers.
