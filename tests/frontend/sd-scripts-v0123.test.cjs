@@ -93,10 +93,12 @@ test('preview distributions and subset mixtures match actual upstream CPU sampli
     {}, { discrete_flow_shift: 2 }, { discrete_flow_shift: 0.5 },
     { timestep_cutoff: 0.6, timestep_uniform_ratio: 0.15 },
     { timestep_cutoff: 1, timestep_uniform_ratio: 0 }, { timestep_uniform_ratio: 1 },
+    { timestep_cutoff: 0.001 }, { timestep_cutoff: 0.004 }, { timestep_cutoff: 0.005 },
+    { timestep_cutoff: 0.008 }, { timestep_cutoff: 0.01 },
     { offset: 0.4 }, { offset: -0.4 },
     { timestep_sampling: 'sigma', weighting_scheme: 'logit_normal', offset: 0.4 },
     { timestep_sampling: 'sigma', weighting_scheme: 'logit_normal', offset: -0.4 },
-    { mixture: true },
+    { mixture: true }, { mixture: true, regularization: true },
   ].map(values => ({ timestep_sampling: 'truncated_logit_normal', weighting_scheme: 'uniform',
     logit_mean: -1.09, logit_std: 0.95, timestep_cutoff: 0.95, timestep_uniform_ratio: 0.01,
     discrete_flow_shift: 1, ...values }));
@@ -118,7 +120,9 @@ for case in json.load(sys.stdin):
     offsets = torch.full((count,), float(case.get('offset', 0)))
     if case.get('mixture'):
         offsets[:count // 4] = -0.4
-        offsets[count // 4:] = 0.4
+        offsets[count // 4:count // 2 if case.get('regularization') else count] = 0.4
+        if case.get('regularization'):
+            offsets[count // 2:] = 0
     if case['timestep_sampling'] == 'sigma':
         u = utils.compute_density_for_timestep_sampling('logit_normal', count,
             case['logit_mean'], case['logit_std'], logit_offset=-offsets)
@@ -139,7 +143,8 @@ print(json.dumps(results))
     const { app } = application('moss-image-lora', values);
     app.stepEstimate = { subsets: [
       { name: '1_detail', is_reg: false, sample_count: 1 },
-      { name: '3_structure', is_reg: false, sample_count: 3 },
+      { name: '3_structure', is_reg: false, sample_count: values.regularization ? 1 : 3 },
+      ...(values.regularization ? [{ name: '1_detail', is_reg: true, sample_count: 2 }] : []),
     ] };
     app.form.subset_timestep_offsets = values.mixture
       ? { '1_detail': -0.4, '3_structure': 0.4 } : { '1_detail': values.offset || 0 };

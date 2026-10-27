@@ -218,7 +218,7 @@ Subset offsets are supported by `sigmoid`, `shift`, `flux_shift`, `truncated_log
 
 Start within `-0.5` to `+0.5`. Negative values increase low-noise sampling; positive values increase high-noise sampling. A positive offset on an existing high-noise shift further reduces low-noise coverage. Confirm each subset's noise proportions in the preview.
 
-The preview shows the base distribution (all offsets zero), the overall distribution, or an individual subset. Adjust one subset at a time and keep the default run as a control. Offsets affect training sampling only; validation loss remains comparable when the other validation settings stay fixed.
+The preview shows the base distribution (all offsets zero), the overall distribution, or an individual subset. The overall distribution weights subsets by sample count and includes regularization samples with the base distribution. Adjust one subset at a time and keep the default run as a control. Offsets affect training sampling only; validation loss remains comparable when the other validation settings stay fixed.
 
 ### Where the offset is applied
 
@@ -241,6 +241,8 @@ Available for Anima/MOSS. The logit-normal distribution uses `logit_mean` and `l
 - `timestep_uniform_ratio`: `[0, 1]`, default `0.01` for 1% uniform grid samples; `1` makes all samples uniform.
 - `logit_std` must be positive; `discrete_flow_shift` shifts the training grid.
 - This mode reads `logit_mean/std` directly. It does not require `weighting_scheme=logit_normal`; `sigma_sqrt/cosmap` still apply loss weights.
+
+Very small cutoffs or extreme mean and standard deviation values can hit the trainer's floating-point precision and inverse-CDF input limit, concentrating samples on a few grid points. The preview accounts for this limit; check the distribution when adjusting these values.
 
 <!-- doc-anchor: weighting -->
 ## Sampling frequency and loss weight

@@ -2561,7 +2561,7 @@ window.trainingCoreMixin = {
       : configuredFlowShift;
     const logitMean = this._timestepPreviewNumber(source.logit_mean, 0.0);
     const logitStd = Math.max(0, this._timestepPreviewNumber(source.logit_std, 1.0));
-    const cutoff = Math.max(1e-12, Math.min(1, this._timestepPreviewNumber(source.timestep_cutoff, 0.95)));
+    const cutoff = Math.max(Number.MIN_VALUE, Math.min(1, this._timestepPreviewNumber(source.timestep_cutoff, 0.95)));
     const uniformRatio = Math.max(0, Math.min(1, this._timestepPreviewNumber(source.timestep_uniform_ratio, 0.01)));
     const modeScale = this._timestepPreviewNumber(source.mode_scale, 1.29);
     const rangeMin = isKrea2 ? Math.max(0, Number(source.min_timestep || 0)) / 1000 : 0;
@@ -2672,9 +2672,19 @@ window.trainingCoreMixin = {
         if (s === 0) return 0;
         const mean = logitMean - offset;
         const std = Math.max(logitStd, 1e-12);
-        const retainedMass = cutoff === 1 ? 1 : normalCdf((logit(cutoff) + mean) / std);
-        const mass = normalCdf((logit(cutoff * s) + mean) / std);
-        return uniformRatio * s + (1 - uniformRatio) * Math.max(0, Math.min(1, mass / Math.max(retainedMass, 1e-300)));
+        // The trainer computes the lower normal CDF in float64 and clamps its
+        // inverse-CDF input to 1 - 1e-12. In extreme tails this creates a point
+        // mass, potentially clipped to the last grid cell; mirror it here.
+        const lowerCdf = cutoff === 1 ? 0 : normalCdf((-logit(cutoff) - mean) / std);
+        const retainedMass = 1 - lowerCdf;
+        const maxNormalQuantile = 7.0344869100478356; // ndtri(1 - 1e-12)
+        const minSample = sigmoid(-(mean + std * maxNormalQuantile)) / cutoff;
+        let truncatedMass = 0;
+        if (s >= minSample) {
+          truncatedMass = lowerCdf >= 1 - 1e-12 ? 1
+            : Math.min(1, normalCdf((logit(cutoff * s) + mean) / std) / retainedMass);
+        }
+        return uniformRatio * s + (1 - uniformRatio) * truncatedMass;
       }
       if (sampling === 'logsnr') return normalCdf((2 * logit(sigma) + logitMean) / logitStd);
       const appliedOffset = ['sigmoid', 'shift', 'flux_shift'].includes(sampling) ? offset : 0;
@@ -2708,10 +2718,13 @@ window.trainingCoreMixin = {
     let offset = 0;
     const subsets = this.timestepOffsetSubsets();
     if (scope === 'overall' && subsets.length) {
-      const totalSamples = subsets.reduce((sum, subset) => sum + Number(subset.sample_count || 0), 0);
-      const components = subsets.map(subset => ({
-        weight: totalSamples ? Number(subset.sample_count || 0) / totalSamples : 1 / subsets.length,
-        offset: Number(this.subsetTimestepOffsetValue(subset.name) || 0),
+      // Regularization samples have no per-subset offset, but still take part
+      // in training and must contribute to the overall sampling distribution.
+      const allSubsets = ((this.stepEstimate && this.stepEstimate.subsets) || []);
+      const totalSamples = allSubsets.reduce((sum, subset) => sum + Number(subset.sample_count || 0), 0);
+      const components = allSubsets.map(subset => ({
+        weight: totalSamples ? Number(subset.sample_count || 0) / totalSamples : 1 / allSubsets.length,
+        offset: subset.is_reg ? 0 : Number(this.subsetTimestepOffsetValue(subset.name) || 0),
       }));
       currentCdf = sigma => components.reduce((sum, part) => sum + part.weight * evaluateCdf(sigma, part.offset), 0);
       scopeLabel = this.t('timestepPreview.overallDistribution');
