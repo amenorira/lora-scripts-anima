@@ -4,6 +4,17 @@
 
 本项目的重要版本变更记录于此。
 
+## v26.1027.09879 - 2026-10-27
+
+本次更新修复 bitsandbytes 8-bit 优化器的兼容性问题。
+
+### 兼容性修复
+
+- 修复使用 bitsandbytes 0.50.2 时，`AdamW8bit` 因已移除的 `percentile_clipping` 参数而无法启动训练的问题。此修复也适用于 `PagedAdamW8bit`、`Lion8bit` 和 `PagedLion8bit`（[#1](https://github.com/amenorira/lora-scripts-anima/issues/1)）。
+- 训练界面已移除 8-bit 百分位裁剪选项。导入旧配置或启动训练时会自动移除旧参数；如果此前使用了非默认值（例如 `99`），百分位裁剪将停用并给出提示。全局梯度裁剪 `max_grad_norm` 仍可使用。
+
+[完整变更](https://github.com/amenorira/lora-scripts-anima/compare/v26.1026.136b1...v26.1027.09879)
+
 ## v26.1026.136b1 - 2026-10-26
 
 本次更新重点补齐 **Krea 2 的优化器、LoCon 和训练预览**，新增可选的 **MOSS 文本加速**，为标签编辑器加入 **描述文本模式**，并修复缓存复用、草稿恢复及训练记录复用问题。
