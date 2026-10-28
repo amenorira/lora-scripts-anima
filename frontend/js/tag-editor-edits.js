@@ -282,23 +282,23 @@ window.tagEditorEdits = {
 
   _teUpdateFreq(oldTags, newTags) {
     if (!this.tagEditorAllowsTagOps()) return;
-    var oldList = _teParseTags(oldTags);
-    var newList = _teParseTags(newTags);
-    var newSet = new Set(newList);
-    var oldSet = new Set(oldList);
-    var removed = oldList.filter(function(t) { return !newSet.has(t); });
-    var added = newList.filter(function(t) { return !oldSet.has(t); });
-    if (removed.length === 0 && added.length === 0) return;
+    // Match the backend scan's occurrence counts, including repeated tags.
+    var deltas = new Map();
+    _teParseTags(oldTags).forEach(tag => deltas.set(tag, (deltas.get(tag) || 0) - 1));
+    _teParseTags(newTags).forEach(tag => deltas.set(tag, (deltas.get(tag) || 0) + 1));
+    if (![...deltas.values()].some(delta => delta !== 0)) return;
     if (!this._teFreqIndex) this._teRebuildFreqIndex();
     var freqMap = this._teFreqIndex;
     var self = this;
-    removed.forEach(function(t) {
-      var item = freqMap.get(t);
-      if (item && item.count > 0) item.count--;
-    });
-    added.forEach(function(t) {
-      var item = freqMap.get(t);
-      if (item) { item.count++; } else { var newEntry = { tag: t, count: 1 }; self.tagEditorTagFreq.push(newEntry); freqMap.set(t, newEntry); }
+    deltas.forEach(function(delta, tag) {
+      if (!delta) return;
+      var item = freqMap.get(tag);
+      if (item) item.count = Math.max(0, item.count + delta);
+      else if (delta > 0) {
+        var newEntry = { tag: tag, count: delta };
+        self.tagEditorTagFreq.push(newEntry);
+        freqMap.set(tag, newEntry);
+      }
     });
     this._teScheduleFreqFinalize();
   },
