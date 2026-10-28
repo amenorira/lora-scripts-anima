@@ -535,7 +535,7 @@ window.monitorSummaryMixin = {
     if (value == null || value === '') return fallback;
     const number = Number(value);
     if (!Number.isFinite(number)) return fallback;
-    if (number === 0) return '0';
+    if (number === 0 || Math.abs(number) >= 0.01) return String(number);
     const [mantissa, exponent] = number.toExponential(3).split('e');
     return Number(mantissa) + 'e' + Number(exponent);
   },

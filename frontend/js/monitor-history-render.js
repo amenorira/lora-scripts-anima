@@ -22,7 +22,7 @@ window.monitorHistoryRenderMixin = {
       html += '</div>';
       html += '<div class="hist-name"><b>' + this.esc(r.name || r.id || '') + '</b></div>';
       html += '<div class="hist-meta">' + this.esc(t('historyModel')) + ': ' + this.esc((r.model || '').split(/[\\\/]/).pop() || 'Unknown') + '</div>';
-      html += '<div class="hist-meta">' + this.esc(t('historyLR')) + ': ' + this.esc(r.lr || '?') + ' | ' + this.esc(t('historyDim')) + ': ' + this.esc(r.dim || '?') + (r.alpha ? ' / α ' + this.esc(r.alpha) : '') + ' | ' + this.esc(t('historyEpochs')) + ': ' + this.esc(r.epochs || '?') + '</div>';
+      html += '<div class="hist-meta">' + this.esc(t('historyLR')) + ': ' + this.esc(this._formatLearningRate(r.lr, r.lr ?? '?')) + ' | ' + this.esc(t('historyDim')) + ': ' + this.esc(r.dim || '?') + (r.alpha ? ' / α ' + this.esc(r.alpha) : '') + ' | ' + this.esc(t('historyEpochs')) + ': ' + this.esc(r.epochs || '?') + '</div>';
       if (r.run_dir) html += '<div class="hist-rundir">' + this.esc(t('runDir')) + ': ' + this.esc(r.run_dir) + '</div>';
       if (r.artifact_available === false && r.artifact_dir) html += '<div class="hist-artifact is-offline">' + this.esc(r.artifact_dir) + '</div>';
       html += '<div class="hist-actions"><button class="hist-action hist-action-primary" @click="navigate(\'monitor-dashboard\')">' + this.esc(t('viewDashboard')) + '</button></div>';
@@ -59,7 +59,7 @@ window.monitorHistoryRenderMixin = {
         });
         html += '</div><div class="hist-meta hist-truncate" title="' + this.esc(h.model || '') + '">' + this.esc(t('historyModel')) + ' · ' + this.esc(h.model || '') + '</div>';
         html += '<dl class="hist-stats">';
-        [[t('historyLR'), h.lr], [t('historyDim') + ' / α', String(h.dim ?? '—') + ' / ' + (h.alpha === '' ? '—' : h.alpha ?? '—')], [t('historyEpochs'), h.epochs]].forEach(([label, value]) => {
+        [[t('historyLR'), this._formatLearningRate(h.lr, h.lr ?? '—')], [t('historyDim') + ' / α', String(h.dim ?? '—') + ' / ' + (h.alpha === '' ? '—' : h.alpha ?? '—')], [t('historyEpochs'), h.epochs]].forEach(([label, value]) => {
           html += '<div><dt>' + this.esc(label) + '</dt><dd>' + this.esc(value ?? '—') + '</dd></div>';
         });
         html += '</dl>';
@@ -163,6 +163,7 @@ window.monitorHistoryRenderMixin = {
           val = parts[parts.length - 1] || val;
         }
         if (kd.className) val = val.split('.').pop();
+        if (kd.key === 'learning_rate') val = this._formatLearningRate(raw, val);
         // 高亮卡 label 用 short key（简短），title 用 field.* 完整描述句
         keyItems.push({ label: t(kd.short, kd.key), title: String(raw), value: val });
       });
