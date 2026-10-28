@@ -16,8 +16,8 @@ LORA_EXTENSIONS = {".safetensors", ".pt", ".pth"}
 #   step  存档: {name}-step{:08d}.{ext}  → my_lora-step00001000.safetensors
 #   最终  存档: {name}.{ext}             → my_lora.safetensors / last.safetensors
 
-_RE_CKPT_EPOCH = re.compile(r"^(?P<name>.+)-(?P<epoch>\d{6})\.(?:safetensors|pt|pth)$")
-_RE_CKPT_STEP = re.compile(r"^(?P<name>.+)-step(?P<step>\d{8})\.(?:safetensors|pt|pth)$")
+_RE_CKPT_EPOCH = re.compile(r"^(?P<name>.+)-(?P<epoch>\d{6})\.(?:safetensors|pt|pth)$", re.IGNORECASE)
+_RE_CKPT_STEP = re.compile(r"^(?P<name>.+)-step(?P<step>\d{8})\.(?:safetensors|pt|pth)$", re.IGNORECASE)
 
 
 def parse_checkpoint(name: str) -> dict | None:
@@ -110,9 +110,9 @@ def enrich_model_files_with_loss(files: list[dict], tb_series: list[dict], run_d
                 continue
             name = f.get("name", "")
             if name in log_losses:
-                    f["ckpt_loss"] = log_losses[name]
-                    f["loss_source"] = "log"
-                    f["loss_approximate"] = True
+                f["ckpt_loss"] = log_losses[name]
+                f["loss_source"] = "log"
+                f["loss_approximate"] = True
 
     return files
 
@@ -138,7 +138,7 @@ def _parse_log_checkpoint_losses(run_dir: str) -> dict[str, float]:
     if not lines:
         return {}
 
-    re_loss = re.compile(r'(?:avr_loss|loss)[:=]\s*([\d.]+)')
+    re_loss = re.compile(r'(?:avr_loss|loss)[:=]\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)')
     # 匹配: saving checkpoint: .../name-000002.safetensors 或 name-step00001000.safetensors
     re_save = re.compile(
         r'saving\s+checkpoint.*?[/\\](?P<name>[\w.-]+?)(?:-step(?P<step>\d{8})|-(?P<epoch>\d{6}))\.safetensors'
@@ -150,19 +150,10 @@ def _parse_log_checkpoint_losses(run_dir: str) -> dict[str, float]:
 
     losses: dict[str, float] = {}
     for i, line in enumerate(lines):
-        m = re_save.search(line)
+        m = re_save.search(line) or re_final.search(line)
         if m:
             fname = m.group(0).split('/')[-1].split('\\')[-1].strip()
             # 向前查找 loss
-            for j in range(i - 1, max(i - 6, -1), -1):
-                lm = re_loss.search(lines[j])
-                if lm:
-                    losses[fname] = float(lm.group(1))
-                    break
-            continue
-        m = re_final.search(line)
-        if m:
-            fname = m.group(0).split('/')[-1].split('\\')[-1].strip()
             for j in range(i - 1, max(i - 6, -1), -1):
                 lm = re_loss.search(lines[j])
                 if lm:
