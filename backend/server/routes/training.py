@@ -5,7 +5,6 @@ import asyncio
 import json
 import os
 import shutil
-import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -15,7 +14,7 @@ from fastapi import APIRouter, BackgroundTasks, Query, Request
 from backend.constants import AUTOSAVE_DIR, OUTPUT_DIR
 from backend.async_utils import settled_to_thread as _settled_to_thread
 from backend.monitor.run_registry import resolve_user_path, write_output_dir_reference
-from backend.training import run_train, toml_writer
+from backend.training import run_files, run_train, toml_writer
 from backend.training.core_registry import (
     TrainingProfileError,
     profile_payload,
@@ -135,7 +134,7 @@ async def export_training_config(request: Request):
         profile_id=profile.id,
         document_id=payload.get("document_id"),
     )
-    filename = f"{_safe_output_name(str(form.get('output_name') or 'training'))}.yaml"
+    filename = f"{run_files.safe_output_name(str(form.get('output_name') or 'training'))}.yaml"
     return APIResponseSuccess(
         data={
             "content": dump_training_config(document),
@@ -196,79 +195,11 @@ available_scripts = [
 ]
 
 
-def _safe_output_name(output_name: str) -> str:
-    return "".join(c if c.isalnum() or c in "._-" else "_" for c in output_name).strip("._-") or "my_lora"
-
-
 def _nearest_existing_parent(path: Path) -> Path | None:
     candidate = path
     while not candidate.exists() and candidate != candidate.parent:
         candidate = candidate.parent
     return candidate if candidate.exists() else None
-
-
-def _prepare_writable_directory(path: Path) -> bool:
-    """创建目录并进行一次真实写入探针，尽早给出可操作的路径错误。"""
-    existed = path.exists()
-    path.mkdir(parents=True, exist_ok=True)
-    try:
-        fd, probe = tempfile.mkstemp(prefix=".anima-write-test-", dir=path)
-        os.close(fd)
-        Path(probe).unlink(missing_ok=True)
-    except OSError:
-        if not existed:
-            try:
-                path.rmdir()
-            except OSError:
-                pass
-        raise
-    return not existed
-
-
-def _prepare_output_directories(*directories: Path) -> None:
-    """依次探测产物与内部目录；失败时回收本次新建的空目录。"""
-    prepared: set[Path] = set()
-    created: list[Path] = []
-    try:
-        for directory in directories:
-            resolved = directory.resolve()
-            if resolved in prepared:
-                continue
-            if _prepare_writable_directory(resolved):
-                created.append(resolved)
-            prepared.add(resolved)
-    except OSError:
-        for directory in reversed(created):
-            try:
-                directory.rmdir()
-            except OSError:
-                pass
-        raise
-
-
-def _prepare_run_directories(
-    artifact_dir: Path, internal_dir: Path, *, resume: bool = False, owned: list[Path] | None = None,
-) -> None:
-    """Claim new run directories exclusively before writing any run files."""
-    created: list[Path] = []
-    try:
-        if not resume and artifact_dir != internal_dir:
-            artifact_dir.mkdir(parents=True, exist_ok=False)
-            created.append(artifact_dir)
-            if owned is not None:
-                owned.append(artifact_dir)
-        internal_dir.mkdir(parents=True, exist_ok=False)
-        created.append(internal_dir)
-        if owned is not None:
-            owned.append(internal_dir)
-        _prepare_output_directories(artifact_dir, internal_dir)
-    except OSError:
-        for directory in reversed(created):
-            try:
-                directory.rmdir()
-            except OSError:
-                pass
-        raise
 
 
 def _training_error(message: str, data: dict | None = None) -> dict:
@@ -377,7 +308,7 @@ def _inspect_output_path(path: str, output_name: str, resume: bool) -> dict:
             free_bytes = shutil.disk_usage(parent).free
         except OSError:
             pass
-    run_name = f"{_safe_output_name(output_name)}_时间戳"
+    run_name = f"{run_files.safe_output_name(output_name)}_时间戳"
     artifact_preview = base if resume else base / run_name
     monitor_preview = OUTPUT_DIR.resolve() / run_name
     return {
@@ -544,63 +475,6 @@ def get_sample_prompts(config: dict):
     return sample_prompts_arg
 
 
-def _cleanup_autosave(autosave_dir: str, keep: int = 50) -> None:
-    """清理 autosave 目录，仅保留最近 N 个 TOML 文件"""
-    try:
-        files = sorted(
-            [f for f in os.listdir(autosave_dir) if f.endswith(".toml")],
-            key=lambda f: os.path.getmtime(os.path.join(autosave_dir, f)),
-            reverse=True,
-        )
-        for old_file in files[keep:]:
-            try:
-                os.remove(os.path.join(autosave_dir, old_file))
-            except OSError:
-                pass
-    except OSError:
-        pass
-
-
-def _write_run_info(run_dir: str, config: dict, train_type: str, timestamp: str, is_resume: bool) -> None:
-    """写入人类可读的训练摘要 run_info.txt"""
-    try:
-        model_path = config.get("pretrained_model_name_or_path") or config.get("dit", "?")
-        model_name = os.path.basename(model_path) if model_path else "?"
-        dataset = config.get("train_data_dir") or config.get("dataset_config", "?")
-        lines = [
-            f"Training Run: {os.path.basename(run_dir)}",
-            f"Started:      {timestamp}",
-            f"Type:         {train_type}",
-            f"Resume:       {'yes' if is_resume else 'no'}",
-            f"Model:        {model_name}",
-            f"Dataset:      {dataset}",
-            f"Output Name:  {config.get('output_name', '?')}",
-            f"Resolution:   {config.get('resolution', '?')}",
-            f"Batch Size:   {config.get('train_batch_size', '?')}",
-            f"LR:           {config.get('learning_rate', '?')}"
-            + (f"  (unet={config['unet_lr']})" if config.get('unet_lr') else "")
-            + (f"  (te={config['text_encoder_lr']})" if config.get('text_encoder_lr') else ""),
-            f"Optimizer:    {config.get('optimizer_type', '?')}",
-            f"Network Dim:  {config.get('network_dim', '?')}",
-            f"Network Alpha:{config.get('network_alpha', '?')}",
-            f"Epochs:       {config.get('max_train_epochs', '?')}",
-            f"Mixed Prec:   {config.get('mixed_precision', '?')}",
-            f"Seed:         {config.get('seed', '?')}",
-            "",
-            "Full config:  config.toml",
-            "Training log: train_*.log",
-            f"TensorBoard:  {os.path.join(run_dir, 'log')}",
-            f"Artifacts:    {config.get('output_dir', run_dir)}",
-            f"Model files:  {os.path.join(str(config.get('output_dir', run_dir)), '*.safetensors')}",
-            f"Samples:      {os.path.join(str(config.get('output_dir', run_dir)), 'sample')}",
-        ]
-        info_path = os.path.join(run_dir, "run_info.txt")
-        with open(info_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines))
-    except OSError as e:
-        log.warning(f"Failed to write run_info.txt / 写入失败: {e}")
-
-
 def _krea2_error(errors: list[str], error_code: str = "krea2PreflightFailed"):
     return _training_error(
         message="Krea 2 configuration is not ready / Krea 2 配置尚未就绪:\n" + "\n".join(errors),
@@ -625,7 +499,7 @@ async def _create_krea2_run(config, gpu_ids, timestamp, form_snapshot, reserved_
         return _krea2_error(preflight["errors"], code)
 
     output_name = config.get("output_name", "krea2_lora")
-    safe_name = _safe_output_name(str(output_name))
+    safe_name = run_files.safe_output_name(str(output_name))
     run_dir_name = f"{safe_name}_{timestamp}_{reserved_task.task_id[:12]}"
     is_resume = bool(str(config.get("resume") or "").strip())
     requested_output_dir = str(config.get("output_dir", "./output") or "./output").strip()
@@ -641,7 +515,7 @@ async def _create_krea2_run(config, gpu_ids, timestamp, form_snapshot, reserved_
     artifact_run_dir = output_base_path if is_resume else output_base_path / run_dir_name
     try:
         await _settled_to_thread(
-            _prepare_run_directories, artifact_run_dir, internal_run_dir,
+            run_files.prepare_run_directories, artifact_run_dir, internal_run_dir,
             resume=is_resume, owned=reserved_task.owned_run_paths,
         )
     except OSError as exc:
@@ -675,7 +549,7 @@ async def _create_krea2_run(config, gpu_ids, timestamp, form_snapshot, reserved_
         network_env["LYCORIS_KERNEL_BACKEND"] = kernel
 
     AUTOSAVE_DIR.mkdir(parents=True, exist_ok=True)
-    _cleanup_autosave(str(AUTOSAVE_DIR), keep=50)
+    run_files.cleanup_autosave(str(AUTOSAVE_DIR), keep=50)
     toml_file = AUTOSAVE_DIR / f"{timestamp}_{reserved_task.task_id[:12]}-krea2.toml"
     reserved_task.owned_autosave = toml_file
     train_toml = toml_writer.dumps(train_config)
@@ -698,7 +572,7 @@ async def _create_krea2_run(config, gpu_ids, timestamp, form_snapshot, reserved_
 
     def _write_run_files():
         _write_configs()
-        _write_run_info(str(internal_run_dir), config, KREA2_PROFILE_ID, timestamp, is_resume)
+        run_files.write_run_info(str(internal_run_dir), config, KREA2_PROFILE_ID, timestamp, is_resume)
         write_output_dir_reference(str(internal_run_dir), str(artifact_run_dir))
 
     await _settled_to_thread(_write_run_files)
@@ -790,12 +664,12 @@ async def _create_krea2_cache_reserved(config: dict, reserved_task):
     if not preflight["ok"]:
         return _krea2_error(preflight["errors"], "krea2PreflightFailed")
 
-    safe_name = _safe_output_name(str(config.get("output_name", "krea2_lora")))
+    safe_name = run_files.safe_output_name(str(config.get("output_name", "krea2_lora")))
     run_dir = (OUTPUT_DIR / f"{safe_name}_krea2_cache_{timestamp}_{reserved_task.task_id[:12]}").resolve()
     cache_dir = Path(str(config["dataset_cache_dir"])).resolve()
     try:
         await _settled_to_thread(
-            _prepare_run_directories, cache_dir, run_dir,
+            run_files.prepare_run_directories, cache_dir, run_dir,
             resume=True, owned=reserved_task.owned_run_paths,
         )
     except OSError as exc:
@@ -812,7 +686,7 @@ async def _create_krea2_cache_reserved(config: dict, reserved_task):
         def _write_cache_files():
             dataset_config_file.write_text(dataset_toml, encoding="utf-8")
             cache_request_file.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
-            _write_run_info(str(run_dir), config, "krea2-cache", timestamp, False)
+            run_files.write_run_info(str(run_dir), config, "krea2-cache", timestamp, False)
             write_output_dir_reference(str(run_dir), str(cache_dir))
         await _settled_to_thread(_write_cache_files)
     except OSError as exc:
@@ -986,7 +860,7 @@ async def _create_toml_file_reserved(config: dict, reserved_task):
 
     # ── Per-run folder: internal control data + user-selected artifacts ──
     output_name = config.get("output_name", "my_lora")
-    safe_name = _safe_output_name(str(output_name))
+    safe_name = run_files.safe_output_name(str(output_name))
     run_dir_name = f"{safe_name}_{timestamp}_{reserved_task.task_id[:12]}"
     is_resume = bool(config.get("resume", "").strip())
 
@@ -1085,7 +959,7 @@ async def _create_toml_file_reserved(config: dict, reserved_task):
     try:
         # 优先检查用户产物目录；磁盘 I/O 放入线程，避免离线盘阻塞 API。
         await _settled_to_thread(
-            _prepare_run_directories,
+            run_files.prepare_run_directories,
             artifact_run_dir,
             internal_run_dir,
             resume=is_resume,
@@ -1112,7 +986,7 @@ async def _create_toml_file_reserved(config: dict, reserved_task):
 
     # ── A: autosave — 保留最近 50 个，清理旧文件 ────────────
     AUTOSAVE_DIR.mkdir(parents=True, exist_ok=True)
-    _cleanup_autosave(str(AUTOSAVE_DIR), keep=50)
+    run_files.cleanup_autosave(str(AUTOSAVE_DIR), keep=50)
 
     toml_file = str(AUTOSAVE_DIR / f"{timestamp}_{reserved_task.task_id[:12]}.toml")
     reserved_task.owned_autosave = Path(toml_file)
@@ -1144,7 +1018,7 @@ async def _create_toml_file_reserved(config: dict, reserved_task):
     # ── A-2: 并发写入 config + run 信息（写入不同文件，无依赖）──
     def _write_run_files():
         _write_configs()
-        _write_run_info(str(internal_run_dir), config, model_train_type, timestamp, is_resume)
+        run_files.write_run_info(str(internal_run_dir), config, model_train_type, timestamp, is_resume)
         write_output_dir_reference(str(internal_run_dir), str(artifact_run_dir))
 
     await _settled_to_thread(_write_run_files)

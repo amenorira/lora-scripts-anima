@@ -155,7 +155,7 @@ class Krea2CodecTests(unittest.TestCase):
         manager = TaskManager(max_concurrent=1)
         with patch.object(training_routes, "tm", manager), \
              patch.object(training_routes, "krea2_preflight", side_effect=AssertionError("preflight must not run")) as preflight, \
-             patch.object(training_routes, "_prepare_run_directories") as prepare, \
+             patch.object(training_routes.run_files, "prepare_run_directories") as prepare, \
              patch.object(training_routes, "run_train") as launch, TestClient(app) as client:
             for endpoint in ("/api/run", "/api/training/krea2/cache"):
                 for changes, message in cases:
