@@ -91,7 +91,11 @@ def _krea2_cache_inputs(config: dict[str, Any], images: list[Path] | None = None
 
 
 def krea2_cache_fingerprint(config: dict[str, Any], images: list[Path] | None = None) -> str:
-    encoded = json.dumps(_krea2_cache_inputs(config, images), ensure_ascii=False,
+    return _fingerprint_inputs(_krea2_cache_inputs(config, images))
+
+
+def _fingerprint_inputs(inputs: dict) -> str:
+    encoded = json.dumps(inputs, ensure_ascii=False,
                          separators=(",", ":"), sort_keys=True).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
@@ -128,12 +132,16 @@ def prepare_cache_manifest(config: dict[str, Any]) -> dict[str, Any]:
     cache_dir = Path(str(config["dataset_cache_dir"]))
     cache_dir.mkdir(parents=True, exist_ok=True)
     previous, _ = read_cache_manifest(cache_dir)
-    fingerprints = stage_fingerprints(config)
-    reuse = reusable_stages(config, previous, get_krea2_cache_status(config), fingerprints)
+    groups = dataset_groups(config)
+    inputs = _krea2_cache_inputs(config, [image for _, _, images in groups for image in images])
+    fingerprints = _stage_fingerprints(inputs)
+    fingerprint = _fingerprint_inputs(inputs)
+    status = _cache_status(config, groups, fingerprint, previous)
+    reuse = reusable_stages(config, previous, status, fingerprints)
     payload = {
         "schema": 2,
         "profile": "krea2-lora",
-        "fingerprint": krea2_cache_fingerprint(config),
+        "fingerprint": fingerprint,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "stage_fingerprints": fingerprints,
         "stages": {stage: "completed" if reuse[stage] else "pending" for stage in reuse},
@@ -192,8 +200,19 @@ def mark_cache_manifest(config: dict[str, Any], status: str) -> str | None:
 
 def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
     """Inspect cache files and their fingerprint without importing musubi."""
-    cache_dir = Path(str(config.get("dataset_cache_dir") or ""))
     groups = dataset_groups(config)
+    images = [image for _, _, group_images in groups for image in group_images]
+    try:
+        fingerprint = krea2_cache_fingerprint(config, images)
+    except (TypeError, ValueError):
+        fingerprint = ""
+    manifest, _ = read_cache_manifest(str(config.get("dataset_cache_dir") or ""))
+    return _cache_status(config, groups, fingerprint, manifest)
+
+
+def _cache_status(config: dict, groups: list, fingerprint: str, manifest: dict) -> dict:
+    """Evaluate a single filesystem snapshot without rescanning its dataset."""
+    cache_dir = Path(str(config.get("dataset_cache_dir") or ""))
     conflicts = _krea2_cache_conflicts(groups)
     images = [image for _, _, group_images in groups for image in group_images]
     latent_files = []
@@ -225,7 +244,6 @@ def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
         )
         complete_texts = complete_texts and set(group_texts) == expected_texts
 
-    manifest, _ = read_cache_manifest(cache_dir)
     recorded_outputs = manifest.get("outputs") if isinstance(manifest.get("outputs"), dict) else {}
     stage_outputs_match = {
         stage: outputs_match(cache_dir, files, recorded_outputs.get(stage))
@@ -233,10 +251,6 @@ def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
     }
     complete_groups = complete_latents and complete_texts
 
-    try:
-        fingerprint = krea2_cache_fingerprint(config, images)
-    except (TypeError, ValueError):
-        fingerprint = ""
     matches = bool(fingerprint and manifest.get("fingerprint") == fingerprint)
     stages = manifest.get("stages") if isinstance(manifest.get("stages"), dict) else {}
     expected = len(images)
@@ -265,14 +279,17 @@ def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def stage_fingerprints(config: dict) -> dict[str, str]:
-    inputs = _krea2_cache_inputs(config)
+    return _stage_fingerprints(_krea2_cache_inputs(config))
+
+
+def _stage_fingerprints(inputs: dict) -> dict[str, str]:
     payloads = {
         "latents": {key: inputs[key] for key in ("resolution", "enable_bucket", "bucket_no_upscale", "vae")},
         "text_encoder": {key: inputs[key] for key in ("caption_extension", "text_encoder")},
     }
     payloads["latents"]["dataset"] = [{key: value for key, value in item.items() if key != "caption"}
                                       for item in inputs["dataset"]]
-    payloads["latents"]["vae_tiling"] = bool(config.get("krea_cache_vae_tiling", False))
+    payloads["latents"]["vae_tiling"] = bool(inputs.get("vae_tiling", False))
     payloads["text_encoder"]["dataset"] = [{key: item[key] for key in ("image", "caption")}
                                            for item in inputs["dataset"]]
     return {stage: hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()

@@ -44,6 +44,18 @@ class Krea2CacheReuseTests(unittest.TestCase):
             runner.main()
         launch.assert_not_called()
 
+    def test_manifest_preparation_shares_one_dataset_and_model_input_snapshot(self):
+        from backend.training import krea2_cache as cache, krea2_dataset as dataset
+
+        with patch.object(dataset, "image_files", wraps=dataset.image_files) as scan, \
+             patch.object(cache, "image_files", scan), \
+             patch.object(cache, "_path_identity", wraps=cache._path_identity) as identity:
+            prepared = prepare_cache_manifest(self.config)
+        scan.assert_called_once()
+        self.assertEqual(identity.call_count, 2)
+        self.assertEqual(prepared["fingerprint"], cache.krea2_cache_fingerprint(self.config))
+        self.assertEqual(prepared["stage_fingerprints"], cache.stage_fingerprints(self.config))
+
     def test_changed_inputs_invalidate_only_the_affected_stage(self):
         cases = ("caption", "image", "vae", "text_encoder", "tiling", "force")
         for case in cases:
