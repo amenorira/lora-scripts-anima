@@ -15,7 +15,10 @@ function loadFrontend(files, context = { window: {} }) {
 }
 
 function loadTagEditor(context = { window: {} }) {
-  return loadFrontend(['tag-editor-session', 'tag-editor-edits', 'tag-editor-persistence', 'tag-editor-view', 'tag-editor'], context);
+  return loadFrontend([
+    'tag-editor-session', 'tag-editor-edits', 'tag-editor-persistence',
+    'tag-editor-view', 'tag-editor-actions', 'tag-editor-filters', 'tag-editor',
+  ], context);
 }
 
 // These tests intentionally compare arrays and objects in Node's own realm.
