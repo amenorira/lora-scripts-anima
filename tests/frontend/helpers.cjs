@@ -15,7 +15,7 @@ function loadFrontend(files, context = { window: {} }) {
 }
 
 const TRAINING_CORE_SCRIPTS = [
-  'training-field-relations', 'training-preflight', 'training-file-picker', 'training-core',
+  'training-field-relations', 'training-profiles', 'training-preflight', 'training-file-picker', 'training-core',
 ];
 
 function loadTagEditor(context = { window: {} }) {
