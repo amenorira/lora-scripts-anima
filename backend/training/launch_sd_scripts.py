@@ -6,19 +6,13 @@ from backend.async_utils import settled_to_thread as _settled_to_thread
 from backend.constants import AUTOSAVE_DIR, OUTPUT_DIR
 from backend.log import log
 from backend.monitor.run_registry import resolve_user_path, write_output_dir_reference
-from backend.training import run_files, toml_writer
+from backend.training import run_files, sd_scripts_preflight, toml_writer
 from backend.training.metrics_config import training_metrics_environment
 from backend.training.preparation import training_error as _training_error
-from backend.training.sd_dataset_config import (
-    SUBSET_TIMESTEP_OFFSETS_KEY, build_sd_scripts_dataset_config, normalize_subset_timestep_offsets,
-)
-from backend.training.step_estimator import StepEstimateError, estimate_training_steps
-from backend.training.supervisor import detect_lycoris_kernel_backend
-from backend.training.te_cache_check import TE_CACHE_CHECK_PROFILES, check_te_cache
+from backend.training.sd_dataset_config import build_sd_scripts_dataset_config
 from backend.training.training_config import (
     TRAINING_CONFIG_NAME, build_training_config, write_training_config,
 )
-from backend.utils import train_utils
 
 
 def get_sample_prompts(config: dict):
@@ -84,91 +78,11 @@ def get_sample_prompts(config: dict):
 
 
 async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, profile):
-    try:
-        subset_timestep_offsets = normalize_subset_timestep_offsets(
-            config.pop(SUBSET_TIMESTEP_OFFSETS_KEY, None)
-        )
-    except ValueError as exc:
-        return _training_error(message=str(exc))
-    if profile.id not in ("anima-lora", "moss-image-lora"):
-        subset_timestep_offsets = {}
-
-    # Keep the legacy sd-scripts adapter input byte-for-byte compatible. Core
-    # metadata is restored at the supervisor boundary instead of being passed
-    # through to sd-scripts as an unknown command line field.
-    config.pop("engine_id", None)
-    adapter_id = str(config.pop("adapter_id", profile.adapter_id))
+    settings, error = await sd_scripts_preflight.prepare_settings(config, gpu_ids, profile)
+    if error is not None:
+        return error
+    config = settings.config
     model_train_type = profile.id
-    trainer_file = profile.trainer_file
-
-    # ── Anima Backend Adapter: whitelist filter + NaN cleanup + path normalization ──
-    # 保存原始 config（含 UI-only 字段如 positive_prompts），adapter 之后会被剥离
-    _ui_config = dict(config)
-    # ── LyCORIS 融合内核后端：进程级环境变量，不进 TOML ──────────
-    # vendor 经 LYCORIS_KERNEL_BACKEND 读取（kernels/dispatch.py:58 / select.py:78）。
-    # 启动前探测可用性：不可用的命名后端回退 auto 并携带警告（与 attn_mode 降级同模式）。
-    lycoris_kernel_backend: str | None = None
-    lycoris_kernel_warning = ""
-    if str(config.get("network_module") or "") == "lycoris.kohya":
-        requested = str(config.get("lycoris_kernel_backend") or "auto")
-        lycoris_kernel_backend, lycoris_kernel_warning = detect_lycoris_kernel_backend(requested)
-    from backend.training import adapt_config, detect_attention_backend, validate_training_config
-
-    validation_errors = validate_training_config(config, gpu_ids=gpu_ids)
-    if validation_errors:
-        return _training_error(
-            message="Invalid training configuration / 训练参数无效:\n" + "\n".join(validation_errors)
-        )
-
-    # ── TE 磁盘缓存一致性检查（按引擎）：改 caption/dropout 率不会让缓存失效，启动前提示 ──
-    ignore_te_cache_warnings = bool(config.pop("ignore_te_cache_warnings", None))
-    if profile.id in TE_CACHE_CHECK_PROFILES and not ignore_te_cache_warnings:
-        te_cache_warnings = await _settled_to_thread(check_te_cache, config, profile.id)
-        if te_cache_warnings:
-            return _training_error(
-                message="Text encoder cache may be stale / 文本编码器缓存可能已过期",
-                data={"errorCode": "teCacheStale", "warnings": te_cache_warnings},
-            )
-    adapted_config, adapter_warnings = adapt_config(config, gpu_ids=gpu_ids)
-    for w in adapter_warnings:
-        log.warning(f"[Adapter] {w}")
-    config = adapted_config
-
-    estimate_config = dict(config)
-    if gpu_ids is not None:
-        estimate_config["gpu_ids"] = gpu_ids
-    try:
-        step_estimate = await _settled_to_thread(estimate_training_steps, estimate_config)
-    except StepEstimateError as exc:
-        return _training_error(message=f"Training step calculation failed / 训练步数计算失败: {exc}")
-
-    from backend.training.validation import validate_scheduler_step_budget
-
-    scheduler_errors = validate_scheduler_step_budget(
-        config, step_estimate["total_steps"], step_estimate["gpu_processes"],
-    )
-    if scheduler_errors:
-        return _training_error(
-            message="Invalid training configuration / 训练参数无效:\n" + "\n".join(scheduler_errors)
-        )
-
-    # AdEMAMix 的 α/β3 调度按预估总步数自动注入（仅在用户留空对应字段时）
-    from backend.training.optimizer_contracts import apply_ademamix_step_schedule
-
-    schedule_warnings = apply_ademamix_step_schedule(config, step_estimate["total_steps"])
-    adapter_warnings.extend(schedule_warnings)
-    for warning in schedule_warnings:
-        log.warning(f"[Adapter] {warning}")
-
-    if "attn_mode" in config:
-        attn_requested = config.get("attn_mode", "torch")
-        attn_actual, attn_warning = detect_attention_backend(attn_requested)
-        if attn_requested == "flash" and attn_actual != "flash":
-            return _training_error(message=attn_warning)
-        if attn_warning:
-            log.warning(f"[Attn] {attn_warning}")
-            config["attn_mode"] = attn_actual
-    # ──────────────────────────────────────────────────────────
 
     # ── Per-run folder: internal control data + user-selected artifacts ──
     output_name = config.get("output_name", "my_lora")
@@ -189,80 +103,20 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
     artifact_run_dir = output_base_path if is_resume else output_base_path / run_dir_name
     # ──────────────────────────────────────────────────────────
 
-    dataset_ok = train_utils.validate_data_dir(config["train_data_dir"])
-    if not dataset_ok:
-        return _training_error(message="Dataset path does not exist or has no images / 数据集路径不存在或无图片")
-
-    # 正则化数据目录：填了但不存在时直接报错，避免 sd-scripts 静默忽略导致用户以为有正则数据。
-    # 目录存在但没有任何"数字_类名"子目录时同样报错——sd-scripts 只扫描子目录（子目录缺失时
-    # 生成空子集并仅打警告，训练照常跑但没有正则化）。
-    reg_data_dir = str(config.get("reg_data_dir") or "").strip()
-    if reg_data_dir:
-        if not os.path.isdir(reg_data_dir):
-            return _training_error(
-                message=f"Regularization data dir does not exist / 正则化数据目录不存在: {reg_data_dir}",
-                data={"errorCode": "regDataDirNotFound"},
-            )
-        reg_subdirs = [
-            name
-            for name in os.listdir(reg_data_dir)
-            if os.path.isdir(os.path.join(reg_data_dir, name)) and name.split("_")[0].isdigit()
-        ]
-        if not reg_subdirs:
-            return _training_error(
-                message=f"No valid subfolder (e.g. 10_face) found in regularization data dir / 正则化数据目录中未找到有效子文件夹（如 10_face）: {reg_data_dir}",
-                data={"errorCode": "regDataDirNoSubfolders"},
-            )
-
-    image_count = await _settled_to_thread(
-        train_utils.count_images, config["train_data_dir"], True, 201
-    )
-    suggest_cpu_threads = 8 if image_count > 200 else 2
-
-    validated, message = await _settled_to_thread(
-        train_utils.validate_model, config["pretrained_model_name_or_path"]
-    )
-    if not validated:
-        return _training_error(message=message)
-
-    # ── Anima: qwen3 编码器路径必填校验 ─────────────────
-    if model_train_type == "anima-lora":
-        qwen3_path = config.get("qwen3", "").strip()
-        if not qwen3_path:
-            return _training_error(
-                message="Anima LoRA training requires the Qwen3 encoder path / Anima LoRA 训练需要填写 Qwen3 编码器路径"
-            )
-        if not os.path.exists(qwen3_path):
-            return _training_error(message=f"Qwen3 model not found / Qwen3 模型不存在: {qwen3_path}")
-        vae_path = config.get("vae", "").strip()
-        if not os.path.exists(vae_path):
-            return _training_error(message=f"VAE model not found / VAE 模型不存在: {vae_path}")
-
-    if model_train_type == "moss-image-lora":
-        from backend.training.moss_image import validate_captions, validate_model_files
-
-        model_errors = await _settled_to_thread(validate_model_files, config)
-        if model_errors:
-            return _training_error(message="\n".join(model_errors))
-        caption_errors = await _settled_to_thread(validate_captions, config)
-        if caption_errors:
-            return _training_error(message="\n".join(caption_errors))
-        if config.get("convrot_int8_bwd") == "int8":
-            from library.convrot_int8_kernels import HAS_TRITON
-
-            if not HAS_TRITON:
-                return _training_error(message="ConvRot INT8 backward requires CUDA and Triton / INT8 反向需要 CUDA 与 Triton")
+    suggest_cpu_threads, error = await sd_scripts_preflight.check_input_files(config, model_train_type)
+    if error is not None:
+        return error
 
     sample_prompts_arg = ""
     # Raw trainer TOMLs call the prompt file sample_prompts; the UI calls it prompt_file.
-    prompt_file = str(_ui_config.get("prompt_file") or _ui_config.get("sample_prompts") or "").strip()
+    prompt_file = str(settings.ui_config.get("prompt_file") or settings.ui_config.get("sample_prompts") or "").strip()
     if prompt_file:
         if not os.path.exists(prompt_file):
             return _training_error(message=f"Sample prompt file not found / 采样提示词文件不存在: {prompt_file}")
         config["sample_prompts"] = prompt_file
     else:
         try:
-            sample_prompts_arg = await _settled_to_thread(get_sample_prompts, _ui_config)
+            sample_prompts_arg = await _settled_to_thread(get_sample_prompts, settings.ui_config)
 
         except ValueError as e:
             log.error(f"Error while processing prompts / 处理采样提示词时出错: {e}")
@@ -309,15 +163,15 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
     )
     dataset_config_file: Path | None = None
     dataset_toml = ""
-    if subset_timestep_offsets:
+    if settings.subset_timestep_offsets:
         try:
-            dataset_config = build_sd_scripts_dataset_config(config, subset_timestep_offsets)
+            dataset_config = build_sd_scripts_dataset_config(config, settings.subset_timestep_offsets)
         except ValueError as exc:
             return _training_error(message=str(exc))
         dataset_config_file = internal_run_dir / "dataset.toml"
         dataset_toml = toml_writer.dumps(dataset_config)
 
-    def _write_configs():
+    def _write_run_files():
         with open(toml_file, "w", encoding="utf-8") as f:
             f.write(toml_content)
         run_config_file = str(internal_run_dir / "config.toml")
@@ -327,9 +181,6 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
         if dataset_config_file is not None:
             dataset_config_file.write_text(dataset_toml, encoding="utf-8")
 
-    # ── A-2: 并发写入 config + run 信息（写入不同文件，无依赖）──
-    def _write_run_files():
-        _write_configs()
         run_files.write_run_info(str(internal_run_dir), config, model_train_type, timestamp, is_resume)
         write_output_dir_reference(str(internal_run_dir), str(artifact_run_dir))
 
@@ -339,30 +190,30 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
     extra_args = ["--dataset_config", str(dataset_config_file)] if dataset_config_file is not None else None
     result = reserved_task.launch(
         toml_file,
-        trainer_file,
+        profile.trainer_file,
         gpu_ids,
         suggest_cpu_threads,
         extra_args=extra_args,
         run_dir=str(internal_run_dir),
         artifact_dir=str(artifact_run_dir),
         output_base_dir=requested_output_dir,
-        preview_enabled=bool(_ui_config.get("enable_preview", False)),
+        preview_enabled=bool(settings.ui_config.get("enable_preview", False)),
         engine_id=profile.engine_id,
         run_metadata={
             "profile_id": profile.id,
-            "adapter_id": adapter_id,
+            "adapter_id": settings.adapter_id,
         },
         extra_env={
-            **training_metrics_environment(_ui_config),
+            **training_metrics_environment(settings.ui_config),
             "ANIMA_ENABLE_FLASH_ATTN": "1" if config.get("attn_mode") == "flash" else "0",
-            **({"LYCORIS_KERNEL_BACKEND": lycoris_kernel_backend} if lycoris_kernel_backend else {}),
+            **({"LYCORIS_KERNEL_BACKEND": settings.lycoris_kernel_backend} if settings.lycoris_kernel_backend else {}),
         },
     )
 
     # 将适配器警告附加到返回结果中（前端弹窗展示）
-    if lycoris_kernel_warning:
-        adapter_warnings.append(lycoris_kernel_warning)
-    if result["status"] == "success" and adapter_warnings:
-        result["data"]["warnings"] = adapter_warnings
+    if settings.lycoris_kernel_warning:
+        settings.warnings.append(settings.lycoris_kernel_warning)
+    if result["status"] == "success" and settings.warnings:
+        result["data"]["warnings"] = settings.warnings
 
     return result

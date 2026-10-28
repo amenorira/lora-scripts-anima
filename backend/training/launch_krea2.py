@@ -245,4 +245,3 @@ async def prepare_cache(config: dict, reserved_task):
         return result
     result.setdefault("data", {})["operation"] = "krea2_cache"
     return result
-
