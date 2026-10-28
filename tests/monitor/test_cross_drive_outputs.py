@@ -9,7 +9,7 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.monitor import artifacts, routes, run_registry
+from backend.monitor import artifacts, log_files, routes, run_registry
 from backend.server.routes import training as training_routes
 from backend.training import launch_sd_scripts, sd_scripts_preflight
 from backend.tasks import TaskManager, TaskStatus
@@ -41,7 +41,7 @@ class CrossDriveSandbox(unittest.TestCase):
         self._patches.enter_context(patch.object(run_registry, "OUTPUT_DIR", self.output))
         self._patches.enter_context(patch.object(run_registry, "AUTOSAVE_DIR", self.autosave))
         self._patches.enter_context(patch.object(artifacts, "REPO_ROOT", self.root))
-        self._patches.enter_context(patch.object(artifacts, "OUTPUT_DIR", self.output))
+        self._patches.enter_context(patch.object(log_files, "OUTPUT_DIR", self.output))
         self._patches.enter_context(patch.object(training_routes, "OUTPUT_DIR", self.output))
         self._patches.enter_context(patch.object(launch_sd_scripts, "OUTPUT_DIR", self.output))
         self._patches.enter_context(patch.object(training_routes, "tm", TaskManager()))
