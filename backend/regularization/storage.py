@@ -8,6 +8,7 @@ from collections import OrderedDict
 from pathlib import Path
 
 from backend.constants import REPO_ROOT
+from backend.utils.file_io import atomic_replace
 
 OUTPUT_ROOT = REPO_ROOT / "train" / "regularization"
 _manifest_cache = OrderedDict()
@@ -22,7 +23,7 @@ def atomic_write(path: Path, data: bytes):
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, path)
+        atomic_replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
 

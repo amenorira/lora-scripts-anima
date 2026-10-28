@@ -1,10 +1,31 @@
-"""Atomic UTF-8 writes without tempfile's Windows permission-error retries."""
+"""Atomic replacement and UTF-8 writes with bounded Windows contention retries."""
 from __future__ import annotations
 
 import os
 from pathlib import Path
 import threading
+import time
 import uuid
+
+
+def atomic_replace(
+    source: Path, target: Path, *, cancel_event: threading.Event | None = None,
+) -> None:
+    """Keep the old file intact while briefly retrying Windows handle contention."""
+    for attempt in range(5):
+        if cancel_event is not None and cancel_event.is_set():
+            raise InterruptedError("cancelled")
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError as exc:
+            if getattr(exc, "winerror", None) not in {5, 32, 33} or attempt == 4:
+                raise
+            delay = .02 * (2 ** attempt)
+            if cancel_event is None:
+                time.sleep(delay)
+            elif cancel_event.wait(delay):
+                raise InterruptedError("cancelled") from exc
 
 
 def atomic_write_text(
@@ -26,6 +47,6 @@ def atomic_write_text(
             handle.flush()
             os.fsync(handle.fileno())
         check_cancelled()
-        os.replace(temporary, path)
+        atomic_replace(temporary, path, cancel_event=cancel_event)
     finally:
         temporary.unlink(missing_ok=True)

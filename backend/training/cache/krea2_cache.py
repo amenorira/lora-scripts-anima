@@ -11,6 +11,7 @@ import re
 from typing import Any
 
 from backend.training.datasets.krea2_dataset import dataset_groups, image_files, parse_krea2_resolution
+from backend.utils.file_io import atomic_replace
 
 KREA2_CACHE_MANIFEST_NAME = ".krea2-cache.json"
 _LEGACY_KREA2_CACHE_MANIFEST_NAMES = (".anima-krea2-cache.json",)
@@ -338,7 +339,7 @@ def reusable_stages(config: dict, manifest: dict, status: dict, fingerprints: di
 def write_manifest(path: Path, manifest: dict) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    temporary.replace(path)
+    atomic_replace(temporary, path)
 
 
 def complete_stage(config: dict, stage: str) -> None:
