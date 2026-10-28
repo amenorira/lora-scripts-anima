@@ -196,10 +196,10 @@ assert 'musubi-tuner' in importlib.util.find_spec('musubi_tuner').origin
             config.update(network_module=KREA2_LYCORIS_MODULE, lycoris_algo="loha",
                           krea_attention_backend="flash_attn", lycoris_kernel_backend="torch")
             with patch.object(routes, "tm", TaskManager()), \
-                 patch.object(routes, "OUTPUT_DIR", root / "runs"), \
-                 patch.object(routes, "AUTOSAVE_DIR", root / "autosave"), \
-                 patch.object(routes, "detect_lycoris_kernel_backend", return_value=("torch", "kernel fallback")), \
-                 patch.object(routes, "krea2_preflight", return_value={"ok": True, "errors": [], "cache": {"ready": True}}), \
+                 patch.object(routes.launch_krea2, "OUTPUT_DIR", root / "runs"), \
+                 patch.object(routes.launch_krea2, "AUTOSAVE_DIR", root / "autosave"), \
+                 patch.object(routes.launch_krea2, "detect_lycoris_kernel_backend", return_value=("torch", "kernel fallback")), \
+                 patch.object(routes.launch_krea2, "krea2_preflight", return_value={"ok": True, "errors": [], "cache": {"ready": True}}), \
                  patch.object(routes, "run_train", return_value={"status": "success", "data": {}}) as launch:
                 response = asyncio.run(routes.create_toml_file(json_request(config)))
                 self.assertEqual(response["status"], "success", response)

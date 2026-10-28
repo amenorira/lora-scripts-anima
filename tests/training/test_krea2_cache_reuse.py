@@ -177,8 +177,8 @@ class Krea2CacheReuseTests(unittest.TestCase):
 
         self.config.update(krea_latent_cache_device="cpu", krea_text_cache_device="cpu",
                            krea_latent_cache_batch_size=2, krea_cache_num_workers=3, krea_cache_vae_tiling=True)
-        with patch.object(routes, "tm", TaskManager()), patch.object(routes, "OUTPUT_DIR", self.root / "runs"), \
-             patch.object(routes, "krea2_preflight", return_value={"ok": True}), \
+        with patch.object(routes, "tm", TaskManager()), patch.object(routes.launch_krea2, "OUTPUT_DIR", self.root / "runs"), \
+             patch.object(routes.launch_krea2, "krea2_preflight", return_value={"ok": True}), \
              patch.object(routes, "run_train", return_value={"status": "success", "data": {}}) as launch:
             result = asyncio.run(routes.create_krea2_cache(json_request(dict(self.config))))
         self.assertEqual(result["status"], "success")
