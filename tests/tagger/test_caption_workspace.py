@@ -16,6 +16,7 @@ from PIL import Image
 
 from backend.server.routes.tagger import router
 from backend.tagger import api_engine, captioning, workspace
+from backend.tagger.workspace_state import _SOURCE_TTL
 from backend.tageditor.routes import router as editor_router
 from backend.tageditor.sessions import dataset_sessions
 from backend.tasks import tm
@@ -258,7 +259,7 @@ class CaptionWorkspaceTests(unittest.TestCase):
             workspace._sources[token]["paths"] = [self.root.parent / "outside.png"]
         with self.assertRaises(ValueError): workspace.annotations(token)
         with workspace._sources_lock:
-            workspace._sources[token]["created_at"] = time.time() - workspace._SOURCE_TTL - 1
+            workspace._sources[token]["created_at"] = time.time() - _SOURCE_TTL - 1
         with self.assertRaises(KeyError): workspace.annotations(token)
         token = self.scan()["source_token"]
         self.image.with_suffix(".txt").write_text("x" * (512 * 1024 + 1),encoding="utf-8")

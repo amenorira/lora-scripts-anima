@@ -9,7 +9,7 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.monitor import artifacts, checkpoints, live_snapshot, log_files, routes, run_registry
+from backend.monitor import artifacts, checkpoints, history, live_snapshot, log_files, routes, run_registry
 from backend.server.routes import training as training_routes
 from backend.training import launch_sd_scripts, sd_scripts_preflight
 from backend.tasks import TaskManager, TaskStatus
@@ -46,11 +46,11 @@ class CrossDriveSandbox(unittest.TestCase):
         self._patches.enter_context(patch.object(training_routes, "OUTPUT_DIR", self.output))
         self._patches.enter_context(patch.object(launch_sd_scripts, "OUTPUT_DIR", self.output))
         self._patches.enter_context(patch.object(training_routes, "tm", TaskManager()))
-        artifacts.invalidate_history_cache()
+        history.invalidate_history_cache()
 
     def tearDown(self):
         self._patches.close()
-        artifacts.invalidate_history_cache()
+        history.invalidate_history_cache()
         self._temp.cleanup()
 
     @staticmethod

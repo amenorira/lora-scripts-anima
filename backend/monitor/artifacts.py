@@ -1,4 +1,4 @@
-"""训练产物扫描，并保留历史、检查点和日志模块的原有调用接口。"""
+"""训练样本、输出文件扫描与短期缓存。"""
 from __future__ import annotations
 
 import os
@@ -13,29 +13,7 @@ from urllib.parse import quote
 from backend.constants import REPO_ROOT
 from backend.image_preview import build_image_preview_url
 
-# Compatibility exports; new callers can import the responsible module directly.
-from backend.monitor.history import (
-    invalidate_history_cache,
-    scan_history,
-    _scan_history,
-    _history_item,
-)
-
-from backend.monitor.checkpoints import (
-    LORA_EXTENSIONS,
-    parse_checkpoint,
-    enrich_model_files_with_loss,
-    _parse_log_checkpoint_losses,
-)
-
-from backend.monitor.log_files import (
-    _normalized_log_lines,
-    read_clean_log_lines,
-    _tail_file,
-    find_train_log_path,
-    find_run_log_path,
-    read_log_slice,
-)
+from backend.monitor.checkpoints import LORA_EXTENSIONS, parse_checkpoint
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 

@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from backend.monitor.artifacts import enrich_model_files_with_loss, parse_checkpoint
+from backend.monitor.checkpoints import enrich_model_files_with_loss, parse_checkpoint
 
 
 class CheckpointTests(unittest.TestCase):
