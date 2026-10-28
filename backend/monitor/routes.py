@@ -35,14 +35,14 @@ from backend.monitor.run_registry import (
     normalize_run_status,
     resolve_artifact_file,
 )
-from backend.training.training_config import (
+from backend.training.config.training_config import (
     TRAINING_CONFIG_NAME,
     TrainingConfigError,
     extract_training_form,
     load_training_config,
 )
 from backend.tasks import tm
-from backend.training.config_import import infer_training_profile, import_native_training_form
+from backend.training.config.config_import import infer_training_profile, import_native_training_form
 
 router = APIRouter()
 
@@ -583,7 +583,7 @@ async def get_config_from_run(run_dir: str = Query("")):
             if config_format == "toml":
                 reusable_params = import_native_training_form(params, profile_id=infer_training_profile(params, record))
             else:
-                from backend.training.network_config import extract_network_form, validate_network_preset
+                from backend.training.config.network_config import extract_network_form, validate_network_preset
                 reusable_params = dict(params)
                 if reusable_params.get("model_train_type") == "krea2-lora":
                     reusable_params = extract_network_form(reusable_params)

@@ -4,16 +4,16 @@ from pathlib import Path
 
 from PIL import Image
 
-from backend.training.adapter import adapt_config
-from backend.training.step_estimator import estimate_training_steps
-from backend.training.validation import validate_training_config
-from backend.training.launch_sd_scripts import get_sample_prompts
+from backend.training.config.adapter import adapt_config
+from backend.training.datasets.step_estimator import estimate_training_steps
+from backend.training.config.validation import validate_training_config
+from backend.training.execution.launch_sd_scripts import get_sample_prompts
 from tests.helpers import valid_training_config as valid_anima_config
 
 
 class TrainingValidationTests(unittest.TestCase):
     def test_epoch_caption_dropout_rejects_both_text_cache_modes(self):
-        from backend.training.option_contracts import validate_sd_option_dependencies
+        from backend.training.config.option_contracts import validate_sd_option_dependencies
 
         for profile in ("anima-lora", "sdxl-lora", "moss-image-lora"):
             for cache_key in ("cache_text_encoder_outputs", "cache_text_encoder_outputs_to_disk"):

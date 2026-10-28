@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from backend.monitor import artifacts, checkpoints, history, live_snapshot, log_files, routes, run_registry
 from backend.server.routes import training as training_routes
-from backend.training import launch_sd_scripts, sd_scripts_preflight
+from backend.training.execution import launch_sd_scripts, sd_scripts_preflight
 from backend.tasks import TaskManager, TaskStatus
 from tests.helpers import json_request
 

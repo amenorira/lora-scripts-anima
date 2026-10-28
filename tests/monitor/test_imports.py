@@ -11,7 +11,7 @@ class MonitorImportTests(unittest.TestCase):
 import sys
 from backend.monitor import artifacts, checkpoints, log_files, run_registry
 assert checkpoints.parse_checkpoint('demo-step00000012.safetensors')['step'] == 12
-for name in ('fastapi', 'backend.monitor.routes', 'backend.monitor.history', 'backend.training.field_registry'):
+for name in ('fastapi', 'backend.monitor.routes', 'backend.monitor.history', 'backend.training.fields.field_registry'):
     assert name not in sys.modules, name
 """
         result = subprocess.run([sys.executable, "-B", "-c", script], cwd=ROOT,

@@ -542,7 +542,7 @@ The package default is `0.01`; the trainer explicitly overrides it to `0`. AdamW
 <!-- doc-anchor: evidence -->
 ## Evidence and references
 
-Project defaults and compatibility are defined in `backend/training/optimizer_metadata.py`, `optimizer_contracts.py`, and `field_registry.py`. Algorithm details follow the implementations loaded from vendor and the venv. LoRA-Muon's source is documented in `vendor/lora_muon/SOURCE.md`. The papers explain the algorithms; pinned code links are retained as references:
+Project defaults and compatibility are defined in `backend/training/fields/optimizer_metadata.py`, `optimizer_contracts.py`, and `field_registry.py`. Algorithm details follow the implementations loaded from vendor and the venv. LoRA-Muon's source is documented in `vendor/lora_muon/SOURCE.md`. The papers explain the algorithms; pinned code links are retained as references:
 
 - [Anima model card at a fixed commit](https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md)
 - [sd-scripts Anima training docs at a fixed commit](https://github.com/kohya-ss/sd-scripts/blob/37a1cbbc5725ed2a3575506e7bd2001c9908ac92/docs/anima_train_network.md)

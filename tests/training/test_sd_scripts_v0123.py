@@ -4,12 +4,12 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from backend.training.adapter import adapt_config
-from backend.training.config_import import import_native_training_form
-from backend.training.field_registry import FIELDS, field_applies_to_profile
-from backend.training.moss_image import validate_model_files
-from backend.training.option_contracts import validate_sd_option_dependencies
-from backend.training.training_config import build_training_config, extract_training_form
+from backend.training.config.adapter import adapt_config
+from backend.training.config.config_import import import_native_training_form
+from backend.training.fields.field_registry import FIELDS, field_applies_to_profile
+from backend.training.config.moss_image import validate_model_files
+from backend.training.config.option_contracts import validate_sd_option_dependencies
+from backend.training.config.training_config import build_training_config, extract_training_form
 from tests.training.test_moss_image import moss_config
 
 
@@ -93,7 +93,7 @@ class ReleaseConfigTests(unittest.TestCase):
 class UpstreamCompileTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from backend.training.step_estimator import _sd_dataset_helpers
+        from backend.training.datasets.step_estimator import _sd_dataset_helpers
         _sd_dataset_helpers()
         path = Path(__file__).resolve().parents[2] / "vendor/sd-scripts/tests/test_convrot_int8.py"
         spec = importlib.util.spec_from_file_location("sd_v0123_convrot_tests", path)

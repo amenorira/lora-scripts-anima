@@ -541,7 +541,7 @@ Prodigy は学習率を倍率の基準として使う、D 適応型の方式で�
 <!-- doc-anchor: evidence -->
 ## 実装と参考資料
 
-既定値と互換性は `backend/training/optimizer_metadata.py`、`optimizer_contracts.py`、`field_registry.py` に定義されています。方式の詳細は vendor と venv から読み込む実装に従います。LoRA-Muon の出典は `vendor/lora_muon/SOURCE.md` にあります。論文は方式の説明、リビジョンを固定したコードは実装の参照用です。
+既定値と互換性は `backend/training/fields/optimizer_metadata.py`、`optimizer_contracts.py`、`field_registry.py` に定義されています。方式の詳細は vendor と venv から読み込む実装に従います。LoRA-Muon の出典は `vendor/lora_muon/SOURCE.md` にあります。論文は方式の説明、リビジョンを固定したコードは実装の参照用です。
 
 - [Anima モデルカード](https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md)
 - [sd-scripts の Anima 学習ガイド](https://github.com/kohya-ss/sd-scripts/blob/37a1cbbc5725ed2a3575506e7bd2001c9908ac92/docs/anima_train_network.md)

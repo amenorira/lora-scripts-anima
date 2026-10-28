@@ -13,19 +13,20 @@ from fastapi import APIRouter, BackgroundTasks, Query, Request
 from backend.constants import OUTPUT_DIR
 from backend.async_utils import settled_to_thread as _settled_to_thread
 from backend.monitor.run_registry import resolve_user_path
-from backend.training import launch, launch_krea2, preparation, run_files, run_train
+from backend.training import run_train
+from backend.training.execution import launch, launch_krea2, preparation, run_files
 from backend.training.core_registry import (
     TrainingProfileError,
     profile_payload,
     resolve_training_profile,
 )
-from backend.training.dataset_repeat import DatasetRepeatError, apply_subset_repeats
-from backend.training.krea2_cache import get_krea2_cache_status
-from backend.training.krea2_options import KREA2_PROFILE_ID
-from backend.training.krea2_preflight import inspect_krea2_checkpoint_format
-from backend.training.step_estimator import StepEstimateError, estimate_training_steps
-from backend.training.te_cache_check import delete_te_cache
-from backend.training.training_config import (
+from backend.training.datasets.dataset_repeat import DatasetRepeatError, apply_subset_repeats
+from backend.training.cache.krea2_cache import get_krea2_cache_status
+from backend.training.config.krea2_options import KREA2_PROFILE_ID
+from backend.training.execution.krea2_preflight import inspect_krea2_checkpoint_format
+from backend.training.datasets.step_estimator import StepEstimateError, estimate_training_steps
+from backend.training.cache.te_cache_check import delete_te_cache
+from backend.training.config.training_config import (
     TrainingConfigError,
     build_training_config,
     dump_training_config,
@@ -119,7 +120,7 @@ async def export_training_config(request: Request):
 @router.post("/training/parse-config")
 async def parse_training_toml(req: TrainingTomlParseRequest):
     """Parse a YAML application config or a legacy flat TOML config."""
-    from backend.training.network_config import extract_network_form, validate_network_preset
+    from backend.training.config.network_config import extract_network_form, validate_network_preset
 
     content = req.content.lstrip("\ufeff")
     try:
@@ -152,7 +153,7 @@ async def parse_training_toml(req: TrainingTomlParseRequest):
                 "不再支持结构化预设文件，请导入扁平训练 TOML"
             )
         )
-    from backend.training.config_import import import_native_training_form
+    from backend.training.config.config_import import import_native_training_form
     try:
         parsed = import_native_training_form(parsed, profile_id=req.model_train_type or "anima-lora")
     except ValueError as exc:

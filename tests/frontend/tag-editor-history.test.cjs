@@ -15,7 +15,7 @@ function makeClient() {
   context.localStorage = { _v: {}, getItem(k) { return k in this._v ? this._v[k] : null; }, setItem(k, v) { this._v[k] = String(v); }, removeItem(k) { delete this._v[k]; } };
   context.navigator = { clipboard: { writeText() { return Promise.resolve(); } } };
 
-  loadFrontend(['tag-dictionary-lib', 'tag-dictionary'], context);
+  loadFrontend(['tag-dictionary/lib', 'tag-dictionary/index'], context);
   loadTagEditor(context);
 
   const ctx = Object.assign({}, context.window.tagEditorMixin, context.window.tagDictionaryMixin);

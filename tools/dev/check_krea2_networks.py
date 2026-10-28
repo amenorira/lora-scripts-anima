@@ -35,12 +35,12 @@ def main():
 
     import torch
     from musubi_tuner.krea2.krea2_mmdit import SingleMMDiTConfig, SingleStreamDiT
-    from backend.training.krea2_train import Krea2Trainer, krea2_setup_parser, setup_parser_common
+    from backend.training.execution.krea2_train import Krea2Trainer, krea2_setup_parser, setup_parser_common
     from musubi_tuner.modules.custom_offloading_utils import BlockSwapConfig
     from musubi_tuner.modules.fp8_optimization_utils import apply_fp8_monkey_patch
-    from backend.training import toml_writer
-    from backend.training.krea2_network import build_krea2_network_preset, KREA2_PRESET_FILENAME, linear_target_names, selected_targets
-    from backend.training.musubi_krea2 import KREA2_FIELDS, validate_krea2_config, build_krea2_train_config
+    from backend.training.config import toml_writer
+    from backend.training.config.krea2_network import build_krea2_network_preset, KREA2_PRESET_FILENAME, linear_target_names, selected_targets
+    from backend.training.config.musubi_krea2 import KREA2_FIELDS, validate_krea2_config, build_krea2_train_config
 
     torch.set_num_threads(2)
     device = torch.device(options.device)

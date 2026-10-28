@@ -78,7 +78,7 @@ def _fields_payload() -> tuple[str, bytes]:
         cached = _fields_payload_cache.get("v1")
         if cached is not None:
             return cached
-        from backend.training.field_registry import get_fields_json
+        from backend.training.fields.field_registry import get_fields_json
 
         body = json.dumps(
             {"status": "success", "message": None, "data": get_fields_json()},

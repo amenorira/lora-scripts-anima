@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const {loadFrontend, readFrontend, readRepo} = require('./helpers.cjs');
 
 test('composition preserves getters and rejects duplicates without partial mutation', () => {
-  const {window} = loadFrontend('mixin-compose');
+  const {window} = loadFrontend('shared/mixin-compose');
   const target = {value:2};
   window.composeAppMixins(target,{derived:{get doubled(){return this.value*2;}}});
   assert.equal(target.doubled,4);

@@ -27,12 +27,12 @@ def main():
     import torch
     from accelerate import Accelerator
     from musubi_tuner.krea2.krea2_mmdit import SingleStreamDiT, SingleMMDiTConfig
-    from backend.training.krea2_train import Krea2Trainer, krea2_setup_parser, setup_parser_common
-    from backend.training.musubi_krea2 import KREA2_FIELDS, validate_krea2_config, build_krea2_train_config
-    from backend.training.optimizer_metadata import optimizer_entries, KREA2_PROFILE
-    from backend.training.krea2_network import build_krea2_network_preset, KREA2_PRESET_FILENAME
-    from backend.training import toml_writer
-    from backend.training.config_import import import_native_training_form
+    from backend.training.execution.krea2_train import Krea2Trainer, krea2_setup_parser, setup_parser_common
+    from backend.training.config.musubi_krea2 import KREA2_FIELDS, validate_krea2_config, build_krea2_train_config
+    from backend.training.fields.optimizer_metadata import optimizer_entries, KREA2_PROFILE
+    from backend.training.config.krea2_network import build_krea2_network_preset, KREA2_PRESET_FILENAME
+    from backend.training.config import toml_writer
+    from backend.training.config.config_import import import_native_training_form
 
     torch.set_num_threads(2)
     torch.manual_seed(123)
@@ -99,7 +99,7 @@ def main():
                 # The exact emitted optimizer literals must survive import/export.
                 optimizer_form = import_native_training_form({key: value for key, value in native.items()
                     if key in ('optimizer_type', 'optimizer_args')}, profile_id='krea2-lora')
-                from backend.training.musubi_krea2 import _build_krea2_optimizer_args
+                from backend.training.config.musubi_krea2 import _build_krea2_optimizer_args
                 assert set(_build_krea2_optimizer_args(optimizer_form)) == set(native.get('optimizer_args', []))
                 (directory / KREA2_PRESET_FILENAME).write_text(toml_writer.dumps(build_krea2_network_preset(form)), encoding='utf-8')
                 args = krea2_setup_parser(setup_parser_common()).parse_args([])

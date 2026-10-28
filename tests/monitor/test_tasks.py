@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from backend.tasks import Task, TaskManager, TaskStatus
-from backend.training import supervisor
+from backend.training.execution import supervisor
 from tests.helpers import stub_supervisor
 
 

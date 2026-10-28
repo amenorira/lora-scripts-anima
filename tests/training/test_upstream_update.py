@@ -10,17 +10,17 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 from PIL import Image
 
-from backend.training.adapter import adapt_config
-from backend.training.moss_image import validate_captions
-from backend.training.option_contracts import validate_sd_option_dependencies
-from backend.training.te_cache_check import check_te_cache
-from backend.training.training_config import build_training_config, extract_training_form
+from backend.training.config.adapter import adapt_config
+from backend.training.config.moss_image import validate_captions
+from backend.training.config.option_contracts import validate_sd_option_dependencies
+from backend.training.cache.te_cache_check import check_te_cache
+from backend.training.config.training_config import build_training_config, extract_training_form
 from tests.training.test_moss_image import moss_config
 
 
 class BlockSwapConfigTests(unittest.TestCase):
     def test_regularization_runner_uses_current_inference_swap_contract(self):
-        from backend.training.step_estimator import _sd_dataset_helpers
+        from backend.training.datasets.step_estimator import _sd_dataset_helpers
         _sd_dataset_helpers()
         from backend.regularization.worker import AnimaRunner
         from library import anima_models, anima_utils, anima_train_utils, custom_offloading_utils

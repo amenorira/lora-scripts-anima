@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { TRAINING_CORE_SCRIPTS, loadFrontend } = require('./helpers.cjs');
 
 test('real registry model defaults stay separate across all four profiles and field resets', () => {
-  const { window } = loadFrontend(['constants','utils','config',...TRAINING_CORE_SCRIPTS], {
+  const { window } = loadFrontend(['shared/constants','shared/utils','app/config',...TRAINING_CORE_SCRIPTS], {
     window: {}, document: {getElementById: () => null}, setTimeout, clearTimeout,
   });
   window.t=(_key,fallback)=>fallback || '';
@@ -35,7 +35,7 @@ test('flat config import switches profile before filtering fields', async () => 
   const storage = new Map([['anima-form-train-basic', JSON.stringify({
     model_train_type: 'anima-lora', qwen3: './models/stale-qwen.safetensors',
   })]]);
-  const context = loadFrontend([...TRAINING_CORE_SCRIPTS, 'training-config-io'], {
+  const context = loadFrontend([...TRAINING_CORE_SCRIPTS, 'training/config-io'], {
     window: { getVisibleSections: type => [{ key: 'model', fields:
       (type === 'sdxl-lora' ? ['model_train_type', 'pretrained_model_name_or_path', 'network_module', 'xformers']
         : ['model_train_type', 'qwen3']).map(key => ({ key })),
@@ -127,7 +127,7 @@ test('training profiles keep independent drafts and reset from registry defaults
 
 test('native TOML import sends the profile selected when the file was opened', async () => {
   let reader, request, imported;
-  const { window } = loadFrontend('training-config-io', {
+  const { window } = loadFrontend('training/config-io', {
     window: {},
     FileReader: class {
       constructor() { reader = this; }
@@ -155,7 +155,7 @@ test('native TOML import sends the profile selected when the file was opened', a
 
 test('file import reports unsupported fields instead of a plain success toast', async () => {
   let reader, notice;
-  const { window } = loadFrontend('training-config-io', {
+  const { window } = loadFrontend('training/config-io', {
     window: {},
     FileReader: class { constructor() { reader = this; } readAsText() {} },
     fetch: async () => ({ json: async () => ({ status: 'success', data: { data: { max_train_steps: 300 } } }) }),

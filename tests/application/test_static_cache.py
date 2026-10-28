@@ -54,10 +54,37 @@ class StaticCacheTests(unittest.TestCase):
     def test_frontend_no_longer_requests_old_manual_version_urls(self):
         # Dropping the old query changes the cache key on the first upgrade,
         # before the browser has seen the new response cache policy.
-        files = [ROOT / "frontend/index.html", * (ROOT / "frontend/js").glob("*.js"),
+        files = [ROOT / "frontend/index.html", * (ROOT / "frontend/js").rglob("*.js"),
                  * (ROOT / "frontend/css").glob("*.css")]
         for file in files:
             with self.subTest(file=file.name):
                 self.assertIsNone(re.search(r"\?v=202\d{5}-", file.read_text(encoding="utf-8")))
         index = (ROOT / "frontend/index.html").read_text(encoding="utf-8")
-        self.assertIn('src="/anima-ui/js/anima-select.js"', index)
+        self.assertIn('src="/anima-ui/js/shared/anima-select.js"', index)
+
+    def test_frontend_entrypoints_and_dynamic_assets_resolve_after_grouping(self):
+        from urllib.parse import urljoin
+        from backend.server.application import app
+
+        frontend = ROOT / "frontend"
+        index = (frontend / "index.html").read_text(encoding="utf-8")
+        urls = set(re.findall(r'(?:src|href)="(/anima-ui/[^\"]+)"', index))
+        for script in (frontend / "js").rglob("*.js"):
+            if "vendor" in script.relative_to(frontend).parts:
+                continue
+            source = script.read_text(encoding="utf-8")
+            urls.update(re.findall(r"(?:fetch|new Worker)\(\s*['\"](/anima-ui/[^'\"]+)['\"]", source))
+            base = "/anima-ui/" + script.relative_to(frontend).as_posix()
+            urls.update(urljoin(base, value) for value in re.findall(r"importScripts\(\s*['\"]([^'\"]+)['\"]", source))
+
+        # Requests intentionally skip lifespan: asset checks must not launch GPU
+        # probes, monitoring, TensorBoard, or the preview worker pool.
+        client = TestClient(app)
+        for url in sorted(urls):
+            with self.subTest(url=url):
+                response = client.get(url)
+                self.assertEqual(response.status_code, 200)
+                if url.endswith(".js"):
+                    self.assertIn("javascript", response.headers["content-type"])
+                elif url.endswith(".css"):
+                    self.assertIn("text/css", response.headers["content-type"])

@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from backend.training.step_estimator import estimate_training_steps
+from backend.training.datasets.step_estimator import estimate_training_steps
 
 
 class Krea2EstimateTests(unittest.TestCase):

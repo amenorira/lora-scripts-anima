@@ -4,7 +4,7 @@ import unittest
 
 import toml
 
-from backend.training import toml_writer
+from backend.training.config import toml_writer
 
 
 class TomlWriterTests(unittest.TestCase):

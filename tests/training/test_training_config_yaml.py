@@ -3,7 +3,7 @@ import unittest
 from uuid import UUID
 from pathlib import Path
 
-from backend.training.training_config import (
+from backend.training.config.training_config import (
     TRAINING_CONFIG_SCHEMA_VERSION,
     TrainingConfigError,
     build_training_config,
@@ -11,7 +11,7 @@ from backend.training.training_config import (
     load_training_config,
     write_training_config,
 )
-from backend.training.optimizer_contracts import LORA_MUON_OPTIMIZER_TYPE
+from backend.training.config.optimizer_contracts import LORA_MUON_OPTIMIZER_TYPE
 
 
 class TrainingConfigYamlTests(unittest.TestCase):

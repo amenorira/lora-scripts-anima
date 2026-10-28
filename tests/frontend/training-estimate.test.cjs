@@ -4,7 +4,7 @@ const {loadFrontend, composeMixins, response} = require('./helpers.cjs');
 
 test('step requests retain the caption extension and invalidate when it changes', async () => {
   const requests = [];
-  const {window} = loadFrontend('training-preflight', {window:{}, clearTimeout,
+  const {window} = loadFrontend('training/preflight', {window:{}, clearTimeout,
     fetch: async (url, options) => {requests.push(JSON.parse(options.body)); return response({total_steps:12});},
   });
   const app = composeMixins(window.trainingPreflight, {
@@ -21,7 +21,7 @@ test('step requests retain the caption extension and invalidate when it changes'
 });
 
 test('Krea formula renders counts and distinguishes explicit step budgets', () => {
-  const {window} = loadFrontend('training-preflight');
+  const {window} = loadFrontend('training/preflight');
   const labels = {'stepEstimate.imageTerm':'{images} x {repeats}',
     'stepEstimate.imageFormula':'{trainImages} images = {trainSamples} samples',
     'stepEstimate.totalFormula':'{epochs} x {steps} = {total}',

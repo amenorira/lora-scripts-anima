@@ -5,7 +5,7 @@ const { loadFrontend } = require('./helpers.cjs');
 test('fresh load and reconnect subscribe from a snapshot without persisting event cursors', async () => {
   const sent = [], delivered = [], storageKeys = [];
   let snapshotSeq = 7;
-  const { window } = loadFrontend('realtime', {
+  const { window } = loadFrontend('shared/realtime', {
     window: {}, WebSocket: { OPEN: 1 }, AbortController, URLSearchParams, setTimeout, clearTimeout,
     sessionStorage: {
       getItem(key) { storageKeys.push(key); return 'instance-1'; },
@@ -43,7 +43,7 @@ test('fresh load and reconnect subscribe from a snapshot without persisting even
 });
 
 test('poll response older than ownership boundary is ignored', () => {
-  const { window } = loadFrontend(['realtime', 'monitor-core', 'training-toml'], {
+  const { window } = loadFrontend(['shared/realtime', 'monitor/core', 'training/toml'], {
     window: {}, document: { getElementById: () => null }, requestAnimationFrame: callback => callback(),
   });
   const app = Object.assign({}, window.realtimeMixin, window.monitorCoreMixin, window.trainingTomlMixin, {
@@ -65,7 +65,7 @@ test('poll response older than ownership boundary is ignored', () => {
 });
 
 test('monitor detail snapshot does not skip queued task replay', () => {
-  const { window } = loadFrontend('realtime');
+  const { window } = loadFrontend('shared/realtime');
   const app = Object.assign({}, window.realtimeMixin, {
     _realtimeCursors: { 'task:train-1': 10, server: 3 }, _realtimeTopics: new Set(['server', 'task:train-1']),
   });
@@ -74,7 +74,7 @@ test('monitor detail snapshot does not skip queued task replay', () => {
 });
 
 test('snapshot drops expired cursors while preserving subscribed replay positions', () => {
-  const { window } = loadFrontend('realtime');
+  const { window } = loadFrontend('shared/realtime');
   const app = Object.assign({}, window.realtimeMixin, {
     _realtimeCursors: { 'task:old': 3, 'task:live': 8 }, _realtimeTopics: new Set(['task:live']),
   });

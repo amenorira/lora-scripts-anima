@@ -542,7 +542,7 @@ Prodigy 属于 D-adaptation 系的自适应优化器，学习率作为缩放基�
 <!-- doc-anchor: evidence -->
 ## 依据与参考资料
 
-项目默认值与兼容性见 `backend/training/optimizer_metadata.py`、`optimizer_contracts.py` 和 `field_registry.py`。算法细节以 vendor 和 venv 中实际加载的实现为准；LoRA-Muon 来源见 `vendor/lora_muon/SOURCE.md`。下列论文说明算法，固定提交链接保留为参考：
+项目默认值与兼容性见 `backend/training/fields/optimizer_metadata.py`、`optimizer_contracts.py` 和 `field_registry.py`。算法细节以 vendor 和 venv 中实际加载的实现为准；LoRA-Muon 来源见 `vendor/lora_muon/SOURCE.md`。下列论文说明算法，固定提交链接保留为参考：
 
 - [Anima 官方模型卡（固定提交）](https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md)
 - [sd-scripts Anima LoRA 训练文档（固定提交）](https://github.com/kohya-ss/sd-scripts/blob/37a1cbbc5725ed2a3575506e7bd2001c9908ac92/docs/anima_train_network.md)

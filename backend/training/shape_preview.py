@@ -15,8 +15,8 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.training.moss_image import NETWORK_MODULES as MOSS_NETWORK_MODULES
-from backend.training.krea2_network import (
+from backend.training.config.moss_image import NETWORK_MODULES as MOSS_NETWORK_MODULES
+from backend.training.config.krea2_network import (
     KREA2_NETWORK_MODULES, build_krea2_network_args, build_krea2_network_preset,
     validate_krea2_network,
 )
@@ -120,7 +120,7 @@ def inspect_network(form):
 
 def _inspect_network(form):
     """Runs in a dedicated CPU worker; FakeTensorMode also handles DoRA initialization."""
-    from backend.training.adapter import adapt_config
+    from backend.training.config.adapter import adapt_config
 
     train_type = form.get("model_train_type")
     if train_type not in SUPPORTED:

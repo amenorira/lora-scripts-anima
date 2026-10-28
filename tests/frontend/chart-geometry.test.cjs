@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { TRAINING_CORE_SCRIPTS, loadFrontend } = require('./helpers.cjs');
 
 function application(profile = 'anima-lora', values = {}) {
-  const { window: w } = loadFrontend(['constants', 'utils', 'config', 'training-timestep-model', ...TRAINING_CORE_SCRIPTS, 'training-lr-preview', 'monitor-render'], {
+  const { window: w } = loadFrontend(['shared/constants', 'shared/utils', 'app/config', 'training/timestep-model', ...TRAINING_CORE_SCRIPTS, 'training/lr-preview', 'monitor/render'], {
     window: {}, document: { getElementById: () => null },
   });
   const app = Object.assign({}, w.utilsMixin, w.trainingCoreMixin, w.trainingLrPreviewMixin, w.monitorRenderMixin, {

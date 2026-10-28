@@ -15,7 +15,7 @@ test('resource bars select and display the requested device through an explicit 
       return nodes.get(query);
     },
   };
-  const {window} = loadFrontend('resource-bar',{window:{},document:{getElementById:()=>bar}});
+  const {window} = loadFrontend('monitor/resource-bar',{window:{},document:{getElementById:()=>bar}});
   const selected=[];
   window.resourceBar.render('bar',{gpu:{gpus:[
     {index:0,name:'GPU 0',vram_used_mb:1024,vram_total_mb:4096},
@@ -30,7 +30,7 @@ test('resource bars select and display the requested device through an explicit 
 
 test('each workspace refreshes its own resource bar immediately after selecting a GPU', () => {
   const calls=[];
-  const {window} = loadFrontend(['monitor-render','tagger','regularization'],{window:{},
+  const {window} = loadFrontend(['monitor/render','tagger/index','regularization/index'],{window:{},
     document:{getElementById:()=>null},
   });
   window.resourceBar={render:(id,options)=>calls.push({id,options})};

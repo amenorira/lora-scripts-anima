@@ -96,20 +96,20 @@ class RuntimePathTests(unittest.TestCase):
             self.assertFalse((Path(directory) / "torchinductor_lou").exists())
 
     def test_lycoris_presets_have_a_stable_managed_path_even_if_tempfile_falls_back(self):
-        from backend.training.adapter import _write_lycoris_scope_preset_file
+        from backend.training.config.adapter import _write_lycoris_scope_preset_file
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with patch.object(runtime_paths, "ROOT", root), patch.object(tempfile, "tempdir", str(Path.cwd())):
                 first = _write_lycoris_scope_preset_file("attn-mlp", ["scope_probe"])
-                with patch("backend.training.adapter.atomic_write_text", side_effect=AssertionError("unchanged preset rewritten")):
+                with patch("backend.training.config.adapter.atomic_write_text", side_effect=AssertionError("unchanged preset rewritten")):
                     second = _write_lycoris_scope_preset_file("attn-mlp", ["scope_probe"])
                 self.assertEqual(first, second)
                 self.assertTrue(Path(first).is_relative_to(root / "cache/runtime/lycoris"))
                 self.assertIn("scope_probe", Path(first).read_text(encoding="utf-8"))
 
     def test_lycoris_preset_repair_and_failed_replace_preserve_existing_bytes(self):
-        from backend.training.adapter import _write_lycoris_scope_preset_file
+        from backend.training.config.adapter import _write_lycoris_scope_preset_file
 
         with tempfile.TemporaryDirectory() as directory, patch.object(runtime_paths, "ROOT", Path(directory)):
             target = Path(_write_lycoris_scope_preset_file("attn-mlp", ["scope_probe"]))

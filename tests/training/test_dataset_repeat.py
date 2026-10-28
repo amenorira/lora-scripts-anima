@@ -8,11 +8,11 @@ from unittest.mock import patch
 
 from backend.server.routes import training as training_routes
 from backend.server.routes import system as system_routes
-from backend.training.dataset_repeat import (
+from backend.training.datasets.dataset_repeat import (
     DatasetRepeatError,
     apply_subset_repeats,
 )
-from backend.training.sd_dataset_config import build_sd_scripts_dataset_config
+from backend.training.datasets.sd_dataset_config import build_sd_scripts_dataset_config
 from tests.helpers import json_request
 
 

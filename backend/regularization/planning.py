@@ -108,7 +108,7 @@ def scan(settings: Settings, overrides=None):
     bucket = None
     if settings.size_mode == "bucket":
         # Use precisely the same bucket selection as training, without loading models.
-        from backend.training.step_estimator import _sd_dataset_helpers, _parse_resolution, _adjust_bucket_range
+        from backend.training.datasets.step_estimator import _sd_dataset_helpers, _parse_resolution, _adjust_bucket_range
         BucketManager, _, _ = _sd_dataset_helpers()
         resolution = _parse_resolution(settings.resolution)
         if any(v < 32 or v > 4096 or v % 16 for v in resolution):
@@ -123,7 +123,7 @@ def scan(settings: Settings, overrides=None):
             bucket.set_predefined_resos([resolution])
     sources = []
     extensions = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
-    from backend.training.sd_dataset_config import _dreambooth_subsets
+    from backend.training.datasets.sd_dataset_config import _dreambooth_subsets
     subsets = _dreambooth_subsets(str(root), is_reg=False)
     # A training root uses the trainer's subset rules. A selected flat image
     # directory is also supported, but an explicitly disabled subset is not.

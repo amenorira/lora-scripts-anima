@@ -6,7 +6,7 @@ const {uiHarness} = require('./ui-helpers.cjs');
 function harness() {
   const ui=uiHarness();
   ui.context.URLSearchParams = URLSearchParams;
-  loadFrontend(['constants','config','app'],ui.context);
+  loadFrontend(['shared/constants','app/config','app/index'],ui.context);
   ui.context.ROUTE_CONFIG=ui.context.window.ROUTE_CONFIG;
   ui.listeners.get('alpine:init')();
   const app=ui.factories.animaApp();

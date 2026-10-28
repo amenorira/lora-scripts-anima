@@ -3,12 +3,12 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from backend.training.config_import import import_native_training_form
-from backend.training.krea2_optimizers import ARGUMENTS
-from backend.training.musubi_krea2 import (
+from backend.training.config.config_import import import_native_training_form
+from backend.training.config.krea2_optimizers import ARGUMENTS
+from backend.training.config.musubi_krea2 import (
     KREA2_FIELDS, _build_krea2_optimizer_args, build_krea2_train_config, validate_krea2_config,
 )
-from backend.training.optimizer_metadata import optimizer_entries, KREA2_PROFILE, SD_SCRIPTS_PROFILE
+from backend.training.fields.optimizer_metadata import optimizer_entries, KREA2_PROFILE, SD_SCRIPTS_PROFILE
 from tests.training.test_multi_core_krea2 import krea2_config
 
 

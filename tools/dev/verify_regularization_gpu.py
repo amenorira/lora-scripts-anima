@@ -79,7 +79,7 @@ def main():
     api("/runs/"+root.name+"/items/1/restore", {})
     assert (root / "1_reg" / after["items"][0]["filename"]).exists()
     # Actual training loader helpers and estimator must accept generation.json.
-    from backend.training.step_estimator import estimate_training_steps
+    from backend.training.datasets.step_estimator import estimate_training_steps
     estimate = estimate_training_steps(dict(model_train_type="anima-lora", train_data_dir=str(source), reg_data_dir=str(root),
                     resolution="512,512", train_batch_size=1, max_train_epochs=1, gradient_accumulation_steps=1, enable_bucket=False))
     print("Step estimate: " + json.dumps(estimate, ensure_ascii=False), flush=True)

@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 from starlette.requests import Request
 
-from backend.training.field_registry import FIELDS
+from backend.training.fields.field_registry import FIELDS
 
 
 def config_from_field_defaults(**overrides) -> dict:
@@ -36,7 +36,7 @@ def valid_training_config(model_train_type="anima-lora", **overrides) -> dict:
 @contextmanager
 def stub_supervisor():
     """Isolate launcher bookkeeping while keeping task execution real."""
-    from backend.training import supervisor
+    from backend.training.execution import supervisor
 
     with ExitStack() as stack:
         for name, options in (

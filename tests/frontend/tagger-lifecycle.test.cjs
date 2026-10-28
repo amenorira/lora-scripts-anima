@@ -4,7 +4,7 @@ const {loadFrontend, composeMixins, response, deferred} = require('./helpers.cjs
 
 function harness() {
   const pending = deferred(), scans = [], messages = [];
-  const context = loadFrontend('tagger', {window:{}, fetch:()=>pending.promise});
+  const context = loadFrontend('tagger/index', {window:{}, fetch:()=>pending.promise});
   const app = composeMixins(context.window.taggerMixin, {
     currentRoute:'tagger', taggerSourceMode:'folder', taggerSourcePath:'original',
     scanTaggerSource:async()=>scans.push(app.taggerSourcePath),
@@ -40,7 +40,7 @@ test('picker failure after leaving the workspace does not notify another page', 
 
 test('local task creation response stays attached to the initiating source mode', async()=>{
   const pending=deferred(), storage=new Map();
-  const {window}=loadFrontend('tagger',{window:{},fetch:()=>pending.promise,
+  const {window}=loadFrontend('tagger/index',{window:{},fetch:()=>pending.promise,
     localStorage:{setItem:(key,value)=>storage.set(key,value)}});
   const app=composeMixins(window.taggerMixin,{
     currentRoute:'tagger',taggerSourceMode:'folder',taggerSource:{source_token:'local'},

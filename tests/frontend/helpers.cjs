@@ -7,14 +7,14 @@ const readRepo = name => fs.readFileSync(path.join(ROOT, name), 'utf8');
 const readFrontend = name => readRepo(`frontend/js/${name.replace(/\.js$/, '')}.js`);
 
 const FRONTEND_DEPENDENCIES = {
-  'environment-core': ['environment-loading', 'environment-models', 'environment-components', 'environment-tasks'],
-  'monitor-core': ['monitor-metrics', 'monitor-history', 'monitor-outputs', 'monitor-previews'],
-  'monitor-render': ['utils', 'monitor-summary', 'monitor-diagnostics', 'resource-bar', 'monitor-artifacts-render', 'monitor-history-render', ],
-  'resource-bar': ['utils'],
-  'tagger': ['tagger-tasks', 'tagger-sources', ],
-  'environment-render': ['environment-dictionary-render', 'environment-components-render', 'environment-models-render', ],
+  'environment/core': ['environment/loading', 'environment/models', 'environment/components', 'environment/tasks'],
+  'monitor/core': ['monitor/metrics', 'monitor/history', 'monitor/outputs', 'monitor/previews'],
+  'monitor/render': ['shared/utils', 'monitor/summary', 'monitor/diagnostics', 'monitor/resource-bar', 'monitor/artifacts-render', 'monitor/history-render', ],
+  'monitor/resource-bar': ['shared/utils'],
+  'tagger/index': ['tagger/tasks', 'tagger/sources', ],
+  'environment/render': ['environment/dictionary-render', 'environment/components-render', 'environment/models-render', ],
 };
-const frontendScripts = files => ['mixin-compose', ...[].concat(files).flatMap(file => [
+const frontendScripts = files => ['shared/mixin-compose', ...[].concat(files).flatMap(file => [
   ...(FRONTEND_DEPENDENCIES[file.replace(/\.js$/, '')] || []), file,
 ])];
 
@@ -27,13 +27,13 @@ function loadFrontend(files, context = { window: {} }) {
 }
 
 const TRAINING_CORE_SCRIPTS = [
-  'training-field-relations', 'training-network-panel', 'training-field-renderer', 'training-timestep-preview', 'training-conditions', 'training-sections', 'training-validation', 'training-profiles', 'training-preflight', 'training-file-picker', 'training-core',
+  'training/field-relations', 'training/network-panel', 'training/field-renderer', 'training/timestep-preview', 'training/conditions', 'training/sections', 'training/validation', 'training/profiles', 'training/preflight', 'training/file-picker', 'training/core',
 ];
 
 function loadTagEditor(context = { window: {} }) {
   return loadFrontend([
-    'tag-editor-session', 'tag-editor-edits', 'tag-editor-persistence',
-    'tag-editor-view', 'tag-editor-actions', 'tag-editor-filters', 'tag-editor',
+    'tag-editor/session', 'tag-editor/edits', 'tag-editor/persistence',
+    'tag-editor/view', 'tag-editor/actions', 'tag-editor/filters', 'tag-editor/index',
   ], context);
 }
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from backend.training.musubi_runtime import shared_runtime_status
+from backend.training.execution.musubi_runtime import shared_runtime_status
 
 
 def main() -> int:

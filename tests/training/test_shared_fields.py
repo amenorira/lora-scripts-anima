@@ -1,7 +1,7 @@
 """Shared metadata must not allow one training profile to mutate another."""
 import unittest
 
-from backend.training.shared_fields import shared_training_field
+from backend.training.fields.shared_fields import shared_training_field
 
 
 class SharedTrainingFieldTests(unittest.TestCase):

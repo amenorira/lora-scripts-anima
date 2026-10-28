@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { loadGlobalFrontend, response, deferred } = require('./helpers.cjs');
 global.document = { getElementById: () => null };
 global.WebSocket = { OPEN: 1 };
-loadGlobalFrontend(['monitor-logs', 'monitor-core', 'realtime']);
+loadGlobalFrontend(['monitor/logs', 'monitor/core', 'shared/realtime']);
 
 function app(overrides = {}) {
   const value = Object.create(window.monitorCoreMixin);

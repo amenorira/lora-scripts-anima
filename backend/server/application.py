@@ -23,7 +23,7 @@ from backend.utils.devices import check_torch_gpu
 from backend.monitor.monitor import task_monitor
 from backend.monitor.history import scan_history
 from backend.server.routes.realtime import router as realtime_router
-from backend.training.step_estimator import warm_up as warm_step_estimator
+from backend.training.datasets.step_estimator import warm_up as warm_step_estimator
 from backend.training.shape_preview import warm_up as warm_shape_preview
 from backend.constants import REPO_ROOT
 from backend.startup_output import show_environment, show_ready, show_step

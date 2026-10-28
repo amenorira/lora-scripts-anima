@@ -1,9 +1,9 @@
 import copy
 import unittest
 
-from backend.training.adapter import adapt_config
-from backend.training.network_config import extract_network_form, validate_network_preset
-from backend.training.validation import validate_training_config
+from backend.training.config.adapter import adapt_config
+from backend.training.config.network_config import extract_network_form, validate_network_preset
+from backend.training.config.validation import validate_training_config
 
 
 class NetworkConfigTests(unittest.TestCase):

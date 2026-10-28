@@ -88,16 +88,37 @@ lora-scripts-anima/
 ├── vendor/emo_optimizer/       ← EmoSens 自适应优化器
 ├── vendor/lora_muon/           ← LoRA-Muon 测试优化器
 ├── backend/                    ← FastAPI 后端
-│   ├── server/                 ← API 核心（路由、状态、代理）
-│   ├── training/               ← 训练引擎封装（参数适配、字段注册表、进程管理）
+│   ├── server/                 ← 应用装配、HTTP 路由、静态资源与代理
+│   ├── core/                   ← 实时任务协调与安装任务生命周期
+│   ├── training/               ← 训练模块，按职责组织
+│   │   ├── fields/             ← 字段注册表、默认值与选项元数据
+│   │   ├── config/             ← 配置转换、导入导出与参数校验
+│   │   ├── datasets/           ← 数据集解析、重复次数与步数估算
+│   │   ├── execution/          ← 运行准备、启动分发与进程管理
+│   │   └── cache/              ← 缓存检查、生成与复用
 │   ├── monitor/                ← 训练监控（GPU/系统/日志/预览/历史）
 │   ├── tageditor/              ← 原生标签编辑器
 │   ├── tagger/                 ← 打标模块（WD / CL / Camie / PixAI / AI 接口）
+│   ├── regularization/         ← 正则图片生成、采样与恢复
 │   └── gui.py                  ← GUI 内部入口（由启动脚本调用）
 ├── frontend/                   ← Alpine.js SPA 前端
+│   ├── js/                     ← 按功能组织的脚本
+│   │   ├── app/                ← 应用装配与路由配置
+│   │   ├── shared/             ← 公共控件、通知、国际化与实时连接
+│   │   ├── training/           ← 训练表单、配置与预览
+│   │   ├── monitor/            ← 监控、历史、日志与输出
+│   │   ├── environment/        ← 环境状态、组件安装与模型下载
+│   │   ├── tagger/             ← 自动打标与 AI 描述工作区
+│   │   ├── docs/               ← 参数文档阅读器
+│   │   ├── regularization/     ← 正则图片生成工作区
+│   │   ├── tag-editor/         ← 标签编辑、会话与持久化
+│   │   └── tag-dictionary/     ← 词典、Worker 与悬浮卡片
+│   ├── templates/              ← 按需加载的工作区 HTML 模板
+│   └── css/ · i18n/ · assets/   ← 样式、翻译与静态资源
 ├── config/                     ← 本地配置与自动保存
 ├── docs/                       ← 参数指南与预览截图
 ├── tools/                      ← 启动、安装与运行工具；开发脚本位于 tools/dev/
+├── tests/                      ← 后端回归与前端交互测试
 ├── start.bat / start.sh        ← 启动脚本
 └── requirements.txt            ← 全项目唯一依赖清单（后端与训练核心共用，torch 由启动器单独安装）
 ```

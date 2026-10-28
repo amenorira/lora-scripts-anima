@@ -127,7 +127,7 @@ class IsolatedBundleTests(unittest.TestCase):
         self.assertFalse(accel._verified_file(file, {"size": 3, "sha256": hashlib.sha256(b"new").hexdigest()}))
 
     def test_only_moss_child_receives_optional_import_path(self):
-        from backend.training.supervisor import _build_train_env
+        from backend.training.execution.supervisor import _build_train_env
 
         site = self.activate()
         with patch.dict(os.environ, {"PYTHONPATH": ""}):

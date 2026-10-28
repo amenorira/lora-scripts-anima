@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { TRAINING_CORE_SCRIPTS, loadFrontend } = require('./helpers.cjs');
 
 function application(profile, values = {}) {
-  const { window: w } = loadFrontend(['constants', 'utils', 'config', ...TRAINING_CORE_SCRIPTS, 'training-toml', 'dataset-repeat', 'training-config-io'], {
+  const { window: w } = loadFrontend(['shared/constants', 'shared/utils', 'app/config', ...TRAINING_CORE_SCRIPTS, 'training/toml', 'training/dataset-repeat', 'training/config-io'], {
     window: {}, document: { getElementById: () => null, querySelectorAll: () => [] }, btoa, TextEncoder, clearTimeout,
   });
   w.t = key => key;

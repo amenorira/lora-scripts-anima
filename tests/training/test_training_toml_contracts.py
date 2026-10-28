@@ -4,7 +4,7 @@ import yaml
 
 from backend.server.models import TrainingTomlParseRequest
 from backend.server.routes.training import parse_training_toml
-from backend.training.training_config import build_training_config
+from backend.training.config.training_config import build_training_config
 
 
 class TrainingTomlParseTests(unittest.TestCase):
@@ -21,7 +21,7 @@ class TrainingTomlParseTests(unittest.TestCase):
         self.assertIn("Invalid TOML", response.message)
 
     def test_native_optimizer_arguments_survive_import_for_all_profiles(self):
-        from backend.training.optimizer_contracts import collect_optimizer_args, parse_optimizer_args
+        from backend.training.config.optimizer_contracts import collect_optimizer_args, parse_optimizer_args
         for profile in ("anima-lora", "sdxl-lora", "moss-image-lora"):
             with self.subTest(profile=profile):
                 response = self._parse('optimizer_type = "AdamW"\n'
@@ -48,7 +48,7 @@ class TrainingTomlParseTests(unittest.TestCase):
     def test_krea_optimizer_import_survives_visible_fields_and_native_export(self):
         import ast
         import toml
-        from backend.training.musubi_krea2 import KREA2_FIELDS, build_krea2_train_config, validate_krea2_config
+        from backend.training.config.musubi_krea2 import KREA2_FIELDS, build_krea2_train_config, validate_krea2_config
 
         cases = [
             ("AdamW", {"weight_decay": 0.123, "betas": (0.8, 0.95), "eps": 1e-7, "foreach": None}),
@@ -82,7 +82,7 @@ class TrainingTomlParseTests(unittest.TestCase):
         self.assertEqual(response.data["data"]["krea_optimizer_weight_decay"], 0.3)
 
     def test_krea_invalid_optimizer_value_survives_import_and_fails_training_validation(self):
-        from backend.training.musubi_krea2 import KREA2_FIELDS, validate_krea2_config
+        from backend.training.config.musubi_krea2 import KREA2_FIELDS, validate_krea2_config
 
         response = self._parse('optimizer_type = "AdamW"\noptimizer_args = ["weight_decay=None"]', "krea2-lora")
         self.assertEqual(response.status, "success", response.message)

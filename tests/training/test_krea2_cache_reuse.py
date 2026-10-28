@@ -8,9 +8,9 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from backend.training import krea2_cache_runner as runner
+from backend.training.cache import krea2_cache_runner as runner
 from backend.training.core_registry import MUSUBI_TUNER_DIR
-from backend.training.krea2_cache import (
+from backend.training.cache.krea2_cache import (
     complete_stage, cache_manifest_path, get_krea2_cache_status,
     mark_cache_manifest, prepare_cache_manifest,
 )
@@ -45,7 +45,8 @@ class Krea2CacheReuseTests(unittest.TestCase):
         launch.assert_not_called()
 
     def test_manifest_preparation_shares_one_dataset_and_model_input_snapshot(self):
-        from backend.training import krea2_cache as cache, krea2_dataset as dataset
+        from backend.training.cache import krea2_cache as cache
+        from backend.training.datasets import krea2_dataset as dataset
 
         with patch.object(dataset, "image_files", wraps=dataset.image_files) as scan, \
              patch.object(cache, "image_files", scan), \
@@ -157,7 +158,7 @@ class Krea2CacheReuseTests(unittest.TestCase):
                          {"latents": "pending", "text_encoder": "pending"})
 
     def test_worker_preserves_native_vae_argument_and_enables_requested_tiling(self):
-        from backend.training import krea2_cache_worker as worker
+        from backend.training.cache import krea2_cache_worker as worker
 
         for tiling in (False, True):
             with self.subTest(tiling=tiling):

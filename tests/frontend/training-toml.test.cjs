@@ -4,7 +4,7 @@ const path = require('node:path');
 const { TRAINING_CORE_SCRIPTS, ROOT, loadFrontend } = require('./helpers.cjs');
 
 function preview(profile, module, overrides = {}) {
-  const context = loadFrontend(['constants', 'utils', 'config', ...TRAINING_CORE_SCRIPTS, 'training-toml'], {
+  const context = loadFrontend(['shared/constants', 'shared/utils', 'app/config', ...TRAINING_CORE_SCRIPTS, 'training/toml'], {
     window: {}, document: { getElementById: () => null },
     fetch: async () => { throw new Error('Use generated fallback schema'); },
   });
@@ -76,7 +76,7 @@ test('every optimizer preview agrees with the backend argument contract', () => 
 import ast, json, sys
 from tools.runtime_paths import configure_test_paths
 configure_test_paths()
-from backend.training.adapter import adapt_config
+from backend.training.config.adapter import adapt_config
 def parse(items):
     return {key: ast.literal_eval(value) for key, value in (item.split('=', 1) for item in items)}
 for case in json.load(sys.stdin):

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { loadFrontend } = require('./helpers.cjs');
 
 function application() {
-  return loadFrontend('environment-render').window.environmentRenderMixin;
+  return loadFrontend('environment/render').window.environmentRenderMixin;
 }
 
 function kreaFiles(...models) {

@@ -4,7 +4,7 @@ const {loadFrontend, response, deferred, composeMixins} = require('./helpers.cjs
 
 function harness() {
   const storage = new Map();
-  const context = loadFrontend(['tagger', 'ai-caption-options', 'caption-workspace'], {
+  const context = loadFrontend(['tagger/index', 'tagger/ai-caption-options', 'tagger/caption-workspace'], {
     window: {}, localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
     setTimeout:()=>1,clearTimeout:()=>{},requestAnimationFrame:fn=>fn(),document:{querySelector:()=>null,body:{classList:{remove(){}}}},
     fetch:async()=>response({task_id:null}), AbortController,

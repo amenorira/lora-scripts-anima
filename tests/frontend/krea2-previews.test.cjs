@@ -5,8 +5,8 @@ const { spawnSync } = require('node:child_process');
 const { TRAINING_CORE_SCRIPTS, ROOT, loadFrontend } = require('./helpers.cjs');
 
 function application(values = {}) {
-  const { window: w } = loadFrontend(['constants', 'utils', 'config', 'training-timestep-model', ...TRAINING_CORE_SCRIPTS,
-    'training-toml', 'training-lr-preview', 'training-shape-preview'], {
+  const { window: w } = loadFrontend(['shared/constants', 'shared/utils', 'app/config', 'training/timestep-model', ...TRAINING_CORE_SCRIPTS,
+    'training/toml', 'training/lr-preview', 'training/shape-preview'], {
     window: {}, document: { getElementById: () => null },
     fetch: async () => { throw new Error('Use generated schema'); },
   });
@@ -136,7 +136,7 @@ sys.path[:0] = [str(Path('vendor/musubi-tuner/src').resolve()), str(Path('vendor
 import torch
 from musubi_tuner.training.trainer_base import NetworkTrainer
 from musubi_tuner.training.parser_common import setup_parser_common
-from backend.training.musubi_krea2 import KREA2_FIELDS, build_krea2_train_config, validate_krea2_config
+from backend.training.config.musubi_krea2 import KREA2_FIELDS, build_krea2_train_config, validate_krea2_config
 results = []
 for case in json.load(sys.stdin):
     form = {f['key']: f['default'] for f in KREA2_FIELDS if 'default' in f}

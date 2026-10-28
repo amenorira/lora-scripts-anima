@@ -8,16 +8,16 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from backend.training.adapter import adapt_config
+from backend.training.config.adapter import adapt_config
 from backend.training.core_registry import resolve_training_profile
-from backend.training.field_registry import FIELDS
-from backend.training.moss_image import (
+from backend.training.fields.field_registry import FIELDS
+from backend.training.config.moss_image import (
     DEFAULTS, GROUP, PROFILE_ID, validate_model_files,
 )
-from backend.training.network_config import extract_network_form
-from backend.training.te_cache_check import check_te_cache, delete_te_cache
-from backend.training.training_config import build_training_config, extract_training_form
-from backend.training.validation import validate_training_config
+from backend.training.config.network_config import extract_network_form
+from backend.training.cache.te_cache_check import check_te_cache, delete_te_cache
+from backend.training.config.training_config import build_training_config, extract_training_form
+from backend.training.config.validation import validate_training_config
 
 extract_form = partial(extract_network_form, model_train_type=PROFILE_ID)
 
@@ -129,7 +129,7 @@ class MossImageLaunchTests(unittest.IsolatedAsyncioTestCase):
     async def test_preparation_writes_native_config_dataset_and_structured_prompts(self):
         import tomllib
         from backend.server.routes import training as routes
-        from backend.training import launch_sd_scripts
+        from backend.training.execution import launch_sd_scripts
         from backend.tasks import TaskManager
 
         with tempfile.TemporaryDirectory() as directory:

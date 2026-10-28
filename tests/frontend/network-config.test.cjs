@@ -5,8 +5,8 @@ const { spawnSync } = require('node:child_process');
 const { TRAINING_CORE_SCRIPTS, ROOT, loadFrontend } = require('./helpers.cjs');
 
 function application(profile, values = {}) {
-  const { window: w } = loadFrontend(['constants', 'utils', 'config', ...TRAINING_CORE_SCRIPTS,
-    'training-toml', 'training-shape-preview', 'training-config-io'], {
+  const { window: w } = loadFrontend(['shared/constants', 'shared/utils', 'app/config', ...TRAINING_CORE_SCRIPTS,
+    'training/toml', 'training/shape-preview', 'training/config-io'], {
     window: {}, document: { getElementById: () => null }, btoa, TextEncoder,
     fetch: async () => { throw new Error('Use generated schema'); },
   });
@@ -26,8 +26,8 @@ function python(code, input) {
 import json, sys
 from tools.runtime_paths import configure_test_paths
 configure_test_paths()
-from backend.training.adapter import adapt_config
-from backend.training.network_config import extract_network_form
+from backend.training.config.adapter import adapt_config
+from backend.training.config.network_config import extract_network_form
 data = json.load(sys.stdin)
 ${code}`], { cwd: ROOT, input: JSON.stringify(input), encoding: 'utf8', timeout: 30000 });
   assert.equal(result.status, 0, result.stderr || String(result.error));

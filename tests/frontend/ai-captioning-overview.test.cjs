@@ -4,7 +4,7 @@ const {loadFrontend,loadTagEditor,response,deferred,readRepo,composeMixins} = re
 
 function harness() {
   const storage = new Map();
-  const context = loadFrontend(['tagger','ai-caption-options','caption-workspace'],{
+  const context = loadFrontend(['tagger/index','tagger/ai-caption-options','tagger/caption-workspace'],{
     window:{},localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
     fetch:async()=>response({active:false,tagger_busy:false,phase:'idle',counts:{total:1000},plan:{}}),URLSearchParams,crypto:{randomUUID:()=> 'fixture'},
     URL:{createObjectURL:()=> 'blob:new',revokeObjectURL(){}},FormData:class {append(){}},
@@ -654,7 +654,7 @@ test('keyboard workspace navigation wraps and is blocked during preview',async()
 test('locale parity includes every workspace string and all controls use production templates',()=>{
   const zh=JSON.parse(readRepo('frontend/i18n/zh-CN.json'));
   for(const locale of ['en-US','ja-JP']) assert.deepEqual(Object.keys(JSON.parse(readRepo(`frontend/i18n/${locale}.json`)).caption).sort(),Object.keys(zh.caption).sort());
-  const html=readRepo('frontend/caption-workspace.html');assert.match(html,/role="tablist"/);assert.match(html,/loading="lazy"/);assert.match(html,/captionDetailKey/);
+  const html=readRepo('frontend/templates/caption-workspace.html');assert.match(html,/role="tablist"/);assert.match(html,/loading="lazy"/);assert.match(html,/captionDetailKey/);
 });
 
 test('failed uploads preserve previous image and preview; late uploads do not cross routes',async()=>{

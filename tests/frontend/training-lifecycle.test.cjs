@@ -44,7 +44,7 @@ test('collapse and expand clean up styles through either transition completion o
   for (const collapsing of [true, false]) {
     for (const completion of ['event', 'timeout']) {
       const frames = [], timers = [];
-      const { window } = loadFrontend('training-sections', {
+      const { window } = loadFrontend('training/sections', {
         window: {}, requestAnimationFrame: callback => frames.push(callback),
         setTimeout: callback => timers.push(callback),
       });

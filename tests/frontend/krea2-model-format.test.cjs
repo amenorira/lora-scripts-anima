@@ -5,7 +5,7 @@ const { TRAINING_CORE_SCRIPTS, loadFrontend, deferred, response } = require('./h
 function application(fetch, values = {}) {
   let nextTimer = 0;
   const timers = new Map();
-  const context = loadFrontend(['constants', 'utils', 'config', ...TRAINING_CORE_SCRIPTS, 'training-toml', 'training-config-io'], {
+  const context = loadFrontend(['shared/constants', 'shared/utils', 'app/config', ...TRAINING_CORE_SCRIPTS, 'training/toml', 'training/config-io'], {
     window: {}, document: {
       getElementById: () => null, querySelector: () => null, querySelectorAll: () => [],
       createElement: () => ({ click() {} }),

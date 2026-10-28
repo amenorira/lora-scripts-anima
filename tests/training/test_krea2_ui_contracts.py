@@ -6,11 +6,11 @@ import sys
 import tempfile
 import unittest
 
-from backend.training.config_import import import_native_training_form
-from backend.training.musubi_krea2 import (
+from backend.training.config.config_import import import_native_training_form
+from backend.training.config.musubi_krea2 import (
     KREA2_FIELDS, build_krea2_train_config, validate_krea2_config,
 )
-from backend.training.krea2_preflight import _krea2_checkpoint_format_errors
+from backend.training.execution.krea2_preflight import _krea2_checkpoint_format_errors
 from tests.training.test_multi_core_krea2 import krea2_config
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -23,15 +23,15 @@ class Krea2UIContractsTests(unittest.TestCase):
                 script = f'''
 import importlib
 import sys
-importlib.import_module("backend.training.{first}")
-from backend.training.field_registry import get_fields_json
-from backend.training.krea2_fields import KREA2_FIELDS
+importlib.import_module("backend.training.fields.{first}")
+from backend.training.fields.field_registry import get_fields_json
+from backend.training.fields.krea2_fields import KREA2_FIELDS
 registry = get_fields_json()
 assert KREA2_FIELDS and registry
-assert "backend.training.musubi_krea2" not in sys.modules
-assert "backend.training.krea2_cache" not in sys.modules
-assert "backend.training.musubi_runtime" not in sys.modules
-from backend.training import musubi_krea2
+assert "backend.training.config.musubi_krea2" not in sys.modules
+assert "backend.training.cache.krea2_cache" not in sys.modules
+assert "backend.training.execution.musubi_runtime" not in sys.modules
+from backend.training.config import musubi_krea2
 assert musubi_krea2.KREA2_FIELDS is KREA2_FIELDS
 '''
                 result = subprocess.run([sys.executable, '-B', '-c', script], cwd=ROOT,
@@ -181,7 +181,7 @@ assert musubi_krea2.KREA2_FIELDS is KREA2_FIELDS
 from tools.runtime_paths import configure_test_paths
 configure_test_paths()
 from backend.training.shape_preview import inspect_network
-from backend.training.krea2_network import selected_targets
+from backend.training.config.krea2_network import selected_targets
 base = dict(model_train_type="anima-lora", network_module="networks.lora_anima", network_dim=4,
             network_alpha=4, network_train_unet_only=True, save_precision="bf16")
 anima = inspect_network(base)

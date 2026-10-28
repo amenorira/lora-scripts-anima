@@ -2,9 +2,9 @@ import ast
 import unittest
 
 
-from backend.training.adapter import adapt_config
-from backend.training.config_import import import_native_training_form
-from backend.training.optimizer_contracts import (
+from backend.training.config.adapter import adapt_config
+from backend.training.config.config_import import import_native_training_form
+from backend.training.config.optimizer_contracts import (
     ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE,
     CAME_OPTIMIZER_TYPE,
     LORA_MUON_OPTIMIZER_TYPE,
@@ -14,7 +14,7 @@ from backend.training.optimizer_contracts import (
     SOAP_OPTIMIZER_TYPE,
     STABLE_ADAMW_OPTIMIZER_TYPE,
 )
-from backend.training.validation import validate_training_config
+from backend.training.config.validation import validate_training_config
 from tests.helpers import valid_training_config
 
 

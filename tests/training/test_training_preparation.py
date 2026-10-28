@@ -5,8 +5,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from backend.tasks import TaskManager
-from backend.training.krea2_network import KREA2_PRESET_FILENAME
-from backend.training.preparation import discard_preparation, prepare_training
+from backend.training.config.krea2_network import KREA2_PRESET_FILENAME
+from backend.training.execution.preparation import discard_preparation, prepare_training
 
 
 class TrainingPreparationCleanupTests(unittest.TestCase):

@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from backend.training.krea2_preflight import inspect_krea2_checkpoint_format
+from backend.training.execution.krea2_preflight import inspect_krea2_checkpoint_format
 
 
 def checkpoint_header(dtype, convrot=False):
@@ -25,8 +25,8 @@ class Krea2ModelFormatTests(unittest.TestCase):
 
         script = """
 import sys
-from backend.training.krea2_preflight import inspect_krea2_checkpoint_format
-for name in ('backend.training.musubi_krea2', 'backend.training.krea2_fields', 'torch', 'fastapi'):
+from backend.training.execution.krea2_preflight import inspect_krea2_checkpoint_format
+for name in ('backend.training.config.musubi_krea2', 'backend.training.fields.krea2_fields', 'torch', 'fastapi'):
     assert name not in sys.modules, name
 """
         result = subprocess.run([sys.executable, "-B", "-c", script], cwd=ROOT,

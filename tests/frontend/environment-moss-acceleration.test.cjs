@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { loadFrontend } = require('./helpers.cjs');
 
 function application(fetch = async () => { throw new Error('Unexpected request'); }) {
-  const context = loadFrontend(['environment-core', 'environment-render'], { window: {}, fetch });
+  const context = loadFrontend(['environment/core', 'environment/render'], { window: {}, fetch });
   return Object.assign({}, context.window.environmentCoreMixin, context.window.environmentRenderMixin, {
     esc: value => String(value).replaceAll('<', '&lt;'), t: key => key,
     renderEnvironment() {}, scheduleEnvironmentRender() {}, startProgress() {}, finishProgress() {},

@@ -5,8 +5,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from backend.monitor import history, routes, run_registry
-from backend.training.supervisor import _write_result_json
-from backend.training.training_config import build_training_config, write_training_config
+from backend.training.execution.supervisor import _write_result_json
+from backend.training.config.training_config import build_training_config, write_training_config
 from tests.helpers import json_request
 from tests.monitor.test_cross_drive_outputs import CrossDriveSandbox
 

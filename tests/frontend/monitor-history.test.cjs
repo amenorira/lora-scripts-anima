@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const {loadGlobalFrontend, composeMixins, response, deferred} = require('./helpers.cjs');
 
 global.document = {getElementById: () => null};
-loadGlobalFrontend(['utils', 'monitor-logs', 'monitor-core', 'monitor-render']);
+loadGlobalFrontend(['shared/utils', 'monitor/logs', 'monitor/core', 'monitor/render']);
 
 function app(overrides = {}) {
   return Object.assign(composeMixins(window.utilsMixin, window.monitorCoreMixin, window.monitorRenderMixin), {

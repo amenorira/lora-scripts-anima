@@ -4,7 +4,7 @@ const {loadFrontend, composeMixins, deferred, response} = require('./helpers.cjs
 
 function harness() {
   const requests = [], renders = [];
-  const {window} = loadFrontend(['monitor-logs', 'monitor-core'], {
+  const {window} = loadFrontend(['monitor/logs', 'monitor/core'], {
     window: {}, document: {getElementById: () => null},
     fetch: url => { const pending = deferred(); requests.push({url, ...pending}); return pending.promise; },
   });

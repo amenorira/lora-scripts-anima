@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from backend.monitor.run_registry import import_legacy_external_runs, iter_run_records, read_run_config, normalize_run_status
-from backend.training.config_import import infer_training_profile
+from backend.training.config.config_import import infer_training_profile
 from backend.training.core_registry import PROFILES
 
 

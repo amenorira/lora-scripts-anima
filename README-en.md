@@ -88,16 +88,37 @@ lora-scripts-anima/
 ├── vendor/emo_optimizer/       ← EmoSens adaptive optimizer
 ├── vendor/lora_muon/           ← LoRA-Muon experimental optimizer
 ├── backend/                    ← FastAPI backend
-│   ├── server/                 ← API core (routes, state, proxy)
-│   ├── training/               ← Training engine wrapper (adapter, field registry, supervisor)
+│   ├── server/                 ← App assembly, HTTP routes, static assets, and proxy
+│   ├── core/                   ← Realtime task coordination and install-job lifecycle
+│   ├── training/               ← Training modules grouped by responsibility
+│   │   ├── fields/             ← Field registry, defaults, and option metadata
+│   │   ├── config/             ← Configuration conversion, import/export, and validation
+│   │   ├── datasets/           ← Dataset parsing, repeat counts, and step estimation
+│   │   ├── execution/          ← Run preparation, launch dispatch, and process management
+│   │   └── cache/              ← Cache inspection, generation, and reuse
 │   ├── monitor/                ← Training monitor (GPU/system/logs/preview/history)
 │   ├── tageditor/              ← Native tag editor
 │   ├── tagger/                 ← Tagging module (WD / CL / Camie / PixAI / AI endpoints)
+│   ├── regularization/         ← Regularization image generation, sampling, and recovery
 │   └── gui.py                  ← Internal GUI entry (called by launch scripts)
 ├── frontend/                   ← Alpine.js SPA frontend
+│   ├── js/                     ← Scripts grouped by feature
+│   │   ├── app/                ← Application assembly and route configuration
+│   │   ├── shared/             ← Shared controls, notifications, i18n, and realtime transport
+│   │   ├── training/           ← Training forms, configuration, and previews
+│   │   ├── monitor/            ← Monitoring, history, logs, and outputs
+│   │   ├── environment/        ← Environment status, component installation, and downloads
+│   │   ├── tagger/             ← Automatic tagging and AI captioning workspaces
+│   │   ├── docs/               ← Parameter documentation reader
+│   │   ├── regularization/     ← Regularization image generation workspace
+│   │   ├── tag-editor/         ← Caption editing, sessions, and persistence
+│   │   └── tag-dictionary/     ← Dictionary, Worker, and hover cards
+│   ├── templates/              ← Workspace HTML templates loaded on demand
+│   └── css/ · i18n/ · assets/   ← Styles, translations, and static assets
 ├── config/                     ← Local configuration and autosaves
 ├── docs/                       ← Parameter guides and preview screenshots
 ├── tools/                      ← Bootstrap, installation and runtime tools; developer scripts in tools/dev/
+├── tests/                      ← Backend regressions and frontend interaction tests
 ├── start.bat / start.sh        ← Launch scripts
 └── requirements.txt            ← Single authoritative dependency list (backend and training cores share it; torch is installed by the launcher)
 ```

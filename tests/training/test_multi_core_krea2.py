@@ -10,12 +10,12 @@ from unittest.mock import patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from backend.training.musubi_krea2 import (
+from backend.training.config.musubi_krea2 import (
     KREA2_FIELDS, build_krea2_dataset_config, build_krea2_train_config,
     validate_krea2_config,
 )
-from backend.training.krea2_preflight import krea2_preflight
-from backend.training.krea2_cache import (
+from backend.training.execution.krea2_preflight import krea2_preflight
+from backend.training.cache.krea2_cache import (
     cache_manifest_path, get_krea2_cache_status, mark_cache_manifest, prepare_cache_manifest,
 )
 from backend.server.routes import training as training_routes
@@ -50,7 +50,8 @@ def krea2_config(root: Path) -> dict:
 
 class Krea2PreparationLifecycleTests(unittest.TestCase):
     def test_cache_status_enumerates_once_and_prunes_cache_subtrees(self):
-        from backend.training import krea2_cache as krea, krea2_dataset as dataset
+        from backend.training.cache import krea2_cache as krea
+        from backend.training.datasets import krea2_dataset as dataset
         with tempfile.TemporaryDirectory() as temp_dir:
             config = krea2_config(Path(temp_dir))
             cache = Path(config["dataset_cache_dir"])
@@ -280,7 +281,7 @@ class Krea2CodecTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             config = krea2_config(Path(temp_dir))
             (Path(config["train_data_dir"]) / "portrait.jpg").write_bytes(b"image")
-            with patch("backend.training.krea2_preflight.shared_runtime_status", return_value={"errors": []}), \
+            with patch("backend.training.execution.krea2_preflight.shared_runtime_status", return_value={"errors": []}), \
                  patch.object(training_routes, "tm", TaskManager()), \
                  patch.object(training_routes, "run_train") as launch:
                 for require_cache in (False, True):
