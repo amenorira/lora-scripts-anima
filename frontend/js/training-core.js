@@ -30,6 +30,9 @@ window.trainingCoreMixin = {
   _profileFieldSources: {},
   _fieldSources: {},
   _activeTrainType: '',
+  _optimizerDrafts: {},
+  _optimizerRestore: null,
+  _optimizerRestoreEpoch: 0,
 
   // 分组折叠状态，响应式驱动 UI
   _sectionCollapsed: {},
@@ -725,6 +728,8 @@ window.trainingCoreMixin = {
     try { const raw = localStorage.getItem(savedKey); if (raw) saved = JSON.parse(raw); } catch (e) {}
     this._profileFormDrafts = this._loadProfileDrafts(r);
     this._profileFieldSources = this._loadProfileFieldSources(r);
+    this._optimizerDrafts = {};
+    this._optimizerRestore = null;
 
     // Use saved train type if valid, otherwise fall back to route default
     const validTrainTypes = this.trainTypes.map(t => t.v);
@@ -3490,14 +3495,92 @@ window.trainingCoreMixin = {
 
   /** Preserve explicit values for recommendation-only autoValue rules. */
   _autoValueRuleCanSet(rule) {
+    if (this._isRestoringOptimizerField(rule.target)) return false;
     if (!rule.setIfDefault) return true;
     const source = this._fieldSources && this._fieldSources[rule.target];
     return source === 'default' || source === 'auto';
   },
 
   _autoValueTargetCanReset(target) {
+    if (this._isRestoringOptimizerField(target)) return false;
     const guarded = this._autoValueRules.find(rule => rule.target === target && rule.setIfDefault);
     return !guarded || this._autoValueRuleCanSet(guarded);
+  },
+
+  _optimizerFields(sections = this._allSections()) {
+    const rateKeys = new Set(['learning_rate', 'unet_lr', 'text_encoder_lr', 'optimizer_args_custom']);
+    return sections.flatMap(section => section.fields || [])
+      .filter(field => field.argKey || rateKeys.has(field.key));
+  },
+
+  _isRestoringOptimizerField(key) {
+    const restore = this._optimizerRestore;
+    return restore && restore.trainType === this.form.model_train_type
+      && restore.optimizer === this.form.optimizer_type && restore.keys.includes(key);
+  },
+
+  _switchOptimizer(optimizer, source = 'user') {
+    const trainType = this.form.model_train_type || 'anima-lora';
+    const previous = this.form.optimizer_type;
+    if (previous === optimizer) return;
+    const fields = this._optimizerFields();
+    const saved = {};
+    fields.forEach(({ key }) => {
+      saved[key] = {
+        value: this.form[key], defaultValue: this.formDefaults[key],
+        source: this._fieldSources?.[key] || 'user',
+      };
+    });
+    const drafts = { ...this._optimizerDrafts[trainType], [previous]: saved };
+    this._optimizerDrafts = { ...this._optimizerDrafts, [trainType]: drafts };
+    const restored = drafts[optimizer];
+    const epoch = ++this._optimizerRestoreEpoch;
+    this._optimizerRestore = null;
+    this.form.optimizer_type = optimizer;
+    this._setFieldSource('optimizer_type', source);
+    this._resetOptimizerFields();
+    if (restored) {
+      const keys = fields.map(field => field.key).filter(key => Object.prototype.hasOwnProperty.call(restored, key));
+      this._optimizerRestore = { trainType, optimizer, keys };
+      keys.forEach(key => {
+        this.form[key] = restored[key].value;
+        this.formDefaults[key] = restored[key].defaultValue;
+        this._setFieldSource(key, restored[key].source);
+      });
+      // Keep restored values through the queued optimizer/dependency watchers.
+      // Other targets (scheduler, clipping, etc.) still enforce their constraints.
+      this.$nextTick(() => {
+        if (this._optimizerRestoreEpoch === epoch) this._optimizerRestore = null;
+      });
+      this._enforceMossTextEncoderFreeze();
+      this._persistProfileFieldSources();
+    }
+    this.toast(this.t(restored ? 'field.optimizerSwitchRestored' : 'field.optimizerSwitchReset'), 'info');
+    this._enforceAutomagicFusedUiConstraints();
+  },
+
+  _resetOptimizerFields() {
+    const sections = this._allSections();
+    const defaults = this._buildFormDefaults(this.form.model_train_type || 'anima-lora');
+    const rules = this._collectAutoValueRules(sections);
+    const fields = this._optimizerFields(sections);
+
+    // Start a new optimizer draft from defaults, including hidden fields.
+    // Resolve dependent rules only after their inputs have also been restored.
+    fields.forEach(field => {
+      const value = Object.prototype.hasOwnProperty.call(defaults, field.key) ? defaults[field.key] : '';
+      this.form[field.key] = value;
+      this.formDefaults[field.key] = value;
+      this._setFieldSource(field.key, 'default');
+    });
+    fields.forEach(field => {
+      const { value, source } = this._resolveFieldDefault(field.key, defaults, rules);
+      this.form[field.key] = value;
+      this.formDefaults[field.key] = value;
+      this._setFieldSource(field.key, source);
+    });
+    this._enforceMossTextEncoderFreeze();
+    this._persistProfileFieldSources();
   },
 
   _enforceDataLoaderUiConstraints() {
@@ -3581,13 +3664,9 @@ window.trainingCoreMixin = {
     this._refreshTrainingOptionErrors();
   },
 
-  setupAutoValueWatchers() {
-    // Clean up previous watchers（防御：过滤非函数元素，避免 w is not a function 崩溃）
-    if (this._autoValueWatchers) { this._autoValueWatchers.forEach(function(w) { if (typeof w === 'function') w(); }); }
-    this._autoValueWatchers = [];
-    // Collect all autoValue rules from all visible fields
+  _collectAutoValueRules(sections = this._allSections()) {
     const rules = [];
-    this._allSections().forEach(s => s.fields.forEach(f => {
+    sections.forEach(s => s.fields.forEach(f => {
       if (f.autoValue && Array.isArray(f.autoValue)) {
         f.autoValue.forEach(r => rules.push({
           target: r.setTarget || f.key,
@@ -3599,6 +3678,14 @@ window.trainingCoreMixin = {
         }));
       }
     }));
+    return rules;
+  },
+
+  setupAutoValueWatchers() {
+    // Clean up previous watchers（防御：过滤非函数元素，避免 w is not a function 崩溃）
+    if (this._autoValueWatchers) { this._autoValueWatchers.forEach(function(w) { if (typeof w === 'function') w(); }); }
+    this._autoValueWatchers = [];
+    const rules = this._collectAutoValueRules();
     this._autoValueRules = rules;
     if (rules.length === 0) return;
 
@@ -3832,6 +3919,15 @@ window.trainingCoreMixin = {
     return (conflicts || this._automagicFusedConflicts()).length > 0;
   },
 
+  _enforceAutomagicFusedUiConstraints() {
+    if (!this.form.automagic_fused) return;
+    const conflicts = this._automagicFusedConflicts();
+    if (!this._automagicFusedHasConflict(conflicts)) return;
+    this.form.automagic_fused = false;
+    const details = this._automagicFusedConflictText(conflicts);
+    this.toast(this.t('field.automagic_fusedAutoDisabled').replace('{details}', details), 'warning');
+  },
+
   _automagicFusedConflictText(conflicts) {
     return conflicts.map(conflict => {
       let key = 'field.automagic_fusedConflictValue';
@@ -3906,8 +4002,7 @@ window.trainingCoreMixin = {
     }
     if (this.form.model_train_type !== 'krea2-lora' && key === 'network_module' && value !== loraMuonNetwork &&
         this.form.optimizer_type === loraMuonType) {
-      this.form.optimizer_type = 'AdamW8bit';
-      this._setFieldSource('optimizer_type', 'auto');
+      this._switchOptimizer('AdamW8bit', 'auto');
       this.toast(this.t('field.lora_muonOptimizerAutoDisabled'), 'warning');
     }
     const oldVal = this.form[key];
@@ -3974,8 +4069,12 @@ window.trainingCoreMixin = {
       }
       : null;
 
-    this.form[key] = value;
-    this._setFieldSource(key, 'user');
+    if (key === 'optimizer_type') {
+      this._switchOptimizer(value);
+    } else {
+      this.form[key] = value;
+      this._setFieldSource(key, 'user');
+    }
     if (['gradient_checkpointing', 'cpu_offload_checkpointing', 'unsloth_offload_checkpointing',
       'gradient_checkpointing_cpu_offload', 'block_swap_h2d_only'].includes(key)) {
       this._enforceCheckpointingUiConstraints(key);
@@ -4012,15 +4111,7 @@ window.trainingCoreMixin = {
       this._enforceEmosensUiConstraints(key, emosensPreviousConstraints);
     }
     const fusedInputs = ['automagic_fused', 'gradient_accumulation_steps', 'max_grad_norm', 'mixed_precision', 'gpu_ids'];
-    const fusedConflicts = fusedInputs.includes(key) && this.form.automagic_fused
-      ? this._automagicFusedConflicts()
-      : [];
-    if (this._automagicFusedHasConflict(fusedConflicts)) {
-      this.form.automagic_fused = false;
-      const details = this._automagicFusedConflictText(fusedConflicts);
-      const message = this.t('field.automagic_fusedAutoDisabled').replace('{details}', details);
-      this.toast(message, 'warning');
-    }
+    if (fusedInputs.includes(key)) this._enforceAutomagicFusedUiConstraints();
     if (key === 'output_dir' || key === 'output_name' || key === 'resume') {
       this.scheduleOutputPathInfo();
     }
@@ -4172,8 +4263,12 @@ window.trainingCoreMixin = {
     for (let i = this.formHistoryIdx - 1; i >= 0; i--) {
       const entry = this.formHistory[i];
       if (key in entry && entry[key] !== this.form[key]) {
-        this.form[key] = entry[key];
-        this._setFieldSource(key, 'user');
+        if (key === 'optimizer_type') {
+          this._switchOptimizer(entry[key]);
+        } else {
+          this.form[key] = entry[key];
+          this._setFieldSource(key, 'user');
+        }
         this._persistProfileFieldSources();
         this.formHistoryIdx = i;
         this.updateToml();
@@ -4182,8 +4277,12 @@ window.trainingCoreMixin = {
     }
     // No different value found → restore to default
     const def = this._currentEffectiveFieldDefault(key);
-    this.form[key] = def !== undefined ? def : '';
-    this._setFieldSource(key, 'user');
+    if (key === 'optimizer_type') {
+      this._switchOptimizer(def !== undefined ? def : '');
+    } else {
+      this.form[key] = def !== undefined ? def : '';
+      this._setFieldSource(key, 'user');
+    }
     this._persistProfileFieldSources();
     this.updateToml();
   },
@@ -4195,15 +4294,22 @@ window.trainingCoreMixin = {
   },
 
   _currentEffectiveFieldDefault(key) {
-    if (key === 'lr_scheduler_timescale') return this._defaultLrTimescale();
-    const profileDefault = this._currentProfileFieldDefault(key);
-    const rules = Array.isArray(this._autoValueRules) ? this._autoValueRules : [];
+    return this._resolveFieldDefault(key).value;
+  },
+
+  _resolveFieldDefault(
+    key,
+    defaults = this._buildFormDefaults(this.form.model_train_type || this._activeTrainType || 'anima-lora'),
+    rules = this._collectAutoValueRules(),
+  ) {
+    if (key === 'lr_scheduler_timescale') return { value: this._defaultLrTimescale(), source: 'default' };
     const matched = rules.find(rule =>
       rule.target === key && this._matchAutoValueRule(rule)
     );
-    return matched && matched.set !== null && matched.set !== undefined
-      ? matched.set
-      : profileDefault;
+    if (matched && matched.set !== null && matched.set !== undefined) {
+      return { value: matched.set, source: 'auto' };
+    }
+    return { value: Object.prototype.hasOwnProperty.call(defaults, key) ? defaults[key] : '', source: 'default' };
   },
 
   _defaultLrTimescale() {
@@ -4237,19 +4343,11 @@ window.trainingCoreMixin = {
     // formDefaults may reflect imported values. "Reset to default"
     // must use the active dependency-aware default. Optimizer fields commonly
     // replace the static registry default through autoValue rules.
-    const def = this._currentEffectiveFieldDefault(key);
-    const matched = (Array.isArray(this._autoValueRules) ? this._autoValueRules : []).find(rule =>
-      rule.target === key && this._matchAutoValueRule(rule)
-    );
-    const value = def !== undefined ? def : '';
+    const { value, source } = this._resolveFieldDefault(key);
     const unchanged = this.form[key] === value;
     this.setField(key, value);
     this.formDefaults[key] = value;
-    if (matched && matched.set !== null && matched.set !== undefined) {
-      this._setFieldSource(key, 'auto');
-    } else {
-      this._setFieldSource(key, 'default');
-    }
+    this._setFieldSource(key, source);
     this._persistProfileFieldSources();
     if (unchanged) {
       if (typeof this.queueTomlPreviewChange === 'function') this.queueTomlPreviewChange(key);
@@ -4261,6 +4359,8 @@ window.trainingCoreMixin = {
     // 始终从当前训练类型的 registry 字段定义重新构建，不复用可能已被
     // 导入配置或参数联动修改过的 formDefaults。
     const currentTrainType = this.form.model_train_type;
+    this._optimizerDrafts = { ...this._optimizerDrafts, [currentTrainType]: {} };
+    this._optimizerRestore = null;
     const profileDefaults = this._buildFormDefaults(currentTrainType);
     this.formDefaults = { ...profileDefaults };
     this.form = { ...profileDefaults, model_train_type: currentTrainType };

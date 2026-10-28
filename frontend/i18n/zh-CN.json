@@ -1071,6 +1071,8 @@
 		"came_eps2Hint": "加到更新与动量差值的平方统计中，用于置信度缩放。默认 1e-16；该缩放用于因子化状态路径。",
 		"optimizer_args_custom": "自定义优化器参数",
 		"optimizer_args_customHint": "每行填写一个所选优化器支持的构造参数，例如 amsgrad=False。值使用 Python 字面量，布尔值写 True／False。用于补充表单未列出的参数。",
+		"optimizerSwitchReset": "已重置学习率和优化器参数，并清空自定义优化器参数。",
+		"optimizerSwitchRestored": "已恢复此优化器上次编辑的学习率和参数。",
 		"lr_warmup_steps_internalLocked": "当前优化器或分段恒定调度器不使用外部预热，已固定为 0。",
 		"lr_scheduler_locked": "当前优化器自行调度学习率，外部调度已固定为 constant。",
 		"max_grad_norm_optimizerLocked": "当前优化器组合不使用全局梯度裁剪，已固定为 0。",

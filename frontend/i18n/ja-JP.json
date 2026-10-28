@@ -1071,6 +1071,8 @@
 		"came_eps2Hint": "更新とモメンタムの差の二乗統計に加え、信頼度による尺度調整に使います。既定値は 1e-16。この尺度調整は状態を因子分解する経路で使います。",
 		"optimizer_args_custom": "オプティマイザの追加引数",
 		"optimizer_args_customHint": "選択したオプティマイザのコンストラクタが受け取る引数を、amsgrad=False のように 1 行ずつ入力します。値は Python リテラル、真偽値は True/False を使います。フォームにないパラメータを追加するための項目です。",
+		"optimizerSwitchReset": "学習率とオプティマイザのパラメータを初期化し、カスタム引数を消去しました。",
+		"optimizerSwitchRestored": "このオプティマイザで前回編集した学習率とパラメータを復元しました。",
 		"lr_warmup_steps_internalLocked": "このオプティマイザまたは区分一定スケジューラは外部ウォームアップを使わないため、0 に固定されています。",
 		"lr_scheduler_locked": "このオプティマイザはスケジュールを内部で管理します。外部スケジュールは constant に固定されています。",
 		"max_grad_norm_optimizerLocked": "このオプティマイザ設定では全体の勾配クリッピングが無効になり、0 に固定されています。",

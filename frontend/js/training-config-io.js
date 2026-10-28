@@ -65,6 +65,8 @@ window.trainingConfigIoMixin = {
         if (validKeys.has(key)) imported[key] = value;
       });
       this.form = { ...defaults, ...imported, model_train_type: importedType };
+      this._optimizerDrafts = { ...this._optimizerDrafts, [importedType]: {} };
+      this._optimizerRestore = null;
       this._activeTrainType = importedType;
       this._replaceProfileFieldSources(importedType, defaults, Object.keys(imported), 'import');
       this._normalizeProfileSelectValues(importedType, defaults);
