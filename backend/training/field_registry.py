@@ -921,7 +921,7 @@ def get_all_fields() -> list[dict]:
     legacy definition must remain the last one for older consumers that build
     a key-indexed map without profile filtering.
     """
-    from backend.training.musubi_krea2 import KREA2_FIELDS
+    from backend.training.krea2_fields import KREA2_FIELDS
 
     return [*_krea2_ui_fields(KREA2_FIELDS), *FIELDS]
 

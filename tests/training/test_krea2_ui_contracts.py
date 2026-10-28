@@ -16,6 +16,27 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class Krea2UIContractsTests(unittest.TestCase):
+    def test_field_catalog_loads_without_runtime_in_either_import_order(self):
+        for first in ('field_registry', 'krea2_fields'):
+            with self.subTest(first=first):
+                script = f'''
+import importlib
+import sys
+importlib.import_module("backend.training.{first}")
+from backend.training.field_registry import get_fields_json
+from backend.training.krea2_fields import KREA2_FIELDS
+registry = get_fields_json()
+assert KREA2_FIELDS and registry
+assert "backend.training.musubi_krea2" not in sys.modules
+assert "backend.training.krea2_cache" not in sys.modules
+assert "backend.training.musubi_runtime" not in sys.modules
+from backend.training import musubi_krea2
+assert musubi_krea2.KREA2_FIELDS is KREA2_FIELDS
+'''
+                result = subprocess.run([sys.executable, '-B', '-c', script], cwd=ROOT,
+                                        capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_compute_modes_validate_before_native_export(self):
         defaults = {field["key"]: field["default"] for field in KREA2_FIELDS}
         for changes, message in (
