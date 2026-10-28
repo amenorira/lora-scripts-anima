@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""从 field_registry（SSOT）重新生成 frontend/js/config.js 的 FALLBACK_COMMON 块。
+"""从 field_registry（SSOT）重新生成 frontend/js/app/config.js 的 FALLBACK_COMMON 块。
 
 config.js 第 ~15 行有一份硬编码 FALLBACK_COMMON，作为 /api/fields 不可达时的离线副本
 （前端静态资源与 /api/fields 同进程 serve，所以严格意义上几乎不会用到，但仍承担
@@ -10,9 +10,9 @@ config.js 第 ~15 行有一份硬编码 FALLBACK_COMMON，作为 /api/fields 不
 用与 /api/fields 完全相同的 get_fields_json() 序列化输出，重写那一行，消除漂移源。
 
 用法:
-    python tools/dev/regen_config_fallback.py            # 默认重写 frontend/js/config.js
+    python tools/dev/regen_config_fallback.py            # 默认重写 frontend/js/app/config.js
     python tools/dev/regen_config_fallback.py --check    # 仅比对，不写入（CI/diff 检查）
-    python tools/dev/regen_config_fallback.py --path frontend/js/config.js
+    python tools/dev/regen_config_fallback.py --path frontend/js/app/config.js
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ from pathlib import Path
 # 直接执行开发脚本时也能 import 到仓库根目录下的 backend 包
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-DEFAULT_CONFIG_PATH = Path("frontend/js/config.js")
+DEFAULT_CONFIG_PATH = Path("frontend/js/app/config.js")
 
 # 匹配 config.js 中那行单行声明：const FALLBACK_COMMON = [...];
 # 用非贪婪到行尾的 `;`，假定它独占一行（当前就是这个写法）。
@@ -43,7 +43,7 @@ def _build_fallback_line(sections: list[dict]) -> str:
 
 
 def regen(config_path: Path, check_only: bool = False) -> int:
-    from backend.training.field_registry import get_fields_json
+    from backend.training.fields.field_registry import get_fields_json
 
     sections = get_fields_json().get("sections", [])
     if not sections:

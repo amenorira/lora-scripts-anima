@@ -12,6 +12,7 @@ import zipfile
 from pathlib import Path
 
 from backend.tageditor.core import dataset_lock, restore_caption_state
+from backend.utils.file_io import read_bytes, read_text
 
 
 SNAPSHOT_DIR_NAME = ".snapshots"
@@ -28,7 +29,7 @@ def _is_within(path: Path, root: Path) -> bool:
 
 
 def _read_caption_exact(path: Path) -> str:
-    return path.read_bytes().decode("utf-8")
+    return read_bytes(path).decode("utf-8")
 
 
 def create_snapshot(dataset_dir: str) -> dict:
@@ -133,7 +134,7 @@ def list_snapshots(dataset_dir: str) -> list[dict]:
         results = []
         for meta_file in sorted(snap_dir.glob("*.json"), reverse=True):
             try:
-                meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                meta = json.loads(read_text(meta_file))
                 meta["id"] = meta_file.stem
                 results.append(meta)
             except Exception:

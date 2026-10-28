@@ -134,7 +134,7 @@ PROFILES: dict[str, TrainingProfile] = {
         id="krea2-lora",
         engine_id="musubi_tuner",
         label="Krea 2 LoRA",
-        trainer_file="./backend/training/krea2_train.py",
+        trainer_file="./backend/training/execution/krea2_train.py",
         adapter_id="musubi_lora",
         group="krea2",
         description="musubi-tuner Krea 2 RAW DiT LoRA profile.",
@@ -284,7 +284,7 @@ def profile_payload() -> dict[str, Any]:
         if engine.id == "musubi_tuner":
             # Keep the Environment tab honest: a source tree alone is not
             # enough if a manual sd-scripts install restored transformers 4.54.
-            from backend.training.musubi_runtime import shared_runtime_status
+            from backend.training.execution.musubi_runtime import shared_runtime_status
 
             runtime = shared_runtime_status()
             item["python_executable"] = None

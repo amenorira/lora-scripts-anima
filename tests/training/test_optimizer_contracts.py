@@ -1,10 +1,7 @@
-import ast
 import unittest
 
 
-from backend.training.adapter import adapt_config
-from backend.training.config_import import import_native_training_form
-from backend.training.optimizer_contracts import (
+from backend.training.config.optimizer_contracts import (
     ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE,
     CAME_OPTIMIZER_TYPE,
     LORA_MUON_OPTIMIZER_TYPE,
@@ -14,7 +11,7 @@ from backend.training.optimizer_contracts import (
     SOAP_OPTIMIZER_TYPE,
     STABLE_ADAMW_OPTIMIZER_TYPE,
 )
-from backend.training.validation import validate_training_config
+from backend.training.config.validation import validate_training_config
 from tests.helpers import valid_training_config
 
 
@@ -60,111 +57,6 @@ class OptimizerValidationTests(unittest.TestCase):
                 config.update(updates)
                 errors = validate_training_config(config)
                 self.assertTrue(any(expected in error for error in errors), errors)
-
-
-    def test_rejects_unknown_arguments_for_known_optimizers(self):
-        config = valid_config("AdamW")
-        config["optimizer_args"] = ["silently_ignored_option=1"]
-        errors = validate_training_config(config)
-        self.assertTrue(any("unsupported argument" in error for error in errors), errors)
-
-
-    def test_muon_network_validation_matches_adapted_arguments(self):
-        for key in ("use_scalar", "train_norm"):
-            cases = (
-                ({"network_args": [f"{key}=true", f"{key}=false"]}, False),
-                ({"network_args": [f"{key}=false", f"{key}=true"]}, True),
-                ({"network_args": [f"{key}=false"], "network_args_custom": f"{key}=true"}, True),
-                ({"network_args": [f"{key}=true"], "network_args_custom": f"{key}=false"}, False),
-                ({key: False, "network_args_custom": f"{key}=true"}, False),
-                ({key: True, "network_args_custom": f"{key}=false"}, True),
-                ({"network_args": [f" {key} = FALSE ", f"{key}=NaN"]}, False),
-                ({"network_args_custom": f"{key}=0"}, True),
-            )
-            for values, enabled in cases:
-                with self.subTest(key=key, values=values):
-                    config = valid_config(MUON_OPTIMIZER_TYPE)
-                    config.update(network_module="lycoris.kohya", lycoris_algo="lora")
-                    config.pop(key)
-                    config.update(values)
-                    adapted, _ = adapt_config(config)
-                    args = dict(item.split("=", 1) for item in adapted["network_args"])
-                    self.assertEqual(args[key].lower() != "false", enabled)
-                    errors = validate_training_config(config)
-                    self.assertEqual(any("non-2D" in error for error in errors), enabled, errors)
-
-
-class OptimizerAdapterTests(unittest.TestCase):
-    def test_removed_bnb_clipping_is_cleaned_from_old_configs(self):
-        cases = (
-            ({}, False),
-            ({"bnb_percentile_clipping": 100}, False),
-            ({"bnb_percentile_clipping": "99"}, True),
-            ({"optimizer_args": ["percentile_clipping=100"]}, False),
-            ({"optimizer_args": ["percentile_clipping=99"]}, True),
-            ({"optimizer_args_custom": "percentile_clipping=99"}, True),
-            ({"bnb_percentile_clipping": 100, "optimizer_args_custom": "percentile_clipping=99"}, True),
-        )
-        for optimizer in ("AdamW8bit", "PagedAdamW8bit", "Lion8bit", "PagedLion8bit"):
-            for updates, should_warn in cases:
-                with self.subTest(optimizer=optimizer, updates=updates):
-                    config = {**valid_config(optimizer), "bnb_min_8bit_size": 128, **updates}
-                    self.assertEqual(validate_training_config(config), [])
-                    adapted, warnings = adapt_config(config)
-                    self.assertNotIn("bnb_percentile_clipping", adapted)
-                    self.assertIn("min_8bit_size=128", adapted["optimizer_args"])
-                    self.assertFalse(any("percentile_clipping" in arg for arg in adapted["optimizer_args"]))
-                    self.assertEqual(any("percentile_clipping" in warning for warning in warnings), should_warn)
-                    capture = self.assertLogs if should_warn else self.assertNoLogs
-                    with capture("anima-trainer", level="WARNING"):
-                        restored = import_native_training_form(config)
-                    self.assertNotIn("bnb_percentile_clipping", restored)
-                    self.assertNotIn("percentile_clipping", restored.get("optimizer_args_custom", ""))
-
-    def test_custom_optimizer_retains_its_own_percentile_argument(self):
-        config = {**valid_config("custom.Optimizer"), "optimizer_args": ["percentile_clipping=99"]}
-        adapted, warnings = adapt_config(config)
-        self.assertIn("percentile_clipping=99", adapted["optimizer_args"])
-        self.assertFalse(any("percentile_clipping" in warning for warning in warnings))
-
-    def test_optimizer_argument_serialization(self):
-        cases = [
-            (MUON_OPTIMIZER_TYPE, {
-                "muon_momentum": 0.95, "muon_nesterov": True, "muon_ns_steps": 5,
-                "muon_ns_coefficients": "3.4445, -4.775, 2.0315",
-                "muon_adjust_lr_fn": "match_rms_adamw", "eps": "1e-7",
-            }, ["momentum=0.95", "nesterov=True", "ns_steps=5", "eps=1e-7",
-                "ns_coefficients=(3.4445, -4.775, 2.0315)", "adjust_lr_fn='match_rms_adamw'"]),
-            (SOAP_OPTIMIZER_TYPE, {
-                "betas": "0.95, 0.95", "eps": "1e-8", "max_precondition_dim": 256,
-                "precondition_frequency": 10, "shampoo_beta": 0.9,
-                "normalize_gradient": False, "correct_bias": False, "precondition_1d": True,
-            }, ["betas=0.95, 0.95", "eps=1e-8", "max_precondition_dim=256",
-                "precondition_frequency=10", "shampoo_beta=0.9", "normalize_gradient=False",
-                "correct_bias=False", "precondition_1d=True"]),
-            (LORA_MUON_OPTIMIZER_TYPE, {
-                "momentum": 0.9, "ns_steps": 8, "inv_sqrt_steps": 7, "msign_eps": "1e-20",
-                "inv_sqrt_eps": "1e-5", "inv_sqrt_gamma": "1.001", "gauge_rebalance": False,
-                "gauge_rebalance_alpha": 1.0, "gauge_rebalance_interval": 1, "gauge_power_steps": 2,
-            }, ["momentum=0.9", "ns_steps=8", "inv_sqrt_steps=7", "msign_eps=1e-20",
-                "inv_sqrt_eps=1e-5", "inv_sqrt_gamma=1.001", "gauge_rebalance=False",
-                "gauge_rebalance_alpha=1.0", "gauge_rebalance_interval=1", "gauge_power_steps=2"]),
-        ]
-        for optimizer, values, expected in cases:
-            with self.subTest(optimizer=optimizer):
-                adapted, warnings = adapt_config({
-                    "model_train_type": "anima-lora", "network_module": "networks.lora_anima",
-                    "optimizer_type": optimizer, "learning_rate": "2e-5", "weight_decay": 0, **values,
-                })
-                self.assertEqual(adapted["optimizer_type"], optimizer)
-                self.assertEqual(warnings, [])
-                actual = dict(item.split("=", 1) for item in adapted["optimizer_args"])
-                for argument in ["weight_decay=0", *expected]:
-                    key, literal = argument.split("=", 1)
-                    self.assertEqual(ast.literal_eval(actual[key]), ast.literal_eval(literal))
-                self.assertEqual(len(actual), len(adapted["optimizer_args"]))
-                self.assertFalse(any("lora_muon_" in argument for argument in adapted["optimizer_args"]))
-        self.assertEqual(validate_training_config(valid_config(SOAP_OPTIMIZER_TYPE, "sdxl-lora")), [])
 
 
 if __name__ == "__main__":

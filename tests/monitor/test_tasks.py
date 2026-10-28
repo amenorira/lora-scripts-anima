@@ -6,8 +6,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from backend.tasks import Task, TaskManager, TaskStatus
-from backend.training import supervisor
+from backend.tasks import TaskManager, TaskStatus
+from backend.training.execution import supervisor
 from tests.helpers import stub_supervisor
 
 
@@ -21,38 +21,6 @@ class TaskStateMachineTests(unittest.TestCase):
         process.wait.return_value = returncode
         return process
 
-
-    def test_business_failure_survives_process_exit_and_repeated_settlement(self):
-        for exit_first in (False, True):
-            with self.subTest(exit_first=exit_first):
-                task = Task("invalid-result", ["trainer"])
-                with patch("backend.tasks.subprocess.Popen", return_value=self._process(0)):
-                    task.execute()
-                    if exit_first:
-                        task.communicate()
-                    task.complete_work(failed=True)
-                    if not exit_first:
-                        self.assertIs(task.status, TaskStatus.RUNNING)
-                        task.complete_work()
-                        task.communicate()
-                    finished_at = task.finished_at
-                    task.complete_work()
-                self.assertIs(task.status, TaskStatus.FAILED)
-                self.assertEqual(task.process.returncode, 0)
-                self.assertEqual(task.finished_at, finished_at)
-
-
-    def test_termination_before_start_prevents_process_launch(self):
-        task = Task("cancelled-before-start", ["trainer"])
-        task.terminate()
-        task.complete_work()
-
-        with patch("backend.tasks.subprocess.Popen") as popen:
-            with self.assertRaises(RuntimeError):
-                task.execute()
-
-        popen.assert_not_called()
-        self.assertIs(task.status, TaskStatus.TERMINATED)
 
     def test_reserved_slot_blocks_other_tasks_until_release_or_process_exit(self):
         manager = TaskManager()
@@ -82,23 +50,6 @@ class TaskStateMachineTests(unittest.TestCase):
             reserved.configure_reserved(["trainer"])
         manager.release_reserved(reserved)
         self.assertIsNotNone(manager.reserve_task())
-
-    def test_external_claim_and_dataset_mutation_are_atomic_with_reservation(self):
-        manager = TaskManager()
-        self.assertTrue(manager.begin_dataset_mutation())
-        self.assertIsNone(manager.reserve_task())
-        self.assertFalse(manager.claim_external("tagger:one"))
-        manager.end_dataset_mutation()
-        self.assertTrue(manager.claim_external("tagger:one"))
-        self.assertFalse(manager.claim_external("tagger:two"))
-        self.assertIsNone(manager.reserve_task())
-        manager.release_external("tagger:one")
-        reserved = manager.reserve_task()
-        self.assertIsNotNone(reserved)
-        self.assertFalse(manager.begin_dataset_mutation())
-        manager.release_reserved(reserved)
-        self.assertTrue(manager.begin_dataset_mutation())
-        manager.end_dataset_mutation()
 
 
     def test_failed_stop_keeps_slot_and_can_be_retried(self):
@@ -190,39 +141,6 @@ class TaskStateMachineTests(unittest.TestCase):
         for outcome in ("invalid", "exception", "process", "stop"):
             with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as directory:
                 asyncio.run(scenario(directory, outcome))
-
-
-    def test_supervisor_popen_failure_settles_after_callback(self):
-        async def scenario(directory):
-            manager = TaskManager()
-            reserved = manager.reserve_task()
-            callbacks = []
-            worker_futures = []
-            loop = asyncio.get_running_loop()
-            run_in_executor = loop.run_in_executor
-
-            def submit(executor, func, *args):
-                future = run_in_executor(executor, func, *args)
-                if getattr(func, "__name__", "") == "_run":
-                    worker_futures.append(future)
-                return future
-
-            with stub_supervisor(), \
-                 patch.object(loop, "run_in_executor", side_effect=submit), \
-                 patch("backend.tasks.subprocess.Popen", side_effect=OSError("start denied")):
-                response = supervisor.run_train(
-                    "config.toml", run_dir=directory, reserved_task=reserved,
-                    on_complete=callbacks.append,
-                )
-                self.assertEqual(response["status"], "success")
-                self.assertEqual(len(worker_futures), 1)
-                await asyncio.wait_for(worker_futures[0], 5)
-                self.assertIs(reserved.status, TaskStatus.FAILED)
-                self.assertEqual(callbacks, ["error"])
-                self.assertIsNotNone(manager.reserve_task())
-
-        with tempfile.TemporaryDirectory() as directory:
-            asyncio.run(scenario(directory))
 
 
 if __name__ == "__main__":

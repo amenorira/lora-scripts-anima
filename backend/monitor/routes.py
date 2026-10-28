@@ -16,14 +16,16 @@ from pathlib import Path
 from fastapi import APIRouter, Query, Request
 
 from backend.monitor.training import (
-    read_tensorboard_loss, parse_log_progress,
+    read_tensorboard_loss,
     extract_train_params,
 )
 from backend.monitor.artifacts import (
-    newest_previews, scan_history,
-    list_output_files, read_output_summary, enrich_model_files_with_loss,
-    find_run_log_path, find_train_log_path, read_log_slice,
+    newest_previews, list_output_files, read_output_summary,
 )
+from backend.monitor.checkpoints import enrich_model_files_with_loss
+from backend.monitor.history import scan_history
+from backend.monitor.log_files import find_run_log_path, find_train_log_path, read_log_slice
+from backend.monitor.live_snapshot import read_run_log_progress
 from backend.monitor.run_registry import (
     read_run_config,
     find_run_record_by_task_id,
@@ -33,27 +35,20 @@ from backend.monitor.run_registry import (
     normalize_run_status,
     resolve_artifact_file,
 )
-from backend.training.training_config import (
+from backend.training.config.training_config import (
     TRAINING_CONFIG_NAME,
     TrainingConfigError,
     extract_training_form,
     load_training_config,
 )
 from backend.tasks import tm
-from backend.training.config_import import infer_training_profile, import_native_training_form
+from backend.training.config.config_import import infer_training_profile, import_native_training_form
 
 router = APIRouter()
 
 # run-detail 仅回传日志尾部行数（与前端 LOG.MAX_LINES 对齐）；完整日志经
 # /monitor/log-slice 分页拉取，避免大日志全量回传撑爆响应。
 _LOG_DETAIL_TAIL_LINES = 5000
-
-STATE_LABELS = {
-    "RUNNING": "Training / 训练中",
-    "FINISHED": "Finished / 已完成",
-    "TERMINATED": "Terminated / 已终止",
-    "CREATED": "Pending / 等待启动",
-}
 
 
 def _read_train_result(run_dir_path: Path, *, allow_mtime_fallback: bool = True) -> dict | None:
@@ -95,125 +90,6 @@ def _resolve_monitor_log_path(run_dir: str = "", task_id: str = "") -> Path | No
     if task_id:
         return find_train_log_path(task_id, run_path)
     return find_run_log_path(run_path)
-
-
-def _read_run_log_progress(run_path: Path, limit: int) -> dict:
-    """实时详情与历史详情共用规范化计数、尾页及进度解析。"""
-    page = read_log_slice(find_run_log_path(run_path), limit=limit, tail=True)
-    return {"log_total": page["total"], "log_lines": page["lines"],
-            **parse_log_progress(page["lines"])}
-
-
-async def build_live_monitor_snapshot(
-    task_id: str = "",
-    *,
-    tasks: list[dict] | None = None,
-    gpu: dict | None = None,
-    system: dict | None = None,
-    detail: bool = True,
-    preview_limit: int = 36,
-    curve_points: int = 500,
-    log_tail_lines: int = 500,
-) -> dict:
-    """Build the live-monitor section of a realtime bootstrap snapshot.
-
-    This is intentionally not an HTTP route. Live state is bootstrapped only
-    through ``/api/realtime/snapshot`` and then updated by ``/ws/realtime``.
-    A compact bootstrap skips disk-heavy curves/logs/preview metadata so the
-    connection indicator is not held hostage by a slow remote link; the
-    dashboard explicitly asks that same snapshot endpoint for ``detail``.
-    """
-    tasks = tm.training_dump() if tasks is None else tasks
-    active_statuses = {"CREATED", "RUNNING"}
-    active = next(
-        (
-            item for item in tasks
-            if task_id
-            and item.get("id") == task_id
-            and item.get("status") in active_statuses
-        ),
-        None,
-    )
-    if not active:
-        active = next(
-            (item for item in reversed(tasks) if item.get("status") in active_statuses),
-            None,
-        )
-    active_task_id = active.get("id", "") if active else ""
-    record = await asyncio.to_thread(find_run_record_by_task_id, active_task_id) if active_task_id else None
-    run_path = Path(record["run_path"]) if record else None
-    artifact_path = Path(record["artifact_path"]) if record else None
-
-    # Never revive a previous run's curves when this backend has no managed
-    # live task.  After a restart, that would falsely make an untracked
-    # process look like a task this server still owns.
-    tb_loss = await asyncio.to_thread(
-        read_tensorboard_loss,
-        downsample_to=max(64, min(int(curve_points or 500), 2000)),
-        run_dir=str(run_path),
-    ) if detail and run_path else []
-    result = {
-        "gpu": gpu,
-        "system": system,
-        "tensorboard_loss": tb_loss,
-        "detail": detail,
-        "state": "IDLE",
-        "state_label": "Idle / 空闲",
-        "step": 0,
-        "total_steps": 0,
-        "percent": 0,
-        "loss": None,
-        "lr": None,
-        "epoch": None,
-        "eta": None,
-        "speed": None,
-        "has_error": False,
-        "error_msg": None,
-        "run_dir": record["run_dir"] if record else "",
-        # output_dir is an internal run identifier, never an arbitrary local path.
-        "output_dir": record["run_dir"] if record else "",
-        "artifact_dir": record["artifact_dir"] if record else "",
-        "artifact_available": bool(record and record["artifact_available"]),
-        "artifact_external": bool(record and record["artifact_external"]),
-        "preview_enabled": record["preview_enabled"] if record else None,
-        "log_total": 0,
-        "output_count": 0,
-    }
-    if not active:
-        return result
-
-    active_status = active.get("status", "UNKNOWN")
-    result["active_task"] = active
-    result["state"] = active_status
-    result["state_label"] = STATE_LABELS.get(active_status, active_status)
-    result["all_tasks"] = [t for t in tasks if t.get("status") in active_statuses]
-
-    if not detail:
-        return result
-
-    if record and record["artifact_available"]:
-        result["output_count"] = (await asyncio.to_thread(read_output_summary, str(artifact_path)))["count"]
-
-    train_config = await asyncio.to_thread(read_run_config, run_path) if run_path else {}
-
-    # 预览只读取当前记录登记的产物目录，磁盘离线时返回空并保留明确状态。
-    # ``0`` 是完整列表的显式约定；详细仪表盘只传轻量元数据，缩略图仍由
-    # 浏览器按需单独读取。正数调用方保留上限，以兼容需要小型快照的场景。
-    effective_preview_limit = (
-        0 if preview_limit == 0 else max(1, min(preview_limit, 300))
-    )
-    result["previews"] = await asyncio.to_thread(
-        newest_previews,
-        str(artifact_path) if record and record["artifact_available"] else None,
-        effective_preview_limit,
-        False,
-        record["run_dir"] if record else "",
-    )
-    result["train_params"] = extract_train_params(train_config, ((record or {}).get("extra") or {}).get("profile_id", ""))
-    if active_status == "RUNNING" and run_path:
-        result.update(await asyncio.to_thread(_read_run_log_progress, run_path, log_tail_lines))
-
-    return result
 
 
 @router.get("/monitor/loss")
@@ -290,7 +166,7 @@ async def monitor_stop():
 async def monitor_history(refresh: bool = False):
     """训练记录：运行中任务 + 历史训练记录"""
     if refresh:
-        from backend.monitor.artifacts import invalidate_history_cache
+        from backend.monitor.history import invalidate_history_cache
         invalidate_history_cache()
     history = await asyncio.to_thread(scan_history)
 
@@ -345,7 +221,7 @@ async def delete_history_run(request: Request):
         return {"status": "error", "message": str(exc), "data": {"retryable": True}}
 
     # 失效历史缓存
-    from backend.monitor.artifacts import invalidate_history_cache
+    from backend.monitor.history import invalidate_history_cache
     invalidate_history_cache()
     return {
         "status": "success",
@@ -399,7 +275,7 @@ async def monitor_run_detail(run_dir: str = Query("")):
     if record["artifact_available"]:
         result["output_count"] = (await asyncio.to_thread(read_output_summary, str(artifact_dir)))["count"]
 
-    result.update(await asyncio.to_thread(_read_run_log_progress, abs_run_dir, _LOG_DETAIL_TAIL_LINES))
+    result.update(await asyncio.to_thread(read_run_log_progress, abs_run_dir, _LOG_DETAIL_TAIL_LINES))
 
     # ── result.json（训练结果）──
     def _read_meta_files(run_dir_path: Path) -> tuple[dict | None, str | None]:
@@ -707,7 +583,7 @@ async def get_config_from_run(run_dir: str = Query("")):
             if config_format == "toml":
                 reusable_params = import_native_training_form(params, profile_id=infer_training_profile(params, record))
             else:
-                from backend.training.network_config import extract_network_form, validate_network_preset
+                from backend.training.config.network_config import extract_network_form, validate_network_preset
                 reusable_params = dict(params)
                 if reusable_params.get("model_train_type") == "krea2-lora":
                     reusable_params = extract_network_form(reusable_params)

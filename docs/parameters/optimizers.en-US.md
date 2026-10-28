@@ -157,6 +157,17 @@ For the optimizers covered here, this trainer starts AdamW, AdamW8bit, and Paged
 
 Higher weight decay shrinks weights more strongly and can prevent target features from being learned. Lower values relax that constraint; `0` disables it. Start character LoRAs with the project default, then vary decay separately when comparing regularization strength.
 
+<!-- doc-anchor: foreach -->
+### Batched tensor updates (foreach)
+
+Available for AdamW, StableAdamW, CAME, Adan, AdamWScheduleFree, and Krea 2's Lion.
+
+- **Auto** (default): use the optimizer's default strategy. AdamWScheduleFree uses its native default; other optimizers receive `None`.
+- **Enabled** (`True`): allow batched updates to reduce GPU call overhead. Usually faster, but may increase peak VRAM usage.
+- **Disabled** (`False`): update tensors individually, useful when VRAM is tight or comparing implementations.
+
+Auto does not avoid OOM based on remaining VRAM. AdamW cannot use `foreach=True` and `fused=True` together. Native configs pass this through `optimizer_args`, for example `"foreach=False"`.
+
 <!-- doc-anchor: muon-options -->
 ### Muon options
 
@@ -542,7 +553,7 @@ The package default is `0.01`; the trainer explicitly overrides it to `0`. AdamW
 <!-- doc-anchor: evidence -->
 ## Evidence and references
 
-Project defaults and compatibility are defined in `backend/training/optimizer_metadata.py`, `optimizer_contracts.py`, and `field_registry.py`. Algorithm details follow the implementations loaded from vendor and the venv. LoRA-Muon's source is documented in `vendor/lora_muon/SOURCE.md`. The papers explain the algorithms; pinned code links are retained as references:
+Project defaults and compatibility are defined in `backend/training/fields/optimizer_metadata.py`, `optimizer_contracts.py`, and `field_registry.py`. Algorithm details follow the implementations loaded from vendor and the venv. LoRA-Muon's source is documented in `vendor/lora_muon/SOURCE.md`. The papers explain the algorithms; pinned code links are retained as references:
 
 - [Anima model card at a fixed commit](https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md)
 - [sd-scripts Anima training docs at a fixed commit](https://github.com/kohya-ss/sd-scripts/blob/37a1cbbc5725ed2a3575506e7bd2001c9908ac92/docs/anima_train_network.md)

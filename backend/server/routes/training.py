@@ -5,60 +5,33 @@ import asyncio
 import json
 import os
 import shutil
-import tempfile
-from datetime import datetime
 from pathlib import Path
 
 import toml
 from fastapi import APIRouter, BackgroundTasks, Query, Request
 
-from backend.constants import AUTOSAVE_DIR, OUTPUT_DIR
+from backend.constants import OUTPUT_DIR
 from backend.async_utils import settled_to_thread as _settled_to_thread
-from backend.monitor.run_registry import resolve_user_path, write_output_dir_reference
-from backend.training import run_train, toml_writer
+from backend.monitor.run_registry import resolve_user_path
+from backend.training import run_train
+from backend.training.execution import launch, launch_krea2, preparation, run_files
 from backend.training.core_registry import (
     TrainingProfileError,
     profile_payload,
     resolve_training_profile,
 )
-from backend.training.dataset_repeat import DatasetRepeatError, apply_subset_repeats
-from backend.training.supervisor import detect_lycoris_kernel_backend
-from backend.training.metrics_config import training_metrics_environment
-from backend.training.krea2_network import (
-    KREA2_LYCORIS_MODULE, KREA2_PRESET_FILENAME, build_krea2_network_preset,
-)
-from backend.training.musubi_krea2 import (
-    KREA2_CACHE_RUNNER_FILE,
-    KREA2_PROFILE_ID,
-    KREA2_TRAINER_FILE,
-    MUSUBI_TUNER_DIR,
-    build_krea2_dataset_config,
-    build_krea2_train_config,
-    get_krea2_cache_status,
-    krea2_preflight,
-    mark_cache_manifest,
-    prepare_cache_manifest,
-    validate_krea2_config,
-)
-from backend.training.step_estimator import StepEstimateError, estimate_training_steps
-from backend.training.te_cache_check import (
-    TE_CACHE_CHECK_PROFILES,
-    check_te_cache,
-    delete_te_cache,
-)
-from backend.training.training_config import (
-    TRAINING_CONFIG_NAME,
+from backend.training.datasets.dataset_repeat import DatasetRepeatError, apply_subset_repeats
+from backend.training.cache.krea2_cache import get_krea2_cache_status
+from backend.training.config.krea2_options import KREA2_PROFILE_ID
+from backend.training.execution.krea2_preflight import inspect_krea2_checkpoint_format
+from backend.training.datasets.step_estimator import StepEstimateError, estimate_training_steps
+from backend.training.cache.te_cache_check import delete_te_cache
+from backend.training.config.training_config import (
     TrainingConfigError,
     build_training_config,
     dump_training_config,
     extract_training_form,
     parse_training_config_text,
-    write_training_config,
-)
-from backend.training.sd_dataset_config import (
-    SUBSET_TIMESTEP_OFFSETS_KEY,
-    build_sd_scripts_dataset_config,
-    normalize_subset_timestep_offsets,
 )
 from backend import launch_utils
 from backend.server.models import (
@@ -69,7 +42,6 @@ from backend.server.models import (
 )
 from backend.tasks import tm
 from backend.log import log
-from backend.utils import train_utils
 
 router = APIRouter()
 
@@ -134,7 +106,7 @@ async def export_training_config(request: Request):
         profile_id=profile.id,
         document_id=payload.get("document_id"),
     )
-    filename = f"{_safe_output_name(str(form.get('output_name') or 'training'))}.yaml"
+    filename = f"{run_files.safe_output_name(str(form.get('output_name') or 'training'))}.yaml"
     return APIResponseSuccess(
         data={
             "content": dump_training_config(document),
@@ -148,7 +120,7 @@ async def export_training_config(request: Request):
 @router.post("/training/parse-config")
 async def parse_training_toml(req: TrainingTomlParseRequest):
     """Parse a YAML application config or a legacy flat TOML config."""
-    from backend.training.network_config import extract_network_form, validate_network_preset
+    from backend.training.config.network_config import extract_network_form, validate_network_preset
 
     content = req.content.lstrip("\ufeff")
     try:
@@ -181,7 +153,7 @@ async def parse_training_toml(req: TrainingTomlParseRequest):
                 "不再支持结构化预设文件，请导入扁平训练 TOML"
             )
         )
-    from backend.training.config_import import import_native_training_form
+    from backend.training.config.config_import import import_native_training_form
     try:
         parsed = import_native_training_form(parsed, profile_id=req.model_train_type or "anima-lora")
     except ValueError as exc:
@@ -195,83 +167,11 @@ available_scripts = [
 ]
 
 
-def _safe_output_name(output_name: str) -> str:
-    return "".join(c if c.isalnum() or c in "._-" else "_" for c in output_name).strip("._-") or "my_lora"
-
-
 def _nearest_existing_parent(path: Path) -> Path | None:
     candidate = path
     while not candidate.exists() and candidate != candidate.parent:
         candidate = candidate.parent
     return candidate if candidate.exists() else None
-
-
-def _prepare_writable_directory(path: Path) -> bool:
-    """创建目录并进行一次真实写入探针，尽早给出可操作的路径错误。"""
-    existed = path.exists()
-    path.mkdir(parents=True, exist_ok=True)
-    try:
-        fd, probe = tempfile.mkstemp(prefix=".anima-write-test-", dir=path)
-        os.close(fd)
-        Path(probe).unlink(missing_ok=True)
-    except OSError:
-        if not existed:
-            try:
-                path.rmdir()
-            except OSError:
-                pass
-        raise
-    return not existed
-
-
-def _prepare_output_directories(*directories: Path) -> None:
-    """依次探测产物与内部目录；失败时回收本次新建的空目录。"""
-    prepared: set[Path] = set()
-    created: list[Path] = []
-    try:
-        for directory in directories:
-            resolved = directory.resolve()
-            if resolved in prepared:
-                continue
-            if _prepare_writable_directory(resolved):
-                created.append(resolved)
-            prepared.add(resolved)
-    except OSError:
-        for directory in reversed(created):
-            try:
-                directory.rmdir()
-            except OSError:
-                pass
-        raise
-
-
-def _prepare_run_directories(
-    artifact_dir: Path, internal_dir: Path, *, resume: bool = False, owned: list[Path] | None = None,
-) -> None:
-    """Claim new run directories exclusively before writing any run files."""
-    created: list[Path] = []
-    try:
-        if not resume and artifact_dir != internal_dir:
-            artifact_dir.mkdir(parents=True, exist_ok=False)
-            created.append(artifact_dir)
-            if owned is not None:
-                owned.append(artifact_dir)
-        internal_dir.mkdir(parents=True, exist_ok=False)
-        created.append(internal_dir)
-        if owned is not None:
-            owned.append(internal_dir)
-        _prepare_output_directories(artifact_dir, internal_dir)
-    except OSError:
-        for directory in reversed(created):
-            try:
-                directory.rmdir()
-            except OSError:
-                pass
-        raise
-
-
-def _training_error(message: str, data: dict | None = None) -> dict:
-    return {"status": "error", "message": message, "data": data}
 
 
 def _training_response(result: dict):
@@ -280,88 +180,9 @@ def _training_response(result: dict):
     return result
 
 
-class _TrainingPreparation:
-    """Owns generated files until the launcher accepts the reserved task."""
-
-    def __init__(self, task):
-        self.task = task
-        self.task_id = task.task_id
-        self.owned_run_paths: list[Path] = []
-        self.owned_autosave: Path | None = None
-        self.owned_cache_manifest: dict | None = None
-        self.launched = False
-
-    async def prepare_cache_manifest(self, config: dict) -> None:
-        def write_manifest():
-            prepare_cache_manifest(config)
-            self.owned_cache_manifest = config
-
-        await _settled_to_thread(write_manifest)
-
-    def launch(self, *args, **kwargs):
-        if self.task.stop_requested:
-            return _training_error("Training preparation cancelled / 训练准备已取消")
-        result = run_train(*args, reserved_task=self.task, **kwargs)
-        self.launched = result.get("status") == "success"
-        return result
-
-
 async def _prepare_training(helper, *args):
-    task = tm.reserve_task()
-    if task is None:
-        return _training_response(_training_error(
-            "Training, tagging or generation task is active / 训练、打标或正则生成任务正在运行",
-            {"errorCode": "taskActive"},
-        ))
-    preparation = _TrainingPreparation(task)
-    try:
-        result = await helper(*args, preparation)
-        if task.stop_requested and not preparation.launched:
-            result = _training_error("Training preparation cancelled / 训练准备已取消")
-    except Exception as exc:
-        log.exception("Failed to prepare training / 训练准备失败")
-        result = _training_error(f"Failed to prepare training / 训练准备失败: {exc}")
-    finally:
-        if not preparation.launched:
-            try:
-                if preparation.owned_cache_manifest is not None:
-                    try:
-                        await _settled_to_thread(mark_cache_manifest, preparation.owned_cache_manifest, "failed")
-                    except Exception as exc:
-                        log.exception("Failed to settle Krea 2 cache manifest / 无法结算 Krea 2 缓存记录")
-                        result = _training_error(f"Failed to settle Krea 2 cache / 无法结算 Krea 2 缓存: {exc}")
-            finally:
-                _discard_preparation(preparation)
-                tm.release_reserved(task)
+    result = await preparation.prepare_training(helper, *args, task_manager=tm, launcher=run_train)
     return _training_response(result)
-
-
-def _discard_preparation(task) -> None:
-    """Remove only files made in exclusively claimed, unlaunched run folders."""
-    autosave = task.owned_autosave
-    if autosave is not None and task.task_id[:12] in autosave.name:
-        try:
-            autosave.unlink(missing_ok=True)
-        except OSError:
-            log.warning("Could not remove failed autosave / 无法清理失败的自动保存: %s", autosave)
-    created = list(dict.fromkeys(task.owned_run_paths))
-    generated = {
-        "config.toml", "training.yaml", "dataset.toml", "sample_prompts.txt",
-        "prompts.txt", "run_info.txt", "output_dir.txt",
-    }
-    for directory in reversed(created):
-        # A unique task suffix and an exclusive mkdir are required for ownership.
-        if task.task_id[:12] not in directory.name or directory.is_symlink():
-            continue
-        if not directory.exists():
-            continue
-        try:
-            for name in generated:
-                (directory / name).unlink(missing_ok=True)
-            directory.rmdir()
-        except OSError:
-            # Any unexpected content is left in place rather than recursively deleted.
-            log.warning("Incomplete run preparation retained / 保留未完成的运行目录: %s", directory)
 
 
 def _inspect_output_path(path: str, output_name: str, resume: bool) -> dict:
@@ -376,7 +197,7 @@ def _inspect_output_path(path: str, output_name: str, resume: bool) -> dict:
             free_bytes = shutil.disk_usage(parent).free
         except OSError:
             pass
-    run_name = f"{_safe_output_name(output_name)}_时间戳"
+    run_name = f"{run_files.safe_output_name(output_name)}_时间戳"
     artifact_preview = base if resume else base / run_name
     monitor_preview = OUTPUT_DIR.resolve() / run_name
     return {
@@ -481,250 +302,6 @@ async def update_dataset_repeat(request: Request):
     return APIResponseSuccess(data=result)
 
 
-def get_sample_prompts(config: dict):
-    """Build prompt text; filesystem errors must abort preparation."""
-    import random
-
-    positive_prompts = config.get('positive_prompts', None)
-    negative_prompts = config.get('negative_prompts', '')
-    is_moss = config.get('model_train_type') == 'moss-image-lora'
-    sample_width = config.get('sample_width', 1024 if is_moss else 512)
-    sample_height = config.get('sample_height', 1024 if is_moss else 512)
-    sample_cfg = config.get('sample_cfg', 3.0 if is_moss else 7)
-    sample_seed = config.get('sample_seed', 2333)
-    sample_steps = config.get('sample_steps', 50 if is_moss else 24)
-    sample_flow_shift = config.get('sample_flow_shift', 5.0 if is_moss else 3.0)
-    randomly_choice_prompt = config.get('randomly_choice_prompt', False)
-
-    if randomly_choice_prompt:
-        dataset_subdirs = [p for p in Path(config["train_data_dir"]).iterdir() if p.is_dir()]
-        if len(dataset_subdirs) != 1:
-            raise ValueError(
-                'Multiple subdirectories found / 多子文件夹; '
-                'random prompt selection requires a single subdirectory / 随机选取 Prompt 需要单一子文件夹'
-            )
-
-        # 排序保证同一 seed 下选中的文件稳定（glob 顺序依赖文件系统，不可预期）
-        caption_files = sorted(dataset_subdirs[0].glob('*.txt'))
-        if not caption_files:
-            raise ValueError('No .txt files found in dataset directory / 数据集路径没有 txt 文件')
-        sample_prompt_file = random.Random(int(config.get("seed", 2333))).choice(caption_files)
-        positive_prompts = sample_prompt_file.read_text(encoding="utf-8")
-
-    if is_moss:
-        import json
-
-        if not positive_prompts or not positive_prompts.strip():
-            return ''
-        return json.dumps([{
-            "prompt": positive_prompts, "negative_prompt": negative_prompts or "",
-            "width": sample_width, "height": sample_height,
-            "scale": sample_cfg, "sample_steps": sample_steps,
-            "seed": sample_seed, "flow_shift": sample_flow_shift,
-        }], ensure_ascii=False)
-
-    # Sanitise negative prompt: replace newlines with ", " to keep --n on one line
-    negative_prompts = negative_prompts.replace(chr(10), ", ") if negative_prompts else ""
-
-    param_suffix = (
-        f'--n {negative_prompts} '
-        f'--w {sample_width} --h {sample_height} '
-        f'--l {sample_cfg} --s {sample_steps} --d {sample_seed} '
-        f'--fs {sample_flow_shift}'
-    )
-
-    if positive_prompts and positive_prompts.strip():
-        # Multi-line: treat each non-empty line as a separate sample entry
-        lines = [ln.strip() for ln in positive_prompts.strip().splitlines() if ln.strip()]
-        sample_prompts_arg = chr(10).join(f'{line} {param_suffix}' for line in lines)
-    else:
-        sample_prompts_arg = ''
-
-    return sample_prompts_arg
-
-
-def _cleanup_autosave(autosave_dir: str, keep: int = 50) -> None:
-    """清理 autosave 目录，仅保留最近 N 个 TOML 文件"""
-    try:
-        files = sorted(
-            [f for f in os.listdir(autosave_dir) if f.endswith(".toml")],
-            key=lambda f: os.path.getmtime(os.path.join(autosave_dir, f)),
-            reverse=True,
-        )
-        for old_file in files[keep:]:
-            try:
-                os.remove(os.path.join(autosave_dir, old_file))
-            except OSError:
-                pass
-    except OSError:
-        pass
-
-
-def _write_run_info(run_dir: str, config: dict, train_type: str, timestamp: str, is_resume: bool) -> None:
-    """写入人类可读的训练摘要 run_info.txt"""
-    try:
-        model_path = config.get("pretrained_model_name_or_path") or config.get("dit", "?")
-        model_name = os.path.basename(model_path) if model_path else "?"
-        dataset = config.get("train_data_dir") or config.get("dataset_config", "?")
-        lines = [
-            f"Training Run: {os.path.basename(run_dir)}",
-            f"Started:      {timestamp}",
-            f"Type:         {train_type}",
-            f"Resume:       {'yes' if is_resume else 'no'}",
-            f"Model:        {model_name}",
-            f"Dataset:      {dataset}",
-            f"Output Name:  {config.get('output_name', '?')}",
-            f"Resolution:   {config.get('resolution', '?')}",
-            f"Batch Size:   {config.get('train_batch_size', '?')}",
-            f"LR:           {config.get('learning_rate', '?')}"
-            + (f"  (unet={config['unet_lr']})" if config.get('unet_lr') else "")
-            + (f"  (te={config['text_encoder_lr']})" if config.get('text_encoder_lr') else ""),
-            f"Optimizer:    {config.get('optimizer_type', '?')}",
-            f"Network Dim:  {config.get('network_dim', '?')}",
-            f"Network Alpha:{config.get('network_alpha', '?')}",
-            f"Epochs:       {config.get('max_train_epochs', '?')}",
-            f"Mixed Prec:   {config.get('mixed_precision', '?')}",
-            f"Seed:         {config.get('seed', '?')}",
-            "",
-            "Full config:  config.toml",
-            "Training log: train_*.log",
-            f"TensorBoard:  {os.path.join(run_dir, 'log')}",
-            f"Artifacts:    {config.get('output_dir', run_dir)}",
-            f"Model files:  {os.path.join(str(config.get('output_dir', run_dir)), '*.safetensors')}",
-            f"Samples:      {os.path.join(str(config.get('output_dir', run_dir)), 'sample')}",
-        ]
-        info_path = os.path.join(run_dir, "run_info.txt")
-        with open(info_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines))
-    except OSError as e:
-        log.warning(f"Failed to write run_info.txt / 写入失败: {e}")
-
-
-def _krea2_error(errors: list[str], error_code: str = "krea2PreflightFailed"):
-    return _training_error(
-        message="Krea 2 configuration is not ready / Krea 2 配置尚未就绪:\n" + "\n".join(errors),
-        data={"errorCode": error_code, "errors": errors},
-    )
-
-
-async def _create_krea2_run(config, gpu_ids, timestamp, form_snapshot, reserved_task):
-    """Prepare the musubi Krea 2 profile under the caller's reservation."""
-
-    snapshot_form = dict(form_snapshot)
-    snapshot_form["model_train_type"] = KREA2_PROFILE_ID
-
-    config["gpu_ids"] = gpu_ids
-    validation_errors = validate_krea2_config(config)
-    if validation_errors:
-        return _krea2_error(validation_errors, "invalidKrea2Config")
-
-    preflight = await _settled_to_thread(krea2_preflight, config, True)
-    if not preflight["ok"]:
-        code = "krea2CacheRequired" if not preflight["cache"]["ready"] else "krea2PreflightFailed"
-        return _krea2_error(preflight["errors"], code)
-
-    output_name = config.get("output_name", "krea2_lora")
-    safe_name = _safe_output_name(str(output_name))
-    run_dir_name = f"{safe_name}_{timestamp}_{reserved_task.task_id[:12]}"
-    is_resume = bool(str(config.get("resume") or "").strip())
-    requested_output_dir = str(config.get("output_dir", "./output") or "./output").strip()
-    try:
-        output_base_path = await _settled_to_thread(resolve_user_path, requested_output_dir)
-    except (OSError, ValueError) as exc:
-        return _training_error(
-            message=f"Invalid output path / 输出路径无效: {exc}",
-            data={"errorCode": "invalidOutputPath"},
-        )
-
-    internal_run_dir = (OUTPUT_DIR / run_dir_name).resolve()
-    artifact_run_dir = output_base_path if is_resume else output_base_path / run_dir_name
-    try:
-        await _settled_to_thread(
-            _prepare_run_directories, artifact_run_dir, internal_run_dir,
-            resume=is_resume, owned=reserved_task.owned_run_paths,
-        )
-    except OSError as exc:
-        return _training_error(
-            message=f"Output directory is unavailable or not writable / 输出目录不可用或无法写入: {exc}",
-            data={"errorCode": "outputDirectoryUnavailable", "outputPath": str(artifact_run_dir)},
-        )
-
-    config["output_dir"] = str(artifact_run_dir)
-    config["logging_dir"] = str(internal_run_dir / "log")
-    dataset_config = build_krea2_dataset_config(config)
-    dataset_config_file = internal_run_dir / "dataset.toml"
-    sample_prompts_file = (
-        internal_run_dir / "sample_prompts.txt" if bool(config.get("enable_krea_samples", False)) else None
-    )
-    train_config = build_krea2_train_config(
-        config,
-        dataset_config_file,
-        artifact_run_dir,
-        internal_run_dir / "log",
-        sample_prompts_file,
-    )
-    network_preset = None
-    network_env = {"ANIMA_ENABLE_FLASH_ATTN": "1" if config.get("krea_attention_backend") == "flash_attn" else "0"}
-    network_warning = ""
-    if config["network_module"] == KREA2_LYCORIS_MODULE:
-        network_preset = build_krea2_network_preset(config)
-        kernel, network_warning = await _settled_to_thread(
-            detect_lycoris_kernel_backend, str(config.get("lycoris_kernel_backend") or "auto")
-        )
-        network_env["LYCORIS_KERNEL_BACKEND"] = kernel
-
-    AUTOSAVE_DIR.mkdir(parents=True, exist_ok=True)
-    _cleanup_autosave(str(AUTOSAVE_DIR), keep=50)
-    toml_file = AUTOSAVE_DIR / f"{timestamp}_{reserved_task.task_id[:12]}-krea2.toml"
-    reserved_task.owned_autosave = toml_file
-    train_toml = toml_writer.dumps(train_config)
-    dataset_toml = toml_writer.dumps(dataset_config)
-    training_document = build_training_config(
-        snapshot_form,
-        profile_id=KREA2_PROFILE_ID,
-    )
-
-    def _write_configs():
-        toml_file.write_text(train_toml, encoding="utf-8")
-        (internal_run_dir / "config.toml").write_text(train_toml, encoding="utf-8")
-        write_training_config(internal_run_dir / TRAINING_CONFIG_NAME, training_document)
-        dataset_config_file.write_text(dataset_toml, encoding="utf-8")
-        if network_preset is not None:
-            (internal_run_dir / KREA2_PRESET_FILENAME).write_text(toml_writer.dumps(network_preset), encoding="utf-8")
-        if sample_prompts_file is not None:
-            prompts = str(config["krea_sample_prompts"]).replace("\r\n", "\n").replace("\r", "\n").rstrip()
-            sample_prompts_file.write_text(prompts + "\n", encoding="utf-8")
-
-    def _write_run_files():
-        _write_configs()
-        _write_run_info(str(internal_run_dir), config, KREA2_PROFILE_ID, timestamp, is_resume)
-        write_output_dir_reference(str(internal_run_dir), str(artifact_run_dir))
-
-    await _settled_to_thread(_write_run_files)
-
-    result = reserved_task.launch(
-        str(toml_file),
-        KREA2_TRAINER_FILE,
-        gpu_ids,
-        2,
-        run_dir=str(internal_run_dir),
-        artifact_dir=str(artifact_run_dir),
-        output_base_dir=requested_output_dir,
-        preview_enabled=False,
-        engine_id="musubi_tuner",
-        extra_env={**training_metrics_environment(config), **network_env},
-        run_metadata={
-            "profile_id": KREA2_PROFILE_ID,
-            "adapter_id": config["adapter_id"],
-            "dataset_config": str(dataset_config_file),
-            "sample_prompts": str(sample_prompts_file) if sample_prompts_file is not None else None,
-        },
-    )
-    if network_warning and result.get("status") == "success":
-        result.setdefault("data", {}).setdefault("warnings", []).append(network_warning)
-    return result
-
-
 @router.get("/training/cores")
 async def training_cores():
     """Expose installed runtime/profile capabilities for environment and UI pages."""
@@ -734,6 +311,18 @@ async def training_cores():
     # on FastAPI's event-loop thread where it would stall realtime updates.
     payload = await asyncio.to_thread(profile_payload)
     return APIResponseSuccess(data=payload)
+
+
+@router.post("/training/krea2/model-format")
+async def krea2_model_format(request: Request):
+    payload, error = await _read_json_object(request)
+    if error:
+        return error
+    path = payload.get("path")
+    if not isinstance(path, str) or not path.strip():
+        return APIResponseFail(message="Model path required / 请指定模型路径")
+    result = await asyncio.to_thread(inspect_krea2_checkpoint_format, Path(path.strip()))
+    return APIResponseSuccess(data=result)
 
 
 @router.post("/training/krea2/cache-status")
@@ -756,105 +345,7 @@ async def create_krea2_cache(request: Request):
     config, error = await _read_json_object(request)
     if error:
         return error
-    return await _prepare_training(_create_krea2_cache_reserved, config)
-
-
-async def _create_krea2_cache_reserved(config: dict, reserved_task):
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-
-    gpu_ids = config.pop("gpu_ids", None)
-    try:
-        profile = resolve_training_profile(config)
-    except TrainingProfileError as exc:
-        return _training_error(message=str(exc))
-    if profile.id != KREA2_PROFILE_ID:
-        return _training_error(message="Krea 2 profile required / 此接口仅支持 Krea 2 配置档")
-
-    validation_errors = validate_krea2_config(config)
-    if validation_errors:
-        return _krea2_error(validation_errors, "invalidKrea2Config")
-    preflight = await _settled_to_thread(krea2_preflight, config, False)
-    if not preflight["ok"]:
-        return _krea2_error(preflight["errors"], "krea2PreflightFailed")
-
-    safe_name = _safe_output_name(str(config.get("output_name", "krea2_lora")))
-    run_dir = (OUTPUT_DIR / f"{safe_name}_krea2_cache_{timestamp}_{reserved_task.task_id[:12]}").resolve()
-    cache_dir = Path(str(config["dataset_cache_dir"])).resolve()
-    try:
-        await _settled_to_thread(
-            _prepare_run_directories, cache_dir, run_dir,
-            resume=True, owned=reserved_task.owned_run_paths,
-        )
-    except OSError as exc:
-        return _training_error(
-            message=f"Cache directory is unavailable or not writable / 缓存目录不可用或无法写入: {exc}",
-            data={"errorCode": "cacheDirectoryUnavailable", "cachePath": str(cache_dir)},
-        )
-
-    dataset_config_file = run_dir / "dataset.toml"
-    cache_request_file = run_dir / "cache-request.json"
-    dataset_toml = toml_writer.dumps(build_krea2_dataset_config(config))
-    try:
-        await reserved_task.prepare_cache_manifest(config)
-        def _write_cache_files():
-            dataset_config_file.write_text(dataset_toml, encoding="utf-8")
-            cache_request_file.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
-            _write_run_info(str(run_dir), config, "krea2-cache", timestamp, False)
-            write_output_dir_reference(str(run_dir), str(cache_dir))
-        await _settled_to_thread(_write_cache_files)
-    except OSError as exc:
-        return _training_error(message=f"Failed to initialize Krea 2 cache / 初始化 Krea 2 缓存失败: {exc}")
-
-    def _finalize_cache(status: str) -> str | None:
-        return mark_cache_manifest(config, status)
-
-    result = reserved_task.launch(
-        str(dataset_config_file),
-        KREA2_CACHE_RUNNER_FILE,
-        gpu_ids,
-        2,
-        extra_args=[
-            "--musubi-root",
-            str(MUSUBI_TUNER_DIR),
-            "--dataset-config",
-            str(dataset_config_file),
-            "--vae",
-            str(config["vae"]),
-            "--text-encoder",
-            str(config["text_encoder"]),
-            "--text-cache-batch-size",
-            str(config.get("text_cache_batch_size", 1)),
-            "--latent-cache-batch-size",
-            str(config.get("krea_latent_cache_batch_size", 1)),
-            "--latent-device",
-            str(config.get("krea_latent_cache_device", "auto")),
-            "--text-device",
-            str(config.get("krea_text_cache_device", "auto")),
-            "--num-workers",
-            str(config.get("krea_cache_num_workers", 2)),
-            "--request-file",
-            str(cache_request_file),
-            *(["--vae-tiling"] if config.get("krea_cache_vae_tiling") else []),
-        ],
-        run_dir=str(run_dir),
-        artifact_dir=str(run_dir),
-        output_base_dir=str(cache_dir),
-        preview_enabled=False,
-        engine_id="musubi_tuner",
-        config_argument=None,
-        use_accelerate=False,
-        run_metadata={
-            "profile_id": KREA2_PROFILE_ID,
-            "operation": "krea2_cache",
-            "dataset_config": str(dataset_config_file),
-            "cache_dir": str(cache_dir),
-        },
-        finalize_result=_finalize_cache,
-    )
-    if result.get("status") != "success":
-        return result
-    result.setdefault("data", {})["operation"] = "krea2_cache"
-    return result
+    return await _prepare_training(launch_krea2.prepare_cache, config)
 
 
 @router.post("/run")
@@ -862,311 +353,7 @@ async def create_toml_file(request: Request):
     config, error = await _read_json_object(request)
     if error:
         return error
-    return await _prepare_training(_create_toml_file_reserved, config)
-
-
-async def _create_toml_file_reserved(config: dict, reserved_task):
-    from backend.training.attention_config import normalize_attention_config
-
-    normalize_attention_config(config)
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-
-    form_snapshot = config.pop("_form_state", None)
-    if not isinstance(form_snapshot, dict):
-        form_snapshot = {key: value for key, value in config.items() if not key.startswith("_")}
-    normalize_attention_config(form_snapshot)
-    gpu_ids = config.pop("gpu_ids", None)
-
-    try:
-        profile = resolve_training_profile(config)
-    except TrainingProfileError as exc:
-        return _training_error(message=str(exc))
-    form_snapshot["model_train_type"] = profile.id
-    if profile.id == KREA2_PROFILE_ID:
-        return await _create_krea2_run(config, gpu_ids, timestamp, form_snapshot, reserved_task)
-
-    try:
-        subset_timestep_offsets = normalize_subset_timestep_offsets(
-            config.pop(SUBSET_TIMESTEP_OFFSETS_KEY, None)
-        )
-    except ValueError as exc:
-        return _training_error(message=str(exc))
-    if profile.id not in ("anima-lora", "moss-image-lora"):
-        subset_timestep_offsets = {}
-
-    # Keep the legacy sd-scripts adapter input byte-for-byte compatible. Core
-    # metadata is restored at the supervisor boundary instead of being passed
-    # through to sd-scripts as an unknown command line field.
-    config.pop("engine_id", None)
-    adapter_id = str(config.pop("adapter_id", profile.adapter_id))
-    model_train_type = profile.id
-    trainer_file = profile.trainer_file
-
-    # ── Anima Backend Adapter: whitelist filter + NaN cleanup + path normalization ──
-    # 保存原始 config（含 UI-only 字段如 positive_prompts），adapter 之后会被剥离
-    _ui_config = dict(config)
-    # ── LyCORIS 融合内核后端：进程级环境变量，不进 TOML ──────────
-    # vendor 经 LYCORIS_KERNEL_BACKEND 读取（kernels/dispatch.py:58 / select.py:78）。
-    # 启动前探测可用性：不可用的命名后端回退 auto 并携带警告（与 attn_mode 降级同模式）。
-    lycoris_kernel_backend: str | None = None
-    lycoris_kernel_warning = ""
-    if str(config.get("network_module") or "") == "lycoris.kohya":
-        requested = str(config.get("lycoris_kernel_backend") or "auto")
-        lycoris_kernel_backend, lycoris_kernel_warning = detect_lycoris_kernel_backend(requested)
-    from backend.training import adapt_config, detect_attention_backend, validate_training_config
-
-    validation_errors = validate_training_config(config, gpu_ids=gpu_ids)
-    if validation_errors:
-        return _training_error(
-            message="Invalid training configuration / 训练参数无效:\n" + "\n".join(validation_errors)
-        )
-
-    # ── TE 磁盘缓存一致性检查（按引擎）：改 caption/dropout 率不会让缓存失效，启动前提示 ──
-    ignore_te_cache_warnings = bool(config.pop("ignore_te_cache_warnings", None))
-    if profile.id in TE_CACHE_CHECK_PROFILES and not ignore_te_cache_warnings:
-        te_cache_warnings = await _settled_to_thread(check_te_cache, config, profile.id)
-        if te_cache_warnings:
-            return _training_error(
-                message="Text encoder cache may be stale / 文本编码器缓存可能已过期",
-                data={"errorCode": "teCacheStale", "warnings": te_cache_warnings},
-            )
-    adapted_config, adapter_warnings = adapt_config(config, gpu_ids=gpu_ids)
-    for w in adapter_warnings:
-        log.warning(f"[Adapter] {w}")
-    config = adapted_config
-
-    estimate_config = dict(config)
-    if gpu_ids is not None:
-        estimate_config["gpu_ids"] = gpu_ids
-    try:
-        step_estimate = await _settled_to_thread(estimate_training_steps, estimate_config)
-    except StepEstimateError as exc:
-        return _training_error(message=f"Training step calculation failed / 训练步数计算失败: {exc}")
-
-    from backend.training.validation import validate_scheduler_step_budget
-
-    scheduler_errors = validate_scheduler_step_budget(
-        config, step_estimate["total_steps"], step_estimate["gpu_processes"],
-    )
-    if scheduler_errors:
-        return _training_error(
-            message="Invalid training configuration / 训练参数无效:\n" + "\n".join(scheduler_errors)
-        )
-
-    # AdEMAMix 的 α/β3 调度按预估总步数自动注入（仅在用户留空对应字段时）
-    from backend.training.optimizer_contracts import apply_ademamix_step_schedule
-
-    schedule_warnings = apply_ademamix_step_schedule(config, step_estimate["total_steps"])
-    adapter_warnings.extend(schedule_warnings)
-    for warning in schedule_warnings:
-        log.warning(f"[Adapter] {warning}")
-
-    if "attn_mode" in config:
-        attn_requested = config.get("attn_mode", "torch")
-        attn_actual, attn_warning = detect_attention_backend(attn_requested)
-        if attn_requested == "flash" and attn_actual != "flash":
-            return _training_error(message=attn_warning)
-        if attn_warning:
-            log.warning(f"[Attn] {attn_warning}")
-            config["attn_mode"] = attn_actual
-    # ──────────────────────────────────────────────────────────
-
-    # ── Per-run folder: internal control data + user-selected artifacts ──
-    output_name = config.get("output_name", "my_lora")
-    safe_name = _safe_output_name(str(output_name))
-    run_dir_name = f"{safe_name}_{timestamp}_{reserved_task.task_id[:12]}"
-    is_resume = bool(config.get("resume", "").strip())
-
-    # 用户设置的路径仅决定模型/断点/sample 的位置；日志、配置、TB 均保存在内部 run_dir。
-    requested_output_dir = str(config.get("output_dir", "./output") or "./output").strip()
-    try:
-        output_base_path = await _settled_to_thread(resolve_user_path, requested_output_dir)
-    except (OSError, ValueError) as exc:
-        return _training_error(
-            message=f"Invalid output path / 输出路径无效: {exc}",
-            data={"errorCode": "invalidOutputPath"},
-        )
-    internal_run_dir = (OUTPUT_DIR / run_dir_name).resolve()
-    artifact_run_dir = output_base_path if is_resume else output_base_path / run_dir_name
-    # ──────────────────────────────────────────────────────────
-
-    dataset_ok = train_utils.validate_data_dir(config["train_data_dir"])
-    if not dataset_ok:
-        return _training_error(message="Dataset path does not exist or has no images / 数据集路径不存在或无图片")
-
-    # 正则化数据目录：填了但不存在时直接报错，避免 sd-scripts 静默忽略导致用户以为有正则数据。
-    # 目录存在但没有任何"数字_类名"子目录时同样报错——sd-scripts 只扫描子目录（子目录缺失时
-    # 生成空子集并仅打警告，训练照常跑但没有正则化）。
-    reg_data_dir = str(config.get("reg_data_dir") or "").strip()
-    if reg_data_dir:
-        if not os.path.isdir(reg_data_dir):
-            return _training_error(
-                message=f"Regularization data dir does not exist / 正则化数据目录不存在: {reg_data_dir}",
-                data={"errorCode": "regDataDirNotFound"},
-            )
-        reg_subdirs = [
-            name
-            for name in os.listdir(reg_data_dir)
-            if os.path.isdir(os.path.join(reg_data_dir, name)) and name.split("_")[0].isdigit()
-        ]
-        if not reg_subdirs:
-            return _training_error(
-                message=f"No valid subfolder (e.g. 10_face) found in regularization data dir / 正则化数据目录中未找到有效子文件夹（如 10_face）: {reg_data_dir}",
-                data={"errorCode": "regDataDirNoSubfolders"},
-            )
-
-    image_count = await _settled_to_thread(
-        train_utils.count_images, config["train_data_dir"], True, 201
-    )
-    suggest_cpu_threads = 8 if image_count > 200 else 2
-
-    validated, message = await _settled_to_thread(
-        train_utils.validate_model, config["pretrained_model_name_or_path"]
-    )
-    if not validated:
-        return _training_error(message=message)
-
-    # ── Anima: qwen3 编码器路径必填校验 ─────────────────
-    if model_train_type == "anima-lora":
-        qwen3_path = config.get("qwen3", "").strip()
-        if not qwen3_path:
-            return _training_error(
-                message="Anima LoRA training requires the Qwen3 encoder path / Anima LoRA 训练需要填写 Qwen3 编码器路径"
-            )
-        if not os.path.exists(qwen3_path):
-            return _training_error(message=f"Qwen3 model not found / Qwen3 模型不存在: {qwen3_path}")
-        vae_path = config.get("vae", "").strip()
-        if not os.path.exists(vae_path):
-            return _training_error(message=f"VAE model not found / VAE 模型不存在: {vae_path}")
-
-    if model_train_type == "moss-image-lora":
-        from backend.training.moss_image import validate_captions, validate_model_files
-
-        model_errors = await _settled_to_thread(validate_model_files, config)
-        if model_errors:
-            return _training_error(message="\n".join(model_errors))
-        caption_errors = await _settled_to_thread(validate_captions, config)
-        if caption_errors:
-            return _training_error(message="\n".join(caption_errors))
-        if config.get("convrot_int8_bwd") == "int8":
-            from library.convrot_int8_kernels import HAS_TRITON
-
-            if not HAS_TRITON:
-                return _training_error(message="ConvRot INT8 backward requires CUDA and Triton / INT8 反向需要 CUDA 与 Triton")
-
-    sample_prompts_arg = ""
-    # Raw trainer TOMLs call the prompt file sample_prompts; the UI calls it prompt_file.
-    prompt_file = str(_ui_config.get("prompt_file") or _ui_config.get("sample_prompts") or "").strip()
-    if prompt_file:
-        if not os.path.exists(prompt_file):
-            return _training_error(message=f"Sample prompt file not found / 采样提示词文件不存在: {prompt_file}")
-        config["sample_prompts"] = prompt_file
-    else:
-        try:
-            sample_prompts_arg = await _settled_to_thread(get_sample_prompts, _ui_config)
-
-        except ValueError as e:
-            log.error(f"Error while processing prompts / 处理采样提示词时出错: {e}")
-            return _training_error(message=str(e))
-
-    try:
-        # 优先检查用户产物目录；磁盘 I/O 放入线程，避免离线盘阻塞 API。
-        await _settled_to_thread(
-            _prepare_run_directories,
-            artifact_run_dir,
-            internal_run_dir,
-            resume=is_resume,
-            owned=reserved_task.owned_run_paths,
-        )
-    except OSError as exc:
-        log.warning("Output directory unavailable / 输出目录不可用: %s", exc)
-        return _training_error(
-            message=f"Output directory is unavailable or not writable / 输出目录不可用或无法写入: {exc}",
-            data={
-                "errorCode": "outputDirectoryUnavailable",
-                "outputPath": str(artifact_run_dir),
-            },
-        )
-
-    config["output_dir"] = str(artifact_run_dir)
-    config["logging_dir"] = str(internal_run_dir / "log")
-
-    if sample_prompts_arg:
-        prompts_path = internal_run_dir / ("prompts.json" if model_train_type == "moss-image-lora" else "prompts.txt")
-        prompts_path.write_text(sample_prompts_arg, encoding="utf-8")
-        config["sample_prompts"] = str(prompts_path)
-        log.info(f"Sample prompts written / 采样 prompt 已写入: {prompts_path}")
-
-    # ── A: autosave — 保留最近 50 个，清理旧文件 ────────────
-    AUTOSAVE_DIR.mkdir(parents=True, exist_ok=True)
-    _cleanup_autosave(str(AUTOSAVE_DIR), keep=50)
-
-    toml_file = str(AUTOSAVE_DIR / f"{timestamp}_{reserved_task.task_id[:12]}.toml")
-    reserved_task.owned_autosave = Path(toml_file)
-    toml_content = toml_writer.dumps(config)
-    training_document = build_training_config(
-        form_snapshot,
-        profile_id=profile.id,
-    )
-    dataset_config_file: Path | None = None
-    dataset_toml = ""
-    if subset_timestep_offsets:
-        try:
-            dataset_config = build_sd_scripts_dataset_config(config, subset_timestep_offsets)
-        except ValueError as exc:
-            return _training_error(message=str(exc))
-        dataset_config_file = internal_run_dir / "dataset.toml"
-        dataset_toml = toml_writer.dumps(dataset_config)
-
-    def _write_configs():
-        with open(toml_file, "w", encoding="utf-8") as f:
-            f.write(toml_content)
-        run_config_file = str(internal_run_dir / "config.toml")
-        with open(run_config_file, "w", encoding="utf-8") as f:
-            f.write(toml_content)
-        write_training_config(internal_run_dir / TRAINING_CONFIG_NAME, training_document)
-        if dataset_config_file is not None:
-            dataset_config_file.write_text(dataset_toml, encoding="utf-8")
-
-    # ── A-2: 并发写入 config + run 信息（写入不同文件，无依赖）──
-    def _write_run_files():
-        _write_configs()
-        _write_run_info(str(internal_run_dir), config, model_train_type, timestamp, is_resume)
-        write_output_dir_reference(str(internal_run_dir), str(artifact_run_dir))
-
-    await _settled_to_thread(_write_run_files)
-    # ──────────────────────────────────────────────────────────
-
-    extra_args = ["--dataset_config", str(dataset_config_file)] if dataset_config_file is not None else None
-    result = reserved_task.launch(
-        toml_file,
-        trainer_file,
-        gpu_ids,
-        suggest_cpu_threads,
-        extra_args=extra_args,
-        run_dir=str(internal_run_dir),
-        artifact_dir=str(artifact_run_dir),
-        output_base_dir=requested_output_dir,
-        preview_enabled=bool(_ui_config.get("enable_preview", False)),
-        engine_id=profile.engine_id,
-        run_metadata={
-            "profile_id": profile.id,
-            "adapter_id": adapter_id,
-        },
-        extra_env={
-            **training_metrics_environment(_ui_config),
-            "ANIMA_ENABLE_FLASH_ATTN": "1" if config.get("attn_mode") == "flash" else "0",
-            **({"LYCORIS_KERNEL_BACKEND": lycoris_kernel_backend} if lycoris_kernel_backend else {}),
-        },
-    )
-
-    # 将适配器警告附加到返回结果中（前端弹窗展示）
-    if lycoris_kernel_warning:
-        adapter_warnings.append(lycoris_kernel_warning)
-    if result["status"] == "success" and adapter_warnings:
-        result["data"]["warnings"] = adapter_warnings
-
-    return result
+    return await _prepare_training(launch.prepare_run, config)
 
 
 @router.post("/run_script")

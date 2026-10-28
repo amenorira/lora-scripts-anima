@@ -44,7 +44,7 @@ def normalize_run_status(value: Any) -> str:
 
 
 def _invalidate_history() -> None:
-    from backend.monitor.artifacts import invalidate_history_cache
+    from backend.monitor.history import invalidate_history_cache
     invalidate_history_cache()
 
 

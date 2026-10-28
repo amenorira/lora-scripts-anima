@@ -88,16 +88,37 @@ lora-scripts-anima/
 ├── vendor/emo_optimizer/       ← EmoSens 適応型オプティマイザー
 ├── vendor/lora_muon/           ← 実験的な LoRA-Muon オプティマイザー
 ├── backend/                    ← FastAPI バックエンド
-│   ├── server/                 ← API コア（ルーティング、状態、プロキシ）
-│   ├── training/               ← 学習エンジンのラッパー（パラメータ変換、フィールドレジストリ、プロセス管理）
+│   ├── server/                 ← アプリ構成、HTTP ルート、静的リソース、プロキシ
+│   ├── core/                   ← リアルタイムタスクの調整とインストール処理
+│   ├── training/               ← 役割別に整理した学習モジュール
+│   │   ├── fields/             ← フィールド定義、既定値、選択肢のメタデータ
+│   │   ├── config/             ← 設定変換、インポート・エクスポート、検証
+│   │   ├── datasets/           ← データセット解析、繰り返し回数、ステップ数の推定
+│   │   ├── execution/          ← 実行準備、起動振り分け、プロセス管理
+│   │   └── cache/              ← キャッシュの確認、生成、再利用
 │   ├── monitor/                ← 学習監視（GPU、システム、ログ、プレビュー、履歴）
 │   ├── tageditor/              ← 内蔵タグエディター
 │   ├── tagger/                 ← タグ付けモジュール（WD / CL / Camie / PixAI / AI API）
+│   ├── regularization/         ← 正則化画像の生成、サンプリング、復旧
 │   └── gui.py                  ← GUI の内部エントリーポイント（起動スクリプトから呼び出し）
 ├── frontend/                   ← Alpine.js SPA フロントエンド
+│   ├── js/                     ← 機能別に整理したスクリプト
+│   │   ├── app/                ← アプリ構成とルーティング設定
+│   │   ├── shared/             ← 共通 UI、通知、国際化、リアルタイム通信
+│   │   ├── training/           ← 学習フォーム、設定、プレビュー
+│   │   ├── monitor/            ← 監視、履歴、ログ、出力
+│   │   ├── environment/        ← 環境情報、コンポーネント導入、モデル取得
+│   │   ├── tagger/             ← 自動タグ付けと AI キャプションのワークスペース
+│   │   ├── docs/               ← パラメータガイドの閲覧
+│   │   ├── regularization/     ← 正則化画像生成のワークスペース
+│   │   ├── tag-editor/         ← タグ編集、セッション、永続化
+│   │   └── tag-dictionary/     ← 辞書、Worker、ホバーカード
+│   ├── templates/              ← 必要時に読み込むワークスペース HTML
+│   └── css/ · i18n/ · assets/   ← スタイル、翻訳、静的リソース
 ├── config/                     ← ローカル設定と自動保存
 ├── docs/                       ← パラメータガイドとプレビュー画像
 ├── tools/                      ← 起動・インストール・実行ツール。開発用スクリプトは tools/dev/
+├── tests/                      ← バックエンド回帰テストとフロントエンド操作テスト
 ├── start.bat / start.sh        ← 起動スクリプト
 └── requirements.txt            ← プロジェクト全体で共通の依存関係一覧（torch は起動時に別途インストール）
 ```
@@ -129,7 +150,7 @@ lora-scripts-anima/
 
 NVIDIA GPU がない PC にも GPU 用の依存環境を一式インストールし、GUI を起動できます。ただし、学習には NVIDIA GPU が必要です。
 
-> **Krea 2 の共有環境**：Krea 2 と sd-scripts はプロジェクトのメイン `venv` と同じ CUDA 版 PyTorch を使用します。ルートの `requirements.txt` がプロジェクト全体の唯一の依存関係一覧で、共有パッケージを `transformers 5.17.0` / `tokenizers 0.23.1` に固定します。インストール時に `vendor/` 内の依存関係ファイルは読み込みません。
+> **Krea 2 の共有環境**：Krea 2 と sd-scripts はプロジェクトのメイン `venv` と同じ CUDA 版 PyTorch を使用します。ルートの `requirements.txt` がプロジェクト全体の唯一の依存関係一覧で、共有パッケージを `transformers 5.21.0` / `tokenizers 0.23.3` に固定します。インストール時に `vendor/` 内の依存関係ファイルは読み込みません。
 >
 > 通常の起動では、高速なメタデータ確認のみを行います。バージョンが一致していれば pip の再実行、パッケージの削除・再インストール、Krea 2 の実行環境全体のインポートは行いません。依存関係の同期後と Krea 2 の学習前チェック時には、完全なインポート検証を実行します。`vendor/` 内の上流の依存関係ファイルは変更しません。
 

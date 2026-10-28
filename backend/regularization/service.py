@@ -12,6 +12,7 @@ from PIL import Image
 
 from backend.constants import REPO_ROOT
 from backend.tasks import tm, TaskStatus, kill_proc_tree
+from backend.utils.file_io import read_text
 from . import storage
 from .planning import Settings, scan, identity, choose_output, make_items, extend_items, random_seed, actual_prompt, clean_caption, numbered_filename
 
@@ -111,7 +112,7 @@ def _validate_pairs(root, manifest, repair=False):
         try:
             with Image.open(storage.item_path(root, item)) as image:
                 image.verify()
-            text = storage.item_path(root, item, ".txt").read_text(encoding="utf-8-sig")
+            text = read_text(storage.item_path(root, item, ".txt"), encoding="utf-8-sig")
             caption = text.splitlines()[0].strip() if text else ""
             if not caption:
                 raise ValueError("Empty caption")
@@ -375,7 +376,7 @@ def results(key, offset=0, limit=30, status="all"):
     for item in public_items:
         if item["status"] in {"completed", "excluded"}:
             try:
-                text = storage.item_path(root, item, ".txt").read_text(encoding="utf-8-sig")
+                text = read_text(storage.item_path(root, item, ".txt"), encoding="utf-8-sig")
                 item["caption"] = text.splitlines()[0] if text else ""
             except OSError:
                 pass

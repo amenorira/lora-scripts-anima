@@ -217,7 +217,7 @@ TensorBoard の記録を有効にし、学習中のコンポーネントの基�
 <!-- doc-anchor: references -->
 ## 根拠と参考資料
 
-sd-scripts の設定処理は `backend/training/adapter.py`、Krea 2 の倍率とネットワーク制約は `krea2_network.py`・`krea2_optimizers.py`、オプティマイザの互換性は `optimizer_contracts.py` に定義しています。グループ分け・初期化・ログ名は同梱の `networks/lora.py`・`lora_anima.py`・`network_base.py` に実装されています。以下のリンクはリビジョンを固定しています。
+sd-scripts の設定処理は `backend/training/config/adapter.py`、Krea 2 の倍率とネットワーク制約は `krea2_network.py`・`krea2_optimizers.py`、オプティマイザの互換性は `optimizer_contracts.py` に定義しています。グループ分け・初期化・ログ名は同梱の `networks/lora.py`・`lora_anima.py`・`network_base.py` に実装されています。以下のリンクはリビジョンを固定しています。
 
 - [本プロジェクトの sd-scripts フォーク：train_network_advanced.md（固定リビジョン）](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/docs/train_network_advanced.md)
 - [本プロジェクトの sd-scripts フォーク：loha_lokr.md（固定リビジョン）](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/docs/loha_lokr.md)

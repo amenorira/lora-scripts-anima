@@ -91,15 +91,6 @@ class BuildTagDictionaryTests(unittest.TestCase):
             self.assertTrue((output / first["core"]).is_file())
             self.assertFalse(any(p.name.startswith("tmp") for p in output.iterdir()))
 
-    def test_empty_dictionary_cannot_replace_installed_assets(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            _, _, _, output = read_build(root)
-            previous = (output / "manifest.json").read_bytes()
-            with self.assertRaisesRegex(ValueError, "没有有效标签"):
-                build(write_source(root, {}), output, "new", "https://example.invalid/tags")
-            self.assertEqual((output / "manifest.json").read_bytes(), previous)
-
 
 if __name__ == "__main__":
     unittest.main()

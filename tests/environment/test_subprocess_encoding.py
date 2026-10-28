@@ -3,7 +3,6 @@ import sys
 import unittest
 from pathlib import Path
 
-from tools.python_startup import sitecustomize  # noqa: F401
 
 from backend import launch_utils
 

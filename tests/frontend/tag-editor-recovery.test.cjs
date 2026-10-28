@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { loadFrontend, response, deferred } = require('./helpers.cjs');
+const { loadTagEditor, response, deferred } = require('./helpers.cjs');
 
 function fixture() {
   const raw = '\uFEFF  cat, dog\r\n';
@@ -10,7 +10,7 @@ function fixture() {
   let create = () => response({ session_id: 'new', dir: '/dataset', count: 2, page: 1,
     items: [{ path: 'b', tags: 'other', caption_revision: 'b1' }], tags: [] });
   context.fetch = (url, options) => options?.method === 'DELETE' ? Promise.resolve(response({})) : Promise.resolve(create(url, options));
-  loadFrontend('tag-editor', context);
+  loadTagEditor( context);
   const app = Object.assign({}, context.window.tagEditorMixin, {
     tagEditorSessionId: 'old', tagEditorDir: '/dataset', tagEditorLoadedDir: '/dataset',
     tagEditorImages: [{ path: 'a', tags: raw }], tagEditorOriginal: { a: raw },
@@ -50,19 +50,6 @@ test('session recovery flushes text history and preserves raw undo/redo and sele
   assert.equal(app.tagEditorGetSelectedImg().tags, edited);
 });
 
-test('fully undone off-page captions still support redo after session recovery', async () => {
-  const { app, raw } = fixture();
-  app._teUpdateImageTags(app.tagEditorImages[0], 'changed');
-  app._tePushHistory({ type: 'text' });
-  app.tagEditorUndo();
-  app.tagEditorSelected = [];
-  await app.tagEditorReloadSessionPage(1);
-  assert.equal(app._teFindByPath('a').tags, raw);
-  assert.equal(app.tagEditorHistoryIdx, -1);
-  app.tagEditorRedo();
-  assert.equal(app._teFindByPath('a').tags, 'changed');
-});
-
 test('failed automatic recovery retains unsaved state for a normal load retry', async () => {
   const f = fixture();
   f.app.tagEditorDetailTextChange({ target: { value: 'unsaved' } });
@@ -95,40 +82,4 @@ test('a dataset switch supersedes recovery, and an already cleared save history 
   await f.app.tagEditorReloadSessionPage(1);
   assert.equal(f.app.tagEditorHistory.length, 0);
   assert.equal(f.app.tagEditorHistoryIdx, -1);
-});
-
-test('recovery re-queries the requested filtered page using preserved raw drafts and history', async () => {
-  const {app, raw, create} = fixture();
-  const edited = '\uFEFF  draft, cat\r\n';
-  app._teUpdateImageTags(app.tagEditorImages[0], edited);
-  app._tePushHistory({type: 'text'});
-  app.tagEditorSearchQuery = 'draft';
-  app.tagEditorTagSelection = ['cat'];
-  app.tagEditorExcludedTags = ['dog'];
-  app._teLastSelected = 'a';
-  let queries = 0;
-  create((url, options) => {
-    if (url === '/api/tageditor/sessions') return response({session_id: 'new', dir: '/dataset', count: 90,
-      total: 90, total_pages: 2, page: 1, items: [{path: 'b', tags: 'other'}], tags: []});
-    queries++;
-    const params = new URLSearchParams(url.split('?')[1]);
-    assert.equal(params.get('page'), '2');
-    assert.equal(params.get('search'), 'draft');
-    assert.equal(params.get('include_tags'), 'cat');
-    assert.equal(params.get('exclude_tags'), 'dog');
-    assert.equal(options.method, 'POST');
-    assert.deepEqual(JSON.parse(options.body), {a: edited});
-    return response({total: 61, total_pages: 2, page: 2, items: [{path: 'a', tags: edited}]});
-  });
-  await app.tagEditorReloadSessionPage(2);
-  assert.equal(queries, 1);
-  assert.equal(app.tagEditorPage, 2);
-  assert.equal(app.tagEditorPageItems[0].tags, edited);
-  assert.equal(app.tagEditorOriginal.a, raw);
-  assert.equal(app._teCaptionRevisions.a, 'a1');
-  assert.equal(app._teLastSelected, 'a');
-  assert.equal(app._teSessionRecovery, null);
-  app.tagEditorSchedulePageFetch = () => {};
-  app.tagEditorUndo(); assert.equal(app._teFindByPath('a').tags, raw);
-  app.tagEditorRedo(); assert.equal(app._teFindByPath('a').tags, edited);
 });

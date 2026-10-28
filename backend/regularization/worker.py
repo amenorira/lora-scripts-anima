@@ -18,6 +18,7 @@ from PIL import Image, PngImagePlugin
 
 from backend.constants import REPO_ROOT, SD_SCRIPTS_DIR
 from backend.launch_utils import app_version
+from backend.utils.file_io import read_text
 from .sampling import sample, sampling_sigmas, schedule
 from .storage import atomic_write, item_path, read_manifest, save_manifest, manifest_summary, save_progress
 
@@ -252,7 +253,7 @@ def run(root: Path, runner_factory=None):
                 atomic_write(item_path(root, item), buffer.getvalue())
                 with Image.open(item_path(root, item)) as saved:
                     saved.verify()
-                if item_path(root, item, ".txt").read_text(encoding="utf-8") != item["caption"]:
+                if read_text(item_path(root, item, ".txt")) != item["caption"]:
                     raise OSError("Caption write verification failed")
                 item["status"] = "completed"
                 succeeded += 1

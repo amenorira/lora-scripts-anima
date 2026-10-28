@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.constants import OUTPUT_DIR
-from backend.training.field_registry import get_all_fields, field_applies_to_profile
+from backend.training.fields.field_registry import get_all_fields, field_applies_to_profile
 
 
 _REGISTRY_FIELDS = get_all_fields()

@@ -9,11 +9,12 @@
 # ============================================================
 
 # ── 后端（FastAPI）──
-fastapi==0.103.2
-pydantic>=2.0,<3
-uvicorn==0.22.0
-httpx==0.24.1
-python-multipart==0.0.18
+fastapi==0.162.0
+starlette==1.10.0
+pydantic>=2.9,<3
+uvicorn==0.54.0
+httpx==0.28.1
+python-multipart==0.0.32
 websockets==14.2
 
 # ── 系统监控 ──
@@ -22,7 +23,7 @@ nvidia-ml-py==13.595.45
 
 # ── 数据处理 ──
 pandas>=2.0
-pillow>=11.3.0
+pillow==13.0.0
 Markdown>=3.5,<4
 PyYAML>=6.0,<7
 
@@ -32,29 +33,29 @@ setuptools>=68,<82
 # ── 训练栈（sd-scripts 与 musubi-tuner 共用；与 musubi_runtime.MUSUBI_RUNTIME_PACKAGES 对账）──
 accelerate==1.15.0
 av==17.1.0
-bitsandbytes
-diffusers==0.40.0
+bitsandbytes==0.50.2
+diffusers==0.42.1
 easydict==1.13
 einops==0.7.0
 ftfy==6.3.1
-huggingface-hub==1.32.0
+huggingface-hub==2.3.0
 numpy
 opencv-python==4.10.0.84
 safetensors==0.8.0
 sentencepiece==0.2.1
-tokenizers==0.23.1
+tokenizers==0.23.3
 toml==0.10.2
 tqdm==4.67.1
-transformers==5.17.0
+transformers==5.21.0
 voluptuous==0.15.2
 
 # ── 优化器后端（sd-scripts 优化器工厂按需导入）──
-# 保留项目已适配的 ProdigyPlus 2.0.1 / pytorch_optimizer 3.10.1，
+# 使用项目已适配的 ProdigyPlus 2.0.1 / pytorch_optimizer 4.1.0，
 # 不随 sd-scripts 清单降回 1.9.2 / 3.10.0。
 lion-pytorch==0.2.3
 prodigy-plus-schedule-free==2.0.1
 prodigyopt==1.1.2
-pytorch_optimizer==3.10.1
+pytorch_optimizer==4.1.0
 schedulefree==1.4.1
 
 # ── 训练日志与数据集工具 ──

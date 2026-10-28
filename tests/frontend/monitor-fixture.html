@@ -5,12 +5,33 @@
 <link rel="stylesheet" href="/frontend/css/themes/light.css">
 <link rel="stylesheet" href="/frontend/css/themes/dark.css">
 <style>body { overflow: auto; } #fixture { max-width: 1380px; margin: auto; padding: 24px; } .fixture-controls { display:flex; flex-wrap:wrap; gap:8px; padding-bottom:16px; } #fixture.narrow { max-width:1040px; } #fixtureRoute { height:calc(100vh - 120px); } </style>
-<script src="/frontend/js/utils.js"></script>
-<script src="/frontend/js/config.js"></script>
-<script src="/frontend/js/monitor-logs.js"></script>
-<script src="/frontend/js/training-core.js"></script>
-<script src="/frontend/js/monitor-core.js"></script>
-<script src="/frontend/js/monitor-render.js"></script>
+<script src="/frontend/js/shared/utils.js"></script>
+<script src="/frontend/js/shared/mixin-compose.js"></script>
+<script src="/frontend/js/app/config.js"></script>
+<script src="/frontend/js/monitor/logs.js"></script>
+<script src="/frontend/js/training/timestep-model.js"></script>
+<script src="/frontend/js/training/field-relations.js"></script>
+<script src="/frontend/js/training/file-picker.js"></script>
+<script src="/frontend/js/training/preflight.js"></script>
+<script src="/frontend/js/training/profiles.js"></script>
+<script src="/frontend/js/training/validation.js"></script>
+<script src="/frontend/js/training/sections.js"></script>
+<script src="/frontend/js/training/conditions.js"></script>
+<script src="/frontend/js/training/timestep-preview.js"></script>
+<script src="/frontend/js/training/field-renderer.js"></script>
+<script src="/frontend/js/training/network-panel.js"></script>
+<script src="/frontend/js/training/core.js"></script>
+<script src="/frontend/js/monitor/previews.js"></script>
+<script src="/frontend/js/monitor/outputs.js"></script>
+<script src="/frontend/js/monitor/history.js"></script>
+<script src="/frontend/js/monitor/metrics.js"></script>
+<script src="/frontend/js/monitor/core.js"></script>
+<script src="/frontend/js/monitor/history-render.js"></script>
+<script src="/frontend/js/monitor/artifacts-render.js"></script>
+<script src="/frontend/js/monitor/resource-bar.js"></script>
+<script src="/frontend/js/monitor/diagnostics.js"></script>
+<script src="/frontend/js/monitor/summary.js"></script>
+<script src="/frontend/js/monitor/render.js"></script>
 <main id="fixture" x-data="monitorFixture">
   <div class="fixture-controls">
     <button class="btn btn-sm" @click="$el.closest('main').classList.toggle('narrow')">切换桌面窄窗口</button>

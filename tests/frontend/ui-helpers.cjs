@@ -80,7 +80,7 @@ function uiHarness() {
     requestAnimationFrame: callback => setTimer(callback, 16), cancelAnimationFrame: id => timers.delete(id),
     navigator: { clipboard: { writeText: async () => {} } },
   };
-  loadFrontend(['ui-interactions', 'notifications'], context);
+  loadFrontend(['shared/ui-interactions', 'shared/notifications'], context);
   listeners.get('alpine:init')();
   const flush = () => { while (ticks.length) ticks.shift()(); };
   const advance = amount => {

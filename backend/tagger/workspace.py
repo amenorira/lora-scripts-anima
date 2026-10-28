@@ -1,8 +1,6 @@
-"""Unified Tagger workspace tasks, source scanning, thumbnails, and captions."""
+"""Tagger execution and resource orchestration, with stable workspace API exports."""
 from __future__ import annotations
 
-import os
-import json
 from contextlib import ExitStack
 import threading
 import time
@@ -25,283 +23,40 @@ from backend.tagger.interrogator import (
 )
 from backend.tagger.interrogators.base import CATEGORY_LABELS, Interrogator
 from backend.tagger.registry import MODEL_SPEC_BY_ID
-from backend.utils.file_io import atomic_write_text
+from backend.utils.file_io import atomic_write_text, read_text
 from backend.tasks import tm
-
-_IMAGE_EXTENSIONS = {
-    ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".avif",
-}
-_SOURCE_TTL = 3600
-_TASK_TTL = 3600
-_TASK_KEEP_MAX = 8
-_MAX_LOGS = 200
-_MAX_RECENT_ITEMS = 120
-_ACTIVE_TASK_STATUSES = frozenset({"created", "running", "cancelling"})
-
-_sources: dict[str, dict[str, Any]] = {}
-_sources_lock = threading.Lock()
-_tasks: dict[str, dict[str, Any]] = {}
-_tasks_lock = threading.Lock()
-_direct_tagger: dict[str, Any] = {}
-
-
-def _is_image(path: Path) -> bool:
-    return path.is_file() and path.suffix.lower() in _IMAGE_EXTENSIONS
-
-
-def _cleanup() -> None:
-    now = time.time()
-    with _tasks_lock:
-        for task_id, task in list(_tasks.items()):
-            if task.get("status") in {"done", "cancelled", "error"} and now - task.get("updated_at", now) > _TASK_TTL:
-                _tasks.pop(task_id, None)
-        terminal = sorted(
-            ((task_id, task) for task_id, task in _tasks.items()
-             if task.get("status") in {"done", "cancelled", "error"}),
-            key=lambda entry: entry[1].get("updated_at", 0),
-        )
-        for task_id, _ in terminal[:-_TASK_KEEP_MAX]:
-            _tasks.pop(task_id, None)
-        retained_tokens = {token for task in _tasks.values() for token in (task["source_token"], task.get("overview_source_token"))}
-    with _sources_lock:
-        for token, source in list(_sources.items()):
-            if token not in retained_tokens and now - source.get("created_at", now) > _SOURCE_TTL:
-                _sources.pop(token, None)
-
-
-def _enumerate_images(path: Path, recursive: bool) -> list[Path]:
-    if path.is_file():
-        return [path] if _is_image(path) else []
-    iterator = path.rglob("*") if recursive else path.iterdir()
-    return sorted((item for item in iterator if _is_image(item)), key=lambda item: str(item).lower())
-
-
-def scan_source(path_value: str, recursive: bool = True, caption_extension: str = ".txt", caption_options: dict | None = None) -> dict:
-    _cleanup()
-    path = Path(path_value).expanduser().resolve()
-    if not path.exists():
-        raise ValueError("Source does not exist / 输入路径不存在")
-    if path == Path(path.anchor):
-        raise ValueError("Filesystem root is not allowed / 不允许选择磁盘根目录")
-    images = _enumerate_images(path, recursive)
-    token = uuid.uuid4().hex[:16]
-    caption_extension = "." + str(caption_extension).strip().lstrip(".")
-    if caption_extension == "." or any(c in caption_extension for c in '/\\\r\n'):
-        raise ValueError("Invalid caption extension / 无效的标注扩展名")
-    settings = captioning.output_options(caption_options, caption_extension)
-    directories = len({image.parent for image in images})
-    source = {
-        "token": token,
-        "root": str(path),
-        "kind": "file" if path.is_file() else "folder",
-        "recursive": recursive,
-        "caption_extension": caption_extension,
-        "caption_options": settings,
-        "paths": images,
-        "created_at": time.time(),
-        "annotation_lock": threading.RLock(),
-        "annotation_cache": {},
-    }
-    with _sources_lock:
-        _sources[token] = source
-    if caption_options is not None:
-        _, counts = _annotation_states(source, settings)
-    else:
-        caption_count = sum(image.with_suffix(caption_extension).is_file() for image in images)
-        counts = {"outputs": caption_count, "missing_outputs": len(images) - caption_count}
-    return {
-        "source_token": token,
-        "path": str(path),
-        "kind": source["kind"],
-        "total": len(images),
-        "directories": directories,
-        "with_caption": counts["outputs"],
-        "without_caption": counts["missing_outputs"],
-        "items": [
-            {"index": index, "name": image.name, "path": str(image), "has_caption": image.with_suffix(caption_extension).is_file()}
-            for index, image in enumerate(images[:_MAX_RECENT_ITEMS])
-        ],
-        "items_truncated": len(images) > _MAX_RECENT_ITEMS,
-        **counts,
-    }
-
-
-def register_upload(path: Path) -> dict:
-    result = scan_source(str(path), recursive=False)
-    result["kind"] = "upload"
-    with _sources_lock:
-        if result["source_token"] in _sources:
-            _sources[result["source_token"]]["kind"] = "upload"
-    return result
-
-
-def source_item(source_token: str, index: int) -> Path:
-    source = _get_source(source_token)
-    with source["annotation_lock"]:
-        return _source_path(source, index)
-
-
-def _source_path(source: dict, index: int) -> Path:
-    paths = source["paths"]
-    if index < 0 or index >= len(paths):
-        raise IndexError("Image index out of range / 图片索引超出范围")
-    candidate = paths[index].resolve()
-    root = Path(str(source["root"])).resolve()
-    if source.get("kind") in {"file", "upload"}:
-        if candidate != root:
-            raise ValueError("Image escaped source scope / 图片超出输入源范围")
-    else:
-        try:
-            candidate.relative_to(root)
-        except ValueError as exc:
-            raise ValueError("Image escaped source scope / 图片超出输入源范围") from exc
-    return candidate
-
-
-def _get_source(token: str) -> dict:
-    _cleanup()
-    with _sources_lock:
-        source = _sources.get(token)
-    if source is None:
-        raise KeyError("Source expired or not found / 输入源已过期或不存在")
-    return source
-
-
-def _annotation_states(source: dict, settings: dict, *, cached: bool = False) -> tuple[list[dict], dict]:
-    # Plans/default callers always stat every output. Overview callers may reuse
-    # a five-second snapshot; completed task items invalidate just their paths.
-    with source["annotation_lock"]:
-        cache = source["annotation_cache"]
-        now = time.monotonic()
-        reuse = (cached and source.get("annotation_settings") == settings
-                 and now - source.get("annotation_checked_at", -float("inf")) < 5.0)
-        states = []
-        root = Path(source["root"]).resolve()
-        parents = {}
-        for index, path in enumerate(source["paths"]):
-            if reuse and str(path) in cache:
-                states.append(cache[str(path)])
-                continue
-            if source["kind"] in {"file", "upload"}:
-                _source_path(source, index)
-            parent = parents.get(path.parent)
-            if parent is None:
-                parent = path.parent.resolve()
-                if source["kind"] == "folder":
-                    try:
-                        parent.relative_to(root)
-                    except ValueError as exc:
-                        raise ValueError("Image escaped source scope / 图片超出输入源范围") from exc
-                parents[path.parent] = parent
-            try:
-                if captioning.is_reparse(path.lstat()):
-                    _source_path(source, index)
-            except FileNotFoundError:
-                pass  # A deleted image remains visible until an explicit rescan.
-            state = captioning.output_state(path, settings, cache.get(str(path)), parent=parent)
-            cache[str(path)] = state
-            states.append(state)
-        if not reuse:
-            source["annotation_checked_at"] = now
-            source["annotation_settings"] = dict(settings)
-        return states, captioning.output_counts(states)
-
-
-def _annotation_text(path: Path, settings: dict, state: dict) -> dict:
-    text = captioning.read_bounded(captioning.related_file(path, path.with_suffix(settings["caption_extension"]))) if state["has_caption"] and state["caption_kind"] != "unreadable" else ""
-    candidates = captioning.parse_caption_text(text, settings["separator"]) if state["caption_kind"] == "moss" else {}
-    return {"text": text, "candidates": candidates, "caption_excerpt": (next(iter(candidates.values()), text)).strip()[:240],
-            "candidate_lengths": {key: len(value) for key, value in candidates.items()}}
-
-
-def annotations(token: str, offset=0, limit=60, status="all", q="", refresh=False, options=None, task_id="", cached=False) -> dict:
-    source = _get_source(token)
-    if source["kind"] != "folder":
-        raise ValueError("Overview requires a directory / 总览仅支持批量目录")
-    if status not in {"all", "missing", "missing_json", "invalid_json", "ordinary", "failed"}:
-        raise ValueError("Invalid annotation filter / 无效的标注筛选")
-    settings = captioning.output_options(options, options.get("caption_extension", ".txt")) if options is not None else source["caption_options"]
-    with source["annotation_lock"]:
-        if refresh and not source.get("subset"):
-            source["paths"] = _enumerate_images(Path(source["root"]), source["recursive"])
-            source["annotation_cache"] = {}
-        states, counts = _annotation_states(source, settings, cached=cached and not refresh)
-        task_states = {}
-        if task_id:
-            with _tasks_lock:
-                task = _tasks.get(task_id)
-            if task and task["engine"] == "api" and task["source_root"] == source["root"]:
-                with task["lock"]:
-                    task_states = {os.path.normcase(item["path"]): {k: item[k] for k in ("status", "event", "error") if k in item} for item in task["items"]}
-        selected = []
-        root = Path(source["root"])
-        query = str(q).casefold()[:512]
-        for index, (path, state) in enumerate(zip(source["paths"], states)):
-            relative = path.relative_to(root).as_posix()
-            live = task_states.get(os.path.normcase(str(path)), {})
-            if query and query not in relative.casefold():
-                continue
-            if ((status == "missing" and state["caption_kind"] != "missing") or (status == "missing_json" and state["has_sidecar"] is not False)
-                    or (status == "invalid_json" and not state.get("sidecar_error"))
-                    or (status == "ordinary" and state["caption_kind"] != "ordinary") or (status == "failed" and live.get("status") != "failed")):
-                continue
-            selected.append((index, path, relative, state, live))
-        total = len(selected)
-        limit = max(1, min(int(limit), 60))
-        offset = max(0, min(int(offset), max(0, (total - 1) // limit * limit)))
-        items = []
-        for index, path, relative, state, live in selected[offset:offset + limit]:
-            item = {k: v for k, v in state.items() if k != "fingerprint"}
-            try:
-                content = _annotation_text(path, settings, state)
-                item.update(caption_excerpt=content["caption_excerpt"], candidate_lengths=content["candidate_lengths"])
-            except (OSError, ValueError) as exc:
-                item["read_error"] = str(exc)
-            try:
-                image_version = path.stat().st_mtime_ns
-            except OSError:
-                image_version = 0
-            items.append({"index": index, "name": path.name, "path": str(path), "relative": relative, "image_version": str(image_version), **item, "task": live})
-        return {"total": total, "offset": offset, "limit": limit, "counts": counts, "items": items,
-                "settings": settings, "scanned_at": time.time()}
-
-
-def annotation_detail(token: str, index: int, options: dict | None = None) -> dict:
-    source = _get_source(token)
-    with source["annotation_lock"]:
-        path = source_item(token, index)
-        settings = captioning.output_options(options, options.get("caption_extension", ".txt")) if options is not None else source["caption_options"]
-        state = captioning.output_state(path, settings)
-        output, sidecar, reference = captioning.output_files(path, settings)
-        content = _annotation_text(path, settings, state)
-        sidecar_error = ""
-        try:
-            data = captioning.read_result(sidecar, path) if state["has_sidecar"] else {}
-        except (OSError, ValueError) as exc:
-            data = {}
-            sidecar_error = str(exc)
-        # Explicit allowlist: credentials and arbitrary sidecar properties never leave this API.
-        metadata = {key: data.get(key) for key in ("model", "created_at", "usage", "finish_reason", "prompt", "reference", "knowledge", "response") if key in data}
-        try:
-            reference_text = captioning.read_bounded(reference) if reference and reference.is_file() and (reference != output or state["caption_kind"] != "moss") else data.get("reference") or ""
-        except (OSError, ValueError) as exc:
-            reference_text = ""
-            state["read_error"] = str(exc)
-        relative = path.relative_to(Path(source["root"])).as_posix() if source["kind"] == "folder" else path.name
-        return {"index": index, "name": path.name, "path": str(path), "relative": relative, "image_version": str(path.stat().st_mtime_ns), **{k: v for k, v in state.items() if k != "fingerprint"},
-                **content, "reference": reference_text, "sidecar": metadata, "sidecar_error": sidecar_error}
-
-
-def caption_plan(token: str, options: dict) -> dict:
-    """Plan and validate writes separately from the read-only annotation browser."""
-    source = _get_source(token)
-    if source["kind"] != "folder":
-        raise ValueError("MOSS requires an image directory / MOSS 标注请选择图片目录")
-    settings = captioning.plan_options(options)
-    with source["annotation_lock"]:
-        states, counts = _annotation_states(source, settings)
-        captioning.validate_output_targets(source["paths"], settings, states)
-        return {"counts": counts, "plan": captioning.execution_plan(states, settings)}
+from backend.tagger.workspace_tasks import (
+    _task_log,
+    _record_task_item,
+    _finish_task,
+    task_snapshot,
+    task_items,
+    task_check_prompt,
+    cancel_task,
+    latest_active_task_id,
+)
+from backend.tagger.workspace_sources import (
+    scan_source,
+    register_upload,
+    source_item,
+    _source_path,
+    _get_source,
+    _annotation_states,
+    annotations,
+    annotation_detail,
+    caption_plan,
+    source_items,
+)
+from backend.tagger.workspace_state import (
+    _MAX_LOGS,
+    _ACTIVE_TASK_STATUSES,
+    _sources,
+    _sources_lock,
+    _tasks,
+    _tasks_lock,
+    _direct_tagger,
+    _cleanup,
+)
 
 
 def claim_direct_tagger(owner: str, *, remote=False, cancel_event=None) -> None:
@@ -375,30 +130,6 @@ def preview_caption(payload: dict, request: dict | None = None) -> dict:
         release_direct_tagger(request_id)
 
 
-def source_items(source_token: str, offset: int = 0, limit: int = 120) -> dict:
-    with _sources_lock:
-        source = _sources.get(source_token)
-        if not source:
-            raise KeyError("Source expired or not found / 输入源已过期或不存在")
-        paths = source["paths"]
-        start = max(0, offset)
-        page = paths[start:start + max(1, min(limit, 500))]
-    return {
-        "total": len(paths),
-        "offset": start,
-        "items": [
-            {
-                "index": start + index,
-                "name": path.name,
-                "path": str(path),
-                "has_caption": path.with_suffix(source.get("caption_extension", ".txt")).is_file(),
-                "status": "pending",
-            }
-            for index, path in enumerate(page)
-        ],
-    }
-
-
 def training_active() -> bool:
     return any(task.get("status") in {"CREATED", "RUNNING"} for task in tm.dump())
 
@@ -407,146 +138,6 @@ def has_active_tagger_task() -> bool:
     with _tasks_lock:
         active = bool(_direct_tagger) or any(task.get("status") in _ACTIVE_TASK_STATUSES for task in _tasks.values())
     return active or has_active_legacy_tagger_task()
-
-
-def _task_log(task: dict, event: str, level: str = "info", **data) -> None:
-    with task["lock"]:
-        task["logs"].append({"time": time.strftime("%H:%M:%S"), "event": event, "level": level, **data})
-        task["updated_at"] = time.time()
-
-
-def _record_task_item(task: dict, index: int, outcome: dict) -> None:
-    with task["lock"]:
-        status = outcome["status"]
-        task[status] += 1
-        task["current"] += 1
-        item = task["items"][index]
-        item.update({key: outcome[key] for key in ("status", "tag_count", "error", "event", "planned_action") if key in outcome})
-        task["current_file"] = item["name"]
-        if "result" in outcome:
-            task["current_result"] = task["results"][index] = outcome["result"]
-        event = outcome.get("event") or ("written" if status == "success" and task["write_captions"] else status)
-        if event in {"caption_written", "reused", "written"}:
-            task["written"] += 1
-        if event == "reused":
-            task["reused"] += 1
-        action = outcome.get("planned_action")
-        if action:
-            task["plan"][{"request": "requests", "reuse": "reused", "skip": "skipped"}[action]] += 1
-            task["plan"]["writes"] += action != "skip"
-        if outcome.get("prompt") and not task.get("check_prompt"):
-            task["check_prompt"] = outcome["prompt"]
-            task["check_prompt_image"] = item["path"]
-        _task_log(task, event, {"skipped": "warning", "failed": "error"}.get(status, "info"),
-                  current=task["current"], total=task["total"], name=item["name"],
-                  count=outcome.get("tag_count", 0), error=outcome.get("error", ""),
-                  reference=outcome.get("reference", False), knowledge=outcome.get("knowledge", 0))
-    # Do not take annotation locks while holding the task lock: overview reads
-    # acquire them in the opposite order. External edits are rechecked within 5s.
-    path = Path(item["path"])
-    with _sources_lock:
-        sources = list(_sources.values())
-    for source in sources:
-        if path.is_relative_to(Path(source["root"])):
-            with source["annotation_lock"]:
-                source["annotation_cache"].pop(str(path), None)
-
-
-def _finish_task(task: dict, status: str, error: str = "") -> None:
-    for key, release in (("resource_claim", tm.release_external), ("dataset_claim", tm.release_dataset_reader)):
-        if task.get(key):
-            release(task[key])
-    with task["lock"]:
-        if status in {"cancelled", "error"}:
-            for item in task["items"]:
-                if item["status"] in {"pending", "running"}:
-                    item.update(status="cancelled", event="cancelled")
-        task.update(status=status, phase={"done": "completed", "cancelled": "cancelled", "error": "error"}[status],
-                    error_detail=error or None)
-        level = ("error" if status == "error" or task["failed"] == task["total"] else
-                 "warning" if task["failed"] or status == "cancelled" else "success")
-        _task_log(task, status, level, elapsed=f"{max(0.0, time.time() - task['started_at']):.1f}",
-                  success=task["success"], skipped=task["skipped"], failed=task["failed"],
-                  checked=task["checked"], written=task["written"], reused=task["reused"], error=error)
-
-
-def _task_snapshot_unlocked(task: dict) -> dict:
-    elapsed = max(0.0, time.time() - task["started_at"]) if task.get("started_at") else 0.0
-    current = task["current"]
-    speed = current / elapsed if elapsed > 0 else 0.0
-    remaining = max(0, task["total"] - current)
-    return {
-        "status": task["status"],
-        "phase": task["phase"],
-        "current": current,
-        "total": task["total"],
-        "current_file": task.get("current_file", ""),
-        "success": task["success"],
-        "skipped": task["skipped"],
-        "failed": task["failed"],
-        "written": task["written"],
-        "reused": task["reused"],
-        "checked": task["checked"],
-        "plan": task["plan"],
-        "has_check_prompt": bool(task.get("check_prompt")),
-        "speed": round(speed, 2),
-        "eta_seconds": round(remaining / speed) if speed > 0 else None,
-        "source_token": task["source_token"],
-        "source_kind": task["source_kind"],
-        "source_root": task["source_root"],
-        "overview_source_token": task.get("overview_source_token", task["source_token"]),
-        "model_id": task["model_id"],
-        "engine": task.get("engine", "onnx"),
-        "caption_options": (task.get("options") or {}).get("captioning"),
-        "logs": list(task["logs"]),
-        "error_detail": task.get("error_detail"),
-        **({"current_result": task.get("current_result")} if task["engine"] != "api" else {}),
-        "updated_at": task["updated_at"],
-    }
-
-
-def task_snapshot(task_id: str) -> dict:
-    with _tasks_lock:
-        task = _tasks.get(task_id)
-    if not task:
-        return {"status": "error", "error_detail": "Task not found / 任务不存在", "logs": []}
-    with task["lock"]:
-        return _task_snapshot_unlocked(task)
-
-
-def task_items(task_id: str, offset: int = 0, limit: int = 120, failed_only: bool = False) -> dict:
-    with _tasks_lock:
-        task = _tasks.get(task_id)
-    if not task:
-        raise KeyError("Task not found / 任务不存在")
-    with task["lock"]:
-        items = task["items"]
-        start = max(0, offset)
-        page_size = max(1, min(limit, 500))
-        if failed_only:
-            indexed = [(idx, item) for idx, item in enumerate(items) if item.get("status") == "failed"]
-            total = len(indexed)
-            page = indexed[start:start + page_size]
-        else:
-            total = len(items)
-            page = enumerate(items[start:start + page_size], start=start)
-        return {
-            "total": total,
-            "offset": start,
-            "items": [
-                dict(item, index=index, **({"result": task["results"].get(index)} if task["engine"] != "api" else {}))
-                for index, item in page
-            ],
-        }
-
-
-def task_check_prompt(task_id: str) -> dict:
-    with _tasks_lock:
-        task = _tasks.get(task_id)
-    if not task:
-        raise KeyError("Task not found / 任务不存在")
-    with task["lock"]:
-        return {"prompt": task.get("check_prompt", ""), "path": task.get("check_prompt_image", "")}
 
 
 def _load_local_model(model_id: str, options: dict) -> None:
@@ -613,7 +204,7 @@ def _local_tags(model_id: str, image: Image.Image, options: dict, *, full_catego
 
 
 def _existing_caption(path: Path) -> str:
-    return path.read_text(encoding="utf-8", errors="ignore").strip() if path.is_file() else ""
+    return read_text(path, errors="ignore").strip() if path.is_file() else ""
 
 
 def _write_caption(path: Path, tags: list[str], conflict: str, remove_duplicated: bool = True,
@@ -1067,25 +658,3 @@ def retry_failed_task(task_id: str) -> str:
     else:
         payload["model_id"] = model_id
     return create_task(payload)
-
-
-def cancel_task(task_id: str) -> bool:
-    with _tasks_lock:
-        task = _tasks.get(task_id)
-    if not task:
-        return False
-    with task["lock"]:
-        if task["status"] in {"created", "running"}:
-            task["status"] = "cancelling"
-            task["phase"] = "cancelling"
-            task["updated_at"] = time.time()
-        task["cancel_event"].set()
-    return True
-
-
-def latest_active_task_id() -> str | None:
-    with _tasks_lock:
-        active = [task for task in _tasks.values() if task["status"] in _ACTIVE_TASK_STATUSES]
-    if not active:
-        return None
-    return max(active, key=lambda task: task["updated_at"])["id"]

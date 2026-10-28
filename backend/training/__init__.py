@@ -5,9 +5,9 @@ from importlib import import_module
 
 # Metadata-only startup checks must not load the training supervisor or API stack.
 _EXPORTS = {
-    **dict.fromkeys(("adapt_config", "SUPPORTED_FIELDS", "UI_ONLY_FIELDS", "MERGED_FIELDS"), "adapter"),
-    **dict.fromkeys(("get_automagic_fused_conflicts", "get_emosens_conflicts", "validate_training_config"), "validation"),
-    **dict.fromkeys(("run_train", "detect_attention_backend"), "supervisor"),
+    **dict.fromkeys(("adapt_config", "SUPPORTED_FIELDS", "UI_ONLY_FIELDS", "MERGED_FIELDS"), "config.adapter"),
+    **dict.fromkeys(("get_automagic_fused_conflicts", "get_emosens_conflicts", "validate_training_config"), "config.validation"),
+    **dict.fromkeys(("run_train", "detect_attention_backend"), "execution.supervisor"),
 }
 __all__ = list(_EXPORTS)
 

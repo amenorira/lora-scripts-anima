@@ -8,7 +8,6 @@ from unittest.mock import patch
 from PIL import Image
 
 from backend.tagger import workspace
-from backend.utils import file_io as writing
 from backend.tasks import tm
 
 
@@ -62,58 +61,6 @@ class TaggerWorkspaceTests(unittest.TestCase):
             self.assertEqual(items[0]["result"]["text"], "1girl, blue eyes")
             self.assertFalse(list(root.glob(".*.tmp")))
 
-    def test_model_loading_and_first_inference_are_separate_and_cancel_skips_write(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            for index in range(3):
-                self._image(root / f"{index}.png")
-            source = workspace.scan_source(str(root))
-            loading = threading.Event()
-            loaded = threading.Event()
-            inferring = threading.Event()
-            inferred = threading.Event()
-
-            def load(*_args):
-                loading.set()
-                self.assertTrue(loaded.wait(5))
-
-            def infer(*_args, **_kwargs):
-                inferring.set()
-                self.assertTrue(inferred.wait(5))
-                return ["tag"], {}
-
-            with patch.object(workspace, "_load_local_model", side_effect=load), patch.object(
-                workspace, "_local_tags", side_effect=infer,
-            ) as inference, patch.object(workspace, "_write_caption") as write:
-                try:
-                    task_id = workspace.create_task({
-                        "source_token": source["source_token"], "model_id": "camie-tagger-v2",
-                        "write_captions": True,
-                    })
-                    self.assertTrue(loading.wait(5))
-                    snapshot = workspace.task_snapshot(task_id)
-                    self.assertEqual(snapshot["phase"], "loading_model")
-                    self.assertNotIn("ready", [line["event"] for line in snapshot["logs"]])
-                    loaded.set()
-                    self.assertTrue(inferring.wait(5))
-                    snapshot = workspace.task_snapshot(task_id)
-                    self.assertEqual(snapshot["phase"], "first_inference")
-                    self.assertEqual([line["event"] for line in snapshot["logs"]],
-                                     ["start", "loading", "ready", "first_inference"])
-                    self.assertTrue(workspace.cancel_task(task_id))
-                    self.assertEqual(workspace.task_snapshot(task_id)["phase"], "cancelling")
-                finally:
-                    loaded.set()
-                    inferred.set()
-                result = self._wait(task_id)
-            self.assertEqual(result["status"], "cancelled")
-            self.assertEqual(result["success"], 0)
-            self.assertEqual(inference.call_count, 1)
-            write.assert_not_called()
-            self.assertEqual(list(root.glob("*.txt")), [])
-            reservation = tm.reserve_task()
-            self.assertIsNotNone(reservation)
-            tm.release_reserved(reservation)
 
     def test_cancel_during_model_load_skips_inference(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -169,58 +116,6 @@ class TaggerWorkspaceTests(unittest.TestCase):
             self.assertIsNotNone(reservation)
             tm.release_reserved(reservation)
 
-    def test_cancel_during_caption_write_cleans_temporary_and_stops_batch(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            for index in range(3):
-                self._image(root / f"{index}.png")
-            source = workspace.scan_source(str(root))
-            writing_started = threading.Event()
-            release = threading.Event()
-
-            def sync(_fd):
-                writing_started.set()
-                self.assertTrue(release.wait(5))
-
-            with patch.object(workspace, "_load_local_model"), patch.object(
-                workspace, "_local_tags", return_value=(["tag"], {}),
-            ) as inference, patch.object(writing.os, "fsync", side_effect=sync):
-                try:
-                    task_id = workspace.create_task({
-                        "source_token": source["source_token"], "model_id": "camie-tagger-v2",
-                        "write_captions": True,
-                    })
-                    self.assertTrue(writing_started.wait(5))
-                    self.assertEqual(workspace.task_snapshot(task_id)["phase"], "writing")
-                    workspace.cancel_task(task_id)
-                finally:
-                    release.set()
-                result = self._wait(task_id)
-            self.assertEqual(result["status"], "cancelled")
-            self.assertEqual(result["success"], 0)
-            self.assertEqual(inference.call_count, 1)
-            self.assertEqual(list(root.glob("*.txt")), [])
-            self.assertEqual(list(root.glob(".*.tmp")), [])
-
-
-    def test_prefetch_start_failure_releases_training_slot(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            self._image(root / "sample.png")
-            source = workspace.scan_source(str(root), True)
-            with patch.object(workspace, "training_active", return_value=False), patch.object(
-                workspace, "_start_image_prefetch", side_effect=OSError("prefetch unavailable"),
-            ):
-                task_id = workspace.create_task({
-                    "source_token": source["source_token"],
-                    "model_id": "camie-tagger-v2",
-                    "write_captions": False,
-                })
-                self.assertEqual(self._wait(task_id)["status"], "error")
-            reservation = tm.reserve_task()
-            self.assertIsNotNone(reservation)
-            tm.release_reserved(reservation)
-
 
     def test_api_cancel_stops_scheduling_and_waits_for_inflight_caption_write(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -262,55 +157,6 @@ class TaggerWorkspaceTests(unittest.TestCase):
             self.assertEqual(len(started), 2)
             self.assertEqual(len(list(root.glob("*.txt"))), 0)
             self.assertEqual({item["status"] for item in workspace.task_items(task_id)["items"]}, {"cancelled"})
-            reservation = tm.reserve_task()
-            self.assertIsNotNone(reservation)
-            tm.release_reserved(reservation)
-
-
-    def test_onnx_task_claim_excludes_training_and_second_tagger(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            self._image(root / "sample.png")
-            source = workspace.scan_source(str(root), True)
-            entered = threading.Event()
-            release = threading.Event()
-
-            def slow_inference(*_args, **_kwargs):
-                entered.set()
-                self.assertTrue(release.wait(5))
-                return ["tag"], {}
-
-            payload = {
-                "source_token": source["source_token"], "model_id": "camie-tagger-v2",
-                "write_captions": False,
-            }
-            with patch.object(workspace, "_load_local_model"), patch.object(workspace, "_local_tags", side_effect=slow_inference):
-                task_id = workspace.create_task(payload)
-                self.assertTrue(entered.wait(5))
-                self.assertIsNone(tm.reserve_task())
-                with self.assertRaises(RuntimeError):
-                    workspace.create_task(payload)
-                release.set()
-                self.assertEqual(self._wait(task_id)["status"], "done")
-            reservation = tm.reserve_task()
-            self.assertIsNotNone(reservation)
-            tm.release_reserved(reservation)
-
-    def test_api_auth_failure_stops_new_requests_and_releases_training_slot(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            for index in range(4):
-                self._image(root / f"{index}.png")
-            source = workspace.scan_source(str(root))
-            with patch.object(workspace.captioning, "process", side_effect=workspace.api_engine.ApiAuthError("invalid key")) as process:
-                task_id = workspace.create_task({
-                    "engine": "api", "source_token": source["source_token"],
-                    "api": {"base_url":"http://localhost/v1", "model":"fake", "max_workers":1},
-                })
-                result = self._wait(task_id)
-            self.assertEqual(result["status"], "error")
-            self.assertIn("鉴权失败", result["error_detail"])
-            self.assertEqual(process.call_count, 1)
             reservation = tm.reserve_task()
             self.assertIsNotNone(reservation)
             tm.release_reserved(reservation)

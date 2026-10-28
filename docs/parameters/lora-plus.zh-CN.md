@@ -217,7 +217,7 @@ lr/textencoder 1 plus
 <!-- doc-anchor: references -->
 ## 依据与参考资料
 
-sd-scripts 的配置传递见 `backend/training/adapter.py`；Krea 2 的倍率与网络限制见 `krea2_network.py`、`krea2_optimizers.py`。优化器兼容性见 `optimizer_contracts.py`。参数分组、初始化与日志名称见 vendor 中的 `networks/lora.py`、`lora_anima.py`、`network_base.py`。下列链接固定到对应提交：
+sd-scripts 的配置传递见 `backend/training/config/adapter.py`；Krea 2 的倍率与网络限制见 `krea2_network.py`、`krea2_optimizers.py`。优化器兼容性见 `optimizer_contracts.py`。参数分组、初始化与日志名称见 vendor 中的 `networks/lora.py`、`lora_anima.py`、`network_base.py`。下列链接固定到对应提交：
 
 - [本项目 sd-scripts fork：`train_network_advanced.md`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/docs/train_network_advanced.md)
 - [本项目 sd-scripts fork：`loha_lokr.md`（固定提交）](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/docs/loha_lokr.md)

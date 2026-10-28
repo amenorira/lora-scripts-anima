@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / "cache" / "moss_acceleration"
 CATALOG = Path(__file__).with_name("moss_acceleration_wheels.json")
 VERSIONS = {"flash-linear-attention": "0.5.2", "fla-core": "0.5.2", "causal-conv1d": "1.7.0"}
-BASELINE = {"torch": "2.12.1+cu130", "transformers": "5.17.0", "einops": "0.7.0"}
+BASELINE = {"torch": "2.12.1+cu130", "transformers": "5.21.0", "einops": "0.7.0"}
 
 
 def runtime_signature() -> dict:

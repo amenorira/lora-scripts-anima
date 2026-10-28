@@ -4,6 +4,38 @@
 
 All notable changes to this project are documented in this file.
 
+## v26.1028.1348c - 2026-10-28
+
+This release improves **Krea 2 quantized models and previews**, adds optimizer **foreach updates and per-optimizer parameter drafts**, upgrades shared training dependencies, and fixes issues with file saving, training configuration, and monitoring.
+
+### Krea 2 Models and Previews
+
+- The model library now offers downloads for the **RAW ConvRot INT8 base model** and **Turbo LoRA preview weights**. Selecting an INT8 base model detects its format, enables ConvRot INT8, and disables the conflicting FP8 setting.
+- When training with ConvRot INT8 or block swapping, Turbo LoRA can be used for previews with fewer sampling steps. The interface displays the preview source and checks compatibility between Turbo DiT, Turbo LoRA, quantization, and block swapping.
+- Corrected training step estimation requests and results, and clarified fixed-step and bucket estimates. Cache preparation reuses a dataset input snapshot to reduce repeated scans.
+
+**Model selection:** Choose a RAW BF16 or ConvRot INT8 training base model and the Qwen3-VL BF16 text encoder. For Turbo previews with an INT8 base model or block swapping, use Turbo LoRA and leave the full Turbo DiT field empty.
+
+### Optimizers and Training Configuration
+
+- Supported optimizers now offer **foreach tensor updates** with automatic, enabled, and disabled settings. Enabling foreach can reduce GPU call overhead but may increase peak VRAM; try disabling it when memory is tight. AdamW cannot use `foreach=True` and `fused=True` together.
+- Switching optimizers retains each optimizer's edited learning rate, dedicated parameters, and custom parameters during the current page session. Resetting all settings or importing a configuration clears the corresponding drafts.
+- Fixed history snapshots taken before training-field updates completed, improving undo and redo for training scope, cache exclusions, and component learning rates. Fixed delayed file-picker results being written to an old form after switching forms.
+
+### Stability and Dependencies
+
+- Improved concurrent reads and replacement of files on Windows, including tags, training configurations, and cache manifests. Short-lived file contention is handled during replacement; if saving still fails, the original file is preserved and an error is reported.
+- Fixed older sample refreshes or detail requests overwriting newer monitoring results. Corrected checkpoint recognition, parsing of loss values in scientific notation, and display of small learning rates.
+- Fixed file-picker results overwriting tagging sources, asynchronously created tagging tasks being assigned to the wrong mode, and frequency counts after editing duplicate tags. Generated files from a failed training launch are cleaned up.
+- Upgraded the shared training stack to **Transformers 5.21.0, Diffusers 0.42.1, Hugging Face Hub 2.3.0, Tokenizers 0.23.3**, and **pytorch_optimizer 4.1.0**, and pinned bitsandbytes to **0.50.2**. Backend dependencies, Krea 2 runtime checks, and the MOSS acceleration environment baseline were also updated. The CUDA and PyTorch combination remains unchanged.
+
+### Internal Structure
+
+- Split training form, configuration, dataset, cache, and launch responsibilities into focused modules, and reorganized Krea 2 and sd-scripts launch preparation.
+- Split monitoring, tagging, tag editor, and environment management modules; reorganized shared components and frontend assembly, and aligned tests with the new module boundaries while retaining key regression coverage.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1027.13e93...v26.1028.1348c)
+
 ## v26.1027.13e93 - 2026-10-27
 
 This update fixes how timestep distribution preview curves are drawn at the chart boundaries.

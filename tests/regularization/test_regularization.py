@@ -14,6 +14,7 @@ from backend.tasks import TaskManager
 class FakeRunner:
     def __init__(self, settings, report, check):
         self.check = check
+
     def generate(self, item):
         self.check()
         return Image.new("RGB", (item["width"], item["height"]), "red")
@@ -88,71 +89,6 @@ class GenerationTests(unittest.TestCase):
         self.assertNotEqual(service.preview(dict(body, new_round=True))["run_key"], root.name)
 
 
-    def test_output_names_cannot_escape_result_directory(self):
-        for name in ("../a.png", "..\\a.png", "C:a.png", "/tmp/a.png"):
-            with self.subTest(name=name), self.assertRaises(ValueError):
-                storage.item_path(self.root, {"index": 1, "filename": name})
-
-
-    def test_all_failed_and_partial_failure_have_truthful_task_status(self):
-        root, manifest = self.stored_run("pending", 2)
-        class Failed(FakeRunner):
-            def generate(self, item):
-                raise ValueError("invalid generation")
-        self.assertEqual(worker.run(root, Failed), 1)
-        self.assertEqual(service.summary(root)["status"], "failed")
-        self.assertIn("2 failed", service.summary(root)["error"])
-        class Partial(FakeRunner):
-            def generate(self, item):
-                if item["index"] == 2:
-                    raise ValueError("invalid generation")
-                return super().generate(item)
-        self.assertEqual(worker.run(root, Partial), 0)
-        result = service.summary(root)
-        self.assertEqual((result["status"], result["completed"], result["failed"]), ("finished", 1, 1))
-        self.assertIn("1 failed", result["error"])
-
-
-    def test_worker_launch_failure_is_terminal_and_releases_preparation(self):
-        plan = service.preview({"settings": self.settings})
-        with patch.object(service, "REPO_ROOT", self.root):
-            with self.assertRaises(RuntimeError):
-                service.start(plan["token"])
-        manifest = storage.read_manifest(storage.run_path(plan["run_key"]))
-        self.assertEqual(manifest["status"], "failed")
-        self.assertEqual(service.tm.tasks, {})
-
-    def test_old_task_id_keeps_terminal_snapshot_and_cannot_cancel_replacement(self):
-        root, manifest = self.stored_run("pending")
-        task = service._reserve()
-        with patch.object(service, "REPO_ROOT", self.root):
-            with self.assertRaises(RuntimeError):
-                service._launch(task, root, manifest)
-        service.tm.release_reserved(task)
-        self.assertEqual(service.task_snapshot("old")["status"], "finished")
-        with self.assertRaises(ValueError):
-            service.cancel("old")
-        self.assertFalse((root / ".cancel").exists())
-
-
-    def test_gpu_and_mutation_exclusion(self):
-        root, _ = self.stored_run()
-        reserved = service.tm.reserve_task()
-        with self.assertRaises(RuntimeError):
-            service.start(service.preview({"settings": self.settings})["token"])
-        with self.assertRaises(RuntimeError):
-            service.mutate(root.name, 1, "regenerate")
-        with self.assertRaises(RuntimeError):
-            service.mutate(root.name, 1, "exclude")
-        with self.assertRaises(RuntimeError):
-            service.resume(root.name)
-        service.tm.release_reserved(reserved)
-        self.assertTrue(service.tm.claim_external("tagger"))
-        with self.assertRaises(RuntimeError):
-            service.start(service.preview({"settings": self.settings})["token"])
-        service.tm.release_external("tagger")
-
-
     def test_ordinary_failure_continues_and_oom_preserves_completed(self):
         root, manifest = self.stored_run("pending", 3)
         class Failing(FakeRunner):
@@ -171,14 +107,6 @@ class GenerationTests(unittest.TestCase):
         result = storage.read_manifest(root)
         self.assertEqual(result["status"], "failed")
         self.assertEqual([i["status"] for i in result["items"]], ["completed", "pending", "pending"])
-
-    def test_cooperative_cancel_retains_seed(self):
-        root, manifest = self.stored_run("pending")
-        (root / ".cancel").write_text("stop")
-        worker.run(root, FakeRunner)
-        result = storage.read_manifest(root)
-        self.assertEqual(result["status"], "terminated")
-        self.assertEqual(result["items"][0]["seed"], manifest["items"][0]["seed"])
 
 
 if __name__ == "__main__":

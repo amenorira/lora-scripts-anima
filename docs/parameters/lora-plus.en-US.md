@@ -217,7 +217,7 @@ When TensorBoard logging is enabled, inspect the base and plus curves for compon
 <!-- doc-anchor: references -->
 ## Evidence and references
 
-The sd-scripts configuration path is defined in `backend/training/adapter.py`; Krea 2 ratios and network restrictions are in `krea2_network.py` and `krea2_optimizers.py`. Optimizer compatibility is in `optimizer_contracts.py`. Grouping, initialization, and log names are implemented in the vendored `networks/lora.py`, `lora_anima.py`, and `network_base.py`. The links below point to fixed revisions:
+The sd-scripts configuration path is defined in `backend/training/config/adapter.py`; Krea 2 ratios and network restrictions are in `krea2_network.py` and `krea2_optimizers.py`. Optimizer compatibility is in `optimizer_contracts.py`. Grouping, initialization, and log names are implemented in the vendored `networks/lora.py`, `lora_anima.py`, and `network_base.py`. The links below point to fixed revisions:
 
 - [This project's sd-scripts fork: `train_network_advanced.md` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/docs/train_network_advanced.md)
 - [This project's sd-scripts fork: `loha_lokr.md` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/docs/loha_lokr.md)

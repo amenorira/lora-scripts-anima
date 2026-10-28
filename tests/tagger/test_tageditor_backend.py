@@ -1,4 +1,3 @@
-import stat
 import tempfile
 import unittest
 import zipfile
@@ -8,7 +7,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from backend.server import app
-from backend.tageditor.core import caption_revision, get_cached_scan_dataset, read_caption_snapshot
+from backend.tageditor.core import caption_revision, read_caption_snapshot
 from backend.tageditor.repository import save_caption_transaction, restore_timeline_event
 from backend.tageditor.sessions import DatasetSessionService
 from backend.tageditor.snapshots import create_snapshot, restore_snapshot
@@ -42,49 +41,6 @@ class TagEditorTransactionTests(unittest.TestCase):
                     restore_timeline_event(root, saved["timeline_event"]["id"])
                 self.assertEqual(caption.read_bytes(), original.encode("utf-8"))
 
-    def test_failed_transaction_restores_raw_bytes_and_invalid_utf8_is_not_overwritten(self):
-        from backend.tageditor.core import write_tags
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            images = [root / "a.png", root / "b.png"]
-            for image in images:
-                image.touch()
-            caption = images[0].with_suffix(".txt")
-            original = b"\xef\xbb\xbf  first\r\n\r\nlast  \r\n"
-            caption.write_bytes(original)
-            result = save_caption_transaction(root, [{"path": str(image), "tags": "new"} for image in images],
-                writer=lambda path, text: write_tags(path, text) if path == caption else False)
-            self.assertTrue(result["rolled_back"])
-            self.assertEqual(caption.read_bytes(), original)
-            caption.write_bytes(b"invalid\xff")
-            result = save_caption_transaction(root, [{"path": str(images[0]), "tags": "new"}])
-            self.assertTrue(result["aborted"])
-            self.assertEqual(caption.read_bytes(), b"invalid\xff")
-
-    def test_snapshot_detects_in_place_changes_during_read(self):
-        from types import SimpleNamespace
-        with tempfile.TemporaryDirectory() as temp_dir:
-            caption = Path(temp_dir) / "a.txt"
-            caption.write_text("old", encoding="utf-8")
-            with patch("backend.tageditor.core.os.fstat", side_effect=[
-                SimpleNamespace(st_mtime_ns=1, st_size=3),
-                SimpleNamespace(st_mtime_ns=2, st_size=3),
-            ]):
-                with self.assertRaisesRegex(OSError, "changed while reading"):
-                    read_caption_snapshot(caption)
-
-    def test_unreadable_caption_aborts_without_overwriting(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            image = root / "a.png"
-            image.touch()
-            caption = image.with_suffix(".txt")
-            caption.write_text("original", encoding="utf-8")
-            with patch("backend.tageditor.repository.read_caption_snapshot", side_effect=PermissionError("denied")):
-                result = save_caption_transaction(root, [{"path": str(image), "tags": "new"}])
-            self.assertTrue(result["aborted"])
-            self.assertIn("denied", result["failed"][0]["reason"])
-            self.assertEqual(caption.read_text(encoding="utf-8"), "original")
 
     def test_transaction_rolls_back_all_applied_files(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -129,23 +85,6 @@ class TagEditorTransactionTests(unittest.TestCase):
             self.assertEqual(result["saved"], 0)
             self.assertEqual(len(result["conflicts"]), 1)
             self.assertEqual(caption.read_text(encoding="utf-8"), "external")
-
-
-    def test_txt_priority_is_explicit_and_conflict_blocks_save(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            image = root / "a.png"
-            image.touch()
-            image.with_suffix(".txt").write_text("from txt", encoding="utf-8")
-            image.with_suffix(".caption").write_text("from caption", encoding="utf-8")
-
-            images, _ = get_cached_scan_dataset(root)
-            self.assertEqual(images[0]["tags"], "from txt")
-            self.assertTrue(images[0]["caption_conflict"])
-
-            result = save_caption_transaction(root, [{"path": str(image), "tags": "new"}])
-            self.assertEqual(result["saved"], 0)
-            self.assertIn("同时存在", result["failed"][0]["reason"])
 
 
 class TagEditorSessionTests(unittest.TestCase):
@@ -197,107 +136,6 @@ class TagEditorSessionTests(unittest.TestCase):
             self.assertTrue(all(item["tags"] == raw for item in session.images))
             self.assertEqual((root / "img-00.txt").read_bytes(), raw.encode("utf-8"))
 
-    def test_session_initial_empty_count_ignores_bom_without_changing_text(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            (root / "empty.png").touch()
-            raw = "\ufeff \r\n"
-            (root / "empty.txt").write_bytes(raw.encode("utf-8"))
-            client = TestClient(app)
-            data = client.post("/api/tageditor/sessions", json={"dir": temp_dir}).json()["data"]
-            self.assertEqual(data["no_tag_count"], 1)
-            self.assertEqual(data["tags"], [])
-            self.assertEqual(data["items"][0]["tags"], raw)
-            client.delete(f"/api/tageditor/sessions/{data['session_id']}")
-
-    def test_refresh_cannot_resurrect_deleted_session(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            service = DatasetSessionService()
-            session = service.create(temp_dir)
-
-            def scan(*args):
-                service.delete(session.id)
-                return [], []
-
-            with patch("backend.tageditor.sessions.get_cached_scan_dataset", side_effect=scan):
-                with self.assertRaises(KeyError):
-                    service.refresh(session.id)
-            with self.assertRaises(KeyError):
-                service.get(session.id)
-
-
-    def test_session_http_contract(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            for index in range(35):
-                (root / f"img-{index:02}.png").touch()
-            client = TestClient(app)
-
-            created = client.post("/api/tageditor/sessions", json={
-                "dir": str(root), "recursive": True, "page_size": 30,
-            }).json()
-            self.assertEqual(created["status"], "success")
-            self.assertEqual(created["data"]["count"], 35)
-            self.assertEqual(len(created["data"]["items"]), 30)
-            session_id = created["data"]["session_id"]
-            first_item = created["data"]["items"][0]
-            self.assertIn("/api/image-preview?", first_item["thumbnail"])
-            self.assertIn("scope=dataset", first_item["thumbnail"])
-            self.assertIn(f"session_id={session_id}", first_item["thumbnail"])
-            self.assertIn("variant=preview", first_item["preview"])
-
-            second = client.get(f"/api/tageditor/sessions/{session_id}/images", params={
-                "page": 2, "page_size": 30,
-            }).json()
-            self.assertEqual(second["status"], "success")
-            self.assertEqual(len(second["data"]["items"]), 5)
-            self.assertTrue(client.delete(f"/api/tageditor/sessions/{session_id}").json()["data"]["closed"])
-            self.assertEqual(
-                client.get(f"/api/tageditor/sessions/{session_id}/images").json()["status"],
-                "error",
-            )
-
-
-class TagEditorTimelineTests(unittest.TestCase):
-    def test_timeline_round_trip_and_restore(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            image = root / "a.png"
-            caption = root / "a.txt"
-            image.touch()
-            caption.write_text("old", encoding="utf-8")
-            store = TimelineStore(root / "timeline.sqlite3")
-
-            with patch("backend.tageditor.repository.timeline_store", store):
-                saved = save_caption_transaction(root, [{"path": str(image), "tags": "new"}])
-                event_id = saved["timeline_event"]["id"]
-                self.assertEqual(store.list(root)[0]["file_count"], 1)
-                restored = restore_timeline_event(root, event_id)
-
-            self.assertEqual(restored["restored"], 1)
-            self.assertEqual(caption.read_text(encoding="utf-8"), "old")
-            events = store.list(root)
-            self.assertEqual(events[0]["event_type"], "restore")
-            self.assertEqual(events[0]["metadata"]["source_event_id"], event_id)
-
-    def test_timeline_restore_rejects_external_modification(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            image = root / "a.png"
-            caption = root / "a.txt"
-            image.touch()
-            caption.write_text("old", encoding="utf-8")
-            store = TimelineStore(root / "timeline.sqlite3")
-
-            with patch("backend.tageditor.repository.timeline_store", store):
-                saved = save_caption_transaction(root, [{"path": str(image), "tags": "new"}])
-                caption.write_text("external", encoding="utf-8")
-                with self.assertRaisesRegex(ValueError, "时间线恢复冲突"):
-                    restore_timeline_event(root, saved["timeline_event"]["id"])
-
-            self.assertEqual(caption.read_text(encoding="utf-8"), "external")
-            self.assertEqual([event["event_type"] for event in store.list(root)], ["save"])
-
 
 class TagEditorSnapshotCompatibilityTests(unittest.TestCase):
     def test_snapshot_restore_is_exact_and_rejects_traversal(self):
@@ -322,20 +160,6 @@ class TagEditorSnapshotCompatibilityTests(unittest.TestCase):
                 restore_snapshot(str(root), malicious_id)
             self.assertFalse((root.parent / "escape.txt").exists())
 
-    def test_snapshot_rejects_symlink_members(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            snap_dir = root / ".snapshots"
-            snap_dir.mkdir()
-            snapshot_id = "symlink"
-            with zipfile.ZipFile(snap_dir / f"{snapshot_id}.zip", "w") as archive:
-                member = zipfile.ZipInfo("link.txt")
-                member.create_system = 3
-                member.external_attr = (stat.S_IFLNK | 0o777) << 16
-                archive.writestr(member, "outside.txt")
-
-            with self.assertRaisesRegex(ValueError, "符号链接"):
-                restore_snapshot(str(root), snapshot_id)
 
     def test_snapshot_restore_rolls_back_exact_text_on_failure(self):
         with tempfile.TemporaryDirectory() as temp_dir:

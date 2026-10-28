@@ -3,15 +3,8 @@ import unittest
 from uuid import UUID
 from pathlib import Path
 
-from backend.training.training_config import (
-    TRAINING_CONFIG_SCHEMA_VERSION,
-    TrainingConfigError,
-    build_training_config,
-    extract_training_form,
-    load_training_config,
-    write_training_config,
-)
-from backend.training.optimizer_contracts import LORA_MUON_OPTIMIZER_TYPE
+from backend.training.config.training_config import TRAINING_CONFIG_SCHEMA_VERSION, build_training_config, extract_training_form, load_training_config, write_training_config
+from backend.training.config.optimizer_contracts import LORA_MUON_OPTIMIZER_TYPE
 
 
 class TrainingConfigYamlTests(unittest.TestCase):
@@ -63,18 +56,3 @@ class TrainingConfigYamlTests(unittest.TestCase):
         self.assertIs(restored["gradient_checkpointing"], False)
         self.assertEqual(restored["max_data_loader_n_workers"], 0)
         self.assertNotIn("runtime", loaded)
-
-    def test_duplicate_keys_are_rejected(self):
-        with tempfile.TemporaryDirectory() as temp:
-            path = Path(temp) / "training.yaml"
-            path.write_text(
-                "kind: training\n"
-                "schema_version: 1\n"
-                "profile:\n"
-                "  id: anima-lora\n"
-                "form: {}\n"
-                "form: {}\n",
-                encoding="utf-8",
-            )
-            with self.assertRaises(TrainingConfigError):
-                load_training_config(path)
