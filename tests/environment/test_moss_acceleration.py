@@ -141,9 +141,10 @@ class IsolatedBundleTests(unittest.TestCase):
 
 class RouteTests(unittest.IsolatedAsyncioTestCase):
     async def test_active_gpu_task_blocks_installation(self):
+        from backend.core import install_jobs
         from backend.server.routes import moss_acceleration as routes
 
-        with patch.object(routes.tm, "claim_external", return_value=False), \
+        with patch.object(install_jobs.tm, "claim_external", return_value=False), \
              patch.object(routes.moss_acceleration, "install") as install:
             result = await routes.install()
         self.assertFalse(result["success"])
@@ -151,6 +152,7 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_worker_failure_releases_gpu_task_and_reports_failure(self):
         from unittest.mock import AsyncMock
+        from backend.core import install_jobs
         from backend.server.routes import moss_acceleration as routes
 
         class ImmediateThread:
@@ -160,14 +162,14 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
             def start(self):
                 self.target()
 
-        with patch.object(routes.tm, "claim_external", return_value=True), \
-             patch.object(routes.tm, "release_external") as release, \
-             patch.object(routes.realtime_tasks, "register", new_callable=AsyncMock), \
-             patch.object(routes.threading, "Thread", ImmediateThread), \
+        with patch.object(install_jobs.tm, "claim_external", return_value=True), \
+             patch.object(install_jobs.tm, "release_external") as release, \
+             patch.object(install_jobs.realtime_tasks, "register", new_callable=AsyncMock), \
+             patch.object(install_jobs.threading, "Thread", ImmediateThread), \
              patch.object(routes.moss_acceleration, "install", side_effect=RuntimeError("GPU failed")), \
-             patch.dict(routes._jobs, {}, clear=True):
+             patch.object(routes, "install_jobs", install_jobs.InstallJobs("moss-acceleration")):
             result = await routes.install()
-            snapshot = routes._snapshot(result["job_id"])
+            snapshot = routes.install_jobs.snapshot(result["job_id"])
             self.assertTrue(snapshot["done"])
             self.assertFalse(snapshot["success"])
             self.assertEqual(snapshot["error"], "GPU failed")
