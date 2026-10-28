@@ -4,14 +4,14 @@ const { loadFrontend } = require('./helpers.cjs');
 
 function application(profile, values = {}) {
   const { window: w } = loadFrontend(['constants', 'utils', 'config', 'training-core', 'training-toml', 'dataset-repeat', 'training-config-io'], {
-    window: {}, document: { getElementById: () => null }, btoa, TextEncoder, clearTimeout,
+    window: {}, document: { getElementById: () => null, querySelectorAll: () => [] }, btoa, TextEncoder, clearTimeout,
   });
   w.t = key => key;
   const app = Object.assign({}, w.utilsMixin, w.trainingCoreMixin, w.trainingTomlMixin, w.datasetRepeatMixin, w.trainingConfigIoMixin, {
     t: key => key, toast() {}, pushHistory() {}, _persistProfileFieldSources() {},
     _persistProfileDrafts() {}, _scheduleProfileFieldWatchers() {},
     _allShowIfKeys: () => [], updateTomlDebounced() {}, updateToml() {},
-    renderTrainingForm() {}, updateReadonlyStates() {}, $nextTick: callback => callback(),
+    renderTrainingForm() {}, $nextTick: callback => callback(),
   });
   app.formDefaults = app._buildFormDefaults(profile);
   app.form = { ...app.formDefaults, model_train_type: profile, ...values };
@@ -343,8 +343,10 @@ test('Krea hides sd-scripts dataset editing and subset offset controls, includin
   assert.ok(application('anima-lora').renderDatasetSubsets());
 });
 
-test('Krea upload-only swapping follows gradient checkpointing and Turbo conflicts stay on their field', () => {
+test('Krea upload-only swapping follows gradient checkpointing and blocks incompatible Turbo selection', () => {
   const app = application('krea2-lora', { gradient_checkpointing: false, blocks_to_swap: 2 });
+  const warnings = [];
+  app.toast = text => warnings.push(text);
   app.setField('block_swap_h2d_only', true);
   assert.equal(app.form.gradient_checkpointing, true);
   app.setField('gradient_checkpointing', false);
@@ -357,6 +359,11 @@ test('Krea upload-only swapping follows gradient checkpointing and Turbo conflic
   assert.equal(Object.hasOwn(app.form, 'unsloth_offload_checkpointing'), false);
   app.setField('enable_krea_samples', true);
   app.setField('turbo_dit', './models/turbo.safetensors');
+  assert.equal(app.form.turbo_dit, '');
+  assert.equal(warnings.at(-1), 'field.krea_turboDitLocked');
+  // Imported presets keep their path and expose a correctable inline conflict.
+  app.form.turbo_dit = './models/turbo.safetensors';
+  app._refreshTrainingOptionErrors();
   assert.equal(app.formErrors.turbo_dit, 'field.kreaTurboBlockSwapConflict');
   app.setField('enable_krea_samples', false);
   assert.equal(app.formErrors.turbo_dit, null);
@@ -447,9 +454,110 @@ test('resetting parameters and switching models remove expired conflicts and res
   app.setField('enable_krea_samples', true);
   app.setField('turbo_dit', './turbo.safetensors');
   app.setField('blocks_to_swap', 2);
+  assert.equal(app.form.blocks_to_swap, 0);
+  assert.equal(app.formErrors.turbo_dit, null);
+  app.form.blocks_to_swap = 2;
+  app._refreshTrainingOptionErrors();
   assert.equal(app.formErrors.turbo_dit, 'field.kreaTurboBlockSwapConflict');
   app.resetField('blocks_to_swap');
   assert.equal(app.formErrors.turbo_dit, null);
+});
+
+test('Krea ConvRot disables FP8 immediately and remains consistent through reactive watchers', async () => {
+  const app = application('krea2-lora', { fp8_base: true });
+  const triggered = watchAutoValues(app);
+  app.setupReadonlyWatchers();
+  try {
+    app.setField('convrot_int8', true);
+    assert.equal(app.form.fp8_base, false);
+    app.setField('fp8_base', true);
+    assert.equal(app.form.fp8_base, false);
+    await app.$nextTick();
+    assert.ok(triggered.has('form.convrot_int8'));
+    assert.equal(app.form.fp8_base, false);
+    app.setField('convrot_int8', false);
+    await app.$nextTick();
+    app.setField('fp8_base', true);
+    await app.$nextTick();
+    assert.equal(app.form.fp8_base, true);
+  } finally {
+    app._autoValueWatchers.forEach(dispose => dispose());
+    app._readonlyWatchers.forEach(dispose => dispose());
+  }
+  const restored = application('krea2-lora', { convrot_int8: true, fp8_base: true });
+  restored._applyInitialAutoValues();
+  assert.equal(restored.form.convrot_int8, true);
+  assert.equal(restored.form.fp8_base, false);
+  const moss = application('moss-image-lora', { fp8_base: true });
+  moss.setField('convrot_int8', true);
+  assert.equal(moss.form.fp8_base, true);
+});
+
+test('Krea full Turbo previews lock incompatible options and clearing the source releases them', () => {
+  const app = application('krea2-lora', { enable_krea_samples: true });
+  app.setField('turbo_dit', './turbo.safetensors');
+  for (const [key, value] of [['convrot_int8', true], ['blocks_to_swap', 3], ['turbo_lora', './turbo-lora.safetensors']]) {
+    const original = app.form[key];
+    assert.ok(app._readonlyReason(app.findFieldDef(key)), key);
+    app.setField(key, value);
+    assert.equal(app.form[key], original, key);
+  }
+  app.form.blocks_to_swap = '';
+  app.setField('blocks_to_swap', 3);
+  assert.equal(app.form.blocks_to_swap, '');
+  app.setField('turbo_dit_cache', true);
+  app.setField('turbo_dit', '');
+  assert.equal(app.form.turbo_dit_cache, false);
+  app.setField('convrot_int8', true);
+  app.setField('blocks_to_swap', 3);
+  app.setField('turbo_lora', './turbo-lora.safetensors');
+  assert.equal(app.form.convrot_int8, true);
+  assert.equal(app.form.blocks_to_swap, 3);
+  assert.equal(app.form.turbo_lora, './turbo-lora.safetensors');
+  app.setField('turbo_dit', './turbo.safetensors');
+  assert.equal(app.form.turbo_dit, '');
+  assert.equal(Object.keys(app._kreaOptionErrors()).length, 0);
+});
+
+test('Krea imported preview conflicts retain editable paths and can be resolved in either direction', () => {
+  for (const [clear, keep] of [['turbo_dit', 'turbo_lora'], ['turbo_lora', 'turbo_dit']]) {
+    const app = application('krea2-lora', { enable_krea_samples: true,
+      turbo_dit: './turbo.safetensors', turbo_lora: './turbo-lora.safetensors' });
+    app._applyInitialAutoValues();
+    const keptPath = app.form[keep];
+    assert.ok(app.formErrors.turbo_lora);
+    assert.equal(app._readonlyReason(app.findFieldDef(clear)), '');
+    app.setField(clear, '');
+    assert.equal(app.form[keep], keptPath);
+    assert.equal(Object.keys(app._kreaOptionErrors()).length, 0);
+  }
+  const app = application('krea2-lora', { enable_krea_samples: true,
+    convrot_int8: true, blocks_to_swap: 2, turbo_dit: './turbo.safetensors' });
+  app._applyInitialAutoValues();
+  app.setField('convrot_int8', false);
+  app.setField('blocks_to_swap', 0);
+  assert.equal(app.form.turbo_dit, './turbo.safetensors');
+  assert.equal(Object.keys(app._kreaOptionErrors()).length, 0);
+});
+
+test('Krea preview summary follows the active base, quantization and source', () => {
+  const app = application('krea2-lora', { enable_krea_samples: true, convrot_int8: true });
+  app.t = key => `${key} {precision}`;
+  assert.equal(app.kreaSampleModeText(), 'krea2.sampleModeRaw ConvRot INT8');
+  app.setField('turbo_lora', './turbo-lora.safetensors');
+  assert.equal(app.kreaSampleModeText(), 'krea2.sampleModeTurboLora ConvRot INT8');
+  app.setField('turbo_lora', '');
+  app.setField('convrot_int8', false);
+  app.setField('fp8_base', true);
+  app.setField('turbo_dit', './turbo.safetensors');
+  assert.equal(app.kreaSampleModeText(), 'krea2.sampleModeTurboDit FP8');
+  app.form.blocks_to_swap = 2;
+  assert.equal(app.kreaSampleModeText(), 'krea2.sampleModeConflict {precision}');
+  app.setField('enable_krea_samples', false);
+  assert.equal(app.kreaSampleModeText(), '');
+  app.setField('convrot_int8', true);
+  assert.equal(app.form.convrot_int8, true);
+  assert.equal(app.form.turbo_dit, './turbo.safetensors');
 });
 
 test('refresh clears all resolved option checks while preserving unrelated server errors on the same field', () => {

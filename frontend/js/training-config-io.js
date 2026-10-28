@@ -13,6 +13,7 @@ window.trainingConfigIoMixin = {
 
   async downloadConfig() {
     try {
+      if (!await this.ensureKreaDitFormat()) return;
       const response = await fetch('/api/training/export-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

@@ -826,6 +826,12 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "min": 0,
         "max": 26,
         "step": 1,
+        "readonly_if_any": [[
+            {"key": "enable_krea_samples", "eq": True},
+            {"key": "turbo_dit", "neq": ""},
+            {"key": "blocks_to_swap", "eq": value},
+        ] for value in (0, "")],
+        "readonly_reason_key": "field.krea_blocksTurboLocked",
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -856,6 +862,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "section": "performance",
         "desc_key": "field.krea_fp8_base",
         "hint_key": "field.krea_fp8_baseHint",
+        "readonly_if": {"key": "convrot_int8", "eq": True, "reason_key": "field.krea_fp8ConvrotLocked"},
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -966,6 +973,14 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "hint_key": "field.krea_turbo_ditHint",
         "role": "file-model",
         "show_if": {"key": "enable_krea_samples", "eq": True},
+        # Keep populated fields editable so imported conflicts can be corrected
+        # without deleting a model path automatically or locking both sources.
+        "readonly_if_any": [
+            [{"key": "turbo_dit", "eq": ""}, {"key": "convrot_int8", "eq": True}],
+            [{"key": "turbo_dit", "eq": ""}, {"key": "blocks_to_swap", "neq": 0}],
+            [{"key": "turbo_dit", "eq": ""}, {"key": "turbo_lora", "neq": ""}],
+        ],
+        "readonly_reason_key": "field.krea_turboDitLocked",
         "profiles": [KREA2_PROFILE_ID],
     },
     {
@@ -1021,7 +1036,11 @@ KREA2_FIELDS += [
       for key, default, prefix in (("warmup_type", "linear", "warmup"), ("decay_type", "cosine", "decay"))],
     _krea_field("step_rules", "text", "", "optimizer", hint_key="field.step_rulesHint", placeholder="1:1000,0.5:1600,0.1",
                 show_if={"key": "lr_scheduler", "eq": "piecewise_constant"}),
-    _krea_field("convrot_int8", "toggle", False, "performance", hint_key="field.convrot_int8Hint"),
+    _krea_field("convrot_int8", "toggle", False, "performance", hint_key="field.convrot_int8Hint",
+                readonly_if_any=[[{"key": "enable_krea_samples", "eq": True},
+                                  {"key": "turbo_dit", "neq": ""},
+                                  {"key": "convrot_int8", "eq": False}]],
+                readonly_reason_key="field.krea_convrotTurboLocked"),
     _krea_field("convrot_int8_bwd", "select", "bf16", "performance", hint_key="field.convrot_int8_bwdHint",
                 show_if={"key": "convrot_int8", "eq": True},
                 options=[{"v": v, "l": v, "dk": f"opt.convrot_int8_bwd_{v}"} for v in ("bf16", "int8")]),
@@ -1029,8 +1048,10 @@ KREA2_FIELDS += [
                 show_if={"key": "save_every_n_steps", "neq": ""}),
     _krea_field("save_last_n_steps_state", "number", "", "save", min=1, step=1, hint_key="field.save_last_n_steps_stateHint",
                 show_if=[{"key": "save_state", "eq": True}, {"key": "save_every_n_steps", "neq": ""}], layout_parent="save_state"),
-    _krea_field("turbo_lora", "text", "", "preview", role="file-model-saved", hint_key="field.turbo_loraHint",
-                show_if={"key": "enable_krea_samples", "eq": True}),
+    _krea_field("turbo_lora", "text", "", "preview", role="file-model", hint_key="field.turbo_loraHint",
+                show_if={"key": "enable_krea_samples", "eq": True},
+                readonly_if_any=[[{"key": "turbo_lora", "eq": ""}, {"key": "turbo_dit", "neq": ""}]],
+                readonly_reason_key="field.krea_turboLoraLocked"),
     _krea_field("turbo_lora_multiplier", "number", 1.0, "preview", step=0.05, hint_key="field.turbo_lora_multiplierHint",
                 show_if=[{"key": "enable_krea_samples", "eq": True}, {"key": "turbo_lora", "neq": ""}]),
 ]
@@ -2158,18 +2179,40 @@ def build_krea2_train_config(
     return result
 
 
-def _krea2_checkpoint_format_errors(path: Path, key: str, config: dict) -> list[str]:
+def _read_krea2_checkpoint_tensors(path: Path) -> dict[str, dict]:
     """Read tensor metadata only; never load multi-GB weights during preflight."""
     try:
         with path.open("rb") as stream:
             header_size = int.from_bytes(stream.read(8), "little")
             if not 2 <= header_size <= 16 * 1024 * 1024:
-                return []  # The model loader reports malformed/non-safetensors files.
+                return {}  # The model loader reports malformed/non-safetensors files.
             header = json.loads(stream.read(header_size))
-        tensors = {name: tensor for name, tensor in header.items()
-                   if name != "__metadata__" and isinstance(tensor, dict)}
+        return {name: tensor for name, tensor in header.items()
+                if name != "__metadata__" and isinstance(tensor, dict)}
     except (OSError, ValueError, AttributeError):
-        return []
+        return {}
+
+
+def inspect_krea2_checkpoint_format(path: Path) -> dict[str, str]:
+    """Identify the selectable DiT format without importing the training runtime."""
+    tensors = _read_krea2_checkpoint_tensors(path)
+    int8_weights = any(name.endswith(".weight") and tensor.get("dtype") == "I8"
+                       for name, tensor in tensors.items())
+    if int8_weights and any(name.endswith(".comfy_quant") for name in tensors):
+        kind = "convrot_int8"
+    elif int8_weights:
+        kind = "unknown"
+    elif any(str(tensor.get("dtype")).startswith("F8") for tensor in tensors.values()):
+        kind = "fp8"
+    elif tensors:
+        kind = "unquantized"
+    else:
+        kind = "unknown"
+    return {"format": kind}
+
+
+def _krea2_checkpoint_format_errors(path: Path, key: str, config: dict) -> list[str]:
+    tensors = _read_krea2_checkpoint_tensors(path)
     dtypes = {tensor.get("dtype") for tensor in tensors.values()}
     if any(str(dtype).startswith("F8") for dtype in dtypes) and (
         key == "text_encoder" or any(name.endswith((".scale_weight", ".weight_scale", ".comfy_quant")) for name in tensors)

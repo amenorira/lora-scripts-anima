@@ -551,13 +551,13 @@ window.trainingTomlMixin = {
   async prepareKrea2Cache() {
     if (this.isTraining || this.trainingStarting || this.regularizationActive) return;
     if ((this.form.model_train_type || '') !== 'krea2-lora') return;
-    if (!this.validateForm()) {
-      this.toast(this.t('common.formErrors'), 'error');
-      return;
-    }
-
     this.trainingStarting = true;
     try {
+      if (!await this.ensureKreaDitFormat()) return;
+      if (!this.validateForm()) {
+        this.toast(this.t('common.formErrors'), 'error');
+        return;
+      }
       const response = await fetch('/api/training/krea2/cache', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -602,6 +602,13 @@ window.trainingTomlMixin = {
         return;
       }
 
+      if (this.form.model_train_type === 'krea2-lora') {
+        if (!await this.ensureKreaDitFormat()) return;
+        if (!this.validateForm()) {
+          this.toast(this.t('common.formErrors'), 'error');
+          return;
+        }
+      }
       this.isTraining = true; this.isIdle = false;
       this.statusText = this.t('common.training') + '...';
       const payload = this._collectTrainingPayload();

@@ -11,7 +11,7 @@ test('real registry model defaults stay separate across all four profiles and fi
     form: {model_train_type:'anima-lora',pretrained_model_name_or_path:'./custom-anima.safetensors'},
     formDefaults:{}, _profileFormDrafts:{}, _profileFieldSources:{}, _fieldSources:{},
     _activeTrainType:'anima-lora',currentRoute:'',
-    renderTrainingForm(){}, setupAutoValueWatchers(){}, setupShowIfWatchers(){}, setupReadonlyWatchers(){},
+    renderTrainingForm(){}, _scheduleProfileFieldWatchers(){},
     updateToml(){},rebuildForm(){},toast(){},t:(_key,fallback)=>fallback || '',$nextTick:fn=>fn(),
   });
   app.switchTrainType('sdxl-lora');
@@ -93,7 +93,7 @@ test('training profiles keep independent drafts and reset from registry defaults
     form: { model_train_type: 'anima-lora', learning_rate: 'anima-custom', optimizer_type: 'AnimaOpt' },
     formDefaults: {}, _profileFormDrafts: {}, _profileFieldSources: {},
     _fieldSources: { learning_rate: 'user', optimizer_type: 'default' }, _activeTrainType: 'anima-lora', currentRoute: '',
-    renderTrainingForm() {}, setupAutoValueWatchers() {}, setupShowIfWatchers() {}, setupReadonlyWatchers() {},
+    renderTrainingForm() {}, _scheduleProfileFieldWatchers() {},
     updateToml() {}, rebuildForm() {}, toast() {}, t: (_key, fallback) => fallback || '', $nextTick: fn => fn(),
   });
   app.stepEstimate = { subsets: [{ name: 'old-profile' }] };

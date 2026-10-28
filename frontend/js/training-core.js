@@ -109,6 +109,10 @@ window.trainingCoreMixin = {
   _outputPathInfoTimer: null,
   _outputPathInfoRequestSeq: 0,
   _outputPathInfoSignature: '',
+  _kreaDitFormatTimer: null,
+  _kreaDitFormatRequestSeq: 0,
+  _kreaDitFormatCheck: null,
+  _kreaDitFormatWatcher: null,
 
   trainTypes: [
     { v: 'anima-lora', l: 'Anima LoRA', dk: 'opt.model_train_type_anima-lora' },
@@ -121,6 +125,7 @@ window.trainingCoreMixin = {
 
   _clearProfileFieldWatchers() {
     this._cancelProfileFieldWatcherSetup();
+    this._disposeKreaDitFormatWatcher();
     ['_autoValueWatchers', '_showIfWatchers', '_readonlyWatchers'].forEach(key => {
       (this[key] || []).forEach(stop => { if (typeof stop === 'function') stop(); });
       this[key] = [];
@@ -147,6 +152,7 @@ window.trainingCoreMixin = {
       this.setupAutoValueWatchers();
       this.setupShowIfWatchers();
       this.setupReadonlyWatchers();
+      this.setupKreaDitFormatWatcher();
     };
     if (typeof requestIdleCallback === 'function') {
       this._profileWatcherSetupUsesIdle = true;
@@ -615,6 +621,7 @@ window.trainingCoreMixin = {
   },
 
   suspendTrainForm(route) {
+    this._cancelKreaDitFormatCheck();
     if (!route || !route.startsWith('train-')) return;
 
     this._cancelScheduledTrainTypeSwitch();
@@ -641,6 +648,7 @@ window.trainingCoreMixin = {
   },
 
   _disposeTrainForm() {
+    this._disposeKreaDitFormatWatcher();
     this._cancelScheduledTrainTypeSwitch();
     this._cancelProfileFieldWatcherSetup();
     clearTimeout(this._formSaveTimer);
@@ -710,6 +718,7 @@ window.trainingCoreMixin = {
     this.scheduleStepEstimate();
     this.scheduleOutputPathInfo();
     this.$nextTick(() => this.updateToml());
+    this.scheduleKreaDitFormatCheck();
 
     return true;
   },
@@ -793,6 +802,7 @@ window.trainingCoreMixin = {
     this.setupAutoValueWatchers();
     this.setupShowIfWatchers();
     this.setupReadonlyWatchers();
+    this.setupKreaDitFormatWatcher();
     this._captureProfileDraft(this.form.model_train_type, this.form, defaults);
     this._persistProfileDrafts(r);
     this._persistProfileFieldSources(r);
@@ -868,6 +878,7 @@ window.trainingCoreMixin = {
       self.setupAutoValueWatchers();
       self.setupShowIfWatchers();
       self.setupReadonlyWatchers();
+      self.setupKreaDitFormatWatcher();
       self.updateToml();
     };
     window.addEventListener('training-fields-loaded', self._trainingFieldsLoadedHandler);
@@ -2007,6 +2018,18 @@ window.trainingCoreMixin = {
     );
   },
 
+  kreaSampleModeText() {
+    if (this.form.model_train_type !== 'krea2-lora' || !this.form.enable_krea_samples) return '';
+    const errors = this._kreaOptionErrors();
+    if (errors.turbo_dit || errors.turbo_lora || errors.convrot_int8) {
+      return this.t('krea2.sampleModeConflict');
+    }
+    const precision = this.form.convrot_int8 ? 'ConvRot INT8' : this.form.fp8_base ? 'FP8' : 'BF16';
+    const key = String(this.form.turbo_dit || '').trim() ? 'sampleModeTurboDit'
+      : String(this.form.turbo_lora || '').trim() ? 'sampleModeTurboLora' : 'sampleModeRaw';
+    return this.t('krea2.' + key).replace('{precision}', precision);
+  },
+
 
   renderField(field) {
     const val = this.form[field.key];
@@ -2269,6 +2292,9 @@ window.trainingCoreMixin = {
       : field.hintKeyBy
       ? `<div class="field-hint" x-show="${hintExpr}" x-text="${hintExpr}">${this.esc(hint)}</div>`
       : (hint ? `<div class="field-hint">${hint}</div>` : '');
+    const kreaSampleModeHtml = trainType === 'krea2-lora' && dataKey === 'enable_krea_samples'
+      ? `<div class="field-hint" data-krea-sample-mode role="status" aria-live="polite" x-show="form.enable_krea_samples" x-text="kreaSampleModeText()">${this.esc(this.kreaSampleModeText())}</div>`
+      : '';
     return `<div class="field${condClass}${nestedClass}${staticReadonlyClass}" :class="{ 'field-changed': String(form.${dataKey}) !== String(formDefaults.${dataKey}), 'field-filled': ${_filledExpr} }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}${nestLevelAttr}>
       <div class="field-row">
         ${controlSection}
@@ -2276,6 +2302,7 @@ window.trainingCoreMixin = {
       </div>
       ${fullWidthRow}
       ${hintHtml}
+      ${kreaSampleModeHtml}
       <div class="field-error" x-show="formErrors && formErrors.${dataKey}" x-text="formErrors.${dataKey} || ''" x-cloak></div>
       ${this._getEnvHint(dataKey)}
       ${this._getOutputPathHint(dataKey)}
@@ -3604,9 +3631,113 @@ window.trainingCoreMixin = {
     }
   },
 
+  _disposeKreaDitFormatWatcher() {
+    if (typeof this._kreaDitFormatWatcher === 'function') this._kreaDitFormatWatcher();
+    this._kreaDitFormatWatcher = null;
+    this._cancelKreaDitFormatCheck();
+  },
+
+  setupKreaDitFormatWatcher() {
+    if (typeof this._kreaDitFormatWatcher === 'function') this._kreaDitFormatWatcher();
+    this._kreaDitFormatWatcher = this.form.model_train_type === 'krea2-lora'
+      ? this.$watch('form.dit', () => this.scheduleKreaDitFormatCheck()) : null;
+    this.scheduleKreaDitFormatCheck();
+  },
+
+  _cancelKreaDitFormatCheck() {
+    if (this._kreaDitFormatTimer !== null) clearTimeout(this._kreaDitFormatTimer);
+    this._kreaDitFormatTimer = null;
+    this._kreaDitFormatCheck = null;
+    this._kreaDitFormatRequestSeq += 1;
+  },
+
+  scheduleKreaDitFormatCheck() {
+    const path = String(this.form.dit || '').trim();
+    if (this.form.model_train_type !== 'krea2-lora' || !path
+        || typeof fetch !== 'function' || typeof setTimeout !== 'function') {
+      this._cancelKreaDitFormatCheck();
+      return;
+    }
+    // setField and the path watcher may both schedule the same selection.
+    if (this._kreaDitFormatCheck?.path === path) return;
+    this._cancelKreaDitFormatCheck();
+    const check = { path, sequence: this._kreaDitFormatRequestSeq, promise: null };
+    this._kreaDitFormatCheck = check;
+    this._kreaDitFormatTimer = setTimeout(() => this._runKreaDitFormatCheck(check), 250);
+  },
+
+  _runKreaDitFormatCheck(check) {
+    if (check.sequence !== this._kreaDitFormatRequestSeq) return Promise.resolve();
+    if (this._kreaDitFormatTimer !== null) clearTimeout(this._kreaDitFormatTimer);
+    this._kreaDitFormatTimer = null;
+    if (!check.promise) {
+      check.promise = this._checkKreaDitFormat(check.path, check.sequence).finally(() => {
+        if (check.sequence === this._kreaDitFormatRequestSeq) this._kreaDitFormatCheck = null;
+      });
+    }
+    return check.promise;
+  },
+
+  async ensureKreaDitFormat() {
+    if (this.form.model_train_type !== 'krea2-lora') return true;
+    this.scheduleKreaDitFormatCheck();
+    const check = this._kreaDitFormatCheck;
+    if (!check) return true;
+    // Flush typing debounce and share any in-flight inspection before taking a snapshot.
+    await this._runKreaDitFormatCheck(check);
+    return check.sequence === this._kreaDitFormatRequestSeq
+      && this.form.model_train_type === 'krea2-lora'
+      && String(this.form.dit || '').trim() === check.path;
+  },
+
+  async _checkKreaDitFormat(path, sequence) {
+    try {
+      const response = await fetch('/api/training/krea2/model-format', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }),
+      });
+      if (!response.ok) return;
+      const result = await response.json();
+      if (sequence !== this._kreaDitFormatRequestSeq || this.form.model_train_type !== 'krea2-lora'
+          || String(this.form.dit || '').trim() !== path
+          || result.status !== 'success' || result.data?.format !== 'convrot_int8') return;
+      if (this.form.convrot_int8 === true && !this.form.fp8_base) return;
+      this.form.convrot_int8 = true;
+      this._setFieldSource('convrot_int8', 'auto');
+      this._enforceSharedTrainingUiConstraints();
+      this._persistProfileFieldSources();
+      this.updateReadonlyStates();
+      this._refreshTrainingOptionErrors();
+      this.pushHistory({ ...this.form });
+      this.updateTomlDebounced();
+      this.toast(this.t('krea2.int8ModelAutoConfigured'), 'info');
+    } catch (error) {
+      // Paths can be incomplete while typing; launch preflight remains authoritative.
+    }
+  },
+
+  _enforceKrea2UiConstraints() {
+    if (this.form.model_train_type !== 'krea2-lora') return;
+    if (this.form.convrot_int8 && this.form.fp8_base) {
+      this.form.fp8_base = false;
+      this._setFieldSource('fp8_base', 'auto');
+    }
+    if (!String(this.form.turbo_dit || '').trim() && this.form.turbo_dit_cache) {
+      this.form.turbo_dit_cache = false;
+      this._setFieldSource('turbo_dit_cache', 'auto');
+    }
+  },
+
+  _readonlyReason(field) {
+    if (!field) return '';
+    if (field.readonlyIf && this._evalShowIfCond(field.readonlyIf)) return field.readonlyIf.reasonKey || '';
+    if (this._readonlyIfAnyMet(field.readonlyIfAny)) return field.readonlyReasonKey || '';
+    return '';
+  },
+
   _enforceSharedTrainingUiConstraints() {
     this._enforceCheckpointingUiConstraints();
     if (this.form.model_train_type === 'krea2-lora') {
+      this._enforceKrea2UiConstraints();
       if (this.form.network_module === 'lycoris.kohya' && (this.form.fp8_base || this.form.convrot_int8)) this.form.bypass_mode = true;
       else if (this.form.network_module === 'lycoris.kohya' && this.form.dora_wd) this.form.bypass_mode = false;
       else if (this.form.network_module === 'lycoris.kohya' && this.form.lycoris_algo === 'lora'
@@ -4009,6 +4140,7 @@ window.trainingCoreMixin = {
     if (oldVal === value) {
       this._setFieldSource(key, 'user');
       this._persistProfileFieldSources();
+      if (key === 'dit') this.scheduleKreaDitFormatCheck();
       return;
     }
     if (key === 'model_train_type' && !this._switchInProgress) {
@@ -4033,6 +4165,11 @@ window.trainingCoreMixin = {
           if (constraints.max !== undefined && numVal > constraints.max) value = constraints.max;
         }
       }
+    }
+    const kreaLockedReason = this.form.model_train_type === 'krea2-lora' ? this._readonlyReason(field) : '';
+    if (kreaLockedReason && value !== oldVal) {
+      this.toast(this.t(kreaLockedReason), 'warning');
+      return;
     }
 
     // LyCORIS LoKr uses -1 for automatic factor selection; zero is not a
@@ -4075,6 +4212,11 @@ window.trainingCoreMixin = {
       this.form[key] = value;
       this._setFieldSource(key, 'user');
     }
+    const kreaFp8WasEnabled = this.form.fp8_base;
+    this._enforceKrea2UiConstraints();
+    if (key === 'convrot_int8' && value === true && kreaFp8WasEnabled && !this.form.fp8_base) {
+      this.toast(this.t('field.krea_fp8ConvrotLocked'), 'warning');
+    }
     if (['gradient_checkpointing', 'cpu_offload_checkpointing', 'unsloth_offload_checkpointing',
       'gradient_checkpointing_cpu_offload', 'block_swap_h2d_only'].includes(key)) {
       this._enforceCheckpointingUiConstraints(key);
@@ -4106,6 +4248,7 @@ window.trainingCoreMixin = {
     }
     if (typeof this.queueTomlPreviewChange === 'function') this.queueTomlPreviewChange(key);
     if (key === 'train_data_dir') this._syncKrea2CacheDir();
+    if (key === 'dit') this.scheduleKreaDitFormatCheck();
     if (key === 'optimizer_type' || key === 'gradient_accumulation_steps' ||
         key === 'mixed_precision' || key === 'gpu_ids') {
       this._enforceEmosensUiConstraints(key, emosensPreviousConstraints);

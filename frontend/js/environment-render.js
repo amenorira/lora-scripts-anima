@@ -14,11 +14,15 @@
 // 模型分组 → 槽位 / 标题 / 无文件时回退仓库（与后端 MODEL_FILES 的 group 字段对应）
 const ENV_MODEL_GROUPS = {
   'Anima': { slot: 'animaModel', titleKey: 'animaModel.animaTitle', titleFallback: 'Anima Models', fallbackRepo: 'circlestone-labs/Anima' },
-  'Krea 2': { slot: 'krea2', titleKey: 'animaModel.krea2Title', titleFallback: 'Krea 2 Models', fallbackRepo: 'Comfy-Org/Krea-2', trainingModel: 'krea2_raw_bf16.safetensors' },
+  'Krea 2': {
+    slot: 'krea2', titleKey: 'animaModel.krea2Title', titleFallback: 'Krea 2 Models', fallbackRepo: 'Comfy-Org/Krea-2',
+    trainingModels: ['krea2_raw_bf16.safetensors', 'krea2_raw_int8_convrot.safetensors'],
+    noteKey: 'animaModel.kreaNote', noteDetails: ['animaModel.kreaQuantizationNote', 'animaModel.kreaPreviewNote'],
+  },
   'MOSS-Image': { slot: 'moss', titleKey: 'animaModel.mossTitle', titleFallback: 'MOSS-Image Models', fallbackRepo: 'Comfy-Org/MOSS-Image', noteKey: 'animaModel.mossNote', noteDetails: ['animaModel.mossTrainingNote', 'animaModel.mossTokenizerNote'] },
   'Train Use': { slot: 'trainUse', titleKey: 'animaModel.trainUseTitle', titleFallback: 'Additional Models', fallbackRepo: 'ame-la/train_use_models', requiredComponents: ['model'] },
 };
-const ENV_MODEL_COMPONENT_KEYS = { model: 'componentModel', encoder: 'componentEncoder', vae: 'componentVae', other: 'componentOther' };
+const ENV_MODEL_COMPONENT_KEYS = { model: 'componentModel', lora: 'componentLora', encoder: 'componentEncoder', vae: 'componentVae', other: 'componentOther' };
 
 window.environmentRenderMixin = {
   renderEnvironment() {
@@ -866,6 +870,7 @@ window.environmentRenderMixin = {
     // 兼容尚未重启的后端：使用目录用途，不猜测文件名或翻译后的说明。
     const folders = (file.source_url || '').split('/');
     if (folders.includes('diffusion_models') || file.group === 'Train Use') return 'model';
+    if (folders.includes('loras')) return 'lora';
     if (folders.includes('text_encoders')) return 'encoder';
     if (folders.includes('vae')) return 'vae';
     return 'other';
@@ -875,7 +880,7 @@ window.environmentRenderMixin = {
     const view = ENV_MODEL_GROUPS[modelGroup] || {};
     return (view.requiredComponents || ['model', 'encoder', 'vae']).filter(kind =>
       !files.some(file => file.exists && this._envModelFileComponent(file) === kind
-        && (kind !== 'model' || !view.trainingModel || file.filename === view.trainingModel)));
+        && (kind !== 'model' || !view.trainingModels || view.trainingModels.includes(file.filename))));
   },
 
   _renderModelGroup(T, modelGroup) {
@@ -913,7 +918,7 @@ window.environmentRenderMixin = {
     // 按必需组件判断齐备；同类下载多个变体不会抵消缺少的另一类。
     const doneFiles = files.filter(f => f.exists);
     const totalBytes = doneFiles.reduce((sum, f) => sum + (f.size_bytes ?? (f.size_gb || 0) * 1073741824), 0);
-    const missingNames = missing.map(kind => T('animaModel.' + (kind === 'model' && view.trainingModel ? 'componentTrainingModel' : ENV_MODEL_COMPONENT_KEYS[kind])));
+    const missingNames = missing.map(kind => T('animaModel.' + (kind === 'model' && view.trainingModels ? 'componentTrainingModel' : ENV_MODEL_COMPONENT_KEYS[kind])));
     const countText = !doneFiles.length
       ? T('animaModel.notDownloaded', 'Not downloaded')
       : missing.length

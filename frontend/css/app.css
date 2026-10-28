@@ -4866,6 +4866,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: var(--disabled-opa
   background: color-mix(in srgb, var(--component-color) 10%, transparent);
 }
 .env-component-model { --component-color: var(--env-component-model); }
+.env-component-lora { --component-color: var(--info); }
 .env-component-encoder { --component-color: var(--env-component-encoder); }
 .env-component-vae { --component-color: var(--env-component-vae); }
 .env-file {

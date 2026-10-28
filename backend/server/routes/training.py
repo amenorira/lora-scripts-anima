@@ -35,6 +35,7 @@ from backend.training.musubi_krea2 import (
     build_krea2_dataset_config,
     build_krea2_train_config,
     get_krea2_cache_status,
+    inspect_krea2_checkpoint_format,
     krea2_preflight,
     mark_cache_manifest,
     prepare_cache_manifest,
@@ -734,6 +735,18 @@ async def training_cores():
     # on FastAPI's event-loop thread where it would stall realtime updates.
     payload = await asyncio.to_thread(profile_payload)
     return APIResponseSuccess(data=payload)
+
+
+@router.post("/training/krea2/model-format")
+async def krea2_model_format(request: Request):
+    payload, error = await _read_json_object(request)
+    if error:
+        return error
+    path = payload.get("path")
+    if not isinstance(path, str) or not path.strip():
+        return APIResponseFail(message="Model path required / 请指定模型路径")
+    result = await asyncio.to_thread(inspect_krea2_checkpoint_format, Path(path.strip()))
+    return APIResponseSuccess(data=result)
 
 
 @router.post("/training/krea2/cache-status")

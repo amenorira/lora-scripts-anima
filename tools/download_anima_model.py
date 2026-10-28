@@ -47,19 +47,27 @@ _ANIMA_FILES: list[tuple[str, str, str, str]] = [
 # HF 仓库
 ANIMA_REPO_ID = "circlestone-labs/Anima"
 KREA2_REPO_ID = "Comfy-Org/Krea-2"
+KREA2_TURBO_LORA_REPO_ID = "rockerBOO/krea-2-turbo-lora-r64-kohya"
+KREA2_TURBO_LORA_FILENAME = "krea2_turbo_lora_rank_64_bf16_kohya.safetensors"
 MOSS_REPO_ID = "Comfy-Org/MOSS-Image"
 
 _KREA2_FILES: list[tuple[str, str, str, str]] = [
     (
         "diffusion_models/krea2_raw_bf16.safetensors",
         "krea2_raw_bf16.safetensors",
-        "Krea 2 训练底模 / Training model",
+        "Krea 2 RAW BF16 训练底模 / Training model",
         "kreaRaw",
+    ),
+    (
+        "diffusion_models/krea2_raw_int8_convrot.safetensors",
+        "krea2_raw_int8_convrot.safetensors",
+        "Krea 2 RAW ConvRot INT8 训练底模 / Training model",
+        "kreaRawInt8",
     ),
     (
         "diffusion_models/krea2_turbo_bf16.safetensors",
         "krea2_turbo_bf16.safetensors",
-        "Krea 2 推理模型 / Inference model",
+        "Krea 2 Turbo BF16 预览模型 / Preview model",
         "kreaTurbo",
     ),
     (
@@ -103,7 +111,7 @@ TRAIN_USE_FILES: list[tuple[str, str, str, str, str, str]] = [
     ),
 ]
 
-# (HF repo, HF 路径, 本地文件名, 用途说明, UI 分组 [, 原始出处页面, 三语言文案键])
+# (HF repo, HF 路径, 本地文件名, 用途说明, UI 分组 [, 原始出处页面, 三语言文案键, 组件类型])
 MODEL_FILES: list[tuple] = [
     (repo_id, hf_path, local_name, desc, group, None, f"environment.animaModel.{desc_key}")
     for repo_id, group, files in (
@@ -112,6 +120,17 @@ MODEL_FILES: list[tuple] = [
         (MOSS_REPO_ID, "MOSS-Image", MOSS_FILES),
     )
     for hf_path, local_name, desc, desc_key in files
+] + [
+    (
+        KREA2_TURBO_LORA_REPO_ID,
+        KREA2_TURBO_LORA_FILENAME,
+        KREA2_TURBO_LORA_FILENAME,
+        "Krea 2 Turbo 预览 LoRA（Musubi / Kohya 格式） / Preview LoRA",
+        "Krea 2",
+        None,
+        "environment.animaModel.kreaTurboLora",
+        "lora",
+    ),
 ] + TRAIN_USE_FILES
 
 # 保持下载函数和 CLI 使用的三元组格式，翻译键只供模型清单 UI 使用。
@@ -119,7 +138,8 @@ ANIMA_FILES = [item[:3] for item in _ANIMA_FILES]
 KREA2_FILES = [item[:3] for item in _KREA2_FILES]
 
 
-# Hugging Face 文件元数据快照（2026-10-18）；调整下载清单时同步维护。
+# Hugging Face 文件元数据快照（2026-10-18）；RAW ConvRot INT8 和 Turbo LoRA 于 2026-10-28 核验。
+# 调整下载清单时同步维护。
 # 仅用于下载前展示，保持本地状态查询离线可用；不用于判断文件是否完整。
 MODEL_DOWNLOAD_SIZES: dict[str, dict[str, int]] = {
     ANIMA_REPO_ID: {
@@ -129,9 +149,13 @@ MODEL_DOWNLOAD_SIZES: dict[str, dict[str, int]] = {
     },
     KREA2_REPO_ID: {
         "diffusion_models/krea2_raw_bf16.safetensors": 26_283_332_608,
+        "diffusion_models/krea2_raw_int8_convrot.safetensors": 13_492_686_496,
         "diffusion_models/krea2_turbo_bf16.safetensors": 26_283_332_608,
         "text_encoders/qwen3vl_4b_bf16.safetensors": 8_875_719_384,
         "vae/qwen_image_vae.safetensors": 253_806_246,
+    },
+    KREA2_TURBO_LORA_REPO_ID: {
+        KREA2_TURBO_LORA_FILENAME: 469_446_706,
     },
     MOSS_REPO_ID: {
         "diffusion_models/moss_image_base_bf16.safetensors": 10_164_655_808,
@@ -286,8 +310,9 @@ def list_local_model_files(dest_dir: Path) -> list[dict]:
     for item in MODEL_FILES:
         repo_id, hf_path, local_name, desc, group = item[:5]
         source_page = item[5] if len(item) > 5 else None
-        component_type = next(
-            (kind for folder, kind in (("diffusion_models", "model"), ("text_encoders", "encoder"), ("vae", "vae"))
+        component_type = item[7] if len(item) > 7 else next(
+            (kind for folder, kind in (("diffusion_models", "model"), ("loras", "lora"),
+                                      ("text_encoders", "encoder"), ("vae", "vae"))
              if folder in Path(hf_path).parts),
             "model" if group == "Train Use" else "other",
         )
