@@ -10,7 +10,6 @@
    ================================================================ */
 
 window.monitorRenderMixin = {
-  ...window.monitorLogRenderMixin,
 
   // CREATED/RUNNING 都算"活跃"：等待启动的任务也要能终止，且不显示待命文案。
   _isActiveState(stateCode) {
@@ -268,12 +267,12 @@ window.monitorRenderMixin = {
 
 };
 
-Object.defineProperties(window.monitorRenderMixin, Object.getOwnPropertyDescriptors(window.monitorHistoryRenderMixin));
+window.composeAppMixins(window.monitorRenderMixin, { logs: window.monitorLogRenderMixin, history: window.monitorHistoryRenderMixin });
 
-Object.defineProperties(window.monitorRenderMixin, Object.getOwnPropertyDescriptors(window.monitorArtifactsRenderMixin));
+window.composeAppMixins(window.monitorRenderMixin, { monitorArtifactsRenderMixin: window.monitorArtifactsRenderMixin });
 
-Object.defineProperties(window.monitorRenderMixin, Object.getOwnPropertyDescriptors(window.monitorResourcesMixin));
+window.composeAppMixins(window.monitorRenderMixin, { monitorResourcesMixin: window.monitorResourcesMixin });
 
-Object.defineProperties(window.monitorRenderMixin, Object.getOwnPropertyDescriptors(window.monitorDiagnosticsMixin));
+window.composeAppMixins(window.monitorRenderMixin, { monitorDiagnosticsMixin: window.monitorDiagnosticsMixin });
 
-Object.defineProperties(window.monitorRenderMixin, Object.getOwnPropertyDescriptors(window.monitorSummaryMixin));
+window.composeAppMixins(window.monitorRenderMixin, { monitorSummaryMixin: window.monitorSummaryMixin });

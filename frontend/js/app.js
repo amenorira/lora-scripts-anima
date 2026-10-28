@@ -701,35 +701,18 @@ document.addEventListener('alpine:init', () => {
 
   };  // end data object
 
-  // ── Merge mixins preserving getters/setters ──────────────────
-  // IMPORTANT: ...spread evaluates getters to static values.
-  // Object.defineProperties preserves them as reactive getters.
-  const _mixinSources = [
-    window.utilsMixin,
-    window.realtimeMixin,
-    window.monitorCoreMixin,
-    window.monitorRenderMixin,
-    window.environmentCoreMixin,
-    window.environmentRenderMixin,
-    window.docsMixin,
-    window.trainingCoreMixin,
-    window.datasetRepeatMixin,
-    window.trainingLrPreviewMixin,
-    window.trainingShapePreviewMixin,
-    window.trainingTomlMixin,
-    window.trainingConfigIoMixin,
-    window.taggerMixin,
-    window.captionOptionsMixin,
-    window.captionWorkspaceMixin,
-    window.regularizationMixin,
-    window.tagEditorMixin,
-    window.tagDictionaryMixin,
-  ];
-  for (const _src of _mixinSources) {
-    if (_src) {
-      Object.defineProperties(data, Object.getOwnPropertyDescriptors(_src));
-    }
-  }
+  window.composeAppMixins(data, {
+    utils: window.utilsMixin, realtime: window.realtimeMixin,
+    monitorCore: window.monitorCoreMixin, monitorRender: window.monitorRenderMixin,
+    environmentCore: window.environmentCoreMixin, environmentRender: window.environmentRenderMixin,
+    docs: window.docsMixin, trainingCore: window.trainingCoreMixin,
+    datasetRepeat: window.datasetRepeatMixin, trainingLrPreview: window.trainingLrPreviewMixin,
+    trainingShapePreview: window.trainingShapePreviewMixin, trainingToml: window.trainingTomlMixin,
+    trainingConfigIo: window.trainingConfigIoMixin, tagger: window.taggerMixin,
+    captionOptions: window.captionOptionsMixin, captionWorkspace: window.captionWorkspaceMixin,
+    regularization: window.regularizationMixin, tagEditor: window.tagEditorMixin,
+    tagDictionary: window.tagDictionaryMixin,
+  });
 
   return data;
 

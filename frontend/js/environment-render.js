@@ -609,8 +609,8 @@ window.environmentRenderMixin = {
 
 };
 
-Object.defineProperties(window.environmentRenderMixin, Object.getOwnPropertyDescriptors(window.environmentModelsRenderMixin));
+window.composeAppMixins(window.environmentRenderMixin, { environmentModelsRenderMixin: window.environmentModelsRenderMixin });
 
-Object.defineProperties(window.environmentRenderMixin, Object.getOwnPropertyDescriptors(window.environmentComponentsRenderMixin));
+window.composeAppMixins(window.environmentRenderMixin, { environmentComponentsRenderMixin: window.environmentComponentsRenderMixin });
 
-Object.defineProperties(window.environmentRenderMixin, Object.getOwnPropertyDescriptors(window.environmentDictionaryRenderMixin));
+window.composeAppMixins(window.environmentRenderMixin, { environmentDictionaryRenderMixin: window.environmentDictionaryRenderMixin });

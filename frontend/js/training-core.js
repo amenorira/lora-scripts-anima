@@ -756,18 +756,10 @@ window.trainingCoreMixin = {
   }
 };
 
-// Preserve computed getters when composing the training form modules.
-for (const source of [
-  window.trainingFieldRelations,
-  window.trainingNetworkPanel,
-  window.trainingFieldRenderer,
-  window.trainingTimestepPreview,
-  window.trainingConditions,
-  window.trainingSections,
-  window.trainingValidation,
-  window.trainingProfiles,
-  window.trainingPreflight,
-  window.trainingFilePicker,
-]) {
-  Object.defineProperties(window.trainingCoreMixin, Object.getOwnPropertyDescriptors(source));
-}
+window.composeAppMixins(window.trainingCoreMixin, {
+  fieldRelations: window.trainingFieldRelations, networkPanel: window.trainingNetworkPanel,
+  fieldRenderer: window.trainingFieldRenderer, timestepPreview: window.trainingTimestepPreview,
+  conditions: window.trainingConditions, sections: window.trainingSections,
+  validation: window.trainingValidation, profiles: window.trainingProfiles,
+  preflight: window.trainingPreflight, filePicker: window.trainingFilePicker,
+});

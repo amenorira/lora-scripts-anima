@@ -5,7 +5,6 @@
    ================================================================ */
 
 window.monitorCoreMixin = {
-  ...window.monitorLogCoreMixin,
   // ── State ──────────────────────────────────────────────
   monitorData: null,
   selectedGpuIndex: 0,
@@ -693,10 +692,10 @@ window.monitorCoreMixin = {
 
 };
 
-Object.defineProperties(window.monitorCoreMixin, Object.getOwnPropertyDescriptors(window.monitorPreviewsMixin));
+window.composeAppMixins(window.monitorCoreMixin, { logs: window.monitorLogCoreMixin, previews: window.monitorPreviewsMixin });
 
-Object.defineProperties(window.monitorCoreMixin, Object.getOwnPropertyDescriptors(window.monitorOutputsMixin));
+window.composeAppMixins(window.monitorCoreMixin, { monitorOutputsMixin: window.monitorOutputsMixin });
 
-Object.defineProperties(window.monitorCoreMixin, Object.getOwnPropertyDescriptors(window.monitorHistoryMixin));
+window.composeAppMixins(window.monitorCoreMixin, { monitorHistoryMixin: window.monitorHistoryMixin });
 
-Object.defineProperties(window.monitorCoreMixin, Object.getOwnPropertyDescriptors(window.monitorMetricsMixin));
+window.composeAppMixins(window.monitorCoreMixin, { monitorMetricsMixin: window.monitorMetricsMixin });

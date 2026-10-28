@@ -166,10 +166,10 @@ window.environmentCoreMixin = {
 
 };
 
-Object.defineProperties(window.environmentCoreMixin, Object.getOwnPropertyDescriptors(window.environmentTasksMixin));
+window.composeAppMixins(window.environmentCoreMixin, { environmentTasksMixin: window.environmentTasksMixin });
 
-Object.defineProperties(window.environmentCoreMixin, Object.getOwnPropertyDescriptors(window.environmentComponentsMixin));
+window.composeAppMixins(window.environmentCoreMixin, { environmentComponentsMixin: window.environmentComponentsMixin });
 
-Object.defineProperties(window.environmentCoreMixin, Object.getOwnPropertyDescriptors(window.environmentModelsMixin));
+window.composeAppMixins(window.environmentCoreMixin, { environmentModelsMixin: window.environmentModelsMixin });
 
-Object.defineProperties(window.environmentCoreMixin, Object.getOwnPropertyDescriptors(window.environmentLoadingMixin));
+window.composeAppMixins(window.environmentCoreMixin, { environmentLoadingMixin: window.environmentLoadingMixin });

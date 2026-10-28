@@ -97,13 +97,6 @@ function _teReplaceToken(val, pos, suggestion) {
 }
 
 window.tagEditorMixin = {
-  ...window.tagEditorFilters,
-  ...window.tagEditorActions,
-  ...window.tagEditorView,
-  ...window.tagEditorPersistence,
-  ...window.tagEditorEdits,
-  ...window.tagEditorSession,
-
   // ===== Core State =====
   tagEditorDir: '',
   tagEditorRecursive: true,
@@ -729,3 +722,8 @@ window.tagEditorMixin = {
     }
   }
 };
+
+window.composeAppMixins(window.tagEditorMixin, {
+  filters: window.tagEditorFilters, actions: window.tagEditorActions, view: window.tagEditorView,
+  persistence: window.tagEditorPersistence, edits: window.tagEditorEdits, session: window.tagEditorSession,
+});

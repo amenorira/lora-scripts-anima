@@ -715,6 +715,6 @@ window.taggerMixin = {
 
 };
 
-Object.defineProperties(window.taggerMixin, Object.getOwnPropertyDescriptors(window.taggerSourcesMixin));
+window.composeAppMixins(window.taggerMixin, { taggerSourcesMixin: window.taggerSourcesMixin });
 
-Object.defineProperties(window.taggerMixin, Object.getOwnPropertyDescriptors(window.taggerTasksMixin));
+window.composeAppMixins(window.taggerMixin, { taggerTasksMixin: window.taggerTasksMixin });

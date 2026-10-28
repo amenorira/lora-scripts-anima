@@ -13,9 +13,9 @@ const FRONTEND_DEPENDENCIES = {
   'tagger': ['tagger-tasks', 'tagger-sources', ],
   'environment-render': ['environment-dictionary-render', 'environment-components-render', 'environment-models-render', ],
 };
-const frontendScripts = files => [].concat(files).flatMap(file => [
+const frontendScripts = files => ['mixin-compose', ...[].concat(files).flatMap(file => [
   ...(FRONTEND_DEPENDENCIES[file.replace(/\.js$/, '')] || []), file,
-]);
+])];
 
 function loadFrontend(files, context = { window: {} }) {
   if (!vm.isContext(context)) vm.createContext(context);
