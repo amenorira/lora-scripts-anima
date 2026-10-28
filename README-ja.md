@@ -150,7 +150,7 @@ lora-scripts-anima/
 
 NVIDIA GPU がない PC にも GPU 用の依存環境を一式インストールし、GUI を起動できます。ただし、学習には NVIDIA GPU が必要です。
 
-> **Krea 2 の共有環境**：Krea 2 と sd-scripts はプロジェクトのメイン `venv` と同じ CUDA 版 PyTorch を使用します。ルートの `requirements.txt` がプロジェクト全体の唯一の依存関係一覧で、共有パッケージを `transformers 5.17.0` / `tokenizers 0.23.1` に固定します。インストール時に `vendor/` 内の依存関係ファイルは読み込みません。
+> **Krea 2 の共有環境**：Krea 2 と sd-scripts はプロジェクトのメイン `venv` と同じ CUDA 版 PyTorch を使用します。ルートの `requirements.txt` がプロジェクト全体の唯一の依存関係一覧で、共有パッケージを `transformers 5.21.0` / `tokenizers 0.23.3` に固定します。インストール時に `vendor/` 内の依存関係ファイルは読み込みません。
 >
 > 通常の起動では、高速なメタデータ確認のみを行います。バージョンが一致していれば pip の再実行、パッケージの削除・再インストール、Krea 2 の実行環境全体のインポートは行いません。依存関係の同期後と Krea 2 の学習前チェック時には、完全なインポート検証を実行します。`vendor/` 内の上流の依存関係ファイルは変更しません。
 

@@ -16,25 +16,26 @@ from typing import Any
 from packaging.version import InvalidVersion, Version
 
 
-# Shared sd-scripts v0.12.0 stack plus musubi-tuner 0.3.6 requirements and
-# the curated ProdigyPlus optimizer. Torch and torchvision are
+# Validated shared sd-scripts / musubi-tuner stack and curated optimizers.
+# Keep these versions aligned with the root requirements.txt. Torch and torchvision are
 # shared from the main CUDA 13 environment, but are validated explicitly below
 # because accelerate/bitsandbytes depend on torch indirectly.
 MUSUBI_RUNTIME_PACKAGES: dict[str, str | None] = {
     "accelerate": "1.15.0",
     "av": "17.1.0",
-    "bitsandbytes": None,
-    "diffusers": "0.40.0",
+    "bitsandbytes": "0.50.2",
+    "diffusers": "0.42.1",
     "einops": "0.7.0",
-    "huggingface-hub": "1.32.0",
+    "huggingface-hub": "2.3.0",
     "opencv-python": "4.10.0.84",
-    "pillow": ">=11.3.0",
+    "pillow": "13.0.0",
     "prodigy-plus-schedule-free": "2.0.1",
+    "pytorch_optimizer": "4.1.0",
     "safetensors": "0.8.0",
     "toml": "0.10.2",
     "tqdm": "4.67.1",
-    "transformers": "5.17.0",
-    "tokenizers": "0.23.1",
+    "transformers": "5.21.0",
+    "tokenizers": "0.23.3",
     "voluptuous": "0.15.2",
     "ftfy": "6.3.1",
     "easydict": "1.13",

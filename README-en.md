@@ -150,7 +150,7 @@ After updating the project, older `venv` installations (including Torch 2.10 + c
 
 Machines without an NVIDIA GPU still receive the complete GPU dependency environment and can run the GUI. Training itself requires an NVIDIA GPU.
 
-> **Krea 2 shared environment**: Krea 2 and sd-scripts use the project's main `venv` and the same CUDA-enabled PyTorch build. The root `requirements.txt` is the single authoritative dependency list and pins the shared stack to `transformers 5.17.0` / `tokenizers 0.23.1`; installation never reads requirement files inside `vendor/`.
+> **Krea 2 shared environment**: Krea 2 and sd-scripts use the project's main `venv` and the same CUDA-enabled PyTorch build. The root `requirements.txt` is the single authoritative dependency list and pins the shared stack to `transformers 5.21.0` / `tokenizers 0.23.3`; installation never reads requirement files inside `vendor/`.
 >
 > Normal startup performs only a fast metadata check. When the versions match, it does not rerun pip, uninstall or reinstall packages, or import the full Krea 2 runtime. A complete import check runs after dependency synchronization and during Krea 2 preflight. No upstream dependency file under `vendor/` is modified.
 
