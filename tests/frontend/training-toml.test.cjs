@@ -1,10 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { ROOT, loadFrontend } = require('./helpers.cjs');
+const { TRAINING_CORE_SCRIPTS, ROOT, loadFrontend } = require('./helpers.cjs');
 
 function preview(profile, module, overrides = {}) {
-  const context = loadFrontend(['constants', 'utils', 'config', 'training-field-relations', 'training-core', 'training-toml'], {
+  const context = loadFrontend(['constants', 'utils', 'config', ...TRAINING_CORE_SCRIPTS, 'training-toml'], {
     window: {}, document: { getElementById: () => null },
     fetch: async () => { throw new Error('Use generated fallback schema'); },
   });

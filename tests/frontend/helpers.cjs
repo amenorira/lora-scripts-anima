@@ -14,6 +14,10 @@ function loadFrontend(files, context = { window: {} }) {
   return context;
 }
 
+const TRAINING_CORE_SCRIPTS = [
+  'training-field-relations', 'training-file-picker', 'training-core',
+];
+
 function loadTagEditor(context = { window: {} }) {
   return loadFrontend([
     'tag-editor-session', 'tag-editor-edits', 'tag-editor-persistence',
@@ -40,4 +44,4 @@ function composeMixins(...sources) {
   return app;
 }
 
-module.exports = { ROOT, readRepo, readFrontend, loadFrontend, loadTagEditor, loadGlobalFrontend, response, deferred, composeMixins };
+module.exports = { TRAINING_CORE_SCRIPTS, ROOT, readRepo, readFrontend, loadFrontend, loadTagEditor, loadGlobalFrontend, response, deferred, composeMixins };

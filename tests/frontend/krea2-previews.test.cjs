@@ -2,10 +2,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { ROOT, loadFrontend } = require('./helpers.cjs');
+const { TRAINING_CORE_SCRIPTS, ROOT, loadFrontend } = require('./helpers.cjs');
 
 function application(values = {}) {
-  const { window: w } = loadFrontend(['constants', 'utils', 'config', 'training-timestep-model', 'training-field-relations', 'training-core',
+  const { window: w } = loadFrontend(['constants', 'utils', 'config', 'training-timestep-model', ...TRAINING_CORE_SCRIPTS,
     'training-toml', 'training-lr-preview', 'training-shape-preview'], {
     window: {}, document: { getElementById: () => null },
     fetch: async () => { throw new Error('Use generated schema'); },

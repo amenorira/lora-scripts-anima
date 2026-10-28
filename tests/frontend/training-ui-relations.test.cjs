@@ -1,9 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { loadFrontend } = require('./helpers.cjs');
+const { TRAINING_CORE_SCRIPTS, loadFrontend } = require('./helpers.cjs');
 
 function application(profile, values = {}) {
-  const { window: w } = loadFrontend(['constants', 'utils', 'config', 'training-field-relations', 'training-core', 'training-toml', 'dataset-repeat', 'training-config-io'], {
+  const { window: w } = loadFrontend(['constants', 'utils', 'config', ...TRAINING_CORE_SCRIPTS, 'training-toml', 'dataset-repeat', 'training-config-io'], {
     window: {}, document: { getElementById: () => null, querySelectorAll: () => [] }, btoa, TextEncoder, clearTimeout,
   });
   w.t = key => key;
@@ -43,7 +43,7 @@ function watchAutoValues(app) {
 }
 
 test('field history records the completed dependent changes', () => {
-  const { window: w } = loadFrontend(['training-field-relations', 'training-core']);
+  const { window: w } = loadFrontend([...TRAINING_CORE_SCRIPTS]);
   const cases = [
     ['anima-lora', { network_train_unet_only: true, network_train_text_encoder_only: false, unet_lr: '0.01' }, 'network_train_text_encoder_only', true],
     ['anima-lora', { network_train_unet_only: false, network_train_text_encoder_only: true, text_encoder_lr: '0.01', cache_text_encoder_outputs: false, cache_text_encoder_outputs_to_disk: false }, 'cache_text_encoder_outputs_to_disk', true],
