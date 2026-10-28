@@ -9,9 +9,9 @@ import unittest
 from unittest.mock import Mock, patch
 
 from backend.training import krea2_cache_runner as runner
-from backend.training.krea2_cache_state import complete_stage
-from backend.training.musubi_krea2 import (
-    MUSUBI_TUNER_DIR, cache_manifest_path, get_krea2_cache_status,
+from backend.training.core_registry import MUSUBI_TUNER_DIR
+from backend.training.krea2_cache import (
+    complete_stage, cache_manifest_path, get_krea2_cache_status,
     mark_cache_manifest, prepare_cache_manifest,
 )
 from tests.training.test_multi_core_krea2 import krea2_config

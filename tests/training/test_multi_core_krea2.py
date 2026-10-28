@@ -12,8 +12,10 @@ from fastapi.testclient import TestClient
 
 from backend.training.musubi_krea2 import (
     KREA2_FIELDS, build_krea2_dataset_config, build_krea2_train_config,
-    cache_manifest_path, get_krea2_cache_status, krea2_preflight,
-    mark_cache_manifest, prepare_cache_manifest, validate_krea2_config,
+    krea2_preflight, validate_krea2_config,
+)
+from backend.training.krea2_cache import (
+    cache_manifest_path, get_krea2_cache_status, mark_cache_manifest, prepare_cache_manifest,
 )
 from backend.server.routes import training as training_routes
 from backend.tasks import TaskManager
@@ -47,7 +49,7 @@ def krea2_config(root: Path) -> dict:
 
 class Krea2PreparationLifecycleTests(unittest.TestCase):
     def test_cache_status_enumerates_once_and_prunes_cache_subtrees(self):
-        from backend.training import musubi_krea2 as krea
+        from backend.training import krea2_cache as krea, krea2_dataset as dataset
         with tempfile.TemporaryDirectory() as temp_dir:
             config = krea2_config(Path(temp_dir))
             cache = Path(config["dataset_cache_dir"])
@@ -55,12 +57,12 @@ class Krea2PreparationLifecycleTests(unittest.TestCase):
             (cache / "ignored.png").touch()
             (cache / "ignored.txt").touch()
             visited = []
-            real_walk = krea.os.walk
+            real_walk = dataset.os.walk
             def walk(*args, **kwargs):
                 for entry in real_walk(*args, **kwargs):
                     visited.append(Path(entry[0]))
                     yield entry
-            with patch.object(krea.os, "walk", side_effect=walk), patch.object(krea, "image_files", wraps=krea.image_files) as scan:
+            with patch.object(dataset.os, "walk", side_effect=walk), patch.object(dataset, "image_files", wraps=dataset.image_files) as scan:
                 status = krea.get_krea2_cache_status(config)
                 self.assertEqual(status["image_count"], 1)
                 scan.assert_called_once()

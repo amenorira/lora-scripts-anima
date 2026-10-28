@@ -1,4 +1,4 @@
-"""Krea 2 profile codec, cache contract, and runtime preflight.
+"""Krea 2 profile codec and runtime preflight.
 
 Krea 2 is intentionally kept outside the sd-scripts adapter. Its dataset TOML,
 two-stage cache, model arguments, and attention flags are musubi-tuner
@@ -7,20 +7,16 @@ semantics and must never inherit sd-scripts-only values.
 from __future__ import annotations
 
 import ast
-import hashlib
 import importlib.metadata
-import importlib.util
 import json
 import logging
 import math
-import os
-import re
-from collections import Counter
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
 from backend.training.core_registry import MUSUBI_TUNER_DIR
+from backend.training.krea2_dataset import dataset_groups, parse_krea2_resolution
+from backend.training.krea2_cache import get_krea2_cache_status
 from backend.training.shared_fields import shared_training_field
 from backend.training.krea2_network import (
     KREA2_NETWORK_MODULE, KREA2_LYCORIS_MODULE, KREA2_NETWORK_FIELDS,
@@ -53,12 +49,7 @@ KREA2_TRAINER_FILE = "./backend/training/krea2_train.py"
 KREA2_CACHE_RUNNER_FILE = "./backend/training/krea2_cache_runner.py"
 KREA2_PROFILE_ID = "krea2-lora"
 KREA2_AUTO_CACHE_DIR_NAME = ".krea2-cache"
-KREA2_CACHE_MANIFEST_NAME = ".krea2-cache.json"
-_LEGACY_KREA2_CACHE_MANIFEST_NAMES = (".anima-krea2-cache.json",)
-# Musubi uses its short architecture ID in filenames; "krea2" is metadata only.
-_KREA2_CACHE_ARCHITECTURE = "kr2"
 
-_IMAGE_EXTENSIONS = {".bmp", ".jpeg", ".jpg", ".png", ".webp", ".avif"}
 _ATTENTION_FLAGS = {
     "sdpa": "sdpa",
     "flash_attn": "flash_attn",
@@ -1152,22 +1143,6 @@ def _has_krea2_sample_prompts(value: Any) -> bool:
     return any(line.strip() and not line.lstrip().startswith("#") for line in value.splitlines())
 
 
-def parse_krea2_resolution(value: Any) -> tuple[int, int]:
-    if isinstance(value, (list, tuple)) and len(value) == 2:
-        parts = value
-    else:
-        parts = [part.strip() for part in str(value).split(",")]
-    if len(parts) != 2:
-        raise ValueError("resolution must be width,height / 分辨率必须为 宽,高")
-    try:
-        width, height = (int(parts[0]), int(parts[1]))
-    except (TypeError, ValueError) as exc:
-        raise ValueError("resolution must contain two integers / 分辨率必须为两个整数") from exc
-    if width < 16 or height < 16 or width % 16 or height % 16:
-        raise ValueError("resolution must be positive multiples of 16 / 分辨率必须为 16 的正整数倍")
-    return width, height
-
-
 def _normalize_numeric_literal(
     config: dict[str, Any],
     key: str,
@@ -1309,315 +1284,6 @@ def _selected_optional_optimizer_package(optimizer_type: Any) -> str | None:
         (package for prefix, package in _KREA2_OPTIONAL_OPTIMIZER_PACKAGES.items() if value.startswith(prefix)),
         None,
     )
-
-
-def image_files(
-    directory: str | Path,
-    cache_dir: str | Path | None = None,
-    caption_extension: str = ".txt",
-) -> list[Path]:
-    """Find captioned images, matching musubi's supported image formats."""
-    if not str(directory):
-        return []
-    root = Path(directory)
-    if not root.is_dir():
-        return []
-    excluded = Path(cache_dir).resolve() if cache_dir else None
-    extensions = set(_IMAGE_EXTENSIONS)
-    if any(importlib.util.find_spec(name) is not None for name in ("jxlpy", "pillow_jxl")):
-        extensions.add(".jxl")
-    patterns = {f"*{ext}" for ext in extensions | {ext.upper() for ext in extensions}}
-    paths: list[Path] = []
-    if excluded is not None and root.resolve().is_relative_to(excluded):
-        return []
-    for directory, subdirs, filenames in os.walk(root):
-        parent = Path(directory)
-        if excluded is not None:
-            subdirs[:] = [name for name in subdirs if not (parent / name).resolve().is_relative_to(excluded)]
-        captions = {Path(name).stem for name in filenames
-                    if Path(name).match(f"*{caption_extension}") and (parent / name).is_file()}
-        for name in filenames:
-            path = parent / name
-            # Match musubi's case-sensitive stems even on Windows.
-            if path.stem in captions and any(path.match(pattern) for pattern in patterns) and path.is_file():
-                if excluded is None or not path.resolve().is_relative_to(excluded):
-                    paths.append(path)
-    return sorted(paths)
-
-
-def _krea2_dataset_groups(config: dict[str, Any]) -> list[tuple[Path, Path, list[Path]]]:
-    """Give each source directory its own cache namespace for musubi's flat reader."""
-    if not config.get("train_data_dir"):
-        return []
-    root = Path(str(config.get("train_data_dir") or ""))
-    cache = Path(str(config.get("dataset_cache_dir") or ""))
-    groups: dict[Path, list[Path]] = {}
-    for image in image_files(root, cache, str(config.get("caption_extension") or ".txt")):
-        groups.setdefault(image.parent, []).append(image)
-    result = []
-    for directory, images in sorted(groups.items()):
-        relative = directory.relative_to(root).as_posix()
-        # Retain the existing flat-dataset cache location. Subdirectories need
-        # separate namespaces: musubi names cache files using only image stems.
-        target = (
-            cache if directory == root
-            else cache / "subsets" / hashlib.sha256(relative.encode("utf-8")).hexdigest()
-        )
-        result.append((directory, target, images))
-    return result
-
-
-def _krea2_cache_conflicts(groups: list[tuple[Path, Path, list[Path]]]) -> list[str]:
-    """Musubi drops image extensions; each directory must have unique cache keys."""
-    conflicts = []
-    for directory, _, images in groups:
-        by_key: dict[str, list[str]] = {}
-        for image in images:
-            by_key.setdefault(os.path.normcase(image.stem), []).append(image.name)
-        for names in by_key.values():
-            if len(names) > 1:
-                conflicts.append(
-                    "Images share a Krea 2 cache key; rename the conflicting files / "
-                    f"图片缓存名称冲突，请重命名同名图片: {directory}: {', '.join(names)}"
-                )
-    return conflicts
-
-
-def _path_identity(path_value: Any) -> dict[str, Any]:
-    path = Path(str(path_value or ""))
-    try:
-        stat = path.stat()
-    except OSError:
-        return {"path": str(path), "missing": True}
-    return {"path": str(path.resolve()), "size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
-
-
-def _krea2_cache_inputs(config: dict[str, Any], images: list[Path] | None = None) -> dict:
-    """Describe the inputs that determine cache contents."""
-
-    cache_dir = config.get("dataset_cache_dir")
-    root = Path(str(config.get("train_data_dir") or ""))
-    entries: list[dict[str, Any]] = []
-    if images is None:
-        images = image_files(str(config.get("train_data_dir") or ""), cache_dir, str(config.get("caption_extension") or ".txt"))
-    for image in sorted(images):
-        try:
-            stat = image.stat()
-        except OSError:
-            continue
-        caption = image.with_suffix(str(config.get("caption_extension") or ".txt"))
-        item: dict[str, Any] = {
-            "image": str(image.relative_to(root)).replace("\\", "/"),
-            "size": stat.st_size,
-            "mtime_ns": stat.st_mtime_ns,
-        }
-        try:
-            caption_stat = caption.stat()
-            item["caption"] = {
-                "exists": True,
-                "size": caption_stat.st_size,
-                "mtime_ns": caption_stat.st_mtime_ns,
-            }
-        except OSError:
-            item["caption"] = {"exists": False}
-        entries.append(item)
-
-    width, height = parse_krea2_resolution(config.get("resolution", "1024,1024"))
-    payload = {
-        "schema": 2,
-        "dataset": entries,
-        "resolution": [width, height],
-        "enable_bucket": bool(config.get("enable_bucket", True)),
-        "bucket_no_upscale": bool(config.get("bucket_no_upscale", True)),
-        "caption_extension": str(config.get("caption_extension") or ".txt"),
-        "vae": _path_identity(config.get("vae")),
-        "text_encoder": _path_identity(config.get("text_encoder")),
-    }
-    if config.get("krea_cache_vae_tiling"):
-        payload["vae_tiling"] = True
-    return payload
-
-
-def krea2_cache_fingerprint(config: dict[str, Any], images: list[Path] | None = None) -> str:
-    encoded = json.dumps(_krea2_cache_inputs(config, images), ensure_ascii=False,
-                         separators=(",", ":"), sort_keys=True).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
-
-
-def cache_manifest_path(cache_dir: str | Path) -> Path:
-    return Path(cache_dir) / KREA2_CACHE_MANIFEST_NAME
-
-
-def _read_cache_manifest(cache_dir: str | Path) -> tuple[dict[str, Any], Path]:
-    """Read the current manifest first, with a one-way compatibility fallback.
-
-    Earlier builds called the Krea-specific cache file ``.anima-krea2-cache``.
-    That was only an application-owned filename, never an upstream model
-    setting, but it incorrectly suggested an Anima/Krea relationship.  Keep
-    old cache metadata readable so renaming it does not make users recache.
-    """
-
-    directory = Path(cache_dir)
-    paths = (cache_manifest_path(directory),) + tuple(
-        directory / name for name in _LEGACY_KREA2_CACHE_MANIFEST_NAMES
-    )
-    for path in paths:
-        try:
-            manifest = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if isinstance(manifest, dict):
-            return manifest, path
-    return {}, cache_manifest_path(directory)
-
-
-def prepare_cache_manifest(config: dict[str, Any]) -> dict[str, Any]:
-    """Persist a pending cache request before the worker process starts."""
-    from backend.training.krea2_cache_state import stage_fingerprints, reusable_stages, write_manifest
-
-    cache_dir = Path(str(config["dataset_cache_dir"]))
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    previous, _ = _read_cache_manifest(cache_dir)
-    fingerprints = stage_fingerprints(config)
-    reuse = reusable_stages(config, previous, get_krea2_cache_status(config), fingerprints)
-    payload = {
-        "schema": 2,
-        "profile": KREA2_PROFILE_ID,
-        "fingerprint": krea2_cache_fingerprint(config),
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "stage_fingerprints": fingerprints,
-        "stages": {stage: "completed" if reuse[stage] else "pending" for stage in reuse},
-        "outputs": {stage: previous["outputs"][stage] for stage in reuse if reuse[stage]},
-    }
-    write_manifest(cache_manifest_path(cache_dir), payload)
-    return payload
-
-
-def mark_cache_manifest(config: dict[str, Any], status: str) -> str | None:
-    """Settle both cache stages and return any completion validation error."""
-    from backend.training.krea2_cache_state import (
-        STAGES, collect_stage_outputs, reusable_stages, stage_fingerprints, write_manifest,
-    )
-
-    path = cache_manifest_path(config["dataset_cache_dir"])
-    manifest, _ = _read_cache_manifest(config["dataset_cache_dir"])
-    if not manifest:
-        manifest = prepare_cache_manifest(config)
-    errors = []
-    if status == "completed":
-        try:
-            cache_status = get_krea2_cache_status(config)
-            if not cache_status["image_count"]:
-                errors.append("Dataset has no captioned images / 数据集没有带标注的可用图片")
-            if not cache_status["fingerprint_matches"]:
-                errors.append("Dataset or cache inputs changed during caching; rebuild the cache / 缓存生成期间数据集或缓存输入发生变化，请重新生成缓存")
-            if not cache_status["files_match"]:
-                errors.append(
-                    "Cache files do not match the dataset / 缓存文件缺失、多余、重复或名称不匹配 "
-                    f"(images={cache_status['image_count']}, latents={cache_status['latent_count']}, "
-                    f"text={cache_status['text_encoder_count']})"
-                )
-            for stage in STAGES:
-                if (manifest.get("stages", {}).get(stage) == "completed"
-                        and "outputs" in manifest and not cache_status["stage_outputs_match"][stage]):
-                    errors.append(f"{stage}: cache outputs changed after completion / 阶段完成后缓存文件发生变化")
-            errors.extend(cache_status["conflicts"])
-            if not errors:
-                manifest["outputs"] = {stage: collect_stage_outputs(config, stage) for stage in STAGES}
-                manifest["stage_fingerprints"] = stage_fingerprints(config)
-        except Exception as exc:
-            errors.append(f"Failed to validate Krea 2 cache / Krea 2 缓存校验失败: {exc}")
-    error = "; ".join(errors) or None
-    succeeded = status == "completed" and not error
-    if succeeded:
-        manifest["stages"] = dict.fromkeys(STAGES, "completed")
-    else:
-        try:
-            reusable = reusable_stages({**config, "krea_cache_reuse": True}, manifest,
-                                       get_krea2_cache_status(config), stage_fingerprints(config))
-        except (OSError, TypeError, ValueError):
-            reusable = dict.fromkeys(STAGES, False)
-        manifest["stages"] = {stage: "completed" if reusable[stage] else "failed" for stage in STAGES}
-    manifest["finished_at"] = datetime.now(timezone.utc).isoformat()
-    manifest["error"] = error
-    write_manifest(path, manifest)
-    return error
-
-
-def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
-    """Inspect cache files and their fingerprint without importing musubi."""
-    from backend.training.krea2_cache_state import outputs_match
-
-    cache_dir = Path(str(config.get("dataset_cache_dir") or ""))
-    groups = _krea2_dataset_groups(config)
-    conflicts = _krea2_cache_conflicts(groups)
-    images = [image for _, _, group_images in groups for image in group_images]
-    latent_files = []
-    text_files = []
-    complete_latents = complete_texts = True
-    for _, group_cache, group_images in groups:
-        group_latents = [
-            path
-            for path in group_cache.glob(f"*_{_KREA2_CACHE_ARCHITECTURE}.safetensors")
-            if path.is_file()
-        ]
-        group_texts = [path for path in group_cache.glob(f"*_{_KREA2_CACHE_ARCHITECTURE}_te.safetensors") if path.is_file()]
-        latent_files.extend(group_latents)
-        text_files.extend(group_texts)
-        # The trainer scans every latent cache in this namespace. Counts alone
-        # allow unrelated entries to replace missing images, or duplicate sizes
-        # of one image to enter training. Require exactly one latent per key and
-        # exactly the current text-cache paths, including filesystem case rules.
-        expected_keys = Counter(os.path.normcase(image.stem) for image in group_images)
-        latent_keys = []
-        for path in group_latents:
-            match = re.fullmatch(rf"(.+)_(\d{{4,}})x(\d{{4,}})_{_KREA2_CACHE_ARCHITECTURE}\.safetensors", path.name)
-            if match and int(match[2]) > 0 and int(match[3]) > 0:
-                latent_keys.append(os.path.normcase(match[1]))
-        expected_texts = {group_cache / f"{image.stem}_{_KREA2_CACHE_ARCHITECTURE}_te.safetensors" for image in group_images}
-        complete_latents = complete_latents and (
-            len(latent_keys) == len(group_latents)
-            and Counter(latent_keys) == expected_keys
-        )
-        complete_texts = complete_texts and set(group_texts) == expected_texts
-
-    manifest, _ = _read_cache_manifest(cache_dir)
-    recorded_outputs = manifest.get("outputs") if isinstance(manifest.get("outputs"), dict) else {}
-    stage_outputs_match = {
-        stage: outputs_match(cache_dir, files, recorded_outputs.get(stage))
-        for stage, files in (("latents", latent_files), ("text_encoder", text_files))
-    }
-    complete_groups = complete_latents and complete_texts
-
-    try:
-        fingerprint = krea2_cache_fingerprint(config, images)
-    except (TypeError, ValueError):
-        fingerprint = ""
-    matches = bool(fingerprint and manifest.get("fingerprint") == fingerprint)
-    stages = manifest.get("stages") if isinstance(manifest.get("stages"), dict) else {}
-    expected = len(images)
-    ready = (
-        expected > 0
-        and matches
-        and stages.get("latents") == "completed"
-        and stages.get("text_encoder") == "completed"
-        and complete_groups
-        and ("outputs" not in manifest or all(stage_outputs_match.values()))
-        and not conflicts
-    )
-    return {
-        "cache_dir": str(cache_dir),
-        "image_count": expected,
-        "latent_count": len(latent_files),
-        "text_encoder_count": len(text_files),
-        "fingerprint_matches": matches,
-        "stages": stages,
-        "files_match": complete_groups,
-        "stage_files_match": {"latents": complete_latents, "text_encoder": complete_texts},
-        "stage_outputs_match": stage_outputs_match,
-        "conflicts": conflicts,
-        "ready": ready,
-    }
 
 
 def _validate_krea2_compute_options(config: dict[str, Any]) -> list[str]:
@@ -1994,7 +1660,7 @@ def build_krea2_dataset_config(config: dict[str, Any]) -> dict[str, Any]:
                 "cache_directory": str(cache),
                 "num_repeats": int(config.get("krea_num_repeats", 1)),
             }
-            for directory, cache, _ in _krea2_dataset_groups(config)
+            for directory, cache, _ in dataset_groups(config)
         ],
     }
 
@@ -2294,7 +1960,7 @@ def estimate_krea2_steps(config: dict[str, Any]) -> dict[str, Any]:
         parse_krea2_resolution(config.get("resolution", "1024,1024"))
     except ValueError as exc:
         raise ValueError(f"resolution: {exc}") from exc
-    groups = _krea2_dataset_groups(config)
+    groups = dataset_groups(config)
     images = [image for _, _, group_images in groups for image in group_images]
     if not images:
         raise ValueError("Dataset has no supported images with matching captions / 数据集路径不存在或没有带同名标注的可用图片")

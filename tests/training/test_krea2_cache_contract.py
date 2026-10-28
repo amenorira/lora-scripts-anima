@@ -26,7 +26,8 @@ from PIL import Image
 from musubi_tuner.dataset.architectures import ARCHITECTURE_KREA2
 from musubi_tuner.dataset.config_utils import BlueprintGenerator, ConfigSanitizer, generate_dataset_group_by_blueprint
 from musubi_tuner.dataset.image_video_dataset import ItemInfo, save_latent_cache_krea2, save_text_encoder_output_cache_krea2
-from backend.training.musubi_krea2 import build_krea2_dataset_config, get_krea2_cache_status, prepare_cache_manifest, mark_cache_manifest
+from backend.training.musubi_krea2 import build_krea2_dataset_config
+from backend.training.krea2_cache import get_krea2_cache_status, prepare_cache_manifest, mark_cache_manifest
 from tests.training.test_multi_core_krea2 import krea2_config
 
 with tempfile.TemporaryDirectory() as temp:
