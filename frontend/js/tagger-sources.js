@@ -127,15 +127,23 @@ window.taggerSourcesMixin = {
 
   async pickTaggerSource() {
     if (this.taggerRunning || this.taggerStarting || this.taggerScanning || this.captionPreviewBusy) return;
+    const mode = this.taggerSourceMode, route = this.currentRoute, path = this.taggerSourcePath;
+    const formVersion = this._taggerFormVersion, scanVersion = this._taggerSourceScanVersion;
+    const request = this._taggerPickerRequest = Number(this._taggerPickerRequest || 0) + 1;
+    const isCurrent = () => request === this._taggerPickerRequest
+      && mode === this.taggerSourceMode && route === this.currentRoute && path === this.taggerSourcePath
+      && formVersion === this._taggerFormVersion && scanVersion === this._taggerSourceScanVersion
+      && !this.taggerRunning && !this.taggerStarting && !this.captionPreviewBusy;
     try {
-      const picker = this.taggerSourceMode.endsWith('single') ? 'image-file' : 'folder';
+      const picker = mode.endsWith('single') ? 'image-file' : 'folder';
       const response = await fetch('/api/pick_file?picker_type=' + picker);
       const body = await response.json();
+      if (!isCurrent()) return;
       if (body.status === 'success' && body.data && body.data.path) {
         this.taggerSourcePath = body.data.path;
         await this.scanTaggerSource();
       }
-    } catch (_) { this.toast(this.t('common.localPickerNA')); }
+    } catch (_) { if (isCurrent()) this.toast(this.t('common.localPickerNA')); }
   },
 
   scheduleTaggerSourceScan() {
