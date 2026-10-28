@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { loadFrontend } = require('./helpers.cjs');
 
 function application(profile = 'anima-lora', values = {}) {
-  const { window: w } = loadFrontend(['constants', 'utils', 'config', 'training-timestep-model', 'training-core', 'training-lr-preview', 'monitor-render'], {
+  const { window: w } = loadFrontend(['constants', 'utils', 'config', 'training-timestep-model', 'training-field-relations', 'training-core', 'training-lr-preview', 'monitor-render'], {
     window: {}, document: { getElementById: () => null },
   });
   const app = Object.assign({}, w.utilsMixin, w.trainingCoreMixin, w.trainingLrPreviewMixin, w.monitorRenderMixin, {

@@ -5,7 +5,7 @@ const { spawnSync } = require('node:child_process');
 const { ROOT, loadFrontend } = require('./helpers.cjs');
 
 function application(profile = 'moss-image-lora', values = {}) {
-  const { window: w } = loadFrontend(['constants', 'utils', 'config', 'training-timestep-model', 'training-core', 'training-toml', 'training-config-io'], {
+  const { window: w } = loadFrontend(['constants', 'utils', 'config', 'training-timestep-model', 'training-field-relations', 'training-core', 'training-toml', 'training-config-io'], {
     window: {}, document: { getElementById: () => null }, clearTimeout,
   });
   w.t = key => key;

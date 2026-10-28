@@ -5,7 +5,7 @@ const { spawnSync } = require('node:child_process');
 const { ROOT, loadFrontend } = require('./helpers.cjs');
 
 function application(profile, values = {}) {
-  const { window: w } = loadFrontend(['constants', 'utils', 'config', 'training-core',
+  const { window: w } = loadFrontend(['constants', 'utils', 'config', 'training-field-relations', 'training-core',
     'training-toml', 'training-shape-preview', 'training-config-io'], {
     window: {}, document: { getElementById: () => null }, btoa, TextEncoder,
     fetch: async () => { throw new Error('Use generated schema'); },

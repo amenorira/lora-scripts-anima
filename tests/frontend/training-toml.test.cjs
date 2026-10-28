@@ -4,7 +4,7 @@ const path = require('node:path');
 const { ROOT, loadFrontend } = require('./helpers.cjs');
 
 function preview(profile, module, overrides = {}) {
-  const context = loadFrontend(['constants', 'utils', 'config', 'training-core', 'training-toml'], {
+  const context = loadFrontend(['constants', 'utils', 'config', 'training-field-relations', 'training-core', 'training-toml'], {
     window: {}, document: { getElementById: () => null },
     fetch: async () => { throw new Error('Use generated fallback schema'); },
   });

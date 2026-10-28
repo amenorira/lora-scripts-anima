@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { loadFrontend } = require('./helpers.cjs');
 
 function application(values = {}) {
-  const { window: w } = loadFrontend(['constants', 'utils', 'config', 'training-core',
+  const { window: w } = loadFrontend(['constants', 'utils', 'config', 'training-field-relations', 'training-core',
     'training-toml', 'training-shape-preview', 'training-config-io'], {
     window: {}, document: { getElementById: () => null },
     fetch: async () => { throw new Error('Use generated schema'); },

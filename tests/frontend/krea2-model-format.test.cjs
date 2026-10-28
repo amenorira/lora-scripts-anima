@@ -5,7 +5,7 @@ const { loadFrontend, deferred, response } = require('./helpers.cjs');
 function application(fetch, values = {}) {
   let nextTimer = 0;
   const timers = new Map();
-  const context = loadFrontend(['constants', 'utils', 'config', 'training-core', 'training-toml', 'training-config-io'], {
+  const context = loadFrontend(['constants', 'utils', 'config', 'training-field-relations', 'training-core', 'training-toml', 'training-config-io'], {
     window: {}, document: {
       getElementById: () => null, querySelector: () => null, querySelectorAll: () => [],
       createElement: () => ({ click() {} }),

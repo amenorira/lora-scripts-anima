@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { loadFrontend } = require('./helpers.cjs');
 
 test('real registry model defaults stay separate across all four profiles and field resets', () => {
-  const { window } = loadFrontend(['constants','utils','config','training-core'], {
+  const { window } = loadFrontend(['constants','utils','config','training-field-relations', 'training-core'], {
     window: {}, document: {getElementById: () => null}, setTimeout, clearTimeout,
   });
   window.t=(_key,fallback)=>fallback || '';
@@ -35,7 +35,7 @@ test('flat config import switches profile before filtering fields', async () => 
   const storage = new Map([['anima-form-train-basic', JSON.stringify({
     model_train_type: 'anima-lora', qwen3: './models/stale-qwen.safetensors',
   })]]);
-  const context = loadFrontend(['training-core', 'training-config-io'], {
+  const context = loadFrontend(['training-field-relations', 'training-core', 'training-config-io'], {
     window: { getVisibleSections: type => [{ key: 'model', fields:
       (type === 'sdxl-lora' ? ['model_train_type', 'pretrained_model_name_or_path', 'network_module', 'xformers']
         : ['model_train_type', 'qwen3']).map(key => ({ key })),
@@ -85,7 +85,7 @@ test('training profiles keep independent drafts and reset from registry defaults
       key, type: 'text', default: `./models/${['raw', 'vae', 'text'][i]}.safetensors`,
     })) : []),
   ]]));
-  const { window } = loadFrontend('training-core', {
+  const { window } = loadFrontend(['training-field-relations', 'training-core'], {
     window: { getVisibleSections: type => [{ key: 'test', fields: fields[type] }], t: (_key, fallback) => fallback },
     setTimeout, clearTimeout,
   });
