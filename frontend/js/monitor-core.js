@@ -13,6 +13,7 @@ window.monitorCoreMixin = {
   runDetailLoading: false, runDetailError: '',
   gpuInfo: null, sysInfo: null, lossSeries: [], lossDataVersion: 0, trainParams: [],
   previews: [], previewStep: 0, previewSortDir: 'desc', previewsLoading: false, historyItems: [], runningTask: null,
+  _previewRequestSeq: 0,
   weakNetworkMode: true,
   _previewMediaQueue: [], _previewMediaAbort: null, _previewMediaLoading: false, _previewMediaPaused: false, _previewMediaObjectUrls: [], _previewMediaGeneration: 0,
   previewMetadataOpen: false, previewMetadataLoading: false, previewMetadata: null, previewMetadataError: '', _previewMetadataRequestSeq: 0, _previewMetadataAbort: null,
@@ -414,6 +415,7 @@ window.monitorCoreMixin = {
   },
 
   resetRealtimeMonitorState() {
+    this._invalidatePreviewRequest();
     if (typeof this.closePreviewLightbox === 'function') this.closePreviewLightbox();
     const wasRunning = !!(
       (this.monitorData && this.monitorData.state === 'RUNNING')
@@ -669,6 +671,7 @@ window.monitorCoreMixin = {
     }
   },
   stopMonitorRealtime() {
+    this._invalidatePreviewRequest();
     // Invalidate a detail request that is still fetching disk-backed data.
     if (this._monitorClockTimer) clearInterval(this._monitorClockTimer);
     this._monitorClockTimer = null;

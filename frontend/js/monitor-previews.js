@@ -1,5 +1,10 @@
 /* 样本刷新、媒体队列与元数据交互；由 monitor-core.js 装配，沿用同一份监控状态。 */
 window.monitorPreviewsMixin = {
+  _invalidatePreviewRequest() {
+    this._previewRequestSeq++;
+    this.previewsLoading = false;
+  },
+
   setPreviewMediaPaused(paused) {
     this._previewMediaPaused = !!paused;
     if (paused) {
@@ -150,7 +155,12 @@ window.monitorPreviewsMixin = {
     /** 主动重新拉取预览样本（绕过后端 5s 缓存），并自动跟随到最新一张。 */
     if (this.previewsLoading) return;
     this.previewsLoading = true;
+    const requestSeq = ++this._previewRequestSeq;
     const sourceRunDir = this.currentOutputRunDir;
+    const sourceTaskId = this.taskId;
+    const isCurrent = () => requestSeq === this._previewRequestSeq
+      && sourceRunDir === this.currentOutputRunDir
+      && (sourceRunDir || sourceTaskId === this.taskId);
     const wasAtEnd = this.previews.length === 0 || this.previewStep >= this.previews.length - 1;
     try {
       // ``limit=0`` means all compact preview metadata. Image bytes continue
@@ -164,7 +174,7 @@ window.monitorPreviewsMixin = {
       }
       const r = await fetch(url);
       const j = await r.json();
-      if (sourceRunDir !== this.currentOutputRunDir) return;
+      if (!isCurrent()) return;
       if (j.status === 'success') {
         this.previews = j.data || [];
         this.previewsVersion++;
@@ -179,8 +189,10 @@ window.monitorPreviewsMixin = {
     } catch (e) {
       /* 静默失败，不打扰用户 */
     } finally {
-      this.previewsLoading = false;
-      this.renderDashboard();
+      if (requestSeq === this._previewRequestSeq) {
+        this.previewsLoading = false;
+        if (this.currentRoute === 'monitor-dashboard') this.renderDashboard();
+      }
     }
   },
 

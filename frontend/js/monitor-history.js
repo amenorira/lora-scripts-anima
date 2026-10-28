@@ -99,6 +99,7 @@ window.monitorHistoryMixin = {
       this.navigate('monitor-dashboard', { run: runDir });
       return;
     }
+    this._invalidatePreviewRequest();
     this._runDetailRequestSeq++;
     this._logSliceRequestSeq++;
     this.logLines = [];
@@ -174,6 +175,7 @@ window.monitorHistoryMixin = {
 
   resetRunDetailState() {
     /** 清除历史运行详情及其派生缓存，防止返回实时监控后继续显示历史数据。 */
+    this._invalidatePreviewRequest();
     this._runDetailRequestSeq++;
     this._logSliceRequestSeq++;
     this.selectedRunDir = null;
