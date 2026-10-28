@@ -114,6 +114,7 @@ class Krea2PreparationLifecycleTests(unittest.TestCase):
             self.assertIn("executor shutdown", response.message)
             manifest = json.loads(cache_manifest_path(config["dataset_cache_dir"]).read_text(encoding="utf-8"))
             self.assertEqual(manifest["stages"], {"latents": "failed", "text_encoder": "failed"})
+            self.assertEqual(list((root / "runs").iterdir()), [])
             self.assertIsNotNone(manager.reserve_task())
 
 

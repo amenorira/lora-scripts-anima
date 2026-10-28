@@ -8,6 +8,7 @@ from pathlib import Path
 from backend.async_utils import settled_to_thread as _settled_to_thread
 from backend.log import log
 from backend.training.krea2_cache import mark_cache_manifest, prepare_cache_manifest
+from backend.training.krea2_network import KREA2_PRESET_FILENAME
 
 
 def training_error(message: str, data: dict | None = None) -> dict:
@@ -82,7 +83,8 @@ def discard_preparation(task) -> None:
     created = list(dict.fromkeys(task.owned_run_paths))
     generated = {
         "config.toml", "training.yaml", "dataset.toml", "sample_prompts.txt",
-        "prompts.txt", "run_info.txt", "output_dir.txt",
+        "prompts.txt", "prompts.json", "cache-request.json", KREA2_PRESET_FILENAME,
+        "run_info.txt", "output_dir.txt",
     }
     for directory in reversed(created):
         # A unique task suffix and an exclusive mkdir are required for ownership.
