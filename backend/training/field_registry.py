@@ -928,7 +928,7 @@ def get_all_fields() -> list[dict]:
 
 def _krea2_ui_fields(fields: list[dict]) -> list[dict]:
     """Align equivalent presentation while preserving Musubi values and conditions."""
-    from backend.training.musubi_krea2 import _KREA2_OPTIMIZER_ARGUMENTS
+    from backend.training.krea2_options import OPTIMIZER_ARGUMENTS
 
     aliases = {
         "dit": "pretrained_model_name_or_path", "text_encoder": "qwen3",
@@ -974,8 +974,8 @@ def _krea2_ui_fields(fields: list[dict]) -> list[dict]:
     positions = {}
     for index, field in enumerate(result):
         key = field["key"]
-        if key in _KREA2_OPTIMIZER_ARGUMENTS:
-            field["arg_key"] = _KREA2_OPTIMIZER_ARGUMENTS[key].argument
+        if key in OPTIMIZER_ARGUMENTS:
+            field["arg_key"] = OPTIMIZER_ARGUMENTS[key].argument
         shared_key = aliases.get(key, key)
         reference = references.get(shared_key)
         if reference:

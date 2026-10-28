@@ -24,139 +24,46 @@ from backend.training.krea2_network import (
 )
 from backend.training.metrics_config import training_metric_fields
 from backend.training.scheduler_config import normalize_scheduler_config, validate_scheduler_config
-from backend.training.optimizer_contracts import FormArgument, extract_optimizer_form
+from backend.training.optimizer_contracts import extract_optimizer_form
 from backend.training.krea2_optimizers import (
-    ARGUMENTS as _SHARED_KREA2_OPTIMIZER_ARGUMENTS, collect_arguments as _collect_krea2_arguments,
+    collect_arguments as _collect_krea2_arguments,
     extend_fields as _extend_optimizer_fields, validate_optimizer as _validate_krea2_optimizer,
 )
 from backend.training.musubi_runtime import MUSUBI_RUNTIME_PACKAGES, shared_runtime_status
-from backend.training.optimizer_metadata import (
-    KREA2_OPTIMIZER_AUTO_VALUES,
-    KREA2_PRODIGYPLUS_OPTIMIZER_TYPE,
-    KREA2_PROFILE,
-    KREA2_SCHEDULEFREE_OPTIMIZER_TYPE,
-    internal_scheduler_selectors,
-    optimizer_beta_hint_map,
-    optimizer_beta_lengths,
-    optimizer_entries,
-    optimizer_eps_selectors,
-    optimizer_groups,
-    optimizer_selectors,
+from backend.training.optimizer_metadata import KREA2_OPTIMIZER_AUTO_VALUES, KREA2_PROFILE, optimizer_groups
+from backend.training.krea2_options import (
+    KREA2_PROFILE_ID,
+    ATTENTION_FLAGS as _ATTENTION_FLAGS,
+    MIXED_PRECISIONS as _KREA2_MIXED_PRECISIONS,
+    TRAINING_DURATIONS as _KREA2_TRAINING_DURATIONS,
+    LR_SCHEDULERS as _KREA2_LR_SCHEDULERS,
+    COMPILE_MODES as _KREA2_COMPILE_MODES,
+    COMPILE_DYNAMIC_VALUES as _KREA2_COMPILE_DYNAMIC_VALUES,
+    PRODIGYPLUS_OPTIMIZER as _KREA2_PRODIGYPLUS_OPTIMIZER,
+    INTERNAL_SCHEDULER_OPTIMIZERS as _KREA2_INTERNAL_SCHEDULER_OPTIMIZERS,
+    SCHEDULEFREE_WARMUP_OPTIMIZERS as _KREA2_SCHEDULEFREE_WARMUP_OPTIMIZERS,
+    PRODIGY_OPTIMIZERS as _KREA2_PRODIGY_OPTIMIZERS,
+    BETA_LENGTHS as _KREA2_BETA_LENGTHS,
+    BETA_OPTIMIZERS as _KREA2_BETA_OPTIMIZERS,
+    BETA_HINTS as _KREA2_BETA_HINTS,
+    EPS_OPTIMIZERS as _KREA2_EPS_OPTIMIZERS,
+    EPS_OPTIMIZER_ORDER as _KREA2_EPS_OPTIMIZER_ORDER,
+    MIN_LR_RATIO_SCHEDULERS as _KREA2_MIN_LR_RATIO_SCHEDULERS,
+    NUM_CYCLES_SCHEDULERS as _KREA2_NUM_CYCLES_SCHEDULERS,
+    LEGACY_OPTIMIZER_ALIASES as _KREA2_LEGACY_OPTIMIZER_ALIASES,
+    VISIBLE_OPTIMIZERS as _KREA2_VISIBLE_OPTIMIZERS,
+    HIDDEN_LEGACY_OPTIMIZERS as _KREA2_HIDDEN_LEGACY_OPTIMIZERS,
+    CURATED_OPTIMIZERS as _KREA2_CURATED_OPTIMIZERS,
+    OPTIMIZER_ARGUMENTS as _KREA2_OPTIMIZER_ARGUMENTS,
+    OPTIONAL_OPTIMIZER_PACKAGES as _KREA2_OPTIONAL_OPTIMIZER_PACKAGES,
 )
 
 
 KREA2_TRAINER_FILE = "./backend/training/krea2_train.py"
 KREA2_CACHE_RUNNER_FILE = "./backend/training/krea2_cache_runner.py"
-KREA2_PROFILE_ID = "krea2-lora"
 KREA2_AUTO_CACHE_DIR_NAME = ".krea2-cache"
 
-_ATTENTION_FLAGS = {
-    "sdpa": "sdpa",
-    "flash_attn": "flash_attn",
-    "xformers": "xformers",
-}
-_KREA2_MIXED_PRECISIONS = ("bf16", "fp16")
-_KREA2_TRAINING_DURATIONS = {"epochs", "steps"}
-_KREA2_LR_SCHEDULERS = {
-    "constant",
-    "constant_with_warmup",
-    "linear",
-    "cosine",
-    "cosine_with_restarts",
-    "polynomial",
-    "inverse_sqrt",
-    "cosine_with_min_lr",
-    "warmup_stable_decay",
-    "piecewise_constant",
-    # Kept for old saved presets.  musubi selects this internally for
-    # AdaFactor relative-step mode; it is deliberately not offered as a
-    # general UI scheduler.
-    "adafactor",
-    "rex",
-}
-_KREA2_COMPILE_MODES = {"default", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs"}
-_KREA2_COMPILE_DYNAMIC_VALUES = {"auto", "true", "false"}
-_KREA2_PRODIGYPLUS_OPTIMIZER = KREA2_PRODIGYPLUS_OPTIMIZER_TYPE
-# musubi recognizes optimizer classes ending in ``ScheduleFree`` and supplies
-# its own no-op scheduler for them.  That does *not* mean each such class
-# accepts AdamWScheduleFree's ``warmup_steps`` constructor argument.
-_KREA2_INTERNAL_SCHEDULER_OPTIMIZERS = internal_scheduler_selectors(KREA2_PROFILE)
-_KREA2_SCHEDULEFREE_WARMUP_OPTIMIZERS = frozenset({KREA2_SCHEDULEFREE_OPTIMIZER_TYPE})
-_KREA2_PRODIGY_OPTIMIZERS = frozenset({"prodigyopt.Prodigy", _KREA2_PRODIGYPLUS_OPTIMIZER})
-_KREA2_BETA_LENGTHS: dict[str, set[int]] = optimizer_beta_lengths(KREA2_PROFILE)
-# Hidden legacy torch optimizers remain launch-compatible but are not product
-# options, so their constructor capabilities stay local to the compatibility path.
-_KREA2_BETA_LENGTHS.update(
-    {
-        "torch.optim.Adam": {2},
-        "torch.optim.RAdam": {2},
-        "torch.optim.NAdam": {2},
-    }
-)
-_KREA2_BETA_OPTIMIZERS = set(_KREA2_BETA_LENGTHS)
-_KREA2_BETA_HINTS = optimizer_beta_hint_map(KREA2_PROFILE)
-_KREA2_BETA_HINTS.update(
-    {
-        "torch.optim.Adam": "field.betasHint_adam",
-        "torch.optim.RAdam": "field.betasHint_adam",
-        "torch.optim.NAdam": "field.betasHint_adam",
-    }
-)
-_KREA2_EPS_OPTIMIZERS = set(optimizer_eps_selectors(KREA2_PROFILE))
-_KREA2_EPS_OPTIMIZERS.update(
-    {"torch.optim.Adam", "torch.optim.RAdam", "torch.optim.NAdam"}
-)
-_KREA2_EPS_OPTIMIZER_ORDER = tuple(
-    entry.selector
-    for entry in optimizer_entries(KREA2_PROFILE)
-    if entry.selector in _KREA2_EPS_OPTIMIZERS
-) + ("torch.optim.Adam", "torch.optim.RAdam", "torch.optim.NAdam")
-_KREA2_MIN_LR_RATIO_SCHEDULERS = {"cosine_with_min_lr", "warmup_stable_decay", "rex"}
-_KREA2_NUM_CYCLES_SCHEDULERS = {"cosine_with_restarts", "cosine_with_min_lr", "warmup_stable_decay"}
-_KREA2_LEGACY_OPTIMIZER_ALIASES = {
-    **{entry.label.lower(): entry.selector for entry in optimizer_entries(KREA2_PROFILE)},
-    # These bare values were valid selectors in the sd-scripts form, but
-    # musubi resolves non-dotted names from torch.optim.  Translate only the
-    # known values to their real musubi-importable class paths.
-    "pagedadamw8bit": "bitsandbytes.optim.PagedAdamW8bit",
-    "lion": "pytorch_optimizer.Lion",
-    "lion8bit": "bitsandbytes.optim.Lion8bit",
-    "pagedlion8bit": "bitsandbytes.optim.PagedLion8bit",
-    "prodigy": "prodigyopt.Prodigy",
-    "prodigyplus": _KREA2_PRODIGYPLUS_OPTIMIZER,
-    "prodigyplusschedulefree": _KREA2_PRODIGYPLUS_OPTIMIZER,
-    "adamwschedulefree": "schedulefree.AdamWScheduleFree",
-    "came": "pytorch_optimizer.CAME",
-}
-_KREA2_VISIBLE_OPTIMIZERS = optimizer_selectors(KREA2_PROFILE)
-# These generic torch optimizers were visible in the first Krea 2 release.
-# Keep them launch-compatible for saved presets, but do not offer new tasks a
-# half-configured SGD/Adam-family surface in the curated selector.
-_KREA2_HIDDEN_LEGACY_OPTIMIZERS = frozenset(
-    {"torch.optim.Adam", "torch.optim.RAdam", "torch.optim.NAdam", "torch.optim.SGD"}
-)
-_KREA2_CURATED_OPTIMIZERS = _KREA2_VISIBLE_OPTIMIZERS | _KREA2_HIDDEN_LEGACY_OPTIMIZERS
-_KREA2_OPTIMIZER_ARGUMENTS = {
-    **_SHARED_KREA2_OPTIMIZER_ARGUMENTS,
-    "krea_adamw_fused": FormArgument("fused", {"AdamW"}),
-    "krea_optimizer_weight_decay": FormArgument("weight_decay", _KREA2_CURATED_OPTIMIZERS),
-    "krea_optimizer_betas": FormArgument("betas", _KREA2_BETA_OPTIMIZERS),
-    "krea_optimizer_eps": FormArgument("eps", _KREA2_EPS_OPTIMIZERS),
-    "krea_prodigy_d_coef": FormArgument("d_coef", _KREA2_PRODIGY_OPTIMIZERS),
-    "krea_prodigy_d0": FormArgument("d0", _KREA2_PRODIGY_OPTIMIZERS),
-    "krea_prodigyplus_use_stableadamw": FormArgument("use_stableadamw", {_KREA2_PRODIGYPLUS_OPTIMIZER}),
-    "krea_schedulefree_warmup_steps": FormArgument("warmup_steps", _KREA2_SCHEDULEFREE_WARMUP_OPTIMIZERS),
-    **{
-        f"krea_adafactor_{key}": FormArgument(key, {"AdaFactor"})
-        for key in ("relative_step", "scale_parameter", "warmup_init", "clip_threshold", "eps")
-    },
-}
-_KREA2_OPTIONAL_OPTIMIZER_PACKAGES = {
-    "pytorch_optimizer.": "pytorch-optimizer",
-    "prodigyopt.": "prodigyopt",
-    "prodigyplus.": "prodigy-plus-schedule-free",
-    "schedulefree.": "schedulefree",
-}
+
 def _show_if_one_of(key: str, values: Iterable[str]) -> dict[str, Any]:
     ordered = list(values)
     condition: dict[str, Any] = {"key": key, "eq": ordered[0]}
