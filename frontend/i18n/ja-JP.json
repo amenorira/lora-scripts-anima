@@ -630,6 +630,8 @@
 		"epochFormula": "1 エポック：{batches} バッチ ÷ 勾配累積 {accumulation} = {steps} ステップ",
 		"epochFormulaMultiGpu": "1 エポック：{batches} バッチ ÷ GPU {gpus} 枚 ÷ 勾配累積 {accumulation} = {steps} ステップ",
 		"totalFormula": "{epochs} エポック × {steps} ステップ/エポック = 合計 {total} ステップ",
+		"maxStepsFormula": "最大学習ステップ数：{total}、約 {epochs} エポック",
+		"kreaNote": "同名キャプションのある画像から推定します。バケット分けにより実際のステップ数が変わる場合があります。",
 		"sdScriptsNote": "sd-scripts と同じバケット・切り上げ規則を使い、学習開始前に再計算します。"
 	},
 	"field": {

@@ -1000,7 +1000,8 @@ def estimate_krea2_steps(config: dict[str, Any]) -> dict[str, Any]:
         "original_images": len(images),
         "repeated_samples": repeated_samples,
         "subsets": [
-            {"name": directory.name, "image_count": len(group_images), "repeats": repeats}
+            {"name": directory.name, "image_count": len(group_images), "repeats": repeats,
+             "sample_count": len(group_images) * repeats, "is_reg": False}
             for directory, _, group_images in groups
         ],
         "enable_bucket": bool(config.get("enable_bucket", True)),
@@ -1011,6 +1012,8 @@ def estimate_krea2_steps(config: dict[str, Any]) -> dict[str, Any]:
         "gpu_processes": gpu_processes,
         "effective_batch": batch_size * accumulation * gpu_processes,
         "steps_per_epoch": steps_per_epoch,
+        "epochs": epochs,
+        "duration_mode": duration_mode,
         "max_train_epochs": epochs,
         "max_train_steps": total_steps,
         "total_steps": total_steps,

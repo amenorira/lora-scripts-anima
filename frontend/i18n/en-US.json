@@ -630,6 +630,8 @@
 		"epochFormula": "Per epoch: {batches} batches ÷ accumulation {accumulation} = {steps} steps",
 		"epochFormulaMultiGpu": "Per epoch: {batches} batches ÷ {gpus} GPUs ÷ accumulation {accumulation} = {steps} steps",
 		"totalFormula": "{epochs} epochs × {steps} steps/epoch = {total} steps total",
+		"maxStepsFormula": "Maximum training steps: {total}, approximately {epochs} epochs",
+		"kreaNote": "Estimated from images with matching captions; bucketing may change the actual step count.",
 		"sdScriptsNote": "Uses the same bucket and ceiling rules as sd-scripts; recalculated before training starts."
 	},
 	"field": {

@@ -34,7 +34,7 @@ window.trainingPreflight = {
 
   _stepEstimatePayload() {
     const keys = [
-      'model_train_type', 'train_data_dir', 'enable_reg_data', 'reg_data_dir', 'dataset_cache_dir', 'resolution', 'enable_bucket',
+      'model_train_type', 'train_data_dir', 'caption_extension', 'enable_reg_data', 'reg_data_dir', 'dataset_cache_dir', 'resolution', 'enable_bucket',
       'bucket_no_upscale', 'min_bucket_reso', 'max_bucket_reso', 'bucket_reso_steps',
       'krea_num_repeats', 'train_batch_size', 'gradient_accumulation_steps',
       'krea_training_duration_mode', 'max_train_epochs', 'max_train_steps', 'gpu_ids',
@@ -392,9 +392,14 @@ window.trainingPreflight = {
     const estimate = this.stepEstimate;
     if (!estimate) return '';
     return this._stepEstimateText(
-      'stepEstimate.totalFormula', undefined,
+      estimate.duration_mode === 'steps' ? 'stepEstimate.maxStepsFormula' : 'stepEstimate.totalFormula', undefined,
       { steps: estimate.steps_per_epoch, epochs: estimate.epochs, total: estimate.total_steps }
     );
+  },
+
+  stepEstimateNote() {
+    return this.t(this.stepEstimate?.engine_id === 'musubi_tuner'
+      ? 'stepEstimate.kreaNote' : 'stepEstimate.sdScriptsNote');
   },
 
   renderStepEstimatePanel() {
@@ -416,7 +421,7 @@ window.trainingPreflight = {
         <div class="step-estimate-line"><span class="step-estimate-number">3</span><span x-text="stepEstimateBatchFormula()"></span></div>
         <div class="step-estimate-line"><span class="step-estimate-number">4</span><span x-text="stepEstimateEpochFormula()"></span></div>
         <div class="step-estimate-line step-estimate-line-total"><span class="step-estimate-number">5</span><span x-text="stepEstimateTotalFormula()"></span></div>
-        <div class="step-estimate-note" x-text="t('stepEstimate.sdScriptsNote')"></div>
+        <div class="step-estimate-note" x-text="stepEstimateNote()"></div>
       </div>
     </div>`;
   },

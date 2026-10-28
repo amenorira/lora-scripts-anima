@@ -630,6 +630,8 @@
 		"epochFormula": "每轮：{batches} 批 ÷ 梯度累积 {accumulation} = {steps} 步",
 		"epochFormulaMultiGpu": "每轮：{batches} 批 ÷ {gpus} 张 GPU ÷ 梯度累积 {accumulation} = {steps} 步",
 		"totalFormula": "{epochs} 轮 × 每轮 {steps} 步 = 总共 {total} 步",
+		"maxStepsFormula": "最大训练步数：{total} 步，约 {epochs} 轮",
+		"kreaNote": "按有同名标注的图片估算；分桶可能改变实际步数。",
 		"sdScriptsNote": "按 sd-scripts 的分桶与向上取整规则计算；开始训练前会再算一次。"
 	},
 	"field": {
