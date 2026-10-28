@@ -396,13 +396,9 @@ window.monitorCoreMixin = {
       if (!versions || versions.logs === (this._logObservationVersion || 0)) {
         this._applyMonitorLogSnapshot(next.log_lines, next.log_total, reusingFullLog);
       }
-      if (!versions || versions.previews == null || versions.previews === this._previewRequestSeq) {
-        const wasAtEnd = this.previews.length === 0 || this.previewStep >= this.previews.length - 1;
-        this._invalidatePreviewRequest();
-        this.previews = Array.isArray(next.previews) ? next.previews : [];
-        this.previewsVersion++;
-        this._followLatestPreview(wasAtEnd);
-      } else next.previews = this.previews;
+      if (!this._applyPreviewSnapshot(next.previews, versions?.previews ?? this._previewRequestSeq)) {
+        next.previews = this.previews;
+      }
     }
     const liveOutputRunDir = this.currentOutputRunDir;
     if (!versions || versions.outputs === (this._outputCountVersion || 0)) this._applyOutputCount(liveOutputRunDir, next.output_count);

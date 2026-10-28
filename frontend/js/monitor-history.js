@@ -137,6 +137,7 @@ window.monitorHistoryMixin = {
   async _fetchRunDetail(runDir) {
     if (this.selectedRunDir !== runDir) return;
     const requestSeq = ++this._runDetailRequestSeq;
+    const previewRequestSeq = this._previewRequestSeq;
     const isCurrent = () => requestSeq === this._runDetailRequestSeq && this.selectedRunDir === runDir;
     try {
       this.startProgress();
@@ -151,10 +152,9 @@ window.monitorHistoryMixin = {
         this.lossDataVersion++;
         this.trainParams = j.data.train_params || [];
         this.trainParamsVersion++;
-        this.previews = j.data.previews || [];
-        this.previewsVersion++;
-        // 历史记录进入时定位到最新样本（末尾）
-        this.previewStep = this.previews.length ? this.previews.length - 1 : 0;
+        if (!this._applyPreviewSnapshot(j.data.previews, previewRequestSeq)) {
+          this.runDetailData.previews = this.previews;
+        }
         this._applyMonitorLogSnapshot(j.data.log_lines, j.data.log_total);
         this._forceLogRebuild = true;
         // 默认完整日志：末页 + 跟随（历史停在末尾；工具栏可翻页浏览全部）

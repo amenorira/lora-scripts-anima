@@ -124,3 +124,20 @@ test('a newer detail snapshot invalidates an older outstanding preview response'
   assert.equal(app.previews[0].name, 'new.png');
   assert.equal(app.previewsLoading, false);
 });
+
+test('a late historical detail cannot replace samples refreshed while its view was loading', async () => {
+  const {app, requests} = detailHarness();
+  app.$nextTick=async()=>{};
+  const detail=app.viewRunDetail('output/history',true);
+  await new Promise(setImmediate);
+  assert.match(requests[0].url,/run-detail/);
+  const previews=app.refreshPreviews();
+  assert.match(requests[1].url,/run_dir=output%2Fhistory/);
+  requests[1].resolve(response([{name:'new-history.png'}]));
+  await previews;
+  requests[0].resolve(response({previews:[],log_lines:[],tensorboard_loss:[]}));
+  await detail;
+  assert.equal(app.previews[0].name,'new-history.png');
+  assert.equal(app.runDetailData.previews,app.previews);
+  assert.equal(app.runDetailLoading,false);
+});

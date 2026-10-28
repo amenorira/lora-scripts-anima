@@ -5,6 +5,16 @@ window.monitorPreviewsMixin = {
     this.previewsLoading = false;
   },
 
+  _applyPreviewSnapshot(previews, requestSeq = this._previewRequestSeq) {
+    if (requestSeq !== this._previewRequestSeq) return false;
+    const wasAtEnd = this.previews.length === 0 || this.previewStep >= this.previews.length - 1;
+    this._invalidatePreviewRequest();
+    this.previews = Array.isArray(previews) ? previews : [];
+    this.previewsVersion++;
+    this._followLatestPreview(wasAtEnd);
+    return true;
+  },
+
   setPreviewMediaPaused(paused) {
     this._previewMediaPaused = !!paused;
     if (paused) {
