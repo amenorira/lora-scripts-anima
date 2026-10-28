@@ -299,7 +299,7 @@ window.realtimeMixin = {
         timeout = setTimeout(() => controller.abort(), 4000);
         const taskBoundaryAt = this.liveTaskBoundaryAt;
         const requestedTaskId = this.liveTaskId;
-        const monitorVersions = { logs: this._logObservationVersion || 0, outputs: this._outputCountVersion || 0, progress: this._monitorProgressVersion || 0 };
+        const monitorVersions = { logs: this._logObservationVersion || 0, outputs: this._outputCountVersion || 0, progress: this._monitorProgressVersion || 0, previews: this._previewRequestSeq };
         const explicitDetail = options && Object.prototype.hasOwnProperty.call(options, 'monitorDetail')
           ? !!options.monitorDetail
           : this.currentRoute === 'monitor-dashboard' && !this.selectedRunDir;

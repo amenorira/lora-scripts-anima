@@ -14,7 +14,7 @@ function harness() {
     renderDashboard: () => renders.push(app.currentRoute), scheduleRender() {},
     realtimeSubscribe() {}, realtimeUnsubscribe() {}, refreshMonitorRealtimeDetail() {}, t: key => key,
   });
-  return {app, requests, renders};
+  return {app, requests, renders, core: window.monitorCoreMixin};
 }
 
 test('preview responses from a previous task are ignored before either run directory is known', async () => {
@@ -85,3 +85,42 @@ for (const direction of ['history', 'live']) {
     assert.equal(app.previewsLoading, false);
   });
 }
+
+function detailHarness() {
+  const fixture = harness();
+  const {app} = fixture;
+  Object.assign(app, {
+    liveTaskId: null, taskId: null,
+    monitorData: {state: 'FINISHED', detail: true, run_dir: 'output/A', active_task: {id: 'A'}},
+    startProgress() {}, finishProgress() {}, toast() {},
+    _observeMonitorClock() {}, _ingestMonitorPerfSamples() {}, _recordMonitorPerfSample() {},
+    _applyMonitorLogSnapshot() {},
+  });
+  return fixture;
+}
+
+test('an older same-run detail response cannot erase a newer preview refresh', async () => {
+  const {app, requests, core} = detailHarness();
+  app.refreshMonitorRealtimeDetail = core.refreshMonitorRealtimeDetail;
+  const detail = app.refreshMonitorRealtimeDetail();
+  const previews = app.refreshPreviews();
+  requests[1].resolve(response([{name: 'new.png'}]));
+  await previews;
+  requests[0].resolve(response({run_dir: 'output/A', previews: [], tensorboard_loss: []}));
+  await detail;
+  assert.equal(app.previews[0].name, 'new.png');
+  assert.equal(app.monitorData.previews, app.previews);
+});
+
+test('a newer detail snapshot invalidates an older outstanding preview response', async () => {
+  const {app, requests} = detailHarness();
+  const old = app.refreshPreviews();
+  app.applyRealtimeMonitorSnapshot({monitor: {
+    detail: true, active_task: {id: 'A'}, run_dir: 'output/A',
+    previews: [{name: 'new.png'}], tensorboard_loss: [],
+  }}, {previews: app._previewRequestSeq});
+  requests[0].resolve(response([{name: 'old.png'}]));
+  await old;
+  assert.equal(app.previews[0].name, 'new.png');
+  assert.equal(app.previewsLoading, false);
+});

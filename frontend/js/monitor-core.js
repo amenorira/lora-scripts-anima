@@ -398,10 +398,13 @@ window.monitorCoreMixin = {
       if (!versions || versions.logs === (this._logObservationVersion || 0)) {
         this._applyMonitorLogSnapshot(next.log_lines, next.log_total, reusingFullLog);
       }
-      const wasAtEnd = this.previews.length === 0 || this.previewStep >= this.previews.length - 1;
-      this.previews = Array.isArray(next.previews) ? next.previews : [];
-      this.previewsVersion++;
-      this._followLatestPreview(wasAtEnd);
+      if (!versions || versions.previews == null || versions.previews === this._previewRequestSeq) {
+        const wasAtEnd = this.previews.length === 0 || this.previewStep >= this.previews.length - 1;
+        this._invalidatePreviewRequest();
+        this.previews = Array.isArray(next.previews) ? next.previews : [];
+        this.previewsVersion++;
+        this._followLatestPreview(wasAtEnd);
+      } else next.previews = this.previews;
     }
     const liveOutputRunDir = this.currentOutputRunDir;
     if (!versions || versions.outputs === (this._outputCountVersion || 0)) this._applyOutputCount(liveOutputRunDir, next.output_count);
@@ -629,7 +632,7 @@ window.monitorCoreMixin = {
     const runDir = this.currentOutputRunDir;
     if (!this.selectedRunDir && !this.liveTaskId && runDir) {
       const generation = ++this._monitorRealtimeDetailGeneration;
-      const versions = { logs: this._logObservationVersion || 0, outputs: this._outputCountVersion || 0, progress: this._monitorProgressVersion || 0 };
+      const versions = { logs: this._logObservationVersion || 0, outputs: this._outputCountVersion || 0, progress: this._monitorProgressVersion || 0, previews: this._previewRequestSeq };
       try {
         const response = await fetch('/api/monitor/run-detail?run_dir=' + encodeURIComponent(runDir));
         const body = await response.json();
