@@ -153,6 +153,7 @@ window.trainingCoreMixin = {
   },
 
   switchTrainType(v) {
+    this._invalidateTrainingPickers();
     // Update display labels and descriptions
     const tt = this.trainTypes.find(t => t.v === v);
     this.currentTrainTypeDesc = tt ? window.t(tt.dk, tt.l) : '';
@@ -220,6 +221,7 @@ window.trainingCoreMixin = {
     this._cancelKreaDitFormatCheck();
     if (!route || !route.startsWith('train-')) return;
 
+    this._invalidateTrainingPickers();
     this._cancelScheduledTrainTypeSwitch();
     clearTimeout(this._formSaveTimer);
     this._formSaveTimer = null;
@@ -235,6 +237,7 @@ window.trainingCoreMixin = {
   },
 
   _disposeTrainForm() {
+    this._invalidateTrainingPickers();
     this._disposeKreaDitFormatWatcher();
     this._cancelScheduledTrainTypeSwitch();
     this._cancelProfileFieldWatcherSetup();

@@ -46,3 +46,38 @@ test('late picker responses cannot replace a newer selection or reopen a closed 
   assert.equal(app.showFilePickerModalFlag, false);
   assert.equal(app._pickerFiles.length, 0);
 });
+
+test('native picker ignores results after the form, profile, route or field changes', async () => {
+  for (const change of [
+    app => { app.form = { model_train_type: 'krea2-lora', vae: 'krea-vae' }; },
+    app => { app.form.model_train_type = 'krea2-lora'; },
+    app => { app.currentRoute = 'settings'; },
+    app => { app.form.vae = 'manually-selected'; },
+    app => app._invalidateTrainingPickers(),
+  ]) {
+    const pending = deferred();
+    const app = application(() => pending.promise);
+    app.form = { model_train_type: 'anima-lora', vae: 'original' };
+    app.currentRoute = 'train-basic';
+    app.setField = () => assert.fail('stale picker must not edit the form');
+    const choice = app.localFilePicker('vae', 'file-model');
+    change(app);
+    pending.resolve(response({ path: 'late-vae' }));
+    await choice;
+  }
+});
+
+test('native picker accepts only the latest request in the current form', async () => {
+  const first = deferred(), second = deferred(), pending = [first, second];
+  const app = application(() => pending.shift().promise);
+  app.form = { model_train_type: 'anima-lora', vae: 'original' };
+  app.setField = (key, value) => { app.form[key] = value; };
+  const old = app.localFilePicker('vae', 'file-model');
+  const current = app.localFilePicker('vae', 'file-model');
+  first.resolve(response({ path: 'old' }));
+  await old;
+  assert.equal(app.form.vae, 'original');
+  second.resolve(response({ path: 'selected' }));
+  await current;
+  assert.equal(app.form.vae, 'selected');
+});

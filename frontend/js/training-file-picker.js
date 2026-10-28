@@ -9,14 +9,25 @@ window.trainingFilePicker = {
   _pickerLoading: false,
   _pickerError: '',
   _pickerRequestSeq: 0,
+  _nativePickerRequestSeq: 0,
   _pickerRole: '',
+  _invalidateTrainingPickers() {
+    this._nativePickerRequestSeq++;
+    this.closeFilePickerModal();
+  },
   // ── File Pickers ───────────────────────────────────────
   async localFilePicker(key, role) {
+    const requestSeq = ++this._nativePickerRequestSeq;
+    const form = this.form, route = this.currentRoute, profile = form.model_train_type, value = form[key];
+    const isCurrent = () => requestSeq === this._nativePickerRequestSeq
+      && this.form === form && this.currentRoute === route
+      && this.form.model_train_type === profile && this.form[key] === value;
     let type = 'folder';
     if (role==='file-model'||role==='file-model-saved') type='model-file';
     try {
       const r = await fetch('/api/pick_file?picker_type='+type);
       const d = await r.json();
+      if (!isCurrent()) return;
       if (d.status==='success'&&d.data&&d.data.path) {
         this.setField(key, d.data.path);
       } else {
@@ -29,7 +40,7 @@ window.trainingFilePicker = {
           this.toast(this.t('common.localPickerCancelled'));
         }
       }
-    } catch(e) { this.toast(this.t('common.localPickerNA'), 'error'); }
+    } catch(e) { if (isCurrent()) this.toast(this.t('common.localPickerNA'), 'error'); }
   },
 
   async builtinFilePicker(key, role) {
