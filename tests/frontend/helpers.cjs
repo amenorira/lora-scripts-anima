@@ -9,7 +9,7 @@ const readFrontend = name => readRepo(`frontend/js/${name.replace(/\.js$/, '')}.
 const FRONTEND_DEPENDENCIES = {
   'monitor-render': ['monitor-summary', 'monitor-diagnostics', 'monitor-resources', 'monitor-artifacts-render', 'monitor-history-render', ],
   'tagger': ['tagger-tasks', 'tagger-sources', ],
-  'environment-render': [],
+  'environment-render': ['environment-models-render', ],
 };
 const frontendScripts = files => [].concat(files).flatMap(file => [
   ...(FRONTEND_DEPENDENCIES[file.replace(/\.js$/, '')] || []), file,
