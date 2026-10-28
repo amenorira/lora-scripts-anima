@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { loadFrontend, response, deferred } = require('./helpers.cjs');
+const { loadTagEditor, response, deferred } = require('./helpers.cjs');
 
 function fixture() {
   const raw = '\uFEFF  cat, dog\r\n';
@@ -10,7 +10,7 @@ function fixture() {
   let create = () => response({ session_id: 'new', dir: '/dataset', count: 2, page: 1,
     items: [{ path: 'b', tags: 'other', caption_revision: 'b1' }], tags: [] });
   context.fetch = (url, options) => options?.method === 'DELETE' ? Promise.resolve(response({})) : Promise.resolve(create(url, options));
-  loadFrontend('tag-editor', context);
+  loadTagEditor( context);
   const app = Object.assign({}, context.window.tagEditorMixin, {
     tagEditorSessionId: 'old', tagEditorDir: '/dataset', tagEditorLoadedDir: '/dataset',
     tagEditorImages: [{ path: 'a', tags: raw }], tagEditorOriginal: { a: raw },

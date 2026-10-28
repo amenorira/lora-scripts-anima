@@ -1,10 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {loadFrontend} = require('./helpers.cjs');
+const {loadTagEditor} = require('./helpers.cjs');
 
 function fixture() {
   const context={window:{innerWidth:1200,innerHeight:800},document:{activeElement:null}};
-  loadFrontend('tag-editor.js',context);
+  loadTagEditor(context);
   const callbacks=[];
   const app=Object.assign({},context.window.tagEditorMixin,{
     currentRoute:'tagEditor',tagEditorSelected:['a'],tagDictionaryCloseHover(){},$nextTick:cb=>callbacks.push(cb),

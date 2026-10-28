@@ -1,10 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { loadFrontend } = require('./helpers.cjs');
+const { loadTagEditor } = require('./helpers.cjs');
 
 function fixture() {
   const context = {window:{}, URLSearchParams, setTimeout, clearTimeout};
-  loadFrontend('tag-editor.js',context);
+  loadTagEditor(context);
   const app = Object.assign({},context.window.tagEditorMixin, {
     tagEditorSessionId:'test', tagEditorPageItems:[], tagEditorSelected:[],
     _teFlushAllPendingTextEdits(){}, _updateEditorPanel(){},

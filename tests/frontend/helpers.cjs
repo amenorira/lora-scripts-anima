@@ -14,6 +14,10 @@ function loadFrontend(files, context = { window: {} }) {
   return context;
 }
 
+function loadTagEditor(context = { window: {} }) {
+  return loadFrontend(['tag-editor-session', 'tag-editor'], context);
+}
+
 // These tests intentionally compare arrays and objects in Node's own realm.
 function loadGlobalFrontend(files) {
   global.window = {};
@@ -33,4 +37,4 @@ function composeMixins(...sources) {
   return app;
 }
 
-module.exports = { ROOT, readRepo, readFrontend, loadFrontend, loadGlobalFrontend, response, deferred, composeMixins };
+module.exports = { ROOT, readRepo, readFrontend, loadFrontend, loadTagEditor, loadGlobalFrontend, response, deferred, composeMixins };

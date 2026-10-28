@@ -2,11 +2,11 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
-const {loadFrontend}=require('./helpers.cjs');
+const {loadTagEditor}=require('./helpers.cjs');
 const {uiHarness}=require('./ui-helpers.cjs');
 
 function fixture(kind) {
-  const f=uiHarness();loadFrontend('tag-editor',f.context);
+  const f=uiHarness();loadTagEditor(f.context);
   f.document.body.classList.remove=name=>f.document.body.classList.toggle(name,false);
   const trigger=new f.Element('button'),dialog=new f.Element('dialog');
   dialog.id=kind==='lightbox'?'teLightbox':'help';

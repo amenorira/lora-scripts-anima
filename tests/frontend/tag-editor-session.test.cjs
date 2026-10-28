@@ -1,12 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { loadFrontend } = require('./helpers.cjs');
+const { loadTagEditor } = require('./helpers.cjs');
 
 function fixture() {
   const pending = [];
   const context = { window: {}, URLSearchParams, AbortController, setTimeout, clearTimeout,
     fetch(url, options) { return new Promise((resolve, reject) => pending.push({ url, options, resolve, reject })); } };
-  loadFrontend('tag-editor.js', context);
+  loadTagEditor( context);
   const app = Object.assign({}, context.window.tagEditorMixin, {
     tagEditorSessionId: 'A', tagEditorImages: [], tagEditorPageItems: [],
     tagEditorOriginal: {}, _teEditVersions: {}, _teCaptionRevisions: {}, _tePathIndex: {}, _tePageCache: {},

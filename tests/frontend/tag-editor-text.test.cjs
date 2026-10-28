@@ -1,10 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { loadFrontend } = require('./helpers.cjs');
+const { loadTagEditor } = require('./helpers.cjs');
 
 function fixture(raw = '  原文,  with commas\r\n\r\n末段  \r\n') {
   const context = { window: {}, setTimeout, clearTimeout };
-  loadFrontend('tag-editor.js', context);
+  loadTagEditor( context);
   const app = Object.assign({}, context.window.tagEditorMixin, {
     tagEditorImages: [{ path: 'a', tags: raw }], tagEditorOriginal: { a: raw }, tagEditorSelected: ['a'],
     tagEditorHistory: [], _teHistoryState: {}, _teEditVersions: {}, _tePendingTextEdits: {},

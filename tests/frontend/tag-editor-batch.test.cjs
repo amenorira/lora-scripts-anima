@@ -1,10 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { loadFrontend } = require('./helpers.cjs');
+const { loadTagEditor } = require('./helpers.cjs');
 
 function fixture(captions) {
   const context = { window: {} };
-  loadFrontend('tag-editor.js', context);
+  loadTagEditor( context);
   const history = [], messages = [], writes = [];
   let confirmation;
   const images = captions.map((tags, i) => ({ path: String(i), name: String(i), tags }));

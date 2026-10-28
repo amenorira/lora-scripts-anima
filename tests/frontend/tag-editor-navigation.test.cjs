@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {loadFrontend,deferred}=require('./helpers.cjs');
+const {loadTagEditor,deferred}=require('./helpers.cjs');
 
 function fixture() {
   const pending=[],decodes=[],notices=[];
@@ -9,7 +9,7 @@ function fixture() {
     fetch:()=>{const request=deferred();pending.push(request);return request.promise;},
     Image:class {constructor(){this.request=deferred();decodes.push(this);}decode(){return this.request.promise;}},
   };
-  loadFrontend('tag-editor',context);
+  loadTagEditor(context);
   const app=Object.assign({},context.window.tagEditorMixin,{
     currentRoute:'tagEditor',tagEditorSessionId:'A',tagEditorPage:1,tagEditorServerTotalPages:2,
     tagEditorImages:[],tagEditorOriginal:{},_teEditVersions:{},_teCaptionRevisions:{},_tePathIndex:{},_tePageCache:{},

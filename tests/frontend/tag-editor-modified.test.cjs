@@ -1,12 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {loadFrontend}=require('./helpers.cjs');
+const {loadTagEditor}=require('./helpers.cjs');
 
 function fixture() {
   const context={window:{},URLSearchParams,setTimeout,clearTimeout,
     fetch:()=>assert.fail('modified filtering must stay local'),
     localStorage:{removeItem(){}}};
-  loadFrontend('tag-editor',context);
+  loadTagEditor(context);
   const images=[
     {path:'z',name:'z.png',rel_path:'dir/z.png',tags:'cat, blue'},
     {path:'a',name:'a.png',rel_path:'dir/a.png',tags:'cat, red'},

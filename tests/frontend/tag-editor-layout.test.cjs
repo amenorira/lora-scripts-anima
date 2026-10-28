@@ -1,11 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {loadFrontend} = require('./helpers.cjs');
+const {loadTagEditor} = require('./helpers.cjs');
 
 function fixture() {
   const context={window:{matchMedia:()=>({matches:false})},
     getComputedStyle:()=>({columnGap:'8px',paddingLeft:'8px',paddingRight:'8px'})};
-  loadFrontend('tag-editor.js',context);
+  loadTagEditor(context);
   return {app:Object.assign({},context.window.tagEditorMixin),context};
 }
 

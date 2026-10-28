@@ -1,11 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {loadFrontend, readRepo} = require('./helpers.cjs');
+const {loadTagEditor, readRepo} = require('./helpers.cjs');
 
 test('clear filters cancels pending search, resets invalid regex and schedules one clean refresh', () => {
   const timers = new Map(); let next = 0;
   const context = {window: {}, setTimeout: fn => { timers.set(++next, fn); return next; }, clearTimeout: id => timers.delete(id)};
-  loadFrontend('tag-editor', context);
+  loadTagEditor( context);
   const calls = [];
   const raw = '\uFEFF  untouched\r\n';
   const history = [{changes: {a: {before: null, after: raw}}}];

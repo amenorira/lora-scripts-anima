@@ -1,7 +1,7 @@
 // Caption editing, stale confirmations, and undo/redo regressions.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { loadFrontend, deferred } = require('./helpers.cjs');
+const { loadFrontend, loadTagEditor, deferred } = require('./helpers.cjs');
 
 // Caption edits and history need an isolated editor, without a dictionary worker.
 
@@ -15,7 +15,8 @@ function makeClient() {
   context.localStorage = { _v: {}, getItem(k) { return k in this._v ? this._v[k] : null; }, setItem(k, v) { this._v[k] = String(v); }, removeItem(k) { delete this._v[k]; } };
   context.navigator = { clipboard: { writeText() { return Promise.resolve(); } } };
 
-  loadFrontend(['tag-dictionary-lib', 'tag-dictionary', 'tag-editor'], context);
+  loadFrontend(['tag-dictionary-lib', 'tag-dictionary'], context);
+  loadTagEditor(context);
 
   const ctx = Object.assign({}, context.window.tagEditorMixin, context.window.tagDictionaryMixin);
   ctx.locale = 'zh-CN';

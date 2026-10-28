@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {loadFrontend,response,deferred,readRepo,composeMixins} = require('./helpers.cjs');
+const {loadFrontend,loadTagEditor,response,deferred,readRepo,composeMixins} = require('./helpers.cjs');
 
 function harness() {
   const storage = new Map();
@@ -351,7 +351,7 @@ test('single-image editor entry resets stale filters and targets the current ima
 for (const separator of ['/','\\']) {
   test(`editor jump selects a same-named image beyond page one with ${JSON.stringify(separator)} paths`,async()=>{
     const {app,context}=harness();
-    loadFrontend('tag-editor',context);
+    loadTagEditor(context);
     Object.defineProperties(app,Object.getOwnPropertyDescriptors(context.window.tagEditorMixin));
     context.AbortController=AbortController;
     const root='C:/dataset';
