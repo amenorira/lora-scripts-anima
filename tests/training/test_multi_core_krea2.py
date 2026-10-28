@@ -103,7 +103,7 @@ class Krea2PreparationLifecycleTests(unittest.TestCase):
             with patch.object(training_routes, "tm", manager), \
                  patch.object(training_routes, "OUTPUT_DIR", root / "runs"), \
                  patch.object(training_routes, "krea2_preflight", return_value={"ok": True, "errors": [], "cache": {"ready": True}}), \
-                 patch.object(training_routes, "mark_cache_manifest", side_effect=settle_manifest), \
+                 patch.object(training_routes.preparation, "mark_cache_manifest", side_effect=settle_manifest), \
                  stub_supervisor():
                 try:
                     response = asyncio.run(exercise())
