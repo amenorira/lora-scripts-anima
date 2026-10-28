@@ -40,6 +40,14 @@ window.trainingFieldRelations = {
     return !guarded || this._autoValueRuleCanSet(guarded);
   },
 
+  _applyAutoValueRule(rule) {
+    if (!rule || rule.set === null || rule.set === undefined || !this._autoValueRuleCanSet(rule)) return false;
+    this.form[rule.target] = rule.set;
+    this._setFieldSource(rule.target, 'auto');
+    this.formDefaults[rule.target] = rule.set;
+    return true;
+  },
+
   _optimizerFields(sections = this._allSections()) {
     const rateKeys = new Set(['learning_rate', 'unet_lr', 'text_encoder_lr', 'optimizer_args_custom']);
     return sections.flatMap(section => section.fields || [])
@@ -195,15 +203,8 @@ window.trainingFieldRelations = {
       const matched = rules.find(
         rule => rule.target === target && this._matchAutoValueRule(rule)
       );
-      if (matched && matched.set !== null && matched.set !== undefined) {
-        if (this._autoValueRuleCanSet(matched)) {
-          this.form[matched.target] = matched.set;
-          this._setFieldSource(matched.target, 'auto');
-          this.formDefaults[matched.target] = matched.set;
-          if (this._allShowIfKeys().includes(matched.target)) {
-            this.showConditionalFields(matched.target);
-          }
-        }
+      if (this._applyAutoValueRule(matched) && this._allShowIfKeys().includes(matched.target)) {
+        this.showConditionalFields(matched.target);
       }
     });
     this._refreshTrainingOptionErrors();
@@ -262,13 +263,7 @@ window.trainingFieldRelations = {
           // Find the first matching rule for this target
           const matched = self._autoValueRules.find(x => x.target === target && self._matchAutoValueRule(x));
           if (matched) {
-            if (matched.set !== null && matched.set !== undefined) {
-              if (self._autoValueRuleCanSet(matched)) {
-                self.form[matched.target] = matched.set;
-                self._setFieldSource(matched.target, 'auto');
-                self.formDefaults[matched.target] = matched.set;
-              }
-            }
+            self._applyAutoValueRule(matched);
           } else if (self._autoValueTargetCanReset(target)) {
             // No rule matches → restore default (also update formDefaults)
             const field = self.findFieldDef(target);
@@ -429,6 +424,30 @@ window.trainingFieldRelations = {
       this._scheduleTrainTypeSwitch(value);
       return;
     }
+    const edit = this._normalizeTrainingFieldEdit(key, value, oldVal);
+    if (!edit) return;
+    value = edit.value;
+
+    const emosensPreviousConstraints = key === 'optimizer_type' &&
+      value === 'vendor.emo_optimizer.emosens.EmoSens'
+      ? {
+        gradient_accumulation_steps: this.form.gradient_accumulation_steps,
+        mixed_precision: this.form.mixed_precision,
+      }
+      : null;
+
+    if (key === 'optimizer_type') {
+      this._switchOptimizer(value);
+    } else {
+      this.form[key] = value;
+      this._setFieldSource(key, 'user');
+    }
+    this._applyTrainingFieldConstraints(key, value, oldVal, emosensPreviousConstraints);
+    this._applyTrainingScopeAndCache(key, value);
+    this._refreshTrainingFieldUi(key);
+  },
+
+  _normalizeTrainingFieldEdit(key, value, oldVal) {
     if (typeof this.formDefaults[key] === 'number' && value !== '' && value !== null) {
       const numVal = Number(value);
       if (!isNaN(numVal)) value = numVal;
@@ -451,7 +470,7 @@ window.trainingFieldRelations = {
     const kreaLockedReason = this.form.model_train_type === 'krea2-lora' ? this._readonlyReason(field) : '';
     if (kreaLockedReason && value !== oldVal) {
       this.toast(this.t(kreaLockedReason), 'warning');
-      return;
+      return null;
     }
 
     // LyCORIS LoKr uses -1 for automatic factor selection; zero is not a
@@ -465,7 +484,7 @@ window.trainingFieldRelations = {
     if ((key === 'cache_latents' || key === 'cache_latents_to_disk') && value === true &&
         this.form.model_train_type !== 'krea2-lora' && this.form.random_crop === true) {
       this.toast(this.t('field.cache_latentsLocked'), 'warning');
-      return;
+      return null;
     }
 
     if ((key === 'cache_text_encoder_outputs' || key === 'cache_text_encoder_outputs_to_disk') && value === true) {
@@ -476,24 +495,13 @@ window.trainingFieldRelations = {
       if (hasShuffleConflict || hasTagDropoutConflict || hasSdxlDropoutConflict || hasEpochDropoutConflict) {
         this.toast(this.t('field.cache_text_encoder_outputsLocked'), 'warning');
         this.form[key] = false;
-        return;
+        return null;
       }
     }
+    return { value };
+  },
 
-    const emosensPreviousConstraints = key === 'optimizer_type' &&
-      value === 'vendor.emo_optimizer.emosens.EmoSens'
-      ? {
-        gradient_accumulation_steps: this.form.gradient_accumulation_steps,
-        mixed_precision: this.form.mixed_precision,
-      }
-      : null;
-
-    if (key === 'optimizer_type') {
-      this._switchOptimizer(value);
-    } else {
-      this.form[key] = value;
-      this._setFieldSource(key, 'user');
-    }
+  _applyTrainingFieldConstraints(key, value, oldVal, emosensPreviousConstraints) {
     const kreaFp8WasEnabled = this.form.fp8_base;
     this._enforceKrea2UiConstraints();
     if (key === 'convrot_int8' && value === true && kreaFp8WasEnabled && !this.form.fp8_base) {
@@ -540,9 +548,10 @@ window.trainingFieldRelations = {
     if (key === 'output_dir' || key === 'output_name' || key === 'resume') {
       this.scheduleOutputPathInfo();
     }
-    this.pushHistory({ ...this.form });
     if (this._allShowIfKeys().indexOf(key) !== -1) this.showConditionalFields(key);
+  },
 
+  _applyTrainingScopeAndCache(key, value) {
     // 学习率 ↔ 训练开关联动（与 adapter.py 同步）：
     // sd-scripts 取值链：unet_lr/text_encoder_lr 非空 → 覆盖 learning_rate；为空 → 回退 learning_rate。
     // 故把"被开关排除的部分"对应的分量学习率清空，让 learning_rate 成为唯一生效的总学习率，
@@ -612,7 +621,9 @@ window.trainingFieldRelations = {
       this.form['cache_text_encoder_outputs'] = false;
       this.form['cache_text_encoder_outputs_to_disk'] = false;
     }
+  },
 
+  _refreshTrainingFieldUi(key) {
     if (this.lrPreviewOpen && [
       'model_train_type', 'optimizer_type', 'learning_rate', 'unet_lr', 'text_encoder_lr',
       'lr_scheduler', 'lr_warmup_steps', 'lr_scheduler_num_cycles', 'lr_scheduler_power',
@@ -631,6 +642,8 @@ window.trainingFieldRelations = {
       this.formErrors[key] = null;
     }
     this._refreshTrainingOptionErrors();
+    // Capture the final state after all synchronous field dependencies settle.
+    this.pushHistory({ ...this.form });
     this.updateTomlDebounced();
   },
 

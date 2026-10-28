@@ -42,6 +42,26 @@ function watchAutoValues(app) {
   return triggered;
 }
 
+test('field history records the completed dependent changes', () => {
+  const { window: w } = loadFrontend(['training-field-relations', 'training-core']);
+  const cases = [
+    ['anima-lora', { network_train_unet_only: true, network_train_text_encoder_only: false, unet_lr: '0.01' }, 'network_train_text_encoder_only', true],
+    ['anima-lora', { network_train_unet_only: false, network_train_text_encoder_only: true, text_encoder_lr: '0.01', cache_text_encoder_outputs: false, cache_text_encoder_outputs_to_disk: false }, 'cache_text_encoder_outputs_to_disk', true],
+    ['anima-lora', { shuffle_caption: false, cache_text_encoder_outputs: true, cache_text_encoder_outputs_to_disk: true }, 'shuffle_caption', true],
+    ['sdxl-lora', { sdpa: false, xformers: true }, 'sdpa', true],
+  ];
+  for (const [profile, initial, key, value] of cases) {
+    const app = application(profile, initial);
+    app.pushHistory = w.trainingCoreMixin.pushHistory;
+    app.formHistory = [];
+    app.formHistoryIdx = -1;
+    app.pushHistory({ ...app.form });
+    app.setField(key, value);
+    assert.equal(app.formHistory.length, 2, key);
+    assert.deepEqual(JSON.parse(JSON.stringify(app.formHistory.at(-1))), JSON.parse(JSON.stringify(app.form)), key);
+  }
+});
+
 test('optimizer drafts survive Alpine dependency watchers and later edits still trigger constraints', async () => {
   const app = application('anima-lora', { optimizer_type: 'AdamW8bit', adafactor_relative_step: false });
   app._profileFieldSources = {};
