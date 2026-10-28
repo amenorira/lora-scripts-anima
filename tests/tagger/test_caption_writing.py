@@ -18,12 +18,24 @@ class CaptionWritingTests(unittest.TestCase):
             self.assertEqual(output.read_text(encoding="utf-8"), "replacement")
             self.assertEqual(list(output.parent.iterdir()), [output])
 
-    def test_tag_editor_preserves_replacement_encoding_and_line_endings(self):
+    def test_tag_editor_preserves_unicode_and_line_endings(self):
         from backend.tageditor.core import restore_caption_state
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "nested" / "sample.txt"
-            restore_caption_state(output, True, "标签\r\nline\n\ud800")
-            self.assertEqual(output.read_bytes(), "标签\r\nline\n?".encode("utf-8"))
+            text = "标签\r\nline\n"
+            restore_caption_state(output, True, text)
+            self.assertEqual(output.read_bytes(), text.encode("utf-8"))
+
+    def test_tag_editor_rejects_invalid_unicode_without_replacing_original(self):
+        from backend.tageditor.core import restore_caption_state
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "sample.txt"
+            original = "原文\r\n".encode("utf-8")
+            output.write_bytes(original)
+            with self.assertRaises(UnicodeEncodeError):
+                restore_caption_state(output, True, "invalid \ud800")
+            self.assertEqual(output.read_bytes(), original)
+            self.assertEqual(list(output.parent.iterdir()), [output])
 
     def test_permission_denied_is_reported_after_one_creation_attempt(self):
         with tempfile.TemporaryDirectory() as temporary:
