@@ -3,7 +3,7 @@ from datetime import datetime
 
 from backend.training import launch_krea2, launch_sd_scripts
 from backend.training.core_registry import TrainingProfileError, resolve_training_profile
-from backend.training.musubi_krea2 import KREA2_PROFILE_ID
+from backend.training.krea2_options import KREA2_PROFILE_ID
 from backend.training.preparation import training_error as _training_error
 
 

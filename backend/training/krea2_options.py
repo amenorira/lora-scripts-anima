@@ -12,6 +12,11 @@ from backend.training.optimizer_metadata import (
 
 KREA2_PROFILE_ID = "krea2-lora"
 
+
+def is_empty(value) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
 ATTENTION_FLAGS = {
     "sdpa": "sdpa",
     "flash_attn": "flash_attn",

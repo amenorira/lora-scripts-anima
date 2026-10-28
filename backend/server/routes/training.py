@@ -21,7 +21,8 @@ from backend.training.core_registry import (
 )
 from backend.training.dataset_repeat import DatasetRepeatError, apply_subset_repeats
 from backend.training.krea2_cache import get_krea2_cache_status
-from backend.training.musubi_krea2 import KREA2_PROFILE_ID, inspect_krea2_checkpoint_format
+from backend.training.krea2_options import KREA2_PROFILE_ID
+from backend.training.krea2_preflight import inspect_krea2_checkpoint_format
 from backend.training.step_estimator import StepEstimateError, estimate_training_steps
 from backend.training.te_cache_check import delete_te_cache
 from backend.training.training_config import (

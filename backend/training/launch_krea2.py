@@ -7,15 +7,16 @@ from backend.async_utils import settled_to_thread as _settled_to_thread
 from backend.constants import AUTOSAVE_DIR, OUTPUT_DIR
 from backend.monitor.run_registry import resolve_user_path, write_output_dir_reference
 from backend.training import run_files, toml_writer
-from backend.training.core_registry import TrainingProfileError, resolve_training_profile
+from backend.training.core_registry import MUSUBI_TUNER_DIR, TrainingProfileError, get_profile, resolve_training_profile
 from backend.training.krea2_cache import mark_cache_manifest
 from backend.training.krea2_network import (
     KREA2_LYCORIS_MODULE, KREA2_PRESET_FILENAME, build_krea2_network_preset,
 )
 from backend.training.metrics_config import training_metrics_environment
+from backend.training.krea2_options import KREA2_PROFILE_ID
+from backend.training.krea2_preflight import krea2_preflight
 from backend.training.musubi_krea2 import (
-    KREA2_CACHE_RUNNER_FILE, KREA2_PROFILE_ID, KREA2_TRAINER_FILE, MUSUBI_TUNER_DIR,
-    build_krea2_dataset_config, build_krea2_train_config, krea2_preflight, validate_krea2_config,
+    build_krea2_dataset_config, build_krea2_train_config, validate_krea2_config,
 )
 from backend.training.preparation import training_error as _training_error
 from backend.training.supervisor import detect_lycoris_kernel_backend
@@ -128,7 +129,7 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task):
 
     result = reserved_task.launch(
         str(toml_file),
-        KREA2_TRAINER_FILE,
+        get_profile(KREA2_PROFILE_ID).trainer_file,
         gpu_ids,
         2,
         run_dir=str(internal_run_dir),
@@ -200,7 +201,7 @@ async def prepare_cache(config: dict, reserved_task):
 
     result = reserved_task.launch(
         str(dataset_config_file),
-        KREA2_CACHE_RUNNER_FILE,
+        "./backend/training/krea2_cache_runner.py",
         gpu_ids,
         2,
         extra_args=[

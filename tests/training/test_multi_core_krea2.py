@@ -12,8 +12,9 @@ from fastapi.testclient import TestClient
 
 from backend.training.musubi_krea2 import (
     KREA2_FIELDS, build_krea2_dataset_config, build_krea2_train_config,
-    krea2_preflight, validate_krea2_config,
+    validate_krea2_config,
 )
+from backend.training.krea2_preflight import krea2_preflight
 from backend.training.krea2_cache import (
     cache_manifest_path, get_krea2_cache_status, mark_cache_manifest, prepare_cache_manifest,
 )
@@ -270,7 +271,7 @@ class Krea2CodecTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             config = krea2_config(Path(temp_dir))
             (Path(config["train_data_dir"]) / "portrait.jpg").write_bytes(b"image")
-            with patch("backend.training.musubi_krea2.shared_runtime_status", return_value={"errors": []}), \
+            with patch("backend.training.krea2_preflight.shared_runtime_status", return_value={"errors": []}), \
                  patch.object(training_routes, "tm", TaskManager()), \
                  patch.object(training_routes, "run_train") as launch:
                 for require_cache in (False, True):

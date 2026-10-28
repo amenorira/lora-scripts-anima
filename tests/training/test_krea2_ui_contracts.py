@@ -8,8 +8,9 @@ import unittest
 
 from backend.training.config_import import import_native_training_form
 from backend.training.musubi_krea2 import (
-    KREA2_FIELDS, _krea2_checkpoint_format_errors, build_krea2_train_config, validate_krea2_config,
+    KREA2_FIELDS, build_krea2_train_config, validate_krea2_config,
 )
+from backend.training.krea2_preflight import _krea2_checkpoint_format_errors
 from tests.training.test_multi_core_krea2 import krea2_config
 
 ROOT = Path(__file__).resolve().parents[2]

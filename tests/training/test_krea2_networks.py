@@ -13,7 +13,8 @@ from backend.training.krea2_network import (
     KREA2_LYCORIS_MODULE, KREA2_NETWORK_MODULE, KREA2_PRESET_FILENAME,
     build_krea2_network_preset, linear_target_names, selected_targets,
 )
-from backend.training.musubi_krea2 import build_krea2_train_config, validate_krea2_config, krea2_preflight
+from backend.training.musubi_krea2 import build_krea2_train_config, validate_krea2_config
+from backend.training.krea2_preflight import krea2_preflight
 from backend.training.network_config import extract_network_form
 from backend.training.core_registry import resolve_training_profile, TrainingProfileError
 from backend.training.supervisor import _build_train_env
@@ -182,7 +183,7 @@ assert 'musubi-tuner' in importlib.util.find_spec('musubi_tuner').origin
         with tempfile.TemporaryDirectory() as tmp:
             config = krea2_config(Path(tmp))
             config["krea_attention_backend"] = "flash_attn"
-            with patch("backend.training.musubi_krea2.shared_runtime_status", return_value={"errors": []}), \
+            with patch("backend.training.krea2_preflight.shared_runtime_status", return_value={"errors": []}), \
                  patch("tools.flash_attention.package_version", return_value=None) as version:
                 result = krea2_preflight(config, require_cache=False)
                 self.assertFalse(result["ok"])

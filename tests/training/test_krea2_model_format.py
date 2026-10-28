@@ -2,12 +2,14 @@
 import asyncio
 import io
 import json
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from backend.training.musubi_krea2 import inspect_krea2_checkpoint_format
+from backend.training.krea2_preflight import inspect_krea2_checkpoint_format
 
 
 def checkpoint_header(dtype, convrot=False):
@@ -18,6 +20,19 @@ def checkpoint_header(dtype, convrot=False):
 
 
 class Krea2ModelFormatTests(unittest.TestCase):
+    def test_model_inspection_import_does_not_load_codec_or_field_catalog(self):
+        from tools.runtime_paths import ROOT
+
+        script = """
+import sys
+from backend.training.krea2_preflight import inspect_krea2_checkpoint_format
+for name in ('backend.training.musubi_krea2', 'backend.training.krea2_fields', 'torch', 'fastapi'):
+    assert name not in sys.modules, name
+"""
+        result = subprocess.run([sys.executable, "-B", "-c", script], cwd=ROOT,
+                                capture_output=True, text=True, encoding="utf-8", timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_format_follows_tensor_metadata_instead_of_filename(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "int8_convrot.safetensors"
