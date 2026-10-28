@@ -20,10 +20,11 @@ from backend.monitor.training import (
     extract_train_params,
 )
 from backend.monitor.artifacts import (
-    newest_previews, scan_history,
-    list_output_files, read_output_summary, enrich_model_files_with_loss,
-    find_run_log_path, find_train_log_path, read_log_slice,
+    newest_previews, list_output_files, read_output_summary,
 )
+from backend.monitor.checkpoints import enrich_model_files_with_loss
+from backend.monitor.history import scan_history
+from backend.monitor.log_files import find_run_log_path, find_train_log_path, read_log_slice
 from backend.monitor.run_registry import (
     read_run_config,
     find_run_record_by_task_id,
@@ -290,7 +291,7 @@ async def monitor_stop():
 async def monitor_history(refresh: bool = False):
     """训练记录：运行中任务 + 历史训练记录"""
     if refresh:
-        from backend.monitor.artifacts import invalidate_history_cache
+        from backend.monitor.history import invalidate_history_cache
         invalidate_history_cache()
     history = await asyncio.to_thread(scan_history)
 
@@ -345,7 +346,7 @@ async def delete_history_run(request: Request):
         return {"status": "error", "message": str(exc), "data": {"retryable": True}}
 
     # 失效历史缓存
-    from backend.monitor.artifacts import invalidate_history_cache
+    from backend.monitor.history import invalidate_history_cache
     invalidate_history_cache()
     return {
         "status": "success",

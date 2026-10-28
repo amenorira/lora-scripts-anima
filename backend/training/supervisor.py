@@ -467,7 +467,7 @@ def _write_result_json(
         }
         result_path = run_dir / "result.json"
         from backend.utils.file_io import atomic_write_text
-        from backend.monitor.artifacts import invalidate_history_cache
+        from backend.monitor.history import invalidate_history_cache
         atomic_write_text(result_path, json.dumps(result, indent=2, ensure_ascii=False))
         invalidate_history_cache()
     except OSError as e:

@@ -19,7 +19,8 @@ from typing import Any
 from backend.core.realtime import realtime_hub, realtime_tasks, task_topic
 from backend.monitor.hardware import gpu_info, system_info
 from backend.monitor.training import parse_log_progress, read_tensorboard_incremental
-from backend.monitor.artifacts import find_train_log_path, newest_previews, read_output_summary, read_log_slice
+from backend.monitor.artifacts import newest_previews, read_output_summary
+from backend.monitor.log_files import find_train_log_path, read_log_slice
 from backend.monitor.run_registry import find_run_record_by_task_id, read_run_config
 from backend.tasks import tm
 
