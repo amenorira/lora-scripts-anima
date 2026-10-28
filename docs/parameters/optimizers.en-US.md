@@ -157,6 +157,17 @@ For the optimizers covered here, this trainer starts AdamW, AdamW8bit, and Paged
 
 Higher weight decay shrinks weights more strongly and can prevent target features from being learned. Lower values relax that constraint; `0` disables it. Start character LoRAs with the project default, then vary decay separately when comparing regularization strength.
 
+<!-- doc-anchor: foreach -->
+### Batched tensor updates (foreach)
+
+Available for AdamW, StableAdamW, CAME, Adan, AdamWScheduleFree, and Krea 2's Lion.
+
+- **Auto** (default): use the optimizer's default strategy. AdamWScheduleFree uses its native default; other optimizers receive `None`.
+- **Enabled** (`True`): allow batched updates to reduce GPU call overhead. Usually faster, but may increase peak VRAM usage.
+- **Disabled** (`False`): update tensors individually, useful when VRAM is tight or comparing implementations.
+
+Auto does not avoid OOM based on remaining VRAM. AdamW cannot use `foreach=True` and `fused=True` together. Native configs pass this through `optimizer_args`, for example `"foreach=False"`.
+
 <!-- doc-anchor: muon-options -->
 ### Muon options
 

@@ -86,7 +86,7 @@ def extend_fields(fields):
 def validate_optimizer(config, arguments, gpu_ids=None):
     from backend.training.config.validation import _validate_automagic, _validate_emosens
     from backend.training.fields.field_registry import LORAPLUS_INCOMPATIBLE_OPTIMIZERS
-    reverse = {value: key for key, value in KREA2_OPTIMIZER_SELECTORS.items()}
+    reverse = {value: key for key, value in KREA2_OPTIMIZER_SELECTORS.items() if key != 'Lion'}
     canonical = {**config, 'model_train_type': 'krea2-lora',
                  'optimizer_type': reverse.get(config['optimizer_type'], config['optimizer_type'])}
     errors = validate_optimizer_contract(canonical, arguments)
@@ -123,7 +123,7 @@ def collect_arguments(config, defaults, mappings, *, warnings=None):
     parsed, errors = parse_optimizer_args(values)
     if errors:
         raise ValueError('; '.join(errors))
-    reverse = {value: key for key, value in KREA2_OPTIMIZER_SELECTORS.items()}
+    reverse = {value: key for key, value in KREA2_OPTIMIZER_SELECTORS.items() if key != 'Lion'}
     canonical = dict(values)
     for key, mapped in FIELD_ALIASES.items():
         if mapped in values:

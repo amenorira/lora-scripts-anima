@@ -46,6 +46,17 @@ test('all profiles submit raw form fields through the common launch boundary', a
   }
 });
 
+test('ScheduleFree auto keeps its native default and explicit custom arguments', () => {
+  for (const [profile, optimizer] of [['anima-lora', 'AdamWScheduleFree'], ['krea2-lora', 'schedulefree.AdamWScheduleFree']]) {
+    const { app } = preview(profile, 'networks.lora_anima', { optimizer_type: optimizer, foreach: 'auto' });
+    assert.ok(!app._buildOptimizerArgs(app.form).some(arg => arg.startsWith('foreach=')));
+    app.form.optimizer_args_custom = 'foreach=None';
+    assert.ok(app._buildOptimizerArgs(app.form).includes('foreach=None'));
+    app.form.foreach = 'false';
+    assert.ok(app._buildOptimizerArgs(app.form).includes('foreach=False'));
+  }
+});
+
 test('numeric-looking text stays text while the schema identifies numeric preview values', () => {
   for (const profile of ['anima-lora', 'sdxl-lora', 'krea2-lora']) {
     const { app, text } = preview(profile, 'networks.lora_anima', {
@@ -60,5 +71,37 @@ test('numeric-looking text stays text while the schema identifies numeric previe
     assert.match(text, /^output_name = "00123"$/m);
     assert.match(text, /^resolution = "1024"$/m);
     assert.match(text, /^learning_rate = 0.0001$/m);
+  }
+});
+
+test('foreach choices preserve native literals, custom precedence and optimizer visibility', () => {
+  for (const profile of ['anima-lora', 'sdxl-lora', 'moss-image-lora', 'krea2-lora']) {
+    for (const [choice, literal] of [['auto', 'None'], ['true', 'True'], ['false', 'False']]) {
+      const { app, text } = preview(profile, 'networks.lora_anima', {
+        optimizer_type: 'pytorch_optimizer.CAME', foreach: choice,
+      });
+      assert.equal(app._collectTrainingPayload().foreach, choice);
+      if (profile === 'krea2-lora') assert.match(text, new RegExp(`^foreach = "${choice}"$`, 'm'));
+      else {
+        assert.ok(app._buildOptimizerArgs(app.form).includes(`foreach=${literal}`));
+        assert.doesNotMatch(text, /^foreach =/m);
+        assert.doesNotMatch(text, /foreach=\\"(?:auto|true|false)\\"/);
+      }
+    }
+    const { app, context } = preview(profile, 'networks.lora_anima', {
+      optimizer_type: 'pytorch_optimizer.CAME', foreach: 'auto', optimizer_args_custom: 'foreach=False',
+    });
+    if (profile === 'krea2-lora') {
+      assert.equal(app._collectTrainingPayload().optimizer_args_custom, 'foreach=False');
+    } else {
+      assert.ok(app._buildOptimizerArgs(app.form).includes('foreach=False'));
+      app.form.foreach = 'true';
+      assert.ok(app._buildOptimizerArgs(app.form).includes('foreach=True'));
+    }
+    const field = context.window.getVisibleSections(profile).flatMap(s => s.fields).find(f => f.key === 'foreach');
+    for (const optimizer of ['AdamW8bit', 'pytorch_optimizer.SOAP', 'Lion', 'pytorch_optimizer.Lion']) {
+      app.form.optimizer_type = optimizer;
+      assert.equal(app._fieldShowIfMet(field), optimizer === 'pytorch_optimizer.Lion');
+    }
   }
 });

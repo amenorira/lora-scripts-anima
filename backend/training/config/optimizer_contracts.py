@@ -54,6 +54,12 @@ ADEMAMIX_OPTIMIZER_TYPE = "bitsandbytes.optim.AdEMAMix"
 ADEMAMIX8BIT_OPTIMIZER_TYPE = "bitsandbytes.optim.AdEMAMix8bit"
 LORARITE_OPTIMIZER_TYPE = "pytorch_optimizer.LoRARite"
 SOAP_OPTIMIZER_TYPE = "pytorch_optimizer.SOAP"
+PYTORCH_LION_OPTIMIZER_TYPE = "pytorch_optimizer.Lion"
+FOREACH_OPTIMIZERS = frozenset({
+    "AdamW", STABLE_ADAMW_OPTIMIZER_TYPE, CAME_OPTIMIZER_TYPE,
+    ADAN_OPTIMIZER_TYPE, ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE, PYTORCH_LION_OPTIMIZER_TYPE,
+})
+FOREACH_FORM_VALUES = {"auto": None, "true": True, "false": False}
 
 ADEMAMIX_OPTIMIZERS = frozenset(
     {ADEMAMIX_OPTIMIZER_TYPE, ADEMAMIX8BIT_OPTIMIZER_TYPE}
@@ -139,7 +145,12 @@ OPTIMIZER_ARGUMENT_DEFAULTS: dict[str, dict[str, Any]] = {
     "normalize_gradient": {"pytorch_optimizer.SOAP": False},
     "correct_bias": {"pytorch_optimizer.SOAP": True},
     "precondition_1d": {"pytorch_optimizer.SOAP": False},
+    "foreach": {optimizer: None for optimizer in sorted(FOREACH_OPTIMIZERS)},
 }
+
+# Krea selects pytorch_optimizer.Lion; sd-scripts' bare Lion uses lion-pytorch.
+for _key in ("betas", "weight_decay"):
+    OPTIMIZER_ARGUMENT_DEFAULTS[_key][PYTORCH_LION_OPTIMIZER_TYPE] = OPTIMIZER_ARGUMENT_DEFAULTS[_key]["Lion"]
 
 
 def is_empty_optimizer_value(value: Any) -> bool:
@@ -389,6 +400,7 @@ _CAME_ARGS = {
     "ams_bound": _boolean(),
     "eps1": _NON_NEGATIVE,
     "eps2": _NON_NEGATIVE,
+    "foreach": _boolean(allow_none=True),
     "maximize": _boolean(),
 }
 
@@ -525,6 +537,9 @@ OPTIMIZER_CONTRACTS: dict[str, OptimizerContract] = {
         learning_rate_minimum_inclusive=True,
     ),
     "Lion": OptimizerContract(_LION_ARGS),
+    PYTORCH_LION_OPTIMIZER_TYPE: OptimizerContract({
+        **_LION_ARGS, "foreach": _boolean(allow_none=True),
+    }),
     "Lion8bit": OptimizerContract(_BNB_LION_ARGS),
     "PagedLion8bit": OptimizerContract(_BNB_LION_ARGS),
     PRODIGY_OPTIMIZER_TYPE: OptimizerContract(
@@ -587,6 +602,7 @@ _ADAM_OPTIMIZERS = frozenset(
 _BETAS_OPTIMIZERS = _ADAM_OPTIMIZERS | frozenset(
     {
         "Lion",
+        PYTORCH_LION_OPTIMIZER_TYPE,
         "Lion8bit",
         "PagedLion8bit",
         CAME_OPTIMIZER_TYPE,
@@ -615,6 +631,7 @@ FORM_ARGUMENTS: dict[str, FormArgument] = {
     },
     "weight_decay": FormArgument("weight_decay", frozenset(OPTIMIZER_CONTRACTS) | {AUTOMAGIC_OPTIMIZER_TYPE}),
     "betas": FormArgument("betas", _BETAS_OPTIMIZERS),
+    "foreach": FormArgument("foreach", FOREACH_OPTIMIZERS),
     "eps": FormArgument("eps", _EPS_OPTIMIZERS | {AUTOMAGIC_OPTIMIZER_TYPE}),
     "muon_momentum": FormArgument("momentum", frozenset({MUON_OPTIMIZER_TYPE})),
     "muon_nesterov": FormArgument("nesterov", frozenset({MUON_OPTIMIZER_TYPE})),
@@ -800,6 +817,13 @@ def collect_optimizer_args(
             continue
         value = config.get(form_key)
         if not is_empty_optimizer_value(value):
+            # ScheduleFree treats None as disabled; omitting the argument uses
+            # its native default. Preserve any explicit custom argument.
+            if (form_key == "foreach" and value == "auto"
+                    and optimizer_type in {ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE, "schedulefree.AdamWScheduleFree"}):
+                continue
+            if form_key == "foreach" and isinstance(value, str):
+                value = FOREACH_FORM_VALUES.get(value, value)
             value = _coerce_form_argument(value)
             defaults = OPTIMIZER_ARGUMENT_DEFAULTS.get(form_key, {})
             # A form value equal to the native default used to be omitted by the
@@ -835,6 +859,15 @@ def extract_optimizer_form(
         if optimizer_type not in mapping.optimizers or mapping.argument not in arguments:
             continue
         value = arguments[mapping.argument]
+        if key == "foreach":
+            if (value is None and optimizer_type in
+                    {ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE, "schedulefree.AdamWScheduleFree"}):
+                form[key] = "auto"
+                continue  # Keep explicit None in custom arguments for a lossless import.
+            form[key] = next((choice for choice, native in FOREACH_FORM_VALUES.items()
+                              if value is native), value)
+            del arguments[mapping.argument]
+            continue
         # None is meaningful to some optimizers but empty in a form control.
         if value is None:
             form[key] = ""
@@ -1005,6 +1038,9 @@ def validate_optimizer_contract(
     contract = OPTIMIZER_CONTRACTS.get(optimizer_type)
     if contract is None:
         return errors
+
+    if optimizer_type == "AdamW" and args.get("foreach") is True and args.get("fused") is True:
+        errors.append("AdamW: foreach and fused cannot both be True / foreach 与 fused 不能同时启用")
 
     for key, value in args.items():
         spec = contract.argument_specs.get(key)

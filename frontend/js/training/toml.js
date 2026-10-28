@@ -529,8 +529,12 @@ window.trainingTomlMixin = {
     for (const section of window.getVisibleSections(form.model_train_type || 'anima-lora')) {
       for (const field of section.fields) {
         if (!field.argKey || !this._fieldShowIfMet(field)) continue;
-        const val = form[field.key];
-        if (val === undefined || val === null || val === '') continue;
+        const rawValue = form[field.key];
+        if (rawValue === undefined || rawValue === null || rawValue === '') continue;
+        if (field.key === 'foreach' && rawValue === 'auto'
+            && ['AdamWScheduleFree', 'schedulefree.AdamWScheduleFree'].includes(form.optimizer_type)) continue;
+        const val = field.optimizerArgValues && Object.hasOwn(field.optimizerArgValues, rawValue)
+          ? field.optimizerArgValues[rawValue] : rawValue;
         const defaultValue = field.optimizerDefaults?.[form.optimizer_type];
         const comparable = Array.isArray(defaultValue)
           ? String(val).replace(/[\[\]()]/g, '').split(',').filter(item => item.trim()).map(Number)
@@ -539,7 +543,7 @@ window.trainingTomlMixin = {
           ? comparable.length === defaultValue.length && comparable.every((item, i) => item === defaultValue[i])
           : comparable === defaultValue;
         if (args.has(field.argKey) && matchesDefault) continue;
-        const formatted = typeof val === 'boolean' ? (val ? 'True' : 'False')
+        const formatted = val === null ? 'None' : typeof val === 'boolean' ? (val ? 'True' : 'False')
           : field.type === 'select' ? JSON.stringify(val) : String(val);
         args.set(field.argKey, formatted);
       }

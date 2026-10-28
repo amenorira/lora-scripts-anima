@@ -157,6 +157,17 @@ beta 越高，对应统计保留历史越久、响应越慢；越低则更快跟
 
 提高权重衰减会加强权重收缩，过大会妨碍目标特征学习；降低会减弱这一约束，`0` 关闭衰减。人物 LoRA 先保留项目默认值，需要比较约束强度时再单独调整。
 
+<!-- doc-anchor: foreach -->
+### 批量张量更新（foreach）
+
+适用于 AdamW、StableAdamW、CAME、Adan、AdamWScheduleFree，以及 Krea 2 的 Lion。
+
+- **自动**（默认）：使用优化器的默认策略。AdamWScheduleFree 使用原生默认值，其他优化器接收 `None`。
+- **启用**（`True`）：允许批量更新，减少 GPU 调用开销，通常更快，但可能增加峰值显存。
+- **禁用**（`False`）：逐张量更新，适合显存紧张或需要对照测试的情况。
+
+自动模式不会根据剩余显存避开 OOM。AdamW 的 `foreach=True` 与 `fused=True` 不能同时使用。原生配置通过 `optimizer_args` 传递，例如 `"foreach=False"`。
+
 <!-- doc-anchor: muon-options -->
 ### Muon 参数
 

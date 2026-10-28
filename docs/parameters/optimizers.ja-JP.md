@@ -157,6 +157,17 @@ AdamWScheduleFree と ProdigyPlus は内部でスケジュールを管理する�
 
 大きい値は重みを強く縮め、必要な特徴の学習を妨げる場合があります。小さい値は制約を弱め、`0` は無効にします。キャラクター LoRA は本ツールの既定値から始め、正則化の強さを比較する場合に減衰だけを変えてください。
 
+<!-- doc-anchor: foreach -->
+### テンソルの一括更新（foreach）
+
+AdamW、StableAdamW、CAME、Adan、AdamWScheduleFree、および Krea 2 の Lion で使用できます。
+
+- **自動**（既定値）：オプティマイザの既定の動作を使用します。AdamWScheduleFree は本来の既定値を使用し、その他は `None` を受け取ります。
+- **有効**（`True`）：一括更新で GPU 呼び出しの負荷を減らします。通常は高速になりますが、ピーク VRAM 使用量が増える場合があります。
+- **無効**（`False`）：テンソルを個別に更新します。VRAM が少ない場合や比較実験に適しています。
+
+自動は残り VRAM に応じて OOM を回避する機能ではありません。AdamW の `foreach=True` と `fused=True` は併用できません。ネイティブ設定では `optimizer_args` に `"foreach=False"` のように指定します。
+
 <!-- doc-anchor: muon-options -->
 ### Muon の設定
 
