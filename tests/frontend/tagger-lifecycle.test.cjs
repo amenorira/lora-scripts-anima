@@ -37,3 +37,25 @@ test('picker failure after leaving the workspace does not notify another page', 
   pending.reject(new Error('picker closed'));await pick;
   assert.deepEqual(messages,[]);
 });
+
+test('local task creation response stays attached to the initiating source mode', async()=>{
+  const pending=deferred(), storage=new Map();
+  const {window}=loadFrontend('tagger',{window:{},fetch:()=>pending.promise,
+    localStorage:{setItem:(key,value)=>storage.set(key,value)}});
+  const app=composeMixins(window.taggerMixin,{
+    currentRoute:'tagger',taggerSourceMode:'folder',taggerSource:{source_token:'local'},
+    taggerModels:[{id:'model',engine:'onnx'}],taggerSelectedModel:'model',
+    taggerCanStart:()=>true,_clearTaggerResultState(){},saveTaggerSettings(){},
+    realtimeSubscribe(){},realtimeUnsubscribe(){},toast:message=>assert.fail(message),
+  });
+  const start=app.startTagger();
+  app.currentRoute='ai-captioning';app.taggerSourceMode='api-folder';
+  app.taggerSource={source_token:'api-draft'};
+  pending.resolve(response({task_id:'new-local-task'}));await start;
+  assert.equal(app.taggerTaskId,null);
+  assert.equal(app._taggerModeStates.folder.taskId,'new-local-task');
+  assert.equal(app.taggerSource.source_token,'api-draft');
+  assert.equal(app.taggerTaskById('new-local-task').engine,'onnx');
+  assert.equal(storage.get('anima-tagger-task-id'),'new-local-task');
+  assert.equal(storage.has('anima-ai-tagger-task-id'),false);
+});
