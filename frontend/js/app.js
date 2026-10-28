@@ -73,7 +73,6 @@ document.addEventListener('alpine:init', () => {
     backendConnected: false,
     backendDisconnectedAt: null,
     backendDisconnectedDuration: '',
-    _healthTimer: null,
     _disconnectedTimer: null,
     // 训练与正则生成状态由全局状态轮询同步。
       trainingActive: false,

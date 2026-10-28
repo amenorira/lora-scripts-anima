@@ -4077,12 +4077,6 @@ window.trainingCoreMixin = {
     this.updateToml();
   },
 
-  _currentProfileFieldDefault(key) {
-    const trainType = this.form.model_train_type || this._activeTrainType || 'anima-lora';
-    const defaults = this._buildFormDefaults(trainType);
-    return Object.prototype.hasOwnProperty.call(defaults, key) ? defaults[key] : '';
-  },
-
   _currentEffectiveFieldDefault(key) {
     return this._resolveFieldDefault(key).value;
   },
