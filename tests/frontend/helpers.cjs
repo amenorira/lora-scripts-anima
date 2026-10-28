@@ -6,9 +6,18 @@ const ROOT = path.join(__dirname, '../..');
 const readRepo = name => fs.readFileSync(path.join(ROOT, name), 'utf8');
 const readFrontend = name => readRepo(`frontend/js/${name.replace(/\.js$/, '')}.js`);
 
+const FRONTEND_DEPENDENCIES = {
+  'monitor-render': ['monitor-history-render', ],
+  'tagger': [],
+  'environment-render': [],
+};
+const frontendScripts = files => [].concat(files).flatMap(file => [
+  ...(FRONTEND_DEPENDENCIES[file.replace(/\.js$/, '')] || []), file,
+]);
+
 function loadFrontend(files, context = { window: {} }) {
   if (!vm.isContext(context)) vm.createContext(context);
-  for (const file of [].concat(files)) {
+  for (const file of frontendScripts(files)) {
     vm.runInContext(readFrontend(file), context, { filename: `${file.replace(/\.js$/, '')}.js` });
   }
   return context;
@@ -28,7 +37,7 @@ function loadTagEditor(context = { window: {} }) {
 // These tests intentionally compare arrays and objects in Node's own realm.
 function loadGlobalFrontend(files) {
   global.window = {};
-  for (const file of [].concat(files)) vm.runInThisContext(readFrontend(file), { filename: `${file.replace(/\.js$/, '')}.js` });
+  for (const file of frontendScripts(files)) vm.runInThisContext(readFrontend(file), { filename: `${file.replace(/\.js$/, '')}.js` });
 }
 
 const response = data => ({ ok: true, json: async () => ({ status: 'success', data }) });
