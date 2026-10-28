@@ -7,7 +7,7 @@ const readRepo = name => fs.readFileSync(path.join(ROOT, name), 'utf8');
 const readFrontend = name => readRepo(`frontend/js/${name.replace(/\.js$/, '')}.js`);
 
 const FRONTEND_DEPENDENCIES = {
-  'monitor-core': ['monitor-outputs', 'monitor-previews'],
+  'monitor-core': ['monitor-history', 'monitor-outputs', 'monitor-previews'],
   'monitor-render': ['monitor-summary', 'monitor-diagnostics', 'monitor-resources', 'monitor-artifacts-render', 'monitor-history-render', ],
   'tagger': ['tagger-tasks', 'tagger-sources', ],
   'environment-render': ['environment-dictionary-render', 'environment-components-render', 'environment-models-render', ],
