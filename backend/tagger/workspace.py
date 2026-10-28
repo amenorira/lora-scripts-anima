@@ -27,46 +27,25 @@ from backend.tagger.interrogators.base import CATEGORY_LABELS, Interrogator
 from backend.tagger.registry import MODEL_SPEC_BY_ID
 from backend.utils.file_io import atomic_write_text
 from backend.tasks import tm
-
-_IMAGE_EXTENSIONS = {
-    ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".avif",
-}
-_SOURCE_TTL = 3600
-_TASK_TTL = 3600
-_TASK_KEEP_MAX = 8
-_MAX_LOGS = 200
-_MAX_RECENT_ITEMS = 120
-_ACTIVE_TASK_STATUSES = frozenset({"created", "running", "cancelling"})
-
-_sources: dict[str, dict[str, Any]] = {}
-_sources_lock = threading.Lock()
-_tasks: dict[str, dict[str, Any]] = {}
-_tasks_lock = threading.Lock()
-_direct_tagger: dict[str, Any] = {}
+from backend.tagger.workspace_state import (
+    _IMAGE_EXTENSIONS,
+    _SOURCE_TTL,
+    _TASK_TTL,
+    _TASK_KEEP_MAX,
+    _MAX_LOGS,
+    _MAX_RECENT_ITEMS,
+    _ACTIVE_TASK_STATUSES,
+    _sources,
+    _sources_lock,
+    _tasks,
+    _tasks_lock,
+    _direct_tagger,
+    _cleanup,
+)
 
 
 def _is_image(path: Path) -> bool:
     return path.is_file() and path.suffix.lower() in _IMAGE_EXTENSIONS
-
-
-def _cleanup() -> None:
-    now = time.time()
-    with _tasks_lock:
-        for task_id, task in list(_tasks.items()):
-            if task.get("status") in {"done", "cancelled", "error"} and now - task.get("updated_at", now) > _TASK_TTL:
-                _tasks.pop(task_id, None)
-        terminal = sorted(
-            ((task_id, task) for task_id, task in _tasks.items()
-             if task.get("status") in {"done", "cancelled", "error"}),
-            key=lambda entry: entry[1].get("updated_at", 0),
-        )
-        for task_id, _ in terminal[:-_TASK_KEEP_MAX]:
-            _tasks.pop(task_id, None)
-        retained_tokens = {token for task in _tasks.values() for token in (task["source_token"], task.get("overview_source_token"))}
-    with _sources_lock:
-        for token, source in list(_sources.items()):
-            if token not in retained_tokens and now - source.get("created_at", now) > _SOURCE_TTL:
-                _sources.pop(token, None)
 
 
 def _enumerate_images(path: Path, recursive: bool) -> list[Path]:
