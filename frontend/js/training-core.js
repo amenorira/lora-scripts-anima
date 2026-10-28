@@ -230,16 +230,7 @@ window.trainingCoreMixin = {
       localStorage.setItem('anima-form-' + route, JSON.stringify(this.form));
     } catch (e) {}
 
-    clearTimeout(this._stepEstimateTimer);
-    this._stepEstimateTimer = null;
-    this._stepEstimateRequestSeq += 1;
-    this._stepEstimateSignature = '';
-    this.stepEstimateLoading = false;
-    clearTimeout(this._outputPathInfoTimer);
-    this._outputPathInfoTimer = null;
-    this._outputPathInfoRequestSeq += 1;
-    this._outputPathInfoSignature = '';
-    this.outputPathInfoLoading = false;
+    this._cancelTrainingPreflight();
     this.stopSectionScroll();
   },
 
@@ -276,16 +267,7 @@ window.trainingCoreMixin = {
       window.removeEventListener('training-fields-loaded', this._trainingFieldsLoadedHandler);
       this._trainingFieldsLoadedHandler = null;
     }
-    clearTimeout(this._stepEstimateTimer);
-    this._stepEstimateTimer = null;
-    this._stepEstimateRequestSeq += 1;
-    this._stepEstimateSignature = '';
-    this.stepEstimateLoading = false;
-    clearTimeout(this._outputPathInfoTimer);
-    this._outputPathInfoTimer = null;
-    this._outputPathInfoRequestSeq += 1;
-    this._outputPathInfoSignature = '';
-    this.outputPathInfoLoading = false;
+    this._cancelTrainingPreflight();
     clearTimeout(this._conditionalMotionTimer);
     this._conditionalMotionTimer = null;
     this._conditionalMotionQueue = null;

@@ -19,6 +19,19 @@ window.trainingPreflight = {
   _kreaDitFormatRequestSeq: 0,
   _kreaDitFormatCheck: null,
   _kreaDitFormatWatcher: null,
+  _cancelTrainingPreflight() {
+    clearTimeout(this._stepEstimateTimer);
+    this._stepEstimateTimer = null;
+    this._stepEstimateRequestSeq += 1;
+    this._stepEstimateSignature = '';
+    this.stepEstimateLoading = false;
+    clearTimeout(this._outputPathInfoTimer);
+    this._outputPathInfoTimer = null;
+    this._outputPathInfoRequestSeq += 1;
+    this._outputPathInfoSignature = '';
+    this.outputPathInfoLoading = false;
+  },
+
   _stepEstimatePayload() {
     const keys = [
       'model_train_type', 'train_data_dir', 'enable_reg_data', 'reg_data_dir', 'dataset_cache_dir', 'resolution', 'enable_bucket',

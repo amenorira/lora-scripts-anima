@@ -56,49 +56,25 @@ window.trainingSections = {
     body.style.maxHeight = '';
     body.style.opacity = '';
     const h = body.scrollHeight;
-    if (collapsing) {
-      // 收起：从当前高度 → 0
-      body.style.overflow = 'hidden';
-      body.style.maxHeight = h + 'px';
-      body.style.opacity = '1';
-      void body.offsetHeight; // 强制 reflow
+    body.style.overflow = 'hidden';
+    body.style.maxHeight = collapsing ? h + 'px' : '0px';
+    body.style.opacity = collapsing ? '1' : '0';
+    void body.offsetHeight; // 强制 reflow
+    body.style.transition = '';
+    requestAnimationFrame(() => {
+      body.style.maxHeight = collapsing ? '0px' : h + 'px';
+      body.style.opacity = collapsing ? '0' : '1';
+    });
+    const cleanup = () => {
+      body.style.maxHeight = '';
+      body.style.opacity = '';
       body.style.transition = '';
-      requestAnimationFrame(() => {
-        body.style.maxHeight = '0px';
-        body.style.opacity = '0';
-      });
-      const cleanup = () => {
-        body.style.maxHeight = '';
-        body.style.opacity = '';
-        body.style.transition = '';
-        body.style.overflow = '';
-        body.removeEventListener('transitionend', onEnd);
-      };
-      const onEnd = (e) => { if (e.propertyName === 'max-height') cleanup(); };
-      body.addEventListener('transitionend', onEnd);
-      setTimeout(cleanup, 500);
-    } else {
-      // 展开：从 0 → 目标高度
-      body.style.overflow = 'hidden';
-      body.style.maxHeight = '0px';
-      body.style.opacity = '0';
-      void body.offsetHeight;
-      body.style.transition = '';
-      requestAnimationFrame(() => {
-        body.style.maxHeight = h + 'px';
-        body.style.opacity = '1';
-      });
-      const cleanup = () => {
-        body.style.maxHeight = '';
-        body.style.opacity = '';
-        body.style.transition = '';
-        body.style.overflow = '';
-        body.removeEventListener('transitionend', onEnd);
-      };
-      const onEnd = (e) => { if (e.propertyName === 'max-height') cleanup(); };
-      body.addEventListener('transitionend', onEnd);
-      setTimeout(cleanup, 500);
-    }
+      body.style.overflow = '';
+      body.removeEventListener('transitionend', onEnd);
+    };
+    const onEnd = (e) => { if (e.propertyName === 'max-height') cleanup(); };
+    body.addEventListener('transitionend', onEnd);
+    setTimeout(cleanup, 500);
   },
 
   // ── 分组导航指示器（#1）──
