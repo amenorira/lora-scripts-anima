@@ -1,5 +1,6 @@
-/* 训练与打标共用的资源栏渲染；由 monitor-render.js 装配。 */
-window.monitorResourcesMixin = {
+/* Shared resource bar. Selection and updates belong to the calling workspace. */
+window.resourceBar = {
+  esc: window.utilsMixin.esc,
   // ═══════════════════════════════════════════════════════════
   //  右上角常驻资源芯片（写入 #monitorResbar）
   // ═══════════════════════════════════════════════════════════
@@ -50,7 +51,7 @@ window.monitorResourcesMixin = {
     const fullName = gpu.name || 'GPU';
     let html = '<div class="m-res-chip" data-res="gpu">';
     if (gpu.gpus && gpu.gpus.length > 1) {
-      html += '<select class="m-gpu-select" aria-label="GPU" @change="selectedGpuIndex=Number($event.target.value);renderDashboard()">';
+      html += '<select class="m-gpu-select" data-resource-gpu aria-label="GPU">';
       for (const device of gpu.gpus) html += '<option value="' + device.index + '"' + (device.index === gpu.index ? ' selected' : '') + '>GPU ' + device.index + ' · ' + this.esc(device.name) + '</option>';
       html += '</select>';
     } else html += '<span class="m-res-chip-name" title="' + this.esc(fullName) + '">' + this.esc(fullName) + '</span>';
@@ -73,11 +74,11 @@ window.monitorResourcesMixin = {
     return html;
   },
 
-  _renderResourceBar(containerId, gpu, sys, t, locale) {
+  render(containerId, {gpu, sys, t, locale, selectedGpuIndex = 0, onSelect}) {
     const bar = document.getElementById(containerId);
     if (!bar) return;
     if (gpu && gpu.gpus && gpu.gpus.length) {
-      const device = gpu.gpus.find(item => item.index === this.selectedGpuIndex) || gpu.gpus[0];
+      const device = gpu.gpus.find(item => item.index === selectedGpuIndex) || gpu.gpus[0];
       gpu = Object.assign({}, device, { gpus: gpu.gpus });
     }
     const localeKey = String(locale || '') + ':' + String(sys && sys.cpu_name || '') + ':' + JSON.stringify(gpu ? [gpu.index, gpu.name, gpu.temperature_c != null, gpu.power_w != null, (gpu.gpus || []).map(g => [g.index, g.name])] : null);
@@ -86,6 +87,8 @@ window.monitorResourcesMixin = {
       bar.innerHTML = this._resbarHtml(gpu, sys, t);
     }
     this._patchResbar(gpu, sys, t, containerId);
+    const selector = bar.querySelector('[data-resource-gpu]');
+    if (selector) selector.onchange = event => onSelect?.(Number(event.target.value));
   },
 
   _patchResbar(gpu, sys, t, containerId = 'monitorResbar') {

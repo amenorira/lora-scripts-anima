@@ -63,7 +63,7 @@ window.monitorRenderMixin = {
 
     // 页头右侧资源监控（仅实时模式；历史模式由 x-show 隐藏）
     if (!isHistory) {
-      this._renderResourceBar('monitorResbar', gpu, sys, t, locale);
+      this.renderMonitorResourceBar();
     }
 
     // ── 3. 标签页内容 ──
@@ -75,6 +75,14 @@ window.monitorRenderMixin = {
       this._tabIndicatorSig = tabIndicatorSig;
       requestAnimationFrame(() => this._syncMonitorTabIndicator());
     }
+  },
+
+  renderMonitorResourceBar() {
+    window.resourceBar.render('monitorResbar', {
+      gpu: this.gpuInfo, sys: this.sysInfo, t: (key, fallback) => this.tMonitor(key, fallback),
+      locale: this.locale, selectedGpuIndex: this.selectedGpuIndex,
+      onSelect: index => { this.selectedGpuIndex = index; this.renderMonitorResourceBar(); },
+    });
   },
 
   // ═══════════════════════════════════════════════════════════
@@ -270,8 +278,6 @@ window.monitorRenderMixin = {
 window.composeAppMixins(window.monitorRenderMixin, { logs: window.monitorLogRenderMixin, history: window.monitorHistoryRenderMixin });
 
 window.composeAppMixins(window.monitorRenderMixin, { monitorArtifactsRenderMixin: window.monitorArtifactsRenderMixin });
-
-window.composeAppMixins(window.monitorRenderMixin, { monitorResourcesMixin: window.monitorResourcesMixin });
 
 window.composeAppMixins(window.monitorRenderMixin, { monitorDiagnosticsMixin: window.monitorDiagnosticsMixin });
 

@@ -67,6 +67,7 @@ document.addEventListener('alpine:init', () => {
 
     // UI Settings
     autoLoadHistory: true,
+    selectedGpuIndex: 0,
 
     // Backend connectivity
     // This becomes true only after WebSocket ready + realtime snapshot.

@@ -110,9 +110,13 @@ window.taggerMixin = {
   },
 
   renderTaggerResourceBar() {
-    if (typeof this._renderResourceBar !== 'function') return;
+    if (!window.resourceBar) return;
     const translate = (key, fallback) => this.t('monitor.' + key, fallback) || fallback || key;
-    this._renderResourceBar('taggerResbar', this.gpuInfo, this.sysInfo, translate, this.locale);
+    window.resourceBar.render('taggerResbar', {
+      gpu: this.gpuInfo, sys: this.sysInfo, t: translate, locale: this.locale,
+      selectedGpuIndex: this.selectedGpuIndex,
+      onSelect: index => { this.selectedGpuIndex = index; this.renderTaggerResourceBar(); },
+    });
   },
 
   async _mountTaggerWorkspace() {

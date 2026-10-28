@@ -7,7 +7,6 @@
 window.monitorCoreMixin = {
   // ── State ──────────────────────────────────────────────
   monitorData: null,
-  selectedGpuIndex: 0,
   previewsVersion: 0, trainParamsVersion: 0,
   runDetailLoading: false, runDetailError: '',
   gpuInfo: null, sysInfo: null, lossSeries: [], lossDataVersion: 0, trainParams: [],

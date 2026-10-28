@@ -223,7 +223,12 @@ window.regularizationMixin = {
     if (!['tagger', 'ai-captioning'].includes(this.currentRoute) && !this.currentRoute.startsWith('monitor-')) this.realtimeUnsubscribe('hardware');
   },
   renderRegularizationResourceBar() {
-    this._renderResourceBar('regularizationResbar', this.gpuInfo, this.sysInfo, (key, fallback) => this.t('monitor.' + key, fallback), this.locale);
+    if (!window.resourceBar) return;
+    window.resourceBar.render('regularizationResbar', {
+      gpu: this.gpuInfo, sys: this.sysInfo, t: (key, fallback) => this.t('monitor.' + key, fallback),
+      locale: this.locale, selectedGpuIndex: this.selectedGpuIndex,
+      onSelect: index => { this.selectedGpuIndex = index; this.renderRegularizationResourceBar(); },
+    });
   },
   regChanged(key) {
     // Every edit invalidates the executable token, but only dataset-dependent
