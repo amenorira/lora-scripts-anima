@@ -120,6 +120,15 @@ class Krea2PreparationLifecycleTests(unittest.TestCase):
 
 
 class Krea2CodecTests(unittest.TestCase):
+    def test_invalid_swap_count_remains_a_validation_error_in_dependent_options(self):
+        defaults = {field["key"]: field["default"] for field in KREA2_FIELDS if "default" in field}
+        for value in ("invalid", "1.5", None):
+            for options in ({"block_swap_h2d_only": True},
+                            {"enable_krea_samples": True, "turbo_dit": "turbo.safetensors", "krea_sample_prompts": "portrait"}):
+                with self.subTest(value=value, options=options):
+                    errors = validate_krea2_config({**defaults, **options, "blocks_to_swap": value})
+                    self.assertTrue(any("blocks_to_swap" in error for error in errors), errors)
+
     def test_adafactor_warmup_requires_relative_step(self):
         defaults = {field["key"]: field["default"] for field in KREA2_FIELDS if "default" in field}
         for optimizer in ("AdaFactor", "adafactor", "AdamW"):

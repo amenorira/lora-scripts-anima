@@ -284,8 +284,7 @@ def _validate_krea2_compute_options(config: dict[str, Any]) -> list[str]:
     return errors
 
 
-def validate_krea2_config(config: dict[str, Any]) -> list[str]:
-    """Validate and normalize the strict Krea 2 UI payload."""
+def _normalize_krea2_defaults(config: dict) -> None:
     from backend.training.attention_config import normalize_attention_config
 
     normalize_attention_config(config)
@@ -322,6 +321,180 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
     automatic_cache_dir = krea2_auto_cache_dir(config.get("train_data_dir"))
     if automatic_cache_dir:
         config["dataset_cache_dir"] = automatic_cache_dir
+
+
+def _validate_krea2_training_numbers(config: dict, duration_mode: str, errors: list[str]) -> None:
+    for key, minimum in (
+        ("network_dim", 1),
+        ("train_batch_size", 1),
+        ("gradient_accumulation_steps", 1),
+        ("krea_num_repeats", 1),
+        ("blocks_to_swap", 0),
+        ("max_data_loader_n_workers", 0),
+        ("text_cache_batch_size", 1),
+        ("krea_latent_cache_batch_size", 1),
+        ("krea_cache_num_workers", 1),
+        ("save_every_n_epochs", 1),
+    ):
+        _as_int(config, key, errors, minimum)
+    if duration_mode == "steps":
+        _as_int(config, "max_train_steps", errors, 1)
+    else:
+        _as_int(config, "max_train_epochs", errors, 1)
+
+    for key, minimum in (
+        ("block_swap_ring_size", 1),
+        ("save_every_n_steps", 1),
+        ("save_last_n_epochs", 1),
+        ("save_last_n_epochs_state", 1),
+        ("save_last_n_steps", 1),
+        ("save_last_n_steps_state", 1),
+        ("num_timestep_buckets", 2),
+        ("sample_every_n_steps", 1),
+    ):
+        if not _is_empty(config.get(key)):
+            _as_int(config, key, errors, minimum)
+    if isinstance(config.get("blocks_to_swap"), int) and config["blocks_to_swap"] > 26:
+        errors.append("blocks_to_swap: Krea 2 maximum is 26 / Krea 2 最大值为 26")
+
+    for key, minimum in (
+        ("network_dropout", 0.0),
+        ("network_alpha", 0.0),
+        ("discrete_flow_shift", 0.01),
+        ("learning_rate", 0.0),
+        ("max_grad_norm", 0.0),
+        ("lr_scheduler_power", 0.01),
+    ):
+        if key == "discrete_flow_shift" and config.get("timestep_sampling", "shift") != "shift":
+            continue
+        if key == "lr_scheduler_power" and str(config.get("lr_scheduler", "constant")) != "polynomial":
+            continue
+        number = _as_float(config, key, errors, minimum)
+        if key == "network_dropout" and number is not None and number > 1.0:
+            errors.append("network_dropout: must be <= 1 / 不能大于 1")
+        if key == "learning_rate" and number is not None and number <= 0:
+            errors.append("learning_rate: must be > 0 / 必须大于 0")
+    if not _is_empty(config.get("sigmoid_scale")):
+        _as_float(config, "sigmoid_scale", errors)
+    for key, default in (("min_timestep", 0), ("max_timestep", 1000)):
+        if _is_empty(config.get(key)):
+            config[key] = default
+    low = _as_int(config, "min_timestep", errors, 0)
+    high = _as_int(config, "max_timestep", errors, 1)
+    if low is not None and high is not None and not 0 <= low < high <= 1000:
+        errors.append("min_timestep/max_timestep: require 0 <= min < max <= 1000 / 时间步范围必须满足 0 ≤ 最小值 < 最大值 ≤ 1000")
+
+
+def _validate_krea2_scheduler(config: dict, errors: list[str]) -> None:
+    for key in ("lr_warmup_steps", "lr_decay_steps"):
+        if not _is_empty(config.get(key)):
+            _as_steps_or_ratio(config, key, errors)
+    scheduler_name = str(config.get("lr_scheduler", "constant"))
+    errors.extend(validate_scheduler_config(config))
+    if scheduler_name == "piecewise_constant":
+        config["lr_warmup_steps"] = 0
+    # get_cosine_with_min_lr_schedule_with_warmup rejects a missing floor;
+    # use zero to match an ordinary cosine schedule for direct API callers and
+    # old presets that naturally predate this guided field.
+    if scheduler_name == "cosine_with_min_lr" and _is_empty(config.get("lr_scheduler_min_lr_ratio")):
+        config["lr_scheduler_min_lr_ratio"] = 0.0
+    if scheduler_name == "constant":
+        try:
+            has_warmup = float(config.get("lr_warmup_steps", 0) or 0) != 0
+        except (TypeError, ValueError):
+            has_warmup = False
+        if has_warmup:
+            errors.append("lr_warmup_steps: constant scheduler does not accept warmup / constant 调度器不支持预热")
+    if scheduler_name in _KREA2_NUM_CYCLES_SCHEDULERS:
+        _as_int(config, "lr_scheduler_num_cycles", errors, 1)
+    if scheduler_name == "inverse_sqrt" and not _is_empty(config.get("lr_scheduler_timescale")):
+        _as_int(config, "lr_scheduler_timescale", errors, 1)
+    if scheduler_name in _KREA2_MIN_LR_RATIO_SCHEDULERS and not _is_empty(
+        config.get("lr_scheduler_min_lr_ratio")
+    ):
+        ratio = _as_float(config, "lr_scheduler_min_lr_ratio", errors, 0.0)
+        if ratio is not None and ratio > 1.0:
+            errors.append("lr_scheduler_min_lr_ratio: must be <= 1 / 不能大于 1")
+
+
+def _validate_krea2_optimizer_arguments(config: dict, optimizer_type: str, errors: list[str]) -> None:
+    if not _is_empty(config.get("krea_optimizer_weight_decay")):
+        _as_float(config, "krea_optimizer_weight_decay", errors, 0.0)
+    if not _is_empty(config.get("krea_optimizer_betas")):
+        if optimizer_type not in _KREA2_BETA_OPTIMIZERS:
+            errors.append("krea_optimizer_betas: not supported by the selected optimizer / 当前优化器不支持 betas")
+        else:
+            _normalize_numeric_tuple(
+                config,
+                "krea_optimizer_betas",
+                errors,
+                lengths=_KREA2_BETA_LENGTHS[optimizer_type],
+                minimum=0.0,
+                maximum=0.999999999,
+            )
+    if not _is_empty(config.get("krea_optimizer_eps")):
+        if optimizer_type not in _KREA2_EPS_OPTIMIZERS:
+            errors.append("krea_optimizer_eps: not supported by the selected optimizer / 当前优化器不支持 eps")
+        elif optimizer_type == _KREA2_PRODIGYPLUS_OPTIMIZER and str(config["krea_optimizer_eps"]).strip() == "None":
+            config["krea_optimizer_eps"] = "None"
+        else:
+            _normalize_numeric_literal(config, "krea_optimizer_eps", errors, minimum=1e-30)
+
+    if optimizer_type in _KREA2_PRODIGY_OPTIMIZERS:
+        config["learning_rate"] = 1.0
+        _normalize_numeric_literal(config, "krea_prodigy_d_coef", errors, minimum=1e-30)
+        _normalize_numeric_literal(config, "krea_prodigy_d0", errors, minimum=1e-30)
+
+    if optimizer_type == "AdaFactor":
+        _as_float(config, "krea_adafactor_clip_threshold", errors, 0.00000001)
+        _normalize_numeric_tuple(
+            config,
+            "krea_adafactor_eps",
+            errors,
+            lengths={2},
+            minimum=1e-30,
+        )
+    if optimizer_type in _KREA2_SCHEDULEFREE_WARMUP_OPTIMIZERS:
+        _as_int(config, "krea_schedulefree_warmup_steps", errors, 0)
+
+    if optimizer_type in _KREA2_VISIBLE_OPTIMIZERS:
+        try:
+            arguments = _collect_krea2_arguments(config, _KREA2_OPTIMIZER_DEFAULTS, _KREA2_OPTIMIZER_ARGUMENTS)
+            errors.extend(_validate_krea2_optimizer(config, arguments, config.get("gpu_ids")))
+            if optimizer_type == _KREA2_PRODIGYPLUS_OPTIMIZER and (
+                arguments.get("use_stableadamw", True) is not False or arguments.get("eps", 1e-8) is None
+            ):
+                config["max_grad_norm"] = 0.0
+        except (TypeError, ValueError) as exc:
+            errors.append(f"optimizer_args: {exc}")
+        if optimizer_type in {"AdaFactor", "pytorch_optimizer.LoRARite"}:
+            config["max_grad_norm"] = 0.0
+
+
+def _validate_krea2_samples(config: dict, errors: list[str]) -> None:
+    samples_enabled = bool(config.get("enable_krea_samples", False))
+    if samples_enabled:
+        if not _has_krea2_sample_prompts(config.get("krea_sample_prompts")):
+            errors.append("krea_sample_prompts: at least one non-comment prompt is required / 至少需要一条非注释提示词")
+        _as_int(config, "sample_every_n_epochs", errors, 1)
+        turbo_dit = str(config.get("turbo_dit") or "").strip()
+        turbo_lora = str(config.get("turbo_lora") or "").strip()
+        if turbo_dit and turbo_lora:
+            errors.append("turbo_lora: cannot be combined with turbo_dit / Turbo LoRA 与 Turbo DiT 不能同时使用")
+        if turbo_dit and config.get("convrot_int8"):
+            errors.append("turbo_dit: cannot be combined with convrot_int8 / Turbo DiT 暂不支持 ConvRot INT8")
+        if turbo_lora:
+            config.setdefault("turbo_lora_multiplier", 1.0)
+            _as_float(config, "turbo_lora_multiplier", errors)
+        if config.get("turbo_dit_cache") and not turbo_dit:
+            errors.append("turbo_dit_cache: requires turbo_dit / 必须先指定 Turbo DiT")
+        if turbo_dit and isinstance(config.get("blocks_to_swap"), int) and config["blocks_to_swap"] > 0:
+            errors.append("turbo_dit: cannot be combined with blocks_to_swap / 不能与 blocks_to_swap 同时使用")
+
+
+def validate_krea2_config(config: dict[str, Any]) -> list[str]:
+    """Validate and normalize the strict Krea 2 UI payload."""
+    _normalize_krea2_defaults(config)
 
     errors = _validate_krea2_compute_options(config)
     for key in ("krea_latent_cache_device", "krea_text_cache_device"):
@@ -389,66 +562,9 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
         config["lr_scheduler"] = "constant"
         config["lr_warmup_steps"] = 0
 
-    for key, minimum in (
-        ("network_dim", 1),
-        ("train_batch_size", 1),
-        ("gradient_accumulation_steps", 1),
-        ("krea_num_repeats", 1),
-        ("blocks_to_swap", 0),
-        ("max_data_loader_n_workers", 0),
-        ("text_cache_batch_size", 1),
-        ("krea_latent_cache_batch_size", 1),
-        ("krea_cache_num_workers", 1),
-        ("save_every_n_epochs", 1),
-    ):
-        _as_int(config, key, errors, minimum)
-    if duration_mode == "steps":
-        _as_int(config, "max_train_steps", errors, 1)
-    else:
-        _as_int(config, "max_train_epochs", errors, 1)
+    _validate_krea2_training_numbers(config, duration_mode, errors)
 
-    for key, minimum in (
-        ("block_swap_ring_size", 1),
-        ("save_every_n_steps", 1),
-        ("save_last_n_epochs", 1),
-        ("save_last_n_epochs_state", 1),
-        ("save_last_n_steps", 1),
-        ("save_last_n_steps_state", 1),
-        ("num_timestep_buckets", 2),
-        ("sample_every_n_steps", 1),
-    ):
-        if not _is_empty(config.get(key)):
-            _as_int(config, key, errors, minimum)
-    if isinstance(config.get("blocks_to_swap"), int) and config["blocks_to_swap"] > 26:
-        errors.append("blocks_to_swap: Krea 2 maximum is 26 / Krea 2 最大值为 26")
-
-    for key, minimum in (
-        ("network_dropout", 0.0),
-        ("network_alpha", 0.0),
-        ("discrete_flow_shift", 0.01),
-        ("learning_rate", 0.0),
-        ("max_grad_norm", 0.0),
-        ("lr_scheduler_power", 0.01),
-    ):
-        if key == "discrete_flow_shift" and config.get("timestep_sampling", "shift") != "shift":
-            continue
-        if key == "lr_scheduler_power" and str(config.get("lr_scheduler", "constant")) != "polynomial":
-            continue
-        number = _as_float(config, key, errors, minimum)
-        if key == "network_dropout" and number is not None and number > 1.0:
-            errors.append("network_dropout: must be <= 1 / 不能大于 1")
-        if key == "learning_rate" and number is not None and number <= 0:
-            errors.append("learning_rate: must be > 0 / 必须大于 0")
-    if not _is_empty(config.get("sigmoid_scale")):
-        _as_float(config, "sigmoid_scale", errors)
     timestep_sampling = str(config.get("timestep_sampling", "shift"))
-    for key, default in (("min_timestep", 0), ("max_timestep", 1000)):
-        if _is_empty(config.get(key)):
-            config[key] = default
-    low = _as_int(config, "min_timestep", errors, 0)
-    high = _as_int(config, "max_timestep", errors, 1)
-    if low is not None and high is not None and not 0 <= low < high <= 1000:
-        errors.append("min_timestep/max_timestep: require 0 <= min < max <= 1000 / 时间步范围必须满足 0 ≤ 最小值 < 最大值 ≤ 1000")
     if not _is_empty(config.get("scale_weight_norms")):
         _as_float(config, "scale_weight_norms", errors, 0)
     if config.get("dim_from_weights") and (not config.get("network_weights") or config.get("network_module") != KREA2_NETWORK_MODULE):
@@ -465,87 +581,9 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
     if uses_mode_scale and not _is_empty(config.get("mode_scale")):
         _as_float(config, "mode_scale", errors)
 
-    for key in ("lr_warmup_steps", "lr_decay_steps"):
-        if not _is_empty(config.get(key)):
-            _as_steps_or_ratio(config, key, errors)
-    scheduler_name = str(config.get("lr_scheduler", "constant"))
-    errors.extend(validate_scheduler_config(config))
-    if scheduler_name == "piecewise_constant":
-        config["lr_warmup_steps"] = 0
-    # get_cosine_with_min_lr_schedule_with_warmup rejects a missing floor;
-    # use zero to match an ordinary cosine schedule for direct API callers and
-    # old presets that naturally predate this guided field.
-    if scheduler_name == "cosine_with_min_lr" and _is_empty(config.get("lr_scheduler_min_lr_ratio")):
-        config["lr_scheduler_min_lr_ratio"] = 0.0
-    if scheduler_name == "constant":
-        try:
-            has_warmup = float(config.get("lr_warmup_steps", 0) or 0) != 0
-        except (TypeError, ValueError):
-            has_warmup = False
-        if has_warmup:
-            errors.append("lr_warmup_steps: constant scheduler does not accept warmup / constant 调度器不支持预热")
-    if scheduler_name in _KREA2_NUM_CYCLES_SCHEDULERS:
-        _as_int(config, "lr_scheduler_num_cycles", errors, 1)
-    if scheduler_name == "inverse_sqrt" and not _is_empty(config.get("lr_scheduler_timescale")):
-        _as_int(config, "lr_scheduler_timescale", errors, 1)
-    if scheduler_name in _KREA2_MIN_LR_RATIO_SCHEDULERS and not _is_empty(
-        config.get("lr_scheduler_min_lr_ratio")
-    ):
-        ratio = _as_float(config, "lr_scheduler_min_lr_ratio", errors, 0.0)
-        if ratio is not None and ratio > 1.0:
-            errors.append("lr_scheduler_min_lr_ratio: must be <= 1 / 不能大于 1")
+    _validate_krea2_scheduler(config, errors)
 
-    if not _is_empty(config.get("krea_optimizer_weight_decay")):
-        _as_float(config, "krea_optimizer_weight_decay", errors, 0.0)
-    if not _is_empty(config.get("krea_optimizer_betas")):
-        if optimizer_type not in _KREA2_BETA_OPTIMIZERS:
-            errors.append("krea_optimizer_betas: not supported by the selected optimizer / 当前优化器不支持 betas")
-        else:
-            _normalize_numeric_tuple(
-                config,
-                "krea_optimizer_betas",
-                errors,
-                lengths=_KREA2_BETA_LENGTHS[optimizer_type],
-                minimum=0.0,
-                maximum=0.999999999,
-            )
-    if not _is_empty(config.get("krea_optimizer_eps")):
-        if optimizer_type not in _KREA2_EPS_OPTIMIZERS:
-            errors.append("krea_optimizer_eps: not supported by the selected optimizer / 当前优化器不支持 eps")
-        elif optimizer_type == _KREA2_PRODIGYPLUS_OPTIMIZER and str(config["krea_optimizer_eps"]).strip() == "None":
-            config["krea_optimizer_eps"] = "None"
-        else:
-            _normalize_numeric_literal(config, "krea_optimizer_eps", errors, minimum=1e-30)
-
-    if optimizer_type in _KREA2_PRODIGY_OPTIMIZERS:
-        config["learning_rate"] = 1.0
-        _normalize_numeric_literal(config, "krea_prodigy_d_coef", errors, minimum=1e-30)
-        _normalize_numeric_literal(config, "krea_prodigy_d0", errors, minimum=1e-30)
-
-    if optimizer_type == "AdaFactor":
-        _as_float(config, "krea_adafactor_clip_threshold", errors, 0.00000001)
-        _normalize_numeric_tuple(
-            config,
-            "krea_adafactor_eps",
-            errors,
-            lengths={2},
-            minimum=1e-30,
-        )
-    if optimizer_type in _KREA2_SCHEDULEFREE_WARMUP_OPTIMIZERS:
-        _as_int(config, "krea_schedulefree_warmup_steps", errors, 0)
-
-    if optimizer_type in _KREA2_VISIBLE_OPTIMIZERS:
-        try:
-            arguments = _collect_krea2_arguments(config, _KREA2_OPTIMIZER_DEFAULTS, _KREA2_OPTIMIZER_ARGUMENTS)
-            errors.extend(_validate_krea2_optimizer(config, arguments, config.get("gpu_ids")))
-            if optimizer_type == _KREA2_PRODIGYPLUS_OPTIMIZER and (
-                arguments.get("use_stableadamw", True) is not False or arguments.get("eps", 1e-8) is None
-            ):
-                config["max_grad_norm"] = 0.0
-        except (TypeError, ValueError) as exc:
-            errors.append(f"optimizer_args: {exc}")
-        if optimizer_type in {"AdaFactor", "pytorch_optimizer.LoRARite"}:
-            config["max_grad_norm"] = 0.0
+    _validate_krea2_optimizer_arguments(config, optimizer_type, errors)
 
     for key, message in (
         ("krea_optimizer_custom_type", "custom optimizer classes are not supported / 不支持自定义优化器类"),
@@ -593,29 +631,13 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
             "gradient_checkpointing_cpu_offload: requires gradient_checkpointing / 必须同时启用 gradient_checkpointing"
         )
     if config.get("block_swap_h2d_only"):
-        if int(config.get("blocks_to_swap") or 0) < 1:
+        blocks_to_swap = config.get("blocks_to_swap")
+        if not isinstance(blocks_to_swap, int) or blocks_to_swap < 1:
             errors.append("block_swap_h2d_only: requires blocks_to_swap > 0 / 需要至少换出一个块")
         if not config.get("gradient_checkpointing"):
             errors.append("block_swap_h2d_only: requires gradient_checkpointing / 必须启用 gradient_checkpointing")
 
-    samples_enabled = bool(config.get("enable_krea_samples", False))
-    if samples_enabled:
-        if not _has_krea2_sample_prompts(config.get("krea_sample_prompts")):
-            errors.append("krea_sample_prompts: at least one non-comment prompt is required / 至少需要一条非注释提示词")
-        _as_int(config, "sample_every_n_epochs", errors, 1)
-        turbo_dit = str(config.get("turbo_dit") or "").strip()
-        turbo_lora = str(config.get("turbo_lora") or "").strip()
-        if turbo_dit and turbo_lora:
-            errors.append("turbo_lora: cannot be combined with turbo_dit / Turbo LoRA 与 Turbo DiT 不能同时使用")
-        if turbo_dit and config.get("convrot_int8"):
-            errors.append("turbo_dit: cannot be combined with convrot_int8 / Turbo DiT 暂不支持 ConvRot INT8")
-        if turbo_lora:
-            config.setdefault("turbo_lora_multiplier", 1.0)
-            _as_float(config, "turbo_lora_multiplier", errors)
-        if config.get("turbo_dit_cache") and not turbo_dit:
-            errors.append("turbo_dit_cache: requires turbo_dit / 必须先指定 Turbo DiT")
-        if turbo_dit and int(config.get("blocks_to_swap") or 0) > 0:
-            errors.append("turbo_dit: cannot be combined with blocks_to_swap / 不能与 blocks_to_swap 同时使用")
+    _validate_krea2_samples(config, errors)
 
     return errors
 
