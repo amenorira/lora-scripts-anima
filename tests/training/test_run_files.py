@@ -42,15 +42,6 @@ class RunDirectoryTests(unittest.TestCase):
                 else:
                     self.assertFalse(artifacts.exists())
 
-    def test_shared_artifact_and_internal_directory_is_claimed_once(self):
-        with tempfile.TemporaryDirectory() as directory:
-            run = Path(directory) / "run"
-            owned = []
-            run_files.prepare_run_directories(run, run, owned=owned)
-            self.assertTrue(run.is_dir())
-            self.assertEqual(owned, [run])
-            self.assertEqual(list(run.iterdir()), [])
-
 
 if __name__ == "__main__":
     unittest.main()

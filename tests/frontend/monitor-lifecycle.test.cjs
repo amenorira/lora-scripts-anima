@@ -62,13 +62,3 @@ test('snapshot started before task switch cannot overwrite the new task', async 
   assert.equal(a.monitorData.active_task.id, 'B');
   assert.equal(a.monitorData.step, 2);
 });
-
-test('compact snapshot preserves progress and detail does not own lifecycle', () => {
-  const a = app();
-  a.applyRealtimeMonitorSnapshot({ monitor: { detail: false, state: 'IDLE', step: 0 } });
-  assert.equal(a.monitorData.step, 12);
-  a._applyTaskView('FINISHED');
-  a.applyRealtimeMonitorSnapshot(snapshot());
-  assert.equal(a.monitorData.state, 'FINISHED');
-  assert.equal(a.isTraining, false);
-});

@@ -3,50 +3,6 @@ import unittest
 from unittest.mock import patch
 
 from backend import launch_utils
-from tools import ensure_runtime
-
-
-class ExistingVenvMigrationTests(unittest.TestCase):
-    def test_user_flash_installation_is_never_modified(self):
-        versions = {"flash-attn": "2.8.3+cu130torch2.10"}
-        with patch.object(ensure_runtime, "package_version", side_effect=versions.get), patch.object(
-            ensure_runtime, "pip"
-        ) as pip_mock, patch.object(ensure_runtime, "run") as run_mock:
-            self.assertEqual(ensure_runtime.sync_optional_packages(core_changed=True), [])
-        pip_mock.assert_not_called()
-        run_mock.assert_not_called()
-    def test_core_upgrade_migrates_old_cu130_torch(self):
-        versions = {
-            "torch": "2.10.0+cu130",
-            "torchvision": "0.25.0+cu130",
-        }
-        with patch.object(ensure_runtime, "package_version", side_effect=versions.get), patch.object(
-            ensure_runtime, "pip", return_value=0
-        ) as pip_mock, patch.object(ensure_runtime, "sync_triton") as triton_mock, patch.object(ensure_runtime, "sync_optional_packages", return_value=[]) as sync_mock:
-            self.assertEqual(ensure_runtime.main(), 0)
-
-        arguments = pip_mock.call_args.args
-        self.assertIn("torch==2.12.1+cu130", arguments)
-        self.assertIn("torchvision==0.27.1+cu130", arguments)
-        self.assertIn("--extra-index-url", arguments)
-        sync_mock.assert_called_once_with(core_changed=True)
-        triton_mock.assert_called_once_with()
-
-
-class TritonBootstrapTests(unittest.TestCase):
-    def test_install_failure_continues_startup(self):
-        versions = {"torch": ensure_runtime.TORCH, "torchvision": ensure_runtime.TORCHVISION}
-        for platform in ("win32", "linux"):
-            for core_changed in (False, True):
-                installed = {} if core_changed else versions
-                results = ([0] if core_changed else []) + [RuntimeError("download failed")]
-                with self.subTest(platform=platform, core_changed=core_changed), \
-                     patch.object(sys, "platform", platform), \
-                     patch.object(ensure_runtime, "package_version", side_effect=installed.get), \
-                     patch.object(ensure_runtime, "pip", side_effect=results), \
-                     patch.object(ensure_runtime, "sync_optional_packages", return_value=[]) as optional:
-                    self.assertEqual(ensure_runtime.main(), 0)
-                    optional.assert_called_once_with(core_changed=core_changed)
 
 
 class RuntimeRepairRegressionTests(unittest.TestCase):

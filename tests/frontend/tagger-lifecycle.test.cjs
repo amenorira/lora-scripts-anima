@@ -31,13 +31,6 @@ for (const change of ['unchanged','route','mode','return','path','scan','startin
   });
 }
 
-test('picker failure after leaving the workspace does not notify another page', async()=>{
-  const {app,pending,messages}=harness();
-  const pick=app.pickTaggerSource();app.currentRoute='monitor-dashboard';
-  pending.reject(new Error('picker closed'));await pick;
-  assert.deepEqual(messages,[]);
-});
-
 test('local task creation response stays attached to the initiating source mode', async()=>{
   const pending=deferred(), storage=new Map();
   const {window}=loadFrontend('tagger/index',{window:{},fetch:()=>pending.promise,

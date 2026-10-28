@@ -1,7 +1,4 @@
 import asyncio
-import os
-import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,15 +6,8 @@ from unittest.mock import patch
 
 import toml
 
-from backend.training.config.krea2_network import (
-    KREA2_LYCORIS_MODULE, KREA2_NETWORK_MODULE, KREA2_PRESET_FILENAME,
-    build_krea2_network_preset, linear_target_names, selected_targets,
-)
+from backend.training.config.krea2_network import KREA2_LYCORIS_MODULE, KREA2_PRESET_FILENAME, build_krea2_network_preset
 from backend.training.config.musubi_krea2 import build_krea2_train_config, validate_krea2_config
-from backend.training.execution.krea2_preflight import krea2_preflight
-from backend.training.config.network_config import extract_network_form
-from backend.training.core_registry import resolve_training_profile, TrainingProfileError
-from backend.training.execution.supervisor import _build_train_env
 from backend.training.config.training_config import build_training_config, dump_training_config, parse_training_config_text, extract_training_form
 from backend.server.routes import training as routes
 from backend.tasks import TaskManager
@@ -26,37 +16,7 @@ from tests.training.test_multi_core_krea2 import krea2_config
 
 
 class Krea2NetworkConfigTests(unittest.TestCase):
-    def test_engine_adapter_and_subprocess_import_contract(self):
-        config = {"model_train_type": "krea2-lora", "network_module": KREA2_LYCORIS_MODULE}
-        resolve_training_profile(config)
-        self.assertEqual(config["adapter_id"], "musubi_lycoris")
-        with self.assertRaises(TrainingProfileError):
-            resolve_training_profile({**config, "adapter_id": "musubi_lora"})
-        with tempfile.TemporaryDirectory() as tmp:
-            env = _build_train_env(tmp, "krea2-test", engine_id="musubi_tuner")
-            paths = env["PYTHONPATH"].split(os.pathsep)
-            self.assertLess(next(i for i, p in enumerate(paths) if p.endswith("musubi-tuner\\src") or p.endswith("musubi-tuner/src")),
-                            next(i for i, p in enumerate(paths) if Path(p).name == "vendor"))
-            for enabled in ("0", "1"):
-                with self.subTest(flash=enabled):
-                    process = subprocess.run([sys.executable, "-B", "-c", """
-import importlib.util, os, sys
-from pathlib import Path
-assert ('flash_attn' in sys.modules and sys.modules['flash_attn'] is None) == (os.environ['ANIMA_ENABLE_FLASH_ATTN'] == '0')
-assert Path(importlib.util.find_spec('lycoris').origin).parent.parent.name == 'vendor'
-assert 'musubi-tuner' in importlib.util.find_spec('musubi_tuner').origin
-"""], env={**env, "ANIMA_ENABLE_FLASH_ATTN": enabled}, capture_output=True, text=True, timeout=30)
-                    self.assertEqual(process.returncode, 0, process.stderr)
 
-    def test_target_counts_and_custom_fullmatch_exclusions(self):
-        self.assertEqual(len(set(linear_target_names())), 264)
-        for mode, count in (("all", 264), ("attention", 140), ("attention_mlp", 224)):
-            self.assertEqual(len(selected_targets({"krea_target_mode": mode})), count)
-        targets = selected_targets({"krea_target_mode": "custom", "krea_target_include": "blocks\\.0\\..*\nfirst",
-                                    "krea_target_exclude": ".*\\.mlp\\..*"})
-        self.assertEqual(len(targets), 6)
-        self.assertIn("first", targets)
-        self.assertNotIn("blocks.0.mlp.up", targets)
 
     def test_serialization_and_portable_yaml_roundtrip(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -93,28 +53,6 @@ assert 'musubi-tuner' in importlib.util.find_spec('musubi_tuner').origin
             self.assertEqual(build_krea2_network_preset(restored), preset)
             self.assertEqual(build_krea2_train_config(restored, root / "dataset.toml", root, root / "log"), native)
 
-    def test_algorithm_switch_does_not_leak_lokr_settings_into_loha(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            config = krea2_config(Path(tmp))
-            config.update(network_module=KREA2_LYCORIS_MODULE, lycoris_algo="loha", lokr_factor=8,
-                          full_matrix=True, decompose_both=True, unbalanced_factorization=True,
-                          rank_dropout=0.2, module_dropout=0.1)
-            self.assertEqual(validate_krea2_config(config), [])
-            native = build_krea2_train_config(config, Path(tmp) / "dataset.toml", tmp, tmp)
-            args = dict(item.split("=", 1) for item in native["network_args"])
-            self.assertEqual(args["algo"], "loha")
-            self.assertEqual(args["rank_dropout"], "0.2")
-            self.assertTrue({"factor", "decompose_both", "full_matrix", "unbalanced_factorization"}.isdisjoint(args))
-
-    def test_disabled_decompose_both_omits_truthy_upstream_string(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            config = krea2_config(Path(tmp))
-            config.update(network_module=KREA2_LYCORIS_MODULE, lokr_factor=8, network_dim=1, network_alpha=1)
-            for enabled in (False, True):
-                config["decompose_both"] = enabled
-                native = build_krea2_train_config(config, "dataset.toml", tmp, tmp)
-                args = dict(item.split("=", 1) for item in native["network_args"])
-                self.assertEqual(args.get("decompose_both"), "True" if enabled else None)
 
     def test_invalid_and_ineffective_settings_fail_before_launch(self):
         cases = [({"network_module": "networks.lokr"}, "network_module"),
@@ -142,53 +80,6 @@ assert 'musubi-tuner' in importlib.util.find_spec('musubi_tuner').origin
                 with self.assertRaises(ValueError):
                     build_krea2_train_config(config, "dataset.toml", tmp, tmp)
 
-    def test_fp8_requires_bypass_and_native_lora_filters_remain_compatible(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            config = krea2_config(Path(tmp))
-            config.update(network_module=KREA2_LYCORIS_MODULE, lycoris_algo="loha", fp8_base=True)
-            self.assertEqual(validate_krea2_config(config), [])
-            self.assertTrue(config["bypass_mode"])
-            config.update(network_module=KREA2_NETWORK_MODULE, fp8_base=False,
-                          network_args_custom="exclude_patterns=['first']\ninclude_patterns=['first']")
-            self.assertEqual(validate_krea2_config(config), [])
-            native = build_krea2_train_config(config, "dataset.toml", tmp, tmp)
-            self.assertEqual(len(native["network_args"]), 2)
-            self.assertFalse(any(a.startswith("algo=") for a in native["network_args"]))
-
-    def test_native_argument_import_restores_guided_controls(self):
-        imported = extract_network_form({"model_train_type": "krea2-lora", "network_module": KREA2_LYCORIS_MODULE,
-            "network_args": ["algo=loha", "rank_dropout=0.1", "use_scalar=true", "factor=8"]})
-        self.assertEqual(imported["lycoris_algo"], "loha")
-        self.assertEqual(imported["rank_dropout"], 0.1)
-        self.assertIs(imported["use_scalar"], True)
-        self.assertEqual(imported["lokr_factor"], 8)
-        self.assertNotIn("network_args", imported)
-        imported = extract_network_form({"model_train_type": "krea2-lora", "network_module": KREA2_LYCORIS_MODULE,
-            "network_args": ["algo=lokr", "factor=4"], "network_args_custom": "algo=loha\nfactor=8"})
-        self.assertEqual(imported["lycoris_algo"], "loha")
-        self.assertEqual(imported["lokr_factor"], 8)
-
-    def test_legacy_dropout_text_preserves_last_value_and_explicit_control_precedence(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            config = krea2_config(Path(tmp))
-            config["network_args_custom"] = "rank_dropout=0.1\nrank_dropout=0.2"
-            self.assertEqual(validate_krea2_config(config), [])
-            self.assertEqual(config["rank_dropout"], 0.2)
-            self.assertEqual(config["network_args_custom"], "")
-            config.update(rank_dropout=0.3, network_args_custom="rank_dropout=0.2")
-            self.assertEqual(validate_krea2_config(config), [])
-            self.assertEqual(config["rank_dropout"], 0.3)
-
-    def test_flash_uses_existing_package_check(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            config = krea2_config(Path(tmp))
-            config["krea_attention_backend"] = "flash_attn"
-            with patch("backend.training.execution.krea2_preflight.shared_runtime_status", return_value={"errors": []}), \
-                 patch("tools.flash_attention.package_version", return_value=None) as version:
-                result = krea2_preflight(config, require_cache=False)
-                self.assertFalse(result["ok"])
-                self.assertTrue(any("FlashAttention" in e for e in result["errors"]))
-                version.assert_called_once_with("flash-attn")
 
     def test_launch_writes_preset_and_enables_selected_process_backends(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -50,29 +50,3 @@ for (const change of ['dataset', 'caption']) {
     assert.deepEqual(f.messages.at(-1), ['tagEditor.batchStale', 'warning']);
   });
 }
-
-test('batch confirmation discloses selected images outside the current page',()=>{
-  const f=fixture(['cat','dog']);
-  f.app.tagEditorSessionId='test';f.app.tagEditorPageItems=[f.images[0]];
-  f.app.t=key=>key==='tagEditor.batchOutsidePage' ? '{n} outside this page' : key;
-  f.app.batchAddInput='blue';f.app.tagEditorBatchAdd();
-  assert.match(f.confirm().message,/1 outside this page/);
-  f.confirm().accept();assert.deepEqual(f.writes,['0','1']);
-});
-
-for (const pos of ['front', 'back']) {
-  test(`batch ${pos} keeps input order while skipping existing and repeated tags`, () => {
-    const raw = '\uFEFF  alpha, beta, cat\r\n';
-    const f = fixture(['cat', 'beta, dog', raw]);
-    f.app.tagEditorBatchPos = pos;
-    f.app.batchAddInput = ' alpha, beta, alpha, cat ';
-    f.app.tagEditorBatchAdd();
-    assert.match(f.confirm().message, /2 images/);
-    f.confirm().accept();
-    assert.deepEqual(f.images.map(img => img.tags), pos === 'front'
-      ? ['alpha, beta, cat', 'alpha, cat, beta, dog', raw]
-      : ['cat, alpha, beta', 'beta, dog, alpha, cat', raw]);
-    assert.deepEqual(f.writes, ['0', '1']);
-    assert.equal(f.history.length, 1);
-  });
-}

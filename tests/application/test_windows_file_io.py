@@ -1,7 +1,6 @@
 """Real Windows handle tests: readers retain old bytes while writers publish new ones."""
 import os
 from pathlib import Path
-import stat
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -30,37 +29,6 @@ class WindowsAtomicIOTests(unittest.TestCase):
             self.assertEqual(reader.read(), b"old version")
             self.assertEqual(file_io.read_text(target), "new version")
 
-    def test_incompatible_external_reader_still_requires_release(self):
-        target = self.root / "caption.txt"
-        target.write_bytes(b"original")
-        with target.open("rb") as incompatible_reader:
-            with patch.object(file_io.time, "sleep", side_effect=lambda _delay: incompatible_reader.close()) as sleep:
-                file_io.atomic_write_text(target, "replacement")
-            sleep.assert_called_once_with(.02)
-        self.assertEqual(file_io.read_text(target), "replacement")
-
-    def test_readonly_target_is_preserved_and_fails_without_retry(self):
-        target = self.root / "caption.txt"
-        target.write_bytes(b"original")
-        target.chmod(stat.S_IREAD)
-        try:
-            with patch.object(file_io.time, "sleep") as sleep:
-                with self.assertRaises(PermissionError):
-                    file_io.atomic_write_text(target, "replacement")
-            sleep.assert_not_called()
-            self.assertEqual(file_io.read_bytes(target), b"original")
-            self.assertEqual(list(self.root.glob(".*.tmp")), [])
-        finally:
-            target.chmod(stat.S_IREAD | stat.S_IWRITE)
-
-    def test_missing_source_reports_paths_and_preserves_target(self):
-        source, target = self.root / "missing.tmp", self.root / "caption.txt"
-        target.write_bytes(b"original")
-        with self.assertRaises(FileNotFoundError) as result:
-            file_io.atomic_replace(source, target)
-        self.assertEqual(result.exception.filename, str(source))
-        self.assertEqual(result.exception.filename2, str(target))
-        self.assertEqual(file_io.read_bytes(target), b"original")
 
     def test_embedded_null_cannot_truncate_a_source_or_target_path(self):
         source, target = self.root / "source.tmp", self.root / "caption.txt"

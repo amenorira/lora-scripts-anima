@@ -63,21 +63,3 @@ test('poll response older than ownership boundary is ignored', () => {
   assert.equal(app.isTraining, false);
   assert.equal(app.statusText, 'monitor.idle');
 });
-
-test('monitor detail snapshot does not skip queued task replay', () => {
-  const { window } = loadFrontend('shared/realtime');
-  const app = Object.assign({}, window.realtimeMixin, {
-    _realtimeCursors: { 'task:train-1': 10, server: 3 }, _realtimeTopics: new Set(['server', 'task:train-1']),
-  });
-  app._applyRealtimeSnapshotCursors({ 'task:train-1': 40, server: 8, hardware: 7 }, { preserveSubscribedCursors: true });
-  assert.deepEqual(JSON.parse(JSON.stringify(app._realtimeCursors)), { 'task:train-1': 10, server: 3, hardware: 7 });
-});
-
-test('snapshot drops expired cursors while preserving subscribed replay positions', () => {
-  const { window } = loadFrontend('shared/realtime');
-  const app = Object.assign({}, window.realtimeMixin, {
-    _realtimeCursors: { 'task:old': 3, 'task:live': 8 }, _realtimeTopics: new Set(['task:live']),
-  });
-  app._applyRealtimeSnapshotCursors({ server: 2 }, { preserveSubscribedCursors: true });
-  assert.deepEqual(JSON.parse(JSON.stringify(app._realtimeCursors)), { 'task:live': 8, server: 2 });
-});

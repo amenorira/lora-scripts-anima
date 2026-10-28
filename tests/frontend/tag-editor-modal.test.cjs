@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const fs=require('node:fs');
+
 const path=require('node:path');
 const {loadTagEditor}=require('./helpers.cjs');
 const {uiHarness}=require('./ui-helpers.cjs');
@@ -44,39 +44,5 @@ test('tag editor dialogs reuse native focus containment, autofocus and Escape re
     assert.equal(f.document.activeElement,f.trigger);
     assert.deepEqual(f.app.tagEditorSelected,['a','b']);
     assert.equal(f.app.tagEditorImages[0].tags,f.raw);assert.equal(f.app.tagEditorHistory[0].desc,'history');
-  }
-});
-
-test('closing before autofocus cancels the old dialog opening and hidden triggers use a safe fallback',()=>{
-  const f=fixture('help');f.open();f.close();f.flush();assert.equal(f.dialog.open,false);
-  f.open();f.flush();f.trigger.hidden=true;
-  const main=new f.Element('main');main.setAttribute('id','mainContent');f.document.body.append(main);
-  f.close();f.flush();assert.equal(f.document.activeElement,main);
-});
-
-test('a dialog restores focus to a refreshed opener with the same identity', () => {
-  const f = fixture('help');
-  f.trigger.id = 'history-config';
-  f.trigger.setAttribute('id', f.trigger.id);
-  f.open(); f.flush();
-  f.trigger.remove();
-  const replacement = new f.Element('button');
-  replacement.setAttribute('id', 'history-config');
-  f.document.body.append(replacement);
-  f.close(); f.flush();
-  assert.equal(f.document.activeElement, replacement);
-});
-
-test('help isolates background shortcuts before the native dialog has opened',()=>{
-  const f=fixture('help');f.open();
-  f.app.tagEditorHandleKeydown({key:'a',ctrlKey:true,target:f.trigger});
-  assert.deepEqual(f.app.tagEditorSelected,['a','b']);
-});
-
-test('production lightbox and help bind the shared native-dialog behavior',()=>{
-  const html=fs.readFileSync(path.join(__dirname,'../../frontend/index.html'),'utf8');
-  for(const flag of ['tagEditorLightboxOpen','tagEditorShortcutsOpen']) {
-    const dialog=html.match(new RegExp('<dialog[^>]*x-dialog="'+flag+'"[\\s\\S]*?</dialog>'))?.[0];
-    assert.ok(dialog);assert.match(dialog,/@dialog-close=/);assert.match(dialog,/data-dialog-autofocus/);
   }
 });

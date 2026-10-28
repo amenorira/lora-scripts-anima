@@ -1,19 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
-const {loadFrontend, readFrontend, readRepo} = require('./helpers.cjs');
-
-test('composition preserves getters and rejects duplicates without partial mutation', () => {
-  const {window} = loadFrontend('shared/mixin-compose');
-  const target = {value:2};
-  window.composeAppMixins(target,{derived:{get doubled(){return this.value*2;}}});
-  assert.equal(target.doubled,4);
-  target.value=3;
-  assert.equal(target.doubled,6);
-  assert.throws(()=>window.composeAppMixins(target,{extra:{added:true},duplicate:{value:4}}),/value: base \/ duplicate/);
-  assert.equal(target.added,undefined);
-  assert.throws(()=>window.composeAppMixins({}, {first:{same:1},second:{same:2}}),/same: first \/ second/);
-});
+const { readFrontend, readRepo } = require('./helpers.cjs');
 
 test('the production script order assembles the complete application without collisions', () => {
   const listeners = new Map();

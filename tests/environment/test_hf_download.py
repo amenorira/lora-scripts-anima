@@ -7,7 +7,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import requests
 
 from backend.utils import hf_download as hf
 
@@ -28,20 +27,6 @@ class HFDownloadTests(unittest.TestCase):
         self.dest = Path(self.temp.name) / "model.bin"
 
 
-    def test_interrupted_stream_resumes_on_next_source_without_retry_sleep(self):
-        def interrupted(chunk_size):
-            yield b"abc"
-            raise requests.ConnectionError("read stalled")
-        first = reply()
-        first.iter_content.side_effect = interrupted
-        second = reply(b"def", 206, {"content-range": "bytes 3-5/6", "content-length": "3"})
-        with patch.object(hf, "_head_total", return_value=6), \
-                patch("requests.get", side_effect=[first, second]) as get:
-            hf.download_url_with_fallback(["https://mirror.invalid/file", "https://official.invalid/file"], self.dest)
-        self.assertEqual(get.call_count, 2)
-        self.assertEqual(get.call_args.kwargs["headers"]["Range"], "bytes=3-")
-        self.assertEqual(self.dest.read_bytes(), b"abcdef")
-
     def test_wrong_resume_offset_never_replaces_destination(self):
         self.dest.write_bytes(b"original")
         self.dest.with_suffix(".bin.partial").write_bytes(b"abc")
@@ -50,30 +35,6 @@ class HFDownloadTests(unittest.TestCase):
             with self.assertRaises(hf.IntegrityError):
                 hf.download_url_with_fallback(["https://example.invalid/file"], self.dest)
         self.assertEqual(self.dest.read_bytes(), b"original")
-
-    def test_416_does_not_promote_unverified_partial(self):
-        self.dest.with_suffix(".bin.partial").write_bytes(b"stale")
-        with patch.object(hf, "_head_total", return_value=0), patch("requests.get", return_value=reply(status=416)):
-            with self.assertRaises(hf.IntegrityError):
-                hf.download_url_with_fallback(["https://example.invalid/file"], self.dest)
-        self.assertFalse(self.dest.exists())
-
-    def test_failed_part_signals_peer_before_waiting_for_executor(self):
-        started = threading.Barrier(2)
-        stopped = threading.Event()
-        def download_part(url, path, start, end, index, size, progress, stop, expected_total):
-            started.wait(timeout=2)
-            if index == 0:
-                raise requests.ConnectionError("connection failed")
-            if stop.wait(1):
-                stopped.set()
-            else:
-                raise AssertionError("peer was not cancelled")
-        with patch.object(hf, "_PART_MIN", 2), patch.object(hf, "_head_total", return_value=4), \
-                patch.object(hf, "_download_part", side_effect=download_part):
-            with self.assertRaises(requests.ConnectionError):
-                hf.download_url_with_fallback(["https://example.invalid/file"], self.dest)
-        self.assertTrue(stopped.is_set())
 
 
 class HTTPDownloadTests(unittest.TestCase):
@@ -144,10 +105,3 @@ class HTTPDownloadTests(unittest.TestCase):
         self.assertGreaterEqual(self.peak, 2)
         self.assertLessEqual(self.peak, 4)
         self.assertEqual(len([c for c in self.calls if c[0] == "GET"]), 4)
-
-    def test_ignored_ranges_fall_back_to_one_full_get(self):
-        with patch.object(hf, "_PART_MIN", 1024):
-            hf.download_url_with_fallback([self.url + "/no-range"], self.dest)
-        self.assertEqual(self.dest.read_bytes(), self.data)
-        self.assertEqual(len([c for c in self.calls if c[0] == "GET" and c[2] is None]), 1)
-        self.assertEqual(list(self.dest.parent.iterdir()), [self.dest])

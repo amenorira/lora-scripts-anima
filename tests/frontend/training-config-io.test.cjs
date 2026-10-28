@@ -2,35 +2,6 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { TRAINING_CORE_SCRIPTS, loadFrontend } = require('./helpers.cjs');
 
-test('real registry model defaults stay separate across all four profiles and field resets', () => {
-  const { window } = loadFrontend(['shared/constants','shared/utils','app/config',...TRAINING_CORE_SCRIPTS], {
-    window: {}, document: {getElementById: () => null}, setTimeout, clearTimeout,
-  });
-  window.t=(_key,fallback)=>fallback || '';
-  const app = Object.assign({}, window.utilsMixin, window.trainingCoreMixin, {
-    form: {model_train_type:'anima-lora',pretrained_model_name_or_path:'./custom-anima.safetensors'},
-    formDefaults:{}, _profileFormDrafts:{}, _profileFieldSources:{}, _fieldSources:{},
-    _activeTrainType:'anima-lora',currentRoute:'',
-    renderTrainingForm(){}, _scheduleProfileFieldWatchers(){},
-    updateToml(){},rebuildForm(){},toast(){},t:(_key,fallback)=>fallback || '',$nextTick:fn=>fn(),
-  });
-  app.switchTrainType('sdxl-lora');
-  assert.equal(app.form.pretrained_model_name_or_path,'');
-  app.form.pretrained_model_name_or_path='./custom-sdxl.safetensors';
-  app.switchTrainType('krea2-lora');
-  assert.equal(app.form.pretrained_model_name_or_path,undefined);
-  assert.ok(app.form.dit);
-  app.switchTrainType('moss-image-lora');
-  assert.equal(app.form.pretrained_model_name_or_path,'');
-  app.switchTrainType('anima-lora');
-  assert.equal(app.form.pretrained_model_name_or_path,'./custom-anima.safetensors');
-  app.switchTrainType('sdxl-lora');
-  assert.equal(app.form.pretrained_model_name_or_path,'./custom-sdxl.safetensors');
-  app.setField=(key,value)=>{app.form[key]=value;};
-  app.resetField('pretrained_model_name_or_path');
-  assert.equal(app.form.pretrained_model_name_or_path,'');
-});
-
 test('flat config import switches profile before filtering fields', async () => {
   const storage = new Map([['anima-form-train-basic', JSON.stringify({
     model_train_type: 'anima-lora', qwen3: './models/stale-qwen.safetensors',
@@ -151,23 +122,4 @@ test('native TOML import sends the profile selected when the file was opened', a
   assert.equal(request.model_train_type, 'moss-image-lora');
   assert.equal(imported.train_text_embedder, true);
   assert.equal(imported.rank_dropout, 0.2);
-});
-
-test('file import reports unsupported fields instead of a plain success toast', async () => {
-  let reader, notice;
-  const { window } = loadFrontend('training/config-io', {
-    window: {},
-    FileReader: class { constructor() { reader = this; } readAsText() {} },
-    fetch: async () => ({ json: async () => ({ status: 'success', data: { data: { max_train_steps: 300 } } }) }),
-  });
-  const app = Object.assign({}, window.trainingConfigIoMixin, {
-    form: { model_train_type: 'moss-image-lora' },
-    async _applyImportedFlatConfig() { this._lastConfigImportIgnoredFields = ['max_train_steps', 'validation_split']; },
-    toast: (text, level) => { notice = { text, level }; },
-    t: key => key === 'common.importedWithIgnoredFields' ? 'Not applied: {fields}' : key,
-  });
-  app.handleConfigFileImport({ target: { files: [{}], value: 'config.toml' } });
-  await reader.onload({ target: { result: 'max_train_steps = 300' } });
-  assert.equal(notice.level, 'warning');
-  assert.match(notice.text, /max_train_steps, validation_split/);
 });

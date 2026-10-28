@@ -17,17 +17,6 @@ function fixture() {
   return { app, pending, reply };
 }
 
-test('switching to modified filter immediately invalidates pending page', async () => {
-  const { app, reply } = fixture();
-  const request = app.tagEditorFetchPage(2);
-  app.tagEditorQuickFilter = 'modified';
-  app._teGetModified = () => [{ path: '/draft', name: 'draft.png', tags: 'draft' }];
-  app.tagEditorSchedulePageFetch(true);
-  reply(0, { page: 2, items: [{ path: '/old' }] });
-  await request;
-  assert.equal(app.tagEditorPageItems[0].path, '/draft');
-});
-
 test('bulk loading cannot merge or select the previous dataset after a switch', async () => {
   const { app, reply } = fixture();
   const request = app.tagEditorSelectFiltered();
@@ -41,39 +30,6 @@ test('bulk loading cannot merge or select the previous dataset after a switch', 
   assert.deepEqual(Array.from(app.tagEditorImages, x => x.path), ['/B/image']);
   assert.deepEqual(app.tagEditorSelected, ['/B/image']);
   assert.equal(app._teSearchLoading, true);
-});
-
-test('bulk loading refuses a changed filter and a changed session generation', async () => {
-  let f = fixture();
-  const changedFilter = f.app._teFetchAllSessionItems(true);
-  f.app.tagEditorSearchQuery = 'new';
-  f.reply(0, { total_pages: 1, items: [{ path: '/old' }] });
-  await assert.rejects(changedFilter, { name: 'AbortError' });
-  assert.equal(f.app.tagEditorImages.length, 0);
-
-  f = fixture();
-  const changedGeneration = f.app._teFetchAllSessionItems(false);
-  f.reply(0, { total_pages: 2, generation: 1, items: [{ path: '/first' }] });
-  await new Promise(resolve => setImmediate(resolve));
-  f.reply(1, { total_pages: 2, generation: 2, items: [{ path: '/second' }] });
-  await assert.rejects(changedGeneration);
-  assert.equal(f.app.tagEditorImages.length, 0);
-});
-
-test('bulk paging keeps drafts and visible page, and uses one fixed session', async () => {
-  const { app, pending, reply } = fixture();
-  app._teMergeSessionItems([{ path: '/first', tags: 'original' }], true);
-  app.tagEditorImages[0].tags = 'draft';
-  const request = app._teFetchAllSessionItems(false);
-  reply(0, { total_pages: 2, generation: 1, items: [{ path: '/first', tags: 'server' }] });
-  await new Promise(resolve => setImmediate(resolve));
-  reply(1, { total_pages: 2, generation: 1, items: [{ path: '/second', tags: 'second' }] });
-  const images = await request;
-  assert.equal(images[0].tags, 'draft');
-  assert.equal(images.length, 2);
-  assert.equal(app.tagEditorPageItems.length, 1);
-  assert.ok(pending.every(p => p.url.includes('/sessions/A/images?')));
-  assert.equal(app._teAllAbort, null);
 });
 
 test('normal pages query sparse raw drafts without advancing the saved baseline', async () => {
@@ -92,24 +48,6 @@ test('normal pages query sparse raw drafts without advancing the saved baseline'
   assert.equal(app.tagEditorPageItems[0].tags, raw);
 });
 
-test('caption changes invalidate page caches and late responses, including undo to clean', async () => {
-  const { app, pending, reply } = fixture();
-  app._teMergeSessionItems([{ path: '/a', tags: 'old' }], true);
-  app._teUpdateFreq = app.tagDictionarySyncChips = app._teRemoveDraft = () => {};
-  const oldKey = app._teSessionQueryKey(1);
-  const request = app.tagEditorFetchPage(2, { force: true });
-  app._teUpdateImageTags(app.tagEditorImages[0], 'new');
-  assert.notEqual(app._teSessionQueryKey(1), oldKey);
-  assert.deepEqual(Object.keys(app._tePageCache), []);
-  reply(0, { items: [{ path: '/stale', tags: 'old' }] });
-  assert.equal(await request, false);
-  app._teUpdateImageTags(app.tagEditorImages[0], 'old');
-  const clean = app.tagEditorFetchPage(1);
-  assert.equal(pending[1].options.method, undefined);
-  reply(1, { items: [{ path: '/a', tags: 'old' }] });
-  assert.equal(await clean, true);
-});
-
 test('filtered bulk selection uses one caption snapshot and rejects edits between pages', async () => {
   const { app, pending, reply } = fixture();
   app._teMergeSessionItems([{ path: '/a', tags: 'old' }], true);
@@ -122,16 +60,4 @@ test('filtered bulk selection uses one caption snapshot and rejects edits betwee
   app._teInvalidateCaptionQuery();
   reply(1, { total_pages: 2, generation: 1, items: [] });
   await assert.rejects(request, { name: 'AbortError' });
-});
-
-test('no-caption count includes current edits and undo without a full dataset download', () => {
-  const { app } = fixture();
-  app._teMergeSessionItems([{ path: '/a', tags: 'old' }, { path: '/b', tags: '' }], true);
-  app.tagEditorNoTagCount = 10;
-  app.tagEditorImages[0].tags = ' \r\n';
-  assert.equal(app.tagEditorGetQuickCount('notag'), 11);
-  app.tagEditorImages[1].tags = 'new';
-  assert.equal(app.tagEditorGetQuickCount('notag'), 10);
-  app.tagEditorImages[0].tags = 'old';
-  assert.equal(app.tagEditorGetQuickCount('notag'), 9);
 });

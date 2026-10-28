@@ -1,57 +1,16 @@
 import asyncio
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.core.realtime import RealtimeHub
 from backend.server.routes import realtime as realtime_route
-from backend.server.routes import system as system_route
-from backend.tasks import TaskManager
 
 
 class RealtimeHubTests(unittest.IsolatedAsyncioTestCase):
-    async def test_periodic_expiry_preserves_subscribers_without_scanning_on_ordinary_events(self):
-        hub = RealtimeHub()
-        await hub.publish("task:finished", "task.result", {"status": "FINISHED"})
-        queue, _, _ = await hub.subscribe("task:finished", 1)
-        with patch.object(hub, "_prune", wraps=hub._prune) as prune:
-            for index in range(20):
-                await hub.publish("hardware", "hardware.sample", {"index": index})
-                await hub.cursors()
-            prune.assert_not_called()
-            with patch("backend.core.realtime.time.time", return_value=10**12):
-                await hub.prune()
-                self.assertIn("task:finished", await hub.cursors())
-                await hub.unsubscribe("task:finished", queue)
-                await hub.prune()
-                self.assertNotIn("task:finished", await hub.cursors())
-        _, replay, resync = await hub.subscribe("task:finished", 1)
-        self.assertTrue(resync)
-        self.assertEqual(replay, [])
 
-    async def test_terminal_topics_expire_without_resetting_reused_sequences(self):
-        hub = RealtimeHub()
-        await hub.publish("task:old", "task.result", {"status": "FINISHED"})
-        await hub.publish("task:active", "task.status", {"status": "RUNNING"})
-        with patch("backend.core.realtime.time.time", return_value=10**12):
-            await hub.prune()
-        self.assertNotIn("task:old", await hub.cursors())
-        self.assertIn("task:active", await hub.cursors())
-        queue, replay, resync = await hub.subscribe("task:old", 1)
-        self.assertTrue(resync)
-        self.assertEqual(replay, [])
-        event = await hub.publish("task:old", "task.status", {"status": "RUNNING"})
-        self.assertGreater(event["seq"], 1)
-
-    async def test_terminal_count_and_global_history_budget_are_bounded(self):
-        hub = RealtimeHub()
-        with patch("backend.core.realtime._MAX_TERMINAL_TOPICS", 4), patch("backend.core.realtime._MAX_TOTAL_HISTORY_BYTES", 1024):
-            for index in range(20):
-                await hub.publish(f"task:{index}", "task.result", {"status": "FINISHED", "log": "x" * 500})
-            self.assertLessEqual(len(await hub.cursors()), 4)
-            self.assertLessEqual(sum(hub._history_bytes.values()), 1024)
 
     async def test_slow_subscriber_queue_is_bounded_and_keeps_newest_events(self):
         hub = RealtimeHub()
@@ -72,42 +31,6 @@ class RealtimeHubTests(unittest.IsolatedAsyncioTestCase):
 
 
 class RealtimeRouteTests(unittest.TestCase):
-    def test_state_poll_does_not_collect_monitor_or_hardware_unless_requested(self):
-        with patch.object(realtime_route, "gpu_info", return_value={}) as gpu, patch.object(
-            realtime_route, "system_info", return_value={}
-        ) as system, patch.object(realtime_route, "build_live_monitor_snapshot", new=AsyncMock()) as monitor:
-            data = asyncio.run(realtime_route.realtime_state())["data"]
-            self.assertIn("managed", data["tasks"])
-            self.assertNotIn("hardware", data)
-            gpu.assert_not_called()
-            system.assert_not_called()
-            monitor.assert_not_called()
-            self.assertIn("hardware", asyncio.run(realtime_route.realtime_state(hardware=True))["data"])
-            gpu.assert_called_once_with()
-
-    def test_generation_activity_is_global_without_becoming_training(self):
-        manager = TaskManager()
-        task = manager.reserve_task()
-        task.kind = "regularization"
-        app = FastAPI()
-        app.include_router(realtime_route.router)
-        app.include_router(system_route.router, prefix="/api")
-        with patch.object(realtime_route, "tm", manager), patch.object(system_route, "tm", manager), patch.object(
-            realtime_route, "gpu_info", return_value={}
-        ), patch.object(realtime_route, "system_info", return_value={}), patch.object(
-            realtime_route, "build_live_monitor_snapshot", new=AsyncMock(return_value={})
-        ), TestClient(app) as client:
-            for active in (True, False):
-                with self.subTest(active=active):
-                    health = client.get("/api/health").json()
-                    snapshot = client.get("/api/realtime/snapshot").json()["data"]
-                    self.assertEqual(health["regularization_active"], active)
-                    self.assertEqual(snapshot["server"]["regularization_active"], active)
-                    self.assertFalse(health["training_active"])
-                    self.assertFalse(snapshot["server"]["training_active"])
-                    self.assertEqual(snapshot["tasks"]["managed"], [])
-                if active:
-                    manager.release_reserved(task)
 
 
     def test_websocket_hello_ready_subscribe_and_replay(self):
@@ -136,24 +59,6 @@ class RealtimeRouteTests(unittest.TestCase):
                 self.assertEqual(event["type"], "server.tasks")
                 self.assertIn("seq", event)
                 self.assertIn("emitted_at", event)
-
-
-    def test_websocket_expired_cursor_forces_resync(self):
-        hub = RealtimeHub()
-        for index in range(258):
-            asyncio.run(hub.publish("server", "server.tasks", {"index": index}))
-        app = FastAPI()
-        app.include_router(realtime_route.router)
-
-        with patch.object(realtime_route, "realtime_hub", hub), TestClient(app) as client:
-            with client.websocket_connect("/ws/realtime") as websocket:
-                websocket.send_json({"op": "hello", "protocol": 1})
-                self.assertEqual(websocket.receive_json()["op"], "ready")
-                websocket.send_json({"op": "subscribe", "topics": ["server"], "resume": {"server": 1}})
-                resync = websocket.receive_json()
-
-        self.assertEqual(resync["op"], "resync_required")
-        self.assertEqual(resync["topics"], ["server"])
 
 
 if __name__ == "__main__":

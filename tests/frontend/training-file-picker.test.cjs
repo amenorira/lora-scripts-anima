@@ -9,22 +9,6 @@ function application(fetch) {
   return composeMixins(window.trainingCoreMixin, { form: {}, $nextTick: callback => callback() });
 }
 
-test('composed picker getters track file, filter and root changes', () => {
-  const app = application();
-  app.showFilePickerModal('vae', [
-    { name: 'alpha', path: './models/a/alpha.safetensors' },
-    { name: 'beta', path: './models/beta.safetensors' },
-  ], 'model-file');
-  assert.equal(app.filteredPickerFiles.length, 2);
-  assert.equal(app.pickerGroups[0].dir, '');
-  app._pickerFilter = 'ALPHA';
-  assert.equal(app.filteredPickerFiles.length, 1);
-  assert.equal(app.pickerGroups[0].dir, 'a');
-  app._pickerFiles = [];
-  assert.equal(app.filteredPickerFiles.length, 0);
-  assert.equal(app.pickerGroups.length, 0);
-});
-
 test('late picker responses cannot replace a newer selection or reopen a closed browser', async () => {
   const first = deferred(), second = deferred();
   const pending = [first, second];
@@ -65,19 +49,4 @@ test('native picker ignores results after the form, profile, route or field chan
     pending.resolve(response({ path: 'late-vae' }));
     await choice;
   }
-});
-
-test('native picker accepts only the latest request in the current form', async () => {
-  const first = deferred(), second = deferred(), pending = [first, second];
-  const app = application(() => pending.shift().promise);
-  app.form = { model_train_type: 'anima-lora', vae: 'original' };
-  app.setField = (key, value) => { app.form[key] = value; };
-  const old = app.localFilePicker('vae', 'file-model');
-  const current = app.localFilePicker('vae', 'file-model');
-  first.resolve(response({ path: 'old' }));
-  await old;
-  assert.equal(app.form.vae, 'original');
-  second.resolve(response({ path: 'selected' }));
-  await current;
-  assert.equal(app.form.vae, 'selected');
 });

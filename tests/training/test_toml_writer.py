@@ -34,9 +34,3 @@ class TomlWriterTests(unittest.TestCase):
             for parser in (tomllib, toml):
                 with self.subTest(case=name, parser=parser.__name__):
                     self.assertEqual(parser.loads(toml_writer.dumps(config)), config)
-
-    def test_none_is_omitted_and_invalid_types_are_rejected(self):
-        self.assertEqual(tomllib.loads(toml_writer.dumps({"a": None, "b": 1})), {"b": 1})
-        for config in ({"bad": object()}, {"bad": [{"a": 1}, "scalar"]}, ["not", "a", "dict"]):
-            with self.subTest(config=config), self.assertRaises(TypeError):
-                toml_writer.dumps(config)

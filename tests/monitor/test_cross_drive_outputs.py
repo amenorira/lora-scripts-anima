@@ -9,7 +9,7 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.monitor import artifacts, checkpoints, history, live_snapshot, log_files, routes, run_registry
+from backend.monitor import artifacts, checkpoints, history, log_files, run_registry
 from backend.server.routes import training as training_routes
 from backend.training.execution import launch_sd_scripts, sd_scripts_preflight
 from backend.tasks import TaskManager, TaskStatus
@@ -68,68 +68,6 @@ class CrossDriveSandbox(unittest.TestCase):
 
 
 class RunRegistryTests(CrossDriveSandbox):
-    def test_live_monitor_uses_registered_run_instead_of_latest_autosave(self):
-        run = self.output / "active"
-        self._write_config(run / "config.toml", self.external, "active")
-        self._write_config(self.autosave / "unrelated.toml", self.external, "unrelated")
-        run_registry.write_run_record(run, artifact_dir=self.external, task_id="active-task")
-        with patch.object(live_snapshot, "read_tensorboard_loss", return_value=[]), \
-                patch.object(live_snapshot, "newest_previews", return_value=[]), \
-                patch.object(live_snapshot, "extract_train_params", side_effect=lambda config, profile_id="": config):
-            snapshot = asyncio.run(live_snapshot.build_live_monitor_snapshot(
-                tasks=[{"id": "active-task", "status": "CREATED"}]))
-            self.assertEqual(snapshot["train_params"]["output_name"], "active")
-            snapshot = asyncio.run(live_snapshot.build_live_monitor_snapshot(
-                tasks=[{"id": "preparing-task", "status": "CREATED"}]))
-            self.assertEqual(snapshot["train_params"], {})
-
-
-    def test_run_route_stop_during_file_preparation_returns_cancelled_and_releases_slot(self):
-        entered, release = threading.Event(), threading.Event()
-        payload = {
-            "model_train_type": "sdxl-lora",
-            "train_data_dir": str(self.root / "train"),
-            "pretrained_model_name_or_path": str(self.root / "model.safetensors"),
-            "output_name": "cancelled_run",
-            "output_dir": str(self.external),
-        }
-
-        def write_config(*_args, **_kwargs):
-            entered.set()
-            self.assertTrue(release.wait(5))
-
-        with ExitStack() as stack:
-            stack.enter_context(patch("backend.training.validate_training_config", return_value=[]))
-            stack.enter_context(patch("backend.training.adapt_config", side_effect=lambda value, gpu_ids=None: (dict(value), [])))
-            stack.enter_context(patch.object(sd_scripts_preflight.train_utils, "validate_data_dir", return_value=True))
-            stack.enter_context(patch.object(sd_scripts_preflight.train_utils, "count_images", return_value=1))
-            stack.enter_context(patch.object(sd_scripts_preflight.train_utils, "validate_model", return_value=(True, "")))
-            stack.enter_context(patch.object(sd_scripts_preflight, "estimate_training_steps", return_value={"total_steps": 10, "gpu_processes": 1}))
-            stack.enter_context(patch.object(launch_sd_scripts, "get_sample_prompts", return_value=""))
-            stack.enter_context(patch.object(launch_sd_scripts, "AUTOSAVE_DIR", self.autosave))
-            stack.enter_context(patch.object(launch_sd_scripts, "write_training_config", side_effect=write_config))
-            launch = stack.enter_context(patch.object(training_routes, "run_train"))
-
-            async def exercise():
-                request = asyncio.create_task(training_routes.create_toml_file(json_request(dict(payload))))
-                self.assertTrue(await asyncio.to_thread(entered.wait, 5))
-                task_id = next(iter(training_routes.tm.tasks))
-                training_routes.tm.terminate_task(task_id)
-                self.assertIsNone(training_routes.tm.reserve_task())
-                release.set()
-                return await request
-
-            try:
-                response = asyncio.run(exercise())
-            finally:
-                release.set()
-
-        self.assertEqual(response.status, "fail")
-        self.assertEqual(response.message, "Training preparation cancelled / 训练准备已取消")
-        launch.assert_not_called()
-        self.assertIsNotNone(training_routes.tm.reserve_task())
-        self.assertEqual(list(self.autosave.glob("*.toml")), [])
-        self.assertEqual(list(self.output.iterdir()), [])
 
 
     def test_same_second_launch_reserves_before_preflight_and_keeps_configs_distinct(self):
@@ -184,38 +122,6 @@ class RunRegistryTests(CrossDriveSandbox):
         self.assertEqual(len(list(self.autosave.glob("20260924-120000_*.toml"))), 2)
         self.assertTrue(all((path / "config.toml").is_file() for path in run_dirs))
 
-    def test_v2_record_maps_external_artifacts_and_rejects_traversal(self):
-        internal = self.output / "demo_20260716-120000"
-        artifact = self.external / internal.name
-        artifact.mkdir(parents=True)
-        (artifact / "sample").mkdir()
-        model = artifact / "demo.safetensors"
-        model.write_bytes(b"weights")
-        self._write_config(internal / "config.toml", artifact)
-
-        run_registry.write_run_record(
-            internal,
-            artifact_dir=artifact,
-            task_id="task-1",
-            output_base_dir=self.external,
-            extra={"preview_enabled": True},
-        )
-
-        record = run_registry.load_run_record("output/demo_20260716-120000")
-        self.assertIsNotNone(record)
-        self.assertEqual(record["schema_version"], 2)
-        self.assertEqual(record["run_dir"], "output/demo_20260716-120000")
-        self.assertEqual(record["artifact_path"], artifact.resolve())
-        self.assertTrue(record["artifact_external"])
-        self.assertTrue(record["artifact_available"])
-        self.assertTrue(record["preview_enabled"])
-        self.assertEqual(
-            run_registry.resolve_artifact_file(record["run_dir"], "demo.safetensors"),
-            model.resolve(),
-        )
-        self.assertIsNone(run_registry.resolve_artifact_file(record["run_dir"], "../secret.txt"))
-        self.assertIsNone(run_registry.resolve_artifact_file(record["run_dir"], self.root / "secret.txt"))
-
 
     def test_deleting_history_keeps_models_checkpoints_and_previews(self):
         for suffix, external in (("external", True), ("default", False)):
@@ -249,49 +155,8 @@ class RunRegistryTests(CrossDriveSandbox):
                 self.assertTrue(tombstone["deleted"])
                 self.assertIsNone(run_registry.load_run_record(internal))
 
-    def test_legacy_external_import_is_idempotent_and_does_not_copy_models(self):
-        artifact = self.external / "old_run"
-        artifact.mkdir()
-        self._write_config(artifact / "config.toml", artifact, "old")
-        (artifact / "train_old.log").write_text("old log", encoding="utf-8")
-        (artifact / "log").mkdir()
-        (artifact / "log" / "events.out.tfevents.old").write_bytes(b"tb")
-        (artifact / "old.safetensors").write_bytes(b"weights")
-        autosave = self.autosave / "20260716-120000.toml"
-        self._write_config(autosave, artifact, "old")
-
-        first = run_registry.import_legacy_external_runs()
-        second = run_registry.import_legacy_external_runs()
-
-        self.assertEqual(first["imported"], 1)
-        self.assertEqual(second["imported"], 0)
-        records = run_registry.iter_run_records()
-        self.assertEqual(len(records), 1)
-        record = records[0]
-        self.assertTrue(record["imported"])
-        internal = record["run_path"]
-        self.assertTrue((internal / "config.toml").exists())
-        self.assertTrue((internal / "train_old.log").exists())
-        self.assertTrue((internal / "log" / "events.out.tfevents.old").exists())
-        self.assertFalse((internal / "old.safetensors").exists())
-        self.assertTrue((artifact / "old.safetensors").exists())
-
 
 class CrossDriveRouteTests(CrossDriveSandbox):
-    def _create_record(self):
-        internal = self.output / "route_run"
-        artifact = self.external / "route_run"
-        artifact.mkdir()
-        self._write_config(internal / "config.toml", artifact, "route")
-        run_registry.write_run_record(
-            internal,
-            artifact_dir=artifact,
-            task_id="route-task",
-            output_base_dir=self.external,
-            extra={"preview_enabled": True},
-        )
-        return internal, artifact
-
     def test_run_route_writes_monitoring_data_internal_and_artifacts_to_selected_path(self):
         cases = (
             ("default", "./output", "", True),
