@@ -13,7 +13,7 @@ window.monitorHistoryRenderMixin = {
     const hasHistory = items && items.length;
 
     let html = '';
-    
+
     if (hasRunning) {
       const r = this.runningTask;
       html += '<div class="card history-card history-running">';
