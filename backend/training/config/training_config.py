@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from backend.utils.file_io import atomic_write_text
+from backend.utils.file_io import atomic_write_text, read_text
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -440,7 +440,7 @@ def load_training_config(path: str | Path) -> dict[str, Any]:
     if source.stat().st_size > MAX_TRAINING_CONFIG_BYTES:
         raise TrainingConfigError("Training YAML is too large")
     try:
-        content = source.read_text(encoding="utf-8")
+        content = read_text(source)
     except (OSError, UnicodeDecodeError) as exc:
         raise TrainingConfigError(f"Invalid training YAML: {exc}") from exc
     return parse_training_config_text(content)

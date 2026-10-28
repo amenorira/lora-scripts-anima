@@ -23,7 +23,7 @@ from backend.tagger.interrogator import (
 )
 from backend.tagger.interrogators.base import CATEGORY_LABELS, Interrogator
 from backend.tagger.registry import MODEL_SPEC_BY_ID
-from backend.utils.file_io import atomic_write_text
+from backend.utils.file_io import atomic_write_text, read_text
 from backend.tasks import tm
 from backend.tagger.workspace_tasks import (
     _task_log,
@@ -204,7 +204,7 @@ def _local_tags(model_id: str, image: Image.Image, options: dict, *, full_catego
 
 
 def _existing_caption(path: Path) -> str:
-    return path.read_text(encoding="utf-8", errors="ignore").strip() if path.is_file() else ""
+    return read_text(path, errors="ignore").strip() if path.is_file() else ""
 
 
 def _write_caption(path: Path, tags: list[str], conflict: str, remove_duplicated: bool = True,

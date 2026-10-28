@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from tools.runtime_paths import runtime_cache_dir
-from backend.utils.file_io import atomic_write_text
+from backend.utils.file_io import atomic_write_text, read_text
 from backend.training.core_registry import PROFILES
 
 # ── 字段集：从统一注册表派生（Single Source of Truth）──────
@@ -250,7 +250,7 @@ def _write_lycoris_scope_preset_file(preset_name: str, exclude_name: list[str]) 
         / f"anima_lycoris_preset_{preset_name}_{digest}.toml"
     )
     try:
-        if path.read_text(encoding="utf-8") == content:
+        if read_text(path) == content:
             return str(path)
     except (FileNotFoundError, UnicodeDecodeError):
         pass

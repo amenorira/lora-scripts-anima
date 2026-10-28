@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from backend.constants import REPO_ROOT
-from backend.utils.file_io import atomic_write_text
+from backend.utils.file_io import atomic_write_text, open_read
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 CAPTION_EXTENSIONS = (".txt", ".caption")
 _dataset_locks: dict[str, threading.RLock] = {}
@@ -45,7 +45,7 @@ def caption_candidates(img_path: Path) -> list[Path]:
 def read_caption_snapshot(cap_path: Path) -> tuple[str, str, int]:
     """Read text and its revision from one handle; never hide unreadable files."""
     try:
-        with cap_path.open("rb") as handle:
+        with open_read(cap_path) as handle:
             before = os.fstat(handle.fileno())
             data = handle.read()
             stat = os.fstat(handle.fileno())

@@ -11,7 +11,7 @@ import re
 from typing import Any
 
 from backend.training.datasets.krea2_dataset import dataset_groups, image_files, parse_krea2_resolution
-from backend.utils.file_io import atomic_replace
+from backend.utils.file_io import atomic_write_text, read_text
 
 KREA2_CACHE_MANIFEST_NAME = ".krea2-cache.json"
 _LEGACY_KREA2_CACHE_MANIFEST_NAMES = (".anima-krea2-cache.json",)
@@ -120,7 +120,7 @@ def read_cache_manifest(cache_dir: str | Path) -> tuple[dict[str, Any], Path]:
     )
     for path in paths:
         try:
-            manifest = json.loads(path.read_text(encoding="utf-8"))
+            manifest = json.loads(read_text(path))
         except (OSError, json.JSONDecodeError):
             continue
         if isinstance(manifest, dict):
@@ -337,9 +337,7 @@ def reusable_stages(config: dict, manifest: dict, status: dict, fingerprints: di
 
 
 def write_manifest(path: Path, manifest: dict) -> None:
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    atomic_replace(temporary, path)
+    atomic_write_text(path, json.dumps(manifest, ensure_ascii=False, indent=2))
 
 
 def complete_stage(config: dict, stage: str) -> None:

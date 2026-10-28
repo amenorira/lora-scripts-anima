@@ -63,7 +63,7 @@ class CaptionWritingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "sample.txt"
             output.write_text("original", encoding="utf-8")
-            with patch.object(writing.os, "replace", side_effect=PermissionError("in use")):
+            with patch.object(writing, "atomic_replace", side_effect=PermissionError("in use")):
                 with self.assertRaises(PermissionError):
                     writing.atomic_write_text(output, "replacement")
             self.assertEqual(output.read_text(encoding="utf-8"), "original")

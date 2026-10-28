@@ -8,7 +8,7 @@ from collections import OrderedDict
 from pathlib import Path
 
 from backend.constants import REPO_ROOT
-from backend.utils.file_io import atomic_replace
+from backend.utils.file_io import atomic_replace, open_read, read_text
 
 OUTPUT_ROOT = REPO_ROOT / "train" / "regularization"
 _manifest_cache = OrderedDict()
@@ -36,12 +36,13 @@ def save_manifest(root: Path, manifest: dict):
 def read_manifest(root: Path, *, readonly=False):
     path = root / "generation.json"
     with _cache_lock:
-        stat = path.stat()
-        revision = (stat.st_mtime_ns, stat.st_size)
-        cached = _manifest_cache.get(path)
-        if cached is None or cached[0] != revision:
-            cached = (revision, json.loads(path.read_text(encoding="utf-8")))
-            _manifest_cache[path] = cached
+        with open_read(path) as handle:
+            stat = os.fstat(handle.fileno())
+            revision = (stat.st_dev, stat.st_ino, stat.st_mtime_ns, stat.st_size)
+            cached = _manifest_cache.get(path)
+            if cached is None or cached[0] != revision:
+                cached = (revision, json.loads(handle.read().decode("utf-8")))
+                _manifest_cache[path] = cached
         _manifest_cache.move_to_end(path)
         while len(_manifest_cache) > 2:
             _manifest_cache.popitem(last=False)
@@ -68,7 +69,7 @@ def save_progress(root, progress):
 
 def read_progress(root):
     try:
-        return json.loads((root / "progress.json").read_text(encoding="utf-8"))
+        return json.loads(read_text(root / "progress.json"))
     except FileNotFoundError:
         return manifest_summary(read_manifest(root, readonly=True))
 

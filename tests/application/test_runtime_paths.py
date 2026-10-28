@@ -115,7 +115,7 @@ class RuntimePathTests(unittest.TestCase):
             target = Path(_write_lycoris_scope_preset_file("attn-mlp", ["scope_probe"]))
             expected = target.read_bytes()
             target.write_bytes(b"broken")
-            with patch("backend.utils.file_io.os.replace", side_effect=PermissionError("in use")):
+            with patch("backend.utils.file_io.atomic_replace", side_effect=PermissionError("in use")):
                 with self.assertRaises(PermissionError):
                     _write_lycoris_scope_preset_file("attn-mlp", ["scope_probe"])
             self.assertEqual(target.read_bytes(), b"broken")
