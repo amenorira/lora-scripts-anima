@@ -9,7 +9,7 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.monitor import artifacts, checkpoints, log_files, routes, run_registry
+from backend.monitor import artifacts, checkpoints, live_snapshot, log_files, routes, run_registry
 from backend.server.routes import training as training_routes
 from backend.training import launch_sd_scripts, sd_scripts_preflight
 from backend.tasks import TaskManager, TaskStatus
@@ -73,13 +73,13 @@ class RunRegistryTests(CrossDriveSandbox):
         self._write_config(run / "config.toml", self.external, "active")
         self._write_config(self.autosave / "unrelated.toml", self.external, "unrelated")
         run_registry.write_run_record(run, artifact_dir=self.external, task_id="active-task")
-        with patch.object(routes, "read_tensorboard_loss", return_value=[]), \
-                patch.object(routes, "newest_previews", return_value=[]), \
-                patch.object(routes, "extract_train_params", side_effect=lambda config, profile_id="": config):
-            snapshot = asyncio.run(routes.build_live_monitor_snapshot(
+        with patch.object(live_snapshot, "read_tensorboard_loss", return_value=[]), \
+                patch.object(live_snapshot, "newest_previews", return_value=[]), \
+                patch.object(live_snapshot, "extract_train_params", side_effect=lambda config, profile_id="": config):
+            snapshot = asyncio.run(live_snapshot.build_live_monitor_snapshot(
                 tasks=[{"id": "active-task", "status": "CREATED"}]))
             self.assertEqual(snapshot["train_params"]["output_name"], "active")
-            snapshot = asyncio.run(routes.build_live_monitor_snapshot(
+            snapshot = asyncio.run(live_snapshot.build_live_monitor_snapshot(
                 tasks=[{"id": "preparing-task", "status": "CREATED"}]))
             self.assertEqual(snapshot["train_params"], {})
 

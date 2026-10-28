@@ -16,7 +16,7 @@ from backend.core.realtime import (
     realtime_tasks,
 )
 from backend.monitor.hardware import gpu_info, system_info
-from backend.monitor.routes import build_live_monitor_snapshot
+from backend.monitor.live_snapshot import build_live_monitor_snapshot
 from backend.tasks import tm
 
 logger = logging.getLogger(__name__)

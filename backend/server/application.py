@@ -17,7 +17,7 @@ from backend.server.api import router as api_router
 from backend.server.routes.training import router as training_router
 from backend.tensorboard_service import PREFIX, service as tensorboard
 from backend.server.proxy import router as proxy_router
-from backend.monitor import router as monitor_router
+from backend.monitor.routes import router as monitor_router
 from backend.tageditor import router as tageditor_router
 from backend.utils.devices import check_torch_gpu
 from backend.monitor.monitor import task_monitor
