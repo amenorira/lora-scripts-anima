@@ -129,6 +129,7 @@ class MossImageLaunchTests(unittest.IsolatedAsyncioTestCase):
     async def test_preparation_writes_native_config_dataset_and_structured_prompts(self):
         import tomllib
         from backend.server.routes import training as routes
+        from backend.training import launch_sd_scripts
         from backend.tasks import TaskManager
 
         with tempfile.TemporaryDirectory() as directory:
@@ -147,11 +148,12 @@ class MossImageLaunchTests(unittest.IsolatedAsyncioTestCase):
                                enable_preview=True, positive_prompts="title\nsecond line",
                                sample_uncond_skip_layers="", log_timestep_count=True)
             with ExitStack() as stack:
-                for name, value in (("tm", TaskManager()), ("OUTPUT_DIR", root / "runs"),
+                stack.enter_context(patch.object(routes, "tm", TaskManager()))
+                for name, value in (("OUTPUT_DIR", root / "runs"),
                                     ("AUTOSAVE_DIR", root / "autosave")):
-                    stack.enter_context(patch.object(routes, name, value))
+                    stack.enter_context(patch.object(launch_sd_scripts, name, value))
                 launch = stack.enter_context(patch.object(routes, "run_train", return_value={"status": "success"}))
-                result = await routes._prepare_training(routes._create_toml_file_reserved, dict(form))
+                result = await routes._prepare_training(routes.launch.prepare_run, dict(form))
             self.assertEqual(result["status"], "success", result)
             self.assertIn("moss_image_train_network.py", launch.call_args.args[1])
             self.assertEqual(launch.call_args.kwargs["engine_id"], "sd_scripts")

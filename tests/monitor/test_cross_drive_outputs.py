@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from backend.monitor import artifacts, routes, run_registry
 from backend.server.routes import training as training_routes
+from backend.training import launch_sd_scripts
 from backend.tasks import TaskManager, TaskStatus
 from tests.helpers import json_request
 
@@ -42,6 +43,7 @@ class CrossDriveSandbox(unittest.TestCase):
         self._patches.enter_context(patch.object(artifacts, "REPO_ROOT", self.root))
         self._patches.enter_context(patch.object(artifacts, "OUTPUT_DIR", self.output))
         self._patches.enter_context(patch.object(training_routes, "OUTPUT_DIR", self.output))
+        self._patches.enter_context(patch.object(launch_sd_scripts, "OUTPUT_DIR", self.output))
         self._patches.enter_context(patch.object(training_routes, "tm", TaskManager()))
         artifacts.invalidate_history_cache()
 
@@ -98,13 +100,13 @@ class RunRegistryTests(CrossDriveSandbox):
         with ExitStack() as stack:
             stack.enter_context(patch("backend.training.validate_training_config", return_value=[]))
             stack.enter_context(patch("backend.training.adapt_config", side_effect=lambda value, gpu_ids=None: (dict(value), [])))
-            stack.enter_context(patch.object(training_routes.train_utils, "validate_data_dir", return_value=True))
-            stack.enter_context(patch.object(training_routes.train_utils, "count_images", return_value=1))
-            stack.enter_context(patch.object(training_routes.train_utils, "validate_model", return_value=(True, "")))
-            stack.enter_context(patch.object(training_routes, "estimate_training_steps", return_value={"total_steps": 10, "gpu_processes": 1}))
-            stack.enter_context(patch.object(training_routes, "get_sample_prompts", return_value=""))
-            stack.enter_context(patch.object(training_routes, "AUTOSAVE_DIR", self.autosave))
-            stack.enter_context(patch.object(training_routes, "write_training_config", side_effect=write_config))
+            stack.enter_context(patch.object(launch_sd_scripts.train_utils, "validate_data_dir", return_value=True))
+            stack.enter_context(patch.object(launch_sd_scripts.train_utils, "count_images", return_value=1))
+            stack.enter_context(patch.object(launch_sd_scripts.train_utils, "validate_model", return_value=(True, "")))
+            stack.enter_context(patch.object(launch_sd_scripts, "estimate_training_steps", return_value={"total_steps": 10, "gpu_processes": 1}))
+            stack.enter_context(patch.object(launch_sd_scripts, "get_sample_prompts", return_value=""))
+            stack.enter_context(patch.object(launch_sd_scripts, "AUTOSAVE_DIR", self.autosave))
+            stack.enter_context(patch.object(launch_sd_scripts, "write_training_config", side_effect=write_config))
             launch = stack.enter_context(patch.object(training_routes, "run_train"))
 
             async def exercise():
@@ -148,14 +150,14 @@ class RunRegistryTests(CrossDriveSandbox):
         with ExitStack() as stack:
             stack.enter_context(patch("backend.training.validate_training_config", return_value=[]))
             stack.enter_context(patch("backend.training.adapt_config", side_effect=lambda value, gpu_ids=None: (dict(value), [])))
-            stack.enter_context(patch.object(training_routes.train_utils, "validate_data_dir", return_value=True))
-            stack.enter_context(patch.object(training_routes.train_utils, "count_images", return_value=1))
-            stack.enter_context(patch.object(training_routes.train_utils, "validate_model", return_value=(True, "")))
-            stack.enter_context(patch.object(training_routes, "estimate_training_steps", side_effect=estimate))
-            stack.enter_context(patch.object(training_routes, "get_sample_prompts", return_value=""))
-            stack.enter_context(patch.object(training_routes, "AUTOSAVE_DIR", self.autosave))
+            stack.enter_context(patch.object(launch_sd_scripts.train_utils, "validate_data_dir", return_value=True))
+            stack.enter_context(patch.object(launch_sd_scripts.train_utils, "count_images", return_value=1))
+            stack.enter_context(patch.object(launch_sd_scripts.train_utils, "validate_model", return_value=(True, "")))
+            stack.enter_context(patch.object(launch_sd_scripts, "estimate_training_steps", side_effect=estimate))
+            stack.enter_context(patch.object(launch_sd_scripts, "get_sample_prompts", return_value=""))
+            stack.enter_context(patch.object(launch_sd_scripts, "AUTOSAVE_DIR", self.autosave))
             stack.enter_context(patch.object(training_routes.os, "getcwd", return_value=str(self.root)))
-            clock = stack.enter_context(patch.object(training_routes, "datetime"))
+            clock = stack.enter_context(patch.object(training_routes.launch, "datetime"))
             clock.now.return_value.strftime.return_value = "20260924-120000"
             launch = stack.enter_context(patch.object(
                 training_routes, "run_train", side_effect=_completed_launch,
@@ -322,16 +324,16 @@ class CrossDriveRouteTests(CrossDriveSandbox):
                 with ExitStack() as stack:
                     stack.enter_context(patch("backend.training.validate_training_config", return_value=[]))
                     stack.enter_context(patch("backend.training.adapt_config", side_effect=_adapt_config))
-                    stack.enter_context(patch.object(training_routes.train_utils, "validate_data_dir", return_value=True))
-                    stack.enter_context(patch.object(training_routes.train_utils, "count_images", return_value=1))
+                    stack.enter_context(patch.object(launch_sd_scripts.train_utils, "validate_data_dir", return_value=True))
+                    stack.enter_context(patch.object(launch_sd_scripts.train_utils, "count_images", return_value=1))
                     stack.enter_context(
-                        patch.object(training_routes.train_utils, "validate_model", return_value=(True, ""))
+                        patch.object(launch_sd_scripts.train_utils, "validate_model", return_value=(True, ""))
                     )
-                    stack.enter_context(patch.object(training_routes, "estimate_training_steps", return_value={"total_steps": 10, "gpu_processes": 1}))
-                    stack.enter_context(patch.object(training_routes, "get_sample_prompts", return_value=""))
+                    stack.enter_context(patch.object(launch_sd_scripts, "estimate_training_steps", return_value={"total_steps": 10, "gpu_processes": 1}))
+                    stack.enter_context(patch.object(launch_sd_scripts, "get_sample_prompts", return_value=""))
                     stack.enter_context(patch.object(training_routes.os, "getcwd", return_value=str(self.root)))
                     stack.enter_context(
-                        patch.object(training_routes, "AUTOSAVE_DIR", Path(self.root) / "config" / "autosave")
+                        patch.object(launch_sd_scripts, "AUTOSAVE_DIR", Path(self.root) / "config" / "autosave")
                     )
                     run_train = stack.enter_context(
                         patch.object(

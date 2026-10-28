@@ -7,7 +7,7 @@ from PIL import Image
 from backend.training.adapter import adapt_config
 from backend.training.step_estimator import estimate_training_steps
 from backend.training.validation import validate_training_config
-from backend.server.routes.training import get_sample_prompts
+from backend.training.launch_sd_scripts import get_sample_prompts
 from tests.helpers import valid_training_config as valid_anima_config
 
 
