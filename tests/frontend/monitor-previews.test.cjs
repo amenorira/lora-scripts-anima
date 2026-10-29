@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {loadFrontend, composeMixins, deferred, response} = require('./helpers.cjs');
+const {loadFrontend, composeMixins, deferred, response, readRepo} = require('./helpers.cjs');
 
 function harness() {
   const requests = [], renders = [];
@@ -67,4 +67,36 @@ test('a newer detail snapshot invalidates an older outstanding preview response'
   await old;
   assert.equal(app.previews[0].name, 'new.png');
   assert.equal(app.previewsLoading, false);
+});
+
+test('sample translations keep group identities and sorting stable across language changes', () => {
+  const items = [0, 1, 2].map(index => ({dataset: {previewIndex: String(index)}}));
+  const headings = ['epoch:1', 'step:20'].map(key => ({dataset: {previewGroup: key}}));
+  const appended = [];
+  const grid = {
+    querySelectorAll: selector => selector === '.preview-grid-item' ? items : headings,
+    appendChild: node => appended.push(node.dataset.previewGroup ?? Number(node.dataset.previewIndex)),
+  };
+  const content = {querySelector: () => grid, querySelectorAll: () => []};
+  const {window} = loadFrontend(['monitor/previews', 'monitor/artifacts-render'], {
+    window: {}, document: {getElementById: () => content},
+  });
+  const dictionaries = Object.fromEntries(['zh-CN', 'en-US', 'ja-JP'].map(locale =>
+    [locale, JSON.parse(readRepo(`frontend/i18n/${locale}.json`))]));
+  const app = composeMixins(window.monitorPreviewsMixin, window.monitorArtifactsRenderMixin, {
+    previews: ['sample_e000001_00_time.png', 'sample_e000001_01_time.png', 'sample_000020_00_time.png'].map(name => ({name})),
+    previewSortDir: 'desc',
+    t(key) { return key.split('.').reduce((value, part) => value?.[part], dictionaries[this.locale]); },
+  });
+  for (const [locale, label] of [
+    ['zh-CN', '第 1 轮 · 提示词 1'], ['en-US', 'Epoch 1 · Prompt 1'], ['ja-JP', 'エポック 1 · プロンプト 1'],
+  ]) {
+    app.locale = locale;
+    assert.equal(app._parseSampleInfo(app.previews[0].name), label);
+    assert.equal(app._sampleMetadata(app.previews[0].name).stage, 'epoch:1');
+    appended.length = 0;
+    assert.equal(app._patchPreviewSortOrder(), true);
+    assert.deepEqual(appended, ['step:20', 2, 'epoch:1', 1, 0]);
+  }
+  assert.equal(app._parseSampleInfo('custom-sample.png'), 'custom-sample.png');
 });

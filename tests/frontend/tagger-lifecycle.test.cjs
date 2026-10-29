@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {loadFrontend, composeMixins, response, deferred} = require('./helpers.cjs');
+const {loadFrontend, composeMixins, response, deferred, readRepo} = require('./helpers.cjs');
 
 function harness() {
   const pending = deferred(), scans = [], messages = [];
@@ -51,4 +51,22 @@ test('local task creation response stays attached to the initiating source mode'
   assert.equal(app.taggerTaskById('new-local-task').engine,'onnx');
   assert.equal(storage.get('anima-tagger-task-id'),'new-local-task');
   assert.equal(storage.has('anima-ai-tagger-task-id'),false);
+});
+
+test('scan failures localize UI fallback while keeping backend diagnostics intact', async () => {
+  const dictionary = JSON.parse(readRepo('frontend/i18n/ja-JP.json'));
+  const diagnostic = 'first cause / 原因一; second cause / 原因二: C:/images';
+  for (const message of [undefined, diagnostic]) {
+    const messages = [];
+    const {window} = loadFrontend('tagger/index', {
+      window: {}, fetch: async () => ({json: async () => ({status: 'fail', message})}),
+    });
+    const app = composeMixins(window.taggerMixin, {
+      currentRoute: 'tagger', taggerSourceMode: 'folder', taggerSourcePath: './images',
+      toast: text => messages.push(text),
+      t: key => key.split('.').reduce((value, part) => value?.[part], dictionary),
+    });
+    await app.scanTaggerSource();
+    assert.deepEqual(messages, [message ?? dictionary.tagger.scanFailed]);
+  }
 });

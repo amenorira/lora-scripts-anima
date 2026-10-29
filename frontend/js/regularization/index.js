@@ -141,7 +141,7 @@ window.regularizationMixin = {
       await this.regLoadSources();
       throw new Error(this.regT('changed'));
     }
-    if (result.status !== 'success') throw new Error(result.message || 'Request failed');
+    if (result.status !== 'success') throw new Error(result.message || this.t('common.requestFailed'));
     return result.data;
   },
   async regAction(callback) {

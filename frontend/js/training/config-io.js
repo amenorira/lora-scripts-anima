@@ -24,7 +24,7 @@ window.trainingConfigIoMixin = {
       });
       const data = await response.json();
       if (data.status !== 'success' || !data.data || !data.data.content) {
-        throw new Error(data.message || 'Failed to export configuration');
+        throw new Error(data.message || this.t('common.exportFailed'));
       }
       const blob = new Blob([data.data.content], { type: 'application/yaml;charset=utf-8' });
       const url = URL.createObjectURL(blob);
@@ -51,7 +51,7 @@ window.trainingConfigIoMixin = {
     const validTypes = new Set((this.trainTypes || []).map(item => item.v));
     const currentType = String(this.form && this.form.model_train_type || 'anima-lora');
     const importedType = String(parsed.model_train_type || currentType);
-    if (!validTypes.has(importedType)) throw new Error(`Unsupported model_train_type: ${importedType}`);
+    if (!validTypes.has(importedType)) throw new Error(this.t('common.unsupportedTrainingType').replace('{type}', () => importedType));
 
     const applyValues = () => {
       const defaults = this._buildFormDefaults(importedType);

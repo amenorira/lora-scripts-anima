@@ -250,7 +250,13 @@ window.monitorPreviewsMixin = {
 
   _sampleMetadata(filename) {
     const match = String(filename || '').match(/(?:^|_)(e?)(\d{6})_(\d{2})_/i);
-    return match ? { stage: (match[1] ? 'Epoch ' : 'Step ') + Number(match[2]), prompt: 'Prompt ' + (Number(match[3]) + 1) } : { stage: '', prompt: '' };
+    if (!match) return { stage: '', stageLabel: '', prompt: '' };
+    const kind = match[1] ? 'epoch' : 'step';
+    return {
+      stage: kind + ':' + Number(match[2]),
+      stageLabel: this.t(match[1] ? 'monitor.sampleEpoch' : 'monitor.sampleStep').replace('{n}', Number(match[2])),
+      prompt: this.t('monitor.samplePrompt').replace('{n}', Number(match[3]) + 1),
+    };
   },
 
   setPreviewSort(dir) {

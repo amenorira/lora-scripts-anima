@@ -21,7 +21,7 @@ from backend.tagger.interrogator import (
     has_active_legacy_tagger_task,
     split_str,
 )
-from backend.tagger.interrogators.base import CATEGORY_LABELS, Interrogator
+from backend.tagger.interrogators.base import Interrogator
 from backend.tagger.registry import MODEL_SPEC_BY_ID
 from backend.utils.file_io import atomic_write_text, read_text
 from backend.tasks import tm
@@ -161,7 +161,7 @@ def _local_tags(model_id: str, image: Image.Image, options: dict, *, full_catego
             raw = interrogator.interrogate(image)
     categories = {
         key: {
-            "label": CATEGORY_LABELS.get(key, key),
+            "label": key,
             "tags": [[name, float(score)] for name, score in (values if full_categories else values[:200])],
             "total": len(values),
             "truncated": not full_categories and len(values) > 200,

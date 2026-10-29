@@ -188,7 +188,7 @@ window.monitorSummaryMixin = {
       html += '<button type="button" class="btn btn-primary m-start-training" @click="navigate(\'train-basic\')">' + this.esc(t('goToTraining')) + ' →</button>';
       if (d.last_config && d.last_config.name) {
         const lc = d.last_config;
-        html += '<div class="m-last-run"><span>' + this.esc(t('lastTraining')) + '</span><strong>' + this.esc(lc.name) + '</strong><small>' + this.esc((lc.model || '') + ' · LR ' + (lc.lr || '--') + ' · ' + (lc.epochs || '--') + ' Epochs') + '</small></div>';
+        html += '<div class="m-last-run"><span>' + this.esc(t('lastTraining')) + '</span><strong>' + this.esc(lc.name) + '</strong><small>' + this.esc((lc.model || '') + ' · ' + t('historyLR') + ' ' + (lc.lr || '--') + ' · ' + t('historyEpochs') + ' ' + (lc.epochs || '--')) + '</small></div>';
       }
       html += '</section>';
       return html;

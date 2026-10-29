@@ -54,7 +54,7 @@ window.monitorArtifactsRenderMixin = {
         const info = this._sampleMetadata(pv.name);
         if (info.stage && counts.get(info.stage) > 1 && !groups.has(info.stage)) {
           groups.add(info.stage);
-          html += '<div class="m-preview-group-heading" data-preview-group="' + this.esc(info.stage) + '">' + this.esc(info.stage) + '</div>';
+          html += '<div class="m-preview-group-heading" data-preview-group="' + this.esc(info.stage) + '">' + this.esc(info.stageLabel) + '</div>';
         }
         html += '<button type="button" class="preview-grid-item" data-preview-index="' + i + '" @click="openPreviewLightbox(' + i + ')">';
         if (i === lastIdx) html += '<span class="preview-thumb-fresh">' + this.esc(t('latest')) + '</span>';
@@ -221,7 +221,7 @@ window.monitorArtifactsRenderMixin = {
 
   _parseSampleInfo(filename) {
     const info = this._sampleMetadata(filename);
-    return [info.stage, info.prompt].filter(Boolean).join(' · ') || filename;
+    return [info.stageLabel, info.prompt].filter(Boolean).join(' · ') || filename;
   },
 
   // ═══════════════════════════════════════════════════════════

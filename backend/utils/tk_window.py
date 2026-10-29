@@ -67,7 +67,7 @@ def _get_tk_root():
 
 def open_file_selector(
         initialdir="",
-        title="Select a file",
+        title="",
         filetypes="*") -> str:
     global last_dir
     if last_dir != "":

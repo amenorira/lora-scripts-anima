@@ -362,7 +362,7 @@ window.tagEditorActions = {
     });
     if (added.length > 0) {
       self._teUpdateImageTags(img, existing.join(', '));
-      this._tePushHistory({ type: 'add', desc: '+ ' + added.length + ' tags · ' + this._teImageLabel(img), affected: 1 });
+      this._tePushHistory({ type: 'add', desc: '+ ' + this.t('tagEditor.dictTagCount').replace('{n}', added.length) + ' · ' + this._teImageLabel(img), affected: 1 });
       this.toast(this.t('tagEditor.tagsPasted').replace('{n}', added.length));
     }
   },
