@@ -25,7 +25,7 @@ window.trainingFilePicker = {
     let type = 'folder';
     if (role==='file-model'||role==='file-model-saved') type='model-file';
     try {
-      const r = await fetch('/api/pick_file?picker_type='+type+'&locale='+encodeURIComponent(this.locale || 'en-US'));
+      const r = await fetch(this.nativePickerUrl(type));
       const d = await r.json();
       if (!isCurrent()) return;
       if (d.status==='success'&&d.data&&d.data.path) {

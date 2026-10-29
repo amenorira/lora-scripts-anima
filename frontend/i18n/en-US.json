@@ -1672,6 +1672,13 @@
 		"diagramAlt": "Weight decomposition diagram for the current configuration",
 		"footnote": "Matrix shapes and parameter counts come from a network built with the current settings. File size includes weights and their index, excluding training metadata and optimizer state. Shapes use a logarithmic scale; dimensions are labeled."
 	},
+	"nativePicker": {
+		"folder": { "title": "Select folder" },
+		"model-file": { "title": "Select model file", "files": "Model files" },
+		"text-file": { "title": "Select text file", "files": "Text files" },
+		"image-file": { "title": "Select image", "files": "Image files" },
+		"allFiles": "All files"
+	},
 	"notifications": {
 		"details": "Details",
 		"copy": "Copy details",

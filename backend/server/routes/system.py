@@ -121,50 +121,31 @@ async def file_picker_available():
     return APIResponseSuccess(data={"available": tk_is_available()})
 
 
-_PICKER_LABELS = {
-    "zh-CN": {"folder": "选择文件夹", "model": "选择模型文件", "text": "选择文本文件", "image": "选择图片",
-              "models": "模型文件", "texts": "文本文件", "images": "图片文件", "all": "所有文件"},
-    "en-US": {"folder": "Select folder", "model": "Select model file", "text": "Select text file", "image": "Select image",
-              "models": "Model files", "texts": "Text files", "images": "Image files", "all": "All files"},
-    "ja-JP": {"folder": "フォルダーを選択", "model": "モデルファイルを選択", "text": "テキストファイルを選択", "image": "画像を選択",
-              "models": "モデルファイル", "texts": "テキストファイル", "images": "画像ファイル", "all": "すべてのファイル"},
-}
-
-
 @router.get("/pick_file")
-async def pick_file(picker_type: str, locale: str = "en-US"):
+async def pick_file(
+    picker_type: str, title: str = "", file_type_label: str = "", all_files_label: str = ""
+):
     if not tk_is_available():
         return APIResponseFail(message="unavailable / 不可用")
-    labels = _PICKER_LABELS.get(locale, _PICKER_LABELS["en-US"])
     if picker_type == "folder":
-        coro = asyncio.get_event_loop().run_in_executor(_tk_executor, open_directory_selector, "", labels["folder"])
-    elif picker_type == "model-file":
-        model_file_kinds = [
-            (labels["models"], "*.safetensors;*.ckpt;*.pt"),
-            (labels["all"], "*.*"),
+        coro = asyncio.get_event_loop().run_in_executor(_tk_executor, open_directory_selector, "", title)
+    else:
+        pattern = {
+            "model-file": "*.safetensors;*.ckpt;*.pt",
+            "text-file": "*.txt;*.md",
+            "image-file": "*.png;*.jpg;*.jpeg;*.webp;*.bmp;*.gif;*.tif;*.tiff;*.avif",
+        }.get(picker_type)
+        if pattern is None:
+            return APIResponseFail(message=f"Invalid picker_type / 无效的选择器类型: {picker_type}")
+        file_types = [
+            (file_type_label or pattern, pattern),
+            (all_files_label or "*.*", "*.*"),
         ]
 
         def _pick():
-            return open_file_selector("", labels["model"], model_file_kinds)
+            return open_file_selector("", title, file_types)
 
         coro = asyncio.get_event_loop().run_in_executor(_tk_executor, _pick)
-    elif picker_type == "text-file":
-        def _pick_text():
-            return open_file_selector("", labels["text"], [(labels["texts"], "*.txt;*.md"), (labels["all"], "*.*")])
-
-        coro = asyncio.get_event_loop().run_in_executor(_tk_executor, _pick_text)
-    elif picker_type == "image-file":
-        file_types = [
-            (labels["images"], "*.png;*.jpg;*.jpeg;*.webp;*.bmp;*.gif;*.tif;*.tiff;*.avif"),
-            (labels["all"], "*.*"),
-        ]
-
-        def _pick_image():
-            return open_file_selector("", labels["image"], file_types)
-
-        coro = asyncio.get_event_loop().run_in_executor(_tk_executor, _pick_image)
-    else:
-        return APIResponseFail(message=f"Invalid picker_type / 无效的选择器类型: {picker_type}")
 
     result = await coro
     if result == "":

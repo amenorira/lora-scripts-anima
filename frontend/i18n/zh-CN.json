@@ -1672,6 +1672,13 @@
 		"diagramAlt": "当前配置的权重分解示意图",
 		"footnote": "矩阵形状和参数量来自按当前配置构造的网络。文件估算包含权重和索引，不含训练元数据及优化器状态。图形按对数比例绘制，尺寸以标注为准。"
 	},
+	"nativePicker": {
+		"folder": { "title": "选择文件夹" },
+		"model-file": { "title": "选择模型文件", "files": "模型文件" },
+		"text-file": { "title": "选择文本文件", "files": "文本文件" },
+		"image-file": { "title": "选择图片", "files": "图片文件" },
+		"allFiles": "所有文件"
+	},
 	"notifications": {
 		"details": "查看详情",
 		"copy": "复制详情",

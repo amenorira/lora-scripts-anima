@@ -4,8 +4,8 @@ const {loadFrontend, composeMixins, response, deferred} = require('./helpers.cjs
 
 function harness() {
   const pending = deferred(), scans = [], messages = [];
-  const context = loadFrontend('tagger/index', {window:{}, fetch:()=>pending.promise});
-  const app = composeMixins(context.window.taggerMixin, {
+  const context = loadFrontend(['shared/utils', 'tagger/index'], {window:{}, URLSearchParams, fetch:()=>pending.promise});
+  const app = composeMixins(context.window.utilsMixin, context.window.taggerMixin, {
     currentRoute:'tagger', taggerSourceMode:'folder', taggerSourcePath:'original',
     scanTaggerSource:async()=>scans.push(app.taggerSourcePath),
     toast:message=>messages.push(message), t:key=>key,

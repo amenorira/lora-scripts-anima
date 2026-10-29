@@ -136,7 +136,7 @@ window.taggerSourcesMixin = {
       && !this.taggerRunning && !this.taggerStarting && !this.captionPreviewBusy;
     try {
       const picker = mode.endsWith('single') ? 'image-file' : 'folder';
-      const response = await fetch('/api/pick_file?picker_type=' + picker + '&locale=' + encodeURIComponent(this.locale || 'en-US'));
+      const response = await fetch(this.nativePickerUrl(picker));
       const body = await response.json();
       if (!isCurrent()) return;
       if (body.status === 'success' && body.data && body.data.path) {
