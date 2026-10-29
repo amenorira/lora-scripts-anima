@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-
-const { TRAINING_CORE_SCRIPTS, loadFrontend } = require('./helpers.cjs');
+const path = require('node:path');
+const { ROOT, TRAINING_CORE_SCRIPTS, loadFrontend } = require('./helpers.cjs');
 
 function preview(profile, module, overrides = {}) {
   const context = loadFrontend(['shared/constants', 'shared/utils', 'app/config', ...TRAINING_CORE_SCRIPTS, 'training/toml'], {
@@ -71,6 +71,82 @@ test('numeric-looking text stays text while the schema identifies numeric previe
     assert.match(text, /^output_name = "00123"$/m);
     assert.match(text, /^resolution = "1024"$/m);
     assert.match(text, /^learning_rate = 0.0001$/m);
+  }
+});
+
+test('every optimizer preview agrees with the backend argument contract', () => {
+  const field = preview('anima-lora', 'networks.lora_anima').app.findFieldDef('optimizer_type');
+  const options = [...(field.options || []), ...(field.groups || []).flatMap(group => group.options)];
+  const cases = options.map(option => {
+    const { app } = preview('anima-lora', 'networks.lora_anima', { optimizer_type: option.v });
+    return { payload: app._collectTrainingPayload(), preview: app._buildOptimizerArgs(app.form) };
+  });
+  assert.ok(cases.length > 10);
+  const python = path.join(ROOT, 'venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  const script = `
+import ast, json, sys
+from tools.runtime_paths import configure_test_paths
+configure_test_paths()
+from backend.training.config.adapter import adapt_config
+def parse(items):
+    return {key: ast.literal_eval(value) for key, value in (item.split('=', 1) for item in items)}
+for case in json.load(sys.stdin):
+    config, _ = adapt_config(case['payload'])
+    actual = parse(config.get('optimizer_args', []))
+    for key, value in parse(case['preview']).items():
+        assert key in actual and actual[key] == value, (case['payload']['optimizer_type'], key, value, actual)
+`;
+  const result = require('node:child_process').spawnSync(python, ['-B', '-c', script], {
+    cwd: ROOT, input: JSON.stringify(cases), encoding: 'utf8', timeout: 30000,
+  });
+  assert.equal(result.status, 0, result.stderr || String(result.error));
+});
+
+test('native LoRA, LoHa, LoKr and LyCORIS serialize supported fields without top-level leakage', () => {
+  for (const module of ['networks.lora', 'networks.loha', 'networks.lokr', 'lycoris.kohya']) {
+    const { text, args } = preview('sdxl-lora', module);
+    for (const value of ['rank_dropout=0.2', 'conv_dim=8', 'conv_alpha=4']) assert.ok(args.includes(value), module + ': ' + value);
+    assert.equal(args.includes('use_tucker=true'), module !== 'networks.lora');
+    assert.equal(args.includes('factor=4'), ['networks.lokr', 'lycoris.kohya'].includes(module));
+    assert.doesNotMatch(text, /^(rank_dropout|conv_dim|conv_alpha|lokr_factor|use_tucker) =/m);
+  }
+});
+
+test('TensorBoard timestep switches are independent and stay out of engine TOML', () => {
+  const keys = ['log_grad_norm', 'log_grad_clipped', 'log_timestep_loss', 'log_timestep_count'];
+  for (const profile of ['anima-lora', 'sdxl-lora', 'krea2-lora']) {
+    const { app } = preview(profile, 'networks.lora_anima');
+    for (const key of keys) assert.equal(app.form[key], false, profile + ': ' + key);
+    assert.equal(app._fieldShowIfMet(app.findFieldDef('log_grad_clipped')), false);
+    assert.equal(app._fieldShowIfMet(app.findFieldDef('log_timestep_count')), true);
+    app.form.log_grad_clipped = true;
+    app.form.log_timestep_count = true;
+    let payload = app._collectTrainingPayload();
+    assert.equal(payload.log_grad_norm, false);
+    assert.equal(payload.log_timestep_loss, false);
+    assert.equal(payload.log_grad_clipped, undefined);
+    assert.equal(payload.log_timestep_count, true);
+    // Keep child preferences in the saved form even while the parent is off.
+    assert.equal(app._collectTrainingFormSnapshot().log_grad_clipped, true);
+    app.form.log_grad_norm = true;
+    app.form.log_timestep_loss = true;
+    for (const key of ['log_grad_clipped', 'log_timestep_count']) {
+      assert.equal(app._fieldShowIfMet(app.findFieldDef(key)), true);
+    }
+    payload = app._collectTrainingPayload();
+    for (const key of keys) assert.equal(payload[key], true);
+    app.updateToml();
+    assert.doesNotMatch(app.tomlRaw, /^(log_grad_norm|log_grad_clipped|log_timestep_loss|log_timestep_count) =/m);
+    for (const loss of [false, true]) {
+      for (const count of [false, true]) {
+        app.form.log_timestep_loss = loss;
+        app.form.log_timestep_count = count;
+        const independent = app._collectTrainingPayload();
+        assert.equal(independent.log_timestep_loss, loss);
+        assert.equal(independent.log_timestep_count, count);
+        assert.equal(app._collectTrainingFormSnapshot().log_timestep_count, count);
+      }
+    }
   }
 });
 
