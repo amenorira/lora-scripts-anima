@@ -28,6 +28,7 @@ window.trainingCoreMixin = {
   datasetRepeatDrafts: {},
   datasetRepeatApplying: false,
   datasetRepeatLastApplied: null,
+  datasetRepeatFailure: null,
 
   // Training state
   trainingBlocked: false,
@@ -152,6 +153,16 @@ window.trainingCoreMixin = {
     }
   },
 
+  _setupTrainTypeWatcher() {
+    this._trainTypeWatcher?.();
+    this._trainTypeWatcher = this.$watch('form.model_train_type', (newVal, oldVal) => {
+      if (newVal !== oldVal && newVal !== this._activeTrainType && !this._switchInProgress) {
+        this._switchInProgress = true;
+        try { this.switchTrainType(newVal); } finally { this._switchInProgress = false; }
+      }
+    });
+  },
+
   switchTrainType(v) {
     this._invalidateTrainingPickers();
     // Update display labels and descriptions
@@ -209,7 +220,9 @@ window.trainingCoreMixin = {
     // 防御：renderTrainingForm 用 innerHTML 重建了 animaSelect 组件，Alpine 异步初始化。
     // 在下一个 tick 再次确保 network_module 与训练类型一致，防止组件初始化时读到旧值
     // 导致下拉显示 networks.lora（anima 下该选项已被 group 过滤，会显示原始值而非标签）。
+    const switchedForm = this.form;
     this.$nextTick(() => {
+      if (this.form !== switchedForm || this.form.model_train_type !== v) return;
       if (this.form.network_module !== targetMod) {
         this.form.network_module = targetMod;
         this.updateToml();
@@ -408,16 +421,7 @@ window.trainingCoreMixin = {
     });
     self.scheduleShapeEstimate();
 
-    if (self._trainTypeWatcher) {
-      self._trainTypeWatcher();
-      self._trainTypeWatcher = null;
-    }
-    self._trainTypeWatcher = self.$watch('form.model_train_type', (newVal, oldVal) => {
-      if (newVal !== oldVal && !self._switchInProgress) {
-        self._switchInProgress = true;
-        try { self.switchTrainType(newVal); } finally { self._switchInProgress = false; }
-      }
-    });
+    self._setupTrainTypeWatcher();
 
     if (self._localeChangeHandler) {
       window.removeEventListener('locale-changed', self._localeChangeHandler);

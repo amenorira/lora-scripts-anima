@@ -32,6 +32,7 @@ window.trainingTimestepPreview = {
   },
 
   setSubsetTimestepOffsetDraft(name, rawValue) {
+    if (this.datasetRepeatApplying) return;
     const raw = String(rawValue ?? '');
     this.subsetTimestepOffsetDrafts = { ...(this.subsetTimestepOffsetDrafts || {}), [name]: raw };
     // Keep intermediate keyboard states such as "-", "." and "0." visible.
@@ -39,6 +40,7 @@ window.trainingTimestepPreview = {
   },
 
   commitSubsetTimestepOffsetDraft(name) {
+    if (this.datasetRepeatApplying) return;
     const drafts = this.subsetTimestepOffsetDrafts || {};
     if (!Object.prototype.hasOwnProperty.call(drafts, name)) return;
     const raw = String(drafts[name] ?? '').trim();
@@ -65,6 +67,7 @@ window.trainingTimestepPreview = {
   },
 
   setSubsetTimestepOffset(name, rawValue) {
+    if (this.datasetRepeatApplying) return;
     const previous = this.form.subset_timestep_offsets || {};
     const next = { ...(this.form.subset_timestep_offsets || {}) };
     if (rawValue === '' || rawValue === null || rawValue === undefined) {
@@ -85,6 +88,7 @@ window.trainingTimestepPreview = {
   },
 
   stepSubsetTimestepOffset(name, delta) {
+    if (this.datasetRepeatApplying) return;
     const current = Number(this.subsetTimestepOffsetValue(name) || 0);
     const nextDrafts = { ...(this.subsetTimestepOffsetDrafts || {}) };
     delete nextDrafts[name];
@@ -99,6 +103,7 @@ window.trainingTimestepPreview = {
   },
 
   undoSubsetTimestepOffset(name) {
+    if (this.datasetRepeatApplying) return;
     const drafts = { ...(this.subsetTimestepOffsetDrafts || {}) };
     delete drafts[name];
     this.subsetTimestepOffsetDrafts = drafts;
@@ -121,6 +126,7 @@ window.trainingTimestepPreview = {
   },
 
   resetSubsetTimestepOffset(name) {
+    if (this.datasetRepeatApplying) return;
     const drafts = { ...(this.subsetTimestepOffsetDrafts || {}) };
     delete drafts[name];
     this.subsetTimestepOffsetDrafts = drafts;
@@ -133,7 +139,7 @@ window.trainingTimestepPreview = {
     if (!['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type)) return '';
     const supported = this.timestepOffsetSupported();
     const subsets = this.timestepOffsetSubsets();
-    const disabled = ' :disabled="!timestepOffsetSupported()"';
+    const disabled = ' :disabled="!timestepOffsetSupported() || datasetRepeatApplying"';
     const rows = subsets.map(subset => {
       const name = String(subset.name || '');
       const nameExpr = this.escapeAttr(JSON.stringify(name));
@@ -152,12 +158,12 @@ window.trainingTimestepPreview = {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19V3"/></svg>
         </button>
         <div class="field-menu-wrap subset-timestep-menu" x-data="actionMenu" x-id="['field-menu']" @keydown="key($event)" @click.outside="close(false)" @pointerenter="hoverEnter($event)" @pointerleave="hoverLeave()" @focusout="focusOut($event)">
-          <button type="button" class="btn-menu" x-ref="trigger" :aria-label="t('common.fieldActions')" title="${this.escapeAttr(this.t('common.fieldActions'))}" aria-haspopup="menu" :aria-expanded="open" :aria-controls="$id('field-menu')" @click="toggle()">
+          <button type="button" class="btn-menu" x-ref="trigger" :aria-label="t('common.fieldActions')" title="${this.escapeAttr(this.t('common.fieldActions'))}" aria-haspopup="menu" :aria-expanded="open" :aria-controls="$id('field-menu')" @click="toggle()"${disabled}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
           </button>
           <div class="field-menu-popup" x-ref="menu" x-show="open" :class="{ 'is-positioned': positioned }" :inert="!open" :id="$id('field-menu')" role="menu" :aria-label="t('common.fieldActions')" x-cloak>
-            <button type="button" role="menuitem" tabindex="-1" @click="undoSubsetTimestepOffset(${nameExpr});close()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg><span>${this.esc(this.t('common.undoField'))}</span></button>
-            <button type="button" role="menuitem" tabindex="-1" @click="resetSubsetTimestepOffset(${nameExpr});close()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg><span>${this.esc(this.t('common.resetField'))}</span></button>
+            <button type="button" role="menuitem" tabindex="-1" @click="undoSubsetTimestepOffset(${nameExpr});close()"${disabled}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg><span>${this.esc(this.t('common.undoField'))}</span></button>
+            <button type="button" role="menuitem" tabindex="-1" @click="resetSubsetTimestepOffset(${nameExpr});close()"${disabled}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg><span>${this.esc(this.t('common.resetField'))}</span></button>
           </div>
         </div>
       </div>`;

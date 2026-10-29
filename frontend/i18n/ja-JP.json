@@ -1600,8 +1600,9 @@
 			"targetExists": "{name} というサブセットが既に存在します。",
 			"duplicateTarget": "2 つのサブセットが同じ名前になります：{name}",
 			"renameFailed": "{names} の名前を変更できません：{reason}",
+			"rollbackFailed": "一部のフォルダを元に戻せず、該当サブセットのオフセットをクリアしました。次のパスで元の名前に戻し、ステップ数を再計算してオフセットを再設定してください：{reason}",
 			"trainingActive": "学習の実行中はデータセットのフォルダ名を変更できません。",
-			"requestFailed": "リクエストが失敗しました：{message}",
+			"requestFailed": "リクエストの結果を確認できません。データセットのフォルダとオフセットを確認してください：{message}",
 			"failed": "名前を変更できませんでした。"
 		}
 	},

@@ -10,6 +10,7 @@ window.trainingConfigIoMixin = {
   confirmSecondaryLabel: '',
   confirmSecondaryCallback: null,
   _trainingDocumentId: null,
+  _configImportRequestSeq: 0,
 
   async downloadConfig() {
     try {
@@ -44,7 +45,18 @@ window.trainingConfigIoMixin = {
     document.getElementById('configFileInput').click();
   },
 
-  _applyImportedFlatConfig(parsed) {
+  _applyImportedFlatConfig(parsed, isCurrent) {
+    const fileImport = typeof isCurrent === 'function';
+    // History reuse also replaces the form, so it supersedes pending file imports.
+    if (!isCurrent) {
+      this._configImportRequestSeq++;
+      isCurrent = () => true;
+    }
+    let targetForm = this.form;
+    const route = this.currentRoute, routeSeq = this._routeTransitionSeq;
+    const canApply = () => !fileImport || (isCurrent() && this.form === targetForm
+      && this.currentRoute === route && this._routeTransitionSeq === routeSeq);
+    if (!canApply()) return Promise.resolve(false);
     parsed = this._normalizeLegacyLoraMuonForm
       ? this._normalizeLegacyLoraMuonForm(parsed)
       : parsed;
@@ -54,6 +66,7 @@ window.trainingConfigIoMixin = {
     if (!validTypes.has(importedType)) throw new Error(this.t('common.unsupportedTrainingType').replace('{type}', () => importedType));
 
     const applyValues = () => {
+      if (!canApply() || (fileImport && this.form.model_train_type !== importedType)) return false;
       const defaults = this._buildFormDefaults(importedType);
       const validKeys = new Set(['model_train_type']);
       window.getVisibleSections(importedType).forEach(section => {
@@ -85,28 +98,37 @@ window.trainingConfigIoMixin = {
         const targetRoute = this.currentRoute.startsWith('train-') ? this.currentRoute : 'train-basic';
         try { localStorage.setItem('anima-form-' + targetRoute, JSON.stringify(this.form)); } catch (e) {}
       }
+      return this.form;
     };
 
     if (importedType !== currentType) {
       this._switchInProgress = true;
       try { this.switchTrainType(importedType); }
       finally { this._switchInProgress = false; }
+      targetForm = this.form;
       if (typeof this.$nextTick === 'function') {
         return new Promise((resolve, reject) => this.$nextTick(() => {
-          try { applyValues(); resolve(); } catch (error) { reject(error); }
+          try { resolve(applyValues()); } catch (error) { reject(error); }
         }));
       }
     }
-    applyValues();
-    return Promise.resolve();
+    return Promise.resolve(applyValues());
   },
 
   handleConfigFileImport(event) {
     const file = event.target.files[0];
     if (!file) return;
+    const requestSeq = ++this._configImportRequestSeq;
+    const form = this.form, route = this.currentRoute, routeSeq = this._routeTransitionSeq;
     const modelTrainType = this.form?.model_train_type || 'anima-lora';
+    const isCurrent = () => requestSeq === this._configImportRequestSeq
+      && this.currentRoute === route && this._routeTransitionSeq === routeSeq;
+    const sourceIsCurrent = () => isCurrent() && this.form === form
+      && (this.form?.model_train_type || 'anima-lora') === modelTrainType;
     const reader = new FileReader();
     reader.onload = async (e) => {
+      if (!sourceIsCurrent()) return;
+      let importForm = form, importProfile = modelTrainType;
       try {
         const r = await fetch('/api/training/parse-config', {
           method: 'POST',
@@ -114,10 +136,15 @@ window.trainingConfigIoMixin = {
           body: JSON.stringify({ content: e.target.result, model_train_type: modelTrainType })
         });
         const d = await r.json();
+        if (!sourceIsCurrent()) return;
         if (d.status !== 'success') throw new Error(d.message || this.t('common.parseError'));
         const parsed = d.data.data || {};
         if (Object.keys(parsed).length === 0) throw new Error(this.t('common.invalidToml'));
-        await this._applyImportedFlatConfig(parsed);
+        let applying;
+        try { applying = this._applyImportedFlatConfig(parsed, isCurrent); }
+        finally { importForm = this.form; importProfile = this.form?.model_train_type; }
+        const applied = await applying;
+        if (applied === false || !isCurrent() || (applied && this.form !== applied)) return;
         this.dismissHistoryReuse?.();
         this._trainingDocumentId = d.data.document_id || null;
         const ignored = this._lastConfigImportIgnoredFields || [];
@@ -127,8 +154,13 @@ window.trainingConfigIoMixin = {
           this.toast(this.t('common.imported'));
         }
       } catch (err) {
-        this.toast(this.t('common.parseError') + ': ' + err.message, 'error');
+        if (isCurrent() && this.form === importForm && this.form?.model_train_type === importProfile) {
+          this.toast(this.t('common.parseError') + ': ' + err.message, 'error');
+        }
       }
+    };
+    reader.onerror = () => {
+      if (sourceIsCurrent()) this.toast(this.t('common.parseError') + ': ' + (reader.error?.message || this.t('common.requestFailed')), 'error');
     };
     reader.readAsText(file);
     event.target.value = '';

@@ -56,6 +56,10 @@ window.trainingPreflight = {
     clearTimeout(this._stepEstimateTimer);
     this._stepEstimateTimer = null;
     const requestSeq = ++this._stepEstimateRequestSeq;
+    if (this._datasetRepeatMutationDir === String(payload.train_data_dir || '').trim()) {
+      this.stepEstimateLoading = false;
+      return;
+    }
 
     if (!String(payload.train_data_dir || '').trim()) {
       this.stepEstimate = null;
@@ -82,6 +86,10 @@ window.trainingPreflight = {
     clearTimeout(this._stepEstimateTimer);
     this._stepEstimateTimer = null;
     const requestSeq = ++this._stepEstimateRequestSeq;
+    if (this._datasetRepeatMutationDir === String(payload.train_data_dir || '').trim()) {
+      this.stepEstimateLoading = false;
+      return null;
+    }
 
     if (!String(payload.train_data_dir || '').trim()) {
       this.stepEstimate = null;

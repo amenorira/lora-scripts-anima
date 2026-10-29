@@ -584,7 +584,7 @@ window.trainingTomlMixin = {
 
   // ── Training ───────────────────────────────────────────
   async startTraining() {
-    if (this.isTraining || this.trainingStarting || this.regularizationActive) return;
+    if (this.isTraining || this.trainingStarting || this.regularizationActive || this.datasetRepeatApplying) return;
 
     // Form validation before starting
     if (!this.validateForm()) {

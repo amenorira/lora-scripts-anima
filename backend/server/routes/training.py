@@ -283,7 +283,7 @@ async def update_dataset_repeat(request: Request):
     except DatasetRepeatError as exc:
         return APIResponseFail(
             message=str(exc),
-            data={"errorCode": exc.code, "errorParams": exc.params},
+            data={"errorCode": exc.code, "errorParams": exc.params, **exc.details},
         )
     except Exception as exc:
         log.exception("Failed to rename dataset subset / 数据集子集改名失败")
@@ -293,9 +293,7 @@ async def update_dataset_repeat(request: Request):
         )
     finally:
         tm.end_dataset_mutation()
-
-    if result.get("applied"):
-        # 目录名变了，选择器缓存的还是旧名字（TTL 60s）。
+        # worker 已结束；取消请求也可能完成改名，统一清除目录缓存。
         from backend.server.routes.system import invalidate_files_cache
 
         invalidate_files_cache()

@@ -1600,8 +1600,9 @@
 			"targetExists": "A subset named {name} already exists.",
 			"duplicateTarget": "Two subsets would end up with the same name: {name}",
 			"renameFailed": "Could not rename {names}: {reason}",
+			"rollbackFailed": "Some folders could not be rolled back. Affected subset offsets were cleared. Restore the original names using these paths, then recalculate steps and set the offsets again: {reason}",
 			"trainingActive": "Cannot rename dataset folders while a training task is running.",
-			"requestFailed": "Request failed: {message}",
+			"requestFailed": "The request outcome is unknown. Check the dataset folders and subset offsets: {message}",
 			"failed": "Rename failed."
 		}
 	},

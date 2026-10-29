@@ -1600,8 +1600,9 @@
 			"targetExists": "已存在名为 {name} 的子集。",
 			"duplicateTarget": "两个子集会改成同一个名字：{name}",
 			"renameFailed": "无法重命名 {names}：{reason}",
+			"rollbackFailed": "部分目录回滚失败，已清除受影响的子集偏移。请按以下路径手动恢复原名，再重新计算步数并设置偏移：{reason}",
 			"trainingActive": "训练进行中，无法重命名数据集目录。",
-			"requestFailed": "请求失败：{message}",
+			"requestFailed": "请求结果无法确认，请检查数据集目录和子集偏移：{message}",
 			"failed": "重命名失败。"
 		}
 	},
