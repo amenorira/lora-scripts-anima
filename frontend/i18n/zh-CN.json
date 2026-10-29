@@ -235,6 +235,32 @@
 		"empty": "暂无参数文档",
 		"retry": "重试",
 		"openGuide": "查看说明",
+		"documents": {
+			"optimizers": {
+				"title": "优化器",
+				"summary": "优化器选择、各训练类型的默认值、关键参数与对照方法。"
+			},
+			"timesteps": {
+				"title": "时间步",
+				"summary": "时间步采样、损失权重、参数生效条件、分布预览与对照实验方法。"
+			},
+			"lora-plus": {
+				"title": "LoRA+",
+				"summary": "LoRA+ 的原理、实际学习率、倍率参数、支持范围与兼容性。"
+			},
+			"network-parameters": {
+				"title": "网络参数",
+				"summary": "网络维度、Alpha、LoRA/LoHa/LoKr 表示、分解方式、Dropout、DoRA 与 Bypass 限制及结构预览。"
+			},
+			"matrix-preview": {
+				"title": "矩阵结构与文件大小",
+				"summary": "逐层矩阵、实际参数量、训练范围与权重文件大小估算。"
+			},
+			"adaln": {
+				"title": "AdaLN 调制层",
+				"summary": "AdaLN 调制层的作用、上游默认排除行为、训练影响与使用建议。"
+			}
+		},
 		"categories": {
 			"training": "训练原理",
 			"network": "网络结构",

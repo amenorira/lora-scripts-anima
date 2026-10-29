@@ -235,6 +235,32 @@
 		"empty": "パラメータガイドがありません",
 		"retry": "再試行",
 		"openGuide": "ガイドを開く",
+		"documents": {
+			"optimizers": {
+				"title": "オプティマイザ",
+				"summary": "オプティマイザの選び方、各プロファイルの既定値、主要設定と比較方法。"
+			},
+			"timesteps": {
+				"title": "タイムステップ",
+				"summary": "タイムステップのサンプリング、損失の重み付け、設定の適用条件、分布プレビューと条件を揃えた比較方法。"
+			},
+			"lora-plus": {
+				"title": "LoRA+",
+				"summary": "LoRA+ の仕組み、実効学習率、倍率設定、対応モジュールと互換性。"
+			},
+			"network-parameters": {
+				"title": "ネットワーク設定",
+				"summary": "次元数、Alpha、LoRA・LoHa・LoKr の表現、分解方法、ドロップアウト、DoRA と Bypass の制限、構造プレビュー。"
+			},
+			"matrix-preview": {
+				"title": "行列構造とファイルサイズ",
+				"summary": "モジュールごとの行列構造、実際のパラメータ数、学習対象と重みファイルサイズの推定。"
+			},
+			"adaln": {
+				"title": "AdaLN 変調層",
+				"summary": "AdaLN 変調層の役割、上流実装での既定の除外、学習への影響と設定の目安。"
+			}
+		},
 		"categories": {
 			"training": "学習",
 			"network": "ネットワーク",

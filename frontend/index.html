@@ -410,7 +410,7 @@
                               :aria-current="docsSelectedSlug === doc.slug ? 'page' : null"
                               :aria-busy="docsPendingSlug === doc.slug ? 'true' : 'false'"
                               @click="selectParameterDoc(doc.slug)">
-                        <span class="docs-index-item-title" x-text="doc.title"></span>
+                        <span class="docs-index-item-title" x-text="docsDocumentTitle(doc.slug)"></span>
                         <span class="docs-index-item-state" aria-hidden="true">
                           <span class="docs-index-spinner" x-show="docsPendingSlug === doc.slug"></span>
                         </span>

@@ -26,21 +26,11 @@ _DOC_ANCHOR_RE = re.compile(
     r"^\s*<!--\s*doc-anchor:\s*([A-Za-z0-9][A-Za-z0-9_-]*)\s*-->\s*$"
 )
 _ATX_HEADING_RE = re.compile(r"^#{1,6}[ \t]+\S")
-# Add future guides here; the reader groups and renders this registry automatically.
+# Document resources; localized catalog text lives in frontend/i18n/*.json.
 _DOCUMENTS = {
     "optimizers": {
         "category": "optimizer",
         "order": 10,
-        "titles": {
-            "zh-CN": "优化器",
-            "en-US": "Optimizers",
-            "ja-JP": "オプティマイザ",
-        },
-        "summaries": {
-            "zh-CN": "优化器选择、各训练类型的默认值、关键参数与对照方法。",
-            "en-US": "Optimizer choices, profile defaults, key controls, and comparison methods.",
-            "ja-JP": "オプティマイザの選び方、各プロファイルの既定値、主要設定と比較方法。",
-        },
         "files": {
             "zh-CN": "parameters/optimizers.zh-CN.md",
             "en-US": "parameters/optimizers.en-US.md",
@@ -50,16 +40,6 @@ _DOCUMENTS = {
     "timesteps": {
         "category": "training",
         "order": 10,
-        "titles": {
-            "zh-CN": "时间步",
-            "en-US": "Timesteps",
-            "ja-JP": "タイムステップ",
-        },
-        "summaries": {
-            "zh-CN": "时间步采样、损失权重、参数生效条件、分布预览与对照实验方法。",
-            "en-US": "Timestep sampling, loss weighting, parameter applicability, distribution preview, and controlled comparisons.",
-            "ja-JP": "タイムステップのサンプリング、損失の重み付け、設定の適用条件、分布プレビューと条件を揃えた比較方法。",
-        },
         "files": {
             "zh-CN": "parameters/timesteps.zh-CN.md",
             "en-US": "parameters/timesteps.en-US.md",
@@ -69,12 +49,6 @@ _DOCUMENTS = {
     "lora-plus": {
         "category": "network",
         "order": 10,
-        "titles": {"zh-CN": "LoRA+", "en-US": "LoRA+", "ja-JP": "LoRA+"},
-        "summaries": {
-            "zh-CN": "LoRA+ 的原理、实际学习率、倍率参数、支持范围与兼容性。",
-            "en-US": "LoRA+ mechanics, effective rates, ratio parameters, supported modules, and compatibility.",
-            "ja-JP": "LoRA+ の仕組み、実効学習率、倍率設定、対応モジュールと互換性。",
-        },
         "files": {
             "zh-CN": "parameters/lora-plus.zh-CN.md",
             "en-US": "parameters/lora-plus.en-US.md",
@@ -84,12 +58,6 @@ _DOCUMENTS = {
     "network-parameters": {
         "category": "network",
         "order": 15,
-        "titles": {"zh-CN": "网络参数", "en-US": "Network parameters", "ja-JP": "ネットワーク設定"},
-        "summaries": {
-            "zh-CN": "网络维度、Alpha、LoRA/LoHa/LoKr 表示、分解方式、Dropout、DoRA 与 Bypass 限制及结构预览。",
-            "en-US": "Dimension, Alpha, LoRA/LoHa/LoKr representations, decomposition, dropout, DoRA and Bypass restrictions, and structure preview.",
-            "ja-JP": "次元数、Alpha、LoRA・LoHa・LoKr の表現、分解方法、ドロップアウト、DoRA と Bypass の制限、構造プレビュー。",
-        },
         "files": {
             "zh-CN": "parameters/network-parameters.zh-CN.md",
             "en-US": "parameters/network-parameters.en-US.md",
@@ -99,12 +67,6 @@ _DOCUMENTS = {
     "matrix-preview": {
         "category": "network",
         "order": 30,
-        "titles": {"zh-CN": "矩阵结构与文件大小", "en-US": "Matrix Structure and File Size", "ja-JP": "行列構造とファイルサイズ"},
-        "summaries": {
-            "zh-CN": "逐层矩阵、实际参数量、训练范围与权重文件大小估算。",
-            "en-US": "Per-module matrices, parameter counts, training scope, and saved-weight size estimates.",
-            "ja-JP": "モジュールごとの行列構造、実際のパラメータ数、学習対象と重みファイルサイズの推定。",
-        },
         "files": {
             "zh-CN": "parameters/matrix-preview.zh-CN.md",
             "en-US": "parameters/matrix-preview.en-US.md",
@@ -114,12 +76,6 @@ _DOCUMENTS = {
     "adaln": {
         "category": "network",
         "order": 20,
-        "titles": {"zh-CN": "AdaLN 调制层", "en-US": "AdaLN Modulation Layers", "ja-JP": "AdaLN 変調層"},
-        "summaries": {
-            "zh-CN": "AdaLN 调制层的作用、上游默认排除行为、训练影响与使用建议。",
-            "en-US": "What the AdaLN modulation layers do, the upstream default exclusion, training impact, and recommendations.",
-            "ja-JP": "AdaLN 変調層の役割、上流実装での既定の除外、学習への影響と設定の目安。",
-        },
         "files": {
             "zh-CN": "parameters/adaln.zh-CN.md",
             "en-US": "parameters/adaln.en-US.md",
@@ -251,7 +207,7 @@ def _resolve_asset_path(asset_path: str) -> Path:
     return path
 
 
-def _list_documents(locale: str) -> list[dict[str, str]]:
+def _list_documents() -> list[dict[str, str]]:
     documents = sorted(
         _DOCUMENTS.items(),
         key=lambda item: (
@@ -264,9 +220,6 @@ def _list_documents(locale: str) -> list[dict[str, str]]:
         {
             "slug": slug,
             "category": document["category"],
-            "title": document["titles"].get(locale) or document["titles"][_DEFAULT_LOCALE],
-            "summary": document["summaries"].get(locale)
-            or document["summaries"][_DEFAULT_LOCALE],
         }
         for slug, document in documents
     ]
@@ -275,7 +228,7 @@ def _list_documents(locale: str) -> list[dict[str, str]]:
 @router.get("/docs")
 async def list_docs(locale: str = Query(_DEFAULT_LOCALE)):
     selected_locale = _normalize_locale(locale)
-    documents = _list_documents(selected_locale)
+    documents = _list_documents()
     return APIResponseSuccess(data={"documents": documents, "locale": selected_locale})
 
 
@@ -287,9 +240,6 @@ async def get_doc_asset(asset_path: str):
 @router.get("/docs/{slug}")
 async def get_doc(slug: str, locale: str = Query(_DEFAULT_LOCALE)):
     selected_locale = _normalize_locale(locale)
-    document = _DOCUMENTS.get(slug)
-    if document is None:
-        raise HTTPException(status_code=404, detail="Document not found")
     path = _document_path(slug, selected_locale)
     source = path.read_text(encoding="utf-8")
     relative_path = PurePosixPath(path.relative_to(DOCS_DIR).as_posix())
@@ -298,8 +248,6 @@ async def get_doc(slug: str, locale: str = Query(_DEFAULT_LOCALE)):
         data={
             "slug": slug,
             "locale": selected_locale,
-            "title": document["titles"].get(selected_locale) or document["titles"][_DEFAULT_LOCALE],
-            "summary": document["summaries"].get(selected_locale) or document["summaries"][_DEFAULT_LOCALE],
             "html": html,
             "toc": toc,
         }

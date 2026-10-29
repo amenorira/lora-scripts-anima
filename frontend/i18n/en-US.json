@@ -235,6 +235,32 @@
 		"empty": "No parameter documents",
 		"retry": "Retry",
 		"openGuide": "Open guide",
+		"documents": {
+			"optimizers": {
+				"title": "Optimizers",
+				"summary": "Optimizer choices, profile defaults, key controls, and comparison methods."
+			},
+			"timesteps": {
+				"title": "Timesteps",
+				"summary": "Timestep sampling, loss weighting, parameter applicability, distribution preview, and controlled comparisons."
+			},
+			"lora-plus": {
+				"title": "LoRA+",
+				"summary": "LoRA+ mechanics, effective rates, ratio parameters, supported modules, and compatibility."
+			},
+			"network-parameters": {
+				"title": "Network parameters",
+				"summary": "Dimension, Alpha, LoRA/LoHa/LoKr representations, decomposition, dropout, DoRA and Bypass restrictions, and structure preview."
+			},
+			"matrix-preview": {
+				"title": "Matrix Structure and File Size",
+				"summary": "Per-module matrices, parameter counts, training scope, and saved-weight size estimates."
+			},
+			"adaln": {
+				"title": "AdaLN Modulation Layers",
+				"summary": "What the AdaLN modulation layers do, the upstream default exclusion, training impact, and recommendations."
+			}
+		},
 		"categories": {
 			"training": "Training",
 			"network": "Network",
