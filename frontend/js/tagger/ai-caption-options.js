@@ -273,7 +273,7 @@ window.captionOptionsMixin = {
   },
   async pickCaptionPath(key) {
     try {
-      const body = await (await fetch('/api/pick_file?picker_type=text-file')).json();
+      const body = await (await fetch('/api/pick_file?picker_type=text-file&locale=' + encodeURIComponent(this.locale || 'en-US'))).json();
       if (body.status === 'success' && body.data?.path) { this.captionOptions[key] = body.data.path; this.saveCaptionOptions(); }
     } catch (_) { this.toast(this.t('common.localPickerNA')); }
   },

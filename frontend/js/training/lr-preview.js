@@ -173,7 +173,7 @@ window.trainingLrPreviewMixin = {
     const chartUnet = selectedComponent === 'unet' || selectedComponent === 'unet_plus';
     const chartComponent = chartUnet
       ? (isKrea2 ? components.find(option => option.value === selectedComponent)?.label : this.t('lrPreview.unetComponent', 'U-Net / DiT'))
-      : (trainTextEncoder ? this.t('lrPreview.textEncoderComponent', 'Text Encoder') : this.t('lrPreview.learningRate'));
+      : (trainTextEncoder ? this.t('lrPreview.textEncoderComponent', 'Text Encoder') : this.t('lrPreview.learningRateAxis'));
     const chartRateText = chartUnet
       ? (unetRateText || baseRateText)
       : (textEncoderRateText || baseRateText);

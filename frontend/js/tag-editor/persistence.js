@@ -264,7 +264,7 @@ window.tagEditorPersistence = {
   _teFormatSnapshotTime(ts) {
     var numeric = Number(ts);
     var d = new Date(numeric > 1000000000000 ? numeric : numeric * 1000);
-    return d.toLocaleString();
+    return d.toLocaleString(this.locale || undefined);
   },
 
   // ===== Auto-save Draft =====
@@ -291,7 +291,7 @@ window.tagEditorPersistence = {
           return { path: img.path, tags: img.tags, original: orig[img.path], revision: revisions[img.path] };
         });
       localStorage.setItem(key, JSON.stringify({ version: 2, items: data, pending: this._teDraftRemainder }));
-      this._teDraftSavedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      this._teDraftSavedAt = new Date().toLocaleTimeString(this.locale || undefined, { hour: '2-digit', minute: '2-digit' });
     } catch (e) {
       this.toast(this.t('tagEditor.draftSaveFailed'), 'warning');
     }

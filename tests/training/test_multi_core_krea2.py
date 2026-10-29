@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.training.config.musubi_krea2 import KREA2_FIELDS
+from backend.training.datasets.step_estimator import StepEstimateError, estimate_training_steps
 from backend.training.execution.krea2_preflight import krea2_preflight
 from backend.training.cache.krea2_cache import (
     cache_manifest_path, get_krea2_cache_status, mark_cache_manifest, prepare_cache_manifest,
@@ -42,6 +43,33 @@ def krea2_config(root: Path) -> dict:
         }
     )
     return config
+
+
+class Krea2EstimateLocalizationTests(unittest.TestCase):
+    def test_specific_error_codes_preserve_distinct_causes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = krea2_config(Path(temp_dir))
+            cases = [
+                ({"resolution": "1024"}, "krea2ResolutionFormat"),
+                ({"resolution": "wrong,1024"}, "krea2ResolutionIntegers"),
+                ({"resolution": "1000,1000"}, "krea2ResolutionMultiple16"),
+                ({"train_data_dir": str(Path(temp_dir) / "missing")}, "krea2NoCaptionedImages"),
+                ({"train_batch_size": "bad"}, "krea2BatchIntegers"),
+                ({"train_batch_size": 0}, "krea2BatchPositive"),
+                ({"max_train_epochs": 0}, "krea2EpochsPositive"),
+                ({"krea_training_duration_mode": "steps", "max_train_steps": 0}, "krea2StepsPositive"),
+            ]
+            for overrides, code in cases:
+                with self.subTest(code=code), self.assertRaises(StepEstimateError) as caught:
+                    estimate_training_steps({**config, **overrides})
+                self.assertEqual(caught.exception.code, code)
+
+    def test_estimate_route_returns_the_specific_error_code(self):
+        response = asyncio.run(training_routes.estimate_steps(json_request({
+            "model_train_type": "krea2-lora", "resolution": "1000,1000", "train_data_dir": "missing",
+        })))
+        self.assertEqual(response.status, "fail")
+        self.assertEqual(response.data["errorCode"], "krea2ResolutionMultiple16")
 
 
 class Krea2PreparationLifecycleTests(unittest.TestCase):

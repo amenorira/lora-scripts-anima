@@ -50,3 +50,15 @@ test('native picker ignores results after the form, profile, route or field chan
     await choice;
   }
 });
+
+test('native picker sends the selected application language', async () => {
+  let url;
+  const app = application(async value => { url = value; return response({path: './models/vae.safetensors'}); });
+  app.locale = 'ja-JP';
+  app.currentRoute = 'train-basic';
+  app.form = {model_train_type: 'anima-lora', vae: ''};
+  app.setField = (key, value) => { app.form[key] = value; };
+  await app.localFilePicker('vae', 'file-model');
+  assert.match(url, /picker_type=model-file&locale=ja-JP/);
+  assert.equal(app.form.vae, './models/vae.safetensors');
+});

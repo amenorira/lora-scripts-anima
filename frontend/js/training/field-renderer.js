@@ -218,8 +218,8 @@ window.trainingFieldRenderer = {
     const dataKey = field.key;
     const accessibleKey = field.argKey || dataKey;
     const fieldAriaLabel = this.escapeAttr(`${accessibleKey}，${label}`);
-    const stepDownLabel = this.escapeAttr(`${accessibleKey} ${label} 减少`);
-    const stepUpLabel = this.escapeAttr(`${accessibleKey} ${label} 增加`);
+    const stepDownLabel = this.escapeAttr(this.t('common.decreaseField').replace('{field}', `${accessibleKey} ${label}`));
+    const stepUpLabel = this.escapeAttr(this.t('common.increaseField').replace('{field}', `${accessibleKey} ${label}`));
     const isToggle = field.type === 'toggle';
     const isStaticReadonly = field.readonly === true;
     const staticReadonlyAttrs = isStaticReadonly ? ' readonly aria-readonly="true"' : '';

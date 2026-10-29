@@ -207,10 +207,13 @@ def estimate_training_steps(config: dict[str, Any]) -> dict[str, Any]:
 
         try:
             return estimate_krea2_steps(dict(config))
+        except StepEstimateError:
+            raise
         except ValueError as exc:
             raise StepEstimateError(
                 str(exc),
                 code="krea2EstimateInvalid",
+                detail=str(exc),
             ) from exc
 
     train_data_value = config.get("train_data_dir")

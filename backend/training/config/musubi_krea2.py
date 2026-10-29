@@ -848,23 +848,36 @@ def build_krea2_train_config(
 def estimate_krea2_steps(config: dict[str, Any]) -> dict[str, Any]:
     """Return a transparent, non-sd-scripts estimate for the Krea profile."""
 
+    from backend.training.datasets.step_estimator import StepEstimateError
+
     try:
         parse_krea2_resolution(config.get("resolution", "1024,1024"))
     except ValueError as exc:
-        raise ValueError(f"resolution: {exc}") from exc
+        raise StepEstimateError(
+            f"resolution: {exc}", code=getattr(exc, "code", "krea2EstimateInvalid"), detail=str(exc)
+        ) from exc
     groups = dataset_groups(config)
     images = [image for _, _, group_images in groups for image in group_images]
     if not images:
-        raise ValueError("Dataset has no supported images with matching captions / 数据集路径不存在或没有带同名标注的可用图片")
+        raise StepEstimateError(
+            "Dataset has no supported images with matching captions / 数据集路径不存在或没有带同名标注的可用图片",
+            code="krea2NoCaptionedImages",
+        )
 
     try:
         repeats = int(config.get("krea_num_repeats", 1))
         batch_size = int(config.get("train_batch_size", 1))
         accumulation = int(config.get("gradient_accumulation_steps", 1))
     except (TypeError, ValueError) as exc:
-        raise ValueError("batch size, repeats and accumulation must be integers / 批量、重复和累积必须为整数") from exc
+        raise StepEstimateError(
+            "batch size, repeats and accumulation must be integers / 批量、重复和累积必须为整数",
+            code="krea2BatchIntegers",
+        ) from exc
     if min(repeats, batch_size, accumulation) < 1:
-        raise ValueError("batch size, repeats and accumulation must be positive / 批量、重复和累积必须大于 0")
+        raise StepEstimateError(
+            "batch size, repeats and accumulation must be positive / 批量、重复和累积必须大于 0",
+            code="krea2BatchPositive",
+        )
     gpu_ids = config.get("gpu_ids")
     gpu_processes = len(gpu_ids) if isinstance(gpu_ids, (list, tuple)) and gpu_ids else 1
     repeated_samples = len(images) * repeats
@@ -875,17 +888,17 @@ def estimate_krea2_steps(config: dict[str, Any]) -> dict[str, Any]:
         try:
             total_steps = int(config.get("max_train_steps", 1))
         except (TypeError, ValueError) as exc:
-            raise ValueError("max_train_steps must be an integer / 最大训练步数必须为整数") from exc
+            raise StepEstimateError("max_train_steps must be an integer / 最大训练步数必须为整数", code="krea2StepsInteger") from exc
         if total_steps < 1:
-            raise ValueError("max_train_steps must be positive / 最大训练步数必须大于 0")
+            raise StepEstimateError("max_train_steps must be positive / 最大训练步数必须大于 0", code="krea2StepsPositive")
         epochs = math.ceil(total_steps / steps_per_epoch)
     else:
         try:
             epochs = int(config.get("max_train_epochs", 1))
         except (TypeError, ValueError) as exc:
-            raise ValueError("max_train_epochs must be an integer / 最大训练轮数必须为整数") from exc
+            raise StepEstimateError("max_train_epochs must be an integer / 最大训练轮数必须为整数", code="krea2EpochsInteger") from exc
         if epochs < 1:
-            raise ValueError("max_train_epochs must be positive / 最大训练轮数必须大于 0")
+            raise StepEstimateError("max_train_epochs must be positive / 最大训练轮数必须大于 0", code="krea2EpochsPositive")
         total_steps = steps_per_epoch * epochs
     return {
         "engine_id": "musubi_tuner",
