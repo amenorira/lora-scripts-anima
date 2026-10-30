@@ -46,7 +46,7 @@ def normalize_loras(value, *, check_files=False, allow_incomplete=False):
             continue
         try:
             multiplier = float(raw)
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, OverflowError):
             multiplier = float("nan")
         if isinstance(raw, bool) or not math.isfinite(multiplier):
             raise ValueError(f"Preview LoRA #{index}: multiplier must be finite / 倍率必须是有限数值")
@@ -63,6 +63,17 @@ def normalize_loras(value, *, check_files=False, allow_incomplete=False):
             path = str(file.resolve())
         result.append({"path": path, "multiplier": multiplier})
     return result
+
+
+def normalize_form(form):
+    """Normalize preview fields in place, preserving absent fields and editable drafts."""
+    options = sampling_options(form.get("preview_sampler"), form.get("preview_scheduler"))
+    for name, value in options.items():
+        key = "preview_" + name
+        if key in form:
+            form[key] = value
+    if "preview_loras" in form:
+        form["preview_loras"] = normalize_loras(form["preview_loras"], allow_incomplete=True)
 
 
 def prepare_config(form, profile_id):

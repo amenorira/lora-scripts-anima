@@ -307,7 +307,7 @@ def extract_training_form(document: dict[str, Any]) -> dict[str, Any]:
         flat = dict(document.get("form") or {})
         normalize_attention_config(flat)
         normalize_lora_muon_form_fields(flat)
-        _normalize_preview_loras(flat)
+        _normalize_preview_form(flat)
         return flat
 
     field_keys = {
@@ -338,27 +338,17 @@ def extract_training_form(document: dict[str, Any]) -> dict[str, Any]:
     flat["model_train_type"] = document["profile"]["id"]
     normalize_lora_muon_form_fields(flat)
     normalize_attention_config(flat)
-    _normalize_preview_loras(flat)
+    _normalize_preview_form(flat)
     return flat
 
 
-def _normalize_preview_loras(form):
-    from backend.training.preview.config import sampling_options
+def _normalize_preview_form(form):
+    from backend.training.preview.config import normalize_form
 
     try:
-        options = sampling_options(form.get("preview_sampler"), form.get("preview_scheduler"))
+        normalize_form(form)
     except ValueError as exc:
         raise TrainingConfigError(str(exc)) from exc
-    for name, value in options.items():
-        if "preview_" + name in form:
-            form["preview_" + name] = value
-    if "preview_loras" in form:
-        from backend.training.preview.config import normalize_loras
-
-        try:
-            form["preview_loras"] = normalize_loras(form["preview_loras"], allow_incomplete=True)
-        except ValueError as exc:
-            raise TrainingConfigError(str(exc)) from exc
 
 
 def build_training_config(

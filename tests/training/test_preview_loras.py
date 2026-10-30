@@ -130,6 +130,23 @@ class PreviewLoRATests(unittest.TestCase):
                 raise ValueError("sample failed")
         self.assertFalse(manager._active)
 
+    def test_empty_and_disabled_adapters_skip_model_inspection_and_weight_loading(self):
+        for architecture in ("anima", "moss_image"):
+            for rows in ([], [{"path": "missing.safetensors", "multiplier": 0}]):
+                with self.subTest(architecture=architecture, rows=rows):
+                    manager = LoRAManager(rows, architecture)
+                    layer = self.model.layers[0].proj.q
+                    x = torch.ones(1, 4)
+                    expected = layer(x)
+                    with patch.object(self.model, "named_modules", side_effect=AssertionError("unexpected model inspection")), \
+                         patch.object(manager, "_weights", side_effect=AssertionError("unexpected weight loading")):
+                        self.assertFalse(manager.needs_text_encoder)
+                        plan = manager.prepare(self.model, self.model)
+                        self.assertEqual(plan, {})
+                        with manager.activate(plan, "cpu"):
+                            torch.testing.assert_close(layer(x), expected, rtol=0, atol=0)
+                    self.assertNotIn("forward", layer.__dict__)
+
     def test_fp32_branch_survives_sampler_autocast(self):
         path, _ = self.file(alpha=2)
         self.model.to(torch.bfloat16)

@@ -148,6 +148,8 @@ class LoRAManager:
         self._prepared_signature = self._prepared = None
 
     def prepare(self, model, text_encoder=None):
+        if not any(row["multiplier"] != 0 for row in self.rows):
+            return {}
         index = module_index(model, self.architecture)
         if text_encoder is not None:
             for alias, targets in module_index(text_encoder, self.architecture).items():

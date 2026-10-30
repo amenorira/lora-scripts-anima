@@ -7,13 +7,13 @@ const subset = (name, repeats = 1) => ({ name, repeats, image_count: 1, sample_c
 function application(result, names) {
   const requests = [], toasts = [], state = { result, names };
   const { window } = loadFrontend(['training/dataset-repeat', 'training/preflight', 'training/timestep-preview'], {
-    window: {}, clearTimeout,
+    window: {}, setTimeout, clearTimeout,
     fetch: async (url, options) => {
       requests.push({ url, body: JSON.parse(options.body) });
       if (url.endsWith('/dataset-repeat') && state.pending) return state.pending.promise;
       if (url.endsWith('/estimate') && state.estimatePending) return state.estimatePending.promise;
       return { ok: true, json: async () => url.endsWith('/estimate')
-        ? { status: 'success', data: { subsets: state.names.map(name => subset(name)) } } : state.result };
+        ? { status: 'success', data: state.estimateData || { subsets: state.names.map(name => subset(name)) } } : state.result };
     },
   });
   const app = Object.assign({}, window.datasetRepeatMixin, window.trainingPreflight, window.trainingTimestepPreview, {
@@ -80,6 +80,61 @@ test('validation failures keep drafts without unnecessary rescans', async () => 
   await h.app.applyDatasetRepeatChanges();
   assert.equal(h.requests.length, 1);
   assert.equal(h.app.datasetRepeatDrafts['5_alpha'], '8');
+});
+
+test('validation failures and no-op responses resume debounced estimates with the latest parameters', async () => {
+  for (const result of [failed('targetExists'), { status: 'success', data: { applied: [] } }]) {
+    const h = application(result, ['5_alpha', '2_beta']);
+    h.app.stepEstimate.total_steps = 100;
+    h.state.estimateData = { total_steps: 50, subsets: h.app.stepEstimate.subsets };
+    h.app.form.train_batch_size = 2;
+    h.app.scheduleStepEstimate();
+    assert.ok(h.app._stepEstimateTimer);
+
+    await h.app.applyDatasetRepeatChanges();
+
+    assert.deepEqual(h.requests.map(item => item.url), ['/api/training/dataset-repeat', '/api/training/estimate']);
+    assert.equal(h.requests[1].body.train_batch_size, 2);
+    assert.equal(h.app.stepEstimate.total_steps, 50);
+    assert.equal(h.app.stepEstimateLoading, false);
+    assert.equal(h.app._stepEstimateTimer, null);
+    assert.equal(h.app.datasetRepeatDrafts['5_alpha'], '8');
+    h.app.scheduleStepEstimate();
+    assert.equal(h.app._stepEstimateTimer, null);
+  }
+});
+
+test('validation failures resume an in-flight estimate and ignore its late response', async () => {
+  const h = application(failed('targetExists'), ['5_alpha', '2_beta']);
+  h.state.estimatePending = deferred();
+  const oldEstimate = h.state.estimatePending;
+  const estimating = h.app.refreshStepEstimate(true);
+  h.state.estimatePending = null;
+  h.state.estimateData = { total_steps: 50, subsets: h.app.stepEstimate.subsets };
+
+  await h.app.applyDatasetRepeatChanges();
+  oldEstimate.resolve({ ok: true, json: async () => ({ status: 'success', data: { total_steps: 100, subsets: [] } }) });
+  await estimating;
+
+  assert.deepEqual(h.requests.map(item => item.url), ['/api/training/estimate', '/api/training/dataset-repeat', '/api/training/estimate']);
+  assert.equal(h.app.stepEstimate.total_steps, 50);
+  assert.equal(h.app.stepEstimateLoading, false);
+});
+
+test('validation failures run estimates deferred by parameter edits during the mutation', async () => {
+  const h = application(failed('targetExists'), ['5_alpha', '2_beta']);
+  h.state.pending = deferred();
+  h.state.estimateData = { total_steps: 50, subsets: h.app.stepEstimate.subsets };
+  const applying = h.app.applyDatasetRepeatChanges();
+  h.app.form.train_batch_size = 2;
+  h.app.scheduleStepEstimate();
+  assert.equal(h.requests.length, 1);
+  h.state.pending.resolve({ ok: true, json: async () => h.state.result });
+  await applying;
+
+  assert.equal(h.requests.length, 2);
+  assert.equal(h.requests[1].body.train_batch_size, 2);
+  assert.equal(h.app.stepEstimate.total_steps, 50);
 });
 
 test('late partial failure updates the original dataset draft without touching an unrelated form', async () => {

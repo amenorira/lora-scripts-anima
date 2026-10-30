@@ -233,6 +233,7 @@ window.datasetRepeatMixin = {
   async _runDatasetRepeatChanges(changes, dir) {
     const drafts = this.datasetRepeatDrafts;
     const isCurrent = () => String(this.form.train_data_dir || '').trim() === dir;
+    const estimateWasPending = this.stepEstimateLoading || this._stepEstimateTimer != null;
     if (this.datasetRepeatFailure?.dir === dir) this.datasetRepeatFailure = null;
     this.datasetRepeatApplying = true;
     this._datasetRepeatMutationDir = dir;
@@ -240,13 +241,21 @@ window.datasetRepeatMixin = {
     this._stepEstimateTimer = null;
     this._stepEstimateRequestSeq = (this._stepEstimateRequestSeq || 0) + 1;
     this.stepEstimateLoading = false;
+    const estimateRequestSeq = this._stepEstimateRequestSeq;
+    const refreshEstimateIfNeeded = async (changed) => {
+      // Restore cancelled estimates and edits deferred while directory names were unstable.
+      if (isCurrent() && (changed || estimateWasPending || this._stepEstimateRequestSeq !== estimateRequestSeq)) {
+        await this.refreshStepEstimate(true);
+      }
+    };
     try {
       const applied = (await this._postDatasetRepeatChanges(changes, dir)).applied || [];
       this._datasetRepeatMutationDir = null;
-      if (!applied.length) return [];
-      if (isCurrent() || this.datasetRepeatDrafts === drafts) this.datasetRepeatDrafts = {};
-      this._renameDatasetRepeatProfileOffsets(applied, dir);
-      if (isCurrent()) await this.refreshStepEstimate(true);
+      if (applied.length) {
+        if (isCurrent() || this.datasetRepeatDrafts === drafts) this.datasetRepeatDrafts = {};
+        this._renameDatasetRepeatProfileOffsets(applied, dir);
+      }
+      await refreshEstimateIfNeeded(applied.length > 0);
       return applied;
     } catch (error) {
       this._datasetRepeatMutationDir = null;
@@ -260,9 +269,7 @@ window.datasetRepeatMixin = {
         if (isCurrent() || this.datasetRepeatDrafts === drafts) this.datasetRepeatDrafts = {};
         this.datasetRepeatFailure = { dir, message: error.message };
       }
-      if (isCurrent() && (unknown || ['renameFailed', 'rollbackFailed'].includes(data.errorCode))) {
-        await this.refreshStepEstimate(true);
-      }
+      await refreshEstimateIfNeeded(unknown || ['renameFailed', 'rollbackFailed'].includes(data.errorCode));
       throw error;
     } finally {
       this._datasetRepeatMutationDir = null;
