@@ -1,4 +1,5 @@
 {
+	"previewLoras": {"add": "プレビュー LoRA を追加", "path": "LoRA ファイルパス", "multiplier": "倍率", "invalid": "プレビュー LoRA はパスと倍率を含むリストにしてください。"},
 	"regularization": {
 		"model_type": "モデルの種類",
 		"checkpoint": "SDXL チェックポイント（UNet・デュアル CLIP・VAE）",
@@ -1172,6 +1173,8 @@
 		"caption_tag_dropout_rate": "タグのドロップアウト率",
 		"caption_tag_dropout_rateHint": "タグをランダムに除外する確率です。保持対象のタグは除外しません。0 で無効になります。0 より大きい場合はメモリとディスクの両方のテキストキャッシュを無効にしてください。",
 		"enable_preview": "学習中にサンプル画像を生成",
+		"preview_loras": "外部 LoRA",
+		"preview_lorasHint": "プレビュー時のみ適用します。複数のファイルに個別の倍率を設定でき、0 で無効になります。同じモデル構造の LoRA、LoHa、LoKr、DoRA、OFT などに対応します。テキストエンコーダーを含む場合はプロンプトを再エンコードします。",
 		"sample_prompts": "サンプルのポジティブプロンプト",
 		"sample_promptsHint": "1 行に 1 件のポジティブプロンプトを入力し、各プロンプトからプレビューを 1 枚生成します。タグや自然文が使えます。例：1girl, smile, cherry blossoms。",
 		"sample_promptsHint_anima": "1 行に 1 件のポジティブプロンプトを入力し、各プロンプトからプレビューを 1 枚生成します。テキストキャッシュを使う場合は、学習開始前に確定してください。",

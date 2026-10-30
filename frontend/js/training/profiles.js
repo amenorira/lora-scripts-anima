@@ -209,6 +209,10 @@ window.trainingProfiles = {
       clean.lr_scheduler_timescale = defaults.lr_scheduler_timescale;
     }
     clean.model_train_type = trainType;
+    if (Object.hasOwn(clean, 'preview_loras') && this._normalizePreviewLoras) {
+      try { clean.preview_loras = this._normalizePreviewLoras(clean.preview_loras); }
+      catch (error) { clean.preview_loras = []; }
+    }
     return clean;
   },
 

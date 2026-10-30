@@ -56,6 +56,12 @@ def _install_bitsandbytes_windows_compat() -> None:
 _install_bitsandbytes_windows_compat()
 
 
+if os.environ.get("ANIMA_PREVIEW_LORAS_CONFIG"):
+    from tools.python_startup.preview_sampling import install_import_hook as install_preview_sampling
+
+    install_preview_sampling(os.environ["ANIMA_PREVIEW_LORAS_CONFIG"])
+
+
 if os.environ.get("ANIMA_TRAIN_LOG_LOCK"):
     from tools.python_startup.training_logging import install as install_training_logging
 

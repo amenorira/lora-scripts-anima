@@ -64,6 +64,9 @@ window.trainingConfigIoMixin = {
     const currentType = String(this.form && this.form.model_train_type || 'anima-lora');
     const importedType = String(parsed.model_train_type || currentType);
     if (!validTypes.has(importedType)) throw new Error(this.t('common.unsupportedTrainingType').replace('{type}', () => importedType));
+    if (Object.hasOwn(parsed, 'preview_loras') && this._normalizePreviewLoras) {
+      parsed = { ...parsed, preview_loras: this._normalizePreviewLoras(parsed.preview_loras) };
+    }
 
     const applyValues = () => {
       if (!canApply() || (fileImport && this.form.model_train_type !== importedType)) return false;

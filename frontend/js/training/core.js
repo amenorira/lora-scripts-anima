@@ -766,4 +766,5 @@ window.composeAppMixins(window.trainingCoreMixin, {
   conditions: window.trainingConditions, sections: window.trainingSections,
   validation: window.trainingValidation, profiles: window.trainingProfiles,
   preflight: window.trainingPreflight, filePicker: window.trainingFilePicker,
+  previewLoras: window.trainingPreviewLoras,
 });

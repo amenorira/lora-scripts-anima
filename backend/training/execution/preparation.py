@@ -84,7 +84,7 @@ def discard_preparation(task) -> None:
     generated = {
         "config.toml", "training.yaml", "dataset.toml", "sample_prompts.txt",
         "prompts.txt", "prompts.json", "cache-request.json", KREA2_PRESET_FILENAME,
-        "run_info.txt", "output_dir.txt",
+        "run_info.txt", "output_dir.txt", "preview_loras.json",
     }
     for directory in reversed(created):
         # A unique task suffix and an exclusive mkdir are required for ownership.

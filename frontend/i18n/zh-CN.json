@@ -1,4 +1,5 @@
 {
+	"previewLoras": {"add": "添加预览 LoRA", "path": "LoRA 文件路径", "multiplier": "倍率", "invalid": "预览 LoRA 必须是包含路径和倍率的列表。"},
 	"regularization": {
 		"model_type": "模型类型",
 		"checkpoint": "SDXL 完整模型（含 UNet、双 CLIP 和 VAE）",
@@ -1172,6 +1173,8 @@
 		"caption_tag_dropout_rate": "标签丢弃概率",
 		"caption_tag_dropout_rateHint": "按此概率随机丢弃标签，保留标签不受影响；0 关闭。大于 0 时须关闭内存和磁盘文本缓存。",
 		"enable_preview": "生成训练预览",
+		"preview_loras": "外部 LoRA",
+		"preview_lorasHint": "仅预览时叠加，可添加多个文件并分别设置倍率；0 为关闭。支持同架构的 LoRA、LoHa、LoKr、DoRA、OFT 等权重。含文本编码器权重时会重新编码预览提示词。",
 		"sample_prompts": "预览图正向提示词",
 		"sample_promptsHint": "每行一条正向提示词，每条生成一张预览图。可使用标签或自然语言，例如 1girl, smile, cherry blossoms。",
 		"sample_promptsHint_anima": "每行一条正向提示词，每条生成一张预览图。使用文本缓存时，须在训练开始前确定。",

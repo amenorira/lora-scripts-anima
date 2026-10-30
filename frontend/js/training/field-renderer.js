@@ -224,11 +224,13 @@ window.trainingFieldRenderer = {
     const isStaticReadonly = field.readonly === true;
     const staticReadonlyAttrs = isStaticReadonly ? ' readonly aria-readonly="true"' : '';
     // Text/textarea/path fields get their input on a separate row (full-width)
-    const isFullWidth = field.type === 'textarea' || (field.role && field.role.startsWith('file-'));
+    const isFullWidth = field.type === 'textarea' || field.type === 'lora-list' || (field.role && field.role.startsWith('file-'));
 
     // ── Generate input HTML ──
     let inputHtml = '';
-    if (isToggle) {
+    if (field.type === 'lora-list') {
+      inputHtml = this.previewLorasHtml();
+    } else if (isToggle) {
       inputHtml = `<label class="toggle"><input type="checkbox" aria-label="${fieldAriaLabel}" :checked="form.${dataKey}" @change="setField('${dataKey}', $event.target.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>`;
     } else if (field.type === 'select') {
       const fc = {};

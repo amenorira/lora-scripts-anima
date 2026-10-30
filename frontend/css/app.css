@@ -969,6 +969,14 @@ input[type="checkbox"]:focus-visible {
 }
 
 /* ── Input wrapper with embedded file buttons ────────────── */
+.preview-loras { display: grid; gap: 8px; width: 100%; }
+.preview-lora-row { display: grid; grid-template-columns: minmax(0, 1fr) 130px 28px; gap: 8px; align-items: center; }
+.preview-lora-row .field-input-wrap { min-width: 0; }
+.preview-lora-multiplier { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 12px; white-space: nowrap; }
+.preview-lora-multiplier span { flex-shrink: 0; }
+.preview-lora-multiplier input[type="number"] { min-width: 0; width: 0; flex: 1; }
+.preview-loras > .btn { justify-self: start; }
+
 .field-input-wrap {
   position: relative; width: 100%;
 }

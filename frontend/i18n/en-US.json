@@ -1,4 +1,5 @@
 {
+	"previewLoras": {"add": "Add preview LoRA", "path": "LoRA file path", "multiplier": "Strength", "invalid": "Preview LoRAs must be a list of paths and strengths."},
 	"regularization": {
 		"model_type": "Model type",
 		"checkpoint": "SDXL checkpoint (UNet, dual CLIP and VAE)",
@@ -1172,6 +1173,8 @@
 		"caption_tag_dropout_rate": "Tag dropout",
 		"caption_tag_dropout_rateHint": "Probability of randomly dropping tags; retained tags are exempt. 0 disables dropout. Above 0, disable both memory and disk text caches.",
 		"enable_preview": "Generate training previews",
+		"preview_loras": "External LoRAs",
+		"preview_lorasHint": "Applied only during previews. Add multiple files with independent strengths; 0 disables a row. Supports matching-model LoRA, LoHa, LoKr, DoRA, OFT and related weights. Text encoder adapters re-encode preview prompts.",
 		"sample_prompts": "Preview positive prompt",
 		"sample_promptsHint": "Enter one positive prompt per line; each produces one preview image. Use tags or natural language, for example: 1girl, smile, cherry blossoms.",
 		"sample_promptsHint_anima": "Enter one positive prompt per line; each produces one preview image. With text caching enabled, finalize the prompts before training starts.",

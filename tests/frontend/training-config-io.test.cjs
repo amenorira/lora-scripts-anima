@@ -96,6 +96,44 @@ test('training profiles keep independent drafts and reset from registry defaults
   assert.equal(app._fieldSources.learning_rate, 'default');
 });
 
+test('preview lists validate before import and survive profile switch and reset', async () => {
+  const fields = [
+    { key: 'preview_loras', type: 'lora-list', default: [] },
+  ];
+  const { window } = loadFrontend([...TRAINING_CORE_SCRIPTS, 'training/config-io'], {
+    window: { getVisibleSections: () => [{ key: 'preview', fields }], t: (_key, fallback) => fallback },
+    setTimeout, clearTimeout,
+  });
+  const app = Object.assign({}, window.trainingCoreMixin, window.trainingConfigIoMixin, {
+    form: { model_train_type: 'anima-lora', preview_loras: [] },
+    _activeTrainType: 'anima-lora', _profileFormDrafts: {}, _profileFieldSources: {}, _fieldSources: {},
+    currentRoute: '', formDefaults: {}, renderTrainingForm() {}, _scheduleProfileFieldWatchers() {},
+    updateToml() {}, rebuildForm() {}, toast() {}, t: key => key, $nextTick: fn => fn(),
+  });
+  const original = app.form;
+  for (const value of [{ path: 'one' }, [null], [{ multiplier: true }]]) {
+    assert.throws(() => app._applyImportedFlatConfig({
+      model_train_type: 'moss-image-lora', preview_loras: value,
+    }), /previewLoras.invalid/);
+    assert.equal(app.form, original);
+    assert.equal(app._activeTrainType, 'anima-lora');
+  }
+  await app._applyImportedFlatConfig({ model_train_type: 'anima-lora', preview_loras: [
+    { path: 'one.safetensors', multiplier: -0.3 }, { path: 'two.safetensors', multiplier: 0.7 },
+  ] });
+  app.switchTrainType('moss-image-lora');
+  assert.equal(app.form.preview_loras.length, 0);
+  app.form.preview_loras = [{ path: 'moss.safetensors', multiplier: 0.4 }];
+  app.switchTrainType('anima-lora');
+  assert.equal(app.form.preview_loras[0].multiplier, -0.3);
+  assert.equal(app.form.preview_loras[1].path, 'two.safetensors');
+  app.resetAllParams();
+  assert.equal(app.form.preview_loras.length, 0);
+  app._profileFormDrafts['moss-image-lora'].preview_loras = { path: 'corrupted draft' };
+  app.switchTrainType('moss-image-lora');
+  assert.equal(app.form.preview_loras.length, 0);
+});
+
 test('native TOML import keeps its parse profile but discards results after a profile switch', async () => {
   let reader, request, imported;
   const parsing = deferred();

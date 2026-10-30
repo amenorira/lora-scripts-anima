@@ -632,6 +632,7 @@ shared_training_field('save_state', default=False, target="toml", omit_default=T
 {"key": "caption_tag_dropout_rate", "type": "number", "default": 0, "section": "caption", "desc_key": "field.caption_tag_dropout_rate", "target": "toml", "min": 0, "max": 1, "step": 0.01, "omit_default": True},
 # ── Preview ──
 {"key": "enable_preview", "type": "toggle", "default": False, "section": "preview", "desc_key": "field.enable_preview", "target": "ui"},
+{"key": "preview_loras", "type": "lora-list", "default": [], "section": "preview", "desc_key": "field.preview_loras", "hint_key": "field.preview_lorasHint", "target": "ui", "group": ["anima", "moss_image"], "show_if": {"key": "enable_preview", "eq": True}},
 {"key": "positive_prompts", "type": "textarea", "default": "", "section": "preview", "desc_key": "field.sample_prompts", "target": "ui", "hint_key": "field.sample_promptsHint", "show_if": {"key": "enable_preview", "eq": True}},
 {"key": "negative_prompts", "type": "textarea", "default": "", "section": "preview", "desc_key": "field.negative_prompts", "target": "ui", "show_if": {"key": "enable_preview", "eq": True}},
     # 仅 SDXL 暴露采样器（sd-scripts 的 diffusers scheduler 路径）。

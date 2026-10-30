@@ -72,6 +72,8 @@ class MossImageLaunchTests(unittest.IsolatedAsyncioTestCase):
                                timestep_sampling="shift", subset_timestep_offsets={"1_character": 0.25},
                                enable_preview=True, positive_prompts="title\nsecond line",
                                sample_uncond_skip_layers="", log_timestep_count=True)
+            form["preview_loras"] = [{"path": paths["pretrained_model_name_or_path"], "multiplier": 0.8},
+                                     {"path": paths["pretrained_model_name_or_path"], "multiplier": -0.2}]
             with ExitStack() as stack:
                 stack.enter_context(patch.object(routes, "tm", TaskManager()))
                 for name, value in (("OUTPUT_DIR", root / "runs"),
@@ -85,6 +87,9 @@ class MossImageLaunchTests(unittest.IsolatedAsyncioTestCase):
             native = tomllib.loads(Path(launch.call_args.args[0]).read_text(encoding="utf-8"))
             self.assertEqual(native["sample_uncond_skip_layers"], "")
             self.assertNotIn("engine_id", native)
+            self.assertNotIn("preview_loras", native)
+            preview_path = Path(launch.call_args.kwargs["extra_env"]["ANIMA_PREVIEW_LORAS_CONFIG"])
+            self.assertEqual(json.loads(preview_path.read_text(encoding="utf-8"))["loras"], form["preview_loras"])
             self.assertNotIn("subset_timestep_offsets", native)
             prompts_path = Path(native["sample_prompts"])
             self.assertEqual(prompts_path.suffix, ".json")

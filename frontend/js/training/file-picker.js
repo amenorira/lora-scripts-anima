@@ -11,17 +11,19 @@ window.trainingFilePicker = {
   _pickerRequestSeq: 0,
   _nativePickerRequestSeq: 0,
   _pickerRole: '',
+  _pickerTarget: null,
   _invalidateTrainingPickers() {
     this._nativePickerRequestSeq++;
     this.closeFilePickerModal();
   },
   // ── File Pickers ───────────────────────────────────────
-  async localFilePicker(key, role) {
+  async localFilePicker(key, role, target = null) {
     const requestSeq = ++this._nativePickerRequestSeq;
     const form = this.form, route = this.currentRoute, profile = form.model_train_type, value = form[key];
     const isCurrent = () => requestSeq === this._nativePickerRequestSeq
       && this.form === form && this.currentRoute === route
-      && this.form.model_train_type === profile && this.form[key] === value;
+      && this.form.model_train_type === profile
+      && (target ? target.isCurrent() : this.form[key] === value);
     let type = 'folder';
     if (role==='file-model'||role==='file-model-saved') type='model-file';
     try {
@@ -29,7 +31,8 @@ window.trainingFilePicker = {
       const d = await r.json();
       if (!isCurrent()) return;
       if (d.status==='success'&&d.data&&d.data.path) {
-        this.setField(key, d.data.path);
+        if (target) target.setValue(d.data.path);
+        else this.setField(key, d.data.path);
       } else {
         // 非 success：后端用 message 区分"unavailable"(tkinter 不可用) 与 "cancelled"(用户取消)。
         // 给出反馈，避免点击后毫无响应被误认为"不生效"。
@@ -43,7 +46,7 @@ window.trainingFilePicker = {
     } catch(e) { if (isCurrent()) this.toast(this.t('common.localPickerNA'), 'error'); }
   },
 
-  async builtinFilePicker(key, role) {
+  async builtinFilePicker(key, role, target = null) {
     let pickType = 'model-file';
     if (role==='file-folder') pickType='train-dir';
     if (key === 'reg_data_dir' && role === 'file-folder') pickType = 'reg-dir';
@@ -51,7 +54,7 @@ window.trainingFilePicker = {
     if (role==='file-model-saved') pickType='model-saved-file';
     const requestSeq = ++this._pickerRequestSeq;
     this._pickerRole = role;
-    this.showFilePickerModal(key, [], pickType);
+    this.showFilePickerModal(key, [], pickType, target);
     this._pickerLoading = true;
     this._pickerError = '';
     try {
@@ -62,7 +65,7 @@ window.trainingFilePicker = {
       if (d.status !== 'success') throw new Error(d.message || this.t('common.fileBrowserFailed'));
       const files = d.data ? (d.data.files || d.data) : [];
       this._pickerFiles = Array.isArray(files) ? files : [];
-      this._pickerCurrent = this._normalizePickerPath(this.form[key]);
+      this._pickerCurrent = this._normalizePickerPath(target ? target.getValue() : this.form[key]);
       this._pickerIndex = this._pickerCurrent
         ? this.filteredPickerFiles.findIndex(f => this._normalizePickerPath(f.path) === this._pickerCurrent)
         : -1;
@@ -85,23 +88,25 @@ window.trainingFilePicker = {
     this._pickerRequestSeq++;
     this._pickerLoading = false;
     this.showFilePickerModalFlag = false;
+    this._pickerTarget = null;
   },
 
   retryFilePicker() {
-    if (this._pickerKey && this._pickerRole) this.builtinFilePicker(this._pickerKey, this._pickerRole);
+    if (this._pickerKey && this._pickerRole) this.builtinFilePicker(this._pickerKey, this._pickerRole, this._pickerTarget);
   },
 
   // 与后端 get_files 的扫描根目录保持一致，用于弹窗上下文显示与子目录分组
   PICKER_ROOTS: { 'model-file': './models', 'model-saved-file': './output', 'train-dir': './train', 'reg-dir': './train/regularization' },
 
-  showFilePickerModal(key, files, pickType) {
+  showFilePickerModal(key, files, pickType, target = null) {
+    this._pickerTarget = target;
     this._pickerKey = key;
     this._pickerFiles = files || [];
     this._pickerFilter = '';
     this._pickerError = '';
     this._pickerKind = pickType || '';
     this._pickerRoot = this.PICKER_ROOTS[pickType] || '';
-    this._pickerCurrent = this._normalizePickerPath(this.form[key]);
+    this._pickerCurrent = this._normalizePickerPath(target ? target.getValue() : this.form[key]);
     this.showFilePickerModalFlag = true;
     // 键盘高亮初始落在当前值所在行，并滚动到它
     const cur = this._pickerCurrent;
@@ -249,7 +254,8 @@ window.trainingFilePicker = {
 
   pickFileFromModal(file) {
     if (!file) return;
-    this.setField(this._pickerKey, file.path || file.name || '');
+    if (this._pickerTarget) this._pickerTarget.setValue(file.path || file.name || '');
+    else this.setField(this._pickerKey, file.path || file.name || '');
     this.closeFilePickerModal();
   },
 };
