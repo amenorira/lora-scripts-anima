@@ -4,6 +4,18 @@
 
 All notable changes to this project are documented in this file.
 
+## v26.1030.1044c - 2026-10-30
+
+This release expands **training previews for Anima and MOSS-Image** with external adapter stacking, selectable samplers and noise schedules, and improvements to configuration imports, dataset operations, and parameter previews.
+
+- **Stack multiple external adapters in training previews:** Use weights for the same architecture, including LoRA, LoHa, LoKr, DoRA, and OFT, applied in list order with an independent multiplier for each entry. External adapters are active only during previews; preview prompts are re-encoded when an adapter includes text encoder weights. Adapter lists are saved and restored with training configurations.
+- **Choose preview samplers and noise schedules:** Anima and MOSS-Image offer five samplers—Euler, ER-SDE, Euler ancestral, DPM++ 2M, and Heun—and eight noise schedules: Native, simple, sgm_uniform, beta, beta57, normal, karras, and exponential.
+- **Fix configuration imports and dataset state synchronization:** Prevent older configuration reads, parsing results, or training-profile switches from overwriting the current form, and improve consistency between step estimates and actual training. Improve state recovery, actual-path reporting, and estimate refreshes after failed repeat renames. Fix older snapshots overwriting forced sample refresh results.
+- **Improve learning-rate, timestep, and matrix previews:** Learning-rate curves show values at the start, midpoint, and end of training, along with zero-warmup settings. Timestep charts integrate noise-range shares and add the 10th and 90th percentiles. Matrix previews have improved grouping, diagram sizing, and narrow desktop layouts.
+- **Improve Chinese, English, and Japanese interfaces and documentation:** Complete localization for native file pickers, training monitoring, tagging status, and error messages. Add links between parameter guides, update multilingual descriptions and preview screenshots, and simplify repeated prompts and empty-state text.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1028.1348c...v26.1030.1044c)
+
 ## v26.1028.1348c - 2026-10-28
 
 This release improves **Krea 2 quantized models and previews**, adds optimizer **foreach updates and per-optimizer parameter drafts**, upgrades shared training dependencies, and fixes issues with file saving, training configuration, and monitoring.
