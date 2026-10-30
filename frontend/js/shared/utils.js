@@ -13,6 +13,18 @@ window.utilsMixin = {
   // Handles null/undefined/0 correctly.
   esc(s) { if (s == null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); },
 
+  nativePickerUrl(type) {
+    const params = new URLSearchParams({
+      picker_type: type,
+      title: this.t(`nativePicker.${type}.title`),
+    });
+    if (type !== 'folder') {
+      params.set('file_type_label', this.t(`nativePicker.${type}.files`));
+      params.set('all_files_label', this.t('nativePicker.allFiles'));
+    }
+    return '/api/pick_file?' + params;
+  },
+
   // monitor 命名空间 i18n 快捷包装：带点的 key 原样传，否则补 'monitor.' 前缀。
   tMonitor(key, fb) {
     const fullKey = key.includes('.') ? key : ('monitor.' + key);

@@ -67,7 +67,7 @@ def _get_tk_root():
 
 def open_file_selector(
         initialdir="",
-        title="Select a file",
+        title="",
         filetypes="*") -> str:
     global last_dir
     if last_dir != "":
@@ -86,7 +86,7 @@ def open_file_selector(
         return ""
 
 
-def open_directory_selector(initialdir) -> str:
+def open_directory_selector(initialdir, title="") -> str:
     global last_dir
     if last_dir != "":
         initialdir = last_dir
@@ -94,9 +94,10 @@ def open_directory_selector(initialdir) -> str:
         initialdir = os.getcwd()
     try:
         _get_tk_root()
-        directory = _filedialog.askdirectory(
-            initialdir=initialdir
-        )
+        options = {"initialdir": initialdir}
+        if title:
+            options["title"] = title
+        directory = _filedialog.askdirectory(**options)
         last_dir = directory
         return directory
     except (OSError, RuntimeError, TypeError):

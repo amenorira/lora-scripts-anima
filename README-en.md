@@ -2,7 +2,7 @@
 
 # lora-scripts-anima
 
-_✨ Multi-backend LoRA Training Tool: Anima, SDXL, MOSS-Image, and Krea 2 ✨_
+_A local LoRA training tool for Anima, SDXL, MOSS-Image, and Krea 2._
 
 A local GUI for LoRA training with training configuration, image tagging, caption editing, and real-time monitoring. Anima / SDXL / MOSS-Image use [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts), Krea 2 uses [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner), and [LyCORIS](https://github.com/KohakuBlueleaf/LyCORIS) adds training algorithms for Anima / SDXL.
 
@@ -41,14 +41,14 @@ Anima / SDXL / MOSS-Image support native LoRA, LoHa, and LoKr. Anima / SDXL also
 
 ## Feature Overview
 
-- **Training WebUI** — An all-in-one workspace with a LoRA training form, TOML configuration preview, configuration import/export, and training history
+- **Training configuration** — Edit training settings, preview, import, and export TOML, and review training history
 - **Pre-training previews** — Timestep distribution, learning-rate curve, and matrix structure modals computed locally; [see the next section](#pre-training-previews)
 - **LyCORIS adapter panel** — LoCon / LoHa / LoKr with algorithm-aware parameters, a selectable kernel backend (auto / Triton / TileLang / compile / Torch), LoRA+ support, and Anima training-scope refinement
 - **Many optimizers** — AdamW, Lion, Prodigy, CAME, StableAdamW, Adafactor, ScheduleFree, Adan, AdEMAMix, Muon, plus the bundled LoRA-RITE and the experimental LoRA-Muon, each with its own defaults and constraint hints
 - **Real-time Hardware Monitor** — GPU utilization, VRAM, and temperature; CPU and RAM usage; Chart.js charts, TensorBoard integration, and live logs
 - **Native Tag Editor** — Built-in image tag editor with batch find-and-replace, deduplication, sorting, cleanup, and more
 - **Tagger Workspace** — WD EVA02-Large, WD ViT-Large, CL Tagger, Camie Tagger, and [PixAI Tagger v1.0](https://huggingface.co/pixai-labs/pixai-tagger-v1.0) with single-image inspection, category thresholds, and batch caption output; PixAI runs locally with PyTorch, supports style tags, and downloads about 1.95 GB on first use; AI tagging connects to any vision API speaking OpenAI-compatible (Chat Completions / Responses) or Anthropic Messages protocols
-- **EmoSens Adaptive Optimizer** — Built-in EmoSens v3.9 with better convergence for Anima DiT training
+- **EmoSens Adaptive Optimizer** — Built-in EmoSens v3.9 adjusts the learning rate based on loss changes and suggests when to stop
 - **Internationalization (i18n)** — Chinese, English, and Japanese UI and built-in guides, with browser-language detection and a persistent language preference
 - **Three themes** — Light, dark, and ComfyUI themes, with auto-follow system preference or manual toggle
 - **Backend Connectivity Indicator** — Real-time frontend-backend connection status with disconnect duration
@@ -72,7 +72,7 @@ Open **View learning-rate curve** under the schedule field to inspect warmup, de
 
 ### Matrix structure
 
-For Anima or MOSS-Image training, open **Structure preview** under **Training network module**. Anima supports LoRA / LoCon, LoHa, and LoKr; MOSS-Image supports native LoRA / LoHa / LoKr, including its optional DiT text projection and refiner layers. The diagram reflects actual network construction. Switch between attention, MLP, and other modules to inspect tensor shapes, effective rank / alpha, scaling, matching layer counts, and parameter statistics.
+For Anima, MOSS-Image, or Krea 2 training, open **Structure preview** under **Training network module**. Anima supports LoRA / LoCon, LoHa, and LoKr; MOSS-Image supports native LoRA / LoHa / LoKr, including its optional DiT text projection and refiner layers; Krea 2 supports native LoRA and LyCORIS LoCon / LoHa / LoKr. The diagram reflects actual network construction. Switch between attention, MLP, and other modules to inspect tensor shapes, effective rank / alpha, scaling, matching layer counts, and parameter statistics.
 
 The entry also shows the **estimated weight-file size**, updating with the algorithm, rank, training scope, and save precision. Fake tensors make this possible without loading base-model weights or starting training. The estimate includes saved tensors and the safetensors index, and is not a VRAM estimate. See the [matrix structure and file-size guide](docs/parameters/matrix-preview.en-US.md).
 

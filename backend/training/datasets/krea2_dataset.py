@@ -10,19 +10,33 @@ from typing import Any
 _IMAGE_EXTENSIONS = {".bmp", ".jpeg", ".jpg", ".png", ".webp", ".avif"}
 
 
+class Krea2ResolutionError(ValueError):
+    """Resolution validation with a stable code for the step-estimate UI."""
+
+    def __init__(self, message: str, code: str):
+        super().__init__(message)
+        self.code = code
+
+
 def parse_krea2_resolution(value: Any) -> tuple[int, int]:
     if isinstance(value, (list, tuple)) and len(value) == 2:
         parts = value
     else:
         parts = [part.strip() for part in str(value).split(",")]
     if len(parts) != 2:
-        raise ValueError("resolution must be width,height / 分辨率必须为 宽,高")
+        raise Krea2ResolutionError(
+            "resolution must be width,height / 分辨率必须为 宽,高", "krea2ResolutionFormat"
+        )
     try:
         width, height = (int(parts[0]), int(parts[1]))
     except (TypeError, ValueError) as exc:
-        raise ValueError("resolution must contain two integers / 分辨率必须为两个整数") from exc
+        raise Krea2ResolutionError(
+            "resolution must contain two integers / 分辨率必须为两个整数", "krea2ResolutionIntegers"
+        ) from exc
     if width < 16 or height < 16 or width % 16 or height % 16:
-        raise ValueError("resolution must be positive multiples of 16 / 分辨率必须为 16 的正整数倍")
+        raise Krea2ResolutionError(
+            "resolution must be positive multiples of 16 / 分辨率必须为 16 的正整数倍", "krea2ResolutionMultiple16"
+        )
     return width, height
 
 

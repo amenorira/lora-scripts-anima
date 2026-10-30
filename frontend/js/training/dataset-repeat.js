@@ -20,12 +20,17 @@ window.datasetRepeatMixin = {
   },
 
   datasetRepeatLocked() {
-    return !!(this.trainingActive || this.isTraining);
+    return !!(this.trainingActive || this.isTraining || this.trainingStarting);
   },
 
   // 应用/重算在途时目录名正在变，中途再发请求会找不到子集。
   datasetRepeatReadOnly() {
     return this.datasetRepeatLocked() || !!this.datasetRepeatApplying;
+  },
+
+  datasetRepeatFailureText() {
+    const failure = this.datasetRepeatFailure;
+    return failure?.dir === String(this.form.train_data_dir || '').trim() ? failure.message : '';
   },
 
   datasetRepeatSubsets() {
@@ -166,7 +171,8 @@ window.datasetRepeatMixin = {
     const next = {};
     Object.entries(current).forEach(([key, value]) => {
       if (moves.has(key)) {
-        next[moves.get(key)] = value;
+        // newName 为空时清除部分回滚后不再可靠的偏移。
+        if (moves.get(key)) next[moves.get(key)] = value;
         touched = true;
       } else {
         next[key] = value;
@@ -180,6 +186,23 @@ window.datasetRepeatMixin = {
     this.pushHistory({ ...this.form, subset_timestep_offsets: { ...next } });
     if (typeof this.queueTomlPreviewChange === 'function') this.queueTomlPreviewChange('subset_timestep_offsets');
     if (typeof this.updateToml === 'function') this.updateToml();
+  },
+
+  _renameDatasetRepeatProfileOffsets(pairs, dir) {
+    const isCurrent = String(this.form.train_data_dir || '').trim() === dir;
+    if (isCurrent) {
+      this._renameSubsetTimestepOffsets(pairs);
+      this._captureProfileDraft?.(this.form.model_train_type, this.form);
+    }
+    const moves = new Map(pairs.map(item => [item.oldName, item.newName]));
+    for (const [draftProfile, draft] of Object.entries(this._profileFormDrafts || {})) {
+      if ((isCurrent && draftProfile === this.form.model_train_type) || String(draft.train_data_dir || '').trim() !== dir) continue;
+      const offsets = Object.fromEntries(Object.entries(draft.subset_timestep_offsets || {})
+        .filter(([name]) => !moves.has(name) || moves.get(name))
+        .map(([name, offset]) => [moves.get(name) || name, offset]));
+      this._profileFormDrafts[draftProfile] = { ...draft, subset_timestep_offsets: offsets };
+    }
+    this._persistProfileDrafts();
   },
 
   async _postDatasetRepeatChanges(changes, dir) {
@@ -199,23 +222,57 @@ window.datasetRepeatMixin = {
       }));
     }
     if (!response.ok || result.status !== 'success' || !result.data) {
-      throw new Error(this.datasetRepeatErrorText(result));
+      const error = new Error(this.datasetRepeatErrorText(result));
+      error.datasetRepeatData = result.data;
+      throw error;
     }
     return result.data;
   },
 
-  // 改名整批要么全成要么回滚（后端保证），所以一次请求只重算一次；等它返回再解除禁用，
-  // 界面就不会出现"已改名但列表还是旧名"的窗口。
+  // 请求失败也可能已改动磁盘：回滚不完整时同步实际名称，并保留人工恢复所需的信息。
   async _runDatasetRepeatChanges(changes, dir) {
+    const drafts = this.datasetRepeatDrafts;
+    const isCurrent = () => String(this.form.train_data_dir || '').trim() === dir;
+    const estimateWasPending = this.stepEstimateLoading || this._stepEstimateTimer != null;
+    if (this.datasetRepeatFailure?.dir === dir) this.datasetRepeatFailure = null;
     this.datasetRepeatApplying = true;
+    this._datasetRepeatMutationDir = dir;
+    clearTimeout(this._stepEstimateTimer);
+    this._stepEstimateTimer = null;
+    this._stepEstimateRequestSeq = (this._stepEstimateRequestSeq || 0) + 1;
+    this.stepEstimateLoading = false;
+    const estimateRequestSeq = this._stepEstimateRequestSeq;
+    const refreshEstimateIfNeeded = async (changed) => {
+      // Restore cancelled estimates and edits deferred while directory names were unstable.
+      if (isCurrent() && (changed || estimateWasPending || this._stepEstimateRequestSeq !== estimateRequestSeq)) {
+        await this.refreshStepEstimate(true);
+      }
+    };
     try {
       const applied = (await this._postDatasetRepeatChanges(changes, dir)).applied || [];
-      if (!applied.length) return [];
-      this.datasetRepeatDrafts = {};
-      this._renameSubsetTimestepOffsets(applied);
-      await this.refreshStepEstimate(true);
+      this._datasetRepeatMutationDir = null;
+      if (applied.length) {
+        if (isCurrent() || this.datasetRepeatDrafts === drafts) this.datasetRepeatDrafts = {};
+        this._renameDatasetRepeatProfileOffsets(applied, dir);
+      }
+      await refreshEstimateIfNeeded(applied.length > 0);
       return applied;
+    } catch (error) {
+      this._datasetRepeatMutationDir = null;
+      const data = error.datasetRepeatData;
+      const unknown = !data?.errorCode || data.errorCode === 'failed';
+      if (unknown || data.errorCode === 'rollbackFailed') {
+        const names = unknown ? changes.map(item => item.name)
+          : (data.recovery || []).flatMap(item => [item.oldName, item.currentName]);
+        this._renameDatasetRepeatProfileOffsets(names.map(name => ({ oldName: name, newName: null })), dir);
+        if (this.datasetRepeatLastApplied?.dir === dir) this.datasetRepeatLastApplied = null;
+        if (isCurrent() || this.datasetRepeatDrafts === drafts) this.datasetRepeatDrafts = {};
+        this.datasetRepeatFailure = { dir, message: error.message };
+      }
+      await refreshEstimateIfNeeded(unknown || ['renameFailed', 'rollbackFailed'].includes(data.errorCode));
+      throw error;
     } finally {
+      this._datasetRepeatMutationDir = null;
       this.datasetRepeatApplying = false;
     }
   },
@@ -235,7 +292,7 @@ window.datasetRepeatMixin = {
         count: applied.length,
       }));
     } catch (error) {
-      // 失败时保留草稿：用户可以直接改掉冲突项再应用一次。
+      // 校验失败或完整回滚时保留草稿；部分回滚已在上层清除失效状态。
       this.toast(error.message, 'error');
     }
   },
@@ -261,7 +318,7 @@ window.datasetRepeatMixin = {
     void this.locale;
     let text = this.t(key, fallback);
     Object.keys(values || {}).forEach(name => {
-      text = text.replace(`{${name}}`, String(values[name]));
+      text = text.replaceAll(`{${name}}`, () => String(values[name]));
     });
     return text;
   },
@@ -278,11 +335,14 @@ window.datasetRepeatMixin = {
       targetExists: 'datasetRepeat.errors.targetExists',
       duplicateTarget: 'datasetRepeat.errors.duplicateTarget',
       renameFailed: 'datasetRepeat.errors.renameFailed',
+      rollbackFailed: 'datasetRepeat.errors.rollbackFailed',
       trainingActive: 'datasetRepeat.errors.trainingActive',
     };
     // 未覆盖的 errorCode 走兜底，不把后端的中英双语 message 直接塞进界面。
     const key = keys[data.errorCode] || 'datasetRepeat.errors.failed';
-    return this._datasetRepeatText(key, (result && result.message) || '', params);
+    const message = this._datasetRepeatText(key, (result && result.message) || '', params);
+    const recovery = (data.recovery || []).map(item => `${item.currentPath} → ${item.originalPath}`).join('\n');
+    return recovery ? `${message}\n${recovery}` : message;
   },
 
   renderDatasetSubsets() {
@@ -296,6 +356,7 @@ window.datasetRepeatMixin = {
         </div>
         <span class="dataset-subset-total" x-show="datasetRepeatSubsets().length" x-text="datasetRepeatTotalLabel()"></span>
       </div>
+      <div class="field-hint dataset-subset-invalid" style="white-space: pre-wrap; overflow-wrap: anywhere" x-show="datasetRepeatFailureText()" x-text="datasetRepeatFailureText()"></div>
       <div class="dataset-subset-empty field-hint" x-show="!datasetRepeatShowList()" x-text="datasetRepeatEmptyText()"></div>
       <div class="dataset-subset-list" x-show="datasetRepeatShowList()">
         <div class="dataset-subset-row dataset-subset-row--head">

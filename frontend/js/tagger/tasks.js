@@ -77,7 +77,7 @@ window.taggerTasksMixin = {
       };
       const response = await fetch('/api/tagger/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const body = await response.json();
-      if (body.status !== 'success') throw new Error(body.message || 'Unable to start');
+      if (body.status !== 'success') throw new Error(body.message || this.t('tagger.startFailed'));
       this.attachTaggerTask(body.data.task_id, mode);
     } catch (error) { this.toast(error.message, 'error'); }
     finally { this.taggerStarting = false; }
@@ -260,7 +260,7 @@ window.taggerTasksMixin = {
     try {
       const response = await fetch(`/api/tagger/tasks/${encodeURIComponent(taskId)}/retry`, { method: 'POST' });
       const body = await response.json();
-      if (body.status !== 'success') throw new Error(body.message || 'Retry failed');
+      if (body.status !== 'success') throw new Error(body.message || this.t('tagger.retryRequestFailed'));
       this.attachTaggerTask(body.data.task_id, mode);
     } catch (error) { this.toast(error.message, 'error'); }
   },
@@ -279,7 +279,9 @@ window.taggerTasksMixin = {
     if (seconds == null) return '--';
     const value = Math.max(0, Number(seconds) || 0);
     const minutes = Math.floor(value / 60);
-    return minutes ? `${minutes}m ${Math.round(value % 60)}s` : `${Math.round(value)}s`;
+    return minutes
+      ? this.t('tagger.etaMinutesSeconds').replace('{minutes}', minutes).replace('{seconds}', Math.round(value % 60))
+      : this.t('tagger.etaSeconds').replace('{seconds}', Math.round(value));
   },
 
   taggerPhaseLabel() {

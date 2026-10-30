@@ -127,10 +127,10 @@ window.taggerMixin = {
     this._taggerMountPromise = (async () => {
       try {
         const response = await fetch('/anima-ui/templates/tagger-workspace.html');
-        if (!response.ok) throw new Error('Workspace template unavailable');
+        if (!response.ok) throw new Error(this.t('tagger.workspaceLoadFailed'));
         host.innerHTML = await response.text();
         const captionTemplate = await fetch('/anima-ui/templates/caption-workspace.html');
-        if (!captionTemplate.ok) throw new Error('Caption workspace unavailable');
+        if (!captionTemplate.ok) throw new Error(this.t('caption.workspaceLoadFailed'));
         host.querySelector('#captionWorkspaceMount').outerHTML = await captionTemplate.text();
         host.dataset.mounted = '1';
         if (window.Alpine) Alpine.initTree(host);
@@ -175,7 +175,7 @@ window.taggerMixin = {
     try {
       const response = await fetch('/api/tagger/models');
       const body = await response.json();
-      if (body.status !== 'success' || !body.data) throw new Error(body.message || 'Model registry unavailable');
+      if (body.status !== 'success' || !body.data) throw new Error(body.message || this.t('tagger.modelRegistryUnavailable'));
       this.taggerModels = body.data.models || [];
       this.taggerHardware = body.data.hardware || {};
       const savedModel = localStorage.getItem('anima-tagger-model') || '';

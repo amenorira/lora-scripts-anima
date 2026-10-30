@@ -21,7 +21,6 @@ from backend.tagger.interrogator import (
     gpu_inference_lock,
     on_interrogate,
 )
-from backend.tagger.interrogators.base import CATEGORY_LABELS
 from backend.tagger import captioning, api_engine
 from backend.tagger import workspace
 from backend.tagger.registry import DEFAULT_MODEL_ID, MODEL_SPEC_BY_ID, model_payload
@@ -366,7 +365,7 @@ async def tagger_single_image(
         for category, tag_list in tags.items()
     }
     categories = {category: tag_list for category, tag_list in categories.items() if tag_list}
-    labels = {category: CATEGORY_LABELS.get(category, category) for category in categories}
+    labels = {category: category for category in categories}
     return APIResponseSuccess(data={
         "model": interrogator_model,
         "categories": categories,

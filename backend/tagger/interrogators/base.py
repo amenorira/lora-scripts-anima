@@ -46,21 +46,6 @@ CAMIE_THRESHOLD_PRESETS = {
     "micro": CAMIE_MICRO_THRESHOLDS,
 }
 
-# 各分类显示名称
-CATEGORY_LABELS = {
-    "general": "特征 (General)",
-    "character": "角色 (Character)",
-    "copyright": "版权 (Copyright)",
-    "artist": "画师 (Artist)",
-    "meta": "元数据 (Meta)",
-    "year": "年份 (Year)",
-    "rating": "分级 (Rating)",
-    "quality": "质量 (Quality)",
-    "model": "模型 (Model)",
-    "style": "风格 (Style)",
-}
-
-
 def create_onnx_session(model_path: str | Path):
     """创建 CUDA 优先的 ONNX 会话（打标模型共享的默认配置）。
 

@@ -122,38 +122,30 @@ async def file_picker_available():
 
 
 @router.get("/pick_file")
-async def pick_file(picker_type: str):
+async def pick_file(
+    picker_type: str, title: str = "", file_type_label: str = "", all_files_label: str = ""
+):
     if not tk_is_available():
         return APIResponseFail(message="unavailable / 不可用")
     if picker_type == "folder":
-        coro = asyncio.get_event_loop().run_in_executor(_tk_executor, open_directory_selector, "")
-    elif picker_type == "model-file":
-        model_file_kinds = [
-            ("模型文件 (checkpoints)", "*.safetensors;*.ckpt;*.pt"),
-            ("所有文件 (all files)", "*.*"),
+        coro = asyncio.get_event_loop().run_in_executor(_tk_executor, open_directory_selector, "", title)
+    else:
+        pattern = {
+            "model-file": "*.safetensors;*.ckpt;*.pt",
+            "text-file": "*.txt;*.md",
+            "image-file": "*.png;*.jpg;*.jpeg;*.webp;*.bmp;*.gif;*.tif;*.tiff;*.avif",
+        }.get(picker_type)
+        if pattern is None:
+            return APIResponseFail(message=f"Invalid picker_type / 无效的选择器类型: {picker_type}")
+        file_types = [
+            (file_type_label or pattern, pattern),
+            (all_files_label or "*.*", "*.*"),
         ]
 
         def _pick():
-            return open_file_selector("", "Select file", model_file_kinds)
+            return open_file_selector("", title, file_types)
 
         coro = asyncio.get_event_loop().run_in_executor(_tk_executor, _pick)
-    elif picker_type == "text-file":
-        def _pick_text():
-            return open_file_selector("", "Select text file", [("text files", "*.txt;*.md"), ("all files", "*.*")])
-
-        coro = asyncio.get_event_loop().run_in_executor(_tk_executor, _pick_text)
-    elif picker_type == "image-file":
-        file_types = [
-            ("images", "*.png;*.jpg;*.jpeg;*.webp;*.bmp;*.gif;*.tif;*.tiff;*.avif"),
-            ("all files", "*.*"),
-        ]
-
-        def _pick_image():
-            return open_file_selector("", "Select image", file_types)
-
-        coro = asyncio.get_event_loop().run_in_executor(_tk_executor, _pick_image)
-    else:
-        return APIResponseFail(message=f"Invalid picker_type / 无效的选择器类型: {picker_type}")
 
     result = await coro
     if result == "":

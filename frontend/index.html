@@ -78,6 +78,7 @@
   <script src="/anima-ui/js/training/conditions.js" defer></script>
   <script src="/anima-ui/js/training/timestep-preview.js" defer></script>
   <script src="/anima-ui/js/training/field-renderer.js" defer></script>
+  <script src="/anima-ui/js/training/preview-loras.js" defer></script>
   <script src="/anima-ui/js/training/network-panel.js" defer></script>
   <script src="/anima-ui/js/training/core.js" defer></script>
   <script src="/anima-ui/js/training/dataset-repeat.js" defer></script>
@@ -293,7 +294,7 @@
 
           <div class="home-hero-meta" x-show="version">
             <span class="home-hero-meta-item">
-              <span class="home-hero-meta-k">build</span><span class="home-hero-meta-v" x-text="version"></span>
+              <span class="home-hero-meta-k" x-text="t('home.build')"></span><span class="home-hero-meta-v" x-text="version"></span>
             </span>
           </div>
 
@@ -307,10 +308,10 @@
 
           <div class="home-hero-badges">
             <a class="home-badge" href="https://github.com/amenorira/lora-scripts-anima/blob/main/LICENSE" target="_blank" rel="noopener">
-              <span class="home-badge-l">License</span><span class="home-badge-v home-badge-v-license">MIT</span>
+              <span class="home-badge-l" x-text="t('home.license')"></span><span class="home-badge-v home-badge-v-license">MIT</span>
             </a>
             <a class="home-badge" href="https://github.com/amenorira/lora-scripts-anima/releases" target="_blank" rel="noopener">
-              <span class="home-badge-l">Release</span><span class="home-badge-v home-badge-v-release" x-text="displayVersion()">...</span>
+              <span class="home-badge-l" x-text="t('home.release')"></span><span class="home-badge-v home-badge-v-release" x-text="displayVersion()">...</span>
             </a>
           </div>
 
@@ -410,7 +411,7 @@
                               :aria-current="docsSelectedSlug === doc.slug ? 'page' : null"
                               :aria-busy="docsPendingSlug === doc.slug ? 'true' : 'false'"
                               @click="selectParameterDoc(doc.slug)">
-                        <span class="docs-index-item-title" x-text="doc.title"></span>
+                        <span class="docs-index-item-title" x-text="docsDocumentTitle(doc.slug)"></span>
                         <span class="docs-index-item-state" aria-hidden="true">
                           <span class="docs-index-spinner" x-show="docsPendingSlug === doc.slug"></span>
                         </span>
@@ -510,7 +511,7 @@
                       @click="scrollToSection(s.key)" role="menuitem">
                 <span class="train-section-menu-num" x-text="String(idx + 1)"></span>
                 <span class="train-section-menu-title" x-text="s.title"></span>
-                <span class="train-section-menu-state" x-show="s.collapsed" x-text="t('common.collapsed', '已收起')"></span>
+                <span class="train-section-menu-state" x-show="s.collapsed" x-text="t('common.collapsed')"></span>
               </button>
             </template>
           </div>
@@ -724,7 +725,6 @@
             </svg>
           </div>
           <div class="te-empty-title" x-text="t('tagEditor.noImages')"></div>
-          <div class="te-empty-desc" x-text="t('tagEditor.datasetDirPlaceholder')"></div>
           <div class="te-empty-actions">
             <input type="text" x-model="tagEditorDir" :placeholder="t('tagEditor.datasetDirPlaceholder')"
               @keydown.enter="tagEditorLoad(tagEditorDir)">
@@ -1529,7 +1529,7 @@
           <div class="panel-header">
             <span x-text="parameterPreviewTitle()">Parameter Preview</span>
           </div>
-          <div class="panel-preview" id="tomlPreview" x-effect="updateTomlDebounced()"># Parameters will appear here</div>
+          <div class="panel-preview" id="tomlPreview" x-init="$el.textContent = t('common.loading')" x-effect="updateTomlDebounced()"></div>
           <div class="panel-actions">
             <div class="btn-row">
               <button class="btn btn-ghost btn-sm" @click="resetAllParams()" x-text="t('common.resetAll')">Reset All</button>
@@ -1752,7 +1752,23 @@
         </section>
         <section class="preview-info-section">
           <h3 x-text="t('timestepPreview.weightSection')"></h3>
-          <div class="timestep-preview-meta"><span><small x-text="t('timestepPreview.weighting')"></small><b x-text="timestepPreviewData?.weightingLabel"></b></span></div>
+          <div class="timestep-preview-meta"><span class="timestep-help-target" :tabindex="timestepPreviewData?.uniformWeightHelp ? 0 : null" :aria-describedby="timestepPreviewData?.uniformWeightHelp ? 'timestep-weight-help' : null"><small x-text="t('timestepPreview.weighting')"></small><b x-text="timestepPreviewData?.weightingLabel"></b><span id="timestep-weight-help" class="timestep-help-popup" role="tooltip" x-show="timestepPreviewData?.uniformWeightHelp" x-text="t('timestepPreview.uniformWeightNote')"></span></span></div>
+        </section>
+        <section class="preview-info-section">
+          <h3 x-text="t('timestepPreview.rangeSection')"></h3>
+          <div class="timestep-preview-ranges">
+            <span><small x-text="t('timestepPreview.structureZone')"></small><b>667–1000</b></span>
+            <span><small x-text="t('timestepPreview.middleZone')"></small><b>333–667</b></span>
+            <span><small x-text="t('timestepPreview.detailZone')"></small><b>0–333</b></span>
+          </div>
+        </section>
+        <section class="preview-info-section">
+          <h3 x-text="t('timestepPreview.percentileSection')"></h3>
+          <div class="timestep-preview-meta">
+            <span><small x-text="t('timestepPreview.percentile10')"></small><b x-text="timestepPreviewData?.percentile10"></b></span>
+            <span><small x-text="t('timestepPreview.percentile90')"></small><b x-text="timestepPreviewData?.percentile90"></b></span>
+          </div>
+          <p class="timestep-percentile-note" x-text="t('timestepPreview.percentileNote')"></p>
         </section>
 
         <div class="timestep-preview-notes" :class="{'preview-warning': timestepPreviewData?.warning}" x-show="timestepPreviewData && timestepPreviewData.notes.length">
@@ -1760,8 +1776,6 @@
             <div><span aria-hidden="true">•</span><span x-text="note"></span></div>
           </template>
         </div>
-        <p class="timestep-preview-footnote" x-text="t('timestepPreview.interpretationHint')"></p>
-        <p class="timestep-preview-footnote" x-text="t('timestepPreview.footnote')"></p>
       </div>
 
       <!-- ▶ Right: Scientific Chart Workspace + Zone Summary -->
@@ -1823,6 +1837,14 @@
             <span><small x-text="t('lrPreview.power')"></small><b x-text="lrPreviewData && lrPreviewData.power"></b></span>
           </template>
         </div>
+        </section>
+        <section class="preview-info-section" x-show="lrPreviewData && !lrPreviewData.unavailable">
+          <h3 x-text="t('lrPreview.milestones')"></h3>
+          <div class="lr-preview-meta">
+            <span><small x-text="t('lrPreview.atStart')"></small><b x-text="lrPreviewData?.milestoneRates[0]"></b></span>
+            <span><small x-text="t('lrPreview.atMiddle')"></small><b x-text="lrPreviewData?.milestoneRates[1]"></b></span>
+            <span><small x-text="t('lrPreview.atEnd')"></small><b x-text="lrPreviewData?.milestoneRates[2]"></b></span>
+          </div>
         </section>
         <div class="lr-preview-notes" :class="{'preview-warning': lrPreviewData?.warning}" x-show="lrPreviewData && lrPreviewData.notes.length">
           <template x-for="(note, index) in (lrPreviewData ? lrPreviewData.notes : [])" :key="index">

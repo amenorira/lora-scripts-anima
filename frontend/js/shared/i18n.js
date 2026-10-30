@@ -159,8 +159,7 @@ const I18N = (() => {
    * Returns [{ code: 'zh-CN', name: '中文' }, ...]
    */
   function getAvailableLocales() {
-    const names = { 'zh-CN': '中文', 'en-US': 'English', 'ja-JP': '日本語' };
-    return LOCALES.map(l => ({ code: l, name: names[l] || l }));
+    return LOCALES.map(code => ({ code, name: t('common.languageNames.' + code, code) }));
   }
 
   return { init, t, getLocale, setLocale, getAvailableLocales };

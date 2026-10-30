@@ -426,7 +426,7 @@ window.tagDictionaryMixin = {
       .then(function (response) { return response.json(); })
       .then(function (payload) {
         if (!payload || payload.status !== 'success') {
-          throw new Error((payload && payload.message) || 'install failed');
+          throw new Error((payload && payload.message) || self.t('environment.installFailed'));
         }
         if (payload.data && payload.data.status) self.tagDictionaryServer = payload.data.status;
         self._tdPollInstall();

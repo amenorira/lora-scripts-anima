@@ -28,10 +28,12 @@ _TEMP_PREFIX = ".repeat_tmp_"
 class DatasetRepeatError(Exception):
     """改名失败。code 供前端定位文案，params 供文案插值。"""
 
-    def __init__(self, message: str, code: str, params: dict[str, Any] | None = None) -> None:
+    def __init__(self, message: str, code: str, params: dict[str, Any] | None = None,
+                 details: dict[str, Any] | None = None) -> None:
         super().__init__(message)
         self.code = code
         self.params = params or {}
+        self.details = details or {}
 
 
 def _parse_repeats(raw: Any) -> int:
@@ -148,7 +150,7 @@ def _rename_operations(root: Path, plan: list[dict]) -> list[tuple[Path, Path]]:
 def apply_subset_repeats(dataset_dir: Any, changes: Any) -> dict[str, Any]:
     """按批次改子集的 repeat（= 目录名数字前缀）。
 
-    全部校验通过后才动手；执行中途出错会把已完成的改名回滚，不留半成品。
+    全部校验通过后才动手；执行出错时尝试回滚，回滚不完整时返回每个目录的恢复位置。
     """
     raw_dir = str(dataset_dir or "").strip()
     root = Path(raw_dir).expanduser()
@@ -165,21 +167,46 @@ def apply_subset_repeats(dataset_dir: Any, changes: Any) -> dict[str, Any]:
         return {"applied": []}
 
     performed: list[tuple[Path, Path]] = []
+    locations = {item["oldName"]: root / item["oldName"] for item in plan}
+    owners = {path: name for name, path in locations.items()}
+
+    def rename(source: Path, destination: Path) -> None:
+        # POSIX rename 可覆盖空目录；失败恢复时也不能覆盖另一项尚未移走的目录。
+        if destination.exists():
+            raise FileExistsError(f"Rename target already exists: {destination}")
+        source.rename(destination)
+        owner = owners.pop(source)
+        owners[destination] = owner
+        locations[owner] = destination
+
     try:
         for source, destination in _rename_operations(root, plan):
-            source.rename(destination)
+            rename(source, destination)
             performed.append((source, destination))
     except OSError as exc:
+        rollback_errors = []
         for source, destination in reversed(performed):
             try:
-                destination.rename(source)
-            except OSError:
-                pass
+                rename(destination, source)
+            except OSError as rollback_exc:
+                rollback_errors.append({
+                    "from": str(destination.absolute()), "to": str(source.absolute()),
+                    "reason": str(rollback_exc),
+                })
+        recovery = [
+            {"oldName": name, "currentName": path.name,
+             "originalPath": str((root / name).absolute()), "currentPath": str(path.absolute())}
+            for name, path in locations.items() if path != root / name
+        ]
         names = ", ".join(item["oldName"] for item in plan)
+        recovery_text = "\n".join(f"{item['currentPath']} -> {item['originalPath']}" for item in recovery)
         raise DatasetRepeatError(
-            f"Could not rename dataset subset / 无法重命名数据集子集（{names}）: {exc}",
-            code="renameFailed",
+            f"Could not rename dataset subset / 无法重命名数据集子集（{names}）: {exc}"
+            + (f"\nRollback incomplete / 回滚不完整，请恢复以下目录：\n{recovery_text}" if recovery else ""),
+            code="rollbackFailed" if recovery else "renameFailed",
             params={"names": names, "reason": str(exc)},
+            details={"mutationAttempted": bool(performed), "recovery": recovery,
+                     "rollbackErrors": rollback_errors},
         ) from exc
 
     return {"applied": plan}

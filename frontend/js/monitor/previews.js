@@ -2,13 +2,15 @@
 window.monitorPreviewsMixin = {
   _invalidatePreviewRequest() {
     this._previewRequestSeq++;
+    this._previewSnapshotSeq++;
     this.previewsLoading = false;
   },
 
-  _applyPreviewSnapshot(previews, requestSeq = this._previewRequestSeq) {
-    if (requestSeq !== this._previewRequestSeq) return false;
+  _applyPreviewSnapshot(previews, snapshotSeq = this._previewSnapshotSeq) {
+    if (snapshotSeq !== this._previewSnapshotSeq) return false;
     const wasAtEnd = this.previews.length === 0 || this.previewStep >= this.previews.length - 1;
-    this._invalidatePreviewRequest();
+    // A cacheable snapshot must not cancel a forced refresh already in flight.
+    this._previewSnapshotSeq++;
     this.previews = Array.isArray(previews) ? previews : [];
     this.previewsVersion++;
     this._followLatestPreview(wasAtEnd);
@@ -166,6 +168,7 @@ window.monitorPreviewsMixin = {
     if (this.previewsLoading) return;
     this.previewsLoading = true;
     const requestSeq = ++this._previewRequestSeq;
+    this._previewSnapshotSeq++;
     const sourceRunDir = this.currentOutputRunDir;
     const sourceTaskId = this.taskId;
     const isCurrent = () => requestSeq === this._previewRequestSeq
@@ -186,6 +189,8 @@ window.monitorPreviewsMixin = {
       const j = await r.json();
       if (!isCurrent()) return;
       if (j.status === 'success') {
+        // Reject snapshots started during the refresh if they arrive after it.
+        this._previewSnapshotSeq++;
         this.previews = j.data || [];
         this.previewsVersion++;
         if (j.meta) {
@@ -250,7 +255,13 @@ window.monitorPreviewsMixin = {
 
   _sampleMetadata(filename) {
     const match = String(filename || '').match(/(?:^|_)(e?)(\d{6})_(\d{2})_/i);
-    return match ? { stage: (match[1] ? 'Epoch ' : 'Step ') + Number(match[2]), prompt: 'Prompt ' + (Number(match[3]) + 1) } : { stage: '', prompt: '' };
+    if (!match) return { stage: '', stageLabel: '', prompt: '' };
+    const kind = match[1] ? 'epoch' : 'step';
+    return {
+      stage: kind + ':' + Number(match[2]),
+      stageLabel: this.t(match[1] ? 'monitor.sampleEpoch' : 'monitor.sampleStep').replace('{n}', Number(match[2])),
+      prompt: this.t('monitor.samplePrompt').replace('{n}', Number(match[3]) + 1),
+    };
   },
 
   setPreviewSort(dir) {

@@ -56,6 +56,10 @@ window.trainingPreflight = {
     clearTimeout(this._stepEstimateTimer);
     this._stepEstimateTimer = null;
     const requestSeq = ++this._stepEstimateRequestSeq;
+    if (this._datasetRepeatMutationDir === String(payload.train_data_dir || '').trim()) {
+      this.stepEstimateLoading = false;
+      return;
+    }
 
     if (!String(payload.train_data_dir || '').trim()) {
       this.stepEstimate = null;
@@ -82,6 +86,10 @@ window.trainingPreflight = {
     clearTimeout(this._stepEstimateTimer);
     this._stepEstimateTimer = null;
     const requestSeq = ++this._stepEstimateRequestSeq;
+    if (this._datasetRepeatMutationDir === String(payload.train_data_dir || '').trim()) {
+      this.stepEstimateLoading = false;
+      return null;
+    }
 
     if (!String(payload.train_data_dir || '').trim()) {
       this.stepEstimate = null;
@@ -139,7 +147,7 @@ window.trainingPreflight = {
     void this.locale;
     let text = this.t(key, fallback);
     Object.entries(values || {}).forEach(([name, value]) => {
-      text = text.replaceAll(`{${name}}`, String(value));
+      text = text.replaceAll(`{${name}}`, () => String(value));
     });
     return text;
   },
@@ -168,8 +176,10 @@ window.trainingPreflight = {
     const errorData = result && result.data && typeof result.data === 'object' ? result.data : {};
     const code = typeof errorData.errorCode === 'string' ? errorData.errorCode : '';
     const params = errorData.errorParams && typeof errorData.errorParams === 'object'
-      ? errorData.errorParams
+      ? { ...errorData.errorParams }
       : {};
+    // Older Krea 2 servers sent a generic code without the detail parameter.
+    if (code === 'krea2EstimateInvalid' && !params.detail) params.detail = result?.message || this.t('stepEstimate.failed');
     this._setStepEstimateError(
       code ? `stepEstimate.errors.${code}` : '',
       result && result.message

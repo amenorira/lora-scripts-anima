@@ -14,11 +14,20 @@ class _ConsoleVisibilityFilter(logging.Filter):
         return getattr(record, "console", True)
 
 
-# TensorBoard is served through an internal httpx reverse proxy. Its per-request
-# INFO records interrupt Rich's live training row and leave a screenful of
-# progress snapshots; warnings and transport errors remain visible.
+class _HttpLogFilter(logging.Filter):
+    """Keep HTTP chatter quiet even if later logging setup changes the level."""
+
+    def filter(self, record):
+        return record.levelno >= logging.WARNING
+
+
+# TensorBoard proxy and Hugging Face dictionary checks share these loggers.
+# Filter at the source as well as setting the level, so later logging setup
+# cannot re-enable request chatter; warnings and errors remain visible.
 for _quiet_logger in ("httpx", "httpcore"):
-    logging.getLogger(_quiet_logger).setLevel(logging.WARNING)
+    _http_logger = logging.getLogger(_quiet_logger)
+    _http_logger.setLevel(logging.WARNING)
+    _http_logger.addFilter(_HttpLogFilter())
 
 
 log = logging.getLogger('anima-trainer')

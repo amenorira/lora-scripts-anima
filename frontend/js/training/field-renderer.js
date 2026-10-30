@@ -218,17 +218,19 @@ window.trainingFieldRenderer = {
     const dataKey = field.key;
     const accessibleKey = field.argKey || dataKey;
     const fieldAriaLabel = this.escapeAttr(`${accessibleKey}，${label}`);
-    const stepDownLabel = this.escapeAttr(`${accessibleKey} ${label} 减少`);
-    const stepUpLabel = this.escapeAttr(`${accessibleKey} ${label} 增加`);
+    const stepDownLabel = this.escapeAttr(this.t('common.decreaseField').replace('{field}', `${accessibleKey} ${label}`));
+    const stepUpLabel = this.escapeAttr(this.t('common.increaseField').replace('{field}', `${accessibleKey} ${label}`));
     const isToggle = field.type === 'toggle';
     const isStaticReadonly = field.readonly === true;
     const staticReadonlyAttrs = isStaticReadonly ? ' readonly aria-readonly="true"' : '';
     // Text/textarea/path fields get their input on a separate row (full-width)
-    const isFullWidth = field.type === 'textarea' || (field.role && field.role.startsWith('file-'));
+    const isFullWidth = field.type === 'textarea' || field.type === 'lora-list' || (field.role && field.role.startsWith('file-'));
 
     // ── Generate input HTML ──
     let inputHtml = '';
-    if (isToggle) {
+    if (field.type === 'lora-list') {
+      inputHtml = this.previewLorasHtml();
+    } else if (isToggle) {
       inputHtml = `<label class="toggle"><input type="checkbox" aria-label="${fieldAriaLabel}" :checked="form.${dataKey}" @change="setField('${dataKey}', $event.target.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>`;
     } else if (field.type === 'select') {
       const fc = {};

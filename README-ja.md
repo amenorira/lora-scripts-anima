@@ -2,7 +2,7 @@
 
 # lora-scripts-anima
 
-_✨ 複数の学習エンジンに対応した LoRA ツール：Anima、SDXL、MOSS-Image、Krea 2 ✨_
+_Anima、SDXL、MOSS-Image、Krea 2 に対応したローカル LoRA 学習ツール。_
 
 学習設定、画像のタグ付け、キャプション編集、リアルタイム監視を統合した、ローカルで動作する LoRA 学習用 GUI です。Anima / SDXL / MOSS-Image には [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts)、Krea 2 には [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) を使用し、[LyCORIS](https://github.com/KohakuBlueleaf/LyCORIS) により Anima / SDXL の学習アルゴリズムを拡張します。
 
@@ -41,14 +41,14 @@ Anima / SDXL / MOSS-Image はネイティブの LoRA・LoHa・LoKr に対応し�
 
 ## 主な機能
 
-- **学習 WebUI** — LoRA 学習フォーム、TOML 設定プレビュー、設定のインポート・エクスポート、学習履歴をまとめたワークスペース
+- **学習設定** — 学習パラメータの編集、TOML のプレビュー・インポート・エクスポート、学習履歴の確認
 - **学習前のプレビュー** — タイムステップ分布、学習率曲線、行列構造をローカルで計算して表示する 3 種類のダイアログ。[次の節を参照](#pre-training-previews)
 - **LyCORIS アダプターパネル** — LoCon / LoHa / LoKr に対応し、アルゴリズムに応じたパラメータを表示。カーネルバックエンド（auto / Triton / TileLang / compile / Torch）の選択、LoRA+、Anima の学習範囲の詳細設定に対応
 - **豊富なオプティマイザー** — AdamW、Lion、Prodigy、CAME、StableAdamW、Adafactor、ScheduleFree、Adan、AdEMAMix、Muon などに加え、内蔵の LoRA-RITE と実験的な LoRA-Muon を提供。各オプティマイザーの既定値と制約を表示
 - **リアルタイムのハードウェア監視** — GPU 使用率・VRAM・温度、CPU・RAM 使用率を表示。Chart.js のグラフ、TensorBoard、リアルタイムログを統合
 - **内蔵タグエディター** — 画像のタグを編集し、一括検索・置換、重複除去、並べ替え、クリーンアップなどを実行
 - **タグ付けワークスペース** — WD EVA02-Large、WD ViT-Large、CL Tagger、Camie Tagger、[PixAI Tagger v1.0](https://huggingface.co/pixai-labs/pixai-tagger-v1.0) を統合。画像単位の確認、カテゴリ別のしきい値、一括キャプション出力に対応。PixAI はローカルの PyTorch で推論し、スタイルタグに対応。初回のダウンロードは約 1.95 GB。AI タグ付けでは OpenAI 互換（Chat Completions / Responses）または Anthropic Messages プロトコルの画像対応 API を利用可能
-- **EmoSens 適応型オプティマイザー** — Anima DiT 学習での収束を改善する EmoSens v3.9 を内蔵
+- **EmoSens 適応型オプティマイザー** — 損失の変化に応じて学習率を調整し、停止時期を提示する EmoSens v3.9 を内蔵
 - **多言語対応（i18n）** — 中国語・英語・日本語の UI と内蔵ガイド。ブラウザーの言語を自動検出し、選択した言語を保存
 - **3 種類のテーマ** — ライト、ダーク、ComfyUI。システム設定への追従と手動切り替えに対応
 - **バックエンド接続状態の表示** — 接続状態と切断からの経過時間をリアルタイムで表示
@@ -72,7 +72,7 @@ Anima / SDXL / MOSS-Image はネイティブの LoRA・LoHa・LoKr に対応し�
 
 ### 行列構造
 
-Anima または MOSS-Image 学習では、学習ネットワークモジュールの設定から **「構造プレビュー」** を開けます。Anima は LoRA / LoCon、LoHa、LoKr に、MOSS-Image は任意の DiT テキスト投影層と Refiner を含むネイティブ LoRA / LoHa / LoKr に対応します。実際のネットワーク構築結果に基づいて行列の組み合わせを表示し、Attention、MLP などのモジュールを切り替えて、層ごとの形状、実効 rank / alpha、スケーリング、該当する層数、パラメータ数を確認できます。
+Anima、MOSS-Image、Krea 2 の学習では、学習ネットワークモジュールの設定から **「構造プレビュー」** を開けます。Anima は LoRA / LoCon、LoHa、LoKr に、MOSS-Image は任意の DiT テキスト投影層と Refiner を含むネイティブ LoRA / LoHa / LoKr に、Krea 2 はネイティブ LoRA と LyCORIS LoCon / LoHa / LoKr に対応します。実際のネットワーク構築結果に基づいて行列の組み合わせを表示し、Attention、MLP などのモジュールを切り替えて、層ごとの形状、実効 rank / alpha、スケーリング、該当する層数、パラメータ数を確認できます。
 
 同じ場所に **推定重みファイルサイズ** も表示され、アルゴリズム、rank、学習範囲、保存精度に応じて自動更新されます。仮想テンソルを使用するため、ベースモデルの読み込みや学習の開始は不要です。推定には保存テンソルと safetensors のインデックスを含みますが、VRAM 使用量を表すものではありません。詳しくは[行列構造とファイルサイズのガイド](docs/parameters/matrix-preview.ja-JP.md)を参照してください。
 

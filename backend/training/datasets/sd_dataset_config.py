@@ -47,7 +47,9 @@ def _dreambooth_subsets(base_dir: str | None, *, is_reg: bool) -> list[dict[str,
         return []
 
     subsets: list[dict[str, Any]] = []
-    for subdir in sorted(root.iterdir(), key=lambda path: path.name):
+    # Match config_util.generate_dreambooth_subsets_config_by_subdirs: regularization
+    # registration is order-sensitive, including when no dataset TOML is generated.
+    for subdir in root.iterdir():
         if not subdir.is_dir():
             continue
         tokens = subdir.name.split("_")

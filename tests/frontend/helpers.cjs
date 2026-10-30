@@ -27,7 +27,7 @@ function loadFrontend(files, context = { window: {} }) {
 }
 
 const TRAINING_CORE_SCRIPTS = [
-  'training/field-relations', 'training/network-panel', 'training/field-renderer', 'training/timestep-preview', 'training/conditions', 'training/sections', 'training/validation', 'training/profiles', 'training/preflight', 'training/file-picker', 'training/core',
+  'training/field-relations', 'training/network-panel', 'training/field-renderer', 'training/preview-loras', 'training/timestep-preview', 'training/conditions', 'training/sections', 'training/validation', 'training/profiles', 'training/preflight', 'training/file-picker', 'training/core',
 ];
 
 function loadTagEditor(context = { window: {} }) {

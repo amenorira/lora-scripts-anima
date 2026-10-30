@@ -51,7 +51,7 @@ window.environmentLoadingMixin = {
       load: async () => {
         const response = await fetch(url);
         const payload = await response.json();
-        if (!response.ok) throw new Error('Failed to load ' + url);
+        if (!response.ok) throw new Error(this.t('environment.loadResourceFailed').replace('{url}', () => url));
         return transform ? transform(payload) : payload;
       },
       apply,
@@ -129,7 +129,7 @@ window.environmentLoadingMixin = {
           data => { this.trainingCores = data; },
           error => { this.trainingCoresError = String(error.message || error); this.trainingCores = null; },
           payload => {
-            if (payload.status !== 'success') throw new Error(payload.message || 'Failed to load training cores');
+            if (payload.status !== 'success') throw new Error(payload.message || this.t('environment.coresLoadFailed'));
             return payload.data || null;
           },
         ));
@@ -179,7 +179,7 @@ window.environmentLoadingMixin = {
           const r = await fetch('/api/training/cores');
           const payload = await r.json();
           if (payload.status === 'success') { this.trainingCores = payload.data || null; this.trainingCoresError = null; }
-          else { this.trainingCoresError = payload.message || 'Failed to load training cores'; this.trainingCores = null; }
+          else { this.trainingCoresError = payload.message || this.t('environment.coresLoadFailed'); this.trainingCores = null; }
         } catch (e) { this.trainingCoresError = String(e && e.message || e); this.trainingCores = null; }
       })(),
     ];

@@ -569,7 +569,7 @@ window.trainingTomlMixin = {
       });
       const data = await response.json();
       if (!response.ok || data.status !== 'success') {
-        this.toast(data.message || 'Failed to prepare Krea 2 cache', 'error');
+        this.toast(data.message || this.t('krea2.cachePrepareFailed'), 'error');
         return;
       }
       // 缓存任务也是托管任务：走同一条启动边界（清残留 + 订阅 + 轮询接管状态）。
@@ -584,7 +584,7 @@ window.trainingTomlMixin = {
 
   // ── Training ───────────────────────────────────────────
   async startTraining() {
-    if (this.isTraining || this.trainingStarting || this.regularizationActive) return;
+    if (this.isTraining || this.trainingStarting || this.regularizationActive || this.datasetRepeatApplying) return;
 
     // Form validation before starting
     if (!this.validateForm()) {
@@ -629,7 +629,7 @@ window.trainingTomlMixin = {
         if (data.data && data.data.errorCode === 'teCacheStale') {
           this._showTeCacheStaleDialog(data.data.warnings || []);
         } else {
-          this.toast(data.message || 'Failed', 'error');
+          this.toast(data.message || this.t('common.failed'), 'error');
         }
         this._applyTaskView('IDLE');
       }
@@ -719,7 +719,7 @@ window.trainingTomlMixin = {
     if (!taskId || (!this.isTraining && !this.trainingBlocked)) return;
     try {
       const response = await fetch('/api/tasks/terminate/' + encodeURIComponent(taskId));
-      if (!response.ok) throw new Error('terminate failed');
+      if (!response.ok) throw new Error(this.t('monitor.stopFailed'));
       // 后端在 terminate 返回前就已把任务结算为 TERMINATED；立刻对账一次，
       // 终态由轮询写入方统一绘制（补一次轮询让它亚秒级可见）。
       void this._pollTrainingState();

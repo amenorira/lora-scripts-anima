@@ -32,6 +32,7 @@ window.trainingTimestepPreview = {
   },
 
   setSubsetTimestepOffsetDraft(name, rawValue) {
+    if (this.datasetRepeatApplying) return;
     const raw = String(rawValue ?? '');
     this.subsetTimestepOffsetDrafts = { ...(this.subsetTimestepOffsetDrafts || {}), [name]: raw };
     // Keep intermediate keyboard states such as "-", "." and "0." visible.
@@ -39,6 +40,7 @@ window.trainingTimestepPreview = {
   },
 
   commitSubsetTimestepOffsetDraft(name) {
+    if (this.datasetRepeatApplying) return;
     const drafts = this.subsetTimestepOffsetDrafts || {};
     if (!Object.prototype.hasOwnProperty.call(drafts, name)) return;
     const raw = String(drafts[name] ?? '').trim();
@@ -65,6 +67,7 @@ window.trainingTimestepPreview = {
   },
 
   setSubsetTimestepOffset(name, rawValue) {
+    if (this.datasetRepeatApplying) return;
     const previous = this.form.subset_timestep_offsets || {};
     const next = { ...(this.form.subset_timestep_offsets || {}) };
     if (rawValue === '' || rawValue === null || rawValue === undefined) {
@@ -85,6 +88,7 @@ window.trainingTimestepPreview = {
   },
 
   stepSubsetTimestepOffset(name, delta) {
+    if (this.datasetRepeatApplying) return;
     const current = Number(this.subsetTimestepOffsetValue(name) || 0);
     const nextDrafts = { ...(this.subsetTimestepOffsetDrafts || {}) };
     delete nextDrafts[name];
@@ -99,6 +103,7 @@ window.trainingTimestepPreview = {
   },
 
   undoSubsetTimestepOffset(name) {
+    if (this.datasetRepeatApplying) return;
     const drafts = { ...(this.subsetTimestepOffsetDrafts || {}) };
     delete drafts[name];
     this.subsetTimestepOffsetDrafts = drafts;
@@ -121,6 +126,7 @@ window.trainingTimestepPreview = {
   },
 
   resetSubsetTimestepOffset(name) {
+    if (this.datasetRepeatApplying) return;
     const drafts = { ...(this.subsetTimestepOffsetDrafts || {}) };
     delete drafts[name];
     this.subsetTimestepOffsetDrafts = drafts;
@@ -133,7 +139,7 @@ window.trainingTimestepPreview = {
     if (!['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type)) return '';
     const supported = this.timestepOffsetSupported();
     const subsets = this.timestepOffsetSubsets();
-    const disabled = ' :disabled="!timestepOffsetSupported()"';
+    const disabled = ' :disabled="!timestepOffsetSupported() || datasetRepeatApplying"';
     const rows = subsets.map(subset => {
       const name = String(subset.name || '');
       const nameExpr = this.escapeAttr(JSON.stringify(name));
@@ -152,12 +158,12 @@ window.trainingTimestepPreview = {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19V3"/></svg>
         </button>
         <div class="field-menu-wrap subset-timestep-menu" x-data="actionMenu" x-id="['field-menu']" @keydown="key($event)" @click.outside="close(false)" @pointerenter="hoverEnter($event)" @pointerleave="hoverLeave()" @focusout="focusOut($event)">
-          <button type="button" class="btn-menu" x-ref="trigger" :aria-label="t('common.fieldActions')" title="${this.escapeAttr(this.t('common.fieldActions'))}" aria-haspopup="menu" :aria-expanded="open" :aria-controls="$id('field-menu')" @click="toggle()">
+          <button type="button" class="btn-menu" x-ref="trigger" :aria-label="t('common.fieldActions')" title="${this.escapeAttr(this.t('common.fieldActions'))}" aria-haspopup="menu" :aria-expanded="open" :aria-controls="$id('field-menu')" @click="toggle()"${disabled}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
           </button>
           <div class="field-menu-popup" x-ref="menu" x-show="open" :class="{ 'is-positioned': positioned }" :inert="!open" :id="$id('field-menu')" role="menu" :aria-label="t('common.fieldActions')" x-cloak>
-            <button type="button" role="menuitem" tabindex="-1" @click="undoSubsetTimestepOffset(${nameExpr});close()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg><span>${this.esc(this.t('common.undoField'))}</span></button>
-            <button type="button" role="menuitem" tabindex="-1" @click="resetSubsetTimestepOffset(${nameExpr});close()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg><span>${this.esc(this.t('common.resetField'))}</span></button>
+            <button type="button" role="menuitem" tabindex="-1" @click="undoSubsetTimestepOffset(${nameExpr});close()"${disabled}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg><span>${this.esc(this.t('common.undoField'))}</span></button>
+            <button type="button" role="menuitem" tabindex="-1" @click="resetSubsetTimestepOffset(${nameExpr});close()"${disabled}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg><span>${this.esc(this.t('common.resetField'))}</span></button>
           </div>
         </div>
       </div>`;
@@ -239,7 +245,8 @@ window.trainingTimestepPreview = {
       samplingLabel: this._fieldOptionLabel('timestep_sampling', preview.sampling, preview.sampling),
       weightingLabel: preview.weighting === 'uniform' ? this.t('timestepPreview.uniformWeighting')
         : this._fieldOptionLabel('weighting_scheme', preview.weighting, preview.weighting),
-      notes: noteKeys.map(key => this.t(key)),
+      uniformWeightHelp: noteKeys.includes('timestepPreview.uniformWeightNote'),
+      notes: noteKeys.filter(key => key !== 'timestepPreview.uniformWeightNote').map(key => this.t(key)),
     };
   },
 
@@ -276,7 +283,7 @@ window.trainingTimestepPreview = {
     return `
     <div class="timestep-chart-box">
       <div class="timestep-inspect-bar">
-        <span class="timestep-inspect-title">${data.fixedTimestep != null ? t('timestepPreview.fixedDistribution', 'Fixed timestep (100%)') : t('timestepPreview.relativeDensity', 'Relative PDF')}</span>
+        <span class="timestep-inspect-title timestep-help-target" tabindex="0" aria-describedby="timestep-density-help">${data.fixedTimestep != null ? t('timestepPreview.fixedDistribution', 'Fixed timestep (100%)') : t('timestepPreview.relativeDensity', 'Relative PDF')}<span id="timestep-density-help" class="timestep-help-popup" role="tooltip">${t('timestepPreview.footnote', '')}</span></span>
         <span class="timestep-inspect-value" aria-live="polite">
           <b class="ts-hover-t"></b><small>·</small><span class="ts-hover-density"></span>
         </span>
@@ -284,18 +291,22 @@ window.trainingTimestepPreview = {
       <div class="timestep-chart-yaxis">
         <div class="timestep-yaxis-ticks">${yticks}</div>
       </div>
+      <div class="timestep-preview-frame">
+        <div class="timestep-preview-zones timestep-help-target" tabindex="0" aria-label="${t('timestepPreview.zoneShare', 'Sampling share')}" aria-describedby="timestep-zones-help">
+          <div class="zone-col"><span>${t('timestepPreview.structureZone', 'High noise')}</span><b>${esc(fmtPercent(data.baselineHighPercent, data.highPercent, data.compare))}</b></div>
+          <div class="zone-col"><span>${t('timestepPreview.middleZone', 'Mid noise')}</span><b>${esc(fmtPercent(data.baselineMidPercent, data.midPercent, data.compare))}</b></div>
+          <div class="zone-col"><span>${t('timestepPreview.detailZone', 'Low noise')}</span><b>${esc(fmtPercent(data.baselineLowPercent, data.lowPercent, data.compare))}</b></div>
+          <span id="timestep-zones-help" class="timestep-help-popup" role="tooltip">${t('timestepPreview.interpretationHint', '')}</span>
+        </div>
       <div class="timestep-preview-chart" aria-hidden="true">
         <svg class="timestep-grid-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
           ${gridH}
           <line x1="25" y1="0" x2="25" y2="100" class="timestep-grid-v" />
           <line x1="50" y1="0" x2="50" y2="100" class="timestep-grid-v" />
           <line x1="75" y1="0" x2="75" y2="100" class="timestep-grid-v" />
+          <line x1="33.333" y1="0" x2="33.333" y2="100" class="timestep-grid-v" />
+          <line x1="66.667" y1="0" x2="66.667" y2="100" class="timestep-grid-v" />
         </svg>
-        <div class="timestep-preview-zones">
-          <div class="zone-col"><span>${t('timestepPreview.structureZone', 'High noise')}</span></div>
-          <div class="zone-col"><span>${t('timestepPreview.middleZone', 'Mid noise')}</span></div>
-          <div class="zone-col"><span>${t('timestepPreview.detailZone', 'Low noise')}</span></div>
-        </div>
         <svg class="timestep-preview-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
           ${baselineCurve}
           <path class="timestep-curve-area" d="${esc(data.currentAreaPath)}"></path>
@@ -306,6 +317,7 @@ window.trainingTimestepPreview = {
           <span class="timestep-median-tag">${t(data.fixedTimestep != null ? 'timestepPreview.fixedLabel' : 'timestepPreview.medianLabel', 't = {value}').replace('{value}', esc(data.median))}</span>
         </div>
         <div class="timestep-hover-indicator" style="display:none"></div>
+      </div>
       </div>
     </div>
     <div class="timestep-preview-axis">
@@ -318,11 +330,7 @@ window.trainingTimestepPreview = {
       <span><i class="legend-distribution"></i><span>${t('timestepPreview.currentDistribution', 'Current distribution')}</span></span>
       ${weightLegend}
     </div>
-    <div class="timestep-preview-summary">
-      <div><b>${esc(fmtPercent(data.baselineHighPercent, data.highPercent, data.compare))}</b><span>${t('timestepPreview.structureZone', 'High noise')}</span></div>
-      <div><b>${esc(fmtPercent(data.baselineMidPercent, data.midPercent, data.compare))}</b><span>${t('timestepPreview.middleZone', 'Mid noise')}</span></div>
-      <div><b>${esc(fmtPercent(data.baselineLowPercent, data.lowPercent, data.compare))}</b><span>${t('timestepPreview.detailZone', 'Low noise')}</span></div>
-    </div>`;
+    `;
   },
 
   onTimestepChartHover(event) {

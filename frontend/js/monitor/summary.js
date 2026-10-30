@@ -184,11 +184,11 @@ window.monitorSummaryMixin = {
     if (!isHistory) html += '<div class="m-summary-notice" data-summary-notice hidden role="alert"></div>';
     if (!isHistory && state === 'UNKNOWN') return html + '</section>';
     if (!isHistory && state === 'IDLE') {
-      html += '<div class="m-idle-hero"><span class="m-idle-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9l6 3"/><circle cx="12" cy="12" r="9"/></svg></span><div><strong>' + this.esc(t('readyToTrain')) + '</strong><span>' + this.esc(t('readyToTrainHint')) + '</span></div></div>';
+      html += '<div class="m-idle-hero"><span class="m-idle-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9l6 3"/><circle cx="12" cy="12" r="9"/></svg></span><div><strong>' + this.esc(t('noTraining')) + '</strong></div></div>';
       html += '<button type="button" class="btn btn-primary m-start-training" @click="navigate(\'train-basic\')">' + this.esc(t('goToTraining')) + ' →</button>';
       if (d.last_config && d.last_config.name) {
         const lc = d.last_config;
-        html += '<div class="m-last-run"><span>' + this.esc(t('lastTraining')) + '</span><strong>' + this.esc(lc.name) + '</strong><small>' + this.esc((lc.model || '') + ' · LR ' + (lc.lr || '--') + ' · ' + (lc.epochs || '--') + ' Epochs') + '</small></div>';
+        html += '<div class="m-last-run"><span>' + this.esc(t('lastTraining')) + '</span><strong>' + this.esc(lc.name) + '</strong><small>' + this.esc((lc.model || '') + ' · ' + t('historyLR') + ' ' + (lc.lr || '--') + ' · ' + t('historyEpochs') + ' ' + (lc.epochs || '--')) + '</small></div>';
       }
       html += '</section>';
       return html;

@@ -361,6 +361,17 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
         return validate_krea2_config(config)
     profile = PROFILES.get(train_type)
     group = profile.group if profile else None
+    if train_type in ("anima-lora", "moss-image-lora") and config.get("enable_preview"):
+        from backend.training.preview.config import normalize_loras, sampling_options
+
+        try:
+            config["preview_loras"] = normalize_loras(config.get("preview_loras"))
+        except ValueError as exc:
+            errors.append(f"preview_loras: {exc}")
+        try:
+            sampling_options(config.get("preview_sampler"), config.get("preview_scheduler"))
+        except ValueError as exc:
+            errors.append(str(exc))
     from backend.training.config.option_contracts import normalize_sd_options, validate_sd_option_dependencies
 
     errors.extend(validate_sd_option_dependencies(config))

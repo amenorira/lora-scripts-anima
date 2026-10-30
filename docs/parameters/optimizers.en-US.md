@@ -121,7 +121,7 @@ The `piecewise_constant` `step_rules` format is `multiplier:cumulative_end_step,
 
 This scheduler fixes `lr_warmup_steps` at `0`. On the sd-scripts path, boundaries use scheduler steps, which the preview converts to training steps for multiple processes. Staircases with boundaries require a total-step estimate.
 
-Open **View learning-rate curve** under the schedule field to inspect warmup, decay, and restarts. The sidebar shows the selected component's effective learning rate and warmup steps. When training both the DiT and text encoder, switch components to inspect their curves separately. The preview shows an estimation notice while total steps are unknown. The curve represents scheduler output; adaptive optimizers calculate their internal step sizes during training.
+Open **View learning-rate curve** under the schedule field to inspect warmup, decay, and restarts. The sidebar shows the selected component's base rate, warmup, and rates at the start, midpoint, and end of training. When more than one component is available, switch between their curves, for example when training both DiT and the text encoder or using Krea 2 LoRA+. The preview shows an estimation notice while total steps are unknown. The curve represents scheduler output; adaptive optimizers calculate their internal step sizes during training.
 
 ![Learning-rate curve in the ComfyUI theme: 10,000 steps, 500 warmup steps, and cosine decay](../images/lr-preview.en-US.png)
 
@@ -525,11 +525,7 @@ For a complete accumulation window, effective batch size is batch size × accumu
 <!-- doc-anchor: ab-testing -->
 ## Controlled comparisons
 
-1. Fix the dataset, captions, the seed, the base model, VAE, rank/alpha, batch, and total steps.
-2. Fix the preview prompt, sampler settings, and generation seed.
-3. Find a usable learning-rate range for each optimizer, starting from the table above. Vary only learning rate while keeping the other settings fixed.
-4. Compare checkpoints at the same step count, and record gradient norm, peak VRAM, and wall-clock time for each run.
-5. Evaluate fidelity, costume control, pose/background binding, and prompt response, using loss as a supporting metric.
+See the [controlled comparison steps](timesteps.en-US.md#comparison-method) for the general procedure. When comparing optimizers, also fix captions, the base model, VAE, batch settings, and generation sampler settings. Starting from each optimizer's learning rate in the table above, find a usable range and record gradient norm, peak VRAM, and training time. Compare fidelity, costume control, pose/background binding, and prompt response.
 
 Start comparison runs from the same base model and initialize each optimizer's state separately.
 

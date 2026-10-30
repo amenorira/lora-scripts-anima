@@ -1,5 +1,6 @@
 """Prepare sd-scripts profiles under an existing task reservation."""
 import os
+import json
 from pathlib import Path
 
 from backend.async_utils import settled_to_thread as _settled_to_thread
@@ -9,6 +10,7 @@ from backend.monitor.run_registry import resolve_user_path, write_output_dir_ref
 from backend.training.config import toml_writer
 from backend.training.execution import run_files, sd_scripts_preflight
 from backend.training.config.metrics_config import training_metrics_environment
+from backend.training.preview.config import CONFIG_NAME, ENV_KEY, prepare_config as prepare_preview_config
 from backend.training.execution.preparation import training_error as _training_error
 from backend.training.datasets.sd_dataset_config import build_sd_scripts_dataset_config
 from backend.training.config.training_config import (
@@ -84,6 +86,10 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
         return error
     config = settings.config
     model_train_type = profile.id
+    try:
+        preview_config = await _settled_to_thread(prepare_preview_config, settings.ui_config, profile.id)
+    except (ValueError, RuntimeError) as exc:
+        return _training_error(message=str(exc))
 
     # ── Per-run folder: internal control data + user-selected artifacts ──
     output_name = config.get("output_name", "my_lora")
@@ -179,6 +185,9 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
         with open(run_config_file, "w", encoding="utf-8") as f:
             f.write(toml_content)
         write_training_config(internal_run_dir / TRAINING_CONFIG_NAME, training_document)
+        if preview_config is not None:
+            (internal_run_dir / CONFIG_NAME).write_text(
+                json.dumps(preview_config, ensure_ascii=False, indent=2), encoding="utf-8")
         if dataset_config_file is not None:
             dataset_config_file.write_text(dataset_toml, encoding="utf-8")
 
@@ -205,6 +214,7 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
             "adapter_id": settings.adapter_id,
         },
         extra_env={
+            ENV_KEY: str(internal_run_dir / CONFIG_NAME) if preview_config is not None else "",
             **training_metrics_environment(settings.ui_config),
             "ANIMA_ENABLE_FLASH_ATTN": "1" if config.get("attn_mode") == "flash" else "0",
             **({"LYCORIS_KERNEL_BACKEND": settings.lycoris_kernel_backend} if settings.lycoris_kernel_backend else {}),

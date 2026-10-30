@@ -11,7 +11,8 @@ window.monitorCoreMixin = {
   runDetailLoading: false, runDetailError: '',
   gpuInfo: null, sysInfo: null, lossSeries: [], lossDataVersion: 0, trainParams: [],
   previews: [], previewStep: 0, previewSortDir: 'desc', previewsLoading: false, historyItems: [], runningTask: null,
-  _previewRequestSeq: 0,
+  // Refresh ownership and cacheable snapshot freshness advance independently.
+  _previewRequestSeq: 0, _previewSnapshotSeq: 0,
   weakNetworkMode: true,
   _previewMediaQueue: [], _previewMediaAbort: null, _previewMediaLoading: false, _previewMediaPaused: false, _previewMediaObjectUrls: [], _previewMediaGeneration: 0,
   previewMetadataOpen: false, previewMetadataLoading: false, previewMetadata: null, previewMetadataError: '', _previewMetadataRequestSeq: 0, _previewMetadataAbort: null,
@@ -396,7 +397,7 @@ window.monitorCoreMixin = {
       if (!versions || versions.logs === (this._logObservationVersion || 0)) {
         this._applyMonitorLogSnapshot(next.log_lines, next.log_total, reusingFullLog);
       }
-      if (!this._applyPreviewSnapshot(next.previews, versions?.previews ?? this._previewRequestSeq)) {
+      if (!this._applyPreviewSnapshot(next.previews, versions?.previews ?? this._previewSnapshotSeq)) {
         next.previews = this.previews;
       }
     }
@@ -626,7 +627,7 @@ window.monitorCoreMixin = {
     const runDir = this.currentOutputRunDir;
     if (!this.selectedRunDir && !this.liveTaskId && runDir) {
       const generation = ++this._monitorRealtimeDetailGeneration;
-      const versions = { logs: this._logObservationVersion || 0, outputs: this._outputCountVersion || 0, progress: this._monitorProgressVersion || 0, previews: this._previewRequestSeq };
+      const versions = { logs: this._logObservationVersion || 0, outputs: this._outputCountVersion || 0, progress: this._monitorProgressVersion || 0, previews: this._previewSnapshotSeq };
       try {
         const response = await fetch('/api/monitor/run-detail?run_dir=' + encodeURIComponent(runDir));
         const body = await response.json();

@@ -46,4 +46,8 @@ def import_native_training_form(params: dict, *, profile_id: str | None = None) 
             form.setdefault("krea_split_attn", "true" if form.pop("split_attn") else "false")
     else:
         form = extract_optimizer_form(form)
-    return extract_network_form(form, model_train_type=imported_type)
+    form = extract_network_form(form, model_train_type=imported_type)
+    from backend.training.preview.config import normalize_form
+
+    normalize_form(form)
+    return form

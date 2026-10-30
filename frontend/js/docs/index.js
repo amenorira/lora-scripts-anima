@@ -32,8 +32,8 @@ window.docsMixin = {
   _docsScrollTarget: null,
   _docsPinnedAnchor: null,
 
-  docsCurrentDocument() {
-    return this.docsDocuments.find(doc => doc.slug === this.docsSelectedSlug) || null;
+  docsDocumentTitle(slug) {
+    return slug ? this.t('docs.documents.' + slug + '.title', slug) : this.t('docs.title');
   },
 
   docsCategoryLabel(category) {
@@ -194,7 +194,7 @@ window.docsMixin = {
     this.docsActiveAnchor = '';
     this._docsContentLocale = documentData.locale || this.locale || 'zh-CN';
 
-    this._updateDocsDocumentTitle(documentData.title);
+    this._updateDocsDocumentTitle();
 
     this.$nextTick(() => {
       const delay = anchor ? 32 : 0;
@@ -245,10 +245,9 @@ window.docsMixin = {
     this._docsPendingAnchor = '';
   },
 
-  _updateDocsDocumentTitle(title) {
+  _updateDocsDocumentTitle() {
     if (this.currentRoute !== 'docs') return;
-    const currentDocument = this.docsCurrentDocument();
-    const documentTitle = title || (currentDocument && currentDocument.title) || this.t('docs.title');
+    const documentTitle = this.docsDocumentTitle(this.docsSelectedSlug);
     document.title = documentTitle + ' | lora-scripts-anima';
   },
 
@@ -277,6 +276,12 @@ window.docsMixin = {
     const link = event.target.closest && event.target.closest('a');
     if (!link) return;
     const href = link.getAttribute('href') || '';
+    const docLink = href.match(/^([a-z0-9-]+)\.(?:zh-CN|en-US|ja-JP)\.md(?:#([a-z0-9_-]+))?$/i);
+    if (docLink) {
+      event.preventDefault();
+      this.selectParameterDoc(docLink[1], docLink[2] || '');
+      return;
+    }
     if (!href.startsWith('#')) return;
     event.preventDefault();
     this.scrollToDocAnchor(decodeURIComponent(href.slice(1)), true);

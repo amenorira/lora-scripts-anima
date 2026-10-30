@@ -137,7 +137,7 @@ window.monitorHistoryMixin = {
   async _fetchRunDetail(runDir) {
     if (this.selectedRunDir !== runDir) return;
     const requestSeq = ++this._runDetailRequestSeq;
-    const previewRequestSeq = this._previewRequestSeq;
+    const previewSnapshotSeq = this._previewSnapshotSeq;
     const isCurrent = () => requestSeq === this._runDetailRequestSeq && this.selectedRunDir === runDir;
     try {
       this.startProgress();
@@ -152,7 +152,7 @@ window.monitorHistoryMixin = {
         this.lossDataVersion++;
         this.trainParams = j.data.train_params || [];
         this.trainParamsVersion++;
-        if (!this._applyPreviewSnapshot(j.data.previews, previewRequestSeq)) {
+        if (!this._applyPreviewSnapshot(j.data.previews, previewSnapshotSeq)) {
           this.runDetailData.previews = this.previews;
         }
         this._applyMonitorLogSnapshot(j.data.log_lines, j.data.log_total);

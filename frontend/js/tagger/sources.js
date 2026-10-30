@@ -136,7 +136,7 @@ window.taggerSourcesMixin = {
       && !this.taggerRunning && !this.taggerStarting && !this.captionPreviewBusy;
     try {
       const picker = mode.endsWith('single') ? 'image-file' : 'folder';
-      const response = await fetch('/api/pick_file?picker_type=' + picker);
+      const response = await fetch(this.nativePickerUrl(picker));
       const body = await response.json();
       if (!isCurrent()) return;
       if (body.status === 'success' && body.data && body.data.path) {
@@ -221,7 +221,7 @@ window.taggerSourcesMixin = {
       data.append('file', file, file.name);
       const response = await fetch('/api/tagger/uploads', { method: 'POST', body: data });
       const body = await response.json();
-      if (body.status !== 'success') throw new Error(body.message || 'Upload failed');
+      if (body.status !== 'success') throw new Error(body.message || this.t('tagger.uploadFailed'));
       if (version !== this._taggerSourceScanVersion || mode !== this.taggerSourceMode || route !== this.currentRoute) return;
       body.data.display_name = file.name || this.t('tagger.singleImage');
       this._releaseTaggerPreview();
@@ -254,7 +254,7 @@ window.taggerSourcesMixin = {
         body: JSON.stringify({ path, recursive, caption_extension: this.taggerModeIsApi() ? this.captionOptions.caption_extension : '.txt', caption_options: this.taggerModeIsApi() ? this.captionOptions : undefined }),
       });
       const body = await response.json();
-      if (body.status !== 'success') throw new Error(body.message || 'Scan failed');
+      if (body.status !== 'success') throw new Error(body.message || this.t('tagger.scanFailed'));
       if (mode.endsWith('single') && !['file','upload'].includes(body.data.kind)) throw new Error(this.t('caption.singleFileRequired'));
       if (mode === 'api-folder' && body.data.kind !== 'folder') throw new Error(this.t('caption.selectDirectory'));
       if (scanVersion !== this._taggerSourceScanVersion || path !== this.taggerSourcePath.trim() || mode !== this.taggerSourceMode || route !== this.currentRoute) return;

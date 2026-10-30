@@ -10,6 +10,7 @@ from typing import Any
 
 from backend.constants import SD_SCRIPTS_DIR
 from backend.log import log
+from backend.training.datasets.sd_dataset_config import _dreambooth_subsets
 
 
 class StepEstimateError(ValueError):
@@ -150,21 +151,14 @@ def _read_image_size(image_path: str) -> tuple[int, int]:
 
 def _dataset_subsets(train_data_dir: Path, glob_images) -> list[dict[str, Any]]:
     subsets: list[dict[str, Any]] = []
-    for subdir in sorted(train_data_dir.iterdir(), key=lambda path: path.name):
-        if not subdir.is_dir():
-            continue
-        try:
-            repeats = int(subdir.name.split("_")[0])
-        except ValueError:
-            continue
-        if repeats < 1:
-            continue
-        image_paths = glob_images(str(subdir), "*")
+    for subset in _dreambooth_subsets(str(train_data_dir), is_reg=False):
+        repeats = subset["num_repeats"]
+        image_paths = glob_images(subset["image_dir"], "*")
         if not image_paths:
             continue
         subsets.append(
             {
-                "name": subdir.name,
+                "name": Path(subset["image_dir"]).name,
                 "image_count": len(image_paths),
                 "repeats": repeats,
                 "sample_count": len(image_paths) * repeats,
@@ -207,10 +201,13 @@ def estimate_training_steps(config: dict[str, Any]) -> dict[str, Any]:
 
         try:
             return estimate_krea2_steps(dict(config))
+        except StepEstimateError:
+            raise
         except ValueError as exc:
             raise StepEstimateError(
                 str(exc),
                 code="krea2EstimateInvalid",
+                detail=str(exc),
             ) from exc
 
     train_data_value = config.get("train_data_dir")
