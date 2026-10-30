@@ -2750,6 +2750,10 @@ input[type="range"]::-webkit-slider-thumb {
 
 /* ── Training diagnostics ───────────────────────────────── */
 .m-training-diagnostics { display: flex; flex-direction: column; min-height: 252px; }
+.m-training-diagnostics[data-diagnostic-state="insufficient"] { align-self: start; min-height: 0; }
+.m-training-diagnostics[data-diagnostic-state="insufficient"] .m-diagnostic-verdict { min-height: 0; }
+.m-training-diagnostics[data-diagnostic-state="insufficient"] .m-diagnostic-state,
+.m-training-diagnostics[data-diagnostic-state="insufficient"] .m-diagnostic-copy p { min-height: 0; }
 .m-tensorboard-link { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 4px 8px !important; border: 1px solid var(--border-default) !important; border-radius: var(--radius-control); color: var(--text-secondary) !important; }
 .m-tensorboard-link:hover { border-color: var(--accent) !important; color: var(--accent) !important; }
 .m-tensorboard-link svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; }
@@ -2774,6 +2778,7 @@ input[type="range"]::-webkit-slider-thumb {
 .m-diagnostic-verdict[data-diagnostic-tone="danger"] .m-diagnostic-state strong { color: color-mix(in srgb, var(--danger) 78%, var(--text-primary)); }
 .m-diagnostic-copy p { min-height: 4.65em; margin: 8px 0 0; overflow-wrap: anywhere; color: var(--text-secondary); font-size: 13px; line-height: 1.55; }
 .m-diagnostic-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); min-width: 0; }
+.m-diagnostic-metrics[hidden] { display: none; }
 .m-diagnostic-metric { position: relative; display: grid; grid-template-columns: minmax(0, max-content) minmax(40px, 1fr); column-gap: 16px; align-content: center; container-type: inline-size; min-width: 0; min-height: 95px; padding: 15px 18px; border-right: 1px solid var(--monitor-card-border); border-bottom: 1px solid var(--monitor-card-border); }
 .m-diagnostic-metric:nth-child(2n) { border-right: none; }
 .m-diagnostic-metric:nth-child(n+3) { border-bottom: none; }
@@ -3907,7 +3912,6 @@ body.te-lightbox-open { overflow: hidden; }
 .te-empty { text-align: center; padding: 48px 20px; }
 .te-empty-icon { margin-bottom: 8px; opacity: 0.4; display: flex; justify-content: center; }
 .te-empty-title { font-size: 14px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; }
-.te-empty-desc { font-size: 11px; color: var(--text-tertiary); margin-bottom: 16px; }
 .te-empty-actions { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; align-items: center; }
 .te-empty-actions input { font-size: 12px; padding: 5px 8px; border: 1px solid var(--border-input); border-radius: var(--radius-control); background: var(--bg-input); color: var(--text-primary); width: 280px; max-width: 100%; outline: none; }
 .te-recursive-toggle.active { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }

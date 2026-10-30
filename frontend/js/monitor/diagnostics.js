@@ -234,7 +234,7 @@ window.monitorDiagnosticsMixin = {
     html += '<div class="m-card-heading"><div><span data-diagnostic-field="title">' + this.esc(t('trainingDiagnostics')) + '</span></div><button type="button" class="btn btn-sm btn-secondary m-tensorboard-link" @click="navigate(\'tensorboard\')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V9m7 10V5m7 14v-7"/></svg>' + this.esc(t('openTensorBoard')) + '</button></div>';
     html += '<div class="m-diagnostic-body">';
     html += '<div class="m-diagnostic-verdict" data-diagnostic-tone="muted"><div class="m-diagnostic-copy"><div class="m-diagnostic-state"><i aria-hidden="true"></i><strong data-diagnostic-field="state">--</strong></div><p data-diagnostic-field="summary">--</p></div><svg class="m-diagnostic-trend" viewBox="0 0 120 34" preserveAspectRatio="none" aria-hidden="true"><path data-diagnostic-trend></path></svg></div>';
-    html += '</div><div class="m-diagnostic-metrics">';
+    html += '</div><div class="m-diagnostic-metrics" hidden>';
     const metrics = [
       ['change', t('recentLossChange'), t('comparedPreviousWindow')],
       ['volatility', t('lossVolatility'), t('lowerIsMoreStable')],
@@ -284,6 +284,10 @@ window.monitorDiagnosticsMixin = {
     if (root.dataset.diagnosticVersion === version) return;
     root.dataset.diagnosticVersion = version;
     const diagnostic = this._trainingDiagnostics();
+    const card = root.querySelector('.m-training-diagnostics');
+    if (card) card.dataset.diagnosticState = diagnostic.code;
+    const metrics = root.querySelector('.m-diagnostic-metrics');
+    if (metrics) metrics.hidden = diagnostic.code === 'insufficient';
     const setText = (field, value) => {
       const element = root.querySelector('[data-diagnostic-field="' + field + '"]');
       if (element) {
