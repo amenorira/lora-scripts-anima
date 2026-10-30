@@ -2083,8 +2083,10 @@ dialog.modal-overlay::backdrop { background: transparent; }
 .preview-info-section { min-width: 0; }
 .preview-info-section h3 { margin: 0 0 10px; font-size: 12px; font-weight: 600; }
 .timestep-layout-sidebar, .lr-layout-sidebar { gap: 22px; }
-.timestep-layout-sidebar .preview-info-section + .preview-info-section { position: relative; }
-.timestep-layout-sidebar .preview-info-section + .preview-info-section::before {
+.timestep-layout-sidebar .preview-info-section + .preview-info-section,
+.lr-layout-sidebar .preview-info-section + .preview-info-section { position: relative; }
+.timestep-layout-sidebar .preview-info-section + .preview-info-section::before,
+.lr-layout-sidebar .preview-info-section + .preview-info-section::before {
   content: ''; position: absolute; inset: -11px 0 auto; height: 1px;
   background: repeating-linear-gradient(to right, color-mix(in srgb, var(--text-secondary) 55%, transparent) 0 6px, transparent 6px 10px);
 }
@@ -2097,7 +2099,8 @@ dialog.modal-overlay::backdrop { background: transparent; }
 .timestep-layout-chart:focus-visible, .lr-layout-chart:focus-visible { outline: 1px solid var(--accent); outline-offset: 5px; }
 @media (max-height: 850px) {
   .timestep-layout-sidebar, .lr-layout-sidebar { gap: 14px; }
-  .timestep-layout-sidebar .preview-info-section + .preview-info-section::before { top: -7px; }
+  .timestep-layout-sidebar .preview-info-section + .preview-info-section::before,
+  .lr-layout-sidebar .preview-info-section + .preview-info-section::before { top: -7px; }
   .timestep-preview-meta, .lr-preview-meta { gap: 6px 16px; }
   .preview-info-section h3 { margin-bottom: 6px; }
 }

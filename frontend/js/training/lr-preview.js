@@ -341,8 +341,8 @@ window.trainingLrPreviewMixin = {
       chartLabel: `${this.t('lrPreview.learningRateAxis', 'Learning rate')} · ${chartComponent}`,
       totalSteps,
       totalStepsText: totalSteps > 0 ? Number(totalSteps).toLocaleString() : '',
-      warmupVisible: warmup.visible && !unavailable,
-      warmupLabel: warmup.label,
+      warmupVisible: !unavailable,
+      warmupLabel: warmup.label || `0 ${this.t('lrPreview.stepsUnit', 'steps')}`,
       warmupX,
       warmupEstimated: !!warmup.estimated,
       warning: !!unavailable || warmup.estimated || !totalSteps,
@@ -352,6 +352,10 @@ window.trainingLrPreviewMixin = {
       params,
       unavailable,
       chartRate,
+      milestoneRates: unavailable ? [] : [0, 0.5, 1].map(progress => {
+        const stepProgress = totalSteps > 0 ? Math.round(progress * totalSteps) / totalSteps : progress;
+        return this._lrPreviewFormatRate(chartRate * evaluateMultiplier(stepProgress));
+      }),
       yTicks: [1, 0.75, 0.5, 0.25, 0].map((fraction, index) => {
         const value = fraction * peak;
         return {

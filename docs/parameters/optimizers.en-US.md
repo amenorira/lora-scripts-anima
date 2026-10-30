@@ -121,7 +121,7 @@ The `piecewise_constant` `step_rules` format is `multiplier:cumulative_end_step,
 
 This scheduler fixes `lr_warmup_steps` at `0`. On the sd-scripts path, boundaries use scheduler steps, which the preview converts to training steps for multiple processes. Staircases with boundaries require a total-step estimate.
 
-Open **View learning-rate curve** under the schedule field to inspect warmup, decay, and restarts. The sidebar shows the selected component's effective learning rate and warmup steps. When training both the DiT and text encoder, switch components to inspect their curves separately. The preview shows an estimation notice while total steps are unknown. The curve represents scheduler output; adaptive optimizers calculate their internal step sizes during training.
+Open **View learning-rate curve** under the schedule field to inspect warmup, decay, and restarts. The sidebar shows the selected component's base rate, warmup, and rates at the start, midpoint, and end of training. When more than one component is available, switch between their curves, for example when training both DiT and the text encoder or using Krea 2 LoRA+. The preview shows an estimation notice while total steps are unknown. The curve represents scheduler output; adaptive optimizers calculate their internal step sizes during training.
 
 ![Learning-rate curve in the ComfyUI theme: 10,000 steps, 500 warmup steps, and cosine decay](../images/lr-preview.en-US.png)
 

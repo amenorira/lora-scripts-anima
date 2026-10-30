@@ -1837,6 +1837,14 @@
           </template>
         </div>
         </section>
+        <section class="preview-info-section" x-show="lrPreviewData && !lrPreviewData.unavailable">
+          <h3 x-text="t('lrPreview.milestones')"></h3>
+          <div class="lr-preview-meta">
+            <span><small x-text="t('lrPreview.atStart')"></small><b x-text="lrPreviewData?.milestoneRates[0]"></b></span>
+            <span><small x-text="t('lrPreview.atMiddle')"></small><b x-text="lrPreviewData?.milestoneRates[1]"></b></span>
+            <span><small x-text="t('lrPreview.atEnd')"></small><b x-text="lrPreviewData?.milestoneRates[2]"></b></span>
+          </div>
+        </section>
         <div class="lr-preview-notes" :class="{'preview-warning': lrPreviewData?.warning}" x-show="lrPreviewData && lrPreviewData.notes.length">
           <template x-for="(note, index) in (lrPreviewData ? lrPreviewData.notes : [])" :key="index">
             <div><span aria-hidden="true">•</span><span x-text="note"></span></div>
