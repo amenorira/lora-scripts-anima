@@ -276,6 +276,12 @@ window.docsMixin = {
     const link = event.target.closest && event.target.closest('a');
     if (!link) return;
     const href = link.getAttribute('href') || '';
+    const docLink = href.match(/^([a-z0-9-]+)\.(?:zh-CN|en-US|ja-JP)\.md(?:#([a-z0-9_-]+))?$/i);
+    if (docLink) {
+      event.preventDefault();
+      this.selectParameterDoc(docLink[1], docLink[2] || '');
+      return;
+    }
     if (!href.startsWith('#')) return;
     event.preventDefault();
     this.scrollToDocAnchor(decodeURIComponent(href.slice(1)), true);

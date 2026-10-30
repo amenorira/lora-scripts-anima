@@ -2,7 +2,7 @@
 
 # lora-scripts-anima
 
-_✨ 複数の学習エンジンに対応した LoRA ツール：Anima、SDXL、MOSS-Image、Krea 2 ✨_
+_Anima、SDXL、MOSS-Image、Krea 2 に対応したローカル LoRA 学習ツール。_
 
 学習設定、画像のタグ付け、キャプション編集、リアルタイム監視を統合した、ローカルで動作する LoRA 学習用 GUI です。Anima / SDXL / MOSS-Image には [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts)、Krea 2 には [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) を使用し、[LyCORIS](https://github.com/KohakuBlueleaf/LyCORIS) により Anima / SDXL の学習アルゴリズムを拡張します。
 
@@ -41,14 +41,14 @@ Anima / SDXL / MOSS-Image はネイティブの LoRA・LoHa・LoKr に対応し�
 
 ## 主な機能
 
-- **学習 WebUI** — LoRA 学習フォーム、TOML 設定プレビュー、設定のインポート・エクスポート、学習履歴をまとめたワークスペース
+- **学習設定** — 学習パラメータの編集、TOML のプレビュー・インポート・エクスポート、学習履歴の確認
 - **学習前のプレビュー** — タイムステップ分布、学習率曲線、行列構造をローカルで計算して表示する 3 種類のダイアログ。[次の節を参照](#pre-training-previews)
 - **LyCORIS アダプターパネル** — LoCon / LoHa / LoKr に対応し、アルゴリズムに応じたパラメータを表示。カーネルバックエンド（auto / Triton / TileLang / compile / Torch）の選択、LoRA+、Anima の学習範囲の詳細設定に対応
 - **豊富なオプティマイザー** — AdamW、Lion、Prodigy、CAME、StableAdamW、Adafactor、ScheduleFree、Adan、AdEMAMix、Muon などに加え、内蔵の LoRA-RITE と実験的な LoRA-Muon を提供。各オプティマイザーの既定値と制約を表示
 - **リアルタイムのハードウェア監視** — GPU 使用率・VRAM・温度、CPU・RAM 使用率を表示。Chart.js のグラフ、TensorBoard、リアルタイムログを統合
 - **内蔵タグエディター** — 画像のタグを編集し、一括検索・置換、重複除去、並べ替え、クリーンアップなどを実行
 - **タグ付けワークスペース** — WD EVA02-Large、WD ViT-Large、CL Tagger、Camie Tagger、[PixAI Tagger v1.0](https://huggingface.co/pixai-labs/pixai-tagger-v1.0) を統合。画像単位の確認、カテゴリ別のしきい値、一括キャプション出力に対応。PixAI はローカルの PyTorch で推論し、スタイルタグに対応。初回のダウンロードは約 1.95 GB。AI タグ付けでは OpenAI 互換（Chat Completions / Responses）または Anthropic Messages プロトコルの画像対応 API を利用可能
-- **EmoSens 適応型オプティマイザー** — Anima DiT 学習での収束を改善する EmoSens v3.9 を内蔵
+- **EmoSens 適応型オプティマイザー** — 損失の変化に応じて学習率を調整し、停止時期を提示する EmoSens v3.9 を内蔵
 - **多言語対応（i18n）** — 中国語・英語・日本語の UI と内蔵ガイド。ブラウザーの言語を自動検出し、選択した言語を保存
 - **3 種類のテーマ** — ライト、ダーク、ComfyUI。システム設定への追従と手動切り替えに対応
 - **バックエンド接続状態の表示** — 接続状態と切断からの経過時間をリアルタイムで表示
@@ -63,6 +63,8 @@ Anima / SDXL / MOSS-Image はネイティブの LoRA・LoHa・LoKr に対応し�
 学習タイムステップのサンプリング設定で **「タイムステップ分布を表示」** を開くと、確率密度、損失の重み、高・中・低ノイズの割合を確認できます。基本分布と学習全体の分布を切り替えてタイムステップの中央値を比較し、グラフにカーソルを合わせて値を読み取れます。詳しくは[タイムステップガイド](docs/parameters/timesteps.ja-JP.md)を参照してください。
 
 ![タイムステップ分布プレビュー：確率密度、損失の重み、ノイズ領域の割合](docs/images/timestep-preview.ja-JP.jpg)
+
+画像は以前の画面です。現在のプレビューではノイズ区間の割合をグラフ上部に表示します。
 
 ### 学習率曲線
 

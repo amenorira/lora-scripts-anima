@@ -144,7 +144,7 @@ See the Krea 2 section below for its quantization and bypass restrictions.
 <!-- doc-anchor: preview -->
 ## Check the actual structure
 
-After changing dimension, factor, full-matrix mode, or unbalanced factorization, inspect the matrices, parameter count, and scale in the structure preview. To compare results, keep generation prompts and seeds fixed and check both fidelity and behavior in new settings.
+After changing dimension, factor, full-matrix mode, or unbalanced factorization, inspect the matrices, parameter count, and scale in the structure preview. When comparing algorithms, record the actual trainable parameter count; see the [controlled comparison steps](timesteps.en-US.md#comparison-method).
 
 <!-- doc-anchor: krea-targets -->
 ## Krea 2: default targets and filtering

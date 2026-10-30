@@ -2,7 +2,7 @@
 
 # lora-scripts-anima
 
-_✨ Multi-backend LoRA Training Tool: Anima, SDXL, MOSS-Image, and Krea 2 ✨_
+_A local LoRA training tool for Anima, SDXL, MOSS-Image, and Krea 2._
 
 A local GUI for LoRA training with training configuration, image tagging, caption editing, and real-time monitoring. Anima / SDXL / MOSS-Image use [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts), Krea 2 uses [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner), and [LyCORIS](https://github.com/KohakuBlueleaf/LyCORIS) adds training algorithms for Anima / SDXL.
 
@@ -41,14 +41,14 @@ Anima / SDXL / MOSS-Image support native LoRA, LoHa, and LoKr. Anima / SDXL also
 
 ## Feature Overview
 
-- **Training WebUI** — An all-in-one workspace with a LoRA training form, TOML configuration preview, configuration import/export, and training history
+- **Training configuration** — Edit training settings, preview, import, and export TOML, and review training history
 - **Pre-training previews** — Timestep distribution, learning-rate curve, and matrix structure modals computed locally; [see the next section](#pre-training-previews)
 - **LyCORIS adapter panel** — LoCon / LoHa / LoKr with algorithm-aware parameters, a selectable kernel backend (auto / Triton / TileLang / compile / Torch), LoRA+ support, and Anima training-scope refinement
 - **Many optimizers** — AdamW, Lion, Prodigy, CAME, StableAdamW, Adafactor, ScheduleFree, Adan, AdEMAMix, Muon, plus the bundled LoRA-RITE and the experimental LoRA-Muon, each with its own defaults and constraint hints
 - **Real-time Hardware Monitor** — GPU utilization, VRAM, and temperature; CPU and RAM usage; Chart.js charts, TensorBoard integration, and live logs
 - **Native Tag Editor** — Built-in image tag editor with batch find-and-replace, deduplication, sorting, cleanup, and more
 - **Tagger Workspace** — WD EVA02-Large, WD ViT-Large, CL Tagger, Camie Tagger, and [PixAI Tagger v1.0](https://huggingface.co/pixai-labs/pixai-tagger-v1.0) with single-image inspection, category thresholds, and batch caption output; PixAI runs locally with PyTorch, supports style tags, and downloads about 1.95 GB on first use; AI tagging connects to any vision API speaking OpenAI-compatible (Chat Completions / Responses) or Anthropic Messages protocols
-- **EmoSens Adaptive Optimizer** — Built-in EmoSens v3.9 with better convergence for Anima DiT training
+- **EmoSens Adaptive Optimizer** — Built-in EmoSens v3.9 adjusts the learning rate based on loss changes and suggests when to stop
 - **Internationalization (i18n)** — Chinese, English, and Japanese UI and built-in guides, with browser-language detection and a persistent language preference
 - **Three themes** — Light, dark, and ComfyUI themes, with auto-follow system preference or manual toggle
 - **Backend Connectivity Indicator** — Real-time frontend-backend connection status with disconnect duration
@@ -63,6 +63,8 @@ Anima / SDXL / MOSS-Image support native LoRA, LoHa, and LoKr. Anima / SDXL also
 Open **View timestep distribution** under the sampling field to inspect sampling density, loss weighting, and high / mid / low noise shares. Switch between base and overall training distributions, compare median timesteps, and hover to read curve values. See the [timestep guide](docs/parameters/timesteps.en-US.md).
 
 ![Timestep distribution preview: probability density, loss weighting, and noise-zone shares](docs/images/timestep-preview.en-US.png)
+
+The screenshot shows the previous layout; the current preview places the noise shares at the top of the chart.
 
 ### Learning-rate curve
 

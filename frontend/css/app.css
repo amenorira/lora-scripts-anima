@@ -1889,9 +1889,7 @@ dialog.modal-overlay::backdrop { background: transparent; }
   --modal-workbench-width: 80rem;
   --modal-workbench-margin-x: 2.5rem;
   --modal-workbench-margin-y: 3rem;
-  /* 图表保持 5:4 不拉伸；用视口高度反推弹窗宽度上限，保证整窗放得下、不出滚动条。
-     换算：图表宽 ≈ 弹窗宽 - 28rem（侧栏 20rem + 间距/内边距 5rem + y 轴 3rem），
-     整窗高度 ≈ 图表高 + 19rem（头部/页脚/内边距/坐标轴/图例/分区卡片）。 */
+  /* 图表保持 5:4，并按视口高度限制宽度。窄屏说明可在弹窗中滚动。 */
   width: min(var(--modal-workbench-width), calc(100vw - var(--modal-workbench-margin-x)), calc(100dvh * 1.25 - 2rem));
   max-width: min(var(--modal-workbench-width), calc(100vw - var(--modal-workbench-margin-x)), calc(100dvh * 1.25 - 2rem));
   max-height: calc(100vh - var(--modal-workbench-margin-y));
@@ -2039,7 +2037,16 @@ dialog.modal-overlay::backdrop { background: transparent; }
 .timestep-preview-notes { border-radius: var(--radius-sm); color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
 .timestep-preview-notes > div { display: flex; gap: 6px; }
 .timestep-preview-notes > div + div { margin-top: 3px; }
-.timestep-preview-footnote { margin: 2px 1px 0; color: var(--text-tertiary); font-size: 11px; line-height: 1.5; }
+.timestep-preview-ranges { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.timestep-preview-ranges > span { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.timestep-preview-ranges small { color: var(--text-secondary); font-size: 11px; }
+.timestep-preview-ranges b { color: var(--text-primary); font-size: 12px; font-variant-numeric: tabular-nums; }
+.timestep-percentile-note { margin: 8px 0 0; color: var(--text-secondary); font-size: 11px; line-height: 1.5; }
+.timestep-help-target { position: relative; }
+.timestep-help-target[tabindex] { cursor: help; }
+.timestep-help-target[tabindex] > small, .timestep-inspect-title[tabindex], .timestep-preview-zones[tabindex] .zone-col span { text-decoration: underline dotted var(--border-default); text-underline-offset: 3px; }
+.timestep-help-popup { display: none; position: absolute; z-index: 10; left: 0; top: calc(100% + 5px); width: max-content; max-width: min(320px, 75vw); padding: 7px 9px; border: 1px solid var(--border-default); border-radius: var(--radius-control); background: var(--bg-surface-raised); box-shadow: var(--shadow-lg); color: var(--text-primary); font-size: 12px; font-weight: 400; line-height: 1.5; white-space: normal; pointer-events: none; }
+.timestep-help-target[tabindex]:hover > .timestep-help-popup, .timestep-help-target[tabindex]:focus > .timestep-help-popup { display: block; }
 
 /* ── sd-scripts learning-rate curve preview ─────────────── */
 .lr-preview-entry {
@@ -2076,6 +2083,11 @@ dialog.modal-overlay::backdrop { background: transparent; }
 .preview-info-section { min-width: 0; }
 .preview-info-section h3 { margin: 0 0 10px; font-size: 12px; font-weight: 600; }
 .timestep-layout-sidebar, .lr-layout-sidebar { gap: 22px; }
+.timestep-layout-sidebar .preview-info-section + .preview-info-section { position: relative; }
+.timestep-layout-sidebar .preview-info-section + .preview-info-section::before {
+  content: ''; position: absolute; inset: -11px 0 auto; height: 1px;
+  background: repeating-linear-gradient(to right, color-mix(in srgb, var(--text-secondary) 55%, transparent) 0 6px, transparent 6px 10px);
+}
 .timestep-preview-meta, .lr-preview-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 20px; }
 .timestep-preview-meta > span, .lr-preview-meta > span { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .timestep-preview-meta small, .lr-preview-meta small { display: block; color: var(--text-secondary); font-size: 11px; }
@@ -2085,8 +2097,16 @@ dialog.modal-overlay::backdrop { background: transparent; }
 .timestep-layout-chart:focus-visible, .lr-layout-chart:focus-visible { outline: 1px solid var(--accent); outline-offset: 5px; }
 @media (max-height: 850px) {
   .timestep-layout-sidebar, .lr-layout-sidebar { gap: 14px; }
+  .timestep-layout-sidebar .preview-info-section + .preview-info-section::before { top: -7px; }
   .timestep-preview-meta, .lr-preview-meta { gap: 6px 16px; }
   .preview-info-section h3 { margin-bottom: 6px; }
+}
+@media (max-height: 800px) {
+  .modal-workbench--timestep .modal-header, .modal-workbench--timestep .modal-footer { padding-block: 8px; }
+  .timestep-preview-layout { padding-block: 12px; }
+  .timestep-layout-sidebar { gap: 14px; }
+  .timestep-layout-sidebar .preview-info-section + .preview-info-section::before { top: -7px; }
+  .timestep-preview-meta { row-gap: 4px; }
 }
 @media (max-width: 900px) {
   .modal-workbench--lr {
@@ -2258,6 +2278,11 @@ dialog.modal-overlay::backdrop { background: transparent; }
 }
 .shape-preview-sidebar { min-width: 0; display: flex; flex-direction: column; gap: 22px; }
 .shape-preview-section { min-width: 0; }
+.shape-preview-section + .shape-preview-section { position: relative; }
+.shape-preview-section + .shape-preview-section::before {
+  content: ''; position: absolute; inset: -11px 0 auto; height: 1px;
+  background: repeating-linear-gradient(to right, color-mix(in srgb, var(--text-secondary) 55%, transparent) 0 6px, transparent 6px 10px);
+}
 .shape-preview-section-title { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 12px; font-weight: 600; }
 .shape-preview-section-title > span { color: var(--text-secondary); font-size: 11px; font-weight: 400; }
 .shape-preview-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 20px; margin: 10px 0 0; }
@@ -2274,14 +2299,14 @@ dialog.modal-overlay::backdrop { background: transparent; }
 .shape-preview-notes > div + div { margin-top: 3px; }
 .shape-preview-details { min-width: 0; display: grid; gap: 8px; }
 .shape-preview-footnote { margin: 2px 1px 0; color: var(--text-tertiary); font-size: 11px; line-height: 1.5; }
-.shape-preview-diagram { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.shape-preview-diagram { min-width: 0; align-self: center; display: flex; flex-direction: column; gap: 8px; }
 .shape-diagram-caption {
-  padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);
-  background: var(--bg-surface-raised); color: var(--text-secondary);
+  padding: 4px 12px; color: var(--text-secondary);
   font-size: 12.5px; line-height: 1.5; text-align: center; overflow-wrap: anywhere;
 }
 .shape-diagram-caption > div + div { margin-top: 2px; color: var(--text-primary); }
 .shape-diagram-svg { display: block; width: 100%; height: clamp(210px, calc(100dvh - 500px), 260px); margin: 0 auto; }
+.shape-diagram-svg--loha { height: clamp(280px, calc(100dvh - 400px), 420px); }
 .sp-block { fill: var(--bg-surface-raised); stroke: var(--border-default); stroke-width: 1.2; }
 .sp-block--a { fill: color-mix(in srgb, var(--accent) 14%, var(--bg-surface)); stroke: var(--accent); }
 .sp-block--b { fill: color-mix(in srgb, var(--accent) 26%, var(--bg-surface)); stroke: var(--accent); }
@@ -2296,17 +2321,19 @@ dialog.modal-overlay::backdrop { background: transparent; }
   color: var(--text-tertiary); font-size: 11.5px;
 }
 @media (max-width: 1100px) {
-  .shape-preview-layout { grid-template-columns: minmax(430px, 1.1fr) minmax(0, 1fr); }
+  .shape-preview-layout { grid-template-columns: minmax(390px, 0.85fr) minmax(0, 1.15fr); }
 }
 @media (max-height: 850px) {
   .shape-preview-sidebar { gap: 14px; }
+  .shape-preview-section + .shape-preview-section::before { top: -7px; }
   .shape-preview-meta { gap: 6px 16px; margin-top: 6px; }
 }
 @media (max-height: 780px) {
   .modal-workbench--shape { --modal-workbench-margin-y: 16px; }
   .modal-workbench--shape .modal-header,
   .modal-workbench--shape .modal-footer { padding: 8px 20px; }
-  .shape-preview-sidebar { gap: 10px; }
+  .shape-preview-sidebar { gap: 14px; }
+  .shape-preview-section + .shape-preview-section::before { top: -7px; }
   .shape-preview-meta { row-gap: 4px; }
   .shape-preview-meta { margin-top: 4px; }
   .shape-preview-layout { gap: 8px 16px; padding-top: 10px; padding-bottom: 10px; }
@@ -2363,6 +2390,7 @@ dialog.modal-overlay::backdrop { background: transparent; }
   min-width: 96px;
   font-size: 11.5px; color: var(--text-tertiary);
   font-family: var(--font-sans, system-ui, sans-serif); font-style: normal;
+  pointer-events: auto;
 }
 .timestep-inspect-value {
   display: inline-flex; align-items: center; gap: 6px;
@@ -2380,7 +2408,7 @@ dialog.modal-overlay::backdrop { background: transparent; }
 .timestep-inspect-value small { color: var(--text-tertiary); }
 
 .timestep-chart-yaxis {
-  position: relative; width: 48px; flex: 0 0 48px; display: flex; flex-direction: column;
+  position: relative; width: 48px; flex: 0 0 48px; display: flex; flex-direction: column; padding-top: 54px;
 }
 .timestep-yaxis-ticks {
   position: relative; width: 100%; height: 100%;
@@ -2392,10 +2420,10 @@ dialog.modal-overlay::backdrop { background: transparent; }
 }
 
 /* 图表固定 5:4，不随弹窗高度拉伸，避免曲线比例失真 */
+.timestep-preview-frame { min-width: 0; flex: 1 1 0; border: 1px solid var(--border-default); border-radius: var(--radius-panel); background: var(--bg-surface-raised); }
 .timestep-preview-chart {
-  position: relative; flex: 1 1 0; aspect-ratio: 5 / 4;
-  overflow: hidden; border: 1px solid var(--border-default);
-  border-radius: var(--radius-panel); background: var(--bg-surface-raised);
+  position: relative; width: 100%; aspect-ratio: 5 / 4;
+  overflow: hidden;
   cursor: crosshair; user-select: none;
 }
 
@@ -2409,16 +2437,17 @@ dialog.modal-overlay::backdrop { background: transparent; }
 }
 
 .timestep-preview-zones {
-  position: absolute; inset: 0; display: flex; pointer-events: none; z-index: 1;
+  height: 53px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); z-index: 3;
 }
+.timestep-preview-zones > .timestep-help-popup { max-width: min(320px, 100%); box-sizing: border-box; }
 .timestep-preview-zones .zone-col {
-  flex: 1 1 0; height: 100%; border-right: 1px dashed color-mix(in srgb, var(--border-subtle) 75%, transparent);
-  padding: 8px 12px; display: flex; justify-content: center; align-items: flex-start;
+  min-width: 0; padding: 6px 2px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 2px; text-align: center;
 }
-.timestep-preview-zones .zone-col:last-child { border-right: none; }
 .timestep-preview-zones .zone-col span {
   color: var(--text-tertiary); font-size: 11.5px;
 }
+.timestep-preview-zones .zone-col b { color: var(--text-primary); font-size: 13px; font-variant-numeric: tabular-nums; line-height: 1.2; }
+@media (max-height: 700px) { .timestep-preview-zones .zone-col b { font-size: 11px; } }
 
 .timestep-preview-svg {
   position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: none; z-index: 2;
@@ -2495,14 +2524,6 @@ dialog.modal-overlay::backdrop { background: transparent; }
 .legend-baseline { background: color-mix(in srgb, var(--text-tertiary) 60%, transparent); }
 .legend-weight { background: var(--warning); }
 
-/* 3-Column Summary Cards below chart */
-.timestep-preview-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; margin-left: 56px; }
-.timestep-preview-summary > div {
-  padding: 8px 6px; text-align: center; border: 1px solid var(--border-default); border-radius: var(--radius-sm);
-  background: var(--bg-surface-raised);
-}
-.timestep-preview-summary b { display: block; color: var(--text-primary); font-size: 13.5px; font-variant-numeric: tabular-nums; }
-.timestep-preview-summary span { color: var(--text-tertiary); font-size: 10px; }
 
 .subset-timestep-editor { margin: 2px 0 14px; padding: 12px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); }
 .subset-timestep-editor.is-disabled .subset-timestep-list { opacity: .48; }

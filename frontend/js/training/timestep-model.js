@@ -278,16 +278,20 @@ window.TrainingTimestepPreview = (() => {
           mid: fixedSigma >= 1 / 3 && fixedSigma < 2 / 3 ? 100 : 0,
           high: fixedSigma >= 2 / 3 ? 100 : 0,
           median: Math.round(fixedSigma * 1000),
+          percentile10: Math.round(fixedSigma * 1000),
+          percentile90: Math.round(fixedSigma * 1000),
           medianPercent: ((1 - fixedSigma) * 100).toFixed(1),
         };
       }
       let low = cdf(1 / 3), high = 1 - cdf(2 / 3);
-      let medianSigma = bisect(cdf, 0.5);
+      let medianSigma, percentile10Sigma, percentile90Sigma;
       if (sampling === 'sigma' || truncated) {
         low = 0;
         high = 0;
         let previous = 0;
         medianSigma = null;
+        percentile10Sigma = null;
+        percentile90Sigma = null;
         for (let k = 1; k <= 1000; k++) {
           const sigma = shiftSigma(k / 1000, flowShift);
           const cumulative = cdf(sigma);
@@ -296,12 +300,19 @@ window.TrainingTimestepPreview = (() => {
           else if (sigma >= 2 / 3) high += mass;
           // Lower median; tolerance only absorbs numerical inversion roundoff.
           if (medianSigma === null && cumulative >= 0.5 - 1e-12) medianSigma = sigma;
+          if (percentile10Sigma === null && cumulative >= 0.1 - 1e-12) percentile10Sigma = sigma;
+          if (percentile90Sigma === null && cumulative >= 0.9 - 1e-12) percentile90Sigma = sigma;
           previous = cumulative;
         }
+      } else {
+        medianSigma = bisect(cdf, 0.5);
+        percentile10Sigma = bisect(cdf, 0.1);
+        percentile90Sigma = bisect(cdf, 0.9);
       }
       return {
         low: low * 100, mid: (1 - low - high) * 100, high: high * 100,
         median: Math.round(medianSigma * 1000), medianPercent: ((1 - medianSigma) * 100).toFixed(1),
+        percentile10: Math.round(percentile10Sigma * 1000), percentile90: Math.round(percentile90Sigma * 1000),
       };
     };
 
@@ -358,6 +369,8 @@ window.TrainingTimestepPreview = (() => {
       baselineLinePath: baselineSvg.linePath,
       weightPoints,
       median: currentStats.median,
+      percentile10: currentStats.percentile10,
+      percentile90: currentStats.percentile90,
       baselineMedian: baselineStats.median,
       medianPercent: currentStats.medianPercent,
       lowPercent: currentStats.low,

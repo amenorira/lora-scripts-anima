@@ -2,7 +2,7 @@
 
 # lora-scripts-anima
 
-_✨ 多训练核心 LoRA 工具：Anima、SDXL、MOSS-Image 与 Krea 2 ✨_
+_本地 LoRA 训练工具，支持 Anima、SDXL、MOSS-Image 和 Krea 2。_
 
 面向本地运行的 LoRA 训练 GUI，集成训练配置、数据打标、标签编辑与实时监控。Anima / SDXL / MOSS-Image 使用 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts)，Krea 2 使用 [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner)，并通过 [LyCORIS](https://github.com/KohakuBlueleaf/LyCORIS) 扩展 Anima / SDXL 的训练算法。
 
@@ -41,14 +41,14 @@ Anima / SDXL / MOSS-Image 支持原生 LoRA、LoHa、LoKr；Anima / SDXL 还支�
 
 ## 功能简介
 
-- **训练 WebUI** — 一站式工作台，包含 LoRA 训练表单、TOML 配置预览、配置导入导出和训练历史记录
+- **训练配置** — 编辑训练参数，预览、导入和导出 TOML，并查看训练记录
 - **训练前预览** — 时间步分布、学习率曲线与矩阵结构三个本地预览弹窗，[见下一节](#pre-training-previews)
 - **LyCORIS 适配器面板** — 支持 LoCon / LoHa / LoKr，按算法动态显示参数，可选内核后端（auto / Triton / TileLang / compile / Torch），并支持 LoRA+ 与 Anima 训练范围细化
 - **多种优化器** — AdamW、Lion、Prodigy、CAME、StableAdamW、Adafactor、ScheduleFree、Adan、AdEMAMix、Muon 等常用优化器，外加内置的 LoRA-RITE 与测试中的 LoRA-Muon，各自带默认值与约束提示
 - **实时硬件监控** — 显示 GPU 利用率、显存与温度，以及 CPU/RAM 使用率；集成 Chart.js 动态图表、TensorBoard 和实时日志
 - **原生标签编辑器** — 内置图片标签编辑器，支持批量查找替换、去重、排序、清理等操作
 - **Tagger 工作台** — 集成 WD EVA02-Large、WD ViT-Large、CL Tagger、Camie Tagger 与 [PixAI Tagger v1.0](https://huggingface.co/pixai-labs/pixai-tagger-v1.0)，支持单图检查、分类阈值控制和批量标签写入；PixAI 使用本地 PyTorch 推理，支持风格分类，首次下载约 1.95 GB；另可对接 OpenAI 兼容（Chat Completions / Responses）或 Anthropic Messages 协议的 AI 打标
-- **EmoSens 自适应优化器** — 内置 EmoSens v3.9，对 Anima DiT 训练有更好的收敛效果
+- **EmoSens 自适应优化器** — 内置 EmoSens v3.9，可根据损失变化调整学习率并提示停止时机
 - **国际化（i18n）** — 中文、英文和日语界面及内置指南，支持浏览器语言自动检测并保存语言偏好
 - **三种主题** — 浅色、深色与 ComfyUI 主题，支持跟随系统、手动切换
 - **后端连接状态指示器** — 实时显示前后端连接状态及断连时长
@@ -63,6 +63,8 @@ Anima / SDXL / MOSS-Image 支持原生 LoRA、LoHa、LoKr；Anima / SDXL 还支�
 在 **训练时间步采样方式** 下点击「查看时间步分布」，检查采样密度、Loss 权重和高 / 中 / 低噪声占比。可切换基础分布与整体训练分布，对比中位时间步的变化，并通过悬浮读数检查曲线。详见[时间步指南](docs/parameters/timesteps.zh-CN.md)。
 
 ![时间步分布预览：概率密度曲线、Loss 权重与噪声区间占比](docs/images/timestep-preview.zh-CN.png)
+
+截图展示旧版布局；当前版本将噪声占比显示在图框顶部。
 
 ### 学习率曲线预览
 

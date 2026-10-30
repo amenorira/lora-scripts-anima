@@ -36,3 +36,21 @@ test('document titles follow the UI language when loading and restoring cached c
   assert.equal(contentRequests, 3);
   assert.equal(app.docsDocumentTitle('future-guide'), 'future-guide');
 });
+
+test('relative guide links open the corresponding document and anchor', () => {
+  const { window } = loadFrontend(['docs/index']);
+  const calls = [];
+  const app = composeMixins(window.docsMixin, {
+    selectParameterDoc(slug, anchor) { calls.push([slug, anchor]); },
+  });
+  for (const locale of ['zh-CN', 'en-US', 'ja-JP']) {
+    let prevented = false;
+    app.handleDocsContentClick({
+      target: { closest: () => ({ getAttribute: () => `timesteps.${locale}.md#comparison-method` }) },
+      preventDefault() { prevented = true; },
+    });
+    assert.equal(prevented, true);
+    assert.match(readRepo(`docs/parameters/timesteps.${locale}.md`), /id="comparison-method"/);
+  }
+  assert.deepEqual(calls, Array(3).fill(['timesteps', 'comparison-method']));
+});

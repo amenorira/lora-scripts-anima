@@ -4,11 +4,11 @@ During training, each image gets a sampled noise timestep, which determines how 
 
 Anima, MOSS-Image, and Krea 2 use flow matching, where the normalized timestep sets the mixing coefficients:
 
-| Noise range | Information in the input | Meaning for sampling settings |
-| --- | --- | --- |
-| High | Larger noise coefficient, smaller image coefficient | A higher share trains on more high-noise inputs |
-| Medium | Substantial contributions from both image and noise | Concentrating here reduces training at both ends |
-| Low | Larger image coefficient, smaller noise coefficient | A higher share trains on more low-noise inputs |
+| Noise range | Information in the input |
+| --- | --- |
+| High | Less original image information, more noise |
+| Medium | Substantial contributions from both image and noise |
+| Low | More original image information, less noise |
 
 Learning identity, global structure, and texture involves multiple noise ranges. Check data, resolution, and training scope before choosing a sampling adjustment.
 
@@ -56,7 +56,7 @@ The trainer uses the word “step” for three unrelated things:
 
 ![Timestep distribution preview in the ComfyUI theme](../images/timestep-preview.en-US.png)
 
-This is a static illustration of an example configuration. Open **View timestep distribution** under the training timestep sampling field to inspect your own settings and switch between the base and overall training distributions. The sidebar shows sampling settings, base and current median timesteps, and loss weighting. Hover the curve to read values at a particular position.
+This static illustration shows the previous layout; the current preview displays high-, medium-, and low-noise shares at the top of the chart. Open **View timestep distribution** under the training timestep sampling field to inspect your own settings and switch between the base and overall training distributions. The sidebar shows sampling settings, base and current median timesteps, and loss weighting. Hover the curve to read values at a particular position.
 
 | Preview element | How to read it |
 | --- | --- |
@@ -345,6 +345,7 @@ Blank or 0 for `min_snr_gamma` disables Min-SNR. Keep the prediction target and 
 
 Noise offset and multiresolution noise modify the input noise: offset is applied first, then lower-resolution noise is added and normalized. Both can be enabled. The iteration count is an upper bound; processing stops early when one side reaches 1 pixel. The discount controls each layer's contribution.
 
+<span id="comparison-method"></span>
 <!-- doc-anchor: testing -->
 ## Controlled comparisons
 

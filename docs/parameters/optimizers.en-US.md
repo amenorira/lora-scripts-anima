@@ -525,11 +525,7 @@ For a complete accumulation window, effective batch size is batch size × accumu
 <!-- doc-anchor: ab-testing -->
 ## Controlled comparisons
 
-1. Fix the dataset, captions, the seed, the base model, VAE, rank/alpha, batch, and total steps.
-2. Fix the preview prompt, sampler settings, and generation seed.
-3. Find a usable learning-rate range for each optimizer, starting from the table above. Vary only learning rate while keeping the other settings fixed.
-4. Compare checkpoints at the same step count, and record gradient norm, peak VRAM, and wall-clock time for each run.
-5. Evaluate fidelity, costume control, pose/background binding, and prompt response, using loss as a supporting metric.
+See the [controlled comparison steps](timesteps.en-US.md#comparison-method) for the general procedure. When comparing optimizers, also fix captions, the base model, VAE, batch settings, and generation sampler settings. Starting from each optimizer's learning rate in the table above, find a usable range and record gradient norm, peak VRAM, and training time. Compare fidelity, costume control, pose/background binding, and prompt response.
 
 Start comparison runs from the same base model and initialize each optimizer's state separately.
 

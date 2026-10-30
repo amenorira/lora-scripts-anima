@@ -245,7 +245,8 @@ window.trainingTimestepPreview = {
       samplingLabel: this._fieldOptionLabel('timestep_sampling', preview.sampling, preview.sampling),
       weightingLabel: preview.weighting === 'uniform' ? this.t('timestepPreview.uniformWeighting')
         : this._fieldOptionLabel('weighting_scheme', preview.weighting, preview.weighting),
-      notes: noteKeys.map(key => this.t(key)),
+      uniformWeightHelp: noteKeys.includes('timestepPreview.uniformWeightNote'),
+      notes: noteKeys.filter(key => key !== 'timestepPreview.uniformWeightNote').map(key => this.t(key)),
     };
   },
 
@@ -282,7 +283,7 @@ window.trainingTimestepPreview = {
     return `
     <div class="timestep-chart-box">
       <div class="timestep-inspect-bar">
-        <span class="timestep-inspect-title">${data.fixedTimestep != null ? t('timestepPreview.fixedDistribution', 'Fixed timestep (100%)') : t('timestepPreview.relativeDensity', 'Relative PDF')}</span>
+        <span class="timestep-inspect-title timestep-help-target" tabindex="0" aria-describedby="timestep-density-help">${data.fixedTimestep != null ? t('timestepPreview.fixedDistribution', 'Fixed timestep (100%)') : t('timestepPreview.relativeDensity', 'Relative PDF')}<span id="timestep-density-help" class="timestep-help-popup" role="tooltip">${t('timestepPreview.footnote', '')}</span></span>
         <span class="timestep-inspect-value" aria-live="polite">
           <b class="ts-hover-t"></b><small>·</small><span class="ts-hover-density"></span>
         </span>
@@ -290,18 +291,22 @@ window.trainingTimestepPreview = {
       <div class="timestep-chart-yaxis">
         <div class="timestep-yaxis-ticks">${yticks}</div>
       </div>
+      <div class="timestep-preview-frame">
+        <div class="timestep-preview-zones timestep-help-target" tabindex="0" aria-label="${t('timestepPreview.zoneShare', 'Sampling share')}" aria-describedby="timestep-zones-help">
+          <div class="zone-col"><span>${t('timestepPreview.structureZone', 'High noise')}</span><b>${esc(fmtPercent(data.baselineHighPercent, data.highPercent, data.compare))}</b></div>
+          <div class="zone-col"><span>${t('timestepPreview.middleZone', 'Mid noise')}</span><b>${esc(fmtPercent(data.baselineMidPercent, data.midPercent, data.compare))}</b></div>
+          <div class="zone-col"><span>${t('timestepPreview.detailZone', 'Low noise')}</span><b>${esc(fmtPercent(data.baselineLowPercent, data.lowPercent, data.compare))}</b></div>
+          <span id="timestep-zones-help" class="timestep-help-popup" role="tooltip">${t('timestepPreview.interpretationHint', '')}</span>
+        </div>
       <div class="timestep-preview-chart" aria-hidden="true">
         <svg class="timestep-grid-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
           ${gridH}
           <line x1="25" y1="0" x2="25" y2="100" class="timestep-grid-v" />
           <line x1="50" y1="0" x2="50" y2="100" class="timestep-grid-v" />
           <line x1="75" y1="0" x2="75" y2="100" class="timestep-grid-v" />
+          <line x1="33.333" y1="0" x2="33.333" y2="100" class="timestep-grid-v" />
+          <line x1="66.667" y1="0" x2="66.667" y2="100" class="timestep-grid-v" />
         </svg>
-        <div class="timestep-preview-zones">
-          <div class="zone-col"><span>${t('timestepPreview.structureZone', 'High noise')}</span></div>
-          <div class="zone-col"><span>${t('timestepPreview.middleZone', 'Mid noise')}</span></div>
-          <div class="zone-col"><span>${t('timestepPreview.detailZone', 'Low noise')}</span></div>
-        </div>
         <svg class="timestep-preview-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
           ${baselineCurve}
           <path class="timestep-curve-area" d="${esc(data.currentAreaPath)}"></path>
@@ -312,6 +317,7 @@ window.trainingTimestepPreview = {
           <span class="timestep-median-tag">${t(data.fixedTimestep != null ? 'timestepPreview.fixedLabel' : 'timestepPreview.medianLabel', 't = {value}').replace('{value}', esc(data.median))}</span>
         </div>
         <div class="timestep-hover-indicator" style="display:none"></div>
+      </div>
       </div>
     </div>
     <div class="timestep-preview-axis">
@@ -324,11 +330,7 @@ window.trainingTimestepPreview = {
       <span><i class="legend-distribution"></i><span>${t('timestepPreview.currentDistribution', 'Current distribution')}</span></span>
       ${weightLegend}
     </div>
-    <div class="timestep-preview-summary">
-      <div><b>${esc(fmtPercent(data.baselineHighPercent, data.highPercent, data.compare))}</b><span>${t('timestepPreview.structureZone', 'High noise')}</span></div>
-      <div><b>${esc(fmtPercent(data.baselineMidPercent, data.midPercent, data.compare))}</b><span>${t('timestepPreview.middleZone', 'Mid noise')}</span></div>
-      <div><b>${esc(fmtPercent(data.baselineLowPercent, data.lowPercent, data.compare))}</b><span>${t('timestepPreview.detailZone', 'Low noise')}</span></div>
-    </div>`;
+    `;
   },
 
   onTimestepChartHover(event) {

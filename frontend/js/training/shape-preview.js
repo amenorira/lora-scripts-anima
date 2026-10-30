@@ -321,11 +321,11 @@ window.trainingShapePreviewMixin = {
       + this._shapePreviewTextSvg(x + w / 2, y + h + 15, dimText, 'dim');
   },
 
-  _shapePreviewSvgWrap(used, top, bottom, parts) {
+  _shapePreviewSvgWrap(used, top, bottom, parts, isLoha = false) {
     const pad = 26;
     const width = Math.max(140, used) + pad * 2;
     const height = Math.max(60, bottom - top) + pad * 2;
-    return `<svg class="shape-diagram-svg" viewBox="0 0 ${width.toFixed(1)} ${height.toFixed(1)}" preserveAspectRatio="xMidYMid meet" role="img"`
+    return `<svg class="shape-diagram-svg${isLoha ? ' shape-diagram-svg--loha' : ''}" viewBox="0 0 ${width.toFixed(1)} ${height.toFixed(1)}" preserveAspectRatio="xMidYMid meet" role="img"`
       + ` aria-label="${this.escapeAttr(this.t('shapePreview.diagramAlt'))}">`
       + `<g transform="translate(${pad},${(pad - top).toFixed(1)})">${parts.join('')}</g></svg>`;
   },
@@ -383,7 +383,7 @@ window.trainingShapePreviewMixin = {
     x += gap;
     parts.push(this._shapePreviewMatrixSvg(x, midY - dh / 2, dw, dh, 'sp-block--out', 'ΔW', `${outDim} × ${inDim}`));
     x += dw;
-    return this._shapePreviewSvgWrap(x, rows[0] - bh / 2 - 12, rows[1] + bh / 2 + 22, parts);
+    return this._shapePreviewSvgWrap(x, rows[0] - bh / 2 - 12, rows[1] + bh / 2 + 22, parts, true);
   },
 
   _shapePreviewLokrSvg({ rank, inDim, outDim, outL, outK, inM, inN, w1LowRank, w2Full }) {
