@@ -99,6 +99,8 @@ test('training profiles keep independent drafts and reset from registry defaults
 test('preview lists validate before import and survive profile switch and reset', async () => {
   const fields = [
     { key: 'preview_loras', type: 'lora-list', default: [] },
+    { key: 'preview_sampler', type: 'select', default: 'euler', options: [{ v: 'euler' }, { v: 'er_sde' }] },
+    { key: 'preview_scheduler', type: 'select', default: 'native', options: [{ v: 'native' }, { v: 'beta57' }] },
   ];
   const { window } = loadFrontend([...TRAINING_CORE_SCRIPTS, 'training/config-io'], {
     window: { getVisibleSections: () => [{ key: 'preview', fields }], t: (_key, fallback) => fallback },
@@ -118,17 +120,23 @@ test('preview lists validate before import and survive profile switch and reset'
     assert.equal(app.form, original);
     assert.equal(app._activeTrainType, 'anima-lora');
   }
-  await app._applyImportedFlatConfig({ model_train_type: 'anima-lora', preview_loras: [
+  await app._applyImportedFlatConfig({ model_train_type: 'anima-lora', preview_sampler: 'er_sde', preview_scheduler: 'beta57', preview_loras: [
     { path: 'one.safetensors', multiplier: -0.3 }, { path: 'two.safetensors', multiplier: 0.7 },
   ] });
   app.switchTrainType('moss-image-lora');
   assert.equal(app.form.preview_loras.length, 0);
+  assert.equal(app.form.preview_sampler, 'euler');
+  assert.equal(app.form.preview_scheduler, 'native');
   app.form.preview_loras = [{ path: 'moss.safetensors', multiplier: 0.4 }];
   app.switchTrainType('anima-lora');
   assert.equal(app.form.preview_loras[0].multiplier, -0.3);
   assert.equal(app.form.preview_loras[1].path, 'two.safetensors');
+  assert.equal(app.form.preview_sampler, 'er_sde');
+  assert.equal(app.form.preview_scheduler, 'beta57');
   app.resetAllParams();
   assert.equal(app.form.preview_loras.length, 0);
+  assert.equal(app.form.preview_sampler, 'euler');
+  assert.equal(app.form.preview_scheduler, 'native');
   app._profileFormDrafts['moss-image-lora'].preview_loras = { path: 'corrupted draft' };
   app.switchTrainType('moss-image-lora');
   assert.equal(app.form.preview_loras.length, 0);

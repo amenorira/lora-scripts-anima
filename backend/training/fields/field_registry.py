@@ -632,6 +632,15 @@ shared_training_field('save_state', default=False, target="toml", omit_default=T
 {"key": "caption_tag_dropout_rate", "type": "number", "default": 0, "section": "caption", "desc_key": "field.caption_tag_dropout_rate", "target": "toml", "min": 0, "max": 1, "step": 0.01, "omit_default": True},
 # ── Preview ──
 {"key": "enable_preview", "type": "toggle", "default": False, "section": "preview", "desc_key": "field.enable_preview", "target": "ui"},
+{"key": "preview_sampler", "type": "select", "default": "euler", "section": "preview", "desc_key": "field.preview_sampler", "target": "ui", "group": ["anima", "moss_image"], "show_if": {"key": "enable_preview", "eq": True}, "options": [
+    {"v": "euler", "l": "Euler"}, {"v": "er_sde", "l": "ER-SDE"}, {"v": "euler_a", "l": "Euler ancestral"},
+    {"v": "dpmpp_2m", "l": "DPM++ 2M"}, {"v": "heun", "l": "Heun"},
+]},
+{"key": "preview_scheduler", "type": "select", "default": "native", "section": "preview", "desc_key": "field.preview_scheduler", "target": "ui", "group": ["anima", "moss_image"], "show_if": {"key": "enable_preview", "eq": True}, "options": [
+    {"v": "native", "l": "Native", "label_key": "opt.preview_scheduler_native"}, {"v": "simple", "l": "simple"},
+    {"v": "sgm_uniform", "l": "sgm_uniform"}, {"v": "beta", "l": "beta"}, {"v": "beta57", "l": "beta57"},
+    {"v": "normal", "l": "normal"}, {"v": "karras", "l": "karras"}, {"v": "exponential", "l": "exponential"},
+]},
 {"key": "preview_loras", "type": "lora-list", "default": [], "section": "preview", "desc_key": "field.preview_loras", "hint_key": "field.preview_lorasHint", "target": "ui", "group": ["anima", "moss_image"], "show_if": {"key": "enable_preview", "eq": True}},
 {"key": "positive_prompts", "type": "textarea", "default": "", "section": "preview", "desc_key": "field.sample_prompts", "target": "ui", "hint_key": "field.sample_promptsHint", "show_if": {"key": "enable_preview", "eq": True}},
 {"key": "negative_prompts", "type": "textarea", "default": "", "section": "preview", "desc_key": "field.negative_prompts", "target": "ui", "show_if": {"key": "enable_preview", "eq": True}},

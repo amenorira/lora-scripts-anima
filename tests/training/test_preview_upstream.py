@@ -110,6 +110,44 @@ assert torch.equal(rng, torch.get_rng_state()), "sampling changed training RNG"
 assert before.keys() == network.state_dict().keys()
 for key in before:
     assert torch.equal(before[key], network.state_dict()[key]), key
+from backend.training.preview.sampling import wrap_sampler
+from backend.training.preview.config import SAMPLERS, SCHEDULERS
+base_sampler = sampling.sample_images.__wrapped__
+document = {"schema_version": 1, "architecture": architecture, "loras": []}
+base_sampler(accelerator, args, None, 1, model, vae, None, None, None, {"tiny": embeddings})
+native_latents = vae.last_latents.clone()
+wrap_sampler(base_sampler, document)(accelerator, args, None, 1, model, vae, None, None, None, {"tiny": embeddings})
+torch.testing.assert_close(vae.last_latents, native_latents, rtol=0, atol=0)
+kernel_name = "generate_latents" if architecture == "moss_image" else "do_sample"
+original_kernel = getattr(sampling, kernel_name)
+prompts.write_text(json.dumps([{"prompt": "tiny", "negative_prompt": "negative", "width": 64, "height": 64,
+                               "sample_steps": 4, "scale": 2., "seed": 42}]), encoding="utf-8")
+cache = {"tiny": embeddings, "negative": embeddings}
+for sampler_name in SAMPLERS:
+    for scheduler_name in SCHEDULERS:
+        args.output_name = sampler_name + "_" + scheduler_name
+        wrapped = wrap_sampler(base_sampler, {**document, "loras": rows, "sampler": sampler_name, "scheduler": scheduler_name})
+        with patch.object(Adapter, "apply", observed_apply):
+            wrapped(accelerator, args, None, 1, model, vae, None, None, None, cache)
+        assert getattr(sampling, kernel_name) is original_kernel
+        assert torch.equal(rng, torch.get_rng_state())
+        for key in before:
+            assert torch.equal(before[key], network.state_dict()[key]), key
+wrapped = wrap_sampler(base_sampler, {**document, "loras": rows, "sampler": "heun", "scheduler": "simple"})
+with patch("backend.training.preview.kernels.sample", side_effect=ValueError("injected preview error")):
+    try:
+        wrapped(accelerator, args, None, 1, model, vae, None, None, None, cache)
+        raise AssertionError("preview exception was swallowed")
+    except ValueError as exc:
+        assert "injected preview error" in str(exc)
+assert getattr(sampling, kernel_name) is original_kernel
+assert torch.equal(rng, torch.get_rng_state())
+# Non-default sampling is also functional with an empty external-adapter list.
+wrapped = wrap_sampler(base_sampler, {**document, "sampler": "er_sde", "scheduler": "simple"})
+with patch("backend.training.preview.lora.LoRAManager._weights", side_effect=AssertionError("unexpected adapter I/O")):
+    wrapped(accelerator, args, None, 1, model, vae, None, None, None, cache)
+assert getattr(sampling, kernel_name) is original_kernel
+assert torch.equal(rng, torch.get_rng_state())
 training_step()
 assert any(not torch.equal(before[k], network.state_dict()[k]) for k in before)
 # A weight-dependent external DoRA sees the current native training LoRA too.

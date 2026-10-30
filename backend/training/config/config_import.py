@@ -47,6 +47,12 @@ def import_native_training_form(params: dict, *, profile_id: str | None = None) 
     else:
         form = extract_optimizer_form(form)
     form = extract_network_form(form, model_train_type=imported_type)
+    from backend.training.preview.config import sampling_options
+
+    options = sampling_options(form.get("preview_sampler"), form.get("preview_scheduler"))
+    for name, value in options.items():
+        if "preview_" + name in form:
+            form["preview_" + name] = value
     if "preview_loras" in form:
         from backend.training.preview.config import normalize_loras
 

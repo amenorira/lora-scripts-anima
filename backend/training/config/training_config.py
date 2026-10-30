@@ -343,6 +343,15 @@ def extract_training_form(document: dict[str, Any]) -> dict[str, Any]:
 
 
 def _normalize_preview_loras(form):
+    from backend.training.preview.config import sampling_options
+
+    try:
+        options = sampling_options(form.get("preview_sampler"), form.get("preview_scheduler"))
+    except ValueError as exc:
+        raise TrainingConfigError(str(exc)) from exc
+    for name, value in options.items():
+        if "preview_" + name in form:
+            form["preview_" + name] = value
     if "preview_loras" in form:
         from backend.training.preview.config import normalize_loras
 

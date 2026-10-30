@@ -11,6 +11,8 @@ import torch
 
 from .compat import PreviewCompatibilityError, sampling_due, sampling_signature
 from .lora import LoRAManager
+from .config import sampling_options
+from .kernels import override_kernel
 from . import anima, moss_image
 
 
@@ -20,6 +22,7 @@ logger = logging.getLogger(__name__)
 def wrap_sampler(original, document):
     signature = sampling_signature(original)
     manager = LoRAManager(document["loras"], document["architecture"])
+    options = sampling_options(document.get("sampler"), document.get("scheduler"))
 
     @functools.wraps(original)
     def sample_images(*args, **kwargs):
@@ -83,7 +86,7 @@ def wrap_sampler(original, document):
             # Eager preview avoids stale compiled graphs retaining an old forward.
             # Compiled training resumes with its original graph and original forwards.
             with (stance("force_eager") if compiled else nullcontext()):
-                with manager.activate(prepared, accelerator.device), torch.no_grad():
+                with manager.activate(prepared, accelerator.device), torch.no_grad(), override_kernel(original, document["architecture"], options):
                     entered = True
                     return original(*bound.args, **bound.kwargs)
         finally:

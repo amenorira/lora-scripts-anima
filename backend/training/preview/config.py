@@ -9,10 +9,22 @@ from pathlib import Path
 ENV_KEY = "ANIMA_PREVIEW_LORAS_CONFIG"
 CONFIG_NAME = "preview_loras.json"
 PROFILES = {"moss-image-lora": "moss_image", "anima-lora": "anima"}
+SAMPLERS = ("euler", "er_sde", "euler_a", "dpmpp_2m", "heun")
+SCHEDULERS = ("native", "simple", "sgm_uniform", "beta", "beta57", "normal", "karras", "exponential")
 
 
+def sampling_options(sampler=None, scheduler=None):
+    sampler = "euler" if sampler in (None, "") else sampler
+    scheduler = "native" if scheduler in (None, "") else scheduler
+    if sampler not in SAMPLERS:
+        raise ValueError(f"Unsupported preview sampler / 不支持的预览采样器: {sampler}")
+    if scheduler not in SCHEDULERS:
+        raise ValueError(f"Unsupported preview scheduler / 不支持的预览调度器: {scheduler}")
+    return {"sampler": sampler, "scheduler": scheduler}
 
 
+def custom_sampling(options):
+    return options["sampler"] != "euler" or options["scheduler"] != "native"
 
 
 def normalize_loras(value, *, check_files=False, allow_incomplete=False):
@@ -57,12 +69,13 @@ def prepare_config(form, profile_id):
     if not form.get("enable_preview") or profile_id not in PROFILES:
         return None
     loras = normalize_loras(form.get("preview_loras"), check_files=True)
-    if not any(row["multiplier"] != 0 for row in loras):
+    options = sampling_options(form.get("preview_sampler"), form.get("preview_scheduler"))
+    if not any(row["multiplier"] != 0 for row in loras) and not custom_sampling(options):
         return None
     from .compat import check_source
 
-    check_source(PROFILES[profile_id])
-    return {"schema_version": 1, "architecture": PROFILES[profile_id], "loras": loras}
+    check_source(PROFILES[profile_id], custom_sampling=custom_sampling(options))
+    return {"schema_version": 1, "architecture": PROFILES[profile_id], "loras": loras, **options}
 
 
 def read_config(path):
@@ -71,4 +84,5 @@ def read_config(path):
         raise ValueError("Unsupported preview LoRA configuration / 不支持的预览 LoRA 配置")
     if document.get("architecture") not in PROFILES.values():
         raise ValueError("Unsupported preview model / 不支持的预览模型")
-    return {**document, "loras": normalize_loras(document.get("loras"), check_files=True)}
+    return {**document, "loras": normalize_loras(document.get("loras"), check_files=True),
+            **sampling_options(document.get("sampler"), document.get("scheduler"))}
