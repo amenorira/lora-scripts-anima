@@ -64,8 +64,6 @@ Anima / SDXL / MOSS-Image 支持原生 LoRA、LoHa、LoKr；Anima / SDXL 还支�
 
 ![时间步分布预览：概率密度曲线、Loss 权重与噪声区间占比](docs/images/timestep-preview.zh-CN.png)
 
-截图展示旧版布局；当前版本将噪声占比显示在图框顶部。
-
 ### 学习率曲线预览
 
 在 **学习率变化方式** 下点击「查看学习率曲线」，预览预热、衰减与重启，读取各训练步的学习率。侧栏显示当前组件的生效学习率和预热步数，支持切换 DiT / 文本编码器；自行管理调度的优化器会显示相应说明。详见[优化器指南](docs/parameters/optimizers.zh-CN.md)。
@@ -74,7 +72,7 @@ Anima / SDXL / MOSS-Image 支持原生 LoRA、LoHa、LoKr；Anima / SDXL 还支�
 
 ### 矩阵结构预览
 
-Anima 或 MOSS-Image 训练下，在 **训练网络模块** 下点击「结构预览」。Anima 支持 LoRA / LoCon、LoHa 和 LoKr，MOSS-Image 支持原生 LoRA / LoHa / LoKr，包含可选的 DiT 文本投影与细化层。按实际网络构造结果展示矩阵组合，可切换注意力、MLP 等模块，查看逐层形状、生效 rank / alpha、缩放、匹配层数和参数统计。
+Anima、MOSS-Image 或 Krea 2 训练下，在 **训练网络模块** 下点击「结构预览」。Anima 支持 LoRA / LoCon、LoHa 和 LoKr；MOSS-Image 支持原生 LoRA / LoHa / LoKr，包含可选的 DiT 文本投影与细化层；Krea 2 支持原生 LoRA 和 LyCORIS LoCon / LoHa / LoKr。按实际网络构造结果展示矩阵组合，可切换注意力、MLP 等模块，查看逐层形状、生效 rank / alpha、缩放、匹配层数和参数统计。
 
 入口同时显示 **预计权重文件大小**，随算法、rank、训练范围和保存精度自动更新。估算使用虚拟张量，无需加载底模或启动训练；统计实际保存张量与 safetensors 索引开销，不代表显存需求。详见[矩阵结构与文件大小指南](docs/parameters/matrix-preview.zh-CN.md)。
 

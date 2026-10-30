@@ -64,8 +64,6 @@ Open **View timestep distribution** under the sampling field to inspect sampling
 
 ![Timestep distribution preview: probability density, loss weighting, and noise-zone shares](docs/images/timestep-preview.en-US.png)
 
-The screenshot shows the previous layout; the current preview places the noise shares at the top of the chart.
-
 ### Learning-rate curve
 
 Open **View learning-rate curve** under the schedule field to inspect warmup, decay, restarts, and rates at individual steps. The sidebar shows the effective rate and warmup steps for the selected DiT or text-encoder component. Optimizers that manage their own schedule display the relevant explanation. See the [optimizer guide](docs/parameters/optimizers.en-US.md).
@@ -74,7 +72,7 @@ Open **View learning-rate curve** under the schedule field to inspect warmup, de
 
 ### Matrix structure
 
-For Anima or MOSS-Image training, open **Structure preview** under **Training network module**. Anima supports LoRA / LoCon, LoHa, and LoKr; MOSS-Image supports native LoRA / LoHa / LoKr, including its optional DiT text projection and refiner layers. The diagram reflects actual network construction. Switch between attention, MLP, and other modules to inspect tensor shapes, effective rank / alpha, scaling, matching layer counts, and parameter statistics.
+For Anima, MOSS-Image, or Krea 2 training, open **Structure preview** under **Training network module**. Anima supports LoRA / LoCon, LoHa, and LoKr; MOSS-Image supports native LoRA / LoHa / LoKr, including its optional DiT text projection and refiner layers; Krea 2 supports native LoRA and LyCORIS LoCon / LoHa / LoKr. The diagram reflects actual network construction. Switch between attention, MLP, and other modules to inspect tensor shapes, effective rank / alpha, scaling, matching layer counts, and parameter statistics.
 
 The entry also shows the **estimated weight-file size**, updating with the algorithm, rank, training scope, and save precision. Fake tensors make this possible without loading base-model weights or starting training. The estimate includes saved tensors and the safetensors index, and is not a VRAM estimate. See the [matrix structure and file-size guide](docs/parameters/matrix-preview.en-US.md).
 

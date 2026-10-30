@@ -56,12 +56,14 @@ The trainer uses the word “step” for three unrelated things:
 
 ![Timestep distribution preview in the ComfyUI theme](../images/timestep-preview.en-US.png)
 
-This static illustration shows the previous layout; the current preview displays high-, medium-, and low-noise shares at the top of the chart. Open **View timestep distribution** under the training timestep sampling field to inspect your own settings and switch between the base and overall training distributions. The sidebar shows sampling settings, base and current median timesteps, and loss weighting. Hover the curve to read values at a particular position.
+This static illustration shows an example configuration, with high-, medium-, and low-noise shares at the top of the chart. Open **View timestep distribution** under the training timestep sampling field to inspect your own settings and switch between the base and overall training distributions. The sidebar shows sampling settings, base and current median timesteps, and loss weighting. Hover the curve to read values at a particular position.
 
 | Preview element | How to read it |
 | --- | --- |
 | Sampling curve | Over intervals of equal width, more area under the curve means that noise range is sampled more often |
 | High-, medium-, and low-noise shares | Expected fraction of samples in each range |
+| Timestep ranges (approx.) | Timestep intervals for the high-, medium-, and low-noise zones |
+| Sampling range (P10–P90) | Range between the 10th and 90th percentiles, containing approximately 80% of samples |
 | Loss-weight curve | Shows the multiplier applied to a sample’s prediction error after it is sampled |
 | Reference resolution | Dimensions used to compute the current chart's resolution-dependent shift |
 

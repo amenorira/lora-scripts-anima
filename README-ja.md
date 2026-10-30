@@ -64,8 +64,6 @@ Anima / SDXL / MOSS-Image はネイティブの LoRA・LoHa・LoKr に対応し�
 
 ![タイムステップ分布プレビュー：確率密度、損失の重み、ノイズ領域の割合](docs/images/timestep-preview.ja-JP.jpg)
 
-画像は以前の画面です。現在のプレビューではノイズ区間の割合をグラフ上部に表示します。
-
 ### 学習率曲線
 
 学習率スケジュールの設定から学習率のプレビューを開くと、ウォームアップ、減衰、リスタート、各学習ステップの学習率を確認できます。サイドバーには選択した DiT / テキストエンコーダーの実効学習率とウォームアップステップ数を表示します。スケジュールを自動管理するオプティマイザーには、その動作の説明を表示します。詳しくは[オプティマイザーガイド](docs/parameters/optimizers.ja-JP.md)を参照してください。
@@ -74,7 +72,7 @@ Anima / SDXL / MOSS-Image はネイティブの LoRA・LoHa・LoKr に対応し�
 
 ### 行列構造
 
-Anima または MOSS-Image 学習では、学習ネットワークモジュールの設定から **「構造プレビュー」** を開けます。Anima は LoRA / LoCon、LoHa、LoKr に、MOSS-Image は任意の DiT テキスト投影層と Refiner を含むネイティブ LoRA / LoHa / LoKr に対応します。実際のネットワーク構築結果に基づいて行列の組み合わせを表示し、Attention、MLP などのモジュールを切り替えて、層ごとの形状、実効 rank / alpha、スケーリング、該当する層数、パラメータ数を確認できます。
+Anima、MOSS-Image、Krea 2 の学習では、学習ネットワークモジュールの設定から **「構造プレビュー」** を開けます。Anima は LoRA / LoCon、LoHa、LoKr に、MOSS-Image は任意の DiT テキスト投影層と Refiner を含むネイティブ LoRA / LoHa / LoKr に、Krea 2 はネイティブ LoRA と LyCORIS LoCon / LoHa / LoKr に対応します。実際のネットワーク構築結果に基づいて行列の組み合わせを表示し、Attention、MLP などのモジュールを切り替えて、層ごとの形状、実効 rank / alpha、スケーリング、該当する層数、パラメータ数を確認できます。
 
 同じ場所に **推定重みファイルサイズ** も表示され、アルゴリズム、rank、学習範囲、保存精度に応じて自動更新されます。仮想テンソルを使用するため、ベースモデルの読み込みや学習の開始は不要です。推定には保存テンソルと safetensors のインデックスを含みますが、VRAM 使用量を表すものではありません。詳しくは[行列構造とファイルサイズのガイド](docs/parameters/matrix-preview.ja-JP.md)を参照してください。
 
