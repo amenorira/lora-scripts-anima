@@ -98,15 +98,39 @@ class PreviewLoRATests(unittest.TestCase):
             branch = prepared[getattr(self.model.layers[0].proj, projection)][0]
             torch.testing.assert_close(branch.up, state["diffusion_model.layers.0.proj.qkv.lora_up.weight"][index * 3:(index + 1) * 3])
 
+    def test_phase_preparation_releases_raw_checkpoint_cache(self):
+        path, state = self.file()
+        state = {key: value.half() for key, value in state.items()}
+        state.update({key.replace("diffusion_model.layers.0.proj.q", "lora_te_layers_0_proj_q"): value.clone()
+                      for key, value in list(state.items())})
+        save_file(state, path)
+        for has_prompts in (False, True):
+            manager = LoRAManager([{"path": path, "multiplier": 1.}], "anima")
+            self.assertTrue(manager.needs_text_encoder)
+            if has_prompts:
+                manager.prepare(None, TinyDiT())
+                manager.release_text_encoder()
+            manager.prepare(self.model)
+            self.assertEqual(manager._cache, {})
+            # A prompt change may re-encode with a newly loaded frozen encoder.
+            manager.prepare(None, TinyDiT())
+            manager.release_text_encoder()
+            manager.prepare(self.model)
+            self.assertEqual(manager._cache, {})
+
     def test_invalid_second_adapter_does_not_patch_any_layer(self):
         good, _ = self.file()
-        for kwargs in ({"base": "diffusion_model.missing"}, {"out": 4},
-                       {"base": "lora_te_layers_0_self_attn_q_proj"}, {"alpha": float("nan")}):
+        for kwargs in ({"base": "diffusion_model.missing"}, {"out": 4}, {"alpha": float("nan")}):
             bad, _ = self.file("bad", **kwargs)
             manager = LoRAManager([{"path": good, "multiplier": 1}, {"path": bad, "multiplier": 1}], "anima")
             with self.assertRaises(PreviewLoRAError):
                 manager.prepare(self.model)
             self.assertNotIn("forward", self.model.layers[0].proj.q.__dict__)
+
+        bad, _ = self.file("bad-te", base="lora_te_layers_0_self_attn_q_proj")
+        manager = LoRAManager([{"path": good, "multiplier": 1}, {"path": bad, "multiplier": 1}], "anima")
+        with self.assertRaises(PreviewLoRAError):
+            manager.prepare(None, self.model)
 
     def test_partial_and_unsupported_weights_are_rejected(self):
         _, state = self.file()

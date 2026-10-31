@@ -163,8 +163,21 @@ save_file({"diffusion_model." + name + "." + k: v for k, v in {
 manager = LoRAManager([{"path": str(path), "multiplier": 0.4}], architecture)
 x = torch.randn(2, layer.in_features)
 expected = F.linear(x, effective + (merged * 1.2 - effective) * 0.4, layer.bias)
-with manager.activate(manager.prepare(model), "cpu"), torch.no_grad():
+versions = [p._version for p in network.parameters()]
+from backend.training.preview.live import LiveTrainingWeight
+with patch("backend.training.preview.lora.LiveTrainingWeight", wraps=LiveTrainingWeight) as snapshots:
+    with manager.activate(manager.prepare(model), "cpu", models=(model,)), torch.no_grad():
+        torch.testing.assert_close(layer(x), expected, rtol=1e-5, atol=1e-6)
+    assert snapshots.call_count == 1, snapshots.call_count
+assert versions == [p._version for p in network.parameters()], "preview wrote non-mutating training parameters"
+# The actual compile + block-swap helper wraps bound training forwards.
+from library.compile_utils import disable_linear_from_compile
+disable_linear_from_compile(model)
+wrapped_forward = layer.forward
+with manager.activate(manager.prepare(model), "cpu", models=(model,)), torch.no_grad():
     torch.testing.assert_close(layer(x), expected, rtol=1e-5, atol=1e-6)
+assert layer.forward is wrapped_forward
+training_step()
 # Native sd-scripts input-channel rotation formats: validate against the
 # original per-module implementations, including non-unit multipliers.
 from networks.oft_v2 import OFTv2Module
@@ -188,6 +201,11 @@ for cls, options in ((OFTv2Module, {"block_size": 4}),
 # compressed parameters, mixed module modes, and optimizer parameter identities.
 coft_model = torch.nn.Module()
 coft_model.proj = torch.nn.Linear(8, 8, bias=False)
+coft_model.other = torch.nn.Linear(8, 8, bias=False)
+untargeted = OFTv2Module("other", "lora_unet", "other", coft_model.other, block_size=4, coft=True)
+with torch.no_grad(): untargeted.oft_R.weight.fill_(0.1)
+untargeted.apply_to()
+untargeted_saved = untargeted.oft_R.weight.detach().clone()
 live = OFTv2Module("live", "lora_unet", "proj", coft_model.proj, block_size=4, coft=True)
 with torch.no_grad(): live.oft_R.weight.fill_(0.1)
 live.apply_to()
@@ -201,14 +219,17 @@ reference = parse_rebuild({k: v.detach().clone() for k, v in live.state_dict().i
 x = torch.randn(2, 8)
 expected = (F.linear(x, coft_model.proj.weight) + reference.apply(x)) * 2
 try:
-    with manager.activate(manager.prepare(coft_model), "cpu"), torch.no_grad():
+    with manager.activate(manager.prepare(coft_model), "cpu", models=(coft_model,)), torch.no_grad():
         torch.testing.assert_close(coft_model.proj(x), expected, rtol=1e-5, atol=1e-6)
+        coft_model.other(x)
+        assert not torch.equal(untargeted.oft_R.weight, untargeted_saved)
         assert not torch.equal(live.oft_R.weight, saved), "COFT projection was not exercised"
         raise ValueError("injected sampling error")
 except ValueError:
     pass
 assert live.oft_R.weight is identity
 assert torch.equal(live.oft_R.weight, saved)
+assert torch.equal(untargeted.oft_R.weight, untargeted_saved), "untargeted COFT was not restored"
 assert live.training and live.oft_R.training
 # ConvRot INT8 keeps its packed base tensors intact while external adapters
 # execute on the original activation (CPU fallback and CUDA when available).
@@ -238,6 +259,59 @@ for device in (["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]):
         with manager.activate(manager.prepare(quantized), device):
             torch.testing.assert_close(quantized.proj(x), expected, rtol=1e-3, atol=1e-4)
     assert torch.equal(quantized.proj.weight, packed)
+# Exercise both upstream encoding strategies with a tiny real Qwen encoder.
+# Frozen prompts are encoded once; neither TE forwards nor GPU branches survive
+# into the original sampler, which consumes CPU embeddings on subsequent calls.
+from transformers import Qwen3Config, Qwen3Model
+encoder = Qwen3Model(Qwen3Config(vocab_size=32, hidden_size=16, intermediate_size=32,
+                               num_hidden_layers=1, num_attention_heads=2, num_key_value_heads=2,
+                               head_dim=8)).requires_grad_(False).eval()
+te_path = folder / "text_encoder_lora.safetensors"
+save_file({"lora_te_layers_0_self_attn_q_proj.lora_down.weight": torch.randn(2, 16) * .02,
+           "lora_te_layers_0_self_attn_q_proj.lora_up.weight": torch.randn(16, 2) * .02}, te_path)
+ids, mask = torch.tensor([[1, 2, 3, 4]]), torch.ones(1, 4, dtype=torch.long)
+if architecture == "anima":
+    from library.strategy_anima import AnimaTextEncodingStrategy
+    strategy = AnimaTextEncodingStrategy()
+    tokenize = SimpleNamespace(tokenize=lambda text: [ids, mask, ids, mask])
+else:
+    from library.strategy_moss_image import MossImageTextEncodingStrategy
+    strategy = MossImageTextEncodingStrategy()
+    tokenize = SimpleNamespace(tokenize=lambda text: [ids, mask])
+wrapped = wrap_sampler(base_sampler, {**document, "loras": rows + [{"path": str(te_path), "multiplier": .5}]})
+with patch("backend.training.preview." + architecture + ".load_text_encoder", return_value=encoder) as loader, \
+     patch.object(strategy, "encode_tokens", wraps=strategy.encode_tokens) as encoding:
+    missing_args = SimpleNamespace(**{**vars(args), "sample_prompts": str(folder / "missing.json")})
+    wrapped(accelerator, missing_args, None, 1, model, vae, None, tokenize, strategy)
+    assert loader.call_count == 0 and encoding.call_count == 0
+    for step in (1, 2):
+        wrapped(accelerator, args, None, step, model, vae, None, tokenize, strategy)
+    assert loader.call_count == 1, loader.call_count
+    assert encoding.call_count == 2, encoding.call_count
+assert encoder.device.type == "cpu"
+assert "forward" not in encoder.layers[0].self_attn.q_proj.__dict__
+# DiT-only external adapters must still disable the live TE adapter's dropout.
+from networks.lora_anima import LoRAModule as QwenLoRA
+te_training = QwenLoRA("live_te", encoder.layers[0].self_attn.q_proj, lora_dim=2, module_dropout=1.)
+te_training.apply_to()
+te_training.train()
+native_encode = strategy.encode_tokens
+def encode_in_eval(*arguments):
+    assert not te_training.training, "live TE training dropout remained enabled during preview"
+    outputs = native_encode(*arguments)
+    if fail_encoding:
+        raise ValueError("injected live TE error")
+    return outputs
+for fail_encoding in (False, True):
+    wrapped = wrap_sampler(base_sampler, {**document, "loras": rows})
+    with patch.object(strategy, "encode_tokens", side_effect=encode_in_eval):
+        try:
+            wrapped(accelerator, args, None, 1, model, vae, encoder, tokenize, strategy)
+            assert not fail_encoding
+        except ValueError as error:
+            assert fail_encoding and "injected live TE error" in str(error)
+    assert te_training.training, "live TE training mode was not restored"
+training_step()
 print("upstream preview + resumed training + native orthogonal formats OK", architecture)
 '''
 

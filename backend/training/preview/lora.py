@@ -49,6 +49,10 @@ def aliases(name):
             "lora_unet." + name)
 
 
+def is_text_encoder_key(key):
+    return key.startswith(("lora_te_", "lora_te1_", "text_encoders.", "text_encoder."))
+
+
 def module_index(model, architecture):
     if architecture not in ("anima", "moss_image"):
         raise PreviewLoRAError(f"Unsupported architecture: {architecture}")
@@ -107,10 +111,9 @@ class LoRAManager:
     def __init__(self, rows, architecture):
         self.rows = rows
         self.architecture = architecture
-        self._cache = {}  # CPU tensors only, reused across previews.
+        self._cache = {}  # CPU checkpoint tensors; released after DiT preparation.
         self._active = False
-        self._prepared_signature = None
-        self._prepared = None
+        self._plans = {}
         self._has_text_encoder = None
         self._options = {}
 
@@ -140,17 +143,18 @@ class LoRAManager:
     def needs_text_encoder(self):
         if self._has_text_encoder is None:
             self._has_text_encoder = any(
-                key.startswith(("lora_te_", "lora_te1_", "text_encoders.", "text_encoder."))
+                is_text_encoder_key(key)
                 for row in self.rows if row["multiplier"] != 0 for key in self._weights(row["path"]))
         return self._has_text_encoder
 
-    def release_models(self):
-        self._prepared_signature = self._prepared = None
+    def release_text_encoder(self):
+        self._plans = {scope: plan for scope, plan in self._plans.items() if not scope[1]}
 
     def prepare(self, model, text_encoder=None):
         if not any(row["multiplier"] != 0 for row in self.rows):
             return {}
-        index = module_index(model, self.architecture)
+        scope = (model is not None, text_encoder is not None)
+        index = module_index(model, self.architecture) if model is not None else {}
         if text_encoder is not None:
             for alias, targets in module_index(text_encoder, self.architecture).items():
                 if alias.startswith("lora_unet_"):
@@ -167,8 +171,11 @@ class LoRAManager:
                     index["text_encoders.transformer.model." + name] = targets
         signature = tuple((key, tuple((id(module), module_shape(module))
                                       for _, module in targets)) for key, targets in index.items())
-        if signature == self._prepared_signature:
-            return self._prepared
+        cached = self._plans.get(scope)
+        if cached is not None and signature == cached[0]:
+            if scope[0]:
+                self._cache.clear()
+            return cached[1]
         result = {}
         for row_index, row in enumerate(self.rows):
             if row["multiplier"] == 0:
@@ -189,6 +196,9 @@ class LoRAManager:
             if not groups:
                 raise PreviewLoRAError(f"{path}: empty LoRA / LoRA 文件没有权重")
             for group_index, (base, group) in enumerate(groups.items()):
+                text_key = is_text_encoder_key(base)
+                if (text_key and not scope[1]) or (not text_key and not scope[0]):
+                    continue
                 targets = index.get(base)
                 if targets is None and base.endswith(".bias") and set(group) == {"set_weight"}:
                     targets = index.get(base[:-5])
@@ -209,12 +219,13 @@ class LoRAManager:
                     branch.order = (row_index, group_index)
                     result.setdefault(module, []).append(branch)
                     offset += size
-        self._prepared_signature, self._prepared = signature, result
-        self._cache.clear()
+        self._plans[scope] = (signature, result)
+        if scope[0]:
+            self._cache.clear()
         return result
 
     @contextmanager
-    def activate(self, prepared, device):
+    def activate(self, prepared, device, *, models=()):
         if self._active:
             raise PreviewLoRAError("Nested preview LoRA activation / 预览 LoRA 重复挂载")
         self._active = True
@@ -226,18 +237,27 @@ class LoRAManager:
             resident = {module: [b.to(device, moved)
                                  for b in branches if b.scale != 0]
                         for module, branches in prepared.items()}
-            owners = {module: owner for module in resident if (owner := training_owner(module)) is not None}
+            # A partial external adapter still runs all native training layers.
+            # Include them for eval/dropout and native COFT's in-place projection.
+            owners = {module: owner for root in (models or prepared) for module in root.modules()
+                      if (owner := training_owner(module)) is not None}
             for owner in owners.values():
                 for child in owner.modules():
                     modes.setdefault(child, child.training)
                     child.training = False
-                for parameter in owner.parameters():
-                    if parameter not in training_parameters:
-                        training_parameters[parameter] = parameter.detach().clone()
-            training_weights = {}
-            if any(branch.depends_on_weight for branches in resident.values() for branch in branches):
-                training_weights = {module: LiveTrainingWeight(module, owner, device, parse_training_adapter)
-                                    for module, owner in owners.items()}
+                    parameter = getattr(child, "weight", None)
+                    if getattr(child, "coft", False) and isinstance(parameter, torch.nn.Parameter) and parameter not in training_parameters:
+                        training_parameters[parameter] = parameter.detach().to(device="cpu", copy=True)
+            needed = {module for module, branches in resident.items() if any(b.depends_on_weight for b in branches)}
+            pending = list(needed)
+            while pending:
+                for branch in resident.get(pending.pop(), []):
+                    for target in getattr(branch, "targets", ()):
+                        if target not in needed:
+                            needed.add(target)
+                            pending.append(target)
+            training_weights = {module: LiveTrainingWeight(module, owners[module], device, parse_training_adapter)
+                                for module in needed if module in owners}
             for module, branches in resident.items():
                 if not branches:
                     continue

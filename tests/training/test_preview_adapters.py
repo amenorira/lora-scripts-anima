@@ -2,6 +2,7 @@
 import tempfile
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 import torch
 import torch.nn.functional as F
@@ -9,6 +10,7 @@ from safetensors.torch import save_file
 
 from backend.training.preview.lora import LoRAManager
 from backend.training.preview.rebuild import parse_rebuild
+from backend.training.preview.adapters import parse_adapter
 
 
 class AdapterFormatTests(unittest.TestCase):
@@ -68,6 +70,40 @@ class AdapterFormatTests(unittest.TestCase):
             manager = LoRAManager([{"path": path, "multiplier": strength}], "anima")
             with manager.activate(manager.prepare(self.model), "cpu"):
                 torch.testing.assert_close(self.model.proj(x), F.linear(x, base + (normalized - base) * strength), rtol=1e-5, atol=1e-5)
+
+    def test_lokr_keeps_factors_compressed_and_slices_before_projection(self):
+        a, b = torch.randn(5, 2), torch.randn(2, 3)
+        c, d = torch.randn(4, 2), torch.randn(2, 2)
+        x = torch.randn(2, 3, 6)
+        for first_full in (False, True):
+            for second_full in (False, True):
+                group = {**({"lokr_w1": a @ b} if first_full else {"lokr_w1_a": a, "lokr_w1_b": b}),
+                         **({"lokr_w2": c @ d} if second_full else {"lokr_w2_a": c, "lokr_w2_b": d})}
+                adapter = parse_adapter(group, .7)
+                self.assertEqual(sum(t.numel() for t in adapter.weights.values()), sum(t.numel() for t in group.values()))
+                dense = torch.kron(a @ b, c @ d) * .7
+                torch.testing.assert_close(adapter.apply(x), F.linear(x, dense), rtol=1e-5, atol=1e-5)
+                for start, stop in ((0, 4), (4, 8), (8, 20), (0, 7), (7, 14), (14, 20), (1, 3)):
+                    branch = adapter.slice_outputs(start, stop)
+                    torch.testing.assert_close(branch.apply(x), F.linear(x, dense[start:stop]), rtol=1e-5, atol=1e-5)
+                    torch.testing.assert_close(branch.parameter_delta()[0], dense[start:stop], rtol=1e-5, atol=1e-5)
+                with patch.object(F, "linear", wraps=F.linear) as linear:
+                    adapter.slice_outputs(0, 4).apply(x)
+                self.assertEqual(linear.call_args_list[-1].args[1].shape[0], 1)
+                adapter.embedding = True
+                indices = torch.tensor([[0, 7, 19]])
+                torch.testing.assert_close(adapter.apply(indices), F.embedding(indices, dense), rtol=1e-5, atol=1e-5)
+
+    def test_fused_lokr_reuses_shared_second_factor_after_transfer(self):
+        for factored in (False, True):
+            second = ({"lokr_w2_a": torch.randn(4, 2), "lokr_w2_b": torch.randn(2, 8)}
+                      if factored else {"lokr_w2": torch.randn(4, 8)})
+            adapter = parse_adapter({"lokr_w1": torch.randn(3, 1), **second}, 1.)
+            moved = {}
+            branches = [adapter.slice_outputs(start, start + 4).to("meta", moved) for start in (0, 4, 8)]
+            for key in second:
+                self.assertIs(branches[0].weights[key], branches[1].weights[key])
+                self.assertIs(branches[0].weights[key], branches[2].weights[key])
 
     def test_glora_old_and_new_layout_and_ia3(self):
         a1, a2 = torch.randn(8, 2), torch.randn(2, 8)

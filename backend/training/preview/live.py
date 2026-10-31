@@ -5,6 +5,7 @@ Only weight-dependent external patches need the live adapter's effective weight.
 Compression is retained between calls; dense scratch is local to one forward.
 """
 import copy
+import inspect
 
 import torch
 
@@ -13,7 +14,9 @@ from .rebuild import apply_weight_delta, engine_diff_weight
 
 
 def training_owner(module):
-    owner = getattr(module.forward, "__self__", None)
+    # Block swapping disables compilation around Linear.forward. Unwrap that
+    # function before looking for the adapter's bound method.
+    owner = getattr(inspect.unwrap(module.forward), "__self__", None)
     if owner is not module and isinstance(owner, torch.nn.Module) and callable(getattr(owner, "org_forward", None)):
         return owner
     return None
