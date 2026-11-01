@@ -407,11 +407,37 @@ AdamWScheduleFree uses internal `warmup_steps`; external `lr_warmup_steps` is in
 Stochastic rounding reduces the drift from low-precision updates that consistently round in the same direction. ProdigyPlus uses the library default; this trainer provides no separate switch.
 
 <!-- doc-anchor: automagic-lr -->
-### Automagic3 starting rate and bounds
+### Automagic3 parameters
 
-`learning_rate` initializes the controller; each parameter group then adapts its rate from update-direction history. The [vendored upstream source](https://github.com/ostris/ai-toolkit/blob/c2864bba48a6f94ab1171d9df47b1335f8306355/toolkit/optimizers/automagic3.py) uses `max_lr=1e3` as a numerical upper bound. Lower `max_lr` to constrain growth; `min_lr` bounds decreases.
+Automagic3 adjusts each parameter group's learning rate by pooling its recent update directions. Consistent directions push the rate upward, while strictly alternating directions push it downward. The pooled result determines the adjustment. `learning_rate` sets the starting point for a new run.
 
-This project requires every starting group rate, including component overrides and LoRA+ scaling, to lie within `[min_lr, max_lr]`. External scheduling and warmup do not control this adaptation.
+The table lists this trainer's initial settings. Values entered manually or loaded from a configuration may be retained.
+
+| Parameter | Initial value | Range | Purpose |
+| --- | --- | --- | --- |
+| `learning_rate` | `1e-4` | Finite and positive, within the bounds | Starting learning rate for a new run |
+| `min_lr` | `1e-8` | Finite and positive; no greater than `max_lr` | Lower bound for automatic learning-rate adjustment |
+| `max_lr` | `1e3` | Finite and positive; no less than `min_lr` | Upper bound for automatic adjustment; the default is a numerical safeguard, and lowering it limits growth |
+| `beta2` | `0.999` | `0 ≤ beta2 < 1` | Smooths squared-gradient statistics; values closer to 1 retain history longer |
+| `clip_threshold` | `1.0` | Finite and positive | Limits the internal update's root mean square and individual components; lower values apply stronger clipping |
+| `polarity_history` | `8` | Integer from `2` to `64` | Number of recent parameter updates used to track directions and adjust the learning rate |
+| `fused` | `False` | Boolean | Updates parameters during backpropagation and releases their gradients |
+| `eps` | `1e-30` | Finite and positive | Stabilizes squared-gradient statistics to prevent division by zero |
+| `weight_decay` | `0` | Finite and nonnegative | Shrinks trainable weights; `0` disables weight decay |
+
+`min_lr`, `max_lr`, `beta2`, `clip_threshold`, `polarity_history`, and `fused` correspond to the interface's `automagic_*` fields and are exported through `optimizer_args`. The shared `eps` and `weight_decay` fields also use `optimizer_args`; `learning_rate` remains a top-level setting. Every parameter group must start within `min_lr ≤ starting learning rate ≤ max_lr`, including component overrides and rates produced by LoRA+ multipliers.
+
+#### History length and internal clipping
+
+`polarity_history=8` records the last 8 actual parameter updates. Parameters continue updating at the current learning rate while the window fills. Once full, the pooled history can adjust subsequent rates. Longer windows respond more slowly and use more GPU memory. Changing the window length when resuming resets the sign history.
+
+In normal mode, `max_grad_norm` can clip gradients first. Automagic3 then clips the root mean square (RMS) of its internal update and each component, adds any nonzero weight-decay term, and finally multiplies by the current adaptive learning rate.
+
+#### Updates during backpropagation
+
+The project default is `fused=False`: parameters are updated at the normal optimizer step, with gradient accumulation and global gradient clipping available. With `fused=True`, each parameter is updated as its gradient becomes available, and that gradient is released so fewer gradients are held at once. This mode requires one GPU, gradient accumulation of `1`, `max_grad_norm=0`, and `mixed_precision` set to `bf16` or `no`. Internal `clip_threshold` clipping remains active in both modes.
+
+This project keeps trainable parameters in FP32 and disables `full_bf16`. BF16 mixed-precision computation remains available. The optimizer controls the learning rate in both modes; the external scheduler is fixed to `constant`, with external warmup set to `0`.
 
 ### EmoSens v3.9.3
 

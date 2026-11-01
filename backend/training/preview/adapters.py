@@ -27,6 +27,24 @@ PARTS = {"hada_w1_a", "hada_w1_b", "hada_w2_a", "hada_w2_b",
          "lokr_w1", "lokr_w2", "lokr_w1_a", "lokr_w1_b", "lokr_w2_a", "lokr_w2_b", "scalar"}
 
 
+def factor_shape(weights, key):
+    if key in weights:
+        return weights[key].shape
+    return (weights[key + "_a"].shape[0], weights[key + "_b"].shape[1])
+
+
+def factor_linear(x, weights, key):
+    if key in weights:
+        return F.linear(x, weights[key])
+    return F.linear(F.linear(x, weights[key + "_b"]), weights[key + "_a"])
+
+
+def factor_embedding(indices, weights, key):
+    if key in weights:
+        return F.embedding(indices, weights[key])
+    return F.embedding(indices, weights[key + "_a"]) @ weights[key + "_b"]
+
+
 @dataclass
 class Adapter:
     kind: str
@@ -49,7 +67,9 @@ class Adapter:
         elif self.kind == "loha":
             weight = (w["hada_w1_a"] @ w["hada_w1_b"]) * (w["hada_w2_a"] @ w["hada_w2_b"])
         else:
-            weight = torch.kron(w["lokr_w1"], w["lokr_w2"])
+            factors = [w[key] if key in w else w[key + "_a"] @ w[key + "_b"]
+                       for key in ("lokr_w1", "lokr_w2")]
+            weight = torch.kron(*factors)
             if self.output_slice:
                 weight = weight[self.output_slice[0]:self.output_slice[1]]
         return weight * self.scale, None
@@ -77,7 +97,20 @@ class Adapter:
             for key in ("hada_w1_a", "hada_w2_a"):
                 weights[key] = weights[key][start:stop]
         else:
-            return replace(self, out_features=stop - start, output_slice=(start, stop))
+            # Restrict the first factor before doing either projection. Fused
+            # Q/K/V branches must not each compute the entire QKV output.
+            rows = factor_shape(weights, "lokr_w2")[0]
+            first, last = start // rows, (stop + rows - 1) // rows
+            key = "lokr_w1" if "lokr_w1" in weights else "lokr_w1_a"
+            weights[key] = weights[key][first:last]
+            offset = start - first * rows
+            if last - first == 1:
+                if offset != 0 or stop - start != rows:
+                    key = "lokr_w2" if "lokr_w2" in weights else "lokr_w2_a"
+                    weights[key] = weights[key][offset:offset + stop - start]
+                return replace(self, weights=weights, out_features=stop - start)
+            return replace(self, weights=weights, out_features=stop - start,
+                           output_slice=(offset, offset + stop - start))
         return replace(self, weights=weights, out_features=stop - start)
 
     def apply(self, x):
@@ -91,9 +124,9 @@ class Adapter:
                 second = F.embedding(indices, w["hada_w2_a"]) @ w["hada_w2_b"]
                 output = first * second
             else:
-                first, second = w["lokr_w1"], w["lokr_w2"]
-                left = F.embedding(indices // second.shape[0], first)
-                right = F.embedding(indices % second.shape[0], second)
+                rows = factor_shape(w, "lokr_w2")[0]
+                left = factor_embedding(indices // rows, w, "lokr_w1")
+                right = factor_embedding(indices % rows, w, "lokr_w2")
                 output = (left.unsqueeze(-1) * right.unsqueeze(-2)).flatten(-2)
             return output * self.scale
         if self.kind == "lora":
@@ -109,12 +142,11 @@ class Adapter:
             output = torch.cat(parts, dim=-1)
         else:
             # [..., I1 * I2] -> [..., I1, I2] -> [..., O1 * O2]
-            first = w["lokr_w1"]
-            second = w["lokr_w2"]
-            grouped = x.reshape(*x.shape[:-1], first.shape[1], second.shape[1])
-            inner = F.linear(grouped, second)
-            output = F.linear(inner.transpose(-1, -2), first).transpose(-1, -2)
-            output = output.reshape(*x.shape[:-1], first.shape[0] * second.shape[0])
+            first, second = (factor_shape(w, key) for key in ("lokr_w1", "lokr_w2"))
+            grouped = x.reshape(*x.shape[:-1], first[1], second[1])
+            inner = factor_linear(grouped, w, "lokr_w2")
+            output = factor_linear(inner.transpose(-1, -2), w, "lokr_w1").transpose(-1, -2)
+            output = output.reshape(*x.shape[:-1], first[0] * second[0])
             if self.output_slice:
                 output = output[..., self.output_slice[0]:self.output_slice[1]]
         return output * self.scale
@@ -152,7 +184,7 @@ def parse_adapter(group, multiplier):
         in_features = second[0][1]
     elif keys and keys <= {"lokr_w1", "lokr_w2", "lokr_w1_a", "lokr_w1_b", "lokr_w2_a", "lokr_w2_b"}:
         kind = "lokr"
-        rebuilt = {}
+        shapes = []
         for side in (1, 2):
             key = f"lokr_w{side}"
             direct = key in weights
@@ -160,7 +192,7 @@ def parse_adapter(group, multiplier):
             if direct == factored:
                 raise PreviewLoRAError("LoKr needs exactly one full matrix or factor pair per side")
             if direct:
-                rebuilt[key] = weights[key]
+                shapes.append(weights[key].shape)
             else:
                 a, b = weights.get(key + "_a"), weights.get(key + "_b")
                 if a is None or b is None or a.shape[1] != b.shape[0]:
@@ -168,10 +200,9 @@ def parse_adapter(group, multiplier):
                 if rank is not None and rank != b.shape[0]:
                     raise PreviewLoRAError("LoKr decomposed factors have different ranks")
                 rank = b.shape[0]
-                rebuilt[key] = a @ b
-        weights = rebuilt
-        out_features = weights["lokr_w1"].shape[0] * weights["lokr_w2"].shape[0]
-        in_features = weights["lokr_w1"].shape[1] * weights["lokr_w2"].shape[1]
+                shapes.append((a.shape[0], b.shape[1]))
+        out_features = shapes[0][0] * shapes[1][0]
+        in_features = shapes[0][1] * shapes[1][1]
     else:
         raise PreviewLoRAError("Incomplete, mixed or unsupported LoRA / LoHa / LoKr components")
     alpha = group.get("alpha")

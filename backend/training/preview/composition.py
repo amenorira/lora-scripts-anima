@@ -50,7 +50,14 @@ def composed_output_delta(module, plans, x, training_weights=None):
         prefixes[key] = (weight, bias)
         return weight, bias
 
-    final_weight, final_bias = effective(module, (float("inf"), float("inf")))
-    weight, bias = original(module)
-    bias_delta = None if final_bias is None else final_bias - (0 if bias is None else bias)
-    return apply_weight_delta(module, x, final_weight - weight, bias_delta)
+    try:
+        final_weight, final_bias = effective(module, (float("inf"), float("inf")))
+        weight, bias = original(module)
+        bias_delta = None if final_bias is None else final_bias - (0 if bias is None else bias)
+        return apply_weight_delta(module, x, final_weight - weight, bias_delta)
+    finally:
+        # A recursive closure owns its own cell. Break that cycle on every
+        # forward so full FP32 layers never wait for cyclic GC between steps.
+        effective = None
+        bases.clear()
+        prefixes.clear()

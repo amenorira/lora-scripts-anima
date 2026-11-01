@@ -1,14 +1,20 @@
 """Numerical format compatibility, including mixed algorithms and magnitudes."""
+import copy
+import gc
 import tempfile
+import traceback
 from pathlib import Path
 import unittest
+import weakref
+from unittest.mock import patch
 
 import torch
 import torch.nn.functional as F
 from safetensors.torch import save_file
 
 from backend.training.preview.lora import LoRAManager
-from backend.training.preview.rebuild import parse_rebuild
+from backend.training.preview.rebuild import parse_rebuild, RebuildAdapter
+from backend.training.preview.adapters import parse_adapter
 
 
 class AdapterFormatTests(unittest.TestCase):
@@ -68,6 +74,40 @@ class AdapterFormatTests(unittest.TestCase):
             manager = LoRAManager([{"path": path, "multiplier": strength}], "anima")
             with manager.activate(manager.prepare(self.model), "cpu"):
                 torch.testing.assert_close(self.model.proj(x), F.linear(x, base + (normalized - base) * strength), rtol=1e-5, atol=1e-5)
+
+    def test_lokr_keeps_factors_compressed_and_slices_before_projection(self):
+        a, b = torch.randn(5, 2), torch.randn(2, 3)
+        c, d = torch.randn(4, 2), torch.randn(2, 2)
+        x = torch.randn(2, 3, 6)
+        for first_full in (False, True):
+            for second_full in (False, True):
+                group = {**({"lokr_w1": a @ b} if first_full else {"lokr_w1_a": a, "lokr_w1_b": b}),
+                         **({"lokr_w2": c @ d} if second_full else {"lokr_w2_a": c, "lokr_w2_b": d})}
+                adapter = parse_adapter(group, .7)
+                self.assertEqual(sum(t.numel() for t in adapter.weights.values()), sum(t.numel() for t in group.values()))
+                dense = torch.kron(a @ b, c @ d) * .7
+                torch.testing.assert_close(adapter.apply(x), F.linear(x, dense), rtol=1e-5, atol=1e-5)
+                for start, stop in ((0, 4), (4, 8), (8, 20), (0, 7), (7, 14), (14, 20), (1, 3)):
+                    branch = adapter.slice_outputs(start, stop)
+                    torch.testing.assert_close(branch.apply(x), F.linear(x, dense[start:stop]), rtol=1e-5, atol=1e-5)
+                    torch.testing.assert_close(branch.parameter_delta()[0], dense[start:stop], rtol=1e-5, atol=1e-5)
+                with patch.object(F, "linear", wraps=F.linear) as linear:
+                    adapter.slice_outputs(0, 4).apply(x)
+                self.assertEqual(linear.call_args_list[-1].args[1].shape[0], 1)
+                adapter.embedding = True
+                indices = torch.tensor([[0, 7, 19]])
+                torch.testing.assert_close(adapter.apply(indices), F.embedding(indices, dense), rtol=1e-5, atol=1e-5)
+
+    def test_fused_lokr_reuses_shared_second_factor_after_transfer(self):
+        for factored in (False, True):
+            second = ({"lokr_w2_a": torch.randn(4, 2), "lokr_w2_b": torch.randn(2, 8)}
+                      if factored else {"lokr_w2": torch.randn(4, 8)})
+            adapter = parse_adapter({"lokr_w1": torch.randn(3, 1), **second}, 1.)
+            moved = {}
+            branches = [adapter.slice_outputs(start, start + 4).to("meta", moved) for start in (0, 4, 8)]
+            for key in second:
+                self.assertIs(branches[0].weights[key], branches[1].weights[key])
+                self.assertIs(branches[0].weights[key], branches[2].weights[key])
 
     def test_glora_old_and_new_layout_and_ia3(self):
         a1, a2 = torch.randn(8, 2), torch.randn(2, 8)
@@ -162,6 +202,139 @@ class AdapterFormatTests(unittest.TestCase):
         with manager.activate(manager.prepare(model), "cpu"):
             torch.testing.assert_close(model.proj(x), baseline + expected, rtol=1e-5, atol=1e-5)
 
+    def test_weight_dependent_forward_releases_dense_scratch_without_gc(self):
+        from backend.training.preview.composition import base_weight
+        model = torch.nn.Linear(8, 8, bias=False).to(torch.bfloat16)
+        branch = parse_rebuild({"weight": torch.ones(8), "on_input": torch.tensor(1)}, .3, [model])
+        references = []
+
+        def observe(*args, **kwargs):
+            weight = base_weight(*args, **kwargs)
+            references.append(weakref.ref(weight))
+            return weight
+
+        automatic_gc = gc.isenabled()
+        gc.disable()
+        try:
+            with patch("backend.training.preview.composition.base_weight", side_effect=observe), \
+                 LoRAManager([], "moss_image").activate({model: [branch]}, "cpu"), torch.no_grad():
+                x = torch.randn(2, 8, dtype=torch.bfloat16)
+                for _ in range(6):
+                    model(x)
+                    self.assertTrue(all(reference() is None for reference in references))
+        finally:
+            if automatic_gc:
+                gc.enable()
+
+    def test_temporary_lycoris_engines_release_without_gc_and_keep_cpu_load_hooks(self):
+        cases = [
+            (torch.nn.Conv2d(4, 6, 3), {"down": torch.randn(2, 4, 3, 3), "up": torch.randn(6, 2, 1, 1)},
+             torch.randn(1, 4, 6, 6)),
+            (torch.nn.Linear(8, 8), {key: torch.randn(8, 2) if key[1] == "1" else torch.randn(2, 8)
+                                    for key in ("a1.weight", "a2.weight", "b1.weight", "b2.weight")},
+             torch.randn(2, 8)),
+        ]
+        original_to = RebuildAdapter.to
+        for model, group, x in cases:
+            branch = parse_rebuild(group, .5, [model])
+            hooks = [(module, module._load_state_dict_pre_hooks.copy(), module._load_state_dict_post_hooks.copy())
+                     for module in branch.engine.modules()]
+            references = []
+
+            def observe(*args, **kwargs):
+                resident = original_to(*args, **kwargs)
+                references.append(weakref.ref(resident.engine))
+                references.extend(weakref.ref(parameter) for parameter in resident.engine.parameters())
+                return resident
+
+            automatic_gc = gc.isenabled()
+            gc.disable()
+            try:
+                with patch.object(RebuildAdapter, "to", observe), torch.no_grad():
+                    for _ in range(4):
+                        with LoRAManager([], "anima").activate({model: [branch]}, "cpu"):
+                            model(x)
+                        self.assertTrue(all(reference() is None for reference in references))
+                for module, before, after in hooks:
+                    self.assertEqual(module._load_state_dict_pre_hooks, before)
+                    self.assertEqual(module._load_state_dict_post_hooks, after)
+            finally:
+                if automatic_gc:
+                    gc.enable()
+
+    def test_rebuild_partial_transfer_releases_local_weights_with_retained_error(self):
+        first, second = torch.ones(4, 4), torch.ones(4)
+        model = torch.nn.Linear(4, 4)
+        branch = RebuildAdapter("diff", {"diff": first, "diff_b": second}, 1., 4, 4, [model])
+        references = []
+        original_to = torch.Tensor.to
+
+        def transfer(tensor, *args, **kwargs):
+            if tensor is second:
+                raise RuntimeError("injected second transfer failure")
+            result = original_to(tensor, *args, **kwargs)
+            references.append(weakref.ref(result))
+            return result
+
+        saved_error = None
+        with patch.object(torch.Tensor, "to", transfer):
+            try:
+                with LoRAManager([], "anima").activate({model: [branch]}, "meta"):
+                    self.fail("partial transfer must not enter sampling")
+            except RuntimeError as error:
+                saved_error = error
+        self.assertIn("second transfer failure", str(saved_error))
+        self.assertTrue(references)
+        self.assertTrue(all(reference() is None for reference in references))
+
+    def test_rebuild_engine_transfer_failure_releases_clone_with_retained_traceback(self):
+        model = torch.nn.Conv2d(4, 6, 3)
+        branch = parse_rebuild({"down": torch.randn(2, 4, 3, 3), "up": torch.randn(6, 2, 1, 1)}, .5, [model])
+        before = {key: tensor.clone() for key, tensor in branch.engine.state_dict().items()}
+        clones = []
+        original_copy, original_to = copy.deepcopy, torch.Tensor.to
+        transfers = 0
+        injected = torch.cuda.OutOfMemoryError("injected second engine parameter failure")
+
+        def observe_copy(template):
+            engine = original_copy(template)
+            clones.append(weakref.ref(engine))
+            return engine
+
+        def fail_second_parameter(tensor, *args, **kwargs):
+            nonlocal transfers
+            if isinstance(tensor, torch.nn.Parameter) and tensor.ndim > 1:
+                transfers += 1
+                if transfers == 2:
+                    raise injected
+            return original_to(tensor, *args, **kwargs)
+
+        manager = LoRAManager([], "moss_image")
+        saved_error = None
+        automatic_gc = gc.isenabled()
+        gc.disable()
+        try:
+            with patch("backend.training.preview.rebuild.copy", spec=["deepcopy"]) as copier, \
+                 patch.object(torch.Tensor, "to", fail_second_parameter):
+                copier.deepcopy.side_effect = observe_copy
+                try:
+                    with manager.activate({model: [branch]}, "meta"):
+                        self.fail("engine transfer failure must not enter sampling")
+                except torch.cuda.OutOfMemoryError as error:
+                    saved_error = error
+            self.assertIs(saved_error, injected)
+            self.assertEqual(transfers, 2)
+            self.assertIn("fail_second_parameter", "".join(traceback.format_exception(saved_error)))
+            self.assertTrue(clones)
+            self.assertTrue(all(reference() is None for reference in clones))
+            self.assertFalse(manager._active)
+            self.assertNotIn("forward", model.__dict__)
+            for key, tensor in before.items():
+                torch.testing.assert_close(branch.engine.state_dict()[key], tensor, rtol=0, atol=0)
+        finally:
+            if automatic_gc:
+                gc.enable()
+
     def test_embedding_lora_and_standalone_bias_patches(self):
         model = torch.nn.Module()
         model.proj = torch.nn.Embedding(8, 4)
@@ -219,6 +392,70 @@ class AdapterFormatTests(unittest.TestCase):
                     self.assertEqual(module.training, mode)
                 for key, value in before.items():
                     torch.testing.assert_close(training.state_dict()[key], value, rtol=0, atol=0)
+
+    def test_live_snapshot_failure_releases_private_copies_with_retained_traceback(self):
+        from backend.training.preview.rebuild import lycoris_modules
+
+        model = self.model.proj
+        training = lycoris_modules().LoConModule("live", model, lora_dim=2, alpha=2,
+                                               use_scalar=True, weight_decompose=True, bypass_mode=False)
+        training.apply_to()
+        original_forward = model.forward
+        parameters = {name: (parameter, parameter.detach().clone()) for name, parameter in training.named_parameters()}
+        buffers = {name: buffer.clone() for name, buffer in training.named_buffers()}
+        modes = {module: module.training for module in training.modules()}
+        x = torch.randn(2, 8)
+        baseline = model(x).detach()
+        branch = parse_rebuild({"weight": torch.ones(8), "on_input": torch.tensor(1)}, 1., [model])
+        injected = torch.cuda.OutOfMemoryError("injected live snapshot clone failure")
+        original_clone, original_copy = torch.Tensor.clone, copy.copy
+        clones, copied = 0, []
+
+        def observe_copy(template):
+            result = original_copy(template)
+            copied.append(weakref.ref(result))
+            return result
+
+        def fail_third_clone(tensor, *args, **kwargs):
+            nonlocal clones
+            if tensor.device.type == "meta":
+                clones += 1
+                if clones == 3:
+                    raise injected
+            return original_clone(tensor, *args, **kwargs)
+
+        manager = LoRAManager([], "anima")
+        saved_error = None
+        automatic_gc = gc.isenabled()
+        gc.disable()
+        try:
+            with patch("backend.training.preview.live.copy", spec=["copy"]) as copier, \
+                 patch.object(torch.Tensor, "clone", fail_third_clone), torch.no_grad():
+                copier.copy.side_effect = observe_copy
+                try:
+                    with manager.activate({model: [branch]}, "meta"):
+                        self.fail("snapshot allocation failure must not enter sampling")
+                except torch.cuda.OutOfMemoryError as error:
+                    saved_error = error
+            self.assertIs(saved_error, injected)
+            self.assertEqual(clones, 3)
+            self.assertIn("_snapshot_engine", "".join(traceback.format_exception(saved_error)))
+            self.assertTrue(copied)
+            self.assertTrue(all(reference() is None for reference in copied))
+            self.assertFalse(manager._active)
+            self.assertIs(model.forward, original_forward)
+            for name, parameter in training.named_parameters():
+                original, values = parameters[name]
+                self.assertIs(parameter, original)
+                torch.testing.assert_close(parameter, values, rtol=0, atol=0)
+            for name, buffer in training.named_buffers():
+                torch.testing.assert_close(buffer, buffers[name], rtol=0, atol=0)
+            for module, mode in modes.items():
+                self.assertEqual(module.training, mode)
+            torch.testing.assert_close(model(x), baseline, rtol=0, atol=0)
+        finally:
+            if automatic_gc:
+                gc.enable()
 
     def test_live_biasless_norm_and_block_scaled_fp8_base(self):
         from backend.training.preview.rebuild import base_weight, lycoris_modules

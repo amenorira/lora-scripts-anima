@@ -4,6 +4,23 @@
 
 All notable changes to this project are documented in this file.
 
+## v26.1101.112af - 2026-11-01
+
+This release improves **external adapter training previews for Anima and MOSS-Image**, reducing VRAM usage and improving recovery from errors, and expands the Automagic3 optimizer parameter documentation.
+
+### Training Previews
+
+- **Reduce external adapter VRAM usage:** Load and unload weights according to the preview stage, releasing external LoRA GPU weights before VAE decoding. Reduce persistent VRAM usage and repeated computation for adapters such as LoKr.
+- **Improve prompt encoding efficiency:** Encode prompts in stages, promptly release temporary text encoders, and reuse available encoded results. Support multi-GPU sharding and CPU fallback when GPU memory is insufficient.
+- **Fix training state recovery:** Improve adapter detection and state recovery when compilation and block swapping are combined. Fix restoration of parameters, buffers, training modes, and random states during previews, reducing the impact of preview errors on subsequent training.
+
+### Automagic3 Parameter Documentation
+
+- Expand the Chinese, English, and Japanese parameter guides with project defaults, history windows, internal clipping order, and conditions for updates during backpropagation.
+- Improve parameter names and hints in the interface and add documentation links for dedicated parameters.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1030.1044c...v26.1101.112af)
+
 ## v26.1030.1044c - 2026-10-30
 
 This release expands **training previews for Anima and MOSS-Image** with external adapter stacking, selectable samplers and noise schedules, and improvements to configuration imports, dataset operations, and parameter previews.
