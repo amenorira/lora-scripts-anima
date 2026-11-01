@@ -13,7 +13,7 @@ Both compute in FP32 outside the sampler's autocast context.
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import functools
 import json
 from pathlib import Path
@@ -26,6 +26,7 @@ from .adapters import PARTS, PreviewLoRAError, parse_adapter
 from .rebuild import EXTRA_PARTS, module_shape, parse_rebuild
 from .composition import composed_output_delta
 from .live import LiveTrainingWeight, training_owner
+from .tracebacks import clear_internal_frames
 
 
 SUFFIXES = (
@@ -105,6 +106,43 @@ def parse_training_adapter(owner, module):
     group = {parts[key]: tensor.detach().float().clone() for key, tensor in state.items()}
     options = {key: getattr(owner, key) for key in ("coft", "coft_eps") if hasattr(owner, key)}
     return make_adapter(group, getattr(owner, "multiplier", 1), [module], options)
+
+
+@contextmanager
+def preserve_training_adapters(models):
+    """Keep native adapters in eval across encoding, denoising and decoding.
+
+    This guard owns no external GPU branches. COFT's in-place projections must
+    still be restored even for training layers untargeted by external adapters.
+    """
+    owners = {module: owner for root in models for module in root.modules()
+              if (owner := training_owner(module)) is not None}
+    modes, parameters = {}, {}
+    try:
+        for owner in owners.values():
+            for child in owner.modules():
+                modes.setdefault(child, child.training)
+                child.training = False
+                parameter = getattr(child, "weight", None)
+                if getattr(child, "coft", False) and isinstance(parameter, torch.nn.Parameter) and parameter not in parameters:
+                    parameters[parameter] = parameter.detach().to(device="cpu", copy=True)
+        yield owners
+    finally:
+        errors = []
+        for module, training in modes.items():
+            try:
+                module.training = training
+            except Exception as exc:
+                errors.append(exc)
+        with torch.no_grad():
+            for parameter, saved in parameters.items():
+                try:
+                    parameter.copy_(saved)
+                except Exception as exc:
+                    errors.append(exc)
+        if errors:
+            raise PreviewLoRAError("Preview training adapter restoration failed / 训练适配器恢复失败: " +
+                                   "; ".join(map(str, errors))) from errors[0]
 
 
 class LoRAManager:
@@ -225,65 +263,74 @@ class LoRAManager:
         return result
 
     @contextmanager
-    def activate(self, prepared, device, *, models=()):
+    def activate(self, prepared, device, *, models=(), owners=None):
         if self._active:
             raise PreviewLoRAError("Nested preview LoRA activation / 预览 LoRA 重复挂载")
         self._active = True
         restores = []
-        modes, training_parameters = {}, {}
+        resident, moved, training_weights = {}, {}, {}
+        branches = branch = None
         try:
             # Allocate every branch before changing a forward; failure leaves the model intact.
-            moved = {}
             resident = {module: [b.to(device, moved)
                                  for b in branches if b.scale != 0]
                         for module, branches in prepared.items()}
-            # A partial external adapter still runs all native training layers.
-            # Include them for eval/dropout and native COFT's in-place projection.
-            owners = {module: owner for root in (models or prepared) for module in root.modules()
-                      if (owner := training_owner(module)) is not None}
-            for owner in owners.values():
-                for child in owner.modules():
-                    modes.setdefault(child, child.training)
-                    child.training = False
-                    parameter = getattr(child, "weight", None)
-                    if getattr(child, "coft", False) and isinstance(parameter, torch.nn.Parameter) and parameter not in training_parameters:
-                        training_parameters[parameter] = parameter.detach().to(device="cpu", copy=True)
-            needed = {module for module, branches in resident.items() if any(b.depends_on_weight for b in branches)}
-            pending = list(needed)
-            while pending:
-                for branch in resident.get(pending.pop(), []):
-                    for target in getattr(branch, "targets", ()):
-                        if target not in needed:
-                            needed.add(target)
-                            pending.append(target)
-            training_weights = {module: LiveTrainingWeight(module, owners[module], device, parse_training_adapter)
-                                for module in needed if module in owners}
-            for module, branches in resident.items():
-                if not branches:
-                    continue
-                original = module.forward
-                own_forward = module.__dict__.get("forward")
-                had_forward = "forward" in module.__dict__
+            # The sampler can hold the native training guard across all preview
+            # phases while allocating external weights only for each denoiser.
+            state = preserve_training_adapters(models or prepared) if owners is None else nullcontext(owners)
+            with state as active_owners:
+                needed = {module for module, branches in resident.items() if any(b.depends_on_weight for b in branches)}
+                pending = list(needed)
+                while pending:
+                    for branch in resident.get(pending.pop(), []):
+                        for target in getattr(branch, "targets", ()):
+                            if target not in needed:
+                                needed.add(target)
+                                pending.append(target)
+                try:
+                    training_weights = {module: LiveTrainingWeight(module, active_owners[module], device, parse_training_adapter)
+                                        for module in needed if module in active_owners}
+                except BaseException as error:
+                    # Snapshot construction owns private compressed copies.
+                    # Keep this boundary before yield: never clear frames of
+                    # the caller's sampler or native training forward.
+                    clear_internal_frames(error)
+                    raise
+                for module, branches in resident.items():
+                    if not branches:
+                        continue
+                    original = module.forward
+                    own_forward = module.__dict__.get("forward")
+                    had_forward = "forward" in module.__dict__
 
-                def make_forward(original, branches, module):
-                    @functools.wraps(original)
-                    def forward(x, *args, **kwargs):
-                        output = original(x, *args, **kwargs)
-                        with torch.autocast(device_type=x.device.type, enabled=False):
-                            source = x.float()
-                            if any(branch.depends_on_weight for branch in branches):
-                                delta = composed_output_delta(module, resident, source, training_weights)
-                            else:
-                                delta = None
-                                for branch in branches:
-                                    addition = branch.apply(source)
-                                    delta = addition if delta is None else delta + addition
-                        return output + delta.to(output.dtype)
-                    return forward
+                    def make_forward(original, branches, module):
+                        @functools.wraps(original)
+                        def forward(x, *args, **kwargs):
+                            output = original(x, *args, **kwargs)
+                            try:
+                                with torch.autocast(device_type=x.device.type, enabled=False):
+                                    source = x.float()
+                                    if any(branch.depends_on_weight for branch in branches):
+                                        delta = composed_output_delta(module, resident, source, training_weights)
+                                    else:
+                                        delta = None
+                                        for branch in branches:
+                                            addition = branch.apply(source)
+                                            delta = addition if delta is None else delta + addition
+                                return output + delta.to(output.dtype)
+                            except BaseException as error:
+                                # This catch surrounds only external adapter
+                                # computation, not the native training forward.
+                                # Keep traceback locations, release locals of
+                                # completed calls retaining private GPU weights.
+                                output = source = delta = addition = branch = None
+                                clear_internal_frames(error)
+                                raise
+                        return forward
 
-                restores.append((module, had_forward, own_forward))
-                module.forward = make_forward(original, branches, module)
-            yield
+                    restores.append((module, had_forward, own_forward))
+                    module.forward = make_forward(original, branches, module)
+                yield
         finally:
             errors = []
             for module, had_forward, original in reversed(restores):
@@ -294,17 +341,14 @@ class LoRAManager:
                         del module.forward
                 except Exception as exc:
                     errors.append(exc)
-            for module, training in modes.items():
-                try:
-                    module.training = training
-                except Exception as exc:
-                    errors.append(exc)
-            with torch.no_grad():
-                for parameter, saved in training_parameters.items():
-                    try:
-                        parameter.copy_(saved)
-                    except Exception as exc:
-                        errors.append(exc)
+            # Explicitly clear device references even when an exception keeps
+            # this generator's traceback alive. Prepared plans remain on CPU.
+            for branches in resident.values():
+                branches.clear()
+            resident.clear()
+            moved.clear()
+            training_weights.clear()
+            branches = branch = None
             self._active = False
             if errors:
                 raise PreviewLoRAError("Preview adapter restoration failed / 预览适配器恢复失败: " + "; ".join(map(str, errors))) from errors[0]

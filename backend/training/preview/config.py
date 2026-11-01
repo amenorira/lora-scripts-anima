@@ -85,7 +85,8 @@ def prepare_config(form, profile_id):
         return None
     from .compat import check_source
 
-    check_source(PROFILES[profile_id], custom_sampling=custom_sampling(options))
+    # External adapters also wrap the latent generator when using native Euler.
+    check_source(PROFILES[profile_id], custom_sampling=True)
     return {"schema_version": 1, "architecture": PROFILES[profile_id], "loras": loras, **options}
 
 

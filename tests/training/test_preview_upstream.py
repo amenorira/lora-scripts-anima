@@ -38,6 +38,7 @@ for n, p in network.named_parameters():
     if "lora_up" in n:
         torch.nn.init.normal_(p, std=0.01)
 layer = model.get_submodule(name)
+preview_training_forward = layer.forward
 optimizer = torch.optim.SGD(network.parameters(), lr=0.01)
 def training_step():
     optimizer.zero_grad()
@@ -82,10 +83,12 @@ class TinyVAE(torch.nn.Module):
     @property
     def dtype(self): return self.anchor.dtype
     def decode_from_dit(self, latents):
+        assert layer.forward is preview_training_forward, "external LoRA survived into VAE decoding"
         self.last_latents = latents.detach().clone()
         assert torch.isfinite(latents).all()
         return F.interpolate(latents[:, :3], (64, 64))
     def decode_to_pixels(self, latents):
+        assert layer.forward is preview_training_forward, "external LoRA survived into VAE decoding"
         self.last_latents = latents.detach().clone()
         assert torch.isfinite(latents).all()
         return F.interpolate(latents[:, :3, 0], (64, 64))
@@ -174,6 +177,7 @@ assert versions == [p._version for p in network.parameters()], "preview wrote no
 from library.compile_utils import disable_linear_from_compile
 disable_linear_from_compile(model)
 wrapped_forward = layer.forward
+preview_training_forward = wrapped_forward
 with manager.activate(manager.prepare(model), "cpu", models=(model,)), torch.no_grad():
     torch.testing.assert_close(layer(x), expected, rtol=1e-5, atol=1e-6)
 assert layer.forward is wrapped_forward

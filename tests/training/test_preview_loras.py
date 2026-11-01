@@ -1,8 +1,12 @@
 import copy
+from dataclasses import replace
+import gc
 import json
 from pathlib import Path
 import tempfile
+import traceback
 import unittest
+import weakref
 from unittest.mock import patch
 
 import torch
@@ -11,6 +15,8 @@ from safetensors.torch import save_file
 from backend.training.preview.config import normalize_loras, prepare_config, read_config
 from backend.training.preview.compat import check_source, PreviewCompatibilityError
 from backend.training.preview.lora import LoRAManager, PreviewLoRAError
+from backend.training.preview.adapters import Adapter
+from backend.training.preview.tracebacks import clear_internal_frames
 
 
 class TinyDiT(torch.nn.Module):
@@ -153,6 +159,134 @@ class PreviewLoRATests(unittest.TestCase):
                 self.assertNotIn("forward", self.model.layers[0].proj.q.__dict__)
                 raise ValueError("sample failed")
         self.assertFalse(manager._active)
+
+    def test_partial_allocation_failure_releases_transferred_weights(self):
+        path, _ = self.file(base="diffusion_model.layers.0.proj.qkv", out=9)
+        manager = LoRAManager([{"path": path, "multiplier": 1}], "moss_image")
+        prepared = manager.prepare(self.model)
+        references = []
+        move = Adapter.to
+        transfers = 0
+
+        def fail_second(branch, device, cache):
+            nonlocal transfers
+            transfers += 1
+            if transfers == 2:
+                raise RuntimeError("injected allocation failure")
+            resident = move(branch, device, cache)
+            references.extend(weakref.ref(tensor) for tensor in resident.weights.values())
+            return resident
+
+        saved_error = None
+        with patch.object(Adapter, "to", fail_second):
+            try:
+                with manager.activate(prepared, "meta"):
+                    self.fail("partial allocation must not enter sampling")
+            except RuntimeError as error:
+                saved_error = error  # Keep the traceback alive deliberately.
+        self.assertIn("allocation failure", str(saved_error))
+        self.assertTrue(all(reference() is None for reference in references))
+        self.assertFalse(manager._active)
+        for projection in ("q", "k", "v"):
+            self.assertNotIn("forward", getattr(self.model.layers[0].proj, projection).__dict__)
+
+    def test_failed_adapter_forward_releases_weights_with_retained_traceback(self):
+        path, _ = self.file()
+        manager = LoRAManager([{"path": path, "multiplier": .5}], "anima")
+        prepared = manager.prepare(self.model)
+        layer = self.model.layers[0].proj.q
+        x = torch.ones(2, 4)
+        caller_input = weakref.ref(x)
+        before = copy.deepcopy(self.model.state_dict())
+        baseline = layer(x).detach()
+        weights = []
+        original_to, original_linear = Adapter.to, torch.nn.functional.linear
+        injected = torch.cuda.OutOfMemoryError("injected down projection failure")
+
+        def move(branch, *args, **kwargs):
+            resident = replace(original_to(branch, *args, **kwargs),
+                               weights={key: tensor.clone() for key, tensor in branch.weights.items()})
+            weights.extend(weakref.ref(tensor) for tensor in resident.weights.values())
+            return resident
+
+        def fail_down(value, weight, *args, **kwargs):
+            if weight.shape == (2, 4):
+                raise injected
+            return original_linear(value, weight, *args, **kwargs)
+
+        saved_error = None
+        automatic_gc = gc.isenabled()
+        gc.disable()
+        try:
+            with patch.object(Adapter, "to", move), \
+                 patch("torch.nn.functional.linear", fail_down), torch.no_grad():
+                try:
+                    with manager.activate(prepared, "cpu"):
+                        layer(x)
+                except torch.cuda.OutOfMemoryError as error:
+                    saved_error = error
+            self.assertIs(saved_error, injected)
+            self.assertIn("fail_down", "".join(traceback.format_exception(saved_error)))
+            self.assertTrue(weights)
+            self.assertTrue(all(reference() is None for reference in weights))
+            self.assertIs(caller_input(), x)
+            self.assertFalse(manager._active)
+            self.assertNotIn("forward", layer.__dict__)
+            for key, tensor in before.items():
+                torch.testing.assert_close(self.model.state_dict()[key], tensor, rtol=0, atol=0)
+            torch.testing.assert_close(layer(x), baseline, rtol=0, atol=0)
+            branch = prepared[layer][0]
+            expected = baseline + (x @ branch.down.T @ branch.up.T) * branch.scale
+            with manager.activate(prepared, "cpu"), torch.no_grad():
+                torch.testing.assert_close(layer(x), expected)
+        finally:
+            if automatic_gc:
+                gc.enable()
+
+    def test_nested_failure_cleanup_preserves_foreign_exception_and_traceback_locations(self):
+        class Payload:
+            pass
+        foreign, temporary = [], []
+
+        def foreign_failure():
+            payload = Payload()
+            foreign.append(weakref.ref(payload))
+            raise ValueError("caller-owned failure")
+
+        def adapter_leaf():
+            payload = Payload()
+            temporary.append(weakref.ref(payload))
+            raise ValueError("adapter leaf failure")
+
+        def adapter_call():
+            try:
+                adapter_leaf()
+            except ValueError as error:
+                raise RuntimeError("wrapped adapter failure") from error
+
+        def boundary():
+            try:
+                adapter_call()
+            except RuntimeError as error:
+                clear_internal_frames(error)
+                return error
+
+        automatic_gc = gc.isenabled()
+        gc.disable()
+        try:
+            try:
+                foreign_failure()
+            except ValueError as caller_error:
+                saved = boundary()
+                self.assertIs(saved.__cause__.__context__, caller_error)
+                self.assertTrue(all(reference() is not None for reference in foreign))
+                self.assertTrue(all(reference() is None for reference in temporary))
+                rendered = "".join(traceback.format_exception(saved))
+                for text in ("adapter_leaf", "adapter_call", "wrapped adapter failure", "adapter leaf failure"):
+                    self.assertIn(text, rendered)
+        finally:
+            if automatic_gc:
+                gc.enable()
 
     def test_empty_and_disabled_adapters_skip_model_inspection_and_weight_loading(self):
         for architecture in ("anima", "moss_image"):

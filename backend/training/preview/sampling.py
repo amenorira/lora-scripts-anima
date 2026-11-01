@@ -1,23 +1,48 @@
 """Synchronous sampling wrapper with temporary adapters and state restoration."""
 from __future__ import annotations
 
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 import functools
 import logging
 from pathlib import Path
 import random
+import sys
 
 import numpy as np
 import torch
 
 from .compat import PreviewCompatibilityError, sampling_due, sampling_signature
-from .lora import LoRAManager
+from .lora import LoRAManager, preserve_training_adapters
 from .config import sampling_options
 from .kernels import override_kernel
 from .prompts import encode_with_adapters, prompt_texts
 
 
 logger = logging.getLogger(__name__)
+
+
+def _release_cuda_cache(device):
+    if torch.device(device).type != "cuda":
+        return
+    failed = sys.exc_info()[0] is not None
+    try:
+        # Native allocator cache flushing is process-wide, including when a
+        # device context is selected. Reserve this fallback for failed/late
+        # releases instead of repeating upstream's successful-path cleanup.
+        torch.cuda.empty_cache()
+    except Exception:
+        if not failed:
+            raise
+        logger.warning("Preview CUDA cleanup failed / 预览 CUDA 缓存清理失败", exc_info=True)
+
+
+def _log_cuda_memory(device, phase):
+    if torch.device(device).type == "cuda" and logger.isEnabledFor(logging.DEBUG):
+        try:
+            logger.debug("Preview CUDA memory / 预览显存: phase=%s allocated=%s reserved=%s",
+                         phase, torch.cuda.memory_allocated(device), torch.cuda.memory_reserved(device))
+        except Exception:
+            logger.debug("Preview CUDA memory unavailable / 无法读取预览显存", exc_info=True)
 
 
 def wrap_sampler(original, document):
@@ -49,6 +74,8 @@ def wrap_sampler(original, document):
         python_rng, numpy_rng = random.getstate(), np.random.get_state()
         entered = False
         completed = False
+        external_attempted = False
+        late_cuda_release = False
         modes, placements = {}, []
         errors = []
 
@@ -95,15 +122,33 @@ def wrap_sampler(original, document):
             logger.info("Preview external LoRAs / 预览外部 LoRA: %s", document["loras"])
             # Eager preview avoids stale compiled graphs retaining an old forward.
             # Compiled training resumes with its original graph and original forwards.
-            with (stance("force_eager") if compiled else nullcontext()):
+            with (
+                stance("force_eager") if compiled else nullcontext(),
+                torch.no_grad(),
+                preserve_training_adapters(modules) as owners,
+            ):
                 if te_needed:
+                    external_attempted = True
                     encoded = encode_with_adapters(manager, texts, values, text_encoder, document["architecture"])
                     bound.arguments["sample_prompts_te_outputs"] = encoded
                     if frozen:
                         prompt_cache_key, prompt_cache = key, encoded
                 prepared = manager.prepare(dit)
-                roots = (dit,) if bound.arguments["text_encoder"] is None else (dit, text_encoder)
-                with manager.activate(prepared, accelerator.device, models=roots), torch.no_grad(), override_kernel(original, document["architecture"], options):
+
+                @contextmanager
+                def denoising_adapters():
+                    nonlocal external_attempted
+                    external_attempted = True
+                    try:
+                        _log_cuda_memory(accelerator.device, "before_adapters")
+                        with manager.activate(prepared, accelerator.device, owners=owners):
+                            _log_cuda_memory(accelerator.device, "adapters_loaded")
+                            yield
+                    finally:
+                        _log_cuda_memory(accelerator.device, "adapters_released")
+
+                with override_kernel(original, document["architecture"], options,
+                                     context=denoising_adapters if prepared else None):
                     entered = True
                     result = original(*bound.args, **bound.kwargs)
                 completed = True
@@ -117,8 +162,15 @@ def wrap_sampler(original, document):
             for module, field, name, tensor, device, dtype in placements:
                 try:
                     if tensor.device != device or tensor.dtype != dtype:
+                        released_cuda = tensor.device.type == "cuda"
                         tensor.data = tensor.data.to(device=device, dtype=dtype)
-                    getattr(module, field)[name] = tensor
+                        late_cuda_release |= released_cuda
+                    slots = getattr(module, field)
+                    if slots.get(name) is not tensor:
+                        late_cuda_release |= isinstance(slots.get(name), torch.Tensor) and slots[name].device.type == "cuda"
+                    # Do not keep a local reference to the replaced CUDA buffer
+                    # alive until the fallback cache flush below.
+                    slots[name] = tensor
                 except Exception as exc:
                     errors.append(exc)
             restore(torch.set_rng_state, cpu_rng)
@@ -126,9 +178,15 @@ def wrap_sampler(original, document):
                 restore(torch.cuda.set_rng_state_all, cuda_rng)
             restore(random.setstate, python_rng)
             restore(np.random.set_state, numpy_rng)
-            if errors:
-                raise RuntimeError("Preview state restoration failed; training cannot continue / "
-                                   "预览状态恢复失败，训练已中止: " + "; ".join(map(str, errors))) from errors[0]
+            try:
+                if errors:
+                    raise RuntimeError("Preview state restoration failed; training cannot continue / "
+                                       "预览状态恢复失败，训练已中止: " + "; ".join(map(str, errors))) from errors[0]
+            finally:
+                if external_attempted and (not completed or errors or late_cuda_release or sys.exc_info()[0] is not None):
+                    # Normal success uses upstream's VAE/final cleanup. Only
+                    # recover failures or CUDA storage released after it.
+                    _release_cuda_cache(accelerator.device)
 
     sample_images._anima_preview_loras = True
     return sample_images

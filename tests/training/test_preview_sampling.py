@@ -4,6 +4,7 @@ import gc
 import json
 import random
 from contextlib import nullcontext
+from dataclasses import replace
 from pathlib import Path
 import sys
 import tempfile
@@ -20,7 +21,40 @@ from backend.training.preview.compat import PreviewCompatibilityError, sampling_
 from backend.training.preview.sampling import wrap_sampler
 from backend.training.preview.prompts import encode_with_adapters, prompt_texts
 from backend.training.preview.lora import LoRAManager
+from backend.training.preview.adapters import Adapter
+from backend.training.preview.sampling import _release_cuda_cache
 from tools.python_startup.preview_sampling import install_import_hook
+
+
+def _tiny_denoise(dit, x):
+    output = dit.proj(x)
+    if getattr(dit, "fail_sampling", False):
+        raise ValueError("injected sampling failure")
+    return output
+
+
+def do_sample(height, width, seed, dit, crossattn_emb, steps, dtype, device,
+              guidance_scale=1., flow_shift=3., neg_crossattn_emb=None):
+    return _tiny_denoise(dit, crossattn_emb)
+
+
+def generate_latents(dit, prompt_embeds, prompt_mask, negative_embeds, negative_mask,
+                     height, width, steps, guidance_scale, flow_shift, uncond_skip_layers,
+                     seed, device, show_progress=True):
+    return _tiny_denoise(dit, prompt_embeds)
+
+
+def _sample_image_inference(dit, architecture="anima", *, before=None, after=None):
+    if before is not None:
+        before()
+    x = torch.ones(1, 4)
+    if architecture == "moss_image":
+        output = generate_latents(dit, x, None, None, None, 64, 64, 2, 1., 5., [], 42, "cpu")
+    else:
+        output = do_sample(64, 64, 42, dit, x, 2, torch.float32, "cpu")
+    if after is not None:
+        after()
+    return output
 
 
 class PreviewModel(torch.nn.Module):
@@ -77,9 +111,8 @@ class PreviewSamplingTests(unittest.TestCase):
                     random.random()
                     np.random.rand()
                     torch.rand(2)
-                    torch.testing.assert_close(dit.proj(torch.ones(1, 4)), baseline + 4)
-                    if fail:
-                        raise ValueError("injected sampling failure")
+                    dit.fail_sampling = fail
+                    torch.testing.assert_close(_sample_image_inference(dit, architecture), baseline + 4)
                     dit.switch_block_swap_for_training()
                     return "image"
 
@@ -109,6 +142,131 @@ class PreviewSamplingTests(unittest.TestCase):
             return "upstream schedule"
         with patch("backend.training.preview.lora.load_file", side_effect=AssertionError("unexpected IO")):
             self.assertEqual(wrap_sampler(sampler, self.document)(*self.arguments()), "upstream schedule")
+
+    def test_repeated_images_release_branches_before_decode_without_gc(self):
+        for architecture in ("anima", "moss_image"):
+            for custom in (False, True):
+                document = {**self.document, "architecture": architecture}
+                if custom:
+                    document.update(sampler="heun", scheduler="simple")
+                baseline = self.model.proj(torch.ones(1, 4)).detach()
+                references = []
+                transfers = []
+                original_to = Adapter.to
+
+                def move(branch, device, cache):
+                    # Distinct CPU copies model the lifetime of GPU copies on
+                    # machines without CUDA; the prepared CPU plan stays live.
+                    resident = replace(original_to(branch, device, cache),
+                                       weights={key: tensor.clone() for key, tensor in branch.weights.items()})
+                    references.append(weakref.ref(resident))
+                    references.extend(weakref.ref(tensor) for tensor in resident.weights.values())
+                    transfers.append(1)
+                    return resident
+
+                def before():
+                    # Anima's llm_adapter also needs external patches before
+                    # the latent generator. MOSS keeps encoding unpatched.
+                    torch.testing.assert_close(self.model.proj(torch.ones(1, 4)),
+                                               baseline + (4 if architecture == "anima" else 0))
+
+                def after():
+                    self.assertNotIn("forward", self.model.proj.__dict__)
+                    self.assertTrue(all(reference() is None for reference in references))
+                    torch.testing.assert_close(self.model.proj(torch.ones(1, 4)), baseline)
+
+                def sampler(accelerator, args, epoch, steps, dit, vae, text_encoder,
+                            tokenize_strategy, text_encoding_strategy):
+                    for _ in range(2):
+                        output = _sample_image_inference(dit, architecture, before=before, after=after)
+                        torch.testing.assert_close(output, baseline + 4)
+
+                def latent_sampler(options, **arguments):
+                    return _tiny_denoise(arguments["dit"], arguments.get("crossattn_emb", arguments.get("prompt_embeds")))
+
+                automatic_gc = gc.isenabled()
+                gc.disable()
+                try:
+                    with patch.object(Adapter, "to", move), \
+                         patch(f"backend.training.preview.{architecture}.sample_latents", side_effect=latent_sampler), \
+                         patch("backend.training.preview.sampling._release_cuda_cache") as cleanup:
+                        wrapped = wrap_sampler(sampler, document)
+                        for _ in range(3):
+                            wrapped(*self.arguments())
+                        cleanup.assert_not_called()
+                    self.assertEqual(len(transfers), 6)
+                finally:
+                    if automatic_gc:
+                        gc.enable()
+
+    def test_empty_and_zero_strength_previews_skip_extra_cuda_cleanup(self):
+        def sampler(accelerator, args, epoch, steps, dit, vae, text_encoder,
+                    tokenize_strategy, text_encoding_strategy):
+            return _sample_image_inference(dit)
+        for rows in ([], [{"path": "missing.safetensors", "multiplier": 0}]):
+            with patch("backend.training.preview.sampling._release_cuda_cache") as cleanup:
+                wrap_sampler(sampler, {**self.document, "loras": rows})(*self.arguments())
+                cleanup.assert_not_called()
+
+    def test_replaced_cuda_buffer_is_released_before_fallback_cleanup(self):
+        class CudaBuffer(torch.Tensor):
+            @property
+            def device(self):
+                return torch.device("cuda:1")
+
+        self.vae.register_buffer("preview_buffer", torch.ones(2))
+        original = self.vae.preview_buffer
+        references = []
+
+        def sampler(accelerator, args, epoch, steps, dit, vae, text_encoder,
+                    tokenize_strategy, text_encoding_strategy):
+            _sample_image_inference(dit)
+            vae.preview_buffer = torch.zeros(2).as_subclass(CudaBuffer)
+            references.append(weakref.ref(vae.preview_buffer))
+
+        def cleanup(device):
+            self.assertIs(self.vae.preview_buffer, original)
+            self.assertTrue(all(reference() is None for reference in references))
+
+        with patch("backend.training.preview.sampling._release_cuda_cache", side_effect=cleanup) as release:
+            wrap_sampler(sampler, self.document)(*self.arguments())
+            release.assert_called_once()
+
+    def test_cuda_cleanup_failure_keeps_original_sampling_error(self):
+        with patch("torch.cuda.empty_cache", side_effect=RuntimeError("cleanup failed")):
+            with self.assertRaisesRegex(RuntimeError, "cleanup failed"):
+                _release_cuda_cache("cuda:1")
+            with self.assertRaisesRegex(ValueError, "sampling failed"), \
+                 self.assertLogs("backend.training.preview.sampling", level="WARNING"):
+                try:
+                    raise ValueError("sampling failed")
+                finally:
+                    _release_cuda_cache("cuda:1")
+
+    def test_moss_skipped_image_never_allocates_external_gpu_branches(self):
+        def sampler(accelerator, args, epoch, steps, dit, vae, text_encoder,
+                    tokenize_strategy, text_encoding_strategy):
+            return _sample_image_inference(dit)
+        with patch.dict(sampler.__globals__, {"_sample_image_inference": lambda dit: "skipped"}), \
+             patch.object(Adapter, "to", side_effect=AssertionError("unexpected device transfer")), \
+             patch("backend.training.preview.sampling._release_cuda_cache") as cleanup:
+            wrapped = wrap_sampler(sampler, {**self.document, "architecture": "moss_image"})
+            self.assertEqual(wrapped(*self.arguments()), "skipped")
+            cleanup.assert_not_called()
+
+    def test_anima_repeated_denoiser_in_one_image_fails_instead_of_running_unpatched(self):
+        def inference(dit):
+            for _ in range(2):
+                do_sample(64, 64, 42, dit, torch.ones(1, 4), 2, torch.float32, "cpu")
+        def sampler(accelerator, args, epoch, steps, dit, vae, text_encoder,
+                    tokenize_strategy, text_encoding_strategy):
+            return _sample_image_inference(dit)
+        with patch.dict(sampler.__globals__, {"_sample_image_inference": inference}), \
+             patch("backend.training.preview.sampling._release_cuda_cache") as cleanup:
+            with self.assertRaisesRegex(PreviewCompatibilityError, "Denoiser called outside"):
+                wrap_sampler(sampler, self.document)(*self.arguments())
+            cleanup.assert_called_once()
+        self.assertNotIn("forward", self.model.proj.__dict__)
 
     def test_missing_prompt_file_skips_adapter_io(self):
         self.options.sample_prompts = str(Path(self.temp.name) / "missing.json")
@@ -185,7 +343,7 @@ class PreviewSamplingTests(unittest.TestCase):
         baseline = self.model.proj(x).detach()
         def sampler(accelerator, args, epoch, steps, dit, vae, text_encoder,
                     tokenize_strategy, text_encoding_strategy):
-            torch.testing.assert_close(dit.proj(x), baseline + 4)
+            torch.testing.assert_close(_sample_image_inference(dit), baseline + 4)
         wrap_sampler(sampler, self.document)(*self.arguments())
         torch.testing.assert_close(self.model.proj(x), baseline)
 

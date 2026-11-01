@@ -16,6 +16,7 @@ import torch
 import torch.nn.functional as F
 
 from .adapters import PreviewLoRAError
+from .tracebacks import clear_internal_frames
 
 
 EXTRA_PARTS = {"dora_scale", "lora_mid.weight", "hada_t1", "hada_t2", "lokr_t2",
@@ -89,12 +90,33 @@ class RebuildAdapter:
 
     def to(self, device, cache):
         weights = {}
-        for key, tensor in self.weights.items():
-            if id(tensor) not in cache:
-                cache[id(tensor)] = tensor.to(device)
-            weights[key] = cache[id(tensor)]
-        engine = copy.deepcopy(self.engine).to(device=device, dtype=torch.float32) if self.engine is not None else None
-        return replace(self, weights=weights, engine=engine)
+        engine = None
+        try:
+            for key, tensor in self.weights.items():
+                if id(tensor) not in cache:
+                    cache[id(tensor)] = tensor.to(device)
+                weights[key] = cache[id(tensor)]
+            if self.engine is not None:
+                engine = copy.deepcopy(self.engine)
+                # LyCORIS load hooks bind back to their module. This fully
+                # loaded inference-only copy will never load a state dict;
+                # drop those cycles before moving it to the GPU. Deepcopy
+                # owns these dictionaries; the CPU plan/training hooks stay.
+                for module in engine.modules():
+                    module._load_state_dict_pre_hooks.clear()
+                    module._load_state_dict_post_hooks.clear()
+                engine = engine.to(device=device, dtype=torch.float32)
+            return replace(self, weights=weights, engine=engine)
+        except BaseException as error:
+            # A retained allocation-error traceback must not keep this local
+            # dictionary alive after the manager clears its transfer cache.
+            weights.clear()
+            engine = module = None
+            # Module.to/_apply may retain a partially moved private engine in
+            # completed frames. This traceback starts at our allocation call;
+            # caller/trainer frames have not unwound into it here.
+            clear_internal_frames(error)
+            raise
 
     def slice_outputs(self, start, stop):
         return replace(self, out_features=stop - start, output_slice=(start, stop))
