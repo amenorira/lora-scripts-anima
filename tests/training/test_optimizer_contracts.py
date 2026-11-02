@@ -5,6 +5,7 @@ import unittest
 from backend.training.config.adapter import adapt_config
 from backend.training.config.config_import import import_native_training_form
 from backend.training.config.optimizer_contracts import (
+    ADAFACTOR_OPTIMIZER_TYPE,
     ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE,
     CAME_OPTIMIZER_TYPE,
     LORA_MUON_OPTIMIZER_TYPE,
@@ -93,6 +94,16 @@ class OptimizerValidationTests(unittest.TestCase):
 
 
 class OptimizerAdapterTests(unittest.TestCase):
+    def test_adafactor_native_arguments_include_effective_relative_step_default(self):
+        config = {**valid_config(ADAFACTOR_OPTIMIZER_TYPE), 'max_grad_norm': 0,
+                  'optimizer_args': ['eps=(1e-30, 0.001)', 'clip_threshold=1.2']}
+        adapted, _ = adapt_config(config)
+        arguments = dict(item.split('=', 1) for item in adapted['optimizer_args'])
+        self.assertEqual(ast.literal_eval(arguments['relative_step']), True)
+        keys = list(arguments)
+        self.assertLess(keys.index('relative_step'), keys.index('clip_threshold'))
+        self.assertLess(keys.index('clip_threshold'), keys.index('eps'))
+
     def test_removed_bnb_clipping_is_cleaned_from_old_configs(self):
         cases = (
             ({}, False),

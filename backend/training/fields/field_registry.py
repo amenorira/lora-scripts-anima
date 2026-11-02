@@ -435,6 +435,7 @@ shared_training_field('mixed_precision', default="bf16", target="toml"),
     {"key": "min_timestep", "type": "number", "section": "training", "desc_key": "field.min_timestep", "target": "toml", "min": 0, "max": 999, "step": 1, "group": "sdxl", "hint_key": "field.min_timestepHint", "doc_slug": "timesteps", "doc_anchor": "sdxl-range"},
     {"key": "max_timestep", "type": "number", "default": "", "section": "training", "desc_key": "field.max_timestep", "target": "toml", "min": 1, "max": 1000, "step": 1, "group": "sdxl", "hint_key": "field.max_timestepHint", "doc_slug": "timesteps", "doc_anchor": "sdxl-range"},
 # ── Learning Rate & Optimizer ──
+# optimizer_args 导出复用此处的排列；条件子项紧随父项，保持与界面展开顺序一致。
 # 学习率取值链：unet_lr / text_encoder_lr 非空时覆盖 learning_rate；为空时回退 learning_rate。
 # 默认留空 → 默认走 learning_rate 一个总学习率（符合 sd-scripts fallback 语义与 i18n 描述）；
 # 用户想分开调 U-Net / 文本编码器学习率时再填入分量值。
@@ -509,8 +510,8 @@ shared_training_field('mixed_precision', default="bf16", target="toml"),
 {"key": "weight_decay_by_lr", "type": "toggle", "default": True, "section": "optimizer", "desc_key": "field.weight_decay_by_lr", "target": "merged", "show_if": {"key": "optimizer_type", "eq": PRODIGYPLUS_OPTIMIZER_TYPE}, "hint_key": "field.weight_decay_by_lrHint", "doc_slug": "optimizers", "doc_anchor": "prodigyplus-options"},
 {"key": "schedulefree_warmup_steps", "type": "number", "default": 0, "section": "optimizer", "desc_key": "field.schedulefree_warmup_steps", "target": "merged", "min": 0, "step": 1, "show_if": {"key": "optimizer_type", "eq": ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE}, "hint_key": "field.schedulefree_warmup_stepsHint"},
 {"key": "adafactor_relative_step", "type": "toggle", "default": True, "section": "optimizer", "desc_key": "field.adafactor_relative_step", "target": "merged", "show_if": {"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}, "hint_key": "field.adafactor_relative_stepHint"},
-{"key": "adafactor_scale_parameter", "type": "toggle", "default": True, "section": "optimizer", "desc_key": "field.adafactor_scale_parameter", "target": "merged", "show_if": {"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}, "auto_value": [{"watch": "adafactor_relative_step", "when": False, "set": False, "set_if_default": True}]},
 {"key": "adafactor_warmup_init", "type": "toggle", "default": False, "section": "optimizer", "desc_key": "field.adafactor_warmup_init", "target": "merged", "show_if": [{"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}, {"key": "adafactor_relative_step", "eq": True}], "hint_key": "field.adafactor_warmup_initHint", "auto_value": [{"watch": "adafactor_relative_step", "when": False, "set": False, "set_if_default": True}]},
+{"key": "adafactor_scale_parameter", "type": "toggle", "default": True, "section": "optimizer", "desc_key": "field.adafactor_scale_parameter", "target": "merged", "show_if": {"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}, "auto_value": [{"watch": "adafactor_relative_step", "when": False, "set": False, "set_if_default": True}]},
 {"key": "adafactor_clip_threshold", "type": "number", "default": 1.0, "section": "optimizer", "desc_key": "field.adafactor_clip_threshold", "target": "merged", "min": 1e-8, "step": 0.1, "show_if": {"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}},
 {"key": "adafactor_eps", "type": "text", "default": "1e-30, 1e-3", "section": "optimizer", "desc_key": "field.adafactor_eps", "target": "merged", "show_if": {"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}, "hint_key": "field.adafactor_epsHint"},
 # ── Adan 专用参数 ──
@@ -943,17 +944,13 @@ def get_all_fields() -> list[dict]:
 def _krea2_ui_fields(fields: list[dict]) -> list[dict]:
     """Align equivalent presentation while preserving Musubi values and conditions."""
     from backend.training.config.krea2_options import OPTIMIZER_ARGUMENTS
+    from backend.training.config.krea2_optimizers import FIELD_ALIASES
 
     aliases = {
         "dit": "pretrained_model_name_or_path", "text_encoder": "qwen3",
-        "krea_optimizer_weight_decay": "weight_decay", "krea_optimizer_betas": "betas",
-        "krea_optimizer_eps": "eps", "krea_prodigy_d_coef": "prodigy_d_coef", "krea_prodigy_d0": "prodigy_d0",
-        "krea_prodigyplus_use_stableadamw": "prodigyplus_use_stableadamw",
-        "krea_schedulefree_warmup_steps": "schedulefree_warmup_steps",
+        **{alias: key for key, alias in FIELD_ALIASES.items()},
         "krea_attention_backend": "attn_mode", "krea_split_attn": "split_attn",
         "enable_krea_samples": "enable_preview", "krea_sample_prompts": "positive_prompts",
-        **{f"krea_adafactor_{key}": f"adafactor_{key}" for key in
-           ("relative_step", "scale_parameter", "warmup_init", "clip_threshold", "eps")},
     }
     # New Krea-only controls sit beside their corresponding shared control.
     anchors = {

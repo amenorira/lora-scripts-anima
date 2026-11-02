@@ -18,7 +18,7 @@ from backend.training.config.krea2_network import (
     KREA2_PRESET_FILENAME, build_krea2_network_args, validate_krea2_network,
 )
 from backend.training.config.scheduler_config import normalize_scheduler_config, validate_scheduler_config
-from backend.training.config.optimizer_contracts import extract_optimizer_form
+from backend.training.config.optimizer_contracts import extract_optimizer_form, serialize_optimizer_args
 from backend.training.config.krea2_optimizers import (
     collect_arguments as _collect_krea2_arguments,
     validate_optimizer as _validate_krea2_optimizer,
@@ -207,7 +207,9 @@ def _build_krea2_optimizer_args(config: dict[str, Any]) -> list[str]:
         logging.getLogger("anima-trainer").warning(warning)
     if arguments.get("warmup_steps") == 0:
         arguments.pop("warmup_steps")
-    return [f"{key}={value!r}" for key, value in arguments.items()]
+    return serialize_optimizer_args(
+        config, arguments, mappings=_KREA2_OPTIMIZER_ARGUMENTS, profile_id=KREA2_PROFILE_ID
+    )
 
 
 def extract_krea2_optimizer_form(config: dict[str, Any]) -> dict[str, Any]:
@@ -681,7 +683,7 @@ def build_krea2_train_config(
     if errors:
         raise ValueError("; ".join(errors))
 
-    optimizer_type = str(config.get("optimizer_type", "adamw8bit"))
+    optimizer_type = str(config.setdefault("optimizer_type", "adamw8bit"))
     # Normal launch paths call validate_krea2_config first, but keep this
     # serialization boundary closed for direct integrations as well.
     if optimizer_type not in _KREA2_CURATED_OPTIMIZERS:

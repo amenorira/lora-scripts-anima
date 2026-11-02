@@ -642,30 +642,10 @@ FORM_ARGUMENTS: dict[str, FormArgument] = {
     "muon_adjust_lr_fn": FormArgument(
         "adjust_lr_fn", frozenset({MUON_OPTIMIZER_TYPE})
     ),
-    "momentum": FormArgument("momentum", frozenset({LORA_MUON_OPTIMIZER_TYPE})),
-    "ns_steps": FormArgument("ns_steps", frozenset({LORA_MUON_OPTIMIZER_TYPE})),
-    "inv_sqrt_steps": FormArgument(
-        "inv_sqrt_steps", frozenset({LORA_MUON_OPTIMIZER_TYPE})
-    ),
-    "msign_eps": FormArgument("msign_eps", frozenset({LORA_MUON_OPTIMIZER_TYPE})),
-    "inv_sqrt_eps": FormArgument(
-        "inv_sqrt_eps", frozenset({LORA_MUON_OPTIMIZER_TYPE})
-    ),
-    "inv_sqrt_gamma": FormArgument(
-        "inv_sqrt_gamma", frozenset({LORA_MUON_OPTIMIZER_TYPE})
-    ),
-    "gauge_rebalance": FormArgument(
-        "gauge_rebalance", frozenset({LORA_MUON_OPTIMIZER_TYPE})
-    ),
-    "gauge_rebalance_alpha": FormArgument(
-        "gauge_rebalance_alpha", frozenset({LORA_MUON_OPTIMIZER_TYPE})
-    ),
-    "gauge_rebalance_interval": FormArgument(
-        "gauge_rebalance_interval", frozenset({LORA_MUON_OPTIMIZER_TYPE})
-    ),
-    "gauge_power_steps": FormArgument(
-        "gauge_power_steps", frozenset({LORA_MUON_OPTIMIZER_TYPE})
-    ),
+    **{
+        key: FormArgument(key, frozenset({LORA_MUON_OPTIMIZER_TYPE}))
+        for key in LORA_MUON_FORM_ARGUMENTS
+    },
     "bnb_min_8bit_size": FormArgument(
         "min_8bit_size",
         frozenset({"AdamW8bit", "PagedAdamW8bit", "Lion8bit", "PagedLion8bit"}),
@@ -835,6 +815,27 @@ def collect_optimizer_args(
     return result
 
 
+def serialize_optimizer_args(
+    config: Mapping[str, Any], arguments: Mapping[str, Any],
+    *, mappings: Mapping[str, FormArgument] = FORM_ARGUMENTS,
+    profile_id: str | None = None,
+) -> list[str]:
+    """Serialize final values in UI field order, keeping extra arguments last."""
+    # Import after registry initialization: field definitions use these contracts.
+    from backend.training.fields.field_registry import field_applies_to_profile, get_all_fields
+
+    profile_id = profile_id or config.get("model_train_type") or "anima-lora"
+    optimizer_type = str(config.get("optimizer_type", ""))
+    ordered: dict[str, Any] = {}
+    for field in get_all_fields():
+        if field["section"] != "optimizer" or not field_applies_to_profile(field, profile_id):
+            continue
+        mapping = mappings.get(field["key"])
+        if mapping and optimizer_type in mapping.optimizers and mapping.argument in arguments:
+            ordered[mapping.argument] = arguments[mapping.argument]
+    return [f"{key}={value!r}" for key, value in {**ordered, **arguments}.items()]
+
+
 def extract_optimizer_form(
     config: Mapping[str, Any], *, mappings: Mapping[str, FormArgument] = FORM_ARGUMENTS,
 ) -> dict[str, Any]:
@@ -974,7 +975,7 @@ def apply_ademamix_step_schedule(
             f"AdEMAMix: {arg_key} auto-set to estimated total steps {total_steps} / "
             f"已按预估总步数自动设置为 {total_steps}"
         )
-    config["optimizer_args"] = [f"{key}={value!r}" for key, value in args.items()]
+    config["optimizer_args"] = serialize_optimizer_args(config, args)
     return warnings
 
 
@@ -1169,7 +1170,7 @@ def normalize_optimizer_config(config: dict[str, Any], warnings: list[str], gpu_
             )
 
     if optimizer_type == ADAFACTOR_OPTIMIZER_TYPE:
-        relative_step = args.get("relative_step", True)
+        relative_step = args.setdefault("relative_step", True)
         warmup_init = args.get("warmup_init", False)
         if warmup_init and relative_step is False:
             relative_step = True
@@ -1300,6 +1301,6 @@ def normalize_optimizer_config(config: dict[str, Any], warnings: list[str], gpu_
         config["lr_warmup_steps"] = 0
 
     if args:
-        config["optimizer_args"] = [f"{key}={value!r}" for key, value in args.items()]
+        config["optimizer_args"] = serialize_optimizer_args(config, args)
     else:
         config.pop("optimizer_args", None)
