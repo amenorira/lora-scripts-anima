@@ -409,9 +409,9 @@ window.datasetRepeatMixin = {
     return `<div class="dataset-subset-panel" :class="{ 'is-locked': datasetRepeatLocked() }">
       <div class="dataset-subset-header">
         <div>
-          <div class="dataset-subset-title">${this.esc(this.t('datasetRepeat.title'))}</div>
-          <div class="field-hint">${this.esc(this.t('datasetRepeat.hint'))}</div>
-          <div class="field-hint dataset-subset-locked" x-show="datasetRepeatLocked()">${this.esc(this.t('datasetRepeat.locked'))}</div>
+          <div class="dataset-subset-title">${this.trainingText('datasetRepeat.title')}</div>
+          <div class="field-hint">${this.trainingText('datasetRepeat.hint')}</div>
+          <div class="field-hint dataset-subset-locked" x-show="datasetRepeatLocked()">${this.trainingText('datasetRepeat.locked')}</div>
         </div>
         <span class="dataset-subset-total" x-show="datasetRepeatSubsets().length" x-text="datasetRepeatTotalLabel()"></span>
       </div>
@@ -419,11 +419,11 @@ window.datasetRepeatMixin = {
       <div class="dataset-subset-empty field-hint" x-show="!datasetRepeatShowList()" x-text="datasetRepeatEmptyText()"></div>
       <div class="dataset-subset-list" x-show="datasetRepeatShowList()">
         <div class="dataset-subset-row dataset-subset-row--head">
-          <span>${this.esc(this.t('datasetRepeat.subset'))}</span>
-          <span>${this.esc(this.t('datasetRepeat.images'))}</span>
-          <span>${this.esc(this.t('datasetRepeat.repeats'))}</span>
-          <span>${this.esc(this.t('datasetRepeat.samples'))}</span>
-          <span>${this.esc(this.t('datasetRepeat.share'))}</span>
+          <span>${this.trainingText('datasetRepeat.subset')}</span>
+          <span>${this.trainingText('datasetRepeat.images')}</span>
+          <span>${this.trainingText('datasetRepeat.repeats')}</span>
+          <span>${this.trainingText('datasetRepeat.samples')}</span>
+          <span>${this.trainingText('datasetRepeat.share')}</span>
         </div>
         <template x-for="subset in datasetRepeatSubsets()" :key="subset.name">
           <div class="dataset-subset-row" :class="{ 'is-dirty': datasetRepeatParse(subset).state === 'dirty', 'is-invalid': datasetRepeatParse(subset).state === 'invalid' }">
@@ -440,10 +440,10 @@ window.datasetRepeatMixin = {
         </template>
       </div>
       <div class="dataset-subset-footer" x-show="datasetRepeatShowList()">
-        <span class="field-hint dataset-subset-invalid" x-show="datasetRepeatHasInvalidRow()">${this.esc(this.t('datasetRepeat.invalidRow'))}</span>
+        <span class="field-hint dataset-subset-invalid" x-show="datasetRepeatHasInvalidRow()">${this.trainingText('datasetRepeat.invalidRow')}</span>
         <span class="dataset-subset-applied" x-show="datasetRepeatUndoVisible()" x-text="datasetRepeatUndoLabel()"></span>
-        <button type="button" class="btn btn-ghost btn-sm" x-show="datasetRepeatUndoVisible()" @click="undoDatasetRepeatChanges()" :disabled="datasetRepeatReadOnly()">${this.esc(this.t('datasetRepeat.undo'))}</button>
-        <button type="button" class="btn btn-ghost btn-sm" @click="resetDatasetRepeatDrafts()" :disabled="!datasetRepeatHasDraft()">${this.esc(this.t('datasetRepeat.reset'))}</button>
+        <button type="button" class="btn btn-ghost btn-sm" x-show="datasetRepeatUndoVisible()" @click="undoDatasetRepeatChanges()" :disabled="datasetRepeatReadOnly()">${this.trainingText('datasetRepeat.undo')}</button>
+        <button type="button" class="btn btn-ghost btn-sm" @click="resetDatasetRepeatDrafts()" :disabled="!datasetRepeatHasDraft()">${this.trainingText('datasetRepeat.reset')}</button>
         <button type="button" class="btn btn-primary btn-sm" @click="applyDatasetRepeatChanges()" :disabled="!datasetRepeatCanApply()" x-text="datasetRepeatApplyLabel()"></button>
       </div>
     </div>`;

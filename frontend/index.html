@@ -556,7 +556,7 @@
         </div>
 
         <form @submit.prevent="" id="trainForm">
-          <div id="trainFormContent"></div>
+          <div id="trainFormContent" @focusin="if ($event.target.matches('input, textarea, .anima-select-trigger')) rememberTrainingFocus($event.target)"></div>
         </form>
         </div>
         </div>

@@ -12,6 +12,53 @@ window.DEFAULT_DIM_KEYS = new Set([
 ]);
 
 window.trainingFieldRenderer = {
+  // Static translations update only on locale changes, without one Alpine
+  // effect per label or replacing controls (including unfinished input).
+  trainingText(key, fallback = '') {
+    return `<span data-training-i18n="${this.escapeAttr(key)}" data-training-i18n-fallback="${this.escapeAttr(fallback)}">${this.esc(this.t(key, fallback))}</span>`;
+  },
+
+  trainingI18nAttrs(key, fallback = '', targets = ['title', 'aria-label']) {
+    return targets.map(target => ` ${target}="${this.escapeAttr(this.t(key, fallback))}" data-training-i18n-${target}="${this.escapeAttr(key)}"`).join('')
+      + ` data-training-i18n-fallback="${this.escapeAttr(fallback)}"`;
+  },
+
+  _refreshTrainingText(root) {
+    root.querySelectorAll('[data-training-i18n], [data-training-i18n-title], [data-training-i18n-aria-label]').forEach(node => {
+      const fallback = node.dataset.trainingI18nFallback || '';
+      const params = node.dataset.trainingI18nParams ? Object.entries(JSON.parse(node.dataset.trainingI18nParams)) : [];
+      const translate = key => {
+        let value = String(this.t(key, fallback));
+        params.forEach(([name, replacement]) => {
+          value = value.replaceAll(`{${name}}`, () => String(replacement));
+        });
+        return value;
+      };
+      if (node.dataset.trainingI18n) {
+        const text = translate(node.dataset.trainingI18n);
+        if (node.textContent !== text) node.textContent = text;
+      }
+      ['title', 'aria-label'].forEach(target => {
+        const key = node.getAttribute('data-training-i18n-' + target);
+        if (key) {
+          const text = translate(key);
+          if (node.getAttribute(target) !== text) node.setAttribute(target, text);
+        }
+      });
+    });
+    root.querySelectorAll('[data-training-field-label]').forEach(node => {
+      const label = this.t(node.dataset.trainingFieldLabel);
+      const name = node.dataset.trainingFieldName;
+      const step = node.dataset.trainingFieldStep;
+      node.setAttribute('aria-label', step
+        ? this.t('common.' + step + 'Field').replace('{field}', `${name} ${label}`)
+        : `${name}，${label}`);
+    });
+    root.querySelectorAll('[data-readonly-if-reason] .field-readonly-warn').forEach(node => {
+      node.textContent = this.t(node.closest('[data-readonly-if-reason]').dataset.readonlyIfReason);
+    });
+  },
+
   // 选项标签解析入口：表单预览、监控参数摘要共用。
   // 值可能来自历史 TOML（大小写与下拉选项不完全一致），故精确匹配失败后按小写兜底。
   _fieldOptionLabel(fieldKey, value, fallback = '') {
@@ -202,7 +249,7 @@ window.trainingFieldRenderer = {
       const label = action.labelKey ? this.t(action.labelKey, action.label) : action.label;
       const args = this.escapeAttr(`'${key}', ${index}`);
       const title = `fieldQuickActionTitle(${args})`;
-      return `<button type="button" class="field-quick-action" :disabled="fieldQuickActionValue(${args}) === null" :title="${title}" :aria-label="${title}" @click="applyFieldQuickAction(${args})">${this.esc(label)}</button>`;
+      return `<button type="button" class="field-quick-action" :disabled="fieldQuickActionValue(${args}) === null" :title="${title}" :aria-label="${title}" @click="applyFieldQuickAction(${args})">${action.labelKey ? this.trainingText(action.labelKey, action.label) : this.esc(label)}</button>`;
     }).join('');
     return `<div class="field-quick-actions">${buttons}</div>`;
   },
@@ -218,9 +265,11 @@ window.trainingFieldRenderer = {
     const specificLabel = this.t(descKeyWithSuffix);
     const hasSpecificLabel = specificLabel && specificLabel !== descKeyWithSuffix;
     const label = hasSpecificLabel ? specificLabel : (this.t(field.descKey) || field.descKey || field.key);
+    const labelKey = hasSpecificLabel ? descKeyWithSuffix : (field.descKey || field.key);
+    const labelHtml = this.trainingText(labelKey);
     const hint = this._resolveFieldHintText(field, this.form, trainType);
     const docLink = field.docSlug
-      ? `<button type="button" class="field-doc-link" @click.stop="openParameterDoc('${this.escapeAttr(field.docSlug)}','${this.escapeAttr(field.docAnchor || '')}')" title="${this.escapeAttr(this.t('docs.openGuide'))}" aria-label="${this.escapeAttr(this.t('docs.openGuide'))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg><span>${this.esc(this.t('docs.openGuide'))}</span></button>`
+      ? `<button type="button" class="field-doc-link" @click.stop="openParameterDoc('${this.escapeAttr(field.docSlug)}','${this.escapeAttr(field.docAnchor || '')}')"${this.trainingI18nAttrs('docs.openGuide')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>${this.trainingText('docs.openGuide')}</button>`
       : '';
     const currentGroup = window.TRAIN_GROUP_MAP[this.form.model_train_type || 'anima-lora'] || 'all';
     let isRequired = field.required;
@@ -233,6 +282,7 @@ window.trainingFieldRenderer = {
     const fieldAriaLabel = this.escapeAttr(`${accessibleKey}，${label}`);
     const stepDownLabel = this.escapeAttr(this.t('common.decreaseField').replace('{field}', `${accessibleKey} ${label}`));
     const stepUpLabel = this.escapeAttr(this.t('common.increaseField').replace('{field}', `${accessibleKey} ${label}`));
+    const labelAttrs = ` data-training-field-label="${this.escapeAttr(labelKey)}" data-training-field-name="${this.escapeAttr(accessibleKey)}"`;
     const isToggle = field.type === 'toggle';
     const isStaticReadonly = field.readonly === true;
     const staticReadonlyAttrs = isStaticReadonly ? ' readonly aria-readonly="true"' : '';
@@ -244,7 +294,7 @@ window.trainingFieldRenderer = {
     if (field.type === 'lora-list') {
       inputHtml = this.previewLorasHtml();
     } else if (isToggle) {
-      inputHtml = `<label class="toggle"><input type="checkbox" aria-label="${fieldAriaLabel}" :checked="form.${dataKey}" @change="setField('${dataKey}', $event.target.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>`;
+      inputHtml = `<label class="toggle"><input type="checkbox" aria-label="${fieldAriaLabel}"${labelAttrs} :checked="form.${dataKey}" @change="setField('${dataKey}', $event.target.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>`;
     } else if (field.type === 'select') {
       const fc = {};
       const selectAlign = field.selectAlign === 'left' ? 'left' : 'right';
@@ -253,7 +303,9 @@ window.trainingFieldRenderer = {
       const currentGroup = window.TRAIN_GROUP_MAP[currentTrainType] || 'all';
 
       const resolveOption = (o) => {
-        const cloned = { v: o.v, l: o.labelKey ? self.t(o.labelKey, o.l) : o.l };
+        const cloned = { v: o.v, l: o.l, labelKey: o.labelKey || o.dk };
+        if (cloned.labelKey) cloned.l = self.t(cloned.labelKey, o.l);
+        if (o.dKey) cloned.dKey = o.dKey;
         if (o.dKey) { cloned.d = self.t(o.dKey); }
         else if (o.d) { cloned.d = o.d; }
         return cloned;
@@ -271,6 +323,7 @@ window.trainingFieldRenderer = {
       if (field.groups && field.groups.length) {
         fc.groups = field.groups.map(g => ({
           label: g.labelKey ? (self.t(g.labelKey) || g.label) : (g.label || ''),
+          labelKey: g.labelKey,
           options: filterByGroup(g.options)
         })).filter(g => g.options.length > 0);
       } else if (field.options && field.options.length) {
@@ -278,11 +331,11 @@ window.trainingFieldRenderer = {
       } else {
         fc.options = [];
       }
-      const triggerHtml = `<button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle($event)" aria-label="${fieldAriaLabel}" aria-haspopup="listbox" :aria-expanded="open ? 'true' : 'false'"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>`;
+      const triggerHtml = `<button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle($event)" aria-label="${fieldAriaLabel}"${labelAttrs} aria-haspopup="listbox" :aria-expanded="open ? 'true' : 'false'"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>`;
       const menuHtml = `<template x-if="open"><div class="anima-select-menu" :class="{ 'anima-select-menu-described': hasDescriptions, 'anima-select-menu-positioned': positioned }"><div class="anima-select-menu-scroll"><template x-for="(group, gIdx) in displayGroups" :key="gIdx"><div class="anima-select-group"><div class="anima-select-group-label" x-show="group.label" x-text="group.label"></div><template x-for="opt in group.options" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-content"><span class="anima-select-option-label" x-text="opt.l" :title="opt.l"></span><span class="anima-select-option-desc" x-show="opt.d" x-text="opt.d"></span></span><svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></div></template></div></template><div x-show="displayGroups.length === 0" style="padding:8px 12px;font-size:12px;color:var(--text-tertiary)">—</div></div></div></template>`;
       inputHtml = `<div class="anima-select" x-data="animaSelect('${this.escJson(fc)}', '${this.escapeAttr(val ?? '')}', {align:'${selectAlign}'})" @click.outside="close()" @anima-select-change="setField('${dataKey}', $event.detail.value)"><input type="hidden" aria-hidden="true" tabindex="-1" x-ref="modelInput" :value="form.${dataKey}">${triggerHtml}${menuHtml}</div>`;
     } else if (field.type === 'textarea') {
-      inputHtml = `<textarea aria-label="${fieldAriaLabel}" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" rows="3"${staticReadonlyAttrs}></textarea>`;
+      inputHtml = `<textarea aria-label="${fieldAriaLabel}"${labelAttrs} :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" rows="3"${staticReadonlyAttrs}></textarea>`;
       if (dataKey === "positive_prompts") {
         inputHtml += this._positivePromptCountHint(dataKey);
       }
@@ -292,20 +345,20 @@ window.trainingFieldRenderer = {
       const defaultOnBlur = dataKey === 'lr_scheduler_timescale'
         ? ` x-data="{ editing: false }" x-effect="_syncLrTimescaleDefault(editing)" :class="{ 'is-default': ['default', 'auto'].includes(_fieldSources?.lr_scheduler_timescale) }" @focus="editing = true" @blur="editing = false; if (String(form.${dataKey} ?? '').trim() === '') resetField('${dataKey}')"` : '';
       const numberAttrs = `${constraints.min !== undefined ? ` min="${this.escapeAttr(constraints.min)}"` : ''}${constraints.max !== undefined ? ` max="${this.escapeAttr(constraints.max)}"` : ''} step="${this.escapeAttr(sStep)}"`;
-      inputHtml = `<div class="stepper"><button type="button" aria-label="${stepDownLabel}" @click="stepField('${dataKey}', -${sStep})">−</button><input type="number" aria-label="${fieldAriaLabel}" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)"${numberAttrs}${defaultOnBlur}${staticReadonlyAttrs}><button type="button" aria-label="${stepUpLabel}" @click="stepField('${dataKey}', ${sStep})">+</button></div>`;
+      inputHtml = `<div class="stepper"><button type="button" aria-label="${stepDownLabel}"${labelAttrs} data-training-field-step="decrease" @click="stepField('${dataKey}', -${sStep})">−</button><input type="number" aria-label="${fieldAriaLabel}"${labelAttrs} :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)"${numberAttrs}${defaultOnBlur}${staticReadonlyAttrs}><button type="button" aria-label="${stepUpLabel}"${labelAttrs} data-training-field-step="increase" @click="stepField('${dataKey}', ${sStep})">+</button></div>`;
     } else {
       // Placeholders use the same profile defaults and auto-value rules as the form.
       const placeholders = this._optimizerAutoValueMap(field);
       if (Object.keys(placeholders).length || field.argKey) {
         const expression = JSON.stringify(placeholders).replace(/"/g, '&quot;');
         const defaultValue = JSON.stringify(field.default ?? '').replace(/"/g, '&quot;');
-        inputHtml = `<input type="text" aria-label="${fieldAriaLabel}" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" :placeholder="(${expression})[form.optimizer_type] ?? ${defaultValue}"${staticReadonlyAttrs}>`;
+        inputHtml = `<input type="text" aria-label="${fieldAriaLabel}"${labelAttrs} :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" :placeholder="(${expression})[form.optimizer_type] ?? ${defaultValue}"${staticReadonlyAttrs}>`;
       } else if (field.placeholder) {
-        inputHtml = `<input type="text" aria-label="${fieldAriaLabel}" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" placeholder="${this.escapeAttr(field.placeholder)}"${staticReadonlyAttrs}>`;
+        inputHtml = `<input type="text" aria-label="${fieldAriaLabel}"${labelAttrs} :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" placeholder="${this.escapeAttr(field.placeholder)}"${staticReadonlyAttrs}>`;
       } else if (field.omitDefault && field.default !== undefined && field.default !== '' && field.default !== null) {
         // omitDefault 字段：值==默认值时不传，输入框用淡色 placeholder 提示默认值
         const _phVal = String(field.default).replace(/"/g, '&quot;');
-        inputHtml = `<input type="text" aria-label="${fieldAriaLabel}" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" placeholder="${_phVal}"${staticReadonlyAttrs}>`;
+        inputHtml = `<input type="text" aria-label="${fieldAriaLabel}"${labelAttrs} :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" placeholder="${_phVal}"${staticReadonlyAttrs}>`;
       } else {
         // DEFAULT_DIM_KEYS 字段：值==schema 原始默认值时加 is-default class，CSS 淡色模拟 placeholder 视觉
         // （假留空——值仍保留，不触发必填校验失败、不影响训练流程；改值后 class 移除恢复正常字色）
@@ -313,7 +366,7 @@ window.trainingFieldRenderer = {
         const _dimCls = (window.DEFAULT_DIM_KEYS && window.DEFAULT_DIM_KEYS.has(dataKey) && field.default !== undefined && field.default !== '' && field.default !== null)
           ? ` :class="{ 'is-default': String(form.${dataKey}) === String('${String(field.default).replace(/'/g, '\\x27')}') }"`
           : '';
-        inputHtml = `<input type="text" aria-label="${fieldAriaLabel}" :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)"${_dimCls}${staticReadonlyAttrs}>`;
+        inputHtml = `<input type="text" aria-label="${fieldAriaLabel}"${labelAttrs} :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)"${_dimCls}${staticReadonlyAttrs}>`;
       }
     }
 
@@ -333,7 +386,7 @@ window.trainingFieldRenderer = {
     const _resetSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
     const _undoSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>`;
     const _dotsSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>`;
-    const _menuPopupHtml = `<div class="field-menu-popup" x-ref="menu" x-show="open" :class="{ 'is-positioned': positioned }" :inert="!open" :id="$id('field-menu')" role="menu" :aria-label="t('common.fieldActions')" x-cloak><button type="button" role="menuitem" tabindex="-1" @click="undoField('${dataKey}');close()">${_undoSvg}<span>${this.t('common.undoField')}</span></button><button type="button" role="menuitem" tabindex="-1" @click="resetField('${dataKey}');close()">${_resetSvg}<span>${this.t('common.resetField')}</span></button></div>`;
+    const _menuPopupHtml = `<div class="field-menu-popup" x-ref="menu" x-show="open" :class="{ 'is-positioned': positioned }" :inert="!open" :id="$id('field-menu')" role="menu" :aria-label="t('common.fieldActions')" x-cloak><button type="button" role="menuitem" tabindex="-1" @click="undoField('${dataKey}');close()">${_undoSvg}<span>${this.trainingText('common.undoField')}</span></button><button type="button" role="menuitem" tabindex="-1" @click="resetField('${dataKey}');close()">${_resetSvg}<span>${this.trainingText('common.resetField')}</span></button></div>`;
 
     // ── Conditional display ──
     // LyCORIS 面板字段在主表单里只对原生模块（非 lycoris.kohya）显示；
@@ -436,8 +489,8 @@ window.trainingFieldRenderer = {
     // 同一时刻只显示一个优化器的参数，重名不会歧义，且这个名字与文档、日志一致。
     const displayKey = field.argKey || dataKey;
     const infoHtml = field.labelOnly
-      ? `<div class="field-info"><div class="field-key">${label}${requiredMark}${docLink}</div>${field.helpKey ? `<div class="field-desc">${this.esc(this.t(field.helpKey))}</div>` : ''}</div>`
-      : `<div class="field-info"><div class="field-key">${this.esc(displayKey)}${requiredMark}</div><div class="field-desc">${label}${docLink}</div></div>`;
+      ? `<div class="field-info"><div class="field-key">${labelHtml}${requiredMark}${docLink}</div>${field.helpKey ? `<div class="field-desc">${this.trainingText(field.helpKey)}</div>` : ''}</div>`
+      : `<div class="field-info"><div class="field-key">${this.esc(displayKey)}${requiredMark}</div><div class="field-desc">${labelHtml}${docLink}</div></div>`;
     let controlSection = '';
     let fullWidthRow = '';
     if (isFullWidth) {
@@ -469,7 +522,7 @@ window.trainingFieldRenderer = {
       ? `<div class="field-hint" x-text="t('opt.attn_mode_' + form.attn_mode)">${this.esc(this.t('opt.attn_mode_' + val))}</div>`
       : field.hintKeyBy
       ? `<div class="field-hint" x-show="${hintExpr}" x-text="${hintExpr}">${this.esc(hint)}</div>`
-      : (hint ? `<div class="field-hint">${hint}</div>` : '');
+      : (hint ? `<div class="field-hint">${this.trainingText(this._resolveFieldHintKey(field, this.form, trainType))}</div>` : '');
     const kreaSampleModeHtml = trainType === 'krea2-lora' && dataKey === 'enable_krea_samples'
       ? `<div class="field-hint" data-krea-sample-mode role="status" aria-live="polite" x-show="form.enable_krea_samples" x-text="kreaSampleModeText()">${this.esc(this.kreaSampleModeText())}</div>`
       : '';
@@ -513,15 +566,15 @@ window.trainingFieldRenderer = {
       case 'network_module':
         return this._shapePreviewEntry();
       case 'attn_mode':
-        return `<div x-show="faStatus && !faStatus.installed && form.attn_mode==='flash'" x-cloak class="field-hint field-hint-warn">${this.t('environment.envHintFlashNotInstalled')}</div>`
-          + `<div x-show="xfStatus && !xfStatus.installed && form.attn_mode==='xformers'" x-cloak class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')}</div>`;
+        return `<div x-show="faStatus && !faStatus.installed && form.attn_mode==='flash'" x-cloak class="field-hint field-hint-warn">${this.trainingText('environment.envHintFlashNotInstalled')}</div>`
+          + `<div x-show="xfStatus && !xfStatus.installed && form.attn_mode==='xformers'" x-cloak class="field-hint field-hint-warn">${this.trainingText('environment.envHintXformersNotInstalled')}</div>`;
       case 'krea_attention_backend':
-        return `<div x-show="faStatus && !faStatus.installed && form.krea_attention_backend==='flash_attn'" x-cloak class="field-hint field-hint-warn">${this.t('environment.envHintFlashNotInstalled')}</div>`
-          + `<div x-show="xfStatus && !xfStatus.installed && form.krea_attention_backend==='xformers'" x-cloak class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')}</div>`;
+        return `<div x-show="faStatus && !faStatus.installed && form.krea_attention_backend==='flash_attn'" x-cloak class="field-hint field-hint-warn">${this.trainingText('environment.envHintFlashNotInstalled')}</div>`
+          + `<div x-show="xfStatus && !xfStatus.installed && form.krea_attention_backend==='xformers'" x-cloak class="field-hint field-hint-warn">${this.trainingText('environment.envHintXformersNotInstalled')}</div>`;
       case 'xformers':
-        return `<div x-show="xfStatus && !xfStatus.installed && form.xformers" class="field-hint field-hint-warn">${this.t('environment.envHintXformersNotInstalled')}</div>`;
+        return `<div x-show="xfStatus && !xfStatus.installed && form.xformers" class="field-hint field-hint-warn">${this.trainingText('environment.envHintXformersNotInstalled')}</div>`;
       case 'compile':
-        return `<div x-show="tritonStatus && !tritonStatus.installed && form.compile" class="field-hint field-hint-warn">${this.t('environment.envHintTritonNotInstalled')}</div>`;
+        return `<div x-show="tritonStatus && !tritonStatus.installed && form.compile" class="field-hint field-hint-warn">${this.trainingText('environment.envHintTritonNotInstalled')}</div>`;
     }
     return '';
   },

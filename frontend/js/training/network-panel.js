@@ -21,7 +21,7 @@ window.trainingNetworkPanel = {
       const grouped = fields.filter(field => field.lycorisGroup === group)
         .sort((a, b) => (a.lycorisOrder || 0) - (b.lycorisOrder || 0));
       if (!grouped.length) return;
-      html += `<section class="lycoris-field-group"><div class="lycoris-field-group-title">${this.esc(this.t(titleKey))}</div>`;
+      html += `<section class="lycoris-field-group"><div class="lycoris-field-group-title">${this.trainingText(titleKey)}</div>`;
       const groupedKeys = new Set(grouped.map(gf => gf.key));
       grouped.forEach(field => {
         // 同组内可见的布局父字段（如 dora_wd → wd_on_output）保留子项层级缩进；

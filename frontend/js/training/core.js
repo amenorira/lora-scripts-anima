@@ -17,7 +17,9 @@ window.trainingCoreMixin = {
   _profileWatcherSetupUsesIdle: false,
 
   _formSaveTimer: null,
-  _localeChangeHandler: null,
+  _trainingLocaleRefreshSeq: 0,
+  _trainFormFocusedControl: null,
+  _trainingLocaleScrollSnapshot: null,
   _trainFormMountedRoute: '',
   _trainFormLocale: '',
   _trainingSessionRoute: '',
@@ -274,10 +276,6 @@ window.trainingCoreMixin = {
       (this[key] || []).forEach(stop => { if (typeof stop === 'function') stop(); });
       this[key] = [];
     });
-    if (this._localeChangeHandler) {
-      window.removeEventListener('locale-changed', this._localeChangeHandler);
-      this._localeChangeHandler = null;
-    }
     if (this._trainingFieldsLoadedHandler) {
       window.removeEventListener('training-fields-loaded', this._trainingFieldsLoadedHandler);
       this._trainingFieldsLoadedHandler = null;
@@ -296,12 +294,16 @@ window.trainingCoreMixin = {
     this.activeSection = '';
     this._trainFormMountedRoute = '';
     this._trainFormLocale = '';
+    this._trainFormFocusedControl = null;
+    this._trainingLocaleScrollSnapshot = null;
+    this._trainingLocaleRefreshSeq += 1;
   },
 
   _resumeTrainForm(route) {
     const container = document.getElementById('trainFormContent');
     if (!container || !container.childElementCount) return false;
-    if (this._trainFormMountedRoute !== route || this._trainFormLocale !== this.locale) return false;
+    if (this._trainFormMountedRoute !== route) return false;
+    if (this._trainFormLocale !== this.locale) this.refreshTrainingLocale();
 
     const activeType = this.form && this.form.model_train_type;
     if (activeType) this._normalizeProfileSelectValues(activeType);
@@ -393,6 +395,66 @@ window.trainingCoreMixin = {
     this._initializeTrainingFormState(route, false);
   },
 
+  rememberTrainingFocus(control) {
+    // Repeated subset rows can disappear independently of the whole panel.
+    this._trainFormFocusedControl = new WeakRef(control);
+  },
+
+  refreshTrainingLocale() {
+    if (!this._trainFormMountedRoute || this._trainFormLocale === this.locale) return;
+    const root = document.getElementById('trainFormContent');
+    if (!root) return;
+    const route = this.currentRoute;
+    const scroller = route === this._trainFormMountedRoute ? document.getElementById('mainContent') : null;
+    const scrollTop = scroller ? scroller.scrollTop : 0;
+    const viewportTop = scroller ? scroller.getBoundingClientRect().top : 0;
+    // Keep the visible field in place even if translated hints above it wrap.
+    const viewportBottom = scroller ? scroller.getBoundingClientRect().bottom : 0;
+    const visible = node => {
+      if (node.closest('.field-hidden') || !node.getClientRects().length) return false;
+      if (node.closest('.card-collapsed') && !node.matches('.card-header')) return false;
+      const rect = node.getBoundingClientRect();
+      return rect.height > 0 && rect.bottom > viewportTop + 16 && rect.top < viewportBottom;
+    };
+    const focused = this._trainFormFocusedControl?.deref();
+    const anchor = scroller && scrollTop > 0
+      ? (focused && root.contains(focused) && visible(focused) ? focused
+        : Array.from(root.querySelectorAll('[data-field-row], .dataset-subset-row, .subset-timestep-row, .card-header')).find(visible))
+      : null;
+    // Consecutive changes before Alpine settles share the original position.
+    const snapshot = this._trainingLocaleScrollSnapshot?.route === route
+      ? this._trainingLocaleScrollSnapshot
+      : { route, scroller, scrollTop, anchor, top: anchor ? anchor.getBoundingClientRect().top : 0 };
+    this._trainingLocaleScrollSnapshot = snapshot;
+    const seq = ++this._trainingLocaleRefreshSeq;
+    const trainType = this.trainTypes.find(item => item.v === this.form.model_train_type);
+    this.currentTrainTypeDesc = trainType ? this.t(trainType.dk, trainType.l) : '';
+    this._refreshTrainingText(root);
+    const lycoris = document.getElementById('lycorisConfigContent');
+    if (lycoris) this._refreshTrainingText(lycoris);
+    const sections = this._allSections();
+    this.sectionNavList = this.sectionNavList.map(item => {
+      const section = sections.find(section => section.key === item.key);
+      return section ? { ...item, title: this.t(section.titleKey) } : item;
+    });
+    this._refreshTrainingOptionErrors();
+    this._trainFormLocale = this.locale;
+    if (this._trainTypePanel) this._trainTypePanel.dataset.panelLocale = String(this.locale);
+    this.$nextTick(() => {
+      if (seq !== this._trainingLocaleRefreshSeq) return;
+      this._trainingLocaleScrollSnapshot = null;
+      if (this.currentRoute !== route) return;
+      if (snapshot.scroller) {
+        const { scroller, anchor } = snapshot;
+        scroller.scrollTop = anchor && anchor.isConnected
+          ? scroller.scrollTop + anchor.getBoundingClientRect().top - snapshot.top
+          : snapshot.scrollTop;
+        this._updateActiveSection();
+        this.positionSectionRail();
+      }
+    });
+  },
+
   buildTrainForm() {
     const r = this.currentRoute;
     if (this._resumeTrainForm(r)) { this.regApplyPendingTrainingPath?.(); return; }
@@ -447,20 +509,6 @@ window.trainingCoreMixin = {
     self.scheduleShapeEstimate();
 
     self._setupTrainTypeWatcher();
-
-    if (self._localeChangeHandler) {
-      window.removeEventListener('locale-changed', self._localeChangeHandler);
-    }
-    self._localeChangeHandler = () => {
-      const tt2 = self.trainTypes.find(t => t.v === self.form.model_train_type);
-      self.currentTrainTypeDesc = tt2 ? window.t(tt2.dk, tt2.l) : '';
-      const activeType = self.form.model_train_type || 'anima-lora';
-      self._refreshTrainingOptionErrors();
-      self._destroyTrainTypePanel();
-      self.renderTrainingForm(activeType, null, true);
-      self._trainFormLocale = self.locale;
-    };
-    window.addEventListener('locale-changed', self._localeChangeHandler);
 
     // The form may mount before /api/fields returns. Rehydrate missing
     // profile-scoped fields (notably Krea 2) once the authoritative registry
@@ -518,6 +566,7 @@ window.trainingCoreMixin = {
   _destroyTrainTypePanel() {
     const panel = this._trainTypePanel;
     if (!panel) return;
+    this._releaseTrainingControlReferences(panel);
     const alpine = window.Alpine;
     this._mutateTrainingPanels(() => {
       if (alpine && typeof alpine.destroyTree === 'function') alpine.destroyTree(panel);
@@ -568,7 +617,7 @@ window.trainingCoreMixin = {
       html += `<div class="card" data-section="${section.key}" :class="{ 'card-collapsed': _sectionCollapsed['${section.key}'] }">`;
       html += `<div class="card-header" @click="toggleSection('${section.key}')">`;
       html += `<svg class="card-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>`;
-      html += `<span>${this.t(section.titleKey) || section.titleKey}</span>`;
+      html += this.trainingText(section.titleKey);
       html += `</div>`;
       html += `<div class="card-body" :inert="_sectionCollapsed['${section.key}']" :aria-hidden="_sectionCollapsed['${section.key}'] ? 'true' : null">`;
       if (section.key === 'training' && !targetId) html += this.renderStepEstimatePanel();
@@ -579,7 +628,7 @@ window.trainingCoreMixin = {
         if (f.key === 'network_module') {
           html += `<div class="lycoris-config-entry" x-show="form.network_module === 'lycoris.kohya'" x-cloak>`
             + `<button type="button" class="lycoris-config-button" @click="openLycorisConfig()">`
-            + `<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg><span>${this.esc(this.t('field.configureLycoris', 'Configure LyCORIS'))}</span></button>`
+            + `<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>${this.trainingText('field.configureLycoris', 'Configure LyCORIS')}</button>`
             + `<span class="lycoris-config-summary" x-text="lycorisSummary()"></span></div>`;
         }
         if (f.key === 'mode_scale') html += this.renderSubsetTimestepOffsets();
@@ -615,6 +664,7 @@ window.trainingCoreMixin = {
   },
 
   _replaceTrainingFormHtml(container, html) {
+    this._releaseTrainingControlReferences(container);
     const alpine = window.Alpine;
     if (!alpine || typeof alpine.mutateDom !== 'function'
         || typeof alpine.destroyTree !== 'function' || typeof alpine.initTree !== 'function') {
@@ -630,6 +680,18 @@ window.trainingCoreMixin = {
       container.innerHTML = html;
       Array.from(container.children).forEach(child => alpine.initTree(child));
     });
+  },
+
+  _releaseTrainingControlReferences(container) {
+    const focused = this._trainFormFocusedControl?.deref();
+    if (!focused || !focused.isConnected || container.contains(focused)) {
+      this._trainFormFocusedControl = null;
+    }
+    const anchor = this._trainingLocaleScrollSnapshot?.anchor;
+    if (anchor && (!anchor.isConnected || container.contains(anchor))) {
+      this._trainingLocaleScrollSnapshot = null;
+      this._trainingLocaleRefreshSeq += 1;
+    }
   },
 
   _allSections() {

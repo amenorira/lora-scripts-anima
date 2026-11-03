@@ -1,6 +1,6 @@
 /* Anima regularization workspace: persistent jobs and shared scrolling galleries. */
 window.regularizationMixin = {
-  regDefaults: null, regSectionCollapsed: { models: true, deviceOptions: true, bucketSettings: true }, _regUndo: {}, _regFields: {}, _regControlsLocale: '',
+  regDefaults: null, regSectionCollapsed: { models: true, deviceOptions: true, bucketSettings: true }, _regUndo: {}, _regFields: {},
   regSettings: {}, regMetadata: null, _regResultRequest: 0, _regSourceRequest: 0, _regScanTimer: null, _regScanVersion: 0,
   regTab: 'settings', regPlan: null, regSources: [], regEdits: {}, regPlanDirty: false, regPreviewDirty: false, regPlanConsumed: false,
   regBusy: false, regError: '', regNewRound: false, regTask: null, regRunKey: '', regRuns: [],
@@ -371,10 +371,6 @@ window.regularizationMixin = {
     }
     host.innerHTML = html + '</div>'; host.dataset.locale = this.locale;
     Alpine.initTree(host);
-    if (!this._regControlsLocale) {
-      this._regControlsLocale = 'registered';
-      window.addEventListener('locale-changed', () => this.regRenderControls());
-    }
   },
   async regShowPlan() {
     this.regTab = 'plan';

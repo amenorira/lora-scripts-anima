@@ -143,52 +143,53 @@ window.trainingTimestepPreview = {
     const rows = subsets.map(subset => {
       const name = String(subset.name || '');
       const nameExpr = this.escapeAttr(JSON.stringify(name));
+      const counts = { images: subset.image_count || 0, repeats: subset.repeats || 0 };
       const sampleText = this.t('timestepOffset.sampleFormat')
-        .replace('{images}', String(subset.image_count || 0))
-        .replace('{repeats}', String(subset.repeats || 0));
+        .replace('{images}', String(counts.images))
+        .replace('{repeats}', String(counts.repeats));
       return `<div class="subset-timestep-row">
         <span class="subset-timestep-name" title="${this.escapeAttr(name)}">${this.esc(name)}</span>
-        <span class="subset-timestep-meta">${this.esc(sampleText)}</span>
+        <span class="subset-timestep-meta" data-training-i18n="timestepOffset.sampleFormat" data-training-i18n-params="${this.escapeAttr(JSON.stringify(counts))}">${this.esc(sampleText)}</span>
         <div class="stepper subset-timestep-stepper">
           <button type="button" @click="stepSubsetTimestepOffset(${nameExpr}, -0.05)"${disabled}>−</button>
           <input type="text" inputmode="decimal" autocomplete="off" placeholder="0" :value="subsetTimestepOffsetInputValue(${nameExpr})" @input="setSubsetTimestepOffsetDraft(${nameExpr}, $event.target.value)" @blur="commitSubsetTimestepOffsetDraft(${nameExpr})"${disabled}>
           <button type="button" @click="stepSubsetTimestepOffset(${nameExpr}, 0.05)"${disabled}>+</button>
         </div>
-        <button type="button" class="btn-icon" @click="openTimestepPreview(${nameExpr})"${disabled} title="${this.escapeAttr(this.t('timestepOffset.previewSubset'))}" aria-label="${this.escapeAttr(this.t('timestepOffset.previewSubset'))}">
+        <button type="button" class="btn-icon" @click="openTimestepPreview(${nameExpr})"${disabled} ${this.trainingI18nAttrs('timestepOffset.previewSubset')}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19V3"/></svg>
         </button>
         <div class="field-menu-wrap subset-timestep-menu" x-data="actionMenu" x-id="['field-menu']" @keydown="key($event)" @click.outside="close(false)" @pointerenter="hoverEnter($event)" @pointerleave="hoverLeave()" @focusout="focusOut($event)">
-          <button type="button" class="btn-menu" x-ref="trigger" :aria-label="t('common.fieldActions')" title="${this.escapeAttr(this.t('common.fieldActions'))}" aria-haspopup="menu" :aria-expanded="open" :aria-controls="$id('field-menu')" @click="toggle()"${disabled}>
+          <button type="button" class="btn-menu" x-ref="trigger" ${this.trainingI18nAttrs('common.fieldActions')} aria-haspopup="menu" :aria-expanded="open" :aria-controls="$id('field-menu')" @click="toggle()"${disabled}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
           </button>
           <div class="field-menu-popup" x-ref="menu" x-show="open" :class="{ 'is-positioned': positioned }" :inert="!open" :id="$id('field-menu')" role="menu" :aria-label="t('common.fieldActions')" x-cloak>
-            <button type="button" role="menuitem" tabindex="-1" @click="undoSubsetTimestepOffset(${nameExpr});close()"${disabled}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg><span>${this.esc(this.t('common.undoField'))}</span></button>
-            <button type="button" role="menuitem" tabindex="-1" @click="resetSubsetTimestepOffset(${nameExpr});close()"${disabled}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg><span>${this.esc(this.t('common.resetField'))}</span></button>
+            <button type="button" role="menuitem" tabindex="-1" @click="undoSubsetTimestepOffset(${nameExpr});close()"${disabled}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>${this.trainingText('common.undoField')}</button>
+            <button type="button" role="menuitem" tabindex="-1" @click="resetSubsetTimestepOffset(${nameExpr});close()"${disabled}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>${this.trainingText('common.resetField')}</button>
           </div>
         </div>
       </div>`;
     }).join('');
-    const body = rows || `<div class="subset-timestep-empty field-hint">${this.esc(this.t('timestepOffset.empty'))}</div>`;
+    const body = rows || `<div class="subset-timestep-empty field-hint">${this.trainingText('timestepOffset.empty')}</div>`;
     const previewDisabled = subsets.length ? '' : ' disabled';
     return `<div class="subset-timestep-editor${supported ? '' : ' is-disabled'}" :class="{ 'is-disabled': !timestepOffsetSupported() }">
       <div class="subset-timestep-header">
         <div>
           <div class="subset-timestep-title">
-            <span>${this.esc(this.t('timestepOffset.title'))}</span>
-            <button type="button" class="field-doc-link" @click.stop="openParameterDoc('timesteps','subset-offsets')" title="${this.escapeAttr(this.t('docs.openGuide'))}" aria-label="${this.escapeAttr(this.t('docs.openGuide'))}">
+            ${this.trainingText('timestepOffset.title')}
+            <button type="button" class="field-doc-link" @click.stop="openParameterDoc('timesteps','subset-offsets')" ${this.trainingI18nAttrs('docs.openGuide')}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-              <span>${this.esc(this.t('docs.openGuide'))}</span>
+              ${this.trainingText('docs.openGuide')}
             </button>
           </div>
-          <div class="field-hint">${this.esc(this.t('timestepOffset.hint'))}</div>
+          <div class="field-hint">${this.trainingText('timestepOffset.hint')}</div>
         </div>
         <button type="button" class="btn btn-ghost btn-sm" @click="openTimestepPreview('overall')"${previewDisabled}${disabled}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19V3"/></svg>
-          <span>${this.esc(this.t('timestepOffset.preview'))}</span>
+          ${this.trainingText('timestepOffset.preview')}
         </button>
       </div>
-      ${rows ? `<div class="subset-timestep-list"><div class="subset-timestep-row subset-timestep-row--head"><span>${this.esc(this.t('timestepOffset.subset'))}</span><span>${this.esc(this.t('timestepOffset.samples'))}</span><span>${this.esc(this.t('timestepOffset.offset'))}</span><span></span></div>${body}</div>` : body}
-      <div class="field-hint subset-timestep-footnote">${this.esc(this.t('timestepOffset.rangeWarning'))}</div>
+      ${rows ? `<div class="subset-timestep-list"><div class="subset-timestep-row subset-timestep-row--head">${this.trainingText('timestepOffset.subset')}${this.trainingText('timestepOffset.samples')}${this.trainingText('timestepOffset.offset')}<span></span></div>${body}</div>` : body}
+      <div class="field-hint subset-timestep-footnote">${this.trainingText('timestepOffset.rangeWarning')}</div>
     </div>`;
   },
 
@@ -199,6 +200,7 @@ window.trainingTimestepPreview = {
     wrapper.innerHTML = this.renderSubsetTimestepOffsets();
     const next = wrapper.firstElementChild;
     if (!next) return;
+    this._releaseTrainingControlReferences(current);
     const alpine = window.Alpine;
     if (alpine && typeof alpine.mutateDom === 'function' && typeof alpine.destroyTree === 'function' && typeof alpine.initTree === 'function') {
       alpine.mutateDom(() => {
