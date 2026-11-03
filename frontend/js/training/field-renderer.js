@@ -210,8 +210,8 @@ window.trainingFieldRenderer = {
   },
 
   _resolveFieldHintKey(field, values, trainType) {
-    return this._resolveFieldHintOverrideKey(field, values)
-      || this._resolveFieldBaseHintKey(field, trainType);
+    const overrideKey = this._resolveFieldHintOverrideKey(field, values);
+    return this._resolveFieldBaseHintKey(overrideKey ? { hintKey: overrideKey } : field, trainType);
   },
 
   _resolveFieldHintText(field, values, trainType) {

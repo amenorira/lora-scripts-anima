@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { TRAINING_CORE_SCRIPTS, loadFrontend, composeMixins } = require('./helpers.cjs');
+const { TRAINING_CORE_SCRIPTS, loadFrontend, composeMixins, readRepo } = require('./helpers.cjs');
 
 function mountedApplication({ hidden = false, scrollTop = 1200 } = {}) {
   const ticks = [];
@@ -185,4 +185,24 @@ test('static text refresh translates parameters and accessibility without changi
   window.trainingFieldRenderer._refreshTrainingText.call({ t: key => ({ counts: '{images} images', guide: 'Guide' }[key]) }, root);
   assert.equal(nodes[0].textContent, '12 images');
   assert.equal(nodes[1].attributes.title, 'Guide');
+});
+
+test('optimizer hints resolve the current model and locale while preserving generic fallbacks', () => {
+  const { window } = loadFrontend(['shared/constants', 'shared/utils', 'app/config', 'training/field-renderer'], { window: {} });
+  const app = Object.assign({}, window.trainingFieldRenderer);
+  for (const locale of ['zh-CN', 'en-US', 'ja-JP']) {
+    const translations = JSON.parse(readRepo(`frontend/i18n/${locale}.json`));
+    app.t = key => key.split('.').reduce((value, part) => value?.[part], translations) ?? key;
+    for (const profile of ['anima-lora', 'moss-image-lora', 'sdxl-lora']) {
+      const field = app._fieldDefinition('learning_rate', profile);
+      const optimizer = Object.entries(field.hintKeyBy.values)
+        .find(([, key]) => key === 'field.learning_rateHint_emosens')[0];
+      app.form = { model_train_type: profile, optimizer_type: optimizer };
+      const expected = 'field.learning_rateHint_emosens' + (profile === 'sdxl-lora' ? '_sdxl' : '');
+      assert.equal(app.fieldHintText('learning_rate'), app.t(expected), `${locale}: ${profile}`);
+      app.form.optimizer_type = 'AdamW';
+      assert.equal(app.fieldHintText('learning_rate'),
+        app.t('field.learning_rateHint' + (profile === 'moss-image-lora' ? '_moss' : '')));
+    }
+  }
 });
