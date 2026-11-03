@@ -25,6 +25,32 @@ window.utilsMixin = {
     return '/api/pick_file?' + params;
   },
 
+  // Fixed API failures use stable codes; unknown and third-party errors retain
+  // their original message. Parameters are text and must still be escaped by
+  // callers that insert the returned string into HTML.
+  localizeApiError(payload, fallbackKey = 'common.requestFailed', fallbackText) {
+    const body = payload && typeof payload === 'object' ? payload : {};
+    const data = body.data && typeof body.data === 'object' ? body.data : {};
+    const code = body.error_code || data.errorCode;
+    const key = code ? `errors.${code}` : '';
+    const translated = key ? this.t(key) : '';
+    if (typeof translated === 'string' && translated && translated !== key) {
+      const params = body.error_params || data.errorParams || {};
+      return String(translated).replace(/\{([A-Za-z0-9_]+)\}/g, (match, name) =>
+        Object.hasOwn(params, name) && params[name] != null ? String(params[name]) : match);
+    }
+    return body.message || this.t(fallbackKey, fallbackText) || fallbackText || fallbackKey;
+  },
+
+  // Keep low-level diagnostics separate from the localized action message.
+  apiErrorDetails(payload) {
+    const body = payload && typeof payload === 'object' ? payload : {};
+    const data = body.data && typeof body.data === 'object' ? body.data : {};
+    const details = body.error_details ?? data.errorDetails;
+    if (details == null || details === '') return '';
+    return typeof details === 'string' ? details : JSON.stringify(details, null, 2);
+  },
+
   // monitor 命名空间 i18n 快捷包装：带点的 key 原样传，否则补 'monitor.' 前缀。
   tMonitor(key, fb) {
     const fullKey = key.includes('.') ? key : ('monitor.' + key);

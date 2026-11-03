@@ -189,20 +189,79 @@ window.datasetRepeatMixin = {
   },
 
   _renameDatasetRepeatProfileOffsets(pairs, dir) {
+    const route = this._trainFormMountedRoute || this._trainingSessionRoute || this.currentRoute;
     const isCurrent = String(this.form.train_data_dir || '').trim() === dir;
     if (isCurrent) {
       this._renameSubsetTimestepOffsets(pairs);
       this._captureProfileDraft?.(this.form.model_train_type, this.form);
     }
     const moves = new Map(pairs.map(item => [item.oldName, item.newName]));
+    const remap = draft => {
+      if (!draft || String(draft.train_data_dir || '').trim() !== dir) return null;
+      const offsets = draft.subset_timestep_offsets;
+      if (!offsets || typeof offsets !== 'object' || Array.isArray(offsets)
+          || !Object.keys(offsets).some(name => moves.has(name))) return null;
+      return { ...draft, subset_timestep_offsets: Object.fromEntries(Object.entries(offsets)
+        .filter(([name]) => !moves.has(name) || moves.get(name))
+        .map(([name, offset]) => [moves.get(name) || name, offset])) };
+    };
+    const remapProfiles = (profiles, skipEdited = false) => {
+      if (!profiles || typeof profiles !== 'object' || Array.isArray(profiles)) return false;
+      let changed = false;
+      Object.entries(profiles).forEach(([profile, draft]) => {
+        if (!this.trainTypes.some(type => type.v === profile)) return;
+        if (skipEdited && this._sessionEditedProfiles?.has(profile)) return;
+        const updated = remap(draft);
+        if (updated) { profiles[profile] = updated; changed = true; }
+      });
+      return changed;
+    };
     for (const [draftProfile, draft] of Object.entries(this._profileFormDrafts || {})) {
       if ((isCurrent && draftProfile === this.form.model_train_type) || String(draft.train_data_dir || '').trim() !== dir) continue;
+      if (!Object.keys(draft.subset_timestep_offsets || {}).some(name => moves.has(name))) continue;
       const offsets = Object.fromEntries(Object.entries(draft.subset_timestep_offsets || {})
         .filter(([name]) => !moves.has(name) || moves.get(name))
         .map(([name, offset]) => [moves.get(name) || name, offset]));
       this._profileFormDrafts[draftProfile] = { ...draft, subset_timestep_offsets: offsets };
+      if (this._preserveUnloadedTrainingDrafts) this._markTrainingDraftEdited(draftProfile);
     }
-    this._persistProfileDrafts();
+    // Directory changes also apply to a pending history-reuse undo snapshot.
+    const undo = this._historyReuseUndo;
+    if (undo) {
+      undo.form = remap(undo.form) || undo.form;
+      undo.formDefaults = remap(undo.formDefaults) || undo.formDefaults;
+      if (Array.isArray(undo.formHistory)) undo.formHistory = undo.formHistory.map(entry => remap(entry) || entry);
+      remapProfiles(undo.drafts);
+    }
+    if (this._preserveUnloadedTrainingDrafts && typeof localStorage !== 'undefined') {
+      // A disabled startup restore keeps historical profiles out of the form.
+      // Still move their folder-keyed offsets when those folders are renamed.
+      try {
+        const key = this._profileDraftStorageKey(route);
+        const stored = key ? JSON.parse(localStorage.getItem(key) || '{}') : {};
+        const profiles = stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+        if (key && remapProfiles(profiles, true)) localStorage.setItem(key, JSON.stringify(profiles));
+        const activeKey = route?.startsWith('train-') ? 'anima-form-' + route : '';
+        if (activeKey) {
+          const saved = JSON.parse(localStorage.getItem(activeKey) || 'null');
+          if (!this._sessionEditedProfiles?.has(saved?.model_train_type)) {
+            const updated = remap(saved);
+            if (updated) localStorage.setItem(activeKey, JSON.stringify(updated));
+          }
+        }
+        if (undo?.storedDrafts) {
+          if (key && undo.storedDrafts[key] !== null && undo.storedDrafts[key] !== undefined) {
+            const previousProfiles = JSON.parse(undo.storedDrafts[key]);
+            if (remapProfiles(previousProfiles)) undo.storedDrafts[key] = JSON.stringify(previousProfiles);
+          }
+          if (activeKey && undo.storedDrafts[activeKey] !== null && undo.storedDrafts[activeKey] !== undefined) {
+            const previousActive = remap(JSON.parse(undo.storedDrafts[activeKey]));
+            if (previousActive) undo.storedDrafts[activeKey] = JSON.stringify(previousActive);
+          }
+        }
+      } catch (e) { /* A storage failure must not undo a successful directory rename. */ }
+    }
+    this._persistProfileDrafts(route);
   },
 
   async _postDatasetRepeatChanges(changes, dir) {
@@ -350,9 +409,9 @@ window.datasetRepeatMixin = {
     return `<div class="dataset-subset-panel" :class="{ 'is-locked': datasetRepeatLocked() }">
       <div class="dataset-subset-header">
         <div>
-          <div class="dataset-subset-title">${this.esc(this.t('datasetRepeat.title'))}</div>
-          <div class="field-hint">${this.esc(this.t('datasetRepeat.hint'))}</div>
-          <div class="field-hint dataset-subset-locked" x-show="datasetRepeatLocked()">${this.esc(this.t('datasetRepeat.locked'))}</div>
+          <div class="dataset-subset-title">${this.trainingText('datasetRepeat.title')}</div>
+          <div class="field-hint">${this.trainingText('datasetRepeat.hint')}</div>
+          <div class="field-hint dataset-subset-locked" x-show="datasetRepeatLocked()">${this.trainingText('datasetRepeat.locked')}</div>
         </div>
         <span class="dataset-subset-total" x-show="datasetRepeatSubsets().length" x-text="datasetRepeatTotalLabel()"></span>
       </div>
@@ -360,11 +419,11 @@ window.datasetRepeatMixin = {
       <div class="dataset-subset-empty field-hint" x-show="!datasetRepeatShowList()" x-text="datasetRepeatEmptyText()"></div>
       <div class="dataset-subset-list" x-show="datasetRepeatShowList()">
         <div class="dataset-subset-row dataset-subset-row--head">
-          <span>${this.esc(this.t('datasetRepeat.subset'))}</span>
-          <span>${this.esc(this.t('datasetRepeat.images'))}</span>
-          <span>${this.esc(this.t('datasetRepeat.repeats'))}</span>
-          <span>${this.esc(this.t('datasetRepeat.samples'))}</span>
-          <span>${this.esc(this.t('datasetRepeat.share'))}</span>
+          <span>${this.trainingText('datasetRepeat.subset')}</span>
+          <span>${this.trainingText('datasetRepeat.images')}</span>
+          <span>${this.trainingText('datasetRepeat.repeats')}</span>
+          <span>${this.trainingText('datasetRepeat.samples')}</span>
+          <span>${this.trainingText('datasetRepeat.share')}</span>
         </div>
         <template x-for="subset in datasetRepeatSubsets()" :key="subset.name">
           <div class="dataset-subset-row" :class="{ 'is-dirty': datasetRepeatParse(subset).state === 'dirty', 'is-invalid': datasetRepeatParse(subset).state === 'invalid' }">
@@ -381,10 +440,10 @@ window.datasetRepeatMixin = {
         </template>
       </div>
       <div class="dataset-subset-footer" x-show="datasetRepeatShowList()">
-        <span class="field-hint dataset-subset-invalid" x-show="datasetRepeatHasInvalidRow()">${this.esc(this.t('datasetRepeat.invalidRow'))}</span>
+        <span class="field-hint dataset-subset-invalid" x-show="datasetRepeatHasInvalidRow()">${this.trainingText('datasetRepeat.invalidRow')}</span>
         <span class="dataset-subset-applied" x-show="datasetRepeatUndoVisible()" x-text="datasetRepeatUndoLabel()"></span>
-        <button type="button" class="btn btn-ghost btn-sm" x-show="datasetRepeatUndoVisible()" @click="undoDatasetRepeatChanges()" :disabled="datasetRepeatReadOnly()">${this.esc(this.t('datasetRepeat.undo'))}</button>
-        <button type="button" class="btn btn-ghost btn-sm" @click="resetDatasetRepeatDrafts()" :disabled="!datasetRepeatHasDraft()">${this.esc(this.t('datasetRepeat.reset'))}</button>
+        <button type="button" class="btn btn-ghost btn-sm" x-show="datasetRepeatUndoVisible()" @click="undoDatasetRepeatChanges()" :disabled="datasetRepeatReadOnly()">${this.trainingText('datasetRepeat.undo')}</button>
+        <button type="button" class="btn btn-ghost btn-sm" @click="resetDatasetRepeatDrafts()" :disabled="!datasetRepeatHasDraft()">${this.trainingText('datasetRepeat.reset')}</button>
         <button type="button" class="btn btn-primary btn-sm" @click="applyDatasetRepeatChanges()" :disabled="!datasetRepeatCanApply()" x-text="datasetRepeatApplyLabel()"></button>
       </div>
     </div>`;

@@ -42,7 +42,8 @@ window.environmentModelsMixin = {
         this._setEnvironmentRealtimeTask('animaModel', result.job_id);
       } else {
         this.animaModelBusy = false;
-        this.animaModelError = result.message || this.t('environment.animaModel.failed');
+        const details = this.apiErrorDetails(result);
+        this.animaModelError = this.localizeApiError(result, 'environment.animaModel.failed') + (details ? '\n' + details : '');
         this.finishProgress(); this.renderEnvironment();
       }
     } catch (e) {

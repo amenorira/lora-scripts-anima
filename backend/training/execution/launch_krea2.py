@@ -136,7 +136,7 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task):
         run_dir=str(internal_run_dir),
         artifact_dir=str(artifact_run_dir),
         output_base_dir=requested_output_dir,
-        preview_enabled=False,
+        preview_enabled=sample_prompts_file is not None,
         engine_id="musubi_tuner",
         extra_env={**training_metrics_environment(config), **network_env},
         run_metadata={

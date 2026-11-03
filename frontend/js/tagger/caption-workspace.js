@@ -245,7 +245,7 @@ window.captionWorkspaceMixin = {
       const body = await (await fetch('/api/tagger/caption/preview', {method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({source_token:source,index:0,request_id:id,api,captioning:options})})).json();
       if (isCurrent() && !this.captionPreviewCancelling) {
-        if (body.status !== 'success') throw new Error(body.message);
+        if (body.status !== 'success') throw new Error(this.localizeApiError?.(body) || body.message);
         this.captionSingleResult = body.data;
       }
     } catch (error) {
@@ -287,7 +287,7 @@ window.captionWorkspaceMixin = {
       const body = await (await fetch(`/api/tagger/source/${encodeURIComponent(token)}/caption-plan`, {method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify(options)})).json();
       if (request !== this._captionPlanRequest || token !== this.captionBatchState().source?.source_token) return null;
-      if (body.status !== 'success') throw new Error(body.message);
+      if (body.status !== 'success') throw new Error(this.localizeApiError?.(body) || body.message);
       if (JSON.stringify(this.captionOverviewPlan) !== JSON.stringify(body.data.plan)) this.captionOverviewPlan = body.data.plan;
       this._captionPlanSourcePath = source.path;
       this.captionOverviewCounts = body.data.counts;
@@ -313,7 +313,7 @@ window.captionWorkspaceMixin = {
     try {
       const body = await (await fetch(`/api/tagger/source/${encodeURIComponent(token)}/annotations?${this.captionAnnotationParams(options)}`)).json();
       if (request !== this._captionOverviewRequest || token !== this.captionBatchState().source?.source_token) return null;
-      if (body.status !== 'success') throw new Error(body.message);
+      if (body.status !== 'success') throw new Error(this.localizeApiError?.(body) || body.message);
       const data = body.data;
       this.captionOverviewCounts = data.counts;
       source.total = data.counts.total;
@@ -483,7 +483,7 @@ window.captionWorkspaceMixin = {
     try {
       const body = await (await fetch(`/api/tagger/source/${encodeURIComponent(source.source_token)}/annotations/${item.index}?${this.captionOutputParams(this.captionOverviewSettings || this.captionOptions)}`)).json();
       if (request !== this._captionDetailRequest) return;
-      if (body.status !== 'success') throw new Error(body.message);
+      if (body.status !== 'success') throw new Error(this.localizeApiError?.(body) || body.message);
       this.captionOverviewDetail = body.data;
     } catch (error) { if (request === this._captionDetailRequest) this.captionDetailError = error.message || String(error); }
     finally { if (request === this._captionDetailRequest) this.captionDetailLoading = false; }

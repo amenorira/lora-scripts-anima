@@ -119,7 +119,10 @@ window.monitorHistoryRenderMixin = {
     try {
       const j = await this._fetchConfigSnapshot(runDir, this._snapshotAbort.signal);
       if (seq !== this._snapshotRequestSeq) return;
-      if (j.status !== 'success' || !j.data) throw new Error(j.message || t('configLoadError'));
+      if (j.status !== 'success' || !j.data) {
+        this.configSnapshotError = this.localizeApiError(j, 'monitor.configLoadError');
+        return;
+      }
       this.showSnapshotModal(j.data);
     } catch (e) {
       if (seq === this._snapshotRequestSeq && e.name !== 'AbortError') this.configSnapshotError = t('configLoadError');
@@ -226,15 +229,35 @@ window.monitorHistoryRenderMixin = {
     const routeSeq = this._routeTransitionSeq;
     this.historyReuseBusy = runDir;
     this._reuseAbort = new AbortController();
+    let errorDetails = '';
     try {
       this.startProgress();
       const j = snapshot ? { status: 'success', data: snapshot } : await this._fetchConfigSnapshot(runDir, this._reuseAbort.signal);
       if (seq !== this._reuseRequestSeq) return;
-      if (j.status !== 'success' || !j.data?.reuse_params) throw new Error(j.data?.reuse_error || j.message || t('configLoadError'));
+      if (j.status !== 'success' || !j.data?.reuse_params) {
+        errorDetails = this.apiErrorDetails(j);
+        throw new Error(j.data?.reuse_error || this.localizeApiError(j, 'monitor.configLoadError'));
+      }
+      this._ensureTrainingSession?.('train-basic');
+      // When startup restore is disabled, some saved profiles are intentionally
+      // absent from the in-memory undo snapshot. Keep their original storage
+      // values too, so undo can recover a profile replaced by this import.
+      const preserveUnloaded = this._preserveUnloadedTrainingDrafts ||
+        (this.autoLoadHistory === false && !this._trainingSessionRoute);
+      let storedDrafts = null;
+      if (preserveUnloaded && typeof localStorage !== 'undefined') {
+        try {
+          storedDrafts = Object.fromEntries([
+            'anima-form-train-basic', 'anima-form-profiles-train-basic',
+            'anima-form-profile-sources-v1-train-basic',
+          ].map(key => [key, localStorage.getItem(key)]));
+        } catch (e) { /* Storage may be unavailable. */ }
+      }
       const undo = JSON.parse(JSON.stringify({
         form: this.form, drafts: this._profileFormDrafts, sources: this._profileFieldSources,
         fieldSources: this._fieldSources, documentId: this._trainingDocumentId,
         formHistory: this.formHistory, formHistoryIdx: this.formHistoryIdx, formDefaults: this.formDefaults,
+        storedDrafts, preserveUnloaded, editedProfiles: Array.from(this._sessionEditedProfiles || []),
       }));
       this._historyReuseApplying = true;
       await this._applyConfigToTraining(j.data.reuse_params);
@@ -247,7 +270,7 @@ window.monitorHistoryRenderMixin = {
       else this.toast(t('configLoaded'), 'success');
       if (routeSeq === this._routeTransitionSeq) this.navigate('train-basic');
     } catch (e) {
-      if (seq === this._reuseRequestSeq && e.name !== 'AbortError') this.toast(e.message || t('configLoadError'), 'error');
+      if (seq === this._reuseRequestSeq && e.name !== 'AbortError') this.toast(e.message || t('configLoadError'), 'error', { details: errorDetails });
     } finally {
       if (seq === this._reuseRequestSeq) {
         this.historyReuseBusy = '';
@@ -285,8 +308,16 @@ window.monitorHistoryRenderMixin = {
       if (undo.formDefaults) this.formDefaults = undo.formDefaults;
       this.formHistory = undo.formHistory || [this.formDefaults];
       this.formHistoryIdx = undo.formHistoryIdx ?? 0;
-      this._persistProfileDrafts?.();
-      this._persistProfileFieldSources?.();
+      if (undo.preserveUnloaded) this._sessionEditedProfiles = new Set(undo.editedProfiles || []);
+      if (undo.storedDrafts && typeof localStorage !== 'undefined') {
+        Object.entries(undo.storedDrafts).forEach(([key, value]) => {
+          if (value === null) localStorage.removeItem(key);
+          else localStorage.setItem(key, value);
+        });
+      } else {
+        this._persistProfileDrafts?.();
+        this._persistProfileFieldSources?.();
+      }
       this.rebuildForm?.();
       this.dismissHistoryReuse();
       this.toast(this.t('monitor.historyReuseUndone'), 'success');

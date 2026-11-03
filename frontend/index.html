@@ -290,9 +290,9 @@
       <div x-show="currentRoute === 'home'" x-cloak>
         <div class="home-hero">
           <h1 class="home-hero-title">lora-scripts-anima</h1>
-          <div class="home-hero-subtitle" x-text="t('home.subtitle', 'A sd-scripts based trainer')"></div>
+          <div class="home-hero-subtitle" x-text="t('home.subtitle', 'A local LoRA training tool')"></div>
 
-          <div class="home-hero-meta" x-show="version">
+          <div class="home-hero-meta" x-show="version && version !== displayVersion()">
             <span class="home-hero-meta-item">
               <span class="home-hero-meta-k" x-text="t('home.build')"></span><span class="home-hero-meta-v" x-text="version"></span>
             </span>
@@ -556,7 +556,7 @@
         </div>
 
         <form @submit.prevent="" id="trainForm">
-          <div id="trainFormContent"></div>
+          <div id="trainFormContent" @focusin="if ($event.target.matches('input, textarea, .anima-select-trigger')) rememberTrainingFocus($event.target)"></div>
         </form>
         </div>
         </div>
@@ -903,7 +903,7 @@
             <button class="te-topbar-btn" @click="tagEditorReloadDir()" x-text="t('tagEditor.rescanDataset')"></button>
             <button class="te-topbar-btn" x-show="_teDraftRemainder.length" @click="_teCheckDraft()" x-text="t('tagEditor.retryDraft')"></button>
             <button class="te-topbar-btn" @click="tagEditorToggleRecursive()" :aria-pressed="tagEditorRecursive"><span x-text="tagEditorRecursive ? '✓' : '　'"></span><span x-text="t('tagEditor.recursive')"></span></button>
-            <button class="te-topbar-btn" @click="tagEditorDownloadZip()" x-text="t('tagEditor.downloadZip')"></button>
+            <button class="te-topbar-btn" @click="tagEditorDownloadZip()" :title="t('tagEditor.downloadZipHint')" x-text="t('tagEditor.downloadZip')"></button>
             <button class="te-topbar-btn" @click="tagEditorRestoreBackup()" x-text="t('tagEditor.restoreBackup')"></button>
             <button class="te-topbar-btn" x-show="tagEditorAllowsTagOps()" @click="tagEditorRemoveBracketEscapes()" :disabled="!tagEditorSelected.length" :title="t('tagEditor.unescapeHint')" x-text="t('tagEditor.unescapeBrackets')"></button>
             <button class="te-topbar-btn" @click="tagEditorOpenShortcuts($event)"
@@ -1884,6 +1884,28 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-primary btn-sm" @click="closeShapePreview()" x-text="t('common.close')">Close</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ── Parameter guide in the current workspace ────────── -->
+<dialog class="modal-overlay" x-dialog="parameterDocOpen" @click.self="closeParameterDoc()"
+        @dialog-close="closeParameterDoc()" :aria-label="docsDocumentTitle(parameterDocSlug)" x-cloak>
+  <div class="modal modal-workbench parameter-doc-modal">
+    <div class="modal-header">
+      <span x-text="docsDocumentTitle(parameterDocSlug)"></span>
+      <button type="button" class="btn-icon" data-dialog-autofocus @click="closeParameterDoc()" :aria-label="t('common.close')">×</button>
+    </div>
+    <div id="parameterDocBody" class="modal-body" tabindex="0" :aria-busy="parameterDocLoading">
+      <div class="docs-loading" x-show="parameterDocLoading" role="status" aria-live="polite">
+        <span class="spinner"></span><span x-text="t('docs.loading')"></span>
+      </div>
+      <div class="docs-error" x-show="parameterDocError" role="alert">
+        <span x-text="parameterDocError"></span>
+        <button type="button" class="btn btn-ghost btn-sm" @click="openParameterDoc(parameterDocSlug, parameterDocAnchor, { force: true })" x-text="t('docs.retry')"></button>
+      </div>
+      <article id="parameterDocArticle" class="markdown-body" x-show="parameterDocHtml"
+               x-html="parameterDocHtml" @click="handleDocsContentClick($event, true)"></article>
     </div>
   </div>
 </dialog>

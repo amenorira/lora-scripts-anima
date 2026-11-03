@@ -14,13 +14,17 @@ from backend.constants import REPO_ROOT
 from backend.tasks import tm, TaskStatus, kill_proc_tree
 from backend.utils.file_io import read_text
 from . import storage
-from .planning import Settings, scan, identity, choose_output, make_items, extend_items, random_seed, actual_prompt, clean_caption, numbered_filename
+from .planning import CANDIDATE_HEADER, Settings, CaptionSelectionError, scan, identity, choose_output, make_items, extend_items, random_seed, actual_prompt, clean_caption, numbered_filename
 
 _lock = threading.RLock()
 _plans = {}
 _tasks = {}
 _recovery_started = False
 _ACTIVE = {"created", "running", "stopping"}
+_LEGACY_REASON_CODES = {
+    "Missing caption txt / 缺少标签 txt": "regularization_missing_caption",
+    "Empty caption after cleaning / 清理后标签为空": "regularization_empty_caption",
+}
 
 
 def _reserve():
@@ -102,8 +106,9 @@ def recover():
             threading.Thread(target=watch, daemon=True).start()
 
 
-def _validate_pairs(root, manifest, repair=False):
+def _validate_pairs(root, manifest):
     """Recover only valid image/txt pairs. A half-written pair is never complete."""
+    invalid = []
     for item in manifest["items"]:
         if item["status"] == "excluded":
             continue
@@ -122,11 +127,33 @@ def _validate_pairs(root, manifest, repair=False):
             item["status"] = "completed"
         except (OSError, ValueError):
             item["status"] = "pending"
-            # Generated corrupt/half pairs must not be read as a folder-name
-            # caption by sd-scripts while other completed items are used.
-            if repair:
-                storage.item_path(root, item).unlink(missing_ok=True)
-                storage.item_path(root, item, ".txt").unlink(missing_ok=True)
+            invalid.append(item)
+    return invalid
+
+
+def _repair_pairs(root, invalid):
+    # Remove corrupt/half output pairs only after the requested operation is allowed.
+    for item in invalid:
+        storage.item_path(root, item).unlink(missing_ok=True)
+        storage.item_path(root, item, ".txt").unlink(missing_ok=True)
+
+
+def _check_saved_captions(manifest, items, *, regenerate=False):
+    """Old manifests may have saved a candidate header as the actual caption."""
+    settings = manifest["settings"]
+    if settings.get("caption_candidate"):
+        return
+    headers = {
+        s["relative"]: clean_caption(s["original_caption"], settings["ignore_first"], settings["exclude_tags"])
+        for s in manifest["sources"] if CANDIDATE_HEADER.fullmatch(s["original_caption"].strip())
+    }
+    for item in items:
+        header = headers.get(item["relative"])
+        # Regeneration rebuilds the prompt from the current, possibly edited caption.
+        if header and (item["caption"] == header or
+                       (not regenerate and item["prompt"] == actual_prompt(header, settings["extra_positive"]))):
+            raise CaptionSelectionError("regularization_legacy_candidate",
+                                        "Preview the source dataset and select a caption candidate / 请重新预览来源目录并选择标注候选")
 
 
 def preview(body):
@@ -190,6 +217,8 @@ def _public_plan(plan):
         "completed": sum(i["status"] == "completed" for i in items),
         "pending": sum(i["status"] in {"pending", "failed", "running"} for i in items),
         "output_path": str(storage.run_path(plan["run_key"])), "source_count": len(plan["sources"]),
+        "candidate_sources": sum(bool(s.get("multi_candidate")) for s in plan["sources"]),
+        "candidate_selection_required": sum(s.get("reason_code") == "regularization_candidate_required" for s in plan["sources"]),
         "master_seed": str(plan["master_seed"]), "settings": dict(plan["settings"], seed=str(plan["settings"]["seed"]))}
 
 
@@ -199,7 +228,11 @@ def plan_items(token, offset=0, limit=30):
         if not plan:
             raise ValueError("Plan expired; scan again / 计划已过期，请重新扫描")
         offset, limit = max(0, offset), max(1, min(100, limit))
-        return {"items": plan["sources"][offset:offset + limit], "total": len(plan["sources"])}
+        items = plan["sources"][offset:offset + limit]
+        if plan.get("readonly"):
+            items = [dict(s, reason_code=_LEGACY_REASON_CODES[s["reason"]])
+                     if "reason_code" not in s and s["reason"] in _LEGACY_REASON_CODES else s for s in items]
+        return {"items": items, "total": len(plan["sources"])}
 
 
 def source_preview(token, index):
@@ -217,6 +250,8 @@ def start(token):
         plan = _plans[token]
         if plan.get("readonly"):
             raise ValueError("Use resume for an existing run / 已执行计划请使用续跑")
+        if any(source.get("reason_code") == "regularization_candidate_required" for source in plan["sources"]):
+            raise CaptionSelectionError("regularization_candidate_required", "Select a caption candidate / 请选择标注候选")
         if not any(i["status"] in {"pending", "failed", "running"} for i in plan["items"]):
             raise ValueError("No unfinished valid images / 没有有效的待生成图片")
         task = _reserve()
@@ -238,7 +273,7 @@ def start(token):
                     raise RuntimeError("Previous worker is still active / 旧 worker 仍在运行")
                 manifest["items"] = extend_items(manifest, sources)
                 manifest.update(settings=plan["settings"], fingerprint=fingerprint, sources=sources)
-                _validate_pairs(root, manifest, repair=True)
+                _repair_pairs(root, _validate_pairs(root, manifest))
                 manifest.pop("selection", None)
             else:
                 storage.OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
@@ -438,16 +473,19 @@ def resume(key, failed_only=False):
         if not task:
             raise RuntimeError("Training, tagging or generation is active / 训练、打标或正则生成任务正在运行")
         try:
-            _validate_pairs(root, manifest, repair=True)
+            invalid = _validate_pairs(root, manifest)
+            states = {"failed"} if failed_only else {"pending", "failed", "running"}
+            items = [item for item in manifest["items"] if item["status"] in states]
+            if not items:
+                raise ValueError("Nothing to resume / 没有待续跑条目")
+            _check_saved_captions(manifest, items)
             if failed_only:
                 # Worker receives an explicit selection, so pending images do not
                 # disappear or get incorrectly relabeled as completed.
-                manifest["selection"] = [i["index"] for i in manifest["items"] if i["status"] == "failed"]
+                manifest["selection"] = [item["index"] for item in items]
             else:
                 manifest.pop("selection", None)
-            selected = manifest.get("selection")
-            if not any(i["status"] in {"pending", "failed", "running"} and (selected is None or i["index"] in selected) for i in manifest["items"]):
-                raise ValueError("Nothing to resume / 没有待续跑条目")
+            _repair_pairs(root, invalid)
             return _launch(task, root, manifest)
         except Exception:
             if task.process is None:
@@ -465,10 +503,13 @@ def mutate(key, index, action):
         if _live_process(manifest, root) or not tm.begin_dataset_mutation():
             raise RuntimeError("Stop training/generation before editing results / 请停止训练或生成后再修改结果")
         try:
-            _validate_pairs(root, manifest, repair=True)
+            invalid = _validate_pairs(root, manifest)
             item = next((i for i in manifest["items"] if i["index"] == index), None)
             if item is None:
                 raise ValueError("Image not found")
+            if action == "regenerate":
+                _check_saved_captions(manifest, [item], regenerate=True)
+            _repair_pairs(root, invalid)
             if action in {"exclude", "regenerate"} and item["status"] == "completed":
                 previous = item["status"]
                 image, caption = storage.item_path(root, item), storage.item_path(root, item, ".txt")

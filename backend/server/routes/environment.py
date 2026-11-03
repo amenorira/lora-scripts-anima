@@ -204,8 +204,9 @@ def _download_job_snapshot(job_id: str) -> dict:
     return {"status": "error", "done": True, "progress": {"phase": "error", "error": "Job not found / 任务不存在"}, "log": []}
 
 
-def _start_download_job(only_file: str | None = None, group: str | None = None) -> str:
-    """启动训练模型下载后台线程，返回 job_id。"""
+def _start_download_job(only_file: str | None = None, group: str | None = None) -> str | None:
+    """启动训练模型下载后台线程，已有下载任务时返回 None。"""
+    from backend.utils.hf_download import make_progress_bar
     from tools.download_anima_model import MODEL_FILES, download_anima_files
 
     files = [
@@ -221,6 +222,8 @@ def _start_download_job(only_file: str | None = None, group: str | None = None) 
     shared_progress: dict = {"group": group or "all"}
     log_lines: list[str] = []
     with _download_jobs_lock:
+        if any(not job.get("done") for job in _download_jobs.values()):
+            return None
         _download_jobs[job_id] = {
             "start": time.time(),
             "done": False,
@@ -231,13 +234,11 @@ def _start_download_job(only_file: str | None = None, group: str | None = None) 
         }
 
     def _run():
-        from backend.utils.hf_download import make_progress_bar
-
         try:
             from backend.log import console as rich_console
         except Exception:
             rich_console = None
-        progress_bar = make_progress_bar(console=rich_console)
+        progress_bar = None
         state = {"task_id": None}
 
         def _on_log(message: str):
@@ -266,8 +267,9 @@ def _start_download_job(only_file: str | None = None, group: str | None = None) 
             except Exception:
                 pass
 
-        progress_bar.start()
         try:
+            progress_bar = make_progress_bar(console=rich_console)
+            progress_bar.start()
             paths = download_anima_files(
                 dest_dir=SD_MODELS_DIR,
                 progress=shared_progress,
@@ -289,7 +291,8 @@ def _start_download_job(only_file: str | None = None, group: str | None = None) 
                 _download_jobs[job_id]["success"] = False
         finally:
             try:
-                progress_bar.stop()
+                if progress_bar is not None:
+                    progress_bar.stop()
             except Exception:
                 pass
             try:
@@ -298,7 +301,12 @@ def _start_download_job(only_file: str | None = None, group: str | None = None) 
             except Exception:
                 pass
 
-    threading.Thread(target=_run, daemon=True).start()
+    try:
+        threading.Thread(target=_run, daemon=True).start()
+    except RuntimeError:
+        with _download_jobs_lock:
+            _download_jobs.pop(job_id, None)
+        raise
     return job_id
 
 
@@ -329,14 +337,12 @@ async def anima_model_download(request: Request) -> dict:
         group = body.get("group") or None
     except Exception:
         pass
-    with _download_jobs_lock:
-        running = [job for job in _download_jobs.values() if not job.get("done")]
-    if running:
-        return {"success": False, "message": "已有下载任务进行中 / A download is already running"}
     try:
         job_id = await asyncio.to_thread(_start_download_job, only_file, group)
     except Exception as exc:
         return {"success": False, "message": str(exc)}
+    if job_id is None:
+        return {"success": False, "message": "已有下载任务进行中 / A download is already running", "error_code": "environmentDownloadBusy"}
     await realtime_tasks.register(
         job_id,
         "model-download",

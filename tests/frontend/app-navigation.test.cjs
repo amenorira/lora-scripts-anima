@@ -35,3 +35,16 @@ test('history detail navigation preserves run identity and can return to live on
   app.buildRouteContent();
   assert.deepEqual(restored,['output/c',true,'logs']);
 });
+
+test('route changes close a parameter guide before mounting the destination', () => {
+  const {app}=harness(), events=[];
+  Object.assign(app, {
+    currentRoute:'train-basic', parameterDocOpen:true,
+    closeParameterDoc(){ events.push('close'); this.parameterDocOpen=false; },
+    _playRouteEnter(){}, suspendTrainForm(){}, t:key=>key, $nextTick(){},
+    buildRouteContent(){ events.push('mount:'+this.currentRoute); },
+  });
+  app._commitRoute('home','train-basic',1);
+  assert.deepEqual(events,['close','mount:home']);
+  assert.equal(app.parameterDocOpen,false);
+});

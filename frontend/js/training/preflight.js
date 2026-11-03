@@ -360,6 +360,18 @@ window.trainingPreflight = {
   stepEstimateBatchFormula() {
     const estimate = this.stepEstimate;
     if (!estimate) return '';
+    // Krea estimates batches per source directory without assigning actual
+    // image buckets. Its result cannot be described by the sd-scripts formula.
+    if (estimate.engine_id === 'musubi_tuner') {
+      return this._stepEstimateText(
+        'stepEstimate.kreaBatchFormula', undefined,
+        {
+          samples: estimate.repeated_samples,
+          batch: estimate.batch_size,
+          batches: estimate.batches_per_epoch,
+        }
+      );
+    }
     if (estimate.enable_bucket) {
       return this._stepEstimateText(
         'stepEstimate.bucketFormula', undefined,

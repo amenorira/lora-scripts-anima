@@ -178,8 +178,7 @@ document.addEventListener('alpine:init', () => {
         if (cfg.titleKey) this.pageTitle = this.t(cfg.titleKey) || cfg.title || r;
         else this.pageTitle = cfg.title || r;
         document.title = this.pageTitle + ' | lora-scripts-anima';
-        this.buildRouteContent();
-        if (r === 'monitor-dashboard' && typeof this.renderDashboard === 'function') this.renderDashboard();
+        this.refreshRouteLocale(r);
       });
 
       this.startRealtime();
@@ -390,6 +389,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     _commitRoute(route, prev, transitionSeq) {
+      if (route !== prev && this.parameterDocOpen) this.closeParameterDoc();
       const mainContent = document.getElementById('mainContent');
       if (mainContent) this._routeScrollPositions[prev] = mainContent.scrollTop;
       if (prev === 'ai-captioning' && route !== prev) this.resetTaggerApiTest();
@@ -438,6 +438,27 @@ document.addEventListener('alpine:init', () => {
     showRightPanel() {
       const r = this.currentRoute;
       return !!(r && r.startsWith('train-'));
+    },
+
+    // Most routes translate through Alpine's t() bindings. Refresh only
+    // generated markup and resources whose content depends on the locale.
+    refreshRouteLocale(route) {
+      if (route.startsWith('train-')) {
+        this.refreshTrainingLocale();
+      } else if (route === 'monitor-dashboard') {
+        this.renderDashboard();
+      } else if (route === 'history') {
+        this.renderHistory();
+      } else if (route === 'environment') {
+        this.renderEnvironment();
+      } else if (route === 'docs') {
+        void this.loadDocsPage();
+      } else if (route === 'tagger' || route === 'ai-captioning') {
+        this.renderTaggerResourceBar();
+      } else if (route === 'regularization') {
+        if (this._regLoaded) this.regRenderControls();
+        this.renderRegularizationResourceBar();
+      }
     },
 
     // ── Route Content Builder ───────────────────────────────

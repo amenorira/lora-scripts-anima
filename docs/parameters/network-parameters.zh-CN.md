@@ -21,7 +21,7 @@ MOSS 的目标层均为线性层，界面仅提供线性层适用的参数，网
 <!-- doc-anchor: dimension -->
 ## 网络维度
 
-`network_dim` 是标准 LoRA 两个矩阵之间的维度，通常称为 rank。默认值见开头的训练类型表。
+`network_dim` 是标准 LoRA 两个矩阵之间的维度，通常称为 rank。Anima、SDXL、Krea 2 默认 `32`，MOSS-Image 默认 `16`。
 
 | 调整 | 可以得到什么 | 代价与限制 |
 | --- | --- | --- |
@@ -33,7 +33,7 @@ MOSS 的目标层均为线性层，界面仅提供线性层适用的参数，网
 <!-- doc-anchor: alpha -->
 ## Alpha
 
-`network_alpha` 控制分支缩放，默认值见开头的训练类型表。标准 LoRA 的权重增量为：
+`network_alpha` 控制分支缩放。Anima、SDXL、Krea 2 默认 `32`，MOSS-Image 默认 `1`。标准 LoRA 的权重增量为：
 
 ```text
 ΔW = (Alpha / rank) × B × A
@@ -49,7 +49,7 @@ MOSS 的目标层均为线性层，界面仅提供线性层适用的参数，网
 
 `rs_lora` 默认关闭。受支持的低秩路径开启后，分母改为 √rank，减轻高维度下的缩放衰减。测试高 rank 配置时可比较这一选项，并重新检查学习率。
 
-以上公式介绍标准 LoRA。LoKr 中直接存储完整因子时还有特殊处理，见下文。
+以上公式介绍标准 LoRA。LoKr 直接存储完整因子时还有[特殊处理](#full-matrix)。
 
 <!-- doc-anchor: algorithms -->
 ## LoRA、LoHa 与 LoKr
@@ -139,7 +139,7 @@ Anima 的 LyCORIS DoRA（`dora_wd`）按层类型选择计算路径：
 | FP8 weight-only：LoKr | 开启 DoRA 后强制重建权重，覆盖 Bypass 设置 |
 | FP8 weight-only：LoCon、LoHa | 当前实现不支持在这些层创建 DoRA 适配器 |
 
-Krea 2 的量化与旁路限制见下方专节。
+参见 [Krea 2 的量化与旁路限制](#krea-targets)。
 
 <!-- doc-anchor: preview -->
 ## 用结构预览核对配置

@@ -52,6 +52,43 @@ class CaptionWorkspaceTests(unittest.TestCase):
         task_id = workspace.create_task({"engine": "api", "source_token": token, "api": self.api, "options": {"captioning": options}})
         return task_id, self.wait(task_id)
 
+    def test_fixed_validation_errors_have_stable_codes(self):
+        app = FastAPI()
+        app.include_router(router, prefix="/api")
+        with TestClient(app) as client:
+            response = client.post("/api/tagger/source/scan", json={"path": str(self.root / "missing")}).json()
+            self.assertEqual(response["data"]["errorCode"], "tagger_source_not_found")
+            token = self.scan()["source_token"]
+            response = client.post(f"/api/tagger/source/{token}/caption-plan", json={"separator": ""}).json()
+            self.assertEqual(response["data"]["errorCode"], "caption_invalid_separator")
+            self.assertIn("Separator", response["message"])
+
+            for extension in ("", "bad/name", "bad:name"):
+                with self.subTest(extension=extension):
+                    response = client.post("/api/tagger/source/scan", json={
+                        "path": str(self.root), "caption_extension": extension,
+                    }).json()
+                    self.assertEqual(response["data"]["errorCode"], "caption_invalid_extension_format")
+            for options, code in (({"reference_extension": "bad:name"}, "caption_invalid_extension_format"),
+                                  ({"sidecar_suffix": "bad/name.json"}, "caption_invalid_sidecar_format")):
+                with self.subTest(options=options):
+                    response = client.post(f"/api/tagger/source/{token}/caption-plan", json=options).json()
+                    self.assertEqual(response["data"]["errorCode"], code)
+
+    def test_compound_extensions_cannot_overwrite_images_or_json(self):
+        from backend.tagger.captioning import output_options
+        from backend.tagger.errors import TaggerUserError
+
+        for extension in (".custom.json", ".preview.PNG", ".custom.json.", ".json. "):
+            with self.subTest(extension=extension):
+                target = self.image.with_suffix(extension.rstrip(" ."))
+                original = b"user file to preserve"
+                target.write_bytes(original)
+                with self.assertRaises(TaggerUserError):
+                    self.scan(caption_extension=extension)
+                self.assertEqual(target.read_bytes(), original)
+        self.assertEqual(output_options(extension=".caption.txt")["caption_extension"], ".caption.txt")
+
 
     def test_preview_cancellation_holds_gate_until_request_settles_and_allows_training(self):
         source = workspace.scan_source(str(self.image))

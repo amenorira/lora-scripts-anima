@@ -180,7 +180,7 @@ window.monitorLogCoreMixin = {
         if (opts.tail && updatedDuringRequest) this._logFullNeedsResync = true;
         this._logObservationVersion = (this._logObservationVersion || 0) + 1;
       } else {
-        this.toast(j.message || this.t('monitor.logSliceError'), 'error');
+        this.toast(this.localizeApiError(j, 'monitor.logSliceError'), 'error', { details: this.apiErrorDetails(j) });
       }
     } catch (e) {
       if (requestSeq !== this._logSliceRequestSeq) return;
@@ -642,8 +642,27 @@ window.monitorLogRenderMixin = {
     const params = new URLSearchParams();
     if (runDir) params.set('run_dir', runDir);
     else params.set('task_id', taskId);
-    this._triggerDownload('/api/monitor/log-download?' + params.toString());
-    this.toast(this.t('monitor.logDownloadStarted'));
+    const sourceKey = this._currentLogSourceKey();
+    // An attachment goes to the native download manager. Only a failure
+    // navigates this frame, so the actual GET can report errors in the app.
+    document.getElementById('monitor-log-download-frame')?.remove();
+    const frame = document.createElement('iframe');
+    frame.id = 'monitor-log-download-frame';
+    frame.hidden = true;
+    frame.onload = () => {
+      if (sourceKey !== this._currentLogSourceKey()) return;
+      let result = {};
+      try {
+        const doc = frame.contentDocument;
+        if (doc?.URL === 'about:blank') return;
+        result = JSON.parse(doc?.querySelector('pre')?.textContent || doc?.body?.textContent || '{}');
+      } catch (_) {
+        // Browser network-error pages may be opaque.
+      }
+      this.toast(this.localizeApiError(result, 'monitor.logDownloadFailed'), 'error', { details: this.apiErrorDetails(result) });
+    };
+    frame.src = '/api/monitor/log-download?' + params.toString();
+    document.body.appendChild(frame);
   },
 
 

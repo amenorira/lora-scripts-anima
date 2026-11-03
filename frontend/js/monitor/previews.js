@@ -122,7 +122,10 @@ window.monitorPreviewsMixin = {
       const body = await response.json();
       if (requestSeq !== this._previewMetadataRequestSeq) return;
       if (body.status === 'success') this.previewMetadata = body.data;
-      else this.previewMetadataError = body.message || this.t('common.failed');
+      else {
+        const details = this.apiErrorDetails(body);
+        this.previewMetadataError = this.localizeApiError(body, 'common.failed') + (details ? '\n' + details : '');
+      }
     } catch (_) {
       if (requestSeq === this._previewMetadataRequestSeq) this.previewMetadataError = this.t('common.failed');
     } finally {

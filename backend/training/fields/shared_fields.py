@@ -81,6 +81,7 @@ _FIELDS = {
         "section": "performance",
         "show_if": {"key": "compile", "eq": True},
         "hint_key": "field.compile_cache_size_limitHint",
+        "quick_actions": [{"label": "32", "value": 32}],
     },
     "max_data_loader_n_workers": {
         "type": "number",
@@ -161,6 +162,12 @@ _FIELDS = {
         "step": 1,
         "doc_slug": "network-parameters",
         "doc_anchor": "alpha",
+        # Numeric shortcuts use a literal value or the current source × factor.
+        # Keep this declarative so other fields can reuse the same renderer.
+        "quick_actions": [
+            {"label": "= dim", "source": "network_dim"},
+            {"label": "½ dim", "source": "network_dim", "factor": 0.5},
+        ],
     },
     "network_dropout": {
         "type": "number",

@@ -63,6 +63,9 @@ from backend.training.fields.optimizer_metadata import (
 #   target     — "toml"（传入 sd-scripts）, "ui"（仅 UI）, "merged"（UI 输入合并后传入）
 #   role       — 文件选择器类型（可选）: file-model, file-folder, file-model-saved
 #   options    — select 选项列表（可选）
+#   quick_actions — 数值框前的快捷赋值按钮：
+#                   {"label": "½ dim", "source": "network_dim", "factor": 0.5}
+#                   或 {"label": "32", "value": 32}；仅点击时赋值，遵守当前字段约束。
 #   show_if    — 条件显示（可选）: {"key": "...", "eq": ...} 或 {"key": "...", "neq": ...}
 #                可带 "_or" 键表示多值匹配任一。
 #                多条件 AND：传 list[dict]，所有条件同时成立才显示。
@@ -414,6 +417,7 @@ shared_training_field('gradient_checkpointing',
     target="toml",
     omit_default=True,
 ),
+{"key": "gradient_checkpointing_skip_blocks", "type": "number", "default": 0, "section": "training", "desc_key": "field.gradient_checkpointing_skip_blocks", "hint_key": "field.gradient_checkpointing_skip_blocksHint", "target": "toml", "min": 0, "max": 28, "step": 1, "group": "anima", "show_if": {"key": "gradient_checkpointing", "eq": True}, "omit_default": True},
 shared_training_field('seed', default=1337, target="toml"),
 shared_training_field('mixed_precision', default="bf16", target="toml"),
     # full_bf16: 将模型 + Network 全部参数 cast 为 bf16，消除 autocast 与 compile/LoRA 交互的 dtype 不一致问题。
@@ -435,6 +439,7 @@ shared_training_field('mixed_precision', default="bf16", target="toml"),
     {"key": "min_timestep", "type": "number", "section": "training", "desc_key": "field.min_timestep", "target": "toml", "min": 0, "max": 999, "step": 1, "group": "sdxl", "hint_key": "field.min_timestepHint", "doc_slug": "timesteps", "doc_anchor": "sdxl-range"},
     {"key": "max_timestep", "type": "number", "default": "", "section": "training", "desc_key": "field.max_timestep", "target": "toml", "min": 1, "max": 1000, "step": 1, "group": "sdxl", "hint_key": "field.max_timestepHint", "doc_slug": "timesteps", "doc_anchor": "sdxl-range"},
 # ── Learning Rate & Optimizer ──
+# optimizer_args 导出复用此处的排列；条件子项紧随父项，保持与界面展开顺序一致。
 # 学习率取值链：unet_lr / text_encoder_lr 非空时覆盖 learning_rate；为空时回退 learning_rate。
 # 默认留空 → 默认走 learning_rate 一个总学习率（符合 sd-scripts fallback 语义与 i18n 描述）；
 # 用户想分开调 U-Net / 文本编码器学习率时再填入分量值。
@@ -509,8 +514,8 @@ shared_training_field('mixed_precision', default="bf16", target="toml"),
 {"key": "weight_decay_by_lr", "type": "toggle", "default": True, "section": "optimizer", "desc_key": "field.weight_decay_by_lr", "target": "merged", "show_if": {"key": "optimizer_type", "eq": PRODIGYPLUS_OPTIMIZER_TYPE}, "hint_key": "field.weight_decay_by_lrHint", "doc_slug": "optimizers", "doc_anchor": "prodigyplus-options"},
 {"key": "schedulefree_warmup_steps", "type": "number", "default": 0, "section": "optimizer", "desc_key": "field.schedulefree_warmup_steps", "target": "merged", "min": 0, "step": 1, "show_if": {"key": "optimizer_type", "eq": ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE}, "hint_key": "field.schedulefree_warmup_stepsHint"},
 {"key": "adafactor_relative_step", "type": "toggle", "default": True, "section": "optimizer", "desc_key": "field.adafactor_relative_step", "target": "merged", "show_if": {"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}, "hint_key": "field.adafactor_relative_stepHint"},
-{"key": "adafactor_scale_parameter", "type": "toggle", "default": True, "section": "optimizer", "desc_key": "field.adafactor_scale_parameter", "target": "merged", "show_if": {"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}, "auto_value": [{"watch": "adafactor_relative_step", "when": False, "set": False, "set_if_default": True}]},
 {"key": "adafactor_warmup_init", "type": "toggle", "default": False, "section": "optimizer", "desc_key": "field.adafactor_warmup_init", "target": "merged", "show_if": [{"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}, {"key": "adafactor_relative_step", "eq": True}], "hint_key": "field.adafactor_warmup_initHint", "auto_value": [{"watch": "adafactor_relative_step", "when": False, "set": False, "set_if_default": True}]},
+{"key": "adafactor_scale_parameter", "type": "toggle", "default": True, "section": "optimizer", "desc_key": "field.adafactor_scale_parameter", "target": "merged", "show_if": {"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}, "auto_value": [{"watch": "adafactor_relative_step", "when": False, "set": False, "set_if_default": True}]},
 {"key": "adafactor_clip_threshold", "type": "number", "default": 1.0, "section": "optimizer", "desc_key": "field.adafactor_clip_threshold", "target": "merged", "min": 1e-8, "step": 0.1, "show_if": {"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}},
 {"key": "adafactor_eps", "type": "text", "default": "1e-30, 1e-3", "section": "optimizer", "desc_key": "field.adafactor_eps", "target": "merged", "show_if": {"key": "optimizer_type", "eq": ADAFACTOR_OPTIMIZER_TYPE}, "hint_key": "field.adafactor_epsHint"},
 # ── Adan 专用参数 ──
@@ -741,6 +746,22 @@ for _field in FIELDS:
         _field.setdefault("hint_key", _FIELD_HINTS_BY_KEY[_field["key"]])
 
 
+# Only options with matching upstream VRAM measurements have a guide link.
+_MEMORY_DOC_ANCHORS = {
+    "gradient_checkpointing_skip_blocks": {
+        "anima-lora": "anima-partial-checkpointing",
+        "moss-image-lora": "moss-partial-checkpointing",
+    },
+    "blocks_to_swap": {"moss-image-lora": "moss-block-swap"},
+    "text_encoder_blocks_to_swap": {"moss-image-lora": "moss-text-encoder-swap"},
+}
+for _field in FIELDS:
+    if _field["key"] in _MEMORY_DOC_ANCHORS:
+        _anchors = _MEMORY_DOC_ANCHORS[_field["key"]]
+        _field.update(doc_slug="memory-optimization", doc_anchor=next(iter(_anchors.values())),
+                      doc_anchor_by_profile=_anchors)
+
+
 # ═══════════════════════════════════════════════════════════════
 # 派生集合（供 adapter.py 使用）
 # ═══════════════════════════════════════════════════════════════
@@ -788,6 +809,7 @@ _FIELD_KEY_MAP = {
     "optimizer_arg_values": "optimizerArgValues",
     "dk": "dKey",
     "auto_value": "autoValue",
+    "quick_actions": "quickActions",
     "readonly_if": "readonlyIf",
     "readonly_if_any": "readonlyIfAny",
     "reason_key": "reasonKey",
@@ -796,6 +818,7 @@ _FIELD_KEY_MAP = {
     "set_if_default": "setIfDefault",
     "omit_default": "omitDefault",
     "doc_slug": "docSlug",
+    "doc_anchor_by_profile": "docAnchorByProfile",
     "doc_anchor": "docAnchor",
     "constraints_by_group": "constraintsByGroup",
     "layout_parent": "layoutParent",
@@ -823,7 +846,7 @@ def _to_camel(field: dict) -> dict:
                 }
                 for g in v
             ]
-        elif k == "options" and isinstance(v, list):
+        elif k in ("options", "quick_actions") and isinstance(v, list):
             result[new_key] = [_to_camel(o) for o in v]
         elif k == "show_if" and isinstance(v, dict):
             # Convert show_if; keep _or as "or" in camelCase
@@ -943,17 +966,13 @@ def get_all_fields() -> list[dict]:
 def _krea2_ui_fields(fields: list[dict]) -> list[dict]:
     """Align equivalent presentation while preserving Musubi values and conditions."""
     from backend.training.config.krea2_options import OPTIMIZER_ARGUMENTS
+    from backend.training.config.krea2_optimizers import FIELD_ALIASES
 
     aliases = {
         "dit": "pretrained_model_name_or_path", "text_encoder": "qwen3",
-        "krea_optimizer_weight_decay": "weight_decay", "krea_optimizer_betas": "betas",
-        "krea_optimizer_eps": "eps", "krea_prodigy_d_coef": "prodigy_d_coef", "krea_prodigy_d0": "prodigy_d0",
-        "krea_prodigyplus_use_stableadamw": "prodigyplus_use_stableadamw",
-        "krea_schedulefree_warmup_steps": "schedulefree_warmup_steps",
+        **{alias: key for key, alias in FIELD_ALIASES.items()},
         "krea_attention_backend": "attn_mode", "krea_split_attn": "split_attn",
         "enable_krea_samples": "enable_preview", "krea_sample_prompts": "positive_prompts",
-        **{f"krea_adafactor_{key}": f"adafactor_{key}" for key in
-           ("relative_step", "scale_parameter", "warmup_init", "clip_threshold", "eps")},
     }
     # New Krea-only controls sit beside their corresponding shared control.
     anchors = {
@@ -997,7 +1016,7 @@ def _krea2_ui_fields(fields: list[dict]) -> list[dict]:
             if key not in {"dit", "vae", "text_encoder", "compile", "krea_attention_backend", "krea_split_attn",
                            "enable_krea_samples", "krea_sample_prompts"}:
                 field["desc_key"] = reference["desc_key"]
-            for metadata in ("doc_slug", "doc_anchor", "keep_children_position"):
+            for metadata in ("doc_slug", "doc_anchor_by_profile", "doc_anchor", "keep_children_position"):
                 if metadata in reference:
                     field.setdefault(metadata, reference[metadata])
             if key == "resume":

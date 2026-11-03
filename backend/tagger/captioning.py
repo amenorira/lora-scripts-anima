@@ -11,6 +11,7 @@ import time
 from PIL import Image
 
 from backend.tagger import api_engine
+from backend.tagger.errors import TaggerUserError
 from backend.utils.file_io import atomic_write_text
 
 from tools import caption_images_moss as upstream
@@ -19,8 +20,16 @@ from tools import caption_images_moss as upstream
 def _name(value: str, label: str, empty: bool = False) -> str:
     if empty and not value:
         return value
-    if not value or value in {".", ".."} or any(c in value for c in '/\\:*?"<>|\r\n\x00'):
-        raise ValueError(f"Invalid {label} / {label} 不能包含路径或非法文件名字符")
+    if not value or value in {".", ".."} or value.endswith((".", " ")) or any(c in value for c in '/\\:*?"<>|\r\n\x00'):
+        message = f"Invalid {label} / {label} 不能包含路径或非法文件名字符"
+        code = {
+            "caption_extension": "caption_invalid_extension_format",
+            "reference_extension": "caption_invalid_extension_format",
+            "sidecar_suffix": "caption_invalid_sidecar_format",
+        }.get(label)
+        if code:
+            raise TaggerUserError(code, message)
+        raise ValueError(message)
     return value
 
 
@@ -94,13 +103,15 @@ def output_options(value: dict | None = None, extension: str = ".txt") -> dict:
         if key == "reference_extension" and not text:
             text = ".txt"
         settings[key] = _name("." + text.lstrip("."), key) if text else ""
-    if not settings["caption_extension"] or settings["caption_extension"].lower() in upstream.IMAGE_EXTENSIONS | {".avif", ".json"}:
-        raise ValueError("Caption extension must not replace an image or JSON / 标注扩展名不能覆盖图片或 JSON")
+    if not settings["caption_extension"]:
+        raise TaggerUserError("caption_invalid_extension_format", "Caption extension is empty / 标注扩展名不能为空")
+    if Path("image" + settings["caption_extension"]).suffix.lower() in upstream.IMAGE_EXTENSIONS | {".avif", ".json"}:
+        raise TaggerUserError("caption_invalid_extension", "Caption extension must not replace an image or JSON / 标注扩展名不能覆盖图片或 JSON")
     _name(settings["sidecar_suffix"], "sidecar_suffix")
     if not settings["sidecar_suffix"].lower().endswith(".json"):
-        raise ValueError("JSON suffix must end with .json / 结果 JSON 后缀必须以 .json 结尾")
+        raise TaggerUserError("caption_invalid_json_suffix", "JSON suffix must end with .json / 结果 JSON 后缀必须以 .json 结尾")
     if not settings["separator"] or any(c in settings["separator"] for c in "\r\n\x00"):
-        raise ValueError("Separator must be one nonempty line / 分隔符必须是非空单行文本")
+        raise TaggerUserError("caption_invalid_separator", "Separator must be one nonempty line / 分隔符必须是非空单行文本")
     return settings
 
 

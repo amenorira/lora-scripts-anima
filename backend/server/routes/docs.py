@@ -46,6 +46,15 @@ _DOCUMENTS = {
             "ja-JP": "parameters/timesteps.ja-JP.md",
         },
     },
+    "memory-optimization": {
+        "category": "training",
+        "order": 20,
+        "files": {
+            "zh-CN": "parameters/memory-optimization.zh-CN.md",
+            "en-US": "parameters/memory-optimization.en-US.md",
+            "ja-JP": "parameters/memory-optimization.ja-JP.md",
+        },
+    },
     "lora-plus": {
         "category": "network",
         "order": 10,
@@ -152,7 +161,7 @@ def _asset_url(url: str, document_dir: PurePosixPath) -> str:
     return urlunsplit(("", "", f"/api/docs/assets/{encoded_path}", parts.query, parts.fragment))
 
 
-class _AssetTreeprocessor(Treeprocessor):
+class _ResourceTreeprocessor(Treeprocessor):
     def __init__(self, markdown: Markdown, document_dir: PurePosixPath):
         super().__init__(markdown)
         self.document_dir = document_dir
@@ -162,18 +171,23 @@ class _AssetTreeprocessor(Treeprocessor):
             source = element.get("src")
             if source:
                 element.set("src", _asset_url(source, self.document_dir))
+        for element in root.iter("a"):
+            target = urlsplit(element.get("href", ""))
+            if target.scheme.lower() in {"http", "https"} or (not target.scheme and target.netloc):
+                element.set("target", "_blank")
+                element.set("rel", "noopener noreferrer")
         return root
 
 
-class _AssetExtension(Extension):
+class _ResourceExtension(Extension):
     def __init__(self, document_dir: PurePosixPath):
         super().__init__()
         self.document_dir = document_dir
 
     def extendMarkdown(self, markdown: Markdown) -> None:
         markdown.treeprocessors.register(
-            _AssetTreeprocessor(markdown, self.document_dir),
-            "local_doc_assets",
+            _ResourceTreeprocessor(markdown, self.document_dir),
+            "local_doc_resources",
             5,
         )
 
@@ -184,7 +198,7 @@ def _render_markdown(source: str, relative_path: PurePosixPath) -> tuple[str, st
             "extra",
             "toc",
             _DocAnchorExtension(),
-            _AssetExtension(relative_path.parent),
+            _ResourceExtension(relative_path.parent),
         ],
         extension_configs={"toc": {"permalink": False, "toc_depth": "2-3"}},
         output_format="html5",

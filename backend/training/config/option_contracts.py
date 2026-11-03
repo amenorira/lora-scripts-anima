@@ -27,6 +27,8 @@ def normalize_sd_options(config: dict) -> None:
             config.pop(key, None)
     if config.get("cpu_offload_checkpointing") or config.get("unsloth_offload_checkpointing"):
         config["gradient_checkpointing"] = True
+    if not config.get("gradient_checkpointing"):
+        config.pop("gradient_checkpointing_skip_blocks", None)
     if not config.get("block_swap_h2d_only"):
         config.pop("block_swap_ring_size", None)
         config.pop("use_pinned_memory_for_block_swap", None)
@@ -46,6 +48,16 @@ def validate_sd_option_dependencies(config: dict) -> list[str]:
     if (config.get("cache_text_encoder_outputs") or config.get("cache_text_encoder_outputs_to_disk")) and epoch_dropout:
         errors.append("caption_dropout_every_n_epochs: requires disabling both Text Encoder caches / 按轮丢弃标注需要关闭内存和磁盘文本缓存")
     if config.get("model_train_type") in ("anima-lora", "moss-image-lora"):
+        if config.get("model_train_type") == "moss-image-lora":
+            try:
+                text_encoder_swapping = float(config.get("text_encoder_blocks_to_swap") or 0) > 0
+            except (TypeError, ValueError):
+                text_encoder_swapping = False  # Generic numeric validation reports invalid values.
+            if text_encoder_swapping and (
+                config.get("network_train_unet_only") is not True
+                or config.get("network_train_text_encoder_only") is True
+            ):
+                errors.append("text_encoder_blocks_to_swap: requires a frozen Text Encoder / 文本编码器换层需要冻结文本编码器，请仅训练主干")
         if config.get("timestep_sampling") == "truncated_logit_normal":
             for key, default, lower, upper in (
                 ("timestep_cutoff", 0.95, 0, 1),
@@ -86,6 +98,22 @@ def validate_sd_option_dependencies(config: dict) -> list[str]:
                 valid_ring = False
             if not valid_ring:
                 errors.append("block_swap_ring_size: must be a positive integer / 必须为正整数")
+            try:
+                counts = [config.get("blocks_to_swap") or 0, config.get("gradient_checkpointing_skip_blocks") or 0, ring]
+                valid_counts = all(
+                    not isinstance(value, bool) and math.isfinite(float(value))
+                    and float(value).is_integer() and float(value) >= 0
+                    for value in counts
+                )
+                swapped, skipped, slots = map(float, counts)
+            except (TypeError, ValueError, OverflowError):
+                valid_counts = False  # Numeric validation owns invalid counts.
+            # H2D slots reuse weight storage. Saved activations from skipped
+            # checkpoints cannot outlive that storage unless the ring covers
+            # all swapped blocks; otherwise backward sees an inplace update.
+            checkpointing = config.get("gradient_checkpointing") is True or cpu or unsloth
+            if valid_ring and valid_counts and checkpointing and swapped > slots and skipped > slots:
+                errors.append("gradient_checkpointing_skip_blocks: H2D-only block swap requires skipped blocks or swapped blocks to fit within block_swap_ring_size / H2D 换块时，跳过检查点的块数或换出块数至少一项不能超过环形缓冲槽数")
         if swapping and config.get("compile") and config.get("compile_fullgraph"):
             errors.append("compile_fullgraph: cannot be combined with blocks_to_swap; disable fullgraph / 完整图编译不能与换块并用；请关闭完整图编译")
     if config.get("enable_preview") and config.get("sample_interval_mode") in ("epochs", "steps"):

@@ -212,7 +212,7 @@ window.captionOptionsMixin = {
       const s = this.taggerApiSettings;
       const body = await (await fetch('/api/tagger/api/test', {method:'POST', headers:{'Content-Type':'application/json'}, signal:controller.signal, body:JSON.stringify({base_url:s.baseUrl,api_key:s.apiKey,protocol:s.protocol})})).json();
       if (!stillCurrent()) return;
-      if (body.status !== 'success') throw new Error(body.message);
+      if (body.status !== 'success') throw new Error(this.localizeApiError?.(body) || body.message);
       this.taggerApiModelSuggestions = body.data?.models || [];
       this.taggerApiTestInfo = {state:'ok',text:this.t('tagger.apiTestOk').replace('{count}',String(body.data?.count || 0))};
     } catch (error) {
@@ -256,7 +256,7 @@ window.captionOptionsMixin = {
       const payload = {engine:'api',source_token:token,
         api,options:{captioning:{...options,candidates,dry_run:dryRun}}};
       const body = await (await fetch('/api/tagger/tasks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})).json();
-      if (body.status !== 'success') throw new Error(body.message);
+      if (body.status !== 'success') throw new Error(this.localizeApiError?.(body) || body.message);
       this.attachTaggerTask(body.data.task_id, mode);
     } catch (error) { this.toast(error.message, 'error'); }
     finally { this.taggerStarting = false; }

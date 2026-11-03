@@ -12,12 +12,18 @@ window.docsMixin = {
   docsError: '',
   docsActiveAnchor: '',
   docsTocItems: [],
+  parameterDocOpen: false,
+  parameterDocSlug: '',
+  parameterDocAnchor: '',
+  parameterDocHtml: '',
+  parameterDocLoading: false,
+  parameterDocError: '',
+  _parameterDocRequestId: 0,
+  _parameterDocAbortController: null,
   _docsLocale: '',
   _docsContentLocale: '',
   _docsListRequestId: 0,
   _docsContentRequestId: 0,
-  _docsRequestedSlug: '',
-  _docsRequestedAnchor: '',
   _docsPendingLocale: '',
   _docsPendingAnchor: '',
   _docsContentCache: Object.create(null),
@@ -86,12 +92,9 @@ window.docsMixin = {
       }
     }
 
-    const requestedSlug = this._docsRequestedSlug || this.docsSelectedSlug;
+    const requestedSlug = this.docsSelectedSlug;
     const fallbackSlug = this.docsDocuments.length ? this.docsDocuments[0].slug : '';
     const slug = this.docsDocuments.some(doc => doc.slug === requestedSlug) ? requestedSlug : fallbackSlug;
-    const anchor = this._docsRequestedAnchor;
-    this._docsRequestedSlug = '';
-    this._docsRequestedAnchor = '';
 
     if (!slug) {
       this._cancelDocsContentRequest();
@@ -102,7 +105,20 @@ window.docsMixin = {
       this._docsContentLocale = '';
       return;
     }
-    await this.selectParameterDoc(slug, anchor, { force: !!force });
+    await this.selectParameterDoc(slug, '', { force: !!force });
+  },
+
+  async _fetchDocsContent(slug, locale, signal) {
+    const response = await fetch(
+      '/api/docs/' + encodeURIComponent(slug) + '?locale=' + encodeURIComponent(locale),
+      { signal },
+    );
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const result = await response.json();
+    if (result.status !== 'success' || !result.data) {
+      throw new Error(result.message || this.t('docs.loadError'));
+    }
+    return result.data;
   },
 
   async selectParameterDoc(slug, anchor, options) {
@@ -152,19 +168,11 @@ window.docsMixin = {
 
     const requestPromise = (async () => {
       try {
-        const response = await fetch(
-          '/api/docs/' + encodeURIComponent(slug) + '?locale=' + encodeURIComponent(locale),
-          { signal: controller.signal },
-        );
-        if (!response.ok) throw new Error('HTTP ' + response.status);
-        const result = await response.json();
-        if (result.status !== 'success' || !result.data) {
-          throw new Error(result.message || this.t('docs.loadError'));
-        }
+        const data = await this._fetchDocsContent(slug, locale, controller.signal);
         if (requestId !== this._docsContentRequestId) return;
 
-        this._docsContentCache[cacheKey] = result.data;
-        this._commitDocsContent(result.data, this._docsPendingAnchor);
+        this._docsContentCache[cacheKey] = data;
+        this._commitDocsContent(data, this._docsPendingAnchor);
       } catch (error) {
         if (requestId !== this._docsContentRequestId || error.name === 'AbortError') return;
         const message = this.t('docs.loadError') + ': ' + (error.message || String(error));
@@ -258,33 +266,113 @@ window.docsMixin = {
     this._teardownDocsScrollSpy();
   },
 
-  openParameterDoc(slug, anchor) {
-    this._docsRequestedSlug = slug || 'lora-plus';
-    this._docsRequestedAnchor = anchor || '';
+  async openParameterDoc(slug, anchor, options) {
+    const targetSlug = slug || 'lora-plus';
+    const targetAnchor = anchor || '';
     if (this.currentRoute === 'docs') {
-      const targetSlug = this._docsRequestedSlug;
-      const targetAnchor = this._docsRequestedAnchor;
-      this._docsRequestedSlug = '';
-      this._docsRequestedAnchor = '';
-      this.selectParameterDoc(targetSlug, targetAnchor);
-      return;
+      return this.selectParameterDoc(targetSlug, targetAnchor);
     }
-    this.navigate('docs');
+
+    this._parameterDocAbortController?.abort();
+    const requestId = ++this._parameterDocRequestId;
+    const controller = new AbortController();
+    this._parameterDocAbortController = controller;
+    this.parameterDocSlug = targetSlug;
+    this.parameterDocAnchor = targetAnchor;
+    this.parameterDocHtml = '';
+    this.parameterDocError = '';
+    this.parameterDocLoading = true;
+    this.parameterDocOpen = true;
+    const locale = this.locale || 'zh-CN';
+    const cacheKey = locale + ':' + targetSlug;
+
+    try {
+      let data = !(options && options.force) && this._docsContentCache[cacheKey];
+      if (!data) {
+        data = await this._fetchDocsContent(targetSlug, locale, controller.signal);
+      }
+      if (requestId !== this._parameterDocRequestId) return;
+      this._docsContentCache[cacheKey] = data;
+      this.parameterDocHtml = this._parameterDocSection(data.html || '', targetAnchor, targetSlug === 'memory-optimization');
+      this.$nextTick(() => {
+        if (requestId !== this._parameterDocRequestId || !this.parameterDocOpen) return;
+        const article = document.getElementById('parameterDocArticle');
+        if (article) this._hydrateDocsTables(article);
+        const body = document.getElementById('parameterDocBody');
+        if (body) body.scrollTop = 0;
+      });
+    } catch (error) {
+      if (requestId !== this._parameterDocRequestId || error.name === 'AbortError') return;
+      this.parameterDocError = this.t('docs.loadError') + ': ' + (error.message || String(error));
+    } finally {
+      if (requestId === this._parameterDocRequestId) {
+        this.parameterDocLoading = false;
+        this._parameterDocAbortController = null;
+      }
+    }
   },
 
-  handleDocsContentClick(event) {
+  _parameterDocSection(html, anchor, includeModelHeading = false) {
+    // Keep unselected sections inert, including their images.
+    const source = document.createElement('template');
+    source.innerHTML = html;
+    const content = source.content;
+    const target = anchor && Array.from(content.querySelectorAll('[id]'))
+      .find(node => node.id === anchor);
+    if (target) {
+      let start = target;
+      while (start.parentNode !== content) start = start.parentNode;
+      // Legacy empty anchors may be placed just before or after their heading.
+      if (!start.textContent.trim() && /^H[1-6]$/.test(start.nextElementSibling?.tagName || '')) {
+        start = start.nextElementSibling;
+      }
+      while (start.previousElementSibling && !/^H[1-6]$/.test(start.tagName)) {
+        start = start.previousElementSibling;
+      }
+      const level = /^H[1-6]$/.test(start.tagName) ? Number(start.tagName.slice(1)) : 1;
+      let modelHeading = null;
+      if (includeModelHeading && level > 2) {
+        for (let node = start.previousElementSibling; node; node = node.previousElementSibling) {
+          if (node.tagName === 'H2') { modelHeading = node.cloneNode(true); break; }
+        }
+      }
+      const section = document.createElement('div');
+      if (modelHeading) section.appendChild(modelHeading);
+      for (let node = start; node;) {
+        if (node !== start && /^H[1-6]$/.test(node.tagName) && Number(node.tagName.slice(1)) <= level) break;
+        const next = node.nextElementSibling;
+        section.appendChild(node);
+        node = next;
+      }
+      content.replaceChildren(...section.childNodes);
+    }
+    // The full reader remains mounted behind the dialog; avoid duplicate IDs.
+    content.querySelectorAll('[id]').forEach(node => { node.id = 'parameter-doc-' + node.id; });
+    return source.innerHTML;
+  },
+
+  closeParameterDoc() {
+    this.parameterDocOpen = false;
+    this._parameterDocRequestId += 1;
+    this._parameterDocAbortController?.abort();
+    this._parameterDocAbortController = null;
+    this.parameterDocLoading = false;
+    this.parameterDocHtml = '';
+    this.parameterDocError = '';
+  },
+
+  handleDocsContentClick(event, inDialog = false) {
     const link = event.target.closest && event.target.closest('a');
     if (!link) return;
     const href = link.getAttribute('href') || '';
     const docLink = href.match(/^([a-z0-9-]+)\.(?:zh-CN|en-US|ja-JP)\.md(?:#([a-z0-9_-]+))?$/i);
-    if (docLink) {
+    if (docLink || href.startsWith('#')) {
       event.preventDefault();
-      this.selectParameterDoc(docLink[1], docLink[2] || '');
-      return;
+      const anchor = docLink ? docLink[2] || '' : decodeURIComponent(href.slice(1));
+      if (inDialog) this.openParameterDoc(docLink ? docLink[1] : this.parameterDocSlug, anchor);
+      else if (docLink) this.selectParameterDoc(docLink[1], anchor);
+      else this.scrollToDocAnchor(anchor, true);
     }
-    if (!href.startsWith('#')) return;
-    event.preventDefault();
-    this.scrollToDocAnchor(decodeURIComponent(href.slice(1)), true);
   },
 
   scrollToDocAnchor(anchor, smooth) {

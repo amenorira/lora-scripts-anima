@@ -30,6 +30,11 @@ document.addEventListener('alpine:init', () => {
         : []);
     const staticDisplayGroups = normalizedGroups(fieldConfig);
     const staticFlatOptions = staticDisplayGroups.flatMap(group => group.options || []);
+    const localized = staticDisplayGroups.some(group => group.labelKey
+      || (group.options || []).some(option => option.labelKey || option.dKey));
+    let translatedLocale;
+    let translatedGroups;
+    let translatedOptions;
 
     return ({
     open: false,
@@ -49,13 +54,36 @@ document.addEventListener('alpine:init', () => {
     _keyHandler: null,
 
     get displayGroups() {
-      if (!fieldConfigFactory) return staticDisplayGroups;
+      if (!fieldConfigFactory) {
+        if (!localized) return staticDisplayGroups;
+        // Track the owning app's locale, translating once per change. Reuse
+        // the component, selection and option values without emitting edits.
+        const locale = this.locale;
+        if (!translatedGroups || translatedLocale !== locale) {
+          translatedLocale = locale;
+          translatedGroups = staticDisplayGroups.map(group => ({
+            ...group,
+            label: group.labelKey ? this.t(group.labelKey, group.label) : group.label,
+            options: (group.options || []).map(option => ({
+              ...option,
+              l: option.labelKey ? this.t(option.labelKey, option.l) : option.l,
+              d: option.dKey ? this.t(option.dKey, option.d) : option.d,
+            })),
+          }));
+          translatedOptions = translatedGroups.flatMap(group => group.options);
+        }
+        return translatedGroups;
+      }
       try { return normalizedGroups(fieldConfigFactory() || {}); }
       catch (_) { return []; }
     },
 
     get flatOptions() {
-      if (!fieldConfigFactory) return staticFlatOptions;
+      if (!fieldConfigFactory) {
+        if (!localized) return staticFlatOptions;
+        void this.displayGroups;
+        return translatedOptions;
+      }
       return this.displayGroups.flatMap(group => group.options || []);
     },
 

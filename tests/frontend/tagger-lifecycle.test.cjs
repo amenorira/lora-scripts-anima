@@ -70,3 +70,20 @@ test('scan failures localize UI fallback while keeping backend diagnostics intac
     assert.deepEqual(messages, [message ?? dictionary.tagger.scanFailed]);
   }
 });
+
+test('coded source errors are translated without exposing a bilingual backend message', async () => {
+  const messages = [];
+  const {window} = loadFrontend(['shared/utils', 'tagger/index'], {
+    window: {}, fetch: async () => ({json: async () => ({
+      status:'fail', message:'Source does not exist / 输入路径不存在',
+      data:{errorCode:'tagger_source_not_found'},
+    })}),
+  });
+  const app = composeMixins(window.utilsMixin, window.taggerMixin, {
+    currentRoute:'tagger', taggerSourceMode:'folder', taggerSourcePath:'./missing',
+    toast: text => messages.push(text),
+    t: key => ({'errors.tagger_source_not_found':'指定されたパスが存在しません。'}[key] || key),
+  });
+  await app.scanTaggerSource();
+  assert.deepEqual(messages, ['指定されたパスが存在しません。']);
+});

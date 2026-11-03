@@ -292,7 +292,13 @@ def optimizer_groups(profile: str) -> list[dict[str, Any]]:
             option = {
                 "v": entry.selector,
                 "l": entry.label,
-                "dk": entry.description_key,
+                # Krea leaves Prodigy's learning-rate multiplier editable;
+                # sd-scripts fixes it at 1.0. Keep their option text distinct.
+                "dk": (
+                    "opt.krea_optimizer_type_Prodigy"
+                    if profile == KREA2_PROFILE and entry.selector == KREA2_PRODIGY_OPTIMIZER_TYPE
+                    else entry.description_key
+                ),
             }
             if entry.train_group is not None:
                 option["group"] = list(entry.train_group) if isinstance(entry.train_group, tuple) else entry.train_group

@@ -31,7 +31,7 @@ Start with AdamW8bit. Compare StableAdamW for update spikes, or a Paged variant 
 | Lion | Sign-based momentum updates for comparison | Works with a different LR range; tune it separately |
 | Lion8bit | Lion with less state VRAM | Needs its own LR sweep |
 | PagedLion8bit | Lion8bit that also needs paging | Paging changes where momentum state is stored; active paging adds CPU/GPU transfers |
-| Prodigy | Optimizer-estimated update scale | Base LR must be `1.0`; not supported with LoRA+ here |
+| Prodigy | Optimizer-estimated update scale | LR acts as a multiplier; start at `1.0`. Fixed at `1.0` for sd-scripts, editable for Krea 2. Not supported with LoRA+ here |
 | ProdigyPlusScheduleFree | Automatic step-size estimation and internal scheduling | External scheduler and warmup are ignored; compare against an established baseline |
 | Automagic3 | Experimental adaptive scheme | Keeps trainable parameters in FP32. Only fused updates require gradient accumulation of 1, global gradient clipping of 0, no fp16 mixed precision, and a single GPU |
 | AdaFactor | Very tight optimizer memory | Relative-step mode takes over the LR and restricts LoRA+ |
@@ -94,11 +94,11 @@ Other profiles use their own starting configurations:
 | MOSS-Image | `1e-4` with `rank=16, alpha=1` | Muon also starts at `1e-4` |
 | Krea 2 | AdamW8bit `1e-4` | CAME `2e-4`; Lion `1e-4`; AdamWScheduleFree `0.0025`; LoRA-Muon `0.1`; LoRA-RITE `1e-4`; EmoSens multiplier `0.1` |
 
-Krea 2 uses its corresponding `krea_*` fields for weight decay, betas, and eps. Shared optimizer parameters follow the descriptions below.
+Krea 2 uses its corresponding `krea_*` fields for weight decay, betas, and eps. See [weight decay](#weight-decay), [betas](#betas), and [eps](#eps) for their meanings.
 
 `network_alpha / network_dim` scales the LoRA branch. The upstream sd-scripts `1e-4` example uses `alpha=1`; retune the learning rate when switching to this project's `rank=32, alpha=32`.
 
-When a character locks in, colors bleed, or prompt adherence drops too early, lower the learning rate or reduce training steps. When the model underlearns, confirm the trigger word and useful step count before nudging the LR up. Lion's usable LR range is different from AdamW's; test it on its own.
+If poses or compositions become fixed, colors bleed, or prompt adherence drops early in training, try a lower learning rate or fewer training steps. When the model underlearns, confirm the trigger word and useful step count before nudging the LR up. Lion's usable LR range is different from AdamW's; test it on its own.
 
 With `relative_step` enabled, AdaFactor computes the update step size from the update count. The entered learning rate initializes the scheduler proxy's display; it does not control updates, and the external scheduler does not apply. `scale_parameter` separately controls multiplication by the parameter RMS. Turn off both `relative_step` and `warmup_init` to use manual learning rates, an external scheduler, or LoRA+.
 
@@ -361,7 +361,7 @@ Before reading a curve, check whether it records group learning rate, `D × lr`,
 - **Steps before D freezes** (`prodigy_steps`, default `0`): after this many steps `D` freezes at its current value and the estimation buffers are released. For the case where `D` has been verified and the second half should not change it; `0` keeps estimating throughout.
 - **Bias correction and automatic warmup** (`use_bias_correction`, off by default): selects a RAdam variant with bias correction and automatic warmup, slowing adjustment of `D`. If `D` stops growing after enabling it, compare with it off.
 - **SPEED estimator** (`use_speed`, off by default): raises `D` when directional progress reaches a historical peak, uses less state, and tolerates overall gradient rescaling. It is experimental; upstream warns when it is combined with nonzero weight decay.
-- **Cautious updates** (`use_cautious`, off by default): removes update components that disagree with the current gradient. This implementation masks the update directly, without a first-moment state. Enable it for a separate comparison of directional filtering.
+- **Cautious updates** (`use_cautious`, off by default): removes update components that disagree with the current gradient. This implementation masks the update directly, rather than modifying the first-moment state. Enable it for a separate comparison of directional filtering.
 - **Orthogonal gradient updates** (`use_orthograd`, off by default): uses only the gradient component orthogonal to the current weight direction. Enable it when testing this constraint.
 
 - **Estimate D per parameter group** (`split_groups`, on by default): each group estimates step size independently, such as separate text-encoder and DiT groups. Disabling it gives all groups one shared estimate.
@@ -562,11 +562,11 @@ Prodigy, Muon, and LoRA-Muon use different update scales. Compare them with indi
 
 **Why is the learning rate replaced after I switch model type or optimizer?**
 
-Ordinary recommendations update values whose source is default or automatic; manual and imported values are preserved. Switching to a mode that locks the learning rate, such as Prodigy or ProdigyPlus, sets it to the required `1.0`.
+Ordinary recommendations update values whose source is default or automatic; manual and imported values are preserved. In sd-scripts training, switching to a mode that locks the learning rate, such as Prodigy or ProdigyPlus, sets it to `1.0`. The Prodigy multiplier remains editable for Krea 2.
 
 **Why is the Prodigy learning rate locked to `1.0`?**
 
-Prodigy is a D-adaptation-style adaptive optimizer that uses the learning rate as a scaling baseline. The sd-scripts documentation recommends setting it near `1.0`, so the UI locks it and explains why.
+Prodigy is a D-adaptation-style adaptive optimizer that uses the learning rate as a scaling baseline. The sd-scripts documentation recommends a value near `1.0`, and this trainer fixes it at `1.0` for that training path. For Krea 2, start at `1.0`; the multiplier remains editable.
 
 **Why is StableAdamW's weight decay `0` in the generated configuration?**
 

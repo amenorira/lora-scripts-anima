@@ -54,6 +54,8 @@ class HistoryTests(CrossDriveSandbox):
             result = asyncio.run(routes.delete_history_run(json_request({"run_dir": "output/demo"})))
         self.assertEqual(result["status"], "error")
         self.assertTrue(result["data"]["retryable"])
+        self.assertEqual(result["error_code"], "monitorCleanupFailed")
+        self.assertEqual(result["error_details"], "train_demo.log")
         self.assertTrue(history.scan_history()[0]["deletion_pending"])
         self.assertEqual(history.scan_history()[0]["name"], "demo")
         self.assertTrue(log.exists())
@@ -62,3 +64,24 @@ class HistoryTests(CrossDriveSandbox):
         self.assertEqual(history.scan_history(), [])
         self.assertEqual(model.read_bytes(), b"model")
         self.assertFalse(log.exists())
+
+    def test_legacy_krea_preview_state_uses_its_own_config(self):
+        run = self.make_run(extra={"profile_id": "krea2-lora", "preview_enabled": False})
+        self.assertFalse(run_registry.load_run_record(run)["preview_enabled"])
+        with (run / "config.toml").open("a", encoding="utf-8") as handle:
+            handle.write('sample_prompts = "sample_prompts.txt"\n')
+        self.assertTrue(run_registry.load_run_record(run)["preview_enabled"])
+        (run / "config.toml").unlink()
+        self.assertIsNone(run_registry.load_run_record(run)["preview_enabled"])
+
+    def test_other_profiles_do_not_infer_preview_state_from_krea_fields(self):
+        run = self.make_run(extra={"profile_id": "anima-lora", "preview_enabled": False})
+        with (run / "config.toml").open("a", encoding="utf-8") as handle:
+            handle.write('sample_prompts = "sample_prompts.txt"\n')
+        self.assertFalse(run_registry.load_run_record(run)["preview_enabled"])
+
+    def test_krea_uses_saved_prompt_metadata_when_configuration_is_missing(self):
+        for name, prompts in (("enabled", "sample_prompts.txt"), ("disabled", None)):
+            run = self.make_run(name, extra={"profile_id": "krea2-lora", "preview_enabled": False, "sample_prompts": prompts})
+            (run / "config.toml").unlink()
+            self.assertIs(run_registry.load_run_record(run)["preview_enabled"], bool(prompts))

@@ -188,12 +188,26 @@ window.trainingProfiles = {
 
   _setFieldSource(key, source, trainType = this.form.model_train_type || this._activeTrainType) {
     if (!key || !trainType) return;
+    if (source === 'user' || source === 'import') this._markTrainingDraftEdited(trainType);
     if (!this._fieldSources || typeof this._fieldSources !== 'object') this._fieldSources = {};
     if (!this._profileFieldSources || typeof this._profileFieldSources !== 'object') {
       this._profileFieldSources = {};
     }
     this._fieldSources[key] = source;
     this._profileFieldSources[trainType] = this._fieldSources;
+  },
+
+  _markTrainingDraftEdited(trainType = this.form?.model_train_type || this._activeTrainType) {
+    if (!this._preserveUnloadedTrainingDrafts || !trainType) return;
+    if (!this._sessionEditedProfiles) this._sessionEditedProfiles = new Set();
+    this._sessionEditedProfiles.add(trainType);
+  },
+
+  _persistActiveTrainingForm(route = this.currentRoute) {
+    if (!route || !route.startsWith('train-') || typeof localStorage === 'undefined') return;
+    const trainType = this.form?.model_train_type || this._activeTrainType;
+    if (this._preserveUnloadedTrainingDrafts && !this._sessionEditedProfiles?.has(trainType)) return;
+    try { localStorage.setItem('anima-form-' + route, JSON.stringify(this.form)); } catch (e) {}
   },
 
   _profileFormFromDraft(trainType, defaults = this._buildFormDefaults(trainType), source = null) {
@@ -262,7 +276,33 @@ window.trainingProfiles = {
     const storageKey = this._profileDraftStorageKey(route);
     if (!storageKey || typeof localStorage === 'undefined') return;
     try {
-      localStorage.setItem(storageKey, JSON.stringify(this._profileFormDrafts));
+      let drafts = this._profileFormDrafts;
+      if (this._preserveUnloadedTrainingDrafts) {
+        if (!this._sessionEditedProfiles?.size) return;
+        // Keep prior profiles that were deliberately not restored this session.
+        const stored = JSON.parse(localStorage.getItem(storageKey) || '{}');
+        if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return;
+        drafts = { ...stored };
+        // Older versions only saved the active form, without per-profile drafts.
+        const legacy = JSON.parse(localStorage.getItem('anima-form-' + route) || 'null');
+        const legacyType = !legacy?.model_train_type || legacy.model_train_type === 'sd-lora'
+          ? ((typeof ROUTE_CONFIG !== 'undefined' && ROUTE_CONFIG[route]?.trainType) || 'anima-lora')
+          : legacy.model_train_type;
+        if (legacy && typeof legacy === 'object' && !Array.isArray(legacy)
+            && typeof legacyType === 'string' && legacyType) {
+          const previous = drafts[legacyType];
+          const base = previous && typeof previous === 'object' && !Array.isArray(previous) ? previous : {};
+          // Active-form fields take precedence when the two old stores differ,
+          // matching the normal restoration path in buildTrainForm.
+          drafts[legacyType] = { ...base, ...legacy, model_train_type: legacyType };
+        }
+        this._sessionEditedProfiles.forEach(trainType => {
+          if (Object.hasOwn(this._profileFormDrafts, trainType)) {
+            drafts[trainType] = this._profileFormDrafts[trainType];
+          }
+        });
+      }
+      localStorage.setItem(storageKey, JSON.stringify(drafts));
     } catch (e) {}
   },
 
@@ -270,9 +310,23 @@ window.trainingProfiles = {
     const storageKey = this._profileFieldSourceStorageKey(route);
     if (!storageKey || typeof localStorage === 'undefined') return;
     try {
+      let sources = this._profileFieldSources;
+      if (this._preserveUnloadedTrainingDrafts) {
+        if (!this._sessionEditedProfiles?.size) return;
+        const raw = localStorage.getItem(storageKey);
+        const stored = raw ? JSON.parse(raw) : { version: 1, profiles: {} };
+        if (!stored || stored.version !== 1 || !stored.profiles
+            || typeof stored.profiles !== 'object' || Array.isArray(stored.profiles)) return;
+        sources = { ...stored.profiles };
+        this._sessionEditedProfiles.forEach(trainType => {
+          if (Object.hasOwn(this._profileFieldSources, trainType)) {
+            sources[trainType] = this._profileFieldSources[trainType];
+          }
+        });
+      }
       localStorage.setItem(storageKey, JSON.stringify({
         version: 1,
-        profiles: this._profileFieldSources,
+        profiles: sources,
       }));
     } catch (e) {}
   },

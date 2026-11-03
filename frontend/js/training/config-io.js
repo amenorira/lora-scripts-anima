@@ -60,6 +60,11 @@ window.trainingConfigIoMixin = {
     parsed = this._normalizeLegacyLoraMuonForm
       ? this._normalizeLegacyLoraMuonForm(parsed)
       : parsed;
+    const targetRoute = this.currentRoute?.startsWith('train-') ? this.currentRoute : 'train-basic';
+    // A history import may precede the first training-page mount.
+    if (!fileImport && this.currentRoute && !this.currentRoute.startsWith('train-')) {
+      this._ensureTrainingSession?.(targetRoute);
+    }
     const validTypes = new Set((this.trainTypes || []).map(item => item.v));
     const currentType = String(this.form && this.form.model_train_type || 'anima-lora');
     const importedType = String(parsed.model_train_type || currentType);
@@ -67,7 +72,6 @@ window.trainingConfigIoMixin = {
     if (Object.hasOwn(parsed, 'preview_loras') && this._normalizePreviewLoras) {
       parsed = { ...parsed, preview_loras: this._normalizePreviewLoras(parsed.preview_loras) };
     }
-
     const applyValues = () => {
       if (!canApply() || (fileImport && this.form.model_train_type !== importedType)) return false;
       const defaults = this._buildFormDefaults(importedType);
@@ -82,6 +86,7 @@ window.trainingConfigIoMixin = {
         if (validKeys.has(key)) imported[key] = value;
       });
       this.form = { ...defaults, ...imported, model_train_type: importedType };
+      this._markTrainingDraftEdited?.(importedType);
       this._optimizerDrafts = { ...this._optimizerDrafts, [importedType]: {} };
       this._optimizerRestore = null;
       this._activeTrainType = importedType;
@@ -95,11 +100,13 @@ window.trainingConfigIoMixin = {
       this.updateToml();
       this.rebuildForm();
       this._captureProfileDraft(importedType, this.form, defaults);
-      this._persistProfileDrafts();
-      this._persistProfileFieldSources();
+      // History reuse may happen away from the training route.
+      if (this.currentRoute?.startsWith('train-') || this._trainingSessionRoute === targetRoute) {
+        this._persistProfileDrafts(targetRoute);
+        this._persistProfileFieldSources(targetRoute);
+      }
       if (this.currentRoute && typeof localStorage !== 'undefined') {
-        const targetRoute = this.currentRoute.startsWith('train-') ? this.currentRoute : 'train-basic';
-        try { localStorage.setItem('anima-form-' + targetRoute, JSON.stringify(this.form)); } catch (e) {}
+        this._persistActiveTrainingForm(targetRoute);
       }
       return this.form;
     };

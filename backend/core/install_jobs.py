@@ -29,7 +29,7 @@ class InstallJobs:
         job_id = uuid4().hex[:12]
         owner = self.name + ":" + job_id
         if not tm.claim_external(owner):
-            return {"success": False, "message": "Finish the active training or GPU task first / 请先结束正在运行的训练或 GPU 任务"}
+            return {"success": False, "message": "Finish the active training or GPU task first / 请先结束正在运行的训练或 GPU 任务", "error_code": "environmentGpuTaskBusy"}
         with self._lock:
             for expired in [key for key, job in self._jobs.items() if job["done"] and time.time() - job["start"] > 600]:
                 del self._jobs[expired]

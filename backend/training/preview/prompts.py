@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import gc
 import logging
+from contextlib import nullcontext
 
 import torch
 
@@ -60,15 +61,19 @@ def encode_with_adapters(manager, texts, values, encoder, architecture):
             if temporary:
                 adapter = moss_image if architecture == "moss_image" else anima
                 encoder = adapter.load_text_encoder(values["args"], target).requires_grad_(False)
-                if target.type == "cuda":
+                swapping = architecture == "moss_image" and (getattr(values["args"], "text_encoder_blocks_to_swap", None) or 0) > 0
+                if target.type == "cuda" and not swapping:
                     size = sum(t.numel() * t.element_size() for t in (*encoder.parameters(), *encoder.buffers()))
                     available = (torch.cuda.mem_get_info(target)[0] + torch.cuda.memory_reserved(target)
                                  - torch.cuda.memory_allocated(target))
                     if size > available:
                         target = torch.device("cpu")
                         logger.info("Preview text encoder uses CPU: insufficient free CUDA memory / 预览文本编码改用 CPU，显存不足")
-            encoder.to(target).eval()
-            with manager.activate(manager.prepare(None, encoder), target, models=(encoder,)):
+            placement = (moss_image.text_encoder_for_preview(encoder, values["args"], target, temporary=temporary)
+                         if architecture == "moss_image" else nullcontext())
+            if architecture != "moss_image":
+                encoder.to(target).eval()
+            with placement, manager.activate(manager.prepare(None, encoder), target, models=(encoder,)):
                 return encode_prompts(texts, values, encoder)
         except torch.cuda.OutOfMemoryError:
             if not temporary or target.type != "cuda":
@@ -81,5 +86,5 @@ def encode_with_adapters(manager, texts, values, encoder, architecture):
                 # ConvRot installs bound forwards on its own child modules.
                 # Those cycles must release weights before denoising/retry.
                 gc.collect()
-            else:
+            elif architecture != "moss_image":
                 encoder.to("cpu")

@@ -119,7 +119,7 @@ MOSS-Image の新規設定は、0.95 での打ち切りと 1% の一様サンプ
 
 ### `uniform`
 
-タイムステップの全範囲を均等に選びます。既定の sigmoid 分布より、低ノイズと高ノイズの両端を多く学習します。
+タイムステップの全範囲を均等に選びます。既定の sigmoid 分布より、低ノイズと高ノイズの区間を多くサンプリングします。
 
 ### `shift`
 
@@ -168,7 +168,7 @@ Krea 2 の `logsnr` は、`logit_mean` と `logit_std` で定義した分布か�
 <!-- doc-anchor: flow-shift -->
 ## `discrete_flow_shift`：高・低ノイズの割合を調整
 
-既定値は Anima/MOSS が `1.0`、Krea 2 が `2.5` です。大きくすると高ノイズ、小さくすると低ノイズが増えます。`0` より大きい値を指定してください。Anima/MOSS は `shift` と `sigma`、Krea 2 は `shift` だけで使います。
+既定値は Anima/MOSS が `1.0`、Krea 2 が `2.5` です。大きくすると高ノイズ、小さくすると低ノイズが増えます。`0` より大きい値を指定してください。Anima/MOSS は `shift`、`sigma`、`truncated_logit_normal` で使用します。Krea 2 は `shift` のみで使用します。
 
 | 値 | 変化の方向 | 基本分布からの変化 |
 | --- | --- | --- |
@@ -189,7 +189,7 @@ Krea 2 の `logsnr` は、`logit_mean` と `logit_std` で定義した分布か�
 <!-- doc-anchor: subset-offsets -->
 ## サブセット別のタイムステップオフセット
 
-`subset_timestep_offsets` は、サブセットごとに独立したサンプリング偏移を指定します。sigmoid 変換前の正規乱数に加えるため、分布の形状とノイズの割合が変わります。**Anima/MOSS のみ**対応します。
+`subset_timestep_offsets` は、学習サブセットごとにノイズのサンプリング分布を調整します。負の値は低ノイズ、正の値は高ノイズを増やします。**Anima/MOSS** の以下のモードで使用できます。モードごとの計算は「オフセットを加える位置」を参照してください。
 
 サブセットは、数字とアンダースコアで始まるサブフォルダです（例：`10_group_a`、`3_group_b`）。先頭の数字はリピート回数です。サブセット名とオフセットの対応表を次の手順で入力します。
 
@@ -203,7 +203,7 @@ Krea 2 の `logsnr` は、`logit_mean` と `logit_std` で定義した分布か�
 {"10_group_a": -0.25, "3_group_b": 0.20}
 ```
 
-学習開始時に、バックエンドが別の `dataset.toml` を書き出します。この項目はメインの学習設定には入りません。
+0 以外のサブセットオフセットがある場合、学習開始時に別の `dataset.toml` を生成します。実行用のメイン TOML には直接書き込みませんが、アプリから書き出す YAML と実行ごとの `training.yaml` には保存します。
 
 ```toml
 [[datasets.subsets]]
@@ -218,7 +218,7 @@ timestep_sampling = { offset = -0.25 }
 
 `sigmoid`、`shift`、`flux_shift`、`truncated_logit_normal`、`sigma + logit_normal` で有効です。`uniform` と他の `sigma` 方式では無効です。
 
-まず `-0.5`～`+0.5` の範囲で調整してください。負の値は低ノイズ、正の値は高ノイズを増やします。すでに高ノイズへシフトしている場合、正の偏移は低ノイズをさらに減らします。分布プレビューで各サブセットのノイズ割合を確認してください。
+まず `-0.5`～`+0.5` の範囲で調整してください。負の値は低ノイズ、正の値は高ノイズを増やします。すでに高ノイズへシフトしている場合、正のオフセットは低ノイズのサンプルをさらに減らします。分布プレビューで各サブセットのノイズ割合を確認してください。
 
 プレビューでは、基本分布（全オフセットが 0）、全体の分布、各サブセットを確認できます。全体の分布はサンプル数で各サブセットを混合し、正則化サンプルを基本分布として含めます。1 つずつ調整し、既定値の学習結果と比較してください。オフセットは学習時のサンプリングだけに作用します。他の検証設定が同じなら、検証損失を比較できます。
 
@@ -232,7 +232,7 @@ timestep = sigmoid( sigmoid_scale × (random sample + offset) )
 
 `0` は元の分布を保ちます。`sigmoid_scale` は乱数とオフセットの両方に掛かります。
 
-`sigma + logit_normal` と `truncated_logit_normal` は `logit_mean - offset` として適用し、正の値を高ノイズ方向に保ちます。
+`sigma + logit_normal` と `truncated_logit_normal` では、オフセットを `logit_mean - offset` として適用します。そのため、正のオフセットでも高ノイズのサンプリングが増えます。
 
 <!-- doc-anchor: truncated-logit-normal -->
 ### `truncated_logit_normal`：打ち切りと一様混合
@@ -263,6 +263,8 @@ Anima/MOSS で使用できます。`logit_mean` と `logit_std` の logit-normal
 
 ### `sigma_sqrt` と `cosmap` の重み
 
+式の σ はノイズの混合比です。0 に近いほどノイズが少なく、1 に近いほど多くなります。
+
 <div class="doc-equation" role="group" aria-label="sigma sqrt による損失重み付けの式">
   <div class="doc-equation-kicker">低ノイズを重視</div>
   <div class="doc-equation-expression"><var>w</var> = <span class="doc-frac"><span>1</span><span><var>σ</var><sup>2</sup></span></span></div>
@@ -283,7 +285,7 @@ Anima/MOSS で使用できます。`logit_mean` と `logit_std` の logit-normal
 - `logit_mean=0` では表のインデックスが対称に分布します。大きくすると低ノイズ、小さくすると高ノイズが増えます。MOSS の既定値は `-1.09` です。
 - `logit_std` は小さくすると集中し、大きくすると両端へ広がります。Anima の既定値は `1`、MOSS は `0.95` です。
 
-Anima/MOSS ではスケジューラのシフトも最終的なノイズ量を変えます。Krea 2 の `sigma` の表にはシフトを適用しません。`sigmoid + logit_normal` では、後者は頻度にも重みにも作用しません。Krea 2 の `logsnr` はこの 2 つの値を直接読むため、該当する説明を参照してください。
+Anima/MOSS ではスケジューラのシフトも最終的なノイズ量を変えます。Krea 2 の `sigma` の表にはシフトを適用しません。`sigmoid + logit_normal` では、後者は頻度にも重みにも作用しません。Anima/MOSS の [`truncated_logit_normal`](#truncated-logit-normal) と Krea 2 の [`logsnr`](#sampling) もこの 2 つの値を直接使います。`logsnr` は `logit_mean` を大きくすると低ノイズが増え、`logit_std` を大きくすると分布が広がります。
 
 <!-- doc-anchor: mode -->
 ### `mode` と `mode_scale`
@@ -306,14 +308,14 @@ Anima/MOSS ではスケジューラのシフトも最終的なノイズ量を変
 | `subset_timestep_offsets` | 有効 | 無効 | 有効 | Anima/MOSS の `logit_normal` | `flux_shift` のみ | 無効 |
 | `sigma_sqrt/cosmap` の重み | 有効 | 有効 | 有効 | 有効 | 有効 | 有効 |
 
-`truncated_logit_normal` は `logit_mean/std`、`discrete_flow_shift`、サブセット偏移、2 つの打ち切り設定を使います。`sigmoid_scale` と `mode_scale` は無効です。
+`truncated_logit_normal` は `logit_mean/std`、`discrete_flow_shift`、サブセットのオフセット、2 つの打ち切り設定を使います。`sigmoid_scale` と `mode_scale` は無効です。
 
 「無効」は現在の学習経路でその項目を使わないことを表します。フォームでは無効な項目を隠すか注記し、プレビューでも知らせます。
 
 <!-- doc-anchor: sdxl-range -->
 ## SDXL の `min_timestep` と `max_timestep`
 
-SDXL は、上記の Anima/MOSS／Krea 2 用フローマッチング設定を使いません。代わりに、範囲を指定する項目があります。
+SDXL は Anima/MOSS／Krea 2 用フローマッチング設定を使いません。代わりに、範囲を指定する項目があります。
 
 - `min_timestep`：許可する最小タイムステップ。空欄は `0`。
 - `max_timestep`：上限。この値自体は含みません。空欄は `1000` で、既定範囲は `0–999`。
@@ -334,11 +336,11 @@ SDXL の `min_snr_gamma`、`v_parameterization`、`zero_terminal_snr` は、そ�
 <!-- doc-anchor: sdxl-loss -->
 ## SDXL：損失重みとノイズ追加の関係
 
-Min-SNR と去偏推定は抽出後の損失重みに作用します。両方有効なら重みが乗算され、抽出頻度はタイムステップのサンプリング設定で決まります。
+Min-SNR と不偏推定による損失（debiased estimation loss）は、サンプリング後の損失の重みを調整します。両方有効なら重みが乗算され、抽出頻度はタイムステップのサンプリング設定で決まります。
 
-対象タイムステップの信号対雑音比を SNR とし、去偏推定には S = min(SNR, 1000) を使います。
+対象タイムステップの信号対雑音比を SNR とし、不偏推定には S = min(SNR, 1000) を使います。
 
-| 予測対象 | Min-SNR の重み | 去偏推定の重み |
+| 予測対象 | Min-SNR の重み | 不偏推定の重み |
 | --- | --- | --- |
 | ノイズ予測 | min(SNR, γ) / SNR | 1 / √S |
 | v-prediction | min(SNR, γ) / (SNR + 1) | 1 / (S + 1) |
@@ -355,7 +357,7 @@ Min-SNR と去偏推定は抽出後の損失重みに作用します。両方有
 2. **固定する条件**：データセット、シード、rank、alpha、学習率、総学習ステップ数を揃えます。
 3. **変更は 1 つ**：例として、`sigmoid_scale` だけを `1.0` から `1.25` に変えます。
 4. **比較条件**：同じ学習ステップのチェックポイントを使い、プロンプト、生成シード、解像度、推論時の LoRA 強度を揃えます。
-5. **評価項目**：再現性、背景の混入、構図の固定化、プロンプトへの追従、学習画像にない被写体や構図への対応を確認します。
+5. **評価項目**：キャラクターや画風の再現度、背景の混入、構図の固定化、プロンプトへの追従、学習画像にない被写体や構図への対応を確認します。
 
 条件を揃えた生成画像と実際の用途を主な評価基準にし、学習損失は補助的な指標として使ってください。
 

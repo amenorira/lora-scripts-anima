@@ -20,6 +20,37 @@ function preview(profile, module, overrides = {}) {
   return { app, context, text: app.tomlRaw, args: match ? JSON.parse(match[1]) : [] };
 }
 
+test('partial checkpointing exports only for enabled Anima and MOSS checkpointing', () => {
+  for (const [profile, module, maximum] of [
+    ['anima-lora', 'networks.lora_anima', 28], ['moss-image-lora', 'networks.lora_generic', 42],
+  ]) {
+    const { app } = preview(profile, module, { gradient_checkpointing: true, gradient_checkpointing_skip_blocks: maximum });
+    assert.match(app.tomlRaw, new RegExp(`^gradient_checkpointing_skip_blocks = ${maximum}$`, 'm'));
+    assert.equal(app._numberConstraints(app.findFieldDef('gradient_checkpointing_skip_blocks')).max, maximum);
+    app.form.gradient_checkpointing = false;
+    app.updateToml();
+    assert.doesNotMatch(app.tomlRaw, /^gradient_checkpointing_skip_blocks =/m);
+    app.form.gradient_checkpointing = true;
+    app.form.gradient_checkpointing_skip_blocks = 0;
+    app.updateToml();
+    assert.doesNotMatch(app.tomlRaw, /^gradient_checkpointing_skip_blocks =/m);
+  }
+});
+
+test('MOSS text encoder swapping exports without caches and stays outside other profiles', () => {
+  const values = { text_encoder_blocks_to_swap: 32, cache_text_encoder_outputs: false,
+    cache_text_encoder_outputs_to_disk: false, gradient_checkpointing: false, blocks_to_swap: 0 };
+  const { app } = preview('moss-image-lora', 'networks.lora_generic', values);
+  assert.match(app.tomlRaw, /^text_encoder_blocks_to_swap = 32$/m);
+  assert.equal(app._collectTrainingPayload().text_encoder_blocks_to_swap, 32);
+  for (const [profile, module] of [['anima-lora', 'networks.lora_anima'], ['sdxl-lora', 'networks.lora']]) {
+    const { app: other } = preview(profile, module, { ...values, gradient_checkpointing_skip_blocks: 8 });
+    assert.doesNotMatch(other.tomlRaw, /^text_encoder_blocks_to_swap =/m);
+    assert.equal(other._collectTrainingPayload().text_encoder_blocks_to_swap, undefined);
+    if (profile === 'sdxl-lora') assert.doesNotMatch(other.tomlRaw, /^gradient_checkpointing_skip_blocks =/m);
+  }
+});
+
 test('all profiles submit raw form fields through the common launch boundary', async () => {
   for (const profile of ['anima-lora', 'sdxl-lora', 'krea2-lora']) {
     const { app, context } = preview(profile, 'networks.lora_anima', { weight_decay: 0.04 });

@@ -44,3 +44,21 @@ test('step errors keep raw diagnostics and paths intact', () => {
   app._setStepEstimateErrorFromResult({message: detail, data: {errorCode: 'unknownError'}});
   assert.equal(app.stepEstimateErrorText(), detail);
 });
+
+test('Krea explains the directory-based estimate with or without bucketing', () => {
+  const app = application();
+  app.t = key => ({
+    'stepEstimate.kreaBatchFormula': 'directories: {samples} / {batch} = {batches}',
+    'stepEstimate.bucketFormula': 'buckets: {samples} / {batch} = {batches}',
+    'stepEstimate.batchFormula': 'flat: {samples} / {batch} = {batches}',
+  })[key] || key;
+  app.stepEstimate = { engine_id: 'musubi_tuner', repeated_samples: 5, batch_size: 2,
+    batches_per_epoch: 4, bucket_count: 1, enable_bucket: true };
+  assert.equal(app.stepEstimateBatchFormula(), 'directories: 5 / 2 = 4');
+  app.stepEstimate.enable_bucket = false;
+  assert.equal(app.stepEstimateBatchFormula(), 'directories: 5 / 2 = 4');
+  app.stepEstimate.engine_id = 'sd_scripts';
+  assert.equal(app.stepEstimateBatchFormula(), 'flat: 5 / 2 = 4');
+  app.stepEstimate.enable_bucket = true;
+  assert.equal(app.stepEstimateBatchFormula(), 'buckets: 5 / 2 = 4');
+});

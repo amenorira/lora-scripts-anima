@@ -21,11 +21,11 @@ window.environmentComponentsMixin = {
         body: JSON.stringify({ source: this.faSource }),
       });
       const result = await response.json();
-      if (!response.ok || !result.success || !result.job_id) throw new Error(result.message || this.t('environment.installFailed'));
+      if (!response.ok || !result.success || !result.job_id) throw new Error(this.localizeApiError(result, 'environment.installFailed'));
       this.faInstallJobId = result.job_id;
       this._setEnvironmentRealtimeTask('fa', result.job_id);
     } catch (error) {
-      this.faBusy = false; this.faError = String(error); this.renderEnvironment();
+      this.faBusy = false; this.faError = error.message || String(error); this.renderEnvironment();
     }
   },
 
@@ -76,11 +76,11 @@ window.environmentComponentsMixin = {
     try {
       const response = await fetch('/api/moss-acceleration/install', { method: 'POST' });
       const result = await response.json();
-      if (!response.ok || !result.success || !result.job_id) throw new Error(result.message || this.t('environment.installFailed'));
+      if (!response.ok || !result.success || !result.job_id) throw new Error(this.localizeApiError(result, 'environment.installFailed'));
       this.mossAccelInstallJobId = result.job_id;
       this._setEnvironmentRealtimeTask('mossAccel', result.job_id);
     } catch (error) {
-      this.mossAccelBusy = false; this.mossAccelError = String(error);
+      this.mossAccelBusy = false; this.mossAccelError = error.message || String(error);
       this.finishProgress(); this.renderEnvironment();
     }
   },
@@ -92,9 +92,9 @@ window.environmentComponentsMixin = {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }),
       });
       const result = await response.json();
-      if (!response.ok || !result.success) throw new Error(result.message || this.t('environment.installFailed'));
+      if (!response.ok || !result.success) throw new Error(this.localizeApiError(result, 'environment.operationFailed'));
       this.mossAccelStatus = result.data;
-    } catch (error) { this.mossAccelError = String(error); }
+    } catch (error) { this.mossAccelError = error.message || String(error); }
     this.renderEnvironment();
   },
 };

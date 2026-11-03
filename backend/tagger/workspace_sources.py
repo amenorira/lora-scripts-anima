@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 
 from backend.tagger import captioning
+from backend.tagger.errors import TaggerUserError
 from backend.tagger.workspace_state import (
     _IMAGE_EXTENSIONS, _MAX_RECENT_ITEMS, _sources, _sources_lock,
     _tasks, _tasks_lock, _cleanup,
@@ -27,14 +28,14 @@ def scan_source(path_value: str, recursive: bool = True, caption_extension: str 
     _cleanup()
     path = Path(path_value).expanduser().resolve()
     if not path.exists():
-        raise ValueError("Source does not exist / 输入路径不存在")
+        raise TaggerUserError("tagger_source_not_found", "Source does not exist / 输入路径不存在")
     if path == Path(path.anchor):
         raise ValueError("Filesystem root is not allowed / 不允许选择磁盘根目录")
     images = _enumerate_images(path, recursive)
     token = uuid.uuid4().hex[:16]
     caption_extension = "." + str(caption_extension).strip().lstrip(".")
     if caption_extension == "." or any(c in caption_extension for c in '/\\\r\n'):
-        raise ValueError("Invalid caption extension / 无效的标注扩展名")
+        raise TaggerUserError("caption_invalid_extension_format", "Invalid caption extension / 无效的标注扩展名")
     settings = captioning.output_options(caption_options, caption_extension)
     directories = len({image.parent for image in images})
     source = {
