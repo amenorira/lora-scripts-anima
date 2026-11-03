@@ -293,7 +293,7 @@ window.docsMixin = {
       }
       if (requestId !== this._parameterDocRequestId) return;
       this._docsContentCache[cacheKey] = data;
-      this.parameterDocHtml = this._parameterDocSection(data.html || '', targetAnchor);
+      this.parameterDocHtml = this._parameterDocSection(data.html || '', targetAnchor, targetSlug === 'memory-optimization');
       this.$nextTick(() => {
         if (requestId !== this._parameterDocRequestId || !this.parameterDocOpen) return;
         const article = document.getElementById('parameterDocArticle');
@@ -312,7 +312,7 @@ window.docsMixin = {
     }
   },
 
-  _parameterDocSection(html, anchor) {
+  _parameterDocSection(html, anchor, includeModelHeading = false) {
     // Keep unselected sections inert, including their images.
     const source = document.createElement('template');
     source.innerHTML = html;
@@ -330,7 +330,14 @@ window.docsMixin = {
         start = start.previousElementSibling;
       }
       const level = /^H[1-6]$/.test(start.tagName) ? Number(start.tagName.slice(1)) : 1;
+      let modelHeading = null;
+      if (includeModelHeading && level > 2) {
+        for (let node = start.previousElementSibling; node; node = node.previousElementSibling) {
+          if (node.tagName === 'H2') { modelHeading = node.cloneNode(true); break; }
+        }
+      }
       const section = document.createElement('div');
+      if (modelHeading) section.appendChild(modelHeading);
       for (let node = start; node;) {
         if (node !== start && /^H[1-6]$/.test(node.tagName) && Number(node.tagName.slice(1)) <= level) break;
         const next = node.nextElementSibling;

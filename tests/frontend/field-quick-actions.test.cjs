@@ -116,3 +116,22 @@ test('shortcuts render before the numeric control and omit static readonly or no
   assert.equal(app._renderFieldQuickActions({ ...alpha, readonly: true }), '');
   assert.equal(app._renderFieldQuickActions({ ...alpha, type: 'text' }), '');
 });
+
+test('memory tables are offered only for the three measured options and matching models', () => {
+  for (const [profile, prefix] of [['anima-lora', 'anima'], ['moss-image-lora', 'moss']]) {
+    const { app } = application(profile, { gradient_checkpointing: true });
+    assert.ok(app.renderField(app._fieldDefinition('gradient_checkpointing_skip_blocks'))
+      .includes(`openParameterDoc('memory-optimization','${prefix}-partial-checkpointing')`));
+  }
+  const { app: moss } = application('moss-image-lora');
+  for (const [key, anchor] of [['blocks_to_swap', 'moss-block-swap'], ['text_encoder_blocks_to_swap', 'moss-text-encoder-swap']]) {
+    assert.ok(moss.renderField(moss._fieldDefinition(key)).includes(`openParameterDoc('memory-optimization','${anchor}')`));
+  }
+  for (const profile of ['anima-lora', 'sdxl-lora', 'krea2-lora']) {
+    const { app } = application(profile);
+    for (const key of ['gradient_checkpointing', 'blocks_to_swap', 'resolution', 'train_batch_size', 'mixed_precision']) {
+      const field = app._fieldDefinition(key);
+      if (field) assert.ok(!app.renderField(field).includes("openParameterDoc('memory-optimization'"), `${profile}: ${key}`);
+    }
+  }
+});

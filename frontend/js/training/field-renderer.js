@@ -268,8 +268,11 @@ window.trainingFieldRenderer = {
     const labelKey = hasSpecificLabel ? descKeyWithSuffix : (field.descKey || field.key);
     const labelHtml = this.trainingText(labelKey);
     const hint = this._resolveFieldHintText(field, this.form, trainType);
-    const docLink = field.docSlug
-      ? `<button type="button" class="field-doc-link" @click.stop="openParameterDoc('${this.escapeAttr(field.docSlug)}','${this.escapeAttr(field.docAnchor || '')}')"${this.trainingI18nAttrs('docs.openGuide')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>${this.trainingText('docs.openGuide')}</button>`
+    const docAnchor = field.docAnchorByProfile
+      ? field.docAnchorByProfile[trainType] : field.docAnchor || '';
+    const docSlug = field.docAnchorByProfile && !docAnchor ? null : field.docSlug;
+    const docLink = docSlug
+      ? `<button type="button" class="field-doc-link" @click.stop="openParameterDoc('${this.escapeAttr(docSlug)}','${this.escapeAttr(docAnchor)}')"${this.trainingI18nAttrs('docs.openGuide')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>${this.trainingText('docs.openGuide')}</button>`
       : '';
     const currentGroup = window.TRAIN_GROUP_MAP[this.form.model_train_type || 'anima-lora'] || 'all';
     let isRequired = field.required;

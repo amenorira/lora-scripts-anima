@@ -245,8 +245,8 @@
 		"openGuide": "Open guide",
 		"documents": {
 			"memory-optimization": {
-				"title": "VRAM and speed",
-				"summary": "Checkpointing, block swap, quantization, caching, and upstream Anima / MOSS-Image memory and step-time measurements."
+				"title": "Measured VRAM and speed",
+				"summary": "VRAM usage and timings for partial checkpointing, block swap, and text encoder layer swap."
 			},
 			"optimizers": {
 				"title": "Optimizers",

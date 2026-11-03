@@ -746,45 +746,20 @@ for _field in FIELDS:
         _field.setdefault("hint_key", _FIELD_HINTS_BY_KEY[_field["key"]])
 
 
-# Shared controls and model-specific additions open the same focused guide.
+# Only options with matching upstream VRAM measurements have a guide link.
 _MEMORY_DOC_ANCHORS = {
-    "gradient_checkpointing": "checkpointing",
-    "gradient_checkpointing_skip_blocks": "partial-checkpointing",
-    "resolution": "batch-resolution",
-    "train_batch_size": "batch-resolution",
-    "gradient_accumulation_steps": "batch-resolution",
-    "blocks_to_swap": "block-swap",
-    "block_swap_h2d_only": "h2d-only",
-    "block_swap_ring_size": "h2d-only",
-    "use_pinned_memory_for_block_swap": "h2d-only",
-    "cpu_offload_checkpointing": "activation-offload",
-    "unsloth_offload_checkpointing": "activation-offload",
-    "cache_latents": "caching",
-    "cache_latents_to_disk": "caching",
-    "cache_text_encoder_outputs": "caching",
-    "cache_text_encoder_outputs_to_disk": "caching",
-    "text_encoder_blocks_to_swap": "text-encoder-swap",
-    "text_encoder_batch_size": "text-encoder-swap",
-    "convrot_int8": "quantization",
-    "convrot_int8_text_encoder": "quantization",
-    "convrot_int8_bwd": "quantization",
-    "qwen_image_vae_2d": "vae",
-    "vae_batch_size": "vae",
-    "vae_chunk_size": "vae",
-    "vae_disable_cache": "vae",
-    "no_half_vae": "vae",
-    "mixed_precision": "precision-attention",
-    "full_bf16": "precision-attention",
-    "attn_mode": "precision-attention",
-    "split_attn": "precision-attention",
-    "xformers": "precision-attention",
-    "sdpa": "precision-attention",
-    "lowram": "memory-phases",
-    "compile": "compile",
+    "gradient_checkpointing_skip_blocks": {
+        "anima-lora": "anima-partial-checkpointing",
+        "moss-image-lora": "moss-partial-checkpointing",
+    },
+    "blocks_to_swap": {"moss-image-lora": "moss-block-swap"},
+    "text_encoder_blocks_to_swap": {"moss-image-lora": "moss-text-encoder-swap"},
 }
 for _field in FIELDS:
     if _field["key"] in _MEMORY_DOC_ANCHORS:
-        _field.update(doc_slug="memory-optimization", doc_anchor=_MEMORY_DOC_ANCHORS[_field["key"]])
+        _anchors = _MEMORY_DOC_ANCHORS[_field["key"]]
+        _field.update(doc_slug="memory-optimization", doc_anchor=next(iter(_anchors.values())),
+                      doc_anchor_by_profile=_anchors)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -843,6 +818,7 @@ _FIELD_KEY_MAP = {
     "set_if_default": "setIfDefault",
     "omit_default": "omitDefault",
     "doc_slug": "docSlug",
+    "doc_anchor_by_profile": "docAnchorByProfile",
     "doc_anchor": "docAnchor",
     "constraints_by_group": "constraintsByGroup",
     "layout_parent": "layoutParent",
@@ -1040,7 +1016,7 @@ def _krea2_ui_fields(fields: list[dict]) -> list[dict]:
             if key not in {"dit", "vae", "text_encoder", "compile", "krea_attention_backend", "krea_split_attn",
                            "enable_krea_samples", "krea_sample_prompts"}:
                 field["desc_key"] = reference["desc_key"]
-            for metadata in ("doc_slug", "doc_anchor", "keep_children_position"):
+            for metadata in ("doc_slug", "doc_anchor_by_profile", "doc_anchor", "keep_children_position"):
                 if metadata in reference:
                     field.setdefault(metadata, reference[metadata])
             if key == "resume":

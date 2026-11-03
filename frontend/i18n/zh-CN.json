@@ -245,8 +245,8 @@
 		"openGuide": "查看说明",
 		"documents": {
 			"memory-optimization": {
-				"title": "显存与速度",
-				"summary": "检查点、换块、量化和缓存的配置方法，以及 Anima / MOSS-Image 上游显存与步时实测。"
+				"title": "显存与速度实测",
+				"summary": "跳过检查点、换块和文本编码器换层的显存与耗时。"
 			},
 			"optimizers": {
 				"title": "优化器",
