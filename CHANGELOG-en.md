@@ -4,6 +4,32 @@
 
 All notable changes to this project are documented in this file.
 
+## v26.1103.14934 - 2026-11-03
+
+This release reduces the VRAM needed for **MOSS-Image text encoding** and gives **Anima and MOSS-Image** a way to use spare VRAM for faster training. It also improves regularization-image caption handling, configuration recovery, and parameter guidance.
+
+### Memory and Training Speed
+
+- **MOSS-Image text encoder layer swapping:** Stream up to 32 layers from CPU to GPU on demand to reduce VRAM usage when caching and encoding text, including during training previews. Supports ConvRot INT8; the text encoder must be frozen, and swapping adds transfer time. In upstream measurements with an approximately 2,000-token prompt, BF16, and 32 swapped layers, PyTorch GPU allocations peaked at about **3.5 GB** during caching.
+- **Partial gradient checkpointing for Anima and MOSS-Image:** Skip recomputation for some of the final blocks, using more VRAM to reduce training time. Set 0–28 blocks for Anima or 0–42 for MOSS. In upstream Anima measurements on an RTX 4090, skipping 14 blocks increased training VRAM from **6.7 GB to 13.0 GB** and reduced step time from **0.73 to 0.63 seconds**. The test used approximately 1 MP images, batch 1, LoRA rank 16, BF16, Flash Attention, and cached image and text outputs.
+- Both new options are disabled by default. When H2D block swapping is enabled, the interface checks the skipped-block, swapped-block, and buffer counts and prevents unsafe combinations.
+- Added Chinese, English, and Japanese memory and speed guides with measurements for skipped checkpoint blocks, MOSS block swapping, and text encoder layer swapping.
+
+### Regularization Images and Stability
+
+- **Regularization images support multiple caption candidates:** When multiple candidates are detected, choose the content to use for generation; images with a missing or empty candidate are skipped. Old records that used a candidate heading as a description prompt you to preview the source again and make a selection.
+- Fixed old drafts potentially being overwritten when automatic restoration at startup is disabled. Improved state recovery when reusing historical configurations and undoing the operation.
+- Strengthened AI caption output suffix validation to prevent custom suffixes from overwriting images or JSON files. Fixed model download registration and Krea 2 preview state issues, and improved feedback when log downloads fail.
+
+### Interface and Parameter Guidance
+
+- Open parameter documentation in a dialog on the configuration page, with hints and value ranges tailored to the current model.
+- Keep edited content and undo history when switching languages, while reducing interface rebuilding.
+- Set Alpha to Dim or half of Dim with quick actions; set the compile cache limit to 32 with a quick action.
+- Synced the training core to **sd-scripts dev `b8da8698`**.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1101.112af...v26.1103.14934)
+
 ## v26.1101.112af - 2026-11-01
 
 This release improves **external adapter training previews for Anima and MOSS-Image**, reducing VRAM usage and improving recovery from errors, and expands the Automagic3 optimizer parameter documentation.
