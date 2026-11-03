@@ -28,6 +28,8 @@
 
 约 1 MP 图片，batch 1，LoRA rank 16，Flash Attention；启用梯度检查点、latent 和文本缓存。INT8 + compile 的步时取预热后。
 
+显存为训练阶段 nvidia-smi 峰值（含 CUDA 上下文）。使用 bf16 文本编码器生成缓存时，启动峰值约 15.6 GB。
+
 | 跳过块数 | bf16 显存 | 秒/步 | ConvRot INT8 + compile 显存 | 秒/步 |
 | --- | --- | --- | --- | --- |
 | 0 | 13.5 GB | 1.29 | 10.0 GB | 0.84 |
@@ -38,7 +40,7 @@
 
 #### RTX 4090
 
-图片、batch、rank 和注意力设置同上；文本编码器为 ConvRot INT8。
+图片、batch、rank、注意力设置和显存统计口径同上；文本编码器为 ConvRot INT8。
 
 | DiT 配置 | 跳过块数 | 显存峰值 | 秒/步 |
 | --- | --- | --- | --- |

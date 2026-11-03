@@ -28,6 +28,8 @@ Source: [sd-scripts](https://github.com/kohya-ss/sd-scripts/blob/b8da8698a05ed26
 
 About 1 MP images, batch 1, LoRA rank 16, Flash Attention; gradient checkpointing, latent caching, and text caching enabled. INT8 + compile timings follow warm-up.
 
+VRAM is the training-phase nvidia-smi peak, including the CUDA context. Startup peaks at about 15.6 GB when caching with the bf16 text encoder.
+
 | Skipped blocks | bf16 VRAM | s/step | ConvRot INT8 + compile VRAM | s/step |
 | --- | --- | --- | --- | --- |
 | 0 | 13.5 GB | 1.29 | 10.0 GB | 0.84 |
@@ -38,7 +40,7 @@ About 1 MP images, batch 1, LoRA rank 16, Flash Attention; gradient checkpointin
 
 #### RTX 4090
 
-Same image, batch, rank, and attention settings. The text encoder uses ConvRot INT8.
+Same image, batch, rank, attention settings, and VRAM measurement method. The text encoder uses ConvRot INT8.
 
 | DiT configuration | Skipped blocks | Peak VRAM | s/step |
 | --- | --- | --- | --- |

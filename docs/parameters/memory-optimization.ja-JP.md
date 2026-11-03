@@ -28,6 +28,8 @@
 
 約 1 MP、batch 1、LoRA rank 16、Flash Attention。勾配チェックポイント、latent とテキストのキャッシュを使用。INT8 + compile の時間はウォームアップ後です。
 
+VRAM は CUDA コンテキストを含む学習中の nvidia-smi ピークです。bf16 エンコーダーでテキストをキャッシュする際の起動時ピークは約 15.6 GB です。
+
 | 省略数 | bf16 VRAM | 秒/step | ConvRot INT8 + compile VRAM | 秒/step |
 | --- | --- | --- | --- | --- |
 | 0 | 13.5 GB | 1.29 | 10.0 GB | 0.84 |
@@ -38,7 +40,7 @@
 
 #### RTX 4090
 
-画像、batch、rank、アテンションは同条件。エンコーダーは ConvRot INT8 です。
+画像、batch、rank、アテンションと VRAM の測定方法は同条件。エンコーダーは ConvRot INT8 です。
 
 | DiT 構成 | 省略数 | ピーク VRAM | 秒/step |
 | --- | --- | --- | --- |
