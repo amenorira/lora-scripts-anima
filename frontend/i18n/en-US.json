@@ -244,6 +244,10 @@
 		"retry": "Retry",
 		"openGuide": "Open guide",
 		"documents": {
+			"memory-optimization": {
+				"title": "VRAM and speed",
+				"summary": "Checkpointing, block swap, quantization, caching, and upstream Anima / MOSS-Image memory and step-time measurements."
+			},
 			"optimizers": {
 				"title": "Optimizers",
 				"summary": "Optimizer choices, profile defaults, key controls, and comparison methods."

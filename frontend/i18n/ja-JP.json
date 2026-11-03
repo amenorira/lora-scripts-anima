@@ -244,6 +244,10 @@
 		"retry": "再試行",
 		"openGuide": "ガイドを開く",
 		"documents": {
+			"memory-optimization": {
+				"title": "VRAM と速度",
+				"summary": "チェックポイント、ブロックスワップ、量子化、キャッシュの設定と、Anima / MOSS-Image の上流で測定したメモリ使用量とステップ時間。"
+			},
 			"optimizers": {
 				"title": "オプティマイザ",
 				"summary": "オプティマイザの選び方、各プロファイルの既定値、主要設定と比較方法。"

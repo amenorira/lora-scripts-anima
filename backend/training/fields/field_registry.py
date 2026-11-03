@@ -746,6 +746,47 @@ for _field in FIELDS:
         _field.setdefault("hint_key", _FIELD_HINTS_BY_KEY[_field["key"]])
 
 
+# Shared controls and model-specific additions open the same focused guide.
+_MEMORY_DOC_ANCHORS = {
+    "gradient_checkpointing": "checkpointing",
+    "gradient_checkpointing_skip_blocks": "partial-checkpointing",
+    "resolution": "batch-resolution",
+    "train_batch_size": "batch-resolution",
+    "gradient_accumulation_steps": "batch-resolution",
+    "blocks_to_swap": "block-swap",
+    "block_swap_h2d_only": "h2d-only",
+    "block_swap_ring_size": "h2d-only",
+    "use_pinned_memory_for_block_swap": "h2d-only",
+    "cpu_offload_checkpointing": "activation-offload",
+    "unsloth_offload_checkpointing": "activation-offload",
+    "cache_latents": "caching",
+    "cache_latents_to_disk": "caching",
+    "cache_text_encoder_outputs": "caching",
+    "cache_text_encoder_outputs_to_disk": "caching",
+    "text_encoder_blocks_to_swap": "text-encoder-swap",
+    "text_encoder_batch_size": "text-encoder-swap",
+    "convrot_int8": "quantization",
+    "convrot_int8_text_encoder": "quantization",
+    "convrot_int8_bwd": "quantization",
+    "qwen_image_vae_2d": "vae",
+    "vae_batch_size": "vae",
+    "vae_chunk_size": "vae",
+    "vae_disable_cache": "vae",
+    "no_half_vae": "vae",
+    "mixed_precision": "precision-attention",
+    "full_bf16": "precision-attention",
+    "attn_mode": "precision-attention",
+    "split_attn": "precision-attention",
+    "xformers": "precision-attention",
+    "sdpa": "precision-attention",
+    "lowram": "memory-phases",
+    "compile": "compile",
+}
+for _field in FIELDS:
+    if _field["key"] in _MEMORY_DOC_ANCHORS:
+        _field.update(doc_slug="memory-optimization", doc_anchor=_MEMORY_DOC_ANCHORS[_field["key"]])
+
+
 # ═══════════════════════════════════════════════════════════════
 # 派生集合（供 adapter.py 使用）
 # ═══════════════════════════════════════════════════════════════

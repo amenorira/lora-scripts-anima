@@ -244,6 +244,10 @@
 		"retry": "重试",
 		"openGuide": "查看说明",
 		"documents": {
+			"memory-optimization": {
+				"title": "显存与速度",
+				"summary": "检查点、换块、量化和缓存的配置方法，以及 Anima / MOSS-Image 上游显存与步时实测。"
+			},
 			"optimizers": {
 				"title": "优化器",
 				"summary": "优化器选择、各训练类型的默认值、关键参数与对照方法。"

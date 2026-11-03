@@ -46,6 +46,15 @@ _DOCUMENTS = {
             "ja-JP": "parameters/timesteps.ja-JP.md",
         },
     },
+    "memory-optimization": {
+        "category": "training",
+        "order": 20,
+        "files": {
+            "zh-CN": "parameters/memory-optimization.zh-CN.md",
+            "en-US": "parameters/memory-optimization.en-US.md",
+            "ja-JP": "parameters/memory-optimization.ja-JP.md",
+        },
+    },
     "lora-plus": {
         "category": "network",
         "order": 10,
