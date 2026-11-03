@@ -49,6 +49,15 @@ window.trainingValidation = {
     // Musubi uses different offload and compile paths; only the H2D prerequisite is shared.
     if (this.form.model_train_type === 'krea2-lora') return errors;
     const cpu = this.form.cpu_offload_checkpointing, unsloth = this.form.unsloth_offload_checkpointing;
+    const counts = [this.form.blocks_to_swap || 0, this.form.gradient_checkpointing_skip_blocks || 0,
+      this.form.block_swap_ring_size ?? 2];
+    const validCounts = counts.every(value => typeof value !== 'boolean'
+      && Number.isFinite(Number(value)) && Number.isInteger(Number(value)) && Number(value) >= 0);
+    const [swapped, skipped, slots] = counts.map(Number);
+    if (this.form.block_swap_h2d_only && (this.form.gradient_checkpointing === true || cpu || unsloth)
+        && validCounts && slots >= 1 && swapped > slots && skipped > slots) {
+      errors.gradient_checkpointing_skip_blocks = this.t('field.partialCheckpointH2dConflict');
+    }
     if (cpu && unsloth) errors.unsloth_offload_checkpointing = this.t('field.checkpointOffloadConflict');
     if (swapping && (cpu || unsloth)) errors.blocks_to_swap = this.t('field.blockSwapOffloadConflict');
     if (swapping && this.form.compile && this.form.compile_fullgraph) {

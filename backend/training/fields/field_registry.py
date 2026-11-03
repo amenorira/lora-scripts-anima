@@ -417,6 +417,7 @@ shared_training_field('gradient_checkpointing',
     target="toml",
     omit_default=True,
 ),
+{"key": "gradient_checkpointing_skip_blocks", "type": "number", "default": 0, "section": "training", "desc_key": "field.gradient_checkpointing_skip_blocks", "hint_key": "field.gradient_checkpointing_skip_blocksHint", "target": "toml", "min": 0, "max": 28, "step": 1, "group": "anima", "show_if": {"key": "gradient_checkpointing", "eq": True}, "omit_default": True},
 shared_training_field('seed', default=1337, target="toml"),
 shared_training_field('mixed_precision', default="bf16", target="toml"),
     # full_bf16: 将模型 + Network 全部参数 cast 为 bf16，消除 autocast 与 compile/LoRA 交互的 dtype 不一致问题。

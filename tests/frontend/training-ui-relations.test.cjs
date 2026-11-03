@@ -144,6 +144,42 @@ test('training text encoders disables both caches without reversing the requeste
   }
 });
 
+test('partial checkpointing with H2D swap reports unsafe ring reuse without changing counts', () => {
+  for (const profile of ['anima-lora', 'moss-image-lora']) {
+    for (const [swapped, skipped, ring, h2d, blocked] of [
+      [6, 4, 2, true, true], [8, 8, 2, true, true],
+      [6, 0, 2, true, false], [6, 2, 2, true, false],
+      [6, 3, 3, true, false], [6, 8, 6, true, false], [6, 8, 2, false, false],
+    ]) {
+      const app = application(profile, { gradient_checkpointing: true, blocks_to_swap: swapped,
+        gradient_checkpointing_skip_blocks: skipped, block_swap_ring_size: ring, block_swap_h2d_only: h2d });
+      const before = { ...app.form };
+      const errors = app._checkpointOffloadErrors();
+      assert.equal(errors.gradient_checkpointing_skip_blocks,
+        blocked ? 'field.partialCheckpointH2dConflict' : undefined, JSON.stringify({ profile, swapped, skipped, ring, h2d }));
+      assert.deepEqual(app.form, before);
+    }
+  }
+});
+
+test('H2D partial checkpointing guard uses effective checkpointing and leaves invalid counts to numeric validation', () => {
+  const values = { gradient_checkpointing: false, blocks_to_swap: 6,
+    gradient_checkpointing_skip_blocks: 4, block_swap_ring_size: 2, block_swap_h2d_only: true };
+  assert.equal(application('moss-image-lora', values)._checkpointOffloadErrors().gradient_checkpointing_skip_blocks, undefined);
+  for (const offload of ['cpu_offload_checkpointing', 'unsloth_offload_checkpointing']) {
+    assert.equal(application('moss-image-lora', { ...values, [offload]: true })
+      ._checkpointOffloadErrors().gradient_checkpointing_skip_blocks, 'field.partialCheckpointH2dConflict');
+  }
+  assert.equal(application('krea2-lora', { ...values, gradient_checkpointing: true })
+    ._checkpointOffloadErrors().gradient_checkpointing_skip_blocks, undefined);
+  for (const key of ['blocks_to_swap', 'gradient_checkpointing_skip_blocks', 'block_swap_ring_size']) {
+    for (const value of [true, -1, 0.5, Infinity, 'invalid']) {
+      assert.equal(application('moss-image-lora', { ...values, gradient_checkpointing: true, [key]: value })
+        ._checkpointOffloadErrors().gradient_checkpointing_skip_blocks, undefined, key + ': ' + value);
+    }
+  }
+});
+
 test('Krea ConvRot disables FP8 immediately and remains consistent through reactive watchers', async () => {
   const app = application('krea2-lora', { fp8_base: true });
   const triggered = watchAutoValues(app);

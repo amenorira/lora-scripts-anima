@@ -19,6 +19,7 @@ SHARED_FIELDS = {
     "cpu_offload_checkpointing", "unsloth_offload_checkpointing", "compile",
     "compile_backend", "compile_mode", "compile_dynamic", "compile_fullgraph",
     "compile_cache_size_limit", "sample_flow_shift",
+    "gradient_checkpointing_skip_blocks",
 }
 DEFAULTS = {
     "pretrained_model_name_or_path": "", "vae": "", "network_module": "networks.lora_generic",
@@ -48,6 +49,7 @@ def extend_fields(fields: list[dict[str, Any]]) -> None:
     for key in ("bucket_reso_steps",):
         by_key[key].setdefault("constraints_by_group", {})[GROUP] = {"min": 16, "step": 16}
     by_key["blocks_to_swap"].setdefault("constraints_by_group", {})[GROUP] = {"max": 40}
+    by_key["gradient_checkpointing_skip_blocks"].setdefault("constraints_by_group", {})[GROUP] = {"max": 42}
     # Product UI follows OpenMOSS's recommendation to keep Qwen frozen.
     # DiT text-embedder adapters are separate from the frozen text encoder.
     for key in ("network_train_unet_only", "network_train_text_encoder_only"):
@@ -84,6 +86,7 @@ def extend_fields(fields: list[dict[str, Any]]) -> None:
         ("enable_multiline_caption", {"key": "multiline_caption_separator", "type": "text", "default": "---===---", "section": "caption", "show_if": {"key": "enable_multiline_caption", "eq": True}}),
         ("cache_text_encoder_outputs_to_disk", {"key": "convrot_int8", "type": "toggle", "default": False, "section": "performance"}),
         ("cache_text_encoder_outputs_to_disk", {"key": "text_encoder_batch_size", "type": "number", "default": 1, "min": 1, "step": 1, "section": "performance"}),
+        ("text_encoder_batch_size", {"key": "text_encoder_blocks_to_swap", "type": "number", "default": "", "min": 0, "max": 32, "step": 1, "section": "performance"}),
         ("convrot_int8", {"key": "convrot_int8_text_encoder", "type": "toggle", "default": False, "section": "performance"}),
         ("convrot_int8_text_encoder", {"key": "convrot_int8_bwd", "type": "select", "default": "bf16", "section": "performance", "options": [
             {"v": "bf16", "l": "bf16", "dk": "opt.convrot_int8_bwd_bf16"},

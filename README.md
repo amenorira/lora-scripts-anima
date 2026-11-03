@@ -246,6 +246,12 @@ Anima / MOSS 默认使用 `torch`，Krea2 默认使用 `sdpa`。SDPA 根据当�
 
 使用独立 FlashAttention 2：在「环境管理」中安装完成后，将 Anima / MOSS 的 `attn_mode` 设为 `flash`。安装器匹配 Python、PyTorch、CUDA 和平台，只安装扩展，不更换 PyTorch。Krea2 的旧 `flash_attn` 配置仍转为 `sdpa`。
 
+## 训练显存与速度
+
+- **Anima / MOSS 梯度检查点跳过末尾块**（`gradient_checkpointing_skip_blocks`）：开启梯度检查点时，保留末尾指定主块的激活，以更多显存减少反向重算。默认 0，不跳过；Anima 可设 0–28，MOSS 可设 0–42。MOSS 的文本嵌入块仍使用检查点。
+- 使用 H2D 换块时，跳过检查点块数和换出块数不能同时超过 `block_swap_ring_size`（默认 2），以避免反向传播时复用仍被引用的权重缓冲区；可减少跳过块数、增加缓冲块数或使用经典换块。
+- **MOSS 文本编码器块交换**（`text_encoder_blocks_to_swap`）：留空或 0 关闭，可设 0–32。编码时按需将冻结的 Qwen 块从 CPU 传到 GPU，以传输开销换取更低显存。生成文本缓存或训练时实时编码均可使用，也可与文本编码器 ConvRot INT8 并用；仅适用于冻结的文本编码器，不支持文本编码器 LoRA 训练。无需开启 DiT 块交换、仅向 GPU 传输权重或梯度检查点。
+
 ## EmoSens 自适应优化器
 
 内置的 EmoSens v3.9 位于 `vendor/emo_optimizer/`。

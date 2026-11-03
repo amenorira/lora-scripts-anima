@@ -16,6 +16,7 @@ from .lora import LoRAManager, preserve_training_adapters
 from .config import sampling_options
 from .kernels import override_kernel
 from .prompts import encode_with_adapters, prompt_texts
+from . import moss_image
 
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,8 @@ def wrap_sampler(original, document):
         late_cuda_release = False
         modes, placements = {}, []
         errors = []
+        swapped_text_encoder = None
+        encoding_attempted = False
 
         def restore(function, *arguments):
             try:
@@ -89,6 +92,8 @@ def wrap_sampler(original, document):
             text_encoder = values["text_encoder"]
             if text_encoder is not None:
                 text_encoder = accelerator.unwrap_model(text_encoder)
+                if document["architecture"] == "moss_image" and moss_image.text_encoder_swap_active(text_encoder):
+                    swapped_text_encoder = text_encoder
             te_needed = manager.needs_text_encoder
             if te_needed:
                 if "sample_prompts_te_outputs" not in signature.parameters:
@@ -112,7 +117,9 @@ def wrap_sampler(original, document):
             # Buffers can be replaced by Module.to(), so preserve their slots
             # and identities as well as the original tensor devices/dtypes.
             placements = [(module, field, name, tensor, tensor.device, tensor.dtype)
-                          for root in modules[1:] for module in root.modules()
+                          for root in modules[1:]
+                          if not (document["architecture"] == "moss_image" and moss_image.text_encoder_swap_active(root))
+                          for module in root.modules()
                           for field in ("_parameters", "_buffers")
                           for name, tensor in getattr(module, field).items() if tensor is not None]
             compiled = any(hasattr(module, "_orig_mod") for module in modes)
@@ -129,6 +136,7 @@ def wrap_sampler(original, document):
             ):
                 if te_needed:
                     external_attempted = True
+                    encoding_attempted = True
                     encoded = encode_with_adapters(manager, texts, values, text_encoder, document["architecture"])
                     bound.arguments["sample_prompts_te_outputs"] = encoded
                     if frozen:
@@ -157,6 +165,9 @@ def wrap_sampler(original, document):
             # The upstream sampler restores block swapping on normal return.
             if entered and not completed:
                 restore(dit.switch_block_swap_for_training)
+            if swapped_text_encoder is not None and not completed and not encoding_attempted:
+                restore(swapped_text_encoder._moss_text_encoder_block_swap_offloader.prepare_block_devices_before_forward,
+                        list(swapped_text_encoder.layers))
             for module, training in modes.items():
                 restore(setattr, module, "training", training)
             for module, field, name, tensor, device, dtype in placements:

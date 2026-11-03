@@ -244,6 +244,12 @@ Anima / MOSS defaults to `torch` and Krea2 to `sdpa`. SDPA selects available ker
 
 For external FlashAttention 2, install it from Environment and select `attn_mode=flash` for Anima / MOSS after installation completes. The installer matches Python, PyTorch, CUDA and platform, and installs only the extension without replacing PyTorch. Krea2's legacy `flash_attn` setting still maps to `sdpa`.
 
+## Training VRAM and Speed
+
+- **Anima / MOSS final blocks skipped by gradient checkpointing** (`gradient_checkpointing_skip_blocks`): With checkpointing enabled, retain activations for the specified final main blocks to reduce backward recomputation at the cost of VRAM. The default 0 skips none; Anima accepts 0–28 and MOSS 0–42. MOSS text embedder blocks remain checkpointed.
+- With H2D block swapping, skipped checkpoint blocks and swapped blocks cannot both exceed `block_swap_ring_size` (default 2), to avoid reusing weight buffers still needed for backward. Reduce skipped blocks, increase the ring size, or use classic block swapping.
+- **MOSS text encoder block swapping** (`text_encoder_blocks_to_swap`): Blank or 0 disables it; choose 0–32. Frozen Qwen blocks transfer from CPU to GPU as needed during encoding, reducing VRAM at the cost of transfers. It works when building text caches or encoding during training, including with text encoder ConvRot INT8. It requires a frozen text encoder and cannot train text encoder LoRA. It does not require DiT block swapping, the GPU-only weight transfer option, or gradient checkpointing.
+
 ## EmoSens Adaptive Optimizer
 
 The bundled EmoSens v3.9 lives in `vendor/emo_optimizer/`.

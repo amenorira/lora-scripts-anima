@@ -3,7 +3,7 @@ import copy
 import gc
 import json
 import random
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from pathlib import Path
 import sys
@@ -23,6 +23,7 @@ from backend.training.preview.prompts import encode_with_adapters, prompt_texts
 from backend.training.preview.lora import LoRAManager
 from backend.training.preview.adapters import Adapter
 from backend.training.preview.sampling import _release_cuda_cache
+from backend.training.preview import moss_image
 from tools.python_startup.preview_sampling import install_import_hook
 
 
@@ -65,6 +66,53 @@ class PreviewModel(torch.nn.Module):
 
     def switch_block_swap_for_training(self):
         self.forward_only = False
+
+
+@contextmanager
+def mock_moss_text_encoder_swap(*, fail_prepare=False):
+    """Exercise lifecycle behavior on CPU without importing training models."""
+    calls = []
+    utils = ModuleType("library.moss_image_utils")
+    utils.TEXT_ENCODER_BLOCK_SWAP_HANDLES_ATTR = "_moss_text_encoder_block_swap_handles"
+    utils.TEXT_ENCODER_BLOCK_SWAP_OFFLOADER_ATTR = "_moss_text_encoder_block_swap_offloader"
+    utils.TEXT_ENCODER_DEVICE_ATTR = "_moss_text_encoder_device"
+    class Offloader:
+        def __init__(self, name, layers, count, blocks, **kwargs):
+            calls.append(("enable", blocks, kwargs["device"].type))
+            self.layers, self.S = layers, blocks
+            self.copier = SimpleNamespace(sync=lambda: calls.append(("sync",)))
+            self.cpu_master = {}
+        def prepare_block_devices_before_forward(self, layers):
+            if fail_prepare:
+                # Model the upstream empty-placeholder window during .to().
+                self.cpu_master[0] = layers[0].weight.detach()
+                layers[0].weight.data = torch.ones_like(layers[0].weight)
+                layers[-1].weight.data = torch.empty(0)
+                raise torch.cuda.OutOfMemoryError("injected swap preparation OOM")
+        def release_device_buffers(self):
+            if fail_prepare:
+                raise KeyError("second streamed master does not exist")
+            calls.append(("release",))
+    def attach(offloader, layers):
+        return [layer.register_forward_pre_hook(lambda module, args: None) for layer in layers]
+    def disable(encoder):
+        handles = getattr(encoder, utils.TEXT_ENCODER_BLOCK_SWAP_HANDLES_ATTR, None)
+        if handles is None:
+            return
+        for handle in handles:
+            handle.remove()
+        getattr(encoder, utils.TEXT_ENCODER_BLOCK_SWAP_OFFLOADER_ATTR).release_device_buffers()
+        for name in (utils.TEXT_ENCODER_BLOCK_SWAP_HANDLES_ATTR, utils.TEXT_ENCODER_BLOCK_SWAP_OFFLOADER_ATTR,
+                     utils.TEXT_ENCODER_DEVICE_ATTR):
+            delattr(encoder, name)
+        encoder.to("cpu")
+    utils.disable_text_encoder_block_swap = disable
+    offloading = ModuleType("library.custom_offloading_utils")
+    offloading.LoRAStreamOffloader, offloading.attach_forward_streaming_hooks = Offloader, attach
+    library = ModuleType("library")
+    library.moss_image_utils = utils
+    with patch.dict(sys.modules, {"library": library, utils.__name__: utils, offloading.__name__: offloading}):
+        yield calls
 
 
 class PreviewSamplingTests(unittest.TestCase):
@@ -510,3 +558,148 @@ class PreviewSamplingTests(unittest.TestCase):
             self.assertEqual(load.call_count, 2 if allocation_fails else 1)
             if allocation_fails:
                 self.assertEqual(load.call_args.args[1].type, "cpu")
+
+    def test_moss_preview_swap_streams_without_full_model_memory_check_and_cleans_up(self):
+        values = {"args": SimpleNamespace(text_encoder_blocks_to_swap=1),
+                  "accelerator": SimpleNamespace(device=torch.device("cuda"), autocast=nullcontext),
+                  "tokenize_strategy": SimpleNamespace(tokenize=lambda text: text)}
+        for temporary in (False, True):
+            for fail in (False, True):
+                encoder = torch.nn.Module()
+                encoder.layers = torch.nn.ModuleList([torch.nn.Linear(4, 3)])
+                def encode(tokenize, models, text):
+                    self.assertTrue(moss_image.text_encoder_swap_active(models[0]))
+                    if fail:
+                        raise ValueError("injected encoding failure")
+                    return [models[0].layers[0](torch.ones(1, 4))]
+                values["text_encoding_strategy"] = SimpleNamespace(encode_tokens=encode)
+                with mock_moss_text_encoder_swap() as calls, \
+                     patch("backend.training.preview.moss_image.load_text_encoder", return_value=encoder), \
+                     patch("torch.cuda.mem_get_info", side_effect=AssertionError("full-model memory check")):
+                    if fail:
+                        with self.assertRaisesRegex(ValueError, "encoding failure"):
+                            encode_with_adapters(LoRAManager([], "moss_image"), ("tiny",), values,
+                                                 None if temporary else encoder, "moss_image")
+                    else:
+                        result = encode_with_adapters(LoRAManager([], "moss_image"), ("tiny",), values,
+                                                      None if temporary else encoder, "moss_image")
+                        self.assertEqual(result["tiny"][0].device.type, "cpu")
+                self.assertEqual(calls, [("enable", 1, "cuda"), ("release",)])
+                self.assertFalse(moss_image.text_encoder_swap_active(encoder))
+                self.assertEqual(len(encoder.layers[0]._forward_pre_hooks), 0)
+
+    def test_moss_swap_initialization_oom_restores_placeholders_and_temporary_cpu_retry(self):
+        values = {"args": SimpleNamespace(text_encoder_blocks_to_swap=2),
+                  "accelerator": SimpleNamespace(device=torch.device("cuda"), autocast=nullcontext),
+                  "tokenize_strategy": SimpleNamespace(tokenize=lambda text: text),
+                  "text_encoding_strategy": SimpleNamespace(encode_tokens=lambda tokenize, models, text:
+                                                               [models[0].layers[0](torch.ones(1, 4))])}
+        for temporary in (False, True):
+            encoder = torch.nn.Module()
+            encoder.layers = torch.nn.ModuleList([torch.nn.Linear(4, 3), torch.nn.Linear(3, 2)])
+            weight = encoder.layers[0].weight
+            original = weight.detach().clone()
+            replacement = copy.deepcopy(encoder)
+            with mock_moss_text_encoder_swap(fail_prepare=True) as calls, \
+                 patch("backend.training.preview.moss_image.load_text_encoder", side_effect=[encoder, replacement]) as load, \
+                 (patch.object(encoder, "to", side_effect=AssertionError("moving discarded encoder")) if temporary else nullcontext()):
+                if temporary:
+                    result = encode_with_adapters(LoRAManager([], "moss_image"), ("tiny",), values, None, "moss_image")
+                    self.assertEqual(result["tiny"][0].device.type, "cpu")
+                    self.assertEqual(load.call_args.args[1].type, "cpu")
+                    self.assertEqual(load.call_count, 2)
+                    self.assertEqual(encoder.layers[-1].weight.numel(), 0)
+                    torch.testing.assert_close(result["tiny"][0], replacement.layers[0](torch.ones(1, 4)))
+                else:
+                    with self.assertRaises(torch.cuda.OutOfMemoryError):
+                        encode_with_adapters(LoRAManager([], "moss_image"), ("tiny",), values, encoder, "moss_image")
+            self.assertIs(encoder.layers[0].weight, weight)
+            if not temporary:
+                torch.testing.assert_close(weight, original)
+            self.assertFalse(moss_image.text_encoder_swap_active(encoder))
+            self.assertEqual(len(encoder.layers[0]._forward_pre_hooks), 0)
+            self.assertEqual(calls, [("enable", 2, "cuda"), ("sync",)])
+
+    def test_moss_temporary_encoding_oom_disables_swap_before_cpu_retry(self):
+        encoder = torch.nn.Module()
+        encoder.layers = torch.nn.ModuleList([torch.nn.Linear(4, 3)])
+        attempts = []
+        def encode(tokenize, models, text):
+            active = moss_image.text_encoder_swap_active(models[0])
+            attempts.append(active)
+            if active:
+                raise torch.cuda.OutOfMemoryError("injected encoding OOM")
+            return [models[0].layers[0](torch.ones(1, 4))]
+        values = {"args": SimpleNamespace(text_encoder_blocks_to_swap=1),
+                  "accelerator": SimpleNamespace(device=torch.device("cuda"), autocast=nullcontext),
+                  "tokenize_strategy": SimpleNamespace(tokenize=lambda text: text),
+                  "text_encoding_strategy": SimpleNamespace(encode_tokens=encode)}
+        with mock_moss_text_encoder_swap() as calls, \
+             patch("backend.training.preview.moss_image.load_text_encoder", return_value=encoder) as load:
+            result = encode_with_adapters(LoRAManager([], "moss_image"), ("tiny",), values, None, "moss_image")
+        self.assertEqual(result["tiny"][0].device.type, "cpu")
+        self.assertEqual(attempts, [True, False])
+        self.assertEqual(load.call_args.args[1].type, "cpu")
+        self.assertEqual(calls, [("enable", 1, "cuda"), ("release",)])
+
+    def test_moss_live_swap_preserves_ring_and_external_lora_on_success_and_failure(self):
+        path = Path(self.temp.name) / "live-swap-te.safetensors"
+        save_file({"lora_te_proj.lora_down.weight": torch.ones(2, 4),
+                   "lora_te_proj.lora_up.weight": torch.ones(3, 2)}, path)
+        document = {**self.document, "architecture": "moss_image",
+                    "loras": [{"path": str(path), "multiplier": .5}]}
+        for fail in (False, True):
+            encoder = PreviewModel()
+            encoder.register_buffer("ring", torch.zeros(1))
+            resets = []
+            encoder.layers = torch.nn.ModuleList([])
+            handles, offloader = [], SimpleNamespace(prepare_block_devices_before_forward=lambda layers: resets.append(layers))
+            encoder._moss_text_encoder_block_swap_handles = handles
+            encoder._moss_text_encoder_block_swap_offloader = offloader
+            baseline = encoder.proj(torch.ones(1, 4)).detach()
+            ring = torch.ones(1)
+            def encode(tokenize, models, text):
+                torch.testing.assert_close(encoder.proj(torch.ones(1, 4)), baseline + 4)
+                encoder.ring = ring
+                if fail:
+                    raise ValueError("injected live-swap encoding failure")
+                return [torch.ones(1)]
+            def sampler(accelerator, args, epoch, steps, dit, vae, text_encoder,
+                        tokenize_strategy, text_encoding_strategy, sample_prompts_te_outputs=None):
+                self.assertIsNone(text_encoder)
+            arguments = list(self.arguments())
+            arguments[0].autocast = nullcontext
+            arguments[1].sample_prompts = str(self.prompts)
+            arguments[6] = encoder
+            arguments[7] = SimpleNamespace(tokenize=lambda text: text)
+            arguments[8] = SimpleNamespace(encode_tokens=encode)
+            with patch.object(encoder, "to", side_effect=AssertionError("moving a live ring")), \
+                 patch.dict(sampler.__globals__, {"sampling": SimpleNamespace(load_prompts=lambda path: [{"prompt": "tiny", "scale": 1}])}):
+                sample = wrap_sampler(sampler, document)
+                if fail:
+                    with self.assertRaisesRegex(ValueError, "live-swap encoding failure"):
+                        sample(*arguments)
+                else:
+                    sample(*arguments)
+            self.assertIs(encoder.ring, ring)
+            self.assertIs(encoder._moss_text_encoder_block_swap_handles, handles)
+            self.assertIs(encoder._moss_text_encoder_block_swap_offloader, offloader)
+            self.assertEqual(len(resets), int(fail))
+            self.assertNotIn("forward", encoder.proj.__dict__)
+
+    def test_moss_upstream_encoding_failure_resets_caller_owned_live_ring(self):
+        encoder = PreviewModel()
+        encoder.layers = torch.nn.ModuleList([])
+        resets = []
+        encoder._moss_text_encoder_block_swap_handles = []
+        offloader = SimpleNamespace(prepare_block_devices_before_forward=lambda layers: resets.append(layers))
+        encoder._moss_text_encoder_block_swap_offloader = offloader
+        def sampler(accelerator, args, epoch, steps, dit, vae, text_encoder,
+                    tokenize_strategy, text_encoding_strategy):
+            raise ValueError("injected upstream text encoding failure")
+        arguments = list(self.arguments())
+        arguments[6] = encoder
+        with self.assertRaisesRegex(ValueError, "upstream text encoding failure"):
+            wrap_sampler(sampler, {**self.document, "architecture": "moss_image"})(*arguments)
+        self.assertEqual(resets, [[]])
+        self.assertIs(encoder._moss_text_encoder_block_swap_offloader, offloader)

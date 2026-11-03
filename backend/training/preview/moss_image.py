@@ -1,5 +1,94 @@
 """MOSS module aliases, including LoRAs targeting fused QKV projections."""
 
+from contextlib import contextmanager
+
+
+def text_encoder_swap_active(encoder):
+    return getattr(encoder, "_moss_text_encoder_block_swap_handles", None) is not None
+
+
+def _enable_preview_text_encoder_swap(encoder, blocks, device, *, temporary=False):
+    from library import moss_image_utils as utils
+    from library.custom_offloading_utils import LoRAStreamOffloader, attach_forward_streaming_hooks
+
+    layers = list(encoder.layers)
+    if not 0 < blocks <= len(layers):
+        raise ValueError(f"text_encoder_blocks_to_swap must be between 1 and {len(layers)}, got {blocks}")
+    # Upstream enable_text_encoder_block_swap publishes its lifecycle handles
+    # only after preparation. Keep them here to roll back an initialization OOM,
+    # including preparation of only part of the offloader's CPU masters.
+    # Temporary encoders are discarded on failure. Avoid retaining their full
+    # original CPU storage while the offloader creates flat CPU masters.
+    saved = [] if temporary else [(module, field, name, tensor, tensor.detach(), tensor.requires_grad)
+             for module in encoder.modules() for field in ("_parameters", "_buffers")
+             for name, tensor in getattr(module, field).items() if tensor is not None]
+    offloader, handles = None, []
+    try:
+        encoder.requires_grad_(False)
+        for name, module in encoder.named_children():
+            if name != "layers":
+                module.to(device)
+        offloader = LoRAStreamOffloader("moss-te", layers, len(layers), blocks,
+                                       supports_backward=False, device=device, ring_size=2, use_pinned_memory=False)
+        handles = attach_forward_streaming_hooks(offloader, layers)
+        setattr(encoder, utils.TEXT_ENCODER_BLOCK_SWAP_HANDLES_ATTR, handles)
+        setattr(encoder, utils.TEXT_ENCODER_BLOCK_SWAP_OFFLOADER_ATTR, offloader)
+        setattr(encoder, utils.TEXT_ENCODER_DEVICE_ATTR, device)
+        offloader.prepare_block_devices_before_forward(layers)
+    except BaseException:
+        try:
+            for handle in handles:
+                handle.remove()
+            if offloader is not None:
+                # release_device_buffers requires every streamed master to exist;
+                # initialization may have failed before creating the next one.
+                offloader.copier.sync()
+        finally:
+            for name in (utils.TEXT_ENCODER_BLOCK_SWAP_HANDLES_ATTR, utils.TEXT_ENCODER_BLOCK_SWAP_OFFLOADER_ATTR,
+                         utils.TEXT_ENCODER_DEVICE_ATTR):
+                if hasattr(encoder, name):
+                    delattr(encoder, name)
+            # prepare may fail while a streamed parameter is an empty temporary
+            # placeholder. Reinstall the original storage, including buffer slots.
+            for module, field, name, tensor, data, requires_grad in saved:
+                tensor.data = data
+                tensor.requires_grad_(requires_grad)
+                getattr(module, field)[name] = tensor
+        raise
+
+
+@contextmanager
+def text_encoder_for_preview(encoder, args, device, *, temporary=False):
+    """Keep live streaming hooks intact and release preview-owned swaps."""
+    if text_encoder_swap_active(encoder):
+        # Its parameters may point into the offloader's ring. Moving individual
+        # tensors, or the whole model, would disconnect them from that ring.
+        encoder.eval()
+        try:
+            yield
+        except BaseException:
+            # A failed layer can interrupt the cyclic prefetch before the next
+            # pass wraps around. Reset using the original offloader and masters.
+            encoder._moss_text_encoder_block_swap_offloader.prepare_block_devices_before_forward(list(encoder.layers))
+            raise
+        return
+    blocks = getattr(args, "text_encoder_blocks_to_swap", None) or 0
+    if blocks > 0 and device.type == "cuda":
+        from library.moss_image_utils import disable_text_encoder_block_swap
+
+        try:
+            _enable_preview_text_encoder_swap(encoder, blocks, device, temporary=temporary)
+            encoder.eval()
+            yield
+        finally:
+            disable_text_encoder_block_swap(encoder)
+    else:
+        try:
+            encoder.to(device).eval()
+            yield
+        finally:
+            encoder.to("cpu")
+
 
 def fused_targets(name):
     if name.endswith(".proj.qkv"):
