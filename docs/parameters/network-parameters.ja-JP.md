@@ -21,7 +21,7 @@ MOSS の対象は線形層で、画面には線形層用の設定と上記 3 つ
 <!-- doc-anchor: dimension -->
 ## ネットワークの次元数
 
-`network_dim` はランクとも呼ばれ、標準 LoRA の 2 行列の中間次元を指定します。既定値は冒頭のプロファイル表を参照してください。
+`network_dim` はランクとも呼ばれ、標準 LoRA の 2 行列の中間次元を指定します。既定値は Anima・SDXL・Krea 2 が `32`、MOSS-Image が `16` です。
 
 | 調整 | 得られる効果 | 負荷・制約 |
 | --- | --- | --- |
@@ -33,7 +33,7 @@ MOSS の対象は線形層で、画面には線形層用の設定と上記 3 つ
 <!-- doc-anchor: alpha -->
 ## Alpha
 
-`network_alpha` は分岐のスケールを調整します。既定値は冒頭のプロファイル表を参照してください。標準 LoRA の式は次のとおりです。
+`network_alpha` は分岐のスケールを調整します。既定値は Anima・SDXL・Krea 2 が `32`、MOSS-Image が `1` です。標準 LoRA の式は次のとおりです。
 
 ```text
 ΔW = (Alpha / rank) × B × A
@@ -49,7 +49,7 @@ MOSS の対象は線形層で、画面には線形層用の設定と上記 3 つ
 
 `rs_lora` は既定でオフです。対応する低ランク経路では分母を √rank に変え、高ランク時のスケールの低下を緩やかにします。高いランクを試す際に比較できる設定ですが、学習率も見直してください。
 
-この式は標準 LoRA のものです。LoKr は因子を完全な行列で保持する場合に、後述の追加規則があります。
+この式は標準 LoRA のものです。LoKr は因子を完全な行列で保持する場合に[追加規則](#full-matrix)があります。
 
 <!-- doc-anchor: algorithms -->
 ## LoRA・LoHa・LoKr
@@ -139,7 +139,7 @@ Anima の LyCORIS DoRA（`dora_wd`）は、層の種類に応じて次の経路�
 | FP8 weight-only：LoKr | DoRA を有効にすると Bypass 設定を上書きし、重みを再構成 |
 | FP8 weight-only：LoCon、LoHa | 現在の実装は、これらの層の DoRA アダプタ作成に未対応 |
 
-Krea 2 の量子化とバイパスの制約は、後述の専用節を参照してください。
+量子化とバイパスの制約は [Krea 2 の学習対象](#krea-targets)を参照してください。
 
 <!-- doc-anchor: preview -->
 ## 実際の構造を確認

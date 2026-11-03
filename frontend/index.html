@@ -1888,6 +1888,28 @@
   </div>
 </dialog>
 
+<!-- ── Parameter guide in the current workspace ────────── -->
+<dialog class="modal-overlay" x-dialog="parameterDocOpen" @click.self="closeParameterDoc()"
+        @dialog-close="closeParameterDoc()" :aria-label="docsDocumentTitle(parameterDocSlug)" x-cloak>
+  <div class="modal modal-workbench parameter-doc-modal">
+    <div class="modal-header">
+      <span x-text="docsDocumentTitle(parameterDocSlug)"></span>
+      <button type="button" class="btn-icon" data-dialog-autofocus @click="closeParameterDoc()" :aria-label="t('common.close')">×</button>
+    </div>
+    <div id="parameterDocBody" class="modal-body" tabindex="0" :aria-busy="parameterDocLoading">
+      <div class="docs-loading" x-show="parameterDocLoading" role="status" aria-live="polite">
+        <span class="spinner"></span><span x-text="t('docs.loading')"></span>
+      </div>
+      <div class="docs-error" x-show="parameterDocError" role="alert">
+        <span x-text="parameterDocError"></span>
+        <button type="button" class="btn btn-ghost btn-sm" @click="openParameterDoc(parameterDocSlug, parameterDocAnchor, { force: true })" x-text="t('docs.retry')"></button>
+      </div>
+      <article id="parameterDocArticle" class="markdown-body" x-show="parameterDocHtml"
+               x-html="parameterDocHtml" @click="handleDocsContentClick($event, true)"></article>
+    </div>
+  </div>
+</dialog>
+
 <!-- ── Config Snapshot Modal ───────────────────────────── -->
 <dialog class="modal-overlay" x-dialog="configSnapshotOpen" @click.self="closeSnapshotModal()" @dialog-close="closeSnapshotModal()" :aria-label="t('monitor.configSnapshot')" x-cloak>
   <div class="modal config-snapshot-modal">

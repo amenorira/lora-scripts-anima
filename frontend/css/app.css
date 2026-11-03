@@ -1898,6 +1898,10 @@ dialog.modal-overlay::backdrop { background: transparent; }
   max-height: calc(100dvh - var(--modal-workbench-margin-y));
   overflow: hidden;
 }
+.parameter-doc-modal { --modal-workbench-width: 56rem; }
+.parameter-doc-modal .modal-header { flex-shrink: 0; }
+.parameter-doc-modal .modal-header .btn-icon { flex-shrink: 0; width: 32px; height: 32px; }
+.parameter-doc-modal .modal-body { min-height: 0; overscroll-behavior: contain; }
 
 /* LyCORIS near-fullscreen editor. Uses viewport bounds so browser/Windows
    scaling and desktop window resizing never push controls off-screen. */

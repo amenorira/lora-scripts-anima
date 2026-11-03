@@ -263,6 +263,8 @@ Anima/MOSS 可用。按 `logit_mean`、`logit_std` 生成 logit-normal 分布，
 
 ### `sigma_sqrt` 与 `cosmap` 的精确权重
 
+公式中的 σ 表示噪声混合比例：越接近 0，噪声越少；越接近 1，噪声越多。
+
 <div class="doc-equation" role="group" aria-label="Sigma sqrt Loss 权重公式">
   <div class="doc-equation-kicker">低噪声权重</div>
   <div class="doc-equation-expression"><var>w</var> = <span class="doc-frac"><span>1</span><span><var>σ</var><sup>2</sup></span></span></div>
@@ -283,7 +285,7 @@ Anima/MOSS 可用。按 `logit_mean`、`logit_std` 生成 logit-normal 分布，
 - `logit_mean=0` 时，噪声表索引的分布对称。增大偏向低噪声，减小偏向高噪声；MOSS 默认 `-1.09`。
 - `logit_std` 越小越集中，越大越向两端展开。Anima 默认 `1`，MOSS 默认 `0.95`。
 
-Anima/MOSS 的 scheduler 偏移也会改变最终噪声强度；Krea 2 的 `sigma` 表不做偏移。选择 `sigmoid + logit_normal` 时，后者不改变采样或损失权重。Krea 2 的 `logsnr` 直接读取这两个数值，见其采样说明。
+Anima/MOSS 的 scheduler 偏移也会改变最终噪声强度；Krea 2 的 `sigma` 表不做偏移。选择 `sigmoid + logit_normal` 时，后者不改变采样或损失权重。Anima/MOSS 的 [`truncated_logit_normal`](#truncated-logit-normal) 和 Krea 2 的 [`logsnr`](#sampling) 也直接读取这两个数值；`logsnr` 的 `logit_mean` 越大越偏向低噪声，`logit_std` 越大分布越分散。
 
 <!-- doc-anchor: mode -->
 ### `mode` 与 `mode_scale`
@@ -313,7 +315,7 @@ Anima/MOSS 的 scheduler 偏移也会改变最终噪声强度；Krea 2 的 `sigm
 <!-- doc-anchor: sdxl-range -->
 ## SDXL 的 `min_timestep` 与 `max_timestep`
 
-SDXL 不使用前面介绍的 Anima/MOSS/Krea 2 流匹配采样选项，本训练器为 SDXL 提供两个独立的范围参数：
+SDXL 不使用 Anima/MOSS/Krea 2 的流匹配采样选项，本训练器为 SDXL 提供两个独立的范围参数：
 
 - `min_timestep`：允许抽取的最低噪声时间步，留空时使用 `0`。
 - `max_timestep`：抽样范围的上限（不包含该值），留空时使用 `1000`，即默认抽取 `0～999`。

@@ -21,7 +21,7 @@ These modules inherit the backbone learning rate. To set matched layers to `5e-5
 <!-- doc-anchor: dimension -->
 ## Network dimension
 
-`network_dim`, also called rank, sets the intermediate dimension between standard LoRA's two matrices. See the profile table above for defaults.
+`network_dim`, also called rank, sets the intermediate dimension between standard LoRA's two matrices. It defaults to `32` for Anima, SDXL, and Krea 2, and `16` for MOSS-Image.
 
 | Adjustment | What it provides | Cost or limitation |
 | --- | --- | --- |
@@ -33,7 +33,7 @@ When comparing algorithms, use the actual parameter counts in the structure prev
 <!-- doc-anchor: alpha -->
 ## Alpha
 
-`network_alpha` controls branch scaling. See the profile table above for defaults. Standard LoRA uses:
+`network_alpha` controls branch scaling. It defaults to `32` for Anima, SDXL, and Krea 2, and `1` for MOSS-Image. Standard LoRA uses:
 
 ```text
 ΔW = (Alpha / rank) × B × A
@@ -49,7 +49,7 @@ With rank and A/B weights fixed, higher Alpha strengthens the branch output and 
 
 `rs_lora` is off by default. On supported low-rank paths, it changes the denominator to √rank, reducing scale attenuation at high ranks. It is useful to compare when testing higher ranks; reassess the learning rate as well.
 
-These formulas describe standard LoRA. LoKr has additional handling when factors are stored as full matrices, described below.
+These formulas describe standard LoRA. LoKr has [additional handling](#full-matrix) when factors are stored as full matrices.
 
 <!-- doc-anchor: algorithms -->
 ## LoRA, LoHa, and LoKr
@@ -139,7 +139,7 @@ Anima's LyCORIS DoRA (`dora_wd`) uses the following paths:
 | FP8 weight-only: LoKr | Enabling DoRA forces weight reconstruction, overriding Bypass |
 | FP8 weight-only: LoCon, LoHa | Creating DoRA adapters on these layers is currently unsupported |
 
-See the Krea 2 section below for its quantization and bypass restrictions.
+See [Krea 2 targets](#krea-targets) for its quantization and bypass restrictions.
 
 <!-- doc-anchor: preview -->
 ## Check the actual structure

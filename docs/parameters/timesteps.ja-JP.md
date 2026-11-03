@@ -263,6 +263,8 @@ Anima/MOSS で使用できます。`logit_mean` と `logit_std` の logit-normal
 
 ### `sigma_sqrt` と `cosmap` の重み
 
+式の σ はノイズの混合比です。0 に近いほどノイズが少なく、1 に近いほど多くなります。
+
 <div class="doc-equation" role="group" aria-label="sigma sqrt による損失重み付けの式">
   <div class="doc-equation-kicker">低ノイズを重視</div>
   <div class="doc-equation-expression"><var>w</var> = <span class="doc-frac"><span>1</span><span><var>σ</var><sup>2</sup></span></span></div>
@@ -283,7 +285,7 @@ Anima/MOSS で使用できます。`logit_mean` と `logit_std` の logit-normal
 - `logit_mean=0` では表のインデックスが対称に分布します。大きくすると低ノイズ、小さくすると高ノイズが増えます。MOSS の既定値は `-1.09` です。
 - `logit_std` は小さくすると集中し、大きくすると両端へ広がります。Anima の既定値は `1`、MOSS は `0.95` です。
 
-Anima/MOSS ではスケジューラのシフトも最終的なノイズ量を変えます。Krea 2 の `sigma` の表にはシフトを適用しません。`sigmoid + logit_normal` では、後者は頻度にも重みにも作用しません。Krea 2 の `logsnr` はこの 2 つの値を直接読むため、該当する説明を参照してください。
+Anima/MOSS ではスケジューラのシフトも最終的なノイズ量を変えます。Krea 2 の `sigma` の表にはシフトを適用しません。`sigmoid + logit_normal` では、後者は頻度にも重みにも作用しません。Anima/MOSS の [`truncated_logit_normal`](#truncated-logit-normal) と Krea 2 の [`logsnr`](#sampling) もこの 2 つの値を直接使います。`logsnr` は `logit_mean` を大きくすると低ノイズが増え、`logit_std` を大きくすると分布が広がります。
 
 <!-- doc-anchor: mode -->
 ### `mode` と `mode_scale`
@@ -313,7 +315,7 @@ Anima/MOSS ではスケジューラのシフトも最終的なノイズ量を変
 <!-- doc-anchor: sdxl-range -->
 ## SDXL の `min_timestep` と `max_timestep`
 
-SDXL は、上記の Anima/MOSS／Krea 2 用フローマッチング設定を使いません。代わりに、範囲を指定する項目があります。
+SDXL は Anima/MOSS／Krea 2 用フローマッチング設定を使いません。代わりに、範囲を指定する項目があります。
 
 - `min_timestep`：許可する最小タイムステップ。空欄は `0`。
 - `max_timestep`：上限。この値自体は含みません。空欄は `1000` で、既定範囲は `0–999`。

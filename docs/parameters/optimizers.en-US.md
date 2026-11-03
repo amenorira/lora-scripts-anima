@@ -94,7 +94,7 @@ Other profiles use their own starting configurations:
 | MOSS-Image | `1e-4` with `rank=16, alpha=1` | Muon also starts at `1e-4` |
 | Krea 2 | AdamW8bit `1e-4` | CAME `2e-4`; Lion `1e-4`; AdamWScheduleFree `0.0025`; LoRA-Muon `0.1`; LoRA-RITE `1e-4`; EmoSens multiplier `0.1` |
 
-Krea 2 uses its corresponding `krea_*` fields for weight decay, betas, and eps. Shared optimizer parameters follow the descriptions below.
+Krea 2 uses its corresponding `krea_*` fields for weight decay, betas, and eps. See [weight decay](#weight-decay), [betas](#betas), and [eps](#eps) for their meanings.
 
 `network_alpha / network_dim` scales the LoRA branch. The upstream sd-scripts `1e-4` example uses `alpha=1`; retune the learning rate when switching to this project's `rank=32, alpha=32`.
 
@@ -361,7 +361,7 @@ Before reading a curve, check whether it records group learning rate, `D × lr`,
 - **Steps before D freezes** (`prodigy_steps`, default `0`): after this many steps `D` freezes at its current value and the estimation buffers are released. For the case where `D` has been verified and the second half should not change it; `0` keeps estimating throughout.
 - **Bias correction and automatic warmup** (`use_bias_correction`, off by default): selects a RAdam variant with bias correction and automatic warmup, slowing adjustment of `D`. If `D` stops growing after enabling it, compare with it off.
 - **SPEED estimator** (`use_speed`, off by default): raises `D` when directional progress reaches a historical peak, uses less state, and tolerates overall gradient rescaling. It is experimental; upstream warns when it is combined with nonzero weight decay.
-- **Cautious updates** (`use_cautious`, off by default): removes update components that disagree with the current gradient. This implementation masks the update directly, without a first-moment state. Enable it for a separate comparison of directional filtering.
+- **Cautious updates** (`use_cautious`, off by default): removes update components that disagree with the current gradient. This implementation masks the update directly, rather than modifying the first-moment state. Enable it for a separate comparison of directional filtering.
 - **Orthogonal gradient updates** (`use_orthograd`, off by default): uses only the gradient component orthogonal to the current weight direction. Enable it when testing this constraint.
 
 - **Estimate D per parameter group** (`split_groups`, on by default): each group estimates step size independently, such as separate text-encoder and DiT groups. Disabling it gives all groups one shared estimate.

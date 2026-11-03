@@ -263,6 +263,8 @@ Keep the selected profile's default for an initial run: `uniform` for Anima/MOSS
 
 ### Exact weights for `sigma_sqrt` and `cosmap`
 
+In these formulas, σ is the noise mixing ratio: values near 0 mean less noise, and values near 1 mean more noise.
+
 <div class="doc-equation" role="group" aria-label="Sigma sqrt loss weighting equation">
   <div class="doc-equation-kicker">Low-noise weighting</div>
   <div class="doc-equation-expression"><var>w</var> = <span class="doc-frac"><span>1</span><span><var>σ</var><sup>2</sup></span></span></div>
@@ -283,7 +285,7 @@ Keep the selected profile's default for an initial run: `uniform` for Anima/MOSS
 - `logit_mean=0` gives a symmetric distribution of table indices. Higher values favor low noise; lower values favor high noise. MOSS defaults to `-1.09`.
 - Lower `logit_std` concentrates samples; higher values spread them toward the endpoints. Anima defaults to `1`, MOSS to `0.95`.
 
-Anima/MOSS's scheduler shift also changes the resulting noise levels; Krea 2's `sigma` table is unshifted. With `sigmoid + logit_normal`, the latter changes neither sampling nor loss weights. Krea 2's `logsnr` reads these two values directly; see its sampling description.
+Anima/MOSS's scheduler shift also changes the resulting noise levels; Krea 2's `sigma` table is unshifted. With `sigmoid + logit_normal`, the latter changes neither sampling nor loss weights. Anima/MOSS's [`truncated_logit_normal`](#truncated-logit-normal) and Krea 2's [`logsnr`](#sampling) also read these values directly. For `logsnr`, a higher `logit_mean` favors lower noise, while a higher `logit_std` spreads the distribution.
 
 <!-- doc-anchor: mode -->
 ### `mode` and `mode_scale`
@@ -313,7 +315,7 @@ Anima/MOSS's scheduler shift also changes the resulting noise levels; Krea 2's `
 <!-- doc-anchor: sdxl-range -->
 ## SDXL `min_timestep` and `max_timestep`
 
-SDXL does not use the Anima/MOSS/Krea 2 flow-matching sampling options described above. The trainer provides two separate range controls for SDXL:
+SDXL does not use the Anima/MOSS/Krea 2 flow-matching sampling options. The trainer provides two separate range controls for SDXL:
 
 - `min_timestep`: the lowest allowed noise timestep; blank uses `0`.
 - `max_timestep`: the exclusive upper bound; blank uses `1000`, giving the default range `0–999`.

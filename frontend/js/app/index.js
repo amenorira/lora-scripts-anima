@@ -390,6 +390,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     _commitRoute(route, prev, transitionSeq) {
+      if (route !== prev && this.parameterDocOpen) this.closeParameterDoc();
       const mainContent = document.getElementById('mainContent');
       if (mainContent) this._routeScrollPositions[prev] = mainContent.scrollTop;
       if (prev === 'ai-captioning' && route !== prev) this.resetTaggerApiTest();

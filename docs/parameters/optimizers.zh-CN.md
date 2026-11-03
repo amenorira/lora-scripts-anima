@@ -94,7 +94,7 @@ Lion 的 `5e-6` 沿用官方“LR 约为 AdamW 的 1/3～1/10”的建议；本�
 | MOSS-Image | `1e-4`，配合 `rank=16, alpha=1` | Muon 同样从 `1e-4` 开始 |
 | Krea 2 | AdamW8bit `1e-4` | CAME `2e-4`；Lion `1e-4`；AdamWScheduleFree `0.0025`；LoRA-Muon `0.1`；LoRA-RITE `1e-4`；EmoSens 倍率 `0.1` |
 
-Krea 2 的权重衰减、betas、eps 使用对应的 `krea_*` 界面字段；共同的优化器参数含义沿用下文说明。
+Krea 2 的权重衰减、betas、eps 使用对应的 `krea_*` 界面字段；参见[权重衰减](#weight-decay)、[动量参数](#betas)和[数值稳定项](#eps)的说明。
 
 `network_alpha / network_dim` 会缩放 LoRA 分支。上游 sd-scripts 的 `1e-4` 示例对应 `alpha=1`；改用本项目的 `rank=32, alpha=32` 时，需要重新调整学习率。
 
