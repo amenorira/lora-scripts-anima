@@ -161,6 +161,12 @@ _FIELDS = {
         "step": 1,
         "doc_slug": "network-parameters",
         "doc_anchor": "alpha",
+        # Numeric shortcuts use a literal value or the current source × factor.
+        # Keep this declarative so other fields can reuse the same renderer.
+        "quick_actions": [
+            {"label": "= dim", "source": "network_dim"},
+            {"label": "½ dim", "source": "network_dim", "factor": 0.5},
+        ],
     },
     "network_dropout": {
         "type": "number",

@@ -792,6 +792,24 @@ input[type="checkbox"]:focus-visible {
 .field-control .stepper {
   width: 140px;
 }
+.field-quick-actions {
+  display: flex; align-items: center; gap: 4px;
+  margin-right: 5px;
+}
+.field-quick-action {
+  min-height: 26px; padding: 3px 7px;
+  border: 1px solid var(--border-default); border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-secondary);
+  font: inherit; font-size: 12px; line-height: 1.3; white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--duration-fast), background var(--duration-fast), border-color var(--duration-fast);
+}
+.field-quick-action:hover:not(:disabled) {
+  color: var(--accent); background: var(--accent-soft); border-color: var(--border-focus);
+}
+.field-quick-action:active:not(:disabled) { background: var(--accent-muted); }
+.field-quick-action:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+.field-quick-action:disabled { opacity: 0.4; cursor: not-allowed; }
 /* 直接子元素限定：stepper 内部的 input 由 .stepper 自己的 flex 规则管 */
 .field-control > input[type="text"],
 .field-control > input[type="number"] {

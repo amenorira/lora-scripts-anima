@@ -194,6 +194,19 @@ window.trainingFieldRenderer = {
   },
 
 
+  _renderFieldQuickActions(field) {
+    if (field.readonly || !['number', 'stepper'].includes(field.type)
+        || !Array.isArray(field.quickActions) || !field.quickActions.length) return '';
+    const key = this.escapeJsString(field.key);
+    const buttons = field.quickActions.map((action, index) => {
+      const label = action.labelKey ? this.t(action.labelKey, action.label) : action.label;
+      const args = this.escapeAttr(`'${key}', ${index}`);
+      const title = `fieldQuickActionTitle(${args})`;
+      return `<button type="button" class="field-quick-action" :disabled="fieldQuickActionValue(${args}) === null" :title="${title}" :aria-label="${title}" @click="applyFieldQuickAction(${args})">${this.esc(label)}</button>`;
+    }).join('');
+    return `<div class="field-quick-actions">${buttons}</div>`;
+  },
+
   renderField(field) {
     const val = this.form[field.key];
     const trainType = this.form.model_train_type || 'anima-lora';
@@ -433,7 +446,7 @@ window.trainingFieldRenderer = {
       fullWidthRow = `<div class="field-input-row">${controlHtml}</div>`;
     } else {
       // Standard: info left, control right — single flex row
-      controlSection = `${infoHtml}<div class="field-control">${controlHtml}${field.controlActions || ''}</div>`;
+      controlSection = `${infoHtml}<div class="field-control">${this._renderFieldQuickActions(field)}${controlHtml}${field.controlActions || ''}</div>`;
     }
 
     // ── Assemble ──

@@ -63,6 +63,9 @@ from backend.training.fields.optimizer_metadata import (
 #   target     — "toml"（传入 sd-scripts）, "ui"（仅 UI）, "merged"（UI 输入合并后传入）
 #   role       — 文件选择器类型（可选）: file-model, file-folder, file-model-saved
 #   options    — select 选项列表（可选）
+#   quick_actions — 数值框前的快捷赋值按钮：
+#                   {"label": "½ dim", "source": "network_dim", "factor": 0.5}
+#                   或 {"label": "32", "value": 32}；仅点击时赋值，遵守当前字段约束。
 #   show_if    — 条件显示（可选）: {"key": "...", "eq": ...} 或 {"key": "...", "neq": ...}
 #                可带 "_or" 键表示多值匹配任一。
 #                多条件 AND：传 list[dict]，所有条件同时成立才显示。
@@ -789,6 +792,7 @@ _FIELD_KEY_MAP = {
     "optimizer_arg_values": "optimizerArgValues",
     "dk": "dKey",
     "auto_value": "autoValue",
+    "quick_actions": "quickActions",
     "readonly_if": "readonlyIf",
     "readonly_if_any": "readonlyIfAny",
     "reason_key": "reasonKey",
@@ -824,7 +828,7 @@ def _to_camel(field: dict) -> dict:
                 }
                 for g in v
             ]
-        elif k == "options" and isinstance(v, list):
+        elif k in ("options", "quick_actions") and isinstance(v, list):
             result[new_key] = [_to_camel(o) for o in v]
         elif k == "show_if" and isinstance(v, dict):
             # Convert show_if; keep _or as "or" in camelCase

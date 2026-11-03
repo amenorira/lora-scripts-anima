@@ -647,6 +647,58 @@ window.trainingFieldRelations = {
     this.updateTomlDebounced();
   },
 
+  // Declarative numeric shortcuts: { label, source, factor? } or { label, value }.
+  // Read at click time; never establish a persistent link between two fields.
+  _fieldQuickActionNumber(raw, field = null) {
+    if (!['number', 'string'].includes(typeof raw) || String(raw).trim() === '') return null;
+    const value = Number(raw);
+    if (!Number.isFinite(value)) return null;
+    if (!field || !['number', 'stepper'].includes(field.type)) return value;
+    const constraints = this._numberConstraints(field);
+    if (constraints.min !== undefined && value < constraints.min) return null;
+    if (constraints.max !== undefined && value > constraints.max) return null;
+    const step = Number(constraints.step || 1);
+    if (step > 0) {
+      if (Number.isInteger(step) && !Number.isInteger(value)) return null;
+      const steps = (value - Number(constraints.min ?? 0)) / step;
+      if (Math.abs(steps - Math.round(steps)) > 1e-9) return null;
+    }
+    return value;
+  },
+
+  fieldQuickActionValue(key, index) {
+    const field = this._fieldDefinition(key);
+    const action = field?.quickActions?.[index];
+    if (!action || !['number', 'stepper'].includes(field.type) || field.readonly
+        || (field.readonlyIf && this._evalShowIfCond(field.readonlyIf))
+        || this._readonlyIfAnyMet(field.readonlyIfAny)) return null;
+    const source = action.source ? this._fieldDefinition(action.source) : null;
+    if (action.source && !source) return null;
+    const raw = action.source ? this.form[action.source] : action.value;
+    const number = this._fieldQuickActionNumber(raw, source);
+    if (number === null) return null;
+    const factor = action.factor ?? 1;
+    if (typeof factor !== 'number' || !Number.isFinite(factor)) return null;
+    return this._fieldQuickActionNumber(number * factor, field);
+  },
+
+  fieldQuickActionTitle(key, index) {
+    const field = this._fieldDefinition(key);
+    const action = field?.quickActions?.[index];
+    if (!action) return '';
+    const source = action.source || String(action.value);
+    const formula = `${source}${action.factor !== undefined && action.factor !== 1 ? ` × ${action.factor}` : ''}`;
+    const value = this.fieldQuickActionValue(key, index);
+    return value === null
+      ? `${key} ← ${formula} · ${this.t('common.fieldQuickActionUnavailable')}`
+      : `${this.t('common.setFieldValue').replace('{field}', key).replace('{value}', String(value))} (${formula})`;
+  },
+
+  applyFieldQuickAction(key, index) {
+    const value = this.fieldQuickActionValue(key, index);
+    if (value !== null) this.setField(key, value);
+  },
+
   stepField(key, delta) {
     const current = Number(this.form[key]) || 0;
     const field = this.findFieldDef(key);

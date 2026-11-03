@@ -1777,6 +1777,8 @@
 		"loading": "Loading…",
 		"decreaseField": "Decrease {field}",
 		"increaseField": "Increase {field}",
+		"setFieldValue": "Set {field} to {value}",
+		"fieldQuickActionUnavailable": "Field is read-only, source is invalid, or result is outside the allowed range or step",
 		"panelResizeHint": "Drag or use the arrow keys to resize; double-click to reset",
 		"requestFailed": "Request failed",
 		"unknown": "Unknown",
