@@ -31,7 +31,7 @@ Start with AdamW8bit. Compare StableAdamW for update spikes, or a Paged variant 
 | Lion | Sign-based momentum updates for comparison | Works with a different LR range; tune it separately |
 | Lion8bit | Lion with less state VRAM | Needs its own LR sweep |
 | PagedLion8bit | Lion8bit that also needs paging | Paging changes where momentum state is stored; active paging adds CPU/GPU transfers |
-| Prodigy | Optimizer-estimated update scale | Base LR must be `1.0`; not supported with LoRA+ here |
+| Prodigy | Optimizer-estimated update scale | LR acts as a multiplier; start at `1.0`. Fixed at `1.0` for sd-scripts, editable for Krea 2. Not supported with LoRA+ here |
 | ProdigyPlusScheduleFree | Automatic step-size estimation and internal scheduling | External scheduler and warmup are ignored; compare against an established baseline |
 | Automagic3 | Experimental adaptive scheme | Keeps trainable parameters in FP32. Only fused updates require gradient accumulation of 1, global gradient clipping of 0, no fp16 mixed precision, and a single GPU |
 | AdaFactor | Very tight optimizer memory | Relative-step mode takes over the LR and restricts LoRA+ |
@@ -98,7 +98,7 @@ Krea 2 uses its corresponding `krea_*` fields for weight decay, betas, and eps. 
 
 `network_alpha / network_dim` scales the LoRA branch. The upstream sd-scripts `1e-4` example uses `alpha=1`; retune the learning rate when switching to this project's `rank=32, alpha=32`.
 
-When a character locks in, colors bleed, or prompt adherence drops too early, lower the learning rate or reduce training steps. When the model underlearns, confirm the trigger word and useful step count before nudging the LR up. Lion's usable LR range is different from AdamW's; test it on its own.
+If poses or compositions become fixed, colors bleed, or prompt adherence drops early in training, try a lower learning rate or fewer training steps. When the model underlearns, confirm the trigger word and useful step count before nudging the LR up. Lion's usable LR range is different from AdamW's; test it on its own.
 
 With `relative_step` enabled, AdaFactor computes the update step size from the update count. The entered learning rate initializes the scheduler proxy's display; it does not control updates, and the external scheduler does not apply. `scale_parameter` separately controls multiplication by the parameter RMS. Turn off both `relative_step` and `warmup_init` to use manual learning rates, an external scheduler, or LoRA+.
 
@@ -562,11 +562,11 @@ Prodigy, Muon, and LoRA-Muon use different update scales. Compare them with indi
 
 **Why is the learning rate replaced after I switch model type or optimizer?**
 
-Ordinary recommendations update values whose source is default or automatic; manual and imported values are preserved. Switching to a mode that locks the learning rate, such as Prodigy or ProdigyPlus, sets it to the required `1.0`.
+Ordinary recommendations update values whose source is default or automatic; manual and imported values are preserved. In sd-scripts training, switching to a mode that locks the learning rate, such as Prodigy or ProdigyPlus, sets it to `1.0`. The Prodigy multiplier remains editable for Krea 2.
 
 **Why is the Prodigy learning rate locked to `1.0`?**
 
-Prodigy is a D-adaptation-style adaptive optimizer that uses the learning rate as a scaling baseline. The sd-scripts documentation recommends setting it near `1.0`, so the UI locks it and explains why.
+Prodigy is a D-adaptation-style adaptive optimizer that uses the learning rate as a scaling baseline. The sd-scripts documentation recommends a value near `1.0`, and this trainer fixes it at `1.0` for that training path. For Krea 2, start at `1.0`; the multiplier remains editable.
 
 **Why is StableAdamW's weight decay `0` in the generated configuration?**
 

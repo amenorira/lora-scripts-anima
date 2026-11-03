@@ -31,7 +31,7 @@
 | Lion | 对比符号动量优化器 | 合理学习率范围与 AdamW 不同，需要重新调整 |
 | Lion8bit | 降低 Lion 的状态显存 | 需要独立调整学习率 |
 | PagedLion8bit | Lion8bit 同时需要分页时 | 分页改变动量状态的存储位置；触发换页时增加 CPU/GPU 数据传输 |
-| Prodigy | 由优化器估计更新尺度 | 基础学习率用 `1.0`；本项目不支持搭配 LoRA+ |
+| Prodigy | 由优化器估计更新尺度 | 学习率作为倍率，建议从 `1.0` 开始；sd-scripts 固定为 `1.0`，Krea 2 可调整；本项目不支持搭配 LoRA+ |
 | ProdigyPlusScheduleFree | 自动估计步长并在内部管理调度 | 外部 scheduler 和 warmup 不生效；适合已有基准后的对照 |
 | Automagic3 | 项目实验性自适应方案 | 训练参数保持 FP32；仅融合更新模式要求梯度累积为 1、全局梯度裁剪为 0、禁用 mixed_precision=fp16、仅使用单卡 |
 | AdaFactor | 优化器状态显存紧张 | relative step 模式会接管学习率，并限制 LoRA+ |
@@ -562,11 +562,11 @@ Prodigy、Muon、LoRA-Muon 等采用不同更新尺度，比较时使用各自�
 
 **为什么切换模型类型或优化器后，学习率被替换了？**
 
-普通推荐值仅在当前值来自默认或自动推荐时更新，手动值和导入值保持原样。切换到 Prodigy、ProdigyPlus 等锁定学习率的模式时，界面会按该模式要求将学习率设为 `1.0`。
+普通推荐值仅在当前值来自默认或自动推荐时更新，手动值和导入值保持原样。sd-scripts 训练切换到 Prodigy、ProdigyPlus 等锁定学习率的模式时，界面会将学习率设为 `1.0`。Krea 2 的 Prodigy 倍率仍可手动调整。
 
 **为什么 Prodigy 的学习率被锁定为 1.0？**
 
-Prodigy 属于 D-adaptation 系的自适应优化器，学习率作为缩放基准使用，sd-scripts 文档建议设为 `1.0` 左右，因此界面会锁定并提示。
+Prodigy 属于 D-adaptation 系的自适应优化器，学习率作为缩放基准使用。sd-scripts 文档建议设为 `1.0` 左右，本训练器在该训练路径中固定为 `1.0`；Krea 2 建议从 `1.0` 开始，但允许调整倍率。
 
 **为什么 StableAdamW 的 weight_decay 在配置里是 0？**
 

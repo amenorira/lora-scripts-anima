@@ -119,7 +119,7 @@ Sigmoid sampling takes a standard normal random value and maps it into the `0–
 
 ### `uniform`
 
-`uniform` samples evenly across the full timestep range. Compared with the default sigmoid distribution, it gives both the low- and high-noise endpoints substantially more training time.
+`uniform` samples evenly across the full timestep range. Compared with the default sigmoid distribution, it samples both low- and high-noise regions more often.
 
 ### `shift`
 
@@ -168,7 +168,7 @@ To favor just one end of the noise range, adjust the timestep shift.
 <!-- doc-anchor: flow-shift -->
 ## `discrete_flow_shift`: changing high- and low-noise shares
 
-`discrete_flow_shift` moves sampling toward one end. It defaults to `1.0` for Anima/MOSS and `2.5` for Krea 2. Higher values favor high noise; lower values favor low noise. Values must be greater than `0`. Anima/MOSS uses it in `shift` and `sigma`; Krea 2 uses it only in `shift`.
+`discrete_flow_shift` moves sampling toward one end. It defaults to `1.0` for Anima/MOSS and `2.5` for Krea 2. Higher values favor high noise; lower values favor low noise. Values must be greater than `0`. Anima/MOSS uses it in `shift`, `sigma`, and `truncated_logit_normal`; Krea 2 uses it only in `shift`.
 
 | `discrete_flow_shift` | Direction | Change from the base distribution |
 | --- | --- | --- |
@@ -189,7 +189,7 @@ Let <var>s</var> be the shift value. The transform is:
 <!-- doc-anchor: subset-offsets -->
 ## Per-subset timestep offsets
 
-`subset_timestep_offsets` sets an independent sampling offset for each training subset. The offset is added to the normal random sample before the sigmoid mapping, changing distribution shape and noise shares. Supported by **Anima/MOSS only**.
+`subset_timestep_offsets` adjusts the noise-sampling distribution for each training subset. Negative values favor lower noise; positive values favor higher noise. Available in the **Anima/MOSS** modes listed below. See “Where the offset is applied” for the calculation used by each mode.
 
 A subset is a subfolder whose name starts with a number followed by an underscore (for example `10_group_a` and `3_group_b`); the leading number is the repeat count. Enter a mapping from subset names to offsets:
 
@@ -203,7 +203,7 @@ The mapping looks like this:
 {"10_group_a": -0.25, "3_group_b": 0.20}
 ```
 
-When training starts, the backend writes a separate `dataset.toml`; the field itself is not part of the main training configuration:
+When nonzero subset offsets are configured, launch generates a separate `dataset.toml`. Offsets are not added directly to the main training TOML, but are retained in the app's YAML export and the run's `training.yaml`:
 
 ```toml
 [[datasets.subsets]]

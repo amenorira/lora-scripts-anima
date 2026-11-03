@@ -189,7 +189,7 @@ lr/textencoder 1 plus
 入力 2048・出力 8192・ランク 32 の層の例：
 
 ```text
-2048 特徴 → lora_down → 32 特徴 → lora_up → 8192 特徴
+2048 次元の入力 → lora_down → 32 次元 → lora_up → 8192 次元の出力
 ```
 
 重みの変化は `ΔW = (Alpha / rank) × B × A` で、A が `lora_down`、B が `lora_up` です。

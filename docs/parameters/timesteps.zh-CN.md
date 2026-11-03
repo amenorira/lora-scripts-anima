@@ -119,7 +119,7 @@ MOSS-Image 新配置使用截断 logit-normal 采样，包含 0.95 处截断和 
 
 ### `uniform`
 
-`uniform` 在完整时间范围内均匀抽取。和默认 sigmoid 相比，它会明显增加低噪声与高噪声两端的训练次数。
+`uniform` 在完整时间范围内均匀抽取。和默认 sigmoid 相比，它会明显增加低噪声与高噪声区间的采样次数。
 
 ### `shift`
 
@@ -168,7 +168,7 @@ Krea 2 的 `logsnr` 先根据 `logit_mean` 和 `logit_std` 生成 LogSNR，再�
 <!-- doc-anchor: flow-shift -->
 ## `discrete_flow_shift`：调整高、低噪声占比
 
-`discrete_flow_shift` 将采样重点移向一侧。Anima/MOSS 默认 `1.0`，Krea 2 默认 `2.5`。增大偏向高噪声，减小偏向低噪声；值必须大于 `0`。Anima/MOSS 在 `shift` 和 `sigma` 中使用，Krea 2 仅在 `shift` 中使用。
+`discrete_flow_shift` 将采样重点移向一侧。Anima/MOSS 默认 `1.0`，Krea 2 默认 `2.5`。增大偏向高噪声，减小偏向低噪声；值必须大于 `0`。Anima/MOSS 在 `shift`、`sigma` 和 `truncated_logit_normal` 中使用；Krea 2 仅在 `shift` 中使用。
 
 | `discrete_flow_shift` | 变化方向 | 相对基础分布的变化 |
 | --- | --- | --- |
@@ -189,7 +189,7 @@ Krea 2 的 `logsnr` 先根据 `logit_mean` 和 `logit_std` 生成 LogSNR，再�
 <!-- doc-anchor: subset-offsets -->
 ## 按子集设置时间步偏移
 
-`subset_timestep_offsets` 为不同训练子集设置独立采样偏移。偏移加在 sigmoid 映射前的正态随机值上，因此改变分布的形状和噪声占比。仅 **Anima/MOSS** 支持。
+`subset_timestep_offsets` 为不同训练子集分别调整噪声采样分布。负值增加低噪声采样，正值增加高噪声采样。仅 **Anima/MOSS** 的下列模式支持，具体计算方式见“偏移加在哪里”。
 
 训练目录中每个以“数字_”开头的子文件夹（例如 `10_group_a`、`3_group_b`）会被识别为一个子集，开头的数字是重复次数。按“子集名称 → 偏移值”填写，操作如下：
 
@@ -203,7 +203,7 @@ Krea 2 的 `logsnr` 先根据 `logit_mean` 和 `logit_std` 生成 LogSNR，再�
 {"10_group_a": -0.25, "3_group_b": 0.20}
 ```
 
-启动训练时，后端会为它单独生成一份 `dataset.toml`；这个界面字段本身不写进主训练配置：
+配置了非零子集偏移时，启动训练会生成单独的 `dataset.toml`。偏移不直接写入运行用的主训练 TOML，但会保存在应用导出的 YAML 和本次运行的 `training.yaml` 中：
 
 ```toml
 [[datasets.subsets]]

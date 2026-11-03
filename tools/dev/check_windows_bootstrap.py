@@ -179,7 +179,7 @@ class WindowsBootstrapIntegrationTests(unittest.TestCase):
         self.write(target, "README.md", "my source\n")
         result = self.action(target, remote, "update", check=False)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("modified locally", result.stdout)
+        self.assertIn("local changes", result.stdout)
         self.assertEqual((target / "README.md").read_text(), "my source\n")
         self.git(target, "checkout", "--", "README.md")
         self.write(target, SETTINGS, "staged settings\n")
