@@ -22,6 +22,7 @@ from backend.tagger.interrogator import (
     on_interrogate,
 )
 from backend.tagger import captioning, api_engine
+from backend.tagger.errors import error_data
 from backend.tagger import workspace
 from backend.tagger.registry import DEFAULT_MODEL_ID, MODEL_SPEC_BY_ID, model_payload
 from backend.tagger.workspace import (
@@ -151,12 +152,12 @@ async def tagger_scan_source(request: Request):
             scan_source,
             str(body.get("path") or ""),
             bool(body.get("recursive", True)),
-            str(body.get("caption_extension") or ".txt"),
+            str(body.get("caption_extension", ".txt") or ""),
             body.get("caption_options"),
         )
         return APIResponseSuccess(data=result)
     except Exception as exc:
-        return APIResponseFail(message=str(exc))
+        return APIResponseFail(message=str(exc), data=error_data(exc))
 
 
 @router.post("/tagger/uploads")
@@ -200,7 +201,7 @@ async def list_annotations(source_token: str, offset: int = 0, limit: int = 60, 
     try:
         return APIResponseSuccess(data=await asyncio.to_thread(workspace.annotations, source_token, offset, limit, status, q, refresh, options, task_id, cached))
     except Exception as exc:
-        return APIResponseFail(message=str(exc))
+        return APIResponseFail(message=str(exc), data=error_data(exc))
 
 
 @router.get("/tagger/source/{source_token}/annotations/{index}")
@@ -208,7 +209,7 @@ async def get_annotation(source_token: str, index: int, options: dict = Depends(
     try:
         return APIResponseSuccess(data=await asyncio.to_thread(workspace.annotation_detail, source_token, index, options))
     except Exception as exc:
-        return APIResponseFail(message=str(exc))
+        return APIResponseFail(message=str(exc), data=error_data(exc))
 
 
 @router.post("/tagger/source/{source_token}/caption-plan")
@@ -217,7 +218,7 @@ async def get_caption_plan(source_token: str, request: Request):
         options = await request.json()
         return APIResponseSuccess(data=await asyncio.to_thread(workspace.caption_plan, source_token, options))
     except Exception as exc:
-        return APIResponseFail(message=str(exc))
+        return APIResponseFail(message=str(exc), data=error_data(exc))
 
 
 @router.get("/tagger/caption/preview-state")
@@ -245,7 +246,7 @@ async def caption_preview(request: Request):
         key = str((body.get("api") or {}).get("api_key") or "")
         if key:
             message = message.replace(key, "[redacted]")
-        return APIResponseFail(message=message[:2000])
+        return APIResponseFail(message=message[:2000], data=error_data(exc))
     finally:
         # settled_to_thread waits for the worker's HTTP client before releasing.
         if preview is not None:
@@ -264,7 +265,7 @@ async def start_tagger_workspace_task(request: Request):
         )
         return APIResponseSuccess(data={"task_id": task_id})
     except Exception as exc:
-        return APIResponseFail(message=str(exc))
+        return APIResponseFail(message=str(exc), data=error_data(exc))
 
 
 @router.get("/tagger/tasks/{task_id}/status")

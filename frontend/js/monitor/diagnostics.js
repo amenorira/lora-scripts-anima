@@ -170,8 +170,8 @@ window.monitorDiagnosticsMixin = {
         advice: ['diagnosticVolatileAdvice', '优先检查学习率、batch size 和异常样本，不要因为某一步的数值变化就停止训练。'],
       },
       steady: {
-        label: ['diagnosticSteady', '平稳运行'],
-        summary: ['diagnosticSteadySummary', '近期波动可控，但改善幅度暂不显著。'],
+        label: ['diagnosticSteady', '趋势暂不明确'],
+        summary: ['diagnosticSteadySummary', '近期 Loss 尚未呈现明确趋势，请结合预览图评估训练效果。'],
         advice: ['diagnosticSteadyAdvice', '继续关注样本质量和后续窗口变化。'],
       },
     };
@@ -204,10 +204,10 @@ window.monitorDiagnosticsMixin = {
     };
     const copy = {
       insufficient: ['diagnosticEvidenceInsufficient', '当前 {count} 个有效 Loss 点；至少 {minimum} 个点后才会比较两个相邻时间段。'],
-      converging: ['diagnosticEvidenceConverging', '近期平均值下降 {magnitude}，达到 ≤ -{converging}% 的下降条件；波动程度 {volatility} 未达到 {volatile}% 异常阈值。'],
-      plateau: ['diagnosticEvidencePlateau', '平均值变化幅度 {magnitude} < {plateauChange}%，且波动程度 {volatility} < {plateauVolatility}%，符合平台期条件。'],
-      rebound: ['diagnosticEvidenceRebound', '近期平均值上升 {magnitude}，达到 ≥ +{rebound}% 的反弹条件；反弹信号优先判定。'],
-      volatile: ['diagnosticEvidenceVolatile', '近期波动程度 {volatility}，达到 ≥ {volatile}% 的异常条件；同期平均值变化为 {change}。'],
+      converging: ['diagnosticEvidenceConverging', '近期平均值下降 {magnitude}，符合下降条件；波动程度为 {volatility}。'],
+      plateau: ['diagnosticEvidencePlateau', '平均值变化幅度为 {magnitude}，波动程度为 {volatility}，符合平台期条件。'],
+      rebound: ['diagnosticEvidenceRebound', '近期平均值上升 {magnitude}，符合反弹条件；反弹信号优先判定。'],
+      volatile: ['diagnosticEvidenceVolatile', '近期波动程度为 {volatility}，符合异常波动条件；同期平均值变化为 {change}。'],
       steady: ['diagnosticEvidenceSteady', '平均值变化 {change}、波动程度 {volatility}，不符合下降、反弹、异常波动或平台期条件。'],
     };
     const item = copy[diagnostic.code] || copy.insufficient;
@@ -302,7 +302,9 @@ window.monitorDiagnosticsMixin = {
     if (trend) this._patchRollingSparkline(trend, this._trainingDiagnosticPoints(), root._metricMotion, root.dataset.motionContext);
     setText('state', this._diagnosticText(t, diagnostic.code, 'label'));
     setText('summary', this._diagnosticText(t, diagnostic.code, 'summary'));
-    setText('advice', this._diagnosticText(t, diagnostic.code, 'advice'));
+    setText('advice', isHistory || isPreviousRun
+      ? t('diagnosticHistoryAdvice', '结合固定提示词的样本和 TensorBoard 记录评估本次训练；下次训练可据此调整参数。')
+      : this._diagnosticText(t, diagnostic.code, 'advice'));
     setText('evidence', this._diagnosticEvidence(t, diagnostic));
     setText('window-evidence', this._diagnosticWindowEvidence(t, diagnostic));
     setText('change', this._formatDiagnosticPercent(diagnostic.changePct, true));

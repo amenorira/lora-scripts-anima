@@ -37,8 +37,8 @@ from backend.tageditor.core import (
 )
 from backend.tageditor import dictionary
 from backend.tageditor.operations import apply_operation
-from backend.tageditor.repository import save_caption_transaction, restore_legacy_backups, restore_timeline_event
-from backend.tageditor.sessions import dataset_sessions
+from backend.tageditor.repository import save_caption_transaction, restore_legacy_backups, restore_timeline_event, TimelineConflict
+from backend.tageditor.sessions import dataset_sessions, DatasetDirectoryError
 from backend.tageditor.snapshots import create_snapshot, list_snapshots, restore_snapshot, delete_snapshot, clear_all_snapshots
 from backend.tageditor.timeline import timeline_store
 
@@ -132,6 +132,9 @@ async def create_dataset_session(data: dict):
                 **page,
             },
         }
+    except DatasetDirectoryError as exc:
+        return {"status": "error", "message": str(exc), "error_code": "tageditor_invalid_directory",
+                "error_params": {"directory": exc.directory}}
     except ValueError as exc:
         return {"status": "error", "message": str(exc)}
 
@@ -527,6 +530,9 @@ async def api_restore_timeline(event_id: str, dataset_dir: str = Query(...)):
         return {"status": "success", "data": result}
     except KeyError:
         return {"status": "error", "message": "Timeline event not found / 时间线事件不存在"}
+    except TimelineConflict as exc:
+        return {"status": "error", "message": str(exc), "error_code": "tageditor_timeline_conflict",
+                "error_params": {"count": exc.count}}
     except Exception as exc:
         return {"status": "error", "message": str(exc)}
 

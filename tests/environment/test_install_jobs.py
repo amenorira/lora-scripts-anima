@@ -3,7 +3,9 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from backend.core import install_jobs
+from backend.server.routes import environment
 from backend.tasks import TaskManager
+from tests.helpers import json_request
 
 
 class ImmediateThread:
@@ -50,3 +52,24 @@ class InstallJobTests(unittest.IsolatedAsyncioTestCase):
                     self.assertFalse(snapshot["success"])
                 self.assertTrue(self.manager.claim_external("next"))
                 self.manager.release_external("next")
+
+
+class ModelDownloadJobTests(unittest.IsolatedAsyncioTestCase):
+    async def test_concurrent_requests_reserve_only_one_download_and_allow_retries(self):
+        async def deferred(function, *args):
+            # Both HTTP requests reach the worker scheduling point before registration.
+            await asyncio.sleep(0)
+            return function(*args)
+
+        with patch.object(environment, "_download_jobs", {}), patch.object(environment.asyncio, "to_thread", deferred), \
+             patch.object(environment.threading, "Thread") as thread, patch.object(environment.realtime_tasks, "register", new_callable=AsyncMock):
+            results = await asyncio.gather(*(environment.anima_model_download(json_request({})) for _ in range(2)))
+            successful = [result for result in results if result["success"]]
+            self.assertEqual(len(successful), 1)
+            self.assertEqual(next(result for result in results if not result["success"])["error_code"], "environmentDownloadBusy")
+            thread.return_value.start.assert_called_once()
+            environment._download_jobs[successful[0]["job_id"]]["done"] = True
+            thread.return_value.start.side_effect = RuntimeError("cannot start")
+            self.assertFalse((await environment.anima_model_download(json_request({})))["success"])
+            thread.return_value.start.side_effect = None
+            self.assertTrue((await environment.anima_model_download(json_request({})))["success"])

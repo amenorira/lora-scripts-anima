@@ -210,15 +210,19 @@ async def delete_history_run(request: Request):
 
     record = await asyncio.to_thread(load_run_record, run_dir, include_deleted=True)
     if not record:
-        return {"status": "error", "message": "Run directory not found / 目录不存在"}
+        return {"status": "error", "message": "Run directory not found / 目录不存在", "error_code": "monitorRunNotFound"}
     tid = record.get("task_id")
     if tid and any(t.get("id") == tid and t.get("status") in {"CREATED", "RUNNING"} for t in tm.training_dump()):
-        return {"status": "error", "message": "Cannot delete a running task / 无法删除运行中的任务"}
+        return {"status": "error", "message": "Cannot delete a running task / 无法删除运行中的任务", "error_code": "monitorRunActive"}
     try:
         if not await asyncio.to_thread(mark_run_deleted, run_dir):
-            return {"status": "error", "message": "Failed to delete history / 删除历史失败"}
-    except (RunDeletionError, OSError) as exc:
-        return {"status": "error", "message": str(exc), "data": {"retryable": True}}
+            return {"status": "error", "message": "Failed to delete history / 删除历史失败", "error_code": "monitorDeleteFailed"}
+    except RunDeletionError as exc:
+        return {"status": "error", "message": str(exc), "error_code": "monitorCleanupFailed",
+                "error_details": "\n".join(exc.failures), "data": {"retryable": True}}
+    except OSError as exc:
+        return {"status": "error", "message": str(exc), "error_code": "monitorDeleteFailed",
+                "error_details": str(exc), "data": {"retryable": True}}
 
     # 失效历史缓存
     from backend.monitor.history import invalidate_history_cache
@@ -239,7 +243,7 @@ async def monitor_run_detail(run_dir: str = Query("")):
 
     record = await asyncio.to_thread(load_run_record, run_dir)
     if not record:
-        return {"status": "error", "message": "Run directory not found / 训练目录不存在"}
+        return {"status": "error", "message": "Run directory not found / 训练目录不存在", "error_code": "monitorRunNotFound"}
     abs_run_dir = Path(record["run_path"])
     artifact_dir = Path(record["artifact_path"])
 
@@ -319,7 +323,7 @@ async def monitor_log_slice(
 
     log_path = await asyncio.to_thread(_resolve_monitor_log_path, run_dir, task_id)
     if not log_path:
-        return {"status": "error", "message": "Log file not found / 日志文件未找到"}
+        return {"status": "error", "message": "Log file not found / 日志文件未找到", "error_code": "monitorLogNotFound"}
 
     data = await asyncio.to_thread(read_log_slice, log_path, offset, limit, q, tail)
     return {"status": "success", "data": data}
@@ -329,15 +333,21 @@ async def monitor_log_slice(
 async def monitor_log_download(run_dir: str = Query(""), task_id: str = Query("")):
     """下载完整训练日志（实时任务或历史 run 均可）。"""
     from backend.monitor.log_download import snapshot_response
+    from fastapi.responses import JSONResponse
 
     if not run_dir and not task_id:
-        return {"status": "error", "message": "run_dir or task_id is required"}
+        return JSONResponse(status_code=400, content={"status": "error", "message": "run_dir or task_id is required", "error_code": "monitorLogSourceMissing"})
 
-    log_path = await asyncio.to_thread(_resolve_monitor_log_path, run_dir, task_id)
-    if not log_path or not log_path.is_file():
-        return {"status": "error", "message": "Log file not found / 日志文件未找到"}
-
-    return await asyncio.to_thread(snapshot_response, log_path)
+    try:
+        log_path = await asyncio.to_thread(_resolve_monitor_log_path, run_dir, task_id)
+        if log_path is not None:
+            return await asyncio.to_thread(snapshot_response, log_path)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(exc),
+                            "error_code": "monitorLogAccessFailed", "error_details": str(exc)})
+    return JSONResponse(status_code=404, content={"status": "error", "message": "Log file not found / 日志文件未找到", "error_code": "monitorLogNotFound"})
 
 
 @router.get("/monitor/preview-metadata")
@@ -348,6 +358,7 @@ async def monitor_preview_metadata(
 ):
     """Read display-safe PNG text/EXIF metadata without loading the original image."""
     import hashlib
+    import stat as stat_module
     import urllib.parse
     from fastapi.responses import JSONResponse, Response
 
@@ -355,11 +366,19 @@ async def monitor_preview_metadata(
         return {"status": "error", "message": "run_dir and path are required"}
     decoded = urllib.parse.unquote(path)
     p = await asyncio.to_thread(resolve_artifact_file, run_dir, decoded)
-    if not p or not p.is_file():
-        return {"status": "error", "message": "File not found / 文件不存在"}
-    stat = p.stat()
+    if not p:
+        return {"status": "error", "message": "File not found / 文件不存在", "error_code": "monitorPreviewNotFound"}
+    try:
+        file_stat = await asyncio.to_thread(p.stat)
+        if not stat_module.S_ISREG(file_stat.st_mode):
+            return {"status": "error", "message": "File not found / 文件不存在", "error_code": "monitorPreviewNotFound"}
+    except FileNotFoundError:
+        return {"status": "error", "message": "File not found / 文件不存在", "error_code": "monitorPreviewNotFound"}
+    except OSError as exc:
+        return {"status": "error", "message": f"Metadata read failed: {exc}",
+                "error_code": "monitorMetadataReadFailed", "error_details": str(exc)}
     etag = hashlib.sha1(
-        f"{p}|{stat.st_mtime_ns}|{stat.st_size}|metadata".encode("utf-8", errors="ignore")
+        f"{p}|{file_stat.st_mtime_ns}|{file_stat.st_size}|metadata".encode("utf-8", errors="ignore")
     ).hexdigest()
     headers = {
         "Cache-Control": "private, max-age=86400, immutable",
@@ -396,8 +415,11 @@ async def monitor_preview_metadata(
 
     try:
         data = await asyncio.to_thread(_read_metadata)
+    except FileNotFoundError:
+        return {"status": "error", "message": "File not found / 文件不存在", "error_code": "monitorPreviewNotFound"}
     except Exception as exc:
-        return {"status": "error", "message": f"Metadata read failed: {exc}"}
+        return {"status": "error", "message": f"Metadata read failed: {exc}",
+                "error_code": "monitorMetadataReadFailed", "error_details": str(exc)}
     return JSONResponse({"status": "success", "data": data}, headers=headers)
 
 
@@ -549,14 +571,14 @@ async def get_config_from_run(run_dir: str = Query("")):
     
     record = await asyncio.to_thread(load_run_record, run_dir)
     if not record:
-        return {"status": "error", "message": "Run directory not found"}
+        return {"status": "error", "message": "Run directory not found", "error_code": "monitorRunNotFound"}
     if record.get("deletion_pending"):
-        return {"status": "error", "message": "Cleanup incomplete; retry deletion / 此记录已部分清理，请重试删除"}
+        return {"status": "error", "message": "Cleanup incomplete; retry deletion / 此记录已部分清理，请重试删除", "error_code": "monitorCleanupPending"}
     abs_run_dir = Path(record["run_path"])
     
     config_file = abs_run_dir / "config.toml"
     if not config_file.exists():
-        return {"status": "error", "message": "Config file not found"}
+        return {"status": "error", "message": "Config file not found", "error_code": "monitorConfigNotFound"}
     
     try:
         training_file = abs_run_dir / TRAINING_CONFIG_NAME

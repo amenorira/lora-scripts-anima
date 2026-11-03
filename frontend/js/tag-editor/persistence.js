@@ -246,12 +246,16 @@ window.tagEditorPersistence = {
       return fetch(url, options)
         .then(function(r) { return r.json(); }).then(function(j) {
           if (epoch !== self._teLoadEpoch) return;
-          if (j.status !== 'success') throw new Error(j.message || self.t('common.error'));
+          if (j.status !== 'success') {
+            var error = new Error(self.localizeApiError?.(j, 'common.error') || j.message || self.t('common.error'));
+            error.details = self.apiErrorDetails?.(j) || '';
+            throw error;
+          }
           self.toast(self.t('tagEditor.' + success));
           if (restoring) return self.tagEditorLoad(dir);
           else self.tagEditorLoadSnapshots(epoch);
         }).catch(function(err) {
-          if (epoch === self._teLoadEpoch) self.toast(err.message || self.t('common.error'), 'error');
+          if (epoch === self._teLoadEpoch) self.toast(err.message || self.t('common.error'), 'error', err.details ? {details:err.details} : undefined);
         }).finally(function() { if (epoch === self._teLoadEpoch) self.tagEditorSnapshotBusy = false; });
     }, this.t('common.confirm'));
   },

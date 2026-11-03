@@ -156,7 +156,8 @@ window.trainingFilePicker = {
   // 注意：这些方法依赖 this.t()，不能写成 getter——测试会用 Object.assign 展开
   // mixin，getter 会在展开时被立即调用（此时 this 上还没有 t），直接抛错。
   pickerTitle() {
-    return this.t('common.pickerSelect', 'Select') + ' ' + this._pickerFieldLabel(this._pickerKey);
+    return this.t('common.pickerSelect', 'Select {field}')
+      .replace('{field}', () => this._pickerFieldLabel(this._pickerKey));
   },
 
   // 与 renderField 的标签解析同规则：优先训练类型专属 descKey

@@ -189,20 +189,79 @@ window.datasetRepeatMixin = {
   },
 
   _renameDatasetRepeatProfileOffsets(pairs, dir) {
+    const route = this._trainFormMountedRoute || this._trainingSessionRoute || this.currentRoute;
     const isCurrent = String(this.form.train_data_dir || '').trim() === dir;
     if (isCurrent) {
       this._renameSubsetTimestepOffsets(pairs);
       this._captureProfileDraft?.(this.form.model_train_type, this.form);
     }
     const moves = new Map(pairs.map(item => [item.oldName, item.newName]));
+    const remap = draft => {
+      if (!draft || String(draft.train_data_dir || '').trim() !== dir) return null;
+      const offsets = draft.subset_timestep_offsets;
+      if (!offsets || typeof offsets !== 'object' || Array.isArray(offsets)
+          || !Object.keys(offsets).some(name => moves.has(name))) return null;
+      return { ...draft, subset_timestep_offsets: Object.fromEntries(Object.entries(offsets)
+        .filter(([name]) => !moves.has(name) || moves.get(name))
+        .map(([name, offset]) => [moves.get(name) || name, offset])) };
+    };
+    const remapProfiles = (profiles, skipEdited = false) => {
+      if (!profiles || typeof profiles !== 'object' || Array.isArray(profiles)) return false;
+      let changed = false;
+      Object.entries(profiles).forEach(([profile, draft]) => {
+        if (!this.trainTypes.some(type => type.v === profile)) return;
+        if (skipEdited && this._sessionEditedProfiles?.has(profile)) return;
+        const updated = remap(draft);
+        if (updated) { profiles[profile] = updated; changed = true; }
+      });
+      return changed;
+    };
     for (const [draftProfile, draft] of Object.entries(this._profileFormDrafts || {})) {
       if ((isCurrent && draftProfile === this.form.model_train_type) || String(draft.train_data_dir || '').trim() !== dir) continue;
+      if (!Object.keys(draft.subset_timestep_offsets || {}).some(name => moves.has(name))) continue;
       const offsets = Object.fromEntries(Object.entries(draft.subset_timestep_offsets || {})
         .filter(([name]) => !moves.has(name) || moves.get(name))
         .map(([name, offset]) => [moves.get(name) || name, offset]));
       this._profileFormDrafts[draftProfile] = { ...draft, subset_timestep_offsets: offsets };
+      if (this._preserveUnloadedTrainingDrafts) this._markTrainingDraftEdited(draftProfile);
     }
-    this._persistProfileDrafts();
+    // Directory changes also apply to a pending history-reuse undo snapshot.
+    const undo = this._historyReuseUndo;
+    if (undo) {
+      undo.form = remap(undo.form) || undo.form;
+      undo.formDefaults = remap(undo.formDefaults) || undo.formDefaults;
+      if (Array.isArray(undo.formHistory)) undo.formHistory = undo.formHistory.map(entry => remap(entry) || entry);
+      remapProfiles(undo.drafts);
+    }
+    if (this._preserveUnloadedTrainingDrafts && typeof localStorage !== 'undefined') {
+      // A disabled startup restore keeps historical profiles out of the form.
+      // Still move their folder-keyed offsets when those folders are renamed.
+      try {
+        const key = this._profileDraftStorageKey(route);
+        const stored = key ? JSON.parse(localStorage.getItem(key) || '{}') : {};
+        const profiles = stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+        if (key && remapProfiles(profiles, true)) localStorage.setItem(key, JSON.stringify(profiles));
+        const activeKey = route?.startsWith('train-') ? 'anima-form-' + route : '';
+        if (activeKey) {
+          const saved = JSON.parse(localStorage.getItem(activeKey) || 'null');
+          if (!this._sessionEditedProfiles?.has(saved?.model_train_type)) {
+            const updated = remap(saved);
+            if (updated) localStorage.setItem(activeKey, JSON.stringify(updated));
+          }
+        }
+        if (undo?.storedDrafts) {
+          if (key && undo.storedDrafts[key] !== null && undo.storedDrafts[key] !== undefined) {
+            const previousProfiles = JSON.parse(undo.storedDrafts[key]);
+            if (remapProfiles(previousProfiles)) undo.storedDrafts[key] = JSON.stringify(previousProfiles);
+          }
+          if (activeKey && undo.storedDrafts[activeKey] !== null && undo.storedDrafts[activeKey] !== undefined) {
+            const previousActive = remap(JSON.parse(undo.storedDrafts[activeKey]));
+            if (previousActive) undo.storedDrafts[activeKey] = JSON.stringify(previousActive);
+          }
+        }
+      } catch (e) { /* A storage failure must not undo a successful directory rename. */ }
+    }
+    this._persistProfileDrafts(route);
   },
 
   async _postDatasetRepeatChanges(changes, dir) {

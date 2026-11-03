@@ -15,6 +15,33 @@ from backend.tageditor.timeline import TimelineStore
 
 
 class TagEditorTransactionTests(unittest.TestCase):
+    def test_route_returns_timeline_conflict_code_without_overwriting(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            image = root / "a.png"
+            image.touch()
+            caption = image.with_suffix(".txt")
+            caption.write_text("before", encoding="utf-8")
+            store = TimelineStore(root / "timeline.sqlite3")
+            with patch("backend.tageditor.repository.timeline_store", store):
+                saved = save_caption_transaction(root, [{"path": str(image), "tags": "saved"}])
+                caption.write_text("external", encoding="utf-8")
+                with TestClient(app) as client:
+                    response = client.post(
+                        f"/api/tageditor/timeline/{saved['timeline_event']['id']}/restore",
+                        params={"dataset_dir": str(root)},
+                    ).json()
+            self.assertEqual(response["error_code"], "tageditor_timeline_conflict")
+            self.assertEqual(response["error_params"]["count"], 1)
+            self.assertEqual(caption.read_text(encoding="utf-8"), "external")
+
+    def test_invalid_directory_error_has_code_and_original_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir, TestClient(app) as client:
+            missing = str(Path(temp_dir) / "missing")
+            response = client.post("/api/tageditor/sessions", json={"dir": missing}).json()
+        self.assertEqual(response["error_code"], "tageditor_invalid_directory")
+        self.assertEqual(response["error_params"]["directory"], missing)
+
     def test_raw_text_round_trip_noop_and_timeline_restore(self):
         for extension in (".txt", ".caption"):
             with self.subTest(extension=extension), tempfile.TemporaryDirectory() as temp_dir:

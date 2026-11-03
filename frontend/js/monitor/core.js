@@ -484,7 +484,7 @@ window.monitorCoreMixin = {
 
   handleTaskCompletion(prevState, newState) {
     if (!['RUNNING', 'CREATED'].includes(prevState) || !['FINISHED', 'FAILED', 'TERMINATED'].includes(newState)) return;
-    const msg = this.t(newState === 'FINISHED' ? 'monitor.trainCompleted' : newState === 'FAILED' ? 'monitor.statusFailed' : 'monitor.trainTerminated');
+    const msg = this.t(newState === 'FINISHED' ? 'monitor.trainCompleted' : newState === 'FAILED' ? 'monitor.trainFailed' : 'monitor.trainTerminated');
     this.toast(msg, newState === 'FINISHED' ? 'success' : 'error');
     if ('Notification' in window && Notification.permission === 'granted') {
       new Notification('lora-scripts-anima', { body: msg });

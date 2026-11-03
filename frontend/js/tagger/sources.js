@@ -254,7 +254,11 @@ window.taggerSourcesMixin = {
         body: JSON.stringify({ path, recursive, caption_extension: this.taggerModeIsApi() ? this.captionOptions.caption_extension : '.txt', caption_options: this.taggerModeIsApi() ? this.captionOptions : undefined }),
       });
       const body = await response.json();
-      if (body.status !== 'success') throw new Error(body.message || this.t('tagger.scanFailed'));
+      if (body.status !== 'success') {
+        const error = new Error(this.localizeApiError?.(body, 'tagger.scanFailed') || body.message || this.t('tagger.scanFailed'));
+        error.details = this.apiErrorDetails?.(body) || '';
+        throw error;
+      }
       if (mode.endsWith('single') && !['file','upload'].includes(body.data.kind)) throw new Error(this.t('caption.singleFileRequired'));
       if (mode === 'api-folder' && body.data.kind !== 'folder') throw new Error(this.t('caption.selectDirectory'));
       if (scanVersion !== this._taggerSourceScanVersion || path !== this.taggerSourcePath.trim() || mode !== this.taggerSourceMode || route !== this.currentRoute) return;
@@ -262,7 +266,7 @@ window.taggerSourcesMixin = {
     } catch (error) {
       if (scanVersion === this._taggerSourceScanVersion && mode === this.taggerSourceMode && route === this.currentRoute && path === this.taggerSourcePath.trim()) {
         if (route === 'ai-captioning' && mode === 'api-folder') this.captionSourceError = this.captionErrorMessage?.(error) || error.message || String(error);
-        else if (!options.quiet) this.toast(error.message, 'error');
+        else if (!options.quiet) this.toast(error.message, 'error', error.details ? {details:error.details} : undefined);
       }
     } finally {
       if (scanVersion === this._taggerSourceScanVersion) this.taggerScanning = false;

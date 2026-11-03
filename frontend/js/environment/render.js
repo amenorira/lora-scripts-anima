@@ -294,7 +294,7 @@ window.environmentRenderMixin = {
       return `<span>${label} ${num}</span>`;
     };
     const summaryHtml = `<div class="env-hero-summary">`
-      + summary(accelDone, 'overview.availableCount', accelReady, T('overview.accel', 'Acceleration'))
+      + summary(accelDone, 'overview.accelCount', accelReady, T('overview.accel', 'Acceleration'))
       + `<span class="env-summary-sep">·</span>`
       + summary(coreDone, 'overview.availableCount', coreReady, T('overview.core', 'Training core'))
       + `<span class="env-summary-sep">·</span>`

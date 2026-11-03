@@ -28,12 +28,13 @@
       <template x-if="regPlan && (!regPlanConsumed || regPlanDirty) && !regPreviewDirty"><div class="reg-plan-summary">
         <div class="tagger-source-summary"><span><strong x-text="regPlan.total"></strong><small x-text="regT('total')"></small></span><span :title="regPlanDirty ? regT('confirmOnGenerate') : ''"><strong x-text="regPlanDirty ? '—' : regPlan.completed"></strong><small x-text="regT('completed')"></small></span><span :title="regPlanDirty ? regT('confirmOnGenerate') : ''"><strong x-text="regPlanDirty ? '—' : regPlan.pending"></strong><small x-text="regT('pending')"></small></span></div>
         <p class="reg-help" x-show="regPlan.invalid_sources" x-text="regT('invalid') + ' ' + regPlan.invalid_sources + ' · ' + regT('skippedSourcesHelp')"></p>
+        <p class="field-hint field-hint-warn" x-show="regPlan.candidate_selection_required" x-text="regT('candidateSelectionRequired')"></p>
         <p class="reg-help" x-text="regT('output')"></p><p class="reg-path" x-text="regPlanDirty ? regT('confirmOnGenerate') : regPlan.output_path"></p>
         <button type="button" class="btn btn-secondary btn-sm" x-show="regPlan.existing.length" @click="regShowPlan(); $nextTick(() => { const el = document.getElementById('regExistingResults'); el.open = true; el.scrollIntoView({block:'center',behavior:'smooth'}); })" x-text="regT('existing') + ' · ' + regPlan.existing.length"></button>
       </div></template>
       <div class="field" x-show="!regRunning && !regPlanConsumed && regPlan?.pending && regPlan?.existing.length"><div class="field-row"><div class="field-info"><div class="field-desc" x-text="regT('newRound')"></div></div><div class="field-control"><label class="toggle"><input type="checkbox" x-model="regNewRound" @change="regChanged()" :disabled="regBusy" :aria-label="regT('newRound')"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div></div></div>
       <p class="reg-help" x-show="!regPlan && !regRunning" x-text="regT('emptyPlan')"></p>
-      <button type="button" class="tagger-start-button" x-show="!regRunning" :disabled="regBusy || trainingActive" @click="regGenerate()"><svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z"/></svg><span x-text="regBusy ? regT('working') : !regPlanDirty && (regPlanConsumed || regPlan?.total && !regPlan.pending) ? regT('again') : regT('start')"></span></button>
+      <button type="button" class="tagger-start-button" x-show="!regRunning" :disabled="regBusy || trainingActive || regPlan?.candidate_selection_required" @click="regGenerate()"><svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z"/></svg><span x-text="regBusy ? regT('working') : !regPlanDirty && (regPlanConsumed || regPlan?.total && !regPlan.pending) ? regT('again') : regT('start')"></span></button>
       <button type="button" class="tagger-secondary-button" x-show="regTab === 'settings'" :disabled="regBusy" @click="regShowPlan()" x-text="regT('viewPlan')"></button>
       <button type="button" class="tagger-stop-button" x-show="regRunning" :disabled="regBusy" @click="regStop()"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12"/></svg><span x-text="regT('stop')"></span></button>
       <div class="tagger-task-status" x-show="regTask && regTaskMatchesPlan">
@@ -91,7 +92,7 @@
         <div class="te-dict-hover-head"><strong class="te-dict-hover-name" x-text="detail?.relative"></strong><button class="btn-icon reg-detail-close" @click="closeDetail()" :aria-label="regT('close')">×</button></div>
         <p class="reg-help" x-text="regPreviewDirty ? regT('awaitValidation') : (detail?.width || '—') + ' × ' + (detail?.height || '—') + ' · ' + regT('imageCount') + ' ' + (detail?.count || 0) + (regSettings.expand_repeats ? ' · ' + regT('repeats') + ' ' + detail?.repeats : '')"></p>
         <template x-for="entry in [{label:'original', text:detail?.original_caption}, {label:'caption', text:detail?.caption}, {label:'prompt', text:detail?.prompt}, {label:'negative', text:regSettings.negative}]" :key="entry.label"><div class="reg-source-detail-field"><span class="te-dict-hover-key" x-text="regT(entry.label)"></span><p x-text="entry.text || '—'"></p></div></template>
-        <p class="reg-error" x-show="detail?.reason" x-text="detail?.reason"></p>
+        <p class="reg-error" x-show="detail?.reason" x-text="regReasonText(detail)"></p>
         <span class="reg-help reg-detail-pin-hint" x-text="regT('pinDetails')"></span>
       </div>
     </div></template>

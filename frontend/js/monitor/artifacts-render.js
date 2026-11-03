@@ -268,8 +268,9 @@ window.monitorArtifactsRenderMixin = {
         emptyKey = 'noOutputsNoRunHint';
         emptyFallback = 'Start or select a training run to view its output files.';
       } else if (artifactUnavailable) {
-        emptyKey = 'noOutputsArtifactUnavailableHint';
-        emptyFallback = 'The output folder is unavailable. Logs and TensorBoard remain available; restore the path to list or download files.';
+        const hasLocationNotice = d.artifact_available === false && !!d.artifact_dir;
+        emptyKey = hasLocationNotice ? 'noOutputsArtifactUnavailableHint' : 'artifactUnavailableStandalone';
+        emptyFallback = hasLocationNotice ? 'Output files are unavailable.' : 'The output folder is unavailable. Check the path and refresh.';
       } else if (this.outputFilesError === 'loadFailed') {
         emptyKey = 'outputFilesLoadFailed';
         emptyFallback = 'Unable to load output files. Check the folder and try Refresh.';

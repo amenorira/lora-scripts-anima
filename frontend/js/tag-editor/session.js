@@ -438,7 +438,8 @@ window.tagEditorSession = {
         if (!recovery) this._teCheckDraft();
         this._teStartAutoSave();
       } else {
-        this.toast(j.message || this.t('common.error'), 'error');
+        this.toast(this.localizeApiError?.(j, 'common.error') || j.message || this.t('common.error'), 'error',
+          this.apiErrorDetails?.(j) ? {details:this.apiErrorDetails(j)} : undefined);
       }
     } catch (e) {
       if (e && e.name === 'AbortError') return;

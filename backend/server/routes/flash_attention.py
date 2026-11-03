@@ -23,5 +23,5 @@ async def install(request: Request) -> dict:
         body = {}
     source = body.get("source", "auto") if isinstance(body, dict) else None
     if source not in ("auto", "direct", "mirror"):
-        return {"success": False, "message": "Invalid download source / 下载源无效"}
+        return {"success": False, "message": "Invalid download source / 下载源无效", "error_code": "environmentInvalidDownloadSource"}
     return await install_jobs.start(flash_attention.install, source=source)

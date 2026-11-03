@@ -37,7 +37,7 @@ window.regularizationMixin = {
       filename: plan ? item.relative.split('/').pop() : item.filename,
       label: plan ? this.regPreviewDirty ? this.regT('awaitValidation') : item.reason ? this.regT('invalid') : this.regT('imageCount') + ' ' + (item.count || 0) : this.regT(item.status),
       caption: item.caption || '—', dimensions: (item.width || '—') + ' × ' + (item.height || '—'),
-      error: plan ? item.reason : item.error,
+      error: plan ? this.regReasonText(item) : item.error,
       image: plan ? this.regSourceImage(index) : ['completed', 'excluded'].includes(item.status) ? this.regImage(item) : '',
     }));
   },
@@ -111,6 +111,10 @@ window.regularizationMixin = {
     if (!this.regPlan || this.regPreviewDirty) return this.regT('awaitPreview');
     return this.regT('usableSources').replace('{valid}', this.regPlan.valid_sources).replace('{total}', this.regPlan.source_count);
   },
+  regReasonText(item) {
+    if (!item?.reason_code || typeof this.localizeApiError !== 'function') return item?.reason || '';
+    return this.localizeApiError({error_code: item.reason_code, message: item.reason || ''});
+  },
   regPromptSizing() {
     let observer;
     return {
@@ -141,17 +145,21 @@ window.regularizationMixin = {
       await this.regLoadSources();
       throw new Error(this.regT('changed'));
     }
-    if (result.status !== 'success') throw new Error(result.message || this.t('common.requestFailed'));
+    if (result.status !== 'success') {
+      const error = new Error(this.localizeApiError?.(result) || result.message || this.t('common.requestFailed'));
+      error.details = this.apiErrorDetails?.(result) || '';
+      throw error;
+    }
     return result.data;
   },
   async regAction(callback) {
     if (this.regBusy) return;
     this.regBusy = true; this.regError = '';
-    try { await callback(); } catch (error) { this.regReportError(error.message); }
+    try { await callback(); } catch (error) { this.regReportError(error.message, error.details); }
     finally { this.regBusy = false; }
   },
-  regReportError(message) {
-    if (message !== this.regError) this.toast(message, 'error');
+  regReportError(message, details = '') {
+    if (message !== this.regError) this.toast(message, 'error', details ? {details} : undefined);
     this.regError = message;
   },
   regInitSettings() {
@@ -234,7 +242,7 @@ window.regularizationMixin = {
     // Every edit invalidates the executable token, but only dataset-dependent
     // fields invalidate the source preview. Validate the full config on Generate.
     this.regPlanDirty = true;
-    const scanFields = ['source_dir', 'ignore_first', 'exclude_tags', 'size_mode', 'per_image', 'expand_repeats'];
+    const scanFields = ['source_dir', 'ignore_first', 'exclude_tags', 'caption_candidate', 'size_mode', 'per_image', 'expand_repeats'];
     const sizeFields = this.regSettings.size_mode === 'fixed' ? ['width', 'height'] : this.regSettings.size_mode === 'bucket'
       ? ['resolution', 'enable_bucket', ...(this.regSettings.enable_bucket ? ['bucket_no_upscale', 'min_bucket_reso', 'max_bucket_reso', 'bucket_reso_steps'] : [])] : [];
     if (!key || !this.regPlan || scanFields.includes(key) || sizeFields.includes(key)) this.regPreviewDirty = true;
@@ -304,7 +312,7 @@ window.regularizationMixin = {
       formDefaults: { value: this.regDefaults },
       _getEnvHint: { value: () => '' }, _getOutputPathHint: { value: () => '' },
     });
-    const helpFields = new Set(['source_dir', 'ignore_first', 'exclude_tags', 'sampler', 'scheduler', 'steps', 'cfg', 'seed', 'per_image', 'expand_repeats', 'size_mode', 'flow_shift', 'precision', 'blocks_to_swap', 'text_encoder_cpu', 'gpu_index', 'bucket_no_upscale', 'min_bucket_reso', 'max_bucket_reso', 'bucket_reso_steps']);
+    const helpFields = new Set(['source_dir', 'ignore_first', 'exclude_tags', 'caption_candidate', 'sampler', 'scheduler', 'steps', 'cfg', 'seed', 'per_image', 'expand_repeats', 'size_mode', 'flow_shift', 'precision', 'blocks_to_swap', 'text_encoder_cpu', 'gpu_index', 'bucket_no_upscale', 'min_bucket_reso', 'max_bucket_reso', 'bucket_reso_steps']);
     const field = (key, type = 'text', extra = {}) => ({ key, type, descKey: 'regularization.' + key, helpKey: helpFields.has(key) ? 'regularization.help.' + key : undefined, default: this.regDefaults[key], nested: false, labelOnly: true, ...extra });
     const num = (key, step = 1) => {
       const schema = this.regMetadata.fields[key];
@@ -326,7 +334,9 @@ window.regularizationMixin = {
       ['dataset', [field('source_dir', 'text', { role: 'file-folder', required: true,
         controlActions: `<button type="button" class="btn btn-secondary btn-sm" :disabled="regBusy || regRunning" :title="regT('importHelp')" @click="regImportTraining()" x-text="regT('import')"></button>` })]],
       ['models', [select('model_type'), ...['dit', 'text_encoder', 'vae', 'checkpoint', 'sdxl_vae'].map(key => field(key, 'text', { role: 'file-model', required: key !== 'sdxl_vae' }))]],
-      ['prompts', [num('ignore_first'), field('exclude_tags')]],
+      ['prompts', [field('caption_candidate', 'select', {options: ['', 'original', 'long', 'medium', 'short', 'first_line'].map(v => ({
+        v, l: v === '' ? this.regT('chooseCandidate') : v === 'first_line' ? this.regT('candidateFirstLine') : this.t('moss.candidate_' + v),
+      }))}), num('ignore_first'), field('exclude_tags')]],
       ['quantity', [select('sampler'), select('scheduler'), num('flow_shift', .1), num('steps'), num('cfg', .1),
         field('seed', 'text', { controlActions: seedActions })]],
       ['size', [select('size_mode'), widthField, heightField, field('resolution'), field('enable_bucket', 'toggle'), num('per_image'), field('expand_repeats', 'toggle')]],
@@ -346,6 +356,7 @@ window.regularizationMixin = {
         let rendered = this.renderField.call(scope, definition);
         let show = '';
         if (['width', 'height'].includes(definition.key)) show = "form.size_mode === 'fixed'";
+        if (definition.key === 'caption_candidate') show = "!!regPlan?.candidate_sources";
         if (['resolution', 'enable_bucket'].includes(definition.key)) show = "form.size_mode === 'bucket'";
         if (definition.key === 'flow_shift') show = "form.model_type !== 'sdxl' && form.scheduler !== 'flux2'";
         if (['precision', 'blocks_to_swap', 'text_encoder_cpu'].includes(definition.key)) show = "form.memory_mode === 'manual'";
@@ -353,6 +364,7 @@ window.regularizationMixin = {
         if (['dit', 'text_encoder', 'vae'].includes(definition.key)) show = "form.model_type !== 'sdxl'";
         if (['checkpoint', 'sdxl_vae'].includes(definition.key)) show = "form.model_type === 'sdxl'";
         html += show ? '<div x-show="' + show + '" x-cloak>' + rendered + '</div>' : rendered;
+        if (definition.key === 'source_dir') html += '<details class="field-hint"><summary>' + this.esc(this.regT('sourceFolderRules')) + '</summary><p>' + this.esc(this.regT('sourceFolderRulesHelp')) + '</p></details>';
       }
       if (title === 'size') html += '<div class="card reg-extra-options" :class="{\'card-collapsed\': regSectionCollapsed.bucketSettings}" x-show="form.size_mode === \'bucket\' && form.enable_bucket">' + sectionHeader('bucketSettings') + '<div class="card-body" :inert="!!regSectionCollapsed.bucketSettings">' + bucketFields.map(definition => this.renderField.call(scope, definition)).join('') + '</div></div>';
       html += '</div></div>';
@@ -406,6 +418,7 @@ window.regularizationMixin = {
     // Files may have been added outside the app since the last preview.
     await this.regScan();
     if (this.regError || !this.regPlan) return;
+    if (this.regPlan.candidate_selection_required) { this.regReportError(this.regT('candidateSelectionRequired')); return; }
     if (!this.regPlan.total) { this.regReportError(this.regT('noUsableSources')); return; }
     if (this.regPlanConsumed || this.regPlan.total && !this.regPlan.pending) await this.regAgain();
     else await this.regStart();

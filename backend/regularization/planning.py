@@ -26,6 +26,7 @@ class Settings(BaseModel):
     vae: str = "./models/qwen_image_vae.safetensors"
     ignore_first: int = Field(0, ge=0, le=10000)
     exclude_tags: str = ""
+    caption_candidate: Literal["", "first_line", "original", "long", "medium", "short"] = ""
     extra_positive: str = ""
     negative: str = ""
     per_image: int = Field(1, ge=1, le=1000)
@@ -97,6 +98,61 @@ def source_stamp(path):
     return [str(path), stat.st_size, stat.st_mtime_ns]
 
 
+class CaptionSelectionError(ValueError):
+    """A source needs a user-selected caption or has invalid candidate data."""
+
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+
+
+# The reserved default marker is recognizable even when its name is invalid.
+CANDIDATE_HEADER = re.compile(r"(.+?) # (original|long|medium|short)|---===--- #(?: .*)?")
+
+
+def source_caption(text: str, candidate: str) -> tuple[str, bool]:
+    """Read ordinary first-line captions or an explicitly selected named candidate.
+
+    A first line matching the writer's exact ``separator # name`` header is
+    potentially ambiguous with ordinary text. Require an explicit choice,
+    including a first-line option for files which only resemble this format.
+    """
+    lines = text.lstrip("\ufeff").splitlines()
+    first = lines[0] if lines else ""
+    header = CANDIDATE_HEADER.fullmatch(first.strip())
+    if header and not header.group(1):
+        raise CaptionSelectionError("regularization_candidate_invalid", "Invalid caption candidate format / 标注候选格式无效")
+    if not header:
+        return first, False
+    if not candidate:
+        raise CaptionSelectionError("regularization_candidate_required", "Select a caption candidate / 请选择标注候选")
+    separator = header.group(1)
+    marker = separator + " # "
+    names = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith(marker):
+            name = stripped[len(marker):].strip()
+            if name not in {"original", "long", "medium", "short"} or name in names:
+                raise CaptionSelectionError("regularization_candidate_invalid", "Invalid caption candidate format / 标注候选格式无效")
+            names.append(name)
+    if candidate == "first_line":
+        # A default or repeated named header is unambiguously generated data;
+        # never train on that header even if this option was chosen for another
+        # ambiguous ordinary caption in the same dataset.
+        if separator == "---===---" or len(names) > 1:
+            raise CaptionSelectionError("regularization_candidate_not_plain", "Select a named caption candidate / 此文件需要选择具名标注候选")
+        return first, True
+    from backend.tagger.captioning import parse_caption_text
+    sections = parse_caption_text(text, separator)
+    selected = sections.get(candidate, "").strip()
+    if not selected:
+        raise CaptionSelectionError("regularization_candidate_missing", "Selected caption candidate is missing or empty / 所选标注候选缺失或为空")
+    # The generated training caption must be one line. Preserve all text while
+    # converting candidate line breaks to spaces instead of dropping later lines.
+    return " ".join(line.strip() for line in selected.splitlines()), True
+
+
 def scan(settings: Settings, overrides=None):
     root = resolve_input(settings.source_dir)
     output_root = storage.OUTPUT_ROOT.resolve()
@@ -153,8 +209,9 @@ def scan(settings: Settings, overrides=None):
         try:
             raw = caption_path.read_bytes()
             item["caption_sha256"] = hashlib.sha256(raw).hexdigest()
-            lines = raw.decode("utf-8-sig").splitlines()
-            item["original_caption"] = lines[0] if lines else ""
+            item["original_caption"], multi_candidate = source_caption(raw.decode("utf-8-sig"), settings.caption_candidate)
+            if multi_candidate:
+                item["multi_candidate"] = True
             caption = clean_caption(item["original_caption"], settings.ignore_first, settings.exclude_tags)
             if relative.as_posix() in overrides:
                 caption = str(overrides[relative.as_posix()]).strip()
@@ -162,7 +219,7 @@ def scan(settings: Settings, overrides=None):
                     raise ValueError("Caption must be a single line / 标签必须为一行")
             item["caption"] = caption
             if not caption:
-                raise ValueError("Empty caption after cleaning / 清理后标签为空")
+                raise CaptionSelectionError("regularization_empty_caption", "Empty caption after cleaning / 清理后标签为空")
             with Image.open(path) as image:
                 w, h = image.size
                 # Match the displayed orientation without decoding/resizing pixels.
@@ -181,6 +238,12 @@ def scan(settings: Settings, overrides=None):
             item["count"] = settings.per_image * (repeats if settings.expand_repeats else 1)
         except FileNotFoundError:
             item["reason"] = "Missing caption txt / 缺少标签 txt"
+            item["reason_code"] = "regularization_missing_caption"
+        except CaptionSelectionError as exc:
+            item["reason"] = str(exc)
+            item["reason_code"] = exc.code
+            if exc.code.startswith("regularization_candidate_"):
+                item["multi_candidate"] = True
         except Exception as exc:
             item["reason"] = str(exc)
         sources.append(item)
@@ -191,8 +254,17 @@ def scan(settings: Settings, overrides=None):
     return root, sources
 
 
+def identity_source(source):
+    # Presentation-only error codes must not change fingerprints of old runs.
+    return {key: value for key, value in source.items() if key != "reason_code"}
+
+
 def identity(settings, root, sources):
     config = settings.model_dump()
+    # A selection cannot affect a set of ordinary captions. This applies to
+    # the old source subset too when checking whether an existing run can grow.
+    if not config["caption_candidate"] or not any(s.get("multi_candidate") for s in sources):
+        config.pop("caption_candidate")
     config["source_dir"] = str(root)
     model_keys = ("checkpoint", "sdxl_vae") if settings.model_type == "sdxl" and settings.sdxl_vae.strip() else ("checkpoint",) if settings.model_type == "sdxl" else ("dit", "text_encoder", "vae")
     # Preserve fingerprints of existing Anima jobs.
@@ -205,7 +277,7 @@ def identity(settings, root, sources):
             raise ValueError(f"Model not found / 模型不存在: {path}")
         config[key] = str(path)
     models = [source_stamp(Path(config[k])) for k in model_keys]
-    return config, digest({"settings": config, "sources": sources, "models": models})
+    return config, digest({"settings": config, "sources": [identity_source(s) for s in sources], "models": models})
 
 
 def choose_output(root, fingerprint, new_round=False, *, settings=None, sources=None):
@@ -226,10 +298,10 @@ def choose_output(root, fingerprint, new_round=False, *, settings=None, sources=
                 return key, manifest, existing
             if not new_round and settings is not None and sources is not None:
                 previous = manifest.get("sources", [])
-                current = {s["relative"]: s for s in sources}
+                current = {s["relative"]: identity_source(s) for s in sources}
                 # Only extend an unchanged plan. Recompute its identity to also
                 # check model file revisions, including for legacy manifests.
-                if (previous and all(current.get(s["relative"]) == s for s in previous)
+                if (previous and all(current.get(s["relative"]) == identity_source(s) for s in previous)
                         and identity(settings, root, previous)[1] == manifest.get("fingerprint")):
                     return key, manifest, existing
         except (OSError, ValueError, KeyError):

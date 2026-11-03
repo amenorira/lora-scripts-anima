@@ -24,7 +24,9 @@ async def enabled(request: Request) -> dict:
             raise ValueError("enabled must be boolean / enabled 必须为布尔值")
         result = await asyncio.to_thread(moss_acceleration.set_enabled, value)
         return {"success": True, "data": result}
-    except (ValueError, RuntimeError, OSError) as exc:
+    except RuntimeError as exc:
+        return {"success": False, "message": str(exc), "error_code": "environmentMossVerifyRequired"}
+    except (ValueError, OSError) as exc:
         return {"success": False, "message": str(exc)}
 
 

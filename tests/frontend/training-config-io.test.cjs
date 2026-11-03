@@ -195,6 +195,7 @@ function importApplication() {
     _buildFormDefaults: type => ({ model_train_type: type, learning_rate: 'default' }),
     _replaceProfileFieldSources() {}, _normalizeProfileSelectValues() {}, _captureProfileDraft() {},
     _persistProfileDrafts() {}, _persistProfileFieldSources() {}, updateToml() {}, rebuildForm() {},
+    _persistActiveTrainingForm() { persisted.push(JSON.parse(JSON.stringify(this.form))); },
     switchTrainType(type) { this.form = { model_train_type: type }; },
     $nextTick: callback => ticks.push(callback),
     toast: (...args) => toasts.push(args), t: key => key,

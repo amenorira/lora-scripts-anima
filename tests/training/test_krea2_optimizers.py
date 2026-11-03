@@ -7,11 +7,19 @@ from backend.training.config.krea2_optimizers import ARGUMENTS
 from backend.training.config.musubi_krea2 import (
     KREA2_FIELDS, _build_krea2_optimizer_args, build_krea2_train_config, validate_krea2_config,
 )
-from backend.training.fields.optimizer_metadata import optimizer_entries, KREA2_PROFILE, SD_SCRIPTS_PROFILE
+from backend.training.fields.optimizer_metadata import optimizer_entries, optimizer_groups, KREA2_PROFILE, SD_SCRIPTS_PROFILE
 from tests.training.test_multi_core_krea2 import krea2_config
 
 
 class Krea2OptimizerTests(unittest.TestCase):
+
+    def test_prodigy_description_matches_learning_rate_behavior_per_profile(self):
+        def description(profile, selector):
+            return next(option['dk'] for group in optimizer_groups(profile)
+                        for option in group['options'] if option['v'] == selector)
+
+        self.assertEqual(description(SD_SCRIPTS_PROFILE, 'Prodigy'), 'opt.optimizer_type_Prodigy')
+        self.assertEqual(description(KREA2_PROFILE, 'prodigyopt.Prodigy'), 'opt.krea_optimizer_type_Prodigy')
 
     def test_default_optimizer_exports_the_same_arguments_as_explicit_selection(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -20,6 +20,9 @@ window.trainingCoreMixin = {
   _localeChangeHandler: null,
   _trainFormMountedRoute: '',
   _trainFormLocale: '',
+  _trainingSessionRoute: '',
+  _preserveUnloadedTrainingDrafts: false,
+  _sessionEditedProfiles: null,
   _trainTypeSwitchFrame: null,
   _trainTypeSwitchCommitFrame: null,
   _pendingTrainType: '',
@@ -241,9 +244,7 @@ window.trainingCoreMixin = {
     this._captureProfileDraft(this._activeTrainType || this.form.model_train_type, this.form);
     this._persistProfileDrafts(route);
     this._persistProfileFieldSources(route);
-    try {
-      localStorage.setItem('anima-form-' + route, JSON.stringify(this.form));
-    } catch (e) {}
+    this._persistActiveTrainingForm(route);
 
     this._cancelTrainingPreflight();
     this.stopSectionScroll();
@@ -260,9 +261,7 @@ window.trainingCoreMixin = {
       this._captureProfileDraft(this._activeTrainType || this.form.model_train_type, this.form);
       this._persistProfileDrafts(this._trainFormMountedRoute);
       this._persistProfileFieldSources(this._trainFormMountedRoute);
-      try {
-        localStorage.setItem('anima-form-' + this._trainFormMountedRoute, JSON.stringify(this.form));
-      } catch (e) {}
+      this._persistActiveTrainingForm(this._trainFormMountedRoute);
     }
 
     const dispose = (key) => {
@@ -318,19 +317,29 @@ window.trainingCoreMixin = {
   },
 
   // ── Training Form ──────────────────────────────────────
-  buildTrainForm() {
-    const r = this.currentRoute;
-    if (this._resumeTrainForm(r)) { this.regApplyPendingTrainingPath?.(); return; }
-    if (this._trainFormMountedRoute) this._disposeTrainForm();
-
+  _initializeTrainingFormState(r, sameSession, applyPendingPath = false) {
     const cfg = ROUTE_CONFIG[r] || {};
     const routeTrainType = cfg.trainType || 'anima-lora';
 
     const savedKey = 'anima-form-' + r;
     let saved = null;
-    try { const raw = localStorage.getItem(savedKey); if (raw) saved = JSON.parse(raw); } catch (e) {}
-    this._profileFormDrafts = this._loadProfileDrafts(r);
-    this._profileFieldSources = this._loadProfileFieldSources(r);
+    if (sameSession) {
+      // A locale change can rebuild the form; retain this session's edits even
+      // when restoring an earlier session was disabled at startup.
+      saved = { ...this.form };
+    } else {
+      this._trainingSessionRoute = r;
+      this._preserveUnloadedTrainingDrafts = this.autoLoadHistory === false;
+      this._sessionEditedProfiles = new Set();
+      if (this._preserveUnloadedTrainingDrafts) {
+        this._profileFormDrafts = {};
+        this._profileFieldSources = {};
+      } else {
+        try { const raw = localStorage.getItem(savedKey); if (raw) saved = JSON.parse(raw); } catch (e) {}
+        this._profileFormDrafts = this._loadProfileDrafts(r);
+        this._profileFieldSources = this._loadProfileFieldSources(r);
+      }
+    }
     this._optimizerDrafts = {};
     this._optimizerRestore = null;
 
@@ -369,13 +378,29 @@ window.trainingCoreMixin = {
       this.form.network_module = 'networks.lora';
     }
     this.formDefaults = { ...defaults };
-    this.regApplyPendingTrainingPath?.();
+    if (applyPendingPath) this.regApplyPendingTrainingPath?.();
     this._syncKrea2CacheDir();
     this._captureProfileDraft(this.form.model_train_type, this.form, defaults);
-    this._persistProfileDrafts(r);
-    this._persistProfileFieldSources(r);
     this.formHistory = [{ ...this.form }];
     this.formHistoryIdx = 0;
+    return { trainType, defaults };
+  },
+
+  // History reuse can be the first action involving the training form. Load
+  // the same state a normal first mount would use, without rendering or saving.
+  _ensureTrainingSession(route) {
+    if (!route?.startsWith('train-') || this._trainingSessionRoute === route) return;
+    this._initializeTrainingFormState(route, false);
+  },
+
+  buildTrainForm() {
+    const r = this.currentRoute;
+    if (this._resumeTrainForm(r)) { this.regApplyPendingTrainingPath?.(); return; }
+    const sameSession = this._trainingSessionRoute === r;
+    if (this._trainFormMountedRoute) this._disposeTrainForm();
+    const { trainType, defaults } = this._initializeTrainingFormState(r, sameSession, true);
+    this._persistProfileDrafts(r);
+    this._persistProfileFieldSources(r);
 
     const tt = this.trainTypes.find(t => t.v === this.form.model_train_type);
     this.currentTrainTypeDesc = tt ? window.t(tt.dk, tt.l) : '';
@@ -416,7 +441,7 @@ window.trainingCoreMixin = {
         self._captureProfileDraft(self._activeTrainType || self.form.model_train_type, self.form);
         self._persistProfileDrafts(r);
         self._persistProfileFieldSources(r);
-        try { localStorage.setItem(savedKey, JSON.stringify(self.form)); } catch (e) {}
+        self._persistActiveTrainingForm(r);
       }, 1000);
     });
     self.scheduleShapeEstimate();
@@ -688,6 +713,7 @@ window.trainingCoreMixin = {
     // 始终从当前训练类型的 registry 字段定义重新构建，不复用可能已被
     // 导入配置或参数联动修改过的 formDefaults。
     const currentTrainType = this.form.model_train_type;
+    this._markTrainingDraftEdited(currentTrainType);
     this._optimizerDrafts = { ...this._optimizerDrafts, [currentTrainType]: {} };
     this._optimizerRestore = null;
     const profileDefaults = this._buildFormDefaults(currentTrainType);

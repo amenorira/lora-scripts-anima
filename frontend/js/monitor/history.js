@@ -81,7 +81,7 @@ window.monitorHistoryMixin = {
       if (j.status === 'success') {
         this.toast(this.t('monitor.runDeleted'), 'success');
       } else {
-        this.toast(j.message || this.t('monitor.deleteFailed'), 'error');
+        this.toast(this.localizeApiError(j, 'monitor.deleteFailed'), 'error', { details: this.apiErrorDetails(j) });
       }
     } catch(e) {
       this.toast(this.t('monitor.deleteFailed'), 'error');
@@ -163,8 +163,8 @@ window.monitorHistoryMixin = {
         this._logAtBottom = true;
         this.renderDashboard();
       } else {
-        this.runDetailError = j.message || this.t('monitor.loadRunFailed');
-        this.toast(j.message || this.t('monitor.loadRunFailed'));
+        this.runDetailError = this.localizeApiError(j, 'monitor.loadRunFailed');
+        this.toast(this.runDetailError, 'error', { details: this.apiErrorDetails(j) });
       }
     } catch (e) {
       if (isCurrent()) this.runDetailError = this.t('monitor.runDetailError');

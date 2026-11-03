@@ -93,3 +93,16 @@ test('caption text picker uses the same translated request', async () => {
   await caption.pickCaptionPath('prompt_file');
   assert.equal(caption.captionOptions.prompt_file, './prompts.txt');
 });
+
+test('picker title uses each locale template and inserts labels literally', () => {
+  const app = application();
+  app._pickerFieldLabel = () => 'data $&';
+  for (const [template, expected] of [
+    ['选择{field}', '选择data $&'],
+    ['Select {field}', 'Select data $&'],
+    ['{field}を選択', 'data $&を選択'],
+  ]) {
+    app.t = () => template;
+    assert.equal(app.pickerTitle(), expected);
+  }
+});

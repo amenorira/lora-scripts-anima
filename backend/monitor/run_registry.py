@@ -34,6 +34,10 @@ _delete_lock = threading.Lock()
 class RunDeletionError(OSError):
     """Monitoring files remain; keep the record visible for a retry."""
 
+    def __init__(self, failures: list[str]):
+        self.failures = tuple(failures)
+        super().__init__("Some files could not be removed / 部分文件无法删除: " + ", ".join(failures))
+
 
 def normalize_run_status(value: Any) -> str:
     return {
@@ -202,6 +206,20 @@ def read_run_config(run_dir: str | Path) -> dict:
         return {}
 
 
+def _preview_enabled(run_dir: Path, extra: dict[str, Any]) -> bool | None:
+    """Recover Krea 2 records created before preview metadata was accurate."""
+    enabled = extra.get("preview_enabled")
+    if enabled is not False or extra.get("profile_id") != "krea2-lora" or extra.get("operation") == "krea2_cache":
+        return enabled
+    if "sample_prompts" in extra:
+        return bool(extra["sample_prompts"])
+    config = read_run_config(run_dir)
+    if not config:
+        return None
+    # The Krea launcher writes this field only when sampling is enabled.
+    return bool(config.get("sample_prompts"))
+
+
 def _run_dir_holds_artifacts(run_dir: Path) -> bool:
     """运行目录自身是否承载模型/预览产物（整个运行目录被拷贝/搬迁的场景）。
 
@@ -280,7 +298,7 @@ def load_run_record(
         "artifact_path": artifact,
         "artifact_available": artifact.is_dir(),
         "artifact_external": artifact_external,
-        "preview_enabled": extra.get("preview_enabled"),
+        "preview_enabled": _preview_enabled(internal, extra),
         "output_base_dir": str(output_base),
         "deleted": bool(meta.get("deleted", False)),
         "imported": bool(meta.get("imported", False)),
@@ -395,7 +413,7 @@ def _delete_run_files(run_dir: str | Path) -> bool:
     if failures:
         tombstone["deletion_errors"] = failures
         _atomic_write_json(internal / RUN_META_NAME, tombstone)
-        raise RunDeletionError("Some files could not be removed / 部分文件无法删除，请关闭占用程序后重试: " + ", ".join(failures))
+        raise RunDeletionError(failures)
     for key in ("deletion_pending", "deletion_config", "deletion_result", "deletion_errors"):
         tombstone.pop(key, None)
     tombstone.update({

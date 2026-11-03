@@ -46,6 +46,12 @@ def _dataset_revision(images: tuple[dict, ...]) -> str:
     return digest.hexdigest()
 
 
+class DatasetDirectoryError(ValueError):
+    def __init__(self, directory: str):
+        super().__init__(f"Directory does not exist or is not a directory / 目录不存在或不是目录: {directory}")
+        self.directory = directory
+
+
 class DatasetSessionService:
     def __init__(self, max_sessions: int = 12, ttl_seconds: int = 1800):
         self.max_sessions = max_sessions
@@ -56,7 +62,7 @@ class DatasetSessionService:
     def create(self, directory: str, recursive: bool = True) -> DatasetSession:
         path = resolve_dir(directory)
         if not path.exists() or not path.is_dir():
-            raise ValueError(f"Directory does not exist or is not a directory / 目录不存在或不是目录: {directory}")
+            raise DatasetDirectoryError(directory)
         images, tags = get_cached_scan_dataset(path, recursive)
         image_snapshot = tuple(dict(item) for item in images)
         now = time.time()

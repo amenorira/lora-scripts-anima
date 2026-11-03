@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 
 from backend.core.realtime import realtime_tasks
 from backend.regularization import service
-from backend.regularization.planning import metadata
+from backend.regularization.planning import metadata, CaptionSelectionError
 from backend.server.models import APIResponseFail, APIResponseSuccess
 from backend.server.routes.image_preview import serve_preview_file
 
@@ -27,6 +27,8 @@ async def invoke(function, *args, register=False):
         return APIResponseSuccess(data=result)
     except service.PlanChanged as exc:
         return JSONResponse(status_code=409, content={"status": "changed", "message": str(exc), "data": exc.plan})
+    except CaptionSelectionError as exc:
+        return APIResponseFail(message=str(exc), data={"errorCode": exc.code})
     except Exception as exc:
         return APIResponseFail(message=str(exc))
 
