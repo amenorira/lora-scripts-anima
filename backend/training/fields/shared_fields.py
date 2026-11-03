@@ -81,6 +81,7 @@ _FIELDS = {
         "section": "performance",
         "show_if": {"key": "compile", "eq": True},
         "hint_key": "field.compile_cache_size_limitHint",
+        "quick_actions": [{"label": "32", "value": 32}],
     },
     "max_data_loader_n_workers": {
         "type": "number",
