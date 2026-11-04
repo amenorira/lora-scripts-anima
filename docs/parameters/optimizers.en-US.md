@@ -162,7 +162,7 @@ Higher weight decay shrinks weights more strongly and can prevent target feature
 
 After selecting AdamW, set AdamW fused updates to Auto, Enabled, or Disabled. Auto follows PyTorch defaults; Enabled passes `fused=True`, and Disabled passes `fused=False`. Fused updates combine optimizer operations to reduce dispatch overhead. Speed gains depend on the training configuration.
 
-When enabled, leave foreach on Auto or Disabled, and keep `differentiable=False`. Native configs pass this through `optimizer_args`, for example `"fused=True"`; importing restores the corresponding UI option.
+When enabled, leave foreach on Auto or Disabled, and keep `differentiable=False`. The UI disables conflicting choices and immediately shows field errors for conflicts from imported configs or custom arguments. Auto retains explicit custom arguments. Native configs pass this through `optimizer_args`, for example `"fused=True"`; importing restores the corresponding UI option.
 
 <!-- doc-anchor: foreach -->
 ### Batched tensor updates (foreach)

@@ -162,7 +162,7 @@ AdamWScheduleFree と ProdigyPlus は内部でスケジュールを管理する�
 
 AdamW を選ぶと「AdamW の融合更新」を設定できます。自動は PyTorch の選択に従い、有効は `fused=True`、無効は `fused=False` を渡します。融合更新はオプティマイザの演算をまとめて呼び出し回数を減らします。実際の高速化は学習設定によって異なります。
 
-有効にする場合、foreach は自動か無効にし、`differentiable=False` を維持してください。ネイティブ設定では `optimizer_args` に `"fused=True"` のように指定します。読み込み時は対応する画面上の選択肢に戻ります。
+有効にする場合、foreach は自動か無効にし、`differentiable=False` を維持してください。画面では競合する選択肢を選べず、読み込んだ設定やカスタム引数に競合があれば該当欄にすぐ表示します。自動はカスタム引数の指定を保持します。ネイティブ設定では `optimizer_args` に `"fused=True"` のように指定します。読み込み時は対応する画面上の選択肢に戻ります。
 
 <!-- doc-anchor: foreach -->
 ### テンソルの一括更新（foreach）

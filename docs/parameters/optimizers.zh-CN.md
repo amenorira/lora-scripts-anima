@@ -160,9 +160,9 @@ beta 越高，对应统计保留历史越久、响应越慢；越低则更快跟
 <!-- doc-anchor: adamw-fused -->
 ### AdamW 融合更新（fused）
 
-选择 AdamW 后，可在优化器参数中设置“AdamW 融合更新”：自动沿用 PyTorch 的选择，开启传入 `fused=True`，关闭传入 `fused=False`。融合更新合并优化器算子，减少调用开销，实际提速取决于训练配置。
+选择 AdamW 后，可在优化器参数中设置“AdamW 融合更新”：自动沿用 PyTorch 的选择，启用传入 `fused=True`，禁用传入 `fused=False`。融合更新合并优化器算子，减少调用开销，实际提速取决于训练配置。
 
-开启时将 foreach 保持为自动或关闭，且不能设置 `differentiable=True`。原生配置通过 `optimizer_args` 传递，例如 `"fused=True"`；导入后会还原为对应的界面选项。
+启用时将 foreach 保持为自动或禁用，且不能设置 `differentiable=True`。界面会禁选产生冲突的选项；导入配置或自定义参数产生冲突时，会立即在对应字段下提示。自动模式保留自定义参数中的设置。原生配置通过 `optimizer_args` 传递，例如 `"fused=True"`；导入后会还原为对应的界面选项。
 
 <!-- doc-anchor: foreach -->
 ### 批量张量更新（foreach）

@@ -36,9 +36,54 @@ window.trainingValidation = {
       if (errors[key] === message) errors[key] = null;
     });
     const current = { ...this._timestepOptionErrors(), ...this._checkpointOffloadErrors(), ...this._mossOptionErrors(),
-      ...this._kreaOptionErrors(), ...this._muonOptionErrors() };
+      ...this._kreaOptionErrors(), ...this._muonOptionErrors(), ...this._adamwOptionErrors() };
     this._trainingOptionErrorMessages = current;
     this.formErrors = { ...errors, ...current };
+  },
+
+  _adamwOptionValues(overrides = {}) {
+    const form = { ...this.form, ...overrides };
+    if (form.optimizer_type !== 'AdamW') return {};
+    const values = {};
+    for (const line of String(form.optimizer_args_custom || '').split('\n')) {
+      const match = line.match(/^\s*(fused|foreach|differentiable)\s*=(.*)$/);
+      if (!match) continue;
+      let literal = match[2].split('#', 1)[0].trim();
+      while (literal.startsWith('(') && literal.endsWith(')')) literal = literal.slice(1, -1).trim();
+      values[match[1]] = { True: true, False: false, None: null }[literal];
+    }
+    const fusedKey = form.model_train_type === 'krea2-lora' ? 'krea_adamw_fused' : 'adamw_fused';
+    for (const [key, argument] of [[fusedKey, 'fused'], ['foreach', 'foreach']]) {
+      if (String(form[key]) === 'true') values[argument] = true;
+      else if (String(form[key]) === 'false') values[argument] = false;
+    }
+    return values;
+  },
+
+  _adamwOptionDisabledReason(key, value) {
+    const fusedKey = this.form.model_train_type === 'krea2-lora' ? 'krea_adamw_fused' : 'adamw_fused';
+    if (this.form.optimizer_type !== 'AdamW' || !['foreach', fusedKey].includes(key)) return '';
+    // Auto can restore a custom True, so evaluate the prospective exported values.
+    const values = this._adamwOptionValues({ [key]: value });
+    if (values.fused === true) {
+      if (values.foreach === true) return this.t('field.adamwFusedForeachConflict');
+      if (key === fusedKey && values.differentiable === true) return this.t('field.adamwFusedDifferentiableConflict');
+    }
+    return '';
+  },
+
+  _adamwOptionErrors() {
+    const values = this._adamwOptionValues();
+    if (values.fused !== true) return {};
+    const errors = {};
+    const fusedKey = this.form.model_train_type === 'krea2-lora' ? 'krea_adamw_fused' : 'adamw_fused';
+    if (values.foreach === true) {
+      errors.foreach = errors[fusedKey] = this.t('field.adamwFusedForeachConflict');
+    }
+    if (values.differentiable === true) {
+      errors.optimizer_args_custom = errors[fusedKey] = this.t('field.adamwFusedDifferentiableConflict');
+    }
+    return errors;
   },
 
   _checkpointOffloadErrors() {
@@ -234,7 +279,7 @@ window.trainingValidation = {
       && !this._parseStepRules(this.form.step_rules)) {
       errors.step_rules = this.t('field.step_rulesError');
     }
-    Object.assign(errors, this._timestepOptionErrors(), this._checkpointOffloadErrors(), this._mossOptionErrors(), this._kreaOptionErrors(), this._muonOptionErrors());
+    Object.assign(errors, this._timestepOptionErrors(), this._checkpointOffloadErrors(), this._mossOptionErrors(), this._kreaOptionErrors(), this._muonOptionErrors(), this._adamwOptionErrors());
     if (this.form.model_train_type !== 'krea2-lora' && this.form.enable_preview && this.form.sample_interval_mode !== 'none') {
       const key = this.form.sample_interval_mode === 'steps' ? 'sample_every_n_steps' : 'sample_every_n_epochs';
       if (this.form[key] === '' || this.form[key] === null || this.form[key] === undefined) errors[key] = this.t('common.fieldRequired');
