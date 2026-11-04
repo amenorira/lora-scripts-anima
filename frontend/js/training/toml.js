@@ -533,6 +533,7 @@ window.trainingTomlMixin = {
         if (rawValue === undefined || rawValue === null || rawValue === '') continue;
         if (field.key === 'foreach' && rawValue === 'auto'
             && ['AdamWScheduleFree', 'schedulefree.AdamWScheduleFree'].includes(form.optimizer_type)) continue;
+        if (field.key === 'adamw_fused' && rawValue === 'auto') continue;
         const val = field.optimizerArgValues && Object.hasOwn(field.optimizerArgValues, rawValue)
           ? field.optimizerArgValues[rawValue] : rawValue;
         const defaultValue = field.optimizerDefaults?.[form.optimizer_type];

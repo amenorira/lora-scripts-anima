@@ -146,6 +146,7 @@ OPTIMIZER_ARGUMENT_DEFAULTS: dict[str, dict[str, Any]] = {
     "correct_bias": {"pytorch_optimizer.SOAP": True},
     "precondition_1d": {"pytorch_optimizer.SOAP": False},
     "foreach": {optimizer: None for optimizer in sorted(FOREACH_OPTIMIZERS)},
+    "adamw_fused": {"AdamW": None},
 }
 
 # Krea selects pytorch_optimizer.Lion; sd-scripts' bare Lion uses lion-pytorch.
@@ -632,6 +633,7 @@ FORM_ARGUMENTS: dict[str, FormArgument] = {
     "weight_decay": FormArgument("weight_decay", frozenset(OPTIMIZER_CONTRACTS) | {AUTOMAGIC_OPTIMIZER_TYPE}),
     "betas": FormArgument("betas", _BETAS_OPTIMIZERS),
     "foreach": FormArgument("foreach", FOREACH_OPTIMIZERS),
+    "adamw_fused": FormArgument("fused", frozenset({"AdamW"})),
     "eps": FormArgument("eps", _EPS_OPTIMIZERS | {AUTOMAGIC_OPTIMIZER_TYPE}),
     "muon_momentum": FormArgument("momentum", frozenset({MUON_OPTIMIZER_TYPE})),
     "muon_nesterov": FormArgument("nesterov", frozenset({MUON_OPTIMIZER_TYPE})),
@@ -802,7 +804,9 @@ def collect_optimizer_args(
             if (form_key == "foreach" and value == "auto"
                     and optimizer_type in {ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE, "schedulefree.AdamWScheduleFree"}):
                 continue
-            if form_key == "foreach" and isinstance(value, str):
+            if form_key == "adamw_fused" and value == "auto":
+                continue  # Preserve PyTorch defaults and explicit custom arguments.
+            if form_key in {"foreach", "adamw_fused"} and isinstance(value, str):
                 value = FOREACH_FORM_VALUES.get(value, value)
             value = _coerce_form_argument(value)
             defaults = OPTIMIZER_ARGUMENT_DEFAULTS.get(form_key, {})
@@ -860,7 +864,7 @@ def extract_optimizer_form(
         if optimizer_type not in mapping.optimizers or mapping.argument not in arguments:
             continue
         value = arguments[mapping.argument]
-        if key == "foreach":
+        if key in {"foreach", "adamw_fused"}:
             if (value is None and optimizer_type in
                     {ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE, "schedulefree.AdamWScheduleFree"}):
                 form[key] = "auto"
@@ -1042,6 +1046,8 @@ def validate_optimizer_contract(
 
     if optimizer_type == "AdamW" and args.get("foreach") is True and args.get("fused") is True:
         errors.append("AdamW: foreach and fused cannot both be True / foreach 与 fused 不能同时启用")
+    if optimizer_type == "AdamW" and args.get("differentiable") is True and args.get("fused") is True:
+        errors.append("AdamW: differentiable and fused cannot both be True / differentiable 与 fused 不能同时启用")
 
     for key, value in args.items():
         spec = contract.argument_specs.get(key)

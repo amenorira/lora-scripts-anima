@@ -10,6 +10,7 @@ from backend.training.fields.optimizer_metadata import KREA2_OPTIMIZER_SELECTORS
 
 
 FIELD_ALIASES = {
+    'adamw_fused': 'krea_adamw_fused',
     'weight_decay': 'krea_optimizer_weight_decay', 'betas': 'krea_optimizer_betas',
     'eps': 'krea_optimizer_eps', 'prodigy_d_coef': 'krea_prodigy_d_coef',
     'prodigy_d0': 'krea_prodigy_d0', 'prodigyplus_use_stableadamw': 'krea_prodigyplus_use_stableadamw',

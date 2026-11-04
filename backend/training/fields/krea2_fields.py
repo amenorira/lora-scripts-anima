@@ -866,7 +866,7 @@ KREA2_FIELDS += [
     _krea_field("krea_cache_reuse", "toggle", True, "performance", hint_key="field.krea_cache_reuseHint"),
     _krea_field("krea_cache_vae_tiling", "toggle", False, "performance", hint_key="field.krea_cache_vae_tilingHint"),
     _krea_field("krea_adamw_fused", "select", "auto", "optimizer", show_if={"key": "optimizer_type", "eq": "AdamW"},
-                hint_key="field.krea_adamw_fusedHint", options=[{"v": v, "l": v, "label_key": f"opt.krea_adamw_fused_{v}"}
+                hint_key="field.adamw_fusedHint", options=[{"v": v, "l": v, "label_key": f"opt.krea_adamw_fused_{v}", "dk": f"opt.adamw_fused_{v}Desc"}
                                                              for v in ("auto", "true", "false")]),
     _krea_field("krea_split_attn", "select", "auto", "performance", hint_key="field.krea_split_attnHint",
                 options=[{"v": v, "l": v, "label_key": f"opt.krea_split_attn_{v}"} for v in ("auto", "true", "false")]),

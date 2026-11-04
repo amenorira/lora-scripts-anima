@@ -157,6 +157,13 @@ beta 越高，对应统计保留历史越久、响应越慢；越低则更快跟
 
 提高权重衰减会加强权重收缩，过大会妨碍目标特征学习；降低会减弱这一约束，`0` 关闭衰减。人物 LoRA 先保留项目默认值，需要比较约束强度时再单独调整。
 
+<!-- doc-anchor: adamw-fused -->
+### AdamW 融合更新（fused）
+
+选择 AdamW 后，可在优化器参数中设置“AdamW 融合更新”：自动沿用 PyTorch 的选择，开启传入 `fused=True`，关闭传入 `fused=False`。融合更新合并优化器算子，减少调用开销，实际提速取决于训练配置。
+
+开启时将 foreach 保持为自动或关闭，且不能设置 `differentiable=True`。原生配置通过 `optimizer_args` 传递，例如 `"fused=True"`；导入后会还原为对应的界面选项。
+
 <!-- doc-anchor: foreach -->
 ### 批量张量更新（foreach）
 

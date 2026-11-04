@@ -212,3 +212,27 @@ test('foreach choices preserve native literals, custom precedence and optimizer 
     }
   }
 });
+
+test('AdamW fused control is visible and exports native booleans with custom precedence', () => {
+  for (const profile of ['anima-lora', 'moss-image-lora', 'sdxl-lora']) {
+    for (const [choice, literal] of [['auto', null], ['true', 'True'], ['false', 'False']]) {
+      const { app } = preview(profile, 'networks.lora_anima', { optimizer_type: 'AdamW', adamw_fused: choice });
+      const field = app.findFieldDef('adamw_fused');
+      assert.ok(field);
+      assert.equal(app._fieldShowIfMet(field), true);
+      assert.equal(app._collectTrainingPayload().adamw_fused, choice);
+      const args = app._buildOptimizerArgs(app.form);
+      if (literal === null) assert.equal(args.some(arg => arg.startsWith('fused=')), false);
+      else assert.ok(args.includes(`fused=${literal}`));
+      assert.doesNotMatch(app.tomlRaw, /^adamw_fused =/m);
+      app.form.optimizer_args_custom = 'fused=True';
+      assert.ok(app._buildOptimizerArgs(app.form).includes(`fused=${choice === 'false' ? 'False' : 'True'}`));
+      app.form.optimizer_type = 'AdamW8bit';
+      assert.equal(app._fieldShowIfMet(field), false);
+      assert.equal(app._collectTrainingPayload().adamw_fused, undefined);
+    }
+  }
+  const { context } = preview('krea2-lora', 'networks.lora_krea2', { optimizer_type: 'AdamW' });
+  const fields = context.window.getVisibleSections('krea2-lora').flatMap(section => section.fields);
+  assert.equal(fields.filter(field => ['adamw_fused', 'krea_adamw_fused'].includes(field.key)).length, 1);
+});
