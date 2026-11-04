@@ -29,7 +29,7 @@ async def prepare_settings(config, gpu_ids, profile) -> tuple[SdScriptsSettings 
             config.pop(SUBSET_TIMESTEP_OFFSETS_KEY, None)
         )
     except ValueError as exc:
-        return None, _training_error(message=str(exc))
+        return None, _training_error(message=str(exc), code="invalidSubsetOffsets", details=str(exc))
     if profile.id not in ("anima-lora", "moss-image-lora"):
         subset_timestep_offsets = {}
 
@@ -55,7 +55,8 @@ async def prepare_settings(config, gpu_ids, profile) -> tuple[SdScriptsSettings 
     validation_errors = validate_training_config(config, gpu_ids=gpu_ids)
     if validation_errors:
         return None, _training_error(
-            message="Invalid training configuration / 训练参数无效:\n" + "\n".join(validation_errors)
+            message="Invalid training configuration / 训练参数无效:\n" + "\n".join(validation_errors),
+            code="invalidTrainingConfig", details=validation_errors,
         )
 
     # ── TE 磁盘缓存一致性检查（按引擎）：改 caption/dropout 率不会让缓存失效，启动前提示 ──
@@ -78,7 +79,8 @@ async def prepare_settings(config, gpu_ids, profile) -> tuple[SdScriptsSettings 
     try:
         step_estimate = await _settled_to_thread(estimate_training_steps, estimate_config)
     except StepEstimateError as exc:
-        return None, _training_error(message=f"Training step calculation failed / 训练步数计算失败: {exc}")
+        return None, _training_error(message=f"Training step calculation failed / 训练步数计算失败: {exc}",
+                                     code="stepCalculationFailed", params={"estimateCode": exc.code, "estimateParams": exc.params}, details=str(exc))
 
     from backend.training.config.validation import validate_scheduler_step_budget
 
@@ -87,7 +89,8 @@ async def prepare_settings(config, gpu_ids, profile) -> tuple[SdScriptsSettings 
     )
     if scheduler_errors:
         return None, _training_error(
-            message="Invalid training configuration / 训练参数无效:\n" + "\n".join(scheduler_errors)
+            message="Invalid training configuration / 训练参数无效:\n" + "\n".join(scheduler_errors),
+            code="invalidTrainingConfig", details=scheduler_errors,
         )
 
     # AdEMAMix 的 α/β3 调度按预估总步数自动注入（仅在用户留空对应字段时）
@@ -102,7 +105,7 @@ async def prepare_settings(config, gpu_ids, profile) -> tuple[SdScriptsSettings 
         attn_requested = config.get("attn_mode", "torch")
         attn_actual, attn_warning = detect_attention_backend(attn_requested)
         if attn_requested == "flash" and attn_actual != "flash":
-            return None, _training_error(message=attn_warning)
+            return None, _training_error(message=attn_warning, code="attentionUnavailable", params={"backend": attn_requested}, details=attn_warning)
         if attn_warning:
             log.warning(f"[Attn] {attn_warning}")
             config["attn_mode"] = attn_actual
@@ -117,7 +120,8 @@ async def prepare_settings(config, gpu_ids, profile) -> tuple[SdScriptsSettings 
 async def check_input_files(config, model_train_type) -> tuple[int | None, dict | None]:
     dataset_ok = train_utils.validate_data_dir(config["train_data_dir"])
     if not dataset_ok:
-        return None, _training_error(message="Dataset path does not exist or has no images / 数据集路径不存在或无图片")
+        return None, _training_error(message="Dataset path does not exist or has no images / 数据集路径不存在或无图片",
+                                     code="datasetUnavailable", params={"path": str(config["train_data_dir"])})
 
     # 正则化数据目录：填了但不存在时直接报错，避免 sd-scripts 静默忽略导致用户以为有正则数据。
     # 目录存在但没有任何"数字_类名"子目录时同样报错——sd-scripts 只扫描子目录（子目录缺失时
@@ -127,7 +131,7 @@ async def check_input_files(config, model_train_type) -> tuple[int | None, dict 
         if not os.path.isdir(reg_data_dir):
             return None, _training_error(
                 message=f"Regularization data dir does not exist / 正则化数据目录不存在: {reg_data_dir}",
-                data={"errorCode": "regDataDirNotFound"},
+                code="regDataDirNotFound", params={"path": reg_data_dir},
             )
         reg_subdirs = [
             name
@@ -137,7 +141,7 @@ async def check_input_files(config, model_train_type) -> tuple[int | None, dict 
         if not reg_subdirs:
             return None, _training_error(
                 message=f"No valid subfolder (e.g. 10_face) found in regularization data dir / 正则化数据目录中未找到有效子文件夹（如 10_face）: {reg_data_dir}",
-                data={"errorCode": "regDataDirNoSubfolders"},
+                code="regDataDirNoSubfolders", params={"path": reg_data_dir},
             )
 
     image_count = await _settled_to_thread(
@@ -149,34 +153,35 @@ async def check_input_files(config, model_train_type) -> tuple[int | None, dict 
         train_utils.validate_model, config["pretrained_model_name_or_path"]
     )
     if not validated:
-        return None, _training_error(message=message)
+        return None, _training_error(message=message, code="baseModelInvalid", params={"path": str(config["pretrained_model_name_or_path"])}, details=message)
 
     # ── Anima: qwen3 编码器路径必填校验 ─────────────────
     if model_train_type == "anima-lora":
         qwen3_path = config.get("qwen3", "").strip()
         if not qwen3_path:
             return None, _training_error(
-                message="Anima LoRA training requires the Qwen3 encoder path / Anima LoRA 训练需要填写 Qwen3 编码器路径"
+                message="Anima LoRA training requires the Qwen3 encoder path / Anima LoRA 训练需要填写 Qwen3 编码器路径",
+                code="qwen3Required",
             )
         if not os.path.exists(qwen3_path):
-            return None, _training_error(message=f"Qwen3 model not found / Qwen3 模型不存在: {qwen3_path}")
+            return None, _training_error(message=f"Qwen3 model not found / Qwen3 模型不存在: {qwen3_path}", code="qwen3NotFound", params={"path": qwen3_path})
         vae_path = config.get("vae", "").strip()
         if not os.path.exists(vae_path):
-            return None, _training_error(message=f"VAE model not found / VAE 模型不存在: {vae_path}")
+            return None, _training_error(message=f"VAE model not found / VAE 模型不存在: {vae_path}", code="vaeNotFound", params={"path": vae_path})
 
     if model_train_type == "moss-image-lora":
         from backend.training.config.moss_image import validate_captions, validate_model_files
 
         model_errors = await _settled_to_thread(validate_model_files, config)
         if model_errors:
-            return None, _training_error(message="\n".join(model_errors))
+            return None, _training_error(message="\n".join(model_errors), code="modelFilesInvalid", details=model_errors)
         caption_errors = await _settled_to_thread(validate_captions, config)
         if caption_errors:
-            return None, _training_error(message="\n".join(caption_errors))
+            return None, _training_error(message="\n".join(caption_errors), code="captionsInvalid", details=caption_errors)
         if config.get("convrot_int8_bwd") == "int8":
             from library.convrot_int8_kernels import HAS_TRITON
 
             if not HAS_TRITON:
-                return None, _training_error(message="ConvRot INT8 backward requires CUDA and Triton / INT8 反向需要 CUDA 与 Triton")
+                return None, _training_error(message="ConvRot INT8 backward requires CUDA and Triton / INT8 反向需要 CUDA 与 Triton", code="int8BackwardUnavailable")
 
     return suggest_cpu_threads, None

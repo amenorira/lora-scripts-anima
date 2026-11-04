@@ -89,6 +89,37 @@ class CaptionWorkspaceTests(unittest.TestCase):
                 self.assertEqual(target.read_bytes(), original)
         self.assertEqual(output_options(extension=".caption.txt")["caption_extension"], ".caption.txt")
 
+    def test_plain_format_reaches_single_preview_and_offline_batch_export(self):
+        source = workspace.scan_source(str(self.image))
+        with patch.object(api_engine, "interrogate", return_value=(RESPONSE, "raw")):
+            result = workspace.preview_caption({"source_token": source["source_token"], "api": self.api,
+                "captioning": {"output_format": "plain", "candidates": ["long"]}})
+        self.assertEqual(result["text"], "Long description Visible text\n")
+        self.assertFalse(self.image.with_suffix(".txt").exists())
+        self.sidecar(reference="original tags")
+        source = self.scan()
+        with patch.object(api_engine, "interrogate") as call:
+            _, task = self.run_task(source["source_token"], mode="export", output_format="plain", candidates=["short"])
+            call.assert_not_called()
+        self.assertEqual(task["written"], 1)
+        self.assertEqual(self.image.with_suffix(".txt").read_text(encoding="utf-8"), "Short description\n")
+
+    def test_plain_format_and_invalid_hidden_separator_reach_annotation_routes(self):
+        source = self.scan()
+        app = FastAPI()
+        app.include_router(router, prefix="/api")
+        with TestClient(app) as client:
+            base = f"/api/tagger/source/{source['source_token']}"
+            options = {"output_format": "plain", "separator": ""}
+            plan = client.post(base + "/caption-plan", json=options).json()
+            self.assertEqual(plan["status"], "success")
+            overview = client.get(base + "/annotations", params=options).json()
+            self.assertEqual(overview["status"], "success")
+            self.assertEqual(overview["data"]["settings"]["output_format"], "plain")
+            self.assertEqual(overview["data"]["settings"]["separator"], "---===---")
+            detail = client.get(base + "/annotations/0", params=options).json()
+            self.assertEqual(detail["status"], "success")
+
 
     def test_preview_cancellation_holds_gate_until_request_settles_and_allows_training(self):
         source = workspace.scan_source(str(self.image))

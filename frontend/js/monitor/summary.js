@@ -179,7 +179,7 @@ window.monitorSummaryMixin = {
     let html = '<section class="m-console-card m-overview-metrics">';
     html += '<div class="m-card-heading"><div><span>' + this.esc(t('runSummary')) + '</span></div>';
     html += '<div class="m-summary-actions"><span class="m-summary-state" data-summary-state></span><span class="m-summary-connection" data-summary-connection hidden role="status" aria-live="polite"></span>';
-    if (!isHistory) html += '<button type="button" class="btn btn-sm m-summary-stop" data-summary-stop hidden @click="stopTraining()">' + this.esc(t('stopTraining')) + '</button>';
+    if (!isHistory) html += '<button type="button" class="btn btn-sm m-summary-stop" data-summary-stop hidden @click="stopTraining()" title="' + this.esc(t('training.stopHint')) + '">' + this.esc(t('stopTraining')) + '</button>';
     html += '</div></div>';
     if (!isHistory) html += '<div class="m-summary-notice" data-summary-notice hidden role="alert"></div>';
     if (!isHistory && state === 'UNKNOWN') return html + '</section>';

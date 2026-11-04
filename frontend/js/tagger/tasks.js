@@ -110,8 +110,7 @@ window.taggerTasksMixin = {
       localStorage.setItem(this._taggerTaskStorageKey(mode), taskId);
       if (body.data.engine === 'api' && this.taggerTaskActive(taskId)) {
         if (body.data.caption_options) {
-          const {dry_run, ...settings} = body.data.caption_options;
-          this.captionOptions = Object.assign({}, this.captionOptions, settings);
+          this.restoreCaptionTaskOptions(body.data.caption_options);
         }
       }
       if (this.taggerTaskActive(taskId)) this._setTaggerRealtimeTask(taskId);

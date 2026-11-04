@@ -1,7 +1,7 @@
 /* MOSS directory workflow, using the shared Tagger task/source lifecycle. */
 window.captionFieldDefaults = {
-  options: {mode:'generate',overwrite:false,recursive:true,reference_extension:'',caption_extension:'.txt',sidecar_suffix:'_caption.json',separator:'---===---',
-    candidates:['original','long','medium','short'],knowledge:'',knowledge_file:'',dir_knowledge_name:'_knowledge.txt',knowledge_suffix:'_knowledge.txt',prompt_source:'default',prompt_text:'',prompt_file:'',verbose:false},
+  options: {mode:'generate',overwrite:false,recursive:true,reference_extension:'',caption_extension:'.txt',sidecar_suffix:'_caption.json',separator:'---===---',output_format:'plain',
+    candidates:['long'],knowledge:'',knowledge_file:'',dir_knowledge_name:'_knowledge.txt',knowledge_suffix:'_knowledge.txt',prompt_source:'default',prompt_text:'',prompt_file:'',verbose:false},
   api: {baseUrl:'',apiKey:'',model:'',protocol:'chat-completions',max_workers:1,max_image_size:1536,jpeg_quality:'',max_tokens:16384,temperature:1,top_p:.95,timeout:600,max_retries:3,extra_body:'{}'},
 };
 window.captionOptionsMixin = {
@@ -16,19 +16,30 @@ window.captionOptionsMixin = {
   _taggerApiConnectionFingerprint: '',
   _taggerApiTestRequest: 0,
   _taggerApiTestAbort: null,
+  _captionCandidateDrafts: null,
+  _captionCandidateContext: 'batch',
+  _captionCandidateFormat: null,
 
   loadCaptionOptions() {
     if (this._captionOptionsLoaded) return;
     this._captionOptionsLoaded = true;
+    let candidateDrafts;
     try {
       const saved = JSON.parse(localStorage.getItem('anima-moss-workflow') || 'null');
       if (saved) {
         for (const key of Object.keys(this.captionOptions)) if (key in (saved.options || {})) this.captionOptions[key] = saved.options[key];
+        if (!saved.options?.output_format) this.captionOptions.output_format = 'multi';
+        if (!Object.hasOwn(saved.options || {},'candidates') && this.captionOptions.output_format === 'multi') this.captionOptions.candidates = ['original','long','medium','short'];
+        candidateDrafts = saved.candidateDrafts;
         for (const key of Object.keys(this.taggerApiSettings)) if (key in (saved.api || {})) this.taggerApiSettings[key] = saved.api[key];
       } else {
         // Import useful connection/file settings, without restoring removed AI modes or presets.
         const api = JSON.parse(localStorage.getItem('anima-tagger-api-settings') || '{}');
         const options = JSON.parse(localStorage.getItem('anima-ai-caption-options') || '{}');
+        if (Object.keys(options).length) {
+          this.captionOptions.output_format = 'multi';
+          if (!Object.hasOwn(options,'candidates')) this.captionOptions.candidates = ['original','long','medium','short'];
+        }
         for (const key of ['baseUrl','apiKey','model','protocol']) if (key in api) this.taggerApiSettings[key] = api[key];
         for (const key of ['reference_extension','caption_extension','sidecar_suffix','separator','knowledge','knowledge_file','dir_knowledge_name','knowledge_suffix','candidates']) if (key in options) this.captionOptions[key] = options[key];
         if (options.prompt_file) Object.assign(this.captionOptions, {prompt_source:'file', prompt_file:options.prompt_file});
@@ -37,20 +48,31 @@ window.captionOptionsMixin = {
     } catch (_) {}
     if (!Array.isArray(this.captionOptions.candidates)) this.captionOptions.candidates = [...window.captionFieldDefaults.options.candidates];
     this.captionOptions.candidates = ['original','long','medium','short'].filter(name => this.captionOptions.candidates.includes(name));
+    this.initCaptionCandidateDrafts(candidateDrafts);
+    this._captionInitialCandidateDrafts = JSON.parse(JSON.stringify(this._captionCandidateDrafts));
     this._captionInitialFields = JSON.parse(JSON.stringify({options:this.captionOptions,api:this.taggerApiSettings}));
     this.captionOptionsChanged?.({initialize:true});
   },
 
   captionFieldChanged(scope, key) {
     const values = scope === 'api' ? this.taggerApiSettings : this.captionOptions;
-    const value = values[key], original = window.captionFieldDefaults[scope]?.[key];
+    const value = values[key], original = scope === 'options' && key === 'candidates'
+      ? this.captionDefaultCandidates(this._captionCandidateContext,this.captionOptions.output_format) : window.captionFieldDefaults[scope]?.[key];
     return Array.isArray(value) ? JSON.stringify(value) !== JSON.stringify(original) : String(value) !== String(original);
   },
 
   restoreCaptionField(scope, key, undo = false) {
     const defaults = window.captionFieldDefaults[scope];
     if (!defaults || !Object.hasOwn(defaults,key)) return;
-    const value = undo ? this._captionInitialFields?.[scope]?.[key] ?? defaults[key] : defaults[key];
+    let value = undo ? this._captionInitialFields?.[scope]?.[key] ?? defaults[key] : defaults[key];
+    if (scope === 'options' && ['candidates','output_format'].includes(key)) {
+      this.normalizeCaptionFormat();
+      const initial = this._captionInitialCandidateDrafts?.[this._captionCandidateContext];
+      value = key === 'output_format'
+        ? undo ? initial?.format || defaults.output_format : defaults.output_format
+        : undo ? initial?.[this.captionOptions.output_format] || this.captionDefaultCandidates(this._captionCandidateContext,this.captionOptions.output_format)
+          : this.captionDefaultCandidates(this._captionCandidateContext,this.captionOptions.output_format);
+    }
     (scope === 'api' ? this.taggerApiSettings : this.captionOptions)[key] = JSON.parse(JSON.stringify(value));
     if (scope === 'options' && key === 'recursive') this.scheduleTaggerSourceScan();
     this.saveCaptionOptions();
@@ -67,8 +89,9 @@ window.captionOptionsMixin = {
   },
 
   saveCaptionOptions() {
+    this.normalizeCaptionFormat();
     this.syncTaggerApiConnection();
-    localStorage.setItem('anima-moss-workflow', JSON.stringify({options:this.captionOptions, api:this.taggerApiSettings}));
+    localStorage.setItem('anima-moss-workflow', JSON.stringify({options:this.captionOptions, api:this.taggerApiSettings,candidateDrafts:this._captionCandidateDrafts}));
     if (this.taggerSourceMode === 'api-folder') localStorage.setItem('anima-ai-source-path', this.taggerSourcePath);
     this.captionOptionsChanged?.();
   },
@@ -93,6 +116,87 @@ window.captionOptionsMixin = {
 
   captionSelectedCandidates() {
     return [...this.captionOptions.candidates];
+  },
+
+  captionDefaultCandidates(context, format) {
+    return format === 'plain' ? ['long'] : context === 'single' ? ['long','medium','short'] : ['original','long','medium','short'];
+  },
+
+  captionValidCandidates(value, context, format) {
+    const names = ['original','long','medium','short'].filter(name => Array.isArray(value) && value.includes(name) && (context !== 'single' || name !== 'original'));
+    return format === 'plain' ? [names.find(name => name !== 'original') || names[0] || 'long'] : names;
+  },
+
+  initCaptionCandidateDrafts(saved) {
+    const format = ['plain','multi'].includes(this.captionOptions.output_format) ? this.captionOptions.output_format : 'multi';
+    const candidates = this.captionOptions.candidates;
+    this._captionCandidateDrafts = {};
+    for (const context of ['batch','single']) {
+      const stored = saved?.[context];
+      const active = ['plain','multi'].includes(stored?.format) ? stored.format : format;
+      const draft = {format:active};
+      for (const kind of ['plain','multi']) {
+        const value = Array.isArray(stored?.[kind]) ? stored[kind]
+          : kind === active ? candidates : this.captionDefaultCandidates(context,kind);
+        draft[kind] = this.captionValidCandidates(value,context,kind);
+        if (context === 'single' && !draft[kind].length && Array.isArray(value) && value.includes('original')) draft[kind] = ['long'];
+      }
+      this._captionCandidateDrafts[context] = draft;
+    }
+    this._captionCandidateContext = 'batch';
+    this._captionCandidateFormat = this._captionCandidateDrafts.batch.format;
+    this.captionOptions.output_format = this._captionCandidateFormat;
+    this.captionOptions.candidates = [...this._captionCandidateDrafts.batch[this._captionCandidateFormat]];
+  },
+
+  normalizeCaptionFormat() {
+    if (!this._captionCandidateDrafts) this.initCaptionCandidateDrafts();
+    const context = this._captionCandidateContext, draft = this._captionCandidateDrafts[context];
+    const format = ['plain','multi'].includes(this.captionOptions.output_format) ? this.captionOptions.output_format : 'multi';
+    if (format !== this._captionCandidateFormat) {
+      draft[this._captionCandidateFormat] = this.captionValidCandidates(this.captionOptions.candidates,context,this._captionCandidateFormat);
+      this.captionOptions.candidates = [...draft[format]];
+    }
+    this.captionOptions.output_format = draft.format = this._captionCandidateFormat = format;
+    this.captionOptions.candidates = this.captionValidCandidates(this.captionOptions.candidates,context,format);
+    draft[format] = [...this.captionOptions.candidates];
+  },
+
+  setCaptionCandidateContext(context) {
+    this.normalizeCaptionFormat();
+    if (context === this._captionCandidateContext) return;
+    this._captionCandidateContext = context;
+    const draft = this._captionCandidateDrafts[context];
+    this.captionOptions.output_format = this._captionCandidateFormat = draft.format;
+    this.captionOptions.candidates = [...draft[draft.format]];
+  },
+
+  restoreCaptionTaskOptions(settings) {
+    this.normalizeCaptionFormat();
+    const restored = Object.fromEntries(Object.keys(window.captionFieldDefaults.options)
+      .filter(key => Object.hasOwn(settings,key)).map(key => [key,settings[key]]));
+    const format = ['plain','multi'].includes(restored.output_format) ? restored.output_format : 'multi';
+    const candidates = this.captionValidCandidates(Array.isArray(restored.candidates)
+      ? restored.candidates : this.captionDefaultCandidates('batch',format),'batch',format);
+    const batch = this._captionCandidateDrafts.batch;
+    batch.format = format;
+    batch[format] = [...candidates];
+    // Active API tasks belong to batch annotation, even when recovered on the trial tab.
+    const active = this._captionCandidateContext === 'batch'
+      ? {output_format:format,candidates} : {output_format:this.captionOptions.output_format,candidates:[...this.captionOptions.candidates]};
+    this.captionOptions = {...this.captionOptions,...restored,...active};
+    if (this._captionCandidateContext === 'batch') this._captionCandidateFormat = format;
+    this.saveCaptionOptions();
+  },
+
+  setCaptionOutputFormat(format) {
+    this.normalizeCaptionFormat();
+    this.captionOptions.output_format = format;
+    this.saveCaptionOptions();
+  },
+
+  captionOutputFormatConfig() {
+    return {options:['plain','multi'].map(v => ({v,l:this.t('caption.format_' + v),d:this.t('caption.format_' + v + 'Help')}))};
   },
 
   setCaptionTaskMode(mode) {
@@ -227,6 +331,7 @@ window.captionOptionsMixin = {
 
   async startApiTagger(dryRun = false, approval = '') {
     if (dryRun ? !this.captionCanCheck() : !this.taggerApiCanStart()) return;
+    this.normalizeCaptionFormat();
     const route = this.currentRoute, mode = this.taggerSourceMode;
     const source = this.taggerSource, token = source.source_token;
     const options = {...this.captionOptions,candidates:[...this.captionOptions.candidates]};

@@ -77,6 +77,63 @@ class CaptioningTests(unittest.TestCase):
                 captioning.process(self.config(), self.image, self.runtime(overwrite=True))
             call.assert_not_called()
 
+    def test_plain_caption_generation_regeneration_and_json_export(self):
+        self.image.with_suffix(".txt").write_text("original tags", encoding="utf-8")
+        config = self.config()
+        with patch.object(api_engine, "interrogate", return_value=(RESPONSE, json.dumps(RESPONSE))) as call:
+            runtime = self.runtime(output_format="plain", candidates=["long"])
+            captioning.process(config, self.image, runtime)
+            self.assertEqual(self.image.with_suffix(".txt").read_text(encoding="utf-8"), "Long description Visible text\n")
+            record = self.root / "sample_caption.json"
+            data = json.loads(record.read_text(encoding="utf-8"))
+            self.assertEqual(data["response"], RESPONSE)
+            self.assertEqual(data["reference"], "original tags")
+            captioning.process(config, self.image, self.runtime(output_format="plain", candidates=["short"], overwrite=True))
+            self.assertEqual(json.loads(record.read_text(encoding="utf-8"))["reference"], "original tags")
+            calls = call.call_count
+            captioning.process(config, self.image, self.runtime(mode="export", output_format="plain", candidates=["original"], overwrite=True))
+            self.assertEqual(self.image.with_suffix(".txt").read_text(encoding="utf-8"), "original tags\n")
+            captioning.process(config, self.image, self.runtime(mode="export", candidates=["long", "short"], overwrite=True))
+            self.assertIn("---===--- # long\nLong description", self.image.with_suffix(".txt").read_text(encoding="utf-8"))
+            self.assertEqual(call.call_count, calls)
+
+            # A manually replaced ordinary reference is new input, not our prior output.
+            self.image.with_suffix(".txt").write_text("new manual reference", encoding="utf-8")
+            captioning.process(config, self.image, self.runtime(output_format="plain", candidates=["long"], overwrite=True))
+            self.assertEqual(json.loads(record.read_text(encoding="utf-8"))["reference"], "new manual reference")
+
+    def test_plain_preview_and_validation(self):
+        with self.assertRaisesRegex(ValueError, "one candidate"):
+            self.runtime(output_format="plain", candidates=["long", "short"])
+        with patch.object(api_engine, "interrogate", return_value=(RESPONSE, json.dumps(RESPONSE))):
+            options = captioning.validate_options({"output_format": "plain", "candidates": ["long"]})
+            result = captioning.preview(self.config(), self.image, options)
+        self.assertEqual(result["candidates"], {"long": "Long description Visible text"})
+        self.assertEqual(result["text"], "Long description Visible text\n")
+        with self.assertRaises(captioning.TaggerUserError) as exc:
+            captioning.validate_write_targets([self.image], [self.image.with_suffix(".txt"), self.image.with_suffix(".txt")])
+        self.assertEqual(exc.exception.code, "caption_output_conflict")
+        self.assertEqual(exc.exception.params["path"], str(self.image.with_suffix(".txt")))
+
+    def test_regeneration_preserves_reference_across_paths_formats_and_separators(self):
+        for initial_format, next_format, extension in (("plain", "plain", ".caption"), ("multi", "multi", ".txt"), ("multi", "plain", ".txt")):
+            with self.subTest(initial=initial_format, next=next_format, extension=extension):
+                record = self.root / "sample_caption.json"
+                record.unlink(missing_ok=True)
+                self.image.with_suffix(".txt").write_text("true original", encoding="utf-8")
+                with patch.object(api_engine, "interrogate", return_value=(RESPONSE, json.dumps(RESPONSE))):
+                    captioning.process(self.config(), self.image, self.runtime(output_format=initial_format, candidates=["long"], separator="OLD", overwrite=True))
+                    captioning.process(self.config(), self.image, self.runtime(output_format=next_format, candidates=["short"], separator="NEW", caption_extension=extension, overwrite=True))
+                self.assertEqual(json.loads(record.read_text(encoding="utf-8"))["reference"], "true original")
+
+    def test_plain_ignores_invalid_separator_but_keeps_valid_custom_value(self):
+        for separator in ("", "bad\nseparator"):
+            options = captioning.validate_options({"output_format": "plain", "candidates": ["long"], "separator": separator})
+            self.assertEqual(options["separator"], "---===---")
+            with self.assertRaises(captioning.TaggerUserError):
+                captioning.validate_options({"output_format": "multi", "separator": separator})
+        self.assertEqual(self.runtime(output_format="plain", candidates=["long"], separator="CUSTOM")["options"]["separator"], "CUSTOM")
+
 
     def test_three_protocols_preserve_same_json_and_generation_parameters(self):
         for protocol in api_engine.PROTOCOLS:

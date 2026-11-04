@@ -215,7 +215,8 @@
 			"rateMismatch": "{count} cache file(s) have a caption_dropout_rate different from this run's {current}. One detected cached value is {cached}; cached values may differ. Without rebuilding, training uses each cache's stored dropout rate. Rebuild the cache to apply the current setting.",
 			"captionModified": "{count} caption file(s) were modified after the cache was generated; training will use the old encodings until the cache is rebuilt.",
 			"everyNEpochs": "caption_dropout_every_n_epochs has no effect while text encoder output caching is on; whole-epoch caption dropout will NOT happen this run."
-		}
+		},
+		"deleteScope": "Delete all text-encoding caches in these folders and their subfolders, including Anima, SDXL and MOSS-Image caches. Images and captions are unchanged:\n{directories}"
 	},
 	"nav": {
 		"monitor": "Monitor",
@@ -1489,7 +1490,10 @@
 		"krea_split_attn": "Split attention",
 		"krea_split_attnHint": "Auto disables splitting for SDPA and enables it for other backends. Splitting can reduce peak attention memory but adds calls. Required for xFormers.",
 		"krea_enable_loraplusHint": "Sets a learning-rate multiplier for LoRA Up; LoRA Down uses the base rate. Rank and Alpha must be configured manually.",
-		"krea_loraplus_structureConflict": "To use LoRA+, turn off structure inference from weights and set Rank and Alpha manually."
+		"krea_loraplus_structureConflict": "To use LoRA+, turn off structure inference from weights and set Rank and Alpha manually.",
+		"trainingScopeHint": "The two “Train … only” options are mutually exclusive. Turn both off to train the backbone and text encoder together.",
+		"qwen3TokenLengthHint": "Input length limit for the Qwen3 text encoder, counted with the Qwen3 tokenizer. Longer text is truncated.",
+		"t5TokenLengthHint": "Length limit for the LLM Adapter target input, counted with the T5 tokenizer. Longer text is truncated. This uses only T5 tokenization; no T5 encoder weights are needed."
 	},
 	"krea2": {
 		"int8ModelAutoConfigured": "INT8 base model detected. ConvRot INT8 is enabled and FP8 is off.",
@@ -1665,7 +1669,7 @@
 		"otherModules": "Other modules",
 		"selfAttention": "Self-attention",
 		"crossAttention": "Cross-attention",
-		"adalnModules": "AdaLN modulation",
+		"adalnModules": "AdaLN Modulation",
 		"finalLayer": "Final Layer",
 		"inputProjection": "Input projection",
 		"timeEmbedding": "Time embedding",
@@ -2029,7 +2033,7 @@
 		"success": "Success",
 		"skipped": "Skipped",
 		"failed": "Failed",
-		"retryFailed": "Retry failed",
+		"retryFailed": "Retry failed images",
 		"openTagEditor": "Open Tag Editor",
 		"toggleFilmstrip": "Toggle filmstrip",
 		"showFailedOnly": "Failed only",
@@ -2348,7 +2352,8 @@
 		"shortcutTab": "Move focus between card and editor",
 		"shortcutMouse": "Double-click card",
 		"shortcutNav": "Previous / next image",
-		"downloadZipHint": "Includes supported images whose filenames do not start with “.” and their matching captions, from this folder and its subfolders. Other files are excluded."
+		"downloadZipHint": "Includes supported images whose filenames do not start with “.” and their matching captions, from this folder and its subfolders. Other files are excluded.",
+		"saveFailed": "{failed} captions were not saved. Expand details for file paths and reasons."
 	},
 	"bulkAction": {
 		"add": "Add",
@@ -2364,8 +2369,8 @@
 	"tools": {},
 	"settings": {
 		"title": "UI Settings",
-		"autoLoadHistory": "Auto-load History",
-		"autoLoadHistoryDesc": "Automatically restore last training parameters on startup",
+		"autoLoadHistory": "Restore training drafts",
+		"autoLoadHistoryDesc": "Restore your last edited training settings on startup, including changes you have not used to start training.",
 		"slowConnectionMode": "Slow connection compatibility",
 		"slowConnectionModeDesc": "Loads preview thumbnails one at a time to reduce their impact on live updates. Before you choose a setting, it defaults on when the browser reports a slow connection or data saver.",
 		"disableSlowConnectionTitle": "Turn off slow connection compatibility?",
@@ -2374,8 +2379,8 @@
 	},
 	"environment": {
 		"fa": {
-			"hint": "Attention acceleration for Anima / MOSS training",
-			"usage": "After installation, select flash in Anima or MOSS attn_mode.",
+			"hint": "Attention acceleration for Anima / MOSS / Krea 2 training",
+			"usage": "After installation, select flash in Anima or MOSS attn_mode. For Krea 2, select FlashAttention in krea_attention_backend.",
 			"unsupported": "Requires an available NVIDIA Ampere or newer GPU and a matching CUDA build of PyTorch.",
 			"noWheel": "No bundled wheel matches this Python, PyTorch, CUDA and platform combination.",
 			"source": "Download source",
@@ -2793,7 +2798,39 @@
 		"outputPathNotDirectory": "The output path points to a file. Enter a folder path.",
 		"outputPathUnavailable": "The drive or parent folder is currently unavailable, so training cannot start yet.",
 		"outputPathNotWritable": "The output folder is not writable, so training cannot start yet.",
-		"outputPathCustomSummary": "Models and previews will use this folder; logs and TensorBoard remain managed by the trainer."
+		"outputPathCustomSummary": "Models and previews will use this folder; logs and TensorBoard remain managed by the trainer.",
+		"stopHint": "Stopping does not save an additional model or training state. Only previously saved files remain available.",
+		"errors": {
+			"preparationCancelled": "Training preparation was cancelled.",
+			"preparationFailed": "Training preparation failed. See the diagnostic details.",
+			"cacheFinalizeFailed": "Could not update the cache task record. See the diagnostic details.",
+			"taskActive": "A training, tagging or generation task is active. Stop it or wait for it to finish.",
+			"invalidSubsetOffsets": "The subset timestep offsets are invalid.",
+			"invalidTrainingConfig": "The training configuration is invalid. Check the diagnostic details below.",
+			"stepCalculationFailed": "Could not calculate training steps.",
+			"attentionUnavailable": "The {backend} attention backend is unavailable. Check its installation.",
+			"datasetUnavailable": "The dataset folder does not exist or has no usable images: {path}",
+			"regDataDirNotFound": "The regularization dataset folder does not exist: {path}",
+			"regDataDirNoSubfolders": "No valid subset folder, such as 10_face, was found in the regularization dataset: {path}",
+			"baseModelInvalid": "The base model path or file is invalid: {path}",
+			"qwen3Required": "Anima training requires the Qwen3 encoder path.",
+			"qwen3NotFound": "Qwen3 model not found: {path}",
+			"vaeNotFound": "VAE model not found: {path}",
+			"modelFilesInvalid": "The model files did not pass validation.",
+			"captionsInvalid": "The caption files did not pass validation.",
+			"int8BackwardUnavailable": "ConvRot INT8 backward computation requires CUDA and Triton.",
+			"invalidKrea2Config": "The Krea 2 training configuration is invalid.",
+			"krea2PreflightFailed": "Krea 2 preflight checks failed.",
+			"krea2CacheRequired": "Krea 2 caches are not ready. Prepare the caches first.",
+			"invalidOutputPath": "The output path is invalid: {path}",
+			"outputDirectoryUnavailable": "The output folder is unavailable or not writable: {path}",
+			"invalidTrainingProfile": "Could not identify the training type.",
+			"krea2ProfileRequired": "This operation requires Krea 2 training settings.",
+			"cacheDirectoryUnavailable": "The cache folder is unavailable or not writable: {path}",
+			"cacheInitializationFailed": "Could not initialize the Krea 2 caches.",
+			"previewConfigInvalid": "The preview settings are invalid.",
+			"samplePromptNotFound": "Preview prompt file not found: {path}"
+		}
 	},
 	"home": {
 		"subtitle": "A local LoRA training tool",
@@ -2876,7 +2913,7 @@
 		"singleFileRequired": "Select a single image file.",
 		"startPreview": "Preview",
 		"retryPreview": "Retry preview",
-		"previewNoWrite": "Preview only. No caption files or result JSON are saved.",
+		"previewNoWrite": "The trial displays only the checked descriptions. No caption files or generation record JSON are saved.",
 		"previewTaggerBusy": "A Tagger request is running. Preview becomes available when it finishes.",
 		"previewLoading": "Requesting the model…",
 		"settling": "Waiting for request…",
@@ -2915,7 +2952,7 @@
 		"precheckReadiness": "Last input check: {checked} images checked, {failed} errors.",
 		"effectivePrompt": "View prompt from last input check",
 		"viewOverview": "View annotations",
-		"scanCounts": "Images {images} · With references {references} · With generation records {json} · With output captions {outputs} · Other caption formats {ordinary}",
+		"scanCounts": "Images {images} · With references {references} · With generation records {json} · With output captions {outputs} · Plain captions {ordinary}",
 		"loading": "Loading…",
 		"rescan": "Rescan",
 		"filter": "Annotation status",
@@ -2924,7 +2961,7 @@
 		"filter_missing_json": "Missing generation records",
 		"filter_invalid_json": "Invalid records",
 		"invalidRecord": "Invalid generation record",
-		"filter_ordinary": "Other caption formats",
+		"filter_ordinary": "Plain captions",
 		"filter_failed": "Task failures",
 		"noTaskFailures": "Run a batch task to filter its failures.",
 		"searchFiles": "Search filename or relative path",
@@ -2932,7 +2969,7 @@
 		"noImages": "No supported images in this directory.",
 		"noMatches": "No matching images.",
 		"kind_moss": "Multi-candidate captions",
-		"kind_ordinary": "Other caption formats",
+		"kind_ordinary": "Plain caption",
 		"kind_missing": "Missing caption",
 		"kind_unreadable": "Read error",
 		"state_pending": "Pending",
@@ -2967,7 +3004,7 @@
 		"imageDirExportHelp": "Choose a folder containing images and their result JSON files, e.g. image.png and image_caption.json (default naming).",
 		"referenceFilesHelp": "Leave blank to use .txt. For example, image.png reads image.txt in the same folder as reference. If that file does not exist, generate descriptions from the image directly.",
 		"referenceStorageHelp": "When reference and output extensions match, overwriting replaces the original caption. The reference text is saved in the generation record JSON before overwriting.",
-		"candidatesHelp": "Choose content to save in one caption file, in the order below. Original uses the reference file and is omitted when unavailable.",
+		"candidatesHelp": "When generating descriptions, the built-in prompt requests long, medium and short versions together. Select which content to save. Original uses the text from the reference file.",
 		"policy_generate_missing": "Generate when no record exists, overwriting an existing output caption if present. With a valid record, export only a missing caption; otherwise skip. If a generation record is invalid, the image is marked as failed. New records preserve the original reference text.",
 		"policy_generate_overwrite": "Call AI again for every image and overwrite captions and generation record JSON. Original reference text is retained in the new JSON.",
 		"policy_export_missing": "Save missing captions only. Skip existing captions or images without matching JSON. No AI calls.",
@@ -2995,7 +3032,7 @@
 		"completePrompt": "Complete the selected prompt template.",
 		"completeConnection": "Enter the API address and model name, or check inputs first.",
 		"exportHelp": "Save captions again from existing generation records without calling AI. Images without matching JSON are skipped.",
-		"exportCandidatesHelp": "Select content from existing JSON to save in the caption. Original uses the reference text stored in JSON. Missing sections are omitted. No AI calls.",
+		"exportCandidatesHelp": "Select content from existing JSON to save in the caption. Original uses the reference text stored in JSON. Exporting does not call AI.",
 		"exportRecordHelp": "Read existing generation records with this suffix. For example, _caption.json makes image.png use image_caption.json. JSON files are not modified.",
 		"overwrite_generate": "Regenerate and overwrite",
 		"overwrite_export": "Re-export and overwrite",
@@ -3028,7 +3065,13 @@
 		"invalidJsonExportWarning": "{count} invalid records cannot be exported. Inspect them in Overview, or select Generate descriptions and Regenerate and overwrite.",
 		"promptUsed": "Prompt used for generation",
 		"testImageInput": "Use Single-image trial to test image input for the selected model.",
-		"sourceFolderPath": "Enter an image folder path"
+		"sourceFolderPath": "Enter an image folder path",
+		"outputFormat": "Caption format",
+		"format_plain": "Plain caption",
+		"format_plainHelp": "For SDXL, Anima and Krea 2. Select one candidate to save as a single line, without candidate headings or separators. Line breaks become spaces.",
+		"format_multi": "MOSS multi-candidate caption",
+		"format_multiHelp": "For MOSS. Select multiple candidates to save in the order below, keeping headings, separators and paragraphs. Enable “Preserve caption line breaks” in training and use the same candidate separator.",
+		"selectedCandidate": "Candidate"
 	},
 	"errors": {
 		"caption_invalid_extension": "Caption filenames cannot end in an image extension or .json.",
@@ -3060,6 +3103,17 @@
 		"regularization_candidate_not_plain": "This file cannot use the first-line option. Select Original, Long, Medium or Short",
 		"caption_invalid_extension_format": "The caption extension is invalid. It cannot contain a path or invalid filename characters, or end in a period. The output caption extension cannot be empty.",
 		"caption_invalid_sidecar_format": "The generation-record suffix must be nonempty, contain no paths or invalid filename characters, and not end in a period or space.",
-		"regularization_legacy_candidate": "This saved item used a caption candidate header as its description. Preview the source folder again and check any skip reasons in the plan. If candidates are detected, select one before starting generation."
+		"regularization_legacy_candidate": "This saved item used a caption candidate header as its description. Preview the source folder again and check any skip reasons in the plan. If candidates are detected, select one before starting generation.",
+		"caption_plain_candidate": "Select exactly one candidate for a plain caption.",
+		"caption_empty_candidate": "The selected candidate has no content. Choose another description; Original requires reference text.",
+		"caption_invalid_output_format": "Invalid caption format. Select a format again.",
+		"caption_output_conflict": "Conflicting output filename: {path}. Give images with the same stem in one folder unique names, and check whether caption or record filenames overlap other input files.",
+		"tageditor_invalid_image": "Invalid image path. Reload the dataset.",
+		"tageditor_image_missing": "The image no longer exists. Rescan the dataset and review unsaved changes.",
+		"tageditor_outside_dataset": "The image is outside the current dataset. Load the correct dataset.",
+		"tageditor_caption_conflict": "Both .txt and .caption files exist. Keep the caption you want to edit, then reload.",
+		"tageditor_read_failed": "Could not read the caption. Check file read permissions and encoding.",
+		"tageditor_external_change": "The caption was changed outside the editor. Keep a copy of your current edits, then reload and review the caption on disk.",
+		"tageditor_write_failed": "Could not write captions; this save was aborted. Check file permissions, disk space and whether another app is using the files."
 	}
 }

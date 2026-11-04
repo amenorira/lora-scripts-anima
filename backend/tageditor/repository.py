@@ -53,29 +53,29 @@ def save_caption_transaction(
         for item in items:
             raw_path = str(item.get("path", ""))
             if not raw_path:
-                failed.append({"path": "", "reason": "图片路径无效"})
+                failed.append({"path": "", "reason": "图片路径无效", "error_code": "tageditor_invalid_image"})
                 continue
             image_path = Path(raw_path).resolve()
             if not image_path.is_file():
-                failed.append({"path": raw_path, "reason": "图片不存在"})
+                failed.append({"path": raw_path, "reason": "图片不存在", "error_code": "tageditor_image_missing"})
                 continue
             if not _within(image_path, dataset_dir):
-                failed.append({"path": raw_path, "reason": "图片不在数据集目录内"})
+                failed.append({"path": raw_path, "reason": "图片不在数据集目录内", "error_code": "tageditor_outside_dataset"})
                 continue
             candidates = caption_candidates(image_path)
             if len(candidates) > 1:
-                failed.append({"path": str(image_path), "reason": "同时存在 .txt 与 .caption，请先解决冲突"})
+                failed.append({"path": str(image_path), "reason": "同时存在 .txt 与 .caption，请先解决冲突", "error_code": "tageditor_caption_conflict"})
                 continue
             caption_path = candidates[0] if candidates else image_path.with_suffix(".txt")
             try:
                 before_text, current_revision, _ = read_caption_snapshot(caption_path)
             except (OSError, UnicodeError) as exc:
-                failed.append({"path": str(image_path), "reason": str(exc)})
+                failed.append({"path": str(image_path), "reason": str(exc), "error_code": "tageditor_read_failed", "error_details": str(exc)})
                 continue
             before_exists = current_revision != "missing"
             expected_revision = item.get("expected_revision")
             if expected_revision is not None and expected_revision != current_revision:
-                conflicts.append({"path": str(image_path), "reason": "标签文件已被外部修改", "revision": current_revision})
+                conflicts.append({"path": str(image_path), "reason": "标签文件已被外部修改", "revision": current_revision, "error_code": "tageditor_external_change"})
                 continue
             after_text = str(item.get("tags", ""))
             if before_text == after_text:
@@ -118,7 +118,7 @@ def save_caption_transaction(
                     restore_caption_state(previous["caption_path"], previous["before_exists"], previous["before_text"])
                 except Exception:
                     rollback_failed.append(str(previous["image_path"]))
-            failed.extend({"path": str(change["image_path"]), "reason": "写入标签文件失败"} for change in prepared)
+            failed.extend({"path": str(change["image_path"]), "reason": "写入标签文件失败", "error_code": "tageditor_write_failed"} for change in prepared)
             return {
                 "saved": 0,
                 "skipped": len(skipped_paths),

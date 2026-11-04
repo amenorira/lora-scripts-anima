@@ -190,9 +190,9 @@ async def list_tagger_source_items(source_token: str, offset: int = 0, limit: in
 
 
 def annotation_options(caption_extension: str = ".txt", reference_extension: str = ".txt",
-                       sidecar_suffix: str = "_caption.json", separator: str = "---===---") -> dict:
+                       sidecar_suffix: str = "_caption.json", separator: str = "---===---", output_format: str = "multi") -> dict:
     return dict(caption_extension=caption_extension, reference_extension=reference_extension,
-                sidecar_suffix=sidecar_suffix, separator=separator)
+                sidecar_suffix=sidecar_suffix, separator=separator, output_format=output_format)
 
 
 @router.get("/tagger/source/{source_token}/annotations")

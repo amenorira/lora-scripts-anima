@@ -57,6 +57,9 @@ def extend_fields(fields: list[dict[str, Any]]) -> None:
             "key": "model_train_type", "eq": PROFILE_ID,
             "reason_key": "field.mossTextEncoderFrozen",
         }
+    by_key["network_train_unet_only"]["hint_key_by"] = {
+        "key": "model_train_type", "values": {PROFILE_ID: "field.mossTextEncoderFrozen"},
+    }
     for conditions in by_key["loraplus_text_encoder_lr_ratio"]["show_if_any"]:
         conditions.append({"key": "model_train_type", "neq": PROFILE_ID})
     by_key["vae"]["requiredGroups"].append(GROUP)

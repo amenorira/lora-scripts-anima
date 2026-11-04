@@ -11,7 +11,17 @@ from backend.training.cache.krea2_cache import mark_cache_manifest, prepare_cach
 from backend.training.config.krea2_network import KREA2_PRESET_FILENAME
 
 
-def training_error(message: str, data: dict | None = None) -> dict:
+def training_error(message: str, data: dict | None = None, *, code: str | None = None,
+                   params: dict | None = None, details: str | list[str] | None = None) -> dict:
+    """Keep diagnostics while giving the UI a locale-independent error contract."""
+    if code is not None or params is not None or details is not None:
+        data = dict(data or {})
+        if code is not None:
+            data["errorCode"] = code
+        if params is not None:
+            data["errorParams"] = params
+        if details:
+            data["errorDetails"] = details
     return {"status": "error", "message": message, "data": data}
 
 
@@ -36,7 +46,7 @@ class TrainingPreparation:
 
     def launch(self, *args, **kwargs):
         if self.task.stop_requested:
-            return training_error("Training preparation cancelled / 训练准备已取消")
+            return training_error("Training preparation cancelled / 训练准备已取消", code="preparationCancelled")
         result = self._launcher(*args, reserved_task=self.task, **kwargs)
         self.launched = result.get("status") == "success"
         return result
@@ -53,10 +63,10 @@ async def prepare_training(helper, *args, task_manager, launcher):
     try:
         result = await helper(*args, preparation)
         if task.stop_requested and not preparation.launched:
-            result = training_error("Training preparation cancelled / 训练准备已取消")
+            result = training_error("Training preparation cancelled / 训练准备已取消", code="preparationCancelled")
     except Exception as exc:
         log.exception("Failed to prepare training / 训练准备失败")
-        result = training_error(f"Failed to prepare training / 训练准备失败: {exc}")
+        result = training_error(f"Failed to prepare training / 训练准备失败: {exc}", code="preparationFailed", details=str(exc))
     finally:
         if not preparation.launched:
             try:
@@ -65,7 +75,7 @@ async def prepare_training(helper, *args, task_manager, launcher):
                         await _settled_to_thread(mark_cache_manifest, preparation.owned_cache_manifest, "failed")
                     except Exception as exc:
                         log.exception("Failed to settle Krea 2 cache manifest / 无法结算 Krea 2 缓存记录")
-                        result = training_error(f"Failed to settle Krea 2 cache / 无法结算 Krea 2 缓存: {exc}")
+                        result = training_error(f"Failed to settle Krea 2 cache / 无法结算 Krea 2 缓存: {exc}", code="cacheFinalizeFailed", details=str(exc))
             finally:
                 discard_preparation(preparation)
                 task_manager.release_reserved(task)

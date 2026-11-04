@@ -552,6 +552,32 @@ window.trainingTomlMixin = {
   },
 
   // ── Krea 2 cache pipeline ──────────────────────────────
+  _trainingErrorText(result, fallbackKey = 'common.failed') {
+    const data = result?.data || {};
+    const key = data.errorCode ? `training.errors.${data.errorCode}` : '';
+    let text = key ? this.t(key, '') : '';
+    if (!text || text === key) return result?.message || this.t(fallbackKey);
+    Object.entries(data.errorParams || {}).forEach(([name, value]) => {
+      text = text.replaceAll(`{${name}}`, () => String(value));
+    });
+    if (data.errorCode === 'stepCalculationFailed' && data.errorParams?.estimateCode) {
+      const estimateKey = `stepEstimate.errors.${data.errorParams.estimateCode}`;
+      const estimateText = this._stepEstimateText(estimateKey, '', data.errorParams.estimateParams);
+      if (estimateText && estimateText !== estimateKey) return `${text}\n${estimateText}`;
+    }
+    return text;
+  },
+
+  _trainingErrorDetails(result) {
+    if (typeof this.apiErrorDetails === 'function') return this.apiErrorDetails(result);
+    const details = result?.data?.errorDetails;
+    return Array.isArray(details) ? details.join('\n') : (details || '');
+  },
+
+  _showTrainingError(result, fallbackKey = 'common.failed') {
+    this.toast(this._trainingErrorText(result, fallbackKey), 'error', { details: this._trainingErrorDetails(result) });
+  },
+
   async prepareKrea2Cache() {
     if (this.isTraining || this.trainingStarting || this.regularizationActive) return;
     if ((this.form.model_train_type || '') !== 'krea2-lora') return;
@@ -569,7 +595,7 @@ window.trainingTomlMixin = {
       });
       const data = await response.json();
       if (!response.ok || data.status !== 'success') {
-        this.toast(data.message || this.t('krea2.cachePrepareFailed'), 'error');
+        this._showTrainingError(data, 'krea2.cachePrepareFailed');
         return;
       }
       // 缓存任务也是托管任务：走同一条启动边界（清残留 + 订阅 + 轮询接管状态）。
@@ -629,7 +655,7 @@ window.trainingTomlMixin = {
         if (data.data && data.data.errorCode === 'teCacheStale') {
           this._showTeCacheStaleDialog(data.data.warnings || []);
         } else {
-          this.toast(data.message || this.t('common.failed'), 'error');
+          this._showTrainingError(data);
         }
         this._applyTaskView('IDLE');
       }
@@ -667,6 +693,9 @@ window.trainingTomlMixin = {
         return text;
       })
       .filter(Boolean);
+    const directories = [this.form.train_data_dir];
+    if (this.form.enable_reg_data && this.form.reg_data_dir) directories.push(this.form.reg_data_dir);
+    lines.push(this.t('teCache.deleteScope').replace('{directories}', () => directories.filter(Boolean).join('\n')));
     this.openConfirm(
       this.t('teCache.staleTitle'),
       lines.join('\n\n'),
@@ -720,6 +749,7 @@ window.trainingTomlMixin = {
     try {
       const response = await fetch('/api/tasks/terminate/' + encodeURIComponent(taskId));
       if (!response.ok) throw new Error(this.t('monitor.stopFailed'));
+      this.toast(this.t('training.stopHint'), 'info');
       // 后端在 terminate 返回前就已把任务结算为 TERMINATED；立刻对账一次，
       // 终态由轮询写入方统一绘制（补一次轮询让它亚秒级可见）。
       void this._pollTrainingState();

@@ -298,7 +298,7 @@ shared_training_field('bucket_no_upscale', default=True, target="toml"),
 # ── Network ──
 # 通用基础参数在前（对所有 module 生效）；network_module 作为"算法开关"置于其后。
 # show_if 子参数紧随触发源展开（A1 重排），按层级缩进渲染，不引入额外的分组盒子。
-{"key": "network_train_unet_only", "type": "toggle", "default": True, "section": "network", "desc_key": "field.network_train_unet_only", "target": "toml"},
+{"key": "network_train_unet_only", "type": "toggle", "default": True, "section": "network", "desc_key": "field.network_train_unet_only", "hint_key": "field.trainingScopeHint", "target": "toml"},
 {"key": "network_train_text_encoder_only", "type": "toggle", "default": False, "section": "network", "desc_key": "field.network_train_text_encoder_only", "target": "toml", "omit_default": True},
 shared_training_field('network_dim',
     default=32,
@@ -625,8 +625,8 @@ shared_training_field('save_state', default=False, target="toml", omit_default=T
 # ── Caption ──
 {"key": "caption_extension", "type": "text", "default": ".txt", "section": "caption", "desc_key": "field.caption_extension", "target": "toml"},
 {"key": "max_token_length", "type": "select", "default": 225, "section": "caption", "desc_key": "field.max_token_length", "target": "toml", "group": "sdxl", "options": [{"v": 150, "l": "150", "dk": "opt.max_token_length_150"}, {"v": 225, "l": "225", "dk": "opt.max_token_length_225"}]},
-{"key": "qwen3_max_token_length", "type": "number", "default": 512, "section": "caption", "desc_key": "field.qwen3_max_token_length", "target": "toml", "min": 1, "step": 1, "group": "anima", "hint_key": "field.textTokenLengthHint"},
-{"key": "t5_max_token_length", "type": "number", "default": 512, "section": "caption", "desc_key": "field.t5_max_token_length", "target": "toml", "min": 1, "step": 1, "group": "anima", "hint_key": "field.textTokenLengthHint"},
+{"key": "qwen3_max_token_length", "type": "number", "default": 512, "section": "caption", "desc_key": "field.qwen3_max_token_length", "target": "toml", "min": 1, "step": 1, "group": "anima", "hint_key": "field.qwen3TokenLengthHint"},
+{"key": "t5_max_token_length", "type": "number", "default": 512, "section": "caption", "desc_key": "field.t5_max_token_length", "target": "toml", "min": 1, "step": 1, "group": "anima", "hint_key": "field.t5TokenLengthHint"},
 # shuffle_caption 与 cache_text_encoder_outputs 互斥：默认关闭以让推荐默认 cache=true 可用。
 # 用户主动开启 shuffle 时会触发 cache 的 readonly 锁定（见 performance 段对 cache_text_encoder_outputs 的注释）。
 {"key": "shuffle_caption", "type": "toggle", "default": False, "section": "caption", "desc_key": "field.shuffle_caption", "target": "toml"},

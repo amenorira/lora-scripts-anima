@@ -111,7 +111,22 @@ class TagEditorTransactionTests(unittest.TestCase):
             self.assertTrue(result["aborted"])
             self.assertEqual(result["saved"], 0)
             self.assertEqual(len(result["conflicts"]), 1)
+            self.assertEqual(result["conflicts"][0]["error_code"], "tageditor_external_change")
+            self.assertEqual(result["conflicts"][0]["path"], str(image.resolve()))
             self.assertEqual(caption.read_text(encoding="utf-8"), "external")
+
+    def test_caption_conflict_returns_structured_reason_without_writing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            image = root / "a.png"
+            image.touch()
+            for extension in (".txt", ".caption"):
+                image.with_suffix(extension).write_text("original", encoding="utf-8")
+            result = save_caption_transaction(root, [{"path": str(image), "tags": "edited"}])
+            self.assertTrue(result["aborted"])
+            self.assertEqual(result["failed"][0]["error_code"], "tageditor_caption_conflict")
+            self.assertEqual(result["failed"][0]["path"], str(image.resolve()))
+            self.assertEqual(image.with_suffix(".txt").read_text(encoding="utf-8"), "original")
 
 
 class TagEditorSessionTests(unittest.TestCase):
