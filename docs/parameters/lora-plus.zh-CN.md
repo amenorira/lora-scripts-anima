@@ -38,7 +38,7 @@
 
 “启用 LoRA+”关闭时不输出倍率，开启后使用界面的倍率字段。SDXL、Anima、MOSS-Image 的自定义网络参数中的同名 `loraplus_*` 项会被清理，以界面值为准。Krea 2 导入旧配置时，会将附加参数中的全局倍率迁移到界面字段。
 
-以下示例展示导出训练 TOML 的写法。倍率属于 `network_args`；设置多个倍率时，合并到同一个列表中。Krea 2 仅提供全局倍率，使用 LoRA+ 时需手动配置 Rank 和 Alpha，并关闭“从权重推导维度”。
+以下示例展示运行用 TOML 的写法；应用下载的配置文件使用 YAML。倍率属于 `network_args`；设置多个倍率时，合并到同一个列表中。Krea 2 仅提供全局倍率，使用 LoRA+ 时需手动配置 Rank 和 Alpha，并关闭“从权重推导维度”。
 
 <!-- doc-anchor: loraplus-lr-ratio -->
 ### `loraplus_lr_ratio`

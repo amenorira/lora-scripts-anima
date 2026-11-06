@@ -41,7 +41,7 @@ Anima / SDXL / MOSS-Image 支持原生 LoRA、LoHa、LoKr；Anima / SDXL 还支�
 
 ## 功能简介
 
-- **训练配置** — 编辑训练参数，预览、导入和导出 TOML，并查看训练记录
+- **训练配置** — 编辑训练参数、预览 TOML、导入 YAML / TOML、导出 YAML，并查看训练记录
 - **训练前预览** — 时间步分布、学习率曲线与矩阵结构三个本地预览弹窗，[见下一节](#pre-training-previews)
 - **LyCORIS 适配器面板** — 支持 LoCon / LoHa / LoKr，按算法动态显示参数，可选内核后端（auto / Triton / TileLang / compile / Torch），并支持 LoRA+ 与 Anima 训练范围细化
 - **多种优化器** — AdamW、Lion、Prodigy、CAME、StableAdamW、Adafactor、ScheduleFree、Adan、AdEMAMix、Muon 等常用优化器，外加内置的 LoRA-RITE 与测试中的 LoRA-Muon，各自带默认值与约束提示
@@ -259,10 +259,10 @@ Anima / MOSS 默认使用 `torch`，Krea2 默认使用 `sdpa`。SDPA 根据当�
 
 在训练表单的优化器下拉菜单中选择 `EmoSens` 即可使用。
 
-## TOML 配置导入导出
+## 训练配置导入导出
 
-- **导出**：在训练页右侧参数预览中下载当前 TOML 配置
-- **导入**：选择 TOML 文件，将有效字段填入对应训练类型的表单
+- **导出**：在训练页右侧参数预览中下载当前 YAML 配置；TOML 预览用于查看训练参数
+- **导入**：选择 YAML 或旧版扁平 TOML 文件，将支持的字段填入对应训练类型的表单；不支持的字段会提示忽略
 
 ## 环境管理
 

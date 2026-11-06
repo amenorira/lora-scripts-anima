@@ -38,7 +38,7 @@ The paper and sd-scripts documentation use `16` in their experiments; this train
 
 With Enable LoRA+ off, no ratios are exported. With it on, the dedicated ratio fields supply the values. For SDXL, Anima, and MOSS-Image, matching `loraplus_*` entries in custom network arguments are removed so the form values take priority. Krea 2 imports a legacy global ratio from additional arguments into the form field.
 
-The examples below show exported training TOML. Ratios belong in `network_args`; combine multiple ratios in a single list. Krea 2 provides only the global ratio. To use LoRA+ there, configure rank and Alpha manually and turn off dimension inference from weights.
+The examples below show runtime TOML; configurations downloaded from the app use YAML. Ratios belong in `network_args`; combine multiple ratios in a single list. Krea 2 provides only the global ratio. To use LoRA+ there, configure rank and Alpha manually and turn off dimension inference from weights.
 
 <!-- doc-anchor: loraplus-lr-ratio -->
 ### `loraplus_lr_ratio`

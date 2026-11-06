@@ -7,6 +7,18 @@ def _present(value: Any) -> bool:
     return value is not None and value != ""
 
 
+def effective_training_scope(config: dict) -> tuple[bool, bool]:
+    """Resolve the adapter's legacy scope conflicts for execution and LR checks."""
+    unet_only = config.get("network_train_unet_only") is True
+    text_encoder_only = config.get("network_train_text_encoder_only") is True
+    if unet_only:
+        text_encoder_only = False
+    if (config.get("cache_text_encoder_outputs") is True
+            or config.get("cache_text_encoder_outputs_to_disk") is True) and text_encoder_only:
+        return True, False
+    return unet_only, text_encoder_only
+
+
 def sample_interval_mode(config: dict) -> str:
     if _present(config.get("sample_interval_mode")):
         return str(config["sample_interval_mode"])
@@ -39,6 +51,16 @@ def normalize_sd_options(config: dict) -> None:
 
 def validate_sd_option_dependencies(config: dict) -> list[str]:
     errors = []
+    if (config.get("model_train_type") == "sdxl-lora"
+            and (config.get("cache_text_encoder_outputs") is True
+                 or config.get("cache_text_encoder_outputs_to_disk") is True)
+            and (config.get("network_train_unet_only") is not True
+                 or config.get("network_train_text_encoder_only") is True)):
+        errors.append(
+            "cache_text_encoder_outputs: SDXL Text Encoder caching requires training only the backbone; "
+            "disable both Text Encoder caches to train text encoders / "
+            "SDXL 文本编码器缓存要求仅训练主干；训练文本编码器时请关闭内存和磁盘文本缓存"
+        )
     if config.get("block_swap_h2d_only") and config.get("model_train_type") not in ("anima-lora", "moss-image-lora"):
         errors.append("block_swap_h2d_only: supported only for Anima / MOSS LoRA profiles / 仅支持 Anima / MOSS 适配器训练")
     try:

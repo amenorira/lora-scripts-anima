@@ -1,3 +1,4 @@
+import asyncio
 import tempfile
 import unittest
 import zipfile
@@ -7,14 +8,190 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from backend.server import app
-from backend.tageditor.core import caption_revision, read_caption_snapshot
-from backend.tageditor.repository import save_caption_transaction, restore_timeline_event
+from backend.tageditor.core import caption_revision, read_caption_snapshot, write_tags
+from backend.tageditor.repository import save_caption_transaction, restore_timeline_event, restore_legacy_backups
 from backend.tageditor.sessions import DatasetSessionService
 from backend.tageditor.snapshots import create_snapshot, restore_snapshot
 from backend.tageditor.timeline import TimelineStore
 
 
 class TagEditorTransactionTests(unittest.TestCase):
+    def test_distinct_caption_entries_are_written_even_if_resolve_maps_them_together(self):
+        # Simulate final-symlink resolution without requiring Windows symlink privileges.
+        # Real files and the production atomic writer verify both replacement entries.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            images = [root / "a.png", root / "b.png"]
+            captions = {image.with_suffix(".txt") for image in images}
+            for image in images:
+                image.touch()
+                image.with_suffix(".txt").write_text("original", encoding="utf-8")
+            store = TimelineStore(root / "timeline.sqlite3")
+            resolve = Path.resolve
+
+            def shared_final_target(path, *args, **kwargs):
+                if path in captions:
+                    return root / "shared.txt"
+                return resolve(path, *args, **kwargs)
+
+            with patch.object(Path, "resolve", shared_final_target), patch(
+                "backend.tageditor.repository.timeline_store", store
+            ):
+                result = save_caption_transaction(root, [
+                    {"path": str(image), "tags": "edited"} for image in images
+                ])
+                changes = store.changes_for(result["timeline_event"]["id"], root)
+            self.assertEqual(result["saved"], 2)
+            self.assertEqual({item["rel_path"] for item in changes}, {"a.txt", "b.txt"})
+            for caption in captions:
+                self.assertEqual(caption.read_text(encoding="utf-8"), "edited")
+
+    def test_shared_caption_writes_once_and_restores_one_history_change(self):
+        for extension in (".txt", ".caption"):
+            with self.subTest(extension=extension), tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                images = [root / "same.png", root / "same.jpg"]
+                for image in images:
+                    image.touch()
+                caption = root / f"same{extension}"
+                caption.write_text("original", encoding="utf-8")
+                store = TimelineStore(root / "timeline.sqlite3")
+                with patch("backend.tageditor.repository.timeline_store", store), patch(
+                    "backend.tageditor.repository.write_tags", wraps=write_tags
+                ) as writer:
+                    result = save_caption_transaction(root, [
+                        {"path": str(image), "tags": "shared edit"} for image in images
+                    ], writer=writer)
+                    self.assertEqual(writer.call_count, 1)
+                    self.assertEqual(result["saved"], 2)
+                    self.assertEqual(result["saved_paths"], [str(image) for image in images])
+                    self.assertEqual(set(result["revisions"].values()), {caption_revision(caption)})
+                    changes = store.changes_for(result["timeline_event"]["id"], root)
+                    self.assertEqual(len(changes), 1)
+                    restore_timeline_event(root, result["timeline_event"]["id"])
+                self.assertEqual(caption.read_text(encoding="utf-8"), "original")
+
+    def test_shared_caption_disagreeing_aliases_abort_before_any_write(self):
+        for values in (("first", "second"), ("original", "edit"), ("edit", "original")):
+            with self.subTest(values=values), tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                images = [root / "same.png", root / "same.jpg", root / "other.png"]
+                for image in images:
+                    image.touch()
+                caption = root / "same.txt"
+                caption.write_text("original", encoding="utf-8")
+                with patch("backend.tageditor.repository.timeline_store.record") as record:
+                    result = save_caption_transaction(root, [
+                        {"path": str(image), "tags": text} for image, text in zip(images, (*values, "other edit"))
+                    ])
+                self.assertTrue(result["aborted"])
+                self.assertEqual(result["saved"], 0)
+                self.assertEqual({item["path"] for item in result["conflicts"]}, {str(image) for image in images[:2]})
+                self.assertEqual({item["error_code"] for item in result["conflicts"]}, {"tageditor_shared_caption_conflict"})
+                self.assertEqual(caption.read_text(encoding="utf-8"), "original")
+                self.assertFalse((root / "other.txt").exists())
+                record.assert_not_called()
+
+    def test_timeline_record_failure_rolls_back_restore_and_allows_retry(self):
+        for original in ("\ufeff  original\r\n", None):
+            with self.subTest(original=original), tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                image = root / "a.png"
+                image.touch()
+                caption = root / "a.txt"
+                if original is not None:
+                    caption.write_bytes(original.encode("utf-8"))
+                store = TimelineStore(root / "timeline.sqlite3")
+                with patch("backend.tageditor.repository.timeline_store", store):
+                    result = save_caption_transaction(root, [{"path": str(image), "tags": "edited"}])
+                    event_id = result["timeline_event"]["id"]
+                    with patch.object(store, "record", side_effect=OSError("database unavailable")):
+                        with self.assertRaisesRegex(OSError, "database unavailable"):
+                            restore_timeline_event(root, event_id)
+                    self.assertEqual(caption.read_bytes(), b"edited")
+                    self.assertEqual(len(store.list(root)), 1)
+                    restore_timeline_event(root, event_id)
+                if original is not None:
+                    self.assertEqual(caption.read_bytes(), original.encode("utf-8"))
+                else:
+                    self.assertFalse(caption.exists())
+
+    def test_restore_rollback_reports_failure_and_attempts_remaining_files(self):
+        from backend.tageditor import repository
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            images = [root / "a.png", root / "b.png"]
+            for image in images:
+                image.touch()
+                image.with_suffix(".txt").write_text("original", encoding="utf-8")
+            store = TimelineStore(root / "timeline.sqlite3")
+            restore = repository.restore_caption_state
+
+            def fail_one_rollback(path, existed, text):
+                if path.name == "a.txt" and text == "edited":
+                    raise OSError("rollback denied")
+                restore(path, existed, text)
+
+            with patch.object(repository, "timeline_store", store):
+                saved = save_caption_transaction(root, [{"path": str(image), "tags": "edited"} for image in images])
+                with patch.object(store, "record", side_effect=OSError("database unavailable")), patch.object(
+                    repository, "restore_caption_state", side_effect=fail_one_rollback
+                ):
+                    with self.assertRaisesRegex(RuntimeError, "a.txt"):
+                        restore_timeline_event(root, saved["timeline_event"]["id"])
+            self.assertEqual((root / "a.txt").read_text(encoding="utf-8"), "original")
+            self.assertEqual((root / "b.txt").read_text(encoding="utf-8"), "edited")
+
+    def test_legacy_record_failure_restores_existing_and_removes_new_caption(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            caption = root / "a.txt"
+            before = b"\xef\xbb\xbf exact\r\n"
+            caption.write_bytes(before)
+            (root / "a.txt.bak").write_text("backup-a", encoding="utf-8")
+            (root / "b.caption.bak").write_text("backup-b", encoding="utf-8")
+            with patch("backend.tageditor.repository.timeline_store.record", side_effect=OSError("database unavailable")):
+                with self.assertRaisesRegex(OSError, "database unavailable"):
+                    restore_legacy_backups(root)
+            self.assertEqual(caption.read_bytes(), before)
+            self.assertFalse((root / "b.caption").exists())
+
+    def test_batch_detects_caption_changed_after_transform(self):
+        from backend.tageditor import routes
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            image = root / "a.png"
+            image.touch()
+            caption = root / "a.txt"
+            caption.write_text("original", encoding="utf-8")
+            apply = routes.apply_operation
+
+            def concurrent_operation(tags, operation, args):
+                result = apply(tags, operation, args)
+                caption.write_text("concurrent edit", encoding="utf-8")
+                return result
+
+            context = (None, root, "add_suffix", {"value": "suffix"}, [{"path": str(image), "name": image.name}])
+            with patch.object(routes, "_resolve_batch_context", return_value=context), patch.object(
+                routes, "apply_operation", side_effect=concurrent_operation
+            ):
+                result = asyncio.run(routes.batch_edit_tags({}))["data"]
+            self.assertEqual(result["modified"], 0)
+            self.assertTrue(result["errors"])
+            self.assertEqual(caption.read_text(encoding="utf-8"), "concurrent edit")
+
+    def test_failed_restore_invalidates_cached_views(self):
+        from backend.tageditor import routes
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with patch.object(routes, "restore_timeline_event", side_effect=OSError("failed rollback")), patch.object(
+                routes, "_invalidate_cache"
+            ) as invalidate, patch.object(routes.dataset_sessions, "invalidate_dataset") as invalidate_session:
+                result = asyncio.run(routes.api_restore_timeline("event", str(root)))
+            self.assertEqual(result["status"], "error")
+            invalidate.assert_called_once_with(root, None)
+            invalidate_session.assert_called_once_with(root)
+
     def test_route_returns_timeline_conflict_code_without_overwriting(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

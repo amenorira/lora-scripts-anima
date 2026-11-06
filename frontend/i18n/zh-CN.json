@@ -3118,6 +3118,7 @@
 		"tageditor_image_missing": "图片已不存在，请重新扫描数据集并核对未保存的修改。",
 		"tageditor_outside_dataset": "图片不在当前数据集目录内，请重新加载正确的数据集。",
 		"tageditor_caption_conflict": "同时存在 .txt 与 .caption 标注，请保留要编辑的一份后重新加载。",
+		"tageditor_shared_caption_conflict": "多张图片共用同一个标注文件，待保存内容不一致。请统一这些图片的标注后重试。",
 		"tageditor_read_failed": "无法读取标注，请检查文件读取权限和编码。",
 		"tageditor_external_change": "标注已被外部修改。请先保留当前编辑内容，再重新加载并核对磁盘上的标注。",
 		"tageditor_write_failed": "无法写入标注，本次保存已中止。请检查文件权限、磁盘空间和文件占用情况。"

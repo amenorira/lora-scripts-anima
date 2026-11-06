@@ -95,12 +95,20 @@ window.taggerTasksMixin = {
 
   async restoreTaggerTask(taskId) {
     const route = this.currentRoute;
+    const mode = this.taggerSourceMode, version = this._taggerFormVersion;
+    const source = this.taggerSource, path = this.taggerSourcePath, currentTaskId = this.taggerTaskId;
+    const scanVersion = this._taggerSourceScanVersion, instanceId = this.realtimeInstanceId;
+    const key = route === 'ai-captioning' ? 'anima-ai-tagger-task-id' : 'anima-tagger-task-id';
+    const stored = localStorage.getItem(key);
+    const isCurrent = () => route === this.currentRoute && mode === this.taggerSourceMode
+      && version === this._taggerFormVersion && scanVersion === this._taggerSourceScanVersion
+      && source === this.taggerSource && path === this.taggerSourcePath && currentTaskId === this.taggerTaskId
+      && instanceId === this.realtimeInstanceId && stored === localStorage.getItem(key);
     try {
       const response = await fetch(`/api/tagger/tasks/${encodeURIComponent(taskId)}/status`);
       const body = await response.json();
-      if (this.currentRoute !== route) return false;
+      if (!isCurrent()) return false;
       if (body.status !== 'success') {
-        const key = route === 'ai-captioning' ? 'anima-ai-tagger-task-id' : 'anima-tagger-task-id';
         if (localStorage.getItem(key) === taskId) localStorage.removeItem(key);
         return false;
       }
@@ -254,14 +262,41 @@ window.taggerTasksMixin = {
   },
 
   async retryFailedTagger() {
-    if (!this.taggerTaskId || !this.taggerTask || !this.taggerTask.failed) return;
+    if (!this.taggerTaskId || !this.taggerTask?.failed || this.taggerStarting || this.taggerHasActiveTask()) return;
     const taskId = this.taggerTaskId, mode = this.taggerSourceMode;
+    const source = this.taggerSource, version = this._taggerFormVersion;
+    const route = this.currentRoute, path = this.taggerSourcePath, scanVersion = this._taggerSourceScanVersion;
+    const instanceId = this.realtimeInstanceId, storageKey = this._taggerTaskStorageKey(mode);
+    const isCurrent = () => instanceId === this.realtimeInstanceId
+      && taskId === this.taggerTaskId && mode === this.taggerSourceMode
+      && source === this.taggerSource && path === this.taggerSourcePath && route === this.currentRoute
+      && version === this._taggerFormVersion && scanVersion === this._taggerSourceScanVersion;
+    this.taggerStarting = true;
     try {
       const response = await fetch(`/api/tagger/tasks/${encodeURIComponent(taskId)}/retry`, { method: 'POST' });
       const body = await response.json();
+      // Navigation may outlive the retry itself. Preserve its recovery identity
+      // without replacing a newer task, an explicitly cleared source, or a new server instance.
+      let keptRecovery = false;
+      if (body.status === 'success' && body.data?.task_id && instanceId === this.realtimeInstanceId
+          && storageKey && localStorage.getItem(storageKey) === taskId) {
+        localStorage.setItem(storageKey, body.data.task_id);
+        keptRecovery = true;
+      }
+      if (!isCurrent()) {
+        // Returning to the same source can restore the old failed task before
+        // this POST finishes. Reconcile the new task against that current mount.
+        if (keptRecovery && route === this.currentRoute && mode === this.taggerSourceMode
+            && taskId === this.taggerTaskId && path === this.taggerSourcePath
+            && source?.source_token === this.taggerSource?.source_token) {
+          await this.restoreTaggerTask(body.data.task_id);
+        }
+        return;
+      }
       if (body.status !== 'success') throw new Error(body.message || this.t('tagger.retryRequestFailed'));
       this.attachTaggerTask(body.data.task_id, mode);
-    } catch (error) { this.toast(error.message, 'error'); }
+    } catch (error) { if (isCurrent()) this.toast(error.message, 'error'); }
+    finally { this.taggerStarting = false; }
   },
 
   taggerProgressPercent() {

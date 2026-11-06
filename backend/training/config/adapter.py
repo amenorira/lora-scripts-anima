@@ -265,7 +265,9 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     返回 (adapted_config, warnings)
     """
     source = config.copy()
-    from backend.training.config.option_contracts import normalize_sd_options, validate_sd_option_dependencies
+    from backend.training.config.option_contracts import (
+        effective_training_scope, normalize_sd_options, validate_sd_option_dependencies,
+    )
 
     option_errors = validate_sd_option_dependencies(source)
     if option_errors:
@@ -448,14 +450,19 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     # network_train_unet_only 和 network_train_text_encoder_only 互斥
     unet_only = source.get("network_train_unet_only")
     te_only = source.get("network_train_text_encoder_only")
+    effective_unet_only, effective_te_only = effective_training_scope(source)
     if unet_only and te_only:
         warnings.append(
             "[Conflict] network_train_unet_only and network_train_text_encoder_only "
             "are both true; forcing text_encoder_only=false / 两者同时为 true，"
             "自动关闭 text_encoder_only"
         )
-        source["network_train_text_encoder_only"] = False
-        te_only = False
+    if effective_unet_only != bool(unet_only):
+        source["network_train_unet_only"] = effective_unet_only
+    if effective_te_only != bool(te_only):
+        source["network_train_text_encoder_only"] = effective_te_only
+    cache_forced_scope = bool(te_only and not unet_only and effective_unet_only)
+    unet_only, te_only = effective_unet_only, effective_te_only
 
     # 学习率 ↔ 训练开关联动兜底（与前端 training-core.js setField 同步）：
     # sd-scripts 取值链：unet_lr/text_encoder_lr 非空时覆盖 learning_rate，为空则回退 learning_rate。
@@ -483,14 +490,9 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
             )
 
     # ── 5.8. cache_text_encoder_outputs 与 text_encoder_only 互斥 ──
-    if source.get("cache_text_encoder_outputs") and source.get("network_train_text_encoder_only"):
-        source["network_train_text_encoder_only"] = False
-        source["network_train_unet_only"] = True
-        # 同 5.5 联动：被排除的文本编码器分量学习率清空（不写 TOML）
-        if not _is_empty_value(source.get("text_encoder_lr")):
-            source["text_encoder_lr"] = ""
+    if cache_forced_scope:
         warnings.append(
-            "[Conflict] cache_text_encoder_outputs and network_train_text_encoder_only "
+            "[Conflict] Text Encoder caching and network_train_text_encoder_only "
             "are incompatible; forcing unet_only=True, text_encoder_only=False / "
             "缓存文本编码器输出与仅训练文本编码器不兼容，已自动切换为仅训练主干"
         )

@@ -30,7 +30,7 @@ from fastapi import APIRouter, Body, Query
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from backend.tageditor.core import (
-    resolve_dir, find_caption, read_tags, write_tags,
+    resolve_dir, find_caption, read_tags, read_caption_snapshot, write_tags,
     scan_selected_images, get_autocomplete, IMAGE_EXTENSIONS,
     _invalidate_cache,
     get_cached_scan_images, get_cached_scan_dataset, tag_list,
@@ -373,13 +373,17 @@ async def batch_edit_tags(data: dict):
                 continue
             p = Path(img_path_str)
             cap = find_caption(p) or p.with_suffix(".txt")
-            tags = read_tags(cap) if cap.exists() else ""
+            try:
+                tags, revision, _ = read_caption_snapshot(cap)
+            except (OSError, UnicodeError) as exc:
+                operation_errors.append(f"{img.get('name', '?')}: {exc}")
+                continue
             new_tags, operation_error = apply_operation(tags, operation, args)
             if operation_error:
                 operation_errors.append(f"{img.get('name', '?')}: {operation_error}")
                 continue
             if new_tags != tags:
-                changes.append({"path": img_path_str, "tags": new_tags})
+                changes.append({"path": img_path_str, "tags": new_tags, "expected_revision": revision})
         return changes, operation_errors
 
     changes, errors = await asyncio.to_thread(_apply_batch)
@@ -448,7 +452,8 @@ async def restore_from_backup(data: dict):
         result = await asyncio.to_thread(restore_legacy_backups, d)
     except Exception as exc:
         return {"status": "error", "message": str(exc)}
-    if result["restored"] > 0:
+    finally:
+        # A failed rollback can leave changed files; discard snapshots on failure too.
         _invalidate_cache(d, None)
         dataset_sessions.invalidate_dataset(d)
     return {"status": "success", "data": result}
@@ -525,8 +530,6 @@ async def api_restore_timeline(event_id: str, dataset_dir: str = Query(...)):
         return {"status": "error", "message": "Directory does not exist / 目录不存在"}
     try:
         result = await asyncio.to_thread(restore_timeline_event, directory, event_id)
-        _invalidate_cache(directory, None)
-        dataset_sessions.invalidate_dataset(directory)
         return {"status": "success", "data": result}
     except KeyError:
         return {"status": "error", "message": "Timeline event not found / 时间线事件不存在"}
@@ -535,6 +538,9 @@ async def api_restore_timeline(event_id: str, dataset_dir: str = Query(...)):
                 "error_params": {"count": exc.count}}
     except Exception as exc:
         return {"status": "error", "message": str(exc)}
+    finally:
+        _invalidate_cache(directory, None)
+        dataset_sessions.invalidate_dataset(directory)
 
 
 @router.delete("/tageditor/timeline/{event_id}")
