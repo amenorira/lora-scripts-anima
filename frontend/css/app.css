@@ -797,7 +797,7 @@ input[type="checkbox"]:focus-visible {
   margin-right: 5px;
 }
 .field-quick-action {
-  min-height: 26px; padding: 3px 7px;
+  min-width: 32px; min-height: 26px; padding: 3px 7px;
   border: 1px solid var(--border-default); border-radius: var(--radius-sm);
   background: transparent; color: var(--text-secondary);
   font: inherit; font-size: 12px; line-height: 1.3; white-space: nowrap;

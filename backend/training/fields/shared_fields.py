@@ -167,6 +167,7 @@ _FIELDS = {
         "quick_actions": [
             {"label": "= dim", "source": "network_dim"},
             {"label": "½ dim", "source": "network_dim", "factor": 0.5},
+            {"label": "1", "value": 1},
         ],
     },
     "network_dropout": {
