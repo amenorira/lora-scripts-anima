@@ -19,6 +19,41 @@ function application(profile = 'anima-lora', values = {}) {
   return { app, w, history };
 }
 
+test('dim shortcuts add or subtract eight with normal editing and undo in every profile', () => {
+  for (const profile of ['anima-lora', 'moss-image-lora', 'sdxl-lora', 'krea2-lora']) {
+    const { app, history } = application(profile, { network_dim: 24, network_alpha: 8 });
+    history.push({ ...app.form });
+    assert.equal(app._fieldDefinition('network_dim').quickActions.length, 2);
+    assert.equal(app.fieldQuickActionValue('network_dim', 0), 16);
+    assert.match(app.fieldQuickActionTitle('network_dim', 0), /network_dim − 8/);
+    app.applyFieldQuickAction('network_dim', 0);
+    app.applyFieldQuickAction('network_dim', 0);
+    assert.equal(app.form.network_dim, 8);
+    assert.equal(app.fieldQuickActionValue('network_dim', 0), null);
+    app.applyFieldQuickAction('network_dim', 0);
+    assert.equal(history.length, 3);
+    assert.match(app.fieldQuickActionTitle('network_dim', 1), /network_dim \+ 8/);
+    app.applyFieldQuickAction('network_dim', 1);
+    assert.equal(app.form.network_dim, 16);
+    assert.equal(app.form.network_alpha, 8);
+    assert.equal(app._fieldSources.network_dim, 'user');
+    assert.equal(app.tomlUpdates, 3);
+    app.formHistory = history;
+    app.formHistoryIdx = history.length - 1;
+    app.undoField('network_dim');
+    assert.equal(app.form.network_dim, 8);
+    for (const value of ['', null, 'bad', Infinity, 2.5]) {
+      app.form.network_dim = value;
+      assert.equal(app.fieldQuickActionValue('network_dim', 1), null);
+    }
+    app.form.network_dim = 9;
+    assert.equal(app.fieldQuickActionValue('network_dim', 0), 1);
+    app.form.network_dim = 1;
+    assert.equal(app.fieldQuickActionValue('network_dim', 0), null);
+    assert.equal(app.fieldQuickActionValue('network_dim', 1), 9);
+  }
+});
+
 test('alpha shortcuts use the current dim once and preserve the normal edit pipeline in every profile', () => {
   for (const profile of ['anima-lora', 'moss-image-lora', 'sdxl-lora', 'krea2-lora']) {
     const { app, history } = application(profile, { network_dim: 24, network_alpha: 8 });
@@ -80,6 +115,8 @@ test('other numeric fields reuse literal, scaled and self-sourced shortcuts with
     constraintsByGroup: { anima: { max: 8 } }, quickActions: [
       { label: 'zero', value: 0 }, { label: 'half', source: 'custom', factor: 0.5 },
       { label: 'too high', value: 9 }, { label: 'bad factor', value: 1, factor: Infinity },
+      { label: 'bad offset', value: 1, offset: Infinity },
+      { label: 'string offset', value: 1, offset: '8' },
     ] };
   w.TRAIN_SECTIONS = [{ key: 'custom', fields: [field] }];
   app.form.custom = 6;
@@ -90,6 +127,8 @@ test('other numeric fields reuse literal, scaled and self-sourced shortcuts with
   assert.equal(app.form.custom, 0);
   assert.equal(app.fieldQuickActionValue('custom', 2), null);
   assert.equal(app.fieldQuickActionValue('custom', 3), null);
+  assert.equal(app.fieldQuickActionValue('custom', 4), null);
+  assert.equal(app.fieldQuickActionValue('custom', 5), null);
   delete field.step;
   app.form.custom = 3;
   assert.equal(app.fieldQuickActionValue('custom', 1), null);
@@ -130,6 +169,9 @@ test('shortcuts render before the numeric control and omit static readonly or no
   assert.match(html, />1<\/button>/);
   assert.match(html, /:disabled="fieldQuickActionValue\(/);
   assert.match(html, /:aria-label="fieldQuickActionTitle\(/);
+  const dimHtml = app.renderField(app._fieldDefinition('network_dim'));
+  assert.match(dimHtml, />−8<\/button>/);
+  assert.match(dimHtml, />\+8<\/button>/);
   assert.equal(app._renderFieldQuickActions({ ...alpha, readonly: true }), '');
   assert.equal(app._renderFieldQuickActions({ ...alpha, type: 'text' }), '');
 });

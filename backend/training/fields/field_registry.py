@@ -65,6 +65,7 @@ from backend.training.fields.optimizer_metadata import (
 #   options    — select 选项列表（可选）
 #   quick_actions — 数值框前的快捷赋值按钮：
 #                   {"label": "½ dim", "source": "network_dim", "factor": 0.5}
+#                   或 {"label": "+8", "source": "network_dim", "offset": 8}
 #                   或 {"label": "32", "value": 32}；仅点击时赋值，遵守当前字段约束。
 #   show_if    — 条件显示（可选）: {"key": "...", "eq": ...} 或 {"key": "...", "neq": ...}
 #                可带 "_or" 键表示多值匹配任一。

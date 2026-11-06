@@ -647,7 +647,7 @@ window.trainingFieldRelations = {
     this.updateTomlDebounced();
   },
 
-  // Declarative numeric shortcuts: { label, source, factor? } or { label, value }.
+  // Declarative numeric shortcuts: { label, source, factor?, offset? } or { label, value }.
   // Read at click time; never establish a persistent link between two fields.
   _fieldQuickActionNumber(raw, field = null) {
     if (!['number', 'string'].includes(typeof raw) || String(raw).trim() === '') return null;
@@ -678,8 +678,10 @@ window.trainingFieldRelations = {
     const number = this._fieldQuickActionNumber(raw, source);
     if (number === null) return null;
     const factor = action.factor ?? 1;
-    if (typeof factor !== 'number' || !Number.isFinite(factor)) return null;
-    return this._fieldQuickActionNumber(number * factor, field);
+    const offset = action.offset ?? 0;
+    if (typeof factor !== 'number' || !Number.isFinite(factor)
+        || typeof offset !== 'number' || !Number.isFinite(offset)) return null;
+    return this._fieldQuickActionNumber(number * factor + offset, field);
   },
 
   fieldQuickActionTitle(key, index) {
@@ -687,7 +689,7 @@ window.trainingFieldRelations = {
     const action = field?.quickActions?.[index];
     if (!action) return '';
     const source = action.source || String(action.value);
-    const formula = `${source}${action.factor !== undefined && action.factor !== 1 ? ` × ${action.factor}` : ''}`;
+    const formula = `${source}${action.factor !== undefined && action.factor !== 1 ? ` × ${action.factor}` : ''}${action.offset ? ` ${action.offset < 0 ? '−' : '+'} ${Math.abs(action.offset)}` : ''}`;
     const value = this.fieldQuickActionValue(key, index);
     return value === null
       ? `${key} ← ${formula} · ${this.t('common.fieldQuickActionUnavailable')}`
