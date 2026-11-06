@@ -84,7 +84,7 @@ window.taggerMixin = {
     if (!ai) await this.loadTaggerModels();
     if (ai) await this.loadCaptionTemplate();
     if (!isCurrent()) return;
-    const stored = localStorage.getItem(ai ? 'anima-ai-tagger-task-id' : this._taggerTaskStorageKey());
+    const storageKey = ai ? 'anima-ai-tagger-task-id' : this._taggerTaskStorageKey();
     let taskId = '';
     try {
       const response = await fetch('/api/tagger/tasks/active');
@@ -92,11 +92,13 @@ window.taggerMixin = {
       taskId = body.status === 'success' && body.data ? body.data.task_id || '' : '';
     } catch (_) {}
     if (!isCurrent()) return;
+    const stored = localStorage.getItem(storageKey);
     taskId = taskId || stored || '';
     if (taskId) {
       const restored = await this.restoreTaggerTask(taskId);
       if (!isCurrent()) return;
-      if (!restored && stored && stored !== taskId) await this.restoreTaggerTask(stored);
+      const latestStored = localStorage.getItem(storageKey);
+      if (!restored && latestStored && latestStored !== taskId) await this.restoreTaggerTask(latestStored);
     }
     if (!isCurrent()) return;
     if (ai && this.taggerSourceMode === 'api-folder' && !this.taggerSourcePath) {

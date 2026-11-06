@@ -1811,6 +1811,8 @@
 		"decreaseField": "Decrease {field}",
 		"increaseField": "Increase {field}",
 		"setFieldValue": "Set {field} to {value}",
+		"quickName": "Quick name",
+		"quickNameUnavailable": "Set a training folder and check the optimizer, network type and dimension settings",
 		"fieldQuickActionUnavailable": "Field is read-only, source is invalid, or result is outside the allowed range or step",
 		"panelResizeHint": "Drag or use the arrow keys to resize; double-click to reset",
 		"requestFailed": "Request failed",
@@ -3116,6 +3118,7 @@
 		"tageditor_image_missing": "The image no longer exists. Rescan the dataset and review unsaved changes.",
 		"tageditor_outside_dataset": "The image is outside the current dataset. Load the correct dataset.",
 		"tageditor_caption_conflict": "Both .txt and .caption files exist. Keep the caption you want to edit, then reload.",
+		"tageditor_shared_caption_conflict": "Multiple images share one caption file, but their pending captions differ. Make their captions match, then retry.",
 		"tageditor_read_failed": "Could not read the caption. Check file read permissions and encoding.",
 		"tageditor_external_change": "The caption was changed outside the editor. Keep a copy of your current edits, then reload and review the caption on disk.",
 		"tageditor_write_failed": "Could not write captions; this save was aborted. Check file permissions, disk space and whether another app is using the files."

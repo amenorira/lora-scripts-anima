@@ -10,6 +10,40 @@ from tests.training.test_moss_image import moss_config
 
 class TrainingValidationTests(unittest.TestCase):
 
+    def test_sdxl_text_cache_requires_backbone_only_at_both_backend_boundaries(self):
+        for disk in (False, True):
+            for unet_only, te_only in ((False, False), (False, True), (True, True), (True, False)):
+                with self.subTest(disk=disk, unet_only=unet_only, te_only=te_only):
+                    config = dict(valid_anima_config(), model_train_type="sdxl-lora",
+                                  network_module="networks.lora", network_train_unet_only=unet_only,
+                                  network_train_text_encoder_only=te_only,
+                                  cache_text_encoder_outputs=not disk,
+                                  cache_text_encoder_outputs_to_disk=disk)
+                    errors = validate_training_config(config.copy())
+                    if unet_only and not te_only:
+                        self.assertEqual(errors, [])
+                        adapted, _ = adapt_config(config)
+                        self.assertTrue(adapted["network_train_unet_only"])
+                    else:
+                        self.assertTrue(any("SDXL Text Encoder caching" in error for error in errors), errors)
+                        with self.assertRaisesRegex(ValueError, "SDXL Text Encoder caching"):
+                            adapt_config(config)
+
+    def test_automagic_scope_matches_adapter_for_disk_text_cache(self):
+        from backend.training.config.optimizer_contracts import AUTOMAGIC_OPTIMIZER_TYPE
+
+        for disk in (False, True):
+            config = dict(valid_anima_config(), optimizer_type=AUTOMAGIC_OPTIMIZER_TYPE,
+                          enable_loraplus=True, loraplus_lr_ratio=1,
+                          loraplus_text_encoder_lr_ratio=1000000,
+                          network_train_unet_only=False, network_train_text_encoder_only=True,
+                          cache_text_encoder_outputs=not disk, cache_text_encoder_outputs_to_disk=disk)
+            errors = validate_training_config(config.copy())
+            self.assertFalse(any("effective text encoder LoRA+ LR" in error for error in errors), errors)
+            adapted, _ = adapt_config(config)
+            self.assertTrue(adapted["network_train_unet_only"])
+            self.assertFalse(adapted["network_train_text_encoder_only"])
+
 
     def test_text_cache_caption_contracts_are_profile_specific(self):
         anima = valid_anima_config()

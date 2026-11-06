@@ -408,6 +408,7 @@ window.realtimeMixin = {
     if (typeof this.resetRealtimeTrainingState === 'function') hadLiveTask = !!this.resetRealtimeTrainingState() || hadLiveTask;
     if (typeof this.resetRealtimeTaggerState === 'function') hadLiveTask = !!this.resetRealtimeTaggerState() || hadLiveTask;
     if (typeof this.resetRealtimeEnvironmentState === 'function') hadLiveTask = !!this.resetRealtimeEnvironmentState() || hadLiveTask;
+    if (typeof this.resetRealtimeRegularizationState === 'function') this.resetRealtimeRegularizationState();
     this.realtimeTaskStateUnknown = hadLiveTask;
     this.toast(
       hadLiveTask

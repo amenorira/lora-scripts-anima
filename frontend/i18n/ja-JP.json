@@ -1811,6 +1811,8 @@
 		"decreaseField": "{field} を減らす",
 		"increaseField": "{field} を増やす",
 		"setFieldValue": "{field} を {value} に設定",
+		"quickName": "名前を自動入力",
+		"quickNameUnavailable": "学習フォルダーを指定し、オプティマイザー、ネットワーク種類、次元数の設定を確認してください",
 		"fieldQuickActionUnavailable": "読み取り専用、無効な参照値、または結果が範囲・刻みに適合しません",
 		"panelResizeHint": "ドラッグまたは左右キーで幅を変更・ダブルクリックでリセット",
 		"requestFailed": "リクエストが失敗しました",
@@ -3116,6 +3118,7 @@
 		"tageditor_image_missing": "画像が見つかりません。フォルダを再読み取りし、未保存の変更を確認してください。",
 		"tageditor_outside_dataset": "画像が現在のデータセットの外にあります。正しいデータセットを読み込んでください。",
 		"tageditor_caption_conflict": ".txt と .caption が両方あります。編集するファイルを 1 つ残して読み込み直してください。",
+		"tageditor_shared_caption_conflict": "複数の画像が同じキャプションファイルを共有していますが、保存内容が一致しません。キャプションを揃えてから再試行してください。",
 		"tageditor_read_failed": "キャプションを読み込めません。ファイルの読み取り権限と文字コードを確認してください。",
 		"tageditor_external_change": "キャプションが外部で変更されています。現在の編集内容を別途残してから、読み込み直してディスク上の内容を確認してください。",
 		"tageditor_write_failed": "キャプションを書き込めず、保存を中止しました。ファイルのアクセス権限、空き容量、他のアプリで使用中かどうかを確認してください。"

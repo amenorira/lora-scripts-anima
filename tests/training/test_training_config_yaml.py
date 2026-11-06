@@ -8,6 +8,17 @@ from backend.training.config.optimizer_contracts import LORA_MUON_OPTIMIZER_TYPE
 
 
 class TrainingConfigYamlTests(unittest.TestCase):
+    def test_unknown_misc_parameters_round_trip_without_reinterpreting_dict_values(self):
+        form = {"model_train_type": "anima-lora", "network_dim": 16,
+                "future_flag": 42, "future_options": {"network_dim": 999, "enabled": True}}
+        document = build_training_config(form, profile_id="anima-lora")
+        restored = extract_training_form(document)
+        self.assertEqual(restored["future_flag"], 42)
+        self.assertEqual(restored["future_options"], form["future_options"])
+        self.assertEqual(restored["network_dim"], 16)
+        document["parameters"]["misc"]["network_dim"] = 888
+        self.assertEqual(extract_training_form(document)["network_dim"], 16)
+
     def test_round_trip_preserves_ui_only_and_nested_values(self):
         document = build_training_config(
             {

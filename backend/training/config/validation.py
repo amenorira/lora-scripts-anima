@@ -267,14 +267,9 @@ def _validate_automagic(
         and min_lr is not None
         and max_lr is not None
     ):
-        # Missing flags follow sd-scripts' store_true defaults: both components train.
-        unet_only = config.get("network_train_unet_only", False) is True
-        text_encoder_only = config.get("network_train_text_encoder_only", False) is True
-        if unet_only and text_encoder_only:
-            text_encoder_only = False  # mirrors adapter conflict normalization
-        if config.get("cache_text_encoder_outputs") is True and text_encoder_only:
-            unet_only = True
-            text_encoder_only = False  # mirrors adapter cache conflict normalization
+        from backend.training.config.option_contracts import effective_training_scope
+
+        unet_only, text_encoder_only = effective_training_scope(config)
 
         component_specs = (
             (

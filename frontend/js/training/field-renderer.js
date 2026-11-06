@@ -196,9 +196,18 @@ window.trainingFieldRenderer = {
     return null;
   },
 
+  _trainingTranslationSuffix(trainType) {
+    switch (trainType) {
+      case 'moss-image-lora': return '_moss';
+      case 'anima-lora': return '_anima';
+      case 'sdxl-lora': return '_sdxl';
+      default: return '';
+    }
+  },
+
   _resolveFieldBaseHintKey(field, trainType) {
     if (!field || !field.hintKey) return '';
-    const suffix = trainType === 'moss-image-lora' ? '_moss' : (trainType === 'anima-lora' ? '_anima' : (trainType === 'sdxl-lora' ? '_sdxl' : ''));
+    const suffix = this._trainingTranslationSuffix(trainType);
     if (suffix) {
       const specificKey = field.hintKey + suffix;
       const specific = this.t(specificKey);
@@ -270,7 +279,11 @@ window.trainingFieldRenderer = {
 
 
   _renderFieldQuickActions(field) {
-    if (field.readonly || !['number', 'stepper'].includes(field.type)
+    if (field.readonly) return '';
+    if (field.key === 'output_name' && field.type === 'text') {
+      return `<div class="field-quick-actions"><button type="button" class="field-quick-action" :disabled="!suggestedOutputName()" :title="suggestedOutputName() || t('common.quickNameUnavailable')" :aria-label="t('common.quickName')" @click="applySuggestedOutputName()">${this.trainingText('common.quickName')}</button></div>`;
+    }
+    if (!['number', 'stepper'].includes(field.type)
         || !Array.isArray(field.quickActions) || !field.quickActions.length) return '';
     const key = this.escapeJsString(field.key);
     const buttons = field.quickActions.map((action, index) => {
@@ -285,7 +298,7 @@ window.trainingFieldRenderer = {
   renderField(field) {
     const val = this.form[field.key];
     const trainType = this.form.model_train_type || 'anima-lora';
-    const trainTypeSuffix = trainType === 'moss-image-lora' ? '_moss' : (trainType === 'anima-lora' ? '_anima' : (trainType === 'sdxl-lora' ? '_sdxl' : ''));
+    const trainTypeSuffix = this._trainingTranslationSuffix(trainType);
 
     // Try train-type-specific desc key first, then fall back to default
     // Only use if the i18n key actually exists (to avoid showing "field.qwen3_anima" etc.)

@@ -136,9 +136,9 @@ window.monitorCoreMixin = {
 
   // ── 训练状态所有权 ─────────────────────────────────────
   // 训练生命周期状态（在训/终态/空闲）只有一个事实来源：对
-  // /api/realtime/snapshot 的串行轮询；也只有一个写入方：_applyTaskView。
+  // /api/realtime/state 的串行轮询；统一由 _applyTaskView 应用状态。
   // WebSocket 只负责流式数据（日志/loss/硬件/进度），不做状态拼装，
-  // 因此"旧任务迟到事件/过期快照覆盖新状态"这类问题在结构上不存在。
+  // 迟到事件与过期响应仍需通过任务边界和请求版本检查后再应用。
   liveTaskId: null,
   liveTaskBoundaryAt: 0,      // 最近一次所有权变更（claim/release）的本地时刻
   _statePollTimer: null,

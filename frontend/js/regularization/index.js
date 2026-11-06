@@ -5,6 +5,7 @@ window.regularizationMixin = {
   regTab: 'settings', regPlan: null, regSources: [], regEdits: {}, regPlanDirty: false, regPreviewDirty: false, regPlanConsumed: false,
   regBusy: false, regError: '', regNewRound: false, regTask: null, regRunKey: '', regRuns: [],
   regularizationActive: false, _regActivityBoundaryAt: 0,
+  _regTaskRequest: 0, _regTaskNeedsSync: false,
   regItems: [], regItemsTotal: 0, regFilter: 'all', regLogs: [], regLogsOpen: false, _regLogRequest: 0,
   regGalleryLoading: '', regMoreError: '', _regMoreRequest: 0, _regResultRefresh: 0,
   regSelected: null, regTrainRoute: 'train-basic', regPendingTrainingPath: '', _regTopic: null, _regTimer: null, _regLoaded: false, _regRefreshing: false,
@@ -222,6 +223,8 @@ window.regularizationMixin = {
     } else if (this._regTimer) { clearInterval(this._regTimer); this._regTimer = null; }
   },
   stopRegularizationWorkspace() {
+    ++this._regTaskRequest;
+    this._regRefreshing = false;
     this._regScanVersion++;
     clearTimeout(this._regScanTimer); this._regScanTimer = null;
     if (this._regTimer) { clearInterval(this._regTimer); this._regTimer = null; }
@@ -544,21 +547,33 @@ window.regularizationMixin = {
     const tracked = snapshot?.tasks?.tracked?.find(task => task.task_id === this.regTask?.task_id);
     if (tracked && this.currentRoute === 'regularization') this.regApplyTask(tracked.data);
   },
+  resetRealtimeRegularizationState() {
+    // A recovered terminal run is absent from the new server's WS registry.
+    // Keep its identity and reconcile HTTP even when the new socket is healthy.
+    ++this._regTaskRequest;
+    this._regRefreshing = false;
+    this._regTaskNeedsSync = !!(this.regRunning && this.regTask?.task_id);
+    if (this._regTaskNeedsSync && this.currentRoute === 'regularization') void this.regRefreshTask();
+  },
   async regRefreshTask() {
     if (!this.regRunning) { this.regSyncTimer(); return; }
     if (!this.regTask?.task_id || this._regRefreshing || this.currentRoute !== 'regularization') return;
     const taskId = this.regTask.task_id, key = this.regRunKey;
+    const request = ++this._regTaskRequest;
+    const isCurrent = () => request === this._regTaskRequest && this.currentRoute === 'regularization'
+      && key === this.regRunKey && taskId === this.regTask?.task_id;
     this._regRefreshing = true;
     try {
-      if (!this.realtimeReady || this.realtimeState !== 'online') {
+      if (this._regTaskNeedsSync || !this.realtimeReady || this.realtimeState !== 'online') {
         const task = await this.regRequest('/tasks/' + taskId);
-        if (key !== this.regRunKey || taskId !== this.regTask?.task_id) return;
+        if (!isCurrent()) return;
+        this._regTaskNeedsSync = false;
         this.regApplyTask(task);
         if (!this.regRunning) return;
       }
       await this.regLoadLogs();
-    } catch (error) { if (key === this.regRunKey && taskId === this.regTask?.task_id) this.regReportError(error.message); }
-    finally { this._regRefreshing = false; }
+    } catch (error) { if (isCurrent()) this.regReportError(error.message); }
+    finally { if (request === this._regTaskRequest) this._regRefreshing = false; }
   },
   regClearRun() {
     const outputPath = this.regTask?.output_path;

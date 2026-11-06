@@ -4,6 +4,30 @@
 
 All notable changes to this project are documented in this file.
 
+## v26.1106.10b6b - 2026-11-06
+
+This release adds **quick model naming** and **network dimension shortcuts**, and improves caption saving, task recovery, and training configuration validation.
+
+### Training Configuration
+
+- **Quick model naming:** Generate a save name from the training folder, optimizer, network type, and dimension. Supports LoRA, LoHa, LoKr, LoKr factor, and LyCORIS Full Matrix settings. Generated names can still be edited or undone.
+- **Added −8 / +8 buttons for network dimension**, respecting the field's range and step.
+- **Changed the default model save interval from every 2 epochs to every epoch**.
+- Improved SDXL text encoder cache validation: enabling in-memory or disk text caching requires backbone-only training. Training text encoders prompts you to disable the corresponding caches.
+
+### Caption Editing and Task Recovery
+
+- When multiple images share a caption file, merge identical content and reject conflicting edits.
+- Strengthened external-change checks for batch editing and improved rollback when restoring timeline events or legacy backups fails.
+- Prevent duplicate failed-captioning retry requests and fix task state synchronization after navigating away, returning to a page, or restarting the backend.
+
+### Configuration Compatibility and Environment Checks
+
+- Preserve unknown YAML parameters when reading configurations again, and report unsupported fields ignored during interface import.
+- Shared training dependency checks now read version constraints from the installation requirements file, with clearer messages for missing dependencies and version issues.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1106.0bb16...v26.1106.10b6b)
+
 ## v26.1106.0bb16 - 2026-11-06
 
 This release adds **AdamW fused updates** and **plain single-caption export**, and improves Alpha parameter guidance and multilingual messages.

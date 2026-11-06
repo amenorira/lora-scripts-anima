@@ -6,7 +6,8 @@
 前后端共享此定义。
 
 与 Musubi 语义一致的基础控件复用 shared_fields；默认值和适用范围仍由各训练配置定义。
-添加新字段只需在此文件中新增一条记录，无需修改 adapter.py 或 config.js。
+普通字段在此新增记录后运行 tools/dev/regen_config_fallback.py 同步前端；
+合并参数、网络映射和跨字段约束仍需同步相应配置契约。
 """
 from __future__ import annotations
 
@@ -65,6 +66,7 @@ from backend.training.fields.optimizer_metadata import (
 #   options    — select 选项列表（可选）
 #   quick_actions — 数值框前的快捷赋值按钮：
 #                   {"label": "½ dim", "source": "network_dim", "factor": 0.5}
+#                   或 {"label": "+8", "source": "network_dim", "offset": 8}
 #                   或 {"label": "32", "value": 32}；仅点击时赋值，遵守当前字段约束。
 #   show_if    — 条件显示（可选）: {"key": "...", "eq": ...} 或 {"key": "...", "neq": ...}
 #                可带 "_or" 键表示多值匹配任一。
@@ -614,7 +616,7 @@ shared_training_field('output_name', default="my_lora", target="toml"),
 shared_training_field('output_dir', default="./output", target="toml"),
 {"key": "save_model_as", "type": "select", "default": "safetensors", "section": "save", "desc_key": "field.save_model_as", "target": "toml", "options": [{"v": "safetensors", "l": "safetensors", "dk": "opt.save_model_as_safetensors"}, {"v": "pt", "l": "pt", "dk": "opt.save_model_as_pt"}, {"v": "ckpt", "l": "ckpt", "dk": "opt.save_model_as_ckpt"}]},
 shared_training_field('save_precision', default="bf16", target="toml"),
-shared_training_field('save_every_n_epochs', default=2, target="toml"),
+shared_training_field('save_every_n_epochs', default=1, target="toml"),
     shared_training_field('save_every_n_steps', default="", target="toml"),
     shared_training_field('save_last_n_epochs', default="", target="toml"),
     *training_metric_fields(),

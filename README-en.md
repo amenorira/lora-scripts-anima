@@ -41,7 +41,7 @@ Anima / SDXL / MOSS-Image support native LoRA, LoHa, and LoKr. Anima / SDXL also
 
 ## Feature Overview
 
-- **Training configuration** — Edit training settings, preview, import, and export TOML, and review training history
+- **Training configuration** — Edit training settings, preview TOML, import YAML / TOML, export YAML, and review training history
 - **Pre-training previews** — Timestep distribution, learning-rate curve, and matrix structure modals computed locally; [see the next section](#pre-training-previews)
 - **LyCORIS adapter panel** — LoCon / LoHa / LoKr with algorithm-aware parameters, a selectable kernel backend (auto / Triton / TileLang / compile / Torch), LoRA+ support, and Anima training-scope refinement
 - **Many optimizers** — AdamW, Lion, Prodigy, CAME, StableAdamW, Adafactor, ScheduleFree, Adan, AdEMAMix, Muon, plus the bundled LoRA-RITE and the experimental LoRA-Muon, each with its own defaults and constraint hints
@@ -257,10 +257,10 @@ The bundled EmoSens v3.9 lives in `vendor/emo_optimizer/`.
 
 Select `EmoSens` from the optimizer dropdown in the training form.
 
-## TOML Configuration Import and Export
+## Training Configuration Import and Export
 
-- **Export**: Download the current TOML configuration from the training preview panel
-- **Import**: Load a TOML file and apply supported fields to the matching training form
+- **Export**: Download the current YAML configuration from the training preview panel; the TOML preview shows the training parameters
+- **Import**: Load YAML or a legacy flat TOML file and apply supported fields to the matching training form; unsupported fields are reported as ignored
 
 ## Environment Management
 

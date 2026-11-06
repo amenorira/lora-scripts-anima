@@ -334,7 +334,19 @@ def extract_training_form(document: dict[str, Any]) -> dict[str, Any]:
             elif isinstance(value, dict):
                 visit(value)
 
-    visit(document.get("parameters") or {})
+    parameters = document.get("parameters") or {}
+    misc = parameters.get("misc")
+    if isinstance(misc, dict):
+        visit({key: value for key, value in misc.items() if key in field_keys})
+    # Structured sections take precedence over legacy copies in misc.
+    visit({key: value for key, value in parameters.items() if key != "misc"})
+    # Unknown API parameters are saved directly in misc. Preserve them on read
+    # too, so frontend imports can report unsupported fields instead of silently
+    # dropping them before its whitelist has a chance to warn the user.
+    if isinstance(misc, dict):
+        for key, value in misc.items():
+            if key not in field_keys:
+                flat[key] = value
     flat["model_train_type"] = document["profile"]["id"]
     normalize_lora_muon_form_fields(flat)
     normalize_attention_config(flat)
