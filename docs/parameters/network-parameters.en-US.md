@@ -33,23 +33,49 @@ When comparing algorithms, use the actual parameter counts in the structure prev
 <!-- doc-anchor: alpha -->
 ## Alpha
 
-`network_alpha` controls branch scaling. It defaults to `32` for Anima, SDXL, and Krea 2, and `1` for MOSS-Image. Standard LoRA uses:
+LoRA stores two small matrices, A and B. During training and use, their product is multiplied by `Alpha / Rank` to produce the weight change added to the base model:
 
 ```text
-ΔW = (Alpha / rank) × B × A
+ΔW = (Alpha / Rank) × B × A
 ```
 
-With rank and A/B weights fixed, higher Alpha strengthens the branch output and lower Alpha weakens it. Keep the default for an initial run. Alpha also scales training gradients, so reassess the learning rate after changing it.
+Very small LoRA weights can round to zero when saved at low precision, losing some of the learned changes. One reason Kohya introduced Network Alpha was to reduce this risk: a smaller `Alpha / Rank` multiplier allows larger internal weights to represent the desired weight change. With Rank fixed, a smaller Alpha requires a larger matrix product B × A to represent the same ΔW. To reduce the risk of losing small weights when saving, you can lower Alpha before your next training run, for example to half the Rank or to 1.
 
-| Configuration | Standard branch scale | Meaning |
-| --- | --- | --- |
-| Rank 32, Alpha 32 | 1 | No additional reduction of the matrix product |
-| Rank 32, Alpha 16 | 0.5 | Half the contribution from the same matrix product |
-| Rank 16, Alpha 16 | 1 | The same scale of 1, but a different intermediate dimension and parameter count |
+For example, at Rank 32, lowering Alpha from 32 to 1 changes the multiplier from 1 to `1/32`, so representing the same ΔW requires a matrix product 32 times as large. The values actually learned still depend on training.
 
-`rs_lora` is off by default. On supported low-rank paths, it changes the denominator to √rank, reducing scale attenuation at high ranks. It is useful to compare when testing higher ranks; reassess the learning rate as well.
+### Choosing a value
 
-These formulas describe standard LoRA. LoKr has [additional handling](#full-matrix) when factors are stored as full matrices.
+For a first run, keep the defaults: Rank 32 / Alpha 32 for Anima, SDXL, and Krea 2; Rank 16 / Alpha 1 for MOSS-Image. When following an existing training recipe, keep its Rank, Alpha, and learning rate together.
+
+To try a smaller Alpha, click `½ dim` to set it to half the Rank, or click `1` to set it to 1. If the default is already 1, there is no need to lower it further for this purpose.
+
+For standard LoRA at Rank 32:
+
+| Shortcut | Alpha | Multiplier | When to use it |
+| --- | --- | --- | --- |
+| `= dim` | 32 | 1 | A starting point with no extra reduction of the matrix product |
+| `½ dim` | 16 | 0.5 | A first step when trying a smaller Alpha |
+| `1` | 1 | 1/32 | Follow an Alpha-1 recipe or explore much smaller scaling |
+
+Alpha 1 is not necessarily better; training results also depend on the learning rate, optimizer, and data.
+
+Alpha does not change parameter count or file size. Each shortcut sets the value once; changing Rank afterward does not update Alpha.
+
+### How it relates to learning rate
+
+Alpha is applied during training and affects gradients, so consider the learning rate when changing it. The Kohya Wiki describes halving Alpha as halving the effect of the learning rate, but optimizers such as AdamW also transform the gradients, so actual updates do not follow that ratio exactly. Halving Alpha and doubling the learning rate may produce different training results.
+
+In practice, keep Rank and other settings fixed, change Alpha alone, and compare several checkpoints using the same prompts and seeds. If learning becomes noticeably slower, try increasing the learning rate. If training becomes unstable or overfits quickly, lower it first. Avoid jumping to a learning rate tens of times larger based on the multiplier alone.
+
+### Other settings
+
+Start within `1–Rank` in most cases. Alpha equal to Rank gives a multiplier of 1. Alpha above Rank amplifies the matrix product and is allowed by the current standard LoRA implementations. Some native implementations treat Alpha 0 as Rank, so do not rely on 0 to disable LoRA.
+
+With `rs_lora` enabled, the denominator becomes √Rank. At Rank 32 and Alpha 1, the multiplier changes from `0.03125` to about `0.177`; Alpha equal to Rank no longer gives a multiplier of 1 either. Revisit Alpha and the learning rate after switching. rsLoRA addresses diminishing scaling at high ranks; the paper's experiments primarily use language models.
+
+LoHa and LoKr also depend on their matrix structures. Check their scale in the structure preview, and see [full matrices](#full-matrix) for LoKr's full-factor behavior.
+
+References: [Kohya parameter guide](https://github.com/bmaltais/kohya_ss/wiki/LoRA-training-parameters#network-alpha) · [LoRA §4.1](https://arxiv.org/html/2106.09685v2#S4.SS1) · [rsLoRA](https://arxiv.org/html/2312.03732v1)
 
 <!-- doc-anchor: algorithms -->
 ## LoRA, LoHa, and LoKr

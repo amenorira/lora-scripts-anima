@@ -13,13 +13,42 @@ function harness() {
   const app = composeMixins(context.window.taggerMixin,context.window.captionOptionsMixin,context.window.captionWorkspaceMixin);
   app.currentRoute='ai-captioning';app.taggerSourceMode='api-folder';app.t=k=>k;app.toast=()=>{};
   app.taggerApiSettings={...app.taggerApiSettings,baseUrl:'http://fixture/v1',model:'fixture'};
-  app.captionOptions={...app.captionOptions,candidates:['original','long','medium','short']};
+  app.captionOptions={...app.captionOptions,output_format:'multi',candidates:['original','long','medium','short']};
   app._taggerModeStates={folder:null,single:null,'api-folder':null,'api-single':null};
   app.syncTaggerDictionary=app.realtimeSubscribe=app.realtimeUnsubscribe=app._mountTaggerWorkspace=()=>{};
   app.tagDictionaryInit=app.loadTaggerModels=app.loadCaptionTemplate=app.renderTaggerResourceBar=()=>{};
   app.$nextTick=fn=>fn();
   return {app,context,storage};
 }
+
+test('active task restoration adopts batch format and candidates without overwriting trial drafts',async()=>{
+  for (const contextName of ['batch','single']) for (const restoredFormat of ['plain','legacy-multi']) {
+    const {app,context,storage}=harness();app.loadCaptionOptions();
+    app.setCaptionOutputFormat('plain');app.toggleCaptionCandidate('short',true);
+    app.setCaptionCandidateContext('single');app.setCaptionOutputFormat('plain');app.toggleCaptionCandidate('medium',true);
+    app.setCaptionCandidateContext(contextName);
+    app.captionTab=contextName;app.taggerSourceMode=contextName==='single'?'api-single':'api-folder';
+    const taskOptions=restoredFormat==='plain'
+      ? {output_format:'plain',candidates:['long'],separator:'TASK',dry_run:true}
+      : {candidates:['original','short'],separator:'TASK',dry_run:true};
+    context.fetch=async()=>response({task_id:'resumed',engine:'api',status:'running',source_kind:'folder',source_token:'batch-token',source_root:'dataset',total:1,caption_options:taskOptions});
+    assert.equal(await app.restoreTaggerTask('resumed'),true);
+    if(contextName==='single') {
+      assert.equal(app.captionOptions.output_format,'plain');
+      assert.deepEqual(Array.from(app.captionOptions.candidates),['medium']);
+    }
+    app.setCaptionCandidateContext('batch');app.saveCaptionOptions();
+    assert.equal(app.captionOptions.output_format,restoredFormat==='plain'?'plain':'multi');
+    assert.deepEqual(Array.from(app.captionOptions.candidates),taskOptions.candidates);
+    assert.equal(app.captionOptions.dry_run,undefined);
+    const saved=JSON.parse(storage.get('anima-moss-workflow'));
+    assert.deepEqual(saved.candidateDrafts.batch[app.captionOptions.output_format],taskOptions.candidates);
+    app.setCaptionCandidateContext('single');
+    assert.deepEqual(Array.from(app.captionOptions.candidates),['medium']);
+    app._captionOptionsLoaded=false;app.loadCaptionOptions();
+    assert.deepEqual(Array.from(app.captionOptions.candidates),taskOptions.candidates);
+  }
+});
 
 for (const destination of ['tagger','monitor-dashboard','ai-captioning']) {
   test(`late workspace initialization preserves the current page after navigation to ${destination}`,async()=>{

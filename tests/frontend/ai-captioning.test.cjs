@@ -13,7 +13,7 @@ function harness() {
   app.captionApiPayload = context.window.captionWorkspaceMixin.captionApiPayload;
   app.refreshCaptionPlan = async()=>({plan:{}});
   app.taggerSettings={...app.taggerSettings};app.taggerApiSettings={...app.taggerApiSettings};
-  app.captionOptions={...app.captionOptions,candidates:['original','long','medium','short']};
+  app.captionOptions={...app.captionOptions,output_format:'multi',candidates:['original','long','medium','short']};
   app._taggerModeStates={folder:null,single:null,'api-folder':null};
   app.t=k=>k;app.toast=()=>{};app._mountTaggerWorkspace=async()=>{};
   app.tagDictionaryInit=app.syncTaggerDictionary=app.realtimeSubscribe=app.realtimeUnsubscribe=app.renderTaggerResourceBar=()=>{};
@@ -55,4 +55,73 @@ test('switching task clears overwrite so an export choice cannot trigger regener
   const {app}=harness();app.captionOptions.overwrite=true;app.setCaptionTaskMode('export');
   assert.equal(app.captionOptions.overwrite,false);app.captionOptions.overwrite=true;app.setCaptionTaskMode('generate');
   assert.equal(app.captionOptions.overwrite,false);
+});
+
+test('plain output selects one candidate and old saved workflows keep multi-candidate output',()=>{
+  const {app,context,storage}=harness();
+  app.setCaptionOutputFormat('plain');
+  assert.deepEqual(Array.from(app.captionOptions.candidates),['long']);
+  context.window.captionWorkspaceMixin.toggleCaptionCandidate.call(app,'short',true);
+  assert.deepEqual(Array.from(app.captionOptions.candidates),['short']);
+  context.window.captionWorkspaceMixin.toggleCaptionCandidate.call(app,'short',false);
+  assert.deepEqual(Array.from(app.captionOptions.candidates),['short']);
+  app._captionOptionsLoaded=false;
+  storage.set('anima-moss-workflow',JSON.stringify({options:{candidates:['original','long','short']}}));
+  app.loadCaptionOptions();
+  assert.equal(app.captionOptions.output_format,'multi');
+  assert.deepEqual(Array.from(app.captionOptions.candidates),['original','long','short']);
+});
+
+test('format candidate drafts survive switches, field actions and storage reload without leaking into API options',()=>{
+  const {app,storage}=harness();app.loadCaptionOptions();
+  app.captionOptions.candidates=['original','medium','short'];app.saveCaptionOptions();
+  app.setCaptionOutputFormat('plain');app.captionOptions.candidates=['short'];app.saveCaptionOptions();
+  app.setCaptionOutputFormat('multi');
+  assert.deepEqual(Array.from(app.captionOptions.candidates),['original','medium','short']);
+  app.restoreCaptionField('options','output_format');
+  assert.equal(app.captionOptions.output_format,'plain');
+  assert.deepEqual(Array.from(app.captionOptions.candidates),['short']);
+  app.restoreCaptionField('options','candidates');assert.deepEqual(Array.from(app.captionOptions.candidates),['long']);
+  app.setCaptionOutputFormat('multi');app.restoreCaptionField('options','candidates');
+  assert.deepEqual(Array.from(app.captionOptions.candidates),['original','long','medium','short']);
+  app.captionOptions.candidates=['medium','short'];app.saveCaptionOptions();app.setCaptionOutputFormat('plain');
+  const saved=JSON.parse(storage.get('anima-moss-workflow'));
+  assert.ok(saved.candidateDrafts);assert.equal(saved.options.candidateDrafts,undefined);
+  app._captionOptionsLoaded=false;app.loadCaptionOptions();app.setCaptionOutputFormat('multi');
+  assert.deepEqual(Array.from(app.captionOptions.candidates),['medium','short']);
+});
+
+test('legacy partial settings use old defaults and preserve the old single-image candidates',()=>{
+  for(const legacyKey of ['anima-moss-workflow','anima-ai-caption-options']){
+    const {app,storage}=harness();
+    const options={separator:'OLD'};
+    storage.set(legacyKey,JSON.stringify(legacyKey==='anima-moss-workflow'?{options}:options));app.loadCaptionOptions();
+    assert.equal(app.captionOptions.output_format,'multi');
+    assert.deepEqual(Array.from(app.captionOptions.candidates),['original','long','medium','short']);
+    app.setCaptionCandidateContext('single');
+    assert.equal(app.captionOptions.output_format,'multi');
+    assert.deepEqual(Array.from(app.captionOptions.candidates),['long','medium','short']);
+  }
+  const {app,storage}=harness();
+  storage.set('anima-moss-workflow',JSON.stringify({options:{output_format:'multi',candidates:['original']},candidateDrafts:{single:{format:'multi',multi:[],plain:['short']}}}));
+  app.loadCaptionOptions();app.setCaptionCandidateContext('single');
+  assert.deepEqual(Array.from(app.captionOptions.candidates),[]);
+});
+
+test('single-image trials keep valid independent candidates and restore the batch original selection',async()=>{
+  const {app,context}=harness();app.loadCaptionOptions();app.captionTab='batch';
+  app.selectTaggerSourceMode=async mode=>{app.taggerSourceMode=mode;};
+  app.closeCaptionDetail=()=>{};app.syncCaptionPreviewState=async()=>{};
+  app.setCaptionOutputFormat('plain');app.captionOptions.candidates=['original'];app.saveCaptionOptions();
+  await context.window.captionWorkspaceMixin.selectCaptionTab.call(app,'single',false);
+  assert.ok(app.captionOptions.candidates.every(name=>name!=='original'));
+  app.setCaptionOutputFormat('plain');app.captionOptions.candidates=['short'];app.saveCaptionOptions();
+  await context.window.captionWorkspaceMixin.selectCaptionTab.call(app,'batch',false);
+  assert.equal(app.captionOptions.output_format,'plain');
+  assert.deepEqual(Array.from(app.captionOptions.candidates),['original']);
+  await context.window.captionWorkspaceMixin.selectCaptionTab.call(app,'single',false);
+  assert.deepEqual(Array.from(app.captionOptions.candidates),['short']);
+  app._captionOptionsLoaded=false;app.loadCaptionOptions();
+  assert.deepEqual(Array.from(app.captionOptions.candidates),['original']);
+  app.setCaptionCandidateContext('single');assert.deepEqual(Array.from(app.captionOptions.candidates),['short']);
 });

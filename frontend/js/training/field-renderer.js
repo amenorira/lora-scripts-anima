@@ -12,6 +12,34 @@ window.DEFAULT_DIM_KEYS = new Set([
 ]);
 
 window.trainingFieldRenderer = {
+  _trainingSelectConfig(field) {
+    if (!field) return { options: [] };
+    const currentGroup = window.TRAIN_GROUP_MAP[this.form.model_train_type || 'anima-lora'] || 'all';
+    const options = items => (items || []).filter(option => !option.group || option.group === 'all'
+      || (Array.isArray(option.group) ? option.group.includes(currentGroup) : option.group === currentGroup))
+      .map(option => {
+        const labelKey = option.labelKey || option.dk;
+        const reason = this._adamwOptionDisabledReason?.(field.key, option.v) || '';
+        const resolved = { v: option.v, l: labelKey ? this.t(labelKey, option.l) : option.l, labelKey };
+        if (option.dKey) resolved.dKey = option.dKey;
+        if (option.dKey) resolved.d = this.t(option.dKey);
+        else if (option.d) resolved.d = option.d;
+        if (reason) {
+          resolved.disabled = true;
+          resolved.d = reason;
+          delete resolved.dKey;
+        }
+        return resolved;
+      });
+    if (field.groups?.length) {
+      return { groups: field.groups.map(group => ({
+        label: group.labelKey ? (this.t(group.labelKey) || group.label) : (group.label || ''),
+        labelKey: group.labelKey, options: options(group.options),
+      })).filter(group => group.options.length) };
+    }
+    return { options: options(field.options) };
+  },
+
   // Static translations update only on locale changes, without one Alpine
   // effect per label or replacing controls (including unfinished input).
   trainingText(key, fallback = '') {
@@ -299,44 +327,13 @@ window.trainingFieldRenderer = {
     } else if (isToggle) {
       inputHtml = `<label class="toggle"><input type="checkbox" aria-label="${fieldAriaLabel}"${labelAttrs} :checked="form.${dataKey}" @change="setField('${dataKey}', $event.target.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>`;
     } else if (field.type === 'select') {
-      const fc = {};
+      const fc = this._trainingSelectConfig(field);
       const selectAlign = field.selectAlign === 'left' ? 'left' : 'right';
-      const self = this;
-      const currentTrainType = this.form.model_train_type || 'anima-lora';
-      const currentGroup = window.TRAIN_GROUP_MAP[currentTrainType] || 'all';
-
-      const resolveOption = (o) => {
-        const cloned = { v: o.v, l: o.l, labelKey: o.labelKey || o.dk };
-        if (cloned.labelKey) cloned.l = self.t(cloned.labelKey, o.l);
-        if (o.dKey) cloned.dKey = o.dKey;
-        if (o.dKey) { cloned.d = self.t(o.dKey); }
-        else if (o.d) { cloned.d = o.d; }
-        return cloned;
-      };
-
-      // Filter options by group compatibility
-      const filterByGroup = (opts) => {
-        return (opts || []).filter(o => {
-          if (!o.group || o.group === 'all') return true;
-          if (Array.isArray(o.group)) return o.group.includes(currentGroup);
-          return o.group === currentGroup;
-        }).map(o => resolveOption(o));
-      };
-
-      if (field.groups && field.groups.length) {
-        fc.groups = field.groups.map(g => ({
-          label: g.labelKey ? (self.t(g.labelKey) || g.label) : (g.label || ''),
-          labelKey: g.labelKey,
-          options: filterByGroup(g.options)
-        })).filter(g => g.options.length > 0);
-      } else if (field.options && field.options.length) {
-        fc.options = filterByGroup(field.options);
-      } else {
-        fc.options = [];
-      }
+      const configExpression = ['foreach', 'adamw_fused', 'krea_adamw_fused'].includes(dataKey)
+        ? `() => _trainingSelectConfig(findFieldDef('${dataKey}'))` : `'${this.escJson(fc)}'`;
       const triggerHtml = `<button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle($event)" aria-label="${fieldAriaLabel}"${labelAttrs} aria-haspopup="listbox" :aria-expanded="open ? 'true' : 'false'"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>`;
       const menuHtml = `<template x-if="open"><div class="anima-select-menu" :class="{ 'anima-select-menu-described': hasDescriptions, 'anima-select-menu-positioned': positioned }"><div class="anima-select-menu-scroll"><template x-for="(group, gIdx) in displayGroups" :key="gIdx"><div class="anima-select-group"><div class="anima-select-group-label" x-show="group.label" x-text="group.label"></div><template x-for="opt in group.options" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-content"><span class="anima-select-option-label" x-text="opt.l" :title="opt.l"></span><span class="anima-select-option-desc" x-show="opt.d" x-text="opt.d"></span></span><svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></div></template></div></template><div x-show="displayGroups.length === 0" style="padding:8px 12px;font-size:12px;color:var(--text-tertiary)">—</div></div></div></template>`;
-      inputHtml = `<div class="anima-select" x-data="animaSelect('${this.escJson(fc)}', '${this.escapeAttr(val ?? '')}', {align:'${selectAlign}'})" @click.outside="close()" @anima-select-change="setField('${dataKey}', $event.detail.value)"><input type="hidden" aria-hidden="true" tabindex="-1" x-ref="modelInput" :value="form.${dataKey}">${triggerHtml}${menuHtml}</div>`;
+      inputHtml = `<div class="anima-select" x-data="animaSelect(${configExpression}, '${this.escapeAttr(val ?? '')}', {align:'${selectAlign}'})" @click.outside="close()" @anima-select-change="setField('${dataKey}', $event.detail.value)"><input type="hidden" aria-hidden="true" tabindex="-1" x-ref="modelInput" :value="form.${dataKey}">${triggerHtml}${menuHtml}</div>`;
     } else if (field.type === 'textarea') {
       inputHtml = `<textarea aria-label="${fieldAriaLabel}"${labelAttrs} :value="form.${dataKey}" @input="setField('${dataKey}', $event.target.value)" rows="3"${staticReadonlyAttrs}></textarea>`;
       if (dataKey === "positive_prompts") {

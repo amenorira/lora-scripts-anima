@@ -89,7 +89,7 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
     try:
         preview_config = await _settled_to_thread(prepare_preview_config, settings.ui_config, profile.id)
     except (ValueError, RuntimeError) as exc:
-        return _training_error(message=str(exc))
+        return _training_error(message=str(exc), code="previewConfigInvalid", details=str(exc))
 
     # ── Per-run folder: internal control data + user-selected artifacts ──
     output_name = config.get("output_name", "my_lora")
@@ -104,7 +104,7 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
     except (OSError, ValueError) as exc:
         return _training_error(
             message=f"Invalid output path / 输出路径无效: {exc}",
-            data={"errorCode": "invalidOutputPath"},
+            code="invalidOutputPath", params={"path": requested_output_dir}, details=str(exc),
         )
     internal_run_dir = (OUTPUT_DIR / run_dir_name).resolve()
     artifact_run_dir = output_base_path if is_resume else output_base_path / run_dir_name
@@ -119,7 +119,8 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
     prompt_file = str(settings.ui_config.get("prompt_file") or settings.ui_config.get("sample_prompts") or "").strip()
     if prompt_file:
         if not os.path.exists(prompt_file):
-            return _training_error(message=f"Sample prompt file not found / 采样提示词文件不存在: {prompt_file}")
+            return _training_error(message=f"Sample prompt file not found / 采样提示词文件不存在: {prompt_file}",
+                                   code="samplePromptNotFound", params={"path": prompt_file})
         config["sample_prompts"] = prompt_file
     else:
         try:
@@ -127,7 +128,7 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
 
         except ValueError as e:
             log.error(f"Error while processing prompts / 处理采样提示词时出错: {e}")
-            return _training_error(message=str(e))
+            return _training_error(message=str(e), code="previewConfigInvalid", details=str(e))
 
     try:
         # 优先检查用户产物目录；磁盘 I/O 放入线程，避免离线盘阻塞 API。
@@ -143,9 +144,9 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
         return _training_error(
             message=f"Output directory is unavailable or not writable / 输出目录不可用或无法写入: {exc}",
             data={
-                "errorCode": "outputDirectoryUnavailable",
                 "outputPath": str(artifact_run_dir),
             },
+            code="outputDirectoryUnavailable", params={"path": str(artifact_run_dir)}, details=str(exc),
         )
 
     config["output_dir"] = str(artifact_run_dir)
@@ -174,7 +175,7 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
         try:
             dataset_config = build_sd_scripts_dataset_config(config, settings.subset_timestep_offsets)
         except ValueError as exc:
-            return _training_error(message=str(exc))
+            return _training_error(message=str(exc), code="invalidSubsetOffsets", details=str(exc))
         dataset_config_file = internal_run_dir / "dataset.toml"
         dataset_toml = toml_writer.dumps(dataset_config)
 

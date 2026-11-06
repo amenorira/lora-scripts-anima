@@ -37,7 +37,7 @@ def validate_options(value: dict) -> dict:
     options = {
         "mode": "generate", "overwrite": False, "recursive": True,
         "reference_extension": ".txt", "caption_extension": ".txt", "sidecar_suffix": "_caption.json",
-        "candidates": ["original", "long", "medium", "short"], "separator": "---===---",
+        "candidates": ["original", "long", "medium", "short"], "separator": "---===---", "output_format": "multi",
         "knowledge": "", "knowledge_file": "", "dir_knowledge_name": "_knowledge.txt", "knowledge_suffix": "_knowledge.txt",
         "prompt_source": "default", "prompt_text": "", "prompt_file": "", "dry_run": False, "verbose": False,
     }
@@ -47,6 +47,8 @@ def validate_options(value: dict) -> dict:
     if not isinstance(names, list) or not names or any(name not in {"original", "long", "medium", "short"} for name in names) or len(names) != len(set(names)):
         raise ValueError("Select at least one valid candidate / 请至少选择一种有效的导出候选")
     options["candidates"] = [name for name in ("original", "long", "medium", "short") if name in names]
+    if options["output_format"] == "plain" and len(names) != 1:
+        raise TaggerUserError("caption_plain_candidate", "Plain captions require one candidate")
     if options["mode"] == "generate":
         if options["prompt_source"] not in {"default", "text", "file"}:
             raise ValueError("Invalid prompt source / 无效的提示词来源")
@@ -97,7 +99,10 @@ def output_options(value: dict | None = None, extension: str = ".txt") -> dict:
     """File reading settings, independent of generation and write policy."""
     value = value or {}
     settings = {"caption_extension": extension, "reference_extension": value.get("reference_extension", ".txt"),
-                "sidecar_suffix": str(value.get("sidecar_suffix", "_caption.json")), "separator": str(value.get("separator", "---===---")).strip()}
+                "sidecar_suffix": str(value.get("sidecar_suffix", "_caption.json")), "separator": str(value.get("separator", "---===---")).strip(),
+                "output_format": value.get("output_format", "multi")}
+    if settings["output_format"] not in {"multi", "plain"}:
+        raise TaggerUserError("caption_invalid_output_format", "Invalid caption output format")
     for key in ("caption_extension", "reference_extension"):
         text = str(settings[key]).strip()
         if key == "reference_extension" and not text:
@@ -111,7 +116,10 @@ def output_options(value: dict | None = None, extension: str = ".txt") -> dict:
     if not settings["sidecar_suffix"].lower().endswith(".json"):
         raise TaggerUserError("caption_invalid_json_suffix", "JSON suffix must end with .json / 结果 JSON 后缀必须以 .json 结尾")
     if not settings["separator"] or any(c in settings["separator"] for c in "\r\n\x00"):
-        raise TaggerUserError("caption_invalid_separator", "Separator must be one nonempty line / 分隔符必须是非空单行文本")
+        if settings["output_format"] == "plain":
+            settings["separator"] = "---===---"
+        else:
+            raise TaggerUserError("caption_invalid_separator", "Separator must be one nonempty line / 分隔符必须是非空单行文本")
     return settings
 
 
@@ -291,7 +299,7 @@ def validate_write_targets(paths: list[Path], targets: list[Path], protected: li
     for target in targets:
         key = os.path.normcase(str(target.resolve()))
         if key in seen or key in protected:
-            raise ValueError(f"Conflicting output filenames / 图片输出文件名冲突: {target.name}")
+            raise TaggerUserError("caption_output_conflict", f"Conflicting output filenames: {target.name}", path=str(target))
         seen.add(key)
 
 
@@ -331,6 +339,31 @@ def build_prompt(runtime: dict, path: Path, reference: str = "") -> tuple[str, s
     return prompt, knowledge
 
 
+def format_caption(candidates: list[tuple[str, str]], options: dict) -> str:
+    if options.get("output_format", "multi") == "plain":
+        if not candidates or not candidates[0][1].strip():
+            raise TaggerUserError("caption_empty_candidate", "Selected caption has no content")
+        if len(candidates) != 1:
+            raise TaggerUserError("caption_plain_candidate", "Plain captions require one candidate")
+        # All supported ordinary-caption trainers consume a single line.
+        return " ".join(candidates[0][1].splitlines()).strip() + "\n"
+    return upstream.build_caption_text(candidates, options["separator"])
+
+
+def matches_record_caption(text: str, record: dict) -> bool:
+    """Recognize prior output independently of the next output path or separator."""
+    candidates = upstream.collect_candidates(["original", "long", "medium", "short"], record["response"], record.get("reference") or "")
+    if text in {" ".join(value.splitlines()).strip() for _, value in candidates}:
+        return True
+    first = text.splitlines()[0] if text else ""
+    separator, marker, name = first.rpartition(" # ")
+    if not marker or not separator or name not in {"original", "long", "medium", "short"}:
+        return False
+    sections = parse_caption_text(text, separator)
+    expected = upstream.build_caption_text(upstream.collect_candidates(list(sections), record["response"], record.get("reference") or ""), separator)
+    return bool(sections) and text == expected.strip()
+
+
 def preview(config: api_engine.ApiConfig, path: Path, options: dict, *, cancel_event=None) -> dict:
     if not any(name != "original" for name in options["candidates"]):
         raise ValueError("No selected candidate has content / 请选择长、中或短描述")
@@ -345,7 +378,10 @@ def preview(config: api_engine.ApiConfig, path: Path, options: dict, *, cancel_e
     candidates = dict(upstream.collect_candidates([n for n in options["candidates"] if n != "original"], response, ""))
     if not candidates:
         raise ValueError("No selected candidate has content / 请选择长、中或短描述")
-    return {"model": config.model, "candidates": candidates, "text": upstream.build_caption_text(list(candidates.items()), options["separator"]),
+    text = format_caption(list(candidates.items()), options)
+    if options.get("output_format") == "plain":
+        candidates = {name: text.rstrip("\n") for name in candidates}
+    return {"model": config.model, "candidates": candidates, "text": text,
             "prompt": prompt, "raw": raw, **info, "elapsed": round(time.monotonic() - started, 2)}
 
 
@@ -377,8 +413,10 @@ def process(config: api_engine.ApiConfig, path: Path, runtime: dict, *, cancel_e
         response, reference = old["response"], old.get("reference") or ""
     else:
         reference = upstream.read_text(reference_path) if reference_path and reference_path.is_file() else ""
-        if any(upstream.is_separator_line(line, options["separator"]) for line in reference.splitlines()):
-            reference = (old.get("reference") or "") if old is not None else parse_caption_text(reference, options["separator"]).get("original", "")
+        if old is not None and matches_record_caption(reference, old):
+            reference = old.get("reference") or ""
+        elif any(upstream.is_separator_line(line, options["separator"]) for line in reference.splitlines()):
+            reference = parse_caption_text(reference, options["separator"]).get("original", "")
         prompt, knowledge = build_prompt(runtime, path, reference)
         if not reference and options["candidates"] == ["original"]:
             raise ValueError("No selected candidate has content / 没有参考标注时请选择长、中或短描述")
@@ -393,7 +431,7 @@ def process(config: api_engine.ApiConfig, path: Path, runtime: dict, *, cancel_e
                "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
                "reference": reference or None, "knowledge": knowledge or None, "prompt": prompt, "response": response, **info}
     upstream.validate_response(response)
-    text = upstream.build_caption_text(upstream.collect_candidates(options["candidates"], response, reference), options["separator"])
+    text = format_caption(upstream.collect_candidates(options["candidates"], response, reference), options)
     if not text.strip():
         raise ValueError("No selected candidate has content / 所选候选没有内容；没有参考标注时请选择长、中或短描述")
     if options["dry_run"]:

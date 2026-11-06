@@ -81,7 +81,9 @@ window.captionWorkspaceMixin = {
     if (changed) ++this._captionPromptRequest;
     const mode = tab === 'single' ? 'api-single' : 'api-folder';
     await this.selectTaggerSourceMode(mode, {allowActive:true});
+    this.setCaptionCandidateContext?.(tab === 'single' ? 'single' : 'batch');
     this.captionTab = tab;
+    this.saveCaptionOptions?.();
     localStorage.setItem('anima-ai-tab', tab);
     if (changed || focus) this.closeCaptionDetail();
     if (tab === 'overview') void this.refreshCaptionOverview();
@@ -127,7 +129,7 @@ window.captionWorkspaceMixin = {
   },
   captionOptionsChanged({initialize = false} = {}) {
     const o = this.captionOptions;
-    const outputFingerprint = JSON.stringify([o.caption_extension,o.reference_extension,o.sidecar_suffix,o.separator]);
+    const outputFingerprint = JSON.stringify([o.caption_extension,o.reference_extension,o.sidecar_suffix,o.separator,o.output_format]);
     const fingerprint = JSON.stringify([outputFingerprint,o.mode,o.overwrite,o.knowledge_file,
       o.prompt_source === 'file' ? o.prompt_file : '',o.dir_knowledge_name,o.knowledge_suffix]);
     const promptFingerprint = JSON.stringify([o.knowledge,o.knowledge_file,o.dir_knowledge_name,o.knowledge_suffix,
@@ -166,7 +168,15 @@ window.captionWorkspaceMixin = {
     return ['original','long','medium','short']
       .filter(n => n !== 'original' || !single);
   },
+  captionPlainCandidateConfig() {
+    return {options:this.captionCandidateRows(this.captionTab === 'single').map(v => ({v,l:this.t('moss.candidate_' + v)}))};
+  },
   toggleCaptionCandidate(name, enabled) {
+    if (this.captionOptions.output_format === 'plain') {
+      this.captionOptions.candidates = [name];
+      this.saveCaptionOptions();
+      return;
+    }
     const names = this.captionOptions.candidates.filter(n => n !== name);
     if (enabled) names.push(name);
     this.captionOptions.candidates = ['original','long','medium','short'].filter(n => names.includes(n));
@@ -227,6 +237,7 @@ window.captionWorkspaceMixin = {
   },
   async startCaptionPreview() {
     if (this.currentRoute !== 'ai-captioning' || this.taggerSourceMode !== 'api-single' || !this.taggerSource) return;
+    this.normalizeCaptionFormat();
     const source = this.taggerSource.source_token, version = this._taggerFormVersion;
     const options = {...this.captionOptions,candidates:[...this.captionOptions.candidates]};
     const api = this.captionApiPayload(), settings = JSON.stringify([options,api]);
@@ -270,7 +281,7 @@ window.captionWorkspaceMixin = {
     }
   },
   captionOutputParams(settings = this.captionOptions) {
-    return new URLSearchParams(Object.fromEntries(['caption_extension','reference_extension','sidecar_suffix','separator'].map(key => [key,settings[key]])));
+    return new URLSearchParams(Object.fromEntries(['caption_extension','reference_extension','sidecar_suffix','separator','output_format'].map(key => [key,settings[key] ?? (key === 'output_format' ? 'multi' : '')])));
   },
   captionAnnotationParams({refresh=false} = {}) {
     const params = this.captionOutputParams();

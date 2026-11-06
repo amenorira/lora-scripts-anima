@@ -1553,7 +1553,7 @@
                 Start Training
               </button>
               <button class="btn btn-stop" style="flex:1" @click="stopTraining()"
-                      :disabled="!isTraining" x-text="t('common.stopTraining')">
+                      :disabled="!isTraining" :title="t('training.stopHint')" x-text="t('common.stopTraining')">
                 Stop Training
               </button>
             </div>

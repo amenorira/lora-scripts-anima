@@ -29,7 +29,7 @@ from backend.training.config.training_config import (
 def _krea2_error(errors: list[str], error_code: str = "krea2PreflightFailed"):
     return _training_error(
         message="Krea 2 configuration is not ready / Krea 2 配置尚未就绪:\n" + "\n".join(errors),
-        data={"errorCode": error_code, "errors": errors},
+        data={"errors": errors}, code=error_code, details=errors,
     )
 
 
@@ -59,7 +59,7 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task):
     except (OSError, ValueError) as exc:
         return _training_error(
             message=f"Invalid output path / 输出路径无效: {exc}",
-            data={"errorCode": "invalidOutputPath"},
+            code="invalidOutputPath", params={"path": requested_output_dir}, details=str(exc),
         )
 
     internal_run_dir = (OUTPUT_DIR / run_dir_name).resolve()
@@ -72,7 +72,8 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task):
     except OSError as exc:
         return _training_error(
             message=f"Output directory is unavailable or not writable / 输出目录不可用或无法写入: {exc}",
-            data={"errorCode": "outputDirectoryUnavailable", "outputPath": str(artifact_run_dir)},
+            data={"outputPath": str(artifact_run_dir)}, code="outputDirectoryUnavailable",
+            params={"path": str(artifact_run_dir)}, details=str(exc),
         )
 
     config["output_dir"] = str(artifact_run_dir)
@@ -158,9 +159,9 @@ async def prepare_cache(config: dict, reserved_task):
     try:
         profile = resolve_training_profile(config)
     except TrainingProfileError as exc:
-        return _training_error(message=str(exc))
+        return _training_error(message=str(exc), code="invalidTrainingProfile", details=str(exc))
     if profile.id != KREA2_PROFILE_ID:
-        return _training_error(message="Krea 2 profile required / 此接口仅支持 Krea 2 配置档")
+        return _training_error(message="Krea 2 profile required / 此接口仅支持 Krea 2 配置档", code="krea2ProfileRequired")
 
     validation_errors = validate_krea2_config(config)
     if validation_errors:
@@ -180,7 +181,8 @@ async def prepare_cache(config: dict, reserved_task):
     except OSError as exc:
         return _training_error(
             message=f"Cache directory is unavailable or not writable / 缓存目录不可用或无法写入: {exc}",
-            data={"errorCode": "cacheDirectoryUnavailable", "cachePath": str(cache_dir)},
+            data={"cachePath": str(cache_dir)}, code="cacheDirectoryUnavailable",
+            params={"path": str(cache_dir)}, details=str(exc),
         )
 
     dataset_config_file = run_dir / "dataset.toml"
@@ -195,7 +197,8 @@ async def prepare_cache(config: dict, reserved_task):
             write_output_dir_reference(str(run_dir), str(cache_dir))
         await _settled_to_thread(_write_cache_files)
     except OSError as exc:
-        return _training_error(message=f"Failed to initialize Krea 2 cache / 初始化 Krea 2 缓存失败: {exc}")
+        return _training_error(message=f"Failed to initialize Krea 2 cache / 初始化 Krea 2 缓存失败: {exc}",
+                               code="cacheInitializationFailed", details=str(exc))
 
     def _finalize_cache(status: str) -> str | None:
         return mark_cache_manifest(config, status)

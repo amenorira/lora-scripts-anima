@@ -33,23 +33,49 @@ MOSS 的目标层均为线性层，界面仅提供线性层适用的参数，网
 <!-- doc-anchor: alpha -->
 ## Alpha
 
-`network_alpha` 控制分支缩放。Anima、SDXL、Krea 2 默认 `32`，MOSS-Image 默认 `1`。标准 LoRA 的权重增量为：
+LoRA 保存的是两个小矩阵 A、B。训练和使用时，将它们相乘，再乘上 `Alpha / Rank`，得到加到原模型上的权重变化：
 
 ```text
-ΔW = (Alpha / rank) × B × A
+ΔW = (Alpha / Rank) × B × A
 ```
 
-固定 rank 和 A/B 权重时，Alpha 越大，分支输出越强；越小则越弱。初次训练保留默认值。Alpha 也影响训练梯度，调整后应重新检查学习率。
+LoRA 权重过小时，低精度保存可能将其舍入为 0，丢失部分学到的变化。Kohya 引入 Network Alpha 的一个用途是降低这种风险：用较小的 `Alpha / Rank` 缩放，让内部权重可以用较大的数值表示所需的权重变化。固定 Rank 时，Alpha 越小，要表示相同的 ΔW，矩阵乘积 B × A 就需要越大。如果担心小权重在保存时损失，可以在下一次训练前降低 Alpha，例如设为 Rank 的一半或 1。
 
-| 配置 | 标准分支缩放 | 说明 |
-| --- | --- | --- |
-| rank 32，Alpha 32 | 1 | 不额外缩小矩阵乘积 |
-| rank 32，Alpha 16 | 0.5 | 同一矩阵乘积的输出贡献减半 |
-| rank 16，Alpha 16 | 1 | 缩放也是 1，但中间维度和参数量与 rank 32 不同 |
+例如 Rank 为 32 时，把 Alpha 从 32 降到 1，倍率就从 1 变为 `1/32`，表达相同 ΔW 所需的矩阵乘积增至 32 倍。实际学到的数值仍由训练过程决定。
 
-`rs_lora` 默认关闭。受支持的低秩路径开启后，分母改为 √rank，减轻高维度下的缩放衰减。测试高 rank 配置时可比较这一选项，并重新检查学习率。
+### 怎么选
 
-以上公式介绍标准 LoRA。LoKr 直接存储完整因子时还有[特殊处理](#full-matrix)。
+初次训练可保留默认值：Anima、SDXL、Krea 2 为 Rank 32 / Alpha 32，MOSS-Image 为 Rank 16 / Alpha 1。已有训练配方时，Rank、Alpha 和学习率一起沿用。
+
+想尝试较小的 Alpha 时，可以点击 `½ dim` 设为 Rank 的一半，或点击 `1` 设为 1。默认已是 1 时无需为此继续调小。
+
+以 Rank 32、标准 LoRA 为例：
+
+| 快捷按钮 | Alpha | 计算时乘以 | 选择思路 |
+| --- | --- | --- | --- |
+| `= dim` | 32 | 1 | 不额外缩小矩阵乘积，适合作为起点 |
+| `½ dim` | 16 | 0.5 | 想尝试较小 Alpha 时，可先从减半开始 |
+| `1` | 1 | 1/32 | 使用较强的缩小比例，适合沿用 Alpha 1 的配方，或比较小 Alpha 的效果 |
+
+Alpha 1 不一定更好，训练结果还取决于学习率、优化器和数据。
+
+Alpha 不改变参数量或文件大小。按钮只赋值一次，之后修改 Rank，Alpha 不会跟着变。
+
+### 和学习率的关系
+
+Alpha 在训练时参与计算，也会影响梯度，因此调整时要考虑学习率。Kohya Wiki 用“学习率的作用减半”来描述 Alpha 减半的效果，但 AdamW 等优化器还会处理梯度，实际更新并不严格按这个比例变化。将 Alpha 减半、学习率翻倍，未必能得到原来的训练结果。
+
+实际调整时，先固定 Rank 和其他设置，只改 Alpha，用相同提示词、种子比较几个保存节点。如果学得明显变慢，再尝试提高学习率；若不稳定或很快过拟合，则先降低学习率。不要仅凭缩放比例一次把学习率提高几十倍。
+
+### 其他情况
+
+通常先在 `1～Rank` 之间选择。Alpha 等于 Rank 时，缩放为 1；大于 Rank 时会放大矩阵乘积，当前标准 LoRA 实现允许这样设置。部分原生实现会把 Alpha 0 当作 Rank，因此不能指望用 0 关闭 LoRA。
+
+开启 `rs_lora` 后，分母变为 √Rank。以 Rank 32 为例，同样是 Alpha 1，缩放从 `0.03125` 变为约 `0.177`；Alpha 等于 Rank 时，缩放也不再是 1。切换后应重新选择 Alpha 和学习率。rsLoRA 针对高 Rank 下的缩放衰减提出改进，论文中的实验主要使用语言模型。
+
+LoHa、LoKr 还受各自矩阵结构影响，具体缩放可看结构预览；LoKr 的完整因子见[完整矩阵说明](#full-matrix)。
+
+参考：[Kohya 参数说明](https://github.com/bmaltais/kohya_ss/wiki/LoRA-training-parameters#network-alpha) · [LoRA 原论文 §4.1](https://arxiv.org/html/2106.09685v2#S4.SS1) · [rsLoRA 论文](https://arxiv.org/html/2312.03732v1)
 
 <!-- doc-anchor: algorithms -->
 ## LoRA、LoHa 与 LoKr

@@ -157,6 +157,13 @@ For the optimizers covered here, this trainer starts AdamW, AdamW8bit, and Paged
 
 Higher weight decay shrinks weights more strongly and can prevent target features from being learned. Lower values relax that constraint; `0` disables it. Start character LoRAs with the project default, then vary decay separately when comparing regularization strength.
 
+<!-- doc-anchor: adamw-fused -->
+### AdamW fused updates (fused)
+
+After selecting AdamW, set AdamW fused updates to Auto, Enabled, or Disabled. Auto follows PyTorch defaults; Enabled passes `fused=True`, and Disabled passes `fused=False`. Fused updates combine optimizer operations to reduce dispatch overhead. Speed gains depend on the training configuration.
+
+When enabled, leave foreach on Auto or Disabled, and keep `differentiable=False`. The UI disables conflicting choices and immediately shows field errors for conflicts from imported configs or custom arguments. Auto retains explicit custom arguments. Native configs pass this through `optimizer_args`, for example `"fused=True"`; importing restores the corresponding UI option.
+
 <!-- doc-anchor: foreach -->
 ### Batched tensor updates (foreach)
 

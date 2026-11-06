@@ -65,9 +65,9 @@ _FIELDS = {
         "section": "performance",
         "show_if": {"key": "compile", "eq": True},
         "options": [
-            {"v": "auto", "l": "auto", "dk": "opt.compile_dynamic_auto"},
-            {"v": "true", "l": "true", "dk": "opt.compile_dynamic_true"},
-            {"v": "false", "l": "false", "dk": "opt.compile_dynamic_false"},
+            {"v": "auto", "l": "auto", "label_key": "opt.tristate_auto", "dk": "opt.compile_dynamic_auto"},
+            {"v": "true", "l": "true", "label_key": "opt.tristate_true", "dk": "opt.compile_dynamic_true"},
+            {"v": "false", "l": "false", "label_key": "opt.tristate_false", "dk": "opt.compile_dynamic_false"},
         ],
     },
     "compile_fullgraph": {
@@ -167,6 +167,7 @@ _FIELDS = {
         "quick_actions": [
             {"label": "= dim", "source": "network_dim"},
             {"label": "½ dim", "source": "network_dim", "factor": 0.5},
+            {"label": "1", "value": 1},
         ],
     },
     "network_dropout": {

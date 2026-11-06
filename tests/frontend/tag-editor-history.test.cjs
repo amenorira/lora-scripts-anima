@@ -55,6 +55,16 @@ function draftClient(storage) {
   return {ctx,context,tick:()=>autosave()};
 }
 
+test('save failure details retain affected paths and localize structured reasons',()=>{
+  const {ctx}=makeClient();
+  ctx.localizeApiError=body=>'translated '+body.error_code;
+  const details=ctx._teSaveFailureDetails([
+    {path:'/dataset/a.png',reason:'backend text',error_code:'tageditor_external_change'},
+    {path:'/dataset/b.png',reason:'backend text',error_code:'tageditor_caption_conflict'},
+  ]);
+  assert.equal(details,'/dataset/a.png\ntranslated tageditor_external_change\n\n/dataset/b.png\ntranslated tageditor_caption_conflict');
+});
+
 test('a real reorder still records one step and restores exact original text on undo', () => {
   const {ctx} = draftClient();
   const original = '\uFEFF  cat,  dog\r\n';

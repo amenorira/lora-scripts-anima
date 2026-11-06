@@ -16,6 +16,13 @@ window.tagEditorPersistence = {
   _teSaveEpoch: 0,
   _teCaptionRevisions: null,
 
+  _teSaveFailureDetails(items) {
+    return items.map(item => {
+      const reason = this.localizeApiError?.({...item, message:item.reason}) || (item.error_code ? this.t('errors.' + item.error_code) : item.reason);
+      return [item.path, reason, item.error_details].filter(Boolean).join('\n');
+    }).join('\n\n');
+  },
+
   // ===== Save =====
   async tagEditorSaveAll() {
     if (this._teIsSaving || this._teDraftRestoreBusy || this.tagEditorSnapshotBusy) return;
@@ -159,9 +166,10 @@ window.tagEditorPersistence = {
       if (processedCount === 0 && saveErrorMessage) {
         this.toast(saveErrorMessage, 'error');
       } else {
-        this.toast(this.t('tagEditor.partialSaveFailed')
+        this.toast(this.t(processedCount ? 'tagEditor.partialSaveFailed' : 'tagEditor.saveFailed')
           .replace('{saved}', processedCount)
-          .replace('{failed}', Math.max(failedItems.length, this._teModifiedCount)), 'warning');
+          .replace('{failed}', Math.max(failedItems.length, this._teModifiedCount)), 'warning',
+          {details:this._teSaveFailureDetails(failedItems)});
       }
       this._teSaveDraft();
     } else {

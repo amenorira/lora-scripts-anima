@@ -529,8 +529,8 @@ window.trainingShapePreviewMixin = {
       output_proj: t('outputProjection'), linear: t('outputProjection'),
       layer1: t('mlpExpand'), layer2: t('mlpContract'),
       '1': t('bottleneck'), '2': t('modulationOutput'),
-      'adaln_modulation.1': `AdaLN / ${t('bottleneck')}`,
-      'adaln_modulation.2': `AdaLN / ${t('modulationOutput')}`,
+      'adaln_modulation.1': `${t('adalnModules')} / ${t('bottleneck')}`,
+      'adaln_modulation.2': `${t('adalnModules')} / ${t('modulationOutput')}`,
       'proj.1': t('inputProjection'), '1.linear_1': t('timeProjection'),
       '1.linear_2': t('modulationOutput'),
     };

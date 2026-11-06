@@ -4,6 +4,29 @@
 
 All notable changes to this project are documented in this file.
 
+## v26.1106.0bb16 - 2026-11-06
+
+This release adds **AdamW fused updates** and **plain single-caption export**, and improves Alpha parameter guidance and multilingual messages.
+
+### Optimizers and Training Parameters
+
+- **AdamW fused updates for Anima, MOSS-Image, and SDXL:** Choose automatic, enabled, or disabled; the existing Krea 2 option also has clearer guidance. Fused updates can reduce optimizer call overhead, with speed gains depending on the training configuration.
+- Fused updates and foreach tensor updates cannot both be enabled. The interface prevents conflicting choices and reports conflicts in imported configurations or custom arguments.
+- Set Alpha to **1** with a quick action. Expanded Chinese, English, and Japanese parameter guides explain scaling, low-precision saving, how to choose Alpha, and its relationship with learning rate.
+
+### AI Captioning
+
+- Added a **plain single-caption** format: choose one candidate and save it as a single line without a heading or separator, suitable for SDXL, Anima, and Krea 2. The generation record is retained.
+- **MOSS multi-candidate captions** remain available, with multiple candidates, headings, separators, and paragraphs. New users default to a plain single long description; existing caption settings retain their previous multi-candidate format.
+- Fixed an issue where regenerating captions after changing the output extension or separator could fail to preserve the original reference text. Single-image previews and batch captioning retain their own format and candidate selections.
+
+### Interface and Stability
+
+- Improved Chinese, English, and Japanese training and captioning error messages, including the paths and reasons for caption save failures.
+- Clarified the scope of text-cache deletion, saving behavior when stopping training, and training-draft restoration.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1103.14934...v26.1106.0bb16)
+
 ## v26.1103.14934 - 2026-11-03
 
 This release reduces the VRAM needed for **MOSS-Image text encoding** and gives **Anima and MOSS-Image** a way to use spare VRAM for faster training. It also improves regularization-image caption handling, configuration recovery, and parameter guidance.

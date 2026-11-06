@@ -22,7 +22,7 @@ function application(profile = 'anima-lora', values = {}) {
 test('alpha shortcuts use the current dim once and preserve the normal edit pipeline in every profile', () => {
   for (const profile of ['anima-lora', 'moss-image-lora', 'sdxl-lora', 'krea2-lora']) {
     const { app, history } = application(profile, { network_dim: 24, network_alpha: 8 });
-    assert.equal(app._fieldDefinition('network_alpha').quickActions.length, 2);
+    assert.equal(app._fieldDefinition('network_alpha').quickActions.length, 3);
     app.applyFieldQuickAction('network_alpha', 0);
     assert.equal(app.form.network_alpha, 24);
     app.setField('network_dim', '48');
@@ -40,6 +40,22 @@ test('alpha shortcuts use the current dim once and preserve the normal edit pipe
     app.formHistoryIdx = history.length - 1;
     app.undoField('network_alpha');
     assert.equal(app.form.network_alpha, 48);
+  }
+});
+
+test('alpha 1 shortcut is independent of dim and uses the normal edit and undo pipeline', () => {
+  for (const profile of ['anima-lora', 'moss-image-lora', 'sdxl-lora', 'krea2-lora']) {
+    const { app, history } = application(profile, { network_dim: '', network_alpha: 8 });
+    history.push({ ...app.form });
+    assert.equal(app.fieldQuickActionValue('network_alpha', 2), 1);
+    app.applyFieldQuickAction('network_alpha', 2);
+    assert.equal(app.form.network_alpha, 1);
+    assert.equal(app._fieldSources.network_alpha, 'user');
+    assert.equal(app.tomlUpdates, 1);
+    app.formHistory = history;
+    app.formHistoryIdx = history.length - 1;
+    app.undoField('network_alpha');
+    assert.equal(app.form.network_alpha, 8);
   }
 });
 
@@ -111,6 +127,7 @@ test('shortcuts render before the numeric control and omit static readonly or no
   assert.ok(html.indexOf('class="field-quick-actions"') < html.indexOf('class="stepper"'));
   assert.match(html, />= dim<\/button>/);
   assert.match(html, />½ dim<\/button>/);
+  assert.match(html, />1<\/button>/);
   assert.match(html, /:disabled="fieldQuickActionValue\(/);
   assert.match(html, /:aria-label="fieldQuickActionTitle\(/);
   assert.equal(app._renderFieldQuickActions({ ...alpha, readonly: true }), '');

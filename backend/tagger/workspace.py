@@ -118,7 +118,7 @@ def preview_caption(payload: dict, request: dict | None = None) -> dict:
         path = source_item(token, int(payload.get("index", 0)))
         # Preview consumes prompts and candidates, not batch output filenames.
         settings = {key: value for key, value in (payload.get("captioning") or {}).items()
-                    if key in {"candidates", "knowledge", "knowledge_file", "prompt_source", "prompt_text", "prompt_file", "separator"}}
+                    if key in {"candidates", "knowledge", "knowledge_file", "prompt_source", "prompt_text", "prompt_file", "separator", "output_format"}}
         options = captioning.validate_options({**settings, "overwrite": True, "reference_extension": "", "dir_knowledge_name": "", "knowledge_suffix": ""})
         config = captioning.validate_config(payload.get("api") or {}, options)
         with _tasks_lock:
