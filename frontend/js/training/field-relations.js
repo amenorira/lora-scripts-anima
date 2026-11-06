@@ -647,6 +647,41 @@ window.trainingFieldRelations = {
     this.updateTomlDebounced();
   },
 
+  suggestedOutputName() {
+    const f = this.form;
+    const path = String(f.train_data_dir || '').trim().replace(/\\/g, '/').replace(/\/+$/, '');
+    const basename = path.split('/').pop();
+    if (!basename || ['.', '..'].includes(basename) || /^[a-z]:$/i.test(basename)) return '';
+    const folder = basename.replace(/[<>:"|?*\x00-\x1f]/g, '_').replace(/[. ]+$/, '');
+    const optimizer = String(f.optimizer_type || '').split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '');
+    const shortOptimizer = {
+      prodigyplusschedulefree: 'ppsf', adamwschedulefree: 'adamwsf', automagic3: 'automagic',
+    }[optimizer] || optimizer;
+    const lycoris = f.network_module === 'lycoris.kohya';
+    const algorithm = lycoris ? f.lycoris_algo : {
+      'networks.lora': 'lora', 'networks.lora_anima': 'lora',
+      'networks.lora_generic': 'lora', 'networks.lora_krea2': 'lora',
+      'networks.loha': 'loha', 'networks.lokr': 'lokr',
+    }[f.network_module];
+    if (!folder || !shortOptimizer || !['lora', 'loha', 'lokr'].includes(algorithm)) return '';
+    const full = algorithm === 'lokr' && lycoris && f.full_matrix === true;
+    const dim = this._fieldQuickActionNumber(f.network_dim, this._fieldDefinition('network_dim'));
+    if (!full && dim === null) return '';
+    let size = full ? 'full' : `dim${dim}`;
+    if (algorithm === 'lokr') {
+      // An empty factor uses the training default; full_matrix only applies to LyCORIS.
+      const factor = this._fieldQuickActionNumber(f.lokr_factor === '' ? -1 : (f.lokr_factor ?? -1));
+      if (factor === null || !Number.isInteger(factor) || (factor !== -1 && factor < 1)) return '';
+      size = `f${factor === -1 ? 'auto' : factor}${size}`;
+    }
+    return `${folder}_${shortOptimizer}_${algorithm}_${size}`;
+  },
+
+  applySuggestedOutputName() {
+    const name = this.suggestedOutputName();
+    if (name) this.setField('output_name', name);
+  },
+
   // Declarative numeric shortcuts: { label, source, factor?, offset? } or { label, value }.
   // Read at click time; never establish a persistent link between two fields.
   _fieldQuickActionNumber(raw, field = null) {

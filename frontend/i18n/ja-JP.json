@@ -1811,6 +1811,8 @@
 		"decreaseField": "{field} を減らす",
 		"increaseField": "{field} を増やす",
 		"setFieldValue": "{field} を {value} に設定",
+		"quickName": "名前を自動入力",
+		"quickNameUnavailable": "学習フォルダーを指定し、オプティマイザー、ネットワーク種類、次元数の設定を確認してください",
 		"fieldQuickActionUnavailable": "読み取り専用、無効な参照値、または結果が範囲・刻みに適合しません",
 		"panelResizeHint": "ドラッグまたは左右キーで幅を変更・ダブルクリックでリセット",
 		"requestFailed": "リクエストが失敗しました",

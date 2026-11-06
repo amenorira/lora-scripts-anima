@@ -270,7 +270,11 @@ window.trainingFieldRenderer = {
 
 
   _renderFieldQuickActions(field) {
-    if (field.readonly || !['number', 'stepper'].includes(field.type)
+    if (field.readonly) return '';
+    if (field.key === 'output_name' && field.type === 'text') {
+      return `<div class="field-quick-actions"><button type="button" class="field-quick-action" :disabled="!suggestedOutputName()" :title="suggestedOutputName() || t('common.quickNameUnavailable')" :aria-label="t('common.quickName')" @click="applySuggestedOutputName()">${this.trainingText('common.quickName')}</button></div>`;
+    }
+    if (!['number', 'stepper'].includes(field.type)
         || !Array.isArray(field.quickActions) || !field.quickActions.length) return '';
     const key = this.escapeJsString(field.key);
     const buttons = field.quickActions.map((action, index) => {

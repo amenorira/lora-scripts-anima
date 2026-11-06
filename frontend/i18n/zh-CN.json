@@ -1811,6 +1811,8 @@
 		"decreaseField": "减少 {field}",
 		"increaseField": "增加 {field}",
 		"setFieldValue": "将 {field} 设为 {value}",
+		"quickName": "快速命名",
+		"quickNameUnavailable": "请填写训练文件夹，并检查优化器、网络类型和维度设置",
 		"fieldQuickActionUnavailable": "字段只读、来源无效或结果不符合取值范围及步长",
 		"panelResizeHint": "拖拽或用左右方向键调整宽度，双击恢复默认",
 		"requestFailed": "请求失败",

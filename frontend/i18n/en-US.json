@@ -1811,6 +1811,8 @@
 		"decreaseField": "Decrease {field}",
 		"increaseField": "Increase {field}",
 		"setFieldValue": "Set {field} to {value}",
+		"quickName": "Quick name",
+		"quickNameUnavailable": "Set a training folder and check the optimizer, network type and dimension settings",
 		"fieldQuickActionUnavailable": "Field is read-only, source is invalid, or result is outside the allowed range or step",
 		"panelResizeHint": "Drag or use the arrow keys to resize; double-click to reset",
 		"requestFailed": "Request failed",
