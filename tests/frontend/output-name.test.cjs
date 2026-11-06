@@ -22,12 +22,14 @@ function application(profile = 'anima-lora', values = {}) {
 test('quick naming uses folder basename and optimizer shorthand across profiles and native networks', () => {
   for (const profile of ['anima-lora', 'moss-image-lora', 'sdxl-lora', 'krea2-lora']) {
     const { app } = application(profile);
-    assert.equal(app.suggestedOutputName(), 'lanyin reine_ppsf_lora_dim16');
+    assert.equal(app.suggestedOutputName(), 'lanyin reine_ppsf_dim16');
   }
   const { app } = application();
-  for (const [module, type] of [['networks.lora', 'lora'], ['networks.loha', 'loha'], ['networks.lokr', 'lokr']]) {
+  for (const [module, suffix] of [
+    ['networks.lora', 'dim16'], ['networks.loha', 'loha_dim16'], ['networks.lokr', 'lokr_f4dim16'],
+  ]) {
     Object.assign(app.form, { network_module: module, lokr_factor: 4, full_matrix: true });
-    assert.equal(app.suggestedOutputName(), `lanyin reine_ppsf_${type}_${type === 'lokr' ? 'f4' : ''}dim16`);
+    assert.equal(app.suggestedOutputName(), `lanyin reine_ppsf_${suffix}`);
   }
   for (const [optimizer, name] of [
     ['AdamW8bit', 'adamw8bit'], ['schedulefree.AdamWScheduleFree', 'adamwsf'],
@@ -36,7 +38,7 @@ test('quick naming uses folder basename and optimizer shorthand across profiles 
     ['vendor.automagic_optimizer.integration.Automagic3', 'automagic'],
   ]) {
     Object.assign(app.form, { optimizer_type: optimizer, network_module: 'networks.lora_anima' });
-    assert.equal(app.suggestedOutputName(), `lanyin reine_${name}_lora_dim16`);
+    assert.equal(app.suggestedOutputName(), `lanyin reine_${name}_dim16`);
   }
 });
 
@@ -49,7 +51,7 @@ test('LyCORIS names use the active algorithm and explicit full matrix setting', 
   app.form.lycoris_algo = 'loha';
   assert.equal(app.suggestedOutputName(), 'lanyin reine_ppsf_loha_dim64');
   app.form.lycoris_algo = 'lora';
-  assert.equal(app.suggestedOutputName(), 'lanyin reine_ppsf_lora_dim64');
+  assert.equal(app.suggestedOutputName(), 'lanyin reine_ppsf_dim64');
   Object.assign(app.form, { lycoris_algo: 'lokr', full_matrix: false });
   for (const factor of [-1, '', null]) {
     app.form.lokr_factor = factor;
@@ -68,7 +70,7 @@ test('folder names support Windows, POSIX, Unicode and filename cleanup; invalid
     ['./train', 'train'], ['/data/a:b?c. ', 'a_b_c'],
   ]) {
     app.form.train_data_dir = path;
-    assert.equal(app.suggestedOutputName(), `${folder}_ppsf_lora_dim16`);
+    assert.equal(app.suggestedOutputName(), `${folder}_ppsf_dim16`);
   }
   for (const path of ['', ' ', '/', 'C:\\', '.', '..', '/data/..']) {
     app.form.train_data_dir = path;
@@ -89,13 +91,13 @@ test('clicking quick name preserves edit, path checking and undo pipelines witho
   const { app, history } = application('anima-lora', { output_name: 'custom_name' });
   history.push({ ...app.form });
   app.applySuggestedOutputName();
-  assert.equal(app.form.output_name, 'lanyin reine_ppsf_lora_dim16');
+  assert.equal(app.form.output_name, 'lanyin reine_ppsf_dim16');
   assert.equal(app._fieldSources.output_name, 'user');
   assert.equal(app.tomlUpdates, 1);
   assert.equal(app.pathUpdates, 1);
   app.form.network_dim = 64;
-  assert.equal(app.form.output_name, 'lanyin reine_ppsf_lora_dim16');
-  assert.equal(app.suggestedOutputName(), 'lanyin reine_ppsf_lora_dim64');
+  assert.equal(app.form.output_name, 'lanyin reine_ppsf_dim16');
+  assert.equal(app.suggestedOutputName(), 'lanyin reine_ppsf_dim64');
   app.formHistory = history;
   app.formHistoryIdx = history.length - 1;
   app.undoField('output_name');
