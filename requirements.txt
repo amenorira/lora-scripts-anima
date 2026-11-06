@@ -30,7 +30,7 @@ PyYAML>=6.0,<7
 # ── 构建工具（TensorBoard 依赖 pkg_resources，setuptools>=82 已移除该模块）──
 setuptools>=68,<82
 
-# ── 训练栈（sd-scripts 与 musubi-tuner 共用；与 musubi_runtime.MUSUBI_RUNTIME_PACKAGES 对账）──
+# ── 训练栈（sd-scripts 与 musubi-tuner 共用；运行时检查直接读取本文件的版本约束）──
 accelerate==1.15.0
 av==17.1.0
 bitsandbytes==0.50.2

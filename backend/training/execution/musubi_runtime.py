@@ -9,40 +9,50 @@ from __future__ import annotations
 
 import importlib
 import importlib.metadata
+from pathlib import Path
 import sys
 import warnings
 from typing import Any
 
+from packaging.requirements import Requirement
+from packaging.specifiers import SpecifierSet
+from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
 
-# Validated shared sd-scripts / musubi-tuner stack and curated optimizers.
-# Keep these versions aligned with the root requirements.txt. Torch and torchvision are
-# shared from the main CUDA 13 environment, but are validated explicitly below
-# because accelerate/bitsandbytes depend on torch indirectly.
-MUSUBI_RUNTIME_PACKAGES: dict[str, str | None] = {
-    "accelerate": "1.15.0",
-    "av": "17.1.0",
-    "bitsandbytes": "0.50.2",
-    "diffusers": "0.42.1",
-    "einops": "0.7.0",
-    "huggingface-hub": "2.3.0",
-    "opencv-python": "4.10.0.84",
-    "pillow": "13.0.0",
-    "prodigy-plus-schedule-free": "2.0.1",
-    "pytorch_optimizer": "4.1.0",
-    "safetensors": "0.8.0",
-    "toml": "0.10.2",
-    "tqdm": "4.67.1",
-    "transformers": "5.21.0",
-    "tokenizers": "0.23.3",
-    "voluptuous": "0.15.2",
-    "ftfy": "6.3.1",
-    "easydict": "1.13",
-    "sentencepiece": "0.2.1",
-    "torch": ">=2.9.1",
-    "torchvision": ">=0.24.1",
-}
+# Only the probe's package selection lives here; shared version constraints come
+# from requirements.txt. CUDA wheels are installed separately, so their minimum
+# compatibility requirements remain independent of the shared pip manifest.
+_SHARED_RUNTIME_PACKAGES = (
+    "accelerate", "av", "bitsandbytes", "diffusers", "einops",
+    "huggingface-hub", "opencv-python", "pillow", "prodigy-plus-schedule-free",
+    "pytorch_optimizer", "safetensors", "toml", "tqdm", "transformers",
+    "tokenizers", "voluptuous", "ftfy", "easydict", "sentencepiece",
+)
+
+
+def runtime_requirements(requirements_path: Path | None = None) -> dict[str, str]:
+    """Read the selected PEP 508 constraints from the shared installation manifest."""
+    path = requirements_path if requirements_path is not None else Path(__file__).resolve().parents[3] / "requirements.txt"
+    selected = {canonicalize_name(name): name for name in _SHARED_RUNTIME_PACKAGES}
+    requirements: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
+        line = line.split(" #", 1)[0].strip()
+        if not line or line.startswith("#"):
+            continue
+        requirement = Requirement(line)
+        name = selected.get(canonicalize_name(requirement.name))
+        if name is None or (requirement.marker is not None and not requirement.marker.evaluate()):
+            continue
+        if requirement.url:
+            raise ValueError(f"Runtime dependency must use a version constraint / 运行时依赖须使用版本约束: {name}")
+        if name in requirements:
+            raise ValueError(f"Duplicate runtime dependency / 运行时依赖重复: {name}")
+        requirements[name] = str(requirement.specifier)
+    missing = [name for name in _SHARED_RUNTIME_PACKAGES if name not in requirements]
+    if missing:
+        raise ValueError("Missing runtime dependencies in requirements.txt / 依赖清单缺少运行时依赖: " + ", ".join(missing))
+    return {**requirements, "torch": ">=2.9.1", "torchvision": ">=0.24.1"}
 
 
 # Metadata alone can say that a wheel is installed even when a native module
@@ -65,11 +75,11 @@ _CRITICAL_RUNTIME_IMPORTS: tuple[tuple[str, str], ...] = (
 )
 
 
-def installed_versions() -> dict[str, str | None]:
+def installed_versions(packages: dict[str, str]) -> dict[str, str | None]:
     """Return package versions from the interpreter that runs the GUI."""
 
     versions: dict[str, str | None] = {}
-    for package_name in MUSUBI_RUNTIME_PACKAGES:
+    for package_name in packages:
         try:
             versions[package_name] = importlib.metadata.version(package_name)
         except importlib.metadata.PackageNotFoundError:
@@ -80,21 +90,13 @@ def installed_versions() -> dict[str, str | None]:
 def version_error(package_name: str, expected: str | None, installed: str) -> str | None:
     """Return an actionable version mismatch message, if any."""
 
-    if expected is None:
+    if not expected:
         return None
-    if expected.startswith(">="):
-        minimum = expected[2:]
-        try:
-            if Version(installed) >= Version(minimum):
-                return None
-        except InvalidVersion:
-            pass
-        return (
-            f"{package_name} must be {expected}, found {installed} / "
-            f"{package_name} 版本必须为 {expected}，当前为 {installed}"
-        )
-    if installed == expected:
-        return None
+    try:
+        if Version(installed) in SpecifierSet(expected):
+            return None
+    except InvalidVersion:
+        pass
     return (
         f"{package_name} must be {expected}, found {installed} / "
         f"{package_name} 版本必须为 {expected}，当前为 {installed}"
@@ -115,9 +117,18 @@ def shared_runtime_status(*, verify_imports: bool = True) -> dict[str, Any]:
     dependency repair, in the Environment page, and before Krea 2 work.
     """
 
-    versions = installed_versions()
+    try:
+        packages = runtime_requirements()
+    except (OSError, ValueError) as exc:
+        return {
+            "ok": False,
+            "errors": [f"Cannot read shared runtime requirements / 无法读取共享运行时依赖约束: {exc}"],
+            "versions": {}, "python": sys.executable, "torch_path": None,
+            "torch_cuda": None, "imports_verified": False,
+        }
+    versions = installed_versions(packages)
     errors: list[str] = []
-    for package_name, expected in MUSUBI_RUNTIME_PACKAGES.items():
+    for package_name, expected in packages.items():
         installed = versions[package_name]
         if installed is None:
             errors.append(f"{package_name} is not installed / 未安装 {package_name}")

@@ -165,7 +165,7 @@ window.trainingFilePicker = {
     const trainType = this.form.model_train_type || 'anima-lora';
     const field = this._fieldDefinition(key, trainType);
     if (!field || !field.descKey) return key || '';
-    const suffix = trainType === 'moss-image-lora' ? '_moss' : (trainType === 'anima-lora' ? '_anima' : (trainType === 'sdxl-lora' ? '_sdxl' : ''));
+    const suffix = this._trainingTranslationSuffix(trainType);
     const specific = this.t(field.descKey + suffix);
     if (specific && specific !== field.descKey + suffix) return specific;
     return this.t(field.descKey) || key || '';
