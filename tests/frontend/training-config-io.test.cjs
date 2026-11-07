@@ -248,7 +248,12 @@ test('valid selections use target profile options and retain migrations and igno
     { key: 'optimizer_type' }, { key: 'momentum' }, { key: 'optimizer_args_custom' },
     { key: 'mode', type: 'select', options: [{ v: false, group: 'all' }, { v: 0 }] },
   ]);
-  const locales = ['zh-CN', 'en-US'].map(locale => JSON.parse(require('./helpers.cjs').readRepo(`frontend/i18n/${locale}.json`)).common);
+  const locales = ['zh-CN', 'en-US', 'ja-JP'].map(locale => JSON.parse(require('./helpers.cjs').readRepo(`frontend/i18n/${locale}.json`)).common);
+  for (const messages of locales) {
+    assert.match(messages.importedWithIgnoredFields, /\{fields\}/);
+    assert.match(messages.unsupportedConfigOption, /\{field\}/);
+    assert.match(messages.unsupportedConfigOption, /\{value\}/);
+  }
   h.app.t = key => locales[0][key.replace('common.', '')] || key;
   h.select('valid.yaml');
   const pending = h.read(0);
