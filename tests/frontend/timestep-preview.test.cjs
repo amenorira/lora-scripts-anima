@@ -23,19 +23,24 @@ test('sampling shares remain readable in the chart for base and comparison distr
   assert.match(comparison, /24\.4% → 30\.0%/);
 });
 
-test('uniform weighting moves to help while configuration warnings stay visible', () => {
-  const { window } = loadFrontend(['training/timestep-preview']);
-  window.TrainingTimestepPreview = { build: () => ({
-    sampling: 'sigmoid', weighting: 'uniform', warning: true,
-    noteKeys: ['timestepPreview.shiftIgnored', 'timestepPreview.uniformWeightNote'],
-  }) };
+test('preview notes keep configuration warnings without repeating the uniform weighting label', () => {
+  const { window } = loadFrontend(['training/timestep-model', 'training/timestep-preview']);
   const app = composeMixins(window.trainingTimestepPreview, {
     form: {}, t: key => key, _fieldOptionLabel: (field, value) => value,
   });
-  const result = app._buildTimestepPreview({}, 'base');
-  assert.equal(result.uniformWeightHelp, true);
-  assert.deepEqual(Array.from(result.notes), ['timestepPreview.shiftIgnored']);
-  assert.equal(result.warning, true);
+  const preview = source => app._buildTimestepPreview(source, 'base');
+  const uniform = preview({});
+  assert.equal(uniform.weightingLabel, 'timestepPreview.uniformWeighting');
+  assert.deepEqual(Array.from(uniform.notes), []);
+  for (const timestep_sampling of ['flux_shift', 'krea2_shift']) {
+    assert.deepEqual(Array.from(preview({ timestep_sampling }).notes), ['timestepPreview.resolutionShiftNote']);
+  }
+  const warned = preview({ model_train_type: 'krea2-lora', timestep_sampling: 'uniform', weighting_scheme: 'mode',
+    discrete_flow_shift: 1.3, min_timestep: 100, max_timestep: 900 });
+  assert.deepEqual(Array.from(warned.notes), [
+    'timestepPreview.kreaRangeNote', 'timestepPreview.shiftIgnored', 'timestepPreview.densityIgnored',
+  ]);
+  assert.equal(warned.warning, true);
 });
 
 test('sampling range follows the descending axis and collapses at fixed timesteps', () => {
@@ -59,6 +64,7 @@ test('sampling range follows the descending axis and collapses at fixed timestep
     assert.ok(fixed.includes(`class="timestep-range-dim" style="left:0;width:${position}%"`));
     assert.ok(fixed.includes(`class="timestep-range-dim" style="left:${position}%;right:0"`));
     assert.equal((fixed.match(/class="timestep-range-guide"/g) || []).length, 1);
+    assert.doesNotMatch(fixed, /timestep-density-help/);
     assert.doesNotMatch(fixed, /NaN|Infinity/);
   }
   const narrow = app._buildTimestepChartHtml({ ...uniform, percentile10: 499, percentile90: 501 });

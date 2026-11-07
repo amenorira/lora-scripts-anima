@@ -2074,7 +2074,7 @@ dialog.modal-overlay::backdrop { background: transparent; }
 .timestep-percentile-note { margin: 8px 0 0; color: var(--text-secondary); font-size: 11px; line-height: 1.5; }
 .timestep-help-target { position: relative; }
 .timestep-help-target[tabindex] { cursor: help; }
-.timestep-help-target[tabindex] > small, .timestep-inspect-title[tabindex] { text-decoration: underline dotted var(--border-default); text-underline-offset: 3px; }
+.timestep-inspect-title[tabindex] { text-decoration: underline dotted var(--border-default); text-underline-offset: 3px; }
 .timestep-help-popup { display: none; position: absolute; z-index: 10; left: 0; top: calc(100% + 5px); width: max-content; max-width: min(320px, 75vw); padding: 7px 9px; border: 1px solid var(--border-default); border-radius: var(--radius-control); background: var(--bg-surface-raised); box-shadow: var(--shadow-lg); color: var(--text-primary); font-size: 12px; font-weight: 400; line-height: 1.5; white-space: normal; pointer-events: none; }
 .timestep-help-target[tabindex]:hover > .timestep-help-popup, .timestep-help-target[tabindex]:focus > .timestep-help-popup { display: block; }
 

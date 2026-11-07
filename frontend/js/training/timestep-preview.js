@@ -247,8 +247,7 @@ window.trainingTimestepPreview = {
       samplingLabel: this._fieldOptionLabel('timestep_sampling', preview.sampling, preview.sampling),
       weightingLabel: preview.weighting === 'uniform' ? this.t('timestepPreview.uniformWeighting')
         : this._fieldOptionLabel('weighting_scheme', preview.weighting, preview.weighting),
-      uniformWeightHelp: noteKeys.includes('timestepPreview.uniformWeightNote'),
-      notes: noteKeys.filter(key => key !== 'timestepPreview.uniformWeightNote').map(key => this.t(key)),
+      notes: noteKeys.map(key => this.t(key)),
     };
   },
 
@@ -281,6 +280,9 @@ window.trainingTimestepPreview = {
       ? `<span><i class="legend-baseline"></i><span>${t('timestepPreview.baseline', 'Base distribution')}</span></span>` : '';
     const weightLegend = data.weighting !== 'uniform'
       ? `<span><i class="legend-weight"></i><span>${t('timestepPreview.lossWeight', 'Loss weight (log scale)')}</span></span>` : '';
+    const inspectTitle = data.fixedTimestep != null
+      ? `<span class="timestep-inspect-title">${t('timestepPreview.fixedDistribution', 'Fixed timestep (100%)')}</span>`
+      : `<span class="timestep-inspect-title timestep-help-target" tabindex="0" aria-describedby="timestep-density-help">${t('timestepPreview.relativeDensity', 'Relative PDF')}<span id="timestep-density-help" class="timestep-help-popup" role="tooltip">${t('timestepPreview.densityHint', 'Higher parts of the curve indicate more frequent sampling of nearby timesteps.')}</span></span>`;
     // The timestep axis runs from 1000 on the left to 0 on the right.
     const hasRange = Number.isFinite(data.percentile10) && Number.isFinite(data.percentile90);
     const rangeLeft = hasRange ? Number(Math.max(0, Math.min(100, 100 - data.percentile90 / 10)).toFixed(1)) : 0;
@@ -306,7 +308,7 @@ window.trainingTimestepPreview = {
     return `
     <div class="timestep-chart-box">
       <div class="timestep-inspect-bar">
-        <span class="timestep-inspect-title timestep-help-target" tabindex="0" aria-describedby="timestep-density-help">${data.fixedTimestep != null ? t('timestepPreview.fixedDistribution', 'Fixed timestep (100%)') : t('timestepPreview.relativeDensity', 'Relative PDF')}<span id="timestep-density-help" class="timestep-help-popup" role="tooltip">${t('timestepPreview.footnote', '')}</span></span>
+        ${inspectTitle}
         <span class="timestep-inspect-value" aria-live="polite">
           <b class="ts-hover-t"></b><small>·</small><span class="ts-hover-density"></span>
         </span>

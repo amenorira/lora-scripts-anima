@@ -1552,13 +1552,11 @@
 		"middleZone": "Mid noise",
 		"structureZone": "High noise",
 		"shiftIgnored": "The current sampling mode does not use discrete_flow_shift; that value is ignored.",
-		"fluxShiftNote": "flux_shift uses the preview resolution. During training, each bucket uses its own latent grid position count, so shifts may differ.",
-		"krea2ShiftNote": "krea2_shift uses the preview resolution. During training, each bucket uses its own latent grid position count, so shifts may differ.",
+		"resolutionShiftNote": "The preview calculates the shift at the reference resolution. Training uses each bucket’s resolution.",
 		"densityIgnored": "logit_normal/mode changes sampling density only when timestep_sampling=sigma.",
-		"uniformWeightNote": "All timesteps use the same loss weight.",
 		"fixedDistribution": "Fixed timestep",
 		"fixedLabel": "Fixed timestep: {value}",
-		"footnote": "The curve shows bin-average continuous density; sigma and truncated_logit_normal percentages, medians, and percentiles use the discrete training grid. The loss-weight curve shows the weighting factor. When training at multiple resolutions, preview the main resolutions separately.",
+		"densityHint": "Higher parts of the curve indicate more frequent sampling of nearby timesteps.",
 		"kreaRangeNote": "Includes the timestep range. With shape preservation, the curve is truncated to that range. Very narrow ranges may make training fall back to the original distribution and sample outside the range."
 	},
 	"lrPreview": {

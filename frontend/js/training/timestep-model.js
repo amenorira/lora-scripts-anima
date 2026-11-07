@@ -325,13 +325,9 @@ window.TrainingTimestepPreview = (() => {
     if (shiftIgnored) {
       noteKeys.push('timestepPreview.shiftIgnored');
     }
-    if (sampling === 'flux_shift') noteKeys.push('timestepPreview.fluxShiftNote');
-    if (sampling === 'krea2_shift') noteKeys.push('timestepPreview.krea2ShiftNote');
+    if (['flux_shift', 'krea2_shift'].includes(sampling)) noteKeys.push('timestepPreview.resolutionShiftNote');
     if (['logit_normal', 'mode'].includes(weighting) && sampling !== 'sigma') {
       noteKeys.push('timestepPreview.densityIgnored');
-    }
-    if (!['sigma_sqrt', 'cosmap'].includes(weighting)) {
-      noteKeys.push('timestepPreview.uniformWeightNote');
     }
 
     // Conditional parameter cards: only the inputs that actually shape the current

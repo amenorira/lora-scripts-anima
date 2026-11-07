@@ -1552,13 +1552,11 @@
 		"middleZone": "中噪声区",
 		"structureZone": "高噪声区",
 		"shiftIgnored": "当前采样方式不使用 discrete_flow_shift。",
-		"fluxShiftNote": "flux_shift 按预览分辨率计算偏移。实际训练中，各分桶按自己的 latent 网格位置数计算，结果可能不同。",
-		"krea2ShiftNote": "krea2_shift 按预览分辨率计算偏移。实际训练中，各分桶按自己的 latent 网格位置数计算，结果可能不同。",
+		"resolutionShiftNote": "预览按参考分辨率计算偏移，训练时按各分桶的分辨率分别计算。",
 		"densityIgnored": "logit_normal/mode 仅在 timestep_sampling=sigma 时改变采样密度。",
-		"uniformWeightNote": "各时间步使用相同的损失权重。",
 		"fixedDistribution": "固定时间步",
 		"fixedLabel": "固定时间步：{value}",
-		"footnote": "曲线显示连续分布的区间平均概率密度；sigma 和 truncated_logit_normal 的占比、中位数和分位数按离散训练网格计算。损失权重曲线表示加权系数；多分辨率训练时分别查看主要分辨率的结果。",
+		"densityHint": "曲线越高，附近的时间步越容易被采到。",
 		"kreaRangeNote": "已计入时间步范围。开启保留分布形状时，曲线按指定范围截取；范围过窄可能使实际采样退回原始分布，出现范围外的时间步。"
 	},
 	"lrPreview": {

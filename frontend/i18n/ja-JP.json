@@ -1552,13 +1552,11 @@
 		"middleZone": "中ノイズ",
 		"structureZone": "高ノイズ",
 		"shiftIgnored": "現在のサンプリング方法では discrete_flow_shift を使わないため、この値は無視します。",
-		"fluxShiftNote": "flux_shift はプレビュー解像度から算出します。学習中は各バケットの潜在グリッド位置数を使うため、シフトが異なる場合があります。",
-		"krea2ShiftNote": "krea2_shift はプレビュー解像度から算出します。学習中は各バケットの潜在グリッド位置数を使うため、シフトが異なる場合があります。",
+		"resolutionShiftNote": "プレビューでは参照解像度、学習時は各バケットの解像度でシフトを計算します。",
 		"densityIgnored": "logit_normal/mode がサンプリング密度を変えるのは timestep_sampling=sigma の場合だけです。",
-		"uniformWeightNote": "すべてのタイムステップに同じ損失の重みを使います。",
 		"fixedDistribution": "固定タイムステップ",
 		"fixedLabel": "固定タイムステップ：{value}",
-		"footnote": "曲線は連続分布の区間平均密度を示します。sigma と truncated_logit_normal の割合・中央値・分位数は離散学習グリッドから算出します。損失の重みの曲線は重み係数を示します。複数解像度の場合は、主な解像度ごとに確認してください。",
+		"densityHint": "曲線が高いほど、その付近のタイムステップが選ばれやすくなります。",
 		"kreaRangeNote": "タイムステップ範囲を反映しています。分布形状を保持する場合、曲線を指定範囲で切り取ります。範囲が狭すぎると学習では元の分布に戻り、範囲外の時刻も抽出される場合があります。"
 	},
 	"lrPreview": {
