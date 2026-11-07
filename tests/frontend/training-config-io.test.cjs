@@ -173,10 +173,10 @@ test('native TOML import keeps its parse profile but discards results after a pr
   assert.equal(imported, undefined);
 });
 
-function importApplication() {
+function importApplication(fields = [{ key: 'learning_rate' }]) {
   const readers = [], requests = [], toasts = [], ticks = [], persisted = [];
-  const { window } = loadFrontend('training/config-io', {
-    window: { getVisibleSections: () => [{ fields: [{ key: 'learning_rate' }] }] },
+  const { window } = loadFrontend(['training/profiles', 'training/config-io'], {
+    window: { getVisibleSections: () => [{ fields }], TRAIN_GROUP_MAP: { 'anima-lora': 'anima', 'sdxl-lora': 'sdxl' } },
     FileReader: class {
       constructor() { readers.push(this); }
       readAsText() {}
@@ -188,7 +188,7 @@ function importApplication() {
     },
     localStorage: { setItem: (_key, value) => persisted.push(JSON.parse(value)) },
   });
-  const app = Object.assign({}, window.trainingConfigIoMixin, {
+  const app = Object.assign({}, window.trainingProfiles, window.trainingConfigIoMixin, {
     trainTypes: ['anima-lora', 'sdxl-lora'].map(v => ({ v })),
     form: { model_train_type: 'anima-lora', learning_rate: 'original' },
     currentRoute: 'train-basic', _routeTransitionSeq: 0, _optimizerDrafts: {},
@@ -207,6 +207,72 @@ function importApplication() {
   }) });
   return { app, readers, requests, toasts, ticks, persisted, select, read, respond };
 }
+
+test('unsupported imported selections reject before changing the form, profile or document', async () => {
+  const fields = [{ key: 'network_module', type: 'select', options: [
+    { v: 'networks.lora_anima', group: 'anima' }, { v: 'networks.lora', group: 'sdxl' },
+    { v: 'lycoris.kohya', group: ['anima', 'sdxl'] },
+  ] }];
+  for (const type of ['anima-lora', 'sdxl-lora']) {
+    for (const value of ['networks.legacy_lora', type === 'anima-lora' ? 'networks.lora' : 'networks.lora_anima', null]) {
+      const h = importApplication(fields);
+      h.app.t = key => key === 'common.unsupportedConfigOption' ? 'Unsupported {field}: {value}' : key;
+      h.app._trainingDocumentId = 'original-document';
+      h.app._lastConfigImportIgnoredFields = ['previous-import'];
+      const original = h.app.form;
+      h.select('invalid.yaml');
+      const pending = h.read(0);
+      h.requests[0].resolve({ json: async () => ({ status: 'success', data: {
+        data: { model_train_type: type, network_module: value }, document_id: 'replacement-document',
+      } }) });
+      await pending;
+      assert.equal(h.app.form, original);
+      assert.equal(h.app._trainingDocumentId, 'original-document');
+      assert.deepEqual(h.app._lastConfigImportIgnoredFields, ['previous-import']);
+      assert.equal(h.persisted.length, 0);
+      assert.equal(h.ticks.length, 0);
+      assert.deepEqual(h.toasts, [[`common.parseError: Unsupported network_module: ${JSON.stringify(value)}`, 'error']]);
+    }
+  }
+  const h = importApplication(fields);
+  h.app.currentRoute = 'monitor';
+  h.app._ensureTrainingSession = () => assert.fail('invalid history import must not initialize a session');
+  const original = h.app.form;
+  assert.throws(() => h.app._applyImportedFlatConfig({ network_module: 'networks.legacy_lora' }));
+  assert.equal(h.app.form, original);
+});
+
+test('valid selections use target profile options and retain migrations and ignored-field warnings', async () => {
+  const h = importApplication([
+    { key: 'network_module', type: 'select', options: [{ v: 'lycoris.kohya', group: ['anima', 'sdxl'] }] },
+    { key: 'optimizer_type' }, { key: 'momentum' }, { key: 'optimizer_args_custom' },
+    { key: 'mode', type: 'select', options: [{ v: false, group: 'all' }, { v: 0 }] },
+  ]);
+  const locales = ['zh-CN', 'en-US'].map(locale => JSON.parse(require('./helpers.cjs').readRepo(`frontend/i18n/${locale}.json`)).common);
+  h.app.t = key => locales[0][key.replace('common.', '')] || key;
+  h.select('valid.yaml');
+  const pending = h.read(0);
+  h.requests[0].resolve({ json: async () => ({ status: 'success', data: {
+    data: { model_train_type: 'sdxl-lora', network_module: 'lycoris.kohya', mode: false,
+      optimizer_type: 'vendor.lora_muon.LoRA_Muon', lora_muon_momentum: 0.91,
+      optimizer_args_custom: 'amsgrad=False', future_flag: 42, future_options: { network_dim: 999 } },
+    document_id: 'imported-document',
+  } }) });
+  await new Promise(setImmediate);
+  h.ticks.shift()();
+  await pending;
+  assert.equal(h.app.form.network_module, 'lycoris.kohya');
+  assert.equal(h.app.form.mode, false);
+  assert.equal(h.app.form.momentum, 0.91);
+  assert.equal(h.app.form.optimizer_args_custom, 'amsgrad=False');
+  assert.equal(h.app.form.future_flag, undefined);
+  assert.equal(h.app.form.future_options, undefined);
+  assert.equal(h.app._trainingDocumentId, 'imported-document');
+  assert.equal(h.toasts[0][1], 'warning');
+  assert.match(h.toasts[0][0], /future_flag, future_options/);
+  assert.match(h.toasts[0][0], /重新导出时不会包含/);
+  assert.match(locales[1].importedWithIgnoredFields, /will not be included when exporting again/);
+});
 
 test('newest selected file wins for out-of-order reads and parse responses', async () => {
   for (const delayRead of [false, true]) {

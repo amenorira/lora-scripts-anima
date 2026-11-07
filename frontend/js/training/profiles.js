@@ -339,13 +339,17 @@ window.trainingProfiles = {
     });
   },
 
+  _profileSelectValues(field, trainType) {
+    const group = window.TRAIN_GROUP_MAP?.[trainType];
+    return field.options.filter(option => !group || !option.group || option.group === 'all'
+      || (Array.isArray(option.group) ? option.group.includes(group) : option.group === group)).map(option => option.v);
+  },
+
   _normalizeProfileSelectValues(trainType, defaults = this._buildFormDefaults(trainType), target = this.form) {
     window.getVisibleSections(trainType).forEach(section => {
       section.fields.forEach(field => {
         if (field.type !== 'select' || !Array.isArray(field.options) || !field.options.length) return;
-        const group = window.TRAIN_GROUP_MAP?.[trainType];
-        const validValues = field.options.filter(option => !group || !option.group || option.group === 'all'
-          || (Array.isArray(option.group) ? option.group.includes(group) : option.group === group)).map(option => option.v);
+        const validValues = this._profileSelectValues(field, trainType);
         if (!validValues.includes(target[field.key])) {
           target[field.key] = defaults[field.key] ?? validValues[0];
         }
