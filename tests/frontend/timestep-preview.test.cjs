@@ -13,7 +13,7 @@ test('sampling shares remain readable in the chart for base and comparison distr
   };
   const base = app._buildTimestepChartHtml({ ...data, compare: false });
   assert.match(base, /aria-label="Sampling share"/);
-  assert.match(base, /aria-describedby="timestep-zones-help"/);
+  assert.doesNotMatch(base, /timestep-zones-help/);
   assert.match(base, /aria-describedby="timestep-density-help"/);
   assert.match(base, /High noise<\/span><b>20\.0%/);
   assert.doesNotMatch(base, /timestep-preview-summary/);

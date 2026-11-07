@@ -294,11 +294,10 @@ window.trainingTimestepPreview = {
         <div class="timestep-yaxis-ticks">${yticks}</div>
       </div>
       <div class="timestep-preview-frame">
-        <div class="timestep-preview-zones timestep-help-target" tabindex="0" aria-label="${t('timestepPreview.zoneShare', 'Sampling share')}" aria-describedby="timestep-zones-help">
+        <div class="timestep-preview-zones" role="group" aria-label="${t('timestepPreview.zoneShare', 'Sampling share')}">
           <div class="zone-col"><span>${t('timestepPreview.structureZone', 'High noise')}</span><b>${esc(fmtPercent(data.baselineHighPercent, data.highPercent, data.compare))}</b></div>
           <div class="zone-col"><span>${t('timestepPreview.middleZone', 'Mid noise')}</span><b>${esc(fmtPercent(data.baselineMidPercent, data.midPercent, data.compare))}</b></div>
           <div class="zone-col"><span>${t('timestepPreview.detailZone', 'Low noise')}</span><b>${esc(fmtPercent(data.baselineLowPercent, data.lowPercent, data.compare))}</b></div>
-          <span id="timestep-zones-help" class="timestep-help-popup" role="tooltip">${t('timestepPreview.interpretationHint', '')}</span>
         </div>
       <div class="timestep-preview-chart" aria-hidden="true">
         <svg class="timestep-grid-svg" viewBox="0 0 100 100" preserveAspectRatio="none">

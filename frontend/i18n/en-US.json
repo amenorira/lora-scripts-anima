@@ -1560,7 +1560,6 @@
 		"fixedDistribution": "Fixed timestep",
 		"fixedLabel": "Fixed timestep: {value}",
 		"footnote": "The curve shows bin-average continuous density; sigma and truncated_logit_normal percentages, medians, and percentiles use the discrete training grid. The loss-weight curve shows the weighting factor. When training at multiple resolutions, preview the main resolutions separately.",
-		"interpretationHint": "Percentages show how often each range is sampled. In comparisons, the arrow goes from the base distribution to the current distribution. High-noise inputs retain less original image information; low-noise inputs retain more.",
 		"kreaRangeNote": "Includes the timestep range. With shape preservation, the curve is truncated to that range. Very narrow ranges may make training fall back to the original distribution and sample outside the range."
 	},
 	"lrPreview": {
