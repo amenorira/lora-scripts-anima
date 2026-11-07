@@ -674,7 +674,8 @@ window.trainingFieldRelations = {
       if (factor === null || !Number.isInteger(factor) || (factor !== -1 && factor < 1)) return '';
       size = `f${factor === -1 ? 'auto' : factor}${size}`;
     }
-    return `${folder}_${shortOptimizer}_${algorithm}_${size}`;
+    const algorithmSuffix = algorithm === 'lora' ? '' : `_${algorithm}`;
+    return `${folder}_${shortOptimizer}${algorithmSuffix}_${size}`;
   },
 
   applySuggestedOutputName() {

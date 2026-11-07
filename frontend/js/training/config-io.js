@@ -61,16 +61,30 @@ window.trainingConfigIoMixin = {
       ? this._normalizeLegacyLoraMuonForm(parsed)
       : parsed;
     const targetRoute = this.currentRoute?.startsWith('train-') ? this.currentRoute : 'train-basic';
-    // A history import may precede the first training-page mount.
-    if (!fileImport && this.currentRoute && !this.currentRoute.startsWith('train-')) {
-      this._ensureTrainingSession?.(targetRoute);
-    }
     const validTypes = new Set((this.trainTypes || []).map(item => item.v));
-    const currentType = String(this.form && this.form.model_train_type || 'anima-lora');
+    let currentType = String(this.form && this.form.model_train_type || 'anima-lora');
     const importedType = String(parsed.model_train_type || currentType);
     if (!validTypes.has(importedType)) throw new Error(this.t('common.unsupportedTrainingType').replace('{type}', () => importedType));
     if (Object.hasOwn(parsed, 'preview_loras') && this._normalizePreviewLoras) {
       parsed = { ...parsed, preview_loras: this._normalizePreviewLoras(parsed.preview_loras) };
+    }
+    const migrated = this._migrateSdOptionModes ? this._migrateSdOptionModes(parsed, importedType) : parsed;
+    // Validate supplied selections before profile switching or draft persistence.
+    // Draft recovery may use defaults; an import must report unsupported values.
+    window.getVisibleSections(importedType).forEach(section => {
+      (section.fields || []).forEach(field => {
+        if (field.type !== 'select' || !Array.isArray(field.options) || !field.options.length
+            || !Object.hasOwn(migrated, field.key)) return;
+        if (!this._profileSelectValues(field, importedType).includes(migrated[field.key])) {
+          throw new Error(this.t('common.unsupportedConfigOption')
+            .replace('{field}', () => field.key).replace('{value}', () => JSON.stringify(migrated[field.key])));
+        }
+      });
+    });
+    // A history import may precede the first training-page mount.
+    if (!fileImport && this.currentRoute && !this.currentRoute.startsWith('train-')) {
+      this._ensureTrainingSession?.(targetRoute);
+      currentType = String(this.form && this.form.model_train_type || 'anima-lora');
     }
     const applyValues = () => {
       if (!canApply() || (fileImport && this.form.model_train_type !== importedType)) return false;
@@ -81,7 +95,6 @@ window.trainingConfigIoMixin = {
       });
       const imported = {};
       this._lastConfigImportIgnoredFields = Object.keys(parsed).filter(key => !validKeys.has(key));
-      const migrated = this._migrateSdOptionModes ? this._migrateSdOptionModes(parsed, importedType) : parsed;
       Object.entries(migrated).forEach(([key, value]) => {
         if (validKeys.has(key)) imported[key] = value;
       });

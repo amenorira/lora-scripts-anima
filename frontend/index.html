@@ -1752,7 +1752,7 @@
         </section>
         <section class="preview-info-section">
           <h3 x-text="t('timestepPreview.weightSection')"></h3>
-          <div class="timestep-preview-meta"><span class="timestep-help-target" :tabindex="timestepPreviewData?.uniformWeightHelp ? 0 : null" :aria-describedby="timestepPreviewData?.uniformWeightHelp ? 'timestep-weight-help' : null"><small x-text="t('timestepPreview.weighting')"></small><b x-text="timestepPreviewData?.weightingLabel"></b><span id="timestep-weight-help" class="timestep-help-popup" role="tooltip" x-show="timestepPreviewData?.uniformWeightHelp" x-text="t('timestepPreview.uniformWeightNote')"></span></span></div>
+          <div class="timestep-preview-meta"><span><small x-text="t('timestepPreview.weighting')"></small><b x-text="timestepPreviewData?.weightingLabel"></b></span></div>
         </section>
         <section class="preview-info-section">
           <h3 x-text="t('timestepPreview.rangeSection')"></h3>
@@ -1762,13 +1762,12 @@
             <span><small x-text="t('timestepPreview.detailZone')"></small><b>0–333</b></span>
           </div>
         </section>
-        <section class="preview-info-section">
-          <h3 x-text="t('timestepPreview.percentileSection')"></h3>
+        <section class="preview-info-section timestep-range-trigger" tabindex="0" aria-labelledby="timestep-range-title">
+          <h3 id="timestep-range-title" x-text="t('timestepPreview.percentileSection')"></h3>
           <div class="timestep-preview-meta">
-            <span><small x-text="t('timestepPreview.percentile10')"></small><b x-text="timestepPreviewData?.percentile10"></b></span>
-            <span><small x-text="t('timestepPreview.percentile90')"></small><b x-text="timestepPreviewData?.percentile90"></b></span>
+            <span><b x-text="timestepPreviewData ? (timestepPreviewData.percentile10 === timestepPreviewData.percentile90 ? timestepPreviewData.percentile10 : `${timestepPreviewData.percentile10}–${timestepPreviewData.percentile90}`) : ''"></b></span>
           </div>
-          <p class="timestep-percentile-note" x-text="t('timestepPreview.percentileNote')"></p>
+          <p class="timestep-percentile-note" x-text="t(timestepPreviewData?.fixedTimestep != null ? 'timestepPreview.fixedRangeNote' : 'timestepPreview.percentileNote')"></p>
         </section>
 
         <div class="timestep-preview-notes" :class="{'preview-warning': timestepPreviewData?.warning}" x-show="timestepPreviewData && timestepPreviewData.notes.length">
