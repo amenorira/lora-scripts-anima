@@ -4,6 +4,12 @@
 
 All notable changes to this project are documented in this file.
 
+## v26.1107.0d80b - 2026-11-07
+
+Fixed an issue where the Start Generation button for regularization images stayed disabled even when the source images were ready and no caption selection was required.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1107.0a196...v26.1107.0d80b)
+
 ## v26.1107.0a196 - 2026-11-07
 
 This release makes the timestep preview easier to read and improves training configuration imports and quick model naming.
