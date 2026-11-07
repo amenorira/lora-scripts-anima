@@ -2468,7 +2468,53 @@ dialog.modal-overlay::backdrop { background: transparent; }
   stroke: color-mix(in srgb, var(--border-subtle) 50%, transparent);
   stroke-width: 1; stroke-dasharray: 2, 3; vector-effect: non-scaling-stroke;
 }
-
+.timestep-range-trigger { cursor: help; }
+.timestep-range-trigger:focus-visible { outline: 1px solid var(--chart-range); outline-offset: 4px; }
+.timestep-preview-layout {
+  --timestep-range-visible: 0;
+  --timestep-range-label-offset: 3px;
+  --timestep-range-detail-delay: 0ms;
+}
+.timestep-preview-layout:has(.timestep-range-trigger:hover, .timestep-range-trigger:focus-visible) {
+  --timestep-range-visible: 1;
+  --timestep-range-label-offset: 0px;
+  --timestep-range-detail-delay: 35ms;
+}
+.timestep-range-overlay {
+  position: absolute; inset: 0; pointer-events: none; z-index: 4;
+}
+.timestep-range-dim, .timestep-range-guides, .timestep-range-label { opacity: var(--timestep-range-visible); }
+.timestep-range-dim {
+  position: absolute; top: 0; bottom: 0;
+  transition: opacity 220ms var(--ease-out, ease-out);
+}
+.timestep-range-dim { background: rgba(0, 0, 0, 0.32); }
+.timestep-range-guides {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  transition: opacity 180ms var(--ease-out, ease-out) var(--timestep-range-detail-delay);
+}
+.timestep-range-guide { stroke: var(--chart-range); stroke-width: 1.5; stroke-dasharray: 5, 4; vector-effect: non-scaling-stroke; }
+.timestep-range-values {
+  position: absolute; inset-block: 0; container: timestep-range-values / inline-size;
+  font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.timestep-range-label {
+  position: absolute; bottom: 6px; padding: 2px 4px;
+  background: var(--bg-surface-raised); color: var(--chart-range);
+  line-height: 1.2; white-space: nowrap;
+  translate: 0 var(--timestep-range-label-offset);
+  transition: opacity 180ms var(--ease-out, ease-out) var(--timestep-range-detail-delay), translate 180ms var(--ease-out, ease-out) var(--timestep-range-detail-delay);
+}
+.timestep-range-label--compact { display: none; }
+/* Allow for one inward-aligned four-digit label and half of its neighbor. */
+@container timestep-range-values (width < calc(6ch + 14px)) {
+  .timestep-range-label--endpoint { display: none; }
+  .timestep-range-label--compact { display: block; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .timestep-range-dim, .timestep-range-guides, .timestep-range-label, .timestep-preview-layout .timestep-median-tag { transition: none; }
+  .timestep-range-label { translate: none; }
+}
 .timestep-preview-zones {
   position: relative; height: 53px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); z-index: 3;
 }
@@ -2514,6 +2560,8 @@ dialog.modal-overlay::backdrop { background: transparent; }
   border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   color: var(--accent); font-size: 11px; font-weight: 600; white-space: nowrap;
   font-variant-numeric: tabular-nums; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  opacity: calc(1 - var(--timestep-range-visible, 0));
+  transition: opacity 140ms var(--ease-out, ease-out);
 }
 .timestep-hover-indicator {
   position: absolute; top: 0; bottom: 0; width: 1px;
@@ -2547,7 +2595,7 @@ dialog.modal-overlay::backdrop { background: transparent; }
 }
 
 .timestep-preview-legend {
-  display: flex; align-items: center; justify-content: flex-end; gap: 14px;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 14px;
   margin-top: 4px; margin-left: 56px; font-size: 11.5px; color: var(--text-tertiary);
 }
 .timestep-preview-legend > span { display: inline-flex; align-items: center; gap: 4px; }

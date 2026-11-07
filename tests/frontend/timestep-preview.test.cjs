@@ -38,6 +38,33 @@ test('uniform weighting moves to help while configuration warnings stay visible'
   assert.equal(result.warning, true);
 });
 
+test('sampling range follows the descending axis and collapses at fixed timesteps', () => {
+  const { window } = loadFrontend(['training/timestep-model', 'training/timestep-preview']);
+  const app = composeMixins(window.trainingTimestepPreview, { t: () => '' });
+  const uniform = window.TrainingTimestepPreview.build({ timestep_sampling: 'uniform' });
+  const range = app._buildTimestepChartHtml({ ...uniform, percentile10: 218, percentile90: 858 });
+  assert.match(range, /class="timestep-range-guide" x1="14\.2" y1="0" x2="14\.2" y2="100"/);
+  assert.match(range, /class="timestep-range-guide" x1="78\.2" y1="0" x2="78\.2" y2="100"/);
+  assert.match(range, /class="timestep-range-dim" style="left:0;width:14\.2%"/);
+  assert.match(range, /class="timestep-range-dim" style="left:78\.2%;right:0"/);
+  assert.match(range, /class="timestep-range-values" style="left:14\.2%;width:64%"/);
+  assert.match(range, /left:0%;transform:translateX\(-50%\)">858/);
+  assert.match(range, /left:100%;transform:translateX\(-50%\)">218/);
+  assert.doesNotMatch(range, /timestep-range-highlight|timestep-range-bracket|timestep-range-rail|timestep-range-band|legend-range/);
+  const comparison = app._buildTimestepChartHtml({ ...uniform, compare: true });
+  assert.match(comparison, /class="timestep-range-dim" style="left:0;width:10%"/);
+  assert.match(comparison, /class="timestep-range-dim" style="left:90%;right:0"/);
+  for (const [value, position] of [[0, 100], [500, 50], [1000, 0]]) {
+    const fixed = app._buildTimestepChartHtml({ ...uniform, fixedTimestep: value, percentile10: value, percentile90: value });
+    assert.ok(fixed.includes(`class="timestep-range-dim" style="left:0;width:${position}%"`));
+    assert.ok(fixed.includes(`class="timestep-range-dim" style="left:${position}%;right:0"`));
+    assert.equal((fixed.match(/class="timestep-range-guide"/g) || []).length, 1);
+    assert.doesNotMatch(fixed, /NaN|Infinity/);
+  }
+  const narrow = app._buildTimestepChartHtml({ ...uniform, percentile10: 499, percentile90: 501 });
+  assert.match(narrow, /left:50%;transform:translateX\(-50%\)">499–501/);
+});
+
 test('sampling percentiles follow continuous, discrete and fixed distributions', () => {
   const { window } = loadFrontend(['training/timestep-model']);
   const build = window.TrainingTimestepPreview.build;

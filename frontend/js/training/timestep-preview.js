@@ -281,6 +281,27 @@ window.trainingTimestepPreview = {
       ? `<span><i class="legend-baseline"></i><span>${t('timestepPreview.baseline', 'Base distribution')}</span></span>` : '';
     const weightLegend = data.weighting !== 'uniform'
       ? `<span><i class="legend-weight"></i><span>${t('timestepPreview.lossWeight', 'Loss weight (log scale)')}</span></span>` : '';
+    // The timestep axis runs from 1000 on the left to 0 on the right.
+    const hasRange = Number.isFinite(data.percentile10) && Number.isFinite(data.percentile90);
+    const rangeLeft = hasRange ? Number(Math.max(0, Math.min(100, 100 - data.percentile90 / 10)).toFixed(1)) : 0;
+    const rangeRight = hasRange ? Number(Math.max(rangeLeft, Math.min(100, 100 - data.percentile10 / 10)).toFixed(1)) : 0;
+    const rangeWidth = Number((rangeRight - rangeLeft).toFixed(1));
+    const rangeLabel = (value, position, axisPosition, variant = '') => `<span class="timestep-range-label${variant}" style="left:${position}%;transform:translateX(${axisPosition < 10 ? 0 : axisPosition > 90 ? -100 : -50}%)">${esc(value)}</span>`;
+    const rangeLabels = rangeWidth === 0
+      ? rangeLabel(data.percentile10, 0, rangeLeft)
+      : rangeLabel(data.percentile90, 0, rangeLeft, ' timestep-range-label--endpoint')
+        + rangeLabel(data.percentile10, 100, rangeRight, ' timestep-range-label--endpoint')
+        + rangeLabel(`${data.percentile10}–${data.percentile90}`, 50, (rangeLeft + rangeRight) / 2, ' timestep-range-label--compact');
+    const rangeOverlay = hasRange
+      ? `<div class="timestep-range-overlay">
+          <div class="timestep-range-dim" style="left:0;width:${rangeLeft}%"></div>
+          <div class="timestep-range-dim" style="left:${rangeRight}%;right:0"></div>
+          <svg class="timestep-range-guides" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <line class="timestep-range-guide" x1="${rangeLeft}" y1="0" x2="${rangeLeft}" y2="100" />
+            ${rangeWidth > 0 ? `<line class="timestep-range-guide" x1="${rangeRight}" y1="0" x2="${rangeRight}" y2="100" />` : ''}
+          </svg>
+          <div class="timestep-range-values" style="left:${rangeLeft}%;width:${rangeWidth}%">${rangeLabels}</div>
+        </div>` : '';
 
     return `
     <div class="timestep-chart-box">
@@ -318,6 +339,7 @@ window.trainingTimestepPreview = {
           <span class="timestep-median-tag">${t(data.fixedTimestep != null ? 'timestepPreview.fixedLabel' : 'timestepPreview.medianLabel', 't = {value}').replace('{value}', esc(data.median))}</span>
         </div>
         <div class="timestep-hover-indicator" style="display:none"></div>
+        ${rangeOverlay}
       </div>
       </div>
     </div>
