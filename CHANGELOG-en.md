@@ -4,6 +4,16 @@
 
 All notable changes to this project are documented in this file.
 
+## v26.1107.0a196 - 2026-11-07
+
+This release makes the timestep preview easier to read and improves training configuration imports and quick model naming.
+
+- **See the main sampling range on the chart.** Hover over “Main sampling range” or use Tab to focus it. The chart marks the endpoints of the range that contains about 80% of samples. With a fixed timestep, the chart marks that single value. The probability density and resolution-based shift explanations are also shorter.
+- **Get a clear error for unsupported values when importing a configuration.** If a dropdown value is unavailable for the target training type, the app names the field and value, cancels the import, and keeps the current form. If unsupported fields can be skipped, the app lists them and explains that a subsequent export will omit them. These messages are available in Chinese, English, and Japanese.
+- **Use shorter names for LoRA models.** Quick naming drops `_lora`, so `dataset_adamw8bit_lora_dim16` becomes `dataset_adamw8bit_dim16`. LoHa and LoKr names keep their algorithm labels.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1106.10b6b...v26.1107.0a196)
+
 ## v26.1106.10b6b - 2026-11-06
 
 This release adds **quick model naming** and **network dimension shortcuts**, and improves caption saving, task recovery, and training configuration validation.
