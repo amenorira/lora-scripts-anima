@@ -210,8 +210,8 @@
 		"title": "检测到已有缓存",
 		"scope": "以下目录中有 {latents} 个图像 Latent 缓存、{text} 个文本编码缓存。重建会先删除这些缓存。\n{directories}",
 		"trainingNote": "训练会按本次设置重新生成已启用的缓存。",
-		"rebuild": "清除并重建",
-		"rebuildStart": "重建并开始训练",
+		"rebuild": "清除旧缓存并重建",
+		"rebuildStart": "清除旧缓存并开始训练",
 		"continue": "按当前设置继续",
 		"keepStart": "不重建，开始训练"
 	},

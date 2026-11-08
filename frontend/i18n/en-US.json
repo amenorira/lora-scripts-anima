@@ -210,8 +210,8 @@
 		"title": "Existing caches found",
 		"scope": "The folders below contain {latents} image latent caches and {text} text encoder caches. Rebuilding deletes these files first.\n{directories}",
 		"trainingNote": "Training regenerates the caches enabled in the current settings.",
-		"rebuild": "Clear and rebuild",
-		"rebuildStart": "Rebuild and start training",
+		"rebuild": "Clear old caches and rebuild",
+		"rebuildStart": "Clear old caches and start training",
 		"continue": "Continue with current settings",
 		"keepStart": "Start without rebuilding"
 	},
