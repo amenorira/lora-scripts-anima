@@ -2019,6 +2019,13 @@ dialog.modal-overlay::backdrop { background: transparent; }
 .modal-confirm {
   min-width: 340px; max-width: 420px; text-align: center;
 }
+.modal-confirm--three-actions {
+  min-width: min(340px, calc(100% - 32px));
+  max-width: calc(100% - 32px);
+}
+.modal-confirm--three-actions .modal-body {
+  contain: inline-size;
+}
 .modal-confirm .modal-body {
   padding: 30px 28px 20px;
 }
@@ -2035,7 +2042,7 @@ dialog.modal-overlay::backdrop { background: transparent; }
 }
 .modal-confirm .modal-footer {
   border-top: none; padding: 0 28px 22px;
-  justify-content: center; gap: 10px;
+  justify-content: center; flex-wrap: wrap; gap: 10px;
 }
 
 /* ── Anima timestep distribution preview ───────────────── */
