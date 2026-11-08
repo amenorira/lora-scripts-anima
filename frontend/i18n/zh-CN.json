@@ -206,17 +206,14 @@
 		"candidateFirstLine": "普通标注第一行（误识别时使用）",
 		"candidateSelectionRequired": "请先为检测到的多段标注选择读取方式。"
 	},
-	"teCache": {
-		"staleTitle": "文本编码器缓存已过期",
-		"rebuildStart": "删除缓存并开始训练",
-		"useOld": "使用旧缓存继续",
-		"deleteFailed": "缓存删除失败",
-		"warn": {
-			"rateMismatch": "{count} 个缓存文件的 caption_dropout_rate 与本次设置 {current} 不同，检测到的一个缓存值为 {cached}；各缓存的值可能不同。不重建时，训练沿用各缓存对应的旧丢弃概率；删除并重建后，本次设置才会生效。",
-			"captionModified": "有 {count} 张图的 caption 在缓存生成后被修改过，本次训练将使用修改前的旧编码，删除缓存重建后才会使用新 caption。",
-			"everyNEpochs": "缓存开启时 caption_dropout_every_n_epochs 不生效，本次训练不会执行整轮 caption 丢弃。"
-		},
-		"deleteScope": "将删除以下目录及子目录中的全部文本编码缓存，包括 Anima、SDXL 和 MOSS-Image 的缓存；图片与标注不变：\n{directories}"
+	"trainingCache": {
+		"title": "检测到已有缓存",
+		"scope": "以下目录中有 {latents} 个图像 Latent 缓存、{text} 个文本编码缓存。重建会先删除这些缓存。\n{directories}",
+		"trainingNote": "训练会按本次设置重新生成已启用的缓存。",
+		"rebuild": "清除并重建",
+		"rebuildStart": "重建并开始训练",
+		"continue": "按当前设置继续",
+		"keepStart": "不重建，开始训练"
 	},
 	"nav": {
 		"monitor": "训练监控",
@@ -2824,6 +2821,7 @@
 			"int8BackwardUnavailable": "ConvRot INT8 反向计算需要 CUDA 与 Triton。",
 			"invalidKrea2Config": "Krea 2 训练参数无效。",
 			"krea2PreflightFailed": "Krea 2 启动前检查失败。",
+			"trainingCacheDeleteFailed": "无法清理训练缓存。",
 			"krea2CacheRequired": "Krea 2 缓存未就绪，请先准备缓存。",
 			"invalidOutputPath": "输出路径无效：{path}",
 			"outputDirectoryUnavailable": "输出目录不可用或无法写入：{path}",

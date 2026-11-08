@@ -13,6 +13,7 @@ from backend.training.config.metrics_config import training_metrics_environment
 from backend.training.preview.config import CONFIG_NAME, ENV_KEY, prepare_config as prepare_preview_config
 from backend.training.execution.preparation import training_error as _training_error
 from backend.training.datasets.sd_dataset_config import build_sd_scripts_dataset_config
+from backend.training.cache.rebuild import clear_cache_files, prepare_cache_choice, sd_scripts_cache_files
 from backend.training.config.training_config import (
     TRAINING_CONFIG_NAME, build_training_config, write_training_config,
 )
@@ -81,6 +82,7 @@ def get_sample_prompts(config: dict):
 
 
 async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, profile):
+    cache_action = config.pop("_cache_action", None)
     settings, error = await sd_scripts_preflight.prepare_settings(config, gpu_ids, profile)
     if error is not None:
         return error
@@ -111,6 +113,10 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
     # ──────────────────────────────────────────────────────────
 
     suggest_cpu_threads, error = await sd_scripts_preflight.check_input_files(config, model_train_type)
+    if error is not None:
+        return error
+
+    cache_files, error = await prepare_cache_choice(cache_action, sd_scripts_cache_files, config, profile.id)
     if error is not None:
         return error
 
@@ -197,6 +203,10 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
 
     await _settled_to_thread(_write_run_files)
     # ──────────────────────────────────────────────────────────
+
+    error = await clear_cache_files(cache_files)
+    if error is not None:
+        return error
 
     extra_args = ["--dataset_config", str(dataset_config_file)] if dataset_config_file is not None else None
     result = reserved_task.launch(

@@ -8,7 +8,6 @@ from backend.training.execution.preparation import training_error as _training_e
 from backend.training.datasets.sd_dataset_config import SUBSET_TIMESTEP_OFFSETS_KEY, normalize_subset_timestep_offsets
 from backend.training.datasets.step_estimator import StepEstimateError, estimate_training_steps
 from backend.training.execution.supervisor import detect_lycoris_kernel_backend
-from backend.training.cache.te_cache_check import TE_CACHE_CHECK_PROFILES, check_te_cache
 from backend.utils import train_utils
 
 
@@ -59,15 +58,7 @@ async def prepare_settings(config, gpu_ids, profile) -> tuple[SdScriptsSettings 
             code="invalidTrainingConfig", details=validation_errors,
         )
 
-    # ── TE 磁盘缓存一致性检查（按引擎）：改 caption/dropout 率不会让缓存失效，启动前提示 ──
-    ignore_te_cache_warnings = bool(config.pop("ignore_te_cache_warnings", None))
-    if profile.id in TE_CACHE_CHECK_PROFILES and not ignore_te_cache_warnings:
-        te_cache_warnings = await _settled_to_thread(check_te_cache, config, profile.id)
-        if te_cache_warnings:
-            return None, _training_error(
-                message="Text encoder cache may be stale / 文本编码器缓存可能已过期",
-                data={"errorCode": "teCacheStale", "warnings": te_cache_warnings},
-            )
+    config.pop("ignore_te_cache_warnings", None)
     adapted_config, adapter_warnings = adapt_config(config, gpu_ids=gpu_ids)
     for w in adapter_warnings:
         log.warning(f"[Adapter] {w}")

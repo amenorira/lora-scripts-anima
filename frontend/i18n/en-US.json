@@ -206,17 +206,14 @@
 		"candidateFirstLine": "First line of ordinary caption (false detection)",
 		"candidateSelectionRequired": "Choose how to read the detected caption sections before generating."
 	},
-	"teCache": {
-		"staleTitle": "Text encoder cache is stale",
-		"rebuildStart": "Delete cache & start training",
-		"useOld": "Continue with old cache",
-		"deleteFailed": "Failed to delete cache",
-		"warn": {
-			"rateMismatch": "{count} cache file(s) have a caption_dropout_rate different from this run's {current}. One detected cached value is {cached}; cached values may differ. Without rebuilding, training uses each cache's stored dropout rate. Rebuild the cache to apply the current setting.",
-			"captionModified": "{count} caption file(s) were modified after the cache was generated; training will use the old encodings until the cache is rebuilt.",
-			"everyNEpochs": "caption_dropout_every_n_epochs has no effect while text encoder output caching is on; whole-epoch caption dropout will NOT happen this run."
-		},
-		"deleteScope": "Delete all text-encoding caches in these folders and their subfolders, including Anima, SDXL and MOSS-Image caches. Images and captions are unchanged:\n{directories}"
+	"trainingCache": {
+		"title": "Existing caches found",
+		"scope": "The folders below contain {latents} image latent caches and {text} text encoder caches. Rebuilding deletes these files first.\n{directories}",
+		"trainingNote": "Training regenerates the caches enabled in the current settings.",
+		"rebuild": "Clear and rebuild",
+		"rebuildStart": "Rebuild and start training",
+		"continue": "Continue with current settings",
+		"keepStart": "Start without rebuilding"
 	},
 	"nav": {
 		"monitor": "Monitor",
@@ -2824,6 +2821,7 @@
 			"int8BackwardUnavailable": "ConvRot INT8 backward computation requires CUDA and Triton.",
 			"invalidKrea2Config": "The Krea 2 training configuration is invalid.",
 			"krea2PreflightFailed": "Krea 2 preflight checks failed.",
+			"trainingCacheDeleteFailed": "Could not clear the training cache.",
 			"krea2CacheRequired": "Krea 2 caches are not ready. Prepare the caches first.",
 			"invalidOutputPath": "The output path is invalid: {path}",
 			"outputDirectoryUnavailable": "The output folder is unavailable or not writable: {path}",
