@@ -2,15 +2,18 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import threading
 import time
 import uuid
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from backend.tageditor.core import get_cached_scan_dataset, resolve_dir, tag_list
+from backend.tageditor.core import (
+    build_image_entry, cache_dataset_scan, dataset_disk_state, get_cached_scan_dataset, resolve_dir, tag_list,
+)
 from backend.image_preview import build_image_preview_url
 
 
@@ -26,6 +29,10 @@ class DatasetSession:
     tags: tuple[dict, ...]
     created_at: float
     accessed_at: float
+    image_paths: frozenset[str]
+    caption_metadata: dict[str, tuple[int, int]]
+    changed_images: tuple[dict, ...] = ()
+    removed_paths: tuple[str, ...] = ()
     queries: OrderedDict = field(default_factory=OrderedDict, compare=False, repr=False)
 
 
@@ -33,6 +40,20 @@ def _image_index(images: tuple[dict, ...]) -> dict[str, dict]:
     return {
         str(item.get("rel_path", "")).replace("\\", "/"): item
         for item in images
+    }
+
+
+def session_image_payload(session_id: str, item: dict) -> dict:
+    rel_path = item["rel_path"]
+    version = str(item.get("modified_ns", ""))
+    return {
+        **item,
+        "thumbnail": build_image_preview_url(
+            scope="dataset", session_id=session_id, path=rel_path, variant="thumb", size=320, version=version,
+        ),
+        "preview": build_image_preview_url(
+            scope="dataset", session_id=session_id, path=rel_path, variant="preview", size=960, version=version,
+        ),
     }
 
 
@@ -44,6 +65,46 @@ def _dataset_revision(images: tuple[dict, ...]) -> str:
         digest.update(str(item.get("caption_revision", "missing")).encode("ascii", errors="ignore"))
         digest.update(b"\0")
     return digest.hexdigest()
+
+
+def _caption_stem(path: str) -> str:
+    return os.path.normcase(path.rpartition(".")[0])
+
+
+def _refresh_changed_images(
+    old: DatasetSession, image_paths: set[str], caption_metadata: dict[str, tuple[int, int]],
+) -> tuple[list[dict], list[dict]]:
+    changed_stems = {
+        _caption_stem(path) for path, metadata in caption_metadata.items()
+        if metadata != old.caption_metadata.get(path)
+    }
+    changed_stems.update(_caption_stem(path) for path in old.caption_metadata.keys() - caption_metadata.keys())
+    added_paths = image_paths - old.image_paths
+    removed_paths = old.image_paths - image_paths
+    affected_paths = added_paths.copy()
+    if changed_stems:
+        affected_paths.update(path for path in image_paths if _caption_stem(path) in changed_stems)
+
+    updates = {path: build_image_entry(Path(path), old.directory) for path in sorted(affected_paths)}
+    counts = Counter({item["tag"]: item["count"] for item in old.tags})
+    images = []
+    for item in old.images:
+        path = item["path"]
+        if path in removed_paths:
+            counts.subtract(tag_list(item["tags"]))
+            continue
+        replacement = updates.pop(path, item)
+        if replacement["tags"] != item["tags"]:
+            counts.subtract(tag_list(item["tags"]))
+            counts.update(tag_list(replacement["tags"]))
+        images.append(replacement)
+    for item in updates.values():
+        counts.update(tag_list(item["tags"]))
+        images.append(item)
+    if updates:
+        images.sort(key=lambda item: item["name"])
+    tags = [{"tag": tag, "count": count} for tag, count in counts.most_common() if count > 0]
+    return images, tags
 
 
 class DatasetDirectoryError(ValueError):
@@ -63,7 +124,9 @@ class DatasetSessionService:
         path = resolve_dir(directory)
         if not path.exists() or not path.is_dir():
             raise DatasetDirectoryError(directory)
-        images, tags = get_cached_scan_dataset(path, recursive)
+        _, caption_metadata = dataset_disk_state(path, recursive)
+        # A new editor session must see caption writes made outside the editor.
+        images, tags = get_cached_scan_dataset(path, recursive, force_refresh=True)
         image_snapshot = tuple(dict(item) for item in images)
         now = time.time()
         session = DatasetSession(
@@ -77,6 +140,8 @@ class DatasetSessionService:
             tags=tuple(dict(item) for item in tags),
             created_at=now,
             accessed_at=now,
+            image_paths=frozenset(item["path"] for item in image_snapshot),
+            caption_metadata=caption_metadata,
         )
         with self._lock:
             self._prune_locked(now)
@@ -93,13 +158,26 @@ class DatasetSessionService:
             self._sessions[session_id] = refreshed
             return refreshed
 
-    def refresh(self, session_id: str) -> DatasetSession:
+    def refresh(self, session_id: str, *, since_generation: int | None = None) -> DatasetSession | None:
         old = self.get(session_id)
-        from backend.tageditor.core import _invalidate_cache
-
-        _invalidate_cache(old.directory, old.recursive)
-        images, tags = get_cached_scan_dataset(old.directory, old.recursive)
-        image_snapshot = tuple(dict(item) for item in images)
+        if since_generation is not None and since_generation != old.generation:
+            # Keep the last update available until the browser acknowledges it.
+            if since_generation == old.generation - 1:
+                return old
+            raise KeyError(session_id)
+        started_at = time.time()
+        image_paths, caption_metadata = dataset_disk_state(old.directory, old.recursive)
+        if since_generation is None:
+            images, tags = get_cached_scan_dataset(old.directory, old.recursive, force_refresh=True)
+        else:
+            if image_paths == old.image_paths and caption_metadata == old.caption_metadata:
+                return None
+            images, tags = _refresh_changed_images(old, image_paths, caption_metadata)
+        image_snapshot = tuple(images)
+        image_index = _image_index(image_snapshot)
+        changed_images = tuple(item for path, item in image_index.items() if item != old.image_by_rel_path.get(path))
+        removed_paths = tuple(item["path"] for path, item in old.image_by_rel_path.items() if path not in image_index)
+        unchanged = since_generation is not None and not (changed_images or removed_paths)
         now = time.time()
         refreshed = DatasetSession(
             id=old.id,
@@ -108,10 +186,14 @@ class DatasetSessionService:
             generation=old.generation + 1,
             revision=_dataset_revision(image_snapshot),
             images=image_snapshot,
-            image_by_rel_path=_image_index(image_snapshot),
+            image_by_rel_path=image_index,
             tags=tuple(dict(item) for item in tags),
             created_at=old.created_at,
             accessed_at=now,
+            image_paths=frozenset(item["path"] for item in image_snapshot),
+            caption_metadata=caption_metadata,
+            changed_images=changed_images,
+            removed_paths=removed_paths,
         )
         with self._lock:
             current = self._sessions.get(session_id)
@@ -119,7 +201,12 @@ class DatasetSessionService:
                 raise KeyError(session_id)
             if current.generation != old.generation:
                 return current
+            if unchanged:
+                self._sessions[session_id] = replace(current, caption_metadata=caption_metadata, accessed_at=now)
+                return None
             self._sessions[session_id] = refreshed
+            if since_generation is not None:
+                cache_dataset_scan(old.directory, old.recursive, (images, tags), started_at)
         return refreshed
 
     def delete(self, session_id: str) -> bool:
@@ -172,22 +259,8 @@ class DatasetSessionService:
             for item in items:
                 directory = str(item.get("rel_path", item.get("name", ""))).replace("\\", "/").rpartition("/")[0]
                 directory_counts[directory] = directory_counts.get(directory, 0) + 1
-        page_items = []
-        for item in items[start:start + page_size]:
-            payload = dict(item)
-            rel_path = str(payload.get("rel_path", payload.get("name", ""))).replace("\\", "/")
-            version = str(payload.get("modified_ns", ""))
-            payload["thumbnail"] = build_image_preview_url(
-                scope="dataset", session_id=session_id, path=rel_path,
-                variant="thumb", size=320, version=version,
-            )
-            payload["preview"] = build_image_preview_url(
-                scope="dataset", session_id=session_id, path=rel_path,
-                variant="preview", size=960, version=version,
-            )
-            page_items.append(payload)
         return {
-            "items": page_items,
+            "items": [session_image_payload(session_id, item) for item in items[start:start + page_size]],
             "total": total,
             "page": page,
             "page_size": page_size,

@@ -65,6 +65,25 @@ test('failed automatic recovery retains unsaved state for a normal load retry', 
   assert.equal(f.app._teSessionRecovery, null);
 });
 
+test('session recovery loads the fresh caption of a clean selection outside the first page', async () => {
+  const { app, create } = fixture();
+  let retainedPaths;
+  create((_url, options) => {
+    retainedPaths = JSON.parse(options.body).retained_paths;
+    return response({
+      session_id: 'new', dir: '/dataset', count: 2, page: 1, tags: [],
+      items: [{ path: 'b', tags: 'other', caption_revision: 'b1' }],
+      retained_items: [{ path: 'a', tags: 'external', caption_revision: 'a2' }],
+    });
+  });
+  await app.tagEditorReloadSessionPage(1);
+  assert.deepEqual(retainedPaths, ['a']);
+  assert.deepEqual(Array.from(app.tagEditorPageItems, item => item.path), ['b']);
+  assert.equal(app.tagEditorGetSelectedImg().tags, 'external');
+  assert.equal(app._teCaptionRevisions.a, 'a2');
+  assert.equal(app.tagEditorModified, false);
+});
+
 test('a dataset switch supersedes recovery, and an already cleared save history stays cleared', async () => {
   let f = fixture();
   const wait = deferred();

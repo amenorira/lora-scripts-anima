@@ -307,6 +307,102 @@ class TagEditorTransactionTests(unittest.TestCase):
 
 
 class TagEditorSessionTests(unittest.TestCase):
+    def test_open_session_detects_caption_changes_and_retries_unacknowledged_update(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "a.png").touch()
+            (root / "b.png").touch()
+            (root / "c.png").touch()
+            (root / "d.png").touch()
+            (root / "a.txt").write_text("old", encoding="utf-8")
+            (root / "b.caption").write_text("removed", encoding="utf-8")
+            (root / "d.txt").write_text("old, old", encoding="utf-8")
+            client = TestClient(app)
+
+            with patch("backend.tageditor.routes.dataset_sessions", DatasetSessionService()):
+                first = client.post("/api/tageditor/sessions", json={"dir": temp_dir}).json()["data"]
+                url = f"/api/tageditor/sessions/{first['session_id']}"
+                check = f"{url}/refresh?since_generation={first['generation']}"
+                with patch("backend.tageditor.sessions.get_cached_scan_dataset") as scan:
+                    self.assertIsNone(client.post(check).json()["data"])
+                    scan.assert_not_called()
+                (root / "a.txt").write_text("rewritten", encoding="utf-8")
+                (root / "b.caption").unlink()
+                (root / "c.caption").write_text("added", encoding="utf-8")
+                with (
+                    patch("backend.tageditor.sessions.get_cached_scan_dataset") as scan,
+                    patch("backend.tageditor.core.read_caption_snapshot", wraps=read_caption_snapshot) as read,
+                ):
+                    update = client.post(check).json()["data"]
+                    scan.assert_not_called()
+                    self.assertCountEqual([call.args[0].name for call in read.call_args_list], ["a.txt", "c.caption"])
+                self.assertEqual(update["generation"], first["generation"] + 1)
+                self.assertEqual(update["no_tag_count"], 1)
+                self.assertEqual(
+                    {item["rel_path"]: item["tags"] for item in update["changed_images"]},
+                    {"a.png": "rewritten", "b.png": "", "c.png": "added"},
+                )
+                self.assertEqual({item["tag"]: item["count"] for item in update["tags"]},
+                                 {"old": 2, "rewritten": 1, "added": 1})
+                stats = client.get("/api/tageditor/tags", params={"dir": temp_dir}).json()["data"]
+                self.assertEqual(stats["tags"], update["tags"])
+                self.assertEqual(client.post(check).json()["data"], update)
+                self.assertIsNone(client.post(f"{url}/refresh?since_generation={update['generation']}").json()["data"])
+                page = client.get(f"{url}/images", params={"include_tags": "rewritten"}).json()["data"]
+                self.assertEqual([item["rel_path"] for item in page["items"]], ["a.png"])
+                saved = client.post("/api/tageditor/save-all", json={
+                    "dir": temp_dir,
+                    "images": [{"path": first["items"][0]["path"], "tags": "draft",
+                                "expected_revision": first["items"][0]["caption_revision"]}],
+                }).json()["data"]
+                self.assertEqual(saved["conflicts"][0]["error_code"], "tageditor_external_change")
+                self.assertEqual((root / "a.txt").read_text(encoding="utf-8"), "rewritten")
+
+    def test_incremental_refresh_tracks_new_and_removed_images_with_existing_captions(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            (root / "removed.png").touch()
+            (root / "removed.txt").write_text("gone", encoding="utf-8")
+            (root / "added.caption").write_text("kept", encoding="utf-8")
+            service = DatasetSessionService()
+            session = service.create(temp_dir)
+
+            (root / "removed.png").unlink()
+            (root / "added.png").touch()
+            (root / "added.jpg").touch()
+            refreshed = service.refresh(session.id, since_generation=session.generation)
+            self.assertEqual(refreshed.removed_paths, (str(root / "removed.png"),))
+            self.assertEqual([item["name"] for item in refreshed.images], ["added.jpg", "added.png"])
+            self.assertEqual(refreshed.tags, ({"tag": "kept", "count": 2},))
+
+    def test_reopening_dataset_reads_externally_rewritten_caption(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            for index in range(30):
+                (root / f"a-{index:02}.png").touch()
+            (root / "z.png").touch()
+            caption = root / "z.txt"
+            caption.write_text("before", encoding="utf-8")
+            client = TestClient(app)
+            url = "/api/tageditor/sessions"
+
+            with patch("backend.tageditor.routes.dataset_sessions", DatasetSessionService()):
+                first = client.post(url, json={"dir": temp_dir}).json()["data"]
+                caption.write_text("after", encoding="utf-8")
+                target = first["items"][-1]
+                reopened = client.post(url, json={
+                    "dir": temp_dir, "page_size": 30, "retained_paths": [target["path"]],
+                }).json()["data"]
+
+                self.assertEqual(target["tags"], "before")
+                self.assertNotIn(target["path"], {item["path"] for item in reopened["items"]})
+                self.assertEqual(reopened["retained_items"][0]["tags"], "after")
+                self.assertIn(reopened["session_id"], reopened["retained_items"][0]["preview"])
+                self.assertEqual(reopened["tags"], [{"tag": "after", "count": 1}])
+                self.assertNotEqual(reopened["revision"], first["revision"])
+                original_page = client.get(f"{url}/{first['session_id']}/images", params={"search": "z.png"}).json()["data"]
+                self.assertEqual(original_page["items"][0]["tags"], "before")
+
     def test_unsaved_caption_queries_are_request_scoped_and_preserve_raw_baselines(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

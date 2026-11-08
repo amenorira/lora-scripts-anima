@@ -4,7 +4,7 @@ const { loadTagEditor } = require('./helpers.cjs');
 
 function fixture() {
   const pending = [];
-  const context = { window: {}, URLSearchParams, AbortController, setTimeout, clearTimeout,
+  const context = { window: {}, document: { hidden: false }, URLSearchParams, AbortController, setTimeout, clearTimeout,
     fetch(url, options) { return new Promise((resolve, reject) => pending.push({ url, options, resolve, reject })); } };
   loadTagEditor( context);
   const app = Object.assign({}, context.window.tagEditorMixin, {
@@ -16,6 +16,65 @@ function fixture() {
   const reply = (index, data) => pending[index].resolve({ json: async () => ({ status: 'success', data }) });
   return { app, pending, reply };
 }
+
+test('external refresh keeps a pending draft and its save revision while updating clean selections', async () => {
+  const { app, pending, reply } = fixture();
+  app.currentRoute = 'tagEditor';
+  app._teExternalGeneration = 1;
+  app._teApplyTagFreq = () => {};
+  app.tagEditorSchedulePageFetch = () => {};
+  const updatedPanels = [];
+  app._updateEditorPanel = () => updatedPanels.push(app.tagEditorGetSelectedImg().tags);
+  app._teMergeSessionItems([
+    { path: '/a', tags: 'original', caption_revision: 'before' },
+    { path: '/b', tags: 'clean', caption_revision: 'b1' },
+  ], true);
+  app.tagEditorSelected = ['/b'];
+  const checking = app._teCheckExternalChanges();
+  assert.match(pending[0].url, /refresh\?since_generation=1$/);
+  app._teApplySessionPage({
+    generation: 2, items: [{ path: '/a', tags: 'external', caption_revision: 'after' }],
+  }, false);
+  assert.equal(app._teFindByPath('/a').tags, 'original');
+  app._teFindByPath('/a').tags = '\uFEFFdraft\r\n';
+  reply(0, {
+    generation: 2, revision: 'dataset2', count: 2, no_tag_count: 0, tags: [], removed_paths: [],
+    changed_images: [
+      { path: '/a', tags: 'external', caption_revision: 'after' },
+      { path: '/b', tags: 'new clean', caption_revision: 'b2' },
+    ],
+  });
+  await checking;
+  assert.equal(app._teFindByPath('/a').tags, '\uFEFFdraft\r\n');
+  assert.equal(app.tagEditorOriginal['/a'], 'external');
+  assert.equal(app._teCaptionRevisions['/a'], 'before');
+  assert.equal(app._teModifiedCount, 1);
+  assert.equal(app._teExternalGeneration, 2);
+  assert.equal(app._teCaptionRevisions['/b'], 'b2');
+  assert.deepEqual(updatedPanels, ['new clean']);
+});
+
+test('a refresh response is ignored during IME input and after leaving the dataset', async () => {
+  const { app, pending, reply } = fixture();
+  app.currentRoute = 'tagEditor';
+  app._teExternalGeneration = 1;
+  let applied = 0;
+  app._teApplyExternalChanges = () => { applied++; };
+  const composing = app._teCheckExternalChanges();
+  app._teDetailComposing = true;
+  reply(0, { generation: 2 });
+  await composing;
+  await app._teCheckExternalChanges();
+  assert.equal(pending.length, 1);
+  app._teDetailComposing = false;
+  const leaving = app._teCheckExternalChanges();
+  app._teStopExternalRefresh();
+  assert.equal(pending[1].options.signal.aborted, true);
+  reply(1, { generation: 2 });
+  await leaving;
+  assert.equal(applied, 0);
+  assert.equal(app._teExternalGeneration, 1);
+});
 
 test('bulk loading cannot merge or select the previous dataset after a switch', async () => {
   const { app, reply } = fixture();

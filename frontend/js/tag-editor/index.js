@@ -297,6 +297,7 @@ window.tagEditorMixin = {
     this._teLoadEpoch++;
     this.tagEditorSaving = this._teIsSaving = false;
     this.tagEditorSnapshotBusy = false;
+    this._teStopExternalRefresh();
     if (this._teLoadAbort) { this._teLoadAbort.abort(); this._teLoadAbort = null; }
     this._teCancelPageFetch();
     if (this._teAllAbort) { this._teAllAbort.abort(); this._teAllAbort = null; }

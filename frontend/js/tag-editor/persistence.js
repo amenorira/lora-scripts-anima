@@ -116,7 +116,11 @@ window.tagEditorPersistence = {
           }
         });
         if (data.revisions && self._teCaptionRevisions) {
-          Object.keys(data.revisions).forEach(function(path) { self._teCaptionRevisions[path] = data.revisions[path]; });
+          Object.keys(data.revisions).forEach(function(path) {
+            self._teCaptionRevisions[path] = data.revisions[path];
+            var img = self._teFindByPath(path);
+            if (img) img.caption_revision = data.revisions[path];
+          });
         }
         if (Array.isArray(data.conflicts)) failedItems = failedItems.concat(data.conflicts);
         if (Array.isArray(data.failed)) failedItems = failedItems.concat(data.failed);

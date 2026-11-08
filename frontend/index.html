@@ -1301,7 +1301,9 @@
                     </div>
                     <textarea class="te-editor-textarea" x-show="tagEditorDetailView === 'text'" :aria-label="t('tagEditor.captionText')"
                       x-model="tagEditorDetailText" @input="tagEditorDetailTextChange($event)"
-                      @compositionend="tagEditorDetailTextChange($event)" @blur="_teFlushAllPendingTextEdits()"></textarea>
+                      @compositionstart="_teDetailComposing = true"
+                      @compositionend="_teDetailComposing = false; tagEditorDetailTextChange($event)"
+                      @blur="_teDetailComposing = false; _teFlushAllPendingTextEdits()"></textarea>
                   </div>
                   <div class="te-editor-add" x-show="tagEditorAllowsTagOps() && !tagEditorQuickRemove && tagEditorDetailView === 'chip'">
                     <input type="text" x-model="tagEditorAddInput" :placeholder="t(tagDictionaryReady ? 'tagEditor.dictAddPlaceholder' : 'tagEditor.addTagPlaceholder')"

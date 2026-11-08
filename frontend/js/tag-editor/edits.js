@@ -314,6 +314,9 @@ window.tagEditorEdits = {
     if (!this._teEditVersions) this._teEditVersions = {};
     this._teEditVersions[img.path] = (this._teEditVersions[img.path] || 0) + 1;
     var isMod = newTagsStr !== this.tagEditorOriginal[img.path];
+    if (wasMod && !isMod && img.caption_revision && this._teCaptionRevisions) {
+      this._teCaptionRevisions[img.path] = img.caption_revision;
+    }
     this._teInvalidateCaptionQuery();
     if (wasMod !== isMod) {
       this._teBumpModified(isMod ? 1 : -1);
@@ -330,7 +333,7 @@ window.tagEditorEdits = {
       // the DOM value (and native undo/caret) on every CRLF keystroke.
       this.tagEditorDetailText = _teInputText(newTagsStr);
     }
-    this._teUpdateFreq(oldTags, newTagsStr);
+    if (!img._teMissingOnDisk) this._teUpdateFreq(oldTags, newTagsStr);
     this.tagDictionarySyncChips();
   },
 
