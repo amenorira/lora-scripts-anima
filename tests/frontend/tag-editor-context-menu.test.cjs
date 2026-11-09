@@ -54,7 +54,7 @@ test('closing or replacing a menu cancels deferred positioning and focus', async
     getBoundingClientRect:()=>({width:220,height:100}),
     querySelectorAll:()=>[{disabled:false,getClientRects:()=>[{}],focus:()=>focused.push(id)}],
   });
-  const event={target:trigger,currentTarget:trigger,clientX:900,clientY:750};
+  const event={target:trigger,currentTarget:trigger,clientX:900,clientY:750,preventDefault(){},stopPropagation(){}};
   app.tagEditorTagCtx(event,'first');
   app.tagEditorCloseTagMenu(false);
   await Promise.resolve();
@@ -82,6 +82,45 @@ test('right-clicking an enabled menu option selects it once', () => {
   app.tagEditorMenuContextSelect({...event,button:0});
   app.tagEditorMenuContextSelect({...event,target:{closest:()=>null}});
   assert.equal(selections,1);
+});
+
+test('layout changes restore focus only from a menu and do not scroll its trigger', () => {
+  const {app, context} = fixture();
+  const focusCalls=[];
+  const rect={left:10,right:50,top:10,bottom:30};
+  const trigger={isConnected:true,getClientRects:()=>[{}],getBoundingClientRect:()=>rect,closest:()=>null,focus:options=>focusCalls.push(options.preventScroll)};
+  for (const [stateKey, triggerKey, id] of [
+    ['tagEditorPanelMenu','_tePanelMenuTrigger','tePanelMenu'],
+    ['tagEditorContextMenu','_teTagMenuTrigger','teTagMenu'],
+    ['tagEditorImageContextMenu','_teImageMenuTrigger','teImageMenu'],
+  ]) {
+    app[stateKey]={tag:'blue'};
+    app[triggerKey]=trigger;
+    context.document.activeElement={closest:()=>({id})};
+    app.tagEditorCloseContextMenus(true);
+    assert.equal(app[stateKey],null);
+  }
+  assert.deepEqual(focusCalls,[true,true,true]);
+  app.tagEditorContextMenu={tag:'blue'};
+  app._teTagMenuTrigger=trigger;
+  context.document.activeElement={closest:()=>null};
+  app.tagEditorCloseContextMenus(true);
+  assert.deepEqual(focusCalls,[true,true,true]);
+  app.tagEditorContextMenu={tag:'blue'};
+  app._teTagMenuTrigger=trigger;
+  context.document.activeElement={closest:()=>({id:'teTagMenu'})};
+  const scrollTarget={contains:node=>node === trigger,getBoundingClientRect:()=>({left:0,right:200,top:100,bottom:300})};
+  app.tagEditorCloseContextMenus(true,scrollTarget);
+  assert.deepEqual(focusCalls,[true,true,true]);
+});
+
+test('right-clicking the inline rename field leaves text editing to the browser', () => {
+  const {app} = fixture();
+  let prevented=false;
+  const event={target:{closest:()=>({})},preventDefault:()=>{prevented=true;},stopPropagation(){}};
+  app.tagEditorTagCtx(event,'blue');
+  assert.equal(prevented,false);
+  assert.equal(app.tagEditorContextMenu,null);
 });
 
 test('tag explanations follow the context menu and close with it', async () => {
@@ -193,6 +232,43 @@ test('tag and panel filter actions toggle the same filter and retain unrelated f
   assert.deepEqual(Array.from(app.tagEditorExcludedTags),['red']);
   assert.equal(invalidations,4);
   assert.equal(fetches,4);
+});
+
+test('removing a repeated single-image tag removes the clicked occurrence', async () => {
+  const {app} = fixture();
+  const img={path:'image',tags:'blue, standing, blue'};
+  let history=0;
+  app.tagEditorGetSelectedImg=()=>img;
+  app._teUpdateImageTags=(_, tags)=>{img.tags=tags;};
+  app._tePushHistory=()=>history++;
+  app._teImageLabel=()=>img.path;
+  app.tagEditorClosePanelMenu=()=>{app.tagEditorPanelMenu=null;};
+  app.tagEditorPanelMenu={tag:'blue'};
+  app._tePanelMenuTrigger={classList:{contains:()=>true},dataset:{ti:'2'}};
+  await app.tagEditorPanelAction('remove');
+  assert.equal(img.tags,'blue, standing');
+  assert.equal(history,1);
+  app.tagEditorPanelMenu={tag:'blue'};
+  app._tePanelMenuTrigger.dataset.ti='1';
+  await app.tagEditorPanelAction('remove');
+  assert.equal(img.tags,'blue, standing');
+  assert.equal(history,1);
+});
+
+test('deleting a dataset tag removes every occurrence in each image', async () => {
+  const {app} = fixture();
+  const images=[{path:'a',tags:'blue, standing, blue'},{path:'b',tags:'blue, blue'},{path:'c',tags:'standing'}];
+  let operation, history;
+  app.tagEditorContextMenu={tag:'blue'};
+  app.tagEditorCloseTagMenu=()=>{app.tagEditorContextMenu=null;};
+  app._teConfirmTagBatch=(_, callback)=>{operation=callback();};
+  app._teEnsureAllImagesLoaded=async()=>images;
+  app._teUpdateImageTags=(img, tags)=>{img.tags=tags;};
+  app._tePushHistory=meta=>{history=meta;};
+  app.tagEditorCtxDeleteTag();
+  await operation;
+  assert.deepEqual(images.map(img=>img.tags),['standing','','standing']);
+  assert.equal(history.affected,2);
 });
 
 test('copy feedback is consistent and reports clipboard failures', async () => {

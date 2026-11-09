@@ -341,6 +341,9 @@ window.tagEditorFilters = {
 
   tagEditorTagCtx(e, tag) {
     if (!this.tagEditorAllowsTagOps()) return;
+    if (e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+    e.preventDefault();
+    e.stopPropagation();
     var point = this._teContextMenuPoint(e);
     this.tagEditorImageContextMenu = null;
     this.tagEditorPanelMenu = null;
@@ -415,10 +418,9 @@ window.tagEditorFilters = {
         if (!self.tagEditorAllowsTagOps() || modeEpoch !== self._teModeEpoch) return;
         images.forEach(function(img) {
           var tags = _teParseTags(img.tags);
-          var idx = tags.indexOf(tag);
-          if (idx !== -1) {
-            tags.splice(idx, 1);
-            self._teUpdateImageTags(img, tags.join(', '));
+          var remaining = tags.filter(function(value) { return value !== tag; });
+          if (remaining.length !== tags.length) {
+            self._teUpdateImageTags(img, remaining.join(', '));
             affected++;
           }
         });

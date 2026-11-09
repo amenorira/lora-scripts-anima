@@ -140,6 +140,25 @@ window.tagEditorActions = {
     this._teCloseMenu('tagEditorImageContextMenu', '_teImageMenuTrigger', restoreFocus);
   },
 
+  tagEditorCloseContextMenus(restoreFocus = false, scrollTarget = null) {
+    var menuId = restoreFocus && document.activeElement?.closest?.('.te-ctx')?.id;
+    var trigger = menuId === 'tePanelMenu' && this.tagEditorPanelMenu ? this._tePanelMenuTrigger
+      : menuId === 'teTagMenu' && this.tagEditorContextMenu ? this._teTagMenuTrigger
+      : menuId === 'teImageMenu' && this.tagEditorImageContextMenu ? this._teImageMenuTrigger : null;
+    if (trigger?.isConnected && trigger.getClientRects().length && !trigger.closest('[inert]')) {
+      var rect = trigger.getBoundingClientRect();
+      var visible = rect.bottom > 0 && rect.top < window.innerHeight && rect.right > 0 && rect.left < window.innerWidth;
+      if (visible && scrollTarget?.contains(trigger)) {
+        var bounds = scrollTarget.getBoundingClientRect();
+        visible = rect.bottom > bounds.top && rect.top < bounds.bottom && rect.right > bounds.left && rect.left < bounds.right;
+      }
+      if (visible) trigger.focus({ preventScroll: true });
+    }
+    this.tagEditorClosePanelMenu(false);
+    this.tagEditorCloseTagMenu(false);
+    this.tagEditorCloseImageMenu(false);
+  },
+
   _teCloseMenu(stateKey, triggerKey, restoreFocus) {
     if (!this[stateKey]) return;
     var trigger = this[triggerKey];
@@ -185,8 +204,10 @@ window.tagEditorActions = {
       await this._teCopyMenuTags(text, !!menu.tag);
     } else if (action === 'remove') {
       if (this.tagEditorQuickRemove) this.tagEditorToggleRemoval(menu.tag);
-      else if (this.tagEditorSelected.length === 1) this.tagEditorRemoveTagFromSelected(menu.tag);
-      else this.tagEditorPrepareRemove(menu.tag);
+      else if (this.tagEditorSelected.length === 1) {
+        var index = trigger?.classList?.contains('te-editor-tag') ? Number(trigger.dataset.ti) : null;
+        this.tagEditorRemoveTagFromSelected(menu.tag, index);
+      } else this.tagEditorPrepareRemove(menu.tag);
     } else if (action === 'filter') {
       this._teToggleContextFilter(menu.tag);
     } else if (action === 'quick') this.tagEditorStartQuickRemove();
@@ -208,9 +229,7 @@ window.tagEditorActions = {
     if (event.key === 'Tab') {
       var trigger = this.tagEditorPanelMenu ? this._tePanelMenuTrigger
         : this.tagEditorContextMenu ? this._teTagMenuTrigger : this._teImageMenuTrigger;
-      this.tagEditorClosePanelMenu(false);
-      this.tagEditorCloseTagMenu(false);
-      this.tagEditorCloseImageMenu(false);
+      this.tagEditorCloseContextMenus();
       if (trigger?.isConnected && trigger.getClientRects().length) trigger.focus();
       return;
     }
@@ -245,13 +264,13 @@ window.tagEditorActions = {
     this._teCloseSuggestions();
   },
 
-  tagEditorRemoveTagFromSelected(tag) {
+  tagEditorRemoveTagFromSelected(tag, index = null) {
     if (!this.tagEditorAllowsTagOps()) return;
     if (this.tagEditorSelected.length !== 1) return;
     var img = this.tagEditorGetSelectedImg();
     if (!img) return;
     var tags = _teParseTags(img.tags);
-    var idx = tags.indexOf(tag);
+    var idx = Number.isInteger(index) ? (tags[index] === tag ? index : -1) : tags.indexOf(tag);
     if (idx !== -1) {
       tags.splice(idx, 1);
       this._teUpdateImageTags(img, tags.join(', '));
