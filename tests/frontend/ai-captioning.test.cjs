@@ -31,6 +31,26 @@ test('tasks send only fixed caption workflow and use existing API transport sett
   assert.equal(sent.api.parse_mode,undefined);assert.equal(sent.options.captioning.save_json,undefined);
 });
 
+test('a rejected batch description launch keeps the previous record recoverable', async () => {
+  const {app,context,storage} = harness();
+  const errors = [];
+  app.currentRoute = 'ai-captioning';
+  app.taggerSourceMode = 'api-folder';
+  app.taggerSource = { total: 1, source_token: 'folder' };
+  app.captionOptions.mode = 'export';
+  app.taggerTaskId = 'old-description';
+  app._taggerTasks = { 'old-description': { status: 'done', failed: 1 } };
+  app.toast = error => errors.push(error);
+  storage.set('anima-ai-tagger-task-id', 'old-description');
+  context.fetch = async () => ({ json: async () => ({ status: 'fail', message: 'Another Tagger task is running' }) });
+
+  await app.startApiTagger();
+  assert.deepEqual(errors, ['Another Tagger task is running']);
+  assert.equal(app.taggerStarting, false);
+  assert.equal(app.taggerTask.failed, 1);
+  assert.equal(storage.get('anima-ai-tagger-task-id'), 'old-description');
+});
+
 test('connection changes cancel the old test and cannot overwrite a newer result',async()=>{
   for (const [key,value] of [['baseUrl','http://b'],['apiKey','changed-key'],['protocol','responses']]) {
     const {app,context}=harness();

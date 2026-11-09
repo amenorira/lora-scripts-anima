@@ -275,7 +275,7 @@ window.tagEditorFilters = {
   tagEditorGetQuickCount(type) {
     if (this.tagEditorSessionId && type === 'notag') {
       return this.tagEditorNoTagCount + this._teGetModified().reduce((delta, img) =>
-        delta + Number(!img.tags.trim()) - Number(!(this.tagEditorOriginal[img.path] || '').trim()), 0);
+        img._teMissingOnDisk ? delta : delta + Number(!img.tags.trim()) - Number(!(this.tagEditorOriginal[img.path] || '').trim()), 0);
     }
     if (this.tagEditorSessionId && type === 'modified') return this._teModifiedCount;
     var images = this._teCachedFiltered || this.tagEditorImages;

@@ -547,7 +547,7 @@ window.trainingFieldRenderer = {
       ${fullWidthRow}
       ${hintHtml}
       ${kreaSampleModeHtml}
-      <div class="field-error" x-show="formErrors && formErrors.${dataKey}" x-text="formErrors.${dataKey} || ''" x-cloak></div>
+      <div class="field-error" x-show="formErrors && formErrors.${dataKey}" x-cloak><span x-html="fieldErrorHtml('${dataKey}')"></span></div>
       ${this._getEnvHint(dataKey)}
       ${this._getOutputPathHint(dataKey)}
       ${readonlyWarnHtml}

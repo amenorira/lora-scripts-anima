@@ -395,7 +395,7 @@ window.trainingLrPreviewMixin = {
       ? t('lrPreview.estimatedWarmupEnd', 'Warmup end (10% preview)')
       : t('lrPreview.warmupEnd', 'Warmup end');
     const warmupLine = data.warmupVisible && data.warmupX !== null
-      ? `<div class="lr-warmup-line" style="left:${esc(data.warmupX)}%"><span class="lr-warmup-tag">${warmupEndLabel}</span></div>`
+      ? `<div class="lr-warmup-region" data-preview-target="warmup" data-preview-anchor="region" aria-hidden="true" style="width:${Math.max(0, Math.min(100, Number(data.warmupX) || 0))}%"></div><div class="lr-warmup-line" style="left:${esc(data.warmupX)}%"><span class="lr-warmup-tag">${warmupEndLabel}</span></div>`
       : '';
     const axisLabels = data.axisLabels || ['0%', '25%', '50%', '75%', '100%'];
     return `

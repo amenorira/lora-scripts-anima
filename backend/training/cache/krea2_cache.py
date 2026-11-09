@@ -20,6 +20,27 @@ _KREA2_CACHE_ARCHITECTURE = "kr2"
 STAGES = ("latents", "text_encoder")
 
 
+def _group_cache_files(directory: Path) -> tuple[list[Path], list[Path]]:
+    return (
+        [path for path in directory.glob(f"*_{_KREA2_CACHE_ARCHITECTURE}.safetensors") if path.is_file()],
+        [path for path in directory.glob(f"*_{_KREA2_CACHE_ARCHITECTURE}_te.safetensors") if path.is_file()],
+    )
+
+
+def krea2_cache_files(config: dict) -> tuple[set[Path], set[Path]]:
+    """Find native caches in the namespaces used by the current dataset."""
+    root = Path(config["dataset_cache_dir"])
+    latents, text = set(), set()
+    for _, directory, _ in dataset_groups(config):
+        target = root.resolve() / directory.relative_to(root)
+        if target.resolve() != target:
+            continue
+        group_latents, group_text = _group_cache_files(target)
+        latents.update(path for path in group_latents if not path.is_symlink())
+        text.update(path for path in group_text if not path.is_symlink())
+    return latents, text
+
+
 def _krea2_cache_conflicts(groups: list[tuple[Path, Path, list[Path]]]) -> list[str]:
     """Musubi drops image extensions; each directory must have unique cache keys."""
     conflicts = []
@@ -220,12 +241,7 @@ def _cache_status(config: dict, groups: list, fingerprint: str, manifest: dict) 
     text_files = []
     complete_latents = complete_texts = True
     for _, group_cache, group_images in groups:
-        group_latents = [
-            path
-            for path in group_cache.glob(f"*_{_KREA2_CACHE_ARCHITECTURE}.safetensors")
-            if path.is_file()
-        ]
-        group_texts = [path for path in group_cache.glob(f"*_{_KREA2_CACHE_ARCHITECTURE}_te.safetensors") if path.is_file()]
+        group_latents, group_texts = _group_cache_files(group_cache)
         latent_files.extend(group_latents)
         text_files.extend(group_texts)
         # The trainer scans every latent cache in this namespace. Counts alone

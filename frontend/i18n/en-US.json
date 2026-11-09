@@ -1,4 +1,23 @@
 {
+	"fieldConflict": {
+		"checkpointOffloadConflict": "Enable only one of {cpu_offload_checkpointing} and {unsloth_offload_checkpointing}.",
+		"blockSwapOffloadConflict": "{blocks_to_swap} cannot be combined with {cpu_offload_checkpointing} or {unsloth_offload_checkpointing}.",
+		"blockSwapFullgraphConflict": "Turn off {compile_fullgraph} when using {blocks_to_swap}.",
+		"compile_fullgraphAttentionConflict": "{compile_fullgraph} cannot be combined with {split_attn} or xformers. Turn off full-graph compilation or change {attn_mode}.",
+		"compile_fullgraphMossConflict": "{compile_fullgraph} cannot be combined with {blocks_to_swap}, {split_attn}, or xformers. Turn off full-graph compilation or adjust the related settings, including {attn_mode}.",
+		"partialCheckpointH2dConflict": "With {block_swap_h2d_only}, {gradient_checkpointing_skip_blocks} and {blocks_to_swap} cannot both exceed {block_swap_ring_size}.",
+		"blockSwapH2dRequiresBlocks": "Set {blocks_to_swap} to at least 1 to enable this option.",
+		"base_weightsConvrotConflict": "{base_weights} requires unquantized weights. Turn off {convrot_int8} and {convrot_int8_text_encoder}.",
+		"adamwFusedForeachConflict": "{adamw_fused} and {foreach} cannot both be enabled. Disable the other option or remove its forced value from {optimizer_args_custom}.",
+		"adamwFusedDifferentiableConflict": "{adamw_fused} cannot be combined with differentiable=True. Remove that argument from {optimizer_args_custom} or set it to False.",
+		"muonNonMatrixConflict": "Muon only supports two-dimensional parameters. Turn off this option or change {optimizer_type}.",
+		"kreaQuantizationConflict": "{convrot_int8} and {fp8_base} cannot both be enabled.",
+		"kreaTurboBlockSwapConflict": "{turbo_dit} cannot use block swapping. Clear Turbo DiT or set {blocks_to_swap} to 0.",
+		"kreaTurboQuantizationConflict": "{turbo_dit} does not yet support {convrot_int8}.",
+		"kreaTurboSourceConflict": "Choose only one of {turbo_dit} and {turbo_lora}.",
+		"krea_dora_fp8Conflict": "{dora_wd} cannot use a quantized base model. Turn off DoRA or disable both {fp8_base} and {convrot_int8}.",
+		"krea_loraplus_structureConflict": "With {enable_loraplus}, turn off {dim_from_weights} and set Rank and Alpha manually."
+	},
 	"previewLoras": {"add": "Add preview LoRA", "path": "LoRA file path", "multiplier": "Strength", "invalid": "Preview LoRAs must be a list of paths and strengths."},
 	"regularization": {
 		"model_type": "Model type",
@@ -206,17 +225,14 @@
 		"candidateFirstLine": "First line of ordinary caption (false detection)",
 		"candidateSelectionRequired": "Choose how to read the detected caption sections before generating."
 	},
-	"teCache": {
-		"staleTitle": "Text encoder cache is stale",
-		"rebuildStart": "Delete cache & start training",
-		"useOld": "Continue with old cache",
-		"deleteFailed": "Failed to delete cache",
-		"warn": {
-			"rateMismatch": "{count} cache file(s) have a caption_dropout_rate different from this run's {current}. One detected cached value is {cached}; cached values may differ. Without rebuilding, training uses each cache's stored dropout rate. Rebuild the cache to apply the current setting.",
-			"captionModified": "{count} caption file(s) were modified after the cache was generated; training will use the old encodings until the cache is rebuilt.",
-			"everyNEpochs": "caption_dropout_every_n_epochs has no effect while text encoder output caching is on; whole-epoch caption dropout will NOT happen this run."
-		},
-		"deleteScope": "Delete all text-encoding caches in these folders and their subfolders, including Anima, SDXL and MOSS-Image caches. Images and captions are unchanged:\n{directories}"
+	"trainingCache": {
+		"title": "Existing caches found",
+		"scope": "The folders below contain {latents} image latent caches and {text} text encoder caches. Rebuilding deletes these files first.\n{directories}",
+		"trainingNote": "Training regenerates the caches enabled in the current settings.",
+		"rebuild": "Clear old caches and rebuild",
+		"rebuildStart": "Clear old caches and start training",
+		"continue": "Continue with current settings",
+		"keepStart": "Start without rebuilding"
 	},
 	"nav": {
 		"monitor": "Monitor",
@@ -282,6 +298,7 @@
 		}
 	},
 	"monitor": {
+		"onlySamplePrompt": "Only prompt {n}",
 		"followPaused": "Following paused · Go to latest",
 		"copyOutputPath": "Copy output path",
 		"preparingDownload": "Preparing download. Multiple files need to be packaged first.",
@@ -2230,6 +2247,7 @@
 		"batchPreview": "Preview Changes",
 		"batchPreviewDiff": "{n} images will be modified",
 		"batchStale": "The captions or dataset changed. Please run the batch operation again.",
+		"externalRefreshUnreadable": "Some captions could not be read. See the affected image paths for details.",
 		"copyTags": "Copy Tags",
 		"pasteTags": "Paste Tags",
 		"tagsCopied": "Copied {n} tags",
@@ -2824,6 +2842,7 @@
 			"int8BackwardUnavailable": "ConvRot INT8 backward computation requires CUDA and Triton.",
 			"invalidKrea2Config": "The Krea 2 training configuration is invalid.",
 			"krea2PreflightFailed": "Krea 2 preflight checks failed.",
+			"trainingCacheDeleteFailed": "Could not clear the training cache.",
 			"krea2CacheRequired": "Krea 2 caches are not ready. Prepare the caches first.",
 			"invalidOutputPath": "The output path is invalid: {path}",
 			"outputDirectoryUnavailable": "The output folder is unavailable or not writable: {path}",
@@ -2878,6 +2897,7 @@
 		"separator_help": "Separates the original caption and descriptions within one file. For MOSS training, enable “Preserve caption line breaks” and use the same candidate separator."
 	},
 	"caption": {
+		"viewFailures": "View {count} failed images",
 		"runningTask": "Captioning in progress",
 		"runRecord": "Run record",
 		"builtinPromptHelp": "Generate long, medium and short descriptions, preserving visible non-watermark text.",

@@ -77,7 +77,7 @@ class APIResponseFail(APIResponse):
 
 
 class TeCacheDeleteRequest(BaseModel):
-    """请求删除这些目录树下的各引擎 TE 输出缓存（按 TE_DELETE_SUFFIXES 后缀匹配）。"""
+    """请求删除这些目录树下的各引擎 TE 输出缓存。"""
 
     dirs: List[str] = Field(default_factory=list)
 

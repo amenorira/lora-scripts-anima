@@ -18,11 +18,134 @@ window.tagEditorSession = {
   _tePageFetchTimer: null,
   _teSessionRecovery: null,
   _teCaptionQueryVersion: 0,
+  _teExternalTimer: null,
+  _teExternalAbort: null,
+  _teExternalGeneration: 0,
+  _teSessionTags: null,
+  _teUnreadablePathsKey: '',
+  _teDetailComposing: false,
 
   // ===== Data Loading =====
   _teCloseSession(sessionId) {
     if (!sessionId) return;
     fetch('/api/tageditor/sessions/' + encodeURIComponent(sessionId), { method: 'DELETE', keepalive: true }).catch(function() {});
+  },
+
+  _teStartExternalRefresh() {
+    this._teStopExternalRefresh();
+    if (this.currentRoute !== 'tagEditor') return;
+    this._teExternalTimer = setInterval(() => this._teCheckExternalChanges(), 4000);
+  },
+
+  _teStopExternalRefresh() {
+    if (this._teExternalTimer !== null) clearInterval(this._teExternalTimer);
+    this._teExternalTimer = null;
+    if (this._teExternalAbort) this._teExternalAbort.abort();
+    this._teExternalAbort = null;
+    this._teDetailComposing = false;
+  },
+
+  _teCanRefreshExternally() {
+    return this.currentRoute === 'tagEditor' && !document.hidden && this.tagEditorSessionId &&
+      !this.tagEditorLoading && !this._teIsSaving && !this.tagEditorSnapshotBusy && !this._teDraftRestoreBusy &&
+      !this._teDetailComposing && !this.tagEditorInlineEdit;
+  },
+
+  async _teCheckExternalChanges() {
+    if (!this._teCanRefreshExternally() || !this._teExternalGeneration || this._teExternalAbort) return;
+    var session = this.tagEditorSessionId;
+    var saveEpoch = this._teSaveEpoch;
+    var controller = new AbortController();
+    this._teExternalAbort = controller;
+    try {
+      var url = '/api/tageditor/sessions/' + encodeURIComponent(session) + '/refresh?since_generation=' + this._teExternalGeneration;
+      var response = await fetch(url, { method: 'POST', signal: controller.signal });
+      var payload = await response.json();
+      if (controller.signal.aborted || session !== this.tagEditorSessionId ||
+          saveEpoch !== this._teSaveEpoch || !this._teCanRefreshExternally()) return;
+      if (payload.status === 'success' && payload.data) this._teApplyExternalChanges(payload.data);
+      if (payload.code === 'session_expired') {
+        this._teSaveDraft();
+        await this.tagEditorReloadSessionPage(this.tagEditorPage);
+      }
+    } catch (_) {
+      // External writers may still have the file open. Retry on the next tick.
+    } finally {
+      if (this._teExternalAbort === controller) this._teExternalAbort = null;
+    }
+  },
+
+  _teApplyExternalChanges(data) {
+    this._teFlushAllPendingTextEdits();
+    var selected = this.tagEditorGetSelectedImg();
+    var updatePanel = false;
+    for (var item of data.changed_images) {
+      var img = this._teFindByPath(item.path);
+      if (!img) continue;
+      var draft = img.tags;
+      var dirty = draft !== this.tagEditorOriginal[item.path];
+      Object.assign(img, item);
+      img._teMissingOnDisk = false;
+      this.tagEditorOriginal[item.path] = item.tags;
+      if (dirty && draft !== item.tags) {
+        // Update the display baseline, but keep the draft's original save revision.
+        img.tags = draft;
+      } else {
+        this._teCaptionRevisions[item.path] = item.caption_revision;
+        if (this._teHistoryState) delete this._teHistoryState[item.path];
+        if (img === selected && !dirty) updatePanel = true;
+      }
+    }
+    if (data.removed_paths.length) {
+      var discard = [];
+      for (var path of data.removed_paths) {
+        var img = this._teFindByPath(path);
+        if (!img) continue;
+        if (img.tags !== this.tagEditorOriginal[path]) img._teMissingOnDisk = true;
+        else discard.push(path);
+      }
+      if (this._teDiscardSessionImages(discard)) updatePanel = true;
+    }
+    this._teExternalGeneration = this.tagEditorSessionGeneration = data.generation;
+    this.tagEditorSessionRevision = data.revision;
+    this.tagEditorDatasetCount = data.count;
+    this.tagEditorNoTagCount = data.no_tag_count;
+    this._teSessionTags = data.tags;
+    if (this.tagEditorAllowsTagOps()) this._teApplyTagFreq(data.tags);
+    var hadDraft = this.tagEditorModified;
+    this._teRecountModified();
+    this.tagEditorModified = this._teModifiedCount > 0;
+    if (hadDraft && !this.tagEditorModified) this._teRemoveDraft();
+    this._tePageCache = {};
+    this._teInvalidateDiff();
+    this._teInvalidateFilter();
+    if (updatePanel) this._updateEditorPanel();
+    this._teReportUnreadablePaths(data.unreadable_paths);
+    this.tagEditorSchedulePageFetch(false);
+  },
+
+  _teDiscardSessionImages(paths) {
+    if (!paths.length) return false;
+    var removed = new Set(paths);
+    var selectionSize = this.tagEditorSelected.length;
+    this.tagEditorImages = this.tagEditorImages.filter(img => !removed.has(img.path));
+    this.tagEditorPageItems = this.tagEditorPageItems.filter(img => !removed.has(img.path));
+    this.tagEditorSelected = this.tagEditorSelected.filter(path => !removed.has(path));
+    for (var path of paths) {
+      delete this._tePathIndex[path];
+      delete this.tagEditorOriginal[path];
+      delete this._teCaptionRevisions[path];
+      delete this._teEditVersions[path];
+      if (this._teHistoryState) delete this._teHistoryState[path];
+    }
+    return selectionSize !== this.tagEditorSelected.length;
+  },
+
+  _teReportUnreadablePaths(paths = []) {
+    var key = paths.join('\n');
+    if (key === this._teUnreadablePathsKey) return;
+    this._teUnreadablePathsKey = key;
+    if (key) this.toast(this.t('tagEditor.externalRefreshUnreadable'), 'warning', { details: key });
   },
 
   _teSessionQuery(page, useFilters = true) {
@@ -75,7 +198,7 @@ window.tagEditorSession = {
     this._teSearchLoading = false;
   },
 
-  _teMergeSessionItems(items, reset) {
+  _teMergeSessionItems(items, reset, holdBaselines = false) {
     if (reset || !this._tePageCache) this._tePageCache = {};
     if (reset) {
       this.tagEditorImages = [];
@@ -87,7 +210,7 @@ window.tagEditorSession = {
     var self = this;
     (items || []).forEach(function(serverImg) {
       var existing = self._teFindByPath(serverImg.path);
-      if (existing && existing.tags !== self.tagEditorOriginal[existing.path]) return;
+      if (existing && (holdBaselines || existing.tags !== self.tagEditorOriginal[existing.path])) return;
       if (existing) Object.assign(existing, serverImg);
       else {
         existing = Object.assign({}, serverImg);
@@ -106,9 +229,12 @@ window.tagEditorSession = {
     this.tagEditorPage = Number(data.page || 1);
     this.tagEditorFilteredTotal = Number(data.total || 0);
     this.tagEditorServerTotalPages = Number(data.total_pages || 1);
-    this.tagEditorSessionGeneration = Number(data.generation || this.tagEditorSessionGeneration || 1);
+    var generation = Number(data.generation || 1);
+    this.tagEditorSessionGeneration = reset ? generation : Math.max(this.tagEditorSessionGeneration, generation);
     this.tagEditorSessionRevision = data.revision || this.tagEditorSessionRevision || '';
-    this._teMergeSessionItems(data.items || [], !!reset);
+    // A page can arrive before the refresh response. Keep the displayed save baseline
+    // until the refresh can update both the cached caption and the editor panel.
+    this._teMergeSessionItems(data.items || [], !!reset, !reset && data.generation > this._teExternalGeneration);
     this._tdRequestChips();
     if (this._tePageCache) {
       this._tePageCache[this._teSessionQueryKey(this.tagEditorPage, !reset)] = { ...data, items: this.tagEditorPageItems.slice() };
@@ -218,7 +344,7 @@ window.tagEditorSession = {
     this._teSessionRecovery = {
       dir: this.tagEditorLoadedDir || this.tagEditorDir, preserveDrafts: drafts, targetPage: page || 1,
       history: this.tagEditorHistory.slice(), historyIdx: this.tagEditorHistoryIdx,
-      historyState: Object.assign({}, this._teHistoryState), selected: this.tagEditorSelected.slice(),
+      selected: this.tagEditorSelected.slice(),
       anchor: this._teLastSelected, include: this.tagEditorTagSelection.slice(), exclude: this.tagEditorExcludedTags.slice(),
       remainder: this._teDraftRemainder.slice(), mode: this.tagEditorWorkMode, detailView: this.tagEditorDetailView
     };
@@ -309,6 +435,7 @@ window.tagEditorSession = {
     var recovery = this._teSessionRecovery;
     if (recovery) loadOptions = recovery;
     var epoch = ++this._teLoadEpoch;
+    this._teStopExternalRefresh();
     this.tagEditorSaving = this._teIsSaving = false;
     this.tagEditorSnapshotBusy = false;
     if (this._teLoadAbort) this._teLoadAbort.abort();
@@ -325,11 +452,16 @@ window.tagEditorSession = {
     if (this._teSearchDebounce) { clearTimeout(this._teSearchDebounce); this._teSearchDebounce = null; }
     if (this._teTagSearchDebounce) { clearTimeout(this._teTagSearchDebounce); this._teTagSearchDebounce = null; }
     this.startProgress();
+    var preservedDrafts = loadOptions.preserveDrafts || {};
+    var retainedPaths = Object.keys(preservedDrafts);
     try {
       var r = await fetch('/api/tageditor/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dir: d, recursive: this.tagEditorRecursive, page_size: Number(this.tagEditorPageSize) || 60 }),
+        body: JSON.stringify({
+          dir: d, recursive: this.tagEditorRecursive, page_size: Number(this.tagEditorPageSize) || 60,
+          retained_paths: retainedPaths,
+        }),
         signal: controller.signal
       });
       var j = await r.json();
@@ -337,6 +469,7 @@ window.tagEditorSession = {
       if (j.status === 'success') {
         try { sessionStorage.setItem('tagEditor_lastDir', d); } catch (e) {}
         this.tagEditorDir = j.data.dir || d;
+        if (this.tagEditorLoadedDir !== this.tagEditorDir) this._teUnreadablePathsKey = '';
         this.tagEditorLoadedDir = this.tagEditorDir;
         this._teDraftRemainder = [];
         this._teDraftRestoreBusy = false;
@@ -351,6 +484,13 @@ window.tagEditorSession = {
         this.tagEditorDatasetCount = Number(j.data.count || 0);
         this.tagEditorNoTagCount = Number(j.data.no_tag_count || 0);
         this._teApplySessionPage(j.data || {}, true);
+        if (j.data.retained_items?.length) {
+          var firstPageItems = this.tagEditorPageItems;
+          this._teMergeSessionItems(j.data.retained_items, false);
+          this.tagEditorPageItems = firstPageItems;
+        }
+        this._teExternalGeneration = this.tagEditorSessionGeneration;
+        this._teSessionTags = j.data.tags || null;
         this.tagEditorModified = false;
         this._teModifiedCount = 0;
         this.tagEditorSelected = [];
@@ -370,20 +510,19 @@ window.tagEditorSession = {
         if (!this.tagEditorAllowsTagOps()) {
           this._teClearFreqData();
         } else if (Array.isArray(j.data.tags)) {
-          this.tagEditorTagFreq = j.data.tags;
-          this.tagEditorMaxFreq = this.tagEditorTagFreq.length > 0 ? this.tagEditorTagFreq[0].count : 0;
-          this._teRebuildFreqIndex();
-          this._teInvalidateFreq();
+          this._teApplyTagFreq(j.data.tags);
         } else {
           await this.tagEditorLoadTagFreq();
         }
-        var preservedDrafts = loadOptions.preserveDrafts || {};
-        Object.keys(preservedDrafts).forEach(function(path) {
+        var hadDraft = false;
+        retainedPaths.forEach(function(path) {
           var draft = preservedDrafts[path];
+          if (draft.image.tags === draft.original) return;
+          hadDraft = true;
           var img = self._teFindByPath(path);
-          if (!img && draft && draft.image) {
-            img = Object.assign({}, draft.image);
-            // 页外图片尚未取得新分页元数据，预览地址也要迁移到新会话。
+          if (!img) {
+            img = Object.assign({}, draft.image, { _teMissingOnDisk: true });
+            // 保留未返回图片的草稿，并让预览地址指向重建后的会话。
             ['thumbnail', 'preview'].forEach(function(field) {
               if (!img[field]) return;
               var parts = img[field].split('?');
@@ -394,20 +533,20 @@ window.tagEditorSession = {
             });
             self.tagEditorImages.push(img);
             self._tePathIndex[path] = img;
-          }
-          if (img && draft) {
             self.tagEditorOriginal[path] = draft.original;
-            self._teEditVersions[path] = draft.editVersion;
-            self._teCaptionRevisions[path] = draft.captionRevision;
-            img.tags = draft.image.tags;
-            self._teUpdateFreq(draft.original, img.tags);
           }
+          var baseline = self.tagEditorOriginal[path];
+          if (draft.image.tags === baseline) return;
+          self._teEditVersions[path] = draft.editVersion;
+          self._teCaptionRevisions[path] = draft.captionRevision;
+          img.tags = draft.image.tags;
+          if (!img._teMissingOnDisk) self._teUpdateFreq(baseline, img.tags);
         });
         if (recovery) {
           this.tagEditorHistory = recovery.history;
           this.tagEditorHistoryIdx = recovery.historyIdx;
-          this._teHistoryState = recovery.historyState;
-          this.tagEditorSelected = recovery.selected;
+          this._teHistoryState = Object.fromEntries(this._teGetModified().map(img => [img.path, img.tags]));
+          this.tagEditorSelected = recovery.selected.filter(path => this._teFindByPath(path));
           this.tagEditorTagSelection = recovery.include;
           this.tagEditorExcludedTags = recovery.exclude;
           this._teDraftRemainder = recovery.remainder;
@@ -418,6 +557,7 @@ window.tagEditorSession = {
         this._teRecountModified();
         this._teInvalidateCaptionQuery();
         this.tagEditorModified = this._teModifiedCount > 0;
+        if (hadDraft && !this.tagEditorModified) this._teRemoveDraft();
         if (this._teSessionQueryKey(this.tagEditorPage) !== this._teSessionQueryKey(Number(j.data.page || 1), false)) {
           await this.tagEditorFetchPage(this.tagEditorPage, { force: true });
         }
@@ -435,8 +575,10 @@ window.tagEditorSession = {
           });
         }
         this.tagEditorLoadSnapshots(epoch);
+        this._teReportUnreadablePaths(j.data.unreadable_paths);
         if (!recovery) this._teCheckDraft();
         this._teStartAutoSave();
+        this._teStartExternalRefresh();
       } else {
         this.toast(this.localizeApiError?.(j, 'common.error') || j.message || this.t('common.error'), 'error',
           this.apiErrorDetails?.(j) ? {details:this.apiErrorDetails(j)} : undefined);
@@ -503,24 +645,40 @@ window.tagEditorSession = {
       this._teConfirmUnsaved(this.t('tagEditor.unsavedConfirm'), closeNow);
     } else closeNow();
   },
+  _teApplyTagFreq(tags) {
+    this.tagEditorTagFreq = tags.map(item => ({ ...item }));
+    this.tagEditorMaxFreq = tags.length ? tags[0].count : 0;
+    this._teRebuildFreqIndex();
+    this._teGetModified().forEach(img => {
+      if (!img._teMissingOnDisk) this._teUpdateFreq(this.tagEditorOriginal[img.path] || '', img.tags);
+    });
+    this._teInvalidateFreq();
+  },
+  _teUpdateSessionTagFreq(deltas) {
+    var counts = new Map(this._teSessionTags.map(item => [item.tag, item.count]));
+    deltas.forEach((delta, tag) => counts.set(tag, (counts.get(tag) || 0) + delta));
+    this._teSessionTags = Array.from(counts, ([tag, count]) => ({ tag, count }))
+      .filter(item => item.count > 0).sort((a, b) => b.count - a.count);
+  },
   async tagEditorLoadTagFreq() {
     if (!this.tagEditorDir || !this.tagEditorAllowsTagOps()) return;
-    var epoch = this._teLoadEpoch, modeEpoch = this._teModeEpoch;
+    if (this.tagEditorSessionId && this._teSessionTags) {
+      this._teApplyTagFreq(this._teSessionTags);
+      return;
+    }
+    var epoch = this._teLoadEpoch, modeEpoch = this._teModeEpoch, generation = this._teExternalGeneration;
+    var isCurrent = () => epoch === this._teLoadEpoch && modeEpoch === this._teModeEpoch && generation === this._teExternalGeneration;
     try {
       var r = await fetch('/api/tageditor/tags?dir=' + encodeURIComponent(this.tagEditorDir) + '&recursive=' + (this.tagEditorRecursive ? 'true' : 'false'));
       var j = await r.json();
-      if (epoch !== this._teLoadEpoch || modeEpoch !== this._teModeEpoch) return;
+      if (!isCurrent()) return;
       if (j.status === 'success') {
-        this.tagEditorTagFreq = j.data.tags || [];
-        this.tagEditorMaxFreq = this.tagEditorTagFreq.length > 0 ? this.tagEditorTagFreq[0].count : 0;
-        this._teRebuildFreqIndex();
-        this._teGetModified().forEach(img => this._teUpdateFreq(this.tagEditorOriginal[img.path] || '', img.tags));
-        this._teInvalidateFreq();
+        this._teApplyTagFreq(j.data.tags || []);
       } else {
         this._teClearFreqData();
       }
     } catch (e) {
-      if (epoch === this._teLoadEpoch && modeEpoch === this._teModeEpoch) this._teClearFreqData();
+      if (isCurrent()) this._teClearFreqData();
     }
   },
 
@@ -588,7 +746,8 @@ window.tagEditorSession = {
         for (var item of data.items || []) all.push(item);
       }
       var currentItems = this.tagEditorPageItems.slice();
-      this._teMergeSessionItems(all, false);
+      this.tagEditorSessionGeneration = Math.max(this.tagEditorSessionGeneration, generation || 0);
+      this._teMergeSessionItems(all, false, generation > this._teExternalGeneration);
       this.tagEditorPageItems = currentItems;
       return all.map(function(item) { return this._teFindByPath(item.path); }, this).filter(Boolean);
     } catch (error) {
@@ -601,7 +760,7 @@ window.tagEditorSession = {
 
   async _teEnsureAllImagesLoaded() {
     var epoch = this._teLoadEpoch;
-    if (this.tagEditorSessionId && this.tagEditorImages.length < this.tagEditorDatasetCount) {
+    if (this.tagEditorSessionId && this.tagEditorImages.filter(img => !img._teMissingOnDisk).length < this.tagEditorDatasetCount) {
       this._teSearchLoading = true;
       try {
         await this._teFetchAllSessionItems(false);

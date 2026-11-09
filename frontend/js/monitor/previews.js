@@ -1,5 +1,35 @@
 /* 样本刷新、媒体队列与元数据交互；由 monitor-core.js 装配，沿用同一份监控状态。 */
 window.monitorPreviewsMixin = {
+  previewPromptFilter: null,
+
+  _previewPromptIdentity(preview) {
+    // Only the trainer's complete filename convention is eligible. Custom names
+    // remain browsable, but cannot accidentally become members of a prompt group.
+    const match = String(preview?.name || '').match(/^(.*?)(e?)(\d{6})_(\d{2})_(\d{14})(?:_-?\d+)?\.(?:png|jpe?g|webp)$/i);
+    if (!match || (match[1] && !match[1].endsWith('_'))) return null;
+    return { key: match[1] + ':' + match[4], number: Number(match[4]) + 1,
+      stage: (match[2] ? 'epoch:' : 'step:') + Number(match[3]) };
+  },
+
+  _previewPromptGroup() {
+    const current = this._previewPromptIdentity(this.previews[this.previewStep]);
+    if (!current) return null;
+    const identities = this.previews.map(preview => this._previewPromptIdentity(preview)).filter(Boolean);
+    const stages = new Set(identities.filter(item => item.key === current.key).map(item => item.stage));
+    return stages.size > 1 && identities.some(item => item.key !== current.key) ? current : null;
+  },
+
+  _previewLightboxIndices() {
+    return this._previewDisplayIndices().filter(index => !this.previewPromptFilter
+      || this._previewPromptIdentity(this.previews[index])?.key === this.previewPromptFilter);
+  },
+
+  togglePreviewPromptFilter() {
+    const group = this._previewPromptGroup();
+    this.previewPromptFilter = this.previewPromptFilter ? null : group?.key || null;
+    this._updatePreviewLightbox();
+  },
+
   _invalidatePreviewRequest() {
     this._previewRequestSeq++;
     this._previewSnapshotSeq++;
@@ -11,10 +41,19 @@ window.monitorPreviewsMixin = {
     const wasAtEnd = this.previews.length === 0 || this.previewStep >= this.previews.length - 1;
     // A cacheable snapshot must not cancel a forced refresh already in flight.
     this._previewSnapshotSeq++;
-    this.previews = Array.isArray(previews) ? previews : [];
+    this._replacePreviewItems(Array.isArray(previews) ? previews : []);
     this.previewsVersion++;
     this._followLatestPreview(wasAtEnd);
     return true;
+  },
+
+  _replacePreviewItems(items) {
+    const selectedName = this.previewPromptFilter ? this.previews[this.previewStep]?.name : null;
+    this.previews = items;
+    if (selectedName) {
+      const index = items.findIndex(item => item.name === selectedName);
+      if (index >= 0) this.previewStep = index;
+    }
   },
 
   setPreviewMediaPaused(paused) {
@@ -194,7 +233,7 @@ window.monitorPreviewsMixin = {
       if (j.status === 'success') {
         // Reject snapshots started during the refresh if they arrive after it.
         this._previewSnapshotSeq++;
-        this.previews = j.data || [];
+        this._replacePreviewItems(j.data || []);
         this.previewsVersion++;
         if (j.meta) {
           const target = this.currentArtifactData();
@@ -220,7 +259,12 @@ window.monitorPreviewsMixin = {
   _followLatestPreview(wasAtEnd) {
     const n = this.previews.length;
     if (n === 0) { this.previewStep = 0; if (this.closePreviewLightbox) this.closePreviewLightbox(); return; }
-    if (wasAtEnd) {
+    if (this.previewPromptFilter) {
+      const indices = this._previewLightboxIndices();
+      if (!indices.length) this.previewPromptFilter = null;
+      else if (!indices.includes(this.previewStep)) this.previewStep = indices[0];
+    }
+    if (!this.previewPromptFilter && wasAtEnd) {
       this.previewStep = n - 1;
     } else if (this.previewStep > n - 1) {
       this.previewStep = n - 1;

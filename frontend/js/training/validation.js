@@ -4,6 +4,33 @@
 window.trainingValidation = {
   formErrors: {},
   _trainingOptionErrorMessages: null,
+  fieldErrorHtml(key) {
+    const message = this.formErrors?.[key] || '';
+    if (!message) return '';
+    const names = ['checkpointOffloadConflict', 'blockSwapOffloadConflict', 'blockSwapFullgraphConflict',
+      'compile_fullgraphAttentionConflict', 'compile_fullgraphMossConflict', 'partialCheckpointH2dConflict',
+      'blockSwapH2dRequiresBlocks', 'base_weightsConvrotConflict', 'adamwFusedForeachConflict',
+      'adamwFusedDifferentiableConflict', 'muonNonMatrixConflict', 'kreaQuantizationConflict',
+      'kreaTurboBlockSwapConflict', 'kreaTurboQuantizationConflict', 'kreaTurboSourceConflict',
+      'krea_dora_fp8Conflict', 'krea_loraplus_structureConflict'];
+    // Unknown/server messages are always plain escaped text. Only local,
+    // translated conflicts may link to fields present in this training form.
+    const name = names.find(name => message === this.t('field.' + name));
+    if (!name) return this.esc(message);
+    const template = this.t('fieldConflict.' + name);
+    if (!template || template === 'fieldConflict.' + name) return this.esc(message);
+    const fields = this._allSections().flatMap(section => section.fields || []);
+    return template.split(/(\{[a-zA-Z0-9_]+\})/).map(part => {
+      if (!/^\{\w+\}$/.test(part)) return this.esc(part);
+      let target = part.slice(1, -1);
+      if (target === 'adamw_fused' && this.form.model_train_type === 'krea2-lora') target = 'krea_adamw_fused';
+      const field = fields.find(field => field.key === target);
+      const label = this.esc(field?.argKey || target);
+      if (target === key || !field || !this._fieldShowIfMet(field)) return label;
+      return `<button type="button" class="field-conflict-link" @click="focusTrainingField('${target}')">${label}</button>`;
+    }).join('');
+  },
+
   // ── Validation ────────────────────────────────────────
   _parseStepRules(value) {
     if (typeof value !== 'string' || !value.trim()) return null;
@@ -288,19 +315,7 @@ window.trainingValidation = {
     this.formErrors = errors;
     const hasErrors = Object.keys(errors).length > 0;
     if (hasErrors) {
-      this.$nextTick(() => {
-        const firstKey = Object.keys(errors)[0];
-        const row = Array.from(document.querySelectorAll('#trainFormContent [data-field-row]'))
-          .find(item => item.getAttribute('data-field-row') === firstKey);
-        if (!row) return;
-        const card = row.closest('.card[data-section]');
-        if (card && this._sectionCollapsed[card.dataset.section]) {
-          this.toggleSection(card.dataset.section);
-        }
-        row.scrollIntoView({ block: 'center', behavior: 'smooth' });
-        const input = row.querySelector('input:not([type="hidden"]), textarea, .anima-select-trigger');
-        if (input) input.focus({ preventScroll: true });
-      });
+      this.$nextTick(() => this.focusTrainingField(Object.keys(errors)[0]));
     }
     return !hasErrors;
   },

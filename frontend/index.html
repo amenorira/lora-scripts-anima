@@ -1301,7 +1301,9 @@
                     </div>
                     <textarea class="te-editor-textarea" x-show="tagEditorDetailView === 'text'" :aria-label="t('tagEditor.captionText')"
                       x-model="tagEditorDetailText" @input="tagEditorDetailTextChange($event)"
-                      @compositionend="tagEditorDetailTextChange($event)" @blur="_teFlushAllPendingTextEdits()"></textarea>
+                      @compositionstart="_teDetailComposing = true"
+                      @compositionend="_teDetailComposing = false; tagEditorDetailTextChange($event)"
+                      @blur="_teDetailComposing = false; _teFlushAllPendingTextEdits()"></textarea>
                   </div>
                   <div class="te-editor-add" x-show="tagEditorAllowsTagOps() && !tagEditorQuickRemove && tagEditorDetailView === 'chip'">
                     <input type="text" x-model="tagEditorAddInput" :placeholder="t(tagDictionaryReady ? 'tagEditor.dictAddPlaceholder' : 'tagEditor.addTagPlaceholder')"
@@ -1609,7 +1611,7 @@
 <!-- ── Confirm Modal ───────────────────────────────────── -->
 <dialog class="modal-overlay" x-dialog="showConfirmModal" @click.self="cancelConfirm()"
         @dialog-close="cancelConfirm()" :aria-label="confirmTitle" x-cloak>
-  <div class="modal modal-confirm">
+  <div class="modal modal-confirm" :class="{ 'modal-confirm--three-actions': confirmSecondaryLabel }">
     <div class="modal-body">
       <div class="confirm-icon">
         <svg x-show="!confirmNotice" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -1658,11 +1660,11 @@
         <button type="button" class="btn btn-ghost btn-sm" @click="retryFilePicker()" x-text="t('common.pickerRetry','Retry')"></button>
       </div>
       <p class="picker-empty" x-show="!_pickerLoading && !_pickerError && filteredPickerFiles.length === 0" x-text="pickerEmptyText()"></p>
-      <template x-for="group in (!_pickerLoading && !_pickerError ? pickerGroups : [])" :key="group.dir || '__root'">
+      <template x-for="group in (!_pickerLoading && !_pickerError ? pickerGroups : [])" :key="group.dir">
         <div class="picker-group">
           <div class="picker-group-header" x-show="group.dir" x-text="group.dir + '/'"></div>
-          <template x-for="f in group.files" :key="f.path">
-            <div class="picker-row" :class="{ 'is-current': pickerIsCurrent(f), 'is-kb-active': filteredPickerFiles.indexOf(f) === _pickerIndex }"
+          <template x-for="(f, index) in group.files" :key="f.path">
+            <div class="picker-row" :class="{ 'is-current': pickerIsCurrent(f), 'is-kb-active': group.start + index === _pickerIndex }"
                  @click="pickFileFromModal(f)" :title="f.path">
               <svg class="picker-row-icon" x-show="!['train-dir', 'reg-dir'].includes(_pickerKind)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
               <svg class="picker-row-icon" x-show="['train-dir', 'reg-dir'].includes(_pickerKind)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
@@ -1701,9 +1703,9 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
-    <div class="modal-body timestep-preview-layout" x-show="timestepPreviewData">
+    <div class="modal-body timestep-preview-layout preview-linked-layout" x-show="timestepPreviewData" x-data="previewConnector">
       <!-- ◀ Left: Controls, Parameter Matrix & Notes -->
-      <div class="timestep-layout-sidebar">
+      <div class="timestep-layout-sidebar" data-preview-sidebar>
         <div class="timestep-preview-toolbar">
           <span x-text="t('timestepPreview.previewRange')"></span>
           <div class="timestep-preview-select" @preview-select="setTimestepPreviewScope($event.detail); $nextTick(() => $el.querySelector('.preview-select-trigger')?.focus())"
@@ -1762,7 +1764,7 @@
             <span><small x-text="t('timestepPreview.detailZone')"></small><b>0–333</b></span>
           </div>
         </section>
-        <section class="preview-info-section timestep-range-trigger" tabindex="0" aria-labelledby="timestep-range-title">
+        <section class="preview-info-section timestep-range-trigger" data-preview-link="timestep-range" tabindex="0" aria-labelledby="timestep-range-title">
           <h3 id="timestep-range-title" x-text="t('timestepPreview.percentileSection')"></h3>
           <div class="timestep-preview-meta">
             <span><b x-text="timestepPreviewData ? (timestepPreviewData.percentile10 === timestepPreviewData.percentile90 ? timestepPreviewData.percentile10 : `${timestepPreviewData.percentile10}–${timestepPreviewData.percentile90}`) : ''"></b></span>
@@ -1778,7 +1780,7 @@
       </div>
 
       <!-- ▶ Right: Scientific Chart Workspace + Zone Summary -->
-      <div class="timestep-layout-chart"
+      <div class="timestep-layout-chart" data-preview-diagram
            tabindex="0" role="group" :aria-label="t('timestepPreview.title')" @keydown="onPreviewChartKey($event, 'timestep')"
            @mousemove="onTimestepChartHover($event)"
            @mouseleave="onTimestepChartLeave($event)">
@@ -1803,8 +1805,8 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
-    <div class="modal-body lr-preview-layout" x-show="lrPreviewData">
-      <div class="lr-layout-sidebar">
+    <div class="modal-body lr-preview-layout preview-linked-layout" x-show="lrPreviewData" x-data="previewConnector">
+      <div class="lr-layout-sidebar" data-preview-sidebar>
         <div class="lr-component-toolbar" x-show="lrPreviewData?.components.length > 1">
           <span x-text="t('lrPreview.component')"></span>
           <div @preview-select="setLrPreviewComponent($event.detail); $nextTick(() => $el.querySelector('.preview-select-trigger')?.focus())"
@@ -1827,7 +1829,7 @@
             <span><small x-text="t('lrPreview.totalSteps')"></small><b x-text="lrPreviewData && lrPreviewData.totalStepsText"></b></span>
           </template>
           <template x-if="lrPreviewData && lrPreviewData.warmupVisible">
-            <span><small x-text="t('lrPreview.warmup')"></small><b x-text="lrPreviewData && lrPreviewData.warmupLabel"></b></span>
+            <span :class="{'lr-warmup-trigger': Number(lrPreviewData.warmupX) > 0}" :data-preview-link="Number(lrPreviewData.warmupX) > 0 ? 'warmup' : null" :tabindex="Number(lrPreviewData.warmupX) > 0 ? 0 : null"><small x-text="t('lrPreview.warmup')"></small><b x-text="lrPreviewData && lrPreviewData.warmupLabel"></b></span>
           </template>
           <template x-if="lrPreviewData && lrPreviewData.cycles">
             <span><small x-text="t('lrPreview.cycles')"></small><b x-text="lrPreviewData && lrPreviewData.cycles"></b></span>
@@ -1851,7 +1853,7 @@
           </template>
         </div>
       </div>
-      <div class="lr-layout-chart"
+      <div class="lr-layout-chart" data-preview-diagram
            tabindex="0" role="group" :aria-label="t('lrPreview.title')" @keydown="onPreviewChartKey($event, 'lr')"
            @mousemove="onLrChartHover($event)"
            @mouseleave="onLrChartLeave($event)">

@@ -108,14 +108,17 @@ window.taggerSourcesMixin = {
     });
   },
 
-  _clearTaggerResultState(clearTask = false) {
+  _clearTaggerResultState(mode = this.taggerSourceMode) {
+    this._clearTaggerTask(mode);
+    if (mode !== this.taggerSourceMode) {
+      this._clearStoredTaggerResult(this._taggerModeStates[mode]);
+      return;
+    }
     this.tagDictionaryCloseHover?.();
     this.taggerResultText = '';
     this.taggerResultCategories = {};
     this.taggerCategoryState = {};
     this._taggerLoadedResultKey = '';
-    if (!clearTask) return;
-    this._clearTaggerTask();
     this.taggerItems = this.taggerItems.map(item => {
       const next = Object.assign({}, item, { status: 'pending' });
       delete next.result;
@@ -164,7 +167,7 @@ window.taggerSourcesMixin = {
       this.taggerCategoryState = {};
       this._taggerLoadedResultKey = '';
       if (this.taggerSourceMode === 'api-folder') {
-        this._clearTaggerResultState(true);
+        this._clearTaggerResultState();
         this.captionSourceChanged?.(this.taggerSourceMode);
       }
     }

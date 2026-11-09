@@ -280,12 +280,16 @@ window.tagEditorEdits = {
     this._updateEditorPanel();
   },
 
+  _teAccumulateTagFreqDelta(deltas, oldTags, newTags) {
+    _teParseTags(oldTags).forEach(tag => deltas.set(tag, (deltas.get(tag) || 0) - 1));
+    _teParseTags(newTags).forEach(tag => deltas.set(tag, (deltas.get(tag) || 0) + 1));
+  },
+
   _teUpdateFreq(oldTags, newTags) {
     if (!this.tagEditorAllowsTagOps()) return;
     // Match the backend scan's occurrence counts, including repeated tags.
     var deltas = new Map();
-    _teParseTags(oldTags).forEach(tag => deltas.set(tag, (deltas.get(tag) || 0) - 1));
-    _teParseTags(newTags).forEach(tag => deltas.set(tag, (deltas.get(tag) || 0) + 1));
+    this._teAccumulateTagFreqDelta(deltas, oldTags, newTags);
     if (![...deltas.values()].some(delta => delta !== 0)) return;
     if (!this._teFreqIndex) this._teRebuildFreqIndex();
     var freqMap = this._teFreqIndex;
@@ -314,6 +318,9 @@ window.tagEditorEdits = {
     if (!this._teEditVersions) this._teEditVersions = {};
     this._teEditVersions[img.path] = (this._teEditVersions[img.path] || 0) + 1;
     var isMod = newTagsStr !== this.tagEditorOriginal[img.path];
+    if (wasMod && !isMod && img.caption_revision && this._teCaptionRevisions) {
+      this._teCaptionRevisions[img.path] = img.caption_revision;
+    }
     this._teInvalidateCaptionQuery();
     if (wasMod !== isMod) {
       this._teBumpModified(isMod ? 1 : -1);
@@ -323,6 +330,7 @@ window.tagEditorEdits = {
     // draft. Do not do this in the idle autosave path: an unopened recovery
     // draft must survive loading a clean dataset or dismissing its prompt.
     if (wasMod && !this.tagEditorModified && !this._teIsSaving) this._teRemoveDraft();
+    if (img._teMissingOnDisk && !isMod && this._teDiscardSessionImages([img.path])) this._updateEditorPanel();
     this._teInvalidateFilter();
     // Only update detail text if the image being edited is currently selected
     if (this.tagEditorSelected.length === 1 && this.tagEditorSelected[0] === img.path) {
@@ -330,7 +338,7 @@ window.tagEditorEdits = {
       // the DOM value (and native undo/caret) on every CRLF keystroke.
       this.tagEditorDetailText = _teInputText(newTagsStr);
     }
-    this._teUpdateFreq(oldTags, newTagsStr);
+    if (!img._teMissingOnDisk) this._teUpdateFreq(oldTags, newTagsStr);
     this.tagDictionarySyncChips();
   },
 

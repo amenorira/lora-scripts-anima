@@ -38,7 +38,7 @@ from backend.tageditor.core import (
 from backend.tageditor import dictionary
 from backend.tageditor.operations import apply_operation
 from backend.tageditor.repository import save_caption_transaction, restore_legacy_backups, restore_timeline_event, TimelineConflict
-from backend.tageditor.sessions import dataset_sessions, DatasetDirectoryError
+from backend.tageditor.sessions import dataset_sessions, DatasetDirectoryError, session_image_payload
 from backend.tageditor.snapshots import create_snapshot, list_snapshots, restore_snapshot, delete_snapshot, clear_all_snapshots
 from backend.tageditor.timeline import timeline_store
 
@@ -119,6 +119,13 @@ async def create_dataset_session(data: dict):
             page=1,
             page_size=int(data.get("page_size", 60)),
         )
+        retained_paths = data.get("retained_paths")
+        if isinstance(retained_paths, list) and retained_paths:
+            paths = {path for path in retained_paths if isinstance(path, str)}
+            paths.difference_update(item["path"] for item in page["items"])
+            page["retained_items"] = [
+                session_image_payload(session.id, item) for item in session.images if item["path"] in paths
+            ]
         return {
             "status": "success",
             "data": {
@@ -129,6 +136,7 @@ async def create_dataset_session(data: dict):
                 "count": len(session.images),
                 "no_tag_count": sum(1 for item in session.images if not str(item.get("tags", "")).lstrip("\ufeff").strip()),
                 "tags": list(session.tags),
+                "unreadable_paths": session.unreadable_paths,
                 **page,
             },
         }
@@ -185,12 +193,25 @@ async def get_dataset_session_page(
 
 
 @router.post("/tageditor/sessions/{session_id}/refresh")
-async def refresh_dataset_session(session_id: str):
+async def refresh_dataset_session(session_id: str, since_generation: int | None = Query(None, ge=1)):
     try:
-        session = await asyncio.to_thread(dataset_sessions.refresh, session_id)
-        return {"status": "success", "data": {"session_id": session.id, "generation": session.generation, "revision": session.revision, "count": len(session.images)}}
+        session = await asyncio.to_thread(dataset_sessions.refresh, session_id, since_generation=since_generation)
+        if session is None:
+            return {"status": "success", "data": None}
+        data = {"session_id": session.id, "generation": session.generation, "revision": session.revision, "count": len(session.images)}
+        if since_generation is not None:
+            data.update(
+                tags=list(session.tags),
+                no_tag_count=sum(1 for item in session.images if not item["tags"].lstrip("\ufeff").strip()),
+                changed_images=session.changed_images,
+                removed_paths=session.removed_paths,
+                unreadable_paths=session.unreadable_paths,
+            )
+        return {"status": "success", "data": data}
     except KeyError:
         return {"status": "error", "code": "session_expired", "message": "Session expired / 数据集会话已过期"}
+    except (OSError, UnicodeError):
+        return {"status": "error", "code": "dataset_unreadable"}
 
 
 @router.delete("/tageditor/sessions/{session_id}")

@@ -101,6 +101,16 @@ window.captionWorkspaceMixin = {
     event.preventDefault();
     void this.selectCaptionTab(tabs[i]);
   },
+  async showCaptionFailures() {
+    const batch = this.captionBatchState();
+    if (!batch.source || !batch.taskId || !(batch.task?.failed > 0)
+      || this.captionPreviewBusy || this.taggerStarting || this.taggerScanning) return;
+    // Start the overview request with the intended task filter, without a stale search/page.
+    this.captionOverviewFilter = 'failed';
+    this.captionOverviewQuery = '';
+    this.captionOverviewOffset = 0;
+    await this.selectCaptionTab('overview');
+  },
   captionSourceChanged(mode) {
     if (mode === 'api-single') { this.captionSingleResult = null; this.captionPreviewError = ''; }
     if (mode !== 'api-folder') return;

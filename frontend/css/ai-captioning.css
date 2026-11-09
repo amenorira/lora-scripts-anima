@@ -73,6 +73,9 @@
 .caption-prompt-preview p { margin: 0; color: var(--text-tertiary); font-size: 12px; line-height: 1.6; }
 .caption-text-button { flex: none; padding: 2px 0; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; }
 .caption-text-button:hover { text-decoration: underline; text-underline-offset: 3px; }
+.caption-count-link { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.caption-count-link:focus-visible { outline: 1px solid currentColor; outline-offset: 3px; }
+.caption-count-link:disabled { cursor: default; opacity: .5; }
 /* Keep at least 240px per column for labels and descriptions, with at most three columns. */
 .caption-parameter-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,max(240px,calc((100% - 48px) / 3))),1fr)); column-gap: 24px; align-items: start; }
 .caption-knowledge-rules > .field-hint { margin-bottom: 12px; }

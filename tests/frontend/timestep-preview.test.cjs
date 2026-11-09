@@ -52,7 +52,7 @@ test('sampling range follows the descending axis and collapses at fixed timestep
   assert.match(range, /class="timestep-range-guide" x1="78\.2" y1="0" x2="78\.2" y2="100"/);
   assert.match(range, /class="timestep-range-dim" style="left:0;width:14\.2%"/);
   assert.match(range, /class="timestep-range-dim" style="left:78\.2%;right:0"/);
-  assert.match(range, /class="timestep-range-values" style="left:14\.2%;width:64%"/);
+  assert.match(range, /class="timestep-range-values"[^>]* style="left:14\.2%;width:64%"/);
   assert.match(range, /left:0%;transform:translateX\(-50%\)">858/);
   assert.match(range, /left:100%;transform:translateX\(-50%\)">218/);
   assert.doesNotMatch(range, /timestep-range-highlight|timestep-range-bracket|timestep-range-rail|timestep-range-band|legend-range/);

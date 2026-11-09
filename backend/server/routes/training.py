@@ -25,7 +25,7 @@ from backend.training.cache.krea2_cache import get_krea2_cache_status
 from backend.training.config.krea2_options import KREA2_PROFILE_ID
 from backend.training.execution.krea2_preflight import inspect_krea2_checkpoint_format
 from backend.training.datasets.step_estimator import StepEstimateError, estimate_training_steps
-from backend.training.cache.te_cache_check import delete_te_cache
+from backend.training.cache.rebuild import delete_te_cache
 from backend.training.config.training_config import (
     TrainingConfigError,
     build_training_config,

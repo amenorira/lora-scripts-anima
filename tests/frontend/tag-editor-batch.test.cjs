@@ -50,3 +50,18 @@ for (const change of ['dataset', 'caption']) {
     assert.deepEqual(f.messages.at(-1), ['tagEditor.batchStale', 'warning']);
   });
 }
+
+test('global rename rejects stale scope after external refresh, even if a page already saw the new generation', async () => {
+  const f = fixture(['cat', 'dog']);
+  f.app.tagEditorSessionGeneration = 2;
+  f.app._teExternalGeneration = 1;
+  f.app.tagEditorInlineEdit = { oldTag: 'cat', newTag: 'bird' };
+  await f.app.tagEditorFinishInlineEdit();
+  f.images[0].tags = '  external\r\n';
+  f.images[1].tags = 'cat';
+  f.app._teExternalGeneration = 2;
+  f.confirm().accept();
+  assert.deepEqual(f.images.map(img => img.tags), ['  external\r\n', 'cat']);
+  assert.deepEqual(f.writes, []);
+  assert.deepEqual(f.messages.at(-1), ['tagEditor.batchStale', 'warning']);
+});

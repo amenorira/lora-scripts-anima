@@ -1,4 +1,23 @@
 {
+	"fieldConflict": {
+		"checkpointOffloadConflict": "{cpu_offload_checkpointing} 与 {unsloth_offload_checkpointing} 只能启用一项。",
+		"blockSwapOffloadConflict": "{blocks_to_swap} 不能与 {cpu_offload_checkpointing} 或 {unsloth_offload_checkpointing} 同时启用。",
+		"blockSwapFullgraphConflict": "使用 {blocks_to_swap} 时，请关闭 {compile_fullgraph}。",
+		"compile_fullgraphAttentionConflict": "{compile_fullgraph} 不能与 {split_attn} 或 xformers 并用。请关闭完整图编译，或更改 {attn_mode}。",
+		"compile_fullgraphMossConflict": "{compile_fullgraph} 不能与 {blocks_to_swap}、{split_attn} 或 xformers 并用。请关闭完整图编译，或调整 {attn_mode} 等相关设置。",
+		"partialCheckpointH2dConflict": "启用 {block_swap_h2d_only} 时，{gradient_checkpointing_skip_blocks} 与 {blocks_to_swap} 不能同时超过 {block_swap_ring_size}。",
+		"blockSwapH2dRequiresBlocks": "启用此项需要将 {blocks_to_swap} 设为至少 1。",
+		"base_weightsConvrotConflict": "{base_weights} 需要未量化权重，请关闭 {convrot_int8} 和 {convrot_int8_text_encoder}。",
+		"adamwFusedForeachConflict": "{adamw_fused} 与 {foreach} 不能同时启用。请禁用另一项，或取消 {optimizer_args_custom} 中的强制启用。",
+		"adamwFusedDifferentiableConflict": "{adamw_fused} 不能与 differentiable=True 并用。请在 {optimizer_args_custom} 中移除该参数或设为 False。",
+		"muonNonMatrixConflict": "Muon 仅支持二维参数。请关闭此选项，或更换 {optimizer_type}。",
+		"kreaQuantizationConflict": "{convrot_int8} 与 {fp8_base} 不能同时启用。",
+		"kreaTurboBlockSwapConflict": "{turbo_dit} 不能与块交换并用。请清空 Turbo DiT，或将 {blocks_to_swap} 设为 0。",
+		"kreaTurboQuantizationConflict": "{turbo_dit} 暂不支持 {convrot_int8}。",
+		"kreaTurboSourceConflict": "{turbo_dit} 与 {turbo_lora} 只能选择一种。",
+		"krea_dora_fp8Conflict": "{dora_wd} 不能与量化底模并用。请关闭 DoRA，或关闭 {fp8_base} 和 {convrot_int8}。",
+		"krea_loraplus_structureConflict": "启用 {enable_loraplus} 时，请关闭 {dim_from_weights}，手动设置 Rank 和 Alpha。"
+	},
 	"previewLoras": {"add": "添加预览 LoRA", "path": "LoRA 文件路径", "multiplier": "倍率", "invalid": "预览 LoRA 必须是包含路径和倍率的列表。"},
 	"regularization": {
 		"model_type": "模型类型",
@@ -206,17 +225,14 @@
 		"candidateFirstLine": "普通标注第一行（误识别时使用）",
 		"candidateSelectionRequired": "请先为检测到的多段标注选择读取方式。"
 	},
-	"teCache": {
-		"staleTitle": "文本编码器缓存已过期",
-		"rebuildStart": "删除缓存并开始训练",
-		"useOld": "使用旧缓存继续",
-		"deleteFailed": "缓存删除失败",
-		"warn": {
-			"rateMismatch": "{count} 个缓存文件的 caption_dropout_rate 与本次设置 {current} 不同，检测到的一个缓存值为 {cached}；各缓存的值可能不同。不重建时，训练沿用各缓存对应的旧丢弃概率；删除并重建后，本次设置才会生效。",
-			"captionModified": "有 {count} 张图的 caption 在缓存生成后被修改过，本次训练将使用修改前的旧编码，删除缓存重建后才会使用新 caption。",
-			"everyNEpochs": "缓存开启时 caption_dropout_every_n_epochs 不生效，本次训练不会执行整轮 caption 丢弃。"
-		},
-		"deleteScope": "将删除以下目录及子目录中的全部文本编码缓存，包括 Anima、SDXL 和 MOSS-Image 的缓存；图片与标注不变：\n{directories}"
+	"trainingCache": {
+		"title": "检测到已有缓存",
+		"scope": "以下目录中有 {latents} 个图像 Latent 缓存、{text} 个文本编码缓存。重建会先删除这些缓存。\n{directories}",
+		"trainingNote": "训练会按本次设置重新生成已启用的缓存。",
+		"rebuild": "清除旧缓存并重建",
+		"rebuildStart": "清除旧缓存并开始训练",
+		"continue": "按当前设置继续",
+		"keepStart": "不重建，开始训练"
 	},
 	"nav": {
 		"monitor": "训练监控",
@@ -282,6 +298,7 @@
 		}
 	},
 	"monitor": {
+		"onlySamplePrompt": "仅提示词 {n}",
 		"followPaused": "已暂停跟随 · 回到最新",
 		"copyOutputPath": "复制产物路径",
 		"preparingDownload": "正在准备下载；多个文件需要先打包，请稍候。",
@@ -2230,6 +2247,7 @@
 		"batchPreview": "预览变更",
 		"batchPreviewDiff": "{n} 张图片将被修改",
 		"batchStale": "标注或数据集已变化，请重新执行批量操作。",
+		"externalRefreshUnreadable": "部分图片的标注无法读取，详见受影响的图片路径。",
 		"copyTags": "复制标签",
 		"pasteTags": "粘贴标签",
 		"tagsCopied": "已复制 {n} 个标签",
@@ -2824,6 +2842,7 @@
 			"int8BackwardUnavailable": "ConvRot INT8 反向计算需要 CUDA 与 Triton。",
 			"invalidKrea2Config": "Krea 2 训练参数无效。",
 			"krea2PreflightFailed": "Krea 2 启动前检查失败。",
+			"trainingCacheDeleteFailed": "无法清理训练缓存。",
 			"krea2CacheRequired": "Krea 2 缓存未就绪，请先准备缓存。",
 			"invalidOutputPath": "输出路径无效：{path}",
 			"outputDirectoryUnavailable": "输出目录不可用或无法写入：{path}",
@@ -2878,6 +2897,7 @@
 		"separator_help": "分隔原有标注和不同长度的描述。用于 MOSS 训练时，开启“保留标注中的换行”，并设置相同的候选标注分隔符。"
 	},
 	"caption": {
+		"viewFailures": "查看失败的 {count} 张图片",
 		"runningTask": "标注进行中",
 		"runRecord": "运行记录",
 		"builtinPromptHelp": "生成长、中、短三种描述，并保留图片中的非水印文字。",

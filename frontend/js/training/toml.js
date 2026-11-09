@@ -579,24 +579,31 @@ window.trainingTomlMixin = {
     this.toast(this._trainingErrorText(result, fallbackKey), 'error', { details: this._trainingErrorDetails(result) });
   },
 
-  async prepareKrea2Cache() {
+  async prepareKrea2Cache(confirmedPayload = null) {
     if (this.isTraining || this.trainingStarting || this.regularizationActive) return;
-    if ((this.form.model_train_type || '') !== 'krea2-lora') return;
+    if (!confirmedPayload && this.form.model_train_type !== 'krea2-lora') return;
     this.trainingStarting = true;
     try {
-      if (!await this.ensureKreaDitFormat()) return;
-      if (!this.validateForm()) {
-        this.toast(this.t('common.formErrors'), 'error');
-        return;
+      if (!confirmedPayload) {
+        if (!await this.ensureKreaDitFormat()) return;
+        if (!this.validateForm()) {
+          this.toast(this.t('common.formErrors'), 'error');
+          return;
+        }
       }
+      const payload = confirmedPayload ?? this._collectTrainingPayload();
       const response = await fetch('/api/training/krea2/cache', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(this._collectTrainingPayload()),
+        body: JSON.stringify(payload),
       });
       const data = await response.json();
       if (!response.ok || data.status !== 'success') {
-        this._showTrainingError(data, 'krea2.cachePrepareFailed');
+        if (data.data?.errorCode === 'trainingCacheFound') {
+          this._showCacheRebuildDialog(data.data, payload, next => this.prepareKrea2Cache(next), true);
+        } else {
+          this._showTrainingError(data, 'krea2.cachePrepareFailed');
+        }
         return;
       }
       // 缓存任务也是托管任务：走同一条启动边界（清残留 + 订阅 + 轮询接管状态）。
@@ -610,17 +617,21 @@ window.trainingTomlMixin = {
   },
 
   // ── Training ───────────────────────────────────────────
-  async startTraining() {
+  async startTraining(confirmedPayload = null) {
     if (this.isTraining || this.trainingStarting || this.regularizationActive || this.datasetRepeatApplying) return;
 
     // Form validation before starting
-    if (!this.validateForm()) {
+    if (!confirmedPayload && !this.validateForm()) {
       this.toast(this.t('common.formErrors'), 'error');
       return;
     }
 
     this.trainingStarting = true;
     try {
+      if (confirmedPayload) {
+        await this._submitTraining(confirmedPayload);
+        return;
+      }
       const outputPathInfo = await this.refreshOutputPathInfo(true);
       if (!outputPathInfo || !outputPathInfo.available || !outputPathInfo.writable || outputPathInfo.path_is_directory === false) {
         this.toast(this.outputPathBlockingText(), 'error');
@@ -640,39 +651,9 @@ window.trainingTomlMixin = {
           return;
         }
       }
-      this.isTraining = true; this.isIdle = false;
-      this.statusText = this.t('common.training') + '...';
       const payload = this._collectTrainingPayload();
       payload._form_state = this._collectTrainingFormSnapshot();
-      // 一次性放行：用户在缓存过期弹窗里选择"使用旧缓存继续"后置位
-      if (this._ignoreTeCacheWarnings) {
-        payload.ignore_te_cache_warnings = true;
-        this._ignoreTeCacheWarnings = false;
-      }
-
-      const resp = await fetch('/api/run', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
-      const data = await resp.json();
-      if (!resp.ok || data.status !== 'success') {
-        if (data.data && data.data.errorCode === 'teCacheStale') {
-          this._showTeCacheStaleDialog(data.data.warnings || []);
-        } else {
-          this._showTrainingError(data);
-        }
-        this._applyTaskView('IDLE');
-      }
-      else {
-        this._acceptTrainingStart(data.data); this.toast(this.t('common.trainingStarted'));
-        // 弹出适配器警告（如有）
-        const warnings = data.data && data.data.warnings;
-        if (warnings && warnings.length > 0) {
-          setTimeout(() => {
-            const msg = warnings.join('\n');
-            this.toast('⚠️ ' + this.t('common.adapterWarnings'));
-            // 单按钮警告弹窗：必须看到（如 torch_compile 被自动关闭）再关闭
-            this.openConfirm(this.t('common.adapterWarnings'), msg, null, this.t('common.acknowledge'), { notice: true });
-          }, 500);
-        }
-      }
+      await this._submitTraining(payload);
     } catch(e) {
       this.toast(this.t('common.requestFailed')+': '+e.message, 'error');
       this._applyTaskView('IDLE');
@@ -681,55 +662,53 @@ window.trainingTomlMixin = {
     }
   },
 
-  // ── TE 磁盘缓存过期弹窗：删除重建 或 按旧缓存继续 ──
-  _showTeCacheStaleDialog(warnings) {
-    // 后端只回 {code, 参数}，文案按当前语言渲染（{name} 占位符，同 stepEstimate 惯例）
-    const lines = (warnings || [])
-      .filter(w => w && w.code)
-      .map(w => {
-        let text = this.t(`teCache.warn.${w.code}`, '');
-        Object.entries(w).forEach(([name, value]) => {
-          if (name !== 'code') text = text.replaceAll(`{${name}}`, String(value));
-        });
-        return text;
-      })
-      .filter(Boolean);
-    const directories = [this.form.train_data_dir];
-    if (this.form.enable_reg_data && this.form.reg_data_dir) directories.push(this.form.reg_data_dir);
-    lines.push(this.t('teCache.deleteScope').replace('{directories}', () => directories.filter(Boolean).join('\n')));
-    this.openConfirm(
-      this.t('teCache.staleTitle'),
-      lines.join('\n\n'),
-      () => this._rebuildTeCacheAndStart(),
-      this.t('teCache.rebuildStart'),
-      { secondaryLabel: this.t('teCache.useOld'), secondaryCallback: () => this._startWithTeCacheOverride() }
-    );
-  },
-
-  async _rebuildTeCacheAndStart() {
-    const dirs = [this.form.train_data_dir];
-    if (this.form.enable_reg_data && this.form.reg_data_dir) dirs.push(this.form.reg_data_dir);
-    try {
-      const resp = await fetch('/api/training/te-cache/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dirs: dirs.filter(Boolean) }),
-      });
-      const data = await resp.json();
-      if (data.status !== 'success') {
-        this.toast(data.message || this.t('teCache.deleteFailed'), 'error');
-        return;
+  async _submitTraining(payload) {
+    this.isTraining = true; this.isIdle = false;
+    this.statusText = this.t('common.training') + '...';
+    const resp = await fetch('/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await resp.json();
+    if (!resp.ok || data.status !== 'success') {
+      this._applyTaskView('IDLE');
+      if (data.data?.errorCode === 'trainingCacheFound') {
+        this._showCacheRebuildDialog(data.data, payload, next => this.startTraining(next));
+      } else {
+        this._showTrainingError(data);
       }
-    } catch (error) {
-      this.toast(this.t('common.requestFailed') + ': ' + error.message, 'error');
       return;
     }
-    void this.startTraining();
+    this._acceptTrainingStart(data.data);
+    this.toast(this.t('common.trainingStarted'));
+    const warnings = data.data?.warnings;
+    if (warnings?.length) {
+      setTimeout(() => {
+        const msg = warnings.join('\n');
+        this.toast('⚠️ ' + this.t('common.adapterWarnings'));
+        this.openConfirm(this.t('common.adapterWarnings'), msg, null, this.t('common.acknowledge'), { notice: true });
+      }, 500);
+    }
   },
 
-  _startWithTeCacheOverride() {
-    this._ignoreTeCacheWarnings = true;
-    void this.startTraining();
+  _showCacheRebuildDialog(cache, payload, submit, preparingCache = false) {
+    const scope = this.t('trainingCache.scope')
+      .replace('{latents}', String(cache.latents))
+      .replace('{text}', String(cache.text))
+      .replace('{directories}', () => cache.directories.join('\n'));
+    const message = preparingCache ? scope : scope + '\n\n' + this.t('trainingCache.trainingNote');
+    this.openConfirm(
+      this.t('trainingCache.title'),
+      message,
+      () => submit({ ...payload, _cache_action: cache.scope }),
+      this.t(preparingCache ? 'trainingCache.rebuild' : 'trainingCache.rebuildStart'),
+      {
+        danger: true,
+        secondaryLabel: this.t(preparingCache ? 'trainingCache.continue' : 'trainingCache.keepStart'),
+        secondaryCallback: () => submit({ ...payload, _cache_action: 'keep' }),
+      }
+    );
   },
 
   _acceptTrainingStart(data, status) {

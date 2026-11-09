@@ -9,7 +9,8 @@ from backend.monitor.run_registry import resolve_user_path, write_output_dir_ref
 from backend.training.config import toml_writer
 from backend.training.execution import run_files
 from backend.training.core_registry import MUSUBI_TUNER_DIR, TrainingProfileError, get_profile, resolve_training_profile
-from backend.training.cache.krea2_cache import mark_cache_manifest
+from backend.training.cache.krea2_cache import krea2_cache_files, mark_cache_manifest
+from backend.training.cache.rebuild import clear_cache_files, prepare_cache_choice
 from backend.training.config.krea2_network import (
     KREA2_LYCORIS_MODULE, KREA2_PRESET_FILENAME, build_krea2_network_preset,
 )
@@ -155,6 +156,7 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task):
 async def prepare_cache(config: dict, reserved_task):
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
 
+    cache_action = config.pop("_cache_action", None)
     gpu_ids = config.pop("gpu_ids", None)
     try:
         profile = resolve_training_profile(config)
@@ -169,6 +171,10 @@ async def prepare_cache(config: dict, reserved_task):
     preflight = await _settled_to_thread(krea2_preflight, config, False)
     if not preflight["ok"]:
         return _krea2_error(preflight["errors"], "krea2PreflightFailed")
+
+    cache_files, error = await prepare_cache_choice(cache_action, krea2_cache_files, config)
+    if error is not None:
+        return error
 
     safe_name = run_files.safe_output_name(str(config.get("output_name", "krea2_lora")))
     run_dir = (OUTPUT_DIR / f"{safe_name}_krea2_cache_{timestamp}_{reserved_task.task_id[:12]}").resolve()
@@ -189,13 +195,16 @@ async def prepare_cache(config: dict, reserved_task):
     cache_request_file = run_dir / "cache-request.json"
     dataset_toml = toml_writer.dumps(build_krea2_dataset_config(config))
     try:
-        await reserved_task.prepare_cache_manifest(config)
         def _write_cache_files():
             dataset_config_file.write_text(dataset_toml, encoding="utf-8")
             cache_request_file.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
             run_files.write_run_info(str(run_dir), config, "krea2-cache", timestamp, False)
             write_output_dir_reference(str(run_dir), str(cache_dir))
         await _settled_to_thread(_write_cache_files)
+        error = await clear_cache_files(cache_files)
+        if error is not None:
+            return error
+        await reserved_task.prepare_cache_manifest(config)
     except OSError as exc:
         return _training_error(message=f"Failed to initialize Krea 2 cache / 初始化 Krea 2 缓存失败: {exc}",
                                code="cacheInitializationFailed", details=str(exc))

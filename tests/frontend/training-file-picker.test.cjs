@@ -37,6 +37,37 @@ test('late picker responses cannot replace a newer selection or reopen a closed 
   assert.equal(app._pickerFiles.length, 0);
 });
 
+test('file picker navigates in the displayed group order before and after filtering', async () => {
+  const files = [
+    { name: 'z-match.safetensors', path: './models/z/z-match.safetensors' },
+    { name: 'a-second.safetensors', path: './models/a/a-second.safetensors' },
+    { name: 'root.safetensors', path: './models/root.safetensors' },
+    { name: 'a-match.safetensors', path: './models/a/a-match.safetensors' },
+  ];
+  const app = application(async () => response({ files }));
+  app.setField = (key, value) => { app.form[key] = value; };
+  const open = () => app.builtinFilePicker('vae', 'file-model');
+
+  await open();
+  assert.deepEqual(Array.from(app.pickerGroups, ({ dir, start }) => [dir, start]), [['', 0], ['a', 1], ['z', 3]]);
+  app.pickerConfirm();
+  assert.equal(app.form.vae, files[2].path);
+
+  app.form.vae = files[1].path;
+  await open();
+  app.pickerMove(1);
+  app.pickerConfirm();
+  assert.equal(app.form.vae, files[3].path);
+
+  await open();
+  app._pickerFilter = 'match';
+  app._pickerIndex = -1;
+  assert.deepEqual(Array.from(app.pickerGroups, ({ dir, start }) => [dir, start]), [['a', 0], ['z', 1]]);
+  app.pickerMove(1);
+  app.pickerConfirm();
+  assert.equal(app.form.vae, files[3].path);
+});
+
 test('native picker ignores results after the form, profile, route or field changes', async () => {
   for (const change of [
     app => { app.form = { model_train_type: 'krea2-lora', vae: 'krea-vae' }; },

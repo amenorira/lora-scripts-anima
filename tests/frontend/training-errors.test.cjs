@@ -23,12 +23,26 @@ test('training errors localize structured parameters without rewriting diagnosti
   assert.equal(model._trainingErrorText({ message: 'legacy diagnostic', data: { errorCode: 'newUnknownCode' } }), 'legacy diagnostic');
 });
 
-test('cache rebuilding notice names both directory trees and all profile caches', () => {
-  const model = app({ 'teCache.warn.rateMismatch': 'Changed {count}',
-    'teCache.deleteScope': 'All Anima, SDXL and MOSS caches in these trees:\n{directories}' });
-  model.form = { train_data_dir: 'C:/train', enable_reg_data: true, reg_data_dir: 'D:/reg' };
-  let message;
-  model.openConfirm = (_title, text) => { message = text; };
-  model._showTeCacheStaleDialog([{ code: 'rateMismatch', count: 2 }]);
-  assert.equal(message, 'Changed 2\n\nAll Anima, SDXL and MOSS caches in these trees:\nC:/train\nD:/reg');
+test('cache rebuild dialog uses the server scope and the original training request', () => {
+  const model = app({
+    'trainingCache.scope': '{latents} image, {text} text\n{directories}',
+    'trainingCache.trainingNote': 'Training note',
+  });
+  const requests = [];
+  const payload = { train_data_dir: 'C:/train' };
+  model.openConfirm = (_title, message, rebuild, _label, options) => {
+    assert.equal(message, '2 image, 1 text\nC:/train/1_data\nD:/reg/1_data\n\nTraining note');
+    assert.equal(options.danger, true);
+    assert.equal(requests.length, 0);
+    model.form = { train_data_dir: 'C:/other' };
+    rebuild();
+    options.secondaryCallback();
+  };
+  model._showCacheRebuildDialog({
+    latents: 2, text: 1, directories: ['C:/train/1_data', 'D:/reg/1_data'], scope: 'confirmed',
+  }, payload, request => requests.push(request));
+  assert.deepEqual(requests.map(request => [request.train_data_dir, request._cache_action]), [
+    ['C:/train', 'confirmed'],
+    ['C:/train', 'keep'],
+  ]);
 });

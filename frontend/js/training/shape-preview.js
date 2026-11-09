@@ -156,7 +156,7 @@ window.trainingShapePreviewMixin = {
       ? this._fieldOptionLabel('lycoris_algo', algo, algo)
       : (algo === 'loha' ? 'LoHa' : (algo === 'lokr' ? 'LoKr' : 'LoRA'));
     const settings = [
-      { label: t('shapePreview.rank'), value: String(rank), hint: t('shapePreview.rankHelp') },
+      { label: t('shapePreview.rank'), value: String(rank), hint: t('shapePreview.rankHelp'), inspect: algo !== 'lokr' || group.shapes.lokr_w1_a || group.shapes.lokr_w2_a ? 'rank' : '' },
       { label: t('shapePreview.alpha'), value: String(alpha), hint: t('shapePreview.alphaHelp') },
     ];
     const structure = [];
@@ -224,6 +224,7 @@ window.trainingShapePreviewMixin = {
           ? `W1a ${outL} × ${rank} · W1b ${rank} × ${inM}`
           : `${outL} × ${inM}`,
         hint: t('shapePreview.w1Help'),
+        inspect: 'w1',
       });
       structure.push({
         label: t('shapePreview.w2'),
@@ -232,6 +233,7 @@ window.trainingShapePreviewMixin = {
           ? `${outK} × ${inN}`
           : `W2a ${outK} × ${rank} · W2b ${rank} × ${inN}`,
         hint: t('shapePreview.w2Help'),
+        inspect: 'w2',
       });
       if (w2Full && !fullMatrix) {
         notes.push(fill('shapePreview.w2AutoFullNote', { rank, outK, inN }));
@@ -296,8 +298,8 @@ window.trainingShapePreviewMixin = {
     return 26 + norm * norm * 124;
   },
 
-  _shapePreviewBlockSvg(x, y, w, h, cls) {
-    return `<rect class="sp-block ${cls}" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="3"/>`;
+  _shapePreviewBlockSvg(x, y, w, h, cls, target = '') {
+    return `<rect class="sp-block ${cls}"${target ? ` data-preview-target="${target}"` : ''} x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="3"/>`;
   },
 
   _shapePreviewTextSvg(x, y, text, cls) {
@@ -306,19 +308,23 @@ window.trainingShapePreviewMixin = {
 
   // 低秩对的成组框：虚线圆角框把「这两块先相乘，再作为整体参与 ⊗」圈在一起。
   // 框要包住块上方的名称与下方的维度标签，所以上下各留 20/22 单位。
-  _shapePreviewGroupSvg(left, right, top, bottom) {
+  _shapePreviewGroupSvg(left, right, top, bottom, target) {
     const boxLeft = left - 14;
     const boxRight = right + 14;
     const boxTop = top - 20;
     const boxBottom = bottom + 22;
-    return `<rect class="sp-group" x="${boxLeft.toFixed(1)}" y="${boxTop.toFixed(1)}"`
+    return `<rect class="sp-group" data-preview-target="${target}" x="${boxLeft.toFixed(1)}" y="${boxTop.toFixed(1)}"`
       + ` width="${(boxRight - boxLeft).toFixed(1)}" height="${(boxBottom - boxTop).toFixed(1)}" rx="8"/>`;
   },
 
-  _shapePreviewMatrixSvg(x, y, w, h, cls, name, dimText) {
-    return this._shapePreviewBlockSvg(x, y, w, h, cls)
+  _shapePreviewMatrixSvg(x, y, w, h, cls, name, dimText, rankAxis = '') {
+    const dimensions = rankAxis ? dimText.split(' × ').map((value, i) =>
+      `<tspan${i === (rankAxis === 'row' ? 0 : 1) ? ' class="sp-rank-value" data-preview-target="rank"' : ''}>${this.esc(value)}</tspan>`).join(' × ') : this.esc(dimText);
+    const factor = name.match(/^W[12]/)?.[0].toLowerCase();
+    return `<g${factor ? ` class="sp-${factor}-matrix"` : ''}>`
+      + this._shapePreviewBlockSvg(x, y, w, h, cls, /^W[12]$/.test(name) ? factor : '')
       + this._shapePreviewTextSvg(x + w / 2, y - 7, name, 'name')
-      + this._shapePreviewTextSvg(x + w / 2, y + h + 15, dimText, 'dim');
+      + `<text class="sp-dim" x="${(x + w / 2).toFixed(1)}" y="${(y + h + 15).toFixed(1)}" text-anchor="middle">${dimensions}</text></g>`;
   },
 
   _shapePreviewSvgWrap(used, top, bottom, parts, isLoha = false) {
@@ -341,11 +347,11 @@ window.trainingShapePreviewMixin = {
     const gap = 44;
     const parts = [];
     let x = 0;
-    parts.push(this._shapePreviewMatrixSvg(x, cy - bh / 2, bw, bh, 'sp-block--b', 'B', `${outDim} × ${rank}`));
+    parts.push(this._shapePreviewMatrixSvg(x, cy - bh / 2, bw, bh, 'sp-block--b', 'B', `${outDim} × ${rank}`, 'column'));
     x += bw + gap;
     parts.push(this._shapePreviewTextSvg(x, cy + 6, '×', 'op'));
     x += gap;
-    parts.push(this._shapePreviewMatrixSvg(x, cy - ah / 2, aw, ah, 'sp-block--a', 'A', `${rank} × ${inDim}`));
+    parts.push(this._shapePreviewMatrixSvg(x, cy - ah / 2, aw, ah, 'sp-block--a', 'A', `${rank} × ${inDim}`, 'row'));
     x += aw + gap;
     parts.push(this._shapePreviewTextSvg(x, cy + 6, '=', 'op'));
     x += gap;
@@ -368,11 +374,11 @@ window.trainingShapePreviewMixin = {
     let used = 0;
     rows.forEach((cy, index) => {
       let x = 0;
-      parts.push(this._shapePreviewMatrixSvg(x, cy - bh / 2, bw, bh, 'sp-block--b', `B${index + 1}`, `${outDim} × ${rank}`));
+      parts.push(this._shapePreviewMatrixSvg(x, cy - bh / 2, bw, bh, 'sp-block--b', `B${index + 1}`, `${outDim} × ${rank}`, 'column'));
       x += bw + gap;
       parts.push(this._shapePreviewTextSvg(x, cy + 6, '×', 'op'));
       x += gap;
-      parts.push(this._shapePreviewMatrixSvg(x, cy - ah / 2, aw, ah, 'sp-block--a', `A${index + 1}`, `${rank} × ${inDim}`));
+      parts.push(this._shapePreviewMatrixSvg(x, cy - ah / 2, aw, ah, 'sp-block--a', `A${index + 1}`, `${rank} × ${inDim}`, 'row'));
       used = Math.max(used, x + aw);
     });
     const midY = (rows[0] + rows[1]) / 2;
@@ -404,13 +410,13 @@ window.trainingShapePreviewMixin = {
       const pairTop = cy - Math.max(b1h, a1h) / 2;
       const pairBottom = cy + Math.max(b1h, a1h) / 2;
       const pairStart = x;
-      parts.push(this._shapePreviewMatrixSvg(x, cy - b1h / 2, b1w, b1h, 'sp-block--b', 'W1a', `${outL} × ${rank}`));
+      parts.push(this._shapePreviewMatrixSvg(x, cy - b1h / 2, b1w, b1h, 'sp-block--b', 'W1a', `${outL} × ${rank}`, 'column'));
       x += b1w + gap;
       parts.push(this._shapePreviewTextSvg(x, cy + 6, '×', 'op'));
       x += gap;
-      parts.push(this._shapePreviewMatrixSvg(x, cy - a1h / 2, a1w, a1h, 'sp-block--a', 'W1b', `${rank} × ${inM}`));
+      parts.push(this._shapePreviewMatrixSvg(x, cy - a1h / 2, a1w, a1h, 'sp-block--a', 'W1b', `${rank} × ${inM}`, 'row'));
       x += a1w;
-      groups.push({ left: pairStart, right: x, top: pairTop, bottom: pairBottom });
+      groups.push({ left: pairStart, right: x, top: pairTop, bottom: pairBottom, target: 'w1' });
     } else {
       const w1w = this._shapePreviewSize(inM);
       const w1h = this._shapePreviewSize(outL);
@@ -439,13 +445,13 @@ window.trainingShapePreviewMixin = {
       const pairBottom = cy + Math.max(b2h, a2h) / 2;
       const pairStart = x;
       // 训练端是 w2 = w2a @ w2b：a 是 (out_k × rank)，b 是 (rank × in_n)。
-      parts.push(this._shapePreviewMatrixSvg(x, cy - b2h / 2, b2w, b2h, 'sp-block--a', 'W2a', `${outK} × ${rank}`));
+      parts.push(this._shapePreviewMatrixSvg(x, cy - b2h / 2, b2w, b2h, 'sp-block--a', 'W2a', `${outK} × ${rank}`, 'column'));
       x += b2w + gap;
       parts.push(this._shapePreviewTextSvg(x, cy + 6, '×', 'op'));
       x += gap;
-      parts.push(this._shapePreviewMatrixSvg(x, cy - a2h / 2, a2w, a2h, 'sp-block--a', 'W2b', `${rank} × ${inN}`));
+      parts.push(this._shapePreviewMatrixSvg(x, cy - a2h / 2, a2w, a2h, 'sp-block--a', 'W2b', `${rank} × ${inN}`, 'row'));
       x += a2w;
-      groups.push({ left: pairStart, right: x, top: pairTop, bottom: pairBottom });
+      groups.push({ left: pairStart, right: x, top: pairTop, bottom: pairBottom, target: 'w2' });
     }
 
     x += gap;
@@ -465,7 +471,7 @@ window.trainingShapePreviewMixin = {
       const boxRight = group.right + 14;
       const boxTop = group.top - 20;
       const boxBottom = group.bottom + 22;
-      parts.push(this._shapePreviewGroupSvg(group.left, group.right, group.top, group.bottom));
+      parts.push(this._shapePreviewGroupSvg(group.left, group.right, group.top, group.bottom, group.target));
       minY = Math.min(minY, boxTop - 8);
       maxY = Math.max(maxY, boxBottom + 8);
       used = Math.max(used, boxRight + 8);
@@ -563,22 +569,22 @@ window.trainingShapePreviewMixin = {
     const options = [...families.values()].flat();
     const selector = `<div class="shape-preview-selector" @preview-select="selectShapePreview($event.detail)"><span>${this.esc(this.t('shapePreview.selectModule'))}</span>${window.previewSelectHtml(options, this.shapePreviewSelected, this.t('shapePreview.selectModule'))}</div>`;
     const metaHtml = data.sections.map(section => `<section class="shape-preview-section"><div class="shape-preview-section-title">${this.esc(section.title)}${section.detail ? `<span title="${this.esc(section.hint)}">${this.esc(section.detail)}</span>` : ''}</div><dl class="shape-preview-meta">`
-      + section.rows.map(row => `<div ${row.hint ? `aria-label="${this.esc(`${row.label}: ${row.value}. ${row.detail || ''} ${row.hint}`)}" tabindex="0"` : ''}><dt>${this.esc(row.label)}</dt><dd>${this.esc(String(row.value))}${row.detail ? `<small class="shape-preview-dimensions">${this.esc(row.detail)}</small>` : ''}</dd>${row.hint ? `<span class="shape-preview-help" role="tooltip">${this.esc(row.hint)}</span>` : ''}</div>`).join('') + '</dl></section>').join('');
+      + section.rows.map(row => `<div ${row.inspect ? `data-shape-inspect="${row.inspect}" data-preview-link="${row.inspect}"` : ''} ${row.hint ? `aria-label="${this.esc(`${row.label}: ${row.value}. ${row.detail || ''} ${row.hint}`)}" tabindex="0"` : ''}><dt>${this.esc(row.label)}</dt><dd>${this.esc(String(row.value))}${row.detail ? `<small class="shape-preview-dimensions">${this.esc(row.detail)}</small>` : ''}</dd>${row.hint ? `<span class="shape-preview-help" role="tooltip">${this.esc(row.hint)}</span>` : ''}</div>`).join('') + '</dl></section>').join('');
     const notesHtml = data.notes.length
       ? `<div class="shape-preview-notes">${data.notes.map(note =>
         `<div><span aria-hidden="true">•</span><span>${this.esc(note)}</span></div>`).join('')}</div>`
       : '';
     const legendHtml = data.legend.map(item => `<span>${this.esc(item)}</span>`).join('');
     const captionHtml = data.caption.map(line => `<div>${this.esc(line)}</div>`).join('');
-    return summary + selector + `<div class="shape-preview-layout">
-      <div class="shape-preview-sidebar">
+    return summary + selector + `<div class="shape-preview-layout preview-linked-layout" x-data="previewConnector">
+      <div class="shape-preview-sidebar" data-preview-sidebar>
         ${metaHtml}
         <div class="shape-preview-details">
           ${notesHtml}
           <p class="shape-preview-footnote">${this.esc(this.t('shapePreview.footnote'))}</p>
         </div>
       </div>
-      <div class="shape-preview-diagram">
+      <div class="shape-preview-diagram" data-preview-diagram>
         <div class="shape-diagram-caption">${captionHtml}</div>
         ${data.diagram}
         <div class="shape-diagram-legend">${legendHtml}</div>

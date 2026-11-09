@@ -7,6 +7,7 @@ import hashlib
 import os
 import shutil
 import threading
+import time
 from collections import Counter
 from contextlib import contextmanager
 from pathlib import Path
@@ -112,7 +113,7 @@ def write_tags(cap_path: Path, tags: str, create_backup: bool = False) -> bool:
         return False
 
 
-def _build_image_entry(p: Path, base_dir: Path) -> dict:
+def build_image_entry(p: Path, base_dir: Path) -> dict:
     """构建单张图片的条目字典（scan_dataset / scan_selected_images 共用）。"""
     candidates = caption_candidates(p)
     cap = candidates[0] if candidates else None
@@ -145,12 +146,43 @@ def scan_dataset(dir_path: Path, recursive: bool = True) -> tuple[list[dict], li
             continue
         if p.suffix.lower() not in img_exts:
             continue
-        entry = _build_image_entry(p, dir_path)
+        entry = build_image_entry(p, dir_path)
         counter.update(tag_list(entry["tags"]))
         images.append(entry)
     images.sort(key=lambda x: x["name"])
     tags_data = [{"tag": tag, "count": count} for tag, count in counter.most_common()]
     return images, tags_data
+
+
+def dataset_disk_state(dir_path: Path, recursive: bool) -> tuple[set[str], dict[str, tuple[int, int]]]:
+    """List image paths and caption metadata without opening any files."""
+    images = set()
+    captions = {}
+    directories = [dir_path]
+    while directories:
+        directory = directories.pop()
+        try:
+            children = os.scandir(directory)
+        except (FileNotFoundError, PermissionError):
+            if directory == dir_path:
+                raise
+            continue
+        with children:
+            for child in children:
+                if recursive and child.is_dir(follow_symlinks=False):
+                    directories.append(child.path)
+                    continue
+                _, dot, suffix = child.name.rpartition(".")
+                extension = dot + suffix.lower() if dot else ""
+                if extension in IMAGE_EXTENSIONS and not child.name.startswith(".") and child.is_file():
+                    images.add(child.path)
+                elif extension in CAPTION_EXTENSIONS and child.is_file():
+                    try:
+                        stat = child.stat()
+                    except FileNotFoundError:
+                        continue
+                    captions[child.path] = (stat.st_mtime_ns, stat.st_size)
+    return images, captions
 
 
 def scan_selected_images(dir_path: Path, selected_paths: set[str]) -> list[dict]:
@@ -168,7 +200,7 @@ def scan_selected_images(dir_path: Path, selected_paths: set[str]) -> list[dict]
             p.relative_to(dir_resolved)
         except ValueError:
             continue
-        images.append(_build_image_entry(p, dir_resolved))
+        images.append(build_image_entry(p, dir_resolved))
     images.sort(key=lambda x: x["name"])
     return images
 
@@ -195,7 +227,6 @@ def _get_cached_tags(dir_path: Path, recursive: bool = True) -> list[dict]:
 
 def get_cached_scan_dataset(dir_path: Path, recursive: bool = True) -> tuple[list[dict], list[dict]]:
     """返回缓存的图片与标签统计；两者始终来自同一次目录扫描。"""
-    import time
     cache_key = f"{dir_path.resolve()}:{recursive}"
     now = time.time()
     with _cache_lock:
@@ -204,9 +235,18 @@ def get_cached_scan_dataset(dir_path: Path, recursive: bool = True) -> tuple[lis
             if now - ts < _CACHE_TTL:
                 return data
     data = scan_dataset(dir_path, recursive=recursive)
-    with _cache_lock:
-        _scan_dataset_cache[cache_key] = (now, data)
+    cache_dataset_scan(dir_path, recursive, data, now)
     return data
+
+
+def cache_dataset_scan(
+    dir_path: Path, recursive: bool, data: tuple[list[dict], list[dict]], started_at: float,
+) -> None:
+    cache_key = f"{dir_path.resolve()}:{recursive}"
+    with _cache_lock:
+        current = _scan_dataset_cache.get(cache_key)
+        if current is None or started_at >= current[0]:
+            _scan_dataset_cache[cache_key] = (started_at, data)
 
 
 def get_cached_scan_images(dir_path: Path, recursive: bool = True) -> list[dict]:

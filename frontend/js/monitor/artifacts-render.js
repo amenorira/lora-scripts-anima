@@ -103,6 +103,7 @@ window.monitorArtifactsRenderMixin = {
        + '<span class="preview-lightbox-label" id="previewLightboxLabel"></span>'
        + '<span class="preview-lightbox-label" id="previewReferenceLabel" hidden></span>'
        + '<div class="preview-lightbox-actions">'
+       + '<button type="button" class="btn btn-sm btn-secondary preview-prompt-filter" id="previewPromptFilter" hidden aria-pressed="false" @click="togglePreviewPromptFilter()"></button>'
        + '<button type="button" class="btn btn-sm btn-secondary" @click="togglePreviewReference()" x-text="previewReference ? t(\'monitor.clearReference\') : t(\'monitor.pinReference\')"></button>'
        + '<button type="button" class="btn btn-sm btn-secondary" id="previewLightboxMetadataButton" @click="togglePreviewMetadata()" aria-expanded="false">' + this.esc(t('previewMetadata')) + '</button>'
        + '<a class="btn btn-sm btn-secondary" id="previewLightboxOriginal" target="_blank" rel="noopener" @click.stop>' + this.esc(t('openOriginal')) + '</a>'
@@ -117,6 +118,7 @@ window.monitorArtifactsRenderMixin = {
 
   openPreviewLightbox(i) {
     if (!this.previews.length) return;
+    this.previewPromptFilter = null;
     this.previewStep = Math.max(0, Math.min(i, this.previews.length - 1));
     const box = document.getElementById('previewLightbox');
     if (!box) return;
@@ -153,6 +155,7 @@ window.monitorArtifactsRenderMixin = {
     const reference = document.getElementById('previewReferenceImg');
     if (reference) { reference.removeAttribute('src'); reference.hidden = true; }
     this.previewReference = null;
+    this.previewPromptFilter = null;
     if (typeof this._resetPreviewMetadata === 'function') this._resetPreviewMetadata();
     document.body.style.overflow = '';
     if (this._lightboxKeyHandler) document.removeEventListener('keydown', this._lightboxKeyHandler);
@@ -168,7 +171,8 @@ window.monitorArtifactsRenderMixin = {
 
   previewLightboxNav(dir) {
     if (!this.previews.length) return;
-    const indices = this._previewDisplayIndices();
+    const indices = this._previewLightboxIndices();
+    if (!indices.length) return;
     const current = Math.max(0, indices.indexOf(this.previewStep));
     const nextPosition = Math.max(0, Math.min(current + dir, indices.length - 1));
     const next = indices[nextPosition];
@@ -205,9 +209,17 @@ window.monitorArtifactsRenderMixin = {
       else original.removeAttribute('href');
     }
     const c = document.getElementById('previewLightboxCounter');
-    const indices = this._previewDisplayIndices();
+    const indices = this._previewLightboxIndices();
     const displayPosition = Math.max(0, indices.indexOf(this.previewStep));
-    if (c) c.textContent = (displayPosition + 1) + ' / ' + n;
+    if (c) c.textContent = (displayPosition + 1) + ' / ' + indices.length;
+    const filter = document.getElementById('previewPromptFilter');
+    if (filter) {
+      const group = this._previewPromptGroup();
+      const identity = group || this._previewPromptIdentity(p);
+      filter.hidden = !group && !this.previewPromptFilter;
+      filter.setAttribute('aria-pressed', this.previewPromptFilter ? 'true' : 'false');
+      filter.textContent = this.t('monitor.onlySamplePrompt').replace('{n}', identity?.number || '');
+    }
     const lbl = document.getElementById('previewLightboxLabel');
     if (lbl) lbl.textContent = this._parseSampleInfo(p.name);
     const box = document.getElementById('previewLightbox');
@@ -215,7 +227,7 @@ window.monitorArtifactsRenderMixin = {
       const prevBtn = box.querySelector('.preview-lightbox-nav.prev');
       const nextBtn = box.querySelector('.preview-lightbox-nav.next');
       if (prevBtn) prevBtn.disabled = displayPosition <= 0;
-      if (nextBtn) nextBtn.disabled = displayPosition >= n - 1;
+      if (nextBtn) nextBtn.disabled = displayPosition >= indices.length - 1;
     }
   },
 

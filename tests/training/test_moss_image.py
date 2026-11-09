@@ -11,7 +11,7 @@ from PIL import Image
 from backend.training.fields.field_registry import FIELDS
 from backend.training.config.moss_image import DEFAULTS, GROUP, PROFILE_ID
 from backend.training.config.network_config import extract_network_form
-from backend.training.cache.te_cache_check import check_te_cache, delete_te_cache
+from backend.training.cache.rebuild import delete_te_cache
 
 extract_form = partial(extract_network_form, model_train_type=PROFILE_ID)
 
@@ -35,18 +35,15 @@ def moss_config(**overrides):
 class MossImageConfigTests(unittest.TestCase):
 
 
-    def test_moss_te_cache_is_checked_and_deleted_without_touching_latents(self):
-        import numpy as np
+    def test_legacy_endpoint_can_delete_moss_text_cache_without_touching_latents(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             cache = root / "image_moss_te.npz"
             latent = root / "image_1024x1024_moss.npz"
-            np.savez(cache, caption_dropout_rate=np.float32(0.1))
-            np.savez(latent, latents=np.zeros((1,)))
-            warnings = check_te_cache(moss_config(train_data_dir=directory,
-                                                   cache_text_encoder_outputs_to_disk=True), PROFILE_ID)
-            self.assertTrue(any(warning["code"] == "rateMismatch" for warning in warnings))
+            cache.touch()
+            latent.touch()
             self.assertEqual(delete_te_cache([directory]), (1, []))
+            self.assertFalse(cache.exists())
             self.assertTrue(latent.exists())
 
 

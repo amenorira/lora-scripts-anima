@@ -511,7 +511,14 @@ window.regularizationMixin = {
     });
     if (!this.regError && this.regPlan?.fingerprint === fingerprint) await this.regStart();
   },
-  async regStop() { await this.regAction(async () => { await this.regRequest('/tasks/' + this.regTask.task_id + '/cancel', {}); this.regTask.status = 'stopping'; }); },
+  async regStop() {
+    if (!this.regRunning) return;
+    const taskId = this.regTask.task_id;
+    await this.regAction(async () => {
+      const task = await this.regRequest('/tasks/' + taskId + '/cancel', {});
+      if (this.regRunning && this.regTask.task_id === taskId) this.regApplyTask({ ...this.regTask, ...task });
+    });
+  },
   regApplyTask(task, refreshResults = true) {
     // Registration publishes a CREATED event with empty data before the first
     // summary. Keep the known task so polling and cancellation remain active.
@@ -524,11 +531,11 @@ window.regularizationMixin = {
     if (this.regPlan && this.regPlan.output_path === task.output_path) {
       this.regPlan.completed = task.completed; this.regPlan.pending = task.pending;
     }
-    const topic = this.regRunning && task.task_id ? 'task:' + task.task_id : null;
+    const topic = this.currentRoute === 'regularization' && this.regRunning ? 'task:' + task.task_id : null;
     if (topic !== this._regTopic) {
       if (this._regTopic) this.realtimeUnsubscribe(this._regTopic);
       this._regTopic = topic;
-      if (topic && this.currentRoute === 'regularization') this.realtimeSubscribe(topic);
+      if (topic) this.realtimeSubscribe(topic);
     }
     this.regSyncTimer();
     if (refreshResults && this.regTab === 'inspect' && (countsChanged || wasRunning && !this.regRunning)) {
