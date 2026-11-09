@@ -73,7 +73,6 @@
 		"checkpoint": "SDXL checkpoint (UNet, dual CLIP and VAE)",
 		"sdxl_vae": "SDXL VAE (optional; blank uses checkpoint VAE)",
 		"title": "Regularization images",
-		"entry": "Generate regularization images",
 		"subtitle": "Generate regularization images from dataset captions",
 		"settings": "Basic settings",
 		"detailedPlan": "Detailed generation plan",

@@ -73,7 +73,6 @@
 		"checkpoint": "SDXL 完整模型（含 UNet、双 CLIP 和 VAE）",
 		"sdxl_vae": "SDXL VAE（可选，留空使用模型内置 VAE）",
 		"title": "正则图生成",
-		"entry": "生成正则图片",
 		"subtitle": "根据训练集标签生成正则图片",
 		"settings": "基本设置",
 		"detailedPlan": "详细生成计划",

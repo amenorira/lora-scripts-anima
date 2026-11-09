@@ -744,9 +744,6 @@ window.regularizationMixin = {
     }
     this.regEdits = {}; this.regChanged(); this.toast(this.regT('imported')); this.regError = '';
   },
-  openRegularizationFromTraining() {
-    this.regTrainRoute = this.currentRoute; this.regImportTraining(); this.regTab = 'settings'; this.navigate('regularization');
-  },
   regUseForTraining() {
     if (!this.regTask?.completed || !this.regTask.output_path || this.regRunning) return;
     this.regPendingTrainingPath = this.regTask.output_path;

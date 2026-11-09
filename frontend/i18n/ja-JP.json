@@ -73,7 +73,6 @@
 		"checkpoint": "SDXL チェックポイント（UNet・デュアル CLIP・VAE）",
 		"sdxl_vae": "SDXL VAE（任意・空欄でモデル内蔵の VAE を使用）",
 		"title": "正則化画像",
-		"entry": "正則化画像を生成",
 		"subtitle": "データセットのキャプションから正則化画像を生成",
 		"settings": "基本設定",
 		"detailedPlan": "生成計画の詳細",
