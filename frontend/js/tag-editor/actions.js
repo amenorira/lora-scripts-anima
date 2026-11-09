@@ -76,12 +76,13 @@ window.tagEditorActions = {
     event.preventDefault();
     event.stopPropagation();
     var tag = event.target.closest('.te-editor-tag[data-tag], .te-selected-tag[data-tag]');
-    var anchor = event.target.getBoundingClientRect();
+    var point = this._teContextMenuPoint(event);
     this.tagEditorPanelMenu = {
       tag: tag ? tag.dataset.tag : null,
       preview: !!event.target.closest('.te-editor-preview'),
-      x: Math.max(4, Math.min(event.clientX || anchor.left, window.innerWidth - 224)),
-      y: Math.max(4, Math.min(event.clientY || anchor.bottom, window.innerHeight - 260)),
+      x: point.x,
+      y: point.y,
+      positioned: false,
     };
     this.tagEditorContextMenu = null;
     this.tagEditorImageContextMenu = null;
@@ -89,15 +90,37 @@ window.tagEditorActions = {
     this._teFocusMenu('tagEditorPanelMenu', '_tePanelMenuTrigger', 'tePanelMenu', event);
   },
 
-  _teFocusMenu(stateKey, triggerKey, id, event) {
+  _teContextMenuPoint(event) {
+    var anchor = event.target?.getBoundingClientRect?.() || { left: 4, bottom: 4 };
+    var pointer = Number.isFinite(event.clientX) && Number.isFinite(event.clientY) && (event.clientX !== 0 || event.clientY !== 0);
+    return {
+      x: Math.max(4, Math.min(pointer ? event.clientX : anchor.left, window.innerWidth - 4)),
+      y: Math.max(4, Math.min(pointer ? event.clientY : anchor.bottom, window.innerHeight - 4)),
+    };
+  },
+
+  _teFitContextMenu(menu, state) {
+    if (!menu?.getBoundingClientRect) return;
+    var rect = menu.getBoundingClientRect();
+    state.x = Math.max(4, Math.min(state.x, window.innerWidth - rect.width - 4));
+    state.y = Math.max(4, Math.min(state.y, window.innerHeight - rect.height - 4));
+  },
+
+  async _teFocusMenu(stateKey, triggerKey, id, event) {
     this[triggerKey] = event.target?.closest?.('[tabindex], button') || event.currentTarget?.querySelector?.('button, [tabindex]') || event.currentTarget;
     var state = this[stateKey], epoch = this._teLoadEpoch;
     var request = ++this._teMenuFocusRequest;
-    this.$nextTick(() => {
-      if (this[stateKey] !== state || epoch !== this._teLoadEpoch || request !== this._teMenuFocusRequest || this.currentRoute !== 'tagEditor') return;
-      var menu = document.getElementById(id);
-      (this._teVisibleMenuButtons(menu)[0] || menu)?.focus();
-    });
+    var isCurrent = () => this[stateKey] === state && epoch === this._teLoadEpoch && request === this._teMenuFocusRequest && this.currentRoute === 'tagEditor';
+    // Let Alpine apply the hidden bindings before measuring, within the same frame.
+    await Promise.resolve();
+    if (!isCurrent()) return;
+    var menu = document.getElementById(id);
+    if (!menu) return;
+    this._teFitContextMenu(menu, state);
+    state.positioned = true;
+    // The position and visibility bindings apply together before moving focus.
+    await Promise.resolve();
+    if (isCurrent()) (this._teVisibleMenuButtons(menu)[0] || menu).focus({ preventScroll: true });
   },
 
   _teVisibleMenuButtons(menu) {
@@ -128,6 +151,26 @@ window.tagEditorActions = {
     });
   },
 
+  _teToggleContextFilter(tag, exclude = false) {
+    if (!tag || !this.tagEditorAllowsTagOps()) return;
+    var selected = exclude ? this.tagEditorExcludedTags : this.tagEditorTagSelection;
+    var other = exclude ? this.tagEditorTagSelection : this.tagEditorExcludedTags;
+    this._teTagListToggle(selected, other, tag);
+    this._teInvalidateFilter();
+    this.tagEditorSchedulePageFetch(true);
+  },
+
+  async _teCopyMenuTags(text, singleTag) {
+    try {
+      await navigator.clipboard.writeText(text || '');
+      this.toast(singleTag
+        ? this.t('tagEditor.singleTagCopied').replace('{tag}', text)
+        : this.t('tagEditor.tagsCopied').replace('{n}', _teParseTags(text || '').length));
+    } catch (_) {
+      this.toast(this.t('tagEditor.dictCopyFailed'), 'error');
+    }
+  },
+
   async tagEditorPanelAction(action) {
     var menu = this.tagEditorPanelMenu;
     if (!menu) return;
@@ -136,17 +179,13 @@ window.tagEditorActions = {
     if (!this.tagEditorAllowsTagOps() && ['copy', 'remove', 'filter', 'quick'].includes(action)) return;
     if (action === 'copy') {
       var text = menu.tag || (this.tagEditorSelected.length === 1 ? this.tagEditorGetSelectedImg()?.tags : this.tagEditorGetSelectedStats().map(function(item) { return item.tag; }).join(', '));
-      try { await navigator.clipboard.writeText(text || ''); this.toast(this.t('tagEditor.tagsCopied').replace('{n}', _teParseTags(text || '').length)); }
-      catch (_) { this.toast(this.t('common.error'), 'error'); }
+      await this._teCopyMenuTags(text, !!menu.tag);
     } else if (action === 'remove') {
       if (this.tagEditorQuickRemove) this.tagEditorToggleRemoval(menu.tag);
       else if (this.tagEditorSelected.length === 1) this.tagEditorRemoveTagFromSelected(menu.tag);
       else this.tagEditorPrepareRemove(menu.tag);
     } else if (action === 'filter') {
-      this.tagEditorTagSelection = [menu.tag];
-      this.tagEditorExcludedTags = [];
-      this._teInvalidateFilter();
-      this.tagEditorSchedulePageFetch(true);
+      this._teToggleContextFilter(menu.tag);
     } else if (action === 'quick') this.tagEditorStartQuickRemove();
     else if (action === 'view') this.tagEditorOpenLightbox(this.tagEditorGetSelectedImg(), trigger);
     else if (action === 'revert') this.tagEditorRevertSelectedImage();
@@ -668,7 +707,7 @@ window.tagEditorActions = {
     }
     var selSet = Object.create(null);
     for (var si = 0; si < this.tagEditorSelected.length; si++) selSet[this.tagEditorSelected[si]] = true;
-    var counter = {};
+    var counter = Object.create(null);
     var imgs = this.tagEditorImages;
     for (var i = 0; i < imgs.length; i++) {
       if (!selSet[imgs[i].path]) continue;

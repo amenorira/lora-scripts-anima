@@ -3688,10 +3688,10 @@ input[type="range"]::-webkit-slider-thumb {
 .te-regex-btn.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 .te-search-actions button:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
 
-.te-filter-group { display: flex; gap: 2px; }
-.te-filter-group button { height: 28px; font-size: 11px; padding: 3px 8px; border: 1px solid var(--border-default); border-radius: var(--radius-control); background: var(--bg-input); color: var(--text-tertiary); cursor: pointer; font-weight: 500; transition: background-color 0.1s, border-color 0.1s, color 0.1s; }
-.te-filter-group button:hover { border-color: var(--accent); color: var(--accent); }
-.te-filter-group button.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.te-filter-group, .te-editor-view { display: flex; gap: 2px; flex-shrink: 0; }
+.te-filter-group button, .te-editor-view button { height: 28px; font-size: 11px; padding: 3px 8px; border: 1px solid var(--border-default); border-radius: var(--radius-control); background: var(--bg-input); color: var(--text-tertiary); cursor: pointer; font-weight: 500; transition: background-color 0.1s, border-color 0.1s, color 0.1s; }
+.te-filter-group button:hover, .te-editor-view button:hover { border-color: var(--accent); color: var(--accent); }
+.te-filter-group button.active, .te-editor-view button.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 .te-badge { display: inline-block; min-width: 15px; padding: 0 3px; border-radius: var(--radius-xs); font-size: 10px; font-weight: 600; text-align: center; margin-left: 3px; background: var(--accent-soft); color: var(--accent); }
 
 .te-sort-wrap { display: flex; align-items: center; gap: 2px; }
@@ -3832,6 +3832,7 @@ dialog.te-shortcuts::backdrop, dialog.te-lightbox::backdrop { background: transp
 
 /* ===== Grid ===== */
 .te-selection-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--border-default); flex-shrink: 0; }
+.te-selection-view { display: flex; align-items: center; padding-left: 6px; border-left: 1px solid var(--border-default); }
 .te-selection-count { font-size: 11px; color: var(--text-tertiary); margin-left: auto; }
 .te-selected-tags { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 5px; }
 .te-selected-tag { display: inline-flex; max-width: 100%; gap: 6px; align-items: center; min-width: 0; padding: 3px 6px; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius-control); font-size: 11px; }
@@ -3935,10 +3936,6 @@ body.te-preview-resizing, body.te-preview-resizing * { cursor: row-resize !impor
 .te-editor-revert:hover:not(:disabled) { background: var(--accent-soft); color: var(--accent); }
 .te-editor-revert:disabled { opacity: 0.3; cursor: default; }
 
-.te-editor-view { display: flex; gap: 0; border: 1px solid var(--border-default); border-radius: var(--radius-control); overflow: hidden; flex-shrink: 0; }
-.te-editor-view button { font-size: 10px; padding: 4px 12px; border: none; border-radius: 0; background: var(--bg-input); color: var(--text-tertiary); cursor: pointer; font-weight: 500; transition: background-color 0.1s, color 0.1s; }
-.te-editor-view button.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-
 .te-editor-textarea { width: 100%; font-size: 12px; font-family: var(--font-mono); padding: 8px; flex: 1; min-height: 0; border: 1px solid var(--border-input); border-radius: var(--radius-control); background: var(--bg-input); color: var(--text-primary); outline: none; resize: none; }
 .te-editor-textarea:focus { border-color: var(--border-focus); }
 .te-editor.is-description .te-editor-textarea { font-family: var(--font-sans); font-size: 14px; line-height: 1.6; }
@@ -3978,9 +3975,6 @@ body.te-preview-resizing, body.te-preview-resizing * { cursor: row-resize !impor
 .te-clear-filters { margin-left: auto; flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; min-height: 24px; border: 1px solid var(--border-default); border-radius: var(--radius-control); padding: 3px 8px; background: var(--bg-input); color: var(--text-primary); font: inherit; font-size: 11px; cursor: pointer; }
 .te-clear-filters:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 .te-clear-filters:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
-.te-panel-menu { width: 220px; }
-
-
 .te-dataset-controls { position: relative; min-width: 0; }
 .te-dataset-button { max-width: 260px; }
 .te-dataset-button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
@@ -4015,14 +4009,18 @@ body.te-preview-resizing, body.te-preview-resizing * { cursor: row-resize !impor
 .te-chip-x { cursor: pointer; font-size: 12px; opacity: 0.5; }
 .te-chip-x:hover { opacity: 1; }
 
-.te-ctx { position: fixed; z-index: 3000; min-width: 140px; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-control); box-shadow: var(--shadow-lg); padding: 4px; }
+.te-ctx-icons { position: absolute; width: 0; height: 0; overflow: hidden; }
+.te-ctx { position: fixed; z-index: 3000; width: 220px; max-width: calc(100vw - 8px); max-height: calc(100vh - 8px); overflow-y: auto; visibility: hidden; pointer-events: none; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-control); box-shadow: var(--shadow-lg); padding: 4px; }
+.te-ctx.is-positioned { visibility: visible; pointer-events: auto; }
+.te-ctx[hidden], .te-ctx > [hidden] { display: none; }
 .te-ctx > button { display: flex; align-items: center; gap: 7px; width: 100%; min-height: 30px; padding: 6px 10px; border: 0; background: transparent; font: inherit; font-size: 12px; color: var(--text-primary); text-align: left; cursor: pointer; border-radius: var(--radius-control); }
+.te-ctx > button > svg { flex: 0 0 14px; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.te-ctx > button > span { min-width: 0; overflow-wrap: anywhere; }
 .te-ctx > button:hover:not(:disabled), .te-ctx > button:focus-visible { background: var(--hover-overlay); outline: none; }
 .te-ctx > button:disabled { opacity: .4; cursor: default; }
 .te-ctx > .te-ctx-danger { color: var(--danger); }
-.te-ctx > .te-ctx-danger:hover { background: var(--danger-soft); }
+.te-ctx > .te-ctx-danger:hover:not(:disabled), .te-ctx > .te-ctx-danger:focus-visible { background: var(--danger-soft); }
 .te-ctx-divider { height: 1px; background: var(--border-default); margin: 2px 5px; }
-.te-image-ctx { min-width: 168px; }
 
 /* ===== Image Lightbox ===== */
 body.te-lightbox-open { overflow: hidden; }

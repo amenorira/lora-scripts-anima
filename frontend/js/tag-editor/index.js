@@ -330,12 +330,10 @@ window.tagEditorMixin = {
 
   // ===== Card Interactions =====
   tagEditorImageCtx(e, img) {
-    var menuW = 168, menuH = 38, margin = 4;
-    var x = Math.max(margin, Math.min(e.clientX, window.innerWidth - menuW - margin));
-    var y = Math.max(margin, Math.min(e.clientY, window.innerHeight - menuH - margin));
+    var point = this._teContextMenuPoint(e);
     this.tagEditorContextMenu = null;
     this.tagEditorPanelMenu = null;
-    this.tagEditorImageContextMenu = { x: x, y: y, image: img };
+    this.tagEditorImageContextMenu = { x: point.x, y: point.y, image: img, positioned: false };
     this.tagDictionaryCloseHover();
     this._teFocusMenu('tagEditorImageContextMenu', '_teImageMenuTrigger', 'teImageMenu', e);
   },
@@ -439,23 +437,42 @@ window.tagEditorMixin = {
     this._updateEditorPanel();
   },
 
-  async tagEditorSelectFiltered() {
+  tagEditorSelectFiltered() {
+    return this._teSelectImages(true);
+  },
+
+  tagEditorSelectDataset() {
+    return this._teSelectImages(false);
+  },
+
+  async _teSelectImages(useCurrentFilters) {
     this._teFlushAllPendingTextEdits();
     var epoch = this._teLoadEpoch;
     var request = ++this._teNavRequest;
+    var fetchOptions = { selectionRequest: request, datasetSelectionRequest: useCurrentFilters ? null : request };
     try {
       this._teSearchLoading = true;
-      var filtered = await this._teFetchAllSessionItems(true);
+      var images = await this._teFetchAllSessionItems(useCurrentFilters, fetchOptions);
       if (epoch !== this._teLoadEpoch || request !== this._teNavRequest) return;
-      this.tagEditorSelected = filtered.map(function(img) { return img.path; });
+      if (fetchOptions.controller && (this._teAllAbort !== fetchOptions.controller || fetchOptions.controller.signal.aborted)) return;
+      if (useCurrentFilters && fetchOptions.queryKey != null && fetchOptions.queryKey !== this._teSessionQueryKey(1)) return;
+      if (fetchOptions.generation != null && fetchOptions.generation < this.tagEditorSessionGeneration) {
+        this.toast(this.t(useCurrentFilters ? 'tagEditor.datasetChangedRetry' : 'tagEditor.selectDatasetChanged'), 'warning');
+        return;
+      }
+      if (fetchOptions.controller && this._teAllAbort === fetchOptions.controller) this._teAllAbort = null;
+      this.tagEditorSelected = images.map(function(img) { return img.path; });
       this._teLastSelected = null;
       this._teCachedSelectedStatsKey = '';
       this._teCachedSelectedStats = null;
       this._updateEditorPanel();
     } catch (e) {
-      if (e.name !== 'AbortError') this.toast(e.message || this.t('common.networkError'), 'error');
+      if (epoch === this._teLoadEpoch && request === this._teNavRequest && e.name !== 'AbortError') {
+        this.toast(e.message || this.t('common.networkError'), e.code === 'dataset_changed' ? 'warning' : 'error');
+      }
     } finally {
-      if (epoch === this._teLoadEpoch && !this._teAllAbort && !this._tePageAbort) this._teSearchLoading = false;
+      if (fetchOptions.controller && this._teAllAbort === fetchOptions.controller) this._teAllAbort = null;
+      if (epoch === this._teLoadEpoch) this._teSearchLoading = this._teHasSearchWork();
     }
   },
 
@@ -491,6 +508,7 @@ window.tagEditorMixin = {
 
   _updateEditorPanel() {
     ++this._teNavRequest;
+    if (this._teAllAbort?._teSelectionRequest != null) this._teAllAbort.abort();
     this.tagEditorCancelQuickRemove();
     this.tagEditorPanelMenu = null;
     this._teCloseSuggestions();

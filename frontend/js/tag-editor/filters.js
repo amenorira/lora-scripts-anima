@@ -341,13 +341,10 @@ window.tagEditorFilters = {
 
   tagEditorTagCtx(e, tag) {
     if (!this.tagEditorAllowsTagOps()) return;
-    // Reserve space for the shared menu sizing and rename action.
-    var menuW = 220, menuH = 230;
-    var x = Math.min(e.clientX, window.innerWidth - menuW - 4);
-    var y = Math.min(e.clientY, window.innerHeight - menuH - 4);
+    var point = this._teContextMenuPoint(e);
     this.tagEditorImageContextMenu = null;
     this.tagEditorPanelMenu = null;
-    this.tagEditorContextMenu = { x: x, y: y, tag: tag };
+    this.tagEditorContextMenu = { x: point.x, y: point.y, tag: tag, positioned: false };
     this.tagDictionaryCloseHover();
     this._teFocusMenu('tagEditorContextMenu', '_teTagMenuTrigger', 'teTagMenu', e);
   },
@@ -355,31 +352,22 @@ window.tagEditorFilters = {
   tagEditorCtxInclude() {
     if (!this.tagEditorAllowsTagOps()) return;
     var tag = this.tagEditorContextMenu && this.tagEditorContextMenu.tag;
-    if (tag && this._teTagListToggle(this.tagEditorTagSelection, this.tagEditorExcludedTags, tag)) {
-      this._teInvalidateFilter();
-      this.tagEditorSchedulePageFetch(true);
-    }
+    this._teToggleContextFilter(tag);
     this.tagEditorCloseTagMenu();
   },
 
   tagEditorCtxExclude() {
     if (!this.tagEditorAllowsTagOps()) return;
     var tag = this.tagEditorContextMenu && this.tagEditorContextMenu.tag;
-    if (tag && this._teTagListToggle(this.tagEditorExcludedTags, this.tagEditorTagSelection, tag)) {
-      this._teInvalidateFilter();
-      this.tagEditorSchedulePageFetch(true);
-    }
+    this._teToggleContextFilter(tag, true);
     this.tagEditorCloseTagMenu();
   },
 
-  tagEditorCtxCopy() {
+  async tagEditorCtxCopy() {
     if (!this.tagEditorAllowsTagOps()) return;
     var tag = this.tagEditorContextMenu && this.tagEditorContextMenu.tag;
-    if (tag) {
-      navigator.clipboard.writeText(tag).catch(function() {});
-      this.toast(this.t('tagEditor.singleTagCopied').replace('{tag}', tag));
-    }
     this.tagEditorCloseTagMenu();
+    if (tag) await this._teCopyMenuTags(tag, true);
   },
 
   tagEditorCtxAddAll() {
