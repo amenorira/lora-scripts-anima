@@ -756,19 +756,30 @@ window.tagDictionaryMixin = {
 
   // ===== 悬停卡 =====
   tagDictionaryHoverEnter(tag, el) {
-    if (!this.tagDictionaryReady || !tag) return;
-    this.tagDictionaryCancelHoverTimers();
+    if (!this.tagDictionaryReady || !tag || this._tdHasTagContextMenu()) return;
     this._tdShowHover(tag, el);
+  },
+
+  _tdHasTagContextMenu() {
+    return this.currentRoute === 'tagEditor' && !!(this.tagEditorContextMenu?.tag || this.tagEditorPanelMenu?.tag);
+  },
+
+  tagDictionaryShowContextHover(tag, el) {
+    if (!tag || !el || !this.tagDictionaryReady) {
+      this.tagDictionaryCloseHover();
+      return;
+    }
+    this._tdShowHover(tag, el, true);
   },
 
   tagDictionaryHoverLeave() {
     var state = _td();
-    if (!this.tagDictionaryHover) return;
+    if (!this.tagDictionaryHover || this._tdHasTagContextMenu()) return;
     var self = this;
     if (state.hoverHideTimer) clearTimeout(state.hoverHideTimer);
     state.hoverHideTimer = setTimeout(function () {
       state.hoverHideTimer = null;
-      self.tagDictionaryCloseHover();
+      if (!self._tdHasTagContextMenu()) self.tagDictionaryCloseHover();
     }, TD_HOVER_HIDE_DELAY);
   },
 
@@ -783,9 +794,9 @@ window.tagDictionaryMixin = {
     if (state.hoverHideTimer) { clearTimeout(state.hoverHideTimer); state.hoverHideTimer = null; }
   },
 
-  _tdShowHover(tag, el) {
+  _tdShowHover(tag, el, fromContextMenu = false) {
     if (this._tePreviewDrag) return;
-    if (this.tagEditorQuickRemove && el?.closest('.te-editor')) return;
+    if (!fromContextMenu && this.tagEditorQuickRemove && el?.closest('.te-editor')) return;
     this.tagDictionaryCancelHoverTimers();
     var state = _td();
     if (!this.tagDictionaryReady) return;

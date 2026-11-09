@@ -430,7 +430,7 @@ window.tagEditorSession = {
     this.tagEditorShortcutsOpen = false;
     this._teLastSelected = null;
     this.tagEditorCancelQuickRemove();
-    this.tagEditorPanelMenu = null;
+    this.tagEditorClosePanelMenu(false);
     var loadOptions = arguments.length > 1 && arguments[1] ? arguments[1] : {};
     var openPath = this.tagEditorOpenPath;
     this.tagEditorOpenPath = '';

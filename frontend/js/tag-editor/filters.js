@@ -345,7 +345,7 @@ window.tagEditorFilters = {
     this.tagEditorImageContextMenu = null;
     this.tagEditorPanelMenu = null;
     this.tagEditorContextMenu = { x: point.x, y: point.y, tag: tag, positioned: false };
-    this.tagDictionaryCloseHover();
+    this.tagDictionaryShowContextHover?.(tag, e.currentTarget);
     this._teFocusMenu('tagEditorContextMenu', '_teTagMenuTrigger', 'teTagMenu', e);
   },
 

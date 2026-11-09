@@ -3676,6 +3676,10 @@ input[type="range"]::-webkit-slider-thumb {
 .te-menu-items .te-topbar-btn { width: 100%; min-height: 30px; padding: 0 10px; border: 0; background: transparent; color: var(--text-primary); justify-content: flex-start; white-space: nowrap; font-weight: 400; transition: none; }
 .te-menu-items .te-topbar-btn:hover:not(:disabled), .te-menu-items .te-topbar-btn:focus-visible { background: var(--hover-overlay); color: var(--text-primary); }
 .te-menu > summary:focus-visible, .te-menu-items .te-topbar-btn:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
+.te-more-menu .te-menu-items { width: max-content; min-width: 128px; max-width: min(280px, calc(100vw - 16px)); }
+.te-more-menu .te-menu-items .te-topbar-btn { height: auto; padding: 6px 10px; gap: 7px; font-size: 12px; white-space: normal; text-align: left; }
+.te-more-menu .te-menu-items .te-topbar-btn > svg { flex: 0 0 14px; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.te-more-menu .te-menu-items .te-topbar-btn > span:not(.te-menu-check) { min-width: 0; overflow-wrap: anywhere; }
 .te-topbar > .te-save-btn { margin-left: auto; }
 
 .te-search-wrap { position: relative; flex: 0 1 220px; min-width: 160px; }
@@ -3788,6 +3792,9 @@ dialog.te-shortcuts::backdrop, dialog.te-lightbox::backdrop { background: transp
 .te-tag-row:hover { background: var(--hover-overlay); }
 .te-tag-row.selected { background: var(--accent-soft); border-color: var(--accent); }
 .te-tag-row.excluded { background: var(--danger-soft); border-color: var(--danger); }
+.te-tag-row.has-context-menu, .te-editor .te-editor-tag.has-context-menu, .te-selected-tag.has-context-menu { box-shadow: inset 0 0 0 1px var(--accent); }
+.te-tag-row.has-context-menu:not(.selected):not(.excluded), .te-editor .te-editor-tag.has-context-menu:not(.is-marked), .te-selected-tag.has-context-menu:not(.is-marked) { background: var(--accent-soft); }
+.te-tag-row.excluded.has-context-menu, .is-removing .is-marked.has-context-menu { box-shadow: inset 0 0 0 2px var(--danger); }
 .te-tag-name { flex: 1; min-width: 0; border: 0; background: transparent; padding: 0; font: inherit; color: var(--text-primary); cursor: pointer; }
 .te-tag-title { line-height: 1.5; overflow-wrap: anywhere; }
 .te-tag-count { display: inline-block; margin-left: 3px; vertical-align: 2px; font-size: 10px; font-weight: 400; line-height: 1; color: var(--text-secondary); white-space: nowrap; }
@@ -4010,7 +4017,7 @@ body.te-preview-resizing, body.te-preview-resizing * { cursor: row-resize !impor
 .te-chip-x:hover { opacity: 1; }
 
 .te-ctx-icons { position: absolute; width: 0; height: 0; overflow: hidden; }
-.te-ctx { position: fixed; z-index: 3000; width: 220px; max-width: calc(100vw - 8px); max-height: calc(100vh - 8px); overflow-y: auto; visibility: hidden; pointer-events: none; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-control); box-shadow: var(--shadow-lg); padding: 4px; }
+.te-ctx { position: fixed; z-index: 3000; width: max-content; min-width: 128px; max-width: min(280px, calc(100vw - 8px)); max-height: calc(100vh - 8px); overflow-y: auto; visibility: hidden; pointer-events: none; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-control); box-shadow: var(--shadow-lg); padding: 4px; }
 .te-ctx.is-positioned { visibility: visible; pointer-events: auto; }
 .te-ctx[hidden], .te-ctx > [hidden] { display: none; }
 .te-ctx > button { display: flex; align-items: center; gap: 7px; width: 100%; min-height: 30px; padding: 6px 10px; border: 0; background: transparent; font: inherit; font-size: 12px; color: var(--text-primary); text-align: left; cursor: pointer; border-radius: var(--radius-control); }

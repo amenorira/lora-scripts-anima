@@ -86,7 +86,8 @@ window.tagEditorActions = {
     };
     this.tagEditorContextMenu = null;
     this.tagEditorImageContextMenu = null;
-    this.tagDictionaryCloseHover();
+    if (tag) this.tagDictionaryShowContextHover?.(tag.dataset.tag, tag);
+    else this.tagDictionaryCloseHover();
     this._teFocusMenu('tagEditorPanelMenu', '_tePanelMenuTrigger', 'tePanelMenu', event);
   },
 
@@ -142,10 +143,12 @@ window.tagEditorActions = {
   _teCloseMenu(stateKey, triggerKey, restoreFocus) {
     if (!this[stateKey]) return;
     var trigger = this[triggerKey];
+    var hadTag = !!this[stateKey].tag;
     var epoch = this._teLoadEpoch;
     var request = ++this._teMenuFocusRequest;
     this[stateKey] = null;
     this[triggerKey] = null;
+    if (hadTag) this.tagDictionaryCloseHover();
     if (restoreFocus) this.$nextTick(() => {
       if (epoch === this._teLoadEpoch && request === this._teMenuFocusRequest && this.currentRoute === 'tagEditor' && !this.tagEditorLightboxOpen && !this.tagEditorShortcutsOpen && !this.showConfirmModal && trigger?.isConnected && trigger.getClientRects().length) trigger.focus();
     });
@@ -191,6 +194,12 @@ window.tagEditorActions = {
     else if (action === 'revert') this.tagEditorRevertSelectedImage();
     else if (action === 'undo') this.tagEditorUndo();
     else if (action === 'redo') this.tagEditorRedo();
+  },
+
+  tagEditorMenuContextSelect(event) {
+    if (event.button !== 2) return;
+    var button = event.target?.closest?.('button');
+    if (button && event.currentTarget.contains(button) && !button.matches(':disabled')) button.click();
   },
 
   tagEditorPanelMenuKeydown(event) {

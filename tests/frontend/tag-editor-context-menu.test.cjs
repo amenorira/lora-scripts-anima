@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {loadTagEditor} = require('./helpers.cjs');
+const {loadFrontend, loadTagEditor} = require('./helpers.cjs');
 
 function fixture() {
   const notices = [], copies = [];
@@ -67,6 +67,107 @@ test('closing or replacing a menu cancels deferred positioning and focus', async
   await Promise.resolve();
   await Promise.resolve();
   assert.deepEqual(focused,['teImageMenu']);
+});
+
+test('right-clicking an enabled menu option selects it once', () => {
+  const {app} = fixture();
+  let selections=0;
+  const button={matches:()=>false,click:()=>selections++};
+  const menu={contains:node=>node === button};
+  const event={button:2,target:{closest:()=>button},currentTarget:menu};
+  app.tagEditorMenuContextSelect(event);
+  assert.equal(selections,1);
+  button.matches=()=>true;
+  app.tagEditorMenuContextSelect(event);
+  app.tagEditorMenuContextSelect({...event,button:0});
+  app.tagEditorMenuContextSelect({...event,target:{closest:()=>null}});
+  assert.equal(selections,1);
+});
+
+test('tag explanations follow the context menu and close with it', async () => {
+  const timers = new Map(), details = new Map();
+  let timerId = 0;
+  const document = {
+    activeElement: null,
+    getElementById(id) {
+      if (id === 'teDictHover') return null;
+      return {getBoundingClientRect:()=>({width:150,height:200}), querySelectorAll:()=>[], focus(){}};
+    },
+  };
+  const context = {
+    window:{innerWidth:1000,innerHeight:800}, document,
+    setTimeout(fn) { const id=++timerId; timers.set(id,fn); return id; },
+    clearTimeout(id) { timers.delete(id); },
+    requestAnimationFrame:()=>1, cancelAnimationFrame() {},
+  };
+  loadTagEditor(context);
+  loadFrontend('tag-dictionary/index', context);
+  const app = Object.assign({}, context.window.tagEditorMixin, context.window.tagDictionaryMixin, {
+    currentRoute:'tagEditor', tagEditorSelected:['image'], tagEditorAllowsTagOps:()=>true,
+    tagDictionaryReady:true, $nextTick:callback=>callback(),
+    tagDictionaryDetail:tag=>new Promise(resolve=>details.set(tag,resolve)),
+  });
+  function anchor(tag, panel=false) {
+    return {
+      dataset:{tag}, isConnected:true,
+      getBoundingClientRect:()=>({left:300,right:350,top:100,bottom:120}),
+      closest(selector) {
+        if (selector === '[tabindex], button' || (panel && selector.includes('te-editor-tag'))) return this;
+        if (selector === '.te-editor' && panel) return {getBoundingClientRect:()=>({left:700})};
+        if (selector === '.te-sidebar' && !panel) return {getBoundingClientRect:()=>({right:350})};
+        return null;
+      },
+    };
+  }
+  const first=anchor('blue hair'), second=anchor('standing');
+  const eventFor=node=>({target:node,currentTarget:node,clientX:320,clientY:110,preventDefault(){},stopPropagation(){}});
+  app.tagEditorTagCtx(eventFor(first),'blue hair');
+  app.tagDictionaryHoverLeave();
+  app.tagDictionaryHoverEnter('standing',second);
+  assert.equal(app.tagDictionaryHover.tag,'blue hair');
+  assert.equal(timers.size,0);
+
+  app.tagEditorTagCtx(eventFor(second),'standing');
+  details.get('blue hair')({canonical:'blue hair',description:'outdated'});
+  details.get('standing')({canonical:'standing',description:'current'});
+  await Promise.resolve();
+  assert.equal(app.tagDictionaryHover.tag,'standing');
+  assert.equal(app.tagDictionaryHover.description,'current');
+  app.tagEditorCloseTagMenu(false);
+  assert.equal(app.tagDictionaryHover,null);
+  assert.equal(timers.size,0);
+
+  app.tagEditorQuickRemove=true;
+  const panelTag=anchor('blue hair',true);
+  app.tagEditorPanelContext(eventFor(panelTag));
+  assert.equal(app.tagDictionaryHover.tag,'blue hair');
+  app.tagEditorClosePanelMenu(false);
+  assert.equal(app.tagDictionaryHover,null);
+  app.tagEditorPanelContext(eventFor(panelTag));
+  app.currentRoute='tagger';
+  app.tagDictionaryHoverEnter('standing',second);
+  assert.equal(app.tagDictionaryHover.tag,'standing');
+  app.currentRoute='tagEditor';
+  app.tagEditorClosePanelMenu(false);
+});
+
+test('refreshing or loading the editor closes the tag menu and explanation', async () => {
+  const {app} = fixture();
+  let closed=0;
+  app.tagEditorPanelMenu={tag:'blue'};
+  app.tagEditorSelected=[];
+  app.tagDictionaryCloseHover=()=>closed++;
+  app.tagDictionarySyncChips=()=>{};
+  app._teCloseSuggestions=()=>{};
+  app._updateEditorPanel();
+  assert.equal(app.tagEditorPanelMenu,null);
+  assert.equal(closed,1);
+  app.tagEditorPanelMenu={tag:'blue'};
+  app.tagEditorDir='';
+  app.finishProgress=()=>{};
+  await app.tagEditorLoad('');
+  assert.equal(app.tagEditorPanelMenu,null);
+  assert.equal(closed,2);
 });
 
 test('tag and panel filter actions toggle the same filter and retain unrelated filters', async () => {

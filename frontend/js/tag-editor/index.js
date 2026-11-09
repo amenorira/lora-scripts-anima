@@ -510,7 +510,7 @@ window.tagEditorMixin = {
     ++this._teNavRequest;
     if (this._teAllAbort?._teSelectionRequest != null) this._teAllAbort.abort();
     this.tagEditorCancelQuickRemove();
-    this.tagEditorPanelMenu = null;
+    this.tagEditorClosePanelMenu(false);
     this._teCloseSuggestions();
     if (this.tagEditorSelected.length === 1) {
       var img = this.tagEditorGetSelectedImg();

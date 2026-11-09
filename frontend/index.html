@@ -576,8 +576,7 @@
       <!-- Route: Tag Editor -->
       <div x-show="currentRoute === 'tagEditor'" x-cloak
         x-init="tagEditorRestorePanelWidth(); tagEditorInitLayout()"
-        @keydown.window="tagEditorHandleKeydown($event)"
-        @click="tagEditorCloseTagMenu(false); tagEditorCloseImageMenu(false); tagEditorClosePanelMenu(false)">
+        @keydown.window="tagEditorHandleKeydown($event)">
 
         <!-- Saving overlay -->
         <div x-show="tagEditorSaving" class="te-saving-overlay" x-transition>
@@ -662,11 +661,17 @@
           <symbol id="te-icon-redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5m5 5h-9a6 6 0 0 0 0 12h2"/></symbol>
           <symbol id="te-icon-revert" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></symbol>
           <symbol id="te-icon-delete" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+          <symbol id="te-icon-rescan" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5M5 9a7 7 0 0 1 12-2l3 5M19 15a7 7 0 0 1-12 2l-3-5"/></symbol>
+          <symbol id="te-icon-draft" viewBox="0 0 24 24"><path d="M6 3h8l4 4v5M14 3v5h4M6 3v18h6M15 16h6M18 13l3 3-3 3"/></symbol>
+          <symbol id="te-icon-folders" viewBox="0 0 24 24"><path d="M3 5h7l2 2h9v12H3zM7 12h10M9 15h6"/></symbol>
+          <symbol id="te-icon-download" viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M4 18v3h16v-3"/></symbol>
+          <symbol id="te-icon-brackets" viewBox="0 0 24 24"><path d="M8 4H5v16h3M16 4h3v16h-3M10 17l4-10"/></symbol>
+          <symbol id="te-icon-keyboard" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 15h10"/></symbol>
         </svg>
         <div id="tePanelMenu" hidden :hidden="!tagEditorPanelMenu" class="te-ctx" role="menu" tabindex="-1"
           :class="{ 'is-positioned': tagEditorPanelMenu?.positioned }"
           :style="'left:' + (tagEditorPanelMenu?.positioned ? tagEditorPanelMenu.x : 4) + 'px; top:' + (tagEditorPanelMenu?.positioned ? tagEditorPanelMenu.y : 4) + 'px'"
-          @keydown="tagEditorPanelMenuKeydown($event)" @click.outside="tagEditorClosePanelMenu(false)" @keydown.escape.prevent.stop="tagEditorClosePanelMenu()">
+          @contextmenu.prevent.stop="tagEditorMenuContextSelect($event)" @keydown="tagEditorPanelMenuKeydown($event)" @click.outside.capture="tagEditorClosePanelMenu(false)" @keydown.escape.prevent.stop="tagEditorClosePanelMenu()">
           <button type="button" role="menuitem" :hidden="!tagEditorPanelMenu?.preview" @click="tagEditorPanelAction('view')"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#te-icon-view"></use></svg><span x-text="t('tagEditor.viewOriginal')"></span></button>
           <button type="button" role="menuitem" :hidden="!tagEditorPanelMenu?.tag" @click="tagEditorPanelAction('filter')"><svg viewBox="0 0 24 24" aria-hidden="true"><use :href="tagEditorTagSelection.includes(tagEditorPanelMenu?.tag) ? '#te-icon-clear-filter' : '#te-icon-include'"></use></svg><span x-text="t(tagEditorTagSelection.includes(tagEditorPanelMenu?.tag) ? 'tagEditor.contextClearInclude' : 'tagEditor.contextInclude')"></span></button>
           <div class="te-ctx-divider" role="separator" :hidden="!(tagEditorPanelMenu?.preview || tagEditorPanelMenu?.tag)"></div>
@@ -682,7 +687,7 @@
         <div id="teTagMenu" hidden :hidden="!tagEditorContextMenu" class="te-ctx" role="menu" tabindex="-1"
           :class="{ 'is-positioned': tagEditorContextMenu?.positioned }"
           :style="'left:' + (tagEditorContextMenu?.positioned ? tagEditorContextMenu.x : 4) + 'px; top:' + (tagEditorContextMenu?.positioned ? tagEditorContextMenu.y : 4) + 'px'"
-          @click.outside="tagEditorCloseTagMenu(false)" @keydown="tagEditorPanelMenuKeydown($event)" @keydown.escape.prevent.stop="tagEditorCloseTagMenu()">
+          @contextmenu.prevent.stop="tagEditorMenuContextSelect($event)" @click.outside.capture="tagEditorCloseTagMenu(false)" @keydown="tagEditorPanelMenuKeydown($event)" @keydown.escape.prevent.stop="tagEditorCloseTagMenu()">
           <button type="button" role="menuitem" @click="tagEditorCtxInclude()"><svg viewBox="0 0 24 24" aria-hidden="true"><use :href="tagEditorTagSelection.includes(tagEditorContextMenu?.tag) ? '#te-icon-clear-filter' : '#te-icon-include'"></use></svg><span x-text="t(tagEditorTagSelection.includes(tagEditorContextMenu?.tag) ? 'tagEditor.contextClearInclude' : 'tagEditor.contextInclude')"></span></button>
           <button type="button" role="menuitem" @click="tagEditorCtxExclude()"><svg viewBox="0 0 24 24" aria-hidden="true"><use :href="tagEditorExcludedTags.includes(tagEditorContextMenu?.tag) ? '#te-icon-clear-filter' : '#te-icon-exclude'"></use></svg><span x-text="t(tagEditorExcludedTags.includes(tagEditorContextMenu?.tag) ? 'tagEditor.contextClearExclude' : 'tagEditor.contextExclude')"></span></button>
           <div class="te-ctx-divider" role="separator"></div>
@@ -697,7 +702,7 @@
         <div id="teImageMenu" hidden :hidden="!tagEditorImageContextMenu" class="te-ctx" role="menu" tabindex="-1"
           :class="{ 'is-positioned': tagEditorImageContextMenu?.positioned }"
           :style="'left:' + (tagEditorImageContextMenu?.positioned ? tagEditorImageContextMenu.x : 4) + 'px; top:' + (tagEditorImageContextMenu?.positioned ? tagEditorImageContextMenu.y : 4) + 'px'"
-          @click.outside="tagEditorCloseImageMenu(false)" @keydown="tagEditorPanelMenuKeydown($event)" @keydown.escape.prevent.stop="tagEditorCloseImageMenu()">
+          @contextmenu.prevent.stop="tagEditorMenuContextSelect($event)" @click.outside.capture="tagEditorCloseImageMenu(false)" @keydown="tagEditorPanelMenuKeydown($event)" @keydown.escape.prevent.stop="tagEditorCloseImageMenu()">
           <button type="button" role="menuitem" @click="tagEditorCtxViewImage()">
             <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#te-icon-view"></use></svg>
             <span x-text="t('tagEditor.viewOriginal')"></span>
@@ -918,17 +923,16 @@
                 <span x-text="'(' + tagEditorModifiedCount() + ')'"></span>
               </template>
             </button>
-            <details class="te-menu" @click.outside="$el.open = false" @keydown.escape.stop="$el.open = false">
+            <details class="te-menu te-more-menu" @click.outside="$el.open = false" @keydown.escape.stop="$el.open = false">
             <summary class="te-topbar-btn" x-text="t('tagEditor.moreMenu')"></summary>
             <div class="te-menu-items te-menu-end" @click="$el.parentElement.open = false">
-            <button class="te-topbar-btn" @click="tagEditorReloadDir()" x-text="t('tagEditor.rescanDataset')"></button>
-            <button class="te-topbar-btn" x-show="_teDraftRemainder.length" @click="_teCheckDraft()" x-text="t('tagEditor.retryDraft')"></button>
-            <button class="te-topbar-btn" @click="tagEditorToggleRecursive()" :aria-pressed="tagEditorRecursive"><span x-text="tagEditorRecursive ? '✓' : '　'"></span><span x-text="t('tagEditor.recursive')"></span></button>
-            <button class="te-topbar-btn" @click="tagEditorDownloadZip()" :title="t('tagEditor.downloadZipHint')" x-text="t('tagEditor.downloadZip')"></button>
-            <button class="te-topbar-btn" @click="tagEditorRestoreBackup()" x-text="t('tagEditor.restoreBackup')"></button>
-            <button class="te-topbar-btn" x-show="tagEditorAllowsTagOps()" @click="tagEditorRemoveBracketEscapes()" :disabled="!tagEditorSelected.length" :title="t('tagEditor.unescapeHint')" x-text="t('tagEditor.unescapeBrackets')"></button>
-            <button class="te-topbar-btn" @click="tagEditorOpenShortcuts($event)"
-              x-text="t('tagEditor.shortcutHelpTitle')"></button>
+            <button type="button" class="te-topbar-btn" @click="tagEditorReloadDir()"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#te-icon-rescan"></use></svg><span x-text="t('tagEditor.rescanDataset')"></span></button>
+            <button type="button" class="te-topbar-btn" x-show="_teDraftRemainder.length" @click="_teCheckDraft()"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#te-icon-draft"></use></svg><span x-text="t('tagEditor.retryDraft')"></span></button>
+            <button type="button" class="te-topbar-btn" @click="tagEditorToggleRecursive()" :aria-pressed="tagEditorRecursive"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#te-icon-folders"></use></svg><span x-text="t('tagEditor.recursive')"></span><span class="te-menu-check" aria-hidden="true" x-text="tagEditorRecursive ? '✓' : ''"></span></button>
+            <button type="button" class="te-topbar-btn" @click="tagEditorDownloadZip()" :title="t('tagEditor.downloadZipHint')"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#te-icon-download"></use></svg><span x-text="t('tagEditor.downloadZip')"></span></button>
+            <button type="button" class="te-topbar-btn" @click="tagEditorRestoreBackup()"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#te-icon-revert"></use></svg><span x-text="t('tagEditor.restoreBackup')"></span></button>
+            <button type="button" class="te-topbar-btn" x-show="tagEditorAllowsTagOps()" @click="tagEditorRemoveBracketEscapes()" :disabled="!tagEditorSelected.length" :title="t('tagEditor.unescapeHint')"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#te-icon-brackets"></use></svg><span x-text="t('tagEditor.unescapeBrackets')"></span></button>
+            <button type="button" class="te-topbar-btn" @click="tagEditorOpenShortcuts($event)"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#te-icon-keyboard"></use></svg><span x-text="t('tagEditor.shortcutHelpTitle')"></span></button>
             </div></details>
           </div>
           <div class="te-main" data-te-main="active"
@@ -1016,7 +1020,7 @@
                   </template>
                 <template x-for="item in tagEditorGetDisplayFreq()" :key="item.tag">
                   <div class="te-tag-row" :data-tag="item.tag"
-                    :class="{ selected: tagEditorTagSelection.includes(item.tag), excluded: tagEditorExcludedTags.includes(item.tag) }"
+                    :class="{ selected: tagEditorTagSelection.includes(item.tag), excluded: tagEditorExcludedTags.includes(item.tag), 'has-context-menu': tagEditorContextMenu?.tag === item.tag }"
                     @contextmenu.prevent="tagEditorTagCtx($event, item.tag)">
                     <template x-if="tagEditorInlineEdit && tagEditorInlineEdit.oldTag === item.tag">
                       <input id="te-inline-edit-input" type="text" class="te-inline-edit-input"
@@ -1308,7 +1312,7 @@
                       <template x-for="(tag, ti) in tagEditorGetSelectedTags()" :key="tag + '-' + ti">
                         <span class="te-editor-tag" :draggable="!tagEditorQuickRemove" :data-ti="ti" :data-tag="tag" tabindex="0"
                           :role="tagEditorQuickRemove ? 'checkbox' : null" :aria-checked="tagEditorQuickRemove ? tagEditorRemovalTags.includes(tag) : null"
-                          :class="Object.assign({ 'is-marked': tagEditorQuickRemove && tagEditorRemovalTags.includes(tag), 'te-pill-drag-src': tagEditorDetailDragSrcIdx === ti, 'te-drop-before': tagEditorDetailDragOverIdx === ti && tagEditorDetailDragOverPos === 'before', 'te-drop-after': tagEditorDetailDragOverIdx === ti && tagEditorDetailDragOverPos === 'after' }, tagDictionaryChipState(tag))"
+                          :class="Object.assign({ 'is-marked': tagEditorQuickRemove && tagEditorRemovalTags.includes(tag), 'has-context-menu': !!tagEditorPanelMenu && _tePanelMenuTrigger === $el, 'te-pill-drag-src': tagEditorDetailDragSrcIdx === ti, 'te-drop-before': tagEditorDetailDragOverIdx === ti && tagEditorDetailDragOverPos === 'before', 'te-drop-after': tagEditorDetailDragOverIdx === ti && tagEditorDetailDragOverPos === 'after' }, tagDictionaryChipState(tag))"
                           @click="tagEditorToggleRemoval(tag)"
                           @dragstart="tagEditorDetailDragStart($event, ti)"
                           @dragover="tagEditorDetailTagDragOver($event, ti)"
@@ -1426,7 +1430,7 @@
                       <div class="te-selected-tags">
                       <div class="te-tagcloud-empty" x-show="tagEditorGetVisibleSelectedStats().length === 0" x-text="t('common.noResults')"></div>
                       <template x-for="item in tagEditorGetVisibleSelectedStats()" :key="item.tag">
-                        <div class="te-selected-tag" :data-tag="item.tag" :class="Object.assign({ 'is-marked': tagEditorQuickRemove && tagEditorRemovalTags.includes(item.tag) }, tagDictionaryChipState(item.tag))" tabindex="0"
+                        <div class="te-selected-tag" :data-tag="item.tag" :class="Object.assign({ 'is-marked': tagEditorQuickRemove && tagEditorRemovalTags.includes(item.tag), 'has-context-menu': !!tagEditorPanelMenu && _tePanelMenuTrigger === $el }, tagDictionaryChipState(item.tag))" tabindex="0"
                           :role="tagEditorQuickRemove ? 'checkbox' : null" :aria-checked="tagEditorQuickRemove ? tagEditorRemovalTags.includes(item.tag) : null"
                           @click="tagEditorToggleRemoval(item.tag)" @keydown.space.prevent.stop="tagEditorToggleRemoval(item.tag)" @keydown.enter.prevent.stop="tagEditorToggleRemoval(item.tag)">
                           <span class="te-tag-label"><span class="te-tag-title"><span class="te-editor-tag-name" x-text="tagDictionaryDisplayName(item.tag)"></span><span class="te-tag-count" role="img" :title="t('tagEditor.countInSelection').replace('{total}', tagEditorSelected.length).replace('{count}', item.count)" :aria-label="t('tagEditor.countInSelection').replace('{total}', tagEditorSelected.length).replace('{count}', item.count)" x-text="item.count"></span></span><span class="te-editor-tag-zh" x-text="tagDictionaryTranslationFor(item.tag)"></span></span>
