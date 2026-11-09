@@ -627,7 +627,7 @@ window.trainingCoreMixin = {
         html += this.renderField(f);
         if (f.key === 'network_module') {
           html += `<div class="lycoris-config-entry" x-show="form.network_module === 'lycoris.kohya'" x-cloak>`
-            + `<button type="button" class="lycoris-config-button" @click="openLycorisConfig()">`
+            + `<button type="button" class="lycoris-config-button" data-dialog-opens="lycorisDialog" @click="openLycorisConfig()">`
             + `<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>${this.trainingText('field.configureLycoris', 'Configure LyCORIS')}</button>`
             + `<span class="lycoris-config-summary" x-text="lycorisSummary()"></span></div>`;
         }

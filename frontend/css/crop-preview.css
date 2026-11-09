@@ -41,12 +41,13 @@
 .cp-tile:disabled { cursor: default; }
 .cp-stage { display: flex; align-items: center; justify-content: center; height: 180px; container-type: size; min-width: 0; min-height: 0; }
 .cp-tile .cp-stage { align-items: flex-end; }
-.cp-frame { position: relative; width: min(100cqw, calc(100cqh * var(--cp-ratio))); aspect-ratio: var(--cp-ratio); overflow: hidden; transform-origin: top left; flex: 0 0 auto; background: var(--bg-sunken); }
+.cp-frame { position: relative; width: min(100cqw, calc(100cqh * var(--cp-ratio))); aspect-ratio: var(--cp-ratio); container-type: inline-size; overflow: hidden; transform-origin: top left; flex: 0 0 auto; background: var(--bg-sunken); }
 .cp-frame img { display: block; width: 100%; height: 100%; pointer-events: none; }
 .cp-hatch, .cp-legend-swatch {
-  background: repeating-linear-gradient(135deg, rgba(255,174,65,.88) 0 2px, transparent 2px 8px), rgba(12,12,12,.52);
+  --cp-hatch-width: 2px;
+  background: repeating-linear-gradient(135deg, rgba(255,174,65,.88) 0 var(--cp-hatch-width), transparent var(--cp-hatch-width) calc(4 * var(--cp-hatch-width))), rgba(12,12,12,.52);
 }
-.cp-hatch { position: absolute; pointer-events: none; }
+.cp-hatch { --cp-hatch-width: 1cqw; position: absolute; pointer-events: none; }
 .cp-tile-info { display: block; margin-top: 8px; font-size: 12px; line-height: 1.6; font-variant-numeric: tabular-nums; color: var(--text-secondary); overflow-wrap: anywhere; }
 .cp-tile-meta { display: block; max-width: 220px; margin: 10px auto 0; text-align: left; font-variant-numeric: tabular-nums; }
 .cp-dimensions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -56,9 +57,13 @@
 .cp-state { min-height: 180px; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--text-secondary); white-space: pre-wrap; padding: 24px; }
 .cp-error { font-size: 12px; color: var(--text-secondary); overflow-wrap: anywhere; padding: 16px; }
 #cropFocusDialog { --dialog-backdrop-color: rgba(0,0,0,.18); }
-.cp-frame .cp-full-image { position: absolute; inset: 0; opacity: 0; transition: opacity 100ms ease-out; }
+.cp-frame .cp-full-image { position: absolute; inset: 0; opacity: 0; transition: opacity 65ms ease-out; }
 .cp-frame .cp-full-image.is-loaded { opacity: 1; }
-.modal.cp-focus-modal { width: 960px; height: 760px; min-width: 0; max-width: calc(100vw - 144px); max-height: calc(100dvh - 128px); }
+.modal.cp-focus-modal {
+  position: relative; isolation: isolate;
+  background: transparent; border-color: transparent; box-shadow: none;
+  width: 960px; height: 760px; min-width: 0; max-width: calc(100vw - 144px); max-height: calc(100dvh - 128px);
+}
 .cp-focus-modal .modal-header { padding: 12px 18px; gap: 10px; flex: 0 0 auto; }
 .cp-focus-body { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 18px; }
 .cp-focus-body .cp-stage { flex: 1; height: auto; }

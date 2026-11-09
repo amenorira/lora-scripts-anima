@@ -3,28 +3,58 @@ const assert = require('node:assert/strict');
 const {loadFrontend, composeMixins, readRepo} = require('./helpers.cjs');
 const {uiHarness} = require('./ui-helpers.cjs');
 
-test('morph dialogs track their opener at both ends and fall back for hidden origins', () => {
-  const {context, document, Element, ticks, flush} = uiHarness();
+test('morph dialogs keep the explicit opener hidden until the exit finishes', async () => {
+  const {context, document, Element, ticks, flush, listeners} = uiHarness();
   const opener = new Element('button'), dialog = new Element('dialog'), modal = new Element('div');
   dialog.className = 'modal-overlay modal-overlay--morph'; modal.className = 'modal';
-  dialog.rect = {left:0,top:0};
-  Object.assign(modal, {offsetLeft:100,offsetTop:100,offsetWidth:800,offsetHeight:500});
-  modal.style.setProperty = (key,value) => { modal.style[key] = value; };
+  dialog.setAttribute('id', 'testDialog');
+  opener.dataset = {dialogOpens: 'testDialog'};
+  opener.setAttribute('data-dialog-opens', 'testDialog');
+  dialog.rect = {left:0,top:0,right:1280,bottom:720,width:1280,height:720};
+  modal.rect = {left:100,top:100,right:900,bottom:600,width:800,height:500};
+  const motions = [];
+  function animate(frames) {
+    let finish;
+    const finished = new Promise(resolve => { finish = resolve; });
+    const motion = {frames, finished, finish, cancel: finish, effect: {target: this}};
+    motions.push(motion);
+    return motion;
+  }
+  dialog.animate = modal.animate = animate;
+  document.createElement = tag => Object.assign(new Element(tag), {animate});
+  opener.classList.remove = name => opener.classList.toggle(name, false);
+  opener.cloneNode = () => Object.assign(new Element('button'), {animate, className: opener.className});
+  const settle = async () => { motions.splice(0).forEach(motion => motion.finish()); await new Promise(setImmediate); flush(); };
   opener.rect = {left:120,top:30,width:120,height:32,right:240,bottom:62};
   dialog.appendChild(modal); document.body.append(opener,dialog);
   const binding = context.window.AnimaUI.bindDialog(dialog, callback=>ticks.push(callback));
-  opener.focus(); binding.setOpen(true); flush();
-  assert.equal(modal.style['--dialog-origin-transform'], 'translate(-320px,-304px) scale(0.15,0.064)');
+  listeners.get('click')({target: opener});
   opener.rect = {...opener.rect,top:600,bottom:632};
+  binding.setOpen(true); flush();
+  assert.equal(motions[0].frames[0].clipPath, 'inset(30px 1040px 658px 120px round 0px)');
+  assert.equal(motions[0].frames[1].clipPath, 'inset(100px 380px 120px 100px round 0px)');
+  assert.equal(opener.classList.contains('dialog-morph-origin'), true);
+  await settle();
+  assert.equal(opener.classList.contains('dialog-morph-origin'), true);
+  const thumbnail = new Element('div');
+  thumbnail.setAttribute('data-dialog-anchor', '');
+  modal.appendChild(thumbnail);
   binding.setOpen(false); flush();
-  assert.equal(modal.style['--dialog-origin-transform'], 'translate(-320px,266px) scale(0.15,0.064)');
-  opener.focus(); binding.setOpen(true); flush();
-  opener.remove(); binding.setOpen(false); flush();
-  assert.equal(modal.style['--dialog-origin-transform'], 'scale(.97)');
-  document.body.appendChild(opener);
+  assert.equal(dialog.open, true);
+  assert.equal(opener.classList.contains('dialog-morph-origin'), true);
+  assert.equal(dialog.querySelector('.dialog-morph-button').classList.contains('dialog-morph-origin'), false);
+  assert.equal(motions[0].frames.at(-1).clipPath, 'inset(600px 1040px 88px 120px round 0px)');
+  await settle();
+  assert.equal(dialog.open, false);
+  assert.equal(opener.classList.contains('dialog-morph-origin'), false);
+  assert.equal(document.activeElement, opener);
   context.window.AnimaUI.setDialogOrigin(dialog, opener);
-  document.body.focus(); binding.setOpen(true); flush();
-  assert.equal(modal.style['--dialog-origin-transform'], 'translate(-320px,266px) scale(0.15,0.064)');
+  binding.setOpen(true); flush(); await settle();
+  opener.remove(); binding.setOpen(false); flush();
+  assert.equal(motions[0].frames.at(-1).clipPath, 'inset(600px 1040px 88px 120px round 0px)');
+  binding.setOpen(true); flush(); await settle();
+  assert.equal(dialog.open, true);
+  assert.equal(context.window.AnimaUI.topDialog(), dialog);
 });
 
 test('closing a dialog preserves an explicit destination focus and still restores lost focus', () => {

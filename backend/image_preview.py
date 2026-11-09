@@ -157,12 +157,16 @@ def get_cached_preview_path(
         temporary = cache_dir / f".{key}.{os.getpid()}.{threading.get_ident()}.tmp"
         try:
             with Image.open(source) as opened:
-                image = ImageOps.exif_transpose(opened) if orient else opened.copy()
-                if not orient:
-                    image.info.pop("exif", None)
+                # We own the decoder and only need the preview, so keep one
+                # full-size pixel buffer for images that do not need rotation.
+                if orient:
+                    ImageOps.exif_transpose(opened, in_place=True)
+                else:
+                    opened.load()
+                    opened.info.pop("exif", None)
                 if target_size is not None:
-                    image.thumbnail((target_size, target_size), Image.Resampling.LANCZOS)
-                image, lossless = _render_mode(image)
+                    opened.thumbnail((target_size, target_size), Image.Resampling.LANCZOS)
+                image, lossless = _render_mode(opened)
                 save_options = {
                     "format": "WEBP",
                     "lossless": lossless,

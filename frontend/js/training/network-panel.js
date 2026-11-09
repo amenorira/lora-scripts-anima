@@ -50,7 +50,11 @@ window.trainingNetworkPanel = {
     });
   },
 
-  closeLycorisConfig() {
+  closeLycorisConfig(afterClose) {
+    if (afterClose) {
+      document.getElementById('lycorisDialog')?.addEventListener('dialog-after-close',
+        () => this.$nextTick(afterClose), { once: true });
+    }
     this._closeManagedModal('lycorisModalOpen');
   },
 

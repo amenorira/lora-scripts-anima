@@ -1,9 +1,51 @@
 /* Dataset crop workbench: geometry comes from the active training core. */
+const cropPreviewStatsCache = new WeakMap();
+const cropPreviewWarmDelay = 100;
+const cropPreviewWarmLifetime = 3000;
+const cropPreviewWarmBytes = 1024 * 1024;
+let cropPreviewWarm = null;
+let cropPreviewDetailWarm = null;
+let pendingCropPreviewFrame = null;
+
+function requestCropPreview(body, signal) {
+  return fetch('/api/training/crop-preview', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal,
+  });
+}
+
+function releaseCropPreviewWarm(keepRequest = false) {
+  const warm = cropPreviewWarm;
+  cropPreviewWarm = null;
+  clearTimeout(warm?.timer);
+  if (!keepRequest) warm?.controller?.abort();
+  return warm;
+}
+
+function cancelCropPreviewDetailImage(frame) {
+  const full = frame?.querySelector('.cp-full-image:not(.is-loaded)');
+  full?.removeAttribute('src');
+}
+
+function discardPendingCropPreviewFrame() {
+  const frame = pendingCropPreviewFrame;
+  pendingCropPreviewFrame = null;
+  for (const image of frame?.querySelectorAll('img[src]') || []) image.removeAttribute('src');
+}
+
+function releaseCropPreviewDetailWarm(keepFrame = false) {
+  const warm = cropPreviewDetailWarm;
+  cropPreviewDetailWarm = null;
+  clearTimeout(warm?.timer);
+  if (!keepFrame) cancelCropPreviewDetailImage(warm?.frame);
+  return warm;
+}
+
 window.trainingCropPreviewMixin = {
   cropPreviewOpen: false,
   cropPreviewLoading: false,
   cropPreviewError: '',
   cropPreviewItems: [],
+  cropPreviewRenderLimit: null,
   cropPreviewRandom: false,
   cropPreviewFilter: 'all',
   cropPreviewBucket: '',
@@ -11,11 +53,52 @@ window.trainingCropPreviewMixin = {
   cropPreviewBucketLimit: 9,
   cropPreviewFocus: null,
   cropPreviewFocusOpen: false,
+  _cropFocusSeq: 0,
+  _cropFocusRequested: null,
   _cropPreviewSeq: 0,
   _cropPreviewAbort: null,
   _cropBucketResize: null,
 
+  cropPreviewRequestBody() {
+    return JSON.stringify({ ...this._stepEstimatePayload(), random_crop: !!this.form.random_crop });
+  },
+
+  scheduleCropPreviewWarmup(opener) {
+    if (cropPreviewWarm || this.cropPreviewOpen || !this.form.train_data_dir) return;
+    if (document.body.hasAttribute('data-gpu-workload')) return;
+    const warm = { opener };
+    cropPreviewWarm = warm;
+    warm.timer = setTimeout(() => {
+      if (!opener.isConnected || !this.form.train_data_dir || document.body.hasAttribute('data-gpu-workload')) {
+        releaseCropPreviewWarm();
+        return;
+      }
+      warm.body = this.cropPreviewRequestBody();
+      warm.controller = new AbortController();
+      warm.promise = requestCropPreview(warm.body, warm.controller.signal).then(async response => {
+        if (!response.ok) return null;
+        const bytes = Number(response.headers.get('Content-Length'));
+        if (!warm.used && (!bytes || bytes > cropPreviewWarmBytes)) {
+          if (cropPreviewWarm === warm) releaseCropPreviewWarm();
+          return null;
+        }
+        const result = await response.json();
+        return result.status === 'success' ? result : null;
+      }).catch(() => null).finally(() => {
+        if (cropPreviewWarm === warm) warm.timer = setTimeout(releaseCropPreviewWarm, cropPreviewWarmLifetime);
+      });
+    }, cropPreviewWarmDelay);
+  },
+
+  cancelCropPreviewWarmup(opener) {
+    // The server scan cannot be stopped by aborting the HTTP request. Keep
+    // one in flight and reuse it if the pointer comes back.
+    if (cropPreviewWarm?.opener === opener && !cropPreviewWarm.promise) releaseCropPreviewWarm();
+  },
+
   async openCropPreview() {
+    const dialog = !this.cropPreviewOpen && document.getElementById('cropPreviewDialog');
+    ++this._cropFocusSeq;
     this.cropPreviewOpen = true;
     this.cropPreviewFocus = null;
     this.cropPreviewFocusOpen = false;
@@ -23,24 +106,37 @@ window.trainingCropPreviewMixin = {
     this.cropPreviewBucket = '';
     this.cropPreviewBucketsExpanded = false;
     this.cropPreviewItems = [];
+    // The widest preview fits six cards per row. Mount two rows during the morph.
+    this.cropPreviewRenderLimit = dialog ? 12 : null;
     this.cropPreviewRandom = false;
     this.cropPreviewError = '';
     this.cropPreviewLoading = true;
     const seq = ++this._cropPreviewSeq;
     this._cropPreviewAbort?.abort();
-    this._cropPreviewAbort = new AbortController();
+    const body = this.cropPreviewRequestBody();
+    const warm = cropPreviewWarm?.body === body ? releaseCropPreviewWarm(true) : null;
+    if (!warm && !cropPreviewWarm?.promise) releaseCropPreviewWarm();
+    if (warm) warm.used = true;
+    this._cropPreviewAbort = warm?.controller || new AbortController();
+    const signal = this._cropPreviewAbort.signal;
+    if (dialog) {
+      dialog.addEventListener('dialog-after-open', () => requestAnimationFrame(() => {
+        if (seq === this._cropPreviewSeq) this.cropPreviewRenderLimit = null;
+      }), { once: true, signal });
+    }
     try {
-      const response = await fetch('/api/training/crop-preview', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        signal: this._cropPreviewAbort.signal,
-        body: JSON.stringify({ ...this._stepEstimatePayload(), random_crop: !!this.form.random_crop }),
-      });
-      const result = await response.json();
+      let result = warm ? await warm.promise : null;
+      if (!result && !signal.aborted) {
+        const response = await requestCropPreview(body, signal);
+        result = await response.json();
+        if (!response.ok) throw new Error(result.message || this.t('cropPreview.failed'));
+      }
       if (seq !== this._cropPreviewSeq) return;
-      if (!response.ok || result.status !== 'success') throw new Error(result.message || this.t('cropPreview.failed'));
+      if (result?.status !== 'success') throw new Error(result?.message || this.t('cropPreview.failed'));
       this.cropPreviewRandom = result.data.random_crop;
       this.cropPreviewItems = result.data.items;
       if (this.cropPreviewRandom) this.shuffleCropPreview();
+      this.cropPreviewLoading = false;
       await this.$nextTick();
       if (seq !== this._cropPreviewSeq) return;
       this._cropBucketResize?.disconnect();
@@ -65,9 +161,7 @@ window.trainingCropPreviewMixin = {
     this._cropBucketResize?.disconnect();
     this._cropBucketResize = null;
     this.cropPreviewOpen = false;
-    this.cropPreviewFocus = null;
-    this.cropPreviewFocusOpen = false;
-    this.cropPreviewLoading = false;
+    this.unfocusCropPreview();
   },
 
   cropPreviewDismiss() {
@@ -87,24 +181,47 @@ window.trainingCropPreviewMixin = {
     if (grid) grid.scrollTop = 0;
   },
 
-  get cropPreviewBuckets() {
+  get cropPreviewStats() {
+    const items = this.cropPreviewItems;
+    // Preview results and random-crop updates replace the array.
+    const cached = cropPreviewStatsCache.get(items);
+    if (cached) return cached;
     const counts = new Map();
-    this.cropPreviewItems.filter(item => !item.error).forEach(item => {
+    const totals = { count: 0, samples: 0 };
+    let errors = 0;
+    let includesReg = false;
+    for (const item of items) {
+      if (item.is_reg) includesReg = true;
+      if (item.error) { errors += 1; continue; }
       const key = item.bucket.join(' × ');
       const bucket = counts.get(key) || { key, count: 0, samples: 0, width: item.bucket[0], height: item.bucket[1] };
+      const samples = Number(item.sample_count || 0);
       bucket.count += 1;
-      bucket.samples += Number(item.sample_count || 0);
+      bucket.samples += samples;
+      totals.count += 1;
+      totals.samples += samples;
       counts.set(key, bucket);
-    });
-    return Array.from(counts.values()).sort((a, b) => b.samples - a.samples || a.width - b.width || a.height - b.height);
+    }
+    const buckets = Array.from(counts.values()).sort((a, b) => b.samples - a.samples || a.width - b.width || a.height - b.height);
+    const stats = { buckets, totals, errors, includesReg };
+    cropPreviewStatsCache.set(items, stats);
+    return stats;
+  },
+
+  get cropPreviewBuckets() {
+    return this.cropPreviewStats.buckets;
   },
 
   get cropPreviewVisible() {
-    return this.cropPreviewItems.filter(item => {
-      if (this.cropPreviewBucket && (item.error || item.bucket.join(' × ') !== this.cropPreviewBucket)) return false;
-      if (this.cropPreviewFilter === 'cropped') return !item.error && item.crop_percent > 0;
-      if (this.cropPreviewFilter === 'upscaled') return !item.error && item.scale > 1.001;
-      if (this.cropPreviewFilter === 'errors') return !!item.error;
+    const items = this.cropPreviewItems;
+    const bucket = this.cropPreviewBucket;
+    const filter = this.cropPreviewFilter;
+    if (!bucket && filter === 'all') return items;
+    return items.filter(item => {
+      if (bucket && (item.error || item.bucket.join(' × ') !== bucket)) return false;
+      if (filter === 'cropped') return !item.error && item.crop_percent > 0;
+      if (filter === 'upscaled') return !item.error && item.scale > 1.001;
+      if (filter === 'errors') return !!item.error;
       return true;
     });
   },
@@ -128,7 +245,16 @@ window.trainingCropPreviewMixin = {
       if (!folders.has(key)) folders.set(key, { key, name: folder, items: [] });
       folders.get(key).items.push(item);
     }
-    return Array.from(folders.values());
+    let remaining = this.cropPreviewRenderLimit ?? Infinity;
+    const rendered = [];
+    for (const folder of folders.values()) {
+      if (!remaining) break;
+      folder.count = folder.items.length;
+      if (folder.count > remaining) folder.items = folder.items.slice(0, remaining);
+      remaining -= folder.items.length;
+      rendered.push(folder);
+    }
+    return rendered;
   },
 
   cropPreviewFolderCount(count) {
@@ -136,9 +262,7 @@ window.trainingCropPreviewMixin = {
   },
 
   get cropPreviewTotals() {
-    return this.cropPreviewBuckets.reduce((total, bucket) => ({
-      count: total.count + bucket.count, samples: total.samples + bucket.samples,
-    }), { count: 0, samples: 0 });
+    return this.cropPreviewStats.totals;
   },
 
   cropPreviewCount(count) {
@@ -146,10 +270,10 @@ window.trainingCropPreviewMixin = {
   },
 
   cropPreviewSummary() {
-    const buckets = this.cropPreviewBuckets;
+    const { buckets, totals } = this.cropPreviewStats;
     return this.t('cropPreview.summary')
-      .replace('{images}', buckets.reduce((sum, bucket) => sum + bucket.count, 0))
-      .replace('{samples}', buckets.reduce((sum, bucket) => sum + bucket.samples, 0))
+      .replace('{images}', totals.count)
+      .replace('{samples}', totals.samples)
       .replace('{buckets}', buckets.length);
   },
 
@@ -162,9 +286,9 @@ window.trainingCropPreviewMixin = {
   },
 
   cropPreviewStatsNote() {
+    const { includesReg, errors } = this.cropPreviewStats;
     const notes = [];
-    if (this.cropPreviewItems.some(item => item.is_reg)) notes.push(this.t('cropPreview.includesReg'));
-    const errors = this.cropPreviewItems.filter(item => item.error).length;
+    if (includesReg) notes.push(this.t('cropPreview.includesReg'));
     if (errors) notes.push(this.t('cropPreview.statsErrors').replace('{count}', errors));
     return notes.join(' · ');
   },
@@ -194,8 +318,8 @@ window.trainingCropPreviewMixin = {
       overlay = rects.filter(r => r[2] > 0 && r[3] > 0).map(([l, t, rw, rh]) =>
         `<span class="cp-hatch" style="left:${l * 100}%;top:${t * 100}%;width:${rw * 100}%;height:${rh * 100}%"></span>`).join('');
     }
-    const full = large ? `<img class="cp-full-image" src="${this.esc(item.preview)}" alt="" aria-hidden="true" decoding="async" x-init="window.AnimaImages.reveal($el)">` : '';
-    return `<div class="cp-frame" data-dialog-anchor style="--cp-ratio:${ratio}"><img src="${url}" alt="${this.esc(item.name)}" loading="${large ? 'eager' : 'lazy'}" decoding="async">${full}${overlay}</div>`;
+    const full = large ? `<img class="cp-full-image" data-preview-src="${this.esc(item.preview)}" alt="" aria-hidden="true" decoding="async">` : '';
+    return `<div class="cp-frame" data-dialog-anchor${large ? '="target"' : ''} style="--cp-ratio:${ratio}"><img src="${url}" alt="${this.esc(item.name)}" loading="${large ? 'eager' : 'lazy'}" decoding="${large ? 'sync' : 'async'}">${full}${overlay}</div>`;
   },
 
   shuffleCropPreview() {
@@ -206,36 +330,165 @@ window.trainingCropPreviewMixin = {
     });
   },
 
-  focusCropPreview(item) {
+  createCropPreviewFrame(item) {
+    const container = document.createElement('div');
+    container.innerHTML = this.cropPreviewImageHtml(item, true);
+    return container.firstElementChild;
+  },
+
+  async decodeCropPreviewDetail(frame, priority) {
+    const image = frame.querySelector('.cp-full-image');
+    if (!image?.dataset.previewSrc) return false;
+    const thumb = frame.firstElementChild;
+    image.fetchPriority = priority;
+    image.src = image.dataset.previewSrc;
+    try {
+      await image.decode();
+      if (!image.hasAttribute('src')) return false;
+      image.classList.add('is-loaded');
+      const removeThumb = () => {
+        image.alt = thumb.alt;
+        image.removeAttribute('aria-hidden');
+        thumb.remove();
+      };
+      if (frame.isConnected) setTimeout(removeThumb, 100);
+      else removeThumb();
+      return true;
+    } catch (_) { return false; }
+  },
+
+  scheduleCropPreviewDetailWarmup(event) {
+    const tile = event.target.closest('.cp-tile');
+    if (!tile || tile.disabled || tile.contains(event.relatedTarget) || cropPreviewDetailWarm?.tile === tile) return;
+    if (cropPreviewDetailWarm?.ready && !cropPreviewDetailWarm.done) return;
+    if (!this.cropPreviewOpen || this.cropPreviewFocusOpen || this.cropPreviewRenderLimit !== null
+        || document.body.hasAttribute('data-gpu-workload')) return;
+    releaseCropPreviewDetailWarm();
+    const id = tile.id.slice('crop-image-'.length);
+    const warm = { tile };
+    cropPreviewDetailWarm = warm;
+    warm.timer = setTimeout(() => {
+      if (!tile.isConnected || document.body.hasAttribute('data-gpu-workload')) {
+        releaseCropPreviewDetailWarm();
+        return;
+      }
+      const item = this.cropPreviewItems[Number(id)];
+      warm.item = item?.id === id ? item : this.cropPreviewItems.find(item => item.id === id);
+      if (!warm.item?.preview) {
+        releaseCropPreviewDetailWarm();
+        return;
+      }
+      warm.frame = this.createCropPreviewFrame(warm.item);
+      warm.ready = this.decodeCropPreviewDetail(warm.frame, 'low').finally(() => {
+        warm.done = true;
+        if (cropPreviewDetailWarm === warm) warm.timer = setTimeout(releaseCropPreviewDetailWarm, cropPreviewWarmLifetime);
+      });
+    }, cropPreviewWarmDelay);
+  },
+
+  cancelCropPreviewDetailWarmup(event) {
+    const warm = cropPreviewDetailWarm;
+    if (warm?.tile.contains(event.target) && !warm.tile.contains(event.relatedTarget) && (!warm.ready || warm.done)) {
+      releaseCropPreviewDetailWarm();
+    }
+  },
+
+  async prepareCropPreviewFrame(item) {
+    discardPendingCropPreviewFrame();
+    const canReuse = cropPreviewDetailWarm?.item === item;
+    const warmed = releaseCropPreviewDetailWarm(canReuse);
+    const warm = canReuse ? warmed : null;
+    const frame = warm?.frame || this.createCropPreviewFrame(item);
+    const image = frame.querySelector('.cp-full-image');
+    if (image?.classList.contains('is-loaded')) return frame;
+    if (image) image.fetchPriority = 'high';
+    const detail = warm?.ready || this.decodeCropPreviewDetail(frame, 'high');
+    // Start with whichever of these exact display nodes decodes first. A cold
+    // detail request never holds up a ready thumbnail.
+    const thumb = frame.firstElementChild.decode().then(() => true, () => false);
+    pendingCropPreviewFrame = frame;
+    try {
+      await Promise.race([detail.then(ok => ok || thumb), thumb.then(ok => ok || detail)]);
+      return frame;
+    } finally {
+      if (pendingCropPreviewFrame === frame) pendingCropPreviewFrame = null;
+    }
+  },
+
+  replaceCropPreviewFrame(frame) {
+    const stage = document.getElementById('cropFocusOriginal');
+    cancelCropPreviewDetailImage(stage?.firstElementChild);
+    if (frame) stage?.replaceChildren(frame);
+    else stage?.replaceChildren();
+  },
+
+  async focusCropPreview(item) {
     if (item.error) return;
-    window.AnimaUI?.setDialogOrigin(document.getElementById('cropFocusDialog'), document.getElementById(`crop-image-${item.id}`));
+    const seq = ++this._cropFocusSeq;
+    this._cropFocusRequested = null;
+    const frame = await this.prepareCropPreviewFrame(item);
+    if (seq !== this._cropFocusSeq || !this.cropPreviewOpen) {
+      cancelCropPreviewDetailImage(frame);
+      return;
+    }
+    this.replaceCropPreviewFrame(frame);
     this.cropPreviewFocus = item;
+    window.AnimaUI?.setDialogOrigin(document.getElementById('cropFocusDialog'), document.getElementById(`crop-image-${item.id}`));
     this.cropPreviewFocusOpen = true;
   },
 
-  async unfocusCropPreview() {
-    const item = this.cropPreviewFocus;
-    if (!item || !this.cropPreviewFocusOpen) return;
-    const tile = document.getElementById(`crop-image-${item.id}`);
-    // Retain the image while the dialog fades out; native dialog owns modality.
+  unfocusCropPreview() {
+    // The dialog clears its content after the image returns to the grid.
+    ++this._cropFocusSeq;
+    this._cropFocusRequested = null;
+    releaseCropPreviewDetailWarm();
+    discardPendingCropPreviewFrame();
+    cancelCropPreviewDetailImage(document.getElementById('cropFocusOriginal')?.firstElementChild);
     this.cropPreviewFocusOpen = false;
-    await this.$nextTick();
-    tile?.focus({ preventScroll: true });
   },
 
-  cropPreviewAdjacent(direction) {
-    const items = this.cropPreviewVisible.filter(item => !item.error);
-    const index = items.findIndex(item => item.id === this.cropPreviewFocus?.id);
-    return index < 0 ? null : items[index + direction] || null;
+  clearCropPreviewFocus() {
+    this.replaceCropPreviewFrame();
+    this.cropPreviewFocus = null;
   },
 
-  stepCropPreview(direction) {
-    const next = this.cropPreviewAdjacent(direction);
-    if (next) {
-      this.cropPreviewFocus = next;
+  cropPreviewAdjacent(direction, id = this.cropPreviewFocus?.id) {
+    if (id == null) return null;
+    const items = this.cropPreviewVisible;
+    const index = items.findIndex(item => item.id === id);
+    if (index < 0) return null;
+    for (let i = index + direction; i >= 0 && i < items.length; i += direction) {
+      if (!items[i].error) return items[i];
+    }
+    return null;
+  },
+
+  async stepCropPreview(direction) {
+    const next = this.cropPreviewAdjacent(direction, this._cropFocusRequested ?? this.cropPreviewFocus?.id);
+    if (!next || !this.cropPreviewFocusOpen) return;
+    if (this.cropPreviewRenderLimit !== null && !document.getElementById(`crop-image-${next.id}`)) return;
+    const seq = ++this._cropFocusSeq;
+    this._cropFocusRequested = next.id;
+    try {
+      const frame = await this.prepareCropPreviewFrame(next);
+      if (seq !== this._cropFocusSeq || !this.cropPreviewFocusOpen) {
+        cancelCropPreviewDetailImage(frame);
+        return;
+      }
+      const dialog = document.getElementById('cropFocusDialog');
+      window.AnimaUI?.settleDialog(dialog?.querySelector('[data-dialog-anchor]'));
+      await this.$nextTick();
       const tile = document.getElementById(`crop-image-${next.id}`);
-      tile?.scrollIntoView({ block: 'nearest' });
-      window.AnimaUI?.setDialogOrigin(document.getElementById('cropFocusDialog'), tile);
+      if (seq !== this._cropFocusSeq || !this.cropPreviewFocusOpen || (!tile && this.cropPreviewRenderLimit !== null)) {
+        cancelCropPreviewDetailImage(frame);
+        return;
+      }
+      this.replaceCropPreviewFrame(frame);
+      this.cropPreviewFocus = next;
+      tile?.querySelector('[data-dialog-anchor]')?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+      window.AnimaUI?.setDialogOrigin(dialog, tile);
+    } finally {
+      if (seq === this._cropFocusSeq) this._cropFocusRequested = null;
     }
   },
 

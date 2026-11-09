@@ -74,40 +74,88 @@ dialog.modal-overlay:not([open]) { pointer-events: none; }
   dialog.modal-overlay[open] { opacity: 0; }
   dialog.modal-overlay[open] > .modal { opacity: 0; transform: scale(var(--menu-scale-enter)); }
 }
-/* Feedback changes paint, never the position or size of a click target. */
-/* Reusable button-to-dialog motion. Requires x-dialog and a direct .modal child.
-   --dialog-backdrop-blur / --dialog-backdrop-color may be overridden per dialog. */
+:root {
+  --duration-morph-enter: 240ms;
+  --duration-morph-exit: 210ms;
+  --ease-morph-enter: cubic-bezier(.36, 0, .24, 1);
+  --ease-morph-exit: cubic-bezier(.45, 0, .35, 1);
+}
+@supports (animation-timing-function: linear(0, 1)) {
+  :root {
+    /* Soft pickup, quick expansion, then a small elastic settle at the panel. */
+    --ease-morph-enter: linear(0, .0139, .0733, .1783, .3136, .4601, .6009, .7241, .8236, .898,
+      .9494, .9818, 1.0001, 1.0086, 1.0111, 1.0103, 1.0082, 1.0049, 1.0018, 1.0003, 1);
+    /* Set the source back in its slot without overshooting the landing. */
+    --ease-morph-exit: linear(0, .0105, .0518, .1226, .2141, .3163, .4206, .5202, .6111, .691,
+      .759, .8155, .8614, .898, .9267, .9489, .9658, .9785, .988, .9949, 1);
+  }
+}
+/* x-dialog animates the silhouette and its contents separately. */
 dialog.modal-overlay--morph {
-  --duration-dialog-enter: 260ms;
-  --duration-dialog-exit: 200ms;
+  --duration-dialog-enter: var(--duration-morph-enter);
+  --duration-dialog-exit: var(--duration-morph-exit);
+  --ease-dialog-out: var(--ease-morph-enter);
+  --ease-dialog-in: var(--ease-morph-exit);
   background: transparent;
   opacity: 1;
-  transition: display var(--duration-dialog-exit) allow-discrete, overlay var(--duration-dialog-exit) allow-discrete;
+  transition: none;
 }
-dialog.modal-overlay--morph > .modal {
-  transform: var(--dialog-origin-transform, scale(.97));
-  transform-origin: center;
+dialog.modal-overlay--morph > .modal,
+dialog.modal-overlay--morph[open] > .modal {
+  opacity: 1;
+  transform: none;
+  transition: none;
 }
-dialog.modal-overlay--morph[open] > .modal { transform: none; }
+.dialog-morph-origin { visibility: hidden !important; }
+.dialog-morph-button {
+  position: absolute;
+  z-index: 1;
+  margin: 0;
+  max-width: none;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  pointer-events: none;
+  transition: none !important;
+}
+dialog[data-dialog-button-flight] > .modal { background: transparent; border-color: transparent; box-shadow: none; }
+.dialog-morph-fill { position: absolute; z-index: -1; pointer-events: none; }
 dialog.modal-overlay--morph::backdrop {
-  background: transparent;
-  backdrop-filter: blur(0);
-  transition: background-color var(--duration-dialog-exit) var(--ease-out),
-    backdrop-filter var(--duration-dialog-exit) var(--ease-out),
-    display var(--duration-dialog-exit) allow-discrete, overlay var(--duration-dialog-exit) allow-discrete;
+  background: var(--dialog-backdrop-color, rgba(0,0,0,.32));
+  opacity: 0;
+  transition: opacity var(--duration-dialog-exit) var(--ease-dialog-in);
 }
-dialog.modal-overlay--morph[open]::backdrop {
-  background: var(--dialog-backdrop-color, rgba(0,0,0,.25));
-  backdrop-filter: blur(var(--dialog-backdrop-blur, 5px));
+dialog.modal-overlay--morph[open]:not([data-dialog-closing])::backdrop {
+  opacity: 1;
   transition-duration: var(--duration-dialog-enter);
+  transition-timing-function: var(--ease-dialog-out);
 }
 @starting-style {
-  dialog.modal-overlay--morph[open] { opacity: 1; }
-  dialog.modal-overlay--morph[open] > .modal { opacity: 0; transform: var(--dialog-origin-transform, scale(.97)); }
-  dialog.modal-overlay--morph[open]::backdrop { background: transparent; backdrop-filter: blur(0); }
+  dialog.modal-overlay--morph[open]:not([data-dialog-closing])::backdrop { opacity: 0; }
 }
-@media (prefers-reduced-motion: reduce) {
-  dialog.modal-overlay--morph > .modal { transform: none; }
+/* Keep the blur radius fixed during flight. Sharpen the underlying layer
+   after the dialog leaves the top layer. */
+body > .app-layout,
+#cropPreviewDialog > .modal {
+  transition: filter 80ms ease-out;
+}
+body:not([data-gpu-workload]) > .app-layout.dialog-is-background,
+body:not([data-gpu-workload]) > #cropPreviewDialog.dialog-is-background > .modal {
+  filter: blur(5px);
+  transition: none;
+}
+body[data-gpu-workload] > .app-layout,
+body[data-gpu-workload] > #cropPreviewDialog > .modal,
+#cropPreviewDialog[data-dialog-closing] > .modal { transition: none; }
+.dialog-morph-surface {
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: inherit;
+  box-shadow: var(--shadow-lg);
 }
 
 .toast { animation: toast-in var(--duration-toast-enter) var(--ease-out) both; }

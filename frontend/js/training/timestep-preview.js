@@ -155,7 +155,7 @@ window.trainingTimestepPreview = {
           <input type="text" inputmode="decimal" autocomplete="off" placeholder="0" :value="subsetTimestepOffsetInputValue(${nameExpr})" @input="setSubsetTimestepOffsetDraft(${nameExpr}, $event.target.value)" @blur="commitSubsetTimestepOffsetDraft(${nameExpr})"${disabled}>
           <button type="button" @click="stepSubsetTimestepOffset(${nameExpr}, 0.05)"${disabled}>+</button>
         </div>
-        <button type="button" class="btn-icon" @click="openTimestepPreview(${nameExpr})"${disabled} ${this.trainingI18nAttrs('timestepOffset.previewSubset')}>
+        <button type="button" class="btn-icon" data-dialog-opens="timestepPreviewDialog" @click="openTimestepPreview(${nameExpr})"${disabled} ${this.trainingI18nAttrs('timestepOffset.previewSubset')}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19V3"/></svg>
         </button>
         <div class="field-menu-wrap subset-timestep-menu" x-data="actionMenu" x-id="['field-menu']" @keydown="key($event)" @click.outside="close(false)" @pointerenter="hoverEnter($event)" @pointerleave="hoverLeave()" @focusout="focusOut($event)">
@@ -183,7 +183,7 @@ window.trainingTimestepPreview = {
           </div>
           <div class="field-hint">${this.trainingText('timestepOffset.hint')}</div>
         </div>
-        <button type="button" class="btn btn-ghost btn-sm" @click="openTimestepPreview('overall')"${previewDisabled}${disabled}>
+        <button type="button" class="btn btn-ghost btn-sm" data-dialog-opens="timestepPreviewDialog" @click="openTimestepPreview('overall')"${previewDisabled}${disabled}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19V3"/></svg>
           ${this.trainingText('timestepOffset.preview')}
         </button>

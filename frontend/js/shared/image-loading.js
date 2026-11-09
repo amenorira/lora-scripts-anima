@@ -5,8 +5,7 @@
    Alpine: <img x-image="{src: item.original, placeholder: item.thumbnail}">
    The optional image-ready event carries original width/height. Directive
    cleanup cancels stale writes; imperative callers use display()/cancel().
-   decode() is for state-driven viewers; reveal() is for a full-image layer
-   above an existing thumbnail. Do not apply eager decoding to lazy grids. */
+   decode() is for state-driven viewers. Do not apply eager decoding to lazy grids. */
 (() => {
   const pending = new Map();
   const requests = new WeakMap();
@@ -57,14 +56,7 @@
     return request.ready;
   }
 
-  async function reveal(element) {
-    try {
-      await element.decode();
-      if (element.isConnected) element.classList.add('is-loaded');
-    } catch (_) { /* The thumbnail underneath remains visible. */ }
-  }
-
-  window.AnimaImages = {decode, display, cancel, reveal};
+  window.AnimaImages = {decode, display, cancel};
   document.addEventListener('alpine:init', () => {
     Alpine.directive('image', (element, {expression}, {evaluateLater, effect, cleanup}) => {
       const evaluate = evaluateLater(expression);

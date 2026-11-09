@@ -1,9 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {loadFrontend, composeMixins} = require('./helpers.cjs');
+const {loadFrontend, composeMixins, deferred} = require('./helpers.cjs');
 
 function app() {
-  const context = loadFrontend(['training/crop-preview'], {window:{}, AbortController, document:{querySelector:()=>null, getElementById:()=>null}});
+  const context = loadFrontend(['training/crop-preview'], {window:{}, AbortController, setTimeout, clearTimeout, document:{querySelector:()=>null, getElementById:()=>null}});
   return composeMixins(context.window.trainingCropPreviewMixin, {
     t: key => key, esc: text => String(text).replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;'),
     $nextTick: async () => {},
@@ -22,6 +22,9 @@ test('bucket statistics aggregate repeats independently of image filters', () =>
   assert.equal(a.cropPreviewSummary(), '3/17/2');
   assert.ok(a.cropPreviewStatsNote().includes('cropPreview.includesReg'));
   assert.ok(a.cropPreviewStatsNote().includes('cropPreview.statsErrors'));
+  a.cropPreviewItems = [sample];
+  assert.equal(a.cropPreviewSummary(), '1/5/1');
+  assert.equal(a.cropPreviewStatsNote(), '');
 });
 
 test('crop filter and bucket filter compose without losing error entries', () => {
@@ -79,7 +82,7 @@ test('thumbnail marks discarded strips and escapes filenames', () => {
   assert.ok(!focused.includes('cp-crop-boundary'));
   assert.ok(focused.includes('/preview'));
   assert.ok(focused.includes('src="/thumb"'));
-  assert.ok(focused.includes('window.AnimaImages.reveal($el)'));
+  assert.ok(focused.includes('data-preview-src="/preview"'));
 });
 
 test('folder groups follow combined filters and exclude empty groups', () => {
@@ -98,6 +101,20 @@ test('folder groups follow combined filters and exclude empty groups', () => {
   assert.equal(a.cropPreviewBucket, '');
 });
 
+test('entry limits rendered cards without changing their order or folder counts', () => {
+  const a = app();
+  a.cropPreviewItems = [
+    {...sample, name:'a/one.png'},
+    {...sample, id:'1', name:'b/two.png'},
+    {...sample, id:'2', name:'a/three.png'},
+  ];
+  const groups = () => Array.from(a.cropPreviewFolders, f => [f.name, f.count, Array.from(f.items, item => item.id)]);
+  a.cropPreviewRenderLimit = 1;
+  assert.deepEqual(groups(), [['a', 2, ['0']]]);
+  a.cropPreviewRenderLimit = null;
+  assert.deepEqual(groups(), [['a', 2, ['0', '2']], ['b', 1, ['1']]]);
+});
+
 test('focus navigation follows visible images across folders and stops at the ends', () => {
   const a = app();
   a.cropPreviewItems = [sample, {...sample,id:'1',name:'folder/b.png'}, {id:'2',error:'broken'}];
@@ -108,13 +125,53 @@ test('focus navigation follows visible images across folders and stops at the en
   assert.equal(a.cropPreviewAdjacent(1), null);
 });
 
-test('closing the focus dialog retains its image for fade-out without leaving the grid inert', async () => {
+test('two navigation steps while decoding advance twice without showing a stale frame', async () => {
   const a = app();
-  a.focusCropPreview(sample);
+  a.cropPreviewItems = [sample, {...sample, id:'1'}, {...sample, id:'2'}];
+  a.cropPreviewFocusOpen = true;
+  a.cropPreviewFocus = sample;
+  const pending = [];
+  a.prepareCropPreviewFrame = item => {
+    const ready = deferred();
+    pending.push({item, ready});
+    return ready.promise;
+  };
+  const first = a.stepCropPreview(1);
+  const second = a.stepCropPreview(1);
+  assert.deepEqual(pending.map(({item}) => item.id), ['1', '2']);
+  pending[1].ready.resolve();
+  await second;
+  pending[0].ready.resolve();
+  await first;
+  assert.equal(a.cropPreviewFocus.id, '2');
+});
+
+test('closing crop previews retains their content until the dialog exit finishes', async () => {
+  const a = app();
+  a.prepareCropPreviewFrame = async () => ({});
+  a.cropPreviewOpen = true;
+  a.cropPreviewLoading = true;
+  await a.focusCropPreview(sample);
   assert.equal(a.cropPreviewFocusOpen, true);
-  await a.unfocusCropPreview();
+  a.unfocusCropPreview();
   assert.equal(a.cropPreviewFocusOpen, false);
   assert.equal(a.cropPreviewFocus, sample);
   a.closeCropPreview();
-  assert.equal(a.cropPreviewFocus, null);
+  assert.equal(a.cropPreviewOpen, false);
+  assert.equal(a.cropPreviewLoading, true);
+});
+
+test('a late thumbnail decode cannot open the detail after the crop window closes', async () => {
+  let decoded;
+  const ready = new Promise(resolve => { decoded = resolve; });
+  const a = app();
+  a.prepareCropPreviewFrame = () => ready;
+  a.cropPreviewOpen = true;
+  const opening = a.focusCropPreview(sample);
+  await Promise.resolve();
+  assert.equal(a.cropPreviewFocusOpen, false);
+  a.closeCropPreview();
+  decoded();
+  await opening;
+  assert.equal(a.cropPreviewFocusOpen, false);
 });
