@@ -4,6 +4,30 @@
 
 All notable changes to this project are documented in this file.
 
+## v26.1109.0bb27 - 2026-11-09
+
+This release makes the relationship between preview parameters and graphics clearer, reduces the steps needed to find conflicting settings, failed images, and training samples, and improves cache rebuilding and caption editing.
+
+### Previews and Navigation
+
+- **Connect parameters to their graphics.** Hover over or use the keyboard to focus the timestep main sampling range, learning-rate warmup, matrix Rank, or W1/W2 to show subtly animated straight dashed lines and highlight the corresponding graphics. Rank connects to every relevant dimension; decomposed W1/W2 factors connect to the whole matrix group. Range endpoints sit inside the chart, away from its center. Respects the system's reduced-motion preference.
+- **Jump from a parameter conflict to the related setting.** Click a parameter in a conflict message to locate it, expand its section, and focus the field. Focus also transfers correctly between the LyCORIS dialog and the main form.
+- **Open failed AI-captioning images from the failure count.** Clicking the count opens the current task's failed-image filter and clears the previous search and page position.
+- **Compare training samples for the same prompt.** When samples contain multiple prompts across multiple stages, the preview can show only images for the current prompt. Refreshing preserves the selected image; closing the preview restores the full list.
+
+### Caches and Caption Editing
+
+- **Choose whether to rebuild caches before starting.** Existing image or text-encoder caches trigger a choice, with clearing limited to the relevant training type's caches. Legacy SDXL cache names are supported. Buttons state whether clearing is followed by cache rebuilding or training, and wrap in narrow windows.
+- **Automatic incremental refresh in the caption editor.** While the page is visible, external caption changes refresh only affected images and statistics, preserving unsaved content and conflict checks. Restoring a session also synchronizes selected images outside the first page.
+- Fixed state synchronization during draft recovery, batch confirmation, selection, restoration, and partial saves. Unreadable caption files are reported with their paths while other images continue to refresh.
+
+### Interaction Fixes
+
+- Fixed state synchronization when restoring environment tasks, stopping regularization-image generation, and switching pages. Existing tagging results are retained if a new task fails to start.
+- Aligned file-picker grouping with keyboard navigation and fixed long paths overflowing confirmation dialogs. Related messages include Chinese, English, and Japanese translations.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1107.0d80b...v26.1109.0bb27)
+
 ## v26.1107.0d80b - 2026-11-07
 
 Fixed an issue where the Start Generation button for regularization images stayed disabled even when the source images were ready and no caption selection was required.
