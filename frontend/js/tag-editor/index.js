@@ -442,9 +442,11 @@ window.tagEditorMixin = {
   async tagEditorSelectFiltered() {
     this._teFlushAllPendingTextEdits();
     var epoch = this._teLoadEpoch;
+    var request = ++this._teNavRequest;
     try {
       this._teSearchLoading = true;
       var filtered = await this._teFetchAllSessionItems(true);
+      if (epoch !== this._teLoadEpoch || request !== this._teNavRequest) return;
       this.tagEditorSelected = filtered.map(function(img) { return img.path; });
       this._teLastSelected = null;
       this._teCachedSelectedStatsKey = '';
@@ -524,8 +526,13 @@ window.tagEditorMixin = {
 
   _teConfirmTagBatch(msg, cb) {
     var epoch = this._teLoadEpoch, modeEpoch = this._teModeEpoch;
+    var generation = this._teExternalGeneration;
+    var captionVersion = this._teCaptionQueryVersion;
     this._teConfirmBatch(msg, () => {
-      if (epoch === this._teLoadEpoch && modeEpoch === this._teModeEpoch && this.tagEditorAllowsTagOps()) return cb();
+      if (epoch === this._teLoadEpoch && modeEpoch === this._teModeEpoch &&
+          generation === this._teExternalGeneration && this.tagEditorSessionGeneration <= generation &&
+          captionVersion === this._teCaptionQueryVersion &&
+          this.tagEditorAllowsTagOps()) return cb();
       this.toast(this.t('tagEditor.batchStale'), 'warning');
     });
   },

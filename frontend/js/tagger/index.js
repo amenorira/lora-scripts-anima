@@ -373,7 +373,7 @@ window.taggerMixin = {
   handleTaggerModelChange(resetPreset = true) {
     localStorage.setItem('anima-tagger-model', this.taggerSelectedModel || '');
     if (resetPreset) {
-      this._clearTaggerResultState(true);
+      this._clearTaggerResultState();
       ['folder','single'].forEach(mode => this._clearStoredTaggerResult(this._taggerModeStates[mode]));
       localStorage.removeItem('anima-tagger-task-id');
       this._pruneTaggerTasks();

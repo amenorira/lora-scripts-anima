@@ -136,6 +136,7 @@ async def create_dataset_session(data: dict):
                 "count": len(session.images),
                 "no_tag_count": sum(1 for item in session.images if not str(item.get("tags", "")).lstrip("\ufeff").strip()),
                 "tags": list(session.tags),
+                "unreadable_paths": session.unreadable_paths,
                 **page,
             },
         }
@@ -204,6 +205,7 @@ async def refresh_dataset_session(session_id: str, since_generation: int | None 
                 no_tag_count=sum(1 for item in session.images if not item["tags"].lstrip("\ufeff").strip()),
                 changed_images=session.changed_images,
                 removed_paths=session.removed_paths,
+                unreadable_paths=session.unreadable_paths,
             )
         return {"status": "success", "data": data}
     except KeyError:

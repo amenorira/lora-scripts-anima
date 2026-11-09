@@ -2038,7 +2038,7 @@ dialog.modal-overlay::backdrop { background: transparent; }
   margin-bottom: 8px;
 }
 .confirm-message {
-  font-size: 13px; color: var(--text-tertiary); line-height: 1.6; white-space: pre-line;
+  font-size: 13px; color: var(--text-tertiary); line-height: 1.6; white-space: pre-line; overflow-wrap: anywhere;
 }
 .modal-confirm .modal-footer {
   border-top: none; padding: 0 28px 22px;

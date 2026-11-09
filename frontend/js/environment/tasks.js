@@ -35,12 +35,15 @@ window.environmentTasksMixin = {
     };
     for (const task of tracked) {
       const slot = slots[task.kind];
-      if (!slot || !['CREATED', 'RUNNING'].includes(task.status)) continue;
+      if (!slot) continue;
       const idKey = slot === 'animaModel' ? 'animaModelJobId' : slot + 'InstallJobId';
       const busyKey = slot === 'animaModel' ? 'animaModelBusy' : slot + 'Busy';
-      if (!this[idKey]) this[idKey] = task.task_id;
-      this[busyKey] = true;
-      this._setEnvironmentRealtimeTask(slot, task.task_id);
+      if (this[idKey] && this[idKey] !== task.task_id) continue;
+      if (['CREATED', 'RUNNING'].includes(task.status)) {
+        this[idKey] = task.task_id;
+        this[busyKey] = true;
+        this._setEnvironmentRealtimeTask(slot, task.task_id);
+      } else if (!this[idKey]) continue;
       this._applyEnvironmentRealtimeUpdate(slot, task.data || {}, task.status || '');
     }
   },

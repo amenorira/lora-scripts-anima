@@ -106,6 +106,7 @@ test('edits and undo during a save remain dirty against the text actually writte
     const saved=original.replace('原文','已发送');
     const typed=original.replace('原文','继续输入');
     ctx.tagEditorImages[0].tags=ctx.tagEditorOriginal.a=original;
+    ctx._teSessionTags=[{tag:'原文',count:1}];
     ctx._teCaptionRevisions={a:'old-revision'};
     ctx._teUpdateImageTags(ctx.tagEditorImages[0],saved);ctx._tePushHistory({type:'text'});
     let finish;
@@ -120,6 +121,7 @@ test('edits and undo during a save remain dirty against the text actually writte
     const expected=action==='undo' ? original : typed;
     assert.equal(ctx.tagEditorImages[0].tags,expected);
     assert.equal(ctx.tagEditorOriginal.a,saved);
+    assert.deepEqual(Array.from(ctx._teSessionTags, item => [item.tag, item.count]), [['已发送',1]]);
     assert.equal(ctx.tagEditorModified,true);
     const draft=JSON.parse(context.localStorage.getItem('tagEditor_draft_/dataset')).items[0];
     assert.equal(draft.tags,expected);assert.equal(draft.original,saved);assert.equal(draft.revision,'new-revision');

@@ -64,7 +64,7 @@ window.trainingFilePicker = {
       if (requestSeq !== this._pickerRequestSeq || !this.showFilePickerModalFlag) return;
       if (d.status !== 'success') throw new Error(d.message || this.t('common.fileBrowserFailed'));
       const files = d.data ? (d.data.files || d.data) : [];
-      this._pickerFiles = Array.isArray(files) ? files : [];
+      this._setPickerFiles(files);
       this._pickerCurrent = this._normalizePickerPath(target ? target.getValue() : this.form[key]);
       this._pickerIndex = this._pickerCurrent
         ? this.filteredPickerFiles.findIndex(f => this._normalizePickerPath(f.path) === this._pickerCurrent)
@@ -101,11 +101,11 @@ window.trainingFilePicker = {
   showFilePickerModal(key, files, pickType, target = null) {
     this._pickerTarget = target;
     this._pickerKey = key;
-    this._pickerFiles = files || [];
     this._pickerFilter = '';
     this._pickerError = '';
     this._pickerKind = pickType || '';
     this._pickerRoot = this.PICKER_ROOTS[pickType] || '';
+    this._setPickerFiles(files);
     this._pickerCurrent = this._normalizePickerPath(target ? target.getValue() : this.form[key]);
     this.showFilePickerModalFlag = true;
     // 键盘高亮初始落在当前值所在行，并滚动到它
@@ -133,16 +133,30 @@ window.trainingFilePicker = {
     return (this._pickerFiles || []).filter(f => f.name.toLowerCase().includes(filter));
   },
 
-  // 按扫描根目录下的子目录分组；全部直接在根目录时只有一组（不显示分组头）
-  get pickerGroups() {
+  _groupPickerFiles(files) {
     const byDir = new Map();
-    for (const f of this.filteredPickerFiles) {
+    for (const f of files) {
       const dir = this._pickerRelDir(f.path);
       if (!byDir.has(dir)) byDir.set(dir, []);
       byDir.get(dir).push(f);
     }
+    return byDir;
+  },
+
+  _setPickerFiles(files) {
+    const byDir = this._groupPickerFiles(Array.isArray(files) ? files : []);
     const dirs = [...byDir.keys()].sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b)));
-    return dirs.map(d => ({ dir: d, files: byDir.get(d) }));
+    this._pickerFiles = dirs.flatMap(dir => byDir.get(dir));
+  },
+
+  // 筛选和分组保留键盘导航使用的文件顺序。
+  get pickerGroups() {
+    let start = 0;
+    return Array.from(this._groupPickerFiles(this.filteredPickerFiles), ([dir, files]) => {
+      const group = { dir, files, start };
+      start += files.length;
+      return group;
+    });
   },
 
   _pickerRelDir(path) {

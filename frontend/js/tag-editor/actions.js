@@ -527,7 +527,7 @@ window.tagEditorActions = {
     try { images = await this._teEnsureAllImagesLoaded(); }
     catch (e) { if (e.name !== 'AbortError') this.toast(e.message || this.t('common.networkError'), 'error'); return; }
     if (!this.tagEditorAllowsTagOps() || modeEpoch !== this._teModeEpoch) return;
-    var targets = images.filter(function(img) { return _teParseTags(img.tags).includes(oldTag); });
+    var targets = images.filter(function(img) { return !img._teMissingOnDisk && _teParseTags(img.tags).includes(oldTag); });
     if (!targets.length) { this.toast(this.t('tagEditor.inlineRenameNone'), 'warning'); return; }
     var message = this.t('tagEditor.globalRenameConfirm').replace('{n}', targets.length) + '\n' + oldTag + ' → ' + newTag;
     this._teConfirmTagBatch(message, function() {

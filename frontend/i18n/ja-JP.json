@@ -2227,6 +2227,7 @@
 		"batchPreview": "変更をプレビュー",
 		"batchPreviewDiff": "{n} 枚を変更します",
 		"batchStale": "キャプションまたはデータセットが変わりました。一括操作をやり直してください。",
+		"externalRefreshUnreadable": "一部のキャプションを読み込めませんでした。対象の画像パスを確認してください。",
 		"copyTags": "タグをコピー",
 		"pasteTags": "タグを貼り付け",
 		"tagsCopied": "{n} 個のタグをコピーしました",

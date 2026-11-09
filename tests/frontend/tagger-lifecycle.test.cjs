@@ -32,25 +32,57 @@ for (const change of ['unchanged','route','mode','return','path','scan','startin
 }
 
 test('local task creation response stays attached to the initiating source mode', async()=>{
-  const pending=deferred(), storage=new Map();
+  const pending=deferred(), storage=new Map([['anima-tagger-task-id','old-local-task']]);
   const {window}=loadFrontend('tagger/index',{window:{},fetch:()=>pending.promise,
-    localStorage:{setItem:(key,value)=>storage.set(key,value)}});
+    localStorage:{getItem:key=>storage.get(key),setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)}});
   const app=composeMixins(window.taggerMixin,{
     currentRoute:'tagger',taggerSourceMode:'folder',taggerSource:{source_token:'local'},
+    taggerTaskId:'old-local-task',_taggerTasks:{'old-local-task':{status:'done'}},
+    taggerItems:[{index:0,status:'failed',error:'Old error'}],taggerResultText:'old local result',
     taggerModels:[{id:'model',engine:'onnx'}],taggerSelectedModel:'model',
-    taggerCanStart:()=>true,_clearTaggerResultState(){},saveTaggerSettings(){},
+    taggerCanStart:()=>true,saveTaggerSettings(){},syncTaggerDictionary(){},
     realtimeSubscribe(){},realtimeUnsubscribe(){},toast:message=>assert.fail(message),
   });
   const start=app.startTagger();
+  assert.equal(app.taggerResultText,'old local result');
+  app._taggerModeStates.folder=app._captureTaggerModeState();
   app.currentRoute='ai-captioning';app.taggerSourceMode='api-folder';
   app.taggerSource={source_token:'api-draft'};
+  app.taggerTaskId='api-task';app._taggerTasks['api-task']={status:'done'};
+  app.taggerResultText='api result';
   pending.resolve(response({task_id:'new-local-task'}));await start;
-  assert.equal(app.taggerTaskId,null);
+  assert.equal(app.taggerTaskId,'api-task');
+  assert.equal(app.taggerResultText,'api result');
   assert.equal(app._taggerModeStates.folder.taskId,'new-local-task');
+  assert.equal(app._taggerModeStates.folder.resultText,'');
+  assert.equal(app._taggerModeStates.folder.items[0].status,'pending');
+  assert.equal(app._taggerModeStates.folder.items[0].error,undefined);
+  assert.equal(app.taggerTaskById('old-local-task'),null);
   assert.equal(app.taggerSource.source_token,'api-draft');
   assert.equal(app.taggerTaskById('new-local-task').engine,'onnx');
   assert.equal(storage.get('anima-tagger-task-id'),'new-local-task');
   assert.equal(storage.has('anima-ai-tagger-task-id'),false);
+});
+
+test('a rejected local launch preserves the previous result, failures and recovery ID', async () => {
+  const storage = new Map([['anima-tagger-task-id', 'old-task']]), errors = [];
+  const {window} = loadFrontend('tagger/index', {
+    window: {}, localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) },
+    fetch: async () => ({ json: async () => ({ status: 'fail', message: 'Another Tagger task is running' }) }),
+  });
+  const app = composeMixins(window.taggerMixin, {
+    taggerSource: { source_token: 'source', total: 1 }, taggerSelectedModel: 'model',
+    taggerTaskId: 'old-task', _taggerTasks: { 'old-task': { status: 'done', failed: 1 } },
+    taggerResultText: 'old result', taggerItems: [{ index: 0, status: 'failed' }],
+    toast: error => errors.push(error),
+  });
+  await app.startTagger();
+  assert.deepEqual(errors, ['Another Tagger task is running']);
+  assert.equal(app.taggerStarting, false);
+  assert.equal(app.taggerTask.failed, 1);
+  assert.equal(app.taggerItems[0].status, 'failed');
+  assert.equal(app.taggerResultText, 'old result');
+  assert.equal(storage.get('anima-tagger-task-id'), 'old-task');
 });
 
 test('scan failures localize UI fallback while keeping backend diagnostics intact', async () => {

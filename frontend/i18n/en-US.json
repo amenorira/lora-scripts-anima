@@ -2227,6 +2227,7 @@
 		"batchPreview": "Preview Changes",
 		"batchPreviewDiff": "{n} images will be modified",
 		"batchStale": "The captions or dataset changed. Please run the batch operation again.",
+		"externalRefreshUnreadable": "Some captions could not be read. See the affected image paths for details.",
 		"copyTags": "Copy Tags",
 		"pasteTags": "Paste Tags",
 		"tagsCopied": "Copied {n} tags",

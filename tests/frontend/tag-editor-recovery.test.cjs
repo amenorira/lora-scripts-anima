@@ -8,7 +8,11 @@ function fixture() {
   const context = { window: {}, URLSearchParams, AbortController, setTimeout, clearTimeout,
     localStorage: storage, sessionStorage: storage };
   let create = () => response({ session_id: 'new', dir: '/dataset', count: 2, page: 1,
-    items: [{ path: 'b', tags: 'other', caption_revision: 'b1' }], tags: [] });
+    items: [{ path: 'b', tags: 'other', caption_revision: 'b1' }], tags: [],
+    retained_items: [{ path: 'a', tags: raw, caption_revision: 'a1',
+      preview: '/api/image-preview?scope=dataset&session_id=new&path=a.png&variant=preview&size=960',
+      thumbnail: '/api/image-preview?scope=dataset&session_id=new&path=a.png&variant=thumb&size=320',
+    }] });
   context.fetch = (url, options) => options?.method === 'DELETE' ? Promise.resolve(response({})) : Promise.resolve(create(url, options));
   loadTagEditor( context);
   const app = Object.assign({}, context.window.tagEditorMixin, {
@@ -27,8 +31,6 @@ function fixture() {
 
 test('session recovery flushes text history and preserves raw undo/redo and selection off page', async () => {
   const { app, raw } = fixture();
-  app.tagEditorImages[0].preview = '/api/image-preview?scope=dataset&session_id=old&path=a.png&variant=preview&size=960';
-  app.tagEditorImages[0].thumbnail = '/api/image-preview?scope=dataset&session_id=old&path=a.png&variant=thumb&size=320';
   app.tagEditorDetailTextChange({ target: { value: '  edited\n' } });
   const edited = app.tagEditorImages[0].tags;
   assert.equal(app.tagEditorHistory.length, 0);
@@ -48,6 +50,31 @@ test('session recovery flushes text history and preserves raw undo/redo and sele
   assert.equal(app.tagEditorGetSelectedImg().tags, raw);
   app.tagEditorRedo();
   assert.equal(app.tagEditorGetSelectedImg().tags, edited);
+});
+
+test('recovery preserves the draft revision but reverts to the current caption on or off the first page', async () => {
+  for (const onFirstPage of [true, false]) {
+    const { app, create } = fixture();
+    app.tagEditorDetailTextChange({ target: { value: 'my draft' } });
+    create((_url, options) => {
+      assert.deepEqual(JSON.parse(options.body).retained_paths, ['a']);
+      const current = { path: 'a', tags: 'external', caption_revision: 'a2' };
+      return response({ session_id: 'new', dir: '/dataset', count: 2, page: 1, tags: [],
+        items: onFirstPage ? [current] : [{ path: 'b', tags: 'other' }],
+        retained_items: onFirstPage ? [] : [current] });
+    });
+    await app.tagEditorReloadSessionPage(1);
+    assert.equal(app.tagEditorGetSelectedImg().tags, '\uFEFFmy draft');
+    assert.equal(app.tagEditorOriginal.a, 'external');
+    assert.equal(app._teCaptionRevisions.a, 'a1');
+    app.tagEditorRevertSelectedImage();
+    assert.equal(app.tagEditorGetSelectedImg().tags, 'external');
+    assert.equal(app.tagEditorModified, false);
+    assert.equal(app._teCaptionRevisions.a, 'a2');
+    app.tagEditorAddInput = 'new';
+    app.tagEditorAddTagToSelected();
+    assert.equal(app.tagEditorGetSelectedImg().tags, 'external, new');
+  }
 });
 
 test('failed automatic recovery retains unsaved state for a normal load retry', async () => {

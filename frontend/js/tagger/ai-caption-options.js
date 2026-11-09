@@ -357,11 +357,11 @@ window.captionOptionsMixin = {
         },this.t('caption.continueOverwrite'),{danger:true});
         return;
       }
-      this._clearTaggerResultState(true);
       const payload = {engine:'api',source_token:token,
         api,options:{captioning:{...options,candidates,dry_run:dryRun}}};
       const body = await (await fetch('/api/tagger/tasks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})).json();
       if (body.status !== 'success') throw new Error(this.localizeApiError?.(body) || body.message);
+      this._clearTaggerResultState(mode);
       this.attachTaggerTask(body.data.task_id, mode);
     } catch (error) { this.toast(error.message, 'error'); }
     finally { this.taggerStarting = false; }

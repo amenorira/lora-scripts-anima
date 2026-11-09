@@ -2227,6 +2227,7 @@
 		"batchPreview": "预览变更",
 		"batchPreviewDiff": "{n} 张图片将被修改",
 		"batchStale": "标注或数据集已变化，请重新执行批量操作。",
+		"externalRefreshUnreadable": "部分图片的标注无法读取，详见受影响的图片路径。",
 		"copyTags": "复制标签",
 		"pasteTags": "粘贴标签",
 		"tagsCopied": "已复制 {n} 个标签",

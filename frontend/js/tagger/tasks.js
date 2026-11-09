@@ -41,7 +41,6 @@ window.taggerTasksMixin = {
     if (!this.taggerCanStart()) return;
     const mode = this.taggerSourceMode;
 
-    this._clearTaggerResultState(true);
     this.taggerStarting = true;
     this.saveTaggerSettings();
     try {
@@ -78,6 +77,7 @@ window.taggerTasksMixin = {
       const response = await fetch('/api/tagger/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const body = await response.json();
       if (body.status !== 'success') throw new Error(body.message || this.t('tagger.startFailed'));
+      this._clearTaggerResultState(mode);
       this.attachTaggerTask(body.data.task_id, mode);
     } catch (error) { this.toast(error.message, 'error'); }
     finally { this.taggerStarting = false; }

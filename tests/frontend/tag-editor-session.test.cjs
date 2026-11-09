@@ -91,6 +91,61 @@ test('bulk loading cannot merge or select the previous dataset after a switch', 
   assert.equal(app._teSearchLoading, true);
 });
 
+test('a newer selection or explicit clear supersedes an in-flight select filtered request', async () => {
+  for (const selectAnother of [true, false]) {
+    const { app, reply } = fixture();
+    app._updateEditorPanel = function() { ++this._teNavRequest; };
+    const items = [{ path: '/a', tags: 'a' }, { path: '/b', tags: 'b' }];
+    app._teMergeSessionItems(items, true);
+    app.tagEditorSelected = ['/a'];
+    const selecting = app.tagEditorSelectFiltered();
+    if (selectAnother) app.tagEditorCardClick(items[1], 1, {});
+    else app.tagEditorClearSelection();
+    reply(0, { generation: 1, total_pages: 1, items });
+    await selecting;
+    assert.deepEqual(Array.from(app.tagEditorSelected), selectAnother ? ['/b'] : []);
+  }
+});
+
+test('external removal keeps a dirty draft until revert, then discards its image and selection', () => {
+  const { app } = fixture();
+  app.tagEditorSchedulePageFetch = () => {};
+  app._teApplyTagFreq = () => {};
+  app.tagDictionarySyncChips = () => {};
+  app._teRemoveDraft = () => {};
+  app.toast = () => {};
+  app._teMergeSessionItems([{ path: '/a', tags: 'original', caption_revision: 'a1' }], true);
+  app.tagEditorSelected = ['/a'];
+  app._teFindByPath('/a').tags = 'draft';
+  app._teApplyExternalChanges({ generation: 2, count: 0, no_tag_count: 0, tags: [],
+    changed_images: [], removed_paths: ['/a'] });
+  assert.equal(app.tagEditorGetSelectedImg().tags, 'draft');
+  assert.equal(app._teModifiedCount, 1);
+  app.tagEditorRevertSelectedImage();
+  assert.equal(app._teModifiedCount, 0);
+  assert.equal(app._teFindByPath('/a'), null);
+  assert.equal(app.tagEditorGetSelectedImg(), null);
+  assert.equal(app.tagEditorGetBatchTargets().length, 0);
+  assert.equal(app.tagEditorPageItems.length, 0);
+});
+
+test('unreadable paths are reported once while other captions continue to refresh', () => {
+  const { app } = fixture();
+  const notices = [];
+  app.tagEditorSchedulePageFetch = () => {};
+  app._teApplyTagFreq = () => {};
+  app.toast = (...args) => notices.push(args);
+  app._teMergeSessionItems([{ path: '/a', tags: 'original' }, { path: '/b', tags: 'original' }], true);
+  for (const [generation, tags, unreadable_paths] of [[2, 'first', ['/a']], [3, 'second', ['/a']], [4, 'fixed', []]]) {
+    app._teApplyExternalChanges({ generation, count: 2, no_tag_count: 0, tags: [],
+      changed_images: [{ path: '/b', tags }], removed_paths: [], unreadable_paths });
+    assert.equal(app._teFindByPath('/b').tags, tags);
+  }
+  assert.equal(app._teFindByPath('/a').tags, 'original');
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0][2].details, '/a');
+});
+
 test('normal pages query sparse raw drafts without advancing the saved baseline', async () => {
   const { app, pending, reply } = fixture();
   app._teMergeSessionItems([{ path: '/a', tags: '\uFEFF  old\r\n', caption_revision: 'original' }, { path: '/b', tags: 'clean' }], true);

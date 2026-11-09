@@ -33,3 +33,24 @@ test('realtime reconnect resumes the isolated installation task', () => {
   assert.equal(app.mossAccelBusy, false);
   assert.equal(app.mossAccelError, 'monitor.taskStateUnknown');
 });
+
+test('reconnect applies the tracked job completion and ignores an older job in the same slot', async () => {
+  const app = application(async () => ({ ok: true, json: async () => ({ installed: true, enabled: true }) }));
+  const unsubscribed = [];
+  app.realtimeUnsubscribe = topic => unsubscribed.push(topic);
+  const previous = { kind: 'moss-acceleration-install', task_id: 'old', status: 'FAILED', data: { error: 'Old failure' } };
+  const active = { kind: 'moss-acceleration-install', task_id: 'job', status: 'RUNNING', data: { lines: 'Verifying CUDA' } };
+  const apply = tracked => app.applyRealtimeEnvironmentSnapshot({ tasks: { tracked } });
+  apply([active]);
+  apply([previous, active]);
+  assert.equal(app.mossAccelBusy, true);
+  assert.deepEqual(unsubscribed, []);
+
+  apply([previous, { ...active, status: 'FINISHED', data: { done: true } }]);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app.mossAccelBusy, false);
+  assert.equal(app.mossAccelInstallJobId, null);
+  assert.equal(app.mossAccelStatus.enabled, true);
+  assert.equal(app.mossAccelError, null);
+  assert.deepEqual(unsubscribed, ['task:job']);
+});

@@ -323,18 +323,14 @@ class TagEditorSessionTests(unittest.TestCase):
                 first = client.post("/api/tageditor/sessions", json={"dir": temp_dir}).json()["data"]
                 url = f"/api/tageditor/sessions/{first['session_id']}"
                 check = f"{url}/refresh?since_generation={first['generation']}"
-                with patch("backend.tageditor.sessions.get_cached_scan_dataset") as scan:
+                with patch("backend.tageditor.sessions.build_image_entry") as read:
                     self.assertIsNone(client.post(check).json()["data"])
-                    scan.assert_not_called()
+                    read.assert_not_called()
                 (root / "a.txt").write_text("rewritten", encoding="utf-8")
                 (root / "b.caption").unlink()
                 (root / "c.caption").write_text("added", encoding="utf-8")
-                with (
-                    patch("backend.tageditor.sessions.get_cached_scan_dataset") as scan,
-                    patch("backend.tageditor.core.read_caption_snapshot", wraps=read_caption_snapshot) as read,
-                ):
+                with patch("backend.tageditor.core.read_caption_snapshot", wraps=read_caption_snapshot) as read:
                     update = client.post(check).json()["data"]
-                    scan.assert_not_called()
                     self.assertCountEqual([call.args[0].name for call in read.call_args_list], ["a.txt", "c.caption"])
                 self.assertEqual(update["generation"], first["generation"] + 1)
                 self.assertEqual(update["no_tag_count"], 1)
@@ -357,6 +353,37 @@ class TagEditorSessionTests(unittest.TestCase):
                 }).json()["data"]
                 self.assertEqual(saved["conflicts"][0]["error_code"], "tageditor_external_change")
                 self.assertEqual((root / "a.txt").read_text(encoding="utf-8"), "rewritten")
+
+    def test_unreadable_caption_does_not_block_other_updates_or_reopening(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            (root / "a.png").touch()
+            (root / "b.png").touch()
+            (root / "a.txt").write_text("known", encoding="utf-8")
+            (root / "b.txt").write_text("before", encoding="utf-8")
+            client = TestClient(app)
+            url = "/api/tageditor/sessions"
+            with patch("backend.tageditor.routes.dataset_sessions", DatasetSessionService()):
+                opened = client.post(url, json={"dir": temp_dir}).json()["data"]
+                session = f"{url}/{opened['session_id']}"
+                (root / "a.txt").write_bytes(b"\xff")
+                (root / "b.txt").write_text("after", encoding="utf-8")
+                updated = client.post(f"{session}/refresh?since_generation={opened['generation']}").json()["data"]
+                self.assertEqual(updated["unreadable_paths"], [str(root / "a.png")])
+                self.assertEqual([(item["name"], item["tags"]) for item in updated["changed_images"]], [("b.png", "after")])
+                page = client.get(f"{session}/images").json()["data"]
+                self.assertEqual([item["tags"] for item in page["items"]], ["known", "after"])
+                refresh = f"{session}/refresh?since_generation={updated['generation']}"
+                self.assertIsNone(client.post(refresh).json()["data"])
+
+                reopened = client.post(url, json={"dir": temp_dir}).json()["data"]
+                self.assertEqual(reopened["unreadable_paths"], [str(root / "a.png")])
+                self.assertEqual([item["name"] for item in reopened["items"]], ["b.png"])
+                (root / "a.txt").write_text("repaired", encoding="utf-8")
+                for check in (refresh, f"{url}/{reopened['session_id']}/refresh?since_generation={reopened['generation']}"):
+                    repaired = client.post(check).json()["data"]
+                    self.assertEqual(repaired["unreadable_paths"], [])
+                    self.assertEqual([item["tags"] for item in repaired["changed_images"]], ["repaired"])
 
     def test_incremental_refresh_tracks_new_and_removed_images_with_existing_captions(self):
         with tempfile.TemporaryDirectory() as temp_dir:

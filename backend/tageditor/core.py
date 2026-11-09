@@ -225,18 +225,15 @@ def _get_cached_tags(dir_path: Path, recursive: bool = True) -> list[dict]:
     return tags_data
 
 
-def get_cached_scan_dataset(
-    dir_path: Path, recursive: bool = True, *, force_refresh: bool = False,
-) -> tuple[list[dict], list[dict]]:
+def get_cached_scan_dataset(dir_path: Path, recursive: bool = True) -> tuple[list[dict], list[dict]]:
     """返回缓存的图片与标签统计；两者始终来自同一次目录扫描。"""
     cache_key = f"{dir_path.resolve()}:{recursive}"
     now = time.time()
-    if not force_refresh:
-        with _cache_lock:
-            if cache_key in _scan_dataset_cache:
-                ts, data = _scan_dataset_cache[cache_key]
-                if now - ts < _CACHE_TTL:
-                    return data
+    with _cache_lock:
+        if cache_key in _scan_dataset_cache:
+            ts, data = _scan_dataset_cache[cache_key]
+            if now - ts < _CACHE_TTL:
+                return data
     data = scan_dataset(dir_path, recursive=recursive)
     cache_dataset_scan(dir_path, recursive, data, now)
     return data

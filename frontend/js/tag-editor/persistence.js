@@ -108,13 +108,19 @@ window.tagEditorPersistence = {
         });
         var payloadByPath = {};
         payload.forEach(function(item) { payloadByPath[item.path] = item; });
+        var sessionTagDeltas = new Map();
         modified.forEach(function(img) {
           var savedPayload = payloadByPath[img.path];
           if (successfulLookup[img.path] && savedPayload) {
-            self.tagEditorNoTagCount += Number(!savedPayload.tags.trim()) - Number(!(self.tagEditorOriginal[img.path] || '').trim());
+            var baseline = self.tagEditorOriginal[img.path] || '';
+            self.tagEditorNoTagCount += Number(!savedPayload.tags.trim()) - Number(!baseline.trim());
+            if (self._teSessionTags && baseline !== savedPayload.tags) {
+              self._teAccumulateTagFreqDelta(sessionTagDeltas, baseline, savedPayload.tags);
+            }
             self.tagEditorOriginal[img.path] = savedPayload.tags;
           }
         });
+        if (sessionTagDeltas.size) self._teUpdateSessionTagFreq(sessionTagDeltas);
         if (data.revisions && self._teCaptionRevisions) {
           Object.keys(data.revisions).forEach(function(path) {
             self._teCaptionRevisions[path] = data.revisions[path];

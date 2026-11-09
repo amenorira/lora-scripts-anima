@@ -91,3 +91,65 @@ test('failed restart reconciliation retains the run and retries HTTP on the next
   await app.regRefreshTask();
   assert.equal(app.regRunning,false);
 });
+
+for (const eventFirst of [false, true]) {
+  test(`cancel preserves terminal status with ${eventFirst ? 'an earlier event' : 'only the HTTP response'}`, async () => {
+    const app = restartHarness(), pending = deferred(), unsubscribed = [];
+    app._regTopic = 'task:old-task';
+    app.realtimeUnsubscribe = topic => unsubscribed.push(topic);
+    app.regRequest = path => {
+      assert.equal(path, '/tasks/old-task/cancel');
+      return pending.promise;
+    };
+    const stopping = app.regStop();
+    const finished = { ...app.regTask, status: 'finished', updated_at: 200 };
+    if (eventFirst) {
+      app.handleRealtimeRegularizationEvent({ topic: 'task:old-task', type: 'task.status', payload: { data: finished } });
+    }
+    pending.resolve(eventFirst ? { task_id: 'old-task', status: 'stopping' } : finished);
+    await stopping;
+    assert.equal(app.regTask.status, 'finished');
+    assert.equal(app.regRunning, false);
+    assert.equal(app._regTopic, null);
+    assert.deepEqual(unsubscribed, ['task:old-task']);
+  });
+}
+
+test('returning to regularization subscribes when the launch response arrived off-page', async () => {
+  const start = deferred(), subscribed = new Set();
+  const storage = new Map();
+  const {window} = loadFrontend('regularization/index', {
+    window:{}, clearTimeout, clearInterval, setInterval: () => 1,
+    document: { getElementById: () => null },
+    localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) },
+  });
+  const task = { task_id: 'new-task', run_key: 'reg_new', status: 'running', updated_at: 100, output_path: './reg_new' };
+  const app = composeMixins(window.regularizationMixin, {
+    currentRoute: 'regularization', _regLoaded: true, regDefaults: {}, regPlan: { token: 'plan' },
+    regRenderControls() {}, renderRegularizationResourceBar() {}, regLoadLogs() {},
+    realtimeSubscribe: topic => subscribed.add(topic), realtimeUnsubscribe: topic => subscribed.delete(topic),
+    regReportError: message => assert.fail(message),
+    async regRequest(path) {
+      if (path === '/tasks') return start.promise;
+      if (path === '/tasks/new-task') return task;
+      if (path === '/runs') return [task];
+      if (path === '/runs/reg_new/items?limit=1') return { settings: { seed: '1' } };
+      assert.fail(`Unexpected request ${path}`);
+    },
+  });
+  const launching = app.regStart();
+  app.currentRoute = 'train-basic';
+  app.stopRegularizationWorkspace();
+  start.resolve(task);
+  await launching;
+  assert.equal(app._regTopic, null);
+  assert.equal(subscribed.has('task:new-task'), false);
+
+  app.currentRoute = 'regularization';
+  await app.buildRegularizationForm();
+  assert.equal(subscribed.has('task:new-task'), true);
+  app.handleRealtimeRegularizationEvent({ topic: 'task:new-task', type: 'task.status',
+    payload: { data: { ...task, status: 'finished', updated_at: 200 } } });
+  assert.equal(app.regRunning, false);
+  assert.equal(subscribed.has('task:new-task'), false);
+});
