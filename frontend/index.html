@@ -1703,9 +1703,9 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
-    <div class="modal-body timestep-preview-layout" x-show="timestepPreviewData">
+    <div class="modal-body timestep-preview-layout preview-linked-layout" x-show="timestepPreviewData" x-data="previewConnector">
       <!-- ◀ Left: Controls, Parameter Matrix & Notes -->
-      <div class="timestep-layout-sidebar">
+      <div class="timestep-layout-sidebar" data-preview-sidebar>
         <div class="timestep-preview-toolbar">
           <span x-text="t('timestepPreview.previewRange')"></span>
           <div class="timestep-preview-select" @preview-select="setTimestepPreviewScope($event.detail); $nextTick(() => $el.querySelector('.preview-select-trigger')?.focus())"
@@ -1764,7 +1764,7 @@
             <span><small x-text="t('timestepPreview.detailZone')"></small><b>0–333</b></span>
           </div>
         </section>
-        <section class="preview-info-section timestep-range-trigger" tabindex="0" aria-labelledby="timestep-range-title">
+        <section class="preview-info-section timestep-range-trigger" data-preview-link="timestep-range" tabindex="0" aria-labelledby="timestep-range-title">
           <h3 id="timestep-range-title" x-text="t('timestepPreview.percentileSection')"></h3>
           <div class="timestep-preview-meta">
             <span><b x-text="timestepPreviewData ? (timestepPreviewData.percentile10 === timestepPreviewData.percentile90 ? timestepPreviewData.percentile10 : `${timestepPreviewData.percentile10}–${timestepPreviewData.percentile90}`) : ''"></b></span>
@@ -1780,7 +1780,7 @@
       </div>
 
       <!-- ▶ Right: Scientific Chart Workspace + Zone Summary -->
-      <div class="timestep-layout-chart"
+      <div class="timestep-layout-chart" data-preview-diagram
            tabindex="0" role="group" :aria-label="t('timestepPreview.title')" @keydown="onPreviewChartKey($event, 'timestep')"
            @mousemove="onTimestepChartHover($event)"
            @mouseleave="onTimestepChartLeave($event)">
@@ -1805,8 +1805,8 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
-    <div class="modal-body lr-preview-layout" x-show="lrPreviewData">
-      <div class="lr-layout-sidebar">
+    <div class="modal-body lr-preview-layout preview-linked-layout" x-show="lrPreviewData" x-data="previewConnector">
+      <div class="lr-layout-sidebar" data-preview-sidebar>
         <div class="lr-component-toolbar" x-show="lrPreviewData?.components.length > 1">
           <span x-text="t('lrPreview.component')"></span>
           <div @preview-select="setLrPreviewComponent($event.detail); $nextTick(() => $el.querySelector('.preview-select-trigger')?.focus())"
@@ -1829,7 +1829,7 @@
             <span><small x-text="t('lrPreview.totalSteps')"></small><b x-text="lrPreviewData && lrPreviewData.totalStepsText"></b></span>
           </template>
           <template x-if="lrPreviewData && lrPreviewData.warmupVisible">
-            <span><small x-text="t('lrPreview.warmup')"></small><b x-text="lrPreviewData && lrPreviewData.warmupLabel"></b></span>
+            <span :class="{'lr-warmup-trigger': Number(lrPreviewData.warmupX) > 0}" :data-preview-link="Number(lrPreviewData.warmupX) > 0 ? 'warmup' : null" :tabindex="Number(lrPreviewData.warmupX) > 0 ? 0 : null"><small x-text="t('lrPreview.warmup')"></small><b x-text="lrPreviewData && lrPreviewData.warmupLabel"></b></span>
           </template>
           <template x-if="lrPreviewData && lrPreviewData.cycles">
             <span><small x-text="t('lrPreview.cycles')"></small><b x-text="lrPreviewData && lrPreviewData.cycles"></b></span>
@@ -1853,7 +1853,7 @@
           </template>
         </div>
       </div>
-      <div class="lr-layout-chart"
+      <div class="lr-layout-chart" data-preview-diagram
            tabindex="0" role="group" :aria-label="t('lrPreview.title')" @keydown="onPreviewChartKey($event, 'lr')"
            @mousemove="onLrChartHover($event)"
            @mouseleave="onLrChartLeave($event)">

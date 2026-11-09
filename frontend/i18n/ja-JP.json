@@ -1,4 +1,23 @@
 {
+	"fieldConflict": {
+		"checkpointOffloadConflict": "{cpu_offload_checkpointing} と {unsloth_offload_checkpointing} はどちらか一方のみ有効にしてください。",
+		"blockSwapOffloadConflict": "{blocks_to_swap} は {cpu_offload_checkpointing} または {unsloth_offload_checkpointing} と併用できません。",
+		"blockSwapFullgraphConflict": "{blocks_to_swap} を使う場合は {compile_fullgraph} を無効にしてください。",
+		"compile_fullgraphAttentionConflict": "{compile_fullgraph} は {split_attn} または xformers と併用できません。完全グラフコンパイルを無効にするか、{attn_mode} を変更してください。",
+		"compile_fullgraphMossConflict": "{compile_fullgraph} は {blocks_to_swap}、{split_attn}、xformers と併用できません。完全グラフコンパイルを無効にするか、{attn_mode} などの関連設定を変更してください。",
+		"partialCheckpointH2dConflict": "{block_swap_h2d_only} が有効な場合、{gradient_checkpointing_skip_blocks} と {blocks_to_swap} の両方が {block_swap_ring_size} を超えることはできません。",
+		"blockSwapH2dRequiresBlocks": "この項目を有効にするには {blocks_to_swap} を 1 以上にしてください。",
+		"base_weightsConvrotConflict": "{base_weights} には非量子化の重みが必要です。{convrot_int8} と {convrot_int8_text_encoder} を無効にしてください。",
+		"adamwFusedForeachConflict": "{adamw_fused} と {foreach} は同時に有効にできません。もう一方を無効にするか、{optimizer_args_custom} の強制指定を解除してください。",
+		"adamwFusedDifferentiableConflict": "{adamw_fused} は differentiable=True と併用できません。{optimizer_args_custom} からこの引数を削除するか、False にしてください。",
+		"muonNonMatrixConflict": "Muon は二次元パラメータのみ対応しています。この項目を無効にするか、{optimizer_type} を変更してください。",
+		"kreaQuantizationConflict": "{convrot_int8} と {fp8_base} は同時に有効にできません。",
+		"kreaTurboBlockSwapConflict": "{turbo_dit} はブロックスワップと併用できません。Turbo DiT を空にするか、{blocks_to_swap} を 0 にしてください。",
+		"kreaTurboQuantizationConflict": "{turbo_dit} はまだ {convrot_int8} に対応していません。",
+		"kreaTurboSourceConflict": "{turbo_dit} と {turbo_lora} はどちらか一方を選んでください。",
+		"krea_dora_fp8Conflict": "{dora_wd} は量子化ベースモデルと併用できません。DoRA を無効にするか、{fp8_base} と {convrot_int8} の両方を無効にしてください。",
+		"krea_loraplus_structureConflict": "{enable_loraplus} が有効な場合は {dim_from_weights} を無効にし、Rank と Alpha を手動で設定してください。"
+	},
 	"previewLoras": {"add": "プレビュー LoRA を追加", "path": "LoRA ファイルパス", "multiplier": "倍率", "invalid": "プレビュー LoRA はパスと倍率を含むリストにしてください。"},
 	"regularization": {
 		"model_type": "モデルの種類",
@@ -279,6 +298,7 @@
 		}
 	},
 	"monitor": {
+		"onlySamplePrompt": "プロンプト {n} のみ",
 		"followPaused": "自動追従を一時停止中・最新へ移動",
 		"copyOutputPath": "出力パスをコピー",
 		"preparingDownload": "ダウンロードを準備中です。複数のファイルは先にまとめます。",
@@ -2877,6 +2897,7 @@
 		"separator_help": "1 つのファイル内で元のキャプションと各説明を区切ります。MOSS の学習では「キャプションの改行を保持」を有効にし、同じ候補の区切り文字を指定してください。"
 	},
 	"caption": {
+		"viewFailures": "失敗した {count} 枚を表示",
 		"runningTask": "キャプション処理中",
 		"runRecord": "実行記録",
 		"builtinPromptHelp": "長・中・短の説明を生成し、透かし以外の画像内の文字も残します。",

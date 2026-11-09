@@ -90,6 +90,11 @@
           // never steal focus from a second dialog opened by the same action.
           nextTick(() => {
             if (current !== sequence || requested || document.querySelector('dialog[open]')) return;
+            const active = document.activeElement;
+            // A link in the dialog may deliberately focus a field on the page.
+            // Repair lost focus only; do not overwrite that explicit destination.
+            if (active && active !== document.body && !element.contains(active)
+              && active.isConnected && !active.disabled && active.getClientRects().length) return;
             const opener = previousFocus?.isConnected ? previousFocus
               : previousFocus?.id ? document.getElementById(previousFocus.id) : null;
             if (opener && !opener.disabled && opener.getClientRects().length) {
@@ -123,6 +128,87 @@
   };
 
   document.addEventListener('alpine:init', () => {
+    // Non-interactive straight leaders shared by chart and matrix previews.
+    // Its endpoints come from the rendered elements, so resizing/localization
+    // does not require hard-coded coordinates in either preview.
+    // Contract: .preview-linked-layout + x-data="previewConnector" contains
+    // data-preview-sidebar / data-preview-diagram regions. Matching link/target
+    // keys connect one source to all targets; data-preview-anchor="region" is for chart ranges.
+    Alpine.data('previewConnector', () => {
+      let root, svg, path, dots, hovered, focused, frame, resize, mutations;
+      const sourceFor = node => node?.closest?.('[data-preview-link]');
+      const paint = () => {
+        frame = null;
+        const source = hovered?.matches(':hover') ? hovered : focused?.matches(':focus-visible') ? focused : null;
+        const kind = source?.dataset.previewLink;
+        const targets = kind ? [...root.querySelectorAll(`[data-preview-target="${kind}"]`)] : [];
+        if (!source || !root.contains(source) || !targets.length) { svg.classList.remove('is-active'); return; }
+        settleDialog(source);
+        const sidebar = source.closest('[data-preview-sidebar]');
+        const chart = targets[0].closest('[data-preview-diagram]');
+        const value = source.querySelector('dd, b') || source;
+        const range = document.createRange();
+        range.selectNodeContents(value.firstChild?.nodeType === 3 ? value.firstChild : value);
+        const r = root.getBoundingClientRect(), s = range.getBoundingClientRect();
+        const side = sidebar?.getBoundingClientRect(), diagram = chart?.getBoundingClientRect();
+        // Only connect side-by-side layouts.
+        if (!side || !diagram || diagram.left < side.right || !s.height) {
+          svg.classList.remove('is-active'); return;
+        }
+        const x = value => value - r.left + root.scrollLeft;
+        const y = value => value - r.top + root.scrollTop;
+        const sx = x(s.right + 6), sy = y(s.top + s.height / 2);
+        const ends = targets.filter(target => target.getClientRects().length).map(target => {
+          const t = target.getBoundingClientRect();
+          const cx = x(t.left + t.width / 2), cy = y(t.top + t.height / 2);
+          // Point inside a highlighted range, away from its center and the axes.
+          if (target.dataset.previewAnchor === 'region') return [x(t.left + t.width * .35), y(t.top + t.height * .75)];
+          // Intersect the straight leader with the padded target boundary.
+          const dx = sx - cx, dy = sy - cy;
+          const scale = Math.max(Math.abs(dx) / (t.width / 2 + 4), Math.abs(dy) / (t.height / 2 + 4), 1);
+          return [cx + dx / scale, cy + dy / scale];
+        });
+        svg.dataset.kind = kind;
+        path.setAttribute('d', ends.map(([tx, ty]) => `M ${sx} ${sy} L ${tx} ${ty}`).join(' '));
+        dots.setAttribute('d', ends.map(([tx, ty]) => `M ${tx - 2} ${ty} a 2 2 0 1 0 4 0 a 2 2 0 1 0 -4 0`).join(' '));
+        svg.classList.toggle('is-active', ends.length > 0);
+      };
+      const schedule = () => { if (frame == null) frame = requestAnimationFrame(paint); };
+      const pointer = event => {
+        hovered = sourceFor(event.type === 'pointerout' ? event.relatedTarget : event.target);
+        if (hovered && !root.contains(hovered)) hovered = null;
+        schedule();
+      };
+      const focus = event => {
+        focused = sourceFor(event.type === 'focusout' ? event.relatedTarget : event.target);
+        if (focused && !root.contains(focused)) focused = null;
+        schedule();
+      };
+      return {
+        init() {
+          root = this.$el;
+          const create = tag => document.createElementNS('http://www.w3.org/2000/svg', tag);
+          svg = create('svg'); path = create('path'); dots = create('path');
+          svg.classList.add('preview-connector'); svg.setAttribute('aria-hidden', 'true');
+          dots.classList.add('preview-connector-dots'); svg.append(path, dots); root.append(svg);
+          root.addEventListener('pointerover', pointer); root.addEventListener('pointerout', pointer);
+          root.addEventListener('focusin', focus); root.addEventListener('focusout', focus);
+          root.addEventListener('keydown', schedule);
+          root.addEventListener('scroll', schedule, true);
+          resize = new ResizeObserver(schedule); resize.observe(root);
+          mutations = new MutationObserver(schedule);
+          mutations.observe(root, {childList: true, subtree: true, attributes: true, attributeFilter: ['data-preview-link']});
+        },
+        destroy() {
+          cancelAnimationFrame(frame); resize.disconnect(); mutations.disconnect();
+          root.removeEventListener('pointerover', pointer); root.removeEventListener('pointerout', pointer);
+          root.removeEventListener('focusin', focus); root.removeEventListener('focusout', focus);
+          root.removeEventListener('keydown', schedule);
+          root.removeEventListener('scroll', schedule, true); svg.remove();
+        },
+      };
+    });
+
     Alpine.directive('dialog', (element, { expression }, { effect, evaluate, cleanup }) => {
       const dialog = bindDialog(element, callback => Alpine.nextTick(callback));
       effect(() => dialog.setOpen(evaluate(expression)));

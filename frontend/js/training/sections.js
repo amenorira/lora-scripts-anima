@@ -11,6 +11,43 @@ window.trainingSections = {
   sectionRailTop: 16,
   _sectionScrollHandler: null,
 
+  focusTrainingField(key) {
+    const field = this._allSections().flatMap(section => section.fields || []).find(field => field.key === key);
+    const inPanel = field?.lycorisGroup && this.form.network_module === 'lycoris.kohya';
+    if (inPanel && !this.lycorisModalOpen) {
+      this.openLycorisConfig();
+      this.$nextTick(() => this.focusTrainingField(key));
+      return;
+    }
+    if (!inPanel && this.lycorisModalOpen) this.closeLycorisConfig();
+    const root = inPanel ? '#lycorisConfigContent' : '#trainFormContent';
+    const row = Array.from(document.querySelectorAll(root + ' [data-field-row]'))
+      .find(item => item.dataset.fieldRow === key);
+    if (!row) return;
+    const card = row.closest('.card[data-section]');
+    if (card && this._sectionCollapsed[card.dataset.section]) {
+      // Open immediately so measuring and focusing a nested field is reliable;
+      // the subsequent scroll provides the spatial transition.
+      this._sectionCollapsed[card.dataset.section] = false;
+      localStorage.setItem('anima-section-collapsed-' + card.dataset.section, '0');
+      this.sectionNavList = this.sectionNavList.map(section => section.key === card.dataset.section
+        ? { ...section, collapsed: false } : section);
+    }
+    this.$nextTick(() => {
+      if (!row.isConnected || !row.getClientRects().length) return;
+      const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      row.scrollIntoView({ block: 'center', behavior: reduced ? 'instant' : 'smooth' });
+      const input = row.querySelector('input:not([type="hidden"]):not(:disabled), textarea:not(:disabled), .anima-select-trigger:not(:disabled)');
+      if (input) input.focus({ preventScroll: true });
+      else { row.tabIndex = -1; row.focus({ preventScroll: true }); }
+      document.querySelectorAll('.field-located').forEach(item => item.classList.remove('field-located'));
+      if (!reduced) {
+        row.classList.add('field-located');
+        row.addEventListener('animationend', () => row.classList.remove('field-located'), { once: true });
+      }
+    });
+  },
+
   get activeSectionIndex() {
     const idx = this.sectionNavList.findIndex(s => s.key === this.activeSection);
     return idx < 0 ? 0 : idx;

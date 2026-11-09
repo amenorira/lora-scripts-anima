@@ -1,4 +1,23 @@
 {
+	"fieldConflict": {
+		"checkpointOffloadConflict": "{cpu_offload_checkpointing} 与 {unsloth_offload_checkpointing} 只能启用一项。",
+		"blockSwapOffloadConflict": "{blocks_to_swap} 不能与 {cpu_offload_checkpointing} 或 {unsloth_offload_checkpointing} 同时启用。",
+		"blockSwapFullgraphConflict": "使用 {blocks_to_swap} 时，请关闭 {compile_fullgraph}。",
+		"compile_fullgraphAttentionConflict": "{compile_fullgraph} 不能与 {split_attn} 或 xformers 并用。请关闭完整图编译，或更改 {attn_mode}。",
+		"compile_fullgraphMossConflict": "{compile_fullgraph} 不能与 {blocks_to_swap}、{split_attn} 或 xformers 并用。请关闭完整图编译，或调整 {attn_mode} 等相关设置。",
+		"partialCheckpointH2dConflict": "启用 {block_swap_h2d_only} 时，{gradient_checkpointing_skip_blocks} 与 {blocks_to_swap} 不能同时超过 {block_swap_ring_size}。",
+		"blockSwapH2dRequiresBlocks": "启用此项需要将 {blocks_to_swap} 设为至少 1。",
+		"base_weightsConvrotConflict": "{base_weights} 需要未量化权重，请关闭 {convrot_int8} 和 {convrot_int8_text_encoder}。",
+		"adamwFusedForeachConflict": "{adamw_fused} 与 {foreach} 不能同时启用。请禁用另一项，或取消 {optimizer_args_custom} 中的强制启用。",
+		"adamwFusedDifferentiableConflict": "{adamw_fused} 不能与 differentiable=True 并用。请在 {optimizer_args_custom} 中移除该参数或设为 False。",
+		"muonNonMatrixConflict": "Muon 仅支持二维参数。请关闭此选项，或更换 {optimizer_type}。",
+		"kreaQuantizationConflict": "{convrot_int8} 与 {fp8_base} 不能同时启用。",
+		"kreaTurboBlockSwapConflict": "{turbo_dit} 不能与块交换并用。请清空 Turbo DiT，或将 {blocks_to_swap} 设为 0。",
+		"kreaTurboQuantizationConflict": "{turbo_dit} 暂不支持 {convrot_int8}。",
+		"kreaTurboSourceConflict": "{turbo_dit} 与 {turbo_lora} 只能选择一种。",
+		"krea_dora_fp8Conflict": "{dora_wd} 不能与量化底模并用。请关闭 DoRA，或关闭 {fp8_base} 和 {convrot_int8}。",
+		"krea_loraplus_structureConflict": "启用 {enable_loraplus} 时，请关闭 {dim_from_weights}，手动设置 Rank 和 Alpha。"
+	},
 	"previewLoras": {"add": "添加预览 LoRA", "path": "LoRA 文件路径", "multiplier": "倍率", "invalid": "预览 LoRA 必须是包含路径和倍率的列表。"},
 	"regularization": {
 		"model_type": "模型类型",
@@ -279,6 +298,7 @@
 		}
 	},
 	"monitor": {
+		"onlySamplePrompt": "仅提示词 {n}",
 		"followPaused": "已暂停跟随 · 回到最新",
 		"copyOutputPath": "复制产物路径",
 		"preparingDownload": "正在准备下载；多个文件需要先打包，请稍候。",
@@ -2877,6 +2897,7 @@
 		"separator_help": "分隔原有标注和不同长度的描述。用于 MOSS 训练时，开启“保留标注中的换行”，并设置相同的候选标注分隔符。"
 	},
 	"caption": {
+		"viewFailures": "查看失败的 {count} 张图片",
 		"runningTask": "标注进行中",
 		"runRecord": "运行记录",
 		"builtinPromptHelp": "生成长、中、短三种描述，并保留图片中的非水印文字。",

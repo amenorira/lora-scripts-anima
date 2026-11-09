@@ -302,7 +302,7 @@ window.trainingTimestepPreview = {
             <line class="timestep-range-guide" x1="${rangeLeft}" y1="0" x2="${rangeLeft}" y2="100" />
             ${rangeWidth > 0 ? `<line class="timestep-range-guide" x1="${rangeRight}" y1="0" x2="${rangeRight}" y2="100" />` : ''}
           </svg>
-          <div class="timestep-range-values" style="left:${rangeLeft}%;width:${rangeWidth}%">${rangeLabels}</div>
+          <div class="timestep-range-values" data-preview-target="timestep-range" data-preview-anchor="region" style="left:${rangeLeft}%;width:${rangeWidth}%">${rangeLabels}</div>
         </div>` : '';
 
     return `
