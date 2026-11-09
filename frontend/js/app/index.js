@@ -730,6 +730,7 @@ document.addEventListener('alpine:init', () => {
     docs: window.docsMixin, trainingCore: window.trainingCoreMixin,
     datasetRepeat: window.datasetRepeatMixin, trainingLrPreview: window.trainingLrPreviewMixin,
     trainingShapePreview: window.trainingShapePreviewMixin, trainingToml: window.trainingTomlMixin,
+    trainingCropPreview: window.trainingCropPreviewMixin,
     trainingConfigIo: window.trainingConfigIoMixin, tagger: window.taggerMixin,
     captionOptions: window.captionOptionsMixin, captionWorkspace: window.captionWorkspaceMixin,
     regularization: window.regularizationMixin, tagEditor: window.tagEditorMixin,

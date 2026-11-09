@@ -169,6 +169,44 @@ def _dataset_subsets(train_data_dir: Path, glob_images) -> list[dict[str, Any]]:
     return subsets
 
 
+def _registered_dataset_subsets(config: dict[str, Any], glob_images) -> list[dict[str, Any]]:
+    """Shared discovery and actual DreamBooth regularization registration counts."""
+    subsets = _dataset_subsets(Path(str(config["train_data_dir"])), glob_images)
+    reg_path = config.get("reg_data_dir") if config.get("enable_reg_data", True) else None
+    if reg_path and Path(str(reg_path)).is_dir():
+        regularization = _dataset_subsets(Path(str(reg_path)), glob_images)
+        for subset in regularization:
+            subset["is_reg"] = True
+        subsets += regularization
+    reg_subsets = [s for s in subsets if s.get("is_reg")]
+    if reg_subsets:
+        target = sum(s["sample_count"] for s in subsets if not s.get("is_reg"))
+        repeats = [s["repeats"] for s in reg_subsets for _ in s["image_paths"]]
+        counts = [0] * len(repeats)
+        total = 0
+        first_loop = True
+        # The first pass registers whole repeat groups, so the last one may
+        # exceed the target. Later passes add one repeat to each registered image.
+        while total < target:
+            for index, count in enumerate(repeats):
+                increment = count if first_loop else 1
+                counts[index] += increment
+                total += increment
+                if total >= target:
+                    break
+            first_loop = False
+        offset = 0
+        for subset in reg_subsets:
+            sub_counts = counts[offset:offset + subset["image_count"]]
+            offset += subset["image_count"]
+            subset["image_paths"] = [p for p, c in zip(subset["image_paths"], sub_counts) if c > 0]
+            subset["per_image_repeats"] = [c for c in sub_counts if c > 0]
+            subset["unused_images"] = len(sub_counts) - len(subset["image_paths"])
+            subset["image_count"] = len(subset["image_paths"])
+            subset["sample_count"] = sum(sub_counts)
+    return subsets
+
+
 def _adjust_bucket_range(
     resolution: tuple[int, int], min_bucket_reso: int, max_bucket_reso: int, bucket_reso_steps: int
 ) -> tuple[int, int]:
@@ -225,60 +263,12 @@ def estimate_training_steps(config: dict[str, Any]) -> dict[str, Any]:
         )
 
     BucketManager, glob_images, _ = _sd_dataset_helpers()
-    subsets = _dataset_subsets(train_data_dir, glob_images)
-    # 正则化数据（DreamBooth 正则）与训练数据同批参与训练：把 reg_data_dir 子集一并计入步数估算。
-    # 与 sd-scripts 行为保持一致：reg 目录不存在时静默忽略（generate_dreambooth_subsets_config_by_subdirs）。
-    # UI 配置关闭正则时仍保留路径；训练适配后的原生配置则没有此开关。
-    reg_data_value = config.get("reg_data_dir") if config.get("enable_reg_data", True) else None
-    if reg_data_value:
-        reg_data_dir = Path(str(reg_data_value))
-        if reg_data_dir.is_dir():
-            reg_subsets = _dataset_subsets(reg_data_dir, glob_images)
-            for subset in reg_subsets:
-                subset["is_reg"] = True
-            subsets += reg_subsets
+    subsets = _registered_dataset_subsets(config, glob_images)
     if not subsets:
         raise StepEstimateError(
             "No valid image folder found (example: 5_character) / 未找到有效图片目录（例如 5_character）",
             code="noValidImageFolder",
         )
-
-    # DreamBooth 正则注册规则（复刻 dreambooth_dataset.py:320-345）：
-    # 正则样本数不是"图数 × 子目录重复次数"，而是以训练样本总数为目标补足/截断——
-    # 首轮按子目录 repeats 逐图注册，未达到训练样本数时逐轮每图 +1 直到追平；
-    # 首轮即超出时按子目录顺序截断。子目录 repeats 只影响首轮注册比例。
-    # 这里把每张正则图的实际注册次数回写进子集，供样本统计与分桶使用。
-    reg_subsets = [s for s in subsets if s.get("is_reg")]
-    if reg_subsets:
-        num_train_samples = sum(s["sample_count"] for s in subsets if not s.get("is_reg"))
-        reg_repeats: list[int] = []
-        for s in reg_subsets:
-            reg_repeats.extend([s["repeats"]] * s["image_count"])
-        counts = [0] * len(reg_repeats)
-        n = 0
-        first_loop = True
-        while n < num_train_samples:
-            for i, repeats in enumerate(reg_repeats):
-                if first_loop:
-                    counts[i] += repeats
-                    n += repeats
-                else:
-                    counts[i] += 1
-                    n += 1
-                if n >= num_train_samples:
-                    break
-            first_loop = False
-        idx = 0
-        for s in reg_subsets:
-            sub_counts = counts[idx : idx + s["image_count"]]
-            idx += s["image_count"]
-            original_count = len(sub_counts)
-            # 只保留实际注册的图（未注册的图不参与训练与分桶）
-            s["image_paths"] = [p for p, c in zip(s["image_paths"], sub_counts) if c > 0]
-            s["per_image_repeats"] = [c for c in sub_counts if c > 0]
-            s["unused_images"] = original_count - len(s["per_image_repeats"])
-            s["image_count"] = len(s["image_paths"])
-            s["sample_count"] = sum(s["per_image_repeats"])
 
     resolution = _parse_resolution(config.get("resolution", "1024,1024"))
     batch_size = _positive_int(config, "train_batch_size", 1)

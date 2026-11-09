@@ -40,6 +40,7 @@
   <script src="/anima-ui/js/shared/constants.js" defer></script>
   <script src="/anima-ui/js/shared/mixin-compose.js" defer></script>
   <script src="/anima-ui/js/shared/utils.js" defer></script>
+  <script src="/anima-ui/js/shared/image-loading.js" defer></script>
   <script src="/anima-ui/js/shared/ui-interactions.js" defer></script>
   <script src="/anima-ui/js/shared/notifications.js" defer></script>
   <!-- Feature modules (order matters: config first, app last) -->
@@ -85,6 +86,8 @@
   <script src="/anima-ui/js/training/lr-preview.js" defer></script>
   <script src="/anima-ui/js/shared/preview-select.js" defer></script>
   <script src="/anima-ui/js/training/shape-preview.js" defer></script>
+  <script src="/anima-ui/js/training/crop-preview.js" defer></script>
+  <link rel="stylesheet" href="/anima-ui/css/crop-preview.css">
   <script src="/anima-ui/js/training/toml.js" defer></script>
   <script src="/anima-ui/js/training/config-io.js" defer></script>
   <script src="/anima-ui/js/tagger/ai-caption-options.js" defer></script>
@@ -1256,7 +1259,7 @@
                     @keydown.enter.prevent="tagEditorOpenLightbox(tagEditorGetSelectedImg())"
                     @keydown.space.prevent="tagEditorOpenLightbox(tagEditorGetSelectedImg())"
                     :title="t('tagEditor.viewOriginal')">
-                    <img :src="tagEditorGetSelectedImg()?.preview || tagEditorGetSelectedImg()?.thumbnail"
+                    <img x-image="{src: tagEditorGetSelectedImg()?.preview || tagEditorGetSelectedImg()?.thumbnail, placeholder: tagEditorGetSelectedImg()?.thumbnail}"
                       :alt="tagEditorGetSelectedImg()?.rel_path || tagEditorGetSelectedImg()?.name" draggable="false">
                   </div>
                   <div class="te-editor-toolbar">
@@ -1692,7 +1695,7 @@
 </dialog>
 
 <!-- ── Flow-matching Timestep Distribution Preview ─────── -->
-<dialog class="modal-overlay" x-dialog="timestepPreviewOpen" @click.self="closeTimestepPreview()"
+<dialog class="modal-overlay modal-overlay--morph" x-dialog="timestepPreviewOpen" @click.self="closeTimestepPreview()"
         @dialog-close="closeTimestepPreview()" :aria-label="t('timestepPreview.title')" x-cloak>
   <div class="modal timestep-preview-modal modal-workbench modal-workbench--timestep">
     <div class="modal-header">
@@ -1794,7 +1797,7 @@
 </dialog>
 
 <!-- ── Learning-Rate Curve Preview ──────────── -->
-<dialog class="modal-overlay" x-dialog="lrPreviewOpen" @click.self="closeLrPreview()"
+<dialog class="modal-overlay modal-overlay--morph" x-dialog="lrPreviewOpen" @click.self="closeLrPreview()"
         @dialog-close="closeLrPreview()" :aria-label="t('lrPreview.title')" x-cloak>
   <div class="modal lr-preview-modal modal-workbench modal-workbench--lr">
     <div class="modal-header">
@@ -1867,7 +1870,7 @@
 </dialog>
 
 <!-- ── Adapter weight-decomposition (matrix shape) preview ── -->
-<dialog class="modal-overlay" x-dialog="shapePreviewOpen" @click.self="closeShapePreview()"
+<dialog class="modal-overlay modal-overlay--morph" x-dialog="shapePreviewOpen" @click.self="closeShapePreview()"
         @dialog-close="closeShapePreview()" :aria-label="t('shapePreview.title')" x-cloak>
   <div class="modal shape-preview-modal modal-workbench modal-workbench--shape">
     <div class="modal-header">
@@ -1885,6 +1888,111 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-primary btn-sm" @click="closeShapePreview()" x-text="t('common.close')">Close</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ── Dataset crop preview ───────────────────────────── -->
+<dialog id="cropPreviewDialog" class="modal-overlay modal-overlay--morph" x-dialog="cropPreviewOpen" @click.self="cropPreviewDismiss()"
+        @dialog-after-close="cropPreviewItems = []; cropPreviewFocus = null"
+        @dialog-close="cropPreviewDismiss()" @keydown="cropPreviewKey($event)" :aria-label="t('cropPreview.title')" x-cloak>
+  <div class="modal crop-preview-modal">
+    <header class="modal-header">
+      <div class="cp-heading"><span x-text="t('cropPreview.title')"></span>
+        <span class="cp-summary" x-show="cropPreviewItems.length">
+          <span><span x-text="t('cropPreview.originalSize')"></span> <strong x-text="cropPreviewCount(cropPreviewTotals.count)"></strong></span>
+          <span :title="t('cropPreview.sampleHint')"><span x-text="t('cropPreview.trainingCount')"></span> <strong x-text="cropPreviewCount(cropPreviewTotals.samples)"></strong></span>
+          <span><span x-text="t('cropPreview.bucketCount')"></span> <strong x-text="cropPreviewBuckets.length"></strong></span>
+        </span>
+      </div>
+      <button type="button" class="btn-icon" data-dialog-autofocus @click="closeCropPreview()" :aria-label="t('common.close')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m18 6-12 12M6 6l12 12"/></svg></button>
+    </header>
+    <div class="cp-content">
+    <div class="cp-toolbar" :inert="cropPreviewFocusOpen">
+      <div class="cp-filter" @preview-select="setCropPreviewFilter($event.detail); $nextTick(() => $el.querySelector('.preview-select-trigger')?.focus())"
+           x-html="window.previewSelectHtml(cropPreviewFilterOptions(), cropPreviewFilter, t('cropPreview.filter'))"></div>
+      <span class="cp-legend"><span class="cp-legend-swatch" aria-hidden="true"></span><span x-text="t('cropPreview.removed')"></span></span>
+      <span class="cp-legend" x-show="cropPreviewRandom" x-text="t('cropPreview.random')"></span>
+      <button type="button" class="btn btn-ghost btn-sm" x-show="cropPreviewRandom" @click="shuffleCropPreview()" x-text="t('cropPreview.shuffle')"></button>
+    </div>
+    <section id="cropBucketStats" class="cp-stats" x-show="cropPreviewBuckets.length" :inert="cropPreviewFocusOpen" :aria-label="t('cropPreview.stats')">
+      <div class="cp-buckets" id="cropBucketChips">
+        <button type="button" class="cp-bucket-chip" :aria-pressed="!cropPreviewBucket" @click="selectCropPreviewBucket('')" :title="t('cropPreview.sampleHint')">
+          <span class="cp-bucket-size" x-text="t('cropPreview.buckets')"></span>
+          <span class="cp-bucket-counts">
+            <span><span class="cp-meta-label" x-text="t('cropPreview.originalSize')"></span><strong x-text="cropPreviewCount(cropPreviewTotals.count)"></strong></span>
+            <span><span class="cp-meta-label" x-text="t('cropPreview.trainingCount')"></span><strong x-text="cropPreviewCount(cropPreviewTotals.samples)"></strong></span>
+          </span>
+        </button>
+        <template x-for="bucket in cropPreviewBucketChips" :key="bucket.key">
+          <button type="button" class="cp-bucket-chip" :aria-pressed="cropPreviewBucket === bucket.key" @click="selectCropPreviewBucket(bucket.key)" :title="t('cropPreview.sampleHint')">
+            <span class="cp-bucket-size" x-text="bucket.key"></span>
+            <span class="cp-bucket-counts">
+              <span><span class="cp-meta-label" x-text="t('cropPreview.originalSize')"></span><strong x-text="cropPreviewCount(bucket.count)"></strong></span>
+              <span><span class="cp-meta-label" x-text="t('cropPreview.trainingCount')"></span><strong x-text="cropPreviewCount(bucket.samples)"></strong></span>
+            </span>
+          </button>
+        </template>
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm cp-buckets-toggle" x-show="cropPreviewBuckets.length > cropPreviewBucketLimit"
+              @click="cropPreviewBucketsExpanded = !cropPreviewBucketsExpanded" :aria-expanded="cropPreviewBucketsExpanded" aria-controls="cropBucketChips">
+        <span x-text="cropPreviewBucketsExpanded ? t('cropPreview.collapseBuckets') : t('cropPreview.expandBuckets').replace('{count}', cropPreviewBuckets.length - cropPreviewBucketChips.length)"></span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+    </section>
+    <div class="cp-stats-note" :inert="cropPreviewFocusOpen" x-show="cropPreviewStatsNote()" x-text="cropPreviewStatsNote()"></div>
+    <div class="cp-workspace">
+      <div class="cp-scroll" :inert="cropPreviewFocusOpen" :aria-busy="cropPreviewLoading">
+        <div class="cp-state" x-show="cropPreviewLoading" role="status"><span class="spinner"></span><span x-text="t('cropPreview.loading')"></span></div>
+        <div class="cp-state" x-show="cropPreviewError" role="alert"><span x-text="cropPreviewError"></span><button class="btn btn-secondary btn-sm" @click="openCropPreview()" x-text="t('cropPreview.retry')"></button></div>
+        <div class="cp-state" x-show="!cropPreviewLoading && !cropPreviewError && !cropPreviewVisible.length" x-text="t('cropPreview.empty')"></div>
+        <template x-for="folder in cropPreviewFolders" :key="folder.key">
+        <section class="cp-folder" :aria-label="folder.name">
+          <h3 class="cp-folder-heading"><span class="cp-folder-name" x-text="folder.name"></span><span class="cp-folder-count" x-text="cropPreviewFolderCount(folder.items.length)"></span></h3>
+          <div class="cp-grid">
+          <template x-for="item in folder.items" :key="item.id">
+            <button type="button" class="cp-tile" :id="'crop-image-' + item.id" :title="item.name" :aria-label="item.name + ' · ' + cropPreviewInfo(item)" :disabled="!!item.error" @click="focusCropPreview(item)">
+              <div class="cp-stage" x-show="!item.error" x-html="cropPreviewImageHtml(item)"></div>
+              <div class="cp-stage cp-error" x-show="item.error" x-text="item.error"></div>
+              <span class="cp-tile-info" x-show="item.error" x-text="item.name"></span>
+              <span class="cp-tile-meta" x-show="!item.error">
+                <span class="cp-dimensions">
+                  <span><span class="cp-meta-label" x-text="t('cropPreview.originalSize')"></span><strong x-text="item.original?.join(' × ')"></strong></span>
+                  <span><span class="cp-meta-label" x-text="t('cropPreview.trainingSize')"></span><strong x-text="item.bucket?.join(' × ')"></strong></span>
+                </span>
+                <span class="cp-tile-changes">
+                  <span x-show="item.crop_percent > 0"><span x-text="t('cropPreview.cropAmount')"></span> <span x-text="item.error ? '' : cropPreviewCropPercent(item)"></span></span>
+                  <span x-show="item.scale > 1.001"><span x-text="t('cropPreview.scaleUp')"></span> <span x-text="item.scale?.toFixed(2) + '×'"></span></span>
+                </span>
+              </span>
+            </button>
+          </template>
+          </div>
+        </section>
+        </template>
+      </div>
+    </div>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="cropFocusDialog" class="modal-overlay modal-overlay--morph" x-dialog="cropPreviewFocusOpen" @click.self="unfocusCropPreview()"
+        @dialog-close="unfocusCropPreview()" @keydown="cropPreviewKey($event)" :aria-label="cropPreviewFocus?.name || t('cropPreview.title')" x-cloak>
+  <div class="modal cp-focus-modal">
+    <header class="modal-header">
+      <span class="cp-filename" :title="cropPreviewFocus?.name" x-text="cropPreviewFocus?.name"></span>
+      <button type="button" class="btn-icon" @click="stepCropPreview(-1)" :disabled="!cropPreviewAdjacent(-1)" :aria-label="t('cropPreview.previous')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+      <button type="button" class="btn-icon" @click="stepCropPreview(1)" :disabled="!cropPreviewAdjacent(1)" :aria-label="t('cropPreview.next')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+      <button type="button" id="cropFocusBack" class="btn-icon" data-dialog-autofocus @click="unfocusCropPreview()" :aria-label="t('common.close')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m18 6-12 12M6 6l12 12"/></svg></button>
+    </header>
+    <div class="cp-focus-body">
+      <div id="cropFocusOriginal" class="cp-stage" x-html="cropPreviewImageHtml(cropPreviewFocus, true)"></div>
+      <dl class="cp-focus-details">
+        <div><dt x-text="t('cropPreview.originalSize')"></dt><dd x-text="cropPreviewFocus?.original.join(' × ')"></dd></div>
+        <div><dt x-text="t('cropPreview.trainingSize')"></dt><dd x-text="cropPreviewFocus?.bucket.join(' × ')"></dd></div>
+        <div :title="t('cropPreview.areaHint')"><dt x-text="t('cropPreview.cropAmount')"></dt><dd x-text="cropPreviewCropPercent(cropPreviewFocus)"></dd></div>
+        <div x-show="cropPreviewFocus?.scale > 1.001"><dt x-text="t('cropPreview.scaleUp')"></dt><dd x-text="cropPreviewFocus?.scale.toFixed(2) + '×'"></dd></div>
+      </dl>
     </div>
   </div>
 </dialog>

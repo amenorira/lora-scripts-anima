@@ -3,6 +3,30 @@ const assert = require('node:assert/strict');
 const {loadFrontend, composeMixins, readRepo} = require('./helpers.cjs');
 const {uiHarness} = require('./ui-helpers.cjs');
 
+test('morph dialogs track their opener at both ends and fall back for hidden origins', () => {
+  const {context, document, Element, ticks, flush} = uiHarness();
+  const opener = new Element('button'), dialog = new Element('dialog'), modal = new Element('div');
+  dialog.className = 'modal-overlay modal-overlay--morph'; modal.className = 'modal';
+  dialog.rect = {left:0,top:0};
+  Object.assign(modal, {offsetLeft:100,offsetTop:100,offsetWidth:800,offsetHeight:500});
+  modal.style.setProperty = (key,value) => { modal.style[key] = value; };
+  opener.rect = {left:120,top:30,width:120,height:32,right:240,bottom:62};
+  dialog.appendChild(modal); document.body.append(opener,dialog);
+  const binding = context.window.AnimaUI.bindDialog(dialog, callback=>ticks.push(callback));
+  opener.focus(); binding.setOpen(true); flush();
+  assert.equal(modal.style['--dialog-origin-transform'], 'translate(-320px,-304px) scale(0.15,0.064)');
+  opener.rect = {...opener.rect,top:600,bottom:632};
+  binding.setOpen(false); flush();
+  assert.equal(modal.style['--dialog-origin-transform'], 'translate(-320px,266px) scale(0.15,0.064)');
+  opener.focus(); binding.setOpen(true); flush();
+  opener.remove(); binding.setOpen(false); flush();
+  assert.equal(modal.style['--dialog-origin-transform'], 'scale(.97)');
+  document.body.appendChild(opener);
+  context.window.AnimaUI.setDialogOrigin(dialog, opener);
+  document.body.focus(); binding.setOpen(true); flush();
+  assert.equal(modal.style['--dialog-origin-transform'], 'translate(-320px,266px) scale(0.15,0.064)');
+});
+
 test('closing a dialog preserves an explicit destination focus and still restores lost focus', () => {
   const {context, document, Element, ticks, flush} = uiHarness();
   const opener = new Element('button'), target = new Element('input'), dialog = new Element('dialog');

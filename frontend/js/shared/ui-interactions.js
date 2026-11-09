@@ -4,6 +4,35 @@
   'use strict';
   const dialogs = [];
   const popups = new Map();
+  const dialogOrigins = new WeakMap();
+  const pendingDialogOrigins = new WeakMap();
+
+  // Opt in with .modal-overlay--morph. Only transforms animate; layout stays fixed.
+  function setDialogOrigin(element, origin) {
+    if (!element || !origin) return;
+    dialogOrigins.set(element, origin);
+    // An underlying dialog may become inert before the next Alpine effect runs.
+    // Preserve an explicit opener instead of capturing the now-blurred body.
+    if (!element.open) pendingDialogOrigins.set(element, origin);
+  }
+  function syncDialogOrigin(element) {
+    if (!element.classList.contains('modal-overlay--morph')) return;
+    const modal = element.querySelector('.modal');
+    if (!modal) return;
+    const opener = dialogOrigins.get(element);
+    const anchor = opener?.querySelector('[data-dialog-anchor]') || opener;
+    const source = anchor?.getBoundingClientRect();
+    let transform = 'scale(.97)';
+    if (anchor?.isConnected && anchor.getClientRects().length && source?.width > 0 && source.height > 0
+        && source.left >= 0 && source.top >= 0 && source.right <= window.innerWidth && source.bottom <= window.innerHeight
+        && modal.offsetWidth > 0 && modal.offsetHeight > 0) {
+      const root = element.getBoundingClientRect();
+      const dx = source.left + source.width / 2 - (root.left + modal.offsetLeft + modal.offsetWidth / 2);
+      const dy = source.top + source.height / 2 - (root.top + modal.offsetTop + modal.offsetHeight / 2);
+      transform = `translate(${dx}px,${dy}px) scale(${Math.min(1, source.width / modal.offsetWidth)},${Math.min(1, source.height / modal.offsetHeight)})`;
+    }
+    modal.style.setProperty('--dialog-origin-transform', transform);
+  }
   function dismissPopups(root) {
     for (const [element, close] of Array.from(popups)) {
       if (!root || root.contains(element)) { popups.delete(element); close(); }
@@ -67,12 +96,15 @@
         requested = open;
         const current = ++sequence;
         if (open) {
-          previousFocus = document.activeElement;
+          previousFocus = pendingDialogOrigins.get(element) || document.activeElement;
+          pendingDialogOrigins.delete(element);
+          dialogOrigins.set(element, previousFocus);
           nextTick(() => {
             if (current !== sequence || !requested || !element.isConnected) return;
             dismissPopups();
             element.inert = false;
             if (!element.open) element.showModal();
+            syncDialogOrigin(element);
             dialogs.push(element);
             window.AnimaUI.placeNotifications?.();
             const target = Array.from(element.querySelectorAll('[data-dialog-autofocus]'))
@@ -81,8 +113,15 @@
           });
         } else {
           dismissPopups(element);
+          syncDialogOrigin(element);
           element.inert = true;
           if (element.open) element.close();
+          // Keep content until native display/overlay transitions finish.
+          const animations = (element.getAnimations?.({ subtree: true }) || [])
+            .filter(animation => animation.effect?.getComputedTiming().endTime !== Infinity);
+          Promise.all(animations.map(animation => animation.finished.catch(() => {}))).then(() => {
+            if (current === sequence && !requested) element.dispatchEvent(new CustomEvent('dialog-after-close'));
+          });
           const index = dialogs.indexOf(element);
           if (index >= 0) dialogs.splice(index, 1);
           window.AnimaUI.placeNotifications?.();
@@ -121,7 +160,7 @@
   }
 
   window.AnimaUI = {
-    bindDialog, settleDialog, dismissPopups,
+    bindDialog, settleDialog, dismissPopups, setDialogOrigin,
     registerPopup: (element, close) => popups.set(element, close),
     unregisterPopup: element => popups.delete(element),
     topDialog: () => dialogs.at(-1) || null,

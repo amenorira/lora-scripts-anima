@@ -46,6 +46,19 @@ from backend.log import log
 router = APIRouter()
 
 
+@router.post("/training/crop-preview")
+async def training_crop_preview(request: Request):
+    from backend.training.datasets.crop_preview import inspect_crops
+
+    payload, error = await _read_json_object(request)
+    if error is not None:
+        return error
+    try:
+        return APIResponseSuccess(data=await asyncio.to_thread(inspect_crops, payload))
+    except Exception as exc:
+        return APIResponseFail(message=str(exc) or type(exc).__name__)
+
+
 @router.post("/training/shape-preview")
 async def training_shape_preview(request: Request):
     from backend.training.shape_preview import inspect_network, preview_pool

@@ -75,6 +75,41 @@ dialog.modal-overlay:not([open]) { pointer-events: none; }
   dialog.modal-overlay[open] > .modal { opacity: 0; transform: scale(var(--menu-scale-enter)); }
 }
 /* Feedback changes paint, never the position or size of a click target. */
+/* Reusable button-to-dialog motion. Requires x-dialog and a direct .modal child.
+   --dialog-backdrop-blur / --dialog-backdrop-color may be overridden per dialog. */
+dialog.modal-overlay--morph {
+  --duration-dialog-enter: 260ms;
+  --duration-dialog-exit: 200ms;
+  background: transparent;
+  opacity: 1;
+  transition: display var(--duration-dialog-exit) allow-discrete, overlay var(--duration-dialog-exit) allow-discrete;
+}
+dialog.modal-overlay--morph > .modal {
+  transform: var(--dialog-origin-transform, scale(.97));
+  transform-origin: center;
+}
+dialog.modal-overlay--morph[open] > .modal { transform: none; }
+dialog.modal-overlay--morph::backdrop {
+  background: transparent;
+  backdrop-filter: blur(0);
+  transition: background-color var(--duration-dialog-exit) var(--ease-out),
+    backdrop-filter var(--duration-dialog-exit) var(--ease-out),
+    display var(--duration-dialog-exit) allow-discrete, overlay var(--duration-dialog-exit) allow-discrete;
+}
+dialog.modal-overlay--morph[open]::backdrop {
+  background: var(--dialog-backdrop-color, rgba(0,0,0,.25));
+  backdrop-filter: blur(var(--dialog-backdrop-blur, 5px));
+  transition-duration: var(--duration-dialog-enter);
+}
+@starting-style {
+  dialog.modal-overlay--morph[open] { opacity: 1; }
+  dialog.modal-overlay--morph[open] > .modal { opacity: 0; transform: var(--dialog-origin-transform, scale(.97)); }
+  dialog.modal-overlay--morph[open]::backdrop { background: transparent; backdrop-filter: blur(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  dialog.modal-overlay--morph > .modal { transform: none; }
+}
+
 .toast { animation: toast-in var(--duration-toast-enter) var(--ease-out) both; }
 .toast.out { animation: toast-out var(--duration-toast-exit) var(--ease-out) forwards; pointer-events: none; }
 @keyframes toast-in {
