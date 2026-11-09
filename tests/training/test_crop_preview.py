@@ -13,6 +13,28 @@ from backend.training.datasets.crop_preview import inspect_crops, resolve_previe
 
 
 class CropPreviewTests(unittest.TestCase):
+    def test_model_steps_preserve_1280_by_720_at_expected_alignment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subset = root / '1_subject'
+            subset.mkdir()
+            Image.new('RGB', (1280, 720)).save(subset / 'image.png')
+            for profile, step, expected in [
+                ('anima-lora', 16, [1280, 720]),
+                ('moss-image-lora', 16, [1280, 720]),
+                ('sdxl-lora', 32, [1280, 704]),
+            ]:
+                with self.subTest(profile=profile):
+                    result = inspect_crops(dict(
+                        model_train_type=profile, train_data_dir=str(root), resolution='1024,1024',
+                        enable_bucket=True, bucket_no_upscale=True, bucket_reso_steps=step,
+                        min_bucket_reso=256, max_bucket_reso=2048,
+                    ))
+                    item = result['items'][0]
+                    self.assertEqual(item['resized'], [1280, 720])
+                    self.assertEqual(item['bucket'], expected)
+                    self.assertAlmostEqual(item['crop_percent'], (1 - expected[1] / 720) * 100)
+
     def test_sd_configuration_matrix_matches_actual_resize_and_crop(self):
         from backend.training.datasets.step_estimator import _sd_dataset_helpers, _adjust_bucket_range
         manager, _, _ = _sd_dataset_helpers()
