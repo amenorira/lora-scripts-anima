@@ -85,7 +85,17 @@ test('inline rename takes completed DOM text and confirmation retains raw undo/r
   assert.match(confirmations[0].message, /cat → prefix中文$/);
   assert.equal(app.tagEditorImages[0].tags, raw);
   confirmations[0].accept();
-  assert.equal(app.tagEditorImages[0].tags, 'prefix中文, dog');
+  assert.equal(app.tagEditorImages[0].tags, '\uFEFF  prefix中文, dog\r\n');
   app.tagEditorUndo(); assert.equal(app.tagEditorImages[0].tags, raw);
-  app.tagEditorRedo(); assert.equal(app.tagEditorImages[0].tags, 'prefix中文, dog');
+  app.tagEditorRedo(); assert.equal(app.tagEditorImages[0].tags, '\uFEFF  prefix中文, dog\r\n');
+});
+
+test('single-image inline rename is undoable and changes only the selected occurrence', async () => {
+  const { app } = fixture('blue eyes, standing, blue eyes');
+  app.tagEditorInlineEdit = { scope: 'image', oldTag: 'blue eyes', newTag: 'red eyes', index: 2, selected: ['a'] };
+  app.$nextTick = callback => Promise.resolve().then(callback);
+  await app.tagEditorFinishInlineEdit({ type: 'keydown', target: { value: 'red eyes' } });
+  assert.equal(app.tagEditorImages[0].tags, 'blue eyes, standing, red eyes');
+  app.tagEditorUndo(); assert.equal(app.tagEditorImages[0].tags, 'blue eyes, standing, blue eyes');
+  app.tagEditorRedo(); assert.equal(app.tagEditorImages[0].tags, 'blue eyes, standing, red eyes');
 });

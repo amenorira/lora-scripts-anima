@@ -2387,6 +2387,7 @@
 		"snapshotRestored": "已撤销这次更改",
 		"snapshotDeleted": "时间线记录已删除",
 		"inlineEditHint": "重命名标签",
+		"inlineRenameInvalid": "标签名不能包含逗号",
 		"inlineReplaceDone": "已将 {old} 替换为 {new}（影响 {n} 张图片）",
 		"noTags": "该数据集还没有标签",
 		"restoreBackupHint": "还原到该文件最初的版本（.bak 在首次写入时创建）",

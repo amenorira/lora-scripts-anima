@@ -5456,17 +5456,42 @@ input:disabled, select:disabled, textarea:disabled { opacity: var(--disabled-opa
 .home-badge-v-release { background: #7a3fc4; }   /* purple */
 
 /* ===== Inline Tag Edit ===== */
-.te-inline-edit-input {
-  position: relative;
-  z-index: 2;
+input[type="text"].te-inline-edit-input {
+  display: block;
+  flex: none;
   width: 100%;
-  padding: 1px 4px;
-  font-size: 12px;
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-control);
-  background: var(--bg-input);
-  color: var(--text-primary);
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--tag-cat, var(--text-primary));
+  font: inherit;
+  line-height: inherit;
   outline: none;
+  box-shadow: none;
+  transition: none;
+  user-select: text;
+}
+input[type="text"].te-inline-edit-input:hover:not(:focus),
+input[type="text"].te-inline-edit-input:focus { background: transparent; box-shadow: none; }
+.te-inline-edit-title { display: flex; align-items: baseline; flex-shrink: 0; width: 100%; min-width: 0; }
+.te-inline-edit-title input[type="text"].te-inline-edit-input { flex: 1; }
+.te-tag-row.is-editing, .te-editor-tag.is-editing, .te-selected-tag.is-editing {
+  flex-shrink: 0;
+  overflow: hidden;
+  cursor: text;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.te-tag-row.is-editing, .te-selected-tag.is-editing { align-items: flex-start; }
+.te-inline-translation {
+  display: block;
+  flex: none;
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 

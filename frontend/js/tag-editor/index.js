@@ -16,6 +16,42 @@ function _teParseTags(s, lower) {
   return out;
 }
 
+// Replace tag contents without reformatting the rest of the caption. An index
+// addresses the nonempty tags returned by _teParseTags; null replaces all.
+function _teRenameTagText(text, oldTag, newTag, index = null) {
+  var parts = text.split(',');
+  var targets = [], tagIndex = 0;
+  parts.forEach(function(part, partIndex) {
+    var tag = part.trim();
+    if (!tag) return;
+    if (tag === oldTag && (index === null || index === tagIndex)) targets.push(partIndex);
+    tagIndex++;
+  });
+  if (!targets.length) return text;
+  var targetSet = new Set(targets);
+  var newKey = newTag.toLowerCase();
+  var collision = oldTag.toLowerCase() !== newKey && parts.some(function(part, partIndex) {
+    return !targetSet.has(partIndex) && part.trim().toLowerCase() === newKey;
+  });
+  // Keep existing duplicates unrelated to the rename. When the destination
+  // already exists, remove only the renamed occurrences and one comma each.
+  for (var i = targets.length - 1; i >= 0; i--) {
+    var partIndex = targets[i], part = parts[partIndex];
+    var start = part.length - part.trimStart().length;
+    var end = part.trimEnd().length;
+    var prefix = part.slice(0, start), suffix = part.slice(end);
+    if (!collision) parts[partIndex] = prefix + newTag + suffix;
+    else if (partIndex < parts.length - 1) {
+      parts[partIndex + 1] = prefix + suffix + parts[partIndex + 1];
+      parts.splice(partIndex, 1);
+    } else {
+      parts[partIndex - 1] += prefix + suffix;
+      parts.splice(partIndex, 1);
+    }
+  }
+  return parts.join(',');
+}
+
 var TE_SUGGEST_FIELDS = { single: 'tagEditorAddInput', add: 'batchAddInput', remove: 'batchRemoveInput', old: 'batchOldTag', new: 'batchNewTag' };
 
 // Textareas expose LF even for CRLF files. Keep file formatting in the single
@@ -294,6 +330,8 @@ window.tagEditorMixin = {
   tagEditorCleanup() {
     this._teSessionRecovery = null;
     this._teLastSelected = null;
+    this.tagEditorInlineEdit = null;
+    this._teClearInlineLookupTimer();
     this._teLoadEpoch++;
     this.tagEditorSaving = this._teIsSaving = false;
     this.tagEditorSnapshotBusy = false;
@@ -509,6 +547,12 @@ window.tagEditorMixin = {
   _updateEditorPanel() {
     ++this._teNavRequest;
     if (this._teAllAbort?._teSelectionRequest != null) this._teAllAbort.abort();
+    var edit = this.tagEditorInlineEdit;
+    if (edit?.selected && (edit.selected.length !== this.tagEditorSelected.length ||
+        edit.selected.some((path, index) => path !== this.tagEditorSelected[index]))) {
+      this.tagEditorInlineEdit = null;
+      this._teClearInlineLookupTimer();
+    }
     this.tagEditorCancelQuickRemove();
     this.tagEditorClosePanelMenu(false);
     this._teCloseSuggestions();
@@ -558,7 +602,8 @@ window.tagEditorMixin = {
   _teHasUnsavedEdits() {
     if (this.currentRoute !== 'tagEditor') return false;
     this._teFlushAllPendingTextEdits();
-    return !!this.tagEditorModified;
+    return !!this.tagEditorModified || !!(this.tagEditorInlineEdit &&
+      (this.tagEditorInlineEdit.composing || this.tagEditorInlineDraftChanged()));
   },
 
   // ===== Keyboard Shortcuts =====

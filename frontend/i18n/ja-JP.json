@@ -2387,6 +2387,7 @@
 		"snapshotRestored": "変更を戻しました",
 		"snapshotDeleted": "タイムラインの記録を削除しました",
 		"inlineEditHint": "タグ名を変更",
+		"inlineRenameInvalid": "タグ名にカンマは使用できません",
 		"inlineReplaceDone": "{old} を {new} に置換しました（{n} 枚に適用）",
 		"noTags": "このデータセットにはタグがまだありません",
 		"restoreBackupHint": "ファイルの元の状態に戻します（.bak は初回書き込み時に作成）",

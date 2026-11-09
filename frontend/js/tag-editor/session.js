@@ -421,6 +421,10 @@ window.tagEditorSession = {
 
   tagEditorSetDetailView(view) {
     this._teFlushAllPendingTextEdits();
+    if (view !== 'chip' && this.tagEditorInlineEdit?.scope === 'image') {
+      this.tagEditorInlineEdit = null;
+      this._teClearInlineLookupTimer();
+    }
     this.tagEditorCancelQuickRemove();
     this.tagEditorDetailView = this.tagEditorAllowsTagOps() && view === 'chip' ? 'chip' : 'text';
   },
@@ -429,6 +433,8 @@ window.tagEditorSession = {
     if (this.tagEditorLightboxOpen) this.tagEditorCloseLightbox();
     this.tagEditorShortcutsOpen = false;
     this._teLastSelected = null;
+    this.tagEditorInlineEdit = null;
+    this._teClearInlineLookupTimer();
     this.tagEditorCancelQuickRemove();
     this.tagEditorClosePanelMenu(false);
     var loadOptions = arguments.length > 1 && arguments[1] ? arguments[1] : {};
@@ -630,7 +636,7 @@ window.tagEditorSession = {
     if (!nextDir || nextDir === this.tagEditorLoadedDir) { this.tagEditorSwitchOpen = false; return; }
     var self = this;
     var run = function() { self._teRemoveDraft(); self.tagEditorLoad(nextDir); };
-    if (this.tagEditorModifiedCount() > 0) {
+    if (this.tagEditorModifiedCount() > 0 || this._teHasUnsavedEdits()) {
       this._teConfirmUnsaved(this.t('tagEditor.unsavedConfirm'), run);
     } else run();
   },
@@ -658,7 +664,7 @@ window.tagEditorSession = {
       self._teRebuildPathIndex();
       try { sessionStorage.removeItem('tagEditor_lastDir'); } catch (e) {}
     };
-    if (this.tagEditorModifiedCount() > 0) {
+    if (this.tagEditorModifiedCount() > 0 || this._teHasUnsavedEdits()) {
       this._teConfirmUnsaved(this.t('tagEditor.unsavedConfirm'), closeNow);
     } else closeNow();
   },
@@ -700,7 +706,7 @@ window.tagEditorSession = {
   },
 
   tagEditorReloadDir() {
-    if (this.tagEditorModifiedCount() > 0) {
+    if (this.tagEditorModifiedCount() > 0 || this._teHasUnsavedEdits()) {
       var self = this;
       this._teConfirmUnsaved(this.t('tagEditor.revertConfirm'), function() {
         self._teRemoveDraft();
@@ -719,7 +725,7 @@ window.tagEditorSession = {
       self.tagEditorRecursive = nextRecursive;
       if (self.tagEditorDir) self.tagEditorLoad(self.tagEditorDir);
     };
-    if (this.tagEditorModifiedCount() > 0) {
+    if (this.tagEditorModifiedCount() > 0 || this._teHasUnsavedEdits()) {
       this._teConfirmUnsaved(this.t('tagEditor.recursiveUnsavedConfirm'), applyToggle);
       return;
     }

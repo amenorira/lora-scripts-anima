@@ -176,6 +176,17 @@ test('tag explanations follow the context menu and close with it', async () => {
   assert.equal(app.tagDictionaryHover,null);
   assert.equal(timers.size,0);
 
+  app.tagEditorInlineEdit={chip:first};
+  app.tagDictionaryHoverEnter('blue hair',first);
+  app._tdShowHover('blue hair',first);
+  assert.equal(app.tagDictionaryHover,null);
+  app.tagDictionaryHoverEnter('standing',second);
+  assert.equal(app.tagDictionaryHover,null);
+  app.tagEditorInlineEdit=null;
+  app.tagDictionaryHoverEnter('standing',second);
+  assert.equal(app.tagDictionaryHover.tag,'standing');
+  app.tagDictionaryCloseHover();
+
   app.tagEditorQuickRemove=true;
   const panelTag=anchor('blue hair',true);
   app.tagEditorPanelContext(eventFor(panelTag));

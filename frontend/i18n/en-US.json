@@ -2387,6 +2387,7 @@
 		"snapshotRestored": "Changes reverted",
 		"snapshotDeleted": "Timeline record deleted",
 		"inlineEditHint": "Rename tag",
+		"inlineRenameInvalid": "A tag name cannot contain a comma",
 		"inlineReplaceDone": "Replaced {old} with {new} (affected {n} images)",
 		"noTags": "No tags in this dataset yet",
 		"restoreBackupHint": "Restore to the file's original version (.bak is created on first write)",

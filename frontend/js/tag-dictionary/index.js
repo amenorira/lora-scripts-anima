@@ -796,6 +796,7 @@ window.tagDictionaryMixin = {
 
   _tdShowHover(tag, el, fromContextMenu = false) {
     if (this._tePreviewDrag) return;
+    if (this.currentRoute === 'tagEditor' && this.tagEditorInlineEdit) return;
     if (!fromContextMenu && this.tagEditorQuickRemove && el?.closest('.te-editor')) return;
     this.tagDictionaryCancelHoverTimers();
     var state = _td();

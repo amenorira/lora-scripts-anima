@@ -39,6 +39,10 @@ window.tagEditorActions = {
     if (!this.tagEditorAllowsTagOps()) return;
     if (!this.tagEditorSelected.length) return;
     this._teFlushAllPendingTextEdits();
+    if (this.tagEditorInlineEdit && this.tagEditorInlineEdit.scope !== 'dataset') {
+      this.tagEditorInlineEdit = null;
+      this._teClearInlineLookupTimer();
+    }
     this.tagEditorQuickRemove = true;
     this.tagEditorRemovalTags = [];
     this.tagEditorDetailView = 'chip';
@@ -197,11 +201,16 @@ window.tagEditorActions = {
     var menu = this.tagEditorPanelMenu;
     if (!menu) return;
     var trigger = this._tePanelMenuTrigger;
-    this.tagEditorClosePanelMenu(action !== 'view');
-    if (!this.tagEditorAllowsTagOps() && ['copy', 'remove', 'filter', 'quick'].includes(action)) return;
+    this.tagEditorClosePanelMenu(action !== 'view' && action !== 'rename');
+    if (!this.tagEditorAllowsTagOps() && ['copy', 'remove', 'filter', 'quick', 'rename'].includes(action)) return;
     if (action === 'copy') {
       var text = menu.tag || (this.tagEditorSelected.length === 1 ? this.tagEditorGetSelectedImg()?.tags : this.tagEditorGetSelectedStats().map(function(item) { return item.tag; }).join(', '));
       await this._teCopyMenuTags(text, !!menu.tag);
+    } else if (action === 'rename') {
+      if (this.tagEditorQuickRemove || !menu.tag) return;
+      var single = this.tagEditorSelected.length === 1 && trigger?.classList?.contains('te-editor-tag');
+      var multiple = this.tagEditorSelected.length > 1 && trigger?.classList?.contains('te-selected-tag');
+      if (single || multiple) this.tagEditorStartInlineEdit(menu.tag, null, single ? 'image' : 'selection', single ? Number(trigger.dataset.ti) : null, trigger);
     } else if (action === 'remove') {
       if (this.tagEditorQuickRemove) this.tagEditorToggleRemoval(menu.tag);
       else if (this.tagEditorSelected.length === 1) {
@@ -379,10 +388,6 @@ window.tagEditorActions = {
     this._tePushHistory({ type: 'reorder', desc: this.t('tagEditor.historyStepReorder') + ' · ' + moving + ' @' + this._teImageLabel(img), affected: 1 });
   },
 
-  tagEditorDetailEditTag(ti) {
-    this.tagEditorSetDetailView('text');
-  },
-
   tagEditorDetailTextChange(event) {
     // Alpine defers x-model during IME composition. Commit the completed input,
     // never the stale model or a half-composed candidate.
@@ -547,26 +552,107 @@ window.tagEditorActions = {
   },
 
   // ===== Inline Tag Editing =====
-  tagEditorStartInlineEdit(tag, event) {
-    if (!this.tagEditorAllowsTagOps()) return;
-    event.stopPropagation();
-    this.tagEditorInlineEdit = { oldTag: tag, newTag: tag };
-    this.$nextTick(function() {
+  tagEditorStartInlineEdit(tag, event, scope = 'dataset', index = null, anchor = null) {
+    if (!this.tagEditorAllowsTagOps() || !tag || (scope !== 'dataset' && this.tagEditorQuickRemove)) return;
+    event?.stopPropagation?.();
+    this._teClearInlineLookupTimer();
+    anchor = anchor || (scope === 'dataset' ? this._teTagMenuTrigger : event?.currentTarget);
+    var chip = scope === 'dataset' ? anchor?.closest?.('.te-tag-row') : anchor;
+    var rect = chip?.getBoundingClientRect?.();
+    var edit = {
+      scope: scope, oldTag: tag, newTag: tag, index: index,
+      selected: scope === 'dataset' ? null : this.tagEditorSelected.slice(),
+      width: rect?.width, height: rect?.height, anchor: anchor, chip: chip,
+      translationHasRoom: false,
+    };
+    this.tagDictionaryCloseHover?.();
+    this.tagEditorInlineEdit = edit;
+    edit = this.tagEditorInlineEdit;
+    this.$nextTick(() => {
+      if (this.tagEditorInlineEdit !== edit) return;
       var input = document.getElementById('te-inline-edit-input');
       if (input) { input.focus(); input.select(); }
+      this.tagEditorMeasureInlineTranslation();
     });
+  },
+
+  tagEditorInlineEditMatches(scope, tag, index = null) {
+    var edit = this.tagEditorInlineEdit;
+    return !!edit && (edit.scope || 'dataset') === scope && edit.oldTag === tag && (scope !== 'image' || edit.index === index);
+  },
+
+  tagEditorInlineEditStyle(scope, tag, index = null) {
+    if (!this.tagEditorInlineEditMatches(scope, tag, index)) return {};
+    var edit = this.tagEditorInlineEdit;
+    return edit.width > 0 && edit.height > 0 ? { width: edit.width + 'px', height: edit.height + 'px' } : {};
+  },
+
+  tagEditorInlineDraftChanged() {
+    var edit = this.tagEditorInlineEdit;
+    if (!edit) return false;
+    var value = edit.newTag.trim();
+    return value !== edit.oldTag && (edit.inputEdited || value !== edit.oldTag.replace(/[\r\n]/g, ''));
+  },
+
+  tagEditorInlineTranslation() {
+    var edit = this.tagEditorInlineEdit;
+    if (!edit) return '';
+    var tag = edit.newTag.trim();
+    return tag && !tag.includes(',') ? this.tagDictionaryTranslationFor(tag) : '';
+  },
+
+  tagEditorMeasureInlineTranslation() {
+    var edit = this.tagEditorInlineEdit;
+    var chip = edit?.chip, input = document.getElementById('te-inline-edit-input');
+    var translation = chip?.querySelector?.('.te-inline-translation');
+    var rect = chip?.getBoundingClientRect?.(), inputRect = input?.getBoundingClientRect?.();
+    if (!edit || !rect || !inputRect || !translation || !window.getComputedStyle) return;
+    var chipStyle = window.getComputedStyle(chip), translationStyle = window.getComputedStyle(translation);
+    var needed = (parseFloat(translationStyle.lineHeight) || 0) + (parseFloat(translationStyle.marginTop) || 0);
+    var available = rect.bottom - inputRect.bottom - (parseFloat(chipStyle.paddingBottom) || 0) - (parseFloat(chipStyle.borderBottomWidth) || 0);
+    edit.translationHasRoom = needed > 0 && available + 0.75 >= needed;
+  },
+
+  tagEditorInlineEditInput(event) {
+    var edit = this.tagEditorInlineEdit;
+    if (!edit || (event.type !== 'compositionend' && this._teInlineEditIsComposing(event))) return;
+    edit.newTag = event.target.value;
+    edit.inputEdited = true;
+    this._teClearInlineLookupTimer();
+    var tag = edit.newTag.trim();
+    if (!tag || tag.includes(',')) return;
+    this._teInlineLookupTimer = setTimeout(() => {
+      this._teInlineLookupTimer = null;
+      if (this.tagEditorInlineEdit === edit) this.tagDictionaryLookupTags?.([tag]);
+    }, 250);
+  },
+
+  _teClearInlineLookupTimer() {
+    if (this._teInlineLookupTimer) clearTimeout(this._teInlineLookupTimer);
+    this._teInlineLookupTimer = null;
   },
 
   _teInlineEditIsComposing(event) {
     return this.tagEditorInlineEdit?.composing || event?.isComposing || event?.target?.composing || event?.keyCode === 229;
   },
 
+  tagEditorInlineCompositionStart(event) {
+    var edit = this.tagEditorInlineEdit;
+    if (!edit) return;
+    edit.composing = true;
+    edit.compositionStartValue = event.target.value;
+  },
+
   tagEditorInlineCompositionEnd(event) {
     var edit = this.tagEditorInlineEdit;
     if (!edit) return;
     edit.composing = false;
-    edit.newTag = event.target.value;
+    if (edit.compositionStartValue === undefined || event.target.value !== edit.compositionStartValue || event.data) {
+      this.tagEditorInlineEditInput(event);
+    }
+    delete edit.compositionStartValue;
     if (edit.finishAfterComposition) {
+      if (this.showConfirmModal) { edit.finishAfterComposition = false; return; }
       // 等 Alpine 完成组合输入同步；期间切换模式或关闭编辑器时不再提交。
       return this.$nextTick(() => {
         if (this.tagEditorInlineEdit === edit) return this.tagEditorFinishInlineEdit(event);
@@ -577,15 +663,59 @@ window.tagEditorActions = {
   async tagEditorFinishInlineEdit(event) {
     if (!this.tagEditorAllowsTagOps()) return;
     if (!this.tagEditorInlineEdit) return;
+    if (this.currentRoute && this.currentRoute !== 'tagEditor') {
+      this.tagEditorInlineEdit = null;
+      this._teClearInlineLookupTimer();
+      return;
+    }
+    if (event?.type === 'blur' && this.showConfirmModal) return;
     if (this._teInlineEditIsComposing(event)) {
       if (event?.type === 'blur') this.tagEditorInlineEdit.finishAfterComposition = true;
       return;
     }
     if (event?.type === 'keydown') { event.preventDefault?.(); event.stopPropagation?.(); }
-    var oldTag = this.tagEditorInlineEdit.oldTag;
-    var newTag = (event?.target ? event.target.value : this.tagEditorInlineEdit.newTag).trim();
+    var edit = this.tagEditorInlineEdit;
+    var oldTag = edit.oldTag;
+    var newTag = (event?.target ? event.target.value : edit.newTag).trim();
+    if (newTag.includes(',') && event?.type === 'keydown') {
+      this.toast(this.t('tagEditor.inlineRenameInvalid'), 'warning');
+      return;
+    }
     this.tagEditorInlineEdit = null;
-    if (!newTag || oldTag === newTag) return;
+    this._teClearInlineLookupTimer();
+    // A text input strips CR/LF on assignment, even before the user types.
+    if (!newTag || oldTag === newTag || (!edit.inputEdited && oldTag.replace(/[\r\n]/g, '') === newTag)) {
+      if (event?.type === 'keydown' && edit.anchor?.isConnected) this.$nextTick(() => edit.anchor.focus({ preventScroll: true }));
+      return;
+    }
+    if (newTag.includes(',')) { this.toast(this.t('tagEditor.inlineRenameInvalid'), 'warning'); return; }
+    if (edit.scope && edit.scope !== 'dataset') {
+      if (!edit.selected || edit.selected.length !== this.tagEditorSelected.length ||
+          edit.selected.some((path, index) => path !== this.tagEditorSelected[index])) return;
+      if (edit.scope === 'image') {
+        var img = this.tagEditorGetSelectedImg();
+        if (!img || img.path !== edit.selected[0]) return;
+        if (!Number.isInteger(edit.index) || _teParseTags(img.tags)[edit.index] !== oldTag) return;
+        var container = edit.anchor?.parentElement;
+        var renamed = _teRenameTagText(img.tags, oldTag, newTag, edit.index);
+        var renamedTags = _teParseTags(renamed);
+        var focusIndex = renamedTags[edit.index]?.toLowerCase() === newTag.toLowerCase() ? edit.index
+          : renamedTags.findIndex(tag => tag.toLowerCase() === newTag.toLowerCase());
+        this._teUpdateImageTags(img, renamed);
+        this._tePushHistory({ type: 'rename', desc: oldTag + ' → ' + newTag + ' · ' + this._teImageLabel(img), affected: 1 });
+        if (event?.type === 'keydown') this.$nextTick(() => {
+          if (this.tagEditorSelected.length === 1 && this.tagEditorSelected[0] === edit.selected[0]) {
+            container?.querySelector('.te-editor-tag[data-ti="' + focusIndex + '"]')?.focus({ preventScroll: true });
+          }
+        });
+      } else {
+        this._teConfirmBatchScope('replace', function(before) {
+          return _teRenameTagText(before, oldTag, newTag);
+        }, 'rename', oldTag + ' → ' + newTag, function() {});
+      }
+      this.tagDictionaryLookupTags?.([newTag]);
+      return;
+    }
 
     // 左侧重命名作用于整个数据集，确认时明确范围，失去焦点不会直接修改图片。
     var self = this;
@@ -599,11 +729,11 @@ window.tagEditorActions = {
     var message = this.t('tagEditor.globalRenameConfirm').replace('{n}', targets.length) + '\n' + oldTag + ' → ' + newTag;
     this._teConfirmTagBatch(message, function() {
       targets.forEach(function(img) {
-        var tags = _teParseTags(img.tags).map(function(tag) { return tag === oldTag ? newTag : tag; });
-        self._teUpdateImageTags(img, self._teDedupTags(tags).join(', '));
+        self._teUpdateImageTags(img, _teRenameTagText(img.tags, oldTag, newTag));
       });
       self._teInvalidateFilter();
       self._tePushHistory({ type: 'rename', desc: oldTag + ' → ' + newTag, affected: targets.length });
+      self.tagDictionaryLookupTags?.([newTag]);
       self.toast(self.t('tagEditor.inlineReplaceDone').replace('{old}', oldTag).replace('{new}', newTag).replace('{n}', targets.length));
     });
   },
@@ -611,7 +741,10 @@ window.tagEditorActions = {
   tagEditorCancelInlineEdit(event) {
     if (this._teInlineEditIsComposing(event)) return;
     if (event?.type === 'keydown') { event.preventDefault?.(); event.stopPropagation?.(); }
+    var anchor = this.tagEditorInlineEdit?.anchor;
     this.tagEditorInlineEdit = null;
+    this._teClearInlineLookupTimer();
+    if (event?.type === 'keydown' && anchor?.isConnected) this.$nextTick(() => anchor.focus({ preventScroll: true }));
   },
 
   _teConfirmBatchScope(action, transform, type, description, onDone) {
