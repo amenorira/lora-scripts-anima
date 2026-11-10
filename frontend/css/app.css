@@ -1207,7 +1207,7 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
               opacity var(--duration-fast) var(--ease-out);
   white-space: nowrap; user-select: none; letter-spacing: 0;
 }
-.btn:active { opacity: 0.82; }
+.btn:active:where(:not(.btn-preview)) { opacity: 0.82; }
 
 .btn-primary { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 .btn-primary:hover { background: var(--accent-solid); color: #fff; border-color: var(--accent-solid); }
@@ -1226,6 +1226,15 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   border-color: var(--border-default);
 }
 .btn-ghost:hover { background: var(--bg-surface-raised); color: var(--text-primary); border-color: var(--border-input); }
+
+.btn-preview {
+  background: var(--bg-surface-raised);
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--border-input) 70%, var(--text-tertiary));
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.btn-preview:hover { border-color: var(--text-tertiary); }
+.btn-preview:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
 
 /* Outline-to-fill: Start (teal) & Stop (red) */
 .btn-start {

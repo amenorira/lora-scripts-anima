@@ -98,12 +98,6 @@
     return { anchor, rect, visible, paint };
   }
 
-  function insetClip(rect, bounds, radius = '0px') {
-    const inset = [rect.top - bounds.top, bounds.right - rect.right,
-      bounds.bottom - rect.bottom, rect.left - bounds.left];
-    return `inset(${inset.map(value => `${value}px`).join(' ')} round ${radius})`;
-  }
-
   function buttonFlight(element, { source, panel, bounds, dest, opening, animate, reuse }) {
     const { anchor, rect, paint, visible } = source;
     const copy = anchor.cloneNode(true);
@@ -139,43 +133,33 @@
     return copy;
   }
 
-  // Use two rounded clips to draw the surface and its rim. The panel keeps
-  // its normal layout and only reveals what fits inside the moving outline.
+  // Clip the panel to the moving outline and paint the rim as a real border.
+  // A translucent fill must composite over the backdrop, not the rim color.
   function animateSurface(element, { bounds, source, dest, panel, opening, animate, reuse, rounded }) {
     const surface = document.createElement('div');
     surface.className = 'dialog-morph-fill';
     surface.setAttribute('aria-hidden', 'true');
-    const surfaceBounds = {
-      left: Math.max(bounds.left, Math.min(source.visible.left, dest.left)),
-      top: Math.max(bounds.top, Math.min(source.visible.top, dest.top)),
-      right: Math.min(bounds.right, Math.max(source.visible.right, dest.right)),
-      bottom: Math.min(bounds.bottom, Math.max(source.visible.bottom, dest.bottom)),
-    };
-    Object.assign(surface.style, {
-      left: `${surfaceBounds.left - bounds.left}px`, top: `${surfaceBounds.top - bounds.top}px`,
-      width: `${surfaceBounds.right - surfaceBounds.left}px`, height: `${surfaceBounds.bottom - surfaceBounds.top}px`,
-    });
     element.append(surface);
     reuse(surface, 'surface');
-    const shape = (rect, paint, fill = false) => {
-      const border = parseFloat(paint.borderTopWidth) || 0;
-      const inset = fill ? border : 0;
-      const inner = { top: rect.top + inset, left: rect.left + inset,
-        bottom: rect.bottom - inset, right: rect.right - inset };
-      const radius = fill ? `${Math.max(0, (parseFloat(paint.borderRadius) || 0) - inset)}px` : paint.borderRadius;
-      return { clipPath: insetClip(inner, fill ? surfaceBounds : bounds, radius),
-        backgroundColor: fill || !border ? paint.backgroundColor : paint.borderTopColor };
+    const shape = (rect, paint) => {
+      const inset = [rect.top - bounds.top, bounds.right - rect.right,
+        bounds.bottom - rect.bottom, rect.left - bounds.left].map(value => `${value}px`).join(' ');
+      const { borderRadius, backgroundColor, borderTopColor, borderTopWidth } = paint;
+      return {
+        clip: { clipPath: `inset(${inset} round ${borderRadius})` },
+        surface: { inset, borderRadius, backgroundColor, borderColor: borderTopColor, borderWidth: borderTopWidth },
+      };
     };
-    for (const [node, fill] of [[element, false], [surface, true]]) {
-      const frames = [];
-      if (rounded) {
-        const middle = Object.fromEntries(['top', 'right', 'bottom', 'left'].map(side =>
-          [side, source.visible[side] + (dest[side] - source.visible[side]) * .36]));
-        const round = { borderRadius: '16px', borderTopWidth: panel.borderTopWidth,
-          borderTopColor: panel.borderTopColor, backgroundColor: panel.backgroundColor };
-        frames.push({ ...shape(middle, round, fill), offset: opening ? .36 : .64 });
-      }
-      animate(node, shape(source.visible, source.paint, fill), shape(dest, panel, fill), frames);
+    const start = shape(source.visible, source.paint);
+    const end = shape(dest, panel);
+    const frames = [];
+    if (rounded) {
+      const middle = Object.fromEntries(['top', 'right', 'bottom', 'left'].map(side =>
+        [side, source.visible[side] + (dest[side] - source.visible[side]) * .36]));
+      frames.push({ ...shape(middle, { ...panel, borderRadius: '16px' }), offset: opening ? .36 : .64 });
+    }
+    for (const [node, layer] of [[element, 'clip'], [surface, 'surface']]) {
+      animate(node, start[layer], end[layer], frames.map(frame => ({ ...frame[layer], offset: frame.offset })));
     }
     return surface;
   }
@@ -195,7 +179,7 @@
     const previous = new Map((dialogMotions.get(element) || []).map(animation => {
       const node = animation.effect.target;
       const style = getComputedStyle(node);
-      const properties = ['transform', 'opacity', 'clipPath', 'backgroundColor'];
+      const properties = ['transform', 'opacity', 'clipPath', 'backgroundColor', 'inset', 'borderRadius', 'borderColor', 'borderWidth'];
       return [node, Object.fromEntries(properties.map(name => [name, style[name]]))];
     }));
     stopDialogMotion(element);

@@ -18,7 +18,7 @@ window.trainingShapePreviewMixin = {
   _shapePreviewEntry() {
     if (!this.shapePreviewSupported()) return '';
     return `<div class="shape-preview-entry">
-      <button type="button" class="btn btn-ghost btn-sm" data-dialog-opens="shapePreviewDialog" @click="openShapePreview()">
+      <button type="button" class="btn btn-preview btn-sm" data-dialog-opens="shapePreviewDialog" @click="openShapePreview()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/></svg>
         <span x-text="t('shapePreview.open')">Structure preview</span>
       </button>
