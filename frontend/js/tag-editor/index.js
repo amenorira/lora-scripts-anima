@@ -18,21 +18,28 @@ function _teParseTags(s, lower) {
 
 // Replace tag contents without reformatting the rest of the caption. An index
 // addresses the nonempty tags returned by _teParseTags; null replaces all.
-function _teRenameTagText(text, oldTag, newTag, index = null) {
+function _teRenameTagText(text, oldTag, newTags, index = null) {
   var parts = text.split(',');
   var targets = [], tagIndex = 0;
+  var existing = new Set();
   parts.forEach(function(part, partIndex) {
     var tag = part.trim();
     if (!tag) return;
     if (tag === oldTag && (index === null || index === tagIndex)) targets.push(partIndex);
+    else existing.add(tag.toLowerCase());
     tagIndex++;
   });
   if (!targets.length) return text;
-  var targetSet = new Set(targets);
-  var newKey = newTag.toLowerCase();
-  var collision = oldTag.toLowerCase() !== newKey && parts.some(function(part, partIndex) {
-    return !targetSet.has(partIndex) && part.trim().toLowerCase() === newKey;
-  });
+  // Allow case-only changes even when another occurrence retains the old spelling.
+  existing.delete(oldTag.toLowerCase());
+  var replacements = [];
+  for (var tag of newTags) {
+    var key = tag.toLowerCase();
+    if (existing.has(key)) continue;
+    existing.add(key);
+    replacements.push(tag);
+  }
+  var replacement = replacements.join(', ');
   // Keep existing duplicates unrelated to the rename. When the destination
   // already exists, remove only the renamed occurrences and one comma each.
   for (var i = targets.length - 1; i >= 0; i--) {
@@ -40,7 +47,7 @@ function _teRenameTagText(text, oldTag, newTag, index = null) {
     var start = part.length - part.trimStart().length;
     var end = part.trimEnd().length;
     var prefix = part.slice(0, start), suffix = part.slice(end);
-    if (!collision) parts[partIndex] = prefix + newTag + suffix;
+    if (replacement) parts[partIndex] = prefix + replacement + suffix;
     else if (partIndex < parts.length - 1) {
       parts[partIndex + 1] = prefix + suffix + parts[partIndex + 1];
       parts.splice(partIndex, 1);

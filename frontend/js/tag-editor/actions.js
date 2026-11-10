@@ -698,7 +698,7 @@ window.tagEditorActions = {
         if (!Number.isInteger(edit.index)) return;
         var container = edit.anchor?.parentElement;
         var before = img.tags || '';
-        var renamed = _teRenameTagText(before, oldTag, newTag, edit.index);
+        var renamed = _teRenameTagText(before, oldTag, [newTag], edit.index);
         if (renamed === before) return;
         this._teUpdateImageTags(img, renamed);
         this._tePushHistory({ type: 'rename', desc: oldTag + ' → ' + newTag + ' · ' + this._teImageLabel(img), affected: 1 });
@@ -713,7 +713,7 @@ window.tagEditorActions = {
         });
       } else {
         this._teConfirmBatchScope('replace', function(before) {
-          return _teRenameTagText(before, oldTag, newTag);
+          return _teRenameTagText(before, oldTag, [newTag]);
         }, 'rename', oldTag + ' → ' + newTag);
       }
       this.tagDictionaryLookupTags?.([newTag]);
@@ -732,7 +732,7 @@ window.tagEditorActions = {
     var message = this.t('tagEditor.globalRenameConfirm').replace('{n}', targets.length) + '\n' + oldTag + ' → ' + newTag;
     this._teConfirmTagBatch(message, function() {
       targets.forEach(function(img) {
-        self._teUpdateImageTags(img, _teRenameTagText(img.tags, oldTag, newTag), { deferDictionarySync: true });
+        self._teUpdateImageTags(img, _teRenameTagText(img.tags, oldTag, [newTag]), { deferDictionarySync: true });
       });
       self.tagDictionarySyncChips();
       self._tePushHistory({ type: 'rename', desc: oldTag + ' → ' + newTag, affected: targets.length });
@@ -843,13 +843,12 @@ window.tagEditorActions = {
 
   tagEditorBatchReplace() {
     var oldTag = this.batchOldTag.trim();
-    var newTag = this.batchNewTag.trim();
-    if (!oldTag || !newTag || oldTag === newTag) return;
-    if (newTag.includes(',')) { this.toast(this.t('tagEditor.inlineRenameInvalid'), 'warning'); return; }
+    var newTags = _teParseTags(this.batchNewTag);
+    if (!oldTag || !newTags.length) return;
     var self = this;
     this._teConfirmBatchScope('replace', function(before) {
-      return _teRenameTagText(before, oldTag, newTag);
-    }, 'replace', oldTag + ' → ' + newTag, function() {
+      return _teRenameTagText(before, oldTag, newTags);
+    }, 'replace', oldTag + ' → ' + newTags.join(', '), function() {
       self.batchOldTag = ''; self.batchNewTag = '';
     });
   },

@@ -47,6 +47,15 @@ test('batch replacement renames every matching occurrence and preserves the othe
   assert.deepEqual(f.images.map(img => img.tags), ['\uFEFFred, standing,\r\n red, standing\r\n', 'red, sitting', 'blue']);
 });
 
+test('batch replacement accepts several new tags without duplicating existing destinations', () => {
+  const f = fixture(['\uFEFFcat, outdoors, outdoors\r\n', 'animal, cat']);
+  f.app.batchOldTag = 'cat';
+  f.app.batchNewTag = 'animal, feline, Feline';
+  f.app.tagEditorBatchReplace();
+  f.confirm().accept();
+  assert.deepEqual(f.images.map(img => img.tags), ['\uFEFFanimal, feline, outdoors, outdoors\r\n', 'animal, feline']);
+});
+
 test('quick removal records every edit before syncing the dictionary once', () => {
   const f = fixture(Array(100).fill('blue, standing'));
   f.app.tagEditorOriginal = Object.fromEntries(f.images.map(img => [img.path, img.tags]));
