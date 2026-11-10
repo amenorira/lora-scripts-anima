@@ -1319,16 +1319,25 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 }
 /* 分组主体：高度折叠动画由 JS _animateCollapse 驱动（测量 scrollHeight），
    此处仅声明过渡属性；初始渲染的持久化收起态由下方 .card-collapsed 规则承接。 */
-:is(#trainFormContent, #regTrainingControls) .card-body {
+#regTrainingControls .card-body {
   transition: max-height var(--duration-normal) var(--ease-out), opacity var(--duration-fast) var(--ease-out);
+}
+#trainFormContent {
+  --duration-section-toggle: 270ms;
+}
+#trainFormContent .card-body {
+  transition: max-height var(--duration-section-toggle) var(--ease-disclosure);
+}
+#trainFormContent .card-chevron {
+  transition: transform var(--duration-section-toggle) var(--ease-disclosure);
 }
 /* 初始渲染即为收起态（页面加载 / 切训练类型重建时，无动画直接收起） */
 :is(#trainFormContent, #regTrainingControls) .card.card-collapsed > .card-body {
   max-height: 0;
-  opacity: 0;
   overflow: hidden;
   pointer-events: none;
 }
+#regTrainingControls .card.card-collapsed > .card-body { opacity: 0; }
 
 :is(#trainFormContent, #regTrainingControls) [data-section="training"] .step-estimate-panel {
   margin: 8px -8px 12px;
@@ -1613,7 +1622,7 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
 }
 /* Keep text out of scaled/composited layers, including after the animation. */
 .train-section-menu--enter {
-  transition: opacity 100ms ease-out;
+  transition: opacity 100ms var(--ease-disclosure);
 }
 .train-section-menu--enter-start {
   opacity: 0;
@@ -1622,7 +1631,7 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
   opacity: 1;
 }
 .train-section-menu--leave {
-  transition: opacity 80ms ease-out;
+  transition: opacity 80ms var(--ease-disclosure);
 }
 .train-section-menu--leave-start {
   opacity: 1;

@@ -126,14 +126,15 @@
     animate(copy, { transform: 'translate(0px, 0px)' }, { transform: `translate(${-dx}px, ${-dy}px)` });
     animate(panel, { transform: `translate(${dx}px, ${dy}px) scale(${startScale})` },
       { transform: 'translate(0px, 0px) scale(1)' });
+    // Time the crossfade separately so it stays readable while the outline moves quickly.
     const label = opening
-      ? [{ opacity: 1, offset: .08, easing: 'ease-in-out' }, { opacity: 0, offset: .66 }]
-      : [{ opacity: 0, offset: .34, easing: 'ease-in-out' }, { opacity: 1, offset: .92 }];
+      ? [{ opacity: 1, offset: .04, easing: 'ease-in-out' }, { opacity: 0, offset: .36 }]
+      : [{ opacity: 0, offset: .20, easing: 'ease-in-out' }, { opacity: 1, offset: .58 }];
     const content = opening
-      ? [{ opacity: 0, offset: .12, easing: 'ease-in-out' }, { opacity: 1, offset: .84 }]
-      : [{ opacity: 1, offset: .16, easing: 'ease-in-out' }, { opacity: 0, offset: .88 }];
-    animate(copy, { opacity: 1 }, { opacity: 0 }, label);
-    animate(panel, { opacity: 0 }, { opacity: 1 }, content);
+      ? [{ opacity: 0, offset: .10, easing: 'ease-in-out' }, { opacity: 1, offset: .63 }]
+      : [{ opacity: 1, offset: .04, easing: 'ease-in-out' }, { opacity: 0, offset: .36 }];
+    animate(copy, { opacity: 1 }, { opacity: 0 }, label, 'linear');
+    animate(panel, { opacity: 0 }, { opacity: 1 }, content, 'linear');
     element.setAttribute('data-dialog-button-flight', '');
     return copy;
   }
@@ -144,13 +145,11 @@
     const surface = document.createElement('div');
     surface.className = 'dialog-morph-fill';
     surface.setAttribute('aria-hidden', 'true');
-    // Include the small overshoot of the opening spring in the painted area.
-    const extent = (from, to) => opening ? to + (to - from) * .012 : to;
     const surfaceBounds = {
-      left: Math.max(bounds.left, Math.min(source.visible.left, extent(source.visible.left, dest.left))),
-      top: Math.max(bounds.top, Math.min(source.visible.top, extent(source.visible.top, dest.top))),
-      right: Math.min(bounds.right, Math.max(source.visible.right, extent(source.visible.right, dest.right))),
-      bottom: Math.min(bounds.bottom, Math.max(source.visible.bottom, extent(source.visible.bottom, dest.bottom))),
+      left: Math.max(bounds.left, Math.min(source.visible.left, dest.left)),
+      top: Math.max(bounds.top, Math.min(source.visible.top, dest.top)),
+      right: Math.min(bounds.right, Math.max(source.visible.right, dest.right)),
+      bottom: Math.min(bounds.bottom, Math.max(source.visible.bottom, dest.bottom)),
     };
     Object.assign(surface.style, {
       left: `${surfaceBounds.left - bounds.left}px`, top: `${surfaceBounds.top - bounds.top}px`,
@@ -216,7 +215,7 @@
     const style = getComputedStyle(element);
     const options = {
       duration: parseFloat(style.getPropertyValue(opening ? '--duration-dialog-enter' : '--duration-dialog-exit')),
-      easing: style.getPropertyValue(opening ? '--ease-dialog-out' : '--ease-dialog-in').trim(),
+      easing: style.getPropertyValue('--ease-disclosure').trim(),
       fill: 'both',
     };
     const animations = [];
