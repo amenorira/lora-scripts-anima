@@ -42,6 +42,14 @@ def _krea_selector_class():
     return partial(BucketSelector, architecture=ARCHITECTURE_KREA2)
 
 
+@lru_cache(maxsize=16384)
+def _decoded_image_size(source: Path, _mtime_ns: int, _size: int) -> tuple[int, int]:
+    # Both trainers decode pixels without EXIF rotation or a separate container check.
+    with open_preview_source(source) as image:
+        image.load()
+        return image.size
+
+
 def crop_geometry(original, bucket, resized):
     """Integer crop offsets match both trainers; normalized values drive the overlay."""
     width, height = original
@@ -94,15 +102,8 @@ def inspect_crops(config: dict) -> dict:
         try:
             # Authorize only the discovered image, retaining its logical name for grouping.
             source = path.resolve(strict=True)
-            # Trainers read raw pixel orientation, without EXIF auto-rotation.
-            with open_preview_source(source) as image:
-                original = image.size
-                # Catch broken image containers without decoding every image's pixels.
-                try:
-                    image.verify()
-                except IndexError as exc:
-                    # Pillow's PNG verifier can index an empty tile list when IDAT is missing.
-                    raise OSError("Missing or invalid image data / 图片数据缺失或无效") from exc
+            stat = source.stat()
+            original = _decoded_image_size(source, stat.st_mtime_ns, stat.st_size)
             if krea:
                 bucket = selector.get_bucket_resolution(original)
                 scale = max(bucket[0] / original[0], bucket[1] / original[1])
@@ -118,7 +119,6 @@ def inspect_crops(config: dict) -> dict:
                 if original != bucket and not random_crop:
                     raise ValueError("Enable bucketing or random crop for this image / 此图片需要启用分桶或随机裁剪")
             item.update(crop_geometry(original, bucket, resized))
-            stat = source.stat()
             versions[image_id] = f"{stat.st_mtime_ns}-{stat.st_size}"
             capability[image_id] = source
         except (OSError, SyntaxError, Image.DecompressionBombError, ValueError, AssertionError, ZeroDivisionError) as exc:
