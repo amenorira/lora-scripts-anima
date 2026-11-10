@@ -4,6 +4,36 @@
 
 All notable changes to this project are documented in this file.
 
+## v26.1110.0a4d4 - 2026-11-10
+
+This release adds training image crop previews and bucket statistics, inline tag renaming and dataset-wide selection, and new animations for preview buttons on the training page.
+
+### Training Configuration
+
+- Click **View Crop Preview** under **Training Resolution** to see the original and training dimensions, crop area, and upscale factor. Open a thumbnail to compare the original image with the training input. With random cropping enabled, you can switch between sample crops.
+- Bucket statistics show the number of original images and the number of samples per epoch, including repeats. Filter by bucket or show only cropped, upscaled, or unavailable images. When regularization images are configured, you can include them, exclude them, or view them on their own.
+- The default bucket resolution step is now 16 pixels for Anima and MOSS-Image and 32 pixels for SDXL. Saved settings retain their values.
+- Generate regularization images from the dedicated page, where you can import training settings.
+
+### Tag Editing
+
+- Rename tags directly in their chips. Renaming from the tag list on the left applies to the entire dataset. Renaming in the editor on the right applies to the current image or the selected images.
+- Select all images in the dataset, including those outside the current filter. You can also select all filtered results or just the current page.
+- Context menus distinguish between removing a tag from one image, preparing a batch removal, and removing a tag from all images.
+
+### Interface and Animations
+
+- Preview buttons on the training page share a consistent style and use new animations.
+- Large image previews for training samples, tag editing, and caption review show a thumbnail first and replace it when the larger preview loads.
+
+### Other Changes
+
+- Crop previews and training step estimates use the same bucketing and regularization image counting rules. Images that cannot be decoded are listed separately and excluded from bucket statistics.
+- Batch replacement updates every matching tag and preserves unrelated tags and the original caption formatting. Use commas to separate multiple replacement tags.
+- Fixed a focus issue when jumping from a LyCORIS conflict message to the corresponding field in the main form.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1109.0bb27...v26.1110.0a4d4)
+
 ## v26.1109.0bb27 - 2026-11-09
 
 This release makes the relationship between preview parameters and graphics clearer, reduces the steps needed to find conflicting settings, failed images, and training samples, and improves cache rebuilding and caption editing.
