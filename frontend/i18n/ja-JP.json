@@ -757,7 +757,6 @@
 		"totalFormula": "{epochs} エポック × {steps} ステップ/エポック = 合計 {total} ステップ",
 		"maxStepsFormula": "最大学習ステップ数：{total}、約 {epochs} エポック",
 		"kreaNote": "同名キャプションのある画像から推定します。バケット分けにより実際のステップ数が変わる場合があります。",
-		"sdScriptsNote": "sd-scripts と同じバケット・切り上げ規則を使い、学習開始前に再計算します。",
 		"kreaBatchFormula": "{samples} サンプルを画像のあるフォルダーごとに分け、各組を 1 バッチ {batch} サンプルで割って切り上げます。1 エポックあたり推定 {batches} バッチです。"
 	},
 	"field": {

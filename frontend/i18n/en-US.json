@@ -757,7 +757,6 @@
 		"totalFormula": "{epochs} epochs × {steps} steps/epoch = {total} steps total",
 		"maxStepsFormula": "Maximum training steps: {total}, approximately {epochs} epochs",
 		"kreaNote": "Estimated from images with matching captions; bucketing may change the actual step count.",
-		"sdScriptsNote": "Uses the same bucket and ceiling rules as sd-scripts; recalculated before training starts.",
 		"kreaBatchFormula": "{samples} samples are grouped by source directory. Each group is divided into batches of {batch} and rounded up, giving an estimated {batches} batches per epoch."
 	},
 	"field": {

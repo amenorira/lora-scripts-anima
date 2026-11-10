@@ -757,7 +757,6 @@
 		"totalFormula": "{epochs} 轮 × 每轮 {steps} 步 = 总共 {total} 步",
 		"maxStepsFormula": "最大训练步数：{total} 步，约 {epochs} 轮",
 		"kreaNote": "按有同名标注的图片估算；分桶可能改变实际步数。",
-		"sdScriptsNote": "按 sd-scripts 的分桶与向上取整规则计算；开始训练前会再算一次。",
 		"kreaBatchFormula": "{samples} 份样本按所在目录分组，每组按每批 {batch} 份计算并向上取整，估计每轮 {batches} 批。"
 	},
 	"field": {
