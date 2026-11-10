@@ -11,7 +11,7 @@ import time
 
 from PIL import Image
 
-from backend.image_preview import build_image_preview_url
+from backend.image_preview import build_image_preview_url, open_preview_source
 from backend.training.datasets.step_estimator import (
     StepEstimateError, _registered_dataset_subsets, _parse_resolution,
     _positive_int, _sd_bucket_manager, _sd_dataset_helpers,
@@ -95,8 +95,10 @@ def inspect_crops(config: dict) -> dict:
             # Authorize only the discovered image, retaining its logical name for grouping.
             source = path.resolve(strict=True)
             # Trainers read raw pixel orientation, without EXIF auto-rotation.
-            with Image.open(source) as image:
+            with open_preview_source(source) as image:
                 original = image.size
+                # Catch broken image containers without decoding every image's pixels.
+                image.verify()
             if krea:
                 bucket = selector.get_bucket_resolution(original)
                 scale = max(bucket[0] / original[0], bucket[1] / original[1])
@@ -115,7 +117,7 @@ def inspect_crops(config: dict) -> dict:
             stat = source.stat()
             versions[image_id] = f"{stat.st_mtime_ns}-{stat.st_size}"
             capability[image_id] = source
-        except (OSError, ValueError, AssertionError, ZeroDivisionError) as exc:
+        except (OSError, SyntaxError, Image.DecompressionBombError, ValueError, AssertionError, ZeroDivisionError) as exc:
             item["error"] = str(exc)
         items.append(item)
     if not items:

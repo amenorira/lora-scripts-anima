@@ -1,6 +1,7 @@
 """Shared preview rendering, deduplication and browser cache contracts."""
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
 import tempfile
 import unittest
@@ -50,6 +51,22 @@ class ImagePreviewTests(unittest.TestCase):
                         self.assertEqual(image.getpixel((0, 0))[3], 73)
                     else:
                         self.assertEqual(image.convert('L').getpixel((0, 0)), color)
+
+    def test_jpeg_xl_path_reaches_optional_decoder_and_webp_renderer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'image.JXL'
+            # Use PNG pixels to exercise the route without requiring an optional codec.
+            Image.new('RGB', (32, 16)).save(source, format='PNG')
+            with patch('backend.image_preview._register_jpeg_xl_decoders') as register, patch(
+                'backend.server.routes.image_preview.get_cached_preview_path',
+                partial(get_cached_preview_path, cache_dir=root / 'cache'),
+            ):
+                response = asyncio.run(serve_preview_file(source, variant='thumb', orient=False))
+            register.assert_called_once_with()
+            self.assertEqual(response.status_code, 200)
+            with Image.open(response.path) as preview:
+                self.assertEqual((preview.format, preview.size), ('WEBP', (32, 16)))
 
     def test_versioned_urls_cache_and_unversioned_urls_revalidate(self):
         with tempfile.TemporaryDirectory() as directory:

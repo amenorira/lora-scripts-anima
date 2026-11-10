@@ -200,14 +200,20 @@ class CropPreviewTests(unittest.TestCase):
             Image.new('RGB', (181, 257)).save(subset / 'portrait.png')
             Image.new('RGB', (381, 131)).save(subset / 'wide.png')
             (subset / 'broken.png').write_bytes(b'not an image')
+            truncated = subset / 'truncated.png'
+            truncated.write_bytes((subset / 'portrait.png').read_bytes()[:50])
+            with Image.open(truncated) as image:
+                self.assertEqual(image.size, (181, 257))
             for no_upscale in (True, False):
                 result = inspect_crops(dict(train_data_dir=str(root), resolution='256,256',
                     enable_bucket=True, bucket_no_upscale=no_upscale, bucket_reso_steps=64,
                     min_bucket_reso=64, max_bucket_reso=512))
-                self.assertEqual(len(result['items']), 3)
-                self.assertEqual(sum('error' in i for i in result['items']), 1)
+                self.assertEqual(len(result['items']), 4)
+                self.assertEqual({Path(i['name']).name for i in result['items'] if 'error' in i},
+                                 {'broken.png', 'truncated.png'})
                 for item in result['items']:
                     if 'error' in item:
+                        self.assertNotIn('thumb', item)
                         continue
                     rw, rh = item['resized']
                     bw, bh = item['bucket']

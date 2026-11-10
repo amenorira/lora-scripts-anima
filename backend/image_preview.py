@@ -5,6 +5,8 @@ import hashlib
 import os
 import threading
 import urllib.parse
+from functools import lru_cache
+from importlib.util import find_spec
 from pathlib import Path
 
 from PIL import Image, ImageOps
@@ -12,7 +14,7 @@ from PIL import Image, ImageOps
 from backend.constants import CACHE_DIR
 
 IMAGE_EXTENSIONS = {
-    ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".avif",
+    ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".avif", ".jxl",
 }
 IMAGE_PREVIEW_CACHE_DIR = CACHE_DIR / "image-previews"
 PREVIEW_RENDER_VERSION = "webp-v2"
@@ -28,6 +30,21 @@ _VARIANT_DEFAULTS = {
     "preview": {"size": 960, "quality": 95},
     "inspect": {"size": None, "quality": 95},
 }
+
+
+@lru_cache(maxsize=1)
+def _register_jpeg_xl_decoders() -> None:
+    # Match the optional Pillow plugins used by the Krea trainer.
+    if find_spec("jxlpy") is not None:
+        from jxlpy import JXLImagePlugin  # noqa: F401
+    if find_spec("pillow_jxl") is not None:
+        import pillow_jxl  # noqa: F401
+
+
+def open_preview_source(source: Path) -> Image.Image:
+    if source.suffix.lower() == ".jxl":
+        _register_jpeg_xl_decoders()
+    return Image.open(source)
 
 
 def normalize_variant(variant: str) -> str:
@@ -156,7 +173,7 @@ def get_cached_preview_path(
         cache_dir.mkdir(parents=True, exist_ok=True)
         temporary = cache_dir / f".{key}.{os.getpid()}.{threading.get_ident()}.tmp"
         try:
-            with Image.open(source) as opened:
+            with open_preview_source(source) as opened:
                 # We own the decoder and only need the preview, so keep one
                 # full-size pixel buffer for images that do not need rotation.
                 if orient:
