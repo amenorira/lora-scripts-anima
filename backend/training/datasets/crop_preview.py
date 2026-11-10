@@ -98,7 +98,11 @@ def inspect_crops(config: dict) -> dict:
             with open_preview_source(source) as image:
                 original = image.size
                 # Catch broken image containers without decoding every image's pixels.
-                image.verify()
+                try:
+                    image.verify()
+                except IndexError as exc:
+                    # Pillow's PNG verifier can index an empty tile list when IDAT is missing.
+                    raise OSError("Missing or invalid image data / 图片数据缺失或无效") from exc
             if krea:
                 bucket = selector.get_bucket_resolution(original)
                 scale = max(bucket[0] / original[0], bucket[1] / original[1])
