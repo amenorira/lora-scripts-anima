@@ -50,7 +50,6 @@
 .cp-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .cp-tile:disabled { cursor: default; }
 .cp-stage { display: flex; align-items: center; justify-content: center; height: 180px; container-type: size; min-width: 0; min-height: 0; }
-.cp-tile .cp-stage { align-items: flex-end; }
 .cp-frame { position: relative; width: min(100cqw, calc(100cqh * var(--cp-ratio))); aspect-ratio: var(--cp-ratio); container-type: inline-size; overflow: hidden; transform-origin: top left; flex: 0 0 auto; background: var(--bg-sunken); }
 .cp-frame img { display: block; width: 100%; height: 100%; pointer-events: none; }
 .cp-hatch, .cp-legend-swatch {
