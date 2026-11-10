@@ -66,11 +66,10 @@ window.tagEditorActions = {
       var tags = _teParseTags(img.tags);
       var remaining = tags.filter(function(tag) { return !removed.has(tag); });
       if (remaining.length === tags.length) continue;
-      this._teUpdateImageTags(img, remaining.join(', '));
+      this._teUpdateImageTags(img, remaining.join(', '), { deferDictionarySync: true });
       paths.push(img.path);
     }
     if (paths.length) this._tePushHistory({ type: 'batchRemove', desc: '− ' + Array.from(removed).join(', '), affected: paths.length, paths: paths });
-    this.tagEditorCancelQuickRemove();
     this._updateEditorPanel();
   },
 
@@ -797,7 +796,8 @@ window.tagEditorActions = {
         self.toast(self.t('tagEditor.unescapeStale'), 'warning');
         return;
       }
-      changes.forEach(function(change) { self._teUpdateImageTags(change.img, change.after); });
+      changes.forEach(function(change) { self._teUpdateImageTags(change.img, change.after, { deferDictionarySync: true }); });
+      self.tagDictionarySyncChips();
       self._tePushHistory({ type: 'unescape', desc: self.t('tagEditor.unescapeBrackets'), affected: changes.length });
       self.toast(self.t('tagEditor.batchDone'));
     });
@@ -845,13 +845,10 @@ window.tagEditorActions = {
     var oldTag = this.batchOldTag.trim();
     var newTag = this.batchNewTag.trim();
     if (!oldTag || !newTag || oldTag === newTag) return;
+    if (newTag.includes(',')) { this.toast(this.t('tagEditor.inlineRenameInvalid'), 'warning'); return; }
     var self = this;
     this._teConfirmBatchScope('replace', function(before) {
-      var tags = _teParseTags(before);
-      var idx = tags.indexOf(oldTag);
-      if (idx === -1) return before;
-      tags[idx] = newTag;
-      return self._teDedupTags(tags).join(', ');
+      return _teRenameTagText(before, oldTag, newTag);
     }, 'replace', oldTag + ' → ' + newTag, function() {
       self.batchOldTag = ''; self.batchNewTag = '';
     });
@@ -888,15 +885,5 @@ window.tagEditorActions = {
     this._teCachedSelectedStatsKey = selKey;
     this._teCachedSelectedStats = result;
     return result;
-  },
-
-  _teDedupTags(tags) {
-    var seen = new Set();
-    return tags.filter(function(t) {
-      var lower = t.trim().toLowerCase();
-      if (seen.has(lower)) return false;
-      seen.add(lower);
-      return true;
-    });
   },
 };

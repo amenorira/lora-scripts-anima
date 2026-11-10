@@ -237,7 +237,7 @@ window.tagEditorEdits = {
       if (!img) continue;
       var value = changes[path][direction];
       var desired = value == null ? (this.tagEditorOriginal[path] || '') : value;
-      if (img.tags !== desired) this._teUpdateImageTags(img, desired);
+      if (img.tags !== desired) this._teUpdateImageTags(img, desired, { deferDictionarySync: true });
     }
     var state = {};
     var modified = this._teGetModified();

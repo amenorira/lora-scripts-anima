@@ -289,17 +289,19 @@ test('removing a repeated single-image tag removes the clicked occurrence', asyn
 test('deleting a dataset tag removes every occurrence in each image', async () => {
   const {app} = fixture();
   const images=[{path:'a',tags:'blue, standing, blue'},{path:'b',tags:'blue, blue'},{path:'c',tags:'standing'}];
-  let operation, history;
+  let operation, history, syncs=0;
   app.tagEditorContextMenu={tag:'blue'};
   app.tagEditorCloseTagMenu=()=>{app.tagEditorContextMenu=null;};
   app._teConfirmTagBatch=(_, callback)=>{operation=callback();};
   app._teEnsureAllImagesLoaded=async()=>images;
   app._teUpdateImageTags=(img, tags)=>{img.tags=tags;};
+  app.tagDictionarySyncChips=()=>{syncs++;};
   app._tePushHistory=meta=>{history=meta;};
   app.tagEditorCtxDeleteTag();
   await operation;
   assert.deepEqual(images.map(img=>img.tags),['standing','','standing']);
   assert.equal(history.affected,2);
+  assert.equal(syncs,1);
 });
 
 test('copy feedback is consistent and reports clipboard failures', async () => {

@@ -393,11 +393,14 @@ window.tagEditorFilters = {
           var tags = _teParseTags(img.tags);
           if (tags.indexOf(tag) === -1) {
             tags.push(tag);
-            self._teUpdateImageTags(img, tags.join(', '));
+            self._teUpdateImageTags(img, tags.join(', '), { deferDictionarySync: true });
             affected++;
           }
         });
-        self._tePushHistory({ type: 'batchAdd', desc: '+ ' + tag + ' · ' + self.t('tagEditor.historyStepImages').replace('{n}', affected), affected: affected });
+        if (affected) {
+          self.tagDictionarySyncChips();
+          self._tePushHistory({ type: 'batchAdd', desc: '+ ' + tag + ' · ' + self.t('tagEditor.historyStepImages').replace('{n}', affected), affected: affected });
+        }
       });
   },
 
@@ -420,11 +423,12 @@ window.tagEditorFilters = {
           var tags = _teParseTags(img.tags);
           var remaining = tags.filter(function(value) { return value !== tag; });
           if (remaining.length !== tags.length) {
-            self._teUpdateImageTags(img, remaining.join(', '));
+            self._teUpdateImageTags(img, remaining.join(', '), { deferDictionarySync: true });
             affected++;
           }
         });
         if (affected > 0) {
+          self.tagDictionarySyncChips();
           self._tePushHistory({ type: 'tagDelete', desc: '− ' + tag + ' · ' + self.t('tagEditor.historyStepImages').replace('{n}', affected), affected: affected });
           self.toast(self.t('tagEditor.tagDeleted').replace('{tag}', tag).replace('{n}', affected));
         }

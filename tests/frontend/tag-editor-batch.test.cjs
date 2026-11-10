@@ -37,6 +37,30 @@ test('batch preview and commit use the same selected changes and count', () => {
   assert.equal(f.app.batchAddInput, '');
 });
 
+test('batch replacement renames every matching occurrence and preserves the other text', () => {
+  const f = fixture(['\uFEFFblue, standing,\r\n blue, standing\r\n', 'blue, sitting', 'blue']);
+  f.app.tagEditorSelected = ['0', '1'];
+  f.app.batchOldTag = 'blue';
+  f.app.batchNewTag = 'red';
+  f.app.tagEditorBatchReplace();
+  f.confirm().accept();
+  assert.deepEqual(f.images.map(img => img.tags), ['\uFEFFred, standing,\r\n red, standing\r\n', 'red, sitting', 'blue']);
+});
+
+test('quick removal records every edit before syncing the dictionary once', () => {
+  const f = fixture(Array(100).fill('blue, standing'));
+  f.app.tagEditorOriginal = Object.fromEntries(f.images.map(img => [img.path, img.tags]));
+  f.app._teUpdateImageTags = f.context.window.tagEditorMixin._teUpdateImageTags;
+  f.app._teUpdateFreq = () => {};
+  const synced = [];
+  f.app.tagDictionarySyncChips = () => synced.push(f.images.filter(img => img.tags === 'standing').length);
+  f.app.tagEditorQuickRemove = true;
+  f.app.tagEditorRemovalTags = ['blue'];
+  f.app.tagEditorApplyQuickRemove();
+  assert.deepEqual(synced, [100]);
+  assert.equal(f.history[0].affected, 100);
+});
+
 for (const change of ['dataset', 'caption']) {
   test(`confirmation rejects stale ${change} without partial changes`, () => {
     const f = fixture(['cat', 'dog']);
