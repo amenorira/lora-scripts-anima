@@ -3049,7 +3049,6 @@ input[type="range"]::-webkit-slider-thumb {
 .m-diagnostic-rules > div:last-child { border-right: none; }
 .m-diagnostic-rules span { display: block; color: var(--text-secondary); font-size: 11px; }
 .m-diagnostic-rules code { display: block; margin-top: 3px; overflow: hidden; color: var(--text-primary); font: 11px/1.35 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
-.m-diagnostic-method-note { margin: 10px 0 0; color: var(--text-tertiary); font-size: 11px; line-height: 1.45; }
 
 /* ── Parameter console ─────────────────────────────────── */
 .m-parameters-console { margin-top: var(--monitor-gap); flex-shrink: 0; }

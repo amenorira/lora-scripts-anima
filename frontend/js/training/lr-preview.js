@@ -300,7 +300,7 @@ window.trainingLrPreviewMixin = {
     });
     const notes = [];
     if (unavailable) notes.push(unavailable);
-    if (!unavailable) notes.push(this.t(isKrea2 ? 'lrPreview.kreaBaseGroupNote' : 'lrPreview.baseGroupNote'));
+    if (!unavailable && !isKrea2) notes.push(this.t('lrPreview.baseGroupNote'));
     if (endpointJump) notes.push(this.t('lrPreview.endpointJumpNote'));
     if (!totalSteps && !unavailable) {
       notes.push(this.t('lrPreview.noStepNote', 'Total steps are unavailable, so the x-axis shows 0–100% training progress.'));

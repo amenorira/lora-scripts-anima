@@ -272,7 +272,7 @@ window.monitorDiagnosticsMixin = {
       [t('diagnosticRuleSteady'), t('diagnosticRuleOtherwise')],
     ];
     ruleItems.forEach(item => { html += '<div><span>' + this.esc(item[0]) + '</span><code>' + this.esc(item[1]) + '</code></div>'; });
-    html += '</div><p class="m-diagnostic-method-note">' + this.esc(t('diagnosticMethodNote')) + '</p></div></div>';
+    html += '</div></div></div>';
     html += '</details></section>';
     return html;
   },
