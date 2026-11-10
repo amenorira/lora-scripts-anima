@@ -1,7 +1,7 @@
 /* Shared timings and state transitions, independent of theme appearance. */
 :root {
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-spring: var(--ease-out);
+  --ease-disclosure: cubic-bezier(.1, .78, .21, 1);
   --duration-fast: 80ms;
   --duration-normal: 120ms;
   --duration-slow: 150ms;
@@ -74,7 +74,75 @@ dialog.modal-overlay:not([open]) { pointer-events: none; }
   dialog.modal-overlay[open] { opacity: 0; }
   dialog.modal-overlay[open] > .modal { opacity: 0; transform: scale(var(--menu-scale-enter)); }
 }
-/* Feedback changes paint, never the position or size of a click target. */
+:root {
+  --duration-morph-enter: 300ms;
+  --duration-morph-exit: 270ms;
+}
+/* x-dialog animates the silhouette and its contents separately. */
+dialog.modal-overlay--morph {
+  --duration-dialog-enter: var(--duration-morph-enter);
+  --duration-dialog-exit: var(--duration-morph-exit);
+  background: transparent;
+  opacity: 1;
+  transition: none;
+}
+dialog.modal-overlay--morph > .modal,
+dialog.modal-overlay--morph[open] > .modal {
+  opacity: 1;
+  transform: none;
+  transition: none;
+}
+.dialog-morph-origin { visibility: hidden !important; }
+.dialog-morph-button {
+  position: absolute;
+  z-index: 1;
+  margin: 0;
+  max-width: none;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  pointer-events: none;
+  transition: none !important;
+}
+dialog[data-dialog-button-flight] > .modal { background: transparent; border-color: transparent; box-shadow: none; }
+.dialog-morph-fill { position: absolute; z-index: -1; pointer-events: none; border-style: solid; background-clip: padding-box; }
+dialog.modal-overlay--morph::backdrop {
+  background: var(--dialog-backdrop-color, rgba(0,0,0,.32));
+  opacity: 0;
+  transition: opacity var(--duration-dialog-exit) var(--ease-disclosure);
+}
+dialog.modal-overlay--morph[open]:not([data-dialog-closing])::backdrop {
+  opacity: 1;
+  transition-duration: var(--duration-dialog-enter);
+}
+@starting-style {
+  dialog.modal-overlay--morph[open]:not([data-dialog-closing])::backdrop { opacity: 0; }
+}
+/* Keep the blur radius fixed during flight. Sharpen the underlying layer
+   after the dialog leaves the top layer. */
+body > .app-layout,
+#cropPreviewDialog > .modal {
+  transition: filter 80ms ease-out;
+}
+body:not([data-gpu-workload]) > .app-layout.dialog-is-background,
+body:not([data-gpu-workload]) > #cropPreviewDialog.dialog-is-background > .modal {
+  filter: blur(5px);
+  transition: none;
+}
+body[data-gpu-workload] > .app-layout,
+body[data-gpu-workload] > #cropPreviewDialog > .modal,
+#cropPreviewDialog[data-dialog-closing] > .modal { transition: none; }
+.dialog-morph-surface {
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: inherit;
+  box-shadow: var(--shadow-lg);
+}
+
 .toast { animation: toast-in var(--duration-toast-enter) var(--ease-out) both; }
 .toast.out { animation: toast-out var(--duration-toast-exit) var(--ease-out) forwards; pointer-events: none; }
 @keyframes toast-in {
@@ -89,7 +157,7 @@ dialog.modal-overlay:not([open]) { pointer-events: none; }
 :is(.btn-icon, .bottom-btn, .btn-menu, .toast-close):active:not(:disabled) {
   background: var(--active-overlay); transition-duration: 50ms;
 }
-.btn:active:not(:disabled) { opacity: .9; transition-duration: 50ms; }
+.btn:active:not(:disabled):where(:not(.btn-preview)) { opacity: .9; transition-duration: 50ms; }
 :is(.anima-select-trigger, .preview-select-trigger):focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);

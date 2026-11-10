@@ -558,12 +558,12 @@ window.trainingFieldRenderer = {
   // x-show 与扩展状态及 form 值联动。
   _getEnvHint(dataKey) {
     switch (dataKey) {
-      case 'enable_reg_data':
-        if (!['anima-lora', 'sdxl-lora'].includes(this.form.model_train_type)) return '';
-        return `<div class="timestep-preview-entry"><button type="button" class="btn btn-ghost btn-sm" @click="openRegularizationFromTraining()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1"/><path d="m21 15-5-5L5 21"/></svg><span x-text="regT('entry')"></span></button></div>`;
+      case 'resolution':
+        return `<div class="timestep-preview-entry"><button type="button" class="btn btn-preview btn-sm" data-dialog-opens="cropPreviewDialog"
+          @click="openCropPreview()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 3v15h15M3 6h15v15"/></svg><span x-text="t('cropPreview.open')"></span></button></div>`;
       case 'timestep_sampling':
         return `<div class="timestep-preview-entry">
-          <button type="button" class="btn btn-ghost btn-sm" @click="openTimestepPreview()">
+          <button type="button" class="btn btn-preview btn-sm" data-dialog-opens="timestepPreviewDialog" @click="openTimestepPreview()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19V3"/></svg>
             <span x-text="t('timestepPreview.open')">View timestep distribution</span>
           </button>
@@ -571,7 +571,7 @@ window.trainingFieldRenderer = {
         </div>`;
       case 'lr_scheduler':
         return `<div class="lr-preview-entry">
-          <button type="button" class="btn btn-ghost btn-sm" @click="openLrPreview()">
+          <button type="button" class="btn btn-preview btn-sm" data-dialog-opens="lrPreviewDialog" @click="openLrPreview()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19V3"/></svg>
             <span x-text="t('lrPreview.open')">View learning-rate curve</span>
           </button>

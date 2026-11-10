@@ -39,6 +39,10 @@ window.tagEditorActions = {
     if (!this.tagEditorAllowsTagOps()) return;
     if (!this.tagEditorSelected.length) return;
     this._teFlushAllPendingTextEdits();
+    if (this.tagEditorInlineEdit && this.tagEditorInlineEdit.scope !== 'dataset') {
+      this.tagEditorInlineEdit = null;
+      this._teClearInlineLookupTimer();
+    }
     this.tagEditorQuickRemove = true;
     this.tagEditorRemovalTags = [];
     this.tagEditorDetailView = 'chip';
@@ -62,11 +66,10 @@ window.tagEditorActions = {
       var tags = _teParseTags(img.tags);
       var remaining = tags.filter(function(tag) { return !removed.has(tag); });
       if (remaining.length === tags.length) continue;
-      this._teUpdateImageTags(img, remaining.join(', '));
+      this._teUpdateImageTags(img, remaining.join(', '), { deferDictionarySync: true });
       paths.push(img.path);
     }
     if (paths.length) this._tePushHistory({ type: 'batchRemove', desc: '− ' + Array.from(removed).join(', '), affected: paths.length, paths: paths });
-    this.tagEditorCancelQuickRemove();
     this._updateEditorPanel();
   },
 
@@ -76,28 +79,52 @@ window.tagEditorActions = {
     event.preventDefault();
     event.stopPropagation();
     var tag = event.target.closest('.te-editor-tag[data-tag], .te-selected-tag[data-tag]');
-    var anchor = event.target.getBoundingClientRect();
+    var point = this._teContextMenuPoint(event);
     this.tagEditorPanelMenu = {
       tag: tag ? tag.dataset.tag : null,
       preview: !!event.target.closest('.te-editor-preview'),
-      x: Math.max(4, Math.min(event.clientX || anchor.left, window.innerWidth - 224)),
-      y: Math.max(4, Math.min(event.clientY || anchor.bottom, window.innerHeight - 260)),
+      x: point.x,
+      y: point.y,
+      positioned: false,
     };
     this.tagEditorContextMenu = null;
     this.tagEditorImageContextMenu = null;
-    this.tagDictionaryCloseHover();
+    if (tag) this.tagDictionaryShowContextHover?.(tag.dataset.tag, tag);
+    else this.tagDictionaryCloseHover();
     this._teFocusMenu('tagEditorPanelMenu', '_tePanelMenuTrigger', 'tePanelMenu', event);
   },
 
-  _teFocusMenu(stateKey, triggerKey, id, event) {
+  _teContextMenuPoint(event) {
+    var pointer = Number.isFinite(event.clientX) && Number.isFinite(event.clientY) && (event.clientX !== 0 || event.clientY !== 0);
+    var anchor = pointer ? null : event.target?.getBoundingClientRect?.() || { left: 4, bottom: 4 };
+    return {
+      x: Math.max(4, Math.min(pointer ? event.clientX : anchor.left, window.innerWidth - 4)),
+      y: Math.max(4, Math.min(pointer ? event.clientY : anchor.bottom, window.innerHeight - 4)),
+    };
+  },
+
+  _teFitContextMenu(menu, state) {
+    if (!menu?.getBoundingClientRect) return;
+    var rect = menu.getBoundingClientRect();
+    state.x = Math.max(4, Math.min(state.x, window.innerWidth - rect.width - 4));
+    state.y = Math.max(4, Math.min(state.y, window.innerHeight - rect.height - 4));
+  },
+
+  async _teFocusMenu(stateKey, triggerKey, id, event) {
     this[triggerKey] = event.target?.closest?.('[tabindex], button') || event.currentTarget?.querySelector?.('button, [tabindex]') || event.currentTarget;
     var state = this[stateKey], epoch = this._teLoadEpoch;
     var request = ++this._teMenuFocusRequest;
-    this.$nextTick(() => {
-      if (this[stateKey] !== state || epoch !== this._teLoadEpoch || request !== this._teMenuFocusRequest || this.currentRoute !== 'tagEditor') return;
-      var menu = document.getElementById(id);
-      (this._teVisibleMenuButtons(menu)[0] || menu)?.focus();
-    });
+    var isCurrent = () => this[stateKey] === state && epoch === this._teLoadEpoch && request === this._teMenuFocusRequest && this.currentRoute === 'tagEditor';
+    // Let Alpine apply the hidden bindings before measuring, within the same frame.
+    await Promise.resolve();
+    if (!isCurrent()) return;
+    var menu = document.getElementById(id);
+    if (!menu) return;
+    this._teFitContextMenu(menu, state);
+    state.positioned = true;
+    // The position and visibility bindings apply together before moving focus.
+    await Promise.resolve();
+    if (isCurrent()) (this._teVisibleMenuButtons(menu)[0] || menu).focus({ preventScroll: true });
   },
 
   _teVisibleMenuButtons(menu) {
@@ -116,42 +143,92 @@ window.tagEditorActions = {
     this._teCloseMenu('tagEditorImageContextMenu', '_teImageMenuTrigger', restoreFocus);
   },
 
+  tagEditorCloseContextMenus(restoreFocus = false, scrollTarget = null) {
+    var menuId = restoreFocus && document.activeElement?.closest?.('.te-ctx')?.id;
+    var trigger = menuId === 'tePanelMenu' && this.tagEditorPanelMenu ? this._tePanelMenuTrigger
+      : menuId === 'teTagMenu' && this.tagEditorContextMenu ? this._teTagMenuTrigger
+      : menuId === 'teImageMenu' && this.tagEditorImageContextMenu ? this._teImageMenuTrigger : null;
+    if (trigger?.isConnected && trigger.getClientRects().length && !trigger.closest('[inert]')) {
+      var rect = trigger.getBoundingClientRect();
+      var visible = rect.bottom > 0 && rect.top < window.innerHeight && rect.right > 0 && rect.left < window.innerWidth;
+      if (visible && scrollTarget?.contains(trigger)) {
+        var bounds = scrollTarget.getBoundingClientRect();
+        visible = rect.bottom > bounds.top && rect.top < bounds.bottom && rect.right > bounds.left && rect.left < bounds.right;
+      }
+      if (visible) trigger.focus({ preventScroll: true });
+    }
+    this.tagEditorClosePanelMenu(false);
+    this.tagEditorCloseTagMenu(false);
+    this.tagEditorCloseImageMenu(false);
+  },
+
   _teCloseMenu(stateKey, triggerKey, restoreFocus) {
     if (!this[stateKey]) return;
     var trigger = this[triggerKey];
+    var hadTag = !!this[stateKey].tag;
     var epoch = this._teLoadEpoch;
     var request = ++this._teMenuFocusRequest;
     this[stateKey] = null;
     this[triggerKey] = null;
+    if (hadTag) this.tagDictionaryCloseHover();
     if (restoreFocus) this.$nextTick(() => {
       if (epoch === this._teLoadEpoch && request === this._teMenuFocusRequest && this.currentRoute === 'tagEditor' && !this.tagEditorLightboxOpen && !this.tagEditorShortcutsOpen && !this.showConfirmModal && trigger?.isConnected && trigger.getClientRects().length) trigger.focus();
     });
+  },
+
+  _teToggleContextFilter(tag, exclude = false) {
+    if (!tag || !this.tagEditorAllowsTagOps()) return;
+    var selected = exclude ? this.tagEditorExcludedTags : this.tagEditorTagSelection;
+    var other = exclude ? this.tagEditorTagSelection : this.tagEditorExcludedTags;
+    this._teTagListToggle(selected, other, tag);
+    this._teInvalidateFilter();
+    this.tagEditorSchedulePageFetch(true);
+  },
+
+  async _teCopyMenuTags(text, singleTag) {
+    try {
+      await navigator.clipboard.writeText(text || '');
+      this.toast(singleTag
+        ? this.t('tagEditor.singleTagCopied').replace('{tag}', text)
+        : this.t('tagEditor.tagsCopied').replace('{n}', _teParseTags(text || '').length));
+    } catch (_) {
+      this.toast(this.t('tagEditor.dictCopyFailed'), 'error');
+    }
   },
 
   async tagEditorPanelAction(action) {
     var menu = this.tagEditorPanelMenu;
     if (!menu) return;
     var trigger = this._tePanelMenuTrigger;
-    this.tagEditorClosePanelMenu(action !== 'view');
-    if (!this.tagEditorAllowsTagOps() && ['copy', 'remove', 'filter', 'quick'].includes(action)) return;
+    this.tagEditorClosePanelMenu(action !== 'view' && action !== 'rename');
+    if (!this.tagEditorAllowsTagOps() && ['copy', 'remove', 'filter', 'quick', 'rename'].includes(action)) return;
     if (action === 'copy') {
       var text = menu.tag || (this.tagEditorSelected.length === 1 ? this.tagEditorGetSelectedImg()?.tags : this.tagEditorGetSelectedStats().map(function(item) { return item.tag; }).join(', '));
-      try { await navigator.clipboard.writeText(text || ''); this.toast(this.t('tagEditor.tagsCopied').replace('{n}', _teParseTags(text || '').length)); }
-      catch (_) { this.toast(this.t('common.error'), 'error'); }
+      await this._teCopyMenuTags(text, !!menu.tag);
+    } else if (action === 'rename') {
+      if (this.tagEditorQuickRemove || !menu.tag) return;
+      var single = this.tagEditorSelected.length === 1 && trigger?.classList?.contains('te-editor-tag');
+      var multiple = this.tagEditorSelected.length > 1 && trigger?.classList?.contains('te-selected-tag');
+      if (single || multiple) this.tagEditorStartInlineEdit(menu.tag, null, single ? 'image' : 'selection', single ? Number(trigger.dataset.ti) : null, trigger);
     } else if (action === 'remove') {
       if (this.tagEditorQuickRemove) this.tagEditorToggleRemoval(menu.tag);
-      else if (this.tagEditorSelected.length === 1) this.tagEditorRemoveTagFromSelected(menu.tag);
-      else this.tagEditorPrepareRemove(menu.tag);
+      else if (this.tagEditorSelected.length === 1) {
+        var index = trigger?.classList?.contains('te-editor-tag') ? Number(trigger.dataset.ti) : null;
+        this.tagEditorRemoveTagFromSelected(menu.tag, index);
+      } else this.tagEditorPrepareRemove(menu.tag);
     } else if (action === 'filter') {
-      this.tagEditorTagSelection = [menu.tag];
-      this.tagEditorExcludedTags = [];
-      this._teInvalidateFilter();
-      this.tagEditorSchedulePageFetch(true);
+      this._teToggleContextFilter(menu.tag);
     } else if (action === 'quick') this.tagEditorStartQuickRemove();
     else if (action === 'view') this.tagEditorOpenLightbox(this.tagEditorGetSelectedImg(), trigger);
     else if (action === 'revert') this.tagEditorRevertSelectedImage();
     else if (action === 'undo') this.tagEditorUndo();
     else if (action === 'redo') this.tagEditorRedo();
+  },
+
+  tagEditorMenuContextSelect(event) {
+    if (event.button !== 2) return;
+    var button = event.target?.closest?.('button');
+    if (button && event.currentTarget.contains(button) && !button.matches(':disabled')) button.click();
   },
 
   tagEditorPanelMenuKeydown(event) {
@@ -160,15 +237,14 @@ window.tagEditorActions = {
     if (event.key === 'Tab') {
       var trigger = this.tagEditorPanelMenu ? this._tePanelMenuTrigger
         : this.tagEditorContextMenu ? this._teTagMenuTrigger : this._teImageMenuTrigger;
-      this.tagEditorClosePanelMenu(false);
-      this.tagEditorCloseTagMenu(false);
-      this.tagEditorCloseImageMenu(false);
+      this.tagEditorCloseContextMenus();
       if (trigger?.isConnected && trigger.getClientRects().length) trigger.focus();
       return;
     }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
     var buttons = this._teVisibleMenuButtons(event.currentTarget);
+    if (!buttons.length) return;
     var index = buttons.indexOf(document.activeElement);
-    if (!buttons.length || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault();
     var next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
       : index < 0 ? (event.key === 'ArrowDown' ? 0 : buttons.length - 1)
@@ -197,13 +273,13 @@ window.tagEditorActions = {
     this._teCloseSuggestions();
   },
 
-  tagEditorRemoveTagFromSelected(tag) {
+  tagEditorRemoveTagFromSelected(tag, index = null) {
     if (!this.tagEditorAllowsTagOps()) return;
     if (this.tagEditorSelected.length !== 1) return;
     var img = this.tagEditorGetSelectedImg();
     if (!img) return;
     var tags = _teParseTags(img.tags);
-    var idx = tags.indexOf(tag);
+    var idx = Number.isInteger(index) ? (tags[index] === tag ? index : -1) : tags.indexOf(tag);
     if (idx !== -1) {
       tags.splice(idx, 1);
       this._teUpdateImageTags(img, tags.join(', '));
@@ -310,10 +386,6 @@ window.tagEditorActions = {
     if (tags.every((tag, index) => tag === originalTags[index])) return;
     this._teUpdateImageTags(img, tags.join(', '));
     this._tePushHistory({ type: 'reorder', desc: this.t('tagEditor.historyStepReorder') + ' · ' + moving + ' @' + this._teImageLabel(img), affected: 1 });
-  },
-
-  tagEditorDetailEditTag(ti) {
-    this.tagEditorSetDetailView('text');
   },
 
   tagEditorDetailTextChange(event) {
@@ -480,26 +552,107 @@ window.tagEditorActions = {
   },
 
   // ===== Inline Tag Editing =====
-  tagEditorStartInlineEdit(tag, event) {
-    if (!this.tagEditorAllowsTagOps()) return;
-    event.stopPropagation();
-    this.tagEditorInlineEdit = { oldTag: tag, newTag: tag };
-    this.$nextTick(function() {
+  tagEditorStartInlineEdit(tag, event, scope = 'dataset', index = null, anchor = null) {
+    if (!this.tagEditorAllowsTagOps() || !tag || (scope !== 'dataset' && this.tagEditorQuickRemove)) return;
+    event?.stopPropagation?.();
+    this._teClearInlineLookupTimer();
+    anchor = anchor || (scope === 'dataset' ? this._teTagMenuTrigger : event?.currentTarget);
+    var chip = scope === 'dataset' ? anchor?.closest?.('.te-tag-row') : anchor;
+    var rect = chip?.getBoundingClientRect?.();
+    var edit = {
+      scope: scope, oldTag: tag, newTag: tag, index: index,
+      selected: scope === 'dataset' ? null : this.tagEditorSelected.slice(),
+      width: rect?.width, height: rect?.height, anchor: anchor, chip: chip,
+      translationHasRoom: false,
+    };
+    this.tagDictionaryCloseHover?.();
+    this.tagEditorInlineEdit = edit;
+    edit = this.tagEditorInlineEdit;
+    this.$nextTick(() => {
+      if (this.tagEditorInlineEdit !== edit) return;
       var input = document.getElementById('te-inline-edit-input');
       if (input) { input.focus(); input.select(); }
+      this.tagEditorMeasureInlineTranslation();
     });
+  },
+
+  tagEditorInlineEditMatches(scope, tag, index = null) {
+    var edit = this.tagEditorInlineEdit;
+    return !!edit && edit.scope === scope && edit.oldTag === tag && (scope !== 'image' || edit.index === index);
+  },
+
+  tagEditorInlineEditStyle(scope, tag, index = null) {
+    if (!this.tagEditorInlineEditMatches(scope, tag, index)) return {};
+    var edit = this.tagEditorInlineEdit;
+    return edit.width > 0 && edit.height > 0 ? { width: edit.width + 'px', height: edit.height + 'px' } : {};
+  },
+
+  tagEditorInlineDraftChanged() {
+    var edit = this.tagEditorInlineEdit;
+    if (!edit) return false;
+    var value = edit.newTag.trim();
+    return value !== edit.oldTag && (edit.inputEdited || value !== edit.oldTag.replace(/[\r\n]/g, ''));
+  },
+
+  tagEditorInlineTranslation() {
+    var edit = this.tagEditorInlineEdit;
+    if (!edit) return '';
+    var tag = edit.newTag.trim();
+    return tag && !tag.includes(',') ? this.tagDictionaryTranslationFor(tag) : '';
+  },
+
+  tagEditorMeasureInlineTranslation() {
+    var edit = this.tagEditorInlineEdit;
+    var chip = edit?.chip, input = document.getElementById('te-inline-edit-input');
+    var translation = chip?.querySelector?.('.te-inline-translation');
+    var rect = chip?.getBoundingClientRect?.(), inputRect = input?.getBoundingClientRect?.();
+    if (!edit || !rect || !inputRect || !translation || !window.getComputedStyle) return;
+    var chipStyle = window.getComputedStyle(chip), translationStyle = window.getComputedStyle(translation);
+    var needed = (parseFloat(translationStyle.lineHeight) || 0) + (parseFloat(translationStyle.marginTop) || 0);
+    var available = rect.bottom - inputRect.bottom - (parseFloat(chipStyle.paddingBottom) || 0) - (parseFloat(chipStyle.borderBottomWidth) || 0);
+    edit.translationHasRoom = needed > 0 && available + 0.75 >= needed;
+  },
+
+  tagEditorInlineEditInput(event) {
+    var edit = this.tagEditorInlineEdit;
+    if (!edit || (event.type !== 'compositionend' && this._teInlineEditIsComposing(event))) return;
+    edit.newTag = event.target.value;
+    edit.inputEdited = true;
+    this._teClearInlineLookupTimer();
+    var tag = edit.newTag.trim();
+    if (!tag || tag.includes(',')) return;
+    this._teInlineLookupTimer = setTimeout(() => {
+      this._teInlineLookupTimer = null;
+      if (this.tagEditorInlineEdit === edit) this.tagDictionaryLookupTags?.([tag]);
+    }, 250);
+  },
+
+  _teClearInlineLookupTimer() {
+    if (this._teInlineLookupTimer) clearTimeout(this._teInlineLookupTimer);
+    this._teInlineLookupTimer = null;
   },
 
   _teInlineEditIsComposing(event) {
     return this.tagEditorInlineEdit?.composing || event?.isComposing || event?.target?.composing || event?.keyCode === 229;
   },
 
+  tagEditorInlineCompositionStart(event) {
+    var edit = this.tagEditorInlineEdit;
+    if (!edit) return;
+    edit.composing = true;
+    edit.compositionStartValue = event.target.value;
+  },
+
   tagEditorInlineCompositionEnd(event) {
     var edit = this.tagEditorInlineEdit;
     if (!edit) return;
     edit.composing = false;
-    edit.newTag = event.target.value;
+    if (edit.compositionStartValue === undefined || event.target.value !== edit.compositionStartValue || event.data) {
+      this.tagEditorInlineEditInput(event);
+    }
+    delete edit.compositionStartValue;
     if (edit.finishAfterComposition) {
+      if (this.showConfirmModal) { edit.finishAfterComposition = false; return; }
       // 等 Alpine 完成组合输入同步；期间切换模式或关闭编辑器时不再提交。
       return this.$nextTick(() => {
         if (this.tagEditorInlineEdit === edit) return this.tagEditorFinishInlineEdit(event);
@@ -510,15 +663,62 @@ window.tagEditorActions = {
   async tagEditorFinishInlineEdit(event) {
     if (!this.tagEditorAllowsTagOps()) return;
     if (!this.tagEditorInlineEdit) return;
+    if (this.currentRoute && this.currentRoute !== 'tagEditor') {
+      this.tagEditorInlineEdit = null;
+      this._teClearInlineLookupTimer();
+      return;
+    }
+    if (event?.type === 'blur' && this.showConfirmModal) return;
     if (this._teInlineEditIsComposing(event)) {
       if (event?.type === 'blur') this.tagEditorInlineEdit.finishAfterComposition = true;
       return;
     }
     if (event?.type === 'keydown') { event.preventDefault?.(); event.stopPropagation?.(); }
-    var oldTag = this.tagEditorInlineEdit.oldTag;
-    var newTag = (event?.target ? event.target.value : this.tagEditorInlineEdit.newTag).trim();
+    var edit = this.tagEditorInlineEdit;
+    var oldTag = edit.oldTag;
+    var newTag = (event?.target ? event.target.value : edit.newTag).trim();
+    if (newTag.includes(',') && event?.type === 'keydown') {
+      this.toast(this.t('tagEditor.inlineRenameInvalid'), 'warning');
+      return;
+    }
     this.tagEditorInlineEdit = null;
-    if (!newTag || oldTag === newTag) return;
+    this._teClearInlineLookupTimer();
+    // A text input strips CR/LF on assignment, even before the user types.
+    if (!newTag || oldTag === newTag || (!edit.inputEdited && oldTag.replace(/[\r\n]/g, '') === newTag)) {
+      if (event?.type === 'keydown' && edit.anchor?.isConnected) this.$nextTick(() => edit.anchor.focus({ preventScroll: true }));
+      return;
+    }
+    if (newTag.includes(',')) { this.toast(this.t('tagEditor.inlineRenameInvalid'), 'warning'); return; }
+    if (edit.scope !== 'dataset') {
+      if (edit.selected.length !== this.tagEditorSelected.length ||
+          edit.selected.some((path, index) => path !== this.tagEditorSelected[index])) return;
+      if (edit.scope === 'image') {
+        var img = this.tagEditorGetSelectedImg();
+        if (!img || img.path !== edit.selected[0]) return;
+        if (!Number.isInteger(edit.index)) return;
+        var container = edit.anchor?.parentElement;
+        var before = img.tags || '';
+        var renamed = _teRenameTagText(before, oldTag, [newTag], edit.index);
+        if (renamed === before) return;
+        this._teUpdateImageTags(img, renamed);
+        this._tePushHistory({ type: 'rename', desc: oldTag + ' → ' + newTag + ' · ' + this._teImageLabel(img), affected: 1 });
+        if (event?.type === 'keydown') this.$nextTick(() => {
+          if (this.tagEditorSelected.length === 1 && this.tagEditorSelected[0] === edit.selected[0]) {
+            var renamedTags = _teParseTags(renamed);
+            var newKey = newTag.toLowerCase();
+            var focusIndex = renamedTags[edit.index]?.toLowerCase() === newKey ? edit.index
+              : renamedTags.findIndex(tag => tag.toLowerCase() === newKey);
+            container?.querySelector('.te-editor-tag[data-ti="' + focusIndex + '"]')?.focus({ preventScroll: true });
+          }
+        });
+      } else {
+        this._teConfirmBatchScope('replace', function(before) {
+          return _teRenameTagText(before, oldTag, [newTag]);
+        }, 'rename', oldTag + ' → ' + newTag);
+      }
+      this.tagDictionaryLookupTags?.([newTag]);
+      return;
+    }
 
     // 左侧重命名作用于整个数据集，确认时明确范围，失去焦点不会直接修改图片。
     var self = this;
@@ -532,11 +732,11 @@ window.tagEditorActions = {
     var message = this.t('tagEditor.globalRenameConfirm').replace('{n}', targets.length) + '\n' + oldTag + ' → ' + newTag;
     this._teConfirmTagBatch(message, function() {
       targets.forEach(function(img) {
-        var tags = _teParseTags(img.tags).map(function(tag) { return tag === oldTag ? newTag : tag; });
-        self._teUpdateImageTags(img, self._teDedupTags(tags).join(', '));
+        self._teUpdateImageTags(img, _teRenameTagText(img.tags, oldTag, [newTag]), { deferDictionarySync: true });
       });
-      self._teInvalidateFilter();
+      self.tagDictionarySyncChips();
       self._tePushHistory({ type: 'rename', desc: oldTag + ' → ' + newTag, affected: targets.length });
+      self.tagDictionaryLookupTags?.([newTag]);
       self.toast(self.t('tagEditor.inlineReplaceDone').replace('{old}', oldTag).replace('{new}', newTag).replace('{n}', targets.length));
     });
   },
@@ -544,7 +744,10 @@ window.tagEditorActions = {
   tagEditorCancelInlineEdit(event) {
     if (this._teInlineEditIsComposing(event)) return;
     if (event?.type === 'keydown') { event.preventDefault?.(); event.stopPropagation?.(); }
+    var anchor = this.tagEditorInlineEdit?.anchor;
     this.tagEditorInlineEdit = null;
+    this._teClearInlineLookupTimer();
+    if (event?.type === 'keydown' && anchor?.isConnected) this.$nextTick(() => anchor.focus({ preventScroll: true }));
   },
 
   _teConfirmBatchScope(action, transform, type, description, onDone) {
@@ -565,16 +768,16 @@ window.tagEditorActions = {
     if (!changes.length) { this.toast(this.t('tagEditor.batchNoChanges')); return; }
     msg += '\n' + this.t('tagEditor.batchPreviewDiff').replace('{n}', changes.length) + ' · ' + description;
     msg += this._teOutsidePageHint(targets.map(img => img.path));
-    var epoch = this._teLoadEpoch;
     var self = this;
     this._teConfirmTagBatch(msg, function() {
-      if (epoch !== self._teLoadEpoch || changes.some(function(change) { return change.img.tags !== change.before; })) {
+      if (changes.some(function(change) { return change.img.tags !== change.before; })) {
         self.toast(self.t('tagEditor.batchStale'), 'warning');
         return;
       }
-      changes.forEach(function(change) { self._teUpdateImageTags(change.img, change.after); });
+      changes.forEach(function(change) { self._teUpdateImageTags(change.img, change.after, { deferDictionarySync: true }); });
+      self.tagDictionarySyncChips();
       self._tePushHistory({ type: type, desc: description + ' · ' + self.t('tagEditor.historyStepImages').replace('{n}', changes.length), affected: changes.length });
-      onDone();
+      onDone?.();
       self.toast(self.t('tagEditor.batchDone'));
     });
   },
@@ -587,14 +790,14 @@ window.tagEditorActions = {
       return { img: img, before: before, after: before.replace(/\\+([()])/g, '$1') };
     }).filter(function(change) { return change.before !== change.after; });
     if (!changes.length) { this.toast(this.t('tagEditor.batchNoChanges')); return; }
-    var epoch = this._teLoadEpoch;
     var self = this;
     this._teConfirmTagBatch(this.t('tagEditor.unescapeConfirm').replace('{n}', changes.length) + this._teOutsidePageHint(changes.map(change => change.img.path)), function() {
-      if (epoch !== self._teLoadEpoch || changes.some(function(change) { return change.img.tags !== change.before; })) {
+      if (changes.some(function(change) { return change.img.tags !== change.before; })) {
         self.toast(self.t('tagEditor.unescapeStale'), 'warning');
         return;
       }
-      changes.forEach(function(change) { self._teUpdateImageTags(change.img, change.after); });
+      changes.forEach(function(change) { self._teUpdateImageTags(change.img, change.after, { deferDictionarySync: true }); });
+      self.tagDictionarySyncChips();
       self._tePushHistory({ type: 'unescape', desc: self.t('tagEditor.unescapeBrackets'), affected: changes.length });
       self.toast(self.t('tagEditor.batchDone'));
     });
@@ -640,16 +843,12 @@ window.tagEditorActions = {
 
   tagEditorBatchReplace() {
     var oldTag = this.batchOldTag.trim();
-    var newTag = this.batchNewTag.trim();
-    if (!oldTag || !newTag || oldTag === newTag) return;
+    var newTags = _teParseTags(this.batchNewTag);
+    if (!oldTag || !newTags.length) return;
     var self = this;
     this._teConfirmBatchScope('replace', function(before) {
-      var tags = _teParseTags(before);
-      var idx = tags.indexOf(oldTag);
-      if (idx === -1) return before;
-      tags[idx] = newTag;
-      return self._teDedupTags(tags).join(', ');
-    }, 'replace', oldTag + ' → ' + newTag, function() {
+      return _teRenameTagText(before, oldTag, newTags);
+    }, 'replace', oldTag + ' → ' + newTags.join(', '), function() {
       self.batchOldTag = ''; self.batchNewTag = '';
     });
   },
@@ -668,7 +867,7 @@ window.tagEditorActions = {
     }
     var selSet = Object.create(null);
     for (var si = 0; si < this.tagEditorSelected.length; si++) selSet[this.tagEditorSelected[si]] = true;
-    var counter = {};
+    var counter = Object.create(null);
     var imgs = this.tagEditorImages;
     for (var i = 0; i < imgs.length; i++) {
       if (!selSet[imgs[i].path]) continue;
@@ -685,15 +884,5 @@ window.tagEditorActions = {
     this._teCachedSelectedStatsKey = selKey;
     this._teCachedSelectedStats = result;
     return result;
-  },
-
-  _teDedupTags(tags) {
-    var seen = new Set();
-    return tags.filter(function(t) {
-      var lower = t.trim().toLowerCase();
-      if (seen.has(lower)) return false;
-      seen.add(lower);
-      return true;
-    });
   },
 };

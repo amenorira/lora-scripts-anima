@@ -1,6 +1,15 @@
 /* Training step estimates, output path inspection and Krea model format checks.
  * Composed into trainingCoreMixin with property descriptors intact.
  */
+function trainingPreflightFields(form, keys) {
+  const payload = {};
+  for (const key of keys) {
+    const value = form[key];
+    if (value !== undefined && value !== null && value !== '') payload[key] = value;
+  }
+  return payload;
+}
+
 window.trainingPreflight = {
   stepEstimate: null,
   stepEstimateLoading: false,
@@ -32,19 +41,22 @@ window.trainingPreflight = {
     this.outputPathInfoLoading = false;
   },
 
-  _stepEstimatePayload() {
-    const keys = [
+  _trainingDatasetPayload() {
+    return trainingPreflightFields(this.form, [
       'model_train_type', 'train_data_dir', 'caption_extension', 'enable_reg_data', 'reg_data_dir', 'dataset_cache_dir', 'resolution', 'enable_bucket',
       'bucket_no_upscale', 'min_bucket_reso', 'max_bucket_reso', 'bucket_reso_steps',
-      'krea_num_repeats', 'train_batch_size', 'gradient_accumulation_steps',
-      'krea_training_duration_mode', 'max_train_epochs', 'max_train_steps', 'gpu_ids',
-    ];
-    const payload = {};
-    keys.forEach(key => {
-      const value = this.form[key];
-      if (value !== undefined && value !== null && value !== '') payload[key] = value;
-    });
-    return payload;
+      'krea_num_repeats',
+    ]);
+  },
+
+  _stepEstimatePayload() {
+    return {
+      ...this._trainingDatasetPayload(),
+      ...trainingPreflightFields(this.form, [
+        'train_batch_size', 'gradient_accumulation_steps', 'krea_training_duration_mode',
+        'max_train_epochs', 'max_train_steps', 'gpu_ids',
+      ]),
+    };
   },
 
   scheduleStepEstimate() {

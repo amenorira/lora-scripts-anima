@@ -341,45 +341,36 @@ window.tagEditorFilters = {
 
   tagEditorTagCtx(e, tag) {
     if (!this.tagEditorAllowsTagOps()) return;
-    // Reserve space for the shared menu sizing and rename action.
-    var menuW = 220, menuH = 230;
-    var x = Math.min(e.clientX, window.innerWidth - menuW - 4);
-    var y = Math.min(e.clientY, window.innerHeight - menuH - 4);
+    if (e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var point = this._teContextMenuPoint(e);
     this.tagEditorImageContextMenu = null;
     this.tagEditorPanelMenu = null;
-    this.tagEditorContextMenu = { x: x, y: y, tag: tag };
-    this.tagDictionaryCloseHover();
+    this.tagEditorContextMenu = { x: point.x, y: point.y, tag: tag, positioned: false };
+    this.tagDictionaryShowContextHover?.(tag, e.currentTarget);
     this._teFocusMenu('tagEditorContextMenu', '_teTagMenuTrigger', 'teTagMenu', e);
   },
 
   tagEditorCtxInclude() {
     if (!this.tagEditorAllowsTagOps()) return;
     var tag = this.tagEditorContextMenu && this.tagEditorContextMenu.tag;
-    if (tag && this._teTagListToggle(this.tagEditorTagSelection, this.tagEditorExcludedTags, tag)) {
-      this._teInvalidateFilter();
-      this.tagEditorSchedulePageFetch(true);
-    }
+    this._teToggleContextFilter(tag);
     this.tagEditorCloseTagMenu();
   },
 
   tagEditorCtxExclude() {
     if (!this.tagEditorAllowsTagOps()) return;
     var tag = this.tagEditorContextMenu && this.tagEditorContextMenu.tag;
-    if (tag && this._teTagListToggle(this.tagEditorExcludedTags, this.tagEditorTagSelection, tag)) {
-      this._teInvalidateFilter();
-      this.tagEditorSchedulePageFetch(true);
-    }
+    this._teToggleContextFilter(tag, true);
     this.tagEditorCloseTagMenu();
   },
 
-  tagEditorCtxCopy() {
+  async tagEditorCtxCopy() {
     if (!this.tagEditorAllowsTagOps()) return;
     var tag = this.tagEditorContextMenu && this.tagEditorContextMenu.tag;
-    if (tag) {
-      navigator.clipboard.writeText(tag).catch(function() {});
-      this.toast(this.t('tagEditor.singleTagCopied').replace('{tag}', tag));
-    }
     this.tagEditorCloseTagMenu();
+    if (tag) await this._teCopyMenuTags(tag, true);
   },
 
   tagEditorCtxAddAll() {
@@ -402,11 +393,14 @@ window.tagEditorFilters = {
           var tags = _teParseTags(img.tags);
           if (tags.indexOf(tag) === -1) {
             tags.push(tag);
-            self._teUpdateImageTags(img, tags.join(', '));
+            self._teUpdateImageTags(img, tags.join(', '), { deferDictionarySync: true });
             affected++;
           }
         });
-        self._tePushHistory({ type: 'batchAdd', desc: '+ ' + tag + ' · ' + self.t('tagEditor.historyStepImages').replace('{n}', affected), affected: affected });
+        if (affected) {
+          self.tagDictionarySyncChips();
+          self._tePushHistory({ type: 'batchAdd', desc: '+ ' + tag + ' · ' + self.t('tagEditor.historyStepImages').replace('{n}', affected), affected: affected });
+        }
       });
   },
 
@@ -427,14 +421,14 @@ window.tagEditorFilters = {
         if (!self.tagEditorAllowsTagOps() || modeEpoch !== self._teModeEpoch) return;
         images.forEach(function(img) {
           var tags = _teParseTags(img.tags);
-          var idx = tags.indexOf(tag);
-          if (idx !== -1) {
-            tags.splice(idx, 1);
-            self._teUpdateImageTags(img, tags.join(', '));
+          var remaining = tags.filter(function(value) { return value !== tag; });
+          if (remaining.length !== tags.length) {
+            self._teUpdateImageTags(img, remaining.join(', '), { deferDictionarySync: true });
             affected++;
           }
         });
         if (affected > 0) {
+          self.tagDictionarySyncChips();
           self._tePushHistory({ type: 'tagDelete', desc: '− ' + tag + ' · ' + self.t('tagEditor.historyStepImages').replace('{n}', affected), affected: affected });
           self.toast(self.t('tagEditor.tagDeleted').replace('{tag}', tag).replace('{n}', affected));
         }

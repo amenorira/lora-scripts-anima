@@ -1,5 +1,9 @@
 /* 训练样本、预览灯箱与输出文件视图；由 monitor-render.js 装配。 */
 window.monitorArtifactsRenderMixin = {
+  _previewFullImageUrl(preview) {
+    // Browser-native originals avoid re-encoding full-resolution samples.
+    return (/\.tiff?$/i.test(preview.name) ? preview.inspect_url : preview.url) || preview.inspect_url || preview.url;
+  },
   _previewThumbImageHtml(preview) {
     const imageUrl = preview.thumb_url || preview.url;
     const common = ' alt="' + this.esc(preview.name) + '" loading="lazy" decoding="async" fetchpriority="low"';
@@ -151,9 +155,9 @@ window.monitorArtifactsRenderMixin = {
     const box = document.getElementById('previewLightbox');
     if (box) box.classList.remove('open');
     const image = document.getElementById('previewLightboxImg');
-    if (image) image.removeAttribute('src');
+    if (image) { window.AnimaImages.cancel(image); image.removeAttribute('src'); }
     const reference = document.getElementById('previewReferenceImg');
-    if (reference) { reference.removeAttribute('src'); reference.hidden = true; }
+    if (reference) { window.AnimaImages.cancel(reference); reference.removeAttribute('src'); reference.hidden = true; }
     this.previewReference = null;
     this.previewPromptFilter = null;
     if (typeof this._resetPreviewMetadata === 'function') this._resetPreviewMetadata();
@@ -187,15 +191,15 @@ window.monitorArtifactsRenderMixin = {
     const p = this.previews[this.previewStep] || this.previews[0];
     if (typeof this._resetPreviewMetadata === 'function') this._resetPreviewMetadata();
     const img = document.getElementById('previewLightboxImg');
-    if (img) { img.src = p.inspect_url || p.url; img.alt = p.name; }
+    if (img) { window.AnimaImages.display(img, this._previewFullImageUrl(p), p.thumb_url); img.alt = p.name; }
     const reference = document.getElementById('previewReferenceImg');
     if (reference) {
       reference.hidden = !this.previewReference;
       if (this.previewReference) {
-        reference.src = this.previewReference.inspect_url || this.previewReference.url;
+        window.AnimaImages.display(reference, this._previewFullImageUrl(this.previewReference), this.previewReference.thumb_url);
         reference.alt = this.t('monitor.pinReference') + ': ' + this.previewReference.name;
         reference.title = reference.alt;
-      } else reference.removeAttribute('src');
+      } else { window.AnimaImages.cancel(reference); reference.removeAttribute('src'); }
     }
     const referenceLabel = document.getElementById('previewReferenceLabel');
     if (referenceLabel) {

@@ -155,7 +155,7 @@ window.trainingTimestepPreview = {
           <input type="text" inputmode="decimal" autocomplete="off" placeholder="0" :value="subsetTimestepOffsetInputValue(${nameExpr})" @input="setSubsetTimestepOffsetDraft(${nameExpr}, $event.target.value)" @blur="commitSubsetTimestepOffsetDraft(${nameExpr})"${disabled}>
           <button type="button" @click="stepSubsetTimestepOffset(${nameExpr}, 0.05)"${disabled}>+</button>
         </div>
-        <button type="button" class="btn-icon" @click="openTimestepPreview(${nameExpr})"${disabled} ${this.trainingI18nAttrs('timestepOffset.previewSubset')}>
+        <button type="button" class="btn-icon" data-dialog-opens="timestepPreviewDialog" @click="openTimestepPreview(${nameExpr})"${disabled} ${this.trainingI18nAttrs('timestepOffset.previewSubset')}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19V3"/></svg>
         </button>
         <div class="field-menu-wrap subset-timestep-menu" x-data="actionMenu" x-id="['field-menu']" @keydown="key($event)" @click.outside="close(false)" @pointerenter="hoverEnter($event)" @pointerleave="hoverLeave()" @focusout="focusOut($event)">
@@ -183,7 +183,7 @@ window.trainingTimestepPreview = {
           </div>
           <div class="field-hint">${this.trainingText('timestepOffset.hint')}</div>
         </div>
-        <button type="button" class="btn btn-ghost btn-sm" @click="openTimestepPreview('overall')"${previewDisabled}${disabled}>
+        <button type="button" class="btn btn-ghost btn-sm" data-dialog-opens="timestepPreviewDialog" @click="openTimestepPreview('overall')"${previewDisabled}${disabled}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19V3"/></svg>
           ${this.trainingText('timestepOffset.preview')}
         </button>
@@ -309,8 +309,8 @@ window.trainingTimestepPreview = {
     <div class="timestep-chart-box">
       <div class="timestep-inspect-bar">
         ${inspectTitle}
-        <span class="timestep-inspect-value" aria-live="polite">
-          <b class="ts-hover-t"></b><small>·</small><span class="ts-hover-density"></span>
+        <span class="timestep-inspect-value" data-chart-readout aria-live="polite">
+          <b class="ts-hover-t" data-chart-value></b><small>·</small><span class="ts-hover-density" data-chart-value></span>
         </span>
       </div>
       <div class="timestep-chart-yaxis">
@@ -322,7 +322,7 @@ window.trainingTimestepPreview = {
           <div class="zone-col"><span>${t('timestepPreview.middleZone', 'Mid noise')}</span><b>${esc(fmtPercent(data.baselineMidPercent, data.midPercent, data.compare))}</b></div>
           <div class="zone-col"><span>${t('timestepPreview.detailZone', 'Low noise')}</span><b>${esc(fmtPercent(data.baselineLowPercent, data.lowPercent, data.compare))}</b></div>
         </div>
-      <div class="timestep-preview-chart" aria-hidden="true">
+      <div class="timestep-preview-chart" data-chart-plot aria-hidden="true">
         <svg class="timestep-grid-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
           ${gridH}
           <line x1="25" y1="0" x2="25" y2="100" class="timestep-grid-v" />
@@ -340,7 +340,7 @@ window.trainingTimestepPreview = {
         <div class="timestep-median-line" style="left: ${esc(data.medianPercent)}%">
           <span class="timestep-median-tag">${t(data.fixedTimestep != null ? 'timestepPreview.fixedLabel' : 'timestepPreview.medianLabel', 't = {value}').replace('{value}', esc(data.median))}</span>
         </div>
-        <div class="timestep-hover-indicator" style="display:none"></div>
+        <div class="timestep-hover-indicator" data-chart-indicator style="display:none"></div>
         ${rangeOverlay}
       </div>
       </div>
@@ -358,52 +358,15 @@ window.trainingTimestepPreview = {
     `;
   },
 
-  onTimestepChartHover(event) {
-    if (!event || !event.currentTarget) return;
-    const holder = event.currentTarget;
-    const chart = holder.querySelector ? holder.querySelector('.timestep-preview-chart') : null;
-    if (!chart) return;
-    const rect = chart.getBoundingClientRect();
-    if (!rect.width) return;
-    if (event.clientX < rect.left || event.clientX > rect.right
-      || event.clientY < rect.top || event.clientY > rect.bottom) {
-      this.onTimestepChartLeave(event);
-      return;
-    }
-    const relX = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-    holder.dataset.inspectProgress = relX;
-    const data = this.timestepPreviewData;
-    if (!data) return;
-    if (data.fixedTimestep != null) return;
-    const densities = data.densities || [];
-    const idx = Math.min(densities.length - 1, Math.floor(relX * densities.length));
-    const density = densities.length ? (densities[idx] || 0) : 0;
-
-    const hoverLine = chart.querySelector('.timestep-hover-indicator');
-    if (hoverLine) {
-      hoverLine.style.left = `${(relX * 100).toFixed(2)}%`;
-      hoverLine.style.display = 'block';
-    }
-    const tEl = holder.querySelector('.ts-hover-t');
-    const dEl = holder.querySelector('.ts-hover-density');
-    const valueBox = holder.querySelector('.timestep-inspect-value');
-    const translate = (key, fallback, value) => {
-      const raw = typeof this.t === 'function' ? this.t(key) : '';
-      return String(raw || fallback).replace('{value}', String(value));
-    };
-    if (tEl) tEl.textContent = translate('timestepPreview.timestepValue', 't = {value}', Math.round((1 - relX) * 1000));
-    if (dEl) dEl.textContent = translate('timestepPreview.densityValue', 'Probability density: {value}', density.toFixed(5));
-    if (valueBox) valueBox.classList.add('is-visible');
-  },
-
-  onTimestepChartLeave(event) {
-    if (event && event.currentTarget && event.currentTarget.querySelector) {
-      const holder = event.currentTarget;
-      const hoverLine = holder.querySelector('.timestep-hover-indicator');
-      if (hoverLine) hoverLine.style.display = 'none';
-      const valueBox = holder.querySelector('.timestep-inspect-value');
-      if (valueBox) valueBox.classList.remove('is-visible');
-    }
+  timestepChartSample(data, progress) {
+    if (data.fixedTimestep != null) return null;
+    const { densities } = data;
+    const index = Math.min(densities.length - 1, Math.floor(progress * densities.length));
+    const density = densities[index] ?? 0;
+    return [
+      this.t('timestepPreview.timestepValue', 't = {value}').replace('{value}', Math.round((1 - progress) * 1000)),
+      this.t('timestepPreview.densityValue', 'Probability density: {value}').replace('{value}', density.toFixed(5)),
+    ];
   },
 
   openTimestepPreview(scope) {

@@ -204,9 +204,10 @@ window.trainingConditions = {
     });
 
     const after = this._captureConditionalLayout(layoutParents, false);
-    this._playConditionalFlip(before, after, entering);
-    this._animateConditionalEntries(entering);
-    this._animateConditionalExits(exiting, epoch);
+    const easing = getComputedStyle(container).getPropertyValue('--ease-disclosure').trim();
+    this._playConditionalFlip(before, after, entering, easing);
+    this._animateConditionalEntries(entering, easing);
+    this._animateConditionalExits(exiting, epoch, easing);
   },
 
   _captureConditionalLayout(parents, cancelExisting) {
@@ -237,7 +238,7 @@ window.trainingConditions = {
     return layout;
   },
 
-  _playConditionalFlip(before, after, entering) {
+  _playConditionalFlip(before, after, entering, easing) {
     const scroller = document.getElementById('mainContent');
     const viewport = scroller ? scroller.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
     let animationCount = 0;
@@ -259,7 +260,7 @@ window.trainingConditions = {
         { transform: 'translate3d(0, 0, 0)' },
       ], {
         duration: 190,
-        easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+        easing,
       });
       element._conditionalLayoutAnimation = animation;
       animationCount += 1;
@@ -280,7 +281,7 @@ window.trainingConditions = {
     });
   },
 
-  _animateConditionalEntries(rows) {
+  _animateConditionalEntries(rows, easing) {
     rows.forEach(row => {
       if (!row.isConnected || row._conditionalTargetVisible !== true) return;
       row.classList.add('field-motion-entering');
@@ -289,7 +290,7 @@ window.trainingConditions = {
         { opacity: 1, transform: 'translate3d(0, 0, 0)' },
       ], {
         duration: 180,
-        easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+        easing,
       });
       row._conditionalVisibilityAnimation = animation;
       let settled = false;
@@ -309,15 +310,15 @@ window.trainingConditions = {
     });
   },
 
-  _animateConditionalExits(rows, epoch) {
+  _animateConditionalExits(rows, epoch, easing) {
     rows.forEach(row => {
       if (!row.isConnected || row._conditionalTargetVisible !== false) return;
       const animation = row.animate([
         { opacity: 1, transform: 'translate3d(0, 0, 0)' },
         { opacity: 0, transform: 'translate3d(0, -4px, 0)' },
       ], {
-        duration: 125,
-        easing: 'cubic-bezier(0.4, 0, 1, 1)',
+        duration: 180,
+        easing,
         fill: 'forwards',
       });
       row._conditionalVisibilityAnimation = animation;
@@ -348,7 +349,7 @@ window.trainingConditions = {
           this._applyConditionalDeferredChanges(row);
         }
       };
-      row._conditionalVisibilityTimer = setTimeout(finish, 190);
+      row._conditionalVisibilityTimer = setTimeout(finish, 240);
       animation.finished.then(finish).catch(() => {});
     });
   },

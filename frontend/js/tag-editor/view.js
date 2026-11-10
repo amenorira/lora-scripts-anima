@@ -245,15 +245,13 @@ window.tagEditorView = {
 
   _teLoadLightboxImage(img) {
     this.tagEditorLightboxImage = img;
-    this.tagEditorLightboxSrc = img.preview || img.thumbnail || '';
+    this.tagEditorLightboxSrc = img.thumbnail || img.preview || '';
     this.tagEditorLightboxLoading = true;
     this.tagEditorResetLightbox();
     var self = this;
     var epoch = this._teLoadEpoch;
     var request = ++this._teLightboxRequest;
-    var original = new Image();
-    original.src = this.tagEditorOriginalUrl(img);
-    original.decode().then(function() {
+    window.AnimaImages.decode(this.tagEditorOriginalUrl(img)).then(function(original) {
       if (epoch !== self._teLoadEpoch || request !== self._teLightboxRequest || !self.tagEditorLightboxOpen) return;
       self.tagEditorLightboxSrc = original.src;
       self.tagEditorLightboxLoading = false;

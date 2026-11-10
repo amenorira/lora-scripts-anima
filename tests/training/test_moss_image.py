@@ -82,6 +82,7 @@ class MossImageLaunchTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("moss_image_train_network.py", launch.call_args.args[1])
             self.assertEqual(launch.call_args.kwargs["engine_id"], "sd_scripts")
             native = tomllib.loads(Path(launch.call_args.args[0]).read_text(encoding="utf-8"))
+            self.assertEqual(native["bucket_reso_steps"], 16)
             self.assertEqual(native["sample_uncond_skip_layers"], "")
             self.assertNotIn("engine_id", native)
             self.assertNotIn("preview_loras", native)

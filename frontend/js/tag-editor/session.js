@@ -76,6 +76,13 @@ window.tagEditorSession = {
   },
 
   _teApplyExternalChanges(data) {
+    if (this._teAllAbort) {
+      if (this._teAllAbort._teSelectionRequest != null && this._teAllAbort._teSelectionRequest === this._teNavRequest) {
+        this.toast(this.t(this._teAllAbort._teDatasetSelectionRequest != null
+          ? 'tagEditor.selectDatasetChanged' : 'tagEditor.datasetChangedRetry'), 'warning');
+      }
+      this._teAllAbort.abort();
+    }
     this._teFlushAllPendingTextEdits();
     var selected = this.tagEditorGetSelectedImg();
     var updatePanel = false;
@@ -198,6 +205,10 @@ window.tagEditorSession = {
     this._teSearchLoading = false;
   },
 
+  _teHasSearchWork() {
+    return !!(this._teAllAbort || this._tePageAbort || this._teSearchDebounce || this._tePageFetchTimer);
+  },
+
   _teMergeSessionItems(items, reset, holdBaselines = false) {
     if (reset || !this._tePageCache) this._tePageCache = {};
     if (reset) {
@@ -247,6 +258,7 @@ window.tagEditorSession = {
   async tagEditorFetchPage(page, options) {
     this._teLastSelected = null;
     this._teCancelPageFetch();
+    this._teSearchLoading = this._teHasSearchWork();
     if (!this.tagEditorSessionId) return false;
     if (options?.isCurrent && !options.isCurrent()) return false;
     var targetPage = Math.max(1, Number(page || this.tagEditorPage || 1));
@@ -285,8 +297,8 @@ window.tagEditorSession = {
       if (epoch === this._tePageEpoch && !controller.signal.aborted && (!e || e.name !== 'AbortError')) this.toast(this.t('common.networkError'), 'error');
     } finally {
       if (epoch === this._tePageEpoch) {
-        this._teSearchLoading = false;
         this._tePageAbort = null;
+        this._teSearchLoading = this._teHasSearchWork();
       }
     }
     return false;
@@ -295,10 +307,14 @@ window.tagEditorSession = {
   tagEditorSchedulePageFetch(resetPage) {
     this._teLastSelected = null;
     this._teCancelPageFetch();
-    if (this._teAllAbort) this._teAllAbort.abort();
+    if (this._teAllAbort) {
+      if (this._teAllAbort._teDatasetSelectionRequest != null) this._teSearchLoading = true;
+      else this._teAllAbort.abort();
+    }
     if (resetPage) this.tagEditorPage = 1;
     if (this.tagEditorQuickFilter === 'modified') {
       this._teRefreshModifiedPage();
+      this._teSearchLoading = this._teHasSearchWork();
       return;
     }
     var self = this;
@@ -306,6 +322,7 @@ window.tagEditorSession = {
       self._tePageFetchTimer = null;
       self.tagEditorFetchPage(self.tagEditorPage, { force: true });
     }, 80);
+    this._teSearchLoading = true;
   },
 
   _teRefreshModifiedPage() {
@@ -404,6 +421,10 @@ window.tagEditorSession = {
 
   tagEditorSetDetailView(view) {
     this._teFlushAllPendingTextEdits();
+    if (view !== 'chip' && this.tagEditorInlineEdit?.scope === 'image') {
+      this.tagEditorInlineEdit = null;
+      this._teClearInlineLookupTimer();
+    }
     this.tagEditorCancelQuickRemove();
     this.tagEditorDetailView = this.tagEditorAllowsTagOps() && view === 'chip' ? 'chip' : 'text';
   },
@@ -412,8 +433,10 @@ window.tagEditorSession = {
     if (this.tagEditorLightboxOpen) this.tagEditorCloseLightbox();
     this.tagEditorShortcutsOpen = false;
     this._teLastSelected = null;
+    this.tagEditorInlineEdit = null;
+    this._teClearInlineLookupTimer();
     this.tagEditorCancelQuickRemove();
-    this.tagEditorPanelMenu = null;
+    this.tagEditorClosePanelMenu(false);
     var loadOptions = arguments.length > 1 && arguments[1] ? arguments[1] : {};
     var openPath = this.tagEditorOpenPath;
     this.tagEditorOpenPath = '';
@@ -613,7 +636,7 @@ window.tagEditorSession = {
     if (!nextDir || nextDir === this.tagEditorLoadedDir) { this.tagEditorSwitchOpen = false; return; }
     var self = this;
     var run = function() { self._teRemoveDraft(); self.tagEditorLoad(nextDir); };
-    if (this.tagEditorModifiedCount() > 0) {
+    if (this.tagEditorModifiedCount() > 0 || this._teHasUnsavedEdits()) {
       this._teConfirmUnsaved(this.t('tagEditor.unsavedConfirm'), run);
     } else run();
   },
@@ -641,7 +664,7 @@ window.tagEditorSession = {
       self._teRebuildPathIndex();
       try { sessionStorage.removeItem('tagEditor_lastDir'); } catch (e) {}
     };
-    if (this.tagEditorModifiedCount() > 0) {
+    if (this.tagEditorModifiedCount() > 0 || this._teHasUnsavedEdits()) {
       this._teConfirmUnsaved(this.t('tagEditor.unsavedConfirm'), closeNow);
     } else closeNow();
   },
@@ -683,7 +706,7 @@ window.tagEditorSession = {
   },
 
   tagEditorReloadDir() {
-    if (this.tagEditorModifiedCount() > 0) {
+    if (this.tagEditorModifiedCount() > 0 || this._teHasUnsavedEdits()) {
       var self = this;
       this._teConfirmUnsaved(this.t('tagEditor.revertConfirm'), function() {
         self._teRemoveDraft();
@@ -702,21 +725,30 @@ window.tagEditorSession = {
       self.tagEditorRecursive = nextRecursive;
       if (self.tagEditorDir) self.tagEditorLoad(self.tagEditorDir);
     };
-    if (this.tagEditorModifiedCount() > 0) {
+    if (this.tagEditorModifiedCount() > 0 || this._teHasUnsavedEdits()) {
       this._teConfirmUnsaved(this.t('tagEditor.recursiveUnsavedConfirm'), applyToggle);
       return;
     }
     applyToggle();
   },
-  async _teFetchAllSessionItems(useCurrentFilters) {
-    if (useCurrentFilters && this.tagEditorQuickFilter === 'modified') return this._teFilterImages(this._teGetModified());
-    if (!this.tagEditorSessionId) return this.tagEditorGetFiltered().slice();
+  async _teFetchAllSessionItems(useCurrentFilters, options) {
+    var queryKey = this._teSessionQueryKey(1);
+    if (options && useCurrentFilters) options.queryKey = queryKey;
+    if (useCurrentFilters && this.tagEditorQuickFilter === 'modified') {
+      if (options) options.generation = this.tagEditorSessionGeneration;
+      return this._teFilterImages(this._teGetModified());
+    }
+    if (!this.tagEditorSessionId) return useCurrentFilters
+      ? this.tagEditorGetFiltered().slice()
+      : this.tagEditorImages.filter(img => !img._teMissingOnDisk);
     if (this._teAllAbort) this._teAllAbort.abort();
     var controller = new AbortController();
+    controller._teSelectionRequest = options?.selectionRequest ?? null;
+    controller._teDatasetSelectionRequest = options?.datasetSelectionRequest ?? null;
+    if (options) options.controller = controller;
     this._teAllAbort = controller;
     var sessionId = this.tagEditorSessionId;
     var epoch = this._teLoadEpoch;
-    var queryKey = this._teSessionQueryKey(1);
     var assertCurrent = () => {
       if (controller.signal.aborted || epoch !== this._teLoadEpoch || sessionId !== this.tagEditorSessionId ||
           (useCurrentFilters && queryKey !== this._teSessionQueryKey(1))) {
@@ -731,6 +763,12 @@ window.tagEditorSession = {
     var all = [];
     var totalPages = 1;
     var generation;
+    var datasetChanged = () => {
+      var error = new Error(this.t(options?.datasetSelectionRequest != null
+        ? 'tagEditor.selectDatasetChanged' : 'tagEditor.datasetChangedRetry'));
+      error.code = 'dataset_changed';
+      return error;
+    };
     try {
       for (var page = 1; page <= totalPages; page++) {
         assertCurrent();
@@ -741,7 +779,8 @@ window.tagEditorSession = {
         if (payload.status !== 'success') throw new Error(payload.message || this.t('common.error'));
         var data = payload.data || {};
         if (page === 1) generation = data.generation;
-        else if (generation !== data.generation) throw new Error(this.t('common.error'));
+        else if (generation !== data.generation) throw datasetChanged();
+        if (generation < this.tagEditorSessionGeneration) throw datasetChanged();
         totalPages = Number(data.total_pages || 1);
         for (var item of data.items || []) all.push(item);
       }
@@ -749,12 +788,13 @@ window.tagEditorSession = {
       this.tagEditorSessionGeneration = Math.max(this.tagEditorSessionGeneration, generation || 0);
       this._teMergeSessionItems(all, false, generation > this._teExternalGeneration);
       this.tagEditorPageItems = currentItems;
+      if (options) options.generation = generation;
       return all.map(function(item) { return this._teFindByPath(item.path); }, this).filter(Boolean);
     } catch (error) {
       assertCurrent();
       throw error;
     } finally {
-      if (this._teAllAbort === controller) this._teAllAbort = null;
+      if (this._teAllAbort === controller && controller._teSelectionRequest == null) this._teAllAbort = null;
     }
   },
 
@@ -765,7 +805,7 @@ window.tagEditorSession = {
       try {
         await this._teFetchAllSessionItems(false);
       } finally {
-        if (epoch === this._teLoadEpoch && !this._teAllAbort && !this._tePageAbort) this._teSearchLoading = false;
+        if (epoch === this._teLoadEpoch) this._teSearchLoading = this._teHasSearchWork();
       }
     }
     return this.tagEditorImages;

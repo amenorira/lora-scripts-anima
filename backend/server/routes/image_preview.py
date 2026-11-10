@@ -45,18 +45,21 @@ async def serve_preview_file(
     variant: str,
     size: int | None = None,
     request: Request | None = None,
+    orient: bool = True,
 ):
     try:
         variant = normalize_variant(variant)
         source = source.resolve()
         if not source.is_file() or source.suffix.lower() not in IMAGE_EXTENSIONS:
             raise FileNotFoundError(source)
-        etag = preview_etag(source, variant, size)
+        etag = preview_etag(source, variant, size, orient=orient)
     except (FileNotFoundError, OSError, ValueError):
         return PlainTextResponse("", status_code=404)
 
+    versioned = bool(request and (request.query_params.get('v') or request.query_params.get('version')))
     headers = {
-        "Cache-Control": "private, max-age=86400, immutable",
+        # URLs without a file revision must revalidate when an image is replaced.
+        "Cache-Control": "private, max-age=86400, immutable" if versioned else "private, no-cache",
         "ETag": f'"{etag}"',
     }
     if request and request.headers.get("if-none-match") == headers["ETag"]:
@@ -65,7 +68,7 @@ async def serve_preview_file(
         media_type = mimetypes.guess_type(source.name)[0] or "application/octet-stream"
         return FileResponse(source, media_type=media_type, headers=headers)
     try:
-        rendered = await asyncio.to_thread(get_cached_preview_path, source, variant, size)
+        rendered = await asyncio.to_thread(get_cached_preview_path, source, variant, size, orient=orient)
     except Exception:
         return PlainTextResponse("", status_code=500)
     return FileResponse(rendered, media_type="image/webp", headers=headers)
@@ -91,6 +94,10 @@ async def image_preview(
         source = await asyncio.to_thread(resolve_artifact_file, run_dir, path)
     elif scope == "dataset":
         source = await asyncio.to_thread(_resolve_dataset_image, session_id, path)
+    elif scope == "crop":
+        from backend.training.datasets.crop_preview import resolve_preview_image
+
+        source = resolve_preview_image(session_id, path)
     elif scope == "tagger":
         from backend.tagger.workspace import source_item
 
@@ -100,4 +107,4 @@ async def image_preview(
             source = None
     if source is None:
         return PlainTextResponse("", status_code=404)
-    return await serve_preview_file(source, variant=variant, size=size, request=request)
+    return await serve_preview_file(source, variant=variant, size=size, request=request, orient=scope != "crop")

@@ -5,6 +5,8 @@ import hashlib
 import os
 import threading
 import urllib.parse
+from functools import lru_cache
+from importlib.util import find_spec
 from pathlib import Path
 
 from PIL import Image, ImageOps
@@ -12,10 +14,10 @@ from PIL import Image, ImageOps
 from backend.constants import CACHE_DIR
 
 IMAGE_EXTENSIONS = {
-    ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".avif",
+    ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".avif", ".jxl",
 }
 IMAGE_PREVIEW_CACHE_DIR = CACHE_DIR / "image-previews"
-PREVIEW_RENDER_VERSION = "webp-v1"
+PREVIEW_RENDER_VERSION = "webp-v2"
 _CACHE_MAX_FILES = 14000
 _CACHE_RETAIN_FILES = 12000
 _PRUNE_INTERVAL = 128
@@ -28,6 +30,21 @@ _VARIANT_DEFAULTS = {
     "preview": {"size": 960, "quality": 95},
     "inspect": {"size": None, "quality": 95},
 }
+
+
+@lru_cache(maxsize=1)
+def _register_jpeg_xl_decoders() -> None:
+    # Match the optional Pillow plugins used by the Krea trainer.
+    if find_spec("jxlpy") is not None:
+        from jxlpy import JXLImagePlugin  # noqa: F401
+    if find_spec("pillow_jxl") is not None:
+        import pillow_jxl  # noqa: F401
+
+
+def open_preview_source(source: Path) -> Image.Image:
+    if source.suffix.lower() == ".jxl":
+        _register_jpeg_xl_decoders()
+    return Image.open(source)
 
 
 def normalize_variant(variant: str) -> str:
@@ -69,11 +86,12 @@ def build_image_preview_url(
     return "/api/image-preview?" + urllib.parse.urlencode(params)
 
 
-def preview_etag(source: Path, variant: str, size: int | None = None) -> str:
+def preview_etag(source: Path, variant: str, size: int | None = None, *, orient: bool = True) -> str:
     stat = source.stat()
     key = (
         f"{source.resolve()}|{stat.st_mtime_ns}|{stat.st_size}|"
         f"{normalize_variant(variant)}|{size or ''}|{PREVIEW_RENDER_VERSION}"
+        f"{'' if orient else '|raw-v1'}"
     )
     return hashlib.sha1(key.encode("utf-8", errors="ignore")).hexdigest()
 
@@ -122,6 +140,7 @@ def get_cached_preview_path(
     size: int | None = None,
     *,
     cache_dir: Path = IMAGE_PREVIEW_CACHE_DIR,
+    orient: bool = True,
 ) -> Path:
     """Return an EXIF-corrected, version-keyed WebP preview cache file."""
     source = source.resolve()
@@ -134,10 +153,13 @@ def get_cached_preview_path(
     defaults = _VARIANT_DEFAULTS[variant]
     target_size = defaults["size"] if size is None else max(64, min(int(size), 4096))
     quality = int(defaults["quality"])
+    # Faster local previews; retain exhaustive compression for full-size inspection.
+    method = 6 if variant == "inspect" else 2
     stat = source.stat()
     key_src = (
         f"{source}|{stat.st_mtime_ns}|{stat.st_size}|{variant}|{target_size or ''}|"
-        f"q{quality}|m6|alpha100|{PREVIEW_RENDER_VERSION}"
+        f"q{quality}|m{method}|alpha100|{PREVIEW_RENDER_VERSION}"
+        f"{'' if orient else '|raw-v1'}"
     )
     key = hashlib.sha1(key_src.encode("utf-8", errors="ignore")).hexdigest()
     target = cache_dir / f"{key}.webp"
@@ -151,17 +173,23 @@ def get_cached_preview_path(
         cache_dir.mkdir(parents=True, exist_ok=True)
         temporary = cache_dir / f".{key}.{os.getpid()}.{threading.get_ident()}.tmp"
         try:
-            with Image.open(source) as opened:
-                image = ImageOps.exif_transpose(opened)
+            with open_preview_source(source) as opened:
+                # We own the decoder and only need the preview, so keep one
+                # full-size pixel buffer for images that do not need rotation.
+                if orient:
+                    ImageOps.exif_transpose(opened, in_place=True)
+                else:
+                    opened.load()
+                    opened.info.pop("exif", None)
                 if target_size is not None:
-                    image.thumbnail((target_size, target_size), Image.Resampling.LANCZOS)
-                image, lossless = _render_mode(image)
+                    opened.thumbnail((target_size, target_size), Image.Resampling.LANCZOS)
+                image, lossless = _render_mode(opened)
                 save_options = {
                     "format": "WEBP",
                     "lossless": lossless,
                     "quality": 100 if lossless else quality,
                     "alpha_quality": 100,
-                    "method": 6,
+                    "method": method,
                 }
                 icc_profile = opened.info.get("icc_profile")
                 if icc_profile:

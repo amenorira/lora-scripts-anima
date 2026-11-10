@@ -237,7 +237,7 @@ window.tagEditorEdits = {
       if (!img) continue;
       var value = changes[path][direction];
       var desired = value == null ? (this.tagEditorOriginal[path] || '') : value;
-      if (img.tags !== desired) this._teUpdateImageTags(img, desired);
+      if (img.tags !== desired) this._teUpdateImageTags(img, desired, { deferDictionarySync: true });
     }
     var state = {};
     var modified = this._teGetModified();
@@ -339,7 +339,7 @@ window.tagEditorEdits = {
       this.tagEditorDetailText = _teInputText(newTagsStr);
     }
     if (!img._teMissingOnDisk) this._teUpdateFreq(oldTags, newTagsStr);
-    this.tagDictionarySyncChips();
+    if (!options?.deferDictionarySync) this.tagDictionarySyncChips();
   },
 
   tagEditorModifiedCount() {

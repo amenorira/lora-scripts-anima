@@ -1,6 +1,8 @@
 /* Training section collapse, navigation and scroll tracking.
  * Composed into trainingCoreMixin with property descriptors intact.
  */
+const sectionCollapseCleanups = new WeakMap();
+
 window.trainingSections = {
   // 分组折叠状态，响应式驱动 UI
   _sectionCollapsed: {},
@@ -19,7 +21,10 @@ window.trainingSections = {
       this.$nextTick(() => this.focusTrainingField(key));
       return;
     }
-    if (!inPanel && this.lycorisModalOpen) this.closeLycorisConfig();
+    if (!inPanel && this.lycorisModalOpen) {
+      this.closeLycorisConfig(() => this.focusTrainingField(key));
+      return;
+    }
     const root = inPanel ? '#lycorisConfigContent' : '#trainFormContent';
     const row = Array.from(document.querySelectorAll(root + ' [data-field-row]'))
       .find(item => item.dataset.fieldRow === key);
@@ -28,6 +33,7 @@ window.trainingSections = {
     if (card && this._sectionCollapsed[card.dataset.section]) {
       // Open immediately so measuring and focusing a nested field is reliable;
       // the subsequent scroll provides the spatial transition.
+      sectionCollapseCleanups.get(card.querySelector('.card-body'))?.();
       this._sectionCollapsed[card.dataset.section] = false;
       localStorage.setItem('anima-section-collapsed-' + card.dataset.section, '0');
       this.sectionNavList = this.sectionNavList.map(section => section.key === card.dataset.section
@@ -78,40 +84,42 @@ window.trainingSections = {
     localStorage.setItem('anima-section-collapsed-' + key, willCollapse ? '1' : '0');
     // 同步导航指示器的折叠状态
     this.sectionNavList = this.sectionNavList.map(s => s.key === key ? { ...s, collapsed: willCollapse } : s);
-    // 动画：测量 card-body 真实高度 → 锁定 → 过渡到 0/原高
     const card = document.querySelector(`#trainFormContent .card[data-section="${this.escapeAttr(key)}"]`);
     const body = card && card.querySelector('.card-body');
-    if (body) this._animateCollapse(body, willCollapse);
+    if (body) this._animateCollapse(body, willCollapse, { fade: false });
   },
 
-  // ── 统一的高度折叠动画（#3）──
-  // 测量目标 scrollHeight → 起始高度 → 过渡到目标 → 清理 inline 样式。
-  // 与 showConditionalFields 同一手法，避免 max-height:0!important/none 无法动画的问题。
-  _animateCollapse(body, collapsing) {
-    // 清理可能残留的过渡状态
-    body.style.transition = 'none';
-    body.style.maxHeight = '';
-    body.style.opacity = '';
-    const h = body.scrollHeight;
-    body.style.overflow = 'hidden';
-    body.style.maxHeight = collapsing ? h + 'px' : '0px';
-    body.style.opacity = collapsing ? '1' : '0';
-    void body.offsetHeight; // 强制 reflow
-    body.style.transition = '';
-    requestAnimationFrame(() => {
-      body.style.maxHeight = collapsing ? '0px' : h + 'px';
-      body.style.opacity = collapsing ? '0' : '1';
-    });
+  _animateCollapse(body, collapsing, { fade = true } = {}) {
+    const { style } = body;
+    const previous = sectionCollapseCleanups.get(body);
+    const rendered = previous ? getComputedStyle(body) : null;
+    const height = `${body.scrollHeight}px`;
+    const maxHeight = rendered?.maxHeight ?? (collapsing ? height : '0px');
+    const opacity = rendered?.opacity ?? (collapsing ? '1' : '0');
+    previous?.();
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    // Freeze the rendered values before retargeting an interrupted transition.
+    style.transition = 'none';
+    style.overflow = 'hidden';
+    style.maxHeight = maxHeight === 'none' ? height : maxHeight;
+    if (fade) style.opacity = opacity;
+    void body.offsetHeight;
+    style.transition = '';
+    style.maxHeight = collapsing ? '0px' : height;
+    if (fade) style.opacity = collapsing ? '0' : '1';
+
     const cleanup = () => {
-      body.style.maxHeight = '';
-      body.style.opacity = '';
-      body.style.transition = '';
-      body.style.overflow = '';
-      body.removeEventListener('transitionend', onEnd);
+      if (sectionCollapseCleanups.get(body) !== cleanup) return;
+      sectionCollapseCleanups.delete(body);
+      style.maxHeight = '';
+      if (fade) style.opacity = '';
+      style.overflow = '';
     };
-    const onEnd = (e) => { if (e.propertyName === 'max-height') cleanup(); };
-    body.addEventListener('transitionend', onEnd);
-    setTimeout(cleanup, 500);
+    sectionCollapseCleanups.set(body, cleanup);
+    const transitions = (body.getAnimations?.() || []).filter(animation =>
+      animation.transitionProperty === 'max-height' || animation.transitionProperty === 'opacity');
+    Promise.allSettled(transitions.map(transition => transition.finished)).then(cleanup);
   },
 
   // ── 分组导航指示器（#1）──

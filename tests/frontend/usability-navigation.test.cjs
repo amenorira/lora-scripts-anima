@@ -3,6 +3,60 @@ const assert = require('node:assert/strict');
 const {loadFrontend, composeMixins, readRepo} = require('./helpers.cjs');
 const {uiHarness} = require('./ui-helpers.cjs');
 
+test('morph dialogs keep the explicit opener hidden until the exit finishes', async () => {
+  const {context, document, Element, ticks, flush, listeners} = uiHarness();
+  const opener = new Element('button'), dialog = new Element('dialog'), modal = new Element('div');
+  dialog.className = 'modal-overlay modal-overlay--morph'; modal.className = 'modal';
+  dialog.setAttribute('id', 'testDialog');
+  opener.dataset = {dialogOpens: 'testDialog'};
+  opener.setAttribute('data-dialog-opens', 'testDialog');
+  dialog.rect = {left:0,top:0,right:1280,bottom:720,width:1280,height:720};
+  modal.rect = {left:100,top:100,right:900,bottom:600,width:800,height:500};
+  const motions = [];
+  function animate(frames) {
+    let finish;
+    const finished = new Promise(resolve => { finish = resolve; });
+    const motion = {frames, finished, finish, cancel: finish, effect: {target: this}};
+    motions.push(motion);
+    return motion;
+  }
+  dialog.animate = modal.animate = animate;
+  document.createElement = tag => Object.assign(new Element(tag), {animate});
+  opener.classList.remove = name => opener.classList.toggle(name, false);
+  opener.cloneNode = () => Object.assign(new Element('button'), {animate, className: opener.className});
+  const settle = async () => { motions.splice(0).forEach(motion => motion.finish()); await new Promise(setImmediate); flush(); };
+  opener.rect = {left:120,top:30,width:120,height:32,right:240,bottom:62};
+  dialog.appendChild(modal); document.body.append(opener,dialog);
+  const binding = context.window.AnimaUI.bindDialog(dialog, callback=>ticks.push(callback));
+  listeners.get('click')({target: opener});
+  opener.rect = {...opener.rect,top:600,bottom:632};
+  binding.setOpen(true); flush();
+  assert.equal(motions[0].frames[0].clipPath, 'inset(30px 1040px 658px 120px round 0px)');
+  assert.equal(motions[0].frames[1].clipPath, 'inset(100px 380px 120px 100px round 0px)');
+  assert.equal(opener.classList.contains('dialog-morph-origin'), true);
+  await settle();
+  assert.equal(opener.classList.contains('dialog-morph-origin'), true);
+  const thumbnail = new Element('div');
+  thumbnail.setAttribute('data-dialog-anchor', '');
+  modal.appendChild(thumbnail);
+  binding.setOpen(false); flush();
+  assert.equal(dialog.open, true);
+  assert.equal(opener.classList.contains('dialog-morph-origin'), true);
+  assert.equal(dialog.querySelector('.dialog-morph-button').classList.contains('dialog-morph-origin'), false);
+  assert.equal(motions[0].frames.at(-1).clipPath, 'inset(600px 1040px 88px 120px round 0px)');
+  await settle();
+  assert.equal(dialog.open, false);
+  assert.equal(opener.classList.contains('dialog-morph-origin'), false);
+  assert.equal(document.activeElement, opener);
+  context.window.AnimaUI.setDialogOrigin(dialog, opener);
+  binding.setOpen(true); flush(); await settle();
+  opener.remove(); binding.setOpen(false); flush();
+  assert.equal(motions[0].frames.at(-1).clipPath, 'inset(600px 1040px 88px 120px round 0px)');
+  binding.setOpen(true); flush(); await settle();
+  assert.equal(dialog.open, true);
+  assert.equal(context.window.AnimaUI.topDialog(), dialog);
+});
+
 test('closing a dialog preserves an explicit destination focus and still restores lost focus', () => {
   const {context, document, Element, ticks, flush} = uiHarness();
   const opener = new Element('button'), target = new Element('input'), dialog = new Element('dialog');
@@ -15,6 +69,29 @@ test('closing a dialog preserves an explicit destination focus and still restore
   opener.focus(); binding.setOpen(true); flush();
   binding.setOpen(false); flush();
   assert.equal(document.activeElement, opener);
+});
+
+test('a LyCORIS conflict link waits for the modal to close before focusing the main form', () => {
+  const dialog = new EventTarget();
+  const focused = [];
+  const input = { focus: () => focused.push('fp8_base') };
+  const row = { dataset: { fieldRow: 'fp8_base' }, isConnected: true,
+    closest: () => null, getClientRects: () => [{}], scrollIntoView() {}, querySelector: () => input };
+  const { window } = loadFrontend(['training/sections', 'training/network-panel'], {
+    window: { matchMedia: () => ({ matches: true }) },
+    document: { getElementById: () => dialog, querySelectorAll: selector => selector.startsWith('#trainFormContent') ? [row] : [] },
+  });
+  const app = composeMixins(window.trainingSections, window.trainingNetworkPanel, {
+    form: { network_module: 'lycoris.kohya' }, lycorisModalOpen: true,
+    _allSections: () => [{ fields: [{ key: 'fp8_base' }] }],
+    _closeManagedModal(key) { this[key] = false; },
+    $nextTick: callback => callback(),
+  });
+  app.focusTrainingField('fp8_base');
+  assert.equal(app.lycorisModalOpen, false);
+  assert.deepEqual(focused, []);
+  dialog.dispatchEvent(new Event('dialog-after-close'));
+  assert.deepEqual(focused, ['fp8_base']);
 });
 
 const filename = (stage, prompt, prefix = 'sample_') => `${prefix}e${String(stage).padStart(6, '0')}_${String(prompt).padStart(2, '0')}_20261109120000_42.png`;

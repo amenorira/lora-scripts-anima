@@ -4,6 +4,244 @@
   'use strict';
   const dialogs = [];
   const popups = new Map();
+  const dialogOrigins = new WeakMap();
+  const dialogSources = new WeakMap();
+  const pendingDialogOrigins = new WeakMap();
+  const dialogMotions = new WeakMap();
+  const dialogFlights = new WeakMap();
+  const hiddenDialogOrigins = new WeakMap();
+  const anchorSelector = '[data-dialog-anchor]';
+  const mediaTargetSelector = '[data-dialog-anchor="target"]';
+
+  function syncDialogBackgrounds() {
+    const morphOpen = dialogs.some(dialog => dialog.classList.contains('modal-overlay--morph'));
+    document.querySelector('body > .app-layout')?.classList.toggle('dialog-is-background', morphOpen);
+    document.getElementById('cropPreviewDialog')?.classList.toggle('dialog-is-background',
+      dialogs.some(dialog => dialog.id === 'cropFocusDialog'));
+  }
+
+  function setHiddenDialogOrigin(element, anchor) {
+    const previous = hiddenDialogOrigins.get(element);
+    if (previous === anchor) return;
+    previous?.classList.remove('dialog-morph-origin');
+    if (anchor) {
+      anchor.classList.add('dialog-morph-origin');
+      hiddenDialogOrigins.set(element, anchor);
+    } else hiddenDialogOrigins.delete(element);
+  }
+
+  // data-dialog-opens points to the dialog ID. A data-dialog-anchor in the
+  // opener matches data-dialog-anchor="target" in the detail dialog.
+  function setDialogOrigin(element, origin) {
+    if (!element || !origin) return;
+    // An underlying dialog may become inert before the next Alpine effect runs.
+    // Preserve an explicit opener instead of capturing the now-blurred body.
+    const source = measureOrigin(origin);
+    if (element.open) {
+      dialogOrigins.set(element, origin);
+      dialogSources.set(element, source);
+      if (element.querySelector(mediaTargetSelector)) setHiddenDialogOrigin(element, source?.anchor);
+    } else pendingDialogOrigins.set(element, { opener: origin, source });
+  }
+
+  function resolveDialogOpener(element) {
+    const opener = dialogOrigins.get(element);
+    if (!opener || opener.isConnected) return opener;
+    const byId = opener.id && document.getElementById(opener.id);
+    if (byId) return byId;
+    const dialogId = opener.getAttribute('data-dialog-opens');
+    const action = opener.getAttribute('@click');
+    if (!dialogId || !action) return opener;
+    const matches = [...document.querySelectorAll('[data-dialog-opens]')].filter(node =>
+      node.getAttribute('data-dialog-opens') === dialogId && node.getAttribute('@click') === action && node.getClientRects().length);
+    return matches.length === 1 ? matches[0] : opener;
+  }
+  function measureOrigin(opener) {
+    const anchor = opener?.querySelector(anchorSelector) || opener;
+    if (!anchor?.isConnected || !anchor.getClientRects().length) return null;
+    const rect = anchor.getBoundingClientRect();
+    const style = getComputedStyle(anchor);
+    if (!rect.width || !rect.height || (style.visibility === 'hidden' && !anchor.classList.contains('dialog-morph-origin'))) return null;
+    const transparent = 'rgba(0, 0, 0, 0)';
+    let backgroundColor = style.backgroundColor;
+    const visible = {
+      top: Math.max(rect.top, 0), right: Math.min(rect.right, window.innerWidth),
+      bottom: Math.min(rect.bottom, window.innerHeight), left: Math.max(rect.left, 0),
+    };
+    for (let parent = anchor.parentElement; parent; parent = parent.parentElement) {
+      const parentStyle = getComputedStyle(parent);
+      if (backgroundColor === transparent) backgroundColor = parentStyle.backgroundColor;
+      if (parent === document.body) break;
+      const { overflowX, overflowY } = parentStyle;
+      if (overflowX === 'visible' && overflowY === 'visible') continue;
+      const bounds = parent.getBoundingClientRect();
+      const left = bounds.left + parent.clientLeft, top = bounds.top + parent.clientTop;
+      if (overflowX !== 'visible') {
+        visible.left = Math.max(visible.left, left);
+        visible.right = Math.min(visible.right, left + parent.clientWidth);
+      }
+      if (overflowY !== 'visible') {
+        visible.top = Math.max(visible.top, top);
+        visible.bottom = Math.min(visible.bottom, top + parent.clientHeight);
+      }
+    }
+    if (visible.right <= visible.left || visible.bottom <= visible.top) return null;
+    // Computed styles are live. Freeze the button's appearance before the
+    // top layer takes hover and focus away from the source.
+    const paint = { backgroundColor, borderRadius: style.borderRadius,
+      borderTopColor: style.borderTopColor, borderTopWidth: style.borderTopWidth };
+    if (anchor === opener) {
+      for (const name of ['color', 'font', 'letterSpacing', 'padding', 'display', 'gap', 'alignItems', 'justifyContent']) {
+        paint[name] = style[name];
+      }
+    }
+    return { anchor, rect, visible, paint };
+  }
+
+  function buttonFlight(element, { source, panel, bounds, dest, opening, animate, reuse }) {
+    const { anchor, rect, paint, visible } = source;
+    const copy = anchor.cloneNode(true);
+    for (const node of [copy, ...copy.querySelectorAll('[id]')]) node.removeAttribute('id');
+    copy.removeAttribute('data-dialog-opens');
+    copy.setAttribute('x-ignore', '');
+    copy.setAttribute('aria-hidden', 'true');
+    copy.inert = true;
+    copy.classList.toggle('dialog-morph-origin', false);
+    copy.classList.add('dialog-morph-button');
+    Object.assign(copy.style, paint, {
+      left: `${rect.left - bounds.left}px`, top: `${rect.top - bounds.top}px`,
+      width: `${rect.width}px`, height: `${rect.height}px`,
+    });
+    element.append(copy);
+    reuse(copy, 'copy');
+    const dx = (visible.left + visible.right - dest.left - dest.right) / 2;
+    const dy = (visible.top + visible.bottom - dest.top - dest.bottom) / 2;
+    const startScale = Math.max((visible.right - visible.left) / dest.width, (visible.bottom - visible.top) / dest.height);
+    animate(copy, { transform: 'translate(0px, 0px)' }, { transform: `translate(${-dx}px, ${-dy}px)` });
+    animate(panel, { transform: `translate(${dx}px, ${dy}px) scale(${startScale})` },
+      { transform: 'translate(0px, 0px) scale(1)' });
+    // Time the crossfade separately so it stays readable while the outline moves quickly.
+    const label = opening
+      ? [{ opacity: 1, offset: .04, easing: 'ease-in-out' }, { opacity: 0, offset: .36 }]
+      : [{ opacity: 0, offset: .20, easing: 'ease-in-out' }, { opacity: 1, offset: .58 }];
+    const content = opening
+      ? [{ opacity: 0, offset: .10, easing: 'ease-in-out' }, { opacity: 1, offset: .63 }]
+      : [{ opacity: 1, offset: .04, easing: 'ease-in-out' }, { opacity: 0, offset: .36 }];
+    animate(copy, { opacity: 1 }, { opacity: 0 }, label, 'linear');
+    animate(panel, { opacity: 0 }, { opacity: 1 }, content, 'linear');
+    element.setAttribute('data-dialog-button-flight', '');
+    return copy;
+  }
+
+  // Clip the panel to the moving outline and paint the rim as a real border.
+  // A translucent fill must composite over the backdrop, not the rim color.
+  function animateSurface(element, { bounds, source, dest, panel, opening, animate, reuse, rounded }) {
+    const surface = document.createElement('div');
+    surface.className = 'dialog-morph-fill';
+    surface.setAttribute('aria-hidden', 'true');
+    element.append(surface);
+    reuse(surface, 'surface');
+    const shape = (rect, paint) => {
+      const inset = [rect.top - bounds.top, bounds.right - rect.right,
+        bounds.bottom - rect.bottom, rect.left - bounds.left].map(value => `${value}px`).join(' ');
+      const { borderRadius, backgroundColor, borderTopColor, borderTopWidth } = paint;
+      return {
+        clip: { clipPath: `inset(${inset} round ${borderRadius})` },
+        surface: { inset, borderRadius, backgroundColor, borderColor: borderTopColor, borderWidth: borderTopWidth },
+      };
+    };
+    const start = shape(source.visible, source.paint);
+    const end = shape(dest, panel);
+    const frames = [];
+    if (rounded) {
+      const middle = Object.fromEntries(['top', 'right', 'bottom', 'left'].map(side =>
+        [side, source.visible[side] + (dest[side] - source.visible[side]) * .36]));
+      frames.push({ ...shape(middle, { ...panel, borderRadius: '16px' }), offset: opening ? .36 : .64 });
+    }
+    for (const [node, layer] of [[element, 'clip'], [surface, 'surface']]) {
+      animate(node, start[layer], end[layer], frames.map(frame => ({ ...frame[layer], offset: frame.offset })));
+    }
+    return surface;
+  }
+
+  function stopDialogMotion(element) {
+    for (const animation of dialogMotions.get(element) || []) animation.cancel();
+    dialogMotions.delete(element);
+    const flight = dialogFlights.get(element);
+    flight?.copy?.remove();
+    flight?.surface?.remove();
+    dialogFlights.delete(element);
+    element.removeAttribute('data-dialog-button-flight');
+  }
+
+  function playDialogMotion(element, opening, capturedSource) {
+    const oldFlight = dialogFlights.get(element);
+    const previous = new Map((dialogMotions.get(element) || []).map(animation => {
+      const node = animation.effect.target;
+      const style = getComputedStyle(node);
+      const properties = ['transform', 'opacity', 'clipPath', 'backgroundColor', 'inset', 'borderRadius', 'borderColor', 'borderWidth'];
+      return [node, Object.fromEntries(properties.map(name => [name, style[name]]))];
+    }));
+    stopDialogMotion(element);
+    const modal = element.querySelector('.modal');
+    if (!modal?.animate) return [];
+    const media = modal.querySelector(mediaTargetSelector);
+    const opener = resolveDialogOpener(element);
+    if (opener) dialogOrigins.set(element, opener);
+    const saved = dialogSources.get(element);
+    const source = capturedSource === undefined
+      ? measureOrigin(opener) || (saved?.visible.right <= window.innerWidth && saved.visible.bottom <= window.innerHeight ? saved : null)
+      : capturedSource;
+    if (media && source?.anchor !== opener) setHiddenDialogOrigin(element, source?.anchor);
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return [];
+    const panelRect = modal.getBoundingClientRect();
+    const dest = media ? media.getBoundingClientRect() : panelRect;
+    const style = getComputedStyle(element);
+    const options = {
+      duration: parseFloat(style.getPropertyValue(opening ? '--duration-dialog-enter' : '--duration-dialog-exit')),
+      easing: style.getPropertyValue('--ease-disclosure').trim(),
+      fill: 'both',
+    };
+    const animations = [];
+    const animate = (node, hidden, shown, between = [], easing = options.easing) => {
+      const start = previous.get(node);
+      const frames = opening ? [hidden, ...between, shown] : [shown, ...between, hidden];
+      const first = start && Object.fromEntries(Object.keys(frames[0]).map(name => [name, start[name] || frames[0][name]]));
+      animations.push(node.animate(first ? [first, frames.at(-1)] : frames, { ...options, easing }));
+    };
+    if (!source || !dest.width || !dest.height || (media && source.anchor === dialogOrigins.get(element))) {
+      animate(modal, { opacity: 0 }, { opacity: 1 });
+    } else {
+      const { anchor, rect } = source;
+      const bounds = element.getBoundingClientRect();
+      const surfaceStyle = getComputedStyle(modal.querySelector('.dialog-morph-surface') || modal);
+      const { borderRadius, borderTopWidth, borderTopColor, backgroundColor } = surfaceStyle;
+      const panel = { borderRadius, borderTopWidth, borderTopColor, backgroundColor };
+      const reuse = (node, key) => {
+        if (oldFlight?.[key]) previous.set(node, previous.get(oldFlight[key]));
+      };
+      const surface = animateSurface(element, { bounds, source, dest: panelRect, panel, opening,
+        animate, reuse, rounded: !!media });
+      let copy;
+      if (media) {
+        const reveal = opening ? [{ opacity: 0, offset: .24 }, { opacity: 1, offset: .79 }]
+          : [{ opacity: 1, offset: .21 }, { opacity: 0, offset: .76 }];
+        const dx = rect.left - dest.left;
+        const dy = rect.top - dest.top;
+        animate(media, { transform: `translate(${dx}px, ${dy}px) scale(${rect.width / dest.width}, ${rect.height / dest.height})` },
+          { transform: 'translate(0px, 0px) scale(1, 1)' });
+        for (const part of modal.querySelectorAll('[data-dialog-chrome]')) {
+          animate(part, { opacity: 0 }, { opacity: 1 }, reveal, 'linear');
+        }
+      } else {
+        copy = buttonFlight(element, { source, panel: modal, bounds, dest, opening, animate, reuse });
+        setHiddenDialogOrigin(element, anchor);
+      }
+      dialogFlights.set(element, { surface, copy });
+    }
+    dialogMotions.set(element, animations);
+    return animations;
+  }
   function dismissPopups(root) {
     for (const [element, close] of Array.from(popups)) {
       if (!root || root.contains(element)) { popups.delete(element); close(); }
@@ -11,23 +249,25 @@
   }
 
   function settleDialog(anchor) {
-    const modal = anchor.closest('.modal');
-    if (!modal?.closest('dialog[open]')) return;
+    const modal = anchor?.closest('.modal');
+    const dialog = modal?.closest('dialog[open]');
+    if (!dialog || dialog.hasAttribute('data-dialog-closing')) return;
     // A transforming dialog temporarily becomes the containing block of fixed
     // menus. Finish its entrance before measuring an immediately opened menu.
-    for (const animation of modal.getAnimations?.() || []) {
+    for (const animation of dialogMotions.get(dialog) || modal.getAnimations?.() || []) {
       if (animation.playState === 'running') animation.finish();
     }
   }
 
-  function bindDialog(element, nextTick) {
+  function bindDialog(element, nextTick, scheduleOpen = nextTick) {
+    const morph = element.classList.contains('modal-overlay--morph');
     let requested = false;
     let sequence = 0;
     let previousFocus = null;
     let backdropPress = false;
     const cancel = event => {
       event.preventDefault();
-      element.dispatchEvent(new CustomEvent('dialog-close'));
+      if (requested) element.dispatchEvent(new CustomEvent('dialog-close'));
     };
     const pointerDown = event => { backdropPress = event.target === element; };
     const click = event => {
@@ -41,7 +281,7 @@
         // including while the child's exit animation is still running.
         event.preventDefault();
         event.stopPropagation();
-        element.dispatchEvent(new CustomEvent('dialog-close'));
+        if (requested) element.dispatchEvent(new CustomEvent('dialog-close'));
         return;
       }
       if (event.key !== 'Tab') return;
@@ -60,6 +300,10 @@
     element.addEventListener('pointerdown', pointerDown);
     element.addEventListener('click', click, true);
     element.addEventListener('keydown', keydown);
+    const waitFor = (animations, callback) => {
+      if (!animations.length) { callback(); return; }
+      Promise.allSettled(animations.map(animation => animation.finished)).then(callback);
+    };
     return {
       setOpen(open) {
         open = !!open;
@@ -67,50 +311,97 @@
         requested = open;
         const current = ++sequence;
         if (open) {
-          previousFocus = document.activeElement;
-          nextTick(() => {
+          const explicitOrigin = pendingDialogOrigins.get(element);
+          pendingDialogOrigins.delete(element);
+          if (!element.open) {
+            previousFocus = document.activeElement;
+            dialogOrigins.delete(element);
+          }
+          if (explicitOrigin) dialogOrigins.set(element, explicitOrigin.opener);
+          if (!element.open || explicitOrigin) dialogSources.set(element, explicitOrigin?.source);
+          scheduleOpen(() => {
             if (current !== sequence || !requested || !element.isConnected) return;
             dismissPopups();
             element.inert = false;
-            if (!element.open) element.showModal();
-            dialogs.push(element);
-            window.AnimaUI.placeNotifications?.();
+            if (!element.open) {
+              element.showModal();
+              dialogs.push(element);
+            }
             const target = Array.from(element.querySelectorAll('[data-dialog-autofocus]'))
               .find(node => !node.disabled && node.getClientRects().length);
-            if (target) target.focus({ preventScroll: true });
+            if (target && target !== document.activeElement) target.focus({ preventScroll: true });
+            if (morph) {
+              element.removeAttribute('data-dialog-closing');
+              waitFor(playDialogMotion(element, true, explicitOrigin?.source), () => {
+                if (current !== sequence) return;
+                stopDialogMotion(element);
+                element.dispatchEvent(new CustomEvent('dialog-after-open'));
+              });
+            }
+            window.AnimaUI.placeNotifications?.();
+            if (morph) syncDialogBackgrounds();
           });
         } else {
           dismissPopups(element);
           element.inert = true;
-          if (element.open) element.close();
-          const index = dialogs.indexOf(element);
-          if (index >= 0) dialogs.splice(index, 1);
-          window.AnimaUI.placeNotifications?.();
-          // Native close restores the opener. Only repair a missing/hidden opener;
-          // never steal focus from a second dialog opened by the same action.
-          nextTick(() => {
-            if (current !== sequence || requested || document.querySelector('dialog[open]')) return;
-            const active = document.activeElement;
-            // A link in the dialog may deliberately focus a field on the page.
-            // Repair lost focus only; do not overwrite that explicit destination.
-            if (active && active !== document.body && !element.contains(active)
-              && active.isConnected && !active.disabled && active.getClientRects().length) return;
-            const opener = previousFocus?.isConnected ? previousFocus
-              : previousFocus?.id ? document.getElementById(previousFocus.id) : null;
-            if (opener && !opener.disabled && opener.getClientRects().length) {
-              opener.focus({ preventScroll: true });
-            } else if (document.activeElement === document.body) {
-              document.getElementById('mainContent')?.focus({ preventScroll: true });
-            }
-          });
+          const close = () => {
+            if (current !== sequence || requested) return;
+            if (element.open) element.close();
+            stopDialogMotion(element);
+            setHiddenDialogOrigin(element);
+            const explicitOrigin = dialogOrigins.get(element);
+            const returnFocus = previousFocus;
+            dialogOrigins.delete(element);
+            dialogSources.delete(element);
+            previousFocus = null;
+            element.removeAttribute('data-dialog-closing');
+            const index = dialogs.indexOf(element);
+            if (index >= 0) dialogs.splice(index, 1);
+            if (morph) syncDialogBackgrounds();
+            window.AnimaUI.placeNotifications?.();
+            const animations = morph ? [] : (element.getAnimations?.({ subtree: true }) || [])
+              .filter(animation => animation.effect?.getComputedTiming().endTime !== Infinity);
+            nextTick(() => {
+              if (current !== sequence || requested) return;
+              const top = dialogs.at(-1) || document.querySelector('dialog[open]');
+              const origin = explicitOrigin || returnFocus;
+              const opener = origin?.isConnected ? origin : origin?.id ? document.getElementById(origin.id) : null;
+              const canFocus = opener && !opener.disabled && opener.getClientRects().length;
+              if (top) {
+                if (canFocus && top.contains(opener)) opener.focus({ preventScroll: true });
+                return;
+              }
+              // Preserve an explicit focus destination set by the dialog action.
+              const active = document.activeElement;
+              const nativeRestore = explicitOrigin && active === returnFocus;
+              if (!nativeRestore && active && active !== document.body && !element.contains(active)
+                  && active.isConnected && !active.disabled && active.getClientRects().length) return;
+              if (canFocus) opener.focus({ preventScroll: true });
+              else document.getElementById('mainContent')?.focus({ preventScroll: true });
+            });
+            waitFor(animations, () => {
+              if (current === sequence) element.dispatchEvent(new CustomEvent('dialog-after-close'));
+            });
+          };
+          if (morph && element.open) {
+            element.setAttribute('data-dialog-closing', '');
+            waitFor(playDialogMotion(element, false), close);
+          } else close();
         }
       },
       destroy() {
         ++sequence;
+        stopDialogMotion(element);
         dismissPopups(element);
         if (element.open) element.close();
+        setHiddenDialogOrigin(element);
+        dialogOrigins.delete(element);
+        dialogSources.delete(element);
+        pendingDialogOrigins.delete(element);
+        previousFocus = null;
         const index = dialogs.indexOf(element);
         if (index >= 0) dialogs.splice(index, 1);
+        if (morph && index >= 0) syncDialogBackgrounds();
         window.AnimaUI.placeNotifications?.();
         element.removeEventListener('cancel', cancel);
         element.removeEventListener('pointerdown', pointerDown);
@@ -121,11 +412,16 @@
   }
 
   window.AnimaUI = {
-    bindDialog, settleDialog, dismissPopups,
+    bindDialog, settleDialog, dismissPopups, setDialogOrigin,
     registerPopup: (element, close) => popups.set(element, close),
     unregisterPopup: element => popups.delete(element),
     topDialog: () => dialogs.at(-1) || null,
   };
+
+  document.addEventListener('click', event => {
+    const opener = event.target.closest?.('[data-dialog-opens]');
+    if (opener) setDialogOrigin(document.getElementById(opener.dataset.dialogOpens), opener);
+  }, true);
 
   document.addEventListener('alpine:init', () => {
     // Non-interactive straight leaders shared by chart and matrix previews.
@@ -143,7 +439,7 @@
         const kind = source?.dataset.previewLink;
         const targets = kind ? [...root.querySelectorAll(`[data-preview-target="${kind}"]`)] : [];
         if (!source || !root.contains(source) || !targets.length) { svg.classList.remove('is-active'); return; }
-        settleDialog(source);
+        if (dialogMotions.has(root.closest('dialog'))) { svg.classList.remove('is-active'); return; }
         const sidebar = source.closest('[data-preview-sidebar]');
         const chart = targets[0].closest('[data-preview-diagram]');
         const value = source.querySelector('dd, b') || source;
@@ -195,6 +491,7 @@
           root.addEventListener('focusin', focus); root.addEventListener('focusout', focus);
           root.addEventListener('keydown', schedule);
           root.addEventListener('scroll', schedule, true);
+          root.closest('dialog')?.addEventListener('dialog-after-open', schedule);
           resize = new ResizeObserver(schedule); resize.observe(root);
           mutations = new MutationObserver(schedule);
           mutations.observe(root, {childList: true, subtree: true, attributes: true, attributeFilter: ['data-preview-link']});
@@ -205,12 +502,17 @@
           root.removeEventListener('focusin', focus); root.removeEventListener('focusout', focus);
           root.removeEventListener('keydown', schedule);
           root.removeEventListener('scroll', schedule, true); svg.remove();
+          root.closest('dialog')?.removeEventListener('dialog-after-open', schedule);
         },
       };
     });
 
     Alpine.directive('dialog', (element, { expression }, { effect, evaluate, cleanup }) => {
-      const dialog = bindDialog(element, callback => Alpine.nextTick(callback));
+      const nextTick = callback => Alpine.nextTick(callback);
+      // Fixed-size panels can start as soon as Alpine's effects flush.
+      // Content-sized panels need Alpine's deferred x-show before measuring.
+      const scheduleOpen = element.hasAttribute('data-dialog-fast-open') ? queueMicrotask : nextTick;
+      const dialog = bindDialog(element, nextTick, scheduleOpen);
       effect(() => dialog.setOpen(evaluate(expression)));
       cleanup(() => dialog.destroy());
     });

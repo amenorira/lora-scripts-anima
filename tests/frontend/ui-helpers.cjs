@@ -74,7 +74,7 @@ function uiHarness() {
     Alpine: { directive() {}, data(name, factory) { factories[name] = factory; }, nextTick: callback => ticks.push(callback) },
     CustomEvent: class { constructor(type) { this.type = type; } },
     Date: class extends Date { static now() { return now; } },
-    getComputedStyle: () => ({ visibility: 'visible', getPropertyValue: () => '' }),
+    getComputedStyle: () => ({ visibility: 'visible', borderRadius: '0px', getPropertyValue: () => '' }),
     setTimeout: (fn, ms) => setTimer(fn, ms), clearTimeout: id => timers.delete(id),
     setInterval: (fn, ms) => setTimer(fn, ms, true), clearInterval: id => timers.delete(id),
     requestAnimationFrame: callback => setTimer(callback, 16), cancelAnimationFrame: id => timers.delete(id),

@@ -20,6 +20,30 @@ function preview(profile, module, overrides = {}) {
   return { app, context, text: app.tomlRaw, args: match ? JSON.parse(match[1]) : [] };
 }
 
+test('model bucket defaults reach crop previews and training without overriding saved values', () => {
+  for (const [profile, module, step] of [
+    ['anima-lora', 'networks.lora_anima', 16],
+    ['moss-image-lora', 'networks.lora_generic', 16],
+    ['sdxl-lora', 'networks.lora', 32],
+  ]) {
+    const { app } = preview(profile, module);
+    assert.equal(app.form.bucket_reso_steps, step);
+    assert.equal(app._stepEstimatePayload().bucket_reso_steps, step);
+    assert.equal(app._collectTrainingPayload().bucket_reso_steps, step);
+    assert.match(app.tomlRaw, new RegExp(`^bucket_reso_steps = ${step}$`, 'm'));
+
+    const restored = app._profileFormFromDraft(profile, app._buildFormDefaults(profile), { bucket_reso_steps: 64 });
+    assert.equal(restored.bucket_reso_steps, 64);
+    app.form.bucket_reso_steps = restored.bucket_reso_steps;
+    app.updateToml();
+    assert.equal(app._collectTrainingPayload().bucket_reso_steps, 64);
+    assert.match(app.tomlRaw, /^bucket_reso_steps = 64$/m);
+  }
+  const { app: krea } = preview('krea2-lora', 'networks.lora_krea2');
+  assert.equal(krea._collectTrainingPayload().bucket_reso_steps, undefined);
+  assert.doesNotMatch(krea.tomlRaw, /^bucket_reso_steps =/m);
+});
+
 test('partial checkpointing exports only for enabled Anima and MOSS checkpointing', () => {
   for (const [profile, module, maximum] of [
     ['anima-lora', 'networks.lora_anima', 28], ['moss-image-lora', 'networks.lora_generic', 42],

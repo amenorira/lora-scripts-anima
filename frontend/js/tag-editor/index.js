@@ -16,6 +16,49 @@ function _teParseTags(s, lower) {
   return out;
 }
 
+// Replace tag contents without reformatting the rest of the caption. An index
+// addresses the nonempty tags returned by _teParseTags; null replaces all.
+function _teRenameTagText(text, oldTag, newTags, index = null) {
+  var parts = text.split(',');
+  var targets = [], tagIndex = 0;
+  var existing = new Set();
+  parts.forEach(function(part, partIndex) {
+    var tag = part.trim();
+    if (!tag) return;
+    if (tag === oldTag && (index === null || index === tagIndex)) targets.push(partIndex);
+    else existing.add(tag.toLowerCase());
+    tagIndex++;
+  });
+  if (!targets.length) return text;
+  // Allow case-only changes even when another occurrence retains the old spelling.
+  existing.delete(oldTag.toLowerCase());
+  var replacements = [];
+  for (var tag of newTags) {
+    var key = tag.toLowerCase();
+    if (existing.has(key)) continue;
+    existing.add(key);
+    replacements.push(tag);
+  }
+  var replacement = replacements.join(', ');
+  // Keep existing duplicates unrelated to the rename. When the destination
+  // already exists, remove only the renamed occurrences and one comma each.
+  for (var i = targets.length - 1; i >= 0; i--) {
+    var partIndex = targets[i], part = parts[partIndex];
+    var start = part.length - part.trimStart().length;
+    var end = part.trimEnd().length;
+    var prefix = part.slice(0, start), suffix = part.slice(end);
+    if (replacement) parts[partIndex] = prefix + replacement + suffix;
+    else if (partIndex < parts.length - 1) {
+      parts[partIndex + 1] = prefix + suffix + parts[partIndex + 1];
+      parts.splice(partIndex, 1);
+    } else {
+      parts[partIndex - 1] += prefix + suffix;
+      parts.splice(partIndex, 1);
+    }
+  }
+  return parts.join(',');
+}
+
 var TE_SUGGEST_FIELDS = { single: 'tagEditorAddInput', add: 'batchAddInput', remove: 'batchRemoveInput', old: 'batchOldTag', new: 'batchNewTag' };
 
 // Textareas expose LF even for CRLF files. Keep file formatting in the single
@@ -294,6 +337,8 @@ window.tagEditorMixin = {
   tagEditorCleanup() {
     this._teSessionRecovery = null;
     this._teLastSelected = null;
+    this.tagEditorInlineEdit = null;
+    this._teClearInlineLookupTimer();
     this._teLoadEpoch++;
     this.tagEditorSaving = this._teIsSaving = false;
     this.tagEditorSnapshotBusy = false;
@@ -330,12 +375,10 @@ window.tagEditorMixin = {
 
   // ===== Card Interactions =====
   tagEditorImageCtx(e, img) {
-    var menuW = 168, menuH = 38, margin = 4;
-    var x = Math.max(margin, Math.min(e.clientX, window.innerWidth - menuW - margin));
-    var y = Math.max(margin, Math.min(e.clientY, window.innerHeight - menuH - margin));
+    var point = this._teContextMenuPoint(e);
     this.tagEditorContextMenu = null;
     this.tagEditorPanelMenu = null;
-    this.tagEditorImageContextMenu = { x: x, y: y, image: img };
+    this.tagEditorImageContextMenu = { x: point.x, y: point.y, image: img, positioned: false };
     this.tagDictionaryCloseHover();
     this._teFocusMenu('tagEditorImageContextMenu', '_teImageMenuTrigger', 'teImageMenu', e);
   },
@@ -439,23 +482,42 @@ window.tagEditorMixin = {
     this._updateEditorPanel();
   },
 
-  async tagEditorSelectFiltered() {
+  tagEditorSelectFiltered() {
+    return this._teSelectImages(true);
+  },
+
+  tagEditorSelectDataset() {
+    return this._teSelectImages(false);
+  },
+
+  async _teSelectImages(useCurrentFilters) {
     this._teFlushAllPendingTextEdits();
     var epoch = this._teLoadEpoch;
     var request = ++this._teNavRequest;
+    var fetchOptions = { selectionRequest: request, datasetSelectionRequest: useCurrentFilters ? null : request };
     try {
       this._teSearchLoading = true;
-      var filtered = await this._teFetchAllSessionItems(true);
+      var images = await this._teFetchAllSessionItems(useCurrentFilters, fetchOptions);
       if (epoch !== this._teLoadEpoch || request !== this._teNavRequest) return;
-      this.tagEditorSelected = filtered.map(function(img) { return img.path; });
+      if (fetchOptions.controller && (this._teAllAbort !== fetchOptions.controller || fetchOptions.controller.signal.aborted)) return;
+      if (useCurrentFilters && fetchOptions.queryKey != null && fetchOptions.queryKey !== this._teSessionQueryKey(1)) return;
+      if (fetchOptions.generation != null && fetchOptions.generation < this.tagEditorSessionGeneration) {
+        this.toast(this.t(useCurrentFilters ? 'tagEditor.datasetChangedRetry' : 'tagEditor.selectDatasetChanged'), 'warning');
+        return;
+      }
+      if (fetchOptions.controller && this._teAllAbort === fetchOptions.controller) this._teAllAbort = null;
+      this.tagEditorSelected = images.map(function(img) { return img.path; });
       this._teLastSelected = null;
       this._teCachedSelectedStatsKey = '';
       this._teCachedSelectedStats = null;
       this._updateEditorPanel();
     } catch (e) {
-      if (e.name !== 'AbortError') this.toast(e.message || this.t('common.networkError'), 'error');
+      if (epoch === this._teLoadEpoch && request === this._teNavRequest && e.name !== 'AbortError') {
+        this.toast(e.message || this.t('common.networkError'), e.code === 'dataset_changed' ? 'warning' : 'error');
+      }
     } finally {
-      if (epoch === this._teLoadEpoch && !this._teAllAbort && !this._tePageAbort) this._teSearchLoading = false;
+      if (fetchOptions.controller && this._teAllAbort === fetchOptions.controller) this._teAllAbort = null;
+      if (epoch === this._teLoadEpoch) this._teSearchLoading = this._teHasSearchWork();
     }
   },
 
@@ -491,8 +553,15 @@ window.tagEditorMixin = {
 
   _updateEditorPanel() {
     ++this._teNavRequest;
+    if (this._teAllAbort?._teSelectionRequest != null) this._teAllAbort.abort();
+    var edit = this.tagEditorInlineEdit;
+    if (edit?.selected && (edit.selected.length !== this.tagEditorSelected.length ||
+        edit.selected.some((path, index) => path !== this.tagEditorSelected[index]))) {
+      this.tagEditorInlineEdit = null;
+      this._teClearInlineLookupTimer();
+    }
     this.tagEditorCancelQuickRemove();
-    this.tagEditorPanelMenu = null;
+    this.tagEditorClosePanelMenu(false);
     this._teCloseSuggestions();
     if (this.tagEditorSelected.length === 1) {
       var img = this.tagEditorGetSelectedImg();
@@ -540,7 +609,8 @@ window.tagEditorMixin = {
   _teHasUnsavedEdits() {
     if (this.currentRoute !== 'tagEditor') return false;
     this._teFlushAllPendingTextEdits();
-    return !!this.tagEditorModified;
+    return !!this.tagEditorModified || !!(this.tagEditorInlineEdit &&
+      (this.tagEditorInlineEdit.composing || this.tagEditorInlineDraftChanged()));
   },
 
   // ===== Keyboard Shortcuts =====
@@ -647,7 +717,6 @@ window.tagEditorMixin = {
       return;
     }
     if (e.key === 'Escape') {
-      if (this.tagEditorPanelMenu) { this.tagEditorClosePanelMenu(); return; }
       if (this.tagEditorQuickRemove) { this.tagEditorCancelQuickRemove(); return; }
       if (this.tagEditorSuggestions.length) {
         e.preventDefault();
@@ -658,16 +727,8 @@ window.tagEditorMixin = {
         this.tagDictionaryPanelOpen = false;
         return;
       }
-      if (this.tagEditorShortcutsOpen) {
-        this.tagEditorShortcutsOpen = false;
-        return;
-      }
       if (this.tagDictionaryHover) {
         this.tagDictionaryCloseHover();
-        return;
-      }
-      if (this.tagEditorContextMenu) {
-        this.tagEditorContextMenu = null;
         return;
       }
       if (editableTarget) {

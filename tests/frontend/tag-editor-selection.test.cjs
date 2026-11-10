@@ -27,3 +27,28 @@ test('page selection and inversion preserve off-page selections and raw captions
   assert.equal(new Set(app.tagEditorSelected).size,6);
   assert.ok(app.tagEditorPageItems.every(img=>img.tags==='  raw\r\n'));
 });
+
+test('dataset selection ignores filters while filtered selection keeps them', async () => {
+  const app = fixture();
+  const calls = [];
+  app._teFetchAllSessionItems = async filtered => {
+    calls.push(filtered);
+    return filtered ? [{path:'a1'}] : [{path:'a0'}, {path:'a1'}, {path:'other'}];
+  };
+  app.tagEditorSearchQuery = 'a1';
+  await app.tagEditorSelectFiltered();
+  assert.deepEqual(Array.from(app.tagEditorSelected), ['a1']);
+  await app.tagEditorSelectDataset();
+  assert.deepEqual(Array.from(app.tagEditorSelected), ['a0', 'a1', 'other']);
+  assert.deepEqual(calls, [true, false]);
+  assert.equal(app.tagEditorSearchQuery, 'a1');
+});
+
+test('unfiltered selection without a session uses all available images', async () => {
+  const app = fixture();
+  app.tagEditorSessionId = '';
+  app.tagEditorImages = [{path:'a', name:'match', tags:''}, {path:'b', name:'other', tags:''}, {path:'gone', _teMissingOnDisk:true}];
+  app.tagEditorSearchQuery = 'match';
+  const all = await app._teFetchAllSessionItems(false);
+  assert.deepEqual(Array.from(all, image => image.path), ['a', 'b']);
+});

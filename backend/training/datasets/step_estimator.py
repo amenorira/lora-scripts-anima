@@ -149,23 +149,58 @@ def _read_image_size(image_path: str) -> tuple[int, int]:
     return _cached_image_size(image_path, stat.st_size, stat.st_mtime_ns)
 
 
-def _dataset_subsets(train_data_dir: Path, glob_images) -> list[dict[str, Any]]:
+def _registered_dataset_subsets(config: dict[str, Any], glob_images) -> list[dict[str, Any]]:
+    """Shared discovery and actual DreamBooth regularization registration counts."""
+    discovered = _dreambooth_subsets(str(config["train_data_dir"]), is_reg=False)
+    if config.get("enable_reg_data", True) and config.get("reg_data_dir"):
+        discovered += _dreambooth_subsets(str(config["reg_data_dir"]), is_reg=True)
     subsets: list[dict[str, Any]] = []
-    for subset in _dreambooth_subsets(str(train_data_dir), is_reg=False):
+    seen = set()
+    for subset in discovered:
+        image_dir = subset["image_dir"]
+        # DreamBooth keeps the first nonempty subset with this image_dir.
+        if image_dir in seen:
+            continue
         repeats = subset["num_repeats"]
-        image_paths = glob_images(subset["image_dir"], "*")
+        image_paths = glob_images(image_dir, "*")
         if not image_paths:
             continue
+        seen.add(image_dir)
         subsets.append(
             {
-                "name": Path(subset["image_dir"]).name,
+                "name": Path(image_dir).name,
                 "image_count": len(image_paths),
                 "repeats": repeats,
                 "sample_count": len(image_paths) * repeats,
-                "is_reg": False,
+                "is_reg": subset["is_reg"],
                 "image_paths": image_paths,
             }
         )
+    reg_subsets = [s for s in subsets if s.get("is_reg")]
+    if reg_subsets:
+        target = sum(s["sample_count"] for s in subsets if not s.get("is_reg"))
+        repeats = [s["repeats"] for s in reg_subsets for _ in s["image_paths"]]
+        counts = [0] * len(repeats)
+        total = 0
+        # The first pass registers whole repeat groups, so the last one may
+        # exceed the target. Later passes add one repeat to each registered image.
+        for index, count in enumerate(repeats):
+            if total >= target:
+                break
+            counts[index] = count
+            total += count
+        if total < target:
+            rounds, remainder = divmod(target - total, len(counts))
+            counts = [count + rounds + (index < remainder) for index, count in enumerate(counts)]
+        offset = 0
+        for subset in reg_subsets:
+            sub_counts = counts[offset:offset + subset["image_count"]]
+            offset += subset["image_count"]
+            subset["image_paths"] = [p for p, c in zip(subset["image_paths"], sub_counts) if c > 0]
+            subset["per_image_repeats"] = [c for c in sub_counts if c > 0]
+            subset["unused_images"] = len(sub_counts) - len(subset["image_paths"])
+            subset["image_count"] = len(subset["image_paths"])
+            subset["sample_count"] = sum(sub_counts)
     return subsets
 
 
@@ -186,6 +221,32 @@ def _adjust_bucket_range(
             code="maxBucketTooSmall",
         )
     return min_bucket_reso, max_bucket_reso
+
+
+def _sd_bucket_manager(config: dict[str, Any], resolution: tuple[int, int]):
+    BucketManager, _, _ = _sd_dataset_helpers()
+    if not config.get("enable_bucket"):
+        manager = BucketManager(False, resolution, None, None, None)
+        manager.set_predefined_resos([resolution])
+        return manager
+
+    step = _positive_int(config, "bucket_reso_steps", 64)
+    minimum, maximum = _adjust_bucket_range(
+        resolution, _positive_int(config, "min_bucket_reso", 256),
+        _positive_int(config, "max_bucket_reso", 1024), step,
+    )
+    no_upscale = bool(config.get("bucket_no_upscale"))
+    try:
+        manager = BucketManager(no_upscale, resolution, minimum, maximum, step)
+        if not no_upscale:
+            manager.make_buckets()
+    except (AssertionError, ValueError) as exc:
+        raise StepEstimateError(
+            f"Invalid bucket settings / 分桶参数无效: {exc}",
+            code="invalidBucketSettings",
+            detail=str(exc),
+        ) from exc
+    return manager
 
 
 def estimate_training_steps(config: dict[str, Any]) -> dict[str, Any]:
@@ -224,61 +285,13 @@ def estimate_training_steps(config: dict[str, Any]) -> dict[str, Any]:
             path=str(train_data_dir),
         )
 
-    BucketManager, glob_images, _ = _sd_dataset_helpers()
-    subsets = _dataset_subsets(train_data_dir, glob_images)
-    # 正则化数据（DreamBooth 正则）与训练数据同批参与训练：把 reg_data_dir 子集一并计入步数估算。
-    # 与 sd-scripts 行为保持一致：reg 目录不存在时静默忽略（generate_dreambooth_subsets_config_by_subdirs）。
-    # UI 配置关闭正则时仍保留路径；训练适配后的原生配置则没有此开关。
-    reg_data_value = config.get("reg_data_dir") if config.get("enable_reg_data", True) else None
-    if reg_data_value:
-        reg_data_dir = Path(str(reg_data_value))
-        if reg_data_dir.is_dir():
-            reg_subsets = _dataset_subsets(reg_data_dir, glob_images)
-            for subset in reg_subsets:
-                subset["is_reg"] = True
-            subsets += reg_subsets
+    _, glob_images, _ = _sd_dataset_helpers()
+    subsets = _registered_dataset_subsets(config, glob_images)
     if not subsets:
         raise StepEstimateError(
             "No valid image folder found (example: 5_character) / 未找到有效图片目录（例如 5_character）",
             code="noValidImageFolder",
         )
-
-    # DreamBooth 正则注册规则（复刻 dreambooth_dataset.py:320-345）：
-    # 正则样本数不是"图数 × 子目录重复次数"，而是以训练样本总数为目标补足/截断——
-    # 首轮按子目录 repeats 逐图注册，未达到训练样本数时逐轮每图 +1 直到追平；
-    # 首轮即超出时按子目录顺序截断。子目录 repeats 只影响首轮注册比例。
-    # 这里把每张正则图的实际注册次数回写进子集，供样本统计与分桶使用。
-    reg_subsets = [s for s in subsets if s.get("is_reg")]
-    if reg_subsets:
-        num_train_samples = sum(s["sample_count"] for s in subsets if not s.get("is_reg"))
-        reg_repeats: list[int] = []
-        for s in reg_subsets:
-            reg_repeats.extend([s["repeats"]] * s["image_count"])
-        counts = [0] * len(reg_repeats)
-        n = 0
-        first_loop = True
-        while n < num_train_samples:
-            for i, repeats in enumerate(reg_repeats):
-                if first_loop:
-                    counts[i] += repeats
-                    n += repeats
-                else:
-                    counts[i] += 1
-                    n += 1
-                if n >= num_train_samples:
-                    break
-            first_loop = False
-        idx = 0
-        for s in reg_subsets:
-            sub_counts = counts[idx : idx + s["image_count"]]
-            idx += s["image_count"]
-            original_count = len(sub_counts)
-            # 只保留实际注册的图（未注册的图不参与训练与分桶）
-            s["image_paths"] = [p for p, c in zip(s["image_paths"], sub_counts) if c > 0]
-            s["per_image_repeats"] = [c for c in sub_counts if c > 0]
-            s["unused_images"] = original_count - len(s["per_image_repeats"])
-            s["image_count"] = len(s["image_paths"])
-            s["sample_count"] = sum(s["per_image_repeats"])
 
     resolution = _parse_resolution(config.get("resolution", "1024,1024"))
     batch_size = _positive_int(config, "train_batch_size", 1)
@@ -286,37 +299,7 @@ def estimate_training_steps(config: dict[str, Any]) -> dict[str, Any]:
     gradient_accumulation = _positive_int(config, "gradient_accumulation_steps", 1)
     gpu_processes = _gpu_processes(config.get("gpu_ids"))
     enable_bucket = bool(config.get("enable_bucket", False))
-    bucket_no_upscale = bool(config.get("bucket_no_upscale", False))
-
-    if enable_bucket:
-        bucket_reso_steps = _positive_int(config, "bucket_reso_steps", 64)
-        min_bucket_reso = _positive_int(config, "min_bucket_reso", 256)
-        max_bucket_reso = _positive_int(config, "max_bucket_reso", 1024)
-        min_bucket_reso, max_bucket_reso = _adjust_bucket_range(
-            resolution, min_bucket_reso, max_bucket_reso, bucket_reso_steps
-        )
-        try:
-            bucket_manager = BucketManager(
-                bucket_no_upscale,
-                resolution,
-                min_bucket_reso,
-                max_bucket_reso,
-                bucket_reso_steps,
-            )
-            if not bucket_no_upscale:
-                bucket_manager.make_buckets()
-        except (AssertionError, ValueError) as exc:
-            raise StepEstimateError(
-                f"Invalid bucket settings / 分桶参数无效: {exc}",
-                code="invalidBucketSettings",
-                detail=str(exc),
-            ) from exc
-    else:
-        bucket_reso_steps = None
-        min_bucket_reso = None
-        max_bucket_reso = None
-        bucket_manager = BucketManager(False, resolution, None, None, None)
-        bucket_manager.set_predefined_resos([resolution])
+    bucket_manager = _sd_bucket_manager(config, resolution)
 
     bucket_samples: Counter[tuple[int, int]] = Counter()
     original_images = 0
@@ -390,8 +373,8 @@ def estimate_training_steps(config: dict[str, Any]) -> dict[str, Any]:
         "bucket_count": len(bucket_details),
         "buckets": bucket_details,
         "resolution": list(resolution),
-        "bucket_no_upscale": bucket_no_upscale if enable_bucket else False,
-        "min_bucket_reso": min_bucket_reso,
-        "max_bucket_reso": max_bucket_reso,
-        "bucket_reso_steps": bucket_reso_steps,
+        "bucket_no_upscale": bucket_manager.no_upscale,
+        "min_bucket_reso": bucket_manager.min_size,
+        "max_bucket_reso": bucket_manager.max_size,
+        "bucket_reso_steps": bucket_manager.reso_steps,
     }

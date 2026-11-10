@@ -16,8 +16,9 @@ function fixture(captions) {
     _teConfirmBatch: (message, accept) => { confirmation = { message, accept }; },
     _teUpdateImageTags: (img, tags) => { writes.push(img.path); img.tags = tags; },
     _tePushHistory: meta => history.push(meta),
+    tagDictionarySyncChips() {},
   });
-  return { app, images, history, messages, writes, confirm: () => confirmation };
+  return { app, context, images, history, messages, writes, confirm: () => confirmation };
 }
 
 test('batch preview and commit use the same selected changes and count', () => {
@@ -34,6 +35,39 @@ test('batch preview and commit use the same selected changes and count', () => {
   assert.deepEqual(f.writes, ['0']);
   assert.equal(f.history[0].affected, 1);
   assert.equal(f.app.batchAddInput, '');
+});
+
+test('batch replacement renames every matching occurrence and preserves the other text', () => {
+  const f = fixture(['\uFEFFblue, standing,\r\n blue, standing\r\n', 'blue, sitting', 'blue']);
+  f.app.tagEditorSelected = ['0', '1'];
+  f.app.batchOldTag = 'blue';
+  f.app.batchNewTag = 'red';
+  f.app.tagEditorBatchReplace();
+  f.confirm().accept();
+  assert.deepEqual(f.images.map(img => img.tags), ['\uFEFFred, standing,\r\n red, standing\r\n', 'red, sitting', 'blue']);
+});
+
+test('batch replacement accepts several new tags without duplicating existing destinations', () => {
+  const f = fixture(['\uFEFFcat, outdoors, outdoors\r\n', 'animal, cat']);
+  f.app.batchOldTag = 'cat';
+  f.app.batchNewTag = 'animal, feline, Feline';
+  f.app.tagEditorBatchReplace();
+  f.confirm().accept();
+  assert.deepEqual(f.images.map(img => img.tags), ['\uFEFFanimal, feline, outdoors, outdoors\r\n', 'animal, feline']);
+});
+
+test('quick removal records every edit before syncing the dictionary once', () => {
+  const f = fixture(Array(100).fill('blue, standing'));
+  f.app.tagEditorOriginal = Object.fromEntries(f.images.map(img => [img.path, img.tags]));
+  f.app._teUpdateImageTags = f.context.window.tagEditorMixin._teUpdateImageTags;
+  f.app._teUpdateFreq = () => {};
+  const synced = [];
+  f.app.tagDictionarySyncChips = () => synced.push(f.images.filter(img => img.tags === 'standing').length);
+  f.app.tagEditorQuickRemove = true;
+  f.app.tagEditorRemovalTags = ['blue'];
+  f.app.tagEditorApplyQuickRemove();
+  assert.deepEqual(synced, [100]);
+  assert.equal(f.history[0].affected, 100);
 });
 
 for (const change of ['dataset', 'caption']) {
@@ -55,7 +89,7 @@ test('global rename rejects stale scope after external refresh, even if a page a
   const f = fixture(['cat', 'dog']);
   f.app.tagEditorSessionGeneration = 2;
   f.app._teExternalGeneration = 1;
-  f.app.tagEditorInlineEdit = { oldTag: 'cat', newTag: 'bird' };
+  f.app.tagEditorInlineEdit = { scope: 'dataset', oldTag: 'cat', newTag: 'bird' };
   await f.app.tagEditorFinishInlineEdit();
   f.images[0].tags = '  external\r\n';
   f.images[1].tags = 'cat';
@@ -65,3 +99,21 @@ test('global rename rejects stale scope after external refresh, even if a page a
   assert.deepEqual(f.writes, []);
   assert.deepEqual(f.messages.at(-1), ['tagEditor.batchStale', 'warning']);
 });
+
+for (const scope of ['selection', 'dataset']) {
+  test(`${scope} rename syncs dictionary chips once after all updates`, async () => {
+    const f = fixture(Array(100).fill('cat, dog'));
+    f.app.tagEditorOriginal = Object.fromEntries(f.images.map(img => [img.path, img.tags]));
+    f.app._teUpdateImageTags = f.context.window.tagEditorMixin._teUpdateImageTags;
+    f.app._teUpdateFreq = () => {};
+    const synced = [];
+    f.app.tagDictionarySyncChips = () => synced.push(f.images.filter(img => img.tags === 'bird, dog').length);
+    f.app.tagEditorInlineEdit = { scope, oldTag: 'cat', newTag: 'bird', selected: f.app.tagEditorSelected.slice() };
+
+    await f.app.tagEditorFinishInlineEdit();
+    assert.deepEqual(synced, []);
+    f.confirm().accept();
+    assert.deepEqual(synced, [100]);
+    assert.equal(f.history[0].affected, 100);
+  });
+}
