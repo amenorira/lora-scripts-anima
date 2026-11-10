@@ -8,12 +8,12 @@ function app(fetch) {
     async reveal(id) { return document.getElementById(`crop-image-${id}`); },
     returnTo() {},
   };
-  const context = loadFrontend(['training/crop-preview-grid', 'training/crop-preview'], {
+  const context = loadFrontend(['training/preflight', 'training/crop-preview-grid', 'training/crop-preview'], {
     window: {AnimaUI: {setDialogOrigin() {}, settleDialog() {}}},
     AbortController, setTimeout, clearTimeout, document, fetch,
   });
   context.getCropPreviewGrid = () => grid;
-  return composeMixins(context.window.trainingCropPreviewMixin, {
+  return composeMixins(context.window.trainingPreflight, context.window.trainingCropPreviewMixin, {
     document, grid, buildCropGridLayout: context.buildCropGridLayout, cropGridRowAt: context.cropGridRowAt,
     t: key => key, esc: text => String(text).replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;'),
     $nextTick: async () => {},
@@ -52,7 +52,6 @@ test('crop filter and bucket filter compose without losing error entries', () =>
 test('regularization filter follows the preview configuration even when there are no regularization images', async () => {
   const a = app(async () => response({items: [sample], random_crop: false}));
   a.form = {enable_reg_data: true, reg_data_dir: 'regularization'};
-  a._stepEstimatePayload = () => a.form;
   await a.openCropPreview();
   assert.equal(a.cropPreviewError, '');
   assert.equal(a.cropPreviewRegConfigured, true);
@@ -73,6 +72,22 @@ test('regularization filter follows the preview configuration even when there ar
   a.form.model_train_type = 'krea2-lora';
   await a.openCropPreview();
   assert.equal(a.cropPreviewRegConfigured, false);
+});
+
+test('crop preview sends the active cache flags for fixed-size training', async () => {
+  const a = app(async (url, request) => {
+    assert.equal(url, '/api/training/crop-preview');
+    assert.deepEqual(JSON.parse(request.body), {
+      train_data_dir: 'training', enable_bucket: false, random_crop: false,
+      cache_latents: false, cache_latents_to_disk: true,
+    });
+    return response({ items: [sample], random_crop: false });
+  });
+  a.form = { train_data_dir: 'training', enable_bucket: false, random_crop: false,
+    cache_latents: false, cache_latents_to_disk: true, max_train_epochs: 10 };
+  await a.openCropPreview();
+  assert.equal(a.cropPreviewError, '');
+  assert.equal(a.cropPreviewItems.length, 1);
 });
 
 test('regularization scope composes with crop and bucket filters and scopes the totals', () => {

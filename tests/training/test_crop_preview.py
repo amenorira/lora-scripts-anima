@@ -1,5 +1,8 @@
 """Check crop overlays against actual pixel preprocessing and image capabilities."""
+from dataclasses import asdict
+import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from itertools import product
@@ -279,6 +282,63 @@ class CropPreviewTests(unittest.TestCase):
             result = inspect_crops({**config, 'random_crop': True})
             self.assertTrue(result['random_crop'])
             self.assertEqual(result['items'][0]['resized'], [190, 150])
+
+    def test_fixed_bucket_matches_actual_latent_cache_preprocessing(self):
+        from backend.training.datasets.step_estimator import _sd_dataset_helpers
+        _sd_dataset_helpers()
+        from library.caching import load_images_and_masks_for_caching
+        from library.config_util import DreamBoothDatasetParams, DreamBoothSubsetParams
+        from library.dreambooth_dataset import DreamBoothDataset
+        from library.subset import DreamBoothSubset
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subset = root / '1_subject'
+            subset.mkdir()
+            for name, size in [('small', (64, 96)), ('wide', (256, 128))]:
+                Image.new('RGB', size).save(subset / f'{name}.png')
+            params = DreamBoothDatasetParams(resolution=(128, 96), enable_bucket=False)
+            dataset = DreamBoothDataset(
+                subsets=[DreamBoothSubset(**asdict(DreamBoothSubsetParams(image_dir=str(subset))))],
+                is_training_dataset=True, **asdict(params),
+            )
+            dataset.make_buckets()
+            infos = list(dataset.image_data.values())
+            batch, _, _, _ = load_images_and_masks_for_caching(infos, False, False)
+            self.assertEqual(tuple(batch.shape), (2, 3, 96, 128))
+            for flag in ('cache_latents', 'cache_latents_to_disk'):
+                with self.subTest(flag=flag):
+                    result = inspect_crops(dict(train_data_dir=str(root), resolution='128,96',
+                                                enable_bucket=False, **{flag: True}))
+                    items = {item['name']: item for item in result['items']}
+                    for info in infos:
+                        item = items[Path(info.absolute_path).relative_to(root).as_posix()]
+                        self.assertEqual(item['bucket'], list(info.bucket_reso))
+                        self.assertEqual(item['resized'], list(info.resized_size))
+
+    def test_linked_subset_keeps_its_logical_name_and_is_counted_once(self):
+        from backend.training.datasets.step_estimator import estimate_training_steps
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            train, source = root / 'train', root / 'images'
+            train.mkdir()
+            source.mkdir()
+            Image.new('RGB', (128, 128)).save(source / 'a.png')
+            link = train / '2_subject'
+            if os.name == 'nt':
+                subprocess.run(['cmd.exe', '/d', '/c', 'mklink', '/J', str(link), str(source)],
+                               check=True, capture_output=True)
+            else:
+                link.symlink_to(source, target_is_directory=True)
+            config = dict(train_data_dir=str(train), reg_data_dir=str(train), resolution='128,128')
+            result = inspect_crops(config)
+            item, = result['items']
+            self.assertEqual(item['name'], '2_subject/a.png')
+            self.assertFalse(item['is_reg'])
+            self.assertEqual(item['sample_count'], 2)
+            self.assertEqual(estimate_training_steps(config)['repeated_samples'], 2)
+            self.assertEqual(resolve_preview_image(result['session_id'], item['id']), source.resolve() / 'a.png')
 
     def test_training_thumbnails_preserve_raw_orientation(self):
         with tempfile.TemporaryDirectory() as directory:

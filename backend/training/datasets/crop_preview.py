@@ -13,8 +13,8 @@ from PIL import Image
 
 from backend.image_preview import build_image_preview_url
 from backend.training.datasets.step_estimator import (
-    StepEstimateError, _adjust_bucket_range, _registered_dataset_subsets, _parse_resolution,
-    _positive_int, _sd_dataset_helpers,
+    StepEstimateError, _registered_dataset_subsets, _parse_resolution,
+    _positive_int, _sd_bucket_manager, _sd_dataset_helpers,
 )
 
 _sessions: OrderedDict[str, tuple[float, dict[str, Path]]] = OrderedDict()
@@ -59,56 +59,49 @@ def crop_geometry(original, bucket, resized):
 
 
 def inspect_crops(config: dict) -> dict:
-    root = Path(str(config.get("train_data_dir") or "")).resolve()
+    root = Path(str(config.get("train_data_dir") or ""))
     if not config.get("train_data_dir") or not root.is_dir():
         raise StepEstimateError("Select a valid training dataset directory / 请选择有效的训练数据集目录")
     krea = config.get("model_train_type") == "krea2-lora"
     enabled = bool(config.get("enable_bucket", krea))
     random_crop = bool(config.get("random_crop", False)) and not krea
-    resolution = _parse_resolution(config.get("resolution", "1024,1024"))
+    resize_to_bucket = enabled or bool(config.get("cache_latents") or config.get("cache_latents_to_disk"))
+    resolution_value = config.get("resolution", "1024,1024")
     if krea:
         from backend.training.datasets.krea2_dataset import dataset_groups, parse_krea2_resolution
 
-        resolution = parse_krea2_resolution(config.get("resolution", "1024,1024"))
+        resolution = parse_krea2_resolution(resolution_value)
         repeats = _positive_int(config, "krea_num_repeats", 1)
-        records = [(p, root, repeats, False) for _, _, images in dataset_groups(config) for p in images]
+        records = [(p, repeats, False) for _, _, images in dataset_groups(config) for p in images]
         selector = _krea_selector_class()(resolution, enabled, bool(config.get("bucket_no_upscale", True)))
     else:
-        manager, glob_images, _ = _sd_dataset_helpers()
+        resolution = _parse_resolution(resolution_value)
+        _, glob_images, _ = _sd_dataset_helpers()
         records = []
         for subset in _registered_dataset_subsets(config, glob_images):
-            is_reg = subset["is_reg"]
-            source_root = Path(str(config["reg_data_dir"])).resolve() if is_reg else root
-            counts = subset.get("per_image_repeats", [subset["repeats"]] * subset["image_count"])
-            records.extend((Path(p), source_root, count, is_reg) for p, count in zip(subset["image_paths"], counts))
-        if enabled:
-            step = _positive_int(config, "bucket_reso_steps", 64)
-            minimum, maximum = _adjust_bucket_range(
-                resolution, _positive_int(config, "min_bucket_reso", 256),
-                _positive_int(config, "max_bucket_reso", 1024), step,
-            )
-            no_upscale = bool(config.get("bucket_no_upscale", False))
-            selector = manager(no_upscale, resolution, minimum, maximum, step)
-            if not no_upscale:
-                selector.make_buckets()
+            counts = subset.get("per_image_repeats")
+            for index, path in enumerate(subset["image_paths"]):
+                repeats = subset["repeats"] if counts is None else counts[index]
+                records.append((Path(path), repeats, subset["is_reg"]))
+        if resize_to_bucket:
+            selector = _sd_bucket_manager(config, resolution)
 
     items, capability, versions = [], {}, {}
-    for path, source_root, repeats, is_reg in sorted(records, key=lambda record: (record[3], str(record[0]))):
-        path = path.resolve()
-        if not path.is_relative_to(source_root):
-            continue
+    for path, repeats, is_reg in sorted(records, key=lambda record: (record[2], str(record[0]))):
         image_id = str(len(items))
-        name = path.as_posix() if is_reg else path.relative_to(root).as_posix()
+        name = path.absolute().as_posix() if is_reg else path.relative_to(root).as_posix()
         item = {"id": image_id, "name": name, "sample_count": repeats, "is_reg": is_reg}
         try:
+            # Authorize only the discovered image, retaining its logical name for grouping.
+            source = path.resolve(strict=True)
             # Trainers read raw pixel orientation, without EXIF auto-rotation.
-            with Image.open(path) as image:
+            with Image.open(source) as image:
                 original = image.size
             if krea:
                 bucket = selector.get_bucket_resolution(original)
                 scale = max(bucket[0] / original[0], bucket[1] / original[1])
                 resized = tuple(int(side * scale + 0.5) for side in original)
-            elif enabled:
+            elif resize_to_bucket:
                 bucket, resized, _ = selector.select_bucket(*original)
             else:
                 bucket, resized = resolution, original
@@ -119,9 +112,9 @@ def inspect_crops(config: dict) -> dict:
                 if original != bucket and not random_crop:
                     raise ValueError("Enable bucketing or random crop for this image / 此图片需要启用分桶或随机裁剪")
             item.update(crop_geometry(original, bucket, resized))
-            stat = path.stat()
+            stat = source.stat()
             versions[image_id] = f"{stat.st_mtime_ns}-{stat.st_size}"
-            capability[image_id] = path
+            capability[image_id] = source
         except (OSError, ValueError, AssertionError, ZeroDivisionError) as exc:
             item["error"] = str(exc)
         items.append(item)
