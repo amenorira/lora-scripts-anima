@@ -109,20 +109,26 @@ Git 安装或源码同步前的仓库修复失败不会阻止原 ZIP 启动，�
 ### 使用 Git 克隆
 
 ```sh
-git clone --depth 1 --single-branch --branch main --no-tags https://github.com/amenorira/lora-scripts-anima.git
+git clone --depth 1 --no-tags https://github.com/amenorira/lora-scripts-anima.git
 cd lora-scripts-anima
-git config pull.ff only
 ```
 
-仅下载最新 main，后续可正常 `git pull`。需要完整历史或标签时，分别运行 `git fetch --unshallow`、`git fetch --tags`；开发者也可省略克隆选项。
+这会浅克隆默认分支 `main`。进入目录后按上面的「快速开始」启动。
 
-首次切换 dev 时执行以下命令，之后用 `git switch main` / `git switch dev` 来回切换：
+<details>
+<summary>切换到 dev 或下载完整历史</summary>
+
+浅克隆后，首次切换到 `dev` 时运行以下命令。
 
 ```sh
-git config --add remote.origin.fetch "+refs/heads/dev:refs/remotes/origin/dev"
-git fetch --no-tags origin
+git remote set-branches --add origin dev
+git fetch origin
 git switch --track origin/dev
 ```
+
+之后可用 `git switch main` 或 `git switch dev` 切换。需要补齐已跟踪分支的历史时运行 `git fetch --unshallow`，需要标签时运行 `git fetch --tags`。
+
+</details>
 
 ### 实时连接与慢速远程连接
 
@@ -132,7 +138,7 @@ git switch --track origin/dev
 
 ### 后续更新
 
-Windows 用户先关闭训练器，双击 **`update.bat`**，成功后运行 `start.bat`；也可在项目目录打开终端运行 `git pull`。更新当前分支（main 或 dev），仅允许快进；源码修改、暂存改动或分叉会停止更新。启动训练器不会自动更新源码。
+更新前先关闭训练器。Windows 用户可双击 **`update.bat`**，更新成功后运行 `start.bat`。更新脚本只快进当前分支，遇到源码修改、暂存改动或分叉时会停止。手动更新可在项目目录运行 `git pull --ff-only`。
 
 旧版采样提示词、Accelerate 配置和缓存版本文件停止 Git 跟踪时，更新脚本会先备份，再迁移并保留原内容。默认示例在 `tools/defaults/`，启动只补建缺失配置。旧目录没有更新入口时，可在 PowerShell 运行 `& "新ZIP目录\update.bat" "--bootstrap-root=旧项目目录绝对路径"` 完成迁移，无需覆盖旧启动器或重装环境。
 

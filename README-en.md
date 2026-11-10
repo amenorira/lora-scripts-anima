@@ -107,20 +107,26 @@ Git installation failures and repair failures before source synchronization only
 ### Clone with Git
 
 ```sh
-git clone --depth 1 --single-branch --branch main --no-tags https://github.com/amenorira/lora-scripts-anima.git
+git clone --depth 1 --no-tags https://github.com/amenorira/lora-scripts-anima.git
 cd lora-scripts-anima
-git config pull.ff only
 ```
 
-This downloads the latest main and supports normal `git pull` updates. Fetch full history with `git fetch --unshallow` and tags with `git fetch --tags`, or omit the clone options for development.
+This makes a shallow clone of the default branch, `main`. Follow Quick Start above to launch the trainer.
 
-To use dev, run these commands once, then switch with `git switch main` / `git switch dev`:
+<details>
+<summary>Switch to dev or fetch full history</summary>
+
+After a shallow clone, run these commands the first time you switch to `dev`.
 
 ```sh
-git config --add remote.origin.fetch "+refs/heads/dev:refs/remotes/origin/dev"
-git fetch --no-tags origin
+git remote set-branches --add origin dev
+git fetch origin
 git switch --track origin/dev
 ```
+
+Afterward, use `git switch main` or `git switch dev`. Run `git fetch --unshallow` to download the full history of tracked branches, and `git fetch --tags` to download tags.
+
+</details>
 
 ### Realtime and Slow Remote Connections
 
@@ -130,7 +136,7 @@ If remote previews slow down live updates, enable **Slow connection compatibilit
 
 ### Updating later
 
-On Windows, close the trainer, double-click **`update.bat`**, then run `start.bat` after success. You can also run `git pull` in the project folder. Updates fast-forward the current branch (main or dev); source edits, staged changes, or divergence stop the update. Starting the trainer does not update source files.
+Close the trainer before updating. On Windows, double-click **`update.bat`**, then run `start.bat` after the update succeeds. The updater fast-forwards the current branch and stops if it finds source edits, staged changes, or divergent history. To update manually, run `git pull --ff-only` in the project folder.
 
 When legacy sample prompts, Accelerate settings, and the cache version file stop being tracked, the updater backs them up and preserves their contents. Defaults live in `tools/defaults/`; startup creates only missing settings. If an older folder has no updater, run `& "new-ZIP-folder\update.bat" "--bootstrap-root=absolute-path-to-old-project"` in PowerShell to migrate without replacing its bootstrap or training environment.
 

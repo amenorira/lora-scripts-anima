@@ -107,20 +107,26 @@ Git のインストール、またはソース同期開始前の修復に失敗�
 ### Git でクローン
 
 ```sh
-git clone --depth 1 --single-branch --branch main --no-tags https://github.com/amenorira/lora-scripts-anima.git
+git clone --depth 1 --no-tags https://github.com/amenorira/lora-scripts-anima.git
 cd lora-scripts-anima
-git config pull.ff only
 ```
 
-最新の main のみ取得し、その後も通常の `git pull` で更新できます。完全な履歴は `git fetch --unshallow`、タグは `git fetch --tags` で取得できます。開発者はクローンのオプションを省略できます。
+既定のブランチ `main` を浅くクローンします。クローン後は上の「クイックスタート」に従って起動してください。
 
-dev を使う場合は次のコマンドを一度実行し、その後は `git switch main` / `git switch dev` で切り替えます。
+<details>
+<summary>dev への切り替えと完全な履歴の取得</summary>
+
+浅いクローンから初めて `dev` に切り替える場合は、次のコマンドを実行します。
 
 ```sh
-git config --add remote.origin.fetch "+refs/heads/dev:refs/remotes/origin/dev"
-git fetch --no-tags origin
+git remote set-branches --add origin dev
+git fetch origin
 git switch --track origin/dev
 ```
+
+以降は `git switch main` または `git switch dev` で切り替えられます。追跡中のブランチの完全な履歴は `git fetch --unshallow`、タグは `git fetch --tags` で取得できます。
+
+</details>
 
 ### リアルタイム通信と低速なリモート接続
 
@@ -130,7 +136,7 @@ SSH でアクセスする場合は、GUI のポートを転送します。GUI �
 
 ### 更新方法
 
-Windows では学習ツールを閉じて **`update.bat`** をダブルクリックし、成功後に `start.bat` を実行します。プロジェクト内で `git pull` も利用できます。現在のブランチ（main または dev）を快進更新し、ソースの変更、ステージ済みの変更、分岐がある場合は停止します。起動時にソースの自動更新は行いません。
+更新前に学習ツールを閉じてください。Windows では **`update.bat`** をダブルクリックし、更新後に `start.bat` を実行します。更新スクリプトは現在のブランチをファストフォワードで更新し、ソースの変更、ステージ済みの変更、履歴の分岐があれば停止します。手動で更新するには、プロジェクトフォルダーで `git pull --ff-only` を実行します。
 
 旧版のサンプルプロンプト、Accelerate 設定、キャッシュのバージョンファイルが Git の追跡対象から外れる際は、先にバックアップし元の内容を保持します。既定のサンプルは `tools/defaults/` に置き、起動時には不足する設定だけを作成します。旧版に更新スクリプトがない場合は、PowerShell から `& "新ZIPフォルダー\update.bat" "--bootstrap-root=旧プロジェクトの絶対パス"` を実行すれば、旧起動スクリプトや学習環境を入れ替えずに移行できます。
 
