@@ -2,6 +2,7 @@
 // This mixin renders its per-module shapes and aggregate saved-weight estimate.
 window.trainingShapePreviewMixin = {
   shapePreviewOpen: false,
+  shapePreviewMounted: false,
   shapeEstimate: null,
   shapeEstimateError: '',
   shapeEstimateLoading: false,
@@ -100,6 +101,7 @@ window.trainingShapePreviewMixin = {
     if (!this.shapePreviewSupported()) return;
     if (this.shapeEstimateError) this._shapeEstimateSignature = '';
     this.scheduleShapeEstimate();
+    this.shapePreviewMounted = true;
     this._openManagedModal('shapePreviewOpen');
   },
 

@@ -1937,7 +1937,7 @@
 
 <!-- ── Adapter weight-decomposition (matrix shape) preview ── -->
 <dialog id="shapePreviewDialog" class="modal-overlay modal-overlay--morph" x-dialog="shapePreviewOpen" @click.self="closeShapePreview()"
-        @dialog-close="closeShapePreview()" :aria-label="t('shapePreview.title')" x-cloak>
+        @dialog-close="closeShapePreview()" @dialog-after-close="shapePreviewMounted = false" :aria-label="t('shapePreview.title')" x-cloak>
   <div class="modal shape-preview-modal modal-workbench modal-workbench--shape">
     <div class="modal-header">
       <div>
@@ -1948,7 +1948,7 @@
       </button>
     </div>
     <div class="modal-body shape-preview-body">
-      <template x-if="shapePreviewOpen">
+      <template x-if="shapePreviewMounted">
         <div x-html="shapePreviewHtml()"></div>
       </template>
     </div>
