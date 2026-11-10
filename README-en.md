@@ -4,7 +4,7 @@
 
 _A local LoRA training tool for Anima, SDXL, MOSS-Image, and Krea 2._
 
-A local GUI for LoRA training with training configuration, image tagging, caption editing, and real-time monitoring. Anima / SDXL / MOSS-Image use [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts), Krea 2 uses [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner), and [LyCORIS](https://github.com/KohakuBlueleaf/LyCORIS) adds training algorithms for Anima / SDXL.
+Configure training, tag images, edit captions in bulk, and monitor training progress in real time.
 
 </div>
 
@@ -22,22 +22,17 @@ A local GUI for LoRA training with training configuration, image tagging, captio
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-ja.md">日本語</a>
 </p>
 
-Anima / SDXL / MOSS-Image support native LoRA, LoHa, and LoKr. Anima / SDXL also support **LyCORIS** LoCon / LoHa / LoKr through `lycoris.kohya`. Krea 2 uses its dedicated native LoRA module.
-
 ### Supported Model Types
 
-| Training Type | Base Model |
-|---------------|------------|
-| LoRA | SDXL |
-| **LoRA** | **Anima** (Qwen3 + T5 dual encoder) |
-| **LoRA / LoHa / LoKr** | **MOSS-Image** (sd-scripts) |
-| **LoRA** | **Krea 2 RAW DiT** (musubi-tuner) |
+| Base Model | Training Engine | Native Algorithms | LyCORIS |
+|------------|-----------------|-------------------|---------|
+| SDXL | sd-scripts | LoRA / LoHa / LoKr | LoCon / LoHa / LoKr |
+| Anima | sd-scripts | LoRA / LoHa / LoKr | LoCon / LoHa / LoKr |
+| MOSS-Image | sd-scripts | LoRA / LoHa / LoKr | — |
+| Krea 2 RAW DiT | musubi-tuner | LoRA | LoCon / LoHa / LoKr |
 
-> ℹ️ MOSS-Image supports native `networks.lora_generic`, `networks.loha`, and `networks.lokr`; `lycoris.kohya` is unavailable. All three algorithms can optionally train the text projection and refiner layers inside the DiT. The UI keeps the Qwen text encoder frozen.
-
-> ℹ️ Krea 2 requires both latent and Qwen3-VL text-encoder caches before training. The UI verifies that they are complete and still match the images, captions, and models before a run can start.
-
-> ℹ️ The `vendor/sd-scripts/` engine supports SD3 / FLUX / HunyuanImage / Lumina and more, but the current UI does not yet provide training entry points for them.
+- **MOSS-Image** can train the DiT's text projection and refiner layers. The Qwen text encoder stays frozen.
+- **Krea 2** requires image latent and Qwen3-VL text-encoder caches before training.
 
 ## Feature Overview
 
@@ -52,7 +47,6 @@ Anima / SDXL / MOSS-Image support native LoRA, LoHa, and LoKr. Anima / SDXL also
 - **Internationalization (i18n)** — Chinese, English, and Japanese UI and built-in guides, with browser-language detection and a persistent language preference
 - **Three themes** — Light, dark, and ComfyUI themes, with auto-follow system preference or manual toggle
 - **Backend Connectivity Indicator** — Real-time frontend-backend connection status with disconnect duration
-- **Slow Remote Connection Compatibility** — Same-origin realtime transport, a weak-network thumbnail queue, and versioned browser caching reduce the effect of preview requests on live status delivery
 
 <a name="pre-training-previews"></a>
 
@@ -72,89 +66,34 @@ Open **View learning-rate curve** under the schedule field to inspect warmup, de
 
 ### Matrix structure
 
-For Anima, MOSS-Image, or Krea 2 training, open **Structure preview** under **Training network module**. Anima supports LoRA / LoCon, LoHa, and LoKr; MOSS-Image supports native LoRA / LoHa / LoKr, including its optional DiT text projection and refiner layers; Krea 2 supports native LoRA and LyCORIS LoCon / LoHa / LoKr. The diagram reflects actual network construction. Switch between attention, MLP, and other modules to inspect tensor shapes, effective rank / alpha, scaling, matching layer counts, and parameter statistics.
+For Anima, MOSS-Image, or Krea 2 training, open **Structure preview** under **Training network module**. Switch between attention, MLP, and other modules to inspect matrix shapes, effective rank and alpha, scaling, matching layer counts, and parameter counts.
 
-The entry also shows the **estimated weight-file size**, updating with the algorithm, rank, training scope, and save precision. Fake tensors make this possible without loading base-model weights or starting training. The estimate includes saved tensors and the safetensors index, and is not a VRAM estimate. See the [matrix structure and file-size guide](docs/parameters/matrix-preview.en-US.md).
+The same panel shows the **estimated weight file size**, so you can check how much disk space the saved weights will use before training. [Matrix structure and file size guide](docs/parameters/matrix-preview.en-US.md)
 
 ![Matrix structure preview: LoKr Kronecker decomposition and parameter count](docs/images/shape-preview.en-US.png)
 
-## Project Structure
-
-```
-lora-scripts-anima/
-├── vendor/sd-scripts/          ← Anima / SDXL / MOSS-Image training engine (pinned upstream snapshot)
-├── vendor/musubi-tuner/        ← Krea 2 core (pinned upstream snapshot)
-├── vendor/lycoris/             ← LyCORIS adapter backend (pinned upstream snapshot)
-├── vendor/emo_optimizer/       ← EmoSens adaptive optimizer
-├── vendor/lora_muon/           ← LoRA-Muon experimental optimizer
-├── backend/                    ← FastAPI backend
-│   ├── server/                 ← App assembly, HTTP routes, static assets, and proxy
-│   ├── core/                   ← Realtime task coordination and install-job lifecycle
-│   ├── training/               ← Training modules grouped by responsibility
-│   │   ├── fields/             ← Field registry, defaults, and option metadata
-│   │   ├── config/             ← Configuration conversion, import/export, and validation
-│   │   ├── datasets/           ← Dataset parsing, repeat counts, and step estimation
-│   │   ├── execution/          ← Run preparation, launch dispatch, and process management
-│   │   └── cache/              ← Cache inspection, generation, and reuse
-│   ├── monitor/                ← Training monitor (GPU/system/logs/preview/history)
-│   ├── tageditor/              ← Native tag editor
-│   ├── tagger/                 ← Tagging module (WD / CL / Camie / PixAI / AI endpoints)
-│   ├── regularization/         ← Regularization image generation, sampling, and recovery
-│   └── gui.py                  ← Internal GUI entry (called by launch scripts)
-├── frontend/                   ← Alpine.js SPA frontend
-│   ├── js/                     ← Scripts grouped by feature
-│   │   ├── app/                ← Application assembly and route configuration
-│   │   ├── shared/             ← Shared controls, notifications, i18n, and realtime transport
-│   │   ├── training/           ← Training forms, configuration, and previews
-│   │   ├── monitor/            ← Monitoring, history, logs, and outputs
-│   │   ├── environment/        ← Environment status, component installation, and downloads
-│   │   ├── tagger/             ← Automatic tagging and AI captioning workspaces
-│   │   ├── docs/               ← Parameter documentation reader
-│   │   ├── regularization/     ← Regularization image generation workspace
-│   │   ├── tag-editor/         ← Caption editing, sessions, and persistence
-│   │   └── tag-dictionary/     ← Dictionary, Worker, and hover cards
-│   ├── templates/              ← Workspace HTML templates loaded on demand
-│   └── css/ · i18n/ · assets/   ← Styles, translations, and static assets
-├── config/                     ← Local configuration and autosaves
-├── docs/                       ← Parameter guides and preview screenshots
-├── tools/                      ← Bootstrap, installation and runtime tools; developer scripts in tools/dev/
-├── tests/                      ← Backend regressions and frontend interaction tests
-├── start.bat / start.sh        ← Launch scripts
-└── requirements.txt            ← Single authoritative dependency list (backend and training cores share it; torch is installed by the launcher)
-```
-
 ## Usage
+
+### Quick Start
+
+Run the command for your platform from the extracted or cloned project folder.
+
+| Platform | Install + Launch |
+|----------|-----------------|
+| Windows | `.\start.bat` |
+| Linux | `bash start.sh` |
+
+First launch automatically creates a virtual environment and installs all dependencies. The GUI opens at [http://127.0.0.1:12333](http://127.0.0.1:12333).
 
 ### Prerequisites
 
-- **Python**: 64-bit Python 3.12 (the project baseline; prebuilt dependencies and the setup flow target this version)
-- **Git**: used to download and update the project; Windows ZIP installs can set it up on first launch
-- **PyTorch 2.12.1 + CUDA 13.0**: installed automatically by the startup scripts for RTX 30/40/50 series
-- **NVIDIA driver R580 or newer**: the minimum driver version for CUDA 13.0
+- **Windows** can install 64-bit Python 3.12 for the current user on first launch, alongside existing Python installations. The ZIP setup can also install Git.
+- **Linux** requires Git and 64-bit Python 3.12. If the system reports that `venv` is missing, install the matching package, such as `python3.12-venv`.
+- **Training** requires an NVIDIA GPU and driver R580 or newer. The startup script installs PyTorch 2.12.1 with CUDA 13.0 for RTX 30/40/50 series GPUs. The GUI can also run on machines without an NVIDIA GPU.
 
-> **Windows users do not need to preinstall Python.** On the first run, `start.bat` searches for 64-bit Python 3.12 and skips Microsoft Store placeholders.
->
-> If only Python 3.13/3.14 is installed, the launcher can install the official Python 3.12 side by side for the current user. It does not remove newer versions or change the default Python. Downloads show progress, size, speed, and ETA; silent installer stages show an activity spinner.
->
-> **Linux users** must install 64-bit Python 3.12. Most Python installations include `venv` support; install a separate package such as `python3.12-venv` only if a distribution such as Ubuntu or Debian reports that it is missing.
->
-> If the project already contains an incompatible `venv` created with another Python version, remove or rename only the project's `venv` folder, then rerun the launcher for your platform.
+If an incompatible Python version created the project's `venv`, rename that folder and rerun the startup script to rebuild the environment.
 
-| GPU Series | Automatically Installed PyTorch | CUDA |
-|------------|:-------------------------------:|:----:|
-| RTX 30 (Ampere) | 2.12.1 | 13.0 |
-| RTX 40 (Ada) | 2.12.1 | 13.0 |
-| RTX 50 (Blackwell) | 2.12.1 | 13.0 |
-
-After updating the project, older `venv` installations (including Torch 2.10 + cu130) upgrade on the next launch to PyTorch 2.12.1 + cu130 and torchvision 0.27.1. Installed xformers moves to 0.0.35, and Triton to the 3.7 series. bitsandbytes retains its CUDA 13 compatibility check, and ONNX Runtime GPU stays at 1.27.0. FlashAttention can be installed from Environment; existing versions are not automatically upgraded or removed.
-
-Machines without an NVIDIA GPU still receive the complete GPU dependency environment and can run the GUI. Training itself requires an NVIDIA GPU.
-
-> **Krea 2 shared environment**: Krea 2 and sd-scripts use the project's main `venv` and the same CUDA-enabled PyTorch build. The root `requirements.txt` is the single authoritative dependency list and pins the shared stack to `transformers 5.21.0` / `tokenizers 0.23.3`; installation never reads requirement files inside `vendor/`.
->
-> Normal startup performs only a fast metadata check. When the versions match, it does not rerun pip, uninstall or reinstall packages, or import the full Krea 2 runtime. A complete import check runs after dependency synchronization and during Krea 2 preflight. No upstream dependency file under `vendor/` is modified.
-
-> A legacy `venv/cores/musubi` is no longer read, written, or deleted automatically. After confirming that the project's main `venv` can train correctly, you can remove the legacy directory manually to reclaim disk space.
+Krea 2 and sd-scripts share the project's main `venv`. Once training works in the main environment, you can remove any legacy `venv/cores/musubi` folder manually. [Project dependencies](requirements.txt)
 
 ### Windows: Download ZIP (beginner-friendly)
 
@@ -183,27 +122,11 @@ git fetch --no-tags origin
 git switch --track origin/dev
 ```
 
-### Quick Start
-
-| Platform | Install + Launch |
-|----------|-----------------|
-| Windows | `.\start.bat` |
-| Linux | `bash start.sh` |
-
-First launch automatically creates a virtual environment and installs all dependencies. The GUI opens at [http://127.0.0.1:12333](http://127.0.0.1:12333).
-
 ### Realtime and Slow Remote Connections
 
-TensorBoard shares the GUI's public entry point: by default, visit `http://127.0.0.1:12333/tensorboard/`, which can also be opened directly in a separate window. The embedded page uses the current origin, so SSH only needs to forward the GUI port; the local port may differ from the server port. Terminal output shows the server address and cannot discover your SSH local forwarding port.
+For SSH access, forward the GUI port. Open TensorBoard by adding `/tensorboard/` to the GUI address, for example `http://127.0.0.1:12333/tensorboard/`. Use your local forwarded port if it differs. If TensorBoard fails to start, check `logs/tensorboard.log`.
 
-The TensorBoard child process only listens on server loopback and selects its internal port automatically. `--listen` does not expose it separately. The old `--tensorboard-host` argument is deprecated and ignored; `--tensorboard-port` only selects the internal port. Startup shows a waiting status and prints the access URLs together once TensorBoard is ready. If it fails, the GUI still starts with an explicit warning. Details are recorded in `logs/tensorboard.log`.
-
-All HTTP requests and realtime connections are same-origin with the current page. The trainer does not configure SSH, port forwarding, proxies, cloud-specific logic, or an extra realtime port.
-
-- `/ws/realtime` carries only compact JSON state, progress, log increments, and hardware data. Commands, images, files, and metadata remain HTTP requests.
-- The sidebar shows “Backend connected” only after it receives both the WebSocket `ready` message and a realtime snapshot. Two seconds without valid realtime data produces “Realtime data delayed”; the status changes to “Backend disconnected” only after the socket closes and the health probe also fails.
-- A backend restart creates a new instance ID. The page clears task, progress, log, curve, and hardware data from the old instance and explicitly marks the previous in-memory task state as unknown. This version does not scan for or take over leftover training processes.
-- **UI Settings → Slow connection compatibility** is enabled by default. It shows the complete sample list for the current run or history record, loads thumbnails one at a time at low priority, and pauses those background requests while realtime data is delayed. Versioned thumbnails can stay in the browser cache for 24 hours; opening the original image remains an explicit user action.
+If remote previews slow down live updates, enable **Slow connection compatibility** in **UI Settings** to load thumbnails one at a time. Before you set a preference, the mode turns on automatically when the browser reports a slow connection or data saver mode.
 
 ### Updating later
 
@@ -270,6 +193,51 @@ The GUI **Environment** tab provides:
 - musubi-tuner Krea 2 shared-runtime status (shared CUDA-enabled PyTorch and dependency-version alignment)
 - Flash Attention installation status with one-click install
 - Candidate wheel list preview
+
+## Project Structure
+
+```
+lora-scripts-anima/
+├── vendor/sd-scripts/          ← Anima / SDXL / MOSS-Image training engine (pinned upstream snapshot)
+├── vendor/musubi-tuner/        ← Krea 2 core (pinned upstream snapshot)
+├── vendor/lycoris/             ← LyCORIS adapter backend (pinned upstream snapshot)
+├── vendor/emo_optimizer/       ← EmoSens adaptive optimizer
+├── vendor/lora_muon/           ← LoRA-Muon experimental optimizer
+├── backend/                    ← FastAPI backend
+│   ├── server/                 ← App assembly, HTTP routes, static assets, and proxy
+│   ├── core/                   ← Realtime task coordination and install-job lifecycle
+│   ├── training/               ← Training modules grouped by responsibility
+│   │   ├── fields/             ← Field registry, defaults, and option metadata
+│   │   ├── config/             ← Configuration conversion, import/export, and validation
+│   │   ├── datasets/           ← Dataset parsing, repeat counts, and step estimation
+│   │   ├── execution/          ← Run preparation, launch dispatch, and process management
+│   │   └── cache/              ← Cache inspection, generation, and reuse
+│   ├── monitor/                ← Training monitor (GPU/system/logs/preview/history)
+│   ├── tageditor/              ← Native tag editor
+│   ├── tagger/                 ← Tagging module (WD / CL / Camie / PixAI / AI endpoints)
+│   ├── regularization/         ← Regularization image generation, sampling, and recovery
+│   └── gui.py                  ← Internal GUI entry (called by launch scripts)
+├── frontend/                   ← Alpine.js SPA frontend
+│   ├── js/                     ← Scripts grouped by feature
+│   │   ├── app/                ← Application assembly and route configuration
+│   │   ├── shared/             ← Shared controls, notifications, i18n, and realtime transport
+│   │   ├── training/           ← Training forms, configuration, and previews
+│   │   ├── monitor/            ← Monitoring, history, logs, and outputs
+│   │   ├── environment/        ← Environment status, component installation, and downloads
+│   │   ├── tagger/             ← Automatic tagging and AI captioning workspaces
+│   │   ├── docs/               ← Parameter documentation reader
+│   │   ├── regularization/     ← Regularization image generation workspace
+│   │   ├── tag-editor/         ← Caption editing, sessions, and persistence
+│   │   └── tag-dictionary/     ← Dictionary, Worker, and hover cards
+│   ├── templates/              ← Workspace HTML templates loaded on demand
+│   └── css/ · i18n/ · assets/   ← Styles, translations, and static assets
+├── config/                     ← Local configuration and autosaves
+├── docs/                       ← Parameter guides and preview screenshots
+├── tools/                      ← Bootstrap, installation and runtime tools; developer scripts in tools/dev/
+├── tests/                      ← Backend regressions and frontend interaction tests
+├── start.bat / start.sh        ← Launch scripts
+└── requirements.txt            ← Single authoritative dependency list (backend and training cores share it; torch is installed by the launcher)
+```
 
 ## Acknowledgements
 

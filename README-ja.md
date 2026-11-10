@@ -4,7 +4,7 @@
 
 _Anima、SDXL、MOSS-Image、Krea 2 に対応したローカル LoRA 学習ツール。_
 
-学習設定、画像のタグ付け、キャプション編集、リアルタイム監視を統合した、ローカルで動作する LoRA 学習用 GUI です。Anima / SDXL / MOSS-Image には [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts)、Krea 2 には [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) を使用し、[LyCORIS](https://github.com/KohakuBlueleaf/LyCORIS) により Anima / SDXL の学習アルゴリズムを拡張します。
+学習設定、画像のタグ付け、キャプションの一括編集、学習進捗のリアルタイム監視ができます。
 
 </div>
 
@@ -22,22 +22,17 @@ _Anima、SDXL、MOSS-Image、Krea 2 に対応したローカル LoRA 学習ツ�
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-en.md">English</a>
 </p>
 
-Anima / SDXL / MOSS-Image はネイティブの LoRA・LoHa・LoKr に対応します。Anima / SDXL は `lycoris.kohya` 経由の **LyCORIS** LoCon / LoHa / LoKr にも対応します。Krea 2 は専用のネイティブ LoRA モジュールを使用します。
-
 ### 対応モデル
 
-| 学習方式 | ベースモデル |
-|----------|--------------|
-| LoRA | SDXL |
-| **LoRA** | **Anima**（Qwen3 + T5 のデュアルエンコーダー） |
-| **LoRA / LoHa / LoKr** | **MOSS-Image**（sd-scripts） |
-| **LoRA** | **Krea 2 RAW DiT**（musubi-tuner） |
+| ベースモデル | 学習エンジン | ネイティブ方式 | LyCORIS |
+|--------------|--------------|----------------|---------|
+| SDXL | sd-scripts | LoRA / LoHa / LoKr | LoCon / LoHa / LoKr |
+| Anima | sd-scripts | LoRA / LoHa / LoKr | LoCon / LoHa / LoKr |
+| MOSS-Image | sd-scripts | LoRA / LoHa / LoKr | — |
+| Krea 2 RAW DiT | musubi-tuner | LoRA | LoCon / LoHa / LoKr |
 
-> ℹ️ MOSS-Image はネイティブの `networks.lora_generic`・`networks.loha`・`networks.lokr` に対応し、`lycoris.kohya` には非対応です。3 つの方式すべてで DiT 内のテキスト投影層と Refiner の学習を選択できます。UI では Qwen テキストエンコーダーを凍結します。
-
-> ℹ️ Krea 2 では、学習前に latent と Qwen3-VL テキストエンコーダー出力の両方をキャッシュする必要があります。学習開始前に、キャッシュが揃っているか、画像・キャプション・モデルと一致しているかを GUI が確認します。
-
-> ℹ️ `vendor/sd-scripts/` の学習エンジン自体は SD3 / FLUX / HunyuanImage / Lumina などにも対応していますが、現在の UI にはこれらのモデルの学習画面はありません。
+- **MOSS-Image** では DiT のテキスト投影層と Refiner を学習対象にできます。Qwen テキストエンコーダーは凍結したままです。
+- **Krea 2** の学習前に、画像の潜在表現（latent）と Qwen3-VL のテキストエンコード結果をキャッシュしてください。
 
 ## 主な機能
 
@@ -52,7 +47,6 @@ Anima / SDXL / MOSS-Image はネイティブの LoRA・LoHa・LoKr に対応し�
 - **多言語対応（i18n）** — 中国語・英語・日本語の UI と内蔵ガイド。ブラウザーの言語を自動検出し、選択した言語を保存
 - **3 種類のテーマ** — ライト、ダーク、ComfyUI。システム設定への追従と手動切り替えに対応
 - **バックエンド接続状態の表示** — 接続状態と切断からの経過時間をリアルタイムで表示
-- **低速なリモート接続への対応** — 同一オリジンのリアルタイム通信、低速回線向けのサムネイルキュー、バージョン付きのブラウザーキャッシュにより、プレビュー取得が状態更新に与える影響を軽減
 
 <a name="pre-training-previews"></a>
 
@@ -72,89 +66,34 @@ Anima / SDXL / MOSS-Image はネイティブの LoRA・LoHa・LoKr に対応し�
 
 ### 行列構造
 
-Anima、MOSS-Image、Krea 2 の学習では、学習ネットワークモジュールの設定から **「構造プレビュー」** を開けます。Anima は LoRA / LoCon、LoHa、LoKr に、MOSS-Image は任意の DiT テキスト投影層と Refiner を含むネイティブ LoRA / LoHa / LoKr に、Krea 2 はネイティブ LoRA と LyCORIS LoCon / LoHa / LoKr に対応します。実際のネットワーク構築結果に基づいて行列の組み合わせを表示し、Attention、MLP などのモジュールを切り替えて、層ごとの形状、実効 rank / alpha、スケーリング、該当する層数、パラメータ数を確認できます。
+Anima、MOSS-Image、Krea 2 の学習では、学習ネットワークモジュールの設定から **「構造プレビュー」** を開けます。Attention や MLP などのモジュールを切り替え、行列の形状、実効 rank と alpha、スケーリング、該当する層数、パラメータ数を確認できます。
 
-同じ場所に **推定重みファイルサイズ** も表示され、アルゴリズム、rank、学習範囲、保存精度に応じて自動更新されます。仮想テンソルを使用するため、ベースモデルの読み込みや学習の開始は不要です。推定には保存テンソルと safetensors のインデックスを含みますが、VRAM 使用量を表すものではありません。詳しくは[行列構造とファイルサイズのガイド](docs/parameters/matrix-preview.ja-JP.md)を参照してください。
+同じ場所の **推定重みファイルサイズ** で、重みの保存に必要なディスク容量を学習前に確認できます。[行列構造とファイルサイズのガイド](docs/parameters/matrix-preview.ja-JP.md)
 
 ![行列構造プレビュー：LoKr のクロネッカー分解とパラメータ数](docs/images/shape-preview.ja-JP.jpg)
 
-## プロジェクト構成
-
-```
-lora-scripts-anima/
-├── vendor/sd-scripts/          ← Anima / SDXL / MOSS-Image 学習エンジン（固定した上流スナップショット）
-├── vendor/musubi-tuner/        ← Krea 2 学習エンジン（固定した上流スナップショット）
-├── vendor/lycoris/             ← LyCORIS アダプターバックエンド（固定した上流スナップショット）
-├── vendor/emo_optimizer/       ← EmoSens 適応型オプティマイザー
-├── vendor/lora_muon/           ← 実験的な LoRA-Muon オプティマイザー
-├── backend/                    ← FastAPI バックエンド
-│   ├── server/                 ← アプリ構成、HTTP ルート、静的リソース、プロキシ
-│   ├── core/                   ← リアルタイムタスクの調整とインストール処理
-│   ├── training/               ← 役割別に整理した学習モジュール
-│   │   ├── fields/             ← フィールド定義、既定値、選択肢のメタデータ
-│   │   ├── config/             ← 設定変換、インポート・エクスポート、検証
-│   │   ├── datasets/           ← データセット解析、繰り返し回数、ステップ数の推定
-│   │   ├── execution/          ← 実行準備、起動振り分け、プロセス管理
-│   │   └── cache/              ← キャッシュの確認、生成、再利用
-│   ├── monitor/                ← 学習監視（GPU、システム、ログ、プレビュー、履歴）
-│   ├── tageditor/              ← 内蔵タグエディター
-│   ├── tagger/                 ← タグ付けモジュール（WD / CL / Camie / PixAI / AI API）
-│   ├── regularization/         ← 正則化画像の生成、サンプリング、復旧
-│   └── gui.py                  ← GUI の内部エントリーポイント（起動スクリプトから呼び出し）
-├── frontend/                   ← Alpine.js SPA フロントエンド
-│   ├── js/                     ← 機能別に整理したスクリプト
-│   │   ├── app/                ← アプリ構成とルーティング設定
-│   │   ├── shared/             ← 共通 UI、通知、国際化、リアルタイム通信
-│   │   ├── training/           ← 学習フォーム、設定、プレビュー
-│   │   ├── monitor/            ← 監視、履歴、ログ、出力
-│   │   ├── environment/        ← 環境情報、コンポーネント導入、モデル取得
-│   │   ├── tagger/             ← 自動タグ付けと AI キャプションのワークスペース
-│   │   ├── docs/               ← パラメータガイドの閲覧
-│   │   ├── regularization/     ← 正則化画像生成のワークスペース
-│   │   ├── tag-editor/         ← タグ編集、セッション、永続化
-│   │   └── tag-dictionary/     ← 辞書、Worker、ホバーカード
-│   ├── templates/              ← 必要時に読み込むワークスペース HTML
-│   └── css/ · i18n/ · assets/   ← スタイル、翻訳、静的リソース
-├── config/                     ← ローカル設定と自動保存
-├── docs/                       ← パラメータガイドとプレビュー画像
-├── tools/                      ← 起動・インストール・実行ツール。開発用スクリプトは tools/dev/
-├── tests/                      ← バックエンド回帰テストとフロントエンド操作テスト
-├── start.bat / start.sh        ← 起動スクリプト
-└── requirements.txt            ← プロジェクト全体で共通の依存関係一覧（torch は起動時に別途インストール）
-```
-
 ## 使い方
+
+### クイックスタート
+
+展開またはクローンしたプロジェクトフォルダーで、使用する OS のコマンドを実行してください。
+
+| OS | インストールと起動 |
+|----|--------------------|
+| Windows | `.\start.bat` |
+| Linux | `bash start.sh` |
+
+初回起動時に仮想環境を作成し、依存パッケージを自動インストールします。起動後、GUI が [http://127.0.0.1:12333](http://127.0.0.1:12333) で自動的に開きます。
 
 ### 必要な環境
 
-- **Python**：64 ビット版 Python 3.12（プロジェクトの基準バージョン。ビルド済みの依存パッケージとインストール手順はこのバージョンを対象とします）
-- **Git**：プロジェクトのダウンロードと更新に使用。Windows の ZIP 版では初回起動時に自動インストール可能
-- **PyTorch 2.12.1 + CUDA 13.0**：起動スクリプトが自動インストール。RTX 30/40/50 シリーズに対応
-- **NVIDIA ドライバー R580 以降**：CUDA 13.0 が必要とする最低ドライバーバージョン
+- **Windows** では初回起動時に、案内に従って現在のユーザー向けに 64 ビット版 Python 3.12 を追加できます。既存の Python と併用できます。ZIP 版では Git もインストールできます。
+- **Linux** では Git と 64 ビット版 Python 3.12 を事前にインストールしてください。`venv` が見つからない場合は、`python3.12-venv` などの対応パッケージを追加してください。
+- **学習**には NVIDIA GPU と R580 以降のドライバーが必要です。起動スクリプトは RTX 30/40/50 シリーズに対応する PyTorch 2.12.1 + CUDA 13.0 を自動インストールします。GUI は NVIDIA GPU のない環境でも起動できます。
 
-> **Windows では Python の事前インストールは不要です。** 初回の `start.bat` 実行時に 64 ビット版 Python 3.12 を探し、Microsoft Store の Python プレースホルダーは除外します。
->
-> Python 3.13/3.14 しかインストールされていない場合は、案内に従って公式の Python 3.12 を現在のユーザー向けに追加できます。既存の Python の削除や、既定の Python の変更は行いません。ダウンロード中は進捗、サイズ、速度、残り時間を表示し、サイレントインストール中は処理中のアニメーションを表示します。
->
-> **Linux では** 64 ビット版 Python 3.12 を自分でインストールしてください。通常は `venv` の作成機能も含まれています。Ubuntu / Debian などで機能不足のエラーが出る場合のみ、対応パッケージ（例：`python3.12-venv`）を追加してください。
->
-> 別の Python バージョンで作成した互換性のない `venv` がプロジェクト内にある場合は、プロジェクト内の `venv` フォルダーだけを削除または名前変更し、使用する OS の起動スクリプトを再実行してください。
+互換性のない Python でプロジェクトの `venv` を作成した場合は、そのフォルダーの名前を変更し、起動スクリプトを再実行して環境を作り直してください。
 
-| GPU シリーズ | 自動インストールされる PyTorch | CUDA |
-|--------------|:-----------------------------:|:----:|
-| RTX 30（Ampere） | 2.12.1 | 13.0 |
-| RTX 40（Ada） | 2.12.1 | 13.0 |
-| RTX 50（Blackwell） | 2.12.1 | 13.0 |
-
-プロジェクトの更新後、旧バージョンの `venv`（Torch 2.10 + cu130 を含む）は次回起動時に PyTorch 2.12.1 + cu130 と torchvision 0.27.1 に自動更新されます。インストール済みの xformers は 0.0.35、Triton は 3.7 系に更新されます。FlashAttention は環境管理で必要に応じてインストールできます。既存のバージョンを自動更新・削除することはありません。bitsandbytes の CUDA 13 互換性チェックは継続し、ONNX Runtime GPU は 1.27.0 のままです。未インストールのオプションライブラリは自動追加しません。
-
-NVIDIA GPU がない PC にも GPU 用の依存環境を一式インストールし、GUI を起動できます。ただし、学習には NVIDIA GPU が必要です。
-
-> **Krea 2 の共有環境**：Krea 2 と sd-scripts はプロジェクトのメイン `venv` と同じ CUDA 版 PyTorch を使用します。ルートの `requirements.txt` がプロジェクト全体の唯一の依存関係一覧で、共有パッケージを `transformers 5.21.0` / `tokenizers 0.23.3` に固定します。インストール時に `vendor/` 内の依存関係ファイルは読み込みません。
->
-> 通常の起動では、高速なメタデータ確認のみを行います。バージョンが一致していれば pip の再実行、パッケージの削除・再インストール、Krea 2 の実行環境全体のインポートは行いません。依存関係の同期後と Krea 2 の学習前チェック時には、完全なインポート検証を実行します。`vendor/` 内の上流の依存関係ファイルは変更しません。
-
-> 旧バージョンの `venv/cores/musubi` は読み書きせず、自動削除もしません。メイン `venv` で正常に学習できることを確認した後、不要になった旧ディレクトリを手動で削除してディスク容量を空けられます。
+Krea 2 と sd-scripts はプロジェクトのメイン `venv` を共有します。メイン環境で学習できることを確認した後、旧版の `venv/cores/musubi` を手動で削除できます。[プロジェクトの依存関係](requirements.txt)
 
 ### Windows：ZIP をダウンロード（初心者向け）
 
@@ -183,27 +122,11 @@ git fetch --no-tags origin
 git switch --track origin/dev
 ```
 
-### クイックスタート
-
-| OS | インストールと起動 |
-|----|--------------------|
-| Windows | `.\start.bat` |
-| Linux | `bash start.sh` |
-
-初回起動時に仮想環境を作成し、依存パッケージを自動インストールします。起動後、GUI が [http://127.0.0.1:12333](http://127.0.0.1:12333) で自動的に開きます。
-
 ### リアルタイム通信と低速なリモート接続
 
-TensorBoard は GUI と同じ公開 URL を使用します。既定では `http://127.0.0.1:12333/tensorboard/` にアクセスでき、別のウィンドウでも直接開けます。埋め込みページは現在のページのドメイン、プロトコル、ポートを使うため、SSH では GUI のポートだけを転送すれば利用できます。ローカル側のポートはサーバー側と異なっていても構いません。ターミナルにはサーバー側のアドレスを表示し、SSH のローカル転送ポートは自動検出できません。
+SSH でアクセスする場合は、GUI のポートを転送します。GUI の URL の末尾に `/tensorboard/` を付けると TensorBoard を開けます。例は `http://127.0.0.1:12333/tensorboard/` です。転送先のローカルポートが異なる場合は、そのポートを使ってください。TensorBoard の起動に失敗した場合は `logs/tensorboard.log` を確認してください。
 
-TensorBoard の子プロセスはサーバーのループバックアドレスでのみ待ち受け、内部ポートは既定で自動割り当てします。`--listen` を指定しても TensorBoard を個別に外部公開しません。旧引数 `--tensorboard-host` は廃止され、指定しても無視します。`--tensorboard-port` は内部ポートの指定にのみ使用します。起動中は待機表示を出し、TensorBoard の準備完了後にアクセス先をまとめて表示します。失敗時には警告を表示して GUI の起動を続行します。詳細ログは `logs/tensorboard.log` に保存します。
-
-HTTP リクエストとリアルタイム接続は、常に現在のページと同一オリジンです。SSH、ポート転送、プロキシ、クラウド固有の設定、追加のリアルタイム通信用ポートは自動設定しません。
-
-- `/ws/realtime` は小さな JSON の状態、進捗、ログ差分、ハードウェア情報のみを送信します。コマンド、画像、ファイル、メタデータには引き続き HTTP を使用します。
-- サイドバーは WebSocket の `ready` メッセージとリアルタイムのスナップショットを受信した後に接続中と表示します。有効なデータが 2 秒間届かなければリアルタイムデータの遅延を表示し、接続が閉じてヘルスチェックも失敗した場合にバックエンド未接続と表示します。
-- バックエンドの再起動でインスタンス ID が変わります。ページは旧インスタンスのタスク、進捗、ログ、曲線、ハードウェア情報を消去し、以前のメモリー内のタスク状態が不明であることを表示します。現在のバージョンは残存する学習プロセスの検出や引き継ぎを行いません。
-- **UI 設定の低速接続向け互換性設定**は既定で有効です。現在の実行または履歴のサンプル一覧をすべて表示し、サムネイルを低優先度のキューで 1 件ずつ読み込みます。リアルタイムデータが遅延している間は読み込みを一時停止します。バージョン付きサムネイルはブラウザーに 24 時間キャッシュできます。元画像はクリックしたときに読み込みます。
+リモートのプレビューでリアルタイム更新が遅くなる場合は、**UI 設定 → 低速接続向けモード**をオンにすると、サムネイルを 1 枚ずつ読み込みます。手動で設定するまでは、ブラウザーが低速接続またはデータ節約モードを報告した場合に自動でオンになります。
 
 ### 更新方法
 
@@ -271,6 +194,51 @@ GUI の **「環境」** タブで次の情報や機能を利用できます。
 - musubi-tuner Krea 2 の共有実行環境の状態（sd-scripts と共有する CUDA 版 PyTorch、依存パッケージのバージョン統一状況）
 - Flash Attention のインストール状態の確認とワンクリックインストール
 - インストール候補の wheel 一覧のプレビュー
+
+## プロジェクト構成
+
+```
+lora-scripts-anima/
+├── vendor/sd-scripts/          ← Anima / SDXL / MOSS-Image 学習エンジン（固定した上流スナップショット）
+├── vendor/musubi-tuner/        ← Krea 2 学習エンジン（固定した上流スナップショット）
+├── vendor/lycoris/             ← LyCORIS アダプターバックエンド（固定した上流スナップショット）
+├── vendor/emo_optimizer/       ← EmoSens 適応型オプティマイザー
+├── vendor/lora_muon/           ← 実験的な LoRA-Muon オプティマイザー
+├── backend/                    ← FastAPI バックエンド
+│   ├── server/                 ← アプリ構成、HTTP ルート、静的リソース、プロキシ
+│   ├── core/                   ← リアルタイムタスクの調整とインストール処理
+│   ├── training/               ← 役割別に整理した学習モジュール
+│   │   ├── fields/             ← フィールド定義、既定値、選択肢のメタデータ
+│   │   ├── config/             ← 設定変換、インポート・エクスポート、検証
+│   │   ├── datasets/           ← データセット解析、繰り返し回数、ステップ数の推定
+│   │   ├── execution/          ← 実行準備、起動振り分け、プロセス管理
+│   │   └── cache/              ← キャッシュの確認、生成、再利用
+│   ├── monitor/                ← 学習監視（GPU、システム、ログ、プレビュー、履歴）
+│   ├── tageditor/              ← 内蔵タグエディター
+│   ├── tagger/                 ← タグ付けモジュール（WD / CL / Camie / PixAI / AI API）
+│   ├── regularization/         ← 正則化画像の生成、サンプリング、復旧
+│   └── gui.py                  ← GUI の内部エントリーポイント（起動スクリプトから呼び出し）
+├── frontend/                   ← Alpine.js SPA フロントエンド
+│   ├── js/                     ← 機能別に整理したスクリプト
+│   │   ├── app/                ← アプリ構成とルーティング設定
+│   │   ├── shared/             ← 共通 UI、通知、国際化、リアルタイム通信
+│   │   ├── training/           ← 学習フォーム、設定、プレビュー
+│   │   ├── monitor/            ← 監視、履歴、ログ、出力
+│   │   ├── environment/        ← 環境情報、コンポーネント導入、モデル取得
+│   │   ├── tagger/             ← 自動タグ付けと AI キャプションのワークスペース
+│   │   ├── docs/               ← パラメータガイドの閲覧
+│   │   ├── regularization/     ← 正則化画像生成のワークスペース
+│   │   ├── tag-editor/         ← タグ編集、セッション、永続化
+│   │   └── tag-dictionary/     ← 辞書、Worker、ホバーカード
+│   ├── templates/              ← 必要時に読み込むワークスペース HTML
+│   └── css/ · i18n/ · assets/   ← スタイル、翻訳、静的リソース
+├── config/                     ← ローカル設定と自動保存
+├── docs/                       ← パラメータガイドとプレビュー画像
+├── tools/                      ← 起動・インストール・実行ツール。開発用スクリプトは tools/dev/
+├── tests/                      ← バックエンド回帰テストとフロントエンド操作テスト
+├── start.bat / start.sh        ← 起動スクリプト
+└── requirements.txt            ← プロジェクト全体で共通の依存関係一覧（torch は起動時に別途インストール）
+```
 
 ## 謝辞
 
