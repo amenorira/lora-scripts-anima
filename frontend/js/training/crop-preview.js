@@ -1,4 +1,5 @@
 /* Dataset crop workbench: geometry comes from the active training core. */
+const cropPreviewSourceCache = new WeakMap();
 const cropPreviewStatsCache = new WeakMap();
 const cropPreviewViewCache = new WeakMap();
 const cropPreviewWarmDelay = 100;
@@ -32,6 +33,8 @@ window.trainingCropPreviewMixin = {
   cropPreviewItems: [],
   cropPreviewRandom: false,
   cropPreviewFilter: 'all',
+  cropPreviewSource: 'include',
+  cropPreviewRegConfigured: false,
   cropPreviewBucket: '',
   cropPreviewBucketsExpanded: false,
   cropPreviewBucketLimit: 9,
@@ -50,6 +53,8 @@ window.trainingCropPreviewMixin = {
     this.cropPreviewFocus = null;
     this.cropPreviewFocusOpen = false;
     this.cropPreviewFilter = 'all';
+    this.cropPreviewSource = 'include';
+    this.cropPreviewRegConfigured = false;
     this.cropPreviewBucket = '';
     this.cropPreviewBucketsExpanded = false;
     this.cropPreviewItems = [];
@@ -61,9 +66,12 @@ window.trainingCropPreviewMixin = {
     this._cropPreviewAbort = new AbortController();
     const signal = this._cropPreviewAbort.signal;
     try {
+      const payload = this._stepEstimatePayload();
+      this.cropPreviewRegConfigured = payload.model_train_type !== 'krea2-lora'
+        && (payload.enable_reg_data ?? true) && !!String(payload.reg_data_dir ?? '').trim();
       const response = await fetch('/api/training/crop-preview', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal,
-        body: JSON.stringify({ ...this._stepEstimatePayload(), random_crop: !!this.form.random_crop }),
+        body: JSON.stringify({ ...payload, random_crop: !!this.form.random_crop }),
       });
       const result = await response.json();
       if (seq !== this._cropPreviewSeq) return;
@@ -122,8 +130,33 @@ window.trainingCropPreviewMixin = {
     if (scroller) scroller.scrollTop = 0;
   },
 
-  get cropPreviewStats() {
+  cropPreviewSourceOptions() {
+    return [['include', 'includeReg'], ['exclude', 'excludeReg'], ['only', 'onlyReg']]
+      .map(([value, label]) => ({ value, label: this.t(`cropPreview.${label}`) }));
+  },
+
+  setCropPreviewSource(value) {
+    this.cropPreviewSource = value;
+    if (this.cropPreviewBucket && !this.cropPreviewBuckets.some(bucket => bucket.key === this.cropPreviewBucket)) {
+      this.cropPreviewBucket = '';
+    }
+    const scroller = document.getElementById('cropPreviewScroll');
+    if (scroller) scroller.scrollTop = 0;
+  },
+
+  get cropPreviewSourceItems() {
     const items = this.cropPreviewItems;
+    const source = this.cropPreviewSource;
+    if (source === 'include') return items;
+    const cached = cropPreviewSourceCache.get(items);
+    if (cached?.source === source) return cached.items;
+    const filtered = items.filter(item => !!item.is_reg === (source === 'only'));
+    cropPreviewSourceCache.set(items, { source, items: filtered });
+    return filtered;
+  },
+
+  get cropPreviewStats() {
+    const items = this.cropPreviewSourceItems;
     // Random crop only changes the overlay coordinates.
     const cached = cropPreviewStatsCache.get(items);
     if (cached) return cached;
@@ -154,7 +187,7 @@ window.trainingCropPreviewMixin = {
   },
 
   get cropPreviewView() {
-    const items = this.cropPreviewItems;
+    const items = this.cropPreviewSourceItems;
     const bucket = this.cropPreviewBucket;
     const filter = this.cropPreviewFilter;
     const cached = cropPreviewViewCache.get(items);

@@ -1,8 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {loadFrontend, composeMixins, deferred} = require('./helpers.cjs');
+const {loadFrontend, composeMixins, deferred, response} = require('./helpers.cjs');
 
-function app() {
+function app(fetch) {
   const document = {addEventListener() {}, querySelector: () => null, getElementById: () => null};
   const grid = {
     async reveal(id) { return document.getElementById(`crop-image-${id}`); },
@@ -10,7 +10,7 @@ function app() {
   };
   const context = loadFrontend(['training/crop-preview-grid', 'training/crop-preview'], {
     window: {AnimaUI: {setDialogOrigin() {}, settleDialog() {}}},
-    AbortController, setTimeout, clearTimeout, document,
+    AbortController, setTimeout, clearTimeout, document, fetch,
   });
   context.getCropPreviewGrid = () => grid;
   return composeMixins(context.window.trainingCropPreviewMixin, {
@@ -47,6 +47,58 @@ test('crop filter and bucket filter compose without losing error entries', () =>
   assert.equal(a.cropPreviewView.items.length, 0);
   a.cropPreviewBucket = ''; a.cropPreviewFilter = 'errors';
   assert.equal(a.cropPreviewView.items[0].id, '2');
+});
+
+test('regularization filter follows the preview configuration even when there are no regularization images', async () => {
+  const a = app(async () => response({items: [sample], random_crop: false}));
+  a.form = {enable_reg_data: true, reg_data_dir: 'regularization'};
+  a._stepEstimatePayload = () => a.form;
+  await a.openCropPreview();
+  assert.equal(a.cropPreviewError, '');
+  assert.equal(a.cropPreviewRegConfigured, true);
+  a.setCropPreviewSource('only');
+  assert.equal(a.cropPreviewView.items.length, 0);
+
+  a.form.enable_reg_data = false;
+  await a.openCropPreview();
+  assert.equal(a.cropPreviewRegConfigured, false);
+  assert.equal(a.cropPreviewSource, 'include');
+
+  a.form.enable_reg_data = true;
+  a.form.reg_data_dir = ' ';
+  await a.openCropPreview();
+  assert.equal(a.cropPreviewRegConfigured, false);
+
+  a.form.reg_data_dir = 'regularization';
+  a.form.model_train_type = 'krea2-lora';
+  await a.openCropPreview();
+  assert.equal(a.cropPreviewRegConfigured, false);
+});
+
+test('regularization scope composes with crop and bucket filters and scopes the totals', () => {
+  const a = app();
+  a.cropPreviewItems = [
+    sample,
+    {...sample, id:'1', is_reg:true, bucket:[256,256], sample_count:10},
+    {...sample, id:'2', is_reg:true, crop_percent:0, sample_count:2},
+    {id:'3', name:'reg/broken.png', error:'broken', is_reg:true},
+  ];
+  assert.equal(a.cropPreviewView.items.length, 4);
+  a.selectCropPreviewBucket('256 × 256');
+  a.setCropPreviewFilter('cropped');
+  a.setCropPreviewSource('only');
+  assert.equal(a.cropPreviewBucket, '256 × 256');
+  assert.deepEqual(Array.from(a.cropPreviewView.items, item => item.id), ['1']);
+  assert.equal(a.cropPreviewTotals.samples, 12);
+  a.setCropPreviewSource('exclude');
+  assert.equal(a.cropPreviewBucket, '');
+  assert.equal(a.cropPreviewFilter, 'cropped');
+  assert.deepEqual(Array.from(a.cropPreviewView.items, item => item.id), ['0']);
+  assert.equal(a.cropPreviewTotals.samples, 5);
+  assert.equal(a.cropPreviewStatsNote(), '');
+  a.setCropPreviewFilter('errors');
+  a.setCropPreviewSource('only');
+  assert.deepEqual(Array.from(a.cropPreviewView.items, item => item.id), ['3']);
 });
 
 test('bucket chips preserve image filters and keep the selected bucket visible when collapsed', () => {

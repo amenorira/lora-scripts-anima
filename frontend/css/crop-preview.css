@@ -25,7 +25,10 @@
 .cp-buckets-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
 .cp-stats-note { padding: 6px 18px; color: var(--text-secondary); font-size: 12px; }
 .cp-toolbar { display: flex; flex: 0 0 auto; align-items: center; flex-wrap: wrap; gap: 10px; padding: 10px 18px; border-bottom: 1px solid var(--border-default); }
-.cp-filter { width: 152px; font-size: 12px; }
+.cp-filter-controls { display: flex; align-items: center; gap: inherit; max-width: 100%; }
+.cp-filter-controls > .cp-legend { flex: none; }
+.cp-filter { width: 152px; min-width: 0; font-size: 12px; }
+.cp-source-filter { width: 184px; }
 .cp-legend { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-secondary); }
 .cp-legend-swatch { width: 22px; height: 16px; border: 1px solid #e99a38; }
 .cp-workspace { position: relative; flex: 1; min-height: 0; }

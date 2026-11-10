@@ -1975,9 +1975,14 @@
     </header>
     <div class="cp-content">
     <div class="cp-toolbar">
-      <div class="cp-filter" @preview-select="setCropPreviewFilter($event.detail); $nextTick(() => $el.querySelector('.preview-select-trigger')?.focus())"
-           x-html="window.previewSelectHtml(cropPreviewFilterOptions(), cropPreviewFilter, t('cropPreview.filter'))"></div>
-      <span class="cp-legend"><span class="cp-legend-swatch" aria-hidden="true"></span><span x-text="t('cropPreview.removed')"></span></span>
+      <div class="cp-filter-controls">
+        <div class="cp-filter" @preview-select="setCropPreviewFilter($event.detail); $nextTick(() => $el.querySelector('.preview-select-trigger')?.focus())"
+             x-html="window.previewSelectHtml(cropPreviewFilterOptions(), cropPreviewFilter, t('cropPreview.filter'))"></div>
+        <div class="cp-filter cp-source-filter" x-show="cropPreviewRegConfigured"
+             @preview-select="setCropPreviewSource($event.detail); $nextTick(() => $el.querySelector('.preview-select-trigger')?.focus())"
+             x-html="window.previewSelectHtml(cropPreviewSourceOptions(), cropPreviewSource, t('cropPreview.sourceFilter'))"></div>
+        <span class="cp-legend"><span class="cp-legend-swatch" aria-hidden="true"></span><span x-text="t('cropPreview.removed')"></span></span>
+      </div>
       <span class="cp-legend" x-show="cropPreviewRandom" x-text="t('cropPreview.random')"></span>
       <button type="button" class="btn btn-ghost btn-sm" x-show="cropPreviewRandom" @click="shuffleCropPreview()" x-text="t('cropPreview.shuffle')"></button>
     </div>
