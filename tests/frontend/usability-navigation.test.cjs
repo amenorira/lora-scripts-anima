@@ -71,6 +71,29 @@ test('closing a dialog preserves an explicit destination focus and still restore
   assert.equal(document.activeElement, opener);
 });
 
+test('a LyCORIS conflict link waits for the modal to close before focusing the main form', () => {
+  const dialog = new EventTarget();
+  const focused = [];
+  const input = { focus: () => focused.push('fp8_base') };
+  const row = { dataset: { fieldRow: 'fp8_base' }, isConnected: true,
+    closest: () => null, getClientRects: () => [{}], scrollIntoView() {}, querySelector: () => input };
+  const { window } = loadFrontend(['training/sections', 'training/network-panel'], {
+    window: { matchMedia: () => ({ matches: true }) },
+    document: { getElementById: () => dialog, querySelectorAll: selector => selector.startsWith('#trainFormContent') ? [row] : [] },
+  });
+  const app = composeMixins(window.trainingSections, window.trainingNetworkPanel, {
+    form: { network_module: 'lycoris.kohya' }, lycorisModalOpen: true,
+    _allSections: () => [{ fields: [{ key: 'fp8_base' }] }],
+    _closeManagedModal(key) { this[key] = false; },
+    $nextTick: callback => callback(),
+  });
+  app.focusTrainingField('fp8_base');
+  assert.equal(app.lycorisModalOpen, false);
+  assert.deepEqual(focused, []);
+  dialog.dispatchEvent(new Event('dialog-after-close'));
+  assert.deepEqual(focused, ['fp8_base']);
+});
+
 const filename = (stage, prompt, prefix = 'sample_') => `${prefix}e${String(stage).padStart(6, '0')}_${String(prompt).padStart(2, '0')}_20261109120000_42.png`;
 function previews(names) {
   const {window} = loadFrontend(['monitor/previews', 'monitor/artifacts-render'], {

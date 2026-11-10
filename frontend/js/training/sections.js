@@ -21,7 +21,10 @@ window.trainingSections = {
       this.$nextTick(() => this.focusTrainingField(key));
       return;
     }
-    if (!inPanel && this.lycorisModalOpen) this.closeLycorisConfig();
+    if (!inPanel && this.lycorisModalOpen) {
+      this.closeLycorisConfig(() => this.focusTrainingField(key));
+      return;
+    }
     const root = inPanel ? '#lycorisConfigContent' : '#trainFormContent';
     const row = Array.from(document.querySelectorAll(root + ' [data-field-row]'))
       .find(item => item.dataset.fieldRow === key);
