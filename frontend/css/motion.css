@@ -1,7 +1,6 @@
 /* Shared timings and state transitions, independent of theme appearance. */
 :root {
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-spring: var(--ease-out);
   --duration-fast: 80ms;
   --duration-normal: 120ms;
   --duration-slow: 150ms;

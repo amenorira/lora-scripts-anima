@@ -5287,12 +5287,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: var(--disabled-opa
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
   .main-content.route-transitioning > div { opacity: 1; }
   .page-progress-fill { transition: none; }
 }

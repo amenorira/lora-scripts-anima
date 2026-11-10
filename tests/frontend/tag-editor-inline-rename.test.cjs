@@ -17,6 +17,7 @@ function fixture(captions = ['blue eyes, standing, blue eyes', 'blue eyes, sitti
     currentRoute: 'tagEditor', tagEditorImages: images, tagEditorSelected: ['0'],
     tagEditorAllowsTagOps: () => true, tagDictionaryCloseHover() {},
     tagDictionaryLookupTags: tags => lookups.push(Array.from(tags)),
+    tagDictionarySyncChips() {},
     _teFlushAllPendingTextEdits() {}, _teInvalidateFilter() {},
     _teUpdateImageTags: (img, tags) => { img.tags = tags; },
     _tePushHistory: entry => history.push(entry), _teImageLabel: img => img.path,

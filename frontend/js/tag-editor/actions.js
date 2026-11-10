@@ -96,8 +96,8 @@ window.tagEditorActions = {
   },
 
   _teContextMenuPoint(event) {
-    var anchor = event.target?.getBoundingClientRect?.() || { left: 4, bottom: 4 };
     var pointer = Number.isFinite(event.clientX) && Number.isFinite(event.clientY) && (event.clientX !== 0 || event.clientY !== 0);
+    var anchor = pointer ? null : event.target?.getBoundingClientRect?.() || { left: 4, bottom: 4 };
     return {
       x: Math.max(4, Math.min(pointer ? event.clientX : anchor.left, window.innerWidth - 4)),
       y: Math.max(4, Math.min(pointer ? event.clientY : anchor.bottom, window.innerHeight - 4)),
@@ -242,9 +242,10 @@ window.tagEditorActions = {
       if (trigger?.isConnected && trigger.getClientRects().length) trigger.focus();
       return;
     }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
     var buttons = this._teVisibleMenuButtons(event.currentTarget);
+    if (!buttons.length) return;
     var index = buttons.indexOf(document.activeElement);
-    if (!buttons.length || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault();
     var next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
       : index < 0 ? (event.key === 'ArrowDown' ? 0 : buttons.length - 1)
@@ -578,7 +579,7 @@ window.tagEditorActions = {
 
   tagEditorInlineEditMatches(scope, tag, index = null) {
     var edit = this.tagEditorInlineEdit;
-    return !!edit && (edit.scope || 'dataset') === scope && edit.oldTag === tag && (scope !== 'image' || edit.index === index);
+    return !!edit && edit.scope === scope && edit.oldTag === tag && (scope !== 'image' || edit.index === index);
   },
 
   tagEditorInlineEditStyle(scope, tag, index = null) {
@@ -689,29 +690,32 @@ window.tagEditorActions = {
       return;
     }
     if (newTag.includes(',')) { this.toast(this.t('tagEditor.inlineRenameInvalid'), 'warning'); return; }
-    if (edit.scope && edit.scope !== 'dataset') {
-      if (!edit.selected || edit.selected.length !== this.tagEditorSelected.length ||
+    if (edit.scope !== 'dataset') {
+      if (edit.selected.length !== this.tagEditorSelected.length ||
           edit.selected.some((path, index) => path !== this.tagEditorSelected[index])) return;
       if (edit.scope === 'image') {
         var img = this.tagEditorGetSelectedImg();
         if (!img || img.path !== edit.selected[0]) return;
-        if (!Number.isInteger(edit.index) || _teParseTags(img.tags)[edit.index] !== oldTag) return;
+        if (!Number.isInteger(edit.index)) return;
         var container = edit.anchor?.parentElement;
-        var renamed = _teRenameTagText(img.tags, oldTag, newTag, edit.index);
-        var renamedTags = _teParseTags(renamed);
-        var focusIndex = renamedTags[edit.index]?.toLowerCase() === newTag.toLowerCase() ? edit.index
-          : renamedTags.findIndex(tag => tag.toLowerCase() === newTag.toLowerCase());
+        var before = img.tags || '';
+        var renamed = _teRenameTagText(before, oldTag, newTag, edit.index);
+        if (renamed === before) return;
         this._teUpdateImageTags(img, renamed);
         this._tePushHistory({ type: 'rename', desc: oldTag + ' → ' + newTag + ' · ' + this._teImageLabel(img), affected: 1 });
         if (event?.type === 'keydown') this.$nextTick(() => {
           if (this.tagEditorSelected.length === 1 && this.tagEditorSelected[0] === edit.selected[0]) {
+            var renamedTags = _teParseTags(renamed);
+            var newKey = newTag.toLowerCase();
+            var focusIndex = renamedTags[edit.index]?.toLowerCase() === newKey ? edit.index
+              : renamedTags.findIndex(tag => tag.toLowerCase() === newKey);
             container?.querySelector('.te-editor-tag[data-ti="' + focusIndex + '"]')?.focus({ preventScroll: true });
           }
         });
       } else {
         this._teConfirmBatchScope('replace', function(before) {
           return _teRenameTagText(before, oldTag, newTag);
-        }, 'rename', oldTag + ' → ' + newTag, function() {});
+        }, 'rename', oldTag + ' → ' + newTag);
       }
       this.tagDictionaryLookupTags?.([newTag]);
       return;
@@ -729,9 +733,9 @@ window.tagEditorActions = {
     var message = this.t('tagEditor.globalRenameConfirm').replace('{n}', targets.length) + '\n' + oldTag + ' → ' + newTag;
     this._teConfirmTagBatch(message, function() {
       targets.forEach(function(img) {
-        self._teUpdateImageTags(img, _teRenameTagText(img.tags, oldTag, newTag));
+        self._teUpdateImageTags(img, _teRenameTagText(img.tags, oldTag, newTag), { deferDictionarySync: true });
       });
-      self._teInvalidateFilter();
+      self.tagDictionarySyncChips();
       self._tePushHistory({ type: 'rename', desc: oldTag + ' → ' + newTag, affected: targets.length });
       self.tagDictionaryLookupTags?.([newTag]);
       self.toast(self.t('tagEditor.inlineReplaceDone').replace('{old}', oldTag).replace('{new}', newTag).replace('{n}', targets.length));
@@ -765,16 +769,16 @@ window.tagEditorActions = {
     if (!changes.length) { this.toast(this.t('tagEditor.batchNoChanges')); return; }
     msg += '\n' + this.t('tagEditor.batchPreviewDiff').replace('{n}', changes.length) + ' · ' + description;
     msg += this._teOutsidePageHint(targets.map(img => img.path));
-    var epoch = this._teLoadEpoch;
     var self = this;
     this._teConfirmTagBatch(msg, function() {
-      if (epoch !== self._teLoadEpoch || changes.some(function(change) { return change.img.tags !== change.before; })) {
+      if (changes.some(function(change) { return change.img.tags !== change.before; })) {
         self.toast(self.t('tagEditor.batchStale'), 'warning');
         return;
       }
-      changes.forEach(function(change) { self._teUpdateImageTags(change.img, change.after); });
+      changes.forEach(function(change) { self._teUpdateImageTags(change.img, change.after, { deferDictionarySync: true }); });
+      self.tagDictionarySyncChips();
       self._tePushHistory({ type: type, desc: description + ' · ' + self.t('tagEditor.historyStepImages').replace('{n}', changes.length), affected: changes.length });
-      onDone();
+      onDone?.();
       self.toast(self.t('tagEditor.batchDone'));
     });
   },
@@ -787,10 +791,9 @@ window.tagEditorActions = {
       return { img: img, before: before, after: before.replace(/\\+([()])/g, '$1') };
     }).filter(function(change) { return change.before !== change.after; });
     if (!changes.length) { this.toast(this.t('tagEditor.batchNoChanges')); return; }
-    var epoch = this._teLoadEpoch;
     var self = this;
     this._teConfirmTagBatch(this.t('tagEditor.unescapeConfirm').replace('{n}', changes.length) + this._teOutsidePageHint(changes.map(change => change.img.path)), function() {
-      if (epoch !== self._teLoadEpoch || changes.some(function(change) { return change.img.tags !== change.before; })) {
+      if (changes.some(function(change) { return change.img.tags !== change.before; })) {
         self.toast(self.t('tagEditor.unescapeStale'), 'warning');
         return;
       }

@@ -24,7 +24,6 @@
 		"statsErrors": "プレビューできない {count} 枚はバケット統計から除外",
 		"open": "トリミングをプレビュー",
 		"title": "トリミングプレビュー",
-		"summary": "画像 {images} 枚、各エポック {samples} 回、{buckets} バケット",
 		"filter": "画像を絞り込む",
 		"all": "すべての画像",
 		"hasCrop": "トリミングあり",
@@ -45,7 +44,6 @@
 		"original": "元画像とトリミング範囲",
 		"result": "学習入力",
 		"cropped": "{value}% トリミング",
-		"intact": "全体を保持",
 		"areaHint": "リサイズ後に切り取られる面積の割合です。"
 	},
 	"fieldConflict": {

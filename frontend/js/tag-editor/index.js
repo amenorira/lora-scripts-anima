@@ -710,7 +710,6 @@ window.tagEditorMixin = {
       return;
     }
     if (e.key === 'Escape') {
-      if (this.tagEditorPanelMenu) { this.tagEditorClosePanelMenu(); return; }
       if (this.tagEditorQuickRemove) { this.tagEditorCancelQuickRemove(); return; }
       if (this.tagEditorSuggestions.length) {
         e.preventDefault();
@@ -721,16 +720,8 @@ window.tagEditorMixin = {
         this.tagDictionaryPanelOpen = false;
         return;
       }
-      if (this.tagEditorShortcutsOpen) {
-        this.tagEditorShortcutsOpen = false;
-        return;
-      }
       if (this.tagDictionaryHover) {
         this.tagDictionaryCloseHover();
-        return;
-      }
-      if (this.tagEditorContextMenu) {
-        this.tagEditorContextMenu = null;
         return;
       }
       if (editableTarget) {

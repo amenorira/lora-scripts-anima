@@ -339,7 +339,7 @@ window.tagEditorEdits = {
       this.tagEditorDetailText = _teInputText(newTagsStr);
     }
     if (!img._teMissingOnDisk) this._teUpdateFreq(oldTags, newTagsStr);
-    this.tagDictionarySyncChips();
+    if (!options?.deferDictionarySync) this.tagDictionarySyncChips();
   },
 
   tagEditorModifiedCount() {

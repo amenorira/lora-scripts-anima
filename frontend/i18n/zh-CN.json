@@ -24,7 +24,6 @@
 		"statsErrors": "{count} 张图片无法预览，未计入分桶统计",
 		"open": "查看裁剪预览",
 		"title": "裁剪预览",
-		"summary": "{images} 张图，每轮 {samples} 次，{buckets} 个分桶",
 		"filter": "筛选图片",
 		"all": "全部图片",
 		"hasCrop": "有裁剪",
@@ -45,7 +44,6 @@
 		"original": "原图与裁剪范围",
 		"result": "训练输入",
 		"cropped": "裁去 {value}%",
-		"intact": "完整保留",
 		"areaHint": "裁剪比例按缩放后被裁掉的面积计算。"
 	},
 	"fieldConflict": {

@@ -68,7 +68,7 @@ test('IME commits completed text once and pending input is recorded before switc
 
 function renameFixture() {
   const f = fixture('\uFEFF  cat, dog\r\n');
-  f.app.tagEditorInlineEdit = {oldTag: 'cat', newTag: 'prefix'};
+  f.app.tagEditorInlineEdit = {scope: 'dataset', oldTag: 'cat', newTag: 'prefix'};
   f.app.$nextTick = callback => Promise.resolve().then(callback);
   f.confirmations = [];
   f.app._teConfirmTagBatch = (message, accept) => f.confirmations.push({message, accept});

@@ -560,8 +560,6 @@ window.trainingFieldRenderer = {
     switch (dataKey) {
       case 'resolution':
         return `<div class="timestep-preview-entry"><button type="button" class="btn btn-ghost btn-sm" data-dialog-opens="cropPreviewDialog"
-          @pointerenter="scheduleCropPreviewWarmup($el)" @pointerleave="cancelCropPreviewWarmup($el)"
-          @focus="if ($el.matches(':focus-visible')) scheduleCropPreviewWarmup($el)" @blur="if (!$el.matches(':hover')) cancelCropPreviewWarmup($el)"
           @click="openCropPreview()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 3v15h15M3 6h15v15"/></svg><span x-text="t('cropPreview.open')"></span></button></div>`;
       case 'timestep_sampling':
         return `<div class="timestep-preview-entry">

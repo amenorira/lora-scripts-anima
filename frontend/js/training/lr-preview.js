@@ -24,22 +24,6 @@ window.trainingLrPreviewMixin = {
     this.refreshLrPreview();
   },
 
-  onPreviewChartKey(event, kind) {
-    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-    event.preventDefault();
-    const holder = event.currentTarget;
-    const chart = holder.querySelector(kind === 'lr' ? '.lr-preview-chart' : '.timestep-preview-chart');
-    if (!chart) return;
-    const previous = Number(holder.dataset.inspectProgress || 0);
-    const totalSteps = kind === 'lr' ? this.lrPreviewData?.totalSteps : 0;
-    const increment = totalSteps > 0 ? Math.max(1, Math.round(totalSteps * 0.01)) / totalSteps : 0.01;
-    const progress = event.key === 'Home' ? 0 : event.key === 'End' ? 1
-      : Math.max(0, Math.min(1, previous + (event.key === 'ArrowRight' ? increment : -increment)));
-    holder.dataset.inspectProgress = progress;
-    const rect = chart.getBoundingClientRect();
-    const sample = { currentTarget: holder, clientX: rect.left + rect.width * progress, clientY: rect.top + rect.height / 2 };
-    if (kind === 'lr') this.onLrChartHover(sample); else this.onTimestepChartHover(sample);
-  },
   // Shared by SVG sampling and the exact hover readout.
   _lrPreviewMultiplier(progress, params) {
     const { scheduler, warmupFraction, cycles, power, endRatio, minRatio, decayFraction, totalSteps, timescale } = params;
@@ -401,16 +385,16 @@ window.trainingLrPreviewMixin = {
     return `
       <div class="lr-inspect-bar">
         <div class="lr-inspect-value">
-          <span><small>${t('lrPreview.position', 'Step / progress')}</small><b class="lr-hover-x">—</b></span>
-          <span title="${esc(data.chartLabel)}"><small>${t('lrPreview.learningRateAxis', 'Learning rate')}</small><b class="lr-hover-value">—</b></span>
-          <span><small>${t('lrPreview.multiplier', 'Multiplier')}</small><b class="lr-hover-multiplier">—</b></span>
+          <span><small>${t('lrPreview.position', 'Step / progress')}</small><b class="lr-hover-x" data-chart-value>—</b></span>
+          <span title="${esc(data.chartLabel)}"><small>${t('lrPreview.learningRateAxis', 'Learning rate')}</small><b class="lr-hover-value" data-chart-value>—</b></span>
+          <span><small>${t('lrPreview.multiplier', 'Multiplier')}</small><b class="lr-hover-multiplier" data-chart-value>—</b></span>
         </div>
       </div>
     <div class="lr-chart-box">
       <div class="lr-chart-yaxis">
         <div class="lr-yaxis-ticks">${yTicks}</div>
       </div>
-      <div class="lr-preview-chart" role="img" aria-label="${esc(data.chartAlt)}">
+      <div class="lr-preview-chart" data-chart-plot role="img" aria-label="${esc(data.chartAlt)}">
         <svg class="lr-grid-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
           ${gridH}
           <line x1="25" y1="0" x2="25" y2="100" class="lr-grid-v" />
@@ -423,7 +407,7 @@ window.trainingLrPreviewMixin = {
           <path class="lr-curve-current" d="${esc(data.currentLinePath)}"></path>
         </svg>
         ${warmupLine}
-        <div class="lr-hover-indicator" style="display:none"></div>
+        <div class="lr-hover-indicator" data-chart-indicator style="display:none"></div>
       </div>
     </div>
     <div class="lr-preview-axis">
@@ -437,56 +421,12 @@ window.trainingLrPreviewMixin = {
     </div>`;
   },
 
-  onLrChartHover(event, previewData) {
-    if (!event || !event.currentTarget) return;
-    const holder = event.currentTarget;
-    const chart = holder.querySelector ? holder.querySelector('.lr-preview-chart') : null;
-    if (!chart) return;
-    const rect = chart.getBoundingClientRect();
-    if (!rect.width) return;
-    if (event.clientX < rect.left || event.clientX > rect.right
-      || event.clientY < rect.top || event.clientY > rect.bottom) {
-      this.onLrChartLeave(event);
-      return;
-    }
-    const relX = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-    const data = previewData || this.lrPreviewData;
-    if (!data) return;
-    const progress = data.totalSteps > 0 ? Math.round(relX * data.totalSteps) / data.totalSteps : relX;
-    holder.dataset.inspectProgress = progress;
+  lrChartSample(data, progress) {
     const value = this._lrPreviewMultiplier(progress, data.params);
-    const hoverLine = chart.querySelector('.lr-hover-indicator');
-    if (hoverLine) {
-      hoverLine.style.left = `${(progress * 100).toFixed(2)}%`;
-      hoverLine.style.display = 'block';
-    }
-    const xEl = holder.querySelector('.lr-hover-x');
-    const vEl = holder.querySelector('.lr-hover-value');
-    const multiplierEl = holder.querySelector('.lr-hover-multiplier');
-    const setText = (element, text) => {
-      if (element && element.textContent !== text) element.textContent = text;
-    };
-    if (xEl) {
-      if (data.totalSteps > 0) {
-        const step = Math.round(progress * data.totalSteps);
-        setText(xEl, `${step.toLocaleString()} / ${data.totalStepsText}`);
-      } else {
-        setText(xEl, `${Math.round(progress * 100)}%`);
-      }
-    }
-    if (vEl) {
-      const rate = (Number(data.chartRate) || 0) * value;
-      setText(vEl, this._lrPreviewFormatRate(rate));
-    }
-    setText(multiplierEl, `${value.toFixed(2)}×`);
-  },
-
-  onLrChartLeave(event) {
-    if (event && event.currentTarget && event.currentTarget.querySelector) {
-      const holder = event.currentTarget;
-      const hoverLine = holder.querySelector('.lr-hover-indicator');
-      if (hoverLine) hoverLine.style.display = 'none';
-    }
+    const position = data.totalSteps > 0
+      ? `${Math.round(progress * data.totalSteps).toLocaleString()} / ${data.totalStepsText}`
+      : `${Math.round(progress * 100)}%`;
+    return [position, this._lrPreviewFormatRate(data.chartRate * value), `${value.toFixed(2)}×`];
   },
 
   openLrPreview() {

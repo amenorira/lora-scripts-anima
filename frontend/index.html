@@ -42,6 +42,7 @@
   <script src="/anima-ui/js/shared/utils.js" defer></script>
   <script src="/anima-ui/js/shared/image-loading.js" defer></script>
   <script src="/anima-ui/js/shared/ui-interactions.js" defer></script>
+  <script src="/anima-ui/js/shared/preview-chart.js" defer></script>
   <script src="/anima-ui/js/shared/notifications.js" defer></script>
   <!-- Feature modules (order matters: config first, app last) -->
   <script src="/anima-ui/js/app/config.js" defer></script>
@@ -86,6 +87,7 @@
   <script src="/anima-ui/js/training/lr-preview.js" defer></script>
   <script src="/anima-ui/js/shared/preview-select.js" defer></script>
   <script src="/anima-ui/js/training/shape-preview.js" defer></script>
+  <script src="/anima-ui/js/training/crop-preview-grid.js" defer></script>
   <script src="/anima-ui/js/training/crop-preview.js" defer></script>
   <link rel="stylesheet" href="/anima-ui/css/crop-preview.css">
   <script src="/anima-ui/js/training/toml.js" defer></script>
@@ -1846,9 +1848,10 @@
 
       <!-- ▶ Right: Scientific Chart Workspace + Zone Summary -->
       <div class="timestep-layout-chart" data-preview-diagram
-           tabindex="0" role="group" :aria-label="t('timestepPreview.title')" @keydown="onPreviewChartKey($event, 'timestep')"
-           @mousemove="onTimestepChartHover($event)"
-           @mouseleave="onTimestepChartLeave($event)">
+           tabindex="0" role="group" :aria-label="t('timestepPreview.title')"
+           x-data="previewChart((data, progress) => timestepChartSample(data, progress))"
+           x-effect="setChartData(timestepPreviewOpen ? timestepPreviewData : null)"
+           @keydown="keyChart($event)" @mousemove="moveChart($event)" @mouseleave="leaveChart()">
         <div x-html="_buildTimestepChartHtml(timestepPreviewData)"></div>
       </div>
     </div>
@@ -1919,9 +1922,10 @@
         </div>
       </div>
       <div class="lr-layout-chart" data-preview-diagram
-           tabindex="0" role="group" :aria-label="t('lrPreview.title')" @keydown="onPreviewChartKey($event, 'lr')"
-           @mousemove="onLrChartHover($event)"
-           @mouseleave="onLrChartLeave($event)">
+           tabindex="0" role="group" :aria-label="t('lrPreview.title')"
+           x-data="previewChart((data, progress) => lrChartSample(data, progress))"
+           x-effect="setChartData(lrPreviewOpen ? lrPreviewData : null, lrPreviewData?.totalSteps)"
+           @keydown="keyChart($event)" @mousemove="moveChart($event)" @mouseleave="leaveChart()">
         <div x-html="_buildLrChartHtml(lrPreviewData)"></div>
       </div>
     </div>
@@ -1956,9 +1960,9 @@
 
 <!-- ── Dataset crop preview ───────────────────────────── -->
 <dialog id="cropPreviewDialog" class="modal-overlay modal-overlay--morph" data-dialog-fast-open x-dialog="cropPreviewOpen" @click.self="cropPreviewDismiss()"
-        @dialog-after-close="cropPreviewItems = []; cropPreviewLoading = false"
+        @dialog-after-open="_cropPreviewEntered = true" @dialog-after-close="clearCropPreview()"
         @dialog-close="cropPreviewDismiss()" :aria-label="t('cropPreview.title')" x-cloak>
-  <div class="modal crop-preview-modal">
+  <div class="modal crop-preview-modal" @keydown.tab="cropPreviewTab($event)">
     <header class="modal-header">
       <div class="cp-heading"><span x-text="t('cropPreview.title')"></span>
         <span class="cp-summary" x-show="cropPreviewItems.length">
@@ -2004,19 +2008,24 @@
     </section>
     <div class="cp-stats-note" x-show="cropPreviewStatsNote()" x-text="cropPreviewStatsNote()"></div>
     <div class="cp-workspace">
-      <div class="cp-scroll" :aria-busy="cropPreviewLoading"
+      <div id="cropPreviewScroll" class="cp-scroll" :aria-busy="cropPreviewLoading"
+           x-data="cropPreviewGrid" x-effect="setCropGridView(cropPreviewView, cropPreviewFocus?.id)"
+           @scroll.passive="scheduleCropGridWindow()"
            @pointerover="scheduleCropPreviewDetailWarmup($event)" @pointerout="cancelCropPreviewDetailWarmup($event)"
-           @focusin="if ($event.target.matches(':focus-visible')) scheduleCropPreviewDetailWarmup($event)"
-           @focusout="if (!$event.target.matches(':hover')) cancelCropPreviewDetailWarmup($event)">
+           @focusin="scheduleCropGridWindow(); if ($event.target.matches(':focus-visible')) scheduleCropPreviewDetailWarmup($event)"
+           @focusout="scheduleCropGridWindow(); if (!$event.target.matches(':hover')) cancelCropPreviewDetailWarmup($event)">
         <div class="cp-state" x-show="cropPreviewLoading" role="status"><span class="spinner"></span><span x-text="t('cropPreview.loading')"></span></div>
         <div class="cp-state" x-show="cropPreviewError" role="alert"><span x-text="cropPreviewError"></span><button class="btn btn-secondary btn-sm" @click="openCropPreview()" x-text="t('cropPreview.retry')"></button></div>
-        <div class="cp-state" x-show="!cropPreviewLoading && !cropPreviewError && !cropPreviewVisible.length" x-text="t('cropPreview.empty')"></div>
-        <template x-for="folder in cropPreviewFolders" :key="folder.key">
-        <section class="cp-folder" :aria-label="folder.name">
-          <h3 class="cp-folder-heading"><span class="cp-folder-name" x-text="folder.name"></span><span class="cp-folder-count" x-text="cropPreviewFolderCount(folder.count)"></span></h3>
-          <div class="cp-grid">
-          <template x-for="item in folder.items" :key="item.id">
-            <button type="button" class="cp-tile" :id="'crop-image-' + item.id" :title="item.name" :aria-label="item.name + ' · ' + cropPreviewInfo(item)" :disabled="!!item.error" @click="focusCropPreview(item)">
+        <div class="cp-state" x-show="!cropPreviewLoading && !cropPreviewError && !cropPreviewView.items.length" x-text="t('cropPreview.empty')"></div>
+        <div class="cp-virtual-grid">
+        <template x-for="row in cropGridRows" :key="row.key">
+          <div class="cp-grid-row" :class="{ 'cp-grid': !row.folder }" :style="{ top: row.top + 'px' }"
+               :data-crop-grid-row="row.key" x-crop-grid-row>
+          <template x-if="row.folder">
+            <h3 class="cp-folder-heading"><span class="cp-folder-name" x-text="row.folder.name || t('cropPreview.rootFolder')"></span><span class="cp-folder-count" x-text="cropPreviewFolderCount(row.folder.count)"></span></h3>
+          </template>
+          <template x-for="item in row.items" :key="item.id">
+            <button type="button" class="cp-tile" :id="'crop-image-' + item.id" :data-crop-image="item.id" :title="item.name" :aria-label="item.name + ' · ' + cropPreviewInfo(item)" :disabled="!!item.error" @click="focusCropPreview(item)">
               <div class="cp-stage" x-show="!item.error" x-html="cropPreviewImageHtml(item)"></div>
               <div class="cp-stage cp-error" x-show="item.error" x-text="item.error"></div>
               <span class="cp-tile-info" x-show="item.error" x-text="item.name"></span>
@@ -2033,8 +2042,8 @@
             </button>
           </template>
           </div>
-        </section>
         </template>
+        </div>
       </div>
     </div>
     </div>

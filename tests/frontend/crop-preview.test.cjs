@@ -3,8 +3,18 @@ const assert = require('node:assert/strict');
 const {loadFrontend, composeMixins, deferred} = require('./helpers.cjs');
 
 function app() {
-  const context = loadFrontend(['training/crop-preview'], {window:{}, AbortController, setTimeout, clearTimeout, document:{querySelector:()=>null, getElementById:()=>null}});
+  const document = {addEventListener() {}, querySelector: () => null, getElementById: () => null};
+  const grid = {
+    async reveal(id) { return document.getElementById(`crop-image-${id}`); },
+    returnTo() {},
+  };
+  const context = loadFrontend(['training/crop-preview-grid', 'training/crop-preview'], {
+    window: {AnimaUI: {setDialogOrigin() {}, settleDialog() {}}},
+    AbortController, setTimeout, clearTimeout, document,
+  });
+  context.getCropPreviewGrid = () => grid;
   return composeMixins(context.window.trainingCropPreviewMixin, {
+    document, grid, buildCropGridLayout: context.buildCropGridLayout, cropGridRowAt: context.cropGridRowAt,
     t: key => key, esc: text => String(text).replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;'),
     $nextTick: async () => {},
   });
@@ -13,30 +23,30 @@ const sample = {id:'0',name:'a"<.png',sample_count:5,original:[300,200],bucket:[
 
 test('bucket statistics aggregate repeats independently of image filters', () => {
   const a = app();
-  a.cropPreviewItems = [sample, {...sample,id:'1',sample_count:2}, {...sample,id:'2',sample_count:10,bucket:[256,256],is_reg:true}, {id:'3',error:'broken',sample_count:50}];
+  a.cropPreviewItems = [sample, {...sample,id:'1',sample_count:2}, {...sample,id:'2',sample_count:10,bucket:[256,256],is_reg:true}, {id:'3',name:'broken.png',error:'broken',sample_count:50}];
   assert.deepEqual(Array.from(a.cropPreviewBuckets, b => [b.key,b.count,b.samples]), [['256 × 256',1,10],['128 × 128',2,7]]);
   a.cropPreviewBucket = '128 × 128'; a.cropPreviewFilter = 'upscaled';
-  assert.equal(a.cropPreviewVisible.length, 0);
+  assert.equal(a.cropPreviewView.items.length, 0);
   assert.equal(a.cropPreviewBuckets.reduce((sum,b)=>sum+b.samples,0), 17);
-  a.t = key => key === 'cropPreview.summary' ? '{images}/{samples}/{buckets}' : key;
-  assert.equal(a.cropPreviewSummary(), '3/17/2');
+  assert.equal(a.cropPreviewTotals.count, 3);
   assert.ok(a.cropPreviewStatsNote().includes('cropPreview.includesReg'));
   assert.ok(a.cropPreviewStatsNote().includes('cropPreview.statsErrors'));
   a.cropPreviewItems = [sample];
-  assert.equal(a.cropPreviewSummary(), '1/5/1');
+  assert.equal(a.cropPreviewTotals.count, 1);
+  assert.equal(a.cropPreviewTotals.samples, 5);
   assert.equal(a.cropPreviewStatsNote(), '');
 });
 
 test('crop filter and bucket filter compose without losing error entries', () => {
   const a = app();
-  a.cropPreviewItems = [sample, {...sample,id:'1',crop_percent:0,scale:2,bucket:[256,256]}, {id:'2',error:'broken'}];
-  assert.equal(a.cropPreviewVisible.length, 3);
+  a.cropPreviewItems = [sample, {...sample,id:'1',crop_percent:0,scale:2,bucket:[256,256]}, {id:'2',name:'broken.png',error:'broken'}];
+  assert.equal(a.cropPreviewView.items.length, 3);
   a.cropPreviewFilter = 'upscaled';
-  assert.equal(a.cropPreviewVisible[0].id, '1');
+  assert.equal(a.cropPreviewView.items[0].id, '1');
   a.cropPreviewBucket = '128 × 128';
-  assert.equal(a.cropPreviewVisible.length, 0);
+  assert.equal(a.cropPreviewView.items.length, 0);
   a.cropPreviewBucket = ''; a.cropPreviewFilter = 'errors';
-  assert.equal(a.cropPreviewVisible[0].id, '2');
+  assert.equal(a.cropPreviewView.items[0].id, '2');
 });
 
 test('bucket chips preserve image filters and keep the selected bucket visible when collapsed', () => {
@@ -57,11 +67,11 @@ test('bucket chips preserve image filters and keep the selected bucket visible w
   a.selectCropPreviewBucket('256 × 256');
   assert.equal(a.cropPreviewFilter, 'all');
   a.selectCropPreviewBucket('');
-  assert.equal(a.cropPreviewVisible.length, 3);
+  assert.equal(a.cropPreviewView.items.length, 3);
 });
 
 test('random crop preserves size and stays inside resized image', () => {
-  const a = app(); a.cropPreviewItems = [sample];
+  const a = app(); a.cropPreviewItems = [{...sample}];
   for (let n = 0; n < 40; n++) {
     a.shuffleCropPreview();
     const [x,y,w,h] = a.cropPreviewItems[0].crop;
@@ -92,37 +102,75 @@ test('folder groups follow combined filters and exclude empty groups', () => {
     {...sample, id:'1', name:'3_person/b.png', crop_percent:0},
     {...sample, id:'2', name:'3_person/c.png'},
   ];
-  assert.deepEqual(Array.from(a.cropPreviewFolders, f=>[f.name,f.items.length]), [['1_doll',1],['3_person',2]]);
+  assert.deepEqual(Array.from(a.cropPreviewView.folders, f=>[f.name,f.count]), [['1_doll',1],['3_person',2]]);
   a.setCropPreviewFilter('cropped');
-  assert.deepEqual(Array.from(a.cropPreviewFolders, f=>f.items.length), [1,1]);
+  assert.deepEqual(Array.from(a.cropPreviewView.folders, f=>f.count), [1,1]);
   a.selectCropPreviewBucket('256 × 256');
-  assert.equal(a.cropPreviewFolders.length, 0);
+  assert.equal(a.cropPreviewView.folders.length, 0);
   a.setCropPreviewFilter('errors');
   assert.equal(a.cropPreviewBucket, '');
 });
 
-test('entry limits rendered cards without changing their order or folder counts', () => {
+test('virtual rows follow folder boundaries and map every item at the current column count', () => {
   const a = app();
   a.cropPreviewItems = [
-    {...sample, name:'a/one.png'},
-    {...sample, id:'1', name:'b/two.png'},
-    {...sample, id:'2', name:'a/three.png'},
+    {...sample, name:'a.png'},
+    {...sample, id:'1', name:'nested/b.png'},
+    {...sample, id:'2', name:'z.png'},
+    {...sample, id:'3', name:'q.png'},
+    {id:'4', name:'nested/broken.png', error:'broken'},
   ];
-  const groups = () => Array.from(a.cropPreviewFolders, f => [f.name, f.count, Array.from(f.items, item => item.id)]);
-  a.cropPreviewRenderLimit = 1;
-  assert.deepEqual(groups(), [['a', 2, ['0']]]);
-  a.cropPreviewRenderLimit = null;
-  assert.deepEqual(groups(), [['a', 2, ['0', '2']], ['b', 1, ['1']]]);
+  const gaps = { row: 16, folder: 24, heading: 12 };
+  const {rows, byImage} = a.buildCropGridLayout(a.cropPreviewView, 2, gaps);
+  assert.deepEqual(Array.from(rows, row => [row.gap, Array.from(row.items, item => item.id)]),
+    [[0, []], [12, ['0', '2']], [16, ['3']], [24, []], [12, ['1', '4']]]);
+  assert.equal(byImage.get('3'), rows[2]);
+  assert.equal(byImage.get('4'), rows[4]);
+  let bottom = 0;
+  for (const row of rows) {
+    row.top = bottom + row.gap;
+    bottom = row.top + row.height;
+  }
+  assert.equal(a.cropGridRowAt(rows, rows[2].top - 1), 2);
+  assert.equal(a.cropGridRowAt(rows, bottom + 10), 4);
+  const wider = a.buildCropGridLayout(a.cropPreviewView, 3, gaps);
+  assert.equal(wider.byImage.get('3'), wider.byImage.get('0'));
 });
 
 test('focus navigation follows visible images across folders and stops at the ends', () => {
   const a = app();
-  a.cropPreviewItems = [sample, {...sample,id:'1',name:'folder/b.png'}, {id:'2',error:'broken'}];
+  a.cropPreviewItems = [sample, {...sample,id:'1',name:'folder/b.png'}, {id:'2',name:'broken.png',error:'broken'}, {...sample,id:'3',name:'z.png'}];
   a.cropPreviewFocus = sample;
   assert.equal(a.cropPreviewAdjacent(-1), null);
-  assert.equal(a.cropPreviewAdjacent(1).id, '1');
+  assert.equal(a.cropPreviewAdjacent(1).id, '3');
   a.cropPreviewFocus = a.cropPreviewItems[1];
+  assert.equal(a.cropPreviewAdjacent(-1).id, '3');
   assert.equal(a.cropPreviewAdjacent(1), null);
+});
+
+test('detail navigation reveals an unmounted thumbnail before scrolling to its morph anchor', async () => {
+  const a = app();
+  a.cropPreviewItems = Array.from({length: 26}, (_, id) => ({...sample, id: String(id)}));
+  a.cropPreviewFocusOpen = true;
+  a.cropPreviewFocus = a.cropPreviewItems[11];
+  a.prepareCropPreviewFrame = async () => ({});
+  let revealed, mounted = false;
+  a.grid.reveal = async id => {
+    revealed = id;
+    await Promise.resolve();
+    mounted = true;
+    return a.document.getElementById(`crop-image-${id}`);
+  };
+  let scrolled = false;
+  a.document.getElementById = id => {
+    if (id !== 'crop-image-12') return null;
+    assert.equal(revealed, '12');
+    assert.equal(mounted, true);
+    return {querySelector: () => ({scrollIntoView() { scrolled = true; }})};
+  };
+  await a.stepCropPreview(1);
+  assert.equal(a.cropPreviewFocus.id, '12');
+  assert.equal(scrolled, true);
 });
 
 test('two navigation steps while decoding advance twice without showing a stale frame', async () => {
@@ -130,6 +178,7 @@ test('two navigation steps while decoding advance twice without showing a stale 
   a.cropPreviewItems = [sample, {...sample, id:'1'}, {...sample, id:'2'}];
   a.cropPreviewFocusOpen = true;
   a.cropPreviewFocus = sample;
+  a.document.getElementById = id => id === 'crop-image-2' ? {querySelector: () => null} : null;
   const pending = [];
   a.prepareCropPreviewFrame = item => {
     const ready = deferred();
@@ -149,6 +198,7 @@ test('two navigation steps while decoding advance twice without showing a stale 
 test('closing crop previews retains their content until the dialog exit finishes', async () => {
   const a = app();
   a.prepareCropPreviewFrame = async () => ({});
+  a.document.getElementById = id => id === 'crop-image-0' ? {} : null;
   a.cropPreviewOpen = true;
   a.cropPreviewLoading = true;
   await a.focusCropPreview(sample);

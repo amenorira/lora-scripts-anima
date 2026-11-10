@@ -69,6 +69,26 @@ test('closing or replacing a menu cancels deferred positioning and focus', async
   assert.deepEqual(focused,['teImageMenu']);
 });
 
+test('Escape from outside an open context menu closes it and restores its trigger', () => {
+  const {app, context} = fixture();
+  const trigger = { isConnected: true, getClientRects: () => [{}], focus() { context.document.activeElement = this; } };
+  app.$nextTick = callback => callback();
+  for (const [stateKey, triggerKey] of [
+    ['tagEditorPanelMenu', '_tePanelMenuTrigger'],
+    ['tagEditorContextMenu', '_teTagMenuTrigger'],
+    ['tagEditorImageContextMenu', '_teImageMenuTrigger'],
+  ]) {
+    context.document.activeElement = null;
+    app[stateKey] = {};
+    app[triggerKey] = trigger;
+    let prevented = false;
+    app.tagEditorHandleKeydown({ key: 'Escape', target: { closest: () => null }, preventDefault() { prevented = true; } });
+    assert.equal(prevented, true);
+    assert.equal(app[stateKey], null);
+    assert.equal(context.document.activeElement, trigger);
+  }
+});
+
 test('right-clicking an enabled menu option selects it once', () => {
   const {app} = fixture();
   let selections=0;

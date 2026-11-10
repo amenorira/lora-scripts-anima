@@ -24,7 +24,6 @@
 		"statsErrors": "{count} unavailable images excluded from bucket statistics",
 		"open": "Preview image crops",
 		"title": "Image crop preview",
-		"summary": "Images: {images} · Uses per epoch: {samples} · Buckets: {buckets}",
 		"filter": "Filter images",
 		"all": "All images",
 		"hasCrop": "Cropped",
@@ -45,7 +44,6 @@
 		"original": "Original and crop boundary",
 		"result": "Training input",
 		"cropped": "{value}% cropped",
-		"intact": "Fully retained",
 		"areaHint": "Crop percentage is the area removed after resizing."
 	},
 	"fieldConflict": {
