@@ -28,7 +28,7 @@ window.monitorRenderMixin = {
     const sys = isHistory ? null : this.sysInfo;
     const t = (k, fb) => this.tMonitor(k, fb);
     const tab = this.monitorTab||'overview';
-    const locale = String(this.locale || (window.I18N && window.I18N.getLocale ? window.I18N.getLocale() : ''));
+    const locale = String(this.locale || (window.I18N && window.I18N.getLocale ? window.I18N.getLocale() : '')) + ':' + (this.localeRevision || 0);
 
     // ── 1. 外壳层：仅在首次或历史模式切换时构建 ──
     if (!this._shellBuilt || this._shellHistoryMode !== isHistory || this._shellLocale !== locale) {
@@ -80,7 +80,7 @@ window.monitorRenderMixin = {
   renderMonitorResourceBar() {
     window.resourceBar.render('monitorResbar', {
       gpu: this.gpuInfo, sys: this.sysInfo, t: (key, fallback) => this.tMonitor(key, fallback),
-      locale: this.locale, selectedGpuIndex: this.selectedGpuIndex,
+      locale: this.locale, localeRevision: this.localeRevision, selectedGpuIndex: this.selectedGpuIndex,
       onSelect: index => { this.selectedGpuIndex = index; this.renderMonitorResourceBar(); },
     });
   },

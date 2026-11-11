@@ -46,7 +46,7 @@ document.addEventListener('alpine:init', () => {
     currentRoute: 'home',
     pageTitle: 'lora-scripts-anima',
     locale: 'en-US',
-    i18nReady: true,
+    localeRevision: 0,
     sidebarCollapsed: false,
     _routeScrollPositions: {},
     routeTransitioning: false,
@@ -89,13 +89,30 @@ document.addEventListener('alpine:init', () => {
 
       // ── Init ───────────────────────────────────────────────
     async init() {
-      // Initialize I18N first — must be ready before any t() call
-      I18N.init();
+      // bootstrap.js waits for translations before Alpine initializes the DOM.
       this.locale = I18N.getLocale();
       // Keep <html lang> in sync with the active locale from the very first
       // paint (index.html defaults to lang="en"): screen readers and browser
       // translation/checking features rely on it.
       document.documentElement.lang = this.locale;
+
+      // Language controls are usable while backend initialization is awaiting.
+      // Subscribe now, but leave workspace mounting to the initial route build.
+      let routeMounted = false;
+      window.addEventListener('locale-changed', () => {
+        const previousLocale = this.locale;
+        this.locale = I18N.getLocale();
+        this.localeRevision++;
+        // A successful retry can load the same language after startup failed.
+        if (previousLocale === this.locale) this._trainFormLocale = '';
+        document.documentElement.lang = this.locale;
+        const r = this.currentRoute;
+        const cfg = ROUTE_CONFIG[r] || {};
+        if (cfg.titleKey) this.pageTitle = this.t(cfg.titleKey) || cfg.title || r;
+        else this.pageTitle = cfg.title || r;
+        document.title = this.pageTitle + ' | lora-scripts-anima';
+        if (routeMounted) this.refreshRouteLocale(r);
+      });
 
       let route = (window.location.hash || '#home').replace('#', '').split('?')[0];
       const normalizedRoute = normalizeTrainRoute(route);
@@ -167,17 +184,7 @@ document.addEventListener('alpine:init', () => {
       });
 
       this.buildRouteContent();
-
-      window.addEventListener('locale-changed', () => {
-        this.locale = I18N.getLocale();
-        document.documentElement.lang = this.locale;
-        const r = this.currentRoute;
-        const cfg = ROUTE_CONFIG[r] || {};
-        if (cfg.titleKey) this.pageTitle = this.t(cfg.titleKey) || cfg.title || r;
-        else this.pageTitle = cfg.title || r;
-        document.title = this.pageTitle + ' | lora-scripts-anima';
-        this.refreshRouteLocale(r);
-      });
+      routeMounted = true;
 
       this.startRealtime();
 
@@ -588,10 +595,9 @@ document.addEventListener('alpine:init', () => {
         onload="this.style.opacity='1'" style="opacity:0;transition:opacity 0.5s"></iframe>`;
     },
 
-    onLocaleChange() {
-      I18N.setLocale(this.locale);
-      this.locale = I18N.getLocale();
-      document.documentElement.lang = this.locale;
+    onLocaleChange(locale = this.locale) {
+      // locale-changed updates the app only after the requested messages arrive.
+      return I18N.setLocale(locale);
     },
 
     // ── Toast ──────────────────────────────────────────────
@@ -621,6 +627,7 @@ document.addEventListener('alpine:init', () => {
 
     t(key, fallback) {
       void this.locale;
+      void this.localeRevision;
       return window.t ? window.t(key, fallback) : (fallback||key);
     },
 

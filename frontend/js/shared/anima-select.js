@@ -58,7 +58,7 @@ document.addEventListener('alpine:init', () => {
         if (!localized) return staticDisplayGroups;
         // Track the owning app's locale, translating once per change. Reuse
         // the component, selection and option values without emitting edits.
-        const locale = this.locale;
+        const locale = `${this.locale}:${this.localeRevision || 0}`;
         if (!translatedGroups || translatedLocale !== locale) {
           translatedLocale = locale;
           translatedGroups = staticDisplayGroups.map(group => ({

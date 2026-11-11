@@ -399,7 +399,9 @@ window.trainingFieldRenderer = {
     const _resetSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
     const _undoSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>`;
     const _dotsSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>`;
-    const _menuPopupHtml = `<div class="field-menu-popup" x-ref="menu" x-show="open" :class="{ 'is-positioned': positioned }" :inert="!open" :id="$id('field-menu')" role="menu" :aria-label="t('common.fieldActions')" x-cloak><button type="button" role="menuitem" tabindex="-1" @click="undoField('${dataKey}');close()">${_undoSvg}<span>${this.trainingText('common.undoField')}</span></button><button type="button" role="menuitem" tabindex="-1" @click="resetField('${dataKey}');close()">${_resetSvg}<span>${this.trainingText('common.resetField')}</span></button></div>`;
+    // Mount on first use, then retain x-show so closing keeps its exit animation.
+    // Translate at mount time too: a language change does not traverse templates.
+    const _menuPopupHtml = `<template x-if="mounted"><div class="field-menu-popup" x-ref="menu" x-show="open" :class="{ 'is-positioned': positioned }" :inert="!open" :id="$id('field-menu')" role="menu" :aria-label="t('common.fieldActions')" x-cloak><button type="button" role="menuitem" tabindex="-1" @click="undoField('${dataKey}');close()">${_undoSvg}<span x-text="t('common.undoField')"></span></button><button type="button" role="menuitem" tabindex="-1" @click="resetField('${dataKey}');close()">${_resetSvg}<span x-text="t('common.resetField')"></span></button></div></template>`;
 
     // ── Conditional display ──
     // LyCORIS 面板字段在主表单里只对原生模块（非 lycoris.kohya）显示；
@@ -526,7 +528,7 @@ window.trainingFieldRenderer = {
       : 'undefined';
     const _filledExpr = `window.FILLED_INDICATOR_KEYS.has(${_filledKey}) && form.${dataKey} !== '' && form.${dataKey} !== null && form.${dataKey} !== undefined && String(form.${dataKey}) !== String(${_filledDefaultLit})`;
     const fieldMenuHtml = isStaticReadonly ? '' : `<div class="field-menu-wrap" x-data="actionMenu" x-id="['field-menu']" @keydown="key($event)" @click.outside="close(false)" @pointerenter="hoverEnter($event)" @pointerleave="hoverLeave()" @focusout="focusOut($event)">
-          <button type="button" class="btn-menu" x-ref="trigger" :aria-label="t('common.fieldActions')" aria-haspopup="menu" :aria-expanded="open" :aria-controls="$id('field-menu')" @click="toggle()">${_dotsSvg}</button>
+          <button type="button" class="btn-menu" x-ref="trigger" :aria-label="t('common.fieldActions')" aria-haspopup="menu" :aria-expanded="open" :aria-controls="mounted ? $id('field-menu') : null" @click="toggle()">${_dotsSvg}</button>
           ${_menuPopupHtml}
         </div>`;
     const staticReadonlyClass = isStaticReadonly ? ' field-readonly' : '';
@@ -547,7 +549,7 @@ window.trainingFieldRenderer = {
       ${fullWidthRow}
       ${hintHtml}
       ${kreaSampleModeHtml}
-      <div class="field-error" x-show="formErrors && formErrors.${dataKey}" x-cloak><span x-html="fieldErrorHtml('${dataKey}')"></span></div>
+      <template x-if="formErrors && formErrors.${dataKey}"><div class="field-error"><span x-html="fieldErrorHtml('${dataKey}')"></span></div></template>
       ${this._getEnvHint(dataKey)}
       ${this._getOutputPathHint(dataKey)}
       ${readonlyWarnHtml}

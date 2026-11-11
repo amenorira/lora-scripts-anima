@@ -115,7 +115,7 @@ window.taggerMixin = {
     if (!window.resourceBar) return;
     const translate = (key, fallback) => this.t('monitor.' + key, fallback) || fallback || key;
     window.resourceBar.render('taggerResbar', {
-      gpu: this.gpuInfo, sys: this.sysInfo, t: translate, locale: this.locale,
+      gpu: this.gpuInfo, sys: this.sysInfo, t: translate, locale: this.locale, localeRevision: this.localeRevision,
       selectedGpuIndex: this.selectedGpuIndex,
       onSelect: index => { this.selectedGpuIndex = index; this.renderTaggerResourceBar(); },
     });
