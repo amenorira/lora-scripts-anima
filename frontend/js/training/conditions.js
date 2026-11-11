@@ -455,8 +455,7 @@ window.trainingConditions = {
     if (this._showIfWatchers) { this._showIfWatchers.forEach(function(w) { if (typeof w === 'function') w(); }); }
     this._showIfWatchers = [];
     this._allShowIfKeys().forEach(k => {
-      // Use a named function for clarity; Alpine re-evaluates on change
-      self._showIfWatchers.push(self.$watch('form.' + k, () => self.showConditionalFields(k)));
+      self._showIfWatchers.push(self._watchTrainingState(() => self.form[k], () => self.showConditionalFields(k)));
     });
   },
 
@@ -485,10 +484,10 @@ window.trainingConditions = {
     if (this._readonlyWatchers) { this._readonlyWatchers.forEach(function(w) { if (typeof w === 'function') w(); }); }
     this._readonlyWatchers = [];
     this._allReadonlyIfKeys().forEach(k => {
-      self._readonlyWatchers.push(self.$watch('form.' + k, () => self.updateReadonlyStates()));
+      self._readonlyWatchers.push(self._watchTrainingState(() => self.form[k], () => self.updateReadonlyStates()));
     });
     // Also watch model_train_type for multi-condition auto_value
-    self._readonlyWatchers.push(self.$watch('form.model_train_type', () => self.updateReadonlyStates()));
+    self._readonlyWatchers.push(self._watchTrainingState(() => self.form.model_train_type, () => self.updateReadonlyStates()));
     // Initial apply
     self.updateReadonlyStates();
   },

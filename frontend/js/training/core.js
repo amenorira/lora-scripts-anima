@@ -48,6 +48,21 @@ window.trainingCoreMixin = {
   currentTrainTypeDesc: '',
   currentTrainTypeLabel: 'Anima LoRA',
 
+  _watchTrainingState(getter, callback) {
+    let active = true;
+    // $watch is tied to the app root and doesn't return an unsubscribe handle.
+    // Training listeners need to stop when their form/profile is replaced.
+    const unwatch = window.Alpine.watch(getter, (value, oldValue) => {
+      if (active) callback(value, oldValue);
+    });
+    return () => {
+      if (!active) return;
+      // A callback may already be queued separately from its released effect.
+      active = false;
+      unwatch();
+    };
+  },
+
   _clearProfileFieldWatchers() {
     this._cancelProfileFieldWatcherSetup();
     this._disposeKreaDitFormatWatcher();
@@ -160,7 +175,7 @@ window.trainingCoreMixin = {
 
   _setupTrainTypeWatcher() {
     this._trainTypeWatcher?.();
-    this._trainTypeWatcher = this.$watch('form.model_train_type', (newVal, oldVal) => {
+    this._trainTypeWatcher = this._watchTrainingState(() => this.form.model_train_type, (newVal, oldVal) => {
       if (newVal !== oldVal && newVal !== this._activeTrainType && !this._switchInProgress) {
         this._switchInProgress = true;
         try { this.switchTrainType(newVal); } finally { this._switchInProgress = false; }
@@ -476,10 +491,6 @@ window.trainingCoreMixin = {
     this.renderTrainingForm(trainType, null);
     this._trainFormMountedRoute = r;
     this._trainFormLocale = this.locale;
-    // Clean up previous watchers（防御：过滤非函数元素，避免 w is not a function 崩溃）
-    if (this._autoValueWatchers) { this._autoValueWatchers.forEach(function(w) { if (typeof w === 'function') w(); }); }
-    if (this._showIfWatchers) { this._showIfWatchers.forEach(function(w) { if (typeof w === 'function') w(); }); }
-    if (this._readonlyWatchers) { this._readonlyWatchers.forEach(function(w) { if (typeof w === 'function') w(); }); }
     this.setupAutoValueWatchers();
     this.setupShowIfWatchers();
     this.setupReadonlyWatchers();
@@ -493,7 +504,7 @@ window.trainingCoreMixin = {
       self._formWatcher();
       self._formWatcher = null;
     }
-    self._formWatcher = self.$watch('form', () => {
+    self._formWatcher = self._watchTrainingState(() => self.form, () => {
       self.scheduleShapeEstimate();
       self.scheduleStepEstimate();
       self.scheduleOutputPathInfo();

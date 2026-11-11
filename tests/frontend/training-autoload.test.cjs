@@ -45,7 +45,7 @@ function application(entries, autoLoadHistory) {
     navigate(nextRoute) { this.currentRoute = nextRoute; this.buildTrainForm(); },
     scheduleShapeEstimate() {}, scheduleStepEstimate() {}, scheduleOutputPathInfo() {},
     refreshTrainingRealtimeState() {}, xfRefresh: async () => {},
-    $watch: () => () => {}, $nextTick: callback => callback(),
+    _watchTrainingState: () => () => {}, $nextTick: callback => callback(),
   });
   return { app, storage };
 }

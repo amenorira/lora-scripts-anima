@@ -24,20 +24,18 @@ function application(profile, values = {}) {
 function watchAutoValues(app) {
   // Load the shipped Alpine reactivity/watch implementation without starting
   // its DOM scan. Microtasks are enabled before registering production watchers.
-  const context = loadFrontend('vendor/alpine.min', {
+  const context = loadFrontend(['vendor/alpine.min', ...TRAINING_CORE_SCRIPTS], {
     window: { Element: class {} },
     document: { createElement: () => ({}), addEventListener() {} },
     MutationObserver: class {}, queueMicrotask() {}, setTimeout, clearTimeout,
   });
   context.queueMicrotask = queueMicrotask;
   const alpine = context.window.Alpine;
-  const triggered = new Set();
+  const triggered = { calls: 0 };
   app.form = alpine.reactive(app.form);
   app.$nextTick = alpine.nextTick;
-  app.$watch = (path, callback) => alpine.watch(() => app.form[path.slice('form.'.length)], () => {
-    triggered.add(path);
-    callback();
-  });
+  app._watchTrainingState = (getter, callback) => context.window.trainingCoreMixin._watchTrainingState.call(app,
+    getter, (...args) => { triggered.calls++; callback(...args); });
   app.setupAutoValueWatchers();
   return triggered;
 }
@@ -59,18 +57,18 @@ test('optimizer drafts survive Alpine dependency watchers and later edits still 
     assert.equal(app.form.learning_rate, '1e-4');
     app.setField('adafactor_relative_step', false);
     await settle();
-    assert.ok(triggered.has('form.adafactor_relative_step'));
+    assert.ok(triggered.calls > 0);
     assert.equal(app.form.adafactor_scale_parameter, false);
     app.setField('adafactor_warmup_init', true);
     app.setField('learning_rate', '0.123');
     app.setField('betas', '0.3, 0.4');
     app.setField('optimizer_args_custom', 'amsgrad=True');
     await settle();
-    triggered.clear();
+    triggered.calls = 0;
 
     app.setField('optimizer_type', 'AdamW8bit');
     await settle();
-    assert.ok(triggered.has('form.optimizer_type'));
+    assert.ok(triggered.calls > 0);
     assert.equal(app.form.learning_rate, '2e-5');
     assert.equal(app.form.betas, '0.9, 0.999');
     assert.equal(app.form.optimizer_args_custom, '');
@@ -190,7 +188,7 @@ test('Krea ConvRot disables FP8 immediately and remains consistent through react
     app.setField('fp8_base', true);
     assert.equal(app.form.fp8_base, false);
     await app.$nextTick();
-    assert.ok(triggered.has('form.convrot_int8'));
+    assert.ok(triggered.calls > 0);
     assert.equal(app.form.fp8_base, false);
     app.setField('convrot_int8', false);
     await app.$nextTick();

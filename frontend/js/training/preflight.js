@@ -463,7 +463,7 @@ window.trainingPreflight = {
   setupKreaDitFormatWatcher() {
     if (typeof this._kreaDitFormatWatcher === 'function') this._kreaDitFormatWatcher();
     this._kreaDitFormatWatcher = this.form.model_train_type === 'krea2-lora'
-      ? this.$watch('form.dit', () => this.scheduleKreaDitFormatCheck()) : null;
+      ? this._watchTrainingState(() => this.form.dit, () => this.scheduleKreaDitFormatCheck()) : null;
     this.scheduleKreaDitFormatCheck();
   },
 

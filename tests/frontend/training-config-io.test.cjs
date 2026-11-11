@@ -396,10 +396,6 @@ test('cross-profile file import survives the real Alpine training type watcher',
     updateToml() {}, rebuildForm() {}, _replaceProfileFieldSources() {},
     $nextTick: callback => alpine.nextTick(callback),
   }));
-  app.$watch = (path, callback) => {
-    assert.equal(path, 'form.model_train_type');
-    return alpine.watch(() => app.form.model_train_type, callback);
-  };
   app._setupTrainTypeWatcher();
   try {
     const applied = await app._applyImportedFlatConfig({ model_train_type: 'sdxl-lora', learning_rate: 'imported' }, () => true);

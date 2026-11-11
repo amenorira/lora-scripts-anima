@@ -34,9 +34,9 @@ window.trainingFieldRelations = {
     return source === 'default' || source === 'auto';
   },
 
-  _autoValueTargetCanReset(target) {
+  _autoValueTargetCanReset(target, targetRules) {
     if (this._isRestoringOptimizerField(target)) return false;
-    const guarded = this._autoValueRules.find(rule => rule.target === target && rule.setIfDefault);
+    const guarded = targetRules.find(rule => rule.setIfDefault);
     return !guarded || this._autoValueRuleCanSet(guarded);
   },
 
@@ -236,35 +236,31 @@ window.trainingFieldRelations = {
     if (rules.length === 0) return;
 
     const self = this;
-    // Collect all unique watched field keys
-    const allWatchedKeys = new Set();
+    // Rules and visibility dependencies stay fixed until listeners are reinstalled.
+    const targetsByWatchKey = new Map();
+    const rulesByTarget = new Map();
+    const showIfKeys = new Set(this._allShowIfKeys());
     rules.forEach(r => {
-      if (r.watch && typeof r.watch === 'object' && !Array.isArray(r.watch)) {
-        Object.keys(r.watch).forEach(k => allWatchedKeys.add(k));
-      } else {
-        allWatchedKeys.add(r.watch);
-      }
+      if (!rulesByTarget.has(r.target)) rulesByTarget.set(r.target, []);
+      rulesByTarget.get(r.target).push(r);
+      const watchKeys = r.watch && typeof r.watch === 'object' && !Array.isArray(r.watch)
+        ? Object.keys(r.watch) : [r.watch];
+      watchKeys.forEach(key => {
+        if (!targetsByWatchKey.has(key)) targetsByWatchKey.set(key, new Set());
+        targetsByWatchKey.get(key).add(r.target);
+      });
     });
 
     // Register a watcher for each unique watched key
-    allWatchedKeys.forEach(watchKey => {
-      self._autoValueWatchers.push(self.$watch('form.' + watchKey, function() {
-        // Find all target fields affected by this watchKey
-        const affectedTargets = new Set();
-        rules.forEach(r => {
-          if (r.watch && typeof r.watch === 'object' && !Array.isArray(r.watch)) {
-            if (watchKey in r.watch) affectedTargets.add(r.target);
-          } else if (r.watch === watchKey) {
-            affectedTargets.add(r.target);
-          }
-        });
-
+    targetsByWatchKey.forEach((affectedTargets, watchKey) => {
+      self._autoValueWatchers.push(self._watchTrainingState(() => self.form[watchKey], function() {
         affectedTargets.forEach(target => {
-          // Find the first matching rule for this target
-          const matched = self._autoValueRules.find(x => x.target === target && self._matchAutoValueRule(x));
+          // Check every rule for this target in its original priority order.
+          const targetRules = rulesByTarget.get(target);
+          const matched = targetRules.find(rule => self._matchAutoValueRule(rule));
           if (matched) {
             self._applyAutoValueRule(matched);
-          } else if (self._autoValueTargetCanReset(target)) {
+          } else if (self._autoValueTargetCanReset(target, targetRules)) {
             // No rule matches → restore default (also update formDefaults)
             const field = self.findFieldDef(target);
             const defVal = field ? field.default : (self.formDefaults[target]);
@@ -276,7 +272,7 @@ window.trainingFieldRelations = {
 
         // Re-evaluate conditional visibility for all affected targets
         affectedTargets.forEach(target => {
-          if (self._allShowIfKeys().indexOf(target) !== -1) {
+          if (showIfKeys.has(target)) {
             self.showConditionalFields(target);
           }
         });
