@@ -6,6 +6,8 @@ _A local LoRA training tool for Anima, SDXL, MOSS-Image, and Krea 2._
 
 Configure training, tag images, edit captions in bulk, and monitor training progress in real time.
 
+Anima, SDXL, and MOSS-Image use [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) as their training engine, while Krea 2 uses [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner). [LyCORIS](https://github.com/KohakuBlueleaf/LyCORIS) adds support for algorithms such as LoCon, LoHa, and LoKr for Anima, SDXL, and Krea 2.
+
 </div>
 
 <p align="center">

@@ -6,6 +6,8 @@ _Anima、SDXL、MOSS-Image、Krea 2 に対応したローカル LoRA 学習ツ�
 
 学習設定、画像のタグ付け、キャプションの一括編集、学習進捗のリアルタイム監視ができます。
 
+Anima、SDXL、MOSS-Image の学習エンジンには [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts)、Krea 2 には [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) を使用しています。[LyCORIS](https://github.com/KohakuBlueleaf/LyCORIS) により、Anima、SDXL、Krea 2 では LoCon、LoHa、LoKr などの学習方式も利用できます。
+
 </div>
 
 <p align="center">

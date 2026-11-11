@@ -4,7 +4,9 @@
 
 _本地 LoRA 训练工具，支持 Anima、SDXL、MOSS-Image 和 Krea 2。_
 
-可配置训练、给图片打标、批量编辑标签并实时查看训练进度。
+集成训练配置、图片打标、标签批量编辑和训练进度实时监控。
+
+Anima、SDXL 和 MOSS-Image 使用 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) 作为训练核心，Krea 2 使用 [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner)。通过 [LyCORIS](https://github.com/KohakuBlueleaf/LyCORIS)，Anima、SDXL 和 Krea 2 还可使用 LoCon、LoHa、LoKr 等训练算法。
 
 </div>
 
