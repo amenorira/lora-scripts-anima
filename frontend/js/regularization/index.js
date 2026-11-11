@@ -259,6 +259,7 @@ window.regularizationMixin = {
     const field = this._regFields[key];
     if (value !== '' && field?.type === 'number' && Number.isFinite(value)) value = Math.max(field.min, Math.min(field.max, value));
     if (Object.is(this.regSettings[key], value)) return;
+    const previousSampler = this.regSettings.sampler;
     this._regUndo[key] = this.regSettings[key];
     this.regSettings[key] = value;
     if (key === 'model_type' || key === 'sampler') this.regNormalizeModelSettings();
@@ -267,7 +268,10 @@ window.regularizationMixin = {
       source.prompt = this.regActualPrompt(source.caption);
     }
     this.regChanged(key);
-    if (this._regLoaded && (key === 'model_type' || key === 'sampler')) this.regRenderControls(true);
+    // Only SDXL's Euler ancestral sampler changes the scheduler option set.
+    const schedulerOptionsChanged = key === 'sampler' && this.regSettings.model_type === 'sdxl'
+      && (previousSampler === 'euler_a') !== (this.regSettings.sampler === 'euler_a');
+    if (this._regLoaded && (key === 'model_type' || schedulerOptionsChanged)) this.regRenderControls(true);
   },
   regNormalizeModelSettings() {
     if (this.regSettings.model_type !== 'sdxl') return;
