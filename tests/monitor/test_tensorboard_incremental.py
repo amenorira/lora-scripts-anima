@@ -11,18 +11,21 @@ from backend.monitor import training
 
 
 class MainLearningRateTests(unittest.IsolatedAsyncioTestCase):
-    async def test_incremental_component_tags_cannot_replace_measured_backbone_lr(self):
+    async def test_partial_batches_cannot_replace_native_effective_lr_with_a_multiplier(self):
         from backend.monitor.monitor import TaskMonitor
 
         monitor = TaskMonitor()
         updates = [
+            {'lr/d*lr/unet': [{'step': 1, 'value': 0.002}], 'lr/unet': [{'step': 1, 'value': 1.0}]},
             {'lr/d*eff_lr/unet': [{'step': 1, 'value': 0.001}], 'lr/unet': [{'step': 1, 'value': 1.0}]},
-            {'lr/backbone': [{'step': 1, 'value': 0.0}]},
+            {'lr/d*eff_lr/unet': [{'step': 2, 'value': 0.0}]},
             {'lr/unet': [{'step': 2, 'value': 0.5}]},
         ]
         with patch('backend.monitor.monitor.read_tensorboard_incremental', side_effect=updates), \
                 patch('backend.monitor.monitor.realtime_hub.publish', new_callable=AsyncMock), \
                 patch.object(monitor, '_update_console_progress'):
+            await monitor._collect_tb_incremental('task', 'run')
+            self.assertEqual(float(monitor._last_progress['task']['lr']), 0.002)
             await monitor._collect_tb_incremental('task', 'run')
             self.assertEqual(float(monitor._last_progress['task']['lr']), 0.001)
             await monitor._collect_tb_incremental('task', 'run')
@@ -32,9 +35,19 @@ class MainLearningRateTests(unittest.IsolatedAsyncioTestCase):
         monitor._cleanup_task('task')
         self.assertNotIn('task', monitor._primary_lr_tag)
 
+    def test_primary_lr_uses_native_groups_and_excludes_text_encoder_and_old_aliases(self):
+        for tags, expected in (
+            (['lr/unet plus', 'lr/unet'], 'lr/unet'),
+            (['lr/textencoder 1', 'lr/unet_block0', 'lr/unet_block1'], 'lr/unet_block0'),
+            (['lr/group0', 'lr/d*lr/group0', 'lr/d*eff_lr/group0'], 'lr/d*eff_lr/group0'),
+            (['lr/backbone', 'lr/textencoder 1'], None),
+        ):
+            with self.subTest(tags=tags):
+                self.assertEqual(training.primary_learning_rate_tag(tags), expected)
+
 
 class TensorboardIncrementalTests(unittest.TestCase):
-    def test_backbone_and_legacy_ppsf_effective_lr_survive_both_readers(self):
+    def test_native_named_lr_groups_survive_both_readers_without_old_aliases(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(training, "_tb_live_cache", {}), patch.object(training, "_tb_cache", {}):
             writer = EventFileWriter(str(Path(directory) / "log"))
             try:
@@ -42,12 +55,17 @@ class TensorboardIncrementalTests(unittest.TestCase):
                     Summary.Value(tag="lr/backbone", simple_value=0.0),
                     Summary.Value(tag="lr/d*eff_lr/unet", simple_value=0.0001),
                     Summary.Value(tag="lr/unet", simple_value=1.0),
+                    Summary.Value(tag="lr/unet plus", simple_value=0.0002),
+                    Summary.Value(tag="lr/unet_block0", simple_value=0.0003),
+                    Summary.Value(tag="lr/group0", simple_value=0.0004),
+                    Summary.Value(tag="lr/textencoder 1", simple_value=0.0005),
                 ])))
                 writer.flush()
                 live = training.read_tensorboard_incremental(directory)
                 snapshot = {series['tag']: series['latest'] for series in training.read_tensorboard_loss(run_dir=directory)}
                 self.assertEqual(set(live), set(snapshot))
-                self.assertEqual(snapshot['lr/backbone'], 0.0)
+                self.assertEqual(set(snapshot), {'lr/d*eff_lr/unet', 'lr/unet', 'lr/unet plus',
+                                                 'lr/unet_block0', 'lr/group0', 'lr/textencoder 1'})
                 self.assertAlmostEqual(snapshot['lr/d*eff_lr/unet'], 0.0001)
             finally:
                 writer.close()

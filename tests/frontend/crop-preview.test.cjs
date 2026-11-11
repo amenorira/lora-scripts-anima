@@ -149,8 +149,8 @@ test('bucket selection preserves image filters and keeps every bucket available 
 });
 
 test('bucket resizes update row limits after layout and preserve selection without interrupting motion', async () => {
-  const toolbar = {}, note = {}, canvas = {};
-  const content = { querySelectorAll: () => [toolbar, note, canvas] };
+  const canvas = {};
+  const content = { querySelector: () => canvas };
   const panel = {};
   const buckets = { closest: selector => selector === '.cp-content' ? content : panel };
   const frames = new Map();
@@ -176,7 +176,7 @@ test('bucket resizes update row limits after layout and preserve selection witho
     _updateCropPreviewBucketBounds: target => updates.push(target),
   });
   await a.openCropPreview();
-  assert.deepEqual(observed, [buckets, content, toolbar, note, canvas]);
+  assert.deepEqual(observed, [buckets, panel, canvas]);
   const flushFrame = async () => {
     const callbacks = [...frames.values()];
     frames.clear();
@@ -205,8 +205,10 @@ for (const rows of [1, 2, 3, 4, 5]) {
   test(`${rows} bucket rows keep their layout height during the modal scale animation`, () => {
     const box = (height, top = 0) => ({ offsetHeight: height, offsetTop: top,
       getBoundingClientRect: () => ({ height: height / 2, top: top / 2, bottom: (top + height) / 2 }) });
-    const panel = {}, workspace = { querySelector: () => null, style: { setProperty() {} } };
-    const content = { clientHeight: 900, children: [box(52), panel, box(18), box(24), workspace], querySelector: () => workspace };
+    const minimums = new Map();
+    const panel = { style: { setProperty: (key, value) => minimums.set(key, value) } };
+    const workspace = { querySelector: () => null, style: { setProperty() {} } };
+    const content = { querySelector: () => workspace };
     const chips = Array.from({ length: rows * 3 - 1 }, (_, index) => box(72, 100 + Math.floor(index / 3) * 78));
     const buckets = { querySelectorAll: () => chips, closest: selector => selector === '.cp-stats' ? panel : content };
     const context = loadFrontend(['training/crop-preview'], {
@@ -214,6 +216,7 @@ for (const rows of [1, 2, 3, 4, 5]) {
     });
     const a = composeMixins(context.window.trainingCropPreviewMixin);
     a._updateCropPreviewBucketBounds(buckets);
+    assert.equal(minimums.get('--cp-bucket-min-height'), '88px');
     const expected = count => Math.min(rows, count) * 78 + 10;
     assert.equal(a.cropPreviewBucketCollapsedHeight, expected(2));
     assert.equal(a.cropPreviewBucketExpandedHeight, expected(4));
@@ -221,9 +224,6 @@ for (const rows of [1, 2, 3, 4, 5]) {
     a.cropPreviewBucketsExpanded = true;
     a._updateCropPreviewBucketBounds(buckets);
     assert.equal(a.cropPreviewBucketsExpanded, rows > 2);
-    content.clientHeight = 500;
-    a._updateCropPreviewBucketBounds(buckets);
-    assert.ok(a.cropPreviewBucketPanelHeight <= 186);
   });
 }
 

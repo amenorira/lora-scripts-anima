@@ -82,7 +82,7 @@ class Krea2Trainer(Krea2NetworkTrainer):
     def generate_step_logs(self, args, current_loss, avr_loss, lr_scheduler, lr_descriptions,
                            optimizer=None, keys_scaled=None, mean_norm=None, maximum_norm=None):
         from tools.python_startup.lr_logging import (
-            append_backbone_learning_rate, optimizer_has_lr_reporter, read_learning_rates,
+            optimizer_has_lr_reporter, read_learning_rates,
             optimizer_from_scheduler,
         )
         optimizer = optimizer if optimizer is not None else optimizer_from_scheduler(lr_scheduler)
@@ -90,14 +90,8 @@ class Krea2Trainer(Krea2NetworkTrainer):
         if optimizer_has_lr_reporter(optimizer):
             learning_rates = read_learning_rates(optimizer, lr_scheduler)
             scheduler_view = SimpleNamespace(get_last_lr=lambda: learning_rates, optimizers=[optimizer])
-        logs = super().generate_step_logs(args, current_loss, avr_loss, scheduler_view, lr_descriptions,
-                                         optimizer, keys_scaled, mean_norm, maximum_norm)
-        if args.optimizer_type == 'prodigyplus.ProdigyPlusScheduleFree':
-            for key, value in list(logs.items()):
-                if key.startswith('lr/') and not key.startswith('lr/d*'):
-                    logs[f'lr/d*eff_lr/{key[3:]}'] = value
-        append_backbone_learning_rate(logs)
-        return logs
+        return super().generate_step_logs(args, current_loss, avr_loss, scheduler_view, lr_descriptions,
+                                          optimizer, keys_scaled, mean_norm, maximum_norm)
 
 
 def main():

@@ -162,9 +162,8 @@ def main():
                                for value in state.values() if isinstance(value, torch.Tensor)), '8-bit states were not exercised'
                 from tools.python_startup.lr_logging import read_learning_rates
                 logs = Krea2Trainer().generate_step_logs(args, losses[-1], sum(losses) / len(losses), scheduler, None, optimizer)
-                assert [value for key, value in logs.items() if key.startswith('lr/') and not key.startswith('lr/d*')
-                        and key != 'lr/backbone'] == read_learning_rates(optimizer, scheduler)
-                assert 'lr/backbone' in logs, 'measured backbone LR was not emitted'
+                assert [value for key, value in logs.items() if key.startswith('lr/')
+                        and not key.startswith('lr/d*')] == read_learning_rates(optimizer, scheduler)
                 state = copy.deepcopy(optimizer.state_dict())
                 saved_weights = {key: value.detach().clone() for key, value in network.state_dict().items()}
                 # Recreate the actual optimizer and verify the next update matches.

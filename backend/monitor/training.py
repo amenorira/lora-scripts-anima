@@ -8,7 +8,7 @@ import re
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from backend.constants import OUTPUT_DIR
 from backend.training.fields.field_registry import get_all_fields, field_applies_to_profile
@@ -31,11 +31,26 @@ _tb_live_cache: dict[str, tuple] = {}
 _tb_live_lock = threading.Lock()
 
 # 监控面板采集的 TensorBoard scalar 标签（全量与增量读取共用）
-_SCALAR_TAGS = (
+_LOSS_TAGS = (
     "loss/average", "loss/current", "loss/epoch_average", "loss/epoch",
-    "lr/backbone", "lr/unet", "lr/textencoder", "lr/d*lr/unet", "lr/d*lr/textencoder",
-    "lr/d*eff_lr/unet",
 )
+
+
+def _is_lr_tag(tag: str) -> bool:
+    return tag.startswith("lr/") and tag != "lr/backbone"
+
+
+def primary_learning_rate_tag(tags: Iterable[str]) -> str | None:
+    """Select a native backbone group, preferring adaptive scalar metrics."""
+    tags = tuple(tags)
+    for prefix in ("lr/d*eff_lr/", "lr/d*lr/", "lr/"):
+        matches = [tag for tag in tags if tag.startswith(prefix)
+                   and re.match(r"(?:unet(?:$|[ _])|group\d+(?:$|[ _]))", tag[len(prefix):])]
+        if matches:
+            standard = prefix + "unet"
+            return standard if standard in matches else matches[0]
+    return None
+
 
 def _get_cached_accumulator(log_dir: Path, *, incremental: bool = False) -> Any | None:
     """获取缓存的 EventAccumulator，若 event file 未变化则复用"""
@@ -88,7 +103,7 @@ def _get_cached_accumulator(log_dir: Path, *, incremental: bool = False) -> Any 
                 def _ProcessScalar(self, tag, wall_time, step, scalar):
                     # Keep the existing monotonic-step delivery contract. TensorBoard
                     # owns file parsing, rotation and partial-record recovery.
-                    if tag in _SCALAR_TAGS and step > self.last_steps.get(tag, -1):
+                    if (tag in _LOSS_TAGS or _is_lr_tag(tag)) and step > self.last_steps.get(tag, -1):
                         self.pending.setdefault(tag, []).append({"step": int(step), "value": float(scalar)})
                         self.last_steps[tag] = step
 
@@ -184,22 +199,20 @@ def read_tensorboard_loss(
             if log_sub.is_dir():
                 log_dirs.append(log_sub)
 
-    scalar_tags = _SCALAR_TAGS
-
     for log_dir in (log_dirs[:1] if run_dir else log_dirs[:5]):
         ea = _get_cached_accumulator(log_dir)
         if ea is None:
             continue
 
         try:
-            available = set(ea.Tags().get("scalars", []))
+            available = ea.Tags().get("scalars", [])
         except Exception:
             continue
 
+        scalar_tags = [tag for tag in _LOSS_TAGS if tag in available]
+        scalar_tags.extend(tag for tag in available if _is_lr_tag(tag))
         series_list = []
         for tag in scalar_tags:
-            if tag not in available:
-                continue
             try:
                 events = ea.Scalars(tag)[-limit:]
             except Exception:

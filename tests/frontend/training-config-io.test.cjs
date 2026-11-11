@@ -73,12 +73,13 @@ test('Automagic imports preserve valid fused updates and disable conflicting con
         gradient_accumulation_steps: 1, max_grad_norm: 0, mixed_precision: 'bf16',
       };
       await app._applyImportedFlatConfig(imported);
-      app.updateToml();
       assert.equal(app.form.automagic_fused, true, `${profile} Automagic${version}`);
       assert.ok(app._buildOptimizerArgs(app.form).includes('fused=True'));
+      assert.match(app.tomlRaw, profile === 'krea2-lora' ? /^automagic_fused = true$/m : /fused=True/);
       await app._applyImportedFlatConfig({ ...imported, max_grad_norm: 1 });
       assert.equal(app.form.automagic_fused, false);
       assert.ok(app._buildOptimizerArgs(app.form).includes('fused=False'));
+      assert.match(app.tomlRaw, profile === 'krea2-lora' ? /^automagic_fused = false$/m : /fused=False/);
     }
   }
 });

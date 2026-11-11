@@ -1,8 +1,8 @@
 """Optimizer-aware learning-rate reporting for sd-scripts training runs.
 
-The trainer APIs expose a scheduler to logging code, but several optimizers
-own their effective scalar learning rate. This module keeps that distinction
-out of the UI and provides a small registry for optimizer-specific reporters.
+Fill gaps where scheduler values miss an optimizer's internal learning rate.
+Prodigy and DAdapt already have native adaptive LR tags; leave those paths
+unchanged and let the dashboard select their existing values.
 """
 from __future__ import annotations
 
@@ -79,26 +79,6 @@ def _named(*names: str) -> LrMatcher:
     return matches
 
 
-def _name_starts_with(*prefixes: str) -> LrMatcher:
-    normalized = tuple(prefix.lower() for prefix in prefixes)
-
-    def matches(optimizer: Any) -> bool:
-        simple, _ = _optimizer_names(optimizer)
-        return simple.startswith(normalized)
-
-    return matches
-
-
-def _name_ends_with(*suffixes: str) -> LrMatcher:
-    normalized = tuple(suffix.lower() for suffix in suffixes)
-
-    def matches(optimizer: Any) -> bool:
-        simple, _ = _optimizer_names(optimizer)
-        return simple.endswith(normalized)
-
-    return matches
-
-
 def _read_param_groups(optimizer: Any) -> list[float]:
     return [group["lr"] for group in optimizer.param_groups]
 
@@ -109,46 +89,6 @@ def _read_public_method(optimizer: Any) -> list[float]:
 
 def _read_schedule_free(optimizer: Any) -> list[float]:
     return [group.get("scheduled_lr", group["lr"]) for group in optimizer.param_groups]
-
-
-def _read_prodigy_plus(optimizer: Any) -> list[float]:
-    values = []
-    for group in optimizer.param_groups:
-        lr = group["lr"]
-        value = optimizer.get_dlr(group)
-        value *= group.get("effective_lr", lr) / lr if lr else 0.0
-        if group.get("use_bias_correction"):
-            # effective_lr describes the latest update; k already advanced.
-            step = max(int(group.get("k", 1)) - 1, 1)
-            value = optimizer.get_bias_correction(value, group["betas"][1], step)[0]
-        values.append(value)
-    return values
-
-
-def _read_prodigy(optimizer: Any) -> list[float]:
-    values: list[float] = []
-    for group in optimizer.param_groups:
-        value = group["d"] * group["lr"]
-        if group.get("use_bias_correction"):
-            beta1, beta2 = group["betas"]
-            step = max(int(group.get("k", 0)), 1)
-            value *= math.sqrt(1.0 - beta2**step) / (1.0 - beta1**step)
-        values.append(value)
-    return values
-
-
-def _read_d_adaptation(optimizer: Any) -> list[float]:
-    values: list[float] = []
-    for group in optimizer.param_groups:
-        lr = group.get("effective_lr", group["lr"])
-        value = group["d"] * lr
-
-        if group.get("use_bias_correction"):
-            beta1, beta2 = group["betas"]
-            step = int(group.get("k", 0)) + 1
-            value *= math.sqrt(1.0 - beta2**step) / (1.0 - beta1**step)
-        values.append(value)
-    return values
 
 
 def _read_adafactor(optimizer: Any) -> list[float]:
@@ -272,39 +212,6 @@ class EffectiveLrNoOpScheduler:
         return None
 
 
-def _append_d_adaptation_diagnostics(
-    logs: dict[str, Any],
-    optimizer: Any | None,
-    names: Sequence[str],
-) -> None:
-    if optimizer is None:
-        return
-    candidate, reporter = _resolve_reporter(optimizer)
-    if reporter is None or reporter.name not in {"d-adaptation", "prodigy", "prodigy-plus"}:
-        return
-
-    for name, group in zip(names, candidate.param_groups):
-        try:
-            logs[f"lr/d*lr/{name}"] = float(group["d"] * group["lr"])
-            if "effective_lr" in group:
-                logs[f"lr/d*eff_lr/{name}"] = float(group["d"] * group["effective_lr"])
-        except (KeyError, TypeError, ValueError):
-            continue
-
-
-def append_backbone_learning_rate(logs: dict[str, Any]) -> None:
-    """Copy the backbone's existing log value without inspecting parameters."""
-    if "lr/unet" in logs:
-        logs["lr/backbone"] = logs["lr/unet"]
-        return
-    for key, value in list(logs.items()):
-        if (key.startswith("lr/") and not key.startswith("lr/d*")
-                and key != "lr/backbone"
-                and not key[3:].lower().startswith(("text", "te_", "te1", "te2"))):
-            logs["lr/backbone"] = value
-            return
-
-
 def learning_rate_names(args: Any, descriptions: Sequence[str] | None, count: int) -> list[str]:
     """Keep one name per optimizer group, even if upstream log keys collide."""
     if descriptions is not None:
@@ -338,16 +245,10 @@ def _patch_optimizer_module(module: Any) -> None:
         _, reporter = _resolve_reporter(optimizer) if optimizer is not None else (None, None)
         if reporter is None and callable(original_append_lr):
             original_append_lr(logs, lr_scheduler, optimizer_type, names)
-            append_backbone_learning_rate(logs)
             return
         learning_rates = read_learning_rates(optimizer=optimizer, scheduler=lr_scheduler)
         for name, learning_rate in zip(names, learning_rates):
             logs[f"lr/{name}"] = learning_rate
-        _append_d_adaptation_diagnostics(logs, optimizer, names)
-        if reporter is not None and reporter.name == "prodigy-plus":
-            for name, learning_rate in zip(names, learning_rates):
-                logs[f"lr/d*eff_lr/{name}"] = learning_rate
-        append_backbone_learning_rate(logs)
 
     get_scheduler_fix.__wrapped__ = original_get_scheduler_fix
     module.get_scheduler_fix = get_scheduler_fix
@@ -388,11 +289,6 @@ def _patch_network_trainer_module(module: Any) -> None:
             names = learning_rate_names(training_args, descriptions, len(learning_rates))
             for name, learning_rate in zip(names, learning_rates):
                 logs[f"lr/{name}"] = learning_rate
-        if reporter is not None and reporter.name == "prodigy-plus":
-            for key, value in list(logs.items()):
-                if key.startswith("lr/") and not key.startswith("lr/d*") and key != "lr/backbone":
-                    logs[f"lr/d*eff_lr/{key[3:]}"] = value
-        append_backbone_learning_rate(logs)
         return logs
 
     generate_step_logs.__wrapped__ = original_generate_step_logs
@@ -453,32 +349,10 @@ register_learning_rate_reporter(
 )
 register_learning_rate_reporter(
     LearningRateReporter(
-        "prodigy-plus",
-        _named("ProdigyPlusScheduleFree", "prodigyplus.ProdigyPlusScheduleFree"),
-        _read_prodigy_plus,
-        owns_schedule=True,
-    )
-)
-register_learning_rate_reporter(
-    LearningRateReporter(
         "schedule-free",
-        _name_ends_with("ScheduleFree"),
+        _named("AdamWScheduleFree", "RAdamScheduleFree", "SGDScheduleFree"),
         _read_schedule_free,
         owns_schedule=True,
-    )
-)
-register_learning_rate_reporter(
-    LearningRateReporter(
-        "prodigy",
-        _named("Prodigy", "prodigyopt.prodigy.Prodigy"),
-        _read_prodigy,
-    )
-)
-register_learning_rate_reporter(
-    LearningRateReporter(
-        "d-adaptation",
-        _name_starts_with("DAdapt"),
-        _read_d_adaptation,
     )
 )
 register_learning_rate_reporter(
@@ -492,7 +366,6 @@ register_learning_rate_reporter(
 __all__ = [
     "EffectiveLrNoOpScheduler",
     "LearningRateReporter",
-    "append_backbone_learning_rate",
     "learning_rate_names",
     "install_import_hook",
     "optimizer_from_scheduler",

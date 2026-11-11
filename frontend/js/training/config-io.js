@@ -110,8 +110,8 @@ window.trainingConfigIoMixin = {
       this.formDefaults = { ...defaults };
       this.formHistory = [this.formDefaults];
       this.formHistoryIdx = 0;
-      this.updateToml();
       this.rebuildForm();
+      this.updateToml();
       this._captureProfileDraft(importedType, this.form, defaults);
       // History reuse may happen away from the training route.
       if (this.currentRoute?.startsWith('train-') || this._trainingSessionRoute === targetRoute) {

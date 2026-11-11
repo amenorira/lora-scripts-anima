@@ -104,11 +104,9 @@ window.trainingCropPreviewMixin = {
           });
         });
         this._cropBucketResize.observe(buckets);
+        this._cropBucketResize.observe(buckets.closest('.cp-stats'));
         const content = buckets.closest('.cp-content');
-        this._cropBucketResize.observe(content);
-        for (const sibling of content.querySelectorAll('.cp-toolbar, .cp-stats-note, .cp-virtual-grid')) {
-          this._cropBucketResize.observe(sibling);
-        }
+        this._cropBucketResize.observe(content.querySelector('.cp-virtual-grid'));
       }
     } catch (error) {
       if (seq === this._cropPreviewSeq && error.name !== 'AbortError') this.cropPreviewError = error.message;
@@ -256,10 +254,7 @@ window.trainingCropPreviewMixin = {
     const style = getComputedStyle(panel);
     const inset = ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth']
       .reduce((sum, name) => sum + (parseFloat(style[name]) || 0), 0);
-    const minimum = Math.ceil(first.offsetHeight + inset);
-    const occupied = Array.from(content.children)
-      .filter(element => element !== panel && element !== workspace)
-      .reduce((sum, element) => sum + element.offsetHeight, 0);
+    panel.style.setProperty('--cp-bucket-min-height', `${Math.ceil(first.offsetHeight + inset)}px`);
     const scroller = workspace.querySelector('.cp-scroll');
     const stage = workspace.querySelector('.cp-tile:not(:disabled) .cp-stage');
     const stageHeight = stage?.offsetHeight;
@@ -276,11 +271,10 @@ window.trainingCropPreviewMixin = {
         + (parseFloat(scrollStyle.paddingTop) || 0) + (parseFloat(scrollStyle.paddingBottom) || 0));
     }
     workspace.style.setProperty('--cp-image-min-height', `${imageHeight}px`);
-    const available = Math.max(minimum, Math.floor(content.clientHeight - occupied - imageHeight));
     const columns = Math.max(1, getComputedStyle(buckets).gridTemplateColumns.split(' ').length);
     const heightForRows = rows => {
       const last = chips[Math.min(chips.length, rows * columns) - 1];
-      return Math.min(available, Math.ceil(last.offsetTop + last.offsetHeight - first.offsetTop + inset));
+      return Math.ceil(last.offsetTop + last.offsetHeight - first.offsetTop + inset);
     };
     this.cropPreviewBucketCollapsedHeight = heightForRows(2);
     this.cropPreviewBucketExpandedHeight = heightForRows(4);

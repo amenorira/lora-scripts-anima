@@ -18,7 +18,7 @@ from typing import Any
 
 from backend.core.realtime import realtime_hub, realtime_tasks, task_topic
 from backend.monitor.hardware import gpu_info, system_info
-from backend.monitor.training import parse_log_progress, read_tensorboard_incremental
+from backend.monitor.training import parse_log_progress, primary_learning_rate_tag, read_tensorboard_incremental
 from backend.monitor.artifacts import newest_previews, read_output_summary
 from backend.monitor.log_files import find_train_log_path, read_log_slice
 from backend.monitor.run_registry import find_run_record_by_task_id, read_run_config
@@ -406,10 +406,10 @@ class TaskMonitor:
                     if tb_points.get(tag):
                         tb_progress["loss"] = f"{float(tb_points[tag][-1]['value']):.6g}"
                         break
-                lr_tags = ("lr/backbone", "lr/d*eff_lr/unet", "lr/unet")
                 previous_lr_tag = self._primary_lr_tag.get(task_id)
-                allowed = lr_tags[:lr_tags.index(previous_lr_tag) + 1] if previous_lr_tag else lr_tags
-                lr_tag = next((tag for tag in allowed if tb_points.get(tag)), None)
+                # Partial batches must not replace the selected adaptive metric with a multiplier.
+                lr_tags = ([previous_lr_tag] if previous_lr_tag else []) + list(tb_points)
+                lr_tag = primary_learning_rate_tag(lr_tags)
                 lr_points = tb_points.get(lr_tag) if lr_tag else None
                 if lr_points:
                     self._primary_lr_tag[task_id] = lr_tag
