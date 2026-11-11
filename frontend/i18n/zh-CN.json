@@ -13,7 +13,7 @@
 		"folderCountSingle": "{count} 张",
 		"bucketCounts": "{images} 张图，每轮 {samples} 次",
 		"bucketCountsSingle": "{images} 张图，每轮 {samples} 次",
-		"expandBuckets": "展开剩余 {count} 个",
+		"expandBuckets": "展开剩余 {count} 个分桶",
 		"collapseBuckets": "收起分桶",
 		"bucketSize": "分桶尺寸",
 		"originalCount": "原图数",

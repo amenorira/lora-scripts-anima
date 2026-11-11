@@ -13,7 +13,7 @@
 		"folderCountSingle": "{count} image",
 		"bucketCounts": "Images: {images} · Uses per epoch: {samples}",
 		"bucketCountsSingle": "Images: {images} · Uses per epoch: {samples}",
-		"expandBuckets": "Show {count} more",
+		"expandBuckets": "Show {count} more buckets",
 		"collapseBuckets": "Show fewer buckets",
 		"bucketSize": "Bucket size",
 		"originalCount": "Original images",

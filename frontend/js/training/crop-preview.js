@@ -46,6 +46,7 @@ window.trainingCropPreviewMixin = {
   _cropPreviewAbort: null,
   _cropPreviewEntered: false,
   _cropBucketResize: null,
+  _cropBucketFrame: null,
 
   async openCropPreview() {
     ++this._cropFocusSeq;
@@ -87,10 +88,18 @@ window.trainingCropPreviewMixin = {
       const buckets = document.querySelector('#cropBucketStats .cp-buckets');
       if (buckets) {
         this._cropBucketResize = new ResizeObserver(() => {
-          const columns = getComputedStyle(buckets).gridTemplateColumns.split(' ').length;
-          this.cropPreviewBucketLimit = Math.max(1, columns * 2 - 1);
+          if (this._cropBucketFrame !== null) return;
+          // Updating the chip count changes the observed grid's height.
+          this._cropBucketFrame = requestAnimationFrame(() => {
+            this._cropBucketFrame = null;
+            const style = getComputedStyle(buckets);
+            const columns = style.gridTemplateColumns.split(' ').length;
+            const rows = parseInt(style.getPropertyValue('--cp-bucket-rows'), 10) || 2;
+            this.cropPreviewBucketLimit = Math.max(1, columns * rows - 1);
+          });
         });
         this._cropBucketResize.observe(buckets);
+        this._cropBucketResize.observe(buckets.closest('.cp-content'));
       }
     } catch (error) {
       if (seq === this._cropPreviewSeq && error.name !== 'AbortError') this.cropPreviewError = error.message;
@@ -104,6 +113,8 @@ window.trainingCropPreviewMixin = {
     this._cropPreviewAbort?.abort();
     this._cropBucketResize?.disconnect();
     this._cropBucketResize = null;
+    if (this._cropBucketFrame !== null) cancelAnimationFrame(this._cropBucketFrame);
+    this._cropBucketFrame = null;
     this._cropPreviewEntered = false;
     this.cropPreviewOpen = false;
     this.unfocusCropPreview();

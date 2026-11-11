@@ -137,6 +137,50 @@ test('bucket chips preserve image filters and keep the selected bucket visible w
   assert.equal(a.cropPreviewView.items.length, 3);
 });
 
+test('bucket rows follow height-only resizes on the next frame and cancel work when closed', async () => {
+  const content = {};
+  const buckets = { closest: () => content };
+  const frames = new Map();
+  const observed = [];
+  let observer, disconnected = false, frameId = 0, rows = 2;
+  const context = loadFrontend(['training/crop-preview'], {
+    window: {}, AbortController, setTimeout, clearTimeout,
+    document: { querySelector: () => buckets, getElementById: () => null },
+    fetch: async () => response({ items: [], random_crop: false }),
+    ResizeObserver: class {
+      constructor(callback) { observer = callback; }
+      observe(target) { observed.push(target); }
+      disconnect() { disconnected = true; }
+    },
+    getComputedStyle: () => ({ gridTemplateColumns: '240px 240px 240px', getPropertyValue: () => String(rows) }),
+    requestAnimationFrame(callback) { frames.set(++frameId, callback); return frameId; },
+    cancelAnimationFrame(id) { frames.delete(id); },
+  });
+  const a = composeMixins(context.window.trainingCropPreviewMixin, {
+    form: {}, _trainingDatasetPayload: () => ({}), $nextTick: async () => {},
+  });
+  await a.openCropPreview();
+  assert.deepEqual(observed, [buckets, content]);
+  const flushFrame = () => {
+    const callbacks = [...frames.values()];
+    frames.clear();
+    callbacks.forEach(callback => callback());
+  };
+  observer(); observer();
+  assert.equal(frames.size, 1);
+  assert.equal(a.cropPreviewBucketLimit, 9);
+  flushFrame();
+  assert.equal(a.cropPreviewBucketLimit, 5);
+  rows = 1;
+  observer(); flushFrame();
+  assert.equal(a.cropPreviewBucketLimit, 2);
+  observer();
+  a.closeCropPreview();
+  assert.equal(disconnected, true);
+  assert.equal(frames.size, 0);
+  assert.equal(a._cropBucketFrame, null);
+});
+
 test('random crop preserves size and stays inside resized image', () => {
   const a = app(); a.cropPreviewItems = [{...sample}];
   for (let n = 0; n < 40; n++) {

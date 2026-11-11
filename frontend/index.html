@@ -1985,6 +1985,12 @@
       </div>
       <span class="cp-legend" x-show="cropPreviewRandom" x-text="t('cropPreview.random')"></span>
       <button type="button" class="btn btn-ghost btn-sm" x-show="cropPreviewRandom" @click="shuffleCropPreview()" x-text="t('cropPreview.shuffle')"></button>
+      <button type="button" class="btn btn-ghost btn-sm cp-buckets-toggle" x-show="cropPreviewBuckets.length > cropPreviewBucketLimit"
+              @click="cropPreviewBucketsExpanded = !cropPreviewBucketsExpanded" :aria-expanded="cropPreviewBucketsExpanded" aria-controls="cropBucketChips">
+        <span :aria-hidden="cropPreviewBucketsExpanded" x-text="t('cropPreview.expandBuckets').replace('{count}', Math.max(0, cropPreviewBuckets.length - cropPreviewBucketLimit))"></span>
+        <span :aria-hidden="!cropPreviewBucketsExpanded" x-text="t('cropPreview.collapseBuckets')"></span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
     </div>
     <section id="cropBucketStats" class="cp-stats" x-show="cropPreviewBuckets.length" :aria-label="t('cropPreview.stats')">
       <div class="cp-buckets" id="cropBucketChips">
@@ -2005,11 +2011,6 @@
           </button>
         </template>
       </div>
-      <button type="button" class="btn btn-ghost btn-sm cp-buckets-toggle" x-show="cropPreviewBuckets.length > cropPreviewBucketLimit"
-              @click="cropPreviewBucketsExpanded = !cropPreviewBucketsExpanded" :aria-expanded="cropPreviewBucketsExpanded" aria-controls="cropBucketChips">
-        <span x-text="cropPreviewBucketsExpanded ? t('cropPreview.collapseBuckets') : t('cropPreview.expandBuckets').replace('{count}', cropPreviewBuckets.length - cropPreviewBucketChips.length)"></span>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-      </button>
     </section>
     <div class="cp-stats-note" x-show="cropPreviewStatsNote()" x-text="cropPreviewStatsNote()"></div>
     <div class="cp-workspace">
