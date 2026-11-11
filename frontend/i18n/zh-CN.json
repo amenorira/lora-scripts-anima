@@ -1832,7 +1832,6 @@
 		"pageLoading": "页面加载：{percent}%",
 		"changeTheme": "切换主题",
 		"changeLanguage": "切换语言",
-		"languageNames": { "zh-CN": "中文", "en-US": "English", "ja-JP": "日本語" },
 		"expandSidebar": "展开侧栏",
 		"collapseSidebar": "收起侧栏",
 		"startTraining": "开始训练",

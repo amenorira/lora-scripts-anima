@@ -278,7 +278,7 @@ window.trainingFieldRelations = {
         });
 
         // Update readonly states after auto_value changes
-        self.updateReadonlyStates();
+        self.updateReadonlyStates(true);
       }));
     });
 

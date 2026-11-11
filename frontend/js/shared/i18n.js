@@ -2,12 +2,16 @@
    Loads translations asynchronously. The app bootstrap waits for ready
    before loading Alpine; other languages preload in the background.
    To add a new language: drop a JSON file in i18n/ and add its
-   code to the LOCALES array below.
+   code and native name to the LOCALES array below.
    ================================================================ */
 
 const I18N = (() => {
   // ── Register available locales here ──────────────────────
-  const LOCALES = ['zh-CN', 'en-US', 'ja-JP'];
+  const LOCALES = [
+    { code: 'zh-CN', name: '中文' },
+    { code: 'en-US', name: 'English' },
+    { code: 'ja-JP', name: '日本語' },
+  ];
 
   let _locale = 'en-US';
   let _messages = null;
@@ -30,7 +34,7 @@ const I18N = (() => {
   }
 
   function _supportedLocale(loc) {
-    return LOCALES.includes(loc) ? loc : null;
+    return LOCALES.some(locale => locale.code === loc) ? loc : null;
   }
 
   function _activeLocale() {
@@ -69,8 +73,8 @@ const I18N = (() => {
   }
 
   const ready = init().then(() => {
-    LOCALES.filter(locale => locale !== _locale).forEach(locale => {
-      _loadLocale(locale).catch(() => {});
+    LOCALES.filter(locale => locale.code !== _locale).forEach(({ code }) => {
+      _loadLocale(code).catch(() => {});
     });
   });
 
@@ -118,7 +122,7 @@ const I18N = (() => {
    * Returns [{ code: 'zh-CN', name: '中文' }, ...]
    */
   function getAvailableLocales() {
-    return LOCALES.map(code => ({ code, name: t('common.languageNames.' + code, code) }));
+    return LOCALES.map(locale => ({ ...locale }));
   }
 
   return { ready, init, t, getLocale, setLocale, getAvailableLocales };

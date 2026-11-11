@@ -109,3 +109,19 @@ test('English can be retried after all startup loading failed and emits an updat
   assert.equal(h.events.length, 1);
   assert.equal(h.events[0].detail.locale, 'en-US');
 });
+
+test('native language names are available before loading and survive startup failure and recovery', async () => {
+  const h = runtime();
+  const expected = [
+    { code: 'zh-CN', name: '中文' }, { code: 'en-US', name: 'English' }, { code: 'ja-JP', name: '日本語' },
+  ];
+  const languages = () => Array.from(h.i18n.getAvailableLocales(), locale => ({ ...locale }));
+  assert.deepEqual(languages(), expected);
+  h.i18n.getAvailableLocales()[0].name = 'changed';
+  assert.deepEqual(languages(), expected, 'callers cannot change the registered names');
+  h.fail('en-US'); await h.i18n.ready;
+  assert.deepEqual(languages(), expected);
+  const retry = h.i18n.setLocale('en-US'); await Promise.resolve();
+  h.respond('en-US', 'recovered'); assert.equal(await retry, true);
+  assert.deepEqual(languages(), expected);
+});

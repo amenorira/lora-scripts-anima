@@ -1832,7 +1832,6 @@
 		"pageLoading": "Page loading: {percent}%",
 		"changeTheme": "Change theme",
 		"changeLanguage": "Change language",
-		"languageNames": { "zh-CN": "中文", "en-US": "English", "ja-JP": "日本語" },
 		"expandSidebar": "Expand sidebar",
 		"collapseSidebar": "Collapse sidebar",
 		"startTraining": "Start Training",

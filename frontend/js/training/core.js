@@ -66,6 +66,7 @@ window.trainingCoreMixin = {
   _clearProfileFieldWatchers() {
     this._cancelProfileFieldWatcherSetup();
     this._disposeKreaDitFormatWatcher();
+    this._cancelReadonlyDomUpdate();
     ['_autoValueWatchers', '_showIfWatchers', '_readonlyWatchers'].forEach(key => {
       (this[key] || []).forEach(stop => { if (typeof stop === 'function') stop(); });
       this[key] = [];
@@ -272,6 +273,7 @@ window.trainingCoreMixin = {
     this._disposeKreaDitFormatWatcher();
     this._cancelScheduledTrainTypeSwitch();
     this._cancelProfileFieldWatcherSetup();
+    this._cancelReadonlyDomUpdate();
     clearTimeout(this._formSaveTimer);
     this._formSaveTimer = null;
     if (this._trainFormMountedRoute) {
