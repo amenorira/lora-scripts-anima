@@ -1993,6 +1993,7 @@
       </button>
     </div>
     <section id="cropBucketStats" class="cp-stats" x-show="cropPreviewBuckets.length" :aria-label="t('cropPreview.stats')">
+      <div class="cp-buckets-scroll">
       <div class="cp-buckets" id="cropBucketChips">
         <button type="button" class="cp-bucket-chip" :aria-pressed="!cropPreviewBucket" @click="selectCropPreviewBucket('')" :title="t('cropPreview.sampleHint')">
           <span class="cp-bucket-size" x-text="t('cropPreview.buckets')"></span>
@@ -2011,9 +2012,12 @@
           </button>
         </template>
       </div>
+      </div>
     </section>
-    <div class="cp-buckets-hint" x-show="!cropPreviewBucketsExpanded && cropPreviewBuckets.length > cropPreviewBucketLimit" aria-hidden="true">
-      <span x-text="t('cropPreview.moreBuckets').replace('{count}', cropPreviewBuckets.length - cropPreviewBucketChips.length)"></span>
+    <div class="cp-buckets-hint" x-show="cropPreviewBuckets.length > cropPreviewBucketLimit">
+      <button type="button" @click="cropPreviewBucketsExpanded = !cropPreviewBucketsExpanded"
+              :aria-expanded="cropPreviewBucketsExpanded" aria-controls="cropBucketChips"
+              x-text="cropPreviewBucketsExpanded ? t('common.collapse') : t('cropPreview.moreBuckets').replace('{count}', cropPreviewBuckets.length - cropPreviewBucketChips.length)"></button>
     </div>
     <div class="cp-stats-note" x-show="cropPreviewStatsNote()" x-text="cropPreviewStatsNote()"></div>
     <div class="cp-workspace">
