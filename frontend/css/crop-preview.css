@@ -25,7 +25,10 @@
 .cp-bucket-counts strong { color: var(--text-primary); font-size: 12px; font-weight: 400; text-align: right; white-space: nowrap; }
 .cp-buckets-divider { position: relative; display: flex; justify-content: center; align-items: center; flex: 0 0 18px; }
 .cp-buckets-divider::before { content: ''; position: absolute; inset-inline: 0; top: 50%; height: 1px; background: var(--border-default); }
-.cp-buckets-toggle { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 5px; appearance: none; border: 0; border-radius: var(--radius-control); padding: 0 10px; background: var(--bg-surface); color: var(--text-secondary); font: inherit; font-size: 11px; line-height: 18px; cursor: pointer; }
+.cp-buckets-toggle { position: relative; display: flex; flex: 1; align-self: stretch; align-items: center; justify-content: center; gap: 5px; appearance: none; border: 0; border-radius: var(--radius-control); padding: 0; background: var(--bg-surface); color: var(--text-secondary); font: inherit; font-size: 11px; line-height: 18px; cursor: pointer; }
+.cp-buckets-toggle::before, .cp-buckets-toggle::after { content: ''; flex: 1; height: 1px; background: var(--border-default); }
+.cp-buckets-toggle::before { margin-right: 5px; }
+.cp-buckets-toggle::after { margin-left: 5px; }
 .cp-buckets-toggle:hover { color: var(--text-primary); }
 .cp-buckets-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .cp-buckets-toggle > svg { transition: transform 180ms var(--ease-disclosure); }
