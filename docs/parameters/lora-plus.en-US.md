@@ -130,7 +130,7 @@ When LoRA+ only brings the best result forward, its main benefit is fewer traini
 | CAME | Supported | Preserves separate per-group learning rates |
 | StableAdamW, Muon, Adan, AdEMAMix, AdEMAMix8bit, SOAP | Supported | Preserve separate per-group learning rates |
 | AdamWScheduleFree | Supported | Keeps the groups, but internal adjustments change the effective rates during training |
-| Automagic3 | Conditional | Both initial group rates must lie within `min_lr` and `max_lr`. Each group adapts independently, so the initial ratio is not fixed during training |
+| Automagic3 / Automagic4 | Conditional | Both initial group rates must lie within `min_lr` and `max_lr`. Each group adapts independently, so the initial ratio is not fixed during training |
 | AdaFactor | Manual-LR mode only | Both `relative_step` and `warmup_init` must be off. The default relative-step mode ignores per-group rates, so the UI disables and locks LoRA+ |
 | Prodigy, ProdigyPlus | Unsupported | The current sd-scripts path cannot reliably preserve separate per-group rates; both UI and backend reject the combination |
 | EmoSens | Unsupported | Updates every parameter with one global `emoPulse` and resets all groups to that rate each step, which removes the ratio |

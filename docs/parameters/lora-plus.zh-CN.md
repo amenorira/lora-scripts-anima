@@ -130,7 +130,7 @@ LoRA+ 的效果需要区分学习速度和最终质量。
 | CAME | 支持 | 保留不同参数组的独立学习率 |
 | StableAdamW、Muon、Adan、AdEMAMix、AdEMAMix8bit、SOAP | 支持 | 保留不同参数组的独立学习率 |
 | AdamWScheduleFree | 支持 | 保留参数组，但内部调整会改变训练中的实际学习率 |
-| Automagic3 | 条件支持 | 两组初始学习率必须在 `min_lr` 与 `max_lr` 之间。各参数组独立调整学习率，初始倍率关系不固定 |
+| Automagic3 / Automagic4 | 条件支持 | 两组初始学习率必须在 `min_lr` 与 `max_lr` 之间。各参数组独立调整学习率，初始倍率关系不固定 |
 | AdaFactor | 仅手动学习率模式 | `relative_step` 与 `warmup_init` 必须关闭。默认相对步长模式会忽略参数组学习率，界面会自动关闭并锁定 LoRA+ |
 | Prodigy、ProdigyPlus | 不支持 | 当前 sd-scripts 训练路径无法可靠保留不同参数组的独立学习率，界面与后端都会阻止该组合 |
 | EmoSens | 不支持 | EmoSens 用单一全局 `emoPulse` 更新所有参数，并在每步后统一各参数组学习率，倍率会失效 |

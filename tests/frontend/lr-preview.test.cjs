@@ -36,6 +36,12 @@ test('zero warmup is visible and unavailable curves have no milestone values', (
   const unavailable = app._buildLrPreview({ ...values, optimizer_type: 'AdamWScheduleFree' });
   assert.ok(unavailable.unavailable);
   assert.deepEqual(Array.from(unavailable.milestoneRates), []);
+  for (const version of [3, 4]) {
+    const adaptive = app._buildLrPreview({ ...values,
+      optimizer_type: `vendor.automagic_optimizer.integration.Automagic${version}` });
+    assert.equal(adaptive.unavailable, 'lrPreview.internalNote');
+    assert.deepEqual(Array.from(adaptive.milestoneRates), []);
+  }
 });
 
 test('Krea 2 LoRA+ milestones use the selected parameter group', () => {

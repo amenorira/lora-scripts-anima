@@ -380,7 +380,8 @@ def install_import_hook() -> None:
 register_learning_rate_reporter(
     LearningRateReporter(
         "automagic",
-        _named("Automagic3", "vendor.automagic_optimizer.integration.Automagic3"),
+        _named("Automagic3", "vendor.automagic_optimizer.integration.Automagic3",
+               "Automagic4", "vendor.automagic_optimizer.integration.Automagic4"),
         _read_public_method,
         owns_schedule=True,
     )

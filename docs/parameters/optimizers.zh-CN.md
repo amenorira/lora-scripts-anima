@@ -33,7 +33,7 @@
 | PagedLion8bit | Lion8bit 同时需要分页时 | 分页改变动量状态的存储位置；触发换页时增加 CPU/GPU 数据传输 |
 | Prodigy | 由优化器估计更新尺度 | 学习率作为倍率，建议从 `1.0` 开始；sd-scripts 固定为 `1.0`，Krea 2 可调整；本项目不支持搭配 LoRA+ |
 | ProdigyPlusScheduleFree | 自动估计步长并在内部管理调度 | 外部 scheduler 和 warmup 不生效；适合已有基准后的对照 |
-| Automagic3 | 项目实验性自适应方案 | 训练参数保持 FP32；仅融合更新模式要求梯度累积为 1、全局梯度裁剪为 0、禁用 mixed_precision=fp16、仅使用单卡 |
+| Automagic3 / Automagic4 | 上游实验性自适应优化器 | 训练参数保持 FP32；仅融合更新模式要求梯度累积为 1、全局梯度裁剪为 0、禁用 mixed_precision=fp16、仅使用单卡 |
 | AdaFactor | 优化器状态显存紧张 | relative step 模式会接管学习率，并限制 LoRA+ |
 | CAME | 比较因子化状态、残差置信度缩放和内部 RMS 裁剪 | 使用三个 beta；可因子化张量的二阶状态按行、列存储 |
 | AdamWScheduleFree | 测试不依赖外部 scheduler 的 AdamW | 使用内部 warmup，项目默认 `warmup_steps=0`；评估和保存使用平均权重 |
@@ -82,7 +82,7 @@
 | AdamWScheduleFree | `1e-4` | 官方建议常比基准优化器高 `1`～`10` 倍；Anima 缺少充分验证，按实验方案使用 |
 | Prodigy / ProdigyPlus | `1.0` | D-adaptation 缩放基准，不能与 `2e-5` 直接比较 |
 | AdaFactor relative step | 由优化器接管，输入 LR 不控制更新 | 关闭 `relative_step` 和 `warmup_init` 后，Anima 手动模式从 `2e-5` 开始 |
-| Automagic3 / EmoSens | `1e-4` / Transformer LoRA `0.1`、U-Net LoRA `1.0` | 分别作为动态学习率的起点和倍率 |
+| Automagic3 / Automagic4 / EmoSens | `2e-5` / `2e-5` / Transformer LoRA `0.1`、U-Net LoRA `1.0` | Automagic 使用动态学习率的起点，EmoSens 使用倍率 |
 
 Lion 的 `5e-6` 沿用官方“LR 约为 AdamW 的 1/3～1/10”的建议；本项目保持自己的权重衰减默认值。复现官方配方时，还需将 weight decay 相应增大 3～10 倍。
 
@@ -414,37 +414,47 @@ AdamWScheduleFree 使用内部 `warmup_steps`，外部 `lr_warmup_steps` 无效�
 随机舍入减少低精度更新长期朝同一方向取整造成的误差。ProdigyPlus 沿用库默认行为，本训练器不另加开关。
 
 <!-- doc-anchor: automagic-lr -->
-### Automagic3 参数
+### Automagic3 / Automagic4 参数
+
+两版均集成自 AI Toolkit 上游：[Automagic3](https://github.com/ostris/ai-toolkit/blob/c2864bba48a6f94ab1171d9df47b1335f8306355/toolkit/optimizers/automagic3.py)、[Automagic4](https://github.com/ostris/ai-toolkit/blob/534d462ff622e334e1a65b42884d96d98315d75a/toolkit/optimizers/automagic4.py)。本项目负责训练器接入、参数校验和兼容约束。两版仍属实验性优化器。
 
 Automagic3 汇总各参数组近期的更新方向，自动调节该组的学习率。持续同向的更新推动学习率上升，连续交替的更新推动学习率下降；实际调整由组内汇总结果决定。`learning_rate` 是新训练的起始值。
+
+Automagic4 在内部裁剪后，根据梯度平方统计估计的敏感度缩小高敏感元素的更新，并按方向翻转率调整组学习率。`sensitivity_quantile` 设置敏感度参考，`step_target` 设置学习率控制器的中性点。
 
 下表列出本训练器的初始值。已经手动修改或从配置导入的值可能保留。
 
 | 参数 | 初始值 | 范围 | 作用 |
 | --- | --- | --- | --- |
-| `learning_rate` | `1e-4` | 有限正数，位于上下限内 | 设置新训练的起始学习率 |
+| `learning_rate` | `2e-5` | 有限正数，位于上下限内 | 设置新训练的起始学习率 |
 | `min_lr` | `1e-8` | 有限正数，不大于 `max_lr` | 限制自动调节的最低学习率 |
-| `max_lr` | `1e3` | 有限正数，不小于 `min_lr` | 限制自动调节的最高学习率；默认值用于数值保护，调低可收紧增长范围 |
+| `max_lr` | `1e-4` | 有限正数，不小于 `min_lr` | 限制自动调节的最高学习率，可按训练需要调整 |
 | `beta2` | `0.999` | `0 ≤ beta2 < 1` | 平滑梯度平方统计；越接近 1，历史保留越久 |
 | `clip_threshold` | `1.0` | 有限正数 | 限制内部更新的均方根和单个分量；值越小，限制越强 |
 | `polarity_history` | `8` | 整数 `2–64` | 记录最近多少次实际参数更新的方向，供学习率调整使用 |
+| `sensitivity_quantile` | `0.9` | 仅 v4；`0 < q ≤ 1` | 对各张量的几何平均敏感度取按元素数加权的分位数，作为下一步的参考；超过参考值的元素缩小更新 |
+| `step_target` | `0.1` | 仅 v4；`0 < step_target < 2` | 设置方向翻转率的中性点，近似对应有效学习率与曲率的乘积；`2` 是稳定边界 |
 | `fused` | `False` | 布尔值 | 开启后，在反向传播中逐个更新参数并释放对应梯度 |
 | `eps` | `1e-30` | 有限正数 | 为梯度平方统计提供数值稳定项，避免除零 |
 | `weight_decay` | `0` | 有限非负数 | 收缩可训练权重；`0` 关闭权重衰减 |
 
-`min_lr`、`max_lr`、`beta2`、`clip_threshold`、`polarity_history`、`fused` 对应界面的 `automagic_*` 字段，生成训练配置时写入 `optimizer_args`。`eps`、`weight_decay` 使用同名共享字段，也写入 `optimizer_args`；`learning_rate` 保留为顶层配置。各参数组的起始学习率都须满足 `min_lr ≤ 起始学习率 ≤ max_lr`，包括组件独立学习率及 LoRA+ 倍率形成的分组值。
+`min_lr`、`max_lr`、`beta2`、`clip_threshold`、`polarity_history`、`fused` 以及 v4 的 `sensitivity_quantile`、`step_target` 对应界面的 `automagic_*` 字段，生成训练配置时写入 `optimizer_args`。`eps`、`weight_decay` 使用同名共享字段，也写入 `optimizer_args`；`learning_rate` 保留为顶层配置。各参数组的起始学习率都须满足 `min_lr ≤ 起始学习率 ≤ max_lr`，包括组件独立学习率及 LoRA+ 倍率形成的分组值。
+
+`max_lr` 是 Automagic 系列的主要调节参数，用于设定自适应学习率的上限。调低更保守，调高则允许更大的更新。
 
 #### 历史步数与内部裁剪
 
-`polarity_history=8` 表示记录最近 8 次实际参数更新。历史尚未填满时，参数仍按当前学习率更新；填满后再根据汇总结果调整后续学习率。较长的窗口响应更慢，历史缓存也占用更多显存。恢复训练时改变窗口长度，会重新收集符号历史。
+`polarity_history=8` 表示记录最近 8 次实际参数更新。历史尚未填满时，参数按当前学习率更新；填满后再根据汇总结果调整后续学习率。较长的窗口响应更慢，历史缓存也占用更多显存。恢复训练时改变窗口长度，会重新收集符号历史。
 
-普通模式可以先通过 `max_grad_norm` 裁剪梯度。Automagic3 随后对内部更新做均方根（RMS）裁剪和逐元素裁剪，再加入非零权重衰减项，最后乘以当前自适应学习率。
+Automagic4 在没有敏感度参考时，首次优化器更新仅测量梯度平方统计和参考值，不更新权重；下一步有参考值后才开始权重更新和方向历史记录。
+
+普通模式可以先通过 `max_grad_norm` 裁剪梯度。两版随后对内部更新做均方根（RMS）裁剪和逐元素裁剪；v4 再应用敏感度缩放。之后加入非零权重衰减项，最后乘以当前自适应学习率。
 
 #### 反向传播时更新参数
 
 `fused=False` 是项目默认值，参数在常规优化器更新阶段更新，可以使用梯度累积和全局梯度裁剪。`fused=True` 会在某个参数的梯度就绪后立即更新它并释放对应梯度，减少同时保留的梯度。开启需要单 GPU、梯度累积为 `1`、`max_grad_norm=0`，且混合精度选择 `bf16` 或 `no`。内部 `clip_threshold` 在两种模式下都生效。
 
-本项目要求可训练参数保持 FP32，因此 `full_bf16` 会关闭；BF16 混合精度计算仍可使用。两种更新模式都由优化器管理学习率，外部调度器固定为 `constant`，外部预热固定为 `0`。
+本项目要求可训练参数保持 FP32，因此 `full_bf16` 和旧配置或 API 输入中的 `full_fp16` 都会关闭；BF16 混合精度计算仍可使用。两种更新模式都由优化器管理学习率，外部调度器固定为 `constant`，外部预热固定为 `0`。
 
 ### EmoSens v3.9.3
 
@@ -475,9 +485,9 @@ EmoSens 会根据损失的变化自动调整学习率。使用时，在 `learnin
 <!-- doc-anchor: loraplus -->
 ### LoRA+
 
-大多数优化器都可以搭配 LoRA+，包括 Muon 和 Automagic3；例外是 Prodigy、ProdigyPlus、EmoSens、LoRA-RITE 和 LoRA-Muon（LoRA+ 的分组学习率与 LoRA-RITE 的 A/B 配对、LoRA-Muon 的联合更新路径均不兼容），AdaFactor 则需要同时关闭 `relative_step` 和 `warmup_init`。
+大多数优化器都可以搭配 LoRA+，包括 Muon、Automagic3 和 Automagic4；例外是 Prodigy、ProdigyPlus、EmoSens、LoRA-RITE 和 LoRA-Muon（LoRA+ 的分组学习率与 LoRA-RITE 的 A/B 配对、LoRA-Muon 的联合更新路径均不兼容），AdaFactor 则需要同时关闭 `relative_step` 和 `warmup_init`。
 
-切换优化器后重新检查 LoRA+ 倍率；Automagic3 还要求倍率后的学习率落在 `min_lr` 与 `max_lr` 之间。完整限制见 LoRA+ 文档的“优化器与调度器”。
+切换优化器后重新检查 LoRA+ 倍率；Automagic3 / Automagic4 还要求倍率后的学习率落在 `min_lr` 与 `max_lr` 之间。完整限制见 LoRA+ 文档的“优化器与调度器”。
 
 <!-- doc-anchor: scenarios -->
 ## 不同数据集需要检查的内容

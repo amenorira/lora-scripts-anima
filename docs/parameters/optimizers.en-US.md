@@ -33,7 +33,7 @@ Start with AdamW8bit. Compare StableAdamW for update spikes, or a Paged variant 
 | PagedLion8bit | Lion8bit that also needs paging | Paging changes where momentum state is stored; active paging adds CPU/GPU transfers |
 | Prodigy | Optimizer-estimated update scale | LR acts as a multiplier; start at `1.0`. Fixed at `1.0` for sd-scripts, editable for Krea 2. Not supported with LoRA+ here |
 | ProdigyPlusScheduleFree | Automatic step-size estimation and internal scheduling | External scheduler and warmup are ignored; compare against an established baseline |
-| Automagic3 | Experimental adaptive scheme | Keeps trainable parameters in FP32. Only fused updates require gradient accumulation of 1, global gradient clipping of 0, no fp16 mixed precision, and a single GPU |
+| Automagic3 / Automagic4 | Experimental upstream adaptive optimizers | Keeps trainable parameters in FP32. Only fused updates require gradient accumulation of 1, global gradient clipping of 0, no fp16 mixed precision, and a single GPU |
 | AdaFactor | Very tight optimizer memory | Relative-step mode takes over the LR and restricts LoRA+ |
 | CAME | Compare factorized state, residual-confidence scaling, and internal RMS clipping | Uses three betas; stores second moments by row and column for factorable tensors |
 | AdamWScheduleFree | Testing AdamW without an external scheduler | Uses internal warmup, default `warmup_steps=0`; evaluation and saving use averaged weights |
@@ -82,7 +82,7 @@ The table lists project starting values for Anima. Each optimizer uses its own u
 | AdamWScheduleFree | `1e-4` | Schedule-Free guidance often `1`–`10`× higher than the base optimizer; treated as experimental on Anima |
 | Prodigy / ProdigyPlus | `1.0` | D-adaptation scale; not comparable to `2e-5` |
 | AdaFactor relative step | Controlled by the optimizer; entered LR does not control updates | With both `relative_step` and `warmup_init` off, Anima manual mode starts at `2e-5` |
-| Automagic3 / EmoSens | `1e-4` / Transformer LoRA `0.1`, U-Net LoRA `1.0` | Starting value and multiplier, respectively, for internally adjusted learning rates |
+| Automagic3 / Automagic4 / EmoSens | `2e-5` / `2e-5` / Transformer LoRA `0.1`, U-Net LoRA `1.0` | Automagic uses a starting rate; EmoSens uses a multiplier for its internally adjusted rate |
 
 Lion's `5e-6` follows the guidance of roughly 1/3 to 1/10 of AdamW's learning rate. This project keeps its own weight-decay defaults. To reproduce the official recipe, also increase weight decay by roughly 3–10×.
 
@@ -414,37 +414,47 @@ AdamWScheduleFree uses internal `warmup_steps`; external `lr_warmup_steps` is in
 Stochastic rounding reduces the drift from low-precision updates that consistently round in the same direction. ProdigyPlus uses the library default; this trainer provides no separate switch.
 
 <!-- doc-anchor: automagic-lr -->
-### Automagic3 parameters
+### Automagic3 / Automagic4 parameters
+
+Both versions are integrated from AI Toolkit upstream: [Automagic3](https://github.com/ostris/ai-toolkit/blob/c2864bba48a6f94ab1171d9df47b1335f8306355/toolkit/optimizers/automagic3.py) and [Automagic4](https://github.com/ostris/ai-toolkit/blob/534d462ff622e334e1a65b42884d96d98315d75a/toolkit/optimizers/automagic4.py). This project provides trainer integration, validation, and compatibility constraints. Both remain experimental optimizers.
 
 Automagic3 adjusts each parameter group's learning rate by pooling its recent update directions. Consistent directions push the rate upward, while strictly alternating directions push it downward. The pooled result determines the adjustment. `learning_rate` sets the starting point for a new run.
+
+After internal clipping, Automagic4 uses sensitivity estimated from squared-gradient statistics to reduce updates to highly sensitive elements. It adjusts each group's learning rate from direction-flip rates. `sensitivity_quantile` sets the sensitivity reference, and `step_target` sets the controller's neutral point.
 
 The table lists this trainer's initial settings. Values entered manually or loaded from a configuration may be retained.
 
 | Parameter | Initial value | Range | Purpose |
 | --- | --- | --- | --- |
-| `learning_rate` | `1e-4` | Finite and positive, within the bounds | Starting learning rate for a new run |
+| `learning_rate` | `2e-5` | Finite and positive, within the bounds | Starting learning rate for a new run |
 | `min_lr` | `1e-8` | Finite and positive; no greater than `max_lr` | Lower bound for automatic learning-rate adjustment |
-| `max_lr` | `1e3` | Finite and positive; no less than `min_lr` | Upper bound for automatic adjustment; the default is a numerical safeguard, and lowering it limits growth |
+| `max_lr` | `1e-4` | Finite and positive; no less than `min_lr` | Upper bound for automatic adjustment; adjust it for your run |
 | `beta2` | `0.999` | `0 ≤ beta2 < 1` | Smooths squared-gradient statistics; values closer to 1 retain history longer |
 | `clip_threshold` | `1.0` | Finite and positive | Limits the internal update's root mean square and individual components; lower values apply stronger clipping |
 | `polarity_history` | `8` | Integer from `2` to `64` | Number of recent parameter updates used to track directions and adjust the learning rate |
+| `sensitivity_quantile` | `0.9` | v4 only; `0 < q ≤ 1` | Element-count-weighted quantile of per-tensor geometric-mean sensitivities, used as the next step's reference; elements above it receive smaller updates |
+| `step_target` | `0.1` | v4 only; `0 < step_target < 2` | Neutral direction-flip rate, approximately targeting effective learning rate times curvature; `2` is the stability edge |
 | `fused` | `False` | Boolean | Updates parameters during backpropagation and releases their gradients |
 | `eps` | `1e-30` | Finite and positive | Stabilizes squared-gradient statistics to prevent division by zero |
 | `weight_decay` | `0` | Finite and nonnegative | Shrinks trainable weights; `0` disables weight decay |
 
-`min_lr`, `max_lr`, `beta2`, `clip_threshold`, `polarity_history`, and `fused` correspond to the interface's `automagic_*` fields and are exported through `optimizer_args`. The shared `eps` and `weight_decay` fields also use `optimizer_args`; `learning_rate` remains a top-level setting. Every parameter group must start within `min_lr ≤ starting learning rate ≤ max_lr`, including component overrides and rates produced by LoRA+ multipliers.
+`min_lr`, `max_lr`, `beta2`, `clip_threshold`, `polarity_history`, `fused`, and v4's `sensitivity_quantile` and `step_target` correspond to the interface's `automagic_*` fields and are exported through `optimizer_args`. The shared `eps` and `weight_decay` fields also use `optimizer_args`; `learning_rate` remains a top-level setting. Every parameter group must start within `min_lr ≤ starting learning rate ≤ max_lr`, including component overrides and rates produced by LoRA+ multipliers.
+
+`max_lr` is the main tuning parameter for Automagic optimizers. It caps the adaptive learning rate: lower values are more conservative, while higher values allow larger updates.
 
 #### History length and internal clipping
 
 `polarity_history=8` records the last 8 actual parameter updates. Parameters continue updating at the current learning rate while the window fills. Once full, the pooled history can adjust subsequent rates. Longer windows respond more slowly and use more GPU memory. Changing the window length when resuming resets the sign history.
 
-In normal mode, `max_grad_norm` can clip gradients first. Automagic3 then clips the root mean square (RMS) of its internal update and each component, adds any nonzero weight-decay term, and finally multiplies by the current adaptive learning rate.
+Without a sensitivity reference, Automagic4's first optimizer step only measures squared-gradient statistics and the reference, leaving weights unchanged. Weight updates and direction-history recording begin on the next step with a reference available.
+
+In normal mode, `max_grad_norm` can clip gradients first. Both versions then clip the root mean square (RMS) of their internal update and each component; v4 also applies sensitivity scaling. Any nonzero weight-decay term is then added, and the result is multiplied by the current adaptive learning rate.
 
 #### Updates during backpropagation
 
 The project default is `fused=False`: parameters are updated at the normal optimizer step, with gradient accumulation and global gradient clipping available. With `fused=True`, each parameter is updated as its gradient becomes available, and that gradient is released so fewer gradients are held at once. This mode requires one GPU, gradient accumulation of `1`, `max_grad_norm=0`, and `mixed_precision` set to `bf16` or `no`. Internal `clip_threshold` clipping remains active in both modes.
 
-This project keeps trainable parameters in FP32 and disables `full_bf16`. BF16 mixed-precision computation remains available. The optimizer controls the learning rate in both modes; the external scheduler is fixed to `constant`, with external warmup set to `0`.
+This project keeps trainable parameters in FP32 and disables `full_bf16` and any `full_fp16` supplied by older configurations or API requests. BF16 mixed-precision computation remains available. The optimizer controls the learning rate in both modes; the external scheduler is fixed to `constant`, with external warmup set to `0`.
 
 ### EmoSens v3.9.3
 
@@ -475,9 +485,9 @@ When resuming, keep the original learning-rate multiplier, convergence-hint sett
 <!-- doc-anchor: loraplus -->
 ### LoRA+
 
-LoRA+ works with most optimizers, including Muon and Automagic3. The exceptions are Prodigy, ProdigyPlus, EmoSens, LoRA-RITE, and LoRA-Muon (LoRA+'s grouped learning rates are incompatible with LoRA-RITE's A/B pairing and LoRA-Muon's joint update path); AdaFactor requires both `relative_step` and `warmup_init` off.
+LoRA+ works with most optimizers, including Muon, Automagic3, and Automagic4. The exceptions are Prodigy, ProdigyPlus, EmoSens, LoRA-RITE, and LoRA-Muon (LoRA+'s grouped learning rates are incompatible with LoRA-RITE's A/B pairing and LoRA-Muon's joint update path); AdaFactor requires both `relative_step` and `warmup_init` off.
 
-Recheck the LoRA+ ratio after switching optimizers. Automagic3 also requires the multiplied rate to stay between `min_lr` and `max_lr`. See Optimizers and schedulers in the LoRA+ guide for the full rules.
+Recheck the LoRA+ ratio after switching optimizers. Automagic3 / Automagic4 also requires the multiplied rate to stay between `min_lr` and `max_lr`. See Optimizers and schedulers in the LoRA+ guide for the full rules.
 
 <!-- doc-anchor: scenarios -->
 ## What to check for each dataset type

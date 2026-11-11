@@ -179,7 +179,7 @@ window.trainingLrPreviewMixin = {
     const pointCount = 160;
     const optimizer = String(source.optimizer_type || '').toLowerCase();
     const internal = optimizer.endsWith('schedulefree') || optimizer.endsWith('.emosens')
-      || optimizer.endsWith('automagic') || optimizer.endsWith('automagic3')
+      || optimizer.endsWith('automagic') || optimizer.endsWith('automagic3') || optimizer.endsWith('automagic4')
       || (optimizer === 'adafactor' && source[isKrea2 ? 'krea_adafactor_relative_step' : 'adafactor_relative_step'] !== false);
     const params = {
       scheduler, warmupFraction: warmup.fraction,

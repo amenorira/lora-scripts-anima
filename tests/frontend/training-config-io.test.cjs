@@ -47,6 +47,42 @@ test('flat config import switches profile before filtering fields', async () => 
   assert.deepEqual(JSON.parse(storage.get('anima-form-train-basic')), JSON.parse(JSON.stringify(app.form)));
 });
 
+test('Automagic imports preserve valid fused updates and disable conflicting configurations', async () => {
+  for (const profile of ['anima-lora', 'moss-image-lora', 'sdxl-lora', 'krea2-lora']) {
+    for (const version of [3, 4]) {
+      const { window } = loadFrontend(['shared/constants', 'shared/utils', 'app/config',
+        ...TRAINING_CORE_SCRIPTS, 'training/config-io', 'training/toml'], {
+        window: {}, document: { getElementById: () => null },
+      });
+      const defaults = Object.fromEntries(window.getVisibleSections(profile)
+        .flatMap(section => section.fields).map(field => [field.key, field.default]));
+      const app = Object.assign({}, window.utilsMixin, window.trainingCoreMixin,
+        window.trainingConfigIoMixin, window.trainingTomlMixin, {
+          currentRoute: 'train-basic', trainTypes: [{ v: profile }],
+          form: { ...defaults, model_train_type: profile }, formDefaults: { ...defaults },
+          _profileFieldSources: {}, _profileFormDrafts: {}, _optimizerDrafts: {}, _activeTrainType: profile,
+          renderTrainingForm() {}, updateReadonlyStates() {}, showConditionalFields() {},
+          _renderTomlPreview() {}, _persistProfileDrafts() {}, _persistProfileFieldSources() {},
+          _persistActiveTrainingForm() {}, updateTomlDebounced() {}, toast() {}, t: key => key,
+        });
+      app._autoValueRules = app._collectAutoValueRules();
+      const imported = {
+        model_train_type: profile,
+        optimizer_type: `vendor.automagic_optimizer.integration.Automagic${version}`,
+        learning_rate: 3e-5, automagic_max_lr: 0.3, automagic_fused: true,
+        gradient_accumulation_steps: 1, max_grad_norm: 0, mixed_precision: 'bf16',
+      };
+      await app._applyImportedFlatConfig(imported);
+      app.updateToml();
+      assert.equal(app.form.automagic_fused, true, `${profile} Automagic${version}`);
+      assert.ok(app._buildOptimizerArgs(app.form).includes('fused=True'));
+      await app._applyImportedFlatConfig({ ...imported, max_grad_norm: 1 });
+      assert.equal(app.form.automagic_fused, false);
+      assert.ok(app._buildOptimizerArgs(app.form).includes('fused=False'));
+    }
+  }
+});
+
 test('training profiles keep independent drafts and reset from registry defaults', () => {
   const profiles = [['anima', 'anima-default', 'AnimaOpt'], ['sdxl', 'sdxl-default', 'SDXLOpt'], ['krea2', 'krea-default', 'KreaOpt']];
   const fields = Object.fromEntries(profiles.map(([name, rate, optimizer]) => [`${name}-lora`, [

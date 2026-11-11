@@ -207,6 +207,7 @@ window.trainingFieldRelations = {
         this.showConditionalFields(matched.target);
       }
     });
+    this._enforceAutomagicFusedUiConstraints();
     this._refreshTrainingOptionErrors();
   },
 
@@ -651,7 +652,7 @@ window.trainingFieldRelations = {
     const folder = basename.replace(/[<>:"|?*\x00-\x1f]/g, '_').replace(/[. ]+$/, '');
     const optimizer = String(f.optimizer_type || '').split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '');
     const shortOptimizer = {
-      prodigyplusschedulefree: 'ppsf', adamwschedulefree: 'adamwsf', automagic3: 'automagic',
+      prodigyplusschedulefree: 'ppsf', adamwschedulefree: 'adamwsf', automagic3: 'automagic', automagic4: 'automagic4',
     }[optimizer] || optimizer;
     const lycoris = f.network_module === 'lycoris.kohya';
     const algorithm = lycoris ? f.lycoris_algo : {

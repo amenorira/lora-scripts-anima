@@ -36,6 +36,7 @@ test('quick naming uses folder basename and optimizer shorthand across profiles 
     ['AdamWScheduleFree', 'adamwsf'], ['prodigyopt.Prodigy', 'prodigy'],
     ['vendor.lora_muon.LoRA_Muon', 'loramuon'], ['pytorch_optimizer.CAME', 'came'],
     ['vendor.automagic_optimizer.integration.Automagic3', 'automagic'],
+    ['vendor.automagic_optimizer.integration.Automagic4', 'automagic4'],
   ]) {
     Object.assign(app.form, { optimizer_type: optimizer, network_module: 'networks.lora_anima' });
     assert.equal(app.suggestedOutputName(), `lanyin reine_${name}_dim16`);

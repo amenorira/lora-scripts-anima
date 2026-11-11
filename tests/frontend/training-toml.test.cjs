@@ -112,6 +112,27 @@ test('ScheduleFree auto keeps its native default and explicit custom arguments',
   }
 });
 
+test('Automagic defaults reach every profile without replacing a manual starting rate', () => {
+  for (const profile of ['anima-lora', 'moss-image-lora', 'sdxl-lora', 'krea2-lora']) {
+    for (const version of [3, 4]) {
+      const { app } = preview(profile, 'networks.lora_anima', {
+        optimizer_type: `vendor.automagic_optimizer.integration.Automagic${version}`,
+      });
+      app.formDefaults = {};
+      app._fieldSources = { learning_rate: 'default' };
+      const rule = app._collectAutoValueRules().find(rule =>
+        rule.target === 'learning_rate' && app._matchAutoValueRule(rule));
+      assert.equal(app._applyAutoValueRule(rule), true, `${profile} Automagic${version}`);
+      assert.equal(app.form.learning_rate, '2e-5');
+      assert.equal(app.findFieldDef('automagic_max_lr').default, '1e-4');
+      app.form.learning_rate = '3e-5';
+      app._fieldSources.learning_rate = 'user';
+      assert.equal(app._applyAutoValueRule(rule), false);
+      assert.equal(app.form.learning_rate, '3e-5');
+    }
+  }
+});
+
 test('numeric-looking text stays text while the schema identifies numeric preview values', () => {
   for (const profile of ['anima-lora', 'sdxl-lora', 'krea2-lora']) {
     const { app, text } = preview(profile, 'networks.lora_anima', {

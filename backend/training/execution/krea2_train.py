@@ -15,7 +15,7 @@ from musubi_tuner.krea2_train_network import (
     Krea2NetworkTrainer, krea2_setup_parser, setup_parser_common, read_config_from_file,
 )
 from backend.training.config.krea2_optimizers import PAIRED_OPTIMIZERS, INTERNAL_OPTIMIZERS
-from backend.training.config.optimizer_contracts import ADEMAMIX_OPTIMIZERS, AUTOMAGIC_OPTIMIZER_TYPE, get_automagic_fused_conflicts
+from backend.training.config.optimizer_contracts import ADEMAMIX_OPTIMIZERS, AUTOMAGIC_OPTIMIZERS, get_automagic_fused_conflicts
 
 
 def paired_parameter_groups(network, groups):
@@ -55,12 +55,12 @@ class Krea2Trainer(Krea2NetworkTrainer):
         return params
 
     def get_optimizer(self, args, trainable_params):
-        if args.optimizer_type == AUTOMAGIC_OPTIMIZER_TYPE:
+        if args.optimizer_type in AUTOMAGIC_OPTIMIZERS:
             arguments = dict(item.split('=', 1) for item in args.optimizer_args or [])
             if ast.literal_eval(arguments.get('fused', 'False')):
                 conflicts = get_automagic_fused_conflicts(vars(args), list(range(getattr(self, '_optimizer_processes', 1))))
                 if conflicts:
-                    raise ValueError('Automagic3 fused: ' + '; '.join(conflicts))
+                    raise ValueError(args.optimizer_type.rsplit('.', 1)[-1] + ' fused: ' + '; '.join(conflicts))
                 args = copy.copy(args)
                 args.optimizer_args = [arg for arg in args.optimizer_args if not arg.startswith('fused_guard=')]
                 args.optimizer_args.append('fused_guard=True')

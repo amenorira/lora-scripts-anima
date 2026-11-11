@@ -130,7 +130,7 @@ Krea 2 は `learning_rate` を DiT の基本学習率として使います。
 | CAME | 対応 | 群別の学習率を保持 |
 | StableAdamW・Muon・Adan・AdEMAMix・AdEMAMix8bit・SOAP | 対応 | 群別の学習率を保持 |
 | AdamWScheduleFree | 対応 | 群は保持するが、内部調整で実効学習率が変化 |
-| Automagic3 | 条件付き | 両群の初期学習率を `min_lr`～`max_lr` に収める。各群が独立に学習率を調整するため、初期の倍率関係は固定されない |
+| Automagic3 / Automagic4 | 条件付き | 両群の初期学習率を `min_lr`～`max_lr` に収める。各群が独立に学習率を調整するため、初期の倍率関係は固定されない |
 | AdaFactor | 手動学習率のみ | `relative_step` と `warmup_init` を両方オフにする。既定の相対ステップは群別学習率を使わないため、画面で LoRA+ を無効に固定 |
 | Prodigy・ProdigyPlus | 未対応 | 現在の sd-scripts 経路では群別学習率を確実に保持できず、画面とバックエンドで拒否 |
 | EmoSens | 未対応 | 共通の `emoPulse` で全パラメータを更新し、毎ステップ全群を同じ学習率に戻すため倍率が失われる |

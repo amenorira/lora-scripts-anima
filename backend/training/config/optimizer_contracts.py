@@ -9,9 +9,12 @@ from typing import Any, Mapping
 
 
 AUTOMAGIC_OPTIMIZER_TYPE = "vendor.automagic_optimizer.integration.Automagic3"
-AUTOMAGIC_MAX_LR_DEFAULT = 1e3
-AUTOMAGIC_MAX_LR_DEFAULT_TEXT = "1e3"
-# Automagic3 UI 顶层字段 → optimizer_args 键的映射（adapter 与 validation 共用，Single Source of Truth）
+AUTOMAGIC4_OPTIMIZER_TYPE = "vendor.automagic_optimizer.integration.Automagic4"
+AUTOMAGIC_OPTIMIZERS = frozenset({AUTOMAGIC_OPTIMIZER_TYPE, AUTOMAGIC4_OPTIMIZER_TYPE})
+AUTOMAGIC_START_LR_DEFAULT = 2e-5
+AUTOMAGIC_MAX_LR_DEFAULT = 1e-4
+AUTOMAGIC_MAX_LR_DEFAULT_TEXT = "1e-4"
+# Automagic 共有的 UI 顶层字段 → optimizer_args 键的映射。
 AUTOMAGIC_MERGED_ARG_MAP: dict[str, str] = {
     "automagic_min_lr": "min_lr",
     "automagic_max_lr": "max_lr",
@@ -21,6 +24,10 @@ AUTOMAGIC_MERGED_ARG_MAP: dict[str, str] = {
     "automagic_fused": "fused",
     "eps": "eps",
     "weight_decay": "weight_decay",
+}
+AUTOMAGIC4_MERGED_ARG_MAP: dict[str, str] = {
+    "automagic_sensitivity_quantile": "sensitivity_quantile",
+    "automagic_step_target": "step_target",
 }
 EMOSENS_OPTIMIZER_TYPE = "vendor.emo_optimizer.emosens.EmoSens"
 # Supported Transformer/DiT LoRA profiles share upstream's 0.1 multiplier;
@@ -80,11 +87,13 @@ _EMPTY_STRINGS = {"", "undefined", "null", "nan"}
 # previews receive this contract through the generated field registry.
 OPTIMIZER_ARGUMENT_DEFAULTS: dict[str, dict[str, Any]] = {
     "automagic_min_lr": {"vendor.automagic_optimizer.integration.Automagic3": 1e-8},
-    "automagic_max_lr": {"vendor.automagic_optimizer.integration.Automagic3": 1000},
+    "automagic_max_lr": {AUTOMAGIC_OPTIMIZER_TYPE: AUTOMAGIC_MAX_LR_DEFAULT},
     "automagic_beta2": {"vendor.automagic_optimizer.integration.Automagic3": 0.999},
     "automagic_clip_threshold": {"vendor.automagic_optimizer.integration.Automagic3": 1},
     "automagic_polarity_history": {"vendor.automagic_optimizer.integration.Automagic3": 8},
     "automagic_fused": {"vendor.automagic_optimizer.integration.Automagic3": False},
+    "automagic_sensitivity_quantile": {AUTOMAGIC4_OPTIMIZER_TYPE: 0.9},
+    "automagic_step_target": {AUTOMAGIC4_OPTIMIZER_TYPE: 0.1},
     "betas": {"AdamW": (0.9, 0.999), "AdamW8bit": (0.9, 0.999), "PagedAdamW8bit": (0.9, 0.999), "pytorch_optimizer.StableAdamW": (0.9, 0.99), "Lion": (0.9, 0.99), "Lion8bit": (0.9, 0.99), "PagedLion8bit": (0.9, 0.99), "pytorch_optimizer.CAME": (0.9, 0.999, 0.9999), "vendor.emo_optimizer.emosens.EmoSens": (0.9, 0.995), "AdamWScheduleFree": (0.9, 0.999), "Prodigy": (0.9, 0.999), "prodigyplus.ProdigyPlusScheduleFree": (0.9, 0.99), "pytorch_optimizer.Adan": (0.98, 0.92, 0.99), "bitsandbytes.optim.AdEMAMix": (0.9, 0.999, 0.9999), "bitsandbytes.optim.AdEMAMix8bit": (0.9, 0.999, 0.9999), "pytorch_optimizer.LoRARite": (0.9, 0.999), "pytorch_optimizer.SOAP": (0.95, 0.95)},
     "eps": {"AdamW": 1e-8, "AdamW8bit": 1e-8, "PagedAdamW8bit": 1e-8, "pytorch_optimizer.StableAdamW": 1e-8, "vendor.emo_optimizer.emosens.EmoSens": 1e-8, "vendor.automagic_optimizer.integration.Automagic3": 1e-30, "AdamWScheduleFree": 1e-8, "Prodigy": 1e-8, "prodigyplus.ProdigyPlusScheduleFree": 1e-8, "Muon": 1e-7, "pytorch_optimizer.Adan": 1e-8, "bitsandbytes.optim.AdEMAMix": 1e-8, "bitsandbytes.optim.AdEMAMix8bit": 1e-8, "pytorch_optimizer.LoRARite": 0.000001, "pytorch_optimizer.SOAP": 1e-8},
     "weight_decay": {"AdamW": 0.01, "AdamW8bit": 0.01, "PagedAdamW8bit": 0.01, "pytorch_optimizer.StableAdamW": 0.01, "Lion": 0, "Lion8bit": 0, "PagedLion8bit": 0, "Prodigy": 0, "prodigyplus.ProdigyPlusScheduleFree": 0, "AdaFactor": 0, "pytorch_optimizer.CAME": 0, "AdamWScheduleFree": 0, "vendor.automagic_optimizer.integration.Automagic3": 0, "vendor.emo_optimizer.emosens.EmoSens": 0.01, "Muon": 0.1, "vendor.lora_muon.LoRA_Muon": 0, "pytorch_optimizer.Adan": 0.01, "bitsandbytes.optim.AdEMAMix": 0.01, "bitsandbytes.optim.AdEMAMix8bit": 0.01, "pytorch_optimizer.LoRARite": 0, "pytorch_optimizer.SOAP": 0.01},
@@ -148,6 +157,10 @@ OPTIMIZER_ARGUMENT_DEFAULTS: dict[str, dict[str, Any]] = {
     "foreach": {optimizer: None for optimizer in sorted(FOREACH_OPTIMIZERS)},
     "adamw_fused": {"AdamW": None},
 }
+
+for _defaults in OPTIMIZER_ARGUMENT_DEFAULTS.values():
+    if AUTOMAGIC_OPTIMIZER_TYPE in _defaults:
+        _defaults[AUTOMAGIC4_OPTIMIZER_TYPE] = _defaults[AUTOMAGIC_OPTIMIZER_TYPE]
 
 # Krea selects pytorch_optimizer.Lion; sd-scripts' bare Lion uses lion-pytorch.
 for _key in ("betas", "weight_decay"):
@@ -627,14 +640,18 @@ _EPS_OPTIMIZERS = _ADAM_OPTIMIZERS | frozenset(
 
 FORM_ARGUMENTS: dict[str, FormArgument] = {
     **{
-        key: FormArgument(argument, frozenset({AUTOMAGIC_OPTIMIZER_TYPE}))
+        key: FormArgument(argument, AUTOMAGIC_OPTIMIZERS)
         for key, argument in AUTOMAGIC_MERGED_ARG_MAP.items()
     },
-    "weight_decay": FormArgument("weight_decay", frozenset(OPTIMIZER_CONTRACTS) | {AUTOMAGIC_OPTIMIZER_TYPE}),
+    **{
+        key: FormArgument(argument, frozenset({AUTOMAGIC4_OPTIMIZER_TYPE}))
+        for key, argument in AUTOMAGIC4_MERGED_ARG_MAP.items()
+    },
+    "weight_decay": FormArgument("weight_decay", frozenset(OPTIMIZER_CONTRACTS) | AUTOMAGIC_OPTIMIZERS),
     "betas": FormArgument("betas", _BETAS_OPTIMIZERS),
     "foreach": FormArgument("foreach", FOREACH_OPTIMIZERS),
     "adamw_fused": FormArgument("fused", frozenset({"AdamW"})),
-    "eps": FormArgument("eps", _EPS_OPTIMIZERS | {AUTOMAGIC_OPTIMIZER_TYPE}),
+    "eps": FormArgument("eps", _EPS_OPTIMIZERS | AUTOMAGIC_OPTIMIZERS),
     "muon_momentum": FormArgument("momentum", frozenset({MUON_OPTIMIZER_TYPE})),
     "muon_nesterov": FormArgument("nesterov", frozenset({MUON_OPTIMIZER_TYPE})),
     "muon_ns_steps": FormArgument("ns_steps", frozenset({MUON_OPTIMIZER_TYPE})),
@@ -860,6 +877,8 @@ def extract_optimizer_form(
     for warning in warnings:
         logging.getLogger("anima-trainer").warning(warning)
     optimizer_type = str(form.get("optimizer_type", ""))
+    if optimizer_type in AUTOMAGIC_OPTIMIZERS:
+        arguments.pop("fused_guard", None)
     for key, mapping in mappings.items():
         if optimizer_type not in mapping.optimizers or mapping.argument not in arguments:
             continue
@@ -1278,29 +1297,33 @@ def normalize_optimizer_config(config: dict[str, Any], warnings: list[str], gpu_
             )
         args.setdefault("weight_decay", 0.01)
 
-    if optimizer_type == AUTOMAGIC_OPTIMIZER_TYPE:
+    if optimizer_type in AUTOMAGIC_OPTIMIZERS:
+        name = optimizer_type.rsplit(".", 1)[-1]
+        if is_empty_optimizer_value(config.get("learning_rate")):
+            config["learning_rate"] = AUTOMAGIC_START_LR_DEFAULT
         if "fused_guard" in args:
             del args["fused_guard"]
             warnings.append(
-                "[Conflict] Automagic3 fused_guard is reserved and was removed / "
-                "Automagic3 fused_guard 是内部参数，已移除"
+                f"[Conflict] {name} fused_guard is reserved and was removed / "
+                f"{name} fused_guard 是内部参数，已移除"
             )
         fused = args.get("fused", False)
         conflicts = get_automagic_fused_conflicts(config, gpu_ids) if fused else []
         args["fused"] = bool(fused and not conflicts)
         if conflicts:
-            warnings.append("[Conflict] Automagic3 fused disabled / fused 已自动关闭: " + "; ".join(conflicts))
+            warnings.append(f"[Conflict] {name} fused disabled / fused 已自动关闭: " + "; ".join(conflicts))
         if args["fused"]:
             args["fused_guard"] = True
         args.setdefault("max_lr", AUTOMAGIC_MAX_LR_DEFAULT)
-        if config.pop("full_bf16", False):
-            warnings.append(
-                "[Conflict] Automagic3 compatibility mode requires FP32 trainable parameters; "
-                "full_bf16 disabled / Automagic3 兼容模式要求可训练参数保持 FP32，已关闭 full_bf16"
-            )
+        for precision_flag in ("full_bf16", "full_fp16"):
+            if config.pop(precision_flag, False):
+                warnings.append(
+                    f"[Conflict] {name} compatibility mode requires FP32 trainable parameters; "
+                    f"{precision_flag} disabled / {name} 兼容模式要求可训练参数保持 FP32，已关闭 {precision_flag}"
+                )
         if config.get("lr_scheduler") != "constant" or config.get("lr_warmup_steps") not in (None, 0):
             warnings.append(
-                "Automagic3: external LR scheduling disabled; TensorBoard reads the optimizer's "
+                f"{name}: external LR scheduling disabled; TensorBoard reads the optimizer's "
                 "adaptive LR directly / 已禁用外部学习率调度，TensorBoard 将直接读取优化器的实际自适应 LR"
             )
         config["lr_scheduler"] = "constant"

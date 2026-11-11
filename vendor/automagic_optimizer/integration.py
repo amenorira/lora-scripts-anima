@@ -1,4 +1,4 @@
-"""Project-safe wrapper around the vendored Automagic3 implementation."""
+"""sd-scripts-compatible wrappers around the upstream Automagic optimizers."""
 from __future__ import annotations
 
 import math
@@ -8,6 +8,7 @@ from typing import Any
 import torch
 
 from .automagic3 import Automagic3 as _UpstreamAutomagic3
+from .automagic4 import Automagic4 as _UpstreamAutomagic4
 
 
 def _materialize_params(params: Iterable[Any]) -> list[Any]:
@@ -30,15 +31,15 @@ def _iter_params(params: list[Any]):
             yield item
 
 
-class Automagic3(_UpstreamAutomagic3):
-    """Automagic3 with sd-scripts-compatible execution constraints."""
+class _AutomagicCompatibility:
+    """Validate shared execution constraints without changing the algorithm."""
 
     def __init__(
         self,
         params,
-        lr: float = 1e-4,
+        lr: float = 2e-5,
         min_lr: float = 1e-8,
-        max_lr: float = 1e3,
+        max_lr: float = 1e-4,
         beta2: float = 0.999,
         eps: float = 1e-30,
         clip_threshold: float = 1.0,
@@ -46,12 +47,14 @@ class Automagic3(_UpstreamAutomagic3):
         polarity_history: int = 8,
         fused: bool = False,
         fused_guard: bool = False,
+        **kwargs,
     ):
+        name = type(self).__name__
         if not isinstance(fused, bool):
-            raise ValueError("Automagic3 fused must be a boolean")
+            raise ValueError(f"{name} fused must be a boolean")
         if fused and fused_guard is not True:
             raise ValueError(
-                "Automagic3 fused mode requires the project's validated fused_guard."
+                f"{name} fused mode requires the project's validated fused_guard."
             )
 
         values = {
@@ -63,13 +66,13 @@ class Automagic3(_UpstreamAutomagic3):
             "clip_threshold": clip_threshold,
             "weight_decay": weight_decay,
         }
-        for name, value in values.items():
+        for key, value in values.items():
             try:
-                values[name] = float(value)
+                values[key] = float(value)
             except (TypeError, ValueError) as exc:
-                raise ValueError(f"Automagic3 {name} must be numeric, got {value!r}") from exc
-            if not math.isfinite(values[name]):
-                raise ValueError(f"Automagic3 {name} must be finite, got {value!r}")
+                raise ValueError(f"{name} {key} must be numeric, got {value!r}") from exc
+            if not math.isfinite(values[key]):
+                raise ValueError(f"{name} {key} must be finite, got {value!r}")
 
         lr = values["lr"]
         min_lr = values["min_lr"]
@@ -79,25 +82,25 @@ class Automagic3(_UpstreamAutomagic3):
         clip_threshold = values["clip_threshold"]
         weight_decay = values["weight_decay"]
         if min_lr <= 0 or max_lr <= 0 or lr <= 0:
-            raise ValueError("Automagic3 lr, min_lr, and max_lr must be positive")
+            raise ValueError(f"{name} lr, min_lr, and max_lr must be positive")
         if not min_lr <= lr <= max_lr:
             raise ValueError(
-                f"Automagic3 requires min_lr <= lr <= max_lr, got {min_lr} <= {lr} <= {max_lr}"
+                f"{name} requires min_lr <= lr <= max_lr, got {min_lr} <= {lr} <= {max_lr}"
             )
         if not 0 <= beta2 < 1:
-            raise ValueError(f"Automagic3 beta2 must be in [0, 1), got {beta2}")
+            raise ValueError(f"{name} beta2 must be in [0, 1), got {beta2}")
         if eps <= 0 or clip_threshold <= 0:
-            raise ValueError("Automagic3 eps and clip_threshold must be positive")
+            raise ValueError(f"{name} eps and clip_threshold must be positive")
         if weight_decay < 0:
-            raise ValueError(f"Automagic3 weight_decay must be non-negative, got {weight_decay}")
+            raise ValueError(f"{name} weight_decay must be non-negative, got {weight_decay}")
         if isinstance(polarity_history, bool):
-            raise ValueError("Automagic3 polarity_history must be an integer from 2 to 64")
+            raise ValueError(f"{name} polarity_history must be an integer from 2 to 64")
         try:
             polarity_history = int(polarity_history)
         except (TypeError, ValueError) as exc:
-            raise ValueError("Automagic3 polarity_history must be an integer from 2 to 64") from exc
+            raise ValueError(f"{name} polarity_history must be an integer from 2 to 64") from exc
         if not 2 <= polarity_history <= 64:
-            raise ValueError("Automagic3 polarity_history must be an integer from 2 to 64")
+            raise ValueError(f"{name} polarity_history must be an integer from 2 to 64")
 
         materialized = _materialize_params(params)
         low_precision = [
@@ -108,8 +111,8 @@ class Automagic3(_UpstreamAutomagic3):
         if low_precision:
             dtypes = ", ".join(sorted(set(low_precision)))
             raise ValueError(
-                "Automagic3 requires FP32 trainable parameters in this project "
-                f"(disable full_bf16); found {dtypes}."
+                f"{name} requires FP32 trainable parameters in this project "
+                f"(disable full_bf16/full_fp16); found {dtypes}."
             )
 
         for item in materialized:
@@ -118,7 +121,7 @@ class Automagic3(_UpstreamAutomagic3):
             group_lr = float(item["lr"])
             if not math.isfinite(group_lr) or not min_lr <= group_lr <= max_lr:
                 raise ValueError(
-                    "Automagic3 parameter-group lr must be within "
+                    f"{name} parameter-group lr must be within "
                     f"[{min_lr}, {max_lr}], got {group_lr}"
                 )
 
@@ -133,4 +136,37 @@ class Automagic3(_UpstreamAutomagic3):
             weight_decay=weight_decay,
             polarity_history=polarity_history,
             fused=fused,
+            **kwargs,
         )
+
+
+class Automagic3(_AutomagicCompatibility, _UpstreamAutomagic3):
+    """Automagic3 with the project's execution constraints."""
+
+
+class Automagic4(_AutomagicCompatibility, _UpstreamAutomagic4):
+    """Automagic4 with the same constraints and validated sensitivity controls."""
+
+    def __init__(
+        self,
+        params,
+        *args,
+        sensitivity_quantile: float = 0.9,
+        step_target: float = 0.1,
+        **kwargs,
+    ):
+        values = {}
+        for key, value in (("sensitivity_quantile", sensitivity_quantile), ("step_target", step_target)):
+            try:
+                if isinstance(value, bool):
+                    raise ValueError
+                values[key] = float(value)
+                if not math.isfinite(values[key]):
+                    raise ValueError
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Automagic4 {key} must be a finite number") from exc
+        if not 0 < values["sensitivity_quantile"] <= 1:
+            raise ValueError("Automagic4 sensitivity_quantile must be in (0, 1]")
+        if not 0 < values["step_target"] < 2:
+            raise ValueError("Automagic4 step_target must be in (0, 2)")
+        super().__init__(params, *args, **values, **kwargs)
