@@ -1920,6 +1920,10 @@ dialog.modal-overlay::backdrop { background: transparent; }
   padding: 12px 22px; border-top: 1px solid var(--border-default);
   display: flex; justify-content: flex-end; gap: 8px;
 }
+.btn-icon.preview-close { flex-shrink: 0; }
+.btn-icon.preview-close:hover,
+.btn-icon.preview-close:focus-visible { background: #b95459; color: #fff; }
+.btn-icon.preview-close:active:not(:disabled) { background: #a3444a; color: #fff; }
 .modal-workbench {
   --modal-workbench-width: 60rem;
   --modal-workbench-margin-x: 2.5rem;
@@ -2126,14 +2130,13 @@ dialog.modal-overlay::backdrop { background: transparent; }
 .modal-workbench--lr {
   --modal-workbench-width: 80rem;
   /* 曲线图保持 2.6:1 不拉伸；用视口高度反推宽度上限，避免矮窗口出现滚动条。
-     换算：图表宽 ≈ 弹窗宽 - 28rem，整窗高度 ≈ 图表高 + 14.5rem。 */
-  width: min(var(--modal-workbench-width), calc(100vw - var(--modal-workbench-margin-x)), calc((100dvh - 17.5rem) * 2.6 + 28rem));
-  max-width: min(var(--modal-workbench-width), calc(100vw - var(--modal-workbench-margin-x)), calc((100dvh - 17.5rem) * 2.6 + 28rem));
+     换算：图表宽 ≈ 弹窗宽 - 28rem，整窗高度 ≈ 图表高 + 11rem。 */
+  width: min(var(--modal-workbench-width), calc(100vw - var(--modal-workbench-margin-x)), calc((100dvh - 14rem) * 2.6 + 28rem));
+  max-width: min(var(--modal-workbench-width), calc(100vw - var(--modal-workbench-margin-x)), calc((100dvh - 14rem) * 2.6 + 28rem));
   max-height: calc(100vh - var(--modal-workbench-margin-y));
   max-height: calc(100dvh - var(--modal-workbench-margin-y));
 }
 .modal-workbench--lr .modal-header { padding: 14px 20px; }
-.modal-workbench--lr .modal-footer { padding: 12px 20px; }
 .lr-preview-layout {
   display: grid; grid-template-columns: minmax(17rem, 20rem) minmax(0, 1fr); gap: 1.25rem;
   min-height: 0; padding: 1.25rem; overflow: auto; align-items: start;
@@ -2192,7 +2195,7 @@ dialog.modal-overlay::backdrop { background: transparent; }
   .preview-info-section h3 { margin-bottom: 6px; }
 }
 @media (max-height: 800px) {
-  .modal-workbench--timestep .modal-header, .modal-workbench--timestep .modal-footer { padding-block: 8px; }
+  .modal-workbench--timestep .modal-header { padding-block: 8px; }
   .timestep-preview-layout { padding-block: 12px; }
   .timestep-layout-sidebar { gap: 14px; }
   .timestep-layout-sidebar .preview-info-section + .preview-info-section::before { top: -7px; }
@@ -2370,7 +2373,6 @@ dialog.modal-overlay::backdrop { background: transparent; }
   --modal-workbench-margin-y: 40px;
 }
 .modal-workbench--shape .modal-header { padding: 14px 20px; }
-.modal-workbench--shape .modal-footer { padding: 12px 20px; }
 .shape-preview-subtitle { margin-top: 2px; color: var(--text-tertiary); font-size: 12.5px; font-weight: 400; }
 .shape-preview-body { padding: 0; }
 .shape-preview-layout {
@@ -2446,8 +2448,7 @@ dialog.modal-overlay::backdrop { background: transparent; }
 }
 @media (max-height: 780px) {
   .modal-workbench--shape { --modal-workbench-margin-y: 16px; }
-  .modal-workbench--shape .modal-header,
-  .modal-workbench--shape .modal-footer { padding: 8px 20px; }
+  .modal-workbench--shape .modal-header { padding: 8px 20px; }
   .shape-preview-sidebar { gap: 14px; }
   .shape-preview-section + .shape-preview-section::before { top: -7px; }
   .shape-preview-meta { row-gap: 4px; }

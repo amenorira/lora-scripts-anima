@@ -1769,7 +1769,7 @@
       <div>
         <div x-text="t('timestepPreview.title')">Timestep distribution</div>
       </div>
-      <button class="btn-icon timestep-preview-close" @click="closeTimestepPreview()" :aria-label="t('common.close')">
+      <button type="button" class="btn-icon preview-close timestep-preview-close" @click="closeTimestepPreview()" :aria-label="t('common.close')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
@@ -1858,9 +1858,6 @@
         <div x-html="_buildTimestepChartHtml(timestepPreviewData)"></div>
       </div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-primary btn-sm" @click="closeTimestepPreview()" x-text="t('common.close')">Close</button>
-    </div>
   </div>
 </dialog>
 
@@ -1872,7 +1869,7 @@
       <div>
         <div x-text="t('lrPreview.title')">Learning-rate curve</div>
       </div>
-      <button class="btn-icon lr-preview-close" @click="closeLrPreview()" :aria-label="t('common.close')">
+      <button type="button" class="btn-icon preview-close lr-preview-close" @click="closeLrPreview()" :aria-label="t('common.close')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
@@ -1932,9 +1929,6 @@
         <div x-html="_buildLrChartHtml(lrPreviewData)"></div>
       </div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-primary btn-sm" @click="closeLrPreview()" x-text="t('common.close')">Close</button>
-    </div>
   </div>
 </dialog>
 
@@ -1946,7 +1940,7 @@
       <div>
         <div x-text="t('shapePreview.title')">Matrix structure preview</div>
       </div>
-      <button type="button" class="btn-icon shape-preview-close" @click="closeShapePreview()" :aria-label="t('common.close')">
+      <button type="button" class="btn-icon preview-close shape-preview-close" @click="closeShapePreview()" :aria-label="t('common.close')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
@@ -1954,9 +1948,6 @@
       <template x-if="shapePreviewMounted">
         <div x-html="shapePreviewHtml()"></div>
       </template>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-primary btn-sm" @click="closeShapePreview()" x-text="t('common.close')">Close</button>
     </div>
   </div>
 </dialog>
