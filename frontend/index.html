@@ -1979,14 +1979,8 @@
       </div>
       <span class="cp-legend" x-show="cropPreviewRandom" x-text="t('cropPreview.random')"></span>
       <button type="button" class="btn btn-ghost btn-sm" x-show="cropPreviewRandom" @click="shuffleCropPreview()" x-text="t('cropPreview.shuffle')"></button>
-      <button type="button" class="btn btn-ghost btn-sm cp-buckets-toggle" x-show="cropPreviewBuckets.length > cropPreviewBucketLimit"
-              @click="toggleCropPreviewBuckets()" :aria-expanded="cropPreviewBucketsExpanded" aria-controls="cropBucketChips">
-        <span :aria-hidden="cropPreviewBucketsExpanded" x-text="t('cropPreview.expandBuckets').replace('{count}', Math.max(0, cropPreviewBuckets.length - cropPreviewBucketLimit))"></span>
-        <span :aria-hidden="!cropPreviewBucketsExpanded" x-text="t('cropPreview.collapseBuckets')"></span>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-      </button>
     </div>
-    <section id="cropBucketStats" class="cp-stats" x-show="cropPreviewBuckets.length" :aria-label="t('cropPreview.stats')"
+    <section id="cropBucketStats" class="cp-stats" :style="{ '--cp-bucket-height': cropPreviewBucketPanelHeight + 'px' }" x-show="cropPreviewBuckets.length" :aria-label="t('cropPreview.stats')"
              @resize.window="_cropBucketMotionCleanup?.()">
       <div class="cp-buckets-scroll">
       <div class="cp-buckets" id="cropBucketChips">
@@ -1997,7 +1991,7 @@
             <span><span class="cp-meta-label" x-text="t('cropPreview.trainingCount')"></span><strong x-text="cropPreviewCount(cropPreviewTotals.samples)"></strong></span>
           </span>
         </button>
-        <template x-for="bucket in cropPreviewBucketChips" :key="bucket.key">
+        <template x-for="bucket in cropPreviewBuckets" :key="bucket.key">
           <button type="button" class="cp-bucket-chip" :aria-pressed="cropPreviewBucket === bucket.key" @click="selectCropPreviewBucket(bucket.key)" :title="t('cropPreview.sampleHint')">
             <span class="cp-bucket-size" x-text="bucket.key"></span>
             <span class="cp-bucket-counts">
@@ -2009,10 +2003,12 @@
       </div>
       </div>
     </section>
-    <div class="cp-buckets-hint" x-show="cropPreviewBuckets.length > cropPreviewBucketLimit">
-      <button type="button" @click="toggleCropPreviewBuckets()"
-              :aria-expanded="cropPreviewBucketsExpanded" aria-controls="cropBucketChips"
-              x-text="cropPreviewBucketsExpanded ? t('common.collapse') : t('cropPreview.moreBuckets').replace('{count}', Math.max(0, cropPreviewBuckets.length - cropPreviewBucketLimit))"></button>
+    <div class="cp-buckets-divider" x-show="cropPreviewBuckets.length">
+      <button type="button" class="cp-buckets-toggle" x-show="cropPreviewBucketsCanExpand"
+              @click="toggleCropPreviewBuckets()" :aria-expanded="cropPreviewBucketsExpanded" aria-controls="cropBucketChips">
+        <span x-text="t(cropPreviewBucketsExpanded ? 'common.collapse' : 'common.expand')"></span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
     </div>
     <div class="cp-stats-note" x-show="cropPreviewStatsNote()" x-text="cropPreviewStatsNote()"></div>
     <div class="cp-workspace">

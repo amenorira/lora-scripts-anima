@@ -37,7 +37,9 @@ window.trainingCropPreviewMixin = {
   cropPreviewRegConfigured: false,
   cropPreviewBucket: '',
   cropPreviewBucketsExpanded: false,
-  cropPreviewBucketLimit: 9,
+  cropPreviewBucketsCanExpand: false,
+  cropPreviewBucketCollapsedHeight: 142,
+  cropPreviewBucketExpandedHeight: 274,
   cropPreviewFocus: null,
   cropPreviewFocusOpen: false,
   _cropFocusSeq: 0,
@@ -48,7 +50,6 @@ window.trainingCropPreviewMixin = {
   _cropBucketResize: null,
   _cropBucketFrame: null,
   _cropBucketMotionCleanup: null,
-  _cropBucketsClosing: false,
 
   async openCropPreview() {
     this._cropBucketMotionCleanup?.();
@@ -92,17 +93,22 @@ window.trainingCropPreviewMixin = {
       if (buckets) {
         this._cropBucketResize = new ResizeObserver(() => {
           if (this._cropBucketFrame !== null) return;
-          // Updating the chip count changes the observed grid's height.
-          this._cropBucketFrame = requestAnimationFrame(() => {
+          this._cropBucketFrame = requestAnimationFrame(async () => {
             this._cropBucketFrame = null;
-            const style = getComputedStyle(buckets);
-            const columns = style.gridTemplateColumns.split(' ').length;
-            const rows = parseInt(style.getPropertyValue('--cp-bucket-rows'), 10) || 2;
-            this.cropPreviewBucketLimit = Math.max(1, columns * rows - 1);
+            this._updateCropPreviewBucketBounds(buckets);
+            await this.$nextTick();
+            if (seq !== this._cropPreviewSeq) return;
+            if (!this._cropBucketMotionCleanup) {
+              this._keepCropPreviewBucketVisible(buckets.closest('.cp-stats'));
+            }
           });
         });
         this._cropBucketResize.observe(buckets);
-        this._cropBucketResize.observe(buckets.closest('.cp-content'));
+        const content = buckets.closest('.cp-content');
+        this._cropBucketResize.observe(content);
+        for (const sibling of content.querySelectorAll('.cp-toolbar, .cp-stats-note, .cp-virtual-grid')) {
+          this._cropBucketResize.observe(sibling);
+        }
       }
     } catch (error) {
       if (seq === this._cropPreviewSeq && error.name !== 'AbortError') this.cropPreviewError = error.message;
@@ -236,15 +242,64 @@ window.trainingCropPreviewMixin = {
     return view;
   },
 
+  get cropPreviewBucketPanelHeight() {
+    return this.cropPreviewBucketsExpanded ? this.cropPreviewBucketExpandedHeight : this.cropPreviewBucketCollapsedHeight;
+  },
+
+  _updateCropPreviewBucketBounds(buckets) {
+    const chips = buckets.querySelectorAll('.cp-bucket-chip');
+    const first = chips[0];
+    if (!first?.offsetHeight) return;
+    const panel = buckets.closest('.cp-stats');
+    const content = buckets.closest('.cp-content');
+    const workspace = content.querySelector('.cp-workspace');
+    const style = getComputedStyle(panel);
+    const inset = ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth']
+      .reduce((sum, name) => sum + (parseFloat(style[name]) || 0), 0);
+    const minimum = Math.ceil(first.offsetHeight + inset);
+    const occupied = Array.from(content.children)
+      .filter(element => element !== panel && element !== workspace)
+      .reduce((sum, element) => sum + element.offsetHeight, 0);
+    const scroller = workspace.querySelector('.cp-scroll');
+    const stage = workspace.querySelector('.cp-tile:not(:disabled) .cp-stage');
+    const stageHeight = stage?.offsetHeight;
+    let imageHeight = 220;
+    if (scroller && stageHeight) {
+      const scrollStyle = getComputedStyle(scroller);
+      const tileStyle = getComputedStyle(stage.closest('.cp-tile'));
+      const canvasStyle = getComputedStyle(scroller.querySelector('.cp-virtual-grid'));
+      const heading = workspace.querySelector('.cp-folder-heading');
+      imageHeight = Math.ceil(stageHeight
+        + (heading?.offsetHeight || 18)
+        + (parseFloat(canvasStyle.getPropertyValue('--cp-heading-gap')) || 12)
+        + (parseFloat(tileStyle.paddingTop) || 0) + (parseFloat(tileStyle.borderTopWidth) || 0)
+        + (parseFloat(scrollStyle.paddingTop) || 0) + (parseFloat(scrollStyle.paddingBottom) || 0));
+    }
+    workspace.style.setProperty('--cp-image-min-height', `${imageHeight}px`);
+    const available = Math.max(minimum, Math.floor(content.clientHeight - occupied - imageHeight));
+    const columns = Math.max(1, getComputedStyle(buckets).gridTemplateColumns.split(' ').length);
+    const heightForRows = rows => {
+      const last = chips[Math.min(chips.length, rows * columns) - 1];
+      return Math.min(available, Math.ceil(last.offsetTop + last.offsetHeight - first.offsetTop + inset));
+    };
+    this.cropPreviewBucketCollapsedHeight = heightForRows(2);
+    this.cropPreviewBucketExpandedHeight = heightForRows(4);
+    this.cropPreviewBucketsCanExpand = chips.length > columns * 2;
+    if (!this.cropPreviewBucketsCanExpand) this.cropPreviewBucketsExpanded = false;
+  },
+
   async toggleCropPreviewBuckets() {
     const panel = document.getElementById('cropBucketStats');
-    const from = panel.getBoundingClientRect().height;
+    const from = panel.offsetHeight;
     this._cropBucketMotionCleanup?.();
     const expanded = !this.cropPreviewBucketsExpanded;
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    this._cropBucketsClosing = !expanded && !reduced;
     this.cropPreviewBucketsExpanded = expanded;
-    if (reduced) return;
+    if (reduced) {
+      await this.$nextTick();
+      this._keepCropPreviewBucketVisible(panel);
+      return;
+    }
 
     let animation;
     const cleanup = () => {
@@ -252,15 +307,15 @@ window.trainingCropPreviewMixin = {
       this._cropBucketMotionCleanup = null;
       animation?.cancel();
       panel.style.height = '';
-      this._cropBucketsClosing = false;
+      this._keepCropPreviewBucketVisible(panel);
     };
     this._cropBucketMotionCleanup = cleanup;
     panel.style.height = `${from}px`;
     await this.$nextTick();
     if (this._cropBucketMotionCleanup !== cleanup) return;
 
-    if (expanded) panel.style.height = '';
-    const to = expanded ? panel.getBoundingClientRect().height : this._measureCropPreviewCollapsedHeight(panel);
+    panel.style.height = '';
+    const to = panel.offsetHeight;
     if (from === to) { cleanup(); return; }
     panel.style.height = `${to}px`;
     animation = panel.animate([{ height: `${from}px` }, { height: `${to}px` }], {
@@ -270,42 +325,15 @@ window.trainingCropPreviewMixin = {
     animation.finished.then(cleanup, cleanup);
   },
 
-  _measureCropPreviewCollapsedHeight(panel) {
-    // Measure only the collapsed cards without disturbing the live scroll position.
-    const measure = panel.cloneNode(false);
-    measure.removeAttribute('id');
-    measure.setAttribute('x-ignore', '');
-    measure.inert = true;
-    measure.style.cssText = `position:absolute;top:0;left:0;visibility:hidden;width:${panel.getBoundingClientRect().width}px`;
-    const scroll = panel.querySelector('.cp-buckets-scroll').cloneNode(false);
-    const grid = panel.querySelector('.cp-buckets').cloneNode(false);
-    grid.removeAttribute('id');
-    const chips = panel.querySelectorAll('.cp-bucket-chip');
-    grid.append(chips[0].cloneNode(true));
-    const buckets = this.cropPreviewBuckets;
-    for (const bucket of this._cropPreviewCollapsedBucketChips()) {
-      grid.append(chips[buckets.indexOf(bucket) + 1].cloneNode(true));
-    }
-    scroll.append(grid);
-    measure.append(scroll);
-    panel.after(measure);
-    const height = measure.getBoundingClientRect().height;
-    measure.remove();
-    return height;
-  },
-
-  _cropPreviewCollapsedBucketChips() {
-    const buckets = this.cropPreviewBuckets;
-    const visible = buckets.slice(0, this.cropPreviewBucketLimit);
-    const selected = buckets.find(bucket => bucket.key === this.cropPreviewBucket);
-    // Keep the active filter visible when collapsing or narrowing the window.
-    if (selected && !visible.includes(selected)) visible[visible.length - 1] = selected;
-    return visible;
-  },
-
-  get cropPreviewBucketChips() {
-    return this.cropPreviewBucketsExpanded || this._cropBucketsClosing
-      ? this.cropPreviewBuckets : this._cropPreviewCollapsedBucketChips();
+  _keepCropPreviewBucketVisible(panel) {
+    if (!this.cropPreviewBucket) return;
+    const scroll = panel.querySelector('.cp-buckets-scroll');
+    const selected = scroll?.querySelector('.cp-bucket-chip[aria-pressed="true"]');
+    if (!selected) return;
+    const top = selected.offsetTop;
+    const bottom = top + selected.offsetHeight;
+    if (top < scroll.scrollTop) scroll.scrollTop = top;
+    else if (bottom > scroll.scrollTop + scroll.clientHeight) scroll.scrollTop = bottom - scroll.clientHeight;
   },
 
   cropPreviewFolderCount(count) {
@@ -320,13 +348,18 @@ window.trainingCropPreviewMixin = {
     return this.t('cropPreview.imageCount').replace('{count}', count);
   },
 
-  selectCropPreviewBucket(key) {
+  async selectCropPreviewBucket(key) {
     this._cropBucketMotionCleanup?.();
     this.cropPreviewBucket = this.cropPreviewBucket === key ? '' : key;
     // Failed images have no bucket; leave that filter when choosing a valid bucket.
     if (key && this.cropPreviewFilter === 'errors') this.cropPreviewFilter = 'all';
     const scroller = document.getElementById('cropPreviewScroll');
     if (scroller) scroller.scrollTop = 0;
+    const panel = document.getElementById('cropBucketStats');
+    if (panel) {
+      await this.$nextTick();
+      this._keepCropPreviewBucketVisible(panel);
+    }
   },
 
   cropPreviewStatsNote() {
