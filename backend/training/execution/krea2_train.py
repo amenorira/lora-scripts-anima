@@ -64,10 +64,7 @@ class Krea2Trainer(Krea2NetworkTrainer):
                 args = copy.copy(args)
                 args.optimizer_args = [arg for arg in args.optimizer_args if not arg.startswith('fused_guard=')]
                 args.optimizer_args.append('fused_guard=True')
-        result = super().get_optimizer(args, trainable_params)
-        from tools.python_startup.lr_logging import install_learning_rate_tracking
-        install_learning_rate_tracking(result[2])
-        return result
+        return super().get_optimizer(args, trainable_params)
 
     def is_schedulefree_optimizer(self, optimizer, args):
         return args.optimizer_type in INTERNAL_OPTIMIZERS or super().is_schedulefree_optimizer(optimizer, args)
@@ -85,18 +82,21 @@ class Krea2Trainer(Krea2NetworkTrainer):
     def generate_step_logs(self, args, current_loss, avr_loss, lr_scheduler, lr_descriptions,
                            optimizer=None, keys_scaled=None, mean_norm=None, maximum_norm=None):
         from tools.python_startup.lr_logging import (
-            append_backbone_learning_rate, learning_rate_names, read_learning_rates, optimizer_from_scheduler,
+            append_backbone_learning_rate, optimizer_has_lr_reporter, read_learning_rates,
+            optimizer_from_scheduler,
         )
         optimizer = optimizer if optimizer is not None else optimizer_from_scheduler(lr_scheduler)
-        scheduler_view = SimpleNamespace(get_last_lr=lambda: read_learning_rates(optimizer, lr_scheduler),
-                                         optimizers=[optimizer])
+        scheduler_view = lr_scheduler
+        if optimizer_has_lr_reporter(optimizer):
+            learning_rates = read_learning_rates(optimizer, lr_scheduler)
+            scheduler_view = SimpleNamespace(get_last_lr=lambda: learning_rates, optimizers=[optimizer])
         logs = super().generate_step_logs(args, current_loss, avr_loss, scheduler_view, lr_descriptions,
                                          optimizer, keys_scaled, mean_norm, maximum_norm)
-        names = learning_rate_names(None, lr_descriptions, len(read_learning_rates(optimizer, lr_scheduler)))
         if args.optimizer_type == 'prodigyplus.ProdigyPlusScheduleFree':
-            for name, value in zip(names, read_learning_rates(optimizer, lr_scheduler)):
-                logs[f'lr/d*eff_lr/{name}'] = value
-        append_backbone_learning_rate(logs, optimizer, names)
+            for key, value in list(logs.items()):
+                if key.startswith('lr/') and not key.startswith('lr/d*'):
+                    logs[f'lr/d*eff_lr/{key[3:]}'] = value
+        append_backbone_learning_rate(logs)
         return logs
 
 

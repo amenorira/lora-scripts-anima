@@ -12,11 +12,6 @@ import sys
 from dataclasses import dataclass
 from typing import Any, Callable, Sequence
 
-from tools.python_startup.lr_capture import (
-    install_learning_rate_tracking, step_learning_rates, step_parameter_counts,
-)
-
-
 LrMatcher = Callable[[Any], bool]
 LrReader = Callable[[Any], Sequence[float]]
 
@@ -117,7 +112,17 @@ def _read_schedule_free(optimizer: Any) -> list[float]:
 
 
 def _read_prodigy_plus(optimizer: Any) -> list[float]:
-    return [optimizer.get_dlr(group) for group in optimizer.param_groups]
+    values = []
+    for group in optimizer.param_groups:
+        lr = group["lr"]
+        value = optimizer.get_dlr(group)
+        value *= group.get("effective_lr", lr) / lr if lr else 0.0
+        if group.get("use_bias_correction"):
+            # effective_lr describes the latest update; k already advanced.
+            step = max(int(group.get("k", 1)) - 1, 1)
+            value = optimizer.get_bias_correction(value, group["betas"][1], step)[0]
+        values.append(value)
+    return values
 
 
 def _read_prodigy(optimizer: Any) -> list[float]:
@@ -214,10 +219,6 @@ def read_learning_rates(
     if optimizer is None:
         optimizer = optimizer_from_scheduler(scheduler)
     if optimizer is not None:
-        for candidate in _optimizer_chain(optimizer):
-            captured = step_learning_rates(candidate)
-            if captured is not None:
-                return list(captured)
         candidate, reporter = _resolve_reporter(optimizer)
         if reporter is not None:
             try:
@@ -245,6 +246,11 @@ def read_learning_rates(
 def optimizer_owns_schedule(optimizer: Any) -> bool:
     _, reporter = _resolve_reporter(optimizer)
     return bool(reporter and reporter.owns_schedule)
+
+
+def optimizer_has_lr_reporter(optimizer: Any) -> bool:
+    """Whether logging needs an optimizer-specific LR value."""
+    return _resolve_reporter(optimizer)[1] is not None
 
 
 class EffectiveLrNoOpScheduler:
@@ -286,22 +292,17 @@ def _append_d_adaptation_diagnostics(
             continue
 
 
-def append_backbone_learning_rate(
-    logs: dict[str, Any], optimizer: Any | None, names: Sequence[str],
-) -> None:
-    """Publish one measured backbone LR; keep component tags for TensorBoard."""
-    if optimizer is None:
+def append_backbone_learning_rate(logs: dict[str, Any]) -> None:
+    """Copy the backbone's existing log value without inspecting parameters."""
+    if "lr/unet" in logs:
+        logs["lr/backbone"] = logs["lr/unet"]
         return
-    candidate = next((item for item in _optimizer_chain(optimizer)
-                      if step_learning_rates(item) is not None), None)
-    if candidate is None:
-        return  # No completed optimizer step: do not publish a configured LR.
-    rates = step_learning_rates(candidate)
-    counts = step_parameter_counts(candidate)
-    entries = [(value, count) for name, value, count in zip(names, rates, counts)
-               if not name.lower().startswith(("text", "te_", "te1", "te2")) and count > 0]
-    if entries:
-        logs["lr/backbone"] = sum(value * count for value, count in entries) / sum(count for _, count in entries)
+    for key, value in list(logs.items()):
+        if (key.startswith("lr/") and not key.startswith("lr/d*")
+                and key != "lr/backbone"
+                and not key[3:].lower().startswith(("text", "te_", "te1", "te2"))):
+            logs["lr/backbone"] = value
+            return
 
 
 def learning_rate_names(args: Any, descriptions: Sequence[str] | None, count: int) -> list[str]:
@@ -320,9 +321,9 @@ def _patch_optimizer_module(module: Any) -> None:
         return
 
     original_get_scheduler_fix = module.get_scheduler_fix
+    original_append_lr = getattr(module, "append_lr_to_logs_with_names", None)
 
     def get_scheduler_fix(args: Any, optimizer: Any, num_processes: int):
-        install_learning_rate_tracking(optimizer)
         if optimizer_owns_schedule(optimizer):
             return EffectiveLrNoOpScheduler(optimizer)
         return original_get_scheduler_fix(args, optimizer, num_processes)
@@ -334,20 +335,19 @@ def _patch_optimizer_module(module: Any) -> None:
         names: Sequence[str],
     ) -> None:
         optimizer = optimizer_from_scheduler(lr_scheduler)
-        learning_rates = read_learning_rates(optimizer=optimizer, scheduler=lr_scheduler)
-        if not learning_rates:
-            for key in list(logs):
-                if key.startswith("lr/"):
-                    logs.pop(key)
+        _, reporter = _resolve_reporter(optimizer) if optimizer is not None else (None, None)
+        if reporter is None and callable(original_append_lr):
+            original_append_lr(logs, lr_scheduler, optimizer_type, names)
+            append_backbone_learning_rate(logs)
             return
+        learning_rates = read_learning_rates(optimizer=optimizer, scheduler=lr_scheduler)
         for name, learning_rate in zip(names, learning_rates):
             logs[f"lr/{name}"] = learning_rate
         _append_d_adaptation_diagnostics(logs, optimizer, names)
-        _, reporter = _resolve_reporter(optimizer) if optimizer is not None else (None, None)
         if reporter is not None and reporter.name == "prodigy-plus":
             for name, learning_rate in zip(names, learning_rates):
                 logs[f"lr/d*eff_lr/{name}"] = learning_rate
-        append_backbone_learning_rate(logs, optimizer, names)
+        append_backbone_learning_rate(logs)
 
     get_scheduler_fix.__wrapped__ = original_get_scheduler_fix
     module.get_scheduler_fix = get_scheduler_fix
@@ -374,33 +374,25 @@ def _patch_network_trainer_module(module: Any) -> None:
         optimizer = kwargs.get("optimizer")
         if optimizer is None and len(args) > 5:
             optimizer = args[5]
-        learning_rates = read_learning_rates(optimizer=optimizer, scheduler=lr_scheduler)
-        if not learning_rates:
-            # Upstream diagnostics can contain configured or resumed values,
-            # which must not become the dashboard fallback before a real step.
-            for key in list(logs):
-                if key.startswith("lr/"):
-                    logs.pop(key)
-            return logs
-        primary_keys = [
-            key
-            for key in logs
-            if key.startswith("lr/") and not key.startswith("lr/d*") and key != "lr/backbone"
-        ]
-        descriptions = kwargs.get("lr_descriptions", args[4] if len(args) > 4 else None)
-        training_args = kwargs.get("args", args[0] if args else None)
-        names = learning_rate_names(training_args, descriptions, len(learning_rates))
-        for key in primary_keys:
-            logs.pop(key, None)
-        for name, learning_rate in zip(names, learning_rates):
-            logs[f"lr/{name}"] = learning_rate
-        # Use exactly the same captured values for PPSF's effective diagnostic
-        # and the dashboard. Recomputing d * effective_lr after step uses new d.
+        if optimizer is None:
+            optimizer = optimizer_from_scheduler(lr_scheduler)
         _, reporter = _resolve_reporter(optimizer) if optimizer is not None else (None, None)
+        # Internally scheduled optimizers already expose their LR through the
+        # no-op scheduler. Reuse those log values, including Automagic's public
+        # reader, without calling it a second time. Ordinary optimizers keep
+        # the trainer's native logging path entirely.
+        if reporter is not None and not reporter.owns_schedule:
+            learning_rates = read_learning_rates(optimizer=optimizer, scheduler=lr_scheduler)
+            descriptions = kwargs.get("lr_descriptions", args[4] if len(args) > 4 else None)
+            training_args = kwargs.get("args", args[0] if args else None)
+            names = learning_rate_names(training_args, descriptions, len(learning_rates))
+            for name, learning_rate in zip(names, learning_rates):
+                logs[f"lr/{name}"] = learning_rate
         if reporter is not None and reporter.name == "prodigy-plus":
-            for name, value in zip(names, learning_rates):
-                logs[f"lr/d*eff_lr/{name}"] = value
-        append_backbone_learning_rate(logs, optimizer, names)
+            for key, value in list(logs.items()):
+                if key.startswith("lr/") and not key.startswith("lr/d*") and key != "lr/backbone":
+                    logs[f"lr/d*eff_lr/{key[3:]}"] = value
+        append_backbone_learning_rate(logs)
         return logs
 
     generate_step_logs.__wrapped__ = original_generate_step_logs
@@ -501,11 +493,11 @@ __all__ = [
     "EffectiveLrNoOpScheduler",
     "LearningRateReporter",
     "append_backbone_learning_rate",
-    "install_learning_rate_tracking",
     "learning_rate_names",
     "install_import_hook",
     "optimizer_from_scheduler",
     "optimizer_owns_schedule",
+    "optimizer_has_lr_reporter",
     "read_learning_rates",
     "register_learning_rate_reporter",
     "registered_learning_rate_reporters",
