@@ -111,10 +111,13 @@ window.monitorMetricsMixin = {
       // HTTP 合并与 WS 增量共用去重和裁尾规则；旧点重放也不能倒退当前读数。
       if (!this._appendMonitorMetricPoints(series, newPoints)) continue;
       changed = true;
-      if (this.monitorData && tag === 'lr/unet') this.monitorData.lr = series.latest.toExponential(4);
     }
 
     if (this.monitorData) {
+      const lr = this.lossSeries.find(series => series.tag === 'lr/backbone')
+        || this.lossSeries.find(series => series.tag === 'lr/d*eff_lr/unet')
+        || this.lossSeries.find(series => series.tag === 'lr/unet');
+      if (lr && Number.isFinite(lr.latest)) this.monitorData.lr = lr.latest.toExponential(4);
       const loss = this.lossSeries.find(s => s.tag === 'loss/average') || this.lossSeries.find(s => s.tag === 'loss/current');
       if (loss && Number.isFinite(loss.latest)) this.monitorData.loss = loss.latest.toFixed(6);
     }

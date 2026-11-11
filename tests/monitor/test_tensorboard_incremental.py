@@ -1,7 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from tensorboard.compat.proto.event_pb2 import Event
 from tensorboard.compat.proto.summary_pb2 import Summary
@@ -10,7 +10,48 @@ from tensorboard.summary.writer.event_file_writer import EventFileWriter
 from backend.monitor import training
 
 
+class MainLearningRateTests(unittest.IsolatedAsyncioTestCase):
+    async def test_incremental_component_tags_cannot_replace_measured_backbone_lr(self):
+        from backend.monitor.monitor import TaskMonitor
+
+        monitor = TaskMonitor()
+        updates = [
+            {'lr/d*eff_lr/unet': [{'step': 1, 'value': 0.001}], 'lr/unet': [{'step': 1, 'value': 1.0}]},
+            {'lr/backbone': [{'step': 1, 'value': 0.0}]},
+            {'lr/unet': [{'step': 2, 'value': 0.5}]},
+        ]
+        with patch('backend.monitor.monitor.read_tensorboard_incremental', side_effect=updates), \
+                patch('backend.monitor.monitor.realtime_hub.publish', new_callable=AsyncMock), \
+                patch.object(monitor, '_update_console_progress'):
+            await monitor._collect_tb_incremental('task', 'run')
+            self.assertEqual(float(monitor._last_progress['task']['lr']), 0.001)
+            await monitor._collect_tb_incremental('task', 'run')
+            self.assertEqual(float(monitor._last_progress['task']['lr']), 0.0)
+            await monitor._collect_tb_incremental('task', 'run')
+            self.assertEqual(float(monitor._last_progress['task']['lr']), 0.0)
+        monitor._cleanup_task('task')
+        self.assertNotIn('task', monitor._primary_lr_tag)
+
+
 class TensorboardIncrementalTests(unittest.TestCase):
+    def test_backbone_and_legacy_ppsf_effective_lr_survive_both_readers(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(training, "_tb_live_cache", {}), patch.object(training, "_tb_cache", {}):
+            writer = EventFileWriter(str(Path(directory) / "log"))
+            try:
+                writer.add_event(Event(step=1, summary=Summary(value=[
+                    Summary.Value(tag="lr/backbone", simple_value=0.0),
+                    Summary.Value(tag="lr/d*eff_lr/unet", simple_value=0.0001),
+                    Summary.Value(tag="lr/unet", simple_value=1.0),
+                ])))
+                writer.flush()
+                live = training.read_tensorboard_incremental(directory)
+                snapshot = {series['tag']: series['latest'] for series in training.read_tensorboard_loss(run_dir=directory)}
+                self.assertEqual(set(live), set(snapshot))
+                self.assertEqual(snapshot['lr/backbone'], 0.0)
+                self.assertAlmostEqual(snapshot['lr/d*eff_lr/unet'], 0.0001)
+            finally:
+                writer.close()
+
     def test_append_rotation_and_history_are_independent(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(training, "_tb_live_cache", {}), patch.object(training, "_tb_cache", {}):
             log = Path(directory) / "log"

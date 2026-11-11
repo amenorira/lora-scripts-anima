@@ -44,7 +44,9 @@ window.monitorSummaryMixin = {
     const rawPercent = d.percent != null ? Number(d.percent) : (total ? step / total * 100 : 0);
     const percent = completed ? 100 : Math.max(0, Math.min(100, Number.isFinite(rawPercent) ? rawPercent : 0));
     const lossSeries = this._summaryLossSeries();
-    const lrSeries = this.monitorLossSeries.find(item => item.tag === 'lr/unet');
+    const lrSeries = this.monitorLossSeries.find(item => item.tag === 'lr/backbone')
+      || this.monitorLossSeries.find(item => item.tag === 'lr/d*eff_lr/unet')
+      || this.monitorLossSeries.find(item => item.tag === 'lr/unet');
     const lrPoints = lrSeries && Array.isArray(lrSeries.points) ? lrSeries.points : [];
     const lrLatest = lrSeries && (lrSeries.latest != null ? Number(lrSeries.latest) : (lrPoints.length ? Number(lrPoints[lrPoints.length - 1].value) : null));
     const lrMax = lrSeries && (lrSeries.max != null ? Number(lrSeries.max) : (lrPoints.length ? Math.max(...lrPoints.map(point => Number(point.value)).filter(Number.isFinite)) : null));
@@ -107,7 +109,7 @@ window.monitorSummaryMixin = {
       if (lossTrend) this._patchLossChange(lossChange, lossTrend.percent, t(isHistory ? 'lossVsPreviousSample' : 'lossVsPreviousDisplay'), animate);
     }
     set('loss-meta', latestLoss ? t('lossUpdatedAt').replace('{n}', latestLoss.step) : t('recentLoss'));
-    set('lr', this._formatLearningRate(lrLatest ?? d.lr, '—'));
+    set('lr', this._formatLearningRate(lrLatest ?? (isHistory ? null : d.lr), '—'));
     const lrRangeEl = root.querySelector('[data-summary-field="lr-range"]');
     if (lrRangeEl) {
       lrRangeEl.hidden = !lrRange;

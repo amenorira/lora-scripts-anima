@@ -33,7 +33,8 @@ _tb_live_lock = threading.Lock()
 # 监控面板采集的 TensorBoard scalar 标签（全量与增量读取共用）
 _SCALAR_TAGS = (
     "loss/average", "loss/current", "loss/epoch_average", "loss/epoch",
-    "lr/unet", "lr/textencoder", "lr/d*lr/unet", "lr/d*lr/textencoder",
+    "lr/backbone", "lr/unet", "lr/textencoder", "lr/d*lr/unet", "lr/d*lr/textencoder",
+    "lr/d*eff_lr/unet",
 )
 
 def _get_cached_accumulator(log_dir: Path, *, incremental: bool = False) -> Any | None:
