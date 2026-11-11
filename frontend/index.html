@@ -1512,9 +1512,11 @@
               <button @click="tagEditorFetchPage(1)" :disabled="tagEditorPage === 1">&laquo;</button>
               <button @click="tagEditorFetchPage(tagEditorPage - 1)" :disabled="tagEditorPage === 1">&lsaquo;</button>
               <template x-for="(p, pidx) in tagEditorGetPageNumbers()" :key="'pg-' + pidx">
-                <button x-show="typeof p === 'number'" :class="{ active: p === tagEditorPage }"
-                  @click="tagEditorFetchPage(p)" x-text="p"></button>
-                <span x-show="typeof p !== 'number'" x-text="p" class="te-pager-ellipsis"></span>
+                <span class="te-pager-item">
+                  <button x-show="typeof p === 'number'" :class="{ active: p === tagEditorPage }"
+                    @click="tagEditorFetchPage(p)" x-text="p"></button>
+                  <span x-show="typeof p !== 'number'" x-text="p" class="te-pager-ellipsis"></span>
+                </span>
               </template>
               <button @click="tagEditorFetchPage(tagEditorPage + 1)" :disabled="tagEditorPage >= tagEditorTotalPages()">&rsaquo;</button>
               <button @click="tagEditorFetchPage(tagEditorTotalPages())" :disabled="tagEditorPage >= tagEditorTotalPages()">&raquo;</button>

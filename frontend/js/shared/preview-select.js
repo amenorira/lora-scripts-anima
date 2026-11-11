@@ -48,9 +48,12 @@ document.addEventListener('alpine:init', () => {
     },
     reveal() {
       this.$nextTick(() => {
+        if (!this.open) return;
         const menu = this.$refs.menu;
+        // Choosing a value can rebuild the surrounding x-html before this tick.
+        if (!menu?.isConnected) return;
         const option = menu.querySelector(`[data-index="${this.active}"]`);
-        if (!this.open || !option) return;
+        if (!option) return;
         const optionRect = option.getBoundingClientRect(), menuRect = menu.getBoundingClientRect();
         if (optionRect.top < menuRect.top) menu.scrollTop += optionRect.top - menuRect.top;
         else if (optionRect.bottom > menuRect.bottom) menu.scrollTop += optionRect.bottom - menuRect.bottom;
