@@ -4,6 +4,36 @@
 
 All notable changes to this project are documented in this file.
 
+## v26.1111.14c5e - 2026-11-11
+
+This release adds the **Automagic4 adaptive optimizer**, upgrades Alpine, and improves interface performance. It also refines crop previews and learning-rate monitoring.
+
+### “Auto Magic”: Introducing Automagic4
+
+Added **Automagic4** from AI Toolkit for Anima, SDXL, MOSS-Image, and Krea 2 training. It automatically adjusts the learning rate for each parameter group based on changes in update direction, and reduces updates to elements with high sensitivity.
+
+Automagic4 is experimental. You can start with the default settings, run a short training session, and adjust them after reviewing the TensorBoard learning-rate curves and sample previews.
+
+The default starting learning rate for Automagic3 and Automagic4 is now `2e-5`, and the default maximum is `1e-4`. Explicit learning rates and maximums in older configurations are retained; configurations without a specified maximum use the new default. Check component learning rates and LoRA+ ratios after importing a configuration.
+
+### Alpine Upgrade and Interface Performance
+
+The bundled Alpine version has been upgraded from **3.14.8 to 3.17.5**, alongside performance improvements to the training configuration interface.
+
+In a local desktop Chromium comparison, **synchronous processing time when switching between the four training types fell by approximately 23%–27%**. Menus and other controls are now created when needed, reducing initialization and cleanup work. Parameter changes also trigger fewer unnecessary rule checks and refreshes.
+
+Switching regularization-image samplers now preserves existing controls and focus where possible. Language packs are loaded asynchronously and preloaded to reduce interface blocking during loading.
+
+The performance comparison used Alpine 3.17.5 in both cases and measured frontend changes such as deferred control creation.
+
+### Crop Previews and Training Monitoring
+
+- Expand, collapse, and scroll through bucket statistics more easily. The selected bucket stays visible when collapsing the list or resizing the window. Buckets are sorted by width and height to match the training log.
+- Improved learning-rate logging for adaptive optimizers. The live and history dashboards select a backbone parameter-group learning rate and support block and LoRA+ parameter groups.
+- Fixed display issues with pagination ellipses in the tag editor, preview dropdowns, and the TOML preview after importing a configuration.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1110.0a4d4...v26.1111.14c5e)
+
 ## v26.1110.0a4d4 - 2026-11-10
 
 This release adds training image crop previews and bucket statistics, inline tag renaming and dataset-wide selection, and new animations for preview buttons on the training page.
