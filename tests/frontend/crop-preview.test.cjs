@@ -193,6 +193,103 @@ test('bucket rows follow height-only resizes on the next frame and cancel work w
   assert.equal(a._cropBucketFrame, null);
 });
 
+function bucketMotionApp(reduced = false) {
+  let a;
+  const animations = [];
+  const panel = {
+    style: { height: '' },
+    getBoundingClientRect() {
+      const active = animations.at(-1);
+      const height = active && !active.cancelled && active.currentHeight != null
+        ? active.currentHeight : parseFloat(this.style.height) || (a.cropPreviewBucketsExpanded || a._cropBucketsClosing ? 200 : 80);
+      return { height };
+    },
+    animate(frames, options) {
+      const ready = deferred();
+      const animation = { frames, options, finished: ready.promise,
+        finish: () => ready.resolve(),
+        cancel() { this.cancelled = true; ready.reject(new Error('cancelled')); },
+      };
+      animations.push(animation);
+      return animation;
+    },
+  };
+  const context = loadFrontend(['training/crop-preview'], {
+    window: { matchMedia: () => ({ matches: reduced }) },
+    document: { getElementById: id => id === 'cropBucketStats' ? panel : null },
+    getComputedStyle: () => ({ getPropertyValue: () => 'cubic-bezier(.1,.78,.21,1)' }),
+    clearTimeout,
+  });
+  a = composeMixins(context.window.trainingCropPreviewMixin, {
+    $nextTick: async () => {}, _measureCropPreviewCollapsedHeight: () => 80,
+  });
+  a.cropPreviewItems = [sample, {...sample,id:'1',bucket:[256,256]}, {...sample,id:'2',bucket:[512,512]}];
+  a.cropPreviewBucketLimit = 1;
+  return { a, panel, animations };
+}
+
+test('bucket motion retains outgoing rows until collapse finishes and releases the fixed height', async () => {
+  const {a, panel, animations} = bucketMotionApp();
+  await a.toggleCropPreviewBuckets();
+  assert.equal(a.cropPreviewBucketsExpanded, true);
+  assert.deepEqual(Array.from(animations[0].frames, frame => frame.height), ['80px', '200px']);
+  assert.equal(animations[0].options.duration, 220);
+  assert.equal(animations[0].options.easing, 'cubic-bezier(.1,.78,.21,1)');
+  animations[0].finish(); await Promise.resolve();
+  assert.equal(panel.style.height, '');
+  await a.toggleCropPreviewBuckets();
+  assert.equal(a.cropPreviewBucketsExpanded, false);
+  assert.equal(a.cropPreviewBucketChips.length, 3);
+  assert.equal(animations[1].options.duration, 180);
+  animations[1].finish(); await Promise.resolve();
+  assert.equal(a.cropPreviewBucketChips.length, 1);
+  assert.equal(panel.style.height, '');
+  assert.equal(a._cropBucketMotionCleanup, null);
+});
+
+test('bucket motion reverses from the rendered height and cancels pending work when the dialog closes', async () => {
+  const {a, panel, animations} = bucketMotionApp();
+  await a.toggleCropPreviewBuckets();
+  animations[0].currentHeight = 130;
+  await a.toggleCropPreviewBuckets();
+  assert.equal(animations[0].cancelled, true);
+  assert.equal(animations[1].frames[0].height, '130px');
+  a.closeCropPreview(); await Promise.resolve();
+  assert.equal(animations[1].cancelled, true);
+  assert.equal(a._cropBucketsClosing, false);
+  assert.equal(panel.style.height, '');
+
+  const pending = bucketMotionApp();
+  const tick = deferred();
+  pending.a.$nextTick = () => tick.promise;
+  const opening = pending.a.toggleCropPreviewBuckets();
+  pending.a.closeCropPreview();
+  tick.resolve(); await opening;
+  assert.equal(pending.animations.length, 0);
+  assert.equal(pending.panel.style.height, '');
+});
+
+test('reduced motion switches bucket states without starting an animation', async () => {
+  const {a, panel, animations} = bucketMotionApp(true);
+  await a.toggleCropPreviewBuckets();
+  assert.equal(a.cropPreviewBucketsExpanded, true);
+  await a.toggleCropPreviewBuckets();
+  assert.equal(a.cropPreviewBucketsExpanded, false);
+  assert.equal(a.cropPreviewBucketChips.length, 1);
+  assert.equal(animations.length, 0);
+  assert.equal(panel.style.height, '');
+});
+
+test('unchanged bucket panel height settles immediately without a delayed collapse', async () => {
+  const {a, panel, animations} = bucketMotionApp();
+  a.cropPreviewBucketsExpanded = true;
+  a._measureCropPreviewCollapsedHeight = () => 200;
+  await a.toggleCropPreviewBuckets();
+  assert.equal(animations.length, 0);
+  assert.equal(a.cropPreviewBucketChips.length, 1);
+  assert.equal(panel.style.height, '');
+});
+
 test('random crop preserves size and stays inside resized image', () => {
   const a = app(); a.cropPreviewItems = [{...sample}];
   for (let n = 0; n < 40; n++) {

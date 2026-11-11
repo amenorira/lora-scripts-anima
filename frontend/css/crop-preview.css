@@ -26,7 +26,7 @@
 .cp-buckets-toggle { display: inline-grid; grid-template-columns: auto 14px; flex-shrink: 0; margin-left: auto; color: var(--text-primary); }
 .cp-buckets-toggle > span { grid-area: 1 / 1; text-align: left; }
 .cp-buckets-toggle > span[aria-hidden="true"] { visibility: hidden; }
-.cp-buckets-toggle > svg { grid-area: 1 / 2; }
+.cp-buckets-toggle > svg { grid-area: 1 / 2; transition: transform 180ms var(--ease-disclosure); }
 .cp-buckets-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
 .cp-buckets-hint { position: relative; flex: 0 0 auto; height: 0; z-index: 1; pointer-events: none; }
 .cp-buckets-hint > button { position: absolute; top: 0; left: 18px; transform: translateY(-50%); appearance: none; border: 0; margin: 0; padding: 0 6px; background: var(--bg-surface); color: var(--text-secondary); font: inherit; font-size: 11px; line-height: 16px; cursor: pointer; pointer-events: auto; }

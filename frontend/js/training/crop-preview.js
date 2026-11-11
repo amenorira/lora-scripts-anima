@@ -47,8 +47,11 @@ window.trainingCropPreviewMixin = {
   _cropPreviewEntered: false,
   _cropBucketResize: null,
   _cropBucketFrame: null,
+  _cropBucketMotionCleanup: null,
+  _cropBucketsClosing: false,
 
   async openCropPreview() {
+    this._cropBucketMotionCleanup?.();
     ++this._cropFocusSeq;
     this.cropPreviewOpen = true;
     this.cropPreviewFocus = null;
@@ -109,6 +112,7 @@ window.trainingCropPreviewMixin = {
   },
 
   closeCropPreview() {
+    this._cropBucketMotionCleanup?.();
     ++this._cropPreviewSeq;
     this._cropPreviewAbort?.abort();
     this._cropBucketResize?.disconnect();
@@ -148,6 +152,7 @@ window.trainingCropPreviewMixin = {
   },
 
   setCropPreviewSource(value) {
+    this._cropBucketMotionCleanup?.();
     this.cropPreviewSource = value;
     if (this.cropPreviewBucket && !this.cropPreviewBuckets.some(bucket => bucket.key === this.cropPreviewBucket)) {
       this.cropPreviewBucket = '';
@@ -231,14 +236,76 @@ window.trainingCropPreviewMixin = {
     return view;
   },
 
-  get cropPreviewBucketChips() {
+  async toggleCropPreviewBuckets() {
+    const panel = document.getElementById('cropBucketStats');
+    const from = panel.getBoundingClientRect().height;
+    this._cropBucketMotionCleanup?.();
+    const expanded = !this.cropPreviewBucketsExpanded;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    this._cropBucketsClosing = !expanded && !reduced;
+    this.cropPreviewBucketsExpanded = expanded;
+    if (reduced) return;
+
+    let animation;
+    const cleanup = () => {
+      if (this._cropBucketMotionCleanup !== cleanup) return;
+      this._cropBucketMotionCleanup = null;
+      animation?.cancel();
+      panel.style.height = '';
+      this._cropBucketsClosing = false;
+    };
+    this._cropBucketMotionCleanup = cleanup;
+    panel.style.height = `${from}px`;
+    await this.$nextTick();
+    if (this._cropBucketMotionCleanup !== cleanup) return;
+
+    if (expanded) panel.style.height = '';
+    const to = expanded ? panel.getBoundingClientRect().height : this._measureCropPreviewCollapsedHeight(panel);
+    if (from === to) { cleanup(); return; }
+    panel.style.height = `${to}px`;
+    animation = panel.animate([{ height: `${from}px` }, { height: `${to}px` }], {
+      duration: expanded ? 220 : 180,
+      easing: getComputedStyle(panel).getPropertyValue('--ease-disclosure').trim(),
+    });
+    animation.finished.then(cleanup, cleanup);
+  },
+
+  _measureCropPreviewCollapsedHeight(panel) {
+    // Measure only the collapsed cards without disturbing the live scroll position.
+    const measure = panel.cloneNode(false);
+    measure.removeAttribute('id');
+    measure.setAttribute('x-ignore', '');
+    measure.inert = true;
+    measure.style.cssText = `position:absolute;top:0;left:0;visibility:hidden;width:${panel.getBoundingClientRect().width}px`;
+    const scroll = panel.querySelector('.cp-buckets-scroll').cloneNode(false);
+    const grid = panel.querySelector('.cp-buckets').cloneNode(false);
+    grid.removeAttribute('id');
+    const chips = panel.querySelectorAll('.cp-bucket-chip');
+    grid.append(chips[0].cloneNode(true));
     const buckets = this.cropPreviewBuckets;
-    if (this.cropPreviewBucketsExpanded) return buckets;
+    for (const bucket of this._cropPreviewCollapsedBucketChips()) {
+      grid.append(chips[buckets.indexOf(bucket) + 1].cloneNode(true));
+    }
+    scroll.append(grid);
+    measure.append(scroll);
+    panel.after(measure);
+    const height = measure.getBoundingClientRect().height;
+    measure.remove();
+    return height;
+  },
+
+  _cropPreviewCollapsedBucketChips() {
+    const buckets = this.cropPreviewBuckets;
     const visible = buckets.slice(0, this.cropPreviewBucketLimit);
     const selected = buckets.find(bucket => bucket.key === this.cropPreviewBucket);
     // Keep the active filter visible when collapsing or narrowing the window.
     if (selected && !visible.includes(selected)) visible[visible.length - 1] = selected;
     return visible;
+  },
+
+  get cropPreviewBucketChips() {
+    return this.cropPreviewBucketsExpanded || this._cropBucketsClosing
+      ? this.cropPreviewBuckets : this._cropPreviewCollapsedBucketChips();
   },
 
   cropPreviewFolderCount(count) {
@@ -254,6 +321,7 @@ window.trainingCropPreviewMixin = {
   },
 
   selectCropPreviewBucket(key) {
+    this._cropBucketMotionCleanup?.();
     this.cropPreviewBucket = this.cropPreviewBucket === key ? '' : key;
     // Failed images have no bucket; leave that filter when choosing a valid bucket.
     if (key && this.cropPreviewFilter === 'errors') this.cropPreviewFilter = 'all';

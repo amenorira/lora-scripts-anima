@@ -1986,13 +1986,14 @@
       <span class="cp-legend" x-show="cropPreviewRandom" x-text="t('cropPreview.random')"></span>
       <button type="button" class="btn btn-ghost btn-sm" x-show="cropPreviewRandom" @click="shuffleCropPreview()" x-text="t('cropPreview.shuffle')"></button>
       <button type="button" class="btn btn-ghost btn-sm cp-buckets-toggle" x-show="cropPreviewBuckets.length > cropPreviewBucketLimit"
-              @click="cropPreviewBucketsExpanded = !cropPreviewBucketsExpanded" :aria-expanded="cropPreviewBucketsExpanded" aria-controls="cropBucketChips">
+              @click="toggleCropPreviewBuckets()" :aria-expanded="cropPreviewBucketsExpanded" aria-controls="cropBucketChips">
         <span :aria-hidden="cropPreviewBucketsExpanded" x-text="t('cropPreview.expandBuckets').replace('{count}', Math.max(0, cropPreviewBuckets.length - cropPreviewBucketLimit))"></span>
         <span :aria-hidden="!cropPreviewBucketsExpanded" x-text="t('cropPreview.collapseBuckets')"></span>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
       </button>
     </div>
-    <section id="cropBucketStats" class="cp-stats" x-show="cropPreviewBuckets.length" :aria-label="t('cropPreview.stats')">
+    <section id="cropBucketStats" class="cp-stats" x-show="cropPreviewBuckets.length" :aria-label="t('cropPreview.stats')"
+             @resize.window="_cropBucketMotionCleanup?.()">
       <div class="cp-buckets-scroll">
       <div class="cp-buckets" id="cropBucketChips">
         <button type="button" class="cp-bucket-chip" :aria-pressed="!cropPreviewBucket" @click="selectCropPreviewBucket('')" :title="t('cropPreview.sampleHint')">
@@ -2015,9 +2016,9 @@
       </div>
     </section>
     <div class="cp-buckets-hint" x-show="cropPreviewBuckets.length > cropPreviewBucketLimit">
-      <button type="button" @click="cropPreviewBucketsExpanded = !cropPreviewBucketsExpanded"
+      <button type="button" @click="toggleCropPreviewBuckets()"
               :aria-expanded="cropPreviewBucketsExpanded" aria-controls="cropBucketChips"
-              x-text="cropPreviewBucketsExpanded ? t('common.collapse') : t('cropPreview.moreBuckets').replace('{count}', cropPreviewBuckets.length - cropPreviewBucketChips.length)"></button>
+              x-text="cropPreviewBucketsExpanded ? t('common.collapse') : t('cropPreview.moreBuckets').replace('{count}', Math.max(0, cropPreviewBuckets.length - cropPreviewBucketLimit))"></button>
     </div>
     <div class="cp-stats-note" x-show="cropPreviewStatsNote()" x-text="cropPreviewStatsNote()"></div>
     <div class="cp-workspace">
