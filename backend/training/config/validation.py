@@ -428,8 +428,12 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
                 errors.append(f"{key}: use an integer step count or a fraction below 1 / 请填写整数步数或小于 1 的比例")
             if "min" in field and number < float(field["min"]):
                 errors.append(f"{key}: must be >= {field['min']} / 不能小于 {field['min']}")
+            elif "min" in field and field.get("min_exclusive") and number == float(field["min"]):
+                errors.append(f"{key}: must be > {field['min']} / 必须大于 {field['min']}")
             if "max" in field and number > float(field["max"]):
                 errors.append(f"{key}: must be <= {field['max']} / 不能大于 {field['max']}")
+            elif "max" in field and field.get("max_exclusive") and number == float(field["max"]):
+                errors.append(f"{key}: must be < {field['max']} / 必须小于 {field['max']}")
             step = field.get("step")
             if step and float(step).is_integer():
                 base = float(field.get("min", 0))

@@ -688,8 +688,10 @@ window.trainingFieldRelations = {
     if (!Number.isFinite(value)) return null;
     if (!field || !['number', 'stepper'].includes(field.type)) return value;
     const constraints = this._numberConstraints(field);
-    if (constraints.min !== undefined && value < constraints.min) return null;
-    if (constraints.max !== undefined && value > constraints.max) return null;
+    if (constraints.min !== undefined && (value < constraints.min
+      || (constraints.minExclusive && value === constraints.min))) return null;
+    if (constraints.max !== undefined && (value > constraints.max
+      || (constraints.maxExclusive && value === constraints.max))) return null;
     const step = Number(constraints.step || 1);
     if (step > 0) {
       if (Number.isInteger(step) && !Number.isInteger(value)) return null;
@@ -746,6 +748,8 @@ window.trainingFieldRelations = {
     // Fix floating-point drift (e.g. 0.1 + 0.2 = 0.30000000000000004)
     const decimals = (String(step).split('.')[1] || '').length;
     newVal = Number(newVal.toFixed(decimals));
+    if ((constraints.minExclusive && newVal <= constraints.min)
+      || (constraints.maxExclusive && newVal >= constraints.max)) return;
     this.setField(key, newVal);
   },
 

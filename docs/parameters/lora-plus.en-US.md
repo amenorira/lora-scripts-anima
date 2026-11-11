@@ -130,7 +130,7 @@ When LoRA+ only brings the best result forward, its main benefit is fewer traini
 | CAME | Supported | Preserves separate per-group learning rates |
 | StableAdamW, Muon, Adan, AdEMAMix, AdEMAMix8bit, SOAP | Supported | Preserve separate per-group learning rates |
 | AdamWScheduleFree | Supported | Keeps the groups, but internal adjustments change the effective rates during training |
-| Automagic3 / Automagic4 | Conditional | Both initial group rates must lie within `min_lr` and `max_lr`. Each group adapts independently, so the initial ratio is not fixed during training |
+| Automagic3 / Automagic4 | Conditional | Every initial group rate must lie within `min_lr` and `max_lr`. Groups adapt independently, so the initial ratio may change during training |
 | AdaFactor | Manual-LR mode only | Both `relative_step` and `warmup_init` must be off. The default relative-step mode ignores per-group rates, so the UI disables and locks LoRA+ |
 | Prodigy, ProdigyPlus | Unsupported | The current sd-scripts path cannot reliably preserve separate per-group rates; both UI and backend reject the combination |
 | EmoSens | Unsupported | Updates every parameter with one global `emoPulse` and resets all groups to that rate each step, which removes the ratio |
@@ -138,6 +138,8 @@ When LoRA+ only brings the best result forward, its main benefit is fewer traini
 | LoRA-RITE | Not supported | Its current factor-pair handling is incompatible with LoRA+ parameter groups |
 
 Switching to an incompatible mode turns LoRA+ off and shows the reason. Backend validation also rejects incompatible combinations from older presets or direct API calls.
+
+For example, an Automagic starting rate of `2e-5` and a LoRA+ ratio of `8` give a group rate of `1.6e-4`, above the default `1e-4` upper bound. Lower the ratio or raise the bound before training.
 
 This trainer's conventional external schedulers apply the same multiplier to each group, preserving the initial ratio. Warmup changes the early learning rate without changing grouping. Internally adaptive optimizers also change step size; distinguish logged group rates from actual update scales.
 

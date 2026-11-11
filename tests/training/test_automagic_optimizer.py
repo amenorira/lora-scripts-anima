@@ -146,8 +146,8 @@ class AutomagicConfigTests(unittest.TestCase):
 
     def test_v4_parameter_domains_reject_booleans_nonfinite_values_and_edges(self):
         for field, valid_values, invalid_values in (
-            ('automagic_sensitivity_quantile', (0.01, 0.9, 1), (0, -0.1, 1.01, True, float('inf'), float('nan'))),
-            ('automagic_step_target', (0.001, 0.1, 1.99), (0, -0.1, 2, True, float('inf'), float('nan'))),
+            ('automagic_sensitivity_quantile', (1e-10, 0.01, 0.9, 1), (0, -0.1, 1.01, True, float('inf'), float('nan'))),
+            ('automagic_step_target', (1e-10, 0.001, 0.1, 1.99, 1.9999999), (0, -0.1, 2, True, float('inf'), float('nan'))),
         ):
             for value in valid_values:
                 with self.subTest(field=field, valid=value):

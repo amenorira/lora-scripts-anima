@@ -229,3 +229,28 @@ test('Krea imported preview conflicts retain editable paths and can be resolved 
   assert.equal(app.form.turbo_dit, './turbo.safetensors');
   assert.equal(Object.keys(app._kreaOptionErrors()).length, 0);
 });
+
+test('Automagic4 controls accept the backend range and reject its open boundaries', () => {
+  const optimizer = 'vendor.automagic_optimizer.integration.Automagic4';
+  for (const profile of ['anima-lora', 'krea2-lora']) {
+    const app = application(profile, { optimizer_type: optimizer });
+    app.focusTrainingField = () => {};
+    for (const [key, value, accepted] of [
+      ['automagic_sensitivity_quantile', 1e-10, true],
+      ['automagic_sensitivity_quantile', 1, true],
+      ['automagic_sensitivity_quantile', 0, false],
+      ['automagic_step_target', 1e-10, true],
+      ['automagic_step_target', 1.9999999, true],
+      ['automagic_step_target', 2, false],
+      ['automagic_step_target', 0, false],
+    ]) {
+      app.setField(key, value);
+      assert.equal(app.form[key], value, `${profile}: ${key} retains ${value}`);
+      app.validateForm();
+      assert.equal(!app.formErrors[key], accepted, `${profile}: ${key}=${value}`);
+    }
+    app.setField('automagic_step_target', 0.01);
+    app.stepField('automagic_step_target', -0.01);
+    assert.equal(app.form.automagic_step_target, 0.01);
+  }
+});
