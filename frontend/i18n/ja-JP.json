@@ -14,6 +14,7 @@
 		"bucketCounts": "画像 {images} 枚、各エポック {samples} 回",
 		"bucketCountsSingle": "画像 {images} 枚、各エポック {samples} 回",
 		"expandBuckets": "残り {count} 個のバケットを表示",
+		"moreBuckets": "ほかに {count} 個のバケット",
 		"collapseBuckets": "バケットを折りたたむ",
 		"bucketSize": "バケットサイズ",
 		"originalCount": "元画像数",

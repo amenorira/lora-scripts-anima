@@ -2012,6 +2012,9 @@
         </template>
       </div>
     </section>
+    <div class="cp-buckets-hint" x-show="!cropPreviewBucketsExpanded && cropPreviewBuckets.length > cropPreviewBucketLimit" aria-hidden="true">
+      <span x-text="t('cropPreview.moreBuckets').replace('{count}', cropPreviewBuckets.length - cropPreviewBucketChips.length)"></span>
+    </div>
     <div class="cp-stats-note" x-show="cropPreviewStatsNote()" x-text="cropPreviewStatsNote()"></div>
     <div class="cp-workspace">
       <div id="cropPreviewScroll" class="cp-scroll" :aria-busy="cropPreviewLoading"
