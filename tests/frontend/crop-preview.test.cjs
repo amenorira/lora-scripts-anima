@@ -24,7 +24,7 @@ const sample = {id:'0',name:'a"<.png',sample_count:5,original:[300,200],bucket:[
 test('bucket statistics aggregate repeats independently of image filters', () => {
   const a = app();
   a.cropPreviewItems = [sample, {...sample,id:'1',sample_count:2}, {...sample,id:'2',sample_count:10,bucket:[256,256],is_reg:true}, {id:'3',name:'broken.png',error:'broken',sample_count:50}];
-  assert.deepEqual(Array.from(a.cropPreviewBuckets, b => [b.key,b.count,b.samples]), [['256 × 256',1,10],['128 × 128',2,7]]);
+  assert.deepEqual(Array.from(a.cropPreviewBuckets, b => [b.key,b.count,b.samples]), [['128 × 128',2,7],['256 × 256',1,10]]);
   a.cropPreviewBucket = '128 × 128'; a.cropPreviewFilter = 'upscaled';
   assert.equal(a.cropPreviewView.items.length, 0);
   assert.equal(a.cropPreviewBuckets.reduce((sum,b)=>sum+b.samples,0), 17);
@@ -35,6 +35,18 @@ test('bucket statistics aggregate repeats independently of image filters', () =>
   assert.equal(a.cropPreviewTotals.count, 1);
   assert.equal(a.cropPreviewTotals.samples, 5);
   assert.equal(a.cropPreviewStatsNote(), '');
+});
+
+test('bucket order matches core logs by numeric width then height, independently of repeats', () => {
+  const a = app();
+  a.cropPreviewItems = [
+    {...sample, id:'0', bucket:[1024,512], sample_count:999},
+    {...sample, id:'1', bucket:[768,1024], sample_count:99},
+    {...sample, id:'2', bucket:[640,1280], sample_count:1},
+    {...sample, id:'3', bucket:[768,768], sample_count:2},
+  ];
+  assert.deepEqual(Array.from(a.cropPreviewBuckets, b => b.key),
+    ['640 × 1280', '768 × 768', '768 × 1024', '1024 × 512']);
 });
 
 test('crop filter and bucket filter compose without losing error entries', () => {

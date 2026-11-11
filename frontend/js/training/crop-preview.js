@@ -188,7 +188,7 @@ window.trainingCropPreviewMixin = {
       totals.samples += samples;
       counts.set(key, bucket);
     }
-    const buckets = Array.from(counts.values()).sort((a, b) => b.samples - a.samples || a.width - b.width || a.height - b.height);
+    const buckets = Array.from(counts.values()).sort((a, b) => a.width - b.width || a.height - b.height);
     const stats = { buckets, totals, errors, includesReg };
     cropPreviewStatsCache.set(items, stats);
     return stats;
