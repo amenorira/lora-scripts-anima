@@ -1,8 +1,8 @@
 """Optimizer-aware learning-rate reporting for sd-scripts training runs.
 
-The trainer APIs expose a scheduler to logging code, but several optimizers
-own their effective scalar learning rate. This module keeps that distinction
-out of the UI and provides a small registry for optimizer-specific reporters.
+Fill gaps where scheduler values miss an optimizer's internal learning rate.
+Prodigy and DAdapt already have native adaptive LR tags; leave those paths
+unchanged and let the dashboard select their existing values.
 """
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ import math
 import sys
 from dataclasses import dataclass
 from typing import Any, Callable, Sequence
-
 
 LrMatcher = Callable[[Any], bool]
 LrReader = Callable[[Any], Sequence[float]]
@@ -80,26 +79,6 @@ def _named(*names: str) -> LrMatcher:
     return matches
 
 
-def _name_starts_with(*prefixes: str) -> LrMatcher:
-    normalized = tuple(prefix.lower() for prefix in prefixes)
-
-    def matches(optimizer: Any) -> bool:
-        simple, _ = _optimizer_names(optimizer)
-        return simple.startswith(normalized)
-
-    return matches
-
-
-def _name_ends_with(*suffixes: str) -> LrMatcher:
-    normalized = tuple(suffix.lower() for suffix in suffixes)
-
-    def matches(optimizer: Any) -> bool:
-        simple, _ = _optimizer_names(optimizer)
-        return simple.endswith(normalized)
-
-    return matches
-
-
 def _read_param_groups(optimizer: Any) -> list[float]:
     return [group["lr"] for group in optimizer.param_groups]
 
@@ -110,36 +89,6 @@ def _read_public_method(optimizer: Any) -> list[float]:
 
 def _read_schedule_free(optimizer: Any) -> list[float]:
     return [group.get("scheduled_lr", group["lr"]) for group in optimizer.param_groups]
-
-
-def _read_prodigy_plus(optimizer: Any) -> list[float]:
-    return [optimizer.get_dlr(group) for group in optimizer.param_groups]
-
-
-def _read_prodigy(optimizer: Any) -> list[float]:
-    values: list[float] = []
-    for group in optimizer.param_groups:
-        value = group["d"] * group["lr"]
-        if group.get("use_bias_correction"):
-            beta1, beta2 = group["betas"]
-            step = max(int(group.get("k", 0)), 1)
-            value *= math.sqrt(1.0 - beta2**step) / (1.0 - beta1**step)
-        values.append(value)
-    return values
-
-
-def _read_d_adaptation(optimizer: Any) -> list[float]:
-    values: list[float] = []
-    for group in optimizer.param_groups:
-        lr = group.get("effective_lr", group["lr"])
-        value = group["d"] * lr
-
-        if group.get("use_bias_correction"):
-            beta1, beta2 = group["betas"]
-            step = int(group.get("k", 0)) + 1
-            value *= math.sqrt(1.0 - beta2**step) / (1.0 - beta1**step)
-        values.append(value)
-    return values
 
 
 def _read_adafactor(optimizer: Any) -> list[float]:
@@ -239,6 +188,11 @@ def optimizer_owns_schedule(optimizer: Any) -> bool:
     return bool(reporter and reporter.owns_schedule)
 
 
+def optimizer_has_lr_reporter(optimizer: Any) -> bool:
+    """Whether logging needs an optimizer-specific LR value."""
+    return _resolve_reporter(optimizer)[1] is not None
+
+
 class EffectiveLrNoOpScheduler:
     """No-op scheduler that reports the optimizer's effective learning rate."""
 
@@ -258,24 +212,13 @@ class EffectiveLrNoOpScheduler:
         return None
 
 
-def _append_d_adaptation_diagnostics(
-    logs: dict[str, Any],
-    optimizer: Any | None,
-    names: Sequence[str],
-) -> None:
-    if optimizer is None:
-        return
-    candidate, reporter = _resolve_reporter(optimizer)
-    if reporter is None or reporter.name not in {"d-adaptation", "prodigy", "prodigy-plus"}:
-        return
-
-    for name, group in zip(names, candidate.param_groups):
-        try:
-            logs[f"lr/d*lr/{name}"] = float(group["d"] * group["lr"])
-            if "effective_lr" in group:
-                logs[f"lr/d*eff_lr/{name}"] = float(group["d"] * group["effective_lr"])
-        except (KeyError, TypeError, ValueError):
-            continue
+def learning_rate_names(args: Any, descriptions: Sequence[str] | None, count: int) -> list[str]:
+    """Keep one name per optimizer group, even if upstream log keys collide."""
+    if descriptions is not None:
+        return list(descriptions)
+    unet_only = getattr(args, "network_train_unet_only", True)
+    return ["textencoder" if index == 0 and not unet_only
+            else f"group{index}" if count > 2 else "unet" for index in range(count)]
 
 
 def _patch_optimizer_module(module: Any) -> None:
@@ -285,6 +228,7 @@ def _patch_optimizer_module(module: Any) -> None:
         return
 
     original_get_scheduler_fix = module.get_scheduler_fix
+    original_append_lr = getattr(module, "append_lr_to_logs_with_names", None)
 
     def get_scheduler_fix(args: Any, optimizer: Any, num_processes: int):
         if optimizer_owns_schedule(optimizer):
@@ -298,10 +242,13 @@ def _patch_optimizer_module(module: Any) -> None:
         names: Sequence[str],
     ) -> None:
         optimizer = optimizer_from_scheduler(lr_scheduler)
+        _, reporter = _resolve_reporter(optimizer) if optimizer is not None else (None, None)
+        if reporter is None and callable(original_append_lr):
+            original_append_lr(logs, lr_scheduler, optimizer_type, names)
+            return
         learning_rates = read_learning_rates(optimizer=optimizer, scheduler=lr_scheduler)
         for name, learning_rate in zip(names, learning_rates):
             logs[f"lr/{name}"] = learning_rate
-        _append_d_adaptation_diagnostics(logs, optimizer, names)
 
     get_scheduler_fix.__wrapped__ = original_get_scheduler_fix
     module.get_scheduler_fix = get_scheduler_fix
@@ -328,14 +275,20 @@ def _patch_network_trainer_module(module: Any) -> None:
         optimizer = kwargs.get("optimizer")
         if optimizer is None and len(args) > 5:
             optimizer = args[5]
-        learning_rates = read_learning_rates(optimizer=optimizer, scheduler=lr_scheduler)
-        primary_keys = [
-            key
-            for key in logs
-            if key.startswith("lr/") and not key.startswith("lr/d*")
-        ]
-        for key, learning_rate in zip(primary_keys, learning_rates):
-            logs[key] = learning_rate
+        if optimizer is None:
+            optimizer = optimizer_from_scheduler(lr_scheduler)
+        _, reporter = _resolve_reporter(optimizer) if optimizer is not None else (None, None)
+        # Internally scheduled optimizers already expose their LR through the
+        # no-op scheduler. Reuse those log values, including Automagic's public
+        # reader, without calling it a second time. Ordinary optimizers keep
+        # the trainer's native logging path entirely.
+        if reporter is not None and not reporter.owns_schedule:
+            learning_rates = read_learning_rates(optimizer=optimizer, scheduler=lr_scheduler)
+            descriptions = kwargs.get("lr_descriptions", args[4] if len(args) > 4 else None)
+            training_args = kwargs.get("args", args[0] if args else None)
+            names = learning_rate_names(training_args, descriptions, len(learning_rates))
+            for name, learning_rate in zip(names, learning_rates):
+                logs[f"lr/{name}"] = learning_rate
         return logs
 
     generate_step_logs.__wrapped__ = original_generate_step_logs
@@ -380,7 +333,8 @@ def install_import_hook() -> None:
 register_learning_rate_reporter(
     LearningRateReporter(
         "automagic",
-        _named("Automagic3", "vendor.automagic_optimizer.integration.Automagic3"),
+        _named("Automagic3", "vendor.automagic_optimizer.integration.Automagic3",
+               "Automagic4", "vendor.automagic_optimizer.integration.Automagic4"),
         _read_public_method,
         owns_schedule=True,
     )
@@ -395,32 +349,10 @@ register_learning_rate_reporter(
 )
 register_learning_rate_reporter(
     LearningRateReporter(
-        "prodigy-plus",
-        _named("ProdigyPlusScheduleFree", "prodigyplus.ProdigyPlusScheduleFree"),
-        _read_prodigy_plus,
-        owns_schedule=True,
-    )
-)
-register_learning_rate_reporter(
-    LearningRateReporter(
         "schedule-free",
-        _name_ends_with("ScheduleFree"),
+        _named("AdamWScheduleFree", "RAdamScheduleFree", "SGDScheduleFree"),
         _read_schedule_free,
         owns_schedule=True,
-    )
-)
-register_learning_rate_reporter(
-    LearningRateReporter(
-        "prodigy",
-        _named("Prodigy", "prodigyopt.prodigy.Prodigy"),
-        _read_prodigy,
-    )
-)
-register_learning_rate_reporter(
-    LearningRateReporter(
-        "d-adaptation",
-        _name_starts_with("DAdapt"),
-        _read_d_adaptation,
     )
 )
 register_learning_rate_reporter(
@@ -434,9 +366,11 @@ register_learning_rate_reporter(
 __all__ = [
     "EffectiveLrNoOpScheduler",
     "LearningRateReporter",
+    "learning_rate_names",
     "install_import_hook",
     "optimizer_from_scheduler",
     "optimizer_owns_schedule",
+    "optimizer_has_lr_reporter",
     "read_learning_rates",
     "register_learning_rate_reporter",
     "registered_learning_rate_reporters",

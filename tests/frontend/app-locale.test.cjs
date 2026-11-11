@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { loadFrontend, response } = require('./helpers.cjs');
+const { loadFrontend, response, deferred } = require('./helpers.cjs');
 const { uiHarness } = require('./ui-helpers.cjs');
 
 const refreshByRoute = {
@@ -54,6 +54,11 @@ async function localeHarness() {
       events.fire('locale-changed');
       return locale;
     },
+    reloadLocale(route) {
+      calls.length = 0;
+      app.currentRoute = route;
+      events.fire('locale-changed');
+    },
   };
 }
 
@@ -76,3 +81,56 @@ test('a locale change while regularization is loading skips its controls and the
   changeLocale('regularization');
   assert.deepEqual(calls, ['renderRegularizationResourceBar']);
 });
+
+test('recovering the same locale refreshes messages and invalidates suspended training text', async () => {
+  const { app, calls, reloadLocale } = await localeHarness();
+  app._trainFormLocale = app.locale;
+  const revision = app.localeRevision;
+  reloadLocale('train-basic');
+  assert.equal(app.localeRevision, revision + 1);
+  assert.equal(app._trainFormLocale, '');
+  assert.deepEqual(calls, ['refreshTrainingLocale']);
+});
+
+for (const pauseAt of ['/api/version', '/api/file_picker_available']) {
+  test(`a language selection during ${pauseAt} updates immediately and mounts the route once in that language`, async () => {
+    const { context, document, Element, factories, listeners } = uiHarness();
+    const events = new Element(), gate = deferred(), entered = deferred();
+    const mountedLocales = [], refreshed = [];
+    document.documentElement = new Element('html');
+    Object.assign(context.window, {
+      location: { hash: '#train-basic' }, history: { state: { animaRoute: 'train-basic' } },
+      matchMedia: () => ({ addEventListener() {} }),
+      addEventListener: events.addEventListener.bind(events),
+      dispatchEvent: events.dispatchEvent.bind(events),
+    });
+    context.localStorage = { getItem: () => null, setItem() {} };
+    context.navigator.language = 'en-US';
+    context.fetch = async url => {
+      if (url.endsWith('.json')) return { ok: true, json: async () => ({ nav: { loraTraining: url } }) };
+      if (url === pauseAt) { entered.resolve(); return gate.promise; }
+      return response({});
+    };
+    loadFrontend(['shared/i18n', 'shared/constants', 'app/config', 'app/index'], context);
+    await context.window.I18N.ready;
+    context.ROUTE_CONFIG = context.window.ROUTE_CONFIG;
+    listeners.get('alpine:init')();
+    const app = factories.animaApp();
+    for (const name of ['resolveTheme', 'loadUISettings', '_initPanelResizer', 'startRealtime']) app[name] = () => {};
+    app.buildRouteContent = () => mountedLocales.push(app.locale);
+    app.refreshRouteLocale = route => refreshed.push(route);
+    const initializing = app.init();
+    await entered.promise;
+    await app.onLocaleChange('ja-JP');
+    assert.equal(app.locale, 'ja-JP');
+    assert.equal(document.documentElement.lang, 'ja-JP');
+    assert.equal(app.localeRevision, 1);
+    assert.equal(refreshed.length, 0, 'startup language changes must not mount a workspace early');
+    assert.equal(mountedLocales.length, 0);
+    gate.resolve(response({}));
+    await initializing;
+    assert.equal(context.window.I18N.getLocale(), app.locale);
+    assert.deepEqual(mountedLocales, ['ja-JP']);
+    assert.equal(refreshed.length, 0);
+  });
+}

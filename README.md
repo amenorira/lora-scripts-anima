@@ -4,7 +4,9 @@
 
 _本地 LoRA 训练工具，支持 Anima、SDXL、MOSS-Image 和 Krea 2。_
 
-面向本地运行的 LoRA 训练 GUI，集成训练配置、数据打标、标签编辑与实时监控。Anima / SDXL / MOSS-Image 使用 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts)，Krea 2 使用 [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner)，并通过 [LyCORIS](https://github.com/KohakuBlueleaf/LyCORIS) 扩展 Anima / SDXL 的训练算法。
+集成训练配置、图片打标、标签批量编辑和训练进度实时监控。
+
+Anima、SDXL 和 MOSS-Image 使用 [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) 作为训练核心，Krea 2 使用 [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner)。通过 [LyCORIS](https://github.com/KohakuBlueleaf/LyCORIS)，Anima、SDXL 和 Krea 2 还可使用 LoCon、LoHa、LoKr 等训练算法。
 
 </div>
 
@@ -22,22 +24,17 @@ _本地 LoRA 训练工具，支持 Anima、SDXL、MOSS-Image 和 Krea 2。_
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-ja.md">日本語</a>
 </p>
 
-Anima / SDXL / MOSS-Image 支持原生 LoRA、LoHa、LoKr；Anima / SDXL 还支持通过 `lycoris.kohya` 接入的 **LyCORIS** LoCon / LoHa / LoKr。Krea 2 使用专用的原生 LoRA 模块。
-
 ### 支持的模型类型
 
-| 训练类型 | 底模 |
-|---------|------|
-| LoRA | SDXL |
-| **LoRA** | **Anima**（Qwen3 + T5 双编码器） |
-| **LoRA / LoHa / LoKr** | **MOSS-Image**（sd-scripts） |
-| **LoRA** | **Krea 2 RAW DiT**（musubi-tuner） |
+| 底模 | 训练引擎 | 原生算法 | LyCORIS |
+|------|----------|----------|---------|
+| SDXL | sd-scripts | LoRA / LoHa / LoKr | LoCon / LoHa / LoKr |
+| Anima | sd-scripts | LoRA / LoHa / LoKr | LoCon / LoHa / LoKr |
+| MOSS-Image | sd-scripts | LoRA / LoHa / LoKr | — |
+| Krea 2 RAW DiT | musubi-tuner | LoRA | LoCon / LoHa / LoKr |
 
-> ℹ️ MOSS-Image 支持原生 `networks.lora_generic`、`networks.loha`、`networks.lokr`，暂不支持 `lycoris.kohya`。三种算法均可单独选择训练 DiT 内的文本投影与细化层；界面固定冻结 Qwen 文本编码器。
-
-> ℹ️ Krea 2 在训练前必须生成 latent 与 Qwen3-VL 文本编码输出两类缓存。界面会在“开始训练”前验证缓存是否完整、且是否仍与图片、标签和模型匹配。
-
-> ℹ️ `vendor/sd-scripts/` 训练引擎本身支持 SD3 / FLUX / HunyuanImage / Lumina 等更多模型，但当前 UI 尚未提供这些模型的训练入口。
+- **MOSS-Image** 可选择训练 DiT 的文本投影与细化层。Qwen 文本编码器保持冻结。
+- **Krea 2** 开始训练前需先准备图像 latent 和 Qwen3-VL 文本编码缓存。
 
 ## 功能简介
 
@@ -52,7 +49,6 @@ Anima / SDXL / MOSS-Image 支持原生 LoRA、LoHa、LoKr；Anima / SDXL 还支�
 - **国际化（i18n）** — 中文、英文和日语界面及内置指南，支持浏览器语言自动检测并保存语言偏好
 - **三种主题** — 浅色、深色与 ComfyUI 主题，支持跟随系统、手动切换
 - **后端连接状态指示器** — 实时显示前后端连接状态及断连时长
-- **慢速远程连接兼容** — 使用同源实时传输、弱网缩略图队列和版本化浏览器缓存，降低预览请求对实时状态传输的影响
 
 <a name="pre-training-previews"></a>
 
@@ -72,89 +68,34 @@ Anima / SDXL / MOSS-Image 支持原生 LoRA、LoHa、LoKr；Anima / SDXL 还支�
 
 ### 矩阵结构预览
 
-Anima、MOSS-Image 或 Krea 2 训练下，在 **训练网络模块** 下点击「结构预览」。Anima 支持 LoRA / LoCon、LoHa 和 LoKr；MOSS-Image 支持原生 LoRA / LoHa / LoKr，包含可选的 DiT 文本投影与细化层；Krea 2 支持原生 LoRA 和 LyCORIS LoCon / LoHa / LoKr。按实际网络构造结果展示矩阵组合，可切换注意力、MLP 等模块，查看逐层形状、生效 rank / alpha、缩放、匹配层数和参数统计。
+训练 Anima、MOSS-Image 或 Krea 2 时，在 **训练网络模块** 下点击「结构预览」。可切换注意力、MLP 等模块，查看矩阵形状、生效 rank / alpha、缩放、匹配层数和参数量。
 
-入口同时显示 **预计权重文件大小**，随算法、rank、训练范围和保存精度自动更新。估算使用虚拟张量，无需加载底模或启动训练；统计实际保存张量与 safetensors 索引开销，不代表显存需求。详见[矩阵结构与文件大小指南](docs/parameters/matrix-preview.zh-CN.md)。
+同一入口也显示 **预计权重文件大小**，可在训练前估算保存权重所需的磁盘空间。[矩阵结构与文件大小指南](docs/parameters/matrix-preview.zh-CN.md)
 
 ![矩阵结构预览：LoKr 的 Kronecker 分解与参数量](docs/images/shape-preview.zh-CN.png)
 
-## 项目结构
-
-```
-lora-scripts-anima/
-├── vendor/sd-scripts/          ← Anima / SDXL / MOSS-Image 训练引擎（固定上游快照）
-├── vendor/musubi-tuner/        ← Krea 2 训练核心（固定上游快照）
-├── vendor/lycoris/             ← LyCORIS 适配器后端（固定上游快照）
-├── vendor/emo_optimizer/       ← EmoSens 自适应优化器
-├── vendor/lora_muon/           ← LoRA-Muon 测试优化器
-├── backend/                    ← FastAPI 后端
-│   ├── server/                 ← 应用装配、HTTP 路由、静态资源与代理
-│   ├── core/                   ← 实时任务协调与安装任务生命周期
-│   ├── training/               ← 训练模块，按职责组织
-│   │   ├── fields/             ← 字段注册表、默认值与选项元数据
-│   │   ├── config/             ← 配置转换、导入导出与参数校验
-│   │   ├── datasets/           ← 数据集解析、重复次数与步数估算
-│   │   ├── execution/          ← 运行准备、启动分发与进程管理
-│   │   └── cache/              ← 缓存检查、生成与复用
-│   ├── monitor/                ← 训练监控（GPU/系统/日志/预览/历史）
-│   ├── tageditor/              ← 原生标签编辑器
-│   ├── tagger/                 ← 打标模块（WD / CL / Camie / PixAI / AI 接口）
-│   ├── regularization/         ← 正则图片生成、采样与恢复
-│   └── gui.py                  ← GUI 内部入口（由启动脚本调用）
-├── frontend/                   ← Alpine.js SPA 前端
-│   ├── js/                     ← 按功能组织的脚本
-│   │   ├── app/                ← 应用装配与路由配置
-│   │   ├── shared/             ← 公共控件、通知、国际化与实时连接
-│   │   ├── training/           ← 训练表单、配置与预览
-│   │   ├── monitor/            ← 监控、历史、日志与输出
-│   │   ├── environment/        ← 环境状态、组件安装与模型下载
-│   │   ├── tagger/             ← 自动打标与 AI 描述工作区
-│   │   ├── docs/               ← 参数文档阅读器
-│   │   ├── regularization/     ← 正则图片生成工作区
-│   │   ├── tag-editor/         ← 标签编辑、会话与持久化
-│   │   └── tag-dictionary/     ← 词典、Worker 与悬浮卡片
-│   ├── templates/              ← 按需加载的工作区 HTML 模板
-│   └── css/ · i18n/ · assets/   ← 样式、翻译与静态资源
-├── config/                     ← 本地配置与自动保存
-├── docs/                       ← 参数指南与预览截图
-├── tools/                      ← 启动、安装与运行工具；开发脚本位于 tools/dev/
-├── tests/                      ← 后端回归与前端交互测试
-├── start.bat / start.sh        ← 启动脚本
-└── requirements.txt            ← 全项目唯一依赖清单（后端与训练核心共用，torch 由启动器单独安装）
-```
-
 ## 使用方法
+
+### 快速开始
+
+进入解压或克隆后的项目目录，执行对应平台的命令。
+
+| 平台 | 安装 + 启动 |
+|------|------------|
+| Windows | `.\start.bat` |
+| Linux | `bash start.sh` |
+
+首次启动会自动创建虚拟环境并安装所有依赖。启动后 GUI 自动打开 [http://127.0.0.1:12333](http://127.0.0.1:12333)。
 
 ### 必要依赖
 
-- **Python**：需要 64 位 Python 3.12（项目基线版本，预编译依赖与安装流程均以此为准）
-- **Git**：用于下载和更新项目；Windows ZIP 下载版可在首次启动时自动安装
-- **PyTorch 2.12.1 + CUDA 13.0**：由启动脚本自动安装，兼容 RTX 30/40/50 全系列
-- **NVIDIA 驱动 R580 或更高版本**：CUDA 13.0 的最低驱动要求
+- **Windows** 首次启动时可按提示为当前用户安装 64 位 Python 3.12，与已有 Python 并存。ZIP 下载版也可按提示安装 Git。
+- **Linux** 请先安装 Git 和 64 位 Python 3.12。如果系统提示缺少 `venv`，请安装对应软件包（如 `python3.12-venv`）。
+- **训练**需要 NVIDIA 显卡和 R580 或更新的驱动。启动脚本自动安装 PyTorch 2.12.1 + CUDA 13.0，支持 RTX 30/40/50 系列。无 NVIDIA 显卡也可启动 GUI。
 
-> **Windows 用户无需提前安装 Python。** 首次运行 `start.bat` 时，启动器会寻找 64 位 Python 3.12，并跳过 Microsoft Store 的 Python 占位符。
->
-> 如果电脑只有 Python 3.13/3.14，可按提示为当前用户并行安装官方 Python 3.12。启动器不会卸载现有 Python，也不会修改系统默认 Python。下载时会显示进度、文件大小、速度和 ETA；静默安装阶段会显示加载动画。
->
-> **Linux 用户**需要自行安装 64 位 Python 3.12。多数 Python 安装已包含创建 `venv` 的功能；只有 Ubuntu/Debian 等系统提示缺少该功能时，才需要额外安装对应的软件包（例如 `python3.12-venv`）。
->
-> 如果项目中已经存在由其他 Python 版本创建的不兼容 `venv`，请只删除或重命名项目内的 `venv` 文件夹，再重新运行当前平台的启动脚本。
+如果已有的项目 `venv` 由不兼容的 Python 版本创建，可重命名该目录，再运行启动脚本重建环境。
 
-| GPU 系列 | 自动安装的 PyTorch | CUDA |
-|----------|:------------------:|:----:|
-| RTX 30 系 (Ampere) | 2.12.1 | 13.0 |
-| RTX 40 系 (Ada) | 2.12.1 | 13.0 |
-| RTX 50 系 (Blackwell) | 2.12.1 | 13.0 |
-
-更新项目代码后，已有旧版 `venv`（包括 Torch 2.10 + cu130）会在下次启动时自动升级到 PyTorch 2.12.1 + cu130、torchvision 0.27.1。已安装的 xformers 同步到 0.0.35，Triton 同步到 3.7 系列；bitsandbytes 保持 CUDA 13 兼容检查，ONNX Runtime GPU 保持 1.27.0。FlashAttention 可在环境管理中按需安装，旧包不会自动升级或卸载。
-
-无 NVIDIA 显卡的机器仍会安装完整的 GPU 依赖环境并可正常运行 GUI，但训练功能需要 NVIDIA 显卡。
-
-> **Krea 2 共享环境**：Krea 2 与 sd-scripts 共用项目主 `venv` 和同一套 CUDA 版 PyTorch。根目录的 `requirements.txt` 是全项目唯一依赖清单，将共享依赖统一钉在 `transformers 5.21.0` / `tokenizers 0.23.3`；安装时不再读取 `vendor/` 内的依赖文件。
->
-> 日常启动只进行快速元数据检查。版本匹配时，不会重复运行 pip、卸载或重装软件包，也不会导入完整的 Krea 2 运行栈。依赖同步完成后，以及执行 Krea 2 预检时，启动器会运行完整的导入验证。此过程不会修改 `vendor/` 中的上游依赖文件。
-
-> 旧版本遗留的 `venv/cores/musubi` 不再被读取、写入或自动删除。确认项目主 `venv` 可以正常训练后，可手动删除该目录以回收磁盘空间。
+Krea 2 与 sd-scripts 共用项目主 `venv`。确认主环境可以正常训练后，可手动清理旧版遗留的 `venv/cores/musubi`。[项目依赖清单](requirements.txt)
 
 > 国内用户设置清华镜像：`set PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple` 后运行 `start.bat`。
 
@@ -170,46 +111,36 @@ Git 安装或源码同步前的仓库修复失败不会阻止原 ZIP 启动，�
 ### 使用 Git 克隆
 
 ```sh
-git clone --depth 1 --single-branch --branch main --no-tags https://github.com/amenorira/lora-scripts-anima.git
+git clone --depth 1 --no-tags https://github.com/amenorira/lora-scripts-anima.git
 cd lora-scripts-anima
-git config pull.ff only
 ```
 
-仅下载最新 main，后续可正常 `git pull`。需要完整历史或标签时，分别运行 `git fetch --unshallow`、`git fetch --tags`；开发者也可省略克隆选项。
+这会浅克隆默认分支 `main`。进入目录后按上面的「快速开始」启动。
 
-首次切换 dev 时执行以下命令，之后用 `git switch main` / `git switch dev` 来回切换：
+<details>
+<summary>切换到 dev 或下载完整历史</summary>
+
+浅克隆后，首次切换到 `dev` 时运行以下命令。
 
 ```sh
-git config --add remote.origin.fetch "+refs/heads/dev:refs/remotes/origin/dev"
-git fetch --no-tags origin
+git remote set-branches --add origin dev
+git fetch origin
 git switch --track origin/dev
 ```
 
-### 快速开始
+之后可用 `git switch main` 或 `git switch dev` 切换。需要补齐已跟踪分支的历史时运行 `git fetch --unshallow`，需要标签时运行 `git fetch --tags`。
 
-| 平台 | 安装 + 启动 |
-|------|------------|
-| Windows | `.\start.bat` |
-| Linux | `bash start.sh` |
-
-首次启动会自动创建虚拟环境并安装所有依赖。启动后 GUI 自动打开 [http://127.0.0.1:12333](http://127.0.0.1:12333)。
+</details>
 
 ### 实时连接与慢速远程连接
 
-TensorBoard 与 GUI 共用对外入口：默认访问 `http://127.0.0.1:12333/tensorboard/`，可直接在独立窗口打开该地址。内嵌页面沿用当前页面的域名、协议和端口；SSH 只需映射 GUI 端口，本地端口可以与服务器不同。远端终端显示服务器地址，无法自动得知 SSH 本地映射端口。
+通过 SSH 访问时，只需转发 GUI 端口。在 GUI 地址后加上 `/tensorboard/` 即可打开 TensorBoard，例如 `http://127.0.0.1:12333/tensorboard/`。若本地转发端口不同，请使用本地端口。TensorBoard 启动失败时可查看 `logs/tensorboard.log`。
 
-TensorBoard 子进程仅监听服务器回环地址，内部端口默认自动分配，`--listen` 不会将其单独暴露。旧的 `--tensorboard-host` 参数已弃用并忽略；`--tensorboard-port` 仅用于指定内部端口。启动期间显示等待提示，TensorBoard 就绪后统一打印访问地址；失败时提示异常并继续启动 GUI。详细日志位于 `logs/tensorboard.log`。
-
-网页的 HTTP 请求和实时连接始终与当前页面同源（same-origin）。训练器不会自动配置 SSH、端口映射、代理、云平台专用逻辑或额外的实时端口。
-
-- `/ws/realtime` 仅传递小型 JSON 状态、进度、日志增量和硬件数据；命令、图片、文件和元数据仍使用 HTTP。
-- 侧栏只有在收到 WebSocket `ready` 消息和实时快照后，才会显示“后端已连接”。连续 2 秒没有有效实时数据时，只显示“实时数据延迟”；连接关闭且健康探测也失败后，才显示“后端离线”。
-- 后端重启会更换实例 ID。网页会清除旧实例的任务、进度、日志、曲线与硬件快照，并明确提示先前的内存任务状态未知；当前版本不会扫描或接管遗留训练进程。
-- **UI 设置 → 慢速远程连接兼容**默认开启：完整显示当前运行或历史记录的样本列表，缩略图以单请求、低优先级队列加载，并会在实时数据延迟时暂停。版本化缩略图可被浏览器缓存 24 小时；查看原图仍需用户主动点击。
+如果远程预览拖慢实时更新，可在 **UI 设置 → 慢速远程连接兼容**中开启逐张加载缩略图。尚未手动设置时，浏览器报告低速连接或省流量模式便会自动开启。
 
 ### 后续更新
 
-Windows 用户先关闭训练器，双击 **`update.bat`**，成功后运行 `start.bat`；也可在项目目录打开终端运行 `git pull`。更新当前分支（main 或 dev），仅允许快进；源码修改、暂存改动或分叉会停止更新。启动训练器不会自动更新源码。
+更新前先关闭训练器。Windows 用户可双击 **`update.bat`**，更新成功后运行 `start.bat`。更新脚本只快进当前分支，遇到源码修改、暂存改动或分叉时会停止。手动更新可在项目目录运行 `git pull --ff-only`。
 
 旧版采样提示词、Accelerate 配置和缓存版本文件停止 Git 跟踪时，更新脚本会先备份，再迁移并保留原内容。默认示例在 `tools/defaults/`，启动只补建缺失配置。旧目录没有更新入口时，可在 PowerShell 运行 `& "新ZIP目录\update.bat" "--bootstrap-root=旧项目目录绝对路径"` 完成迁移，无需覆盖旧启动器或重装环境。
 
@@ -272,6 +203,51 @@ GUI 的 **环境** 标签页提供：
 - musubi-tuner Krea 2 共享运行时状态（与 sd-scripts 共用 CUDA 版 PyTorch，并显示依赖版本是否已统一）
 - Flash Attention 安装状态检测与一键安装
 - 候选 wheel 列表预览
+
+## 项目结构
+
+```
+lora-scripts-anima/
+├── vendor/sd-scripts/          ← Anima / SDXL / MOSS-Image 训练引擎（固定上游快照）
+├── vendor/musubi-tuner/        ← Krea 2 训练核心（固定上游快照）
+├── vendor/lycoris/             ← LyCORIS 适配器后端（固定上游快照）
+├── vendor/emo_optimizer/       ← EmoSens 自适应优化器
+├── vendor/lora_muon/           ← LoRA-Muon 测试优化器
+├── backend/                    ← FastAPI 后端
+│   ├── server/                 ← 应用装配、HTTP 路由、静态资源与代理
+│   ├── core/                   ← 实时任务协调与安装任务生命周期
+│   ├── training/               ← 训练模块，按职责组织
+│   │   ├── fields/             ← 字段注册表、默认值与选项元数据
+│   │   ├── config/             ← 配置转换、导入导出与参数校验
+│   │   ├── datasets/           ← 数据集解析、重复次数与步数估算
+│   │   ├── execution/          ← 运行准备、启动分发与进程管理
+│   │   └── cache/              ← 缓存检查、生成与复用
+│   ├── monitor/                ← 训练监控（GPU/系统/日志/预览/历史）
+│   ├── tageditor/              ← 原生标签编辑器
+│   ├── tagger/                 ← 打标模块（WD / CL / Camie / PixAI / AI 接口）
+│   ├── regularization/         ← 正则图片生成、采样与恢复
+│   └── gui.py                  ← GUI 内部入口（由启动脚本调用）
+├── frontend/                   ← Alpine.js SPA 前端
+│   ├── js/                     ← 按功能组织的脚本
+│   │   ├── app/                ← 应用装配与路由配置
+│   │   ├── shared/             ← 公共控件、通知、国际化与实时连接
+│   │   ├── training/           ← 训练表单、配置与预览
+│   │   ├── monitor/            ← 监控、历史、日志与输出
+│   │   ├── environment/        ← 环境状态、组件安装与模型下载
+│   │   ├── tagger/             ← 自动打标与 AI 描述工作区
+│   │   ├── docs/               ← 参数文档阅读器
+│   │   ├── regularization/     ← 正则图片生成工作区
+│   │   ├── tag-editor/         ← 标签编辑、会话与持久化
+│   │   └── tag-dictionary/     ← 词典、Worker 与悬浮卡片
+│   ├── templates/              ← 按需加载的工作区 HTML 模板
+│   └── css/ · i18n/ · assets/   ← 样式、翻译与静态资源
+├── config/                     ← 本地配置与自动保存
+├── docs/                       ← 参数指南与预览截图
+├── tools/                      ← 启动、安装与运行工具；开发脚本位于 tools/dev/
+├── tests/                      ← 后端回归与前端交互测试
+├── start.bat / start.sh        ← 启动脚本
+└── requirements.txt            ← 全项目唯一依赖清单（后端与训练核心共用，torch 由启动器单独安装）
+```
 
 ## 致谢
 

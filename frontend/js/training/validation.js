@@ -255,8 +255,10 @@ window.trainingValidation = {
           const number = Number(val), constraints = this._numberConstraints(field);
           const step = Number(constraints.step), base = Number(constraints.min || 0);
           if (!Number.isFinite(number) || typeof val === 'boolean'
-            || (constraints.min !== undefined && number < constraints.min)
-            || (constraints.max !== undefined && number > constraints.max)
+            || (constraints.min !== undefined && (number < constraints.min
+              || (constraints.minExclusive && number === constraints.min)))
+            || (constraints.max !== undefined && (number > constraints.max
+              || (constraints.maxExclusive && number === constraints.max)))
             || (Number.isInteger(step) && step > 0 && (!Number.isInteger(number)
               || Math.abs((number - base) / step - Math.round((number - base) / step)) > 1e-9))) {
             errors[field.key] = this.t('common.invalidNumericValue');

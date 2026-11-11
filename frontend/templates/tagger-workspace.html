@@ -88,7 +88,7 @@
             <div class="tagger-field-control"><div class="stepper tagger-field-stepper"><button type="button" @click="taggerSettings.threshold = Number(Math.max(0, Number(taggerSettings.threshold) - 0.01).toFixed(2)); setTaggerCustomPreset()">&minus;</button><input type="number" :aria-label="t('tagger.threshold')" min="0" max="1" step="0.01" x-model.number="taggerSettings.threshold" @change="setTaggerCustomPreset()"><button type="button" @click="taggerSettings.threshold = Number(Math.min(1, Number(taggerSettings.threshold) + 0.01).toFixed(2)); setTaggerCustomPreset()">+</button></div></div>
           </div>
           <div class="tagger-form-field" x-show="taggerSupportsCharacterToggle()">
-            <div class="tagger-field-info"><label x-text="t('tagger.characterRecognition')"></label><p x-text="t('tagger.characterRecognitionDesc')"></p></div>
+            <div class="tagger-field-info"><label x-text="t('tagger.characterRecognition')"></label></div>
             <div class="tagger-field-control"><label class="toggle"><input type="checkbox" :checked="taggerCharacterEnabled()" @change="setTaggerCharacterEnabled($event.target.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>
           </div>
           <div class="tagger-form-field" x-show="taggerSupportsCharacterToggle() && taggerCharacterEnabled()">
@@ -126,7 +126,7 @@
             <div class="tagger-field-control"><input class="tagger-text-input" type="text" x-model="taggerSettings.excludeTags" @change="saveTaggerSettings()" placeholder="watermark, text"></div>
           </div>
           <div class="tagger-option-grid">
-            <label><span><b x-text="t('tagger.recursive')"></b><small x-text="t('tagger.recursiveDesc')"></small></span><span class="toggle"><input type="checkbox" x-model="taggerSettings.recursive" @change="saveTaggerSettings(); scanTaggerSource()"><span class="toggle-track"><span class="toggle-thumb"></span></span></span></label>
+            <label><span><b x-text="t('tagger.recursive')"></b></span><span class="toggle"><input type="checkbox" x-model="taggerSettings.recursive" @change="saveTaggerSettings(); scanTaggerSource()"><span class="toggle-track"><span class="toggle-thumb"></span></span></span></label>
             <label><span><b x-text="t('tagger.replaceUnderscore')"></b></span><span class="toggle"><input type="checkbox" x-model="taggerSettings.replaceUnderscore" @change="saveTaggerSettings()"><span class="toggle-track"><span class="toggle-thumb"></span></span></span></label>
             <label><span><b x-text="t('tagger.escapeTag')"></b><small x-text="t('tagger.escapeTagDesc')"></small></span><span class="toggle"><input type="checkbox" x-model="taggerSettings.escapeTag" @change="saveTaggerSettings()"><span class="toggle-track"><span class="toggle-thumb"></span></span></span></label>
             <label><span><b x-text="t('tagger.removeDuplicated')"></b></span><span class="toggle"><input type="checkbox" x-model="taggerSettings.removeDuplicated" @change="saveTaggerSettings()"><span class="toggle-track"><span class="toggle-thumb"></span></span></span></label>

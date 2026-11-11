@@ -2,7 +2,8 @@
 from copy import deepcopy
 
 from backend.training.config.optimizer_contracts import (
-    FORM_ARGUMENTS, FormArgument, AUTOMAGIC_OPTIMIZER_TYPE, EMOSENS_OPTIMIZER_TYPE,
+    FORM_ARGUMENTS, FormArgument, AUTOMAGIC_OPTIMIZERS, EMOSENS_OPTIMIZER_TYPE,
+    AUTOMAGIC_MAX_LR_DEFAULT,
     LORA_MUON_OPTIMIZER_TYPE, LORARITE_OPTIMIZER_TYPE, MUON_OPTIMIZER_TYPE,
     collect_optimizer_args, validate_optimizer_contract, parse_optimizer_args,
 )
@@ -19,7 +20,7 @@ FIELD_ALIASES = {
        ('relative_step', 'scale_parameter', 'warmup_init', 'clip_threshold', 'eps')},
 }
 PAIRED_OPTIMIZERS = frozenset({LORA_MUON_OPTIMIZER_TYPE, LORARITE_OPTIMIZER_TYPE})
-INTERNAL_OPTIMIZERS = frozenset({AUTOMAGIC_OPTIMIZER_TYPE, EMOSENS_OPTIMIZER_TYPE})
+INTERNAL_OPTIMIZERS = AUTOMAGIC_OPTIMIZERS | {EMOSENS_OPTIMIZER_TYPE}
 ARGUMENTS = {
     FIELD_ALIASES.get(key, key): FormArgument(mapping.argument, frozenset(
         KREA2_OPTIMIZER_SELECTORS.get(value, value) for value in mapping.optimizers))
@@ -105,10 +106,10 @@ def validate_optimizer(config, arguments, gpu_ids=None):
             errors.append('enable_loraplus: incompatible with this optimizer / 当前优化器不能与 LoRA+ 同时使用')
         if optimizer == 'AdaFactor' and (arguments.get('relative_step', True) or arguments.get('warmup_init', False)):
             errors.append('enable_loraplus: disable AdaFactor relative_step and warmup_init / 使用 LoRA+ 时请关闭 AdaFactor 的 relative_step 和 warmup_init')
-        if optimizer == AUTOMAGIC_OPTIMIZER_TYPE:
+        if optimizer in AUTOMAGIC_OPTIMIZERS:
             try:
                 rate = float(config['learning_rate']) * float(config.get('loraplus_lr_ratio', 2))
-                if not float(arguments.get('min_lr', 1e-8)) <= rate <= float(arguments.get('max_lr', 1e3)):
+                if not float(arguments.get('min_lr', 1e-8)) <= rate <= float(arguments.get('max_lr', AUTOMAGIC_MAX_LR_DEFAULT)):
                     errors.append('loraplus_lr_ratio: effective LR must be within Automagic min_lr/max_lr / 倍率后的学习率须在 Automagic 最小与最大学习率之间')
             except (TypeError, ValueError):
                 pass  # Field validation supplies the numeric error.

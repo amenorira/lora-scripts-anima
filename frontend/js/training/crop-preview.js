@@ -37,7 +37,9 @@ window.trainingCropPreviewMixin = {
   cropPreviewRegConfigured: false,
   cropPreviewBucket: '',
   cropPreviewBucketsExpanded: false,
-  cropPreviewBucketLimit: 9,
+  cropPreviewBucketsCanExpand: false,
+  cropPreviewBucketCollapsedHeight: 142,
+  cropPreviewBucketExpandedHeight: 274,
   cropPreviewFocus: null,
   cropPreviewFocusOpen: false,
   _cropFocusSeq: 0,
@@ -46,8 +48,11 @@ window.trainingCropPreviewMixin = {
   _cropPreviewAbort: null,
   _cropPreviewEntered: false,
   _cropBucketResize: null,
+  _cropBucketFrame: null,
+  _cropBucketMotionCleanup: null,
 
   async openCropPreview() {
+    this._cropBucketMotionCleanup?.();
     ++this._cropFocusSeq;
     this.cropPreviewOpen = true;
     this.cropPreviewFocus = null;
@@ -87,10 +92,21 @@ window.trainingCropPreviewMixin = {
       const buckets = document.querySelector('#cropBucketStats .cp-buckets');
       if (buckets) {
         this._cropBucketResize = new ResizeObserver(() => {
-          const columns = getComputedStyle(buckets).gridTemplateColumns.split(' ').length;
-          this.cropPreviewBucketLimit = Math.max(1, columns * 2 - 1);
+          if (this._cropBucketFrame !== null) return;
+          this._cropBucketFrame = requestAnimationFrame(async () => {
+            this._cropBucketFrame = null;
+            this._updateCropPreviewBucketBounds(buckets);
+            await this.$nextTick();
+            if (seq !== this._cropPreviewSeq) return;
+            if (!this._cropBucketMotionCleanup) {
+              this._keepCropPreviewBucketVisible(buckets.closest('.cp-stats'));
+            }
+          });
         });
         this._cropBucketResize.observe(buckets);
+        this._cropBucketResize.observe(buckets.closest('.cp-stats'));
+        const content = buckets.closest('.cp-content');
+        this._cropBucketResize.observe(content.querySelector('.cp-virtual-grid'));
       }
     } catch (error) {
       if (seq === this._cropPreviewSeq && error.name !== 'AbortError') this.cropPreviewError = error.message;
@@ -100,10 +116,13 @@ window.trainingCropPreviewMixin = {
   },
 
   closeCropPreview() {
+    this._cropBucketMotionCleanup?.();
     ++this._cropPreviewSeq;
     this._cropPreviewAbort?.abort();
     this._cropBucketResize?.disconnect();
     this._cropBucketResize = null;
+    if (this._cropBucketFrame !== null) cancelAnimationFrame(this._cropBucketFrame);
+    this._cropBucketFrame = null;
     this._cropPreviewEntered = false;
     this.cropPreviewOpen = false;
     this.unfocusCropPreview();
@@ -137,6 +156,7 @@ window.trainingCropPreviewMixin = {
   },
 
   setCropPreviewSource(value) {
+    this._cropBucketMotionCleanup?.();
     this.cropPreviewSource = value;
     if (this.cropPreviewBucket && !this.cropPreviewBuckets.some(bucket => bucket.key === this.cropPreviewBucket)) {
       this.cropPreviewBucket = '';
@@ -177,7 +197,7 @@ window.trainingCropPreviewMixin = {
       totals.samples += samples;
       counts.set(key, bucket);
     }
-    const buckets = Array.from(counts.values()).sort((a, b) => b.samples - a.samples || a.width - b.width || a.height - b.height);
+    const buckets = Array.from(counts.values()).sort((a, b) => a.width - b.width || a.height - b.height);
     const stats = { buckets, totals, errors, includesReg };
     cropPreviewStatsCache.set(items, stats);
     return stats;
@@ -220,14 +240,94 @@ window.trainingCropPreviewMixin = {
     return view;
   },
 
-  get cropPreviewBucketChips() {
-    const buckets = this.cropPreviewBuckets;
-    if (this.cropPreviewBucketsExpanded) return buckets;
-    const visible = buckets.slice(0, this.cropPreviewBucketLimit);
-    const selected = buckets.find(bucket => bucket.key === this.cropPreviewBucket);
-    // Keep the active filter visible when collapsing or narrowing the window.
-    if (selected && !visible.includes(selected)) visible[visible.length - 1] = selected;
-    return visible;
+  get cropPreviewBucketPanelHeight() {
+    return this.cropPreviewBucketsExpanded ? this.cropPreviewBucketExpandedHeight : this.cropPreviewBucketCollapsedHeight;
+  },
+
+  _updateCropPreviewBucketBounds(buckets) {
+    const chips = buckets.querySelectorAll('.cp-bucket-chip');
+    const first = chips[0];
+    if (!first?.offsetHeight) return;
+    const panel = buckets.closest('.cp-stats');
+    const content = buckets.closest('.cp-content');
+    const workspace = content.querySelector('.cp-workspace');
+    const style = getComputedStyle(panel);
+    const inset = ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth']
+      .reduce((sum, name) => sum + (parseFloat(style[name]) || 0), 0);
+    panel.style.setProperty('--cp-bucket-min-height', `${Math.ceil(first.offsetHeight + inset)}px`);
+    const scroller = workspace.querySelector('.cp-scroll');
+    const stage = workspace.querySelector('.cp-tile:not(:disabled) .cp-stage');
+    const stageHeight = stage?.offsetHeight;
+    let imageHeight = 220;
+    if (scroller && stageHeight) {
+      const scrollStyle = getComputedStyle(scroller);
+      const tileStyle = getComputedStyle(stage.closest('.cp-tile'));
+      const canvasStyle = getComputedStyle(scroller.querySelector('.cp-virtual-grid'));
+      const heading = workspace.querySelector('.cp-folder-heading');
+      imageHeight = Math.ceil(stageHeight
+        + (heading?.offsetHeight || 18)
+        + (parseFloat(canvasStyle.getPropertyValue('--cp-heading-gap')) || 12)
+        + (parseFloat(tileStyle.paddingTop) || 0) + (parseFloat(tileStyle.borderTopWidth) || 0)
+        + (parseFloat(scrollStyle.paddingTop) || 0) + (parseFloat(scrollStyle.paddingBottom) || 0));
+    }
+    workspace.style.setProperty('--cp-image-min-height', `${imageHeight}px`);
+    const columns = Math.max(1, getComputedStyle(buckets).gridTemplateColumns.split(' ').length);
+    const heightForRows = rows => {
+      const last = chips[Math.min(chips.length, rows * columns) - 1];
+      return Math.ceil(last.offsetTop + last.offsetHeight - first.offsetTop + inset);
+    };
+    this.cropPreviewBucketCollapsedHeight = heightForRows(2);
+    this.cropPreviewBucketExpandedHeight = heightForRows(4);
+    this.cropPreviewBucketsCanExpand = chips.length > columns * 2;
+    if (!this.cropPreviewBucketsCanExpand) this.cropPreviewBucketsExpanded = false;
+  },
+
+  async toggleCropPreviewBuckets() {
+    const panel = document.getElementById('cropBucketStats');
+    const from = panel.offsetHeight;
+    this._cropBucketMotionCleanup?.();
+    const expanded = !this.cropPreviewBucketsExpanded;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    this.cropPreviewBucketsExpanded = expanded;
+    if (reduced) {
+      await this.$nextTick();
+      this._keepCropPreviewBucketVisible(panel);
+      return;
+    }
+
+    let animation;
+    const cleanup = () => {
+      if (this._cropBucketMotionCleanup !== cleanup) return;
+      this._cropBucketMotionCleanup = null;
+      animation?.cancel();
+      panel.style.height = '';
+      this._keepCropPreviewBucketVisible(panel);
+    };
+    this._cropBucketMotionCleanup = cleanup;
+    panel.style.height = `${from}px`;
+    await this.$nextTick();
+    if (this._cropBucketMotionCleanup !== cleanup) return;
+
+    panel.style.height = '';
+    const to = panel.offsetHeight;
+    if (from === to) { cleanup(); return; }
+    panel.style.height = `${to}px`;
+    animation = panel.animate([{ height: `${from}px` }, { height: `${to}px` }], {
+      duration: expanded ? 220 : 180,
+      easing: getComputedStyle(panel).getPropertyValue('--ease-disclosure').trim(),
+    });
+    animation.finished.then(cleanup, cleanup);
+  },
+
+  _keepCropPreviewBucketVisible(panel) {
+    if (!this.cropPreviewBucket) return;
+    const scroll = panel.querySelector('.cp-buckets-scroll');
+    const selected = scroll?.querySelector('.cp-bucket-chip[aria-pressed="true"]');
+    if (!selected) return;
+    const top = selected.offsetTop;
+    const bottom = top + selected.offsetHeight;
+    if (top < scroll.scrollTop) scroll.scrollTop = top;
+    else if (bottom > scroll.scrollTop + scroll.clientHeight) scroll.scrollTop = bottom - scroll.clientHeight;
   },
 
   cropPreviewFolderCount(count) {
@@ -242,12 +342,18 @@ window.trainingCropPreviewMixin = {
     return this.t('cropPreview.imageCount').replace('{count}', count);
   },
 
-  selectCropPreviewBucket(key) {
+  async selectCropPreviewBucket(key) {
+    this._cropBucketMotionCleanup?.();
     this.cropPreviewBucket = this.cropPreviewBucket === key ? '' : key;
     // Failed images have no bucket; leave that filter when choosing a valid bucket.
     if (key && this.cropPreviewFilter === 'errors') this.cropPreviewFilter = 'all';
     const scroller = document.getElementById('cropPreviewScroll');
     if (scroller) scroller.scrollTop = 0;
+    const panel = document.getElementById('cropBucketStats');
+    if (panel) {
+      await this.$nextTick();
+      this._keepCropPreviewBucketVisible(panel);
+    }
   },
 
   cropPreviewStatsNote() {

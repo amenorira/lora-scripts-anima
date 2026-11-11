@@ -74,14 +74,14 @@ window.resourceBar = {
     return html;
   },
 
-  render(containerId, {gpu, sys, t, locale, selectedGpuIndex = 0, onSelect}) {
+  render(containerId, {gpu, sys, t, locale, localeRevision = 0, selectedGpuIndex = 0, onSelect}) {
     const bar = document.getElementById(containerId);
     if (!bar) return;
     if (gpu && gpu.gpus && gpu.gpus.length) {
       const device = gpu.gpus.find(item => item.index === selectedGpuIndex) || gpu.gpus[0];
       gpu = Object.assign({}, device, { gpus: gpu.gpus });
     }
-    const localeKey = String(locale || '') + ':' + String(sys && sys.cpu_name || '') + ':' + JSON.stringify(gpu ? [gpu.index, gpu.name, gpu.temperature_c != null, gpu.power_w != null, (gpu.gpus || []).map(g => [g.index, g.name])] : null);
+    const localeKey = String(locale || '') + ':' + localeRevision + ':' + String(sys && sys.cpu_name || '') + ':' + JSON.stringify(gpu ? [gpu.index, gpu.name, gpu.temperature_c != null, gpu.power_w != null, (gpu.gpus || []).map(g => [g.index, g.name])] : null);
     if (!bar.firstElementChild || bar.dataset.locale !== localeKey) {
       bar.dataset.locale = localeKey;
       bar.innerHTML = this._resbarHtml(gpu, sys, t);

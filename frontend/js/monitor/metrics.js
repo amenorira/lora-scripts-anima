@@ -1,4 +1,13 @@
 /* 实时曲线合并、性能采样及单调计时；由 monitor-core.js 装配，沿用同一份监控状态。 */
+window.selectMonitorLearningRateSeries = function(series) {
+  for (const prefix of ['lr/d*eff_lr/', 'lr/d*lr/', 'lr/']) {
+    const matches = series.filter(item => item.tag.startsWith(prefix)
+      && /^(?:unet(?:$|[ _])|group\d+(?:$|[ _]))/.test(item.tag.slice(prefix.length)));
+    if (matches.length) return matches.find(item => item.tag === prefix + 'unet') || matches[0];
+  }
+  return null;
+};
+
 window.monitorMetricsMixin = {
   _mergeMonitorMetricSnapshot(incoming) {
     // HTTP 提供完整历史，WS 提供更晚的尾部；合并后曲线不会倒退，也不会丢掉回填数据。
@@ -111,10 +120,11 @@ window.monitorMetricsMixin = {
       // HTTP 合并与 WS 增量共用去重和裁尾规则；旧点重放也不能倒退当前读数。
       if (!this._appendMonitorMetricPoints(series, newPoints)) continue;
       changed = true;
-      if (this.monitorData && tag === 'lr/unet') this.monitorData.lr = series.latest.toExponential(4);
     }
 
     if (this.monitorData) {
+      const lr = window.selectMonitorLearningRateSeries(this.lossSeries);
+      if (lr && Number.isFinite(lr.latest)) this.monitorData.lr = lr.latest.toExponential(4);
       const loss = this.lossSeries.find(s => s.tag === 'loss/average') || this.lossSeries.find(s => s.tag === 'loss/current');
       if (loss && Number.isFinite(loss.latest)) this.monitorData.loss = loss.latest.toFixed(6);
     }

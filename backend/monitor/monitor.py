@@ -18,7 +18,7 @@ from typing import Any
 
 from backend.core.realtime import realtime_hub, realtime_tasks, task_topic
 from backend.monitor.hardware import gpu_info, system_info
-from backend.monitor.training import parse_log_progress, read_tensorboard_incremental
+from backend.monitor.training import parse_log_progress, primary_learning_rate_tag, read_tensorboard_incremental
 from backend.monitor.artifacts import newest_previews, read_output_summary
 from backend.monitor.log_files import find_train_log_path, read_log_slice
 from backend.monitor.run_registry import find_run_record_by_task_id, read_run_config
@@ -103,6 +103,7 @@ class TaskMonitor:
         self._last_status: dict[str, str] = {}  # task_id -> last_status
         self._last_log_cursor: dict[str, dict] = {}  # 与分页共用规范化行号，包含可被覆盖的末行。
         self._last_progress: dict[str, dict[str, Any]] = {}  # task_id -> 最近一次有效字段
+        self._primary_lr_tag: dict[str, str] = {}
         self._last_artifact_check: dict[str, float] = {}
         self._last_artifact_signature: dict[str, str] = {}
         self._pending_artifact_signature: dict[str, str] = {}
@@ -405,8 +406,14 @@ class TaskMonitor:
                     if tb_points.get(tag):
                         tb_progress["loss"] = f"{float(tb_points[tag][-1]['value']):.6g}"
                         break
-                if tb_points.get("lr/unet"):
-                    lr = float(tb_points["lr/unet"][-1]["value"])
+                previous_lr_tag = self._primary_lr_tag.get(task_id)
+                # Partial batches must not replace the selected adaptive metric with a multiplier.
+                lr_tags = ([previous_lr_tag] if previous_lr_tag else []) + list(tb_points)
+                lr_tag = primary_learning_rate_tag(lr_tags)
+                lr_points = tb_points.get(lr_tag) if lr_tag else None
+                if lr_points:
+                    self._primary_lr_tag[task_id] = lr_tag
+                    lr = float(lr_points[-1]["value"])
                     tb_progress["lr"] = _format_learning_rate(lr)
                 if tb_progress:
                     progress = self._merge_progress(task_id, tb_progress)
@@ -446,6 +453,7 @@ class TaskMonitor:
         # 被误判为一次新的状态变化并重复发送终态事件。
         self._last_log_cursor.pop(task_id, None)
         self._last_progress.pop(task_id, None)
+        self._primary_lr_tag.pop(task_id, None)
         self._last_artifact_check.pop(task_id, None)
         self._last_artifact_signature.pop(task_id, None)
         self._pending_artifact_signature.pop(task_id, None)

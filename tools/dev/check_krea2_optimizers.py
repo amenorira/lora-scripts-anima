@@ -55,6 +55,8 @@ def main():
                 # Keep the form production-valid; CPU probes use FP32 via the accelerator above.
                 if 'Prodigy' in entry.selector:
                     form['learning_rate'] = '1.0'
+                if entry.label in ('Automagic3', 'Automagic4'):
+                    form['learning_rate'] = '2e-5'
                 if entry.label == 'EmoSens':
                     form.update(learning_rate='0.1', notify=False)
                 if entry.label == 'SOAP':
@@ -81,6 +83,9 @@ def main():
                                           krea_adafactor_eps='1e-20, 1e-4'),
                         'Automagic3': dict(automagic_min_lr='1e-7', automagic_max_lr=0.1, automagic_beta2=0.98,
                             automagic_clip_threshold=0.8, automagic_polarity_history=4, automagic_fused=True),
+                        'Automagic4': dict(automagic_min_lr='1e-7', automagic_max_lr=0.1, automagic_beta2=0.98,
+                            automagic_clip_threshold=0.8, automagic_polarity_history=4, automagic_fused=True,
+                            automagic_sensitivity_quantile=0.85, automagic_step_target=0.2),
                         'EmoSens': dict(stopcoef=0.02, use_shadow=True),
                         'Muon': dict(muon_adjust_lr_fn='original', muon_momentum=0.9, muon_nesterov=False,
                                      muon_ns_steps=3, muon_ns_coefficients='3.4445, -4.775, 2.0315'),
@@ -157,7 +162,8 @@ def main():
                                for value in state.values() if isinstance(value, torch.Tensor)), '8-bit states were not exercised'
                 from tools.python_startup.lr_logging import read_learning_rates
                 logs = Krea2Trainer().generate_step_logs(args, losses[-1], sum(losses) / len(losses), scheduler, None, optimizer)
-                assert [value for key, value in logs.items() if key.startswith('lr/') and not key.startswith('lr/d*')] == read_learning_rates(optimizer, scheduler)
+                assert [value for key, value in logs.items() if key.startswith('lr/')
+                        and not key.startswith('lr/d*')] == read_learning_rates(optimizer, scheduler)
                 state = copy.deepcopy(optimizer.state_dict())
                 saved_weights = {key: value.detach().clone() for key, value in network.state_dict().items()}
                 # Recreate the actual optimizer and verify the next update matches.

@@ -7,7 +7,6 @@ from typing import Any
 
 from backend.training.core_registry import PROFILES
 from backend.training.fields.field_registry import (
-    AUTOMAGIC_OPTIMIZER_TYPE,
     EMOSENS_OPTIMIZER_TYPE,
     FIELDS,
     LORAPLUS_INCOMPATIBLE_OPTIMIZERS,
@@ -18,6 +17,10 @@ from backend.training.fields.field_registry import (
 from backend.training.config.optimizer_contracts import (
     ADAFACTOR_OPTIMIZER_TYPE,
     AUTOMAGIC_MAX_LR_DEFAULT,
+    AUTOMAGIC_START_LR_DEFAULT,
+    AUTOMAGIC4_OPTIMIZER_TYPE,
+    AUTOMAGIC4_MERGED_ARG_MAP,
+    AUTOMAGIC_OPTIMIZERS,
     MUON_OPTIMIZER_TYPE,
     collect_optimizer_args,
     get_automagic_fused_conflicts,
@@ -173,10 +176,19 @@ def _validate_loraplus(
 def _validate_automagic(
     config: dict[str, Any], args: dict[str, Any], gpu_ids: Any = None
 ) -> list[str]:
-    if config.get("optimizer_type") != AUTOMAGIC_OPTIMIZER_TYPE:
+    optimizer_type = config.get("optimizer_type")
+    if optimizer_type not in AUTOMAGIC_OPTIMIZERS:
         return []
 
+    name = optimizer_type.rsplit(".", 1)[-1]
     errors: list[str] = []
+    if optimizer_type == AUTOMAGIC4_OPTIMIZER_TYPE:
+        # The shared empty-value codec treats NaN as an unset form control.
+        # Explicit non-finite sensitivity settings must fail validation instead.
+        for form_key in AUTOMAGIC4_MERGED_ARG_MAP:
+            value = config.get(form_key)
+            if isinstance(value, float) and math.isnan(value):
+                errors.append(f"{form_key}: must be finite / 必须是有限数字")
     supported_args = {
         "min_lr",
         "max_lr",
@@ -187,8 +199,10 @@ def _validate_automagic(
         "polarity_history",
         "fused",
     }
+    if optimizer_type == AUTOMAGIC4_OPTIMIZER_TYPE:
+        supported_args.update({"sensitivity_quantile", "step_target"})
     for key in sorted(args.keys() - supported_args):
-        errors.append(f"Automagic3 optimizer_args: unsupported argument {key!r} / 不支持此参数")
+        errors.append(f"{name} optimizer_args: unsupported argument {key!r} / 不支持此参数")
 
     defaults = {
         "min_lr": 1e-8,
@@ -198,47 +212,57 @@ def _validate_automagic(
         "clip_threshold": 1.0,
         "weight_decay": 0.0,
     }
+    if optimizer_type == AUTOMAGIC4_OPTIMIZER_TYPE:
+        defaults.update(sensitivity_quantile=0.9, step_target=0.1)
     numbers: dict[str, float] = {}
     for key, default in defaults.items():
         value = args.get(key, default)
         try:
+            if isinstance(value, bool):
+                raise ValueError
             number = float(value)
         except (TypeError, ValueError):
-            errors.append(f"Automagic3 {key}: must be a number / 必须是数字")
+            errors.append(f"{name} {key}: must be a number / 必须是数字")
             continue
         if not math.isfinite(number):
-            errors.append(f"Automagic3 {key}: must be finite / 必须是有限数字")
+            errors.append(f"{name} {key}: must be finite / 必须是有限数字")
             continue
         numbers[key] = number
 
     for key in ("min_lr", "max_lr", "eps", "clip_threshold"):
         if key in numbers and numbers[key] <= 0:
-            errors.append(f"Automagic3 {key}: must be > 0 / 必须大于 0")
+            errors.append(f"{name} {key}: must be > 0 / 必须大于 0")
     if "weight_decay" in numbers and numbers["weight_decay"] < 0:
-        errors.append("Automagic3 weight_decay: must be >= 0 / 不能小于 0")
+        errors.append(f"{name} weight_decay: must be >= 0 / 不能小于 0")
     if "beta2" in numbers and not 0 <= numbers["beta2"] < 1:
-        errors.append("Automagic3 beta2: must be in [0, 1) / 必须在 [0, 1) 范围内")
+        errors.append(f"{name} beta2: must be in [0, 1) / 必须在 [0, 1) 范围内")
+    if "sensitivity_quantile" in numbers and not 0 < numbers["sensitivity_quantile"] <= 1:
+        errors.append(f"{name} sensitivity_quantile: must be in (0, 1] / 必须在 (0, 1] 范围内")
+    if "step_target" in numbers and not 0 < numbers["step_target"] < 2:
+        errors.append(f"{name} step_target: must be in (0, 2) / 必须在 (0, 2) 范围内")
     fused = args.get("fused", False)
-    if fused not in (False, True, 0, 1):
-        errors.append("Automagic3 fused: must be true or false / 必须是布尔值")
-    elif fused in (True, 1):
+    if not isinstance(fused, bool):
+        errors.append(f"{name} fused: must be true or false / 必须是布尔值")
+    elif fused:
         for conflict in get_automagic_fused_conflicts(config, gpu_ids):
-            errors.append(f"Automagic3 fused: {conflict}")
+            errors.append(f"{name} fused: {conflict}")
 
     history = args.get("polarity_history", 8)
     try:
+        if isinstance(history, bool):
+            raise ValueError
         history_number = float(history)
         if not history_number.is_integer() or not 2 <= history_number <= 64:
             raise ValueError
     except (TypeError, ValueError):
-        errors.append("Automagic3 polarity_history: must be an integer from 2 to 64 / 必须是 2 到 64 的整数")
+        errors.append(f"{name} polarity_history: must be an integer from 2 to 64 / 必须是 2 到 64 的整数")
 
     min_lr = numbers.get("min_lr")
     max_lr = numbers.get("max_lr")
     if min_lr is not None and max_lr is not None and min_lr > max_lr:
-        errors.append("Automagic3 min_lr: must not exceed max_lr / 不能大于 max_lr")
+        errors.append(f"{name} min_lr: must not exceed max_lr / 不能大于 max_lr")
 
-    start_rates = [("learning_rate", config.get("learning_rate", 1e-4))]
+    start_rates = [("learning_rate", config.get("learning_rate", AUTOMAGIC_START_LR_DEFAULT))]
     start_rates.extend(
         (key, config[key])
         for key in ("unet_lr", "text_encoder_lr")
@@ -249,13 +273,13 @@ def _validate_automagic(
         try:
             rate = float(value)
         except (TypeError, ValueError):
-            errors.append(f"{key}: must be a number for Automagic3 / 使用 Automagic3 时必须是数字")
+            errors.append(f"{key}: must be a number for {name} / 使用 {name} 时必须是数字")
             continue
         if not math.isfinite(rate) or rate <= 0:
-            errors.append(f"{key}: must be finite and > 0 for Automagic3 / 使用 Automagic3 时必须为有限正数")
+            errors.append(f"{key}: must be finite and > 0 for {name} / 使用 {name} 时必须为有限正数")
         elif min_lr is not None and max_lr is not None and not min_lr <= rate <= max_lr:
             errors.append(
-                f"{key}: Automagic3 start LR must be within [{min_lr}, {max_lr}] / "
+                f"{key}: {name} start LR must be within [{min_lr}, {max_lr}] / "
                 "启动学习率必须位于 min_lr 与 max_lr 之间"
             )
         else:
@@ -311,7 +335,7 @@ def _validate_automagic(
             effective_rate = base_rate * ratio
             if not min_lr <= effective_rate <= max_lr:
                 errors.append(
-                    f"{ratio_key}: Automagic3 effective {component} LoRA+ LR "
+                    f"{ratio_key}: {name} effective {component} LoRA+ LR "
                     f"{effective_rate:g} ({actual_base_key} {base_rate:g} x ratio {ratio:g}) "
                     f"must be within [{min_lr:g}, {max_lr:g}] / LoRA+ 倍率后的实际 "
                     f"{component} 学习率必须位于 min_lr 与 max_lr 之间"
@@ -404,8 +428,12 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
                 errors.append(f"{key}: use an integer step count or a fraction below 1 / 请填写整数步数或小于 1 的比例")
             if "min" in field and number < float(field["min"]):
                 errors.append(f"{key}: must be >= {field['min']} / 不能小于 {field['min']}")
+            elif "min" in field and field.get("min_exclusive") and number == float(field["min"]):
+                errors.append(f"{key}: must be > {field['min']} / 必须大于 {field['min']}")
             if "max" in field and number > float(field["max"]):
                 errors.append(f"{key}: must be <= {field['max']} / 不能大于 {field['max']}")
+            elif "max" in field and field.get("max_exclusive") and number == float(field["max"]):
+                errors.append(f"{key}: must be < {field['max']} / 必须小于 {field['max']}")
             step = field.get("step")
             if step and float(step).is_integer():
                 base = float(field.get("min", 0))

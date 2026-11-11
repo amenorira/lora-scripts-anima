@@ -11,6 +11,7 @@ from backend.training.config.optimizer_contracts import (
     ADEMAMIX8BIT_OPTIMIZER_TYPE,
     ADEMAMIX_OPTIMIZER_TYPE,
     AUTOMAGIC_OPTIMIZER_TYPE,
+    AUTOMAGIC4_OPTIMIZER_TYPE,
     CAME_OPTIMIZER_TYPE,
     EMOSENS_OPTIMIZER_TYPE,
     EMOSENS_TRANSFORMER_LORA_PROFILES,
@@ -236,6 +237,14 @@ SD_SCRIPTS_OPTIMIZERS: tuple[OptimizerUIEntry, ...] = (
         scheduler_owner="internal",
     ),
     OptimizerUIEntry(
+        AUTOMAGIC4_OPTIMIZER_TYPE,
+        "Automagic4",
+        "opt.optimizer_type_Automagic4",
+        GROUP_AUTOLR,
+        supports_eps=True,
+        scheduler_owner="internal",
+    ),
+    OptimizerUIEntry(
         EMOSENS_OPTIMIZER_TYPE,
         "EmoSens",
         "opt.optimizer_type_EmoSens",
@@ -418,7 +427,13 @@ SD_OPTIMIZER_AUTO_VALUES: dict[str, list[dict[str, Any]]] = {
         {
             "watch": "optimizer_type",
             "when": AUTOMAGIC_OPTIMIZER_TYPE,
-            "set": "1e-4",
+            "set": "2e-5",
+            "set_if_default": True,
+        },
+        {
+            "watch": "optimizer_type",
+            "when": AUTOMAGIC4_OPTIMIZER_TYPE,
+            "set": "2e-5",
             "set_if_default": True,
         },
         {
@@ -599,6 +614,7 @@ SD_OPTIMIZER_AUTO_VALUES: dict[str, list[dict[str, Any]]] = {
             (PRODIGY_OPTIMIZER_TYPE, "1e-8"),
             (PRODIGYPLUS_OPTIMIZER_TYPE, "1e-8"),
             (AUTOMAGIC_OPTIMIZER_TYPE, "1e-30"),
+            (AUTOMAGIC4_OPTIMIZER_TYPE, "1e-30"),
             (MUON_OPTIMIZER_TYPE, "1e-7"),
             (ADAN_OPTIMIZER_TYPE, "1e-8"),
             (ADEMAMIX_OPTIMIZER_TYPE, "1e-8"),
@@ -628,6 +644,7 @@ SD_OPTIMIZER_AUTO_VALUES: dict[str, list[dict[str, Any]]] = {
             (STABLE_ADAMW_OPTIMIZER_TYPE, 0.0),
             (ADAMW_SCHEDULEFREE_OPTIMIZER_TYPE, 0.0),
             (AUTOMAGIC_OPTIMIZER_TYPE, 0.0),
+            (AUTOMAGIC4_OPTIMIZER_TYPE, 0.0),
             (EMOSENS_OPTIMIZER_TYPE, 0.01),
             (MUON_OPTIMIZER_TYPE, 0.0),
             (ADAN_OPTIMIZER_TYPE, 0.01),
@@ -657,6 +674,8 @@ KREA2_OPTIMIZER_AUTO_VALUES: dict[str, list[dict[str, Any]]] = {
             (KREA2_PRODIGY_OPTIMIZER_TYPE, "1.0"),
             (KREA2_PRODIGYPLUS_OPTIMIZER_TYPE, "1.0"),
             (KREA2_SCHEDULEFREE_OPTIMIZER_TYPE, "0.0025"),
+            (AUTOMAGIC_OPTIMIZER_TYPE, "2e-5"),
+            (AUTOMAGIC4_OPTIMIZER_TYPE, "2e-5"),
         )
     ]
 }

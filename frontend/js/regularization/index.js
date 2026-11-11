@@ -237,7 +237,7 @@ window.regularizationMixin = {
     if (!window.resourceBar) return;
     window.resourceBar.render('regularizationResbar', {
       gpu: this.gpuInfo, sys: this.sysInfo, t: (key, fallback) => this.t('monitor.' + key, fallback),
-      locale: this.locale, selectedGpuIndex: this.selectedGpuIndex,
+      locale: this.locale, localeRevision: this.localeRevision, selectedGpuIndex: this.selectedGpuIndex,
       onSelect: index => { this.selectedGpuIndex = index; this.renderRegularizationResourceBar(); },
     });
   },
@@ -259,6 +259,7 @@ window.regularizationMixin = {
     const field = this._regFields[key];
     if (value !== '' && field?.type === 'number' && Number.isFinite(value)) value = Math.max(field.min, Math.min(field.max, value));
     if (Object.is(this.regSettings[key], value)) return;
+    const previousSampler = this.regSettings.sampler;
     this._regUndo[key] = this.regSettings[key];
     this.regSettings[key] = value;
     if (key === 'model_type' || key === 'sampler') this.regNormalizeModelSettings();
@@ -267,7 +268,10 @@ window.regularizationMixin = {
       source.prompt = this.regActualPrompt(source.caption);
     }
     this.regChanged(key);
-    if (this._regLoaded && (key === 'model_type' || key === 'sampler')) this.regRenderControls(true);
+    // Only SDXL's Euler ancestral sampler changes the scheduler option set.
+    const schedulerOptionsChanged = key === 'sampler' && this.regSettings.model_type === 'sdxl'
+      && (previousSampler === 'euler_a') !== (this.regSettings.sampler === 'euler_a');
+    if (this._regLoaded && (key === 'model_type' || schedulerOptionsChanged)) this.regRenderControls(true);
   },
   regNormalizeModelSettings() {
     if (this.regSettings.model_type !== 'sdxl') return;
@@ -305,7 +309,8 @@ window.regularizationMixin = {
   },
   regRenderControls(force = false) {
     const host = document.getElementById('regTrainingControls');
-    if (!host || !force && host.dataset.locale === this.locale) return;
+    const localeRevision = String(this.localeRevision || 0);
+    if (!host || !force && host.dataset.locale === this.locale && host.dataset.localeRevision === localeRevision) return;
     if (host.dataset.locale) Alpine.destroyTree(host);
     // Reuse the training page's renderer and its actual controls. This scope
     // supplies generator values without changing the user's training form.
@@ -372,7 +377,7 @@ window.regularizationMixin = {
       if (title === 'size') html += '<div class="card reg-extra-options" :class="{\'card-collapsed\': regSectionCollapsed.bucketSettings}" x-show="form.size_mode === \'bucket\' && form.enable_bucket">' + sectionHeader('bucketSettings') + '<div class="card-body" :inert="!!regSectionCollapsed.bucketSettings">' + bucketFields.map(definition => this.renderField.call(scope, definition)).join('') + '</div></div>';
       html += '</div></div>';
     }
-    host.innerHTML = html + '</div>'; host.dataset.locale = this.locale;
+    host.innerHTML = html + '</div>'; host.dataset.locale = this.locale; host.dataset.localeRevision = localeRevision;
     Alpine.initTree(host);
   },
   async regShowPlan() {

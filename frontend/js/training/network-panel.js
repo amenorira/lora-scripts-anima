@@ -180,7 +180,6 @@ window.trainingNetworkPanel = {
   lycorisConfigNotes() {
     const f = this.form;
     const notes = [];
-    if (f.lycoris_algo === 'lokr' && f.full_matrix) notes.push(this.t('field.lycorisNoteFullMatrixFactor'));
     if (f.train_llm_adapter) notes.push(this.t('field.lycorisNoteTrainLlmAdapter'));
     // Full Matrix 的自动触发条件取决于每一层经过 factor 分解后的尺寸，
     // 前端没有完整模型结构时不能用固定 rank（例如 16）做静态判定。

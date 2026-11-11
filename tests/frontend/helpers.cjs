@@ -9,7 +9,7 @@ const readFrontend = name => readRepo(`frontend/js/${name.replace(/\.js$/, '')}.
 const FRONTEND_DEPENDENCIES = {
   'environment/core': ['environment/loading', 'environment/models', 'environment/components', 'environment/tasks'],
   'monitor/core': ['monitor/metrics', 'monitor/history', 'monitor/outputs', 'monitor/previews'],
-  'monitor/render': ['shared/utils', 'monitor/summary', 'monitor/diagnostics', 'monitor/resource-bar', 'monitor/artifacts-render', 'monitor/history-render', ],
+  'monitor/render': ['shared/utils', 'monitor/metrics', 'monitor/summary', 'monitor/diagnostics', 'monitor/resource-bar', 'monitor/artifacts-render', 'monitor/history-render', ],
   'monitor/resource-bar': ['shared/utils'],
   'tagger/index': ['tagger/tasks', 'tagger/sources', ],
   'environment/render': ['environment/dictionary-render', 'environment/components-render', 'environment/models-render', ],

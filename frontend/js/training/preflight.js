@@ -431,11 +431,6 @@ window.trainingPreflight = {
     );
   },
 
-  stepEstimateNote() {
-    return this.t(this.stepEstimate?.engine_id === 'musubi_tuner'
-      ? 'stepEstimate.kreaNote' : 'stepEstimate.sdScriptsNote');
-  },
-
   renderStepEstimatePanel() {
     return `<div class="step-estimate-panel" :class="{ 'is-loading': stepEstimateLoading, 'is-error': !!stepEstimateError }">
       <div class="step-estimate-head">
@@ -455,7 +450,7 @@ window.trainingPreflight = {
         <div class="step-estimate-line"><span class="step-estimate-number">3</span><span x-text="stepEstimateBatchFormula()"></span></div>
         <div class="step-estimate-line"><span class="step-estimate-number">4</span><span x-text="stepEstimateEpochFormula()"></span></div>
         <div class="step-estimate-line step-estimate-line-total"><span class="step-estimate-number">5</span><span x-text="stepEstimateTotalFormula()"></span></div>
-        <div class="step-estimate-note" x-text="stepEstimateNote()"></div>
+        <div class="step-estimate-note" x-show="stepEstimate?.engine_id === 'musubi_tuner'" x-text="t('stepEstimate.kreaNote')"></div>
       </div>
     </div>`;
   },
@@ -468,7 +463,7 @@ window.trainingPreflight = {
   setupKreaDitFormatWatcher() {
     if (typeof this._kreaDitFormatWatcher === 'function') this._kreaDitFormatWatcher();
     this._kreaDitFormatWatcher = this.form.model_train_type === 'krea2-lora'
-      ? this.$watch('form.dit', () => this.scheduleKreaDitFormatCheck()) : null;
+      ? this._watchTrainingState(() => this.form.dit, () => this.scheduleKreaDitFormatCheck()) : null;
     this.scheduleKreaDitFormatCheck();
   },
 

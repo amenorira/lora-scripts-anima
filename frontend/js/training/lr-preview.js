@@ -179,7 +179,7 @@ window.trainingLrPreviewMixin = {
     const pointCount = 160;
     const optimizer = String(source.optimizer_type || '').toLowerCase();
     const internal = optimizer.endsWith('schedulefree') || optimizer.endsWith('.emosens')
-      || optimizer.endsWith('automagic') || optimizer.endsWith('automagic3')
+      || optimizer.endsWith('automagic') || optimizer.endsWith('automagic3') || optimizer.endsWith('automagic4')
       || (optimizer === 'adafactor' && source[isKrea2 ? 'krea_adafactor_relative_step' : 'adafactor_relative_step'] !== false);
     const params = {
       scheduler, warmupFraction: warmup.fraction,
@@ -300,7 +300,7 @@ window.trainingLrPreviewMixin = {
     });
     const notes = [];
     if (unavailable) notes.push(unavailable);
-    if (!unavailable) notes.push(this.t(isKrea2 ? 'lrPreview.kreaBaseGroupNote' : 'lrPreview.baseGroupNote'));
+    if (!unavailable && !isKrea2) notes.push(this.t('lrPreview.baseGroupNote'));
     if (endpointJump) notes.push(this.t('lrPreview.endpointJumpNote'));
     if (!totalSteps && !unavailable) {
       notes.push(this.t('lrPreview.noStepNote', 'Total steps are unavailable, so the x-axis shows 0–100% training progress.'));

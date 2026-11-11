@@ -26,6 +26,7 @@
     })();
   </script>
   <link rel="preload" href="/anima-ui/assets/fonts/inter-latin-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/anima-ui/js/vendor/alpine.min.js" as="script">
   <link rel="stylesheet" href="/anima-ui/css/fonts.css">
   <link rel="stylesheet" href="/anima-ui/css/app.css">
   <link rel="stylesheet" href="/anima-ui/css/themes/light.css">
@@ -110,7 +111,7 @@
   <script src="/anima-ui/js/tag-dictionary/index.js" defer></script>
   <script src="/anima-ui/js/tag-dictionary/hover-card.js" defer></script>
   <script src="/anima-ui/js/app/index.js" defer></script>
-  <script src="/anima-ui/js/vendor/alpine.min.js" defer></script>
+  <script src="/anima-ui/js/app/bootstrap.js" defer></script>
 </head>
 <body x-data="animaApp()" :data-gpu-workload="trainingActive || isTraining || trainingStarting || regularizationActive ? '' : null" x-cloak>
 
@@ -269,7 +270,7 @@
         </button>
         <div class="sidebar-dropdown-menu" x-ref="menu" x-show="open" :class="{ 'is-positioned': positioned }" :inert="!open" role="menu" :aria-label="t('common.changeLanguage')" :id="$id('sidebar-menu')" x-cloak>
           <template x-for="language in I18N.getAvailableLocales()" :key="language.code">
-            <button type="button" role="menuitemradio" tabindex="-1" :aria-checked="locale === language.code" :class="{ active: locale === language.code }" @click="locale=language.code; onLocaleChange(); close()" x-text="language.name"></button>
+            <button type="button" role="menuitemradio" tabindex="-1" :aria-checked="locale === language.code" :class="{ active: locale === language.code }" @click="onLocaleChange(language.code); close()" x-text="language.name"></button>
           </template>
         </div>
       </div>
@@ -1512,9 +1513,11 @@
               <button @click="tagEditorFetchPage(1)" :disabled="tagEditorPage === 1">&laquo;</button>
               <button @click="tagEditorFetchPage(tagEditorPage - 1)" :disabled="tagEditorPage === 1">&lsaquo;</button>
               <template x-for="(p, pidx) in tagEditorGetPageNumbers()" :key="'pg-' + pidx">
-                <button x-show="typeof p === 'number'" :class="{ active: p === tagEditorPage }"
-                  @click="tagEditorFetchPage(p)" x-text="p"></button>
-                <span x-show="typeof p !== 'number'" x-text="p" class="te-pager-ellipsis"></span>
+                <span class="te-pager-item">
+                  <button x-show="typeof p === 'number'" :class="{ active: p === tagEditorPage }"
+                    @click="tagEditorFetchPage(p)" x-text="p"></button>
+                  <span x-show="typeof p !== 'number'" x-text="p" class="te-pager-ellipsis"></span>
+                </span>
               </template>
               <button @click="tagEditorFetchPage(tagEditorPage + 1)" :disabled="tagEditorPage >= tagEditorTotalPages()">&rsaquo;</button>
               <button @click="tagEditorFetchPage(tagEditorTotalPages())" :disabled="tagEditorPage >= tagEditorTotalPages()">&raquo;</button>
@@ -1766,7 +1769,7 @@
       <div>
         <div x-text="t('timestepPreview.title')">Timestep distribution</div>
       </div>
-      <button class="btn-icon timestep-preview-close" @click="closeTimestepPreview()" :aria-label="t('common.close')">
+      <button type="button" class="btn-icon preview-close timestep-preview-close" @click="closeTimestepPreview()" :aria-label="t('common.close')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
@@ -1855,9 +1858,6 @@
         <div x-html="_buildTimestepChartHtml(timestepPreviewData)"></div>
       </div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-primary btn-sm" @click="closeTimestepPreview()" x-text="t('common.close')">Close</button>
-    </div>
   </div>
 </dialog>
 
@@ -1869,7 +1869,7 @@
       <div>
         <div x-text="t('lrPreview.title')">Learning-rate curve</div>
       </div>
-      <button class="btn-icon lr-preview-close" @click="closeLrPreview()" :aria-label="t('common.close')">
+      <button type="button" class="btn-icon preview-close lr-preview-close" @click="closeLrPreview()" :aria-label="t('common.close')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
@@ -1929,9 +1929,6 @@
         <div x-html="_buildLrChartHtml(lrPreviewData)"></div>
       </div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-primary btn-sm" @click="closeLrPreview()" x-text="t('common.close')">Close</button>
-    </div>
   </div>
 </dialog>
 
@@ -1943,7 +1940,7 @@
       <div>
         <div x-text="t('shapePreview.title')">Matrix structure preview</div>
       </div>
-      <button type="button" class="btn-icon shape-preview-close" @click="closeShapePreview()" :aria-label="t('common.close')">
+      <button type="button" class="btn-icon preview-close shape-preview-close" @click="closeShapePreview()" :aria-label="t('common.close')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
@@ -1951,9 +1948,6 @@
       <template x-if="shapePreviewMounted">
         <div x-html="shapePreviewHtml()"></div>
       </template>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-primary btn-sm" @click="closeShapePreview()" x-text="t('common.close')">Close</button>
     </div>
   </div>
 </dialog>
@@ -1971,7 +1965,7 @@
           <span><span x-text="t('cropPreview.bucketCount')"></span> <strong x-text="cropPreviewBuckets.length"></strong></span>
         </span>
       </div>
-      <button type="button" class="btn-icon" data-dialog-autofocus @click="closeCropPreview()" :aria-label="t('common.close')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m18 6-12 12M6 6l12 12"/></svg></button>
+      <button type="button" class="btn-icon preview-close" data-dialog-autofocus @click="closeCropPreview()" :aria-label="t('common.close')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m18 6-12 12M6 6l12 12"/></svg></button>
     </header>
     <div class="cp-content">
     <div class="cp-toolbar">
@@ -1986,7 +1980,9 @@
       <span class="cp-legend" x-show="cropPreviewRandom" x-text="t('cropPreview.random')"></span>
       <button type="button" class="btn btn-ghost btn-sm" x-show="cropPreviewRandom" @click="shuffleCropPreview()" x-text="t('cropPreview.shuffle')"></button>
     </div>
-    <section id="cropBucketStats" class="cp-stats" x-show="cropPreviewBuckets.length" :aria-label="t('cropPreview.stats')">
+    <section id="cropBucketStats" class="cp-stats" :style="{ '--cp-bucket-height': cropPreviewBucketPanelHeight + 'px' }" x-show="cropPreviewBuckets.length" :aria-label="t('cropPreview.stats')"
+             @resize.window="_cropBucketMotionCleanup?.()">
+      <div class="cp-buckets-scroll">
       <div class="cp-buckets" id="cropBucketChips">
         <button type="button" class="cp-bucket-chip" :aria-pressed="!cropPreviewBucket" @click="selectCropPreviewBucket('')" :title="t('cropPreview.sampleHint')">
           <span class="cp-bucket-size" x-text="t('cropPreview.buckets')"></span>
@@ -1995,7 +1991,7 @@
             <span><span class="cp-meta-label" x-text="t('cropPreview.trainingCount')"></span><strong x-text="cropPreviewCount(cropPreviewTotals.samples)"></strong></span>
           </span>
         </button>
-        <template x-for="bucket in cropPreviewBucketChips" :key="bucket.key">
+        <template x-for="bucket in cropPreviewBuckets" :key="bucket.key">
           <button type="button" class="cp-bucket-chip" :aria-pressed="cropPreviewBucket === bucket.key" @click="selectCropPreviewBucket(bucket.key)" :title="t('cropPreview.sampleHint')">
             <span class="cp-bucket-size" x-text="bucket.key"></span>
             <span class="cp-bucket-counts">
@@ -2005,12 +2001,15 @@
           </button>
         </template>
       </div>
-      <button type="button" class="btn btn-ghost btn-sm cp-buckets-toggle" x-show="cropPreviewBuckets.length > cropPreviewBucketLimit"
-              @click="cropPreviewBucketsExpanded = !cropPreviewBucketsExpanded" :aria-expanded="cropPreviewBucketsExpanded" aria-controls="cropBucketChips">
-        <span x-text="cropPreviewBucketsExpanded ? t('cropPreview.collapseBuckets') : t('cropPreview.expandBuckets').replace('{count}', cropPreviewBuckets.length - cropPreviewBucketChips.length)"></span>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-      </button>
+      </div>
     </section>
+    <div class="cp-buckets-divider" x-show="cropPreviewBuckets.length">
+      <button type="button" class="cp-buckets-toggle" x-show="cropPreviewBucketsCanExpand"
+              @click="toggleCropPreviewBuckets()" :aria-expanded="cropPreviewBucketsExpanded" aria-controls="cropBucketChips">
+        <span x-text="t(cropPreviewBucketsExpanded ? 'common.collapse' : 'common.expand')"></span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+    </div>
     <div class="cp-stats-note" x-show="cropPreviewStatsNote()" x-text="cropPreviewStatsNote()"></div>
     <div class="cp-workspace">
       <div id="cropPreviewScroll" class="cp-scroll" :aria-busy="cropPreviewLoading"

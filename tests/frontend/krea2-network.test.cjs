@@ -39,7 +39,8 @@ test('Krea2 portable preview and import preserve targets, algorithm and FlashAtt
 test('Krea optimizer controls and raw arguments survive profile import and payload collection', async () => {
   const { app, w } = application();
   const fields = w.getVisibleSections('krea2-lora').flatMap(s => s.fields);
-  assert.equal(fields.find(f => f.key === 'optimizer_type').groups.flatMap(g => g.options).length, 21);
+  const optimizers = fields.find(f => f.key === 'optimizer_type').groups.flatMap(g => g.options).map(o => o.v);
+  assert.ok(optimizers.includes('vendor.automagic_optimizer.integration.Automagic4'));
   for (const values of [
     { optimizer_type: 'pytorch_optimizer.SOAP', max_precondition_dim: 128, precondition_frequency: 3,
       shampoo_beta: 0.9, normalize_gradient: true },
@@ -48,6 +49,7 @@ test('Krea optimizer controls and raw arguments survive profile import and paylo
     { optimizer_type: 'bitsandbytes.optim.AdEMAMix8bit', ademamix_alpha: 3, ademamix_t_alpha: 0, ademamix_t_beta3: 500 },
     { optimizer_type: 'prodigyplus.ProdigyPlusScheduleFree', optimizer_args_custom: 'eps=None\nuse_adopt=True' },
   ]) {
+    assert.ok(optimizers.includes(values.optimizer_type), values.optimizer_type);
     await app._applyImportedFlatConfig({ model_train_type: 'krea2-lora', ...values });
     assert.deepEqual(Array.from(app._lastConfigImportIgnoredFields), []);
     const payload = app._collectTrainingPayload();

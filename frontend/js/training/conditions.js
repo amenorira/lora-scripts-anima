@@ -5,6 +5,7 @@ window.trainingConditions = {
   _conditionalMotionQueue: null,
   _conditionalMotionTimer: null,
   _conditionalMotionEpoch: 0,
+  _readonlyDomFrame: null,
   _allShowIfKeys() {
     const keys = new Set();
     this._allSections().forEach(s => s.fields.forEach(f => {
@@ -455,8 +456,7 @@ window.trainingConditions = {
     if (this._showIfWatchers) { this._showIfWatchers.forEach(function(w) { if (typeof w === 'function') w(); }); }
     this._showIfWatchers = [];
     this._allShowIfKeys().forEach(k => {
-      // Use a named function for clarity; Alpine re-evaluates on change
-      self._showIfWatchers.push(self.$watch('form.' + k, () => self.showConditionalFields(k)));
+      self._showIfWatchers.push(self._watchTrainingState(() => self.form[k], () => self.showConditionalFields(k)));
     });
   },
 
@@ -484,20 +484,37 @@ window.trainingConditions = {
     // Clean up previous watchers（防御：过滤非函数元素，避免 w is not a function 崩溃）
     if (this._readonlyWatchers) { this._readonlyWatchers.forEach(function(w) { if (typeof w === 'function') w(); }); }
     this._readonlyWatchers = [];
-    this._allReadonlyIfKeys().forEach(k => {
-      self._readonlyWatchers.push(self.$watch('form.' + k, () => self.updateReadonlyStates()));
+    // Include training type for multi-condition auto_value without duplicating it.
+    new Set([...this._allReadonlyIfKeys(), 'model_train_type']).forEach(k => {
+      self._readonlyWatchers.push(self._watchTrainingState(() => self.form[k], () => self.updateReadonlyStates(true)));
     });
-    // Also watch model_train_type for multi-condition auto_value
-    self._readonlyWatchers.push(self.$watch('form.model_train_type', () => self.updateReadonlyStates()));
     // Initial apply
     self.updateReadonlyStates();
   },
 
-  updateReadonlyStates() {
+  updateReadonlyStates(deferDom = false) {
     this._enforceDataLoaderUiConstraints();
     this._enforceImageAugmentationUiConstraints();
     this._enforceMossTextEncoderFreeze();
     this._enforceSharedTrainingUiConstraints();
+    // Keep constraints immediate; watcher cascades share one DOM pass before paint.
+    if (!deferDom) {
+      this._cancelReadonlyDomUpdate();
+      this._syncReadonlyDom();
+    } else if (this._readonlyDomFrame === null) {
+      this._readonlyDomFrame = requestAnimationFrame(() => {
+        this._readonlyDomFrame = null;
+        this._syncReadonlyDom();
+      });
+    }
+  },
+
+  _cancelReadonlyDomUpdate() {
+    if (this._readonlyDomFrame !== null) cancelAnimationFrame(this._readonlyDomFrame);
+    this._readonlyDomFrame = null;
+  },
+
+  _syncReadonlyDom() {
     const self = this;
     // 公用 apply 函数：根据 met 决定启用/解除 readonly 态（含告警文本注入）。
     // 由 [data-readonly-if-key]（单 key eq/neq）与 [data-readonly-if-any]（多 key，任一成立即锁定）复用。

@@ -520,6 +520,7 @@
     let activeMenu = null;
     Alpine.data('actionMenu', () => ({
       open: false,
+      mounted: false,
       positioned: false,
       _frame: null,
       _focusFrame: null,
@@ -529,7 +530,7 @@
       _track: null,
       init() {
         this._track = event => {
-          if (!this.open || (event.target?.nodeType && this.$refs.menu.contains(event.target)) || this._frame !== null) return;
+          if (!this.open || (event.target?.nodeType && this.$refs.menu?.contains(event.target)) || this._frame !== null) return;
           this._frame = requestAnimationFrame(() => {
             this._frame = null;
             if (this.open) this.position();
@@ -538,7 +539,7 @@
       },
       destroy() { this.close(false); },
       items() {
-        return Array.from(this.$refs.menu.querySelectorAll('[role="menuitem"], [role="menuitemradio"]'))
+        return Array.from(this.$refs.menu?.querySelectorAll('[role="menuitem"], [role="menuitemradio"]') || [])
           .filter(item => !item.disabled && item.getClientRects().length);
       },
       show(focus = false, last = false) {
@@ -549,6 +550,7 @@
         window.AnimaUI.registerPopup(this.$el, () => this.close(false));
         if (!this.open) this.positioned = false;
         this._keyboard = this._keyboard || focus;
+        this.mounted = true;
         this.open = true;
         window.addEventListener('scroll', this._track, true);
         window.addEventListener('resize', this._track);
@@ -615,6 +617,7 @@
         if (!trigger.isConnected || !trigger.getClientRects().length) { this.close(false); return; }
         const rect = trigger.getBoundingClientRect();
         const menu = this.$refs.menu;
+        if (!menu) return;
         const height = menu.scrollHeight;
         const width = menu.offsetWidth;
         const upward = window.innerHeight - rect.bottom - 8 < height && rect.top > window.innerHeight - rect.bottom;

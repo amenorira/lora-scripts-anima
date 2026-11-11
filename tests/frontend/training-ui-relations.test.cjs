@@ -5,6 +5,7 @@ const { TRAINING_CORE_SCRIPTS, loadFrontend } = require('./helpers.cjs');
 function application(profile, values = {}) {
   const { window: w } = loadFrontend(['shared/constants', 'shared/utils', 'app/config', ...TRAINING_CORE_SCRIPTS, 'training/toml', 'training/dataset-repeat', 'training/config-io'], {
     window: {}, document: { getElementById: () => null, querySelectorAll: () => [] }, btoa, TextEncoder, clearTimeout,
+    requestAnimationFrame: callback => setTimeout(callback, 0), cancelAnimationFrame: clearTimeout,
   });
   w.t = key => key;
   const app = Object.assign({}, w.utilsMixin, w.trainingCoreMixin, w.trainingTomlMixin, w.datasetRepeatMixin, w.trainingConfigIoMixin, {
@@ -24,20 +25,18 @@ function application(profile, values = {}) {
 function watchAutoValues(app) {
   // Load the shipped Alpine reactivity/watch implementation without starting
   // its DOM scan. Microtasks are enabled before registering production watchers.
-  const context = loadFrontend('vendor/alpine.min', {
+  const context = loadFrontend(['vendor/alpine.min', ...TRAINING_CORE_SCRIPTS], {
     window: { Element: class {} },
     document: { createElement: () => ({}), addEventListener() {} },
     MutationObserver: class {}, queueMicrotask() {}, setTimeout, clearTimeout,
   });
   context.queueMicrotask = queueMicrotask;
   const alpine = context.window.Alpine;
-  const triggered = new Set();
+  const triggered = { calls: 0 };
   app.form = alpine.reactive(app.form);
   app.$nextTick = alpine.nextTick;
-  app.$watch = (path, callback) => alpine.watch(() => app.form[path.slice('form.'.length)], () => {
-    triggered.add(path);
-    callback();
-  });
+  app._watchTrainingState = (getter, callback) => context.window.trainingCoreMixin._watchTrainingState.call(app,
+    getter, (...args) => { triggered.calls++; callback(...args); });
   app.setupAutoValueWatchers();
   return triggered;
 }
@@ -59,18 +58,18 @@ test('optimizer drafts survive Alpine dependency watchers and later edits still 
     assert.equal(app.form.learning_rate, '1e-4');
     app.setField('adafactor_relative_step', false);
     await settle();
-    assert.ok(triggered.has('form.adafactor_relative_step'));
+    assert.ok(triggered.calls > 0);
     assert.equal(app.form.adafactor_scale_parameter, false);
     app.setField('adafactor_warmup_init', true);
     app.setField('learning_rate', '0.123');
     app.setField('betas', '0.3, 0.4');
     app.setField('optimizer_args_custom', 'amsgrad=True');
     await settle();
-    triggered.clear();
+    triggered.calls = 0;
 
     app.setField('optimizer_type', 'AdamW8bit');
     await settle();
-    assert.ok(triggered.has('form.optimizer_type'));
+    assert.ok(triggered.calls > 0);
     assert.equal(app.form.learning_rate, '2e-5');
     assert.equal(app.form.betas, '0.9, 0.999');
     assert.equal(app.form.optimizer_args_custom, '');
@@ -190,7 +189,7 @@ test('Krea ConvRot disables FP8 immediately and remains consistent through react
     app.setField('fp8_base', true);
     assert.equal(app.form.fp8_base, false);
     await app.$nextTick();
-    assert.ok(triggered.has('form.convrot_int8'));
+    assert.ok(triggered.calls > 0);
     assert.equal(app.form.fp8_base, false);
     app.setField('convrot_int8', false);
     await app.$nextTick();
@@ -229,4 +228,29 @@ test('Krea imported preview conflicts retain editable paths and can be resolved 
   app.setField('blocks_to_swap', 0);
   assert.equal(app.form.turbo_dit, './turbo.safetensors');
   assert.equal(Object.keys(app._kreaOptionErrors()).length, 0);
+});
+
+test('Automagic4 controls accept the backend range and reject its open boundaries', () => {
+  const optimizer = 'vendor.automagic_optimizer.integration.Automagic4';
+  for (const profile of ['anima-lora', 'krea2-lora']) {
+    const app = application(profile, { optimizer_type: optimizer });
+    app.focusTrainingField = () => {};
+    for (const [key, value, accepted] of [
+      ['automagic_sensitivity_quantile', 1e-10, true],
+      ['automagic_sensitivity_quantile', 1, true],
+      ['automagic_sensitivity_quantile', 0, false],
+      ['automagic_step_target', 1e-10, true],
+      ['automagic_step_target', 1.9999999, true],
+      ['automagic_step_target', 2, false],
+      ['automagic_step_target', 0, false],
+    ]) {
+      app.setField(key, value);
+      assert.equal(app.form[key], value, `${profile}: ${key} retains ${value}`);
+      app.validateForm();
+      assert.equal(!app.formErrors[key], accepted, `${profile}: ${key}=${value}`);
+    }
+    app.setField('automagic_step_target', 0.01);
+    app.stepField('automagic_step_target', -0.01);
+    assert.equal(app.form.automagic_step_target, 0.01);
+  }
 });
