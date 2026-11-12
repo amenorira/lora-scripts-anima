@@ -61,6 +61,47 @@ test('crop filter and bucket filter compose without losing error entries', () =>
   assert.equal(a.cropPreviewView.items[0].id, '2');
 });
 
+test('filter counts match the available results across buckets and regularization scopes', () => {
+  const a = app();
+  a.cropPreviewItems = [
+    sample,
+    {...sample, id:'1', crop_percent:0, scale:1.001},
+    {...sample, id:'2', is_reg:true, bucket:[256,256], scale:1.002},
+    {...sample, id:'3', is_reg:true, crop_percent:0, scale:1.25},
+    {id:'4', name:'broken.png', error:'broken', crop_percent:10, scale:2},
+    {id:'5', name:'reg/broken.png', error:'broken', is_reg:true},
+  ];
+  const counts = () => Array.from(a.cropPreviewFilterOptions(), option => [option.value, option.count]);
+  assert.deepEqual(counts(), [['all', 6], ['cropped', 2], ['upscaled', 2], ['errors', 2]]);
+  a.setCropPreviewFilter('upscaled');
+  assert.deepEqual(counts(), [['all', 6], ['cropped', 2], ['upscaled', 2], ['errors', 2]]);
+
+  a.cropPreviewBucket = '128 × 128';
+  assert.deepEqual(counts(), [['all', 3], ['cropped', 1], ['upscaled', 1], ['errors', 2]]);
+  for (const [value, count] of counts()) {
+    a.cropPreviewBucket = '128 × 128';
+    a.setCropPreviewFilter(value);
+    assert.equal(a.cropPreviewView.items.length, count, value);
+  }
+  assert.equal(a.cropPreviewBucket, '');
+
+  a.setCropPreviewSource('only');
+  assert.deepEqual(counts(), [['all', 3], ['cropped', 1], ['upscaled', 2], ['errors', 1]]);
+  a.cropPreviewBucket = '256 × 256';
+  assert.deepEqual(counts(), [['all', 1], ['cropped', 1], ['upscaled', 1], ['errors', 1]]);
+  a.setCropPreviewSource('exclude');
+  assert.equal(a.cropPreviewBucket, '');
+  assert.deepEqual(counts(), [['all', 3], ['cropped', 1], ['upscaled', 0], ['errors', 1]]);
+
+  a.cropPreviewItems = [];
+  assert.deepEqual(counts(), [['all', 0], ['cropped', 0], ['upscaled', 0], ['errors', 0]]);
+  a.cropPreviewLoading = true;
+  assert.ok(counts().every(([, count]) => count === null));
+  a.cropPreviewLoading = false;
+  a.cropPreviewError = 'failed';
+  assert.ok(counts().every(([, count]) => count === null));
+});
+
 test('regularization filter follows the preview configuration even when there are no regularization images', async () => {
   const a = app(async () => response({items: [sample], random_crop: false}));
   a.form = {enable_reg_data: true, reg_data_dir: 'regularization'};

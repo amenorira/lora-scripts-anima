@@ -94,14 +94,14 @@ window.previewSelectHtml = function(options, value, label) {
   const esc = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
   return `<div class="preview-select" x-data="previewSelect(${esc(JSON.stringify(options))}, ${esc(JSON.stringify(value))})" x-id="['preview-list', 'preview-option']" @keydown="key($event)" @click.outside="open = false" @resize.window="open = false">
     <button type="button" class="preview-select-trigger" x-ref="trigger" role="combobox" aria-haspopup="listbox" aria-label="${esc(label)}" :aria-expanded="open" :aria-controls="$id('preview-list')" :aria-activedescendant="open ? $id('preview-option', active) : null" @click="open ? open = false : show()">
-      <span x-text="selected?.selectedLabel || selected?.label || ''"></span><span class="preview-select-chevron" aria-hidden="true"></span>
+      <span><span x-text="selected?.selectedLabel || selected?.label || ''"></span><span class="preview-select-count" x-show="selected?.count != null" x-text="' (' + selected?.count + ')'"></span></span><span class="preview-select-chevron" aria-hidden="true"></span>
     </button>
     <div class="preview-select-menu" role="listbox" x-ref="menu" :id="$id('preview-list')" aria-label="${esc(label)}" x-show="open" x-cloak :style="position" :inert="!open">
       <template x-for="(option, index) in options" :key="option.value">
         <div>
           <div class="preview-select-group" x-show="option.family && (index === 0 || options[index - 1].family !== option.family)" x-text="option.family"></div>
           <div class="preview-select-option" role="option" :id="$id('preview-option', index)" :data-index="index" :aria-selected="option.value === value" :class="{'is-active': index === active}" @mousemove="active = index" @mousedown.prevent @click="choose(index)">
-            <span x-text="option.label"></span><small x-show="option.detail" x-text="option.detail"></small><span class="preview-select-check" x-show="option.value === value" aria-hidden="true">✓</span>
+            <span><span x-text="option.label"></span><span class="preview-select-count" x-show="option.count != null" x-text="' (' + option.count + ')'"></span></span><small x-show="option.detail" x-text="option.detail"></small><span class="preview-select-check" x-show="option.value === value" aria-hidden="true">✓</span>
           </div>
         </div>
       </template>

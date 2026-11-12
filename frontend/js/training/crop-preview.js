@@ -139,8 +139,20 @@ window.trainingCropPreviewMixin = {
   },
 
   cropPreviewFilterOptions() {
+    const stats = this.cropPreviewStats;
+    const bucket = this.cropPreviewBucket
+      ? stats.buckets.find(item => item.key === this.cropPreviewBucket) || { count: 0, cropped: 0, upscaled: 0 }
+      : stats.totals;
+    const counts = {
+      all: bucket.count + (this.cropPreviewBucket ? 0 : stats.errors),
+      cropped: bucket.cropped,
+      upscaled: bucket.upscaled,
+      // Choosing unavailable images clears the bucket, as they do not belong to one.
+      errors: stats.errors,
+    };
+    const pending = this.cropPreviewLoading || this.cropPreviewError;
     return [['all', 'all'], ['cropped', 'hasCrop'], ['upscaled', 'upscaled'], ['errors', 'errors']]
-      .map(([value, label]) => ({ value, label: this.t(`cropPreview.${label}`) }));
+      .map(([value, label]) => ({ value, label: this.t(`cropPreview.${label}`), count: pending ? null : counts[value] }));
   },
 
   setCropPreviewFilter(value) {
@@ -182,19 +194,25 @@ window.trainingCropPreviewMixin = {
     const cached = cropPreviewStatsCache.get(items);
     if (cached) return cached;
     const counts = new Map();
-    const totals = { count: 0, samples: 0 };
+    const totals = { count: 0, samples: 0, cropped: 0, upscaled: 0 };
     let errors = 0;
     let includesReg = false;
     for (const item of items) {
       if (item.is_reg) includesReg = true;
       if (item.error) { errors += 1; continue; }
       const key = item.bucket.join(' × ');
-      const bucket = counts.get(key) || { key, count: 0, samples: 0, width: item.bucket[0], height: item.bucket[1] };
+      const bucket = counts.get(key) || { key, count: 0, samples: 0, cropped: 0, upscaled: 0, width: item.bucket[0], height: item.bucket[1] };
       const samples = Number(item.sample_count || 0);
+      const cropped = item.crop_percent > 0 ? 1 : 0;
+      const upscaled = item.scale > 1.001 ? 1 : 0;
       bucket.count += 1;
       bucket.samples += samples;
+      bucket.cropped += cropped;
+      bucket.upscaled += upscaled;
       totals.count += 1;
       totals.samples += samples;
+      totals.cropped += cropped;
+      totals.upscaled += upscaled;
       counts.set(key, bucket);
     }
     const buckets = Array.from(counts.values()).sort((a, b) => a.width - b.width || a.height - b.height);
