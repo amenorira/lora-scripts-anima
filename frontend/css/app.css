@@ -3614,6 +3614,9 @@ dialog.preview-lightbox::backdrop { background: transparent; }
 .hist-filter-btn.active { background: var(--accent-soft); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 55%, var(--border-default)); }
 .hist-search:focus-visible, .hist-filter-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .hist-section-label { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin: 16px 0 8px; }
+.hist-card-content { flex: 1; min-width: 0; margin: -18px -18px 0; padding: 18px 18px 0; }
+.hist-card-content.is-clickable { cursor: pointer; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+.hist-card-content.is-clickable:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .hist-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .hist-timing { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-bottom: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .hist-time, .hist-duration { font-size: 12px; }

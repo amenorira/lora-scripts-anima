@@ -42,7 +42,14 @@ window.monitorHistoryRenderMixin = {
         const controlId = this.esc('history-' + encodeURIComponent(h.run_dir || ''));
         const artifactOffline = h.artifact_available === false;
         const unavailable = h.deletion_pending ? ' disabled' : '';
+        const configAvailable = !!h.run_dir && !h.deletion_pending;
         html += '<div class="card history-card' + (artifactOffline ? ' history-artifact-offline' : '') + '">';
+        html += '<div class="hist-card-content' + (configAvailable ? ' is-clickable' : '') + '"';
+        if (configAvailable) {
+          html += ' id="' + controlId + '-card" role="button" tabindex="0" aria-label="' + this.esc(t('viewConfig') + ': ' + (h.name || h.run_dir)) + '"';
+          html += ' @click="_viewHistoryCardSnapshot(\'' + runDirJs + '\', $event)" @keydown.enter.prevent="$el.click()" @keydown.space.prevent="$el.click()"';
+        }
+        html += '>';
         html += '<div class="hist-card-head">';
         html += '<h2 class="hist-name" title="' + this.esc(h.name || '') + '">' + this.esc(h.name || '') + '</h2>';
         const statusColors = { completed: 'ok', failed: 'danger', terminated: 'muted' };
@@ -66,7 +73,7 @@ window.monitorHistoryRenderMixin = {
         if (h.dataset) html += '<div class="hist-dataset hist-truncate" title="' + this.esc(h.dataset) + '">' + this.esc(t('dataset')) + ' · ' + this.esc(h.dataset) + '</div>';
         if (artifactOffline && h.artifact_dir) html += '<div class="hist-artifact is-offline">' + this.esc(h.artifact_dir) + '</div>';
         if (h.deletion_pending || h.warning) html += '<p class="hist-warning">' + this.esc(t(h.deletion_pending ? 'historyCleanupPending' : 'historyResultUnreadable')) + '</p>';
-        html += '</div>';
+        html += '</div></div>';
         if (h.run_dir) {
           html += '<div class="hist-actions">';
           html += '<button class="hist-action hist-action-primary" @click.stop="viewRunDetail(\'' + runDirJs + '\')"' + unavailable + '>' + this.esc(t('viewDetails')) + '</button>';
@@ -90,6 +97,11 @@ window.monitorHistoryRenderMixin = {
     } catch (e) {
       el.innerHTML = '<div class="dashboard-empty" style="padding:48px"><p>⚠ ' + (this.t ? this.t('monitor.historyRenderError') : 'Error displaying history. Check browser console (F12).') + '</p></div>';
     }
+  },
+
+  _viewHistoryCardSnapshot(runDir, event) {
+    if (event.detail && window.getSelection?.()?.isCollapsed === false) return;
+    this.viewSnapshot(runDir);
   },
 
   async downloadRunOutputs(runDir) {
