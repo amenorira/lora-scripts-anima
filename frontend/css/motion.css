@@ -18,6 +18,8 @@
   from { opacity: 0; transform: scale(var(--menu-scale-enter)); }
   to { opacity: 1; transform: scale(1); }
 }
+@keyframes spin { to { transform: rotate(360deg); } }
+.m-refresh-button.is-loading svg { animation: spin .8s linear infinite; }
 .anima-select-menu-positioned {
   animation: menu-open var(--duration-menu-enter) var(--ease-out) backwards;
 }
@@ -74,6 +76,15 @@ dialog.modal-overlay:not([open]) { pointer-events: none; }
   dialog.modal-overlay[open] { opacity: 0; }
   dialog.modal-overlay[open] > .modal { opacity: 0; transform: scale(var(--menu-scale-enter)); }
 }
+/* The image itself keeps its zoom transform while the full-screen viewer fades. */
+dialog.preview-lightbox {
+  opacity: 0;
+  transition: opacity var(--duration-dialog-exit) var(--ease-out),
+    display var(--duration-dialog-exit) allow-discrete, overlay var(--duration-dialog-exit) allow-discrete;
+}
+dialog.preview-lightbox[open] { opacity: 1; transition-duration: var(--duration-dialog-enter); }
+dialog.preview-lightbox:not([open]) { pointer-events: none; }
+@starting-style { dialog.preview-lightbox[open] { opacity: 0; } }
 :root {
   --duration-morph-enter: 300ms;
   --duration-morph-exit: 270ms;
@@ -165,6 +176,7 @@ body[data-gpu-workload] > #cropPreviewDialog > .modal,
 .monitor-tab-indicator, .env-tab-indicator { transition-duration: var(--duration-dialog-enter), var(--duration-dialog-enter), var(--duration-fast); }
 .anima-select-chevron { transition: none; }
 @media (prefers-reduced-motion: reduce) {
+  .m-refresh-button.is-loading svg { animation: none; }
   *, *::before, *::after {
     animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important; scroll-behavior: auto !important;

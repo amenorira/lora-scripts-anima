@@ -125,13 +125,36 @@ test('a failed refresh releases loading after a detail snapshot and can be retri
   assert.equal(app.previews[0].name, 'latest.png');
 });
 
-test('sample translations keep group identities and sorting stable across language changes', () => {
+test('unchanged preview snapshots do not invalidate the sample grid', () => {
+  const {app} = harness();
+  app.previews = [{name: 'sample.png', path: 'sample/a.png', version: '1', thumb_url: '/thumb'}];
+  app.previewsVersion = 5;
+  app._applyPreviewSnapshot([{...app.previews[0]}]);
+  assert.equal(app.previewsVersion, 5);
+  app._applyPreviewSnapshot([{...app.previews[0], version: '2'}]);
+  assert.equal(app.previewsVersion, 6);
+});
+
+test('manual sample refresh reports errors while automatic refresh remains quiet', async () => {
+  const {app, requests} = harness();
+  const messages = [];
+  app.toast = (message, type) => messages.push([message, type]);
+  const manual = app.refreshPreviews();
+  requests[0].reject(new Error('offline'));
+  await manual;
+  assert.deepEqual(messages, [['monitor.previewRefreshFailed', 'error']]);
+  const automatic = app.refreshPreviews(false);
+  requests[1].reject(new Error('offline'));
+  await automatic;
+  assert.equal(messages.length, 1);
+});
+
+test('sample translations and sorting stay stable across language changes', () => {
   const items = [0, 1, 2].map(index => ({dataset: {previewIndex: String(index)}}));
-  const headings = ['epoch:1', 'step:20'].map(key => ({dataset: {previewGroup: key}}));
   const appended = [];
   const grid = {
-    querySelectorAll: selector => selector === '.preview-grid-item' ? items : headings,
-    appendChild: node => appended.push(node.dataset.previewGroup ?? Number(node.dataset.previewIndex)),
+    querySelectorAll: () => items,
+    appendChild: node => appended.push(Number(node.dataset.previewIndex)),
   };
   const content = {querySelector: () => grid, querySelectorAll: () => []};
   const {window} = loadFrontend(['monitor/previews', 'monitor/artifacts-render'], {
@@ -152,7 +175,7 @@ test('sample translations keep group identities and sorting stable across langua
     assert.equal(app._sampleMetadata(app.previews[0].name).stage, 'epoch:1');
     appended.length = 0;
     assert.equal(app._patchPreviewSortOrder(), true);
-    assert.deepEqual(appended, ['step:20', 2, 'epoch:1', 1, 0]);
+    assert.deepEqual(appended, [2, 1, 0]);
   }
   assert.equal(app._parseSampleInfo('custom-sample.png'), 'custom-sample.png');
 });

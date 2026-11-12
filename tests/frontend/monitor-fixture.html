@@ -4,9 +4,13 @@
 <link rel="stylesheet" href="/frontend/css/app.css">
 <link rel="stylesheet" href="/frontend/css/themes/light.css">
 <link rel="stylesheet" href="/frontend/css/themes/dark.css">
+<link rel="stylesheet" href="/frontend/css/motion.css">
 <style>body { overflow: auto; } #fixture { max-width: 1380px; margin: auto; padding: 24px; } .fixture-controls { display:flex; flex-wrap:wrap; gap:8px; padding-bottom:16px; } #fixture.narrow { max-width:1040px; } #fixtureRoute { height:calc(100vh - 120px); } </style>
 <script src="/frontend/js/shared/utils.js"></script>
 <script src="/frontend/js/shared/image-loading.js"></script>
+<script src="/frontend/js/shared/image-viewport.js"></script>
+<script src="/frontend/js/shared/ui-interactions.js"></script>
+<script src="/frontend/js/shared/preview-select.js"></script>
 <script src="/frontend/js/shared/mixin-compose.js"></script>
 <script src="/frontend/js/app/config.js"></script>
 <script src="/frontend/js/monitor/logs.js"></script>
@@ -45,19 +49,26 @@
     <button class="btn btn-sm" @click="advanceMetrics()">模拟下一步</button>
     <button class="btn btn-sm" @click="advanceMetrics();setTimeout(()=>advanceMetrics(),80);setTimeout(()=>advanceMetrics(),160)">快速连续更新</button>
     <button class="btn btn-sm" @click="appendFixtureLogs()">追加重复日志</button>
+    <button class="btn btn-sm" @click="appendFixtureSample()">追加样本</button>
+    <button class="btn btn-sm" @click="setTimeout(() => appendFixtureSample(), 1800)">延迟追加样本</button>
   </div>
   <div id="fixtureRoute" class="main-fullscreen"></div>
 </main>
 <script>
 (async () => {
-  const language = new URLSearchParams(location.search).get('lang') === 'en-US' ? 'en-US' : 'zh-CN';
-  document.documentElement.dataset.theme = new URLSearchParams(location.search).get('theme') === 'light' ? 'light' : 'dark';
+  const query = new URLSearchParams(location.search);
+  const language = ['en-US', 'ja-JP'].includes(query.get('lang')) ? query.get('lang') : 'zh-CN';
+  const fixtureImages = query.getAll('image').filter(path => path.startsWith('/output/'));
+  const fixtureImage = i => (fixtureImages[i % fixtureImages.length] || '/tests/frontend/monitor-sample.svg') + '?v=fixture';
+  const delayMs = Math.max(0, Math.min(Number(query.get('delay')) || 0, 2000));
+  document.documentElement.dataset.theme = query.get('theme') === 'light' ? 'light' : 'dark';
   document.documentElement.lang = language;
   const [html, translations] = await Promise.all([fetch('/frontend/index.html').then(r=>r.text()),fetch('/frontend/i18n/'+language+'.json', {cache:'no-store'}).then(r=>r.json())]);
   const parsed = new DOMParser().parseFromString(html,'text/html');
   document.getElementById('fixtureRoute').append(parsed.querySelector('.route-monitor-dashboard'));
   const response = data => ({json:async()=>({status:'success',data}),ok:true});
-  const samples = Array.from({length:16},(_,i)=>({name:`test_e${String(Math.floor(i/4)+1).padStart(6,'0')}_${String(i%4).padStart(2,'0')}_sample.svg`,path:`sample/${i}.svg`,url:'/tests/frontend/monitor-sample.svg',thumb_url:'/tests/frontend/monitor-sample.svg',inspect_url:'/tests/frontend/monitor-sample.svg'}));
+  const samples = Array.from({length:16},(_,i)=>({name:`test_e${String(Math.floor(i/4)+1).padStart(6,'0')}_${String(i%4).padStart(2,'0')}_20261112000000_2333.png`,path:`sample/${i}.png`,url:fixtureImage(i),thumb_url:fixtureImage(i),inspect_url:fixtureImage(i)}));
+  if (query.has('longName')) samples.push({name:'a-very-long-custom-sample-filename-for-viewer-layout-check.png',path:'sample/custom.png',url:fixtureImage(0),thumb_url:fixtureImage(0),inspect_url:fixtureImage(0)});
   const files = Array.from({length:12},(_,i)=>({name:`test-${String(i+1).padStart(6,'0')}.safetensors`,path:`test-${i}.safetensors`,category:'model',size:128000000,mtime:1700000000+i*60,ckpt_loss:.1-i*.003,ckpt_type:'epoch',ckpt_epoch:i+1}));
   const realFetch=window.fetch;
   // Include both legacy wrapped Rich output and the wider redirected layout.
@@ -85,7 +96,9 @@
   window.fetch=(url,opts)=> {
     if (!String(url).startsWith('/api/')) return realFetch(url,opts);
     const query = new URL(String(url), location.href).searchParams.get('q') || '';
-    return Promise.resolve(response(String(url).includes('outputs')?files:String(url).includes('previews')?samples:String(url).includes('log-slice')?{total:logs.length,offset:0,lines:logs.slice(),match_indices:logs.flatMap((line,i)=>query && line.toLowerCase().includes(query.toLowerCase())?[i]:[])}:[]));
+    const result = response(String(url).includes('outputs')?files.slice():String(url).includes('previews')?samples.slice():String(url).includes('log-slice')?{total:logs.length,offset:0,lines:logs.slice(),match_indices:logs.flatMap((line,i)=>query && line.toLowerCase().includes(query.toLowerCase())?[i]:[])}:[]);
+    return delayMs && /\/(?:outputs|previews|log-slice)\?/.test(String(url))
+      ? new Promise(resolve => setTimeout(() => resolve(result), delayMs)) : Promise.resolve(result);
   };
   document.addEventListener('alpine:init',()=>Alpine.data('monitorFixture',()=>{
     const a=Object.defineProperties({}, {...Object.getOwnPropertyDescriptors(window.utilsMixin),...Object.getOwnPropertyDescriptors(window.monitorCoreMixin),...Object.getOwnPropertyDescriptors(window.monitorRenderMixin)});
@@ -101,6 +114,12 @@
         const batch=Array.from({length:8},()=> '2026-10-02 11:30:22 INFO     epoch is incremented. current_epoch: 0, epoch: 18  dataset.py:462');
         logs.push(...batch);
         this.handleRealtimeTaskLog({data:{lines:batch,offset,log_total:logs.length}});
+        this.renderDashboard();
+      },
+      appendFixtureSample(){
+        const i=samples.length;
+        samples.push({name:`test_e${String(Math.floor(i/4)+1).padStart(6,'0')}_${String(i%4).padStart(2,'0')}_20261112000001_2333.png`,path:`sample/${i}.png`,url:fixtureImage(i),thumb_url:fixtureImage(i),inspect_url:fixtureImage(i)});
+        this._applyPreviewSnapshot(samples.slice());
         this.renderDashboard();
       },
       advanceMetrics(){
@@ -122,7 +141,7 @@
         this.lossDataVersion++;this.renderDashboard();
       },
       monitorData:{state:'RUNNING',step:518,total_steps:740,percent:70,loss:.0337,lr:4.26e-5,epoch:14,elapsed:'43:21',eta:'18:34',speed:'5.26 s/it',run_dir:'output/fixture',artifact_dir:'C:/training/models',active_task:{id:'fixture'}},
-      previews:samples,previewsVersion:1,weakNetworkMode:true,
+      previews:samples.slice(),previewsVersion:1,weakNetworkMode:true,
       logLines:logs,
       gpuInfo:{name:'GPU fixture',gpu_load_pct:98,vram_used_mb:19000,vram_total_mb:24000,temperature_c:65,power_w:280},
       sysInfo:{cpu_name:'CPU fixture',cpu_pct:35,ram_pct:40,ram_used_gb:24,ram_total_gb:64},

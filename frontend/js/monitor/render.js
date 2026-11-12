@@ -32,7 +32,12 @@ window.monitorRenderMixin = {
 
     // ── 1. 外壳层：仅在首次或历史模式切换时构建 ──
     if (!this._shellBuilt || this._shellHistoryMode !== isHistory || this._shellLocale !== locale) {
-      if (this._shellBuilt) this.closePreviewLightbox();
+      // The old shell can still be in the DOM after a route reset has cleared
+      // _shellBuilt. Its delayed close callback is lost when we replace it.
+      if (document.getElementById('previewLightbox')) {
+        this.closePreviewLightbox();
+        this.clearPreviewLightbox?.();
+      }
       this._shellBuilt = true;
       this._shellHistoryMode = isHistory;
       this._shellLocale = locale;
@@ -176,21 +181,52 @@ window.monitorRenderMixin = {
     if (tab === 'samples') {
       const sig = 'sm:' + this._shellLocale + ':' + this.previewsVersion + ':' + (this.weakNetworkMode ? 1 : 0) + ':' + (d.artifact_available === false ? 0 : 1) + ':' + String(d.preview_enabled);
       if (panelEmpty || this._builtSamplesSig !== sig) {
-        // 保留滚动位置（实时追加样本时不在视觉上跳回顶部）
-        const scrollTop = panel.scrollTop || 0;
+        const grid = panel.querySelector('.preview-grid');
+        const scrollTop = grid?.scrollTop || 0;
+        const focusedId = panel.contains(document.activeElement) ? document.activeElement.id : '';
+        let anchor = null;
+        if (grid && scrollTop > 0 && !this._sampleResetScroll) {
+          const items = Array.from(grid.querySelectorAll('.preview-grid-item'));
+          const previous = this._sampleScrollAnchor;
+          if (previous && Math.abs(previous.scrollTop - scrollTop) < 1 && items.some(item => item.dataset.previewPath === previous.key)) {
+            anchor = previous;
+          } else {
+            const bounds = grid.getBoundingClientRect();
+            const first = items.find(item => {
+              const rect = item.getBoundingClientRect();
+              return rect.bottom > bounds.top && rect.top < bounds.bottom;
+            });
+            if (first) anchor = { key: first.dataset.previewPath, offset: first.getBoundingClientRect().top - bounds.top };
+          }
+        }
+        const loadedMedia = this._capturePreviewMedia(grid);
         this._cancelPreviewMediaQueue();
-        this._releasePreviewMediaObjectUrls();
         this._builtSamplesSig = sig;
         if (!tabChanged) panel.classList.add('no-enter-anim');
         panel.innerHTML = this._renderSamplesTab(t);
-        panel.scrollTop = scrollTop;
+        const nextGrid = panel.querySelector('.preview-grid');
+        this._restorePreviewMedia(nextGrid, loadedMedia);
+        if (nextGrid && !this._sampleResetScroll) {
+          nextGrid.scrollTop = scrollTop;
+          if (anchor) {
+            const item = Array.from(nextGrid.querySelectorAll('.preview-grid-item')).find(node => node.dataset.previewPath === anchor.key);
+            if (item) {
+              nextGrid.scrollTop += item.getBoundingClientRect().top - nextGrid.getBoundingClientRect().top - anchor.offset;
+              this._sampleScrollAnchor = { key: anchor.key, offset: item.getBoundingClientRect().top - nextGrid.getBoundingClientRect().top, scrollTop: nextGrid.scrollTop };
+            } else this._sampleScrollAnchor = null;
+          } else {
+            this._sampleScrollAnchor = null;
+          }
+        } else this._sampleScrollAnchor = null;
+        this._sampleResetScroll = false;
+        if (focusedId) document.getElementById(focusedId)?.focus({ preventScroll: true });
       }
       this.schedulePreviewMediaLoads(panel);
       return;
     }
     if (tab === 'outputs') {
       if ((this._outputFilesNeedsRefresh || (tabChanged && !this.outputFiles.length)) && !this.outputFilesLoading) this.loadOutputFiles();
-      const sig = 'out:' + this._shellLocale + ':' + this.outputFilesVersion + ':' + this.selectedOutputFiles.join('|') + ':' + (this.outputFilesLoading?1:0) + ':' + this.outputSearch + ':' + this.outputFilter + ':' + this.outputModelSortKey + ':' + this.outputModelSortDir + ':' + this.outputOtherSortKey + ':' + this.outputOtherSortDir + ':' + (this.outputFilesError || '') + ':' + (d.artifact_available === false ? 0 : 1);
+      const sig = 'out:' + this._shellLocale + ':' + this.outputFilesVersion + ':' + this.selectedOutputFiles.join('|') + ':' + (!this.outputFiles.length && this.outputFilesLoading ? 1 : 0) + ':' + this.outputSearch + ':' + this.outputFilter + ':' + this.outputModelSortKey + ':' + this.outputModelSortDir + ':' + this.outputOtherSortKey + ':' + this.outputOtherSortDir + ':' + (this.outputFilesError || '') + ':' + (d.artifact_available === false ? 0 : 1);
       if (panelEmpty || this._builtOutputsSig !== sig) {
         // Preserve scroll position across re-renders
         const scrollEl = panel.querySelector('.m-outputs-scroll');

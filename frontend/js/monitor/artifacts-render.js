@@ -6,7 +6,8 @@ window.monitorArtifactsRenderMixin = {
   },
   _previewThumbImageHtml(preview) {
     const imageUrl = preview.thumb_url || preview.url;
-    const common = ' alt="' + this.esc(preview.name) + '" loading="lazy" decoding="async" fetchpriority="low"';
+    const common = ' alt="' + this.esc(preview.name) + '" loading="lazy" decoding="async" fetchpriority="low"'
+      + ' @load="$el.parentElement.classList.remove(\'is-error\')" @error="$el.parentElement.classList.add(\'is-error\')"';
     if (this.weakNetworkMode) {
       return '<img data-preview-url="' + this.esc(imageUrl) + '"' + common + '/>';
     }
@@ -38,32 +39,35 @@ window.monitorArtifactsRenderMixin = {
     const isHistory = !!this.selectedRunDir;
     const d = isHistory ? (this.runDetailData||{}) : (this.monitorData||{});
     const showPreviews = this.previews.length > 0;
-    const lastIdx = this.previews.length - 1;
+    const displayIndices = this._previewDisplayIndices();
+    const lastIdx = displayIndices.reduce((latest, index) => Math.max(latest, index), -1);
 
-    const canRefresh = !!this.currentOutputRunDir;
-    let html = '<div class="m-section m-samples-section"><div class="m-view-header"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t('previewSamples')) + '</span>' + (showPreviews ? '<span class="m-logs-count">' + this.previews.length + '</span>' : '') + '</div>';
-    html += '<div class="m-view-actions"><div class="m-segmented" role="group" aria-label="' + this.esc(t('sampleOrder')) + '">';
+    const promptOptions = this._samplePromptOptions();
+    let html = '<div class="m-section m-samples-section"><div class="m-view-header m-samples-toolbar"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t('previewSamples')) + '</span>' + (showPreviews ? '<span class="m-logs-count">' + this.previews.length + '</span>' : '') + '</div>';
+    html += '<div class="m-view-actions">';
+    if (promptOptions.length && window.previewSelectHtml) {
+      html += '<div class="m-sample-prompt-select" @preview-select="setSamplePromptSelection($event.detail)">'
+        + window.previewSelectHtml(promptOptions, this.samplePromptSelection, t('samplePromptFilter'), 'samplePromptTrigger') + '</div>';
+    }
+    html += '<div class="m-segmented m-sample-sort" role="group" aria-label="' + this.esc(t('sampleOrder')) + '">';
     html += '<button type="button" data-preview-sort="asc" aria-pressed="' + (this.previewSortDir === 'asc' ? 'true' : 'false') + '" class="m-segmented-btn' + (this.previewSortDir === 'asc' ? ' active' : '') + '" @click="setPreviewSort(\'asc\')">' + this.esc(t('trainingOrder')) + '</button>';
     html += '<button type="button" data-preview-sort="desc" aria-pressed="' + (this.previewSortDir === 'desc' ? 'true' : 'false') + '" class="m-segmented-btn' + (this.previewSortDir === 'desc' ? ' active' : '') + '" @click="setPreviewSort(\'desc\')">' + this.esc(t('latestFirst')) + '</button></div>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="refreshPreviews()" :disabled="previewsLoading || !currentOutputRunDir" x-text="previewsLoading ? t(\'monitor.loading\') : t(\'monitor.refresh\')"></button></div>';
+    html += '<button type="button" id="sampleRefresh" class="btn btn-sm btn-secondary m-refresh-button" :class="{ \'is-loading\': previewsLoading || previewRefreshFeedback }" @click="refreshPreviews()" :disabled="!currentOutputRunDir" :aria-disabled="previewsLoading ? \'true\' : \'false\'" :aria-busy="previewsLoading ? \'true\' : \'false\'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 8a7 7 0 0 1 11.5-1.8L20 12M4 12l2.9 5.8A7 7 0 0 0 18.4 16"/></svg><span>' + this.esc(t('refresh')) + '</span><span class="m-number-accessible" role="status" aria-live="polite" x-text="previewsLoading ? t(\'monitor.loading\') : \'\'"></span></button></div>';
     html += '</div>';
     html += this._artifactLocationHtml(t, d);
     if (showPreviews) {
       html += '<div class="preview-grid">';
-      const groups = new Set();
-      const counts = new Map();
-      this.previews.forEach(preview => { const stage = this._sampleMetadata(preview.name).stage; counts.set(stage, (counts.get(stage) || 0) + 1); });
-      this._previewDisplayIndices().forEach(i => {
+      displayIndices.forEach(i => {
         const pv = this.previews[i];
         const info = this._sampleMetadata(pv.name);
-        if (info.stage && counts.get(info.stage) > 1 && !groups.has(info.stage)) {
-          groups.add(info.stage);
-          html += '<div class="m-preview-group-heading" data-preview-group="' + this.esc(info.stage) + '">' + this.esc(info.stageLabel) + '</div>';
-        }
-        html += '<button type="button" class="preview-grid-item" data-preview-index="' + i + '" @click="openPreviewLightbox(' + i + ')">';
+        const key = this._previewItemKey(pv);
+        const id = 'sample-' + encodeURIComponent(key);
+        html += '<button type="button" id="' + this.esc(id) + '" class="preview-grid-item" data-preview-path="' + this.esc(key) + '" data-preview-index="' + i + '" data-dialog-opens="previewLightbox" @click="openPreviewLightbox(' + i + ')">';
+        html += '<span class="preview-thumb-frame">' + this._previewThumbImageHtml(pv)
+          + '<span class="preview-thumb-error">' + this.esc(t('previewImageFailed')) + '</span>';
         if (i === lastIdx) html += '<span class="preview-thumb-fresh">' + this.esc(t('latest')) + '</span>';
-        html += this._previewThumbImageHtml(pv);
-        html += '<span class="preview-grid-item-label" title="' + this.esc(pv.name) + '"><strong>' + this.esc(counts.get(info.stage) > 1 ? info.prompt : this._parseSampleInfo(pv.name)) + '</strong></span>';
+        html += '</span><span class="preview-grid-item-label" title="' + this.esc(pv.name) + '"><strong>' + this.esc(info.stageLabel || pv.name) + '</strong>'
+          + (info.prompt && promptOptions.length && !this.samplePromptSelection ? '<small>' + this.esc(info.prompt) + '</small>' : '') + '</span>';
         html += '</button>';
       });
       html += '</div>';
@@ -96,80 +100,92 @@ window.monitorArtifactsRenderMixin = {
   //  预览灯箱：DOM 模板 + 开/关/翻页
   // ═══════════════════════════════════════════════════════════
   _previewLightboxHtml(t) {
-    // 在 shell 阶段注入一次；通过 .open 类切换显隐，开/关/翻页仅原地填充。
-    return '<div class="preview-lightbox" id="previewLightbox" x-cloak @click="closePreviewLightbox()">'
-      + '<button type="button" class="preview-lightbox-close" @click.stop="closePreviewLightbox()" aria-label="' + this.esc(t('close')) + '">×</button>'
-      + '<button type="button" class="preview-lightbox-nav prev" @click.stop="previewLightboxNav(-1)" aria-label="' + this.esc(t('prev')) + '">‹</button>'
-      + '<div class="preview-lightbox-inner" @click.stop>'
-      + '<div class="preview-lightbox-images"><img class="preview-lightbox-img" id="previewLightboxImg" alt=""/><img class="preview-lightbox-img" id="previewReferenceImg" hidden alt=""/></div>'
-       + '<div class="preview-lightbox-bar">'
-       + '<span class="preview-lightbox-counter" id="previewLightboxCounter"></span>'
-       + '<span class="preview-lightbox-label" id="previewLightboxLabel"></span>'
-       + '<span class="preview-lightbox-label" id="previewReferenceLabel" hidden></span>'
-       + '<div class="preview-lightbox-actions">'
-       + '<button type="button" class="btn btn-sm btn-secondary preview-prompt-filter" id="previewPromptFilter" hidden aria-pressed="false" @click="togglePreviewPromptFilter()"></button>'
-       + '<button type="button" class="btn btn-sm btn-secondary" @click="togglePreviewReference()" x-text="previewReference ? t(\'monitor.clearReference\') : t(\'monitor.pinReference\')"></button>'
-       + '<button type="button" class="btn btn-sm btn-secondary" id="previewLightboxMetadataButton" @click="togglePreviewMetadata()" aria-expanded="false">' + this.esc(t('previewMetadata')) + '</button>'
-       + '<a class="btn btn-sm btn-secondary" id="previewLightboxOriginal" target="_blank" rel="noopener" @click.stop>' + this.esc(t('openOriginal')) + '</a>'
-       + '</div>'
-       + '<span class="preview-lightbox-hint">←/→ ' + this.esc(t('navigate')) + ' · Esc ' + this.esc(t('close')) + '</span>'
-       + '</div>'
-       + '<div class="preview-lightbox-metadata" id="previewLightboxMetadata" hidden></div>'
-       + '</div>'
-      + '<button type="button" class="preview-lightbox-nav next" @click.stop="previewLightboxNav(1)" aria-label="' + this.esc(t('next')) + '">›</button>'
-      + '</div>';
+    const svg = path => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + path + '</svg>';
+    const zoomOut = svg('<circle cx="11" cy="11" r="7"/><path d="M8 11h6m3 6 4 4"/>');
+    const zoomIn = svg('<circle cx="11" cy="11" r="7"/><path d="M8 11h6m-3-3v6m6 3 4 4"/>');
+    const close = svg('<path d="M6 6l12 12M18 6 6 18"/>');
+    const left = svg('<path d="m15 18-6-6 6-6"/>');
+    const right = svg('<path d="m9 18 6-6-6-6"/>');
+    const stage = (reference = false) => '<div class="preview-view-stage" :class="{ zoomed: previewViewScale > 1, panning: previewViewPanning }"'
+      + ' @wheel.prevent="zoomPreviewView($event)" @pointerdown="startPreviewPan($event)" @pointermove="movePreviewPan($event)" @pointerup="stopPreviewPan($event)" @pointercancel="stopPreviewPan($event)" @dblclick.prevent="resetPreviewView()">'
+      + '<img id="' + (reference ? 'previewReferenceImg' : 'previewLightboxImg') + '" class="preview-view-image" alt="" draggable="false" @load="constrainPreviewView()" :style="\'transform:\' + previewViewTransform()">'
+      + '<span class="preview-view-spinner" x-show="' + (reference ? 'previewReferenceLoading' : 'previewImageLoading') + '" aria-hidden="true"></span>'
+      + '<button type="button" class="preview-view-error" x-show="' + (reference ? 'previewReferenceError' : 'previewImageError') + '" @click.stop="retryPreviewImage(' + (reference ? 'true' : 'false') + ')">' + this.esc(t('previewImageRetry')) + '</button></div>';
+    return '<dialog class="preview-lightbox" id="previewLightbox" x-dialog="previewLightboxOpen" @dialog-close="closePreviewLightbox()" @dialog-after-close="clearPreviewLightbox()" @keydown="previewLightboxKeydown($event)" @resize.window="constrainPreviewView()" aria-label="' + this.esc(t('previewSamples')) + '" x-cloak>'
+      + '<div class="preview-lightbox-topbar"><div class="preview-lightbox-leading"><button type="button" class="preview-new-samples" x-show="previewHasNew" @click="jumpToLatestPreview()">' + this.esc(t('previewNewSamples')) + '</button><span id="previewLightboxScope" class="preview-lightbox-scope" hidden></span></div>'
+      + '<div class="preview-lightbox-heading"><button type="button" class="preview-lightbox-nav prev" @click="previewLightboxNav(-1)" title="' + this.esc(this.t('imageViewer.previousHint')) + '" aria-label="' + this.esc(t('prev')) + '" aria-keyshortcuts="ArrowLeft">' + left + '</button>'
+      + '<div class="preview-lightbox-heading-text"><strong id="previewLightboxLabel"></strong><span id="previewLightboxCounter" class="preview-lightbox-counter"></span></div>'
+      + '<button type="button" class="preview-lightbox-nav next" @click="previewLightboxNav(1)" title="' + this.esc(this.t('imageViewer.nextHint')) + '" aria-label="' + this.esc(t('next')) + '" aria-keyshortcuts="ArrowRight">' + right + '</button></div>'
+      + '<div class="preview-lightbox-tools">'
+      + '<button type="button" id="previewReferenceButton" class="preview-tool-action" :class="{ active: !!previewReference }" @click="togglePreviewReference()" x-text="previewReference ? t(\'monitor.clearReference\') : t(\'monitor.pinReference\')"></button>'
+      + '<a class="preview-tool-action" id="previewLightboxOriginal" target="_blank" rel="noopener">' + this.esc(t('openOriginal')) + '</a>'
+      + '<span class="preview-tool-divider"></span>'
+      + '<button type="button" class="preview-icon-button" @click="setPreviewViewScale(previewViewScale / 1.18)" :disabled="previewViewScale <= 1" title="' + this.esc(this.t('tagEditor.zoomOut')) + '" aria-label="' + this.esc(this.t('tagEditor.zoomOut')) + '">' + zoomOut + '</button>'
+      + '<button type="button" class="preview-zoom-value" @click="resetPreviewView()" title="' + this.esc(this.t('imageViewer.zoomHint')) + '" aria-keyshortcuts="0" x-text="previewViewScale <= 1 ? t(\'imageViewer.fit\') : Math.round(previewViewScale * 100) + \'%\'"></button>'
+      + '<button type="button" class="preview-icon-button" @click="setPreviewViewScale(previewViewScale * 1.18)" :disabled="previewViewScale >= 8" title="' + this.esc(this.t('tagEditor.zoomIn')) + '" aria-label="' + this.esc(this.t('tagEditor.zoomIn')) + '">' + zoomIn + '</button>'
+      + '<button type="button" class="preview-icon-button preview-close" data-dialog-autofocus @click="closePreviewLightbox()" title="' + this.esc(this.t('imageViewer.closeHint')) + '" aria-label="' + this.esc(t('close')) + '" aria-keyshortcuts="Escape">' + close + '</button></div></div>'
+      + '<div class="preview-lightbox-body"><div class="preview-lightbox-canvas">'
+      + '<div class="preview-lightbox-panes" :class="{ comparing: !!previewReference }"><div class="preview-lightbox-pane"><div class="preview-pane-caption" id="previewCurrentCaption" hidden><span>' + this.esc(t('currentSample')) + '</span><strong id="previewCurrentLabel"></strong></div>' + stage() + '</div>'
+      + '<div class="preview-lightbox-pane" id="previewReferencePane" hidden><div class="preview-pane-caption"><span>' + this.esc(t('reference')) + '</span><strong id="previewReferenceLabel"></strong></div>' + stage(true) + '</div></div>'
+      + '</div></div></dialog>';
   },
 
   openPreviewLightbox(i) {
     if (!this.previews.length) return;
-    this.previewPromptFilter = null;
+    if (!this.previewLightboxOpen) this.clearPreviewLightbox();
     this.previewStep = Math.max(0, Math.min(i, this.previews.length - 1));
     const box = document.getElementById('previewLightbox');
     if (!box) return;
-    box.classList.add('open');
-    box.setAttribute('role', 'dialog');
-    box.setAttribute('aria-modal', 'true');
-    box.setAttribute('aria-label', this.t('monitor.previewSamples'));
-    this._previewReturnFocus = document.activeElement;
-    document.body.style.overflow = 'hidden';
+    this.previewHasNew = false;
+    this.previewLightboxOpen = true;
+    this.resetPreviewView();
     this._updatePreviewLightbox();
-    if (!this._lightboxKeyHandler) {
-      this._lightboxKeyHandler = (e) => {
-        if (e.defaultPrevented || e.target.closest?.('dialog[open]')) return;
-        if (e.key === 'ArrowLeft') { e.preventDefault(); this.previewLightboxNav(-1); }
-        else if (e.key === 'ArrowRight') { e.preventDefault(); this.previewLightboxNav(1); }
-        else if (e.key === 'Escape') { this.closePreviewLightbox(); }
-        else if (e.key === 'Tab') {
-          const items = Array.from(box.querySelectorAll('button:not([disabled]), a[href], summary')).filter(el => el.getClientRects().length);
-          const first = items[0], last = items[items.length - 1];
-          if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-          else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-        }
-      };
-    }
-    document.addEventListener('keydown', this._lightboxKeyHandler);
-    box.querySelector('.preview-lightbox-close').focus();
   },
 
   closePreviewLightbox() {
-    const box = document.getElementById('previewLightbox');
-    if (box) box.classList.remove('open');
+    if (!this.previewLightboxOpen) return;
+    this.previewLightboxOpen = false;
+    this._previewClosePending = true;
+    ++this._previewImageRequest;
+    ++this._previewReferenceRequest;
+    const image = document.getElementById('previewLightboxImg');
+    if (image) window.AnimaImages.cancel(image);
+    const reference = document.getElementById('previewReferenceImg');
+    if (reference) window.AnimaImages.cancel(reference);
+  },
+
+  clearPreviewLightbox() {
+    if (this.previewLightboxOpen) return;
     const image = document.getElementById('previewLightboxImg');
     if (image) { window.AnimaImages.cancel(image); image.removeAttribute('src'); }
     const reference = document.getElementById('previewReferenceImg');
-    if (reference) { window.AnimaImages.cancel(reference); reference.removeAttribute('src'); reference.hidden = true; }
+    if (reference) { window.AnimaImages.cancel(reference); reference.removeAttribute('src'); }
+    this._previewClosePending = false;
     this.previewReference = null;
-    this.previewPromptFilter = null;
-    if (typeof this._resetPreviewMetadata === 'function') this._resetPreviewMetadata();
-    document.body.style.overflow = '';
-    if (this._lightboxKeyHandler) document.removeEventListener('keydown', this._lightboxKeyHandler);
-    this._lightboxKeyHandler = null;
-    if (this._previewReturnFocus && this._previewReturnFocus.isConnected) this._previewReturnFocus.focus({ preventScroll: true });
-    this._previewReturnFocus = null;
+    this.previewHasNew = false;
+    this._previewImageKey = '';
+    this._previewReferenceImageKey = '';
+    this.previewImageLoading = this.previewImageError = false;
+    this.previewReferenceLoading = this.previewReferenceError = false;
+    this.resetPreviewView();
   },
 
   togglePreviewReference() {
-    this.previewReference = this.previewReference ? null : this.previews[this.previewStep];
+    if (this.previewReference) {
+      this.previewReference = null;
+    } else {
+      const current = this.previews[this.previewStep];
+      if (!current) return;
+      const indices = this._previewLightboxIndices();
+      const position = indices.indexOf(this.previewStep);
+      const alternatives = [...indices.slice(position + 1), ...indices.slice(0, Math.max(0, position)).reverse()];
+      if (!alternatives.length) return;
+      const identity = this._previewPromptIdentity(current);
+      const samePrompt = identity && alternatives.find(index => this._previewPromptIdentity(this.previews[index])?.key === identity.key);
+      this.previewReference = current;
+      this.previewStep = samePrompt ?? alternatives[0];
+      this.previewHasNew = false;
+    }
     this._updatePreviewLightbox();
   },
 
@@ -185,27 +201,126 @@ window.monitorArtifactsRenderMixin = {
     this._updatePreviewLightbox();
   },
 
+  jumpToLatestPreview() {
+    const indices = this._previewLightboxIndices();
+    if (!indices.length) return;
+    this.previewStep = indices.reduce((latest, index) => Math.max(latest, index), 0);
+    this.previewHasNew = false;
+    this._updatePreviewLightbox();
+  },
+
+  previewLightboxKeydown(event) {
+    if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault(); this.previewLightboxNav(event.key === 'ArrowLeft' ? -1 : 1);
+    } else if (event.key === '+' || event.key === '=') {
+      event.preventDefault(); this.setPreviewViewScale(this.previewViewScale * 1.18);
+    } else if (event.key === '-') {
+      event.preventDefault(); this.setPreviewViewScale(this.previewViewScale / 1.18);
+    } else if (event.key === '0') {
+      event.preventDefault(); this.resetPreviewView();
+    }
+  },
+
+  previewViewTransform() {
+    return 'translate3d(' + this.previewViewX + 'px,' + this.previewViewY + 'px,0) scale(' + this.previewViewScale + ')';
+  },
+
+  resetPreviewView() {
+    this.previewViewScale = 1; this.previewViewX = 0; this.previewViewY = 0;
+    this.previewViewPanning = false; this.previewViewPointerId = null;
+  },
+
+  _previewViewStages(fallback) {
+    const box = typeof document !== 'undefined' ? document.getElementById('previewLightbox') : null;
+    const stages = Array.from(box?.querySelectorAll?.('.preview-view-stage') || []);
+    return stages.length ? stages : fallback ? [fallback] : [];
+  },
+
+  constrainPreviewView(fallback) {
+    if (!this.previewLightboxOpen && !fallback) return;
+    const view = window.AnimaImageViewport.constrain({ scale: this.previewViewScale, x: this.previewViewX, y: this.previewViewY }, this._previewViewStages(fallback));
+    this.previewViewX = view.x; this.previewViewY = view.y;
+  },
+
+  setPreviewViewScale(next, event) {
+    const anchor = event ? window.AnimaImageViewport.pointerAnchor(event, event.currentTarget) : null;
+    const view = window.AnimaImageViewport.zoom({ scale: this.previewViewScale, x: this.previewViewX, y: this.previewViewY }, next, anchor);
+    this.previewViewScale = view.scale; this.previewViewX = view.x; this.previewViewY = view.y;
+    this.constrainPreviewView(event?.currentTarget);
+  },
+
+  zoomPreviewView(event) {
+    this.setPreviewViewScale(this.previewViewScale * (event.deltaY < 0 ? 1.18 : 1 / 1.18), event);
+  },
+
+  startPreviewPan(event) {
+    if (event.button !== 0 || this.previewViewScale <= 1 || event.target.closest?.('button')) return;
+    this.previewViewPanning = true; this.previewViewPointerId = event.pointerId;
+    this._previewPanStartX = event.clientX - this.previewViewX; this._previewPanStartY = event.clientY - this.previewViewY;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  },
+
+  movePreviewPan(event) {
+    if (!this.previewViewPanning || event.pointerId !== this.previewViewPointerId) return;
+    this.previewViewX = event.clientX - this._previewPanStartX; this.previewViewY = event.clientY - this._previewPanStartY;
+    this.constrainPreviewView(event.currentTarget);
+    this._previewPanStartX = event.clientX - this.previewViewX; this._previewPanStartY = event.clientY - this.previewViewY;
+  },
+
+  stopPreviewPan(event) {
+    if (event && this.previewViewPointerId !== null) event.currentTarget.releasePointerCapture?.(this.previewViewPointerId);
+    this.previewViewPanning = false; this.previewViewPointerId = null;
+  },
+
+  retryPreviewImage(reference) {
+    if (reference) this._previewReferenceImageKey = '';
+    else this._previewImageKey = '';
+    this._updatePreviewLightbox();
+  },
+
+  _displayPreviewImage(element, preview, reference = false) {
+    if (!element || !preview) return;
+    const key = this._previewItemKey(preview) + '|' + (preview.version || '') + '|' + this._previewFullImageUrl(preview);
+    const keyField = reference ? '_previewReferenceImageKey' : '_previewImageKey';
+    if (this[keyField] === key) return;
+    this[keyField] = key;
+    const requestField = reference ? '_previewReferenceRequest' : '_previewImageRequest';
+    const loadingField = reference ? 'previewReferenceLoading' : 'previewImageLoading';
+    const errorField = reference ? 'previewReferenceError' : 'previewImageError';
+    const request = ++this[requestField];
+    this[loadingField] = true; this[errorField] = false;
+    element.alt = reference ? this.t('monitor.reference') + ': ' + preview.name : preview.name;
+    window.AnimaImages.display(element, this._previewFullImageUrl(preview), preview.thumb_url).then(success => {
+      if (request !== this[requestField] || !this.previewLightboxOpen) return;
+      this[loadingField] = false; this[errorField] = !success;
+    });
+  },
+
   _updatePreviewLightbox() {
     const n = this.previews.length;
     if (!n) return;
     const p = this.previews[this.previewStep] || this.previews[0];
-    if (typeof this._resetPreviewMetadata === 'function') this._resetPreviewMetadata();
     const img = document.getElementById('previewLightboxImg');
-    if (img) { window.AnimaImages.display(img, this._previewFullImageUrl(p), p.thumb_url); img.alt = p.name; }
+    this._displayPreviewImage(img, p);
     const reference = document.getElementById('previewReferenceImg');
+    const referencePane = document.getElementById('previewReferencePane');
+    const currentCaption = document.getElementById('previewCurrentCaption');
+    if (referencePane) referencePane.hidden = !this.previewReference;
+    if (currentCaption) currentCaption.hidden = !this.previewReference;
     if (reference) {
-      reference.hidden = !this.previewReference;
       if (this.previewReference) {
-        window.AnimaImages.display(reference, this._previewFullImageUrl(this.previewReference), this.previewReference.thumb_url);
-        reference.alt = this.t('monitor.pinReference') + ': ' + this.previewReference.name;
-        reference.title = reference.alt;
-      } else { window.AnimaImages.cancel(reference); reference.removeAttribute('src'); }
+        this._displayPreviewImage(reference, this.previewReference, true);
+      } else {
+        ++this._previewReferenceRequest; this._previewReferenceImageKey = '';
+        this.previewReferenceLoading = this.previewReferenceError = false;
+        window.AnimaImages.cancel(reference); reference.removeAttribute('src');
+      }
     }
     const referenceLabel = document.getElementById('previewReferenceLabel');
-    if (referenceLabel) {
-      referenceLabel.hidden = !this.previewReference;
-      referenceLabel.textContent = this.previewReference ? this.t('monitor.reference') + ': ' + this._parseSampleInfo(this.previewReference.name) : '';
-    }
+    if (referenceLabel) referenceLabel.textContent = this.previewReference ? this._previewCompareLabel(this.previewReference) : '';
+    const currentLabel = document.getElementById('previewCurrentLabel');
+    if (currentLabel) currentLabel.textContent = this._previewCompareLabel(p);
     const original = document.getElementById('previewLightboxOriginal');
     if (original) {
       original.hidden = !p.url;
@@ -213,19 +328,26 @@ window.monitorArtifactsRenderMixin = {
       else original.removeAttribute('href');
     }
     const c = document.getElementById('previewLightboxCounter');
-    const indices = this._previewLightboxIndices();
+    const { indices, samePrompt } = this._previewLightboxSequence();
     const displayPosition = Math.max(0, indices.indexOf(this.previewStep));
-    if (c) c.textContent = (displayPosition + 1) + ' / ' + indices.length;
-    const filter = document.getElementById('previewPromptFilter');
-    if (filter) {
-      const group = this._previewPromptGroup();
-      const identity = group || this._previewPromptIdentity(p);
-      filter.hidden = !group && !this.previewPromptFilter;
-      filter.setAttribute('aria-pressed', this.previewPromptFilter ? 'true' : 'false');
-      filter.textContent = this.t('monitor.onlySamplePrompt').replace('{n}', identity?.number || '');
+    if (c) {
+      c.textContent = (displayPosition + 1) + ' / ' + indices.length;
+      c.title = samePrompt ? this.t('monitor.previewSamePromptHint') : '';
     }
+    const scope = document.getElementById('previewLightboxScope');
+    if (scope) {
+      scope.hidden = !samePrompt;
+      scope.textContent = samePrompt ? this.t('monitor.previewSamePrompt') : '';
+      scope.title = samePrompt ? this.t('monitor.previewSamePromptHint') : '';
+    }
+    const referenceButton = document.getElementById('previewReferenceButton');
+    if (referenceButton) referenceButton.disabled = !this.previewReference && indices.length < 2;
     const lbl = document.getElementById('previewLightboxLabel');
-    if (lbl) lbl.textContent = this._parseSampleInfo(p.name);
+    if (lbl) {
+      const label = this._parseSampleInfo(p.name);
+      lbl.textContent = label;
+      lbl.title = label === p.name ? p.name : label + '\n' + p.name;
+    }
     const box = document.getElementById('previewLightbox');
     if (box) {
       const prevBtn = box.querySelector('.preview-lightbox-nav.prev');
@@ -233,11 +355,17 @@ window.monitorArtifactsRenderMixin = {
       if (prevBtn) prevBtn.disabled = displayPosition <= 0;
       if (nextBtn) nextBtn.disabled = displayPosition >= indices.length - 1;
     }
+    this.constrainPreviewView();
   },
 
   _parseSampleInfo(filename) {
     const info = this._sampleMetadata(filename);
     return [info.stageLabel, info.prompt].filter(Boolean).join(' · ') || filename;
+  },
+
+  _previewCompareLabel(preview) {
+    const identity = this._previewPromptIdentity(preview);
+    return this._parseSampleInfo(preview.name) + (identity?.seed != null ? ' · ' + this.t('monitor.sampleSeed').replace('{n}', identity.seed) : '');
   },
 
   // ═══════════════════════════════════════════════════════════
@@ -254,11 +382,11 @@ window.monitorArtifactsRenderMixin = {
     const hiddenSelected = selectedCount - visibleFiles.filter(f => this.outputFilesSelected[f.path]).length;
     let html = '<div class="m-section m-outputs-section">';
     html += '<div class="m-view-header"><div class="m-output-toolbar-top"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t('outputs')) + '</span>' + (this.outputFiles.length ? '<span class="m-logs-count">' + this.outputFiles.length + '</span>' : '') + '</div>';
-    html += '<button type="button" id="outputRefresh" class="btn btn-sm btn-secondary" @click="loadOutputFiles()"' + (!runDir || this.outputFilesLoading ? ' disabled' : '') + '>' + this.esc(t(this.outputFilesLoading ? 'loading' : 'refresh')) + '</button>';
+    html += '<button type="button" id="outputRefresh" class="btn btn-sm btn-secondary m-refresh-button" :class="{ \'is-loading\': outputFilesLoading }" @click="if (!outputFilesLoading) loadOutputFiles()" :disabled="!currentOutputRunDir" :aria-disabled="outputFilesLoading ? \'true\' : \'false\'" :aria-busy="outputFilesLoading ? \'true\' : \'false\'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 8a7 7 0 0 1 11.5-1.8L20 12M4 12l2.9 5.8A7 7 0 0 0 18.4 16"/></svg><span>' + this.esc(t('refresh')) + '</span><span class="m-number-accessible" role="status" aria-live="polite" x-text="outputFilesLoading ? t(\'monitor.loading\') : \'\'"></span></button>';
     html += '<div class="m-output-selection-tools"><span class="m-output-selection-count" role="status">' + this.esc(t('selected')) + ' <strong>' + selectedCount + '</strong> / ' + this.outputFiles.length;
     if (hiddenSelected > 0) html += '<small>' + this.esc(t('hiddenSelectedOutputs').replace('{n}', hiddenSelected)) + '</small>';
     html += '</span><button type="button" id="outputClearSelection" class="btn btn-sm btn-secondary" @click="deselectAllOutputFiles()"' + (!selectedCount ? ' disabled' : '') + '>' + this.esc(t('clearSelection')) + '</button>';
-    html += '<button type="button" id="outputDownload" class="btn btn-sm btn-primary m-output-download" @click="' + (selectedCount ? 'downloadSelectedOutputs()' : 'downloadAllOutputs()') + '"' + (!canUseFiles || this.outputFilesLoading ? ' disabled' : '') + '><span' + (selectedCount ? ' class="is-hidden"' : '') + '>' + this.esc(t('downloadAll')) + '</span><span' + (!selectedCount ? ' class="is-hidden"' : '') + '>' + this.esc(t('downloadSelected')) + '</span></button></div></div>';
+    html += '<button type="button" id="outputDownload" class="btn btn-sm btn-primary m-output-download" @click="' + (selectedCount ? 'downloadSelectedOutputs()' : 'downloadAllOutputs()') + '" :disabled="outputFilesLoading || ' + (!canUseFiles) + '"><span' + (selectedCount ? ' class="is-hidden"' : '') + '>' + this.esc(t('downloadAll')) + '</span><span' + (!selectedCount ? ' class="is-hidden"' : '') + '>' + this.esc(t('downloadSelected')) + '</span></button></div></div>';
     html += '<div class="m-view-actions m-output-toolbar-filters">';
     html += '<label class="m-output-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="m-output-search-input" type="search" value="' + this.esc(this.outputSearch) + '" aria-label="' + this.esc(t('searchOutputs')) + '" placeholder="' + this.esc(t('searchOutputs')) + '" @input.debounce.180ms="setOutputSearch($event.target.value)"></label>';
     html += '<div class="m-segmented" role="group" aria-label="' + this.esc(t('outputFilter')) + '">';
@@ -266,7 +394,7 @@ window.monitorArtifactsRenderMixin = {
       html += '<button type="button" id="outputFilter-' + item[0] + '" aria-pressed="' + (this.outputFilter === item[0]) + '" class="m-segmented-btn' + (this.outputFilter === item[0] ? ' active' : '') + '" @click="setOutputFilter(\'' + item[0] + '\')">' + this.esc(item[1]) + '</button>';
     });
     html += '</div>';
-    html += '<button type="button" id="outputSelectVisible" class="btn btn-sm btn-secondary" @click="selectAllOutputFiles()"' + (!canUseFiles || !visibleCount || this.outputFilesLoading ? ' disabled' : '') + '>' + this.esc(t('selectVisible')) + '</button>';
+    html += '<button type="button" id="outputSelectVisible" class="btn btn-sm btn-secondary" @click="selectAllOutputFiles()" :disabled="outputFilesLoading || ' + (!canUseFiles || !visibleCount) + '">' + this.esc(t('selectVisible')) + '</button>';
     if (d.artifact_dir) html += '<button type="button" class="btn btn-sm btn-secondary" @click="navigator.clipboard.writeText(currentArtifactData().artifact_dir).then(() => toast(t(\'common.copied\'))).catch(() => toast(t(\'common.failed\'), \'error\'))">' + this.esc(t('copyOutputPath')) + '</button>';
     html += '</div></div>';
     html += this._artifactLocationHtml(t, d);

@@ -14,7 +14,7 @@ const FRONTEND_DEPENDENCIES = {
   'tagger/index': ['tagger/tasks', 'tagger/sources', ],
   'environment/render': ['environment/dictionary-render', 'environment/components-render', 'environment/models-render', ],
 };
-const frontendScripts = files => ['shared/mixin-compose', ...[].concat(files).flatMap(file => [
+const frontendScripts = files => ['shared/mixin-compose', 'shared/image-viewport', ...[].concat(files).flatMap(file => [
   ...(FRONTEND_DEPENDENCIES[file.replace(/\.js$/, '')] || []), file,
 ])];
 

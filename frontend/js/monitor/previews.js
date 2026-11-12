@@ -1,33 +1,77 @@
-/* 样本刷新、媒体队列与元数据交互；由 monitor-core.js 装配，沿用同一份监控状态。 */
+/* 样本筛选、刷新与媒体队列；由 monitor-core.js 装配，沿用同一份监控状态。 */
 window.monitorPreviewsMixin = {
-  previewPromptFilter: null,
+  samplePromptSelection: '',
+  _sampleResetScroll: false, _sampleScrollAnchor: null,
+  previewLightboxOpen: false, _previewClosePending: false,
+  previewHasNew: false,
+  previewRefreshFeedback: false, _previewRefreshFeedbackTimer: null,
+  previewViewScale: 1, previewViewX: 0, previewViewY: 0,
+  previewViewPanning: false, previewViewPointerId: null,
+  _previewPanStartX: 0, _previewPanStartY: 0,
+  previewImageLoading: false, previewImageError: false,
+  previewReferenceLoading: false, previewReferenceError: false,
+  _previewImageKey: '', _previewReferenceImageKey: '', _previewImageRequest: 0, _previewReferenceRequest: 0,
 
   _previewPromptIdentity(preview) {
     // Only the trainer's complete filename convention is eligible. Custom names
     // remain browsable, but cannot accidentally become members of a prompt group.
-    const match = String(preview?.name || '').match(/^(.*?)(e?)(\d{6})_(\d{2})_(\d{14})(?:_-?\d+)?\.(?:png|jpe?g|webp)$/i);
+    const match = String(preview?.name || '').match(/^(.*?)(e?)(\d{6})_(\d{2})_(\d{14})(?:_(-?\d+))?\.(?:png|jpe?g|webp)$/i);
     if (!match || (match[1] && !match[1].endsWith('_'))) return null;
-    return { key: match[1] + ':' + match[4], number: Number(match[4]) + 1,
+    return { key: match[1] + ':' + match[4], prefix: match[1], number: Number(match[4]) + 1, seed: match[6] ?? null,
       stage: (match[2] ? 'epoch:' : 'step:') + Number(match[3]) };
   },
 
-  _previewPromptGroup() {
-    const current = this._previewPromptIdentity(this.previews[this.previewStep]);
-    if (!current) return null;
-    const identities = this.previews.map(preview => this._previewPromptIdentity(preview)).filter(Boolean);
-    const stages = new Set(identities.filter(item => item.key === current.key).map(item => item.stage));
-    return stages.size > 1 && identities.some(item => item.key !== current.key) ? current : null;
+  _previewItemKey(preview) {
+    return String(preview?.path || preview?.url || preview?.name || '');
   },
 
-  _previewLightboxIndices() {
-    return this._previewDisplayIndices().filter(index => !this.previewPromptFilter
-      || this._previewPromptIdentity(this.previews[index])?.key === this.previewPromptFilter);
+  _samplePromptOptions() {
+    const groups = new Map();
+    let unknown = false;
+    this.previews.forEach(preview => {
+      const identity = this._previewPromptIdentity(preview);
+      if (!identity) { unknown = true; return; }
+      const group = groups.get(identity.key) || { ...identity, count: 0 };
+      group.count++;
+      groups.set(identity.key, group);
+    });
+    if (groups.size < 2 && !(unknown && groups.size)) return [];
+    const entries = [...groups.values()].sort((a, b) => a.number - b.number || a.prefix.localeCompare(b.prefix));
+    const numberCounts = new Map();
+    entries.forEach(group => numberCounts.set(group.number, (numberCounts.get(group.number) || 0) + 1));
+    return [{ value: '', label: this.t('monitor.allSamplePrompts') }, ...entries.map(group => ({
+      value: group.key,
+      label: this.t('monitor.samplePrompt').replace('{n}', group.number)
+        + (numberCounts.get(group.number) > 1 ? ' · ' + (group.prefix.replace(/_$/, '') || '—') : ''),
+      count: group.count,
+    }))];
   },
 
-  togglePreviewPromptFilter() {
-    const group = this._previewPromptGroup();
-    this.previewPromptFilter = this.previewPromptFilter ? null : group?.key || null;
-    this._updatePreviewLightbox();
+  setSamplePromptSelection(value) {
+    const next = this._samplePromptOptions().some(option => option.value === value) ? value : '';
+    if (next === this.samplePromptSelection) return;
+    this.samplePromptSelection = next;
+    this._sampleResetScroll = true;
+    this.previewsVersion++;
+    this.renderDashboard();
+  },
+
+  _previewLightboxSequence(items = this.previews) {
+    const indices = this._previewDisplayIndices(items);
+    if (!this.previewReference) return { indices, samePrompt: false };
+    const referenceKey = this._previewItemKey(this.previewReference);
+    const candidates = indices.filter(index => this._previewItemKey(items[index]) !== referenceKey);
+    const referencePrompt = this._previewPromptIdentity(this.previewReference);
+    const currentPrompt = this._previewPromptIdentity(this.previews[this.previewStep]);
+    if (referencePrompt && currentPrompt?.key === referencePrompt.key) {
+      const samePrompt = candidates.filter(index => this._previewPromptIdentity(items[index])?.key === referencePrompt.key);
+      if (samePrompt.length) return { indices: samePrompt, samePrompt: samePrompt.length < candidates.length };
+    }
+    return { indices: candidates, samePrompt: false };
+  },
+
+  _previewLightboxIndices(items = this.previews) {
+    return this._previewLightboxSequence(items).indices;
   },
 
   _invalidatePreviewRequest() {
@@ -41,19 +85,37 @@ window.monitorPreviewsMixin = {
     const wasAtEnd = this.previews.length === 0 || this.previewStep >= this.previews.length - 1;
     // A cacheable snapshot must not cancel a forced refresh already in flight.
     this._previewSnapshotSeq++;
-    this._replacePreviewItems(Array.isArray(previews) ? previews : []);
-    this.previewsVersion++;
+    const changed = this._replacePreviewItems(Array.isArray(previews) ? previews : []);
+    if (changed) this.previewsVersion++;
     this._followLatestPreview(wasAtEnd);
     return true;
   },
 
   _replacePreviewItems(items) {
-    const selectedName = this.previewPromptFilter ? this.previews[this.previewStep]?.name : null;
+    const previous = this.previews;
+    const selectedKey = this._previewItemKey(previous[this.previewStep]);
+    const referenceKey = this._previewItemKey(this.previewReference);
+    const changed = previous.length !== items.length || previous.some((item, index) => {
+      const next = items[index];
+      return !next || ['name', 'path', 'version', 'url', 'thumb_url', 'inspect_url', 'metadata_url']
+        .some(field => item[field] !== next[field]);
+    });
+    if (this.previewLightboxOpen && previous.length && items.length) {
+      const visible = this._previewLightboxIndices(items);
+      const latestIndex = visible.reduce((latest, index) => Math.max(latest, index), -1);
+      const latestKey = this._previewItemKey(items[latestIndex]);
+      if (latestKey && !previous.some(item => this._previewItemKey(item) === latestKey)) this.previewHasNew = true;
+    }
     this.previews = items;
-    if (selectedName) {
-      const index = items.findIndex(item => item.name === selectedName);
+    if (selectedKey) {
+      const index = items.findIndex(item => this._previewItemKey(item) === selectedKey);
       if (index >= 0) this.previewStep = index;
     }
+    if (referenceKey && !this._previewClosePending) this.previewReference = items.find(item => this._previewItemKey(item) === referenceKey) || null;
+    if (this.samplePromptSelection && !this._samplePromptOptions().some(option => option.value === this.samplePromptSelection)) {
+      this.samplePromptSelection = '';
+    }
+    return changed;
   },
 
   setPreviewMediaPaused(paused) {
@@ -125,10 +187,13 @@ window.monitorPreviewsMixin = {
         next.image.dataset.previewLoaded = '1';
         if (this._previewMediaObserver) this._previewMediaObserver.unobserve(next.image);
       }
-    } catch (_) {
+    } catch (error) {
       // Cancellation and transient slow-link failures remain retryable on the
       // next render or when realtime freshness recovers.
-      if (next.image && next.image.isConnected) delete next.image.dataset.previewQueued;
+      if (next.image && next.image.isConnected) {
+        delete next.image.dataset.previewQueued;
+        if (error?.name !== 'AbortError' && generation === this._previewMediaGeneration) next.image.closest?.('.preview-thumb-frame')?.classList.add('is-error');
+      }
     } finally {
       if (generation !== this._previewMediaGeneration || this._previewMediaAbort !== controller) return;
       this._previewMediaAbort = null;
@@ -143,71 +208,57 @@ window.monitorPreviewsMixin = {
     this._previewMediaObjectUrls = [];
   },
 
-  async togglePreviewMetadata() {
-    this.previewMetadataOpen = !this.previewMetadataOpen;
-    this._patchPreviewMetadataPanel();
-    if (!this.previewMetadataOpen) return;
-    const preview = this.previews[this.previewStep];
-    if (!preview || !preview.metadata_url) return;
-    const requestSeq = ++this._previewMetadataRequestSeq;
-    if (this._previewMetadataAbort) this._previewMetadataAbort.abort();
-    const controller = new AbortController();
-    this._previewMetadataAbort = controller;
-    this.previewMetadataLoading = true;
-    this.previewMetadataError = '';
-    this._patchPreviewMetadataPanel();
-    try {
-      const response = await fetch(preview.metadata_url, { cache: 'default', signal: controller.signal });
-      const body = await response.json();
-      if (requestSeq !== this._previewMetadataRequestSeq) return;
-      if (body.status === 'success') this.previewMetadata = body.data;
-      else {
-        const details = this.apiErrorDetails(body);
-        this.previewMetadataError = this.localizeApiError(body, 'common.failed') + (details ? '\n' + details : '');
-      }
-    } catch (_) {
-      if (requestSeq === this._previewMetadataRequestSeq) this.previewMetadataError = this.t('common.failed');
-    } finally {
-      if (requestSeq === this._previewMetadataRequestSeq) {
-        this.previewMetadataLoading = false;
-        if (this._previewMetadataAbort === controller) this._previewMetadataAbort = null;
-        this._patchPreviewMetadataPanel();
+  // Retain successfully decoded, versioned thumbnails across a grid rebuild.
+  // The complete URL includes the run and file version, so overwritten files
+  // and samples from another run will still be fetched again.
+  _capturePreviewMedia(root) {
+    const loaded = new Map();
+    const owned = new Set(this._previewMediaObjectUrls);
+    if (!root) return loaded;
+    for (const image of root.querySelectorAll('img[data-preview-url]')) {
+      const url = image.dataset.previewUrl || '';
+      const path = image.closest('.preview-grid-item')?.dataset.previewPath;
+      const src = image.getAttribute('src');
+      if (path && /[?&]v=[^&]+/.test(url) && image.dataset.previewLoaded === '1'
+          && image.complete && image.naturalWidth > 0 && owned.has(src)
+          && !image.closest('.preview-thumb-frame')?.classList.contains('is-error')) {
+        loaded.set(JSON.stringify([path, url]), src);
       }
     }
+    return loaded;
   },
 
-  _patchPreviewMetadataPanel() {
-    const panel = document.getElementById('previewLightboxMetadata');
-    const button = document.getElementById('previewLightboxMetadataButton');
-    if (button) button.setAttribute('aria-expanded', this.previewMetadataOpen ? 'true' : 'false');
-    if (!panel) return;
-    panel.hidden = !this.previewMetadataOpen;
-    if (!this.previewMetadataOpen) return;
-    if (this.previewMetadataLoading) panel.textContent = this.t('monitor.loading');
-    else if (this.previewMetadataError) panel.textContent = this.previewMetadataError;
-    else if (this.previewMetadata) {
-      const meta = this.previewMetadata;
-      let html = '<p>' + this.esc([meta.format, meta.width + ' × ' + meta.height].filter(Boolean).join(' · ')) + '</p><dl>';
-      for (const [key, value] of Object.entries(meta.png_text || {}).slice(0, 6)) html += '<dt>' + this.esc(key) + '</dt><dd>' + this.esc(String(value)) + '</dd>';
-      panel.innerHTML = html + '</dl><details><summary>' + this.esc(this.t('monitor.rawMetadata')) + '</summary><pre>' + this.esc(JSON.stringify(meta, null, 2)) + '</pre></details>';
-    } else panel.textContent = '';
-  },
-
-  _resetPreviewMetadata() {
-    this._previewMetadataRequestSeq++;
-    if (this._previewMetadataAbort) this._previewMetadataAbort.abort();
-    this._previewMetadataAbort = null;
-    this.previewMetadataOpen = false;
-    this.previewMetadataLoading = false;
-    this.previewMetadata = null;
-    this.previewMetadataError = '';
-    this._patchPreviewMetadataPanel();
+  _restorePreviewMedia(root, loaded) {
+    const retained = new Set();
+    if (root) for (const image of root.querySelectorAll('img[data-preview-url]')) {
+      const path = image.closest('.preview-grid-item')?.dataset.previewPath;
+      const src = loaded.get(JSON.stringify([path, image.dataset.previewUrl]));
+      if (!src) continue;
+      image.src = src;
+      image.dataset.previewLoaded = '1';
+      retained.add(src);
+    }
+    this._previewMediaObjectUrls = this._previewMediaObjectUrls.filter(url => {
+      if (retained.has(url)) return true;
+      URL.revokeObjectURL(url);
+      return false;
+    });
   },
 
   // ── 预览样本刷新 ────────────────────────────────────────
-  async refreshPreviews() {
-    /** 主动重新拉取预览样本（绕过后端 5s 缓存），并自动跟随到最新一张。 */
+  async refreshPreviews(notifyOnFailure = true) {
+    /** 主动重新拉取预览样本（绕过后端 5s 缓存）。 */
     if (this.previewsLoading) return;
+    // A local refresh can finish before the first frame. Keep the click
+    // feedback visible briefly without holding the request or its results.
+    if (notifyOnFailure) {
+      this.previewRefreshFeedback = true;
+      clearTimeout(this._previewRefreshFeedbackTimer);
+      this._previewRefreshFeedbackTimer = setTimeout(() => {
+        this.previewRefreshFeedback = false;
+        this._previewRefreshFeedbackTimer = null;
+      }, 800);
+    }
     this.previewsLoading = true;
     const requestSeq = ++this._previewRequestSeq;
     this._previewSnapshotSeq++;
@@ -233,8 +284,9 @@ window.monitorPreviewsMixin = {
       if (j.status === 'success') {
         // Reject snapshots started during the refresh if they arrive after it.
         this._previewSnapshotSeq++;
-        this._replacePreviewItems(j.data || []);
-        this.previewsVersion++;
+        const changed = this._replacePreviewItems(j.data || []);
+        const failedMedia = notifyOnFailure && document.getElementById('monitorTabContent')?.querySelector('.preview-thumb-frame.is-error');
+        if (changed || failedMedia) this.previewsVersion++;
         if (j.meta) {
           const target = this.currentArtifactData();
           target.artifact_available = j.meta.artifact_available;
@@ -242,9 +294,9 @@ window.monitorPreviewsMixin = {
           if (j.meta.preview_enabled !== undefined) target.preview_enabled = j.meta.preview_enabled;
         }
         this._followLatestPreview(wasAtEnd);
-      }
+      } else if (notifyOnFailure) this.toast?.(this.t('monitor.previewRefreshFailed'), 'error');
     } catch (e) {
-      /* 静默失败，不打扰用户 */
+      if (notifyOnFailure && isCurrent()) this.toast?.(this.t('monitor.previewRefreshFailed'), 'error');
     } finally {
       if (requestSeq === this._previewRequestSeq) {
         this.previewsLoading = false;
@@ -253,28 +305,28 @@ window.monitorPreviewsMixin = {
     }
   },
 
-  // 预览列表更新后调整 previewStep：
-  //   - 之前停在末尾（或为空）→ 跟随到新的末尾，确保最新样本第一时间可见
-  //   - 否则保持当前选中（clamp 防越界）
+  // Keep an open viewer on its selected image; only an idle viewer follows the latest.
   _followLatestPreview(wasAtEnd) {
+    if (this._previewClosePending) return;
     const n = this.previews.length;
     if (n === 0) { this.previewStep = 0; if (this.closePreviewLightbox) this.closePreviewLightbox(); return; }
-    if (this.previewPromptFilter) {
-      const indices = this._previewLightboxIndices();
-      if (!indices.length) this.previewPromptFilter = null;
-      else if (!indices.includes(this.previewStep)) this.previewStep = indices[0];
+    let indices = this._previewLightboxIndices();
+    if (this.previewReference && !indices.length) {
+      this.previewReference = null;
+      indices = this._previewLightboxIndices();
     }
-    if (!this.previewPromptFilter && wasAtEnd) {
+    if (this.previewLightboxOpen && indices.length && !indices.includes(this.previewStep)) this.previewStep = indices[0];
+    if (!this.previewLightboxOpen && !this.samplePromptSelection && wasAtEnd) {
       this.previewStep = n - 1;
     } else if (this.previewStep > n - 1) {
       this.previewStep = n - 1;
     }
-    const box = document.getElementById('previewLightbox');
-    if (box && box.classList.contains('open')) this._updatePreviewLightbox();
+    if (this.previewLightboxOpen) this._updatePreviewLightbox();
   },
 
-  _previewDisplayIndices() {
-    const indices = this.previews.map((_, index) => index);
+  _previewDisplayIndices(items = this.previews) {
+    const indices = items.map((_, index) => index).filter(index => !this.samplePromptSelection
+      || this._previewPromptIdentity(items[index])?.key === this.samplePromptSelection);
     return this.previewSortDir === 'desc' ? indices.reverse() : indices;
   },
 
@@ -284,14 +336,12 @@ window.monitorPreviewsMixin = {
     const grid = content.querySelector('.m-samples-section .preview-grid');
     if (!grid) return false;
     const items = new Map(Array.from(grid.querySelectorAll('.preview-grid-item')).map(item => [Number(item.dataset.previewIndex), item]));
-    const headings = new Map(Array.from(grid.querySelectorAll('[data-preview-group]')).map(item => [item.dataset.previewGroup, item]));
-    const seen = new Set();
     for (const index of this._previewDisplayIndices()) {
-      const group = this._sampleMetadata(this.previews[index].name).stage;
-      if (!seen.has(group) && headings.has(group)) { grid.appendChild(headings.get(group)); seen.add(group); }
       const item = items.get(index);
       if (item) grid.appendChild(item);
     }
+    grid.scrollTop = 0;
+    this._sampleScrollAnchor = null;
     content.querySelectorAll('[data-preview-sort]').forEach(button => {
       const active = button.dataset.previewSort === this.previewSortDir;
       button.classList.toggle('active', active);

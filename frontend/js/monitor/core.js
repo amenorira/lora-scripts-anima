@@ -15,7 +15,6 @@ window.monitorCoreMixin = {
   _previewRequestSeq: 0, _previewSnapshotSeq: 0,
   weakNetworkMode: true,
   _previewMediaQueue: [], _previewMediaAbort: null, _previewMediaLoading: false, _previewMediaPaused: false, _previewMediaObjectUrls: [], _previewMediaGeneration: 0,
-  previewMetadataOpen: false, previewMetadataLoading: false, previewMetadata: null, previewMetadataError: '', _previewMetadataRequestSeq: 0, _previewMetadataAbort: null,
   configSnapshotOpen: false, configSnapshotLoading: false, configSnapshotError: '', configSnapshotRunDir: '',
   _currentSnapshot: null, _snapshotRequestSeq: 0, _snapshotAbort: null, _reuseRequestSeq: 0, _reuseAbort: null,
   historyReuseBusy: '', _historyReuseApplying: false,
@@ -40,6 +39,7 @@ window.monitorCoreMixin = {
   logFullOffset: 0,            // 当前页起始行号
   logFullMatches: [],          // 全文件搜索匹配行号
   logFullQuery: '',            // 当前搜索词
+  _logFullResultQuery: '',     // 已返回的匹配所属的搜索词
   logFullMatchIdx: -1,         // 当前定位的匹配在 logFullMatches 中的下标
   logFullLoading: false,
   logTotal: 0,                 // 当前日志源的规范化总行数，独立于分页/尾部缓冲。
@@ -343,6 +343,7 @@ window.monitorCoreMixin = {
       this.logFullOffset = 0;
       this.logTotal = 0;
       this.logFullMatches = [];
+      this._logFullResultQuery = '';
       this.logFullMatchIdx = -1;
       this._logFullLoaded = false;
       this._logFullNeedsResync = false;
@@ -447,16 +448,17 @@ window.monitorCoreMixin = {
     this.logTotal = 0;
     this._logTailOffset = 0;
     this.logFullMatches = [];
+    this._logFullResultQuery = '';
     this._logFullSourceKey = '';
     this.trainParams = [];
     this.trainParamsVersion++;
     this.previews = [];
+    this.samplePromptSelection = '';
     this.previewsVersion++;
     this.previewStep = 0;
     this._resetOutputFilesForRun('');
     this._cancelPreviewMediaQueue();
     this._releasePreviewMediaObjectUrls();
-    this._resetPreviewMetadata();
     this._logFullNeedsResync = true;
     if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
     return wasRunning;
@@ -537,6 +539,7 @@ window.monitorCoreMixin = {
       this.logFullLines = [];
       this.logFullOffset = 0;
       this.logFullMatches = [];
+      this._logFullResultQuery = '';
       this.logFullMatchIdx = -1;
       this._logFullLoaded = false;
       this._logFullNeedsResync = true;
@@ -551,6 +554,7 @@ window.monitorCoreMixin = {
       this._logSliceRequestSeq++;
       this.logFullLoading = false;
       this.logFullMatches = [];
+      this._logFullResultQuery = '';
       this.logFullMatchIdx = -1;
       this._logFullNeedsResync = false;
     }
@@ -603,7 +607,7 @@ window.monitorCoreMixin = {
     const now = Date.now();
     if (now - this._lastRealtimePreviewRefreshAt < 500) return;
     this._lastRealtimePreviewRefreshAt = now;
-    this.refreshPreviews();
+    this.refreshPreviews(false);
     if (this.monitorTab === 'outputs') void this.loadOutputFiles();
   },
 
@@ -682,7 +686,6 @@ window.monitorCoreMixin = {
     this._logFullSlide = false;
     this._cancelPreviewMediaQueue();
     this._releasePreviewMediaObjectUrls();
-    this._resetPreviewMetadata();
     if (typeof this.closePreviewLightbox === 'function') this.closePreviewLightbox();
   },
 

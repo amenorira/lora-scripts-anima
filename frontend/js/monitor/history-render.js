@@ -213,7 +213,7 @@ window.monitorHistoryRenderMixin = {
       this._reuseAbort = null;
       this.historyReuseBusy = '';
     }
-    if (this._previewReturnFocus) this.closePreviewLightbox();
+    if (this.previewLightboxOpen) this.closePreviewLightbox();
   },
 
   copyConfigContent() {

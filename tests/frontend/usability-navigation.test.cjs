@@ -100,15 +100,16 @@ function previews(names) {
     window: {}, document: {getElementById: () => null, body: {style: {}}},
   });
   return composeMixins(window.monitorPreviewsMixin, window.monitorArtifactsRenderMixin, {
-    previews: names.map(name => ({name})), previewStep: 0, previewSortDir: 'asc',
-    _previewSnapshotSeq: 0, previewsVersion: 0, _updatePreviewLightbox() {},
+    previews: names.map(name => ({name})), previewStep: 0, previewSortDir: 'asc', previewReference: null,
+    _previewSnapshotSeq: 0, previewsVersion: 0, _updatePreviewLightbox() {}, renderDashboard() {},
+    t(key) { return key === 'monitor.samplePrompt' ? 'Prompt {n}' : key; },
   });
 }
 
-test('prompt browsing requires multiple stages and prompts and excludes custom filenames', () => {
+test('the sample toolbar filters by prompt and the viewer follows the same visible order', () => {
   const app = previews([filename(1, 0), filename(1, 1), filename(2, 0), 'custom_e000003_00_something.png']);
-  assert.equal(app._previewPromptGroup().number, 1);
-  app.togglePreviewPromptFilter();
+  assert.deepEqual(Array.from(app._samplePromptOptions(), option => option.value), ['', 'sample_:00', 'sample_:01']);
+  app.setSamplePromptSelection('sample_:00');
   assert.deepEqual(Array.from(app._previewLightboxIndices()), [0, 2]);
   app.previewLightboxNav(1);
   assert.equal(app.previewStep, 2);
@@ -118,32 +119,107 @@ test('prompt browsing requires multiple stages and prompts and excludes custom f
   assert.deepEqual(Array.from(app._previewLightboxIndices()), [2, 0]);
   app.previewLightboxNav(1);
   assert.equal(app.previewStep, 0);
-  app.togglePreviewPromptFilter();
+  app.setSamplePromptSelection('');
   assert.equal(app._previewLightboxIndices().length, 4);
-  assert.equal(previews([filename(1, 0), filename(2, 0)])._previewPromptGroup(), null);
-  assert.equal(previews([filename(1, 0), filename(1, 1)])._previewPromptGroup(), null);
+  assert.equal(previews([filename(1, 0), filename(2, 0)])._samplePromptOptions().length, 0);
   assert.equal(app._previewPromptIdentity({name: 'my000001_00_20261109120000.png'}), null);
 });
 
 test('filtered refresh preserves the selected image and never jumps to another prompt', () => {
   const app = previews([filename(1, 0), filename(1, 1), filename(2, 0)]);
   app.previewStep = 2;
-  app.togglePreviewPromptFilter();
+  app.setSamplePromptSelection('sample_:00');
   app._applyPreviewSnapshot([filename(1, 0), filename(1, 1), filename(2, 1), filename(2, 0), filename(3, 1)].map(name => ({name})));
   assert.equal(app.previewStep, 3);
   assert.equal(app.previews[app.previewStep].name, filename(2, 0));
   app.closePreviewLightbox();
-  assert.equal(app.previewPromptFilter, null);
-  assert.equal(app._previewLightboxIndices().length, 5);
+  assert.equal(app.samplePromptSelection, 'sample_:00');
+  assert.equal(app._previewLightboxIndices().length, 2);
 });
 
 test('a removed prompt group clears the filter and clamps the current position', () => {
   const app = previews([filename(1, 0), filename(1, 1), filename(2, 0)]);
   app.previewStep = 2;
-  app.togglePreviewPromptFilter();
+  app.setSamplePromptSelection('sample_:00');
   app._applyPreviewSnapshot([{name: filename(1, 1)}]);
-  assert.equal(app.previewPromptFilter, null);
+  assert.equal(app.samplePromptSelection, '');
   assert.equal(app.previewStep, 0);
+});
+
+test('an open viewer keeps its selected path when new or earlier samples arrive', () => {
+  const app = previews([]);
+  const sample = (path, name = 'same.png') => ({path, name});
+  app.previews = [sample('a/same.png'), sample('b/same.png')];
+  app.previewStep = 1;
+  app.previewLightboxOpen = true;
+  app._applyPreviewSnapshot([sample('old/same.png'), ...app.previews, sample('new/same.png')]);
+  assert.equal(app.previews[app.previewStep].path, 'b/same.png');
+  assert.equal(app.previewHasNew, true);
+  app.jumpToLatestPreview();
+  assert.equal(app.previews[app.previewStep].path, 'new/same.png');
+  assert.equal(app.previewHasNew, false);
+});
+
+test('the new-sample action follows the active prompt filter', () => {
+  const app = previews([filename(1, 0), filename(1, 1), filename(2, 0)]);
+  app.setSamplePromptSelection('sample_:00');
+  app.previewStep = 2;
+  app.previewLightboxOpen = true;
+  app._applyPreviewSnapshot([...app.previews, {name: filename(2, 1)}]);
+  assert.equal(app.previewHasNew, false);
+  app._applyPreviewSnapshot([...app.previews, {name: filename(3, 0)}]);
+  assert.equal(app.previewHasNew, true);
+  app.jumpToLatestPreview();
+  assert.equal(app.previews[app.previewStep].name, filename(3, 0));
+});
+
+test('pinning a reference immediately compares another image from the same prompt when available', () => {
+  const app = previews([filename(1, 0), filename(1, 1), filename(2, 0), filename(2, 1)]);
+  app.previewStep = 3;
+  app.togglePreviewReference();
+  assert.equal(app.previewReference.name, filename(2, 1));
+  assert.equal(app.previews[app.previewStep].name, filename(1, 1));
+  assert.deepEqual(Array.from(app._previewLightboxIndices()), [1]);
+  app.togglePreviewReference();
+  assert.equal(app.previewReference, null);
+  assert.deepEqual(Array.from(app._previewLightboxIndices()), [0, 1, 2, 3]);
+  const single = previews([filename(1, 0)]);
+  single.togglePreviewReference();
+  assert.equal(single.previewReference, null);
+});
+
+test('comparison navigation stays within the reference prompt and skips the pinned image', () => {
+  const app = previews([filename(1, 0), filename(1, 1), filename(2, 0), filename(2, 1), filename(3, 0), filename(3, 1)]);
+  app.previewStep = 5;
+  app.previewLightboxOpen = true;
+  app.togglePreviewReference();
+  assert.equal(app.previews[app.previewStep].name, filename(2, 1));
+  assert.deepEqual(Array.from(app._previewLightboxIndices()), [1, 3]);
+  assert.equal(app._previewLightboxSequence().samePrompt, true);
+  app.previewLightboxNav(-1);
+  assert.equal(app.previews[app.previewStep].name, filename(1, 1));
+  app._applyPreviewSnapshot([...app.previews, {name: filename(4, 0)}]);
+  assert.equal(app.previewHasNew, false);
+  app._applyPreviewSnapshot([...app.previews, {name: filename(4, 1)}]);
+  assert.equal(app.previewHasNew, true);
+  app.jumpToLatestPreview();
+  assert.equal(app.previews[app.previewStep].name, filename(4, 1));
+});
+
+test('comparison scope does not claim a prompt filter when it falls back to other samples', () => {
+  const app = previews([filename(1, 0), filename(1, 1), 'custom.png']);
+  app.previewStep = 0;
+  app.togglePreviewReference();
+  assert.equal(app._previewLightboxSequence().samePrompt, false);
+  assert.equal(app._previewLightboxIndices().length, 2);
+});
+
+test('custom sample names remain visible when several filenames cannot be parsed', () => {
+  const app = previews(['custom-a.png', 'custom-b.png']);
+  Object.assign(app, {currentOutputRunDir: 'output/a', monitorData: {}, weakNetworkMode: false, esc: value => String(value ?? '')});
+  const html = app._renderSamplesTab(key => key);
+  assert.match(html, /<strong>custom-a\.png<\/strong>/);
+  assert.match(html, /<strong>custom-b\.png<\/strong>/);
 });
 
 test('failure count navigation clears the old query and pagination before requesting the task filter', async () => {

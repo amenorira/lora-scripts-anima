@@ -106,10 +106,11 @@ window.monitorLogCoreMixin = {
     const requestSeq = ++this._logSliceRequestSeq;
     const eventVersion = this._logObservationVersion || 0;
     const sourceKey = runDir ? ('run:' + runDir) : ('task:' + taskId);
+    const inputAtStart = opts._inputAtStart ?? this.logFullQuery;
     const q = (opts.q !== undefined) ? opts.q : this.logFullQuery;
     let offset = this.logFullOffset;
     if (opts.offset !== undefined) offset = opts.offset;
-    else if (opts.matchIdx !== undefined && this.logFullMatches.length && q === this.logFullQuery) {
+    else if (opts.matchIdx !== undefined && this.logFullMatches.length && q === this._logFullResultQuery) {
       // 跳到指定匹配行所在页
       const m = this.logFullMatches[opts.matchIdx];
       offset = Math.floor(m / limit) * limit;
@@ -144,11 +145,10 @@ window.monitorLogCoreMixin = {
           const target = nextMatches[idx];
           const pageEnd = d.offset + nextLines.length;
           if (target < d.offset || target >= pageEnd) {
-            this.logFullMatches = nextMatches;
-            this.logFullMatchIdx = idx;
             await this.fetchLogSlice({
               offset: Math.floor(target / limit) * limit,
               q,
+              _inputAtStart: inputAtStart,
               _matchIdx: idx,
               _matchJumpResolved: true,
             });
@@ -162,7 +162,8 @@ window.monitorLogCoreMixin = {
         this.logFullLines = nextLines;
         this.logFullMatches = nextMatches;
         this.logFullMatchesTruncated = !!d.matches_truncated;
-        this.logFullQuery = q;
+        this._logFullResultQuery = q;
+        if (this.logFullQuery === inputAtStart) this.logFullQuery = q;
         this._logFullSourceKey = sourceKey;
         if (opts._matchIdx !== undefined) {
           this.logFullMatchIdx = opts._matchIdx;
@@ -202,6 +203,7 @@ window.monitorLogCoreMixin = {
     if (!query) {
       this.logFullQuery = '';
       this.logFullMatches = [];
+      this._logFullResultQuery = '';
       this.logFullMatchIdx = -1;
       this.fetchLogSlice({ q: '' });
       return;
@@ -222,7 +224,7 @@ window.monitorLogCoreMixin = {
   logFullNextPage() { if (this.logFullOffset + this.logFullLines.length < this.logTotal) { this.logAutoScroll = false; this._logAtBottom = false; this.fetchLogSlice({ offset: this.logFullOffset + this._logPageSize() }); } },
   /** 上一/下一匹配行 */
   logFullPrevMatch() {
-    if (!this.logFullMatches.length) return;
+    if (this.logFullLoading || this.logFullQuery.trim() !== this._logFullResultQuery || !this.logFullMatches.length) return;
     let idx = this.logFullMatchIdx;
     // 在当前页之前的最近匹配
     if (idx < 0) idx = this.logFullMatches.length;
@@ -232,7 +234,7 @@ window.monitorLogCoreMixin = {
     this.fetchLogSlice({ matchIdx: idx });
   },
   logFullNextMatch() {
-    if (!this.logFullMatches.length) return;
+    if (this.logFullLoading || this.logFullQuery.trim() !== this._logFullResultQuery || !this.logFullMatches.length) return;
     let idx = this.logFullMatchIdx + 1;
     if (idx >= this.logFullMatches.length) idx = 0;
     this.logAutoScroll = false; this._logAtBottom = false;
@@ -275,10 +277,10 @@ window.monitorLogRenderMixin = {
     html += '<button type="button" class="btn btn-sm log-follow-btn" :class="logAutoScroll ? \'btn-primary\' : \'btn-secondary\'" @click="logFullLastPage()" x-text="selectedRunDir ? t(\'monitor.logBottom\') : (logAutoScroll ? t(\'monitor.logLiveTail\') : t(\'monitor.followPaused\'))">' + this.esc(tailLabel) + '</button></div>';
     html += '<div class="m-log-toolgroup m-log-searchgroup"><input type="text" class="m-logs-search m-logs-search-full" x-model="logFullQuery" placeholder="' + this.esc(t('searchFullLog')) + '" @keydown.enter="searchFullLog(logFullQuery)">';
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="searchFullLog(logFullQuery)">' + this.esc(t('search')) + '</button>';
-    html += '<span class="m-logs-match-nav" x-show="logFullQuery && !logFullLoading">';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullPrevMatch()">‹</button>';
-    html += '<span class="m-logs-match" x-text="logFullMatches.length ? logFullMatchText() : t(\'monitor.noResults\')"></span>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullNextMatch()">›</button>';
+    html += '<span class="m-logs-match-nav" x-show="logFullQuery" :aria-busy="logFullLoading ? \'true\' : \'false\'">';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullPrevMatch()" :disabled="logFullLoading || logFullQuery.trim() !== _logFullResultQuery || !logFullMatches.length">‹</button>';
+    html += '<span class="m-logs-match" :style="logFullLoading || logFullQuery.trim() !== _logFullResultQuery ? \'visibility:hidden\' : \'\'" x-text="logFullMatches.length ? logFullMatchText() : t(\'monitor.noResults\')"></span>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="logFullNextMatch()" :disabled="logFullLoading || logFullQuery.trim() !== _logFullResultQuery || !logFullMatches.length">›</button>';
     html += '</span></div><div class="m-log-toolgroup m-log-toolgroup-actions">';
     // 当前页操作（复制、刷新）在前，整文件下载收尾：范围由小到大，下载保持最右的位置不变。
     html += '<button type="button" class="btn btn-sm btn-secondary" :disabled="logTotal<=0 || logFullLoading" @click="copyLogs()">' + this.esc(t('copyPage')) + '</button>';
@@ -399,7 +401,7 @@ window.monitorLogRenderMixin = {
     });
     const offset = this.logFullOffset || 0;
     const lines = this.logFullLines || [];
-    const search = this.logFullQuery || '';
+    const search = this._logFullResultQuery || '';
     const activeLine = search ? this.logFullMatches[this.logFullMatchIdx] : null;
     const entries = this._coalesceRichLogLines(lines, offset, search, activeLine);
     if (this.logFullLoading || !entries.length) {

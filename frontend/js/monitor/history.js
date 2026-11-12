@@ -109,6 +109,7 @@ window.monitorHistoryMixin = {
     this.logFullOffset = 0;
     this.logFullMatches = [];
     this.logFullQuery = '';
+    this._logFullResultQuery = '';
     this.logFullMatchIdx = -1;
     this.logFullLoading = false;
     this._logFullSourceKey = 'run:' + runDir;
@@ -119,6 +120,7 @@ window.monitorHistoryMixin = {
     this.trainParams = [];
     this.trainParamsVersion++;
     this.previews = [];
+    this.samplePromptSelection = '';
     this.previewsVersion++;
     this.runDetailLoading = true;
     this.runDetailError = '';
@@ -185,6 +187,7 @@ window.monitorHistoryMixin = {
     this.trainParamsVersion++;
     this.monitorParamQuery = '';
     this.previews = [];
+    this.samplePromptSelection = '';
     this.previewsVersion++;
     this.previewStep = 0;
     this._resetOutputFilesForRun('');
@@ -193,6 +196,7 @@ window.monitorHistoryMixin = {
     this.logFullOffset = 0;
     this.logFullMatches = [];
     this.logFullQuery = '';
+    this._logFullResultQuery = '';
     this.logFullMatchIdx = -1;
     this.logFullLoading = false;
     this._shellBuilt = false;

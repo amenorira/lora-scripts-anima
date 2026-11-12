@@ -90,10 +90,10 @@ document.addEventListener('alpine:init', () => {
   }));
 });
 
-window.previewSelectHtml = function(options, value, label) {
+window.previewSelectHtml = function(options, value, label, triggerId = '') {
   const esc = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
   return `<div class="preview-select" x-data="previewSelect(${esc(JSON.stringify(options))}, ${esc(JSON.stringify(value))})" x-id="['preview-list', 'preview-option']" @keydown="key($event)" @click.outside="open = false" @resize.window="open = false">
-    <button type="button" class="preview-select-trigger" x-ref="trigger" role="combobox" aria-haspopup="listbox" aria-label="${esc(label)}" :aria-expanded="open" :aria-controls="$id('preview-list')" :aria-activedescendant="open ? $id('preview-option', active) : null" @click="open ? open = false : show()">
+    <button type="button" class="preview-select-trigger" ${triggerId ? `id="${esc(triggerId)}"` : ''} x-ref="trigger" role="combobox" aria-haspopup="listbox" aria-label="${esc(label)}" :aria-expanded="open" :aria-controls="$id('preview-list')" :aria-activedescendant="open ? $id('preview-option', active) : null" @click="open ? open = false : show()">
       <span><span x-text="selected?.selectedLabel || selected?.label || ''"></span><span class="preview-select-count" x-show="selected?.count != null" x-text="' (' + selected?.count + ')'"></span></span><span class="preview-select-chevron" aria-hidden="true"></span>
     </button>
     <div class="preview-select-menu" role="listbox" x-ref="menu" :id="$id('preview-list')" aria-label="${esc(label)}" x-show="open" x-cloak :style="position" :inert="!open">

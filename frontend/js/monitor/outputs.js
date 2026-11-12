@@ -39,6 +39,7 @@ window.monitorOutputsMixin = {
     if (this._outputFilesRunDir !== runDir) this._resetOutputFilesForRun(runDir);
     const requestSeq = ++this._outputFilesRequestSeq;
     const countVersion = this._outputCountVersion;
+    const previousFiles = JSON.stringify(this.outputFiles);
     this.outputFilesLoading = true;
     this.outputFilesError = '';
     this.renderDashboard();
@@ -79,7 +80,7 @@ window.monitorOutputsMixin = {
     } finally {
       if (requestSeq === this._outputFilesRequestSeq && runDir === this.currentOutputRunDir) {
         this.outputFilesLoading = false;
-        this.outputFilesVersion++;
+        if (JSON.stringify(this.outputFiles) !== previousFiles) this.outputFilesVersion++;
         this.renderDashboard();
       }
     }
