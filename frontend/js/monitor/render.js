@@ -115,8 +115,7 @@ window.monitorRenderMixin = {
     html += '<span class="m-badge m-badge-' + stClass + '"><i aria-hidden="true"></i>' + this.esc(stLabel) + '</span>';
     if (d.artifact_available === false) html += '<span class="m-badge m-badge-danger"><i aria-hidden="true"></i>' + this.esc(t('artifactOffline')) + '</span>';
     html += '<div class="m-history-spacer"></div>';
-    html += '<button class="btn btn-sm btn-secondary" @click="clearRunDetail()">' + this.esc(t('backToLive')) + '</button>';
-    html += '<button class="btn btn-sm" @click="navigate(\'history\')">← ' + this.esc(t('backToHistory')) + '</button>';
+    html += '<button class="btn btn-sm btn-secondary" @click="navigate(\'history\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>' + this.esc(t('backToHistory')) + '</button>';
     html += '</div>';
     return html;
   },

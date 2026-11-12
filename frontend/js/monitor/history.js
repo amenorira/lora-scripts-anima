@@ -209,9 +209,4 @@ window.monitorHistoryMixin = {
     this._logTailOffset = 0;
     this._logContentVersion++;
   },
-
-  clearRunDetail() {
-    /** 返回实时监控模式 */
-    this.navigate('monitor-dashboard');
-  },
 };

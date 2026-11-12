@@ -623,7 +623,6 @@
 		"trainStopped": "训练已停止",
 		"confirmStop": "确定要停止训练吗？",
 		"stopFailed": "停止训练失败",
-		"backToLive": "返回实时",
 		"viewingHistory": "查看历史",
 		"trainResult": "训练结果",
 		"exitCode": "退出码",

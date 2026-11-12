@@ -623,7 +623,6 @@
 		"trainStopped": "学習を停止しました",
 		"confirmStop": "学習を停止しますか？",
 		"stopFailed": "学習を停止できませんでした",
-		"backToLive": "リアルタイム表示に戻る",
 		"viewingHistory": "履歴を表示中",
 		"trainResult": "学習結果",
 		"exitCode": "終了コード",

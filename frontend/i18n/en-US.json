@@ -623,7 +623,6 @@
 		"trainStopped": "Training stopped",
 		"confirmStop": "Are you sure you want to stop training?",
 		"stopFailed": "Failed to stop training",
-		"backToLive": "Back to live",
 		"viewingHistory": "Viewing history",
 		"trainResult": "Training Result",
 		"exitCode": "Exit Code",
