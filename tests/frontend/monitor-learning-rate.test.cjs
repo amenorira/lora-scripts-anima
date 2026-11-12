@@ -76,3 +76,62 @@ test('live and history read native block, LoRA+ and unnamed groups without selec
   }
   assert.equal(renderSummary([{ tag: 'lr/textencoder 1', latest: 0.9, points: [] }], true), '—');
 });
+
+function renderSchedulerMeta(params, isHistory = false, locale = 'zh-CN') {
+  const meta = {};
+  const root = { dataset: {}, querySelector: selector => selector === '[data-summary-field="lr-meta"]' ? meta : null };
+  const app = Object.assign({}, window.monitorSummaryMixin, {
+    monitorLossSeries: [], trainParams: Object.entries(params).map(([key, value]) => ({ key, value })), lossDataVersion: 1,
+    _summaryStatus: () => ({ running: !isHistory, terminal: isHistory }), _summaryLossSeries: () => null,
+    _monitorConnectionMeta: () => null, _cleanLossPoints: () => [], _summaryLossChange: () => null,
+    _patchSummaryTime() {}, _patchSummaryTelemetry() {}, _patchTrainingDiagnostics() {},
+  });
+  const messages = require(`../../frontend/i18n/${locale}.json`).monitor;
+  app._patchOverviewStatus(root, { total_steps: 1000 }, key => messages[key] || key, isHistory);
+  return meta.textContent;
+}
+
+test('live and history describe optimizer-managed learning rates as automatic', () => {
+  const optimizers = [
+    'vendor.automagic_optimizer.integration.Automagic3', 'vendor.automagic_optimizer.integration.Automagic4',
+    'vendor.emo_optimizer.emosens.EmoSens', 'prodigyplus.ProdigyPlusScheduleFree', 'AdaFactor',
+  ];
+  for (const optimizer_type of optimizers) {
+    for (const isHistory of [false, true]) {
+      assert.equal(renderSchedulerMeta({ optimizer_type, lr_scheduler: 'constant', lr_warmup_steps: '0' }, isHistory), '自动学习率');
+    }
+  }
+  assert.equal(renderSchedulerMeta({ optimizer_type: optimizers[0] }, false, 'en-US'), 'Automatic learning rate');
+  assert.equal(renderSchedulerMeta({ optimizer_type: optimizers[0] }, true, 'ja-JP'), '学習率を自動調整');
+});
+
+test('AdaFactor relative step follows the actual optimizer arguments', () => {
+  const params = { optimizer_type: 'AdaFactor', lr_scheduler: 'constant', lr_warmup_steps: '0' };
+  assert.equal(renderSchedulerMeta({ ...params, 'optimizer_args.relative_step': 'False', adafactor_relative_step: 'true' }),
+    '按参数缩放 · 外部调度：恒定');
+  assert.equal(renderSchedulerMeta({ ...params, krea_adafactor_relative_step: 'false', 'optimizer_args.scale_parameter': 'False' }, true),
+    '恒定学习率 · 无预热');
+  assert.equal(renderSchedulerMeta({ ...params, 'optimizer_args.relative_step': 'False', 'optimizer_args.scale_parameter': 'False', adafactor_scale_parameter: 'true' }),
+    '恒定学习率 · 无预热');
+  assert.equal(renderSchedulerMeta({ ...params, 'optimizer_args.relative_step': 'True' }), '自动学习率');
+  assert.equal(renderSchedulerMeta({ ...params, 'optimizer_args.relative_step': 'False', 'optimizer_args.warmup_init': 'True' }), '自动学习率');
+});
+
+test('Prodigy reports its external schedule without calling the adaptive rate constant', () => {
+  const params = { optimizer_type: 'prodigyopt.Prodigy', lr_scheduler: 'constant', lr_warmup_steps: '0' };
+  assert.equal(renderSchedulerMeta(params), '自动学习率 · 外部调度：恒定');
+  assert.equal(renderSchedulerMeta({ ...params, lr_scheduler: 'cosine', lr_warmup_steps: '0.1' }, true),
+    '自动学习率 · 外部调度：余弦衰减 · 预热 100 步');
+  assert.equal(renderSchedulerMeta(params, false, 'en-US'), 'Automatic learning rate · External schedule: Constant');
+  assert.equal(renderSchedulerMeta(params, true, 'ja-JP'), '学習率を自動調整 · 外部スケジュール：一定');
+  assert.equal(renderSchedulerMeta({ optimizer_type: 'DAdaptAdam' }), '自动学习率');
+});
+
+test('Schedule-Free uses its internal warmup and ordinary optimizers keep their existing description', () => {
+  const params = { optimizer_type: 'schedulefree.AdamWScheduleFree', lr_scheduler: 'constant', lr_warmup_steps: '0' };
+  assert.equal(renderSchedulerMeta(params), 'Schedule-Free · 无预热');
+  assert.equal(renderSchedulerMeta({ ...params, 'optimizer_args.warmup_steps': '250' }, true), 'Schedule-Free · 预热 250 步');
+  assert.equal(renderSchedulerMeta({ ...params, optimizer_type: 'RAdamScheduleFree' }), 'Schedule-Free');
+  assert.equal(renderSchedulerMeta({ ...params, optimizer_type: 'AdamW', lr_scheduler: 'linear', lr_warmup_steps: '100' }),
+    '线性衰减 · 预热 100 步');
+});

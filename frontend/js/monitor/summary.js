@@ -315,11 +315,50 @@ window.monitorSummaryMixin = {
 
   _summarySchedulerMeta(t, totalSteps) {
     const params = new Map((this.trainParams || []).map(item => [item.key, item.value]));
+    const optimizer = String(params.get('optimizer_type') || '').trim().toLowerCase().split('.').pop();
+    // 训练配置中的 optimizer_args 已展开为独立条目；旧配置可能保留表单字段。
+    const optimizerArg = (name, ...legacyKeys) => {
+      for (const key of ['optimizer_args.' + name, ...legacyKeys]) {
+        if (params.has(key)) return params.get(key);
+      }
+      return null;
+    };
+    const enabled = value => ['true', '1'].includes(String(value).trim().toLowerCase());
+    const relativeStep = optimizerArg('relative_step', 'adafactor_relative_step', 'krea_adafactor_relative_step');
+    const warmupInit = optimizerArg('warmup_init', 'adafactor_warmup_init', 'krea_adafactor_warmup_init');
+    const adaptive = ['automagic', 'automagic3', 'automagic4', 'emosens', 'prodigyplus', 'prodigyplusschedulefree'].includes(optimizer)
+      || optimizer === 'prodigy' || optimizer.startsWith('dadapt')
+      || (optimizer === 'adafactor' && (relativeStep == null || enabled(relativeStep) || enabled(warmupInit)));
+    const externalAdaptive = optimizer === 'prodigy' || optimizer.startsWith('dadapt');
+    if (adaptive && !externalAdaptive) return t('lrAdaptive');
+    const scaleParameter = optimizerArg('scale_parameter', 'adafactor_scale_parameter', 'krea_adafactor_scale_parameter');
+    const parameterScaled = optimizer === 'adafactor' && (scaleParameter == null || enabled(scaleParameter));
+    const rateMode = externalAdaptive ? 'lrAdaptive' : parameterScaled ? 'lrParameterScaled' : '';
+
+    // RAdamScheduleFree uses rectification for its warmup and has no warmup_steps argument.
+    if (optimizer === 'radamschedulefree') return 'Schedule-Free';
+    if (['adamwschedulefree', 'sgdschedulefree'].includes(optimizer)) {
+      const raw = optimizerArg('warmup_steps', 'schedulefree_warmup_steps', 'krea_schedulefree_warmup_steps');
+      const warmup = raw == null || raw === '' ? 0 : Number(raw);
+      const detail = Number.isFinite(warmup) && warmup >= 0
+        ? (warmup > 0 ? t('lrWarmupSteps').replace('{n}', Math.floor(warmup)) : t('lrNoWarmup')) : '';
+      return ['Schedule-Free', detail].filter(Boolean).join(' · ');
+    }
+
     const scheduler = params.get('lr_scheduler');
-    if (!scheduler) return '';
+    if (!scheduler) return rateMode ? t(rateMode) : '';
     const labels = { constant: 'lrScheduleConstant', constant_with_warmup: 'lrScheduleWarmup', linear: 'lrScheduleLinear', cosine: 'lrScheduleCosine', cosine_with_restarts: 'lrScheduleRestarts', polynomial: 'lrSchedulePolynomial', inverse_sqrt: 'lrScheduleInverseSqrt' };
-    const label = labels[scheduler] ? t(labels[scheduler]) : String(scheduler);
+    const label = rateMode && scheduler === 'constant' ? t('lrScheduleConstantShort')
+      : labels[scheduler] ? t(labels[scheduler]) : String(scheduler);
     const raw = params.get('lr_warmup_steps');
+    if (rateMode) {
+      const description = t(rateMode) + ' · ' + t('lrExternalSchedule').replace('{scheduler}', label);
+      const warmup = Number(raw);
+      if (raw == null || raw === '' || !Number.isFinite(warmup) || warmup <= 0 || scheduler === 'constant') return description;
+      const detail = warmup < 1 && !totalSteps ? t('lrWarmupPercent').replace('{n}', +(warmup * 100).toFixed(2))
+        : t('lrWarmupSteps').replace('{n}', warmup < 1 ? Math.floor(warmup * totalSteps) : Math.floor(warmup));
+      return description + ' · ' + detail;
+    }
     if (raw == null || raw === '' || !Number.isFinite(Number(raw))) return label;
     const warmup = Number(raw);
     const detail = warmup > 0
