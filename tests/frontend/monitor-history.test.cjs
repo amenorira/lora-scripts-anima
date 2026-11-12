@@ -12,6 +12,191 @@ function app(overrides = {}) {
   }, overrides);
 }
 
+test('YAML snapshot highlights values safely while preserving the original text', () => {
+  const yaml = [
+    '# training config',
+    'kind: training',
+    'learning_rate: 2e-5',
+    'enabled: true',
+    'path: D:\\lora训练\\model.safetensors',
+    'url: https://example.com/a#part',
+    "'quoted: key': 'it''s # still a string' # comment",
+    'items: [null, 42, "<script>alert(1)</script>"]',
+    'flow: {"count":2, active: false}',
+    'nested:',
+    '  - [{name: example, active: true}]',
+    'prompt: |-',
+    '  label: true',
+    '  # part of the prompt',
+    'after: false',
+    'multiline: "first',
+    '  # still quoted"',
+    '',
+  ].join('\r\n');
+  const html = app()._highlightSnapshotYaml(yaml);
+  assert.match(html, /<span class="yaml-key">kind<\/span>: <span class="yaml-string">training<\/span>/);
+  assert.match(html, /<span class="yaml-number">2e-5<\/span>/);
+  assert.match(html, /<span class="yaml-constant">true<\/span>/);
+  assert.match(html, /<span class="yaml-string">https:\/\/example\.com\/a#part<\/span>/);
+  assert.match(html, /<span class="yaml-string">'it''s # still a string'<\/span> <span class="yaml-comment"># comment<\/span>/);
+  assert.match(html, /<span class="yaml-key">&quot;count&quot;<\/span>:<span class="yaml-number">2<\/span>/);
+  assert.match(html, /\[\{<span class="yaml-key">name<\/span>: <span class="yaml-string">example<\/span>/);
+  assert.match(html, /<span class="yaml-string">  # part of the prompt<\/span>/);
+  assert.match(html, /<span class="yaml-string">  # still quoted&quot;<\/span>/);
+  assert.doesNotMatch(html, /<script>/);
+  const displayed = html.replace(/<\/?span(?: class="yaml-[a-z]+")?>/g, '')
+    .replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  assert.equal(displayed, yaml);
+});
+
+test('snapshot reflows folded prompt lines without changing the YAML source', () => {
+  const yaml = [
+    'parameters:',
+    '  positive_prompts: first part ending with white',
+    '    hair, long description ending in rabbit',
+    '    hair ornament, pink skirt',
+    "  negative_prompts: 'text: bad quality,",
+    "    # still part of the quoted value'",
+    '  positive_prompts: |-',
+    '    a real line',
+    '    another real line',
+    '  negative_prompts: value # comment',
+    '    # keep this comment on its line',
+    '',
+  ].join('\r\n');
+  const a = app();
+  const html = a._renderSnapshotLines(yaml, a._highlightSnapshotYaml(yaml), 'yaml');
+  assert.equal((html.match(/class="m-config-fold"/g) || []).length, 3);
+  assert.match(html, /class="m-config-fold">\r\n    <\/span><span class="yaml-string">hair, long/);
+  assert.match(html, /class="m-config-fold">\r\n    <\/span><span class="yaml-string"># still part/);
+  const restored = html.replace(/<br>/g, '').replace(/<span[^>]*>|<\/span>/g, '')
+    .replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  assert.equal(restored, yaml);
+});
+
+test('snapshot reflows prompt continuations beginning with YAML punctuation', () => {
+  const yaml = [
+    'positive_prompts: first part',
+    '  [headpiece] and other details',
+    '  {red eyes} and more',
+    '  - detail',
+    '  , final detail',
+    'next: true',
+  ].join('\n');
+  const a = app();
+  const html = a._renderSnapshotLines(yaml, a._highlightSnapshotYaml(yaml), 'yaml');
+  assert.equal((html.match(/class="m-config-fold"/g) || []).length, 4);
+  const restored = html.replace(/<br>/g, '').replace(/<span[^>]*>|<\/span>/g, '')
+    .replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  assert.equal(restored, yaml);
+});
+
+test('plain scalar continuations do not change highlighting of later fields', () => {
+  for (const text of ['[headpiece', '{red eyes', "'smile", '"smile']) {
+    const yaml = `positive_prompts: first part\n  ${text}\nlearning_rate: 2e-5\nenabled: true\n`;
+    const a = app();
+    const highlighted = a._highlightSnapshotYaml(yaml);
+    assert.match(highlighted, /<span class="yaml-key">learning_rate<\/span>: <span class="yaml-number">2e-5<\/span>/);
+    assert.match(highlighted, /<span class="yaml-key">enabled<\/span>: <span class="yaml-constant">true<\/span>/);
+    const html = a._renderSnapshotLines(yaml, highlighted, 'yaml');
+    assert.equal((html.match(/class="m-config-fold"/g) || []).length, 1);
+  }
+});
+
+test('snapshot keeps meaningful prompt breaks and unrelated YAML lines', () => {
+  const yaml = [
+    "positive_prompts: 'first prompt",
+    '',
+    "  second prompt'",
+    'negative_prompts: "joined\\',
+    '  without a space"',
+    'description: ordinary text',
+    '  with an existing continuation',
+  ].join('\n');
+  const a = app();
+  const html = a._renderSnapshotLines(yaml, a._highlightSnapshotYaml(yaml), 'yaml');
+  assert.doesNotMatch(html, /class="m-config-fold"/);
+});
+
+test('prompt-like text inside a block scalar is not reflowed as YAML fields', () => {
+  const yaml = 'description: |-\n  positive_prompts: first line\n    second line\n';
+  const a = app();
+  const html = a._renderSnapshotLines(yaml, a._highlightSnapshotYaml(yaml), 'yaml');
+  assert.doesNotMatch(html, /class="m-config-fold"/);
+});
+
+test('copying a selection from a snapshot retains its original line breaks', () => {
+  const originalGetSelection = window.getSelection;
+  const node = {};
+  const originalText = '  prompt: first\n    continuation';
+  let copied, prevented = false;
+  window.getSelection = () => ({rangeCount: 1, getRangeAt: () => ({
+    commonAncestorContainer: node, cloneContents: () => ({textContent: originalText}),
+  })});
+  try {
+    app()._copySnapshotSelection({
+      clipboardData: {setData: (type, text) => { copied = [type, text]; }},
+      preventDefault: () => { prevented = true; },
+    }, {contains: target => target === node});
+    assert.deepEqual(copied, ['text/plain', originalText]);
+    assert.equal(prevented, true);
+  } finally {
+    window.getSelection = originalGetSelection;
+  }
+});
+
+test('snapshot copy listener is replaced and removed with the modal', () => {
+  const oldDocument = global.document;
+  const handlers = new Set();
+  const pre = {};
+  const content = {innerHTML: '', scrollTop: 0, querySelector: () => pre};
+  global.document = {
+    getElementById: id => id === 'configSnapshotContent' ? content : null,
+    addEventListener: (type, handler) => handlers.add(handler),
+    removeEventListener: (type, handler) => handlers.delete(handler),
+  };
+  try {
+    const a = app();
+    a.showSnapshotModal({content: 'key: value', config_format: 'yaml'});
+    assert.equal(handlers.size, 1);
+    a.showSnapshotModal({content: 'other: value', config_format: 'yaml'});
+    assert.equal(handlers.size, 1);
+    a.closeSnapshotModal();
+    assert.equal(handlers.size, 0);
+  } finally {
+    global.document = oldDocument;
+  }
+});
+
+test('snapshot rendering keeps copy text intact and leaves older TOML snapshots uncolored', () => {
+  const oldDocument = global.document;
+  const oldNavigator = Object.getOwnPropertyDescriptor(global, 'navigator');
+  const content = {innerHTML: '', scrollTop: 1};
+  const body = {scrollTop: 1};
+  let copied;
+  global.document = {getElementById: id => id === 'configSnapshotContent' ? content : id === 'configSnapshotBody' ? body : null};
+  Object.defineProperty(global, 'navigator', {configurable: true, value: {clipboard: {writeText: text => { copied = text; return Promise.resolve(); }}}});
+  try {
+    const a = app();
+    const yaml = 'path: "<data>&"\nnumber: 42\n';
+    a.showSnapshotModal({content: yaml, config_format: 'yaml'});
+    assert.match(content.innerHTML, /class="yaml-key"/);
+    a.copyConfigContent();
+    assert.equal(copied, yaml);
+
+    const toml = 'path = "<data>&"\n';
+    a.showSnapshotModal({content: toml, config_format: 'toml'});
+    assert.doesNotMatch(content.innerHTML, /class="yaml-/);
+    assert.match(content.innerHTML, /path = &quot;&lt;data&gt;&amp;&quot;/);
+    a.copyConfigContent();
+    assert.equal(copied, toml);
+  } finally {
+    global.document = oldDocument;
+    if (oldNavigator) Object.defineProperty(global, 'navigator', oldNavigator);
+    else delete global.navigator;
+  }
+});
+
 test('copy uses the converted form and undo restores both profile drafts', async () => {
   const original = {model_train_type: 'moss-image-lora', output_name: 'my draft'};
   const drafts = {'anima-lora': {output_name: 'saved anima'}, 'moss-image-lora': original};

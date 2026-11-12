@@ -3652,7 +3652,21 @@ dialog.preview-lightbox::backdrop { background: transparent; }
 .m-config-pre {
   background: var(--bg-surface-raised); padding: 12px; border-radius: var(--radius-sm);
   font-size: 12px; font-family: var(--font-mono); overflow-x: auto; max-height: 400px; overflow-y: auto;
+  --yaml-key: #0451a5; --yaml-string: #a31515; --yaml-number: #096c48;
+  --yaml-constant: #0000c0; --yaml-comment: #46753b; --yaml-meta: #795e26;
 }
+[data-theme="dark"] .m-config-pre, [data-theme="comfy"] .m-config-pre {
+  /* Monaco's built-in vs-dark palette, matching the YAML reference view. */
+  background: #1e1e1e; color: #d4d4d4;
+  --yaml-key: #3dc9b0; --yaml-string: #ce9178; --yaml-number: #b5cea8;
+  --yaml-constant: #569cd6; --yaml-comment: #608b4e; --yaml-meta: #d4d4d4;
+}
+.m-config-pre .yaml-key { color: var(--yaml-key); }
+.m-config-pre .yaml-string { color: var(--yaml-string); }
+.m-config-pre .yaml-number { color: var(--yaml-number); }
+.m-config-pre .yaml-constant { color: var(--yaml-constant); }
+.m-config-pre .yaml-comment { color: var(--yaml-comment); }
+.m-config-pre .yaml-meta { color: var(--yaml-meta); }
 .m-modal-footer { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
 .config-snapshot-modal { width: min(880px, calc(100vw - 64px)); max-width: 880px; max-height: calc(100dvh - 64px); }
 .config-snapshot-modal .modal-body { min-height: 0; overscroll-behavior: contain; }
@@ -3666,6 +3680,13 @@ dialog.preview-lightbox::backdrop { background: transparent; }
 .config-snapshot-modal .param-keygrid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .config-snapshot-modal .param-key-item:first-child { grid-column: 1 / -1; }
 .config-snapshot-modal .m-config-pre { max-height: none; overflow-y: visible; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+.m-config-line {
+  --config-wrap-indent: min(calc(var(--config-indent) * 1ch), 45%);
+  display: inline-block; box-sizing: border-box; width: 100%; vertical-align: top; text-wrap: pretty;
+  padding-left: var(--config-wrap-indent); text-indent: calc(-1 * var(--config-wrap-indent));
+}
+.m-config-fold { white-space: normal; }
+.m-config-newline { display: none; }
 .snapshot-heading { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .snapshot-heading small { font-size: 13px; font-weight: 400; color: var(--text-secondary); overflow-wrap: anywhere; }
 .snapshot-run-path { margin: 0 0 16px; font: 12px var(--font-mono); color: var(--text-secondary); overflow-wrap: anywhere; }

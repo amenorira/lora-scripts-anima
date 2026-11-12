@@ -3,11 +3,61 @@ import unittest
 from uuid import UUID
 from pathlib import Path
 
-from backend.training.config.training_config import TRAINING_CONFIG_SCHEMA_VERSION, build_training_config, extract_training_form, load_training_config, write_training_config
+from backend.training.config.training_config import (
+    TRAINING_CONFIG_SCHEMA_VERSION,
+    build_training_config,
+    dump_training_config,
+    extract_training_form,
+    load_training_config,
+    parse_training_config_text,
+    write_training_config,
+)
 from backend.training.config.optimizer_contracts import LORA_MUON_OPTIMIZER_TYPE
 
 
 class TrainingConfigYamlTests(unittest.TestCase):
+    def test_long_prompts_are_not_wrapped_and_round_trip(self):
+        multiline_prompt = "low quality\nextra limbs\n"
+        prompts = [
+            ", ".join(["masterpiece", "一名角色", "detailed background"] * 40),
+            ", ".join(["description: character", "# detail"] * 40),
+        ]
+        for prompt in prompts:
+            with self.subTest(prompt=prompt[:20]):
+                document = build_training_config(
+                    {
+                        "model_train_type": "anima-lora",
+                        "enable_preview": True,
+                        "positive_prompts": prompt,
+                        "negative_prompts": multiline_prompt,
+                    },
+                    profile_id="anima-lora",
+                )
+
+                content = dump_training_config(document)
+                prompt_line = next(line for line in content.splitlines() if "positive_prompts:" in line)
+                self.assertIn(prompt, prompt_line)
+                restored = extract_training_form(parse_training_config_text(content))
+                self.assertEqual(restored["positive_prompts"], prompt)
+                self.assertEqual(restored["negative_prompts"], multiline_prompt)
+
+    def test_existing_folded_prompt_is_read_as_one_value(self):
+        content = """\
+kind: training
+schema_version: 2
+profile:
+  id: anima-lora
+parameters:
+  preview:
+    enable_preview:
+      enabled: true
+      options:
+        positive_prompts: masterpiece, best quality,
+          long hair, blue eyes
+"""
+        restored = extract_training_form(parse_training_config_text(content))
+        self.assertEqual(restored["positive_prompts"], "masterpiece, best quality, long hair, blue eyes")
+
     def test_unknown_misc_parameters_round_trip_without_reinterpreting_dict_values(self):
         form = {"model_train_type": "anima-lora", "network_dim": 16,
                 "future_flag": 42, "future_options": {"network_dim": 999, "enabled": True}}
