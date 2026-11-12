@@ -124,7 +124,7 @@ test('Automagic defaults reach every profile without replacing a manual starting
         rule.target === 'learning_rate' && app._matchAutoValueRule(rule));
       assert.equal(app._applyAutoValueRule(rule), true, `${profile} Automagic${version}`);
       assert.equal(app.form.learning_rate, '2e-5');
-      assert.equal(app.findFieldDef('automagic_max_lr').default, '1e-4');
+      assert.equal(app.findFieldDef('automagic_max_lr').default, '2e-4');
       app.form.learning_rate = '3e-5';
       app._fieldSources.learning_rate = 'user';
       assert.equal(app._applyAutoValueRule(rule), false);

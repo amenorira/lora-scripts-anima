@@ -38,13 +38,38 @@ class AutomagicConfigTests(unittest.TestCase):
                 self.assertEqual(validate_training_config(form.copy()), [])
                 native, _ = adapt_config(form)
                 self.assertEqual(float(native['learning_rate']), 2e-5)
-                self.assertEqual(parse_optimizer_args(native)[0]['max_lr'], 1e-4)
+                self.assertEqual(parse_optimizer_args(native)[0]['max_lr'], 2e-4)
                 form.pop('learning_rate')
                 self.assertEqual(adapt_config(form)[0]['learning_rate'], 2e-5)
-                form.update(learning_rate='1e-4', automagic_max_lr='1e3')
-                native, _ = adapt_config(form)
-                self.assertEqual(float(native['learning_rate']), 1e-4)
-                self.assertEqual(parse_optimizer_args(native)[0]['max_lr'], 1e3)
+                for explicit_max in ('1e-4', '1e3'):
+                    form.update(learning_rate='1e-4', automagic_max_lr=explicit_max)
+                    native, _ = adapt_config(form)
+                    self.assertEqual(float(native['learning_rate']), 1e-4)
+                    self.assertEqual(parse_optimizer_args(native)[0]['max_lr'], float(explicit_max))
+
+    def test_default_max_lr_applies_to_export_and_validation_for_both_training_cores(self):
+        with tempfile.TemporaryDirectory() as directory:
+            krea = krea2_config(Path(directory))
+            for optimizer in OPTIMIZERS:
+                for profile in ('anima-lora', 'krea2-lora'):
+                    with self.subTest(optimizer=optimizer, profile=profile):
+                        if profile == 'krea2-lora':
+                            form = {**krea, 'optimizer_type': optimizer, 'learning_rate': 2e-4}
+                            validate = validate_krea2_config
+                            export = lambda values: build_krea2_train_config(values, 'dataset.toml', 'output', 'log')
+                        else:
+                            form = valid_training_config(optimizer_type=optimizer, learning_rate=2e-4)
+                            validate = validate_training_config
+                            export = lambda values: adapt_config(values)[0]
+                        form.pop('automagic_max_lr', None)
+                        self.assertEqual(validate(form.copy()), [])
+                        self.assertEqual(parse_optimizer_args(export(form))[0]['max_lr'], 2e-4)
+                        form['learning_rate'] = 2.01e-4
+                        self.assertTrue(any('max_lr' in error for error in validate(form.copy())))
+                        form.update(learning_rate=2e-5, enable_loraplus=True, loraplus_lr_ratio=8)
+                        self.assertEqual(validate(form.copy()), [])
+                        form['loraplus_lr_ratio'] = 12
+                        self.assertTrue(any('max_lr' in error for error in validate(form.copy())))
 
     def test_complete_arguments_round_trip_across_training_profiles(self):
         with tempfile.TemporaryDirectory() as directory:
