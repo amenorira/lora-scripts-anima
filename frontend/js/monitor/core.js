@@ -143,6 +143,7 @@ window.monitorCoreMixin = {
   liveTaskBoundaryAt: 0,      // 最近一次所有权变更（claim/release）的本地时刻
   _statePollTimer: null,
   _statePollInFlight: false,
+  _statePollDiscard: false,
 
   claimLiveTask(taskId) {
     const id = String(taskId || '').trim();
@@ -203,6 +204,7 @@ window.monitorCoreMixin = {
   async _pollTrainingState() {
     if (this._statePollInFlight) return;
     this._statePollInFlight = true;
+    this._statePollDiscard = false;
     const requestedAt = Date.now();
     let timeout;
     try {
@@ -222,7 +224,7 @@ window.monitorCoreMixin = {
       // WS 掉线时资源圆环仍有数据（状态轮询顺带带回硬件采样）。
       if (!this.realtimeReady && snapshot.hardware) this.handleRealtimeHardware(snapshot.hardware);
       if (typeof this.applyRegularizationActivity === 'function') this.applyRegularizationActivity(snapshot, requestedAt);
-      this._applyManagedTrainingState(snapshot, requestedAt);
+      if (!this._statePollDiscard) this._applyManagedTrainingState(snapshot, requestedAt);
     } catch (_) {
       // 后端不可达：保持最后已知状态；连接指示由探针/WS 状态机负责。
     } finally {

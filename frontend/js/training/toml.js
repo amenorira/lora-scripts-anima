@@ -580,7 +580,7 @@ window.trainingTomlMixin = {
   },
 
   async prepareKrea2Cache(confirmedPayload = null) {
-    if (this.isTraining || this.trainingStarting || this.regularizationActive) return;
+    if (this.isTraining || this.trainingStarting || this.showConfirmModal || this.regularizationActive) return;
     if (!confirmedPayload && this.form.model_train_type !== 'krea2-lora') return;
     this.trainingStarting = true;
     try {
@@ -618,7 +618,7 @@ window.trainingTomlMixin = {
 
   // ── Training ───────────────────────────────────────────
   async startTraining(confirmedPayload = null) {
-    if (this.isTraining || this.trainingStarting || this.regularizationActive || this.datasetRepeatApplying) return;
+    if (this.isTraining || this.trainingStarting || this.showConfirmModal || this.regularizationActive || this.datasetRepeatApplying) return;
 
     // Form validation before starting
     if (!confirmedPayload && !this.validateForm()) {
@@ -672,10 +672,10 @@ window.trainingTomlMixin = {
     });
     const data = await resp.json();
     if (!resp.ok || data.status !== 'success') {
-      this._applyTaskView('IDLE');
       if (data.data?.errorCode === 'trainingCacheFound') {
         this._showCacheRebuildDialog(data.data, payload, next => this.startTraining(next));
       } else {
+        this._applyTaskView('IDLE');
         this._showTrainingError(data);
       }
       return;
@@ -693,6 +693,9 @@ window.trainingTomlMixin = {
   },
 
   _showCacheRebuildDialog(cache, payload, submit, preparingCache = false) {
+    // A pending poll may still contain the preparation task that the server just released.
+    this._statePollDiscard = true;
+    this._applyTaskView('IDLE');
     const scope = this.t('trainingCache.scope')
       .replace('{latents}', String(cache.latents))
       .replace('{text}', String(cache.text))
