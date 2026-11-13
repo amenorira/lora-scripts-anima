@@ -539,8 +539,10 @@ window.trainingFieldRenderer = {
           ${_menuPopupHtml}
         </div>`;
     const staticReadonlyClass = isStaticReadonly ? ' field-readonly' : '';
-    const changedExpr = `String(form.${dataKey}) !== String(formDefaults.${dataKey})`
-      + (toggleKey ? ` || String(form.${toggleKey}) !== String(formDefaults.${toggleKey})` : '');
+    const valueChangedExpr = `String(form.${dataKey}) !== String(formDefaults.${dataKey})`;
+    const changedExpr = toggleKey
+      ? `form.${toggleKey} && (${valueChangedExpr} || String(form.${toggleKey}) !== String(formDefaults.${toggleKey}))`
+      : valueChangedExpr;
     const hintExpr = `fieldHintText('${this.escapeAttr(dataKey)}')`;
     const hintHtml = dataKey === 'attn_mode'
       ? `<div class="field-hint" x-text="t('opt.attn_mode_' + form.attn_mode)">${this.esc(this.t('opt.attn_mode_' + val))}</div>`

@@ -34,6 +34,24 @@ test('quality prompt text and its switch survive profile draft restoration inclu
   }
 });
 
+test('disabled quality prompts hide the changed indicator while retaining edited text', () => {
+  for (const profile of ['anima-lora', 'sdxl-lora', 'moss-image-lora', 'krea2-lora']) {
+    const { app, w } = application(profile);
+    const binding = app.renderField(app._fieldDefinition('quality_prompts')).match(/:class="([^"]+)"/)[1];
+    const changed = () => Function('form', 'formDefaults', 'window', `return (${binding})['field-changed'];`)(app.form, app.formDefaults, w);
+    assert.equal(changed(), false);
+    app.setField('enable_quality_prompts', true);
+    assert.equal(changed(), true);
+    app.setField('quality_prompts', 'custom quality');
+    assert.equal(changed(), true);
+    app.setField('enable_quality_prompts', false);
+    assert.equal(changed(), false);
+    assert.equal(app.form.quality_prompts, 'custom quality');
+    app.setField('enable_quality_prompts', true);
+    assert.equal(changed(), true);
+  }
+});
+
 test('a toggled text control resets and undoes its text and switch as one field', () => {
   for (const profile of ['anima-lora', 'sdxl-lora', 'moss-image-lora', 'krea2-lora']) {
     const { app, w } = application(profile);
