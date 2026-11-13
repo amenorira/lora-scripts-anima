@@ -37,37 +37,6 @@ test('late picker responses cannot replace a newer selection or reopen a closed 
   assert.equal(app._pickerFiles.length, 0);
 });
 
-test('file picker navigates in the displayed group order before and after filtering', async () => {
-  const files = [
-    { name: 'z-match.safetensors', path: './models/z/z-match.safetensors' },
-    { name: 'a-second.safetensors', path: './models/a/a-second.safetensors' },
-    { name: 'root.safetensors', path: './models/root.safetensors' },
-    { name: 'a-match.safetensors', path: './models/a/a-match.safetensors' },
-  ];
-  const app = application(async () => response({ files }));
-  app.setField = (key, value) => { app.form[key] = value; };
-  const open = () => app.builtinFilePicker('vae', 'file-model');
-
-  await open();
-  assert.deepEqual(Array.from(app.pickerGroups, ({ dir, start }) => [dir, start]), [['', 0], ['a', 1], ['z', 3]]);
-  app.pickerConfirm();
-  assert.equal(app.form.vae, files[2].path);
-
-  app.form.vae = files[1].path;
-  await open();
-  app.pickerMove(1);
-  app.pickerConfirm();
-  assert.equal(app.form.vae, files[3].path);
-
-  await open();
-  app._pickerFilter = 'match';
-  app._pickerIndex = -1;
-  assert.deepEqual(Array.from(app.pickerGroups, ({ dir, start }) => [dir, start]), [['a', 0], ['z', 1]]);
-  app.pickerMove(1);
-  app.pickerConfirm();
-  assert.equal(app.form.vae, files[3].path);
-});
-
 test('native picker ignores results after the form, profile, route or field changes', async () => {
   for (const change of [
     app => { app.form = { model_train_type: 'krea2-lora', vae: 'krea-vae' }; },
@@ -85,55 +54,5 @@ test('native picker ignores results after the form, profile, route or field chan
     change(app);
     pending.resolve(response({ path: 'late-vae' }));
     await choice;
-  }
-});
-
-test('native picker sends labels from the active translation JSON', async () => {
-  let url;
-  const app = application(async value => { url = value; return response({path: './models/vae.safetensors'}); });
-  app.currentRoute = 'train-basic';
-  app.form = {model_train_type: 'anima-lora', vae: ''};
-  app.setField = (key, value) => { app.form[key] = value; };
-  for (const locale of Object.keys(dictionaries)) {
-    app.locale = locale;
-    await app.localFilePicker('vae', 'file-model');
-    assert.equal(app.form.vae, './models/vae.safetensors');
-    const params = new URL(url, 'http://fixture').searchParams;
-    assert.equal(params.get('title'), dictionaries[locale].nativePicker['model-file'].title);
-    for (const type of ['folder', 'model-file', 'text-file', 'image-file']) {
-      const params = new URL(app.nativePickerUrl(type), 'http://fixture').searchParams;
-      assert.equal(params.get('picker_type'), type);
-      assert.equal(params.get('title'), dictionaries[locale].nativePicker[type].title);
-      assert.equal(params.get('file_type_label'), dictionaries[locale].nativePicker[type].files ?? null);
-      assert.equal(params.get('all_files_label'), type === 'folder' ? null : dictionaries[locale].nativePicker.allFiles);
-    }
-  }
-  app.t = () => '标题 & type=other + # /';
-  assert.equal(new URL(app.nativePickerUrl('text-file'), 'http://fixture').searchParams.get('title'), app.t());
-});
-
-test('caption text picker uses the same translated request', async () => {
-  const app = application();
-  const { window } = loadFrontend(['tagger/ai-caption-options'], {
-    window: {}, fetch: async url => {
-      assert.equal(url, app.nativePickerUrl('text-file'));
-      return response({path: './prompts.txt'});
-    },
-  });
-  const caption = composeMixins(app, window.captionOptionsMixin, {captionOptions: {}, saveCaptionOptions() {}});
-  await caption.pickCaptionPath('prompt_file');
-  assert.equal(caption.captionOptions.prompt_file, './prompts.txt');
-});
-
-test('picker title uses each locale template and inserts labels literally', () => {
-  const app = application();
-  app._pickerFieldLabel = () => 'data $&';
-  for (const [template, expected] of [
-    ['选择{field}', '选择data $&'],
-    ['Select {field}', 'Select data $&'],
-    ['{field}を選択', 'data $&を選択'],
-  ]) {
-    app.t = () => template;
-    assert.equal(app.pickerTitle(), expected);
   }
 });

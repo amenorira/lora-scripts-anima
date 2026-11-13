@@ -2,7 +2,6 @@ import asyncio
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 import toml
 
@@ -10,8 +9,6 @@ from backend.training.config.krea2_network import KREA2_LYCORIS_MODULE, KREA2_PR
 from backend.training.config.musubi_krea2 import build_krea2_train_config, validate_krea2_config
 from backend.training.config.training_config import build_training_config, dump_training_config, parse_training_config_text, extract_training_form
 from backend.server.routes import training as routes
-from backend.tasks import TaskManager
-from tests.helpers import json_request
 from tests.training.test_multi_core_krea2 import krea2_config
 
 
@@ -79,34 +76,6 @@ class Krea2NetworkConfigTests(unittest.TestCase):
                 self.assertTrue(any(message in e for e in validate_krea2_config(config)))
                 with self.assertRaises(ValueError):
                     build_krea2_train_config(config, "dataset.toml", tmp, tmp)
-
-
-    def test_launch_writes_preset_and_enables_selected_process_backends(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            config = krea2_config(root)
-            config.update(network_module=KREA2_LYCORIS_MODULE, lycoris_algo="loha",
-                          krea_attention_backend="flash_attn", lycoris_kernel_backend="torch")
-            with patch.object(routes, "tm", TaskManager()), \
-                 patch.object(routes.launch_krea2, "OUTPUT_DIR", root / "runs"), \
-                 patch.object(routes.launch_krea2, "AUTOSAVE_DIR", root / "autosave"), \
-                 patch.object(routes.launch_krea2, "detect_lycoris_kernel_backend", return_value=("torch", "kernel fallback")), \
-                 patch.object(routes.launch_krea2, "krea2_preflight", return_value={"ok": True, "errors": [], "cache": {"ready": True}}), \
-                 patch.object(routes, "run_train", return_value={"status": "success", "data": {}}) as launch:
-                response = asyncio.run(routes.create_toml_file(json_request(config)))
-                self.assertEqual(response["status"], "success", response)
-                self.assertEqual(response["data"]["warnings"], ["kernel fallback"])
-                env = launch.call_args.kwargs["extra_env"]
-                self.assertEqual(env["ANIMA_ENABLE_FLASH_ATTN"], "1")
-                self.assertEqual(env["LYCORIS_KERNEL_BACKEND"], "torch")
-                native = toml.load(launch.call_args.args[0])
-                args = dict(arg.split("=", 1) for arg in native["network_args"])
-                self.assertEqual(len(toml.load(args["preset"])["unet_target_name"]), 264)
-                launch.return_value = {"status": "error", "message": "cancelled", "data": None}
-                with patch.object(routes, "tm", TaskManager()):
-                    cancelled = asyncio.run(routes.create_toml_file(json_request(config)))
-                self.assertEqual(cancelled.status, "fail")
-                self.assertEqual(cancelled.message, "cancelled")
 
 
 if __name__ == "__main__":

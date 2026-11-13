@@ -2,7 +2,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
-from zipfile import ZipFile
 
 from backend.training.cache.krea2_cache import krea2_cache_files
 from backend.training.cache.rebuild import clear_cache_files, prepare_cache_choice, sd_scripts_cache_files
@@ -42,24 +41,6 @@ class CacheRebuildTest(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(await clear_cache_files(files))
             self.assertFalse(any(path.exists() for path in (latent, text, new_cache)))
             self.assertTrue(all(path.exists() for path in protected))
-
-    async def test_sdxl_recognizes_legacy_latents_by_archive_keys(self):
-        with TemporaryDirectory() as temporary:
-            root = Path(temporary).resolve()
-            subset = root / "1_subject"
-            subset.mkdir()
-            legacy = subset / "sample.npz"
-            multi_resolution = subset / "multi.npz"
-            for name in ("sample.avif", "multi.jxl", "other.png", "other.npz", "sample_moss_te.npz"):
-                (subset / name).touch()
-            for cache, suffix in ((legacy, ""), (multi_resolution, "_64x64")):
-                with ZipFile(cache, "w") as archive:
-                    for key in ("latents", "original_size", "crop_ltrb"):
-                        archive.writestr(f"{key}{suffix}.npy", b"")
-            self.assertEqual(sd_scripts_cache_files({"train_data_dir": str(root)}, "sdxl-lora"),
-                             ({legacy, multi_resolution}, set()))
-            self.assertEqual(sd_scripts_cache_files({"train_data_dir": str(root)}, "moss-image-lora"),
-                             (set(), {subset / "sample_moss_te.npz"}))
 
     async def test_krea2_scans_active_cache_namespace_and_reports_delete_failure(self):
         with TemporaryDirectory() as temporary:

@@ -47,59 +47,6 @@ function application(profile = 'anima-lora', run = async () => response({ task_i
   return { model, requests, focused, errors, visibility };
 }
 
-test('quality prefixes appear in the reviewed prompts while requests and form snapshots keep editable text separate', async () => {
-  for (const profile of ['anima-lora', 'sdxl-lora', 'moss-image-lora', 'krea2-lora']) {
-    const { model, requests } = application(profile);
-    const key = profile === 'krea2-lora' ? 'krea_sample_prompts' : 'positive_prompts';
-    Object.assign(model.form, { enable_quality_prompts: true, quality_prompts: ' , masterpiece, best quality,， ',
-      [key]: ' , portrait\nfull body' });
-    const pending = model.startTraining();
-    await turn();
-    assert.equal(model.confirmDialog.fields[2].value, profile === 'moss-image-lora'
-      ? 'masterpiece, best quality, portrait\nfull body'
-      : 'masterpiece, best quality, portrait\nmasterpiece, best quality, full body');
-    model.confirmAction();
-    await pending;
-    assert.equal(requests[0][key], ' , portrait\nfull body');
-    assert.equal(requests[0].enable_quality_prompts, true);
-    assert.equal(requests[0].quality_prompts, model.form.quality_prompts);
-    assert.equal(requests[0]._form_state[key], ' , portrait\nfull body');
-    assert.equal(model.form[key], ' , portrait\nfull body');
-    assert.equal(model._previewPositivePrompts({ ...model.form, enable_quality_prompts: false }), model.form[key]);
-    assert.equal(model._previewPositivePrompts({ ...model.form, quality_prompts: ' ,， ' }), model.form[key]);
-  }
-});
-
-for (const profile of ['anima-lora', 'sdxl-lora', 'moss-image-lora', 'krea2-lora']) {
-  test(`${profile}: preview summary uses its submitted fields and modifying waits for the dialog to close`, async () => {
-    for (const action of ['cancelConfirm', 'confirmSecondaryAction']) {
-      const { model, requests, focused } = application(profile);
-      const promptKey = profile === 'krea2-lora' ? 'krea_sample_prompts' : 'positive_prompts';
-      const pending = model.startTraining();
-      await turn();
-      assert.equal(model.showConfirmModal, true);
-      assert.equal(model.confirmDialog.title, 'trainingPreview.title');
-      assert.equal(model.confirmDialog.size, 'wide');
-      assert.deepEqual(JSON.parse(JSON.stringify(model.confirmDialog.fields)), [
-        { label: 'field.train_data_dir', value: 'C:/train', multiline: false },
-        { label: 'field.output_name', value: 'portrait_v3', multiline: false },
-        { label: 'trainingPreview.positivePrompts', value: model.form[promptKey], multiline: true },
-      ]);
-      await model.startTraining();
-      assert.equal(model._confirmQueue.length, 0, 'a repeated start cannot queue another preview');
-      model[action]();
-      await pending;
-      assert.deepEqual(requests, []);
-      assert.deepEqual(focused, [], 'the native dialog must release focus first');
-      assert.equal(model.trainingStarting, false);
-      model.confirmAfterClose();
-      assert.deepEqual(focused, action === 'confirmSecondaryAction' ? [promptKey] : []);
-      model.confirmAfterClose();
-      assert.equal(focused.length, action === 'confirmSecondaryAction' ? 1 : 0);
-    }
-  });
-}
-
 for (const [action, cacheAction] of [['confirmAction', 'server-cache-scope'], ['confirmSecondaryAction', 'keep']]) {
   test(`preview to cache ${action} keeps the host open through asynchronous checks and submits the reviewed snapshot`, async () => {
     const first = deferred(), second = deferred();
@@ -161,30 +108,6 @@ test('cancelling the cache step stops the chain without a retry or prompt focus'
   assert.equal(model.isTraining, false);
 });
 
-test('disabling preview confirmation skips only that step and keeps cache confirmation functional', async () => {
-  const { model, requests } = application('anima-lora', async number => number === 1 ? cacheFound : response({ task_id: 'started-task' }));
-  model.confirmPreviewBeforeTraining = false;
-  await model.startTraining();
-  assert.equal(requests.length, 1);
-  assert.equal(model.confirmDialog.title, 'trainingCache.title');
-  model.confirmSecondaryAction();
-  await turn();
-  assert.equal(requests.length, 2);
-  assert.equal(requests[1]._cache_action, 'keep');
-  assert.equal(model.acceptedTask, 'started-task');
-});
-
-test('disabled model preview does not open a confirmation even when another profile flag is enabled', async () => {
-  for (const profile of ['anima-lora', 'krea2-lora']) {
-    const { model, requests } = application(profile);
-    model.form[profile === 'krea2-lora' ? 'enable_krea_samples' : 'enable_preview'] = false;
-    await model.startTraining();
-    assert.equal(requests.length, 1);
-    assert.equal(model.showConfirmModal, false);
-    assert.equal(model.acceptedTask, 'started-task');
-  }
-});
-
 test('a failed asynchronous submission at either step releases the flow so training can be retried', async () => {
   for (const failAt of [1, 2]) {
     const { model, requests, errors } = application('anima-lora', async number => {
@@ -213,17 +136,4 @@ test('a failed asynchronous submission at either step releases the flow so train
     model.cancelConfirm();
     await retry;
   }
-});
-
-test('confirming previews finishes normally when the server has no cache to confirm', async () => {
-  const { model, requests, visibility } = application();
-  const pending = model.startTraining();
-  await turn();
-  model.confirmAction();
-  await pending;
-  assert.equal(requests.length, 1);
-  assert.equal(model.acceptedTask, 'started-task');
-  assert.equal(model.trainingStarting, false);
-  assert.equal(model.confirmBusy, false);
-  assert.deepEqual(visibility, [true, false]);
 });

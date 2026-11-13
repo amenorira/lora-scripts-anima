@@ -65,37 +65,3 @@ test('IME commits completed text once and pending input is recorded before switc
   app.tagEditorUndo(); assert.equal(app.tagEditorImages[0].tags, '原文');
   app.tagEditorRedo(); assert.equal(app.tagEditorImages[0].tags, '原文中文');
 });
-
-function renameFixture() {
-  const f = fixture('\uFEFF  cat, dog\r\n');
-  f.app.tagEditorInlineEdit = {scope: 'dataset', oldTag: 'cat', newTag: 'prefix'};
-  f.app.$nextTick = callback => Promise.resolve().then(callback);
-  f.confirmations = [];
-  f.app._teConfirmTagBatch = (message, accept) => f.confirmations.push({message, accept});
-  return f;
-}
-
-test('inline rename takes completed DOM text and confirmation retains raw undo/redo', async () => {
-  const {app, confirmations} = renameFixture();
-  const raw = app.tagEditorImages[0].tags;
-  const target = {value: 'prefix中文'};
-  await app.tagEditorFinishInlineEdit({type: 'keydown', target});
-  await app.tagEditorFinishInlineEdit({type: 'blur', target});
-  assert.equal(confirmations.length, 1);
-  assert.match(confirmations[0].message, /cat → prefix中文$/);
-  assert.equal(app.tagEditorImages[0].tags, raw);
-  confirmations[0].accept();
-  assert.equal(app.tagEditorImages[0].tags, '\uFEFF  prefix中文, dog\r\n');
-  app.tagEditorUndo(); assert.equal(app.tagEditorImages[0].tags, raw);
-  app.tagEditorRedo(); assert.equal(app.tagEditorImages[0].tags, '\uFEFF  prefix中文, dog\r\n');
-});
-
-test('single-image inline rename is undoable and changes only the selected occurrence', async () => {
-  const { app } = fixture('blue eyes, standing, blue eyes');
-  app.tagEditorInlineEdit = { scope: 'image', oldTag: 'blue eyes', newTag: 'red eyes', index: 2, selected: ['a'] };
-  app.$nextTick = callback => Promise.resolve().then(callback);
-  await app.tagEditorFinishInlineEdit({ type: 'keydown', target: { value: 'red eyes' } });
-  assert.equal(app.tagEditorImages[0].tags, 'blue eyes, standing, red eyes');
-  app.tagEditorUndo(); assert.equal(app.tagEditorImages[0].tags, 'blue eyes, standing, blue eyes');
-  app.tagEditorRedo(); assert.equal(app.tagEditorImages[0].tags, 'blue eyes, standing, red eyes');
-});

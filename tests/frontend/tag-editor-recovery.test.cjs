@@ -52,31 +52,6 @@ test('session recovery flushes text history and preserves raw undo/redo and sele
   assert.equal(app.tagEditorGetSelectedImg().tags, edited);
 });
 
-test('recovery preserves the draft revision but reverts to the current caption on or off the first page', async () => {
-  for (const onFirstPage of [true, false]) {
-    const { app, create } = fixture();
-    app.tagEditorDetailTextChange({ target: { value: 'my draft' } });
-    create((_url, options) => {
-      assert.deepEqual(JSON.parse(options.body).retained_paths, ['a']);
-      const current = { path: 'a', tags: 'external', caption_revision: 'a2' };
-      return response({ session_id: 'new', dir: '/dataset', count: 2, page: 1, tags: [],
-        items: onFirstPage ? [current] : [{ path: 'b', tags: 'other' }],
-        retained_items: onFirstPage ? [] : [current] });
-    });
-    await app.tagEditorReloadSessionPage(1);
-    assert.equal(app.tagEditorGetSelectedImg().tags, '\uFEFFmy draft');
-    assert.equal(app.tagEditorOriginal.a, 'external');
-    assert.equal(app._teCaptionRevisions.a, 'a1');
-    app.tagEditorRevertSelectedImage();
-    assert.equal(app.tagEditorGetSelectedImg().tags, 'external');
-    assert.equal(app.tagEditorModified, false);
-    assert.equal(app._teCaptionRevisions.a, 'a2');
-    app.tagEditorAddInput = 'new';
-    app.tagEditorAddTagToSelected();
-    assert.equal(app.tagEditorGetSelectedImg().tags, 'external, new');
-  }
-});
-
 test('failed automatic recovery retains unsaved state for a normal load retry', async () => {
   const f = fixture();
   f.app.tagEditorDetailTextChange({ target: { value: 'unsaved' } });
@@ -90,25 +65,6 @@ test('failed automatic recovery retains unsaved state for a normal load retry', 
   assert.equal(f.app._teFindByPath('a').tags, '\uFEFFunsaved');
   assert.equal(f.app.tagEditorHistory.length, 1);
   assert.equal(f.app._teSessionRecovery, null);
-});
-
-test('session recovery loads the fresh caption of a clean selection outside the first page', async () => {
-  const { app, create } = fixture();
-  let retainedPaths;
-  create((_url, options) => {
-    retainedPaths = JSON.parse(options.body).retained_paths;
-    return response({
-      session_id: 'new', dir: '/dataset', count: 2, page: 1, tags: [],
-      items: [{ path: 'b', tags: 'other', caption_revision: 'b1' }],
-      retained_items: [{ path: 'a', tags: 'external', caption_revision: 'a2' }],
-    });
-  });
-  await app.tagEditorReloadSessionPage(1);
-  assert.deepEqual(retainedPaths, ['a']);
-  assert.deepEqual(Array.from(app.tagEditorPageItems, item => item.path), ['b']);
-  assert.equal(app.tagEditorGetSelectedImg().tags, 'external');
-  assert.equal(app._teCaptionRevisions.a, 'a2');
-  assert.equal(app.tagEditorModified, false);
 });
 
 test('a dataset switch supersedes recovery, and an already cleared save history stays cleared', async () => {

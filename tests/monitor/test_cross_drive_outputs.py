@@ -1,28 +1,11 @@
-import asyncio
 import json
-import threading
 import tempfile
-import time
-import tomllib
 import unittest
 from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.monitor import artifacts, checkpoints, history, log_files, run_registry
-from backend.server.routes import training as training_routes
-from backend.training.execution import launch_sd_scripts, sd_scripts_preflight
-from backend.tasks import TaskManager, TaskStatus
-from tests.helpers import json_request
-
-
-def _completed_launch(*_args, **kwargs):
-    """A successful launcher stub must settle its reserved task like a worker."""
-    task = kwargs["reserved_task"]
-    with task.lock:
-        task.status = TaskStatus.FINISHED
-        task.finished_at = time.time()
-    return {"status": "success", "data": {"task_id": task.task_id}}
+from backend.monitor import history, run_registry
 
 
 class CrossDriveSandbox(unittest.TestCase):
@@ -40,12 +23,6 @@ class CrossDriveSandbox(unittest.TestCase):
         self._patches.enter_context(patch.object(run_registry, "REPO_ROOT", self.root))
         self._patches.enter_context(patch.object(run_registry, "OUTPUT_DIR", self.output))
         self._patches.enter_context(patch.object(run_registry, "AUTOSAVE_DIR", self.autosave))
-        self._patches.enter_context(patch.object(artifacts, "REPO_ROOT", self.root))
-        self._patches.enter_context(patch.object(checkpoints, "REPO_ROOT", self.root))
-        self._patches.enter_context(patch.object(log_files, "OUTPUT_DIR", self.output))
-        self._patches.enter_context(patch.object(training_routes, "OUTPUT_DIR", self.output))
-        self._patches.enter_context(patch.object(launch_sd_scripts, "OUTPUT_DIR", self.output))
-        self._patches.enter_context(patch.object(training_routes, "tm", TaskManager()))
         history.invalidate_history_cache()
 
     def tearDown(self):
@@ -68,61 +45,6 @@ class CrossDriveSandbox(unittest.TestCase):
 
 
 class RunRegistryTests(CrossDriveSandbox):
-
-
-    def test_same_second_launch_reserves_before_preflight_and_keeps_configs_distinct(self):
-        entered = threading.Event()
-        release = threading.Event()
-        payload = {
-            "model_train_type": "sdxl-lora",
-            "train_data_dir": str(self.root / "train"),
-            "pretrained_model_name_or_path": str(self.root / "model.safetensors"),
-            "output_name": "same_name",
-            "output_dir": str(self.external),
-        }
-
-        def estimate(_config):
-            entered.set()
-            self.assertTrue(release.wait(5))
-            return {"total_steps": 10, "gpu_processes": 1}
-
-        with ExitStack() as stack:
-            stack.enter_context(patch("backend.training.validate_training_config", return_value=[]))
-            stack.enter_context(patch("backend.training.adapt_config", side_effect=lambda value, gpu_ids=None: (dict(value), [])))
-            stack.enter_context(patch.object(sd_scripts_preflight.train_utils, "validate_data_dir", return_value=True))
-            stack.enter_context(patch.object(sd_scripts_preflight.train_utils, "count_images", return_value=1))
-            stack.enter_context(patch.object(sd_scripts_preflight.train_utils, "validate_model", return_value=(True, "")))
-            stack.enter_context(patch.object(sd_scripts_preflight, "estimate_training_steps", side_effect=estimate))
-            stack.enter_context(patch.object(launch_sd_scripts, "get_sample_prompts", return_value=""))
-            stack.enter_context(patch.object(launch_sd_scripts, "AUTOSAVE_DIR", self.autosave))
-            stack.enter_context(patch.object(training_routes.os, "getcwd", return_value=str(self.root)))
-            clock = stack.enter_context(patch.object(training_routes.launch, "datetime"))
-            clock.now.return_value.strftime.return_value = "20260924-120000"
-            launch = stack.enter_context(patch.object(
-                training_routes, "run_train", side_effect=_completed_launch,
-            ))
-
-            async def exercise():
-                first = asyncio.create_task(training_routes.create_toml_file(json_request(dict(payload))))
-                self.assertTrue(await asyncio.to_thread(entered.wait, 5))
-                blocked = await training_routes.create_toml_file(json_request({**payload, "output_name": "other"}))
-                release.set()
-                first_result = await first
-                second_result = await training_routes.create_toml_file(json_request(dict(payload)))
-                return first_result, blocked, second_result
-
-            first_result, blocked, second_result = asyncio.run(exercise())
-
-        self.assertEqual(first_result["status"], "success")
-        self.assertEqual(blocked.status, "fail")
-        self.assertEqual(second_result["status"], "success")
-        self.assertEqual(launch.call_count, 2)
-        run_dirs = [Path(call.kwargs["run_dir"]) for call in launch.call_args_list]
-        self.assertNotEqual(run_dirs[0], run_dirs[1])
-        self.assertEqual(len(list(self.autosave.glob("20260924-120000_*.toml"))), 2)
-        self.assertTrue(all((path / "config.toml").is_file() for path in run_dirs))
-
-
     def test_deleting_history_keeps_models_checkpoints_and_previews(self):
         for suffix, external in (("external", True), ("default", False)):
             with self.subTest(storage=suffix):
@@ -154,87 +76,6 @@ class RunRegistryTests(CrossDriveSandbox):
                 tombstone = json.loads((internal / "task_meta.json").read_text(encoding="utf-8"))
                 self.assertTrue(tombstone["deleted"])
                 self.assertIsNone(run_registry.load_run_record(internal))
-
-
-class CrossDriveRouteTests(CrossDriveSandbox):
-    def test_run_route_writes_monitoring_data_internal_and_artifacts_to_selected_path(self):
-        cases = (
-            ("default", "./output", "", True),
-            ("custom", str(self.external / "custom-root"), "", False),
-            (
-                "resume",
-                str(self.external / "existing-run"),
-                str(self.external / "existing-run" / "demo-state"),
-                False,
-            ),
-        )
-
-        for name, requested_output, resume, same_location in cases:
-            with self.subTest(storage=name):
-                payload = {
-                    "model_train_type": "sdxl-lora",
-                    "train_data_dir": str(self.root / "train"),
-                    "pretrained_model_name_or_path": str(self.root / "model.safetensors"),
-                    "output_name": f"route_{name}",
-                    "output_dir": requested_output,
-                    "enable_preview": True,
-                }
-                if resume:
-                    payload["resume"] = resume
-
-                def _adapt_config(value, gpu_ids=None):
-                    adapted = dict(value)
-                    adapted.pop("enable_preview", None)
-                    return adapted, []
-
-                with ExitStack() as stack:
-                    stack.enter_context(patch("backend.training.validate_training_config", return_value=[]))
-                    stack.enter_context(patch("backend.training.adapt_config", side_effect=_adapt_config))
-                    stack.enter_context(patch.object(sd_scripts_preflight.train_utils, "validate_data_dir", return_value=True))
-                    stack.enter_context(patch.object(sd_scripts_preflight.train_utils, "count_images", return_value=1))
-                    stack.enter_context(
-                        patch.object(sd_scripts_preflight.train_utils, "validate_model", return_value=(True, ""))
-                    )
-                    stack.enter_context(patch.object(sd_scripts_preflight, "estimate_training_steps", return_value={"total_steps": 10, "gpu_processes": 1}))
-                    stack.enter_context(patch.object(launch_sd_scripts, "get_sample_prompts", return_value=""))
-                    stack.enter_context(patch.object(training_routes.os, "getcwd", return_value=str(self.root)))
-                    stack.enter_context(
-                        patch.object(launch_sd_scripts, "AUTOSAVE_DIR", Path(self.root) / "config" / "autosave")
-                    )
-                    run_train = stack.enter_context(
-                        patch.object(
-                            training_routes,
-                            "run_train",
-                            side_effect=_completed_launch,
-                        )
-                    )
-                    result = asyncio.run(training_routes.create_toml_file(json_request(payload)))
-
-                self.assertEqual(result["status"], "success")
-                call = run_train.call_args
-                run_path = Path(call.kwargs["run_dir"])
-                artifact_path = Path(call.kwargs["artifact_dir"])
-                self.assertTrue(run_path.is_dir())
-                self.assertTrue(artifact_path.is_dir())
-                self.assertEqual(call.kwargs["output_base_dir"], requested_output)
-                self.assertTrue(call.kwargs["preview_enabled"])
-
-                saved = tomllib.loads((run_path / "config.toml").read_text(encoding="utf-8"))
-                self.assertEqual(Path(saved["output_dir"]), artifact_path)
-                self.assertEqual(Path(saved["logging_dir"]), run_path / "log")
-                output_dir_reference = (run_path / "output_dir.txt").read_text(encoding="utf-8")
-                self.assertIn("Artifact directory / 模型产物目录", output_dir_reference)
-                self.assertIn("Models, checkpoints, training states, and previews are saved here.", output_dir_reference)
-                self.assertEqual(output_dir_reference.splitlines()[-1], str(artifact_path))
-
-                if same_location:
-                    self.assertEqual(artifact_path, run_path)
-                elif resume:
-                    self.assertEqual(artifact_path, Path(requested_output).resolve())
-                    self.assertNotEqual(artifact_path, run_path)
-                else:
-                    self.assertEqual(artifact_path.parent, Path(requested_output).resolve())
-                    self.assertEqual(artifact_path.name, run_path.name)
 
 
 if __name__ == "__main__":

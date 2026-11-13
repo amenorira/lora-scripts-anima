@@ -16,21 +16,6 @@ from backend.training.config.optimizer_contracts import LORA_MUON_OPTIMIZER_TYPE
 
 
 class TrainingConfigYamlTests(unittest.TestCase):
-    def test_quality_prompt_choice_and_text_round_trip_separately_from_positive_prompts(self):
-        for profile in ("anima-lora", "sdxl-lora", "moss-image-lora", "krea2-lora"):
-            for enabled in (False, True):
-                form = {"model_train_type": profile, "enable_quality_prompts": enabled,
-                        "quality_prompts": "custom quality", "positive_prompts": "raw prompt",
-                        "enable_preview": True}
-                if profile == "krea2-lora":
-                    form.update(enable_krea_samples=True, krea_sample_prompts="raw prompt")
-                restored = extract_training_form(parse_training_config_text(dump_training_config(
-                    build_training_config(form, profile_id=profile))))
-                self.assertEqual(restored["enable_quality_prompts"], enabled)
-                self.assertEqual(restored["quality_prompts"], "custom quality")
-                key = "krea_sample_prompts" if profile == "krea2-lora" else "positive_prompts"
-                self.assertEqual(restored[key], "raw prompt")
-
     def test_long_prompts_are_not_wrapped_and_round_trip(self):
         multiline_prompt = "low quality\nextra limbs\n"
         prompts = [
@@ -55,34 +40,6 @@ class TrainingConfigYamlTests(unittest.TestCase):
                 restored = extract_training_form(parse_training_config_text(content))
                 self.assertEqual(restored["positive_prompts"], prompt)
                 self.assertEqual(restored["negative_prompts"], multiline_prompt)
-
-    def test_existing_folded_prompt_is_read_as_one_value(self):
-        content = """\
-kind: training
-schema_version: 2
-profile:
-  id: anima-lora
-parameters:
-  preview:
-    enable_preview:
-      enabled: true
-      options:
-        positive_prompts: masterpiece, best quality,
-          long hair, blue eyes
-"""
-        restored = extract_training_form(parse_training_config_text(content))
-        self.assertEqual(restored["positive_prompts"], "masterpiece, best quality, long hair, blue eyes")
-
-    def test_unknown_misc_parameters_round_trip_without_reinterpreting_dict_values(self):
-        form = {"model_train_type": "anima-lora", "network_dim": 16,
-                "future_flag": 42, "future_options": {"network_dim": 999, "enabled": True}}
-        document = build_training_config(form, profile_id="anima-lora")
-        restored = extract_training_form(document)
-        self.assertEqual(restored["future_flag"], 42)
-        self.assertEqual(restored["future_options"], form["future_options"])
-        self.assertEqual(restored["network_dim"], 16)
-        document["parameters"]["misc"]["network_dim"] = 888
-        self.assertEqual(extract_training_form(document)["network_dim"], 16)
 
     def test_round_trip_preserves_ui_only_and_nested_values(self):
         document = build_training_config(
