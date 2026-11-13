@@ -57,7 +57,7 @@
 		"krea_dora_fp8Conflict": "{dora_wd} は量子化ベースモデルと併用できません。DoRA を無効にするか、{fp8_base} と {convrot_int8} の両方を無効にしてください。",
 		"krea_loraplus_structureConflict": "{enable_loraplus} が有効な場合は {dim_from_weights} を無効にし、Rank と Alpha を手動で設定してください。"
 	},
-	"previewLoras": {"add": "プレビュー LoRA を追加", "path": "LoRA ファイルパス", "multiplier": "倍率", "invalid": "プレビュー LoRA はパスと倍率を含むリストにしてください。"},
+	"previewLoras": {"add": "プレビュー LoRA を追加", "path": "LoRA ファイルパス", "multiplier": "強度", "invalid": "プレビュー LoRA はパスと強度を含むリストにしてください。"},
 	"regularization": {
 		"model_type": "モデルの種類",
 		"checkpoint": "SDXL チェックポイント（UNet・デュアル CLIP・VAE）",
@@ -1297,7 +1297,7 @@
 		"preview_sampler": "プレビューのサンプラー",
 		"preview_scheduler": "ノイズスケジュール",
 		"preview_loras": "外部 LoRA",
-		"preview_lorasHint": "プレビュー時のみ適用します。複数のファイルに個別の倍率を設定でき、0 で無効になります。同じモデル構造の LoRA、LoHa、LoKr、DoRA、OFT などに対応します。重みにテキストエンコーダー用のアダプターが含まれる場合は、プレビュー用プロンプトを再エンコードします。",
+		"preview_lorasHint": "プレビュー時のみ適用します。複数のファイルに個別の強度を設定でき、0 で無効になります。同じモデル構造の LoRA、LoHa、LoKr、DoRA、OFT などに対応します。重みにテキストエンコーダー用のアダプターが含まれる場合は、プレビュー用プロンプトを再エンコードします。",
 		"quality_prompts": "品質プロンプト",
 		"quality_promptsHint": "有効にすると、各正のプロンプトの先頭に追加します。",
 		"sample_prompts": "サンプルのポジティブプロンプト",

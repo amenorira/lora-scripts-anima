@@ -57,7 +57,7 @@
 		"krea_dora_fp8Conflict": "{dora_wd} 不能与量化底模并用。请关闭 DoRA，或关闭 {fp8_base} 和 {convrot_int8}。",
 		"krea_loraplus_structureConflict": "启用 {enable_loraplus} 时，请关闭 {dim_from_weights}，手动设置 Rank 和 Alpha。"
 	},
-	"previewLoras": {"add": "添加预览 LoRA", "path": "LoRA 文件路径", "multiplier": "倍率", "invalid": "预览 LoRA 必须是包含路径和倍率的列表。"},
+	"previewLoras": {"add": "添加预览 LoRA", "path": "LoRA 文件路径", "multiplier": "权重", "invalid": "预览 LoRA 必须是包含路径和权重的列表。"},
 	"regularization": {
 		"model_type": "模型类型",
 		"checkpoint": "SDXL 完整模型（含 UNet、双 CLIP 和 VAE）",
@@ -1297,7 +1297,7 @@
 		"preview_sampler": "预览图采样器",
 		"preview_scheduler": "噪声调度器",
 		"preview_loras": "外部 LoRA",
-		"preview_lorasHint": "仅预览时叠加，可添加多个文件并分别设置倍率；0 为关闭。支持同架构的 LoRA、LoHa、LoKr、DoRA、OFT 等权重。含文本编码器权重时会重新编码预览提示词。",
+		"preview_lorasHint": "仅预览时叠加，可添加多个文件并分别设置权重；0 为关闭。支持同架构的 LoRA、LoHa、LoKr、DoRA、OFT 等权重。含文本编码器权重时会重新编码预览提示词。",
 		"quality_prompts": "质量提示词",
 		"quality_promptsHint": "启用后添加到每组正向提示词之前。",
 		"sample_prompts": "预览图正向提示词",

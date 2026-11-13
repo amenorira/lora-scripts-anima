@@ -58,7 +58,7 @@ def normalize_loras(value, *, check_files=False, allow_incomplete=False):
     result = []
     for index, row in enumerate(value, 1):
         if not isinstance(row, dict):
-            raise ValueError(f"Preview LoRA #{index}: expected path and multiplier / 需要路径和倍率")
+            raise ValueError(f"Preview LoRA #{index}: expected path and multiplier / 需要路径和权重")
         path = row.get("path", "")
         if not isinstance(path, str):
             raise ValueError(f"Preview LoRA #{index}: path must be text / 路径必须是文本")
@@ -72,7 +72,7 @@ def normalize_loras(value, *, check_files=False, allow_incomplete=False):
         except (ValueError, TypeError, OverflowError):
             multiplier = float("nan")
         if isinstance(raw, bool) or not math.isfinite(multiplier):
-            raise ValueError(f"Preview LoRA #{index}: multiplier must be finite / 倍率必须是有限数值")
+            raise ValueError(f"Preview LoRA #{index}: multiplier must be finite / 权重必须是有限数值")
         if not path and multiplier != 0 and not allow_incomplete:
             raise ValueError(f"Preview LoRA #{index}: path is required / 请填写文件路径")
         file = Path(path).expanduser()
