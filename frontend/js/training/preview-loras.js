@@ -41,7 +41,7 @@ window.trainingPreviewLoras = {
         <div class="preview-lora-row">
           <div class="field-input-wrap"><input type="text" :aria-label="t('previewLoras.path')" :value="row.path" @input="updatePreviewLora(index, 'path', $event.target.value)"><div class="field-input-actions">${local}<button type="button" class="btn-icon" @click="pickPreviewLora(index)" :title="t('common.builtinBrowser')" :aria-label="t('common.searchBuiltin')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4-4"/></svg></button></div></div>
           <label class="preview-lora-multiplier"><span x-text="t('previewLoras.multiplier')"></span><input type="number" step="0.05" :aria-label="t('previewLoras.multiplier')" :value="row.multiplier" @input="updatePreviewLora(index, 'multiplier', $event.target.value)"></label>
-          <button type="button" class="btn-icon" @click="removePreviewLora(index)" :title="t('common.delete')" :aria-label="t('common.delete')">×</button>
+          <button type="button" class="btn-icon preview-close" @click="removePreviewLora(index)" :title="t('common.delete')" :aria-label="t('common.delete')">×</button>
         </div>
       </template>
       <button type="button" class="btn btn-ghost btn-sm" @click="addPreviewLora()" x-text="t('previewLoras.add')"></button>
