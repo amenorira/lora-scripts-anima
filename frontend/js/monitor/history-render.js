@@ -47,6 +47,7 @@ window.monitorHistoryRenderMixin = {
         html += '<div class="hist-card-content' + (configAvailable ? ' is-clickable' : '') + '"';
         if (configAvailable) {
           html += ' id="' + controlId + '-card" role="button" tabindex="0" aria-label="' + this.esc(t('viewConfig') + ': ' + (h.name || h.run_dir)) + '"';
+          html += ' @pointerdown="_historyCardPointer = { x: $event.clientX, y: $event.clientY }"';
           html += ' @click="_viewHistoryCardSnapshot(\'' + runDirJs + '\', $event)" @keydown.enter.prevent="$el.click()" @keydown.space.prevent="$el.click()"';
         }
         html += '>';
@@ -102,7 +103,14 @@ window.monitorHistoryRenderMixin = {
   },
 
   _viewHistoryCardSnapshot(runDir, event) {
-    if (event.detail && window.getSelection?.()?.isCollapsed === false) return;
+    const press = this._historyCardPointer;
+    this._historyCardPointer = null;
+    // Only suppress this gesture's drag selection. Fast repeated clicks can
+    // leave a browser word selection, which must not block later activation.
+    if (event.detail && press && Math.hypot(event.clientX - press.x, event.clientY - press.y) >= 4) {
+      const selection = window.getSelection?.();
+      if (selection?.isCollapsed === false && selection.containsNode(event.currentTarget, true)) return;
+    }
     this.viewSnapshot(runDir);
   },
 
@@ -605,6 +613,7 @@ window.monitorHistoryRenderMixin = {
   },
 
   cancelHistoryInteractions() {
+    this._historyCardPointer = null;
     this.closeSnapshotModal();
     // A fetched configuration can be cancelled. Once applying starts, let the
     // form update finish atomically, but do not navigate away from the user's new page.

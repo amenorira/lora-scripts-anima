@@ -12,6 +12,90 @@ function app(overrides = {}) {
   }, overrides);
 }
 
+test('history cards still open after rapid clicks leave a text selection', () => {
+  const originalGetSelection = window.getSelection;
+  const opened = [];
+  const card = {};
+  window.getSelection = () => ({isCollapsed: false, containsNode: node => node === card});
+  try {
+    const a = app({viewSnapshot: runDir => opened.push(runDir)});
+    for (const detail of [1, 2, 3, 4]) {
+      a._historyCardPointer = {x: 100, y: 100};
+      a._viewHistoryCardSnapshot('output/run', {detail, currentTarget: card, clientX: 100, clientY: 100});
+      a.closeSnapshotModal();
+    }
+    assert.deepEqual(opened, Array(4).fill('output/run'));
+  } finally {
+    window.getSelection = originalGetSelection;
+  }
+});
+
+test('dragging to select card text skips the modal and the next click still opens it', () => {
+  const originalGetSelection = window.getSelection;
+  const card = {};
+  let opened = 0;
+  window.getSelection = () => ({isCollapsed: false, containsNode: node => node === card});
+  try {
+    const a = app({viewSnapshot: () => opened++});
+    a._historyCardPointer = {x: 100, y: 100};
+    a._viewHistoryCardSnapshot('output/run', {detail: 1, currentTarget: card, clientX: 150, clientY: 100});
+    assert.equal(opened, 0);
+    a._historyCardPointer = {x: 100, y: 100};
+    a._viewHistoryCardSnapshot('output/run', {detail: 1, currentTarget: card, clientX: 102, clientY: 100});
+    assert.equal(opened, 1);
+  } finally {
+    window.getSelection = originalGetSelection;
+  }
+});
+
+test('card selection handling preserves keyboard activation and ignores unrelated selections', () => {
+  const originalGetSelection = window.getSelection;
+  const card = {};
+  let opened = 0;
+  try {
+    const a = app({viewSnapshot: () => opened++});
+    for (const scenario of [
+      {detail: 0, selected: true, inside: true},
+      {detail: 1, selected: false, inside: true},
+      {detail: 1, selected: true, inside: false},
+    ]) {
+      window.getSelection = () => ({isCollapsed: !scenario.selected, containsNode: () => scenario.inside});
+      a._historyCardPointer = {x: 100, y: 100};
+      a._viewHistoryCardSnapshot('output/run', {detail: scenario.detail, currentTarget: card, clientX: 150, clientY: 100});
+    }
+    assert.equal(opened, 3);
+  } finally {
+    window.getSelection = originalGetSelection;
+  }
+});
+
+test('rapidly closing and reopening a snapshot ignores the old response and keeps the new request loading', async () => {
+  const oldRequest = deferred(), newRequest = deferred();
+  const requests = [], rendered = [];
+  const a = app({
+    _fetchConfigSnapshot(runDir, signal) {
+      requests.push({runDir, signal});
+      return requests.length === 1 ? oldRequest.promise : newRequest.promise;
+    },
+    showSnapshotModal: snapshot => rendered.push(snapshot),
+  });
+  const oldOpen = a.viewSnapshot('output/run');
+  a.closeSnapshotModal();
+  const newOpen = a.viewSnapshot('output/run');
+  assert.equal(requests[0].signal.aborted, true);
+  assert.equal(requests[1].signal.aborted, false);
+  oldRequest.resolve({status: 'success', data: {content: 'old'}});
+  await oldOpen;
+  assert.deepEqual(rendered, []);
+  assert.equal(a.configSnapshotOpen, true);
+  assert.equal(a.configSnapshotLoading, true);
+  newRequest.resolve({status: 'success', data: {content: 'new'}});
+  await newOpen;
+  assert.deepEqual(rendered, [{content: 'new'}]);
+  assert.equal(a.configSnapshotOpen, true);
+  assert.equal(a.configSnapshotLoading, false);
+});
+
 test('YAML snapshot highlights values safely while preserving the original text', () => {
   const yaml = [
     '# training config',

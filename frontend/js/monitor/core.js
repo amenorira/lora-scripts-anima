@@ -19,6 +19,7 @@ window.monitorCoreMixin = {
   _currentSnapshot: null, _snapshotRequestSeq: 0, _snapshotAbort: null, _reuseRequestSeq: 0, _reuseAbort: null,
   historyReuseBusy: '', _historyReuseApplying: false,
   historyReuseSource: '', historyReuseWarning: '', _historyReuseUndo: null,
+  _historyCardPointer: null,
   previewReference: null,
   logAutoScroll: true, logLines: [],
   _logContentVersion: 0, monitorTab: 'overview',

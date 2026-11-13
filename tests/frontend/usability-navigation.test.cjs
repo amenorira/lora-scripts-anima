@@ -71,6 +71,37 @@ test('closing a dialog preserves an explicit destination focus and still restore
   assert.equal(document.activeElement, opener);
 });
 
+test('rapid dialog toggles cancel queued openings and obsolete exit callbacks', async () => {
+  const {context, document, Element, ticks, flush} = uiHarness();
+  const opener = new Element('button'), dialog = new Element('dialog'), closeButton = new Element('button');
+  dialog.appendChild(closeButton);
+  document.body.append(opener, dialog);
+  let finishExit, closed = 0;
+  const finished = new Promise(resolve => { finishExit = resolve; });
+  dialog.getAnimations = () => [{finished, effect: {getComputedTiming: () => ({endTime: 150})}}];
+  dialog.addEventListener('dialog-after-close', () => closed++);
+  const binding = context.window.AnimaUI.bindDialog(dialog, callback => ticks.push(callback));
+  opener.focus();
+  binding.setOpen(true); binding.setOpen(false); flush();
+  assert.equal(dialog.open, false);
+  assert.equal(dialog.opens, undefined);
+  for (let i = 0; i < 4; i++) {
+    binding.setOpen(true); flush();
+    binding.setOpen(false);
+    binding.setOpen(true); flush();
+    assert.equal(dialog.open, true);
+    assert.equal(dialog.inert, false);
+    assert.equal(document.activeElement, closeButton);
+  }
+  finishExit(); await new Promise(setImmediate); flush();
+  assert.equal(closed, 0);
+  assert.equal(dialog.open, true);
+  binding.setOpen(false); await new Promise(setImmediate); flush();
+  assert.equal(dialog.open, false);
+  assert.equal(closed, 1);
+  binding.destroy();
+});
+
 test('a LyCORIS conflict link waits for the modal to close before focusing the main form', () => {
   const dialog = new EventTarget();
   const focused = [];
