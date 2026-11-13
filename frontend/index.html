@@ -479,18 +479,7 @@
 
       <!-- Route: Training pages (basic/master/anima) -->
       <div x-show="currentRoute && currentRoute.startsWith('train-')" x-cloak>
-        <div class="page-header">
-          <div class="page-header-left">
-            <h1 class="page-title" x-text="pageTitle">Training</h1>
-          </div>
-        </div>
-
-        <div class="history-reuse-notice" x-show="historyReuseSource" x-cloak role="status">
-          <div class="history-reuse-text"><span x-text="t('monitor.historyReuseNotice').replace('{name}', historyReuseSource)"></span><small x-show="historyReuseWarning" x-text="historyReuseWarning"></small></div>
-          <button class="btn btn-sm btn-secondary" :disabled="!!historyReuseBusy" @click="undoHistoryReuse()" x-text="t(historyReuseBusy === 'undo' ? 'monitor.restoringConfig' : 'monitor.undoHistoryReuse')"></button>
-          <button class="btn-icon" :disabled="!!historyReuseBusy" @click="dismissHistoryReuse()" :aria-label="t('common.close')">×</button>
-        </div>
-        <div class="train-workbench">
+        <div class="train-rail-anchor">
         <aside class="train-rail" x-show="sectionNavList.length > 0" x-cloak
                :style="{ top: sectionRailTop + 'px' }"
                @resize.window="positionSectionRail()"
@@ -534,6 +523,20 @@
             </template>
           </div>
         </aside>
+        </div>
+
+        <div class="page-header">
+          <div class="page-header-left">
+            <h1 class="page-title" x-text="pageTitle">Training</h1>
+          </div>
+        </div>
+
+        <div class="history-reuse-notice" x-show="historyReuseSource" x-cloak role="status">
+          <div class="history-reuse-text"><span x-text="t('monitor.historyReuseNotice').replace('{name}', historyReuseSource)"></span><small x-show="historyReuseWarning" x-text="historyReuseWarning"></small></div>
+          <button class="btn btn-sm btn-secondary" :disabled="!!historyReuseBusy" @click="undoHistoryReuse()" x-text="t(historyReuseBusy === 'undo' ? 'monitor.restoringConfig' : 'monitor.undoHistoryReuse')"></button>
+          <button class="btn-icon" :disabled="!!historyReuseBusy" @click="dismissHistoryReuse()" :aria-label="t('common.close')">×</button>
+        </div>
+        <div class="train-workbench">
 
         <div class="train-workbench-main">
         <!-- Train type selector -->

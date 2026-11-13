@@ -2,6 +2,7 @@
  * Composed into trainingCoreMixin with property descriptors intact.
  */
 const sectionCollapseCleanups = new WeakMap();
+const sectionScrollCleanups = new WeakMap();
 
 window.trainingSections = {
   // 分组折叠状态，响应式驱动 UI
@@ -177,6 +178,7 @@ window.trainingSections = {
   // 离开训练页时解绑滚动监听，避免泄漏
   stopSectionScroll() {
     this.sectionNavOpen = false;
+    this._cancelSectionScroll();
     if (this._sectionScrollHandler) {
       const scroller = document.querySelector('.main-content');
       if (scroller) scroller.removeEventListener('scroll', this._sectionScrollHandler);
@@ -243,11 +245,16 @@ window.trainingSections = {
     if (next) next.focus();
   },
 
-  // 点击导航项 → 平滑滚动到对应分组顶部
+  _cancelSectionScroll(scroller = document.querySelector('.main-content')) {
+    sectionScrollCleanups.get(scroller)?.();
+  },
+
+  // 点击导航项 → 短时滚动到对应分组顶部，手动操作立即接管。
   scrollToSection(key) {
     const card = document.querySelector(`#trainFormContent .card[data-section="${this.escapeAttr(key)}"]`);
     const scroller = document.querySelector('.main-content');
     if (!card || !scroller) return;
+    this._cancelSectionScroll(scroller);
     // 若分组已收起，先展开（否则跳过去看不到内容）
     if (this._sectionCollapsed[key]) this.toggleSection(key);
     const target = card.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 16;
@@ -259,7 +266,32 @@ window.trainingSections = {
       return;
     }
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    scroller.scrollTo({ top, behavior: reduceMotion ? 'auto' : 'smooth' });
-    if (reduceMotion) this.activeSection = key;
+    if (reduceMotion) {
+      scroller.scrollTop = top;
+      this.activeSection = key;
+      return;
+    }
+
+    // Bound long jumps and use a quadratic ease-out to avoid a lingering tail.
+    const start = scroller.scrollTop;
+    const distance = top - start;
+    const duration = Math.min(260, 140 + Math.abs(distance) * 0.035);
+    const startedAt = performance.now();
+    const inputs = ['wheel', 'touchstart', 'pointerdown', 'keydown'];
+    let frame;
+    const cancel = () => {
+      cancelAnimationFrame(frame);
+      inputs.forEach(type => scroller.removeEventListener(type, cancel));
+      sectionScrollCleanups.delete(scroller);
+    };
+    const tick = now => {
+      const progress = Math.min(1, (now - startedAt) / duration);
+      scroller.scrollTop = start + distance * progress * (2 - progress);
+      if (progress < 1) frame = requestAnimationFrame(tick);
+      else cancel();
+    };
+    sectionScrollCleanups.set(scroller, cancel);
+    inputs.forEach(type => scroller.addEventListener(type, cancel, { passive: true }));
+    frame = requestAnimationFrame(tick);
   },
 };

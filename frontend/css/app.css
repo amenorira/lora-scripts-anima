@@ -1555,20 +1555,24 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
   flex: 1;
   min-width: 0;
 }
-.train-rail {
-  position: fixed;
-  left: var(--sidebar-w);
-  top: 16px;
+.train-rail-anchor {
+  /* Stay in the form's scroll chain without reserving any layout space. */
+  position: sticky;
+  top: 0;
+  height: 0;
+  margin-inline: -28px;
   z-index: 30;
+}
+.train-rail {
+  position: absolute;
+  left: 0;
+  top: 16px;
   width: 24px;
   padding-block: 6px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-}
-.app-layout:has(.sidebar.collapsed) .train-rail {
-  left: 56px;
 }
 .train-rail-track {
   position: relative;
@@ -1620,8 +1624,8 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
   z-index: 1;
   width: min(240px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
+  /* Native scroll chaining keeps wheel speed consistent with the form. */
   overflow-y: auto;
-  overscroll-behavior: contain;
   padding: 6px;
   background: var(--bg-surface);
   border: 0;
