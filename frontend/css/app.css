@@ -1922,8 +1922,8 @@ dialog.modal-overlay::backdrop { background: transparent; }
 }
 .btn-icon.preview-close { flex-shrink: 0; }
 :is(.btn-icon, .preview-icon-button).preview-close:hover:not(:disabled),
-:is(.btn-icon, .preview-icon-button).preview-close:focus-visible:not(:disabled) { background: #b95459; color: #fff; }
-:is(.btn-icon, .preview-icon-button).preview-close:active:not(:disabled) { background: #a3444a; color: #fff; }
+:is(.btn-icon, .preview-icon-button).preview-close:focus-visible:not(:disabled) { background: #c42b1c; color: #fff; }
+:is(.btn-icon, .preview-icon-button).preview-close:active:not(:disabled) { background: #a82418; color: #fff; }
 .modal-workbench {
   --modal-workbench-width: 60rem;
   --modal-workbench-margin-x: 2.5rem;
@@ -2052,35 +2052,66 @@ dialog.modal-overlay::backdrop { background: transparent; }
 .picker-footer { justify-content: space-between; align-items: center; }
 .picker-count { font-size: 12px; color: var(--text-tertiary); }
 
-/* Confirm dialog variant */
+/* Shared confirmation/notice sizes. Callers choose a preset, not local CSS. */
 .modal-confirm {
-  min-width: 340px; max-width: 420px; text-align: center;
+  --confirm-width: 480px;
+  --confirm-tone: var(--text-secondary);
+  width: min(var(--confirm-width), calc(100vw - 48px));
+  min-width: 0; max-width: calc(100vw - 48px);
+  max-height: min(80vh, calc(100dvh - 64px));
+  text-align: left; overflow: hidden;
 }
-.modal-confirm--three-actions {
-  min-width: min(340px, calc(100% - 32px));
-  max-width: calc(100% - 32px);
-}
-.modal-confirm--three-actions .modal-body {
-  contain: inline-size;
-}
-.modal-confirm .modal-body {
-  padding: 30px 28px 20px;
+.modal-confirm[data-size="compact"] { --confirm-width: 400px; }
+.modal-confirm[data-size="wide"] { --confirm-width: 640px; }
+.modal-confirm[data-tone="warning"] { --confirm-tone: var(--warning); }
+.modal-confirm:is([data-tone="danger"], [data-tone="error"]) { --confirm-tone: var(--danger); }
+.confirm-heading {
+  display: flex; align-items: center; gap: 10px;
+  padding: 20px 22px 0; flex-shrink: 0;
 }
 .confirm-icon {
-  display: flex; justify-content: center; margin-bottom: 14px;
-  color: var(--warning);
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: 0 0 20px; color: var(--confirm-tone);
 }
 .confirm-title {
-  font-size: 16px; font-weight: 600; color: var(--text-primary);
-  margin-bottom: 8px;
+  min-width: 0; margin: 0; flex: 1; font-size: 16px; font-weight: 600;
+  line-height: 1.4; color: var(--text-primary); overflow-wrap: anywhere;
+}
+.confirm-heading .btn-icon { flex-shrink: 0; }
+.modal-confirm .confirm-body { min-height: 0; padding-top: 14px; padding-bottom: 22px; overscroll-behavior: contain; }
+.confirm-context {
+  margin: 0 0 10px;
+  font-size: 13px; color: var(--text-primary); line-height: 1.6;
+  white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .confirm-message {
-  font-size: 13px; color: var(--text-tertiary); line-height: 1.6; white-space: pre-line; overflow-wrap: anywhere;
+  margin: 0; font-size: 13px; color: var(--text-secondary); line-height: 1.6;
+  white-space: pre-line; overflow-wrap: anywhere;
 }
-.modal-confirm .modal-footer {
-  border-top: none; padding: 0 28px 22px;
-  justify-content: center; flex-wrap: wrap; gap: 10px;
+.confirm-details { margin-top: 16px; font-size: 12px; color: var(--text-secondary); interpolate-size: allow-keywords; }
+.confirm-details summary {
+  display: flex; align-items: center; gap: 6px; list-style: none;
+  cursor: pointer; width: fit-content; padding: 4px 0;
+  transition: color var(--duration-fast) var(--ease-out);
 }
+.confirm-details summary::-webkit-details-marker { display: none; }
+.confirm-details summary:hover { color: var(--text-primary); }
+.confirm-details-chevron { width: 14px; height: 14px; flex-shrink: 0; transition: transform var(--duration-dialog-enter) var(--ease-out); }
+.confirm-details[open] .confirm-details-chevron { transform: rotate(90deg); }
+.confirm-details::details-content {
+  block-size: 0; opacity: 0; overflow: clip;
+  transition: block-size var(--duration-dialog-enter) var(--ease-out),
+    opacity var(--duration-normal) var(--ease-out),
+    content-visibility var(--duration-dialog-enter) allow-discrete;
+}
+.confirm-details[open]::details-content { block-size: auto; opacity: 1; }
+.confirm-details pre {
+  margin: 8px 0 0; padding: 12px; background: var(--bg-surface-raised);
+  font: 12px/1.65 var(--font-mono); color: var(--text-secondary);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.confirm-footer { flex-shrink: 0; flex-wrap: wrap; align-items: center; }
+.confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-left: auto; min-width: 0; }
 
 /* ── Anima timestep distribution preview ───────────────── */
 .timestep-preview-entry {

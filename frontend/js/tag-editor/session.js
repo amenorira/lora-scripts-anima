@@ -711,7 +711,7 @@ window.tagEditorSession = {
       this._teConfirmUnsaved(this.t('tagEditor.revertConfirm'), function() {
         self._teRemoveDraft();
         self.tagEditorLoad(self.tagEditorDir);
-      });
+      }, 'danger');
     } else {
       this.tagEditorLoad(this.tagEditorDir);
     }

@@ -256,33 +256,38 @@ window.tagEditorPersistence = {
     var restoring = action === 'restore' || action === 'backup';
     var snapshot = this.tagEditorSnapshots.find(function(item) { return item.id === sid; });
     var description = this.t('tagEditor.' + message);
-    if (snapshot) description = this._teFormatSnapshotTime(snapshot.timestamp) + ' · ' + this.t('tagEditor.historyStepImages').replace('{n}', snapshot.file_count) + '\n\n' + description;
-    this.openConfirm(this.t('tagEditor.' + title), description, function() {
-      if (epoch !== self._teLoadEpoch || self.tagEditorSnapshotBusy) return;
-      if (restoring && !self._teCanRestoreCaptions()) return;
-      self.tagEditorSnapshotBusy = true;
-      var path = '/api/tageditor/timeline' + (sid ? '/' + encodeURIComponent(sid) : '') + (action === 'restore' ? '/restore' : '');
-      var url = path + '?dataset_dir=' + encodeURIComponent(dir);
-      var options = { method: action === 'restore' ? 'POST' : 'DELETE' };
-      if (action === 'backup') {
-        url = '/api/tageditor/restore-backup';
-        options = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dir: dir }) };
-      }
-      return fetch(url, options)
-        .then(function(r) { return r.json(); }).then(function(j) {
-          if (epoch !== self._teLoadEpoch) return;
-          if (j.status !== 'success') {
-            var error = new Error(self.localizeApiError?.(j, 'common.error') || j.message || self.t('common.error'));
-            error.details = self.apiErrorDetails?.(j) || '';
-            throw error;
-          }
-          self.toast(self.t('tagEditor.' + success));
-          if (restoring) return self.tagEditorLoad(dir);
-          else self.tagEditorLoadSnapshots(epoch);
-        }).catch(function(err) {
-          if (epoch === self._teLoadEpoch) self.toast(err.message || self.t('common.error'), 'error', err.details ? {details:err.details} : undefined);
-        }).finally(function() { if (epoch === self._teLoadEpoch) self.tagEditorSnapshotBusy = false; });
-    }, this.t('common.confirm'));
+    var context = snapshot ? this._teFormatSnapshotTime(snapshot.timestamp) + ' · ' + this.t('tagEditor.historyStepImages').replace('{n}', snapshot.file_count) : '';
+    this.openConfirm({
+      title: this.t('tagEditor.' + title), message: description, context,
+      actionLabel: this.t('tagEditor.' + title),
+      tone: action === 'delete' || action === 'backup' ? 'danger' : 'warning',
+      onConfirm: function() {
+        if (epoch !== self._teLoadEpoch || self.tagEditorSnapshotBusy) return;
+        if (restoring && !self._teCanRestoreCaptions()) return;
+        self.tagEditorSnapshotBusy = true;
+        var path = '/api/tageditor/timeline' + (sid ? '/' + encodeURIComponent(sid) : '') + (action === 'restore' ? '/restore' : '');
+        var url = path + '?dataset_dir=' + encodeURIComponent(dir);
+        var options = { method: action === 'restore' ? 'POST' : 'DELETE' };
+        if (action === 'backup') {
+          url = '/api/tageditor/restore-backup';
+          options = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dir: dir }) };
+        }
+        return fetch(url, options)
+          .then(function(r) { return r.json(); }).then(function(j) {
+            if (epoch !== self._teLoadEpoch) return;
+            if (j.status !== 'success') {
+              var error = new Error(self.localizeApiError?.(j, 'common.error') || j.message || self.t('common.error'));
+              error.details = self.apiErrorDetails?.(j) || '';
+              throw error;
+            }
+            self.toast(self.t('tagEditor.' + success));
+            if (restoring) return self.tagEditorLoad(dir);
+            else self.tagEditorLoadSnapshots(epoch);
+          }).catch(function(err) {
+            if (epoch === self._teLoadEpoch) self.toast(err.message || self.t('common.error'), 'error', err.details ? {details:err.details} : undefined);
+          }).finally(function() { if (epoch === self._teLoadEpoch) self.tagEditorSnapshotBusy = false; });
+      },
+    });
   },
 
   _teTimelineLabel(event) {

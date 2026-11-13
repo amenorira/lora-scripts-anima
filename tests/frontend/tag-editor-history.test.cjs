@@ -90,7 +90,7 @@ test('draft recovery loads missing pages, preserves raw text and supports undo/r
   ctx._teEnsureAllImagesLoaded=async()=>{
     loaded++;ctx._teMergeSessionItems([{path:'b',tags:'old b',caption_revision:'r-b'}],false);
   };
-  ctx.openConfirm=(_title,_message,action)=>{recover=action;};ctx._teCheckDraft();await recover();
+  ctx.openConfirm=({onConfirm:action})=>{recover=action;};ctx._teCheckDraft();await recover();
   assert.equal(loaded,1);assert.equal(ctx._teFindByPath('b').tags,raw);
   assert.equal(ctx.tagEditorModifiedCount(),2);assert.equal(ctx.tagEditorHistory.length,1);
   tick();assert.equal(JSON.parse(context.localStorage.getItem('tagEditor_draft_/dataset')).items[1].revision,'r-b');
@@ -128,7 +128,7 @@ test('edits and undo during a save remain dirty against the text actually writte
     const next=draftClient(context.localStorage);
     next.ctx.tagEditorImages[0].tags=next.ctx.tagEditorOriginal.a=saved;
     next.ctx._teCaptionRevisions={a:'new-revision'};
-    let recover;next.ctx.openConfirm=(_title,_message,callback)=>{recover=callback;};
+    let recover;next.ctx.openConfirm=({onConfirm:callback})=>{recover=callback;};
     next.ctx._teCheckDraft();await recover();
     assert.equal(next.ctx.tagEditorImages[0].tags,expected);
     next.ctx.tagEditorUndo();assert.equal(next.ctx.tagEditorImages[0].tags,saved);
@@ -183,7 +183,7 @@ test('backup failure releases busy state, preserves history and allows retry',as
   const {ctx,context}=makeClient();let accept;const notices=[];
   ctx.tagEditorHistory=[{changes:{a:{before:'old',after:'new'}}}];ctx.tagEditorHistoryIdx=-1;
   const history=JSON.stringify(ctx.tagEditorHistory);
-  ctx.openConfirm=(_title,_message,action)=>{accept=action;};ctx.toast=msg=>notices.push(msg);
+  ctx.openConfirm=({onConfirm:action})=>{accept=action;};ctx.toast=msg=>notices.push(msg);
   ctx.tagEditorLoad=()=>assert.fail('failed restore must not reload');
   context.fetch=async()=>{throw new Error('offline');};
   ctx.tagEditorRestoreBackup();await accept();

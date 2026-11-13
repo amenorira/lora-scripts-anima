@@ -44,6 +44,7 @@
   <script src="/anima-ui/js/shared/image-loading.js" defer></script>
   <script src="/anima-ui/js/shared/image-viewport.js" defer></script>
   <script src="/anima-ui/js/shared/ui-interactions.js" defer></script>
+  <script src="/anima-ui/js/shared/confirmation-dialog.js" defer></script>
   <script src="/anima-ui/js/shared/preview-chart.js" defer></script>
   <script src="/anima-ui/js/shared/notifications.js" defer></script>
   <!-- Feature modules (order matters: config first, app last) -->
@@ -1690,23 +1691,36 @@
 </dialog>
 
 <!-- ── Confirm Modal ───────────────────────────────────── -->
-<dialog class="modal-overlay" x-dialog="showConfirmModal" @click.self="cancelConfirm()"
-        @dialog-close="cancelConfirm()" :aria-label="confirmTitle" x-cloak>
-  <div class="modal modal-confirm" :class="{ 'modal-confirm--three-actions': confirmSecondaryLabel }">
-    <div class="modal-body">
-      <div class="confirm-icon">
-        <svg x-show="!confirmNotice" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        <svg x-show="confirmNotice" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+<dialog id="confirmDialog" x-ref="confirmRoot" class="modal-overlay" x-dialog="showConfirmModal" @click.self="cancelConfirm()"
+        @dialog-close="cancelConfirm()" @dialog-after-close="confirmAfterClose()"
+        aria-labelledby="confirmTitle" :aria-describedby="[confirmDialog.context ? 'confirmContext' : '', confirmDialog.message ? 'confirmMessage' : ''].filter(Boolean).join(' ') || null" x-cloak>
+  <div class="modal modal-confirm" :data-size="confirmDialog.size" :data-tone="confirmDialog.tone"
+       :style="confirmDialog.width ? { '--confirm-width': confirmDialog.width + 'px' } : {}">
+    <header class="confirm-heading">
+      <span class="confirm-icon" aria-hidden="true">
+        <svg x-show="confirmDialog.tone === 'neutral'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/></svg>
+        <svg x-show="confirmDialog.tone !== 'neutral'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M10.3 4.1 2.1 18.3A1.8 1.8 0 0 0 3.7 21h16.6a1.8 1.8 0 0 0 1.6-2.7L13.7 4.1a2 2 0 0 0-3.4 0Z"/><path d="M12 9v5m0 3v1"/></svg>
+      </span>
+      <h2 id="confirmTitle" class="confirm-title" x-text="confirmDialog.title"></h2>
+      <button type="button" class="btn-icon preview-close" @click="cancelConfirm()" :aria-label="t('common.close')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m18 6-12 12M6 6l12 12"/></svg></button>
+    </header>
+    <div class="modal-body confirm-body">
+      <p id="confirmContext" class="confirm-context" x-show="confirmDialog.context" x-text="confirmDialog.context"></p>
+      <p id="confirmMessage" class="confirm-message" x-show="confirmDialog.message" x-text="confirmDialog.message"></p>
+      <details class="confirm-details" x-ref="confirmDetails" x-show="confirmDialog.details">
+        <summary><svg class="confirm-details-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg><span x-text="t('notifications.details')"></span></summary>
+        <pre x-text="confirmDialog.details"></pre>
+      </details>
+    </div>
+    <footer class="modal-footer confirm-footer">
+      <button type="button" class="btn btn-ghost" x-show="!confirmDialog.notice" :data-dialog-autofocus="['danger', 'warning'].includes(confirmDialog.tone) ? '' : null" @click="cancelConfirm()" x-text="confirmDialog.cancelLabel"></button>
+      <button type="button" class="btn btn-ghost" x-show="confirmDialog.details" @click="copyConfirmDetails()" x-text="t('notifications.' + (confirmCopyState || 'copy'))" aria-live="polite"></button>
+      <div class="confirm-actions">
+        <button type="button" class="btn btn-secondary" x-show="confirmDialog.secondaryLabel" @click="confirmSecondaryAction()" x-text="confirmDialog.secondaryLabel"></button>
+        <button type="button" class="btn" :class="confirmDialog.tone === 'danger' ? 'btn-stop' : 'btn-primary'" :data-dialog-autofocus="confirmDialog.notice || !['danger', 'warning'].includes(confirmDialog.tone) ? '' : null"
+                @click="confirmAction()" x-text="confirmDialog.actionLabel"></button>
       </div>
-      <div class="confirm-title" x-text="confirmTitle">Confirm</div>
-      <div class="confirm-message" x-text="confirmMessage">Are you sure?</div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost btn-sm" x-show="!confirmNotice" :data-dialog-autofocus="confirmDanger ? '' : null" @click="cancelConfirm()" x-text="t('common.cancel')">Cancel</button>
-      <button class="btn btn-ghost btn-sm" x-show="confirmSecondaryLabel" @click="confirmSecondaryAction()" x-text="confirmSecondaryLabel">Secondary</button>
-      <button class="btn btn-sm" :class="confirmDanger ? 'btn-danger' : 'btn-primary'" :data-dialog-autofocus="!confirmDanger || confirmNotice ? '' : null" x-ref="confirmPrimary"
-              @click="confirmAction()" x-text="confirmActionLabel || (confirmNotice ? t('common.acknowledge') : t('common.confirm'))">Confirm</button>
-    </div>
+    </footer>
   </div>
 </dialog>
 

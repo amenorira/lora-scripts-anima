@@ -244,7 +244,7 @@ test('late overview/detail responses cannot overwrite a changed source or closed
 test('preflight counts are refreshed before overwrite confirmation and a changed plan reconfirms',async()=>{
   const {app,context}=harness();app.taggerSource={source_token:'batch',total:10};app.captionOptions.overwrite=true;
   let submits=0,confirmation;app.refreshCaptionPlan=async()=>({plan:{overwrite_captions:4,overwrite_json:3,overwrite_references:2}});
-  app.openConfirm=(title,message,callback)=>{confirmation=callback;};context.fetch=async()=>{submits++;return response({task_id:'new'});};
+  app.openConfirm=({onConfirm})=>{confirmation=onConfirm;};context.fetch=async()=>{submits++;return response({task_id:'new'});};
   await app.startApiTagger();assert.equal(submits,0);assert.equal(typeof confirmation,'function');
   await confirmation();assert.equal(submits,1);assert.equal(app.taggerTaskId,'new');
 });

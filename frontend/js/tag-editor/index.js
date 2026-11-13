@@ -585,12 +585,15 @@ window.tagEditorMixin = {
   },
 
   // ===== Navigation Guard =====
-  _teConfirmUnsaved(msg, cb) {
-    this.openConfirm(this.t('tagEditor.unsavedConfirmTitle'), msg, cb, this.t('common.confirm'));
+  _teConfirmUnsaved(msg, cb, tone = 'warning') {
+    this.openConfirm({ title: this.t('tagEditor.unsavedConfirmTitle'), message: msg, tone, onConfirm: cb });
   },
 
   _teConfirmBatch(msg, cb) {
-    this.openConfirm(this.t('tagEditor.batchEditConfirmTitle'), msg, cb, this.t('common.confirm'));
+    this.openConfirm({
+      title: this.t('tagEditor.batchEditConfirmTitle'), message: msg,
+      actionLabel: this.t('tagEditor.batchConfirm'), onConfirm: cb,
+    });
   },
 
   _teConfirmTagBatch(msg, cb) {

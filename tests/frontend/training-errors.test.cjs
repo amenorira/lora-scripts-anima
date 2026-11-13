@@ -31,13 +31,13 @@ test('cache rebuild dialog uses the server scope and the original training reque
   });
   const requests = [];
   const payload = { train_data_dir: 'C:/train' };
-  model.openConfirm = (_title, message, rebuild, _label, options) => {
-    assert.equal(message, '2 image, 1 text\nC:/train/1_data\nD:/reg/1_data\n\nTraining note');
-    assert.equal(options.danger, true);
+  model.openConfirm = options => {
+    assert.equal(options.message, '2 image, 1 text\nC:/train/1_data\nD:/reg/1_data\n\nTraining note');
+    assert.equal(options.tone, 'danger');
     assert.equal(requests.length, 0);
     model.form = { train_data_dir: 'C:/other' };
-    rebuild();
-    options.secondaryCallback();
+    options.onConfirm();
+    options.onSecondary();
   };
   model._showCacheRebuildDialog({
     latents: 2, text: 1, directories: ['C:/train/1_data', 'D:/reg/1_data'], scope: 'confirmed',
@@ -56,12 +56,12 @@ const response = body => ({ ok: true, json: async () => body });
 const activePreparation = { status: 'success', data: { tasks: { managed: [{ id: 'preparation', status: 'CREATED' }] } } };
 
 function cacheFlowApp(profile, fetch) {
-  const context = loadFrontend(['monitor/core', 'training/toml', 'training/config-io'], {
+  const context = loadFrontend(['monitor/core', 'training/toml', 'shared/confirmation-dialog'], {
     window: {}, fetch, setTimeout, clearTimeout, AbortController,
     Date: class extends Date { static now() { return 100; } },
   });
   const { window } = context;
-  return Object.assign({}, window.monitorCoreMixin, window.trainingTomlMixin, window.trainingConfigIoMixin, {
+  return Object.assign({}, window.monitorCoreMixin, window.trainingTomlMixin, window.confirmationDialogMixin, {
     form: { model_train_type: profile },
     t: key => ({ 'trainingCache.scope': '{latents} image, {text} text\n{directories}' }[key] || key),
     validateForm: () => true,
@@ -149,6 +149,7 @@ for (const [profile, method, endpoint] of [
     await model[method]();
     assert.equal(model.showConfirmModal, true);
     model.cancelConfirm();
+    model.confirmAfterClose();
     await model[method]();
     assert.equal(requests, 2);
     assert.equal(model.showConfirmModal, true);

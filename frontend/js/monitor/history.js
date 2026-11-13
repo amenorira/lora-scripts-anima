@@ -75,7 +75,12 @@ window.monitorHistoryMixin = {
     if (!runDir || this.historyDeleting) return;
     const record = this.historyItems.find(item => item.run_dir === runDir);
     const identity = record ? [record.name, record.time].filter(Boolean).join(' · ') : runDir;
-    this.openConfirm(this.t('monitor.confirmDeleteRunTitle'), identity + '\n\n' + this.t('monitor.confirmDeleteRun'), () => this._deleteHistoryRun(runDir), this.t('monitor.confirmDeleteRunTitle'), { danger: true });
+    this.openConfirm({
+      title: this.t('monitor.confirmDeleteRunTitle'), context: identity,
+      message: this.t('monitor.confirmDeleteRun'), tone: 'danger',
+      actionLabel: this.t('monitor.confirmDeleteRunTitle'),
+      onConfirm: () => this._deleteHistoryRun(runDir),
+    });
   },
 
   async _deleteHistoryRun(runDir) {

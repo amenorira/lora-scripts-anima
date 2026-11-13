@@ -686,8 +686,7 @@ window.trainingTomlMixin = {
     if (warnings?.length) {
       setTimeout(() => {
         const msg = warnings.join('\n');
-        this.toast('⚠️ ' + this.t('common.adapterWarnings'));
-        this.openConfirm(this.t('common.adapterWarnings'), msg, null, this.t('common.acknowledge'), { notice: true });
+        this.openNotice({ title: this.t('common.adapterWarnings'), message: msg });
       }, 500);
     }
   },
@@ -701,17 +700,15 @@ window.trainingTomlMixin = {
       .replace('{text}', String(cache.text))
       .replace('{directories}', () => cache.directories.join('\n'));
     const message = preparingCache ? scope : scope + '\n\n' + this.t('trainingCache.trainingNote');
-    this.openConfirm(
-      this.t('trainingCache.title'),
+    this.openConfirm({
+      title: this.t('trainingCache.title'),
       message,
-      () => submit({ ...payload, _cache_action: cache.scope }),
-      this.t(preparingCache ? 'trainingCache.rebuild' : 'trainingCache.rebuildStart'),
-      {
-        danger: true,
-        secondaryLabel: this.t(preparingCache ? 'trainingCache.continue' : 'trainingCache.keepStart'),
-        secondaryCallback: () => submit({ ...payload, _cache_action: 'keep' }),
-      }
-    );
+      tone: 'danger',
+      actionLabel: this.t(preparingCache ? 'trainingCache.rebuild' : 'trainingCache.rebuildStart'),
+      onConfirm: () => submit({ ...payload, _cache_action: cache.scope }),
+      secondaryLabel: this.t(preparingCache ? 'trainingCache.continue' : 'trainingCache.keepStart'),
+      onSecondary: () => submit({ ...payload, _cache_action: 'keep' }),
+    });
   },
 
   _acceptTrainingStart(data, status) {

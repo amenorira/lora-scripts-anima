@@ -573,12 +573,12 @@ document.addEventListener('alpine:init', () => {
       // This checkbox is intentionally not x-model-bound: keep it visually
       // enabled until the user accepts the built-in confirmation dialog.
       if (input) input.checked = true;
-      this.openConfirm(
-        this.t('settings.disableSlowConnectionTitle'),
-        this.t('settings.disableSlowConnectionMessage'),
-        () => this.setWeakNetworkMode(false),
-        this.t('settings.disableSlowConnectionConfirm'),
-      );
+      this.openConfirm({
+        title: this.t('settings.disableSlowConnectionTitle'),
+        message: this.t('settings.disableSlowConnectionMessage'),
+        actionLabel: this.t('settings.disableSlowConnectionConfirm'),
+        onConfirm: () => this.setWeakNetworkMode(false),
+      });
     },
 
     setWeakNetworkMode(enabled) {
@@ -730,6 +730,7 @@ document.addEventListener('alpine:init', () => {
 
   window.composeAppMixins(data, {
     utils: window.utilsMixin, realtime: window.realtimeMixin,
+    confirmationDialog: window.confirmationDialogMixin,
     monitorCore: window.monitorCoreMixin, monitorRender: window.monitorRenderMixin,
     environmentCore: window.environmentCoreMixin, environmentRender: window.environmentRenderMixin,
     docs: window.docsMixin, trainingCore: window.trainingCoreMixin,
