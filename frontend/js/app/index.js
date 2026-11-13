@@ -67,6 +67,7 @@ document.addEventListener('alpine:init', () => {
 
     // UI Settings
     autoLoadHistory: true,
+    confirmPreviewBeforeTraining: true,
     selectedGpuIndex: 0,
 
     // Backend connectivity
@@ -529,6 +530,7 @@ document.addEventListener('alpine:init', () => {
       try {
         const s = JSON.parse(localStorage.getItem('anima-ui-settings')||'{}');
         if (s.autoLoadHistory!==undefined) this.autoLoadHistory = s.autoLoadHistory;
+        if (typeof s.confirmPreviewBeforeTraining === 'boolean') this.confirmPreviewBeforeTraining = s.confirmPreviewBeforeTraining;
         if (typeof s.weakNetworkMode === 'boolean') {
           this.weakNetworkMode = s.weakNetworkMode;
         } else {
@@ -557,6 +559,7 @@ document.addEventListener('alpine:init', () => {
     saveUISettings() {
       localStorage.setItem('anima-ui-settings', JSON.stringify({
         autoLoadHistory: this.autoLoadHistory,
+        confirmPreviewBeforeTraining: this.confirmPreviewBeforeTraining,
         weakNetworkMode: this.weakNetworkMode,
       }));
       this.resolveTheme();

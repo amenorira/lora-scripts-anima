@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { loadFrontend, composeMixins } = require('./helpers.cjs');
+const { loadFrontend, composeMixins, deferred } = require('./helpers.cjs');
 
 function app() {
   const copied = [], errors = [];
@@ -9,6 +9,7 @@ function app() {
   });
   const model = composeMixins(window.confirmationDialogMixin, {
     t: key => key, toast: (...args) => errors.push(args),
+    $nextTick: callback => callback(),
   });
   return { model, copied, errors, regularization: window.regularizationMixin };
 }
@@ -110,6 +111,71 @@ test('a notice cannot expose or execute a secondary action', async () => {
   assert.equal(model.confirmDialog.secondaryLabel, '');
   model.confirmAction();
   assert.equal(await choice, 'confirm');
+});
+
+test('async steps keep the host open, block duplicate actions, and defer unrelated requests', async () => {
+  const { model } = app(), pending = deferred(), callbacks = [];
+  const details = { open: true }, body = { scrollTop: 100 };
+  let focused = 0;
+  model.$refs = { confirmDetails: details, confirmBody: body, confirmRoot: {
+    open: true, getBoundingClientRect() {},
+    querySelectorAll: () => [
+      { getClientRects: () => [], focus() { assert.fail('hidden buttons cannot receive focus'); } },
+      { getClientRects: () => [{}], focus() { focused++; } },
+    ],
+  } };
+  const flow = model.openConfirm({ title: 'Preview', size: 'wide',
+    onConfirm: () => callbacks.push('old-step'), next: () => pending.promise,
+  });
+  const unrelated = model.openNotice({ title: 'Other' });
+  const proceeding = model.confirmAction();
+  model.confirmAction(); model.cancelConfirm();
+  assert.equal(model.confirmBusy, true);
+  assert.equal(model.showConfirmModal, true);
+  assert.equal(model.confirmDialog.title, 'Preview');
+  pending.resolve({ title: 'Cache', size: 'standard', secondaryLabel: 'Keep', onSecondary: () => callbacks.push('keep') });
+  await proceeding;
+  assert.equal(model.showConfirmModal, true);
+  assert.equal(model._confirmClosing, false);
+  assert.equal(model.confirmBusy, false);
+  assert.equal(model.confirmDialog.title, 'Cache');
+  assert.equal(model.confirmDialog.size, 'standard');
+  assert.equal(details.open, false);
+  assert.equal(body.scrollTop, 0);
+  assert.equal(focused, 1);
+  assert.deepEqual(callbacks, []);
+  model.confirmSecondaryAction();
+  assert.equal(await flow, 'secondary');
+  assert.deepEqual(callbacks, ['keep']);
+  model.confirmAfterClose();
+  assert.equal(model.confirmDialog.title, 'Other');
+  model.confirmAction();
+  assert.equal(await unrelated, 'confirm');
+});
+
+test('flow failures reject once and release the host for the next request', async () => {
+  const { model } = app();
+  const flow = model.openConfirm({ next: async () => { throw new Error('request failed'); } });
+  const rejected = assert.rejects(flow, /request failed/);
+  model.openNotice({ title: 'Next' });
+  await model.confirmAction();
+  await rejected;
+  assert.equal(model.confirmBusy, false);
+  assert.equal(model.showConfirmModal, false);
+  model.confirmAfterClose();
+  assert.equal(model.confirmDialog.title, 'Next');
+});
+
+test('final choices wait for actual close before invoking the focus callback', async () => {
+  const { model } = app(), calls = [];
+  const choice = model.openConfirm({ secondaryLabel: 'Edit',
+    next: () => null, onAfterClose: result => calls.push(result),
+  });
+  await model.confirmSecondaryAction();
+  assert.equal(await choice, 'secondary');
+  assert.deepEqual(calls, []);
+  model.confirmAfterClose(); model.confirmAfterClose();
+  assert.deepEqual(calls, ['secondary']);
 });
 
 test('regeneration rechecks the run, selection, route and busy state after async confirmation', async () => {

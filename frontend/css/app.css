@@ -2063,6 +2063,8 @@ dialog.modal-overlay::backdrop { background: transparent; }
 }
 .modal-confirm[data-size="compact"] { --confirm-width: 400px; }
 .modal-confirm[data-size="wide"] { --confirm-width: 640px; }
+.modal-overlay[data-switching], .modal-overlay[data-switching] *,
+.modal-overlay[data-switching] .confirm-details::details-content { transition: none !important; animation: none !important; }
 .modal-confirm[data-tone="warning"] { --confirm-tone: var(--warning); }
 .modal-confirm:is([data-tone="danger"], [data-tone="error"]) { --confirm-tone: var(--danger); }
 .confirm-heading {
@@ -2088,6 +2090,13 @@ dialog.modal-overlay::backdrop { background: transparent; }
   margin: 0; font-size: 13px; color: var(--text-secondary); line-height: 1.6;
   white-space: pre-line; overflow-wrap: anywhere;
 }
+.confirm-summary { display: flex; flex-direction: column; gap: 12px; margin: 18px 0 0; font-size: 13px; line-height: 1.6; }
+.confirm-summary > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; }
+.confirm-summary dt { color: var(--text-secondary); }
+.confirm-summary dd { margin: 0; color: var(--text-primary); white-space: pre-wrap; overflow-wrap: anywhere; }
+.confirm-summary > .confirm-field-multiline { display: block; margin-top: 4px; }
+.confirm-field-multiline dt { margin-bottom: 8px; color: var(--text-primary); font-weight: 500; }
+.confirm-field-multiline dd { padding: 12px; background: var(--bg-surface-raised); font: 12px/1.75 var(--font-mono); }
 .confirm-details { margin-top: 16px; font-size: 12px; color: var(--text-secondary); interpolate-size: allow-keywords; }
 .confirm-details summary {
   display: flex; align-items: center; gap: 6px; list-style: none;

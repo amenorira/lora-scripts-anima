@@ -263,6 +263,12 @@
 		"candidateFirstLine": "通常のキャプションの先頭行（誤検出時）",
 		"candidateSelectionRequired": "検出された複数候補の読み取り方法を選んでから生成してください。"
 	},
+	"trainingPreview": {
+		"title": "学習前にプレビューを確認",
+		"message": "プレビューが有効です。今回の学習に適した正のプロンプトか確認してください。",
+		"positivePrompts": "プレビューの正のプロンプト",
+		"editPrompts": "プロンプトを修正"
+	},
 	"trainingCache": {
 		"title": "既存のキャッシュが見つかりました",
 		"scope": "以下のフォルダに画像潜在表現キャッシュが {latents} 件、テキストエンコーダキャッシュが {text} 件あります。再作成すると、先にこれらのファイルが削除されます。\n{directories}",
@@ -2463,6 +2469,8 @@
 	"tools": {},
 	"settings": {
 		"title": "画面設定",
+		"confirmPreviewBeforeTraining": "学習前にプレビューを確認",
+		"confirmPreviewBeforeTrainingDesc": "プレビューが有効な場合、学習開始前にプロンプトを確認します。",
 		"autoLoadHistory": "前回の入力内容を復元",
 		"autoLoadHistoryDesc": "起動時に前回の学習設定を復元します。学習を開始していない変更も含みます。",
 		"slowConnectionMode": "低速接続向けモード",

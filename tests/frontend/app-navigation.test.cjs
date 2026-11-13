@@ -15,6 +15,20 @@ function harness() {
   return {...ui,app,main};
 }
 
+test('preview confirmation defaults on and remembers an explicit off choice in UI settings', () => {
+  const {app,context}=harness(), stored=new Map();
+  context.localStorage={getItem:key=>stored.get(key)??null,setItem:(key,value)=>stored.set(key,value)};
+  app.resolveTheme=()=>{}; app.toast=()=>{}; app.t=key=>key;
+  app.loadUISettings();
+  assert.equal(app.confirmPreviewBeforeTraining,true);
+  app.confirmPreviewBeforeTraining=false;
+  app.saveUISettings();
+  assert.equal(JSON.parse(stored.get('anima-ui-settings')).confirmPreviewBeforeTraining,false);
+  app.confirmPreviewBeforeTraining=true;
+  app.loadUISettings();
+  assert.equal(app.confirmPreviewBeforeTraining,false);
+});
+
 test('history detail navigation preserves run identity and can return to live on the same route', () => {
   const {app,context}=harness(), mounted=[];
   context.window.location={hash:'#history'};

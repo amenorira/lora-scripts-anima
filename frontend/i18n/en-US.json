@@ -263,6 +263,12 @@
 		"candidateFirstLine": "First line of ordinary caption (false detection)",
 		"candidateSelectionRequired": "Choose how to read the detected caption sections before generating."
 	},
+	"trainingPreview": {
+		"title": "Confirm previews before training",
+		"message": "Previews are enabled. Check that the positive prompts suit this training run.",
+		"positivePrompts": "Preview positive prompts",
+		"editPrompts": "Edit prompts"
+	},
 	"trainingCache": {
 		"title": "Existing caches found",
 		"scope": "The folders below contain {latents} image latent caches and {text} text encoder caches. Rebuilding deletes these files first.\n{directories}",
@@ -2463,6 +2469,8 @@
 	"tools": {},
 	"settings": {
 		"title": "UI Settings",
+		"confirmPreviewBeforeTraining": "Confirm previews before training",
+		"confirmPreviewBeforeTrainingDesc": "Review preview prompts before starting training when previews are enabled.",
 		"autoLoadHistory": "Restore training drafts",
 		"autoLoadHistoryDesc": "Restore your last edited training settings on startup, including changes you have not used to start training.",
 		"slowConnectionMode": "Slow connection compatibility",

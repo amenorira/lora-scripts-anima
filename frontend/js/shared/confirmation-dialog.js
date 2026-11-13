@@ -10,12 +10,15 @@
       ? options.tone : notice ? 'warning' : 'neutral';
     const message = text(options.message), context = text(options.context), details = text(options.details);
     const secondaryLabel = notice ? '' : text(options.secondaryLabel);
+    const fields = (Array.isArray(options.fields) ? options.fields : []).map(field => ({
+      label: text(field.label), value: text(field.value), multiline: !!field.multiline,
+    }));
     const content = [message, context, details].filter(Boolean).join('\n');
     const automatic = content.length > 360 || content.split('\n').length > 6
-      ? 'wide' : details || secondaryLabel || content.length > 120 || context ? 'standard' : 'compact';
+      ? 'wide' : fields.length || details || secondaryLabel || content.length > 120 || context ? 'standard' : 'compact';
     return {
       title: text(options.title) || translate(notice ? 'common.acknowledge' : 'common.confirm'),
-      message, context, details, notice, tone, secondaryLabel,
+      message, context, details, fields, notice, tone, secondaryLabel,
       size: ['compact', 'standard', 'wide'].includes(options.size) ? options.size : automatic,
       width: Number.isFinite(options.width) && options.width > 0 ? options.width : null,
       actionLabel: text(options.actionLabel) || translate(notice ? 'common.acknowledge' : 'common.confirm'),
@@ -27,18 +30,24 @@
     showConfirmModal: false,
     confirmDialog: {},
     confirmCopyState: '',
+    confirmBusy: false,
+    confirmSwitching: false,
     _confirmQueue: null,
     _confirmRequest: null,
     _confirmClosing: false,
+    _confirmAfterClose: null,
 
     // openConfirm({ title, message, tone, size, ... }) resolves to
     // 'confirm' | 'secondary' | 'cancel'. Callbacks are optional.
     // size: auto (default), compact (400px), standard (480px), wide (640px).
     // Optional numeric width overrides the preset; viewport limits still apply.
+    // next(choice) may asynchronously return the next config, keeping the same
+    // dialog open. Returning nothing finishes the flow; cancellation skips next.
+    // Flow errors reject the returned promise after releasing the dialog.
     openConfirm(options = {}) {
-      return new Promise(resolve => {
+      return new Promise((resolve, reject) => {
         if (!this._confirmQueue) this._confirmQueue = [];
-        this._confirmQueue.push({ config: { ...options }, resolve });
+        this._confirmQueue.push({ config: { ...options }, resolve, reject });
         this._showNextConfirm();
       });
     },
@@ -58,12 +67,39 @@
       if (this.$refs?.confirmDetails) this.$refs.confirmDetails.open = false;
     },
 
-    _finishConfirm(choice) {
+    async _finishConfirm(choice) {
       const request = this._confirmRequest;
-      if (!request || !this.showConfirmModal) return;
+      if (!request || !this.showConfirmModal || this.confirmBusy) return;
       if (choice === 'secondary' && !this.confirmDialog.secondaryLabel) return;
+      let failure;
+      if (choice !== 'cancel' && typeof request.config.next === 'function') {
+        this.confirmBusy = true;
+        try {
+          const next = await request.config.next.call(this, choice);
+          if (next) {
+            request.config = next;
+            this.confirmSwitching = true;
+            this.confirmDialog = normalize(next, key => this.t(key));
+            this.confirmCopyState = '';
+            if (this.$refs?.confirmDetails) this.$refs.confirmDetails.open = false;
+            this.$nextTick(() => {
+              const root = this.$refs?.confirmRoot;
+              if (this.$refs?.confirmBody) this.$refs.confirmBody.scrollTop = 0;
+              const target = Array.from(root?.querySelectorAll('[data-dialog-autofocus]') || [])
+                .find(node => !node.disabled && node.getClientRects().length);
+              target?.focus({ preventScroll: true });
+              root?.getBoundingClientRect();
+              this.confirmSwitching = false;
+            });
+            return;
+          }
+        } catch (error) { failure = error; }
+        finally { this.confirmBusy = false; }
+      }
       this._confirmRequest = null;
       this._confirmClosing = true;
+      this._confirmAfterClose = !failure && typeof request.config.onAfterClose === 'function'
+        ? () => request.config.onAfterClose.call(this, choice) : null;
       this.showConfirmModal = false;
       // A programmatic cancellation may happen before x-dialog ever opens.
       // In that case no exit event will be dispatched to drain the queue.
@@ -72,6 +108,7 @@
           if (this._confirmClosing && !this.showConfirmModal) this.confirmAfterClose();
         });
       }
+      if (failure) { request.reject(failure); return; }
       request.resolve(choice);
       const callback = request.config[{ confirm: 'onConfirm', secondary: 'onSecondary', cancel: 'onCancel' }[choice]];
       // Clear the request before callbacks: an action may enqueue another dialog.
@@ -86,12 +123,18 @@
       this.toast(error?.message || this.t('common.requestFailed'), 'error');
     },
 
-    confirmAction() { this._finishConfirm('confirm'); },
-    confirmSecondaryAction() { this._finishConfirm('secondary'); },
-    cancelConfirm() { this._finishConfirm('cancel'); },
+    confirmAction() { return this._finishConfirm('confirm'); },
+    confirmSecondaryAction() { return this._finishConfirm('secondary'); },
+    cancelConfirm() { return this._finishConfirm('cancel'); },
 
     confirmAfterClose() {
+      const callback = this._confirmAfterClose;
+      this._confirmAfterClose = null;
       this._confirmClosing = false;
+      if (callback) {
+        try { Promise.resolve(callback()).catch(error => this._confirmCallbackError(error)); }
+        catch (error) { this._confirmCallbackError(error); }
+      }
       this._showNextConfirm();
     },
 

@@ -263,6 +263,12 @@
 		"candidateFirstLine": "普通标注第一行（误识别时使用）",
 		"candidateSelectionRequired": "请先为检测到的多段标注选择读取方式。"
 	},
+	"trainingPreview": {
+		"title": "开始训练前确认预览",
+		"message": "预览已启用，请确认正向提示词适用于本次训练。",
+		"positivePrompts": "预览正向提示词",
+		"editPrompts": "修改提示词"
+	},
 	"trainingCache": {
 		"title": "检测到已有缓存",
 		"scope": "以下目录中有 {latents} 个图像 Latent 缓存、{text} 个文本编码缓存。重建会先删除这些缓存。\n{directories}",
@@ -2465,6 +2471,8 @@
 		"title": "UI 设置",
 		"autoLoadHistory": "恢复训练草稿",
 		"autoLoadHistoryDesc": "启动时恢复上次编辑的训练参数，包括尚未开始训练的修改。",
+		"confirmPreviewBeforeTraining": "训练前确认预览",
+		"confirmPreviewBeforeTrainingDesc": "启用预览时，在开始训练前核对提示词。",
 		"slowConnectionMode": "慢速远程连接兼容",
 		"slowConnectionModeDesc": "开启后逐张加载预览缩略图，减少对实时更新的影响。尚未手动设置时，浏览器报告低速连接或启用省流量模式会默认开启。",
 		"disableSlowConnectionTitle": "关闭慢速远程连接兼容？",

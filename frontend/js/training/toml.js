@@ -653,7 +653,27 @@ window.trainingTomlMixin = {
       }
       const payload = this._collectTrainingPayload();
       payload._form_state = this._collectTrainingFormSnapshot();
-      await this._submitTraining(payload);
+      const krea = payload.model_train_type === 'krea2-lora';
+      const promptKey = krea ? 'krea_sample_prompts' : 'positive_prompts';
+      if (this.confirmPreviewBeforeTraining && payload[krea ? 'enable_krea_samples' : 'enable_preview']) {
+        await this.openConfirm({
+          title: this.t('trainingPreview.title'),
+          message: this.t('trainingPreview.message'),
+          size: 'wide',
+          fields: [
+            { label: this.t('field.train_data_dir'), value: payload.train_data_dir },
+            { label: this.t('field.output_name'), value: payload.output_name },
+            { label: this.t('trainingPreview.positivePrompts'), value: payload[promptKey], multiline: true },
+          ],
+          secondaryLabel: this.t('trainingPreview.editPrompts'),
+          next: choice => choice === 'confirm' ? this._submitTraining(payload, true) : null,
+          onAfterClose: choice => {
+            if (choice === 'secondary') this.focusTrainingField(promptKey);
+          },
+        });
+      } else {
+        await this._submitTraining(payload);
+      }
     } catch(e) {
       this.toast(this.t('common.requestFailed')+': '+e.message, 'error');
       this._applyTaskView('IDLE');
@@ -662,7 +682,7 @@ window.trainingTomlMixin = {
     }
   },
 
-  async _submitTraining(payload) {
+  async _submitTraining(payload, confirmInPlace = false) {
     this.isTraining = true; this.isIdle = false;
     this.statusText = this.t('common.training') + '...';
     const resp = await fetch('/api/run', {
@@ -673,6 +693,14 @@ window.trainingTomlMixin = {
     const data = await resp.json();
     if (!resp.ok || data.status !== 'success') {
       if (data.data?.errorCode === 'trainingCacheFound') {
+        if (confirmInPlace) {
+          return {
+            ...this._cacheRebuildDialog(data.data),
+            next: choice => this._submitTraining({
+              ...payload, _cache_action: choice === 'confirm' ? data.data.scope : 'keep',
+            }, true),
+          };
+        }
         this._showCacheRebuildDialog(data.data, payload, next => this.startTraining(next));
       } else {
         this._applyTaskView('IDLE');
@@ -692,6 +720,14 @@ window.trainingTomlMixin = {
   },
 
   _showCacheRebuildDialog(cache, payload, submit, preparingCache = false) {
+    this.openConfirm({
+      ...this._cacheRebuildDialog(cache, preparingCache),
+      onConfirm: () => submit({ ...payload, _cache_action: cache.scope }),
+      onSecondary: () => submit({ ...payload, _cache_action: 'keep' }),
+    });
+  },
+
+  _cacheRebuildDialog(cache, preparingCache = false) {
     // A pending poll may still contain the preparation task that the server just released.
     this._statePollDiscard = true;
     this._applyTaskView('IDLE');
@@ -700,15 +736,13 @@ window.trainingTomlMixin = {
       .replace('{text}', String(cache.text))
       .replace('{directories}', () => cache.directories.join('\n'));
     const message = preparingCache ? scope : scope + '\n\n' + this.t('trainingCache.trainingNote');
-    this.openConfirm({
+    return {
       title: this.t('trainingCache.title'),
       message,
       tone: 'danger',
       actionLabel: this.t(preparingCache ? 'trainingCache.rebuild' : 'trainingCache.rebuildStart'),
-      onConfirm: () => submit({ ...payload, _cache_action: cache.scope }),
       secondaryLabel: this.t(preparingCache ? 'trainingCache.continue' : 'trainingCache.keepStart'),
-      onSecondary: () => submit({ ...payload, _cache_action: 'keep' }),
-    });
+    };
   },
 
   _acceptTrainingStart(data, status) {
