@@ -95,6 +95,10 @@
   <script src="/anima-ui/js/training/crop-preview-grid.js" defer></script>
   <script src="/anima-ui/js/training/crop-preview.js" defer></script>
   <link rel="stylesheet" href="/anima-ui/css/crop-preview.css">
+  <script src="/anima-ui/js/training/prompt-workbench.js" defer></script>
+  <script src="/anima-ui/js/training/prompt-tag-tools.js" defer></script>
+  <script src="/anima-ui/js/training/prompt-triggers.js" defer></script>
+  <link rel="stylesheet" href="/anima-ui/css/prompt-workbench.css">
   <script src="/anima-ui/js/training/toml.js" defer></script>
   <script src="/anima-ui/js/training/config-io.js" defer></script>
   <script src="/anima-ui/js/tagger/ai-caption-options.js" defer></script>
@@ -2001,7 +2005,116 @@
   </div>
 </dialog>
 
-<!-- ── Dataset crop preview ───────────────────────────── -->
+<!-- ── Preview prompt workbench ───────────────────────── -->
+<dialog id="promptWorkbenchDialog" class="modal-overlay modal-overlay--morph" data-dialog-fast-open x-dialog="promptWorkbenchOpen"
+        @click.self="closePromptWorkbench()" @dialog-close="closePromptWorkbench()" @dialog-after-open="positionPromptWorkbenchTagSuggestions()" @dialog-after-close="releasePromptWorkbenchView()" :aria-label="t('promptWorkbench.title')" x-cloak>
+  <div class="modal prompt-workbench-modal">
+    <div class="modal-header">
+      <div class="pw-heading"><span x-text="t('promptWorkbench.title')"></span><span class="pw-summary" x-text="promptWorkbenchSummary()"></span></div>
+      <button type="button" class="btn-icon preview-close" @click="closePromptWorkbench()" :aria-label="t('common.close')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m18 6-12 12M6 6l12 12"/></svg></button>
+    </div>
+    <template x-if="promptWorkbenchRendered">
+    <div class="pw-content" @scroll.capture="closePromptWorkbenchTriggerMenu(false)" @resize.window="closePromptWorkbenchTriggerMenu(false)">
+      <svg class="te-ctx-icons" aria-hidden="true"><symbol id="pw-icon-trigger" viewBox="0 0 24 24"><path d="M12 17v5M9 3h6M15 3v5l4 4v3H5v-3l4-4V3"/></symbol></svg>
+      <section class="pw-prompts">
+        <div class="pw-prompt-list" :aria-label="t('promptWorkbench.prompts')">
+          <template x-for="(item,index) in promptWorkbenchItems" :key="item.id">
+            <div class="pw-prompt-row" :data-pw-prompt-id="item.id" :class="{selected:promptWorkbenchActiveId===item.id}">
+              <button type="button" class="btn-icon pw-grip" draggable="false" @dragstart.prevent @pointerdown="startPromptWorkbenchSort($event,item.id)" @keydown="promptWorkbenchSortKey($event,item.id)" :aria-label="t('promptWorkbench.drag')" :title="t('promptWorkbench.drag')"><svg width="14" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg></button>
+              <button type="button" class="pw-prompt-summary loop-marquee-host" @click="editPromptWorkbenchItem(item.id)" :aria-pressed="promptWorkbenchActiveId===item.id">
+                <span class="pw-prompt-number" x-text="t('promptWorkbench.prompt').replace('{n}',index+1)"></span>
+                <span x-loop-marquee><span x-text="item.text || t('promptWorkbench.emptyPrompt')"></span></span>
+              </button>
+              <button type="button" class="btn-icon" @click="editPromptWorkbenchItem(item.id,true)" :aria-label="t('promptWorkbench.edit')" :title="t('promptWorkbench.edit')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#te-icon-rename"></use></svg></button>
+              <button type="button" class="btn-icon preview-close" @click="deletePromptWorkbenchItem(item.id)" :aria-label="t('promptWorkbench.delete')" :title="t('promptWorkbench.delete')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#te-icon-delete"></use></svg></button>
+            </div>
+          </template>
+        </div>
+        <div class="pw-add-row">
+          <button type="button" class="btn btn-ghost btn-sm" @click="addPromptWorkbenchItem()" :disabled="promptWorkbenchSingle&&promptWorkbenchItems.length>0"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#te-icon-add"></use></svg><span x-text="t('promptWorkbench.add')"></span></button>
+          <span class="field-hint" x-show="promptWorkbenchSingle" x-text="t('promptWorkbench.single')"></span>
+        </div>
+        <textarea id="promptWorkbenchEditor" class="pw-editor" x-show="!promptWorkbenchUseTagChips" :aria-label="t('promptWorkbench.editor')" :placeholder="t('promptWorkbench.editorPlaceholder')" :disabled="!promptWorkbenchActive" :value="promptWorkbenchActive?.text||''" @input="updatePromptWorkbenchItem($event.target.value)"></textarea>
+        <template x-if="promptWorkbenchUseTagChips">
+        <div id="promptWorkbenchTagChips" class="pw-prompt-chips" tabindex="0" role="list" :aria-label="t('promptWorkbench.promptTags')">
+          <template x-for="(tag,index) in promptWorkbenchPromptTags" :key="tag+'-'+index">
+            <span class="te-editor-tag pw-selected-tag" :class="tagDictionaryChipState(tag)" :data-pw-tag-index="index" tabindex="0" role="listitem" :aria-label="tag" :data-pw-trigger-tag="tag" :title="promptWorkbenchTriggerTitle(tag)" draggable="false" @dragstart.prevent @pointerdown="startPromptWorkbenchTagDrag($event,index)" @contextmenu="openPromptWorkbenchTriggerMenu($event,tag)" @keydown="if ($event.key==='ContextMenu'||($event.shiftKey&amp;&amp;$event.key==='F10')) openPromptWorkbenchTriggerMenu($event,tag); else promptWorkbenchTagSortKey($event,index)">
+              <svg class="pw-trigger-mark" x-show="promptWorkbenchIsTrigger(tag)" aria-hidden="true"><use href="#pw-icon-trigger"></use></svg>
+              <span class="pw-chip-body"><span class="te-editor-tag-name" x-text="tagDictionaryDisplayName(tag)"></span><span class="te-editor-tag-zh" x-text="tagDictionaryTranslationFor(tag)"></span></span><span class="te-tag-count pw-chip-count" x-show="promptWorkbenchTagCount(tag)!==null" x-text="promptWorkbenchTagCount(tag)" :title="t('tagEditor.countInDataset').replace('{count}',promptWorkbenchTagCount(tag))"></span><button type="button" class="pw-chip-remove" @pointerdown.stop @keydown.stop @click.stop="removePromptWorkbenchTagAt(index)" :aria-label="t('promptWorkbench.removeTag').replace('{tag}',tag)">×</button>
+            </span>
+          </template>
+          <span class="field-hint" x-show="!promptWorkbenchPromptTags.length" x-text="t('promptWorkbench.emptyPrompt')"></span>
+        </div>
+        </template>
+        <div class="field-hint" x-show="promptWorkbenchStructured" x-text="t('promptWorkbench.structured')"></div>
+        <div class="pw-tag-controls" x-show="!promptWorkbenchStructured">
+          <div class="te-editor-add pw-tag-add"><input id="promptWorkbenchTagAdd" type="text" autocomplete="off" spellcheck="false" x-model="promptWorkbenchTagInput" :disabled="!promptWorkbenchActive" :placeholder="t(tagDictionaryReady?'tagEditor.dictAddPlaceholder':'tagEditor.addTagPlaceholder')" :aria-label="t('promptWorkbench.addTags')" role="combobox" aria-autocomplete="list" aria-controls="pw-tag-suggestions" :aria-expanded="promptWorkbenchTagSuggestions.length>0" :aria-activedescendant="promptWorkbenchTagSuggestIndex>=0?'pw-tag-suggestion-'+promptWorkbenchTagSuggestIndex:null" @input="if (!$event.isComposing) suggestPromptWorkbenchTags($event.target)" @focus="suggestPromptWorkbenchTags($event.target)" @click="suggestPromptWorkbenchTags($event.target)" @compositionstart="closePromptWorkbenchTagSuggestions()" @compositionend="suggestPromptWorkbenchTags($event.target)" @blur="closePromptWorkbenchTagSuggestions()" @keyup="if (!$event.isComposing && ['ArrowLeft','ArrowRight','Home','End'].includes($event.key)) suggestPromptWorkbenchTags($event.target)" @keydown="promptWorkbenchTagKey($event)"><button type="button" @click="addPromptWorkbenchTags()" :disabled="!promptWorkbenchActive||!promptWorkbenchTagInput.trim()" :aria-label="t('promptWorkbench.addTags')">+</button></div>
+          <button type="button" class="btn btn-ghost btn-sm" @click="organizePromptWorkbenchTags()" :disabled="!promptWorkbenchActive||!promptWorkbenchData" :aria-disabled="promptWorkbenchLoading?'true':'false'" x-text="t('promptWorkbench.organizeTags')"></button>
+          <div class="tagger-compact-option"><span x-text="t('promptWorkbench.showTagChips')"></span><label class="toggle"><input type="checkbox" :aria-label="t('promptWorkbench.showTagChips')" :checked="promptWorkbenchShowTagChips" @change="setPromptWorkbenchTagChips($event.target.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>
+        </div>
+      </section>
+      <hr class="pw-divider">
+      <section class="pw-candidates" :aria-label="t('promptWorkbench.candidates')">
+        <div class="te-filter-group pw-subsets" role="group" :aria-label="t('promptWorkbench.subsets')">
+          <template x-for="option in promptWorkbenchSubsetOptions" :key="option.id"><button type="button" class="pw-subset" :class="{active:promptWorkbenchSubset===option.id}" @click="setPromptWorkbenchSubset(option.id)" :aria-pressed="promptWorkbenchSubset===option.id" :title="option.name"><span x-text="option.name"></span><span class="pw-subset-count" x-text="option.count===null?'…':'('+option.count+')'"></span></button></template>
+        </div>
+        <div class="pw-toolbar">
+          <div class="te-sidebar-search pw-search"><input type="search" :aria-label="t('promptWorkbench.search')" :placeholder="t('promptWorkbench.search')" x-model="promptWorkbenchSearch" @input.debounce.150ms="filterPromptWorkbench()"><button type="button" class="te-search-clear" x-show="promptWorkbenchSearch" @click="promptWorkbenchSearch='';filterPromptWorkbench()" :aria-label="t('tagEditor.clearSearch')" :title="t('tagEditor.clearSearch')">×</button></div>
+          <div class="tagger-compact-option"><span class="pw-exclusion-caption"><span x-text="t('promptWorkbench.exclusionLabel').split('{list}')[0]"></span><button type="button" class="field-doc-link pw-exclusion-link" data-dialog-opens="promptExclusionsDialog" @click="openPromptWorkbenchExclusions()" aria-haspopup="dialog" x-text="t('promptWorkbench.exclusions')"></button><span x-text="t('promptWorkbench.exclusionLabel').split('{list}')[1]"></span></span><label class="toggle"><input type="checkbox" :aria-label="t('promptWorkbench.useExclusions')" x-model="promptWorkbenchExcludeEnabled" @change="savePromptWorkbenchExclusions()"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>
+          <div class="tagger-compact-option" x-show="tagDictionaryIsChinese()"><span x-text="t('tagger.showTranslation')"></span><label class="toggle"><input type="checkbox" :aria-label="t('tagger.showTranslation')" :checked="tagDictionaryShowTranslation" @change="tagDictionaryToggleTranslation()"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>
+          <button type="button" class="btn-icon refresh-button" :class="{'is-loading':promptWorkbenchLoading||promptWorkbenchRefreshFeedback}" @click="refreshPromptWorkbenchTags()" :aria-disabled="promptWorkbenchLoading?'true':'false'" :aria-busy="promptWorkbenchLoading?'true':'false'" :aria-label="t('promptWorkbench.refresh')" :title="t('promptWorkbench.refresh')" x-html="_refreshIconHtml()"></button>
+          <span class="pw-scan-note" x-text="promptWorkbenchScanNote()"></span>
+        </div>
+        <div class="pw-tag-area">
+          <div class="pw-status" x-show="promptWorkbenchLoading&&!promptWorkbenchData" role="status" x-text="t('promptWorkbench.loading')"></div>
+          <div class="pw-status pw-error" x-show="promptWorkbenchError" role="alert" x-text="promptWorkbenchError"></div>
+          <div class="te-tagcloud-empty" x-show="promptWorkbenchData&&!promptWorkbenchError&&!promptWorkbenchTags.length" x-text="t('promptWorkbench.noTags')"></div>
+          <div class="te-tagcloud pw-tagcloud" x-show="promptWorkbenchData">
+            <template x-for="item in promptWorkbenchVisibleTags" :key="item.tag">
+              <div class="te-tag-row" :class="Object.assign({selected:promptWorkbenchIsTagSelected(item.tag)},tagDictionaryChipState(item.tag))">
+                <button type="button" class="te-tag-name te-tag-label" @pointerdown="if ($event.shiftKey) $event.preventDefault()" @click="togglePromptWorkbenchTag(item.tag,$event)" @contextmenu="openPromptWorkbenchTriggerMenu($event,item.tag)" @keydown="if ($event.key==='ContextMenu'||($event.shiftKey&amp;&amp;$event.key==='F10')) openPromptWorkbenchTriggerMenu($event,item.tag)" :data-pw-trigger-tag="item.tag" :title="promptWorkbenchTriggerTitle(item.tag)" :disabled="!promptWorkbenchActive||promptWorkbenchStructured" :aria-pressed="promptWorkbenchIsTagSelected(item.tag)"><span class="te-tag-title"><svg class="pw-trigger-mark" x-show="promptWorkbenchIsTrigger(item.tag)" aria-hidden="true"><use href="#pw-icon-trigger"></use></svg><span class="te-editor-tag-name" x-text="tagDictionaryDisplayName(item.tag)"></span><span class="te-tag-count" :title="t('tagEditor.countInDataset').replace('{count}',item.count)" x-text="item.count"></span></span><span class="te-editor-tag-zh" x-text="tagDictionaryTranslationFor(item.tag)"></span></button>
+              </div>
+            </template>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm pw-more" x-show="promptWorkbenchData&&promptWorkbenchTags.length>promptWorkbenchLimit" @click="morePromptWorkbenchTags()" x-text="t('promptWorkbench.more').replace('{n}',promptWorkbenchTags.length-promptWorkbenchLimit)"></button>
+        </div>
+      </section>
+    </div>
+    </template>
+  </div>
+  <div id="promptWorkbenchTriggerMenu" class="te-ctx" role="menu" :aria-label="t('promptWorkbench.triggerMenu')" x-show="!!promptWorkbenchTriggerMenu" :class="{'is-positioned':promptWorkbenchTriggerMenu?.positioned}" :style="'left:'+(promptWorkbenchTriggerMenu?.x||4)+'px;top:'+(promptWorkbenchTriggerMenu?.y||4)+'px'" @click.outside.capture="closePromptWorkbenchTriggerMenu(false)" @contextmenu.outside.capture="closePromptWorkbenchTriggerMenu(false)" @contextmenu.prevent.stop @keydown.escape.prevent.stop="closePromptWorkbenchTriggerMenu()" @keydown="promptWorkbenchTriggerMenuKey($event)" x-cloak>
+    <button type="button" role="menuitem" @click="setPromptWorkbenchTrigger(promptWorkbenchTriggerMenu.tag,!promptWorkbenchIsTrigger(promptWorkbenchTriggerMenu.tag))"><svg aria-hidden="true"><use href="#pw-icon-trigger"></use></svg><span x-text="t(promptWorkbenchIsTrigger(promptWorkbenchTriggerMenu?.tag)?'promptWorkbench.unsetTrigger':'promptWorkbench.setTrigger')"></span></button>
+    <button type="button" role="menuitem" x-show="promptWorkbenchTriggerHasOverride(promptWorkbenchTriggerMenu?.tag)" @click="setPromptWorkbenchTrigger(promptWorkbenchTriggerMenu.tag,null)"><svg aria-hidden="true"><use href="#te-icon-rescan"></use></svg><span x-text="t('promptWorkbench.resetTrigger')"></span></button>
+  </div>
+  <div class="te-suggest pw-tag-suggest" x-show="promptWorkbenchTagSuggestions.length>0" :style="promptWorkbenchTagSuggestCoords||{}" @resize.window="positionPromptWorkbenchTagSuggestions()" @scroll.window.capture="positionPromptWorkbenchTagSuggestions($event)" x-cloak>
+    <div id="pw-tag-suggestions" role="listbox" :aria-label="t('promptWorkbench.addTags')">
+      <template x-for="(s,index) in promptWorkbenchTagSuggestions" :key="s.insert"><div class="te-suggest-item te-dict-item" :class="{active:promptWorkbenchTagSuggestIndex===index}" role="option" :id="'pw-tag-suggestion-'+index" :aria-selected="promptWorkbenchTagSuggestIndex===index" @mousedown.prevent @click.stop="addPromptWorkbenchTags(s)"><span class="te-dict-item-body"><span class="te-dict-item-line"><span class="te-dict-item-name" :class="tagDictionaryCategoryClass(s.cat)" x-text="tagDictionaryDisplayName(s.label)"></span><span class="te-dict-item-count" :title="t('tagEditor.dictPostCount')" x-show="s.count" x-text="tagDictionaryFormatCount(s.count)"></span></span><span class="te-dict-item-zh" x-text="tagDictionaryTranslationVisible()?s.sub:''"></span><span class="te-dict-item-alias" x-show="s.alias&&(tagDictionaryIsChinese()||!/[\u3400-\u9fff]/.test(s.alias))" x-text="s.alias?t('tagEditor.dictAliasHit').replace('{alias}',s.alias):''"></span></span></div></template>
+    </div>
+    <button type="button" class="te-suggest-more" tabindex="-1" x-show="promptWorkbenchTagSuggestMore" :disabled="promptWorkbenchTagSuggestLoading" @mousedown.prevent @click.stop="morePromptWorkbenchTagSuggestions()" x-text="t(promptWorkbenchTagSuggestLoading?'common.loading':'tagEditor.moreSuggestions')"></button>
+  </div>
+</dialog>
+
+<dialog id="promptExclusionsDialog" class="modal-overlay" x-dialog="promptWorkbenchExclusionsOpen" @click.self="closePromptWorkbenchExclusions()" @dialog-close="closePromptWorkbenchExclusions()" :aria-label="t('promptWorkbench.exclusions')" x-cloak>
+  <div class="modal pw-exclusions-modal">
+    <div class="modal-header"><span x-text="t('promptWorkbench.exclusions')"></span><button type="button" class="btn-icon preview-close" @click="closePromptWorkbenchExclusions()" :aria-label="t('common.close')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m18 6-12 12M6 6l12 12"/></svg></button></div>
+    <div class="modal-body pw-exclusions-body">
+      <p class="field-hint" x-text="t('promptWorkbench.exclusionHint')"></p>
+      <div class="pw-exclusions-layout">
+        <div id="promptExclusionList" class="pw-exclusion-list" role="listbox" tabindex="0" data-dialog-autofocus :aria-label="t('promptWorkbench.exclusions')" :aria-activedescendant="promptWorkbenchExclusionSelectedId ? 'pw-exclusion-'+promptWorkbenchExclusionSelectedId : null" @keydown="promptWorkbenchExclusionKey($event)">
+          <template x-for="row in promptWorkbenchExclusionDraft" :key="row.id">
+            <div class="pw-exclusion-row" role="option" :id="'pw-exclusion-'+row.id" :aria-selected="promptWorkbenchExclusionSelectedId===row.id" @click="selectPromptWorkbenchExclusion(row.id)" @dblclick="editPromptWorkbenchExclusion(row.id)">
+              <template x-if="promptWorkbenchExclusionEditingId===row.id"><input id="promptExclusionInput" type="text" :aria-label="t('promptWorkbench.exclusionRule')" x-model="promptWorkbenchExclusionValue" @blur="commitPromptWorkbenchExclusion()" @keydown.enter.prevent.stop="commitPromptWorkbenchExclusion();$nextTick(()=>document.getElementById('promptExclusionList')?.focus())" @keydown.escape.prevent.stop="cancelPromptWorkbenchExclusionEdit()"></template>
+              <span x-show="promptWorkbenchExclusionEditingId!==row.id" :title="row.value" x-text="row.value"></span>
+            </div>
+          </template>
+          <div class="pw-exclusion-empty" x-show="!promptWorkbenchExclusionDraft.length" x-text="t('promptWorkbench.noExclusions')"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer pw-exclusions-footer"><button type="button" class="btn btn-ghost btn-sm" @click="resetPromptWorkbenchExclusions()" x-text="t('promptWorkbench.restoreExclusions')"></button><div class="pw-header-actions"><button type="button" class="btn btn-ghost btn-sm" @click="addPromptWorkbenchExclusion()" x-text="t('promptWorkbench.newExclusion')"></button><button type="button" class="btn btn-ghost btn-sm" :disabled="!promptWorkbenchExclusionSelectedId" @click="editPromptWorkbenchExclusion()" x-text="t('promptWorkbench.editExclusion')"></button><button type="button" class="btn btn-ghost btn-sm" :disabled="!promptWorkbenchExclusionSelectedId" @click="deletePromptWorkbenchExclusion()" x-text="t('promptWorkbench.deleteExclusion')"></button></div></div>
+  </div>
+</dialog>
+
 <dialog id="cropPreviewDialog" class="modal-overlay modal-overlay--morph" data-dialog-fast-open x-dialog="cropPreviewOpen" @click.self="cropPreviewDismiss()"
         @dialog-after-open="_cropPreviewEntered = true" @dialog-after-close="clearCropPreview()"
         @dialog-close="cropPreviewDismiss()" :aria-label="t('cropPreview.title')" x-cloak>

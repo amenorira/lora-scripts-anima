@@ -489,7 +489,7 @@ window.tagDictionaryMixin = {
 
   /* 只有真的要看译文时才建 Worker：在环境管理页装完词典不该顺手拉 9MB 数据 */
   _tdStartWorkerForRoute() {
-    if (['tagEditor', 'tagger'].includes(this.currentRoute)) this._tdStartWorker();
+    if (['tagEditor', 'tagger'].includes(this.currentRoute) || this.promptWorkbenchOpen) this._tdStartWorker();
   },
 
   /* 更新完词典或上次加载失败时重新拉起 Worker */
@@ -588,6 +588,11 @@ window.tagDictionaryMixin = {
   },
 
   /* chip 上的词典元数据。读一次版本号以建立响应式依赖：缓存更新后模板重新求值。 */
+  tagDictionaryLookupResultFor(tag) {
+    void this.tagDictionaryVersion;
+    // undefined means pending/unavailable; null means a completed lookup had no match.
+    return this.tagDictionaryReady ? _tdLruGet(_td().lookups, tag) : undefined;
+  },
   tagDictionaryMetaFor(tag) {
     void this.tagDictionaryVersion;
     if (!this.tagDictionaryReady) return null;
@@ -652,6 +657,11 @@ window.tagDictionaryMixin = {
   tagDictionarySyncChips() {
     this.tagDictionaryCloseHover();
     if (!this.tagDictionaryReady) return;
+    if (this.promptWorkbenchOpen) {
+      this.syncPromptWorkbenchDictionary?.();
+      if (this._promptWorkbenchTagQuery) this.fetchPromptWorkbenchTagSuggestions?.(this._promptWorkbenchTagSuggestSeq);
+      return;
+    }
     if (['tagger', 'ai-captioning'].includes(this.currentRoute)) {
       this.syncTaggerDictionary();
       return;
@@ -703,7 +713,10 @@ window.tagDictionaryMixin = {
         delete state.inflight[tag];
         if (results) _tdLruSet(state.lookups, tag, results[i] || null, TD_LOOKUP_CACHE_MAX);
       });
-      if (results) self.tagDictionaryVersion++;
+      if (results) {
+        self.tagDictionaryVersion++;
+        self.refreshPromptWorkbenchTriggerGuesses?.();
+      }
     });
   },
 

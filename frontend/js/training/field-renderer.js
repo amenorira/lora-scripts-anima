@@ -517,8 +517,11 @@ window.trainingFieldRenderer = {
       const toggleHtml = toggleKey
         ? `<label class="toggle"><input type="checkbox" aria-label="${fieldAriaLabel}"${labelAttrs} :checked="form.${toggleKey}" @change="setField('${toggleKey}', $event.target.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>`
         : '';
+      const promptAction = ['positive_prompts', 'krea_sample_prompts'].includes(dataKey)
+        ? `<button type="button" class="btn btn-preview btn-sm" data-dialog-opens="promptWorkbenchDialog" @click="openPromptWorkbench('${dataKey}')"><span x-text="t('promptWorkbench.open')"></span></button>` : '';
       controlSection = infoHtml + toggleHtml + (field.controlActions || '');
-      fullWidthRow = `<div class="field-input-row">${controlHtml}</div>`;
+      fullWidthRow = (promptAction ? `<div class="pw-entry">${promptAction}</div>` : '')
+        + `<div class="field-input-row">${controlHtml}</div>`;
     } else {
       // Standard: info left, control right — single flex row
       controlSection = `${infoHtml}<div class="field-control">${this._renderFieldQuickActions(field)}${controlHtml}${field.controlActions || ''}</div>`;

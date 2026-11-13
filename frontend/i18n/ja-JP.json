@@ -1,4 +1,21 @@
 {
+	"promptWorkbench": {
+		"open": "データセットのタグを選択", "title": "プレビュー用プロンプト", "prompts": "プロンプト一覧", "prompt": "プロンプト {n}",
+		"emptyPrompt": "未入力", "drag": "ドラッグまたは Alt＋↑ / ↓ で並べ替え", "edit": "プロンプトを編集", "delete": "プロンプトを削除", "add": "追加",
+		"editor": "現在のプロンプト", "editorPlaceholder": "プロンプトを入力するか、下のタグを選択してください。すべて削除した場合は「追加」で作成できます。",
+		"addTags": "タグを追加", "organizeTags": "タグを整理", "showTagChips": "タグを表示", "promptTags": "現在のプロンプトのタグ", "removeTag": "{tag} を削除",
+		"triggerMenu": "トリガー設定", "setTrigger": "トリガーに設定", "unsetTrigger": "トリガーから除外", "resetTrigger": "自動判定に戻す",
+		"autoTrigger": "推定トリガー。右クリックで修正", "manualTrigger": "指定したトリガー。右クリックで変更", "triggerHint": "右クリックでトリガーを設定",
+		"candidates": "候補タグ", "subsets": "学習サブセット", "all": "すべて", "search": "タグを検索", "refresh": "タグを再集計",
+		"useExclusions": "除外リストを使用", "exclusionLabel": "{list}を使用", "exclusions": "除外リスト", "restoreExclusions": "標準リストに戻す",
+		"exclusionHint": "1行に1つのルール。大文字・小文字を区別せず、指定文字を含む候補タグを非表示にします。例：smile は evil smile も除外します。",
+		"exclusionRule": "除外ルール", "newExclusion": "新規", "editExclusion": "編集", "deleteExclusion": "削除", "noExclusions": "除外ルールがありません。「新規」で追加できます。",
+		"loading": "学習タグを集計中…", "failed": "タグを集計できません", "noTags": "表示できるタグがありません。キャプション、検索、除外リストを確認してください。",
+		"skipped": "{n} 枚のキャプションが未作成、読み取り不可、または構造化データです", "more": "さらに表示（残り {n} 件）",
+		"count": "{n} 件のプロンプトから毎回 {n} 枚のプレビューを生成", "pending": "プロンプト {n} 件、未入力 {empty} 件",
+		"single": "MOSS-Image は改行と JSON 構造を保持した単一プロンプトを使用します。", "structured": "構造化プロンプトは入力欄で直接編集してください。",
+		"undo": "元に戻す", "done": "完了"
+	},
 	"cropPreview": {
 		"stats": "バケット統計",
 		"originalSize": "元画像",

@@ -1,4 +1,21 @@
 {
+	"promptWorkbench": {
+		"open": "Choose dataset tags", "title": "Preview prompts", "prompts": "Prompt list", "prompt": "Prompt {n}",
+		"emptyPrompt": "Empty prompt", "drag": "Drag to reorder, or press Alt + Up / Down", "edit": "Edit prompt", "delete": "Delete prompt", "add": "Add",
+		"editor": "Current prompt", "editorPlaceholder": "Enter a prompt or choose tags below. Use Add to create a prompt after deleting all entries.",
+		"addTags": "Add tags", "organizeTags": "Organize tags", "showTagChips": "Show tag chips", "promptTags": "Current prompt tags", "removeTag": "Remove {tag}",
+		"triggerMenu": "Trigger settings", "setTrigger": "Set as trigger", "unsetTrigger": "Do not treat as trigger", "resetTrigger": "Use automatic detection",
+		"autoTrigger": "Guessed trigger; right-click to correct", "manualTrigger": "Manually assigned trigger; right-click to change", "triggerHint": "Right-click to set trigger",
+		"candidates": "Candidate tags", "subsets": "Training subsets", "all": "All", "search": "Find tags", "refresh": "Refresh tag counts",
+		"useExclusions": "Use exclusion list", "exclusionLabel": "Use {list}", "exclusions": "Exclusion list", "restoreExclusions": "Restore common list",
+		"exclusionHint": "One rule per row. Hide candidate tags containing the text, ignoring case. For example, smile also excludes evil smile.",
+		"exclusionRule": "Exclusion rule", "newExclusion": "New", "editExclusion": "Edit", "deleteExclusion": "Delete", "noExclusions": "No exclusion rules. Click New to add one.",
+		"loading": "Counting dataset tags…", "failed": "Unable to count tags", "noTags": "No tags to display. Check caption files, search, or exclusions.",
+		"skipped": "{n} images have missing, unreadable, or structured captions", "more": "Show more ({n} remaining)",
+		"count": "{n} prompts, {n} preview images per sampling run", "pending": "{n} prompts, {empty} empty",
+		"single": "MOSS-Image uses one prompt, preserving newlines and JSON structure.", "structured": "Edit structured prompts directly in the text box.",
+		"undo": "Undo", "done": "Done"
+	},
 	"cropPreview": {
 		"stats": "Bucket statistics",
 		"originalSize": "Original",

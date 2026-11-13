@@ -1,4 +1,21 @@
 {
+	"promptWorkbench": {
+		"open": "从训练集选标签", "title": "预览提示词", "prompts": "提示词列表", "prompt": "提示词 {n}",
+		"emptyPrompt": "待填写", "drag": "拖动排序，或按 Alt＋↑ / ↓", "edit": "编辑提示词", "delete": "删除提示词", "add": "添加",
+		"editor": "当前提示词", "editorPlaceholder": "填写提示词，或点击下方标签加入；删除全部后可点击“添加”新建。",
+		"addTags": "添加标签", "organizeTags": "整理标签", "showTagChips": "显示标签块", "promptTags": "当前提示词标签", "removeTag": "删除 {tag}",
+		"triggerMenu": "触发词设置", "setTrigger": "设为触发词", "unsetTrigger": "不作为触发词", "resetTrigger": "恢复自动判断",
+		"autoTrigger": "推测触发词，右键可修正", "manualTrigger": "已指定为触发词，右键可修改", "triggerHint": "右键设置触发词",
+		"candidates": "候选标签", "subsets": "训练子集", "all": "全部", "search": "查找标签", "refresh": "重新统计标签",
+		"useExclusions": "使用排除列表", "exclusionLabel": "使用{list}", "exclusions": "排除列表", "restoreExclusions": "恢复常用列表",
+		"exclusionHint": "每行一条规则，隐藏包含该文字的候选标签，不区分大小写。例如 smile 也会排除 evil smile。",
+		"exclusionRule": "排除规则", "newExclusion": "新增", "editExclusion": "编辑", "deleteExclusion": "删除", "noExclusions": "没有排除规则，点击“新增”添加。",
+		"loading": "正在统计训练集标签…", "failed": "标签统计失败", "noTags": "没有可显示的标签，请检查标注文件、搜索或排除列表。",
+		"skipped": "{n} 张图片的标注缺失、无法读取或为结构化内容", "more": "显示更多（剩余 {n} 个）",
+		"count": "{n} 条提示词，每次生成 {n} 张预览图", "pending": "{n} 条提示词，{empty} 条待填写",
+		"single": "MOSS-Image 使用一条提示词，保留换行和 JSON 结构。", "structured": "结构化提示词请直接在编辑框中修改。",
+		"undo": "撤销", "done": "完成"
+	},
 	"cropPreview": {
 		"stats": "分桶统计",
 		"originalSize": "原图",
