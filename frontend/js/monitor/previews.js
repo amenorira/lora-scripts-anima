@@ -75,6 +75,9 @@ window.monitorPreviewsMixin = {
   },
 
   _invalidatePreviewRequest() {
+    if (this._previewRefreshFeedbackTimer) clearTimeout(this._previewRefreshFeedbackTimer);
+    this._previewRefreshFeedbackTimer = null;
+    this.previewRefreshFeedback = false;
     this._previewRequestSeq++;
     this._previewSnapshotSeq++;
     this.previewsLoading = false;
@@ -251,14 +254,7 @@ window.monitorPreviewsMixin = {
     if (this.previewsLoading) return;
     // A local refresh can finish before the first frame. Keep the click
     // feedback visible briefly without holding the request or its results.
-    if (notifyOnFailure) {
-      this.previewRefreshFeedback = true;
-      clearTimeout(this._previewRefreshFeedbackTimer);
-      this._previewRefreshFeedbackTimer = setTimeout(() => {
-        this.previewRefreshFeedback = false;
-        this._previewRefreshFeedbackTimer = null;
-      }, 800);
-    }
+    if (notifyOnFailure) this._showRefreshFeedback('preview');
     this.previewsLoading = true;
     const requestSeq = ++this._previewRequestSeq;
     this._previewSnapshotSeq++;

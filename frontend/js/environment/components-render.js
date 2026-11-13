@@ -46,7 +46,7 @@ window.environmentComponentsRenderMixin = {
         </div></div></template>
       </div></div>`
       + (status?.installed ? `<button type="button" class="btn btn-sm btn-ghost" data-env-action="fa-install" ${disabled ? 'disabled' : ''}>${this.esc(T('reinstall'))}</button>` : '')
-      + `<button type="button" class="btn btn-sm btn-ghost" data-env-action="fa-refresh" ${this.faBusy ? 'disabled' : ''}>${this.esc(T('refresh'))}</button></div>`;
+      + this._renderRefreshBtn('fa', this.faBusy, true) + '</div>';
     if (this.faInstallLog) body += this._renderLog(this.faInstallLog);
     return this._renderRow('fa', state, open, head, body);
   },
@@ -97,7 +97,7 @@ window.environmentComponentsRenderMixin = {
       if (!xfInstalled) body += `<div class="env-msg env-msg-info">${T('xfInstallInfo','Installs latest compatible version from PyPI.')}</div>`;
 
     }
-    body += `<div class="env-actions">${this._renderRefreshBtn('xf-refresh-btn', this.xfBusy)}</div>`;
+    body += `<div class="env-actions">${this._renderRefreshBtn('xf', this.xfBusy)}</div>`;
 
     return this._renderRow('xf', state, open, head, body);
   },
@@ -237,7 +237,7 @@ window.environmentComponentsRenderMixin = {
     if (status?.reason) body += `<div class="env-msg env-msg-info">${this.esc(T('mossAccelReason_' + status.reason))}</div>`;
     if (status?.verification?.gpu) body += this._renderDetailGroup('GPU', this.esc(status.verification.gpu));
     if (!busy) {
-      body += `<div class="env-actions"><button type="button" class="btn btn-sm btn-ghost" data-env-action="moss-accel-refresh">${T('refresh')}</button>`;
+      body += `<div class="env-actions">${this._renderRefreshBtn('mossAccel', false, true)}`;
       if (status?.installed && status.can_install) body += `<button type="button" class="btn btn-sm btn-ghost" data-env-action="moss-accel-install">${T('mossAccelReinstall')}</button>`;
       body += '</div>';
     }
@@ -292,17 +292,8 @@ window.environmentComponentsRenderMixin = {
         body += `<div class="env-msg env-msg-info">${T('tritonInstallInfo','Enables DiT per-block compilation. Windows installs a triton-windows version matched to PyTorch; Linux installs triton.')}</div>`;
       }
     }
-    body += `<div class="env-actions">${this._renderRefreshBtn('triton-refresh-btn', this.tritonBusy)}</div>`;
+    body += `<div class="env-actions">${this._renderRefreshBtn('triton', this.tritonBusy)}</div>`;
     return this._renderRow('triton', state, open, head, body);
   },
 
-  _bindXfEvents(el) {
-    const a = window.__anima || this;
-    el.querySelector('#xf-refresh-btn')?.addEventListener('click', () => a.xfRefresh());
-  },
-
-  _bindTritonEvents(el) {
-    const a = window.__anima || this;
-    el.querySelector('#triton-refresh-btn')?.addEventListener('click', () => a.tritonRefresh());
-  },
 };

@@ -53,10 +53,19 @@ window.environmentRenderMixin = {
       const html = slots[slot];
       if (this._envSlotHtml[slot] === html) continue; // 无变化 → DOM 保留
       this._envSlotHtml[slot] = html;
+      const focusedRefresh = host.contains(document.activeElement) ? document.activeElement?.dataset.envRefresh : '';
+      const logPositions = Array.from(host.querySelectorAll('.env-log'), pre => ({
+        top: pre.scrollTop, following: pre.scrollHeight - pre.clientHeight - pre.scrollTop <= 2,
+      }));
       host.innerHTML = html;
       this._bindSlotEvents(host, slot, T);
+      this._restoreEnvLogs(host, logPositions);
+      if (focusedRefresh) {
+        const button = Array.from(host.querySelectorAll('[data-env-refresh]')).find(node => node.dataset.envRefresh === focusedRefresh);
+        if (button && !button.disabled) button.focus({ preventScroll: true });
+      }
     }
-    this._autoScrollLogs(el);
+    this._syncEnvRefreshButtons(el);
   },
 
   // ── 稳定骨架（只建一次）──────────────────────────────
@@ -234,13 +243,11 @@ window.environmentRenderMixin = {
   // 页面级加载指示已并入 Hero 骨架（env-load-spinner + env-load-status，
   // 类名为 tests/test_realtime.py 契约），不再单独渲染顶部横条。
 
-  // 分槽渲染只替换变化的槽位 DOM，未变化槽位的 .env-log 滚动位置天然保留；
-  // 这里只把"刚重建且内容溢出"的日志滚到底（实时日志持续追加，用户要看最新行）。
-  _autoScrollLogs(el) {
-    el.querySelectorAll('.env-log').forEach(pre => {
-      if (pre.scrollHeight > pre.clientHeight) {
-        pre.scrollTop = pre.scrollHeight;
-      }
+  // 只处理重建过的槽位：原来跟随末尾的日志继续跟随，向上阅读的保留位置。
+  _restoreEnvLogs(host, positions) {
+    host.querySelectorAll('.env-log').forEach((pre, index) => {
+      const previous = positions[index];
+      pre.scrollTop = !previous || previous.following ? pre.scrollHeight : previous.top;
     });
   },
 
@@ -318,9 +325,9 @@ window.environmentRenderMixin = {
       + `<div class="env-hero-side">`
       +   `<button type="button" class="btn btn-sm btn-ghost env-toggle-all" data-env-toggle-all="open">${T('envExpandAll','Expand all')}</button>`
       +   `<button type="button" class="btn btn-sm btn-ghost env-toggle-all" data-env-toggle-all="close">${T('envCollapseAll','Collapse all')}</button>`
-      +   `<button class="btn btn-sm btn-secondary env-refresh-all" data-env-refresh-all ${this.environmentLoading ? 'disabled' : ''}>`
-      +     `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>`
-      +     `<span>${this.environmentLoading ? T('refreshing', 'Refreshing...') : T('refreshAll', 'Refresh all')}</span></button>`
+      +   `<button type="button" class="btn btn-sm btn-secondary refresh-button" data-env-refresh="all">`
+      +     this._refreshIconHtml()
+      +     `<span>${this.esc(T('refreshAll', 'Refresh all'))}</span></button>`
       + `</div>`
       + `</section>`;
   },
@@ -372,9 +379,12 @@ window.environmentRenderMixin = {
     return `<div class="env-detail-group"><span class="env-detail-label">${label||''}</span><div class="env-detail-content">${contentHtml}</div></div>`;
   },
 
-  // 刷新图标按钮（xf/triton/模型 共用）。
-  _renderRefreshBtn(id, disabled, cls) {
-    return `<button id="${id}" class="btn-icon ${cls || ''}" ${disabled?'disabled':''} title="${this.t('environment.refresh')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>`;
+  // 组件详情中的刷新入口共用图标和加载反馈。
+  _renderRefreshBtn(kind, disabled, withLabel = false) {
+    const label = this.esc(this.t('environment.refresh'));
+    const cls = withLabel ? 'btn btn-sm btn-ghost' : 'btn-icon';
+    return `<button type="button" class="${cls} refresh-button" data-env-refresh="${kind}"${disabled ? ' disabled' : ''} title="${label}" aria-label="${label}">`
+      + this._refreshIconHtml() + (withLabel ? `<span>${label}</span>` : '') + '</button>';
   },
 
   // 统一进度面板。opts: {stage, pct, speedMB, downloadedBytes, totalBytes, elapsed, fileIndex, fileTotal}
@@ -453,10 +463,42 @@ window.environmentRenderMixin = {
         a._envCopyLog(a[btn.dataset.envCopy] || '');
       });
     });
+    const a = window.__anima || this;
+    host.querySelectorAll('[data-env-refresh]').forEach(btn => {
+      btn.addEventListener('click', () => { void a._envRefresh(btn.dataset.envRefresh); });
+    });
     if (slot === 'overview') this._bindOverviewEvents(host);
-    else if (slot === 'xf') this._bindXfEvents(host);
-    else if (slot === 'triton') this._bindTritonEvents(host);
     else if (slot === 'animaModel' || slot === 'krea2' || slot === 'moss' || slot === 'trainUse') this._bindModelGroupEvents(host);
+  },
+
+  _syncEnvRefreshButtons(host = document.getElementById('environmentPage')) {
+    if (!host) return;
+    host.querySelectorAll('[data-env-refresh]').forEach(btn => {
+      const kind = btn.dataset.envRefresh;
+      const busy = !!this._envRefreshInFlight?.[kind] || (kind === 'all' && this.environmentLoading);
+      btn.classList.toggle('is-loading', busy || !!this['env' + kind + 'RefreshFeedback']);
+      btn.setAttribute('aria-disabled', String(this._envRefreshBlocked(kind) || btn.disabled));
+      btn.setAttribute('aria-busy', String(busy));
+    });
+  },
+
+  _envRefreshBlocked(kind) {
+    const pending = this._envRefreshInFlight || {};
+    return !!this.environmentLoading || (kind === 'all' ? Object.values(pending).some(Boolean) : !!(pending.all || pending[kind]));
+  },
+
+  async _envRefresh(kind) {
+    const method = { all: '_envRefreshAll', fa: 'faRefresh', xf: 'xfRefresh', triton: 'tritonRefresh', mossAccel: 'mossAccelRefresh' }[kind];
+    if (!method || this._envRefreshBlocked(kind)) return;
+    if (!this._envRefreshInFlight) this._envRefreshInFlight = {};
+    this._envRefreshInFlight[kind] = true;
+    this._showRefreshFeedback('env' + kind, () => this._syncEnvRefreshButtons());
+    this._syncEnvRefreshButtons();
+    try { await this[method](); }
+    finally {
+      delete this._envRefreshInFlight[kind];
+      this._syncEnvRefreshButtons();
+    }
   },
 
   // 所有展开入口共用状态同步，隐藏内容不能留在键盘焦点顺序里。
@@ -495,12 +537,10 @@ window.environmentRenderMixin = {
         const act = btn.dataset.envAction;
         if (act === 'xf') a.xfInstall();
         else if (act === 'fa-install') a.faInstall();
-        else if (act === 'fa-refresh') a.faRefresh();
         else if (act === 'triton') a.tritonInstall();
         else if (act === 'moss-accel-install') a.mossAccelInstall();
         else if (act === 'moss-accel-enable') a.mossAccelSetEnabled(true);
         else if (act === 'moss-accel-disable') a.mossAccelSetEnabled(false);
-        else if (act === 'moss-accel-refresh') a.mossAccelRefresh();
         else if (act === 'dictionary') a.tagDictionaryDataAction();
         else if (act === 'dictionary-check') a.tagDictionaryCheckUpdate(true);
         else if (act === 'dictionary-redownload') a.tagDictionaryInstall(true);
@@ -568,11 +608,6 @@ window.environmentRenderMixin = {
     const a = window.__anima || this;
     host.querySelectorAll('[data-env-anchor]').forEach(chip => {
       chip.addEventListener('click', () => a._envScrollTo(chip.dataset.envAnchor));
-    });
-    const btn = host.querySelector('[data-env-refresh-all]');
-    if (btn) btn.addEventListener('click', () => {
-      btn.disabled = true;
-      a._envRefreshAll().finally(() => { btn.disabled = false; });
     });
     host.querySelectorAll('[data-env-toggle-all]').forEach(btn2 => {
       btn2.addEventListener('click', () => a._envToggleAll(btn2.dataset.envToggleAll === 'open'));

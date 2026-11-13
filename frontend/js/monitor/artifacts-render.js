@@ -32,6 +32,22 @@ window.monitorArtifactsRenderMixin = {
     return html;
   },
 
+  _monitorRefreshButtonHtml(t, type) {
+    const sample = type === 'sample';
+    const log = type === 'log';
+    const id = sample ? 'sampleRefresh' : log ? 'logRefresh' : 'outputRefresh';
+    const action = sample ? 'refreshPreviews' : log ? 'refreshFullLog' : 'refreshOutputFiles';
+    const loading = sample ? 'previewsLoading' : log ? 'logFullLoading' : 'outputFilesLoading';
+    const feedback = sample ? 'previewRefreshFeedback' : log ? 'logRefreshFeedback' : 'outputRefreshFeedback';
+    const disabled = log ? 'false' : '!currentOutputRunDir';
+    return '<button type="button" id="' + id + '" class="btn btn-sm btn-secondary refresh-button"'
+      + (!log && !this.currentOutputRunDir ? ' disabled' : '')
+      + ' :class="{ \'is-loading\': ' + loading + ' || ' + feedback + ' }" @click="' + action + '()" :disabled="' + disabled + '"'
+      + ' :aria-disabled="' + loading + ' || ' + disabled + ' ? \'true\' : \'false\'" :aria-busy="' + loading + ' ? \'true\' : \'false\'">'
+      + this._refreshIconHtml()
+      + '<span>' + this.esc(t('refresh')) + '</span><span class="m-number-accessible" role="status" aria-live="polite" x-text="' + loading + ' ? t(\'monitor.loading\') : \'\'"></span></button>';
+  },
+
   // ═══════════════════════════════════════════════════════════
   //  样本标签
   // ═══════════════════════════════════════════════════════════
@@ -52,7 +68,7 @@ window.monitorArtifactsRenderMixin = {
     html += '<div class="m-segmented m-sample-sort" role="group" aria-label="' + this.esc(t('sampleOrder')) + '">';
     html += '<button type="button" data-preview-sort="asc" aria-pressed="' + (this.previewSortDir === 'asc' ? 'true' : 'false') + '" class="m-segmented-btn' + (this.previewSortDir === 'asc' ? ' active' : '') + '" @click="setPreviewSort(\'asc\')">' + this.esc(t('trainingOrder')) + '</button>';
     html += '<button type="button" data-preview-sort="desc" aria-pressed="' + (this.previewSortDir === 'desc' ? 'true' : 'false') + '" class="m-segmented-btn' + (this.previewSortDir === 'desc' ? ' active' : '') + '" @click="setPreviewSort(\'desc\')">' + this.esc(t('latestFirst')) + '</button></div>';
-    html += '<button type="button" id="sampleRefresh" class="btn btn-sm btn-secondary m-refresh-button" :class="{ \'is-loading\': previewsLoading || previewRefreshFeedback }" @click="refreshPreviews()" :disabled="!currentOutputRunDir" :aria-disabled="previewsLoading ? \'true\' : \'false\'" :aria-busy="previewsLoading ? \'true\' : \'false\'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 8a7 7 0 0 1 11.5-1.8L20 12M4 12l2.9 5.8A7 7 0 0 0 18.4 16"/></svg><span>' + this.esc(t('refresh')) + '</span><span class="m-number-accessible" role="status" aria-live="polite" x-text="previewsLoading ? t(\'monitor.loading\') : \'\'"></span></button></div>';
+    html += this._monitorRefreshButtonHtml(t, 'sample') + '</div>';
     html += '</div>';
     html += this._artifactLocationHtml(t, d);
     if (showPreviews) {
@@ -381,12 +397,15 @@ window.monitorArtifactsRenderMixin = {
     const selectedCount = this.selectedOutputFiles.length;
     const hiddenSelected = selectedCount - visibleFiles.filter(f => this.outputFilesSelected[f.path]).length;
     let html = '<div class="m-section m-outputs-section">';
+    if (this.outputFilesLoading && !this.outputFiles.length && !this._outputFilesLoaded) {
+      return html + '<div class="dashboard-empty m-output-loading" role="status" style="padding:48px"><p>' + this.esc(t('loading')) + '</p></div></div>';
+    }
     html += '<div class="m-view-header"><div class="m-output-toolbar-top"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t('outputs')) + '</span>' + (this.outputFiles.length ? '<span class="m-logs-count">' + this.outputFiles.length + '</span>' : '') + '</div>';
-    html += '<button type="button" id="outputRefresh" class="btn btn-sm btn-secondary m-refresh-button" :class="{ \'is-loading\': outputFilesLoading }" @click="if (!outputFilesLoading) loadOutputFiles()" :disabled="!currentOutputRunDir" :aria-disabled="outputFilesLoading ? \'true\' : \'false\'" :aria-busy="outputFilesLoading ? \'true\' : \'false\'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 8a7 7 0 0 1 11.5-1.8L20 12M4 12l2.9 5.8A7 7 0 0 0 18.4 16"/></svg><span>' + this.esc(t('refresh')) + '</span><span class="m-number-accessible" role="status" aria-live="polite" x-text="outputFilesLoading ? t(\'monitor.loading\') : \'\'"></span></button>';
+    html += this._monitorRefreshButtonHtml(t, 'output');
     html += '<div class="m-output-selection-tools"><span class="m-output-selection-count" role="status">' + this.esc(t('selected')) + ' <strong>' + selectedCount + '</strong> / ' + this.outputFiles.length;
     if (hiddenSelected > 0) html += '<small>' + this.esc(t('hiddenSelectedOutputs').replace('{n}', hiddenSelected)) + '</small>';
     html += '</span><button type="button" id="outputClearSelection" class="btn btn-sm btn-secondary" @click="deselectAllOutputFiles()"' + (!selectedCount ? ' disabled' : '') + '>' + this.esc(t('clearSelection')) + '</button>';
-    html += '<button type="button" id="outputDownload" class="btn btn-sm btn-primary m-output-download" @click="' + (selectedCount ? 'downloadSelectedOutputs()' : 'downloadAllOutputs()') + '" :disabled="outputFilesLoading || ' + (!canUseFiles) + '"><span' + (selectedCount ? ' class="is-hidden"' : '') + '>' + this.esc(t('downloadAll')) + '</span><span' + (!selectedCount ? ' class="is-hidden"' : '') + '>' + this.esc(t('downloadSelected')) + '</span></button></div></div>';
+    html += '<button type="button" id="outputDownload" class="btn btn-sm btn-primary m-output-download"' + (this.outputFilesLoading || !canUseFiles ? ' disabled' : '') + ' @click="' + (selectedCount ? 'downloadSelectedOutputs()' : 'downloadAllOutputs()') + '" :disabled="outputFilesLoading || ' + (!canUseFiles) + '"><span' + (selectedCount ? ' class="is-hidden"' : '') + '>' + this.esc(t('downloadAll')) + '</span><span' + (!selectedCount ? ' class="is-hidden"' : '') + '>' + this.esc(t('downloadSelected')) + '</span></button></div></div>';
     html += '<div class="m-view-actions m-output-toolbar-filters">';
     html += '<label class="m-output-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="m-output-search-input" type="search" value="' + this.esc(this.outputSearch) + '" aria-label="' + this.esc(t('searchOutputs')) + '" placeholder="' + this.esc(t('searchOutputs')) + '" @input.debounce.180ms="setOutputSearch($event.target.value)"></label>';
     html += '<div class="m-segmented" role="group" aria-label="' + this.esc(t('outputFilter')) + '">';
@@ -394,16 +413,10 @@ window.monitorArtifactsRenderMixin = {
       html += '<button type="button" id="outputFilter-' + item[0] + '" aria-pressed="' + (this.outputFilter === item[0]) + '" class="m-segmented-btn' + (this.outputFilter === item[0] ? ' active' : '') + '" @click="setOutputFilter(\'' + item[0] + '\')">' + this.esc(item[1]) + '</button>';
     });
     html += '</div>';
-    html += '<button type="button" id="outputSelectVisible" class="btn btn-sm btn-secondary" @click="selectAllOutputFiles()" :disabled="outputFilesLoading || ' + (!canUseFiles || !visibleCount) + '">' + this.esc(t('selectVisible')) + '</button>';
+    html += '<button type="button" id="outputSelectVisible" class="btn btn-sm btn-secondary"' + (this.outputFilesLoading || !canUseFiles || !visibleCount ? ' disabled' : '') + ' @click="selectAllOutputFiles()" :disabled="outputFilesLoading || ' + (!canUseFiles || !visibleCount) + '">' + this.esc(t('selectVisible')) + '</button>';
     if (d.artifact_dir) html += '<button type="button" class="btn btn-sm btn-secondary" @click="navigator.clipboard.writeText(currentArtifactData().artifact_dir).then(() => toast(t(\'common.copied\'))).catch(() => toast(t(\'common.failed\'), \'error\'))">' + this.esc(t('copyOutputPath')) + '</button>';
     html += '</div></div>';
     html += this._artifactLocationHtml(t, d);
-
-    if (this.outputFilesLoading && !this.outputFiles.length) {
-      html += '<div class="dashboard-empty" style="padding:48px"><p>' + this.esc(t('loading')) + '</p></div>';
-      html += '</div>';
-      return html;
-    }
 
     if (!this.outputFiles.length) {
       let emptyKey = 'noOutputsHint';
@@ -472,7 +485,7 @@ window.monitorArtifactsRenderMixin = {
 
     // ── 其他文件区 ──
     if (this.outputFilter !== 'models' && others.length) {
-      html += '<div class="m-ckpt-section" style="margin-top:12px">';
+      html += '<div class="m-ckpt-section">';
       html += '<div class="m-section-title"><span>' + this.esc(t('otherFiles')) + ' <span class="m-logs-count">' + others.length + '</span></span></div>';
       html += '<div class="output-list output-table output-table-other"><div class="output-table-head"><span></span><span></span>' + this._outputSortHeadHtml('others', 'name', t('fileName')) + this._outputSortHeadHtml('others', 'type', t('fileType')) + this._outputSortHeadHtml('others', 'size', t('sortSize')) + this._outputSortHeadHtml('others', 'time', t('modifiedTime')) + '<span>' + this.esc(t('actions')) + '</span></div>';
       others.forEach(f => {

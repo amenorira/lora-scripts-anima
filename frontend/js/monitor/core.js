@@ -23,7 +23,7 @@ window.monitorCoreMixin = {
   logAutoScroll: true, logLines: [],
   _logContentVersion: 0, monitorTab: 'overview',
   monitorParamQuery: '',
-  outputFiles: [], outputFilesVersion: 0, outputFilesLoading: false, outputFilesSelected: {},
+  outputFiles: [], outputFilesVersion: 0, outputFilesLoading: false, outputFilesSelected: {}, _outputFilesLoaded: false,
   outputFilesError: '', _outputFilesRunDir: '', _outputFilesRequestSeq: 0,
   _outputFilesKnownCount: 0, _outputCountVersion: 0,
   outputSearch: '', outputFilter: 'all',
@@ -41,7 +41,7 @@ window.monitorCoreMixin = {
   logFullQuery: '',            // 当前搜索词
   _logFullResultQuery: '',     // 已返回的匹配所属的搜索词
   logFullMatchIdx: -1,         // 当前定位的匹配在 logFullMatches 中的下标
-  logFullLoading: false,
+  logFullLoading: false, logRefreshFeedback: false, _logRefreshFeedbackTimer: null,
   logTotal: 0,                 // 当前日志源的规范化总行数，独立于分页/尾部缓冲。
   _logTailOffset: 0,
   _logFullLoaded: false,       // full 模式末页是否已加载（首屏/重连自动拉取用）
@@ -50,9 +50,16 @@ window.monitorCoreMixin = {
   _logSliceRequestSeq: 0,      // 日志分页请求序号；切换实时/历史源时丢弃过期响应
   _logFullSourceKey: '',       // 当前完整日志缓冲所属的 task/run，切页时用于安全复用
 
+  _resetLogRefreshFeedback() {
+    if (this._logRefreshFeedbackTimer) clearTimeout(this._logRefreshFeedbackTimer);
+    this._logRefreshFeedbackTimer = null;
+    this.logRefreshFeedback = false;
+  },
+
   // ── 历史页筛选状态 ──
   historySearch: '', historyFilter: 'all',  // all|completed|failed|terminated
-  historyLoading: false, historyError: '', historyDeleting: '',
+  historyLoading: false, historyRefreshing: false, historyRefreshFeedback: false,
+  historyError: '', historyDeleting: '', _historyLoaded: false, _historyRefreshFeedbackTimer: null,
   _historyRequestSeq: 0, _historyTimer: null, _historyTaskSignature: null, _historyProgressPending: false,
 
   // ── 节流渲染：每帧最多渲染一次 Dashboard ──
@@ -339,6 +346,7 @@ window.monitorCoreMixin = {
     );
 
     if (nextLogSourceKey && this._logFullSourceKey && this._logFullSourceKey !== nextLogSourceKey) {
+      this._resetLogRefreshFeedback();
       this._logSliceRequestSeq++;
       this.logFullLoading = false;
       this.logFullLines = [];
@@ -444,6 +452,7 @@ window.monitorCoreMixin = {
       if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
       return wasRunning;
     }
+    this._resetLogRefreshFeedback();
     this.logLines = [];
     this.logFullLines = [];
     this.logFullOffset = 0;
@@ -533,6 +542,7 @@ window.monitorCoreMixin = {
     const eventSourceKey = this._monitorRealtimeTopic || '';
 
     if (eventSourceKey && this._logFullSourceKey && this._logFullSourceKey !== eventSourceKey) {
+      this._resetLogRefreshFeedback();
       this._logSliceRequestSeq++;
       this.logFullLoading = false;
       this.logLines = [];

@@ -4,12 +4,12 @@ const {loadFrontend, composeMixins, deferred, response, readRepo} = require('./h
 
 function harness() {
   const requests = [], renders = [];
-  const {window} = loadFrontend(['shared/realtime', 'monitor/logs', 'monitor/core'], {
+  const {window} = loadFrontend(['shared/utils', 'shared/realtime', 'monitor/logs', 'monitor/core'], {
     window: {}, document: {getElementById: () => null},
     AbortController, URLSearchParams, setTimeout, clearTimeout,
     fetch: url => { const pending = deferred(); requests.push({url, ...pending}); return pending.promise; },
   });
-  const app = composeMixins(window.realtimeMixin, window.monitorCoreMixin, {
+  const app = composeMixins(window.utilsMixin, window.realtimeMixin, window.monitorCoreMixin, {
     currentRoute: 'monitor-dashboard', liveTaskId: 'A', taskId: 'A',
     monitorData: {state: 'RUNNING', active_task: {id: 'A'}},
     renderDashboard: () => renders.push(app.currentRoute), scheduleRender() {},

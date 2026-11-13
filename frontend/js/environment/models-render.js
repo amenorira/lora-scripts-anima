@@ -206,9 +206,6 @@ window.environmentModelsRenderMixin = {
 
   _bindModelGroupEvents(host) {
     const a = window.__anima || this;
-    host.querySelectorAll('.env-model-refresh').forEach(btn => {
-      btn.addEventListener('click', () => a.animaModelRefresh());
-    });
     host.querySelectorAll('.env-model-dl[data-file]').forEach(btn => {
       btn.addEventListener('click', () => a.animaModelDownload(btn.dataset.file, btn.dataset.group));
     });

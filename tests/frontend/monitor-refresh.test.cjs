@@ -4,13 +4,13 @@ const {loadFrontend, composeMixins, deferred, response} = require('./helpers.cjs
 
 test('a fast manual sample refresh keeps visible feedback without delaying results', async () => {
   const timers = [];
-  const {window} = loadFrontend(['monitor/previews'], {
+  const {window} = loadFrontend(['shared/utils', 'monitor/core'], {
     window: {}, document: {getElementById: () => null},
     setTimeout(fn, ms) { const timer = {fn, ms, cancelled: false}; timers.push(timer); return timer; },
     clearTimeout(timer) { if (timer) timer.cancelled = true; },
     fetch: async () => response([{name: 'new.png'}]),
   });
-  const app = composeMixins(window.monitorPreviewsMixin, {
+  const app = composeMixins(window.utilsMixin, window.monitorCoreMixin, {
     previews: [], previewStep: 0, previewsLoading: false, previewsVersion: 0,
     _previewRequestSeq: 0, _previewSnapshotSeq: 0, currentOutputRunDir: 'output/run',
     currentRoute: 'monitor-dashboard', taskId: 'A', renderDashboard() {},
@@ -27,6 +27,10 @@ test('a fast manual sample refresh keeps visible feedback without delaying resul
   assert.equal(app.previewRefreshFeedback, false);
   await app.refreshPreviews(false);
   assert.equal(timers.length, 2);
+  await app.refreshPreviews();
+  app._invalidatePreviewRequest();
+  assert.equal(timers[2].cancelled, true);
+  assert.equal(app.previewRefreshFeedback, false);
 });
 
 test('only decoded thumbnails with the same run, path and version survive a rebuild', () => {
@@ -89,17 +93,131 @@ test('a cancelled thumbnail request cannot write to a detached grid after it res
 
 function requestHarness() {
   const requests = [];
-  const {window} = loadFrontend(['monitor/logs', 'monitor/core'], {
+  const {window} = loadFrontend(['shared/utils', 'monitor/logs', 'monitor/core'], {
     window: {}, document: {getElementById: () => null}, AbortController, URLSearchParams, setTimeout, clearTimeout,
     fetch: url => { const request = deferred(); requests.push({url, ...request}); return request.promise; },
   });
-  const app = composeMixins(window.monitorCoreMixin, {
+  const app = composeMixins(window.utilsMixin, window.monitorCoreMixin, {
     monitorData: {run_dir: 'output/run'}, outputFiles: [], outputFilesSelected: {},
     _outputFilesRunDir: 'output/run', _outputFilesRequestSeq: 0, _outputCountVersion: 0,
     selectedRunDir: null, liveTaskId: null, renderDashboard() {}, toast() {}, t: key => key,
   });
   return {app, requests};
 }
+
+test('a fast manual output refresh shows feedback without delaying results', async () => {
+  const timers = [];
+  const {window} = loadFrontend(['shared/utils', 'monitor/core'], {
+    window: {},
+    setTimeout(fn, ms) { const timer = {fn, ms, cancelled: false}; timers.push(timer); return timer; },
+    clearTimeout(timer) { if (timer) timer.cancelled = true; },
+    fetch: async () => response([{name: 'new', path: 'new'}]),
+  });
+  const app = composeMixins(window.utilsMixin, window.monitorCoreMixin, {
+    currentOutputRunDir: 'output/run', _outputFilesRunDir: 'output/run',
+    _outputFilesRequestSeq: 0, _outputCountVersion: 0, outputFilesVersion: 0,
+    outputFiles: [], outputFilesSelected: {}, outputFilesLoading: false, _outputFilesLoaded: true,
+    currentArtifactData: () => ({}), renderDashboard() {},
+  });
+  await app.refreshOutputFiles();
+  assert.equal(app.outputFilesLoading, false);
+  assert.equal(app.outputFiles[0].name, 'new');
+  assert.equal(app.outputRefreshFeedback, true);
+  assert.equal(timers[0].ms, 800);
+  await app.refreshOutputFiles();
+  assert.equal(timers[0].cancelled, true);
+  timers[1].fn();
+  assert.equal(app.outputRefreshFeedback, false);
+  await app.loadOutputFiles();
+  assert.equal(timers.length, 2);
+  const pending = app.refreshOutputFiles();
+  app._resetOutputFilesForRun('output/other');
+  await pending;
+  assert.equal(timers[2].cancelled, true);
+  assert.equal(app.outputRefreshFeedback, false);
+  assert.equal(app.outputFiles.length, 0);
+});
+
+test('history refresh keeps unchanged cards and ignores background loading for button feedback', async () => {
+  const requests = [], timers = [];
+  const {window} = loadFrontend(['shared/utils', 'monitor/core'], {
+    window: {},
+    fetch: () => { const request = deferred(); requests.push(request); return request.promise; },
+    setTimeout(fn, ms) { const timer = {fn, ms}; timers.push(timer); return timer; },
+    clearTimeout() {},
+  });
+  let renders = 0;
+  const app = composeMixins(window.utilsMixin, window.monitorCoreMixin, {
+    historyItems: [], runningTask: null, currentRoute: 'history',
+    renderHistory() { renders++; }, finishProgress() {}, t: key => key,
+  });
+  const initial = app.loadHistory();
+  requests[0].resolve(response({running: null, history: []}));
+  await initial;
+  assert.equal(renders, 1); // The initial empty result still needs an empty state.
+  const manual = app.refreshHistory();
+  assert.equal(app.historyRefreshing, true);
+  assert.equal(app.historyRefreshFeedback, true);
+  await app.refreshHistory();
+  assert.equal(requests.length, 2);
+  requests[1].resolve(response({running: null, history: []}));
+  await manual;
+  assert.equal(renders, 1);
+  assert.equal(app.historyRefreshing, false);
+  assert.equal(app.historyRefreshFeedback, true);
+  assert.equal(timers[0].ms, 800);
+  timers[0].fn();
+  const background = app.loadHistory(true);
+  assert.equal(app.historyRefreshing, false);
+  assert.equal(app.historyRefreshFeedback, false);
+  requests[2].resolve(response({running: null, history: [{name: 'new'}]}));
+  await background;
+  assert.equal(renders, 2);
+  const oldManual = app.refreshHistory();
+  const newerLoad = app.loadHistory();
+  assert.equal(app.historyRefreshing, false);
+  requests[4].resolve(response({running: null, history: [{name: 'new'}]}));
+  await newerLoad;
+  requests[3].resolve(response({running: null, history: []}));
+  await oldManual;
+  assert.equal(app.historyRefreshing, false);
+  assert.equal(app.historyItems[0].name, 'new');
+});
+
+test('returning to history after a language change immediately retranslates unchanged cards', async () => {
+  const requests = [];
+  let builds = 0, html = '';
+  const list = {get innerHTML() { return html; }, set innerHTML(value) { html = value; builds++; }};
+  const {window} = loadFrontend(['shared/utils', 'monitor/core', 'monitor/render'], {
+    window: {}, document: {activeElement: null, getElementById: id => id === 'historyList' ? list : null},
+    fetch: () => { const request = deferred(); requests.push(request); return request.promise; },
+  });
+  const app = composeMixins(window.utilsMixin, window.monitorCoreMixin, window.monitorHistoryRenderMixin, {
+    currentRoute: 'history', locale: 'zh-CN', localeRevision: 1, historyItems: [], runningTask: null,
+    t: key => key, tMonitor(key) { return this.locale + ':' + key; },
+    escapeJsString: value => value, _formatLearningRate: value => value ?? '—', finishProgress() {},
+  });
+  const data = {running: null, history: [{name: 'run', run_dir: 'output/run', status: 'completed', time: 'today'}]};
+  const first = app.loadHistory();
+  requests[0].resolve(response(data));
+  await first;
+  assert.match(html, /zh-CN:viewDetails/);
+  assert.equal(builds, 1);
+  app.locale = 'en-US';
+  app.localeRevision++;
+  const returning = app.loadHistory();
+  assert.match(html, /en-US:viewDetails/); // Do not wait for the network to translate the old cards.
+  assert.equal(builds, 2);
+  requests[1].resolve(response(data));
+  await returning;
+  assert.equal(builds, 2); // Unchanged data should not rebuild them a second time.
+  app.localeRevision++;
+  const updatedMessages = app.loadHistory();
+  assert.equal(builds, 3); // Messages can change after retrying the same locale.
+  requests[2].resolve(response(data));
+  await updatedMessages;
+  assert.equal(builds, 3);
+});
 
 test('output refresh invalidates its list only for changes and preserves queued updates', async () => {
   const {app, requests} = requestHarness();
@@ -124,6 +242,19 @@ test('output refresh invalidates its list only for changes and preserves queued 
   assert.equal(app.outputFilesError, 'loadFailed');
   assert.equal(app.outputFiles.length, 0);
   assert.equal(app.outputFilesVersion, 5);
+});
+
+test('retrying an empty output list retains the previous result until the request finishes', async () => {
+  const {app, requests} = requestHarness();
+  app.outputFilesError = 'loadFailed';
+  app._outputFilesLoaded = true;
+  const retry = app.loadOutputFiles();
+  assert.equal(app.outputFilesError, 'loadFailed');
+  assert.equal(app._outputFilesLoaded, true);
+  requests[0].resolve(response([]));
+  await retry;
+  assert.equal(app.outputFilesError, '');
+  assert.equal(app._outputFilesLoaded, true);
 });
 
 test('an existing output panel stays mounted during an unchanged refresh', () => {
@@ -151,6 +282,81 @@ test('an existing output panel stays mounted during an unchanged refresh', () =>
   assert.equal(builds, 2);
 });
 
+test('an already loaded empty output panel stays mounted during a refresh', () => {
+  let builds = 0;
+  const panel = {firstElementChild: {}, classList: {add() {}, remove() {}}, contains: () => false,
+    querySelector: () => null, set innerHTML(_html) { builds++; }};
+  const content = {querySelector: () => panel};
+  const {window} = loadFrontend(['monitor/render'], {
+    window: {}, document: {activeElement: {}, getElementById: id => id === 'monitorTabContent' ? content : null},
+  });
+  const app = composeMixins(window.monitorRenderMixin, {
+    _builtTab: 'outputs', _shellLocale: 'zh', outputFiles: [], selectedOutputFiles: [],
+    outputFilesVersion: 1, outputFilesLoading: false, _outputFilesLoaded: true, _outputFilesNeedsRefresh: false,
+    outputSearch: '', outputFilter: 'all', outputFilesError: '', _renderOutputsTab: () => '',
+  });
+  const render = () => app._renderTab('outputs', {}, null, null, key => key, false);
+  render();
+  app.outputFilesLoading = true;
+  render();
+  app.outputFilesLoading = false;
+  render();
+  assert.equal(builds, 1);
+});
+
+test('initial output loading does not render a temporary toolbar', () => {
+  const {window} = loadFrontend(['shared/utils', 'monitor/artifacts-render'], {window: {}});
+  const app = composeMixins(window.utilsMixin, window.monitorArtifactsRenderMixin, {
+    currentOutputRunDir: 'output/run', currentArtifactData: () => ({}), outputFiles: [],
+    outputFilesLoading: true, _outputFilesLoaded: false, outputFilesSelected: {}, selectedOutputFiles: [],
+    _visibleOutputFiles: () => [],
+  });
+  const html = app._renderOutputsTab(key => key);
+  assert.match(html, /m-output-loading/);
+  assert.doesNotMatch(html, /outputRefresh|outputDownload|outputSelectVisible/);
+  app.outputFilesLoading = false;
+  app._outputFilesLoaded = true;
+  const empty = app._renderOutputsTab(key => key);
+  assert.match(empty, /id="outputDownload"[^>]* disabled/);
+  assert.match(empty, /id="outputSelectVisible"[^>]* disabled/);
+});
+
+test('sample and output refresh controls share the same icon and unavailable state', () => {
+  const {window} = loadFrontend(['shared/utils', 'monitor/artifacts-render'], {window: {}});
+  const app = composeMixins(window.utilsMixin, window.monitorArtifactsRenderMixin, {currentOutputRunDir: ''});
+  const sample = app._monitorRefreshButtonHtml(key => key, 'sample');
+  const output = app._monitorRefreshButtonHtml(key => key, 'output');
+  assert.match(sample, /id="sampleRefresh"[^>]* disabled/);
+  assert.match(output, /id="outputRefresh"[^>]* disabled/);
+  assert.match(sample, /previewsLoading \|\| !currentOutputRunDir/);
+  assert.match(output, /outputFilesLoading \|\| !currentOutputRunDir/);
+  assert.equal(sample.match(/<svg.*?<\/svg>/)[0], output.match(/<svg.*?<\/svg>/)[0]);
+});
+
+test('replacing the initial output loading state does not restart the panel animation', () => {
+  const classes = new Set();
+  const panel = {firstElementChild: {}, classList: {add: name => classes.add(name), remove: name => classes.delete(name)},
+    contains: () => false, querySelector: () => null, set innerHTML(_html) {}};
+  const content = {querySelector: () => panel};
+  const {window} = loadFrontend(['monitor/render'], {
+    window: {}, document: {activeElement: {}, getElementById: id => id === 'monitorTabContent' ? content : null},
+  });
+  const app = composeMixins(window.monitorRenderMixin, {
+    _builtTab: 'outputs', _shellLocale: 'zh', outputFiles: [], selectedOutputFiles: [],
+    outputFilesVersion: 1, outputFilesLoading: true, _outputFilesLoaded: false, _outputFilesNeedsRefresh: false,
+    outputSearch: '', outputFilter: 'all', outputFilesError: '', _renderOutputsTab: () => '',
+  });
+  const render = () => app._renderTab('outputs', {}, null, null, key => key, false);
+  render();
+  assert.equal(classes.has('no-enter-anim'), true);
+  app.outputFiles = [{path: 'a'}];
+  app._outputFilesLoaded = true;
+  app.outputFilesLoading = false;
+  app.outputFilesVersion++;
+  render();
+  assert.equal(classes.has('no-enter-anim'), true);
+});
+
 test('a delayed log search cannot overwrite newer input or enable stale match navigation', async () => {
   const {app, requests} = requestHarness();
   app.logFullQuery = 'old';
@@ -162,6 +368,24 @@ test('a delayed log search cannot overwrite newer input or enable stale match na
   assert.equal(app._logFullResultQuery, 'old');
   app.logFullNextMatch();
   assert.equal(requests.length, 1);
+});
+
+test('manual log refresh keeps the old page and prevents duplicate requests', async () => {
+  const {app, requests} = requestHarness();
+  app.logFullLines = ['existing line'];
+  const pending = app.refreshFullLog();
+  assert.equal(app.logRefreshFeedback, true);
+  assert.equal(app.logFullLoading, true);
+  assert.deepEqual(Array.from(app.logFullLines), ['existing line']);
+  app.refreshFullLog();
+  assert.equal(requests.length, 1);
+  requests[0].resolve(response({offset: 0, total: 1, lines: ['existing line'], match_indices: []}));
+  await pending;
+  assert.equal(app.logFullLoading, false);
+  assert.equal(app.logRefreshFeedback, true);
+  app.resetRunDetailState();
+  assert.equal(app.logRefreshFeedback, false);
+  assert.equal(app._logRefreshFeedbackTimer, null);
 });
 
 test('a failed follow-up log page does not replace the previous search results', async () => {

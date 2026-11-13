@@ -225,16 +225,14 @@ window.monitorRenderMixin = {
     }
     if (tab === 'outputs') {
       if ((this._outputFilesNeedsRefresh || (tabChanged && !this.outputFiles.length)) && !this.outputFilesLoading) this.loadOutputFiles();
-      const sig = 'out:' + this._shellLocale + ':' + this.outputFilesVersion + ':' + this.selectedOutputFiles.join('|') + ':' + (!this.outputFiles.length && this.outputFilesLoading ? 1 : 0) + ':' + this.outputSearch + ':' + this.outputFilter + ':' + this.outputModelSortKey + ':' + this.outputModelSortDir + ':' + this.outputOtherSortKey + ':' + this.outputOtherSortDir + ':' + (this.outputFilesError || '') + ':' + (d.artifact_available === false ? 0 : 1);
+      const sig = 'out:' + this._shellLocale + ':' + this.outputFilesVersion + ':' + this.selectedOutputFiles.join('|') + ':' + (!this.outputFiles.length && this.outputFilesLoading && !this._outputFilesLoaded ? 1 : 0) + ':' + this.outputSearch + ':' + this.outputFilter + ':' + this.outputModelSortKey + ':' + this.outputModelSortDir + ':' + this.outputOtherSortKey + ':' + this.outputOtherSortDir + ':' + (this.outputFilesError || '') + ':' + (d.artifact_available === false ? 0 : 1);
       if (panelEmpty || this._builtOutputsSig !== sig) {
         // Preserve scroll position across re-renders
         const scrollEl = panel.querySelector('.m-outputs-scroll');
         const scrollTop = scrollEl ? scrollEl.scrollTop : 0;
         this._builtOutputsSig = sig;
-        // 进入动画策略：加载/空占位（dashboard-empty）转瞬即逝，不播动画；
-        // 真实内容首次落位（替换占位）播放动画；排序/筛选等原地重建抑制，避免整面板闪烁
-        const replacingPlaceholder = !!panel.querySelector('.dashboard-empty');
-        if (this.outputFilesLoading || (!tabChanged && !panelEmpty && !replacingPlaceholder)) {
+        // 仅在切换标签时淡入；加载完成和原地更新保持工具栏稳定。
+        if (this.outputFilesLoading || (!tabChanged && !panelEmpty)) {
           panel.classList.add('no-enter-anim');
         } else {
           panel.classList.remove('no-enter-anim');

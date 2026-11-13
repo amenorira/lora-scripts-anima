@@ -94,6 +94,8 @@ window.monitorHistoryRenderMixin = {
     const activeId = el.contains?.(document.activeElement) ? document.activeElement.id : '';
     el.innerHTML = html;
     if (activeId) document.getElementById(activeId)?.focus({ preventScroll: true });
+    this._historyRenderLocale = this.locale;
+    this._historyRenderLocaleRevision = this.localeRevision;
     } catch (e) {
       el.innerHTML = '<div class="dashboard-empty" style="padding:48px"><p>⚠ ' + (this.t ? this.t('monitor.historyRenderError') : 'Error displaying history. Check browser console (F12).') + '</p></div>';
     }

@@ -241,9 +241,11 @@ window.monitorLogCoreMixin = {
     this.fetchLogSlice({ matchIdx: idx });
   },
   refreshFullLog() {
+    if (this.logFullLoading) return;
+    if (this._hasLogSource()) this._showRefreshFeedback('log');
     const container = document.getElementById('monitorDashboardLogs');
     this._logRestoreScroll = container ? container.scrollTop : 0;
-    this.fetchLogSlice({});
+    return this.fetchLogSlice({});
   },
 
 
@@ -284,7 +286,7 @@ window.monitorLogRenderMixin = {
     html += '</span></div><div class="m-log-toolgroup m-log-toolgroup-actions">';
     // 当前页操作（复制、刷新）在前，整文件下载收尾：范围由小到大，下载保持最右的位置不变。
     html += '<button type="button" class="btn btn-sm btn-secondary" :disabled="logTotal<=0 || logFullLoading" @click="copyLogs()">' + this.esc(t('copyPage')) + '</button>';
-    html += '<button type="button" class="btn btn-sm btn-secondary" :disabled="logFullLoading" @click="refreshFullLog()">' + this.esc(t('refresh')) + '</button>';
+    html += this._monitorRefreshButtonHtml(t, 'log');
     html += '<button type="button" class="btn btn-sm btn-secondary" @click="downloadLogs()">' + this.esc(t('downloadFullLog')) + '</button></div>';
     return html;
   },

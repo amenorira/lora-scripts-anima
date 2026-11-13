@@ -96,10 +96,10 @@ test('a LyCORIS conflict link waits for the modal to close before focusing the m
 
 const filename = (stage, prompt, prefix = 'sample_') => `${prefix}e${String(stage).padStart(6, '0')}_${String(prompt).padStart(2, '0')}_20261109120000_42.png`;
 function previews(names) {
-  const {window} = loadFrontend(['monitor/previews', 'monitor/artifacts-render'], {
+  const {window} = loadFrontend(['shared/utils', 'monitor/previews', 'monitor/artifacts-render'], {
     window: {}, document: {getElementById: () => null, body: {style: {}}},
   });
-  return composeMixins(window.monitorPreviewsMixin, window.monitorArtifactsRenderMixin, {
+  return composeMixins(window.utilsMixin, window.monitorPreviewsMixin, window.monitorArtifactsRenderMixin, {
     previews: names.map(name => ({name})), previewStep: 0, previewSortDir: 'asc', previewReference: null,
     _previewSnapshotSeq: 0, previewsVersion: 0, _updatePreviewLightbox() {}, renderDashboard() {},
     t(key) { return key === 'monitor.samplePrompt' ? 'Prompt {n}' : key; },

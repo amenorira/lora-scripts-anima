@@ -4,13 +4,13 @@ const { loadFrontend, response, deferred, composeMixins } = require('./helpers.c
 
 function harness() {
   const storage = new Map();
-  const context = loadFrontend(['tagger/index','tagger/ai-caption-options','tagger/caption-workspace'],{
+  const context = loadFrontend(['shared/utils','tagger/index','tagger/ai-caption-options','tagger/caption-workspace'],{
     window:{},localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
     fetch:async()=>response({active:false,tagger_busy:false,phase:'idle',counts:{total:1000},plan:{}}),URLSearchParams,crypto:{randomUUID:()=> 'fixture'},
     URL:{createObjectURL:()=> 'blob:new',revokeObjectURL(){}},FormData:class {append(){}},
     setTimeout:()=>1,clearTimeout(){},document:{querySelector:()=>null,getElementById:()=>null,body:{classList:{remove(){}}}},
   });
-  const app = composeMixins(context.window.taggerMixin,context.window.captionOptionsMixin,context.window.captionWorkspaceMixin);
+  const app = composeMixins(context.window.utilsMixin,context.window.taggerMixin,context.window.captionOptionsMixin,context.window.captionWorkspaceMixin);
   app.currentRoute='ai-captioning';app.taggerSourceMode='api-folder';app.t=k=>k;app.toast=()=>{};
   app.taggerApiSettings={...app.taggerApiSettings,baseUrl:'http://fixture/v1',model:'fixture'};
   app.captionOptions={...app.captionOptions,output_format:'multi',candidates:['original','long','medium','short']};
@@ -20,6 +20,111 @@ function harness() {
   app.$nextTick=fn=>fn();
   return {app,context,storage};
 }
+
+test('manual overview rescan keeps feedback visible, prevents duplicate requests and ignores old completion', async () => {
+  const {app} = harness();
+  app.captionTab = 'overview';
+  app.taggerSource = {source_token: 'batch', total: 1};
+  app.taggerSourcePath = 'dataset';
+  app.refreshCaptionPlan = async () => {};
+  const requests = [];
+  app.refreshCaptionOverview = () => {
+    ++app._captionOverviewRequest;
+    const request = deferred(); requests.push(request); return request.promise;
+  };
+  const first = app.rescanCaptionOverview();
+  assert.equal(app.captionRescanning, true);
+  assert.equal(app.captionRefreshFeedback, true);
+  await app.rescanCaptionOverview();
+  assert.equal(requests.length, 1);
+  app.stopCaptionWorkspace();
+  const second = app.rescanCaptionOverview();
+  assert.equal(requests.length, 2);
+  requests[0].resolve({});
+  await first;
+  assert.equal(app.captionRescanning, true);
+  requests[1].resolve({});
+  await second;
+  assert.equal(app.captionRescanning, false);
+  assert.equal(app.captionRefreshFeedback, true);
+});
+
+test('leaving the overview or resetting the backend releases an old rescan', async () => {
+  for (const boundary of ['tab', 'backend']) {
+    const {app} = harness();
+    app.captionTab = 'overview';
+    app.taggerSource = {source_token: 'old', total: 1};
+    app.taggerSourcePath = 'old-dataset';
+    app.selectTaggerSourceMode = async () => {};
+    app.refreshCaptionPlan = async () => {};
+    const requests = [];
+    app.refreshCaptionOverview = () => {
+      ++app._captionOverviewRequest;
+      app.captionOverviewLoading = true;
+      const request = deferred(); requests.push(request); return request.promise;
+    };
+    const old = app.rescanCaptionOverview();
+    if (boundary === 'tab') {
+      await app.selectCaptionTab('batch', false);
+    } else {
+      app.resetRealtimeTaggerState();
+    }
+    assert.equal(app.captionOverviewLoading, false);
+    assert.equal(app.captionRescanning, false);
+    app.taggerSource = {source_token: 'new', total: 1};
+    app.taggerSourcePath = 'new-dataset';
+    app.captionTab = 'overview';
+    const current = app.rescanCaptionOverview();
+    assert.equal(requests.length, 2);
+    requests[0].resolve({});
+    await old;
+    assert.equal(app.captionRescanning, true);
+    requests[1].resolve({});
+    await current;
+    assert.equal(app.captionRescanning, false);
+  }
+});
+
+test('leaving the overview clears a pending request even if the next source is empty', async () => {
+  const {app, context} = harness();
+  app.captionTab = 'overview';
+  app.taggerSource = {source_token: 'old', total: 1};
+  app.taggerSourcePath = 'old-dataset';
+  app.selectTaggerSourceMode = async () => {};
+  const pending = deferred();
+  context.fetch = () => pending.promise;
+  const old = app.rescanCaptionOverview();
+  assert.equal(app.captionOverviewLoading, true);
+  await app.selectCaptionTab('batch', false);
+  assert.equal(app.captionOverviewLoading, false);
+  assert.equal(app._captionOverviewInFlight, false);
+  app.taggerSource = null;
+  app.taggerSourcePath = '';
+  app.captionSourceChanged('api-folder');
+  await app.selectCaptionTab('overview', false);
+  assert.equal(app.captionOverviewLoading, false);
+  pending.resolve(response({counts: {total: 1}, items: [{name: 'old.png'}], total: 1, offset: 0}));
+  await old;
+  assert.equal(app.captionOverviewLoading, false);
+  assert.equal(app.captionOverviewItems.length, 0);
+});
+
+test('rescan still reloads the overview after recovering an expired source', async () => {
+  const {app} = harness();
+  app.captionTab = 'overview';
+  app.taggerSource = {source_token: 'expired', total: 1};
+  app.taggerSourcePath = 'dataset';
+  app.refreshCaptionPlan = async () => {};
+  let calls = 0;
+  app.refreshCaptionOverview = async () => { ++app._captionOverviewRequest; calls++; return calls === 1 ? null : {}; };
+  app.scanTaggerSource = async () => {
+    app.taggerSource = {source_token: 'recovered', total: 1};
+    app.captionSourceChanged('api-folder');
+  };
+  await app.rescanCaptionOverview();
+  assert.equal(calls, 2);
+  assert.equal(app.captionRescanning, false);
+});
 
 test('active task restoration adopts batch format and candidates without overwriting trial drafts',async()=>{
   for (const contextName of ['batch','single']) for (const restoredFormat of ['plain','legacy-multi']) {

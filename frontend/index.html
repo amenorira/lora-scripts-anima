@@ -375,7 +375,11 @@
       <div x-show="currentRoute === 'history'" x-cloak class="route-history">
         <div class="page-header">
           <h1 class="page-title" x-text="t('nav.history')">Training History</h1>
-          <button class="btn btn-sm btn-secondary" :disabled="historyLoading" @click="loadHistory()" x-text="t(historyLoading ? 'monitor.loading' : 'monitor.refreshHistory')"></button>
+          <button type="button" class="btn btn-sm btn-secondary refresh-button" :class="{ 'is-loading': historyRefreshing || historyRefreshFeedback }"
+                  :aria-disabled="historyLoading ? 'true' : 'false'" :aria-busy="historyRefreshing ? 'true' : 'false'" @click="refreshHistory()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 8a7 7 0 0 1 11.5-1.8L20 12M4 12l2.9 5.8A7 7 0 0 0 18.4 16"/></svg>
+            <span x-text="t('monitor.refreshHistory')"></span><span class="m-number-accessible" role="status" aria-live="polite" x-text="historyRefreshing ? t('monitor.loading') : ''"></span>
+          </button>
         </div>
         <div class="hist-toolbar">
           <input type="search" class="hist-search" x-model="historySearch" :placeholder="t('monitor.searchHistory')" :aria-label="t('monitor.searchHistory')" @input.debounce.200ms="renderHistory()">
@@ -385,13 +389,13 @@
             </template>
           </div>
         </div>
-        <div class="hist-results" role="status" aria-live="polite">
+        <div class="hist-results" role="status" aria-live="polite" x-show="_historyLoaded" x-cloak>
           <span x-text="t('monitor.historyCount').replace('{shown}', filteredHistoryItems.length).replace('{total}', historyItems.length)"></span>
           <button class="hist-action" x-show="historySearch || historyFilter !== 'all'" @click="clearHistoryFilters()" x-text="t('monitor.clearHistoryFilters')"></button>
         </div>
         <div class="hist-load-error" role="alert" x-show="historyError" x-cloak>
           <span x-text="historyError"></span>
-          <button class="btn btn-sm btn-secondary" :disabled="historyLoading" @click="loadHistory()" x-text="t('monitor.refreshHistory')"></button>
+          <button class="btn btn-sm btn-secondary" :disabled="historyLoading" @click="refreshHistory()" x-text="t('monitor.refreshHistory')"></button>
         </div>
         <div id="historyList" class="history-list" :aria-busy="historyLoading"></div>
       </div>
@@ -1146,9 +1150,14 @@
               <div class="te-sidebar-body" x-show="tagEditorSidebarTab === 'snapshots'">
                 <p class="te-history-hint" x-text="t('tagEditor.historyHintSaved')"></p>
                 <div class="te-history-controls">
-                  <button class="te-topbar-btn" @click="tagEditorLoadSnapshots()" :disabled="tagEditorSnapshotLoading || tagEditorSnapshotBusy" x-text="t('tagEditor.timelineRefresh')"></button>
+                  <button type="button" class="te-topbar-btn refresh-button" @click="tagEditorRefreshSnapshots()" :disabled="tagEditorSnapshotBusy"
+                          :class="{ 'is-loading': tagEditorSnapshotLoading || tagEditorSnapshotRefreshFeedback }"
+                          :aria-disabled="tagEditorSnapshotLoading || tagEditorSnapshotBusy ? 'true' : 'false'" :aria-busy="tagEditorSnapshotLoading ? 'true' : 'false'">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 8a7 7 0 0 1 11.5-1.8L20 12M4 12l2.9 5.8A7 7 0 0 0 18.4 16"/></svg>
+                    <span x-text="t('tagEditor.timelineRefresh')"></span>
+                  </button>
                 </div>
-                <p class="te-history-hint" role="status" x-show="tagEditorSnapshotLoading" x-text="t('common.loading')"></p>
+                <p class="te-history-hint" role="status" x-show="tagEditorSnapshotLoading && !tagEditorSnapshots.length" x-text="t('common.loading')"></p>
                 <p class="te-history-hint" role="alert" x-show="tagEditorSnapshotError" x-text="t('tagEditor.timelineLoadError')"></p>
                 <div class="te-snapshot-list">
                   <div x-show="!tagEditorSnapshotLoading && !tagEditorSnapshotError && tagEditorSnapshots.length === 0" class="te-history-empty" x-text="t('tagEditor.snapshotsHint')"></div>

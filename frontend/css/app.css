@@ -3128,8 +3128,9 @@ input[type="range"]::-webkit-slider-thumb {
 .m-sample-prompt-select { width: 166px; max-width: 100%; }
 .m-sample-prompt-select .preview-select-trigger { min-height: 32px; padding: 5px 9px; font-size: 12px; }
 .m-sample-sort { overflow: hidden; border-radius: var(--radius-control); }
-.m-refresh-button { display: inline-flex; align-items: center; gap: 6px; }
-.m-refresh-button svg { width: 14px; height: 14px; }
+.refresh-button { display: inline-flex; align-items: center; gap: 6px; }
+.refresh-button svg { width: 14px; height: 14px; }
+.refresh-button[aria-disabled="true"]:not(:disabled) { cursor: wait; }
 .m-samples-section .preview-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px;
   grid-auto-rows: max-content; align-content: start; align-items: start; flex: 1; min-height: 0;
@@ -3495,6 +3496,7 @@ input[type="range"]::-webkit-slider-thumb {
 
 /* ── 输出：模型存档区（checkpoint badge + loss + 排序）── */
 .m-ckpt-section { margin-top: 4px; }
+.m-outputs-scroll > .m-ckpt-section + .m-ckpt-section { margin-top: 12px; }
 
 .m-ckpt-badge {
   font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: var(--radius-control);
@@ -3764,6 +3766,7 @@ dialog.preview-lightbox::backdrop { background: transparent; }
 }
 .te-topbar-btn { height: 28px; padding: 0 8px; font-size: 11px; border: 1px solid var(--border-default); border-radius: var(--radius-control); background: var(--bg-input); color: var(--text-secondary); cursor: pointer; display: inline-flex; align-items: center; gap: 3px; transition: border-color 0.1s, color 0.1s; }
 .te-topbar-btn:hover { border-color: var(--accent); color: var(--accent); }
+.te-topbar-btn.refresh-button:hover { border-color: var(--border-input); color: var(--text-primary); }
 .te-topbar-btn:disabled { opacity: var(--disabled-opacity); cursor: not-allowed; }
 .te-topbar-sep { width: 1px; height: 20px; background: var(--border-default); flex-shrink: 0; }
 .te-menu { position: relative; flex-shrink: 0; }
@@ -4967,7 +4970,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: var(--disabled-opa
 .env-summary-sep { color: var(--text-tertiary); opacity: 0.7; }
 .env-hero-side { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .env-hero-side .btn { min-height: 32px; }
-.env-refresh-all { display: inline-flex; align-items: center; gap: 6px; }
 
 /* ── 面板与组件行 ───────────────────────────────────── */
 .env-mgroup {

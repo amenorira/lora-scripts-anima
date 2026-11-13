@@ -49,6 +49,7 @@ window.environmentCoreMixin = {
   _environmentLoadPromise: null,
   _environmentCommitChain: null,
   _environmentRenderFrame: null,
+  _envRefreshInFlight: null,
 
   _envInitCardState() {
     try {

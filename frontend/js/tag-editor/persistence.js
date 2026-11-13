@@ -4,6 +4,7 @@ window.tagEditorPersistence = {
   tagEditorTimeline: [],
   tagEditorSnapshots: [],
   tagEditorSnapshotLoading: false,
+  tagEditorSnapshotRefreshFeedback: false, _tagEditorSnapshotRefreshFeedbackTimer: null,
   tagEditorSnapshotBusy: false,
   tagEditorSnapshotError: false,
   _teAutoSaveInterval: null,
@@ -191,6 +192,12 @@ window.tagEditorPersistence = {
       self.tagEditorLoadSnapshots(loadEpoch);
       if (this._teModifiedCount === 0) await this.tagEditorReloadSessionPage(this.tagEditorPage);
     }
+  },
+
+  tagEditorRefreshSnapshots() {
+    if (this.tagEditorSnapshotLoading || this.tagEditorSnapshotBusy) return;
+    this._showRefreshFeedback('tagEditorSnapshot');
+    this.tagEditorLoadSnapshots();
   },
 
   tagEditorLoadSnapshots(epoch) {

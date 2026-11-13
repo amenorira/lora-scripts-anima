@@ -19,11 +19,19 @@ window.monitorHistoryMixin = {
     this.renderHistory();
   },
 
-  async loadHistory(background = false) {
+  refreshHistory() {
+    if (this.historyLoading) return;
+    this._showRefreshFeedback('history');
+    return this.loadHistory(false, true);
+  },
+
+  async loadHistory(background = false, manual = false) {
     if (background && (this.configSnapshotOpen || this.showConfirmModal || this.historyDeleting || this.historyReuseBusy)) return;
+    if (this._historyLoaded && (this._historyRenderLocale !== this.locale || this._historyRenderLocaleRevision !== this.localeRevision)) this.renderHistory();
     const seq = ++this._historyRequestSeq;
     if (!background) this._historyProgressPending = true;
     this.historyLoading = true;
+    this.historyRefreshing = manual;
     this.historyError = '';
     try {
       const r = await fetch('/api/monitor/history' + (background ? '' : '?refresh=true'));
@@ -32,9 +40,10 @@ window.monitorHistoryMixin = {
       if (d.status !== 'success') throw new Error(d.message || this.t('monitor.historyLoadError'));
       const running = d.data.running || null;
       const items = d.data.history || [];
-      if (!background || JSON.stringify([running, items]) !== JSON.stringify([this.runningTask, this.historyItems])) {
+      if (!this._historyLoaded || JSON.stringify([running, items]) !== JSON.stringify([this.runningTask, this.historyItems])) {
         this.runningTask = running;
         this.historyItems = items;
+        this._historyLoaded = true;
         this.renderHistory();
       }
     } catch(e) {
@@ -42,6 +51,7 @@ window.monitorHistoryMixin = {
     } finally {
       if (seq === this._historyRequestSeq) {
         this.historyLoading = false;
+        this.historyRefreshing = false;
         if (this._historyProgressPending) {
           this._historyProgressPending = false;
           if (!this.currentRoute || this.currentRoute === 'history') this.finishProgress();
@@ -102,6 +112,7 @@ window.monitorHistoryMixin = {
     this._invalidatePreviewRequest();
     this._runDetailRequestSeq++;
     this._logSliceRequestSeq++;
+    this._resetLogRefreshFeedback();
     this.logLines = [];
     this.logTotal = 0;
     this._logTailOffset = 0;
@@ -180,6 +191,7 @@ window.monitorHistoryMixin = {
     this._invalidatePreviewRequest();
     this._runDetailRequestSeq++;
     this._logSliceRequestSeq++;
+    this._resetLogRefreshFeedback();
     this.selectedRunDir = null;
     this.runDetailData = null;
     this.lossDataVersion++;

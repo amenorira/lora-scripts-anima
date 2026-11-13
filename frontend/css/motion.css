@@ -19,7 +19,7 @@
   to { opacity: 1; transform: scale(1); }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-.m-refresh-button.is-loading svg { animation: spin .8s linear infinite; }
+.refresh-button.is-loading svg { animation: spin .8s linear infinite; }
 .anima-select-menu-positioned {
   animation: menu-open var(--duration-menu-enter) var(--ease-out) backwards;
 }
@@ -51,6 +51,7 @@
 .m-tab-panel.active,
 .tagger-batch-layout, .tagger-single-layout,
 .env-panel-in { animation: fade-in var(--duration-slow) cubic-bezier(0, 0, 0.2, 1) backwards; }
+.m-tab-panel.active.no-enter-anim { animation: none; }
 /* Animate only the outer page on navigation. Persistent tab panels animate on
    activation, never when their child content is refreshed. */
 .route-enter :is(.m-tab-panel, .tagger-batch-layout, .tagger-single-layout, .env-panel-in) {
@@ -176,7 +177,7 @@ body[data-gpu-workload] > #cropPreviewDialog > .modal,
 .monitor-tab-indicator, .env-tab-indicator { transition-duration: var(--duration-dialog-enter), var(--duration-dialog-enter), var(--duration-fast); }
 .anima-select-chevron { transition: none; }
 @media (prefers-reduced-motion: reduce) {
-  .m-refresh-button.is-loading svg { animation: none; }
+  .refresh-button.is-loading svg { animation: none; transition: none; transform: rotate(90deg); opacity: .55; }
   *, *::before, *::after {
     animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important; scroll-behavior: auto !important;
