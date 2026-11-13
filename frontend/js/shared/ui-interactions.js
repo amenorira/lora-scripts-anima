@@ -110,20 +110,20 @@
     copy.classList.add('dialog-morph-button');
     Object.assign(copy.style, paint, {
       left: `${rect.left - bounds.left}px`, top: `${rect.top - bounds.top}px`,
-      width: `${rect.width}px`, height: `${rect.height}px`,
+      width: `${rect.width}px`, height: `${rect.height}px`, transform: 'none',
     });
     element.append(copy);
     reuse(copy, 'copy');
     const dx = (visible.left + visible.right - dest.left - dest.right) / 2;
     const dy = (visible.top + visible.bottom - dest.top - dest.bottom) / 2;
     const startScale = Math.max((visible.right - visible.left) / dest.width, (visible.bottom - visible.top) / dest.height);
-    animate(copy, { transform: 'translate(0px, 0px)' }, { transform: `translate(${-dx}px, ${-dy}px)` });
     animate(panel, { transform: `translate(${dx}px, ${dy}px) scale(${startScale})` },
       { transform: 'translate(0px, 0px) scale(1)' });
-    // Time the crossfade separately so it stays readable while the outline moves quickly.
-    const label = opening
-      ? [{ opacity: 1, offset: .04, easing: 'ease-in-out' }, { opacity: 0, offset: .36 }]
-      : [{ opacity: 0, offset: .20, easing: 'ease-in-out' }, { opacity: 1, offset: .58 }];
+    // Keep the source label at its button while the panel retains its pop.
+    // Fade it quickly on entry and restore it at the end of the return.
+    const label = current => opening
+      ? [{ opacity: 0, offset: .18 }]
+      : [{ opacity: current.opacity, offset: .72 }];
     const content = opening
       ? [{ opacity: 0, offset: .10, easing: 'ease-in-out' }, { opacity: 1, offset: .63 }]
       : [{ opacity: 1, offset: .04, easing: 'ease-in-out' }, { opacity: 0, offset: .36 }];
@@ -205,9 +205,13 @@
     const animations = [];
     const animate = (node, hidden, shown, between = [], easing = options.easing) => {
       const start = previous.get(node);
-      const frames = opening ? [hidden, ...between, shown] : [shown, ...between, hidden];
-      const first = start && Object.fromEntries(Object.keys(frames[0]).map(name => [name, start[name] || frames[0][name]]));
-      animations.push(node.animate(first ? [first, frames.at(-1)] : frames, { ...options, easing }));
+      const [from, to] = opening ? [hidden, shown] : [shown, hidden];
+      const first = start && Object.fromEntries(Object.keys(from).map(name => [name, start[name] ?? from[name]]));
+      // Keep source-label phases during interrupted opens/closes. The panel
+      // keeps its existing direct retargeting from the interpolated frame.
+      const phased = typeof between === 'function';
+      const frames = [first || from, ...(phased ? between(first || from) : between), to];
+      animations.push(node.animate(first && !phased ? [first, to] : frames, { ...options, easing }));
     };
     if (!source || !dest.width || !dest.height || (media && source.anchor === dialogOrigins.get(element))) {
       animate(modal, { opacity: 0 }, { opacity: 1 });
