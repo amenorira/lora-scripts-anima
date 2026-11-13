@@ -46,6 +46,19 @@ from backend.log import log
 router = APIRouter()
 
 
+@router.post("/training/prompt-tags")
+async def training_prompt_tags(request: Request):
+    from backend.training.datasets.prompt_tags import inspect_prompt_tags
+
+    payload, error = await _read_json_object(request)
+    if error is not None:
+        return error
+    try:
+        return APIResponseSuccess(data=await asyncio.to_thread(inspect_prompt_tags, payload))
+    except Exception as exc:
+        return APIResponseFail(message=str(exc) or type(exc).__name__)
+
+
 @router.post("/training/crop-preview")
 async def training_crop_preview(request: Request):
     from backend.training.datasets.crop_preview import inspect_crops
