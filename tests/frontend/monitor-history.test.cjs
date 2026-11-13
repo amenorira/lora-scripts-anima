@@ -365,28 +365,18 @@ test('snapshot title uses the run name while loading and after loading', () => {
   assert.equal(a.snapshotTitle(), 'run-123');
 });
 
-test('dataset path scrolls only when it overflows and updates after resizing', () => {
-  const listeners = {};
-  const classes = new Set();
-  const properties = {};
-  const label = {scrollWidth: 330};
-  const path = {
-    clientWidth: 200,
-    querySelector: () => label,
-    classList: {toggle: (name, enabled) => enabled ? classes.add(name) : classes.delete(name)},
-    style: {setProperty: (name, value) => { properties[name] = value; }},
-    addEventListener: (name, callback) => { listeners[name] = callback; },
-    removeEventListener: name => { delete listeners[name]; },
+test('snapshot dataset paths use the shared seamless marquee and release it on close', t => {
+  const previous = window.initLoopMarquee;
+  t.after(() => {window.initLoopMarquee = previous;});
+  const label = {};
+  const path = {querySelector:()=>label};
+  let disposed = false;
+  window.initLoopMarquee = (element,source) => {
+    assert.equal(element,path); assert.equal(source,label);
+    return () => {disposed = true;};
   };
-  const cleanup = app()._initSnapshotPathScroll({querySelector: () => path});
-  assert.equal(classes.has('is-overflowing'), true);
-  assert.equal(properties['--snapshot-scroll-distance'], '130px');
-  assert.ok(parseFloat(properties['--snapshot-scroll-duration']) >= 6);
-  path.clientWidth = 400;
-  listeners.mouseenter();
-  assert.equal(classes.has('is-overflowing'), false);
-  cleanup();
-  assert.deepEqual(listeners, {});
+  app()._initSnapshotPathScroll({querySelector:()=>path})();
+  assert.equal(disposed,true);
 });
 
 test('snapshot disclosure handles interrupted animations and keeps the final state', () => {

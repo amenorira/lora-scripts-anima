@@ -400,26 +400,7 @@ window.monitorHistoryRenderMixin = {
     const path = content.querySelector?.('.snapshot-dataset-path');
     const label = path?.querySelector?.('.snapshot-path-text');
     if (!path || !label) return null;
-    const update = () => {
-      const distance = Math.max(0, label.scrollWidth - path.clientWidth);
-      path.classList.toggle('is-overflowing', distance > 1);
-      if (distance > 1) {
-        path.style.setProperty('--snapshot-scroll-distance', `${distance}px`);
-        path.style.setProperty('--snapshot-scroll-duration', `${Math.max(6, distance / 35 * 2 + 2).toFixed(2)}s`);
-      }
-    };
-    path.addEventListener('mouseenter', update);
-    path.addEventListener('focus', update);
-    window.addEventListener?.('resize', update);
-    const observer = window.ResizeObserver ? new window.ResizeObserver(update) : null;
-    observer?.observe(path);
-    update();
-    return () => {
-      observer?.disconnect();
-      path.removeEventListener('mouseenter', update);
-      path.removeEventListener('focus', update);
-      window.removeEventListener?.('resize', update);
-    };
+    return window.initLoopMarquee?.(path, label) || null;
   },
 
   _initSnapshotDisclosure(content) {

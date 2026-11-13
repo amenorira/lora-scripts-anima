@@ -1,0 +1,22 @@
+.loop-marquee { display:block; min-width:0; overflow:hidden; white-space:nowrap; }
+.loop-marquee-track { display:flex; width:max-content; gap:64px; }
+.loop-marquee-text, .loop-marquee-copy { display:block; flex:none; white-space:nowrap; }
+.loop-marquee-copy { display:none; user-select:none; }
+.loop-marquee.is-overflowing { mask-image:linear-gradient(to right,#000 0%,#000 calc(100% - 18px),transparent 100%); }
+.loop-marquee.is-overflowing .loop-marquee-copy { display:block; }
+.loop-marquee.is-overflowing:is(:hover,:focus-visible,:focus-within),
+.loop-marquee-host:is(:hover,:focus-visible) .loop-marquee.is-overflowing {
+  mask-image:linear-gradient(to right,transparent 0%,#000 18px,#000 calc(100% - 18px),transparent 100%);
+}
+.loop-marquee.is-overflowing:is(:hover,:focus-visible,:focus-within) .loop-marquee-track,
+.loop-marquee-host:is(:hover,:focus-visible) .loop-marquee.is-overflowing .loop-marquee-track {
+  animation:loop-marquee-travel var(--loop-marquee-duration) linear infinite;
+}
+.loop-marquee .snapshot-path-text { width:auto; overflow:visible; text-overflow:clip; }
+@keyframes loop-marquee-travel { to { transform:translateX(calc(-1 * var(--loop-marquee-distance))); } }
+@media (prefers-reduced-motion:reduce) {
+  .loop-marquee.is-overflowing:is(:hover,:focus-visible,:focus-within) .loop-marquee-track,
+  .loop-marquee-host:is(:hover,:focus-visible) .loop-marquee.is-overflowing .loop-marquee-track { animation:none; }
+  .loop-marquee.is-overflowing:focus-visible { overflow-x:auto; mask-image:none; }
+  .loop-marquee.is-overflowing .loop-marquee-copy { display:none; }
+}

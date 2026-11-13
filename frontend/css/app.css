@@ -3734,15 +3734,6 @@ dialog.preview-lightbox::backdrop { background: transparent; }
 .snapshot-dataset-path { overflow: hidden; white-space: nowrap; }
 .snapshot-dataset-path:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
 .snapshot-path-text { display: block; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.snapshot-dataset-path.is-overflowing:is(:hover, :focus-visible) .snapshot-path-text {
-  width: max-content; overflow: visible; text-overflow: clip;
-  animation: snapshot-path-scroll var(--snapshot-scroll-duration) ease-in-out infinite;
-}
-@keyframes snapshot-path-scroll {
-  0%, 10% { transform: translateX(0); }
-  45%, 55% { transform: translateX(calc(-1 * var(--snapshot-scroll-distance))); }
-  90%, 100% { transform: translateX(0); }
-}
 .snapshot-raw { position: relative; }
 .snapshot-raw .m-details-summary { min-height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 120px 0 0; list-style: none; }
 .snapshot-raw .m-details-summary::-webkit-details-marker { display: none; }
@@ -3755,9 +3746,6 @@ dialog.preview-lightbox::backdrop { background: transparent; }
 @media (max-width: 620px) { .snapshot-params { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (prefers-reduced-motion: reduce) {
   .snapshot-raw-chevron { transition: none; }
-  .snapshot-dataset-path.is-overflowing:hover .snapshot-path-text { width: 100%; overflow: hidden; text-overflow: ellipsis; animation: none; }
-  .snapshot-dataset-path.is-overflowing:focus-visible { overflow-x: auto; }
-  .snapshot-dataset-path.is-overflowing:focus-visible .snapshot-path-text { width: max-content; overflow: visible; animation: none; }
 }
 .config-snapshot-modal .m-config-pre { max-height: none; overflow-y: visible; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
 .m-config-line {
