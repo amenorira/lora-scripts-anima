@@ -378,61 +378,199 @@ window.monitorHistoryRenderMixin = {
     event.preventDefault();
   },
 
+  snapshotTitle() {
+    const runDir = this.configSnapshotRunDir || '';
+    return this._currentSnapshot?.name
+      || this.historyItems?.find(item => item.run_dir === runDir)?.name
+      || String(runDir).replace(/\\/g, '/').split('/').pop()
+      || '';
+  },
+
+  _initSnapshotPathScroll(content) {
+    const path = content.querySelector?.('.snapshot-dataset-path');
+    const label = path?.querySelector?.('.snapshot-path-text');
+    if (!path || !label) return null;
+    const update = () => {
+      const distance = Math.max(0, label.scrollWidth - path.clientWidth);
+      path.classList.toggle('is-overflowing', distance > 1);
+      if (distance > 1) {
+        path.style.setProperty('--snapshot-scroll-distance', `${distance}px`);
+        path.style.setProperty('--snapshot-scroll-duration', `${Math.max(6, distance / 35 * 2 + 2).toFixed(2)}s`);
+      }
+    };
+    path.addEventListener('mouseenter', update);
+    path.addEventListener('focus', update);
+    window.addEventListener?.('resize', update);
+    const observer = window.ResizeObserver ? new window.ResizeObserver(update) : null;
+    observer?.observe(path);
+    update();
+    return () => {
+      observer?.disconnect();
+      path.removeEventListener('mouseenter', update);
+      path.removeEventListener('focus', update);
+      window.removeEventListener?.('resize', update);
+    };
+  },
+
+  _initSnapshotDisclosure(content) {
+    const details = content.querySelector?.('.snapshot-raw details');
+    const summary = details?.querySelector?.('summary');
+    const panel = details?.querySelector?.('.snapshot-raw-panel');
+    if (!details || !summary || !panel) return null;
+    let expanded = details.open;
+    let animation = null;
+    const stopAnimation = () => {
+      if (!animation) return;
+      animation.onfinish = null;
+      animation.cancel();
+      animation = null;
+    };
+    const resetPanel = () => { panel.style.height = ''; panel.style.overflow = ''; };
+    const toggle = event => {
+      event.preventDefault();
+      const fromHeight = details.open ? panel.getBoundingClientRect().height : 0;
+      stopAnimation();
+      expanded = !expanded;
+      summary.setAttribute('aria-expanded', String(expanded));
+      const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+      if (reduced || typeof panel.animate !== 'function') {
+        details.open = expanded;
+        resetPanel();
+        return;
+      }
+      if (expanded) details.open = true;
+      // Restore the natural size before measuring, even if the previous motion
+      // was interrupted. No intermediate size is painted before the new effect.
+      resetPanel();
+      const bodyHeight = document.getElementById('configSnapshotBody')?.clientHeight || panel.scrollHeight;
+      // A long YAML file can be much taller than the scrollable modal. Animate
+      // only the visible height so its disclosure doesn't finish in a flash.
+      const visibleHeight = Math.min(panel.scrollHeight, Math.max(200, bodyHeight));
+      const from = Math.min(fromHeight, visibleHeight);
+      const to = expanded ? visibleHeight : 0;
+      if (Math.abs(from - to) < 1) {
+        details.open = expanded;
+        resetPanel();
+        return;
+      }
+      panel.style.height = `${to}px`;
+      panel.style.overflow = 'hidden';
+      const current = panel.animate([{ height: `${from}px` }, { height: `${to}px` }], {
+        duration: expanded ? 220 : 180,
+        easing: 'cubic-bezier(.1, .78, .21, 1)',
+      });
+      animation = current;
+      current.onfinish = () => {
+        if (animation !== current) return;
+        animation = null;
+        details.open = expanded;
+        resetPanel();
+      };
+    };
+    summary.addEventListener('click', toggle);
+    return () => { stopAnimation(); resetPanel(); summary.removeEventListener('click', toggle); };
+  },
+
   showSnapshotModal(snapshot) {
     const content = document.getElementById('configSnapshotContent');
     if (!content) return;
     const t = (k, fb) => this.tMonitor(k, fb);
 
     let html = '';
-    html += '<p class="snapshot-run-path">' + this.esc(snapshot.run_dir || '') + '</p>';
     if (snapshot.config_warning || snapshot.reuse_error) html += '<p class="hist-warning">' + this.esc(snapshot.reuse_error || snapshot.config_warning) + '</p>';
     if (snapshot.params) {
       const p = snapshot.params;
-      // 关键参数高亮卡（与概览页同款）：模型取 basename，9 个核心字段
-      const keyDefs = [
-        { key: 'pretrained_model_name_or_path', labelKey: 'field.pretrained_model_name_or_path', short: 'historyModel', basename: true },
-        { key: 'learning_rate', labelKey: 'field.learning_rate', short: 'historyLR' },
-        { key: 'network_dim', labelKey: 'field.network_dim', short: 'historyDim' },
-        { key: 'network_alpha', labelKey: 'field.network_alpha', short: 'historyAlpha' },
-        { key: 'max_train_epochs', labelKey: 'field.max_train_epochs', short: 'historyEpochs' },
-        { key: 'optimizer_type', labelKey: 'field.optimizer_type', short: 'historyOptimizer', className: true },
-        { key: 'train_batch_size', labelKey: 'field.train_batch_size', short: 'historyBatch' },
-        { key: 'resolution', labelKey: 'field.resolution', short: 'historyResolution' },
-        { key: 'seed', labelKey: 'field.seed', short: 'historySeed' },
-      ];
-      const keyItems = [];
-      keyDefs.forEach(kd => {
-        const raw = p[kd.key];
-        if (raw == null || raw === '') return;
-        let val = String(raw);
-        if (kd.basename) {
-          const parts = val.replace(/\\/g, '/').split('/');
-          val = parts[parts.length - 1] || val;
+      const present = value => value != null && String(value).trim() !== '';
+      const basename = value => {
+        const path = String(value);
+        return path.replace(/\\/g, '/').replace(/\/+$/, '').split('/').pop() || path;
+      };
+      const profileId = p.model_train_type || snapshot.reuse_params?.model_train_type;
+      const model = profileId === 'krea2-lora' ? (p.dit || p.pretrained_model_name_or_path) : (p.pretrained_model_name_or_path || p.dit);
+      const sources = [
+        [t('historyModel'), model],
+        [t(p.train_data_dir ? 'dataset' : 'snapshotDatasetConfig'), p.train_data_dir || p.dataset_config, true],
+        [t('field.network_weights'), p.network_weights],
+      ].filter(([, value]) => present(value));
+
+      const items = [];
+      const add = (label, value, title = value) => {
+        if (present(value)) items.push({ label, value: String(value), title: String(title) });
+      };
+      const profileNames = { 'anima-lora': 'Anima', 'sdxl-lora': 'SDXL', 'krea2-lora': 'Krea 2', 'moss-image-lora': 'MOSS-Image' };
+      if (present(profileId)) add(t('field.model_train_type'), Object.hasOwn(profileNames, profileId) ? profileNames[profileId] : profileId, profileId);
+      const module = String(p.network_module || '');
+      const networkNames = { lora: 'LoRA', lora_anima: 'LoRA', lora_generic: 'LoRA', lora_krea2: 'LoRA', loha: 'LoHa', lokr: 'LoKr' };
+      const moduleName = module.split('.').pop();
+      let network = Object.hasOwn(networkNames, moduleName) ? networkNames[moduleName] : module;
+      if (module === 'lycoris.kohya') {
+        const arg = Array.isArray(p.network_args) && p.network_args.find(value => /^algo\s*=/.test(String(value)));
+        const algo = String(p.lycoris_algo || (arg && String(arg).split('=').slice(1).join('=')) || '').trim().toLowerCase();
+        const algorithmNames = { lora: 'LoCon', loha: 'LoHa', lokr: 'LoKr' };
+        network = Object.hasOwn(algorithmNames, algo) ? algorithmNames[algo] : (algo || 'LyCORIS');
+      }
+      add(t('snapshotNetwork'), network, module);
+      const dimFromWeights = String(p.dim_from_weights).toLowerCase() === 'true';
+      if (dimFromWeights) {
+        add(t('snapshotRankAlpha'), t('snapshotRankFromWeights'));
+      } else if (present(p.network_dim) && present(p.network_alpha)) {
+        add(t('snapshotRankAlpha'), String(p.network_dim) + ' / ' + String(p.network_alpha));
+      } else {
+        add(t('historyDim'), p.network_dim);
+        add(t('historyAlpha'), p.network_alpha);
+      }
+      if (present(p.learning_rate)) add(t('snapshotBaseLearningRate'), this._formatLearningRate(p.learning_rate, String(p.learning_rate)));
+      if (present(p.optimizer_type)) add(t('historyOptimizer'), String(p.optimizer_type).split('.').pop(), p.optimizer_type);
+      const stepsMode = p.krea_training_duration_mode === 'steps' || (!present(p.max_train_epochs) && present(p.max_train_steps));
+      add(t(stepsMode ? 'snapshotSteps' : 'historyEpochs'), stepsMode ? p.max_train_steps : p.max_train_epochs);
+      add(t('historyBatch'), p.train_batch_size);
+      if (present(p.gradient_accumulation_steps) && Number(p.gradient_accumulation_steps) > 1) add(t('field.gradient_accumulation_steps'), p.gradient_accumulation_steps);
+      if (present(p.resolution)) {
+        const resolution = String(p.resolution);
+        add(t('historyResolution'), resolution.replace(/^\s*(\d+)\s*,\s*(\d+)\s*$/, '$1 × $2'), resolution);
+      }
+
+      if (sources.length || items.length) {
+        html += '<div class="snapshot-overview">';
+        if (sources.length) {
+          html += '<dl class="snapshot-sources">';
+          sources.forEach(([label, value, isDataset]) => {
+            html += '<div><dt>' + this.esc(label) + '</dt>';
+            if (isDataset) {
+              html += '<dd class="snapshot-dataset-path" tabindex="0" title="' + this.esc(value) + '"><span class="snapshot-path-text">' + this.esc(value) + '</span></dd>';
+            } else {
+              html += '<dd title="' + this.esc(value) + '">' + this.esc(basename(value)) + '</dd>';
+            }
+            html += '</div>';
+          });
+          html += '</dl>';
         }
-        if (kd.className) val = val.split('.').pop();
-        if (kd.key === 'learning_rate') val = this._formatLearningRate(raw, val);
-        // 高亮卡 label 用 short key（简短），title 用 field.* 完整描述句
-        keyItems.push({ label: t(kd.short, kd.key), title: String(raw), value: val });
-      });
-      if (keyItems.length) {
-        html += '<div class="param-keygrid" style="margin-bottom:16px">';
-        keyItems.forEach(it => {
-          const titleAttr = it.title && it.title !== it.label ? ' title="' + this.esc(it.title) + '"' : '';
-          html += '<div class="param-key-item"' + titleAttr + '><span class="param-key-label">' + this.esc(it.label) + '</span><span class="param-key-value">' + this.esc(it.value) + '</span></div>';
-        });
+        if (items.length) {
+          html += '<dl class="snapshot-params">';
+          items.forEach(it => {
+            html += '<div><dt>' + this.esc(it.label) + '</dt><dd title="' + this.esc(it.title) + '">' + this.esc(it.value) + '</dd></div>';
+          });
+          html += '</dl>';
+        }
         html += '</div>';
       }
     }
     if (snapshot.content) {
-      html += '<details open><summary class="m-details-summary">' + this.esc(t('rawConfig')) + ' <span class="hist-tag">' + this.esc((snapshot.config_format || 'toml').toUpperCase()) + '</span></summary>';
+      html += '<div class="snapshot-raw"><details open><summary class="m-details-summary" aria-expanded="true"><svg class="snapshot-raw-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>' + this.esc(t('rawConfig')) + ' <span class="snapshot-format">' + this.esc((snapshot.config_format || 'toml').toUpperCase()) + '</span></summary>';
       const format = String(snapshot.config_format || 'toml').toLowerCase();
       const configHtml = format === 'yaml' || format === 'yml' ? this._highlightSnapshotYaml(snapshot.content) : this.esc(snapshot.content);
-      html += '<pre class="m-config-pre">' + this._renderSnapshotLines(snapshot.content, configHtml, format) + '</pre></details>';
+      html += '<div class="snapshot-raw-panel"><pre class="m-config-pre">' + this._renderSnapshotLines(snapshot.content, configHtml, format) + '</pre></div></details>';
+      html += '<button type="button" class="btn btn-sm btn-ghost snapshot-raw-copy">' + this.esc(t('snapshotCopyRaw')) + '</button></div>';
     }
 
     this._snapshotCopyCleanup?.();
     this._snapshotCopyCleanup = null;
+    this._snapshotPathCleanup?.();
+    this._snapshotDisclosureCleanup?.();
     content.innerHTML = html;
+    this._snapshotPathCleanup = this._initSnapshotPathScroll(content);
+    this._snapshotDisclosureCleanup = this._initSnapshotDisclosure(content);
+    content.querySelector?.('.snapshot-raw-copy')?.addEventListener?.('click', () => this.copyConfigContent());
     const pre = content.querySelector?.('.m-config-pre');
     if (pre && document.addEventListener) {
       const copyDocument = document;
@@ -453,6 +591,10 @@ window.monitorHistoryRenderMixin = {
   closeSnapshotModal() {
     this._snapshotCopyCleanup?.();
     this._snapshotCopyCleanup = null;
+    this._snapshotPathCleanup?.();
+    this._snapshotPathCleanup = null;
+    this._snapshotDisclosureCleanup?.();
+    this._snapshotDisclosureCleanup = null;
     ++this._snapshotRequestSeq;
     this._snapshotAbort?.abort();
     this._snapshotAbort = null;

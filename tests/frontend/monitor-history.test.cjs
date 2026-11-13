@@ -197,6 +197,183 @@ test('snapshot rendering keeps copy text intact and leaves older TOML snapshots 
   }
 });
 
+test('the raw configuration copy control copies the full original text', () => {
+  const oldDocument = global.document;
+  const oldNavigator = Object.getOwnPropertyDescriptor(global, 'navigator');
+  let onClick, copied;
+  const copyButton = {addEventListener: (type, handler) => { if (type === 'click') onClick = handler; }};
+  const content = {innerHTML: '', scrollTop: 0, querySelector: selector => selector === '.snapshot-raw-copy' ? copyButton : null};
+  global.document = {getElementById: id => id === 'configSnapshotContent' ? content : null};
+  Object.defineProperty(global, 'navigator', {configurable: true, value: {clipboard: {writeText: text => { copied = text; return Promise.resolve(); }}}});
+  try {
+    const original = 'nested:\n  value: test\n';
+    app().showSnapshotModal({content: original, config_format: 'yaml'});
+    assert.equal(typeof onClick, 'function');
+    onClick();
+    assert.equal(copied, original);
+  } finally {
+    global.document = oldDocument;
+    if (oldNavigator) Object.defineProperty(global, 'navigator', oldNavigator);
+    else delete global.navigator;
+  }
+});
+
+test('snapshot summary uses the selected step plan and inferred dimensions', () => {
+  const oldDocument = global.document;
+  const content = {innerHTML: '', scrollTop: 0};
+  global.document = {getElementById: id => id === 'configSnapshotContent' ? content : null};
+  try {
+    app().showSnapshotModal({run_dir: 'output/private-run', params: {
+      model_train_type: 'krea2-lora',
+      dit: 'D:\\models\\krea.safetensors', pretrained_model_name_or_path: 'D:\\models\\unused.safetensors',
+      train_data_dir: 'D:\\data\\portraits\\',
+      network_weights: 'D:\\weights\\initial.safetensors', network_module: 'networks.lora_krea2',
+      dim_from_weights: true, network_dim: 888, network_alpha: 999,
+      krea_training_duration_mode: 'steps', max_train_steps: 1600, max_train_epochs: 42,
+      learning_rate: '2e-5', optimizer_type: 'torch.optim.AdamW', train_batch_size: 1,
+      gradient_accumulation_steps: 4, resolution: '1024,1024', seed: 1337,
+    }});
+    const html = content.innerHTML;
+    assert.match(html, />krea\.safetensors<\/dd>/);
+    assert.ok(html.includes('<span class="snapshot-path-text">D:\\data\\portraits\\</span>'));
+    assert.match(html, />initial\.safetensors<\/dd>/);
+    assert.match(html, />Krea 2<\/dd>/);
+    assert.match(html, />LoRA<\/dd>/);
+    assert.match(html, />snapshotRankFromWeights<\/dd>/);
+    assert.match(html, />snapshotSteps<\/dt><dd[^>]*>1600<\/dd>/);
+    assert.match(html, />field\.gradient_accumulation_steps<\/dt><dd[^>]*>4<\/dd>/);
+    assert.match(html, />1024 × 1024<\/dd>/);
+    assert.doesNotMatch(html, /private-run|unused\.safetensors|>888<|>999<|>42<|>1337</);
+  } finally {
+    global.document = oldDocument;
+  }
+});
+
+test('legacy snapshot summary recognizes LyCORIS and escapes paths', () => {
+  const oldDocument = global.document;
+  const content = {innerHTML: '', scrollTop: 0};
+  global.document = {getElementById: id => id === 'configSnapshotContent' ? content : null};
+  try {
+    app().showSnapshotModal({params: {
+      dataset_config: 'D:\\data\\<dataset>.toml', network_module: 'lycoris.kohya',
+      network_args: ['algo=lokr'], network_dim: 16, network_alpha: 0,
+      max_train_epochs: 20, gradient_accumulation_steps: 1,
+    }});
+    const html = content.innerHTML;
+    assert.match(html, />snapshotDatasetConfig<\/dt>/);
+    assert.ok(html.includes('<span class="snapshot-path-text">D:\\data\\&lt;dataset&gt;.toml</span>'));
+    assert.match(html, />LoKr<\/dd>/);
+    assert.match(html, />16 \/ 0<\/dd>/);
+    assert.match(html, />historyEpochs<\/dt><dd[^>]*>20<\/dd>/);
+    assert.doesNotMatch(html, /<dataset>|gradient_accumulation_steps|snapshotSteps/);
+  } finally {
+    global.document = oldDocument;
+  }
+});
+
+test('snapshot title uses the run name while loading and after loading', () => {
+  const a = app({configSnapshotRunDir: 'output/run-123', historyItems: [{run_dir: 'output/run-123', name: 'my training'}]});
+  assert.equal(a.snapshotTitle(), 'my training');
+  a._currentSnapshot = {name: 'snapshot name'};
+  assert.equal(a.snapshotTitle(), 'snapshot name');
+  a._currentSnapshot = null;
+  a.historyItems = [];
+  assert.equal(a.snapshotTitle(), 'run-123');
+});
+
+test('dataset path scrolls only when it overflows and updates after resizing', () => {
+  const listeners = {};
+  const classes = new Set();
+  const properties = {};
+  const label = {scrollWidth: 330};
+  const path = {
+    clientWidth: 200,
+    querySelector: () => label,
+    classList: {toggle: (name, enabled) => enabled ? classes.add(name) : classes.delete(name)},
+    style: {setProperty: (name, value) => { properties[name] = value; }},
+    addEventListener: (name, callback) => { listeners[name] = callback; },
+    removeEventListener: name => { delete listeners[name]; },
+  };
+  const cleanup = app()._initSnapshotPathScroll({querySelector: () => path});
+  assert.equal(classes.has('is-overflowing'), true);
+  assert.equal(properties['--snapshot-scroll-distance'], '130px');
+  assert.ok(parseFloat(properties['--snapshot-scroll-duration']) >= 6);
+  path.clientWidth = 400;
+  listeners.mouseenter();
+  assert.equal(classes.has('is-overflowing'), false);
+  cleanup();
+  assert.deepEqual(listeners, {});
+});
+
+test('snapshot disclosure handles interrupted animations and keeps the final state', () => {
+  const oldDocument = global.document;
+  const listeners = {};
+  const attributes = {};
+  const motions = [];
+  let height = 600;
+  const summary = {
+    setAttribute: (name, value) => { attributes[name] = value; },
+    addEventListener: (name, callback) => { listeners[name] = callback; },
+    removeEventListener: name => { delete listeners[name]; },
+  };
+  const panel = {
+    scrollHeight: 600, style: {}, getBoundingClientRect: () => ({height}),
+    animate: frames => {
+      const motion = {frames, cancel() { this.cancelled = true; }};
+      motions.push(motion);
+      return motion;
+    },
+  };
+  const details = {open: true, querySelector: selector => selector === 'summary' ? summary : panel};
+  global.document = {getElementById: () => ({clientHeight: 350})};
+  try {
+    const cleanup = app()._initSnapshotDisclosure({querySelector: () => details});
+    const click = () => listeners.click({preventDefault() {}});
+    click();
+    assert.equal(attributes['aria-expanded'], 'false');
+    assert.equal(details.open, true);
+    assert.equal(motions[0].frames[0].height, '350px');
+    height = 125;
+    click();
+    assert.equal(motions[0].cancelled, true);
+    assert.equal(attributes['aria-expanded'], 'true');
+    assert.equal(motions[1].frames[0].height, '125px');
+    motions[1].onfinish();
+    assert.equal(details.open, true);
+    assert.equal(panel.style.height, '');
+    click();
+    motions[2].onfinish();
+    assert.equal(details.open, false);
+    click();
+    assert.equal(details.open, true);
+    assert.equal(motions[3].frames[0].height, '0px');
+    motions[3].onfinish();
+    cleanup();
+    assert.deepEqual(listeners, {});
+  } finally {
+    global.document = oldDocument;
+  }
+});
+
+test('snapshot disclosure opens and closes immediately with reduced motion', () => {
+  const oldMatchMedia = window.matchMedia;
+  let onClick;
+  const summary = {setAttribute() {}, addEventListener: (_, callback) => { onClick = callback; }, removeEventListener() {}};
+  const panel = {style: {}, getBoundingClientRect: () => ({height: 100}), animate: () => assert.fail('should not animate')};
+  const details = {open: true, querySelector: selector => selector === 'summary' ? summary : panel};
+  window.matchMedia = () => ({matches: true});
+  try {
+    const cleanup = app()._initSnapshotDisclosure({querySelector: () => details});
+    onClick({preventDefault() {}});
+    assert.equal(details.open, false);
+    onClick({preventDefault() {}});
+    assert.equal(details.open, true);
+    cleanup();
+  } finally {
+    window.matchMedia = oldMatchMedia;
+  }
+});
+
 test('copy uses the converted form and undo restores both profile drafts', async () => {
   const original = {model_train_type: 'moss-image-lora', output_name: 'my draft'};
   const drafts = {'anima-lora': {output_name: 'saved anima'}, 'moss-image-lora': original};

@@ -2105,7 +2105,7 @@
 <dialog class="modal-overlay" x-dialog="configSnapshotOpen" @click.self="closeSnapshotModal()" @dialog-close="closeSnapshotModal()" :aria-label="t('monitor.configSnapshot')" x-cloak>
   <div class="modal config-snapshot-modal">
     <div class="modal-header">
-      <div class="snapshot-heading"><span x-text="t('monitor.configSnapshot')">Config Snapshot</span><small x-text="_currentSnapshot?.name || configSnapshotRunDir" :title="configSnapshotRunDir"></small></div>
+      <div class="snapshot-heading" x-text="snapshotTitle()" :title="configSnapshotRunDir"></div>
       <button class="btn-icon" data-dialog-autofocus @click="closeSnapshotModal()" :aria-label="t('common.close')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div class="modal-body" id="configSnapshotBody" :aria-busy="configSnapshotLoading">
@@ -2114,9 +2114,11 @@
       <div id="configSnapshotContent" x-show="!configSnapshotLoading && !configSnapshotError"></div>
     </div>
     <div class="modal-footer snapshot-footer">
-      <span x-text="t('monitor.snapshotCopyHint')"></span>
-      <button class="btn btn-sm btn-secondary" :disabled="!_currentSnapshot?.content || configSnapshotLoading" @click="copyConfigContent()" x-text="t('monitor.copyConfig')"></button>
-      <button class="btn btn-sm btn-primary" :disabled="!_currentSnapshot?.reuse_params || !!historyReuseBusy || configSnapshotLoading" @click="reuseConfigFromSnapshot(configSnapshotRunDir)" x-text="t('monitor.reuseConfig')"></button>
+      <span x-show="_currentSnapshot?.reuse_params && !configSnapshotLoading">
+        <span x-text="t('monitor.snapshotDraftHint')"></span>
+        <span x-show="String(_currentSnapshot?.params?.resume || '').trim()" x-text="t('monitor.snapshotResumeHint')"></span>
+      </span>
+      <button class="btn btn-sm btn-primary" :disabled="!_currentSnapshot?.reuse_params || !!historyReuseBusy || configSnapshotLoading" @click="reuseConfigFromSnapshot(configSnapshotRunDir)" x-text="t('monitor.snapshotUseConfig')"></button>
     </div>
   </div>
 </dialog>
