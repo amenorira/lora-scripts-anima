@@ -22,6 +22,7 @@ from backend.training.config.training_config import (
 def get_sample_prompts(config: dict):
     """Build prompt text; filesystem errors must abort preparation."""
     import random
+    from backend.training.preview.config import compose_preview_prompts
 
     positive_prompts = config.get('positive_prompts', None)
     negative_prompts = config.get('negative_prompts', '')
@@ -48,6 +49,8 @@ def get_sample_prompts(config: dict):
             raise ValueError('No .txt files found in dataset directory / 数据集路径没有 txt 文件')
         sample_prompt_file = random.Random(int(config.get("seed", 2333))).choice(caption_files)
         positive_prompts = sample_prompt_file.read_text(encoding="utf-8")
+
+    positive_prompts = compose_preview_prompts(config, positive_prompts)
 
     if is_moss:
         import json

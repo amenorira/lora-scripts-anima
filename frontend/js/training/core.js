@@ -711,18 +711,26 @@ window.trainingCoreMixin = {
     return window.getVisibleSections(this.form.model_train_type || 'anima-lora');
   },
 
+  _fieldControlKeys(key) {
+    const toggleKey = this._fieldDefinition(key)?.toggleKey;
+    return toggleKey ? [key, toggleKey] : [key];
+  },
+
   undoField(key) {
     if (this.formHistoryIdx <= 0) return;
-    // Walk back through history to find the most recent entry where this key differs
+    const keys = this._fieldControlKeys(key);
+    // A toggled input is one control: restore its text and enabled state together.
     for (let i = this.formHistoryIdx - 1; i >= 0; i--) {
       const entry = this.formHistory[i];
-      if (key in entry && entry[key] !== this.form[key]) {
-        if (key === 'optimizer_type') {
-          this._switchOptimizer(entry[key]);
-        } else {
-          this.form[key] = entry[key];
-          this._setFieldSource(key, 'user');
-        }
+      if (keys.some(fieldKey => fieldKey in entry && entry[fieldKey] !== this.form[fieldKey])) {
+        keys.forEach(fieldKey => {
+          if (!(fieldKey in entry)) return;
+          if (fieldKey === 'optimizer_type') this._switchOptimizer(entry[fieldKey]);
+          else {
+            this.form[fieldKey] = entry[fieldKey];
+            this._setFieldSource(fieldKey, 'user');
+          }
+        });
         this._persistProfileFieldSources();
         this.formHistoryIdx = i;
         this.updateToml();
@@ -730,13 +738,14 @@ window.trainingCoreMixin = {
       }
     }
     // No different value found → restore to default
-    const def = this._currentEffectiveFieldDefault(key);
-    if (key === 'optimizer_type') {
-      this._switchOptimizer(def !== undefined ? def : '');
-    } else {
-      this.form[key] = def !== undefined ? def : '';
-      this._setFieldSource(key, 'user');
-    }
+    keys.forEach(fieldKey => {
+      const def = this._currentEffectiveFieldDefault(fieldKey);
+      if (fieldKey === 'optimizer_type') this._switchOptimizer(def !== undefined ? def : '');
+      else {
+        this.form[fieldKey] = def !== undefined ? def : '';
+        this._setFieldSource(fieldKey, 'user');
+      }
+    });
     this._persistProfileFieldSources();
     this.updateToml();
   },
@@ -772,11 +781,23 @@ window.trainingCoreMixin = {
     // formDefaults may reflect imported values. "Reset to default"
     // must use the active dependency-aware default. Optimizer fields commonly
     // replace the static registry default through autoValue rules.
-    const { value, source } = this._resolveFieldDefault(key);
-    const unchanged = this.form[key] === value;
-    this.setField(key, value);
-    this.formDefaults[key] = value;
-    this._setFieldSource(key, source);
+    const keys = this._fieldControlKeys(key);
+    const history = keys.length > 1 ? this.formHistory : null;
+    const historyIdx = this.formHistoryIdx;
+    let unchanged = true;
+    keys.forEach(fieldKey => {
+      const { value, source } = this._resolveFieldDefault(fieldKey);
+      if (this.form[fieldKey] !== value) unchanged = false;
+      this.setField(fieldKey, value);
+      this.formDefaults[fieldKey] = value;
+      this._setFieldSource(fieldKey, source);
+    });
+    if (history && !unchanged) {
+      // Keep dependency handling in setField, but record one composite action.
+      this.formHistory = history;
+      this.formHistoryIdx = historyIdx;
+      this.pushHistory({ ...this.form });
+    }
     this._persistProfileFieldSources();
     if (unchanged) {
       if (typeof this.queueTomlPreviewChange === 'function') this.queueTomlPreviewChange(key);

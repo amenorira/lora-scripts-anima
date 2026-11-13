@@ -1298,6 +1298,8 @@
 		"preview_scheduler": "Noise schedule",
 		"preview_loras": "External LoRAs",
 		"preview_lorasHint": "Applied only during previews. Add multiple files with independent strengths; 0 disables a row. Supports matching-model LoRA, LoHa, LoKr, DoRA, OFT and related weights. If the weights include text encoder adapters, preview prompts are re-encoded.",
+		"quality_prompts": "Quality prompts",
+		"quality_promptsHint": "When enabled, prepends this text to each positive prompt.",
 		"sample_prompts": "Preview positive prompt",
 		"sample_promptsHint": "Enter one positive prompt per line; each produces one preview image. Use tags or natural language, for example: 1girl, smile, cherry blossoms.",
 		"sample_promptsHint_anima": "Enter one positive prompt per line; each produces one preview image. With text caching enabled, finalize the prompts before training starts.",

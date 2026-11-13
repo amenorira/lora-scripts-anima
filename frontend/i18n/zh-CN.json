@@ -1298,6 +1298,8 @@
 		"preview_scheduler": "噪声调度器",
 		"preview_loras": "外部 LoRA",
 		"preview_lorasHint": "仅预览时叠加，可添加多个文件并分别设置倍率；0 为关闭。支持同架构的 LoRA、LoHa、LoKr、DoRA、OFT 等权重。含文本编码器权重时会重新编码预览提示词。",
+		"quality_prompts": "质量提示词",
+		"quality_promptsHint": "启用后添加到每组正向提示词之前。",
 		"sample_prompts": "预览图正向提示词",
 		"sample_promptsHint": "每行一条正向提示词，每条生成一张预览图。可使用标签或自然语言，例如 1girl, smile, cherry blossoms。",
 		"sample_promptsHint_anima": "每行一条正向提示词，每条生成一张预览图。使用文本缓存时，须在训练开始前确定。",

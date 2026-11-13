@@ -1298,6 +1298,8 @@
 		"preview_scheduler": "ノイズスケジュール",
 		"preview_loras": "外部 LoRA",
 		"preview_lorasHint": "プレビュー時のみ適用します。複数のファイルに個別の倍率を設定でき、0 で無効になります。同じモデル構造の LoRA、LoHa、LoKr、DoRA、OFT などに対応します。重みにテキストエンコーダー用のアダプターが含まれる場合は、プレビュー用プロンプトを再エンコードします。",
+		"quality_prompts": "品質プロンプト",
+		"quality_promptsHint": "有効にすると、各正のプロンプトの先頭に追加します。",
 		"sample_prompts": "サンプルのポジティブプロンプト",
 		"sample_promptsHint": "1 行に 1 件のポジティブプロンプトを入力し、各プロンプトからプレビューを 1 枚生成します。タグや自然文が使えます。例：1girl, smile, cherry blossoms。",
 		"sample_promptsHint_anima": "1 行に 1 件のポジティブプロンプトを入力し、各プロンプトからプレビューを 1 枚生成します。テキストキャッシュを使う場合は、学習開始前に確定してください。",

@@ -328,17 +328,21 @@ window.trainingFieldRenderer = {
     const stepUpLabel = this.escapeAttr(this.t('common.increaseField').replace('{field}', `${accessibleKey} ${label}`));
     const labelAttrs = ` data-training-field-label="${this.escapeAttr(labelKey)}" data-training-field-name="${this.escapeAttr(accessibleKey)}"`;
     const isToggle = field.type === 'toggle';
+    const toggleKey = field.toggleKey;
     const isStaticReadonly = field.readonly === true;
-    const staticReadonlyAttrs = isStaticReadonly ? ' readonly aria-readonly="true"' : '';
+    const staticReadonlyAttrs = (isStaticReadonly ? ' readonly aria-readonly="true"' : '')
+      + (toggleKey ? ` :disabled="!form.${toggleKey}"` : '');
     // Text/textarea/path fields get their input on a separate row (full-width)
-    const isFullWidth = field.type === 'textarea' || field.type === 'lora-list' || (field.role && field.role.startsWith('file-'));
+    const isFullWidth = toggleKey || field.type === 'textarea' || field.type === 'lora-list' || (field.role && field.role.startsWith('file-'));
 
     // ── Generate input HTML ──
     let inputHtml = '';
     if (field.type === 'lora-list') {
       inputHtml = this.previewLorasHtml();
     } else if (isToggle) {
-      inputHtml = `<label class="toggle"><input type="checkbox" aria-label="${fieldAriaLabel}"${labelAttrs} :checked="form.${dataKey}" @change="setField('${dataKey}', $event.target.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>`;
+      const previewScroll = dataKey === 'enable_preview'
+        ? `; if ($event.target.checked) $nextTick(() => { if (form.enable_preview) scrollToSection('preview') })` : '';
+      inputHtml = `<label class="toggle"><input type="checkbox" aria-label="${fieldAriaLabel}"${labelAttrs} :checked="form.${dataKey}" @change="setField('${dataKey}', $event.target.checked)${previewScroll}"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>`;
     } else if (field.type === 'select') {
       const fc = this._trainingSelectConfig(field);
       const selectAlign = field.selectAlign === 'left' ? 'left' : 'right';
@@ -494,7 +498,7 @@ window.trainingFieldRenderer = {
     // ── Nested detection (explicit layout parent or conditional parent) ──
     // 计算嵌套层级：一个字段的层级 = 其布局父字段的层级 + 1，父级若无则为 0。
     // 这样"开关→选项→子选项"的树形层级通过递增缩进 + 加深左边框一眼可读。
-    const isNested = Boolean(this._fieldLayoutParentKey(field));
+    const isNested = field.section !== 'preview' && Boolean(this._fieldLayoutParentKey(field));
     const nestLevel = isNested ? this._nestLevel(field) : 0;
     const nestedClass = isNested ? ' field-nested' : '';
     const nestLevelAttr = ` data-nest-level="${nestLevel}"`;
@@ -510,7 +514,10 @@ window.trainingFieldRenderer = {
     let fullWidthRow = '';
     if (isFullWidth) {
       // Textarea / path: info on top, input full-width below (outside field-row)
-      controlSection = infoHtml + (field.controlActions || '');
+      const toggleHtml = toggleKey
+        ? `<label class="toggle"><input type="checkbox" aria-label="${fieldAriaLabel}"${labelAttrs} :checked="form.${toggleKey}" @change="setField('${toggleKey}', $event.target.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>`
+        : '';
+      controlSection = infoHtml + toggleHtml + (field.controlActions || '');
       fullWidthRow = `<div class="field-input-row">${controlHtml}</div>`;
     } else {
       // Standard: info left, control right — single flex row
@@ -532,6 +539,8 @@ window.trainingFieldRenderer = {
           ${_menuPopupHtml}
         </div>`;
     const staticReadonlyClass = isStaticReadonly ? ' field-readonly' : '';
+    const changedExpr = `String(form.${dataKey}) !== String(formDefaults.${dataKey})`
+      + (toggleKey ? ` || String(form.${toggleKey}) !== String(formDefaults.${toggleKey})` : '');
     const hintExpr = `fieldHintText('${this.escapeAttr(dataKey)}')`;
     const hintHtml = dataKey === 'attn_mode'
       ? `<div class="field-hint" x-text="t('opt.attn_mode_' + form.attn_mode)">${this.esc(this.t('opt.attn_mode_' + val))}</div>`
@@ -541,7 +550,7 @@ window.trainingFieldRenderer = {
     const kreaSampleModeHtml = trainType === 'krea2-lora' && dataKey === 'enable_krea_samples'
       ? `<div class="field-hint" data-krea-sample-mode role="status" aria-live="polite" x-show="form.enable_krea_samples" x-text="kreaSampleModeText()">${this.esc(this.kreaSampleModeText())}</div>`
       : '';
-    return `<div class="field${condClass}${nestedClass}${staticReadonlyClass}" :class="{ 'field-changed': String(form.${dataKey}) !== String(formDefaults.${dataKey}), 'field-filled': ${_filledExpr} }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}${nestLevelAttr}>
+    return `<div class="field${condClass}${nestedClass}${staticReadonlyClass}" :class="{ 'field-changed': ${changedExpr}, 'field-filled': ${_filledExpr} }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}${nestLevelAttr}>
       <div class="field-row">
         ${controlSection}
         ${fieldMenuHtml}

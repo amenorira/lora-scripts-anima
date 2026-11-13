@@ -47,6 +47,29 @@ function application(profile = 'anima-lora', run = async () => response({ task_i
   return { model, requests, focused, errors, visibility };
 }
 
+test('quality prefixes appear in the reviewed prompts while requests and form snapshots keep editable text separate', async () => {
+  for (const profile of ['anima-lora', 'sdxl-lora', 'moss-image-lora', 'krea2-lora']) {
+    const { model, requests } = application(profile);
+    const key = profile === 'krea2-lora' ? 'krea_sample_prompts' : 'positive_prompts';
+    Object.assign(model.form, { enable_quality_prompts: true, quality_prompts: ' , masterpiece, best quality,， ',
+      [key]: ' , portrait\nfull body' });
+    const pending = model.startTraining();
+    await turn();
+    assert.equal(model.confirmDialog.fields[2].value, profile === 'moss-image-lora'
+      ? 'masterpiece, best quality, portrait\nfull body'
+      : 'masterpiece, best quality, portrait\nmasterpiece, best quality, full body');
+    model.confirmAction();
+    await pending;
+    assert.equal(requests[0][key], ' , portrait\nfull body');
+    assert.equal(requests[0].enable_quality_prompts, true);
+    assert.equal(requests[0].quality_prompts, model.form.quality_prompts);
+    assert.equal(requests[0]._form_state[key], ' , portrait\nfull body');
+    assert.equal(model.form[key], ' , portrait\nfull body');
+    assert.equal(model._previewPositivePrompts({ ...model.form, enable_quality_prompts: false }), model.form[key]);
+    assert.equal(model._previewPositivePrompts({ ...model.form, quality_prompts: ' ,， ' }), model.form[key]);
+  }
+});
+
 for (const profile of ['anima-lora', 'sdxl-lora', 'moss-image-lora', 'krea2-lora']) {
   test(`${profile}: preview summary uses its submitted fields and modifying waits for the dialog to close`, async () => {
     for (const action of ['cancelConfirm', 'confirmSecondaryAction']) {

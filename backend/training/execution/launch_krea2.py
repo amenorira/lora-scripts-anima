@@ -120,7 +120,9 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task):
         if network_preset is not None:
             (internal_run_dir / KREA2_PRESET_FILENAME).write_text(toml_writer.dumps(network_preset), encoding="utf-8")
         if sample_prompts_file is not None:
-            prompts = str(config["krea_sample_prompts"]).replace("\r\n", "\n").replace("\r", "\n").rstrip()
+            from backend.training.preview.config import compose_preview_prompts
+            prompts = compose_preview_prompts(config, str(config["krea_sample_prompts"]))
+            prompts = prompts.replace("\r\n", "\n").replace("\r", "\n").rstrip()
             sample_prompts_file.write_text(prompts + "\n", encoding="utf-8")
 
     def _write_run_files():

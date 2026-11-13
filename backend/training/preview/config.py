@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from pathlib import Path
 
 
@@ -11,6 +12,28 @@ CONFIG_NAME = "preview_loras.json"
 PROFILES = {"moss-image-lora": "moss_image", "anima-lora": "anima"}
 SAMPLERS = ("euler", "er_sde", "euler_a", "dpmpp_2m", "heun")
 SCHEDULERS = ("native", "simple", "sgm_uniform", "beta", "beta57", "normal", "karras", "exponential")
+DEFAULT_QUALITY_PROMPTS = "masterpiece, best quality, highres, absurdres"
+
+
+def compose_preview_prompts(form, prompts):
+    """Prepend quality text without changing editable prompts or sample grouping."""
+    if not form.get("enable_quality_prompts"):
+        return prompts
+    quality = re.sub(r"[\r\n]+", ", ", str(form.get("quality_prompts") or ""))
+    quality = re.sub(r"^[\s,，]+|[\s,，]+$", "", quality)
+    if not quality or not prompts or not prompts.strip():
+        return prompts
+
+    def prepend(prompt):
+        body = re.sub(r"^[\s,，]+", "", prompt)
+        return f"{quality}, {body}" if body.strip() else prompt
+
+    if form.get("model_train_type") == "moss-image-lora":
+        return prepend(prompts)
+    return "\n".join(
+        prepend(line) if line.strip() and not line.lstrip().startswith("#") else line
+        for line in prompts.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    )
 
 
 def sampling_options(sampler=None, scheduler=None):

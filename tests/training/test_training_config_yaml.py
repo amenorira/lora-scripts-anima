@@ -16,6 +16,21 @@ from backend.training.config.optimizer_contracts import LORA_MUON_OPTIMIZER_TYPE
 
 
 class TrainingConfigYamlTests(unittest.TestCase):
+    def test_quality_prompt_choice_and_text_round_trip_separately_from_positive_prompts(self):
+        for profile in ("anima-lora", "sdxl-lora", "moss-image-lora", "krea2-lora"):
+            for enabled in (False, True):
+                form = {"model_train_type": profile, "enable_quality_prompts": enabled,
+                        "quality_prompts": "custom quality", "positive_prompts": "raw prompt",
+                        "enable_preview": True}
+                if profile == "krea2-lora":
+                    form.update(enable_krea_samples=True, krea_sample_prompts="raw prompt")
+                restored = extract_training_form(parse_training_config_text(dump_training_config(
+                    build_training_config(form, profile_id=profile))))
+                self.assertEqual(restored["enable_quality_prompts"], enabled)
+                self.assertEqual(restored["quality_prompts"], "custom quality")
+                key = "krea_sample_prompts" if profile == "krea2-lora" else "positive_prompts"
+                self.assertEqual(restored[key], "raw prompt")
+
     def test_long_prompts_are_not_wrapped_and_round_trip(self):
         multiline_prompt = "low quality\nextra limbs\n"
         prompts = [

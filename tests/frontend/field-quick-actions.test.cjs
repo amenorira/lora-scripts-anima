@@ -19,6 +19,58 @@ function application(profile = 'anima-lora', values = {}) {
   return { app, w, history };
 }
 
+test('quality prompt text and its switch survive profile draft restoration including an explicit empty value', () => {
+  for (const profile of ['anima-lora', 'sdxl-lora', 'moss-image-lora', 'krea2-lora']) {
+    const { app } = application(profile);
+    assert.equal(app.form.quality_prompts, 'masterpiece, best quality, highres, absurdres');
+    for (const enabled of [true, false]) {
+      for (const text of ['custom quality', '']) {
+        const restored = app._profileFormFromDraft(profile, app.formDefaults,
+          { ...app.form, enable_quality_prompts: enabled, quality_prompts: text });
+        assert.equal(restored.enable_quality_prompts, enabled);
+        assert.equal(restored.quality_prompts, text);
+      }
+    }
+  }
+});
+
+test('a toggled text control resets and undoes its text and switch as one field', () => {
+  for (const profile of ['anima-lora', 'sdxl-lora', 'moss-image-lora', 'krea2-lora']) {
+    const { app, w } = application(profile);
+    app.pushHistory = w.trainingCoreMixin.pushHistory;
+    const original = { ...app.form };
+    app.formHistory = [original];
+    app.formHistoryIdx = 0;
+    app.setField('enable_quality_prompts', true);
+    app.undoField('quality_prompts');
+    assert.equal(app.form.enable_quality_prompts, false, 'undo finds a change to just the switch');
+    assert.equal(app.form.quality_prompts, original.quality_prompts);
+
+    app.setField('enable_quality_prompts', true);
+    app.resetField('quality_prompts');
+    assert.equal(app.form.enable_quality_prompts, false, 'reset also turns off an otherwise default control');
+    assert.equal(app.form.quality_prompts, original.quality_prompts);
+
+    app.setField('quality_prompts', 'custom quality');
+    app.setField('enable_quality_prompts', true);
+    app.formHistory = [original, { ...app.form }];
+    app.formHistoryIdx = 1;
+    app.undoField('quality_prompts');
+    assert.equal(app.form.enable_quality_prompts, false);
+    assert.equal(app.form.quality_prompts, original.quality_prompts);
+    app.setField('quality_prompts', 'custom quality');
+    app.setField('enable_quality_prompts', true);
+    const historyLength = app.formHistory.length;
+    app.resetField('quality_prompts');
+    assert.equal(app.form.enable_quality_prompts, false);
+    assert.equal(app.form.quality_prompts, original.quality_prompts);
+    assert.equal(app.formHistory.length, historyLength + 1, 'reset records one composite action');
+    app.undoField('quality_prompts');
+    assert.equal(app.form.enable_quality_prompts, true, 'undo restores the whole pre-reset control');
+    assert.equal(app.form.quality_prompts, 'custom quality');
+  }
+});
+
 test('dim shortcuts add or subtract eight with normal editing and undo in every profile', () => {
   for (const profile of ['anima-lora', 'moss-image-lora', 'sdxl-lora', 'krea2-lora']) {
     const { app, history } = application(profile, { network_dim: 24, network_alpha: 8 });

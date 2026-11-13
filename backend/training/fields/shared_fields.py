@@ -9,6 +9,8 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from backend.training.preview.config import DEFAULT_QUALITY_PROMPTS
+
 
 _FIELDS = {
     "train_batch_size": {"type": "number", "section": "training", "min": 1, "hint_key": "field.train_batch_sizeHint"},
@@ -218,3 +220,14 @@ _FIELDS = {
 
 def shared_training_field(key: str, **profile: Any) -> dict[str, Any]:
     return deepcopy({"key": key, "desc_key": f"field.{key}", **_FIELDS[key], **profile})
+
+
+def quality_prompt_fields(preview_key: str, **profile: Any) -> list[dict[str, Any]]:
+    common = {"section": "preview", "target": "ui", "show_if": {"key": preview_key, "eq": True}, **profile}
+    return [
+        {**common, "key": "enable_quality_prompts", "type": "toggle", "default": False,
+         "desc_key": "field.quality_prompts", "hidden": True},
+        {**common, "key": "quality_prompts", "type": "text", "default": DEFAULT_QUALITY_PROMPTS,
+         "desc_key": "field.quality_prompts", "hint_key": "field.quality_promptsHint",
+         "toggle_key": "enable_quality_prompts", "keep_empty": True},
+    ]

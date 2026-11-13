@@ -471,6 +471,7 @@ window.trainingTomlMixin = {
         if (field.omitDefault && field.key !== 'train_text_embedder'
           && String(value) === String(field.default)) return;
         payload[field.key] = value;
+        if (field.toggleKey) payload[field.toggleKey] = !!this.form[field.toggleKey];
       });
     });
     if (this.form.gpu_ids !== undefined && this.form.gpu_ids !== null) payload.gpu_ids = this.form.gpu_ids;
@@ -617,6 +618,19 @@ window.trainingTomlMixin = {
   },
 
   // ── Training ───────────────────────────────────────────
+  _previewPositivePrompts(payload) {
+    const prompts = String(payload[payload.model_train_type === 'krea2-lora' ? 'krea_sample_prompts' : 'positive_prompts'] ?? '');
+    if (!payload.enable_quality_prompts) return prompts;
+    const quality = String(payload.quality_prompts ?? '').replace(/[\r\n]+/g, ', ').replace(/^[\s,，]+|[\s,，]+$/g, '');
+    if (!quality || !prompts.trim()) return prompts;
+    const prepend = prompt => {
+      const body = prompt.replace(/^[\s,，]+/, '');
+      return body.trim() ? quality + ', ' + body : prompt;
+    };
+    if (payload.model_train_type === 'moss-image-lora') return prepend(prompts);
+    return prompts.split(/\r\n|\r|\n/).map(line => line.trim() && !line.trimStart().startsWith('#') ? prepend(line) : line).join('\n');
+  },
+
   async startTraining(confirmedPayload = null) {
     if (this.isTraining || this.trainingStarting || this.showConfirmModal || this.regularizationActive || this.datasetRepeatApplying) return;
 
@@ -663,7 +677,7 @@ window.trainingTomlMixin = {
           fields: [
             { label: this.t('field.train_data_dir'), value: payload.train_data_dir },
             { label: this.t('field.output_name'), value: payload.output_name },
-            { label: this.t('trainingPreview.positivePrompts'), value: payload[promptKey], multiline: true },
+            { label: this.t('trainingPreview.positivePrompts'), value: this._previewPositivePrompts(payload), multiline: true },
           ],
           secondaryLabel: this.t('trainingPreview.editPrompts'),
           next: choice => choice === 'confirm' ? this._submitTraining(payload, true) : null,

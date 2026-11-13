@@ -16,7 +16,7 @@ from typing import Any
 
 from backend.training.core_registry import PROFILES
 from backend.training.fields.lycoris_layout import apply_lycoris_panel_layout
-from backend.training.fields.shared_fields import shared_training_field
+from backend.training.fields.shared_fields import quality_prompt_fields, shared_training_field
 from backend.training.config.metrics_config import training_metric_fields
 
 from backend.training.config.optimizer_contracts import (
@@ -653,6 +653,7 @@ shared_training_field('save_state', default=False, target="toml", omit_default=T
     {"v": "normal", "l": "normal"}, {"v": "karras", "l": "karras"}, {"v": "exponential", "l": "exponential"},
 ]},
 {"key": "preview_loras", "type": "lora-list", "default": [], "section": "preview", "desc_key": "field.preview_loras", "hint_key": "field.preview_lorasHint", "target": "ui", "group": ["anima", "moss_image"], "show_if": {"key": "enable_preview", "eq": True}},
+*quality_prompt_fields("enable_preview"),
 {"key": "positive_prompts", "type": "textarea", "default": "", "section": "preview", "desc_key": "field.sample_prompts", "target": "ui", "hint_key": "field.sample_promptsHint", "show_if": {"key": "enable_preview", "eq": True}},
 {"key": "negative_prompts", "type": "textarea", "default": "", "section": "preview", "desc_key": "field.negative_prompts", "target": "ui", "show_if": {"key": "enable_preview", "eq": True}},
     # 仅 SDXL 暴露采样器（sd-scripts 的 diffusers scheduler 路径）。
@@ -803,6 +804,7 @@ _MERGED_ARG_NAMES: dict[str, str] = {
 # snake_case → camelCase key mapping for frontend
 _FIELD_KEY_MAP = {
     "keep_empty": "keepEmpty",
+    "toggle_key": "toggleKey",
     "default_by_group": "defaultByGroup",
     "value_type": "valueType",
     "min_exclusive": "minExclusive",

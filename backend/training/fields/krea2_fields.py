@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
-from backend.training.fields.shared_fields import shared_training_field
+from backend.training.fields.shared_fields import quality_prompt_fields, shared_training_field
 from backend.training.config.metrics_config import training_metric_fields
 from backend.training.config.krea2_network import KREA2_NETWORK_MODULE, KREA2_LYCORIS_MODULE, KREA2_NETWORK_FIELDS
 from backend.training.config.krea2_optimizers import extend_fields as _extend_optimizer_fields
@@ -774,6 +774,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "hint_key": "field.enable_krea_samplesHint",
         "profiles": [KREA2_PROFILE_ID],
     },
+    *quality_prompt_fields("enable_krea_samples", profiles=[KREA2_PROFILE_ID]),
     {
         "key": "krea_sample_prompts",
         "type": "textarea",
