@@ -10,7 +10,7 @@ window.monitorCoreMixin = {
   previewsVersion: 0, trainParamsVersion: 0,
   runDetailLoading: false, runDetailError: '',
   gpuInfo: null, sysInfo: null, lossSeries: [], lossDataVersion: 0, trainParams: [],
-  previews: [], previewStep: 0, previewSortDir: 'desc', previewsLoading: false, historyItems: [], runningTask: null,
+  previews: [], previewStep: 0, previewsLoading: false, historyItems: [], runningTask: null,
   // Refresh ownership and cacheable snapshot freshness advance independently.
   _previewRequestSeq: 0, _previewSnapshotSeq: 0,
   weakNetworkMode: true,
@@ -20,7 +20,6 @@ window.monitorCoreMixin = {
   historyReuseBusy: '', _historyReuseApplying: false,
   historyReuseSource: '', historyReuseWarning: '', _historyReuseUndo: null,
   _historyCardPointer: null,
-  previewReference: null,
   logAutoScroll: true, logLines: [],
   _logContentVersion: 0, monitorTab: 'overview',
   monitorParamQuery: '',
@@ -465,7 +464,7 @@ window.monitorCoreMixin = {
     this.trainParams = [];
     this.trainParamsVersion++;
     this.previews = [];
-    this.samplePromptSelection = '';
+    this.resetSampleBrowser?.();
     this.previewsVersion++;
     this.previewStep = 0;
     this._resetOutputFilesForRun('');

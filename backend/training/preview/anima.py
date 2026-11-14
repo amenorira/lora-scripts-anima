@@ -16,6 +16,9 @@ def sample_latents(options, height, width, seed, dit, crossattn_emb, steps, dtyp
                    guidance_scale=1., flow_shift=3., neg_crossattn_emb=None):
     import torch
     from .kernels import cpu_generator, run_solver
+    from .metadata import record_parameters
+
+    record_parameters(verified=True, cfg_scale=guidance_scale if guidance_scale > 1 and neg_crossattn_emb is not None else 1.0)
 
     device = torch.device(device)
     enabled, compute_dtype = torch.is_autocast_enabled(device.type), torch.get_autocast_dtype(device.type)

@@ -2,9 +2,10 @@
 (() => {
   function zoom(view, requestedScale, anchor) {
     const current = Number(view.scale) || 1;
-    const scale = Math.max(1, Math.min(8, Number(requestedScale) || 1));
-    if (Math.abs(scale - current) < 0.001) return { scale: current, x: view.x || 0, y: view.y || 0 };
+    const requested = Math.max(1, Math.min(8, Number(requestedScale) || 1));
+    const scale = Math.abs(requested - 1) < 0.001 ? 1 : requested;
     if (scale === 1) return { scale: 1, x: 0, y: 0 };
+    if (Math.abs(scale - current) < 0.001) return { scale: current, x: view.x || 0, y: view.y || 0 };
     const ratio = scale / current;
     return {
       scale,

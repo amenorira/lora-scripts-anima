@@ -136,7 +136,7 @@ window.monitorHistoryMixin = {
     this.trainParams = [];
     this.trainParamsVersion++;
     this.previews = [];
-    this.samplePromptSelection = '';
+    this.resetSampleBrowser?.();
     this.previewsVersion++;
     this.runDetailLoading = true;
     this.runDetailError = '';
@@ -204,7 +204,7 @@ window.monitorHistoryMixin = {
     this.trainParamsVersion++;
     this.monitorParamQuery = '';
     this.previews = [];
-    this.samplePromptSelection = '';
+    this.resetSampleBrowser?.();
     this.previewsVersion++;
     this.previewStep = 0;
     this._resetOutputFilesForRun('');

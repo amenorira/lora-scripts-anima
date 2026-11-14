@@ -399,11 +399,12 @@ async def monitor_preview_metadata(
                     text = str(value)
                     png_text[str(key)] = text[:8192]
             exif: dict[str, str] = {}
-            try:
-                for key, value in image.getexif().items():
-                    exif[str(key)] = str(value)[:8192]
-            except Exception:
-                pass
+            if image.info.get("exif"):
+                try:
+                    for key, value in image.getexif().items():
+                        exif[str(key)] = str(value)[:8192]
+                except Exception:
+                    pass
             return {
                 "format": image.format,
                 "width": image.width,

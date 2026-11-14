@@ -1,18 +1,38 @@
 /* 样本筛选、刷新与媒体队列；由 monitor-core.js 装配，沿用同一份监控状态。 */
 window.monitorPreviewsMixin = {
-  samplePromptSelection: '',
-  _sampleResetScroll: false, _sampleScrollAnchor: null,
-  previewLightboxOpen: false, _previewClosePending: false,
+  sampleBatchId: '', sampleBatchSortDir: 'desc',
+  sampleTimelineVisible: true,
+  previewViewTimelineVisible: true,
+  previewViewTimelineAvailable: false,
+  previewComparisonLayout: 'horizontal',
+  sampleExpandedBatchId: '', _sampleExpansionPausedFollow: false,
+  _sampleExpansionUI: null, _sampleExpansionPointer: null, _sampleExpansionAction: 0, _sampleExpansionDismissTimer: null,
+  _sampleGridPointer: null,
+  previewCompareActive: false, previewComparisonWaiting: false,
+  previewReferences: [], _previewReferenceEntries: [],
+  _sampleModelCache: null,
+  _sampleResetScroll: false, _sampleScrollAnchor: null, _sampleOverviewAtEnd: true,
+  previewLightboxOpen: false, previewInfoOpen: false, _previewClosePending: false,
+  previewPageEditing: false, previewPageDraft: '', _previewPageLastDraft: '',
+  previewTimelineMenu: null, _previewTimelineMenuToken: 0, _previewTimelineMenuCleanup: null,
   previewHasNew: false,
   previewRefreshFeedback: false, _previewRefreshFeedbackTimer: null,
-  previewViewScale: 1, previewViewX: 0, previewViewY: 0,
+  previewViewScale: 1,
+  _previewViewFitScale: 1, _previewViewFitted: true, _previewGroupGeometry: null,
   previewViewPanning: false, previewViewPointerId: null,
-  _previewPanStartX: 0, _previewPanStartY: 0,
+  _previewPanStartX: 0, _previewPanStartY: 0, _previewPanRatio: 1,
   previewImageLoading: false, previewImageError: false,
-  previewReferenceLoading: false, previewReferenceError: false,
-  _previewImageKey: '', _previewReferenceImageKey: '', _previewImageRequest: 0, _previewReferenceRequest: 0,
+  _previewImageKey: '', _previewImageRequest: 0,
+  _previewOriginalCache: null,
+  _previewMediaByUrl: null,
 
   _previewPromptIdentity(preview) {
+    if (preview?.sample?.prompt_id) {
+      const sample = preview.sample;
+      return { key: sample.prompt_id, prefix: '', number: Number(sample.prompt_index ?? 0) + 1,
+        seed: sample.seed == null ? null : String(sample.seed),
+        stage: sample.stage_kind + ':' + sample.stage_value };
+    }
     // Only the trainer's complete filename convention is eligible. Custom names
     // remain browsable, but cannot accidentally become members of a prompt group.
     const match = String(preview?.name || '').match(/^(.*?)(e?)(\d{6})_(\d{2})_(\d{14})(?:_(-?\d+))?\.(?:png|jpe?g|webp)$/i);
@@ -25,53 +45,427 @@ window.monitorPreviewsMixin = {
     return String(preview?.path || preview?.url || preview?.name || '');
   },
 
-  _samplePromptOptions() {
-    const groups = new Map();
-    let unknown = false;
-    this.previews.forEach(preview => {
-      const identity = this._previewPromptIdentity(preview);
-      if (!identity) { unknown = true; return; }
-      const group = groups.get(identity.key) || { ...identity, count: 0 };
-      group.count++;
-      groups.set(identity.key, group);
-    });
-    if (groups.size < 2 && !(unknown && groups.size)) return [];
-    const entries = [...groups.values()].sort((a, b) => a.number - b.number || a.prefix.localeCompare(b.prefix));
-    const numberCounts = new Map();
-    entries.forEach(group => numberCounts.set(group.number, (numberCounts.get(group.number) || 0) + 1));
-    return [{ value: '', label: this.t('monitor.allSamplePrompts') }, ...entries.map(group => ({
-      value: group.key,
-      label: this.t('monitor.samplePrompt').replace('{n}', group.number)
-        + (numberCounts.get(group.number) > 1 ? ' · ' + (group.prefix.replace(/_$/, '') || '—') : ''),
-      count: group.count,
-    }))];
+  resetSampleBrowser() {
+    this.cancelPreviewPromptBarDrag?.();
+    this.closePreviewTimelineMenu?.(false);
+    this.previewInfoOpen = false;
+    this.previewPageEditing = false; this.previewPageDraft = ''; this._previewPageLastDraft = '';
+    this._clearPreviewImageLoading?.(true);
+    this._disconnectSampleExpansionUI?.();
+    this._sampleExpansionAction = (this._sampleExpansionAction || 0) + 1;
+    this._sampleGridPointer = null;
+    ['_sampleTimeline', '_previewViewTimeline'].forEach(prefix => this._cancelPreviewRailDrag?.(prefix));
+    this._sampleOverviewJumpId = '';
+    this.sampleBatchId = ''; this.sampleBatchSortDir = 'desc';
+    this.sampleExpandedBatchId = ''; this._sampleExpansionPausedFollow = false;
+    this._cancelSampleGridMotion?.(this._sampleOverviewPanel?.()?.querySelector('.m-sample-batches'));
+    this._clearPreviewComparison();
+    this.previewHasNew = false;
+    this._sampleModelCache = null;
+    this._sampleResetScroll = true; this._sampleScrollAnchor = null;
+    this._sampleOverviewAtEnd = true;
+    this._loadSampleViewPreferences();
   },
 
-  setSamplePromptSelection(value) {
-    const next = this._samplePromptOptions().some(option => option.value === value) ? value : '';
-    if (next === this.samplePromptSelection) return;
-    this.samplePromptSelection = next;
-    this._sampleResetScroll = true;
+  _loadSampleViewPreferences() {
+    try {
+      const saved = JSON.parse(localStorage.getItem('anima-sample-view') || '{}');
+      if (typeof saved?.overviewTimeline === 'boolean') this.sampleTimelineVisible = saved.overviewTimeline;
+      if (typeof saved?.viewerTimeline === 'boolean') this.previewViewTimelineVisible = saved.viewerTimeline;
+      if (saved?.sort === 'asc' || saved?.sort === 'desc') this.sampleBatchSortDir = saved.sort;
+      if (saved?.comparisonLayout === 'horizontal' || saved?.comparisonLayout === 'vertical') this.previewComparisonLayout = saved.comparisonLayout;
+    } catch { /* Keep the current layout if storage is unavailable. */ }
+  },
+
+  _saveSampleViewPreferences() {
+    try {
+      localStorage.setItem('anima-sample-view', JSON.stringify({overviewTimeline: this.sampleTimelineVisible,
+        viewerTimeline: this.previewViewTimelineVisible, sort: this.sampleBatchSortDir, comparisonLayout: this.previewComparisonLayout}));
+    } catch { /* The controls remain usable without storage. */ }
+  },
+
+  _sampleRecord(preview, index = 0) {
+    if (preview?.sample?.batch_id) return preview.sample;
+    const identity = this._previewPromptIdentity(preview);
+    const info = this._sampleMetadata(preview?.name);
+    // Historical custom images remain inspectable without inventing an identity.
+    return { batch_id: identity ? 'legacy:' + identity.prefix + ':' + identity.stage : 'file:' + this._previewItemKey(preview),
+      batch_label: info.stageLabel || preview?.name || '', batch_order: index,
+      prompt_id: identity?.key || 'file:' + this._previewItemKey(preview),
+      prompt_label: info.prompt || preview?.name || '', prompt_index: identity ? identity.number - 1 : null,
+      seed: identity?.seed ?? null, params: {}, comparable: false, condition_key: null,
+      metadata_source: identity ? 'filename' : 'unknown', batch_status: 'unknown' };
+  },
+
+  _sampleDataModel(items = this.previews) {
+    if (this._sampleModelCache?.items === items && this._sampleModelCache.version === this.previewsVersion) return this._sampleModelCache;
+    const groups = new Map();
+    const records = items.map((preview, index) => {
+      const sample = this._sampleRecord(preview, index);
+      let batch = groups.get(sample.batch_id);
+      if (!batch) {
+        const epoch = Number.isInteger(sample.epoch) && sample.epoch > 0 ? sample.epoch : null;
+        const step = Number.isInteger(sample.step) && sample.step >= 0 ? sample.step : null;
+        const label = epoch !== null && step !== null ? 'Epoch ' + epoch + ' · Step ' + step : sample.batch_label || preview.name;
+        batch = { id: sample.batch_id, label,
+          order: Number.isFinite(Number(sample.batch_order)) ? Number(sample.batch_order) : index,
+          firstIndex: index, indices: [], expected: null, status: sample.batch_status || 'unknown' };
+        groups.set(batch.id, batch);
+      }
+      batch.indices.push(index);
+      if (Number.isInteger(sample.batch_expected) && sample.batch_expected > 0) batch.expected = Math.max(batch.expected || 0, sample.batch_expected);
+      if (sample.batch_status === 'running') batch.status = 'running';
+      else if (sample.batch_status === 'failed' && batch.status !== 'running') batch.status = 'failed';
+      return { index, preview, sample, batch };
+    });
+    // The API's generation order is shared by recorded and legacy samples.
+    // Their optional batch_order values may use different units after upgrades.
+    const batches = [...groups.values()].sort((a, b) => a.firstIndex - b.firstIndex);
+    const labelCounts = new Map(), labelOrdinals = new Map();
+    batches.forEach(batch => labelCounts.set(batch.label, (labelCounts.get(batch.label) || 0) + 1));
+    batches.forEach(batch => {
+      if (labelCounts.get(batch.label) > 1) {
+        const original = batch.label, ordinal = (labelOrdinals.get(original) || 0) + 1;
+        labelOrdinals.set(original, ordinal); batch.label += ' (' + ordinal + ')';
+      }
+    });
+    batches.forEach((batch, position) => { batch.position = position; });
+    const model = { items, version: this.previewsVersion, records, batches, byBatch: groups };
+    if (items === this.previews) this._sampleModelCache = model;
+    return model;
+  },
+
+  _sampleSelectedBatch() {
+    const model = this._sampleDataModel();
+    return model.byBatch.get(this.sampleBatchId) || model.batches[model.batches.length - 1] || null;
+  },
+
+  _sampleOverviewBatches(items = this.previews) {
+    // Presentation order is independent of the canonical sampling chronology
+    // used by automatic pairing and latest-following.
+    const batches = [...this._sampleDataModel(items).batches];
+    return this.sampleBatchSortDir !== 'asc' ? batches.reverse() : batches;
+  },
+
+  _sampleOverviewAtLatestEdge(grid) {
+    if (!grid) return true;
+    return this.sampleBatchSortDir !== 'asc' ? grid.scrollTop <= 4
+      : grid.scrollTop + grid.clientHeight >= grid.scrollHeight - 4;
+  },
+
+  _sampleOverviewLatestScrollTop(grid) {
+    return this.sampleBatchSortDir !== 'asc' ? 0 : Math.max(0, (grid?.scrollHeight || 0) - (grid?.clientHeight || 0));
+  },
+
+  setSampleBatchSort(dir) {
+    if ((dir !== 'asc' && dir !== 'desc') || dir === this.sampleBatchSortDir) return;
+    this.sampleBatchSortDir = dir;
+    this._saveSampleViewPreferences();
+    // Rebuild around the same batch. Sorting neither acknowledges new samples
+    // nor resumes latest-following for a reader inspecting history.
+    this._sampleResetScroll = true; this._sampleScrollAnchor = null;
     this.previewsVersion++;
     this.renderDashboard();
   },
 
-  _previewLightboxSequence(items = this.previews) {
-    const indices = this._previewDisplayIndices(items);
-    if (!this.previewReference) return { indices, samePrompt: false };
-    const referenceKey = this._previewItemKey(this.previewReference);
-    const candidates = indices.filter(index => this._previewItemKey(items[index]) !== referenceKey);
-    const referencePrompt = this._previewPromptIdentity(this.previewReference);
-    const currentPrompt = this._previewPromptIdentity(this.previews[this.previewStep]);
-    if (referencePrompt && currentPrompt?.key === referencePrompt.key) {
-      const samePrompt = candidates.filter(index => this._previewPromptIdentity(items[index])?.key === referencePrompt.key);
-      if (samePrompt.length) return { indices: samePrompt, samePrompt: samePrompt.length < candidates.length };
+  _sampleCaseKey(preview) {
+    const sample = this._sampleRecord(preview);
+    return JSON.stringify([sample.prompt_id, sample.seed == null ? null : String(sample.seed), sample.condition_key || null]);
+  },
+
+  _sampleNeedsSeed(preview) {
+    const sample = this._sampleRecord(preview);
+    const model = this._sampleDataModel(), batch = model.byBatch.get(sample.batch_id);
+    if (!batch) return false;
+    const seeds = new Set(batch.indices.map(index => model.records[index].sample)
+      .filter(other => other.prompt_id === sample.prompt_id)
+      .map(other => other.seed == null ? 'unknown' : String(other.seed)));
+    return seeds.size > 1;
+  },
+
+  _samplePromptButtonLabel(preview) {
+    return this._sampleCaseLabel(preview);
+  },
+
+  _samplePromptText(preview) {
+    const prompt = this._sampleRecord(preview).params?.prompt;
+    return typeof prompt === 'string' ? prompt.replace(/\s+/g, ' ').trim() : '';
+  },
+
+  _sampleCaseLabel(preview, includeSeed = undefined, promptText = undefined) {
+    const sample = this._sampleRecord(preview);
+    const batchIndices = Number.isInteger(sample.prompt_index) ? null : this._sampleDataModel().byBatch.get(sample.batch_id)?.indices || [];
+    const number = Number.isInteger(sample.prompt_index) && sample.prompt_index >= 0 ? sample.prompt_index + 1
+      : Math.max(0, batchIndices?.findIndex(index => this.previews[index] === preview) ?? -1) + 1;
+    const prompt = promptText ?? this.t('monitor.samplePrompt').replace('{n}', number);
+    const showSeed = includeSeed === undefined ? this._sampleNeedsSeed(preview) : includeSeed;
+    let label = prompt + (showSeed ? ' ' + (sample.seed == null ? this.t('monitor.sampleNoSeed') : this.t('monitor.sampleSeed').replace('{n}', sample.seed)) : '');
+    const model = this._sampleDataModel(), batch = model.byBatch.get(sample.batch_id);
+    const seed = sample.seed == null ? 'unknown' : String(sample.seed);
+    const siblings = (batch?.indices || []).map(index => model.records[index].sample)
+      .filter(other => other.prompt_id === sample.prompt_id && (other.seed == null ? 'unknown' : String(other.seed)) === seed);
+    if (new Set(siblings.map(other => other.condition_key || 'unverified')).size > 1) {
+      label += ' ' + this._sampleConditionDifference(sample, siblings, Math.max(0, siblings.indexOf(sample)));
     }
-    return { indices: candidates, samePrompt: false };
+    return label;
+  },
+
+  _sampleBatchNavigationIndex(batch, preview, items = this.previews) {
+    if (!batch?.indices.length) return -1;
+    if (!preview) return batch.indices[0];
+    const current = this._sampleRecord(preview), key = this._sampleCaseKey(preview);
+    const sameSeed = sample => sample.seed != null && current.seed != null && String(sample.seed) === String(current.seed);
+    const find = predicate => batch.indices.find(index => predicate(this._sampleRecord(items[index], index), items[index]));
+    return find((sample, item) => this._sampleCaseKey(item) === key)
+      ?? find(sample => sample.prompt_id === current.prompt_id && sameSeed(sample))
+      ?? find(sample => sample.prompt_id === current.prompt_id)
+      ?? (current.prompt_index != null ? find(sample => sample.prompt_index === current.prompt_index && sameSeed(sample)) : undefined)
+      ?? batch.indices[0];
+  },
+
+  _previewComparisonKey(preview) {
+    if (!preview) return '';
+    const sample = this._sampleRecord(preview), params = sample.params || {};
+    if (sample.comparable !== true || sample.metadata_source !== 'recorded' || !sample.prompt_id || sample.seed == null || !sample.condition_key
+        || typeof params.prompt !== 'string' || typeof params.negative_prompt !== 'string') return '';
+    return JSON.stringify([sample.prompt_id, String(sample.seed), sample.condition_key, params.prompt, params.negative_prompt]);
+  },
+
+  canCompareCurrentPreview() {
+    const current = this.previews[this.previewStep];
+    return !!this._previewViewerComparisonKey(current)
+      && this._previewViewerFileIndex(this._previewItemKey(current)) === this.previewStep;
+  },
+
+  _previewViewerComparisonKey(preview) {
+    if (!preview) return '';
+    const sample = this._sampleRecord(preview);
+    if (sample.metadata_source === 'recorded') {
+      const key = this._previewComparisonKey(preview);
+      return key ? 'recorded:' + key : '';
+    }
+    // Historical filenames establish a prompt slot and optional seed, not
+    // complete generation settings. This identity only permits manual viewing.
+    if (sample.metadata_source === 'filename' || sample.metadata_source === 'unverified') {
+      return sample.prompt_id ? JSON.stringify(['legacy', sample.prompt_id, sample.seed == null ? null : String(sample.seed)]) : '';
+    }
+    return !sample.metadata_source || sample.metadata_source === 'unknown' ? 'unknown' : '';
+  },
+
+  _previewViewerMetadataKey(preview) {
+    const sample = this._sampleRecord(preview);
+    return JSON.stringify(this._sampleStableValue({source: sample.metadata_source || 'unknown', prompt: sample.prompt_id,
+      seed: sample.seed == null ? null : String(sample.seed), params: sample.params || {},
+      condition: sample.condition_key || null, comparable: sample.comparable === true}));
+  },
+
+  _previewViewerFileIndex(key) {
+    if (!key) return -1;
+    let found = -1;
+    for (let index = 0; index < this.previews.length; index++) {
+      if (this._previewItemKey(this.previews[index]) !== key) continue;
+      if (found >= 0) return -1;
+      found = index;
+    }
+    return found;
+  },
+
+  _clearPreviewComparison() {
+    this.previewCompareActive = false;
+    this.previewComparisonWaiting = false;
+    this.previewReferences = []; this._previewReferenceEntries = [];
+  },
+
+  _resolvedPreviewReferenceEntries() {
+    const files = new Map();
+    this.previews.forEach((preview, index) => {
+      const key = this._previewItemKey(preview);
+      files.set(key, files.has(key) ? -1 : index);
+    });
+    return (this._previewReferenceEntries || []).flatMap(entry => {
+      const index = files.get(entry.itemKey), preview = this.previews[index];
+      const sample = preview && this._sampleRecord(preview);
+      return Number.isInteger(index) && index >= 0 && entry.caseKey
+        // Filename batches can be refined by later log records. The actual
+        // file and captured conditions still identify a manually fixed image.
+        && (sample.metadata_source === 'filename' || sample.batch_id === entry.batchId)
+        && this._previewViewerComparisonKey(preview) === entry.caseKey
+        && this._previewViewerMetadataKey(preview) === entry.metadataKey
+        ? [{entry, preview, index}] : [];
+    });
+  },
+
+  pinPreviewReference(previewOrIndex, refresh = true) {
+    const preview = Number.isInteger(previewOrIndex) ? this.previews[previewOrIndex] : previewOrIndex;
+    const key = this._previewViewerComparisonKey(preview);
+    this._syncPreviewReference();
+    const fileIndex = this._previewViewerFileIndex(this._previewItemKey(preview)), actual = this.previews[fileIndex];
+    if (!key || fileIndex < 0) return false;
+    const entry = {itemKey: this._previewItemKey(preview), caseKey: key,
+      batchId: this._sampleRecord(preview).batch_id, metadataKey: this._previewViewerMetadataKey(preview)};
+    if (this._sampleRecord(actual).batch_id !== entry.batchId || this._previewViewerComparisonKey(actual) !== key
+        || this._previewViewerMetadataKey(actual) !== entry.metadataKey) return false;
+    if (this._previewReferenceEntries.length && this._previewReferenceEntries[0].caseKey !== key) this._clearPreviewComparison();
+    const entries = this._previewReferenceEntries || [];
+    if (!entries.some(other => other.itemKey === entry.itemKey)) this._previewReferenceEntries = [...entries, entry];
+    this.previewCompareActive = true;
+    this.previewComparisonWaiting = true;
+    this._syncPreviewReference();
+    if (refresh && this.previewLightboxOpen) this._updatePreviewLightbox();
+    return this._previewReferenceEntries.some(other => other.itemKey === entry.itemKey);
+  },
+
+  selectPreviewComparisonCurrent(index) {
+    const current = this.previews[index];
+    if (!current || !Number.isInteger(index) || this._previewViewerFileIndex(this._previewItemKey(current)) !== index) return false;
+    this._syncPreviewReference();
+    if (this._isPreviewReference(current)) return false;
+    this.previewStep = index;
+    this.sampleBatchId = this._sampleRecord(current, index).batch_id;
+    this.previewComparisonWaiting = false;
+    this._syncPreviewReference();
+    return true;
+  },
+
+  _isPreviewReference(preview) {
+    return this.previewCompareActive && (this._previewReferenceEntries || [])
+      .some(entry => entry.itemKey === this._previewItemKey(preview));
+  },
+
+  unpinPreviewReference(itemKey) {
+    const entries = this._previewReferenceEntries || [];
+    if (!entries.some(entry => entry.itemKey === itemKey)) return false;
+    this._previewReferenceEntries = entries.filter(entry => entry.itemKey !== itemKey);
+    this._syncPreviewReference();
+    if (this.previewLightboxOpen) this._updatePreviewLightbox();
+    return true;
+  },
+
+  startPreviewComparison() {
+    return this.pinPreviewReference(this.previewStep);
+  },
+
+  stopPreviewComparison() {
+    this._clearPreviewComparison();
+    if (this.previewLightboxOpen) this._updatePreviewLightbox();
+  },
+
+  setCurrentPreviewAsReference() {
+    return this.pinPreviewReference(this.previewStep);
+  },
+
+  _syncPreviewReference() {
+    if (!this.previewCompareActive) { this._clearPreviewComparison(); return; }
+    const entries = this._previewReferenceEntries || [], current = this.previews[this.previewStep];
+    if (!entries.length || (!this.previewComparisonWaiting
+        && (this._previewViewerComparisonKey(current) !== entries[0].caseKey
+          || this._previewViewerFileIndex(this._previewItemKey(current)) !== this.previewStep))) {
+      this._clearPreviewComparison(); return;
+    }
+    // Each fixed file resolves independently. A deleted or mutated reference
+    // cannot replace its neighbors or remove other valid fixed images.
+    const resolved = this._resolvedPreviewReferenceEntries();
+    if (!resolved.length) { this._clearPreviewComparison(); return; }
+    this._previewReferenceEntries = resolved.map(item => item.entry);
+    this.previewReferences = resolved.map(item => item.preview);
+  },
+
+  selectPreviewCase(index) {
+    if (!this.selectPreviewComparisonCurrent(index)) return;
+    this._updatePreviewLightbox();
+  },
+
+  _sampleStableValue(value) {
+    if (Array.isArray(value)) return value.map(item => this._sampleStableValue(item));
+    if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(key => [key, this._sampleStableValue(value[key])]));
+    return value;
+  },
+
+  _sampleConditionDifference(sample, siblings, index) {
+    const changed = key => new Set(siblings.map(other => JSON.stringify(other.params?.[key] ?? null))).size > 1;
+    const params = sample.params || {}, parts = [];
+    if (changed('width') || changed('height')) parts.push((params.width ?? '—') + '×' + (params.height ?? '—'));
+    if (changed('cfg_scale')) parts.push('CFG ' + (params.cfg_scale ?? '—'));
+    if (changed('steps')) parts.push((params.steps ?? '—') + ' steps');
+    ['sampler', 'scheduler', 'flow_shift', 'architecture'].forEach(key => {
+      if (changed(key)) parts.push((key === 'flow_shift' ? 'shift ' : '') + String(params[key] ?? '—'));
+    });
+    if (changed('base_model')) parts.push(this._sampleWeightLabel(params.base_model) || '—');
+    if (changed('model_variant')) {
+      const variant = params.model_variant;
+      if (variant && typeof variant === 'object') {
+        const model = this._sampleWeightLabel(variant.turbo_dit), lora = this._sampleWeightLabel(variant.turbo_lora);
+        if (model) parts.push(model);
+        if (lora) parts.push(lora + ' × ' + (variant.turbo_lora_multiplier ?? 1));
+      } else if (variant != null) parts.push(String(variant));
+    }
+    if (changed('loras') && Array.isArray(params.loras)) {
+      const loras = params.loras.map(lora => { const name = this._sampleWeightLabel(lora); return name ? name + ' × ' + (lora.multiplier ?? 1) : ''; }).filter(Boolean);
+      if (loras.length) parts.push(loras.join(', '));
+      else if (!params.loras.length) parts.push('LoRA × 0');
+    }
+    return parts.join(' ') || this.t('monitor.sampleConditionOption').replace('{n}', index + 1);
+  },
+
+  _sampleWeightLabel(value) {
+    const path = typeof value === 'string' ? value : value?.path;
+    return typeof path === 'string' ? path.replace(/\\/g, '/').split('/').pop() || path : '';
   },
 
   _previewLightboxIndices(items = this.previews) {
-    return this._previewLightboxSequence(items).indices;
+    const current = this.previewComparisonWaiting && this.previewReferences?.length
+      ? this.previewReferences[0] : this.previews[this.previewStep];
+    const sample = current && this._sampleRecord(current);
+    const model = this._sampleDataModel(items);
+    if (!current || sample.metadata_source === 'unknown') return model.batches.flatMap(batch => batch.indices);
+    const currentKey = this._previewItemKey(current);
+    return model.batches.map(batch => {
+      const selected = batch.indices.find(index => this._previewItemKey(items[index]) === currentKey);
+      if (selected !== undefined) return selected;
+      const candidates = batch.indices.filter(index => {
+        const other = this._sampleRecord(items[index], index);
+        return other.prompt_id === sample.prompt_id && (other.seed == null ? sample.seed == null : sample.seed != null && String(other.seed) === String(sample.seed));
+      });
+      const exact = candidates.filter(index => this._sampleCaseKey(items[index]) === this._sampleCaseKey(current));
+      // A temporal inspection keeps the selected prompt and seed. Missing or
+      // ambiguous cases are skipped rather than silently selecting another seed.
+      return exact.length === 1 ? exact[0] : candidates.length === 1 ? candidates[0] : -1;
+    }).filter(index => index >= 0);
+  },
+
+  _previewLightboxDisplayIndices(indices = this._previewLightboxIndices()) {
+    const display = [...indices];
+    // Explicitly fixed actual files remain visible even when their batches
+    // contain repeated metadata. Canonical automatic pairing stays unchanged.
+    if (this.previewCompareActive) {
+      const key = this.previewComparisonWaiting ? this._previewReferenceEntries[0]?.caseKey
+        : this._previewViewerComparisonKey(this.previews[this.previewStep]);
+      this._resolvedPreviewReferenceEntries().forEach(({entry, index}) => {
+        if (entry.caseKey === key && !display.includes(index)) display.push(index);
+      });
+      const model = this._sampleDataModel();
+      display.sort((a, b) => model.records[a].batch.position - model.records[b].batch.position || a - b);
+    }
+    return this.sampleBatchSortDir !== 'asc' ? display.reverse() : display;
+  },
+
+  _previewLightboxNavigationIndices(indices = this._previewLightboxDisplayIndices()) {
+    if (!this.previewCompareActive) return indices;
+    const fixed = new Set((this._previewReferenceEntries || []).map(entry => entry.itemKey));
+    return indices.filter(index => !fixed.has(this._previewItemKey(this.previews[index])));
+  },
+
+  _previewLightboxNavigationTarget(direction, indices = this._previewLightboxDisplayIndices()) {
+    const position = indices.indexOf(this.previewStep);
+    const available = new Set(this._previewLightboxNavigationIndices(indices));
+    const step = direction < 0 ? -1 : 1;
+    // While waiting, the previous current file may be fixed or outside the
+    // prompt sequence. Use its visual position without selecting fixed files.
+    for (let cursor = position < 0 ? (step < 0 ? indices.length - 1 : 0) : position + step;
+      cursor >= 0 && cursor < indices.length; cursor += step) {
+      if (available.has(indices[cursor])) return indices[cursor];
+    }
+    return -1;
   },
 
   _invalidatePreviewRequest() {
@@ -85,38 +479,55 @@ window.monitorPreviewsMixin = {
 
   _applyPreviewSnapshot(previews, snapshotSeq = this._previewSnapshotSeq) {
     if (snapshotSeq !== this._previewSnapshotSeq) return false;
-    const wasAtEnd = this.previews.length === 0 || this.previewStep >= this.previews.length - 1;
     // A cacheable snapshot must not cancel a forced refresh already in flight.
     this._previewSnapshotSeq++;
     const changed = this._replacePreviewItems(Array.isArray(previews) ? previews : []);
     if (changed) this.previewsVersion++;
-    this._followLatestPreview(wasAtEnd);
+    this._followLatestPreview();
     return true;
   },
 
   _replacePreviewItems(items) {
     const previous = this.previews;
     const selectedKey = this._previewItemKey(previous[this.previewStep]);
-    const referenceKey = this._previewItemKey(this.previewReference);
+    const selectedPreview = previous[this.previewStep];
+    const previousModel = this._sampleDataModel();
+    const previousBatch = this._sampleSelectedBatch();
+    const latestBatch = previousModel.batches[previousModel.batches.length - 1];
+    const nextLatestId = items.length ? this._sampleRecord(items[items.length - 1], items.length - 1).batch_id : '';
+    const readingLatestGroup = this.sampleExpandedBatchId === latestBatch?.id && nextLatestId === latestBatch?.id;
+    const follow = !this.previewLightboxOpen && !this._sampleExpansionPausedFollow
+      && (this._sampleOverviewAtEnd !== false || readingLatestGroup) && (!previousBatch || previousBatch.id === latestBatch?.id);
     const changed = previous.length !== items.length || previous.some((item, index) => {
       const next = items[index];
       return !next || ['name', 'path', 'version', 'url', 'thumb_url', 'inspect_url', 'metadata_url']
-        .some(field => item[field] !== next[field]);
+        .some(field => item[field] !== next[field]) || JSON.stringify(item.sample || null) !== JSON.stringify(next.sample || null);
     });
-    if (this.previewLightboxOpen && previous.length && items.length) {
-      const visible = this._previewLightboxIndices(items);
-      const latestIndex = visible.reduce((latest, index) => Math.max(latest, index), -1);
-      const latestKey = this._previewItemKey(items[latestIndex]);
-      if (latestKey && !previous.some(item => this._previewItemKey(item) === latestKey)) this.previewHasNew = true;
-    }
+    const previousKeys = new Set(previous.map(item => this._previewItemKey(item)));
+    if (!follow && items.some(item => !previousKeys.has(this._previewItemKey(item)))) this.previewHasNew = true;
     this.previews = items;
-    if (selectedKey) {
-      const index = items.findIndex(item => this._previewItemKey(item) === selectedKey);
-      if (index >= 0) this.previewStep = index;
+    this._sampleModelCache = null;
+    const model = this._sampleDataModel();
+    if (this.sampleExpandedBatchId && !model.byBatch.has(this.sampleExpandedBatchId)) {
+      this.sampleExpandedBatchId = ''; this._sampleExpansionPausedFollow = false;
     }
-    if (referenceKey && !this._previewClosePending) this.previewReference = items.find(item => this._previewItemKey(item) === referenceKey) || null;
-    if (this.samplePromptSelection && !this._samplePromptOptions().some(option => option.value === this.samplePromptSelection)) {
-      this.samplePromptSelection = '';
+    const selectedIndex = selectedKey ? items.findIndex(item => this._previewItemKey(item) === selectedKey) : -1;
+    const selectedBatch = model.records[selectedIndex]?.batch;
+    // A late manifest can move just this file out of a still-existing legacy
+    // batch. The open viewer owns its file; the overview owns its batch choice.
+    const target = follow ? model.batches[model.batches.length - 1]
+      : (this.previewLightboxOpen && selectedBatch) || model.byBatch.get(previousBatch?.id)
+        || selectedBatch || model.batches[model.batches.length - 1];
+    this.sampleBatchId = target?.id || '';
+    if (selectedIndex >= 0) this.previewStep = selectedIndex;
+    if (target && (!items[this.previewStep] || this._sampleRecord(items[this.previewStep], this.previewStep).batch_id !== target.id)) {
+      this.previewStep = this._sampleBatchNavigationIndex(target, selectedPreview, items);
+    }
+    if (!target) this.previewStep = 0;
+    if (!this._previewClosePending) this._syncPreviewReference();
+    if (this.previewTimelineMenu) {
+      if (this._previewTimelineMenuTarget() < 0) this.closePreviewTimelineMenu(false);
+      else this.previewTimelineMenu.actions = this._previewTimelineMenuActions();
     }
     return changed;
   },
@@ -128,7 +539,7 @@ window.monitorPreviewsMixin = {
       return;
     }
     if (this.currentRoute !== 'monitor-dashboard' || this.monitorTab !== 'samples') return;
-    const content = document.getElementById('monitorTabContent');
+    const content = document.getElementById('monitorDashboard');
     if (content) this.schedulePreviewMediaLoads(content);
   },
 
@@ -150,6 +561,8 @@ window.monitorPreviewsMixin = {
     const enqueue = image => {
       const url = image.dataset.previewUrl;
       if (!url || image.dataset.previewLoaded === '1' || image.dataset.previewQueued === '1') return;
+      const source = this._previewMediaByUrl?.get(url);
+      if (source) { this._setPreviewMediaSource(image, url, source); return; }
       image.dataset.previewQueued = '1';
       this._previewMediaQueue.push({ image, url });
     };
@@ -170,7 +583,16 @@ window.monitorPreviewsMixin = {
 
   async _drainPreviewMediaQueue() {
     if (this._previewMediaLoading || this._previewMediaPaused || !this.weakNetworkMode) return;
-    const next = this._previewMediaQueue.shift();
+    let next = this._previewMediaQueue.shift();
+    while (next) {
+      if (!next.image.isConnected || next.image.dataset.previewUrl !== next.url) delete next.image.dataset.previewQueued;
+      else {
+        const source = this._previewMediaByUrl?.get(next.url);
+        if (!source) break;
+        this._setPreviewMediaSource(next.image, next.url, source);
+      }
+      next = this._previewMediaQueue.shift();
+    }
     if (!next) return;
     const generation = this._previewMediaGeneration;
     this._previewMediaLoading = true;
@@ -186,9 +608,10 @@ window.monitorPreviewsMixin = {
       if (generation === this._previewMediaGeneration && next.image.isConnected && next.image.dataset.previewUrl === next.url && !this._previewMediaPaused) {
         const objectUrl = URL.createObjectURL(blob);
         this._previewMediaObjectUrls.push(objectUrl);
-        next.image.src = objectUrl;
-        next.image.dataset.previewLoaded = '1';
-        if (this._previewMediaObserver) this._previewMediaObserver.unobserve(next.image);
+        // The overview and both timelines can display the same thumbnail.
+        // Share only immutable, versioned URLs so bare URLs remain refreshable.
+        if (/[?&]v=[^&]+/.test(next.url)) (this._previewMediaByUrl ||= new Map()).set(next.url, objectUrl);
+        this._setPreviewMediaSource(next.image, next.url, objectUrl);
       }
     } catch (error) {
       // Cancellation and transient slow-link failures remain retryable on the
@@ -206,9 +629,17 @@ window.monitorPreviewsMixin = {
     }
   },
 
+  _setPreviewMediaSource(image, url, source) {
+    if (!image.isConnected || image.dataset.previewUrl !== url) return;
+    image.src = source;
+    image.dataset.previewLoaded = '1';
+    this._previewMediaObserver?.unobserve(image);
+  },
+
   _releasePreviewMediaObjectUrls() {
     for (const url of this._previewMediaObjectUrls) URL.revokeObjectURL(url);
     this._previewMediaObjectUrls = [];
+    this._previewMediaByUrl?.clear();
   },
 
   // Retain successfully decoded, versioned thumbnails across a grid rebuild.
@@ -220,7 +651,7 @@ window.monitorPreviewsMixin = {
     if (!root) return loaded;
     for (const image of root.querySelectorAll('img[data-preview-url]')) {
       const url = image.dataset.previewUrl || '';
-      const path = image.closest('.preview-grid-item')?.dataset.previewPath;
+      const path = image.closest('.m-sample-card-image, .preview-grid-item, .m-sample-timeline-image, .preview-view-timeline-item')?.dataset.previewPath;
       const src = image.getAttribute('src');
       if (path && /[?&]v=[^&]+/.test(url) && image.dataset.previewLoaded === '1'
           && image.complete && image.naturalWidth > 0 && owned.has(src)
@@ -233,19 +664,31 @@ window.monitorPreviewsMixin = {
 
   _restorePreviewMedia(root, loaded) {
     const retained = new Set();
+    const owned = new Set(this._previewMediaObjectUrls);
     if (root) for (const image of root.querySelectorAll('img[data-preview-url]')) {
-      const path = image.closest('.preview-grid-item')?.dataset.previewPath;
+      // Local disclosure retains the surrounding DOM. Its existing images can
+      // still be decoding, so keep their URL before consulting a sibling cache.
+      const current = image.getAttribute('src');
+      if (owned.has(current)) {
+        retained.add(current);
+        continue;
+      }
+      const path = image.closest('.m-sample-card-image, .preview-grid-item, .m-sample-timeline-image, .preview-view-timeline-item')?.dataset.previewPath;
       const src = loaded.get(JSON.stringify([path, image.dataset.previewUrl]));
-      if (!src) continue;
-      image.src = src;
-      image.dataset.previewLoaded = '1';
-      retained.add(src);
+      if (src) {
+        image.src = src;
+        image.dataset.previewLoaded = '1';
+        retained.add(src);
+      }
     }
     this._previewMediaObjectUrls = this._previewMediaObjectUrls.filter(url => {
       if (retained.has(url)) return true;
       URL.revokeObjectURL(url);
       return false;
     });
+    for (const [url, source] of this._previewMediaByUrl || []) {
+      if (!retained.has(source)) this._previewMediaByUrl.delete(url);
+    }
   },
 
   // ── 预览样本刷新 ────────────────────────────────────────
@@ -263,7 +706,6 @@ window.monitorPreviewsMixin = {
     const isCurrent = () => requestSeq === this._previewRequestSeq
       && sourceRunDir === this.currentOutputRunDir
       && (sourceRunDir || sourceTaskId === this.taskId);
-    const wasAtEnd = this.previews.length === 0 || this.previewStep >= this.previews.length - 1;
     try {
       // ``limit=0`` means all compact preview metadata. Image bytes continue
       // through the thumbnail queue (or normal browser loading when disabled).
@@ -289,7 +731,7 @@ window.monitorPreviewsMixin = {
           if (j.meta.artifact_dir) target.artifact_dir = j.meta.artifact_dir;
           if (j.meta.preview_enabled !== undefined) target.preview_enabled = j.meta.preview_enabled;
         }
-        this._followLatestPreview(wasAtEnd);
+        this._followLatestPreview();
       } else if (notifyOnFailure) this.toast?.(this.t('monitor.previewRefreshFailed'), 'error');
     } catch (e) {
       if (notifyOnFailure && isCurrent()) this.toast?.(this.t('monitor.previewRefreshFailed'), 'error');
@@ -302,48 +744,12 @@ window.monitorPreviewsMixin = {
   },
 
   // Keep an open viewer on its selected image; only an idle viewer follows the latest.
-  _followLatestPreview(wasAtEnd) {
+  _followLatestPreview() {
     if (this._previewClosePending) return;
     const n = this.previews.length;
     if (n === 0) { this.previewStep = 0; if (this.closePreviewLightbox) this.closePreviewLightbox(); return; }
-    let indices = this._previewLightboxIndices();
-    if (this.previewReference && !indices.length) {
-      this.previewReference = null;
-      indices = this._previewLightboxIndices();
-    }
-    if (this.previewLightboxOpen && indices.length && !indices.includes(this.previewStep)) this.previewStep = indices[0];
-    if (!this.previewLightboxOpen && !this.samplePromptSelection && wasAtEnd) {
-      this.previewStep = n - 1;
-    } else if (this.previewStep > n - 1) {
-      this.previewStep = n - 1;
-    }
+    if (this.previewStep > n - 1) this.previewStep = n - 1;
     if (this.previewLightboxOpen) this._updatePreviewLightbox();
-  },
-
-  _previewDisplayIndices(items = this.previews) {
-    const indices = items.map((_, index) => index).filter(index => !this.samplePromptSelection
-      || this._previewPromptIdentity(items[index])?.key === this.samplePromptSelection);
-    return this.previewSortDir === 'desc' ? indices.reverse() : indices;
-  },
-
-  _patchPreviewSortOrder() {
-    const content = document.getElementById('monitorTabContent');
-    if (!content) return false;
-    const grid = content.querySelector('.m-samples-section .preview-grid');
-    if (!grid) return false;
-    const items = new Map(Array.from(grid.querySelectorAll('.preview-grid-item')).map(item => [Number(item.dataset.previewIndex), item]));
-    for (const index of this._previewDisplayIndices()) {
-      const item = items.get(index);
-      if (item) grid.appendChild(item);
-    }
-    grid.scrollTop = 0;
-    this._sampleScrollAnchor = null;
-    content.querySelectorAll('[data-preview-sort]').forEach(button => {
-      const active = button.dataset.previewSort === this.previewSortDir;
-      button.classList.toggle('active', active);
-      button.setAttribute('aria-pressed', active ? 'true' : 'false');
-    });
-    return true;
   },
 
   _sampleMetadata(filename) {
@@ -357,11 +763,4 @@ window.monitorPreviewsMixin = {
     };
   },
 
-  setPreviewSort(dir) {
-    if (dir !== 'asc' && dir !== 'desc') return;
-    if (dir === this.previewSortDir) return;
-    this.previewSortDir = dir;
-    if (this.currentRoute === 'monitor-dashboard' && this.monitorTab === 'samples' && this._patchPreviewSortOrder()) return;
-    this.renderDashboard();
-  },
 };

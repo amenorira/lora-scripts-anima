@@ -1,6 +1,7 @@
 """训练样本、输出文件扫描与短期缓存。"""
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import threading
@@ -14,13 +15,15 @@ from backend.constants import REPO_ROOT
 from backend.image_preview import build_image_preview_url
 
 from backend.monitor.checkpoints import LORA_EXTENSIONS, parse_checkpoint
+from backend.monitor.legacy_sample_steps import enrich_legacy_sample_steps
+from backend.monitor.sample_metadata import legacy_sample_metadata, read_sample_records, sample_manifest_version
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
 # 隐藏 / 缓存目录名前缀与名称，扫描时一律跳过（避免 .ipynb_checkpoints、__pycache__ 等污染）
 _HIDDEN_PREFIXES = (".", "__")
 _TRAINING_SAMPLE_RE = re.compile(
-    r"(?:^|_)(?P<progress>e?\d{6})_(?P<prompt>\d{2})_(?P<timestamp>\d{14})(?:_-?\d+)?$",
+    r"(?:^|_)(?P<progress>e?\d{6})_(?P<prompt>\d{2,})_(?P<timestamp>\d{14})(?:_-?\d+)?(?:_\d{3})?$",
     re.IGNORECASE,
 )
 
@@ -84,7 +87,8 @@ def newest_previews(
     force_refresh: True 时跳过 5s 缓存，立即重新扫描磁盘并覆盖缓存。
     """
     now = time.time()
-    cache_key = f"{run_dir}|{output_dir or ''}"
+    metadata_version = sample_manifest_version(output_dir, force_refresh=force_refresh) if output_dir else ""
+    cache_key = f"{run_dir}|{output_dir or ''}|{metadata_version}"
     if not force_refresh:
         with _previews_cache_lock:
             cached = _previews_cache.get(cache_key)
@@ -156,6 +160,24 @@ def newest_previews(
             "size": stat.st_size,
             "version": version,
         })
+    recorded = read_sample_records(od, {item["path"]: item["version"] for item in result})
+    for item in result:
+        item["sample"] = recorded.get(item["path"]) or legacy_sample_metadata(item["name"], item["path"])
+        item["sample"]["metadata_version"] = metadata_version
+    log_root = Path(run_dir) if run_dir else od
+    if not log_root.is_absolute():
+        log_root = REPO_ROOT / log_root
+    enrich_legacy_sample_steps(result, log_root, od)
+    for item in result:
+        sample = item["sample"]
+        if sample.get("step_source") == "log":
+            # The recovered value can appear after the image; unrelated log
+            # appends must not continuously invalidate realtime previews.
+            call_digest = hashlib.sha256(sample["batch_id"].encode("utf-8")).hexdigest()[:24]
+            sample["metadata_version"] += f":log-call:{call_digest}:log-step:{sample['step']}"
+            if sample.get("metadata_source") == "filename" and isinstance(sample.get("params", {}).get("prompt"), str):
+                prompt_digest = hashlib.sha256(sample["params"]["prompt"].encode("utf-8")).hexdigest()[:24]
+                sample["metadata_version"] += f":log-prompt:{prompt_digest}"
     _store_previews(cache_key, result)
     return result[-limit:] if limit else result
 

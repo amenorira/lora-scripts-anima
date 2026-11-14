@@ -14,8 +14,8 @@
   const mediaTargetSelector = '[data-dialog-anchor="target"]';
 
   function syncDialogBackgrounds() {
-    const morphOpen = dialogs.some(dialog => dialog.classList.contains('modal-overlay--morph'));
-    document.querySelector('body > .app-layout')?.classList.toggle('dialog-is-background', morphOpen);
+    const backgroundDialogOpen = dialogs.some(dialog => dialog.classList.contains('modal-overlay--morph'));
+    document.querySelector('body > .app-layout')?.classList.toggle('dialog-is-background', backgroundDialogOpen);
     document.getElementById('cropPreviewDialog')?.classList.toggle('dialog-is-background',
       dialogs.some(dialog => dialog.id === 'cropFocusDialog'));
   }
@@ -246,6 +246,32 @@
     dialogMotions.set(element, animations);
     return animations;
   }
+
+  // The sample viewer uses the normal dialog entrance. Its exit is delayed
+  // until this small fade completes, so the native dialog and image remain
+  // visible throughout the animation even without discrete overlay support.
+  function playPreviewDialogExit(element) {
+    stopDialogMotion(element);
+    const modal = element.querySelector('.modal');
+    if (!modal?.animate || !element.animate || window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return [];
+    const animations = [];
+    try {
+      const overlayStyle = getComputedStyle(element), modalStyle = getComputedStyle(modal);
+      const raw = overlayStyle.getPropertyValue('--duration-dialog-exit').trim();
+      const value = parseFloat(raw);
+      const duration = Number.isFinite(value) ? (raw.endsWith('ms') ? value : raw.endsWith('s') ? value * 1000 : value) : 150;
+      if (duration <= 0) return [];
+      const options = { duration, easing: overlayStyle.getPropertyValue('--ease-out').trim() || 'ease-out', fill: 'both' };
+      animations.push(element.animate([{ opacity: overlayStyle.opacity }, { opacity: 0 }], options));
+      animations.push(modal.animate([{ transform: modalStyle.transform }, { transform: 'scale(.99)' }], options));
+      dialogMotions.set(element, animations);
+      return animations;
+    } catch (_) {
+      animations.forEach(animation => { animation.finished?.catch(() => {}); animation.cancel(); });
+      return [];
+    }
+  }
+
   function dismissPopups(root) {
     for (const [element, close] of Array.from(popups)) {
       if (!root || root.contains(element)) { popups.delete(element); close(); }
@@ -265,6 +291,7 @@
 
   function bindDialog(element, nextTick, scheduleOpen = nextTick) {
     const morph = element.classList.contains('modal-overlay--morph');
+    const preview = element.classList.contains('preview-lightbox');
     let requested = false;
     let sequence = 0;
     let previousFocus = null;
@@ -315,6 +342,10 @@
         requested = open;
         const current = ++sequence;
         if (open) {
+          if (preview) {
+            stopDialogMotion(element);
+            element.removeAttribute('data-dialog-closing');
+          }
           const explicitOrigin = pendingDialogOrigins.get(element);
           pendingDialogOrigins.delete(element);
           if (!element.open) {
@@ -363,7 +394,7 @@
             if (index >= 0) dialogs.splice(index, 1);
             if (morph) syncDialogBackgrounds();
             window.AnimaUI.placeNotifications?.();
-            const animations = morph ? [] : (element.getAnimations?.({ subtree: true }) || [])
+            const animations = morph || preview ? [] : (element.getAnimations?.({ subtree: true }) || [])
               .filter(animation => animation.effect?.getComputedTiming().endTime !== Infinity);
             nextTick(() => {
               if (current !== sequence || requested) return;
@@ -390,6 +421,9 @@
           if (morph && element.open) {
             element.setAttribute('data-dialog-closing', '');
             waitFor(playDialogMotion(element, false), close);
+          } else if (preview && element.open) {
+            element.setAttribute('data-dialog-closing', '');
+            waitFor(playPreviewDialogExit(element), close);
           } else close();
         }
       },

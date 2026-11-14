@@ -51,42 +51,175 @@ window.monitorArtifactsRenderMixin = {
   // ═══════════════════════════════════════════════════════════
   //  样本标签
   // ═══════════════════════════════════════════════════════════
+  _sampleSelectHtml(options, value, label, id, action, className = '') {
+    if (typeof window.previewSelectHtml === 'function') {
+      const handler = action.replaceAll('$event.target.value', '$event.detail')
+        + '; $nextTick(() => document.getElementById(' + JSON.stringify(id) + ')?.focus({ preventScroll: true }))';
+      return '<div class="m-sample-select ' + this.esc(className) + '" @preview-select="' + this.esc(handler) + '">'
+        + window.previewSelectHtml(options, value, label, id) + '</div>';
+    }
+    // The native control is a usable fallback if the shared component is unavailable.
+    return '<select id="' + this.esc(id) + '" class="' + this.esc(className) + '" aria-label="' + this.esc(label) + '" @change="' + this.esc(action) + '">'
+      + options.map(option => '<option value="' + this.esc(option.value) + '"' + (option.value === value ? ' selected' : '') + '>' + this.esc(option.label) + '</option>').join('') + '</select>';
+  },
+
+  _sampleStageParts(label) {
+    const text = String(label || '');
+    const stage = text.match(/^(Epoch\s+\d+)\s*·\s*(Step\s+\d+.*)$/);
+    return { primary: stage ? stage[1] : text, secondary: stage ? stage[2] : '' };
+  },
+
+  _sampleStageHtml(label) {
+    const stage = this._sampleStageParts(label);
+    if (!stage.secondary) return '<strong>' + this.esc(stage.primary) + '</strong>';
+    return '<span class="m-sample-stage"><strong>' + this.esc(stage.primary) + '</strong><small>'
+      + this.esc(stage.secondary) + '</small></span>';
+  },
+
+  _sampleStageText(label) {
+    const stage = this._sampleStageParts(label);
+    return [stage.primary, stage.secondary].filter(Boolean).join(' ');
+  },
+
+  _sampleThumbnailHtml(index, caption = true, includeSeed, batch = null, status = '') {
+    const preview = this.previews[index], key = this._previewItemKey(preview);
+    const promptLabel = this._sampleCaseLabel(preview, includeSeed);
+    const label = batch ? batch.label : promptLabel;
+    const detail = batch ? [caption ? promptLabel : '', status].filter(Boolean).join(' ') : '';
+    return '<button type="button" id="sample-' + this.esc(encodeURIComponent(key)) + '" class="preview-grid-item" data-preview-path="' + this.esc(key) + '" data-preview-index="' + index
+      + '" data-dialog-opens="previewLightbox"' + (batch ? '' : ' @click="openPreviewLightbox(' + index + ')"') + ' aria-label="' + this.esc(this._previewCompareLabel(preview)) + '">'
+      + '<span class="preview-thumb-frame">' + this._previewThumbImageHtml(preview) + '<span class="preview-thumb-error">' + this.esc(this.t('monitor.previewImageFailed')) + '</span></span>'
+      + (caption || batch ? '<span class="preview-grid-item-label" title="' + this.esc([this._sampleStageText(label), detail].filter(Boolean).join('\n')) + '">' + this._sampleStageHtml(label)
+        + (detail ? '<small class="m-sample-caption-detail">' + this.esc(detail) + '</small>' : '') + '</span>' : '') + '</button>';
+  },
+
+  _sampleBatchCountText(t, batch) {
+    let count = t('sampleBatchCount').replace('{n}', batch.indices.length);
+    if (batch.status === 'running') count = batch.expected ? t('sampleIncompleteBatch').replace('{done}', batch.indices.length).replace('{total}', batch.expected) : count + ' ' + t('sampleBatchRunning');
+    else if (batch.status === 'failed') count += ' ' + t('sampleBatchFailed');
+    return count;
+  },
+
+  _sampleBatchStatusText(t, batch) {
+    if (batch.status === 'running') return t('sampleBatchRunning');
+    if (batch.status === 'failed') return t('sampleBatchFailed');
+    return '';
+  },
+
+  _sampleBatchIsExpandable(batch) {
+    return batch.indices.length > 1 || batch.expected > 1;
+  },
+
+  _sampleStackHtml(batch, timeline = false) {
+    const total = batch.indices.length;
+    const rootClass = timeline ? 'm-sample-timeline-mosaic' : 'm-sample-card-stack';
+    const imageClass = timeline ? 'm-sample-timeline-image' : 'm-sample-card-image';
+    let html = '<span class="' + rootClass + (total > 1 ? ' is-stack' + (total === 2 ? ' is-two' : '') : ' is-single') + ' m-sample-stack">';
+    batch.indices.slice(0, 3).forEach((index, position) => {
+      const preview = this.previews[index];
+      const layer = total > 1 ? position === 0 ? ' is-cover' : ' is-behind-' + position : '';
+      html += '<span class="preview-thumb-frame ' + imageClass + layer + '" data-preview-path="' + this.esc(this._previewItemKey(preview)) + '">' + this._previewThumbImageHtml(preview) + '</span>';
+    });
+    if (total > 1 || (!timeline && batch.expected > 1)) html += '<span class="' + (timeline ? 'm-sample-timeline-count' : 'm-sample-card-count') + '" aria-hidden="true">×' + total + '</span>';
+    return html + '</span>';
+  },
+
+  _sampleBatchCardHtml(t, batch, showPrompt) {
+    if (!this._sampleBatchIsExpandable(batch)) {
+      return this._sampleThumbnailHtml(batch.indices[0], showPrompt, undefined, batch, this._sampleBatchStatusText(t, batch));
+    }
+    const expanded = this.sampleExpandedBatchId === batch.id;
+    let html = '<button type="button" id="sampleBatch-' + this.esc(encodeURIComponent(batch.id)) + '" class="preview-grid-item m-sample-batch-cover"'
+      + ' aria-expanded="' + expanded + '" aria-controls="sampleBatchImages-' + this.esc(encodeURIComponent(batch.id)) + '"'
+      + ' aria-label="' + this.esc(this._sampleStageText(batch.label) + ' ' + this._sampleBatchCountText(t, batch)) + '">';
+    html += this._sampleStackHtml(batch);
+    const status = batch.status === 'running' ? this._sampleBatchCountText(t, batch) : this._sampleBatchStatusText(t, batch);
+    html += '<span class="preview-grid-item-label">' + this._sampleStageHtml(batch.label)
+      + (status ? '<small class="m-sample-caption-detail">' + this.esc(status) + '</small>' : '') + '</span></button>';
+    return html;
+  },
+
+  _sampleBatchItemsHtml(t, batch, showPrompt = true) {
+    const expanded = this.sampleExpandedBatchId === batch.id;
+    const indices = expanded ? batch.indices : batch.indices.slice(0, 1);
+    return indices.map((index, position) => {
+      const key = this._previewItemKey(this.previews[index]);
+      return '<div class="m-sample-tile' + (expanded ? ' is-expanded' + (position === 0 ? ' is-first' : '') : '')
+        + '" data-sample-tile-key="' + this.esc(JSON.stringify([batch.id, key])) + '" data-batch-id="' + this.esc(batch.id) + '">'
+        + (expanded ? this._sampleThumbnailHtml(index, true, undefined, batch) : this._sampleBatchCardHtml(t, batch, showPrompt)) + '</div>';
+    }).join('');
+  },
+
+  _sampleTimelineLocateHtml(t, keepExpansion = false, timelineId = '') {
+    const label = this.esc(t('sampleLocateCurrent'));
+    const icon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg>';
+    return '<button type="button" class="btn-icon sample-timeline-locate"' + (keepExpansion ? ' data-sample-expansion-keep' : '')
+      + (timelineId ? ' data-sample-timeline-target="' + this.esc(timelineId) + '" disabled' : '')
+      + ' @click="centerSampleTimeline($event.currentTarget)" title="' + label + '" aria-label="' + label + '">' + icon + '</button>';
+  },
+
+  _sampleTimelineHtml(t, batches, selected, singleImageMode = false) {
+    if (batches.length < 2) return '';
+    let html = '<div id="sampleOverviewTimelineFrame" class="m-sample-timeline-frame' + (this.sampleTimelineVisible === false ? ' is-hidden' : '') + '" :class="{\'is-hidden\':!sampleTimelineVisible}" :inert="!sampleTimelineVisible" :aria-hidden="!sampleTimelineVisible"><div class="m-sample-timeline-clip"><div class="m-sample-timeline" role="group" aria-label="' + this.esc(t('sampleBatchSelect')) + '"'
+      + ' @pointerdown="startSampleTimelineDrag($event)" @pointermove="moveSampleTimelineDrag($event)"'
+      + ' @pointerup="endSampleTimelineDrag($event)" @pointercancel="endSampleTimelineDrag($event)"'
+      + ' @pointerleave="leaveSampleTimeline($event)" @click.capture="suppressSampleTimelineClick($event)"'
+      + ' @keydown="sampleTimelineKeydown($event)" @wheel="scrollSampleTimeline($event)">';
+    batches.forEach(batch => {
+      const active = batch.id === selected?.id;
+      const count = this._sampleBatchCountText(t, batch);
+      html += '<button type="button" id="sampleTimeline-' + this.esc(encodeURIComponent(batch.id)) + '" class="m-sample-timeline-item"'
+        + ' data-batch-index="' + batch.position + '" data-batch-id="' + this.esc(batch.id) + '" aria-pressed="' + active + '" tabindex="' + (active ? '0' : '-1') + '"'
+        + ' aria-label="' + this.esc(this._sampleStageText(batch.label) + ' ' + count) + '" @click="sampleTimelineClick($event,' + batch.position + ')" @dragstart.prevent>';
+      html += this._sampleStackHtml(batch, true);
+      const status = batch.status === 'running' && !singleImageMode ? count : this._sampleBatchStatusText(t, batch);
+      const stage = this._sampleStageParts(batch.label);
+      const title = this.esc([stage.primary, stage.secondary].filter(Boolean).join('\n'));
+      html += '<strong title="' + title + '">' + this.esc(stage.primary) + '</strong>'
+        + (stage.secondary ? '<small title="' + title + '">' + this.esc(stage.secondary) + '</small>' : '')
+        + (status ? '<small>' + this.esc(status) + '</small>' : '') + '</button>';
+    });
+    html += '</div></div></div>';
+    return html;
+  },
+
   _renderSamplesTab(t) {
     const isHistory = !!this.selectedRunDir;
     const d = isHistory ? (this.runDetailData||{}) : (this.monitorData||{});
     const showPreviews = this.previews.length > 0;
-    const displayIndices = this._previewDisplayIndices();
-    const lastIdx = displayIndices.reduce((latest, index) => Math.max(latest, index), -1);
-
-    const promptOptions = this._samplePromptOptions();
-    let html = '<div class="m-section m-samples-section"><div class="m-view-header m-samples-toolbar"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t('previewSamples')) + '</span>' + (showPreviews ? '<span class="m-logs-count">' + this.previews.length + '</span>' : '') + '</div>';
+    const batch = this._sampleSelectedBatch();
+    let html = '<div class="m-section m-samples-section"><div class="m-view-header m-samples-toolbar"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t('previewSamples')) + '</span></div>';
     html += '<div class="m-view-actions">';
-    if (promptOptions.length && window.previewSelectHtml) {
-      html += '<div class="m-sample-prompt-select" @preview-select="setSamplePromptSelection($event.detail)">'
-        + window.previewSelectHtml(promptOptions, this.samplePromptSelection, t('samplePromptFilter'), 'samplePromptTrigger') + '</div>';
+    if (showPreviews) {
+      if (this._sampleDataModel().batches.length > 1) {
+        html += '<div class="m-sample-timeline-toggle"><span id="sampleTimelineToggleLabel">' + this.esc(t('sampleThumbnails')) + '</span><label class="toggle"><input type="checkbox" role="switch" id="sampleTimelineToggle"' + (this.sampleTimelineVisible !== false ? ' checked' : '') + ' :checked="sampleTimelineVisible" aria-labelledby="sampleTimelineToggleLabel" aria-controls="sampleOverviewTimelineFrame" @change="toggleSampleTimeline($event)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>';
+      }
+      if (this.previewHasNew) html += '<button type="button" id="sampleLatestBatch" class="btn btn-sm btn-secondary" @click="jumpToLatestOverviewBatch()">' + this.esc(t('previewNewSamples')) + '</button>';
+      if (this._sampleDataModel().batches.length > 1) {
+        const options = [{ value: 'asc', label: t('trainingOrder') }, { value: 'desc', label: t('latestFirst') }];
+        html += '<div class="m-samples-sort"><span>' + this.esc(t('sampleOrder')) + '</span>'
+          + this._sampleSelectHtml(options, this.sampleBatchSortDir || 'desc', t('sampleOrder'), 'sampleBatchSort', 'setSampleBatchSort($event.target.value)') + '</div>';
+      }
     }
-    html += '<div class="m-segmented m-sample-sort" role="group" aria-label="' + this.esc(t('sampleOrder')) + '">';
-    html += '<button type="button" data-preview-sort="asc" aria-pressed="' + (this.previewSortDir === 'asc' ? 'true' : 'false') + '" class="m-segmented-btn' + (this.previewSortDir === 'asc' ? ' active' : '') + '" @click="setPreviewSort(\'asc\')">' + this.esc(t('trainingOrder')) + '</button>';
-    html += '<button type="button" data-preview-sort="desc" aria-pressed="' + (this.previewSortDir === 'desc' ? 'true' : 'false') + '" class="m-segmented-btn' + (this.previewSortDir === 'desc' ? ' active' : '') + '" @click="setPreviewSort(\'desc\')">' + this.esc(t('latestFirst')) + '</button></div>';
     html += this._monitorRefreshButtonHtml(t, 'sample') + '</div>';
     html += '</div>';
     html += this._artifactLocationHtml(t, d);
     if (showPreviews) {
-      html += '<div class="preview-grid">';
-      displayIndices.forEach(i => {
-        const pv = this.previews[i];
-        const info = this._sampleMetadata(pv.name);
-        const key = this._previewItemKey(pv);
-        const id = 'sample-' + encodeURIComponent(key);
-        html += '<button type="button" id="' + this.esc(id) + '" class="preview-grid-item" data-preview-path="' + this.esc(key) + '" data-preview-index="' + i + '" data-dialog-opens="previewLightbox" @click="openPreviewLightbox(' + i + ')">';
-        html += '<span class="preview-thumb-frame">' + this._previewThumbImageHtml(pv)
-          + '<span class="preview-thumb-error">' + this.esc(t('previewImageFailed')) + '</span>';
-        if (i === lastIdx) html += '<span class="preview-thumb-fresh">' + this.esc(t('latest')) + '</span>';
-        html += '</span><span class="preview-grid-item-label" title="' + this.esc(pv.name) + '"><strong>' + this.esc(info.stageLabel || pv.name) + '</strong>'
-          + (info.prompt && promptOptions.length && !this.samplePromptSelection ? '<small>' + this.esc(info.prompt) + '</small>' : '') + '</span>';
-        html += '</button>';
+      const model = this._sampleDataModel(), batches = model.batches;
+      const singleImageMode = batches.every(group => !this._sampleBatchIsExpandable(group));
+      const showPrompt = !singleImageMode || new Set(model.records.map(record => record.sample.prompt_id)).size > 1;
+      html += '<div class="preview-grid m-sample-batches' + (singleImageMode ? ' is-single-image' : '')
+        + (batches.length === 1 ? ' is-only-batch' : '') + '" @scroll.passive="sampleOverviewScroll($event)" @click="sampleGridClick($event)"'
+        + ' @pointerdown="sampleGridPointerDown($event)" @pointermove="sampleGridPointerMove($event)"'
+        + ' @pointerup="sampleGridPointerUp($event)" @pointercancel="sampleGridPointerCancel($event)">';
+      const displayBatches = this._sampleOverviewBatches();
+      displayBatches.forEach(group => {
+        html += '<section class="m-sample-batch" id="sampleBatchImages-' + this.esc(encodeURIComponent(group.id)) + '" data-batch-index="' + group.position + '" data-batch-id="' + this.esc(group.id) + '"'
+          + ' data-sample-selected="' + (group.id === batch?.id) + '" data-expanded="' + (group.id === this.sampleExpandedBatchId) + '" aria-label="' + this.esc(this._sampleStageText(group.label)) + '">';
+        html += this._sampleBatchItemsHtml(t, group, showPrompt) + '</section>';
       });
       html += '</div>';
+      html += this._sampleTimelineHtml(t, displayBatches, batch, singleImageMode);
     } else {
       // 区分空态场景：实时无训练 / 实时训练中未生成样本 / 历史记录无样本
       let hintKey, hintFallback;
@@ -112,6 +245,566 @@ window.monitorArtifactsRenderMixin = {
     return html;
   },
 
+  _sampleTimelineDrag: null,
+  _sampleTimelineSuppressClick: false,
+
+  toggleSampleTimeline(event) {
+    this.sampleTimelineVisible = typeof event?.currentTarget?.checked === 'boolean' ? event.currentTarget.checked : !this.sampleTimelineVisible;
+    this._saveSampleViewPreferences();
+    const frame = document.getElementById('sampleOverviewTimelineFrame');
+    if (!this.sampleTimelineVisible && frame?.contains(document.activeElement)) event?.currentTarget?.focus({preventScroll: true});
+  },
+  _sampleOverviewJumpId: '',
+
+  sampleGridPointerDown(event) {
+    this._sampleGridPointer = null;
+    if (event.button !== 0 || event.isPrimary === false) return;
+    const cover = event.target.closest?.('.m-sample-batch-cover');
+    if (!cover || !event.currentTarget.contains(cover)) return;
+    const batchId = cover.closest('.m-sample-batch')?.dataset.batchId;
+    if (batchId) this._sampleGridPointer = {pointerId: event.pointerId, batchId, x: event.clientX, y: event.clientY,
+      moved: false, ended: false, cancelled: false};
+  },
+
+  sampleGridPointerMove(event) {
+    const pointer = this._sampleGridPointer;
+    if (pointer && pointer.pointerId === event.pointerId && Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > 6) pointer.moved = true;
+  },
+
+  sampleGridPointerUp(event) {
+    const pointer = this._sampleGridPointer;
+    if (!pointer || pointer.pointerId !== event.pointerId) return;
+    this.sampleGridPointerMove(event);
+    pointer.ended = true;
+  },
+
+  sampleGridPointerCancel(event) {
+    const pointer = this._sampleGridPointer;
+    if (!pointer || pointer.pointerId !== event.pointerId) return;
+    pointer.cancelled = true; pointer.ended = true;
+  },
+
+  sampleGridClick(event) {
+    const grid = event.currentTarget, target = event.target, pointer = this._sampleGridPointer;
+    this._sampleGridPointer = null;
+    if (event.defaultPrevented || (event.button != null && event.button !== 0) || target.closest?.('.m-sample-motion-ghost')) return;
+    const pointerClick = event.detail !== 0 && pointer?.ended;
+    if (pointerClick && (pointer.cancelled || pointer.moved || Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > 6)) return;
+    // FLIP and native focus scrolling can change the up/click hit target while
+    // the pointer stays still. Consume the pressed cover before interpreting
+    // that target: click may land on a tile, its section or a different image,
+    // not just the grid. The original batch switches in one DOM update.
+    if (pointerClick && this._sampleDataModel().byBatch.has(pointer.batchId)) {
+      this.toggleSampleBatch(pointer.batchId, event);
+      return;
+    }
+    const cover = target.closest?.('.m-sample-batch-cover');
+    if (cover && grid.contains(cover)) {
+      const id = cover.closest('.m-sample-batch')?.dataset.batchId;
+      if (id) this.toggleSampleBatch(id, event);
+      return;
+    }
+    const image = target.closest?.('.preview-grid-item[data-preview-index]');
+    if (image && grid.contains(image)) {
+      let index = Number(image.dataset.previewIndex);
+      const key = image.dataset.previewPath;
+      if (!Number.isInteger(index) || this._previewItemKey(this.previews[index]) !== key) index = this.previews.findIndex(preview => this._previewItemKey(preview) === key);
+      if (index >= 0) this.openPreviewLightbox(index);
+      return;
+    }
+  },
+
+  _sampleOutlineRows(items, id, padding = 4) {
+    const allRows = [];
+    [...items].sort((a, b) => a.top - b.top || a.left - b.left).forEach(item => {
+      let row = allRows.at(-1);
+      if (!row || Math.abs(row.top - item.top) > 1) {row = {top: item.top, items: []}; allRows.push(row);}
+      row.items.push(item);
+    });
+    const rows = allRows.map(row => {
+      const selected = row.items.filter(item => item.batchId === id);
+      if (!selected.length) return null;
+      return {left: Math.min(...selected.map(item => item.left)) - padding,
+        right: Math.max(...selected.map(item => item.right)) + padding,
+        top: row.top - padding, bottom: Math.max(...selected.map(item => item.bottom)) + padding,
+        rowBottom: Math.max(...row.items.map(item => item.bottom))};
+    }).filter(Boolean);
+    // Horizontal bridges occupy the genuine CSS row-gap. A short group caption
+    // must never route its bridge through a taller neighboring card's caption.
+    rows.forEach((row, index) => {if (index < rows.length - 1) row.bottom = row.rowBottom + padding;});
+    return rows;
+  },
+
+  _sampleOutlinePath(rows) {
+    if (!rows.length) return '';
+    const points = [[rows[0].left, rows[0].top], [rows[0].right, rows[0].top]];
+    for (let index = 1; index < rows.length; index++) {
+      const previous = rows[index - 1], next = rows[index];
+      if (next.right > previous.right) points.push([previous.right, previous.bottom], [next.right, previous.bottom], [next.right, next.top]);
+      else points.push([previous.right, next.top], [next.right, next.top]);
+    }
+    const last = rows.at(-1);
+    points.push([last.right, last.bottom], [last.left, last.bottom]);
+    for (let index = rows.length - 1; index > 0; index--) {
+      const current = rows[index], previous = rows[index - 1];
+      if (previous.left < current.left) points.push([current.left, current.top], [previous.left, current.top], [previous.left, previous.bottom]);
+      else points.push([current.left, previous.bottom], [previous.left, previous.bottom]);
+    }
+    const bridges = rows.slice(0, -1).map((row, index) => ({top: row.bottom, bottom: rows[index + 1].top}));
+    return this._sampleRoundedOutlinePath(points, bridges);
+  },
+
+  _sampleRoundedOutlinePath(points, bridges = []) {
+    let corners = points.filter((point, index) => !index || point[0] !== points[index - 1][0] || point[1] !== points[index - 1][1]);
+    if (corners.length > 1 && corners[0][0] === corners.at(-1)[0] && corners[0][1] === corners.at(-1)[1]) corners.pop();
+    // Remove straight-through vertices before trimming neighboring segments.
+    let simplified;
+    do {
+      simplified = corners.filter((point, index) => {
+        const previous = corners[(index + corners.length - 1) % corners.length], next = corners[(index + 1) % corners.length];
+        return !((previous[0] === point[0] && point[0] === next[0]) || (previous[1] === point[1] && point[1] === next[1]));
+      });
+      if (simplified.length === corners.length) break;
+      corners = simplified;
+    } while (corners.length > 2);
+    if (corners.length < 3) return '';
+    const number = value => String(Math.round(value * 10) / 10);
+    const position = point => point.map(number).join(' ');
+    const turns = corners.map((point, index) => {
+      const previous = corners[(index + corners.length - 1) % corners.length], next = corners[(index + 1) % corners.length];
+      const incoming = [point[0] - previous[0], point[1] - previous[1]], outgoing = [next[0] - point[0], next[1] - point[1]];
+      const before = Math.hypot(...incoming), after = Math.hypot(...outgoing);
+      const bridgeLimit = bridges.reduce((limit, bridge) => Math.abs(point[1] - bridge.top) < 0.1 || Math.abs(point[1] - bridge.bottom) < 0.1
+        ? Math.min(limit, Math.max(0, (bridge.bottom - bridge.top) / 2)) : limit, 6);
+      const radius = Math.min(6, before / 2, after / 2, bridgeLimit);
+      const enter = [point[0] - incoming[0] / before * radius, point[1] - incoming[1] / before * radius];
+      const leave = [point[0] + outgoing[0] / after * radius, point[1] + outgoing[1] / after * radius];
+      const sweep = incoming[0] * outgoing[1] - incoming[1] * outgoing[0] > 0 ? 1 : 0;
+      return {enter, leave, radius, sweep};
+    });
+    return 'M' + position(turns[0].enter) + turns.map((turn, index) => (index ? 'L' + position(turn.enter) : '')
+      + (turn.radius > 0 ? 'A' + number(turn.radius) + ' ' + number(turn.radius) + ' 0 0 ' + turn.sweep + ' ' + position(turn.leave) : '')).join('') + 'Z';
+  },
+
+  _sampleOutlineContainsPoint(rows, x, y) {
+    if (rows.some(row => x >= row.left && x <= row.right && y >= row.top && y <= row.bottom)) return true;
+    return rows.some((row, index) => {
+      const next = rows[index + 1];
+      return next && y > row.bottom && y < next.top && x >= Math.min(row.left, next.left) && x <= Math.max(row.right, next.right);
+    });
+  },
+
+  _refreshSampleGroupOutline(panel, animate = false) {
+    const grid = panel?.querySelector('.m-sample-batches');
+    if (!grid) return;
+    let outline = grid.querySelector('.m-sample-group-outline');
+    if (!this.sampleExpandedBatchId) {outline?.remove(); return;}
+    let bounds;
+    const items = Array.from(grid.querySelectorAll('.m-sample-tile')).map(node => {
+      // offset* reads the final layout while FLIP is translating the cards.
+      if (Number.isFinite(node.offsetLeft)) return {batchId: node.dataset.batchId, left: node.offsetLeft, top: node.offsetTop,
+        right: node.offsetLeft + node.offsetWidth, bottom: node.offsetTop + node.offsetHeight};
+      bounds ||= grid.getBoundingClientRect();
+      const rect = node.getBoundingClientRect();
+      return {batchId: node.dataset.batchId, left: rect.left - bounds.left + grid.scrollLeft, top: rect.top - bounds.top + grid.scrollTop,
+        right: rect.right - bounds.left + grid.scrollLeft, bottom: rect.bottom - bounds.top + grid.scrollTop};
+    });
+    const rows = this._sampleOutlineRows(items, this.sampleExpandedBatchId);
+    if (!rows.length) {outline?.remove(); return;}
+    if (!outline) {
+      outline = document.createElement('div');
+      outline.setAttribute('class', 'm-sample-group-outline'); outline.setAttribute('aria-hidden', 'true');
+      outline.setAttribute('x-ignore', '');
+      outline.inert = true;
+      const fill = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      fill.append(document.createElementNS('http://www.w3.org/2000/svg', 'path'));
+      outline.append(fill);
+      grid.append(outline);
+    }
+    outline._sampleRows = rows;
+    // Bound the isolated paint layer to this group instead of the entire
+    // scroll history. Geometry changes keep the same flowing stroke alive.
+    const left = Math.floor(Math.min(...rows.map(row => row.left))) - 1;
+    const top = Math.floor(Math.min(...rows.map(row => row.top))) - 1;
+    const width = Math.ceil(Math.max(...rows.map(row => row.right))) + 1 - left;
+    const height = Math.ceil(Math.max(...rows.map(row => row.bottom))) + 1 - top;
+    const viewBox = [left, top, width, height].join(' '), path = this._sampleOutlinePath(rows);
+    const geometry = viewBox + '|' + path;
+    if (outline._sampleGeometry !== geometry) {
+      outline._sampleGeometry = geometry;
+      Object.assign(outline.style, {left: left + 'px', top: top + 'px', width: width + 'px', height: height + 'px'});
+      const fill = outline.firstElementChild;
+      fill.setAttribute('viewBox', viewBox); fill.firstElementChild.setAttribute('d', path);
+    }
+    if (animate && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      outline.getAnimations?.().forEach(animation => animation.cancel());
+      outline.animate?.([{opacity: 0}, {opacity: 1}], {duration: 200, easing: 'ease-out'});
+    }
+  },
+
+  _disconnectSampleExpansionUI(keepPointer = false) {
+    const ui = this._sampleExpansionUI;
+    if (ui) {
+      ui.observer?.disconnect();
+      if (ui.frame != null) cancelAnimationFrame(ui.frame);
+      Object.entries(ui.handlers).forEach(([type, handler]) => document.removeEventListener(type, handler, type !== 'keydown'));
+    }
+    this._sampleExpansionUI = null;
+    if (!keepPointer) {
+      this._sampleExpansionPointer = null;
+      if (this._sampleExpansionDismissTimer != null) clearTimeout(this._sampleExpansionDismissTimer);
+      this._sampleExpansionDismissTimer = null;
+    }
+  },
+
+  _sampleExpansionDismissAllowed(target, openingOutsideImage = false) {
+    return !!this.sampleExpandedBatchId && (!this.currentRoute || this.currentRoute === 'monitor-dashboard')
+      && (!this.monitorTab || this.monitorTab === 'samples') && (openingOutsideImage || (!this.previewLightboxOpen && !this._previewClosePending))
+      && !target?.closest?.('dialog');
+  },
+
+  _connectSampleExpansionUI(panel) {
+    const grid = panel?.querySelector('.m-sample-batches');
+    if (this._sampleExpansionUI?.grid === grid && this._sampleExpansionUI?.batchId === this.sampleExpandedBatchId) return;
+    this._disconnectSampleExpansionUI(true);
+    if (!grid || !this.sampleExpandedBatchId || !document.addEventListener) return;
+    this._sampleExpansionUI = {grid, panel, batchId: this.sampleExpandedBatchId, handlers: {}, frame: null};
+    const ui = this._sampleExpansionUI;
+    ui.handlers.pointerdown = event => {
+      // A new press outside the grid invalidates an earlier unfinished press.
+      // The grid's bubbling handler records a fresh cover intent when needed.
+      this._sampleGridPointer = null;
+      const target = event.target, rect = target?.getBoundingClientRect?.();
+      const scrollbar = rect && ((target.scrollHeight > target.clientHeight && event.clientX >= rect.left + target.clientWidth)
+        || (target.scrollWidth > target.clientWidth && event.clientY >= rect.top + target.clientHeight));
+      this._sampleExpansionPointer = {id: event.pointerId, x: event.clientX, y: event.clientY, moved: false,
+        ignored: event.button !== 0 || scrollbar || !this._sampleExpansionDismissAllowed(target)};
+    };
+    const move = event => {
+      const pointer = this._sampleExpansionPointer;
+      if (pointer && pointer.id === event.pointerId && Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > 6) pointer.moved = true;
+    };
+    ui.handlers.pointermove = move; ui.handlers.pointerup = move;
+    ui.handlers.pointercancel = () => {if (this._sampleExpansionPointer) this._sampleExpansionPointer.ignored = true;};
+    ui.handlers.click = event => {
+      const path = event.composedPath?.() || [event.target];
+      const inside = path.some(node => node?.matches?.('.m-sample-batch') && node.dataset.batchId === this.sampleExpandedBatchId);
+      const cover = path.some(node => node?.classList?.contains('m-sample-batch-cover'));
+      const outsideImage = path.some(node => node?.matches?.('.preview-grid-item[data-dialog-opens="previewLightbox"]'));
+      const keepExpanded = path.some(node => node?.hasAttribute?.('data-sample-expansion-keep'))
+        || !!event.target?.closest?.('[data-sample-expansion-keep]');
+      const pointer = this._sampleExpansionPointer;
+      this._sampleExpansionPointer = null;
+      if (inside || cover || keepExpanded || pointer?.ignored || pointer?.moved || !this._sampleExpansionDismissAllowed(event.target)) return;
+      if (event.target === grid) {
+        const bounds = grid.getBoundingClientRect(), rows = grid.querySelector('.m-sample-group-outline')?._sampleRows || [];
+        if (this._sampleOutlineContainsPoint(rows, event.clientX - bounds.left + grid.scrollLeft, event.clientY - bounds.top + grid.scrollTop)) return;
+      }
+      const batchId = this.sampleExpandedBatchId, action = this._sampleExpansionAction;
+      // A native event can checkpoint microtasks between capture and target.
+      // Use the next task so the original control and Alpine cleanup finish.
+      if (this._sampleExpansionDismissTimer != null) clearTimeout(this._sampleExpansionDismissTimer);
+      const timer = setTimeout(() => {
+        if (this._sampleExpansionDismissTimer !== timer) return;
+        this._sampleExpansionDismissTimer = null;
+        const openingOutsideImage = outsideImage && this.previewLightboxOpen && !this._previewClosePending;
+        if (this._sampleExpansionAction !== action || this.sampleExpandedBatchId !== batchId || !this._sampleExpansionDismissAllowed(event.target, openingOutsideImage)
+          || this._sampleTimelineDrag?.dragging || this._sampleTimelineSuppressClick || String(window.getSelection?.() || '').trim()) return;
+        this.toggleSampleBatch(batchId, event);
+      }, 0);
+      this._sampleExpansionDismissTimer = timer;
+    };
+    ui.handlers.keydown = event => {
+      if (event.defaultPrevented || event.isComposing || event.key !== 'Escape' || !this._sampleExpansionDismissAllowed(event.target)) return;
+      event.preventDefault(); event.stopPropagation();
+      this.toggleSampleBatch(this.sampleExpandedBatchId, event);
+    };
+    Object.entries(ui.handlers).forEach(([type, handler]) => document.addEventListener(type, handler, type !== 'keydown'));
+    if (typeof ResizeObserver !== 'undefined') {
+      ui.observer = new ResizeObserver(() => {
+        if (this._sampleExpansionUI !== ui) return;
+        if (!grid.isConnected || (this.currentRoute && this.currentRoute !== 'monitor-dashboard') || (this.monitorTab && this.monitorTab !== 'samples')) {
+          this._disconnectSampleExpansionUI(); return;
+        }
+        if (ui.frame != null) return;
+        ui.frame = requestAnimationFrame(() => {ui.frame = null; if (this._sampleExpansionUI === ui) this._refreshSampleGroupOutline(panel);});
+      });
+      ui.observer.observe(grid);
+      grid.querySelectorAll('.m-sample-tile.is-expanded').forEach(node => ui.observer.observe(node));
+    }
+  },
+
+  _sampleBatchFirstItem(group) {
+    // display:contents groups have no box; all navigation uses their first tile.
+    return group?.querySelector?.('.m-sample-tile') || group?.querySelector?.('.preview-grid-item') || group;
+  },
+
+  _captureSampleLayout(grid) {
+    return new Map(Array.from(grid.querySelectorAll('.m-sample-tile')).map(node => [node.dataset.sampleTileKey,
+      {node, rect: node.getBoundingClientRect(), batchId: node.dataset.batchId}]));
+  },
+
+  _cancelSampleGridMotion(grid) {
+    grid?.querySelectorAll('.m-sample-tile, .m-sample-motion-ghost').forEach(node => {
+      node.getAnimations?.().forEach(animation => {if (animation.id === 'sample-grid-flip') animation.cancel();});
+      if (node.classList.contains('m-sample-motion-ghost')) node.remove();
+    });
+  },
+
+  _animateSampleLayout(grid, before, openingId = '') {
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const bounds = grid.getBoundingClientRect();
+    const visible = rect => rect.bottom > bounds.top && rect.top < bounds.bottom && rect.right > bounds.left && rect.left < bounds.right;
+    const timing = {duration: parseFloat(window.getComputedStyle?.(grid).getPropertyValue('--sample-fan-duration')) || 200,
+      easing: 'cubic-bezier(.22,1,.36,1)'};
+    const after = this._captureSampleLayout(grid);
+    const origin = Array.from(before.values()).find(item => item.batchId === openingId)?.rect;
+    for (const [key, item] of after) {
+      if (!before.has(key) && !visible(item.rect)) continue;
+      const from = before.get(key)?.rect || (item.batchId === openingId ? origin : null);
+      if (!from || !item.node.animate || (!visible(from) && !visible(item.rect))) continue;
+      const x = from.left - item.rect.left, y = from.top - item.rect.top;
+      if (Math.abs(x) < 1 && Math.abs(y) < 1) continue;
+      const animation = item.node.animate([{transform: 'translate(' + x + 'px,' + y + 'px)'}, {transform: 'none'}], timing);
+      animation.id = 'sample-grid-flip';
+    }
+    // Removed children fly back to their cover without participating in layout.
+    // They remain in the media root until the short exit finishes.
+    const ghosts = [], exits = [];
+    for (const [key, item] of before) {
+      if (after.has(key) || !item.node.animate || !item.node.cloneNode) continue;
+      const target = Array.from(after.values()).find(other => other.batchId === item.batchId)?.rect;
+      if (!target || !visible(item.rect)) continue;
+      const ghost = item.node.cloneNode(true);
+      ghost.classList.remove('m-sample-tile'); ghost.classList.add('m-sample-motion-ghost');
+      ghost.removeAttribute('id'); ghost.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'));
+      ghost.setAttribute('x-ignore', '');
+      ghost.querySelectorAll('[data-dialog-opens]').forEach(node => node.removeAttribute('data-dialog-opens'));
+      ghost.setAttribute('aria-hidden', 'true'); ghost.inert = true;
+      Object.assign(ghost.style, {position: 'absolute', left: item.rect.left - bounds.left + grid.scrollLeft + 'px',
+        top: item.rect.top - bounds.top + grid.scrollTop + 'px', width: item.rect.width + 'px', height: item.rect.height + 'px',
+        pointerEvents: 'none', zIndex: '3'});
+      grid.append(ghost);
+      const animation = ghost.animate([{transform: 'none', opacity: 1},
+        {transform: 'translate(' + (target.left - item.rect.left) + 'px,' + (target.top - item.rect.top) + 'px)', opacity: 0}], timing);
+      animation.id = 'sample-grid-flip';
+      ghosts.push(ghost); exits.push(animation.finished);
+    }
+    if (ghosts.length) Promise.allSettled(exits).then(() => {
+      if (ghosts.some(ghost => ghost.isConnected)) this._updateSampleExpansionMedia(grid.closest('.m-tab-panel'), () => ghosts.forEach(ghost => ghost.remove()));
+    });
+  },
+
+  _updateSampleExpansionMedia(panel, update) {
+    // Include the persistent viewer: local details must not revoke URLs still
+    // used by its strip or by an overview image which is currently decoding.
+    const root = document.getElementById('monitorDashboard') || panel;
+    if (!root) { update(); return; }
+    const loaded = this._capturePreviewMedia(root);
+    this._cancelPreviewMediaQueue();
+    try { update(); }
+    finally {
+      this._restorePreviewMedia(root, loaded);
+      this.schedulePreviewMediaLoads(root);
+    }
+  },
+
+  _replaceSampleBatchCards(panel, ids, preserveId = '', animate = true) {
+    const grid = panel?.querySelector('.m-sample-batches');
+    if (!grid) return;
+    const groups = Array.from(grid.querySelectorAll('.m-sample-batch'));
+    const anchor = this._sampleBatchFirstItem(groups.find(group => group.dataset.batchId === preserveId));
+    const anchorTop = anchor?.getBoundingClientRect().top;
+    const before = this._captureSampleLayout(grid);
+    this._updateSampleExpansionMedia(panel, () => {
+      this._cancelSampleGridMotion(grid);
+      ids.forEach(id => {
+        const group = groups.find(node => node.dataset.batchId === id), batch = this._sampleDataModel().byBatch.get(id);
+        if (!group || !batch) return;
+        group.innerHTML = this._sampleBatchItemsHtml((key, fallback) => this.tMonitor(key, fallback), batch);
+        group.dataset.expanded = String(this.sampleExpandedBatchId === id);
+      });
+      const nextAnchor = this._sampleBatchFirstItem(groups.find(group => group.dataset.batchId === preserveId));
+      if (nextAnchor && Number.isFinite(anchorTop)) grid.scrollTop += nextAnchor.getBoundingClientRect().top - anchorTop;
+      this._refreshSampleGroupOutline(panel, animate && !!this.sampleExpandedBatchId);
+      if (animate) this._animateSampleLayout(grid, before, this.sampleExpandedBatchId);
+    });
+    this._connectSampleExpansionUI(panel);
+  },
+
+  toggleSampleBatch(id, event) {
+    const batch = this._sampleDataModel().byBatch.get(id);
+    const panel = this._sampleOverviewPanel(), grid = panel?.querySelector('.m-sample-batches');
+    if (!batch || !grid || !this._sampleBatchIsExpandable(batch)) return;
+    const previousId = this.sampleExpandedBatchId;
+    const closing = this.sampleExpandedBatchId === id;
+    this._sampleExpansionAction = (this._sampleExpansionAction || 0) + 1;
+    this.sampleExpandedBatchId = closing ? '' : id;
+    if (!closing) {
+      this._sampleExpansionPausedFollow = id !== this._sampleDataModel().batches.at(-1)?.id;
+      if (this._sampleExpansionPausedFollow) this._sampleOverviewAtEnd = false;
+      this._activateOverviewBatch(batch, panel);
+    }
+    if (closing) this._sampleExpansionPausedFollow = false;
+    this._replaceSampleBatchCards(panel, [...new Set([previousId, id].filter(Boolean))], id);
+    this._sampleOverviewJumpId = id;
+    if (!closing || event?.key === 'Escape') {
+      const focusId = closing ? 'sampleBatch-' + encodeURIComponent(id) : 'sample-' + encodeURIComponent(this._previewItemKey(this.previews[batch.indices[0]]));
+      const focus = document.getElementById(focusId);
+      focus?.focus({preventScroll: true});
+      if (closing && focus?.getBoundingClientRect) {
+        const bounds = grid.getBoundingClientRect(), rect = focus.getBoundingClientRect();
+        if (rect.top < bounds.top) grid.scrollTop += rect.top - bounds.top;
+        else if (rect.bottom > bounds.bottom) grid.scrollTop += rect.bottom - bounds.bottom;
+      }
+    }
+  },
+
+  _sampleOverviewPanel() {
+    return document.getElementById('monitorTabContent')?.querySelector('.m-tab-panel[data-tab="samples"]');
+  },
+
+  _markSampleTimeline(panel, batch, reveal = true) {
+    const rail = panel?.querySelector('.m-sample-timeline');
+    if (!rail || !batch) return;
+    let selected = null;
+    rail.querySelectorAll('.m-sample-timeline-item').forEach(item => {
+      const active = item.dataset.batchId === batch.id;
+      item.setAttribute('aria-pressed', active ? 'true' : 'false');
+      item.tabIndex = active ? 0 : -1;
+      if (active) selected = item;
+    });
+    if (!selected || !reveal || this._sampleTimelineDrag?.dragging) return;
+    const bounds = rail.getBoundingClientRect(), target = selected.getBoundingClientRect();
+    let left = rail.scrollLeft;
+    if (target.left < bounds.left) left += target.left - bounds.left;
+    else if (target.right > bounds.right) left += target.right - bounds.right;
+    this._scrollSampleRail(rail, left);
+  },
+
+  _activateOverviewBatch(batch, panel, reveal = true) {
+    if (!batch) return;
+    if (this.sampleBatchId !== batch.id) {
+      const selected = this.previews[this.previewStep];
+      this.sampleBatchId = batch.id;
+      if (!this.previewLightboxOpen) this.previewStep = this._sampleBatchNavigationIndex(batch, selected);
+    }
+    const grid = panel?.querySelector('.m-sample-batches');
+    if (grid) {
+      const previous = grid.querySelector('.m-sample-batch[data-sample-selected="true"]');
+      const selected = Array.from(grid.querySelectorAll('.m-sample-batch')).find(group => group.dataset.batchId === batch.id);
+      if (previous !== selected) previous?.setAttribute('data-sample-selected', 'false');
+      selected?.setAttribute('data-sample-selected', 'true');
+    }
+    this._markSampleTimeline(panel, batch, reveal);
+  },
+
+  _scrollOverviewToBatch(panel, batch) {
+    const grid = panel?.querySelector('.m-sample-batches');
+    const group = grid && Array.from(grid.querySelectorAll('.m-sample-batch')).find(item => item.dataset.batchId === batch?.id);
+    if (!grid || !group) return;
+    const before = grid.scrollTop;
+    const pending = !!this._sampleOverviewJumpId;
+    grid.scrollTop += this._sampleBatchFirstItem(group).getBoundingClientRect().top - grid.getBoundingClientRect().top;
+    this._sampleOverviewJumpId = pending || Math.abs(grid.scrollTop - before) >= 1 ? batch.id : '';
+  },
+
+  sampleOverviewScroll(event) {
+    const grid = event.currentTarget;
+    const atEnd = this._sampleOverviewAtLatestEdge(grid);
+    this._sampleOverviewAtEnd = atEnd;
+    // A passive vertical scroll never scrubs the selected sample or the rail.
+    // Render captures a fresh visible anchor only when data actually rebuilds.
+    this._sampleScrollAnchor = null;
+    const jumpId = this._sampleOverviewJumpId;
+    this._sampleOverviewJumpId = '';
+    if (!atEnd || this._sampleExpansionPausedFollow) return;
+    const latest = this._sampleDataModel().batches.at(-1);
+    if (!latest || (jumpId && jumpId !== latest.id)) return;
+    const panel = grid.closest('.m-tab-panel');
+    if (this.previewHasNew) {
+      this.previewHasNew = false;
+      panel?.querySelector('#sampleLatestBatch')?.remove();
+    }
+  },
+
+  sampleTimelineClick(event, position) {
+    const model = this._sampleDataModel(), id = event?.currentTarget?.dataset?.batchId;
+    const batch = id ? model.byBatch.get(id) : model.batches[position], panel = this._sampleOverviewPanel();
+    if (!batch || !panel) return;
+    const latest = batch.id === model.batches.at(-1)?.id;
+    if (latest) this._resumeLatestSampleOverview(panel);
+    this._activateOverviewBatch(batch, panel);
+    this._scrollOverviewToBatch(panel, batch);
+    if (latest) {
+      this.previewHasNew = false;
+      panel.querySelector('#sampleLatestBatch')?.remove();
+    }
+  },
+
+  _resumeLatestSampleOverview(panel) {
+    this._sampleExpansionPausedFollow = false;
+    if (this.sampleExpandedBatchId && this.sampleExpandedBatchId !== this._sampleDataModel().batches.at(-1)?.id) {
+      const previousId = this.sampleExpandedBatchId;
+      this.sampleExpandedBatchId = '';
+      this._sampleExpansionAction = (this._sampleExpansionAction || 0) + 1;
+      this._replaceSampleBatchCards(panel, [previousId], '', false);
+    }
+    this._sampleOverviewAtEnd = true;
+  },
+
+  jumpToLatestOverviewBatch() {
+    this.sampleTimelineClick(null, this._sampleDataModel().batches.length - 1);
+  },
+
+  sampleTimelineKeydown(event) {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const batches = this._sampleOverviewBatches();
+    const item = event.target.closest?.('.m-sample-timeline-item');
+    if (!item) return;
+    const current = batches.findIndex(batch => item.dataset.batchId
+      ? batch.id === item.dataset.batchId : batch.position === Number(item.dataset.batchIndex));
+    if (current < 0) return;
+    let next = current;
+    if (event.key === 'ArrowLeft') next--;
+    else if (event.key === 'ArrowRight') next++;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = batches.length - 1;
+    else return;
+    event.preventDefault();
+    next = Math.max(0, Math.min(batches.length - 1, next));
+    this.sampleTimelineClick(null, batches[next].position);
+    if (batches[next]) document.getElementById('sampleTimeline-' + encodeURIComponent(batches[next].id))?.focus({ preventScroll: true });
+  },
+
+  startSampleTimelineDrag(event) {
+    this._startPreviewRailDrag(event, '_sampleTimeline');
+  },
+
+  moveSampleTimelineDrag(event) {
+    this._movePreviewRailDrag(event, '_sampleTimeline');
+  },
+
+  endSampleTimelineDrag(event) {
+    this._endPreviewRailDrag(event, '_sampleTimeline', () => this.renderDashboard());
+  },
+
+  leaveSampleTimeline(event) {
+    this._leavePreviewRailDrag(event, '_sampleTimeline');
+  },
+
+  suppressSampleTimelineClick(event) {
+    this._suppressPreviewRailClick(event, '_sampleTimeline');
+  },
+
+  scrollSampleTimeline(event) {
+    const rail = event.currentTarget;
+    if (event.ctrlKey || event.metaKey || rail.scrollWidth <= rail.clientWidth || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+    const before = rail.scrollLeft;
+    rail.scrollLeft += event.deltaY;
+    if (rail.scrollLeft !== before) event.preventDefault();
+  },
+
   // ═══════════════════════════════════════════════════════════
   //  预览灯箱：DOM 模板 + 开/关/翻页
   // ═══════════════════════════════════════════════════════════
@@ -122,113 +815,1095 @@ window.monitorArtifactsRenderMixin = {
     const close = svg('<path d="M6 6l12 12M18 6 6 18"/>');
     const left = svg('<path d="m15 18-6-6 6-6"/>');
     const right = svg('<path d="m9 18 6-6-6-6"/>');
-    const stage = (reference = false) => '<div class="preview-view-stage" :class="{ zoomed: previewViewScale > 1, panning: previewViewPanning }"'
-      + ' @wheel.prevent="zoomPreviewView($event)" @pointerdown="startPreviewPan($event)" @pointermove="movePreviewPan($event)" @pointerup="stopPreviewPan($event)" @pointercancel="stopPreviewPan($event)" @dblclick.prevent="resetPreviewView()">'
-      + '<img id="' + (reference ? 'previewReferenceImg' : 'previewLightboxImg') + '" class="preview-view-image" alt="" draggable="false" @load="constrainPreviewView()" :style="\'transform:\' + previewViewTransform()">'
-      + '<span class="preview-view-spinner" x-show="' + (reference ? 'previewReferenceLoading' : 'previewImageLoading') + '" aria-hidden="true"></span>'
-      + '<button type="button" class="preview-view-error" x-show="' + (reference ? 'previewReferenceError' : 'previewImageError') + '" @click.stop="retryPreviewImage(' + (reference ? 'true' : 'false') + ')">' + this.esc(t('previewImageRetry')) + '</button></div>';
-    return '<dialog class="preview-lightbox" id="previewLightbox" x-dialog="previewLightboxOpen" @dialog-close="closePreviewLightbox()" @dialog-after-close="clearPreviewLightbox()" @keydown="previewLightboxKeydown($event)" @resize.window="constrainPreviewView()" aria-label="' + this.esc(t('previewSamples')) + '" x-cloak>'
-      + '<div class="preview-lightbox-topbar"><div class="preview-lightbox-leading"><button type="button" class="preview-new-samples" x-show="previewHasNew" @click="jumpToLatestPreview()">' + this.esc(t('previewNewSamples')) + '</button><span id="previewLightboxScope" class="preview-lightbox-scope" hidden></span></div>'
-      + '<div class="preview-lightbox-heading"><button type="button" class="preview-lightbox-nav prev" @click="previewLightboxNav(-1)" title="' + this.esc(this.t('imageViewer.previousHint')) + '" aria-label="' + this.esc(t('prev')) + '" aria-keyshortcuts="ArrowLeft">' + left + '</button>'
-      + '<div class="preview-lightbox-heading-text"><strong id="previewLightboxLabel"></strong><span id="previewLightboxCounter" class="preview-lightbox-counter"></span></div>'
-      + '<button type="button" class="preview-lightbox-nav next" @click="previewLightboxNav(1)" title="' + this.esc(this.t('imageViewer.nextHint')) + '" aria-label="' + this.esc(t('next')) + '" aria-keyshortcuts="ArrowRight">' + right + '</button></div>'
+    const info = svg('<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v.2"/>');
+    const stage = () => '<div class="preview-view-stage">'
+      + '<img id="previewLightboxImg" class="preview-view-image" alt="" draggable="false" @load="resizePreviewComparisonImages()">'
+      + '<button type="button" class="btn btn-sm btn-secondary preview-view-error" x-show="previewImageError" @click.stop="retryPreviewImage()">' + this.esc(t('previewImageRetry')) + '</button></div>';
+    return '<dialog class="preview-lightbox modal-overlay" id="previewLightbox" x-dialog="previewLightboxOpen" @click.self="closePreviewLightbox()" @dialog-close="closePreviewLightbox()" @dialog-after-close="clearPreviewLightbox()" @keydown="previewLightboxKeydown($event)" @resize.window="resizePreviewLightbox()" aria-label="' + this.esc(t('previewSamples')) + '" x-cloak>'
+      + '<div class="modal preview-lightbox-window"><div class="modal-header preview-lightbox-topbar">'
+      + '<div class="preview-lightbox-heading"><div class="preview-lightbox-title"><strong id="previewLightboxLabel"></strong>'
+      + '<button type="button" id="previewInfoButton" class="btn-icon preview-icon-button" data-dialog-opens="previewInfoDialog" @click="previewInfoOpen=true" title="' + this.esc(t('sampleGenerationInfo')) + '" aria-label="' + this.esc(t('sampleGenerationInfo')) + '" aria-haspopup="dialog">' + info + '</button>'
+      + '<span id="previewLightboxPrompt" class="preview-lightbox-prompt" x-loop-marquee hidden><span id="previewLightboxPromptText"></span></span></div>'
+      + '<div class="preview-lightbox-navigation" role="group" aria-label="' + this.esc(t('sampleBatchSelect')) + '">'
+      + '<button type="button" class="btn-icon preview-lightbox-nav prev" @click="previewLightboxNav(-1)" title="' + this.esc(this.t('imageViewer.previousHint')) + '" aria-label="' + this.esc(t('prev')) + '" aria-keyshortcuts="ArrowLeft">' + left + '</button>'
+      + '<span id="previewLightboxCounter" class="preview-lightbox-counter"><span class="preview-lightbox-counter-current"><button type="button" id="previewLightboxCounterDisplay" class="preview-lightbox-counter-display" x-show="!previewPageEditing" @click="openPreviewPageEditor()" aria-label="' + this.esc(t('previewPageNumber')) + '"></button><input id="previewLightboxPage" class="preview-lightbox-page" x-show="previewPageEditing" x-cloak type="text" inputmode="numeric" autocomplete="off" spellcheck="false" aria-label="' + this.esc(t('previewPageNumber')) + '" aria-describedby="previewLightboxCounterTotal" @focus="beginPreviewPageEdit($event)" @input="updatePreviewPageDraft($event)" @compositionend="updatePreviewPageDraft($event)" @blur="commitPreviewPageEdit($event)" @keydown="previewPageKeydown($event)"></span><span class="preview-lightbox-counter-divider" aria-hidden="true">/</span><span id="previewLightboxCounterTotal" class="preview-lightbox-counter-total"></span></span>'
+      + '<button type="button" class="btn-icon preview-lightbox-nav next" @click="previewLightboxNav(1)" title="' + this.esc(this.t('imageViewer.nextHint')) + '" aria-label="' + this.esc(t('next')) + '" aria-keyshortcuts="ArrowRight">' + right + '</button></div>'
+      + '</div>'
       + '<div class="preview-lightbox-tools">'
-      + '<button type="button" id="previewReferenceButton" class="preview-tool-action" :class="{ active: !!previewReference }" @click="togglePreviewReference()" x-text="previewReference ? t(\'monitor.clearReference\') : t(\'monitor.pinReference\')"></button>'
-      + '<a class="preview-tool-action" id="previewLightboxOriginal" target="_blank" rel="noopener">' + this.esc(t('openOriginal')) + '</a>'
-      + '<span class="preview-tool-divider"></span>'
-      + '<button type="button" class="preview-icon-button" @click="setPreviewViewScale(previewViewScale / 1.18)" :disabled="previewViewScale <= 1" title="' + this.esc(this.t('tagEditor.zoomOut')) + '" aria-label="' + this.esc(this.t('tagEditor.zoomOut')) + '">' + zoomOut + '</button>'
-      + '<button type="button" class="preview-zoom-value" @click="resetPreviewView()" title="' + this.esc(this.t('imageViewer.zoomHint')) + '" aria-keyshortcuts="0" x-text="previewViewScale <= 1 ? t(\'imageViewer.fit\') : Math.round(previewViewScale * 100) + \'%\'"></button>'
-      + '<button type="button" class="preview-icon-button" @click="setPreviewViewScale(previewViewScale * 1.18)" :disabled="previewViewScale >= 8" title="' + this.esc(this.t('tagEditor.zoomIn')) + '" aria-label="' + this.esc(this.t('tagEditor.zoomIn')) + '">' + zoomIn + '</button>'
-      + '<button type="button" class="preview-icon-button preview-close" data-dialog-autofocus @click="closePreviewLightbox()" title="' + this.esc(this.t('imageViewer.closeHint')) + '" aria-label="' + this.esc(t('close')) + '" aria-keyshortcuts="Escape">' + close + '</button></div></div>'
+      + '<button type="button" class="btn btn-sm btn-primary preview-new-samples" x-show="_previewHasNewInViewerSequence()" @click="jumpToLatestPreview()">' + this.esc(t('previewNewSamples')) + '</button>'
+      + '<button type="button" id="previewReferenceButton" class="btn btn-sm btn-secondary preview-tool-action" :class="{ active: previewCompareActive }" :disabled="!previewCompareActive && !canPinCurrentPreview()" :title="previewReferenceActionTitle()" :aria-pressed="previewCompareActive ? \'true\' : \'false\'" @click="togglePreviewReference()" x-text="previewCompareActive ? t(\'monitor.sampleEndCompare\') : t(\'monitor.sampleCompareReference\')"></button>'
+      + '<button type="button" class="btn btn-sm btn-ghost preview-tool-action" x-show="previewCompareActive && !previewComparisonWaiting" :disabled="!canPinCurrentPreview()" @click="pinCurrentPreviewReference()" title="' + this.esc(t('samplePinRightHint')) + '" x-text="t(\'monitor.sampleSetReference\')"></button>'
+      + '<a class="btn btn-sm btn-ghost preview-tool-action" id="previewLightboxOriginal" target="_blank" rel="noopener">' + this.esc(t('openOriginal')) + '</a>'
+      + '<div class="preview-lightbox-zoom">'
+      + '<button type="button" class="btn-icon preview-icon-button" @click="setPreviewViewScale(previewViewScale / 1.18)" :disabled="previewViewAtFit()" title="' + this.esc(this.t('tagEditor.zoomOut')) + '" aria-label="' + this.esc(this.t('tagEditor.zoomOut')) + '">' + zoomOut + '</button>'
+      + '<button type="button" class="preview-zoom-value" @click="resetPreviewView()" title="' + this.esc(this.t('imageViewer.zoomHint')) + '" aria-keyshortcuts="0" x-text="previewViewZoomLabel()"></button>'
+      + '<button type="button" class="btn-icon preview-icon-button" @click="setPreviewViewScale(previewViewScale * 1.18)" :disabled="previewViewScale >= 8" title="' + this.esc(this.t('tagEditor.zoomIn')) + '" aria-label="' + this.esc(this.t('tagEditor.zoomIn')) + '">' + zoomIn + '</button></div>'
+      + '<button type="button" class="btn-icon preview-icon-button preview-close" data-dialog-autofocus @click="closePreviewLightbox()" title="' + this.esc(this.t('imageViewer.closeHint')) + '" aria-label="' + this.esc(t('close')) + '" aria-keyshortcuts="Escape">' + close + '</button></div></div>'
       + '<div class="preview-lightbox-body"><div class="preview-lightbox-canvas">'
-      + '<div class="preview-lightbox-panes" :class="{ comparing: !!previewReference }"><div class="preview-lightbox-pane"><div class="preview-pane-caption" id="previewCurrentCaption" hidden><span>' + this.esc(t('currentSample')) + '</span><strong id="previewCurrentLabel"></strong></div>' + stage() + '</div>'
-      + '<div class="preview-lightbox-pane" id="previewReferencePane" hidden><div class="preview-pane-caption"><span>' + this.esc(t('reference')) + '</span><strong id="previewReferenceLabel"></strong></div>' + stage(true) + '</div></div>'
-      + '</div></div></dialog>';
+      + '<div id="previewLightboxViewport" class="preview-lightbox-panes" :class="{zoomed: !previewViewAtFit(), panning: previewViewPanning}" @wheel="zoomPreviewView($event)" @pointerdown="startPreviewPan($event)" @pointermove="movePreviewPan($event)" @pointerup="stopPreviewPan($event)" @pointercancel="stopPreviewPan($event)" @lostpointercapture="stopPreviewPan($event)" @dblclick="if (!$event.target.closest(\'button\')) { $event.preventDefault(); resetPreviewView(); }" @dragstart.prevent><div id="previewLightboxExtent" class="preview-lightbox-extent"><div id="previewLightboxGroup" class="preview-lightbox-group"><div id="previewReferencePanes" class="preview-reference-panes" hidden></div>'
+      + '<div class="preview-lightbox-pane preview-current-pane"><div id="previewCurrentStage" class="preview-current-stage">' + stage() + '</div><div id="previewComparisonPlaceholder" class="preview-comparison-placeholder" hidden>' + this.esc(t('sampleSelectComparison')) + '</div><div id="previewCurrentCaptionSlot" class="preview-caption-slot" hidden><div class="preview-pane-caption" id="previewCurrentCaption" hidden>' + this._previewCaptionTextHtml(true) + '</div></div></div></div></div></div>'
+      + '</div><div class="preview-lightbox-footer"><div id="previewLightboxBar" class="preview-lightbox-bar">' + this._previewPromptBarArrowHtml(t, -1)
+      + '<div id="previewLightboxStrip" class="preview-lightbox-strip" role="group" aria-label="' + this.esc(t('sampleBatchImages')) + '" @scroll.passive="syncPreviewPromptBar()" @pointerdown="startPreviewPromptBarDrag($event)" @pointermove="movePreviewPromptBarDrag($event)" @pointerup="endPreviewPromptBarDrag($event)" @pointercancel="endPreviewPromptBarDrag($event)" @lostpointercapture="endPreviewPromptBarDrag($event)" @pointerleave="leavePreviewPromptBarDrag($event)" @click.capture="suppressPreviewPromptBarClick($event)" @dragstart.prevent></div>'
+      + this._previewPromptBarArrowHtml(t, 1)
+      + '<div class="preview-lightbox-bar-controls" x-effect="previewCompareActive; $nextTick(() => syncPreviewPromptBar())"><div x-show="previewCompareActive" x-cloak>'
+      + this._sampleSelectHtml([{value: 'horizontal', label: t('sampleCompareHorizontal')}, {value: 'vertical', label: t('sampleCompareVertical')}], this.previewComparisonLayout, t('sampleCompareLayout'), 'previewComparisonLayout', 'setPreviewComparisonLayout($event.target.value)')
+      + '</div><div class="m-sample-timeline-toggle" x-show="previewViewTimelineAvailable"><span id="previewTimelineToggleLabel">' + this.esc(t('sampleThumbnails')) + '</span><label class="toggle"><input type="checkbox" role="switch" :checked="previewViewTimelineVisible" aria-labelledby="previewTimelineToggleLabel" aria-controls="previewLightboxTimelineFrame" @change="togglePreviewViewTimeline($event)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>'
+      + this._sampleTimelineLocateHtml(t, false, 'previewLightboxTimeline') + '</div></div>'
+      + '<div id="previewLightboxTimelineFrame" class="preview-view-timeline-frame" :class="{\'is-collapsed\': !previewViewTimelineVisible}" :inert="!previewViewTimelineVisible" :aria-hidden="!previewViewTimelineVisible" hidden><div class="preview-view-timeline-clip"><div id="previewLightboxTimeline" class="preview-view-timeline" role="group" aria-label="' + this.esc(t('sampleBatchSelect')) + '" @keydown="previewViewTimelineKeydown($event)" @wheel="scrollSampleTimeline($event)"'
+      + ' @pointerdown="startPreviewViewTimelineDrag($event)" @pointermove="movePreviewViewTimelineDrag($event)" @pointerup="endPreviewViewTimelineDrag($event)" @pointercancel="endPreviewViewTimelineDrag($event)" @pointerleave="leavePreviewViewTimeline($event)" @click.capture="suppressPreviewViewTimelineClick($event)" @dragstart.prevent hidden></div>'
+      + '</div></div>'
+      + '</div></div></div>'
+      + this._previewTimelineContextMenuHtml(t)
+      + '<dialog id="previewInfoDialog" class="modal-overlay preview-info-overlay" x-dialog="previewInfoOpen" @click.self.stop="previewInfoOpen=false" @dialog-close.stop="previewInfoOpen=false" @dialog-after-close.stop="previewInfoOpen=false" @keydown.stop aria-labelledby="previewInfoTitle" x-cloak>'
+      + '<div class="modal preview-info-window"><div class="modal-header"><h3 id="previewInfoTitle">' + this.esc(t('sampleGenerationInfo')) + '</h3>'
+      + '<button type="button" class="btn-icon preview-icon-button" data-dialog-autofocus @click="previewInfoOpen=false" aria-label="' + this.esc(t('close')) + '">' + close + '</button></div>'
+      + '<div class="modal-body preview-info-content" id="previewGenerationInfo"></div></div></dialog></dialog>';
   },
 
   openPreviewLightbox(i) {
     if (!this.previews.length) return;
     if (!this.previewLightboxOpen) this.clearPreviewLightbox();
     this.previewStep = Math.max(0, Math.min(i, this.previews.length - 1));
+    this.sampleBatchId = this._sampleRecord(this.previews[this.previewStep], this.previewStep).batch_id;
     const box = document.getElementById('previewLightbox');
     if (!box) return;
-    this.previewHasNew = false;
+    if (this.sampleBatchId === this._sampleDataModel().batches.at(-1)?.id) {
+      this.previewHasNew = false;
+      this._sampleOverviewPanel()?.querySelector('#sampleLatestBatch')?.remove();
+    }
     this.previewLightboxOpen = true;
     this.resetPreviewView();
     this._updatePreviewLightbox();
+    if (this.weakNetworkMode) this.schedulePreviewMediaLoads(box);
+    this._revealPreviewViewAfterOpen(box);
+  },
+
+  _revealPreviewViewAfterOpen(box) {
+    this._previewOpenObserver?.disconnect();
+    this._previewOpenObserver = null;
+    // The dialog opens on Alpine's next tick. Long histories can delay that
+    // tick, so wait for the actual open attribute instead of a frame limit.
+    const onOpen = () => {
+      if (!this.previewLightboxOpen || !box.isConnected || !box.open) return;
+      this._previewOpenObserver?.disconnect();
+      this._previewOpenObserver = null;
+      requestAnimationFrame(() => {
+        if (this.previewLightboxOpen && box.isConnected && box.open) {
+          this._connectPreviewViewportResize();
+          this.resizePreviewComparisonImages();
+          this._revealPreviewViewTimeline();
+          this._revealPreviewPromptStrip();
+          this.syncPreviewPromptBar();
+        }
+      });
+    };
+    if (box.open) onOpen();
+    else if (typeof MutationObserver !== 'undefined') {
+      this._previewOpenObserver = new MutationObserver(onOpen);
+      this._previewOpenObserver.observe(box, { attributes: true, attributeFilter: ['open'] });
+    } else {
+      let attempts = 0;
+      const retry = () => {
+        if (!this.previewLightboxOpen || !box.isConnected) return;
+        if (box.open) onOpen();
+        else if (attempts++ < 120) requestAnimationFrame(retry);
+      };
+      requestAnimationFrame(retry);
+    }
   },
 
   closePreviewLightbox() {
+    this.closePreviewTimelineMenu(false);
+    this.cancelPreviewPromptBarDrag();
     if (!this.previewLightboxOpen) return;
+    this._resetPreviewPageEditor();
+    this.previewInfoOpen = false;
     this.previewLightboxOpen = false;
+    this._previewOpenObserver?.disconnect();
+    this._previewOpenObserver = null;
     this._previewClosePending = true;
-    ++this._previewImageRequest;
-    ++this._previewReferenceRequest;
-    const image = document.getElementById('previewLightboxImg');
-    if (image) window.AnimaImages.cancel(image);
-    const reference = document.getElementById('previewReferenceImg');
-    if (reference) window.AnimaImages.cancel(reference);
+    this._cancelPreviewRailDrag('_previewViewTimeline');
+    // Keep the visible sources until the closing animation has finished.
+    this._clearPreviewImageLoading();
+    if (this.weakNetworkMode && this.currentRoute === 'monitor-dashboard' && this.monitorTab === 'samples') {
+      this._cancelPreviewMediaQueue();
+      const content = document.getElementById('monitorTabContent');
+      if (content) this.schedulePreviewMediaLoads(content);
+    }
   },
 
   clearPreviewLightbox() {
+    this.closePreviewTimelineMenu(false);
+    this.cancelPreviewPromptBarDrag();
     if (this.previewLightboxOpen) return;
+    this._resetPreviewPageEditor();
+    this.previewInfoOpen = false;
+    const restoreSample = this._previewClosePending && this.currentRoute === 'monitor-dashboard'
+      && this.monitorTab === 'samples' && this.previews[this.previewStep];
     const image = document.getElementById('previewLightboxImg');
     if (image) { window.AnimaImages.cancel(image); image.removeAttribute('src'); }
-    const reference = document.getElementById('previewReferenceImg');
-    if (reference) { window.AnimaImages.cancel(reference); reference.removeAttribute('src'); }
+    this._clearPreviewReferenceImages();
     this._previewClosePending = false;
-    this.previewReference = null;
-    this.previewHasNew = false;
+    this.stopPreviewComparison();
     this._previewImageKey = '';
-    this._previewReferenceImageKey = '';
     this.previewImageLoading = this.previewImageError = false;
-    this.previewReferenceLoading = this.previewReferenceError = false;
+    this.previewImageAvailable = false;
+    this._previewGroupGeometry = null; this._previewViewFitScale = 1;
     this.resetPreviewView();
+    if (restoreSample) {
+      const item = document.getElementById('sample-' + encodeURIComponent(this._previewItemKey(restoreSample)));
+      const cover = document.getElementById('sampleBatch-' + encodeURIComponent(this._sampleRecord(restoreSample).batch_id));
+      (item || cover)?.focus({ preventScroll: true });
+    }
   },
 
   togglePreviewReference() {
-    if (this.previewReference) {
-      this.previewReference = null;
+    if (this.previewCompareActive) this.stopPreviewComparison();
+    else if (this.canPinCurrentPreview()) this.startPreviewComparison();
+  },
+
+  previewImageAvailable: false,
+
+  canPinCurrentPreview() {
+    return this.previewImageAvailable && !this.previewImageLoading && this.canCompareCurrentPreview();
+  },
+
+  _setPreviewImageAvailable(available) {
+    this.previewImageAvailable = available;
+    if (this.previewTimelineMenu) this.previewTimelineMenu.actions = this._previewTimelineMenuActions();
+  },
+
+  previewReferenceActionTitle() {
+    if (this.previewCompareActive) return '';
+    if (this.previewImageLoading) return this.t('monitor.loading');
+    if (!this.previewImageAvailable) return this.t('monitor.previewImageFailed');
+    return this.t(this.canCompareCurrentPreview() ? 'monitor.samplePinCurrentHint' : 'monitor.sampleNoReferenceMatch');
+  },
+
+  pinCurrentPreviewReference() {
+    if (!this.canPinCurrentPreview() || !this.setCurrentPreviewAsReference()) return;
+    // Keep keyboard navigation with the right-side time point after pinning.
+    const timeline = document.getElementById('previewLightboxTimeline');
+    const selected = timeline?.querySelector('[aria-pressed="true"]');
+    (selected || document.getElementById('previewReferenceButton'))?.focus({ preventScroll: true });
+  },
+
+  previewLightboxNav(dir) {
+    this.closePreviewTimelineMenu(false);
+    if (!this.previews.length) return;
+    const next = this._previewLightboxNavigationTarget(dir);
+    if (next >= 0 && this.selectPreviewComparisonCurrent(next)) this._updatePreviewLightbox();
+  },
+
+  _resetPreviewPageEditor() {
+    this.previewPageEditing = false; this.previewPageDraft = ''; this._previewPageLastDraft = '';
+  },
+
+  _normalizePreviewPageDraft(value) {
+    return String(value ?? '').replace(/[０-９]/g, digit => String(digit.charCodeAt(0) - 0xff10)).trim();
+  },
+
+  _previewPagePosition(indices = this._previewLightboxNavigationIndices()) {
+    return indices.indexOf(this.previewStep) + 1;
+  },
+
+  openPreviewPageEditor() {
+    if (!this._previewLightboxNavigationIndices().length) return;
+    this.previewPageEditing = true;
+    this.previewPageDraft = String(this._previewPagePosition() || 1);
+    this._previewPageLastDraft = this.previewPageDraft;
+    const focus = () => {
+      if (!this.previewPageEditing) return;
+      const input = document.getElementById('previewLightboxPage');
+      if (input) { input.value = this.previewPageDraft; input.focus?.(); input.select?.(); }
+    };
+    if (typeof this.$nextTick === 'function') this.$nextTick(focus);
+    else focus();
+  },
+
+  beginPreviewPageEdit(event) {
+    if (!this._previewLightboxNavigationIndices().length) return;
+    const input = event.currentTarget;
+    this.previewPageEditing = true;
+    this.previewPageDraft = String(this._previewPagePosition() || 1);
+    this._previewPageLastDraft = this.previewPageDraft;
+    input.value = this.previewPageDraft;
+    input.select?.();
+  },
+
+  updatePreviewPageDraft(event) {
+    if (!this.previewPageEditing || event.isComposing) return;
+    const input = event.currentTarget, draft = this._normalizePreviewPageDraft(input.value);
+    if (draft === '' || draft === '-' || /^-?\d+$/.test(draft)) {
+      this.previewPageDraft = draft; this._previewPageLastDraft = draft;
+    }
+    input.value = this._previewPageLastDraft;
+  },
+
+  commitPreviewPageEdit(event) {
+    if (!this.previewPageEditing) return false;
+    const input = event?.currentTarget, indices = this._previewLightboxNavigationIndices();
+    const draft = this._normalizePreviewPageDraft(input?.value ?? this.previewPageDraft);
+    // Validate before Number conversion: very long integers may become
+    // +/-Infinity and should clamp, while decimals/exponents/text are rejected.
+    const page = /^-?\d+$/.test(draft) && indices.length
+      ? Math.max(1, Math.min(indices.length, Number(draft))) : this._previewPagePosition(indices);
+    this.previewPageEditing = false;
+    this.previewPageDraft = page ? String(page) : ''; this._previewPageLastDraft = this.previewPageDraft;
+    if (input) input.value = this.previewPageDraft;
+    const index = indices[page - 1];
+    if (index !== undefined && (index !== this.previewStep || this.previewComparisonWaiting)) this.selectPreviewTimeline(index);
+    else this._updatePreviewLightbox();
+    return true;
+  },
+
+  _focusPreviewPageNavigation(input) {
+    const focus = () => {
+      const timeline = document.getElementById('previewLightboxTimeline');
+      const selected = !timeline?.hidden && timeline?.querySelector('[aria-pressed="true"]');
+      const box = document.getElementById('previewLightbox');
+      const target = selected || box?.querySelector('.preview-lightbox-nav.next:not(:disabled)')
+        || box?.querySelector('.preview-lightbox-nav.prev:not(:disabled)')
+        || document.getElementById('previewLightboxCounterDisplay') || box?.querySelector('.preview-close');
+      if (target) target.focus({preventScroll: true});
+      else input?.blur?.();
+    };
+    if (typeof this.$nextTick === 'function') this.$nextTick(focus);
+    else focus();
+  },
+
+  previewPageKeydown(event) {
+    if (event.key === 'Tab') return;
+    event.stopPropagation();
+    if (event.isComposing) return;
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      this.commitPreviewPageEdit(event);
+      this._focusPreviewPageNavigation(event.currentTarget);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      this._resetPreviewPageEditor();
+      event.currentTarget.value = String(this._previewPagePosition());
+      this._focusPreviewPageNavigation(event.currentTarget);
+    }
+  },
+
+  selectPreviewTimeline(index) {
+    this.closePreviewTimelineMenu(false);
+    if (!this._previewLightboxDisplayIndices().includes(index)) return;
+    const preview = this.previews[index];
+    if (this._isPreviewReference(preview)) {
+      this.locatePreviewReference(this._previewItemKey(preview));
+      return;
+    }
+    if (index === this.previewStep && !this.previewComparisonWaiting) return;
+    if (this.selectPreviewComparisonCurrent(index)) this._updatePreviewLightbox();
+  },
+
+  locatePreviewReference(key) {
+    const pane = this._previewReferenceMedia?.entries.get(key)?.pane;
+    const viewport = document.getElementById('previewLightboxViewport');
+    if (!this.previewLightboxOpen || !pane || !viewport) return;
+    const bounds = viewport.getBoundingClientRect(), rect = pane.getBoundingClientRect();
+    const scale = viewport.offsetWidth ? bounds.width / viewport.offsetWidth : 1;
+    if (!rect.width || !rect.height || !Number.isFinite(scale) || scale <= 0) return;
+    const left = bounds.left + (viewport.clientLeft || 0) * scale;
+    const top = bounds.top + (viewport.clientTop || 0) * scale;
+    const delta = (start, end, near, far) => end - start > far - near
+      ? (start + end - near - far) / 2 : start < near ? start - near : end > far ? end - far : 0;
+    const targetLeft = Math.max(0, Math.min(viewport.scrollWidth - viewport.clientWidth,
+      viewport.scrollLeft + delta(rect.left, rect.right, left, left + viewport.clientWidth * scale) / scale));
+    const targetTop = Math.max(0, Math.min(viewport.scrollHeight - viewport.clientHeight,
+      viewport.scrollTop + delta(rect.top, rect.bottom, top, top + viewport.clientHeight * scale) / scale));
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    this._highlightPreviewReference(pane, reduced);
+    if (Math.abs(targetLeft - viewport.scrollLeft) < 1 && Math.abs(targetTop - viewport.scrollTop) < 1) return;
+    // Scroll this viewport only; scrollIntoView also moves the outer gallery.
+    if (typeof viewport.scrollTo === 'function') viewport.scrollTo({left: targetLeft, top: targetTop, behavior: reduced ? 'instant' : 'smooth'});
+    else {viewport.scrollLeft = targetLeft; viewport.scrollTop = targetTop;}
+  },
+
+  _previewReferenceLocateAnimation: null,
+
+  _highlightPreviewReference(pane, reduced) {
+    this._previewReferenceLocateAnimation?.cancel();
+    const indicator = pane.querySelector?.('.preview-reference-locate-flash');
+    const frames = reduced ? [{opacity: 1}, {opacity: 1, offset: 0.99}, {opacity: 0}]
+      : [{opacity: 0}, {opacity: 1, offset: 0.1}, {opacity: 1, offset: 0.7}, {opacity: 0}];
+    const animation = indicator?.animate?.(frames, {duration: reduced ? 700 : 1400, easing: 'ease-out'});
+    this._previewReferenceLocateAnimation = animation || null;
+    animation?.finished.then(() => {
+      if (this._previewReferenceLocateAnimation === animation) this._previewReferenceLocateAnimation = null;
+    }, () => {});
+  },
+
+  selectPreviewTimelineByKey(key) {
+    const index = this.previews.findIndex(preview => this._previewItemKey(preview) === key);
+    if (index >= 0) this.selectPreviewTimeline(index);
+  },
+
+  selectPreviewCaseByKey(key) {
+    this.closePreviewTimelineMenu(false);
+    const index = this.previews.findIndex(preview => this._previewItemKey(preview) === key);
+    if (index >= 0) this.selectPreviewCase(index);
+  },
+
+  previewViewTimelineKeydown(event) {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const indices = this._previewLightboxNavigationIndices();
+    let index;
+    if (event.key === 'ArrowLeft') index = this._previewLightboxNavigationTarget(-1);
+    else if (event.key === 'ArrowRight') index = this._previewLightboxNavigationTarget(1);
+    else if (event.key === 'Home') index = indices[0];
+    else if (event.key === 'End') index = indices.at(-1);
+    else return;
+    event.preventDefault(); event.stopPropagation();
+    if (!Number.isInteger(index) || index < 0) return;
+    this.selectPreviewTimeline(index);
+    event.currentTarget.querySelector('[data-preview-index="' + index + '"]')?.focus({ preventScroll: true });
+  },
+
+  previewPromptBarOverflow: false,
+  previewPromptBarAtStart: true,
+  previewPromptBarAtEnd: true,
+  _previewPromptBarDrag: null,
+  _previewPromptBarSuppressClick: false,
+  _previewPromptBarClickTimer: null,
+
+  _previewPromptBarArrowHtml(t, direction) {
+    const previous = direction < 0;
+    const label = this.esc(t(previous ? 'samplePromptScrollLeft' : 'samplePromptScrollRight'));
+    return '<button type="button" class="btn-icon preview-prompt-bar-arrow" x-show="previewPromptBarOverflow" x-cloak'
+      + ' :disabled="' + (previous ? 'previewPromptBarAtStart' : 'previewPromptBarAtEnd') + '" @click="scrollPreviewPromptBar(' + (previous ? -1 : 1) + ')"'
+      + ' title="' + label + '" aria-label="' + label + '"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+      + '<path d="' + (previous ? 'm15 18-6-6 6-6' : 'm9 18 6-6-6-6') + '"/></svg></button>';
+  },
+
+  syncPreviewPromptBar() {
+    const rail = document.getElementById('previewLightboxStrip');
+    if (!rail || rail.hidden || !rail.clientWidth) {
+      this.previewPromptBarOverflow = false;
+      this.previewPromptBarAtStart = this.previewPromptBarAtEnd = true;
+      this.cancelPreviewPromptBarDrag();
+      return;
+    }
+    const bar = rail.parentElement;
+    const gap = parseFloat(window.getComputedStyle?.(bar)?.columnGap) || 0;
+    // Test against the space available without arrows, so they cannot keep
+    // themselves visible after the prompts fit following a resize/update.
+    const arrowSpace = Array.from(bar?.querySelectorAll('.preview-prompt-bar-arrow') || [])
+      .reduce((width, arrow) => width + (arrow.offsetWidth ? arrow.offsetWidth + gap : 0), 0);
+    const overflow = rail.scrollWidth > rail.clientWidth + arrowSpace + 1;
+    const changed = this.previewPromptBarOverflow !== overflow;
+    this.previewPromptBarOverflow = overflow;
+    const max = Math.max(0, rail.scrollWidth - rail.clientWidth);
+    this.previewPromptBarAtStart = !overflow || rail.scrollLeft <= 1;
+    this.previewPromptBarAtEnd = !overflow || max - rail.scrollLeft <= 1;
+    if (!overflow) this.cancelPreviewPromptBarDrag();
+    // x-show changes the rail width on the next Alpine flush.
+    if (changed) this.$nextTick?.(() => this.syncPreviewPromptBar());
+  },
+
+  scrollPreviewPromptBar(direction) {
+    const rail = document.getElementById('previewLightboxStrip');
+    if (!rail || rail.hidden || !this.previewPromptBarOverflow) return;
+    this.cancelPreviewPromptBarDrag();
+    this._scrollSampleRail(rail, rail.scrollLeft + Math.sign(direction) * Math.max(80, rail.clientWidth * 0.75));
+    this.syncPreviewPromptBar();
+  },
+
+  startPreviewPromptBarDrag(event) {
+    this._startPreviewRailDrag(event, '_previewPromptBar');
+  },
+
+  movePreviewPromptBarDrag(event) {
+    this._movePreviewRailDrag(event, '_previewPromptBar');
+    this.syncPreviewPromptBar();
+  },
+
+  endPreviewPromptBarDrag(event) {
+    this._endPreviewRailDrag(event, '_previewPromptBar');
+  },
+
+  leavePreviewPromptBarDrag(event) {
+    this._leavePreviewRailDrag(event, '_previewPromptBar');
+  },
+
+  suppressPreviewPromptBarClick(event) {
+    this._suppressPreviewRailClick(event, '_previewPromptBar');
+  },
+
+  cancelPreviewPromptBarDrag() {
+    this._cancelPreviewRailDrag('_previewPromptBar');
+  },
+
+  _previewViewTimelineDrag: null,
+  _previewViewTimelineSuppressClick: false,
+
+  startPreviewViewTimelineDrag(event) {
+    this._startPreviewRailDrag(event, '_previewViewTimeline');
+  },
+
+  movePreviewViewTimelineDrag(event) {
+    this._movePreviewRailDrag(event, '_previewViewTimeline');
+  },
+
+  endPreviewViewTimelineDrag(event) {
+    this._endPreviewRailDrag(event, '_previewViewTimeline');
+  },
+
+  leavePreviewViewTimeline(event) {
+    this._leavePreviewRailDrag(event, '_previewViewTimeline');
+  },
+
+  suppressPreviewViewTimelineClick(event) {
+    this._suppressPreviewRailClick(event, '_previewViewTimeline');
+  },
+
+  _startPreviewRailDrag(event, prefix) {
+    if (event.button !== 0 || event.isPrimary === false) return;
+    this._cancelPreviewRailDrag(prefix);
+    const rail = event.currentTarget;
+    if (rail.scrollWidth <= rail.clientWidth + 1) return;
+    this._scrollSampleRail(rail, rail.scrollLeft, false);
+    const width = rail.getBoundingClientRect?.().width;
+    const scale = rail.offsetWidth && width ? width / rail.offsetWidth : 1;
+    this[prefix + 'Drag'] = {rail, pointerId: event.pointerId, startX: event.clientX,
+      startScroll: rail.scrollLeft, scale, dragging: false};
+  },
+
+  _movePreviewRailDrag(event, prefix) {
+    const drag = this[prefix + 'Drag'];
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const distance = event.clientX - drag.startX;
+    if (!drag.dragging && Math.abs(distance) <= 6) return;
+    if (!drag.dragging) {
+      drag.dragging = true;
+      drag.rail.setPointerCapture?.(event.pointerId);
+      drag.rail.classList.add('is-dragging');
+    }
+    const maximum = drag.rail.scrollWidth - drag.rail.clientWidth;
+    drag.rail.scrollLeft = Math.max(0, Math.min(Number.isFinite(maximum) ? maximum : Infinity, drag.startScroll - distance / drag.scale));
+    event.preventDefault();
+  },
+
+  _endPreviewRailDrag(event, prefix, afterEnd) {
+    const drag = this[prefix + 'Drag'];
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    this[prefix + 'Drag'] = null;
+    if (drag.rail.hasPointerCapture?.(event.pointerId)) drag.rail.releasePointerCapture(event.pointerId);
+    drag.rail.classList.remove('is-dragging');
+    if (!drag.dragging) return;
+    this[prefix + 'SuppressClick'] = true;
+    this[prefix + 'ClickTimer'] = setTimeout(() => {
+      this[prefix + 'SuppressClick'] = false;
+      this[prefix + 'ClickTimer'] = null;
+      afterEnd?.();
+    }, 0);
+  },
+
+  _leavePreviewRailDrag(event, prefix) {
+    const drag = this[prefix + 'Drag'];
+    if (drag && !drag.dragging && drag.pointerId === event.pointerId) this[prefix + 'Drag'] = null;
+  },
+
+  _suppressPreviewRailClick(event, prefix) {
+    if (!this[prefix + 'SuppressClick']) return;
+    this[prefix + 'SuppressClick'] = false;
+    event.preventDefault(); event.stopImmediatePropagation();
+  },
+
+  _cancelPreviewRailDrag(prefix) {
+    const drag = this[prefix + 'Drag'];
+    this[prefix + 'Drag'] = null;
+    if (drag?.rail.hasPointerCapture?.(drag.pointerId)) drag.rail.releasePointerCapture(drag.pointerId);
+    drag?.rail.classList.remove('is-dragging');
+    if (this[prefix + 'ClickTimer'] != null) clearTimeout(this[prefix + 'ClickTimer']);
+    this[prefix + 'ClickTimer'] = null;
+    this[prefix + 'SuppressClick'] = false;
+  },
+
+  _previewViewTimelineHtml(indices) {
+    const model = this._sampleDataModel();
+    return indices.map(index => {
+      const preview = this.previews[index], sample = this._sampleRecord(preview, index);
+      const label = model.byBatch.get(sample.batch_id)?.label || sample.batch_label || preview.name;
+      const stage = this._sampleStageParts(label);
+      return '<button type="button" class="preview-view-timeline-item" data-preview-index="' + index + '" data-preview-path="' + this.esc(this._previewItemKey(preview)) + '" data-preview-batch-id="' + this.esc(sample.batch_id) + '"'
+        + ' aria-pressed="false" tabindex="-1" aria-label="' + this.esc(this._previewCompareLabel(preview)) + '" title="' + this.esc(this._previewCompareLabel(preview)) + '" aria-haspopup="menu" @contextmenu="openPreviewTimelineMenu($event,$event.currentTarget.dataset.previewPath)" @keydown="previewTimelineItemKeydown($event)" @click="selectPreviewTimelineByKey($event.currentTarget.dataset.previewPath)">'
+        + '<span class="preview-thumb-frame">' + this._previewThumbImageHtml(preview) + '</span><span class="preview-view-time-label"><strong><span class="preview-reference-mark" aria-hidden="true" hidden></span>' + this.esc(stage.primary) + '</strong>'
+        + (stage.secondary ? '<small>' + this.esc(stage.secondary) + '</small>' : '') + '</span></button>';
+    }).join('');
+  },
+
+  _previewTimelineContextMenuHtml(t) {
+    return '<div id="previewTimelineContextMenu" class="te-ctx preview-timeline-context-menu" role="menu" tabindex="-1" hidden :hidden="!previewTimelineMenu"'
+      + ' :class="{\'is-positioned\':previewTimelineMenu?.positioned}" :style="\'left:\'+(previewTimelineMenu?.x||0)+\'px;top:\'+(previewTimelineMenu?.y||0)+\'px\'"'
+      + ' aria-label="' + this.esc(t('sampleContextMenu')) + '" @contextmenu.prevent.stop @click.stop @keydown="previewTimelineMenuKeydown($event)">'
+      + '<button type="button" role="menuitem" data-preview-menu-action="pin" :disabled="!previewTimelineMenu?.actions.pin" @click="previewTimelineMenuAction(\'pin\')"><span>' + this.esc(t('pinReference')) + '</span></button>'
+      + '<button type="button" role="menuitem" data-preview-menu-action="unpin" :hidden="!previewTimelineMenu?.actions.unpin" @click="previewTimelineMenuAction(\'unpin\')"><span>' + this.esc(t('sampleUnpinComparison')) + '</span></button>'
+      + '<button type="button" role="menuitem" data-preview-menu-action="compare" :disabled="!previewTimelineMenu?.actions.compare" @click="previewTimelineMenuAction(\'compare\')"><span>' + this.esc(t('sampleContextCompare')) + '</span></button>'
+      + '<div class="te-ctx-divider" role="separator" :hidden="!previewTimelineMenu?.actions.cancel"></div>'
+      + '<button type="button" role="menuitem" data-preview-menu-action="cancel" :hidden="!previewTimelineMenu?.actions.cancel" @click="previewTimelineMenuAction(\'cancel\')"><span>' + this.esc(t('sampleContextCancel')) + '</span></button></div>';
+  },
+
+  _previewTimelineMenuTarget(menu = this.previewTimelineMenu) {
+    if (!menu) return -1;
+    const index = this._previewViewerFileIndex(menu.key), preview = this.previews[index];
+    return index >= 0 && this._previewLightboxDisplayIndices().includes(index)
+      && this._sampleRecord(preview).batch_id === menu.batchId
+      && this._previewViewerMetadataKey(preview) === menu.metadataKey ? index : -1;
+  },
+
+  _previewTimelineMenuActions(menu = this.previewTimelineMenu) {
+    const actions = {pin: false, unpin: false, compare: false, cancel: this.previewCompareActive};
+    const index = this._previewTimelineMenuTarget(menu), current = this.previews[this.previewStep];
+    if (index < 0 || this._previewViewerFileIndex(this._previewItemKey(current)) !== this.previewStep) return actions;
+    const key = this._previewViewerComparisonKey(current), target = this.previews[index];
+    if (!key || this._previewViewerComparisonKey(target) !== key) return actions;
+    const pinned = this.previewReferences.some(preview => this._previewItemKey(preview) === this._previewItemKey(target));
+    const currentUnavailable = this.previewImageError && !this.previewImageAvailable && !this.previewImageLoading;
+    actions.pin = !pinned && !(index === this.previewStep && currentUnavailable);
+    actions.unpin = pinned;
+    actions.compare = !pinned && (index !== this.previewStep || this.previewComparisonWaiting)
+      && (this.previewCompareActive || !currentUnavailable);
+    return actions;
+  },
+
+  previewTimelineItemKeydown(event) {
+    if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+    this.openPreviewTimelineMenu(event, event.currentTarget.dataset.previewPath, true);
+  },
+
+  async openPreviewTimelineMenu(event, key, keyboard = false) {
+    event.preventDefault(); event.stopPropagation();
+    if (!this.previewLightboxOpen || this._previewViewTimelineDrag?.dragging) return;
+    const index = this._previewViewerFileIndex(key);
+    if (index < 0 || !this._previewLightboxDisplayIndices().includes(index)) return;
+    this.closePreviewTimelineMenu(false);
+    window.AnimaUI?.settleDialog(event.currentTarget);
+    const timeline = document.getElementById('previewLightboxTimeline');
+    // Abort a locate/reveal smooth scroll before measuring its moving trigger.
+    // A queued event from that old motion may still fire without any movement.
+    if (timeline) this._scrollSampleRail(timeline, timeline.scrollLeft, false);
+    const stoppedLeft = timeline?.scrollLeft, stoppedTop = timeline?.scrollTop;
+    const anchor = event.currentTarget?.getBoundingClientRect?.() || {left: 4, bottom: 4};
+    const pointer = !keyboard && Number.isFinite(event.clientX) && Number.isFinite(event.clientY)
+      && (event.clientX !== 0 || event.clientY !== 0);
+    this.previewTimelineMenu = {key, batchId: this._sampleRecord(this.previews[index]).batch_id,
+      metadataKey: this._previewViewerMetadataKey(this.previews[index]), x: 0, y: 0, positioned: false,
+      point: {x: pointer ? event.clientX : anchor.left, y: pointer ? event.clientY : anchor.bottom}};
+    const state = this.previewTimelineMenu, request = ++this._previewTimelineMenuToken;
+    state.actions = this._previewTimelineMenuActions(state);
+    const current = () => this.previewLightboxOpen && this.previewTimelineMenu === state && request === this._previewTimelineMenuToken;
+    await (typeof this.$nextTick === 'function' ? this.$nextTick() : Promise.resolve());
+    if (!current()) return;
+    const menu = document.getElementById('previewTimelineContextMenu'), dialog = document.getElementById('previewLightbox');
+    if (!menu || !dialog) { this.closePreviewTimelineMenu(false); return; }
+    menu.hidden = false;
+    this._positionPreviewTimelineMenu(menu, dialog, state);
+    state.positioned = true;
+    const outside = event => { if (!menu.contains(event.target)) this.closePreviewTimelineMenu(false); };
+    const scrolled = event => {
+      if (menu.contains(event.target)) return;
+      if (event.target === timeline && Math.abs(timeline.scrollLeft - stoppedLeft) < .5
+          && Math.abs((timeline.scrollTop || 0) - (stoppedTop || 0)) < .5) return;
+      this.closePreviewTimelineMenu(false);
+    };
+    const resized = () => this.closePreviewTimelineMenu(false);
+    dialog.addEventListener('pointerdown', outside, true);
+    dialog.addEventListener('scroll', scrolled, true);
+    window.addEventListener('resize', resized);
+    this._previewTimelineMenuCleanup = () => {
+      dialog.removeEventListener('pointerdown', outside, true);
+      dialog.removeEventListener('scroll', scrolled, true);
+      window.removeEventListener('resize', resized);
+    };
+    window.AnimaUI?.registerPopup(menu, () => this.closePreviewTimelineMenu(false));
+    await (typeof this.$nextTick === 'function' ? this.$nextTick() : Promise.resolve());
+    if (current()) (this._previewTimelineMenuButtons(menu)[0] || menu).focus({preventScroll: true});
+  },
+
+  _positionPreviewTimelineMenu(menu, dialog, state) {
+    const origin = dialog.getBoundingClientRect();
+    const surface = dialog.querySelector('.preview-lightbox-window')?.getBoundingClientRect() || origin;
+    const sx = dialog.offsetWidth && origin.width ? origin.width / dialog.offsetWidth : 1;
+    const sy = dialog.offsetHeight && origin.height ? origin.height / dialog.offsetHeight : 1;
+    const left = Math.max(4, origin.left + 4, surface.left + 4), top = Math.max(4, origin.top + 4, surface.top + 4);
+    const right = Math.min(window.innerWidth - 4, origin.right - 4, surface.right - 4);
+    const bottom = Math.min(window.innerHeight - 4, origin.bottom - 4, surface.bottom - 4);
+    menu.style.maxWidth = Math.max(0, (right - left) / sx) + 'px';
+    menu.style.maxHeight = Math.max(0, (bottom - top) / sy) + 'px';
+    const rect = menu.getBoundingClientRect();
+    state.x = (Math.max(left, Math.min(state.point.x, right - rect.width)) - origin.left) / sx;
+    state.y = (Math.max(top, Math.min(state.point.y, bottom - rect.height)) - origin.top) / sy;
+  },
+
+  _previewTimelineMenuButtons(menu) {
+    return Array.from(menu?.querySelectorAll('button') || []).filter(button => !button.disabled && !button.hidden
+      && (!button.getClientRects || button.getClientRects().length));
+  },
+
+  closePreviewTimelineMenu(restoreFocus = false) {
+    const state = this.previewTimelineMenu;
+    this.previewTimelineMenu = null;
+    this._previewTimelineMenuToken = (this._previewTimelineMenuToken || 0) + 1;
+    this._previewTimelineMenuCleanup?.(); this._previewTimelineMenuCleanup = null;
+    const menu = typeof document === 'undefined' ? null : document.getElementById?.('previewTimelineContextMenu');
+    if (menu) { menu.hidden = true; window.AnimaUI?.unregisterPopup(menu); }
+    if (restoreFocus && state && this.previewLightboxOpen) {
+      const timeline = document.getElementById('previewLightboxTimeline');
+      if (!timeline?.hidden) Array.from(timeline?.querySelectorAll('.preview-view-timeline-item') || [])
+        .find(item => item.dataset.previewPath === state.key)?.focus({preventScroll: true});
+    }
+  },
+
+  previewTimelineMenuKeydown(event) {
+    if (event.isComposing) return;
+    if (event.key === 'Escape') {
+      event.preventDefault(); event.stopPropagation(); this.closePreviewTimelineMenu(true); return;
+    }
+    if (event.key === 'Tab') { this.closePreviewTimelineMenu(true); return; }
+    if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) { event.stopPropagation(); return; }
+    event.preventDefault(); event.stopPropagation();
+    const buttons = this._previewTimelineMenuButtons(event.currentTarget);
+    if (!buttons.length) return;
+    const index = buttons.indexOf(document.activeElement);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+      : (index + (event.key === 'ArrowUp' ? -1 : 1) + buttons.length) % buttons.length;
+    buttons[next].focus({preventScroll: true});
+  },
+
+  previewTimelineMenuAction(action) {
+    const state = this.previewTimelineMenu, actions = this._previewTimelineMenuActions(state);
+    if (!state || !actions[action]) return false;
+    const index = this._previewTimelineMenuTarget(state), target = this.previews[index], current = this.previews[this.previewStep];
+    this.closePreviewTimelineMenu(false);
+    let success = true;
+    if (action === 'cancel') this.stopPreviewComparison();
+    else if (action === 'pin') success = this.pinPreviewReference(target);
+    else if (action === 'unpin') success = this.unpinPreviewReference(this._previewItemKey(target));
+    else if (action === 'compare') {
+      if (!this.previewCompareActive) success = this.pinPreviewReference(current, false);
+      if (success) { success = this.selectPreviewComparisonCurrent(index); this._updatePreviewLightbox(); }
+    }
+    if (success) this._focusPreviewPageNavigation();
+    return success;
+  },
+
+  _markPreviewViewReference(timeline) {
+    const keys = new Set(this.previewCompareActive ? this.previewReferences.map(preview => this._previewItemKey(preview)) : []);
+    const mark = (item, pinned) => {
+      if (!item) return;
+      item.classList.toggle('is-reference', pinned);
+      const icon = item.querySelector('.preview-reference-mark');
+      if (icon) icon.hidden = !pinned;
+      const preview = this.previews[Number(item.dataset.previewIndex)];
+      if (preview) {
+        const label = this._previewCompareLabel(preview) + (pinned ? ' ' + this.t('monitor.samplePinnedReference') : '');
+        item.title = label; item.setAttribute('aria-label', label);
+      }
+    };
+    timeline.querySelectorAll('.preview-view-timeline-item').forEach(item => mark(item, keys.has(item.dataset.previewPath)));
+  },
+
+  _previewTimelineImageSwaps: null,
+
+  _cancelPreviewTimelineImageSwap(image, invalidate = true) {
+    const swap = this._previewTimelineImageSwaps?.get(image);
+    if (swap) {
+      this._previewTimelineImageSwaps.delete(image);
+      swap.preload.removeAttribute('src'); swap.preload.remove();
+    }
+    if (invalidate) delete image.dataset.previewTimelineSource;
+  },
+
+  _clearPreviewTimelineImageSwaps() {
+    for (const image of this._previewTimelineImageSwaps?.keys() || []) this._cancelPreviewTimelineImageSwap(image);
+    this._previewTimelineImageSwaps = null;
+    const timeline = document.getElementById('previewLightboxTimeline');
+    if (timeline) delete timeline.dataset.signature;
+  },
+
+  _updatePreviewTimelineImage(image, preview) {
+    const url = preview.thumb_url || preview.url;
+    const key = JSON.stringify([this._previewItemKey(preview), preview.version || '', url, this.weakNetworkMode]);
+    if (image.dataset.previewTimelineSource === key) return;
+    this._cancelPreviewTimelineImageSwap(image);
+    image.dataset.previewTimelineSource = key; image.alt = preview.name;
+    const weak = this.weakNetworkMode;
+    const setSource = (source, loaded) => {
+      if (source && image.getAttribute('src') !== source) image.src = source;
+      if (weak) {
+        image.dataset.previewUrl = url;
+        if (loaded) image.dataset.previewLoaded = '1';
+        else delete image.dataset.previewLoaded;
+        delete image.dataset.previewQueued;
+      } else {
+        delete image.dataset.previewUrl; delete image.dataset.previewLoaded; delete image.dataset.previewQueued;
+      }
+    };
+    if (image.getAttribute('src') === url || (weak && image.dataset.previewUrl === url && image.dataset.previewLoaded === '1')) return;
+    if (!image.complete || !image.naturalWidth) {
+      if (weak) { image.removeAttribute('src'); setSource('', false); }
+      else setSource(url, false);
+      return;
+    }
+    // A second lazy image occupies the same thumbnail slot while decoding.
+    // Weak mode observes this image through its existing serial media queue.
+    const preload = document.createElement('img');
+    preload.alt = ''; preload.setAttribute('aria-hidden', 'true');
+    preload.loading = 'lazy'; preload.decoding = 'async'; preload.fetchPriority = 'low';
+    preload.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;opacity:0;pointer-events:none';
+    this._previewTimelineImageSwaps ||= new Map();
+    this._previewTimelineImageSwaps.set(image, {preload, key, decoding: false});
+    const swap = this._previewTimelineImageSwaps.get(image);
+    const current = () => image.isConnected && this._previewTimelineImageSwaps?.get(image) === swap
+      && image.dataset.previewTimelineSource === key;
+    preload.addEventListener('load', () => {
+      if (!current() || swap.decoding) return;
+      swap.decoding = true;
+      Promise.resolve(preload.decode?.()).then(() => {
+        if (!current()) return;
+        setSource(preload.currentSrc || preload.getAttribute('src'), true);
+        image.closest('.preview-thumb-frame')?.classList.remove('is-error');
+        this._cancelPreviewTimelineImageSwap(image, false);
+      }, () => { if (current()) this._cancelPreviewTimelineImageSwap(image, false); });
+    });
+    preload.addEventListener('error', () => {
+      if (!current()) return;
+      image.closest('.preview-thumb-frame')?.classList.add('is-error');
+      this._cancelPreviewTimelineImageSwap(image, false);
+    });
+    image.parentElement.appendChild(preload);
+    if (weak) preload.dataset.previewUrl = url;
+    else preload.src = url;
+  },
+
+  _reconcilePreviewViewTimeline(timeline, indices) {
+    const old = Array.from(timeline.querySelectorAll('.preview-view-timeline-item'));
+    const batches = new Map(this.previews.map((preview, index) => [this._previewItemKey(preview), this._sampleRecord(preview, index).batch_id]));
+    const byFile = new Map(), byBatch = new Map(), counts = new Map(), remaining = new Set(old);
+    const group = (map, key, item) => map.set(key, [...(map.get(key) || []), item]);
+    for (const item of old) {
+      group(byFile, item.dataset.previewPath, item);
+      group(byBatch, item.dataset.previewBatchId || batches.get(item.dataset.previewPath), item);
+    }
+    for (const index of indices) {
+      const id = this._sampleRecord(this.previews[index], index).batch_id;
+      counts.set(id, (counts.get(id) || 0) + 1);
+    }
+    let next = timeline.firstElementChild;
+    for (const index of indices) {
+      const preview = this.previews[index], sample = this._sampleRecord(preview, index), key = this._previewItemKey(preview);
+      const exact = byFile.get(key), sameBatch = byBatch.get(sample.batch_id);
+      let item = exact?.length === 1 && remaining.has(exact[0]) ? exact[0]
+        : counts.get(sample.batch_id) === 1 && sameBatch?.length === 1 && remaining.has(sameBatch[0]) ? sameBatch[0] : null;
+      if (!item) {
+        const template = document.createElement('template');
+        template.innerHTML = this._previewViewTimelineHtml([index]);
+        item = template.content.firstElementChild;
+      }
+      remaining.delete(item);
+      if (item === next) next = next.nextElementSibling;
+      else timeline.insertBefore(item, next);
+      item.dataset.previewIndex = String(index); item.dataset.previewPath = key; item.dataset.previewBatchId = sample.batch_id;
+      const label = this._previewCompareLabel(preview);
+      item.title = label; item.setAttribute('aria-label', label);
+      const stage = this._sampleStageParts(this._sampleDataModel().byBatch.get(sample.batch_id)?.label || sample.batch_label || preview.name);
+      const stageKey = JSON.stringify(stage);
+      if (item.dataset.previewTimelineStage !== stageKey) {
+        item.querySelector('.preview-view-time-label').innerHTML = '<strong><span class="preview-reference-mark" aria-hidden="true" hidden></span>'
+          + this.esc(stage.primary) + '</strong>' + (stage.secondary ? '<small>' + this.esc(stage.secondary) + '</small>' : '');
+        item.dataset.previewTimelineStage = stageKey;
+      }
+      this._updatePreviewTimelineImage(item.querySelector('img'), preview);
+    }
+    for (const item of remaining) {
+      this._cancelPreviewTimelineImageSwap(item.querySelector('img'));
+      item.remove();
+    }
+  },
+
+  _updatePreviewViewTimeline(indices) {
+    const timeline = document.getElementById('previewLightboxTimeline');
+    if (!timeline) return;
+    const frame = document.getElementById('previewLightboxTimelineFrame');
+    const locate = document.getElementById('previewLightboxBar')?.querySelector('.sample-timeline-locate');
+    const wasVisible = !timeline.hidden;
+    const hadTimelineFocus = (frame || timeline).contains(document.activeElement) || (!!locate && locate === document.activeElement);
+    timeline.hidden = indices.length < 2;
+    this.previewViewTimelineAvailable = !timeline.hidden;
+    if (frame) frame.hidden = timeline.hidden;
+    if (locate) locate.disabled = timeline.hidden || !this.previewViewTimelineVisible || this.previewComparisonWaiting;
+    if (timeline.hidden) {
+      if (hadTimelineFocus) document.getElementById('previewLightbox')?.querySelector('.preview-close')?.focus({ preventScroll: true });
+      if (wasVisible && this.weakNetworkMode) {
+        this._cancelPreviewMediaQueue();
+        const root = document.getElementById('monitorDashboard');
+        if (root) this.schedulePreviewMediaLoads(root);
+      }
+      return;
+    }
+    const model = this._sampleDataModel();
+    const signature = JSON.stringify([this.weakNetworkMode, indices.map(index => {
+      const item = this.previews[index], sample = this._sampleRecord(item, index);
+      return [index, this._previewItemKey(item), item.version || '', item.thumb_url || item.url, sample.batch_id,
+        model.byBatch.get(sample.batch_id)?.label || sample.batch_label, this._previewCompareLabel(item)];
+    })]);
+    const previous = timeline.querySelector('[aria-pressed="true"]')?.dataset.previewPath;
+    if (timeline.dataset.signature !== signature) {
+      const root = document.getElementById('monitorDashboard') || timeline;
+      const loaded = this.weakNetworkMode ? this._capturePreviewMedia(root) : null;
+      const scrollLeft = timeline.scrollLeft;
+      const hadFocus = timeline.contains(document.activeElement);
+      const focusedPath = hadFocus ? document.activeElement.dataset.previewPath : '';
+      if (this.weakNetworkMode) this._cancelPreviewMediaQueue();
+      this._reconcilePreviewViewTimeline(timeline, indices);
+      timeline.dataset.signature = signature;
+      timeline.scrollLeft = scrollLeft;
+      if (loaded) this._restorePreviewMedia(root, loaded);
+      if (hadFocus) {
+        const focus = Array.from(timeline.querySelectorAll('.preview-view-timeline-item')).find(item => item.dataset.previewPath === focusedPath)
+          || timeline.querySelector('[data-preview-index="' + this.previewStep + '"]');
+        focus?.focus({ preventScroll: true });
+      }
+      if (this.weakNetworkMode) this.schedulePreviewMediaLoads(root);
+    }
+    const selected = this.previewComparisonWaiting ? null : timeline.querySelector('[data-preview-index="' + this.previewStep + '"]');
+    const old = timeline.querySelector('[aria-pressed="true"]');
+    if (old && old !== selected) { old.setAttribute('aria-pressed', 'false'); old.tabIndex = -1; }
+    this._markPreviewViewReference(timeline);
+    if (!selected) return;
+    selected.setAttribute('aria-pressed', 'true'); selected.tabIndex = 0;
+    if (previous !== selected.dataset.previewPath) this._revealPreviewViewTimeline();
+  },
+
+  _scrollSampleRail(rail, left, smooth = true) {
+    if (!Number.isFinite(left)) return;
+    const max = Number.isFinite(rail.scrollWidth) && Number.isFinite(rail.clientWidth) ? Math.max(0, rail.scrollWidth - rail.clientWidth) : Infinity;
+    const target = Math.max(0, Math.min(max, left));
+    const motion = smooth && Math.abs(target - rail.scrollLeft) > 1 && !window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    if (typeof rail.scrollTo === 'function') rail.scrollTo({ left: target, behavior: motion ? 'smooth' : 'instant' });
+    else rail.scrollLeft = target;
+  },
+
+  _revealPreviewViewTimeline(smooth = true) {
+    if (!this.previewViewTimelineVisible) return;
+    this._revealSampleRail(document.getElementById('previewLightboxTimeline'), smooth);
+  },
+
+  togglePreviewViewTimeline(event) {
+    this.previewViewTimelineVisible = event?.currentTarget?.checked ?? !this.previewViewTimelineVisible;
+    this._saveSampleViewPreferences();
+    const locate = document.getElementById('previewLightboxBar')?.querySelector('.sample-timeline-locate');
+    if (locate) locate.disabled = !this.previewViewTimelineAvailable || !this.previewViewTimelineVisible || this.previewComparisonWaiting;
+    const frame = document.getElementById('previewLightboxTimelineFrame');
+    if (!this.previewViewTimelineVisible && frame?.contains(document.activeElement)) event?.currentTarget?.focus({preventScroll: true});
+  },
+
+  _layoutPreviewComparisonPanes(count) {
+    const group = document.getElementById('previewReferencePanes')?.parentElement;
+    const panes = document.getElementById('previewLightboxViewport') || group;
+    if (!group || !panes) return;
+    const vertical = this.previewComparisonLayout === 'vertical';
+    panes.classList.toggle('is-vertical', vertical);
+    panes.classList.toggle('comparing', count > 1);
+    const items = Array.from(group.querySelectorAll('.preview-lightbox-pane'));
+    if (!items.length) return;
+    const cssHeight = parseFloat(window.getComputedStyle?.(panes)?.height);
+    const width = panes.clientWidth, height = cssHeight > 0 ? cssHeight : panes.offsetHeight || panes.clientHeight;
+    if (!width || !height) return;
+    const images = items.map(item => item.querySelector('img'));
+    const ratio = image => image?.naturalWidth && image.naturalHeight ? image.naturalWidth / image.naturalHeight : 0;
+    const fallbackRatio = images.map(ratio).find(Boolean) || 1;
+    const ratios = images.map(image => ratio(image) || fallbackRatio);
+    const gap = 12, captionWidth = count > 1 && vertical ? 160 : 0, captionHeight = count > 1 && !vertical ? 32 : 0;
+    let sizes;
+    if (count < 2) {
+      const imageHeight = Math.min(height, width / ratios[0]);
+      sizes = [{width: imageHeight * ratios[0], height: imageHeight}];
+    } else if (vertical) {
+      const available = Math.max(0, width - captionWidth);
+      const fit = count === 2
+        ? (height - gap) / ratios.reduce((sum, value) => sum + 1 / value, 0)
+        : height * Math.min(...ratios);
+      const imageWidth = Math.max(0, Math.min(available, fit));
+      sizes = items.map((item, index) => ({width: imageWidth, height: imageWidth / ratios[index]}));
     } else {
-      const current = this.previews[this.previewStep];
-      if (!current) return;
-      const indices = this._previewLightboxIndices();
-      const position = indices.indexOf(this.previewStep);
-      const alternatives = [...indices.slice(position + 1), ...indices.slice(0, Math.max(0, position)).reverse()];
-      if (!alternatives.length) return;
-      const identity = this._previewPromptIdentity(current);
-      const samePrompt = identity && alternatives.find(index => this._previewPromptIdentity(this.previews[index])?.key === identity.key);
-      this.previewReference = current;
-      this.previewStep = samePrompt ?? alternatives[0];
+      const available = Math.max(0, height - captionHeight);
+      const fit = (width - gap * (count - 1)) / ratios.reduce((sum, value) => sum + value, 0);
+      const imageHeight = Math.max(Math.min(160, available), Math.min(available, fit));
+      sizes = items.map((item, index) => ({width: imageHeight * ratios[index], height: imageHeight}));
+    }
+    items.forEach((item, index) => {
+      item.style.setProperty('--preview-pane-width', sizes[index].width + 'px');
+      item.style.setProperty('--preview-pane-height', sizes[index].height + 'px');
+    });
+    const baseWidth = vertical && count > 1 ? Math.max(...sizes.map(size => size.width))
+      : sizes.reduce((sum, size) => sum + size.width, gap * (sizes.length - 1));
+    const baseHeight = vertical && count > 1 ? sizes.reduce((sum, size) => sum + size.height, gap * (sizes.length - 1))
+      : Math.max(...sizes.map(size => size.height));
+    const previous = this._previewGroupGeometry;
+    if (vertical && count > 2 && (previous?.count !== count || !previous?.vertical)) {
+      this._previewViewFitted = false; this.previewViewScale = 1;
+    }
+    this._previewGroupGeometry = {width: baseWidth, height: baseHeight, count, vertical, captionWidth, captionHeight};
+    this._previewViewFitScale = Math.max(0.0001, Math.min(1, (width - captionWidth) / baseWidth, (height - captionHeight) / baseHeight));
+    if (this._previewViewFitted || this.previewViewScale < this._previewViewFitScale) this.previewViewScale = this._previewViewFitScale;
+    this._syncPreviewGroupViewport();
+    if (this._previewReferenceMedia) this._refreshPreviewReferenceVisibility(this._previewReferenceMedia);
+  },
+
+  _syncPreviewGroupViewport() {
+    const geometry = this._previewGroupGeometry;
+    const viewport = document.getElementById('previewLightboxViewport');
+    const extent = document.getElementById('previewLightboxExtent');
+    const group = document.getElementById('previewLightboxGroup');
+    if (!geometry || !viewport || !extent || !group) return;
+    const scale = this.previewViewScale;
+    const drawn = this._previewGroupDrawSize(scale);
+    const extentWidth = Math.max(viewport.clientWidth, drawn.width);
+    extent.style.width = extentWidth + 'px';
+    const cssHeight = parseFloat(window.getComputedStyle?.(viewport)?.height);
+    const availableHeight = cssHeight > 0 ? Math.min(viewport.clientHeight, cssHeight) : viewport.clientHeight;
+    const extentHeight = Math.max(availableHeight, drawn.height);
+    extent.style.height = extentHeight + 'px';
+    group.style.setProperty('--preview-caption-x-space', ((geometry.captionWidth || 0) / scale) + 'px');
+    group.style.setProperty('--preview-caption-y-space', ((geometry.captionHeight || 0) / scale) + 'px');
+    group.style.setProperty('--preview-caption-counter-scale', String(1 / scale));
+    group.style.setProperty('--preview-caption-zoom', String(scale));
+    const width = drawn.width / scale, height = drawn.height / scale;
+    Object.assign(group.style, {width: width + 'px', height: height + 'px',
+      left: (extentWidth - width) / 2 + 'px', top: (extentHeight - height) / 2 + 'px', transform: 'scale(' + scale + ')'});
+  },
+
+  _previewGroupDrawSize(scale) {
+    const geometry = this._previewGroupGeometry;
+    return {width: geometry.width * scale + (geometry.captionWidth || 0),
+      height: geometry.height * scale + (geometry.captionHeight || 0)};
+  },
+
+  resizePreviewComparisonImages() {
+    const references = document.getElementById('previewReferencePanes');
+    this._layoutPreviewComparisonPanes((references?.children.length || 0) + 1);
+  },
+
+  _previewViewportResize: null,
+
+  _connectPreviewViewportResize() {
+    const element = document.getElementById('previewLightboxViewport');
+    if (!element || this._previewViewportResize?.element === element) return;
+    this._disconnectPreviewViewportResize();
+    if (typeof ResizeObserver === 'undefined') return;
+    let state = {element, observer: null, frame: null, width: element.clientWidth, height: element.offsetHeight};
+    this._previewViewportResize = state;
+    state = this._previewViewportResize;
+    state.observer = new ResizeObserver(() => {
+      if (this._previewViewportResize !== state || !this.previewLightboxOpen || !element.isConnected) return;
+      const width = element.clientWidth, height = element.offsetHeight;
+      if (width === state.width && height === state.height) return;
+      state.width = width; state.height = height;
+      if (state.frame !== null) return;
+      state.frame = requestAnimationFrame(() => {
+        state.frame = null;
+        if (this._previewViewportResize !== state || !this.previewLightboxOpen || !element.isConnected) return;
+        this.resizePreviewComparisonImages();
+        this.syncPreviewPromptBar();
+      });
+    });
+    state.observer.observe(element, {box: 'border-box'});
+  },
+
+  _disconnectPreviewViewportResize() {
+    const state = this._previewViewportResize;
+    this._previewViewportResize = null;
+    state?.observer?.disconnect();
+    if (state?.frame != null) cancelAnimationFrame(state.frame);
+  },
+
+  setPreviewComparisonLayout(layout) {
+    if (!['horizontal', 'vertical'].includes(layout) || layout === this.previewComparisonLayout) return;
+    this.previewComparisonLayout = layout;
+    this.previewViewScale = 1; this._previewViewFitted = false;
+    this._saveSampleViewPreferences();
+    const references = document.getElementById('previewReferencePanes');
+    this._layoutPreviewComparisonPanes((references?.children.length || 0) + 1);
+    const viewport = document.getElementById('previewLightboxViewport') || references?.parentElement;
+    if (viewport) viewport.scrollLeft = viewport.scrollTop = 0;
+    this.constrainPreviewView();
+    this.syncPreviewPromptBar();
+  },
+
+  _revealPreviewPromptStrip(smooth = true) {
+    this._revealSampleRail(document.getElementById('previewLightboxStrip'), smooth);
+  },
+
+  _revealSampleRail(rail, smooth = true) {
+    const selected = rail?.querySelector('[aria-pressed="true"]');
+    if (!selected || rail.hidden) return;
+    const bounds = rail.getBoundingClientRect(), rect = selected.getBoundingClientRect();
+    if (!bounds.width) return;
+    // Dialog entrance motion can scale measured rectangles. scrollLeft is in
+    // unscaled CSS pixels, so normalize the distance before scrolling.
+    const scale = rail.offsetWidth ? bounds.width / rail.offsetWidth : 1;
+    let left = rail.scrollLeft;
+    if (rect.left < bounds.left) left += (rect.left - bounds.left) / scale - 4;
+    else if (rect.right > bounds.right) left += (rect.right - bounds.right) / scale + 4;
+    this._scrollSampleRail(rail, left, smooth);
+  },
+
+  centerSampleTimeline(button) {
+    const frame = button?.closest?.('.sample-timeline-frame');
+    const rail = button?.dataset?.sampleTimelineTarget ? document.getElementById(button.dataset.sampleTimelineTarget)
+      : frame?.querySelector?.('.m-sample-timeline, .preview-view-timeline');
+    const selected = rail?.querySelector?.('[aria-pressed="true"]');
+    if (!selected || rail.hidden) return;
+    const bounds = rail.getBoundingClientRect(), rect = selected.getBoundingClientRect();
+    // Both rectangles share the dialog's entrance scale; scrollLeft is in CSS
+    // pixels. Keep the operation inside this rail, away from the main grid.
+    const scale = rail.offsetWidth ? bounds.width / rail.offsetWidth : 1;
+    if (!bounds.width || !Number.isFinite(scale) || scale <= 0) return;
+    const delta = ((rect.left + rect.right) - (bounds.left + bounds.right)) / (2 * scale);
+    this._scrollSampleRail(rail, rail.scrollLeft + delta);
+  },
+
+  resizePreviewLightbox() {
+    const panes = document.getElementById('previewReferencePanes');
+    this._layoutPreviewComparisonPanes((panes?.children.length || 0) + 1);
+    this.constrainPreviewView();
+    if (this.previewLightboxOpen) {
+      this._revealPreviewViewTimeline(false);
+      this._revealPreviewPromptStrip(false);
+      this.syncPreviewPromptBar();
+    }
+  },
+
+  jumpToLatestPreview() {
+    this.closePreviewTimelineMenu(false);
+    const indices = this._previewLightboxNavigationIndices(this._previewLightboxIndices());
+    if (!indices.length) return;
+    // Keep the current prompt/seed when the latest batch is still incomplete.
+    this.selectPreviewComparisonCurrent(indices[indices.length - 1]);
+    if (this.sampleBatchId === this._sampleDataModel().batches.at(-1)?.id) {
       this.previewHasNew = false;
+      this._sampleOverviewPanel()?.querySelector('#sampleLatestBatch')?.remove();
     }
     this._updatePreviewLightbox();
   },
 
-  previewLightboxNav(dir) {
-    if (!this.previews.length) return;
-    const indices = this._previewLightboxIndices();
-    if (!indices.length) return;
-    const current = Math.max(0, indices.indexOf(this.previewStep));
-    const nextPosition = Math.max(0, Math.min(current + dir, indices.length - 1));
-    const next = indices[nextPosition];
-    if (next === this.previewStep) return;
-    this.previewStep = next;
-    this._updatePreviewLightbox();
-  },
-
-  jumpToLatestPreview() {
-    const indices = this._previewLightboxIndices();
-    if (!indices.length) return;
-    this.previewStep = indices.reduce((latest, index) => Math.max(latest, index), 0);
-    this.previewHasNew = false;
-    this._updatePreviewLightbox();
+  _previewHasNewInViewerSequence() {
+    if (!this.previewHasNew) return false;
+    const indices = this._previewLightboxNavigationIndices(this._previewLightboxIndices()), position = indices.indexOf(this.previewStep);
+    return position >= 0 && position < indices.length - 1;
   },
 
   previewLightboxKeydown(event) {
     if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (this.previewInfoOpen) {event.stopPropagation?.(); return;}
+    if (event.target?.closest?.('input,select,textarea,summary,[contenteditable="true"],[role="combobox"],[role="listbox"],[role="menu"]')) return;
     if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-      event.preventDefault(); this.previewLightboxNav(event.key === 'ArrowLeft' ? -1 : 1);
+      event.preventDefault(); event.stopPropagation?.(); this.previewLightboxNav(event.key === 'ArrowLeft' ? -1 : 1);
     } else if (event.key === '+' || event.key === '=') {
       event.preventDefault(); this.setPreviewViewScale(this.previewViewScale * 1.18);
     } else if (event.key === '-') {
@@ -238,150 +1913,626 @@ window.monitorArtifactsRenderMixin = {
     }
   },
 
-  previewViewTransform() {
-    return 'translate3d(' + this.previewViewX + 'px,' + this.previewViewY + 'px,0) scale(' + this.previewViewScale + ')';
+  previewViewAtFit() {
+    const fit = this._previewViewFitScale || 1;
+    return Math.abs(this.previewViewScale - fit) <= fit * 0.001;
+  },
+
+  previewViewZoomLabel() {
+    return this.previewViewAtFit() ? this.t('imageViewer.fit')
+      : (this.previewViewScale / (this._previewViewFitScale || 1)).toFixed(2) + '×';
   },
 
   resetPreviewView() {
-    this.previewViewScale = 1; this.previewViewX = 0; this.previewViewY = 0;
-    this.previewViewPanning = false; this.previewViewPointerId = null;
-  },
-
-  _previewViewStages(fallback) {
-    const box = typeof document !== 'undefined' ? document.getElementById('previewLightbox') : null;
-    const stages = Array.from(box?.querySelectorAll?.('.preview-view-stage') || []);
-    return stages.length ? stages : fallback ? [fallback] : [];
+    this.stopPreviewPan();
+    this._previewViewFitted = true;
+    if (this.previewLightboxOpen) this.resizePreviewComparisonImages();
+    this.previewViewScale = this._previewViewFitScale || 1;
+    this._previewViewFitted = true;
+    this._syncPreviewGroupViewport();
+    const viewport = document.getElementById('previewLightboxViewport');
+    if (viewport) viewport.scrollLeft = viewport.scrollTop = 0;
   },
 
   constrainPreviewView(fallback) {
     if (!this.previewLightboxOpen && !fallback) return;
-    const view = window.AnimaImageViewport.constrain({ scale: this.previewViewScale, x: this.previewViewX, y: this.previewViewY }, this._previewViewStages(fallback));
-    this.previewViewX = view.x; this.previewViewY = view.y;
+    this._syncPreviewGroupViewport();
   },
 
   setPreviewViewScale(next, event) {
-    const anchor = event ? window.AnimaImageViewport.pointerAnchor(event, event.currentTarget) : null;
-    const view = window.AnimaImageViewport.zoom({ scale: this.previewViewScale, x: this.previewViewX, y: this.previewViewY }, next, anchor);
-    this.previewViewScale = view.scale; this.previewViewX = view.x; this.previewViewY = view.y;
-    this.constrainPreviewView(event?.currentTarget);
+    const viewport = document.getElementById('previewLightboxViewport'), geometry = this._previewGroupGeometry;
+    const fit = this._previewViewFitScale || 1;
+    let scale = Math.max(fit, Math.min(8, Number(next) || fit));
+    if (Math.abs(scale - fit) <= fit * 0.001) scale = fit;
+    if (scale === this.previewViewScale) return;
+    let anchor;
+    if (viewport && geometry) {
+      window.AnimaUI?.settleDialog?.(viewport);
+      const rect = viewport.getBoundingClientRect();
+      const entranceScale = viewport.offsetWidth && rect.width ? rect.width / viewport.offsetWidth : 1;
+      const x = event ? (event.clientX - rect.left) / entranceScale : viewport.clientWidth / 2;
+      const y = event ? (event.clientY - rect.top) / entranceScale : viewport.clientHeight / 2;
+      const old = this.previewViewScale;
+      const drawn = this._previewGroupDrawSize(old);
+      anchor = {x, y,
+        imageX: (viewport.scrollLeft + x - Math.max(0, (viewport.clientWidth - drawn.width) / 2) - (geometry.captionWidth || 0)) / old,
+        imageY: (viewport.scrollTop + y - Math.max(0, (viewport.clientHeight - drawn.height) / 2)) / old};
+    }
+    this.previewViewScale = scale; this._previewViewFitted = scale === fit;
+    this._syncPreviewGroupViewport();
+    if (anchor) {
+      const drawn = this._previewGroupDrawSize(scale);
+      viewport.scrollLeft = Math.max(0, (viewport.clientWidth - drawn.width) / 2) + (geometry.captionWidth || 0) + anchor.imageX * scale - anchor.x;
+      viewport.scrollTop = Math.max(0, (viewport.clientHeight - drawn.height) / 2) + anchor.imageY * scale - anchor.y;
+    }
+    if (this._previewReferenceMedia) this._refreshPreviewReferenceVisibility(this._previewReferenceMedia);
   },
 
   zoomPreviewView(event) {
+    if (event.target?.closest?.('button,.preview-pane-caption')) return;
+    if (!event.deltaY || Math.abs(event.deltaX || 0) > Math.abs(event.deltaY)) return;
+    if (this.previewCompareActive && this.previewComparisonLayout === 'vertical' && !event.ctrlKey && !event.metaKey) return;
+    event.preventDefault(); event.stopPropagation();
     this.setPreviewViewScale(this.previewViewScale * (event.deltaY < 0 ? 1.18 : 1 / 1.18), event);
   },
 
   startPreviewPan(event) {
-    if (event.button !== 0 || this.previewViewScale <= 1 || event.target.closest?.('button')) return;
+    const viewport = event.currentTarget;
+    if (event.button !== 0 || event.target.closest?.('button')
+        || (viewport.scrollWidth <= viewport.clientWidth + 1 && viewport.scrollHeight <= viewport.clientHeight + 1)) return;
+    window.AnimaUI?.settleDialog?.(viewport);
+    const rect = viewport.getBoundingClientRect();
+    this._previewPanRatio = viewport.offsetWidth && rect.width ? rect.width / viewport.offsetWidth : 1;
     this.previewViewPanning = true; this.previewViewPointerId = event.pointerId;
-    this._previewPanStartX = event.clientX - this.previewViewX; this._previewPanStartY = event.clientY - this.previewViewY;
-    event.currentTarget.setPointerCapture?.(event.pointerId);
+    this._previewPanStartX = event.clientX / this._previewPanRatio + viewport.scrollLeft;
+    this._previewPanStartY = event.clientY / this._previewPanRatio + viewport.scrollTop;
+    viewport.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
   },
 
   movePreviewPan(event) {
     if (!this.previewViewPanning || event.pointerId !== this.previewViewPointerId) return;
-    this.previewViewX = event.clientX - this._previewPanStartX; this.previewViewY = event.clientY - this._previewPanStartY;
-    this.constrainPreviewView(event.currentTarget);
-    this._previewPanStartX = event.clientX - this.previewViewX; this._previewPanStartY = event.clientY - this.previewViewY;
+    event.currentTarget.scrollLeft = this._previewPanStartX - event.clientX / this._previewPanRatio;
+    event.currentTarget.scrollTop = this._previewPanStartY - event.clientY / this._previewPanRatio;
+    event.preventDefault();
   },
 
   stopPreviewPan(event) {
-    if (event && this.previewViewPointerId !== null) event.currentTarget.releasePointerCapture?.(this.previewViewPointerId);
+    const pointer = this.previewViewPointerId, viewport = event?.currentTarget || document.getElementById('previewLightboxViewport');
     this.previewViewPanning = false; this.previewViewPointerId = null;
+    if (pointer != null && viewport?.hasPointerCapture?.(pointer)) viewport.releasePointerCapture(pointer);
   },
 
-  retryPreviewImage(reference) {
-    if (reference) this._previewReferenceImageKey = '';
-    else this._previewImageKey = '';
+  retryPreviewImage() {
+    this._previewImageKey = '';
     this._updatePreviewLightbox();
   },
 
-  _displayPreviewImage(element, preview, reference = false) {
+  _previewReferenceMedia: null,
+
+  _createPreviewReferencePane(key) {
+    const pane = document.createElement('div');
+    pane.className = 'preview-lightbox-pane preview-reference-pane';
+    pane.dataset.previewReferenceKey = key;
+    const escapedKey = this.esc(key);
+    pane.innerHTML = '<div class="preview-view-stage">'
+      + '<img class="preview-view-image" alt="" draggable="false" @load="resizePreviewComparisonImages()">'
+      + '<span class="preview-reference-locate-flash" aria-hidden="true"></span>'
+      + '<button type="button" class="btn btn-sm btn-secondary preview-view-error" data-preview-reference-key="' + escapedKey
+      + '" @click.stop="retryPreviewReferenceImage($event.currentTarget.dataset.previewReferenceKey)" hidden>'
+      + this.esc(this.t('monitor.previewImageRetry')) + '</button></div>'
+      + '<div class="preview-caption-slot"><div class="preview-pane-caption preview-reference-caption">' + this._previewCaptionTextHtml()
+      + '<button type="button" class="btn-icon preview-reference-remove" data-preview-reference-key="' + escapedKey
+      + '" @click.stop="unpinPreviewReference($event.currentTarget.dataset.previewReferenceKey)" aria-label="'
+      + this.esc(this.t('monitor.sampleRemoveComparison')) + '" title="' + this.esc(this.t('monitor.sampleRemoveComparison')) + '">'
+      + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div></div>';
+    return {pane, image: pane.querySelector('img'), caption: pane.querySelector('.preview-reference-caption strong'),
+      captionStep: pane.querySelector('.preview-caption-step'), retry: pane.querySelector('.preview-view-error')};
+  },
+
+  _updatePreviewReferencePanes(references) {
+    const container = document.getElementById('previewReferencePanes');
+    if (!container || !this.previewLightboxOpen || !references?.length) {
+      this._clearPreviewReferenceImages();
+      this._layoutPreviewComparisonPanes(1);
+      return;
+    }
+    let media = this._previewReferenceMedia;
+    if (!media || media.container !== container) {
+      this._clearPreviewReferenceImages();
+      const root = container.closest('.preview-lightbox-panes') || container.parentElement;
+      media = {container, root, entries: new Map(), observer: null, cleanup: null};
+      this._previewReferenceMedia = media;
+      media = this._previewReferenceMedia;
+      if (typeof IntersectionObserver === 'function') {
+        media.observer = new IntersectionObserver(entries => {
+          if (this._previewReferenceMedia !== media) return;
+          for (const item of entries) {
+            const entry = media.entries.get(item.target.dataset.previewReferenceKey);
+            if (entry?.pane === item.target) this._setPreviewReferenceVisibility(media, entry,
+              item.isIntersecting && this._previewReferenceIsVisible(media, entry));
+          }
+        }, {root, threshold: 0.01});
+      } else {
+        const refresh = () => this._refreshPreviewReferenceVisibility(media);
+        root?.addEventListener?.('scroll', refresh, {passive: true});
+        window.addEventListener?.('resize', refresh, {passive: true});
+        media.cleanup = () => { root?.removeEventListener?.('scroll', refresh); window.removeEventListener?.('resize', refresh); };
+      }
+    }
+    const wanted = new Map(references.filter(Boolean).map(preview => [this._previewItemKey(preview), preview]));
+    for (const [key, entry] of media.entries) {
+      if (wanted.has(key)) continue;
+      media.entries.delete(key); entry.request++;
+      window.AnimaImages.cancel(entry.image); entry.image.removeAttribute('src');
+      media.observer?.unobserve(entry.pane); entry.pane.remove();
+    }
+    container.hidden = false;
+    let next = container.firstElementChild;
+    for (const [key, preview] of wanted) {
+      let entry = media.entries.get(key);
+      if (!entry) {
+        entry = {...this._createPreviewReferencePane(key), itemKey: key, preview, imageKey: '', versionKey: '', source: '', request: 0,
+          status: 'idle', visible: false};
+        media.entries.set(key, entry);
+        entry = media.entries.get(key);
+      }
+      if (entry.pane === next) next = next.nextElementSibling;
+      else container.insertBefore(entry.pane, next);
+      entry.preview = preview;
+      const caption = this._previewCaptionParts(preview);
+      if (entry.caption.textContent !== caption.primary) entry.caption.textContent = caption.primary;
+      entry.caption.title = [caption.primary, caption.secondary].filter(Boolean).join(' · ');
+      entry.caption.closest?.('.preview-pane-caption')?.setAttribute('title', entry.caption.title);
+      if (entry.captionStep.textContent !== caption.secondary) entry.captionStep.textContent = caption.secondary;
+      entry.captionStep.hidden = !caption.secondary;
+      entry.image.alt = this.t('monitor.reference') + ': ' + preview.name;
+      const versionKey = this._previewImageCacheKey(preview);
+      if (entry.versionKey !== versionKey) {
+        entry.request++; window.AnimaImages.cancel(entry.image);
+        entry.versionKey = versionKey; entry.imageKey = ''; entry.source = ''; entry.status = 'idle'; entry.retry.hidden = true;
+        if (!entry.visible || !this._previewViewerImageSource(entry.image)) this._showPreviewReferenceThumb(entry);
+      }
+      media.observer?.observe(entry.pane);
+    }
+    this._layoutPreviewComparisonPanes(wanted.size + 1);
+  },
+
+  _showPreviewReferenceThumb(entry) {
+    const thumb = entry.preview.thumb_url;
+    if (thumb) {
+      if (entry.image.getAttribute('src') !== thumb) {
+        window.AnimaImages.cancel(entry.image);
+        entry.image.src = thumb;
+      }
+    } else {
+      if (entry.image.getAttribute('src')) window.AnimaImages.cancel(entry.image);
+      entry.image.removeAttribute('src');
+    }
+  },
+
+  _previewReferenceIsVisible(media, entry, bounds = media.root?.getBoundingClientRect()) {
+    if (!bounds) return false;
+    const width = window.innerWidth || Infinity, height = window.innerHeight || Infinity;
+    const rect = entry.pane.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0
+      && Math.min(rect.right, bounds.right, width) > Math.max(rect.left, bounds.left, 0)
+      && Math.min(rect.bottom, bounds.bottom, height) > Math.max(rect.top, bounds.top, 0);
+  },
+
+  _refreshPreviewReferenceVisibility(media) {
+    if (this._previewReferenceMedia !== media) return;
+    const bounds = media.root?.getBoundingClientRect();
+    for (const entry of media.entries.values()) {
+      this._setPreviewReferenceVisibility(media, entry, this._previewReferenceIsVisible(media, entry, bounds));
+    }
+  },
+
+  _setPreviewReferenceVisibility(media, entry, visible) {
+    if (this._previewReferenceMedia !== media || media.entries.get(entry.itemKey) !== entry) return;
+    entry.visible = visible;
+    if (!visible) {
+      if (entry.status !== 'idle') {entry.request++; entry.status = 'idle';}
+      this._showPreviewReferenceThumb(entry);
+    } else {
+      const source = this._previewReferenceSource(entry);
+      const key = this._previewImageCacheKey(entry.preview, source);
+      if (key !== entry.imageKey) {
+        entry.request++; entry.imageKey = key; entry.source = source;
+        entry.status = 'idle'; entry.retry.hidden = true;
+      }
+      if (entry.status === 'idle') {
+        this._queuePreviewReferenceImage(media, entry);
+      }
+    }
+  },
+
+  _previewReferenceSource(entry) {
+    const thumb = entry.preview.thumb_url;
+    const original = this._previewFullImageUrl(entry.preview);
+    const bounds = entry.image.getBoundingClientRect?.() || entry.pane.getBoundingClientRect();
+    const required = Math.max(bounds.width, bounds.height) * (window.devicePixelRatio || 1);
+    // Thumbnail rounding can slightly alter the measured aspect ratio. Leave
+    // room around tier boundaries so its load cannot trigger an upgrade loop.
+    const tier = !entry.source ? 0 : entry.source === thumb ? 320 : entry.source === original ? Infinity : 960;
+    const thumbLimit = tier > 320 ? 288 : tier === 320 ? 352 : 320;
+    if (thumb && required <= thumbLimit) return thumb;
+    const previewLimit = tier > 960 ? 864 : tier === 960 ? 1056 : 960;
+    if (thumb?.startsWith('/api/image-preview?') && required <= previewLimit) {
+      const url = new URL(thumb, window.location.href);
+      url.searchParams.set('variant', 'preview'); url.searchParams.delete('size');
+      return url.pathname + url.search;
+    }
+    return original;
+  },
+
+  _queuePreviewReferenceImage(media, entry) {
+    const request = ++entry.request, key = entry.imageKey, source = entry.source;
+    entry.status = 'queued'; entry.retry.hidden = true;
+    const current = () => this._previewReferenceMedia === media && media.entries.get(entry.itemKey) === entry
+      && entry.request === request && entry.imageKey === key && entry.image.isConnected && entry.visible;
+    const finish = (image, success) => {
+      if (!current()) return;
+      if (image) {
+        if (this._previewViewerImageSource(entry.image) !== image.src) entry.image.src = image.src;
+        entry.image.dispatchEvent?.(new CustomEvent('image-ready', {detail: {width: image.naturalWidth, height: image.naturalHeight}}));
+      } else entry.image.removeAttribute('src');
+      entry.status = success ? 'ready' : 'error'; entry.retry.hidden = success;
+      if (success) this.constrainPreviewView();
+    };
+    this._queuePreviewImage('reference:' + entry.itemKey, {key, source, current,
+      start: () => {entry.status = 'loading';}, ready: image => finish(image, true),
+      failed: () => {
+        if (!current()) return;
+        const thumb = entry.preview.thumb_url;
+        if (!thumb || source === thumb) {finish(null, false); return;}
+        return window.AnimaImages.decode(thumb).then(image => finish(image, false), () => finish(null, false));
+      }});
+  },
+
+  retryPreviewReferenceImage(key) {
+    const media = this._previewReferenceMedia, entry = media?.entries.get(key);
+    if (!entry || entry.status !== 'error') return;
+    entry.status = 'idle'; entry.retry.hidden = true;
+    this._setPreviewReferenceVisibility(media, entry, entry.visible);
+  },
+
+  _clearPreviewReferenceImages(removeSources = true) {
+    this._previewReferenceLocateAnimation?.cancel();
+    this._previewReferenceLocateAnimation = null;
+    const media = this._previewReferenceMedia;
+    this._previewReferenceMedia = null;
+    media?.observer?.disconnect(); media?.cleanup?.();
+    if (media) {
+      for (const entry of media.entries.values()) {
+        entry.request++; window.AnimaImages?.cancel(entry.image);
+        if (removeSources) entry.image.removeAttribute('src');
+      }
+    }
+    if (removeSources) {
+      const container = media?.container || document.getElementById('previewReferencePanes');
+      if (container) { container.replaceChildren(); container.hidden = true; }
+    }
+  },
+
+  _clearPreviewImageLoading(removeSources = false) {
+    this._disconnectPreviewViewportResize();
+    this._clearPreviewTimelineImageSwaps();
+    this._clearPreviewReferenceImages(removeSources);
+    this._previewImageQueue = null;
+    this._previewImageElement = null;
+    ++this._previewImageRequest;
+    this._previewImageKey = '';
+    this.previewImageLoading = this.previewImageError = false;
+    this.previewImageAvailable = false;
+    this._previewOriginalCache?.clear();
+    this._previewOriginalCache = null;
+    const image = document.getElementById('previewLightboxImg');
+    if (image) {
+      window.AnimaImages?.cancel(image);
+      if (removeSources) image.removeAttribute('src');
+    }
+  },
+
+  _previewImageCacheKey(preview, source = this._previewFullImageUrl(preview)) {
+    return JSON.stringify([this._previewItemKey(preview), preview.version ?? '', source || '']);
+  },
+
+  _prefetchPreviewNeighbors() {
+    const cache = this._previewOriginalCache;
+    if (!cache) return;
+    if (!this.previewLightboxOpen || this.weakNetworkMode || this.trainingActive) { cache.cancelPrefetch(); return; }
+    const current = this.previews[this.previewStep];
+    if (!current) { cache.cancelPrefetch(); return; }
+    const indices = this._previewLightboxNavigationIndices(this._previewLightboxIndices()), position = indices.indexOf(this.previewStep);
+    const comparisonKey = this._previewComparisonKey(current);
+    const sample = this._sampleRecord(current), caseKey = this._sampleCaseKey(current);
+    const candidates = position < 0 ? [] : [indices[position - 1], indices[position + 1]]
+      .filter(Number.isInteger).map(index => this.previews[index]).filter(candidate => {
+        if (!candidate) return false;
+        if (comparisonKey) return this._previewComparisonKey(candidate) === comparisonKey;
+        return sample.metadata_source !== 'unknown' && this._sampleCaseKey(candidate) === caseKey;
+      }).map(candidate => ({key: this._previewImageCacheKey(candidate), source: this._previewFullImageUrl(candidate)}));
+    cache.prefetch(candidates);
+  },
+
+  _previewImageQueue: null,
+
+  _previewViewerImageSource(element) {
+    return element.getAttribute?.('src') ?? element.src ?? '';
+  },
+
+  _previewViewerImageJobCurrent(job) {
+    return this.previewLightboxOpen && !this.previewComparisonWaiting
+      && this._previewImageRequest === job.request && this._previewImageKey === job.key
+      && this._previewImageElement === job.element && job.element.isConnected;
+  },
+
+  _commitPreviewViewerImage(job, image, original) {
+    if (!this._previewViewerImageJobCurrent(job)) return;
+    if (this._previewViewerImageSource(job.element) !== image.src) job.element.src = image.src;
+    if (job.element.dataset) job.element.dataset.previewDisplayedKey = job.key;
+    job.element.dispatchEvent?.(new CustomEvent('image-ready', {detail: {width: image.naturalWidth, height: image.naturalHeight}}));
+    this.previewImageLoading = false; this.previewImageError = !original;
+    this._setPreviewImageAvailable(true);
+    if (original) this._prefetchPreviewNeighbors();
+  },
+
+  _failPreviewViewerImage(job) {
+    if (!this._previewViewerImageJobCurrent(job)) return;
+    const thumb = job.preview.thumb_url;
+    const unavailable = () => {
+      if (!this._previewViewerImageJobCurrent(job)) return;
+      job.element.removeAttribute('src');
+      if (job.element.dataset) delete job.element.dataset.previewDisplayedKey;
+      this.previewImageLoading = false; this.previewImageError = true;
+      this._setPreviewImageAvailable(false);
+    };
+    // Once both target sources fail, remove the previous sample: the heading
+    // and generation information already describe the newly selected target.
+    if (!thumb) {unavailable(); return;}
+    if (this._previewViewerImageSource(job.element) === thumb && job.element.complete && job.element.naturalWidth) {
+      this.previewImageLoading = false; this.previewImageError = true;
+      this._setPreviewImageAvailable(true);
+      return;
+    }
+    return window.AnimaImages.decode(thumb).then(image => this._commitPreviewViewerImage(job, image, false), unavailable);
+  },
+
+  _queuePreviewImage(slot, job) {
+    const cache = this._previewOriginalCache ||= window.AnimaImages.createReadyCache(5);
+    cache.cancelPrefetch();
+    this._previewImageQueue ||= {active: new Set(), pending: new Map()};
+    const loads = this._previewImageQueue;
+    loads.pending.delete(slot);
+    const cached = cache.get(job.key);
+    if (cached) {if (job.current()) job.ready(cached); return;}
+    loads.pending.set(slot, {...job, cache});
+    this._drainPreviewImageQueue(loads);
+  },
+
+  _drainPreviewImageQueue(loads = this._previewImageQueue) {
+    if (!loads || this._previewImageQueue !== loads || !this.previewLightboxOpen) return;
+    while (loads.active.size < 2 && loads.pending.size) {
+      const slot = loads.pending.has('current') ? 'current' : loads.pending.keys().next().value;
+      const job = loads.pending.get(slot);
+      loads.pending.delete(slot);
+      if (!job.current()) continue;
+      const cached = job.cache.get(job.key);
+      if (cached) {job.ready(cached); continue;}
+      loads.active.add(job);
+      job.start?.();
+      const ticket = job.cache.ticket();
+      window.AnimaImages.decode(job.source).then(image => {
+        if (!job.current()) return;
+        job.cache.put(job.key, image, ticket);
+        job.ready(image);
+      }, job.failed).finally(() => {
+        loads.active.delete(job);
+        if (this._previewImageQueue === loads) this._drainPreviewImageQueue(loads);
+      });
+    }
+  },
+
+  _displayPreviewImage(element, preview) {
     if (!element || !preview) return;
-    const key = this._previewItemKey(preview) + '|' + (preview.version || '') + '|' + this._previewFullImageUrl(preview);
-    const keyField = reference ? '_previewReferenceImageKey' : '_previewImageKey';
-    if (this[keyField] === key) return;
-    this[keyField] = key;
-    const requestField = reference ? '_previewReferenceRequest' : '_previewImageRequest';
-    const loadingField = reference ? 'previewReferenceLoading' : 'previewImageLoading';
-    const errorField = reference ? 'previewReferenceError' : 'previewImageError';
-    const request = ++this[requestField];
-    this[loadingField] = true; this[errorField] = false;
-    element.alt = reference ? this.t('monitor.reference') + ': ' + preview.name : preview.name;
-    window.AnimaImages.display(element, this._previewFullImageUrl(preview), preview.thumb_url).then(success => {
-      if (request !== this[requestField] || !this.previewLightboxOpen) return;
-      this[loadingField] = false; this[errorField] = !success;
-    });
+    const key = this._previewImageCacheKey(preview);
+    if (this._previewImageKey === key && this._previewImageElement === element) {
+      if (this.weakNetworkMode || this.trainingActive) this._previewOriginalCache?.cancelPrefetch();
+      else if (!this.previewImageLoading && !this.previewImageError) this._prefetchPreviewNeighbors();
+      return;
+    }
+    this._previewOriginalCache?.cancelPrefetch();
+    this._previewImageKey = key;
+    const request = ++this._previewImageRequest;
+    this._previewImageElement = element;
+    this.previewImageLoading = true; this.previewImageError = false;
+    this._setPreviewImageAvailable(false);
+    element.alt = preview.name;
+    window.AnimaImages.cancel(element);
+    const job = {element, preview, key, request};
+    // Keep a decoded displayed sample through prompt/page changes. A thumbnail
+    // is only the initial placeholder when this element has no visible image.
+    if (!this._previewViewerImageSource(element) && preview.thumb_url) element.src = preview.thumb_url;
+    this._queuePreviewImage('current', {key, source: this._previewFullImageUrl(preview),
+      current: () => this._previewViewerImageJobCurrent(job),
+      ready: image => this._commitPreviewViewerImage(job, image, true),
+      failed: () => this._failPreviewViewerImage(job)});
   },
 
   _updatePreviewLightbox() {
+    if (this.previewTimelineMenu && this._previewTimelineMenuTarget() < 0) this.closePreviewTimelineMenu(false);
     const n = this.previews.length;
     if (!n) return;
     const p = this.previews[this.previewStep] || this.previews[0];
+    this._syncPreviewReference();
+    const waiting = this.previewCompareActive && this.previewComparisonWaiting;
+    const currentKey = this._previewItemKey(p);
+    const references = this.previewCompareActive ? this.previewReferences.filter(item => waiting || this._previewItemKey(item) !== currentKey) : [];
+    const headingPreview = waiting ? this.previewReferences[0] : p;
     const img = document.getElementById('previewLightboxImg');
-    this._displayPreviewImage(img, p);
-    const reference = document.getElementById('previewReferenceImg');
-    const referencePane = document.getElementById('previewReferencePane');
+    if (waiting) {
+      ++this._previewImageRequest; this._previewImageKey = '';
+      this.previewImageLoading = this.previewImageError = false;
+      this.previewImageAvailable = false;
+      if (img) { window.AnimaImages.cancel(img); img.removeAttribute('src'); }
+    } else this._displayPreviewImage(img, p);
+    const currentStage = document.getElementById('previewCurrentStage');
+    const placeholder = document.getElementById('previewComparisonPlaceholder');
+    if (currentStage) currentStage.hidden = waiting;
+    if (placeholder) placeholder.hidden = !waiting;
     const currentCaption = document.getElementById('previewCurrentCaption');
-    if (referencePane) referencePane.hidden = !this.previewReference;
-    if (currentCaption) currentCaption.hidden = !this.previewReference;
-    if (reference) {
-      if (this.previewReference) {
-        this._displayPreviewImage(reference, this.previewReference, true);
-      } else {
-        ++this._previewReferenceRequest; this._previewReferenceImageKey = '';
-        this.previewReferenceLoading = this.previewReferenceError = false;
-        window.AnimaImages.cancel(reference); reference.removeAttribute('src');
-      }
-    }
-    const referenceLabel = document.getElementById('previewReferenceLabel');
-    if (referenceLabel) referenceLabel.textContent = this.previewReference ? this._previewCompareLabel(this.previewReference) : '';
+    if (currentCaption) currentCaption.hidden = waiting || !references.length;
+    const currentCaptionSlot = document.getElementById('previewCurrentCaptionSlot');
+    if (currentCaptionSlot) currentCaptionSlot.hidden = !references.length;
+    this._updatePreviewReferencePanes(references);
     const currentLabel = document.getElementById('previewCurrentLabel');
-    if (currentLabel) currentLabel.textContent = this._previewCompareLabel(p);
+    const caption = this._previewCaptionParts(p);
+    if (currentLabel) {
+      currentLabel.textContent = caption.primary;
+      currentLabel.title = [caption.primary, caption.secondary].filter(Boolean).join(' · ');
+      currentCaption?.setAttribute('title', currentLabel.title);
+    }
+    const currentStep = document.getElementById('previewCurrentStep');
+    if (currentStep) {currentStep.textContent = caption.secondary; currentStep.hidden = !caption.secondary;}
     const original = document.getElementById('previewLightboxOriginal');
     if (original) {
-      original.hidden = !p.url;
+      original.hidden = waiting || !p.url;
       if (p.url) original.href = p.url;
       else original.removeAttribute('href');
     }
     const c = document.getElementById('previewLightboxCounter');
-    const { indices, samePrompt } = this._previewLightboxSequence();
-    const displayPosition = Math.max(0, indices.indexOf(this.previewStep));
+    const chronologicalIndices = this._previewLightboxIndices();
+    const displayIndices = this._previewLightboxDisplayIndices(chronologicalIndices);
+    const indices = this._previewLightboxNavigationIndices(displayIndices);
+    const displayPosition = indices.indexOf(this.previewStep);
     if (c) {
-      c.textContent = (displayPosition + 1) + ' / ' + indices.length;
-      c.title = samePrompt ? this.t('monitor.previewSamePromptHint') : '';
+      const display = document.getElementById('previewLightboxCounterDisplay');
+      const input = document.getElementById('previewLightboxPage');
+      const total = document.getElementById('previewLightboxCounterTotal');
+      if (display) {
+        display.textContent = waiting || displayPosition < 0 ? '—' : String(displayPosition + 1);
+        display.disabled = !indices.length;
+        display.setAttribute?.('aria-label', this.t('monitor.previewPageNumber') + ' ' + display.textContent + ' / ' + indices.length);
+      }
+      if (input) {
+        input.disabled = !indices.length;
+        if (!this.previewPageEditing) input.value = displayPosition < 0 ? '' : String(displayPosition + 1);
+      }
+      if (total) total.textContent = String(indices.length);
+      c.style?.setProperty('--preview-counter-width', (String(indices.length).length * 2 + 3) + 'ch');
+      c.style?.setProperty('--preview-counter-digits', String(String(indices.length).length));
+      c.title = '';
     }
-    const scope = document.getElementById('previewLightboxScope');
-    if (scope) {
-      scope.hidden = !samePrompt;
-      scope.textContent = samePrompt ? this.t('monitor.previewSamePrompt') : '';
-      scope.title = samePrompt ? this.t('monitor.previewSamePromptHint') : '';
-    }
-    const referenceButton = document.getElementById('previewReferenceButton');
-    if (referenceButton) referenceButton.disabled = !this.previewReference && indices.length < 2;
     const lbl = document.getElementById('previewLightboxLabel');
     if (lbl) {
-      const label = this._parseSampleInfo(p.name);
+      const label = waiting ? this.t('monitor.sampleComparison') : this._previewStageLabel(p);
       lbl.textContent = label;
       lbl.title = label === p.name ? p.name : label + '\n' + p.name;
+    }
+    const prompt = document.getElementById('previewLightboxPrompt');
+    const promptText = document.getElementById('previewLightboxPromptText');
+    if (prompt && promptText) {
+      const text = this._samplePromptText(headingPreview);
+      if (promptText.textContent !== text) promptText.textContent = text;
+      prompt.hidden = !text;
     }
     const box = document.getElementById('previewLightbox');
     if (box) {
       const prevBtn = box.querySelector('.preview-lightbox-nav.prev');
       const nextBtn = box.querySelector('.preview-lightbox-nav.next');
-      if (prevBtn) prevBtn.disabled = displayPosition <= 0;
-      if (nextBtn) nextBtn.disabled = displayPosition >= indices.length - 1;
+      if (prevBtn) prevBtn.disabled = this._previewLightboxNavigationTarget(-1, displayIndices) < 0;
+      if (nextBtn) nextBtn.disabled = this._previewLightboxNavigationTarget(1, displayIndices) < 0;
     }
+    const strip = document.getElementById('previewLightboxStrip');
+    const batch = this._sampleDataModel().byBatch.get(this._sampleRecord(headingPreview).batch_id);
+    if (strip && batch) {
+      const hadStripFocus = strip.contains(document.activeElement);
+      strip.hidden = !batch.indices.length;
+      if (strip.hidden && hadStripFocus) document.getElementById('previewLightbox')?.querySelector('.preview-close')?.focus({ preventScroll: true });
+      const signature = JSON.stringify(batch.indices.map(index => [index, this._previewItemKey(this.previews[index]), this._samplePromptButtonLabel(this.previews[index])]));
+      if (strip.dataset.signature !== signature) {
+        const hadFocus = strip.contains(document.activeElement);
+        const focusedPath = hadFocus ? document.activeElement.dataset.previewPath : '';
+        strip.innerHTML = batch.indices.map(index => '<button type="button" class="btn btn-sm btn-ghost preview-strip-item"'
+          + ' data-preview-index="' + index + '" data-preview-path="' + this.esc(this._previewItemKey(this.previews[index]))
+          + '" aria-pressed="false" @click="selectPreviewCaseByKey($event.currentTarget.dataset.previewPath)" aria-label="' + this.esc(this._samplePromptButtonLabel(this.previews[index])) + '">'
+          + this.esc(this._samplePromptButtonLabel(this.previews[index])) + '</button>').join('');
+        strip.dataset.signature = signature;
+        if (hadFocus) {
+          const focus = Array.from(strip.querySelectorAll('.preview-strip-item')).find(item => item.dataset.previewPath === focusedPath)
+            || strip.querySelector('[data-preview-index="' + this.previewStep + '"]');
+          focus?.focus({ preventScroll: true });
+        }
+      }
+      strip.querySelectorAll('.preview-strip-item').forEach(item => {
+        const active = Number(item.dataset.previewIndex) === (waiting ? this.previews.indexOf(headingPreview) : this.previewStep);
+        item.classList.toggle('active', active);
+        item.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+      this._revealPreviewPromptStrip();
+      this.syncPreviewPromptBar();
+    }
+    this._updatePreviewViewTimeline(displayIndices);
+    const metadata = document.getElementById('previewGenerationInfo');
+    if (metadata) metadata.innerHTML = this._previewGenerationInfoHtml(headingPreview);
     this.constrainPreviewView();
   },
 
   _parseSampleInfo(filename) {
     const info = this._sampleMetadata(filename);
-    return [info.stageLabel, info.prompt].filter(Boolean).join(' · ') || filename;
+    return [info.stageLabel, info.prompt].filter(Boolean).join(' ') || filename;
   },
 
   _previewCompareLabel(preview) {
-    const identity = this._previewPromptIdentity(preview);
-    return this._parseSampleInfo(preview.name) + (identity?.seed != null ? ' · ' + this.t('monitor.sampleSeed').replace('{n}', identity.seed) : '');
+    const sample = this._sampleRecord(preview);
+    const batch = this._sampleDataModel().byBatch.get(sample.batch_id);
+    return [this._sampleStageText(batch?.label || sample.batch_label), this._sampleCaseLabel(preview)].filter(Boolean).join(' ') || preview.name;
+  },
+
+  _previewStageLabel(preview) {
+    const sample = this._sampleRecord(preview);
+    return this._sampleStageText(this._sampleDataModel().byBatch.get(sample.batch_id)?.label || sample.batch_label);
+  },
+
+  _previewCaptionParts(preview) {
+    const sample = this._sampleRecord(preview);
+    return this._sampleStageParts(this._sampleDataModel().byBatch.get(sample.batch_id)?.label || sample.batch_label || preview.name);
+  },
+
+  _previewCaptionTextHtml(current = false) {
+    return '<span class="preview-caption-text"><span class="preview-caption-heading">'
+      + (current ? '<span class="preview-caption-current">' + this.esc(this.t('monitor.currentSample')) + '</span>' : '')
+      + '<strong' + (current ? ' id="previewCurrentLabel"' : '') + '></strong></span>'
+      + '<small class="preview-caption-step"' + (current ? ' id="previewCurrentStep"' : '') + '></small></span>';
+  },
+
+  _previewGenerationInfoHtml(preview) {
+    const sample = this._sampleRecord(preview), params = sample.params || {};
+    let html = '';
+    const entries = [], add = (label, value) => {
+      if (value != null && value !== '') entries.push([this.t('monitor.' + label), String(value)]);
+    };
+    const weightPath = value => typeof value === 'string' ? value : value?.path || '';
+    add('sampleAxisPrompt', params.prompt);
+    add('sampleNegativePrompt', params.negative_prompt);
+    add('sampleAxisSeed', sample.seed ?? params.seed);
+    if (params.width != null && params.height != null) add('sampleImageSize', params.width + ' × ' + params.height);
+    add('sampleAxisSteps', params.steps);
+    if (params.requested_steps != null && params.requested_steps !== params.steps) add('sampleRequestedSteps', params.requested_steps);
+    add('sampleAxisCfg', params.cfg_scale);
+    add('sampleAxisSampler', params.sampler);
+    add('sampleAxisScheduler', params.scheduler);
+    add('sampleAxisFlowShift', params.flow_shift);
+    if (Array.isArray(params.uncond_skip_layers) && params.uncond_skip_layers.length) add('sampleUncondSkipLayers', params.uncond_skip_layers.join(', '));
+    add('sampleBaseModel', weightPath(params.base_model));
+    if (Array.isArray(params.loras) && params.loras.length) add('sampleExtraLoras', params.loras.map(lora => weightPath(lora) + (lora?.multiplier != null ? ' × ' + lora.multiplier : '')).join('\n'));
+    if (params.model_variant?.turbo_dit) add('sampleTurboModel', weightPath(params.model_variant.turbo_dit));
+    if (params.model_variant?.turbo_lora) add('sampleTurboLora', weightPath(params.model_variant.turbo_lora)
+      + (params.model_variant.turbo_lora_multiplier != null ? ' × ' + params.model_variant.turbo_lora_multiplier : ''));
+    if (entries.length) html += '<dl class="preview-generation-grid">' + entries.map(([label, value]) => '<dt>' + this.esc(label) + '</dt><dd>' + this.esc(value) + '</dd>').join('') + '</dl>';
+    html += '<p class="preview-generation-file">' + this.esc(preview.name) + '</p>';
+    return html;
   },
 
   // ═══════════════════════════════════════════════════════════
@@ -516,7 +2667,7 @@ window.monitorArtifactsRenderMixin = {
     const activeKey = modelGroup ? this.outputModelSortKey : this.outputOtherSortKey;
     const activeDir = modelGroup ? this.outputModelSortDir : this.outputOtherSortDir;
     const active = activeKey === key;
-    let html = '<button type="button" id="outputSort-' + group + '-' + key + '" aria-label="' + this.esc(label + (active ? ' · ' + this.t('monitor.' + (activeDir === 'asc' ? 'sortAscending' : 'sortDescending')) : '')) + '" class="output-table-sort' + (active ? ' active' : '') + '" @click="setOutputSort(\'' + group + '\',\'' + key + '\')">' + this.esc(label);
+    let html = '<button type="button" id="outputSort-' + group + '-' + key + '" aria-label="' + this.esc(label + (active ? ' ' + this.t('monitor.' + (activeDir === 'asc' ? 'sortAscending' : 'sortDescending')) : '')) + '" class="output-table-sort' + (active ? ' active' : '') + '" @click="setOutputSort(\'' + group + '\',\'' + key + '\')">' + this.esc(label);
     if (active) html += '<span aria-hidden="true">' + (activeDir === 'asc' ? '↑' : '↓') + '</span>';
     return html + '</button>';
   },

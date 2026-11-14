@@ -134,7 +134,10 @@ window.monitorRenderMixin = {
       const prevTab = this._builtTab;
       this._builtTab = tab;
       // 切离样本标签：取消弱网模式下的后台媒体加载队列（面板 DOM 保留，不释放 object URL）
-      if (prevTab === 'samples' && tab !== 'samples') this._cancelPreviewMediaQueue();
+      if (prevTab === 'samples' && tab !== 'samples') {
+        this._cancelPreviewMediaQueue();
+        this._disconnectSampleExpansionUI?.();
+      }
       contentEl.querySelectorAll('.m-tab-panel').forEach(panel => {
         const isActive = panel.dataset.tab === tab;
         panel.classList.toggle('active', isActive);
@@ -180,35 +183,54 @@ window.monitorRenderMixin = {
     if (tab === 'samples') {
       const sig = 'sm:' + this._shellLocale + ':' + this.previewsVersion + ':' + (this.weakNetworkMode ? 1 : 0) + ':' + (d.artifact_available === false ? 0 : 1) + ':' + String(d.preview_enabled);
       if (panelEmpty || this._builtSamplesSig !== sig) {
+        // Keep pointer capture alive while the user is dragging the timeline.
+        if (this._sampleTimelineDrag?.dragging) return;
+        this._disconnectSampleExpansionUI?.(true);
         const grid = panel.querySelector('.preview-grid');
+        this._cancelSampleGridMotion?.(grid);
+        const wasOverview = !!grid?.classList.contains('m-sample-batches');
         const scrollTop = grid?.scrollTop || 0;
+        const timeline = panel.querySelector('.m-sample-timeline');
+        const timelineScrollLeft = timeline?.scrollLeft || 0;
+        const previousTimelineSelection = timeline?.querySelector('[aria-pressed="true"]')?.id;
         const focusedId = panel.contains(document.activeElement) ? document.activeElement.id : '';
         let anchor = null;
         if (grid && scrollTop > 0 && !this._sampleResetScroll) {
-          const items = Array.from(grid.querySelectorAll('.preview-grid-item'));
-          const previous = this._sampleScrollAnchor;
-          if (previous && Math.abs(previous.scrollTop - scrollTop) < 1 && items.some(item => item.dataset.previewPath === previous.key)) {
-            anchor = previous;
-          } else {
-            const bounds = grid.getBoundingClientRect();
-            const first = items.find(item => {
-              const rect = item.getBoundingClientRect();
-              return rect.bottom > bounds.top && rect.top < bounds.bottom;
-            });
-            if (first) anchor = { key: first.dataset.previewPath, offset: first.getBoundingClientRect().top - bounds.top };
-          }
+          const items = Array.from(grid.querySelectorAll('.m-sample-tile .preview-grid-item'));
+          // Recompute after a resize: the same scrollTop can now show a
+          // different row when the number of grid columns changes.
+          const bounds = grid.getBoundingClientRect();
+          const first = items.find(item => {
+            const rect = item.getBoundingClientRect();
+            return rect.bottom > bounds.top && rect.top < bounds.bottom;
+          });
+          if (first) anchor = { key: first.dataset.previewPath, batchId: first.closest('.m-sample-batch')?.dataset.batchId,
+            offset: first.getBoundingClientRect().top - bounds.top };
         }
-        const loadedMedia = this._capturePreviewMedia(grid);
+        const mediaRoot = document.getElementById('monitorDashboard') || panel;
+        const loadedMedia = this._capturePreviewMedia(mediaRoot);
         this._cancelPreviewMediaQueue();
         this._builtSamplesSig = sig;
         if (!tabChanged) panel.classList.add('no-enter-anim');
         panel.innerHTML = this._renderSamplesTab(t);
         const nextGrid = panel.querySelector('.preview-grid');
-        this._restorePreviewMedia(nextGrid, loadedMedia);
-        if (nextGrid && !this._sampleResetScroll) {
+        const nextTimeline = panel.querySelector('.m-sample-timeline');
+        if (nextTimeline) nextTimeline.scrollLeft = timelineScrollLeft;
+        this._restorePreviewMedia(mediaRoot, loadedMedia);
+        const nextIsOverview = !!nextGrid?.classList.contains('m-sample-batches');
+        const selectedBatch = nextIsOverview ? this._sampleSelectedBatch() : null;
+        const latestBatch = nextIsOverview ? this._sampleDataModel().batches.at(-1) : null;
+        const followLatest = nextIsOverview && selectedBatch?.id === latestBatch?.id && this._sampleOverviewAtEnd !== false;
+        if (nextIsOverview && followLatest) {
+          nextGrid.scrollTop = this._sampleOverviewLatestScrollTop(nextGrid);
+        } else if (nextIsOverview && (!wasOverview || this._sampleResetScroll)) {
+          this._scrollOverviewToBatch?.(panel, selectedBatch);
+        } else if (nextGrid && !this._sampleResetScroll) {
           nextGrid.scrollTop = scrollTop;
           if (anchor) {
-            const item = Array.from(nextGrid.querySelectorAll('.preview-grid-item')).find(node => node.dataset.previewPath === anchor.key);
+            const group = anchor.batchId ? Array.from(nextGrid.querySelectorAll('.m-sample-batch')).find(node => node.dataset.batchId === anchor.batchId) : null;
+            const item = Array.from((group || nextGrid).querySelectorAll('.preview-grid-item')).find(node => anchor.key && node.dataset.previewPath === anchor.key)
+              || group?.querySelector('.preview-grid-item');
             if (item) {
               nextGrid.scrollTop += item.getBoundingClientRect().top - nextGrid.getBoundingClientRect().top - anchor.offset;
               this._sampleScrollAnchor = { key: anchor.key, offset: item.getBoundingClientRect().top - nextGrid.getBoundingClientRect().top, scrollTop: nextGrid.scrollTop };
@@ -217,10 +239,15 @@ window.monitorRenderMixin = {
             this._sampleScrollAnchor = null;
           }
         } else this._sampleScrollAnchor = null;
+        if (nextTimeline && (!timeline || nextTimeline.querySelector('[aria-pressed="true"]')?.id !== previousTimelineSelection)) {
+          this._markSampleTimeline?.(panel, selectedBatch, !timeline || this._sampleResetScroll);
+        }
         this._sampleResetScroll = false;
         if (focusedId) document.getElementById(focusedId)?.focus({ preventScroll: true });
+        this._refreshSampleGroupOutline?.(panel);
       }
-      this.schedulePreviewMediaLoads(panel);
+      this._connectSampleExpansionUI?.(panel);
+      this.schedulePreviewMediaLoads(document.getElementById('monitorDashboard') || panel);
       return;
     }
     if (tab === 'outputs') {
