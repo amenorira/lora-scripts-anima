@@ -398,7 +398,10 @@ document.addEventListener('alpine:init', () => {
       if (route !== prev && this.parameterDocOpen) this.closeParameterDoc();
       const mainContent = document.getElementById('mainContent');
       if (mainContent) this._routeScrollPositions[prev] = mainContent.scrollTop;
-      if (prev === 'ai-captioning' && route !== prev) this.resetTaggerApiTest();
+      if (prev === 'ai-captioning' && route !== prev) {
+        this.resetTaggerApiTest();
+        this.closeCaptionDetail?.();
+      }
       // Cleanup tag editor resources when leaving
       if (prev === 'tagEditor' && typeof this.tagEditorCleanup === 'function') {
         this.tagEditorCleanup();
