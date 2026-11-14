@@ -5338,22 +5338,42 @@ input:disabled, select:disabled, textarea:disabled { opacity: var(--disabled-opa
   background: transparent; padding: 0;
 }
 
-/* ── Settings row (settings page, not env row) ─────────── */
+/* ── UI settings: titled groups on the shared theme surfaces ── */
+.route-settings { width: 100%; max-width: 760px; }
+.route-settings .page-header { margin-bottom: 32px; }
+.settings-sections { display: grid; gap: 28px; }
+.settings-section-title {
+  margin: 0 0 11px; font-size: 12px; font-weight: 500; line-height: 1.6;
+  color: var(--text-secondary);
+}
+.settings-panel {
+  background: color-mix(in srgb, var(--bg-surface) 88%, var(--bg-root));
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-control);
+}
 .settings-row {
-  display: flex; align-items: flex-start; gap: 16px;
-  padding: 10px 4px;
-  border-bottom: 1px solid var(--border-default);
+  position: relative; display: flex; align-items: flex-start; gap: 24px;
+  min-height: 80px; padding: 18px 20px; border-radius: inherit; cursor: pointer;
+}
+.settings-row + .settings-row::before {
+  content: ''; position: absolute; inset: 0 20px auto; height: 1px;
+  background: var(--border-subtle); pointer-events: none;
+}
+@media (hover: hover) {
+  .settings-row:hover { background: var(--hover-overlay); }
 }
 .settings-row-main { flex: 1; min-width: 0; }
 .settings-row-label {
-  font-size: 13px; font-weight: 550; color: var(--text-primary); line-height: 1.4;
+  display: block; font-size: 13px; font-weight: 550; line-height: 22px;
+  color: var(--text-primary);
 }
 .settings-row-desc {
-  font-size: 12.5px; color: var(--text-tertiary); line-height: 1.45; margin-top: 2px;
+  display: block; margin-top: 5px; font-size: 12.5px; line-height: 1.6;
+  color: var(--text-secondary); overflow-wrap: anywhere;
 }
-.settings-row-action {
-  flex-shrink: 0; display: flex; align-items: center; padding-top: 2px;
+.settings-row-note {
+  display: block; margin-top: 7px; color: var(--text-tertiary);
 }
+.settings-row-action { flex-shrink: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   .env-load-spinner,

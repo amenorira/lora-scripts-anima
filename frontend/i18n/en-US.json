@@ -2488,12 +2488,15 @@
 	"tools": {},
 	"settings": {
 		"title": "UI Settings",
+		"trainingExperience": "Training experience",
+		"remoteConnection": "Remote connection",
 		"confirmPreviewBeforeTraining": "Confirm previews before training",
 		"confirmPreviewBeforeTrainingDesc": "Review preview prompts before starting training when previews are enabled.",
 		"autoLoadHistory": "Restore training drafts",
 		"autoLoadHistoryDesc": "Restore your last edited training settings on startup, including changes you have not used to start training.",
 		"slowConnectionMode": "Slow connection compatibility",
-		"slowConnectionModeDesc": "Loads preview thumbnails one at a time to reduce their impact on live updates. Before you choose a setting, it defaults on when the browser reports a slow connection or data saver.",
+		"slowConnectionModeDesc": "Loads preview thumbnails one at a time to reduce their impact on live updates.",
+		"slowConnectionModeDefaultDesc": "Before you choose a setting, it defaults on when the browser reports a slow connection or data saver.",
 		"disableSlowConnectionTitle": "Turn off slow connection compatibility?",
 		"disableSlowConnectionMessage": "More preview images will load at once. On slow or unstable connections, that can delay realtime status updates and page response.",
 		"disableSlowConnectionConfirm": "Turn off anyway"

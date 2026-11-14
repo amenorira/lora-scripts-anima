@@ -2488,12 +2488,15 @@
 	"tools": {},
 	"settings": {
 		"title": "画面設定",
+		"trainingExperience": "学習体験",
+		"remoteConnection": "リモート接続",
 		"confirmPreviewBeforeTraining": "学習前にプレビューを確認",
 		"confirmPreviewBeforeTrainingDesc": "プレビューが有効な場合、学習開始前にプロンプトを確認します。",
 		"autoLoadHistory": "前回の入力内容を復元",
 		"autoLoadHistoryDesc": "起動時に前回の学習設定を復元します。学習を開始していない変更も含みます。",
 		"slowConnectionMode": "低速接続向けモード",
-		"slowConnectionModeDesc": "有効にするとサンプルのサムネイルを 1 枚ずつ読み込み、リアルタイム更新への影響を抑えます。手動で設定する前は、ブラウザが低速接続またはデータセーバーを報告した場合に自動で有効になります。",
+		"slowConnectionModeDesc": "サンプルのサムネイルを 1 枚ずつ読み込み、リアルタイム更新への影響を抑えます。",
+		"slowConnectionModeDefaultDesc": "手動で設定する前は、ブラウザが低速接続またはデータセーバーを報告した場合に自動で有効になります。",
 		"disableSlowConnectionTitle": "低速接続向けモードをオフにしますか？",
 		"disableSlowConnectionMessage": "同時に読み込むサンプル画像が増えます。低速・不安定な接続では、状態のリアルタイム更新や画面の応答が遅れる場合があります。",
 		"disableSlowConnectionConfirm": "オフにする"

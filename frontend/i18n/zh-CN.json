@@ -2488,12 +2488,15 @@
 	"tools": {},
 	"settings": {
 		"title": "UI 设置",
+		"trainingExperience": "训练体验",
+		"remoteConnection": "远程连接",
 		"autoLoadHistory": "恢复训练草稿",
 		"autoLoadHistoryDesc": "启动时恢复上次编辑的训练参数，包括尚未开始训练的修改。",
 		"confirmPreviewBeforeTraining": "训练前确认预览",
 		"confirmPreviewBeforeTrainingDesc": "启用预览时，在开始训练前核对提示词。",
 		"slowConnectionMode": "慢速远程连接兼容",
-		"slowConnectionModeDesc": "开启后逐张加载预览缩略图，减少对实时更新的影响。尚未手动设置时，浏览器报告低速连接或启用省流量模式会默认开启。",
+		"slowConnectionModeDesc": "逐张加载预览缩略图，减少对实时更新的影响。",
+		"slowConnectionModeDefaultDesc": "尚未手动设置时，浏览器报告低速连接或启用省流量模式会默认开启。",
 		"disableSlowConnectionTitle": "关闭慢速远程连接兼容？",
 		"disableSlowConnectionMessage": "关闭后会同时请求更多预览图片。慢速或波动连接下，这可能拖慢实时状态更新和页面响应。",
 		"disableSlowConnectionConfirm": "仍然关闭"

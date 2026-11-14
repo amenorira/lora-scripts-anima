@@ -1578,47 +1578,54 @@
       </div>
 
       <!-- Route: Settings -->
-      <div x-show="currentRoute === 'settings'" x-cloak>
+      <div class="route-settings" x-show="currentRoute === 'settings'" x-cloak>
         <div class="page-header">
           <h1 class="page-title" x-text="t('settings.title')">UI Settings</h1>
         </div>
-        <div class="env-section">
-          <div class="settings-row">
-            <div class="settings-row-main">
-              <div class="settings-row-label" x-text="t('settings.autoLoadHistory')">Auto-load History</div>
-              <div class="settings-row-desc" x-text="t('settings.autoLoadHistoryDesc')">Automatically restore last training parameters on startup</div>
-            </div>
-            <div class="settings-row-action">
-              <label class="toggle">
-                <input type="checkbox" x-model="autoLoadHistory" @change="saveUISettings()">
-                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        <div class="settings-sections">
+          <section aria-labelledby="settingsTrainingTitle">
+            <h2 class="settings-section-title" id="settingsTrainingTitle" x-text="t('settings.trainingExperience')">Training experience</h2>
+            <div class="settings-panel">
+              <label class="settings-row">
+                <span class="settings-row-main">
+                  <span class="settings-row-label" id="restoreDraftSetting" x-text="t('settings.autoLoadHistory')">Restore training drafts</span>
+                  <span class="settings-row-desc" id="restoreDraftSettingDesc" x-text="t('settings.autoLoadHistoryDesc')">Restore your last edited training settings on startup, including changes you have not used to start training.</span>
+                </span>
+                <span class="settings-row-action toggle">
+                  <input type="checkbox" x-model="autoLoadHistory" @change="saveUISettings()" aria-labelledby="restoreDraftSetting" aria-describedby="restoreDraftSettingDesc">
+                  <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                </span>
+              </label>
+              <label class="settings-row">
+                <span class="settings-row-main">
+                  <span class="settings-row-label" id="confirmPreviewSetting" x-text="t('settings.confirmPreviewBeforeTraining')">Confirm previews before training</span>
+                  <span class="settings-row-desc" id="confirmPreviewSettingDesc" x-text="t('settings.confirmPreviewBeforeTrainingDesc')">Review preview prompts before starting training when previews are enabled.</span>
+                </span>
+                <span class="settings-row-action toggle">
+                  <input type="checkbox" x-model="confirmPreviewBeforeTraining" @change="saveUISettings()" aria-labelledby="confirmPreviewSetting" aria-describedby="confirmPreviewSettingDesc">
+                  <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                </span>
               </label>
             </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-main">
-              <div class="settings-row-label" id="confirmPreviewSetting" x-text="t('settings.confirmPreviewBeforeTraining')">Confirm previews before training</div>
-              <div class="settings-row-desc" x-text="t('settings.confirmPreviewBeforeTrainingDesc')">Review preview prompts before starting training when previews are enabled.</div>
-            </div>
-            <div class="settings-row-action">
-              <label class="toggle">
-                <input type="checkbox" x-model="confirmPreviewBeforeTraining" @change="saveUISettings()" aria-labelledby="confirmPreviewSetting">
-                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </section>
+          <section aria-labelledby="settingsConnectionTitle">
+            <h2 class="settings-section-title" id="settingsConnectionTitle" x-text="t('settings.remoteConnection')">Remote connection</h2>
+            <div class="settings-panel">
+              <label class="settings-row">
+                <span class="settings-row-main">
+                  <span class="settings-row-label" id="slowConnectionSetting" x-text="t('settings.slowConnectionMode')">Slow connection compatibility</span>
+                  <span class="settings-row-desc" id="slowConnectionSettingDesc">
+                    <span x-text="t('settings.slowConnectionModeDesc')">Loads preview thumbnails one at a time to reduce their impact on live updates.</span>
+                    <span class="settings-row-note" x-text="t('settings.slowConnectionModeDefaultDesc')">Before you choose a setting, it defaults on when the browser reports a slow connection or data saver.</span>
+                  </span>
+                </span>
+                <span class="settings-row-action toggle">
+                  <input type="checkbox" :checked="weakNetworkMode" @change="requestWeakNetworkModeChange($event.target.checked, $event.target)" aria-labelledby="slowConnectionSetting" aria-describedby="slowConnectionSettingDesc">
+                  <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                </span>
               </label>
             </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-main">
-              <div class="settings-row-label" x-text="t('settings.slowConnectionMode')">Slow connection compatibility</div>
-              <div class="settings-row-desc" x-text="t('settings.slowConnectionModeDesc')">Enabled by default: show the full sample list while loading thumbnails in the background without delaying realtime updates on slow or unstable connections.</div>
-            </div>
-            <div class="settings-row-action">
-              <label class="toggle">
-                <input type="checkbox" :checked="weakNetworkMode" @change="requestWeakNetworkModeChange($event.target.checked, $event.target)">
-                <span class="toggle-track"><span class="toggle-thumb"></span></span>
-              </label>
-            </div>
-          </div>
+          </section>
         </div>
       </div>
 
