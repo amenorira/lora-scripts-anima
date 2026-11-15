@@ -23,6 +23,8 @@ window.monitorCoreMixin = {
   logAutoScroll: true, logLines: [],
   _logContentVersion: 0, monitorTab: 'overview',
   monitorParamQuery: '',
+  monitorParamsExpanded: false,
+  _monitorParamContext: null, _monitorParamCache: null,
   outputFiles: [], outputFilesVersion: 0, outputFilesLoading: false, outputFilesSelected: {}, _outputFilesLoaded: false,
   outputFilesError: '', _outputFilesRunDir: '', _outputFilesRequestSeq: 0,
   _outputFilesKnownCount: 0, _outputCountVersion: 0,

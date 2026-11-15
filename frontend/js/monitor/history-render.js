@@ -476,57 +476,29 @@ window.monitorHistoryRenderMixin = {
         const path = String(value);
         return path.replace(/\\/g, '/').replace(/\/+$/, '').split('/').pop() || path;
       };
-      const profileId = p.model_train_type || snapshot.reuse_params?.model_train_type;
-      const model = profileId === 'krea2-lora' ? (p.dit || p.pretrained_model_name_or_path) : (p.pretrained_model_name_or_path || p.dit);
+      const model = this._monitorSnapshotParamModel(snapshot, t);
+      const display = model.byField;
+      const source = (...keys) => keys.map(key => display.get(key)).find(param => present(param?.raw));
       const sources = [
-        [t('historyModel'), model],
-        [t(p.train_data_dir ? 'dataset' : 'snapshotDatasetConfig'), p.train_data_dir || p.dataset_config, true],
-        [t('field.network_weights'), p.network_weights],
-      ].filter(([, value]) => present(value));
-
-      const items = [];
-      const add = (label, value, title = value) => {
-        if (present(value)) items.push({ label, value: String(value), title: String(title) });
-      };
-      const profileNames = { 'anima-lora': 'Anima', 'sdxl-lora': 'SDXL', 'krea2-lora': 'Krea 2', 'moss-image-lora': 'MOSS-Image' };
-      if (present(profileId)) add(t('field.model_train_type'), Object.hasOwn(profileNames, profileId) ? profileNames[profileId] : profileId, profileId);
-      const module = String(p.network_module || '');
-      const networkNames = { lora: 'LoRA', lora_anima: 'LoRA', lora_generic: 'LoRA', lora_krea2: 'LoRA', loha: 'LoHa', lokr: 'LoKr' };
-      const moduleName = module.split('.').pop();
-      let network = Object.hasOwn(networkNames, moduleName) ? networkNames[moduleName] : module;
-      if (module === 'lycoris.kohya') {
-        const arg = Array.isArray(p.network_args) && p.network_args.find(value => /^algo\s*=/.test(String(value)));
-        const algo = String(p.lycoris_algo || (arg && String(arg).split('=').slice(1).join('=')) || '').trim().toLowerCase();
-        const algorithmNames = { lora: 'LoCon', loha: 'LoHa', lokr: 'LoKr' };
-        network = Object.hasOwn(algorithmNames, algo) ? algorithmNames[algo] : (algo || 'LyCORIS');
-      }
-      add(t('snapshotNetwork'), network, module);
+        [source('dit', 'pretrained_model_name_or_path')],
+        [source('dataset_config', 'train_data_dir'), true],
+        [source('network_weights')],
+      ].filter(([param]) => param);
       const dimFromWeights = String(p.dim_from_weights).toLowerCase() === 'true';
-      if (dimFromWeights) {
-        add(t('snapshotRankAlpha'), t('snapshotRankFromWeights'));
-      } else if (present(p.network_dim) && present(p.network_alpha)) {
-        add(t('snapshotRankAlpha'), String(p.network_dim) + ' / ' + String(p.network_alpha));
-      } else {
-        add(t('historyDim'), p.network_dim);
-        add(t('historyAlpha'), p.network_alpha);
-      }
-      if (present(p.learning_rate)) add(t('snapshotBaseLearningRate'), this._formatLearningRate(p.learning_rate, String(p.learning_rate)));
-      if (present(p.optimizer_type)) add(t('historyOptimizer'), String(p.optimizer_type).split('.').pop(), p.optimizer_type);
-      const stepsMode = p.krea_training_duration_mode === 'steps' || (!present(p.max_train_epochs) && present(p.max_train_steps));
-      add(t(stepsMode ? 'snapshotSteps' : 'historyEpochs'), stepsMode ? p.max_train_steps : p.max_train_epochs);
-      add(t('historyBatch'), p.train_batch_size);
-      if (present(p.gradient_accumulation_steps) && Number(p.gradient_accumulation_steps) > 1) add(t('field.gradient_accumulation_steps'), p.gradient_accumulation_steps);
-      if (present(p.resolution)) {
-        const resolution = String(p.resolution);
-        add(t('historyResolution'), resolution.replace(/^\s*(\d+)\s*,\s*(\d+)\s*$/, '$1 × $2'), resolution);
-      }
+      const stepsMode = p.krea_training_duration_mode === 'steps' || !(Number(p.max_train_epochs) > 0);
+      const items = ['model_train_type', 'network_module', ...(p.network_module === 'lycoris.kohya' ? ['lycoris_algo'] : []),
+        ...(dimFromWeights ? ['dim_from_weights'] : ['network_dim', 'network_alpha']),
+        'learning_rate', 'optimizer_type', stepsMode ? 'max_train_steps' : 'max_train_epochs',
+        'train_batch_size', 'gradient_accumulation_steps', 'resolution']
+        .map(key => key === 'model_train_type' ? model.profileRow : display.get(key)).filter(param => present(param?.raw));
 
       if (sources.length || items.length) {
         html += '<div class="snapshot-overview">';
         if (sources.length) {
           html += '<dl class="snapshot-sources">';
-          sources.forEach(([label, value, isDataset]) => {
-            html += '<div><dt>' + this.esc(label) + '</dt>';
+          sources.forEach(([param, isDataset]) => {
+            const value = param.raw;
+            html += '<div><dt>' + this.esc(param.label) + '</dt>';
             if (isDataset) {
               html += '<dd class="snapshot-dataset-path" tabindex="0" title="' + this.esc(value) + '"><span class="snapshot-path-text">' + this.esc(value) + '</span></dd>';
             } else {
@@ -539,7 +511,7 @@ window.monitorHistoryRenderMixin = {
         if (items.length) {
           html += '<dl class="snapshot-params">';
           items.forEach(it => {
-            html += '<div><dt>' + this.esc(it.label) + '</dt><dd title="' + this.esc(it.title) + '">' + this.esc(it.value) + '</dd></div>';
+            html += '<div><dt>' + this.esc(it.label) + '</dt><dd title="' + this.esc(it.raw) + '">' + this.esc(it.value) + '</dd></div>';
           });
           html += '</dl>';
         }

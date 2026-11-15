@@ -147,32 +147,26 @@ window.monitorDiagnosticsMixin = {
       insufficient: {
         label: ['diagnosticInsufficient', '数据不足'],
         summary: ['diagnosticInsufficientSummary', '至少需要 6 个有效 Loss 点才能判断近期趋势。'],
-        advice: ['diagnosticInsufficientAdvice', '训练开始后诊断会随 Loss 数据自动更新。'],
       },
       converging: {
         label: ['diagnosticConverging', '训练 Loss 持续下降'],
         summary: ['diagnosticConvergingSummary', '近期训练 Loss 平均值持续下降，优化目标仍在改善。'],
-        advice: ['diagnosticConvergingAdvice', '可保持当前配置继续观察，并用固定提示词样本确认实际质量变化。'],
       },
       plateau: {
         label: ['diagnosticPlateau', '进入平台期'],
         summary: ['diagnosticPlateauSummary', '近期变化很小且波动不大，Loss 可能进入平台期。'],
-        advice: ['diagnosticPlateauAdvice', '结合样本质量判断是否继续；需要细节时打开 TensorBoard。'],
       },
       rebound: {
         label: ['diagnosticRebound', '近期反弹'],
         summary: ['diagnosticReboundSummary', '近期 Loss 平均值明显高于前一段时间。'],
-        advice: ['diagnosticReboundAdvice', '先观察下一 Epoch；若持续反弹，再检查学习率与数据。'],
       },
       volatile: {
         label: ['diagnosticVolatile', '波动异常'],
         summary: ['diagnosticVolatileSummary', '近期 Loss 起伏较大，训练稳定性需要关注。'],
-        advice: ['diagnosticVolatileAdvice', '优先检查学习率、batch size 和异常样本，不要因为某一步的数值变化就停止训练。'],
       },
       steady: {
         label: ['diagnosticSteady', '趋势暂不明确'],
         summary: ['diagnosticSteadySummary', '近期 Loss 尚未呈现明确趋势，请结合预览图评估训练效果。'],
-        advice: ['diagnosticSteadyAdvice', '继续关注样本质量和后续窗口变化。'],
       },
     };
     const item = copy[code] || copy.insufficient;
@@ -250,20 +244,17 @@ window.monitorDiagnosticsMixin = {
       html += '<path data-diagnostic-spark="' + metric[0] + '"></path><line data-diagnostic-low="' + metric[0] + '" visibility="hidden"></line><line data-diagnostic-point="' + metric[0] + '" visibility="hidden"></line></svg></div>';
     });
     html += '</div>';
-    html += '<details class="m-diagnostic-details"><summary>' + this.esc(t('diagnosticMethodTitle')) + '</summary>';
-    html += '<div class="m-diagnostic-evidence"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l5-5 4 3 7-8"/><path d="M16 7h4v4"/></svg><div><span>' + this.esc(t('diagnosticEvidence')) + '</span><strong data-diagnostic-field="evidence">--</strong><small data-diagnostic-field="window-evidence">--</small></div></div>';
-    html += '<div class="m-diagnostic-guidance"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6 7 7m10 10 1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/><circle cx="12" cy="12" r="4"/></svg><div><span>' + this.esc(t('diagnosticAdvice')) + '</span><strong data-diagnostic-field="advice">--</strong></div></div>';
-    html += '<div class="m-diagnostic-method">';
-    html += '<div class="m-diagnostic-method-content">';
-    html += '<p class="m-diagnostic-boundary"><strong>' + this.esc(t('diagnosticScopeTitle')) + '</strong><span>' + this.esc(t('diagnosticScopeText')) + '</span></p>';
+    html += '<details class="m-diagnostic-details"><summary><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg><span>' + this.esc(t('diagnosticMethodTitle')) + '</span></summary>';
+    html += '<div class="m-diagnostic-method-content"><div class="m-diagnostic-evidence"><p data-diagnostic-field="evidence">--</p><small data-diagnostic-field="window-evidence">--</small></div>';
     const methodItems = [
       [t('diagnosticMethodSource'), t('diagnosticMethodSourceText')],
-      [t('diagnosticMethodWindow'), t('diagnosticMethodWindowText')],
+      [t('diagnosticMethodWindow'), this._fillDiagnosticTemplate(t('diagnosticMethodWindowText'), { total: rules.windowMax * 2, window: rules.windowMax, minimum: rules.minimumPoints })],
+      [t('diagnosticMethodChange'), t('diagnosticMethodChangeText')],
       [t('diagnosticMethodVolatility'), t('diagnosticMethodVolatilityText')],
     ];
-    html += '<div class="m-diagnostic-method-grid">';
-    methodItems.forEach(item => { html += '<div><span>' + this.esc(item[0]) + '</span><p>' + this.esc(item[1]) + '</p></div>'; });
-    html += '</div><div class="m-diagnostic-rule-title">' + this.esc(t('diagnosticRuleOrder')) + '</div><div class="m-diagnostic-rules">';
+    html += '<dl class="m-diagnostic-method-grid">';
+    methodItems.forEach(item => { html += '<div><dt>' + this.esc(item[0]) + '</dt><dd>' + this.esc(item[1]) + '</dd></div>'; });
+    html += '</dl><p class="m-diagnostic-rule-title">' + this.esc(t('diagnosticRuleOrder')) + '</p><dl class="m-diagnostic-rules">';
     const ruleItems = [
       [t('diagnosticRuleRebound'), this._fillDiagnosticTemplate(t('diagnosticRuleReboundCondition'), { value: rules.reboundChange })],
       [t('diagnosticRuleVolatile'), this._fillDiagnosticTemplate(t('diagnosticRuleVolatileCondition'), { value: rules.volatileCv })],
@@ -271,8 +262,8 @@ window.monitorDiagnosticsMixin = {
       [t('diagnosticRulePlateau'), this._fillDiagnosticTemplate(t('diagnosticRulePlateauCondition'), { change: rules.plateauAbsChange, volatility: rules.plateauCv })],
       [t('diagnosticRuleSteady'), t('diagnosticRuleOtherwise')],
     ];
-    ruleItems.forEach(item => { html += '<div><span>' + this.esc(item[0]) + '</span><code>' + this.esc(item[1]) + '</code></div>'; });
-    html += '</div></div></div>';
+    ruleItems.forEach(item => { html += '<div><dt>' + this.esc(item[0]) + '</dt><dd>' + this.esc(item[1]) + '</dd></div>'; });
+    html += '</dl><p class="m-diagnostic-scope">' + this.esc(t('diagnosticScopeText')) + '</p></div>';
     html += '</details></section>';
     return html;
   },
@@ -302,9 +293,6 @@ window.monitorDiagnosticsMixin = {
     if (trend) this._patchRollingSparkline(trend, this._trainingDiagnosticPoints(), root._metricMotion, root.dataset.motionContext);
     setText('state', this._diagnosticText(t, diagnostic.code, 'label'));
     setText('summary', this._diagnosticText(t, diagnostic.code, 'summary'));
-    setText('advice', isHistory || isPreviousRun
-      ? t('diagnosticHistoryAdvice', '结合固定提示词的样本和 TensorBoard 记录评估本次训练；下次训练可据此调整参数。')
-      : this._diagnosticText(t, diagnostic.code, 'advice'));
     setText('evidence', this._diagnosticEvidence(t, diagnostic));
     setText('window-evidence', this._diagnosticWindowEvidence(t, diagnostic));
     setText('change', this._formatDiagnosticPercent(diagnostic.changePct, true));

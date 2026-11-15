@@ -44,13 +44,15 @@
     <button class="btn btn-sm" @click="monitorData.state='RUNNING';monitorData.train_result=null;renderDashboard()">训练中</button>
     <button class="btn btn-sm" @click="monitorData.state='FINISHED';monitorData.step=740;monitorData.percent=100;monitorData.epoch='20/20';monitorData.elapsed='1:04:50';monitorData.lr=0;monitorData.train_result={status:'completed',duration_str:'1:04:50',ended_at:'2025-09-24T08:42:31+00:00'};lossSeries[1].points.push({step:740,value:0});lossSeries[1].latest=0;lossDataVersion++;renderDashboard()">训练完成</button>
     <button class="btn btn-sm" @click="monitorData.state='FAILED';monitorData.train_result={status:'failed',duration_str:'43:21'};monitorData.has_error=true;monitorData.error_msg='Sample failure';renderDashboard()">训练失败</button>
-    <button class="btn btn-sm" @click="selectedRunDir='output/fixture';runDetailData={...monitorData,tensorboard_loss:lossSeries,perf_samples:monitorPerfSamples,state:'FINISHED',step:740,percent:100,epoch:'20/20',elapsed:'1:04:50',config:{output_name:'fixture',model_train_type:'anima-lora'},train_result:{status:'completed',duration_str:'1:04:50',ended_at:'2025-09-24T08:42:31+00:00'}};renderDashboard()">历史详情</button>
+    <button class="btn btn-sm" @click="selectedRunDir='output/fixture';runDetailData={...monitorData,tensorboard_loss:lossSeries,perf_samples:monitorPerfSamples,state:'FINISHED',step:740,percent:100,epoch:'20/20',elapsed:'1:04:50',config:{output_name:'fixture',model_train_type:monitorData.training_profile||'anima-lora'},train_result:{status:'completed',duration_str:'1:04:50',ended_at:'2025-09-24T08:42:31+00:00'}};renderDashboard()">历史详情</button>
     <button class="btn btn-sm" @click="realtimeState='degraded';renderDashboard()">数据延迟</button>
     <button class="btn btn-sm" @click="advanceMetrics()">模拟下一步</button>
     <button class="btn btn-sm" @click="advanceMetrics();setTimeout(()=>advanceMetrics(),80);setTimeout(()=>advanceMetrics(),160)">快速连续更新</button>
     <button class="btn btn-sm" @click="appendFixtureLogs()">追加重复日志</button>
     <button class="btn btn-sm" @click="appendFixtureSample()">追加样本</button>
     <button class="btn btn-sm" @click="setTimeout(() => appendFixtureSample(), 1800)">延迟追加样本</button>
+    <button class="btn btn-sm" @click="fixtureConfigRefreshed=false;setTimeout(()=>{trainParamsVersion++;renderDashboard();fixtureConfigRefreshed=true},500)">延迟刷新配置</button>
+    <span x-show="fixtureConfigRefreshed">配置已刷新</span>
   </div>
   <div id="fixtureRoute" class="main-fullscreen"></div>
 </main>
@@ -58,6 +60,27 @@
 (async () => {
   const query = new URLSearchParams(location.search);
   const language = ['en-US', 'ja-JP'].includes(query.get('lang')) ? query.get('lang') : 'zh-CN';
+  const configProfile = ['anima-lora', 'sdxl-lora', 'krea2-lora', 'moss-image-lora'].includes(query.get('configProfile')) ? query.get('configProfile') : '';
+  const inferredRank = configProfile === 'krea2-lora' && query.get('rankFromWeights') === '1';
+  const fixtureConfig = {
+    model_train_type: configProfile || 'anima-lora',
+    [configProfile === 'krea2-lora' ? 'dit' : 'pretrained_model_name_or_path']: 'C:/models/模型文件名较长的训练基础模型-anima-base-v1.0.safetensors',
+    train_data_dir: 'D:/datasets/人物训练集/带有中文与空格的素材目录',
+    network_module: configProfile === 'krea2-lora' ? (inferredRank ? 'networks.lora_krea2' : 'lycoris.kohya') : configProfile === 'moss-image-lora' ? 'networks.lora_generic' : configProfile === 'sdxl-lora' ? 'networks.lora' : 'networks.lora_anima',
+    network_dim: 32, network_alpha: 16,
+    ...(configProfile === 'krea2-lora' ? {max_train_steps: 1200, ...(inferredRank
+      ? {network_weights: 'C:/models/initial-lora.safetensors', dim_from_weights: true}
+      : {network_args: ['algo=lokr', 'factor=8']})} : {max_train_epochs: 20}),
+    train_batch_size: 2, gradient_accumulation_steps: 4, resolution: '1024,1024', enable_bucket: true,
+    seed: 0, learning_rate: 0.00006, optimizer_type: 'AdamW8bit', lr_scheduler: 'cosine',
+    mixed_precision: 'bf16', gradient_checkpointing: true, output_name: 'fixture',
+    ...(configProfile === 'krea2-lora'
+      ? {krea_latent_cache_device: 'cuda', krea_text_cache_device: 'cpu', krea_cache_reuse: true, blocks_to_swap: 8}
+      : {cache_latents: true, cache_latents_to_disk: true, cache_text_encoder_outputs: false}),
+  };
+  const fixtureParams = Object.entries(fixtureConfig).flatMap(([key, value]) => key === 'network_args'
+    ? value.map(arg => { const [name, v] = arg.split('='); return {key: 'network_args.' + name, label_raw: name, value: v}; })
+    : [{key, value, desc_key: 'field.' + key}]);
   const fixtureImages = query.getAll('image').filter(path => path.startsWith('/output/'));
   const fixtureImage = i => (fixtureImages[i % fixtureImages.length] || '/tests/frontend/monitor-sample.svg') + '?v=fixture';
   const delayMs = Math.max(0, Math.min(Number(query.get('delay')) || 0, 2000));
@@ -66,6 +89,7 @@
   const [html, translations] = await Promise.all([fetch('/frontend/index.html').then(r=>r.text()),fetch('/frontend/i18n/'+language+'.json', {cache:'no-store'}).then(r=>r.json())]);
   const parsed = new DOMParser().parseFromString(html,'text/html');
   document.getElementById('fixtureRoute').append(parsed.querySelector('.route-monitor-dashboard'));
+  document.getElementById('fixtureRoute').append(parsed.querySelector('.config-snapshot-modal').closest('dialog'));
   const response = data => ({json:async()=>({status:'success',data}),ok:true});
   const samples = Array.from({length:16},(_,i)=>({name:`test_e${String(Math.floor(i/4)+1).padStart(6,'0')}_${String(i%4).padStart(2,'0')}_20261112000000_2333.png`,path:`sample/${i}.png`,url:fixtureImage(i),thumb_url:fixtureImage(i),inspect_url:fixtureImage(i)}));
   if (query.has('longName')) samples.push({name:'a-very-long-custom-sample-filename-for-viewer-layout-check.png',path:'sample/custom.png',url:fixtureImage(0),thumb_url:fixtureImage(0),inspect_url:fixtureImage(0)});
@@ -95,6 +119,9 @@
   ];
   window.fetch=(url,opts)=> {
     if (!String(url).startsWith('/api/')) return realFetch(url,opts);
+    if (String(url).includes('config-from-run')) return Promise.resolve(response({name: 'fixture', run_dir: 'output/fixture',
+      params: fixtureConfig, reuse_params: fixtureConfig,
+      config_format: 'toml', content: Object.entries(fixtureConfig).map(([key, value]) => key + ' = ' + JSON.stringify(value)).join('\n')}));
     const query = new URL(String(url), location.href).searchParams.get('q') || '';
     const result = response(String(url).includes('outputs')?files.slice():String(url).includes('previews')?samples.slice():String(url).includes('log-slice')?{total:logs.length,offset:0,lines:logs.slice(),match_indices:logs.flatMap((line,i)=>query && line.toLowerCase().includes(query.toLowerCase())?[i]:[])}:[]);
     return delayMs && /\/(?:outputs|previews|log-slice)\?/.test(String(url))
@@ -103,7 +130,7 @@
   document.addEventListener('alpine:init',()=>Alpine.data('monitorFixture',()=>{
     const a=Object.defineProperties({}, {...Object.getOwnPropertyDescriptors(window.utilsMixin),...Object.getOwnPropertyDescriptors(window.monitorCoreMixin),...Object.getOwnPropertyDescriptors(window.monitorRenderMixin)});
     return Object.assign(a,{
-      escapeJsString: window.trainingCoreMixin.escapeJsString, currentRoute:'monitor-dashboard',locale:language,realtimeState:'online',liveTaskId:'fixture',
+      escapeJsString: window.trainingCoreMixin.escapeJsString, currentRoute:'monitor-dashboard',locale:language,realtimeState:'online',liveTaskId:'fixture',fixtureConfigRefreshed:false,
       t(key,fb){return String(key||'').split('.').reduce((v,k)=>v&&v[k],translations)||fb||key;},
       toast(message){console.log(message);},finishProgress(){},navigate(){},stopMonitorRealtime(){},startMonitorRealtime(){},
       _fieldOptionLabel: window.trainingCoreMixin._fieldOptionLabel,
@@ -140,7 +167,7 @@
         this.lossSeries[1].points.push({step:d.step,value:this.lossSeries[1].latest});
         this.lossDataVersion++;this.renderDashboard();
       },
-      monitorData:{state:'RUNNING',step:518,total_steps:740,percent:70,loss:.0337,lr:4.26e-5,epoch:14,elapsed:'43:21',eta:'18:34',speed:'5.26 s/it',run_dir:'output/fixture',artifact_dir:'C:/training/models',active_task:{id:'fixture'}},
+      monitorData:{state:'RUNNING',step:518,total_steps:740,percent:70,loss:.0337,lr:4.26e-5,epoch:14,elapsed:'43:21',eta:'18:34',speed:'5.26 s/it',run_dir:'output/fixture',artifact_dir:'C:/training/models',active_task:{id:'fixture'},training_profile:configProfile||'anima-lora'},
       previews:samples.slice(),previewsVersion:1,weakNetworkMode:true,
       logLines:logs,
       gpuInfo:{name:'GPU fixture',gpu_load_pct:98,vram_used_mb:19000,vram_total_mb:24000,temperature_c:65,power_w:280},
@@ -150,7 +177,7 @@
         {tag:'lr/unet',max:.00006,latest:.0000426,points:Array.from({length:120},(_,i)=>({step:399+i,value:.00006-i*(.0000174/119)}))},
         {tag:'loss/current',points:Array.from({length:160},(_,i)=>({step:359+i,value:.034+Math.sin((i-40)*.7)*.004}))}
       ],
-      trainParams:[
+      trainParams:configProfile ? fixtureParams : [
         {key:'pretrained_model_name_or_path',value:'C:/models/anima-base-v1.0.safetensors',section:'model'},
         {key:'learning_rate',value:'6e-5',section:'training'},
         {key:'lr_scheduler',value:'cosine',section:'optimizer'},

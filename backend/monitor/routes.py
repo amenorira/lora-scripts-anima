@@ -260,6 +260,7 @@ async def monitor_run_detail(run_dir: str = Query("")):
     params = await asyncio.to_thread(read_run_config, abs_run_dir)
     if params:
         result["config"] = params
+        result["training_profile"] = params.get("model_train_type") or (record.get("extra") or {}).get("profile_id", "")
         result["train_params"] = extract_train_params(params, (record.get("extra") or {}).get("profile_id", ""))
 
     # ── TensorBoard Loss/LR 图表 ──
@@ -618,11 +619,14 @@ async def get_config_from_run(run_dir: str = Query("")):
         except ValueError as exc:
             reusable_params = None
             reuse_error = str(exc)
+        profile_id = params.get("model_train_type") or (record.get("extra") or {}).get("profile_id") or (reusable_params or {}).get("model_train_type", "")
         return {
             "status": "success",
             "data": {
                 "content": content,
                 "params": params,
+                "training_profile": profile_id,
+                "train_params": extract_train_params(params, profile_id),
                 "reuse_params": reusable_params,
                 "reuse_error": reuse_error,
                 "name": params.get("output_name", abs_run_dir.name),

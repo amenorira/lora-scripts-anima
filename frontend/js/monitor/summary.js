@@ -1,36 +1,8 @@
-/* 训练摘要、参数控制台与数值动画；由 monitor-render.js 装配。 */
+/* 训练摘要、配置快照与数值动画；由 monitor-render.js 装配。 */
 window.monitorSummaryMixin = {
   // ═══════════════════════════════════════════════════════════
   //  概览标签
   // ═══════════════════════════════════════════════════════════
-
-  // 训练参数标签：用字段 key 名（简洁，与训练表单 field-key 一致）。
-  // network_args/optimizer_args 子项用 label_raw（如 algo/preset）。
-  // 兼容旧后端响应（p.label 直接用）。
-  _paramLabel(p) {
-    if (p.label_raw) return this.esc(p.label_raw);
-    if (p.label) return this.esc(p.label);
-    return this.esc(p.key || '');
-  },
-
-  // 训练参数 hover title：用 desc_key 取 i18n 完整描述句，供鼠标悬停提示。
-  _paramTitle(p, t) {
-    if (p.desc_key) {
-      const v = t(p.desc_key, '');
-      return v && v !== p.desc_key ? v : '';
-    }
-    return '';
-  },
-
-  // 训练参数值 HTML：toggle 类型渲染 ✓/✕ 徽标，其余正常转义显示。
-  _paramValueHtml(p) {
-    const v = String(p.value == null ? '' : p.value);
-    if (p.type === 'toggle') {
-      const on = v === 'true' || v === 'True';
-      return '<span class="param-toggle ' + (on ? 'on' : 'off') + '">' + (on ? '✓' : '✕') + '</span>';
-    }
-    return this.esc(v);
-  },
 
   _patchOverviewStatus(root, d, t, isHistory) {
     if (!d || !root) return;
@@ -169,8 +141,8 @@ window.monitorSummaryMixin = {
     html += this._overviewMetricsHtml(d, t, isHistory);
     html += this._trainingDiagnosticsHtml(t);
     html += '</div>';
-    if (this.trainParams.length) html += this._parametersConsoleHtml(t);
-    else if (!running) html += '<div class="m-console-card m-empty-params"><div class="m-card-heading"><span>' + this.esc(t('trainParams')) + '</span></div><div class="dashboard-empty dashboard-empty-compact"><p>' + this.esc(t('noParamsHint')) + '</p></div></div>';
+    if (this.trainParams.length) html += this._parametersConsoleHtml(t, d);
+    else if (!running) html += '<div class="m-console-card m-empty-params"><div class="m-card-heading"><span>' + this.esc(t('trainingConfig')) + '</span></div><div class="dashboard-empty dashboard-empty-compact"><p>' + this.esc(t(isHistory ? 'noSavedParams' : 'noParamsHint')) + '</p></div></div>';
     return html;
   },
 
@@ -284,15 +256,6 @@ window.monitorSummaryMixin = {
       lr: '<path d="M4 19V11m5 8V5m5 14v-9m5 9V7"/>',
       speed: '<path d="M4 17a9 9 0 1 1 16 0m-8-2 4-6"/><circle cx="12" cy="15" r="1"/>',
       time: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>',
-      pretrained_model_name_or_path: '<path d="m12 2 9 5v10l-9 5-9-5V7zM3 7l9 5 9-5m-9 5v10"/>',
-      learning_rate: '<path d="M3 19h18M3 19V5m3 9 4-5 4 3 6-7"/>',
-      network_dim: '<path d="M4 4v16m16-16v16M7 12h10m-7-3-3 3 3 3m4-6 3 3-3 3"/>',
-      network_alpha: '<text x="12" y="17" text-anchor="middle" fill="currentColor" stroke="none" font-family="Georgia,serif" font-size="19">α</text>',
-      max_train_epochs: '<path d="M19 8a8 8 0 1 0 1 5M19 3v5h-5"/>',
-      optimizer_type: '<path d="M10 2h4l.5 2.2 1.5.7 1.9-1.2 2.8 2.8-1.2 1.9.7 1.5L22 10v4l-2.2.5-.7 1.5 1.2 1.9-2.8 2.8-1.9-1.2-1.5.7L14 22h-4l-.5-2.2-1.5-.7-1.9 1.2-2.8-2.8 1.2-1.9-.7-1.5L2 14v-4l2.2-.5.7-1.5-1.2-1.9 2.8-2.8 1.9 1.2 1.5-.7z"/><circle cx="12" cy="12" r="3"/>',
-      train_batch_size: '<rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="18" height="4" rx="1"/><rect x="3" y="16" width="18" height="4" rx="1"/>',
-      resolution: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M7 17 17 7m-5 0h5v5M7 12v5h5"/>',
-      seed: '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="16" cy="16" r="1"/>',
     };
     return '<svg class="m-monitor-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (paths[kind] || '') + '</svg>';
   },
@@ -600,71 +563,243 @@ window.monitorSummaryMixin = {
       + ' ' + pad(date.getHours()) + ':' + pad(date.getMinutes()) + ':' + pad(date.getSeconds());
   },
 
-  _parametersConsoleHtml(t) {
-    const byKey = {};
-    this.trainParams.forEach(param => { if (param.key) byKey[param.key] = param; });
-    const keyDefs = [
-      { key: 'pretrained_model_name_or_path', short: 'historyModel', basename: true }, { key: 'learning_rate', short: 'historyLR' },
-      { key: 'network_dim', short: 'paramDim' }, { key: 'network_alpha', short: 'historyAlpha' },
-      { key: 'max_train_epochs', short: 'historyEpochs' }, { key: 'optimizer_type', short: 'historyOptimizer' },
-      { key: 'train_batch_size', short: 'historyBatch' }, { key: 'resolution', short: 'historyResolution' }, { key: 'seed', short: 'historySeed' },
-    ];
-    let html = '<section class="m-console-card m-parameters-console"><div class="m-card-heading"><div><span>' + this.esc(t('trainParams')) + '</span><small>' + this.trainParams.length + ' ' + this.esc(t('items')) + '</small></div></div>';
-    html += '<div class="param-keygrid">';
-    keyDefs.forEach(definition => {
-      const param = byKey[definition.key];
-      if (!param || param.value == null || param.value === '') return;
-      let value = String(param.value);
-      if (definition.basename) { const parts = value.replace(/\\/g, '/').split('/'); value = parts[parts.length - 1] || value; }
-      if (definition.key === 'learning_rate' && Number.isFinite(Number(value))) value = this._formatLearningRate(value, value);
-      // optimizer_type 用训练表单同款选项标签，避免历史 TOML 值（大小写不一致）直接露在摘要里
-      if (definition.key === 'optimizer_type') value = this._fieldOptionLabel('optimizer_type', value, value);
-      html += '<div class="param-key-item"><span class="param-key-icon">' + this._monitorIconHtml(definition.key) + '</span><span class="param-key-copy"><span class="param-key-label">' + this.esc(t(definition.short, definition.key)) + '</span><span class="param-key-value" title="' + this.esc(value) + '">' + this._paramValueHtml({ value, type: param.type }) + '</span></span></div>';
-    });
-    html += '</div>';
-    html += '<div class="m-param-toolbar"><label class="m-param-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input type="search" value="' + this.esc(this.monitorParamQuery || '') + '" placeholder="' + this.esc(t('parameterSearch')) + '" aria-label="' + this.esc(t('parameterSearch')) + '" @input="monitorParamQuery=$event.target.value;filterMonitorParams()"/></label><span class="m-param-match" data-param-match></span><button type="button" class="btn btn-sm btn-secondary" @click="setMonitorParamGroups(true)">' + this.esc(t('expandAll')) + '</button><button type="button" class="btn btn-sm btn-secondary" @click="setMonitorParamGroups(false)">' + this.esc(t('collapseAll')) + '</button></div>';
-    const groups = {};
-    const order = ['model','network','training','optimizer','regularization','caption','performance','save','preview','basic'];
-    this.trainParams.forEach(param => { const group = param.section || param.group || ''; (groups[group] || (groups[group] = [])).push(param); });
-    const keys = Object.keys(groups).sort((a, b) => { const ai = order.indexOf(a), bi = order.indexOf(b); return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi); });
-    html += '<div class="m-param-groups">';
-    keys.forEach(group => {
-      const groupTitle = group && ['model','network','training','optimizer','regularization','caption','performance','save','preview'].includes(group) ? t('section.' + group, group) : (group || t('other'));
-      html += '<details class="m-param-group"><summary><span>' + this.esc(groupTitle) + '</span><small>' + groups[group].length + '</small><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg></summary><div class="m-param-list">';
-      groups[group].forEach(param => {
-        const rawLabel = param.label_raw || param.label || param.key || '';
-        const searchText = (rawLabel + ' ' + (param.value == null ? '' : param.value)).toLowerCase();
-        const title = this._paramTitle(param, t);
-        html += '<div class="m-param-row" data-param-row data-search="' + this.esc(searchText) + '"><span class="param-label"' + (title ? ' title="' + this.esc(title) + '"' : '') + '>' + this._paramLabel(param) + '</span><span class="param-value">' + this._paramValueHtml(param) + '</span></div>';
-      });
-      html += '</div></details>';
-    });
-    html += '</div></section>';
+  // 配置只在快照/语言变化时整理；不读取当前训练表单，也不在指标 tick 中重建。
+  _monitorParamModel(t) {
+    const locale = [this.locale, this.localeRevision].join(':');
+    const cached = this._monitorParamCache;
+    const snapshot = this.selectedRunDir ? this.runDetailData : this.monitorData;
+    const values = new Map((this.trainParams || []).map(param => [param.key, param.value]));
+    const profile = snapshot?.training_profile || snapshot?.config?.model_train_type || values.get('model_train_type')
+      || (values.has('dit') ? 'krea2-lora' : ({ 'networks.lora_anima': 'anima-lora', 'networks.lora_generic': 'moss-image-lora', 'networks.lora': 'sdxl-lora' }[values.get('network_module')] || ''))
+      || (cached?.params === this.trainParams ? cached.profile : '');
+    if (cached?.params === this.trainParams && cached.version === this.trainParamsVersion && cached.locale === locale && cached.profile === profile && cached.schema === window.TRAIN_SECTIONS) return cached;
+    return this._monitorParamCache = { ...this._buildMonitorParamModel(this.trainParams || [], profile, t),
+      params: this.trainParams, version: this.trainParamsVersion, locale, profile, schema: window.TRAIN_SECTIONS };
+  },
+
+  _buildMonitorParamModel(params, profile, t) {
+    const values = new Map(params.map(param => [param.key, param.value]));
+    const fields = (window.getVisibleSections?.(profile) || window.TRAIN_SECTIONS || []).flatMap(section => section.fields || []);
+    const definitions = new Map(fields.map(field => [field.key, field]));
+    const display = window.trainingFieldDisplay;
+    const translate = (key, fallback) => this.t(key, fallback);
+    const argumentsByKind = { network_args: new Map(), optimizer_args: new Map(), lr_scheduler_args: new Map() };
+    const module = values.get('network_module');
+    const indexArgument = (kind, argument, field) => {
+      if (!argument) return;
+      const index = argumentsByKind[kind];
+      if (!index.has(argument)) index.set(argument, []);
+      index.get(argument).push(field);
+    };
+    for (const field of fields) {
+      indexArgument('optimizer_args', field.argKey, field);
+      indexArgument('lr_scheduler_args', field.schedulerArg, field);
+      if (field.networkModules?.includes(module)) indexArgument('network_args', field.networkArgByModule?.[module] || field.networkArg, field);
+    }
+    const argumentField = (kind, argument) => {
+      const candidates = argumentsByKind[kind]?.get(argument) || [];
+      const driver = kind === 'optimizer_args' ? 'optimizer_type' : kind === 'lr_scheduler_args' ? 'lr_scheduler' : 'network_module';
+      const selected = String(values.get(driver) || '').toLowerCase();
+      return candidates.find(field => [field.showIf, ...(field.showIfAny || [])].flat(Infinity)
+        .some(condition => condition?.key === driver && [condition.eq, ...(condition.or || [])]
+          .some(value => value != null && String(value).toLowerCase() === selected)))
+        || (candidates.length === 1 ? candidates[0] : definitions.get(argument));
+    };
+    // 只匹配已知选项对应的原生字面量；未知参数保留原文，不执行配置内容。
+    const nativeOptionMatches = (value, raw) => {
+      const text = raw.trim().toLowerCase();
+      if (value === null) return text === 'none' || text === 'null';
+      if (typeof value !== 'string') return String(value).toLowerCase() === text;
+      return [value, JSON.stringify(value), "'" + value.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'"]
+        .some(literal => literal.toLowerCase() === text);
+    };
+    const formatParam = param => {
+      const key = param.key || param.label_raw || param.label || '';
+      const [namespace, ...argumentParts] = key.split('.');
+      const argument = argumentParts.join('.');
+      const native = Object.hasOwn(argumentsByKind, namespace);
+      const literal = namespace === 'optimizer_args' || namespace === 'lr_scheduler_args';
+      const field = native ? argumentField(namespace, argument) : definitions.get(key);
+      const fieldKey = field?.key || (native ? argument : key);
+      const labelKey = field?.descKey || param.desc_key || ('field.' + fieldKey);
+      const translated = display?.label(field || { key: fieldKey, descKey: labelKey }, profile, translate).text || t(labelKey, '');
+      const label = translated && translated !== labelKey && translated !== fieldKey ? translated : (param.label_raw || param.label || fieldKey);
+      const raw = String(param.value ?? '');
+      const input = literal && field ? String(param.string_value ?? raw) : raw;
+      let value = input;
+      const trainType = key === 'model_train_type' && (this.trainTypes || window.trainingCoreMixin?.trainTypes || []).find(type => type.v === raw);
+      const options = [...(field?.options || []), ...(field?.groups || []).flatMap(group => group.options || [])]
+        .filter(option => !display || display.optionApplies(option, profile));
+      const option = options.find(option => String(option.v) === input)
+        || options.find(option => String(option.v).toLowerCase() === input.toLowerCase())
+        || (literal && options.find(option => nativeOptionMatches(
+          Object.hasOwn(field.optimizerArgValues || {}, option.v) ? field.optimizerArgValues[option.v] : option.v, input)));
+      if (trainType) value = trainType.l;
+      else if (option && display) value = display.optionLabel(option, translate);
+      else if (/^(true|false)$/i.test(input) || ((field?.type || param.type) === 'toggle' && /^(0|1)$/.test(input))) value = t(/^(true|1)$/i.test(input) ? 'paramEnabled' : 'paramDisabled');
+      const displayKey = field?.argKey || fieldKey;
+      return { ...param, key, fieldKey, displayKey, label, raw, value, search: [label, key, fieldKey, displayKey, raw, value].join(' ').toLowerCase() };
+    };
+    const rows = params.map(formatParam);
+    const byField = new Map(rows.map(row => [row.fieldKey, row]));
+    const profileRow = byField.get('model_train_type') || (profile ? formatParam({ key: 'model_train_type', value: profile }) : null);
+    return { rows, profileRow, byKey: new Map(rows.map(row => [row.key, row])), byField };
+  },
+
+  _monitorSnapshotParamModel(snapshot, t) {
+    const profile = snapshot.training_profile || snapshot.params?.model_train_type || snapshot.reuse_params?.model_train_type || (snapshot.params?.dit ? 'krea2-lora' : '');
+    if (Array.isArray(snapshot.train_params)) return this._buildMonitorParamModel(snapshot.train_params, profile, t);
+    const params = [];
+    for (const [key, value] of Object.entries(snapshot.params || {})) {
+      if (value == null || value === '') continue;
+      if (['network_args', 'optimizer_args', 'lr_scheduler_args'].includes(key) && Array.isArray(value)) {
+        for (const argument of value) {
+          const text = String(argument).trim();
+          if (!text) continue;
+          const separator = text.indexOf('=');
+          const name = (separator < 0 ? text : text.slice(0, separator)).trim();
+          params.push({ key: key + '.' + name, label_raw: name, value: separator < 0 ? 'true' : text.slice(separator + 1).trim() });
+        }
+      } else params.push({ key, value: Array.isArray(value) ? value.join(', ') : String(value) });
+    }
+    return this._buildMonitorParamModel(params, profile, t);
+  },
+
+  _monitorParamSummary(t, model) {
+    const p = model.byField;
+    const raw = key => p.get(key)?.raw;
+    const present = key => raw(key) != null && raw(key) !== '';
+    const enabled = key => /^(true|1)$/i.test(raw(key) || '');
+    const groups = [];
+    let rows = [];
+    const field = key => { if (present(key)) rows.push(p.get(key)); };
+    const group = title => { if (rows.length) groups.push({ title: t(title), rows }); rows = []; };
+    if (model.profileRow) rows.push(model.profileRow);
+    field('network_module');
+    if (raw('network_module') === 'lycoris.kohya') field('lycoris_algo');
+    field('dim_from_weights');
+    if (!enabled('dim_from_weights')) { field('network_dim'); field('network_alpha'); }
+    field('lokr_factor');
+    group('paramNetwork');
+
+    const stepsMode = raw('krea_training_duration_mode') === 'steps' || !(Number(raw('max_train_epochs')) > 0);
+    field(stepsMode ? 'max_train_steps' : 'max_train_epochs');
+    field('train_batch_size');
+    field('gradient_accumulation_steps');
+    field('resolution');
+    field('enable_bucket');
+    field('seed');
+    group('paramTraining');
+
+    field('learning_rate');
+    field('unet_lr');
+    field('text_encoder_lr');
+    field('text_encoder_lr1');
+    field('text_encoder_lr2');
+    field('optimizer_type');
+    field('lr_scheduler');
+    field('lr_warmup_steps');
+    group('paramOptimization');
+
+    field('mixed_precision');
+    field('gradient_checkpointing');
+    field('gradient_checkpointing_cpu_offload');
+    field('cache_latents');
+    field('cache_latents_to_disk');
+    field('cache_text_encoder_outputs');
+    field('cache_text_encoder_outputs_to_disk');
+    field('krea_latent_cache_device');
+    field('krea_text_cache_device');
+    field('krea_cache_reuse');
+    field('blocks_to_swap');
+    group('paramPerformance');
+    return groups;
+  },
+
+  _parametersConsoleHtml(t, d = {}) {
+    const context = this.selectedRunDir || d.run_dir || this.liveTaskId || d.active_task?.id || '';
+    if (this._monitorParamContext !== context) {
+      this._monitorParamContext = context;
+      this.monitorParamQuery = '';
+      this.monitorParamsExpanded = false;
+    }
+    const model = this._monitorParamModel(t);
+    const p = model.byKey;
+    let html = '<section class="m-console-card m-parameters-console"><div class="m-card-heading m-param-heading"><div><span>' + this.esc(t('trainingConfig')) + '</span></div>';
+    html += '<div class="m-param-actions"><button type="button" class="btn btn-sm btn-secondary" :disabled="!currentOutputRunDir" @click="viewSnapshot(currentOutputRunDir)">' + this.esc(t('viewRawConfig')) + '</button>';
+    html += '<button type="button" class="btn btn-sm btn-primary" :disabled="!currentOutputRunDir || !!historyReuseBusy" @click="reuseConfig(currentOutputRunDir)" x-text="t(historyReuseBusy === currentOutputRunDir ? \'monitor.copyingConfig\' : \'monitor.reuseRunConfig\')">' + this.esc(t('reuseRunConfig')) + '</button></div></div>';
+    const source = (...keys) => keys.map(key => p.get(key)).find(param => param?.raw);
+    const datasetConfig = source('dataset_config');
+    const sources = [source('dit', 'pretrained_model_name_or_path'), datasetConfig || source('train_data_dir'), source('network_weights')].filter(Boolean);
+    if (sources.length) {
+      html += '<dl class="m-param-sources">';
+      for (const param of sources) {
+        const label = param.label;
+        const basename = param.raw.replace(/\\/g, '/').replace(/\/+$/, '').split('/').pop() || param.raw;
+        html += '<div><dt>' + this.esc(label) + '</dt><dd><strong>' + this.esc(basename) + '</strong>';
+        if (basename !== param.raw) html += '<span>' + this.esc(param.raw) + '</span>';
+        html += '</dd><button type="button" class="btn-icon" data-config-value="' + this.esc(param.raw) + '" @click="copyMonitorParamValue($el.dataset.configValue)" title="' + this.esc(t('paramCopyPath')) + '" aria-label="' + this.esc(t('paramCopyPath') + ': ' + label) + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg></button></div>';
+      }
+      html += '</dl>';
+    }
+    const groups = this._monitorParamSummary(t, model);
+    if (groups.length) {
+      html += '<div class="m-param-summary">';
+      for (const group of groups) {
+        html += '<section><h3>' + this.esc(group.title) + '</h3><dl>';
+        for (const row of group.rows) html += '<div><dt title="' + this.esc(row.displayKey) + '">' + this.esc(row.label) + '</dt><dd>' + this.esc(row.value) + '</dd></div>';
+        html += '</dl></section>';
+      }
+      html += '</div>';
+    }
+    html += '<details class="m-param-all" @toggle="toggleMonitorParams($el)"' + (this.monitorParamsExpanded ? ' open' : '') + '><summary><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg><span>' + this.esc(t('allParams')) + '</span><small>' + model.rows.length + ' ' + this.esc(t('items')) + '</small></summary><div data-param-body></div></details></section>';
     return html;
   },
 
-  filterMonitorParams() {
-    const root = document.getElementById('monitorTabContent');
-    if (!root) return;
-    const query = String(this.monitorParamQuery || '').trim().toLowerCase();
-    let matches = 0;
-    root.querySelectorAll('[data-param-row]').forEach(row => {
-      const show = !query || String(row.dataset.search || '').includes(query);
-      row.hidden = !show;
-      if (show) matches++;
-    });
-    root.querySelectorAll('.m-param-group').forEach(group => {
-      const count = group.querySelectorAll('[data-param-row]:not([hidden])').length;
-      group.hidden = query ? count === 0 : false;
-      if (query && count > 0) group.open = true;
-    });
-    const result = root.querySelector('[data-param-match]');
-    if (result) result.textContent = query ? matches + ' ' + this.t('monitor.matches') : '';
+  initMonitorParams(panel) {
+    const details = panel.querySelector('.m-param-all');
+    if (details?.open) this.toggleMonitorParams(details);
   },
 
-  setMonitorParamGroups(open) {
-    const root = document.getElementById('monitorTabContent');
-    if (!root) return;
-    root.querySelectorAll('.m-param-group:not([hidden])').forEach(group => { group.open = !!open; });
+  toggleMonitorParams(details) {
+    // 移除旧面板时可能还有待发送的 toggle 事件，不让它污染新记录。
+    if (!details.isConnected) return;
+    this.monitorParamsExpanded = details.open;
+    if (!details.open) return;
+    const body = details.querySelector('[data-param-body]');
+    if (!body.firstElementChild) {
+      const t = (key, fallback) => this.tMonitor(key, fallback);
+      const model = this._monitorParamModel(t);
+      let html = '<div class="m-param-toolbar"><input type="search" value="' + this.esc(this.monitorParamQuery || '') + '" placeholder="' + this.esc(t('parameterSearch')) + '" aria-label="' + this.esc(t('parameterSearch')) + '" @input="monitorParamQuery=$event.target.value;filterMonitorParams()"><span class="m-param-match" data-param-match role="status"></span></div>';
+      html += '<table class="m-param-table"><thead><tr><th scope="col">' + this.esc(t('paramName')) + '</th><th scope="col">' + this.esc(t('paramValue')) + '</th></tr></thead><tbody>';
+      for (const row of model.rows) {
+        html += '<tr data-param-row data-search="' + this.esc(row.search) + '"><th scope="row">' + this.esc(row.label);
+        if (row.label !== row.displayKey) html += '<small title="' + this.esc(row.key) + '">' + this.esc(row.displayKey) + '</small>';
+        html += '</th><td>' + this.esc(row.value) + '</td></tr>';
+      }
+      html += '</tbody></table><p class="m-param-empty" data-param-empty hidden>' + this.esc(t('paramNoMatches')) + '</p>';
+      body.innerHTML = html;
+      body._paramRows = Array.from(body.querySelectorAll('[data-param-row]'));
+    }
+    this.filterMonitorParams();
+  },
+
+  filterMonitorParams() {
+    const root = document.getElementById('monitorTabContent')?.querySelector('[data-param-body]');
+    if (!root?.firstElementChild) return;
+    const query = String(this.monitorParamQuery || '').trim().toLowerCase();
+    let matches = 0;
+    for (const row of root._paramRows || []) {
+      const show = !query || row.dataset.search.includes(query);
+      if (row.hidden === show) row.hidden = !show;
+      if (show) matches++;
+    }
+    root.querySelector('[data-param-match]').textContent = matches + ' ' + this.tMonitor(query ? 'matches' : 'items');
+    root.querySelector('[data-param-empty]').hidden = matches > 0;
+  },
+
+  async copyMonitorParamValue(value) {
+    try { await navigator.clipboard.writeText(value); this.toast(this.t('common.copied')); }
+    catch { this.toast(this.t('common.requestFailed'), 'error'); }
   },
 };

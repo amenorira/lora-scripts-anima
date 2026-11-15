@@ -167,15 +167,36 @@ window.monitorRenderMixin = {
     }
     if (tab === 'overview') {
       const sig = 'ov:' + this._shellLocale + ':' + this._summaryStatus(d, isHistory).state + ':' + this.trainParamsVersion;
-      if (panelEmpty || this._builtOverviewSig !== sig) {
+      if (panelEmpty || this._builtOverviewSig !== sig || this._builtParamSchema !== window.TRAIN_SECTIONS) {
         this._builtOverviewSig = sig;
+        this._builtParamSchema = window.TRAIN_SECTIONS;
         if (!tabChanged) panel.classList.add('no-enter-anim');
+        const paramInput = panel.querySelector('.m-param-toolbar input');
+        const paramFocus = paramInput && document.activeElement === paramInput
+          ? { start: paramInput.selectionStart, end: paramInput.selectionEnd } : null;
+        const overviewContext = isHistory ? 'history:' + this.selectedRunDir : 'live:' + (d.run_dir || this.liveTaskId || d.active_task?.id || '');
+        const sameContext = panel.dataset.overviewContext === overviewContext;
+        const method = panel.querySelector('.m-diagnostic-details');
+        const methodOpen = method?.open;
+        const methodFocused = method && document.activeElement === method.querySelector('summary');
+        const scrollTop = panel.scrollTop;
         panel.innerHTML = this._renderOverviewTab(d, t, isHistory);
+        panel.dataset.overviewContext = overviewContext;
         delete panel.dataset.diagnosticVersion;
         delete panel.dataset.sparklineVersion;
         delete panel.dataset.telemetryVersion;
         delete panel.dataset.motionContext;
-        if (this.monitorParamQuery) this.filterMonitorParams();
+        this.initMonitorParams(panel);
+        if (sameContext) {
+          const method = panel.querySelector('.m-diagnostic-details');
+          if (method) method.open = !!methodOpen;
+          panel.scrollTop = scrollTop;
+          if (paramFocus) {
+            const input = panel.querySelector('.m-param-toolbar input');
+            input?.focus({ preventScroll: true });
+            input?.setSelectionRange(paramFocus.start, paramFocus.end);
+          } else if (methodFocused) method?.querySelector('summary')?.focus({ preventScroll: true });
+        }
       }
       this._patchOverviewStatus(panel, d, t, isHistory);
       return;

@@ -1026,7 +1026,7 @@ def _krea2_ui_fields(fields: list[dict]) -> list[dict]:
             if key not in {"dit", "vae", "text_encoder", "compile", "krea_attention_backend", "krea_split_attn",
                            "enable_krea_samples", "krea_sample_prompts"}:
                 field["desc_key"] = reference["desc_key"]
-            for metadata in ("doc_slug", "doc_anchor_by_profile", "doc_anchor", "keep_children_position"):
+            for metadata in ("doc_slug", "doc_anchor_by_profile", "doc_anchor", "keep_children_position", "optimizer_arg_values"):
                 if metadata in reference:
                     field.setdefault(metadata, reference[metadata])
             if key == "resume":

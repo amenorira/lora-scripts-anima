@@ -11,16 +11,38 @@ window.DEFAULT_DIM_KEYS = new Set([
   'train_data_dir', 'output_name', 'output_dir',
 ]);
 
+// 表单和训练记录共用名称/选项标签，显示历史值时不依赖当前表单内容。
+window.trainingFieldDisplay = {
+  suffix(profile) {
+    return { 'moss-image-lora': '_moss', 'anima-lora': '_anima', 'sdxl-lora': '_sdxl' }[profile] || '';
+  },
+  label(field, profile, t) {
+    const base = field.descKey || field.desc_key || ('field.' + field.key);
+    const specificKey = base + this.suffix(profile);
+    const specific = t(specificKey);
+    const key = specific && specific !== specificKey ? specificKey : base;
+    const translated = t(key);
+    return { key, text: translated && translated !== key ? translated : field.key };
+  },
+  optionLabel(option, t) {
+    const key = option.labelKey || option.dk;
+    return key ? t(key, option.l) : option.l;
+  },
+  optionApplies(option, profile) {
+    const group = window.TRAIN_GROUP_MAP?.[profile] || 'all';
+    return !option.group || option.group === 'all'
+      || (Array.isArray(option.group) ? option.group.includes(group) : option.group === group);
+  },
+};
+
 window.trainingFieldRenderer = {
   _trainingSelectConfig(field) {
     if (!field) return { options: [] };
-    const currentGroup = window.TRAIN_GROUP_MAP[this.form.model_train_type || 'anima-lora'] || 'all';
-    const options = items => (items || []).filter(option => !option.group || option.group === 'all'
-      || (Array.isArray(option.group) ? option.group.includes(currentGroup) : option.group === currentGroup))
+    const options = items => (items || []).filter(option => window.trainingFieldDisplay.optionApplies(option, this.form.model_train_type || 'anima-lora'))
       .map(option => {
         const labelKey = option.labelKey || option.dk;
         const reason = this._adamwOptionDisabledReason?.(field.key, option.v) || '';
-        const resolved = { v: option.v, l: labelKey ? this.t(labelKey, option.l) : option.l, labelKey };
+        const resolved = { v: option.v, l: window.trainingFieldDisplay.optionLabel(option, (key, fallback) => this.t(key, fallback)), labelKey };
         if (option.dKey) resolved.dKey = option.dKey;
         if (option.dKey) resolved.d = this.t(option.dKey);
         else if (option.d) resolved.d = option.d;
@@ -103,7 +125,7 @@ window.trainingFieldRenderer = {
     const option = options.find(item => String(item.v) === String(value))
       || options.find(item => String(item.v).toLowerCase() === text.toLowerCase());
     if (!option) return text;
-    return this.t(option.dk, option.l || text);
+    return window.trainingFieldDisplay.optionLabel(option, (key, fallback) => this.t(key, fallback)) || text;
   },
   _orderFieldsByDependencies(fields) {
     const keys = new Set(fields.map(field => field.key));
@@ -197,12 +219,7 @@ window.trainingFieldRenderer = {
   },
 
   _trainingTranslationSuffix(trainType) {
-    switch (trainType) {
-      case 'moss-image-lora': return '_moss';
-      case 'anima-lora': return '_anima';
-      case 'sdxl-lora': return '_sdxl';
-      default: return '';
-    }
+    return window.trainingFieldDisplay.suffix(trainType);
   },
 
   _resolveFieldBaseHintKey(field, trainType) {
@@ -298,15 +315,7 @@ window.trainingFieldRenderer = {
   renderField(field) {
     const val = this.form[field.key];
     const trainType = this.form.model_train_type || 'anima-lora';
-    const trainTypeSuffix = this._trainingTranslationSuffix(trainType);
-
-    // Try train-type-specific desc key first, then fall back to default
-    // Only use if the i18n key actually exists (to avoid showing "field.qwen3_anima" etc.)
-    const descKeyWithSuffix = field.descKey + trainTypeSuffix;
-    const specificLabel = this.t(descKeyWithSuffix);
-    const hasSpecificLabel = specificLabel && specificLabel !== descKeyWithSuffix;
-    const label = hasSpecificLabel ? specificLabel : (this.t(field.descKey) || field.descKey || field.key);
-    const labelKey = hasSpecificLabel ? descKeyWithSuffix : (field.descKey || field.key);
+    const { text: label, key: labelKey } = window.trainingFieldDisplay.label(field, trainType, (key, fallback) => this.t(key, fallback));
     const labelHtml = this.trainingText(labelKey);
     const hint = this._resolveFieldHintText(field, this.form, trainType);
     const docAnchor = field.docAnchorByProfile
