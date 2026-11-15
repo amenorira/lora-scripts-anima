@@ -28,6 +28,7 @@ function app(previews = []) {
     weakNetworkMode: false, currentOutputRunDir: 'output/test', monitorData: {},
     t(key) {
       const text = {'monitor.sampleSeed': 'Seed {n}', 'monitor.samplePrompt': 'Prompt {n}',
+        'monitor.sampleEpoch': 'Epoch {n}', 'monitor.sampleStep': 'Step {n}',
         'monitor.sampleConditionOption': 'Condition {n}',
         'monitor.sampleBatchCount': '{n} images',
         'monitor.sampleNoSeed': 'Unknown seed'};
@@ -1061,6 +1062,37 @@ test('preview labels omit generated middle dots while preserving user prompt and
   assert.equal(value._samplePromptText(value.previews[0]), 'fox · cat');
   assert.match(value._previewGenerationInfoHtml(value.previews[0]), /fox · cat/);
   assert.match(overview, /user·file/);
+});
+
+test('stage labels follow the active locale without rewriting canonical metadata or custom labels', () => {
+  const value = app([image('b1', 0, 4200, {sample: {epoch: 2, step: 800}})]);
+  const model = value._sampleDataModel();
+  for (const [locale, epoch, step] of [['zh-CN', '第 2 轮', '第 800 步'], ['en-US', 'Epoch 2', 'Step 800'], ['ja-JP', 'エポック 2', 'ステップ 800']]) {
+    const messages = require('../../frontend/i18n/' + locale + '.json');
+    value.t = key => key.split('.').reduce((item, part) => item?.[part], messages) || key;
+    assert.deepEqual(value._previewCaptionParts(value.previews[0]), {primary: epoch, secondary: step});
+    assert.deepEqual(value._sampleStageParts('Epoch 2 · Step 800 (2)'), {primary: epoch, secondary: step + ' (2)'});
+    assert.deepEqual(value._sampleStageParts('Epoch 2'), {primary: epoch, secondary: ''});
+    assert.deepEqual(value._sampleStageParts('Step 800'), {primary: step, secondary: ''});
+    assert.deepEqual(value._sampleStageParts('custom Epoch 2 · fox'), {primary: 'custom Epoch 2 · fox', secondary: ''});
+    assert.equal(value._sampleDataModel(), model);
+    assert.equal(model.batches[0].label, 'Epoch 2 · Step 800');
+  }
+});
+
+test('historical filename labels switch language after the batch model was cached in Chinese', () => {
+  const stepName = legacyImage(800).name.replace('e000800', '000800');
+  const value = app([legacyImage(2), {name: stepName, path: 'sample/' + stepName, url: '/' + stepName}]);
+  let model;
+  for (const [locale, epoch, step] of [['zh-CN', '第 2 轮', '第 800 步'], ['en-US', 'Epoch 2', 'Step 800'], ['ja-JP', 'エポック 2', 'ステップ 800']]) {
+    const messages = require('../../frontend/i18n/' + locale + '.json');
+    value.t = key => key.split('.').reduce((item, part) => item?.[part], messages) || key;
+    if (!model) { value._sampleModelCache = null; model = value._sampleDataModel(); }
+    assert.deepEqual(value._previewCaptionParts(value.previews[0]), {primary: epoch, secondary: ''});
+    assert.deepEqual(value._previewCaptionParts(value.previews[1]), {primary: step, secondary: ''});
+    assert.equal(value._sampleDataModel(), model);
+    assert.deepEqual(model.batches.map(batch => batch.label), ['Epoch 2', 'Step 800']);
+  }
 });
 
 test('adjacent uint64 seeds remain different cases and cannot be paired after JavaScript integer rounding', () => {

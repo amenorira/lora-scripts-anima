@@ -94,6 +94,7 @@ test('rapid thumbnail changes and closing invalidate obsolete lazy preloaders', 
 
 function reconcileFixture(previews, oldIndices) {
   const app = composeMixins(window.utilsMixin, window.monitorArtifactsRenderMixin, {
+    t: key => ({'monitor.sampleEpoch': 'Epoch {n}', 'monitor.sampleStep': 'Step {n}'})[key] || key,
     previews, _previewItemKey: preview => preview.path, _sampleRecord: preview => preview.sample,
     _sampleDataModel: () => ({byBatch: new Map(previews.map(preview => [preview.sample.batch_id, {label: preview.sample.batch_label}]))}),
     _previewCompareLabel: preview => preview.path, _previewViewTimelineHtml: indices => String(indices[0]),

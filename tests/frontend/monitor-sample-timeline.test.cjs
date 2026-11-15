@@ -17,7 +17,8 @@ function app(previews) {
     previews: [], previewsVersion: 0, previewStep: 0,
     _previewMediaQueue: [], _previewMediaObjectUrls: [], _previewMediaGeneration: 0,
     weakNetworkMode: false, currentOutputRunDir: 'output/test', monitorData: {},
-    t(key) { return ({'monitor.sampleBatchCount': '{n} images', 'monitor.sampleSeed': 'Seed {n}', 'monitor.samplePrompt': 'Prompt {n}'})[key] || key; },
+    t(key) { return ({'monitor.sampleBatchCount': '{n} images', 'monitor.sampleSeed': 'Seed {n}', 'monitor.samplePrompt': 'Prompt {n}',
+      'monitor.sampleEpoch': 'Epoch {n}', 'monitor.sampleStep': 'Step {n}'})[key] || key; },
     renderDashboard() {}, _refreshIconHtml() {return '';}, _updatePreviewLightbox() {},
   });
   value.resetSampleBrowser(); value._replacePreviewItems(previews);

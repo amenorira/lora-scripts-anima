@@ -23,29 +23,35 @@ function fixture({width = 800, height = 500, fit = 1, vertical = false} = {}) {
     t: key => key,
   });
   value._syncPreviewGroupViewport();
-  return {value, viewport, extent, group, capture};
+  const bounds = () => {
+    const width = parseFloat(group.style.width), height = parseFloat(group.style.height), scale = value.previewViewScale;
+    const left = parseFloat(group.style.left) + width * (1 - scale) / 2 - viewport.scrollLeft;
+    const top = parseFloat(group.style.top) + height * (1 - scale) / 2 - viewport.scrollTop;
+    return {left, top, right: left + width * scale, bottom: top + height * scale, width: width * scale, height: height * scale};
+  };
+  return {value, viewport, extent, group, capture, bounds};
 }
 
 test('zoom changes one group transform and preserves the group point under the pointer', () => {
-  const {value, viewport, group} = fixture();
+  const {value, group, bounds} = fixture();
   value.setPreviewViewScale(2, {clientX: 250, clientY: 200});
   assert.equal(group.style.transform, 'scale(2)');
-  assert.equal(viewport.scrollLeft, 50);
-  assert.equal(viewport.scrollTop, 100);
+  assert.equal(bounds().left, -50);
+  assert.equal(bounds().top, -100);
   assert.deepEqual(value._previewGroupGeometry, {width: 800, height: 500, count: 2});
   assert.equal(value.previewViewZoomLabel(), '2.00×');
 });
 
 test('fitting a long vertical group displays the complete group rather than fitting each image separately', () => {
-  const {value, viewport, extent, group} = fixture({width: 400, height: 1800, fit: 1 / 3, vertical: true});
+  const {value, viewport, group, bounds} = fixture({width: 400, height: 1800, fit: 1 / 3, vertical: true});
   viewport.scrollTop = 600;
   assert.equal(value.previewViewZoomLabel(), '3.00×');
   value.resetPreviewView();
   assert.equal(value.previewViewAtFit(), true);
   assert.equal(value.previewViewScale, 1 / 3);
   assert.equal(group.style.transform, 'scale(' + 1 / 3 + ')');
-  assert.equal(extent.style.height, '600px');
-  assert.equal(viewport.scrollTop, 0);
+  assert.equal(bounds().height, 600);
+  assert(Math.abs(bounds().top) < 0.001);
 });
 
 test('dragging pans the whole scroll surface and releases capture on reset', () => {
@@ -62,6 +68,59 @@ test('dragging pans the whole scroll surface and releases capture on reset', () 
   value.resetPreviewView();
   assert.equal(capture.size, 0);
   assert.equal(value.previewViewPanning, false);
+});
+
+test('single images and both comparison layouts can pan at fit while retaining a visible part at every edge', () => {
+  for (const options of [{width: 800, height: 500}, {width: 1000, height: 500}, {width: 400, height: 600, vertical: true}]) {
+    const {value, viewport, bounds} = fixture(options);
+    value.previewCompareActive = options.width !== 800;
+    const event = {currentTarget: viewport, target: {closest: () => null}, button: 0, pointerId: 9,
+      clientX: 500, clientY: 300, preventDefault() {}};
+    value.startPreviewPan(event);
+    assert.equal(value.previewViewPanning, true);
+    value.movePreviewPan({...event, clientX: 600, clientY: 400});
+    assert.equal(bounds().left, (1000 - options.width) / 2 + 100);
+    assert.equal(bounds().top, (600 - options.height) / 2 + 100);
+    value.movePreviewPan({...event, clientX: 10000, clientY: 10000});
+    assert.equal(bounds().left, 936);
+    assert.equal(bounds().top, 536);
+    value.movePreviewPan({...event, clientX: -10000, clientY: -10000});
+    assert.equal(bounds().right, 64);
+    assert.equal(bounds().bottom, 64);
+    value.resetPreviewView();
+    assert.equal(bounds().left, (1000 - options.width) / 2);
+    assert.equal(bounds().top, (600 - options.height) / 2);
+  }
+});
+
+test('zooming a panned image preserves the pointed image detail and relayout preserves its displacement', () => {
+  const {value, viewport, bounds} = fixture();
+  viewport.scrollLeft += 150; viewport.scrollTop += 100;
+  const before = bounds(), point = {clientX: 250, clientY: 200};
+  value.setPreviewViewScale(2, point);
+  assert.equal((point.clientX - bounds().left) / 2, point.clientX - before.left);
+  assert.equal((point.clientY - bounds().top) / 2, point.clientY - before.top);
+  const zoomed = bounds();
+  value.constrainPreviewView();
+  assert.deepEqual(bounds(), zoomed);
+});
+
+test('comparison pan limits keep image pixels visible instead of only the unscaled caption', () => {
+  for (const vertical of [false, true]) {
+    const {value, viewport, bounds} = fixture({vertical});
+    const captionWidth = vertical ? 160 : 0, captionHeight = vertical ? 0 : 32;
+    Object.assign(value._previewGroupGeometry, {captionWidth, captionHeight});
+    value._syncPreviewGroupViewport();
+    const event = {currentTarget: viewport, target: {closest: () => null}, button: 0, pointerId: 7,
+      clientX: 500, clientY: 300, preventDefault() {}};
+    value.startPreviewPan(event);
+    value.movePreviewPan({...event, clientX: 10000, clientY: 10000});
+    assert.equal(bounds().left + captionWidth, 936);
+    assert.equal(bounds().top, 536);
+    value.movePreviewPan({...event, clientX: -10000, clientY: -10000});
+    assert.equal(bounds().right, 64);
+    assert.equal(bounds().bottom - captionHeight, 64);
+  }
 });
 
 test('reciprocal zoom returns exactly to fit without a misleading 100 percent state', () => {
@@ -134,11 +193,11 @@ test('viewport resize notifications are coalesced and stop after the viewer disc
 });
 
 test('caption space and counter-scaling remain fixed while the image group zooms', () => {
-  const {value, group, extent} = fixture();
+  const {value, group, bounds} = fixture();
   value._previewGroupGeometry.captionHeight = 48;
   value.setPreviewViewScale(2);
   assert.deepEqual(value._previewGroupDrawSize(2), {width: 1600, height: 1048});
-  assert.equal(extent.style.height, '1048px');
+  assert.equal(bounds().height, 1048);
   assert.equal(group.style['--preview-caption-y-space'], '24px');
   assert.equal(group.style['--preview-caption-counter-scale'], '0.5');
   assert.equal(group.style.height, '524px');

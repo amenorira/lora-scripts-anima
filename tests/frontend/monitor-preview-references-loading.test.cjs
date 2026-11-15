@@ -75,7 +75,7 @@ function fixture(count = 4, width = 300, observer = true) {
   const previews = Array.from({length: count}, (_, index) => sample(index + 1));
   const app = composeMixins(context.window.utilsMixin, context.window.monitorPreviewsMixin, context.window.monitorArtifactsRenderMixin, {
     previews, previewsVersion: 1, previewStep: 0, previewLightboxOpen: true,
-    t: key => key, constrainPreviewView() {},
+    t: key => ({'monitor.sampleEpoch': 'Epoch {n}', 'monitor.sampleStep': 'Step {n}'})[key] || key, constrainPreviewView() {},
     _layoutPreviewComparisonPanes() {if (this._previewReferenceMedia) this._refreshPreviewReferenceVisibility(this._previewReferenceMedia);},
   });
   return {app, previews, container, root, originals, panes, observers, listeners, imageSize, environment};

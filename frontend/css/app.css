@@ -3694,8 +3694,8 @@ dialog.preview-lightbox::backdrop { background: transparent; }
 .preview-icon-button:disabled { opacity: var(--disabled-opacity); cursor: default; }
 .preview-lightbox-body { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .preview-lightbox-canvas { position: relative; display: flex; flex: 1; min-width: 0; min-height: 0; padding: 12px 16px; background: var(--bg-preview); }
-.preview-lightbox-panes { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; user-select: none; }
-.preview-lightbox-panes.zoomed { cursor: grab; }
+.preview-lightbox-panes { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden; overscroll-behavior: contain; scrollbar-gutter: stable; user-select: none; cursor: grab; }
+.preview-lightbox-panes.zoomed { overflow: auto; }
 .preview-lightbox-panes.panning { cursor: grabbing; touch-action: none; }
 .preview-lightbox-extent { position: relative; min-width: 100%; min-height: 100%; overflow: hidden; }
 .preview-lightbox-group { position: absolute; display: flex; align-items: center; gap: 12px; transform-origin: center; }

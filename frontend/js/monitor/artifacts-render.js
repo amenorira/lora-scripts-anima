@@ -65,8 +65,12 @@ window.monitorArtifactsRenderMixin = {
 
   _sampleStageParts(label) {
     const text = String(label || '');
-    const stage = text.match(/^(Epoch\s+\d+)\s*·\s*(Step\s+\d+.*)$/);
-    return { primary: stage ? stage[1] : text, secondary: stage ? stage[2] : '' };
+    const stage = text.match(/^(Epoch|Step)\s+(\d+)(?:\s*·\s*Step\s+(\d+))?(\s+\(\d+\))?$/);
+    if (!stage) return { primary: text, secondary: '' };
+    const primary = this.t(stage[1] === 'Epoch' ? 'monitor.sampleEpoch' : 'monitor.sampleStep').replace('{n}', stage[2]);
+    const secondary = stage[3] ? this.t('monitor.sampleStep').replace('{n}', stage[3]) : '';
+    const suffix = stage[4] || '';
+    return { primary: primary + (secondary ? '' : suffix), secondary: secondary ? secondary + suffix : '' };
   },
 
   _sampleStageHtml(label) {
@@ -832,7 +836,7 @@ window.monitorArtifactsRenderMixin = {
       + '<div class="preview-lightbox-tools">'
       + '<button type="button" class="btn btn-sm btn-primary preview-new-samples" x-show="_previewHasNewInViewerSequence()" @click="jumpToLatestPreview()">' + this.esc(t('previewNewSamples')) + '</button>'
       + '<button type="button" id="previewReferenceButton" class="btn btn-sm btn-secondary preview-tool-action" :class="{ active: previewCompareActive }" :disabled="!previewCompareActive && !canPinCurrentPreview()" :title="previewReferenceActionTitle()" :aria-pressed="previewCompareActive ? \'true\' : \'false\'" @click="togglePreviewReference()" x-text="previewCompareActive ? t(\'monitor.sampleEndCompare\') : t(\'monitor.sampleCompareReference\')"></button>'
-      + '<button type="button" class="btn btn-sm btn-ghost preview-tool-action" x-show="previewCompareActive && !previewComparisonWaiting" :disabled="!canPinCurrentPreview()" @click="pinCurrentPreviewReference()" title="' + this.esc(t('samplePinRightHint')) + '" x-text="t(\'monitor.sampleSetReference\')"></button>'
+      + '<button type="button" class="btn btn-sm btn-ghost preview-tool-action" x-show="previewCompareActive && !previewComparisonWaiting" :disabled="!canPinCurrentPreview()" @click="pinCurrentPreviewReference()" title="' + this.esc(t('samplePinRightHint')) + '" x-text="t(\'monitor.sampleCompareReference\')"></button>'
       + '<a class="btn btn-sm btn-ghost preview-tool-action" id="previewLightboxOriginal" target="_blank" rel="noopener">' + this.esc(t('openOriginal')) + '</a>'
       + '<div class="preview-lightbox-zoom">'
       + '<button type="button" class="btn-icon preview-icon-button" @click="setPreviewViewScale(previewViewScale / 1.18)" :disabled="previewViewAtFit()" title="' + this.esc(this.t('tagEditor.zoomOut')) + '" aria-label="' + this.esc(this.t('tagEditor.zoomOut')) + '">' + zoomOut + '</button>'
@@ -948,7 +952,7 @@ window.monitorArtifactsRenderMixin = {
     this._previewImageKey = '';
     this.previewImageLoading = this.previewImageError = false;
     this.previewImageAvailable = false;
-    this._previewGroupGeometry = null; this._previewViewFitScale = 1;
+    this._previewGroupGeometry = null; this._previewViewportLayout = null; this._previewViewFitScale = 1;
     this.resetPreviewView();
     if (restoreSample) {
       const item = document.getElementById('sample-' + encodeURIComponent(this._previewItemKey(restoreSample)));
@@ -1340,11 +1344,11 @@ window.monitorArtifactsRenderMixin = {
     return '<div id="previewTimelineContextMenu" class="te-ctx preview-timeline-context-menu" role="menu" tabindex="-1" hidden :hidden="!previewTimelineMenu"'
       + ' :class="{\'is-positioned\':previewTimelineMenu?.positioned}" :style="\'left:\'+(previewTimelineMenu?.x||0)+\'px;top:\'+(previewTimelineMenu?.y||0)+\'px\'"'
       + ' aria-label="' + this.esc(t('sampleContextMenu')) + '" @contextmenu.prevent.stop @click.stop @keydown="previewTimelineMenuKeydown($event)">'
-      + '<button type="button" role="menuitem" data-preview-menu-action="pin" :disabled="!previewTimelineMenu?.actions.pin" @click="previewTimelineMenuAction(\'pin\')"><span>' + this.esc(t('pinReference')) + '</span></button>'
+      + '<button type="button" role="menuitem" data-preview-menu-action="pin" :disabled="!previewTimelineMenu?.actions.pin" @click="previewTimelineMenuAction(\'pin\')"><span>' + this.esc(t('sampleCompareReference')) + '</span></button>'
       + '<button type="button" role="menuitem" data-preview-menu-action="unpin" :hidden="!previewTimelineMenu?.actions.unpin" @click="previewTimelineMenuAction(\'unpin\')"><span>' + this.esc(t('sampleUnpinComparison')) + '</span></button>'
       + '<button type="button" role="menuitem" data-preview-menu-action="compare" :disabled="!previewTimelineMenu?.actions.compare" @click="previewTimelineMenuAction(\'compare\')"><span>' + this.esc(t('sampleContextCompare')) + '</span></button>'
       + '<div class="te-ctx-divider" role="separator" :hidden="!previewTimelineMenu?.actions.cancel"></div>'
-      + '<button type="button" role="menuitem" data-preview-menu-action="cancel" :hidden="!previewTimelineMenu?.actions.cancel" @click="previewTimelineMenuAction(\'cancel\')"><span>' + this.esc(t('sampleContextCancel')) + '</span></button></div>';
+      + '<button type="button" role="menuitem" data-preview-menu-action="cancel" :hidden="!previewTimelineMenu?.actions.cancel" @click="previewTimelineMenuAction(\'cancel\')"><span>' + this.esc(t('sampleEndCompare')) + '</span></button></div>';
   },
 
   _previewTimelineMenuTarget(menu = this.previewTimelineMenu) {
@@ -1761,13 +1765,22 @@ window.monitorArtifactsRenderMixin = {
     const extent = document.getElementById('previewLightboxExtent');
     const group = document.getElementById('previewLightboxGroup');
     if (!geometry || !viewport || !extent || !group) return;
+    const previous = this._previewViewportLayout;
+    const offsetX = previous ? viewport.scrollLeft - previous.centerX : 0;
+    const offsetY = previous ? viewport.scrollTop - previous.centerY : 0;
     const scale = this.previewViewScale;
     const drawn = this._previewGroupDrawSize(scale);
-    const extentWidth = Math.max(viewport.clientWidth, drawn.width);
-    extent.style.width = extentWidth + 'px';
     const cssHeight = parseFloat(window.getComputedStyle?.(viewport)?.height);
     const availableHeight = cssHeight > 0 ? Math.min(viewport.clientHeight, cssHeight) : viewport.clientHeight;
-    const extentHeight = Math.max(availableHeight, drawn.height);
+    // Leave room past every edge, retaining 64 CSS pixels of the images,
+    // rather than just their captions (or half of a small image/viewport).
+    const captionWidth = geometry.captionWidth || 0, captionHeight = geometry.captionHeight || 0;
+    const horizontalSpace = viewport.clientWidth - Math.min(64, (drawn.width - captionWidth) / 2, viewport.clientWidth / 2);
+    const verticalSpace = availableHeight - Math.min(64, (drawn.height - captionHeight) / 2, availableHeight / 2);
+    const left = Math.max(0, horizontalSpace - captionWidth), top = verticalSpace;
+    const extentWidth = drawn.width + left + horizontalSpace;
+    const extentHeight = drawn.height + top + Math.max(0, verticalSpace - captionHeight);
+    extent.style.width = extentWidth + 'px';
     extent.style.height = extentHeight + 'px';
     group.style.setProperty('--preview-caption-x-space', ((geometry.captionWidth || 0) / scale) + 'px');
     group.style.setProperty('--preview-caption-y-space', ((geometry.captionHeight || 0) / scale) + 'px');
@@ -1775,7 +1788,11 @@ window.monitorArtifactsRenderMixin = {
     group.style.setProperty('--preview-caption-zoom', String(scale));
     const width = drawn.width / scale, height = drawn.height / scale;
     Object.assign(group.style, {width: width + 'px', height: height + 'px',
-      left: (extentWidth - width) / 2 + 'px', top: (extentHeight - height) / 2 + 'px', transform: 'scale(' + scale + ')'});
+      left: left + (drawn.width - width) / 2 + 'px', top: top + (drawn.height - height) / 2 + 'px', transform: 'scale(' + scale + ')'});
+    const centerX = left + (drawn.width - viewport.clientWidth) / 2, centerY = top + (drawn.height - availableHeight) / 2;
+    this._previewViewportLayout = {left, top, centerX, centerY};
+    viewport.scrollLeft = previous ? centerX + offsetX : Math.min(centerX, left);
+    viewport.scrollTop = previous ? centerY + offsetY : Math.min(centerY, top);
   },
 
   _previewGroupDrawSize(scale) {
@@ -1830,7 +1847,11 @@ window.monitorArtifactsRenderMixin = {
     const references = document.getElementById('previewReferencePanes');
     this._layoutPreviewComparisonPanes((references?.children.length || 0) + 1);
     const viewport = document.getElementById('previewLightboxViewport') || references?.parentElement;
-    if (viewport) viewport.scrollLeft = viewport.scrollTop = 0;
+    const position = this._previewViewportLayout;
+    if (viewport) {
+      viewport.scrollLeft = position ? Math.min(position.centerX, position.left) : 0;
+      viewport.scrollTop = position ? Math.min(position.centerY, position.top) : 0;
+    }
     this.constrainPreviewView();
     this.syncPreviewPromptBar();
   },
@@ -1931,7 +1952,11 @@ window.monitorArtifactsRenderMixin = {
     this._previewViewFitted = true;
     this._syncPreviewGroupViewport();
     const viewport = document.getElementById('previewLightboxViewport');
-    if (viewport) viewport.scrollLeft = viewport.scrollTop = 0;
+    const position = this._previewViewportLayout;
+    if (viewport) {
+      viewport.scrollLeft = position?.centerX || 0;
+      viewport.scrollTop = position?.centerY || 0;
+    }
   },
 
   constrainPreviewView(fallback) {
@@ -1953,17 +1978,17 @@ window.monitorArtifactsRenderMixin = {
       const x = event ? (event.clientX - rect.left) / entranceScale : viewport.clientWidth / 2;
       const y = event ? (event.clientY - rect.top) / entranceScale : viewport.clientHeight / 2;
       const old = this.previewViewScale;
-      const drawn = this._previewGroupDrawSize(old);
+      const position = this._previewViewportLayout;
       anchor = {x, y,
-        imageX: (viewport.scrollLeft + x - Math.max(0, (viewport.clientWidth - drawn.width) / 2) - (geometry.captionWidth || 0)) / old,
-        imageY: (viewport.scrollTop + y - Math.max(0, (viewport.clientHeight - drawn.height) / 2)) / old};
+        imageX: (viewport.scrollLeft + x - position.left - (geometry.captionWidth || 0)) / old,
+        imageY: (viewport.scrollTop + y - position.top) / old};
     }
     this.previewViewScale = scale; this._previewViewFitted = scale === fit;
     this._syncPreviewGroupViewport();
     if (anchor) {
-      const drawn = this._previewGroupDrawSize(scale);
-      viewport.scrollLeft = Math.max(0, (viewport.clientWidth - drawn.width) / 2) + (geometry.captionWidth || 0) + anchor.imageX * scale - anchor.x;
-      viewport.scrollTop = Math.max(0, (viewport.clientHeight - drawn.height) / 2) + anchor.imageY * scale - anchor.y;
+      const position = this._previewViewportLayout;
+      viewport.scrollLeft = position.left + (geometry.captionWidth || 0) + anchor.imageX * scale - anchor.x;
+      viewport.scrollTop = position.top + anchor.imageY * scale - anchor.y;
     }
     if (this._previewReferenceMedia) this._refreshPreviewReferenceVisibility(this._previewReferenceMedia);
   },
@@ -2024,7 +2049,7 @@ window.monitorArtifactsRenderMixin = {
       + '<div class="preview-caption-slot"><div class="preview-pane-caption preview-reference-caption">' + this._previewCaptionTextHtml()
       + '<button type="button" class="btn-icon preview-reference-remove" data-preview-reference-key="' + escapedKey
       + '" @click.stop="unpinPreviewReference($event.currentTarget.dataset.previewReferenceKey)" aria-label="'
-      + this.esc(this.t('monitor.sampleRemoveComparison')) + '" title="' + this.esc(this.t('monitor.sampleRemoveComparison')) + '">'
+      + this.esc(this.t('monitor.sampleUnpinComparison')) + '" title="' + this.esc(this.t('monitor.sampleUnpinComparison')) + '">'
       + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div></div>';
     return {pane, image: pane.querySelector('img'), caption: pane.querySelector('.preview-reference-caption strong'),
       captionStep: pane.querySelector('.preview-caption-step'), retry: pane.querySelector('.preview-view-error')};

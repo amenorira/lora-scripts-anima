@@ -18,7 +18,7 @@ window.monitorPreviewsMixin = {
   previewHasNew: false,
   previewRefreshFeedback: false, _previewRefreshFeedbackTimer: null,
   previewViewScale: 1,
-  _previewViewFitScale: 1, _previewViewFitted: true, _previewGroupGeometry: null,
+  _previewViewFitScale: 1, _previewViewFitted: true, _previewGroupGeometry: null, _previewViewportLayout: null,
   previewViewPanning: false, previewViewPointerId: null,
   _previewPanStartX: 0, _previewPanStartY: 0, _previewPanRatio: 1,
   previewImageLoading: false, previewImageError: false,
@@ -88,9 +88,11 @@ window.monitorPreviewsMixin = {
     if (preview?.sample?.batch_id) return preview.sample;
     const identity = this._previewPromptIdentity(preview);
     const info = this._sampleMetadata(preview?.name);
+    const [stageKind, stageValue] = info.stage.split(':');
     // Historical custom images remain inspectable without inventing an identity.
     return { batch_id: identity ? 'legacy:' + identity.prefix + ':' + identity.stage : 'file:' + this._previewItemKey(preview),
-      batch_label: info.stageLabel || preview?.name || '', batch_order: index,
+      // Keep cached stage labels language-independent, as recorded samples do.
+      batch_label: info.stage ? (stageKind === 'epoch' ? 'Epoch ' : 'Step ') + stageValue : preview?.name || '', batch_order: index,
       prompt_id: identity?.key || 'file:' + this._previewItemKey(preview),
       prompt_label: info.prompt || preview?.name || '', prompt_index: identity ? identity.number - 1 : null,
       seed: identity?.seed ?? null, params: {}, comparable: false, condition_key: null,
