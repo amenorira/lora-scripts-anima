@@ -11,7 +11,9 @@
     const message = text(options.message), context = text(options.context), details = text(options.details);
     const secondaryLabel = notice ? '' : text(options.secondaryLabel);
     const fields = (Array.isArray(options.fields) ? options.fields : []).map(field => ({
-      label: text(field.label), value: text(field.value), multiline: !!field.multiline,
+      label: text(field.label), value: text(field.value),
+      multiline: !!field.multiline || Array.isArray(field.items),
+      items: Array.isArray(field.items) ? field.items.map(text) : null,
     }));
     const content = [message, context, details].filter(Boolean).join('\n');
     const automatic = content.length > 360 || content.split('\n').length > 6

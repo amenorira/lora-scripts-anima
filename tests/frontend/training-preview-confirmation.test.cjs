@@ -47,6 +47,28 @@ function application(profile = 'anima-lora', run = async () => response({ task_i
   return { model, requests, focused, errors, visibility };
 }
 
+test('preview summary separates active prompts and keeps multiline MOSS text together', async () => {
+  for (const profile of ['anima-lora', 'krea2-lora', 'moss-image-lora']) {
+    const { model, requests } = application(profile);
+    const key = profile === 'krea2-lora' ? 'krea_sample_prompts' : 'positive_prompts';
+    const prompts = profile === 'moss-image-lora'
+      ? 'A portrait.\nSoft light from the left.' : '# skipped\r\n\r\nportrait, soft light\r\nfull body, outdoors';
+    Object.assign(model.form, { [key]: prompts, enable_quality_prompts: true, quality_prompts: 'best quality\nhighres' });
+    const pending = model.startTraining();
+    await turn();
+    const field = model.confirmDialog.fields[2];
+    const expected = profile === 'moss-image-lora'
+      ? ['best quality, highres, A portrait.\nSoft light from the left.']
+      : ['best quality, highres, portrait, soft light', 'best quality, highres, full body, outdoors'];
+    assert.deepEqual(Array.from(field.items), expected);
+    assert.equal(field.multiline, true);
+    assert.equal(model.form[key], prompts, 'grouping the summary does not rewrite the configured prompts');
+    model.cancelConfirm();
+    await pending;
+    assert.deepEqual(requests, [], 'reviewing or cancelling the summary never starts training');
+  }
+});
+
 for (const [action, cacheAction] of [['confirmAction', 'server-cache-scope'], ['confirmSecondaryAction', 'keep']]) {
   test(`preview to cache ${action} keeps the host open through asynchronous checks and submits the reviewed snapshot`, async () => {
     const first = deferred(), second = deferred();

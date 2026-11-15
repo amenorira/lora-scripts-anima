@@ -1740,8 +1740,25 @@
       <dl class="confirm-summary" x-show="confirmDialog.fields?.length">
         <template x-for="(field, index) in (confirmDialog.fields || [])" :key="index">
           <div :class="{ 'confirm-field-multiline': field.multiline }">
-            <dt x-text="field.label"></dt>
-            <dd x-text="field.value"></dd>
+            <dt>
+              <span x-text="field.label"></span>
+              <span class="confirm-field-count" x-show="field.items?.length > 1" x-text="field.items?.length"></span>
+            </dt>
+            <template x-if="!field.items">
+              <dd x-text="field.value"></dd>
+            </template>
+            <template x-if="field.items">
+              <dd class="confirm-items">
+                <ol :class="{ 'is-numbered': field.items.length > 1 }">
+                  <template x-for="(item, itemIndex) in field.items" :key="itemIndex">
+                    <li>
+                      <span class="confirm-item-index" x-show="field.items.length > 1" x-text="itemIndex + 1" aria-hidden="true"></span>
+                      <p x-text="item"></p>
+                    </li>
+                  </template>
+                </ol>
+              </dd>
+            </template>
           </div>
         </template>
       </dl>

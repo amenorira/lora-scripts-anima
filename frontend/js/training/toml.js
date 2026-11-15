@@ -631,6 +631,13 @@ window.trainingTomlMixin = {
     return prompts.split(/\r\n|\r|\n/).map(line => line.trim() && !line.trimStart().startsWith('#') ? prepend(line) : line).join('\n');
   },
 
+  _previewPositivePromptItems(payload) {
+    const prompts = this._previewPositivePrompts(payload).trim();
+    // MOSS uses the whole multiline text as one prompt; other profiles use one per line.
+    if (payload.model_train_type === 'moss-image-lora') return prompts ? [prompts] : [];
+    return prompts.split(/\r\n|\r|\n/).map(line => line.trim()).filter(line => line && !line.startsWith('#'));
+  },
+
   async startTraining(confirmedPayload = null) {
     if (this.isTraining || this.trainingStarting || this.showConfirmModal || this.regularizationActive || this.datasetRepeatApplying) return;
 
@@ -677,7 +684,7 @@ window.trainingTomlMixin = {
           fields: [
             { label: this.t('field.train_data_dir'), value: payload.train_data_dir },
             { label: this.t('field.output_name'), value: payload.output_name },
-            { label: this.t('trainingPreview.positivePrompts'), value: this._previewPositivePrompts(payload), multiline: true },
+            { label: this.t('trainingPreview.positivePrompts'), items: this._previewPositivePromptItems(payload) },
           ],
           secondaryLabel: this.t('trainingPreview.editPrompts'),
           next: choice => choice === 'confirm' ? this._submitTraining(payload, true) : null,
