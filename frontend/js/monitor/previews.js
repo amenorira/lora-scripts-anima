@@ -33,6 +33,10 @@ window.monitorPreviewsMixin = {
     return this.sampleSidebarVisible && this.sampleSidebarOpen && !!this.previews?.[this.previewStep];
   },
 
+  get sampleSidebarMediaActive() {
+    return this.currentRoute === 'monitor-dashboard' && this.monitorTab === 'samples' && this.sampleSidebarActive;
+  },
+
   _previewPromptIdentity(preview) {
     if (preview?.sample?.prompt_id) {
       const sample = preview.sample;
@@ -122,8 +126,7 @@ window.monitorPreviewsMixin = {
         const step = Number.isInteger(sample.step) && sample.step >= 0 ? sample.step : null;
         const label = epoch !== null && step !== null ? 'Epoch ' + epoch + ' · Step ' + step : sample.batch_label || preview.name;
         batch = { id: sample.batch_id, label,
-          order: Number.isFinite(Number(sample.batch_order)) ? Number(sample.batch_order) : index,
-          firstIndex: index, indices: [], expected: null, status: sample.batch_status || 'unknown' };
+          indices: [], expected: null, status: sample.batch_status || 'unknown' };
         groups.set(batch.id, batch);
       }
       batch.indices.push(index);
@@ -132,9 +135,9 @@ window.monitorPreviewsMixin = {
       else if (sample.batch_status === 'failed' && batch.status !== 'running') batch.status = 'failed';
       return { index, preview, sample, batch };
     });
-    // The API's generation order is shared by recorded and legacy samples.
-    // Their optional batch_order values may use different units after upgrades.
-    const batches = [...groups.values()].sort((a, b) => a.firstIndex - b.firstIndex);
+    // Map insertion order already follows the API's generation order for both
+    // recorded and legacy samples, independent of their batch_order units.
+    const batches = [...groups.values()];
     const labelCounts = new Map(), labelOrdinals = new Map();
     batches.forEach(batch => labelCounts.set(batch.label, (labelCounts.get(batch.label) || 0) + 1));
     batches.forEach(batch => {
@@ -669,6 +672,9 @@ window.monitorPreviewsMixin = {
       const url = image.dataset.previewUrl || '';
       const path = image.closest('.m-sample-card-image, .preview-grid-item, .preview-view-timeline-item')?.dataset.previewPath;
       const src = image.getAttribute('src');
+      // Keep a decoded old image's source when its replacement failed. Only
+      // this image's own failed blob must leave the cache before a retry.
+      if (image.complete && !image.naturalWidth && this._previewMediaByUrl?.get(url) === src) this._previewMediaByUrl.delete(url);
       if (path && /[?&]v=[^&]+/.test(url) && image.dataset.previewLoaded === '1'
           && image.complete && image.naturalWidth > 0 && owned.has(src)
           && !image.closest('.preview-thumb-frame')?.classList.contains('is-error')) {
@@ -739,7 +745,9 @@ window.monitorPreviewsMixin = {
         // Reject snapshots started during the refresh if they arrive after it.
         this._previewSnapshotSeq++;
         const changed = this._replacePreviewItems(j.data || []);
-        const failedMedia = notifyOnFailure && document.getElementById('monitorTabContent')?.querySelector('.preview-thumb-frame.is-error');
+        const mediaRoot = document.getElementById('monitorDashboard') || document.getElementById('monitorTabContent');
+        const failedMedia = notifyOnFailure && mediaRoot?.querySelector('.preview-thumb-frame.is-error');
+        if (failedMedia) this._clearPreviewTimelineImageSwaps?.();
         if (changed || failedMedia) this.previewsVersion++;
         if (j.meta) {
           const target = this.currentArtifactData();
@@ -770,11 +778,10 @@ window.monitorPreviewsMixin = {
 
   _sampleMetadata(filename) {
     const match = String(filename || '').match(/(?:^|_)(e?)(\d{6})_(\d{2})_/i);
-    if (!match) return { stage: '', stageLabel: '', prompt: '' };
+    if (!match) return { stage: '', prompt: '' };
     const kind = match[1] ? 'epoch' : 'step';
     return {
       stage: kind + ':' + Number(match[2]),
-      stageLabel: this.t(match[1] ? 'monitor.sampleEpoch' : 'monitor.sampleStep').replace('{n}', Number(match[2])),
       prompt: this.t('monitor.samplePrompt').replace('{n}', Number(match[3]) + 1),
     };
   },

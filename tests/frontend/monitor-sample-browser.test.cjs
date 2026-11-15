@@ -91,7 +91,7 @@ test('a dismissed preview stays closed across snapshots, sorting and rendering u
   assert.equal(value.sampleSidebarVisible, true); assert.equal(value.sampleSidebarOpen, false);
   assert.match(html, /class="m-samples-workspace has-sidebar"/);
   assert.match(html, /id="sampleSidebarToggle" checked/);
-  assert.match(html, /<template x-if="sampleSidebarActive">/);
+  assert.match(html, /<template x-if="sampleSidebarMediaActive">/);
   assert.equal(value.sampleSidebarView.key, '', 'rendering hidden previews does not prepare or reopen their viewport');
   value.openPreviewLightbox = () => {throw new Error('an enabled sidebar must handle the next image click');};
   value.selectSampleImage(1);
@@ -213,6 +213,28 @@ test('refreshing a sidebar keeps its viewport for the same file and resets it fo
   assert.equal(value.sampleSidebarView.scale, 2); assert.equal(value.sampleSidebarView.x, 40);
   value.selectSampleImage(0); value._sampleSidebarViewState();
   assert.equal(value.sampleSidebarView.scale, 1); assert.equal(value.sampleSidebarView.x, 0);
+});
+
+test('hidden monitor pages unmount sidebar media while retaining the selected file and viewport', () => {
+  const value = app([image('b1', 0, 4200), image('b2', 0, 4200)]);
+  const mediaCondition = value._sampleSidebarHtml(key => key).match(/<template x-if="([^"]+)"/)[1];
+  const mounted = () => new Function('app', 'with (app) { return ' + mediaCondition + '; }')(value);
+  value.currentRoute = 'monitor-dashboard'; value.monitorTab = 'samples';
+  value.selectSampleImage(0);
+  const state = value._sampleSidebarViewState();
+  state.scale = 2; state.x = 40;
+  assert.equal(mounted(), true);
+  for (const [route, tab] of [['monitor-dashboard', 'overview'], ['monitor-dashboard', 'logs'], ['history', 'samples']]) {
+    value.currentRoute = route; value.monitorTab = tab;
+    assert.equal(mounted(), false, 'hidden originals must not download or remain decoded in an img');
+    value._replacePreviewItems([...value.previews, image('b' + (value.previews.length + 1), 0, 4200)]);
+    assert.equal(value.previewStep, 0, 'media cleanup must not discard an inspected selection');
+    assert.equal(value.sampleSidebarOpen, true);
+  }
+  value.currentRoute = 'monitor-dashboard'; value.monitorTab = 'samples';
+  assert.equal(mounted(), true);
+  assert.equal(value._sampleSidebarViewState(), state);
+  assert.deepEqual(window.AnimaImageViewport.create(state).view(), {scale: 2, x: 40, y: 0});
 });
 
 test('selecting the latest sidebar image clears its new-sample notice while older selections retain it', () => {

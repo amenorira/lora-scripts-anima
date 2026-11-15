@@ -1,4 +1,5 @@
 import asyncio
+from collections import OrderedDict
 import json
 from pathlib import Path
 import tempfile
@@ -8,7 +9,7 @@ from unittest.mock import patch
 from PIL import Image
 from PIL.PngImagePlugin import PngImageFile, PngInfo
 
-from backend.monitor import routes, sample_metadata
+from backend.monitor import artifacts, routes, sample_metadata
 from backend.monitor.artifacts import newest_previews
 from backend.monitor.sample_metadata import file_version, legacy_sample_metadata, read_sample_records, write_sample_batch
 
@@ -192,6 +193,82 @@ class SampleMetadataTests(unittest.TestCase):
         self.assertEqual(sample["metadata_source"], "filename")
         self.assertFalse(sample["comparable"])
         self.assertEqual(sample["seed"], 42)
+
+    def test_invalid_manifest_path_does_not_discard_valid_samples(self):
+        path = self.write()
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["items"]["sample/\x00.png"] = {"file_version": "1-1", "params": {}}
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        self.assertEqual(set(self.read()), {self.relative})
+
+    def test_unchanged_poll_reuses_records_without_json_or_normalization(self):
+        self.write()
+        legacy = self.image.with_name("legacy_000400_00_20261114090100_42.png")
+        Image.new("RGB", (8, 8)).save(legacy)
+        initial = newest_previews(str(self.root), force_refresh=True)
+        with (patch.object(sample_metadata.json, "loads", side_effect=AssertionError("unchanged manifest")),
+              patch.object(sample_metadata, "_normalize", side_effect=AssertionError("unchanged record")),
+              patch.object(artifacts, "_PREVIEWS_CACHE_TTL", 0)):
+            refreshed = newest_previews(str(self.root))
+        self.assertEqual(initial, refreshed)
+        self.assertIsNot(initial[0]["sample"], refreshed[0]["sample"])
+        self.assertIsNot(initial[1]["sample"], refreshed[1]["sample"])
+
+    def test_force_refresh_recovers_transient_manifest_read_failures(self):
+        rank_zero = self.write(rank=0, processes=2)
+        self.write(rank=1, processes=2)
+        original = Path.read_text
+
+        def unreadable(path, *args, **kwargs):
+            if path == rank_zero:
+                raise PermissionError("temporarily locked")
+            return original(path, *args, **kwargs)
+
+        with patch.object(Path, "read_text", unreadable):
+            partial = newest_previews(str(self.root), force_refresh=True)[0]["sample"]
+        self.assertEqual((partial["metadata_source"], partial["batch_status"]), ("recorded", "running"))
+        self.assertEqual(newest_previews(str(self.root), force_refresh=True)[0]["sample"]["batch_status"], "complete")
+
+        with patch.object(Path, "read_text", side_effect=PermissionError("temporarily locked")):
+            fallback = newest_previews(str(self.root), force_refresh=True)[0]["sample"]
+        self.assertEqual(fallback["metadata_source"], "filename")
+        self.assertEqual(newest_previews(str(self.root), force_refresh=True)[0]["sample"]["metadata_source"], "recorded")
+
+    def test_unchanged_manifest_checks_only_new_or_replaced_images(self):
+        second = self.image.with_name("demo_000400_00_20261114090100_42.png")
+        Image.new("RGB", (8, 8)).save(second)
+        relative = second.relative_to(self.root).as_posix()
+        self.write()
+        write_sample_batch(self.root, {**self.batch, "id": "batch-400", "order": 400},
+                           {relative: {"params": self.params, "prompt_index": 0}})
+        hidden = second.with_suffix(".hidden")
+        second.rename(hidden)
+        newest_previews(str(self.root), force_refresh=True)
+        hidden.rename(second)
+        with (patch.object(artifacts, "read_sample_records", wraps=read_sample_records) as read,
+              patch.object(artifacts, "_PREVIEWS_CACHE_TTL", 0)):
+            refreshed = newest_previews(str(self.root))
+        self.assertEqual(set(read.call_args.args[1]), {relative})
+        self.assertEqual({item["sample"]["metadata_source"] for item in refreshed}, {"recorded"})
+        Image.new("RGB", (80, 64), "red").save(self.image)
+        with (patch.object(artifacts, "read_sample_records", wraps=read_sample_records) as read,
+              patch.object(artifacts, "_PREVIEWS_CACHE_TTL", 0)):
+            replaced = newest_previews(str(self.root))
+        self.assertEqual(set(read.call_args.args[1]), {self.relative})
+        self.assertEqual(replaced[0]["sample"]["metadata_source"], "filename")
+        second.unlink()
+        self.assertEqual(len(newest_previews(str(self.root), force_refresh=True)), 1)
+
+    def test_preview_cache_replaces_each_runs_metadata_and_stays_bounded(self):
+        with patch.object(artifacts, "_previews_cache", OrderedDict()):
+            for status in ("running", "complete", "failed"):
+                self.write(batch={**self.batch, "status": status})
+                newest_previews(str(self.root), force_refresh=True)
+            self.assertEqual(len(artifacts._previews_cache), 1)
+            for index in range(artifacts._PREVIEWS_CACHE_MAX_RUNS):
+                newest_previews(str(self.root / str(index)), force_refresh=True)
+            self.assertEqual(len(artifacts._previews_cache), artifacts._PREVIEWS_CACHE_MAX_RUNS)
+            self.assertNotIn(f"|{self.root}", artifacts._previews_cache)
 
     def test_rank_merge_rejects_conflicts_and_large_counts_are_bounded(self):
         batch = {**self.batch, "expected": 1}

@@ -13,12 +13,7 @@
   const anchorSelector = '[data-dialog-anchor]';
   const mediaTargetSelector = '[data-dialog-anchor="target"]';
 
-  function syncDialogBackgrounds() {
-    const backgroundDialogOpen = dialogs.some(dialog => dialog.classList.contains('modal-overlay--morph')
-      || dialog.classList.contains('preview-lightbox'));
-    document.querySelector('body > .app-layout')?.classList.toggle('dialog-is-background', backgroundDialogOpen);
-    document.getElementById('cropPreviewDialog')?.classList.toggle('dialog-is-background',
-      dialogs.some(dialog => dialog.id === 'cropFocusDialog'));
+  function syncDialogScrims() {
     // The first dialog owns the page scrim. Keep it steady while a detail
     // dialog enters or leaves, rather than darkening the page a second time.
     dialogs.forEach((dialog, index) => {
@@ -381,7 +376,7 @@
               });
             }
             window.AnimaUI.placeNotifications?.();
-            syncDialogBackgrounds();
+            syncDialogScrims();
           });
         } else {
           dismissPopups(element);
@@ -399,7 +394,7 @@
             element.removeAttribute('data-dialog-closing');
             const index = dialogs.indexOf(element);
             if (index >= 0) dialogs.splice(index, 1);
-            syncDialogBackgrounds();
+            syncDialogScrims();
             window.AnimaUI.placeNotifications?.();
             const animations = morph || preview ? [] : (element.getAnimations?.({ subtree: true }) || [])
               .filter(animation => animation.effect?.getComputedTiming().endTime !== Infinity);
@@ -446,7 +441,7 @@
         previousFocus = null;
         const index = dialogs.indexOf(element);
         if (index >= 0) dialogs.splice(index, 1);
-        if (index >= 0) syncDialogBackgrounds();
+        if (index >= 0) syncDialogScrims();
         window.AnimaUI.placeNotifications?.();
         element.removeEventListener('cancel', cancel);
         element.removeEventListener('pointerdown', pointerDown);

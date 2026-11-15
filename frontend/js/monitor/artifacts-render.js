@@ -173,7 +173,7 @@ window.monitorArtifactsRenderMixin = {
   _sampleSidebarHtml(t) {
     const close = this.esc(t('close'));
     return '<aside id="sampleSidebar" class="m-sample-sidebar" x-show="sampleSidebarVisible"' + (this.sampleSidebarVisible ? '' : ' style="display:none"') + ' aria-label="' + this.esc(t('sampleSelectedImage')) + '" data-sample-expansion-keep>'
-      + '<template x-if="sampleSidebarActive"><div class="m-sample-sidebar-content" x-data="AnimaImageViewport.create(_sampleSidebarViewState())" @image-view-interact="_sampleSidebarInspecting=true" x-init="$watch(\'_previewItemKey(previews[previewStep])\', key => {sampleSidebarView.key=key;reset(false)})">'
+      + '<template x-if="sampleSidebarMediaActive"><div class="m-sample-sidebar-content" x-data="AnimaImageViewport.create(_sampleSidebarViewState())" @image-view-interact="_sampleSidebarInspecting=true" x-init="$watch(\'_previewItemKey(previews[previewStep])\', key => {sampleSidebarView.key=key;reset(false)})">'
       + '<div class="m-sample-sidebar-heading"><div class="m-sample-sidebar-label"><span class="m-sample-sidebar-stage" :title="_previewStageLabel(previews[previewStep])"><strong x-text="_previewCaptionParts(previews[previewStep]).primary"></strong><small x-show="_previewCaptionParts(previews[previewStep]).secondary" x-text="_previewCaptionParts(previews[previewStep]).secondary"></small></span>'
       + this._previewInfoButtonHtml(t, 'sampleSidebarInfoButton') + '</div>'
       + '<div class="m-sample-sidebar-actions"><button type="button" class="btn btn-sm btn-secondary" data-dialog-opens="previewLightbox" @click="openPreviewLightbox(previewStep)">' + this.esc(t('sampleOpenViewer')) + '</button>'
@@ -1397,7 +1397,7 @@ window.monitorArtifactsRenderMixin = {
     event.preventDefault();
   },
 
-  _endPreviewRailDrag(event, prefix, afterEnd) {
+  _endPreviewRailDrag(event, prefix) {
     const drag = this[prefix + 'Drag'];
     if (!drag || drag.pointerId !== event.pointerId) return;
     this[prefix + 'Drag'] = null;
@@ -1408,7 +1408,6 @@ window.monitorArtifactsRenderMixin = {
     this[prefix + 'ClickTimer'] = setTimeout(() => {
       this[prefix + 'SuppressClick'] = false;
       this[prefix + 'ClickTimer'] = null;
-      afterEnd?.();
     }, 0);
   },
 
@@ -1632,7 +1631,10 @@ window.monitorArtifactsRenderMixin = {
     for (const image of this._previewTimelineImageSwaps?.keys() || []) this._cancelPreviewTimelineImageSwap(image);
     this._previewTimelineImageSwaps = null;
     const timeline = document.getElementById('previewLightboxTimeline');
-    if (timeline) delete timeline.dataset.signature;
+    if (timeline) {
+      delete timeline.dataset.signature;
+      timeline.querySelectorAll('.preview-thumb-frame.is-error img').forEach(image => delete image.dataset.previewTimelineSource);
+    }
   },
 
   _updatePreviewTimelineImage(image, preview) {
@@ -1642,8 +1644,9 @@ window.monitorArtifactsRenderMixin = {
     this._cancelPreviewTimelineImageSwap(image);
     image.dataset.previewTimelineSource = key; image.alt = preview.name;
     const weak = this.weakNetworkMode;
+    const failedSource = image.closest('.preview-thumb-frame')?.classList.contains('is-error');
     const setSource = (source, loaded) => {
-      if (source && image.getAttribute('src') !== source) image.src = source;
+      if (source && (failedSource || image.getAttribute('src') !== source)) image.src = source;
       if (weak) {
         image.dataset.previewUrl = url;
         if (loaded) image.dataset.previewLoaded = '1';
@@ -1653,7 +1656,7 @@ window.monitorArtifactsRenderMixin = {
         delete image.dataset.previewUrl; delete image.dataset.previewLoaded; delete image.dataset.previewQueued;
       }
     };
-    if (image.getAttribute('src') === url || (weak && image.dataset.previewUrl === url && image.dataset.previewLoaded === '1')) return;
+    if (!failedSource && (image.getAttribute('src') === url || (weak && image.dataset.previewUrl === url && image.dataset.previewLoaded === '1'))) return;
     if (!image.complete || !image.naturalWidth) {
       if (weak) { image.removeAttribute('src'); setSource('', false); }
       else setSource(url, false);
@@ -1670,6 +1673,12 @@ window.monitorArtifactsRenderMixin = {
     const swap = this._previewTimelineImageSwaps.get(image);
     const current = () => image.isConnected && this._previewTimelineImageSwaps?.get(image) === swap
       && image.dataset.previewTimelineSource === key;
+    const failed = () => {
+      if (!current()) return;
+      image.closest('.preview-thumb-frame')?.classList.add('is-error');
+      if (this._previewMediaByUrl?.get(url) === preload.getAttribute('src')) this._previewMediaByUrl.delete(url);
+      this._cancelPreviewTimelineImageSwap(image);
+    };
     preload.addEventListener('load', () => {
       if (!current() || swap.decoding) return;
       swap.decoding = true;
@@ -1678,13 +1687,9 @@ window.monitorArtifactsRenderMixin = {
         setSource(preload.currentSrc || preload.getAttribute('src'), true);
         image.closest('.preview-thumb-frame')?.classList.remove('is-error');
         this._cancelPreviewTimelineImageSwap(image, false);
-      }, () => { if (current()) this._cancelPreviewTimelineImageSwap(image, false); });
+      }, failed);
     });
-    preload.addEventListener('error', () => {
-      if (!current()) return;
-      image.closest('.preview-thumb-frame')?.classList.add('is-error');
-      this._cancelPreviewTimelineImageSwap(image, false);
-    });
+    preload.addEventListener('error', failed);
     image.parentElement.appendChild(preload);
     if (weak) preload.dataset.previewUrl = url;
     else preload.src = url;
@@ -2633,11 +2638,6 @@ window.monitorArtifactsRenderMixin = {
     }
     this._updatePreviewViewTimeline(displayIndices);
     this.constrainPreviewView();
-  },
-
-  _parseSampleInfo(filename) {
-    const info = this._sampleMetadata(filename);
-    return [info.stageLabel, info.prompt].filter(Boolean).join(' ') || filename;
   },
 
   _previewCompareLabel(preview) {

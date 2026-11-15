@@ -4,9 +4,7 @@ const {loadFrontend, deferred} = require('./helpers.cjs');
 
 function setup({preview = true, reduced = false, failModal = false} = {}) {
   const callbacks = new Map(), animations = [], events = [];
-  const backgroundClasses = new Set();
-  const background = {classList: {toggle(name, enabled) {enabled ? backgroundClasses.add(name) : backgroundClasses.delete(name);}}};
-  const document = {activeElement: null, body: {}, addEventListener() {}, querySelector(selector) {return selector === 'body > .app-layout' ? background : null;}, getElementById() {return null;}};
+  const document = {activeElement: null, body: {}, addEventListener() {}, querySelector() {return null;}, getElementById() {return null;}};
   const opener = {id: 'opener', isConnected: true, disabled: false, getClientRects: () => [{}], focus() {document.activeElement = this;}};
   const autofocus = {disabled: false, getClientRects: () => [{}], focus() {document.activeElement = this;}};
   document.activeElement = opener;
@@ -51,7 +49,7 @@ function setup({preview = true, reduced = false, failModal = false} = {}) {
     };
     return {element: nested, controller: context.window.AnimaUI.bindDialog(nested, callback => callback())};
   };
-  return {controller, element, animations, events, document, opener, autofocus, emit, backgroundClasses, nestedDialog};
+  return {controller, element, animations, events, document, opener, autofocus, emit, nestedDialog};
 }
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -157,51 +155,36 @@ test('other ordinary dialogs keep their existing synchronous native close', () =
   assert.deepEqual(events, ['dialog-after-close']);
 });
 
-test('the sample background remains blurred through exit and is released after close or destruction', async () => {
-  const value = setup();
-  value.controller.setOpen(true);
-  assert.equal(value.backgroundClasses.has('dialog-is-background'), true);
-  value.controller.setOpen(false);
-  assert.equal(value.backgroundClasses.has('dialog-is-background'), true);
-  value.animations.forEach(animation => animation.finish());
-  await tick();
-  assert.equal(value.backgroundClasses.has('dialog-is-background'), false);
-  value.controller.setOpen(true);
-  value.controller.destroy();
-  assert.equal(value.backgroundClasses.has('dialog-is-background'), false);
-});
-
-test('nested details keep the original scrim and blur until the sample viewer actually closes', async () => {
+test('nested details keep the original scrim until the sample viewer actually closes', async () => {
   const value = setup();
   value.controller.setOpen(true);
   const detail = value.nestedDialog();
   detail.controller.setOpen(true);
   assert.equal(value.element.hasAttribute('data-dialog-nested'), false);
   assert.equal(detail.element.hasAttribute('data-dialog-nested'), true);
-  assert.equal(value.backgroundClasses.has('dialog-is-background'), true);
   detail.controller.setOpen(false);
   assert.equal(value.element.open, true);
-  assert.equal(value.backgroundClasses.has('dialog-is-background'), true);
   assert.equal(detail.element.hasAttribute('data-dialog-nested'), true, 'retain the transparent scrim during its CSS exit');
   value.controller.setOpen(false);
   value.animations.forEach(animation => animation.finish());
   await tick();
-  assert.equal(value.backgroundClasses.has('dialog-is-background'), false);
   detail.controller.setOpen(true);
   assert.equal(detail.element.hasAttribute('data-dialog-nested'), false, 'a later standalone opening owns its scrim');
   detail.controller.destroy();
 });
 
-test('reopening an exiting sample viewer keeps the shared background until its eventual destruction', async () => {
+test('reopening then destroying a sample viewer releases its scrim ownership', async () => {
   const value = setup();
   value.controller.setOpen(true);
   value.controller.setOpen(false);
   value.controller.setOpen(true);
   await tick();
-  assert.equal(value.backgroundClasses.has('dialog-is-background'), true);
   assert.equal(value.element.open, true);
   value.controller.destroy();
   await tick();
-  assert.equal(value.backgroundClasses.has('dialog-is-background'), false);
   assert.equal(value.element.open, false);
+  const detail = value.nestedDialog();
+  detail.controller.setOpen(true);
+  assert.equal(detail.element.hasAttribute('data-dialog-nested'), false);
+  detail.controller.destroy();
 });

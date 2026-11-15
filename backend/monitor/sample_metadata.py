@@ -95,7 +95,10 @@ def _safe_path(root: Path, relative: str) -> Path | None:
     candidate = Path(relative)
     if candidate.is_absolute() or ".." in candidate.parts:
         return None
-    resolved = (root / candidate).resolve()
+    try:
+        resolved = (root / candidate).resolve()
+    except (OSError, ValueError):
+        return None
     return resolved if resolved.is_relative_to(root) else None
 
 

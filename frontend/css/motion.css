@@ -130,11 +130,6 @@ dialog.modal-overlay--morph[open]:not([data-dialog-closing])::backdrop {
 /* A single page scrim persists behind nested details, including their exit. */
 dialog.modal-overlay[data-dialog-nested],
 dialog.modal-overlay--morph[data-dialog-nested]::backdrop { background: transparent; }
-/* Keep one fixed blur through native close without animating its radius. */
-body > .app-layout.dialog-is-background,
-body > #cropPreviewDialog.dialog-is-background > .modal {
-  filter: blur(3px);
-}
 .dialog-morph-surface {
   position: absolute;
   inset: -1px;

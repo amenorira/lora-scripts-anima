@@ -2,10 +2,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {loadFrontend, composeMixins, deferred, response} = require('./helpers.cjs');
 
-function requestHarness() {
+function requestHarness(document = {getElementById: () => null}) {
   const requests = [];
   const {window} = loadFrontend(['shared/utils', 'monitor/logs', 'monitor/core'], {
-    window: {}, document: {getElementById: () => null}, AbortController, URLSearchParams, setTimeout, clearTimeout,
+    window: {}, document, AbortController, URLSearchParams, setTimeout, clearTimeout,
     fetch: url => { const request = deferred(); requests.push({url, ...request}); return request.promise; },
   });
   const app = composeMixins(window.utilsMixin, window.monitorCoreMixin, {
@@ -60,6 +60,23 @@ test('a failed follow-up log page does not replace the previous search results',
   await pending;
   assert.equal(app._logFullResultQuery, 'old');
   assert.deepEqual(Array.from(app.logFullMatches), [5]);
+});
+
+test('manual sample refresh retries failed lightbox thumbnails outside the tab panel', async () => {
+  const failed = {};
+  const document = {getElementById: id => id === 'monitorDashboard' ? {querySelector: () => failed}
+    : id === 'monitorTabContent' ? {querySelector: () => null} : null};
+  const {app, requests} = requestHarness(document);
+  let retries = 0;
+  app._clearPreviewTimelineImageSwaps = () => {retries++;};
+  app._replacePreviewItems = () => false;
+  app._followLatestPreview = () => {};
+  const pending = app.refreshPreviews();
+  requests[0].resolve(response([]));
+  await pending;
+  assert.equal(retries, 1);
+  assert.equal(app.previewsVersion, 1, 'unchanged metadata still refreshes failed media');
+  app._invalidatePreviewRequest();
 });
 
 test('sample refresh preserves grid position after modal selection, but initial and explicit resets reveal it', () => {
