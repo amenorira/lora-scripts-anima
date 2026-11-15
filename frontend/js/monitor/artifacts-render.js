@@ -198,7 +198,7 @@ window.monitorArtifactsRenderMixin = {
       this.previewStep = this._sampleBatchNavigationIndex(batch, this.previews[this.previewStep]);
     }
     let html = '<div class="m-section m-samples-section"><div class="m-view-header m-samples-toolbar"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t('previewSamples')) + '</span></div>';
-    html += '<div class="m-view-actions">';
+    html += this._monitorRefreshButtonHtml(t, 'sample') + '<div class="m-view-actions">';
     if (showPreviews) {
       html += '<div class="m-sample-view-toggle"><span id="sampleSidebarToggleLabel">' + this.esc(t('sampleShowSidebar')) + '</span><label class="toggle"><input type="checkbox" role="switch" id="sampleSidebarToggle"' + (this.sampleSidebarVisible ? ' checked' : '') + ' :checked="sampleSidebarVisible" aria-labelledby="sampleSidebarToggleLabel" aria-controls="sampleSidebar" @change="toggleSampleSidebar($event)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>';
       if (this.previewHasNew) html += '<button type="button" id="sampleLatestBatch" class="btn btn-sm btn-secondary" @click="jumpToLatestOverviewBatch()">' + this.esc(t('previewNewSamples')) + '</button>';
@@ -208,8 +208,7 @@ window.monitorArtifactsRenderMixin = {
           + this._sampleSelectHtml(options, this.sampleBatchSortDir || 'desc', t('sampleOrder'), 'sampleBatchSort', 'setSampleBatchSort($event.target.value)') + '</div>';
       }
     }
-    html += this._monitorRefreshButtonHtml(t, 'sample') + '</div>';
-    html += '</div>';
+    html += '</div></div>';
     html += this._artifactLocationHtml(t, d);
     if (showPreviews) {
       const model = this._sampleDataModel(), batches = model.batches;
