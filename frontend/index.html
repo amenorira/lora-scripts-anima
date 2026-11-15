@@ -206,12 +206,6 @@
         </span>
         <span x-text="t('nav.tagger')">Tagger</span>
       </a>
-      <a class="sidebar-item" data-route="ai-captioning" data-group="tools" :class="{ active: currentRoute === 'ai-captioning' }"
-         @click="navigate('ai-captioning')" href="javascript:void(0)" :aria-current="currentRoute === 'ai-captioning' ? 'page' : null">
-        <span class="sidebar-tab-fill" aria-hidden="true"></span>
-        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="m7 15 3-6 3 6M8 13h4M16 9v6M9 1v3M15 1v3M9 20v3M15 20v3"/></svg></span>
-        <span x-text="t('moss.pageTitle')">AI 标注</span>
-      </a>
       <a class="sidebar-item" data-route="tagEditor" data-group="tools" :class="{ active: currentRoute === 'tagEditor' }"
          @click="navigate('tagEditor')" href="javascript:void(0)" :aria-current="currentRoute === 'tagEditor' ? 'page' : null">
         <span class="sidebar-tab-fill" aria-hidden="true"></span>
@@ -219,6 +213,12 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         </span>
         <span x-text="t('nav.tagEditor')">Tag Editor</span>
+      </a>
+      <a class="sidebar-item" data-route="ai-captioning" data-group="tools" :class="{ active: currentRoute === 'ai-captioning' }"
+         @click="navigate('ai-captioning')" href="javascript:void(0)" :aria-current="currentRoute === 'ai-captioning' ? 'page' : null">
+        <span class="sidebar-tab-fill" aria-hidden="true"></span>
+        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="m7 15 3-6 3 6M8 13h4M16 9v6M9 1v3M15 1v3M9 20v3M15 20v3"/></svg></span>
+        <span x-text="t('moss.pageTitle')">AI 标注</span>
       </a>
       <a class="sidebar-item" data-route="regularization" data-group="tools" :class="{ active: currentRoute === 'regularization' }"
          @click="navigate('regularization')" href="javascript:void(0)" :aria-current="currentRoute === 'regularization' ? 'page' : null">
