@@ -20,6 +20,7 @@ from backend.server.proxy import router as proxy_router
 from backend.monitor.routes import router as monitor_router
 from backend.tageditor import router as tageditor_router
 from backend.utils.devices import check_torch_gpu
+from backend.utils.asyncio_errors import windows_disconnect_handler
 from backend.monitor.monitor import task_monitor
 from backend.monitor.history import scan_history
 from backend.server.routes.realtime import router as realtime_router
@@ -107,6 +108,13 @@ async def warm_startup_caches() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    with windows_disconnect_handler():
+        async with _application_lifespan(app):
+            yield
+
+
+@asynccontextmanager
+async def _application_lifespan(app: FastAPI):
     cache_task = None
     shape_cache_task = None
     from backend.regularization.service import recover

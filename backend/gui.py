@@ -4,7 +4,6 @@
 端口探测 → uvicorn 托管 FastAPI（生命周期管理内部 TensorBoard）。
 """
 import argparse
-import asyncio
 import os
 import platform
 import sys
@@ -44,10 +43,6 @@ from backend.launch_utils import (
     find_available_ports,
     prepare_environment,
 )
-
-# Windows 上用 SelectorEventLoop，规避 Proactor 的 ConnectionResetError 噪音
-if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 def build_parser() -> argparse.ArgumentParser:
