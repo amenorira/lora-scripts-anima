@@ -686,6 +686,7 @@ window.monitorCoreMixin = {
   },
   stopMonitorRealtime() {
     this._invalidatePreviewRequest();
+    this._disconnectSampleExpansionUI?.();
     // Invalidate a detail request that is still fetching disk-backed data.
     if (this._monitorClockTimer) clearInterval(this._monitorClockTimer);
     this._monitorClockTimer = null;

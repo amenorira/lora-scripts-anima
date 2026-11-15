@@ -787,16 +787,16 @@ test('outline geometry refresh leaves continuous CSS flow intact and fades only 
 
 const afterSampleClick = () => new Promise(resolve => setTimeout(resolve, 0));
 
-function expansionEvents() {
+function expansionEvents(expanded = 'step-1') {
   const value = app([image('step-1', 'fox', 2), image('step-2')]);
-  value.sampleExpandedBatchId = value.sampleBatchId = 'step-1';
+  value.sampleExpandedBatchId = expanded; value.sampleBatchId = 'step-1';
   value.currentRoute = 'monitor-dashboard'; value.monitorTab = 'samples';
   const listeners = new Map(), capture = new Map(), oldDocument = global.document, oldSelection = window.getSelection;
   global.document = {...oldDocument,
     addEventListener(type, handler, capturing) {listeners.set(type, handler); capture.set(type, capturing);},
     removeEventListener(type, handler) {if (listeners.get(type) === handler) listeners.delete(type);}};
   const rows = [{left: 6, right: 218, top: 6, bottom: 126}, {left: 6, right: 106, top: 130, bottom: 250}];
-  const grid = {isConnected: true, scrollLeft: 0, scrollTop: 0,
+  const grid = {isConnected: true, scrollLeft: 0, scrollTop: 0, contains: () => false,
     querySelector: () => ({_sampleRows: rows}), querySelectorAll: () => [],
     getBoundingClientRect: () => ({left: 0, top: 0, right: 500, bottom: 400})};
   const panel = {querySelector: () => grid};
@@ -1023,6 +1023,123 @@ test('a new outside press cannot reuse an earlier cover intent whose click was c
     await afterSampleClick();
     assert.deepEqual(actions, ['step-1'], 'the outside click only dismisses the expanded group');
   } finally {fixture.restore();}
+});
+
+for (const expanded of ['step-1', '']) test('a cover press finishing outside the grid opens its original batch with previous expansion ' + JSON.stringify(expanded), async () => {
+  const fixture = expansionEvents(expanded), {value, listeners, grid, panel, target: outside, click} = fixture;
+  value.previews[1].sample.batch_expected = 2; value._sampleModelCache = null;
+  const {target: cover} = delegatedCover(grid, 'step-2');
+  const replacements = [];
+  value._replaceSampleBatchCards = (targetPanel, ids) => {assert.equal(targetPanel, panel); replacements.push(ids);};
+  value._activateOverviewBatch = batch => {value.sampleBatchId = batch.id;};
+  try {
+    listeners.get('pointerdown')({target: cover, button: 0, pointerId: 1, clientX: 400, clientY: 300});
+    value.sampleGridPointerDown({currentTarget: grid, target: cover, button: 0, pointerId: 1, clientX: 400, clientY: 300});
+    listeners.get('pointerup')({target: outside, pointerId: 1, clientX: 400, clientY: 300});
+    const event = click({button: 0, detail: 1, pointerId: 1});
+    listeners.get('click')(event);
+    await afterSampleClick();
+    assert.equal(value.sampleExpandedBatchId, 'step-2');
+    assert.equal(value.sampleBatchId, 'step-2');
+    assert.deepEqual(replacements, [expanded ? ['step-1', 'step-2'] : ['step-2']]);
+    assert.equal(value._sampleGridPointer, null);
+  } finally {fixture.restore();}
+});
+
+test('document pointer tracking preserves drags and cancellations when release leaves the grid', async () => {
+  for (const gesture of ['drag-return', 'cancel']) {
+    const fixture = expansionEvents(), {value, listeners, grid, target: outside, click} = fixture;
+    const {target: cover} = delegatedCover(grid, 'step-2');
+    const actions = []; value.toggleSampleBatch = id => actions.push(id);
+    try {
+      value.sampleGridPointerDown({currentTarget: grid, target: cover, button: 0, pointerId: 1, clientX: 400, clientY: 300});
+      if (gesture === 'drag-return') listeners.get('pointermove')({pointerId: 1, clientX: 420, clientY: 300});
+      else listeners.get('pointercancel')({pointerId: 1});
+      listeners.get('pointerup')({target: outside, pointerId: 1, clientX: 400, clientY: 300});
+      listeners.get('click')(click({button: 0, detail: 1, pointerId: 1}));
+      await afterSampleClick();
+      assert.deepEqual(actions, [], gesture);
+      assert.equal(value.sampleExpandedBatchId, 'step-1');
+    } finally {fixture.restore();}
+  }
+});
+
+test('document capture leaves in-grid cover clicks for the grid to switch exactly once', async () => {
+  const fixture = expansionEvents(), {value, listeners, grid, click} = fixture;
+  const {cover, target} = delegatedCover(grid, 'step-2');
+  cover.classList = {contains: name => name === 'm-sample-batch-cover'};
+  const actions = []; value.toggleSampleBatch = id => actions.push(id);
+  try {
+    value.sampleGridPointerDown({currentTarget: grid, target, button: 0, pointerId: 1, clientX: 400, clientY: 300});
+    listeners.get('pointerup')({pointerId: 1, clientX: 400, clientY: 300});
+    const event = click({target, currentTarget: grid, button: 0, detail: 1, composedPath: () => [target, cover, grid]});
+    listeners.get('click')(event);
+    assert.deepEqual(actions, []);
+    value.sampleGridClick(event);
+    await afterSampleClick();
+    assert.deepEqual(actions, ['step-2']);
+  } finally {fixture.restore();}
+});
+
+test('a deferred sample snapshot resumes after pointer completion and the original click', async () => {
+  for (const cancel of [false, true]) {
+    const value = app([image('step-1', 'fox', 2)]);
+    const grid = {}, {target} = delegatedCover(grid, 'step-1'), order = [];
+    value.currentRoute = 'monitor-dashboard'; value.monitorTab = 'samples';
+    value.renderDashboard = () => order.push('render');
+    value.toggleSampleBatch = () => order.push('click');
+    value.sampleGridPointerDown({currentTarget: grid, target, button: 0, pointerId: 1, clientX: 400, clientY: 300});
+    value._sampleGridPointer.renderPending = true;
+    const event = {pointerId: 1, clientX: 400, clientY: 300};
+    if (cancel) value.sampleGridPointerCancel(event);
+    else value.sampleGridPointerUp(event);
+    value.sampleGridPointerUp(event);
+    assert.deepEqual(order, []);
+    value.sampleGridClick({currentTarget: grid, target, button: 0, detail: 1, ...event});
+    await afterSampleClick();
+    assert.deepEqual(order, cancel ? ['render'] : ['click', 'render']);
+  }
+});
+
+test('a snapshot arriving after pointerup still retries when the browser cancels click', async () => {
+  const value = app([image('step-1', 'fox', 2)]);
+  const grid = {}, {target} = delegatedCover(grid, 'step-1');
+  let renders = 0;
+  value.currentRoute = 'monitor-dashboard'; value.monitorTab = 'samples';
+  value.renderDashboard = () => {renders++; assert.equal(value._sampleGridPointer, null);};
+  value.sampleGridPointerDown({currentTarget: grid, target, button: 0, pointerId: 1, clientX: 400, clientY: 300});
+  value.sampleGridPointerUp({pointerId: 1, clientX: 400, clientY: 300});
+  await Promise.resolve();
+  value._sampleGridPointer.renderPending = true;
+  await afterSampleClick();
+  assert.equal(renders, 1);
+  assert.equal(value._sampleGridPointer, null);
+});
+
+test('window blur releases an unfinished cover press and resumes pending snapshots without leaking listeners', async () => {
+  const oldAdd = window.addEventListener, oldRemove = window.removeEventListener, windowEvents = new Map();
+  window.addEventListener = (type, handler, capture) => {
+    assert.equal(type, 'blur'); assert.ok(!capture, 'child focus changes must not cancel cover presses');
+    assert.equal(windowEvents.size, 0); windowEvents.set(type, handler);
+  };
+  window.removeEventListener = (type, handler) => {if (windowEvents.get(type) === handler) windowEvents.delete(type);};
+  const fixture = expansionEvents(), {value, grid, panel} = fixture;
+  const {target} = delegatedCover(grid, 'step-2');
+  let renders = 0; value.renderDashboard = () => {renders++;};
+  try {
+    value.sampleGridPointerDown({currentTarget: grid, target, button: 0, pointerId: 1, clientX: 400, clientY: 300});
+    value._sampleGridPointer.renderPending = true;
+    windowEvents.get('blur')();
+    assert.equal(value._sampleGridPointer.cancelled, true);
+    await afterSampleClick();
+    assert.equal(value._sampleGridPointer, null);
+    assert.equal(renders, 1);
+    value.sampleExpandedBatchId = '';
+    value._connectSampleExpansionUI(panel);
+    assert.equal(windowEvents.size, 1, 'rebinding replaces the old window listener');
+    fixture.restore();
+    assert.equal(windowEvents.size, 0);
+  } finally {fixture.restore(); window.addEventListener = oldAdd; window.removeEventListener = oldRemove;}
 });
 
 test('grid cover intent ignores drags cancellations and outside presses while keyboard clicks use the actual button', () => {

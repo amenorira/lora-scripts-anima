@@ -185,6 +185,12 @@ window.monitorRenderMixin = {
       if (panelEmpty || this._builtSamplesSig !== sig) {
         // Keep pointer capture alive while the user is dragging the timeline.
         if (this._sampleTimelineDrag?.dragging) return;
+        // Removing a pressed cover prevents the browser from dispatching click.
+        // Pointer completion retries this render after the original click.
+        if (this._sampleGridPointer && !this._sampleGridPointer.cancelled) {
+          this._sampleGridPointer.renderPending = true;
+          return;
+        }
         this._disconnectSampleExpansionUI?.(true);
         const grid = panel.querySelector('.preview-grid');
         this._cancelSampleGridMotion?.(grid);

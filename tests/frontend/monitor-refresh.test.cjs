@@ -110,3 +110,19 @@ test('sample refresh preserves grid and rail positions after modal selection, bu
     assert.equal(app.previewStep, 49);
   }
 });
+
+test('sample snapshots keep a pressed cover in the DOM until pointer completion', () => {
+  for (const ended of [false, true]) {
+    const panel = {firstElementChild: {}};
+    const document = {getElementById: () => ({querySelector: () => panel})};
+    const {window} = loadFrontend(['monitor/render'], {window: {}, document});
+    const app = composeMixins(window.monitorRenderMixin, {
+      _builtTab: 'samples', _builtSamplesSig: 'previous-snapshot', previewsVersion: 2,
+      runDetailData: {},
+      _sampleGridPointer: {ended, cancelled: false},
+    });
+    app._renderTab('samples', {}, null, null, () => '', true);
+    assert.equal(app._sampleGridPointer.renderPending, true);
+    assert.equal(app._builtSamplesSig, 'previous-snapshot', 'the pending signature remains dirty for the retry');
+  }
+});

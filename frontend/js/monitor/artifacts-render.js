@@ -266,7 +266,7 @@ window.monitorArtifactsRenderMixin = {
     const cover = event.target.closest?.('.m-sample-batch-cover');
     if (!cover || !event.currentTarget.contains(cover)) return;
     const batchId = cover.closest('.m-sample-batch')?.dataset.batchId;
-    if (batchId) this._sampleGridPointer = {pointerId: event.pointerId, batchId, x: event.clientX, y: event.clientY,
+    if (batchId) this._sampleGridPointer = {pointerId: event.pointerId, grid: event.currentTarget, batchId, x: event.clientX, y: event.clientY,
       moved: false, ended: false, cancelled: false};
   },
 
@@ -279,20 +279,29 @@ window.monitorArtifactsRenderMixin = {
     const pointer = this._sampleGridPointer;
     if (!pointer || pointer.pointerId !== event.pointerId) return;
     this.sampleGridPointerMove(event);
+    if (pointer.ended) return;
     pointer.ended = true;
+    // Keep the pressed DOM through click, including microtask checkpoints
+    // between pointerup and click. A cancelled native click must not strand it.
+    setTimeout(() => {
+      if (this._sampleGridPointer === pointer) this._sampleGridPointer = null;
+      if (pointer.renderPending && this.currentRoute === 'monitor-dashboard' && this.monitorTab === 'samples') this.renderDashboard();
+    }, 0);
   },
 
   sampleGridPointerCancel(event) {
     const pointer = this._sampleGridPointer;
     if (!pointer || pointer.pointerId !== event.pointerId) return;
-    pointer.cancelled = true; pointer.ended = true;
+    pointer.cancelled = true;
+    this.sampleGridPointerUp(event);
   },
 
-  sampleGridClick(event) {
-    const grid = event.currentTarget, target = event.target, pointer = this._sampleGridPointer;
+  sampleGridClick(event, grid = event.currentTarget) {
+    const target = event.target, pointer = this._sampleGridPointer;
     this._sampleGridPointer = null;
     if (event.defaultPrevented || (event.button != null && event.button !== 0) || target.closest?.('.m-sample-motion-ghost')) return;
-    const pointerClick = event.detail !== 0 && pointer?.ended;
+    const pointerClick = event.detail !== 0 && pointer?.ended && pointer.grid === grid
+      && (event.pointerId == null || event.pointerId === pointer.pointerId);
     if (pointerClick && (pointer.cancelled || pointer.moved || Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > 6)) return;
     // FLIP and native focus scrolling can change the up/click hit target while
     // the pointer stays still. Consume the pressed cover before interpreting
@@ -452,9 +461,11 @@ window.monitorArtifactsRenderMixin = {
       ui.observer?.disconnect();
       if (ui.frame != null) cancelAnimationFrame(ui.frame);
       Object.entries(ui.handlers).forEach(([type, handler]) => document.removeEventListener(type, handler, type !== 'keydown'));
+      window.removeEventListener?.('blur', ui.blur);
     }
     this._sampleExpansionUI = null;
     if (!keepPointer) {
+      this._sampleGridPointer = null;
       this._sampleExpansionPointer = null;
       if (this._sampleExpansionDismissTimer != null) clearTimeout(this._sampleExpansionDismissTimer);
       this._sampleExpansionDismissTimer = null;
@@ -471,12 +482,19 @@ window.monitorArtifactsRenderMixin = {
     const grid = panel?.querySelector('.m-sample-batches');
     if (this._sampleExpansionUI?.grid === grid && this._sampleExpansionUI?.batchId === this.sampleExpandedBatchId) return;
     this._disconnectSampleExpansionUI(true);
-    if (!grid || !this.sampleExpandedBatchId || !document.addEventListener) return;
+    if (!grid || !document.addEventListener) return;
     this._sampleExpansionUI = {grid, panel, batchId: this.sampleExpandedBatchId, handlers: {}, frame: null};
     const ui = this._sampleExpansionUI;
+    ui.blur = () => {
+      const pointer = this._sampleGridPointer;
+      if (pointer && !pointer.ended) this.sampleGridPointerCancel({pointerId: pointer.pointerId});
+    };
+    window.addEventListener?.('blur', ui.blur);
     ui.handlers.pointerdown = event => {
       // A new press outside the grid invalidates an earlier unfinished press.
       // The grid's bubbling handler records a fresh cover intent when needed.
+      const previous = this._sampleGridPointer;
+      if (previous?.renderPending) this.sampleGridPointerCancel({pointerId: previous.pointerId});
       this._sampleGridPointer = null;
       const target = event.target, rect = target?.getBoundingClientRect?.();
       const scrollbar = rect && ((target.scrollHeight > target.clientHeight && event.clientX >= rect.left + target.clientWidth)
@@ -485,13 +503,31 @@ window.monitorArtifactsRenderMixin = {
         ignored: event.button !== 0 || scrollbar || !this._sampleExpansionDismissAllowed(target)};
     };
     const move = event => {
+      this.sampleGridPointerMove(event);
       const pointer = this._sampleExpansionPointer;
       if (pointer && pointer.id === event.pointerId && Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > 6) pointer.moved = true;
     };
-    ui.handlers.pointermove = move; ui.handlers.pointerup = move;
-    ui.handlers.pointercancel = () => {if (this._sampleExpansionPointer) this._sampleExpansionPointer.ignored = true;};
+    ui.handlers.pointermove = move;
+    ui.handlers.pointerup = event => {move(event); this.sampleGridPointerUp(event);};
+    ui.handlers.pointercancel = event => {
+      this.sampleGridPointerCancel(event);
+      if (this._sampleExpansionPointer?.id === event.pointerId) this._sampleExpansionPointer.ignored = true;
+    };
     ui.handlers.click = event => {
       const path = event.composedPath?.() || [event.target];
+      // A stationary cover press can finish outside the grid after scrolling
+      // or layout motion. Its click never reaches the grid's bubble listener.
+      const pressed = this._sampleGridPointer;
+      if (pressed?.grid === grid && !path.includes(grid) && !grid.contains(event.target)) {
+        this._sampleGridPointer = null;
+        if (pressed.ended && event.detail !== 0 && !this.previewLightboxOpen && !this._previewClosePending
+            && this.currentRoute === 'monitor-dashboard' && this.monitorTab === 'samples') {
+          this._sampleExpansionPointer = null;
+          this._sampleGridPointer = pressed;
+          this.sampleGridClick(event, grid);
+          return;
+        }
+      }
       const inside = path.some(node => node?.matches?.('.m-sample-batch') && node.dataset.batchId === this.sampleExpandedBatchId);
       const cover = path.some(node => node?.classList?.contains('m-sample-batch-cover'));
       const outsideImage = path.some(node => node?.matches?.('.preview-grid-item[data-dialog-opens="previewLightbox"]'));
@@ -524,7 +560,7 @@ window.monitorArtifactsRenderMixin = {
       this.toggleSampleBatch(this.sampleExpandedBatchId, event);
     };
     Object.entries(ui.handlers).forEach(([type, handler]) => document.addEventListener(type, handler, type !== 'keydown'));
-    if (typeof ResizeObserver !== 'undefined') {
+    if (this.sampleExpandedBatchId && typeof ResizeObserver !== 'undefined') {
       ui.observer = new ResizeObserver(() => {
         if (this._sampleExpansionUI !== ui) return;
         if (!grid.isConnected || (this.currentRoute && this.currentRoute !== 'monitor-dashboard') || (this.monitorTab && this.monitorTab !== 'samples')) {
