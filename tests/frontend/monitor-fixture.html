@@ -5,7 +5,7 @@
 <link rel="stylesheet" href="/frontend/css/themes/light.css">
 <link rel="stylesheet" href="/frontend/css/themes/dark.css">
 <link rel="stylesheet" href="/frontend/css/motion.css">
-<style>body { overflow: auto; } #fixture { max-width: 1380px; margin: auto; padding: 24px; } .fixture-controls { display:flex; flex-wrap:wrap; gap:8px; padding-bottom:16px; } #fixture.narrow { max-width:1040px; } #fixtureRoute { height:calc(100vh - 120px); } </style>
+<style>body { overflow: auto; } #fixture { display:block; height:auto; min-width:0; overflow:visible; max-width:1380px; margin:auto; padding:24px; } .fixture-controls { display:flex; flex-wrap:wrap; gap:8px; padding-bottom:16px; } #fixture.narrow { max-width:1040px; } #fixtureRoute { height:calc(100vh - 120px); } </style>
 <script src="/frontend/js/shared/utils.js"></script>
 <script src="/frontend/js/shared/image-loading.js"></script>
 <script src="/frontend/js/shared/image-viewport.js"></script>
@@ -27,6 +27,7 @@
 <script src="/frontend/js/training/network-panel.js"></script>
 <script src="/frontend/js/training/core.js"></script>
 <script src="/frontend/js/monitor/previews.js"></script>
+<script src="/frontend/js/monitor/sample-layout.js"></script>
 <script src="/frontend/js/monitor/outputs.js"></script>
 <script src="/frontend/js/monitor/history.js"></script>
 <script src="/frontend/js/monitor/metrics.js"></script>
@@ -37,7 +38,7 @@
 <script src="/frontend/js/monitor/diagnostics.js"></script>
 <script src="/frontend/js/monitor/summary.js"></script>
 <script src="/frontend/js/monitor/render.js"></script>
-<main id="fixture" x-data="monitorFixture">
+<main id="fixture" class="app-layout" x-data="monitorFixture">
   <div class="fixture-controls">
     <button class="btn btn-sm" @click="$el.closest('main').classList.toggle('narrow')">切换桌面窄窗口</button>
     <button class="btn btn-sm" @click="monitorData.state='CREATED';renderDashboard()">等待启动</button>

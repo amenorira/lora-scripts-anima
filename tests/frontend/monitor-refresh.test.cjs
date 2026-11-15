@@ -62,7 +62,7 @@ test('a failed follow-up log page does not replace the previous search results',
   assert.deepEqual(Array.from(app.logFullMatches), [5]);
 });
 
-test('sample refresh preserves grid and rail positions after modal selection, but initial and explicit resets reveal it', () => {
+test('sample refresh preserves grid position after modal selection, but initial and explicit resets reveal it', () => {
   for (const mode of ['refresh', 'initial', 'reset']) {
     let rebuilt = false;
     const makeGrid = scrollTop => {
@@ -74,17 +74,10 @@ test('sample refresh preserves grid and rail positions after modal selection, bu
       return grid;
     };
     const oldGrid = mode === 'initial' ? null : makeGrid(300), nextGrid = makeGrid(0);
-    const oldRail = mode === 'initial' ? null : {scrollLeft: 100, querySelector: () => ({id: 'sampleTimeline-epoch-100'})};
-    const nextRail = {scrollLeft: 0, getBoundingClientRect: () => ({left: 0, right: 300})};
-    const selected = {id: 'sampleTimeline-epoch-50', dataset: {batchId: 'epoch-50'}, attributes: {},
-      setAttribute(name, value) {this.attributes[name] = value;},
-      getBoundingClientRect: () => ({left: 800 - nextRail.scrollLeft, right: 900 - nextRail.scrollLeft})};
-    nextRail.querySelector = () => selected;
-    nextRail.querySelectorAll = () => [selected];
     const panel = {firstElementChild: mode === 'initial' ? null : {}, classList: {add() {}}, contains: () => false,
       querySelector(selector) {
         if (selector === '.preview-grid' || selector === '.m-sample-batches') return rebuilt ? nextGrid : oldGrid;
-        return selector === '.m-sample-timeline' ? (rebuilt ? nextRail : oldRail) : null;
+        return null;
       },
       set innerHTML(value) {rebuilt = true;}};
     const document = {activeElement: {}, getElementById: id => id === 'monitorTabContent' ? {querySelector: () => panel} : null};
@@ -104,8 +97,6 @@ test('sample refresh preserves grid and rail positions after modal selection, bu
 
     assert.equal(rebuilt, true, mode);
     assert.equal(nextGrid.scrollTop, mode === 'refresh' ? 300 : 320, mode + ': grid position');
-    assert.equal(nextRail.scrollLeft, mode === 'refresh' ? 100 : 600, mode + ': rail position');
-    assert.equal(selected.attributes['aria-pressed'], 'true', mode + ': selection still updates');
     assert.equal(app.sampleBatchId, 'epoch-50');
     assert.equal(app.previewStep, 49);
   }
@@ -124,5 +115,42 @@ test('sample snapshots keep a pressed cover in the DOM until pointer completion'
     app._renderTab('samples', {}, null, null, () => '', true);
     assert.equal(app._sampleGridPointer.renderPending, true);
     assert.equal(app._builtSamplesSig, 'previous-snapshot', 'the pending signature remains dirty for the retry');
+  }
+});
+
+test('sample snapshots request staged arrival motion only for new tiles in the same visible browsing context', () => {
+  for (const mode of ['incoming', 'refresh', 'initial', 'run', 'sort', 'locale', 'tab', 'reset']) {
+    let rebuilt = false, motions = 0;
+    const oldTile = {dataset: {sampleTileKey: 'old'}}, newTile = {dataset: {sampleTileKey: 'new'}};
+    const grid = tiles => ({scrollTop: 0, classList: {contains: () => true},
+      querySelectorAll: selector => selector === '.m-sample-batch' ? [] : tiles});
+    const previous = mode === 'initial' ? null : grid([oldTile]);
+    const next = grid(mode === 'refresh' ? [oldTile] : [oldTile, newTile]);
+    const context = ['run', '', 'desc', 'test', false];
+    if (mode === 'run') context[0] = 'previous-run';
+    if (mode === 'sort') context[2] = 'asc';
+    if (mode === 'locale') context[3] = 'previous-locale';
+    const panel = {firstElementChild: previous ? {} : null, _sampleMotionContext: JSON.stringify(context),
+      classList: {add() {}}, contains: () => false,
+      querySelector: selector => ['.preview-grid', '.m-sample-batches'].includes(selector) ? (rebuilt ? next : previous) : null,
+      set innerHTML(value) {rebuilt = true;}};
+    const document = {activeElement: {}, getElementById: id => id === 'monitorTabContent' ? {querySelector: () => panel, querySelectorAll: () => []} : null};
+    const {window} = loadFrontend(['monitor/render'], {window: {}, document, requestAnimationFrame() {}});
+    const app = composeMixins(window.monitorArtifactsRenderMixin, window.monitorRenderMixin, {
+      _builtTab: mode === 'tab' ? 'overview' : 'samples', _builtSamplesSig: 'previous', _shellLocale: 'test', previewsVersion: 2,
+      currentOutputRunDir: 'run', selectedRunDir: '', sampleBatchSortDir: 'desc', weakNetworkMode: false, runDetailData: {},
+      _sampleOverviewAtEnd: false, _sampleResetScroll: mode === 'reset',
+      _disconnectSampleExpansionUI() {}, _cancelSampleGridMotion() {}, _cancelPreviewMediaQueue() {},
+      _capturePreviewMedia: () => new Map(), _restorePreviewMedia() {}, _renderSamplesTab: () => 'samples',
+      _sampleSelectedBatch: () => ({id: 'old'}), _sampleDataModel: () => ({batches: [{id: 'old'}, {id: 'new'}]}),
+      _refreshSampleGroupOutline() {}, _connectSampleExpansionUI() {}, schedulePreviewMediaLoads() {},
+      _captureSampleLayout: () => new Map([['old', oldTile]]),
+      _animateSampleLayout(target, before, openingId, options) {
+        assert.equal(target, next); assert.equal(before.size, 1); assert.equal(openingId, '');
+        assert.equal(options.revealNew, true); motions++;
+      },
+    });
+    app._renderTab('samples', {}, null, null, () => '', true);
+    assert.equal(motions, mode === 'incoming' ? 1 : 0, mode);
   }
 });

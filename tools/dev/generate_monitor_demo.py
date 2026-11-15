@@ -7,6 +7,7 @@ Run with the project venv, for example::
     venv/Scripts/python.exe -B tools/dev/generate_monitor_demo.py --single --epochs 100
     venv/Scripts/python.exe -B tools/dev/generate_monitor_demo.py --epochs 100
     venv/Scripts/python.exe -B tools/dev/generate_monitor_demo.py --prompt-count 10 --epochs 5
+    venv/Scripts/python.exe -B tools/dev/generate_monitor_demo.py --sample-shape mixed --prompt-count 3 --epochs 5
 
 Every invocation creates a new directory under output/. No existing run is
 modified, and no model weights are generated.
@@ -28,6 +29,9 @@ STEPS = (400, 800, 1200, 1600, 2000)
 SINGLE_STEPS = tuple(range(400, 3201, 400))
 SEED = 4200
 SAMPLE_SIZE = (1024, 1024)
+ASPECT_SAMPLE_SIZES = ((832, 1216), (1216, 832), (832, 832))
+SAMPLE_SHAPES = {"square": (SAMPLE_SIZE,), "portrait": (ASPECT_SAMPLE_SIZES[0],),
+                 "landscape": (ASPECT_SAMPLE_SIZES[1],), "mixed": ASPECT_SAMPLE_SIZES}
 SAMPLE_CFG = 5.0
 DEFAULT_PROMPT_COUNT = 4
 PROMPTS = (
@@ -60,11 +64,12 @@ def _font(size: int):
     return ImageFont.load_default(size=size)
 
 
-def _draw_sample(prompt_index: int, seed: int, step: int, *, epoch: int | None = None, total_epochs: int | None = None):
+def _draw_sample(prompt_index: int, seed: int, step: int, *, epoch: int | None = None, total_epochs: int | None = None,
+                 size: tuple[int, int] = SAMPLE_SIZE):
     """Draw deterministic, recognizable samples with shared generation settings."""
     from PIL import Image, ImageDraw
 
-    width, height = SAMPLE_SIZE
+    width, height = size
     composition = prompt_index % 4
     backgrounds = ((226, 235, 244), (225, 239, 228), (243, 231, 225), (235, 230, 246))
     image = Image.new("RGB", (width, height), backgrounds[composition])
@@ -77,6 +82,7 @@ def _draw_sample(prompt_index: int, seed: int, step: int, *, epoch: int | None =
     # A consistent composition within each prompt/seed makes stage comparisons
     # easy, while stage-specific shapes remain visibly synthetic.
     draw.rounded_rectangle((22, 22, width - 22, height - 22), radius=18, outline=(175, 185, 198), width=2)
+    draw.text((42, 35), f"{width} x {height}", font=_font(round(24 * scale)), fill=ink)
     if composition == 3:
         draw.rectangle((width * .05, height * .18, width * .29, height * .64), fill=(172, 192, 214), outline=(115, 139, 163), width=5)
         draw.line((width * .17, height * .18, width * .17, height * .64), fill=(235, 242, 247), width=6)
@@ -157,8 +163,8 @@ def _write_tensorboard(run_dir: Path, started_at: datetime, total_steps: int) ->
     return count
 
 
-def _sample_parameters(prompt_index: int) -> dict:
-    width, height = SAMPLE_SIZE
+def _sample_parameters(prompt_index: int, size: tuple[int, int] = SAMPLE_SIZE) -> dict:
+    width, height = size
     return {"prompt": PROMPTS[prompt_index]["prompt"], "negative_prompt": "lowres, blurry", "seed": SEED,
             "architecture": "anima", "width": width, "height": height, "steps": 30, "cfg_scale": SAMPLE_CFG,
             "sampler": "euler", "scheduler": "native", "flow_shift": 3.0, "loras": []}
@@ -178,7 +184,8 @@ def _write_sample_manifest(run_dir: Path, records: list[dict], steps: tuple[int,
                                      "step": step, "epoch": epoch, "expected": expected, "status": "complete"}, items)
 
 
-def create_demo_run(single: bool = False, epochs: int | None = None, prompt_count: int | None = None) -> Path:
+def create_demo_run(single: bool = False, epochs: int | None = None, prompt_count: int | None = None,
+                    sample_shape: str = "square") -> Path:
     from PIL.PngImagePlugin import PngInfo
     from backend.monitor.run_registry import write_run_record
 
@@ -188,21 +195,29 @@ def create_demo_run(single: bool = False, epochs: int | None = None, prompt_coun
         raise ValueError(f"prompt_count must be between 1 and {len(PROMPTS)}")
     if single and prompt_count not in (None, 1):
         raise ValueError("single cannot be combined with multiple prompts")
+    if sample_shape not in SAMPLE_SHAPES:
+        raise ValueError("unsupported sample shape")
     count = 1 if single else prompt_count or DEFAULT_PROMPT_COUNT
     single = count == 1
     steps = tuple(range(400, epochs * 400 + 1, 400)) if epochs is not None else SINGLE_STEPS if single else STEPS
     prompts = PROMPTS[:count]
+    shape_sizes = SAMPLE_SHAPES[sample_shape]
+    sizes = [shape_sizes[index % len(shape_sizes)] for index in range(count)]
     title = "模拟训练 单提示词" if single else "模拟训练 固定种子多提示词"
     if prompt_count is not None and not single:
         title = f"模拟训练 固定种子 {count} 提示词"
     if epochs is not None:
         title += f"（{epochs} Epoch）"
+    if sample_shape != "square":
+        title += " · " + {"portrait": "竖图 832×1216", "landscape": "横图 1216×832", "mixed": "横竖混合比例"}[sample_shape]
     now = datetime.now(timezone(timedelta(hours=8)))
     mode = "single" if single else "fixed_seed"
     if prompt_count is not None and not single:
         mode += f"_{count}prompts"
     if epochs is not None:
         mode += f"_{epochs}epochs"
+    if sample_shape != "square":
+        mode += f"_{sample_shape}"
     run_name = f"monitor_demo_{mode}_{now:%Y%m%d-%H%M%S}_{uuid4().hex[:6]}"
     run_dir = ROOT / "output" / run_name
     run_dir.resolve().relative_to((ROOT / "output").resolve())
@@ -237,8 +252,8 @@ sample_sampler = "euler"
 '''
     (run_dir / "config.toml").write_text(config, encoding="utf-8")
     prompt_lines = []
-    for prompt in prompts:
-        width, height = SAMPLE_SIZE
+    for prompt_index, prompt in enumerate(prompts):
+        width, height = sizes[prompt_index]
         prompt_lines.append(f'{prompt["prompt"]} --n lowres, blurry --w {width} --h {height} --s 30 --l {SAMPLE_CFG:g} --d {SEED} --fs 3')
     (run_dir / "prompts.txt").write_text("\n".join(prompt_lines) + "\n", encoding="utf-8")
     write_run_record(run_dir, artifact_dir=run_dir, task_id=f"simulated-monitor-{uuid4().hex}", created_at=started_at.isoformat(),
@@ -253,11 +268,12 @@ sample_sampler = "euler"
         for prompt_index, prompt in enumerate(prompts):
             progress = f"e{epoch:06d}" if epoch is not None else f"{step:06d}"
             filename = f"demo_{progress}_{prompt_index:02d}_{batch_time:%Y%m%d%H%M%S}_{SEED}.png"
-            parameters = _sample_parameters(prompt_index)
+            parameters = _sample_parameters(prompt_index, sizes[prompt_index])
             metadata = PngInfo()
             metadata.add_text("Comment", "SIMULATED / UI TEST: generated geometric illustration; no trained model was used.")
             metadata.add_text("parameters", json.dumps(parameters, ensure_ascii=False))
-            _draw_sample(prompt_index, SEED, step, epoch=epoch, total_epochs=epochs).save(run_dir / "sample" / filename, pnginfo=metadata)
+            _draw_sample(prompt_index, SEED, step, epoch=epoch, total_epochs=epochs,
+                         size=sizes[prompt_index]).save(run_dir / "sample" / filename, pnginfo=metadata)
             records.append({"path": f"sample/{filename}", "step": step, "epoch": epoch, "batch_index": batch_index,
                             "created_at": batch_time.isoformat(), "prompt_index": prompt_index,
                             "prompt_name": prompt["name"], "parameters": parameters})
@@ -277,10 +293,11 @@ sample_sampler = "euler"
     (run_dir / "train_simulated.log").write_text("\n".join(log_lines) + "\n", encoding="utf-8")
     sample_description = ("每次使用同一条提示词生成 1 张"
                           if single else f"每次 {count} 个不同提示词，每条生成 1 张")
-    expectation = ("默认按最新优先展示采样卡片；点击单图查看大图，拖动时间轴切换采样时点。"
-                   if single else "默认按最新优先展示采样卡片；点击多图封面展开本次所有样图，再点击单图查看大图；同提示词可按记录的种子和参数自动配对。")
+    expectation = ("默认按最新优先展示采样卡片；点击单图在侧栏预览，通过“打开详情”进入弹窗，使用弹窗缩略图切换采样时点。"
+                   if single else "默认按最新优先展示采样卡片；点击多图封面展开本次所有样图，再点击单图在侧栏预览，通过“打开详情”进入弹窗；同提示词可按记录的种子和参数自动配对。")
     stage_description = (f"Epoch 1–{epochs}，每个 Epoch 采样一次，Step 400–{steps[-1]}（每次间隔 400）"
                          if epochs is not None else f'Step {"、".join(str(step) for step in steps)}')
+    size_description = "、".join(f"{width} × {height}" for width, height in dict.fromkeys(sizes))
     info = f"""{title}
 
 这是一份已完成状态的模拟训练记录，仅供训练监控界面手动测试。没有执行模型训练，不含可用模型权重。
@@ -290,7 +307,7 @@ sample_sampler = "euler"
 覆盖场景：
 - {len(steps)} 次采样：{stage_description}。
 - {sample_description}，共用固定种子 {SEED}。
-- {len(records)} 张几何合成样图，全部采用 {SAMPLE_SIZE[0]} × {SAMPLE_SIZE[1]}、CFG {SAMPLE_CFG:g} 和相同采样设置。
+- {len(records)} 张几何合成样图，尺寸为 {size_description}，CFG {SAMPLE_CFG:g}；每条提示词在各轮保持相同尺寸和采样设置。
 - TensorBoard 合成 Loss/LR：{scalar_count} 条标量；训练日志为模拟内容。
 
 预期：{expectation}
@@ -306,6 +323,8 @@ def main() -> None:
     parser.add_argument("--single", action="store_true", help="每次采样使用单条提示词生成一张图")
     parser.add_argument("--epochs", type=int, help="按 Epoch 采样并生成指定次数（1–1000）的长历史")
     parser.add_argument("--prompt-count", type=int, help="每次采样的提示词数量（1–10，默认 4）")
+    parser.add_argument("--sample-shape", choices=tuple(SAMPLE_SHAPES), default="square",
+                        help="样图尺寸：默认 1024 方图；竖图 832×1216、横图 1216×832，mixed 按提示词循环横竖方图")
     args = parser.parse_args()
     if args.epochs is not None and not 1 <= args.epochs <= 1000:
         parser.error("--epochs 必须在 1–1000 之间")
@@ -318,7 +337,8 @@ def main() -> None:
     from tools.runtime_paths import configure_test_paths
 
     configure_test_paths()
-    path = create_demo_run(single=args.single, epochs=args.epochs, prompt_count=args.prompt_count)
+    path = create_demo_run(single=args.single, epochs=args.epochs, prompt_count=args.prompt_count,
+                           sample_shape=args.sample_shape)
     print(path)
     count = 1 if args.single else args.prompt_count or DEFAULT_PROMPT_COUNT
     sample_count = (args.epochs or (len(SINGLE_STEPS) if count == 1 else len(STEPS))) * count

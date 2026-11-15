@@ -1,17 +1,19 @@
 /* 样本筛选、刷新与媒体队列；由 monitor-core.js 装配，沿用同一份监控状态。 */
 window.monitorPreviewsMixin = {
   sampleBatchId: '', sampleBatchSortDir: 'desc',
-  sampleTimelineVisible: true,
+  sampleSidebarVisible: true, sampleSidebarOpen: true, _sampleSidebarInspecting: false,
+  sampleSidebarView: {key: '', scale: 1, x: 0, y: 0},
   previewViewTimelineVisible: true,
   previewViewTimelineAvailable: false,
   previewComparisonLayout: 'horizontal',
   sampleExpandedBatchId: '', _sampleExpansionPausedFollow: false,
   _sampleExpansionUI: null, _sampleExpansionPointer: null, _sampleExpansionAction: 0, _sampleExpansionDismissTimer: null,
-  _sampleGridPointer: null,
+  _sampleGridPointer: null, _sampleGridLastAction: null,
   previewCompareActive: false, previewComparisonWaiting: false,
   previewReferences: [], _previewReferenceEntries: [],
   _sampleModelCache: null,
   _sampleResetScroll: false, _sampleScrollAnchor: null, _sampleOverviewAtEnd: true,
+  _sampleLayoutAction: 0,
   previewLightboxOpen: false, previewInfoOpen: false, _previewClosePending: false,
   previewPageEditing: false, previewPageDraft: '', _previewPageLastDraft: '',
   previewTimelineMenu: null, _previewTimelineMenuToken: 0, _previewTimelineMenuCleanup: null,
@@ -21,10 +23,15 @@ window.monitorPreviewsMixin = {
   _previewViewFitScale: 1, _previewViewFitted: true, _previewGroupGeometry: null, _previewViewportLayout: null,
   previewViewPanning: false, previewViewPointerId: null,
   _previewPanStartX: 0, _previewPanStartY: 0, _previewPanRatio: 1,
+  _previewPanWrite: null,
   previewImageLoading: false, previewImageError: false,
   _previewImageKey: '', _previewImageRequest: 0,
   _previewOriginalCache: null,
   _previewMediaByUrl: null,
+
+  get sampleSidebarActive() {
+    return this.sampleSidebarVisible && this.sampleSidebarOpen && !!this.previews?.[this.previewStep];
+  },
 
   _previewPromptIdentity(preview) {
     if (preview?.sample?.prompt_id) {
@@ -46,6 +53,9 @@ window.monitorPreviewsMixin = {
   },
 
   resetSampleBrowser() {
+    this._sampleLayoutAction++;
+    this._cancelPreviewReset?.();
+    this.stopPreviewPan?.();
     this.cancelPreviewPromptBarDrag?.();
     this.closePreviewTimelineMenu?.(false);
     this.previewInfoOpen = false;
@@ -53,8 +63,7 @@ window.monitorPreviewsMixin = {
     this._clearPreviewImageLoading?.(true);
     this._disconnectSampleExpansionUI?.();
     this._sampleExpansionAction = (this._sampleExpansionAction || 0) + 1;
-    this._sampleGridPointer = null;
-    ['_sampleTimeline', '_previewViewTimeline'].forEach(prefix => this._cancelPreviewRailDrag?.(prefix));
+    this._cancelPreviewRailDrag?.('_previewViewTimeline');
     this._sampleOverviewJumpId = '';
     this.sampleBatchId = ''; this.sampleBatchSortDir = 'desc';
     this.sampleExpandedBatchId = ''; this._sampleExpansionPausedFollow = false;
@@ -64,13 +73,16 @@ window.monitorPreviewsMixin = {
     this._sampleModelCache = null;
     this._sampleResetScroll = true; this._sampleScrollAnchor = null;
     this._sampleOverviewAtEnd = true;
+    this.sampleSidebarOpen = true;
+    this._sampleSidebarInspecting = false;
+    this.sampleSidebarView = {key: '', scale: 1, x: 0, y: 0};
     this._loadSampleViewPreferences();
   },
 
   _loadSampleViewPreferences() {
     try {
       const saved = JSON.parse(localStorage.getItem('anima-sample-view') || '{}');
-      if (typeof saved?.overviewTimeline === 'boolean') this.sampleTimelineVisible = saved.overviewTimeline;
+      if (typeof saved?.sidebar === 'boolean') this.sampleSidebarVisible = saved.sidebar;
       if (typeof saved?.viewerTimeline === 'boolean') this.previewViewTimelineVisible = saved.viewerTimeline;
       if (saved?.sort === 'asc' || saved?.sort === 'desc') this.sampleBatchSortDir = saved.sort;
       if (saved?.comparisonLayout === 'horizontal' || saved?.comparisonLayout === 'vertical') this.previewComparisonLayout = saved.comparisonLayout;
@@ -79,7 +91,7 @@ window.monitorPreviewsMixin = {
 
   _saveSampleViewPreferences() {
     try {
-      localStorage.setItem('anima-sample-view', JSON.stringify({overviewTimeline: this.sampleTimelineVisible,
+      localStorage.setItem('anima-sample-view', JSON.stringify({sidebar: this.sampleSidebarVisible,
         viewerTimeline: this.previewViewTimelineVisible, sort: this.sampleBatchSortDir, comparisonLayout: this.previewComparisonLayout}));
     } catch { /* The controls remain usable without storage. */ }
   },
@@ -161,6 +173,7 @@ window.monitorPreviewsMixin = {
 
   setSampleBatchSort(dir) {
     if ((dir !== 'asc' && dir !== 'desc') || dir === this.sampleBatchSortDir) return;
+    this._sampleLayoutAction++;
     this.sampleBatchSortDir = dir;
     this._saveSampleViewPreferences();
     // Rebuild around the same batch. Sorting neither acknowledges new samples
@@ -498,7 +511,8 @@ window.monitorPreviewsMixin = {
     const latestBatch = previousModel.batches[previousModel.batches.length - 1];
     const nextLatestId = items.length ? this._sampleRecord(items[items.length - 1], items.length - 1).batch_id : '';
     const readingLatestGroup = this.sampleExpandedBatchId === latestBatch?.id && nextLatestId === latestBatch?.id;
-    const follow = !this.previewLightboxOpen && !this._sampleExpansionPausedFollow
+    const inspecting = this.previewInfoOpen || (this.sampleSidebarActive && this._sampleSidebarInspecting);
+    const follow = !this.previewLightboxOpen && !inspecting && !this._sampleExpansionPausedFollow
       && (this._sampleOverviewAtEnd !== false || readingLatestGroup) && (!previousBatch || previousBatch.id === latestBatch?.id);
     const changed = previous.length !== items.length || previous.some((item, index) => {
       const next = items[index];
@@ -516,9 +530,9 @@ window.monitorPreviewsMixin = {
     const selectedIndex = selectedKey ? items.findIndex(item => this._previewItemKey(item) === selectedKey) : -1;
     const selectedBatch = model.records[selectedIndex]?.batch;
     // A late manifest can move just this file out of a still-existing legacy
-    // batch. The open viewer owns its file; the overview owns its batch choice.
+    // batch. An inspected image owns its file; the idle overview owns its batch.
     const target = follow ? model.batches[model.batches.length - 1]
-      : (this.previewLightboxOpen && selectedBatch) || model.byBatch.get(previousBatch?.id)
+      : ((this.previewLightboxOpen || inspecting) && selectedBatch) || model.byBatch.get(previousBatch?.id)
         || selectedBatch || model.batches[model.batches.length - 1];
     this.sampleBatchId = target?.id || '';
     if (selectedIndex >= 0) this.previewStep = selectedIndex;
@@ -610,7 +624,7 @@ window.monitorPreviewsMixin = {
       if (generation === this._previewMediaGeneration && next.image.isConnected && next.image.dataset.previewUrl === next.url && !this._previewMediaPaused) {
         const objectUrl = URL.createObjectURL(blob);
         this._previewMediaObjectUrls.push(objectUrl);
-        // The overview and both timelines can display the same thumbnail.
+        // The overview and viewer timeline can display the same thumbnail.
         // Share only immutable, versioned URLs so bare URLs remain refreshable.
         if (/[?&]v=[^&]+/.test(next.url)) (this._previewMediaByUrl ||= new Map()).set(next.url, objectUrl);
         this._setPreviewMediaSource(next.image, next.url, objectUrl);
@@ -653,7 +667,7 @@ window.monitorPreviewsMixin = {
     if (!root) return loaded;
     for (const image of root.querySelectorAll('img[data-preview-url]')) {
       const url = image.dataset.previewUrl || '';
-      const path = image.closest('.m-sample-card-image, .preview-grid-item, .m-sample-timeline-image, .preview-view-timeline-item')?.dataset.previewPath;
+      const path = image.closest('.m-sample-card-image, .preview-grid-item, .preview-view-timeline-item')?.dataset.previewPath;
       const src = image.getAttribute('src');
       if (path && /[?&]v=[^&]+/.test(url) && image.dataset.previewLoaded === '1'
           && image.complete && image.naturalWidth > 0 && owned.has(src)
@@ -675,7 +689,7 @@ window.monitorPreviewsMixin = {
         retained.add(current);
         continue;
       }
-      const path = image.closest('.m-sample-card-image, .preview-grid-item, .m-sample-timeline-image, .preview-view-timeline-item')?.dataset.previewPath;
+      const path = image.closest('.m-sample-card-image, .preview-grid-item, .preview-view-timeline-item')?.dataset.previewPath;
       const src = loaded.get(JSON.stringify([path, image.dataset.previewUrl]));
       if (src) {
         image.src = src;

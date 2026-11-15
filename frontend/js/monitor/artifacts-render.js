@@ -85,16 +85,15 @@ window.monitorArtifactsRenderMixin = {
     return [stage.primary, stage.secondary].filter(Boolean).join(' ');
   },
 
-  _sampleThumbnailHtml(index, caption = true, includeSeed, batch = null, status = '') {
+  _sampleThumbnailHtml(index, batch, showPrompt = true, status = '') {
     const preview = this.previews[index], key = this._previewItemKey(preview);
-    const promptLabel = this._sampleCaseLabel(preview, includeSeed);
-    const label = batch ? batch.label : promptLabel;
-    const detail = batch ? [caption ? promptLabel : '', status].filter(Boolean).join(' ') : '';
+    const detail = [showPrompt ? this._sampleCaseLabel(preview) : '', status].filter(Boolean).join(' ');
     return '<button type="button" id="sample-' + this.esc(encodeURIComponent(key)) + '" class="preview-grid-item" data-preview-path="' + this.esc(key) + '" data-preview-index="' + index
-      + '" data-dialog-opens="previewLightbox"' + (batch ? '' : ' @click="openPreviewLightbox(' + index + ')"') + ' aria-label="' + this.esc(this._previewCompareLabel(preview)) + '">'
+      + '" data-dialog-opens="previewLightbox" :data-sample-image-selected="sampleSidebarActive && previewStep === ' + index + '" :aria-current="sampleSidebarActive && previewStep === ' + index + '"'
+      + ' aria-label="' + this.esc(this._previewCompareLabel(preview)) + '"><span class="m-sample-card-visual">'
       + '<span class="preview-thumb-frame">' + this._previewThumbImageHtml(preview) + '<span class="preview-thumb-error">' + this.esc(this.t('monitor.previewImageFailed')) + '</span></span>'
-      + (caption || batch ? '<span class="preview-grid-item-label" title="' + this.esc([this._sampleStageText(label), detail].filter(Boolean).join('\n')) + '">' + this._sampleStageHtml(label)
-        + (detail ? '<small class="m-sample-caption-detail">' + this.esc(detail) + '</small>' : '') + '</span>' : '') + '</button>';
+      + '<span class="preview-grid-item-label" title="' + this.esc([this._sampleStageText(batch.label), detail].filter(Boolean).join('\n')) + '">' + this._sampleStageHtml(batch.label)
+      + (detail ? '<small class="m-sample-caption-detail">' + this.esc(detail) + '</small>' : '') + '</span></span></button>';
   },
 
   _sampleBatchCountText(t, batch) {
@@ -114,32 +113,30 @@ window.monitorArtifactsRenderMixin = {
     return batch.indices.length > 1 || batch.expected > 1;
   },
 
-  _sampleStackHtml(batch, timeline = false) {
+  _sampleStackHtml(batch) {
     const total = batch.indices.length;
-    const rootClass = timeline ? 'm-sample-timeline-mosaic' : 'm-sample-card-stack';
-    const imageClass = timeline ? 'm-sample-timeline-image' : 'm-sample-card-image';
-    let html = '<span class="' + rootClass + (total > 1 ? ' is-stack' + (total === 2 ? ' is-two' : '') : ' is-single') + ' m-sample-stack">';
+    let html = '<span class="m-sample-stack' + (total > 1 ? ' is-stack' : '') + '">';
     batch.indices.slice(0, 3).forEach((index, position) => {
       const preview = this.previews[index];
       const layer = total > 1 ? position === 0 ? ' is-cover' : ' is-behind-' + position : '';
-      html += '<span class="preview-thumb-frame ' + imageClass + layer + '" data-preview-path="' + this.esc(this._previewItemKey(preview)) + '">' + this._previewThumbImageHtml(preview) + '</span>';
+      html += '<span class="preview-thumb-frame m-sample-card-image' + layer + '" data-preview-path="' + this.esc(this._previewItemKey(preview)) + '">' + this._previewThumbImageHtml(preview) + '</span>';
     });
-    if (total > 1 || (!timeline && batch.expected > 1)) html += '<span class="' + (timeline ? 'm-sample-timeline-count' : 'm-sample-card-count') + '" aria-hidden="true">×' + total + '</span>';
+    if (total > 1 || batch.expected > 1) html += '<span class="m-sample-card-count" aria-hidden="true">×' + total + '</span>';
     return html + '</span>';
   },
 
   _sampleBatchCardHtml(t, batch, showPrompt) {
     if (!this._sampleBatchIsExpandable(batch)) {
-      return this._sampleThumbnailHtml(batch.indices[0], showPrompt, undefined, batch, this._sampleBatchStatusText(t, batch));
+      return this._sampleThumbnailHtml(batch.indices[0], batch, showPrompt, this._sampleBatchStatusText(t, batch));
     }
     const expanded = this.sampleExpandedBatchId === batch.id;
     let html = '<button type="button" id="sampleBatch-' + this.esc(encodeURIComponent(batch.id)) + '" class="preview-grid-item m-sample-batch-cover"'
       + ' aria-expanded="' + expanded + '" aria-controls="sampleBatchImages-' + this.esc(encodeURIComponent(batch.id)) + '"'
-      + ' aria-label="' + this.esc(this._sampleStageText(batch.label) + ' ' + this._sampleBatchCountText(t, batch)) + '">';
+      + ' aria-label="' + this.esc(this._sampleStageText(batch.label) + ' ' + this._sampleBatchCountText(t, batch)) + '"><span class="m-sample-card-visual">';
     html += this._sampleStackHtml(batch);
     const status = batch.status === 'running' ? this._sampleBatchCountText(t, batch) : this._sampleBatchStatusText(t, batch);
     html += '<span class="preview-grid-item-label">' + this._sampleStageHtml(batch.label)
-      + (status ? '<small class="m-sample-caption-detail">' + this.esc(status) + '</small>' : '') + '</span></button>';
+      + (status ? '<small class="m-sample-caption-detail">' + this.esc(status) + '</small>' : '') + '</span></span></button>';
     return html;
   },
 
@@ -150,41 +147,45 @@ window.monitorArtifactsRenderMixin = {
       const key = this._previewItemKey(this.previews[index]);
       return '<div class="m-sample-tile' + (expanded ? ' is-expanded' + (position === 0 ? ' is-first' : '') : '')
         + '" data-sample-tile-key="' + this.esc(JSON.stringify([batch.id, key])) + '" data-batch-id="' + this.esc(batch.id) + '">'
-        + (expanded ? this._sampleThumbnailHtml(index, true, undefined, batch) : this._sampleBatchCardHtml(t, batch, showPrompt)) + '</div>';
+        + (expanded ? this._sampleThumbnailHtml(index, batch) : this._sampleBatchCardHtml(t, batch, showPrompt)) + '</div>';
     }).join('');
   },
 
-  _sampleTimelineLocateHtml(t, keepExpansion = false, timelineId = '') {
+  _previewTimelineLocateHtml(t) {
     const label = this.esc(t('sampleLocateCurrent'));
     const icon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg>';
-    return '<button type="button" class="btn-icon sample-timeline-locate"' + (keepExpansion ? ' data-sample-expansion-keep' : '')
-      + (timelineId ? ' data-sample-timeline-target="' + this.esc(timelineId) + '" disabled' : '')
-      + ' @click="centerSampleTimeline($event.currentTarget)" title="' + label + '" aria-label="' + label + '">' + icon + '</button>';
+    return '<button type="button" class="btn-icon sample-timeline-locate" disabled'
+      + ' @click="centerPreviewViewTimeline()" title="' + label + '" aria-label="' + label + '">' + icon + '</button>';
   },
 
-  _sampleTimelineHtml(t, batches, selected, singleImageMode = false) {
-    if (batches.length < 2) return '';
-    let html = '<div id="sampleOverviewTimelineFrame" class="m-sample-timeline-frame' + (this.sampleTimelineVisible === false ? ' is-hidden' : '') + '" :class="{\'is-hidden\':!sampleTimelineVisible}" :inert="!sampleTimelineVisible" :aria-hidden="!sampleTimelineVisible"><div class="m-sample-timeline-clip"><div class="m-sample-timeline" role="group" aria-label="' + this.esc(t('sampleBatchSelect')) + '"'
-      + ' @pointerdown="startSampleTimelineDrag($event)" @pointermove="moveSampleTimelineDrag($event)"'
-      + ' @pointerup="endSampleTimelineDrag($event)" @pointercancel="endSampleTimelineDrag($event)"'
-      + ' @pointerleave="leaveSampleTimeline($event)" @click.capture="suppressSampleTimelineClick($event)"'
-      + ' @keydown="sampleTimelineKeydown($event)" @wheel="scrollSampleTimeline($event)">';
-    batches.forEach(batch => {
-      const active = batch.id === selected?.id;
-      const count = this._sampleBatchCountText(t, batch);
-      html += '<button type="button" id="sampleTimeline-' + this.esc(encodeURIComponent(batch.id)) + '" class="m-sample-timeline-item"'
-        + ' data-batch-index="' + batch.position + '" data-batch-id="' + this.esc(batch.id) + '" aria-pressed="' + active + '" tabindex="' + (active ? '0' : '-1') + '"'
-        + ' aria-label="' + this.esc(this._sampleStageText(batch.label) + ' ' + count) + '" @click="sampleTimelineClick($event,' + batch.position + ')" @dragstart.prevent>';
-      html += this._sampleStackHtml(batch, true);
-      const status = batch.status === 'running' && !singleImageMode ? count : this._sampleBatchStatusText(t, batch);
-      const stage = this._sampleStageParts(batch.label);
-      const title = this.esc([stage.primary, stage.secondary].filter(Boolean).join('\n'));
-      html += '<strong title="' + title + '">' + this.esc(stage.primary) + '</strong>'
-        + (stage.secondary ? '<small title="' + title + '">' + this.esc(stage.secondary) + '</small>' : '')
-        + (status ? '<small>' + this.esc(status) + '</small>' : '') + '</button>';
-    });
-    html += '</div></div></div>';
-    return html;
+  _previewInfoButtonHtml(t, id) {
+    const label = this.esc(t('sampleGenerationInfo'));
+    return '<button type="button" id="' + this.esc(id) + '" class="btn-icon preview-icon-button" data-dialog-opens="previewInfoDialog" @click="previewInfoOpen=true" title="' + label + '" aria-label="' + label + '" aria-haspopup="dialog">'
+      + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v.2"/></svg></button>';
+  },
+
+  _sampleSidebarViewState() {
+    const key = this._previewItemKey(this.previews[this.previewStep]);
+    if (this.sampleSidebarView.key !== key) this.sampleSidebarView = {key, scale: 1, x: 0, y: 0};
+    return this.sampleSidebarView;
+  },
+
+  _sampleSidebarHtml(t) {
+    const close = this.esc(t('close'));
+    return '<aside id="sampleSidebar" class="m-sample-sidebar" x-show="sampleSidebarVisible"' + (this.sampleSidebarVisible ? '' : ' style="display:none"') + ' aria-label="' + this.esc(t('sampleSelectedImage')) + '" data-sample-expansion-keep>'
+      + '<template x-if="sampleSidebarActive"><div class="m-sample-sidebar-content" x-data="AnimaImageViewport.create(_sampleSidebarViewState())" @image-view-interact="_sampleSidebarInspecting=true" x-init="$watch(\'_previewItemKey(previews[previewStep])\', key => {sampleSidebarView.key=key;reset(false)})">'
+      + '<div class="m-sample-sidebar-heading"><div class="m-sample-sidebar-label"><span class="m-sample-sidebar-stage" :title="_previewStageLabel(previews[previewStep])"><strong x-text="_previewCaptionParts(previews[previewStep]).primary"></strong><small x-show="_previewCaptionParts(previews[previewStep]).secondary" x-text="_previewCaptionParts(previews[previewStep]).secondary"></small></span>'
+      + this._previewInfoButtonHtml(t, 'sampleSidebarInfoButton') + '</div>'
+      + '<div class="m-sample-sidebar-actions"><button type="button" class="btn btn-sm btn-secondary" data-dialog-opens="previewLightbox" @click="openPreviewLightbox(previewStep)">' + this.esc(t('sampleOpenViewer')) + '</button>'
+      + '<button type="button" class="btn btn-sm btn-ghost" @click="reset()" :disabled="scale === 1 && x === 0 && y === 0">' + this.esc(t('sampleResetView')) + '</button>'
+      + '<button type="button" class="btn-icon preview-icon-button" @click="closeSampleSidebarPreview()" title="' + close + '" aria-label="' + close + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div></div>'
+      + '<div id="sampleSidebarImage" class="m-sample-sidebar-image" x-ref="viewport" :class="{\'is-zoomed\':scale > 1, \'is-panning\':panning}" @wheel="zoom($event)"'
+      + ' @pointerdown="startPan($event)" @pointermove="movePan($event)" @pointerup="stopPan($event)" @pointercancel="stopPan($event)" @lostpointercapture="stopPan($event)" @resize.window="constrain()" x-data="{failed:false}">'
+      + '<img x-image="{src: _previewFullImageUrl(previews[previewStep]), placeholder: previews[previewStep].thumb_url || previews[previewStep].url}" :alt="previews[previewStep].name" :style="\'transform:\'+transform()" :class="{\'is-error\':failed}" @load="failed=false;constrain()" @error="failed=true" @dragstart.prevent>'
+      + '<span class="m-sample-sidebar-error" x-show="failed" x-cloak>' + this.esc(t('previewImageFailed')) + '</span></div>'
+      + '</div></template><div class="m-sample-sidebar-empty" x-show="!sampleSidebarActive"' + (this.sampleSidebarActive ? ' style="display:none"' : '') + '>'
+      + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/></svg>'
+      + '<span>' + this.esc(t('sampleSelectPreview')) + '</span></div></aside>';
   },
 
   _renderSamplesTab(t) {
@@ -192,12 +193,14 @@ window.monitorArtifactsRenderMixin = {
     const d = isHistory ? (this.runDetailData||{}) : (this.monitorData||{});
     const showPreviews = this.previews.length > 0;
     const batch = this._sampleSelectedBatch();
+    if (batch && !this.sampleBatchId && !this.previewLightboxOpen) {
+      this.sampleBatchId = batch.id;
+      this.previewStep = this._sampleBatchNavigationIndex(batch, this.previews[this.previewStep]);
+    }
     let html = '<div class="m-section m-samples-section"><div class="m-view-header m-samples-toolbar"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t('previewSamples')) + '</span></div>';
     html += '<div class="m-view-actions">';
     if (showPreviews) {
-      if (this._sampleDataModel().batches.length > 1) {
-        html += '<div class="m-sample-timeline-toggle"><span id="sampleTimelineToggleLabel">' + this.esc(t('sampleThumbnails')) + '</span><label class="toggle"><input type="checkbox" role="switch" id="sampleTimelineToggle"' + (this.sampleTimelineVisible !== false ? ' checked' : '') + ' :checked="sampleTimelineVisible" aria-labelledby="sampleTimelineToggleLabel" aria-controls="sampleOverviewTimelineFrame" @change="toggleSampleTimeline($event)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>';
-      }
+      html += '<div class="m-sample-view-toggle"><span id="sampleSidebarToggleLabel">' + this.esc(t('sampleShowSidebar')) + '</span><label class="toggle"><input type="checkbox" role="switch" id="sampleSidebarToggle"' + (this.sampleSidebarVisible ? ' checked' : '') + ' :checked="sampleSidebarVisible" aria-labelledby="sampleSidebarToggleLabel" aria-controls="sampleSidebar" @change="toggleSampleSidebar($event)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>';
       if (this.previewHasNew) html += '<button type="button" id="sampleLatestBatch" class="btn btn-sm btn-secondary" @click="jumpToLatestOverviewBatch()">' + this.esc(t('previewNewSamples')) + '</button>';
       if (this._sampleDataModel().batches.length > 1) {
         const options = [{ value: 'asc', label: t('trainingOrder') }, { value: 'desc', label: t('latestFirst') }];
@@ -212,18 +215,17 @@ window.monitorArtifactsRenderMixin = {
       const model = this._sampleDataModel(), batches = model.batches;
       const singleImageMode = batches.every(group => !this._sampleBatchIsExpandable(group));
       const showPrompt = !singleImageMode || new Set(model.records.map(record => record.sample.prompt_id)).size > 1;
-      html += '<div class="preview-grid m-sample-batches' + (singleImageMode ? ' is-single-image' : '')
-        + (batches.length === 1 ? ' is-only-batch' : '') + '" @scroll.passive="sampleOverviewScroll($event)" @click="sampleGridClick($event)"'
-        + ' @pointerdown="sampleGridPointerDown($event)" @pointermove="sampleGridPointerMove($event)"'
-        + ' @pointerup="sampleGridPointerUp($event)" @pointercancel="sampleGridPointerCancel($event)">';
+      html += '<div class="m-samples-workspace' + (this.sampleSidebarVisible ? ' has-sidebar' : '') + '" :class="{\'has-sidebar\':sampleSidebarVisible}"'
+        + ' x-data="AnimaSampleLayout.create({getAnchor: () => _sampleScrollAnchor, setAnchor: anchor => _sampleScrollAnchor=anchor, cleanup: () => _cancelSampleGridMotion($el.querySelector(\'.preview-grid\'))})"><div class="preview-grid m-sample-batches" @scroll.passive="sampleOverviewScroll($event)" @click="sampleGridClick($event)" @dblclick="sampleGridDoubleClick($event)"'
+        + ' @pointerdown="sampleGridPointerDown($event)">';
       const displayBatches = this._sampleOverviewBatches();
       displayBatches.forEach(group => {
         html += '<section class="m-sample-batch" id="sampleBatchImages-' + this.esc(encodeURIComponent(group.id)) + '" data-batch-index="' + group.position + '" data-batch-id="' + this.esc(group.id) + '"'
-          + ' data-sample-selected="' + (group.id === batch?.id) + '" data-expanded="' + (group.id === this.sampleExpandedBatchId) + '" aria-label="' + this.esc(this._sampleStageText(group.label)) + '">';
+          + ' data-sample-selected="' + (this.sampleSidebarActive && group.id === batch?.id) + '" :data-sample-selected="' + this.esc('sampleSidebarActive && sampleBatchId === ' + JSON.stringify(group.id)) + '" data-expanded="' + (group.id === this.sampleExpandedBatchId) + '" aria-label="' + this.esc(this._sampleStageText(group.label)) + '">';
         html += this._sampleBatchItemsHtml(t, group, showPrompt) + '</section>';
       });
       html += '</div>';
-      html += this._sampleTimelineHtml(t, displayBatches, batch, singleImageMode);
+      html += this._sampleSidebarHtml(t) + '</div>';
     } else {
       // 区分空态场景：实时无训练 / 实时训练中未生成样本 / 历史记录无样本
       let hintKey, hintFallback;
@@ -249,25 +251,134 @@ window.monitorArtifactsRenderMixin = {
     return html;
   },
 
-  _sampleTimelineDrag: null,
-  _sampleTimelineSuppressClick: false,
-
-  toggleSampleTimeline(event) {
-    this.sampleTimelineVisible = typeof event?.currentTarget?.checked === 'boolean' ? event.currentTarget.checked : !this.sampleTimelineVisible;
+  toggleSampleSidebar(event) {
+    const visible = typeof event?.currentTarget?.checked === 'boolean' ? event.currentTarget.checked : !this.sampleSidebarVisible;
+    if (visible === this.sampleSidebarVisible) return;
+    const action = ++this._sampleLayoutAction, panel = this._sampleOverviewPanel(), grid = panel?.querySelector('.preview-grid');
+    const selected = this.sampleSidebarOpen && (document.getElementById('sample-' + encodeURIComponent(this._previewItemKey(this.previews[this.previewStep])))
+      || document.getElementById('sampleBatch-' + encodeURIComponent(this.sampleBatchId)));
+    const anchor = window.AnimaSampleLayout.captureAnchor(grid, selected, this._sampleScrollAnchor);
+    const before = grid ? this._captureSampleLayout(grid) : null;
+    this._cancelSampleGridMotion(grid);
+    this.sampleSidebarVisible = visible;
     this._saveSampleViewPreferences();
-    const frame = document.getElementById('sampleOverviewTimelineFrame');
-    if (!this.sampleTimelineVisible && frame?.contains(document.activeElement)) event?.currentTarget?.focus({preventScroll: true});
+    const sidebar = document.getElementById('sampleSidebar');
+    if (!this.sampleSidebarVisible && sidebar?.contains(document.activeElement)) {
+      document.getElementById('sampleSidebarToggle')?.focus({preventScroll: true});
+    }
+    if (!grid) return;
+    const finish = () => {
+      if (this._sampleLayoutAction !== action || this._sampleOverviewPanel()?.querySelector('.preview-grid') !== grid || grid.isConnected === false) return;
+      this._sampleScrollAnchor = window.AnimaSampleLayout.restoreAnchor(grid, anchor);
+      this._refreshSampleGroupOutline(panel);
+      this._animateSampleLayout(grid, before);
+    };
+    if (typeof this.$nextTick === 'function') this.$nextTick(finish);
+    else finish();
+  },
+
+  closeSampleSidebarPreview() {
+    this._sampleLayoutAction++;
+    const sidebar = document.getElementById('sampleSidebar');
+    const restoreFocus = sidebar?.contains(document.activeElement);
+    this.sampleSidebarOpen = false;
+    this._sampleSidebarInspecting = false;
+    this.sampleSidebarView = {key: '', scale: 1, x: 0, y: 0};
+    if (!this.previewLightboxOpen) this.previewInfoOpen = false;
+    if (restoreFocus) {
+      const image = document.getElementById('sample-' + encodeURIComponent(this._previewItemKey(this.previews[this.previewStep])));
+      const cover = document.getElementById('sampleBatch-' + encodeURIComponent(this.sampleBatchId));
+      (image || cover || document.getElementById('sampleSidebarToggle'))?.focus({preventScroll: true});
+    }
   },
   _sampleOverviewJumpId: '',
+
+  selectSampleImage(index) {
+    if (!this.previews[index]) return;
+    this._sampleLayoutAction++;
+    this._sampleScrollAnchor = null;
+    if (!this.sampleSidebarVisible) { this.openPreviewLightbox(index); return; }
+    const model = this._sampleDataModel(), batch = model.records[index]?.batch, panel = this._sampleOverviewPanel();
+    this._activateOverviewBatch(batch);
+    this.previewStep = index;
+    this.sampleSidebarOpen = true;
+    this._sampleSidebarInspecting = true;
+    this._sampleOverviewAtEnd = false;
+    if (batch?.id === model.batches.at(-1)?.id) this._acknowledgeNewPreviews(panel);
+  },
+
+  _acknowledgeNewPreviews(panel = this._sampleOverviewPanel()) {
+    this.previewHasNew = false;
+    panel?.querySelector('#sampleLatestBatch')?.remove();
+  },
+
+  _sampleGridActionForTarget(target, grid) {
+    if (target?.closest?.('.m-sample-motion-ghost')) return null;
+    const cover = target?.closest?.('.m-sample-batch-cover');
+    if (cover && grid.contains(cover)) {
+      const id = cover.closest('.m-sample-batch')?.dataset.batchId;
+      return id ? {kind: 'batch', id} : null;
+    }
+    const image = target?.closest?.('.preview-grid-item[data-preview-index]');
+    return image && grid.contains(image)
+      ? {kind: 'image', key: image.dataset.previewPath, index: Number(image.dataset.previewIndex), batchId: image.closest?.('.m-sample-batch')?.dataset.batchId} : null;
+  },
+
+  _sampleGridVisualAction(event, grid) {
+    const motion = grid._sampleGridMotion;
+    if (!motion?.animations.size) return null;
+    const bounds = grid.getBoundingClientRect(), left = bounds.left + (grid.clientLeft || 0), top = bounds.top + (grid.clientTop || 0);
+    const x = event.clientX, y = event.clientY;
+    if (x < left || x >= left + grid.clientWidth || y < top || y >= top + grid.clientHeight) return {action: null};
+    // The buttons stay at their final grid slots. During motion, interpret a
+    // press against the painted visuals, including visuals over a grid gap.
+    // Later siblings paint above earlier ones; transparent reveals and ghosts
+    // never claim a press. No geometry is read outside an active animation.
+    for (let index = motion.items.length - 1; index >= 0; index--) {
+      const item = motion.items[index], rect = item.visual.getBoundingClientRect();
+      if (x < rect.left || x >= rect.right || y < rect.top || y >= rect.bottom) continue;
+      if (Number(window.getComputedStyle(item.visual).opacity) <= 0.01) continue;
+      return {action: this._sampleGridActionForTarget(item.button, grid)};
+    }
+    return {action: null};
+  },
+
+  _runSampleGridAction(action, event) {
+    if (action?.kind === 'batch') {
+      if (this._sampleDataModel().byBatch.has(action.id)) {
+        this.toggleSampleBatch(action.id, event);
+        return action;
+      }
+    } else if (action?.kind === 'image') {
+      let index = action.index;
+      if (!Number.isInteger(index) || this._previewItemKey(this.previews[index]) !== action.key) {
+        index = this.previews.findIndex(preview => this._previewItemKey(preview) === action.key);
+      }
+      if (index >= 0) {
+        window.AnimaUI?.setDialogOrigin?.(document.getElementById('previewLightbox'), document.getElementById('sample-' + encodeURIComponent(action.key)));
+        this.selectSampleImage(index);
+        return {...action, index};
+      }
+    }
+    return null;
+  },
 
   sampleGridPointerDown(event) {
     this._sampleGridPointer = null;
     if (event.button !== 0 || event.isPrimary === false) return;
-    const cover = event.target.closest?.('.m-sample-batch-cover');
-    if (!cover || !event.currentTarget.contains(cover)) return;
-    const batchId = cover.closest('.m-sample-batch')?.dataset.batchId;
-    if (batchId) this._sampleGridPointer = {pointerId: event.pointerId, grid: event.currentTarget, batchId, x: event.clientX, y: event.clientY,
+    const visual = this._sampleGridVisualAction(event, event.currentTarget);
+    const action = visual ? visual.action : this._sampleGridActionForTarget(event.target, event.currentTarget);
+    if (action || visual) this._sampleGridPointer = {pointerId: event.pointerId, grid: event.currentTarget, action, visual: !!visual, x: event.clientX, y: event.clientY,
       moved: false, ended: false, cancelled: false};
+  },
+
+  _sampleGridPressMatches(event, grid, pointer = this._sampleGridPointer) {
+    return event.detail !== 0 && pointer?.ended && pointer.grid === grid
+      && (event.pointerId == null || event.pointerId === pointer.pointerId);
+  },
+
+  _sampleGridPressStationary(event, pointer) {
+    return !pointer.cancelled && !pointer.moved && Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) <= 6;
   },
 
   sampleGridPointerMove(event) {
@@ -281,7 +392,7 @@ window.monitorArtifactsRenderMixin = {
     this.sampleGridPointerMove(event);
     if (pointer.ended) return;
     pointer.ended = true;
-    // Keep the pressed DOM through click, including microtask checkpoints
+    // Keep every pressed card through click, including microtask checkpoints
     // between pointerup and click. A cancelled native click must not strand it.
     setTimeout(() => {
       if (this._sampleGridPointer === pointer) this._sampleGridPointer = null;
@@ -297,34 +408,26 @@ window.monitorArtifactsRenderMixin = {
   },
 
   sampleGridClick(event, grid = event.currentTarget) {
-    const target = event.target, pointer = this._sampleGridPointer;
+    const target = event.target, pointer = this._sampleGridPointer, previous = this._sampleGridLastAction;
     this._sampleGridPointer = null;
+    this._sampleGridLastAction = null;
     if (event.defaultPrevented || (event.button != null && event.button !== 0) || target.closest?.('.m-sample-motion-ghost')) return;
-    const pointerClick = event.detail !== 0 && pointer?.ended && pointer.grid === grid
-      && (event.pointerId == null || event.pointerId === pointer.pointerId);
-    if (pointerClick && (pointer.cancelled || pointer.moved || Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > 6)) return;
-    // FLIP and native focus scrolling can change the up/click hit target while
-    // the pointer stays still. Consume the pressed cover before interpreting
-    // that target: click may land on a tile, its section or a different image,
-    // not just the grid. The original batch switches in one DOM update.
-    if (pointerClick && this._sampleDataModel().byBatch.has(pointer.batchId)) {
-      this.toggleSampleBatch(pointer.batchId, event);
-      return;
-    }
-    const cover = target.closest?.('.m-sample-batch-cover');
-    if (cover && grid.contains(cover)) {
-      const id = cover.closest('.m-sample-batch')?.dataset.batchId;
-      if (id) this.toggleSampleBatch(id, event);
-      return;
-    }
-    const image = target.closest?.('.preview-grid-item[data-preview-index]');
-    if (image && grid.contains(image)) {
-      let index = Number(image.dataset.previewIndex);
-      const key = image.dataset.previewPath;
-      if (!Number.isInteger(index) || this._previewItemKey(this.previews[index]) !== key) index = this.previews.findIndex(preview => this._previewItemKey(preview) === key);
-      if (index >= 0) this.openPreviewLightbox(index);
-      return;
-    }
+    const pointerClick = this._sampleGridPressMatches(event, grid, pointer);
+    if (pointerClick && !this._sampleGridPressStationary(event, pointer)) return;
+    // FLIP and focus scrolling can retarget click to a tile, the grid or a
+    // different card. Both images and batch covers keep the pressed identity;
+    // keyboard activation resolves the current target through the same action.
+    const action = this._runSampleGridAction(pointerClick ? pointer.action : this._sampleGridActionForTarget(target, grid), event);
+    if (action) this._sampleGridLastAction = {...action, clickDetail: event.detail,
+      doubleClick: event.detail === 2 && previous?.clickDetail === 1 && action.kind === 'image' && previous.kind === 'image' && previous.key === action.key};
+  },
+
+  sampleGridDoubleClick(event) {
+    if (event.defaultPrevented || (event.button != null && event.button !== 0)) return;
+    const action = this._sampleGridLastAction;
+    if (action?.kind !== 'image' || !action.doubleClick) return;
+    const index = this.previews.findIndex(preview => this._previewItemKey(preview) === action.key);
+    if (index >= 0) this.openPreviewLightbox(index);
   },
 
   _sampleOutlineRows(items, id, padding = 4) {
@@ -466,6 +569,7 @@ window.monitorArtifactsRenderMixin = {
     this._sampleExpansionUI = null;
     if (!keepPointer) {
       this._sampleGridPointer = null;
+      this._sampleGridLastAction = null;
       this._sampleExpansionPointer = null;
       if (this._sampleExpansionDismissTimer != null) clearTimeout(this._sampleExpansionDismissTimer);
       this._sampleExpansionDismissTimer = null;
@@ -476,6 +580,18 @@ window.monitorArtifactsRenderMixin = {
     return !!this.sampleExpandedBatchId && (!this.currentRoute || this.currentRoute === 'monitor-dashboard')
       && (!this.monitorTab || this.monitorTab === 'samples') && (openingOutsideImage || (!this.previewLightboxOpen && !this._previewClosePending))
       && !target?.closest?.('dialog');
+  },
+
+  _sampleWorkspaceBlankTarget(event, panel) {
+    const target = event.target, grid = panel?.querySelector('.m-sample-batches');
+    if (!grid || this.previewLightboxOpen || this.previewInfoOpen || this._previewClosePending) return false;
+    if (target === grid) {
+      const bounds = grid.getBoundingClientRect();
+      if (event.clientX >= bounds.left + grid.clientWidth || event.clientY >= bounds.top + grid.clientHeight) return false;
+      return true;
+    }
+    return !!target?.matches?.('.m-samples-workspace, .m-sample-sidebar, .m-sample-sidebar-content, .m-sample-sidebar-heading, .m-sample-sidebar-empty')
+      && panel.contains(target);
   },
 
   _connectSampleExpansionUI(panel) {
@@ -492,30 +608,31 @@ window.monitorArtifactsRenderMixin = {
     window.addEventListener?.('blur', ui.blur);
     ui.handlers.pointerdown = event => {
       // A new press outside the grid invalidates an earlier unfinished press.
-      // The grid's bubbling handler records a fresh cover intent when needed.
+      // The grid's bubbling handler records a fresh card action when needed.
       const previous = this._sampleGridPointer;
       if (previous?.renderPending) this.sampleGridPointerCancel({pointerId: previous.pointerId});
       this._sampleGridPointer = null;
       const target = event.target, rect = target?.getBoundingClientRect?.();
       const scrollbar = rect && ((target.scrollHeight > target.clientHeight && event.clientX >= rect.left + target.clientWidth)
         || (target.scrollWidth > target.clientWidth && event.clientY >= rect.top + target.clientHeight));
-      this._sampleExpansionPointer = {id: event.pointerId, x: event.clientX, y: event.clientY, moved: false,
+      this._sampleExpansionPointer = {id: event.pointerId, target, primary: event.button === 0 && !scrollbar, x: event.clientX, y: event.clientY, moved: false,
         ignored: event.button !== 0 || scrollbar || !this._sampleExpansionDismissAllowed(target)};
     };
-    const move = event => {
-      this.sampleGridPointerMove(event);
+    const moveExpansionPointer = event => {
       const pointer = this._sampleExpansionPointer;
       if (pointer && pointer.id === event.pointerId && Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > 6) pointer.moved = true;
     };
-    ui.handlers.pointermove = move;
-    ui.handlers.pointerup = event => {move(event); this.sampleGridPointerUp(event);};
+    ui.handlers.pointermove = event => {moveExpansionPointer(event); this.sampleGridPointerMove(event);};
+    ui.handlers.pointerup = event => {moveExpansionPointer(event); this.sampleGridPointerUp(event);};
     ui.handlers.pointercancel = event => {
       this.sampleGridPointerCancel(event);
-      if (this._sampleExpansionPointer?.id === event.pointerId) this._sampleExpansionPointer.ignored = true;
+      if (this._sampleExpansionPointer?.id === event.pointerId) {
+        this._sampleExpansionPointer.ignored = true; this._sampleExpansionPointer.primary = false;
+      }
     };
     ui.handlers.click = event => {
       const path = event.composedPath?.() || [event.target];
-      // A stationary cover press can finish outside the grid after scrolling
+      // A stationary card press can finish outside the grid after scrolling
       // or layout motion. Its click never reaches the grid's bubble listener.
       const pressed = this._sampleGridPointer;
       if (pressed?.grid === grid && !path.includes(grid) && !grid.contains(event.target)) {
@@ -528,13 +645,17 @@ window.monitorArtifactsRenderMixin = {
           return;
         }
       }
-      const inside = path.some(node => node?.matches?.('.m-sample-batch') && node.dataset.batchId === this.sampleExpandedBatchId);
-      const cover = path.some(node => node?.classList?.contains('m-sample-batch-cover'));
-      const outsideImage = path.some(node => node?.matches?.('.preview-grid-item[data-dialog-opens="previewLightbox"]'));
+      const visualPress = pressed?.visual && this._sampleGridPressMatches(event, grid, pressed) && this._sampleGridPressStationary(event, pressed);
+      const visualAction = visualPress ? pressed.action : null;
+      const inside = visualPress ? (visualAction?.kind === 'batch' ? visualAction.id : visualAction?.batchId) === this.sampleExpandedBatchId
+        : path.some(node => node?.matches?.('.m-sample-batch') && node.dataset.batchId === this.sampleExpandedBatchId);
+      const cover = visualPress ? visualAction?.kind === 'batch' : path.some(node => node?.classList?.contains('m-sample-batch-cover'));
+      const outsideImage = visualPress ? visualAction?.kind === 'image' : path.some(node => node?.matches?.('.preview-grid-item[data-dialog-opens="previewLightbox"]'));
       const keepExpanded = path.some(node => node?.hasAttribute?.('data-sample-expansion-keep'))
         || !!event.target?.closest?.('[data-sample-expansion-keep]');
       const pointer = this._sampleExpansionPointer;
       this._sampleExpansionPointer = null;
+      if (visualPress ? !visualAction : pointer?.primary && !pointer.moved && pointer.target === event.target && this._sampleWorkspaceBlankTarget(event, panel)) this.closeSampleSidebarPreview();
       if (inside || cover || keepExpanded || pointer?.ignored || pointer?.moved || !this._sampleExpansionDismissAllowed(event.target)) return;
       if (event.target === grid) {
         const bounds = grid.getBoundingClientRect(), rows = grid.querySelector('.m-sample-group-outline')?._sampleRows || [];
@@ -549,7 +670,7 @@ window.monitorArtifactsRenderMixin = {
         this._sampleExpansionDismissTimer = null;
         const openingOutsideImage = outsideImage && this.previewLightboxOpen && !this._previewClosePending;
         if (this._sampleExpansionAction !== action || this.sampleExpandedBatchId !== batchId || !this._sampleExpansionDismissAllowed(event.target, openingOutsideImage)
-          || this._sampleTimelineDrag?.dragging || this._sampleTimelineSuppressClick || String(window.getSelection?.() || '').trim()) return;
+          || String(window.getSelection?.() || '').trim()) return;
         this.toggleSampleBatch(batchId, event);
       }, 0);
       this._sampleExpansionDismissTimer = timer;
@@ -576,22 +697,25 @@ window.monitorArtifactsRenderMixin = {
 
   _sampleBatchFirstItem(group) {
     // display:contents groups have no box; all navigation uses their first tile.
-    return group?.querySelector?.('.m-sample-tile') || group?.querySelector?.('.preview-grid-item') || group;
+    return group?.querySelector('.m-sample-tile');
   },
 
   _captureSampleLayout(grid) {
-    return new Map(Array.from(grid.querySelectorAll('.m-sample-tile')).map(node => [node.dataset.sampleTileKey,
-      {node, rect: node.getBoundingClientRect(), batchId: node.dataset.batchId}]));
+    return new Map(Array.from(grid.querySelectorAll('.m-sample-tile')).map(node => {
+      const button = node.querySelector('.preview-grid-item'), visual = button.querySelector('.m-sample-card-visual');
+      return [node.dataset.sampleTileKey, {node, button, visual, rect: visual.getBoundingClientRect(), batchId: node.dataset.batchId}];
+    }));
   },
 
   _cancelSampleGridMotion(grid) {
-    grid?.querySelectorAll('.m-sample-tile, .m-sample-motion-ghost').forEach(node => {
+    if (grid) grid._sampleGridMotion = null;
+    grid?.querySelectorAll('.m-sample-card-visual, .m-sample-motion-ghost').forEach(node => {
       node.getAnimations?.().forEach(animation => {if (animation.id === 'sample-grid-flip') animation.cancel();});
       if (node.classList.contains('m-sample-motion-ghost')) node.remove();
     });
   },
 
-  _animateSampleLayout(grid, before, openingId = '') {
+  _animateSampleLayout(grid, before, openingId = '', {revealNew = false} = {}) {
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
     const bounds = grid.getBoundingClientRect();
     const visible = rect => rect.bottom > bounds.top && rect.top < bounds.bottom && rect.right > bounds.left && rect.left < bounds.right;
@@ -599,20 +723,40 @@ window.monitorArtifactsRenderMixin = {
       easing: 'cubic-bezier(.22,1,.36,1)'};
     const after = this._captureSampleLayout(grid);
     const origin = Array.from(before.values()).find(item => item.batchId === openingId)?.rect;
+    const motion = {items: Array.from(after.values()), animations: new Set()};
+    const animateVisual = (item, frames, options) => {
+      // Keep the native hit box stable; only its pointer-inert visual moves.
+      const animation = item.visual.animate(frames, options);
+      animation.id = 'sample-grid-flip';
+      motion.animations.add(animation); grid._sampleGridMotion = motion;
+      const release = () => {
+        motion.animations.delete(animation);
+        if (!motion.animations.size && grid._sampleGridMotion === motion) grid._sampleGridMotion = null;
+      };
+      animation.finished.then(release, release);
+    };
+    let moved = false;
     for (const [key, item] of after) {
       if (!before.has(key) && !visible(item.rect)) continue;
       const from = before.get(key)?.rect || (item.batchId === openingId ? origin : null);
-      if (!from || !item.node.animate || (!visible(from) && !visible(item.rect))) continue;
+      if (!from || !item.visual.animate || (!visible(from) && !visible(item.rect))) continue;
       const x = from.left - item.rect.left, y = from.top - item.rect.top;
       if (Math.abs(x) < 1 && Math.abs(y) < 1) continue;
-      const animation = item.node.animate([{transform: 'translate(' + x + 'px,' + y + 'px)'}, {transform: 'none'}], timing);
-      animation.id = 'sample-grid-flip';
+      animateVisual(item, [{transform: 'translate(' + x + 'px,' + y + 'px)'}, {transform: 'none'}], timing);
+      if (before.has(key)) moved = true;
+    }
+    if (revealNew && moved) {
+      for (const [key, item] of after) {
+        if (before.has(key) || !visible(item.rect) || !item.visual.animate) continue;
+        animateVisual(item, [{opacity: 0, transform: 'translateY(4px)'}, {opacity: 1, transform: 'none'}],
+          {duration: 140, delay: timing.duration, fill: 'backwards', easing: timing.easing});
+      }
     }
     // Removed children fly back to their cover without participating in layout.
     // They remain in the media root until the short exit finishes.
     const ghosts = [], exits = [];
     for (const [key, item] of before) {
-      if (after.has(key) || !item.node.animate || !item.node.cloneNode) continue;
+      if (after.has(key) || !item.node.cloneNode) continue;
       const target = Array.from(after.values()).find(other => other.batchId === item.batchId)?.rect;
       if (!target || !visible(item.rect)) continue;
       const ghost = item.node.cloneNode(true);
@@ -676,6 +820,8 @@ window.monitorArtifactsRenderMixin = {
     const batch = this._sampleDataModel().byBatch.get(id);
     const panel = this._sampleOverviewPanel(), grid = panel?.querySelector('.m-sample-batches');
     if (!batch || !grid || !this._sampleBatchIsExpandable(batch)) return;
+    this._sampleLayoutAction++;
+    this._sampleScrollAnchor = null;
     const previousId = this.sampleExpandedBatchId;
     const closing = this.sampleExpandedBatchId === id;
     this._sampleExpansionAction = (this._sampleExpansionAction || 0) + 1;
@@ -683,7 +829,8 @@ window.monitorArtifactsRenderMixin = {
     if (!closing) {
       this._sampleExpansionPausedFollow = id !== this._sampleDataModel().batches.at(-1)?.id;
       if (this._sampleExpansionPausedFollow) this._sampleOverviewAtEnd = false;
-      this._activateOverviewBatch(batch, panel);
+      this._activateOverviewBatch(batch);
+      if (this.sampleSidebarVisible) this.sampleSidebarOpen = true;
     }
     if (closing) this._sampleExpansionPausedFollow = false;
     this._replaceSampleBatchCards(panel, [...new Set([previousId, id].filter(Boolean))], id);
@@ -704,39 +851,13 @@ window.monitorArtifactsRenderMixin = {
     return document.getElementById('monitorTabContent')?.querySelector('.m-tab-panel[data-tab="samples"]');
   },
 
-  _markSampleTimeline(panel, batch, reveal = true) {
-    const rail = panel?.querySelector('.m-sample-timeline');
-    if (!rail || !batch) return;
-    let selected = null;
-    rail.querySelectorAll('.m-sample-timeline-item').forEach(item => {
-      const active = item.dataset.batchId === batch.id;
-      item.setAttribute('aria-pressed', active ? 'true' : 'false');
-      item.tabIndex = active ? 0 : -1;
-      if (active) selected = item;
-    });
-    if (!selected || !reveal || this._sampleTimelineDrag?.dragging) return;
-    const bounds = rail.getBoundingClientRect(), target = selected.getBoundingClientRect();
-    let left = rail.scrollLeft;
-    if (target.left < bounds.left) left += target.left - bounds.left;
-    else if (target.right > bounds.right) left += target.right - bounds.right;
-    this._scrollSampleRail(rail, left);
-  },
-
-  _activateOverviewBatch(batch, panel, reveal = true) {
+  _activateOverviewBatch(batch) {
     if (!batch) return;
     if (this.sampleBatchId !== batch.id) {
       const selected = this.previews[this.previewStep];
       this.sampleBatchId = batch.id;
       if (!this.previewLightboxOpen) this.previewStep = this._sampleBatchNavigationIndex(batch, selected);
     }
-    const grid = panel?.querySelector('.m-sample-batches');
-    if (grid) {
-      const previous = grid.querySelector('.m-sample-batch[data-sample-selected="true"]');
-      const selected = Array.from(grid.querySelectorAll('.m-sample-batch')).find(group => group.dataset.batchId === batch.id);
-      if (previous !== selected) previous?.setAttribute('data-sample-selected', 'false');
-      selected?.setAttribute('data-sample-selected', 'true');
-    }
-    this._markSampleTimeline(panel, batch, reveal);
   },
 
   _scrollOverviewToBatch(panel, batch) {
@@ -753,33 +874,28 @@ window.monitorArtifactsRenderMixin = {
     const grid = event.currentTarget;
     const atEnd = this._sampleOverviewAtLatestEdge(grid);
     this._sampleOverviewAtEnd = atEnd;
-    // A passive vertical scroll never scrubs the selected sample or the rail.
+    // A passive vertical scroll never changes the selected sample.
     // Render captures a fresh visible anchor only when data actually rebuilds.
-    this._sampleScrollAnchor = null;
+    if (!Number.isFinite(this._sampleScrollAnchor?.scrollTop) || Math.abs(grid.scrollTop - this._sampleScrollAnchor.scrollTop) >= 1) this._sampleScrollAnchor = null;
     const jumpId = this._sampleOverviewJumpId;
     this._sampleOverviewJumpId = '';
     if (!atEnd || this._sampleExpansionPausedFollow) return;
     const latest = this._sampleDataModel().batches.at(-1);
     if (!latest || (jumpId && jumpId !== latest.id)) return;
-    const panel = grid.closest('.m-tab-panel');
-    if (this.previewHasNew) {
-      this.previewHasNew = false;
-      panel?.querySelector('#sampleLatestBatch')?.remove();
-    }
+    if (this.previewHasNew) this._acknowledgeNewPreviews(grid.closest('.m-tab-panel'));
   },
 
-  sampleTimelineClick(event, position) {
-    const model = this._sampleDataModel(), id = event?.currentTarget?.dataset?.batchId;
-    const batch = id ? model.byBatch.get(id) : model.batches[position], panel = this._sampleOverviewPanel();
+  jumpToLatestOverviewBatch() {
+    this._sampleLayoutAction++;
+    this._sampleScrollAnchor = null;
+    const batch = this._sampleDataModel().batches.at(-1), panel = this._sampleOverviewPanel();
     if (!batch || !panel) return;
-    const latest = batch.id === model.batches.at(-1)?.id;
-    if (latest) this._resumeLatestSampleOverview(panel);
-    this._activateOverviewBatch(batch, panel);
+    this._sampleSidebarInspecting = false;
+    this._resumeLatestSampleOverview(panel);
+    this._activateOverviewBatch(batch);
+    if (this.sampleSidebarVisible) this.sampleSidebarOpen = true;
     this._scrollOverviewToBatch(panel, batch);
-    if (latest) {
-      this.previewHasNew = false;
-      panel.querySelector('#sampleLatestBatch')?.remove();
-    }
+    this._acknowledgeNewPreviews(panel);
   },
 
   _resumeLatestSampleOverview(panel) {
@@ -793,51 +909,7 @@ window.monitorArtifactsRenderMixin = {
     this._sampleOverviewAtEnd = true;
   },
 
-  jumpToLatestOverviewBatch() {
-    this.sampleTimelineClick(null, this._sampleDataModel().batches.length - 1);
-  },
-
-  sampleTimelineKeydown(event) {
-    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-    const batches = this._sampleOverviewBatches();
-    const item = event.target.closest?.('.m-sample-timeline-item');
-    if (!item) return;
-    const current = batches.findIndex(batch => item.dataset.batchId
-      ? batch.id === item.dataset.batchId : batch.position === Number(item.dataset.batchIndex));
-    if (current < 0) return;
-    let next = current;
-    if (event.key === 'ArrowLeft') next--;
-    else if (event.key === 'ArrowRight') next++;
-    else if (event.key === 'Home') next = 0;
-    else if (event.key === 'End') next = batches.length - 1;
-    else return;
-    event.preventDefault();
-    next = Math.max(0, Math.min(batches.length - 1, next));
-    this.sampleTimelineClick(null, batches[next].position);
-    if (batches[next]) document.getElementById('sampleTimeline-' + encodeURIComponent(batches[next].id))?.focus({ preventScroll: true });
-  },
-
-  startSampleTimelineDrag(event) {
-    this._startPreviewRailDrag(event, '_sampleTimeline');
-  },
-
-  moveSampleTimelineDrag(event) {
-    this._movePreviewRailDrag(event, '_sampleTimeline');
-  },
-
-  endSampleTimelineDrag(event) {
-    this._endPreviewRailDrag(event, '_sampleTimeline', () => this.renderDashboard());
-  },
-
-  leaveSampleTimeline(event) {
-    this._leavePreviewRailDrag(event, '_sampleTimeline');
-  },
-
-  suppressSampleTimelineClick(event) {
-    this._suppressPreviewRailClick(event, '_sampleTimeline');
-  },
-
-  scrollSampleTimeline(event) {
+  scrollPreviewViewTimeline(event) {
     const rail = event.currentTarget;
     if (event.ctrlKey || event.metaKey || rail.scrollWidth <= rail.clientWidth || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
     const before = rail.scrollLeft;
@@ -855,14 +927,13 @@ window.monitorArtifactsRenderMixin = {
     const close = svg('<path d="M6 6l12 12M18 6 6 18"/>');
     const left = svg('<path d="m15 18-6-6 6-6"/>');
     const right = svg('<path d="m9 18 6-6-6-6"/>');
-    const info = svg('<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v.2"/>');
     const stage = () => '<div class="preview-view-stage">'
       + '<img id="previewLightboxImg" class="preview-view-image" alt="" draggable="false" @load="resizePreviewComparisonImages()">'
       + '<button type="button" class="btn btn-sm btn-secondary preview-view-error" x-show="previewImageError" @click.stop="retryPreviewImage()">' + this.esc(t('previewImageRetry')) + '</button></div>';
     return '<dialog class="preview-lightbox modal-overlay" id="previewLightbox" x-dialog="previewLightboxOpen" @click.self="closePreviewLightbox()" @dialog-close="closePreviewLightbox()" @dialog-after-close="clearPreviewLightbox()" @keydown="previewLightboxKeydown($event)" @resize.window="resizePreviewLightbox()" aria-label="' + this.esc(t('previewSamples')) + '" x-cloak>'
-      + '<div class="modal preview-lightbox-window"><div class="modal-header preview-lightbox-topbar">'
+      + '<div class="modal preview-lightbox-window" :class="{\'is-comparing\': previewCompareActive}"><div class="modal-header preview-lightbox-topbar">'
       + '<div class="preview-lightbox-heading"><div class="preview-lightbox-title"><strong id="previewLightboxLabel"></strong>'
-      + '<button type="button" id="previewInfoButton" class="btn-icon preview-icon-button" data-dialog-opens="previewInfoDialog" @click="previewInfoOpen=true" title="' + this.esc(t('sampleGenerationInfo')) + '" aria-label="' + this.esc(t('sampleGenerationInfo')) + '" aria-haspopup="dialog">' + info + '</button>'
+      + this._previewInfoButtonHtml(t, 'previewInfoButton')
       + '<span id="previewLightboxPrompt" class="preview-lightbox-prompt" x-loop-marquee hidden><span id="previewLightboxPromptText"></span></span></div>'
       + '<div class="preview-lightbox-navigation" role="group" aria-label="' + this.esc(t('sampleBatchSelect')) + '">'
       + '<button type="button" class="btn-icon preview-lightbox-nav prev" @click="previewLightboxNav(-1)" title="' + this.esc(this.t('imageViewer.previousHint')) + '" aria-label="' + this.esc(t('prev')) + '" aria-keyshortcuts="ArrowLeft">' + left + '</button>'
@@ -876,28 +947,28 @@ window.monitorArtifactsRenderMixin = {
       + '<a class="btn btn-sm btn-ghost preview-tool-action" id="previewLightboxOriginal" target="_blank" rel="noopener">' + this.esc(t('openOriginal')) + '</a>'
       + '<div class="preview-lightbox-zoom">'
       + '<button type="button" class="btn-icon preview-icon-button" @click="setPreviewViewScale(previewViewScale / 1.18)" :disabled="previewViewAtFit()" title="' + this.esc(this.t('tagEditor.zoomOut')) + '" aria-label="' + this.esc(this.t('tagEditor.zoomOut')) + '">' + zoomOut + '</button>'
-      + '<button type="button" class="preview-zoom-value" @click="resetPreviewView()" title="' + this.esc(this.t('imageViewer.zoomHint')) + '" aria-keyshortcuts="0" x-text="previewViewZoomLabel()"></button>'
+      + '<button type="button" class="preview-zoom-value" @click="resetPreviewView(true)" :title="previewViewZoomLabel() + \' · \' + t(\'imageViewer.zoomHint\')" aria-keyshortcuts="0" x-text="previewViewZoomLabel()"></button>'
       + '<button type="button" class="btn-icon preview-icon-button" @click="setPreviewViewScale(previewViewScale * 1.18)" :disabled="previewViewScale >= 8" title="' + this.esc(this.t('tagEditor.zoomIn')) + '" aria-label="' + this.esc(this.t('tagEditor.zoomIn')) + '">' + zoomIn + '</button></div>'
       + '<button type="button" class="btn-icon preview-icon-button preview-close" data-dialog-autofocus @click="closePreviewLightbox()" title="' + this.esc(this.t('imageViewer.closeHint')) + '" aria-label="' + this.esc(t('close')) + '" aria-keyshortcuts="Escape">' + close + '</button></div></div>'
       + '<div class="preview-lightbox-body"><div class="preview-lightbox-canvas">'
-      + '<div id="previewLightboxViewport" class="preview-lightbox-panes" :class="{zoomed: !previewViewAtFit(), panning: previewViewPanning}" @wheel="zoomPreviewView($event)" @pointerdown="startPreviewPan($event)" @pointermove="movePreviewPan($event)" @pointerup="stopPreviewPan($event)" @pointercancel="stopPreviewPan($event)" @lostpointercapture="stopPreviewPan($event)" @dblclick="if (!$event.target.closest(\'button\')) { $event.preventDefault(); resetPreviewView(); }" @dragstart.prevent><div id="previewLightboxExtent" class="preview-lightbox-extent"><div id="previewLightboxGroup" class="preview-lightbox-group"><div id="previewReferencePanes" class="preview-reference-panes" hidden></div>'
+      + '<div id="previewLightboxViewport" class="preview-lightbox-panes" :class="{zoomed: !previewViewAtFit(), panning: previewViewPanning}" @wheel="zoomPreviewView($event)" @pointerdown="startPreviewPan($event)" @pointermove="movePreviewPan($event)" @pointerup="stopPreviewPan($event)" @pointercancel="stopPreviewPan($event)" @lostpointercapture="stopPreviewPan($event)" @dblclick="if (!$event.target.closest(\'button\')) { $event.preventDefault(); resetPreviewView(true); }" @dragstart.prevent><div id="previewLightboxExtent" class="preview-lightbox-extent"><div id="previewLightboxGroup" class="preview-lightbox-group"><div id="previewReferencePanes" class="preview-reference-panes" hidden></div>'
       + '<div class="preview-lightbox-pane preview-current-pane"><div id="previewCurrentStage" class="preview-current-stage">' + stage() + '</div><div id="previewComparisonPlaceholder" class="preview-comparison-placeholder" hidden>' + this.esc(t('sampleSelectComparison')) + '</div><div id="previewCurrentCaptionSlot" class="preview-caption-slot" hidden><div class="preview-pane-caption" id="previewCurrentCaption" hidden>' + this._previewCaptionTextHtml(true) + '</div></div></div></div></div></div>'
       + '</div><div class="preview-lightbox-footer"><div id="previewLightboxBar" class="preview-lightbox-bar">' + this._previewPromptBarArrowHtml(t, -1)
       + '<div id="previewLightboxStrip" class="preview-lightbox-strip" role="group" aria-label="' + this.esc(t('sampleBatchImages')) + '" @scroll.passive="syncPreviewPromptBar()" @pointerdown="startPreviewPromptBarDrag($event)" @pointermove="movePreviewPromptBarDrag($event)" @pointerup="endPreviewPromptBarDrag($event)" @pointercancel="endPreviewPromptBarDrag($event)" @lostpointercapture="endPreviewPromptBarDrag($event)" @pointerleave="leavePreviewPromptBarDrag($event)" @click.capture="suppressPreviewPromptBarClick($event)" @dragstart.prevent></div>'
       + this._previewPromptBarArrowHtml(t, 1)
       + '<div class="preview-lightbox-bar-controls" x-effect="previewCompareActive; $nextTick(() => syncPreviewPromptBar())"><div x-show="previewCompareActive" x-cloak>'
       + this._sampleSelectHtml([{value: 'horizontal', label: t('sampleCompareHorizontal')}, {value: 'vertical', label: t('sampleCompareVertical')}], this.previewComparisonLayout, t('sampleCompareLayout'), 'previewComparisonLayout', 'setPreviewComparisonLayout($event.target.value)')
-      + '</div><div class="m-sample-timeline-toggle" x-show="previewViewTimelineAvailable"><span id="previewTimelineToggleLabel">' + this.esc(t('sampleThumbnails')) + '</span><label class="toggle"><input type="checkbox" role="switch" :checked="previewViewTimelineVisible" aria-labelledby="previewTimelineToggleLabel" aria-controls="previewLightboxTimelineFrame" @change="togglePreviewViewTimeline($event)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>'
-      + this._sampleTimelineLocateHtml(t, false, 'previewLightboxTimeline') + '</div></div>'
-      + '<div id="previewLightboxTimelineFrame" class="preview-view-timeline-frame" :class="{\'is-collapsed\': !previewViewTimelineVisible}" :inert="!previewViewTimelineVisible" :aria-hidden="!previewViewTimelineVisible" hidden><div class="preview-view-timeline-clip"><div id="previewLightboxTimeline" class="preview-view-timeline" role="group" aria-label="' + this.esc(t('sampleBatchSelect')) + '" @keydown="previewViewTimelineKeydown($event)" @wheel="scrollSampleTimeline($event)"'
+      + '</div><div class="m-sample-view-toggle" x-show="previewViewTimelineAvailable"><span id="previewTimelineToggleLabel">' + this.esc(t('sampleThumbnails')) + '</span><label class="toggle"><input type="checkbox" role="switch" :checked="previewViewTimelineVisible" aria-labelledby="previewTimelineToggleLabel" aria-controls="previewLightboxTimelineFrame" @change="togglePreviewViewTimeline($event)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>'
+      + this._previewTimelineLocateHtml(t) + '</div></div>'
+      + '<div id="previewLightboxTimelineFrame" class="preview-view-timeline-frame" :class="{\'is-collapsed\': !previewViewTimelineVisible}" :inert="!previewViewTimelineVisible" :aria-hidden="!previewViewTimelineVisible" hidden><div class="preview-view-timeline-clip"><div id="previewLightboxTimeline" class="preview-view-timeline" role="group" aria-label="' + this.esc(t('sampleBatchSelect')) + '" @keydown="previewViewTimelineKeydown($event)" @wheel="scrollPreviewViewTimeline($event)"'
       + ' @pointerdown="startPreviewViewTimelineDrag($event)" @pointermove="movePreviewViewTimelineDrag($event)" @pointerup="endPreviewViewTimelineDrag($event)" @pointercancel="endPreviewViewTimelineDrag($event)" @pointerleave="leavePreviewViewTimeline($event)" @click.capture="suppressPreviewViewTimelineClick($event)" @dragstart.prevent hidden></div>'
       + '</div></div>'
       + '</div></div></div>'
-      + this._previewTimelineContextMenuHtml(t)
+      + this._previewTimelineContextMenuHtml(t) + '</dialog>'
       + '<dialog id="previewInfoDialog" class="modal-overlay preview-info-overlay" x-dialog="previewInfoOpen" @click.self.stop="previewInfoOpen=false" @dialog-close.stop="previewInfoOpen=false" @dialog-after-close.stop="previewInfoOpen=false" @keydown.stop aria-labelledby="previewInfoTitle" x-cloak>'
       + '<div class="modal preview-info-window"><div class="modal-header"><h3 id="previewInfoTitle">' + this.esc(t('sampleGenerationInfo')) + '</h3>'
       + '<button type="button" class="btn-icon preview-icon-button" data-dialog-autofocus @click="previewInfoOpen=false" aria-label="' + this.esc(t('close')) + '">' + close + '</button></div>'
-      + '<div class="modal-body preview-info-content" id="previewGenerationInfo"></div></div></dialog></dialog>';
+      + '<div class="modal-body preview-info-content" id="previewGenerationInfo" x-html="previewInfoOpen ? _previewGenerationInfoHtml(_previewInfoPreview()) : \'\'"></div></div></dialog>';
   },
 
   openPreviewLightbox(i) {
@@ -907,10 +978,7 @@ window.monitorArtifactsRenderMixin = {
     this.sampleBatchId = this._sampleRecord(this.previews[this.previewStep], this.previewStep).batch_id;
     const box = document.getElementById('previewLightbox');
     if (!box) return;
-    if (this.sampleBatchId === this._sampleDataModel().batches.at(-1)?.id) {
-      this.previewHasNew = false;
-      this._sampleOverviewPanel()?.querySelector('#sampleLatestBatch')?.remove();
-    }
+    if (this.sampleBatchId === this._sampleDataModel().batches.at(-1)?.id) this._acknowledgeNewPreviews();
     this.previewLightboxOpen = true;
     this.resetPreviewView();
     this._updatePreviewLightbox();
@@ -953,6 +1021,8 @@ window.monitorArtifactsRenderMixin = {
   },
 
   closePreviewLightbox() {
+    this._cancelPreviewReset();
+    this.stopPreviewPan();
     this.closePreviewTimelineMenu(false);
     this.cancelPreviewPromptBarDrag();
     if (!this.previewLightboxOpen) return;
@@ -1743,6 +1813,8 @@ window.monitorArtifactsRenderMixin = {
   },
 
   _layoutPreviewComparisonPanes(count) {
+    this._cancelPreviewReset();
+    this.stopPreviewPan();
     const group = document.getElementById('previewReferencePanes')?.parentElement;
     const panes = document.getElementById('previewLightboxViewport') || group;
     if (!group || !panes) return;
@@ -1910,10 +1982,8 @@ window.monitorArtifactsRenderMixin = {
     this._scrollSampleRail(rail, left, smooth);
   },
 
-  centerSampleTimeline(button) {
-    const frame = button?.closest?.('.sample-timeline-frame');
-    const rail = button?.dataset?.sampleTimelineTarget ? document.getElementById(button.dataset.sampleTimelineTarget)
-      : frame?.querySelector?.('.m-sample-timeline, .preview-view-timeline');
+  centerPreviewViewTimeline() {
+    const rail = document.getElementById('previewLightboxTimeline');
     const selected = rail?.querySelector?.('[aria-pressed="true"]');
     if (!selected || rail.hidden) return;
     const bounds = rail.getBoundingClientRect(), rect = selected.getBoundingClientRect();
@@ -1943,8 +2013,7 @@ window.monitorArtifactsRenderMixin = {
     // Keep the current prompt/seed when the latest batch is still incomplete.
     this.selectPreviewComparisonCurrent(indices[indices.length - 1]);
     if (this.sampleBatchId === this._sampleDataModel().batches.at(-1)?.id) {
-      this.previewHasNew = false;
-      this._sampleOverviewPanel()?.querySelector('#sampleLatestBatch')?.remove();
+      this._acknowledgeNewPreviews();
     }
     this._updatePreviewLightbox();
   },
@@ -1966,7 +2035,7 @@ window.monitorArtifactsRenderMixin = {
     } else if (event.key === '-') {
       event.preventDefault(); this.setPreviewViewScale(this.previewViewScale / 1.18);
     } else if (event.key === '0') {
-      event.preventDefault(); this.resetPreviewView();
+      event.preventDefault(); this.resetPreviewView(true);
     }
   },
 
@@ -1980,14 +2049,31 @@ window.monitorArtifactsRenderMixin = {
       : (this.previewViewScale / (this._previewViewFitScale || 1)).toFixed(2) + '×';
   },
 
-  resetPreviewView() {
+  _cancelPreviewReset() {
+    this._previewResetCancel?.(); this._previewResetCancel = null;
+  },
+
+  resetPreviewView(smooth = false) {
+    this._cancelPreviewReset();
     this.stopPreviewPan();
+    const viewport = document.getElementById('previewLightboxViewport');
+    if (smooth && this.previewLightboxOpen && this._previewGroupGeometry && this._previewViewportLayout && viewport) {
+      const position = this._previewViewportLayout;
+      const from = {scale: this.previewViewScale, x: viewport.scrollLeft - position.centerX, y: viewport.scrollTop - position.centerY};
+      this._previewViewFitted = false;
+      this._previewResetCancel = window.AnimaImageViewport.animate(from, {scale: this._previewViewFitScale || 1, x: 0, y: 0}, view => {
+        this.previewViewScale = view.scale;
+        this._syncPreviewGroupViewport();
+        viewport.scrollLeft = this._previewViewportLayout.centerX + view.x;
+        viewport.scrollTop = this._previewViewportLayout.centerY + view.y;
+      }, () => { this._previewViewFitted = true; this._previewResetCancel = null; });
+      return;
+    }
     this._previewViewFitted = true;
     if (this.previewLightboxOpen) this.resizePreviewComparisonImages();
     this.previewViewScale = this._previewViewFitScale || 1;
     this._previewViewFitted = true;
     this._syncPreviewGroupViewport();
-    const viewport = document.getElementById('previewLightboxViewport');
     const position = this._previewViewportLayout;
     if (viewport) {
       viewport.scrollLeft = position?.centerX || 0;
@@ -2001,6 +2087,8 @@ window.monitorArtifactsRenderMixin = {
   },
 
   setPreviewViewScale(next, event) {
+    this._cancelPreviewReset();
+    this.stopPreviewPan();
     const viewport = document.getElementById('previewLightboxViewport'), geometry = this._previewGroupGeometry;
     const fit = this._previewViewFitScale || 1;
     let scale = Math.max(fit, Math.min(8, Number(next) || fit));
@@ -2038,6 +2126,8 @@ window.monitorArtifactsRenderMixin = {
   },
 
   startPreviewPan(event) {
+    this._cancelPreviewReset();
+    this.stopPreviewPan();
     const viewport = event.currentTarget;
     if (event.button !== 0 || event.target.closest?.('button')
         || (viewport.scrollWidth <= viewport.clientWidth + 1 && viewport.scrollHeight <= viewport.clientHeight + 1)) return;
@@ -2047,19 +2137,25 @@ window.monitorArtifactsRenderMixin = {
     this.previewViewPanning = true; this.previewViewPointerId = event.pointerId;
     this._previewPanStartX = event.clientX / this._previewPanRatio + viewport.scrollLeft;
     this._previewPanStartY = event.clientY / this._previewPanRatio + viewport.scrollTop;
+    this._previewPanWrite = window.AnimaImageViewport.frameWriter(point => {
+      viewport.scrollLeft = point.x;
+      viewport.scrollTop = point.y;
+    });
     viewport.setPointerCapture?.(event.pointerId);
     event.preventDefault();
   },
 
   movePreviewPan(event) {
     if (!this.previewViewPanning || event.pointerId !== this.previewViewPointerId) return;
-    event.currentTarget.scrollLeft = this._previewPanStartX - event.clientX / this._previewPanRatio;
-    event.currentTarget.scrollTop = this._previewPanStartY - event.clientY / this._previewPanRatio;
+    this._previewPanWrite.schedule({x: this._previewPanStartX - event.clientX / this._previewPanRatio,
+      y: this._previewPanStartY - event.clientY / this._previewPanRatio});
     event.preventDefault();
   },
 
   stopPreviewPan(event) {
     const pointer = this.previewViewPointerId, viewport = event?.currentTarget || document.getElementById('previewLightboxViewport');
+    if (event && pointer !== event.pointerId) return;
+    this._previewPanWrite?.flush(); this._previewPanWrite = null;
     this.previewViewPanning = false; this.previewViewPointerId = null;
     if (pointer != null && viewport?.hasPointerCapture?.(pointer)) viewport.releasePointerCapture(pointer);
   },
@@ -2481,8 +2577,8 @@ window.monitorArtifactsRenderMixin = {
         if (!this.previewPageEditing) input.value = displayPosition < 0 ? '' : String(displayPosition + 1);
       }
       if (total) total.textContent = String(indices.length);
-      c.style?.setProperty('--preview-counter-width', (String(indices.length).length * 2 + 3) + 'ch');
-      c.style?.setProperty('--preview-counter-digits', String(String(indices.length).length));
+      const digits = Math.max(4, String(indices.length).length);
+      c.style?.setProperty('--preview-counter-width', (digits * 2 + 3) + 'ch');
       c.title = '';
     }
     const lbl = document.getElementById('previewLightboxLabel');
@@ -2496,6 +2592,7 @@ window.monitorArtifactsRenderMixin = {
     if (prompt && promptText) {
       const text = this._samplePromptText(headingPreview);
       if (promptText.textContent !== text) promptText.textContent = text;
+      prompt.title = text;
       prompt.hidden = !text;
     }
     const box = document.getElementById('previewLightbox');
@@ -2535,8 +2632,6 @@ window.monitorArtifactsRenderMixin = {
       this.syncPreviewPromptBar();
     }
     this._updatePreviewViewTimeline(displayIndices);
-    const metadata = document.getElementById('previewGenerationInfo');
-    if (metadata) metadata.innerHTML = this._previewGenerationInfoHtml(headingPreview);
     this.constrainPreviewView();
   },
 
@@ -2568,7 +2663,13 @@ window.monitorArtifactsRenderMixin = {
       + '<small class="preview-caption-step"' + (current ? ' id="previewCurrentStep"' : '') + '></small></span>';
   },
 
+  _previewInfoPreview() {
+    return this.previewLightboxOpen && this.previewCompareActive && this.previewComparisonWaiting
+      ? this.previewReferences[0] : this.previews[this.previewStep];
+  },
+
   _previewGenerationInfoHtml(preview) {
+    if (!preview) return '';
     const sample = this._sampleRecord(preview), params = sample.params || {};
     let html = '';
     const entries = [], add = (label, value) => {

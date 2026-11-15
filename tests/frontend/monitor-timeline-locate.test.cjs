@@ -31,42 +31,45 @@ function railFixture({itemLeft = 4000, itemWidth = 40, scrollLeft = 0, scale = 1
     const left = 30 + (itemLeft - rail.scrollLeft) * scale;
     return {left, right: left + itemWidth * scale};
   }};
-  const frame = {querySelector(selector) {assert.equal(selector, '.m-sample-timeline, .preview-view-timeline'); return rail;}};
-  const button = {closest(selector) {assert.equal(selector, '.sample-timeline-frame'); return frame;}};
-  return {rail, button};
+  return rail;
 }
 
-test('only the viewer prompt bar has a locate action and the overview exposes its thumbnail toggle', () => {
+function locate(value, rail) {
+  const previous = global.document;
+  global.document = {...previous, getElementById(id) {assert.equal(id, 'previewLightboxTimeline'); return rail;}};
+  try {value.centerPreviewViewTimeline();}
+  finally {global.document = previous;}
+}
+
+test('the overview exposes an image sidebar while the viewer retains its thumbnails and locate action', () => {
   const value = app();
   const main = value._renderSamplesTab(key => value.t('monitor.' + key));
   const modal = value._previewLightboxHtml(key => value.t('monitor.' + key));
-  assert.equal((main.match(/class="m-sample-timeline-item"/g) || []).length, 100);
-  assert.match(main, /id="sampleOverviewTimelineFrame" class="m-sample-timeline-frame"/);
-  assert.match(main, /id="sampleTimelineToggle"/);
+  assert.doesNotMatch(main, /sampleOverviewTimelineFrame|m-sample-timeline-item/);
+  assert.match(main, /id="sampleSidebar" class="m-sample-sidebar"/);
+  assert.match(main, /id="sampleSidebarToggle"/);
   assert.doesNotMatch(main, /sample-timeline-locate/);
   assert.match(modal, /id="previewLightboxTimelineFrame" class="preview-view-timeline-frame"[^>]* hidden>/);
   assert.match(modal, /:class="\{'is-collapsed': !previewViewTimelineVisible\}"/);
   assert.match(modal, /:inert="!previewViewTimelineVisible"/);
   const barStart = modal.indexOf('id="previewLightboxBar"');
-  const locateStart = modal.indexOf('data-sample-timeline-target="previewLightboxTimeline"');
+  const locateStart = modal.indexOf('@click="centerPreviewViewTimeline()"');
   assert.ok(barStart < locateStart && locateStart < modal.indexOf('id="previewLightboxTimelineFrame"'));
-  assert.doesNotMatch(app(1)._renderSamplesTab(key => key), /m-sample-timeline-frame|sampleTimelineToggle/);
+  assert.match(app(1)._renderSamplesTab(key => key), /id="sampleSidebarToggle"/);
 });
 
 test('locating from the prompt bar scrolls only its target rail smoothly and respects reduced motion', () => {
-  const value = app(2), previousDocument = global.document, previousMatchMedia = window.matchMedia;
-  const {rail} = railFixture();
+  const value = app(2), previousMatchMedia = window.matchMedia;
+  const rail = railFixture();
   const scrolls = []; rail.scrollTo = options => scrolls.push(options);
-  const button = {dataset: {sampleTimelineTarget: 'previewLightboxTimeline'}, closest: () => null};
-  global.document = {...previousDocument, getElementById(id) {assert.equal(id, 'previewLightboxTimeline'); return rail;}};
   try {
     window.matchMedia = () => ({matches: false});
-    value.centerSampleTimeline(button);
+    locate(value, rail);
     assert.deepEqual(scrolls.pop(), {left: 3920, behavior: 'smooth'});
     window.matchMedia = () => ({matches: true});
-    value.centerSampleTimeline(button);
+    locate(value, rail);
     assert.deepEqual(scrolls.pop(), {left: 3920, behavior: 'instant'});
-  } finally {global.document = previousDocument; window.matchMedia = previousMatchMedia;}
+  } finally {window.matchMedia = previousMatchMedia;}
 });
 
 test('locating centers the selected thumbnail for either sorting direction and preserves comparison and grid state', () => {
@@ -75,12 +78,12 @@ test('locating centers the selected thumbnail for either sorting direction and p
     value.pinPreviewReference(20); value.selectPreviewComparisonCurrent(49);
     const grid = {scrollTop: 730};
     const position = dir === 'asc' ? 49 : 50;
-    const {rail,button} = railFixture({itemLeft: position * 80, itemWidth: 60, scrollLeft: 10, scale: 0.8});
+    const rail = railFixture({itemLeft: position * 80, itemWidth: 60, scrollLeft: 10, scale: 0.8});
     const before = {batch: value.sampleBatchId, step: value.previewStep, references: [...value.previewReferences],
       entries: [...value._previewReferenceEntries], grid: grid.scrollTop};
     value.renderDashboard = () => {throw new Error('locating must not rebuild the UI');};
     value._updatePreviewLightbox = () => {throw new Error('locating must not change the preview');};
-    value.centerSampleTimeline(button);
+    locate(value, rail);
     assert.ok(Math.abs(rail.scrollLeft - (position * 80 + 30 - 100)) < 0.00001);
     assert.equal(value.sampleBatchId, before.batch); assert.equal(value.previewStep, before.step);
     assert.equal(value.previewCompareActive, true); assert.deepEqual(value.previewReferences, before.references);
@@ -97,10 +100,10 @@ test('locating handles visible items, scaled dialogs and both scroll boundaries'
     [{itemLeft: 9980, scrollLeft: 400, scale: 0.5}, 9800],
     [{itemLeft: 20, scrollLeft: 0, scrollWidth: 200}, 0],
   ]) {
-    const {rail,button} = railFixture(options); value.centerSampleTimeline(button);
+    const rail = railFixture(options); locate(value, rail);
     assert.ok(Math.abs(rail.scrollLeft - expected) < 0.00001, JSON.stringify(options));
   }
-  const {rail,button} = railFixture(); rail.hidden = true; value.centerSampleTimeline(button);
+  const rail = railFixture(); rail.hidden = true; locate(value, rail);
   assert.equal(rail.scrollLeft, 0);
 });
 
@@ -147,7 +150,7 @@ test('the viewer locate action stays in place and is disabled when its timeline 
     assert.equal(locate.hidden, false); assert.equal(locate.disabled, false);
     value.togglePreviewViewTimeline();
     assert.equal(value.previewViewTimelineVisible, false);
-    assert.equal(value.sampleTimelineVisible, true);
+    assert.equal(value.sampleSidebarVisible, true);
     assert.equal(locate.disabled, true);
     value.togglePreviewViewTimeline();
     assert.equal(locate.disabled, false);
@@ -162,14 +165,14 @@ test('the viewer locate action stays in place and is disabled when its timeline 
   } finally {global.document = previous;}
 });
 
-test('toggling the overview thumbnails preserves the sample and does not rebuild the rail', () => {
+test('toggling the sidebar preserves the sample and does not rebuild the grid', () => {
   const value = app();
   const before = {batch: value.sampleBatchId, step: value.previewStep, previews: value.previews};
-  value.renderDashboard = () => {throw new Error('the thumbnail toggle must not rebuild loaded images');};
-  value.toggleSampleTimeline();
-  assert.equal(value.sampleTimelineVisible, false);
+  value.renderDashboard = () => {throw new Error('the sidebar toggle must not rebuild loaded images');};
+  value.toggleSampleSidebar();
+  assert.equal(value.sampleSidebarVisible, false);
   assert.equal(value.sampleBatchId, before.batch); assert.equal(value.previewStep, before.step);
   assert.equal(value.previews, before.previews);
-  value.toggleSampleTimeline();
-  assert.equal(value.sampleTimelineVisible, true);
+  value.toggleSampleSidebar();
+  assert.equal(value.sampleSidebarVisible, true);
 });

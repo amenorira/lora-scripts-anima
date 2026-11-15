@@ -36,27 +36,27 @@ function app() {
 }
 
 function settings(value) {
-  return {overviewTimeline: value.sampleTimelineVisible, viewerTimeline: value.previewViewTimelineVisible,
+  return {sidebar: value.sampleSidebarVisible, viewerTimeline: value.previewViewTimelineVisible,
     sort: value.sampleBatchSortDir};
 }
 
-test('both timeline controls and sorting save independent preferences without changing the selected image', () => {
+test('sidebar, viewer thumbnails and sorting save independent preferences without changing the selected image', () => {
   const saved = storage();
   withStorage(saved, () => {
     const value = app(); value.previewStep = 4; value.sampleBatchId = 'selected-batch';
     value.renderDashboard = () => {};
-    value.toggleSampleTimeline({currentTarget: {checked: false}});
-    assert.deepEqual(settings(value), {overviewTimeline: false, viewerTimeline: true, sort: 'desc'});
+    value.toggleSampleSidebar({currentTarget: {checked: false}});
+    assert.deepEqual(settings(value), {sidebar: false, viewerTimeline: true, sort: 'desc'});
     value.togglePreviewViewTimeline({currentTarget: {checked: false}});
-    assert.deepEqual(settings(value), {overviewTimeline: false, viewerTimeline: false, sort: 'desc'});
-    value.toggleSampleTimeline({currentTarget: {checked: true}});
-    assert.deepEqual(settings(value), {overviewTimeline: true, viewerTimeline: false, sort: 'desc'});
+    assert.deepEqual(settings(value), {sidebar: false, viewerTimeline: false, sort: 'desc'});
+    value.toggleSampleSidebar({currentTarget: {checked: true}});
+    assert.deepEqual(settings(value), {sidebar: true, viewerTimeline: false, sort: 'desc'});
     value.setSampleBatchSort('asc');
     assert.deepEqual(saved.writes, [
-      {overviewTimeline: false, viewerTimeline: true, sort: 'desc', comparisonLayout: 'horizontal'},
-      {overviewTimeline: false, viewerTimeline: false, sort: 'desc', comparisonLayout: 'horizontal'},
-      {overviewTimeline: true, viewerTimeline: false, sort: 'desc', comparisonLayout: 'horizontal'},
-      {overviewTimeline: true, viewerTimeline: false, sort: 'asc', comparisonLayout: 'horizontal'},
+      {sidebar: false, viewerTimeline: true, sort: 'desc', comparisonLayout: 'horizontal'},
+      {sidebar: false, viewerTimeline: false, sort: 'desc', comparisonLayout: 'horizontal'},
+      {sidebar: true, viewerTimeline: false, sort: 'desc', comparisonLayout: 'horizontal'},
+      {sidebar: true, viewerTimeline: false, sort: 'asc', comparisonLayout: 'horizontal'},
     ]);
     assert.equal(value.previewStep, 4);
     assert.equal(value.sampleBatchId, 'selected-batch');
@@ -65,13 +65,13 @@ test('both timeline controls and sorting save independent preferences without ch
   });
 });
 
-test('saved timeline visibility and sorting restore in a new browser state and after a run reset', () => {
-  const expected = {overviewTimeline: false, viewerTimeline: true, sort: 'asc'};
+test('saved sidebar, viewer thumbnails and sorting restore after a run reset', () => {
+  const expected = {sidebar: false, viewerTimeline: true, sort: 'asc'};
   const saved = storage(JSON.stringify(expected));
   withStorage(saved, () => {
     const value = app();
     assert.deepEqual(settings(value), expected);
-    value.sampleTimelineVisible = true; value.previewViewTimelineVisible = false; value.sampleBatchSortDir = 'desc';
+    value.sampleSidebarVisible = true; value.previewViewTimelineVisible = false; value.sampleBatchSortDir = 'desc';
     value.resetSampleBrowser();
     assert.deepEqual(settings(value), expected, 'changing runs restores the saved layout');
     assert.deepEqual(settings(app()), expected, 'a fresh monitor state uses the same saved choices');
@@ -79,13 +79,40 @@ test('saved timeline visibility and sorting restore in a new browser state and a
   });
 });
 
+test('closing only the sidebar preview preserves the enabled preference and restores visible focus', () => {
+  const saved = storage(), previousDocument = global.document;
+  let focused = '';
+  const closeButton = {focus() {throw new Error('the hidden close button must not retain focus');}};
+  try {
+    withStorage(saved, () => {
+      for (const target of ['sample-selected.png', 'sampleBatch-b1', 'sampleSidebarToggle']) {
+        global.document = {activeElement: closeButton, getElementById(id) {
+          if (id === 'sampleSidebar') return {contains: element => element === closeButton};
+          if (id === target) return {focus(options) {assert.deepEqual(options, {preventScroll: true}); focused = id;}};
+          return null;
+        }};
+        const value = app(); value.previews = [{path: 'selected.png'}]; value.sampleBatchId = 'b1';
+        value.previewInfoOpen = true; value._sampleSidebarInspecting = true;
+        value.sampleSidebarView = {key: 'selected.png', scale: 2, x: 40, y: 20};
+        value.closeSampleSidebarPreview();
+        assert.equal(value.sampleSidebarVisible, true); assert.equal(value.sampleSidebarOpen, false);
+        assert.equal(value.sampleSidebarActive, false); assert.equal(value.previewStep, 0);
+        assert.equal(value.previewInfoOpen, false); assert.equal(value._sampleSidebarInspecting, false);
+        assert.deepEqual(value.sampleSidebarView, {key: '', scale: 1, x: 0, y: 0});
+        assert.equal(saved.writes.length, 0, 'dismissing a preview must not save a feature preference');
+        assert.equal(focused, target);
+      }
+    });
+  } finally {global.document = previousDocument;}
+});
+
 test('preference loading accepts only booleans and the two supported sorting values', () => {
   for (const [savedValue, expected] of [
-    [{overviewTimeline: false, viewerTimeline: false, sort: 'asc'}, {overviewTimeline: false, viewerTimeline: false, sort: 'asc'}],
-    [{overviewTimeline: 'false', viewerTimeline: 0, sort: 'ASC'}, {overviewTimeline: true, viewerTimeline: true, sort: 'desc'}],
-    [{overviewTimeline: true, viewerTimeline: false, sort: 'desc'}, {overviewTimeline: true, viewerTimeline: false, sort: 'desc'}],
-    [{overviewTimeline: false, viewerTimeline: null, sort: 1}, {overviewTimeline: false, viewerTimeline: true, sort: 'desc'}],
-    [{sort: 'asc'}, {overviewTimeline: true, viewerTimeline: true, sort: 'asc'}],
+    [{sidebar: false, viewerTimeline: false, sort: 'asc'}, {sidebar: false, viewerTimeline: false, sort: 'asc'}],
+    [{sidebar: 'false', viewerTimeline: 0, sort: 'ASC'}, {sidebar: true, viewerTimeline: true, sort: 'desc'}],
+    [{sidebar: true, viewerTimeline: false, sort: 'desc'}, {sidebar: true, viewerTimeline: false, sort: 'desc'}],
+    [{sidebar: false, viewerTimeline: null, sort: 1}, {sidebar: false, viewerTimeline: true, sort: 'desc'}],
+    [{sort: 'asc'}, {sidebar: true, viewerTimeline: true, sort: 'asc'}],
   ]) {
     withStorage(storage(JSON.stringify(savedValue)), () => assert.deepEqual(settings(app()), expected));
   }
@@ -95,11 +122,19 @@ test('empty, malformed and unrelated stored values leave the default controls us
   for (const stored of [null, '', '{invalid json', 'null', '[]', '42', '"unrelated"']) {
     withStorage(storage(stored), () => {
       const value = app();
-      assert.deepEqual(settings(value), {overviewTimeline: true, viewerTimeline: true, sort: 'desc'}, String(stored));
+      assert.deepEqual(settings(value), {sidebar: true, viewerTimeline: true, sort: 'desc'}, String(stored));
       assert.doesNotThrow(() => value.togglePreviewViewTimeline());
       assert.equal(value.previewViewTimelineVisible, false);
     });
   }
+});
+
+test('the removed overview thumbnail preference does not hide the new sidebar or reset viewer preferences', () => {
+  withStorage(storage(JSON.stringify({overviewTimeline: false, viewerTimeline: false, sort: 'asc', comparisonLayout: 'vertical'})), () => {
+    const value = app();
+    assert.deepEqual(settings(value), {sidebar: true, viewerTimeline: false, sort: 'asc'});
+    assert.equal(value.previewComparisonLayout, 'vertical');
+  });
 });
 
 test('storage read and write failures do not interrupt reset, timeline controls or sorting', () => {
@@ -107,10 +142,10 @@ test('storage read and write failures do not interrupt reset, timeline controls 
   withStorage(unavailable, () => {
     const value = app();
     assert.doesNotThrow(() => value.resetSampleBrowser());
-    assert.doesNotThrow(() => value.toggleSampleTimeline());
+    assert.doesNotThrow(() => value.toggleSampleSidebar());
     assert.doesNotThrow(() => value.togglePreviewViewTimeline());
     assert.doesNotThrow(() => value.setSampleBatchSort('asc'));
-    assert.deepEqual(settings(value), {overviewTimeline: false, viewerTimeline: false, sort: 'asc'});
+    assert.deepEqual(settings(value), {sidebar: false, viewerTimeline: false, sort: 'asc'});
   });
 });
 

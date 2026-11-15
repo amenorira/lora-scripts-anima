@@ -14,10 +14,17 @@
   const mediaTargetSelector = '[data-dialog-anchor="target"]';
 
   function syncDialogBackgrounds() {
-    const backgroundDialogOpen = dialogs.some(dialog => dialog.classList.contains('modal-overlay--morph'));
+    const backgroundDialogOpen = dialogs.some(dialog => dialog.classList.contains('modal-overlay--morph')
+      || dialog.classList.contains('preview-lightbox'));
     document.querySelector('body > .app-layout')?.classList.toggle('dialog-is-background', backgroundDialogOpen);
     document.getElementById('cropPreviewDialog')?.classList.toggle('dialog-is-background',
       dialogs.some(dialog => dialog.id === 'cropFocusDialog'));
+    // The first dialog owns the page scrim. Keep it steady while a detail
+    // dialog enters or leaves, rather than darkening the page a second time.
+    dialogs.forEach((dialog, index) => {
+      if (index) dialog.setAttribute('data-dialog-nested', '');
+      else dialog.removeAttribute('data-dialog-nested');
+    });
   }
 
   function setHiddenDialogOrigin(element, anchor) {
@@ -263,7 +270,7 @@
       if (duration <= 0) return [];
       const options = { duration, easing: overlayStyle.getPropertyValue('--ease-out').trim() || 'ease-out', fill: 'both' };
       animations.push(element.animate([{ opacity: overlayStyle.opacity }, { opacity: 0 }], options));
-      animations.push(modal.animate([{ transform: modalStyle.transform }, { transform: 'scale(.99)' }], options));
+      animations.push(modal.animate([{ transform: modalStyle.transform }, { transform: 'translateY(4px)' }], options));
       dialogMotions.set(element, animations);
       return animations;
     } catch (_) {
@@ -374,7 +381,7 @@
               });
             }
             window.AnimaUI.placeNotifications?.();
-            if (morph) syncDialogBackgrounds();
+            syncDialogBackgrounds();
           });
         } else {
           dismissPopups(element);
@@ -392,7 +399,7 @@
             element.removeAttribute('data-dialog-closing');
             const index = dialogs.indexOf(element);
             if (index >= 0) dialogs.splice(index, 1);
-            if (morph) syncDialogBackgrounds();
+            syncDialogBackgrounds();
             window.AnimaUI.placeNotifications?.();
             const animations = morph || preview ? [] : (element.getAnimations?.({ subtree: true }) || [])
               .filter(animation => animation.effect?.getComputedTiming().endTime !== Infinity);
@@ -439,7 +446,7 @@
         previousFocus = null;
         const index = dialogs.indexOf(element);
         if (index >= 0) dialogs.splice(index, 1);
-        if (morph && index >= 0) syncDialogBackgrounds();
+        if (index >= 0) syncDialogBackgrounds();
         window.AnimaUI.placeNotifications?.();
         element.removeEventListener('cancel', cancel);
         element.removeEventListener('pointerdown', pointerDown);

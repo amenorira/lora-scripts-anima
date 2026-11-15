@@ -45,6 +45,184 @@ function pageInput() {
   return {value: '', select() {this.selected = true;}, blur() {this.blurred = true;}};
 }
 
+test('sidebar selection previews the exact prompt image without opening the modal or rebuilding the grid', () => {
+  const value = app([image('b1', 0, 4200), image('b1', 1, 4201), image('b2', 0, 4200)]);
+  value.renderDashboard = () => {throw new Error('selection must keep grid images mounted');};
+  value.openPreviewLightbox = () => {throw new Error('single click belongs to the sidebar');};
+  value.selectSampleImage(1);
+  assert.equal(value.previewStep, 1);
+  assert.equal(value.sampleBatchId, 'b1');
+  assert.equal(value.previewLightboxOpen, false);
+  value.selectSampleImage(-1); value.selectSampleImage(99);
+  assert.equal(value.previewStep, 1);
+});
+
+test('a hidden sidebar retains single-click modal viewing and the selected image', () => {
+  const value = app([image('b1', 0, 4200), image('b2', 0, 4200)]);
+  value.selectSampleImage(0);
+  value.toggleSampleSidebar({currentTarget: {checked: false}});
+  assert.equal(value.previewStep, 0);
+  const opened = []; value.openPreviewLightbox = index => opened.push(index);
+  value.selectSampleImage(1);
+  assert.deepEqual(opened, [1]);
+  value.toggleSampleSidebar({currentTarget: {checked: true}});
+  assert.equal(value.previewStep, 0);
+});
+
+test('thumbnail current-image semantics follow sidebar selection and clear while it is hidden', () => {
+  const value = app([image('b1', 0, 4200), image('b2', 0, 4200)]);
+  const html = value._sampleThumbnailHtml(0, value._sampleDataModel().byBatch.get('b1'));
+  // This button identifies the current image, rather than toggling a pressed
+  // state. Alpine removes aria-current for false without stringifying null.
+  assert.doesNotMatch(html, /aria-pressed/);
+  const current = new Function('sampleSidebarActive', 'previewStep', 'return ' + html.match(/:aria-current="([^"]+)"/)[1]);
+  for (const [enabled, open, selected, expected] of [[true, true, 0, true], [true, true, 1, false], [false, true, 0, false], [true, false, 0, false], [true, false, 1, false], [true, true, 0, true]]) {
+    value.sampleSidebarVisible = enabled; value.sampleSidebarOpen = open; value.previewStep = selected;
+    assert.equal(current(value.sampleSidebarActive, value.previewStep), expected);
+  }
+});
+
+test('a dismissed preview stays closed across snapshots, sorting and rendering until the same image is selected again', () => {
+  const value = app([image('b1', 0, 4200), image('b2', 0, 4200)]);
+  value.selectSampleImage(1); value.closeSampleSidebarPreview();
+  value._replacePreviewItems([...value.previews, image('b3', 0, 4200)]);
+  value.setSampleBatchSort('asc');
+  const html = value._renderSamplesTab(key => key);
+  assert.equal(value.sampleSidebarVisible, true); assert.equal(value.sampleSidebarOpen, false);
+  assert.match(html, /class="m-samples-workspace has-sidebar"/);
+  assert.match(html, /id="sampleSidebarToggle" checked/);
+  assert.match(html, /<template x-if="sampleSidebarActive">/);
+  assert.equal(value.sampleSidebarView.key, '', 'rendering hidden previews does not prepare or reopen their viewport');
+  value.openPreviewLightbox = () => {throw new Error('an enabled sidebar must handle the next image click');};
+  value.selectSampleImage(1);
+  assert.equal(value.sampleSidebarActive, true); assert.equal(value.previewStep, 1);
+  const view = window.AnimaImageViewport.create(value._sampleSidebarViewState());
+  view.apply({scale: 2, x: 40, y: -20});
+  const state = value.sampleSidebarView;
+  assert.equal(state.key, value._previewItemKey(value.previews[1]));
+  value._replacePreviewItems([...value.previews, image('b4', 0, 4200)]);
+  value._renderSamplesTab(key => key);
+  const remounted = window.AnimaImageViewport.create(value._sampleSidebarViewState());
+  assert.equal(value.sampleSidebarView, state);
+  assert.deepEqual(remounted.view(), {scale: 2, x: 40, y: -20}, 'reopening, zooming and refreshing retain the same viewport');
+  value.closeSampleSidebarPreview(); value.resetSampleBrowser();
+  assert.equal(value.sampleSidebarOpen, true, 'changing runs restores the initial preview state');
+});
+
+test('opening a batch cover or explicitly jumping to latest reopens a dismissed preview only when the feature is enabled', () => {
+  const value = app([image('b1', 0, 4200), image('b1', 1, 4201), image('b2', 0, 4200)]);
+  value._sampleOverviewPanel = () => ({querySelector: () => ({})});
+  value._replaceSampleBatchCards = value._scrollOverviewToBatch = value._acknowledgeNewPreviews = () => {};
+  for (const enabled of [true, false]) {
+    value.sampleSidebarVisible = enabled;
+    for (const id of ['b2', 'b1']) {
+      value.closeSampleSidebarPreview(); value.sampleExpandedBatchId = '';
+      value.toggleSampleBatch(id);
+      assert.equal(value.sampleBatchId, id);
+      assert.equal(value.sampleSidebarOpen, enabled);
+      assert.equal(value.sampleSidebarActive, enabled);
+    }
+    value.closeSampleSidebarPreview(); value.jumpToLatestOverviewBatch();
+    assert.equal(value.sampleBatchId, 'b2'); assert.equal(value.sampleSidebarActive, enabled);
+  }
+});
+
+test('modal viewing and navigation preserve a dismissed sidebar and sidebar dismissal leaves modal details alone', () => {
+  const value = app([image('b1', 0, 4200), image('b2', 0, 4200)]), previousDocument = global.document;
+  global.document = {getElementById: id => id === 'previewLightbox' ? {} : null};
+  value._revealPreviewViewAfterOpen = () => {};
+  try {
+    value.closeSampleSidebarPreview(); value.openPreviewLightbox(0);
+    assert.equal(value.previewLightboxOpen, true); assert.equal(value.sampleSidebarOpen, false);
+    value.previewInfoOpen = true; value.closeSampleSidebarPreview();
+    assert.equal(value.previewInfoOpen, true, 'sidebar dismissal does not close a modal-owned info dialog');
+    value.selectPreviewTimelineByKey(value._previewItemKey(value.previews[1]));
+    assert.equal(value.previewStep, 1); assert.equal(value.sampleSidebarActive, false);
+    value.closePreviewLightbox(); value.clearPreviewLightbox();
+    assert.equal(value.sampleSidebarOpen, false); assert.equal(value.sampleSidebarVisible, true);
+  } finally {global.document = previousDocument;}
+});
+
+test('explicit sidebar inspection survives new images even in the expanded latest batch or at the latest scroll edge', () => {
+  const value = app([image('b1', 0, 4200), image('b2', 0, 4200), image('b2', 1, 4201)]);
+  value.sampleExpandedBatchId = 'b2'; value.selectSampleImage(2);
+  value._sampleOverviewAtEnd = true;
+  value._replacePreviewItems([...value.previews, image('b2', 2, 4202)]);
+  assert.equal(value.previewStep, 2);
+  assert.equal(value.previewHasNew, true);
+  value._replacePreviewItems([...value.previews, image('b3', 0, 4200)]);
+  assert.equal(value.previewStep, 2);
+  assert.equal(value.sampleBatchId, 'b2');
+  value._sampleOverviewPanel = () => ({querySelector: () => null});
+  value._scrollOverviewToBatch = () => {};
+  value.jumpToLatestOverviewBatch();
+  assert.equal(value._sampleSidebarInspecting, false);
+  value.resetSampleBrowser();
+  assert.equal(value._sampleSidebarInspecting, false);
+});
+
+test('sidebar inspection follows its exact file through late metadata regrouping and falls back safely after deletion', () => {
+  const first = image('b1', 0, 4200, {sample: {batch_id: 'legacy:b1'}});
+  const second = image('b1', 1, 4201, {sample: {batch_id: 'legacy:b1'}});
+  const value = app([first, second, image('b2', 0, 4200)]);
+  value.selectSampleImage(0);
+  const refined = {...first, version: '2', sample: {...first.sample, batch_id: 'recorded:b1'}};
+  value._replacePreviewItems([refined, second, value.previews[2]]);
+  assert.equal(value.previews[value.previewStep], refined);
+  assert.equal(value.sampleBatchId, 'recorded:b1');
+  value._replacePreviewItems([second]);
+  assert.equal(value.previewStep, 0);
+  assert.equal(value.previews[value.previewStep], second);
+  value._replacePreviewItems([]);
+  assert.equal(value.previewStep, 0);
+  assert.equal(value.sampleBatchId, '');
+});
+
+test('the initial sidebar and grid selection use the same latest batch', () => {
+  const value = app([image('b1', 0, 4200), image('b2', 0, 4200)]);
+  value.sampleBatchId = ''; value.previewStep = 0;
+  value._renderSamplesTab(key => value.t('monitor.' + key));
+  assert.equal(value.sampleBatchId, 'b2');
+  assert.equal(value.previewStep, 1);
+});
+
+test('shared generation details use the sidebar selection and retain the waiting comparison reference in the modal', () => {
+  const value = app([image('b1', 0, 4200), image('b2', 0, 4200)]);
+  value.startPreviewComparison(); value.previewStep = 0;
+  assert.equal(value._previewInfoPreview(), value.previews[0], 'sidebar details belong to the selected image');
+  value.previewLightboxOpen = true;
+  assert.equal(value._previewInfoPreview(), value.previewReferences[0], 'the waiting modal describes its pinned reference');
+  value.previewComparisonWaiting = false;
+  assert.equal(value._previewInfoPreview(), value.previews[0]);
+  assert.equal(value._previewGenerationInfoHtml(undefined), '');
+});
+
+test('new samples do not replace the image described by an open generation-info dialog', () => {
+  const value = app([image('b1', 0, 4200), image('b2', 0, 4200)]);
+  value.previewInfoOpen = true;
+  value._replacePreviewItems([...value.previews, image('b3', 0, 4200)]);
+  assert.equal(value._previewInfoPreview().sample.batch_id, 'b2');
+  assert.equal(value.previewHasNew, true);
+});
+
+test('refreshing a sidebar keeps its viewport for the same file and resets it for a different image', () => {
+  const value = app([image('b1', 0, 4200), image('b2', 0, 4200)]);
+  value._sampleSidebarViewState();
+  value.sampleSidebarView.scale = 2; value.sampleSidebarView.x = 40;
+  value._sampleSidebarViewState();
+  assert.equal(value.sampleSidebarView.scale, 2); assert.equal(value.sampleSidebarView.x, 40);
+  value.selectSampleImage(0); value._sampleSidebarViewState();
+  assert.equal(value.sampleSidebarView.scale, 1); assert.equal(value.sampleSidebarView.x, 0);
+});
+
+test('selecting the latest sidebar image clears its new-sample notice while older selections retain it', () => {
+  const value = app([image('b1', 0, 4200), image('b2', 0, 4200)]);
+  value.previewHasNew = true; value.selectSampleImage(0);
+  assert.equal(value.previewHasNew, true);
+  value.selectSampleImage(1);
+  assert.equal(value.previewHasNew, false); assert.equal(value._sampleSidebarInspecting, true);
+});
+
 test('prompt buttons use short numbered labels while keeping the actual prompt and pairing identity', () => {
   const prompt = 'a very long actual prompt, \n with recorded details and lighting';
   const previews = [image('b1', 0, 4200, {params: {prompt}, sample: {prompt_label: '正面特写'}}),
@@ -131,7 +309,7 @@ test('overview sorting leaves the canonical viewer sequence chronological', () =
   assert.equal(value.sampleBatchSortDir, 'desc');
 });
 
-test('both timeline displays follow overview order while their canonical sequence stays chronological', () => {
+test('viewer thumbnails follow overview order while their canonical sequence stays chronological', () => {
   const value = app(['b1', 'b2', 'b3'].map(batch => image(batch, 0, 4200)));
   for (const dir of ['desc', 'asc']) {
     value.setSampleBatchSort(dir);
@@ -140,35 +318,12 @@ test('both timeline displays follow overview order while their canonical sequenc
     assert.deepEqual(display, expected);
     assert.deepEqual(value._sampleOverviewBatches().map(batch => batch.id), expected.map(index => 'b' + (index + 1)));
     const html = value._renderSamplesTab(key => value.t('monitor.' + key));
-    const timeline = [...html.matchAll(/class="m-sample-timeline-item"[^>]*data-batch-id="([^"]+)"/g)].map(match => match[1]);
-    assert.deepEqual(timeline, expected.map(index => 'b' + (index + 1)));
+    const groups = [...html.matchAll(/class="m-sample-batch"[^>]*data-batch-id="([^"]+)"/g)].map(match => match[1]);
+    assert.deepEqual(groups, expected.map(index => 'b' + (index + 1)));
     display.reverse();
     assert.deepEqual(value._previewLightboxIndices(), [0, 1, 2]);
     assert.deepEqual(value._sampleDataModel().batches.map(batch => batch.position), [0, 1, 2]);
   }
-});
-
-test('main timeline arrow and Home End keys use visual order and pass canonical batch positions', () => {
-  const value = app(['b1', 'b2', 'b3'].map(batch => image(batch, 0, 4200)));
-  const originalDocument = global.document, focused = [];
-  global.document = {getElementById: id => ({focus() {focused.push(id);}})};
-  const item = {dataset: {batchId: 'b2', batchIndex: '999'}};
-  const calls = [];
-  value.sampleTimelineClick = (event, position) => {assert.equal(event, null); calls.push(position);};
-  try {
-    for (const dir of ['desc', 'asc']) {
-      value.setSampleBatchSort(dir);
-      const expected = dir === 'desc' ? [0, 2, 2, 0] : [2, 0, 0, 2];
-      for (const [index, key] of ['ArrowRight', 'ArrowLeft', 'Home', 'End'].entries()) {
-        let prevented = false;
-        value.sampleTimelineKeydown({key, target: {closest: () => item}, currentTarget: item,
-          preventDefault() {prevented = true;}});
-        assert.equal(prevented, true);
-        assert.equal(calls.at(-1), expected[index]);
-        assert.equal(focused.at(-1), 'sampleTimeline-b' + (expected[index] + 1));
-      }
-    }
-  } finally {global.document = originalDocument;}
 });
 
 test('modal navigation and timeline keyboard follow the same visual left to right order', () => {
@@ -323,7 +478,7 @@ test('page commit uses the latest visible sequence after samples grow or shrink 
   }
 });
 
-test('counter updates preserve an active draft while reserving width from the total digit count', () => {
+test('counter updates preserve an active draft while reserving at least four digits', () => {
   const value = app(Array.from({length: 100}, (_, index) => image('b' + (index + 1), 0, 4200)));
   const input = pageInput(), display = {}, total = {}, widths = {};
   const counter = {style: {setProperty(name, text) {widths[name] = text;}}};
@@ -337,13 +492,12 @@ test('counter updates preserve an active draft while reserving width from the to
     assert.equal(input.value, '99');
     assert.equal(display.textContent, '1');
     assert.equal(total.textContent, '100');
-    assert.equal(widths['--preview-counter-width'], '9ch');
-    assert.equal(widths['--preview-counter-digits'], '3');
+    assert.equal(widths['--preview-counter-width'], '11ch');
     value._resetPreviewPageEditor(); value.previewStep = 49;
     window.monitorArtifactsRenderMixin._updatePreviewLightbox.call(value);
     assert.equal(input.value, '51');
     assert.equal(display.textContent, '51');
-    assert.equal(widths['--preview-counter-width'], '9ch');
+    assert.equal(widths['--preview-counter-width'], '11ch');
   } finally {global.document = originalDocument;}
 });
 
@@ -377,9 +531,11 @@ test('latest actions keep using the chronological newest point in either visual 
     assert.equal(value.sampleBatchId, 'b4');
     assert.equal(value.previewHasNew, false);
     assert.equal(value._sampleOverviewAtEnd, false);
-    const calls = []; value.sampleTimelineClick = (event, position) => calls.push(position);
+    const calls = [];
+    value._sampleOverviewPanel = () => ({querySelector: () => null});
+    value._scrollOverviewToBatch = (panel, batch) => calls.push(batch.id);
     value.jumpToLatestOverviewBatch();
-    assert.deepEqual(calls, [3]);
+    assert.deepEqual(calls, ['b4']);
   }
 });
 
@@ -482,7 +638,7 @@ test('late manifests can rename a batch without moving an open viewer to another
   const old = image('b1', 0, 4200, {sample: {batch_id: 'legacy:b1', comparable: false}});
   const later = image('b2', 0, 4200);
   const value = app([old, later]);
-  value._activateOverviewBatch(value._sampleDataModel().byBatch.get('legacy:b1'), null, false); value.previewLightboxOpen = true;
+  value._activateOverviewBatch(value._sampleDataModel().byBatch.get('legacy:b1')); value.previewLightboxOpen = true;
   const recorded = {...old, sample: {...image('b1', 0, 4200).sample}};
   value._replacePreviewItems([recorded, later, image('b3', 0, 4200)]);
   assert.equal(value.previewStep, 0);
@@ -494,7 +650,7 @@ test('partial manifest arrivals preserve the selected file while its legacy batc
   const first = image('b1', 0, 4200, {sample: {batch_id: 'legacy:b1', metadata_source: 'filename'}});
   const second = image('b1', 1, 4200, {sample: {batch_id: 'legacy:b1', metadata_source: 'filename'}});
   const value = app([first, second, image('b2', 0, 4200)]);
-  value._activateOverviewBatch(value._sampleDataModel().byBatch.get('legacy:b1'), null, false); value.previewLightboxOpen = true;
+  value._activateOverviewBatch(value._sampleDataModel().byBatch.get('legacy:b1')); value.previewLightboxOpen = true;
   const recorded = {...first, sample: {...image('b1', 0, 4200).sample}};
   value._replacePreviewItems([recorded, second, value.previews[2]]);
   assert.equal(value.previews[value.previewStep].path, first.path);
@@ -530,9 +686,9 @@ test('sample snapshots preserve a valid context menu and dismiss only a removed 
 test('batch navigation preserves prompt and seed across a parameter change without treating it as comparable', () => {
   const value = app([image('b1', 0, 4200), image('b1', 1, 4201, {params: {cfg_scale: 7}}), image('b2', 1, 4201)]);
   assert.equal(value.previewStep, 2);
-  value._activateOverviewBatch(value._sampleDataModel().byBatch.get('b1'), null, false);
+  value._activateOverviewBatch(value._sampleDataModel().byBatch.get('b1'));
   assert.equal(value.previewStep, 1);
-  value._activateOverviewBatch(value._sampleDataModel().byBatch.get('b2'), null, false);
+  value._activateOverviewBatch(value._sampleDataModel().byBatch.get('b2'));
   assert.equal(value.previewStep, 2);
   assert.deepEqual(value._previewLightboxIndices(), [1, 2]);
 });
@@ -969,7 +1125,7 @@ test('lightbox history skips a missing seed and a changed negative prompt instea
     image('b3', 1, 4201, {sample: {prompt_id: 'different-negative'}}), image('b4', 1, 4201)]);
   assert.equal(value.previewStep, 3);
   assert.deepEqual(value._previewLightboxIndices(), [0, 3]);
-  value._activateOverviewBatch(value._sampleDataModel().byBatch.get('b2'), null, false);
+  value._activateOverviewBatch(value._sampleDataModel().byBatch.get('b2'));
   assert.equal(value.previewStep, 1, 'the whole-batch browser can still display an available prompt with another seed');
 });
 
@@ -1129,7 +1285,7 @@ test('historical duplicate files remain browsable with an unambiguous earlier ti
 test('the overview has no separate comparison controls and resetting a run clears its fixed viewer references', () => {
   const value = app([image('b1', 0, 4200), image('b2', 0, 4200)]);
   const html = value._renderSamplesTab(key => value.t('monitor.' + key));
-  assert.match(html, /sampleBatchSelect/);
+  assert.match(html, /sampleSidebarToggle/);
   assert.doesNotMatch(html, /data-preview-sort|samplePromptTrigger|sampleMatrix|sampleCompare|sampleComparisonBack/);
   value.pinPreviewReference(0); value.pinPreviewReference(1);
   value.resetSampleBrowser();

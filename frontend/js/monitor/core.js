@@ -688,6 +688,8 @@ window.monitorCoreMixin = {
   },
   stopMonitorRealtime() {
     this._invalidatePreviewRequest();
+    this._sampleLayoutAction++;
+    this._cancelSampleGridMotion?.(this._sampleOverviewPanel?.()?.querySelector('.preview-grid'));
     this._disconnectSampleExpansionUI?.();
     // Invalidate a detail request that is still fetching disk-backed data.
     if (this._monitorClockTimer) clearInterval(this._monitorClockTimer);

@@ -79,6 +79,10 @@ dialog.modal-overlay:not([open]) { pointer-events: none; }
   dialog.modal-overlay[open] { opacity: 0; }
   dialog.modal-overlay[open] > .modal { opacity: 0; transform: scale(var(--menu-scale-enter)); }
 }
+/* WAAPI owns this exit through native close; closed panels must not start a
+   second CSS exit. Leave an interrupted entrance intact for WAAPI to sample. */
+dialog.preview-lightbox:not([open]),
+dialog.preview-lightbox:not([open]) > .modal { transition: none; }
 :root {
   --duration-morph-enter: 300ms;
   --duration-morph-exit: 270ms;
@@ -123,20 +127,14 @@ dialog.modal-overlay--morph[open]:not([data-dialog-closing])::backdrop {
 @starting-style {
   dialog.modal-overlay--morph[open]:not([data-dialog-closing])::backdrop { opacity: 0; }
 }
-/* Keep the blur radius fixed during flight. Sharpen the underlying layer
-   after the dialog leaves the top layer. */
-body > .app-layout,
-#cropPreviewDialog > .modal {
-  transition: filter 80ms ease-out;
+/* A single page scrim persists behind nested details, including their exit. */
+dialog.modal-overlay[data-dialog-nested],
+dialog.modal-overlay--morph[data-dialog-nested]::backdrop { background: transparent; }
+/* Keep one fixed blur through native close without animating its radius. */
+body > .app-layout.dialog-is-background,
+body > #cropPreviewDialog.dialog-is-background > .modal {
+  filter: blur(3px);
 }
-body:not([data-gpu-workload]) > .app-layout.dialog-is-background,
-body:not([data-gpu-workload]) > #cropPreviewDialog.dialog-is-background > .modal {
-  filter: blur(5px);
-  transition: none;
-}
-body[data-gpu-workload] > .app-layout,
-body[data-gpu-workload] > #cropPreviewDialog > .modal,
-#cropPreviewDialog[data-dialog-closing] > .modal { transition: none; }
 .dialog-morph-surface {
   position: absolute;
   inset: -1px;

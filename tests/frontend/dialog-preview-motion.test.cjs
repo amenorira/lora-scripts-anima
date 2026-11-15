@@ -41,12 +41,22 @@ function setup({preview = true, reduced = false, failModal = false} = {}) {
   });
   const controller = context.window.AnimaUI.bindDialog(element, callback => callback());
   const emit = (name, values = {}) => callbacks.get(name)?.({preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {}, ...values});
-  return {controller, element, animations, events, document, opener, autofocus, emit, backgroundClasses};
+  const nestedDialog = () => {
+    const nestedAttrs = new Set();
+    const nested = {...element, open: false, closeCount: 0,
+      classList: {contains(name) {return name === 'modal-overlay';}},
+      querySelectorAll() {return [];},
+      setAttribute(name) {nestedAttrs.add(name);}, removeAttribute(name) {nestedAttrs.delete(name);}, hasAttribute(name) {return nestedAttrs.has(name);},
+      addEventListener() {}, removeEventListener() {}, dispatchEvent() {},
+    };
+    return {element: nested, controller: context.window.AnimaUI.bindDialog(nested, callback => callback())};
+  };
+  return {controller, element, animations, events, document, opener, autofocus, emit, backgroundClasses, nestedDialog};
 }
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
-test('sample dialog fades and shrinks before native close and after-close cleanup', async () => {
+test('sample dialog fades and moves slightly before native close and after-close cleanup', async () => {
   const {controller, element, animations, events, document, opener} = setup();
   controller.setOpen(true);
   controller.setOpen(false);
@@ -61,7 +71,7 @@ test('sample dialog fades and shrinks before native close and after-close cleanu
   assert.equal(animations[0].frames[1].opacity, 0);
   assert.equal(animations[1].target, 'modal');
   assert.equal(animations[1].frames[0].transform, 'matrix(.97, 0, 0, .97, 0, 0)');
-  assert.equal(animations[1].frames[1].transform, 'scale(.99)');
+  assert.equal(animations[1].frames[1].transform, 'translateY(4px)');
   assert.equal(animations[0].options.duration, 150);
   animations[0].finish(); await tick();
   assert.equal(element.open, true, 'both exit animations must finish before closing');
@@ -147,16 +157,51 @@ test('other ordinary dialogs keep their existing synchronous native close', () =
   assert.deepEqual(events, ['dialog-after-close']);
 });
 
-test('the sample dialog does not blur the background while opening or closing', async () => {
+test('the sample background remains blurred through exit and is released after close or destruction', async () => {
   const value = setup();
   value.controller.setOpen(true);
-  assert.equal(value.backgroundClasses.has('dialog-is-background'), false);
+  assert.equal(value.backgroundClasses.has('dialog-is-background'), true);
   value.controller.setOpen(false);
-  assert.equal(value.backgroundClasses.has('dialog-is-background'), false);
+  assert.equal(value.backgroundClasses.has('dialog-is-background'), true);
   value.animations.forEach(animation => animation.finish());
   await tick();
   assert.equal(value.backgroundClasses.has('dialog-is-background'), false);
   value.controller.setOpen(true);
   value.controller.destroy();
   assert.equal(value.backgroundClasses.has('dialog-is-background'), false);
+});
+
+test('nested details keep the original scrim and blur until the sample viewer actually closes', async () => {
+  const value = setup();
+  value.controller.setOpen(true);
+  const detail = value.nestedDialog();
+  detail.controller.setOpen(true);
+  assert.equal(value.element.hasAttribute('data-dialog-nested'), false);
+  assert.equal(detail.element.hasAttribute('data-dialog-nested'), true);
+  assert.equal(value.backgroundClasses.has('dialog-is-background'), true);
+  detail.controller.setOpen(false);
+  assert.equal(value.element.open, true);
+  assert.equal(value.backgroundClasses.has('dialog-is-background'), true);
+  assert.equal(detail.element.hasAttribute('data-dialog-nested'), true, 'retain the transparent scrim during its CSS exit');
+  value.controller.setOpen(false);
+  value.animations.forEach(animation => animation.finish());
+  await tick();
+  assert.equal(value.backgroundClasses.has('dialog-is-background'), false);
+  detail.controller.setOpen(true);
+  assert.equal(detail.element.hasAttribute('data-dialog-nested'), false, 'a later standalone opening owns its scrim');
+  detail.controller.destroy();
+});
+
+test('reopening an exiting sample viewer keeps the shared background until its eventual destruction', async () => {
+  const value = setup();
+  value.controller.setOpen(true);
+  value.controller.setOpen(false);
+  value.controller.setOpen(true);
+  await tick();
+  assert.equal(value.backgroundClasses.has('dialog-is-background'), true);
+  assert.equal(value.element.open, true);
+  value.controller.destroy();
+  await tick();
+  assert.equal(value.backgroundClasses.has('dialog-is-background'), false);
+  assert.equal(value.element.open, false);
 });

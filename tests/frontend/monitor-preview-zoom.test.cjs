@@ -1,6 +1,7 @@
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const {loadGlobalFrontend, composeMixins} = require('./helpers.cjs');
+const {withAnimationFrames} = require('./helpers-animation.cjs');
 
 loadGlobalFrontend(['shared/utils', 'shared/image-viewport', 'monitor/previews', 'monitor/artifacts-render']);
 
@@ -69,6 +70,61 @@ test('dragging pans the whole scroll surface and releases capture on reset', () 
   assert.equal(capture.size, 0);
   assert.equal(value.previewViewPanning, false);
 });
+
+test('modal drag coalesces pointer bursts and retains the final position when released', () => withAnimationFrames(({tick, frames}) => {
+  const {value, viewport, capture} = fixture(); value.setPreviewViewScale(2);
+  const event = {currentTarget: viewport, target: {closest: () => null}, button: 0, pointerId: 7,
+    clientX: 500, clientY: 300, preventDefault() {}};
+  value.startPreviewPan(event);
+  const left = viewport.scrollLeft;
+  for (let x = 499; x >= 400; x--) value.movePreviewPan({...event, clientX: x});
+  assert.equal(viewport.scrollLeft, left); assert.equal(frames.size, 1);
+  tick(0); assert.equal(viewport.scrollLeft, left + 100);
+  value.movePreviewPan({...event, clientX: 380});
+  value.stopPreviewPan({...event, pointerId: 8});
+  assert.equal(value.previewViewPanning, true, 'another pointer cannot release the drag');
+  const stale = [...frames.values()][0];
+  value.stopPreviewPan(event);
+  assert.equal(viewport.scrollLeft, left + 120); assert.equal(capture.size, 0); assert.equal(frames.size, 0);
+  stale(100); assert.equal(viewport.scrollLeft, left + 120);
+}));
+
+test('modal reset smoothly returns zoom and scroll offset to fit while retaining its image geometry', () => withAnimationFrames(({tick, frames}) => {
+  const {value, viewport, group} = fixture();
+  value.setPreviewViewScale(3);
+  viewport.scrollLeft += 120; viewport.scrollTop -= 80;
+  const geometry = value._previewGroupGeometry;
+  value.resizePreviewComparisonImages = () => {throw new Error('reset must preserve the mounted image layout');};
+  value.resetPreviewView(true);
+  assert.equal(value.previewViewScale, 3);
+  tick(0); tick(45);
+  assert.equal(value.previewViewScale, 1.25);
+  assert(Math.abs(viewport.scrollLeft - value._previewViewportLayout.centerX - 15) < 0.001);
+  assert(Math.abs(viewport.scrollTop - value._previewViewportLayout.centerY + 10) < 0.001);
+  tick(90);
+  assert.equal(value.previewViewScale, 1); assert.equal(value._previewViewFitted, true);
+  assert.equal(group.style.transform, 'scale(1)'); assert.equal(value._previewGroupGeometry, geometry);
+  assert.equal(frames.size, 0);
+}));
+
+test('modal interactions, layout changes and closing cancel pending reset writes', () => withAnimationFrames(({tick, frames}) => {
+  for (const interrupt of ['zoom', 'pan', 'layout', 'close', 'run']) {
+    const {value, viewport, group} = fixture(); value.setPreviewViewScale(3); value.resetPreviewView(true);
+    tick(0); tick(45);
+    const stale = [...frames.values()][0];
+    if (interrupt === 'zoom') value.setPreviewViewScale(2);
+    if (interrupt === 'pan') value.startPreviewPan({currentTarget: viewport, target: {}, button: 0, pointerId: 7,
+      clientX: 500, clientY: 300, preventDefault() {}});
+    if (interrupt === 'layout') value.resizePreviewComparisonImages();
+    if (interrupt === 'close') value.closePreviewLightbox();
+    if (interrupt === 'run') value.resetSampleBrowser();
+    const current = {scale: value.previewViewScale, transform: group.style.transform, x: viewport.scrollLeft, y: viewport.scrollTop};
+    stale(200); tick(90);
+    assert.deepEqual({scale: value.previewViewScale, transform: group.style.transform, x: viewport.scrollLeft, y: viewport.scrollTop}, current, interrupt);
+    assert.equal(frames.size, 0, interrupt);
+    value.stopPreviewPan();
+  }
+}));
 
 test('single images and both comparison layouts can pan at fit while retaining a visible part at every edge', () => {
   for (const options of [{width: 800, height: 500}, {width: 1000, height: 500}, {width: 400, height: 600, vertical: true}]) {

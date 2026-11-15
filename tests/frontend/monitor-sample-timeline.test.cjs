@@ -28,12 +28,11 @@ function app(previews) {
 test('single-image history uses one compact grid with every sampling point', () => {
   const value = app([image('step-1'), image('step-2'), image('step-3')]);
   const html = value._renderSamplesTab(key => value.t('monitor.' + key));
-  assert.match(html, /m-sample-batches is-single-image/);
   assert.equal((html.match(/class="m-sample-batch"/g) || []).length, 3);
   assert.equal((html.match(/class="preview-grid-item"/g) || []).length, 3);
-  assert.equal((html.match(/class="m-sample-timeline-item"/g) || []).length, 3);
+  assert.match(html, /id="sampleSidebar"/);
   assert.equal((html.match(/class="preview-grid-item-label"/g) || []).length, 3);
-  assert.match(html, /class="preview-thumb-frame"[\s\S]*?<span class="preview-grid-item-label" title="step-1"><strong>step-1<\/strong><\/span><\/button>/);
+  assert.match(html, /class="preview-thumb-frame"[\s\S]*?<span class="preview-grid-item-label" title="step-1"><strong>step-1<\/strong><\/span><\/span><\/button>/);
   assert.doesNotMatch(html, /m-sample-batch-heading/);
   assert.doesNotMatch(html, /m-sample-timeline-count/);
   assert.doesNotMatch(html, /Seed 42/);
@@ -52,59 +51,52 @@ test('single-image cards show epoch and step below the image with numbered promp
 test('multi-image history starts with one cover card per sampling point', () => {
   const value = app([image('step-1', 'fox', 2), image('step-1', 'cat', 2), image('step-2', 'fox', 2), image('step-2', 'cat', 2)]);
   const html = value._renderSamplesTab(key => value.t('monitor.' + key));
-  assert.doesNotMatch(html, /m-sample-batches is-single-image/);
   assert.equal((html.match(/class="m-sample-batch"/g) || []).length, 2);
   assert.equal((html.match(/class="preview-grid-item m-sample-batch-cover"/g) || []).length, 2);
   assert.doesNotMatch(html, /class="m-sample-expansion"/);
   assert.equal((html.match(/aria-expanded="false"/g) || []).length, 2);
-  assert.equal((html.match(/class="preview-thumb-frame m-sample-timeline-image /g) || []).length, 4);
+  assert.doesNotMatch(html, /m-sample-timeline-image/);
   assert.match(html, /fox/); assert.match(html, /cat/);
-  assert.match(html, /m-sample-timeline-mosaic is-stack is-two/);
-  assert.match(html, /class="m-sample-timeline-count" aria-hidden="true">×2/);
+  assert.match(html, /m-sample-stack is-stack/);
+  assert.match(html, /class="m-sample-card-count" aria-hidden="true">×2/);
   assert.doesNotMatch(html, /Seed 42/);
 });
 
-test('a multi-prompt timeline uses the first image as a cover with bounded real-image layers and the full count', () => {
+test('multi-prompt covers retain bounded real-image layers without a duplicate thumbnail rail', () => {
   const previews = ['fox', 'cat', 'bird', 'dog', 'horse', 'fish', 'lion', 'owl', 'bear', 'rabbit']
     .map(prompt => image('step-1', prompt, 10));
   previews.push(image('step-2', 'fox'));
   const value = app(previews);
   const html = value._renderSamplesTab(key => value.t('monitor.' + key));
-  const item = html.match(/<button type="button" id="sampleTimeline-step-1"[\s\S]*?<\/button>/)?.[0];
-  assert.match(item, /m-sample-timeline-mosaic is-stack/);
-  assert.match(item, /class="preview-thumb-frame m-sample-timeline-image is-cover" data-preview-path="step-1-fox.png"/);
-  assert.match(item, /class="preview-thumb-frame m-sample-timeline-image is-behind-1" data-preview-path="step-1-cat.png"/);
-  assert.match(item, /class="preview-thumb-frame m-sample-timeline-image is-behind-2" data-preview-path="step-1-bird.png"/);
-  assert.equal((item.match(/class="preview-thumb-frame m-sample-timeline-image /g) || []).length, 3);
-  assert.match(item, /class="m-sample-timeline-count" aria-hidden="true">×10/);
+  const item = html.match(/<button type="button" id="sampleBatch-step-1"[\s\S]*?<\/button>/)?.[0];
+  assert.match(item, /m-sample-stack is-stack/);
+  assert.match(item, /class="preview-thumb-frame m-sample-card-image is-cover" data-preview-path="step-1-fox.png"/);
+  assert.match(item, /class="preview-thumb-frame m-sample-card-image is-behind-1" data-preview-path="step-1-cat.png"/);
+  assert.match(item, /class="preview-thumb-frame m-sample-card-image is-behind-2" data-preview-path="step-1-bird.png"/);
+  assert.equal((item.match(/class="preview-thumb-frame m-sample-card-image /g) || []).length, 3);
+  assert.match(item, /class="m-sample-card-count" aria-hidden="true">×10/);
   assert.match(item, /10 images/);
-  const batch = value._sampleDataModel().byBatch.get('step-1');
-  const main = value._sampleStackHtml(batch), timeline = value._sampleStackHtml(batch, true);
-  assert.match(main, / m-sample-stack"/); assert.match(timeline, / m-sample-stack"/);
-  const paths = markup => [...markup.matchAll(/data-preview-path="([^"]+)"/g)].map(match => match[1]);
-  assert.deepEqual(paths(main), paths(timeline), 'main cards and the rail share the same real-image layers');
+  assert.doesNotMatch(html, /sampleOverviewTimelineFrame|m-sample-timeline-item/);
 });
 
-test('a timeline preserves both epoch and step without truncating them into one line', () => {
+test('grid cards preserve both epoch and step', () => {
   const first = image('step-1'), second = image('step-2');
   second.sample.batch_label = 'Epoch 100 · Step 40000';
   const value = app([first, second]);
   const html = value._renderSamplesTab(key => value.t('monitor.' + key));
-  assert.match(html, /<strong title="Epoch 100\nStep 40000">Epoch 100<\/strong><small title="Epoch 100\nStep 40000">Step 40000<\/small>/);
+  assert.match(html, /<strong>Epoch 100<\/strong><small>Step 40000<\/small>/);
 });
 
-test('sorting keeps overview and timeline in the same presentation order', () => {
+test('sorting retains overview presentation order and selection', () => {
   const value = app([image('step-1', 'fox', 2), image('step-1', 'cat', 2), image('step-2', 'fox', 2), image('step-2', 'cat', 2)]);
   value.sampleBatchId = 'step-1';
   value.setSampleBatchSort('desc');
   const html = value._renderSamplesTab(key => value.t('monitor.' + key));
   const groups = [...html.matchAll(/<section class="m-sample-batch"[^>]*data-batch-id="([^"]+)"/g)].map(match => match[1]);
-  const timeline = [...html.matchAll(/class="m-sample-timeline-item"[^>]*data-batch-id="([^"]+)"/g)].map(match => match[1]);
   assert.deepEqual(groups, ['step-2', 'step-1']);
-  assert.deepEqual(timeline, ['step-2', 'step-1']);
   value.setSampleBatchSort('asc');
   const ascending = value._renderSamplesTab(key => value.t('monitor.' + key));
-  assert.deepEqual([...ascending.matchAll(/class="m-sample-timeline-item"[^>]*data-batch-id="([^"]+)"/g)].map(match => match[1]), ['step-1', 'step-2']);
+  assert.deepEqual([...ascending.matchAll(/class="m-sample-batch"[^>]*data-batch-id="([^"]+)"/g)].map(match => match[1]), ['step-1', 'step-2']);
   assert.equal(value.sampleBatchId, 'step-1');
   assert.match(html, /id="sampleBatchSort"/);
   assert.equal((html.match(/class="preview-grid-item m-sample-batch-cover"/g) || []).length, 2);
@@ -166,16 +158,15 @@ test('an unknown single-image batch stays compact without hiding failures', () =
   const first = image('step-1'); first.sample.batch_expected = null; first.sample.batch_status = 'unknown';
   const value = app([first]); value.monitorData.state = 'RUNNING';
   let html = value._renderSamplesTab(key => value.t('monitor.' + key));
-  assert.match(html, /m-sample-batches is-single-image/);
+  assert.doesNotMatch(html, /m-sample-batch-cover/);
   const second = image('step-2'); second.sample.batch_expected = null; second.sample.batch_status = 'failed';
   value._replacePreviewItems([first, second]); value.previewsVersion++;
   html = value._renderSamplesTab(key => value.t('monitor.' + key));
-  assert.match(html, /m-sample-batches is-single-image/);
+  assert.doesNotMatch(html, /m-sample-batch-cover/);
   assert.match(html, /monitor\.sampleBatchFailed/);
 });
 
 const timelineDrags = [
-  {start: 'startSampleTimelineDrag', move: 'moveSampleTimelineDrag', end: 'endSampleTimelineDrag', suppress: 'suppressSampleTimelineClick', state: '_sampleTimelineDrag', flag: '_sampleTimelineSuppressClick'},
   {start: 'startPreviewViewTimelineDrag', move: 'movePreviewViewTimelineDrag', end: 'endPreviewViewTimelineDrag', suppress: 'suppressPreviewViewTimelineClick', state: '_previewViewTimelineDrag', flag: '_previewViewTimelineSuppressClick'},
 ];
 
@@ -189,12 +180,11 @@ function dragRail(width = 600, initial = 100) {
     querySelectorAll() {throw new Error('timeline pan must not scan timeline items');}};
 }
 
-test('dragging any timeline image pans both rails without changing the sample and suppresses its trailing click', () => {
+test('dragging viewer timeline images pans the rail without changing the sample and suppresses its trailing click', () => {
   for (const methods of timelineDrags) {
     const value = app([image('step-1'), image('step-2')]);
     value.sampleBatchId = 'step-2'; value.previewStep = 1; value.sampleExpandedBatchId = 'step-1';
     const rail = dragRail();
-    value.sampleTimelineClick = () => {throw new Error('pan must never select an Epoch');};
     value[methods.start]({currentTarget: rail, target: {tagName: 'IMG'}, button: 0, pointerId: 1, clientX: 140});
     rail.getBoundingClientRect = () => {throw new Error('moving an active drag must not measure layout');};
     value[methods.move]({currentTarget: rail, pointerId: 1, clientX: 60, preventDefault() {}});
@@ -211,7 +201,7 @@ test('dragging any timeline image pans both rails without changing the sample an
   }
 });
 
-test('short image presses remain clicks and select their stable target in either timeline', () => {
+test('short image presses remain clicks and select their stable target in the viewer timeline', () => {
   for (const methods of timelineDrags) {
     const value = app([image('step-1'), image('step-2')]);
     const rail = dragRail(); let prevented = false;
@@ -221,8 +211,7 @@ test('short image presses remain clicks and select their stable target in either
     value[methods.suppress]({preventDefault() {prevented = true;}, stopImmediatePropagation() {}});
     assert.equal(prevented, false); assert.equal(rail.hasPointerCapture(), false); assert.equal(rail.scrollLeft, 100);
     value._sampleOverviewPanel = () => ({querySelector() {return null;}});
-    if (methods.state === '_sampleTimelineDrag') value.sampleTimelineClick({currentTarget: {dataset: {batchId: 'step-2'}}}, 0);
-    else value.selectPreviewTimelineByKey('step-2-fox.png');
+    value.selectPreviewTimelineByKey('step-2-fox.png');
     assert.equal(value.sampleBatchId, 'step-2');
   }
 });
@@ -258,7 +247,7 @@ test('timeline panning uses native edge clamping without an edge-scroll animatio
   } finally {global.requestAnimationFrame = oldRequest;}
 });
 
-test('resetting the sample browser releases capture and dragging styles on both timelines', () => {
+test('resetting the sample browser releases capture and dragging styles on the viewer timeline', () => {
   const value = app([image('step-1'), image('step-2')]);
   const rails = timelineDrags.map(methods => {
     const rail = dragRail();
@@ -283,14 +272,13 @@ test('resetting after a drag ends cancels deferred click cleanup and rendering',
   value.resetSampleBrowser();
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(renders, 0);
-  assert.equal(value._sampleTimelineClickTimer, null);
   assert.equal(value._previewViewTimelineClickTimer, null);
 });
 
 test('rapid jumps within one image row keep the last requested sampling point', () => {
   const value = app([image('step-1'), image('step-2')]);
-  const groups = [{dataset: {batchId: 'step-1'}, getBoundingClientRect: () => ({top: 100})},
-    {dataset: {batchId: 'step-2'}, getBoundingClientRect: () => ({top: 0})}];
+  const groups = [100, 0].map((top, index) => ({dataset: {batchId: 'step-' + (index + 1)},
+    querySelector(selector) {assert.equal(selector, '.m-sample-tile'); return {getBoundingClientRect: () => ({top})};}}));
   const grid = {scrollTop: 0, querySelectorAll() {return groups;}, getBoundingClientRect() {return {top: 0};}};
   const panel = {querySelector() {return grid;}};
   value._scrollOverviewToBatch(panel, value._sampleDataModel().batches[0]);
@@ -415,13 +403,12 @@ test('new-sample action only clears the global notice after reaching the latest 
 test('closing a historical lightbox preserves the new-sample notice and overview position', () => {
   const value = app([image('step-1'), image('step-2')]);
   value.previewLightboxOpen = true; value.previewHasNew = true; value.sampleBatchId = 'step-1';
-  let marked = '', scrolled = '';
+  let scrolled = '';
   value._sampleOverviewPanel = () => ({querySelector() {return null;}});
-  value._markSampleTimeline = (panel, batch) => {marked = batch.id;};
   value._scrollOverviewToBatch = (panel, batch) => {scrolled = batch.id;};
   value.closePreviewLightbox(); value.clearPreviewLightbox();
   assert.equal(value.previewHasNew, true);
-  assert.equal(marked, ''); assert.equal(scrolled, '');
+  assert.equal(scrolled, '');
 });
 
 test('a hundred multi-image sampling points render a hundred collapsed covers', () => {
@@ -537,13 +524,14 @@ test('FLIP scatters visible children from their cover and translates displaced n
   const value = app([image('step-1', 'fox', 2)]);
   const animations = [];
   const rect = (left, top) => ({left, top, right: left + 100, bottom: top + 120, width: 100, height: 120});
-  const node = key => ({animate(frames, options) {animations.push({key, frames, options}); return {};}});
+  const node = key => ({animate(frames, options) {animations.push({key, frames, options}); return {finished: new Promise(() => {})};}});
   const before = new Map([['first', {node: node('first'), batchId: 'step-1', rect: rect(0, 0)}],
     ['neighbor', {node: node('neighbor'), batchId: 'step-2', rect: rect(112, 0)}]]);
   const after = new Map([['first', {node: node('first'), batchId: 'step-1', rect: rect(0, 0)}],
     ['child', {node: node('child'), batchId: 'step-1', rect: rect(112, 0)}],
     ['neighbor', {node: node('neighbor'), batchId: 'step-2', rect: rect(0, 132)}],
     ['offscreen-child', {node: node('offscreen-child'), batchId: 'step-1', rect: rect(0, 1000)}]]);
+  after.forEach(item => {item.visual = item.node; item.node = {animate() {throw new Error('interactive tile must remain static');}};});
   value._captureSampleLayout = () => after;
   value._animateSampleLayout({getBoundingClientRect: () => ({left: 0, top: 0, right: 300, bottom: 400})}, before, 'step-1');
   assert.deepEqual(animations.map(item => item.key), ['child', 'neighbor']);
@@ -562,7 +550,7 @@ test('collapsing visible children flies them back without grid slots and cleans 
     querySelectorAll(selector) {return selector === '[data-dialog-opens]' ? [{removeAttribute() {dialogOpenerRemoved = true;}}] : [];},
     setAttribute(name, data) {attributes.set(name, data);},
     remove() {this.isConnected = false;}, animate(keyframes) {frames = keyframes; return {finished: new Promise(resolve => {finish = resolve;})};}};
-  const first = {node: {}, rect: rect(0), batchId: 'step-1'};
+  const first = {node: {}, visual: {animate() {throw new Error('the unchanged cover visual must remain still');}}, rect: rect(0), batchId: 'step-1'};
   const before = new Map([['first', first], ['child', {rect: rect(112), batchId: 'step-1', node: {animate() {}, cloneNode() {return ghost;}}}]]);
   value._captureSampleLayout = () => new Map([['first', first]]);
   value._updateSampleExpansionMedia = (panel, update) => {cleaned++; update();};
@@ -666,7 +654,7 @@ test('closing a spread and viewing the latest group replace its cards through th
   assert.deepEqual(operations, [{ids: ['step-1'], preserveId: '', animate: false}]);
 });
 
-test('explicitly selecting the latest timeline item resumes following and closes historical details', () => {
+test('jumping to the latest batch resumes following and closes historical details', () => {
   const value = app([image('step-1', 'fox', 2), image('step-2', 'fox', 2)]);
   value.sampleExpandedBatchId = value.sampleBatchId = 'step-1';
   value._sampleExpansionPausedFollow = true; value._sampleOverviewAtEnd = false; value.previewHasNew = true;
@@ -674,7 +662,7 @@ test('explicitly selecting the latest timeline item resumes following and closes
   const panel = {querySelector() {return null;}, querySelectorAll() {return [];}};
   value._sampleOverviewPanel = () => panel;
   value._replaceSampleBatchCards = () => {removed = true;};
-  value.sampleTimelineClick({currentTarget: {dataset: {batchId: 'step-2'}}}, 1);
+  value.jumpToLatestOverviewBatch();
   assert.equal(removed, true);
   assert.equal(value.sampleExpandedBatchId, '');
   assert.equal(value.sampleBatchId, 'step-2');
@@ -929,15 +917,19 @@ test('outline observers and pending geometry frames are disconnected when the ru
   } finally {fixture.restore(); global.ResizeObserver = oldObserver; global.requestAnimationFrame = oldFrame; global.cancelAnimationFrame = oldCancel;}
 });
 
-test('the persistent grid delegates main cards while ordinary matrix thumbnails retain their own click binding', () => {
+test('the persistent grid delegates single and double clicks while card visuals remain passive', () => {
   const value = app([image('step-1', 'fox', 2), image('step-1', 'cat', 2)]);
   const batch = value._sampleDataModel().byBatch.get('step-1');
   assert.doesNotMatch(value._sampleBatchCardHtml(key => value.t('monitor.' + key), batch, true), /@click=/);
-  assert.doesNotMatch(value._sampleThumbnailHtml(0, true, undefined, batch), /@click=/);
-  assert.match(value._sampleThumbnailHtml(0), /@click="openPreviewLightbox\(0\)"/);
+  assert.doesNotMatch(value._sampleThumbnailHtml(0, batch), /@click=/);
+  assert.doesNotMatch(value._sampleThumbnailHtml(0, batch), /@dblclick=/);
+  assert.match(value._sampleThumbnailHtml(0, batch), /<span class="m-sample-card-visual">/);
+  assert.match(value._sampleBatchCardHtml(key => key, batch, true), /<span class="m-sample-card-visual">/);
   const html = value._renderSamplesTab(key => value.t('monitor.' + key));
   assert.match(html, /@click="sampleGridClick\(\$event\)"/);
+  assert.match(html, /@dblclick="sampleGridDoubleClick\(\$event\)"/);
   assert.match(html, /@pointerdown="sampleGridPointerDown\(\$event\)"/);
+  assert.doesNotMatch(html, /@pointer(?:move|up|cancel)="sampleGridPointer/);
 });
 
 function delegatedCover(grid, id) {
@@ -947,6 +939,143 @@ function delegatedCover(grid, id) {
   grid.contains = node => node === cover;
   return {cover, target};
 }
+
+function delegatedImage(grid, index, key) {
+  const image = {dataset: {previewIndex: String(index), previewPath: key}};
+  image.closest = selector => selector === '.preview-grid-item[data-preview-index]' ? image : null;
+  const target = {closest: selector => selector === '.preview-grid-item[data-preview-index]' ? image : null};
+  grid.contains = node => node === image;
+  return {image, target};
+}
+
+test('document capture alone completes grid gestures before click bubbling and deferred rendering', async () => {
+  for (const gesture of ['click', 'drag-return', 'cancel', 'blank']) {
+    const fixture = expansionEvents(''), {value, listeners, capture, grid} = fixture;
+    const {target} = delegatedImage(grid, 0, 'step-1-fox.png');
+    grid.clientWidth = 500; grid.clientHeight = 400;
+    const html = value._renderSamplesTab(key => value.t('monitor.' + key));
+    const gridAttributes = html.match(/<div class="preview-grid m-sample-batches"([^>]+)>/)[1];
+    const bindings = new Map([...gridAttributes.matchAll(/@(pointerdown|pointermove|pointerup|pointercancel|click)="(\w+)\(\$event\)"/g)]
+      .map(([, type, method]) => [type, method]));
+    assert.deepEqual([...bindings.keys()].sort(), ['click', 'pointerdown']);
+    for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) assert.equal(capture.get(type), true);
+    const order = [];
+    value.sampleSidebarVisible = false;
+    value.openPreviewLightbox = index => {assert.equal(index, 0); value.previewLightboxOpen = true; order.push('open');};
+    value.closeSampleSidebarPreview = () => order.push('clear');
+    value.renderDashboard = () => order.push('render');
+    let gridMoves = 0;
+    const moveGridPointer = value.sampleGridPointerMove;
+    value.sampleGridPointerMove = event => {gridMoves++; moveGridPointer.call(value, event);};
+    const dispatch = (type, changes = {}) => {
+      const event = {target: grid, button: 0, pointerId: 1, detail: 1, clientX: 400, clientY: 300, ...changes};
+      event.composedPath = () => [event.target, grid];
+      event.currentTarget = global.document;
+      listeners.get(type)?.(event);
+      event.currentTarget = grid;
+      if (bindings.has(type)) value[bindings.get(type)](event);
+    };
+    try {
+      dispatch('pointerdown', {target: gesture === 'blank' ? grid : target});
+      if (gesture === 'blank') assert.equal(value._sampleGridPointer, null);
+      else value._sampleGridPointer.renderPending = true;
+      if (gesture === 'drag-return') {
+        dispatch('pointermove', {clientX: 420});
+        assert.equal(gridMoves, 1, 'document capture updates grid movement once');
+      }
+      const movesBeforeCompletion = gridMoves;
+      dispatch(gesture === 'cancel' ? 'pointercancel' : 'pointerup');
+      assert.equal(gridMoves - movesBeforeCompletion, gesture === 'blank' ? 0 : 1, 'completion checks the grid endpoint once');
+      await Promise.resolve();
+      assert.deepEqual(order, [], 'a native microtask checkpoint must leave the original click intact');
+      dispatch('click');
+      assert.deepEqual(order, gesture === 'click' ? ['open'] : gesture === 'blank' ? ['clear'] : []);
+      await afterSampleClick();
+      assert.deepEqual(order, gesture === 'click' ? ['open', 'render'] : gesture === 'blank' ? ['clear'] : ['render']);
+      assert.equal(value._sampleGridPointer, null);
+    } finally {fixture.restore();}
+  }
+});
+
+for (const sidebar of [false, true]) for (const retarget of ['grid', 'tile', 'image', 'outside']) {
+  test(`a stationary image press retains its file through ${retarget} retargeting with sidebar ${sidebar}`, async () => {
+    const fixture = expansionEvents(''), {value, listeners, grid, click, target: outside} = fixture;
+    const {target: pressed} = delegatedImage(grid, 0, 'step-1-fox.png');
+    const other = {dataset: {previewIndex: '1', previewPath: 'step-2-fox.png'}};
+    const target = retarget === 'grid' ? grid : retarget === 'outside' ? outside
+      : {closest: selector => retarget === 'image' && selector === '.preview-grid-item[data-preview-index]' ? other : null};
+    if (retarget === 'image') {const contains = grid.contains; grid.contains = node => node === other || contains(node);}
+    const opened = []; value.sampleSidebarVisible = sidebar;
+    value.openPreviewLightbox = index => {opened.push(index); value.previewLightboxOpen = true;};
+    try {
+      listeners.get('pointerdown')({target: pressed, button: 0, pointerId: 4, clientX: 400, clientY: 300});
+      value.sampleGridPointerDown({target: pressed, currentTarget: grid, button: 0, pointerId: 4, clientX: 400, clientY: 300});
+      listeners.get('pointerup')({target, pointerId: 4, clientX: 400, clientY: 300});
+      const event = click({target, currentTarget: grid, button: 0, detail: 1, pointerId: 4,
+        composedPath: () => retarget === 'outside' ? [target] : [target, grid]});
+      listeners.get('click')(event);
+      if (retarget !== 'outside') value.sampleGridClick(event);
+      await afterSampleClick();
+      assert.deepEqual(opened, sidebar ? [] : [0]);
+      if (sidebar) {assert.equal(value.previewStep, 0); assert.equal(value.sampleSidebarActive, true);}
+      assert.equal(value._sampleGridPointer, null);
+    } finally {fixture.restore();}
+  });
+}
+
+test('image presses retain file identity through reordered snapshots and never select a replacement for a deleted file', () => {
+  for (const deleted of [false, true]) {
+    const value = app([image('step-1'), image('step-2')]), grid = {};
+    const {target} = delegatedImage(grid, 0, 'step-1-fox.png');
+    const selected = []; value.selectSampleImage = index => selected.push(value.previews[index].path);
+    value.sampleGridPointerDown({target, currentTarget: grid, button: 0, pointerId: 1, clientX: 100, clientY: 100});
+    value.previews = deleted ? [value.previews[1]] : value.previews.slice().reverse();
+    value.sampleGridPointerUp({pointerId: 1, clientX: 100, clientY: 100});
+    value.sampleGridClick({target: grid, currentTarget: grid, button: 0, detail: 1, pointerId: 1, clientX: 100, clientY: 100});
+    assert.deepEqual(selected, deleted ? [] : ['step-1-fox.png']);
+  }
+});
+
+test('image press actions reject drags cancellations and mismatched pointers while keyboard clicks remain usable', () => {
+  for (const gesture of ['drag-return', 'cancel', 'different-pointer']) {
+    const value = app([image('step-1')]), grid = {}, {target} = delegatedImage(grid, 0, 'step-1-fox.png');
+    const selected = []; value.selectSampleImage = index => selected.push(index);
+    value.sampleGridPointerDown({target, currentTarget: grid, button: 0, pointerId: 1, clientX: 100, clientY: 100});
+    if (gesture === 'drag-return') value.sampleGridPointerMove({pointerId: 1, clientX: 120, clientY: 100});
+    if (gesture === 'cancel') value.sampleGridPointerCancel({pointerId: 1});
+    value.sampleGridPointerUp({pointerId: 1, clientX: 100, clientY: 100});
+    value.sampleGridClick({target: grid, currentTarget: grid, button: 0, detail: 1,
+      pointerId: gesture === 'different-pointer' ? 2 : 1, clientX: 100, clientY: 100});
+    assert.deepEqual(selected, [], gesture);
+    value.sampleGridClick({target, currentTarget: grid, button: 0, detail: 0});
+    assert.deepEqual(selected, [0]);
+  }
+});
+
+test('document capture treats moving visuals as cards and vacated static slots as workspace blank', () => {
+  const originalStyle = window.getComputedStyle;
+  window.getComputedStyle = () => ({opacity: '1'});
+  for (const visible of [true, false]) {
+    const fixture = expansionEvents(''), {value, listeners, grid, click} = fixture;
+    const {image: button, target} = delegatedImage(grid, 0, 'step-1-fox.png');
+    grid.clientWidth = 500; grid.clientHeight = 400;
+    const visual = {getBoundingClientRect: () => ({left: visible ? 350 : 100, right: visible ? 450 : 200, top: 250, bottom: 350})};
+    grid._sampleGridMotion = {items: [{button, visual}], animations: new Set([{}])};
+    let cleared = 0; const selected = [];
+    value.closeSampleSidebarPreview = () => {cleared++;}; value.selectSampleImage = index => selected.push(index);
+    const nativeTarget = visible ? grid : target;
+    try {
+      listeners.get('pointerdown')({target: nativeTarget, button: 0, pointerId: 1, clientX: 400, clientY: 300});
+      value.sampleGridPointerDown({target: nativeTarget, currentTarget: grid, button: 0, pointerId: 1, clientX: 400, clientY: 300});
+      listeners.get('pointerup')({pointerId: 1, clientX: 400, clientY: 300});
+      const event = click({target: nativeTarget, currentTarget: grid, button: 0, detail: 1, pointerId: 1, composedPath: () => [nativeTarget, grid]});
+      listeners.get('click')(event); value.sampleGridClick(event);
+      assert.equal(cleared, visible ? 0 : 1);
+      assert.deepEqual(selected, visible ? [0] : []);
+    } finally {fixture.restore();}
+  }
+  window.getComputedStyle = originalStyle;
+});
 
 test('a replaced cover without its own event listener switches A to B once through the grid', () => {
   const value = app([image('step-1', 'fox', 2), image('step-2', 'fox', 2)]);
@@ -1082,12 +1211,13 @@ test('document capture leaves in-grid cover clicks for the grid to switch exactl
 });
 
 test('a deferred sample snapshot resumes after pointer completion and the original click', async () => {
-  for (const cancel of [false, true]) {
+  for (const kind of ['cover', 'image']) for (const cancel of [false, true]) {
     const value = app([image('step-1', 'fox', 2)]);
-    const grid = {}, {target} = delegatedCover(grid, 'step-1'), order = [];
+    const grid = {}, {target} = kind === 'cover' ? delegatedCover(grid, 'step-1') : delegatedImage(grid, 0, 'step-1-fox.png'), order = [];
     value.currentRoute = 'monitor-dashboard'; value.monitorTab = 'samples';
     value.renderDashboard = () => order.push('render');
     value.toggleSampleBatch = () => order.push('click');
+    value.selectSampleImage = () => order.push('click');
     value.sampleGridPointerDown({currentTarget: grid, target, button: 0, pointerId: 1, clientX: 400, clientY: 300});
     value._sampleGridPointer.renderPending = true;
     const event = {pointerId: 1, clientX: 400, clientY: 300};
@@ -1167,7 +1297,7 @@ test('delegated main image clicks retain file identity if a snapshot changed its
   const imageButton = {dataset: {previewIndex: '0', previewPath: 'step-2-fox.png'}};
   const target = {closest: selector => selector === '.preview-grid-item[data-preview-index]' ? imageButton : null};
   const grid = {contains: node => node === imageButton};
-  let opened = -1; value.openPreviewLightbox = index => {opened = index;};
+  let opened = -1; value.selectSampleImage = index => {opened = index;};
   value.sampleGridClick({currentTarget: grid, target, button: 0, detail: 1});
   assert.equal(opened, 1);
 });
