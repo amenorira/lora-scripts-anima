@@ -3179,7 +3179,6 @@ input[type="range"]::-webkit-slider-thumb {
 .m-logs-section .monitor-logs-container {
   border: 1px solid var(--monitor-card-border); border-radius: var(--monitor-radius);
 }
-.m-samples-toolbar { min-height: 42px; margin-bottom: 6px; padding: 4px 8px; }
 .m-samples-toolbar .m-view-actions { justify-content: flex-end; }
 .m-samples-sort { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 12px; white-space: nowrap; }
 .m-samples-sort .m-sample-select { width: 132px; }
