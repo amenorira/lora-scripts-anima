@@ -3599,7 +3599,7 @@ input[type="range"]::-webkit-slider-thumb {
 
 /* ── 样本查看器 ── */
 .preview-lightbox {
-  --image-viewer-overlay: rgba(0, 0, 0, .7);
+  --image-viewer-overlay: var(--bg-overlay);
   --image-viewer-bg: var(--bg-surface);
   --image-viewer-bar: var(--bg-surface);
   --image-viewer-border: var(--border-default);
