@@ -96,6 +96,11 @@ def run_solver(velocity, initial, *, options, steps, flow_shift, architecture, g
     metadata = {**options, "architecture": architecture, "seed": generator.initial_seed(), "width": width, "height": height,
                 "flow_shift": flow_shift, "requested_steps": steps, "effective_steps": len(sigmas) - 1,
                 "sigmas": sigmas.tolist(), "solver_version": 1}
+    from .metadata import record_parameters
+
+    record_parameters(seed=metadata["seed"], width=width, height=height,
+                      steps=metadata["effective_steps"], requested_steps=steps,
+                      sampler=options["sampler"], scheduler=options["scheduler"], flow_shift=flow_shift)
     logger.info("Preview sampling / 预览采样: %s", json.dumps(metadata, ensure_ascii=False))
     calls = 0
 

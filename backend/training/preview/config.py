@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from pathlib import Path
 
 
@@ -11,6 +12,28 @@ CONFIG_NAME = "preview_loras.json"
 PROFILES = {"moss-image-lora": "moss_image", "anima-lora": "anima"}
 SAMPLERS = ("euler", "er_sde", "euler_a", "dpmpp_2m", "heun")
 SCHEDULERS = ("native", "simple", "sgm_uniform", "beta", "beta57", "normal", "karras", "exponential")
+DEFAULT_QUALITY_PROMPTS = "masterpiece, best quality, highres, absurdres"
+
+
+def compose_preview_prompts(form, prompts):
+    """Prepend quality text without changing editable prompts or sample grouping."""
+    if not form.get("enable_quality_prompts"):
+        return prompts
+    quality = re.sub(r"[\r\n]+", ", ", str(form.get("quality_prompts") or ""))
+    quality = re.sub(r"^[\s,，]+|[\s,，]+$", "", quality)
+    if not quality or not prompts or not prompts.strip():
+        return prompts
+
+    def prepend(prompt):
+        body = re.sub(r"^[\s,，]+", "", prompt)
+        return f"{quality}, {body}" if body.strip() else prompt
+
+    if form.get("model_train_type") == "moss-image-lora":
+        return prepend(prompts)
+    return "\n".join(
+        prepend(line) if line.strip() and not line.lstrip().startswith("#") else line
+        for line in prompts.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    )
 
 
 def sampling_options(sampler=None, scheduler=None):
@@ -35,7 +58,7 @@ def normalize_loras(value, *, check_files=False, allow_incomplete=False):
     result = []
     for index, row in enumerate(value, 1):
         if not isinstance(row, dict):
-            raise ValueError(f"Preview LoRA #{index}: expected path and multiplier / 需要路径和倍率")
+            raise ValueError(f"Preview LoRA #{index}: expected path and multiplier / 需要路径和权重")
         path = row.get("path", "")
         if not isinstance(path, str):
             raise ValueError(f"Preview LoRA #{index}: path must be text / 路径必须是文本")
@@ -49,7 +72,7 @@ def normalize_loras(value, *, check_files=False, allow_incomplete=False):
         except (ValueError, TypeError, OverflowError):
             multiplier = float("nan")
         if isinstance(raw, bool) or not math.isfinite(multiplier):
-            raise ValueError(f"Preview LoRA #{index}: multiplier must be finite / 倍率必须是有限数值")
+            raise ValueError(f"Preview LoRA #{index}: multiplier must be finite / 权重必须是有限数值")
         if not path and multiplier != 0 and not allow_incomplete:
             raise ValueError(f"Preview LoRA #{index}: path is required / 请填写文件路径")
         file = Path(path).expanduser()

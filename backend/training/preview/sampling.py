@@ -200,4 +200,5 @@ def wrap_sampler(original, document):
                     _release_cuda_cache(accelerator.device)
 
     sample_images._anima_preview_loras = True
+    sample_images._anima_preview_document = document
     return sample_images

@@ -120,6 +120,8 @@ def _build_train_env(
     env["ANIMA_RUN_DIR"] = run_dir or artifact_dir
     env["ANIMA_TRAIN_LOG_LOCK"] = str((Path(run_dir or artifact_dir) / ".train-log.lock").resolve())
     env["ANIMA_TASK_ID"] = task_id
+    env["ANIMA_SAMPLE_METADATA"] = "1"
+    env["ANIMA_SAMPLE_SESSION"] = str(time.time_ns())
     env["ANIMA_TENSORBOARD_DIR"] = str((Path(run_dir or artifact_dir) / "log").resolve())
     from backend.training.config.metrics_config import training_metrics_environment
 

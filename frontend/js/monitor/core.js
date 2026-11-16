@@ -10,21 +10,22 @@ window.monitorCoreMixin = {
   previewsVersion: 0, trainParamsVersion: 0,
   runDetailLoading: false, runDetailError: '',
   gpuInfo: null, sysInfo: null, lossSeries: [], lossDataVersion: 0, trainParams: [],
-  previews: [], previewStep: 0, previewSortDir: 'desc', previewsLoading: false, historyItems: [], runningTask: null,
+  previews: [], previewStep: 0, previewsLoading: false, historyItems: [], runningTask: null,
   // Refresh ownership and cacheable snapshot freshness advance independently.
   _previewRequestSeq: 0, _previewSnapshotSeq: 0,
   weakNetworkMode: true,
   _previewMediaQueue: [], _previewMediaAbort: null, _previewMediaLoading: false, _previewMediaPaused: false, _previewMediaObjectUrls: [], _previewMediaGeneration: 0,
-  previewMetadataOpen: false, previewMetadataLoading: false, previewMetadata: null, previewMetadataError: '', _previewMetadataRequestSeq: 0, _previewMetadataAbort: null,
   configSnapshotOpen: false, configSnapshotLoading: false, configSnapshotError: '', configSnapshotRunDir: '',
   _currentSnapshot: null, _snapshotRequestSeq: 0, _snapshotAbort: null, _reuseRequestSeq: 0, _reuseAbort: null,
   historyReuseBusy: '', _historyReuseApplying: false,
   historyReuseSource: '', historyReuseWarning: '', _historyReuseUndo: null,
-  previewReference: null,
+  _historyCardPointer: null,
   logAutoScroll: true, logLines: [],
   _logContentVersion: 0, monitorTab: 'overview',
   monitorParamQuery: '',
-  outputFiles: [], outputFilesVersion: 0, outputFilesLoading: false, outputFilesSelected: {},
+  monitorParamsExpanded: false,
+  _monitorParamContext: null, _monitorParamCache: null,
+  outputFiles: [], outputFilesVersion: 0, outputFilesLoading: false, outputFilesSelected: {}, _outputFilesLoaded: false,
   outputFilesError: '', _outputFilesRunDir: '', _outputFilesRequestSeq: 0,
   _outputFilesKnownCount: 0, _outputCountVersion: 0,
   outputSearch: '', outputFilter: 'all',
@@ -40,8 +41,9 @@ window.monitorCoreMixin = {
   logFullOffset: 0,            // 当前页起始行号
   logFullMatches: [],          // 全文件搜索匹配行号
   logFullQuery: '',            // 当前搜索词
+  _logFullResultQuery: '',     // 已返回的匹配所属的搜索词
   logFullMatchIdx: -1,         // 当前定位的匹配在 logFullMatches 中的下标
-  logFullLoading: false,
+  logFullLoading: false, logRefreshFeedback: false, _logRefreshFeedbackTimer: null,
   logTotal: 0,                 // 当前日志源的规范化总行数，独立于分页/尾部缓冲。
   _logTailOffset: 0,
   _logFullLoaded: false,       // full 模式末页是否已加载（首屏/重连自动拉取用）
@@ -50,9 +52,16 @@ window.monitorCoreMixin = {
   _logSliceRequestSeq: 0,      // 日志分页请求序号；切换实时/历史源时丢弃过期响应
   _logFullSourceKey: '',       // 当前完整日志缓冲所属的 task/run，切页时用于安全复用
 
+  _resetLogRefreshFeedback() {
+    if (this._logRefreshFeedbackTimer) clearTimeout(this._logRefreshFeedbackTimer);
+    this._logRefreshFeedbackTimer = null;
+    this.logRefreshFeedback = false;
+  },
+
   // ── 历史页筛选状态 ──
   historySearch: '', historyFilter: 'all',  // all|completed|failed|terminated
-  historyLoading: false, historyError: '', historyDeleting: '',
+  historyLoading: false, historyRefreshing: false, historyRefreshFeedback: false,
+  historyError: '', historyDeleting: '', _historyLoaded: false, _historyRefreshFeedbackTimer: null,
   _historyRequestSeq: 0, _historyTimer: null, _historyTaskSignature: null, _historyProgressPending: false,
 
   // ── 节流渲染：每帧最多渲染一次 Dashboard ──
@@ -143,6 +152,7 @@ window.monitorCoreMixin = {
   liveTaskBoundaryAt: 0,      // 最近一次所有权变更（claim/release）的本地时刻
   _statePollTimer: null,
   _statePollInFlight: false,
+  _statePollDiscard: false,
 
   claimLiveTask(taskId) {
     const id = String(taskId || '').trim();
@@ -203,6 +213,7 @@ window.monitorCoreMixin = {
   async _pollTrainingState() {
     if (this._statePollInFlight) return;
     this._statePollInFlight = true;
+    this._statePollDiscard = false;
     const requestedAt = Date.now();
     let timeout;
     try {
@@ -222,7 +233,7 @@ window.monitorCoreMixin = {
       // WS 掉线时资源圆环仍有数据（状态轮询顺带带回硬件采样）。
       if (!this.realtimeReady && snapshot.hardware) this.handleRealtimeHardware(snapshot.hardware);
       if (typeof this.applyRegularizationActivity === 'function') this.applyRegularizationActivity(snapshot, requestedAt);
-      this._applyManagedTrainingState(snapshot, requestedAt);
+      if (!this._statePollDiscard) this._applyManagedTrainingState(snapshot, requestedAt);
     } catch (_) {
       // 后端不可达：保持最后已知状态；连接指示由探针/WS 状态机负责。
     } finally {
@@ -337,12 +348,14 @@ window.monitorCoreMixin = {
     );
 
     if (nextLogSourceKey && this._logFullSourceKey && this._logFullSourceKey !== nextLogSourceKey) {
+      this._resetLogRefreshFeedback();
       this._logSliceRequestSeq++;
       this.logFullLoading = false;
       this.logFullLines = [];
       this.logFullOffset = 0;
       this.logTotal = 0;
       this.logFullMatches = [];
+      this._logFullResultQuery = '';
       this.logFullMatchIdx = -1;
       this._logFullLoaded = false;
       this._logFullNeedsResync = false;
@@ -441,22 +454,24 @@ window.monitorCoreMixin = {
       if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
       return wasRunning;
     }
+    this._resetLogRefreshFeedback();
     this.logLines = [];
     this.logFullLines = [];
     this.logFullOffset = 0;
     this.logTotal = 0;
     this._logTailOffset = 0;
     this.logFullMatches = [];
+    this._logFullResultQuery = '';
     this._logFullSourceKey = '';
     this.trainParams = [];
     this.trainParamsVersion++;
     this.previews = [];
+    this.resetSampleBrowser?.();
     this.previewsVersion++;
     this.previewStep = 0;
     this._resetOutputFilesForRun('');
     this._cancelPreviewMediaQueue();
     this._releasePreviewMediaObjectUrls();
-    this._resetPreviewMetadata();
     this._logFullNeedsResync = true;
     if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
     return wasRunning;
@@ -529,6 +544,7 @@ window.monitorCoreMixin = {
     const eventSourceKey = this._monitorRealtimeTopic || '';
 
     if (eventSourceKey && this._logFullSourceKey && this._logFullSourceKey !== eventSourceKey) {
+      this._resetLogRefreshFeedback();
       this._logSliceRequestSeq++;
       this.logFullLoading = false;
       this.logLines = [];
@@ -537,6 +553,7 @@ window.monitorCoreMixin = {
       this.logFullLines = [];
       this.logFullOffset = 0;
       this.logFullMatches = [];
+      this._logFullResultQuery = '';
       this.logFullMatchIdx = -1;
       this._logFullLoaded = false;
       this._logFullNeedsResync = true;
@@ -551,6 +568,7 @@ window.monitorCoreMixin = {
       this._logSliceRequestSeq++;
       this.logFullLoading = false;
       this.logFullMatches = [];
+      this._logFullResultQuery = '';
       this.logFullMatchIdx = -1;
       this._logFullNeedsResync = false;
     }
@@ -603,7 +621,7 @@ window.monitorCoreMixin = {
     const now = Date.now();
     if (now - this._lastRealtimePreviewRefreshAt < 500) return;
     this._lastRealtimePreviewRefreshAt = now;
-    this.refreshPreviews();
+    this.refreshPreviews(false);
     if (this.monitorTab === 'outputs') void this.loadOutputFiles();
   },
 
@@ -670,6 +688,9 @@ window.monitorCoreMixin = {
   },
   stopMonitorRealtime() {
     this._invalidatePreviewRequest();
+    this._sampleLayoutAction++;
+    this._cancelSampleGridMotion?.(this._sampleOverviewPanel?.()?.querySelector('.preview-grid'));
+    this._disconnectSampleExpansionUI?.();
     // Invalidate a detail request that is still fetching disk-backed data.
     if (this._monitorClockTimer) clearInterval(this._monitorClockTimer);
     this._monitorClockTimer = null;
@@ -682,7 +703,6 @@ window.monitorCoreMixin = {
     this._logFullSlide = false;
     this._cancelPreviewMediaQueue();
     this._releasePreviewMediaObjectUrls();
-    this._resetPreviewMetadata();
     if (typeof this.closePreviewLightbox === 'function') this.closePreviewLightbox();
   },
 

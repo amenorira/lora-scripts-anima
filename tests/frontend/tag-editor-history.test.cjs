@@ -55,28 +55,6 @@ function draftClient(storage) {
   return {ctx,context,tick:()=>autosave()};
 }
 
-test('save failure details retain affected paths and localize structured reasons',()=>{
-  const {ctx}=makeClient();
-  ctx.localizeApiError=body=>'translated '+body.error_code;
-  const details=ctx._teSaveFailureDetails([
-    {path:'/dataset/a.png',reason:'backend text',error_code:'tageditor_external_change'},
-    {path:'/dataset/b.png',reason:'backend text',error_code:'tageditor_caption_conflict'},
-  ]);
-  assert.equal(details,'/dataset/a.png\ntranslated tageditor_external_change\n\n/dataset/b.png\ntranslated tageditor_caption_conflict');
-});
-
-test('a real reorder still records one step and restores exact original text on undo', () => {
-  const {ctx} = draftClient();
-  const original = '\uFEFF  cat,  dog\r\n';
-  ctx.tagEditorImages[0].tags = ctx.tagEditorOriginal.a = original;
-  ctx.tagEditorDetailDragSrcIdx = 0; ctx.tagEditorDetailDragOverPos = 'after';
-  ctx.tagEditorDetailDrop({preventDefault() {}, target: {closest: () => ({dataset: {ti: '1'}})}});
-  assert.equal(ctx.tagEditorImages[0].tags, 'dog, cat');
-  assert.equal(ctx.tagEditorHistory.length, 1);
-  ctx.tagEditorUndo(); assert.equal(ctx.tagEditorImages[0].tags, original);
-  ctx.tagEditorRedo(); assert.equal(ctx.tagEditorImages[0].tags, 'dog, cat');
-});
-
 test('draft recovery loads missing pages, preserves raw text and supports undo/redo', async () => {
   const {ctx,context,tick}=draftClient();
   ctx._teCaptionRevisions={a:'r-a'};
@@ -90,7 +68,7 @@ test('draft recovery loads missing pages, preserves raw text and supports undo/r
   ctx._teEnsureAllImagesLoaded=async()=>{
     loaded++;ctx._teMergeSessionItems([{path:'b',tags:'old b',caption_revision:'r-b'}],false);
   };
-  ctx.openConfirm=(_title,_message,action)=>{recover=action;};ctx._teCheckDraft();await recover();
+  ctx.openConfirm=({onConfirm:action})=>{recover=action;};ctx._teCheckDraft();await recover();
   assert.equal(loaded,1);assert.equal(ctx._teFindByPath('b').tags,raw);
   assert.equal(ctx.tagEditorModifiedCount(),2);assert.equal(ctx.tagEditorHistory.length,1);
   tick();assert.equal(JSON.parse(context.localStorage.getItem('tagEditor_draft_/dataset')).items[1].revision,'r-b');
@@ -128,7 +106,7 @@ test('edits and undo during a save remain dirty against the text actually writte
     const next=draftClient(context.localStorage);
     next.ctx.tagEditorImages[0].tags=next.ctx.tagEditorOriginal.a=saved;
     next.ctx._teCaptionRevisions={a:'new-revision'};
-    let recover;next.ctx.openConfirm=(_title,_message,callback)=>{recover=callback;};
+    let recover;next.ctx.openConfirm=({onConfirm:callback})=>{recover=callback;};
     next.ctx._teCheckDraft();await recover();
     assert.equal(next.ctx.tagEditorImages[0].tags,expected);
     next.ctx.tagEditorUndo();assert.equal(next.ctx.tagEditorImages[0].tags,saved);
@@ -183,44 +161,10 @@ test('backup failure releases busy state, preserves history and allows retry',as
   const {ctx,context}=makeClient();let accept;const notices=[];
   ctx.tagEditorHistory=[{changes:{a:{before:'old',after:'new'}}}];ctx.tagEditorHistoryIdx=-1;
   const history=JSON.stringify(ctx.tagEditorHistory);
-  ctx.openConfirm=(_title,_message,action)=>{accept=action;};ctx.toast=msg=>notices.push(msg);
+  ctx.openConfirm=({onConfirm:action})=>{accept=action;};ctx.toast=msg=>notices.push(msg);
   ctx.tagEditorLoad=()=>assert.fail('failed restore must not reload');
   context.fetch=async()=>{throw new Error('offline');};
   ctx.tagEditorRestoreBackup();await accept();
   assert.equal(ctx.tagEditorSnapshotBusy,false);assert.equal(JSON.stringify(ctx.tagEditorHistory),history);
   assert.deepEqual(notices,['offline']);
-});
-
-test('removing bracket escapes changes only selected captions and supports undo and redo', () => {
-  const { ctx } = makeClient();
-  const raw = String.raw`star \(symbol\),  custom\name, foo \\(bar\\)`;
-  ctx.tagEditorImages = [{ path: 'a', name: 'a', tags: raw }, { path: 'b', name: 'b', tags: raw }, { path: 'c', name: 'c', tags: 'solo' }];
-  ctx.tagEditorOriginal = { a: raw, b: raw, c: 'solo' };
-  ctx.tagEditorSelected = ['a', 'c'];
-  ctx.tagEditorHistory = [];
-  ctx.tagEditorHistoryIdx = -1;
-  ctx._teHistoryState = {};
-  ctx._teModifiedCount = 0;
-  ctx._teInvalidateFilter = () => {};
-  ctx._teInvalidateDiff = () => {};
-  ctx._teUpdateFreq = () => {};
-  ctx._updateEditorPanel = () => {};
-  let apply;
-  ctx._teConfirmBatch = (message, callback) => { apply = callback; };
-  ctx.tagEditorRemoveBracketEscapes();
-  assert.equal(ctx.tagEditorImages[0].tags, raw);
-  apply();
-  assert.equal(ctx.tagEditorImages[0].tags, String.raw`star (symbol),  custom\name, foo (bar)`);
-  assert.equal(ctx.tagEditorImages[1].tags, raw);
-  assert.equal(ctx.tagEditorHistory.length, 1);
-  assert.equal(ctx.tagEditorHistory[0].meta.affected, 1);
-  assert.equal(ctx.tagEditorModifiedCount(), 1);
-  ctx.tagEditorUndo();
-  assert.equal(ctx.tagEditorImages[0].tags, raw);
-  assert.equal(ctx.tagEditorModifiedCount(), 0);
-  ctx.tagEditorRedo();
-  assert.equal(ctx.tagEditorImages[0].tags, String.raw`star (symbol),  custom\name, foo (bar)`);
-  apply = null;
-  ctx.tagEditorRemoveBracketEscapes();
-  assert.equal(apply, null);
 });

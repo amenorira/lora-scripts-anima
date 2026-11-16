@@ -22,7 +22,7 @@ window.monitorHistoryRenderMixin = {
       html += '</div>';
       html += '<div class="hist-name"><b>' + this.esc(r.name || r.id || '') + '</b></div>';
       html += '<div class="hist-meta">' + this.esc(t('historyModel')) + ': ' + this.esc((r.model || '').split(/[\\\/]/).pop() || this.t('common.unknown')) + '</div>';
-      html += '<div class="hist-meta">' + this.esc(t('historyLR')) + ': ' + this.esc(this._formatLearningRate(r.lr, r.lr ?? '?')) + ' | ' + this.esc(t('historyDim')) + ': ' + this.esc(r.dim || '?') + (r.alpha ? ' / α ' + this.esc(r.alpha) : '') + ' | ' + this.esc(t('historyEpochs')) + ': ' + this.esc(r.epochs || '?') + '</div>';
+      html += '<div class="hist-meta">' + this.esc(t('historyLR')) + ': ' + this.esc(this._formatLearningRate(r.lr, r.lr ?? '?')) + ' | ' + this.esc(t('snapshotRankAlpha')) + ': ' + this.esc(r.dim ?? '?') + ' / ' + this.esc(r.alpha === '' ? '?' : r.alpha ?? '?') + ' | ' + this.esc(t('historyEpochs')) + ': ' + this.esc(r.epochs || '?') + '</div>';
       if (r.run_dir) html += '<div class="hist-rundir">' + this.esc(t('runDir')) + ': ' + this.esc(r.run_dir) + '</div>';
       if (r.artifact_available === false && r.artifact_dir) html += '<div class="hist-artifact is-offline">' + this.esc(r.artifact_dir) + '</div>';
       html += '<div class="hist-actions"><button class="hist-action hist-action-primary" @click="navigate(\'monitor-dashboard\')">' + this.esc(t('viewDashboard')) + '</button></div>';
@@ -42,7 +42,15 @@ window.monitorHistoryRenderMixin = {
         const controlId = this.esc('history-' + encodeURIComponent(h.run_dir || ''));
         const artifactOffline = h.artifact_available === false;
         const unavailable = h.deletion_pending ? ' disabled' : '';
+        const configAvailable = !!h.run_dir && !h.deletion_pending;
         html += '<div class="card history-card' + (artifactOffline ? ' history-artifact-offline' : '') + '">';
+        html += '<div class="hist-card-content' + (configAvailable ? ' is-clickable' : '') + '"';
+        if (configAvailable) {
+          html += ' id="' + controlId + '-card" role="button" tabindex="0" aria-label="' + this.esc(t('viewConfig') + ': ' + (h.name || h.run_dir)) + '"';
+          html += ' @pointerdown="_historyCardPointer = { x: $event.clientX, y: $event.clientY }"';
+          html += ' @click="_viewHistoryCardSnapshot(\'' + runDirJs + '\', $event)" @keydown.enter.prevent="$el.click()" @keydown.space.prevent="$el.click()"';
+        }
+        html += '>';
         html += '<div class="hist-card-head">';
         html += '<h2 class="hist-name" title="' + this.esc(h.name || '') + '">' + this.esc(h.name || '') + '</h2>';
         const statusColors = { completed: 'ok', failed: 'danger', terminated: 'muted' };
@@ -59,14 +67,14 @@ window.monitorHistoryRenderMixin = {
         });
         html += '</div><div class="hist-meta hist-truncate" title="' + this.esc(h.model || '') + '">' + this.esc(t('historyModel')) + ' · ' + this.esc(h.model || '') + '</div>';
         html += '<dl class="hist-stats">';
-        [[t('historyLR'), this._formatLearningRate(h.lr, h.lr ?? '—')], [t('historyDim') + ' / α', String(h.dim ?? '—') + ' / ' + (h.alpha === '' ? '—' : h.alpha ?? '—')], [t('historyEpochs'), h.epochs]].forEach(([label, value]) => {
+        [[t('historyLR'), this._formatLearningRate(h.lr, h.lr ?? '—')], [t('snapshotRankAlpha'), String(h.dim ?? '—') + ' / ' + (h.alpha === '' ? '—' : h.alpha ?? '—')], [t('historyEpochs'), h.epochs]].forEach(([label, value]) => {
           html += '<div><dt>' + this.esc(label) + '</dt><dd>' + this.esc(value ?? '—') + '</dd></div>';
         });
         html += '</dl>';
         if (h.dataset) html += '<div class="hist-dataset hist-truncate" title="' + this.esc(h.dataset) + '">' + this.esc(t('dataset')) + ' · ' + this.esc(h.dataset) + '</div>';
         if (artifactOffline && h.artifact_dir) html += '<div class="hist-artifact is-offline">' + this.esc(h.artifact_dir) + '</div>';
         if (h.deletion_pending || h.warning) html += '<p class="hist-warning">' + this.esc(t(h.deletion_pending ? 'historyCleanupPending' : 'historyResultUnreadable')) + '</p>';
-        html += '</div>';
+        html += '</div></div>';
         if (h.run_dir) {
           html += '<div class="hist-actions">';
           html += '<button class="hist-action hist-action-primary" @click.stop="viewRunDetail(\'' + runDirJs + '\')"' + unavailable + '>' + this.esc(t('viewDetails')) + '</button>';
@@ -87,9 +95,23 @@ window.monitorHistoryRenderMixin = {
     const activeId = el.contains?.(document.activeElement) ? document.activeElement.id : '';
     el.innerHTML = html;
     if (activeId) document.getElementById(activeId)?.focus({ preventScroll: true });
+    this._historyRenderLocale = this.locale;
+    this._historyRenderLocaleRevision = this.localeRevision;
     } catch (e) {
       el.innerHTML = '<div class="dashboard-empty" style="padding:48px"><p>⚠ ' + (this.t ? this.t('monitor.historyRenderError') : 'Error displaying history. Check browser console (F12).') + '</p></div>';
     }
+  },
+
+  _viewHistoryCardSnapshot(runDir, event) {
+    const press = this._historyCardPointer;
+    this._historyCardPointer = null;
+    // Only suppress this gesture's drag selection. Fast repeated clicks can
+    // leave a browser word selection, which must not block later activation.
+    if (event.detail && press && Math.hypot(event.clientX - press.x, event.clientY - press.y) >= 4) {
+      const selection = window.getSelection?.();
+      if (selection?.isCollapsed === false && selection.containsNode(event.currentTarget, true)) return;
+    }
+    this.viewSnapshot(runDir);
   },
 
   async downloadRunOutputs(runDir) {
@@ -134,57 +156,391 @@ window.monitorHistoryRenderMixin = {
     }
   },
 
+  _readSnapshotYamlQuoted(line, start, quote, continuation = false) {
+    let i = start + (continuation ? 0 : 1);
+    while (i < line.length) {
+      if (quote === '"' && line[i] === '\\') {
+        if (i + 1 === line.length) return { end: line.length, closed: false, escapedBreak: true };
+        i += 2; continue;
+      }
+      if (line[i] === quote) {
+        if (quote === "'" && line[i + 1] === "'") { i += 2; continue; }
+        return { end: i + 1, closed: true, escapedBreak: false };
+      }
+      i++;
+    }
+    return { end: line.length, closed: false, escapedBreak: false };
+  },
+
+  // Highlight the snapshot without parsing or rewriting its contents. Every
+  // token is escaped before it is inserted into the modal's HTML.
+  _highlightSnapshotYaml(source) {
+    const span = (type, text) => '<span class="yaml-' + type + '">' + this.esc(text) + '</span>';
+    const findKey = (line, start, inFlow) => {
+      if (start >= line.length || line[start] === '[' || line[start] === '{') return null;
+      let end = start;
+      const quotedKey = line[start] === '"' || line[start] === "'";
+      if (quotedKey) {
+        const quoted = this._readSnapshotYamlQuoted(line, start, line[start]);
+        if (!quoted.closed) return null;
+        end = quoted.end;
+      } else {
+        while (end < line.length) {
+          const char = line[end];
+          if (char === '#' && (end === start || /\s/.test(line[end - 1]))) return null;
+          if (inFlow && /[\[\]{},]/.test(char)) return null;
+          if (char === ':' && (end + 1 === line.length || /\s/.test(line[end + 1]) || (inFlow && /[\[\]{},]/.test(line[end + 1])))) break;
+          end++;
+        }
+        while (end > start && /[ \t]/.test(line[end - 1])) end--;
+      }
+      let colon = end;
+      while (/[ \t]/.test(line[colon] || '')) colon++;
+      if (end === start || line[colon] !== ':' || (colon + 1 < line.length && !/\s/.test(line[colon + 1]) && !(inFlow && (quotedKey || /[\[\]{},]/.test(line[colon + 1]))))) return null;
+      return { end, colon };
+    };
+
+    const parts = String(source).split(/(\r\n|\r|\n)/);
+    const html = [];
+    const flow = [];
+    let quote = null;
+    let blockIndent = null;
+    let plainIndent = null;
+    for (let part = 0; part < parts.length; part += 2) {
+      const line = parts[part];
+      const indent = (line.match(/^[ \t]*/) || [''])[0].length;
+      if (plainIndent !== null) {
+        if (/^[ \t]*$/.test(line)) {
+          html.push(this.esc(line));
+          if (part + 1 < parts.length) html.push(parts[part + 1]);
+          continue;
+        }
+        if (indent > plainIndent && line[indent] !== '#') {
+          const content = line.slice(indent);
+          const comment = content.match(/(^|[ \t])#/);
+          const commentAt = comment ? comment.index + comment[1].length : content.length;
+          html.push(this.esc(line.slice(0, indent)), span('string', content.slice(0, commentAt)));
+          if (comment) { html.push(span('comment', content.slice(commentAt))); plainIndent = null; }
+          if (part + 1 < parts.length) html.push(parts[part + 1]);
+          continue;
+        }
+        plainIndent = null;
+      }
+      if (blockIndent !== null && (/^[ \t]*$/.test(line) || indent > blockIndent)) {
+        html.push(span('string', line));
+      } else {
+        blockIndent = null;
+        let i = 0;
+        if (!quote && !flow.length) {
+          const prefix = (line.match(/^[ \t]*(?:[-?](?:[ \t]+|$))?/) || [''])[0];
+          html.push(this.esc(prefix));
+          i = prefix.length;
+          const key = findKey(line, i, false);
+          if (key) {
+            html.push(span('key', line.slice(i, key.end)), this.esc(line.slice(key.end, key.colon + 1)));
+            i = key.colon + 1;
+          }
+          const sequenceItem = !key && /-[ \t]+$/.test(prefix);
+          if (key || sequenceItem) {
+            const value = line.slice(i).trimStart();
+            if (value && !/^[\[\]{}"'|>!&*#%@`]/.test(value) && !/(?:^|[ \t])#/.test(value)) {
+              plainIndent = key ? prefix.length : indent;
+            }
+          }
+        }
+        while (i < line.length) {
+          if (quote) {
+            const quoted = this._readSnapshotYamlQuoted(line, i, quote, true);
+            html.push(span('string', line.slice(i, quoted.end)));
+            i = quoted.end;
+            if (quoted.closed) quote = null;
+            continue;
+          }
+          const char = line[i];
+          if (/[ \t]/.test(char)) { html.push(this.esc(char)); i++; continue; }
+          if (char === '#' && (i === 0 || /\s/.test(line[i - 1]))) {
+            html.push(span('comment', line.slice(i)));
+            break;
+          }
+          if (flow.length && flow[flow.length - 1].map && flow[flow.length - 1].expectKey) {
+            const key = findKey(line, i, true);
+            if (key) {
+              html.push(span('key', line.slice(i, key.end)), this.esc(line.slice(key.end, key.colon + 1)));
+              i = key.colon + 1;
+              flow[flow.length - 1].expectKey = false;
+              continue;
+            }
+          }
+          if (char === '"' || char === "'") {
+            const quoted = this._readSnapshotYamlQuoted(line, i, char);
+            html.push(span('string', line.slice(i, quoted.end)));
+            i = quoted.end;
+            if (!quoted.closed) quote = char;
+            continue;
+          }
+          if (char === '[' || char === '{') {
+            flow.push({ map: char === '{', expectKey: char === '{' });
+            html.push(this.esc(char)); i++; continue;
+          }
+          if (flow.length && (char === ']' || char === '}')) {
+            flow.pop(); html.push(this.esc(char)); i++; continue;
+          }
+          if (flow.length && char === ',') {
+            if (flow[flow.length - 1].map) flow[flow.length - 1].expectKey = true;
+            html.push(this.esc(char)); i++; continue;
+          }
+          if (/[!&*]/.test(char)) {
+            const meta = line.slice(i).match(/^[!&*][^\s\[\]{},]+/);
+            if (meta) { html.push(span('meta', meta[0])); i += meta[0].length; continue; }
+          }
+          let end = i;
+          while (end < line.length) {
+            if (line[end] === '#' && (end === 0 || /\s/.test(line[end - 1]))) break;
+            if (flow.length && /[\[\]{},]/.test(line[end])) break;
+            end++;
+          }
+          // A malformed flow delimiter must still make progress.
+          if (end === i) { html.push(this.esc(line[i++])); continue; }
+          const text = line.slice(i, end);
+          const value = text.replace(/[ \t]+$/, '');
+          let type = 'string';
+          if (/^(?:true|false|null|~)$/i.test(value)) type = 'constant';
+          else if (/^[+-]?(?:(?:0x[\da-f_]+|0o[0-7_]+|0b[01_]+)|(?:\d[\d_]*(?:\.[\d_]*)?|\.[\d_]+)(?:e[+-]?\d+)?|\.inf|\.nan)$/i.test(value)) type = 'number';
+          else if (/^(?:---|\.\.\.)$/.test(value)) type = 'meta';
+          else if (/^[|>](?:[+-]?[1-9]?|[1-9][+-]?)$/.test(value) && !flow.length) { type = 'meta'; blockIndent = indent; }
+          html.push(span(type, value), this.esc(text.slice(value.length)));
+          i = end;
+        }
+      }
+      if (part + 1 < parts.length) html.push(parts[part + 1]);
+    }
+    return html.join('');
+  },
+
+  // A YAML plain/quoted scalar folds ordinary continuation lines into spaces.
+  // Reflow only prompt values here; block scalars and real blank lines retain
+  // their original boundaries. The DOM still contains the original text.
+  _renderSnapshotLines(source, highlightedHtml, format) {
+    const parts = String(source).split(/(\r\n|\r|\n)/);
+    const rendered = highlightedHtml.split(/(\r\n|\r|\n)/);
+    const html = [];
+    const promptScalar = line => {
+      const match = line.match(/^([ ]*)((?:-[ ]+)?)(?:positive_prompts|negative_prompts|krea_sample_prompts):[ \t]+(\S.*)$/);
+      if (!match) return null;
+      const value = match[3];
+      const keyIndent = match[1].length + match[2].length;
+      if (value[0] === '"' || value[0] === "'") {
+        const state = this._readSnapshotYamlQuoted(value, 0, value[0]);
+        return state.closed || state.escapedBreak ? null : { indent: keyIndent, quote: value[0] };
+      }
+      if (/^[|>!&*\[\]{},%@`]/.test(value) || /(?:^|[ \t])#|:(?=[ \t]|$)|[ \t]$/.test(value)) return null;
+      return { indent: keyIndent, quote: null };
+    };
+    const removeLeadingIndent = (lineHtml, indent) => {
+      const stringTag = '<span class="yaml-string">';
+      if (lineHtml.startsWith(stringTag + indent)) return stringTag + lineHtml.slice(stringTag.length + indent.length);
+      return lineHtml.startsWith(indent) ? lineHtml.slice(indent.length) : null;
+    };
+
+    for (let i = 0; i < parts.length; i += 2) {
+      const line = parts[i];
+      let lineHtml = rendered[i];
+      const promptKey = /^[ \t]*(?:-[ \t]+)?<span class="yaml-key">(?:positive_prompts|negative_prompts|krea_sample_prompts)<\/span>/.test(lineHtml);
+      const scalar = (format === 'yaml' || format === 'yml') && promptKey ? promptScalar(line) : null;
+      if (scalar) {
+        while (i + 2 < parts.length) {
+          const next = parts[i + 2];
+          const match = next.match(/^([ ]+)(\S.*)$/);
+          if (!match || match[1].length <= scalar.indent) break;
+          const value = match[2];
+          if (!scalar.quote && /(?:^|[ \t])#|:(?=[ \t]|$)|[ \t]$/.test(value)) break;
+          const rest = removeLeadingIndent(rendered[i + 2], match[1]);
+          if (rest === null) break;
+          const state = scalar.quote ? this._readSnapshotYamlQuoted(value, 0, scalar.quote, true) : null;
+          // A backslash at the end of a double-quoted line removes the break,
+          // so leave it untouched rather than displaying it as a space.
+          if (state?.escapedBreak) break;
+          lineHtml += '<span class="m-config-fold">' + parts[i + 1] + match[1] + '</span>' + rest;
+          i += 2;
+          if (state?.closed) break;
+        }
+      }
+      if (line) {
+        let indent = 0;
+        for (const char of line) {
+          if (char === ' ') indent++;
+          else if (char === '\t') indent += 8 - indent % 8;
+          else break;
+        }
+        html.push('<span class="m-config-line" style="--config-indent:' + indent + '">' + lineHtml + '</span>');
+      }
+      if (i + 1 < parts.length) html.push('<br><span class="m-config-newline">' + parts[i + 1] + '</span>');
+    }
+    return html.join('');
+  },
+
+  _copySnapshotSelection(event, pre) {
+    const selection = window.getSelection?.();
+    if (event.defaultPrevented || !event.clipboardData || !selection || selection.isCollapsed || selection.rangeCount !== 1) return;
+    const range = selection.getRangeAt(0);
+    if (!pre.contains(range.commonAncestorContainer)) return;
+    event.clipboardData.setData('text/plain', range.cloneContents().textContent);
+    event.preventDefault();
+  },
+
+  snapshotTitle() {
+    const runDir = this.configSnapshotRunDir || '';
+    return this._currentSnapshot?.name
+      || this.historyItems?.find(item => item.run_dir === runDir)?.name
+      || String(runDir).replace(/\\/g, '/').split('/').pop()
+      || '';
+  },
+
+  _initSnapshotPathScroll(content) {
+    const path = content.querySelector?.('.snapshot-dataset-path');
+    const label = path?.querySelector?.('.snapshot-path-text');
+    if (!path || !label) return null;
+    return window.initLoopMarquee?.(path, label) || null;
+  },
+
+  _initSnapshotDisclosure(content) {
+    const details = content.querySelector?.('.snapshot-raw details');
+    const summary = details?.querySelector?.('summary');
+    const panel = details?.querySelector?.('.snapshot-raw-panel');
+    if (!details || !summary || !panel) return null;
+    let expanded = details.open;
+    let animation = null;
+    const stopAnimation = () => {
+      if (!animation) return;
+      animation.onfinish = null;
+      animation.cancel();
+      animation = null;
+    };
+    const resetPanel = () => { panel.style.height = ''; panel.style.overflow = ''; };
+    const toggle = event => {
+      event.preventDefault();
+      const fromHeight = details.open ? panel.getBoundingClientRect().height : 0;
+      stopAnimation();
+      expanded = !expanded;
+      summary.setAttribute('aria-expanded', String(expanded));
+      const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+      if (reduced || typeof panel.animate !== 'function') {
+        details.open = expanded;
+        resetPanel();
+        return;
+      }
+      if (expanded) details.open = true;
+      // Restore the natural size before measuring, even if the previous motion
+      // was interrupted. No intermediate size is painted before the new effect.
+      resetPanel();
+      const bodyHeight = document.getElementById('configSnapshotBody')?.clientHeight || panel.scrollHeight;
+      // A long YAML file can be much taller than the scrollable modal. Animate
+      // only the visible height so its disclosure doesn't finish in a flash.
+      const visibleHeight = Math.min(panel.scrollHeight, Math.max(200, bodyHeight));
+      const from = Math.min(fromHeight, visibleHeight);
+      const to = expanded ? visibleHeight : 0;
+      if (Math.abs(from - to) < 1) {
+        details.open = expanded;
+        resetPanel();
+        return;
+      }
+      panel.style.height = `${to}px`;
+      panel.style.overflow = 'hidden';
+      const current = panel.animate([{ height: `${from}px` }, { height: `${to}px` }], {
+        duration: expanded ? 220 : 180,
+        easing: 'cubic-bezier(.1, .78, .21, 1)',
+      });
+      animation = current;
+      current.onfinish = () => {
+        if (animation !== current) return;
+        animation = null;
+        details.open = expanded;
+        resetPanel();
+      };
+    };
+    summary.addEventListener('click', toggle);
+    return () => { stopAnimation(); resetPanel(); summary.removeEventListener('click', toggle); };
+  },
+
   showSnapshotModal(snapshot) {
     const content = document.getElementById('configSnapshotContent');
     if (!content) return;
     const t = (k, fb) => this.tMonitor(k, fb);
 
     let html = '';
-    html += '<p class="snapshot-run-path">' + this.esc(snapshot.run_dir || '') + '</p>';
     if (snapshot.config_warning || snapshot.reuse_error) html += '<p class="hist-warning">' + this.esc(snapshot.reuse_error || snapshot.config_warning) + '</p>';
     if (snapshot.params) {
       const p = snapshot.params;
-      // 关键参数高亮卡（与概览页同款）：模型取 basename，9 个核心字段
-      const keyDefs = [
-        { key: 'pretrained_model_name_or_path', labelKey: 'field.pretrained_model_name_or_path', short: 'historyModel', basename: true },
-        { key: 'learning_rate', labelKey: 'field.learning_rate', short: 'historyLR' },
-        { key: 'network_dim', labelKey: 'field.network_dim', short: 'historyDim' },
-        { key: 'network_alpha', labelKey: 'field.network_alpha', short: 'historyAlpha' },
-        { key: 'max_train_epochs', labelKey: 'field.max_train_epochs', short: 'historyEpochs' },
-        { key: 'optimizer_type', labelKey: 'field.optimizer_type', short: 'historyOptimizer', className: true },
-        { key: 'train_batch_size', labelKey: 'field.train_batch_size', short: 'historyBatch' },
-        { key: 'resolution', labelKey: 'field.resolution', short: 'historyResolution' },
-        { key: 'seed', labelKey: 'field.seed', short: 'historySeed' },
-      ];
-      const keyItems = [];
-      keyDefs.forEach(kd => {
-        const raw = p[kd.key];
-        if (raw == null || raw === '') return;
-        let val = String(raw);
-        if (kd.basename) {
-          const parts = val.replace(/\\/g, '/').split('/');
-          val = parts[parts.length - 1] || val;
+      const present = value => value != null && String(value).trim() !== '';
+      const basename = value => {
+        const path = String(value);
+        return path.replace(/\\/g, '/').replace(/\/+$/, '').split('/').pop() || path;
+      };
+      const model = this._monitorSnapshotParamModel(snapshot, t);
+      const display = model.byField;
+      const source = (...keys) => keys.map(key => display.get(key)).find(param => present(param?.raw));
+      const sources = [
+        [source('dit', 'pretrained_model_name_or_path')],
+        [source('dataset_config', 'train_data_dir'), true],
+        [source('network_weights')],
+      ].filter(([param]) => param);
+      const dimFromWeights = String(p.dim_from_weights).toLowerCase() === 'true';
+      const stepsMode = p.krea_training_duration_mode === 'steps' || !(Number(p.max_train_epochs) > 0);
+      const items = ['model_train_type', 'network_module', ...(p.network_module === 'lycoris.kohya' ? ['lycoris_algo'] : []),
+        ...(dimFromWeights ? ['dim_from_weights'] : ['network_dim', 'network_alpha']),
+        'learning_rate', 'optimizer_type', stepsMode ? 'max_train_steps' : 'max_train_epochs',
+        'train_batch_size', 'gradient_accumulation_steps', 'resolution']
+        .map(key => key === 'model_train_type' ? model.profileRow : display.get(key)).filter(param => present(param?.raw));
+
+      if (sources.length || items.length) {
+        html += '<div class="snapshot-overview">';
+        if (sources.length) {
+          html += '<dl class="snapshot-sources">';
+          sources.forEach(([param, isDataset]) => {
+            const value = param.raw;
+            html += '<div><dt>' + this.esc(param.label) + '</dt>';
+            if (isDataset) {
+              html += '<dd class="snapshot-dataset-path" tabindex="0" title="' + this.esc(value) + '"><span class="snapshot-path-text">' + this.esc(value) + '</span></dd>';
+            } else {
+              html += '<dd title="' + this.esc(value) + '">' + this.esc(basename(value)) + '</dd>';
+            }
+            html += '</div>';
+          });
+          html += '</dl>';
         }
-        if (kd.className) val = val.split('.').pop();
-        if (kd.key === 'learning_rate') val = this._formatLearningRate(raw, val);
-        // 高亮卡 label 用 short key（简短），title 用 field.* 完整描述句
-        keyItems.push({ label: t(kd.short, kd.key), title: String(raw), value: val });
-      });
-      if (keyItems.length) {
-        html += '<div class="param-keygrid" style="margin-bottom:16px">';
-        keyItems.forEach(it => {
-          const titleAttr = it.title && it.title !== it.label ? ' title="' + this.esc(it.title) + '"' : '';
-          html += '<div class="param-key-item"' + titleAttr + '><span class="param-key-label">' + this.esc(it.label) + '</span><span class="param-key-value">' + this.esc(it.value) + '</span></div>';
-        });
+        if (items.length) {
+          html += '<dl class="snapshot-params">';
+          items.forEach(it => {
+            html += '<div><dt>' + this.esc(it.label) + '</dt><dd title="' + this.esc(it.raw) + '">' + this.esc(it.value) + '</dd></div>';
+          });
+          html += '</dl>';
+        }
         html += '</div>';
       }
     }
     if (snapshot.content) {
-      html += '<details open><summary class="m-details-summary">' + this.esc(t('rawConfig')) + ' <span class="hist-tag">' + this.esc((snapshot.config_format || 'toml').toUpperCase()) + '</span></summary>';
-      html += '<pre class="m-config-pre">' + this.esc(snapshot.content) + '</pre></details>';
+      html += '<div class="snapshot-raw"><details open><summary class="m-details-summary" aria-expanded="true"><svg class="snapshot-raw-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>' + this.esc(t('rawConfig')) + ' <span class="snapshot-format">' + this.esc((snapshot.config_format || 'toml').toUpperCase()) + '</span></summary>';
+      const format = String(snapshot.config_format || 'toml').toLowerCase();
+      const configHtml = format === 'yaml' || format === 'yml' ? this._highlightSnapshotYaml(snapshot.content) : this.esc(snapshot.content);
+      html += '<div class="snapshot-raw-panel"><pre class="m-config-pre">' + this._renderSnapshotLines(snapshot.content, configHtml, format) + '</pre></div></details>';
+      html += '<button type="button" class="btn btn-sm btn-ghost snapshot-raw-copy">' + this.esc(t('snapshotCopyRaw')) + '</button></div>';
     }
 
+    this._snapshotCopyCleanup?.();
+    this._snapshotCopyCleanup = null;
+    this._snapshotPathCleanup?.();
+    this._snapshotDisclosureCleanup?.();
     content.innerHTML = html;
+    this._snapshotPathCleanup = this._initSnapshotPathScroll(content);
+    this._snapshotDisclosureCleanup = this._initSnapshotDisclosure(content);
+    content.querySelector?.('.snapshot-raw-copy')?.addEventListener?.('click', () => this.copyConfigContent());
+    const pre = content.querySelector?.('.m-config-pre');
+    if (pre && document.addEventListener) {
+      const copyDocument = document;
+      const onCopy = event => this._copySnapshotSelection(event, pre);
+      copyDocument.addEventListener('copy', onCopy);
+      this._snapshotCopyCleanup = () => copyDocument.removeEventListener('copy', onCopy);
+    }
     const body = document.getElementById('configSnapshotBody');
     if (body) body.scrollTop = 0;
     content.scrollTop = 0;
@@ -196,6 +552,12 @@ window.monitorHistoryRenderMixin = {
   },
 
   closeSnapshotModal() {
+    this._snapshotCopyCleanup?.();
+    this._snapshotCopyCleanup = null;
+    this._snapshotPathCleanup?.();
+    this._snapshotPathCleanup = null;
+    this._snapshotDisclosureCleanup?.();
+    this._snapshotDisclosureCleanup = null;
     ++this._snapshotRequestSeq;
     this._snapshotAbort?.abort();
     this._snapshotAbort = null;
@@ -204,6 +566,7 @@ window.monitorHistoryRenderMixin = {
   },
 
   cancelHistoryInteractions() {
+    this._historyCardPointer = null;
     this.closeSnapshotModal();
     // A fetched configuration can be cancelled. Once applying starts, let the
     // form update finish atomically, but do not navigate away from the user's new page.
@@ -213,7 +576,7 @@ window.monitorHistoryRenderMixin = {
       this._reuseAbort = null;
       this.historyReuseBusy = '';
     }
-    if (this._previewReturnFocus) this.closePreviewLightbox();
+    if (this.previewLightboxOpen) this.closePreviewLightbox();
   },
 
   copyConfigContent() {

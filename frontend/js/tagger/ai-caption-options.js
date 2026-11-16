@@ -352,9 +352,13 @@ window.captionOptionsMixin = {
       const signature = JSON.stringify([token,options,plan]);
       if (!dryRun && plan && (plan.overwrite_captions || plan.overwrite_json || plan.overwrite_references) && signature !== approval) {
         const message = this.t(this.captionOffline() ? 'caption.exportOverwriteConfirm' : 'caption.overwriteConfirm').replace('{captions}',plan.overwrite_captions).replace('{json}',plan.overwrite_json).replace('{references}',plan.overwrite_references);
-        this.openConfirm(this.t('caption.confirmOverwriteFiles'),message,() => {
-          if (stillCurrent()) return this.startApiTagger(false,signature);
-        },this.t('caption.continueOverwrite'),{danger:true});
+        this.openConfirm({
+          title: this.t('caption.confirmOverwriteFiles'), message, tone: 'danger',
+          actionLabel: this.t('caption.continueOverwrite'),
+          onConfirm: () => {
+            if (stillCurrent()) return this.startApiTagger(false,signature);
+          },
+        });
         return;
       }
       const payload = {engine:'api',source_token:token,

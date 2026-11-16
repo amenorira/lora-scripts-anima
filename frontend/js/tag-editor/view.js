@@ -288,24 +288,25 @@ window.tagEditorView = {
     this.tagEditorLightboxY = 0;
   },
 
+  tagEditorConstrainLightbox(fallback) {
+    if (!this.tagEditorLightboxOpen && !fallback) return;
+    var dialog = typeof document !== 'undefined' ? document.getElementById('teLightbox') : null;
+    var stage = dialog?.querySelector?.('.te-lightbox-stage') || fallback;
+    var view = window.AnimaImageViewport.constrain({ scale: this.tagEditorLightboxScale,
+      x: this.tagEditorLightboxX, y: this.tagEditorLightboxY }, stage ? [stage] : []);
+    this.tagEditorLightboxX = view.x;
+    this.tagEditorLightboxY = view.y;
+  },
+
   tagEditorSetLightboxScale(next, event) {
-    var current = this.tagEditorLightboxScale || 1;
-    next = Math.max(1, Math.min(8, next));
-    if (Math.abs(next - current) < 0.001) return;
-    var ratio = next / current;
-    if (event) {
-      var stage = event.currentTarget.closest('.te-lightbox-stage') || event.currentTarget;
-      var rect = stage.getBoundingClientRect();
-      var cursorX = event.clientX - (rect.left + rect.width / 2);
-      var cursorY = event.clientY - (rect.top + rect.height / 2);
-      this.tagEditorLightboxX = cursorX - (cursorX - this.tagEditorLightboxX) * ratio;
-      this.tagEditorLightboxY = cursorY - (cursorY - this.tagEditorLightboxY) * ratio;
-    }
-    this.tagEditorLightboxScale = next;
-    if (next === 1) {
-      this.tagEditorLightboxX = 0;
-      this.tagEditorLightboxY = 0;
-    }
+    var stage = event && (event.currentTarget.closest('.te-lightbox-stage') || event.currentTarget);
+    var anchor = stage ? window.AnimaImageViewport.pointerAnchor(event, stage) : null;
+    var view = window.AnimaImageViewport.zoom({ scale: this.tagEditorLightboxScale,
+      x: this.tagEditorLightboxX, y: this.tagEditorLightboxY }, next, anchor);
+    this.tagEditorLightboxScale = view.scale;
+    this.tagEditorLightboxX = view.x;
+    this.tagEditorLightboxY = view.y;
+    this.tagEditorConstrainLightbox(stage);
   },
 
   tagEditorZoomLightbox(event) {
@@ -326,6 +327,9 @@ window.tagEditorView = {
     if (!this.tagEditorLightboxPanning || event.pointerId !== this.tagEditorLightboxPointerId) return;
     this.tagEditorLightboxX = event.clientX - this.tagEditorLightboxPanStartX;
     this.tagEditorLightboxY = event.clientY - this.tagEditorLightboxPanStartY;
+    this.tagEditorConstrainLightbox(event.currentTarget);
+    this.tagEditorLightboxPanStartX = event.clientX - this.tagEditorLightboxX;
+    this.tagEditorLightboxPanStartY = event.clientY - this.tagEditorLightboxY;
   },
 
   tagEditorStopLightboxPan(event) {

@@ -13,6 +13,23 @@ window.utilsMixin = {
   // Handles null/undefined/0 correctly.
   esc(s) { if (s == null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); },
 
+  _refreshIconHtml() {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 8a7 7 0 0 1 11.5-1.8L20 12M4 12l2.9 5.8A7 7 0 0 0 18.4 16"/></svg>';
+  },
+
+  // Keep fast manual refreshes visible without delaying the request itself.
+  _showRefreshFeedback(kind, onEnd) {
+    const flag = kind + 'RefreshFeedback';
+    const timer = '_' + kind + 'RefreshFeedbackTimer';
+    this[flag] = true;
+    clearTimeout(this[timer]);
+    this[timer] = setTimeout(() => {
+      this[flag] = false;
+      this[timer] = null;
+      onEnd?.();
+    }, 800);
+  },
+
   nativePickerUrl(type) {
     const params = new URLSearchParams({
       picker_type: type,

@@ -75,7 +75,6 @@
 .cp-tile-changes { display: flex; gap: 12px; min-height: 18px; margin-top: 5px; font-size: 11px; color: var(--text-secondary); }
 .cp-state { min-height: 180px; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--text-secondary); white-space: pre-wrap; padding: 24px; }
 .cp-error { font-size: 12px; color: var(--text-secondary); overflow-wrap: anywhere; padding: 16px; }
-#cropFocusDialog { --dialog-backdrop-color: rgba(0,0,0,.18); }
 .cp-frame .cp-full-image { position: absolute; inset: 0; opacity: 0; transition: opacity 65ms ease-out; }
 .cp-frame .cp-full-image.is-loaded { opacity: 1; }
 .modal.cp-focus-modal {

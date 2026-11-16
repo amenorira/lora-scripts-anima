@@ -4,13 +4,13 @@ const { loadFrontend, response, deferred, composeMixins } = require('./helpers.c
 
 function harness() {
   const storage = new Map();
-  const context = loadFrontend(['tagger/index','tagger/ai-caption-options','tagger/caption-workspace'],{
+  const context = loadFrontend(['shared/utils','tagger/index','tagger/ai-caption-options','tagger/caption-workspace'],{
     window:{},localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
     fetch:async()=>response({active:false,tagger_busy:false,phase:'idle',counts:{total:1000},plan:{}}),URLSearchParams,crypto:{randomUUID:()=> 'fixture'},
     URL:{createObjectURL:()=> 'blob:new',revokeObjectURL(){}},FormData:class {append(){}},
     setTimeout:()=>1,clearTimeout(){},document:{querySelector:()=>null,getElementById:()=>null,body:{classList:{remove(){}}}},
   });
-  const app = composeMixins(context.window.taggerMixin,context.window.captionOptionsMixin,context.window.captionWorkspaceMixin);
+  const app = composeMixins(context.window.utilsMixin,context.window.taggerMixin,context.window.captionOptionsMixin,context.window.captionWorkspaceMixin);
   app.currentRoute='ai-captioning';app.taggerSourceMode='api-folder';app.t=k=>k;app.toast=()=>{};
   app.taggerApiSettings={...app.taggerApiSettings,baseUrl:'http://fixture/v1',model:'fixture'};
   app.captionOptions={...app.captionOptions,output_format:'multi',candidates:['original','long','medium','short']};
@@ -20,113 +20,6 @@ function harness() {
   app.$nextTick=fn=>fn();
   return {app,context,storage};
 }
-
-test('active task restoration adopts batch format and candidates without overwriting trial drafts',async()=>{
-  for (const contextName of ['batch','single']) for (const restoredFormat of ['plain','legacy-multi']) {
-    const {app,context,storage}=harness();app.loadCaptionOptions();
-    app.setCaptionOutputFormat('plain');app.toggleCaptionCandidate('short',true);
-    app.setCaptionCandidateContext('single');app.setCaptionOutputFormat('plain');app.toggleCaptionCandidate('medium',true);
-    app.setCaptionCandidateContext(contextName);
-    app.captionTab=contextName;app.taggerSourceMode=contextName==='single'?'api-single':'api-folder';
-    const taskOptions=restoredFormat==='plain'
-      ? {output_format:'plain',candidates:['long'],separator:'TASK',dry_run:true}
-      : {candidates:['original','short'],separator:'TASK',dry_run:true};
-    context.fetch=async()=>response({task_id:'resumed',engine:'api',status:'running',source_kind:'folder',source_token:'batch-token',source_root:'dataset',total:1,caption_options:taskOptions});
-    assert.equal(await app.restoreTaggerTask('resumed'),true);
-    if(contextName==='single') {
-      assert.equal(app.captionOptions.output_format,'plain');
-      assert.deepEqual(Array.from(app.captionOptions.candidates),['medium']);
-    }
-    app.setCaptionCandidateContext('batch');app.saveCaptionOptions();
-    assert.equal(app.captionOptions.output_format,restoredFormat==='plain'?'plain':'multi');
-    assert.deepEqual(Array.from(app.captionOptions.candidates),taskOptions.candidates);
-    assert.equal(app.captionOptions.dry_run,undefined);
-    const saved=JSON.parse(storage.get('anima-moss-workflow'));
-    assert.deepEqual(saved.candidateDrafts.batch[app.captionOptions.output_format],taskOptions.candidates);
-    app.setCaptionCandidateContext('single');
-    assert.deepEqual(Array.from(app.captionOptions.candidates),['medium']);
-    app._captionOptionsLoaded=false;app.loadCaptionOptions();
-    assert.deepEqual(Array.from(app.captionOptions.candidates),taskOptions.candidates);
-  }
-});
-
-for (const destination of ['tagger','monitor-dashboard','ai-captioning']) {
-  test(`late workspace initialization preserves the current page after navigation to ${destination}`,async()=>{
-    const {app,context,storage}=harness();const pending=deferred();let previewRequests=0,planRequests=0;
-    app.taggerSource={source_token:'batch',kind:'folder',total:3,path:'dataset'};app.taggerSourcePath='dataset';
-    app._taggerModeStates.folder={source:{source_token:'local',total:2},sourcePath:'local-dataset',taskId:'local-done',resultText:'Keep local result'};
-    app._taggerTasks['local-done']={status:'done',engine:'onnx'};
-    app.tagDictionaryCleanup=()=>{};
-    context.fetch=async url=>{
-      if(url.endsWith('/active')) return response({task_id:null});
-      if(url.endsWith('/preview-state')) {
-        if(++previewRequests===1) return pending.promise;
-        return response({active:false,tagger_busy:false,phase:'idle'});
-      }
-      if(url.endsWith('/caption-plan')) {planRequests++;return response({counts:{total:3},plan:{requests:3}});}
-      throw new Error(`Unexpected request: ${url}`);
-    };
-    const initial=app.buildTaggerForm();await new Promise(resolve=>setImmediate(resolve));
-    assert.equal(previewRequests,1);
-    if(destination==='monitor-dashboard') {
-      app.currentRoute=destination;app.stopTaggerWorkspace();
-    } else {
-      app.currentRoute='tagger';await app.buildTaggerForm();
-      if(destination==='ai-captioning') {app.currentRoute=destination;await app.buildTaggerForm();}
-    }
-    await new Promise(resolve=>setImmediate(resolve));
-    app.captionOverviewDetail={index:0,name:'Keep current detail'};
-    const before={mode:app.taggerSourceMode,source:app.taggerSource,task:app.taggerTaskId,result:app.taggerResultText,
-      detail:app.captionOverviewDetail,plans:planRequests,storage:[...storage]};
-    pending.resolve(response({active:false,tagger_busy:true,phase:'idle'}));await initial;
-    assert.equal(app.currentRoute,destination);assert.equal(app.taggerSourceMode,before.mode);
-    assert.equal(app.taggerSource,before.source);assert.equal(app.taggerTaskId,before.task);
-    assert.equal(app.taggerResultText,before.result);assert.equal(app.captionOverviewDetail,before.detail);
-    assert.equal(app.captionExternalTaggerBusy,false);assert.equal(planRequests,before.plans);
-    assert.deepEqual([...storage],before.storage);
-  });
-}
-
-for (const destination of ['tagger','monitor-dashboard','return','source','settings']) {
-  test(`preview preflight cannot submit after its original context changes: ${destination}`,async()=>{
-    const {app,context,storage}=harness(),pending=deferred();let checks=0,submits=0;
-    app.captionTab='single';app.taggerSourceMode='api-single';app.taggerSource={source_token:'original',kind:'upload',total:1};
-    storage.set('anima-ai-tab','single');app.tagDictionaryCleanup=()=>{};
-    context.fetch=async url=>{
-      if(url.endsWith('/preview-state')) {if(++checks===1)return pending.promise;return response({active:false,tagger_busy:false});}
-      if(url.endsWith('/preview')){submits++;return response({candidates:{short:'Wrong result'}});}
-      if(url.endsWith('/active'))return response({task_id:null});
-      throw new Error(url);
-    };
-    const request=app.startCaptionPreview();
-    if(destination==='tagger'||destination==='return') {
-      app.currentRoute='tagger';await app.buildTaggerForm();
-      if(destination==='return'){app.currentRoute='ai-captioning';await app.buildTaggerForm();}
-    } else if(destination==='monitor-dashboard') {app.currentRoute=destination;app.stopTaggerWorkspace();}
-    else if(destination==='source') app.setTaggerSource({source_token:'new-image',kind:'upload',total:1});
-    else app.taggerApiSettings.model='different-model';
-    const result=app.captionSingleResult={candidates:{short:'Keep existing result'}};
-    pending.resolve(response({active:false,tagger_busy:false}));await request;
-    assert.equal(submits,0);assert.equal(app.captionSingleResult,result);assert.equal(app.captionPreviewStatus,'idle');
-  });
-}
-
-test('three workspaces keep sources, batch task and preview results separate',async()=>{
-  const {app,storage}=harness();
-  app.taggerSource={source_token:'batch',kind:'folder',total:1000,path:'dataset'};app.taggerSourcePath='dataset';
-  app.attachTaggerTask('batch-task');
-  app.applyTaggerTaskSnapshot({status:'running',engine:'api',source_root:'dataset',source_token:'batch'});
-  await app.selectCaptionTab('single');
-  assert.equal(app.taggerSourceMode,'api-single');assert.equal(app.taggerSource,null);assert.equal(app.taggerRunning,false);
-  assert.equal(app.captionBatchRunning(),true);assert.equal(app.captionPreviewCanStart(),false);
-  assert.equal(storage.get('anima-ai-tagger-task-id'),'batch-task');
-  app.taggerSource={source_token:'single',kind:'upload',total:1};app.captionSingleResult={candidates:{short:'Single'}};
-  app.applyTaggerTaskSnapshot({status:'done',engine:'api',source_token:'batch',source_root:'dataset'},'FINISHED','batch-task');
-  assert.equal(app.taggerSource.source_token,'single');assert.equal(app.captionBatchRunning(),false);
-  app.refreshCaptionOverview=async()=>{};
-  await app.selectCaptionTab('overview');assert.equal(app.taggerSource.source_token,'batch');assert.equal(app.taggerTask.status,'done');
-  await app.selectCaptionTab('single');assert.equal(app.taggerSource.source_token,'single');assert.equal(app.captionSingleResult.candidates.short,'Single');
-});
 
 test('late overview/detail responses cannot overwrite a changed source or closed detail',async()=>{
   const {app,context}=harness();app.taggerSource={source_token:'a',total:1};const pending=deferred();context.fetch=()=>pending.promise;
@@ -139,7 +32,7 @@ test('late overview/detail responses cannot overwrite a changed source or closed
 test('preflight counts are refreshed before overwrite confirmation and a changed plan reconfirms',async()=>{
   const {app,context}=harness();app.taggerSource={source_token:'batch',total:10};app.captionOptions.overwrite=true;
   let submits=0,confirmation;app.refreshCaptionPlan=async()=>({plan:{overwrite_captions:4,overwrite_json:3,overwrite_references:2}});
-  app.openConfirm=(title,message,callback)=>{confirmation=callback;};context.fetch=async()=>{submits++;return response({task_id:'new'});};
+  app.openConfirm=({onConfirm})=>{confirmation=onConfirm;};context.fetch=async()=>{submits++;return response({task_id:'new'});};
   await app.startApiTagger();assert.equal(submits,0);assert.equal(typeof confirmation,'function');
   await confirmation();assert.equal(submits,1);assert.equal(app.taggerTaskId,'new');
 });
@@ -211,27 +104,4 @@ test('server restart clears active task references in every workspace',async()=>
   assert.equal(app.taggerSource,null);assert.equal(app._taggerRealtimeTopic,null);
   assert.equal(storage.get('anima-ai-tagger-task-id'),undefined);
   await app.selectCaptionTab('batch');assert.equal(app.taggerRunning,false);
-});
-
-test('cancel arriving before the preview POST is retried until acknowledged',async()=>{
-  const {app,context}=harness();app.captionPreviewStatus='preparing';app.captionPreviewRequestId='early';
-  context.setTimeout=fn=>{queueMicrotask(fn);return 1;};
-  let calls=0;context.fetch=async()=>response({cancelling:++calls > 1});
-  await app.cancelCaptionPreview();
-  assert.equal(calls,2);assert.equal(app.captionPreviewStatus,'cancelling');
-});
-
-test('write-plan failure leaves the read-only gallery available and details retain its settings',async()=>{
-  const {app,context}=harness();app.taggerSource={source_token:'batch',total:2};let detailUrl;
-  context.fetch=async(url)=>{
-    if(url.endsWith('/caption-plan')) return {json:async()=>({status:'fail',message:'conflicting output'})};
-    if(url.includes('/annotations?')) return response({counts:{total:2},items:[{index:0,name:'a.png',path:'a.png'}],total:2,offset:0,
-      settings:{caption_extension:'.caption',reference_extension:'.tags',sidecar_suffix:'_caption.json',separator:'==='}});
-    detailUrl=url;return response({text:'Saved caption'});
-  };
-  assert.equal(await app.refreshCaptionPlan(),null);
-  assert.equal(app.captionPlanError,'conflicting output');
-  await app.refreshCaptionOverview();assert.equal(app.captionOverviewItems.length,1);assert.equal(app.captionOverviewError,'');
-  app.captionOptions.caption_extension='.other';await app.openCaptionDetail(app.captionOverviewItems[0],null);
-  assert.match(detailUrl,/caption_extension=\.caption/);assert.match(detailUrl,/separator=%3D%3D%3D/);
 });

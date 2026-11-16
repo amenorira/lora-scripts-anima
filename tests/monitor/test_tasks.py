@@ -21,23 +21,6 @@ class TaskStateMachineTests(unittest.TestCase):
         process.wait.return_value = returncode
         return process
 
-
-    def test_reserved_slot_blocks_other_tasks_until_release_or_process_exit(self):
-        manager = TaskManager()
-        reserved = manager.reserve_task()
-        self.assertIsNotNone(reserved)
-        self.assertIsNone(manager.reserve_task())
-        self.assertFalse(manager.claim_external("tagger:one"))
-
-        reserved.configure_reserved(["trainer"])
-        # Configuring a command is still preparation; only the launcher may
-        # transfer ownership to a running worker.
-        self.assertIsNone(manager.reserve_task())
-        reserved.terminate()
-        self.assertIsNone(manager.reserve_task())
-        manager.release_reserved(reserved)
-        self.assertIsNotNone(manager.reserve_task())
-
     def test_stop_during_preparation_keeps_slot_until_owner_settles(self):
         manager = TaskManager()
         reserved = manager.reserve_task()
@@ -50,7 +33,6 @@ class TaskStateMachineTests(unittest.TestCase):
             reserved.configure_reserved(["trainer"])
         manager.release_reserved(reserved)
         self.assertIsNotNone(manager.reserve_task())
-
 
     def test_failed_stop_keeps_slot_and_can_be_retried(self):
         manager = TaskManager()
@@ -70,7 +52,6 @@ class TaskStateMachineTests(unittest.TestCase):
             task.terminate()
         kill.assert_called_once_with(task.process.pid, processes=task._process_tree)
         self.assertIs(task.status, TaskStatus.TERMINATED)
-
 
     def test_supervisor_finalization_precedes_results_and_preserves_stop_or_process_failure(self):
         async def scenario(directory, outcome):

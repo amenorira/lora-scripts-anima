@@ -339,7 +339,8 @@ class TaskMonitor:
         )
         latest = previews[-1] if previews else None
         outputs = await asyncio.to_thread(read_output_summary, str(record["artifact_path"]))
-        signature = repr((latest.get("path", "") if latest else "", latest.get("version", "") if latest else "", outputs["count"], outputs["models"]))
+        signature = repr((latest.get("path", "") if latest else "", latest.get("version", "") if latest else "",
+                          (latest.get("sample") or {}).get("metadata_version", "") if latest else "", outputs["count"], outputs["models"]))
         previous = self._pending_artifact_signature.get(task_id)
         self._pending_artifact_signature[task_id] = signature
         if previous != signature:

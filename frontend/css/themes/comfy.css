@@ -24,7 +24,7 @@
   --bg-input: rgba(255, 255, 255, 0.06);   /* ComfyUI input-surface */
   --bg-input-hover: rgba(255, 255, 255, 0.09);
   --bg-input-action: #131314;
-  --bg-overlay: rgba(0, 0, 0, 0.5);
+  --bg-overlay: rgba(0, 0, 0, 0.38);
 
   --text-primary: #ffffff;
   --text-secondary: #a0a0a0;   /* smoke-700 */

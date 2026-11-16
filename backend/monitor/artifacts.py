@@ -1,6 +1,7 @@
 """训练样本、输出文件扫描与短期缓存。"""
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import threading
@@ -14,13 +15,15 @@ from backend.constants import REPO_ROOT
 from backend.image_preview import build_image_preview_url
 
 from backend.monitor.checkpoints import LORA_EXTENSIONS, parse_checkpoint
+from backend.monitor.legacy_sample_steps import enrich_legacy_sample_steps
+from backend.monitor.sample_metadata import legacy_sample_metadata, read_sample_records, sample_manifest_version
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
 # 隐藏 / 缓存目录名前缀与名称，扫描时一律跳过（避免 .ipynb_checkpoints、__pycache__ 等污染）
 _HIDDEN_PREFIXES = (".", "__")
 _TRAINING_SAMPLE_RE = re.compile(
-    r"(?:^|_)(?P<progress>e?\d{6})_(?P<prompt>\d{2})_(?P<timestamp>\d{14})(?:_-?\d+)?$",
+    r"(?:^|_)(?P<progress>e?\d{6})_(?P<prompt>\d{2,})_(?P<timestamp>\d{14})(?:_-?\d+)?(?:_\d{3})?$",
     re.IGNORECASE,
 )
 
@@ -59,14 +62,14 @@ def _preview_sort_key(path: Path, stat) -> tuple[int, int, int, int, str]:
 # ── 预览样本 ──────────────────────────────────────────────
 
 _previews_cache_lock = threading.Lock()
-_previews_cache: OrderedDict[str, tuple[float, list[dict]]] = OrderedDict()
+_previews_cache: OrderedDict[str, tuple[float, str, list[dict]]] = OrderedDict()
 _PREVIEWS_CACHE_TTL = 5.0
 _PREVIEWS_CACHE_MAX_RUNS = 8
 
 
-def _store_previews(cache_key: str, result: list[dict]) -> None:
+def _store_previews(cache_key: str, result: list[dict], metadata_version: str) -> None:
     with _previews_cache_lock:
-        _previews_cache[cache_key] = (time.time(), result)
+        _previews_cache[cache_key] = (time.time(), metadata_version, result)
         _previews_cache.move_to_end(cache_key)
         while len(_previews_cache) > _PREVIEWS_CACHE_MAX_RUNS:
             _previews_cache.popitem(last=False)
@@ -84,27 +87,27 @@ def newest_previews(
     force_refresh: True 时跳过 5s 缓存，立即重新扫描磁盘并覆盖缓存。
     """
     now = time.time()
+    metadata_version = sample_manifest_version(output_dir, force_refresh=force_refresh) if output_dir else ""
     cache_key = f"{run_dir}|{output_dir or ''}"
-    if not force_refresh:
-        with _previews_cache_lock:
-            cached = _previews_cache.get(cache_key)
-            if cached and now - cached[0] < _PREVIEWS_CACHE_TTL:
-                _previews_cache.move_to_end(cache_key)
-                return cached[1][-limit:] if limit else cached[1]
+    with _previews_cache_lock:
+        cached = _previews_cache.get(cache_key)
+        if not force_refresh and cached and cached[1] == metadata_version and now - cached[0] < _PREVIEWS_CACHE_TTL:
+            _previews_cache.move_to_end(cache_key)
+            return cached[2][-limit:] if limit else cached[2]
 
     recursive_roots: list[Path] = []
     flat_roots: list[Path] = []
     if not output_dir:
-        _store_previews(cache_key, [])
+        _store_previews(cache_key, [], metadata_version)
         return []
     if output_dir:
         try:
             od = Path(output_dir).resolve()
         except OSError:
-            _store_previews(cache_key, [])
+            _store_previews(cache_key, [], metadata_version)
             return []
         if not od.is_dir():
-            _store_previews(cache_key, [])
+            _store_previews(cache_key, [], metadata_version)
             return []
         recursive_roots.extend([od / "sample", od / "outputs" / "sample"])
         flat_roots.extend([od, od / "outputs"])
@@ -156,7 +159,39 @@ def newest_previews(
             "size": stat.st_size,
             "version": version,
         })
-    _store_previews(cache_key, result)
+    # Manual refresh retries failed/partial reads even when file stamps match.
+    previous = {item["path"]: item for item in cached[2]} if not force_refresh and cached and cached[1] == metadata_version else {}
+    recorded, unresolved = {}, {}
+    for item in result:
+        prior = previous.get(item["path"])
+        if prior and prior["version"] == item["version"]:
+            if prior["sample"].get("metadata_source") != "recorded":
+                # Retry negative lookups on manifest changes or manual refresh.
+                continue
+            if prior["sample"].get("step_source") != "log":
+                recorded[item["path"]] = dict(prior["sample"])
+                continue
+        unresolved[item["path"]] = item["version"]
+    if unresolved:
+        recorded.update(read_sample_records(od, unresolved))
+    for item in result:
+        item["sample"] = recorded.get(item["path"]) or legacy_sample_metadata(item["name"], item["path"])
+        item["sample"]["metadata_version"] = metadata_version
+    log_root = Path(run_dir) if run_dir else od
+    if not log_root.is_absolute():
+        log_root = REPO_ROOT / log_root
+    enrich_legacy_sample_steps(result, log_root, od)
+    for item in result:
+        sample = item["sample"]
+        if sample.get("step_source") == "log":
+            # The recovered value can appear after the image; unrelated log
+            # appends must not continuously invalidate realtime previews.
+            call_digest = hashlib.sha256(sample["batch_id"].encode("utf-8")).hexdigest()[:24]
+            sample["metadata_version"] += f":log-call:{call_digest}:log-step:{sample['step']}"
+            if sample.get("metadata_source") == "filename" and isinstance(sample.get("params", {}).get("prompt"), str):
+                prompt_digest = hashlib.sha256(sample["params"]["prompt"].encode("utf-8")).hexdigest()[:24]
+                sample["metadata_version"] += f":log-prompt:{prompt_digest}"
+    _store_previews(cache_key, result, metadata_version)
     return result[-limit:] if limit else result
 
 

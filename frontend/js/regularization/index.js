@@ -708,10 +708,18 @@ window.regularizationMixin = {
   },
   regSourceImage(index) { return '/api/regularization/plans/' + this.regPlan?.token + '/preview/' + index + '?variant=thumb'; },
   async regMutate(item, action) {
-    if (this.trainingActive || this.regRunning) return;
-    if (action === 'regenerate' && !window.confirm(this.regT('replaceHelp'))) return;
+    if (this.trainingActive || this.regRunning || this.regBusy || this.showConfirmModal) return;
+    const key = this.regRunKey, selected = this.regSelected;
+    if (action === 'regenerate') {
+      const choice = await this.openConfirm({
+        title: this.regT('regenerate'), message: this.regT('replaceHelp'),
+        tone: 'danger', actionLabel: this.regT('regenerate'),
+      });
+      if (choice !== 'confirm' || key !== this.regRunKey || selected !== this.regSelected ||
+          this.trainingActive || this.regRunning || this.regBusy || this.currentRoute !== 'regularization') return;
+    }
     await this.regAction(async () => {
-      const result = await this.regRequest('/runs/' + encodeURIComponent(this.regRunKey) + '/items/' + item.index + '/' + action, {});
+      const result = await this.regRequest('/runs/' + encodeURIComponent(key) + '/items/' + item.index + '/' + action, {});
       if (action === 'regenerate') {
         this.regAcceptStart(result);
         this.regApplyTask(await this.regRequest('/tasks/' + result.task_id));

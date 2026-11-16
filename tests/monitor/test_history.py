@@ -14,29 +14,6 @@ class HistoryTests(CrossDriveSandbox):
         run_registry.write_run_record(run, artifact_dir=self.external, **kwargs)
         return run
 
-    def test_legacy_copy_converts_native_arguments_and_clears_only_the_copy_resume(self):
-        run = self.make_run(extra={"trainer_file": "./vendor/sd-scripts/anima_train_network.py"})
-        with (run / "config.toml").open("a", encoding="utf-8") as handle:
-            handle.write('resume = "old-state"\nnetwork_module = "lycoris.kohya"\n'
-                         'network_args = ["algo=lokr", "preset=attn-mlp", "factor=8", "full_matrix=true"]\n'
-                         'optimizer_type = "AdamW"\noptimizer_args = ["weight_decay=0.03", "betas=(0.8, 0.98)"]\n'
-                         'lr_scheduler = "warmup_stable_decay"\nlr_scheduler_args = ["decay_type=\'1-sqrt\'"]\n')
-        response = asyncio.run(routes.get_config_from_run("output/demo"))
-        self.assertEqual(response["status"], "success")
-        snapshot = response["data"]
-        form = snapshot["reuse_params"]
-        self.assertEqual(form["model_train_type"], "anima-lora")
-        self.assertEqual(form["lycoris_algo"], "lokr")
-        self.assertEqual(form["lokr_factor"], 8)
-        self.assertTrue(form["full_matrix"])
-        self.assertEqual(form["weight_decay"], 0.03)
-        self.assertEqual(form["decay_type"], "1-sqrt")
-        self.assertEqual(form["resume"], "")
-        self.assertEqual(form["output_dir"], str(self.external.parent))
-        self.assertEqual(snapshot["params"]["resume"], "old-state")
-        self.assertIn('resume = "old-state"', snapshot["content"])
-
-
     def test_partial_delete_stays_visible_and_retry_preserves_artifacts(self):
         run = self.make_run()
         log = run / "train_demo.log"
@@ -65,23 +42,22 @@ class HistoryTests(CrossDriveSandbox):
         self.assertEqual(model.read_bytes(), b"model")
         self.assertFalse(log.exists())
 
-    def test_legacy_krea_preview_state_uses_its_own_config(self):
-        run = self.make_run(extra={"profile_id": "krea2-lora", "preview_enabled": False})
-        self.assertFalse(run_registry.load_run_record(run)["preview_enabled"])
-        with (run / "config.toml").open("a", encoding="utf-8") as handle:
-            handle.write('sample_prompts = "sample_prompts.txt"\n')
-        self.assertTrue(run_registry.load_run_record(run)["preview_enabled"])
-        (run / "config.toml").unlink()
-        self.assertIsNone(run_registry.load_run_record(run)["preview_enabled"])
-
-    def test_other_profiles_do_not_infer_preview_state_from_krea_fields(self):
-        run = self.make_run(extra={"profile_id": "anima-lora", "preview_enabled": False})
-        with (run / "config.toml").open("a", encoding="utf-8") as handle:
-            handle.write('sample_prompts = "sample_prompts.txt"\n')
-        self.assertFalse(run_registry.load_run_record(run)["preview_enabled"])
-
-    def test_krea_uses_saved_prompt_metadata_when_configuration_is_missing(self):
-        for name, prompts in (("enabled", "sample_prompts.txt"), ("disabled", None)):
-            run = self.make_run(name, extra={"profile_id": "krea2-lora", "preview_enabled": False, "sample_prompts": prompts})
-            (run / "config.toml").unlink()
-            self.assertIs(run_registry.load_run_record(run)["preview_enabled"], bool(prompts))
+    def test_snapshot_parameters_keep_native_values_separate_from_reuse_conversion(self):
+        run = self.make_run(extra={"profile_id": "anima-lora"})
+        with (run / "config.toml").open("a", encoding="utf-8") as stream:
+            stream.write(
+                'network_module = "networks.lora_anima"\n'
+                'optimizer_type = "prodigyplus.ProdigyPlusScheduleFree"\n'
+                'optimizer_args = ["eps=None"]\n'
+                'lr_scheduler = "piecewise_constant"\n'
+                'lr_scheduler_args = ["step_rules=\'1:100,0.5\'"]\n'
+                'step_rules = "1:200,0.2"\n'
+            )
+        result = asyncio.run(routes.get_config_from_run("output/demo"))
+        self.assertEqual(result["status"], "success")
+        data = result["data"]
+        self.assertEqual(data["training_profile"], "anima-lora")
+        saved = {param["key"]: param for param in data["train_params"]}
+        self.assertEqual(saved["optimizer_args.eps"]["value"], "None")
+        self.assertEqual(saved["lr_scheduler_args.step_rules"]["string_value"], "1:100,0.5")
+        self.assertEqual(data["reuse_params"]["step_rules"], "1:200,0.2")

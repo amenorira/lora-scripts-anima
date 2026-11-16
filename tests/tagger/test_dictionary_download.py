@@ -16,7 +16,6 @@ class DictionaryDownloadTests(unittest.TestCase):
     def download(self):
         return hf.download_url_with_fallback(["https://example.invalid/meta.csv"], self.target)
 
-
     def test_invalid_multipart_download_does_not_replace_existing_file(self):
         self.target.write_bytes(b"previous valid data")
         def part(url, path, start, end, index, size, progress, stop=None, expected_total=None):

@@ -139,7 +139,7 @@ When LoRA+ only brings the best result forward, its main benefit is fewer traini
 
 Switching to an incompatible mode turns LoRA+ off and shows the reason. Backend validation also rejects incompatible combinations from older presets or direct API calls.
 
-For example, an Automagic starting rate of `2e-5` and a LoRA+ ratio of `8` give a group rate of `1.6e-4`, above the default `1e-4` upper bound. Lower the ratio or raise the bound before training.
+For example, an Automagic starting rate of `2e-5` and a LoRA+ ratio of `12` give a group rate of `2.4e-4`, above the default `2e-4` upper bound. Lower the ratio or raise the bound before training.
 
 This trainer's conventional external schedulers apply the same multiplier to each group, preserving the initial ratio. Warmup changes the early learning rate without changing grouping. Internally adaptive optimizers also change step size; distinguish logged group rates from actual update scales.
 

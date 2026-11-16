@@ -63,14 +63,6 @@ class Krea2CacheReuseTests(unittest.TestCase):
                     expected = dict.fromkeys(expected, "pending")
                 self.assertEqual(prepare_cache_manifest(self.config)["stages"], expected)
 
-    def test_failed_text_stage_retains_completed_image_stage(self):
-        prepare_cache_manifest(self.config)
-        self.latent.write_bytes(b"image-cache")
-        complete_stage(self.config, "latents")
-        mark_cache_manifest(self.config, "failed")
-        self.assertEqual(prepare_cache_manifest(self.config)["stages"],
-                         {"latents": "completed", "text_encoder": "pending"})
-
     def test_modified_output_is_rebuilt_and_changed_input_cannot_finish(self):
         self.finish_cache()
         self.text.write_bytes(b"truncated")

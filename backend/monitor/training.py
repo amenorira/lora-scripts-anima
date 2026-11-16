@@ -3,6 +3,7 @@
 """
 from __future__ import annotations
 
+import ast
 import logging
 import re
 import threading
@@ -364,20 +365,15 @@ def parse_log_progress(lines: list[str]) -> dict:
 def _format_param_value(key: str, v: Any) -> str:
     """将 TOML 原生值格式化为展示字符串。
 
-    - 布尔 → "true"/"false"（前端 toggle 字段会渲染为 ✓/✕ 徽标，此处保留可读文本兜底）
+    - 布尔 → "true"/"false"，由前端展示为开启/关闭
     - list → 逗号连接的字符串
-    - learning_rate/unet_lr/text_encoder_lr 等小学习率用科学计数法
+    - 数值保留原始精度，由界面按字段定义展示
     - 路径类字段保留原值
     """
     if isinstance(v, bool):
         return "true" if v else "false"
     if isinstance(v, list):
         return ", ".join(str(x) for x in v)
-    if isinstance(v, (int, float)) and not isinstance(v, bool):
-        # 学习率类字段：小量值用科学计数法更易读
-        if key in ("learning_rate", "unet_lr", "text_encoder_lr") and 0 < abs(v) < 0.001:
-            return f"{float(v):.2e}"
-        return str(v)
     return str(v)
 
 
@@ -437,13 +433,13 @@ def extract_train_params(config: dict, profile_id: str = "") -> list[dict]:
 
     # Runtime-only and legacy fields remain inspectable without guessing a label.
     for key, value in config.items():
-        if key not in seen and key not in {"network_args", "optimizer_args"} and value is not None and value != "":
+        if key not in seen and key not in {"network_args", "optimizer_args", "lr_scheduler_args"} and value is not None and value != "":
             params.append({"key": key, "desc_key": "", "label_raw": key,
                            "value": _format_param_value(key, value), "section": "misc", "type": "text"})
 
-    # 2) network_args / optimizer_args：adapter 折叠的 LyCORIS/优化器子参数数组
+    # 2) adapter 折叠的网络/优化器/调度器子参数数组
     #    形如 ["algo=lokr", "preset=attn-mlp"] → 拆成独立条目，归入对应 section
-    for arr_key, section in (("network_args", "network"), ("optimizer_args", "optimizer")):
+    for arr_key, section in (("network_args", "network"), ("optimizer_args", "optimizer"), ("lr_scheduler_args", "optimizer")):
         arr = config.get(arr_key)
         if not isinstance(arr, list) or not arr:
             continue
@@ -458,13 +454,23 @@ def extract_train_params(config: dict, profile_id: str = "") -> list[dict]:
             else:
                 k, val = s, "true"
             # 跳过空键（如纯标志位无值时 k 已是值，仍展示）
-            params.append({
+            entry = {
                 "key": f"{arr_key}.{k}",
                 "desc_key": "",
                 "value": val,
                 "section": section,
                 "type": "text",
                 "label_raw": k,
-            })
+            }
+            # 保留原文字面量；已知表单文本/选项可另外使用解码后的字符串。
+            if arr_key != "network_args" and val and val[0] in {"'", '"'}:
+                try:
+                    decoded = ast.literal_eval(val)
+                except (ValueError, SyntaxError):
+                    pass
+                else:
+                    if isinstance(decoded, str):
+                        entry["string_value"] = decoded
+            params.append(entry)
 
     return params

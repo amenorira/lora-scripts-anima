@@ -1,14 +1,5 @@
-/* Training YAML/TOML import/export and shared confirmation dialog. */
+/* Training YAML/TOML import/export. */
 window.trainingConfigIoMixin = {
-  showConfirmModal: false,
-  confirmTitle: '',
-  confirmMessage: '',
-  confirmCallback: null,
-  confirmActionLabel: '',
-  confirmDanger: false,
-  confirmNotice: false,
-  confirmSecondaryLabel: '',
-  confirmSecondaryCallback: null,
   _trainingDocumentId: null,
   _configImportRequestSeq: 0,
 
@@ -189,36 +180,4 @@ window.trainingConfigIoMixin = {
     event.target.value = '';
   },
 
-  openConfirm(title, message, callback, actionLabel = '', opts = {}) {
-    this.confirmTitle = title;
-    this.confirmMessage = message;
-    this.confirmCallback = callback;
-    this.confirmActionLabel = actionLabel;
-    this.confirmDanger = !!opts.danger;
-    this.confirmNotice = !!opts.notice;
-    this.confirmSecondaryLabel = opts.secondaryLabel || '';
-    this.confirmSecondaryCallback = opts.secondaryCallback || null;
-    this.showConfirmModal = true;
-  },
-
-  confirmAction() {
-    this.showConfirmModal = false;
-    const cb = this.confirmCallback;
-    this.confirmCallback = null;
-    this.confirmSecondaryCallback = null;
-    if (typeof cb === 'function') cb();
-  },
-
-  confirmSecondaryAction() {
-    this.showConfirmModal = false;
-    const cb = this.confirmSecondaryCallback;
-    this.confirmSecondaryCallback = null;
-    if (typeof cb === 'function') cb();
-  },
-
-  cancelConfirm() {
-    this.showConfirmModal = false;
-    this.confirmCallback = null;
-    this.confirmSecondaryCallback = null;
-  },
 };

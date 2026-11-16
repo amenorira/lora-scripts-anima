@@ -172,6 +172,7 @@ window.taggerTasksMixin = {
     localStorage.removeItem('anima-ai-tagger-task-id');
     localStorage.removeItem('anima-tagger-task-id');
     this.captionExternalTaggerBusy = false;
+    this._invalidateCaptionRescan?.();
     this.captionSourceChanged?.('api-folder');
     return active;
   },

@@ -20,6 +20,7 @@ window.captionWorkspaceMixin = {
   captionOverviewFilter: 'all',
   captionOverviewQuery: '',
   captionOverviewLoading: false,
+  captionRescanning: false, captionRefreshFeedback: false, _captionRefreshFeedbackTimer: null, _captionRescanSeq: 0,
   captionOverviewError: '',
   captionSourceError: '',
   captionOverviewDetail: null,
@@ -61,14 +62,25 @@ window.captionWorkspaceMixin = {
     }
     if (isCurrent() && this.captionBatchState().source) void this.refreshCaptionPlan();
   },
+  _invalidateCaptionRescan() {
+    ++this._captionRescanSeq;
+    this.captionRescanning = false;
+    clearTimeout(this._captionRefreshFeedbackTimer);
+    this._captionRefreshFeedbackTimer = null;
+    this.captionRefreshFeedback = false;
+  },
+  _invalidateCaptionOverview() {
+    ++this._captionOverviewRequest;
+    this._captionOverviewInFlight = false;
+    this.captionOverviewLoading = false;
+  },
   stopCaptionWorkspace() {
     clearTimeout(this._captionRefreshTimer);
     clearTimeout(this._captionBusyTimer);
-    ++this._captionOverviewRequest;
+    this._invalidateCaptionOverview();
+    this._invalidateCaptionRescan();
     ++this._captionPlanRequest;
     ++this._captionPromptRequest;
-    this._captionOverviewInFlight = false;
-    this.captionOverviewLoading = false;
     this.captionPlanLoading = false;
     ++this._captionDetailRequest;
     this.closeCaptionDetail();
@@ -78,6 +90,10 @@ window.captionWorkspaceMixin = {
   async selectCaptionTab(tab, focus = true) {
     if (!['batch','single','overview'].includes(tab) || this.captionPreviewBusy || this.taggerStarting || this.taggerScanning) return;
     const changed = tab !== this.captionTab;
+    if (changed && this.captionTab === 'overview') {
+      this._invalidateCaptionOverview();
+      this._invalidateCaptionRescan();
+    }
     if (changed) ++this._captionPromptRequest;
     const mode = tab === 'single' ? 'api-single' : 'api-folder';
     await this.selectTaggerSourceMode(mode, {allowActive:true});
@@ -114,6 +130,7 @@ window.captionWorkspaceMixin = {
   captionSourceChanged(mode) {
     if (mode === 'api-single') { this.captionSingleResult = null; this.captionPreviewError = ''; }
     if (mode !== 'api-folder') return;
+    this._invalidateCaptionOverview();
     this.captionSourceError = '';
     ++this._captionPlanRequest;
     this.captionPlanLoading = false;
@@ -160,9 +177,7 @@ window.captionWorkspaceMixin = {
     ++this._captionPlanRequest;
     this.captionPlanError = '';
     if (outputChanged) {
-      ++this._captionOverviewRequest;
-      this.captionOverviewLoading = false;
-      this._captionOverviewInFlight = false;
+      this._invalidateCaptionOverview();
       this.closeCaptionDetail();
     }
     if (!this.taggerStarting && !this.taggerScanning && !this._taggerSourceScanTimer && this.captionBatchState().source) {
@@ -354,23 +369,30 @@ window.captionWorkspaceMixin = {
     }
   },
   async rescanCaptionOverview() {
-    if (this.currentRoute !== 'ai-captioning' || this.taggerSourceMode !== 'api-folder' || this.captionOverviewLoading) return;
-    this.closeCaptionDetail();
-    const batch = this.captionBatchState(), version = this._taggerFormVersion, tab = this.captionTab;
-    const isCurrent = () => this.currentRoute === 'ai-captioning' && version === this._taggerFormVersion
-      && this.taggerSourceMode === 'api-folder' && this.captionTab === tab;
-    const sameSource = () => this.captionBatchState().source?.source_token === batch.source?.source_token
-      && this.captionBatchState().sourcePath === batch.sourcePath;
-    if (batch.source) {
-      const pending = this.refreshCaptionOverview({refresh:true}), request = this._captionOverviewRequest;
-      const result = await pending;
-      // A discarded response is not a reason to recover an expired source.
-      if (!isCurrent() || !sameSource() || request !== this._captionOverviewRequest) return;
-      if (result) { void this.refreshCaptionPlan(); return; }
-    }
-    if (isCurrent() && sameSource() && !this.captionBatchRunning() && batch.sourcePath) {
-      await this.scanTaggerSource();
-      if (isCurrent()) await this.refreshCaptionOverview();
+    if (this.currentRoute !== 'ai-captioning' || this.taggerSourceMode !== 'api-folder' || this.captionOverviewLoading || this.captionRescanning) return;
+    const rescanSeq = ++this._captionRescanSeq;
+    this.captionRescanning = true;
+    this._showRefreshFeedback('caption');
+    try {
+      this.closeCaptionDetail();
+      const batch = this.captionBatchState(), version = this._taggerFormVersion, tab = this.captionTab;
+      const isCurrent = () => this.currentRoute === 'ai-captioning' && version === this._taggerFormVersion
+        && this.taggerSourceMode === 'api-folder' && this.captionTab === tab && rescanSeq === this._captionRescanSeq;
+      const sameSource = () => this.captionBatchState().source?.source_token === batch.source?.source_token
+        && this.captionBatchState().sourcePath === batch.sourcePath;
+      if (batch.source) {
+        const pending = this.refreshCaptionOverview({refresh:true}), request = this._captionOverviewRequest;
+        const result = await pending;
+        // A discarded response is not a reason to recover an expired source.
+        if (!isCurrent() || !sameSource() || request !== this._captionOverviewRequest) return;
+        if (result) { void this.refreshCaptionPlan(); return; }
+      }
+      if (isCurrent() && sameSource() && !this.captionBatchRunning() && batch.sourcePath) {
+        await this.scanTaggerSource();
+        if (isCurrent()) await this.refreshCaptionOverview();
+      }
+    } finally {
+      if (rescanSeq === this._captionRescanSeq) this.captionRescanning = false;
     }
   },
   setCaptionOverviewFilter(filter) {

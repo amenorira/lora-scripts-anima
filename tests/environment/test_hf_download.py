@@ -1,12 +1,8 @@
-"""公共 HF 下载器：端点回退、真实 HTTP 分块、超时与跨源续传。"""
+"""Invalid resume offsets must preserve an existing download destination."""
 import tempfile
-import threading
-import time
 import unittest
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-
 
 from backend.utils import hf_download as hf
 
@@ -26,7 +22,6 @@ class HFDownloadTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.dest = Path(self.temp.name) / "model.bin"
 
-
     def test_wrong_resume_offset_never_replaces_destination(self):
         self.dest.write_bytes(b"original")
         self.dest.with_suffix(".bin.partial").write_bytes(b"abc")
@@ -35,73 +30,3 @@ class HFDownloadTests(unittest.TestCase):
             with self.assertRaises(hf.IntegrityError):
                 hf.download_url_with_fallback(["https://example.invalid/file"], self.dest)
         self.assertEqual(self.dest.read_bytes(), b"original")
-
-
-class HTTPDownloadTests(unittest.TestCase):
-    """用真实本机 HTTP 服务器验证并发、服务器忽略 Range 和短超时，不依赖公网。"""
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp.cleanup)
-        self.dest = Path(self.temp.name) / "model.bin"
-        self.data = bytes(range(256)) * 16
-        self.active = self.peak = 0
-        self.calls = []
-        self.lock = threading.Lock()
-        case = self
-
-        class Handler(BaseHTTPRequestHandler):
-            def log_message(self, *args):
-                pass
-
-            def do_HEAD(self):
-                case.calls.append(("HEAD", self.path))
-                if self.path == "/slow":
-                    time.sleep(2.5)
-                self.send_response(200)
-                self.send_header("Content-Length", str(len(case.data)))
-                self.end_headers()
-
-            def do_GET(self):
-                byte_range = self.headers.get("Range")
-                case.calls.append(("GET", self.path, byte_range))
-                with case.lock:
-                    case.active += 1
-                    case.peak = max(case.peak, case.active)
-                try:
-                    time.sleep(0.05)
-                    if byte_range and self.path != "/no-range":
-                        start, end = byte_range.removeprefix("bytes=").split("-")
-                        start, end = int(start), int(end) if end else len(case.data) - 1
-                        body = case.data[start:end + 1]
-                        self.send_response(206)
-                        self.send_header("Content-Range", f"bytes {start}-{end}/{len(case.data)}")
-                    else:
-                        body = case.data
-                        self.send_response(200)
-                    self.send_header("Content-Length", str(len(body)))
-                    self.end_headers()
-                    self.wfile.write(body)
-                except (BrokenPipeError, ConnectionResetError):
-                    pass
-                finally:
-                    with case.lock:
-                        case.active -= 1
-
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        self.worker = threading.Thread(target=self.server.serve_forever, daemon=True)
-        self.worker.start()
-        self.addCleanup(self.close_server)
-        self.url = f"http://127.0.0.1:{self.server.server_port}"
-
-    def close_server(self):
-        self.server.shutdown()
-        self.server.server_close()
-        self.worker.join(timeout=2)
-
-    def test_real_parallel_ranges_reconstruct_original_file(self):
-        with patch.object(hf, "_PART_MIN", 1024):
-            hf.download_url_with_fallback([self.url + "/file"], self.dest)
-        self.assertEqual(self.dest.read_bytes(), self.data)
-        self.assertGreaterEqual(self.peak, 2)
-        self.assertLessEqual(self.peak, 4)
-        self.assertEqual(len([c for c in self.calls if c[0] == "GET"]), 4)

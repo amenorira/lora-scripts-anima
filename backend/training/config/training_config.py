@@ -402,7 +402,9 @@ def dump_training_config(document: dict[str, Any]) -> str:
         allow_unicode=True,
         sort_keys=False,
         default_flow_style=False,
-        width=120,
+        # Leave long scalar values on their original line; viewers can wrap
+        # them to their own width without adding serialization line breaks.
+        width=MAX_TRAINING_CONFIG_BYTES,
     )
 
 

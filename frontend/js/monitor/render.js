@@ -32,7 +32,12 @@ window.monitorRenderMixin = {
 
     // ── 1. 外壳层：仅在首次或历史模式切换时构建 ──
     if (!this._shellBuilt || this._shellHistoryMode !== isHistory || this._shellLocale !== locale) {
-      if (this._shellBuilt) this.closePreviewLightbox();
+      // The old shell can still be in the DOM after a route reset has cleared
+      // _shellBuilt. Its delayed close callback is lost when we replace it.
+      if (document.getElementById('previewLightbox')) {
+        this.closePreviewLightbox();
+        this.clearPreviewLightbox?.();
+      }
       this._shellBuilt = true;
       this._shellHistoryMode = isHistory;
       this._shellLocale = locale;
@@ -110,8 +115,7 @@ window.monitorRenderMixin = {
     html += '<span class="m-badge m-badge-' + stClass + '"><i aria-hidden="true"></i>' + this.esc(stLabel) + '</span>';
     if (d.artifact_available === false) html += '<span class="m-badge m-badge-danger"><i aria-hidden="true"></i>' + this.esc(t('artifactOffline')) + '</span>';
     html += '<div class="m-history-spacer"></div>';
-    html += '<button class="btn btn-sm btn-secondary" @click="clearRunDetail()">' + this.esc(t('backToLive')) + '</button>';
-    html += '<button class="btn btn-sm" @click="navigate(\'history\')">← ' + this.esc(t('backToHistory')) + '</button>';
+    html += '<button class="btn btn-sm btn-secondary" @click="navigate(\'history\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>' + this.esc(t('backToHistory')) + '</button>';
     html += '</div>';
     return html;
   },
@@ -130,7 +134,12 @@ window.monitorRenderMixin = {
       const prevTab = this._builtTab;
       this._builtTab = tab;
       // 切离样本标签：取消弱网模式下的后台媒体加载队列（面板 DOM 保留，不释放 object URL）
-      if (prevTab === 'samples' && tab !== 'samples') this._cancelPreviewMediaQueue();
+      if (prevTab === 'samples' && tab !== 'samples') {
+        this._sampleLayoutAction++;
+        this._cancelSampleGridMotion?.(contentEl.querySelector('.m-tab-panel[data-tab="samples"]')?.querySelector('.preview-grid'));
+        this._cancelPreviewMediaQueue();
+        this._disconnectSampleExpansionUI?.();
+      }
       contentEl.querySelectorAll('.m-tab-panel').forEach(panel => {
         const isActive = panel.dataset.tab === tab;
         panel.classList.toggle('active', isActive);
@@ -160,15 +169,36 @@ window.monitorRenderMixin = {
     }
     if (tab === 'overview') {
       const sig = 'ov:' + this._shellLocale + ':' + this._summaryStatus(d, isHistory).state + ':' + this.trainParamsVersion;
-      if (panelEmpty || this._builtOverviewSig !== sig) {
+      if (panelEmpty || this._builtOverviewSig !== sig || this._builtParamSchema !== window.TRAIN_SECTIONS) {
         this._builtOverviewSig = sig;
+        this._builtParamSchema = window.TRAIN_SECTIONS;
         if (!tabChanged) panel.classList.add('no-enter-anim');
+        const paramInput = panel.querySelector('.m-param-toolbar input');
+        const paramFocus = paramInput && document.activeElement === paramInput
+          ? { start: paramInput.selectionStart, end: paramInput.selectionEnd } : null;
+        const overviewContext = isHistory ? 'history:' + this.selectedRunDir : 'live:' + (d.run_dir || this.liveTaskId || d.active_task?.id || '');
+        const sameContext = panel.dataset.overviewContext === overviewContext;
+        const method = panel.querySelector('.m-diagnostic-details');
+        const methodOpen = method?.open;
+        const methodFocused = method && document.activeElement === method.querySelector('summary');
+        const scrollTop = panel.scrollTop;
         panel.innerHTML = this._renderOverviewTab(d, t, isHistory);
+        panel.dataset.overviewContext = overviewContext;
         delete panel.dataset.diagnosticVersion;
         delete panel.dataset.sparklineVersion;
         delete panel.dataset.telemetryVersion;
         delete panel.dataset.motionContext;
-        if (this.monitorParamQuery) this.filterMonitorParams();
+        this.initMonitorParams(panel);
+        if (sameContext) {
+          const method = panel.querySelector('.m-diagnostic-details');
+          if (method) method.open = !!methodOpen;
+          panel.scrollTop = scrollTop;
+          if (paramFocus) {
+            const input = panel.querySelector('.m-param-toolbar input');
+            input?.focus({ preventScroll: true });
+            input?.setSelectionRange(paramFocus.start, paramFocus.end);
+          } else if (methodFocused) method?.querySelector('summary')?.focus({ preventScroll: true });
+        }
       }
       this._patchOverviewStatus(panel, d, t, isHistory);
       return;
@@ -176,30 +206,72 @@ window.monitorRenderMixin = {
     if (tab === 'samples') {
       const sig = 'sm:' + this._shellLocale + ':' + this.previewsVersion + ':' + (this.weakNetworkMode ? 1 : 0) + ':' + (d.artifact_available === false ? 0 : 1) + ':' + String(d.preview_enabled);
       if (panelEmpty || this._builtSamplesSig !== sig) {
-        // 保留滚动位置（实时追加样本时不在视觉上跳回顶部）
-        const scrollTop = panel.scrollTop || 0;
+        // Removing a pressed card prevents the browser from dispatching click.
+        // Pointer completion retries this render after the original click.
+        if (this._sampleGridPointer && !this._sampleGridPointer.cancelled) {
+          this._sampleGridPointer.renderPending = true;
+          return;
+        }
+        this._disconnectSampleExpansionUI?.(true);
+        this._sampleLayoutAction++;
+        const grid = panel.querySelector('.preview-grid');
+        const motionContext = JSON.stringify([this.currentOutputRunDir || '', this.selectedRunDir || '', this.sampleBatchSortDir, this._shellLocale, this.weakNetworkMode]);
+        const before = grid && !tabChanged && !this._sampleResetScroll && panel._sampleMotionContext === motionContext
+          ? this._captureSampleLayout(grid) : null;
+        this._cancelSampleGridMotion?.(grid);
+        const wasOverview = !!grid?.classList.contains('m-sample-batches');
+        const scrollTop = grid?.scrollTop || 0;
+        const focusedId = panel.contains(document.activeElement) ? document.activeElement.id : '';
+        let anchor = null;
+        if (grid && scrollTop > 0 && !this._sampleResetScroll) {
+          // Recompute after a resize: the same scrollTop can now show a
+          // different row when the number of grid columns changes.
+          anchor = window.AnimaSampleLayout.captureAnchor(grid, null, this._sampleScrollAnchor);
+        }
+        const mediaRoot = document.getElementById('monitorDashboard') || panel;
+        const loadedMedia = this._capturePreviewMedia(mediaRoot);
         this._cancelPreviewMediaQueue();
-        this._releasePreviewMediaObjectUrls();
         this._builtSamplesSig = sig;
+        panel._sampleMotionContext = motionContext;
         if (!tabChanged) panel.classList.add('no-enter-anim');
         panel.innerHTML = this._renderSamplesTab(t);
-        panel.scrollTop = scrollTop;
+        window.AnimaSampleLayout.update(panel.querySelector('.m-samples-workspace'));
+        const nextGrid = panel.querySelector('.preview-grid');
+        this._restorePreviewMedia(mediaRoot, loadedMedia);
+        const nextIsOverview = !!nextGrid?.classList.contains('m-sample-batches');
+        const selectedBatch = nextIsOverview ? this._sampleSelectedBatch() : null;
+        const latestBatch = nextIsOverview ? this._sampleDataModel().batches.at(-1) : null;
+        const followLatest = nextIsOverview && selectedBatch?.id === latestBatch?.id && this._sampleOverviewAtEnd !== false;
+        this._sampleScrollAnchor = null;
+        if (nextIsOverview && followLatest) {
+          nextGrid.scrollTop = this._sampleOverviewLatestScrollTop(nextGrid);
+        } else if (nextIsOverview && (!wasOverview || this._sampleResetScroll)) {
+          this._scrollOverviewToBatch?.(panel, selectedBatch);
+        } else if (nextGrid && !this._sampleResetScroll) {
+          nextGrid.scrollTop = scrollTop;
+          this._sampleScrollAnchor = window.AnimaSampleLayout.restoreAnchor(nextGrid, anchor);
+        } else this._sampleScrollAnchor = null;
+        this._sampleResetScroll = false;
+        if (focusedId) document.getElementById(focusedId)?.focus({ preventScroll: true });
+        this._refreshSampleGroupOutline?.(panel);
+        if (before && nextGrid && Array.from(nextGrid.querySelectorAll('.m-sample-tile')).some(item => !before.has(item.dataset.sampleTileKey))) {
+          this._animateSampleLayout(nextGrid, before, '', {revealNew: true});
+        }
       }
-      this.schedulePreviewMediaLoads(panel);
+      this._connectSampleExpansionUI?.(panel);
+      this.schedulePreviewMediaLoads(document.getElementById('monitorDashboard') || panel);
       return;
     }
     if (tab === 'outputs') {
       if ((this._outputFilesNeedsRefresh || (tabChanged && !this.outputFiles.length)) && !this.outputFilesLoading) this.loadOutputFiles();
-      const sig = 'out:' + this._shellLocale + ':' + this.outputFilesVersion + ':' + this.selectedOutputFiles.join('|') + ':' + (this.outputFilesLoading?1:0) + ':' + this.outputSearch + ':' + this.outputFilter + ':' + this.outputModelSortKey + ':' + this.outputModelSortDir + ':' + this.outputOtherSortKey + ':' + this.outputOtherSortDir + ':' + (this.outputFilesError || '') + ':' + (d.artifact_available === false ? 0 : 1);
+      const sig = 'out:' + this._shellLocale + ':' + this.outputFilesVersion + ':' + this.selectedOutputFiles.join('|') + ':' + (!this.outputFiles.length && this.outputFilesLoading && !this._outputFilesLoaded ? 1 : 0) + ':' + this.outputSearch + ':' + this.outputFilter + ':' + this.outputModelSortKey + ':' + this.outputModelSortDir + ':' + this.outputOtherSortKey + ':' + this.outputOtherSortDir + ':' + (this.outputFilesError || '') + ':' + (d.artifact_available === false ? 0 : 1);
       if (panelEmpty || this._builtOutputsSig !== sig) {
         // Preserve scroll position across re-renders
         const scrollEl = panel.querySelector('.m-outputs-scroll');
         const scrollTop = scrollEl ? scrollEl.scrollTop : 0;
         this._builtOutputsSig = sig;
-        // 进入动画策略：加载/空占位（dashboard-empty）转瞬即逝，不播动画；
-        // 真实内容首次落位（替换占位）播放动画；排序/筛选等原地重建抑制，避免整面板闪烁
-        const replacingPlaceholder = !!panel.querySelector('.dashboard-empty');
-        if (this.outputFilesLoading || (!tabChanged && !panelEmpty && !replacingPlaceholder)) {
+        // 仅在切换标签时淡入；加载完成和原地更新保持工具栏稳定。
+        if (this.outputFilesLoading || (!tabChanged && !panelEmpty)) {
           panel.classList.add('no-enter-anim');
         } else {
           panel.classList.remove('no-enter-anim');

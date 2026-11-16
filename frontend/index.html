@@ -42,7 +42,11 @@
   <script src="/anima-ui/js/shared/mixin-compose.js" defer></script>
   <script src="/anima-ui/js/shared/utils.js" defer></script>
   <script src="/anima-ui/js/shared/image-loading.js" defer></script>
+  <script src="/anima-ui/js/shared/image-viewport.js" defer></script>
   <script src="/anima-ui/js/shared/ui-interactions.js" defer></script>
+  <script src="/anima-ui/js/shared/loop-marquee.js" defer></script>
+  <link rel="stylesheet" href="/anima-ui/css/loop-marquee.css">
+  <script src="/anima-ui/js/shared/confirmation-dialog.js" defer></script>
   <script src="/anima-ui/js/shared/preview-chart.js" defer></script>
   <script src="/anima-ui/js/shared/notifications.js" defer></script>
   <!-- Feature modules (order matters: config first, app last) -->
@@ -51,6 +55,7 @@
   <script src="/anima-ui/js/shared/realtime.js" defer></script>
   <script src="/anima-ui/js/monitor/logs.js" defer></script>
   <script src="/anima-ui/js/monitor/previews.js" defer></script>
+  <script src="/anima-ui/js/monitor/sample-layout.js" defer></script>
   <script src="/anima-ui/js/monitor/outputs.js" defer></script>
   <script src="/anima-ui/js/monitor/history.js" defer></script>
   <script src="/anima-ui/js/monitor/metrics.js" defer></script>
@@ -91,6 +96,10 @@
   <script src="/anima-ui/js/training/crop-preview-grid.js" defer></script>
   <script src="/anima-ui/js/training/crop-preview.js" defer></script>
   <link rel="stylesheet" href="/anima-ui/css/crop-preview.css">
+  <script src="/anima-ui/js/training/prompt-workbench.js" defer></script>
+  <script src="/anima-ui/js/training/prompt-tag-tools.js" defer></script>
+  <script src="/anima-ui/js/training/prompt-triggers.js" defer></script>
+  <link rel="stylesheet" href="/anima-ui/css/prompt-workbench.css">
   <script src="/anima-ui/js/training/toml.js" defer></script>
   <script src="/anima-ui/js/training/config-io.js" defer></script>
   <script src="/anima-ui/js/tagger/ai-caption-options.js" defer></script>
@@ -198,12 +207,6 @@
         </span>
         <span x-text="t('nav.tagger')">Tagger</span>
       </a>
-      <a class="sidebar-item" data-route="ai-captioning" data-group="tools" :class="{ active: currentRoute === 'ai-captioning' }"
-         @click="navigate('ai-captioning')" href="javascript:void(0)" :aria-current="currentRoute === 'ai-captioning' ? 'page' : null">
-        <span class="sidebar-tab-fill" aria-hidden="true"></span>
-        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="m7 15 3-6 3 6M8 13h4M16 9v6M9 1v3M15 1v3M9 20v3M15 20v3"/></svg></span>
-        <span x-text="t('moss.pageTitle')">AI 标注</span>
-      </a>
       <a class="sidebar-item" data-route="tagEditor" data-group="tools" :class="{ active: currentRoute === 'tagEditor' }"
          @click="navigate('tagEditor')" href="javascript:void(0)" :aria-current="currentRoute === 'tagEditor' ? 'page' : null">
         <span class="sidebar-tab-fill" aria-hidden="true"></span>
@@ -211,6 +214,12 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         </span>
         <span x-text="t('nav.tagEditor')">Tag Editor</span>
+      </a>
+      <a class="sidebar-item" data-route="ai-captioning" data-group="tools" :class="{ active: currentRoute === 'ai-captioning' }"
+         @click="navigate('ai-captioning')" href="javascript:void(0)" :aria-current="currentRoute === 'ai-captioning' ? 'page' : null">
+        <span class="sidebar-tab-fill" aria-hidden="true"></span>
+        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="m7 15 3-6 3 6M8 13h4M16 9v6M9 1v3M15 1v3M9 20v3M15 20v3"/></svg></span>
+        <span x-text="t('moss.pageTitle')">AI 标注</span>
       </a>
       <a class="sidebar-item" data-route="regularization" data-group="tools" :class="{ active: currentRoute === 'regularization' }"
          @click="navigate('regularization')" href="javascript:void(0)" :aria-current="currentRoute === 'regularization' ? 'page' : null">
@@ -374,7 +383,11 @@
       <div x-show="currentRoute === 'history'" x-cloak class="route-history">
         <div class="page-header">
           <h1 class="page-title" x-text="t('nav.history')">Training History</h1>
-          <button class="btn btn-sm btn-secondary" :disabled="historyLoading" @click="loadHistory()" x-text="t(historyLoading ? 'monitor.loading' : 'monitor.refreshHistory')"></button>
+          <button type="button" class="btn btn-sm btn-secondary refresh-button" :class="{ 'is-loading': historyRefreshing || historyRefreshFeedback }"
+                  :aria-disabled="historyLoading ? 'true' : 'false'" :aria-busy="historyRefreshing ? 'true' : 'false'" @click="refreshHistory()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 8a7 7 0 0 1 11.5-1.8L20 12M4 12l2.9 5.8A7 7 0 0 0 18.4 16"/></svg>
+            <span x-text="t('monitor.refreshHistory')"></span><span class="m-number-accessible" role="status" aria-live="polite" x-text="historyRefreshing ? t('monitor.loading') : ''"></span>
+          </button>
         </div>
         <div class="hist-toolbar">
           <input type="search" class="hist-search" x-model="historySearch" :placeholder="t('monitor.searchHistory')" :aria-label="t('monitor.searchHistory')" @input.debounce.200ms="renderHistory()">
@@ -384,13 +397,13 @@
             </template>
           </div>
         </div>
-        <div class="hist-results" role="status" aria-live="polite">
+        <div class="hist-results" role="status" aria-live="polite" x-show="_historyLoaded" x-cloak>
           <span x-text="t('monitor.historyCount').replace('{shown}', filteredHistoryItems.length).replace('{total}', historyItems.length)"></span>
           <button class="hist-action" x-show="historySearch || historyFilter !== 'all'" @click="clearHistoryFilters()" x-text="t('monitor.clearHistoryFilters')"></button>
         </div>
         <div class="hist-load-error" role="alert" x-show="historyError" x-cloak>
           <span x-text="historyError"></span>
-          <button class="btn btn-sm btn-secondary" :disabled="historyLoading" @click="loadHistory()" x-text="t('monitor.refreshHistory')"></button>
+          <button class="btn btn-sm btn-secondary" :disabled="historyLoading" @click="refreshHistory()" x-text="t('monitor.refreshHistory')"></button>
         </div>
         <div id="historyList" class="history-list" :aria-busy="historyLoading"></div>
       </div>
@@ -467,18 +480,7 @@
 
       <!-- Route: Training pages (basic/master/anima) -->
       <div x-show="currentRoute && currentRoute.startsWith('train-')" x-cloak>
-        <div class="page-header">
-          <div class="page-header-left">
-            <h1 class="page-title" x-text="pageTitle">Training</h1>
-          </div>
-        </div>
-
-        <div class="history-reuse-notice" x-show="historyReuseSource" x-cloak role="status">
-          <div class="history-reuse-text"><span x-text="t('monitor.historyReuseNotice').replace('{name}', historyReuseSource)"></span><small x-show="historyReuseWarning" x-text="historyReuseWarning"></small></div>
-          <button class="btn btn-sm btn-secondary" :disabled="!!historyReuseBusy" @click="undoHistoryReuse()" x-text="t(historyReuseBusy === 'undo' ? 'monitor.restoringConfig' : 'monitor.undoHistoryReuse')"></button>
-          <button class="btn-icon" :disabled="!!historyReuseBusy" @click="dismissHistoryReuse()" :aria-label="t('common.close')">×</button>
-        </div>
-        <div class="train-workbench">
+        <div class="train-rail-anchor">
         <aside class="train-rail" x-show="sectionNavList.length > 0" x-cloak
                :style="{ top: sectionRailTop + 'px' }"
                @resize.window="positionSectionRail()"
@@ -522,6 +524,20 @@
             </template>
           </div>
         </aside>
+        </div>
+
+        <div class="page-header">
+          <div class="page-header-left">
+            <h1 class="page-title" x-text="pageTitle">Training</h1>
+          </div>
+        </div>
+
+        <div class="history-reuse-notice" x-show="historyReuseSource" x-cloak role="status">
+          <div class="history-reuse-text"><span x-text="t('monitor.historyReuseNotice').replace('{name}', historyReuseSource)"></span><small x-show="historyReuseWarning" x-text="historyReuseWarning"></small></div>
+          <button class="btn btn-sm btn-secondary" :disabled="!!historyReuseBusy" @click="undoHistoryReuse()" x-text="t(historyReuseBusy === 'undo' ? 'monitor.restoringConfig' : 'monitor.undoHistoryReuse')"></button>
+          <button class="btn-icon" :disabled="!!historyReuseBusy" @click="dismissHistoryReuse()" :aria-label="t('common.close')">×</button>
+        </div>
+        <div class="train-workbench">
 
         <div class="train-workbench-main">
         <!-- Train type selector -->
@@ -611,7 +627,7 @@
         <!-- Image lightbox -->
         <dialog id="teLightbox" x-dialog="tagEditorLightboxOpen" class="te-lightbox"
           :aria-label="tagEditorLightboxImage?.rel_path || tagEditorLightboxImage?.name || t('tagEditor.viewOriginal')"
-          @click.self="tagEditorCloseLightbox()" @dialog-close="tagEditorCloseLightbox()" x-cloak>
+          @click.self="tagEditorCloseLightbox()" @dialog-close="tagEditorCloseLightbox()" @resize.window="tagEditorConstrainLightbox()" x-cloak>
           <div class="te-lightbox-topbar">
             <span class="te-lightbox-name"
               x-text="tagEditorLightboxImage?.rel_path || tagEditorLightboxImage?.name || ''"
@@ -621,13 +637,13 @@
                 :title="t('tagEditor.zoomOut')" :aria-label="t('tagEditor.zoomOut')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
               </button>
-              <button class="te-lightbox-scale" @click="tagEditorResetLightbox()" :title="t('tagEditor.resetZoom')"
-                x-text="Math.round(tagEditorLightboxScale * 100) + '%'"></button>
+              <button class="te-lightbox-scale" @click="tagEditorResetLightbox()" :title="t('imageViewer.zoomHint')" aria-keyshortcuts="0"
+                x-text="tagEditorLightboxScale <= 1 ? t('imageViewer.fit') : Math.round(tagEditorLightboxScale * 100) + '%'"></button>
               <button @click="tagEditorSetLightboxScale(tagEditorLightboxScale * 1.18)" :disabled="tagEditorLightboxScale >= 8"
                 :title="t('tagEditor.zoomIn')" :aria-label="t('tagEditor.zoomIn')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
               </button>
-              <button class="te-lightbox-close" data-dialog-autofocus @click="tagEditorCloseLightbox()" :title="t('common.close')" :aria-label="t('common.close')">
+              <button class="te-lightbox-close" data-dialog-autofocus @click="tagEditorCloseLightbox()" :title="t('imageViewer.closeHint')" :aria-label="t('common.close')" aria-keyshortcuts="Escape">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>
@@ -640,15 +656,16 @@
             <div class="te-lightbox-spinner" x-show="tagEditorLightboxLoading"></div>
             <img class="te-lightbox-image" :src="tagEditorLightboxSrc"
               :alt="tagEditorLightboxImage?.rel_path || tagEditorLightboxImage?.name || ''"
+              @load="tagEditorConstrainLightbox()"
               :style="'transform:' + tagEditorLightboxTransform()"
               draggable="false">
           </div>
           <button class="te-lightbox-nav te-lightbox-prev" x-show="tagEditorCanNavDetail(-1)"
-            @click.stop="tagEditorLightboxNav(-1)" :title="t('tagEditor.prevImage')">
+            @click.stop="tagEditorLightboxNav(-1)" :title="t('imageViewer.previousHint')" :aria-label="t('tagEditor.prevImage')" aria-keyshortcuts="ArrowLeft">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
           </button>
           <button class="te-lightbox-nav te-lightbox-next" x-show="tagEditorCanNavDetail(1)"
-            @click.stop="tagEditorLightboxNav(1)" :title="t('tagEditor.nextImage')">
+            @click.stop="tagEditorLightboxNav(1)" :title="t('imageViewer.nextHint')" :aria-label="t('tagEditor.nextImage')" aria-keyshortcuts="ArrowRight">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
           </button>
         </dialog>
@@ -1144,9 +1161,14 @@
               <div class="te-sidebar-body" x-show="tagEditorSidebarTab === 'snapshots'">
                 <p class="te-history-hint" x-text="t('tagEditor.historyHintSaved')"></p>
                 <div class="te-history-controls">
-                  <button class="te-topbar-btn" @click="tagEditorLoadSnapshots()" :disabled="tagEditorSnapshotLoading || tagEditorSnapshotBusy" x-text="t('tagEditor.timelineRefresh')"></button>
+                  <button type="button" class="te-topbar-btn refresh-button" @click="tagEditorRefreshSnapshots()" :disabled="tagEditorSnapshotBusy"
+                          :class="{ 'is-loading': tagEditorSnapshotLoading || tagEditorSnapshotRefreshFeedback }"
+                          :aria-disabled="tagEditorSnapshotLoading || tagEditorSnapshotBusy ? 'true' : 'false'" :aria-busy="tagEditorSnapshotLoading ? 'true' : 'false'">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 8a7 7 0 0 1 11.5-1.8L20 12M4 12l2.9 5.8A7 7 0 0 0 18.4 16"/></svg>
+                    <span x-text="t('tagEditor.timelineRefresh')"></span>
+                  </button>
                 </div>
-                <p class="te-history-hint" role="status" x-show="tagEditorSnapshotLoading" x-text="t('common.loading')"></p>
+                <p class="te-history-hint" role="status" x-show="tagEditorSnapshotLoading && !tagEditorSnapshots.length" x-text="t('common.loading')"></p>
                 <p class="te-history-hint" role="alert" x-show="tagEditorSnapshotError" x-text="t('tagEditor.timelineLoadError')"></p>
                 <div class="te-snapshot-list">
                   <div x-show="!tagEditorSnapshotLoading && !tagEditorSnapshotError && tagEditorSnapshots.length === 0" class="te-history-empty" x-text="t('tagEditor.snapshotsHint')"></div>
@@ -1557,35 +1579,54 @@
       </div>
 
       <!-- Route: Settings -->
-      <div x-show="currentRoute === 'settings'" x-cloak>
+      <div class="route-settings" x-show="currentRoute === 'settings'" x-cloak>
         <div class="page-header">
           <h1 class="page-title" x-text="t('settings.title')">UI Settings</h1>
         </div>
-        <div class="env-section">
-          <div class="settings-row">
-            <div class="settings-row-main">
-              <div class="settings-row-label" x-text="t('settings.autoLoadHistory')">Auto-load History</div>
-              <div class="settings-row-desc" x-text="t('settings.autoLoadHistoryDesc')">Automatically restore last training parameters on startup</div>
-            </div>
-            <div class="settings-row-action">
-              <label class="toggle">
-                <input type="checkbox" x-model="autoLoadHistory" @change="saveUISettings()">
-                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        <div class="settings-sections">
+          <section aria-labelledby="settingsTrainingTitle">
+            <h2 class="settings-section-title" id="settingsTrainingTitle" x-text="t('settings.trainingExperience')">Training experience</h2>
+            <div class="settings-panel">
+              <label class="settings-row">
+                <span class="settings-row-main">
+                  <span class="settings-row-label" id="restoreDraftSetting" x-text="t('settings.autoLoadHistory')">Restore training drafts</span>
+                  <span class="settings-row-desc" id="restoreDraftSettingDesc" x-text="t('settings.autoLoadHistoryDesc')">Restore your last edited training settings on startup, including changes you have not used to start training.</span>
+                </span>
+                <span class="settings-row-action toggle">
+                  <input type="checkbox" x-model="autoLoadHistory" @change="saveUISettings()" aria-labelledby="restoreDraftSetting" aria-describedby="restoreDraftSettingDesc">
+                  <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                </span>
+              </label>
+              <label class="settings-row">
+                <span class="settings-row-main">
+                  <span class="settings-row-label" id="confirmPreviewSetting" x-text="t('settings.confirmPreviewBeforeTraining')">Confirm previews before training</span>
+                  <span class="settings-row-desc" id="confirmPreviewSettingDesc" x-text="t('settings.confirmPreviewBeforeTrainingDesc')">Review preview prompts before starting training when previews are enabled.</span>
+                </span>
+                <span class="settings-row-action toggle">
+                  <input type="checkbox" x-model="confirmPreviewBeforeTraining" @change="saveUISettings()" aria-labelledby="confirmPreviewSetting" aria-describedby="confirmPreviewSettingDesc">
+                  <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                </span>
               </label>
             </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-main">
-              <div class="settings-row-label" x-text="t('settings.slowConnectionMode')">Slow connection compatibility</div>
-              <div class="settings-row-desc" x-text="t('settings.slowConnectionModeDesc')">Enabled by default: show the full sample list while loading thumbnails in the background without delaying realtime updates on slow or unstable connections.</div>
-            </div>
-            <div class="settings-row-action">
-              <label class="toggle">
-                <input type="checkbox" :checked="weakNetworkMode" @change="requestWeakNetworkModeChange($event.target.checked, $event.target)">
-                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </section>
+          <section aria-labelledby="settingsConnectionTitle">
+            <h2 class="settings-section-title" id="settingsConnectionTitle" x-text="t('settings.remoteConnection')">Remote connection</h2>
+            <div class="settings-panel">
+              <label class="settings-row">
+                <span class="settings-row-main">
+                  <span class="settings-row-label" id="slowConnectionSetting" x-text="t('settings.slowConnectionMode')">Slow connection compatibility</span>
+                  <span class="settings-row-desc" id="slowConnectionSettingDesc">
+                    <span x-text="t('settings.slowConnectionModeDesc')">Loads preview thumbnails one at a time to reduce their impact on live updates.</span>
+                    <span class="settings-row-note" x-text="t('settings.slowConnectionModeDefaultDesc')">Before you choose a setting, it defaults on when the browser reports a slow connection or data saver.</span>
+                  </span>
+                </span>
+                <span class="settings-row-action toggle">
+                  <input type="checkbox" :checked="weakNetworkMode" @change="requestWeakNetworkModeChange($event.target.checked, $event.target)" aria-labelledby="slowConnectionSetting" aria-describedby="slowConnectionSettingDesc">
+                  <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                </span>
               </label>
             </div>
-          </div>
+          </section>
         </div>
       </div>
 
@@ -1613,14 +1654,14 @@
             </div>
             <div class="btn-row" x-show="form.model_train_type === 'krea2-lora'">
               <button class="btn btn-ghost btn-sm" style="flex:1" @click="prepareKrea2Cache()"
-                      :disabled="isTraining || trainingStarting || regularizationActive"
+                      :disabled="isTraining || trainingStarting || showConfirmModal || regularizationActive"
                       x-text="t('krea2.prepareCache', 'Prepare Krea 2 Caches')">
                 Prepare Krea 2 Caches
               </button>
             </div>
             <div class="btn-row">
               <button class="btn btn-start" style="flex:1" @click="startTraining()"
-                      :disabled="isTraining || trainingStarting || trainingBlocked || regularizationActive"
+                      :disabled="isTraining || trainingStarting || showConfirmModal || trainingBlocked || regularizationActive"
                       x-text="trainingStarting ? t('common.starting') : (isTraining ? t('common.training') : (regularizationActive ? t('common.regularizationInProgress') : (trainingBlocked ? t('training.trainingInProgress') : t('common.startTraining'))))">
                 Start Training
               </button>
@@ -1679,23 +1720,63 @@
 </dialog>
 
 <!-- ── Confirm Modal ───────────────────────────────────── -->
-<dialog class="modal-overlay" x-dialog="showConfirmModal" @click.self="cancelConfirm()"
-        @dialog-close="cancelConfirm()" :aria-label="confirmTitle" x-cloak>
-  <div class="modal modal-confirm" :class="{ 'modal-confirm--three-actions': confirmSecondaryLabel }">
-    <div class="modal-body">
-      <div class="confirm-icon">
-        <svg x-show="!confirmNotice" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        <svg x-show="confirmNotice" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+<dialog id="confirmDialog" x-ref="confirmRoot" class="modal-overlay" x-dialog="showConfirmModal" @click.self="cancelConfirm()"
+        @dialog-close="cancelConfirm()" @dialog-after-close="confirmAfterClose()"
+        :data-switching="confirmSwitching || confirmBusy ? '' : null"
+        aria-labelledby="confirmTitle" :aria-describedby="[confirmDialog.context ? 'confirmContext' : '', confirmDialog.message ? 'confirmMessage' : ''].filter(Boolean).join(' ') || null" x-cloak>
+  <div class="modal modal-confirm" :data-size="confirmDialog.size" :data-tone="confirmDialog.tone"
+       :aria-busy="confirmBusy"
+       :style="confirmDialog.width ? { '--confirm-width': confirmDialog.width + 'px' } : {}">
+    <header class="confirm-heading">
+      <span class="confirm-icon" aria-hidden="true">
+        <svg x-show="confirmDialog.tone === 'neutral'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/></svg>
+        <svg x-show="confirmDialog.tone !== 'neutral'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M10.3 4.1 2.1 18.3A1.8 1.8 0 0 0 3.7 21h16.6a1.8 1.8 0 0 0 1.6-2.7L13.7 4.1a2 2 0 0 0-3.4 0Z"/><path d="M12 9v5m0 3v1"/></svg>
+      </span>
+      <h2 id="confirmTitle" class="confirm-title" x-text="confirmDialog.title"></h2>
+      <button type="button" class="btn-icon preview-close" :disabled="confirmBusy" @click="cancelConfirm()" :aria-label="t('common.close')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m18 6-12 12M6 6l12 12"/></svg></button>
+    </header>
+    <div class="modal-body confirm-body" x-ref="confirmBody">
+      <p id="confirmContext" class="confirm-context" x-show="confirmDialog.context" x-text="confirmDialog.context"></p>
+      <p id="confirmMessage" class="confirm-message" x-show="confirmDialog.message" x-text="confirmDialog.message"></p>
+      <dl class="confirm-summary" x-show="confirmDialog.fields?.length">
+        <template x-for="(field, index) in (confirmDialog.fields || [])" :key="index">
+          <div :class="{ 'confirm-field-multiline': field.multiline }">
+            <dt>
+              <span x-text="field.label"></span>
+              <span class="confirm-field-count" x-show="field.items?.length > 1" x-text="field.items?.length"></span>
+            </dt>
+            <template x-if="!field.items">
+              <dd x-text="field.value"></dd>
+            </template>
+            <template x-if="field.items">
+              <dd class="confirm-items">
+                <ol :class="{ 'is-numbered': field.items.length > 1 }">
+                  <template x-for="(item, itemIndex) in field.items" :key="itemIndex">
+                    <li>
+                      <span class="confirm-item-index" x-show="field.items.length > 1" x-text="itemIndex + 1" aria-hidden="true"></span>
+                      <p x-text="item"></p>
+                    </li>
+                  </template>
+                </ol>
+              </dd>
+            </template>
+          </div>
+        </template>
+      </dl>
+      <details class="confirm-details" x-ref="confirmDetails" x-show="confirmDialog.details">
+        <summary><svg class="confirm-details-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg><span x-text="t('notifications.details')"></span></summary>
+        <pre x-text="confirmDialog.details"></pre>
+      </details>
+    </div>
+    <footer class="modal-footer confirm-footer">
+      <button type="button" class="btn btn-ghost" :disabled="confirmBusy" x-show="!confirmDialog.notice" :data-dialog-autofocus="['danger', 'warning'].includes(confirmDialog.tone) ? '' : null" @click="cancelConfirm()" x-text="confirmDialog.cancelLabel"></button>
+      <button type="button" class="btn btn-ghost" x-show="confirmDialog.details" @click="copyConfirmDetails()" x-text="t('notifications.' + (confirmCopyState || 'copy'))" aria-live="polite"></button>
+      <div class="confirm-actions">
+        <button type="button" class="btn btn-secondary" :disabled="confirmBusy" x-show="confirmDialog.secondaryLabel" @click="confirmSecondaryAction()" x-text="confirmDialog.secondaryLabel"></button>
+        <button type="button" class="btn" :class="confirmDialog.tone === 'danger' ? 'btn-stop' : 'btn-primary'" :data-dialog-autofocus="confirmDialog.notice || !['danger', 'warning'].includes(confirmDialog.tone) ? '' : null"
+                :disabled="confirmBusy" @click="confirmAction()" x-text="confirmDialog.actionLabel"></button>
       </div>
-      <div class="confirm-title" x-text="confirmTitle">Confirm</div>
-      <div class="confirm-message" x-text="confirmMessage">Are you sure?</div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost btn-sm" x-show="!confirmNotice" :data-dialog-autofocus="confirmDanger ? '' : null" @click="cancelConfirm()" x-text="t('common.cancel')">Cancel</button>
-      <button class="btn btn-ghost btn-sm" x-show="confirmSecondaryLabel" @click="confirmSecondaryAction()" x-text="confirmSecondaryLabel">Secondary</button>
-      <button class="btn btn-sm" :class="confirmDanger ? 'btn-danger' : 'btn-primary'" :data-dialog-autofocus="!confirmDanger || confirmNotice ? '' : null" x-ref="confirmPrimary"
-              @click="confirmAction()" x-text="confirmActionLabel || (confirmNotice ? t('common.acknowledge') : t('common.confirm'))">Confirm</button>
-    </div>
+    </footer>
   </div>
 </dialog>
 
@@ -1952,7 +2033,116 @@
   </div>
 </dialog>
 
-<!-- ── Dataset crop preview ───────────────────────────── -->
+<!-- ── Preview prompt workbench ───────────────────────── -->
+<dialog id="promptWorkbenchDialog" class="modal-overlay modal-overlay--morph" data-dialog-fast-open x-dialog="promptWorkbenchOpen"
+        @click.self="closePromptWorkbench()" @dialog-close="closePromptWorkbench()" @dialog-after-open="positionPromptWorkbenchTagSuggestions()" @dialog-after-close="releasePromptWorkbenchView()" :aria-label="t('promptWorkbench.title')" x-cloak>
+  <div class="modal prompt-workbench-modal">
+    <div class="modal-header">
+      <div class="pw-heading"><span x-text="t('promptWorkbench.title')"></span><span class="pw-summary" x-text="promptWorkbenchSummary()"></span></div>
+      <button type="button" class="btn-icon preview-close" @click="closePromptWorkbench()" :aria-label="t('common.close')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m18 6-12 12M6 6l12 12"/></svg></button>
+    </div>
+    <template x-if="promptWorkbenchRendered">
+    <div class="pw-content" @scroll.capture="closePromptWorkbenchTriggerMenu(false)" @resize.window="closePromptWorkbenchTriggerMenu(false)">
+      <svg class="te-ctx-icons" aria-hidden="true"><symbol id="pw-icon-trigger" viewBox="0 0 24 24"><path d="M12 17v5M9 3h6M15 3v5l4 4v3H5v-3l4-4V3"/></symbol></svg>
+      <section class="pw-prompts">
+        <div class="pw-prompt-list" :aria-label="t('promptWorkbench.prompts')">
+          <template x-for="(item,index) in promptWorkbenchItems" :key="item.id">
+            <div class="pw-prompt-row" :data-pw-prompt-id="item.id" :class="{selected:promptWorkbenchActiveId===item.id}">
+              <button type="button" class="btn-icon pw-grip" draggable="false" @dragstart.prevent @pointerdown="startPromptWorkbenchSort($event,item.id)" @keydown="promptWorkbenchSortKey($event,item.id)" :aria-label="t('promptWorkbench.drag')" :title="t('promptWorkbench.drag')"><svg width="14" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg></button>
+              <button type="button" class="pw-prompt-summary loop-marquee-host" @click="editPromptWorkbenchItem(item.id)" :aria-pressed="promptWorkbenchActiveId===item.id">
+                <span class="pw-prompt-number" x-text="t('promptWorkbench.prompt').replace('{n}',index+1)"></span>
+                <span x-loop-marquee><span x-text="item.text || t('promptWorkbench.emptyPrompt')"></span></span>
+              </button>
+              <button type="button" class="btn-icon" @click="editPromptWorkbenchItem(item.id,true)" :aria-label="t('promptWorkbench.edit')" :title="t('promptWorkbench.edit')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#te-icon-rename"></use></svg></button>
+              <button type="button" class="btn-icon preview-close" @click="deletePromptWorkbenchItem(item.id)" :aria-label="t('promptWorkbench.delete')" :title="t('promptWorkbench.delete')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#te-icon-delete"></use></svg></button>
+            </div>
+          </template>
+        </div>
+        <div class="pw-add-row">
+          <button type="button" class="btn btn-ghost btn-sm" @click="addPromptWorkbenchItem()" :disabled="promptWorkbenchSingle&&promptWorkbenchItems.length>0"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#te-icon-add"></use></svg><span x-text="t('promptWorkbench.add')"></span></button>
+          <span class="field-hint" x-show="promptWorkbenchSingle" x-text="t('promptWorkbench.single')"></span>
+        </div>
+        <textarea id="promptWorkbenchEditor" class="pw-editor" x-show="!promptWorkbenchUseTagChips" :aria-label="t('promptWorkbench.editor')" :placeholder="t('promptWorkbench.editorPlaceholder')" :disabled="!promptWorkbenchActive" :value="promptWorkbenchActive?.text||''" @input="updatePromptWorkbenchItem($event.target.value)"></textarea>
+        <template x-if="promptWorkbenchUseTagChips">
+        <div id="promptWorkbenchTagChips" class="pw-prompt-chips" tabindex="0" role="list" :aria-label="t('promptWorkbench.promptTags')">
+          <template x-for="(tag,index) in promptWorkbenchPromptTags" :key="tag+'-'+index">
+            <span class="te-editor-tag pw-selected-tag" :class="tagDictionaryChipState(tag)" :data-pw-tag-index="index" tabindex="0" role="listitem" :aria-label="tag" :data-pw-trigger-tag="tag" :title="promptWorkbenchTriggerTitle(tag)" draggable="false" @dragstart.prevent @pointerdown="startPromptWorkbenchTagDrag($event,index)" @contextmenu="openPromptWorkbenchTriggerMenu($event,tag)" @keydown="if ($event.key==='ContextMenu'||($event.shiftKey&amp;&amp;$event.key==='F10')) openPromptWorkbenchTriggerMenu($event,tag); else promptWorkbenchTagSortKey($event,index)">
+              <svg class="pw-trigger-mark" x-show="promptWorkbenchIsTrigger(tag)" aria-hidden="true"><use href="#pw-icon-trigger"></use></svg>
+              <span class="pw-chip-body"><span class="te-editor-tag-name" x-text="tagDictionaryDisplayName(tag)"></span><span class="te-editor-tag-zh" x-text="tagDictionaryTranslationFor(tag)"></span></span><span class="te-tag-count pw-chip-count" x-show="promptWorkbenchTagCount(tag)!==null" x-text="promptWorkbenchTagCount(tag)" :title="t('tagEditor.countInDataset').replace('{count}',promptWorkbenchTagCount(tag))"></span><button type="button" class="pw-chip-remove" @pointerdown.stop @keydown.stop @click.stop="removePromptWorkbenchTagAt(index)" :aria-label="t('promptWorkbench.removeTag').replace('{tag}',tag)">×</button>
+            </span>
+          </template>
+          <span class="field-hint" x-show="!promptWorkbenchPromptTags.length" x-text="t('promptWorkbench.emptyPrompt')"></span>
+        </div>
+        </template>
+        <div class="field-hint" x-show="promptWorkbenchStructured" x-text="t('promptWorkbench.structured')"></div>
+        <div class="pw-tag-controls" x-show="!promptWorkbenchStructured">
+          <div class="te-editor-add pw-tag-add"><input id="promptWorkbenchTagAdd" type="text" autocomplete="off" spellcheck="false" x-model="promptWorkbenchTagInput" :disabled="!promptWorkbenchActive" :placeholder="t(tagDictionaryReady?'tagEditor.dictAddPlaceholder':'tagEditor.addTagPlaceholder')" :aria-label="t('promptWorkbench.addTags')" role="combobox" aria-autocomplete="list" aria-controls="pw-tag-suggestions" :aria-expanded="promptWorkbenchTagSuggestions.length>0" :aria-activedescendant="promptWorkbenchTagSuggestIndex>=0?'pw-tag-suggestion-'+promptWorkbenchTagSuggestIndex:null" @input="if (!$event.isComposing) suggestPromptWorkbenchTags($event.target)" @focus="suggestPromptWorkbenchTags($event.target)" @click="suggestPromptWorkbenchTags($event.target)" @compositionstart="closePromptWorkbenchTagSuggestions()" @compositionend="suggestPromptWorkbenchTags($event.target)" @blur="closePromptWorkbenchTagSuggestions()" @keyup="if (!$event.isComposing && ['ArrowLeft','ArrowRight','Home','End'].includes($event.key)) suggestPromptWorkbenchTags($event.target)" @keydown="promptWorkbenchTagKey($event)"><button type="button" @click="addPromptWorkbenchTags()" :disabled="!promptWorkbenchActive||!promptWorkbenchTagInput.trim()" :aria-label="t('promptWorkbench.addTags')">+</button></div>
+          <button type="button" class="btn btn-ghost btn-sm" @click="organizePromptWorkbenchTags()" :disabled="!promptWorkbenchActive||!promptWorkbenchData" :aria-disabled="promptWorkbenchLoading?'true':'false'" x-text="t('promptWorkbench.organizeTags')"></button>
+          <div class="tagger-compact-option"><span x-text="t('promptWorkbench.showTagChips')"></span><label class="toggle"><input type="checkbox" :aria-label="t('promptWorkbench.showTagChips')" :checked="promptWorkbenchShowTagChips" @change="setPromptWorkbenchTagChips($event.target.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>
+        </div>
+      </section>
+      <hr class="pw-divider">
+      <section class="pw-candidates" :aria-label="t('promptWorkbench.candidates')">
+        <div class="te-filter-group pw-subsets" role="group" :aria-label="t('promptWorkbench.subsets')">
+          <template x-for="option in promptWorkbenchSubsetOptions" :key="option.id"><button type="button" class="pw-subset" :class="{active:promptWorkbenchSubset===option.id}" @click="setPromptWorkbenchSubset(option.id)" :aria-pressed="promptWorkbenchSubset===option.id" :title="option.name"><span x-text="option.name"></span><span class="pw-subset-count" x-text="option.count===null?'…':'('+option.count+')'"></span></button></template>
+        </div>
+        <div class="pw-toolbar">
+          <div class="te-sidebar-search pw-search"><input type="search" :aria-label="t('promptWorkbench.search')" :placeholder="t('promptWorkbench.search')" x-model="promptWorkbenchSearch" @input.debounce.150ms="filterPromptWorkbench()"><button type="button" class="te-search-clear" x-show="promptWorkbenchSearch" @click="promptWorkbenchSearch='';filterPromptWorkbench()" :aria-label="t('tagEditor.clearSearch')" :title="t('tagEditor.clearSearch')">×</button></div>
+          <div class="tagger-compact-option"><span class="pw-exclusion-caption"><span x-text="t('promptWorkbench.exclusionLabel').split('{list}')[0]"></span><button type="button" class="field-doc-link pw-exclusion-link" data-dialog-opens="promptExclusionsDialog" @click="openPromptWorkbenchExclusions()" aria-haspopup="dialog" x-text="t('promptWorkbench.exclusions')"></button><span x-text="t('promptWorkbench.exclusionLabel').split('{list}')[1]"></span></span><label class="toggle"><input type="checkbox" :aria-label="t('promptWorkbench.useExclusions')" x-model="promptWorkbenchExcludeEnabled" @change="savePromptWorkbenchExclusions()"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>
+          <div class="tagger-compact-option" x-show="tagDictionaryIsChinese()"><span x-text="t('tagger.showTranslation')"></span><label class="toggle"><input type="checkbox" :aria-label="t('tagger.showTranslation')" :checked="tagDictionaryShowTranslation" @change="tagDictionaryToggleTranslation()"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>
+          <button type="button" class="btn-icon refresh-button" :class="{'is-loading':promptWorkbenchLoading||promptWorkbenchRefreshFeedback}" @click="refreshPromptWorkbenchTags()" :aria-disabled="promptWorkbenchLoading?'true':'false'" :aria-busy="promptWorkbenchLoading?'true':'false'" :aria-label="t('promptWorkbench.refresh')" :title="t('promptWorkbench.refresh')" x-html="_refreshIconHtml()"></button>
+          <span class="pw-scan-note" x-text="promptWorkbenchScanNote()"></span>
+        </div>
+        <div class="pw-tag-area">
+          <div class="pw-status" x-show="promptWorkbenchLoading&&!promptWorkbenchData" role="status" x-text="t('promptWorkbench.loading')"></div>
+          <div class="pw-status pw-error" x-show="promptWorkbenchError" role="alert" x-text="promptWorkbenchError"></div>
+          <div class="te-tagcloud-empty" x-show="promptWorkbenchData&&!promptWorkbenchError&&!promptWorkbenchTags.length" x-text="t('promptWorkbench.noTags')"></div>
+          <div class="te-tagcloud pw-tagcloud" x-show="promptWorkbenchData">
+            <template x-for="item in promptWorkbenchVisibleTags" :key="item.tag">
+              <div class="te-tag-row" :class="Object.assign({selected:promptWorkbenchIsTagSelected(item.tag)},tagDictionaryChipState(item.tag))">
+                <button type="button" class="te-tag-name te-tag-label" @pointerdown="if ($event.shiftKey) $event.preventDefault()" @click="togglePromptWorkbenchTag(item.tag,$event)" @contextmenu="openPromptWorkbenchTriggerMenu($event,item.tag)" @keydown="if ($event.key==='ContextMenu'||($event.shiftKey&amp;&amp;$event.key==='F10')) openPromptWorkbenchTriggerMenu($event,item.tag)" :data-pw-trigger-tag="item.tag" :title="promptWorkbenchTriggerTitle(item.tag)" :disabled="!promptWorkbenchActive||promptWorkbenchStructured" :aria-pressed="promptWorkbenchIsTagSelected(item.tag)"><span class="te-tag-title"><svg class="pw-trigger-mark" x-show="promptWorkbenchIsTrigger(item.tag)" aria-hidden="true"><use href="#pw-icon-trigger"></use></svg><span class="te-editor-tag-name" x-text="tagDictionaryDisplayName(item.tag)"></span><span class="te-tag-count" :title="t('tagEditor.countInDataset').replace('{count}',item.count)" x-text="item.count"></span></span><span class="te-editor-tag-zh" x-text="tagDictionaryTranslationFor(item.tag)"></span></button>
+              </div>
+            </template>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm pw-more" x-show="promptWorkbenchData&&promptWorkbenchTags.length>promptWorkbenchLimit" @click="morePromptWorkbenchTags()" x-text="t('promptWorkbench.more').replace('{n}',promptWorkbenchTags.length-promptWorkbenchLimit)"></button>
+        </div>
+      </section>
+    </div>
+    </template>
+  </div>
+  <div id="promptWorkbenchTriggerMenu" class="te-ctx" role="menu" :aria-label="t('promptWorkbench.triggerMenu')" x-show="!!promptWorkbenchTriggerMenu" :class="{'is-positioned':promptWorkbenchTriggerMenu?.positioned}" :style="'left:'+(promptWorkbenchTriggerMenu?.x||4)+'px;top:'+(promptWorkbenchTriggerMenu?.y||4)+'px'" @click.outside.capture="closePromptWorkbenchTriggerMenu(false)" @contextmenu.outside.capture="closePromptWorkbenchTriggerMenu(false)" @contextmenu.prevent.stop @keydown.escape.prevent.stop="closePromptWorkbenchTriggerMenu()" @keydown="promptWorkbenchTriggerMenuKey($event)" x-cloak>
+    <button type="button" role="menuitem" @click="setPromptWorkbenchTrigger(promptWorkbenchTriggerMenu.tag,!promptWorkbenchIsTrigger(promptWorkbenchTriggerMenu.tag))"><svg aria-hidden="true"><use href="#pw-icon-trigger"></use></svg><span x-text="t(promptWorkbenchIsTrigger(promptWorkbenchTriggerMenu?.tag)?'promptWorkbench.unsetTrigger':'promptWorkbench.setTrigger')"></span></button>
+    <button type="button" role="menuitem" x-show="promptWorkbenchTriggerHasOverride(promptWorkbenchTriggerMenu?.tag)" @click="setPromptWorkbenchTrigger(promptWorkbenchTriggerMenu.tag,null)"><svg aria-hidden="true"><use href="#te-icon-rescan"></use></svg><span x-text="t('promptWorkbench.resetTrigger')"></span></button>
+  </div>
+  <div class="te-suggest pw-tag-suggest" x-show="promptWorkbenchTagSuggestions.length>0" :style="promptWorkbenchTagSuggestCoords||{}" @resize.window="positionPromptWorkbenchTagSuggestions()" @scroll.window.capture="positionPromptWorkbenchTagSuggestions($event)" x-cloak>
+    <div id="pw-tag-suggestions" role="listbox" :aria-label="t('promptWorkbench.addTags')">
+      <template x-for="(s,index) in promptWorkbenchTagSuggestions" :key="s.insert"><div class="te-suggest-item te-dict-item" :class="{active:promptWorkbenchTagSuggestIndex===index}" role="option" :id="'pw-tag-suggestion-'+index" :aria-selected="promptWorkbenchTagSuggestIndex===index" @mousedown.prevent @click.stop="addPromptWorkbenchTags(s)"><span class="te-dict-item-body"><span class="te-dict-item-line"><span class="te-dict-item-name" :class="tagDictionaryCategoryClass(s.cat)" x-text="tagDictionaryDisplayName(s.label)"></span><span class="te-dict-item-count" :title="t('tagEditor.dictPostCount')" x-show="s.count" x-text="tagDictionaryFormatCount(s.count)"></span></span><span class="te-dict-item-zh" x-text="tagDictionaryTranslationVisible()?s.sub:''"></span><span class="te-dict-item-alias" x-show="s.alias&&(tagDictionaryIsChinese()||!/[\u3400-\u9fff]/.test(s.alias))" x-text="s.alias?t('tagEditor.dictAliasHit').replace('{alias}',s.alias):''"></span></span></div></template>
+    </div>
+    <button type="button" class="te-suggest-more" tabindex="-1" x-show="promptWorkbenchTagSuggestMore" :disabled="promptWorkbenchTagSuggestLoading" @mousedown.prevent @click.stop="morePromptWorkbenchTagSuggestions()" x-text="t(promptWorkbenchTagSuggestLoading?'common.loading':'tagEditor.moreSuggestions')"></button>
+  </div>
+</dialog>
+
+<dialog id="promptExclusionsDialog" class="modal-overlay" x-dialog="promptWorkbenchExclusionsOpen" @click.self="closePromptWorkbenchExclusions()" @dialog-close="closePromptWorkbenchExclusions()" :aria-label="t('promptWorkbench.exclusions')" x-cloak>
+  <div class="modal pw-exclusions-modal">
+    <div class="modal-header"><span x-text="t('promptWorkbench.exclusions')"></span><button type="button" class="btn-icon preview-close" @click="closePromptWorkbenchExclusions()" :aria-label="t('common.close')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m18 6-12 12M6 6l12 12"/></svg></button></div>
+    <div class="modal-body pw-exclusions-body">
+      <p class="field-hint" x-text="t('promptWorkbench.exclusionHint')"></p>
+      <div class="pw-exclusions-layout">
+        <div id="promptExclusionList" class="pw-exclusion-list" role="listbox" tabindex="0" data-dialog-autofocus :aria-label="t('promptWorkbench.exclusions')" :aria-activedescendant="promptWorkbenchExclusionSelectedId ? 'pw-exclusion-'+promptWorkbenchExclusionSelectedId : null" @keydown="promptWorkbenchExclusionKey($event)">
+          <template x-for="row in promptWorkbenchExclusionDraft" :key="row.id">
+            <div class="pw-exclusion-row" role="option" :id="'pw-exclusion-'+row.id" :aria-selected="promptWorkbenchExclusionSelectedId===row.id" @click="selectPromptWorkbenchExclusion(row.id)" @dblclick="editPromptWorkbenchExclusion(row.id)">
+              <template x-if="promptWorkbenchExclusionEditingId===row.id"><input id="promptExclusionInput" type="text" :aria-label="t('promptWorkbench.exclusionRule')" x-model="promptWorkbenchExclusionValue" @blur="commitPromptWorkbenchExclusion()" @keydown.enter.prevent.stop="commitPromptWorkbenchExclusion();$nextTick(()=>document.getElementById('promptExclusionList')?.focus())" @keydown.escape.prevent.stop="cancelPromptWorkbenchExclusionEdit()"></template>
+              <span x-show="promptWorkbenchExclusionEditingId!==row.id" :title="row.value" x-text="row.value"></span>
+            </div>
+          </template>
+          <div class="pw-exclusion-empty" x-show="!promptWorkbenchExclusionDraft.length" x-text="t('promptWorkbench.noExclusions')"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer pw-exclusions-footer"><button type="button" class="btn btn-ghost btn-sm" @click="resetPromptWorkbenchExclusions()" x-text="t('promptWorkbench.restoreExclusions')"></button><div class="pw-header-actions"><button type="button" class="btn btn-ghost btn-sm" @click="addPromptWorkbenchExclusion()" x-text="t('promptWorkbench.newExclusion')"></button><button type="button" class="btn btn-ghost btn-sm" :disabled="!promptWorkbenchExclusionSelectedId" @click="editPromptWorkbenchExclusion()" x-text="t('promptWorkbench.editExclusion')"></button><button type="button" class="btn btn-ghost btn-sm" :disabled="!promptWorkbenchExclusionSelectedId" @click="deletePromptWorkbenchExclusion()" x-text="t('promptWorkbench.deleteExclusion')"></button></div></div>
+  </div>
+</dialog>
+
 <dialog id="cropPreviewDialog" class="modal-overlay modal-overlay--morph" data-dialog-fast-open x-dialog="cropPreviewOpen" @click.self="cropPreviewDismiss()"
         @dialog-after-open="_cropPreviewEntered = true" @dialog-after-close="clearCropPreview()"
         @dialog-close="cropPreviewDismiss()" :aria-label="t('cropPreview.title')" x-cloak>
@@ -2103,7 +2293,7 @@
 <dialog class="modal-overlay" x-dialog="configSnapshotOpen" @click.self="closeSnapshotModal()" @dialog-close="closeSnapshotModal()" :aria-label="t('monitor.configSnapshot')" x-cloak>
   <div class="modal config-snapshot-modal">
     <div class="modal-header">
-      <div class="snapshot-heading"><span x-text="t('monitor.configSnapshot')">Config Snapshot</span><small x-text="_currentSnapshot?.name || configSnapshotRunDir" :title="configSnapshotRunDir"></small></div>
+      <div class="snapshot-heading" x-text="snapshotTitle()" :title="configSnapshotRunDir"></div>
       <button class="btn-icon" data-dialog-autofocus @click="closeSnapshotModal()" :aria-label="t('common.close')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div class="modal-body" id="configSnapshotBody" :aria-busy="configSnapshotLoading">
@@ -2112,9 +2302,11 @@
       <div id="configSnapshotContent" x-show="!configSnapshotLoading && !configSnapshotError"></div>
     </div>
     <div class="modal-footer snapshot-footer">
-      <span x-text="t('monitor.snapshotCopyHint')"></span>
-      <button class="btn btn-sm btn-secondary" :disabled="!_currentSnapshot?.content || configSnapshotLoading" @click="copyConfigContent()" x-text="t('monitor.copyConfig')"></button>
-      <button class="btn btn-sm btn-primary" :disabled="!_currentSnapshot?.reuse_params || !!historyReuseBusy || configSnapshotLoading" @click="reuseConfigFromSnapshot(configSnapshotRunDir)" x-text="t('monitor.reuseConfig')"></button>
+      <span x-show="_currentSnapshot?.reuse_params && !configSnapshotLoading">
+        <span x-text="t('monitor.snapshotDraftHint')"></span>
+        <span x-show="String(_currentSnapshot?.params?.resume || '').trim()" x-text="t('monitor.snapshotResumeHint')"></span>
+      </span>
+      <button class="btn btn-sm btn-primary" :disabled="!_currentSnapshot?.reuse_params || !!historyReuseBusy || configSnapshotLoading" @click="reuseConfigFromSnapshot(configSnapshotRunDir)" x-text="t('monitor.snapshotUseConfig')"></button>
     </div>
   </div>
 </dialog>

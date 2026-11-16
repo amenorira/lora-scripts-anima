@@ -91,7 +91,8 @@ async def build_live_monitor_snapshot(
         str(artifact_path) if record and record["artifact_available"] else None,
         effective_preview_limit, False, record["run_dir"] if record else "",
     )
-    result["train_params"] = extract_train_params(train_config, ((record or {}).get("extra") or {}).get("profile_id", ""))
+    result["training_profile"] = train_config.get("model_train_type") or ((record or {}).get("extra") or {}).get("profile_id", "")
+    result["train_params"] = extract_train_params(train_config, result["training_profile"])
     if active_status == "RUNNING" and run_path:
         result.update(await asyncio.to_thread(read_run_log_progress, run_path, log_tail_lines))
     return result

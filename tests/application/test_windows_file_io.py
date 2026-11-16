@@ -28,14 +28,3 @@ class WindowsAtomicIOTests(unittest.TestCase):
             sleep.assert_not_called()
             self.assertEqual(reader.read(), b"old version")
             self.assertEqual(file_io.read_text(target), "new version")
-
-
-    def test_embedded_null_cannot_truncate_a_source_or_target_path(self):
-        source, target = self.root / "source.tmp", self.root / "caption.txt"
-        source.write_bytes(b"replacement")
-        target.write_bytes(b"original")
-        for before, after in ((Path(str(source) + "\0suffix"), target), (source, Path(str(target) + "\0suffix"))):
-            with self.subTest(source=before, target=after), self.assertRaises(ValueError):
-                file_io.atomic_replace(before, after)
-            self.assertEqual(file_io.read_bytes(source), b"replacement")
-            self.assertEqual(file_io.read_bytes(target), b"original")

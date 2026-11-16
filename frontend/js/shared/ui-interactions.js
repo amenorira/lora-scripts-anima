@@ -13,11 +13,13 @@
   const anchorSelector = '[data-dialog-anchor]';
   const mediaTargetSelector = '[data-dialog-anchor="target"]';
 
-  function syncDialogBackgrounds() {
-    const morphOpen = dialogs.some(dialog => dialog.classList.contains('modal-overlay--morph'));
-    document.querySelector('body > .app-layout')?.classList.toggle('dialog-is-background', morphOpen);
-    document.getElementById('cropPreviewDialog')?.classList.toggle('dialog-is-background',
-      dialogs.some(dialog => dialog.id === 'cropFocusDialog'));
+  function syncDialogScrims() {
+    // The first dialog owns the page scrim. Keep it steady while a detail
+    // dialog enters or leaves, rather than darkening the page a second time.
+    dialogs.forEach((dialog, index) => {
+      if (index) dialog.setAttribute('data-dialog-nested', '');
+      else dialog.removeAttribute('data-dialog-nested');
+    });
   }
 
   function setHiddenDialogOrigin(element, anchor) {
@@ -110,20 +112,20 @@
     copy.classList.add('dialog-morph-button');
     Object.assign(copy.style, paint, {
       left: `${rect.left - bounds.left}px`, top: `${rect.top - bounds.top}px`,
-      width: `${rect.width}px`, height: `${rect.height}px`,
+      width: `${rect.width}px`, height: `${rect.height}px`, transform: 'none',
     });
     element.append(copy);
     reuse(copy, 'copy');
     const dx = (visible.left + visible.right - dest.left - dest.right) / 2;
     const dy = (visible.top + visible.bottom - dest.top - dest.bottom) / 2;
     const startScale = Math.max((visible.right - visible.left) / dest.width, (visible.bottom - visible.top) / dest.height);
-    animate(copy, { transform: 'translate(0px, 0px)' }, { transform: `translate(${-dx}px, ${-dy}px)` });
     animate(panel, { transform: `translate(${dx}px, ${dy}px) scale(${startScale})` },
       { transform: 'translate(0px, 0px) scale(1)' });
-    // Time the crossfade separately so it stays readable while the outline moves quickly.
-    const label = opening
-      ? [{ opacity: 1, offset: .04, easing: 'ease-in-out' }, { opacity: 0, offset: .36 }]
-      : [{ opacity: 0, offset: .20, easing: 'ease-in-out' }, { opacity: 1, offset: .58 }];
+    // Keep the source label at its button while the panel retains its pop.
+    // Fade it quickly on entry and restore it at the end of the return.
+    const label = current => opening
+      ? [{ opacity: 0, offset: .18 }]
+      : [{ opacity: current.opacity, offset: .72 }];
     const content = opening
       ? [{ opacity: 0, offset: .10, easing: 'ease-in-out' }, { opacity: 1, offset: .63 }]
       : [{ opacity: 1, offset: .04, easing: 'ease-in-out' }, { opacity: 0, offset: .36 }];
@@ -205,9 +207,13 @@
     const animations = [];
     const animate = (node, hidden, shown, between = [], easing = options.easing) => {
       const start = previous.get(node);
-      const frames = opening ? [hidden, ...between, shown] : [shown, ...between, hidden];
-      const first = start && Object.fromEntries(Object.keys(frames[0]).map(name => [name, start[name] || frames[0][name]]));
-      animations.push(node.animate(first ? [first, frames.at(-1)] : frames, { ...options, easing }));
+      const [from, to] = opening ? [hidden, shown] : [shown, hidden];
+      const first = start && Object.fromEntries(Object.keys(from).map(name => [name, start[name] ?? from[name]]));
+      // Keep source-label phases during interrupted opens/closes. The panel
+      // keeps its existing direct retargeting from the interpolated frame.
+      const phased = typeof between === 'function';
+      const frames = [first || from, ...(phased ? between(first || from) : between), to];
+      animations.push(node.animate(first && !phased ? [first, to] : frames, { ...options, easing }));
     };
     if (!source || !dest.width || !dest.height || (media && source.anchor === dialogOrigins.get(element))) {
       animate(modal, { opacity: 0 }, { opacity: 1 });
@@ -242,6 +248,32 @@
     dialogMotions.set(element, animations);
     return animations;
   }
+
+  // The sample viewer uses the normal dialog entrance. Its exit is delayed
+  // until this small fade completes, so the native dialog and image remain
+  // visible throughout the animation even without discrete overlay support.
+  function playPreviewDialogExit(element) {
+    stopDialogMotion(element);
+    const modal = element.querySelector('.modal');
+    if (!modal?.animate || !element.animate || window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return [];
+    const animations = [];
+    try {
+      const overlayStyle = getComputedStyle(element), modalStyle = getComputedStyle(modal);
+      const raw = overlayStyle.getPropertyValue('--duration-dialog-exit').trim();
+      const value = parseFloat(raw);
+      const duration = Number.isFinite(value) ? (raw.endsWith('ms') ? value : raw.endsWith('s') ? value * 1000 : value) : 150;
+      if (duration <= 0) return [];
+      const options = { duration, easing: overlayStyle.getPropertyValue('--ease-out').trim() || 'ease-out', fill: 'both' };
+      animations.push(element.animate([{ opacity: overlayStyle.opacity }, { opacity: 0 }], options));
+      animations.push(modal.animate([{ transform: modalStyle.transform }, { transform: 'translateY(4px)' }], options));
+      dialogMotions.set(element, animations);
+      return animations;
+    } catch (_) {
+      animations.forEach(animation => { animation.finished?.catch(() => {}); animation.cancel(); });
+      return [];
+    }
+  }
+
   function dismissPopups(root) {
     for (const [element, close] of Array.from(popups)) {
       if (!root || root.contains(element)) { popups.delete(element); close(); }
@@ -261,6 +293,7 @@
 
   function bindDialog(element, nextTick, scheduleOpen = nextTick) {
     const morph = element.classList.contains('modal-overlay--morph');
+    const preview = element.classList.contains('preview-lightbox');
     let requested = false;
     let sequence = 0;
     let previousFocus = null;
@@ -311,6 +344,10 @@
         requested = open;
         const current = ++sequence;
         if (open) {
+          if (preview) {
+            stopDialogMotion(element);
+            element.removeAttribute('data-dialog-closing');
+          }
           const explicitOrigin = pendingDialogOrigins.get(element);
           pendingDialogOrigins.delete(element);
           if (!element.open) {
@@ -339,7 +376,7 @@
               });
             }
             window.AnimaUI.placeNotifications?.();
-            if (morph) syncDialogBackgrounds();
+            syncDialogScrims();
           });
         } else {
           dismissPopups(element);
@@ -357,9 +394,9 @@
             element.removeAttribute('data-dialog-closing');
             const index = dialogs.indexOf(element);
             if (index >= 0) dialogs.splice(index, 1);
-            if (morph) syncDialogBackgrounds();
+            syncDialogScrims();
             window.AnimaUI.placeNotifications?.();
-            const animations = morph ? [] : (element.getAnimations?.({ subtree: true }) || [])
+            const animations = morph || preview ? [] : (element.getAnimations?.({ subtree: true }) || [])
               .filter(animation => animation.effect?.getComputedTiming().endTime !== Infinity);
             nextTick(() => {
               if (current !== sequence || requested) return;
@@ -386,6 +423,9 @@
           if (morph && element.open) {
             element.setAttribute('data-dialog-closing', '');
             waitFor(playDialogMotion(element, false), close);
+          } else if (preview && element.open) {
+            element.setAttribute('data-dialog-closing', '');
+            waitFor(playPreviewDialogExit(element), close);
           } else close();
         }
       },
@@ -401,7 +441,7 @@
         previousFocus = null;
         const index = dialogs.indexOf(element);
         if (index >= 0) dialogs.splice(index, 1);
-        if (morph && index >= 0) syncDialogBackgrounds();
+        if (index >= 0) syncDialogScrims();
         window.AnimaUI.placeNotifications?.();
         element.removeEventListener('cancel', cancel);
         element.removeEventListener('pointerdown', pointerDown);

@@ -84,3 +84,9 @@ if os.environ.get("ANIMA_TRAIN_METRICS") == "1":
     from tools.python_startup.training_metrics import install_import_hook as install_training_metrics
 
     install_training_metrics()
+
+
+if os.environ.get("ANIMA_SAMPLE_METADATA") == "1":
+    from tools.python_startup.sample_metadata import install_import_hook as install_sample_metadata
+
+    install_sample_metadata()

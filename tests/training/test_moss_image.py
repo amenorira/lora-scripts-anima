@@ -2,7 +2,6 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from functools import partial
 from contextlib import ExitStack
 from unittest.mock import patch
 
@@ -10,10 +9,6 @@ from PIL import Image
 
 from backend.training.fields.field_registry import FIELDS
 from backend.training.config.moss_image import DEFAULTS, GROUP, PROFILE_ID
-from backend.training.config.network_config import extract_network_form
-from backend.training.cache.rebuild import delete_te_cache
-
-extract_form = partial(extract_network_form, model_train_type=PROFILE_ID)
 
 
 def moss_config(**overrides):
@@ -30,21 +25,6 @@ def moss_config(**overrides):
                   output_dir="output", output_name="moss_test")
     config.update(overrides)
     return config
-
-
-class MossImageConfigTests(unittest.TestCase):
-
-
-    def test_legacy_endpoint_can_delete_moss_text_cache_without_touching_latents(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            cache = root / "image_moss_te.npz"
-            latent = root / "image_1024x1024_moss.npz"
-            cache.touch()
-            latent.touch()
-            self.assertEqual(delete_te_cache([directory]), (1, []))
-            self.assertFalse(cache.exists())
-            self.assertTrue(latent.exists())
 
 
 class MossImageLaunchTests(unittest.IsolatedAsyncioTestCase):

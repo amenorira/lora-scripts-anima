@@ -67,6 +67,7 @@ document.addEventListener('alpine:init', () => {
 
     // UI Settings
     autoLoadHistory: true,
+    confirmPreviewBeforeTraining: true,
     selectedGpuIndex: 0,
 
     // Backend connectivity
@@ -397,7 +398,10 @@ document.addEventListener('alpine:init', () => {
       if (route !== prev && this.parameterDocOpen) this.closeParameterDoc();
       const mainContent = document.getElementById('mainContent');
       if (mainContent) this._routeScrollPositions[prev] = mainContent.scrollTop;
-      if (prev === 'ai-captioning' && route !== prev) this.resetTaggerApiTest();
+      if (prev === 'ai-captioning' && route !== prev) {
+        this.resetTaggerApiTest();
+        this.closeCaptionDetail?.();
+      }
       // Cleanup tag editor resources when leaving
       if (prev === 'tagEditor' && typeof this.tagEditorCleanup === 'function') {
         this.tagEditorCleanup();
@@ -529,6 +533,7 @@ document.addEventListener('alpine:init', () => {
       try {
         const s = JSON.parse(localStorage.getItem('anima-ui-settings')||'{}');
         if (s.autoLoadHistory!==undefined) this.autoLoadHistory = s.autoLoadHistory;
+        if (typeof s.confirmPreviewBeforeTraining === 'boolean') this.confirmPreviewBeforeTraining = s.confirmPreviewBeforeTraining;
         if (typeof s.weakNetworkMode === 'boolean') {
           this.weakNetworkMode = s.weakNetworkMode;
         } else {
@@ -557,6 +562,7 @@ document.addEventListener('alpine:init', () => {
     saveUISettings() {
       localStorage.setItem('anima-ui-settings', JSON.stringify({
         autoLoadHistory: this.autoLoadHistory,
+        confirmPreviewBeforeTraining: this.confirmPreviewBeforeTraining,
         weakNetworkMode: this.weakNetworkMode,
       }));
       this.resolveTheme();
@@ -573,12 +579,12 @@ document.addEventListener('alpine:init', () => {
       // This checkbox is intentionally not x-model-bound: keep it visually
       // enabled until the user accepts the built-in confirmation dialog.
       if (input) input.checked = true;
-      this.openConfirm(
-        this.t('settings.disableSlowConnectionTitle'),
-        this.t('settings.disableSlowConnectionMessage'),
-        () => this.setWeakNetworkMode(false),
-        this.t('settings.disableSlowConnectionConfirm'),
-      );
+      this.openConfirm({
+        title: this.t('settings.disableSlowConnectionTitle'),
+        message: this.t('settings.disableSlowConnectionMessage'),
+        actionLabel: this.t('settings.disableSlowConnectionConfirm'),
+        onConfirm: () => this.setWeakNetworkMode(false),
+      });
     },
 
     setWeakNetworkMode(enabled) {
@@ -730,12 +736,16 @@ document.addEventListener('alpine:init', () => {
 
   window.composeAppMixins(data, {
     utils: window.utilsMixin, realtime: window.realtimeMixin,
+    confirmationDialog: window.confirmationDialogMixin,
     monitorCore: window.monitorCoreMixin, monitorRender: window.monitorRenderMixin,
     environmentCore: window.environmentCoreMixin, environmentRender: window.environmentRenderMixin,
     docs: window.docsMixin, trainingCore: window.trainingCoreMixin,
     datasetRepeat: window.datasetRepeatMixin, trainingLrPreview: window.trainingLrPreviewMixin,
     trainingShapePreview: window.trainingShapePreviewMixin, trainingToml: window.trainingTomlMixin,
     trainingCropPreview: window.trainingCropPreviewMixin,
+    trainingPromptWorkbench: window.trainingPromptWorkbenchMixin,
+    trainingPromptTagTools: window.trainingPromptTagToolsMixin,
+    trainingPromptTriggers: window.trainingPromptTriggersMixin,
     trainingConfigIo: window.trainingConfigIoMixin, tagger: window.taggerMixin,
     captionOptions: window.captionOptionsMixin, captionWorkspace: window.captionWorkspaceMixin,
     regularization: window.regularizationMixin, tagEditor: window.tagEditorMixin,

@@ -1,6 +1,11 @@
 /* 输出文件加载、筛选、排序与下载；由 monitor-core.js 装配，沿用同一份监控状态。 */
 window.monitorOutputsMixin = {
+  outputRefreshFeedback: false, _outputRefreshFeedbackTimer: null,
+
   _resetOutputFilesForRun(runDir) {
+    if (this._outputRefreshFeedbackTimer) clearTimeout(this._outputRefreshFeedbackTimer);
+    this._outputRefreshFeedbackTimer = null;
+    this.outputRefreshFeedback = false;
     this._outputFilesRequestSeq++;
     this._outputFilesRunDir = runDir || '';
     this.outputFiles = [];
@@ -8,6 +13,7 @@ window.monitorOutputsMixin = {
     this.outputFilesSelected = {};
     this.outputFilesError = '';
     this.outputFilesLoading = false;
+    this._outputFilesLoaded = false;
     this._outputFilesKnownCount = 0;
     this._outputFilesNeedsRefresh = false;
   },
@@ -22,6 +28,16 @@ window.monitorOutputsMixin = {
   },
 
   // ── Output Files ──────────────────────────────────────
+  refreshOutputFiles() {
+    const runDir = this.currentOutputRunDir;
+    if (!runDir || this.outputFilesLoading) return;
+    if (this._outputFilesRunDir !== runDir) this._resetOutputFilesForRun(runDir);
+    // As with sample refresh, keep fast local requests visibly responsive
+    // without delaying their results or subsequent refreshes.
+    this._showRefreshFeedback('output');
+    return this.loadOutputFiles();
+  },
+
   async loadOutputFiles() {
     if (this.outputFilesLoading) {
       this._outputFilesNeedsRefresh = true;
@@ -39,13 +55,14 @@ window.monitorOutputsMixin = {
     if (this._outputFilesRunDir !== runDir) this._resetOutputFilesForRun(runDir);
     const requestSeq = ++this._outputFilesRequestSeq;
     const countVersion = this._outputCountVersion;
+    const previousFiles = JSON.stringify(this.outputFiles);
     this.outputFilesLoading = true;
-    this.outputFilesError = '';
     this.renderDashboard();
     try {
       const r = await fetch('/api/monitor/outputs?run_dir=' + encodeURIComponent(runDir));
       const j = await r.json();
       if (requestSeq !== this._outputFilesRequestSeq || runDir !== this.currentOutputRunDir) return;
+      this._outputFilesLoaded = true;
       if (j.status === 'success') {
         this.outputFiles = j.data || [];
         const paths = new Set(this.outputFiles.map(file => file.path));
@@ -73,13 +90,14 @@ window.monitorOutputsMixin = {
       }
     } catch (e) {
       if (requestSeq !== this._outputFilesRequestSeq || runDir !== this.currentOutputRunDir) return;
+      this._outputFilesLoaded = true;
       this.outputFiles = [];
       this.outputFilesSelected = {};
       this.outputFilesError = 'loadFailed';
     } finally {
       if (requestSeq === this._outputFilesRequestSeq && runDir === this.currentOutputRunDir) {
         this.outputFilesLoading = false;
-        this.outputFilesVersion++;
+        if (JSON.stringify(this.outputFiles) !== previousFiles) this.outputFilesVersion++;
         this.renderDashboard();
       }
     }

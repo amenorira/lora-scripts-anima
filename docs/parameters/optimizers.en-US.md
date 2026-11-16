@@ -423,13 +423,13 @@ Automagic3 adjusts each parameter group's learning rate by pooling its recent up
 
 After internal clipping, Automagic4 uses sensitivity estimated from squared-gradient statistics to reduce updates to highly sensitive elements. It adjusts each group's learning rate from direction-flip rates. `sensitivity_quantile` sets the sensitivity reference, and `step_target` sets the controller's neutral point.
 
-The table lists this trainer's initial settings. Explicit learning rates and `max_lr` values in imported configurations are retained; older configurations without `max_lr` use the current default of `1e-4`. After importing, check the upper bound, component learning rates, and LoRA+ ratios.
+The table lists this trainer's initial settings. Explicit learning rates and `max_lr` values in imported configurations are retained; older configurations without `max_lr` use the current default of `2e-4`. After importing, check the upper bound, component learning rates, and LoRA+ ratios.
 
 | Parameter | Initial value | Range | Purpose |
 | --- | --- | --- | --- |
 | `learning_rate` | `2e-5` | Finite and positive, within the bounds | Starting learning rate for a new run |
 | `min_lr` | `1e-8` | Finite and positive; no greater than `max_lr` | Lower bound for automatic learning-rate adjustment |
-| `max_lr` | `1e-4` | Finite and positive; no less than `min_lr` | Upper bound for automatic learning-rate adjustment |
+| `max_lr` | `2e-4` | Finite and positive; no less than `min_lr` | Upper bound for automatic learning-rate adjustment |
 | `beta2` | `0.999` | `0 ≤ beta2 < 1` | Smooths squared-gradient statistics; values closer to 1 retain history longer |
 | `clip_threshold` | `1.0` | Finite and positive | Limits the internal update's root mean square and individual components; lower values apply stronger clipping |
 | `polarity_history` | `8` | Integer from `2` to `64` | Number of recent parameter updates used to track directions and adjust the learning rate |

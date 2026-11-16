@@ -111,6 +111,10 @@ def sample_latents(options, dit, prompt_embeds, prompt_mask, negative_embeds, ne
                    seed, device, show_progress=True):
     import torch
     from .kernels import cpu_generator, run_solver
+    from .metadata import record_parameters
+
+    record_parameters(verified=True, cfg_scale=guidance_scale if negative_embeds is not None else 1.0,
+                      uncond_skip_layers=list(uncond_skip_layers or []))
 
     device = torch.device(device)
     enabled, compute_dtype = torch.is_autocast_enabled(device.type), torch.get_autocast_dtype(device.type)

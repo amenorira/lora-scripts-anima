@@ -12,8 +12,8 @@ AUTOMAGIC_OPTIMIZER_TYPE = "vendor.automagic_optimizer.integration.Automagic3"
 AUTOMAGIC4_OPTIMIZER_TYPE = "vendor.automagic_optimizer.integration.Automagic4"
 AUTOMAGIC_OPTIMIZERS = frozenset({AUTOMAGIC_OPTIMIZER_TYPE, AUTOMAGIC4_OPTIMIZER_TYPE})
 AUTOMAGIC_START_LR_DEFAULT = 2e-5
-AUTOMAGIC_MAX_LR_DEFAULT = 1e-4
-AUTOMAGIC_MAX_LR_DEFAULT_TEXT = "1e-4"
+AUTOMAGIC_MAX_LR_DEFAULT = 2e-4
+AUTOMAGIC_MAX_LR_DEFAULT_TEXT = "2e-4"
 # Automagic 共有的 UI 顶层字段 → optimizer_args 键的映射。
 AUTOMAGIC_MERGED_ARG_MAP: dict[str, str] = {
     "automagic_min_lr": "min_lr",
