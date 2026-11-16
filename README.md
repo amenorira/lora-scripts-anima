@@ -39,7 +39,7 @@ Anima、SDXL 和 MOSS-Image 使用 [kohya-ss/sd-scripts](https://github.com/kohy
 ## 功能简介
 
 - **训练配置** — 编辑训练参数、预览 TOML、导入 YAML / TOML、导出 YAML，并查看训练记录
-- **训练前预览** — 时间步分布、学习率曲线与矩阵结构三个本地预览弹窗，[见下一节](#pre-training-previews)
+- **训练前预览** — 时间步分布、学习率曲线与矩阵结构三个本地预览弹窗，[查看预览](#pre-training-previews)
 - **LyCORIS 适配器面板** — 支持 LoCon / LoHa / LoKr，按算法动态显示参数，可选内核后端（auto / Triton / TileLang / compile / Torch），并支持 LoRA+ 与 Anima 训练范围细化
 - **多种优化器** — AdamW、Lion、Prodigy、CAME、StableAdamW、Adafactor、ScheduleFree、Adan、AdEMAMix、Muon 等常用优化器，外加内置的 LoRA-RITE 与测试中的 LoRA-Muon，各自带默认值与约束提示
 - **实时硬件监控** — 显示 GPU 利用率、显存与温度，以及 CPU/RAM 使用率；集成 Chart.js 动态图表、TensorBoard 和实时日志
@@ -49,6 +49,30 @@ Anima、SDXL 和 MOSS-Image 使用 [kohya-ss/sd-scripts](https://github.com/kohy
 - **国际化（i18n）** — 中文、英文和日语界面及内置指南，支持浏览器语言自动检测并保存语言偏好
 - **三种主题** — 浅色、深色与 ComfyUI 主题，支持跟随系统、手动切换
 - **后端连接状态指示器** — 实时显示前后端连接状态及断连时长
+
+## 训练界面
+
+### 训练表单
+
+按分组调整参数，同时查看训练步数的计算过程和 TOML 预览。
+
+![训练表单与训练步数计算](docs/images/training-form.zh-CN.jpg)
+
+### 预览提示词
+
+设置预览采样的质量、正向和负向提示词，也可从训练集标签中选择、编辑和排序提示词。
+
+![预览采样与提示词设置](docs/images/preview-settings.zh-CN.jpg)
+
+![从训练集标签编辑预览提示词](docs/images/preview-prompts.zh-CN.jpg)
+
+### 训练样本
+
+按批次浏览样本、查看生成信息，按提示词切换并固定图片，对比不同训练阶段（演示样本）。
+
+![训练样本列表与预览侧栏](docs/images/sample-browser.zh-CN.jpg)
+
+![不同训练阶段的样本对比](docs/images/sample-comparison.zh-CN.jpg)
 
 <a name="pre-training-previews"></a>
 

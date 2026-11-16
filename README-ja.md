@@ -39,7 +39,7 @@ Anima、SDXL、MOSS-Image の学習エンジンには [kohya-ss/sd-scripts](http
 ## 主な機能
 
 - **学習設定** — 学習パラメータの編集、TOML のプレビュー、YAML / TOML のインポート、YAML のエクスポート、学習履歴の確認
-- **学習前のプレビュー** — タイムステップ分布、学習率曲線、行列構造をローカルで計算して表示する 3 種類のダイアログ。[次の節を参照](#pre-training-previews)
+- **学習前のプレビュー** — タイムステップ分布、学習率曲線、行列構造をローカルで計算して表示する 3 種類のダイアログ。[プレビューを見る](#pre-training-previews)
 - **LyCORIS アダプターパネル** — LoCon / LoHa / LoKr に対応し、アルゴリズムに応じたパラメータを表示。カーネルバックエンド（auto / Triton / TileLang / compile / Torch）の選択、LoRA+、Anima の学習範囲の詳細設定に対応
 - **豊富なオプティマイザー** — AdamW、Lion、Prodigy、CAME、StableAdamW、Adafactor、ScheduleFree、Adan、AdEMAMix、Muon などに加え、内蔵の LoRA-RITE と実験的な LoRA-Muon を提供。各オプティマイザーの既定値と制約を表示
 - **リアルタイムのハードウェア監視** — GPU 使用率・VRAM・温度、CPU・RAM 使用率を表示。Chart.js のグラフ、TensorBoard、リアルタイムログを統合
@@ -49,6 +49,30 @@ Anima、SDXL、MOSS-Image の学習エンジンには [kohya-ss/sd-scripts](http
 - **多言語対応（i18n）** — 中国語・英語・日本語の UI と内蔵ガイド。ブラウザーの言語を自動検出し、選択した言語を保存
 - **3 種類のテーマ** — ライト、ダーク、ComfyUI。システム設定への追従と手動切り替えに対応
 - **バックエンド接続状態の表示** — 接続状態と切断からの経過時間をリアルタイムで表示
+
+## 学習画面
+
+### 学習フォーム
+
+設定をグループごとに編集し、学習ステップの計算過程と TOML のプレビューを確認できます。
+
+![学習フォームとステップ数の計算](docs/images/training-form.ja-JP.jpg)
+
+### プレビュープロンプト
+
+サンプリングの品質・ポジティブ・ネガティブプロンプトを設定でき、学習データのタグから選択、編集、並べ替えもできます。
+
+![プレビューのサンプリングとプロンプトの設定](docs/images/preview-settings.ja-JP.jpg)
+
+![学習データのタグからプレビュープロンプトを編集](docs/images/preview-prompts.ja-JP.jpg)
+
+### 学習サンプル
+
+バッチごとにサンプルと生成情報を確認し、プロンプトの切り替えや画像の固定で学習段階を比較できます（画像はデモ用です）。
+
+![学習サンプル一覧とプレビューのサイドバー](docs/images/sample-browser.ja-JP.jpg)
+
+![異なる学習段階のサンプル比較](docs/images/sample-comparison.ja-JP.jpg)
 
 <a name="pre-training-previews"></a>
 

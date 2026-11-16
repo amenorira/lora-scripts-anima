@@ -39,7 +39,7 @@ Anima, SDXL, and MOSS-Image use [kohya-ss/sd-scripts](https://github.com/kohya-s
 ## Feature Overview
 
 - **Training configuration** — Edit training settings, preview TOML, import YAML / TOML, export YAML, and review training history
-- **Pre-training previews** — Timestep distribution, learning-rate curve, and matrix structure modals computed locally; [see the next section](#pre-training-previews)
+- **Pre-training previews** — Timestep distribution, learning-rate curve, and matrix structure modals computed locally; [view previews](#pre-training-previews)
 - **LyCORIS adapter panel** — LoCon / LoHa / LoKr with algorithm-aware parameters, a selectable kernel backend (auto / Triton / TileLang / compile / Torch), LoRA+ support, and Anima training-scope refinement
 - **Many optimizers** — AdamW, Lion, Prodigy, CAME, StableAdamW, Adafactor, ScheduleFree, Adan, AdEMAMix, Muon, plus the bundled LoRA-RITE and the experimental LoRA-Muon, each with its own defaults and constraint hints
 - **Real-time Hardware Monitor** — GPU utilization, VRAM, and temperature; CPU and RAM usage; Chart.js charts, TensorBoard integration, and live logs
@@ -49,6 +49,30 @@ Anima, SDXL, and MOSS-Image use [kohya-ss/sd-scripts](https://github.com/kohya-s
 - **Internationalization (i18n)** — Chinese, English, and Japanese UI and built-in guides, with browser-language detection and a persistent language preference
 - **Three themes** — Light, dark, and ComfyUI themes, with auto-follow system preference or manual toggle
 - **Backend Connectivity Indicator** — Real-time frontend-backend connection status with disconnect duration
+
+## Training Interface
+
+### Training form
+
+Adjust settings by group while viewing the step calculation and TOML preview.
+
+![Training form and step calculation](docs/images/training-form.en-US.jpg)
+
+### Preview prompts
+
+Set quality, positive, and negative prompts for sampling, or select, edit, and reorder prompts from dataset tags.
+
+![Preview sampling and prompt settings](docs/images/preview-settings.en-US.jpg)
+
+![Editing preview prompts from dataset tags](docs/images/preview-prompts.en-US.jpg)
+
+### Training samples
+
+Browse samples by batch, inspect their generation details, switch prompts, and pin images to compare training stages. Samples shown are simulated.
+
+![Training samples and preview sidebar](docs/images/sample-browser.en-US.jpg)
+
+![Comparing samples from different training stages](docs/images/sample-comparison.en-US.jpg)
 
 <a name="pre-training-previews"></a>
 
