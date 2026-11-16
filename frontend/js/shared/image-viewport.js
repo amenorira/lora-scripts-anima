@@ -129,6 +129,9 @@
       stopPan(event) {
         const pan = this._pan;
         if (!pan || (event && pan.id !== event.pointerId)) return;
+        // A child may lose capture as a drag transfers to the viewport. That
+        // bubbling event does not mean the viewport has lost its own capture.
+        if (event?.type === 'lostpointercapture' && event.target !== pan.stage) return;
         this._panWrite?.flush(); this._panWrite = null;
         this._pan = null; this.panning = false;
         if (pan.stage.hasPointerCapture?.(pan.id)) pan.stage.releasePointerCapture(pan.id);

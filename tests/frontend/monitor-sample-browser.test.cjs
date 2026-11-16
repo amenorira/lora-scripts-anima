@@ -372,6 +372,49 @@ test('modal navigation and timeline keyboard follow the same visual left to righ
   }
 });
 
+test('sidebar arrows follow the same prompt and seed across batches in the selected order', () => {
+  const value = app([image('b1', 0, 4200), image('b1', 1, 4201), image('b2', 1, 4201),
+    image('b3', 0, 4200), image('b3', 0, 9999), image('b4', 0, 4200)]);
+  value.previewStep = 3; value.sampleBatchId = 'b3';
+  assert.equal(value.sampleSidebarNavigationTarget(-1), 5);
+  assert.equal(value.sampleSidebarNavigationTarget(1), 0, 'a batch missing this prompt is skipped');
+  value.sampleSidebarNav(1);
+  assert.equal(value.previewStep, 0); assert.equal(value.sampleBatchId, 'b1');
+  assert.equal(value.sampleSidebarNavigationTarget(1), -1, 'navigation stops at the end');
+  value.setSampleBatchSort('asc');
+  assert.equal(value.sampleSidebarNavigationTarget(-1), -1);
+  value.sampleSidebarNav(1);
+  assert.equal(value.previewStep, 3); assert.equal(value.sampleBatchId, 'b3');
+  assert.equal(value._sampleSidebarInspecting, true);
+  const unknown = app([{name: 'custom.png', path: 'custom.png'}, {name: 'other.png', path: 'other.png'}]);
+  assert.equal(unknown.sampleSidebarNavigationTarget(-1), -1, 'unknown prompt identity must not silently select another prompt');
+  assert.equal(unknown.sampleSidebarNavigationTarget(1), -1);
+  const varyingSeeds = app([image('b1', 0, 1), image('b2', 0, 2), image('b3', 0, 3), image('b3', 0, 4)]);
+  varyingSeeds.previewStep = 0; varyingSeeds.sampleBatchId = 'b1';
+  varyingSeeds.sampleSidebarNav(-1);
+  assert.equal(varyingSeeds.previewStep, 1, 'a unique matching prompt remains navigable when its seed changes');
+  assert.equal(varyingSeeds.sampleSidebarNavigationTarget(-1), -1, 'several different seeds do not produce an arbitrary match');
+});
+
+test('changing sort while the viewer is open refreshes its sequence without replacing the selected image', () => {
+  const value = app(['b1', 'b2', 'b3'].map(batch => image(batch, 0, 4200)));
+  value.previewStep = 1; value.sampleBatchId = 'b2'; value.previewLightboxOpen = true;
+  const selected = value.previews[value.previewStep];
+  let updates = 0; const reveals = [];
+  value._updatePreviewLightbox = () => {updates++;};
+  value._revealPreviewViewTimeline = smooth => reveals.push({smooth, step: value.previewStep, updates});
+  value.setSampleBatchSort('asc');
+  assert.equal(updates, 1); assert.equal(value.previews[value.previewStep], selected);
+  assert.deepEqual(value._previewLightboxDisplayIndices(), [0, 1, 2]);
+  assert.deepEqual(reveals, [{smooth: false, step: 1, updates: 1}], 'the reordered rail reveals the same selection after its update');
+  value.previewLightboxNav(1);
+  assert.equal(value.previewStep, 2);
+  value.setSampleBatchSort('desc');
+  assert.deepEqual(value._previewLightboxDisplayIndices(), [2, 1, 0]);
+  assert.equal(value.previewStep, 2);
+  assert.deepEqual(reveals.at(-1), {smooth: false, step: 2, updates: 3});
+});
+
 test('page input jumps by visual position and clamps signed and overflowing integers', () => {
   const cases = [['1', 1], ['2', 2], ['0', 1], ['-5', 1], ['999', 5],
     ['9'.repeat(400), 5], ['-' + '9'.repeat(400), 1], ['２', 2]];

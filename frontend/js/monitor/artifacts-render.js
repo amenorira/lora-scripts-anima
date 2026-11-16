@@ -51,15 +51,18 @@ window.monitorArtifactsRenderMixin = {
   // ═══════════════════════════════════════════════════════════
   //  样本标签
   // ═══════════════════════════════════════════════════════════
-  _sampleSelectHtml(options, value, label, id, action, className = '') {
+  _sampleSelectHtml(options, value, label, id, action, className = '', valueBinding = '') {
     if (typeof window.previewSelectHtml === 'function') {
       const handler = action.replaceAll('$event.target.value', '$event.detail')
         + '; $nextTick(() => document.getElementById(' + JSON.stringify(id) + ')?.focus({ preventScroll: true }))';
+      const select = valueBinding ? window.previewSelectHtml(options, value, label, id, valueBinding)
+        : window.previewSelectHtml(options, value, label, id);
       return '<div class="m-sample-select ' + this.esc(className) + '" @preview-select="' + this.esc(handler) + '">'
-        + window.previewSelectHtml(options, value, label, id) + '</div>';
+        + select + '</div>';
     }
     // The native control is a usable fallback if the shared component is unavailable.
-    return '<select id="' + this.esc(id) + '" class="' + this.esc(className) + '" aria-label="' + this.esc(label) + '" @change="' + this.esc(action) + '">'
+    return '<select id="' + this.esc(id) + '" class="' + this.esc(className) + '" aria-label="' + this.esc(label) + '"'
+      + (valueBinding ? ' :value="' + this.esc(valueBinding) + '"' : '') + ' @change="' + this.esc(action) + '">'
       + options.map(option => '<option value="' + this.esc(option.value) + '"' + (option.value === value ? ' selected' : '') + '>' + this.esc(option.label) + '</option>').join('') + '</select>';
   },
 
@@ -172,6 +175,14 @@ window.monitorArtifactsRenderMixin = {
 
   _sampleSidebarHtml(t) {
     const close = this.esc(t('close'));
+    const sideNav = dir => '<button type="button" class="m-sample-sidebar-side-nav ' + (dir < 0 ? 'prev' : 'next') + '"'
+      + ' :disabled="sampleSidebarNavigationTarget(' + dir + ') < 0" aria-label="' + this.esc(t(dir < 0 ? 'prev' : 'next')) + '"'
+      + ' title="' + this.esc(t(dir < 0 ? 'prev' : 'next')) + '"'
+      + ' @pointerdown.stop="startPreviewSideNavPress($event, $refs.viewport)"'
+      + ' @pointermove.stop="movePreviewSideNavPress($event, start => startPan(start), move => movePan(move))"'
+      + ' @pointercancel.stop="cancelPreviewSideNavPress($event)" @click.stop="activatePreviewSideNav($event, ' + dir + ', true)">'
+      + '<span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="'
+      + (dir < 0 ? 'm15 18-6-6 6-6' : 'm9 18 6-6-6-6') + '"/></svg></span></button>';
     return '<aside id="sampleSidebar" class="m-sample-sidebar" x-show="sampleSidebarVisible"' + (this.sampleSidebarVisible ? '' : ' style="display:none"') + ' aria-label="' + this.esc(t('sampleSelectedImage')) + '" data-sample-expansion-keep>'
       + '<template x-if="sampleSidebarMediaActive"><div class="m-sample-sidebar-content" x-data="AnimaImageViewport.create(_sampleSidebarViewState())" @image-view-interact="_sampleSidebarInspecting=true" x-init="$watch(\'_previewItemKey(previews[previewStep])\', key => {sampleSidebarView.key=key;reset(false)})">'
       + '<div class="m-sample-sidebar-heading"><div class="m-sample-sidebar-label"><span class="m-sample-sidebar-stage" :title="_previewStageLabel(previews[previewStep])"><strong x-text="_previewCaptionParts(previews[previewStep]).primary"></strong><small x-show="_previewCaptionParts(previews[previewStep]).secondary" x-text="_previewCaptionParts(previews[previewStep]).secondary"></small></span>'
@@ -182,6 +193,7 @@ window.monitorArtifactsRenderMixin = {
       + '<div id="sampleSidebarImage" class="m-sample-sidebar-image" x-ref="viewport" :class="{\'is-zoomed\':scale > 1, \'is-panning\':panning}" @wheel="zoom($event)"'
       + ' @pointerdown="startPan($event)" @pointermove="movePan($event)" @pointerup="stopPan($event)" @pointercancel="stopPan($event)" @lostpointercapture="stopPan($event)" @resize.window="constrain()" x-data="{failed:false}">'
       + '<img x-image="{src: _previewFullImageUrl(previews[previewStep]), placeholder: previews[previewStep].thumb_url || previews[previewStep].url}" :alt="previews[previewStep].name" :style="\'transform:\'+transform()" :class="{\'is-error\':failed}" @load="failed=false;constrain()" @error="failed=true" @dragstart.prevent>'
+      + sideNav(-1) + sideNav(1)
       + '<span class="m-sample-sidebar-error" x-show="failed" x-cloak>' + this.esc(t('previewImageFailed')) + '</span></div>'
       + '</div></template><div class="m-sample-sidebar-empty" x-show="!sampleSidebarActive"' + (this.sampleSidebarActive ? ' style="display:none"' : '') + '>'
       + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/></svg>'
@@ -304,6 +316,30 @@ window.monitorArtifactsRenderMixin = {
     this._sampleSidebarInspecting = true;
     this._sampleOverviewAtEnd = false;
     if (batch?.id === model.batches.at(-1)?.id) this._acknowledgeNewPreviews(panel);
+  },
+
+  sampleSidebarNavigationTarget(direction) {
+    const model = this._sampleDataModel(), record = model.records[this.previewStep], current = record?.sample;
+    if (!current?.prompt_id || current.metadata_source === 'unknown') return -1;
+    const key = this._sampleCaseKey(record.preview);
+    const step = (direction < 0 ? -1 : 1) * (this.sampleBatchSortDir === 'asc' ? 1 : -1);
+    for (let position = record.batch.position + step; position >= 0 && position < model.batches.length; position += step) {
+      const candidates = model.batches[position].indices.filter(index => model.records[index].sample.prompt_id === current.prompt_id);
+      const exact = candidates.filter(index => this._sampleCaseKey(this.previews[index]) === key);
+      if (exact.length === 1) return exact[0];
+      const sameSeed = candidates.filter(index => {
+        const seed = model.records[index].sample.seed;
+        return seed == null ? current.seed == null : current.seed != null && String(seed) === String(current.seed);
+      });
+      if (sameSeed.length === 1) return sameSeed[0];
+      if (candidates.length === 1) return candidates[0];
+    }
+    return -1;
+  },
+
+  sampleSidebarNav(direction) {
+    const index = this.sampleSidebarNavigationTarget(direction);
+    if (index >= 0) this.selectSampleImage(index);
   },
 
   _acknowledgeNewPreviews(panel = this._sampleOverviewPanel()) {
@@ -444,9 +480,15 @@ window.monitorArtifactsRenderMixin = {
         top: row.top - padding, bottom: Math.max(...selected.map(item => item.bottom)) + padding,
         rowBottom: Math.max(...row.items.map(item => item.bottom))};
     }).filter(Boolean);
-    // Horizontal bridges occupy the genuine CSS row-gap. A short group caption
-    // must never route its bridge through a taller neighboring card's caption.
-    rows.forEach((row, index) => {if (index < rows.length - 1) row.bottom = row.rowBottom + padding;});
+    // Give cross-row bridges more room within the existing grid gap while
+    // keeping their stroke clear of neighboring cards, including tall captions.
+    const bridgeInset = Math.min(padding, 2);
+    rows.forEach((row, index) => {
+      const next = rows[index + 1];
+      if (!next) return;
+      row.bottom = row.rowBottom + bridgeInset;
+      next.top += padding - bridgeInset;
+    });
     return rows;
   },
 
@@ -926,6 +968,11 @@ window.monitorArtifactsRenderMixin = {
     const close = svg('<path d="M6 6l12 12M18 6 6 18"/>');
     const left = svg('<path d="m15 18-6-6 6-6"/>');
     const right = svg('<path d="m9 18 6-6-6-6"/>');
+    const sortOptions = [{value: 'asc', label: t('trainingOrder')}, {value: 'desc', label: t('latestFirst')}];
+    const sideNav = (dir, icon) => '<button type="button" id="previewSideNav' + (dir < 0 ? 'Prev' : 'Next') + '" class="preview-lightbox-side-nav ' + (dir < 0 ? 'prev' : 'next') + '" hidden disabled'
+      + ' title="' + this.esc(this.t(dir < 0 ? 'imageViewer.previousHint' : 'imageViewer.nextHint')) + '" aria-label="' + this.esc(t(dir < 0 ? 'prev' : 'next')) + '"'
+      + ' @pointerdown="startPreviewSideNavPress($event)" @pointermove="movePreviewSideNavPress($event)" @pointercancel="cancelPreviewSideNavPress($event)"'
+      + ' @wheel="previewSideNavWheel($event)" @click="activatePreviewSideNav($event, ' + dir + ')"><span>' + icon + '</span></button>';
     const stage = () => '<div class="preview-view-stage">'
       + '<img id="previewLightboxImg" class="preview-view-image" alt="" draggable="false" @load="resizePreviewComparisonImages()">'
       + '<button type="button" class="btn btn-sm btn-secondary preview-view-error" x-show="previewImageError" @click.stop="retryPreviewImage()">' + this.esc(t('previewImageRetry')) + '</button></div>';
@@ -949,15 +996,18 @@ window.monitorArtifactsRenderMixin = {
       + '<button type="button" class="preview-zoom-value" @click="resetPreviewView(true)" :title="previewViewZoomLabel() + \' · \' + t(\'imageViewer.zoomHint\')" aria-keyshortcuts="0" x-text="previewViewZoomLabel()"></button>'
       + '<button type="button" class="btn-icon preview-icon-button" @click="setPreviewViewScale(previewViewScale * 1.18)" :disabled="previewViewScale >= 8" title="' + this.esc(this.t('tagEditor.zoomIn')) + '" aria-label="' + this.esc(this.t('tagEditor.zoomIn')) + '">' + zoomIn + '</button></div>'
       + '<button type="button" class="btn-icon preview-icon-button preview-close" data-dialog-autofocus @click="closePreviewLightbox()" title="' + this.esc(this.t('imageViewer.closeHint')) + '" aria-label="' + this.esc(t('close')) + '" aria-keyshortcuts="Escape">' + close + '</button></div></div>'
-      + '<div class="preview-lightbox-body"><div class="preview-lightbox-canvas">'
-      + '<div id="previewLightboxViewport" class="preview-lightbox-panes" :class="{zoomed: !previewViewAtFit(), panning: previewViewPanning}" @wheel="zoomPreviewView($event)" @pointerdown="startPreviewPan($event)" @pointermove="movePreviewPan($event)" @pointerup="stopPreviewPan($event)" @pointercancel="stopPreviewPan($event)" @lostpointercapture="stopPreviewPan($event)" @dblclick="if (!$event.target.closest(\'button\')) { $event.preventDefault(); resetPreviewView(true); }" @dragstart.prevent><div id="previewLightboxExtent" class="preview-lightbox-extent"><div id="previewLightboxGroup" class="preview-lightbox-group"><div id="previewReferencePanes" class="preview-reference-panes" hidden></div>'
+      + '<div class="preview-lightbox-body"><div id="previewLightboxCanvas" class="preview-lightbox-canvas">'
+      + '<div id="previewLightboxViewport" class="preview-lightbox-panes" :class="{zoomed: !previewViewAtFit(), panning: previewViewPanning}" @scroll.passive="queuePreviewSideNavLayout()" @wheel="zoomPreviewView($event)" @pointerdown="startPreviewPan($event)" @pointermove="movePreviewPan($event)" @pointerup="stopPreviewPan($event)" @pointercancel="stopPreviewPan($event)" @lostpointercapture="stopPreviewPan($event)" @dblclick="if (!$event.target.closest(\'button\')) { $event.preventDefault(); resetPreviewView(true); }" @dragstart.prevent><div id="previewLightboxExtent" class="preview-lightbox-extent"><div id="previewLightboxGroup" class="preview-lightbox-group"><div id="previewReferencePanes" class="preview-reference-panes" hidden></div>'
       + '<div class="preview-lightbox-pane preview-current-pane"><div id="previewCurrentStage" class="preview-current-stage">' + stage() + '</div><div id="previewComparisonPlaceholder" class="preview-comparison-placeholder" hidden>' + this.esc(t('sampleSelectComparison')) + '</div><div id="previewCurrentCaptionSlot" class="preview-caption-slot" hidden><div class="preview-pane-caption" id="previewCurrentCaption" hidden>' + this._previewCaptionTextHtml(true) + '</div></div></div></div></div></div>'
+      + sideNav(-1, left) + sideNav(1, right)
       + '</div><div class="preview-lightbox-footer"><div id="previewLightboxBar" class="preview-lightbox-bar">' + this._previewPromptBarArrowHtml(t, -1)
       + '<div id="previewLightboxStrip" class="preview-lightbox-strip" role="group" aria-label="' + this.esc(t('sampleBatchImages')) + '" @scroll.passive="syncPreviewPromptBar()" @pointerdown="startPreviewPromptBarDrag($event)" @pointermove="movePreviewPromptBarDrag($event)" @pointerup="endPreviewPromptBarDrag($event)" @pointercancel="endPreviewPromptBarDrag($event)" @lostpointercapture="endPreviewPromptBarDrag($event)" @pointerleave="leavePreviewPromptBarDrag($event)" @click.capture="suppressPreviewPromptBarClick($event)" @dragstart.prevent></div>'
       + this._previewPromptBarArrowHtml(t, 1)
       + '<div class="preview-lightbox-bar-controls" x-effect="previewCompareActive; $nextTick(() => syncPreviewPromptBar())"><div x-show="previewCompareActive" x-cloak>'
       + this._sampleSelectHtml([{value: 'horizontal', label: t('sampleCompareHorizontal')}, {value: 'vertical', label: t('sampleCompareVertical')}], this.previewComparisonLayout, t('sampleCompareLayout'), 'previewComparisonLayout', 'setPreviewComparisonLayout($event.target.value)')
-      + '</div><div class="m-sample-view-toggle" x-show="previewViewTimelineAvailable"><span id="previewTimelineToggleLabel">' + this.esc(t('sampleThumbnails')) + '</span><label class="toggle"><input type="checkbox" role="switch" :checked="previewViewTimelineVisible" aria-labelledby="previewTimelineToggleLabel" aria-controls="previewLightboxTimelineFrame" @change="togglePreviewViewTimeline($event)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>'
+      + '</div><div class="m-samples-sort" x-show="previewViewTimelineAvailable" x-cloak><span>' + this.esc(t('sampleOrder')) + '</span>'
+      + this._sampleSelectHtml(sortOptions, this.sampleBatchSortDir || 'desc', t('sampleOrder'), 'previewViewerSort', 'setSampleBatchSort($event.target.value)', '', 'sampleBatchSortDir') + '</div>'
+      + '<div class="m-sample-view-toggle" x-show="previewViewTimelineAvailable"><span id="previewTimelineToggleLabel">' + this.esc(t('sampleThumbnails')) + '</span><label class="toggle"><input type="checkbox" role="switch" :checked="previewViewTimelineVisible" aria-labelledby="previewTimelineToggleLabel" aria-controls="previewLightboxTimelineFrame" @change="togglePreviewViewTimeline($event)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>'
       + this._previewTimelineLocateHtml(t) + '</div></div>'
       + '<div id="previewLightboxTimelineFrame" class="preview-view-timeline-frame" :class="{\'is-collapsed\': !previewViewTimelineVisible}" :inert="!previewViewTimelineVisible" :aria-hidden="!previewViewTimelineVisible" hidden><div class="preview-view-timeline-clip"><div id="previewLightboxTimeline" class="preview-view-timeline" role="group" aria-label="' + this.esc(t('sampleBatchSelect')) + '" @keydown="previewViewTimelineKeydown($event)" @wheel="scrollPreviewViewTimeline($event)"'
       + ' @pointerdown="startPreviewViewTimelineDrag($event)" @pointermove="movePreviewViewTimelineDrag($event)" @pointerup="endPreviewViewTimelineDrag($event)" @pointercancel="endPreviewViewTimelineDrag($event)" @pointerleave="leavePreviewViewTimeline($event)" @click.capture="suppressPreviewViewTimelineClick($event)" @dragstart.prevent hidden></div>'
@@ -1022,6 +1072,8 @@ window.monitorArtifactsRenderMixin = {
   closePreviewLightbox() {
     this._cancelPreviewReset();
     this.stopPreviewPan();
+    if (this._previewSideNavFrame != null) cancelAnimationFrame(this._previewSideNavFrame);
+    this._previewSideNavFrame = null; this._previewSideNavPress = null;
     this.closePreviewTimelineMenu(false);
     this.cancelPreviewPromptBarDrag();
     if (!this.previewLightboxOpen) return;
@@ -1102,6 +1154,86 @@ window.monitorArtifactsRenderMixin = {
     if (!this.previews.length) return;
     const next = this._previewLightboxNavigationTarget(dir);
     if (next >= 0 && this.selectPreviewComparisonCurrent(next)) this._updatePreviewLightbox();
+  },
+
+  queuePreviewSideNavLayout() {
+    if (!this.previewLightboxOpen || this._previewSideNavFrame != null || !document.getElementById('previewLightboxCanvas')) return;
+    this._previewSideNavFrame = requestAnimationFrame(() => {
+      this._previewSideNavFrame = null;
+      this._layoutPreviewSideNav();
+    });
+  },
+
+  _layoutPreviewSideNav() {
+    const canvas = document.getElementById('previewLightboxCanvas'), viewport = document.getElementById('previewLightboxViewport');
+    const group = document.getElementById('previewLightboxGroup');
+    const prev = document.getElementById('previewSideNavPrev'), next = document.getElementById('previewSideNavNext');
+    if (!canvas || !viewport || !group || !prev || !next || !this.previewLightboxOpen) return;
+    const canvasRect = canvas.getBoundingClientRect(), viewRect = viewport.getBoundingClientRect(), groupRect = group.getBoundingClientRect();
+    const scale = canvas.offsetWidth ? canvasRect.width / canvas.offsetWidth : 0;
+    if (!scale || !viewport.clientWidth || !viewport.clientHeight) {prev.hidden = next.hidden = true; return;}
+    const left = (viewRect.left - canvasRect.left) / scale, top = (viewRect.top - canvasRect.top) / scale;
+    const right = Math.max(0, canvas.clientWidth - left - viewport.clientWidth);
+    const bottom = Math.max(0, canvas.clientHeight - top - viewport.clientHeight);
+    const groupLeft = (groupRect.left - viewRect.left) / scale, groupRight = (groupRect.right - viewRect.left) / scale;
+    const clamp = value => Math.max(0, Math.min(viewport.clientWidth, value));
+    for (let [button, edge, width] of [[prev, 'left', clamp(groupLeft)], [next, 'right', clamp(viewport.clientWidth - groupRight)]]) {
+      // When a single image fills the canvas, keep a small edge target over
+      // the image. Comparison panes retain their unobstructed controls.
+      const imageEdge = width < 24 && !this.previewCompareActive;
+      if (imageEdge) width = Math.min(56, viewport.clientWidth / 2);
+      button.hidden = width < 24;
+      button.classList.toggle('is-narrow', width < 56);
+      button.classList.toggle('is-image-edge', imageEdge);
+      Object.assign(button.style, {[edge]: (edge === 'left' ? left : right) + 'px', top: top + 'px', bottom: bottom + 'px', width: width + 'px'});
+    }
+  },
+
+  startPreviewSideNavPress(event, viewport = document.getElementById('previewLightboxViewport')) {
+    if (event.button !== 0) return;
+    if (!viewport) return;
+    this._previewSideNavPress = {pointerId: event.pointerId, x: event.clientX, y: event.clientY, viewport, moved: false};
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  },
+
+  movePreviewSideNavPress(event, startPan = start => this.startPreviewPan(start), movePan = move => this.movePreviewPan(move)) {
+    const press = this._previewSideNavPress;
+    if (!press || press.pointerId !== event.pointerId) return;
+    if (!press.moved && Math.hypot(event.clientX - press.x, event.clientY - press.y) <= 6) return;
+    if (!press.moved) {
+      press.moved = true;
+      // Hand a drag to the existing viewport pan, retaining the original start.
+      startPan({currentTarget: press.viewport, target: {}, button: 0, pointerId: press.pointerId,
+        clientX: press.x, clientY: press.y, preventDefault() {}});
+    }
+    movePan(event);
+  },
+
+  cancelPreviewSideNavPress(event) {
+    if (this._previewSideNavPress?.pointerId === event.pointerId) this._previewSideNavPress = null;
+  },
+
+  activatePreviewSideNav(event, direction, sidebar = false) {
+    const press = this._previewSideNavPress;
+    this._previewSideNavPress = null;
+    if (event.detail !== 0 && press?.moved) return;
+    if (sidebar) this.sampleSidebarNav(direction);
+    else this.previewLightboxNav(direction);
+  },
+
+  previewSideNavWheel(event) {
+    const viewport = document.getElementById('previewLightboxViewport');
+    if (!viewport) return;
+    if (Math.abs(event.deltaX || 0) > Math.abs(event.deltaY || 0)
+        || (this.previewCompareActive && this.previewComparisonLayout === 'vertical' && !event.ctrlKey && !event.metaKey)) {
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewport.clientHeight : 1;
+      const left = viewport.scrollLeft, top = viewport.scrollTop;
+      viewport.scrollLeft += (event.deltaX || 0) * unit;
+      viewport.scrollTop += (event.deltaY || 0) * unit;
+      if (viewport.scrollLeft !== left || viewport.scrollTop !== top) event.preventDefault();
+      return;
+    }
+    this.zoomPreviewView(event, true);
   },
 
   _resetPreviewPageEditor() {
@@ -1905,6 +2037,7 @@ window.monitorArtifactsRenderMixin = {
     this._previewViewportLayout = {left, top, centerX, centerY};
     viewport.scrollLeft = previous ? centerX + offsetX : Math.min(centerX, left);
     viewport.scrollTop = previous ? centerY + offsetY : Math.min(centerY, top);
+    this.queuePreviewSideNavLayout();
   },
 
   _previewGroupDrawSize(scale) {
@@ -2121,8 +2254,8 @@ window.monitorArtifactsRenderMixin = {
     if (this._previewReferenceMedia) this._refreshPreviewReferenceVisibility(this._previewReferenceMedia);
   },
 
-  zoomPreviewView(event) {
-    if (event.target?.closest?.('button,.preview-pane-caption')) return;
+  zoomPreviewView(event, fromSideNav = false) {
+    if (!fromSideNav && event.target?.closest?.('button,.preview-pane-caption')) return;
     if (!event.deltaY || Math.abs(event.deltaX || 0) > Math.abs(event.deltaY)) return;
     if (this.previewCompareActive && this.previewComparisonLayout === 'vertical' && !event.ctrlKey && !event.metaKey) return;
     event.preventDefault(); event.stopPropagation();
@@ -2603,8 +2736,13 @@ window.monitorArtifactsRenderMixin = {
     if (box) {
       const prevBtn = box.querySelector('.preview-lightbox-nav.prev');
       const nextBtn = box.querySelector('.preview-lightbox-nav.next');
-      if (prevBtn) prevBtn.disabled = this._previewLightboxNavigationTarget(-1, displayIndices) < 0;
-      if (nextBtn) nextBtn.disabled = this._previewLightboxNavigationTarget(1, displayIndices) < 0;
+      const sidePrev = document.getElementById('previewSideNavPrev'), sideNext = document.getElementById('previewSideNavNext');
+      const noPrev = this._previewLightboxNavigationTarget(-1, displayIndices) < 0;
+      const noNext = this._previewLightboxNavigationTarget(1, displayIndices) < 0;
+      if (prevBtn) prevBtn.disabled = noPrev;
+      if (nextBtn) nextBtn.disabled = noNext;
+      if (sidePrev) sidePrev.disabled = noPrev;
+      if (sideNext) sideNext.disabled = noNext;
     }
     const strip = document.getElementById('previewLightboxStrip');
     const batch = this._sampleDataModel().byBatch.get(this._sampleRecord(headingPreview).batch_id);

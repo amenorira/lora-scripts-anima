@@ -24,6 +24,7 @@ window.monitorPreviewsMixin = {
   previewViewPanning: false, previewViewPointerId: null,
   _previewPanStartX: 0, _previewPanStartY: 0, _previewPanRatio: 1,
   _previewPanWrite: null,
+  _previewSideNavFrame: null, _previewSideNavPress: null,
   previewImageLoading: false, previewImageError: false,
   _previewImageKey: '', _previewImageRequest: 0,
   _previewOriginalCache: null,
@@ -60,6 +61,8 @@ window.monitorPreviewsMixin = {
     this._sampleLayoutAction++;
     this._cancelPreviewReset?.();
     this.stopPreviewPan?.();
+    if (this._previewSideNavFrame != null) cancelAnimationFrame(this._previewSideNavFrame);
+    this._previewSideNavFrame = null; this._previewSideNavPress = null;
     this.cancelPreviewPromptBarDrag?.();
     this.closePreviewTimelineMenu?.(false);
     this.previewInfoOpen = false;
@@ -184,6 +187,10 @@ window.monitorPreviewsMixin = {
     this._sampleResetScroll = true; this._sampleScrollAnchor = null;
     this.previewsVersion++;
     this.renderDashboard();
+    if (this.previewLightboxOpen) {
+      this._updatePreviewLightbox();
+      this._revealPreviewViewTimeline(false);
+    }
   },
 
   _sampleCaseKey(preview) {

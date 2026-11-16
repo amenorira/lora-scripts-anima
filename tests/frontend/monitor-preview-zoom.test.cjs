@@ -71,6 +71,77 @@ test('dragging pans the whole scroll surface and releases capture on reset', () 
   assert.equal(value.previewViewPanning, false);
 });
 
+test('viewer side targets stay in the empty viewport and do not cover the image or scrollbars', () => {
+  const {value} = fixture();
+  const previousDocument = global.document;
+  let groupRect = {left: 400, right: 800};
+  const canvas = {offsetWidth: 1000, clientWidth: 1000, clientHeight: 600,
+    getBoundingClientRect: () => ({left: 100, top: 20, width: 1000})};
+  const viewport = {clientWidth: 940, clientHeight: 550, getBoundingClientRect: () => ({left: 116, top: 32})};
+  const button = () => {
+    const flags = {};
+    return {style: {}, flags, classList: {toggle(name, enabled) {flags[name] = enabled;}}, hidden: false};
+  };
+  const prev = button(), next = button();
+  const nodes = {previewLightboxCanvas: canvas, previewLightboxViewport: viewport,
+    previewLightboxGroup: {getBoundingClientRect: () => groupRect}, previewSideNavPrev: prev, previewSideNavNext: next};
+  global.document = {getElementById: id => nodes[id] || null};
+  try {
+    value._layoutPreviewSideNav();
+    assert.equal(prev.style.left, '16px'); assert.equal(prev.style.width, '284px');
+    assert.equal(next.style.right, '44px'); assert.equal(next.style.width, '256px');
+    assert.equal(next.style.bottom, '38px');
+    groupRect = {left: 146, right: 1036}; value._layoutPreviewSideNav();
+    assert.equal(prev.hidden, false); assert.equal(prev.flags['is-narrow'], true, 'a 30px margin keeps a compact visible control');
+    assert.equal(next.hidden, true, 'less than 24px leaves navigation to the toolbar');
+    groupRect = {left: 50, right: 1200}; value._layoutPreviewSideNav();
+    assert.equal(prev.hidden, true); assert.equal(next.hidden, true);
+    value.previewCompareActive = false; value._layoutPreviewSideNav();
+    assert.equal(prev.hidden, false); assert.equal(next.hidden, false);
+    assert.equal(prev.style.width, '56px'); assert.equal(next.style.width, '56px');
+    assert.equal(prev.flags['is-image-edge'], true, 'a full-width image still has an edge navigation target');
+  } finally {global.document = previousDocument;}
+});
+
+test('side navigation distinguishes a click from a drag and hands dragging to the viewer', () => {
+  const {value, viewport} = fixture();
+  let captured = null, starts = [], moves = [], clicks = [];
+  const button = {setPointerCapture(id) {captured = id;}};
+  const down = {currentTarget: button, button: 0, pointerId: 7, clientX: 50, clientY: 100};
+  value.previewLightboxNav = direction => clicks.push(direction);
+  value.startPreviewSideNavPress(down, viewport);
+  assert.equal(captured, 7);
+  value.movePreviewSideNavPress({...down, clientX: 54}, start => starts.push(start), move => moves.push(move));
+  value.activatePreviewSideNav({detail: 1}, 1);
+  assert.deepEqual(clicks, [1]); assert.equal(starts.length, 0);
+  value.startPreviewSideNavPress(down, viewport);
+  value.movePreviewSideNavPress({...down, clientX: 80}, start => starts.push(start), move => moves.push(move));
+  assert.equal(starts[0].currentTarget, viewport); assert.equal(starts[0].clientX, 50);
+  assert.equal(moves.length, 1);
+  value.activatePreviewSideNav({detail: 1}, -1);
+  assert.deepEqual(clicks, [1], 'the click following a drag must not navigate');
+  value.startPreviewSideNavPress(down, viewport);
+  value.cancelPreviewSideNavPress({pointerId: 7});
+  assert.equal(value._previewSideNavPress, null);
+});
+
+test('sidebar dragging continues when the side button transfers pointer capture to the image viewport', () => {
+  const {value, viewport} = fixture();
+  const state = {scale: 2, x: 0, y: 0}, view = window.AnimaImageViewport.create(state);
+  view.$refs = {viewport};
+  const button = {setPointerCapture() {}};
+  const down = {currentTarget: button, button: 0, pointerId: 7, clientX: 50, clientY: 100, preventDefault() {}};
+  value.startPreviewSideNavPress(down, viewport);
+  value.movePreviewSideNavPress({...down, clientX: 80}, event => view.startPan(event), event => view.movePan(event));
+  assert.equal(view.panning, true);
+  view.stopPan({type: 'lostpointercapture', pointerId: 7, target: button, currentTarget: viewport});
+  assert.equal(view.panning, true, 'the child capture loss must not end the viewport drag');
+  view.movePan({...down, clientX: 100});
+  assert.equal(state.x, 50);
+  view.stopPan({type: 'lostpointercapture', pointerId: 7, target: viewport, currentTarget: viewport});
+  assert.equal(view.panning, false, 'losing the viewport capture still ends the drag');
+});
+
 test('modal drag coalesces pointer bursts and retains the final position when released', () => withAnimationFrames(({tick, frames}) => {
   const {value, viewport, capture} = fixture(); value.setPreviewViewScale(2);
   const event = {currentTarget: viewport, target: {closest: () => null}, button: 0, pointerId: 7,

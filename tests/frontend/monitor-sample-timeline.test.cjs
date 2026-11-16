@@ -680,16 +680,16 @@ test('a cross-row group outline has one stepped path and a positive bridge witho
     item('open', 6, 138), item('other', 118, 138), item('other', 230, 138), item('other', 342, 138)], 'open');
   const path = value._sampleOutlinePath(rows);
   assert.equal((path.match(/M/g) || []).length, 1); assert.equal((path.match(/Z/g) || []).length, 1);
-  assert.equal(rows[1].top - rows[0].bottom, 4, 'the connector has real height across nonoverlapping columns');
+  assert.equal(rows[1].top - rows[0].bottom, 8, 'the connector uses the existing row gap without touching neighboring cards');
   assert.equal(value._sampleOutlineContainsPoint(rows, 390, 50), true);
   assert.equal(value._sampleOutlineContainsPoint(rows, 50, 170), true);
   assert.equal(value._sampleOutlineContainsPoint(rows, 200, 132), true, 'the empty bridge is inside the group');
   assert.equal(value._sampleOutlineContainsPoint(rows, 50, 50), false, 'the earlier epoch in the first row stays outside');
   assert.equal(value._sampleOutlineContainsPoint(rows, 390, 170), false, 'the later epoch in the second row stays outside');
   assert.equal((path.match(/A/g) || []).length, 8, 'every convex and concave turn is an actual arc');
-  assert.equal((path.match(/A2 2 /g) || []).length, 4, 'all turns at a 4px bridge are capped at 2px');
+  assert.equal((path.match(/A4 4 /g) || []).length, 4, 'all turns at an 8px bridge are capped at 4px');
   assert.equal((path.match(/A6 6 /g) || []).length, 4, 'the large outside corners retain a 6px radius');
-  assert.match(path, /A2 2 0 0 0 /, 'inner turns use the opposite arc sweep');
+  assert.match(path, /A4 4 0 0 0 /, 'inner turns use the opposite arc sweep');
   assert.doesNotMatch(path, /,/);
 });
 
@@ -708,8 +708,8 @@ test('outline bridges start below the tallest caption in the complete CSS row', 
     {batchId: 'other', left: 6, right: 106, top: 6, bottom: 166},
     {batchId: 'open', left: 118, right: 218, top: 6, bottom: 126},
     {batchId: 'open', left: 6, right: 106, top: 178, bottom: 298}], 'open');
-  assert.equal(rows[0].bottom, 170);
-  assert.equal(rows[1].top, 174);
+  assert.equal(rows[0].bottom, 168);
+  assert.equal(rows[1].top, 176);
   assert.equal(value._sampleOutlineContainsPoint(rows, 50, 150), false, 'the taller neighboring caption is outside');
   assert.equal(value._sampleOutlineContainsPoint(rows, 50, 172), true);
   assert.equal(value._sampleOutlineContainsPoint(rows, 150, 150), true, 'a narrow neck stays in the selected column');

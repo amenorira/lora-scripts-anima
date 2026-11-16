@@ -107,6 +107,28 @@ test('locating handles visible items, scaled dialogs and both scroll boundaries'
   assert.equal(rail.scrollLeft, 0);
 });
 
+test('sorting a long viewer timeline keeps its selected thumbnail visible in both directions', () => {
+  const value = app(100), previous = global.document;
+  value.previewLightboxOpen = true; value.previewStep = 99; value.sampleBatchId = 'b100';
+  let position = 0;
+  const rail = {hidden: false, clientWidth: 200, offsetWidth: 200, scrollWidth: 8000, scrollLeft: 0,
+    getBoundingClientRect: () => ({left: 30, right: 230, width: 200}),
+    querySelector: () => ({getBoundingClientRect() {
+      const left = 30 + position * 80 - rail.scrollLeft;
+      return {left, right: left + 70};
+    }})};
+  global.document = {getElementById: id => id === 'previewLightboxTimeline' ? rail : null};
+  value._updatePreviewLightbox = () => {position = value._previewLightboxDisplayIndices().indexOf(value.previewStep);};
+  try {
+    value.setSampleBatchSort('asc');
+    assert(rail.scrollLeft > 0, 'the selected latest thumbnail moves into view at the other end');
+    assert(rail.querySelector().getBoundingClientRect().right <= rail.getBoundingClientRect().right);
+    value.setSampleBatchSort('desc');
+    assert.equal(rail.scrollLeft, 0, 'reversing again brings the same selection back into view');
+    assert.equal(value.previewStep, 99);
+  } finally {global.document = previous;}
+});
+
 test('the viewer hides the entire rail and restores focus if its locate button was focused', () => {
   const value = app(2), previous = global.document;
   let restored = false;
