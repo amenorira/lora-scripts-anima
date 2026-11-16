@@ -4,6 +4,39 @@
 
 All notable changes to this project are documented in this file.
 
+## v26.1116.08cc0 - 2026-11-16
+
+This update focuses on training previews: build preview prompts from dataset tags, then browse and compare samples from different stages of training by sampling batch.
+
+### Build Preview Prompts from Dataset Tags
+
+In the training configuration, click **Choose dataset tags** beside the positive preview prompts. Browse tags and their frequencies across the whole dataset or a subset, search for tags, and click to add them to a prompt. The workspace lets you edit and organize tags, reorder prompts, right-click to designate trigger words, and hide unwanted candidates with an exclusion list.
+
+![Editing preview prompts from dataset tags](docs/images/preview-prompts.en-US.jpg)
+
+- Prepare multiple prompts, with one preview image generated for each. MOSS-Image uses a single prompt and preserves line breaks and JSON structure.
+- The optional **quality prompt** is prepended to every positive prompt when enabled. It is off by default.
+- When previews are enabled, a confirmation before training shows the dataset path, model save name, and final positive prompts. You can return to edit them. This confirmation is on by default and can be turned off in UI Settings.
+
+### Browse and Compare Training Samples
+
+Samples are grouped by sampling batch; expand and sort them, then preview, navigate, and zoom in the sidebar. In the image viewer, switch sampling points for a prompt, pin multiple reference images, compare them horizontally or vertically, and zoom and pan in sync.
+
+New Anima, MOSS-Image, and Krea 2 samples record generation details such as prompts and seeds. When those details are complete, comparisons match samples with the same prompt, seed, and generation settings. For SDXL and historical samples, available details are recovered from filenames and logs where possible.
+
+![Comparing samples from different training stages](docs/images/sample-comparison.en-US.jpg)
+
+The screenshot uses simulated samples.
+
+### Other Improvements
+
+- Click a training record to view its configuration snapshot, copy the original, or apply it to the training form. The monitor organizes configuration more clearly and explains the formulas and criteria for Loss trends.
+- The default maximum learning rate for Automagic3 and Automagic4 has changed from `1e-4` to `2e-4`. Explicitly configured maximums are retained; configurations without a maximum use the new default. Adaptive learning-rate labels and Schedule-Free warmup display have also been corrected.
+- Crop preview filters show image counts. Refresh feedback is more stable across training history, logs, samples, and output files.
+- Fixed a startup race during cache confirmation and an AI captioning detail dialog remaining open after leaving the page.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1111.14c5e...v26.1116.08cc0)
+
 ## v26.1111.14c5e - 2026-11-11
 
 This release adds the **Automagic4 adaptive optimizer**, upgrades Alpine, and improves interface performance. It also refines crop previews and learning-rate monitoring.
