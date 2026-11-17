@@ -63,6 +63,17 @@ class LegacySampleStepsTests(unittest.TestCase):
         legacy_sample_steps.enrich_legacy_sample_steps([first, second], self.root)
         self.assertEqual(first["sample"]["batch_id"], second["sample"]["batch_id"])
 
+    def test_progress_prefix_preserves_final_and_previous_sampling_calls(self):
+        self.write_log("epoch 48/50\n2026-11-14 09:00:00 INFO Generating sample images at step 1152\n"
+                       "epoch 50/50\n\rsteps: 99%|######### | 1199/1200 [41:28<00:02, 2.08s/it]\r"
+                       "steps: 100%|##########| 1200/1200 [41:30<00:00, 2.08s/it, avr_loss=0.111]"
+                       "2026-11-14 09:05:00 INFO Generating sample images at step 1200\n"
+                       "2026-11-14 09:06:00 INFO model saved\n")
+        previous, final = self.sample(48), self.sample(50, "20261114090515")
+        legacy_sample_steps.enrich_legacy_sample_steps([previous, final], self.root)
+        self.assertEqual([item["sample"]["step"] for item in (previous, final)], [1152, 1200])
+        self.assertEqual(final["sample"]["batch_label"], "Epoch 50 · Step 1200")
+
     def test_append_parses_only_new_complete_records_without_global_lock(self):
         self.write_log("epoch 1/2\n2026-11-14 09:00:00 INFO Generating sample images at step 54\n"
                        "2026-11-14 09:01:00 INFO done\n")

@@ -16,7 +16,8 @@ from backend.monitor.sample_metadata import parse_sample_filename
 
 _EPOCH = re.compile(r"^\s*epoch\s+(\d+)\s*/\s*\d+\s*$", re.I)
 _SAMPLE_STEP = re.compile(r"\bGenerating sample images at step\s+(\d+)\b", re.I)
-_TIME = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})(?:[.,]\d+)?\s")
+# tqdm can leave the next log timestamp directly after its closing bracket.
+_TIME = re.compile(r"(?:^|\])\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})(?:[.,]\d+)?\s")
 _PROMPT_START = re.compile(r"^INFO\s+prompt: (.*)$")
 # Anima logs the prompt after parsing/replacement, followed by this fixed
 # metadata suffix. Raw prompt-file lines and other trainers are not evidence.
@@ -67,7 +68,7 @@ def _parse_calls(stream, state: _ParseState, size: int) -> tuple[_SamplingCall, 
             break  # Re-read this incomplete record when more bytes arrive.
         state.offset += len(raw)
         for _, line in record_frames(raw):
-            timestamp = _TIME.match(line)
+            timestamp = _TIME.search(line)
             current_time = None
             if timestamp:
                 try:
