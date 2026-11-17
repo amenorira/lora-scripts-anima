@@ -103,43 +103,43 @@ test('loss detail availability belongs to the viewed run and historical values c
   assert.equal(value._sampleBatchEpochLoss(value._sampleDataModel().batches.at(-1)).values.overall, .2);
 });
 
-test('shared artifact directories isolate captions, ranking and comparisons by recorded task ownership', () => {
+test('shared artifact directories display each run loss in captions, ranking and comparisons', () => {
   const value = app();
-  value.monitorData.active_task = {id: 'current-task'};
   const own = preview(3), older = preview(3), step = preview(3, 'step');
   own.sample.task_id = 'current-task';
   older.path = 'sample/original.png'; older.sample.batch_id = 'original-epoch-3'; older.sample.task_id = 'original-task';
+  const historical = {epoch: 3, values: {overall: .12, high: .2, mid: .1, low: .02},
+    previous: {overall: .15, high: .3, mid: .2, low: .03}, detailed: true};
+  older.sample.epoch_loss = historical;
   value.previews = [own, older, step]; value.previewsVersion++;
   value.sampleLossMode = 'detailed';
+  value.monitorData.log_timestep_loss = false;
+  assert.equal(value.sampleDetailedLossAvailable, true, 'foreign partition loss remains selectable');
   const model = value._sampleDataModel();
   const read = () => model.batches.map(batch => value._sampleBatchEpochLoss(batch));
-  assert.deepEqual(read().map(loss => loss.values.overall), [.0842, null, null]);
-  assert.deepEqual(read()[1].previous, {overall: null, low: null, mid: null, high: null});
-  for (const key of ['overall', 'low']) {
-    value.sampleBatchSortDir = 'loss-' + key;
-    assert.equal(value._sampleOverviewBatches()[0].id, own.sample.batch_id);
-  }
+  assert.deepEqual(read().map(loss => loss.values.overall), [.0842, .12, null]);
+  assert.deepEqual(read()[1].previous, historical.previous);
+  assert.match(value._sampleCardCaptionHtml(model.batches[1]), /0\.1200/);
+  assert.match(value._sampleLossOverlayHtml(older), /-20\.0%/);
+  value.sampleBatchSortDir = 'loss-overall';
+  assert.equal(value._sampleOverviewBatches()[0].id, own.sample.batch_id);
+  value.sampleBatchSortDir = 'loss-low';
+  assert.equal(value._sampleOverviewBatches()[0].id, older.sample.batch_id);
   value.previewCompareActive = true;
   value.previewReferences = [older]; value.previewComparisonOrder = [older.path, null];
-  assert.doesNotMatch(value._sampleLossOverlayHtml(own, true), /[+-]?\d+\.\d%/,
-    'an unowned baseline cannot supply a percentage');
+  assert.match(value._sampleLossOverlayHtml(own, true), /-29\.8%/);
 
-  // Same points/run key still need a fresh index when ownership becomes known
-  // or changes, otherwise caption and sorting caches keep the previous answer.
-  const before = value._sampleEpochLossIndex();
-  const order = value._sampleBatchOrder();
-  value.monitorData.active_task.id = 'original-task';
-  assert.notEqual(value._sampleEpochLossIndex(), before);
-  assert.notEqual(value._sampleBatchOrder(), order);
-  assert.deepEqual(read().map(loss => loss.values.overall), [null, .0842, null]);
-  assert.equal(value._sampleOverviewBatches()[0].id, older.sample.batch_id);
+  value.lossSeries[0].points = [{step: 3, value: .07}];
+  assert.deepEqual(read().map(loss => loss.values.overall), [.07, .12, null], 'live metrics update only their own run');
 
   value.selectedRunDir = 'output/original';
   value.runDetailData = {task_id: 'original-task', tensorboard_loss: [series('loss/epoch_average', [[3, .12]])]};
-  assert.deepEqual(read().map(loss => loss.values.overall), [null, .12, null]);
-  assert.equal(value._sampleOverviewBatches()[0].id, older.sample.batch_id);
-  delete value.runDetailData.task_id;
-  assert.deepEqual(read().map(loss => loss.values.overall), [.12, .12, null], 'old API responses remain usable');
+  // Each API view attaches the other run's values, independently of selection.
+  own.sample.epoch_loss = {epoch: 3, values: {overall: .07, high: null, mid: null, low: .0318},
+    previous: {overall: null, high: null, mid: null, low: null}, detailed: true};
+  delete older.sample.epoch_loss; value.previewsVersion++;
+  assert.deepEqual(read().map(loss => loss.values.overall), [.07, .12, null]);
+  assert.match(value._sampleLossOverlayHtml(own, true), /-41\.7%/);
 });
 
 test('legacy filenames and demo batches display loss without task IDs in either API generation', () => {

@@ -147,7 +147,7 @@ def _read_calls(run_paths: tuple[Path, ...]) -> tuple[_SamplingCall, ...]:
         return ()
 
 
-def enrich_legacy_sample_steps(previews: list[dict], *run_paths: Path) -> None:
+def enrich_legacy_sample_steps(previews: list[dict], *run_paths: Path, calls=None) -> None:
     """Fill epoch-sample display details without changing pairing eligibility.
 
     Filename timestamps must fall in one explicit sampling-call interval for
@@ -170,7 +170,8 @@ def enrich_legacy_sample_steps(previews: list[dict], *run_paths: Path) -> None:
         pending.append((sample, parsed, timestamp))
     if not pending:
         return
-    calls = _read_calls(tuple(dict.fromkeys(run_paths)))
+    if calls is None:
+        calls = _read_calls(tuple(dict.fromkeys(run_paths)))
     by_epoch = {}
     for call in calls:
         by_epoch.setdefault(call.epoch, []).append(call)

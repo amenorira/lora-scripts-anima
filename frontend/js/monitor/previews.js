@@ -110,13 +110,9 @@ window.monitorPreviewsMixin = {
     } catch { /* The controls remain usable without storage. */ }
   },
 
-  get _sampleLossTaskId() {
-    return (this.selectedRunDir ? this.runDetailData?.task_id : this.monitorData?.active_task?.id) || '';
-  },
-
   _sampleEpochLossIndex() {
     const series = this.monitorLossSeries || (this.selectedRunDir ? this.runDetailData?.tensorboard_loss : this.lossSeries) || [];
-    const run = this.selectedRunDir || this.currentOutputRunDir || '', taskId = this._sampleLossTaskId;
+    const run = this.selectedRunDir || this.currentOutputRunDir || '';
     const sources = [];
     for (const item of series) {
       if (!['loss/epoch', 'loss/epoch_average', 'loss/timestep/epoch/low', 'loss/timestep/epoch/mid', 'loss/timestep/epoch/high'].includes(item.tag)) continue;
@@ -126,7 +122,7 @@ window.monitorPreviewsMixin = {
     const cached = this._sampleLossCache;
     // Production metric updates and snapshots replace points. Length and the
     // last point also cover in-place appends without scanning historical values.
-    if (cached?.run === run && cached.taskId === taskId && cached.sources.length === sources.length && sources.every((source, index) => {
+    if (cached?.run === run && cached.sources.length === sources.length && sources.every((source, index) => {
       const previous = cached.sources[index];
       return source.tag === previous.tag && source.points === previous.points && source.length === previous.length
         && source.lastStep === previous.lastStep && source.lastValue === previous.lastValue;
@@ -139,11 +135,12 @@ window.monitorPreviewsMixin = {
       }
       byTag.set(source.tag, points);
     }
-    this._sampleLossCache = {run, taskId, sources, byTag};
+    this._sampleLossCache = {run, sources, byTag};
     return this._sampleLossCache.byTag;
   },
 
   get sampleDetailedLossAvailable() {
+    if (this.previews?.length && this._sampleDataModel().detailedLoss) return true;
     const data = this.selectedRunDir ? this.runDetailData : this.monitorData;
     if (typeof data?.log_timestep_loss === 'boolean') return data.log_timestep_loss;
     // Existing/imported runs have no saved switch; recorded partition scalars
@@ -168,10 +165,11 @@ window.monitorPreviewsMixin = {
     return this._sampleEpochLoss(sample);
   },
 
-  _sampleEpochLoss(sample, index = this._sampleEpochLossIndex()) {
+  _sampleEpochLoss(sample, index) {
+    if (sample?.epoch_loss) return sample.epoch_loss;
+    index ||= this._sampleEpochLossIndex();
     // A mid-epoch step sample must never acquire the later epoch-end loss.
-    // Keep filename-only, imported and older samples usable. Only an explicit
-    // task mismatch rules out the viewed run's epoch loss.
+    // Foreign runs carry their own loss; the viewed run follows live metrics.
     const epoch = sample?.stage_kind === 'epoch' ? sample.epoch ?? sample.stage_value : null;
     const at = number => ({
       overall: index.get('loss/epoch')?.get(number) ?? index.get('loss/epoch_average')?.get(number) ?? null,
@@ -180,9 +178,7 @@ window.monitorPreviewsMixin = {
       high: index.get('loss/timestep/epoch/high')?.get(number) ?? null,
     });
     const known = Number.isInteger(epoch) && epoch > 0;
-    const taskId = this._sampleLossTaskId;
-    const usable = known && !(sample?.task_id && taskId && sample.task_id !== taskId);
-    return {epoch: known ? epoch : null, values: at(usable ? epoch : null), previous: at(usable ? epoch - 1 : null)};
+    return {epoch: known ? epoch : null, values: at(known ? epoch : null), previous: at(known ? epoch - 1 : null)};
   },
 
   _sampleLossNumber(value, compact = false) {
@@ -248,7 +244,8 @@ window.monitorPreviewsMixin = {
       }
     });
     batches.forEach((batch, position) => { batch.position = position; });
-    const model = { items, version: this.previewsVersion, records, batches, byBatch: groups };
+    const model = { items, version: this.previewsVersion, records, batches, byBatch: groups,
+      detailedLoss: records.some(record => record.sample.epoch_loss?.detailed) };
     if (items === this.previews) this._sampleModelCache = model;
     return model;
   },

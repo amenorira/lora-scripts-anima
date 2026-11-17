@@ -26,6 +26,9 @@ logging.getLogger("tensorboard").setLevel(logging.WARNING)
 # 每次请求检查 event file 的时间与大小；新 step 写入后立即 Reload。
 _tb_cache: dict[str, tuple[float, tuple[str, int, int], str, Any]] = {}
 _tb_cache_lock = threading.Lock()
+# Foreign sample sources retain only their small epoch tables, so several
+# resumed runs do not evict the current run's full step/LR accumulator.
+_tb_epoch_cache: dict[str, tuple] = {}
 
 # Live readers retain file cursors and new points, not the complete scalar history.
 _tb_live_cache: dict[str, tuple] = {}
@@ -58,14 +61,14 @@ def primary_learning_rate_tag(tags: Iterable[str]) -> str | None:
     return None
 
 
-def _get_cached_accumulator(log_dir: Path, *, incremental: bool = False) -> Any | None:
+def _get_cached_accumulator(log_dir: Path, *, incremental: bool = False, epoch_only: bool = False) -> Any | None:
     """获取缓存的 EventAccumulator，若 event file 未变化则复用"""
     try:
         from tensorboard.backend.event_processing import event_accumulator
     except Exception:
         return None
 
-    cache = _tb_live_cache if incremental else _tb_cache
+    cache = _tb_live_cache if incremental else _tb_epoch_cache if epoch_only else _tb_cache
     log_dir_str = str(log_dir)
     event_files = list(log_dir.rglob("events.out.tfevents.*"))
     if not event_files:
@@ -114,6 +117,13 @@ def _get_cached_accumulator(log_dir: Path, *, incremental: bool = False) -> Any 
                         self.last_steps[tag] = step
 
             accumulator_type = LiveAccumulator
+        elif epoch_only:
+            class EpochAccumulator(accumulator_type):
+                def _ProcessScalar(self, tag, wall_time, step, scalar):
+                    if _is_epoch_loss_tag(tag):
+                        super()._ProcessScalar(tag, wall_time, step, scalar)
+
+            accumulator_type = EpochAccumulator
         ea = accumulator_type(
             event_dir,
             size_guidance={event_accumulator.SCALARS: 0},
@@ -121,8 +131,8 @@ def _get_cached_accumulator(log_dir: Path, *, incremental: bool = False) -> Any 
         ea.Reload()
         with _tb_cache_lock:
             cache[log_dir_str] = (now, stamp, event_dir, ea)
-            # 清理过大的缓存（保留最近 3 个）
-            if len(cache) > 3:
+            # Epoch-only readers are much smaller than complete step histories.
+            if len(cache) > (16 if epoch_only else 3):
                 oldest = min(cache, key=lambda k: cache[k][0])
                 del cache[oldest]
         return ea
@@ -175,6 +185,8 @@ def read_tensorboard_loss(
     limit: int = 50000,
     downsample_to: int = 2000,
     run_dir: str | None = None,
+    *,
+    epoch_only: bool = False,
 ) -> list[dict]:
     """从 TensorBoard event 文件读取 Loss/LR scalar，自动降采样。
     若指定 run_dir，仅读取该目录下的 log/；否则扫描 output/*/log/（按 mtime 倒序取最新）。
@@ -206,7 +218,7 @@ def read_tensorboard_loss(
                 log_dirs.append(log_sub)
 
     for log_dir in (log_dirs[:1] if run_dir else log_dirs[:5]):
-        ea = _get_cached_accumulator(log_dir)
+        ea = _get_cached_accumulator(log_dir, epoch_only=epoch_only)
         if ea is None:
             continue
 
@@ -215,8 +227,9 @@ def read_tensorboard_loss(
         except Exception:
             continue
 
-        scalar_tags = [tag for tag in _LOSS_TAGS if tag in available]
-        scalar_tags.extend(tag for tag in available if _is_lr_tag(tag))
+        scalar_tags = [tag for tag in _LOSS_TAGS if tag in available and (not epoch_only or _is_epoch_loss_tag(tag))]
+        if not epoch_only:
+            scalar_tags.extend(tag for tag in available if _is_lr_tag(tag))
         series_list = []
         for tag in scalar_tags:
             try:
