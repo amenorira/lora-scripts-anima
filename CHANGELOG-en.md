@@ -4,6 +4,30 @@
 
 All notable changes to this project are documented in this file.
 
+## v26.1118.00423 - 2026-11-18
+
+This update improves Loss display and multi-image comparisons for training samples, making it easier to view, sort, and compare samples from different stages of training.
+
+### View Loss in Sample Previews
+
+In **Preview Samples**, select **Show loss** to see the overall Loss for the corresponding epoch on sampling batches, in the sidebar, and in the image viewer. When noise-range records are available, you can also view high-, mid-, and low-noise Loss.
+
+A single-image preview shows the change from the previous epoch. In a multi-image comparison, values are compared with the baseline image. Sampling batches can also be sorted from low to high by overall Loss or by noise range.
+
+High-, mid-, and low-noise Loss require the corresponding records. To collect them, enable **Log loss by noise range loss/timestep** in the training configuration. Step-sampled images and sampling points without a matching epoch record display `—`.
+
+### More Flexible Image Comparisons
+
+In the image viewer, drag images to change their order, or use the right-click menu to move an image to the leftmost or top position and set it as the comparison baseline. The horizontal layout can show four images at once; scroll to see additional images.
+
+### Other Improvements
+
+- The tag editor remembers whether its left sidebar is expanded or collapsed and retains that preference when the window is resized.
+- When runs share an output directory, task information and historical logs are used where possible to match each sample with the Loss from its own training run. Fixed missing Step information for some historical samples.
+- Improved thumbnail loading and interface refreshes for large sample collections, and fixed scrollbar and information overlay jumps during multi-image comparisons.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1116.08cc0...v26.1118.00423)
+
 ## v26.1116.08cc0 - 2026-11-16
 
 This update focuses on training previews: build preview prompts from dataset tags, then browse and compare samples from different stages of training by sampling batch.
