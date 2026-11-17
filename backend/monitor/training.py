@@ -34,7 +34,12 @@ _tb_live_lock = threading.Lock()
 # 监控面板采集的 TensorBoard scalar 标签（全量与增量读取共用）
 _LOSS_TAGS = (
     "loss/average", "loss/current", "loss/epoch_average", "loss/epoch",
+    "loss/timestep/epoch/low", "loss/timestep/epoch/mid", "loss/timestep/epoch/high",
 )
+
+
+def _is_epoch_loss_tag(tag: str) -> bool:
+    return tag in {"loss/epoch", "loss/epoch_average"} or tag.startswith("loss/timestep/epoch/")
 
 
 def _is_lr_tag(tag: str) -> bool:
@@ -226,7 +231,7 @@ def read_tensorboard_loss(
                 continue
             raw_points = points
             best = min(raw_points, key=lambda p: p["value"])
-            if len(points) > downsample_to and tag not in {"loss/epoch", "loss/epoch_average"}:
+            if len(points) > downsample_to and not _is_epoch_loss_tag(tag):
                 points = _lttb_downsample(points, downsample_to)
             values = [p["value"] for p in points]
             series_list.append({

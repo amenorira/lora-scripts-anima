@@ -204,6 +204,9 @@ window.monitorRenderMixin = {
       return;
     }
     if (tab === 'samples') {
+      let freshlyRendered = false;
+      // Loss mode/data update captions and Alpine overlays in place; rebuilding
+      // this panel would destroy the sidebar viewport and restart its image.
       const sig = 'sm:' + this._shellLocale + ':' + this.previewsVersion + ':' + (this.weakNetworkMode ? 1 : 0) + ':' + (d.artifact_available === false ? 0 : 1) + ':' + String(d.preview_enabled);
       if (panelEmpty || this._builtSamplesSig !== sig) {
         // Removing a pressed card prevents the browser from dispatching click.
@@ -235,13 +238,15 @@ window.monitorRenderMixin = {
         panel._sampleMotionContext = motionContext;
         if (!tabChanged) panel.classList.add('no-enter-anim');
         panel.innerHTML = this._renderSamplesTab(t);
+        freshlyRendered = true;
+        delete panel._sampleLossVersion;
         window.AnimaSampleLayout.update(panel.querySelector('.m-samples-workspace'));
         const nextGrid = panel.querySelector('.preview-grid');
         this._restorePreviewMedia(mediaRoot, loadedMedia);
         const nextIsOverview = !!nextGrid?.classList.contains('m-sample-batches');
         const selectedBatch = nextIsOverview ? this._sampleSelectedBatch() : null;
         const latestBatch = nextIsOverview ? this._sampleDataModel().batches.at(-1) : null;
-        const followLatest = nextIsOverview && selectedBatch?.id === latestBatch?.id && this._sampleOverviewAtEnd !== false;
+        const followLatest = nextIsOverview && !this.sampleLossSortKey && selectedBatch?.id === latestBatch?.id && this._sampleOverviewAtEnd !== false;
         this._sampleScrollAnchor = null;
         if (nextIsOverview && followLatest) {
           nextGrid.scrollTop = this._sampleOverviewLatestScrollTop(nextGrid);
@@ -258,8 +263,13 @@ window.monitorRenderMixin = {
           this._animateSampleLayout(nextGrid, before, '', {revealNew: true});
         }
       }
+      this._patchSampleBatchOrder?.(panel, freshlyRendered);
+      this._patchSampleLossCaptions?.(panel, freshlyRendered);
       this._connectSampleExpansionUI?.(panel);
-      this.schedulePreviewMediaLoads(document.getElementById('monitorDashboard') || panel);
+      if (freshlyRendered || tabChanged || this._previewMediaRetryNeeded) {
+        this._previewMediaRetryNeeded = false;
+        this.schedulePreviewMediaLoads(document.getElementById('monitorDashboard') || panel);
+      }
       return;
     }
     if (tab === 'outputs') {

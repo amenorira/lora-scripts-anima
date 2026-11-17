@@ -37,9 +37,10 @@ function fixture(count = 4, width = 300, observer = true) {
         getAttribute(name) { return name === 'src' ? this._src || null : null; },
         removeAttribute(name) { if (name === 'src') this._src = ''; }, dispatchEvent() {},
       };
-      const caption = {textContent: ''}, captionStep = {textContent: ''}, retry = {hidden: true};
-      const pane = {dataset: {}, image, caption, captionStep, retry, parentElement: null, innerHTML: '',
-        querySelector: selector => selector === 'img' ? image : selector.includes('strong') ? caption : selector === '.preview-caption-step' ? captionStep : retry,
+      const caption = {innerHTML: ''}, retry = {hidden: true};
+      const pane = {dataset: {}, image, caption, retry, parentElement: null, innerHTML: '',
+        setAttribute(name, value) {(this.attributes ||= {})[name] = value;},
+        querySelector: selector => selector === 'img' ? image : selector === '.preview-caption-stage' ? caption : retry,
         get nextElementSibling() { return container.children[container.children.indexOf(this) + 1] || null; },
         getBoundingClientRect() {
           const left = container.children.indexOf(this) * 100 - root.scrollLeft;
@@ -173,8 +174,8 @@ test('unchanged references keep their image nodes and originals while their orde
   assert.equal(panes.length, 3);
   assert.equal(originals.length, 3);
   assert.equal(nodes[0].image.src, '/original-1?v=1');
-  assert.equal(nodes[0].caption.textContent, 'Epoch 1');
-  assert.equal(nodes[0].captionStep.textContent, 'Step 100');
+  assert.match(nodes[0].caption.innerHTML, /Epoch<\/span><strong>1/);
+  assert.match(nodes[0].caption.innerHTML, /Step<\/span><strong>100/);
   assert.ok(!nodes[0].innerHTML.includes('fake alias'));
   assert.ok(nodes[0].innerHTML.indexOf('preview-view-stage') < nodes[0].innerHTML.indexOf('preview-reference-caption'));
 });

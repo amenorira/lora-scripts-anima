@@ -14,7 +14,24 @@
 }
 .loop-marquee .snapshot-path-text { width:auto; overflow:visible; text-overflow:clip; }
 @keyframes loop-marquee-travel { to { transform:translateX(calc(-1 * var(--loop-marquee-distance))); } }
+.loop-marquee.is-bouncing { margin-left:-8px; }
+.loop-marquee.is-bouncing .loop-marquee-text { padding-left:8px; padding-right:14px; }
+/* Fade in the caption's outer gutter; the first letter stays opaque until it moves. */
+.loop-marquee.is-bouncing.is-overflowing { mask-image:linear-gradient(to right,transparent,#000 8px,#000 calc(100% - 14px),transparent); }
+.loop-marquee.is-bouncing.is-overflowing:is(:hover,:focus-visible,:focus-within) .loop-marquee-track,
+.m-samples-section .preview-grid-item:is(:hover,:focus-visible,[data-sample-image-selected="true"]) .loop-marquee.is-bouncing.is-overflowing .loop-marquee-track,
+.m-sample-batch[data-sample-selected="true"] .m-sample-batch-cover .loop-marquee.is-bouncing.is-overflowing .loop-marquee-track {
+  animation:loop-marquee-bounce var(--loop-marquee-duration) linear infinite;
+}
+@keyframes loop-marquee-bounce {
+  0%,12%,100% { transform:translateX(0); }
+  44%,56% { transform:translateX(calc(-1 * var(--loop-marquee-distance))); }
+  88% { transform:translateX(0); }
+}
+.loop-marquee.is-bouncing:not(.is-marquee-visible) .loop-marquee-track,
+.m-samples-section.is-preview-open .loop-marquee.is-bouncing .loop-marquee-track { animation-play-state:paused!important; }
 @media (prefers-reduced-motion:reduce) {
+  .loop-marquee.is-bouncing .loop-marquee-track { animation:none!important; }
   .loop-marquee.is-overflowing:is(:hover,:focus-visible,:focus-within) .loop-marquee-track,
   .loop-marquee-host:is(:hover,:focus-visible) .loop-marquee.is-overflowing .loop-marquee-track { animation:none; }
   .loop-marquee.is-overflowing:focus-visible { overflow-x:auto; mask-image:none; }

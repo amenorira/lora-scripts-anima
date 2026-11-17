@@ -2,11 +2,13 @@
 <html lang="zh-CN" data-theme="dark">
 <meta charset="utf-8"><title>Monitor UI regression fixture</title>
 <link rel="stylesheet" href="/frontend/css/app.css">
+<link rel="stylesheet" href="/frontend/css/loop-marquee.css">
 <link rel="stylesheet" href="/frontend/css/themes/light.css">
 <link rel="stylesheet" href="/frontend/css/themes/dark.css">
 <link rel="stylesheet" href="/frontend/css/motion.css">
 <style>body { overflow: auto; } #fixture { display:block; height:auto; min-width:0; overflow:visible; max-width:1380px; margin:auto; padding:24px; } .fixture-controls { display:flex; flex-wrap:wrap; gap:8px; padding-bottom:16px; } #fixture.narrow { max-width:1040px; } #fixtureRoute { height:calc(100vh - 120px); } </style>
 <script src="/frontend/js/shared/utils.js"></script>
+<script src="/frontend/js/shared/loop-marquee.js"></script>
 <script src="/frontend/js/shared/image-loading.js"></script>
 <script src="/frontend/js/shared/image-viewport.js"></script>
 <script src="/frontend/js/shared/ui-interactions.js"></script>
@@ -92,7 +94,18 @@
   document.getElementById('fixtureRoute').append(parsed.querySelector('.route-monitor-dashboard'));
   document.getElementById('fixtureRoute').append(parsed.querySelector('.config-snapshot-modal').closest('dialog'));
   const response = data => ({json:async()=>({status:'success',data}),ok:true});
-  const samples = Array.from({length:16},(_,i)=>({name:`test_e${String(Math.floor(i/4)+1).padStart(6,'0')}_${String(i%4).padStart(2,'0')}_20261112000000_2333.png`,path:`sample/${i}.png`,url:fixtureImage(i),thumb_url:fixtureImage(i),inspect_url:fixtureImage(i)}));
+  const sampleCount = Math.max(16, Math.min(20000, Math.floor((Number(query.get('sampleCount')) || 16) / 4) * 4));
+  const samples = Array.from({length:sampleCount},(_,i)=>({name:`test_e${String(Math.floor(i/4)+1).padStart(6,'0')}_${String(i%4).padStart(2,'0')}_20261112000000_2333.png`,path:`sample/${i}.png`,url:fixtureImage(i),thumb_url:fixtureImage(i),inspect_url:fixtureImage(i)}));
+  if (query.has('epochLoss')) samples.forEach((sample, i) => {
+    const epoch = Math.floor(i / 4) + 1;
+    const step = epoch * (query.has('longStages') ? 4000000 : 400);
+    sample.sample = {batch_id: 'fixture-epoch-' + epoch, batch_label: `Epoch ${epoch} · Step ${step}`, batch_order: epoch,
+      epoch, step, stage_kind: 'epoch', stage_value: epoch, batch_expected: 4, batch_status: 'complete',
+      prompt_id: 'fixture-prompt-' + (i % 4), prompt_index: i % 4, seed: 2333,
+      params: {prompt: 'Landscape ' + (i % 4 + 1), negative_prompt: '', seed: 2333, width: 512, height: 512,
+        steps: 30, cfg_scale: 5, sampler: 'euler', scheduler: 'native', architecture: 'anima', flow_shift: 1},
+      condition_key: 'fixture-settings', comparable: true, metadata_source: 'recorded'};
+  });
   if (query.has('longName')) samples.push({name:'a-very-long-custom-sample-filename-for-viewer-layout-check.png',path:'sample/custom.png',url:fixtureImage(0),thumb_url:fixtureImage(0),inspect_url:fixtureImage(0)});
   const files = Array.from({length:12},(_,i)=>({name:`test-${String(i+1).padStart(6,'0')}.safetensors`,path:`test-${i}.safetensors`,category:'model',size:128000000,mtime:1700000000+i*60,ckpt_loss:.1-i*.003,ckpt_type:'epoch',ckpt_epoch:i+1}));
   const realFetch=window.fetch;
@@ -170,6 +183,7 @@
       },
       monitorData:{state:'RUNNING',step:518,total_steps:740,percent:70,loss:.0337,lr:4.26e-5,epoch:14,elapsed:'43:21',eta:'18:34',speed:'5.26 s/it',run_dir:'output/fixture',artifact_dir:'C:/training/models',active_task:{id:'fixture'},training_profile:configProfile||'anima-lora'},
       previews:samples.slice(),previewsVersion:1,weakNetworkMode:true,
+      sampleLossMode: ['off', 'overall', 'detailed'].includes(query.get('lossMode')) ? query.get('lossMode') : 'off',
       logLines:logs,
       gpuInfo:{name:'GPU fixture',gpu_load_pct:98,vram_used_mb:19000,vram_total_mb:24000,temperature_c:65,power_w:280},
       sysInfo:{cpu_name:'CPU fixture',cpu_pct:35,ram_pct:40,ram_used_gb:24,ram_total_gb:64},
@@ -192,9 +206,22 @@
         {key:'seed',value:1337,section:'training'},
         ...Array.from({length:41},(_,i)=>({key:`fixture_param_${i}`,value:i,section:['model','network','training','optimizer','caption','save','performance'][i%7]}))
       ],
-      init(){this._ingestMonitorPerfSamples(this._parseMonitorPerfLogs(logs));this._applyMonitorLogSnapshot(logs,logs.length);this._applyOutputCount('output/fixture',files.length);this._startMonitorClock();this.$nextTick(()=>this.renderDashboard());}
+      init(){
+        if (query.has('epochLoss')) {
+          this.monitorData.log_timestep_loss = query.get('epochLoss') !== 'overall';
+          const epochValues = sampleCount === 16 ? [.1382, .1147, .1016, .0943]
+            : Array.from({length: sampleCount / 4}, (_, i) => .14 / (1 + i / 120));
+          this.lossSeries.push({tag: 'loss/epoch', points: epochValues.map((value, i) => ({step: i + 1, value}))});
+          if (this.monitorData.log_timestep_loss) ['low', 'mid', 'high'].forEach((key, n) => {
+            this.lossSeries.push({tag: 'loss/timestep/epoch/' + key, points: epochValues.map((value, i) => ({step: i + 1, value: value * [.4, .91, 1.69][n]}))});
+          });
+          this.lossDataVersion++;
+        }
+        this._ingestMonitorPerfSamples(this._parseMonitorPerfLogs(logs));this._applyMonitorLogSnapshot(logs,logs.length);this._applyOutputCount('output/fixture',files.length);this._startMonitorClock();this.$nextTick(()=>this.renderDashboard());
+      }
     });
   }));
+  if (query.has('stress')) {const stress = document.createElement('script');stress.src='/cache/dev/epoch-loss/stress-harness.js';document.head.append(stress);}
   const script=document.createElement('script');script.src='/frontend/js/vendor/alpine.min.js';document.head.append(script);
 })();
 </script>

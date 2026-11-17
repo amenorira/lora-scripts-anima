@@ -274,6 +274,7 @@ def run_train(
             "gpu_ids": gpu_ids,
             "output_dir": artifacts_dir,
             "preview_enabled": preview_enabled,
+            "log_timestep_loss": (extra_env or {}).get("ANIMA_TRAIN_METRICS_TIMESTEP_LOSS") == "1",
             "engine_id": engine_id,
         }
         if run_metadata:

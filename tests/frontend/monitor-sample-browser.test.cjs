@@ -312,7 +312,7 @@ test('changing overview order retains the selected batch image and reader state'
   assert.equal(value.previewHasNew, true);
   assert.equal(value._sampleResetScroll, true);
   assert.equal(value._sampleScrollAnchor, null);
-  assert.equal(value.previewsVersion, version + 1);
+  assert.equal(value.previewsVersion, version, 'presentation changes preserve the loaded preview model');
   assert.equal(renders, 1);
   value.setSampleBatchSort('asc'); value.setSampleBatchSort('invalid');
   assert.equal(renders, 1);
@@ -1261,6 +1261,30 @@ test('weak-network queue skips detached and changed-URL images before fetching',
   } finally {global.fetch = originalFetch; URL.createObjectURL = originalCreate;}
 });
 
+test('a visible weak-network thumbnail can retry after failure without scrolling out of view', async () => {
+  const value = app([]), observed = new Set(); let fetched = 0;
+  value.weakNetworkMode = true; value._previewMediaQueue = []; value._previewMediaObjectUrls = [];
+  value._previewMediaGeneration = 0; value._previewMediaLoading = false; value._previewMediaPaused = false;
+  const image = {isConnected: true, dataset: {previewUrl: '/retry?v=1'}, closest: () => ({classList: {add() {}}})};
+  const root = {querySelectorAll: () => [image]};
+  const previous = {fetch: global.fetch, observer: global.IntersectionObserver, create: URL.createObjectURL};
+  global.IntersectionObserver = class {
+    constructor(callback) {this.callback = callback;}
+    observe(target) {if (observed.has(target)) return; observed.add(target); queueMicrotask(() => this.callback([{target, isIntersecting: true}]));}
+    unobserve(target) {observed.delete(target);}
+    disconnect() {observed.clear();}
+  };
+  global.fetch = async () => {if (++fetched === 1) throw new Error('temporary'); return {ok: true, blob: async () => ({})};};
+  URL.createObjectURL = () => 'blob:retry';
+  try {
+    value.schedulePreviewMediaLoads(root); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(fetched, 1); assert.equal(value._previewMediaRetryNeeded, true);
+    assert.equal(observed.has(image), false, 'the next observe must produce a fresh visible entry');
+    value.schedulePreviewMediaLoads(root); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(fetched, 2); assert.equal(image.src, 'blob:retry');
+  } finally {global.fetch = previous.fetch; global.IntersectionObserver = previous.observer; URL.createObjectURL = previous.create;}
+});
+
 test('case labels omit redundant seeds but distinguish seeds and conditions within a batch', () => {
   const value = app([image('b1', 0, 4200), image('b1', 1, 4201), image('b2', 0, 4200),
     image('b2', 0, 4201), image('b2', 1, 4200), image('b2', 1, 4200, {params: {cfg_scale: 7}})]);
@@ -1288,10 +1312,10 @@ test('preview labels omit generated middle dots while preserving user prompt and
 test('stage labels follow the active locale without rewriting canonical metadata or custom labels', () => {
   const value = app([image('b1', 0, 4200, {sample: {epoch: 2, step: 800}})]);
   const model = value._sampleDataModel();
-  for (const [locale, epoch, step] of [['zh-CN', '第 2 轮', '第 800 步'], ['en-US', 'Epoch 2', 'Step 800'], ['ja-JP', 'エポック 2', 'ステップ 800']]) {
+  for (const [locale, epoch, step] of [['zh-CN', 'Epoch 2', 'Step 800'], ['en-US', 'Epoch 2', 'Step 800'], ['ja-JP', 'エポック 2', 'ステップ 800']]) {
     const messages = require('../../frontend/i18n/' + locale + '.json');
     value.t = key => key.split('.').reduce((item, part) => item?.[part], messages) || key;
-    assert.deepEqual(value._previewCaptionParts(value.previews[0]), {primary: epoch, secondary: step});
+    assert.equal(value._previewStageLabel(value.previews[0]), epoch + ' ' + step);
     assert.deepEqual(value._sampleStageParts('Epoch 2 · Step 800 (2)'), {primary: epoch, secondary: step + ' (2)'});
     assert.deepEqual(value._sampleStageParts('Epoch 2'), {primary: epoch, secondary: ''});
     assert.deepEqual(value._sampleStageParts('Step 800'), {primary: step, secondary: ''});
@@ -1305,12 +1329,12 @@ test('historical filename labels switch language after the batch model was cache
   const stepName = legacyImage(800).name.replace('e000800', '000800');
   const value = app([legacyImage(2), {name: stepName, path: 'sample/' + stepName, url: '/' + stepName}]);
   let model;
-  for (const [locale, epoch, step] of [['zh-CN', '第 2 轮', '第 800 步'], ['en-US', 'Epoch 2', 'Step 800'], ['ja-JP', 'エポック 2', 'ステップ 800']]) {
+  for (const [locale, epoch, step] of [['zh-CN', 'Epoch 2', 'Step 800'], ['en-US', 'Epoch 2', 'Step 800'], ['ja-JP', 'エポック 2', 'ステップ 800']]) {
     const messages = require('../../frontend/i18n/' + locale + '.json');
     value.t = key => key.split('.').reduce((item, part) => item?.[part], messages) || key;
     if (!model) { value._sampleModelCache = null; model = value._sampleDataModel(); }
-    assert.deepEqual(value._previewCaptionParts(value.previews[0]), {primary: epoch, secondary: ''});
-    assert.deepEqual(value._previewCaptionParts(value.previews[1]), {primary: step, secondary: ''});
+    assert.equal(value._previewStageLabel(value.previews[0]), epoch);
+    assert.equal(value._previewStageLabel(value.previews[1]), step);
     assert.equal(value._sampleDataModel(), model);
     assert.deepEqual(model.batches.map(batch => batch.label), ['Epoch 2', 'Step 800']);
   }

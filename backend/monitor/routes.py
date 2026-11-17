@@ -254,6 +254,7 @@ async def monitor_run_detail(run_dir: str = Query("")):
         "artifact_external": record["artifact_external"],
         "preview_enabled": record["preview_enabled"],
         "imported": record["imported"],
+        "log_timestep_loss": (record.get("extra") or {}).get("log_timestep_loss"),
     }
 
     # ── 配置参数 ──

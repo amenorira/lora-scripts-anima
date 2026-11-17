@@ -53,10 +53,10 @@ test('sidebar, viewer thumbnails and sorting save independent preferences withou
     assert.deepEqual(settings(value), {sidebar: true, viewerTimeline: false, sort: 'desc'});
     value.setSampleBatchSort('asc');
     assert.deepEqual(saved.writes, [
-      {sidebar: false, viewerTimeline: true, sort: 'desc', comparisonLayout: 'horizontal'},
-      {sidebar: false, viewerTimeline: false, sort: 'desc', comparisonLayout: 'horizontal'},
-      {sidebar: true, viewerTimeline: false, sort: 'desc', comparisonLayout: 'horizontal'},
-      {sidebar: true, viewerTimeline: false, sort: 'asc', comparisonLayout: 'horizontal'},
+      {sidebar: false, viewerTimeline: true, sort: 'desc', comparisonLayout: 'horizontal', lossMode: 'off'},
+      {sidebar: false, viewerTimeline: false, sort: 'desc', comparisonLayout: 'horizontal', lossMode: 'off'},
+      {sidebar: true, viewerTimeline: false, sort: 'desc', comparisonLayout: 'horizontal', lossMode: 'off'},
+      {sidebar: true, viewerTimeline: false, sort: 'asc', comparisonLayout: 'horizontal', lossMode: 'off'},
     ]);
     assert.equal(value.previewStep, 4);
     assert.equal(value.sampleBatchId, 'selected-batch');
@@ -106,7 +106,7 @@ test('closing only the sidebar preview preserves the enabled preference and rest
   } finally {global.document = previousDocument;}
 });
 
-test('preference loading accepts only booleans and the two supported sorting values', () => {
+test('preference loading accepts only booleans and supported sorting values', () => {
   for (const [savedValue, expected] of [
     [{sidebar: false, viewerTimeline: false, sort: 'asc'}, {sidebar: false, viewerTimeline: false, sort: 'asc'}],
     [{sidebar: 'false', viewerTimeline: 0, sort: 'ASC'}, {sidebar: true, viewerTimeline: true, sort: 'desc'}],

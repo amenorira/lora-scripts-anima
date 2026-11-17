@@ -31,7 +31,12 @@ window.monitorMetricsMixin = {
       if (point.value < (series.min ?? Infinity)) { series.min = point.value; series.min_step = point.step; }
       series.max = Math.max(series.max ?? -Infinity, point.value);
     }
-    series.points = series.points.concat(fresh).slice(-5000);
+    const combined = series.points.concat(fresh);
+    // Epoch values are also looked up by historical sample captions, so retain
+    // them just as the full TensorBoard snapshot does.
+    const epochLoss = series.tag === 'loss/epoch' || series.tag === 'loss/epoch_average'
+      || series.tag.startsWith('loss/timestep/epoch/');
+    series.points = epochLoss ? combined : combined.slice(-5000);
     series.latest = fresh.at(-1).value;
     return true;
   },

@@ -5,7 +5,7 @@ const {withAnimationFrames} = require('./helpers-animation.cjs');
 
 loadGlobalFrontend(['shared/utils', 'shared/image-viewport', 'monitor/previews', 'monitor/artifacts-render']);
 
-function fixture({width = 800, height = 500, fit = 1, vertical = false} = {}) {
+function fixture({width = 800, height = 500, fit = 1, vertical = false, compare = false} = {}) {
   const group = {style: {setProperty(key, value) {this[key] = value;}}}, extent = {style: {}}, capture = new Set();
   let left = 0, top = 0;
   const viewport = {clientWidth: 1000, clientHeight: 600, offsetWidth: 1000, offsetHeight: 600,
@@ -19,7 +19,7 @@ function fixture({width = 800, height = 500, fit = 1, vertical = false} = {}) {
     setPointerCapture: id => capture.add(id), hasPointerCapture: id => capture.has(id), releasePointerCapture: id => capture.delete(id)};
   global.document = {getElementById: id => ({previewLightboxViewport: viewport, previewLightboxExtent: extent, previewLightboxGroup: group})[id] || null};
   const value = composeMixins(window.utilsMixin, window.monitorPreviewsMixin, window.monitorArtifactsRenderMixin, {
-    previewLightboxOpen: true, previewCompareActive: true, previewComparisonLayout: vertical ? 'vertical' : 'horizontal',
+    previewLightboxOpen: true, previewCompareActive: compare, previewComparisonLayout: vertical ? 'vertical' : 'horizontal',
     previewViewScale: 1, _previewViewFitScale: fit, _previewGroupGeometry: {width, height, count: vertical ? 3 : 2},
     t: key => key,
   });
@@ -55,8 +55,9 @@ test('fitting a long vertical group displays the complete group rather than fitt
   assert(Math.abs(bounds().top) < 0.001);
 });
 
-test('dragging pans the whole scroll surface and releases capture on reset', () => {
+test('dragging a single image pans the scroll surface and releases capture on reset', () => {
   const {value, viewport, capture} = fixture();
+  value.previewCompareActive = false;
   value.setPreviewViewScale(2);
   const event = {currentTarget: viewport, target: {closest: () => null}, button: 0, pointerId: 7,
     clientX: 500, clientY: 300, preventDefault() {}};
@@ -72,7 +73,7 @@ test('dragging pans the whole scroll surface and releases capture on reset', () 
 });
 
 test('viewer side targets stay in the empty viewport and do not cover the image or scrollbars', () => {
-  const {value} = fixture();
+  const {value} = fixture({compare: true});
   const previousDocument = global.document;
   let groupRect = {left: 400, right: 800};
   const canvas = {offsetWidth: 1000, clientWidth: 1000, clientHeight: 600,
@@ -80,7 +81,7 @@ test('viewer side targets stay in the empty viewport and do not cover the image 
   const viewport = {clientWidth: 940, clientHeight: 550, getBoundingClientRect: () => ({left: 116, top: 32})};
   const button = () => {
     const flags = {};
-    return {style: {}, flags, classList: {toggle(name, enabled) {flags[name] = enabled;}}, hidden: false};
+    return {style: {}, flags, classList: {contains: name => !!flags[name], toggle(name, enabled) {flags[name] = enabled;}}, hidden: false};
   };
   const prev = button(), next = button();
   const nodes = {previewLightboxCanvas: canvas, previewLightboxViewport: viewport,
@@ -144,6 +145,7 @@ test('sidebar dragging continues when the side button transfers pointer capture 
 
 test('modal drag coalesces pointer bursts and retains the final position when released', () => withAnimationFrames(({tick, frames}) => {
   const {value, viewport, capture} = fixture(); value.setPreviewViewScale(2);
+  value.previewCompareActive = false;
   const event = {currentTarget: viewport, target: {closest: () => null}, button: 0, pointerId: 7,
     clientX: 500, clientY: 300, preventDefault() {}};
   value.startPreviewPan(event);
@@ -170,8 +172,9 @@ test('modal reset smoothly returns zoom and scroll offset to fit while retaining
   assert.equal(value.previewViewScale, 3);
   tick(0); tick(45);
   assert.equal(value.previewViewScale, 1.25);
-  assert(Math.abs(viewport.scrollLeft - value._previewViewportLayout.centerX - 15) < 0.001);
-  assert(Math.abs(viewport.scrollTop - value._previewViewportLayout.centerY + 10) < 0.001);
+  const clampScroll = (position, extent, size) => Math.max(0, Math.min(extent - size, position));
+  assert(Math.abs(viewport.scrollLeft - clampScroll(value._previewViewportLayout.centerX + 15, viewport.scrollWidth, viewport.clientWidth)) < 0.001);
+  assert(Math.abs(viewport.scrollTop - clampScroll(value._previewViewportLayout.centerY - 10, viewport.scrollHeight, viewport.clientHeight)) < 0.001);
   tick(90);
   assert.equal(value.previewViewScale, 1); assert.equal(value._previewViewFitted, true);
   assert.equal(group.style.transform, 'scale(1)'); assert.equal(value._previewGroupGeometry, geometry);
@@ -181,6 +184,7 @@ test('modal reset smoothly returns zoom and scroll offset to fit while retaining
 test('modal interactions, layout changes and closing cancel pending reset writes', () => withAnimationFrames(({tick, frames}) => {
   for (const interrupt of ['zoom', 'pan', 'layout', 'close', 'run']) {
     const {value, viewport, group} = fixture(); value.setPreviewViewScale(3); value.resetPreviewView(true);
+    if (interrupt === 'pan') value.previewCompareActive = false;
     tick(0); tick(45);
     const stale = [...frames.values()][0];
     if (interrupt === 'zoom') value.setPreviewViewScale(2);
@@ -197,13 +201,21 @@ test('modal interactions, layout changes and closing cancel pending reset writes
   }
 }));
 
-test('single images and both comparison layouts can pan at fit while retaining a visible part at every edge', () => {
+test('single images can pan at fit while comparisons leave the canvas stationary', () => {
   for (const options of [{width: 800, height: 500}, {width: 1000, height: 500}, {width: 400, height: 600, vertical: true}]) {
     const {value, viewport, bounds} = fixture(options);
     value.previewCompareActive = options.width !== 800;
+    value._syncPreviewGroupViewport();
     const event = {currentTarget: viewport, target: {closest: () => null}, button: 0, pointerId: 9,
       clientX: 500, clientY: 300, preventDefault() {}};
     value.startPreviewPan(event);
+    if (value.previewCompareActive) {
+      assert.equal(value.previewViewPanning, false);
+      const before = bounds();
+      value.movePreviewPan({...event, clientX: 10000, clientY: 10000});
+      assert.deepEqual(bounds(), before);
+      continue;
+    }
     assert.equal(value.previewViewPanning, true);
     value.movePreviewPan({...event, clientX: 600, clientY: 400});
     assert.equal(bounds().left, (1000 - options.width) / 2 + 100);
@@ -220,6 +232,19 @@ test('single images and both comparison layouts can pan at fit while retaining a
   }
 });
 
+test('comparisons have only content overflow, with no blank pan margins at fit or zoom', () => {
+  const {value, viewport, extent, bounds} = fixture({compare: true});
+  assert.equal(parseFloat(extent.style.width), viewport.clientWidth);
+  assert.equal(parseFloat(extent.style.height), viewport.clientHeight);
+  viewport.scrollLeft = 10000; viewport.scrollTop = 10000;
+  assert.equal(viewport.scrollLeft, 0); assert.equal(viewport.scrollTop, 0);
+  value.previewViewScale = 2; value._syncPreviewGroupViewport();
+  viewport.scrollLeft = 0;
+  assert.equal(bounds().left, 0);
+  viewport.scrollLeft = 10000;
+  assert.equal(bounds().right, viewport.clientWidth, 'scrolling cannot pass the last image edge');
+});
+
 test('zooming a panned image preserves the pointed image detail and relayout preserves its displacement', () => {
   const {value, viewport, bounds} = fixture();
   viewport.scrollLeft += 150; viewport.scrollTop += 100;
@@ -232,21 +257,36 @@ test('zooming a panned image preserves the pointed image detail and relayout pre
   assert.deepEqual(bounds(), zoomed);
 });
 
-test('comparison pan limits keep image pixels visible instead of only the unscaled caption', () => {
+test('same-size image relayout does not rewrite scroll positions and interrupt smooth navigation', () => {
+  const {value, viewport} = fixture({width: 2200, height: 800, compare: true});
+  let writes = 0;
+  for (const property of ['scrollLeft', 'scrollTop']) {
+    const descriptor = Object.getOwnPropertyDescriptor(viewport, property);
+    Object.defineProperty(viewport, property, {get: descriptor.get,
+      set(next) {writes++; descriptor.set.call(this, next);}});
+  }
+  value.constrainPreviewView();
+  value._syncPreviewGroupViewport();
+  assert.equal(writes, 0, 'background decoded images preserve the current native scroll animation');
+});
+
+test('comparison canvas rejects pan at fit and while zoomed in both layouts', () => {
   for (const vertical of [false, true]) {
-    const {value, viewport, bounds} = fixture({vertical});
+    const {value, viewport, bounds} = fixture({vertical, compare: true});
     const captionWidth = vertical ? 160 : 0, captionHeight = vertical ? 0 : 32;
     Object.assign(value._previewGroupGeometry, {captionWidth, captionHeight});
     value._syncPreviewGroupViewport();
     const event = {currentTarget: viewport, target: {closest: () => null}, button: 0, pointerId: 7,
       clientX: 500, clientY: 300, preventDefault() {}};
-    value.startPreviewPan(event);
-    value.movePreviewPan({...event, clientX: 10000, clientY: 10000});
-    assert.equal(bounds().left + captionWidth, 936);
-    assert.equal(bounds().top, 536);
-    value.movePreviewPan({...event, clientX: -10000, clientY: -10000});
-    assert.equal(bounds().right, 64);
-    assert.equal(bounds().bottom - captionHeight, 64);
+    for (const scale of [1, 2]) {
+      value.setPreviewViewScale(scale);
+      assert.equal(value.previewViewScale, 1, 'comparison has no manual zoom');
+      const before = bounds();
+      value.startPreviewPan(event);
+      value.movePreviewPan({...event, clientX: 10000, clientY: 10000});
+      assert.equal(value.previewViewPanning, false);
+      assert.deepEqual(bounds(), before);
+    }
   }
 });
 
@@ -262,15 +302,35 @@ test('reciprocal zoom returns exactly to fit without a misleading 100 percent st
   assert.deepEqual(view, {scale: 1, x: 0, y: 0});
 });
 
-test('vertical comparisons retain normal wheel scrolling while Control-wheel zooms the group', () => {
-  const {value, viewport} = fixture({width: 400, height: 1800, fit: 1 / 3, vertical: true});
+test('comparisons retain scrolling but reject wheel and keyboard zoom', () => {
+  const {value, viewport} = fixture({width: 400, height: 1800, fit: 1 / 3, vertical: true, compare: true});
   let prevented = 0;
   const event = {currentTarget: viewport, target: {closest: () => null}, clientX: 500, clientY: 300,
     deltaY: -100, preventDefault() {prevented++;}, stopPropagation() {}};
   value.zoomPreviewView(event);
   assert.equal(prevented, 0); assert.equal(value.previewViewScale, 1);
   value.zoomPreviewView({...event, ctrlKey: true});
-  assert.equal(prevented, 1); assert.equal(value.previewViewScale, 1.18);
+  assert.equal(prevented, 1); assert.equal(value.previewViewScale, 1);
+  value.resetPreviewView = () => assert.fail('comparison shortcuts must not resize images');
+  for (const key of ['+', '-', '=', '0']) value.previewLightboxKeydown({...event, key});
+  assert.equal(value.previewViewScale, 1);
+  value.previewSideNavWheel({...event, deltaX: 500, deltaY: 10, metaKey: true});
+  assert.equal(prevented, 2, 'side navigation cannot leak modified diagonal wheel into browser zoom');
+  assert.equal(value.previewViewScale, 1);
+});
+
+test('wheel scrolling over a comparison overlay cancels captured reorder before moving the viewport', () => {
+  const {value, viewport} = fixture({width: 2200, height: 1800, compare: true});
+  let cancelled = 0;
+  value.cancelPreviewPaneDrag = () => {cancelled++; value._previewPaneDrag = null;};
+  for (const vertical of [true, false]) {
+    value.previewComparisonLayout = vertical ? 'vertical' : 'horizontal'; value._previewPaneDrag = {};
+    value.previewSideNavWheel({deltaX: vertical ? 0 : 100, deltaY: vertical ? 100 : 0,
+      preventDefault() {assert.equal(value._previewPaneDrag, null);}});
+    assert.equal(value._previewPaneDrag, null);
+  }
+  assert.equal(cancelled, 2);
+  assert(viewport.scrollLeft > 0); assert(viewport.scrollTop > 0);
 });
 
 test('page shortcuts do not escape into the main viewer while a child dialog opens or a dropdown is focused', () => {
@@ -318,6 +378,22 @@ test('viewport resize notifications are coalesced and stop after the viewer disc
     global.ResizeObserver = previous.observer; global.requestAnimationFrame = previous.frame; global.cancelAnimationFrame = previous.cancel;
   }
 });
+
+test('horizontal scrollbar height changes trigger a coalesced comparison relayout', () => withAnimationFrames(({tick, frames}) => {
+  const {value, viewport} = fixture({compare: true});
+  const previous = global.ResizeObserver; let callback, resized = 0;
+  viewport.isConnected = true;
+  global.ResizeObserver = class {constructor(notify) {callback = notify;} observe() {} disconnect() {}};
+  value.resizePreviewComparisonImages = () => {resized++;}; value.syncPreviewPromptBar = () => {};
+  try {
+    value._connectPreviewViewportResize(); callback();
+    assert.equal(frames.size, 0);
+    viewport.clientHeight -= 12; callback();
+    assert.equal(frames.size, 1, 'client height changes matter even when the border box is unchanged');
+    tick(0); assert.equal(resized, 1);
+    callback(); assert.equal(frames.size, 0);
+  } finally {value._disconnectPreviewViewportResize(); global.ResizeObserver = previous;}
+}));
 
 test('caption space and counter-scaling remain fixed while the image group zooms', () => {
   const {value, group, bounds} = fixture();

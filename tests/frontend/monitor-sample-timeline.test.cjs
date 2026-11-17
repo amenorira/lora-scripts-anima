@@ -32,7 +32,7 @@ test('single-image history uses one compact grid with every sampling point', () 
   assert.equal((html.match(/class="preview-grid-item"/g) || []).length, 3);
   assert.match(html, /id="sampleSidebar"/);
   assert.equal((html.match(/class="preview-grid-item-label"/g) || []).length, 3);
-  assert.match(html, /class="preview-thumb-frame"[\s\S]*?<span class="preview-grid-item-label" title="step-1"><strong>step-1<\/strong><\/span><\/span><\/button>/);
+  assert.match(html, /class="preview-thumb-frame"[\s\S]*?<span class="preview-grid-item-label" data-sample-loss-batch="step-1" data-sample-loss-detail="" data-sample-loss-status="" title="step-1"><strong>step-1<\/strong><\/span><\/span><\/button>/);
   assert.doesNotMatch(html, /m-sample-batch-heading/);
   assert.doesNotMatch(html, /m-sample-timeline-count/);
   assert.doesNotMatch(html, /Seed 42/);
@@ -44,8 +44,8 @@ test('single-image cards show epoch and step below the image with numbered promp
   second.sample.batch_label = 'Epoch 2 · Step 800';
   const value = app([first, second]);
   const html = value._renderSamplesTab(key => value.t('monitor.' + key));
-  assert.match(html, /class="preview-grid-item-label" title="Epoch 1 Step 400\nPrompt 1"><span class="m-sample-stage"><strong>Epoch 1<\/strong><small>Step 400<\/small><\/span><small class="m-sample-caption-detail">Prompt 1<\/small>/);
-  assert.match(html, /class="preview-grid-item-label" title="Epoch 2 Step 800\nPrompt 1"><span class="m-sample-stage"><strong>Epoch 2<\/strong><small>Step 800<\/small><\/span><small class="m-sample-caption-detail">Prompt 1<\/small>/);
+  assert.match(html, /class="preview-grid-item-label" data-sample-loss-batch="step-1" data-sample-loss-detail="Prompt 1" data-sample-loss-status="" title="Epoch 1 Step 400\nPrompt 1"><span class="m-sample-stage"><strong>Epoch 1<\/strong><small>Step 400<\/small><\/span><small class="m-sample-caption-detail">Prompt 1<\/small>/);
+  assert.match(html, /class="preview-grid-item-label" data-sample-loss-batch="step-2" data-sample-loss-detail="Prompt 1" data-sample-loss-status="" title="Epoch 2 Step 800\nPrompt 1"><span class="m-sample-stage"><strong>Epoch 2<\/strong><small>Step 800<\/small><\/span><small class="m-sample-caption-detail">Prompt 1<\/small>/);
 });
 
 test('multi-image history starts with one cover card per sampling point', () => {
