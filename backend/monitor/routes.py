@@ -249,11 +249,13 @@ async def monitor_run_detail(run_dir: str = Query("")):
 
     result: dict = {
         "run_dir": record["run_dir"],
+        "task_id": record.get("task_id"),
         "artifact_dir": record["artifact_dir"],
         "artifact_available": record["artifact_available"],
         "artifact_external": record["artifact_external"],
         "preview_enabled": record["preview_enabled"],
         "imported": record["imported"],
+        "log_timestep_loss": (record.get("extra") or {}).get("log_timestep_loss"),
     }
 
     # ── 配置参数 ──

@@ -15,7 +15,7 @@ from backend.constants import REPO_ROOT
 from backend.image_preview import build_image_preview_url
 
 from backend.monitor.checkpoints import LORA_EXTENSIONS, parse_checkpoint
-from backend.monitor.legacy_sample_steps import enrich_legacy_sample_steps
+from backend.monitor.sample_loss import enrich_sample_loss
 from backend.monitor.sample_metadata import legacy_sample_metadata, read_sample_records, sample_manifest_version
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
@@ -177,10 +177,7 @@ def newest_previews(
     for item in result:
         item["sample"] = recorded.get(item["path"]) or legacy_sample_metadata(item["name"], item["path"])
         item["sample"]["metadata_version"] = metadata_version
-    log_root = Path(run_dir) if run_dir else od
-    if not log_root.is_absolute():
-        log_root = REPO_ROOT / log_root
-    enrich_legacy_sample_steps(result, log_root, od)
+    enrich_sample_loss(result, od, run_dir)
     for item in result:
         sample = item["sample"]
         if sample.get("step_source") == "log":

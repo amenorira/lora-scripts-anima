@@ -30,6 +30,56 @@ function target(value, index) {
     metadataKey: value._previewViewerMetadataKey(preview)};
 }
 
+test('comparison context opens the exact target in a separate tab without changing its baseline', () => {
+  const value = app(), link = {}; let prevented = false;
+  value.pinPreviewReference(0); target(value, 0);
+  const order = [...value.previewComparisonOrder];
+  assert.equal(value.previewTimelineMenuAction('open', {currentTarget: link}), true);
+  assert.equal(link.href, '/1.png');
+  assert.match(value._previewTimelineContextMenuHtml(key => key), /target="_blank" rel="noopener noreferrer"/);
+  assert.deepEqual(value.previewComparisonOrder, order);
+  target(value, 1); value.previewTimelineMenu.metadataKey = 'stale';
+  assert.equal(value.previewTimelineMenuAction('open', {currentTarget: link, preventDefault() {prevented = true;}}), false);
+  assert.equal(prevented, true); assert.equal(link.href, '/1.png');
+});
+
+test('single-image thumbnail context opens its own file without entering comparison or changing selection', () => {
+  const value = app(), link = {}, current = value.previewStep;
+  for (const index of [current, 0]) {
+    target(value, index);
+    assert.equal(value._previewTimelineMenuActions().open, true);
+    assert.equal(value.previewTimelineMenuAction('open', {currentTarget: link}), true);
+    assert.equal(link.href, value.previews[index].url);
+    assert.equal(value.previewStep, current);
+    assert.equal(value.previewCompareActive, false);
+    assert.deepEqual(value.previewReferences, []);
+  }
+});
+
+test('pane context preserves the single-image native menu and follows decoded pixels during a swap', () => {
+  const value = app(), previous = global.document;
+  const pane = {classList: {contains: () => true}};
+  const event = {currentTarget: {closest: () => pane},
+    preventDefault() {assert.fail('single-image context must preserve the native image menu');},
+    stopPropagation() {assert.fail('single-image context must preserve the native image menu');}};
+  value.openPreviewTimelineMenu = () => assert.fail('single-image context must not open the comparison menu');
+  value.openPreviewPaneMenu(event);
+  value.pinPreviewReference(0); value.selectPreviewComparisonCurrent(2);
+  value.previewImageLoading = true; value.previewImageAvailable = false;
+  const image = {dataset: {previewDisplayedKey: value._previewImageCacheKey(value.previews[1])}, src: '/2.png', getAttribute() {return this.src;}};
+  global.document = {getElementById: id => id === 'previewLightboxImg' ? image : null};
+  const targets = [];
+  value.openPreviewTimelineMenu = (_event, key) => targets.push(key);
+  try {
+    value.openPreviewPaneMenu(event);
+    assert.deepEqual(targets, ['sample/2.png'], 'menu follows the old visible file while the newly selected file loads');
+    image.dataset.previewDisplayedKey = value._previewImageCacheKey(value.previews[2]); image.src = '/3.png';
+    value.previewImageLoading = false; value.previewImageAvailable = true;
+    value.openPreviewPaneMenu(event);
+    assert.deepEqual(targets, ['sample/2.png', 'sample/3.png']);
+  } finally {global.document = previous;}
+});
+
 test('context pin appends references and waits until compare explicitly selects the current image', () => {
   const value = app();
   assert.equal(value.previewStep, 4);
@@ -67,7 +117,7 @@ test('context unpin removes only its fixed file while cancel exits the whole com
   }
   target(value, 1); value.previewTimelineMenuAction('compare');
   target(value, 0);
-  assert.deepEqual(value._previewTimelineMenuActions(), {pin: false, unpin: true, compare: false, cancel: true});
+  assert.deepEqual(value._previewTimelineMenuActions(), {pin: false, unpin: true, compare: false, cancel: true, first: true, open: true});
   assert.equal(value.previewTimelineMenuAction('unpin'), true);
   assert.deepEqual(value.previewReferences, [value.previews[2], value.previews[3]]);
   assert.equal(value.previewCompareActive, true);
@@ -117,13 +167,83 @@ test('a fully unavailable current image cannot be fixed directly or implicitly b
   assert.equal(value._previewTimelineMenuActions().compare, true, 'a usable fallback thumbnail permits comparison');
 });
 
+test('an asynchronous failure closes a focused comparison action and returns focus to its thumbnail', () => {
+  const value = app(), previous = global.document;
+  const state = target(value, 0); state.actions = value._previewTimelineMenuActions();
+  const focused = {dataset: {previewMenuAction: 'compare'}};
+  let restored = false;
+  const item = {dataset: {previewPath: state.key}, focus() {restored = true;}};
+  const menu = {contains: element => element === focused};
+  global.document = {activeElement: focused, getElementById: id => ({previewTimelineContextMenu: menu,
+    previewLightboxTimeline: {hidden: false, querySelectorAll: () => [item]}})[id] || null};
+  try {
+    assert.equal(state.actions.compare, true);
+    value.previewImageError = true; value.previewImageLoading = false;
+    value._setPreviewImageAvailable(false);
+    assert.equal(value.previewTimelineMenu, null);
+    assert.equal(menu.hidden, true);
+    assert.equal(restored, true, 'focus must not be lost when the previously focused item disappears');
+  } finally {global.document = previous;}
+});
+
+test('refreshing other actions keeps a focused open-original action and its menu available', () => {
+  const value = app(), previous = global.document;
+  const state = target(value, 0); state.actions = value._previewTimelineMenuActions();
+  const focused = {dataset: {previewMenuAction: 'open'}};
+  global.document = {activeElement: focused, getElementById: () => ({contains: element => element === focused})};
+  try {
+    value.previewImageError = true; value.previewImageLoading = false;
+    value._setPreviewImageAvailable(false);
+    assert.equal(value.previewTimelineMenu, state);
+    assert.equal(state.actions.compare, false);
+    assert.equal(state.actions.open, true);
+  } finally {global.document = previous;}
+});
+
+test('leaving comparison closes a focused mode-specific action even if its operation remains available', () => {
+  const value = app(), previous = global.document;
+  const state = target(value, 0); state.source = 'pane'; state.actions = {cancel: true, first: true};
+  const focused = {dataset: {previewMenuAction: 'first'}};
+  let restored = false;
+  const item = {dataset: {previewPath: state.key}, focus() {restored = true;}};
+  global.document = {activeElement: focused, getElementById: id => ({
+    previewTimelineContextMenu: {contains: element => element === focused},
+    previewLightboxTimeline: {hidden: false, querySelectorAll: () => [item]},
+  })[id] || null};
+  value._previewTimelineMenuActions = () => ({cancel: false, first: true});
+  try {
+    value._refreshPreviewTimelineMenuActions();
+    assert.equal(value.previewTimelineMenu, null);
+    assert.equal(restored, true, 'a removed comparison pane falls back to the visible thumbnail');
+  } finally {global.document = previous;}
+});
+
+test('restoring pane-menu focus after comparison ends skips a collapsed thumbnail frame', () => {
+  const value = app(), previous = global.document;
+  const state = target(value, 0); state.source = 'pane';
+  value.previewViewTimelineVisible = false;
+  let restored = false;
+  const hiddenItem = {dataset: {previewPath: state.key}, focus() {assert.fail('collapsed thumbnails cannot receive focus');}};
+  const next = {focus() {restored = true;}};
+  global.document = {getElementById: id => ({previewTimelineContextMenu: {},
+    previewLightboxTimeline: {hidden: false, querySelectorAll: () => [hiddenItem], querySelector: () => hiddenItem},
+    previewLightbox: {querySelector: selector => selector === '.preview-lightbox-nav.next:not(:disabled)' ? next : null},
+  })[id] || null};
+  try {
+    value._focusPreviewPageNavigation = window.monitorArtifactsRenderMixin._focusPreviewPageNavigation;
+    value.closePreviewTimelineMenu(true);
+    assert.equal(value.previewTimelineMenu, null);
+    assert.equal(restored, true, 'fallback navigation remains visible with thumbnails switched off');
+  } finally {global.document = previous;}
+});
+
 test('stale targets and different seed identities cannot be used for a context comparison', () => {
   const value = app(); target(value, 1);
   value.previews[1].sample.params.cfg_scale = 7;
   assert.equal(value.previewTimelineMenuAction('pin'), false);
   assert.equal(value.previewCompareActive, false);
   const otherSeed = app([image(1), image(2, 99)]); target(otherSeed, 0);
-  assert.deepEqual(otherSeed._previewTimelineMenuActions(), {pin: false, unpin: false, compare: false, cancel: false});
+  assert.deepEqual(otherSeed._previewTimelineMenuActions(), {pin: false, unpin: false, compare: false, cancel: false, first: false, open: false});
   assert.equal(otherSeed.previewTimelineMenuAction('compare'), false);
   assert.deepEqual(otherSeed.previewReferences, []);
 });

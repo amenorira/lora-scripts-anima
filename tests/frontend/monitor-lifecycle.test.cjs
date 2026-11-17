@@ -63,6 +63,24 @@ test('snapshot started before task switch cannot overwrite the new task', async 
   assert.equal(a.monitorData.step, 2);
 });
 
+test('live epoch loss retains the oldest sample value beyond 5000 points while step curves stay bounded', () => {
+  const epochTags = ['loss/epoch', 'loss/epoch_average', 'loss/timestep/epoch/low',
+    'loss/timestep/epoch/mid', 'loss/timestep/epoch/high'];
+  const tags = [...epochTags, 'loss/current', 'lr/unet'];
+  const a = app({lossSeries: tags.map(tag => ({tag,
+    points: Array.from({length: 5000}, (_, index) => ({step: index + 1, value: .1})),
+  }))});
+  a.handleRealtimeTaskMetrics({points: Object.fromEntries(tags.map(tag => [tag, [{step: 5001, value: .09}]]))});
+  const index = a._sampleEpochLossIndex();
+  for (const series of a.lossSeries) {
+    const epoch = epochTags.includes(series.tag);
+    assert.equal(series.points.length, epoch ? 5001 : 5000, series.tag);
+    assert.equal(series.points[0].step, epoch ? 1 : 2, series.tag);
+    assert.equal(series.latest, .09);
+    if (epoch) assert.equal(index.get(series.tag).get(1), .1, 'the first sample still resolves its epoch loss');
+  }
+});
+
 test('leaving the dashboard cancels retained grid motion before exit callbacks can restart media loading', async () => {
   const exit = deferred();
   let cancelled = 0, mediaUpdates = 0;

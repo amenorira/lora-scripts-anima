@@ -1,6 +1,7 @@
 /* 样本筛选、刷新与媒体队列；由 monitor-core.js 装配，沿用同一份监控状态。 */
 window.monitorPreviewsMixin = {
   sampleBatchId: '', sampleBatchSortDir: 'desc',
+  sampleLossMode: 'off', _sampleLossCache: null, _sampleSortCache: null,
   sampleSidebarVisible: true, sampleSidebarOpen: true, _sampleSidebarInspecting: false,
   sampleSidebarView: {key: '', scale: 1, x: 0, y: 0},
   previewViewTimelineVisible: true,
@@ -11,6 +12,7 @@ window.monitorPreviewsMixin = {
   _sampleGridPointer: null, _sampleGridLastAction: null,
   previewCompareActive: false, previewComparisonWaiting: false,
   previewReferences: [], _previewReferenceEntries: [],
+  previewComparisonOrder: [], _previewPaneDrag: null,
   _sampleModelCache: null,
   _sampleResetScroll: false, _sampleScrollAnchor: null, _sampleOverviewAtEnd: true,
   _sampleLayoutAction: 0,
@@ -29,6 +31,7 @@ window.monitorPreviewsMixin = {
   _previewImageKey: '', _previewImageRequest: 0,
   _previewOriginalCache: null,
   _previewMediaByUrl: null,
+  _previewMediaRetryNeeded: false,
 
   get sampleSidebarActive() {
     return this.sampleSidebarVisible && this.sampleSidebarOpen && !!this.previews?.[this.previewStep];
@@ -78,6 +81,8 @@ window.monitorPreviewsMixin = {
     this._clearPreviewComparison();
     this.previewHasNew = false;
     this._sampleModelCache = null;
+    this._sampleLossCache = null;
+    this._sampleSortCache = null;
     this._sampleResetScroll = true; this._sampleScrollAnchor = null;
     this._sampleOverviewAtEnd = true;
     this.sampleSidebarOpen = true;
@@ -91,16 +96,103 @@ window.monitorPreviewsMixin = {
       const saved = JSON.parse(localStorage.getItem('anima-sample-view') || '{}');
       if (typeof saved?.sidebar === 'boolean') this.sampleSidebarVisible = saved.sidebar;
       if (typeof saved?.viewerTimeline === 'boolean') this.previewViewTimelineVisible = saved.viewerTimeline;
-      if (saved?.sort === 'asc' || saved?.sort === 'desc') this.sampleBatchSortDir = saved.sort;
+      if (['asc', 'desc', 'loss-overall', 'loss-high', 'loss-mid', 'loss-low'].includes(saved?.sort)) this.sampleBatchSortDir = saved.sort;
       if (saved?.comparisonLayout === 'horizontal' || saved?.comparisonLayout === 'vertical') this.previewComparisonLayout = saved.comparisonLayout;
+      if (['off', 'overall', 'detailed'].includes(saved?.lossMode)) this.sampleLossMode = saved.lossMode;
     } catch { /* Keep the current layout if storage is unavailable. */ }
   },
 
   _saveSampleViewPreferences() {
     try {
       localStorage.setItem('anima-sample-view', JSON.stringify({sidebar: this.sampleSidebarVisible,
-        viewerTimeline: this.previewViewTimelineVisible, sort: this.sampleBatchSortDir, comparisonLayout: this.previewComparisonLayout}));
+        viewerTimeline: this.previewViewTimelineVisible, sort: this.sampleBatchSortDir, comparisonLayout: this.previewComparisonLayout,
+        lossMode: this.sampleLossMode}));
     } catch { /* The controls remain usable without storage. */ }
+  },
+
+  _sampleEpochLossIndex() {
+    const series = this.monitorLossSeries || (this.selectedRunDir ? this.runDetailData?.tensorboard_loss : this.lossSeries) || [];
+    const run = this.selectedRunDir || this.currentOutputRunDir || '';
+    const sources = [];
+    for (const item of series) {
+      if (!['loss/epoch', 'loss/epoch_average', 'loss/timestep/epoch/low', 'loss/timestep/epoch/mid', 'loss/timestep/epoch/high'].includes(item.tag)) continue;
+      const points = item.points, last = points?.at(-1);
+      sources.push({tag: item.tag, points, length: points?.length || 0, lastStep: last?.step, lastValue: last?.value});
+    }
+    const cached = this._sampleLossCache;
+    // Production metric updates and snapshots replace points. Length and the
+    // last point also cover in-place appends without scanning historical values.
+    if (cached?.run === run && cached.sources.length === sources.length && sources.every((source, index) => {
+      const previous = cached.sources[index];
+      return source.tag === previous.tag && source.points === previous.points && source.length === previous.length
+        && source.lastStep === previous.lastStep && source.lastValue === previous.lastValue;
+    })) return cached.byTag;
+    const byTag = new Map();
+    for (const source of sources) {
+      const points = new Map();
+      for (const point of source.points || []) {
+        if (Number.isInteger(point.step) && point.step > 0 && Number.isFinite(point.value)) points.set(point.step, point.value);
+      }
+      byTag.set(source.tag, points);
+    }
+    this._sampleLossCache = {run, sources, byTag};
+    return this._sampleLossCache.byTag;
+  },
+
+  get sampleDetailedLossAvailable() {
+    if (this.previews?.length && this._sampleDataModel().detailedLoss) return true;
+    const data = this.selectedRunDir ? this.runDetailData : this.monitorData;
+    if (typeof data?.log_timestep_loss === 'boolean') return data.log_timestep_loss;
+    // Existing/imported runs have no saved switch; recorded partition scalars
+    // establish that logging was enabled without consulting the current form.
+    const series = this.monitorLossSeries || (this.selectedRunDir ? this.runDetailData?.tensorboard_loss : this.lossSeries) || [];
+    return series.some(item => ['loss/timestep/epoch/low', 'loss/timestep/epoch/mid', 'loss/timestep/epoch/high'].includes(item.tag));
+  },
+
+  get sampleEffectiveLossMode() {
+    return this.sampleLossMode === 'detailed' && !this.sampleDetailedLossAvailable ? 'overall' : this.sampleLossMode;
+  },
+
+  setSampleLossMode(mode) {
+    if (!['off', 'overall', 'detailed'].includes(mode) || (mode === 'detailed' && !this.sampleDetailedLossAvailable) || mode === this.sampleLossMode) return;
+    this.sampleLossMode = mode;
+    this._saveSampleViewPreferences();
+    this.renderDashboard();
+  },
+
+  _sampleBatchEpochLoss(batch) {
+    const sample = batch && this._sampleRecord(this.previews[batch.indices[0]]);
+    return this._sampleEpochLoss(sample);
+  },
+
+  _sampleEpochLoss(sample, index) {
+    if (sample?.epoch_loss) return sample.epoch_loss;
+    index ||= this._sampleEpochLossIndex();
+    // A mid-epoch step sample must never acquire the later epoch-end loss.
+    // Foreign runs carry their own loss; the viewed run follows live metrics.
+    const epoch = sample?.stage_kind === 'epoch' ? sample.epoch ?? sample.stage_value : null;
+    const at = number => ({
+      overall: index.get('loss/epoch')?.get(number) ?? index.get('loss/epoch_average')?.get(number) ?? null,
+      low: index.get('loss/timestep/epoch/low')?.get(number) ?? null,
+      mid: index.get('loss/timestep/epoch/mid')?.get(number) ?? null,
+      high: index.get('loss/timestep/epoch/high')?.get(number) ?? null,
+    });
+    const known = Number.isInteger(epoch) && epoch > 0;
+    return {epoch: known ? epoch : null, values: at(known ? epoch : null), previous: at(known ? epoch - 1 : null)};
+  },
+
+  _sampleLossNumber(value, compact = false) {
+    if (!Number.isFinite(value)) return '—';
+    if ((value !== 0 && Math.abs(value) < (compact ? 0.001 : 0.0001)) || Math.abs(value) >= 100) return value.toExponential(1);
+    const result = value.toFixed(compact ? 3 : 4);
+    return compact ? result.replace(/^(-?)0\./, '$1.') : result;
+  },
+
+  _sampleLossChange(value, previous) {
+    if (!Number.isFinite(value) || !Number.isFinite(previous) || previous === 0) return '—';
+    const change = (value - previous) / Math.abs(previous) * 100;
+    if (!Number.isFinite(change)) return '—';
+    return (change > 0 ? '+' : '') + change.toFixed(1) + '%';
   },
 
   _sampleRecord(preview, index = 0) {
@@ -112,6 +204,8 @@ window.monitorPreviewsMixin = {
     return { batch_id: identity ? 'legacy:' + identity.prefix + ':' + identity.stage : 'file:' + this._previewItemKey(preview),
       // Keep cached stage labels language-independent, as recorded samples do.
       batch_label: info.stage ? (stageKind === 'epoch' ? 'Epoch ' : 'Step ') + stageValue : preview?.name || '', batch_order: index,
+      stage_kind: stageKind || 'unknown', stage_value: info.stage ? Number(stageValue) : null,
+      epoch: stageKind === 'epoch' ? Number(stageValue) : null, step: stageKind === 'step' ? Number(stageValue) : null,
       prompt_id: identity?.key || 'file:' + this._previewItemKey(preview),
       prompt_label: info.prompt || preview?.name || '', prompt_index: identity ? identity.number - 1 : null,
       seed: identity?.seed ?? null, params: {}, comparable: false, condition_key: null,
@@ -150,7 +244,8 @@ window.monitorPreviewsMixin = {
       }
     });
     batches.forEach((batch, position) => { batch.position = position; });
-    const model = { items, version: this.previewsVersion, records, batches, byBatch: groups };
+    const model = { items, version: this.previewsVersion, records, batches, byBatch: groups,
+      detailedLoss: records.some(record => record.sample.epoch_loss?.detailed) };
     if (items === this.previews) this._sampleModelCache = model;
     return model;
   },
@@ -160,15 +255,42 @@ window.monitorPreviewsMixin = {
     return model.byBatch.get(this.sampleBatchId) || model.batches[model.batches.length - 1] || null;
   },
 
+  get sampleEffectiveBatchSort() {
+    const sort = this.sampleBatchSortDir || 'desc';
+    return ['loss-high', 'loss-mid', 'loss-low'].includes(sort) && !this.sampleDetailedLossAvailable ? 'loss-overall' : sort;
+  },
+
+  get sampleLossSortKey() {
+    const sort = this.sampleEffectiveBatchSort;
+    return sort.startsWith('loss-') ? sort.slice(5) : '';
+  },
+
+  _sampleBatchOrder(items = this.previews) {
+    // Presentation ranking never changes canonical chronology or comparison baselines.
+    const model = this._sampleDataModel(items), sort = this.sampleEffectiveBatchSort, key = this.sampleLossSortKey;
+    const lossIndex = key ? this._sampleEpochLossIndex() : null, cached = this._sampleSortCache;
+    if (cached?.model === model && cached.sort === sort && cached.requested === this.sampleBatchSortDir && cached.lossIndex === lossIndex) return cached;
+    const batches = [...model.batches];
+    if (key) {
+      const values = new Map(batches.map(batch => {
+        const sample = model.records[batch.indices[0]].sample;
+        const value = this._sampleEpochLoss(sample, lossIndex).values[key];
+        return [batch.id, Number.isFinite(value) ? value : Infinity];
+      }));
+      batches.sort((a, b) => values.get(a.id) !== values.get(b.id) ? values.get(a.id) - values.get(b.id) : b.position - a.position);
+    } else if (sort !== 'asc') batches.reverse();
+    const order = {model, sort, requested: this.sampleBatchSortDir, lossIndex, batches, positions: new Map(batches.map((batch, index) => [batch.id, index]))};
+    if (items === this.previews) this._sampleSortCache = order;
+    return order;
+  },
+
   _sampleOverviewBatches(items = this.previews) {
-    // Presentation order is independent of the canonical sampling chronology
-    // used by automatic pairing and latest-following.
-    const batches = [...this._sampleDataModel(items).batches];
-    return this.sampleBatchSortDir !== 'asc' ? batches.reverse() : batches;
+    return [...this._sampleBatchOrder(items).batches];
   },
 
   _sampleOverviewAtLatestEdge(grid) {
     if (!grid) return true;
+    if (this.sampleLossSortKey) return false;
     return this.sampleBatchSortDir !== 'asc' ? grid.scrollTop <= 4
       : grid.scrollTop + grid.clientHeight >= grid.scrollHeight - 4;
   },
@@ -178,14 +300,13 @@ window.monitorPreviewsMixin = {
   },
 
   setSampleBatchSort(dir) {
-    if ((dir !== 'asc' && dir !== 'desc') || dir === this.sampleBatchSortDir) return;
+    if (!['asc', 'desc', 'loss-overall', 'loss-high', 'loss-mid', 'loss-low'].includes(dir) || dir === this.sampleBatchSortDir
+        || (['loss-high', 'loss-mid', 'loss-low'].includes(dir) && !this.sampleDetailedLossAvailable)) return;
     this._sampleLayoutAction++;
     this.sampleBatchSortDir = dir;
     this._saveSampleViewPreferences();
-    // Rebuild around the same batch. Sorting neither acknowledges new samples
-    // nor resumes latest-following for a reader inspecting history.
+    // Sorting changes presentation without selecting or acknowledging another image.
     this._sampleResetScroll = true; this._sampleScrollAnchor = null;
-    this.previewsVersion++;
     this.renderDashboard();
     if (this.previewLightboxOpen) {
       this._updatePreviewLightbox();
@@ -296,9 +417,11 @@ window.monitorPreviewsMixin = {
   },
 
   _clearPreviewComparison() {
+    this.cancelPreviewPaneDrag?.();
     this.previewCompareActive = false;
     this.previewComparisonWaiting = false;
     this.previewReferences = []; this._previewReferenceEntries = [];
+    this.previewComparisonOrder = [];
   },
 
   _resolvedPreviewReferenceEntries() {
@@ -332,6 +455,10 @@ window.monitorPreviewsMixin = {
         || this._previewViewerMetadataKey(actual) !== entry.metadataKey) return false;
     if (this._previewReferenceEntries.length && this._previewReferenceEntries[0].caseKey !== key) this._clearPreviewComparison();
     const entries = this._previewReferenceEntries || [];
+    if (entry.itemKey === this._previewItemKey(this.previews[this.previewStep]) && !this.previewComparisonWaiting
+        && this.previewComparisonOrder.includes(null)) {
+      this.previewComparisonOrder = this.previewComparisonOrder.map(key => key === null ? entry.itemKey : key).concat(null);
+    }
     if (!entries.some(other => other.itemKey === entry.itemKey)) this._previewReferenceEntries = [...entries, entry];
     this.previewCompareActive = true;
     this.previewComparisonWaiting = true;
@@ -393,6 +520,59 @@ window.monitorPreviewsMixin = {
     if (!resolved.length) { this._clearPreviewComparison(); return; }
     this._previewReferenceEntries = resolved.map(item => item.entry);
     this.previewReferences = resolved.map(item => item.preview);
+    this._syncPreviewComparisonOrder();
+  },
+
+  _syncPreviewComparisonOrder() {
+    const keys = this.previewReferences.map(preview => this._previewItemKey(preview));
+    const valid = new Set([...keys, null]);
+    let order = (this.previewComparisonOrder || []).filter((key, index, items) => valid.has(key) && items.indexOf(key) === index);
+    for (const key of keys) if (!order.includes(key)) order.splice(order.includes(null) ? order.indexOf(null) : order.length, 0, key);
+    if (!order.includes(null)) order.push(null);
+    // A waiting slot is never the baseline. Removing a reference also retains
+    // a fixed first image rather than turning the browsing slot into a baseline.
+    if (this.previewComparisonWaiting || order[0] === null) order = order.filter(key => key !== null).concat(null);
+    if (order.length !== this.previewComparisonOrder.length || order.some((key, index) => key !== this.previewComparisonOrder[index])) this.previewComparisonOrder = order;
+    return order;
+  },
+
+  _previewComparisonBaselinePreview() {
+    if (!this.previewCompareActive) return null;
+    const first = this.previewComparisonOrder[0];
+    return this.previewReferences.find(preview => this._previewItemKey(preview) === first) || this.previewReferences[0] || null;
+  },
+
+  movePreviewToFirst(previewOrIndex) {
+    const preview = Number.isInteger(previewOrIndex) ? this.previews[previewOrIndex] : previewOrIndex;
+    const key = this._previewItemKey(preview), index = this._previewViewerFileIndex(key);
+    if (index < 0 || !this._previewViewerComparisonKey(preview)) return false;
+    if (index === this.previewStep && !this.previewComparisonWaiting && !this.canPinCurrentPreview()) return false;
+    const current = this.previewStep, waiting = this.previewComparisonWaiting;
+    if (!this._isPreviewReference(preview)) {
+      if (!this.pinPreviewReference(preview, false)) return false;
+      if (index !== current && !waiting) this.selectPreviewComparisonCurrent(current);
+    }
+    this.previewComparisonOrder = [key, ...this.previewComparisonOrder.filter(item => item !== key)];
+    this._syncPreviewReference();
+    if (this.previewLightboxOpen) this._updatePreviewLightbox();
+    return true;
+  },
+
+  reorderPreviewComparison(order) {
+    if (!this.previewCompareActive || !Array.isArray(order)) return false;
+    const existing = this._syncPreviewComparisonOrder();
+    if (order.length !== existing.length || new Set(order).size !== order.length || order.some(key => !existing.includes(key))) return false;
+    let result = [...order];
+    if (result[0] === null) {
+      if (this.previewComparisonWaiting || !this.canPinCurrentPreview()) return false;
+      const key = this._previewItemKey(this.previews[this.previewStep]);
+      if (!this.pinPreviewReference(this.previewStep, false)) return false;
+      result = result.map(item => item === null ? key : item).concat(null);
+    }
+    this.previewComparisonOrder = result;
+    this._syncPreviewReference();
+    if (this.previewLightboxOpen) this._updatePreviewLightbox();
+    return true;
   },
 
   selectPreviewCase(index) {
@@ -471,7 +651,11 @@ window.monitorPreviewsMixin = {
       const model = this._sampleDataModel();
       display.sort((a, b) => model.records[a].batch.position - model.records[b].batch.position || a - b);
     }
-    return this.sampleBatchSortDir !== 'asc' ? display.reverse() : display;
+    if (this.sampleLossSortKey) {
+      const order = this._sampleBatchOrder(), model = order.model;
+      return display.sort((a, b) => order.positions.get(model.records[a].batch.id) - order.positions.get(model.records[b].batch.id) || b - a);
+    }
+    return this.sampleEffectiveBatchSort !== 'asc' ? display.reverse() : display;
   },
 
   _previewLightboxNavigationIndices(indices = this._previewLightboxDisplayIndices()) {
@@ -522,7 +706,7 @@ window.monitorPreviewsMixin = {
     const nextLatestId = items.length ? this._sampleRecord(items[items.length - 1], items.length - 1).batch_id : '';
     const readingLatestGroup = this.sampleExpandedBatchId === latestBatch?.id && nextLatestId === latestBatch?.id;
     const inspecting = this.previewInfoOpen || (this.sampleSidebarActive && this._sampleSidebarInspecting);
-    const follow = !this.previewLightboxOpen && !inspecting && !this._sampleExpansionPausedFollow
+    const follow = !this.sampleLossSortKey && !this.previewLightboxOpen && !inspecting && !this._sampleExpansionPausedFollow
       && (this._sampleOverviewAtEnd !== false || readingLatestGroup) && (!previousBatch || previousBatch.id === latestBatch?.id);
     const changed = previous.length !== items.length || previous.some((item, index) => {
       const next = items[index];
@@ -553,7 +737,7 @@ window.monitorPreviewsMixin = {
     if (!this._previewClosePending) this._syncPreviewReference();
     if (this.previewTimelineMenu) {
       if (this._previewTimelineMenuTarget() < 0) this.closePreviewTimelineMenu(false);
-      else this.previewTimelineMenu.actions = this._previewTimelineMenuActions();
+      else this._refreshPreviewTimelineMenuActions();
     }
     return changed;
   },
@@ -644,7 +828,11 @@ window.monitorPreviewsMixin = {
       // next render or when realtime freshness recovers.
       if (next.image && next.image.isConnected) {
         delete next.image.dataset.previewQueued;
-        if (error?.name !== 'AbortError' && generation === this._previewMediaGeneration) next.image.closest?.('.preview-thumb-frame')?.classList.add('is-error');
+        if (error?.name !== 'AbortError' && generation === this._previewMediaGeneration) {
+          this._previewMediaObserver?.unobserve(next.image);
+          this._previewMediaRetryNeeded = true;
+          next.image.closest?.('.preview-thumb-frame')?.classList.add('is-error');
+        }
       }
     } finally {
       if (generation !== this._previewMediaGeneration || this._previewMediaAbort !== controller) return;

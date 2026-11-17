@@ -23,6 +23,9 @@ from backend.utils.file_io import atomic_replace
 SCHEMA_VERSION = 1
 _SAMPLE_NAME = re.compile(
     r"^(?P<prefix>.*?)(?P<progress>e?\d{6})_(?P<prompt>\d{2,})_(?P<timestamp>\d{14})(?:_(?P<seed>-?\d+))?$", re.I)
+# Version 1 batch IDs persist the launching task, including before task_id was
+# exposed by the monitor API. Do not infer ownership from an image filename.
+_BATCH_TASK = re.compile(r"^([^:]+):\d+:(?:anima|moss_image|krea2):(?:None|\d+):\d+:\d+$")
 _CORE = {"prompt", "negative_prompt", "seed", "architecture", "width", "height", "steps", "cfg_scale", "sampler", "scheduler", "loras"}
 _PROMPT_KEYS = {"prompt", "negative_prompt", "seed"}
 _MANIFEST_CACHE_TTL = 5.0
@@ -178,7 +181,9 @@ def _normalize(batch: dict, item: dict, status: str, expected: int | None) -> di
     order = _integer(batch.get("order")) or 0
     batch_label = (f"Epoch {epoch} · Step {step}" if epoch is not None and step is not None
                    else f"{'Epoch' if kind == 'epoch' else 'Step'} {value}" if value is not None else "")
+    owner = _BATCH_TASK.fullmatch(str(batch["id"]))
     return {"batch_id": str(batch["id"]), "batch_order": order // 1000 if order > 2 ** 53 - 1 else order,
+            "task_id": owner[1] if owner else None,
             "batch_label": batch_label,
             "batch_expected": expected, "batch_status": status, "batch_inferred": False,
             "stage_kind": kind, "stage_value": value, "step": step, "epoch": epoch,

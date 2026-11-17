@@ -84,11 +84,16 @@ window.tagEditorView = {
       + (this.tagEditorSearchQuery ? 1 : 0) + (this.tagEditorQuickFilter !== 'all' ? 1 : 0);
   },
 
+  tagEditorSetSidebarCollapsed(collapsed) {
+    this.tagEditorLeftCollapsed = collapsed;
+    try { localStorage.setItem('tagEditor_leftCollapsed', String(collapsed)); } catch (e) {}
+  },
+
   tagEditorCloseSidebar(event) {
     if (this.tagEditorLeftCollapsed || event?.isComposing || event?.keyCode === 229) return;
     event?.preventDefault();
     event?.stopPropagation();
-    this.tagEditorLeftCollapsed = true;
+    this.tagEditorSetSidebarCollapsed(true);
     var epoch = this._teLoadEpoch;
     this.$nextTick(() => {
       if (epoch !== this._teLoadEpoch || this.currentRoute !== 'tagEditor') return;
@@ -118,6 +123,7 @@ window.tagEditorView = {
   },
 
   tagEditorRestorePanelWidth() {
+    try { this.tagEditorLeftCollapsed = localStorage.getItem('tagEditor_leftCollapsed') === 'true'; } catch (e) {}
     var saved = 0;
     try { saved = parseInt(localStorage.getItem('tagEditor_rightWidth'), 10); } catch (e) {}
     this.tagEditorRightWidth = saved >= 280 && saved <= 520 ? saved : 340;
@@ -169,17 +175,14 @@ window.tagEditorView = {
 
   tagEditorInitLayout() {
     var self = this;
-    // At compact desktop widths the tag cloud overlays the grid instead of
-    // permanently consuming a column. Start collapsed so the image wall is usable.
-    if (window.matchMedia && window.matchMedia('(max-width: 1200px)').matches) {
-      this.tagEditorCompactLayout = true;
-      this.tagEditorLeftCollapsed = true;
+    // Width only changes the layout; sidebar visibility follows the user's choice.
+    if (window.matchMedia) {
+      this.tagEditorCompactLayout = window.matchMedia('(max-width: 1200px)').matches;
     }
     if (!this._teCompactMedia && window.matchMedia) {
       this._teCompactMedia = window.matchMedia('(max-width: 1200px)');
       this._teCompactListener = function(event) {
         self.tagEditorCompactLayout = event.matches;
-        if (event.matches) self.tagEditorLeftCollapsed = true;
       };
       if (this._teCompactMedia.addEventListener) {
         this._teCompactMedia.addEventListener('change', this._teCompactListener);

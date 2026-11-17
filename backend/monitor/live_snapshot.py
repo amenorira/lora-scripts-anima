@@ -68,6 +68,7 @@ async def build_live_monitor_snapshot(
         "artifact_available": bool(record and record["artifact_available"]),
         "artifact_external": bool(record and record["artifact_external"]),
         "preview_enabled": record["preview_enabled"] if record else None,
+        "log_timestep_loss": (record.get("extra") or {}).get("log_timestep_loss") if record else None,
         "log_total": 0, "output_count": 0,
     }
     if not active:
