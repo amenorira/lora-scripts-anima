@@ -70,14 +70,20 @@ window.monitorArtifactsRenderMixin = {
       + options.map(option => '<option value="' + this.esc(option.value) + '"' + (option.value === value ? ' selected' : '') + '>' + this.esc(option.label) + '</option>').join('') + '</select>';
   },
 
+  _parseSampleStage(label) {
+    const stage = String(label || '').match(/^(Epoch|Step)\s+(\d+)(?:\s*·\s*Step\s+(\d+))?(\s+\(\d+\))?$/);
+    if (!stage) return null;
+    const parts = [{key: stage[1] === 'Epoch' ? 'monitor.sampleEpoch' : 'monitor.sampleStep', value: stage[2], suffix: ''}];
+    if (stage[3]) parts.push({key: 'monitor.sampleStep', value: stage[3], suffix: ''});
+    parts.at(-1).suffix = stage[4] || '';
+    return parts;
+  },
+
   _sampleStageParts(label) {
-    const text = String(label || '');
-    const stage = text.match(/^(Epoch|Step)\s+(\d+)(?:\s*·\s*Step\s+(\d+))?(\s+\(\d+\))?$/);
-    if (!stage) return { primary: text, secondary: '' };
-    const primary = this.t(stage[1] === 'Epoch' ? 'monitor.sampleEpoch' : 'monitor.sampleStep').replace('{n}', stage[2]);
-    const secondary = stage[3] ? this.t('monitor.sampleStep').replace('{n}', stage[3]) : '';
-    const suffix = stage[4] || '';
-    return { primary: primary + (secondary ? '' : suffix), secondary: secondary ? secondary + suffix : '' };
+    const parts = this._parseSampleStage(label);
+    if (!parts) return { primary: String(label || ''), secondary: '' };
+    const labels = parts.map(part => this.t(part.key).replace('{n}', part.value) + part.suffix);
+    return { primary: labels[0], secondary: labels[1] || '' };
   },
 
   _sampleLossOptions() {
@@ -157,12 +163,11 @@ window.monitorArtifactsRenderMixin = {
   _previewStageHeadingHtml(preview) {
     const sample = this._sampleRecord(preview);
     const label = this._sampleDataModel().byBatch.get(sample.batch_id)?.label || sample.batch_label || preview?.name || '';
-    const match = String(label).match(/^(Epoch|Step)\s+(\d+)(?:\s*·\s*Step\s+(\d+))?(\s+\(\d+\))?$/);
-    if (!match) return '<strong>' + this.esc(label) + '</strong>';
-    const part = (kind, value, suffix = '') => '<span class="preview-stage-part"><span>'
-      + this.esc(this.t(kind === 'Epoch' ? 'monitor.sampleEpoch' : 'monitor.sampleStep').replace('{n}', '').trim())
-      + '</span><strong>' + this.esc(value + suffix) + '</strong></span>';
-    return part(match[1], match[2], match[3] ? '' : match[4] || '') + (match[3] ? part('Step', match[3], match[4] || '') : '');
+    const parts = this._parseSampleStage(label);
+    if (!parts) return '<strong>' + this.esc(label) + '</strong>';
+    return parts.map(part => '<span class="preview-stage-part"><span>'
+      + this.esc(this.t(part.key).replace('{n}', '').trim())
+      + '</span><strong>' + this.esc(part.value + part.suffix) + '</strong></span>').join('');
   },
 
   _sampleCardCaptionHtml(batch, detail = '', status = '') {

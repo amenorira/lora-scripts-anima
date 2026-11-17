@@ -97,6 +97,23 @@ class SampleMetadataTests(unittest.TestCase):
         self.assertEqual((legacy["stage_kind"], legacy["batch_label"]), ("epoch", "Epoch 3"))
         self.assertFalse(legacy["comparable"])
 
+    def test_recorded_sample_ownership_survives_a_shared_artifact_directory(self):
+        original = "original-task:1790000000000000000:anima:6:2400:1"
+        resumed = "resumed-task:1790000000000000001:krea2:6:2400:1"
+        self.write(batch={**self.batch, "id": original, "epoch": 6, "step": 2400})
+        second = self.image.with_name("demo_e000006_00_20261115090000_42.png")
+        Image.new("RGB", (64, 80)).save(second)
+        write_sample_batch(self.root, {**self.batch, "id": resumed, "epoch": 6, "step": 2400},
+                           {second.relative_to(self.root).as_posix(): {"params": self.params, "prompt_index": 0}})
+        previews = newest_previews(str(self.root), force_refresh=True)
+        self.assertEqual({item["sample"]["task_id"] for item in previews}, {"original-task", "resumed-task"})
+        self.assertEqual({item["sample"]["epoch"] for item in previews}, {6})
+        for index, (identifier, expected) in enumerate((("task:123:moss_image:None:400:2", "task"),
+                                                       ("task:123:anima:0:0:1", "task"), ("custom:epoch:6", None))):
+            with self.subTest(identifier=identifier):
+                self.write(batch={**self.batch, "id": identifier, "order": 201 + index})
+                self.assertEqual(self.read()[self.relative]["task_id"], expected)
+
     def test_step_sampling_shows_observed_epoch_without_changing_stage(self):
         self.write(batch={**self.batch, "current_epoch": 3})
         sample = self.read()[self.relative]

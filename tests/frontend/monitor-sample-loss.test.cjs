@@ -103,6 +103,62 @@ test('loss detail availability belongs to the viewed run and historical values c
   assert.equal(value._sampleBatchEpochLoss(value._sampleDataModel().batches.at(-1)).values.overall, .2);
 });
 
+test('shared artifact directories isolate captions, ranking and comparisons by recorded task ownership', () => {
+  const value = app();
+  value.monitorData.active_task = {id: 'current-task'};
+  const own = preview(3), older = preview(3), step = preview(3, 'step');
+  own.sample.task_id = 'current-task';
+  older.path = 'sample/original.png'; older.sample.batch_id = 'original-epoch-3'; older.sample.task_id = 'original-task';
+  value.previews = [own, older, step]; value.previewsVersion++;
+  value.sampleLossMode = 'detailed';
+  const model = value._sampleDataModel();
+  const read = () => model.batches.map(batch => value._sampleBatchEpochLoss(batch));
+  assert.deepEqual(read().map(loss => loss.values.overall), [.0842, null, null]);
+  assert.deepEqual(read()[1].previous, {overall: null, low: null, mid: null, high: null});
+  for (const key of ['overall', 'low']) {
+    value.sampleBatchSortDir = 'loss-' + key;
+    assert.equal(value._sampleOverviewBatches()[0].id, own.sample.batch_id);
+  }
+  value.previewCompareActive = true;
+  value.previewReferences = [older]; value.previewComparisonOrder = [older.path, null];
+  assert.doesNotMatch(value._sampleLossOverlayHtml(own, true), /[+-]?\d+\.\d%/,
+    'an unowned baseline cannot supply a percentage');
+
+  // Same points/run key still need a fresh index when ownership becomes known
+  // or changes, otherwise caption and sorting caches keep the previous answer.
+  const before = value._sampleEpochLossIndex();
+  const order = value._sampleBatchOrder();
+  value.monitorData.active_task.id = 'original-task';
+  assert.notEqual(value._sampleEpochLossIndex(), before);
+  assert.notEqual(value._sampleBatchOrder(), order);
+  assert.deepEqual(read().map(loss => loss.values.overall), [null, .0842, null]);
+  assert.equal(value._sampleOverviewBatches()[0].id, older.sample.batch_id);
+
+  value.selectedRunDir = 'output/original';
+  value.runDetailData = {task_id: 'original-task', tensorboard_loss: [series('loss/epoch_average', [[3, .12]])]};
+  assert.deepEqual(read().map(loss => loss.values.overall), [null, .12, null]);
+  assert.equal(value._sampleOverviewBatches()[0].id, older.sample.batch_id);
+  delete value.runDetailData.task_id;
+  assert.deepEqual(read().map(loss => loss.values.overall), [.12, .12, null], 'old API responses remain usable');
+});
+
+test('legacy filenames and demo batches display loss without task IDs in either API generation', () => {
+  const value = app();
+  const demo = preview(3);
+  demo.sample.batch_id = 'demo-epoch-000003';
+  const name = 'demo_e000001_00_20261115145912_4200.png';
+  value.previews = [{name, path: 'sample/' + name}, demo]; value.previewsVersion++;
+  value.sampleLossMode = 'overall'; value.sampleBatchSortDir = 'loss-overall';
+  const model = value._sampleDataModel();
+  for (const detail of [{tensorboard_loss: value.lossSeries}, {task_id: 'demo-task', tensorboard_loss: value.lossSeries}]) {
+    value.selectedRunDir = 'output/demo'; value.runDetailData = detail;
+    assert.deepEqual(model.batches.map(batch => value._sampleBatchEpochLoss(batch).values.overall), [0, .0842]);
+    assert.equal(value._sampleOverviewBatches()[0].id, model.batches[0].id);
+    assert.match(value._sampleCardCaptionHtml(model.batches[1]), /0\.0842/);
+    assert.match(value._sampleLossOverlayHtml(demo), /\.0842/);
+  }
+});
+
 test('loss preference persists independently and scalar updates replace only captions', () => {
   const value = app(), saved = [], originalStorage = global.localStorage;
   global.localStorage = {getItem: () => JSON.stringify({lossMode: 'detailed'}), setItem: (key, text) => saved.push(JSON.parse(text))};

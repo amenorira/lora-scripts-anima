@@ -110,9 +110,13 @@ window.monitorPreviewsMixin = {
     } catch { /* The controls remain usable without storage. */ }
   },
 
+  get _sampleLossTaskId() {
+    return (this.selectedRunDir ? this.runDetailData?.task_id : this.monitorData?.active_task?.id) || '';
+  },
+
   _sampleEpochLossIndex() {
     const series = this.monitorLossSeries || (this.selectedRunDir ? this.runDetailData?.tensorboard_loss : this.lossSeries) || [];
-    const run = this.selectedRunDir || this.currentOutputRunDir || '';
+    const run = this.selectedRunDir || this.currentOutputRunDir || '', taskId = this._sampleLossTaskId;
     const sources = [];
     for (const item of series) {
       if (!['loss/epoch', 'loss/epoch_average', 'loss/timestep/epoch/low', 'loss/timestep/epoch/mid', 'loss/timestep/epoch/high'].includes(item.tag)) continue;
@@ -122,7 +126,7 @@ window.monitorPreviewsMixin = {
     const cached = this._sampleLossCache;
     // Production metric updates and snapshots replace points. Length and the
     // last point also cover in-place appends without scanning historical values.
-    if (cached?.run === run && cached.sources.length === sources.length && sources.every((source, index) => {
+    if (cached?.run === run && cached.taskId === taskId && cached.sources.length === sources.length && sources.every((source, index) => {
       const previous = cached.sources[index];
       return source.tag === previous.tag && source.points === previous.points && source.length === previous.length
         && source.lastStep === previous.lastStep && source.lastValue === previous.lastValue;
@@ -135,7 +139,7 @@ window.monitorPreviewsMixin = {
       }
       byTag.set(source.tag, points);
     }
-    this._sampleLossCache = {run, sources, byTag};
+    this._sampleLossCache = {run, taskId, sources, byTag};
     return this._sampleLossCache.byTag;
   },
 
@@ -161,10 +165,14 @@ window.monitorPreviewsMixin = {
 
   _sampleBatchEpochLoss(batch) {
     const sample = batch && this._sampleRecord(this.previews[batch.indices[0]]);
+    return this._sampleEpochLoss(sample);
+  },
+
+  _sampleEpochLoss(sample, index = this._sampleEpochLossIndex()) {
     // A mid-epoch step sample must never acquire the later epoch-end loss.
-    // Unknown/custom names likewise cannot borrow the latest training value.
+    // Keep filename-only, imported and older samples usable. Only an explicit
+    // task mismatch rules out the viewed run's epoch loss.
     const epoch = sample?.stage_kind === 'epoch' ? sample.epoch ?? sample.stage_value : null;
-    const index = this._sampleEpochLossIndex();
     const at = number => ({
       overall: index.get('loss/epoch')?.get(number) ?? index.get('loss/epoch_average')?.get(number) ?? null,
       low: index.get('loss/timestep/epoch/low')?.get(number) ?? null,
@@ -172,7 +180,9 @@ window.monitorPreviewsMixin = {
       high: index.get('loss/timestep/epoch/high')?.get(number) ?? null,
     });
     const known = Number.isInteger(epoch) && epoch > 0;
-    return {epoch: known ? epoch : null, values: at(known ? epoch : null), previous: at(known ? epoch - 1 : null)};
+    const taskId = this._sampleLossTaskId;
+    const usable = known && !(sample?.task_id && taskId && sample.task_id !== taskId);
+    return {epoch: known ? epoch : null, values: at(usable ? epoch : null), previous: at(usable ? epoch - 1 : null)};
   },
 
   _sampleLossNumber(value, compact = false) {
@@ -267,10 +277,7 @@ window.monitorPreviewsMixin = {
     if (key) {
       const values = new Map(batches.map(batch => {
         const sample = model.records[batch.indices[0]].sample;
-        const epoch = sample.stage_kind === 'epoch' ? sample.epoch ?? sample.stage_value : null;
-        const value = Number.isInteger(epoch) && epoch > 0 ? key === 'overall'
-          ? lossIndex.get('loss/epoch')?.get(epoch) ?? lossIndex.get('loss/epoch_average')?.get(epoch)
-          : lossIndex.get('loss/timestep/epoch/' + key)?.get(epoch) : null;
+        const value = this._sampleEpochLoss(sample, lossIndex).values[key];
         return [batch.id, Number.isFinite(value) ? value : Infinity];
       }));
       batches.sort((a, b) => values.get(a.id) !== values.get(b.id) ? values.get(a.id) - values.get(b.id) : b.position - a.position);

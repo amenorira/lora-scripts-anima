@@ -61,3 +61,13 @@ class HistoryTests(CrossDriveSandbox):
         self.assertEqual(saved["optimizer_args.eps"]["value"], "None")
         self.assertEqual(saved["lr_scheduler_args.step_rules"]["string_value"], "1:100,0.5")
         self.assertEqual(data["reuse_params"]["step_rules"], "1:200,0.2")
+
+    def test_run_detail_keeps_log_ownership_when_artifacts_are_shared(self):
+        self.make_run("original", task_id="original-task")
+        self.make_run("resumed", task_id="resumed-task")
+        for name in ("original", "resumed"):
+            with self.subTest(name=name):
+                response = asyncio.run(routes.monitor_run_detail(f"output/{name}"))
+                self.assertEqual(response["status"], "success")
+                self.assertEqual(response["data"]["task_id"], f"{name}-task")
+                self.assertEqual(response["data"]["artifact_dir"], str(self.external))
