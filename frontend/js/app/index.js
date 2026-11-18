@@ -176,10 +176,10 @@ document.addEventListener('alpine:init', () => {
         if (this.theme === 'auto') this.resolveTheme();
       });
 
+      this.startRealtime();
+
       this.buildRouteContent();
       routeMounted = true;
-
-      this.startRealtime();
 
       this._initPanelResizer();
 
@@ -366,12 +366,18 @@ document.addEventListener('alpine:init', () => {
 
     _scheduleRoute(route) {
       const prev = this.currentRoute;
-      this.cancelHistoryInteractions?.();
+      this.cancelHistoryInteractions();
       const transitionSeq = ++this._routeTransitionSeq;
       this._pendingRoute = route;
       if (!this.routeTransitioning) {
         this.routeTransitioning = true;
         this.startProgress();
+      }
+      // A tag editor leave must commit in the same turn as its unsaved check.
+      if (prev === 'tagEditor') {
+        this._pendingRoute = '';
+        this._commitRoute(route, prev, transitionSeq);
+        return;
       }
       // The training form mounts hundreds of controls. Leave a short paint
       // window so the progress bar becomes visible before that work starts.
@@ -395,15 +401,10 @@ document.addEventListener('alpine:init', () => {
         this.closeCaptionDetail?.();
       }
       // Cleanup tag editor resources when leaving
-      if (prev === 'tagEditor' && typeof this.tagEditorCleanup === 'function') {
-        this.tagEditorCleanup();
-      }
-      if (prev === 'docs' && route !== 'docs' && typeof this.cleanupDocsReader === 'function') {
-        this.cleanupDocsReader();
-      }
+      if (prev === 'tagEditor') this.tagEditorCleanup();
+      if (prev === 'docs' && route !== 'docs') this.cleanupDocsReader();
       if (prev && prev.startsWith('train-') && !route.startsWith('train-')) {
-        if (typeof this.suspendTrainForm === 'function') this.suspendTrainForm(prev);
-        else if (typeof this.stopSectionScroll === 'function') this.stopSectionScroll();
+        this.suspendTrainForm(prev);
       }
       if (mainContent) this._playRouteEnter(mainContent);
       this.currentRoute = route;
@@ -478,19 +479,14 @@ document.addEventListener('alpine:init', () => {
       const r = this.currentRoute;
       const routeTransition = !!(options && options.routeTransition);
       let progressManagedByRoute = false;
-      if (r !== 'history') this.stopHistoryRefresh?.();
+      if (r !== 'history') this.stopHistoryRefresh();
       if (!r.startsWith('monitor-')) {
         this.stopMonitorRealtime();
-        if ((this.selectedRunDir || this.runDetailData) && typeof this.resetRunDetailState === 'function') {
-          this.resetRunDetailState();
-        } else {
-          this.selectedRunDir = null;
-          this.runDetailData = null;
-        }
+        if (this.selectedRunDir || this.runDetailData) this.resetRunDetailState();
       }
       // Stop rendering a tagger task when leaving; the backend task continues.
-      if (!['tagger', 'ai-captioning'].includes(r) && typeof this.stopTaggerWorkspace === 'function') this.stopTaggerWorkspace();
-      if (r !== 'regularization' && typeof this.stopRegularizationWorkspace === 'function') this.stopRegularizationWorkspace();
+      if (!['tagger', 'ai-captioning'].includes(r)) this.stopTaggerWorkspace();
+      if (r !== 'regularization') this.stopRegularizationWorkspace();
       if (r && r.startsWith('train-')) {
         if (this._trainFormMountedRoute === r) this.buildTrainForm();
         else void this.loadTrainForm();

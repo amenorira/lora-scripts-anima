@@ -38,14 +38,29 @@ def task_topic(task_id: str) -> str:
     return f"task:{task_id}"
 
 
-def offer_realtime(queue: asyncio.Queue, event: dict, topic: str = "") -> None:
+def offer_realtime(queue: asyncio.Queue, event: dict) -> None:
     """Replace an overflowed batch with a resync marker and the newest event."""
     # Both queue operations run synchronously on the owning event loop.
     if queue.full():
+        dropped_topics: set[str] = set()
+        global_resync = False
         while not queue.empty():
-            queue.get_nowait()
-        queue.put_nowait({"op": "resync_required", "topics": [topic] if topic else [],
-                          "reason": "slow_consumer", "server_instance_id": SERVER_INSTANCE_ID})
+            dropped = queue.get_nowait()
+            if dropped.get("op") == "event":
+                dropped_topic = dropped.get("topic")
+                if dropped_topic:
+                    dropped_topics.add(dropped_topic)
+                else:
+                    global_resync = True
+            elif dropped.get("op") == "resync_required":
+                affected = dropped.get("topics") or []
+                if affected:
+                    dropped_topics.update(affected)
+                else:
+                    global_resync = True
+        if global_resync or dropped_topics:
+            queue.put_nowait({"op": "resync_required", "topics": [] if global_resync else sorted(dropped_topics),
+                              "reason": "slow_consumer", "server_instance_id": SERVER_INSTANCE_ID})
     queue.put_nowait(event)
 
 
@@ -113,11 +128,11 @@ class RealtimeHub:
 
     Events remain process-local by design.  A new backend instance receives a
     new ``SERVER_INSTANCE_ID``; clients must then request a fresh snapshot
-    instead of attempting to replay cursors from the old process.
+    instead of attempting to replay cursors from the old process. All state
+    changes run without suspension on the server's event loop.
     """
 
     def __init__(self) -> None:
-        self._lock = asyncio.Lock()
         self._subscribers: dict[str, set[asyncio.Queue[dict[str, Any]]]] = defaultdict(set)
         self._history: dict[str, deque[dict[str, Any]]] = defaultdict(deque)
         self._history_bytes: dict[str, int] = defaultdict(int)
@@ -126,7 +141,7 @@ class RealtimeHub:
         self._sequence_floor = 0
 
     def _prune(self) -> None:
-        """Called under the hub lock; live subscriptions keep their sequence."""
+        """Live subscriptions keep their sequence."""
         now = time.time()
         removable = [(topic, ended) for topic, ended in self._terminal_topics.items()
                      if not self._subscribers.get(topic)]
@@ -141,53 +156,51 @@ class RealtimeHub:
             self._terminal_topics.pop(topic, None)
 
     async def prune(self) -> None:
-        async with self._lock:
-            self._prune()
+        self._prune()
 
     async def publish(self, topic: str, event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         """Publish one canonical event without ever blocking a producer."""
         emitted_at = time.time()
-        async with self._lock:
-            self._next_seq[topic] = self._next_seq.get(topic, self._sequence_floor) + 1
-            event: dict[str, Any] = {
-                "op": "event",
-                "topic": topic,
-                "seq": self._next_seq[topic],
-                "type": event_type,
-                "emitted_at": emitted_at,
-                "payload": payload,
-            }
-            history = self._history[topic]
-            history.append(event)
-            self._history_bytes[topic] += _json_size(event)
-            while history and (
-                len(history) > _MAX_HISTORY_EVENTS
-                or self._history_bytes[topic] > _MAX_HISTORY_BYTES
-            ):
-                self._history_bytes[topic] -= _json_size(history.popleft())
+        self._next_seq[topic] = self._next_seq.get(topic, self._sequence_floor) + 1
+        event: dict[str, Any] = {
+            "op": "event",
+            "topic": topic,
+            "seq": self._next_seq[topic],
+            "type": event_type,
+            "emitted_at": emitted_at,
+            "payload": payload,
+        }
+        history = self._history[topic]
+        history.append(event)
+        self._history_bytes[topic] += _json_size(event)
+        while history and (
+            len(history) > (1 if topic == "hardware" else _MAX_HISTORY_EVENTS)
+            or self._history_bytes[topic] > _MAX_HISTORY_BYTES
+        ):
+            self._history_bytes[topic] -= _json_size(history.popleft())
 
-            if topic.startswith("task:") and event_type in {"task.status", "task.result"}:
-                if payload.get("status") in _TERMINAL_TASK_STATUSES:
-                    self._terminal_topics.setdefault(topic, emitted_at)
-                    if len(self._terminal_topics) > _MAX_TERMINAL_TOPICS:
-                        self._prune()
-                else:
-                    self._terminal_topics.pop(topic, None)
+        if topic.startswith("task:") and event_type in {"task.status", "task.result"}:
+            if payload.get("status") in _TERMINAL_TASK_STATUSES:
+                self._terminal_topics.setdefault(topic, emitted_at)
+                if len(self._terminal_topics) > _MAX_TERMINAL_TOPICS:
+                    self._prune()
+            else:
+                self._terminal_topics.pop(topic, None)
 
-            # Enforce capacity at its only growth point; the monitor owns TTL scans.
-            total = sum(self._history_bytes.values())
-            if total > _MAX_TOTAL_HISTORY_BYTES:
-                for oldest_topic in sorted(self._history, key=lambda key: self._history[key][0]["emitted_at"] if self._history[key] else emitted_at):
-                    history = self._history[oldest_topic]
-                    while history and total > _MAX_TOTAL_HISTORY_BYTES:
-                        size = _json_size(history.popleft())
-                        self._history_bytes[oldest_topic] -= size
-                        total -= size
+        # Enforce capacity at its only growth point; the monitor owns TTL scans.
+        total = sum(self._history_bytes.values())
+        if total > _MAX_TOTAL_HISTORY_BYTES:
+            for oldest_topic in sorted(self._history, key=lambda key: self._history[key][0]["emitted_at"] if self._history[key] else emitted_at):
+                history = self._history[oldest_topic]
+                while history and total > _MAX_TOTAL_HISTORY_BYTES:
+                    size = _json_size(history.popleft())
+                    self._history_bytes[oldest_topic] -= size
+                    total -= size
 
-            subscribers = list(self._subscribers.get(topic, ()))
+        subscribers = list(self._subscribers.get(topic, ()))
 
         for queue in subscribers:
-            offer_realtime(queue, event, topic)
+            offer_realtime(queue, event)
         return event
 
     async def subscribe(
@@ -202,39 +215,40 @@ class RealtimeHub:
         except (TypeError, ValueError):
             resume_seq = 0
 
-        async with self._lock:
-            history = self._history.get(topic, deque())
-            latest_seq = self._next_seq.get(topic, 0)
-            replay: list[dict[str, Any]] = []
-            resync_required = bool(resume_seq and not latest_seq)
+        history = self._history.get(topic, deque())
+        latest_seq = self._next_seq.get(topic, 0)
+        replay: list[dict[str, Any]] = []
+        resync_required = bool(resume_seq and not latest_seq)
 
-            if latest_seq:
-                if resume_seq > latest_seq:
+        if latest_seq:
+            if resume_seq > latest_seq:
+                resync_required = True
+            elif topic == "hardware" and history:
+                # Hardware is a latest-value stream; intermediate samples
+                # are not needed to reconstruct the current display.
+                replay = [history[-1]] if latest_seq > resume_seq else []
+            elif history:
+                oldest_seq = history[0]["seq"]
+                if resume_seq < oldest_seq - 1:
                     resync_required = True
-                elif history:
-                    oldest_seq = history[0]["seq"]
-                    if resume_seq < oldest_seq - 1:
-                        resync_required = True
-                    else:
-                        replay = [event for event in history if event["seq"] > resume_seq]
-                elif latest_seq > resume_seq:
-                    resync_required = True
+                else:
+                    replay = [event for event in history if event["seq"] > resume_seq]
+            elif latest_seq > resume_seq:
+                resync_required = True
 
-            self._subscribers[topic].add(queue)
+        self._subscribers[topic].add(queue)
         return queue, replay, resync_required
 
     async def unsubscribe(self, topic: str, queue: asyncio.Queue[dict[str, Any]]) -> None:
-        async with self._lock:
-            subscribers = self._subscribers.get(topic)
-            if not subscribers:
-                return
-            subscribers.discard(queue)
-            if not subscribers:
-                self._subscribers.pop(topic, None)
+        subscribers = self._subscribers.get(topic)
+        if not subscribers:
+            return
+        subscribers.discard(queue)
+        if not subscribers:
+            self._subscribers.pop(topic, None)
 
     async def subscriber_count(self, topic: str) -> int:
-        async with self._lock:
-            return len(self._subscribers.get(topic, ()))
+        return len(self._subscribers.get(topic, ()))
 
     async def cursors(self) -> dict[str, int]:
         """Return the latest sequence for every topic in this process.
@@ -244,8 +258,7 @@ class RealtimeHub:
         events created after that snapshot, rather than re-appending old logs
         or metric points that are already in it.
         """
-        async with self._lock:
-            return dict(self._next_seq)
+        return dict(self._next_seq)
 
 
 def _normalize_status(snapshot: dict[str, Any]) -> str:
@@ -308,7 +321,6 @@ class RealtimeTaskRegistry:
 
     def __init__(self, hub: RealtimeHub) -> None:
         self._hub = hub
-        self._lock = asyncio.Lock()
         self._tasks: dict[str, _TrackedTask] = {}
 
     async def register(
@@ -320,8 +332,7 @@ class RealtimeTaskRegistry:
         on_expire: Callable[[], None] | None = None,
     ) -> None:
         tracked = _TrackedTask(task_id, kind, snapshot_provider, on_expire)
-        async with self._lock:
-            self._tasks[task_id] = tracked
+        self._tasks[task_id] = tracked
         await self._hub.publish(
             task_topic(task_id),
             "task.status",
@@ -329,17 +340,15 @@ class RealtimeTaskRegistry:
         )
 
     async def poll(self) -> None:
-        async with self._lock:
-            tasks = list(self._tasks.values())
+        tasks = list(self._tasks.values())
 
         now = time.time()
         for tracked in tasks:
             if tracked.terminal_at is not None:
                 if now - tracked.terminal_at > _TERMINAL_TASK_TTL:
-                    async with self._lock:
-                        if self._tasks.get(tracked.task_id) is not tracked:
-                            continue
-                        del self._tasks[tracked.task_id]
+                    if self._tasks.get(tracked.task_id) is not tracked:
+                        continue
+                    del self._tasks[tracked.task_id]
                     if tracked.on_expire:
                         await asyncio.to_thread(tracked.on_expire)
                 continue
@@ -362,8 +371,7 @@ class RealtimeTaskRegistry:
             tracked.last_signature = signature
 
     async def snapshot(self) -> list[dict[str, Any]]:
-        async with self._lock:
-            tasks = list(self._tasks.values())
+        tasks = list(self._tasks.values())
 
         result: list[dict[str, Any]] = []
         for tracked in tasks:

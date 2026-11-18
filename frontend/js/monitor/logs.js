@@ -8,6 +8,18 @@ window.monitorLogCoreMixin = {
   },
   _logPageSize() { return (window.UI_CONSTANTS && window.UI_CONSTANTS.LOG && window.UI_CONSTANTS.LOG.FULL_PAGE_SIZE) || 1000; },
 
+  _resetLogPage() {
+    if (this._logRefreshFeedbackTimer) clearTimeout(this._logRefreshFeedbackTimer);
+    this._logRefreshFeedbackTimer = null;
+    this.logRefreshFeedback = false;
+    this.logFullLines = [];
+    this.logFullOffset = 0;
+    this.logTotal = 0;
+    this._liveLogEnd = 0;
+    this.logFullMatches = [];
+    this._logFullResultQuery = '';
+  },
+
   _applyMonitorLogSnapshot(lines = [], total = 0, preserveFull = false) {
     preserveFull = preserveFull && total >= this.logTotal
       && !((this.logAutoScroll || this._logAtBottom) && this.logFullOffset + this.logFullLines.length >= this.logTotal);

@@ -6,7 +6,7 @@
 
 window.monitorCoreMixin = {
   // ── State ──────────────────────────────────────────────
-  monitorData: null,
+  monitorData: null, monitorDetailError: false,
   previewsVersion: 0, trainParamsVersion: 0,
   runDetailLoading: false, runDetailError: '',
   gpuInfo: null, sysInfo: null, lossSeries: [], lossDataVersion: 0, trainParams: [],
@@ -51,14 +51,8 @@ window.monitorCoreMixin = {
   _logSliceRequestSeq: 0,      // 日志分页请求序号；切换实时/历史源时丢弃过期响应
   _logFullSourceKey: '',       // 当前完整日志缓冲所属的 task/run，切页时用于安全复用
 
-  _resetLogRefreshFeedback() {
-    if (this._logRefreshFeedbackTimer) clearTimeout(this._logRefreshFeedbackTimer);
-    this._logRefreshFeedbackTimer = null;
-    this.logRefreshFeedback = false;
-  },
-
   // ── 历史页筛选状态 ──
-  historySearch: '', historyFilter: 'all',  // all|completed|failed|terminated
+  historySearch: '', historyFilter: 'all', historyPage: 1, historyPageSize: 30, historyFilteredCount: 0,
   historyLoading: false, historyRefreshing: false, historyRefreshFeedback: false,
   historyError: '', historyDeleting: '', _historyLoaded: false, _historyRefreshFeedbackTimer: null,
   _historyRequestSeq: 0, _historyTimer: null, _historyTaskSignature: null, _historyProgressPending: false,
@@ -100,6 +94,7 @@ window.monitorCoreMixin = {
   // ── Realtime subscription state ────────────────────────
   _monitorRealtimeTopic: null,
   _monitorRealtimeDetailGeneration: 0,
+  _monitorRealtimeDetailRequest: null,
   monitorPerfSamples: null,
   _monitorPerfVersion: 0,
   _monitorProgressVersion: 0,
@@ -202,45 +197,56 @@ window.monitorCoreMixin = {
     if (changed && !this.selectedRunDir && this.currentRoute === 'monitor-dashboard') this.scheduleRender();
   },
 
-  startTrainingStatePoll() {
-    if (this._statePollTimer) return;
-    const poll = async () => {
-      await this._pollTrainingState();
-      this._statePollTimer = setTimeout(poll, document.hidden ? 10000 : this.liveTaskId || this.regularizationActive ? 1500 : 5000);
-    };
-    this._statePollTimer = setTimeout(poll, 0);
+  _scheduleTrainingStatePoll(delay) {
+    clearTimeout(this._statePollTimer);
+    this._statePollTimer = setTimeout(async () => {
+      this._statePollTimer = null;
+      try { await this._pollTrainingState(); }
+      finally {
+        const delay = document.hidden ? 10000 : this.liveTaskId || this.regularizationActive ? 1500 : 5000;
+        this._scheduleTrainingStatePoll(delay);
+      }
+    }, delay);
+  },
+
+  _wakeTrainingStatePoll() {
+    if (!this._statePollInFlight) this._scheduleTrainingStatePoll(0);
   },
 
   async _pollTrainingState() {
     if (this._statePollInFlight) return;
     this._statePollInFlight = true;
     this._statePollDiscard = false;
-    const requestedAt = Date.now();
-    let timeout;
+    const requestedAt = Date.now(), requestedInstanceId = this.realtimeInstanceId;
+    let timeout, snapshot;
     try {
       const controller = new AbortController();
       timeout = setTimeout(() => controller.abort(), 4000);
       const response = await fetch('/api/realtime/state?hardware=' + !this.realtimeReady, { cache: 'no-store', signal: controller.signal });
-      if (!response.ok) return;
+      if (!response.ok) throw new Error('state request failed');
       const body = await response.json();
-      if (body.status !== 'success' || !body.data) return;
-      const snapshot = body.data;
-      const nextId = snapshot.server_instance_id;
-      if (nextId && this.realtimeInstanceId && nextId !== this.realtimeInstanceId) {
-        this.realtimeInstanceId = nextId;
-        this._saveRealtimeInstanceId();
-        this._handleRealtimeServerRestart();
-      }
-      // WS 掉线时资源圆环仍有数据（状态轮询顺带带回硬件采样）。
-      if (!this.realtimeReady && snapshot.hardware) this.handleRealtimeHardware(snapshot.hardware);
-      if (typeof this.applyRegularizationActivity === 'function') this.applyRegularizationActivity(snapshot, requestedAt);
-      if (!this._statePollDiscard) this._applyManagedTrainingState(snapshot, requestedAt);
-    } catch (_) {
-      // 后端不可达：保持最后已知状态；连接指示由探针/WS 状态机负责。
-    } finally {
+      if (body.status !== 'success' || !body.data) throw new Error('invalid state response');
+      snapshot = body.data;
+    } catch (_) { return; }
+    finally {
       clearTimeout(timeout);
       this._statePollInFlight = false;
     }
+    this._recordRealtimeHttpResult(true);
+    const nextId = snapshot.server_instance_id;
+    if (this.realtimeInstanceId !== requestedInstanceId && nextId !== this.realtimeInstanceId) return;
+    const restarted = !!nextId && !!this.realtimeInstanceId && nextId !== this.realtimeInstanceId;
+    const identified = !!nextId && !this.realtimeInstanceId;
+    if (restarted || identified) {
+      this.realtimeInstanceId = nextId;
+      this._saveRealtimeInstanceId();
+      if (restarted) this._handleRealtimeServerRestart();
+    }
+    // WS 掉线时资源圆环仍有数据（状态轮询顺带带回硬件采样）。
+    if (!this.realtimeReady && snapshot.hardware) this.handleRealtimeHardware(snapshot.hardware);
+    this.applyRegularizationActivity(snapshot, requestedAt);
+    if (!this._statePollDiscard) this._applyManagedTrainingState(snapshot, requestedAt);
+    if (restarted || (identified && (this.liveTaskId || !this.currentOutputRunDir))) void this.refreshMonitorRealtimeDetail();
   },
 
   _applyManagedTrainingState(snapshot, requestedAt) {
@@ -354,15 +360,9 @@ window.monitorCoreMixin = {
     );
 
     if (nextLogSourceKey && this._logFullSourceKey && this._logFullSourceKey !== nextLogSourceKey) {
-      this._resetLogRefreshFeedback();
+      this._resetLogPage();
       this._logSliceRequestSeq++;
       this.logFullLoading = false;
-      this.logFullLines = [];
-      this.logFullOffset = 0;
-      this.logTotal = 0;
-      this._liveLogEnd = 0;
-      this.logFullMatches = [];
-      this._logFullResultQuery = '';
       this.logFullMatchIdx = -1;
       this._logFullLoaded = false;
       this._logFullNeedsResync = false;
@@ -434,7 +434,7 @@ window.monitorCoreMixin = {
 
   resetRealtimeMonitorState() {
     this._invalidatePreviewRequest();
-    if (typeof this.closePreviewLightbox === 'function') this.closePreviewLightbox();
+    this.closePreviewLightbox();
     const wasRunning = !!(
       (this.monitorData && this.monitorData.state === 'RUNNING')
       || this._monitorRealtimeTopic
@@ -461,13 +461,7 @@ window.monitorCoreMixin = {
       if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
       return wasRunning;
     }
-    this._resetLogRefreshFeedback();
-    this.logFullLines = [];
-    this.logFullOffset = 0;
-    this.logTotal = 0;
-    this._liveLogEnd = 0;
-    this.logFullMatches = [];
-    this._logFullResultQuery = '';
+    this._resetLogPage();
     this._logFullSourceKey = '';
     this.trainParams = [];
     this.trainParamsVersion++;
@@ -550,15 +544,9 @@ window.monitorCoreMixin = {
     const eventSourceKey = this._monitorRealtimeTopic || '';
 
     if (eventSourceKey && this._logFullSourceKey && this._logFullSourceKey !== eventSourceKey) {
-      this._resetLogRefreshFeedback();
+      this._resetLogPage();
       this._logSliceRequestSeq++;
       this.logFullLoading = false;
-      this.logTotal = 0;
-      this._liveLogEnd = 0;
-      this.logFullLines = [];
-      this.logFullOffset = 0;
-      this.logFullMatches = [];
-      this._logFullResultQuery = '';
       this.logFullMatchIdx = -1;
       this._logFullLoaded = false;
       this._logFullNeedsResync = true;
@@ -602,7 +590,7 @@ window.monitorCoreMixin = {
 
     if (!this.selectedRunDir && this.currentRoute === 'monitor-dashboard') {
       this.scheduleRender();
-    } else if (['tagger', 'ai-captioning'].includes(this.currentRoute) && typeof this.renderTaggerResourceBar === 'function') {
+    } else if (['tagger', 'ai-captioning'].includes(this.currentRoute)) {
       this.renderTaggerResourceBar();
     } else if (this.currentRoute === 'regularization') {
       this.renderRegularizationResourceBar();
@@ -631,61 +619,73 @@ window.monitorCoreMixin = {
     if (!this.selectedRunDir) this._setMonitorRealtimeTask(this.liveTaskId);
     if (!this.monitorData) this.monitorData = { state: 'IDLE', state_label: this.t('monitor.idle') };
     this.renderDashboard();
-    if (this.realtimeSnapshot) {
-      if (!this.monitorData?.detail) this.applyRealtimeMonitorSnapshot(this.realtimeSnapshot);
-      // Curves, progress and artifacts are refreshed from disk on entry. A
-      // complete log page for the same task stays in memory so queued replay
-      // can fill the page-switch gap without a later HTTP response replacing it.
-      void this.refreshMonitorRealtimeDetail();
-    }
+    // HTTP detail also works when the socket has never connected.
+    void this.refreshMonitorRealtimeDetail();
   },
-  async refreshMonitorRealtimeDetail() {
+  async refreshMonitorRealtimeDetail(afterPending = false) {
     if (this.currentRoute !== 'monitor-dashboard' || this.selectedRunDir) return;
     const runDir = this.currentOutputRunDir;
-    if (!this.selectedRunDir && !this.liveTaskId && runDir) {
-      const generation = ++this._monitorRealtimeDetailGeneration;
-      const versions = { logs: this._logObservationVersion || 0, outputs: this._outputCountVersion || 0, progress: this._monitorProgressVersion || 0, previews: this._previewSnapshotSeq };
-      try {
-        const response = await fetch('/api/monitor/run-detail?run_dir=' + encodeURIComponent(runDir));
-        const body = await response.json();
-        if (generation !== this._monitorRealtimeDetailGeneration || this.selectedRunDir || this.liveTaskId || this.currentOutputRunDir !== runDir) return;
-        if (body.status === 'success') {
-          this.applyRealtimeMonitorSnapshot({ monitor: Object.assign({}, body.data, {
-            detail: true, active_task: this.monitorData.active_task,
-          }) }, versions);
-          this._logFullNeedsResync = true;
-          this._outputFilesNeedsRefresh = true;
-          this.renderDashboard();
-        }
-      } catch (_) { this.toast(this.t('monitor.loadRunFailed'), 'error'); }
-      return;
-    }
-    // 详情是 HTTP 读取，不要求 WS 存活：隧道弱网下 WS 可能长期不可用，
-    // 而状态轮询仍在工作。socket 在线时传入它作为过期判据，离线时传 null。
-    const socket = this.realtimeSocket && this.realtimeSocket.readyState === WebSocket.OPEN
-      ? this.realtimeSocket
-      : null;
-    const generation = ++this._monitorRealtimeDetailGeneration;
-    await this._refreshRealtimeSnapshot(this.realtimeInstanceId, socket, {
-      monitorDetail: true,
-      monitorDetailGeneration: generation,
-      preserveSubscribedCursors: true,
-    });
-    if (this.currentRoute !== 'monitor-dashboard' || generation !== this._monitorRealtimeDetailGeneration) return;
-    // If this call joined a compact bootstrap already in flight, issue one
-    // detail request after it settles instead of leaving the dashboard empty.
-    if (this.currentRoute === 'monitor-dashboard'
-      && generation === this._monitorRealtimeDetailGeneration
-      && this.realtimeSnapshot
-      && !(this.monitorData && this.monitorData.detail)) {
-      await this._refreshRealtimeSnapshot(this.realtimeInstanceId, socket, {
-        monitorDetail: true,
-        monitorDetailGeneration: generation,
-        preserveSubscribedCursors: true,
+    const taskId = this.liveTaskId, boundary = this.liveTaskBoundaryAt;
+    const historical = !taskId && runDir;
+    const instanceId = historical ? null : this.realtimeInstanceId;
+    const key = JSON.stringify([instanceId, taskId, runDir, boundary]);
+    const pending = this._monitorRealtimeDetailRequest;
+    if (pending && pending.key === key && pending.generation === this._monitorRealtimeDetailGeneration) {
+      if (!afterPending) return pending.promise;
+      pending.followup ||= pending.promise.then(() => {
+        if (pending.generation === this._monitorRealtimeDetailGeneration) return this.refreshMonitorRealtimeDetail();
       });
+      return pending.followup;
     }
+    if (pending) pending.controller.abort();
+    const generation = ++this._monitorRealtimeDetailGeneration;
+    this.monitorDetailError = false;
+    const versions = { logs: this._logObservationVersion || 0, outputs: this._outputCountVersion || 0, progress: this._monitorProgressVersion || 0, previews: this._previewSnapshotSeq };
+    const request = { key, generation, controller: new AbortController(), promise: null };
+    const isCurrent = () => this.currentRoute === 'monitor-dashboard' && !this.selectedRunDir
+      && generation === this._monitorRealtimeDetailGeneration && this.liveTaskId === taskId
+      && this.liveTaskBoundaryAt === boundary && this.currentOutputRunDir === runDir
+      && (historical || this.realtimeInstanceId === instanceId);
+    request.promise = (async () => {
+      const url = historical ? '/api/monitor/run-detail?run_dir=' + encodeURIComponent(runDir)
+        : '/api/realtime/monitor-detail';
+      const timeout = historical ? null : setTimeout(() => request.controller.abort(), 10000);
+      let body;
+      try {
+        for (let attempt = 0; ; attempt++) {
+          try {
+            const response = await fetch(url, { signal: request.controller.signal });
+            body = await response.json();
+            if (!response.ok || body.status !== 'success' || !body.data) throw new Error('monitor detail unavailable');
+            break;
+          } catch (error) {
+            if (attempt || !isCurrent() || request.controller.signal.aborted) throw error;
+          }
+        }
+      } catch (_) {
+        if (isCurrent()) { this.monitorDetailError = true; this.finishProgress(); }
+        return;
+      } finally {
+        if (timeout) clearTimeout(timeout);
+        if (this._monitorRealtimeDetailRequest?.generation === generation) this._monitorRealtimeDetailRequest = null;
+      }
+      if (!isCurrent()) return;
+      if (historical) {
+        this.applyRealtimeMonitorSnapshot({ monitor: Object.assign({}, body.data, {
+          detail: true, active_task: this.monitorData.active_task,
+        }) }, versions);
+        this._logFullNeedsResync = true;
+        this._outputFilesNeedsRefresh = true;
+        this.renderDashboard();
+      } else if (!instanceId || body.data.server_instance_id === instanceId) {
+        this.applyRealtimeMonitorSnapshot(body.data, versions);
+      }
+    })();
+    this._monitorRealtimeDetailRequest = request;
+    return request.promise;
   },
   stopMonitorRealtime() {
+    this.monitorDetailError = false;
     this._invalidatePreviewRequest();
     this._sampleLayoutAction++;
     this._cancelSampleGridMotion?.(this._sampleOverviewPanel?.()?.querySelector('.preview-grid'));
@@ -694,6 +694,7 @@ window.monitorCoreMixin = {
     if (this._monitorClockTimer) clearInterval(this._monitorClockTimer);
     this._monitorClockTimer = null;
     this._monitorRealtimeDetailGeneration++;
+    this._monitorRealtimeDetailRequest?.controller.abort();
     this.realtimeUnsubscribe('hardware');
     this.realtimeUnsubscribe('artifacts');
     // 任务订阅由训练生命周期管理；离开页面只暂停绘制，继续维护当前任务的曲线。
@@ -703,7 +704,7 @@ window.monitorCoreMixin = {
     this._logFullSlide = false;
     this._cancelPreviewMediaQueue();
     this._releasePreviewMediaObjectUrls();
-    if (typeof this.closePreviewLightbox === 'function') this.closePreviewLightbox();
+    this.closePreviewLightbox();
   },
 
 };

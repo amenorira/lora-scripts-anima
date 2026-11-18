@@ -13,8 +13,8 @@ function app(overrides = {}) {
     lossSeries: [], previews: [], logFullLines: [],
     _previewMediaObjectUrls: [], _realtimeTopics: new Set(),
     t: key => key, renderDashboard() {}, scheduleRender() {},
-    startProgress() {}, finishProgress() {}, toast() {},
-    _sendRealtimeSubscriptions() {}, _saveRealtimeCursors() {},
+    startProgress() {}, finishProgress() {}, toast() {}, closePreviewLightbox() {},
+    _sendRealtimeSubscriptions() {},
     _saveRealtimeInstanceId() {}, _applyRealtimeSnapshotCursors() {},
   }, overrides);
   return value;
@@ -53,6 +53,28 @@ test('page switches retain the task subscription and history does not overwrite 
   a.stopMonitorRealtime();
 });
 
+test('dashboard loads details even if the socket has never produced a snapshot', () => {
+  let reads = 0;
+  const a = app({ refreshMonitorRealtimeDetail() { reads++; } });
+  a.startMonitorRealtime();
+  assert.equal(reads, 1);
+  a.stopMonitorRealtime();
+});
+
+test('opening the dashboard does not replace newer hardware with an old bootstrap sample', async () => {
+  const a = app({ currentRoute: 'home', realtimeInstanceId: 'server', monitorData: { state: 'IDLE' },
+    applyRealtimeTaggerSnapshot() {}, applyRealtimeRegularizationSnapshot() {},
+    applyRealtimeEnvironmentSnapshot() {}, refreshMonitorRealtimeDetail() {} });
+  global.fetch = async () => response({ server_instance_id: 'server',
+    hardware: { gpu: { sample: 1 } }, monitor: { detail: false } });
+  assert.equal(await a._refreshRealtimeSnapshot('server'), true);
+  a.handleRealtimeHardware({ gpu: { sample: 2 } });
+  a.currentRoute = 'monitor-dashboard';
+  a.startMonitorRealtime();
+  assert.equal(a.gpuInfo.sample, 2);
+  a.stopMonitorRealtime();
+});
+
 test('realtime logs detect a gap independently of the HTTP page total', () => {
   const a = app({_logFullSourceKey: 'task:A', _liveLogEnd: 100, logTotal: 105,
     logFullOffset: 0, logFullLines: ['page one'], logAutoScroll: false});
@@ -63,11 +85,22 @@ test('realtime logs detect a gap independently of the HTTP page total', () => {
   assert.deepEqual(a.logFullLines, ['page one']);
 });
 
-test('snapshot started before task switch cannot overwrite the new task', async () => {
+test('truncated metric events refresh details without advancing transport cursors', () => {
+  let refreshes = 0;
+  const a = app({ refreshMonitorRealtimeDetail() { refreshes++; }, _realtimeCursors: { 'task:A': 4 } });
+  a.handleRealtimeTaskMetrics({ points: {}, truncated: true });
+  assert.equal(refreshes, 1);
+  assert.equal(a._realtimeCursors['task:A'], 4);
+  a.currentRoute = 'home';
+  a.handleRealtimeTaskMetrics({ points: {}, truncated: true });
+  assert.equal(refreshes, 1);
+});
+
+test('monitor detail started before task switch cannot overwrite the new task', async () => {
   const pending = deferred();
   global.fetch = () => pending.promise;
   const a = app();
-  const request = a._refreshRealtimeSnapshot(null, null, { monitorDetail: true });
+  const request = a.refreshMonitorRealtimeDetail();
   a.claimLiveTask('B');
   a.monitorData = { state: 'RUNNING', active_task: { id: 'B' }, step: 2 };
   pending.resolve(response(snapshot('A')));

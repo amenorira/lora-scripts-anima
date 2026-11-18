@@ -22,6 +22,7 @@ function restartHarness() {
     currentRoute:'regularization', realtimeReady:true, realtimeState:'online',
     regTask:{task_id:'old-task',run_key:'reg_old',status:'running',updated_at:100}, regRunKey:'reg_old',
     realtimeUnsubscribe(){}, toast(){}, t:key=>key, regSyncTimer(){},
+    resetRealtimeMonitorState(){}, resetRealtimeTrainingState(){}, resetRealtimeTaggerState(){}, resetRealtimeEnvironmentState(){},
     regRefreshRuns:async()=>{}, regLoadLogs:async()=>{}, regReportError:message=>assert.fail(message),
   });
 }
@@ -88,3 +89,150 @@ for (const eventFirst of [false, true]) {
     assert.deepEqual(unsubscribed, ['task:old-task']);
   });
 }
+test('concurrent regularization log reads share the in-flight request', async () => {
+  const pending = deferred(), requests = [];
+  const { window } = loadFrontend('regularization/index', { window: {} });
+  const app = composeMixins(window.regularizationMixin, {
+    regRunKey: 'reg_one', regLogs: [], regRequest: path => { requests.push(path); return pending.promise; },
+  });
+  const first = app.regLoadLogs(), second = app.regLoadLogs();
+  assert.equal(requests.length, 1);
+  pending.resolve(['line']);
+  await Promise.all([first, second]);
+  assert.deepEqual(Array.from(app.regLogs), ['line']);
+});
+
+test('terminal log refresh starts a fresh read while an older read is pending', async () => {
+  for (const failed of [false, true]) {
+    const pending = deferred();
+    let calls = 0;
+    const { window } = loadFrontend('regularization/index', { window: {} });
+    const app = composeMixins(window.regularizationMixin, {
+      regRunKey: 'reg_one', regLogs: [], regRequest: () => ++calls === 1 ? pending.promise : Promise.resolve(['final']),
+    });
+    const first = app.regLoadLogs(), terminal = app.regLoadLogs(true);
+    await terminal;
+    assert.equal(calls, 2);
+    if (failed) pending.reject(new Error('temporary'));
+    else pending.resolve(['old']);
+    await first;
+    assert.deepEqual(app.regLogs, ['final']);
+  }
+});
+
+test('leaving regularization ignores pending log reads without another refresh', async () => {
+  for (const failed of [false, true]) {
+    const pending = deferred();
+    let calls = 0;
+    const { window } = loadFrontend('regularization/index', { window: {}, clearTimeout, clearInterval });
+    const app = composeMixins(window.regularizationMixin, {
+      currentRoute: 'regularization', regRunKey: 'reg_one', regLogs: [],
+      regRequest: () => { calls++; return pending.promise; }, realtimeUnsubscribe() {},
+    });
+    const first = app.regLoadLogs(), terminal = app.regLoadLogs(true);
+    app.currentRoute = 'home';
+    app.stopRegularizationWorkspace();
+    if (failed) pending.reject(new Error('old request'));
+    else pending.resolve(['old']);
+    await Promise.all([first, terminal]);
+    assert.equal(calls, 2);
+    assert.deepEqual(app.regLogs, []);
+  }
+});
+
+test('resuming or regenerating an inspected run reads results once', async () => {
+  for (const action of ['resume', 'regenerate']) {
+    let reads = 0;
+    const { window } = loadFrontend('regularization/index', { window: {} });
+    const task = { run_key: 'reg_one', task_id: 'new-task', status: 'running', completed: 2, failed: 0 };
+    const app = composeMixins(window.regularizationMixin, {
+      currentRoute: 'regularization', regTab: 'inspect', regRunKey: 'reg_one',
+      regTask: { run_key: 'reg_one', task_id: 'old-task', status: 'finished', completed: 1 },
+      regSelected: { index: 1 }, trainingActive: false, showConfirmModal: false,
+      regRequest: async () => task, regLoadResults: async () => { reads++; },
+      regSyncTimer() {}, realtimeSubscribe() {}, realtimeUnsubscribe() {}, t: key => key,
+      openConfirm: async () => 'confirm', regReportError: error => assert.fail(error),
+    });
+    if (action === 'resume') await app.regResume();
+    else await app.regMutate(app.regSelected, 'regenerate');
+    assert.equal(reads, 1, action);
+    assert.equal(app.regTask.task_id, 'new-task');
+  }
+});
+
+test('a resumed run that finishes immediately refreshes terminal logs', async () => {
+  const oldLogs = deferred();
+  let logReads = 0;
+  const { window } = loadFrontend('regularization/index', { window: {} });
+  const finished = { run_key: 'reg_one', task_id: 'new-task', status: 'finished', completed: 2, failed: 0 };
+  const app = composeMixins(window.regularizationMixin, {
+    currentRoute: 'regularization', regTab: 'settings', regRunKey: 'reg_one', regSettings: {}, regDefaults: {},
+    regTask: { run_key: 'reg_one', task_id: 'old-task', status: 'finished', completed: 1 },
+    regRequest: async path => {
+      if (path.endsWith('/logs')) return ++logReads === 1 ? oldLogs.promise : ['final'];
+      if (path === '/runs') return [finished];
+      return finished;
+    },
+    regFetchItems: async () => ({ items: [], total: 0, settings: {}, summary: finished }),
+    regSyncTimer() {}, realtimeSubscribe() {}, realtimeUnsubscribe() {},
+    regReportError: error => assert.fail(error),
+  });
+  const first = app.regLoadLogs();
+  await app.regResume();
+  oldLogs.resolve(['pre-terminal']);
+  await first;
+  assert.equal(logReads, 2);
+  assert.deepEqual(app.regLogs, ['final']);
+});
+
+test('reading saved settings opens the settings tab and loads its logs', async () => {
+  let logs = 0;
+  const { window } = loadFrontend('regularization/index', { window: {} });
+  const app = composeMixins(window.regularizationMixin, {
+    currentRoute: 'regularization', regTab: 'inspect', regRunKey: 'reg_one', regSettings: {}, regDefaults: {},
+    regRequest: async () => ({ settings: { seed: '5' }, overrides: {} }),
+    regChanged() {}, regLoadLogs: async () => { logs++; }, toast() {}, t: key => key,
+  });
+  await app.regReadRunSettings();
+  assert.equal(app.regTab, 'settings');
+  assert.equal(app.regSettings.seed, '5');
+  assert.equal(logs, 1);
+});
+
+test('regenerating while switching to settings refreshes the new task logs', async () => {
+  const start = deferred();
+  let logs = 0;
+  const { window } = loadFrontend('regularization/index', { window: {} });
+  const task = { run_key: 'reg_one', task_id: 'new-task', status: 'running', completed: 1, failed: 0 };
+  const app = composeMixins(window.regularizationMixin, {
+    currentRoute: 'regularization', regTab: 'inspect', regRunKey: 'reg_one',
+    regTask: { run_key: 'reg_one', task_id: 'old-task', status: 'finished', completed: 1 },
+    regSelected: { index: 1 }, openConfirm: async () => 'confirm',
+    regRequest: async path => path.includes('/items/') ? start.promise : task,
+    regLoadResults: async () => {}, regLoadLogs: async () => { logs++; },
+    regSyncTimer() {}, realtimeSubscribe() {}, realtimeUnsubscribe() {}, t: key => key,
+    regReportError: error => assert.fail(error),
+  });
+  const action = app.regMutate(app.regSelected, 'regenerate');
+  await new Promise(resolve => setImmediate(resolve));
+  app.regShowSettings();
+  start.resolve(task);
+  await action;
+  assert.equal(logs, 2);
+  assert.equal(app.regTask.task_id, 'new-task');
+});
+
+test('regularization tabs switch and move focus with arrow keys', () => {
+  const focused = [];
+  const { window } = loadFrontend('regularization/index', {
+    window: {}, document: { getElementById: id => ({ focus: () => focused.push(id) }) },
+  });
+  const app = composeMixins(window.regularizationMixin, {
+    regTab: 'settings', regShowPlan() { this.regTab = 'plan'; }, $nextTick: callback => callback(),
+  });
+  let prevented = false;
+  app.regTabKey({ key: 'ArrowRight', preventDefault: () => { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(app.regTab, 'plan');
+  assert.deepEqual(focused, ['reg-tab-plan']);
+});

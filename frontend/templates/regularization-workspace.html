@@ -1,11 +1,11 @@
 <div class="regularization-workspace tagger-page-shell">
   <header class="page-header tagger-page-header"><div class="monitor-page-heading"><h1 class="page-title" x-text="regT('subtitle')"></h1></div><div id="regularizationResbar" class="monitor-resbar tagger-page-resbar"></div></header>
-  <div class="reg-nav"><nav class="tagger-mode-tabs" :aria-label="regT('title')" x-effect="regTab; locale; $nextTick(() => _syncTaggerTabIndicator('.regularization-workspace .tagger-mode-tabs'))"><button type="button" :class="{active: regTab === 'settings'}" @click="regTab = 'settings'" x-text="regT('settings')"></button><button type="button" :class="{active: regTab === 'plan'}" @click="regShowPlan()" x-text="regT('detailedPlan')"></button><button type="button" :class="{active: regTab === 'inspect'}" @click="regInspect()" x-text="regT('inspect')"></button><span class="monitor-tab-indicator" aria-hidden="true"></span></nav></div>
+  <div class="reg-nav"><nav class="tagger-mode-tabs" role="tablist" :aria-label="regT('title')" @keydown="regTabKey($event)" x-effect="regTab; locale; $nextTick(() => _syncTaggerTabIndicator('.regularization-workspace .tagger-mode-tabs'))"><button type="button" role="tab" id="reg-tab-settings" aria-controls="reg-panel-settings" :aria-selected="String(regTab === 'settings')" :tabindex="regTab === 'settings' ? 0 : -1" :class="{active: regTab === 'settings'}" @click="regShowSettings()" x-text="regT('settings')"></button><button type="button" role="tab" id="reg-tab-plan" aria-controls="reg-panel-gallery" :aria-selected="String(regTab === 'plan')" :tabindex="regTab === 'plan' ? 0 : -1" :class="{active: regTab === 'plan'}" @click="regShowPlan()" x-text="regT('detailedPlan')"></button><button type="button" role="tab" id="reg-tab-inspect" aria-controls="reg-panel-gallery" :aria-selected="String(regTab === 'inspect')" :tabindex="regTab === 'inspect' ? 0 : -1" :class="{active: regTab === 'inspect'}" @click="regInspect()" x-text="regT('inspect')"></button><span class="monitor-tab-indicator" aria-hidden="true"></span></nav></div>
   <div class="tagger-training-notice" x-show="trainingActive" role="status">
     <span x-text="regT('trainingBlocked')"></span>
     <button @click="navigate('monitor-dashboard')"><span x-text="t('tagger.openMonitor')"></span><svg><use href="#ti-external"></use></svg></button>
   </div>
-  <div x-show="regTab === 'settings'" class="reg-layout tagger-batch-layout" :class="{'reg-layout-logs': regLogsOpen && regTaskMatchesPlan}">
+  <div x-show="regTab === 'settings'" role="tabpanel" id="reg-panel-settings" aria-labelledby="reg-tab-settings" class="reg-layout tagger-batch-layout" :class="{'reg-layout-logs': regLogsOpen && regTaskMatchesPlan}">
     <div class="reg-form tagger-form-column">
       <fieldset :disabled="regRunning || regBusy">
         <template id="regPromptFields"><div class="reg-prompt-grid" x-data="regPromptSizing()">
@@ -55,7 +55,7 @@
       </section>
     </aside>
   </div>
-  <section class="reg-gallery" x-show="regTab !== 'settings'" x-data="regGallery()" @keydown.escape.window="closeDetail()" @scroll.window="if (!pinned) closeDetail()" @resize.window="closeDetail(); checkMore()">
+  <section class="reg-gallery" x-show="regTab !== 'settings'" role="tabpanel" id="reg-panel-gallery" :aria-labelledby="'reg-tab-' + regTab" x-data="regGallery()" @keydown.escape.window="closeDetail()" @scroll.window="if (!pinned) closeDetail()" @resize.window="closeDetail(); checkMore()">
     <div x-show="regTab === 'plan'">
       <div class="reg-toolbar">
         <span class="reg-help reg-plan-count" role="status" x-text="regPreviewDirty ? regT('awaitValidation') : regPlan ? regSourceSummary() + ' · ' + regT('total') + ' ' + regPlan.total : ''"></span><button type="button" class="btn btn-ghost btn-sm" :disabled="regBusy || regRunning" :title="regT('refreshPlanHelp')" :aria-busy="regBusy" @click="regScan()" x-text="regT('refreshPlan')"></button>

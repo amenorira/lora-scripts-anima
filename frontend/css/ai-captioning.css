@@ -1,6 +1,7 @@
 /* Permanent configuration sections, a stable library and one review surface. */
 :root:has(.route-caption-shell) { --app-min-width: 800px; }
 #taggerWorkspaceHost, .caption-workspace, .caption-settings-column { width: 100%; min-width: 0; }
+#captionWorkspaceMount { display: contents; }
 .main-content.route-caption-shell { overflow: hidden; padding-bottom: 0; }
 .route-caption-shell > .tagger-route, .route-caption-shell #taggerWorkspaceHost, .route-caption-shell .tagger-page-shell { flex: 1 1 auto; height: 100%; min-height: 0; overflow: hidden; }
 .route-caption-shell .tagger-page-shell { padding-bottom: 12px; }

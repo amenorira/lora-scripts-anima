@@ -23,6 +23,10 @@
     </div>
     <div id="taggerResbar" class="monitor-resbar tagger-page-resbar"></div>
   </header>
+  <div class="hist-load-error" x-show="currentRoute === 'tagger' && _taggerItemsError?.taskId === taggerTaskId" role="alert" x-cloak>
+    <span x-text="t('common.requestFailed')"></span>
+    <button type="button" class="btn btn-sm btn-secondary" @click="refreshTaggerItems(_taggerItemsError?.reset)" x-text="t('monitor.retryLoad')"></button>
+  </div>
 
   <nav class="tagger-mode-tabs" x-show="currentRoute !== 'ai-captioning'" :aria-label="t('tagger.sourceType')" x-effect="currentRoute; taggerSourceMode; locale; $nextTick(() => _syncTaggerTabIndicator())" @resize.window.debounce.100ms="_syncTaggerTabIndicator()">
     <button type="button" :class="{active:taggerSourceMode === 'folder'}" :disabled="taggerRunning || taggerStarting || taggerScanning" @click="selectTaggerSourceMode('folder')" x-text="t('tagger.batchMode')"></button>

@@ -376,6 +376,10 @@
             <span class="monitor-tab-indicator" aria-hidden="true"></span>
           </div>
         </div>
+        <div class="hist-load-error" x-show="monitorDetailError" role="alert" x-cloak>
+          <span x-text="t('monitor.loadRunFailed')"></span>
+          <button type="button" class="btn btn-sm btn-secondary" @click="refreshMonitorRealtimeDetail()" x-text="t('monitor.retryLoad')"></button>
+        </div>
         <div id="monitorDashboard" role="tabpanel" :aria-labelledby="'monitor-tab-' + monitorTab"></div>
       </div>
 
@@ -390,15 +394,15 @@
           </button>
         </div>
         <div class="hist-toolbar">
-          <input type="search" class="hist-search" x-model="historySearch" :placeholder="t('monitor.searchHistory')" :aria-label="t('monitor.searchHistory')" @input.debounce.200ms="renderHistory()">
+          <input type="search" class="hist-search" x-model="historySearch" :placeholder="t('monitor.searchHistory')" :aria-label="t('monitor.searchHistory')" @input.debounce.200ms="historyPage = 1; renderHistory()">
           <div class="hist-filters" role="group" :aria-label="t('monitor.historyStatusFilter')">
             <template x-for="filter in [['all','logLevelAll'], ['completed','statusCompleted'], ['failed','statusFailed'], ['terminated','statusTerminated'], ['unknown','statusUnknown']]" :key="filter[0]">
-              <button type="button" class="hist-filter-btn" :class="{active:historyFilter===filter[0]}" :aria-pressed="historyFilter===filter[0]" @click="historyFilter=filter[0];renderHistory()" x-text="t('monitor.'+filter[1])"></button>
+              <button type="button" class="hist-filter-btn" :class="{active:historyFilter===filter[0]}" :aria-pressed="historyFilter===filter[0]" @click="historyFilter=filter[0];historyPage=1;renderHistory()" x-text="t('monitor.'+filter[1])"></button>
             </template>
           </div>
         </div>
         <div class="hist-results" role="status" aria-live="polite" x-show="_historyLoaded" x-cloak>
-          <span x-text="t('monitor.historyCount').replace('{shown}', filteredHistoryItems.length).replace('{total}', historyItems.length)"></span>
+          <span x-text="t('monitor.historyCount').replace('{shown}', historyPageShown).replace('{matched}', historyFilteredCount).replace('{total}', historyItems.length)"></span>
           <button class="hist-action" x-show="historySearch || historyFilter !== 'all'" @click="clearHistoryFilters()" x-text="t('monitor.clearHistoryFilters')"></button>
         </div>
         <div class="hist-load-error" role="alert" x-show="historyError" x-cloak>
@@ -406,6 +410,11 @@
           <button class="btn btn-sm btn-secondary" :disabled="historyLoading" @click="refreshHistory()" x-text="t('monitor.refreshHistory')"></button>
         </div>
         <div id="historyList" class="history-list" :aria-busy="historyLoading"></div>
+        <nav class="hist-pagination" x-show="historyPageCount > 1" :aria-label="t('monitor.historyPagination')" x-cloak>
+          <button type="button" class="btn btn-sm btn-secondary" :disabled="historyPage <= 1" @click="setHistoryPage(historyPage - 1)" x-text="t('monitor.prevPage')"></button>
+          <span role="status" aria-live="polite" x-text="historyPage + ' / ' + historyPageCount"></span>
+          <button type="button" class="btn btn-sm btn-secondary" :disabled="historyPage >= historyPageCount" @click="setHistoryPage(historyPage + 1)" x-text="t('monitor.nextPage')"></button>
+        </nav>
       </div>
 
       <!-- Route: TensorBoard -->
@@ -590,10 +599,18 @@
 
       <!-- Route: Tagger -->
       <div x-show="['tagger', 'ai-captioning'].includes(currentRoute)" class="tagger-route" x-cloak>
-        <div id="taggerWorkspaceHost"></div>
+        <div class="dashboard-empty" x-show="taggerWorkspaceLoading || taggerWorkspaceError" role="status">
+          <p x-text="taggerWorkspaceError || t('common.loading')"></p>
+          <button type="button" class="btn btn-secondary btn-sm" x-show="taggerWorkspaceError" @click="buildTaggerForm()" x-text="t('monitor.retryLoad')"></button>
+        </div>
+        <div id="taggerWorkspaceHost" x-show="!taggerWorkspaceLoading && !taggerWorkspaceError"></div>
       </div>
       <div x-show="currentRoute === 'regularization'" class="tagger-route" x-cloak>
-        <div id="regularizationWorkspaceHost"></div>
+        <div class="dashboard-empty" x-show="regWorkspaceLoading || regWorkspaceError" role="status">
+          <p x-text="regWorkspaceError || t('common.loading')"></p>
+          <button type="button" class="btn btn-secondary btn-sm" x-show="regWorkspaceError" @click="buildRegularizationForm()" x-text="t('monitor.retryLoad')"></button>
+        </div>
+        <div id="regularizationWorkspaceHost" x-show="!regWorkspaceLoading && !regWorkspaceError"></div>
       </div>
 
       <!-- Route: Tag Editor -->

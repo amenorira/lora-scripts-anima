@@ -52,14 +52,12 @@ window.taggerSourcesMixin = {
       source: this.taggerSource,
       taskId: this.taggerTaskId,
       items: this.taggerItems,
-      itemsTotal: this.taggerItemsTotal,
       selectedIndex: this.taggerSelectedIndex,
       resultText: this.taggerResultText,
       resultCategories: this.taggerResultCategories,
       categoryState: this.taggerCategoryState,
       loadedResultKey: this._taggerLoadedResultKey,
       previewObjectUrl: this._taggerPreviewObjectUrl,
-      failedOnly: this.taggerFailedOnly,
       logsOpen: this.taggerLogsOpen,
     };
   },
@@ -69,7 +67,6 @@ window.taggerSourcesMixin = {
     this.taggerSource = state?.source || null;
     this.taggerTaskId = state?.taskId || null;
     this.taggerItems = state?.items || [];
-    this.taggerItemsTotal = Number(state?.itemsTotal || 0);
     this.taggerSelectedIndex = Number(state?.selectedIndex || 0);
     this.taggerResultText = state?.resultText || '';
     this.taggerResultCategories = state?.resultCategories || {};
@@ -77,7 +74,6 @@ window.taggerSourcesMixin = {
     this._taggerLoadedResultKey = state?.loadedResultKey || '';
     this._taggerPreviewObjectUrl = state?.previewObjectUrl || null;
     this.syncTaggerDictionary();
-    this.taggerFailedOnly = !!state?.failedOnly;
     this.taggerLogsOpen = !!state?.logsOpen;
   },
 
@@ -160,7 +156,6 @@ window.taggerSourcesMixin = {
     if (this.taggerSource && path !== scannedPath) {
       this.taggerSource = null;
       this.taggerItems = [];
-      this.taggerItemsTotal = 0;
       this.taggerSelectedIndex = 0;
       this.taggerResultText = '';
       this.taggerResultCategories = {};
@@ -283,7 +278,6 @@ window.taggerSourcesMixin = {
     this.taggerSource = source;
     this.taggerSourcePath = source.display_name || source.path || this.taggerSourcePath;
     this.taggerItems = (source.items || []).map(item => Object.assign({ status: 'pending' }, item));
-    this.taggerItemsTotal = Number(source.total || this.taggerItems.length);
     this.taggerSelectedIndex = 0;
     this.taggerResultText = '';
     this.taggerResultCategories = {};

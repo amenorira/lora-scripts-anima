@@ -28,3 +28,9 @@ test('the production script order assembles the complete application without col
   assert.equal(typeof app.tagEditorSaveAll,'function');
   assert.equal(typeof Object.getOwnPropertyDescriptor(app,'currentOutputRunDir').get,'function');
 });
+
+test('a missing required mixin fails during assembly', () => {
+  const context = vm.createContext({window: {}});
+  vm.runInContext(readFrontend('shared/mixin-compose'), context);
+  assert.throws(() => context.window.composeAppMixins({}, {monitor: undefined}), /Missing mixin: monitor/);
+});

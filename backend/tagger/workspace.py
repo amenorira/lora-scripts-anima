@@ -26,6 +26,7 @@ from backend.tagger.registry import MODEL_SPEC_BY_ID
 from backend.utils.file_io import atomic_write_text, read_text
 from backend.tasks import tm
 from backend.tagger.workspace_tasks import (
+    _touch_task,
     _task_log,
     _record_task_item,
     _finish_task,
@@ -244,6 +245,7 @@ def _run_api_task(task: dict, paths: list[Path], options: dict, config) -> None:
         task["started_at"] = time.time()
         task["status"] = "cancelling" if task["cancel_event"].is_set() else "running"
         task["phase"] = phase
+        _touch_task(task)
     _task_log(task, "api_start" if phase == "api_request" else phase, "phase", total=len(paths), model=config.model,
               endpoint=config.base_url, concurrency=config.concurrency)
     error = ""
@@ -265,8 +267,9 @@ def _run_api_task(task: dict, paths: list[Path], options: dict, config) -> None:
                         break
                     with task["lock"]:
                         task["items"][index]["status"] = "running"
+                        task["items_version"] += 1
                         task["current_file"] = path.name
-                        task["updated_at"] = time.time()
+                        _touch_task(task)
                     pending[pool.submit(_caption_one, task, config, path, runtime)] = index
 
             fill_pending()
@@ -338,12 +341,13 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
             if task["cancel_event"].is_set():
                 raise InterruptedError("cancelled")
             task["phase"] = phase
-            task["updated_at"] = time.time()
+            _touch_task(task)
 
     with task["lock"]:
         task["started_at"] = time.time()
         task["status"] = "cancelling" if task["cancel_event"].is_set() else "running"
         task["phase"] = "cancelling" if task["cancel_event"].is_set() else "created"
+        _touch_task(task)
     spec = None
     prefetch_stop = threading.Event()
     producer = None
@@ -380,7 +384,8 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
             with task["lock"]:
                 task["current_file"] = path.name
                 task["items"][index]["status"] = "running"
-                task["updated_at"] = time.time()
+                task["items_version"] += 1
+                _touch_task(task)
             writing = False
             try:
                 if decode_error:
@@ -542,6 +547,7 @@ def create_task(payload: dict) -> str:
         "api_payload": dict(payload.get("api") or {}) if engine == "api" else None,
         "total": len(paths),
         "current": 0,
+        "items_version": 0,
         "success": 0,
         "skipped": 0,
         "failed": 0,
@@ -556,6 +562,7 @@ def create_task(payload: dict) -> str:
         "cancel_event": threading.Event(),
         "started_at": 0.0,
         "updated_at": time.time(),
+        "snapshot_revision": 0,
         "error_detail": None,
         "options": options,
         "conflict": conflict,

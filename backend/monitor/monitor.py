@@ -98,7 +98,7 @@ class TaskMonitor:
 
     def __init__(self):
         self._running = False
-        self._task: asyncio.Task | None = None
+        self._tasks: list[asyncio.Task] = []
         self._sample_interval = 1.0  # 真实采样间隔（秒）
         self._last_status: dict[str, str] = {}  # task_id -> last_status
         self._last_log_cursor: dict[str, dict] = {}  # 与分页共用规范化行号，包含可被覆盖的末行。
@@ -119,19 +119,20 @@ class TaskMonitor:
             return
 
         self._running = True
-        self._task = asyncio.create_task(self._monitor_loop())
+        self._tasks = [
+            asyncio.create_task(self._monitor_loop(self._check_all_tasks)),
+            asyncio.create_task(self._monitor_loop(self._poll_tracked_tasks)),
+            asyncio.create_task(self._monitor_loop(self._collect_hardware)),
+        ]
         logger.info("任务监控器已启动")
 
     async def stop(self) -> None:
         """停止监控器"""
         self._running = False
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-            self._task = None
+        for task in self._tasks:
+            task.cancel()
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+        self._tasks = []
         self._stop_console_progress()
         logger.info("任务监控器已停止")
 
@@ -195,17 +196,21 @@ class TaskMonitor:
             current[key] = value
         return dict(current)
     
-    async def _monitor_loop(self) -> None:
-        """主监控循环"""
+    async def _monitor_loop(self, sample) -> None:
+        """Sample each independent domain without accumulating overlapping work."""
         while self._running:
             try:
-                await self._check_all_tasks()
+                await sample()
                 await asyncio.sleep(self._sample_interval)
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"监控循环异常: {e}", exc_info=True)
+                logger.error("监控循环异常 (%s): %s", sample.__name__, e, exc_info=True)
                 await asyncio.sleep(1)  # 出错后短暂等待
+
+    async def _poll_tracked_tasks(self) -> None:
+        await realtime_tasks.poll()
+        await realtime_hub.prune()
     
     async def _check_all_tasks(self) -> None:
         """检查所有任务状态"""
@@ -225,7 +230,9 @@ class TaskMonitor:
             
             # 状态变化事件
             if current_status != last_status:
-                self._last_status[task_id] = current_status
+                terminal = current_status in ("FINISHED", "TERMINATED", "FAILED")
+                if terminal:
+                    await self._collect_task_data(task_id)
                 await realtime_hub.publish(task_topic(task_id), "task.status", {
                     "task_id": task_id,
                     "kind": "training",
@@ -235,10 +242,10 @@ class TaskMonitor:
                     "tasks": tasks,
                     "training_active": any(item.get("status") in {"CREATED", "RUNNING"} for item in tasks),
                 })
+                self._last_status[task_id] = current_status
                 
                 # 任务结束时清理
-                if current_status in ("FINISHED", "TERMINATED", "FAILED"):
-                    await self._collect_task_data(task_id)
+                if terminal:
                     await realtime_hub.publish(task_topic(task_id), "task.result", {
                         "task_id": task_id,
                         "kind": "training",
@@ -253,13 +260,6 @@ class TaskMonitor:
             if current_status == "RUNNING":
                 await self._collect_task_data(task_id)
         
-        # 现有打标、下载和环境安装任务通过注册表桥接到同一个实时通道。
-        await realtime_tasks.poll()
-        await realtime_hub.prune()
-
-        # 收集硬件信息（仅在有可见订阅时以 1 Hz 真实采样）
-        await self._collect_hardware()
-    
     async def _collect_task_data(self, task_id: str) -> None:
         """收集任务进度和日志增量"""
         try:

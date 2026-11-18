@@ -8,7 +8,6 @@ from backend.monitor.artifacts import newest_previews, read_output_summary
 from backend.monitor.log_files import find_run_log_path, read_log_slice
 from backend.monitor.run_registry import find_run_record_by_task_id, read_run_config
 from backend.monitor.training import extract_train_params, parse_log_progress, read_tensorboard_loss
-from backend.tasks import tm
 
 
 STATE_LABELS = {
@@ -27,25 +26,14 @@ def read_run_log_progress(run_path: Path, limit: int) -> dict:
 
 
 async def build_live_monitor_snapshot(
-    task_id: str = "",
     *,
-    tasks: list[dict] | None = None,
-    gpu: dict | None = None,
-    system: dict | None = None,
+    tasks: list[dict],
     detail: bool = True,
     preview_limit: int = 36,
-    curve_points: int = 500,
-    log_tail_lines: int = 500,
 ) -> dict:
     """Bootstrap live state; compact snapshots skip disk-heavy detail reads."""
-    tasks = tm.training_dump() if tasks is None else tasks
     active_statuses = {"CREATED", "RUNNING"}
-    active = next(
-        (item for item in tasks if task_id and item.get("id") == task_id
-         and item.get("status") in active_statuses), None,
-    )
-    if not active:
-        active = next((item for item in reversed(tasks) if item.get("status") in active_statuses), None)
+    active = next((item for item in reversed(tasks) if item.get("status") in active_statuses), None)
     active_task_id = active.get("id", "") if active else ""
     record = await asyncio.to_thread(find_run_record_by_task_id, active_task_id) if active_task_id else None
     run_path = Path(record["run_path"]) if record else None
@@ -54,11 +42,11 @@ async def build_live_monitor_snapshot(
     # A restarted backend must not revive an unowned run from disk.
     tb_loss = await asyncio.to_thread(
         read_tensorboard_loss,
-        downsample_to=max(64, min(int(curve_points or 500), 2000)),
+        downsample_to=500,
         run_dir=str(run_path),
     ) if detail and run_path else []
     result = {
-        "gpu": gpu, "system": system, "tensorboard_loss": tb_loss, "detail": detail,
+        "gpu": None, "system": None, "tensorboard_loss": tb_loss, "detail": detail,
         "state": "IDLE", "state_label": "Idle / 空闲",
         "step": 0, "total_steps": 0, "percent": 0, "loss": None, "lr": None,
         "epoch": None, "eta": None, "speed": None, "has_error": False, "error_msg": None,
@@ -95,5 +83,5 @@ async def build_live_monitor_snapshot(
     result["training_profile"] = train_config.get("model_train_type") or ((record or {}).get("extra") or {}).get("profile_id", "")
     result["train_params"] = extract_train_params(train_config, result["training_profile"])
     if active_status == "RUNNING" and run_path:
-        result.update(await asyncio.to_thread(read_run_log_progress, run_path, log_tail_lines))
+        result.update(await asyncio.to_thread(read_run_log_progress, run_path, 500))
     return result

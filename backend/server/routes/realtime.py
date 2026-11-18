@@ -114,6 +114,18 @@ async def realtime_snapshot(
     }
 
 
+@router.get("/api/realtime/monitor-detail")
+async def realtime_monitor_detail() -> dict[str, Any]:
+    """Read disk-backed monitor data without rebuilding the transport snapshot."""
+    tasks = tm.training_dump()
+    monitor = await build_live_monitor_snapshot(tasks=tasks, detail=True, preview_limit=0)
+    return {"status": "success", "data": {
+        "server_instance_id": SERVER_INSTANCE_ID,
+        "tasks": {"managed": tasks},
+        "monitor": monitor,
+    }}
+
+
 @router.websocket("/ws/realtime")
 async def realtime_socket(websocket: WebSocket) -> None:
     """Serve small, replayable realtime JSON events over one same-origin socket."""
@@ -143,14 +155,17 @@ async def realtime_socket(websocket: WebSocket) -> None:
             return
         await close_subscription(topic)
         queue, replay, resync_required = await realtime_hub.subscribe(topic, resume_seq)
-        for event in replay:
-            enqueue(event)
-        if resync_required:
+        # The send loop cannot drain while this replay is enqueued. Reserve a
+        # slot for recovery instead of overflowing a mixed-topic connection.
+        if resync_required or len(replay) > max(0, outbound.maxsize - outbound.qsize() - 1):
             enqueue({
                 "op": "resync_required",
                 "topics": [topic],
                 "server_instance_id": SERVER_INSTANCE_ID,
             })
+        else:
+            for event in replay:
+                enqueue(event)
 
         async def forward() -> None:
             while True:

@@ -100,7 +100,7 @@ window.monitorMetricsMixin = {
       // The server intentionally bounded a delayed TensorBoard catch-up.
       // Rebuild the curve from the HTTP snapshot instead of displaying a
       // convincing but incomplete increment.
-      this._refreshRealtimeSnapshot(this.realtimeInstanceId, null, { preserveSubscribedCursors: true });
+      if (!this.selectedRunDir && this.currentRoute === 'monitor-dashboard') void this.refreshMonitorRealtimeDetail(true);
     }
 
     const points = data.points;

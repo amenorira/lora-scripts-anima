@@ -93,6 +93,20 @@ window.taggerTasksMixin = {
     this._setTaggerRealtimeTask(taskId);
   },
 
+  _taggerSameServer(instanceId, data) {
+    const current = this.realtimeInstanceId, responseId = data?.server_instance_id;
+    return (!responseId || !current || responseId === current)
+      && (instanceId === current || (!instanceId && responseId === current));
+  },
+
+  _rememberTaggerServer(data) {
+    if (!this.realtimeInstanceId && data?.server_instance_id) {
+      this.realtimeInstanceId = data.server_instance_id;
+      this._saveRealtimeInstanceId();
+      if (this.currentRoute === 'monitor-dashboard' && (this.liveTaskId || !this.currentOutputRunDir)) void this.refreshMonitorRealtimeDetail();
+    }
+  },
+
   async restoreTaggerTask(taskId) {
     const route = this.currentRoute;
     const mode = this.taggerSourceMode, version = this._taggerFormVersion;
@@ -103,17 +117,18 @@ window.taggerTasksMixin = {
     const isCurrent = () => route === this.currentRoute && mode === this.taggerSourceMode
       && version === this._taggerFormVersion && scanVersion === this._taggerSourceScanVersion
       && source === this.taggerSource && path === this.taggerSourcePath && currentTaskId === this.taggerTaskId
-      && instanceId === this.realtimeInstanceId && stored === localStorage.getItem(key);
+      && stored === localStorage.getItem(key);
     try {
       const response = await fetch(`/api/tagger/tasks/${encodeURIComponent(taskId)}/status`);
       const body = await response.json();
-      if (!isCurrent()) return false;
+      if (!isCurrent() || !this._taggerSameServer(instanceId, body.data)) return false;
       if (body.status !== 'success') {
         if (localStorage.getItem(key) === taskId) localStorage.removeItem(key);
         return false;
       }
       if ((body.data.engine === 'api') !== (this.currentRoute === 'ai-captioning')) return false;
-      this.applyTaggerTaskSnapshot(body.data, '', taskId);
+      this._rememberTaggerServer(body.data);
+      this.applyTaggerTaskSnapshot(body.data, '', taskId, false);
       const mode = this.taggerTaskById(taskId)._mode;
       localStorage.setItem(this._taggerTaskStorageKey(mode), taskId);
       if (body.data.engine === 'api' && this.taggerTaskActive(taskId)) {
@@ -158,7 +173,6 @@ window.taggerTasksMixin = {
     this.taggerTaskId = null;
     this.taggerSource = null;
     this.taggerItems = [];
-    this.taggerItemsTotal = 0;
     this.taggerResultText = '';
     this.taggerResultCategories = {};
     this.taggerCategoryState = {};
@@ -167,7 +181,6 @@ window.taggerTasksMixin = {
       this._clearStoredTaggerResult(state);
       state.source = null;
       state.items = [];
-      state.itemsTotal = 0;
     }
     localStorage.removeItem('anima-ai-tagger-task-id');
     localStorage.removeItem('anima-tagger-task-id');
@@ -177,12 +190,14 @@ window.taggerTasksMixin = {
     return active;
   },
 
-  applyTaggerTaskSnapshot(data, normalizedStatus, taskId = this.taggerTaskId) {
+  applyTaggerTaskSnapshot(data, normalizedStatus, taskId = this.taggerTaskId, refreshItems = true) {
     if (!taskId) return;
     const previous = this.taggerTaskById(taskId);
     // The registry's initial CREATED frame contains no snapshot. It cannot
     // replace a snapshot already restored by HTTP or a reconnect bootstrap.
     if (!Object.keys(data).length && previous?.status && previous.status !== 'created') return;
+    const order = data.snapshot_revision != null && previous?.snapshot_revision != null ? 'snapshot_revision' : 'updated_at';
+    if (data[order] < previous?.[order]) return;
     const status = data.status || {CREATED:'created',RUNNING:'running',FINISHED:'done',FAILED:'error',TERMINATED:'cancelled'}[normalizedStatus] || previous?.status;
     data = {...previous,...data,status};
     const mode = data.engine === 'api' ? 'api-folder' : data.source_kind ? (data.source_kind === 'folder' ? 'folder' : 'single') : previous?._mode || this.taggerSourceMode;
@@ -209,12 +224,18 @@ window.taggerTasksMixin = {
     if (current && data.engine !== 'api' && data.current_result && data.current_result.index === this.taggerSelectedIndex) {
       this.setTaggerResult(data.current_result, false);
     }
-    const now = Date.now();
-    // Completion must fetch results even when a recent progress event was throttled.
-    // Large candidate lists are deliberately omitted from realtime frames.
-    if (current && data.engine !== 'api' && (terminal || now - this._taggerLastItemsFetch > 800)) {
-      this._taggerLastItemsFetch = now;
-      void this.refreshTaggerItems(false);
+    const failedItems = this._taggerItemsError?.taskId === taskId;
+    const itemsChanged = data.items_version !== previous?.items_version || (terminal && previous?.status !== status) || failedItems;
+    if (refreshItems && current && this.currentRoute === 'tagger' && data.engine !== 'api' && itemsChanged) {
+      clearTimeout(this._taggerItemsRefreshTimer);
+      const delay = terminal ? 0 : Math.max(0, 800 - (Date.now() - this._taggerLastItemsFetch));
+      const reset = failedItems && this._taggerItemsError.reset;
+      if (delay) {
+        this._taggerItemsRefreshTimer = setTimeout(() => {
+          this._taggerItemsRefreshTimer = null;
+          if (this.currentRoute === 'tagger' && this.taggerTaskId === taskId && this.taggerSourceMode === mode) void this.refreshTaggerItems(reset);
+        }, delay);
+      } else void this.refreshTaggerItems(reset);
     }
     if (terminal) {
       if (this._taggerRealtimeTopic === 'task:' + taskId) this._setTaggerRealtimeTask(null);
@@ -226,24 +247,31 @@ window.taggerTasksMixin = {
 
   async refreshTaggerItems(reset) {
     if (!this.taggerTaskId) return;
+    clearTimeout(this._taggerItemsRefreshTimer);
+    this._taggerItemsRefreshTimer = null;
+    this._taggerLastItemsFetch = Date.now();
     const taskId = this.taggerTaskId;
     const sourceMode = this.taggerSourceMode;
     const request = this._taggerItemsRequest = (this._taggerItemsRequest || 0) + 1;
     try {
-      const offset = reset || this.taggerFailedOnly ? 0 : Math.max(0, Number(this.taggerTask?.current || 0) - 80);
-      const limit = this.taggerFailedOnly ? 500 : 160;
-      const response = await fetch(`/api/tagger/tasks/${encodeURIComponent(taskId)}/items?offset=${offset}&limit=${limit}&failed_only=${this.taggerFailedOnly}`);
+      const offset = reset ? 0 : Math.max(0, Number(this.taggerTask?.current || 0) - 80);
+      const response = await fetch(`/api/tagger/tasks/${encodeURIComponent(taskId)}/items?offset=${offset}&limit=160`);
       const body = await response.json();
       if (taskId !== this.taggerTaskId || sourceMode !== this.taggerSourceMode || request !== this._taggerItemsRequest) return;
-      if (body.status !== 'success') return;
-      this.taggerItemsTotal = Number(body.data.total || 0);
-      this._mergeTaggerItems(body.data.items || [], reset || this.taggerFailedOnly);
+      if (!response.ok || body.status !== 'success') throw new Error('tagger items unavailable');
+      this._mergeTaggerItems(body.data.items || [], reset);
       if (reset && this.taggerItems.length) this.selectTaggerItem(this.taggerItems[0]);
       else {
         const selected = this.taggerItems.find(item => item.index === this.taggerSelectedIndex);
         if (selected?.result) this.setTaggerResult(selected.result);
       }
-    } catch (_) {}
+      if (this._taggerItemsError?.taskId === taskId) this._taggerItemsError = null;
+    } catch (_) {
+      if (taskId === this.taggerTaskId && sourceMode === this.taggerSourceMode && request === this._taggerItemsRequest) {
+        const previous = this._taggerItemsError;
+        this._taggerItemsError = { taskId, reset: !!reset || (previous?.taskId === taskId && previous.reset) };
+      }
+    }
   },
 
   _mergeTaggerItems(items, replace) {
@@ -268,23 +296,28 @@ window.taggerTasksMixin = {
     const source = this.taggerSource, version = this._taggerFormVersion;
     const route = this.currentRoute, path = this.taggerSourcePath, scanVersion = this._taggerSourceScanVersion;
     const instanceId = this.realtimeInstanceId, storageKey = this._taggerTaskStorageKey(mode);
-    const isCurrent = () => instanceId === this.realtimeInstanceId
-      && taskId === this.taggerTaskId && mode === this.taggerSourceMode
+    const isCurrent = () => taskId === this.taggerTaskId && mode === this.taggerSourceMode
       && source === this.taggerSource && path === this.taggerSourcePath && route === this.currentRoute
       && version === this._taggerFormVersion && scanVersion === this._taggerSourceScanVersion;
     this.taggerStarting = true;
+    let responseData;
     try {
+      const stored = storageKey ? localStorage.getItem(storageKey) : null;
       const response = await fetch(`/api/tagger/tasks/${encodeURIComponent(taskId)}/retry`, { method: 'POST' });
       const body = await response.json();
+      responseData = body.data;
+      const sameServer = this._taggerSameServer(instanceId, responseData);
+      if (storageKey && localStorage.getItem(storageKey) !== stored) return;
       // Navigation may outlive the retry itself. Preserve its recovery identity
       // without replacing a newer task, an explicitly cleared source, or a new server instance.
       let keptRecovery = false;
-      if (body.status === 'success' && body.data?.task_id && instanceId === this.realtimeInstanceId
-          && storageKey && localStorage.getItem(storageKey) === taskId) {
+      if (body.status === 'success' && body.data?.task_id && sameServer
+          && storageKey && stored === taskId) {
+        this._rememberTaggerServer(body.data);
         localStorage.setItem(storageKey, body.data.task_id);
         keptRecovery = true;
       }
-      if (!isCurrent()) {
+      if (!isCurrent() || !sameServer) {
         // Returning to the same source can restore the old failed task before
         // this POST finishes. Reconcile the new task against that current mount.
         if (keptRecovery && route === this.currentRoute && mode === this.taggerSourceMode
@@ -294,9 +327,10 @@ window.taggerTasksMixin = {
         }
         return;
       }
-      if (body.status !== 'success') throw new Error(body.message || this.t('tagger.retryRequestFailed'));
+      if (body.status !== 'success' || !body.data?.task_id) throw new Error(body.message || this.t('tagger.retryRequestFailed'));
+      this._rememberTaggerServer(body.data);
       this.attachTaggerTask(body.data.task_id, mode);
-    } catch (error) { if (isCurrent()) this.toast(error.message, 'error'); }
+    } catch (error) { if (isCurrent() && this._taggerSameServer(instanceId, responseData)) this.toast(error.message, 'error'); }
     finally { this.taggerStarting = false; }
   },
 

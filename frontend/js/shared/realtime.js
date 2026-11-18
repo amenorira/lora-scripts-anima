@@ -8,14 +8,13 @@ window.realtimeMixin = {
   realtimeState: 'connecting', // connecting | online | degraded | offline
   realtimeReady: false,
   realtimeInstanceId: null,
-  realtimeSnapshot: null,
   realtimeTaskStateUnknown: false,
   _realtimeTopics: null,
   _realtimeCursors: null,
+  _realtimeReplayTopics: null,
   _realtimeLastMessageAt: 0,
   _realtimeReconnectTimer: null,
   _realtimeConnectTimer: null,
-  _realtimeFreshnessTimer: null,
   _realtimePingTimer: null,
   _realtimeHealthTimer: null,
   _realtimeSnapshotRetryTimer: null,
@@ -23,34 +22,21 @@ window.realtimeMixin = {
   _realtimeSnapshotRetryDelay: 500,
   _realtimeHealthFailures: 0,
   _realtimeSocketClosed: false,
-  _realtimeStopped: false,
-  _realtimeVisibilityHandler: null,
   _realtimeInboundChain: null,
-  _realtimeSnapshotPromise: null,
-  _realtimeSnapshotAbort: null,
+  _realtimeSnapshotController: null,
   _realtimeInstanceStorageKey: 'anima-realtime-instance-id',
 
   startRealtime() {
-    this._realtimeStopped = false;
-    if (!this._realtimeTopics) this._realtimeTopics = new Set(['server']);
-    if (!this._realtimeCursors) this._loadRealtimeState();
-    if (!this._realtimeFreshnessTimer) {
-      this._realtimeFreshnessTimer = setInterval(() => this._checkRealtimeFreshness(), 500);
-    }
-    if (!this._realtimeVisibilityHandler) {
-      this._realtimeVisibilityHandler = () => {
-        if (!document.hidden && (!this.realtimeSocket || this.realtimeSocket.readyState > WebSocket.OPEN)) {
-          this._connectRealtimeNow();
-        }
-        // 回到前台立即对账一次（休眠/后台节流期间状态可能已陈旧）。
-        if (!document.hidden && typeof this._pollTrainingState === 'function') {
-          void this._pollTrainingState();
-        }
-      };
-      document.addEventListener('visibilitychange', this._realtimeVisibilityHandler);
-    }
+    this._realtimeTopics = new Set();
+    this._loadRealtimeState();
+    setInterval(() => this._checkRealtimeFreshness(), 500);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && (!this.realtimeSocket || this.realtimeSocket.readyState > WebSocket.OPEN)) this._connectRealtimeNow();
+      // 回到前台立即对账一次（休眠/后台节流期间状态可能已陈旧）。
+      if (!document.hidden) void this._pollTrainingState();
+    });
     // 训练生命周期状态走串行 HTTP 轮询（单一写入方）；WS 只承载流式增量。
-    if (typeof this.startTrainingStatePoll === 'function') this.startTrainingStatePoll();
+    this._scheduleTrainingStatePoll(0);
     this._connectRealtimeNow();
   },
 
@@ -60,9 +46,9 @@ window.realtimeMixin = {
   },
 
   _connectRealtimeNow() {
-    if (this._realtimeStopped) return;
     if (this.realtimeSocket && (this.realtimeSocket.readyState === WebSocket.OPEN || this.realtimeSocket.readyState === WebSocket.CONNECTING)) return;
     if (this._realtimeReconnectTimer) { clearTimeout(this._realtimeReconnectTimer); this._realtimeReconnectTimer = null; }
+    if (this._realtimeSnapshotRetryTimer) { clearTimeout(this._realtimeSnapshotRetryTimer); this._realtimeSnapshotRetryTimer = null; }
     this._stopRealtimePing();
     this.realtimeReady = false;
     this._setRealtimeState('connecting');
@@ -77,7 +63,7 @@ window.realtimeMixin = {
     }, 4000);
 
     socket.onopen = () => {
-      if (this._realtimeStopped || this.realtimeSocket !== socket) return;
+      if (this.realtimeSocket !== socket) return;
       this._realtimeSocketClosed = false;
       this._realtimeHealthFailures = 0;
       this._sendRealtime({
@@ -87,29 +73,37 @@ window.realtimeMixin = {
       });
     };
     socket.onmessage = (event) => {
+      if (this.realtimeSocket !== socket || socket.readyState > WebSocket.OPEN) return;
+      let message;
+      try { message = JSON.parse(event.data); } catch (_) { return; }
+      if (!message || typeof message !== 'object') return;
+      this._realtimeLastMessageAt = Date.now();
       const previous = this._realtimeInboundChain || Promise.resolve();
       this._realtimeInboundChain = previous
-        .then(() => this._handleRealtimeMessage(event, socket))
-        .catch(() => { /* A malformed frame must not poison later frames. */ });
+        .then(() => this._handleRealtimeMessage(message, socket))
+        .catch(error => console.error('Realtime event processing failed', error));
     };
     socket.onerror = () => { /* onclose owns state changes */ };
     socket.onclose = () => {
       // A superseded socket is allowed to close silently. It must never mark
       // the newer, healthy connection as delayed or schedule a second retry.
-      if (this._realtimeStopped || this.realtimeSocket !== socket) return;
+      if (this.realtimeSocket !== socket) return;
       this.realtimeSocket = null;
+      this._realtimeSnapshotController?.abort();
+      if (this._realtimeSnapshotRetryTimer) { clearTimeout(this._realtimeSnapshotRetryTimer); this._realtimeSnapshotRetryTimer = null; }
       if (this._realtimeConnectTimer) { clearTimeout(this._realtimeConnectTimer); this._realtimeConnectTimer = null; }
       this._stopRealtimePing();
       this.realtimeReady = false;
       this._realtimeSocketClosed = true;
       this._setRealtimeState('degraded');
       this._ensureRealtimeHealthProbe();
+      this._wakeTrainingStatePoll();
       this._scheduleRealtimeReconnect();
     };
   },
 
   _scheduleRealtimeReconnect() {
-    if (this._realtimeStopped || this._realtimeReconnectTimer) return;
+    if (this._realtimeReconnectTimer) return;
     const delay = this._realtimeReconnectDelay;
     this._realtimeReconnectDelay = Math.min(5000, Math.max(500, delay * 2));
     this._realtimeReconnectTimer = setTimeout(() => {
@@ -127,7 +121,7 @@ window.realtimeMixin = {
   _startRealtimePing() {
     if (this._realtimePingTimer) return;
     const ping = () => {
-      if (this._realtimeStopped || !this.realtimeReady) return;
+      if (!this.realtimeReady) return;
       this._sendRealtime({ op: 'ping' });
     };
     ping();
@@ -141,7 +135,7 @@ window.realtimeMixin = {
 
   realtimeSubscribe(topic) {
     if (!topic) return;
-    if (!this._realtimeTopics) this._realtimeTopics = new Set(['server']);
+    if (!this._realtimeTopics) this._realtimeTopics = new Set();
     if (this._realtimeTopics.has(topic)) return;
     this._realtimeTopics.add(topic);
     if (this.realtimeReady) {
@@ -153,23 +147,19 @@ window.realtimeMixin = {
   realtimeUnsubscribe(topic) {
     if (!topic || !this._realtimeTopics || !this._realtimeTopics.has(topic)) return;
     this._realtimeTopics.delete(topic);
-    if (this.realtimeReady) this._sendRealtime({ op: 'unsubscribe', topics: [topic] });
+    this._realtimeReplayTopics?.delete(topic);
+    this._sendRealtime({ op: 'unsubscribe', topics: [topic] });
   },
 
   _sendRealtimeSubscriptions() {
-    const topics = Array.from(this._realtimeTopics || ['server']);
+    const topics = Array.from(this._realtimeTopics || []);
     const resume = {};
     for (const topic of topics) resume[topic] = (this._realtimeCursors || {})[topic] || 0;
     this._sendRealtime({ op: 'subscribe', topics, resume });
   },
 
-  async _handleRealtimeMessage(messageEvent, socket) {
-    if (this._realtimeStopped || (socket && this.realtimeSocket !== socket)) return;
-    let message;
-    try { message = JSON.parse(messageEvent.data); } catch (_) { return; }
-    if (!message || typeof message !== 'object') return;
-    this._realtimeLastMessageAt = Date.now();
-
+  async _handleRealtimeMessage(message, socket) {
+    if (socket && (this.realtimeSocket !== socket || socket.readyState > WebSocket.OPEN)) return;
     if (message.op === 'ready') {
       await this._handleRealtimeReady(message, socket);
       return;
@@ -184,7 +174,7 @@ window.realtimeMixin = {
       }
       // A pong is useful only after ready + snapshot established a coherent
       // browser state; before that it must not mark the backend as connected.
-      if (this.realtimeReady) this._setRealtimeState('online');
+      if (this.realtimeReady && Date.now() - this._realtimeLastMessageAt <= 2000) this._setRealtimeState('online');
       return;
     }
     if (message.op === 'resync_required') {
@@ -192,26 +182,45 @@ window.realtimeMixin = {
       return;
     }
     if (message.op !== 'event') return;
+    if (!this.realtimeReady) return;
 
     const topic = message.topic;
     const seq = Number(message.seq) || 0;
     if (topic && seq) {
       let last = Number((this._realtimeCursors || {})[topic] || 0);
       if (seq <= last) return;
-      if (last && seq > last + 1) {
-        await this._handleRealtimeResync({ op: 'resync_required', topics: [topic], reason: 'sequence_gap' }, socket);
+      if (last && seq > last + 1 && !(topic === 'hardware' && message.type === 'hardware.sample')) {
+        const ok = await this._handleRealtimeResync({ op: 'resync_required', topics: [topic], reason: 'sequence_gap' }, socket);
+        if (!ok) return;
         last = Number((this._realtimeCursors || {})[topic] || 0);
         if (seq <= last) return;
       }
+    }
+    if (this.realtimeReady && Date.now() - this._realtimeLastMessageAt <= 2000) this._setRealtimeState('online');
+    try {
+      this._dispatchRealtimeEvent(message);
+    } catch (error) {
+      console.error('Realtime event processing failed', error);
+      this._reconnectRealtimeAfterError(socket);
+      return;
+    }
+    if (topic && seq) {
       if (!this._realtimeCursors) this._realtimeCursors = {};
       this._realtimeCursors[topic] = seq;
+      this._realtimeReplayTopics?.delete(topic);
     }
-    if (this.realtimeReady) this._setRealtimeState('online');
-    this._dispatchRealtimeEvent(message);
+  },
+
+  _reconnectRealtimeAfterError(socket) {
+    this._realtimeReplayTopics = new Set(this._realtimeTopics);
+    this.realtimeReady = false;
+    this._setRealtimeState('degraded');
+    this._wakeTrainingStatePoll();
+    socket.close();
   },
 
   async _handleRealtimeReady(message, socket) {
-    if (this._realtimeStopped || this.realtimeSocket !== socket) return;
+    if (this.realtimeSocket !== socket) return;
     if (this._realtimeConnectTimer) { clearTimeout(this._realtimeConnectTimer); this._realtimeConnectTimer = null; }
     const nextId = message.server_instance_id;
     if (!nextId) return;
@@ -223,11 +232,11 @@ window.realtimeMixin = {
     // The connection gate uses the compact snapshot only. A dashboard may
     // subsequently request curves/log metadata, but a slow disk scan must not
     // prevent the socket itself from becoming healthy.
-    const ok = await this._refreshRealtimeSnapshot(nextId, socket, { monitorDetail: false });
-    if (this._realtimeStopped || this.realtimeSocket !== socket) return;
+    const ok = await this._refreshRealtimeSnapshot(nextId, socket);
+    if (this.realtimeSocket !== socket) return;
     if (!ok || this.realtimeInstanceId !== nextId) {
       this._setRealtimeState('degraded');
-      this._ensureRealtimeHealthProbe();
+      this._wakeTrainingStatePoll();
       this._scheduleRealtimeSnapshotRetry(nextId);
       return;
     }
@@ -235,7 +244,7 @@ window.realtimeMixin = {
   },
 
   _finishRealtimeBootstrap(instanceId, socket) {
-    if (this._realtimeStopped || (socket && this.realtimeSocket !== socket)) return;
+    if ((socket && this.realtimeSocket !== socket)) return;
     if (!instanceId || this.realtimeInstanceId !== instanceId) return;
     if (!this.realtimeSocket || this.realtimeSocket.readyState !== WebSocket.OPEN) return;
     this.realtimeReady = true;
@@ -246,27 +255,34 @@ window.realtimeMixin = {
     this._setRealtimeState('online');
     this._startRealtimePing();
     this._sendRealtimeSubscriptions();
-    if (this.currentRoute === 'monitor-dashboard' && typeof this.refreshMonitorRealtimeDetail === 'function') {
-      void this.refreshMonitorRealtimeDetail();
+    if (this.currentRoute === 'monitor-dashboard') {
+      // A pending live detail may predate the snapshot's subscription cursor.
+      void this.refreshMonitorRealtimeDetail(!!this.liveTaskId || !this.currentOutputRunDir);
     }
   },
 
   _scheduleRealtimeSnapshotRetry(instanceId) {
-    if (this._realtimeStopped || this._realtimeSnapshotRetryTimer) return;
+    if (this._realtimeSnapshotRetryTimer) return;
     const delay = this._realtimeSnapshotRetryDelay;
+    const socket = this.realtimeSocket;
     this._realtimeSnapshotRetryDelay = Math.min(5000, Math.max(500, delay * 2));
-    this._realtimeSnapshotRetryTimer = setTimeout(async () => {
-      this._realtimeSnapshotRetryTimer = null;
-      if (!this.realtimeSocket || this.realtimeSocket.readyState !== WebSocket.OPEN || this.realtimeInstanceId !== instanceId) return;
-      const socket = this.realtimeSocket;
-      const ok = await this._refreshRealtimeSnapshot(instanceId, socket, { monitorDetail: false });
-      if (ok) this._finishRealtimeBootstrap(instanceId, socket);
-      else this._scheduleRealtimeSnapshotRetry(instanceId);
+    const timer = setTimeout(() => {
+      const previous = this._realtimeInboundChain || Promise.resolve();
+      this._realtimeInboundChain = previous.then(async () => {
+        if (this._realtimeSnapshotRetryTimer !== timer) return;
+        this._realtimeSnapshotRetryTimer = null;
+        if (this.realtimeSocket !== socket || !socket || socket.readyState !== WebSocket.OPEN
+          || this.realtimeInstanceId !== instanceId || this.realtimeReady) return;
+        const ok = await this._refreshRealtimeSnapshot(instanceId, socket);
+        if (ok) this._finishRealtimeBootstrap(instanceId, socket);
+        else if (this.realtimeSocket === socket && this.realtimeInstanceId === instanceId) this._scheduleRealtimeSnapshotRetry(instanceId);
+      }).catch(error => console.error('Realtime event processing failed', error));
     }, delay);
+    this._realtimeSnapshotRetryTimer = timer;
   },
 
   async _handleRealtimeResync(message, socket) {
-    if (this._realtimeStopped || (socket && this.realtimeSocket !== socket)) return;
+    if ((socket && this.realtimeSocket !== socket)) return;
     const announcedId = message && message.server_instance_id;
     if (announcedId && announcedId !== this.realtimeInstanceId) {
       this.realtimeInstanceId = announcedId;
@@ -274,104 +290,75 @@ window.realtimeMixin = {
       this._handleRealtimeServerRestart();
     }
     const topics = Array.isArray(message && message.topics) ? message.topics : [];
-    if (typeof this.handleRealtimeResyncRequired === 'function') {
-      this.handleRealtimeResyncRequired(topics);
+    this.handleRealtimeResyncRequired(topics);
+    const ok = await this._refreshRealtimeSnapshot(this.realtimeInstanceId, socket, { topics });
+    if (!ok && socket && this.realtimeSocket === socket) {
+      this._reconnectRealtimeAfterError(socket);
+    } else if (ok && this.currentRoute === 'monitor-dashboard') {
+      void this.refreshMonitorRealtimeDetail(true);
     }
-    if (!this._realtimeCursors) this._realtimeCursors = {};
-    if (topics.length) topics.forEach(topic => delete this._realtimeCursors[topic]);
-    else this._realtimeCursors = {};
-    const ok = await this._refreshRealtimeSnapshot(this.realtimeInstanceId, socket, { monitorDetail: false });
-    if (!ok && !this._realtimeStopped && (!socket || this.realtimeSocket === socket)) {
-      this._setRealtimeState('degraded');
-      this._ensureRealtimeHealthProbe();
-    } else if (ok && this.currentRoute === 'monitor-dashboard' && typeof this.refreshMonitorRealtimeDetail === 'function') {
-      void this.refreshMonitorRealtimeDetail();
-    }
+    return ok;
   },
 
   async _refreshRealtimeSnapshot(expectedInstanceId, expectedSocket, options) {
-    if (this._realtimeSnapshotPromise) return this._realtimeSnapshotPromise;
-    this._realtimeSnapshotPromise = (async () => {
-      let timeout = null;
-      try {
-        const controller = new AbortController();
-        this._realtimeSnapshotAbort = controller;
-        timeout = setTimeout(() => controller.abort(), 4000);
-        const taskBoundaryAt = this.liveTaskBoundaryAt;
-        const requestedTaskId = this.liveTaskId;
-        const monitorVersions = { logs: this._logObservationVersion || 0, outputs: this._outputCountVersion || 0, progress: this._monitorProgressVersion || 0, previews: this._previewSnapshotSeq };
-        const explicitDetail = options && Object.prototype.hasOwnProperty.call(options, 'monitorDetail')
-          ? !!options.monitorDetail
-          : this.currentRoute === 'monitor-dashboard' && !this.selectedRunDir;
-        const monitorDetailGeneration = explicitDetail
-          ? (options && Object.prototype.hasOwnProperty.call(options, 'monitorDetailGeneration')
-            ? options.monitorDetailGeneration
-            : this._monitorRealtimeDetailGeneration)
-          : null;
-        const query = new URLSearchParams();
-        if (explicitDetail) {
-          query.set('detail', 'true');
-          // Zero explicitly requests every compact preview metadata entry.
-          // Weak-network mode controls image loading, not list visibility.
-          query.set('preview_limit', String(0));
-        }
-        const url = '/api/realtime/snapshot' + (query.size ? '?' + query.toString() : '');
-        const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
-        clearTimeout(timeout);
-        timeout = null;
-        if (!response.ok) return false;
-        const body = await response.json();
-        if (body.status !== 'success' || !body.data) return false;
-        const snapshot = body.data;
-        if (this._realtimeStopped || (expectedSocket && this.realtimeSocket !== expectedSocket)) return false;
-        if (expectedInstanceId && snapshot.server_instance_id !== expectedInstanceId) return false;
-        const previousId = this.realtimeInstanceId;
-        const nextId = snapshot.server_instance_id;
-        if (nextId && previousId && nextId !== previousId) {
-          this.realtimeInstanceId = nextId;
-          this._saveRealtimeInstanceId();
-          this._handleRealtimeServerRestart();
-        }
-        this.realtimeSnapshot = snapshot;
-        this.realtimeInstanceId = nextId || this.realtimeInstanceId;
-        this._saveRealtimeInstanceId();
-        this._applyRealtimeSnapshotCursors(snapshot.cursors || {}, options);
-        // A dashboard-only detail request may finish after the user leaves
-        // that page. Keep the current transport snapshot/cursors, but never
-        // let that stale detail overwrite live monitor state off-page.
-        const applyMonitor = requestedTaskId === this.liveTaskId
-          && taskBoundaryAt === this.liveTaskBoundaryAt && (!explicitDetail || (
-          this.currentRoute === 'monitor-dashboard'
-          && (monitorDetailGeneration == null
-            || monitorDetailGeneration === this._monitorRealtimeDetailGeneration)
-        ));
-        this._applyRealtimeSnapshot(snapshot, { applyMonitor, monitorVersions });
-        return true;
-      } catch (_) {
-        return false;
-      } finally {
-        if (timeout) clearTimeout(timeout);
-        this._realtimeSnapshotAbort = null;
-        this._realtimeSnapshotPromise = null;
+    if (expectedSocket && (this.realtimeSocket !== expectedSocket || expectedSocket.readyState > WebSocket.OPEN)) return false;
+    if (!expectedInstanceId || expectedInstanceId !== this.realtimeInstanceId) return false;
+    const topics = options?.topics;
+    this._realtimeSnapshotController?.abort();
+    const controller = this._realtimeSnapshotController = new AbortController();
+    const taskBoundaryAt = this.liveTaskBoundaryAt, requestedTaskId = this.liveTaskId;
+    const timeout = setTimeout(() => controller.abort(), 4000);
+    let snapshot;
+    try {
+      const response = await fetch('/api/realtime/snapshot', { cache: 'no-store', signal: controller.signal });
+      if (!response.ok) return false;
+      const body = await response.json();
+      if (body.status !== 'success' || !body.data) return false;
+      snapshot = body.data;
+    } catch (_) {
+      return false;
+    } finally {
+      clearTimeout(timeout);
+      if (this._realtimeSnapshotController === controller) this._realtimeSnapshotController = null;
+    }
+    if (expectedSocket && (this.realtimeSocket !== expectedSocket || expectedSocket.readyState > WebSocket.OPEN)) return false;
+    if (expectedInstanceId !== this.realtimeInstanceId || snapshot.server_instance_id !== expectedInstanceId) return false;
+    const applyMonitor = requestedTaskId === this.liveTaskId
+      && taskBoundaryAt === this.liveTaskBoundaryAt;
+    const domainSnapshot = topics?.length ? {
+      ...snapshot,
+      hardware: topics.includes('hardware') ? snapshot.hardware : null,
+      tasks: { ...snapshot.tasks, tracked: (snapshot.tasks?.tracked || []).filter(task => topics.includes('task:' + task.task_id)) },
+    } : snapshot;
+    try {
+      this._applyRealtimeSnapshot(domainSnapshot, { applyMonitor });
+      if (topics) {
+        if (topics.length) topics.forEach(topic => { delete this._realtimeCursors?.[topic]; this._realtimeReplayTopics?.delete(topic); });
+        else { this._realtimeCursors = {}; this._realtimeReplayTopics = null; }
       }
-    })();
-    return this._realtimeSnapshotPromise;
+      this._applyRealtimeSnapshotCursors(snapshot.cursors || {}, topics);
+    } catch (error) {
+      console.error('Realtime snapshot processing failed', error);
+      return false;
+    }
+    return true;
   },
 
-  _applyRealtimeSnapshotCursors(snapshotCursors, options) {
+  _applyRealtimeSnapshotCursors(snapshotCursors, topics) {
     if (!this._realtimeCursors) this._realtimeCursors = {};
-    const preserveSubscribed = !!(options && options.preserveSubscribedCursors);
+    if (topics?.length) {
+      for (const topic of topics) {
+        const seq = Number(snapshotCursors[topic]) || 0;
+        if (seq > Number(this._realtimeCursors[topic] || 0)) this._realtimeCursors[topic] = seq;
+      }
+      return;
+    }
     const subscribed = this._realtimeTopics || new Set();
     for (const topic of Object.keys(this._realtimeCursors)) {
       if (!subscribed.has(topic) && !Object.prototype.hasOwnProperty.call(snapshotCursors, topic)) delete this._realtimeCursors[topic];
     }
     for (const [topic, seq] of Object.entries(snapshotCursors || {})) {
-      // A dashboard detail snapshot is fetched while task replay is already
-      // queued on the WebSocket. Advancing that subscribed topic here would
-      // make the inbound handler discard the queued gap as `seq <= last`.
-      // Let WebSocket events advance live cursors; the snapshot may still seed
-      // topics that are not currently subscribed.
-      if (preserveSubscribed && subscribed.has(topic)) continue;
+      if (subscribed.has(topic) && this._realtimeReplayTopics?.has(topic)) continue;
       const numericSeq = Number(seq) || 0;
       if (numericSeq > Number(this._realtimeCursors[topic] || 0)) {
         this._realtimeCursors[topic] = numericSeq;
@@ -382,33 +369,30 @@ window.realtimeMixin = {
   _applyRealtimeSnapshot(snapshot, options) {
     // 训练生命周期状态不在这里拼装：轮询（_applyManagedTrainingState）是唯一
     // 写入方。这里只回填各领域快照（监控详情/打标/环境）。
-    if ((!options || options.applyMonitor !== false) && typeof this.applyRealtimeMonitorSnapshot === 'function') {
-      this.applyRealtimeMonitorSnapshot(snapshot, options && options.monitorVersions);
+    if (!options || options.applyMonitor !== false) {
+      this.applyRealtimeMonitorSnapshot(snapshot);
     }
-    if (typeof this.applyRealtimeTaggerSnapshot === 'function') this.applyRealtimeTaggerSnapshot(snapshot);
-    if (typeof this.applyRealtimeRegularizationSnapshot === 'function') this.applyRealtimeRegularizationSnapshot(snapshot);
-    if (typeof this.applyRealtimeEnvironmentSnapshot === 'function') this.applyRealtimeEnvironmentSnapshot(snapshot);
+    this.applyRealtimeTaggerSnapshot(snapshot);
+    this.applyRealtimeRegularizationSnapshot(snapshot);
+    this.applyRealtimeEnvironmentSnapshot(snapshot);
   },
 
   _dispatchRealtimeEvent(event) {
-    if (typeof this.handleRealtimeMonitorEvent === 'function') this.handleRealtimeMonitorEvent(event);
-    if (typeof this.handleRealtimeTaggerEvent === 'function') this.handleRealtimeTaggerEvent(event);
-    if (typeof this.handleRealtimeRegularizationEvent === 'function') this.handleRealtimeRegularizationEvent(event);
-    if (typeof this.handleRealtimeEnvironmentEvent === 'function') this.handleRealtimeEnvironmentEvent(event);
+    this.handleRealtimeMonitorEvent(event);
+    this.handleRealtimeTaggerEvent(event);
+    this.handleRealtimeRegularizationEvent(event);
+    this.handleRealtimeEnvironmentEvent(event);
   },
 
   _handleRealtimeServerRestart() {
-    // An old detailed snapshot is just as stale as its incremental cursors.
-    // Clear it before the fresh instance bootstrap so another page cannot
-    // reuse old task/log/curve/hardware state during the transition.
-    this.realtimeSnapshot = null;
     this._realtimeCursors = {};
+    this._realtimeReplayTopics = null;
     let hadLiveTask = false;
-    if (typeof this.resetRealtimeMonitorState === 'function') hadLiveTask = !!this.resetRealtimeMonitorState() || hadLiveTask;
-    if (typeof this.resetRealtimeTrainingState === 'function') hadLiveTask = !!this.resetRealtimeTrainingState() || hadLiveTask;
-    if (typeof this.resetRealtimeTaggerState === 'function') hadLiveTask = !!this.resetRealtimeTaggerState() || hadLiveTask;
-    if (typeof this.resetRealtimeEnvironmentState === 'function') hadLiveTask = !!this.resetRealtimeEnvironmentState() || hadLiveTask;
-    if (typeof this.resetRealtimeRegularizationState === 'function') this.resetRealtimeRegularizationState();
+    hadLiveTask = this.resetRealtimeMonitorState() || hadLiveTask;
+    hadLiveTask = this.resetRealtimeTrainingState() || hadLiveTask;
+    hadLiveTask = this.resetRealtimeTaggerState() || hadLiveTask;
+    hadLiveTask = this.resetRealtimeEnvironmentState() || hadLiveTask;
+    this.resetRealtimeRegularizationState();
     this.realtimeTaskStateUnknown = hadLiveTask;
     this.toast(
       hadLiveTask
@@ -422,37 +406,35 @@ window.realtimeMixin = {
     if (!this.realtimeReady) return;
     const age = Date.now() - this._realtimeLastMessageAt;
     if (age > 2000) {
+      const changed = this.realtimeState !== 'degraded' && this.realtimeState !== 'offline';
       this._setRealtimeState('degraded');
-      this._ensureRealtimeHealthProbe();
+      if (changed) this._wakeTrainingStatePoll();
     } else {
       this._setRealtimeState('online');
     }
   },
 
+  async _probeRealtimeHealth() {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1000);
+    try {
+      const response = await fetch('/api/health', { cache: 'no-store', signal: controller.signal });
+      return response.ok;
+    } catch (_) {
+      return false;
+    } finally { clearTimeout(timeout); }
+  },
+
   _ensureRealtimeHealthProbe() {
-    if (this._realtimeStopped || this._realtimeHealthTimer) return;
-    const probe = () => this._probeRealtimeHealth();
-    probe();
+    if (this._realtimeHealthTimer) return;
+    const probe = async () => this._recordRealtimeHttpResult(await this._probeRealtimeHealth());
+    void probe();
     this._realtimeHealthTimer = setInterval(probe, 2000);
   },
 
-  async _probeRealtimeHealth() {
-    if (this._realtimeStopped) return;
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 1000);
-      const response = await fetch('/api/health', { cache: 'no-store', signal: controller.signal });
-      clearTimeout(timeout);
-      if (!response.ok) throw new Error('health failed');
-      const data = await response.json();
-      this._realtimeHealthFailures = 0;
-      // 探针只负责连通性指示；训练状态归轮询写入方，这里不得改写。
-      // A healthy HTTP response does not make an absent realtime session green.
-      if (this._realtimeSocketClosed) this._setRealtimeState('degraded');
-    } catch (_) {
-      this._realtimeHealthFailures++;
-      if (this._realtimeSocketClosed && this._realtimeHealthFailures >= 2) this._setRealtimeState('offline');
-    }
+  _recordRealtimeHttpResult(reachable) {
+    if (reachable) this._realtimeHealthFailures = 0;
+    else if (this._realtimeSocketClosed && ++this._realtimeHealthFailures >= 2) this._setRealtimeState('offline');
   },
 
   _setRealtimeState(state) {
@@ -473,22 +455,22 @@ window.realtimeMixin = {
         window.AnimaUI?.dismissNotification('backend-disconnected');
         this.toast(this.t('common.backendReconnectedToast'), 'success');
       }
-      if (typeof this.setPreviewMediaPaused === 'function') this.setPreviewMediaPaused(false);
+      this.setPreviewMediaPaused(false);
       return;
     }
     if (state === 'degraded') {
       // Keep the previous confirmed-connectivity bit. A failed reconnect
       // emits degraded while there is no working backend; setting this true
       // here made every retry generate another offline notification.
-      if (typeof this.setPreviewMediaPaused === 'function') this.setPreviewMediaPaused(true);
+      this.setPreviewMediaPaused(true);
       return;
     }
     if (state === 'offline') {
-      if (typeof this.setPreviewMediaPaused === 'function') this.setPreviewMediaPaused(true);
+      this.setPreviewMediaPaused(true);
       if (this.backendConnected) {
         this.backendConnected = false;
         this.backendDisconnectedAt = Date.now();
-        if (typeof this._updateDisconnectedDuration === 'function') this._updateDisconnectedDuration();
+        this._updateDisconnectedDuration();
         if (!this._disconnectedTimer) this._disconnectedTimer = setInterval(() => this._updateDisconnectedDuration(), 1000);
         this.toast(this.t('common.backendDisconnectedToast'), 'error', { key: 'backend-disconnected' });
       }

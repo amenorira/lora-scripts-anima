@@ -6,10 +6,12 @@ window.monitorHistoryRenderMixin = {
   renderHistory() {
     const el = document.getElementById('historyList');
     if (!el) return;
-    try {
     const t = (k, fb) => this.tMonitor(k, fb);
     const hasRunning = this.runningTask && this._isActiveState(this.runningTask.status);
-    const items = this.filteredHistoryItems;
+    const filteredItems = this.filteredHistoryItems;
+    this.historyFilteredCount = filteredItems.length;
+    this.historyPage = Math.max(1, Math.min(this.historyPage, Math.ceil(filteredItems.length / this.historyPageSize) || 1));
+    const items = filteredItems.slice((this.historyPage - 1) * this.historyPageSize, this.historyPage * this.historyPageSize);
     const hasHistory = items && items.length;
 
     let html = '';
@@ -97,16 +99,11 @@ window.monitorHistoryRenderMixin = {
     if (activeId) document.getElementById(activeId)?.focus({ preventScroll: true });
     this._historyRenderLocale = this.locale;
     this._historyRenderLocaleRevision = this.localeRevision;
-    } catch (e) {
-      el.innerHTML = '<div class="dashboard-empty" style="padding:48px"><p>⚠ ' + (this.t ? this.t('monitor.historyRenderError') : 'Error displaying history. Check browser console (F12).') + '</p></div>';
-    }
   },
 
   _viewHistoryCardSnapshot(runDir, event) {
     const press = this._historyCardPointer;
     this._historyCardPointer = null;
-    // Only suppress this gesture's drag selection. Fast repeated clicks can
-    // leave a browser word selection, which must not block later activation.
     if (event.detail && press && Math.hypot(event.clientX - press.x, event.clientY - press.y) >= 4) {
       const selection = window.getSelection?.();
       if (selection?.isCollapsed === false && selection.containsNode(event.currentTarget, true)) return;
@@ -695,17 +692,6 @@ window.monitorHistoryRenderMixin = {
   },
 
   async _applyConfigToTraining(params) {
-    if (!params || !this.form) return;
-    if (typeof this._applyImportedFlatConfig === 'function') {
-      await this._applyImportedFlatConfig(params);
-      return;
-    }
-    for (const key of Object.keys(params)) {
-      if (key === 'sample_prompts' || key.startsWith('_')) continue;
-      if (params[key] !== undefined && params[key] !== null && this.form.hasOwnProperty(key)) {
-        this.form[key] = String(params[key]);
-      }
-    }
-    if (this.updateToml) this.updateToml();
+    await this._applyImportedFlatConfig(params);
   },
 };

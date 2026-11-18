@@ -11,7 +11,7 @@ from PIL import Image, UnidentifiedImageError
 
 from backend.async_utils import settled_to_thread
 from backend.constants import TAGGER_CACHE_DIR
-from backend.core.realtime import realtime_tasks
+from backend.core.realtime import SERVER_INSTANCE_ID, realtime_tasks
 from backend.log import log
 from backend.server.models import APIResponseFail, APIResponseSuccess, TaggerInterrogateRequest
 from backend.tagger.interrogator import (
@@ -272,8 +272,8 @@ async def start_tagger_workspace_task(request: Request):
 async def get_tagger_workspace_task(task_id: str):
     snapshot = await asyncio.to_thread(task_snapshot, task_id)
     if snapshot.get("status") == "error" and snapshot.get("error_detail", "").startswith("Task not found"):
-        return APIResponseFail(message=snapshot["error_detail"])
-    return APIResponseSuccess(data=snapshot)
+        return APIResponseFail(message=snapshot["error_detail"], data={"server_instance_id": SERVER_INSTANCE_ID})
+    return APIResponseSuccess(data={**snapshot, "server_instance_id": SERVER_INSTANCE_ID})
 
 
 @router.post("/tagger/tasks/{task_id}/cancel")
@@ -292,9 +292,9 @@ async def retry_tagger_workspace_task(task_id: str):
             "tagger",
             lambda task_id=new_task_id: task_snapshot(task_id),
         )
-        return APIResponseSuccess(data={"task_id": new_task_id})
+        return APIResponseSuccess(data={"task_id": new_task_id, "server_instance_id": SERVER_INSTANCE_ID})
     except Exception as exc:
-        return APIResponseFail(message=str(exc))
+        return APIResponseFail(message=str(exc), data={"server_instance_id": SERVER_INSTANCE_ID})
 
 
 @router.get("/tagger/tasks/{task_id}/items")
