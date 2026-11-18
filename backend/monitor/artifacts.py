@@ -196,13 +196,16 @@ def _output_entries(run_dir: str):
 
 def read_output_summary(run_dir: str) -> dict:
     """轻量总数与模型变更签名；不读取样本/日志等文件的元数据或解析检查点。"""
-    count, models = 0, []
+    count, image_count, models = 0, 0, []
     for entry, rel in _output_entries(run_dir):
         count += 1
-        if os.path.splitext(entry.name)[1].lower() in LORA_EXTENSIONS:
+        suffix = os.path.splitext(entry.name)[1].lower()
+        if suffix in IMAGE_EXTENSIONS:
+            image_count += 1
+        elif suffix in LORA_EXTENSIONS:
             stat = entry.stat()
             models.append((rel, stat.st_size, stat.st_mtime_ns))
-    return {"count": count, "models": sorted(models)}
+    return {"count": count, "image_count": image_count, "models": sorted(models)}
 
 
 def list_output_files(run_dir: str) -> list[dict]:

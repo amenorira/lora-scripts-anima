@@ -399,10 +399,7 @@ window.trainingFieldRenderer = {
     // ── Embed file picker buttons inside input ──
     let controlHtml = '';
     if (field.role && field.role.startsWith('file-') && !isStaticReadonly) {
-      // 本地系统选择器在无图形环境的服务器上不可用：整颗按钮不渲染，只留内置浏览器
-      const localBtnHtml = this.localPickerAvailable
-        ? `<button type="button" class="btn-icon" @click="localFilePicker('${dataKey}','${field.role}')" :title="t('common.localPicker')" :aria-label="t('common.browseLocal')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>`
-        : '';
+      const localBtnHtml = `<button type="button" class="btn-icon" x-show="localPickerAvailable" @click="localFilePicker('${dataKey}','${field.role}')" :title="t('common.localPicker')" :aria-label="t('common.browseLocal')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>`;
       controlHtml = `<div class="field-input-wrap">${inputHtml}<div class="field-input-actions">${localBtnHtml}<button type="button" class="btn-icon" @click="builtinFilePicker('${dataKey}','${field.role}')" :title="t('common.builtinBrowser')" :aria-label="t('common.searchBuiltin')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button></div></div>`;
     } else {
       controlHtml = inputHtml;

@@ -6,7 +6,7 @@
 前后端共享此定义。
 
 与 Musubi 语义一致的基础控件复用 shared_fields；默认值和适用范围仍由各训练配置定义。
-普通字段在此新增记录后运行 tools/dev/regen_config_fallback.py 同步前端；
+前端通过 /api/fields 读取这里的字段定义。
 合并参数、网络映射和跨字段约束仍需同步相应配置契约。
 """
 from __future__ import annotations

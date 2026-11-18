@@ -2,13 +2,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { TRAINING_CORE_SCRIPTS, ROOT, loadFrontend } = require('./helpers.cjs');
+const { TRAINING_CORE_SCRIPTS, ROOT, loadFrontend, trainingFieldSections } = require('./helpers.cjs');
 
 function application(profile, values = {}) {
   const { window: w } = loadFrontend(['shared/constants', 'shared/utils', 'app/config', ...TRAINING_CORE_SCRIPTS,
     'training/toml', 'training/shape-preview', 'training/config-io'], {
-    window: {}, document: { getElementById: () => null }, btoa, TextEncoder,
-    fetch: async () => { throw new Error('Use generated schema'); },
+    window: { TRAIN_SECTIONS: trainingFieldSections() }, document: { getElementById: () => null }, btoa, TextEncoder,
   });
   const app = Object.assign({}, w.utilsMixin, w.trainingCoreMixin, w.trainingTomlMixin,
     w.trainingShapePreviewMixin, w.trainingConfigIoMixin, {

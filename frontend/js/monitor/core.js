@@ -12,7 +12,7 @@ window.monitorCoreMixin = {
   gpuInfo: null, sysInfo: null, lossSeries: [], lossDataVersion: 0, trainParams: [],
   previews: [], previewStep: 0, previewsLoading: false, historyItems: [], runningTask: null,
   // Refresh ownership and cacheable snapshot freshness advance independently.
-  _previewRequestSeq: 0, _previewSnapshotSeq: 0,
+  _previewRequestSeq: 0, _previewSnapshotSeq: 0, _previewRefreshPending: false,
   weakNetworkMode: true,
   _previewMediaQueue: [], _previewMediaAbort: null, _previewMediaLoading: false, _previewMediaPaused: false, _previewMediaObjectUrls: [], _previewMediaGeneration: 0,
   configSnapshotOpen: false, configSnapshotLoading: false, configSnapshotError: '', configSnapshotRunDir: '',
@@ -96,7 +96,6 @@ window.monitorCoreMixin = {
     this.setMonitorTab(tabs[next], true);
   },
   _prevState: null,
-  _lastRealtimePreviewRefreshAt: 0,
 
   // ── Realtime subscription state ────────────────────────
   _monitorRealtimeTopic: null,
@@ -196,10 +195,11 @@ window.monitorCoreMixin = {
     };
     this.statusText = label || (keys[code] ? this.t(keys[code]) : code);
     if (!this.monitorData || typeof this.monitorData !== 'object') this.monitorData = {};
+    const changed = this.monitorData.state !== code || this.monitorData.state_label !== this.statusText;
     this.monitorData.state = code;
     this.monitorData.state_label = this.statusText;
     this._prevState = code;
-    if (!this.selectedRunDir && this.currentRoute === 'monitor-dashboard') this.scheduleRender();
+    if (changed && !this.selectedRunDir && this.currentRoute === 'monitor-dashboard') this.scheduleRender();
   },
 
   startTrainingStatePoll() {
@@ -620,11 +620,8 @@ window.monitorCoreMixin = {
     this._applyOutputCount(this.currentOutputRunDir, data.output_count);
     this._outputFilesNeedsRefresh = true;
     this.scheduleRender();
-    const now = Date.now();
-    if (now - this._lastRealtimePreviewRefreshAt < 500) return;
-    this._lastRealtimePreviewRefreshAt = now;
-    this.refreshPreviews(false);
-    if (this.monitorTab === 'outputs') void this.loadOutputFiles();
+    if (data.previews_changed !== false) this._previewRefreshPending = true;
+    if (this._previewRefreshPending && !this.previewsLoading) void this.refreshPreviews(false);
   },
 
   startMonitorRealtime() {

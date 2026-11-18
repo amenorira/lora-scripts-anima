@@ -87,9 +87,10 @@ document.addEventListener('alpine:init', () => {
     },
     // 本地系统文件选择器是否可用（无图形环境的 Linux 服务器上不可用，对应按钮直接隐藏）
     localPickerAvailable: true,
+    trainFieldsLoadFailed: false,
 
       // ── Init ───────────────────────────────────────────────
-    async init() {
+    init() {
       // bootstrap.js waits for translations before Alpine initializes the DOM.
       this.locale = I18N.getLocale();
       // Keep <html lang> in sync with the active locale from the very first
@@ -133,23 +134,14 @@ document.addEventListener('alpine:init', () => {
       this.pageTitle = cfg.titleKey ? (this.t(cfg.titleKey) || cfg.title || route) : (cfg.title || route);
       document.title = this.pageTitle + ' | lora-scripts-anima';
 
-      try {
-        const r = await fetch('/api/version');
-        if (r.ok) {
-          const d = await r.json();
-          if (d.status === 'success' && d.data && d.data.version) this.version = d.data.version;
-          else this.version = 'dev';
-        } else {
-          this.version = 'dev';
-        }
-      } catch (e) { this.version = 'dev'; }
-
-      // 本地选择器可用性：请求失败保持默认 true（本地场景），只在后端明确返回 false 时隐藏按钮
-      try {
-        const pr = await fetch('/api/file_picker_available');
-        const pd = await pr.json();
-        if (pd.status === 'success' && pd.data) this.localPickerAvailable = !!pd.data.available;
-      } catch (e) { /* 保持默认 */ }
+      void fetch('/api/version').then(async response => {
+        const body = await response.json();
+        this.version = response.ok && body.status === 'success' && body.data?.version || 'dev';
+      }).catch(() => { this.version = 'dev'; });
+      void fetch('/api/file_picker_available').then(async response => {
+        const body = await response.json();
+        if (body.status === 'success') this.localPickerAvailable = !!body.data.available;
+      }).catch(() => {});
 
       this.theme = localStorage.getItem('anima-theme') || 'auto';
       this.resolveTheme();
@@ -445,8 +437,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     showRightPanel() {
-      const r = this.currentRoute;
-      return !!(r && r.startsWith('train-'));
+      return this.currentRoute === this._trainFormMountedRoute;
     },
 
     // Most routes translate through Alpine's t() bindings. Refresh only
@@ -471,6 +462,18 @@ document.addEventListener('alpine:init', () => {
     },
 
     // ── Route Content Builder ───────────────────────────────
+    async loadTrainForm() {
+      const route = this.currentRoute;
+      this.trainFieldsLoadFailed = false;
+      try {
+        await window.loadTrainingFields();
+      } catch (_) {
+        if (this.currentRoute === route) this.trainFieldsLoadFailed = true;
+        return;
+      }
+      if (this.currentRoute === route && this._trainFormMountedRoute !== route) this.buildTrainForm();
+    },
+
     buildRouteContent(options) {
       const r = this.currentRoute;
       const routeTransition = !!(options && options.routeTransition);
@@ -489,7 +492,8 @@ document.addEventListener('alpine:init', () => {
       if (!['tagger', 'ai-captioning'].includes(r) && typeof this.stopTaggerWorkspace === 'function') this.stopTaggerWorkspace();
       if (r !== 'regularization' && typeof this.stopRegularizationWorkspace === 'function') this.stopRegularizationWorkspace();
       if (r && r.startsWith('train-')) {
-        this.buildTrainForm();
+        if (this._trainFormMountedRoute === r) this.buildTrainForm();
+        else void this.loadTrainForm();
       } else if (['tagger', 'ai-captioning'].includes(r)) {
         this.buildTaggerForm();
       } else if (r === 'regularization') {
@@ -506,6 +510,11 @@ document.addEventListener('alpine:init', () => {
         if (runDir) this.viewRunDetail(runDir, true, query.get('tab') || 'overview');
         else if (this.selectedRunDir) this.resetRunDetailState();
         this.startMonitorRealtime();
+        if (!window.TRAIN_SECTIONS) {
+          void window.loadTrainingFields().then(() => {
+            if (this.currentRoute === r) this.scheduleRender();
+          }, () => {});
+        }
         progressManagedByRoute = true;
         // The dashboard hydrates from the shared realtime snapshot.
       } else if (r === 'history') {

@@ -1,10 +1,10 @@
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
-const {loadGlobalFrontend, composeMixins, readRepo} = require('./helpers.cjs');
+const {loadGlobalFrontend, composeMixins, readRepo, trainingFieldSections} = require('./helpers.cjs');
 
 global.document = {getElementById: () => null};
-global.fetch = async () => ({json: async () => ({status: 'success', data: {}})});
 loadGlobalFrontend(['shared/utils', 'app/config', 'training/field-renderer', 'monitor/core', 'monitor/render']);
+window.TRAIN_SECTIONS = trainingFieldSections();
 const translations = JSON.parse(readRepo('frontend/i18n/zh-CN.json'));
 const params = values => Object.entries(values).map(([key, value]) => ({key, value, desc_key: 'field.' + key}));
 function app(values = {}, overrides = {}) {

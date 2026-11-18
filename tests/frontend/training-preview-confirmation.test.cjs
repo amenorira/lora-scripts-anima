@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { loadFrontend, composeMixins, deferred, response } = require('./helpers.cjs');
+const { loadFrontend, composeMixins, deferred, response, trainingFieldSections } = require('./helpers.cjs');
 
 const turn = () => new Promise(resolve => setImmediate(resolve));
 const cacheFound = { ok: true, json: async () => ({
@@ -11,8 +11,7 @@ const cacheFound = { ok: true, json: async () => ({
 function application(profile = 'anima-lora', run = async () => response({ task_id: 'started-task' })) {
   const requests = [], focused = [], errors = [], visibility = [];
   const context = loadFrontend(['shared/utils', 'app/config', 'training/conditions', 'training/toml', 'shared/confirmation-dialog'], {
-    window: {}, fetch: async (url, options) => {
-      if (url === '/api/fields') throw new Error('Use the fallback registry');
+    window: { TRAIN_SECTIONS: trainingFieldSections() }, fetch: async (url, options) => {
       assert.equal(url, '/api/run');
       requests.push(JSON.parse(options.body));
       return run(requests.length);

@@ -90,6 +90,36 @@ test('background sample refresh can reuse the monitor cache', async () => {
   await pending;
 });
 
+test('artifact notices refresh only changed samples and coalesce changes during a read', async () => {
+  const {app, requests} = requestHarness();
+  app.currentRoute = 'monitor-dashboard';
+  app.scheduleRender = () => {};
+  app._replacePreviewItems = () => false;
+  app._followLatestPreview = () => {};
+  app.handleRealtimeTaskArtifacts({output_count: 1, previews_changed: false});
+  assert.equal(requests.length, 0);
+  app.handleRealtimeTaskArtifacts({output_count: 2, previews_changed: true});
+  app.handleRealtimeTaskArtifacts({output_count: 3, previews_changed: true});
+  app.handleRealtimeTaskArtifacts({output_count: 4, previews_changed: true});
+  assert.equal(requests.length, 1);
+  requests[0].resolve(response([]));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(requests.length, 2);
+  requests[1].resolve(response([]));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app.previewsLoading, false);
+  assert.equal(requests.length, 2);
+  app.handleRealtimeTaskArtifacts({output_count: 5, previews_changed: true});
+  requests[2].reject(new Error('temporary'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(requests.length, 3, 'a failed refresh does not immediately loop');
+  app.handleRealtimeTaskArtifacts({output_count: 6, previews_changed: false});
+  assert.equal(requests.length, 4);
+  requests[3].resolve(response([]));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app._previewRefreshPending, false);
+});
+
 test('sample refresh preserves grid position after modal selection, but initial and explicit resets reveal it', () => {
   for (const mode of ['refresh', 'initial', 'reset']) {
     let rebuilt = false;

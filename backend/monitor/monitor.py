@@ -338,20 +338,20 @@ class TaskMonitor:
         root = str(record["artifact_path"])
         outputs = await asyncio.to_thread(read_output_summary, root)
         previous = self._pending_artifact_signature.get(task_id)
-        # A count change can be an older preview added or removed inside the cache TTL.
-        refresh = previous is not None and outputs["count"] != previous[0]
+        # An older preview can be added or removed inside the cache TTL.
+        refresh = previous is not None and outputs["image_count"] != previous[2]
         previews = await asyncio.to_thread(newest_previews, root, 0, refresh, record.get("run_dir", ""))
-        latest = previews[-1] if previews else {}
-        signature = (outputs["count"], outputs["models"], len(previews), latest.get("path"), latest.get("version"),
-                     latest.get("sample", {}).get("metadata_version"))
+        signature = (outputs["count"], outputs["models"], outputs["image_count"], previews)
         self._pending_artifact_signature[task_id] = signature
-        if previous != signature or signature == self._last_artifact_signature.get(task_id):
+        last = self._last_artifact_signature.get(task_id)
+        if previous != signature or signature == last:
             return
         self._last_artifact_signature[task_id] = signature
         await realtime_hub.publish("artifacts", "task.artifacts", {
             "task_id": task_id,
             "kind": "training",
             "output_count": outputs["count"],
+            "previews_changed": last is None or last[3] != previews,
         })
 
     def _read_log_delta(self, task_id: str, output_dir_path: Path | None = None) -> dict | None:

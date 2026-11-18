@@ -556,8 +556,9 @@ window.regularizationMixin = {
     if (['task.status', 'task.progress', 'task.result'].includes(event.type) && event.payload?.data) this.regApplyTask(event.payload.data);
   },
   applyRealtimeRegularizationSnapshot(snapshot) {
+    if (this.currentRoute !== 'regularization' || !this.regRunning) return;
     const tracked = snapshot?.tasks?.tracked?.find(task => task.task_id === this.regTask?.task_id);
-    if (tracked && this.currentRoute === 'regularization') this.regApplyTask(tracked.data);
+    if (tracked) this.regApplyTask(tracked.data);
   },
   resetRealtimeRegularizationState() {
     // A recovered terminal run is absent from the new server's WS registry.

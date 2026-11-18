@@ -1,10 +1,24 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { execFileSync } = require('node:child_process');
 
 const ROOT = path.join(__dirname, '../..');
 const readRepo = name => fs.readFileSync(path.join(ROOT, name), 'utf8');
 const readFrontend = name => readRepo(`frontend/js/${name.replace(/\.js$/, '')}.js`);
+
+let fieldSections;
+function trainingFieldSections() {
+  const executable = path.join(ROOT, 'venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  fieldSections ||= JSON.parse(execFileSync(executable, ['-B', '-X', 'utf8', '-c', [
+    'import json',
+    'from tools.runtime_paths import configure_test_paths',
+    'configure_test_paths()',
+    'from backend.training.fields.field_registry import get_fields_json',
+    'print(json.dumps(get_fields_json()["sections"]))',
+  ].join('\n')], {cwd: ROOT, encoding: 'utf8'}));
+  return fieldSections;
+}
 
 const FRONTEND_DEPENDENCIES = {
   'environment/core': ['environment/loading', 'environment/models', 'environment/components', 'environment/tasks'],
@@ -57,4 +71,4 @@ function composeMixins(...sources) {
   return app;
 }
 
-module.exports = { TRAINING_CORE_SCRIPTS, ROOT, readRepo, readFrontend, loadFrontend, loadTagEditor, loadGlobalFrontend, response, deferred, composeMixins };
+module.exports = { TRAINING_CORE_SCRIPTS, ROOT, readRepo, readFrontend, loadFrontend, loadTagEditor, loadGlobalFrontend, response, deferred, composeMixins, trainingFieldSections };

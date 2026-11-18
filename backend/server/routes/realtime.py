@@ -167,22 +167,12 @@ async def realtime_socket(websocket: WebSocket) -> None:
             op = message.get("op")
             if op == "hello":
                 handshaken = True
-                incoming_instance_id = message.get("server_instance_id")
                 enqueue({
                     "op": "ready",
                     "protocol": PROTOCOL_VERSION,
                     "server_instance_id": SERVER_INSTANCE_ID,
                     "started_at": SERVER_STARTED_AT,
                 })
-                if isinstance(incoming_instance_id, str) and incoming_instance_id and incoming_instance_id != SERVER_INSTANCE_ID:
-                    # Do not replay a cursor from another in-memory backend
-                    # instance.  The client must bootstrap a fresh snapshot.
-                    enqueue({
-                        "op": "resync_required",
-                        "topics": [],
-                        "reason": "server_instance_changed",
-                        "server_instance_id": SERVER_INSTANCE_ID,
-                    })
                 continue
             if not handshaken:
                 enqueue({"op": "error", "code": "hello_required"})

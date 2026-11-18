@@ -54,6 +54,18 @@ test('failed restart reconciliation retains the run and retries HTTP on the next
   assert.equal(app.regRunning,false);
 });
 
+test('reconnect settles an active run without overwriting later result edits', () => {
+  const app = restartHarness();
+  const finished = {task_id:'old-task',run_key:'reg_old',status:'finished',updated_at:200,completed:2};
+  const snapshot = {tasks: {tracked: [{task_id:'old-task', data:finished}]}};
+  app.applyRealtimeRegularizationSnapshot(snapshot);
+  assert.equal(app.regRunning, false);
+  assert.equal(app.regTask.completed, 2);
+  app.regApplyTask({...finished, completed:1, excluded:1});
+  app.applyRealtimeRegularizationSnapshot(snapshot);
+  assert.equal(app.regTask.completed, 1);
+});
+
 for (const eventFirst of [false, true]) {
   test(`cancel preserves terminal status with ${eventFirst ? 'an earlier event' : 'only the HTTP response'}`, async () => {
     const app = restartHarness(), pending = deferred(), unsubscribed = [];

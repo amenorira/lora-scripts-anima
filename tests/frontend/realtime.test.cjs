@@ -63,3 +63,17 @@ test('poll response older than ownership boundary is ignored', () => {
   assert.equal(app.isTraining, false);
   assert.equal(app.statusText, 'monitor.idle');
 });
+
+test('repeated online updates resume sample loading only on a state change', () => {
+  const { window } = loadFrontend('shared/realtime', { window: {} });
+  const media = [];
+  const app = Object.assign({}, window.realtimeMixin, {
+    setPreviewMediaPaused: value => media.push(value),
+  });
+  app._setRealtimeState('online');
+  app._setRealtimeState('online');
+  app._setRealtimeState('degraded');
+  app._setRealtimeState('degraded');
+  app._setRealtimeState('online');
+  assert.deepEqual(media, [false, true, false]);
+});

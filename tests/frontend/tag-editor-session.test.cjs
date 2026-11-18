@@ -54,6 +54,31 @@ test('external refresh keeps a pending draft and its save revision while updatin
   assert.deepEqual(updatedPanels, ['new clean']);
 });
 
+test('external scans back off while unchanged and resume immediately in the foreground', async () => {
+  const { app, context, pending, reply } = fixture();
+  const timers = new Map();
+  let id = 0;
+  context.setTimeout = (callback, delay) => { timers.set(++id, {callback, delay}); return id; };
+  context.clearTimeout = timer => timers.delete(timer);
+  app.currentRoute = 'tagEditor';
+  app._teExternalGeneration = 1;
+  app._teStartExternalRefresh();
+  for (const delay of [4000, 8000, 16000, 32000, 32000]) {
+    const timer = app._teExternalTimer;
+    const task = timers.get(timer);
+    assert.equal(task.delay, delay);
+    timers.delete(timer);
+    const check = task.callback();
+    reply(pending.length - 1, null);
+    await check;
+  }
+  app._teRefreshOnVisible();
+  assert.equal(timers.size, 1);
+  assert.equal(timers.get(app._teExternalTimer).delay, 0);
+  app._teStopExternalRefresh();
+  assert.equal(timers.size, 0);
+});
+
 test('bulk loading cannot merge or select the previous dataset after a switch', async () => {
   const { app, reply } = fixture();
   const request = app.tagEditorSelectFiltered();

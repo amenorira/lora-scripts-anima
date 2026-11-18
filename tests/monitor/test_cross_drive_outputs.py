@@ -58,11 +58,26 @@ class RunRegistryTests(CrossDriveSandbox):
         clock = SimpleNamespace(monotonic=lambda: 10.0)
 
         async def collect():
-            with patch("backend.monitor.monitor.time", clock), patch("backend.monitor.monitor.realtime_hub.subscriber_count", return_value=1):
+            with (
+                patch("backend.monitor.monitor.time", clock),
+                patch("backend.monitor.monitor.realtime_hub.subscriber_count", return_value=1),
+                patch("backend.monitor.monitor.realtime_hub.publish") as publish,
+            ):
                 await monitor._collect_artifact_update("sample", record)
                 (sample / "demo_000001_00_20261114090001.png").write_bytes(b"earlier")
                 clock.monotonic = lambda: 12.0
                 await monitor._collect_artifact_update("sample", record)
+                clock.monotonic = lambda: 14.0
+                await monitor._collect_artifact_update("sample", record)
+                (self.external / "model.safetensors").write_bytes(b"model")
+                clock.monotonic = lambda: 16.0
+                await monitor._collect_artifact_update("sample", record)
+                clock.monotonic = lambda: 18.0
+                await monitor._collect_artifact_update("sample", record)
+                self.assertEqual(
+                    [(args.args[2]["output_count"], args.args[2]["previews_changed"]) for args in publish.await_args_list],
+                    [(2, True), (3, False)],
+                )
 
         asyncio.run(collect())
         previews = newest_previews(str(self.external))

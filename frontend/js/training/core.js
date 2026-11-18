@@ -12,7 +12,6 @@ window.trainingCoreMixin = {
   _activeTrainType: '',
 
   _trainTypePanel: null,
-  _trainFieldsRevision: 0,
   _profileWatcherSetupHandle: null,
   _profileWatcherSetupUsesIdle: false,
 
@@ -108,8 +107,7 @@ window.trainingCoreMixin = {
     return !!panel
       && panel.dataset.trainType === trainType
       && panel.getAttribute('data-panel-ready') === '1'
-      && panel.dataset.panelLocale === String(this.locale || '')
-      && panel.dataset.fieldsRevision === String(this._trainFieldsRevision || 0);
+      && panel.dataset.panelLocale === String(this.locale || '');
   },
 
   _commitTrainTypeSwitch(target) {
@@ -293,10 +291,6 @@ window.trainingCoreMixin = {
       (this[key] || []).forEach(stop => { if (typeof stop === 'function') stop(); });
       this[key] = [];
     });
-    if (this._trainingFieldsLoadedHandler) {
-      window.removeEventListener('training-fields-loaded', this._trainingFieldsLoadedHandler);
-      this._trainingFieldsLoadedHandler = null;
-    }
     this._cancelTrainingPreflight();
     clearTimeout(this._conditionalMotionTimer);
     this._conditionalMotionTimer = null;
@@ -523,37 +517,6 @@ window.trainingCoreMixin = {
 
     self._setupTrainTypeWatcher();
 
-    // The form may mount before /api/fields returns. Rehydrate missing
-    // profile-scoped fields (notably Krea 2) once the authoritative registry
-    // arrives instead of leaving the user with the static fallback schema.
-    if (self._trainingFieldsLoadedHandler) {
-      window.removeEventListener('training-fields-loaded', self._trainingFieldsLoadedHandler);
-    }
-    self._trainingFieldsLoadedHandler = () => {
-      if (!self._trainFormMountedRoute) return;
-      self._trainFieldsRevision += 1;
-      const activeType = self.form.model_train_type || 'anima-lora';
-      const freshDefaults = self._buildFormDefaults(activeType);
-      Object.keys(freshDefaults).forEach(key => {
-        if (self.form[key] === undefined) {
-          self.form[key] = freshDefaults[key];
-          self._setFieldSource(key, 'default', activeType);
-        }
-      });
-      self._normalizeProfileSelectValues(activeType, freshDefaults);
-      if (activeType === 'krea2-lora') self._applyKrea2ModelDefaults(self.form, freshDefaults);
-      self.formDefaults = { ...freshDefaults };
-      self._syncKrea2CacheDir();
-      self._destroyTrainTypePanel();
-      self.renderTrainingForm(activeType, null, true);
-      self.setupAutoValueWatchers();
-      self.setupShowIfWatchers();
-      self.setupReadonlyWatchers();
-      self.setupKreaDitFormatWatcher();
-      self.updateToml();
-    };
-    window.addEventListener('training-fields-loaded', self._trainingFieldsLoadedHandler);
-
     // Synchronize the form once from the shared realtime snapshot.
     this.refreshTrainingRealtimeState();
     this.scheduleOutputPathInfo();
@@ -606,13 +569,13 @@ window.trainingCoreMixin = {
     return panel;
   },
 
-  renderTrainingForm(trainType, targetId, force = false) {
+  renderTrainingForm(trainType, targetId) {
     const root = document.getElementById(targetId || 'trainFormContent');
     if (!root) return;
     const activeType = trainType || this.form.model_train_type || 'anima-lora';
     const container = targetId ? root : this._activateTrainTypePanel(root, activeType);
 
-    if (!targetId && !force && this._trainTypePanelIsReady(activeType)) {
+    if (!targetId && this._trainTypePanelIsReady(activeType)) {
       this._nestLevelCache = null;
       this.buildSectionNav();
       this._syncAllConditionalFields();
@@ -655,7 +618,6 @@ window.trainingCoreMixin = {
     if (!targetId) {
       container.setAttribute('data-panel-ready', '1');
       container.dataset.panelLocale = String(this.locale || '');
-      container.dataset.fieldsRevision = String(this._trainFieldsRevision || 0);
     }
     // 构建右侧分组导航指示器（#1）并绑定滚动高亮
     this.buildSectionNav();
@@ -871,12 +833,8 @@ window.trainingCoreMixin = {
     if (cachePathChanged) this.updateToml();
   },
 
-  // ── Training status from the shared realtime snapshot ─────
+  // ── Training status from the global task poll ─────
   refreshTrainingRealtimeState() {
-    if (this.realtimeSnapshot && typeof this.applyRealtimeTrainingSnapshot === 'function') {
-      this.applyRealtimeTrainingSnapshot(this.realtimeSnapshot);
-      return;
-    }
     this.trainingBlocked = !!this.trainingActive;
     if (!this.trainingBlocked) this.activeTaskId = null;
   }

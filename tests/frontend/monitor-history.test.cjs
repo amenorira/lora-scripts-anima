@@ -4,6 +4,7 @@ const {loadGlobalFrontend, composeMixins, response, deferred} = require('./helpe
 
 global.document = {getElementById: () => null};
 loadGlobalFrontend(['shared/utils', 'monitor/logs', 'monitor/core', 'monitor/render']);
+window.loadTrainingFields = async () => {};
 
 function app(overrides = {}) {
   return Object.assign(composeMixins(window.utilsMixin, window.monitorCoreMixin, window.monitorRenderMixin), {

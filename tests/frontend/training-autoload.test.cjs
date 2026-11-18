@@ -17,6 +17,7 @@ function application(entries, autoLoadHistory) {
   };
   const window = {
     t: key => key, addEventListener() {}, removeEventListener() {},
+    loadTrainingFields: async () => {},
     TRAIN_GROUP_MAP: {},
     getVisibleSections: () => [{ key: 'training', fields: [
       { key: 'learning_rate', type: 'text', default: 'default-rate' },

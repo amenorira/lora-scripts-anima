@@ -8,7 +8,6 @@ import sys
 import tempfile
 import threading
 import time
-from collections.abc import Callable
 from pathlib import Path
 from uuid import uuid4
 
@@ -25,53 +24,21 @@ router = APIRouter()
 router.include_router(flash_attention_router)
 router.include_router(moss_acceleration_router)
 
-_JOB_TTL_SECONDS = 600
-
-
-def _prune_finished_jobs(
-    jobs: dict[str, dict],
-    lock,
-    on_remove: Callable[[dict], None] | None = None,
-    *,
-    now: float | None = None,
-) -> None:
-    """Remove completed jobs older than the shared retention window.
-
-    The callback runs while holding the original lock, matching the previous
-    cleanup behavior for install-log deletion.
-    """
-    current_time = time.time() if now is None else now
-    with lock:
-        expired_ids = [
-            job_id
-            for job_id, job in jobs.items()
-            if job.get("done") and current_time - job.get("start", 0) > _JOB_TTL_SECONDS
-        ]
-        for job_id in expired_ids:
-            job = jobs[job_id]
-            if on_remove is not None:
-                on_remove(job)
-            del jobs[job_id]
-
-
 # ── Generic pip-install jobs ─────────────────────────────────
 
 _install_jobs: dict[str, dict] = {}
 _install_jobs_lock = threading.Lock()
 
 
-def _remove_install_job(job: dict) -> None:
-    log_path = job.get("log_path")
-    if not log_path:
+def _remove_install_job(job_id: str) -> None:
+    with _install_jobs_lock:
+        job = _install_jobs.pop(job_id, None)
+    if not job:
         return
     try:
-        os.unlink(log_path)
-    except Exception:
+        os.unlink(job["log_path"])
+    except OSError:
         pass
-
-
-def _cleanup_install_jobs() -> None:
-    _prune_finished_jobs(_install_jobs, _install_jobs_lock, _remove_install_job)
 
 
 def _read_install_log_tail(path: str, tail: int) -> str:
@@ -102,7 +69,6 @@ def _read_install_log_tail(path: str, tail: int) -> str:
 
 def _install_job_snapshot(job_id: str, tail: int = 20) -> dict:
     """Read the existing install-job state for the realtime bridge."""
-    _cleanup_install_jobs()
     with _install_jobs_lock:
         job = _install_jobs.get(job_id)
         job = dict(job) if job else None
@@ -170,9 +136,9 @@ def _start_install_job(cmd: list[str], max_retries: int = 2) -> str:
                 else:
                     with _install_jobs_lock:
                         _install_jobs[job_id]["returncode"] = -1
+        log_file.close()
         with _install_jobs_lock:
             _install_jobs[job_id]["done"] = True
-        log_file.close()
 
     threading.Thread(target=_run, daemon=True).start()
     return job_id
@@ -184,12 +150,12 @@ _download_jobs: dict[str, dict] = {}
 _download_jobs_lock = threading.Lock()
 
 
-def _cleanup_download_jobs() -> None:
-    _prune_finished_jobs(_download_jobs, _download_jobs_lock)
+def _remove_download_job(job_id: str) -> None:
+    with _download_jobs_lock:
+        _download_jobs.pop(job_id, None)
 
 
 def _download_job_snapshot(job_id: str) -> dict:
-    _cleanup_download_jobs()
     with _download_jobs_lock:
         job = _download_jobs.get(job_id)
         if job:
@@ -313,7 +279,6 @@ def _start_download_job(only_file: str | None = None, group: str | None = None) 
 @router.get("/anima-model/status")
 async def anima_model_status() -> dict:
     """扫描 models/ 目录，返回全部训练模型的下载状态。"""
-    _cleanup_download_jobs()
     from tools.download_anima_model import list_local_model_files
 
     files = await asyncio.to_thread(list_local_model_files, SD_MODELS_DIR)
@@ -347,6 +312,7 @@ async def anima_model_download(request: Request) -> dict:
         job_id,
         "model-download",
         lambda job_id=job_id: _download_job_snapshot(job_id),
+        on_expire=lambda: _remove_download_job(job_id),
     )
     return {"success": True, "job_id": job_id}
 
@@ -417,6 +383,7 @@ async def xformers_install() -> dict:
         job_id,
         "xformers-install",
         lambda job_id=job_id: _install_job_snapshot(job_id),
+        on_expire=lambda: _remove_install_job(job_id),
     )
     return {"success": True, "job_id": job_id, "message": "Installation started / 安装已启动"}
 
@@ -500,5 +467,6 @@ async def triton_install() -> dict:
         job_id,
         "triton-install",
         lambda job_id=job_id: _install_job_snapshot(job_id),
+        on_expire=lambda: _remove_install_job(job_id),
     )
     return {"success": True, "job_id": job_id, "message": f"Installing {package} / 正在安装 {package}..."}

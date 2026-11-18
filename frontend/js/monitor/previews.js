@@ -32,6 +32,7 @@ window.monitorPreviewsMixin = {
   _previewOriginalCache: null,
   _previewMediaByUrl: null,
   _previewMediaRetryNeeded: false,
+  _previewMediaRetryTimer: null,
 
   get sampleSidebarActive() {
     return this.sampleSidebarVisible && this.sampleSidebarOpen && !!this.previews?.[this.previewStep];
@@ -684,6 +685,7 @@ window.monitorPreviewsMixin = {
     this._previewRequestSeq++;
     this._previewSnapshotSeq++;
     this.previewsLoading = false;
+    this._previewRefreshPending = false;
   },
 
   _applyPreviewSnapshot(previews, snapshotSeq = this._previewSnapshotSeq) {
@@ -754,6 +756,8 @@ window.monitorPreviewsMixin = {
   },
 
   _cancelPreviewMediaQueue() {
+    if (this._previewMediaRetryTimer !== null) clearTimeout(this._previewMediaRetryTimer);
+    this._previewMediaRetryTimer = null;
     this._previewMediaGeneration++;
     for (const item of this._previewMediaQueue) delete item.image.dataset.previewQueued;
     if (this._previewMediaActive) delete this._previewMediaActive.dataset.previewQueued;
@@ -824,14 +828,19 @@ window.monitorPreviewsMixin = {
         this._setPreviewMediaSource(next.image, next.url, objectUrl);
       }
     } catch (error) {
-      // Cancellation and transient slow-link failures remain retryable on the
-      // next render or when realtime freshness recovers.
+      // A failed thumbnail can recover even on a static historical dashboard.
       if (next.image && next.image.isConnected) {
         delete next.image.dataset.previewQueued;
         if (error?.name !== 'AbortError' && generation === this._previewMediaGeneration) {
           this._previewMediaObserver?.unobserve(next.image);
           this._previewMediaRetryNeeded = true;
           next.image.closest?.('.preview-thumb-frame')?.classList.add('is-error');
+          if (this.currentRoute === 'monitor-dashboard' && this.monitorTab === 'samples') {
+            this._previewMediaRetryTimer ??= setTimeout(() => {
+              this._previewMediaRetryTimer = null;
+              if (this._previewMediaRetryNeeded) this.scheduleRender();
+            }, 1000);
+          }
         }
       }
     } finally {
@@ -916,6 +925,9 @@ window.monitorPreviewsMixin = {
     // feedback visible briefly without holding the request or its results.
     if (notifyOnFailure) this._showRefreshFeedback('preview');
     this.previewsLoading = true;
+    const artifactRefresh = this._previewRefreshPending;
+    this._previewRefreshPending = false;
+    let applied = false;
     const requestSeq = ++this._previewRequestSeq;
     this._previewSnapshotSeq++;
     const sourceRunDir = this.currentOutputRunDir;
@@ -952,12 +964,19 @@ window.monitorPreviewsMixin = {
           if (j.meta.preview_enabled !== undefined) target.preview_enabled = j.meta.preview_enabled;
         }
         this._followLatestPreview();
+        applied = true;
       } else if (notifyOnFailure) this.toast?.(this.t('monitor.previewRefreshFailed'), 'error');
     } catch (e) {
       if (notifyOnFailure && isCurrent()) this.toast?.(this.t('monitor.previewRefreshFailed'), 'error');
     } finally {
       if (requestSeq === this._previewRequestSeq) {
         this.previewsLoading = false;
+        if (this._previewRefreshPending) {
+          void this.refreshPreviews(false);
+        } else if (artifactRefresh && !applied) {
+          // A later artifact notice can retry a failed sample read.
+          this._previewRefreshPending = true;
+        }
         if (this.currentRoute === 'monitor-dashboard') this.renderDashboard();
       }
     }

@@ -34,11 +34,27 @@ window.tagEditorSession = {
   _teStartExternalRefresh() {
     this._teStopExternalRefresh();
     if (this.currentRoute !== 'tagEditor') return;
-    this._teExternalTimer = setInterval(() => this._teCheckExternalChanges(), 4000);
+    this._teScheduleExternalRefresh(4000);
+  },
+
+  _teScheduleExternalRefresh(delay) {
+    const timer = setTimeout(async () => {
+      const unchanged = await this._teCheckExternalChanges();
+      if (this._teExternalTimer === timer) {
+        this._teScheduleExternalRefresh(unchanged ? Math.min(32000, Math.max(4000, delay * 2)) : 4000);
+      }
+    }, delay);
+    this._teExternalTimer = timer;
+  },
+
+  _teRefreshOnVisible() {
+    if (document.hidden || this._teExternalTimer === null || this._teExternalAbort) return;
+    clearTimeout(this._teExternalTimer);
+    this._teScheduleExternalRefresh(0);
   },
 
   _teStopExternalRefresh() {
-    if (this._teExternalTimer !== null) clearInterval(this._teExternalTimer);
+    clearTimeout(this._teExternalTimer);
     this._teExternalTimer = null;
     if (this._teExternalAbort) this._teExternalAbort.abort();
     this._teExternalAbort = null;
@@ -68,6 +84,7 @@ window.tagEditorSession = {
         this._teSaveDraft();
         await this.tagEditorReloadSessionPage(this.tagEditorPage);
       }
+      return payload.status === 'success' && !payload.data;
     } catch (_) {
       // External writers may still have the file open. Retry on the next tick.
     } finally {

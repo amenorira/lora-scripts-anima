@@ -1,10 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { TRAINING_CORE_SCRIPTS, loadFrontend } = require('./helpers.cjs');
+const { TRAINING_CORE_SCRIPTS, loadFrontend, trainingFieldSections } = require('./helpers.cjs');
 
 function application(profile, values = {}) {
   const { window: w } = loadFrontend(['shared/constants', 'shared/utils', 'app/config', ...TRAINING_CORE_SCRIPTS, 'training/toml', 'training/dataset-repeat', 'training/config-io'], {
-    window: {}, document: { getElementById: () => null, querySelectorAll: () => [] }, btoa, TextEncoder, clearTimeout,
+    window: { TRAIN_SECTIONS: trainingFieldSections() }, document: { getElementById: () => null, querySelectorAll: () => [] }, btoa, TextEncoder, clearTimeout,
     requestAnimationFrame: callback => setTimeout(callback, 0), cancelAnimationFrame: clearTimeout,
   });
   w.t = key => key;

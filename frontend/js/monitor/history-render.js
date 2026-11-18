@@ -601,6 +601,8 @@ window.monitorHistoryRenderMixin = {
         errorDetails = this.apiErrorDetails(j);
         throw new Error(j.data?.reuse_error || this.localizeApiError(j, 'monitor.configLoadError'));
       }
+      await window.loadTrainingFields();
+      if (seq !== this._reuseRequestSeq) return;
       this._ensureTrainingSession?.('train-basic');
       // When startup restore is disabled, some saved profiles are intentionally
       // absent from the in-memory undo snapshot. Keep their original storage

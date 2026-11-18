@@ -540,8 +540,12 @@
         <div class="train-workbench">
 
         <div class="train-workbench-main">
+        <div class="dashboard-empty" x-show="_trainFormMountedRoute !== currentRoute" role="status">
+          <p x-text="t(trainFieldsLoadFailed ? 'common.requestFailed' : 'common.loading')"></p>
+          <button type="button" class="btn btn-secondary btn-sm" x-show="trainFieldsLoadFailed" @click="loadTrainForm()" x-text="t('monitor.retryLoad')"></button>
+        </div>
         <!-- Train type selector -->
-        <div class="train-tab-card">
+        <div class="train-tab-card" x-show="_trainFormMountedRoute === currentRoute">
           <div class="train-type-select-wrap">
             <label class="train-type-label" x-text="t('field.model_train_type', 'Training Type')"></label>
             <div class="anima-select" style="min-width:200px"
@@ -595,6 +599,8 @@
       <!-- Route: Tag Editor -->
       <div x-show="currentRoute === 'tagEditor'" x-cloak
         x-init="tagEditorRestorePanelWidth(); tagEditorInitLayout()"
+        @visibilitychange.document="_teRefreshOnVisible()"
+        @focus.window="_teRefreshOnVisible()"
         @keydown.window="tagEditorHandleKeydown($event)"
         @resize.window="if (currentRoute === 'tagEditor') tagEditorCloseContextMenus(true)"
         @scroll.capture="if (!$event.target.closest?.('.te-ctx')) tagEditorCloseContextMenus(true, $event.target)">
