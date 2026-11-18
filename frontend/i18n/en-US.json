@@ -2992,6 +2992,7 @@
 		"krea_optimizer_type_Prodigy": "Automatically estimates the step-size scale D during training. The learning rate is a multiplier; inspect D in the logs."
 	},
 	"training": {
+		"preflightChanged": "Training settings changed during checks. Start again to check the updated settings.",
 		"trainingInProgress": "Training in Progress...",
 		"taskRunning": "A training task is currently running",
 		"goToMonitor": "Go to Monitor",

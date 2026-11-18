@@ -2992,6 +2992,7 @@
 		"krea_optimizer_type_Prodigy": "学習中にステップサイズの尺度 D を自動推定します。学習率はステップ幅の倍率で、D の変化はログで確認できます。"
 	},
 	"training": {
+		"preflightChanged": "確認中に学習設定が変更されました。もう一度開始して確認してください。",
 		"trainingInProgress": "学習実行中…",
 		"taskRunning": "学習タスクが実行中です",
 		"goToMonitor": "モニターへ",

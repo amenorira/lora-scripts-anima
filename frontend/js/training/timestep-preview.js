@@ -12,9 +12,9 @@ window.trainingTimestepPreview = {
         || (this.form.timestep_sampling === 'sigma' && this.form.weighting_scheme === 'logit_normal'));
   },
 
-  timestepOffsetSubsets() {
+  timestepOffsetSubsets(estimate = this.stepEstimate) {
     if (!['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type)) return [];
-    return ((this.stepEstimate && this.stepEstimate.subsets) || []).filter(subset => !subset.is_reg);
+    return ((estimate && estimate.subsets) || []).filter(subset => !subset.is_reg);
   },
 
   subsetTimestepOffsetValue(name) {
@@ -52,9 +52,9 @@ window.trainingTimestepPreview = {
     this.subsetTimestepOffsetDrafts = nextDrafts;
   },
 
-  _reconcileSubsetTimestepOffsets() {
+  _reconcileSubsetTimestepOffsets(estimate = this.stepEstimate) {
     if (!this.form || !['anima-lora', 'moss-image-lora'].includes(this.form.model_train_type)) return;
-    const validNames = new Set(this.timestepOffsetSubsets().map(subset => subset.name));
+    const validNames = new Set(this.timestepOffsetSubsets(estimate).map(subset => subset.name));
     const current = this.form.subset_timestep_offsets;
     const clean = {};
     if (current && typeof current === 'object' && !Array.isArray(current)) {

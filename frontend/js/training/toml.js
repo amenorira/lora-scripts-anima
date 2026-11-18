@@ -8,6 +8,7 @@ window.trainingTomlMixin = {
   tomlHighlighted: '',
   isTraining: false,
   trainingStarting: false,
+  trainingStopping: '',
   isIdle: true,
   taskId: null,
   statusText: 'Idle',
@@ -570,14 +571,8 @@ window.trainingTomlMixin = {
     return text;
   },
 
-  _trainingErrorDetails(result) {
-    if (typeof this.apiErrorDetails === 'function') return this.apiErrorDetails(result);
-    const details = result?.data?.errorDetails;
-    return Array.isArray(details) ? details.join('\n') : (details || '');
-  },
-
   _showTrainingError(result, fallbackKey = 'common.failed') {
-    this.toast(this._trainingErrorText(result, fallbackKey), 'error', { details: this._trainingErrorDetails(result) });
+    this.toast(this._trainingErrorText(result, fallbackKey), 'error', { details: this.apiErrorDetails(result) });
   },
 
   async prepareKrea2Cache(confirmedPayload = null) {
@@ -614,6 +609,7 @@ window.trainingTomlMixin = {
       this.toast(this.t('common.requestFailed') + ': ' + error.message, 'error');
     } finally {
       this.trainingStarting = false;
+      this.scheduleStepEstimate();
     }
   },
 
@@ -641,39 +637,52 @@ window.trainingTomlMixin = {
   async startTraining(confirmedPayload = null) {
     if (this.isTraining || this.trainingStarting || this.showConfirmModal || this.regularizationActive || this.datasetRepeatApplying) return;
 
-    // Form validation before starting
-    if (!confirmedPayload && !this.validateForm()) {
-      this.toast(this.t('common.formErrors'), 'error');
-      return;
-    }
-
+    const route = this.currentRoute, routeSeq = this._routeTransitionSeq;
+    const onStartPage = () => this.currentRoute === route && this._routeTransitionSeq === routeSeq;
     this.trainingStarting = true;
     try {
       if (confirmedPayload) {
         await this._submitTraining(confirmedPayload);
         return;
       }
-      const outputPathInfo = await this.refreshOutputPathInfo(true);
+      if (this.form.model_train_type === 'krea2-lora' && !await this.ensureKreaDitFormat()) return;
+      if (!onStartPage()) return;
+      this._enforceCheckpointingUiConstraints();
+      this._enforceMossTextEncoderFreeze();
+      if (!this.validateForm()) {
+        this.toast(this.t('common.formErrors'), 'error');
+        return;
+      }
+      this._cancelTrainingPreflight(true);
+      let signature = JSON.stringify(this.form);
+      const form = JSON.parse(signature);
+      const unchanged = () => {
+        if (!onStartPage()) return false;
+        if (JSON.stringify(this.form) === signature) return true;
+        this.toast(this.t('training.preflightChanged'), 'warning');
+        return false;
+      };
+      const outputPathInfo = await this.refreshOutputPathInfo(form);
+      if (!unchanged()) return;
       if (!outputPathInfo || !outputPathInfo.available || !outputPathInfo.writable || outputPathInfo.path_is_directory === false) {
         this.toast(this.outputPathBlockingText(), 'error');
         return;
       }
 
-      const estimate = await this.refreshStepEstimate(true);
+      const estimate = await this.refreshStepEstimate(form, false);
+      if (!unchanged()) return;
       if (!estimate) {
         this.toast(this.stepEstimateErrorText() || this.t('stepEstimate.failed'), 'error');
         return;
       }
 
-      if (this.form.model_train_type === 'krea2-lora') {
-        if (!await this.ensureKreaDitFormat()) return;
-        if (!this.validateForm()) {
-          this.toast(this.t('common.formErrors'), 'error');
-          return;
-        }
-      }
-      const payload = this._collectTrainingPayload();
-      payload._form_state = this._collectTrainingFormSnapshot();
+      this.stepEstimate = estimate;
+      this._reconcileSubsetTimestepOffsets(estimate);
+      this._refreshSubsetTimestepEditor();
+      const payload = JSON.parse(JSON.stringify(this._collectTrainingPayload()));
+      signature = JSON.stringify(this.form);
+      payload._form_state = JSON.parse(signature);
+
       const krea = payload.model_train_type === 'krea2-lora';
       const promptKey = krea ? 'krea_sample_prompts' : 'positive_prompts';
       if (this.confirmPreviewBeforeTraining && payload[krea ? 'enable_krea_samples' : 'enable_preview']) {
@@ -687,7 +696,7 @@ window.trainingTomlMixin = {
             { label: this.t('trainingPreview.positivePrompts'), items: this._previewPositivePromptItems(payload) },
           ],
           secondaryLabel: this.t('trainingPreview.editPrompts'),
-          next: choice => choice === 'confirm' ? this._submitTraining(payload, true) : null,
+          next: choice => choice === 'confirm' && unchanged() ? this._submitTraining(payload, true) : null,
           onAfterClose: choice => {
             if (choice === 'secondary') this.focusTrainingField(promptKey);
           },
@@ -700,6 +709,7 @@ window.trainingTomlMixin = {
       this._applyTaskView('IDLE');
     } finally {
       this.trainingStarting = false;
+      this.scheduleStepEstimate();
     }
   },
 
@@ -780,7 +790,8 @@ window.trainingTomlMixin = {
 
   async stopTraining() {
     const taskId = this.liveTaskId || this.taskId;
-    if (!taskId || (!this.isTraining && !this.trainingBlocked)) return;
+    if (!taskId || this.trainingStopping === taskId || (!this.isTraining && !this.trainingBlocked)) return;
+    this.trainingStopping = taskId;
     try {
       const response = await fetch('/api/tasks/terminate/' + encodeURIComponent(taskId));
       if (!response.ok) throw new Error(this.t('monitor.stopFailed'));
@@ -788,7 +799,8 @@ window.trainingTomlMixin = {
       // 后端在 terminate 返回前就已把任务结算为 TERMINATED；立刻对账一次，
       // 终态由轮询写入方统一绘制（补一次轮询让它亚秒级可见）。
       void this._pollTrainingState();
-    } catch(e) { this.toast(this.t('common.failed')+': '+e.message); }
+    } catch(e) { this.toast(this.t('common.failed')+': '+e.message, 'error'); }
+    finally { if (this.trainingStopping === taskId) this.trainingStopping = ''; }
   },
 
   resetRealtimeTrainingState() {

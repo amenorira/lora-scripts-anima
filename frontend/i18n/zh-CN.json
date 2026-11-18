@@ -2992,6 +2992,7 @@
 		"krea_optimizer_type_Prodigy": "在训练中自动估计步长尺度 D，学习率是步长倍率；可在日志中查看 D 的变化。"
 	},
 	"training": {
+		"preflightChanged": "检查期间训练参数已更改，请重新开始检查。",
 		"trainingInProgress": "训练进行中...",
 		"taskRunning": "当前有训练任务正在运行",
 		"goToMonitor": "前往监控",

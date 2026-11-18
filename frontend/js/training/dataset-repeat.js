@@ -304,7 +304,7 @@ window.datasetRepeatMixin = {
     const refreshEstimateIfNeeded = async (changed) => {
       // Restore cancelled estimates and edits deferred while directory names were unstable.
       if (isCurrent() && (changed || estimateWasPending || this._stepEstimateRequestSeq !== estimateRequestSeq)) {
-        await this.refreshStepEstimate(true);
+        await this.refreshStepEstimate();
       }
     };
     try {

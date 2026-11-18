@@ -50,7 +50,7 @@ test('partial rollback clears stale state and affected offsets, rescans and repo
     assert.ok(h.app.datasetRepeatFailureText().includes(`C:/train/${currentName} → C:/train/5_alpha`));
     assert.match(h.toasts[0][0], /in use \$&/);
     h.state.names = ['5_alpha', '2_beta'];
-    await h.app.refreshStepEstimate(true);
+    await h.app.refreshStepEstimate();
     assert.equal(h.app.form.subset_timestep_offsets['5_alpha'], undefined);
     assert.equal(h.app.datasetRepeatReadOnly(), false);
   }

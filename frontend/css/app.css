@@ -526,6 +526,7 @@ summary:focus-visible {
 }
 .main-content {
   flex: 1; overflow-y: auto;
+  min-width: 0;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   padding: var(--space-4) 28px;
@@ -1291,6 +1292,8 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 :is(#trainFormContent, #regTrainingControls) .card-header:hover {
   color: var(--text-secondary);
 }
+#trainFormContent button.card-header { width: 100%; border: 0; border-bottom: 1px solid var(--border-default); background: transparent; font-family: inherit; text-align: left; }
+#trainFormContent button.card-header:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 :is(#trainFormContent, #regTrainingControls) .card:first-child .card-header {
   padding-top: 0;
 }
@@ -1543,6 +1546,10 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
 }
 .main-content.route-training .page-header { padding-top: var(--space-4); }
 
+@media (max-width: 1023px) {
+  :root:has([data-route="train-*"][aria-current="page"]) { --app-min-width: 760px; }
+}
+
 /* ── Training workbench + vertical section rail ───────────── */
 .train-workbench {
   display: flex;
@@ -1794,8 +1801,8 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
   display: flex; flex-direction: column; gap: 6px;
   transition: opacity 0.2s ease;
 }
-.panel-actions .btn-row { display: flex; gap: 6px; }
-.panel-actions .btn-row .btn { flex: 1; }
+.panel-actions .btn-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.panel-actions .btn-row .btn { flex: 1 1 auto; }
 
 .page-progress {
   position: fixed;
@@ -3833,6 +3840,7 @@ dialog.preview-lightbox::backdrop { background: transparent; }
 .route-history > .page-header .page-title { margin: 0; }
 .hist-filters { display: flex; gap: 6px; flex-wrap: wrap; }
 .hist-results { display: flex; align-items: center; gap: 12px; min-height: 32px; margin: 0 0 12px; font-size: 12px; color: var(--text-secondary); }
+.hist-pagination { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 18px 0; color: var(--text-secondary); font-size: 12px; }
 .hist-empty { padding: 56px 24px; border: 1px dashed var(--border-default); border-radius: var(--radius-sm); }
 .hist-empty .btn { margin-top: 16px; }
 .hist-empty > p:first-of-type { color: var(--text-primary); font-size: 15px; font-weight: 600; }

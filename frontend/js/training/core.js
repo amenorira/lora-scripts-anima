@@ -361,9 +361,6 @@ window.trainingCoreMixin = {
     let trainType = routeTrainType;
     if (saved && saved.model_train_type && validTrainTypes.includes(saved.model_train_type)) {
       trainType = saved.model_train_type;
-    } else if (saved && saved.model_train_type === 'sd-lora') {
-      // Migrate old value
-      saved.model_train_type = routeTrainType;
     }
 
     const defaults = this._buildFormDefaults(trainType);
@@ -377,18 +374,9 @@ window.trainingCoreMixin = {
     const hasSavedDraft = Object.keys(savedProfileDraft).length > 0 || !!saved;
     this._activateProfileFieldSources(trainType, defaults, mergedSavedDraft, hasSavedDraft);
     this._activeTrainType = trainType;
-    // Ensure model_train_type is valid (saved may have been from another route)
-    if (!validTrainTypes.includes(this.form.model_train_type)) {
-      this.form.model_train_type = trainType;
-    }
     this._normalizeProfileSelectValues(this.form.model_train_type, defaults);
-    // Fix incompatible network_module after merge
     if (this.form.model_train_type === 'krea2-lora') {
       this._applyKrea2ModelDefaults(this.form, defaults);
-    } else if (this.form.model_train_type === 'anima-lora' && this.form.network_module === 'networks.lora') {
-      this.form.network_module = 'networks.lora_anima';
-    } else if (this.form.model_train_type === 'sdxl-lora' && ['networks.lora_anima', 'networks.lora_generic'].includes(this.form.network_module)) {
-      this.form.network_module = 'networks.lora';
     }
     this.formDefaults = { ...defaults };
     if (applyPendingPath) this.regApplyPendingTrainingPath?.();
@@ -591,11 +579,12 @@ window.trainingCoreMixin = {
       const allFields = this._orderFieldsByDependencies(visibleFields);
 
       html += `<div class="card" data-section="${section.key}" :class="{ 'card-collapsed': _sectionCollapsed['${section.key}'] }">`;
-      html += `<div class="card-header" @click="toggleSection('${section.key}')">`;
+      const bodyId = `training-section-${activeType}-${section.key}`;
+      html += `<button type="button" class="card-header" @click="toggleSection('${section.key}')" :aria-expanded="String(!_sectionCollapsed['${section.key}'])" aria-controls="${bodyId}">`;
       html += `<svg class="card-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>`;
       html += this.trainingText(section.titleKey);
-      html += `</div>`;
-      html += `<div class="card-body" :inert="_sectionCollapsed['${section.key}']" :aria-hidden="_sectionCollapsed['${section.key}'] ? 'true' : null">`;
+      html += `</button>`;
+      html += `<div id="${bodyId}" class="card-body" :inert="_sectionCollapsed['${section.key}']" :aria-hidden="_sectionCollapsed['${section.key}'] ? 'true' : null">`;
       if (section.key === 'training' && !targetId) html += this.renderStepEstimatePanel();
 
       // 按 FIELDS 顺序渲染字段：条件子项由 show_if 挂到触发字段下做层级缩进，不引入分组盒子。

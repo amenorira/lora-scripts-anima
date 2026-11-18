@@ -19,7 +19,6 @@ window.trainingPreflight = {
   _stepEstimateSignature: '',
 
   outputPathInfo: null,
-  outputPathInfoLoading: false,
   outputPathInfoError: '',
   _outputPathInfoTimer: null,
   _outputPathInfoRequestSeq: 0,
@@ -28,31 +27,30 @@ window.trainingPreflight = {
   _kreaDitFormatRequestSeq: 0,
   _kreaDitFormatCheck: null,
   _kreaDitFormatWatcher: null,
-  _cancelTrainingPreflight() {
+  _cancelTrainingPreflight(preserveCompletedEstimate = false) {
     clearTimeout(this._stepEstimateTimer);
     this._stepEstimateTimer = null;
     this._stepEstimateRequestSeq += 1;
-    this._stepEstimateSignature = '';
+    if (!preserveCompletedEstimate || this.stepEstimateLoading || this.stepEstimateError || !this.stepEstimate) this._stepEstimateSignature = '';
     this.stepEstimateLoading = false;
     clearTimeout(this._outputPathInfoTimer);
     this._outputPathInfoTimer = null;
     this._outputPathInfoRequestSeq += 1;
     this._outputPathInfoSignature = '';
-    this.outputPathInfoLoading = false;
   },
 
-  _trainingDatasetPayload() {
-    return trainingPreflightFields(this.form, [
+  _trainingDatasetPayload(form = this.form) {
+    return trainingPreflightFields(form, [
       'model_train_type', 'train_data_dir', 'caption_extension', 'enable_reg_data', 'reg_data_dir', 'dataset_cache_dir', 'resolution', 'enable_bucket',
       'bucket_no_upscale', 'min_bucket_reso', 'max_bucket_reso', 'bucket_reso_steps',
       'krea_num_repeats',
     ]);
   },
 
-  _stepEstimatePayload() {
+  _stepEstimatePayload(form = this.form) {
     return {
-      ...this._trainingDatasetPayload(),
-      ...trainingPreflightFields(this.form, [
+      ...this._trainingDatasetPayload(form),
+      ...trainingPreflightFields(form, [
         'train_batch_size', 'gradient_accumulation_steps', 'krea_training_duration_mode',
         'max_train_epochs', 'max_train_steps', 'gpu_ids',
       ]),
@@ -60,9 +58,18 @@ window.trainingPreflight = {
   },
 
   scheduleStepEstimate() {
-    const payload = this._stepEstimatePayload();
+    if (this.trainingStarting || !this.currentRoute?.startsWith('train-')) return;
+    this._prepareStepEstimate(this.form, 500);
+  },
+
+  async refreshStepEstimate(form = this.form, reconcile = true) {
+    return this._prepareStepEstimate(form, 0, reconcile);
+  },
+
+  _prepareStepEstimate(form, delay, reconcile = true) {
+    const payload = this._stepEstimatePayload(form);
     const signature = JSON.stringify(payload);
-    if (signature === this._stepEstimateSignature) return;
+    if (delay && signature === this._stepEstimateSignature) return null;
 
     this._stepEstimateSignature = signature;
     clearTimeout(this._stepEstimateTimer);
@@ -70,36 +77,6 @@ window.trainingPreflight = {
     const requestSeq = ++this._stepEstimateRequestSeq;
     if (this._datasetRepeatMutationDir === String(payload.train_data_dir || '').trim()) {
       this.stepEstimateLoading = false;
-      return;
-    }
-
-    if (!String(payload.train_data_dir || '').trim()) {
-      this.stepEstimate = null;
-      this.stepEstimateLoading = false;
-      this._setStepEstimateError(
-        'stepEstimate.selectDataset',
-        'Select a dataset directory to calculate steps'
-      );
-      if (this.lrPreviewOpen) this.refreshLrPreview();
-      return;
-    }
-
-    this.stepEstimateLoading = true;
-    this.stepEstimateError = null;
-    this._stepEstimateTimer = setTimeout(() => {
-      this._stepEstimateTimer = null;
-      this._requestStepEstimate(requestSeq, payload);
-    }, 500);
-  },
-
-  async refreshStepEstimate(force) {
-    const payload = this._stepEstimatePayload();
-    this._stepEstimateSignature = JSON.stringify(payload);
-    clearTimeout(this._stepEstimateTimer);
-    this._stepEstimateTimer = null;
-    const requestSeq = ++this._stepEstimateRequestSeq;
-    if (this._datasetRepeatMutationDir === String(payload.train_data_dir || '').trim()) {
-      this.stepEstimateLoading = false;
       return null;
     }
 
@@ -116,10 +93,17 @@ window.trainingPreflight = {
 
     this.stepEstimateLoading = true;
     this.stepEstimateError = null;
-    return this._requestStepEstimate(requestSeq, payload);
+    if (delay) {
+      this._stepEstimateTimer = setTimeout(() => {
+        this._stepEstimateTimer = null;
+        this._requestStepEstimate(requestSeq, payload, reconcile);
+      }, delay);
+      return null;
+    }
+    return this._requestStepEstimate(requestSeq, payload, reconcile);
   },
 
-  async _requestStepEstimate(requestSeq, payload) {
+  async _requestStepEstimate(requestSeq, payload, reconcile = true) {
     try {
       const response = await fetch('/api/training/estimate', {
         method: 'POST',
@@ -135,8 +119,10 @@ window.trainingPreflight = {
       }
       this.stepEstimate = result.data;
       this.stepEstimateError = null;
-      this._reconcileSubsetTimestepOffsets();
-      this._refreshSubsetTimestepEditor();
+      if (reconcile) {
+        this._reconcileSubsetTimestepOffsets();
+        this._refreshSubsetTimestepEditor();
+      }
       return result.data;
     } catch (error) {
       if (requestSeq !== this._stepEstimateRequestSeq) return null;
@@ -213,44 +199,39 @@ window.trainingPreflight = {
     return this._stepEstimateText(error.key, error.fallback, error.params);
   },
 
-  _outputPathPayload() {
+  _outputPathPayload(form = this.form) {
     return {
-      path: String(this.form.output_dir || './output').trim() || './output',
-      outputName: String(this.form.output_name || 'my_lora').trim() || 'my_lora',
-      resume: !!String(this.form.resume || '').trim(),
+      path: String(form.output_dir || './output').trim() || './output',
+      outputName: String(form.output_name || 'my_lora').trim() || 'my_lora',
+      resume: !!String(form.resume || '').trim(),
     };
   },
 
   scheduleOutputPathInfo() {
-    const payload = this._outputPathPayload();
-    const signature = JSON.stringify(payload);
-    if (signature === this._outputPathInfoSignature) return;
-    this._outputPathInfoSignature = signature;
-    clearTimeout(this._outputPathInfoTimer);
-    this._outputPathInfoTimer = null;
-    const requestSeq = ++this._outputPathInfoRequestSeq;
-    this.outputPathInfo = null;
-    this.outputPathInfoLoading = true;
-    this.outputPathInfoError = '';
-    this._outputPathInfoTimer = setTimeout(() => {
-      this._outputPathInfoTimer = null;
-      this._requestOutputPathInfo(requestSeq, payload);
-    }, 350);
+    this._prepareOutputPathInfo(this.form, 350);
   },
 
-  async refreshOutputPathInfo(force) {
-    const payload = this._outputPathPayload();
+  async refreshOutputPathInfo(form = this.form) {
+    return this._prepareOutputPathInfo(form, 0);
+  },
+
+  _prepareOutputPathInfo(form, delay) {
+    const payload = this._outputPathPayload(form);
     const signature = JSON.stringify(payload);
-    if (!force && signature === this._outputPathInfoSignature && this.outputPathInfo && !this.outputPathInfoLoading) {
-      return this.outputPathInfo;
-    }
+    if (delay && signature === this._outputPathInfoSignature) return null;
     this._outputPathInfoSignature = signature;
     clearTimeout(this._outputPathInfoTimer);
     this._outputPathInfoTimer = null;
     const requestSeq = ++this._outputPathInfoRequestSeq;
     this.outputPathInfo = null;
-    this.outputPathInfoLoading = true;
     this.outputPathInfoError = '';
+    if (delay) {
+      this._outputPathInfoTimer = setTimeout(() => {
+        this._outputPathInfoTimer = null;
+        this._requestOutputPathInfo(requestSeq, payload);
+      }, delay);
+      return null;
+    }
     return this._requestOutputPathInfo(requestSeq, payload);
   },
 
@@ -277,8 +258,6 @@ window.trainingPreflight = {
       this.outputPathInfo = null;
       this.outputPathInfoError = 'requestFailed';
       return null;
-    } finally {
-      if (requestSeq === this._outputPathInfoRequestSeq) this.outputPathInfoLoading = false;
     }
   },
 
@@ -440,7 +419,7 @@ window.trainingPreflight = {
           <span class="step-estimate-status" x-show="!stepEstimate && stepEstimateLoading" x-text="t('stepEstimate.calculating')"></span>
           <span class="step-estimate-status step-estimate-status-error" x-show="!stepEstimate && !stepEstimateLoading" x-text="stepEstimateErrorText()"></span>
         </div>
-        <button type="button" class="step-estimate-refresh" @click="refreshStepEstimate(true)" :disabled="stepEstimateLoading" :title="t('stepEstimate.recalculate')" :aria-label="t('stepEstimate.recalculate')">
+        <button type="button" class="step-estimate-refresh" @click="refreshStepEstimate()" :disabled="stepEstimateLoading" :title="t('stepEstimate.recalculate')" :aria-label="t('stepEstimate.recalculate')">
           <svg :class="{ spinning: stepEstimateLoading }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5M4 13a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5"/></svg>
         </button>
       </div>
@@ -476,8 +455,7 @@ window.trainingPreflight = {
 
   scheduleKreaDitFormatCheck() {
     const path = String(this.form.dit || '').trim();
-    if (this.form.model_train_type !== 'krea2-lora' || !path
-        || typeof fetch !== 'function' || typeof setTimeout !== 'function') {
+    if (this.form.model_train_type !== 'krea2-lora' || !path) {
       this._cancelKreaDitFormatCheck();
       return;
     }

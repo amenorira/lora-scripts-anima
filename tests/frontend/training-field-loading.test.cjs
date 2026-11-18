@@ -29,11 +29,13 @@ test('training fields are loaded once on demand and can be retried', async () =>
 test('a late training schema mounts only on the training route', async () => {
   let init, application;
   const fields = deferred();
-  loadFrontend('app/index', {
+  const context = loadFrontend('app/index', {
     document: {addEventListener: (event, listener) => { init = listener; }},
     Alpine: {data: (name, factory) => { application = factory; }},
     window: {loadTrainingFields: () => fields.promise},
   });
+  // This test exercises the route loader independently of the feature mixins.
+  context.window.composeAppMixins = target => target;
   init();
   const app = application();
   const mounts = [];

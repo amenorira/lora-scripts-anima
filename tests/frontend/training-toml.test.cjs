@@ -5,7 +5,7 @@ const { ROOT, TRAINING_CORE_SCRIPTS, loadFrontend, trainingFieldSections } = req
 
 function preview(profile, module, overrides = {}) {
   const context = loadFrontend(['shared/constants', 'shared/utils', 'app/config', ...TRAINING_CORE_SCRIPTS, 'training/toml'], {
-    window: { TRAIN_SECTIONS: trainingFieldSections() }, document: { getElementById: () => null },
+    window: { TRAIN_SECTIONS: trainingFieldSections() }, document: { getElementById: () => null, querySelector: () => null }, setTimeout, clearTimeout,
   });
   const w = context.window;
   const form = Object.fromEntries(w.getVisibleSections(profile).flatMap(s => s.fields).map(f => [f.key, f.default]));
@@ -31,7 +31,7 @@ test('all profiles submit raw form fields through the common launch boundary', a
     };
     Object.assign(app, {
       validateForm: () => true, refreshOutputPathInfo: async () => ({ available: true, writable: true }),
-      refreshStepEstimate: async () => ({ total_steps: 10 }), toast() {},
+      refreshStepEstimate: async () => ({ total_steps: 10 }), ensureKreaDitFormat: async () => true, toast() {},
       _acceptTrainingStart: data => { accepted = data.task_id; },
     });
     await app.startTraining();

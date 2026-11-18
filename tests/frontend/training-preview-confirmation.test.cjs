@@ -31,6 +31,8 @@ function application(profile = 'anima-lora', run = async () => response({ task_i
     validateForm: () => true, ensureKreaDitFormat: async () => true,
     refreshOutputPathInfo: async () => ({ available: true, writable: true }),
     refreshStepEstimate: async () => ({ total_steps: 10 }),
+    _reconcileSubsetTimestepOffsets() {}, _refreshSubsetTimestepEditor() {},
+    _cancelTrainingPreflight() {}, scheduleStepEstimate() {},
     _enforceCheckpointingUiConstraints() {}, _enforceMossTextEncoderFreeze() {},
     _applyTaskView(state) { if (state === 'IDLE') { this.isTraining = false; this.isIdle = true; } },
     _acceptTrainingStart(data) { this.acceptedTask = data.task_id; },
@@ -157,4 +159,149 @@ test('a failed asynchronous submission at either step releases the flow so train
     model.cancelConfirm();
     await retry;
   }
+});
+
+test('edits during preflight do not submit a configuration that was not checked', async () => {
+  const pending = deferred();
+  const { model, requests, errors } = application();
+  let checked;
+  model.refreshOutputPathInfo = async form => { checked = form; return pending.promise; };
+  const start = model.startTraining();
+  await turn();
+  model.form.output_name = 'changed-during-check';
+  pending.resolve({ available: true, writable: true });
+  await start;
+  assert.equal(checked.output_name, 'portrait_v3');
+  assert.deepEqual(requests, []);
+  assert.equal(errors[0][0], 'training.preflightChanged');
+  assert.equal(model.trainingStarting, false);
+});
+
+test('an invalid output path is reported without waiting for a step estimate', async () => {
+  const { model, errors } = application();
+  let estimates = 0;
+  model.refreshOutputPathInfo = async () => ({ available: false });
+  model.outputPathBlockingText = () => 'output unavailable';
+  model.refreshStepEstimate = async () => { estimates++; return { total_steps: 10 }; };
+  await model.startTraining();
+  assert.equal(estimates, 0);
+  assert.equal(errors[0][0], 'output unavailable');
+});
+
+test('an invalid output path preserves a completed estimate but reschedules an interrupted one', async () => {
+  for (const interrupted of [false, true]) {
+    const timers = [];
+    const { window } = loadFrontend(['training/preflight', 'training/toml'], {
+      window: {}, setTimeout: (callback, delay) => (timers.push({ callback, delay }), timers.length), clearTimeout() {},
+    });
+    const app = composeMixins(window.trainingPreflight, window.trainingTomlMixin, {
+      currentRoute: 'train-basic', form: { model_train_type: 'anima-lora', train_data_dir: 'C:/train' },
+      stepEstimate: { total_steps: 10 }, stepEstimateLoading: interrupted,
+      validateForm: () => true, _enforceCheckpointingUiConstraints() {}, _enforceMossTextEncoderFreeze() {},
+      refreshOutputPathInfo: async () => ({ available: false }), outputPathBlockingText: () => 'invalid', toast() {},
+    });
+    app._stepEstimateSignature = JSON.stringify(app._stepEstimatePayload());
+    await app.startTraining();
+    assert.equal(timers.length, interrupted ? 1 : 0);
+    if (interrupted) assert.equal(timers[0].delay, 500);
+  }
+});
+
+test('leaving during output inspection suppresses stale errors and off-page estimates', async () => {
+  for (const returned of [false, true]) {
+    const output = deferred(), timers = [], notices = [];
+    const { window } = loadFrontend(['training/preflight', 'training/toml'], {
+      window: {}, setTimeout: (callback, delay) => (timers.push({ callback, delay }), timers.length), clearTimeout() {},
+    });
+    const app = composeMixins(window.trainingPreflight, window.trainingTomlMixin, {
+      currentRoute: 'train-basic', _routeTransitionSeq: 1, form: { model_train_type: 'anima-lora', train_data_dir: 'C:/train' },
+      validateForm: () => true, _enforceCheckpointingUiConstraints() {}, _enforceMossTextEncoderFreeze() {},
+      refreshOutputPathInfo: () => output.promise, outputPathBlockingText: () => 'invalid', toast: text => notices.push(text),
+    });
+    const start = app.startTraining();
+    app.currentRoute = 'monitor-dashboard'; app._routeTransitionSeq++; app._cancelTrainingPreflight();
+    if (returned) { app.currentRoute = 'train-basic'; app._routeTransitionSeq++; }
+    output.resolve(null);
+    await start;
+    assert.deepEqual(notices, []);
+    assert.equal(timers.length, returned ? 1 : 0);
+  }
+});
+
+test('step estimation reconciles subset offsets before capturing the submitted form', async () => {
+  const submitted = [], notices = [];
+  const { window } = loadFrontend(['training/timestep-preview', 'training/preflight', 'training/toml'], {
+    window: {}, setTimeout, clearTimeout,
+    fetch: async () => response({ total_steps: 10, subsets: [{ name: 'kept', is_reg: false }] }),
+  });
+  const app = composeMixins(window.trainingTimestepPreview, window.trainingPreflight, window.trainingTomlMixin, {
+    form: { model_train_type: 'anima-lora', train_data_dir: 'C:/train', subset_timestep_offsets: { kept: '0.5', removed: 0.2 } },
+    t: key => key, toast: message => notices.push(message), validateForm: () => true,
+    _enforceCheckpointingUiConstraints() {}, _enforceMossTextEncoderFreeze() {},
+    _collectTrainingPayload() { return { model_train_type: this.form.model_train_type, subset_timestep_offsets: this.form.subset_timestep_offsets }; },
+    refreshOutputPathInfo: async () => ({ available: true, writable: true }),
+    _refreshSubsetTimestepEditor() {}, _submitTraining: payload => submitted.push(payload),
+  });
+  await app.startTraining();
+  assert.deepEqual(JSON.parse(JSON.stringify(submitted[0]._form_state.subset_timestep_offsets)), { kept: 0.5 });
+  assert.deepEqual(JSON.parse(JSON.stringify(submitted[0].subset_timestep_offsets)), { kept: 0.5 });
+  assert.deepEqual(notices, []);
+});
+
+test('a newer preview cannot erase offsets from the estimate used for submission', async () => {
+  const output = deferred(), submitted = [];
+  const { window } = loadFrontend(['training/timestep-preview', 'training/preflight', 'training/toml'], {
+    window: {}, setTimeout, clearTimeout,
+    fetch: async () => response({ total_steps: 10, subsets: [{ name: 'kept', is_reg: false }] }),
+  });
+  const app = composeMixins(window.trainingTimestepPreview, window.trainingPreflight, window.trainingTomlMixin, {
+    form: { model_train_type: 'anima-lora', train_data_dir: 'C:/train', subset_timestep_offsets: { kept: 0.5 } },
+    t: key => key, toast: message => assert.fail(message), validateForm: () => true,
+    _enforceCheckpointingUiConstraints() {}, _enforceMossTextEncoderFreeze() {},
+    _collectTrainingPayload() { return { model_train_type: this.form.model_train_type, subset_timestep_offsets: this.form.subset_timestep_offsets }; },
+    refreshOutputPathInfo: () => output.promise,
+    _refreshSubsetTimestepEditor() {}, _submitTraining: payload => submitted.push(payload),
+  });
+  const refresh = app.refreshStepEstimate.bind(app);
+  app.refreshStepEstimate = async (...args) => {
+    const estimate = await refresh(...args);
+    app.stepEstimate = null;
+    return estimate;
+  };
+  const start = app.startTraining();
+  await turn();
+  app.form.train_data_dir = '';
+  app.scheduleStepEstimate();
+  app.form.train_data_dir = 'C:/train';
+  app.scheduleStepEstimate();
+  output.resolve({ available: true, writable: true });
+  await start;
+  clearTimeout(app._stepEstimateTimer);
+  assert.deepEqual(JSON.parse(JSON.stringify(submitted[0].subset_timestep_offsets)), { kept: 0.5 });
+});
+
+test('editing the form before preview confirmation cancels the pending submission', async () => {
+  const { model, requests, errors } = application();
+  const start = model.startTraining();
+  await turn();
+  model.form.output_name = 'changed-before-confirm';
+  await model.confirmAction();
+  await start;
+  assert.deepEqual(requests, []);
+  assert.equal(errors[0][0], 'training.preflightChanged');
+});
+
+test('concurrent stop actions send one request for the active task', async () => {
+  const pending = deferred(), requests = [];
+  const { window } = loadFrontend('training/toml', { window: {}, fetch: url => { requests.push(url); return pending.promise; } });
+  const app = composeMixins(window.trainingTomlMixin, {
+    liveTaskId: 'task-a', isTraining: true, t: key => key, toast() {}, _pollTrainingState() {},
+  });
+  const stop = app.stopTraining();
+  await app.stopTraining();
+  assert.deepEqual(requests, ['/api/tasks/terminate/task-a']);
+  assert.equal(app.trainingStopping, 'task-a');
+  pending.resolve({ ok: true });
+  await stop;
+  assert.equal(app.trainingStopping, '');
 });
