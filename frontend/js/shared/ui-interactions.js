@@ -14,8 +14,7 @@
   const mediaTargetSelector = '[data-dialog-anchor="target"]';
 
   function syncDialogScrims() {
-    // The first dialog owns the page scrim. Keep it steady while a detail
-    // dialog enters or leaves, rather than darkening the page a second time.
+    // Let the first dialog own the page scrim so nested dialogs share it.
     dialogs.forEach((dialog, index) => {
       if (index) dialog.setAttribute('data-dialog-nested', '');
       else dialog.removeAttribute('data-dialog-nested');
@@ -36,8 +35,8 @@
   // opener matches data-dialog-anchor="target" in the detail dialog.
   function setDialogOrigin(element, origin) {
     if (!element || !origin) return;
-    // An underlying dialog may become inert before the next Alpine effect runs.
-    // Preserve an explicit opener instead of capturing the now-blurred body.
+    // Preserve the explicit opener because the underlying dialog may become
+    // inert and lose focus before the next Alpine effect runs.
     const source = measureOrigin(origin);
     if (element.open) {
       dialogOrigins.set(element, origin);

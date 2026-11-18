@@ -139,7 +139,7 @@ MOSS-Image 新配置使用截断 logit-normal 采样，包含 0.95 处截断和 
 
 ### `logsnr`
 
-`logit_mean` 默认 `0`，增大后偏向低噪声，减小后偏向高噪声。`logit_std` 默认 `1`，增大后分布更分散，减小后更集中。这两个参数也用于 `sigma + logit_normal`，但转换公式不同，数值不能直接互换。
+`logit_mean` 默认 `0`，增大后偏向低噪声，减小后偏向高噪声。`logit_std` 默认 `1`，增大后分布更分散，减小后更集中。`sigma + logit_normal` 使用同名参数和另一套转换公式。切换采样方式后，按分布预览重新选择参数值。
 
 SNR 表示信号与噪声的强度比，LogSNR 是它的对数形式。LogSNR 越高，代表原图信号越强、噪声越少。
 
@@ -203,7 +203,7 @@ Krea 2 的 `logsnr` 先根据 `logit_mean` 和 `logit_std` 生成 LogSNR，再�
 {"10_group_a": -0.25, "3_group_b": 0.20}
 ```
 
-配置了非零子集偏移时，启动训练会生成单独的 `dataset.toml`。偏移不直接写入运行用的主训练 TOML，但会保存在应用导出的 YAML 和本次运行的 `training.yaml` 中：
+配置了非零子集偏移时，启动训练会把偏移写入单独的 `dataset.toml`。应用导出的 YAML 和本次运行的 `training.yaml` 也会保存这些偏移。以下为 `dataset.toml` 示例：
 
 ```toml
 [[datasets.subsets]]

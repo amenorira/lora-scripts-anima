@@ -510,8 +510,7 @@ KREA2_FIELDS: list[dict[str, Any]] = [
         "default": "adamw8bit",
         "section": "optimizer",
         "desc_key": "field.optimizer_type",
-        # The product allowlist is grouped by update mechanism rather than by
-        # a recommendation or popularity ranking.
+        # Group supported optimizers by update mechanism.
         "groups": optimizer_groups(KREA2_PROFILE),
         "doc_slug": "optimizers",
         "doc_anchor": "optimizer-type",

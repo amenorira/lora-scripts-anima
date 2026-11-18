@@ -7,8 +7,7 @@ https://github.com/Comfy-Org/ComfyUI/blob/master/comfy/weight_adapter/lokr.py
 
 This implementation uses PyTorch directly and never imports ComfyUI. LoKr
 applies its two factors without constructing a full Kronecker weight. LoHa
-reconstructs output chunks, bounding scratch memory instead of keeping one
-full FP32 delta per adapted layer resident throughout sampling.
+reconstructs output chunks to limit temporary memory during sampling.
 """
 from __future__ import annotations
 

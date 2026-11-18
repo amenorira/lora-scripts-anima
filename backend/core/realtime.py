@@ -102,9 +102,8 @@ def _compact_task_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
             result[key] = value[-_MAX_TASK_LOG_CHARS:]
             truncated = True
     if _json_size(result) > _MAX_TASK_PAYLOAD_BYTES:
-        # A provider may include arbitrary nested diagnostics. Retain task
-        # identity/progress-like scalar fields and mark the omission instead
-        # of permitting a multi-megabyte realtime message.
+        # Trim oversized diagnostics to scalar task identity and progress fields.
+        # Mark that part of the payload was omitted.
         retained: dict[str, Any] = {}
         for key, value in result.items():
             if isinstance(value, (str, int, float, bool)) or value is None:
@@ -126,10 +125,9 @@ def _compact_task_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
 class RealtimeHub:
     """Topic fan-out with bounded event replay.
 
-    Events remain process-local by design.  A new backend instance receives a
-    new ``SERVER_INSTANCE_ID``; clients must then request a fresh snapshot
-    instead of attempting to replay cursors from the old process. All state
-    changes run without suspension on the server's event loop.
+    Events are process-local. When ``SERVER_INSTANCE_ID`` changes, clients
+    must request a fresh snapshot. All state changes run without suspension
+    on the server's event loop.
     """
 
     def __init__(self) -> None:
@@ -253,10 +251,8 @@ class RealtimeHub:
     async def cursors(self) -> dict[str, int]:
         """Return the latest sequence for every topic in this process.
 
-        A bootstrap snapshot represents state through this instant.  Giving
-        the browser these cursors lets its first subscription replay only
-        events created after that snapshot, rather than re-appending old logs
-        or metric points that are already in it.
+        Bootstrap captures these cursors before reading state. The browser
+        uses them to replay events with later sequence numbers.
         """
         return dict(self._next_seq)
 

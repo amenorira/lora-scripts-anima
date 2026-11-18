@@ -19,9 +19,8 @@
     return { x: event.clientX - (rect.left + rect.width / 2), y: event.clientY - (rect.top + rect.height / 2) };
   }
 
-  // Keep a useful portion of each visible image in its stage. Measuring the
-  // contained pixels (rather than the full img box) handles portrait images,
-  // and intersecting the limits keeps synchronized comparison panes visible.
+  // Measure the actual drawn image bounds, including for portrait images.
+  // Intersect the pan limits to keep each synchronized comparison pane visible.
   function constrain(view, stages) {
     let maxX = Infinity, maxY = Infinity;
     for (const stage of stages || []) {
@@ -129,8 +128,8 @@
       stopPan(event) {
         const pan = this._pan;
         if (!pan || (event && pan.id !== event.pointerId)) return;
-        // A child may lose capture as a drag transfers to the viewport. That
-        // bubbling event does not mean the viewport has lost its own capture.
+        // A child can lose capture as a drag transfers to the viewport.
+        // End the drag when the viewport itself loses capture.
         if (event?.type === 'lostpointercapture' && event.target !== pan.stage) return;
         this._panWrite?.flush(); this._panWrite = null;
         this._pan = null; this.panning = false;

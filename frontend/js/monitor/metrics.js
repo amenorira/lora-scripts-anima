@@ -97,9 +97,8 @@ window.monitorMetricsMixin = {
     if (!data || !data.points) return;
 
     if (data.truncated) {
-      // The server intentionally bounded a delayed TensorBoard catch-up.
-      // Rebuild the curve from the HTTP snapshot instead of displaying a
-      // convincing but incomplete increment.
+      // Rebuild the curve from the HTTP snapshot when a TensorBoard
+      // catch-up exceeds the incremental update limit.
       if (!this.selectedRunDir && this.currentRoute === 'monitor-dashboard') void this.refreshMonitorRealtimeDetail(true);
     }
 

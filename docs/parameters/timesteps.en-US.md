@@ -139,7 +139,7 @@ When buckets are enabled, images with similar resolutions and aspect ratios are 
 
 ### `logsnr`
 
-`logit_mean` defaults to `0`: higher values favor low noise and lower values favor high noise. `logit_std` defaults to `1`: higher values spread samples out and lower values concentrate them. These names are shared with `sigma + logit_normal`, but the conversion formulas differ, so their values are not interchangeable.
+`logit_mean` defaults to `0`: higher values favor low noise and lower values favor high noise. `logit_std` defaults to `1`: higher values spread samples out and lower values concentrate them. `sigma + logit_normal` uses the same parameter names with a different conversion formula. After switching methods, use the distribution preview to choose the values again.
 
 SNR is the ratio of signal strength to noise strength, and LogSNR is its logarithmic form. Higher LogSNR means a stronger image signal and less noise.
 
@@ -203,7 +203,7 @@ The mapping looks like this:
 {"10_group_a": -0.25, "3_group_b": 0.20}
 ```
 
-When nonzero subset offsets are configured, launch generates a separate `dataset.toml`. Offsets are not added directly to the main training TOML, but are retained in the app's YAML export and the run's `training.yaml`:
+When nonzero subset offsets are configured, launch writes them to a separate `dataset.toml`. The app's YAML export and the run's `training.yaml` also retain them. Example `dataset.toml`:
 
 ```toml
 [[datasets.subsets]]

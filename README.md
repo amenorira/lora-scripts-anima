@@ -197,7 +197,7 @@ git switch --track origin/dev
 
 ## 注意力加速
 
-Anima / MOSS 默认使用 `torch`，Krea2 默认使用 `sdpa`。SDPA 根据当前 PyTorch 构建和输入选择可用内核；Windows 安装包不一定包含内置 FlashAttention。
+Anima / MOSS 默认使用 `torch`，Krea2 默认使用 `sdpa`。SDPA 根据当前 PyTorch 构建和输入选择可用内核。Windows 上的内置 FlashAttention 支持取决于安装的 PyTorch 构建。
 
 使用独立 FlashAttention 2：在「环境管理」中安装完成后，将 Anima / MOSS 的 `attn_mode` 设为 `flash`。安装器匹配 Python、PyTorch、CUDA 和平台，只安装扩展，不更换 PyTorch。Krea2 的旧 `flash_attn` 配置仍转为 `sdpa`。
 

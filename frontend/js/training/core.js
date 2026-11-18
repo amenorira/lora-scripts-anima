@@ -238,7 +238,7 @@ window.trainingCoreMixin = {
     this.updateToml();
     // 防御：renderTrainingForm 用 innerHTML 重建了 animaSelect 组件，Alpine 异步初始化。
     // 在下一个 tick 再次确保 network_module 与训练类型一致，防止组件初始化时读到旧值
-    // 导致下拉显示 networks.lora（anima 下该选项已被 group 过滤，会显示原始值而非标签）。
+    // 导致下拉显示已被 Anima 选项分组过滤掉的原始值 networks.lora。
     const switchedForm = this.form;
     this.$nextTick(() => {
       if (this.form !== switchedForm || this.form.model_train_type !== v) return;

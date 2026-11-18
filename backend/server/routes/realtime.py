@@ -64,10 +64,8 @@ async def _snapshot_payload(
     monitor_detail: bool = False,
     preview_limit: int = 36,
 ) -> dict[str, Any]:
-    # Capture cursors *before* reading any state. Events emitted after this
-    # point have a later seq and are replayed after subscribe instead of being
-    # accidentally skipped, and the task list read below is then guaranteed to
-    # include every change up to the captured cursors.
+    # Capture cursors before reading state. The task list includes changes up
+    # to those cursors, and later events can be replayed after subscription.
     cursors = await realtime_hub.cursors()
     state = _managed_state()
     gpu, system, tracked_tasks, monitor = await asyncio.gather(
@@ -155,8 +153,8 @@ async def realtime_socket(websocket: WebSocket) -> None:
             return
         await close_subscription(topic)
         queue, replay, resync_required = await realtime_hub.subscribe(topic, resume_seq)
-        # The send loop cannot drain while this replay is enqueued. Reserve a
-        # slot for recovery instead of overflowing a mixed-topic connection.
+        # Reserve one outbound slot for recovery while replay is enqueued.
+        # The send loop drains the queue after this batch is enqueued.
         if resync_required or len(replay) > max(0, outbound.maxsize - outbound.qsize() - 1):
             enqueue({
                 "op": "resync_required",

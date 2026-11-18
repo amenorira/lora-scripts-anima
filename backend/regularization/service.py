@@ -543,7 +543,7 @@ def mutate(key, index, action):
             elif action != "regenerate":
                 raise ValueError("Image state does not permit this action / 当前图片状态不允许此操作")
             if action == "regenerate":
-                # Append replacement rather than overwriting the excluded pair.
+                # Keep the excluded pair and append its replacement.
                 has_artifact = item["status"] == "excluded"
                 replacement = copy.deepcopy(item) if has_artifact else item
                 history = list(replacement.get("seed_history", [])) + [replacement["seed"]]

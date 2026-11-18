@@ -327,7 +327,7 @@ shared_training_field('network_dropout', default=0, target="toml"),
     # AdaLN 调制层（Anima 专属，见上方 ADALN_* 常量注释）。lycoris.kohya 的 Anima
     # 路径未验证，不在支持集合内。
     {"key": "train_adaln", "type": "toggle", "default": False, "section": "network", "desc_key": "field.train_adaln", "target": "ui", "group": "anima", "nested": False, "show_if": _show_if_one_of("network_module", ADALN_INCLUDE_MODULES), "hint_key": "field.train_adalnHint", "doc_slug": "adaln", "doc_anchor": "overview"},
-    # LoRA+ 是 network_args 功能，不是顶层 CLI 参数。UI 开关仅控制是否生成下列三个
+    # LoRA+ 通过 network_args 传递。UI 开关控制是否生成下列三个
     # sd-scripts 原生参数；支持面与各 network module 的 create_network 实现保持一致。
     {"key": "enable_loraplus", "type": "toggle", "default": False, "section": "network", "desc_key": "field.enable_loraplus", "target": "ui", "nested": False, "show_if_any": _loraplus_show_if(), "layout_parent": "network_module", "hint_key": "field.enable_loraplusHint", "auto_value": _loraplus_auto_disable_rules(), "readonly_if_any": _loraplus_readonly_conditions(), "readonly_reason_key": "field.enable_loraplus_optimizerLocked", "doc_slug": "lora-plus", "doc_anchor": "overview"},
     # 三个比率项的 show_if_any 每组末位是 network_module，不显式 layout_parent 会被
@@ -346,8 +346,8 @@ shared_training_field('network_dropout', default=0, target="toml"),
     {"key": "lycoris_anima_sd_default", "type": "toggle", "default": False, "section": "network", "desc_key": "field.lycoris_anima_sd_default", "target": "ui", "group": "anima", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_preset", "eq": "attn-mlp"}], "hint_key": "field.lycoris_anima_sd_defaultHint", "omit_default": True},
     {"key": "lycoris_anima_train_adaln", "type": "toggle", "default": False, "section": "network", "desc_key": "field.lycoris_anima_train_adaln", "target": "ui", "group": "anima", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_preset", "eq": "attn-mlp"}, {"key": "lycoris_anima_sd_default", "eq": True}], "hint_key": "field.lycoris_anima_train_adalnHint", "omit_default": True},
     # lycoris_kernel_backend：LyCORIS 融合内核后端。vendor 经 LYCORIS_KERNEL_BACKEND
-    # 环境变量读取（kernels/dispatch.py:58 / select.py:78），是进程级开关而非 network_args
-    # —— /run 路由把它转为训练子进程环境变量，target 保持 ui 不进 TOML。
+    # 环境变量读取（kernels/dispatch.py:58 / select.py:78）。
+    # /run 路由将 UI 字段传入训练子进程的环境变量。
     # 不可用后端由探测函数回退 auto 并提示（与 attn_mode 降级同模式）。
     shared_training_field('lycoris_kernel_backend', default="auto", target="ui"),
     # conv_dim/conv_alpha（LoCon：给 3x3 Conv2d 单独设秩）支持面：
@@ -692,7 +692,7 @@ _extend_moss_fields(FIELDS)
 # 各训练配置共用弹窗的分组与稳定顺序；字段支持面和参数语义仍由各自定义。
 apply_lycoris_panel_layout(FIELDS)
 
-# Constraints that depend on LyCORIS semantics rather than generic control type.
+# Apply LyCORIS-specific field constraints.
 _field_by_key = {field["key"]: field for field in FIELDS}
 _field_by_key["dropout"]["max"] = 1
 _field_by_key["lycoris_algo"]["hint_key"] = "field.lycoris_algoHint"

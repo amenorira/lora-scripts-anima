@@ -69,8 +69,8 @@ class AnimaRunner:
         self.model.to(dtype=self.model_dtype)
         self.blocks_to_swap = settings["blocks_to_swap"]
         if self.automatic:
-            # A conservative workspace budget for the default ~1 MP output;
-            # this is not a guarantee for arbitrary resolutions or concurrent apps.
+            # Reserve workspace for the default ~1 MP output.
+            # Higher resolutions or concurrent GPU workloads can require more headroom.
             self.blocks_to_swap = automatic_swap_count(self.model, torch.cuda.mem_get_info(self.device)[0], 3 * 1024**3)
         if self.blocks_to_swap:
             from library.custom_offloading_utils import BlockSwapConfig

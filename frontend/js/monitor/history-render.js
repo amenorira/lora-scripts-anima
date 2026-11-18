@@ -354,8 +354,8 @@ window.monitorHistoryRenderMixin = {
           const rest = removeLeadingIndent(rendered[i + 2], match[1]);
           if (rest === null) break;
           const state = scalar.quote ? this._readSnapshotYamlQuoted(value, 0, scalar.quote, true) : null;
-          // A backslash at the end of a double-quoted line removes the break,
-          // so leave it untouched rather than displaying it as a space.
+          // A trailing backslash in a double-quoted line escapes the break.
+          // Skip space folding at that boundary.
           if (state?.escapedBreak) break;
           lineHtml += '<span class="m-config-fold">' + parts[i + 1] + match[1] + '</span>' + rest;
           i += 2;

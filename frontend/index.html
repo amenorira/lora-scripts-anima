@@ -807,9 +807,8 @@
               :title="t('tagEditor.recursiveHint')"
               x-text="t('tagEditor.recursive')"></button>
           </div>
-          <!-- 还没加载数据集时顶栏不存在，词典的下载入口放这里，装好后自动收起。
-               用 x-if 而不是 x-show：Alpine 的 x-show 变更走 requestAnimationFrame，
-               在后台标签页/内嵌视图里可能不触发；x-if 是同步插入，状态一变就到位。 -->
+          <!-- 未加载数据集时在这里显示词典下载入口。x-if 同步更新入口，
+               在后台标签页和内嵌视图里也能及时收起。 -->
           <template x-if="tagDictionaryStatus() !== 'ready'">
             <div class="te-empty-dict">
               <template x-if="tagDictionaryActionVisible()">

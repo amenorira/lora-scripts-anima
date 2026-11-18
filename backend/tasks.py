@@ -33,7 +33,7 @@ _TERMINAL_STATUSES = frozenset({TaskStatus.FINISHED, TaskStatus.TERMINATED, Task
 
 
 def kill_proc_tree(pid: int, *, processes: list | None = None) -> None:
-    """终止进程树并确认退出；超时不能当作已释放资源。"""
+    """终止进程树。等待退出超时后抛出 TimeoutExpired，由调用方继续保留资源占用。"""
     if processes is None:
         processes = []
     try:

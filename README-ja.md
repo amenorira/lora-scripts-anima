@@ -195,7 +195,7 @@ SSH でアクセスする場合は、GUI のポートを転送します。GUI �
 
 ## Attention の高速化
 
-Anima / MOSS の既定値は `torch`、Krea2 は `sdpa` です。SDPA は PyTorch のビルドと入力に応じて利用可能なカーネルを選択します。Windows 版に内蔵 FlashAttention が含まれているとは限りません。
+Anima / MOSS の既定値は `torch`、Krea2 は `sdpa` です。SDPA は PyTorch のビルドと入力に応じて利用可能なカーネルを選択します。Windows で内蔵 FlashAttention を利用できるかは、インストールした PyTorch のビルドによって決まります。
 
 外部 FlashAttention 2 は「環境管理」でインストールし、完了後に Anima / MOSS の `attn_mode` を `flash` に設定します。インストーラーは Python・PyTorch・CUDA・プラットフォームを照合し、PyTorch を変更せず拡張機能だけをインストールします。Krea2 の旧 `flash_attn` 設定は引き続き `sdpa` に変換します。
 

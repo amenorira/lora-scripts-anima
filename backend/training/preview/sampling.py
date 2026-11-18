@@ -27,9 +27,8 @@ def _release_cuda_cache(device):
         return
     failed = sys.exc_info()[0] is not None
     try:
-        # Native allocator cache flushing is process-wide, including when a
-        # device context is selected. Reserve this fallback for failed/late
-        # releases instead of repeating upstream's successful-path cleanup.
+        # Allocator cache flushing is process-wide, even with a device selected.
+        # Use this fallback only for failed or late releases.
         torch.cuda.empty_cache()
     except Exception:
         if not failed:

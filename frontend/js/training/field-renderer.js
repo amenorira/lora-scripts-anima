@@ -510,8 +510,8 @@ window.trainingFieldRenderer = {
     const nestLevelAttr = ` data-nest-level="${nestLevel}"`;
 
     // ── Build body row ──
-    // merged 字段（优化器参数）显示真正写进 optimizer_args 的参数名，而不是内部表单键：
-    // 同一时刻只显示一个优化器的参数，重名不会歧义，且这个名字与文档、日志一致。
+    // 优化器参数显示写入 optimizer_args 的名称，与文档和日志保持一致。
+    // 表单每次只显示当前优化器的参数。
     const displayKey = field.argKey || dataKey;
     const infoHtml = field.labelOnly
       ? `<div class="field-info"><div class="field-key">${labelHtml}${requiredMark}${docLink}</div>${field.helpKey ? `<div class="field-desc">${this.trainingText(field.helpKey)}</div>` : ''}</div>`

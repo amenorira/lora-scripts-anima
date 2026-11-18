@@ -279,7 +279,7 @@ def _log(message: str) -> None:
 def start_install(force: bool = False) -> dict:
     """启动后台安装；已有任务在跑或已安装（且非强制）时直接返回原因。
 
-    注意：_lock 不是可重入锁，判定完必须先放开再调 status()。"""
+    判定后先释放不可重入的 _lock，再调用 status()。"""
     global _thread
     with _lock:
         busy = _state["status"] in _BUSY

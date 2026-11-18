@@ -780,8 +780,7 @@ window.monitorArtifactsRenderMixin = {
       grid.append(outline);
     }
     outline._sampleRows = rows;
-    // Bound the isolated paint layer to this group instead of the entire
-    // scroll history. Geometry changes keep the same flowing stroke alive.
+    // Bound the paint layer to this group and reuse the stroke as its geometry changes.
     const left = Math.floor(Math.min(...rows.map(row => row.left))) - 1;
     const top = Math.floor(Math.min(...rows.map(row => row.top))) - 1;
     const width = Math.ceil(Math.max(...rows.map(row => row.right))) + 1 - left;
@@ -1239,8 +1238,8 @@ window.monitorArtifactsRenderMixin = {
   _revealPreviewViewAfterOpen(box) {
     this._previewOpenObserver?.disconnect();
     this._previewOpenObserver = null;
-    // The dialog opens on Alpine's next tick. Long histories can delay that
-    // tick, so wait for the actual open attribute instead of a frame limit.
+    // Long histories can delay Alpine's next tick. Wait for the dialog's open
+    // attribute before continuing.
     const onOpen = () => {
       if (!this.previewLightboxOpen || !box.isConnected || !box.open) return;
       this._previewOpenObserver?.disconnect();

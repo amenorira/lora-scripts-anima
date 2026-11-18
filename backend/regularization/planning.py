@@ -148,8 +148,7 @@ def source_caption(text: str, candidate: str) -> tuple[str, bool]:
     selected = sections.get(candidate, "").strip()
     if not selected:
         raise CaptionSelectionError("regularization_candidate_missing", "Selected caption candidate is missing or empty / 所选标注候选缺失或为空")
-    # The generated training caption must be one line. Preserve all text while
-    # converting candidate line breaks to spaces instead of dropping later lines.
+    # Join all candidate lines with spaces to produce a single training caption.
     return " ".join(line.strip() for line in selected.splitlines()), True
 
 

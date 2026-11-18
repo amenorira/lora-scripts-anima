@@ -195,7 +195,7 @@ Detailed training parameter documentation lives in `docs/parameters/`:
 
 ## Attention Acceleration
 
-Anima / MOSS defaults to `torch` and Krea2 to `sdpa`. SDPA selects available kernels based on the PyTorch build and input; Windows builds may not include built-in FlashAttention.
+Anima / MOSS defaults to `torch` and Krea2 to `sdpa`. SDPA selects an available kernel based on the PyTorch build and input. On Windows, built-in FlashAttention support depends on the installed PyTorch build.
 
 For external FlashAttention 2, install it from Environment and select `attn_mode=flash` for Anima / MOSS after installation completes. The installer matches Python, PyTorch, CUDA and platform, and installs only the extension without replacing PyTorch. Krea2's legacy `flash_attn` setting still maps to `sdpa`.
 

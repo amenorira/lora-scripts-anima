@@ -283,7 +283,7 @@ window.trainingValidation = {
     }
     // Cross-field: min_timestep < max_timestep (Anima)
     // 注意：min_timestep/max_timestep 默认都是空串（registry 无显式默认 / default=""）。
-    // Number('') === 0 而非 NaN，必须先排除空串/非数字字符串，否则两个空值会被当作 0>=0 误判为错误。
+    // Number('') 会得到 0。仅在两项都填写有效数字时比较范围。
     const minTsRaw = this.form.min_timestep;
     const maxTsRaw = this.form.max_timestep;
     if (minTsRaw !== '' && minTsRaw !== null && minTsRaw !== undefined &&

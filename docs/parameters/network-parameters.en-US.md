@@ -57,19 +57,19 @@ For standard LoRA at Rank 32:
 | `½ dim` | 16 | 0.5 | A first step when trying a smaller Alpha |
 | `1` | 1 | 1/32 | Follow an Alpha-1 recipe or explore much smaller scaling |
 
-Alpha 1 is not necessarily better; training results also depend on the learning rate, optimizer, and data.
+When comparing Alpha 1 with other values, consider the learning rate, optimizer, and data together.
 
 Alpha does not change parameter count or file size. Each shortcut sets the value once; changing Rank afterward does not update Alpha.
 
 ### How it relates to learning rate
 
-Alpha is applied during training and affects gradients, so consider the learning rate when changing it. The Kohya Wiki describes halving Alpha as halving the effect of the learning rate, but optimizers such as AdamW also transform the gradients, so actual updates do not follow that ratio exactly. Halving Alpha and doubling the learning rate may produce different training results.
+Alpha affects gradients during training, and the learning rate enters the parameter update calculation. Optimizers such as AdamW also use gradient statistics to scale updates. After changing Alpha, recalibrate the learning rate based on training results.
 
 In practice, keep Rank and other settings fixed, change Alpha alone, and compare several checkpoints using the same prompts and seeds. If learning becomes noticeably slower, try increasing the learning rate. If training becomes unstable or overfits quickly, lower it first. Avoid jumping to a learning rate tens of times larger based on the multiplier alone.
 
 ### Other settings
 
-Start within `1–Rank` in most cases. Alpha equal to Rank gives a multiplier of 1. Alpha above Rank amplifies the matrix product and is allowed by the current standard LoRA implementations. Some native implementations treat Alpha 0 as Rank, so do not rely on 0 to disable LoRA.
+Start within `1–Rank` in most cases. Alpha equal to Rank gives a multiplier of 1. Alpha above Rank amplifies the matrix product and is allowed by the current standard LoRA implementations. Some native implementations treat Alpha 0 as Rank, giving a multiplier of 1 with standard scaling.
 
 With `rs_lora` enabled, the denominator becomes √Rank. At Rank 32 and Alpha 1, the multiplier changes from `0.03125` to about `0.177`; Alpha equal to Rank no longer gives a multiplier of 1 either. Revisit Alpha and the learning rate after switching. rsLoRA addresses diminishing scaling at high ranks; the paper's experiments primarily use language models.
 

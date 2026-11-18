@@ -46,7 +46,7 @@ window.trainingPromptTriggersMixin = {
     if (!data) return [];
     const subsets = data.subsets?.length ? data.subsets : [data];
     const tags = new Set();
-    // A repeated subject/style tag is a candidate, not proof of a trigger.
+    // Treat subject and style tags that recur across captions as trigger candidates.
     for (const subset of subsets) {
       if (!(subset.caption_count >= 2)) continue;
       for (const item of subset.tags) if (item.count / subset.caption_count >= .8) tags.add(item.tag);

@@ -279,7 +279,7 @@ window.environmentRenderMixin = {
     const allLoaded = accelReady && coreReady && modelsReady && dictionaryState !== 'checking';
     const working = this.faBusy || this.xfBusy || this.tritonBusy || this.mossAccelBusy || this.animaModelBusy || dictionaryState === 'installing';
 
-    // 完成查询不等于能运行所有训练：只报告查询与任务状态。
+    // 环境概览显示当前查询和安装任务的状态。
     let heroState, heroTitle, heroSub;
     if (hasError) {
       heroState = 'err';

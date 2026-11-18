@@ -167,9 +167,8 @@ window.trainingTomlMixin = {
     this._renderTomlPreview(lines, this.t('common.noConfigs'));
   },
 
-  // Keep all training-core previews on one renderer.  Krea 2 has a
-  // copyable application preset rather than musubi's runtime TOMLs, but it
-  // should still look exactly like the SDXL/Anima TOML preview.
+  // Render the copyable Krea 2 application preset with the same TOML
+  // highlighting as the SDXL and Anima previews.
   _highlightToml(lines) {
     return lines.map(line => {
       if (line === '') {

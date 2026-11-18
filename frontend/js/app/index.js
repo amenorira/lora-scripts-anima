@@ -644,7 +644,7 @@ document.addEventListener('alpine:init', () => {
 
     // Home hero "Release" badge: use the real version from /api/version
     // (e.g. "v26.1017.13c72-4-g3dc39b4f" → "v26.1017.13c72").
-    // Keep loading/unknown states explicit instead of showing an old release.
+    // Show an explicit loading or unknown state until a version is available.
     displayVersion() {
       const v = String(this.version || '');
       if (!v || v === '...') return '...';
@@ -655,7 +655,7 @@ document.addEventListener('alpine:init', () => {
 
     // ── Right Panel Resizer ─────────────────────────────────
     // 鼠标拖拽调整右侧面板宽度并持久化到 localStorage。
-    // 宽度通过 CSS 变量 --panel-w 应用（而非 element inline width），这样：
+    // 通过 CSS 变量 --panel-w 应用宽度：
     //   1. 首帧渲染前由 index.html 的 blocking 脚本设好，无刷新闪现；
     //   2. 桌面窄窗口仍保留主表单的最小可用宽度。
     _PANEL_MIN_W: 300,

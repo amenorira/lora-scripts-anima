@@ -572,8 +572,8 @@ window.monitorPreviewsMixin = {
     let order = (this.previewComparisonOrder || []).filter((key, index, items) => valid.has(key) && items.indexOf(key) === index);
     for (const key of keys) if (!order.includes(key)) order.splice(order.includes(null) ? order.indexOf(null) : order.length, 0, key);
     if (!order.includes(null)) order.push(null);
-    // A waiting slot is never the baseline. Removing a reference also retains
-    // a fixed first image rather than turning the browsing slot into a baseline.
+    // Move the waiting slot to the end when enabled or first in the order.
+    // This keeps an image as the baseline after a reference is removed.
     if (this.previewComparisonWaiting || order[0] === null) order = order.filter(key => key !== null).concat(null);
     if (order.length !== this.previewComparisonOrder.length || order.some((key, index) => key !== this.previewComparisonOrder[index])) this.previewComparisonOrder = order;
     return order;
@@ -675,8 +675,8 @@ window.monitorPreviewsMixin = {
         return other.prompt_id === sample.prompt_id && (other.seed == null ? sample.seed == null : sample.seed != null && String(other.seed) === String(sample.seed));
       });
       const exact = candidates.filter(index => this._sampleCaseKey(items[index]) === this._sampleCaseKey(current));
-      // A temporal inspection keeps the selected prompt and seed. Missing or
-      // ambiguous cases are skipped rather than silently selecting another seed.
+      // Among prompt-and-seed matches, prefer a unique exact case.
+      // Otherwise use a sole candidate and skip batches without one.
       return exact.length === 1 ? exact[0] : candidates.length === 1 ? candidates[0] : -1;
     }).filter(index => index >= 0);
   },

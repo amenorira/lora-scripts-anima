@@ -2,7 +2,7 @@
 // 与 training-lr-preview.js / training-shape-preview.js 同属训练表单的功能面板 mixin。
 window.datasetRepeatMixin = {
   // 一行草稿的合法性、改后的次数、改后的目录名都在这里判定一次，其余取值方法都从它派生。
-  // 参数用 subset 对象而非名字：表格每格都会求值，按名字查找会退化成 O(n²)。
+  // 表格每格都会求值。直接传入 subset 对象可省去按名字查找。
   datasetRepeatParse(subset) {
     const current = Number(subset.repeats || 0);
     const raw = String(this.datasetRepeatInputValue(subset)).trim();
@@ -157,8 +157,8 @@ window.datasetRepeatMixin = {
     });
   },
 
-  // subset_timestep_offsets 用文件夹名做 key，对不上的 key 会被 _reconcileSubsetTimestepOffsets
-  // 静默删掉，改名必须同步搬。从原字典整体映射而非逐个改写，互换/环形改名才不会互相覆盖。
+  // subset_timestep_offsets 只保留现有文件夹名对应的键。改名时基于原字典迁移偏移设置，
+  // 使互换或环形改名中的每个文件夹都保留自己的偏移。
   _renameSubsetTimestepOffsets(pairs) {
     const moves = new Map((pairs || [])
       .filter(item => item.oldName !== item.newName)

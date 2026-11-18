@@ -317,8 +317,8 @@ def parse_rebuild(group, multiplier, targets, *, options=None):
             factors, blocks, block, width = weights["boft_R"].shape
             if block != width or blocks * block != shape[1]:
                 raise PreviewLoRAError("Invalid native BOFT shape")
-            # Keep permutation vectors, rather than the native constructor's
-            # full [in_features, in_features] permutation matrices per layer.
+            # Store each layer's permutation as vectors to avoid allocating
+            # full [in_features, in_features] matrices for the preview.
             if "boft_s" not in weights:
                 weights["boft_s"] = torch.ones(shape[0], 1)
             elif weights["boft_s"].shape == (1, shape[0]):

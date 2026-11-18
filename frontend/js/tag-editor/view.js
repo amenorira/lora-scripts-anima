@@ -472,7 +472,7 @@ window.tagEditorView = {
 
   tagEditorSelectSuggestion(s) {
     if (!this.tagEditorAllowsTagOps()) return;
-    // 下拉条目可能是词典结果对象：插入的是 Anima 格式的 insert，不是别名也不是下划线原形
+    // 词典结果对象通过 insert 提供 Anima 格式的标签。
     var insert = (s && typeof s === 'object') ? (s.insert || '') : s;
     if (!insert) return;
     var el = this._teSuggestInputEl;

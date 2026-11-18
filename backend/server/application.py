@@ -181,10 +181,10 @@ _DICTIONARY_ASSET_PREFIX = "/api/tageditor/dictionary/asset/"
 def apply_cache_policy(url: URL, headers: MutableHeaders) -> None:
     """按资源类型分级缓存策略：
 
-    - 生成类预览走自身 ETag（慢速远程链路上不能再被 no-store 冲掉）
+    - 生成类预览保留自身的缓存头和 ETag
     - 带内容哈希的词典内容文件长期缓存；manifest 保持 revalidate
     - /api/ 一律 revalidate（no-cache），稳定注册表靠各自 ETag 应答 304
-    - 前端资源与 HTML 入口保持 revalidate，不能把手工查询串当成内容哈希
+    - 前端资源与 HTML 入口每次重新校验，包括带版本查询串的资源
     - 图片/字体/图标短缓存；未版本化的 JS/CSS 不缓存
     """
     path = url.path

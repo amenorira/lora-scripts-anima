@@ -322,7 +322,7 @@ def parse_log_progress(lines: list[str]) -> dict:
     info: dict[str, Any] = {}
 
     # 进度: "steps: 45%|████ | 450/1000 [02:30<03:03]"
-    # 取最后一个匹配（最新进度），而不是 search() 返回的第一个
+    # 最后一条匹配记录是最新训练进度。
     progress_matches = list(_RE_PROGRESS.finditer(text))
     if progress_matches:
         m = progress_matches[-1]

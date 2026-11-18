@@ -3,7 +3,7 @@
 模型约定（依据模型仓库自带的 tag_mapping.json 与公开推理脚本）：
 - 输入 448×448、白底补齐方形、BICUBIC 缩放、/255 后按 0.5 均值/方差归一化的
   BGR float32 张量
-- tag_mapping.json 是数据而非代码，支持两种布局：
+- 从 tag_mapping.json 读取标签映射，支持两种布局：
   {"idx_to_tag": {...}, "tag_to_category": {...}}
   或 {索引: {"tag": ..., "category": ...}}
 - rating / quality 分类只取置信度最高的一条，其余分类全量输出（阈值交给后处理）

@@ -247,7 +247,7 @@ window.captionWorkspaceMixin = {
   },
   async waitCaptionPreviewSettled() {
     const id = this.captionPreviewRequestId;
-    // A lost network connection cannot prove the server released its gate.
+    // Poll for server confirmation before clearing the active preview.
     while (id === this.captionPreviewRequestId && this.captionPreviewBusy) {
       try {
         const body = await (await fetch('/api/tagger/caption/preview-state')).json();

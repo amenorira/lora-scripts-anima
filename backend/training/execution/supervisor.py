@@ -248,8 +248,7 @@ def run_train(
         args.extend(["--multi_gpu", "--num_processes", str(len(validated_ids))])
         if sys.platform == "win32":
             args.extend(["--rdzv_backend", "c10d"])
-    # 训练脚本 + 可选配置参数。Krea cache pipeline uses a dataset TOML
-    # argument instead of sd-scripts' config_file convention.
+    # Add the script and its config flag. Krea caching takes a dataset TOML.
     args.append(str(script))
     if config_argument:
         args.extend([config_argument, toml_path])

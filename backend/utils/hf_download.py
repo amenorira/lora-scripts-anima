@@ -237,7 +237,7 @@ def _download_single_stream(url: str, dest: Path, partial: Path,
 
     with requests.get(url, headers=headers, stream=True, allow_redirects=True,
                       timeout=(_CONNECT_TIMEOUT, _READ_TIMEOUT)) as r:
-        # 416 不能证明本地文件完整；大小或版本变化都可能导致范围越界。
+        # 416 表示续传范围已失效。文件大小或版本变化时也会触发这个错误。
         if r.status_code == 416:
             raise IntegrityError("Download resume rejected / 本地续传范围已失效")
         r.raise_for_status()

@@ -32,9 +32,8 @@ async def prepare_settings(config, gpu_ids, profile) -> tuple[SdScriptsSettings 
     if profile.id not in ("anima-lora", "moss-image-lora"):
         subset_timestep_offsets = {}
 
-    # Keep the legacy sd-scripts adapter input byte-for-byte compatible. Core
-    # metadata is restored at the supervisor boundary instead of being passed
-    # through to sd-scripts as an unknown command line field.
+    # Strip core metadata here to preserve the legacy sd-scripts adapter input.
+    # Restore the metadata at the supervisor boundary.
     config.pop("engine_id", None)
     adapter_id = str(config.pop("adapter_id", profile.adapter_id))
 

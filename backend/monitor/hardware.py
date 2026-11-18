@@ -90,7 +90,7 @@ def _gpu_info_raw() -> dict | None:
 
 
 def gpu_info(force: bool = False) -> dict | None:
-    """Return shared telemetry; force requests one-second rather than five-second freshness."""
+    """Return shared telemetry with a five-second cache, or one second when forced."""
     return _read_sample("gpu", _gpu_info_raw, force)
 
 

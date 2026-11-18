@@ -7,14 +7,12 @@ from __future__ import annotations
 
 
 def read_indexes() -> dict[str, str]:
-    # This is the same loader used by `pip config get`. Keep pip isolated here
-    # instead of importing its command runner twice on every healthy launch.
+    # Import the same config loader as `pip config get` on demand.
     import os
     from pip._internal.configuration import Configuration, get_configuration_files, kinds
     from pip._internal.exceptions import ConfigurationError
 
-    # `pip config get` defaults to the venv file when present, otherwise the
-    # user file. Match that selection rather than changing mirror precedence.
+    # Match `pip config get`: read the venv config if present, or the user config.
     files = get_configuration_files()
     selected = kinds.SITE if any(os.path.exists(p) for p in files[kinds.SITE]) else kinds.USER
     config = Configuration(isolated=False, load_only=selected)

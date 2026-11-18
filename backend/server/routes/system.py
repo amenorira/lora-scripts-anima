@@ -69,9 +69,8 @@ _fields_payload_lock = threading.Lock()
 def _fields_payload() -> tuple[str, bytes]:
     """Process-stable fields JSON + strong ETag (body hash).
 
-    The registry is static per process (get_fields_json caches it), so the
-    serialized payload is built once and reused; unchanged clients get a 304
-    instead of re-downloading ~88 KB on every page load.
+    Serialize the registry once per process and return 304 to clients with
+    a matching ETag to save the ~88 KB transfer.
     """
     global _fields_payload_cache
     with _fields_payload_lock:

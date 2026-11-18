@@ -279,9 +279,8 @@ def load_run_record(
     except (OSError, ValueError):
         artifact = Path(artifact_raw)
 
-    # 记录中的产物目录在本机不可用，但运行目录自身承载了模型/预览产物
-    # （整个运行目录被从其他机器拷贝到 output/ 下）。此时修复记录元数据，
-    # 使其指向真实位置，而不是每次读取都做临时回退。
+    # 运行目录可能整体迁移到本机 output/。原产物目录失效且运行目录
+    # 已包含模型或预览时，将实际位置写回运行记录。
     artifact_available = artifact.is_dir()
     if not artifact_available and _run_dir_holds_artifacts(internal):
         artifact = internal

@@ -250,8 +250,7 @@ window.monitorCoreMixin = {
   },
 
   _applyManagedTrainingState(snapshot, requestedAt) {
-    // 快照只代表"取回前"的事实：所有权在本轮请求发出后才变过的，
-    // 这份任务列表既不能证明新任务存在，也不能证明旧任务已结束。
+    // 任务归属在请求发出后发生变化时，跳过这份旧任务列表。
     if (requestedAt != null && requestedAt < (this.liveTaskBoundaryAt || 0)) return;
     const managed = snapshot && snapshot.tasks && snapshot.tasks.managed || [];
     const historySignature = managed.filter(Boolean).map(task => task.id + ':' + task.status).join('|');
@@ -602,8 +601,8 @@ window.monitorCoreMixin = {
     // No one can see this list off the dashboard; defer its full metadata
     // refresh until the page is opened, where the detail snapshot hydrates it.
     if (!data || this.selectedRunDir || this.currentRoute !== 'monitor-dashboard') return;
-    // The socket event is intentionally tiny. Load the cacheable metadata list
-    // only after a real artifact notice, rather than repeatedly requesting it.
+    // Keep the socket payload small. Fetch the cacheable metadata list when an
+    // artifact event arrives.
     this._outputCountVersion++;
     this._applyOutputCount(this.currentOutputRunDir, data.output_count);
     this._outputFilesNeedsRefresh = true;
