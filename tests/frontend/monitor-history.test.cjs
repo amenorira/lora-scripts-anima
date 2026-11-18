@@ -12,6 +12,18 @@ function app(overrides = {}) {
   }, overrides);
 }
 
+test('opening history uses the catalog while manual refresh requests discovery', async () => {
+  const requests = [];
+  global.fetch = async url => {
+    requests.push(url);
+    return response({running: null, history: []});
+  };
+  const a = app();
+  await a.loadHistory();
+  await a.loadHistory(false, true);
+  assert.deepEqual(requests, ['/api/monitor/history', '/api/monitor/history?refresh=true']);
+});
+
 test('copy uses the converted form and undo restores both profile drafts', async () => {
   const original = {model_train_type: 'moss-image-lora', output_name: 'my draft'};
   const drafts = {'anima-lora': {output_name: 'saved anima'}, 'moss-image-lora': original};

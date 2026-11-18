@@ -644,10 +644,12 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
     return errors
 
 
-def build_krea2_dataset_config(config: dict[str, Any]) -> dict[str, Any]:
+def build_krea2_dataset_config(config: dict[str, Any], groups: list | None = None) -> dict[str, Any]:
     """Build musubi's separate dataset TOML object from the visible Krea form."""
 
     width, height = parse_krea2_resolution(config["resolution"])
+    if groups is None:
+        groups = dataset_groups(config)
     return {
         "general": {
             "resolution": [width, height],
@@ -662,7 +664,7 @@ def build_krea2_dataset_config(config: dict[str, Any]) -> dict[str, Any]:
                 "cache_directory": str(cache),
                 "num_repeats": int(config.get("krea_num_repeats", 1)),
             }
-            for directory, cache, _ in dataset_groups(config)
+            for directory, cache, _ in groups
         ],
     }
 

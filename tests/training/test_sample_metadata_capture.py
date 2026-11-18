@@ -79,6 +79,19 @@ class SampleMetadataCaptureTests(unittest.TestCase):
     def previews(self):
         return newest_previews(str(self.root), force_refresh=True)
 
+    def test_later_save_does_not_stamp_a_replaced_image(self):
+        def replace_first_image(prompt):
+            if prompt["enum"] == 1:
+                first = self.root / "sample" / "demo_000200_00_20261114090000_42.png"
+                first.write_bytes(b"different image revision")
+
+        sampler = self.fake_native(before_save=replace_first_image)
+        self.assertEqual(sampler(self.accelerator, self.args, None, 200), "success")
+
+        first, second = self.previews()
+        self.assertEqual(first["sample"]["metadata_source"], "filename")
+        self.assertEqual(second["sample"]["metadata_source"], "recorded")
+
     def in_training_frame(self, architecture, callback, *, epoch=3, step=200, path=None, name=None,
                           frame_args=None, frame_accelerator=None, source=None):
         _, default_name, default_path = metadata._TRAINING_FRAMES[architecture]
@@ -287,7 +300,7 @@ class SampleMetadataCaptureTests(unittest.TestCase):
 
     def test_metadata_io_failure_does_not_change_sampler_result(self):
         sampler = self.fake_native()
-        with patch.object(metadata, "write_sample_batch", side_effect=PermissionError("read only")), patch.object(metadata.logger, "warning"):
+        with patch.object(metadata, "write_prepared_sample_batch", side_effect=PermissionError("read only")), patch.object(metadata.logger, "warning"):
             self.assertEqual(sampler(self.accelerator, self.args, None, 200), "success")
         self.assertEqual(len(self.previews()), 2)
         self.assertTrue(all(not item["sample"]["comparable"] for item in self.previews()))

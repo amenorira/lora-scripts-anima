@@ -37,6 +37,17 @@ def task_topic(task_id: str) -> str:
     return f"task:{task_id}"
 
 
+def offer_realtime(queue: asyncio.Queue, event: dict, topic: str = "") -> None:
+    """Replace an overflowed batch with a resync marker and the newest event."""
+    # Both queue operations run synchronously on the owning event loop.
+    if queue.full():
+        while not queue.empty():
+            queue.get_nowait()
+        queue.put_nowait({"op": "resync_required", "topics": [topic] if topic else [],
+                          "reason": "slow_consumer", "server_instance_id": SERVER_INSTANCE_ID})
+    queue.put_nowait(event)
+
+
 def _json_size(value: dict[str, Any]) -> int:
     try:
         return len(json.dumps(value, ensure_ascii=False, default=str).encode("utf-8"))
@@ -175,45 +186,8 @@ class RealtimeHub:
             subscribers = list(self._subscribers.get(topic, ()))
 
         for queue in subscribers:
-            self._offer(queue, event)
+            offer_realtime(queue, event, topic)
         return event
-
-    @staticmethod
-    def _offer(queue: asyncio.Queue[dict[str, Any]], event: dict[str, Any]) -> None:
-        """Offer an event without letting one slow subscriber grow memory.
-
-        Keeping merely the latest 256 events is not sufficient: a client that
-        lost the beginning of that range cannot infer the gap when its cursor
-        was zero.  On overflow we therefore discard the stale batch and put a
-        protocol-level resync marker before the newest event.  The WebSocket
-        forwarder passes that marker through unchanged and the browser obtains
-        an HTTP snapshot before it trusts subsequent incremental data.
-        """
-        if queue.full():
-            while True:
-                try:
-                    queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    break
-            topic = event.get("topic")
-            marker = {
-                "op": "resync_required",
-                "topics": [topic] if isinstance(topic, str) else [],
-                "reason": "slow_consumer",
-                "server_instance_id": SERVER_INSTANCE_ID,
-            }
-            try:
-                queue.put_nowait(marker)
-            except asyncio.QueueFull:
-                # This should be impossible after draining, but producer
-                # safety matters more than an individual notification.
-                logger.debug("Realtime subscriber queue could not accept resync marker")
-        try:
-            queue.put_nowait(event)
-        except asyncio.QueueFull:
-            # Another consumer raced us.  The resync marker above already
-            # tells this client to rebuild from a snapshot.
-            logger.debug("Realtime subscriber queue stayed full for topic=%s", event.get("topic"))
 
     async def subscribe(
         self,

@@ -193,6 +193,12 @@ def _read_config_revision(path: Path, mtime_ns: int, size: int) -> dict:
         return tomllib.load(handle)
 
 
+@lru_cache(maxsize=64)
+def _read_meta_revision(path: Path, revision: tuple[int, int, int, int]) -> dict:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return data if isinstance(data, dict) else {}
+
+
 def read_run_config(run_dir: str | Path) -> dict:
     """Read this run's immutable config; never substitute another run's autosave."""
     path = Path(run_dir) / "config.toml"
@@ -250,7 +256,12 @@ def load_run_record(
     if internal is None or not internal.is_dir():
         return None
 
-    meta = _load_json(internal / RUN_META_NAME) or {}
+    meta_path = internal / RUN_META_NAME
+    try:
+        stat = meta_path.stat()
+        meta = _read_meta_revision(meta_path, (stat.st_dev, stat.st_ino, stat.st_mtime_ns, stat.st_size))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        meta = {}
     extra = meta.get("extra") if isinstance(meta.get("extra"), dict) else {}
     if meta.get("deleted") and not include_deleted:
         return None
@@ -271,8 +282,10 @@ def load_run_record(
     # 记录中的产物目录在本机不可用，但运行目录自身承载了模型/预览产物
     # （整个运行目录被从其他机器拷贝到 output/ 下）。此时修复记录元数据，
     # 使其指向真实位置，而不是每次读取都做临时回退。
-    if not artifact.is_dir() and _run_dir_holds_artifacts(internal):
+    artifact_available = artifact.is_dir()
+    if not artifact_available and _run_dir_holds_artifacts(internal):
         artifact = internal
+        artifact_available = True
         _repair_artifact_location(internal, meta, artifact)
 
     output_base = meta.get("output_base_dir")
@@ -283,21 +296,17 @@ def load_run_record(
         schema_version = int(meta.get("schema_version") or 1)
     except (TypeError, ValueError):
         schema_version = 1
-    try:
-        artifact_external = artifact.resolve() != internal.resolve()
-    except OSError:
-        artifact_external = artifact != internal
     return {
         **meta,
         "extra": extra,
         "schema_version": schema_version,
         "task_id": meta.get("task_id"),
-        "run_dir": run_dir_ref(internal),
+        "run_dir": internal.relative_to(REPO_ROOT).as_posix(),
         "run_path": internal,
         "artifact_dir": str(artifact),
         "artifact_path": artifact,
-        "artifact_available": artifact.is_dir(),
-        "artifact_external": artifact_external,
+        "artifact_available": artifact_available,
+        "artifact_external": artifact != internal,
         "preview_enabled": _preview_enabled(internal, extra),
         "output_base_dir": str(output_base),
         "deleted": bool(meta.get("deleted", False)),
@@ -348,7 +357,7 @@ def resolve_artifact_file(run_dir: str | Path, relative_path: str | Path) -> Pat
     relative = Path(relative_path)
     if relative.is_absolute():
         return None
-    root = Path(record["artifact_path"]).resolve()
+    root = record["artifact_path"]
     try:
         candidate = (root / relative).resolve()
         candidate.relative_to(root)

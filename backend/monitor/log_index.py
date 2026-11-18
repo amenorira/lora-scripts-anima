@@ -29,7 +29,7 @@ _lock = threading.RLock()
 _generations = count(1)
 
 
-def indexed_slice(path: Path, offset: int, limit: int, query: str, tail: bool) -> dict:
+def indexed_slice(path: Path, offset: int, limit: int, query: str, tail: bool, *, tail_cursor=None) -> dict:
     key = str(path.resolve())
     with _lock:
         index = _indexes.setdefault(key, LogIndex())
@@ -79,7 +79,11 @@ def indexed_slice(path: Path, offset: int, limit: int, query: str, tail: bool) -
 
             total = len(index.offsets)
             limit = max(1, limit)
-            offset = max(0, total - limit) if tail else max(0, min(offset, total))
+            if tail:
+                start = tail_cursor[0] if tail_cursor and tail_cursor[1] == index.generation else 0
+                offset = max(start, total - limit, 0)
+            else:
+                offset = max(0, min(offset, total))
             end = min(total, offset + limit)
 
             def row(number):

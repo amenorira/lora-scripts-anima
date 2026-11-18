@@ -72,11 +72,22 @@ test('manual sample refresh retries failed lightbox thumbnails outside the tab p
   app._replacePreviewItems = () => false;
   app._followLatestPreview = () => {};
   const pending = app.refreshPreviews();
+  assert.match(requests[0].url, /[?&]refresh=1(?:&|$)/);
   requests[0].resolve(response([]));
   await pending;
   assert.equal(retries, 1);
   assert.equal(app.previewsVersion, 1, 'unchanged metadata still refreshes failed media');
   app._invalidatePreviewRequest();
+});
+
+test('background sample refresh can reuse the monitor cache', async () => {
+  const {app, requests} = requestHarness();
+  app._replacePreviewItems = () => false;
+  app._followLatestPreview = () => {};
+  const pending = app.refreshPreviews(false);
+  assert.doesNotMatch(requests[0].url, /[?&]refresh=/);
+  requests[0].resolve(response([]));
+  await pending;
 });
 
 test('sample refresh preserves grid position after modal selection, but initial and explicit resets reveal it', () => {

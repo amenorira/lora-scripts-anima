@@ -95,6 +95,8 @@ def _resolve_monitor_log_path(run_dir: str = "", task_id: str = "") -> Path | No
 @router.get("/monitor/loss")
 async def monitor_loss(run_dir: str = Query("")):
     record = await asyncio.to_thread(load_run_record, run_dir) if run_dir else None
+    if run_dir and record is None:
+        return {"status": "success", "data": []}
     data = await asyncio.to_thread(
         read_tensorboard_loss,
         run_dir=str(record["run_path"]) if record else None,
@@ -165,10 +167,7 @@ async def monitor_stop():
 @router.get("/monitor/history")
 async def monitor_history(refresh: bool = False):
     """训练记录：运行中任务 + 历史训练记录"""
-    if refresh:
-        from backend.monitor.history import invalidate_history_cache
-        invalidate_history_cache()
-    history = await asyncio.to_thread(scan_history)
+    history = await asyncio.to_thread(scan_history, refresh=refresh)
 
     # 获取当前运行中任务
     tasks = tm.training_dump()

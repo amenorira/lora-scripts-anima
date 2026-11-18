@@ -926,7 +926,8 @@ window.monitorPreviewsMixin = {
     try {
       // ``limit=0`` means all compact preview metadata. Image bytes continue
       // through the thumbnail queue (or normal browser loading when disabled).
-      let url = '/api/monitor/previews?refresh=1&limit=0';
+      let url = '/api/monitor/previews?limit=0';
+      if (notifyOnFailure) url += '&refresh=1';
       const runDir = this.currentOutputRunDir;
       if (runDir) {
         url += '&run_dir=' + encodeURIComponent(runDir);

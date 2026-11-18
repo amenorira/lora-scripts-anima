@@ -97,7 +97,7 @@ async def warm_startup_caches() -> None:
     """Optional disk scans and training imports run after the ready banner."""
     from backend.log import log
     results = await asyncio.gather(
-        asyncio.to_thread(scan_history),  # Includes idempotent legacy migration.
+        asyncio.to_thread(scan_history, refresh=True),
         asyncio.to_thread(warm_step_estimator),
         return_exceptions=True,
     )

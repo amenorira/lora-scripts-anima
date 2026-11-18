@@ -10,7 +10,7 @@ function app(overrides = {}) {
   Object.assign(value, window.realtimeMixin, {
     currentRoute: 'monitor-dashboard', liveTaskId: 'A',
     monitorData: { state: 'RUNNING', active_task: { id: 'A' }, step: 12, detail: true },
-    lossSeries: [], previews: [], logLines: [], logFullLines: [],
+    lossSeries: [], previews: [], logFullLines: [],
     _previewMediaObjectUrls: [], _realtimeTopics: new Set(),
     t: key => key, renderDashboard() {}, scheduleRender() {},
     startProgress() {}, finishProgress() {}, toast() {},
@@ -27,9 +27,11 @@ const snapshot = (id = 'A') => ({
 test('page switches retain the task subscription and history does not overwrite live curves', () => {
   const a = app({ refreshMonitorRealtimeDetail() {} });
   a._setMonitorRealtimeTask('A');
+  assert.ok(a._realtimeTopics.has('artifacts'));
   a.stopMonitorRealtime();
   a.currentRoute = 'settings';
   assert.equal(a._monitorRealtimeTopic, 'task:A');
+  assert.ok(!a._realtimeTopics.has('artifacts'));
   a.handleRealtimeMonitorEvent({ topic: 'task:A', type: 'task.progress', payload: { data: { step: 98 } } });
   a.selectedRunDir = 'output/history';
   a.runDetailData = { tensorboard_loss: [{ tag: 'history' }] };
@@ -42,12 +44,23 @@ test('page switches retain the task subscription and history does not overwrite 
   a.startMonitorRealtime();
   assert.equal(a._monitorRealtimeTopic, 'task:A');
   assert.ok(a._realtimeTopics.has('task:A'));
+  assert.ok(a._realtimeTopics.has('artifacts'));
   a.handleRealtimeMonitorEvent({ topic: 'task:A', type: 'task.progress', payload: { data: { step: 99 } } });
   assert.equal(a.monitorData.step, 99);
   a._setMonitorRealtimeTask(null);
   a._applyManagedTrainingState(snapshot());
   assert.equal(a._monitorRealtimeTopic, 'task:A');
   a.stopMonitorRealtime();
+});
+
+test('realtime logs detect a gap independently of the HTTP page total', () => {
+  const a = app({_logFullSourceKey: 'task:A', _liveLogEnd: 100, logTotal: 105,
+    logFullOffset: 0, logFullLines: ['page one'], logAutoScroll: false});
+  a._setMonitorRealtimeTask('A');
+  a.handleRealtimeTaskLog({data: {offset: 105, log_total: 106, lines: ['new']}});
+  assert.equal(a._logFullNeedsResync, true);
+  assert.equal(a._liveLogEnd, 106);
+  assert.deepEqual(a.logFullLines, ['page one']);
 });
 
 test('snapshot started before task switch cannot overwrite the new task', async () => {

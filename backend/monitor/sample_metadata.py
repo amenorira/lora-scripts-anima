@@ -113,21 +113,30 @@ def write_sample_batch(artifact_root, batch: dict, items: dict, *, process_index
     records after an image has been replaced. All ranks share batch.id.
     """
     root = Path(artifact_root).resolve()
+    saved = {}
+    for relative, item in items.items():
+        path = _safe_path(root, relative)
+        if path is not None and path.is_file() and isinstance(item, dict):
+            saved[relative] = sample_item_record(path, item)
+    return write_prepared_sample_batch(root, batch, saved, process_index=process_index, num_processes=num_processes)
+
+
+def sample_item_record(path: Path, item: dict) -> dict:
+    return {**_json_value(item), "file_version": file_version(path)}
+
+
+def write_prepared_sample_batch(root: Path, batch: dict, items: dict, *, process_index=0, num_processes=1) -> Path:
+    """Write records stamped when each image was saved under the canonical root."""
     identifier = str(batch["id"])
     if not identifier or len(identifier) > 256:
         raise ValueError("invalid sample batch id")
     rank, count = _integer(process_index), _integer(num_processes, 1)
     if rank is None or count is None or rank >= count:
         raise ValueError("invalid sample process index")
-    saved = {}
-    for relative, item in items.items():
-        path = _safe_path(root, relative)
-        if path is not None and path.is_file() and isinstance(item, dict):
-            saved[relative] = {**_json_value(item), "file_version": file_version(path)}
     directory = root / "sample" / ".anima-preview" / "batches"
     directory.mkdir(parents=True, exist_ok=True)
     destination = directory / f"{_digest(identifier)}-r{rank}.json"
-    payload = {"schema_version": SCHEMA_VERSION, "batch": _json_value(batch), "items": saved,
+    payload = {"schema_version": SCHEMA_VERSION, "batch": _json_value(batch), "items": items,
                "process_index": rank, "num_processes": count}
     fd, temporary = tempfile.mkstemp(prefix=".sample-", suffix=".tmp", dir=directory)
     try:

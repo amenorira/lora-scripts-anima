@@ -10,7 +10,7 @@ from pathlib import Path
 import re
 from typing import Any
 
-from backend.training.datasets.krea2_dataset import dataset_groups, image_files, parse_krea2_resolution
+from backend.training.datasets.krea2_dataset import dataset_groups, parse_krea2_resolution
 from backend.utils.file_io import atomic_write_text, read_text
 
 KREA2_CACHE_MANIFEST_NAME = ".krea2-cache.json"
@@ -66,14 +66,12 @@ def _path_identity(path_value: Any) -> dict[str, Any]:
     return {"path": str(path.resolve()), "size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
 
 
-def _krea2_cache_inputs(config: dict[str, Any], images: list[Path] | None = None) -> dict:
+def _krea2_cache_inputs(config: dict[str, Any], groups: list) -> dict:
     """Describe the inputs that determine cache contents."""
 
-    cache_dir = config.get("dataset_cache_dir")
     root = Path(str(config.get("train_data_dir") or ""))
     entries: list[dict[str, Any]] = []
-    if images is None:
-        images = image_files(str(config.get("train_data_dir") or ""), cache_dir, str(config.get("caption_extension") or ".txt"))
+    images = [image for _, _, images in groups for image in images]
     for image in sorted(images):
         try:
             stat = image.stat()
@@ -110,10 +108,6 @@ def _krea2_cache_inputs(config: dict[str, Any], images: list[Path] | None = None
     if config.get("krea_cache_vae_tiling"):
         payload["vae_tiling"] = True
     return payload
-
-
-def krea2_cache_fingerprint(config: dict[str, Any], images: list[Path] | None = None) -> str:
-    return _fingerprint_inputs(_krea2_cache_inputs(config, images))
 
 
 def _fingerprint_inputs(inputs: dict) -> str:
@@ -155,11 +149,13 @@ def prepare_cache_manifest(config: dict[str, Any]) -> dict[str, Any]:
     cache_dir.mkdir(parents=True, exist_ok=True)
     previous, _ = read_cache_manifest(cache_dir)
     groups = dataset_groups(config)
-    inputs = _krea2_cache_inputs(config, [image for _, _, images in groups for image in images])
+    inputs = _krea2_cache_inputs(config, groups)
     fingerprints = _stage_fingerprints(inputs)
     fingerprint = _fingerprint_inputs(inputs)
-    status = _cache_status(config, groups, fingerprint, previous)
-    reuse = reusable_stages(config, previous, status, fingerprints)
+    reuse = dict.fromkeys(STAGES, False)
+    if config.get("krea_cache_reuse", True) and previous.get("stages"):
+        status, _ = _cache_status(config, groups, fingerprint, previous)
+        reuse = _reusable_stages(previous, status, fingerprints)
     payload = {
         "schema": 2,
         "profile": "krea2-lora",
@@ -180,9 +176,11 @@ def mark_cache_manifest(config: dict[str, Any], status: str) -> str | None:
     if not manifest:
         manifest = prepare_cache_manifest(config)
     errors = []
+    inspection = None
     if status == "completed":
         try:
-            cache_status = get_krea2_cache_status(config)
+            inspection = _inspect_cache(config, manifest)
+            cache_status, files, fingerprints = inspection
             if not cache_status["image_count"]:
                 errors.append("Dataset has no captioned images / 数据集没有带标注的可用图片")
             if not cache_status["fingerprint_matches"]:
@@ -199,8 +197,11 @@ def mark_cache_manifest(config: dict[str, Any], status: str) -> str | None:
                     errors.append(f"{stage}: cache outputs changed after completion / 阶段完成后缓存文件发生变化")
             errors.extend(cache_status["conflicts"])
             if not errors:
-                manifest["outputs"] = {stage: collect_stage_outputs(config, stage) for stage in STAGES}
-                manifest["stage_fingerprints"] = stage_fingerprints(config)
+                manifest["outputs"] = {
+                    stage: manifest["outputs"][stage] if cache_status["stage_outputs_match"][stage]
+                    else output_records(config["dataset_cache_dir"], files[stage]) for stage in STAGES
+                }
+                manifest["stage_fingerprints"] = fingerprints
         except Exception as exc:
             errors.append(f"Failed to validate Krea 2 cache / Krea 2 缓存校验失败: {exc}")
     error = "; ".join(errors) or None
@@ -209,8 +210,8 @@ def mark_cache_manifest(config: dict[str, Any], status: str) -> str | None:
         manifest["stages"] = dict.fromkeys(STAGES, "completed")
     else:
         try:
-            reusable = reusable_stages({**config, "krea_cache_reuse": True}, manifest,
-                                       get_krea2_cache_status(config), stage_fingerprints(config))
+            cache_status, _, fingerprints = inspection or _inspect_cache(config, manifest)
+            reusable = _reusable_stages(manifest, cache_status, fingerprints)
         except (OSError, TypeError, ValueError):
             reusable = dict.fromkeys(STAGES, False)
         manifest["stages"] = {stage: "completed" if reusable[stage] else "failed" for stage in STAGES}
@@ -220,23 +221,23 @@ def mark_cache_manifest(config: dict[str, Any], status: str) -> str | None:
     return error
 
 
-def get_krea2_cache_status(config: dict[str, Any]) -> dict[str, Any]:
+def get_krea2_cache_status(config: dict[str, Any], *, groups: list | None = None) -> dict[str, Any]:
     """Inspect cache files and their fingerprint without importing musubi."""
-    groups = dataset_groups(config)
-    images = [image for _, _, group_images in groups for image in group_images]
+    if groups is None:
+        groups = dataset_groups(config)
     try:
-        fingerprint = krea2_cache_fingerprint(config, images)
+        fingerprint = _fingerprint_inputs(_krea2_cache_inputs(config, groups))
     except (TypeError, ValueError):
         fingerprint = ""
     manifest, _ = read_cache_manifest(str(config.get("dataset_cache_dir") or ""))
-    return _cache_status(config, groups, fingerprint, manifest)
+    status, _ = _cache_status(config, groups, fingerprint, manifest)
+    return status
 
 
-def _cache_status(config: dict, groups: list, fingerprint: str, manifest: dict) -> dict:
+def _cache_status(config: dict, groups: list, fingerprint: str, manifest: dict) -> tuple[dict, dict]:
     """Evaluate a single filesystem snapshot without rescanning its dataset."""
     cache_dir = Path(str(config.get("dataset_cache_dir") or ""))
     conflicts = _krea2_cache_conflicts(groups)
-    images = [image for _, _, group_images in groups for image in group_images]
     latent_files = []
     text_files = []
     complete_latents = complete_texts = True
@@ -262,15 +263,14 @@ def _cache_status(config: dict, groups: list, fingerprint: str, manifest: dict) 
         complete_texts = complete_texts and set(group_texts) == expected_texts
 
     recorded_outputs = manifest.get("outputs") if isinstance(manifest.get("outputs"), dict) else {}
-    stage_outputs_match = {
-        stage: outputs_match(cache_dir, files, recorded_outputs.get(stage))
-        for stage, files in (("latents", latent_files), ("text_encoder", text_files))
-    }
+    stage_files = {"latents": latent_files, "text_encoder": text_files}
+    stage_outputs_match = {stage: outputs_match(cache_dir, files, recorded_outputs.get(stage))
+                           for stage, files in stage_files.items()}
     complete_groups = complete_latents and complete_texts
 
     matches = bool(fingerprint and manifest.get("fingerprint") == fingerprint)
     stages = manifest.get("stages") if isinstance(manifest.get("stages"), dict) else {}
-    expected = len(images)
+    expected = sum(len(images) for _, _, images in groups)
     ready = (
         expected > 0
         and matches
@@ -292,11 +292,14 @@ def _cache_status(config: dict, groups: list, fingerprint: str, manifest: dict) 
         "stage_outputs_match": stage_outputs_match,
         "conflicts": conflicts,
         "ready": ready,
-    }
+    }, stage_files
 
 
-def stage_fingerprints(config: dict) -> dict[str, str]:
-    return _stage_fingerprints(_krea2_cache_inputs(config))
+def _inspect_cache(config: dict, manifest: dict) -> tuple[dict, dict, dict]:
+    groups = dataset_groups(config)
+    inputs = _krea2_cache_inputs(config, groups)
+    status, files = _cache_status(config, groups, _fingerprint_inputs(inputs), manifest)
+    return status, files, _stage_fingerprints(inputs)
 
 
 def _stage_fingerprints(inputs: dict) -> dict[str, str]:
@@ -333,23 +336,26 @@ def outputs_match(cache_dir: str | Path, files: list[Path], expected: Any) -> bo
         return False
 
 
-def collect_stage_outputs(config: dict, stage: str) -> dict:
-    suffix = f"_{_KREA2_CACHE_ARCHITECTURE}{'_te' if stage == 'text_encoder' else ''}.safetensors"
-    files = [path for _, cache, _ in dataset_groups(config)
-             for path in cache.glob(f"*{suffix}") if path.is_file()]
-    return output_records(config["dataset_cache_dir"], files)
-
-
-def reusable_stages(config: dict, manifest: dict, status: dict, fingerprints: dict) -> dict[str, bool]:
+def _reusable_stages(manifest: dict, status: dict, fingerprints: dict) -> dict[str, bool]:
     stages = manifest.get("stages") if isinstance(manifest.get("stages"), dict) else {}
     previous = manifest.get("stage_fingerprints") if isinstance(manifest.get("stage_fingerprints"), dict) else {}
-    return {stage: bool(config.get("krea_cache_reuse", True)
-                        and stages.get(stage) == "completed"
+    return {stage: bool(stages.get(stage) == "completed"
                         and previous.get(stage) == fingerprints[stage]
                         and status["stage_files_match"][stage]
                         and status["stage_outputs_match"][stage]
                         and not status["conflicts"])
             for stage in STAGES}
+
+
+def can_reuse_stage(config: dict, stage: str) -> bool:
+    if not config.get("krea_cache_reuse", True):
+        return False
+    manifest, _ = read_cache_manifest(config["dataset_cache_dir"])
+    stages = manifest.get("stages")
+    if not isinstance(stages, dict) or stages.get(stage) != "completed":
+        return False
+    status, _, fingerprints = _inspect_cache(config, manifest)
+    return _reusable_stages(manifest, status, fingerprints)[stage]
 
 
 def write_manifest(path: Path, manifest: dict) -> None:
@@ -360,10 +366,10 @@ def complete_stage(config: dict, stage: str) -> None:
     if stage not in STAGES:
         raise ValueError(f"Unknown cache stage: {stage}")
     manifest, _ = read_cache_manifest(config["dataset_cache_dir"])
-    status = get_krea2_cache_status(config)
-    if (manifest.get("stage_fingerprints", {}).get(stage) != stage_fingerprints(config)[stage]
+    status, files, fingerprints = _inspect_cache(config, manifest)
+    if (manifest.get("stage_fingerprints", {}).get(stage) != fingerprints[stage]
             or not status["image_count"] or not status["stage_files_match"][stage] or status["conflicts"]):
         raise ValueError(f"{stage}: cache inputs changed or output files are incomplete / 缓存输入已变化或文件不完整")
-    manifest.setdefault("outputs", {})[stage] = collect_stage_outputs(config, stage)
+    manifest.setdefault("outputs", {})[stage] = output_records(config["dataset_cache_dir"], files[stage])
     manifest.setdefault("stages", {})[stage] = "completed"
     write_manifest(cache_manifest_path(config["dataset_cache_dir"]), manifest)

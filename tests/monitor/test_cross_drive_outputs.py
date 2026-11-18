@@ -1,11 +1,15 @@
+import asyncio
 import json
 import tempfile
 import unittest
 from contextlib import ExitStack
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from backend.monitor import history, run_registry
+from backend.monitor.artifacts import newest_previews
+from backend.monitor.monitor import TaskMonitor
 
 
 class CrossDriveSandbox(unittest.TestCase):
@@ -45,6 +49,26 @@ class CrossDriveSandbox(unittest.TestCase):
 
 
 class RunRegistryTests(CrossDriveSandbox):
+    def test_artifact_count_change_refreshes_older_preview_before_notice(self):
+        sample = self.external / "sample"
+        sample.mkdir()
+        (sample / "demo_000002_00_20261114090002.png").write_bytes(b"latest")
+        record = {"artifact_available": True, "artifact_path": self.external}
+        monitor = TaskMonitor()
+        clock = SimpleNamespace(monotonic=lambda: 10.0)
+
+        async def collect():
+            with patch("backend.monitor.monitor.time", clock), patch("backend.monitor.monitor.realtime_hub.subscriber_count", return_value=1):
+                await monitor._collect_artifact_update("sample", record)
+                (sample / "demo_000001_00_20261114090001.png").write_bytes(b"earlier")
+                clock.monotonic = lambda: 12.0
+                await monitor._collect_artifact_update("sample", record)
+
+        asyncio.run(collect())
+        previews = newest_previews(str(self.external))
+        self.assertEqual(len(previews), 2)
+        self.assertIn("000002", previews[-1]["name"])
+
     def test_deleting_history_keeps_models_checkpoints_and_previews(self):
         for suffix, external in (("external", True), ("default", False)):
             with self.subTest(storage=suffix):
@@ -76,6 +100,24 @@ class RunRegistryTests(CrossDriveSandbox):
                 tombstone = json.loads((internal / "task_meta.json").read_text(encoding="utf-8"))
                 self.assertTrue(tombstone["deleted"])
                 self.assertIsNone(run_registry.load_run_record(internal))
+
+
+    def test_live_log_cursor_keeps_overwrites_and_resets(self):
+        log = self.output / "train_tail.log"
+        log.write_bytes(b"log\n" * 1100 + b"open frame")
+        monitor = TaskMonitor()
+        with patch("backend.monitor.monitor.find_train_log_path", return_value=log):
+            initial = monitor._read_log_delta("tail")
+            self.assertEqual((initial["total"], len(initial["lines"])), (1101, 1000))
+            self.assertTrue(initial["truncated"])
+            with log.open("ab") as stream:
+                stream.write(b" completed\nnext\n")
+            delta = monitor._read_log_delta("tail")
+            self.assertEqual((delta["offset"], delta["lines"]), (1100, ["open frame completed", "next"]))
+            log.write_bytes(b"replacement\n")
+            reset = monitor._read_log_delta("tail")
+            self.assertTrue(reset["reset"])
+            self.assertEqual((reset["offset"], reset["lines"]), (0, ["replacement"]))
 
 
 if __name__ == "__main__":

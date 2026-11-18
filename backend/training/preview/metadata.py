@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 import sys
 
-from backend.monitor.sample_metadata import SCHEMA_VERSION, parse_sample_filename, write_sample_batch
+from backend.monitor.sample_metadata import SCHEMA_VERSION, parse_sample_filename, sample_item_record, write_prepared_sample_batch
 from .compat import sampling_due
 
 
@@ -75,7 +75,7 @@ def _flush(batch):
     if batch["batch"]["expected"] is None or batch["batch"]["expected"] == 0:
         return
     try:
-        write_sample_batch(batch["root"], batch["batch"], batch["items"], process_index=batch["rank"], num_processes=batch["processes"])
+        write_prepared_sample_batch(batch["root"], batch["batch"], batch["items"], process_index=batch["rank"], num_processes=batch["processes"])
     except Exception:
         logger.warning("Sample metadata could not be saved / 无法保存采样参数记录", exc_info=True)
 
@@ -323,7 +323,7 @@ def _patch_save_and_loader(image_module, sampling_module=None):
             result = original(image, fp, *args, **options)
             if item is not None:
                 try:
-                    batch["items"][path.relative_to(batch["root"]).as_posix()] = item
+                    batch["items"][path.relative_to(batch["root"]).as_posix()] = sample_item_record(path, item)
                     _flush(batch)
                 except Exception:
                     logger.warning("Saved sample metadata is unavailable / 无法记录已保存样图的参数", exc_info=True)

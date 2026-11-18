@@ -142,15 +142,16 @@ class AnimaRunner:
         shape = (1, self.model.LATENT_CHANNELS, 1, item["height"] // 8, item["width"] // 8)
         initial = torch.randn(shape, generator=generator, dtype=torch.float32).to(self.device)
         padding = torch.zeros((1, 1, shape[-2], shape[-1]), device=self.device, dtype=self.dtype)
+        # The forward-only offloader cycles the blocks for successive passes.
+        # Reset once here in case an earlier image stopped mid-forward.
+        self.model.prepare_block_swap_before_forward()
         def velocity(x, time_value):
             self.check()
-            self.model.prepare_block_swap_before_forward()
             t = torch.tensor([time_value], device=self.device, dtype=self.dtype)
             with torch.autocast("cuda", dtype=self.dtype):
                 v = self.model(x.to(self.dtype), t, positive, padding_mask=padding).float()
             if self.negative is not None:
                 self.check()
-                self.model.prepare_block_swap_before_forward()
                 with torch.autocast("cuda", dtype=self.dtype):
                     uncond = self.model(x.to(self.dtype), t, self.negative, padding_mask=padding).float()
                 v = uncond + self.settings["cfg"] * (v - uncond)

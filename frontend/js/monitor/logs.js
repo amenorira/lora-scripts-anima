@@ -6,21 +6,16 @@ window.monitorLogCoreMixin = {
     try { await navigator.clipboard.writeText(lines.join('\n')); this.toast(this.t('common.copied')); }
     catch (_) { this.toast(this.t('common.failed'), 'error'); }
   },
-  // 内存缓冲上限 / 分页大小（取自 constants.js LOG）
-  _logCap() { return (window.UI_CONSTANTS && window.UI_CONSTANTS.LOG && window.UI_CONSTANTS.LOG.MAX_LINES) || 5000; },
   _logPageSize() { return (window.UI_CONSTANTS && window.UI_CONSTANTS.LOG && window.UI_CONSTANTS.LOG.FULL_PAGE_SIZE) || 1000; },
 
   _applyMonitorLogSnapshot(lines = [], total = 0, preserveFull = false) {
-    const tail = lines.slice(-this._logCap());
     preserveFull = preserveFull && total >= this.logTotal
       && !((this.logAutoScroll || this._logAtBottom) && this.logFullOffset + this.logFullLines.length >= this.logTotal);
     this.logTotal = total;
     this._logObservationVersion = (this._logObservationVersion || 0) + 1;
-    this.logLines = tail;
-    this._logTailOffset = Math.max(0, total - tail.length);
-    this._logContentVersion++;
+    this._liveLogEnd = total;
     if (!preserveFull) {
-      this.logFullLines = tail.slice(-this._logPageSize());
+      this.logFullLines = lines.slice(-this._logPageSize());
       this.logFullOffset = Math.max(0, total - this.logFullLines.length);
       this._logFullLoaded = true;
       this._logFullNeedsResync = false;

@@ -34,7 +34,7 @@ window.monitorHistoryMixin = {
     this.historyRefreshing = manual;
     this.historyError = '';
     try {
-      const r = await fetch('/api/monitor/history' + (background ? '' : '?refresh=true'));
+      const r = await fetch('/api/monitor/history' + (manual ? '?refresh=true' : ''));
       const d = await r.json();
       if (seq !== this._historyRequestSeq) return;
       if (d.status !== 'success') throw new Error(d.message || this.t('monitor.historyLoadError'));
@@ -118,9 +118,8 @@ window.monitorHistoryMixin = {
     this._runDetailRequestSeq++;
     this._logSliceRequestSeq++;
     this._resetLogRefreshFeedback();
-    this.logLines = [];
     this.logTotal = 0;
-    this._logTailOffset = 0;
+    this._liveLogEnd = 0;
     this.logFullLines = [];
     this.logFullOffset = 0;
     this.logFullMatches = [];
@@ -129,7 +128,6 @@ window.monitorHistoryMixin = {
     this.logFullMatchIdx = -1;
     this.logFullLoading = false;
     this._logFullSourceKey = 'run:' + runDir;
-    this._logContentVersion++;
     this.selectedRunDir = runDir;
     this.runDetailData = null;
     this.lossDataVersion++;
@@ -208,7 +206,6 @@ window.monitorHistoryMixin = {
     this.previewsVersion++;
     this.previewStep = 0;
     this._resetOutputFilesForRun('');
-    this.logLines = [];
     this.logFullLines = [];
     this.logFullOffset = 0;
     this.logFullMatches = [];
@@ -223,7 +220,6 @@ window.monitorHistoryMixin = {
     this._logFullSlide = false;
     this._logFullSourceKey = '';
     this.logTotal = 0;
-    this._logTailOffset = 0;
-    this._logContentVersion++;
+    this._liveLogEnd = 0;
   },
 };

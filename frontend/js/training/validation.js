@@ -57,32 +57,33 @@ window.trainingValidation = {
   },
 
   _refreshTrainingOptionErrors() {
-    const errors = { ...this.formErrors };
-    // Only clear messages we still own; a server error may have replaced the same field's message.
-    Object.entries(this._trainingOptionErrorMessages || {}).forEach(([key, message]) => {
-      if (errors[key] === message) errors[key] = null;
-    });
+    const errors = this.formErrors;
     const current = { ...this._timestepOptionErrors(), ...this._checkpointOffloadErrors(), ...this._mossOptionErrors(),
       ...this._kreaOptionErrors(), ...this._muonOptionErrors(), ...this._adamwOptionErrors() };
+    // Only clear messages we still own; a server error may have replaced the same field's message.
+    Object.entries(this._trainingOptionErrorMessages || {}).forEach(([key, message]) => {
+      if (!(key in current) && errors[key] === message) errors[key] = null;
+    });
+    Object.assign(errors, current);
     this._trainingOptionErrorMessages = current;
-    this.formErrors = { ...errors, ...current };
   },
 
   _adamwOptionValues(overrides = {}) {
-    const form = { ...this.form, ...overrides };
-    if (form.optimizer_type !== 'AdamW') return {};
+    const value = key => Object.hasOwn(overrides, key) ? overrides[key] : this.form[key];
+    if (value('optimizer_type') !== 'AdamW') return {};
     const values = {};
-    for (const line of String(form.optimizer_args_custom || '').split('\n')) {
+    for (const line of String(value('optimizer_args_custom') || '').split('\n')) {
       const match = line.match(/^\s*(fused|foreach|differentiable)\s*=(.*)$/);
       if (!match) continue;
       let literal = match[2].split('#', 1)[0].trim();
       while (literal.startsWith('(') && literal.endsWith(')')) literal = literal.slice(1, -1).trim();
       values[match[1]] = { True: true, False: false, None: null }[literal];
     }
-    const fusedKey = form.model_train_type === 'krea2-lora' ? 'krea_adamw_fused' : 'adamw_fused';
+    const fusedKey = value('model_train_type') === 'krea2-lora' ? 'krea_adamw_fused' : 'adamw_fused';
     for (const [key, argument] of [[fusedKey, 'fused'], ['foreach', 'foreach']]) {
-      if (String(form[key]) === 'true') values[argument] = true;
-      else if (String(form[key]) === 'false') values[argument] = false;
+      const literal = String(value(key));
+      if (literal === 'true') values[argument] = true;
+      else if (literal === 'false') values[argument] = false;
     }
     return values;
   },

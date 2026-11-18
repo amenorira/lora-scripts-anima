@@ -20,8 +20,7 @@ window.monitorCoreMixin = {
   historyReuseBusy: '', _historyReuseApplying: false,
   historyReuseSource: '', historyReuseWarning: '', _historyReuseUndo: null,
   _historyCardPointer: null,
-  logAutoScroll: true, logLines: [],
-  _logContentVersion: 0, monitorTab: 'overview',
+  logAutoScroll: true, monitorTab: 'overview',
   monitorParamQuery: '',
   monitorParamsExpanded: false,
   _monitorParamContext: null, _monitorParamCache: null,
@@ -44,8 +43,8 @@ window.monitorCoreMixin = {
   _logFullResultQuery: '',     // 已返回的匹配所属的搜索词
   logFullMatchIdx: -1,         // 当前定位的匹配在 logFullMatches 中的下标
   logFullLoading: false, logRefreshFeedback: false, _logRefreshFeedbackTimer: null,
-  logTotal: 0,                 // 当前日志源的规范化总行数，独立于分页/尾部缓冲。
-  _logTailOffset: 0,
+  logTotal: 0,                 // 当前日志源的规范化总行数。
+  _liveLogEnd: 0,              // 实时日志尾部行号，HTTP 翻页不更新。
   _logFullLoaded: false,       // full 模式末页是否已加载（首屏/重连自动拉取用）
   _logFullNeedsResync: false,  // 实时重连后需全量 resync（防丢事件）
   _logFullSlide: false,        // full 模式实时增量 slide 待执行
@@ -137,6 +136,8 @@ window.monitorCoreMixin = {
 
   _setMonitorRealtimeTask(taskId) {
     const next = taskId ? 'task:' + taskId : null;
+    if (next && this.currentRoute === 'monitor-dashboard' && !this.selectedRunDir) this.realtimeSubscribe('artifacts');
+    else this.realtimeUnsubscribe('artifacts');
     if (next === this._monitorRealtimeTopic) return;
     if (this._monitorRealtimeTopic) this.realtimeUnsubscribe(this._monitorRealtimeTopic);
     this._monitorRealtimeTopic = next;
@@ -303,6 +304,12 @@ window.monitorCoreMixin = {
       this.handleRealtimeHardware(event.payload);
       return;
     }
+    if (event.topic === 'artifacts') {
+      if (event.type === 'task.artifacts' && event.payload?.task_id === this.liveTaskId) {
+        this.handleRealtimeTaskArtifacts(event.payload);
+      }
+      return;
+    }
     if (!this._monitorRealtimeTopic || event.topic !== this._monitorRealtimeTopic) return;
     const payload = event.payload || {};
     // task.status / task.result 不在这里消费：生命周期状态由轮询统一结算，
@@ -310,7 +317,6 @@ window.monitorCoreMixin = {
     if (event.type === 'task.progress') this.handleRealtimeTaskProgress(payload);
     else if (event.type === 'task.log') this.handleRealtimeTaskLog(payload);
     else if (event.type === 'task.metrics') this.handleRealtimeTaskMetrics(payload);
-    else if (event.type === 'task.artifacts') this.handleRealtimeTaskArtifacts(payload);
   },
 
   handleRealtimeResyncRequired(topics) {
@@ -354,6 +360,7 @@ window.monitorCoreMixin = {
       this.logFullLines = [];
       this.logFullOffset = 0;
       this.logTotal = 0;
+      this._liveLogEnd = 0;
       this.logFullMatches = [];
       this._logFullResultQuery = '';
       this.logFullMatchIdx = -1;
@@ -455,11 +462,10 @@ window.monitorCoreMixin = {
       return wasRunning;
     }
     this._resetLogRefreshFeedback();
-    this.logLines = [];
     this.logFullLines = [];
     this.logFullOffset = 0;
     this.logTotal = 0;
-    this._logTailOffset = 0;
+    this._liveLogEnd = 0;
     this.logFullMatches = [];
     this._logFullResultQuery = '';
     this._logFullSourceKey = '';
@@ -547,9 +553,8 @@ window.monitorCoreMixin = {
       this._resetLogRefreshFeedback();
       this._logSliceRequestSeq++;
       this.logFullLoading = false;
-      this.logLines = [];
       this.logTotal = 0;
-      this._logTailOffset = 0;
+      this._liveLogEnd = 0;
       this.logFullLines = [];
       this.logFullOffset = 0;
       this.logFullMatches = [];
@@ -572,13 +577,10 @@ window.monitorCoreMixin = {
       this.logFullMatchIdx = -1;
       this._logFullNeedsResync = false;
     }
-    const tail = this._mergeRealtimeLogPage(this.logLines, this._logTailOffset, logData, this._logCap());
-    this._logTailOffset = tail.offset;
+    const gap = logData.offset > this._liveLogEnd;
+    this._liveLogEnd = logData.log_total;
     this.logTotal = logData.log_total;
-    if (tail.changed) {
-      this._logContentVersion++;
-    }
-    if (logData.truncated || tail.gap) this._logFullNeedsResync = true;
+    if (logData.truncated || gap) this._logFullNeedsResync = true;
 
     // 总数始终更新；只有当前末页正在跟随时才移动分页内容。
     if ((atLastPage && following && !logData.truncated) || logData.reset) {
@@ -696,6 +698,7 @@ window.monitorCoreMixin = {
     this._monitorClockTimer = null;
     this._monitorRealtimeDetailGeneration++;
     this.realtimeUnsubscribe('hardware');
+    this.realtimeUnsubscribe('artifacts');
     // 任务订阅由训练生命周期管理；离开页面只暂停绘制，继续维护当前任务的曲线。
     if (this._renderRAF) { cancelAnimationFrame(this._renderRAF); this._renderRAF = null; }
     this._dashboardRendered = false;
