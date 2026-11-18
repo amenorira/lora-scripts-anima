@@ -94,11 +94,12 @@ test('sorting retains overview presentation order and selection', () => {
   const html = value._renderSamplesTab(key => value.t('monitor.' + key));
   const groups = [...html.matchAll(/<section class="m-sample-batch"[^>]*data-batch-id="([^"]+)"/g)].map(match => match[1]);
   assert.deepEqual(groups, ['step-2', 'step-1']);
-  value.setSampleBatchSort('asc');
+  value.toggleSampleSortDirection();
   const ascending = value._renderSamplesTab(key => value.t('monitor.' + key));
   assert.deepEqual([...ascending.matchAll(/class="m-sample-batch"[^>]*data-batch-id="([^"]+)"/g)].map(match => match[1]), ['step-1', 'step-2']);
   assert.equal(value.sampleBatchId, 'step-1');
   assert.match(html, /id="sampleBatchSort"/);
+  assert.match(html, /id="sampleBatchSortDirection"[^>]+@click="toggleSampleSortDirection\(\)"/);
   assert.equal((html.match(/class="preview-grid-item m-sample-batch-cover"/g) || []).length, 2);
 });
 

@@ -52,16 +52,34 @@ test('sidebar, viewer thumbnails and sorting save independent preferences withou
     value.toggleSampleSidebar({currentTarget: {checked: true}});
     assert.deepEqual(settings(value), {sidebar: true, viewerTimeline: false, sort: 'desc'});
     value.setSampleBatchSort('asc');
+    const defaults = {comparisonLayout: 'horizontal', lossMode: 'off', lossAscending: true};
     assert.deepEqual(saved.writes, [
-      {sidebar: false, viewerTimeline: true, sort: 'desc', comparisonLayout: 'horizontal', lossMode: 'off'},
-      {sidebar: false, viewerTimeline: false, sort: 'desc', comparisonLayout: 'horizontal', lossMode: 'off'},
-      {sidebar: true, viewerTimeline: false, sort: 'desc', comparisonLayout: 'horizontal', lossMode: 'off'},
-      {sidebar: true, viewerTimeline: false, sort: 'asc', comparisonLayout: 'horizontal', lossMode: 'off'},
+      {...defaults, sidebar: false, viewerTimeline: true, sort: 'desc', trainingSort: 'desc'},
+      {...defaults, sidebar: false, viewerTimeline: false, sort: 'desc', trainingSort: 'desc'},
+      {...defaults, sidebar: true, viewerTimeline: false, sort: 'desc', trainingSort: 'desc'},
+      {...defaults, sidebar: true, viewerTimeline: false, sort: 'asc', trainingSort: 'asc'},
     ]);
     assert.equal(value.previewStep, 4);
     assert.equal(value.sampleBatchId, 'selected-batch');
     value.setSampleBatchSort('asc'); value.setSampleBatchSort('invalid');
     assert.equal(saved.writes.length, 4, 'unchanged or invalid sorting requests do not overwrite preferences');
+  });
+});
+
+test('training progress and loss remember their directions independently after reopening the page', () => {
+  withStorage(storage(JSON.stringify({sort: 'asc'})), () => {
+    const value = app();
+    value.setSampleSortCriterion('loss-overall');
+    assert.equal(value.sampleSortAscending, true);
+    value.toggleSampleSortDirection();
+
+    const reopened = app();
+    assert.equal(reopened.sampleSortCriterion, 'loss-overall');
+    assert.equal(reopened.sampleSortAscending, false);
+    reopened.setSampleSortCriterion('training');
+    assert.equal(reopened.sampleSortAscending, true);
+    reopened.setSampleSortCriterion('loss-overall');
+    assert.equal(reopened.sampleSortAscending, false);
   });
 });
 

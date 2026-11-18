@@ -35,6 +35,28 @@ test('loss ordering is ascending, keeps zero, breaks ties by recency, and leaves
   assert.equal(value._previewLightboxNavigationTarget(1), 2);
 });
 
+test('reversing loss keeps missing values last, preserves selection, and shares the order with the viewer', () => {
+  const value = app();
+  value.setSampleSortCriterion('loss-overall');
+  const ascending = value._sampleBatchOrder();
+  value.toggleSampleSortDirection();
+  assert.notEqual(value._sampleBatchOrder(), ascending);
+  const expected = [1, 4, 3, 2, 5];
+  assert.deepEqual(value._sampleOverviewBatches().map(batch => Number(batch.id.slice(1))), expected);
+  assert.deepEqual(value._previewLightboxDisplayIndices().map(index => index + 1), expected);
+  assert.equal(value.sampleSidebarNavigationTarget(-1), 0);
+  assert.equal(value.sampleBatchId, 'b4');
+  assert.equal(value.previewStep, 3);
+
+  value.setSampleSortCriterion('loss-high');
+  assert.deepEqual(value._sampleOverviewBatches().map(batch => Number(batch.id.slice(1))), [2, 3, 1, 5, 4]);
+  value.monitorData.log_timestep_loss = false;
+  assert.equal(value.sampleSortCriterion, 'loss-overall');
+  value.toggleSampleSortDirection();
+  assert.equal(value.sampleBatchSortDir, 'loss-high', 'changing direction preserves the unavailable metric preference');
+  assert.equal(value.sampleSortAscending, true);
+});
+
 test('unrelated metrics reuse the ranking while epoch corrections and historical runs invalidate it', () => {
   const value = app(); value.sampleBatchSortDir = 'loss-overall';
   const order = value._sampleBatchOrder();
@@ -60,10 +82,10 @@ test('loss ranking does not resume chronological following when another epoch is
 
 test('partition options follow logging availability and a saved partition falls back to overall loss', () => {
   const value = app();
-  assert.deepEqual(value._sampleSortOptions().map(option => option.value), ['asc', 'desc', 'loss-overall', 'loss-high', 'loss-mid', 'loss-low']);
+  assert.deepEqual(value._sampleSortOptions().map(option => option.value), ['training', 'loss-overall', 'loss-high', 'loss-mid', 'loss-low']);
   value.sampleBatchSortDir = 'loss-high'; value.monitorData.log_timestep_loss = false;
   assert.equal(value.sampleEffectiveBatchSort, 'loss-overall');
-  assert.deepEqual(value._sampleSortOptions().map(option => option.value), ['asc', 'desc', 'loss-overall']);
+  assert.deepEqual(value._sampleSortOptions().map(option => option.value), ['training', 'loss-overall']);
   value.setSampleBatchSort('loss-low'); assert.equal(value.sampleBatchSortDir, 'loss-high');
   value.monitorData.log_timestep_loss = true;
   const originalStorage = Object.getOwnPropertyDescriptor(global, 'localStorage'), writes = [];
@@ -72,6 +94,7 @@ test('partition options follow logging availability and a saved partition falls 
   }});
   try {
     value._loadSampleViewPreferences(); assert.equal(value.sampleBatchSortDir, 'loss-mid');
+    assert.equal(value.sampleSortAscending, true, 'old loss preferences default to ascending');
     value.previewComparisonOrder = ['fixed-b', 'fixed-a', null];
     value.setSampleBatchSort('loss-low');
     assert.equal(writes.at(-1).sort, 'loss-low');

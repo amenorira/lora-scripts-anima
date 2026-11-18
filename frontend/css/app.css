@@ -3192,6 +3192,7 @@ input[type="range"]::-webkit-slider-thumb {
 .m-samples-sort .m-sample-select { width: 132px; }
 .m-samples-sort .preview-select-option { grid-template-columns: minmax(0, 1fr) 14px; gap: 8px; }
 .m-samples-sort .preview-select-check { grid-column: 2; }
+.m-samples-sort .m-sample-sort-direction { gap: 4px; min-height: 32px; }
 .m-samples-loss-control { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 12px; white-space: nowrap; }
 .m-samples-loss-control .m-sample-select { width: 94px; }
 .m-sample-select { width: 160px; max-width: min(280px, 100%); min-width: 0; font-size: 12px; }

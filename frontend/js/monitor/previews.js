@@ -1,6 +1,6 @@
 /* 样本筛选、刷新与媒体队列；由 monitor-core.js 装配，沿用同一份监控状态。 */
 window.monitorPreviewsMixin = {
-  sampleBatchId: '', sampleBatchSortDir: 'desc',
+  sampleBatchId: '', sampleBatchSortDir: 'desc', sampleTrainingSortDir: 'desc', sampleLossSortAscending: true,
   sampleLossMode: 'off', _sampleLossCache: null, _sampleSortCache: null,
   sampleSidebarVisible: true, sampleSidebarOpen: true, _sampleSidebarInspecting: false,
   sampleSidebarView: {key: '', scale: 1, x: 0, y: 0},
@@ -77,6 +77,7 @@ window.monitorPreviewsMixin = {
     this._cancelPreviewRailDrag?.('_previewViewTimeline');
     this._sampleOverviewJumpId = '';
     this.sampleBatchId = ''; this.sampleBatchSortDir = 'desc';
+    this.sampleTrainingSortDir = 'desc'; this.sampleLossSortAscending = true;
     this.sampleExpandedBatchId = ''; this._sampleExpansionPausedFollow = false;
     this._cancelSampleGridMotion?.(this._sampleOverviewPanel?.()?.querySelector('.m-sample-batches'));
     this._clearPreviewComparison();
@@ -98,6 +99,9 @@ window.monitorPreviewsMixin = {
       if (typeof saved?.sidebar === 'boolean') this.sampleSidebarVisible = saved.sidebar;
       if (typeof saved?.viewerTimeline === 'boolean') this.previewViewTimelineVisible = saved.viewerTimeline;
       if (['asc', 'desc', 'loss-overall', 'loss-high', 'loss-mid', 'loss-low'].includes(saved?.sort)) this.sampleBatchSortDir = saved.sort;
+      const trainingSort = ['asc', 'desc'].includes(saved?.sort) ? saved.sort : saved?.trainingSort;
+      if (['asc', 'desc'].includes(trainingSort)) this.sampleTrainingSortDir = trainingSort;
+      if (typeof saved?.lossAscending === 'boolean') this.sampleLossSortAscending = saved.lossAscending;
       if (saved?.comparisonLayout === 'horizontal' || saved?.comparisonLayout === 'vertical') this.previewComparisonLayout = saved.comparisonLayout;
       if (['off', 'overall', 'detailed'].includes(saved?.lossMode)) this.sampleLossMode = saved.lossMode;
     } catch { /* Keep the current layout if storage is unavailable. */ }
@@ -107,7 +111,7 @@ window.monitorPreviewsMixin = {
     try {
       localStorage.setItem('anima-sample-view', JSON.stringify({sidebar: this.sampleSidebarVisible,
         viewerTimeline: this.previewViewTimelineVisible, sort: this.sampleBatchSortDir, comparisonLayout: this.previewComparisonLayout,
-        lossMode: this.sampleLossMode}));
+        lossMode: this.sampleLossMode, trainingSort: this.sampleTrainingSortDir, lossAscending: this.sampleLossSortAscending}));
     } catch { /* The controls remain usable without storage. */ }
   },
 
@@ -266,11 +270,23 @@ window.monitorPreviewsMixin = {
     return sort.startsWith('loss-') ? sort.slice(5) : '';
   },
 
+  get sampleSortCriterion() {
+    const sort = this.sampleEffectiveBatchSort;
+    return sort.startsWith('loss-') ? sort : 'training';
+  },
+
+  get sampleSortAscending() {
+    return this.sampleBatchSortDir?.startsWith('loss-') ? this.sampleLossSortAscending : this.sampleBatchSortDir === 'asc';
+  },
+
   _sampleBatchOrder(items = this.previews) {
     // Presentation ranking never changes canonical chronology or comparison baselines.
-    const model = this._sampleDataModel(items), sort = this.sampleEffectiveBatchSort, key = this.sampleLossSortKey;
+    const model = this._sampleDataModel(items), sort = this.sampleEffectiveBatchSort;
+    const key = sort.startsWith('loss-') ? sort.slice(5) : '';
+    const ascending = this.sampleSortAscending;
     const lossIndex = key ? this._sampleEpochLossIndex() : null, cached = this._sampleSortCache;
-    if (cached?.model === model && cached.sort === sort && cached.requested === this.sampleBatchSortDir && cached.lossIndex === lossIndex) return cached;
+    if (cached?.model === model && cached.sort === sort && cached.requested === this.sampleBatchSortDir
+        && cached.ascending === ascending && cached.lossIndex === lossIndex) return cached;
     const batches = [...model.batches];
     if (key) {
       const values = new Map(batches.map(batch => {
@@ -278,9 +294,16 @@ window.monitorPreviewsMixin = {
         const value = this._sampleEpochLoss(sample, lossIndex).values[key];
         return [batch.id, Number.isFinite(value) ? value : Infinity];
       }));
-      batches.sort((a, b) => values.get(a.id) !== values.get(b.id) ? values.get(a.id) - values.get(b.id) : b.position - a.position);
-    } else if (sort !== 'asc') batches.reverse();
-    const order = {model, sort, requested: this.sampleBatchSortDir, lossIndex, batches, positions: new Map(batches.map((batch, index) => [batch.id, index]))};
+      batches.sort((a, b) => {
+        const left = values.get(a.id), right = values.get(b.id);
+        if (left === right) return b.position - a.position;
+        if (left === Infinity) return 1;
+        if (right === Infinity) return -1;
+        return ascending ? left - right : right - left;
+      });
+    } else if (!ascending) batches.reverse();
+    const order = {model, sort, requested: this.sampleBatchSortDir, ascending, lossIndex, batches,
+      positions: new Map(batches.map((batch, index) => [batch.id, index]))};
     if (items === this.previews) this._sampleSortCache = order;
     return order;
   },
@@ -300,11 +323,30 @@ window.monitorPreviewsMixin = {
     return this.sampleBatchSortDir !== 'asc' ? 0 : Math.max(0, (grid?.scrollHeight || 0) - (grid?.clientHeight || 0));
   },
 
+  setSampleSortCriterion(criterion) {
+    if (criterion === this.sampleSortCriterion) return;
+    this.setSampleBatchSort(criterion === 'training' ? this.sampleTrainingSortDir : criterion);
+  },
+
+  toggleSampleSortDirection() {
+    if (!this.sampleLossSortKey) {
+      this.setSampleBatchSort(this.sampleSortAscending ? 'desc' : 'asc');
+      return;
+    }
+    this.sampleLossSortAscending = !this.sampleSortAscending;
+    this._applySampleBatchSort();
+  },
+
   setSampleBatchSort(dir) {
     if (!['asc', 'desc', 'loss-overall', 'loss-high', 'loss-mid', 'loss-low'].includes(dir) || dir === this.sampleBatchSortDir
         || (['loss-high', 'loss-mid', 'loss-low'].includes(dir) && !this.sampleDetailedLossAvailable)) return;
-    this._sampleLayoutAction++;
     this.sampleBatchSortDir = dir;
+    if (dir === 'asc' || dir === 'desc') this.sampleTrainingSortDir = dir;
+    this._applySampleBatchSort();
+  },
+
+  _applySampleBatchSort() {
+    this._sampleLayoutAction++;
     this._saveSampleViewPreferences();
     // Sorting changes presentation without selecting or acknowledging another image.
     this._sampleResetScroll = true; this._sampleScrollAnchor = null;
