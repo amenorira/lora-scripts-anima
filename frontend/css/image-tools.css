@@ -202,7 +202,7 @@
 .reg-inspection-path > button { flex: none; }
 .reg-gallery-end { min-height: 40px; padding: 7px 0; }
 .reg-grid { align-items: start; }
-.reg-result { display: grid; gap: 4px; min-width: 0; padding-bottom: 6px; border-bottom: 1px solid var(--border-subtle); }
+.reg-result { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; min-width: 0; padding-bottom: 6px; border-bottom: 1px solid var(--border-subtle); }
 .reg-result-heading { display: flex; justify-content: space-between; gap: 5px; align-items: baseline; font-size: 12px; }
 .reg-result-heading > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reg-result-heading .reg-help { flex: none; margin: 0; }
