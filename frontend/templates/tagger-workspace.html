@@ -1,5 +1,5 @@
 <section class="tool-workspace" @paste.window="handleTaggerPaste($event)">
-  <header class="tool-header" x-workspace-part="header"
+  <header class="tool-header page-heading-row" x-workspace-part="header"
           x-data="{toolTitle: () => t(currentRoute === 'ai-captioning' ? 'moss.pageTitle' : 'tagger.title'), toolResourceId: 'taggerResbar'}"></header>
   <div class="ui-inline-alert" x-show="currentRoute === 'tagger' && _taggerItemsError?.taskId === taggerTaskId" role="alert" x-cloak>
     <span x-text="t('common.requestFailed')"></span>

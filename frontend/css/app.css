@@ -530,12 +530,21 @@ summary:focus-visible {
   background: var(--bg-root);
 }
 .main-content {
+  --page-header-top: 16px;
+  --page-header-height: 36px;
+  --page-inline-gutter: 28px;
   flex: 1; overflow-y: auto;
   min-width: 0;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   padding: var(--space-4) 28px;
   position: relative; /* anchor for absolute iframe children (TensorBoard / TagEditor) */
+}
+@media (max-width: 1200px) {
+  .main-content { --page-inline-gutter: 16px; }
+}
+.main-content.route-page-shell {
+  padding: var(--page-header-top) var(--page-inline-gutter) var(--space-4);
 }
 /* 挂载前保留旧页可见，避免先淡空再显示新页；入场统一见 motion.css。 */
 
@@ -563,12 +572,10 @@ summary:focus-visible {
   position: relative;
 }
 
-.page-header { margin-bottom: 20px; }
-.page-header-left {
-  display: flex; align-items: center; gap: 10px;
-  flex-wrap: wrap;
-}
+.page-header { margin-bottom: 12px; }
 .page-title { font-size: 20px; font-weight: 700; color: var(--text-primary); letter-spacing: 0; margin-bottom: 0; }
+.page-heading-row { display: flex; align-items: center; gap: 8px 18px; min-height: var(--page-header-height); }
+.page-heading-row .page-title { line-height: 1.4; }
 
 /* ── Train Type Selector ──────────────────────────────── */
 .train-type-select-wrap {
@@ -1537,7 +1544,10 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
   --train-workbench: 780px;
   padding-top: 0;
 }
-.main-content.route-training .page-header { padding-top: var(--space-4); }
+.main-content.route-training .page-header {
+  min-height: calc(var(--page-header-top) + var(--page-header-height));
+  padding-top: var(--page-header-top);
+}
 
 /* ── Training workbench + vertical section rail ───────────── */
 .train-workbench {
@@ -2875,31 +2885,29 @@ input[type="range"]::-webkit-slider-thumb {
 .main-fullscreen .route-monitor-dashboard {
   display: flex; flex-direction: column;
   flex: 1; min-width: 960px; min-height: 0;
-  padding: 24px 28px 0;
+  padding: var(--page-header-top) var(--page-inline-gutter) 0;
   background: var(--monitor-page-bg);
 }
 @media (max-width: 1200px) {
-  .main-fullscreen .route-monitor-dashboard { min-width: 0; padding-inline: 16px; }
+  .main-fullscreen .route-monitor-dashboard { min-width: 0; }
 }
 .monitor-sticky-stack {
   position: sticky; top: 0; z-index: 12; flex-shrink: 0;
   background: var(--monitor-page-bg);
-  padding-top: 0;
 }
 .route-monitor-dashboard .page-header {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 18px; min-height: 38px; margin-bottom: 12px;
+  justify-content: space-between; flex-wrap: wrap; margin-bottom: 8px;
 }
+.route-monitor-dashboard .monitor-resbar { max-width: 100%; overflow: visible; }
+.route-monitor-dashboard .m-res-stats { flex-wrap: wrap; row-gap: 4px; }
 @media (max-width: 1023px) {
-  .route-monitor-dashboard .page-header { flex-wrap: wrap; gap: 8px 16px; }
+  .route-monitor-dashboard .page-header { gap: 8px 16px; }
   .route-monitor-dashboard .monitor-page-heading { flex-basis: 100%; }
-  .route-monitor-dashboard .monitor-resbar { justify-content: flex-start; width: 100%; overflow: visible; }
-  .route-monitor-dashboard .m-res-stats { flex-wrap: wrap; row-gap: 4px; }
+  .route-monitor-dashboard .monitor-resbar { justify-content: flex-start; width: 100%; }
 }
-.route-monitor-dashboard .page-header .page-title { font-size: 22px; }
-.monitor-page-heading { display: flex; flex: 1 1 auto; align-items: center; min-width: 0; }
+.monitor-page-heading { display: flex; flex: 1 1 auto; align-items: center; min-width: 0; min-height: var(--page-header-height); }
 .monitor-page-heading .page-title { flex: 0 0 auto; white-space: nowrap; }
-.monitor-dashboard { padding: 12px 0 8px; display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.monitor-dashboard { padding: 10px 0 8px; display: flex; flex-direction: column; flex: 1; min-height: 0; }
 #monitorDashboard { min-height: 0; flex: 1; display: flex; flex-direction: column; }
 #monitorTabContent { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 /* 持久标签面板：各自独立滚动，切走再切回时滚动位置天然保留。
@@ -3856,8 +3864,7 @@ dialog.preview-lightbox::backdrop { background: transparent; }
 
 /* ── 历史记录页 ── */
 .m-empty-sub { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
-.route-history > .page-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.route-history > .page-header .page-title { margin: 0; }
+.route-history > .page-header { justify-content: space-between; gap: 16px; }
 .hist-filters { display: flex; gap: 6px; flex-wrap: wrap; }
 .hist-results { display: flex; align-items: center; gap: 12px; min-height: 32px; margin: 0 0 12px; font-size: 12px; color: var(--text-secondary); }
 .hist-pagination { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 18px 0; color: var(--text-secondary); font-size: 12px; }
@@ -4485,7 +4492,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: var(--disabled-opa
 .train-tab-card {
   max-width: var(--train-workbench, 780px);
   min-width: 0;
-  margin: 0 auto 36px;
+  margin: 0 auto 24px;
 }
 #trainForm {
   max-width: var(--train-workbench, 780px);
@@ -5182,11 +5189,11 @@ input:disabled, select:disabled, textarea:disabled { opacity: var(--disabled-opa
 
 /* ── 页内 Tab（控制面板式：底部细线 + 滑动指示条）────────── */
 .env-tabs {
-  display: flex; gap: 4px; margin: 20px 0;
+  display: flex; gap: 4px; margin: 12px 0;
   border-bottom: 1px solid var(--border-default); position: relative;
 }
 .env-tab {
-  min-width: 108px; height: 40px; padding: 0 18px;
+  min-width: 108px; height: 38px; padding: 0 18px;
   border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px;
   background: transparent;
   color: var(--text-secondary); font-size: 13px; font-weight: 600;
@@ -5566,7 +5573,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: var(--disabled-opa
 
 /* ── UI settings: titled groups on the shared theme surfaces ── */
 .route-settings { width: 100%; max-width: 760px; }
-.route-settings .page-header { margin-bottom: 32px; }
+.route-settings .page-header { margin-bottom: 24px; }
 .settings-sections { display: grid; gap: 28px; }
 .settings-section-title {
   margin: 0 0 11px; font-size: 12px; font-weight: 500; line-height: 1.6;

@@ -141,6 +141,50 @@
     }
     await win.I18N.setLocale(originalLocale);
     await settle();
+    await navigate('monitor-dashboard');
+    const liveHeader = doc.querySelector('.route-monitor-dashboard .page-header');
+    const headerFixture = doc.createElement('div');
+    headerFixture.className = 'route-monitor-dashboard';
+    headerFixture.style.cssText = 'position:fixed;visibility:hidden;left:-10000px;top:0';
+    headerFixture.style.setProperty('--page-header-height', win.getComputedStyle(doc.querySelector('.main-content')).getPropertyValue('--page-header-height'));
+    const headerCopy = liveHeader.cloneNode(true);
+    const fixtureTitle = headerCopy.querySelector('.page-title');
+    fixtureTitle.removeAttribute('x-text');
+    fixtureTitle.textContent = 'Dashboard';
+    const fixtureBar = headerCopy.querySelector('.monitor-resbar');
+    fixtureBar.removeAttribute('id');
+    fixtureBar.removeAttribute('x-show');
+    fixtureBar.removeAttribute('x-cloak');
+    fixtureBar.removeAttribute('style');
+    const resourceLabels = {cpu:'CPU', ram:'Memory', gpuLoad:'GPU Load', vramUsed:'VRAM Usage', gpuTemp:'Temperature', gpuPower:'Power'};
+    const gpu = {index:0, name:'NVIDIA GeForce RTX 5070 Ti Laptop GPU', gpu_load_pct:42, vram_used_mb:1024, vram_total_mb:12288, temperature_c:40, power_w:55.5};
+    const system = {cpu_name:'AMD Ryzen 9 9955HX 16-Core Processor', cpu_pct:5, ram_pct:35, ram_used_gb:22.4, ram_total_gb:63.2};
+    headerFixture.append(headerCopy);
+    doc.body.append(headerFixture);
+    try {
+      for (const gpuCount of [1, 2]) {
+        const devices = gpuCount === 2 ? [{index:0, name:gpu.name}, {index:1, name:'Second GPU'}] : undefined;
+        fixtureBar.innerHTML = win.resourceBar._resbarHtml({...gpu, gpus:devices}, system, key => resourceLabels[key] || key);
+        for (const width of [840, 1024, 1280]) {
+          frame.style.width = width + 'px';
+          await settle();
+          headerFixture.style.width = liveHeader.getBoundingClientRect().width + 'px';
+          await settle();
+          const title = fixtureTitle.getBoundingClientRect(), bar = fixtureBar.getBoundingClientRect();
+          const sameRow = bar.top < title.bottom - 1 && title.top < bar.bottom - 1;
+          assert(!sameRow || bar.left >= title.right - 1, width + ': resource bar overlaps the title');
+          for (const item of fixtureBar.querySelectorAll('.m-res-stat, .m-gpu-select')) {
+            const rect = item.getBoundingClientRect();
+            assert(rect.left >= bar.left - 1 && rect.right <= bar.right + 1 && rect.top >= bar.top - 1 && rect.bottom <= bar.bottom + 1, width + ': resource item is clipped');
+          }
+          assert(bar.left >= headerCopy.getBoundingClientRect().left - 1 && bar.right <= headerCopy.getBoundingClientRect().right + 1, width + ': resource bar overflows the header');
+          if (width === 1280) assert(sameRow, 'Resources should fit beside the title at a wide desktop size');
+          pass('monitor resource bar ' + gpuCount + ' GPU ' + width);
+        }
+      }
+    } finally {
+      headerFixture.remove();
+    }
     for (const route of ['monitor-dashboard', 'train-basic', 'tagger', 'ai-captioning', 'regularization', 'home', 'history', 'docs', 'tagEditor', 'environment', 'settings', 'tensorboard']) {
       await navigate(route);
       if (route === 'train-basic') await waitFor(() => doc.querySelector('#trainFormContent .field'), 'Training form did not mount');

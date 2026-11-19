@@ -16,14 +16,13 @@
 .tool-icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 .tool-workspace {
   --tool-gap: clamp(16px, 1.6vw, 24px);
-  --tool-padding: clamp(14px, 2vw, 28px);
   display: flex;
   flex: 1 1 0;
   flex-direction: column;
   width: 100%;
   min-width: 0;
   min-height: 0;
-  padding: 18px var(--tool-padding) 12px;
+  padding: var(--page-header-top) var(--page-inline-gutter) 12px;
   container: tool-page / inline-size;
 }
 .tool-workspace :where(button, [role="separator"], [tabindex]):focus-visible {
@@ -43,12 +42,12 @@
   stroke-linejoin: round;
 }
 
-.tool-header { display: flex; flex: none; align-items: center; gap: 8px 18px; flex-wrap: wrap; margin-bottom: 10px; }
-.tool-heading { flex: 1 1 auto; min-width: 0; }
-.tool-heading h1 { line-height: 1.4; overflow-wrap: anywhere; }
+.tool-header { flex: none; flex-wrap: wrap; margin-bottom: 8px; }
+.tool-heading { display: flex; flex: 1 1 auto; align-items: center; min-width: 0; min-height: var(--page-header-height); }
+.tool-heading h1 { min-width: 0; overflow-wrap: anywhere; }
 .tool-resources { min-width: 0; max-width: 100%; padding: 0; overflow: visible; }
 .tool-resources .m-res-stats { flex-wrap: wrap; row-gap: 4px; }
-.tool-tabs { flex: none; margin-bottom: 14px; }
+.tool-tabs { flex: none; margin-bottom: 10px; }
 .tool-tabs .monitor-tab { flex: none; }
 .tool-tabs button:focus-visible { outline-offset: -3px; }
 .tool-tabs button:disabled { opacity: var(--disabled-opacity, .45); }

@@ -301,7 +301,7 @@
   <!-- ── Main Content ─────────────────────────────────────── -->
   <div class="main-area">
     <main class="main-content" id="mainContent" tabindex="-1"
-          :class="{ 'main-fullscreen': currentRoute === 'tagEditor' || currentRoute === 'tensorboard' || currentRoute === 'monitor-dashboard', 'route-monitor-shell': currentRoute === 'monitor-dashboard', 'route-tool-workspace': ['tagger', 'ai-captioning', 'regularization'].includes(currentRoute), 'route-training': currentRoute && currentRoute.startsWith('train-'), 'route-transitioning': routeTransitioning }"
+          :class="{ 'main-fullscreen': currentRoute === 'tagEditor' || currentRoute === 'tensorboard' || currentRoute === 'monitor-dashboard', 'route-monitor-shell': currentRoute === 'monitor-dashboard', 'route-tool-workspace': ['tagger', 'ai-captioning', 'regularization'].includes(currentRoute), 'route-page-shell': ['history', 'docs', 'environment', 'settings'].includes(currentRoute), 'route-training': currentRoute && currentRoute.startsWith('train-'), 'route-transitioning': routeTransitioning }"
               :aria-busy="routeTransitioning ? 'true' : 'false'">
 
       <!-- Route: Home -->
@@ -339,7 +339,7 @@
       <!-- Route: Monitor Dashboard -->
       <div x-show="currentRoute === 'monitor-dashboard'" x-cloak class="route-monitor-dashboard">
         <div class="monitor-sticky-stack">
-          <div class="page-header">
+          <div class="page-header page-heading-row">
             <div class="monitor-page-heading">
               <h1 class="page-title" x-text="t(selectedRunDir ? 'monitor.historyDetail' : 'nav.monitorDashboard')">Training Dashboard</h1>
             </div>
@@ -388,7 +388,7 @@
 
       <!-- Route: History -->
       <div x-show="currentRoute === 'history'" x-cloak class="route-history">
-        <div class="page-header">
+        <div class="page-header page-heading-row">
           <h1 class="page-title" x-text="t('nav.history')">Training History</h1>
           <button type="button" class="btn btn-sm btn-secondary refresh-button" :class="{ 'is-loading': historyRefreshing || historyRefreshFeedback }"
                   :aria-disabled="historyLoading ? 'true' : 'false'" :aria-busy="historyRefreshing ? 'true' : 'false'" @click="refreshHistory()">
@@ -538,10 +538,8 @@
         </aside>
         </div>
 
-        <div class="page-header">
-          <div class="page-header-left">
-            <h1 class="page-title" x-text="pageTitle">Training</h1>
-          </div>
+        <div class="page-header page-heading-row">
+          <h1 class="page-title" x-text="pageTitle">Training</h1>
         </div>
 
         <div class="history-reuse-notice" x-show="historyReuseSource" x-cloak role="status">
@@ -1597,7 +1595,7 @@
 
       <!-- Route: Environment -->
       <div class="route-environment" x-show="currentRoute === 'environment'" x-cloak>
-        <div class="page-header">
+        <div class="page-header page-heading-row">
           <h1 class="page-title" x-text="t('environment.title')">Environment</h1>
         </div>
         <div id="environmentPage"></div>
@@ -1605,7 +1603,7 @@
 
       <!-- Route: Settings -->
       <div class="route-settings" x-show="currentRoute === 'settings'" x-cloak>
-        <div class="page-header">
+        <div class="page-header page-heading-row">
           <h1 class="page-title" x-text="t('settings.title')">UI Settings</h1>
         </div>
         <div class="settings-sections">
