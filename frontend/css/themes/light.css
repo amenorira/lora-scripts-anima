@@ -10,6 +10,7 @@
 
   --accent: #2d6bc4;
   --accent-solid: var(--accent);
+  --accent-solid-hover: var(--accent-solid);
   --accent-hover: #2563b8;
   --accent-soft: rgba(45, 107, 196, 0.12);
   --accent-muted: rgba(45, 107, 196, 0.07);
@@ -63,6 +64,9 @@
   --border-default: #c9ced6;
   --border-input: #8f96a1;
   --border-focus: #2d6bc4;
+  --select-arrow-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2378716c' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --scrollbar-thumb: rgba(120, 113, 108, 0.22);
+  --scrollbar-thumb-hover: rgba(120, 113, 108, 0.45);
 
   --shadow-sm: none;
   --shadow-md: 0 6px 18px rgba(20, 24, 31, 0.10);
@@ -100,15 +104,41 @@
   --diff-added: #16884f;
   --diff-removed: #dc4c4c;
 
-  --monitor-card-bg: color-mix(in srgb, var(--bg-surface) 92%, var(--bg-sunken));
-  --monitor-card-border: color-mix(in srgb, var(--border-default) 85%, transparent);
-  --monitor-card-shadow: none;
-}
+  /* Primary actions remain outlined in the light and dark themes. */
+  --btn-primary-bg: var(--accent-soft);
+  --btn-start-bg: transparent;
+  --btn-accent-color: var(--accent);
+  --btn-accent-border: var(--accent);
+  --btn-accent-hover-bg: var(--accent-solid-hover);
+  --btn-accent-hover-color: #fff;
 
-[data-theme="light"] .route-monitor-dashboard {
   --monitor-page-bg: var(--bg-sidebar);
   --monitor-card-bg: var(--bg-surface);
+  --monitor-card-border: color-mix(in srgb, var(--border-default) 85%, transparent);
+  --monitor-card-shadow: none;
   --monitor-tile-bg: var(--bg-surface-raised);
+
+  --log-bg: #ffffff;
+  --log-fg: #1e1e1e;
+  --log-line-hover: #edf2f7;
+  --log-line-number: #999;
+  --log-lvl-info: #098658;
+  --log-lvl-warn: #a31515;
+  --log-lvl-error: #a31515;
+  --log-lvl-debug: #0451a5;
+  --log-error-weight: 700;
+  --log-ts: #999;
+  --log-str: #a31515;
+  --log-num: #098658;
+  --log-const: #0451a5;
+  --log-kw: #0451a5;
+  --log-exc: #267f99;
+  --log-path: #267f99;
+  --log-module: #0451a5;
+  --log-unit: #6a737d;
+  --log-punct: #8b949e;
+  --log-url: #006ab1;
+  --log-mark-bg: rgba(200, 150, 20, 0.25);
 }
 
 /* ── 本主题专属组件规则 ───────────────────────────────────── */
@@ -121,25 +151,3 @@
   --sidebar-shell-bg: #e2e5eb;
   --sidebar-tab-border: #adb5c1;
 }
-
-/* 实时日志：浅色用 VSCode light 配色（基底规则是深色系，见 app.css） */
-[data-theme="light"] .monitor-logs-container {
-  --log-bg: #ffffff;
-  --log-fg: #1e1e1e;
-}
-[data-theme="light"] .log-line::before { color: #999; }
-[data-theme="light"] .log-lvl-INFO { color: #098658; }
-[data-theme="light"] .log-lvl-WARN { color: #a31515; }
-[data-theme="light"] .log-lvl-ERROR { color: #a31515; font-weight: 700; }
-[data-theme="light"] .log-lvl-DEBUG { color: #0451a5; }
-[data-theme="light"] .log-ts   { color: #999; }
-[data-theme="light"] .log-str  { color: #a31515; }
-[data-theme="light"] .log-num  { color: #098658; }
-[data-theme="light"] .log-const, [data-theme="light"] .log-hex { color: #0451a5; }
-[data-theme="light"] .log-kw   { color: #0451a5; }
-[data-theme="light"] .log-exc  { color: #267f99; }
-[data-theme="light"] .log-path { color: #267f99; }
-[data-theme="light"] .log-module { color: #0451a5; }
-[data-theme="light"] .log-unit { color: #6a737d; }
-[data-theme="light"] .log-url  { color: #006ab1; }
-[data-theme="light"] .log-line mark { background: rgba(200, 150, 20, 0.25); }

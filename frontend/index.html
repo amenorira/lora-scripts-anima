@@ -17,6 +17,10 @@
       var resolved = (t === 'light' || t === 'dark' || t === 'comfy') ? t
         : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
       document.documentElement.setAttribute('data-theme', resolved);
+      var savedLocale = localStorage.getItem('anima-locale');
+      var browserLanguage = (navigator.language || '').toLowerCase();
+      document.documentElement.lang = ['zh-CN', 'en-US', 'ja-JP'].includes(savedLocale) ? savedLocale
+        : browserLanguage.startsWith('zh') ? 'zh-CN' : browserLanguage.startsWith('ja') ? 'ja-JP' : 'en-US';
       // Restore the preferred preview width before first paint. CSS caps its
       // visible width on narrow desktops without losing the saved preference.
       var pw = parseInt(localStorage.getItem('anima-panel-w'), 10);
@@ -91,7 +95,6 @@
   <script src="/anima-ui/js/training/core.js" defer></script>
   <script src="/anima-ui/js/training/dataset-repeat.js" defer></script>
   <script src="/anima-ui/js/training/lr-preview.js" defer></script>
-  <script src="/anima-ui/js/shared/preview-select.js" defer></script>
   <script src="/anima-ui/js/training/shape-preview.js" defer></script>
   <script src="/anima-ui/js/training/crop-preview-grid.js" defer></script>
   <script src="/anima-ui/js/training/crop-preview.js" defer></script>
@@ -373,10 +376,10 @@
               <span x-text="t('monitor.outputs','Outputs')">Outputs</span>
               <span class="monitor-tab-count" x-show="outputTabCount > 0" x-text="outputTabCount"></span>
             </button>
-            <span class="monitor-tab-indicator" aria-hidden="true"></span>
+            <span class="ui-tab-indicator" aria-hidden="true"></span>
           </div>
         </div>
-        <div class="hist-load-error" x-show="monitorDetailError" role="alert" x-cloak>
+        <div class="ui-inline-alert" x-show="monitorDetailError" role="alert" x-cloak>
           <span x-text="t('monitor.loadRunFailed')"></span>
           <button type="button" class="btn btn-sm btn-secondary" @click="refreshMonitorRealtimeDetail()" x-text="t('monitor.retryLoad')"></button>
         </div>
@@ -405,7 +408,7 @@
           <span x-text="t('monitor.historyCount').replace('{shown}', historyPageShown).replace('{matched}', historyFilteredCount).replace('{total}', historyItems.length)"></span>
           <button class="hist-action" x-show="historySearch || historyFilter !== 'all'" @click="clearHistoryFilters()" x-text="t('monitor.clearHistoryFilters')"></button>
         </div>
-        <div class="hist-load-error" role="alert" x-show="historyError" x-cloak>
+        <div class="ui-inline-alert" role="alert" x-show="historyError" x-cloak>
           <span x-text="historyError"></span>
           <button class="btn btn-sm btn-secondary" :disabled="historyLoading" @click="refreshHistory()" x-text="t('monitor.refreshHistory')"></button>
         </div>
@@ -2367,7 +2370,7 @@
       <small class="monitor-tab-count" x-show="tab.count != null" x-text="tab.count"></small>
     </button>
   </template>
-  <span class="monitor-tab-indicator" aria-hidden="true" x-effect="activeToolTab; toolTabs; $nextTick(() => syncToolTabIndicator($el.parentElement))"></span>
+  <span class="ui-tab-indicator" aria-hidden="true" x-effect="activeToolTab; toolTabs; $nextTick(() => syncToolTabIndicator($el.parentElement))"></span>
 </template>
 
 <template id="tool-part-task-log">

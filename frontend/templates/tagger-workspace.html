@@ -1,7 +1,7 @@
 <section class="tool-workspace" @paste.window="handleTaggerPaste($event)">
   <header class="tool-header" x-workspace-part="header"
           x-data="{toolTitle: () => t(currentRoute === 'ai-captioning' ? 'moss.pageTitle' : 'tagger.title'), toolResourceId: 'taggerResbar'}"></header>
-  <div class="hist-load-error" x-show="currentRoute === 'tagger' && _taggerItemsError?.taskId === taggerTaskId" role="alert" x-cloak>
+  <div class="ui-inline-alert" x-show="currentRoute === 'tagger' && _taggerItemsError?.taskId === taggerTaskId" role="alert" x-cloak>
     <span x-text="t('common.requestFailed')"></span>
     <button type="button" class="btn btn-sm btn-secondary" @click="refreshTaggerItems(_taggerItemsError?.reset)" x-text="t('monitor.retryLoad')"></button>
   </div>
@@ -38,13 +38,13 @@
             <div class="field">
               <div class="field-row is-stacked">
                 <div class="field-info">
-                  <label class="field-key" x-text="t('tagger.model', 'Tagger model')"></label>
+                  <label class="field-key" for="tagger-model-select" x-text="t('tagger.model', 'Tagger model')"></label>
                   <p class="field-desc" x-text="taggerRuntimeLabel() + ' · ' + t(taggerModel()?.installed ? 'tagger.installed' : 'tagger.firstUseDownload')"></p>
                 </div>
                 <div class="field-control">
                   <div class="anima-select tagger-model-select" x-data="animaSelect(() => taggerModelSelectConfig(), taggerSelectedModel)" x-effect="value = taggerSelectedModel" @click.outside="close()" @anima-select-change="changeTaggerModel($event.detail.value)">
                     <input type="hidden" x-ref="modelInput" :value="taggerSelectedModel">
-                    <button type="button" class="anima-select-trigger" :class="{ focused: open }" :disabled="taggerRunning || taggerStarting" @click="toggle($event)" :aria-label="t('tagger.model')"><span class="anima-select-trigger-text" x-text="taggerModel()?.name || t('tagger.model')"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button>
+                    <button id="tagger-model-select" type="button" class="anima-select-trigger" :class="{ focused: open }" :disabled="taggerRunning || taggerStarting" @click="toggle($event)" :aria-label="t('tagger.model')"><span class="anima-select-trigger-text" x-text="taggerModel()?.name || t('tagger.model')"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button>
                     <template x-if="open" x-workspace-part="select-menu"></template>
                   </div>
                 </div>
@@ -52,11 +52,11 @@
             </div>
             <div class="field" x-show="taggerSelectedModel === 'pixai-tagger-v1.0'">
               <div class="field-row is-stacked">
-                <div class="field-info"><label class="field-key" x-text="t('tagger.precision')"></label><p class="field-desc" x-text="t('tagger.precisionHelp')"></p></div>
+                <div class="field-info"><label class="field-key" for="tagger-precision-select" x-text="t('tagger.precision')"></label><p class="field-desc" x-text="t('tagger.precisionHelp')"></p></div>
                 <div class="field-control">
                   <div class="anima-select tagger-preset-select" x-data="animaSelect(() => taggerPrecisionSelectConfig(), taggerSettings.precision)" x-effect="value = taggerSettings.precision" @click.outside="close()" @anima-select-change="taggerSettings.precision = $event.detail.value; saveTaggerSettings()">
                     <input type="hidden" :value="taggerSettings.precision">
-                    <button type="button" class="anima-select-trigger" :class="{ focused: open }" :disabled="taggerRunning || taggerStarting" @click="toggle($event)" :aria-label="t('tagger.precision')"><span class="anima-select-trigger-text" x-text="t('tagger.precision_' + taggerSettings.precision)"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button>
+                    <button id="tagger-precision-select" type="button" class="anima-select-trigger" :class="{ focused: open }" :disabled="taggerRunning || taggerStarting" @click="toggle($event)" :aria-label="t('tagger.precision')"><span class="anima-select-trigger-text" x-text="t('tagger.precision_' + taggerSettings.precision)"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button>
                     <template x-if="open" x-workspace-part="select-menu"></template>
                   </div>
                 </div>
@@ -64,11 +64,11 @@
             </div>
             <div class="field">
               <div class="field-row is-stacked">
-                <div class="field-info"><label class="field-key" x-text="t(taggerUsesCategoryThresholds() ? 'tagger.categoryThresholds' : 'tagger.preset')"></label><p class="field-desc" x-text="t(taggerUsesCategoryThresholds() ? 'tagger.categoryThresholdsDesc' : 'tagger.presetHelp')"></p></div>
+                <div class="field-info"><label class="field-key" for="tagger-preset-select" x-text="t(taggerUsesCategoryThresholds() ? 'tagger.categoryThresholds' : 'tagger.preset')"></label><p class="field-desc" x-text="t(taggerUsesCategoryThresholds() ? 'tagger.categoryThresholdsDesc' : 'tagger.presetHelp')"></p></div>
                 <div class="field-control">
                   <div class="anima-select tagger-preset-select" x-data="animaSelect(() => taggerPresetSelectConfig(), taggerSettings.preset)" x-effect="value = taggerSettings.preset" @click.outside="close()" @anima-select-change="applyTaggerPreset($event.detail.value)">
                     <input type="hidden" x-ref="modelInput" :value="taggerSettings.preset">
-                    <button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="value = taggerSettings.preset; toggle($event)" :aria-label="t(taggerUsesCategoryThresholds() ? 'tagger.categoryThresholds' : 'tagger.preset')"><span class="anima-select-trigger-text" x-text="taggerPresetOptions().find(option => option[0] === taggerSettings.preset)?.[1] || taggerSettings.preset"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button>
+                    <button id="tagger-preset-select" type="button" class="anima-select-trigger" :class="{ focused: open }" @click="value = taggerSettings.preset; toggle($event)" :aria-label="t(taggerUsesCategoryThresholds() ? 'tagger.categoryThresholds' : 'tagger.preset')"><span class="anima-select-trigger-text" x-text="taggerPresetOptions().find(option => option[0] === taggerSettings.preset)?.[1] || taggerSettings.preset"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button>
                     <template x-if="open" x-workspace-part="select-menu"></template>
                   </div>
                 </div>
@@ -76,20 +76,20 @@
             </div>
             <div class="field" x-show="!taggerUsesCategoryThresholds()">
               <div class="field-row is-stacked">
-                <div class="field-info"><label class="field-key" x-text="t('tagger.threshold')"></label><p class="field-desc" x-text="t('tagger.thresholdDesc')"></p></div>
-                <div class="field-control"><div class="stepper"><button type="button" @click="taggerSettings.threshold = Number(Math.max(0, Number(taggerSettings.threshold) - 0.01).toFixed(2)); setTaggerCustomPreset()">&minus;</button><input type="number" :aria-label="t('tagger.threshold')" min="0" max="1" step="0.01" x-model.number="taggerSettings.threshold" @change="setTaggerCustomPreset()"><button type="button" @click="taggerSettings.threshold = Number(Math.min(1, Number(taggerSettings.threshold) + 0.01).toFixed(2)); setTaggerCustomPreset()">+</button></div></div>
+                <div class="field-info"><label class="field-key" for="tagger-threshold-input" x-text="t('tagger.threshold')"></label><p class="field-desc" x-text="t('tagger.thresholdDesc')"></p></div>
+                <div class="field-control"><div class="stepper"><button type="button" @click="taggerSettings.threshold = Number(Math.max(0, Number(taggerSettings.threshold) - 0.01).toFixed(2)); setTaggerCustomPreset()">&minus;</button><input id="tagger-threshold-input" type="number" :aria-label="t('tagger.threshold')" min="0" max="1" step="0.01" x-model.number="taggerSettings.threshold" @change="setTaggerCustomPreset()"><button type="button" @click="taggerSettings.threshold = Number(Math.min(1, Number(taggerSettings.threshold) + 0.01).toFixed(2)); setTaggerCustomPreset()">+</button></div></div>
               </div>
             </div>
             <div class="field" x-show="taggerSupportsCharacterToggle()">
               <div class="field-row">
-                <div class="field-info"><label class="field-key" x-text="t('tagger.characterRecognition')"></label></div>
-                <div class="field-control"><label class="toggle"><input type="checkbox" :checked="taggerCharacterEnabled()" :aria-label="t('tagger.characterRecognition')" @change="setTaggerCharacterEnabled($event.target.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>
+                <div class="field-info"><label class="field-key" for="tagger-character-enable" x-text="t('tagger.characterRecognition')"></label></div>
+                <div class="field-control"><label class="toggle"><input id="tagger-character-enable" type="checkbox" :checked="taggerCharacterEnabled()" :aria-label="t('tagger.characterRecognition')" @change="setTaggerCharacterEnabled($event.target.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>
               </div>
             </div>
             <div class="field" x-show="taggerSupportsCharacterToggle() && taggerCharacterEnabled()">
               <div class="field-row is-stacked">
-                <div class="field-info"><label class="field-key" x-text="t('tagger.characterThreshold')"></label><p class="field-desc" x-text="t('tagger.characterThresholdDesc')"></p></div>
-                <div class="field-control"><div class="stepper"><button type="button" @click="taggerSettings.characterThreshold = Number(Math.max(0, Number(taggerSettings.characterThreshold) - 0.01).toFixed(2)); setTaggerCustomPreset()">&minus;</button><input type="number" :aria-label="t('tagger.characterThreshold')" min="0" max="1" step="0.01" x-model.number="taggerSettings.characterThreshold" @change="setTaggerCustomPreset()"><button type="button" @click="taggerSettings.characterThreshold = Number(Math.min(1, Number(taggerSettings.characterThreshold) + 0.01).toFixed(2)); setTaggerCustomPreset()">+</button></div></div>
+                <div class="field-info"><label class="field-key" for="tagger-character-threshold" x-text="t('tagger.characterThreshold')"></label><p class="field-desc" x-text="t('tagger.characterThresholdDesc')"></p></div>
+                <div class="field-control"><div class="stepper"><button type="button" @click="taggerSettings.characterThreshold = Number(Math.max(0, Number(taggerSettings.characterThreshold) - 0.01).toFixed(2)); setTaggerCustomPreset()">&minus;</button><input id="tagger-character-threshold" type="number" :aria-label="t('tagger.characterThreshold')" min="0" max="1" step="0.01" x-model.number="taggerSettings.characterThreshold" @change="setTaggerCustomPreset()"><button type="button" @click="taggerSettings.characterThreshold = Number(Math.min(1, Number(taggerSettings.characterThreshold) + 0.01).toFixed(2)); setTaggerCustomPreset()">+</button></div></div>
               </div>
             </div>
           </div>
@@ -117,11 +117,11 @@
           <div class="tool-field-grid">
             <div class="field tool-field-wide">
               <div class="field-row is-stacked">
-                <div class="field-info"><label class="field-key" x-text="t('tagger.conflictAction')"></label></div>
+                <div class="field-info"><label class="field-key" for="tagger-conflict-select" x-text="t('tagger.conflictAction')"></label></div>
                 <div class="field-control">
                   <div class="anima-select" x-data="animaSelect(() => taggerConflictSelectConfig(), taggerSettings.conflict)" x-effect="value = taggerSettings.conflict" @click.outside="close()" @anima-select-change="taggerSettings.conflict = $event.detail.value; saveTaggerSettings()">
                     <input type="hidden" x-ref="modelInput" :value="taggerSettings.conflict">
-                    <button type="button" class="anima-select-trigger" :class="{focused:open}" :aria-label="t('tagger.conflictAction')" @click="value = taggerSettings.conflict; toggle($event)">
+                    <button id="tagger-conflict-select" type="button" class="anima-select-trigger" :class="{focused:open}" :aria-label="t('tagger.conflictAction')" @click="value = taggerSettings.conflict; toggle($event)">
                       <span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{open}"><use href="#ti-chevron"></use></svg>
                     </button>
                     <template x-if="open" x-workspace-part="select-menu"></template>
@@ -211,7 +211,7 @@
           <div class="field-feedback tagger-compact-field tagger-compact-model"><span x-text="t('tagger.model')"></span><div class="anima-select tagger-model-select" x-data="animaSelect(() => taggerModelSelectConfig(), taggerSelectedModel)" x-effect="value = taggerSelectedModel" @click.outside="close()" @anima-select-change="changeTaggerModel($event.detail.value)"><input type="hidden" x-ref="modelInput" :value="taggerSelectedModel"><button type="button" class="anima-select-trigger" :class="{ focused: open }" :disabled="taggerRunning || taggerStarting" @click="toggle($event)" :aria-label="t('tagger.model')"><span class="anima-select-trigger-text" x-text="taggerModel()?.name || t('tagger.model')"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button><template x-if="open" x-workspace-part="select-menu"></template></div></div>
           </div>
           <div class="tagger-compact-row">
-            <div class="field-feedback tagger-compact-field"><span x-text="t('tagger.presetLabel')"></span><div class="anima-select tagger-preset-select" x-data="animaSelect(() => taggerPresetSelectConfig(), taggerSettings.preset)" x-effect="value = taggerSettings.preset" @click.outside="close()" @anima-select-change="applyTaggerPreset($event.detail.value)"><input type="hidden" :value="taggerSettings.preset"><button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="value = taggerSettings.preset; toggle($event)"><span class="anima-select-trigger-text" x-text="taggerPresetOptions().find(option => option[0] === taggerSettings.preset)?.[1] || taggerSettings.preset"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button><template x-if="open" x-workspace-part="select-menu"></template></div></div>
+            <div class="field-feedback tagger-compact-field"><span x-text="t('tagger.presetLabel')"></span><div class="anima-select tagger-preset-select" x-data="animaSelect(() => taggerPresetSelectConfig(), taggerSettings.preset)" x-effect="value = taggerSettings.preset" @click.outside="close()" @anima-select-change="applyTaggerPreset($event.detail.value)"><input type="hidden" :value="taggerSettings.preset"><button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="value = taggerSettings.preset; toggle($event)" :aria-label="t('tagger.presetLabel')"><span class="anima-select-trigger-text" x-text="taggerPresetOptions().find(option => option[0] === taggerSettings.preset)?.[1] || taggerSettings.preset"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button><template x-if="open" x-workspace-part="select-menu"></template></div></div>
             <div class="field-feedback tagger-compact-field" x-show="taggerSelectedModel === 'pixai-tagger-v1.0'"><span :title="t('tagger.precisionHelp')" x-text="t('tagger.precision')"></span><div class="anima-select tagger-preset-select" x-data="animaSelect(() => taggerPrecisionSelectConfig(), taggerSettings.precision)" x-effect="value = taggerSettings.precision" @click.outside="close()" @anima-select-change="taggerSettings.precision = $event.detail.value; saveTaggerSettings()">
                 <input type="hidden" :value="taggerSettings.precision">
                 <button type="button" class="anima-select-trigger" :class="{ focused: open }" :disabled="taggerRunning || taggerStarting" @click="toggle($event)" :aria-label="t('tagger.precision')"><span class="anima-select-trigger-text" x-text="t('tagger.precision_' + taggerSettings.precision)"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button>

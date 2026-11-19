@@ -23,6 +23,7 @@
   --control-w-form: 200px;
   --control-w-stepper: 140px;
   --control-height: var(--control-h-form);
+  --control-h-sm: 30px;
   --control-h-icon: 30px;
   --control-padding-y: 7px;
   --control-padding-x: 11px;
@@ -30,6 +31,7 @@
   --focus-ring-offset: 2px;
   --focus-ring-color: var(--accent);
   --disabled-opacity: 0.45;
+  --font-size-xs: 11px;
   --success-muted: rgba(34, 197, 94, 0.15);
 
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -99,10 +101,10 @@ summary:focus-visible {
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: rgba(120,113,108,0.22);
+  background: var(--scrollbar-thumb, rgba(120,113,108,0.22));
   border-radius: var(--radius-pill);
 }
-::-webkit-scrollbar-thumb:hover { background: rgba(120,113,108,0.45); }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover, rgba(120,113,108,0.45)); }
 
 /* ── App Layout: sidebar | main | panel ──────────────────── */
 .app-layout {
@@ -669,7 +671,7 @@ summary:focus-visible {
   background: transparent; box-shadow: none;
 }
 /* 滑动激活指示条：位置/宽度由 JS（_syncMonitorTabIndicator）写入 */
-.monitor-tab-indicator {
+.ui-tab-indicator {
   position: absolute; bottom: 0; left: 0;
   width: 0; height: 2px; border-radius: var(--radius-pill);
   background: var(--accent); opacity: 0; pointer-events: none;
@@ -677,8 +679,8 @@ summary:focus-visible {
               width 300ms var(--ease-out),
               opacity var(--duration-fast) var(--ease-out);
 }
-.indicator-ready > .monitor-tab-indicator { opacity: 1; }
-.no-anim > .monitor-tab-indicator { transition: none; }
+.indicator-ready > .ui-tab-indicator { opacity: 1; }
+.no-anim > .ui-tab-indicator { transition: none; }
 .monitor-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .monitor-tab-count { min-width: 20px; padding: 0 5px; border-radius: var(--radius-pill); background: var(--bg-sunken); color: var(--text-tertiary); font: 11px/18px var(--font-mono); }
 .monitor-tab.active .monitor-tab-count { background: var(--accent-soft); color: var(--accent); }
@@ -1099,9 +1101,12 @@ select {
   transition: background-color var(--duration-fast) ease,
               border-color var(--duration-fast) ease,
               box-shadow var(--duration-fast) ease;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2378716c' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-image: var(--select-arrow-image);
   background-repeat: no-repeat; background-position: right 10px center;
 }
+/* Reapply the arrow when a specialized select resets its background shorthand. */
+[data-theme] select { background-image: var(--select-arrow-image); background-repeat: no-repeat; background-position: right 10px center; }
+.te-sort-wrap select, .te-pager select { background-image: none; }
 select:hover:not(:disabled):not(:focus) { background-color: var(--bg-input-hover); }
 select:focus { border-color: var(--border-focus); box-shadow: 0 0 0 2px var(--accent-soft); }
 select option { background: var(--bg-surface); color: var(--text-primary); padding: 8px; }
@@ -1200,8 +1205,8 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 }
 .btn:active:where(:not(.btn-preview)) { opacity: 0.82; }
 
-.btn-primary { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
-.btn-primary:hover { background: var(--accent-solid); color: #fff; border-color: var(--accent-solid); }
+.btn-primary { background: var(--btn-primary-bg, var(--accent-soft)); color: var(--btn-accent-color, var(--accent)); border-color: var(--btn-accent-border, var(--accent)); }
+.btn-primary:hover { background: var(--btn-accent-hover-bg, var(--accent-solid)); color: var(--btn-accent-hover-color, #fff); border-color: var(--btn-accent-hover-bg, var(--accent-solid)); }
 
 .btn-secondary {
   background: var(--bg-surface-raised); color: var(--text-primary);
@@ -1229,9 +1234,9 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 
 /* Outline-to-fill: Start (teal) & Stop (red) */
 .btn-start {
-  background: transparent; color: var(--accent); border-color: var(--accent);
+  background: var(--btn-start-bg, transparent); color: var(--btn-accent-color, var(--accent)); border-color: var(--btn-accent-border, var(--accent));
 }
-.btn-start:hover { background: var(--accent-solid); color: #fff; border-color: var(--accent-solid); }
+.btn-start:hover { background: var(--btn-accent-hover-bg, var(--accent-solid)); color: var(--btn-accent-hover-color, #fff); border-color: var(--btn-accent-hover-bg, var(--accent-solid)); }
 .btn-start:disabled { opacity: 0.35; pointer-events: none; }
 
 .btn-stop {
@@ -1240,7 +1245,7 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 .btn-stop:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
 .btn-stop:disabled { opacity: 0.35; pointer-events: none; }
 
-.btn-sm { min-height: 30px; padding: 5px 11px; font-size: 11.5px; }
+.btn-sm { min-height: var(--control-h-sm); padding: 5px 11px; font-size: 11.5px; }
 
 .btn-icon {
   width: var(--control-h-icon); height: var(--control-h-icon); padding: 0;
@@ -3042,7 +3047,7 @@ input[type="range"]::-webkit-slider-thumb {
 .m-diagnostic-verdict[data-diagnostic-tone="ok"] .m-diagnostic-trend { color: var(--success); }
 .m-diagnostic-verdict[data-diagnostic-tone="warn"] .m-diagnostic-trend { color: var(--warning); }
 .m-diagnostic-verdict[data-diagnostic-tone="danger"] .m-diagnostic-trend { color: var(--danger); }
-.m-gpu-select { max-width: 170px; padding: 3px; color: var(--text-secondary); background: transparent; border: 1px solid var(--border-default); border-radius: var(--radius-control); font-size: 11px; }
+.m-gpu-select { max-width: 170px; padding: 3px 26px 3px 3px; color: var(--text-secondary); background: transparent; border: 1px solid var(--border-default); border-radius: var(--radius-control); font-size: 11px; }
 .m-diagnostic-state { display: flex; align-items: flex-start; gap: 8px; min-height: 52px; }
 .m-diagnostic-state i { width: 7px; height: 7px; margin-top: 10px; flex-shrink: 0; border-radius: 50%; background: var(--text-tertiary); }
 .m-diagnostic-state strong { min-width: 0; overflow-wrap: anywhere; color: var(--text-primary); font-size: 20px; line-height: 1.3; letter-spacing: 0; }
@@ -3459,14 +3464,14 @@ input[type="range"]::-webkit-slider-thumb {
   line-height: 1.6;
 }
 /* VSCode 2026 — list.hoverBackground (#1e1f20) */
-.log-line:hover { background: #1e1f20; }
+.log-line:hover { background: var(--log-line-hover, #1e1f20); }
 /* 完整日志搜索命中行：行底高亮 */
 .log-line.log-line-match { background: rgba(72, 160, 199, 0.10); }
 /* Original row numbers survive grouping and pagination. */
 .log-line::before {
   content: attr(data-line-no);
   display: inline-block; min-width: 48px; padding: 0 12px 0 4px;
-  text-align: right; color: #858889; user-select: none;
+  text-align: right; color: var(--log-line-number, #858889); user-select: none;
   font-size: 12px; flex-shrink: 0; line-height: 1.6;
 }
 .log-line-text { flex: 1; white-space: pre; overflow-wrap: normal; word-break: normal; }
@@ -3484,43 +3489,42 @@ input[type="range"]::-webkit-slider-thumb {
 [data-theme="light"] .log-repeat-count {
   color: #075985; background: #e0f2fe; border-color: #7db5d2;
 }
-[data-theme="light"] .log-line:hover { background: #edf2f7; }
 /* ═══════ Inline syntax tokens — VSCode 2026 Dark (2026-dark.json) ═══════ */
 /* Log levels: VSCode colors log severity via the token.*-token scopes.
    Plain colored text — no badge, no background (matches VSCode log view). */
 .log-lvl { }
-.log-lvl-INFO { color: #6796E6; }  /* token.info-token  */
-.log-lvl-WARN { color: #CD9731; }  /* token.warn-token  */
-.log-lvl-ERROR { color: #F44747; }  /* token.error-token */
-.log-lvl-DEBUG { color: #B267E6; }  /* token.debug-token */
+.log-lvl-INFO { color: var(--log-lvl-info, #6796e6); }
+.log-lvl-WARN { color: var(--log-lvl-warn, #cd9731); }
+.log-lvl-ERROR { color: var(--log-lvl-error, #f44747); font-weight: var(--log-error-weight, 400); }
+.log-lvl-DEBUG { color: var(--log-lvl-debug, #b267e6); }
 /* comment — timestamps & units render muted like VSCode metadata */
-.log-ts   { color: #8b949e; }
+.log-ts   { color: var(--log-ts, #8b949e); }
 /* string */
-.log-str  { color: #a5d6ff; }
+.log-str  { color: var(--log-str, #a5d6ff); }
 /* constant.numeric / constant.language */
-.log-num  { color: #79c0ff; }
-.log-const, .log-hex { color: #79c0ff; }
+.log-num  { color: var(--log-num, #79c0ff); }
+.log-const, .log-hex { color: var(--log-const, #79c0ff); }
 /* keyword / storage */
-.log-kw   { color: #ff7b72; }
+.log-kw   { color: var(--log-kw, #ff7b72); }
 /* message.error / invalid — exception names are error-type tokens */
-.log-exc  { color: #ffa198; }
+.log-exc  { color: var(--log-exc, #ffa198); }
 /* entity.name.tag — file paths render green (linkable in VSCode) */
-.log-path { color: #7ee787; }
+.log-path { color: var(--log-path, #7ee787); }
 /* entity.name.function — qualified module / dotted names */
-.log-module { color: #d2a8ff; }
+.log-module { color: var(--log-module, #d2a8ff); }
 /* unit suffix: dimmed numeric */
-.log-unit  { color: #8b949e; }
+.log-unit  { color: var(--log-unit, #8b949e); }
 /* URL — textLink.foreground */
-.log-url   { color: #48A0C7; }
+.log-url   { color: var(--log-url, #48a0c7); }
 .log-path, .log-module, .log-url, .log-hex {
   white-space: nowrap;
   overflow-wrap: normal;
   word-break: keep-all;
 }
-.log-punct { color: #8b949e; }
+.log-punct { color: var(--log-punct, #8b949e); }
 
 .log-line mark {
-  background: rgba(230, 180, 80, 0.35);
+  background: var(--log-mark-bg, rgba(230, 180, 80, 0.35));
   color: inherit; border-radius: 2px; padding: 0;
 }
 .log-empty { padding: 32px; }
@@ -3860,7 +3864,7 @@ dialog.preview-lightbox::backdrop { background: transparent; }
 .hist-empty { padding: 56px 24px; border: 1px dashed var(--border-default); border-radius: var(--radius-sm); }
 .hist-empty .btn { margin-top: 16px; }
 .hist-empty > p:first-of-type { color: var(--text-primary); font-size: 15px; font-weight: 600; }
-.hist-load-error { display: flex; align-items: center; gap: 16px; justify-content: space-between; padding: 12px 16px; margin-bottom: 16px; background: var(--danger-soft); color: var(--danger); border-radius: var(--radius-sm); }
+.ui-inline-alert { display: flex; align-items: center; gap: 16px; justify-content: space-between; padding: 12px 16px; margin-bottom: 16px; background: var(--danger-soft); color: var(--danger); border-radius: var(--radius-sm); }
 .history-running { margin-bottom: 20px; }
 .history-running .hist-name { margin-top: 6px; }
 .hist-toolbar {
@@ -5880,7 +5884,7 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
   align-items: stretch;
   padding: 10px 4px;
   border-bottom: 1px solid var(--border-subtle);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   gap: 4px;
 }
 
@@ -5895,7 +5899,7 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 
 .te-snapshot-meta {
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   display: flex;
   gap: 6px;
 }
@@ -5916,7 +5920,7 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
   font: inherit;
   padding: 4px 6px;
 }
-.te-snapshot-actions button:disabled { opacity: .4; cursor: default; }
+.te-snapshot-actions button:disabled { opacity: var(--disabled-opacity); cursor: default; }
 
 .te-snapshot-actions button:hover {
   color: var(--accent);

@@ -23,7 +23,7 @@ document.addEventListener('alpine:init', () => {
     destroy() { this.layoutObserver.disconnect(); },
     layoutObserver: null,
     syncToolTabIndicator(bar = this.$el) {
-      const indicator = bar.querySelector('.monitor-tab-indicator');
+      const indicator = bar.querySelector('.ui-tab-indicator');
       const active = bar.querySelector('[aria-selected="true"]');
       if (!indicator || !active?.offsetWidth) return;
       const first = !bar.classList.contains('indicator-ready');

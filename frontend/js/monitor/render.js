@@ -315,7 +315,7 @@ window.monitorRenderMixin = {
   _syncMonitorTabIndicator() {
     const bar = document.querySelector('.monitor-tabs');
     if (!bar) return;
-    const indicator = bar.querySelector('.monitor-tab-indicator');
+    const indicator = bar.querySelector('.ui-tab-indicator');
     const active = bar.querySelector('.monitor-tab.active');
     if (!indicator || !active || !active.offsetWidth) {
       // 路由隐藏时布局不可用：清空签名，让下一次 renderDashboard 重新调度定位

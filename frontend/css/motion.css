@@ -9,6 +9,8 @@
   --duration-menu-exit: 150ms;
   --duration-dialog-enter: 180ms;
   --duration-dialog-exit: 150ms;
+  --duration-morph-enter: 300ms;
+  --duration-morph-exit: 270ms;
   --duration-toast-enter: 180ms;
   --duration-toast-exit: 150ms;
   --menu-scale-enter: .97;
@@ -83,10 +85,6 @@ dialog.modal-overlay:not([open]) { pointer-events: none; }
    second CSS exit. Leave an interrupted entrance intact for WAAPI to sample. */
 dialog.preview-lightbox:not([open]),
 dialog.preview-lightbox:not([open]) > .modal { transition: none; }
-:root {
-  --duration-morph-enter: 300ms;
-  --duration-morph-exit: 270ms;
-}
 /* x-dialog animates the silhouette and its contents separately. */
 dialog.modal-overlay--morph {
   --duration-dialog-enter: var(--duration-morph-enter);
@@ -160,7 +158,7 @@ dialog.modal-overlay--morph[data-dialog-nested]::backdrop { background: transpar
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);
 }
-.monitor-tab-indicator, .env-tab-indicator { transition-duration: var(--duration-dialog-enter), var(--duration-dialog-enter), var(--duration-fast); }
+.ui-tab-indicator, .env-tab-indicator { transition-duration: var(--duration-dialog-enter), var(--duration-dialog-enter), var(--duration-fast); }
 .anima-select-chevron { transition: none; }
 @media (prefers-reduced-motion: reduce) {
   .refresh-button.is-loading svg { animation: none; transition: none; transform: rotate(90deg); opacity: .55; }

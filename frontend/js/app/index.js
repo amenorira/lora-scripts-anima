@@ -93,11 +93,6 @@ document.addEventListener('alpine:init', () => {
     init() {
       // bootstrap.js waits for translations before Alpine initializes the DOM.
       this.locale = I18N.getLocale();
-      // Keep <html lang> in sync with the active locale from the very first
-      // paint (index.html defaults to lang="en"): screen readers and browser
-      // translation/checking features rely on it.
-      document.documentElement.lang = this.locale;
-
       // Language controls are usable while backend initialization is awaiting.
       // Subscribe now, but leave workspace mounting to the initial route build.
       let routeMounted = false;
@@ -107,7 +102,6 @@ document.addEventListener('alpine:init', () => {
         this.localeRevision++;
         // A successful retry can load the same language after startup failed.
         if (previousLocale === this.locale) this._trainFormLocale = '';
-        document.documentElement.lang = this.locale;
         const r = this.currentRoute;
         const cfg = ROUTE_CONFIG[r] || {};
         if (cfg.titleKey) this.pageTitle = this.t(cfg.titleKey) || cfg.title || r;

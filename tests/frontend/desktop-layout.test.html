@@ -19,7 +19,7 @@
     }
   };
   const pass = message => { lines.push('PASS ' + message); results.textContent = lines.join('\n'); };
-  let doc, win, app, savedLocale, originalLocale, originalTheme, savedEditorDir;
+  let doc, win, app, savedLocale, originalLocale, originalTheme, savedEditorDir, savedTaggerMode;
   const settle = async () => {
     await win.Alpine.nextTick();
     await new Promise(resolve => win.requestAnimationFrame(() => win.requestAnimationFrame(resolve)));
@@ -34,6 +34,22 @@
     const width = frame.clientWidth, main = doc.querySelector('.main-content');
     assert(doc.documentElement.scrollWidth <= width + 1, label + ': page overflows');
     assert(main.scrollWidth <= main.clientWidth + 1, label + ': main workspace overflows');
+  };
+  const rgb = value => {
+    const sample = doc.createElement('span');
+    sample.style.color = value;
+    doc.body.append(sample);
+    const result = win.getComputedStyle(sample).color.match(/[\d.]+/g).slice(0, 3).map(Number);
+    sample.remove();
+    return result;
+  };
+  const contrast = (foreground, background) => {
+    const luminance = color => rgb(color).map(value => {
+      const s = value / 255;
+      return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    }).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+    const a = luminance(foreground), b = luminance(background);
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
   };
   const checkPopup = async (trigger, containerSelector, popupSelector, label) => {
     assert(trigger, label + ': trigger is missing');
@@ -55,6 +71,7 @@
     await waitFor(() => frame.contentDocument?.querySelector('#reg-tab-settings'), 'Regularization did not mount directly');
     doc = frame.contentDocument; win = frame.contentWindow; app = win.Alpine.$data(doc.body);
     savedLocale = win.localStorage.getItem('anima-locale');
+    savedTaggerMode = win.localStorage.getItem('anima-tagger-mode');
     savedEditorDir = win.sessionStorage.getItem('tagEditor_lastDir');
     win.sessionStorage.removeItem('tagEditor_lastDir');
     originalLocale = win.I18N.getLocale(); originalTheme = doc.documentElement.dataset.theme;
@@ -70,6 +87,35 @@
       const style = win.getComputedStyle(button);
       assert(parseFloat(style.borderRadius) === (theme === 'comfy' ? 6 : 2), theme + ': wrong primary button radius');
       assert((style.backgroundColor !== 'rgba(0, 0, 0, 0)') === (theme === 'comfy'), theme + ': wrong primary button fill');
+      const root = win.getComputedStyle(doc.documentElement);
+      const themeTokens = [
+        '--radius-xs', '--radius-sm', '--radius-control', '--radius-tile', '--radius-panel', '--radius-pill',
+        '--monitor-page-bg', '--monitor-card-bg', '--monitor-card-border', '--monitor-tile-bg',
+        '--log-bg', '--log-fg', '--log-line-hover', '--log-ts', '--log-str', '--log-lvl-info',
+        '--log-lvl-warn', '--log-lvl-error', '--log-lvl-debug', '--btn-accent-hover-bg',
+      ];
+      for (const token of themeTokens) {
+        assert(root.getPropertyValue(token).trim(), theme + ': missing computed token ' + token);
+      }
+      assert(contrast(root.getPropertyValue('--btn-accent-hover-color'), root.getPropertyValue('--btn-accent-hover-bg')) >= 4.5, theme + ': button hover text has insufficient contrast');
+      if (theme === 'comfy') {
+        assert(contrast(style.color, style.backgroundColor) >= 4.5, theme + ': button text has insufficient contrast');
+        assert(contrast(root.getPropertyValue('--text-preview-comment'), root.getPropertyValue('--bg-preview')) >= 4.5, theme + ': preview comment has insufficient contrast');
+        assert(contrast(root.getPropertyValue('--text-tertiary'), root.getPropertyValue('--bg-surface-raised')) >= 4.5, theme + ': secondary text has insufficient contrast');
+      }
+      const log = doc.createElement('div');
+      log.className = 'monitor-logs-container';
+      log.innerHTML = '<span class="log-lvl-INFO">INFO</span><span class="log-str">text</span><span class="log-const">value</span>';
+      doc.body.append(log);
+      const expected = theme === 'light' ? ['#098658', '#a31515', '#0451a5'] : ['#6796e6', '#a5d6ff', '#79c0ff'];
+      [...log.children].forEach((el, index) => assert(win.getComputedStyle(el).color === `rgb(${rgb(expected[index]).join(', ')})`, theme + ': log syntax color changed'));
+      log.remove();
+      const gpuSelect = doc.createElement('select');
+      gpuSelect.className = 'm-gpu-select';
+      doc.body.append(gpuSelect);
+      const nativeStyle = win.getComputedStyle(gpuSelect);
+      assert(nativeStyle.backgroundImage !== 'none' && nativeStyle.backgroundRepeat === 'no-repeat' && parseFloat(nativeStyle.paddingRight) >= 20, theme + ': native GPU select arrow is missing or overlaps its text');
+      gpuSelect.remove();
       checkShell(theme + ' regularization');
       pass(theme + ' regularization and primary button');
     }
@@ -86,6 +132,7 @@
     for (const locale of ['zh-CN', 'en-US', 'ja-JP']) {
       assert(await win.I18N.setLocale(locale), 'Locale did not load: ' + locale);
       await settle();
+      assert(doc.documentElement.lang === locale, locale + ': document language is stale');
       for (const [route, key] of [['ai-captioning','nav.aiCaptioning'], ['regularization','nav.regularization']]) {
         const label = doc.querySelector(`[data-route="${route}"] span[x-text]`).textContent.trim();
         assert(label && label === win.I18N.t(key) && label !== key, locale + ': missing navigation translation ' + key);
@@ -99,32 +146,55 @@
       if (route === 'train-basic') await waitFor(() => doc.querySelector('#trainFormContent .field'), 'Training form did not mount');
       if (route === 'tagger') await waitFor(() => doc.querySelector('#tagger-tab-folder'), 'Tagger did not mount');
       if (route === 'ai-captioning') await waitFor(() => doc.querySelector('#caption-tab-batch'), 'Caption workspace did not mount');
-      for (const width of [840, 1024, 1280]) {
-        frame.style.width = width + 'px';
-        await settle();
-        const label = route + ' ' + width;
-        checkShell(label);
-        if (route === 'train-basic') {
-          const overflowing = [...doc.querySelectorAll('#trainFormContent .field')].filter(el => el.getClientRects().length && el.scrollWidth > el.clientWidth + 1);
-          assert(!overflowing.length, label + ': a training field overflows');
-          if (width === 840 || width === 1280) {
-            const action = doc.querySelector('#trainFormContent .field .btn-menu:not(:disabled)');
-            const select = [...doc.querySelectorAll('#trainFormContent .field .anima-select-trigger')].find(el => !el.disabled && el.getClientRects().length);
-            await checkPopup(action, '.field-menu-wrap', '.field-menu-popup.is-positioned', label + ' field menu');
-            await checkPopup(select, '.anima-select', '.anima-select-menu-positioned', label + ' select');
+      for (const theme of ['light', 'dark', 'comfy']) {
+        doc.documentElement.dataset.theme = theme;
+        for (const width of [840, 1024, 1280]) {
+          frame.style.width = width + 'px';
+          await settle();
+          const label = theme + ' ' + route + ' ' + width;
+          checkShell(label);
+          if (width === 1280 && ['tagger', 'ai-captioning', 'regularization'].includes(route)) {
+            const indicator = [...doc.querySelectorAll('.ui-tab-indicator')].find(el => el.getClientRects().length);
+            const selected = indicator?.parentElement.querySelector('[aria-selected="true"]');
+            assert(indicator && selected && indicator.parentElement.classList.contains('indicator-ready') && Math.abs(indicator.offsetWidth - selected.offsetWidth) <= 1, label + ': active tab indicator is misplaced');
           }
-        }
-        if (route === 'monitor-dashboard') {
-          const title = doc.querySelector('.monitor-page-heading').getBoundingClientRect();
-          const bar = doc.querySelector('#monitorResbar');
-          const rect = bar.getBoundingClientRect();
-          assert(!rect.width || rect.left >= title.right - 1 || rect.top >= title.bottom - 1, label + ': title and resources overlap');
-          for (const chip of bar.querySelectorAll('.m-res-chip')) {
-            const name = chip.querySelector('.m-res-chip-name');
-            if (name) assert(name.getBoundingClientRect().right <= chip.getBoundingClientRect().right + 1, label + ': device name overflows');
+          if (route === 'train-basic') {
+            const overflowing = [...doc.querySelectorAll('#trainFormContent .field')].filter(el => el.getClientRects().length && el.scrollWidth > el.clientWidth + 1);
+            assert(!overflowing.length, label + ': a training field overflows');
+            if (width === 840 || width === 1280) {
+              const action = doc.querySelector('#trainFormContent .field .btn-menu:not(:disabled)');
+              const select = [...doc.querySelectorAll('#trainFormContent .field .anima-select-trigger')].find(el => !el.disabled && el.getClientRects().length);
+              await checkPopup(action, '.field-menu-wrap', '.field-menu-popup.is-positioned', label + ' field menu');
+              await checkPopup(select, '.anima-select', '.anima-select-menu-positioned', label + ' select');
+            }
           }
+          if (route === 'monitor-dashboard') {
+            const title = doc.querySelector('.monitor-page-heading').getBoundingClientRect();
+            const bar = doc.querySelector('#monitorResbar');
+            const rect = bar.getBoundingClientRect();
+            assert(!rect.width || rect.left >= title.right - 1 || rect.top >= title.bottom - 1, label + ': title and resources overlap');
+            for (const chip of bar.querySelectorAll('.m-res-chip')) {
+              const name = chip.querySelector('.m-res-chip-name');
+              if (name) assert(name.getBoundingClientRect().right <= chip.getBoundingClientRect().right + 1, label + ': device name overflows');
+            }
+          }
+          if (route === 'tagger' && width === 1280) {
+            await app.selectTaggerSourceMode('folder');
+            await settle();
+            for (const id of ['tagger-model-select', 'tagger-precision-select', 'tagger-preset-select', 'tagger-conflict-select']) {
+              const button = doc.getElementById(id), fieldLabel = doc.querySelector(`label[for="${id}"]`);
+              assert(button && fieldLabel?.control === button && button.getAttribute('aria-haspopup') === 'listbox', label + ': select label is not associated');
+            }
+            await app.selectTaggerSourceMode('single');
+            await waitFor(() => doc.querySelector('.tool-divider[role="separator"]')?.getClientRects().length, 'Tagger separator is not visible');
+            const divider = doc.querySelector('.tool-divider[role="separator"]'), before = Number(divider.getAttribute('aria-valuenow'));
+            divider.focus();
+            divider.dispatchEvent(new win.KeyboardEvent('keydown', {key:before < 70 ? 'ArrowRight' : 'ArrowLeft', bubbles:true, cancelable:true}));
+            await settle();
+            assert(Number(divider.getAttribute('aria-valuenow')) === before + (before < 70 ? 1 : -1), 'Tagger separator keyboard resize failed');
+          }
+          pass(label);
         }
-        pass(label);
       }
       frame.style.width = '800px';
       await settle();
@@ -143,6 +213,43 @@
         assert(box.left >= 0 && box.right <= width + 1 && box.top >= 0 && box.bottom <= height + 1, selector + ': dialog escapes viewport');
         const margin = property === 'cropPreviewOpen' && (width <= 800 || height <= 650) ? 16 : 32;
         assert(Math.abs(box.width - Math.min(1280, width - margin)) < 2 && Math.abs(box.height - Math.min(1200, height - margin)) < 2, selector + ': dialog dimensions changed');
+        if (property === 'cropPreviewOpen' && width === 840) {
+          const trigger = doc.querySelector('#cropPreviewDialog .cp-filter .preview-select-trigger');
+          trigger.focus();
+          trigger.dispatchEvent(new win.KeyboardEvent('keydown', {key:'ArrowDown', bubbles:true, cancelable:true}));
+          await waitFor(() => trigger.getAttribute('aria-expanded') === 'true', 'Preview select did not open with keyboard');
+          await waitFor(() => doc.querySelector('#cropPreviewDialog .preview-select-menu [role="option"]'), 'Preview select options did not mount');
+          await settle();
+          const menu = doc.getElementById(trigger.getAttribute('aria-controls'));
+          assert(menu && menu.getAttribute('role') === 'listbox' && menu.querySelectorAll('[role="option"]').length === 4, 'Preview select accessibility is incomplete');
+          const menuBox = menu.getBoundingClientRect(), anchor = trigger.getBoundingClientRect();
+          const hit = doc.elementFromPoint(menuBox.left + menuBox.width / 2, menuBox.top + menuBox.height / 2);
+          assert(menuBox.left >= 0 && menuBox.right <= width + 1 && Math.min(Math.abs(menuBox.top - anchor.bottom), Math.abs(anchor.top - menuBox.bottom)) < 8 && menu.contains(hit), 'Preview select is clipped or detached');
+          trigger.dispatchEvent(new win.KeyboardEvent('keydown', {key:'Escape', bubbles:true, cancelable:true}));
+          await waitFor(() => trigger.getAttribute('aria-expanded') === 'false' && !trigger.hasAttribute('aria-activedescendant'), 'Preview select did not clear its active option on close');
+          trigger.dispatchEvent(new win.KeyboardEvent('keydown', {key:'ArrowDown', bubbles:true, cancelable:true}));
+          await waitFor(() => trigger.getAttribute('aria-expanded') === 'true', 'Preview select did not reopen');
+          await settle();
+          trigger.dispatchEvent(new win.KeyboardEvent('keydown', {key:'ArrowDown', bubbles:true, cancelable:true}));
+          trigger.dispatchEvent(new win.KeyboardEvent('keydown', {key:'Enter', bubbles:true, cancelable:true}));
+          await waitFor(() => app.cropPreviewFilter === 'cropped', 'Preview select keyboard choice did not update the filter');
+          await settle();
+          const refreshed = doc.querySelector('#cropPreviewDialog .cp-filter .preview-select-trigger');
+          await waitFor(() => doc.activeElement === refreshed, 'Preview select did not restore focus after refresh');
+          refreshed.dispatchEvent(new win.KeyboardEvent('keydown', {key:app.t('cropPreview.upscaled')[0], bubbles:true, cancelable:true}));
+          await waitFor(() => refreshed.getAttribute('aria-expanded') === 'true', 'Preview select did not open for typeahead');
+          await settle();
+          refreshed.dispatchEvent(new win.KeyboardEvent('keydown', {key:'Enter', bubbles:true, cancelable:true}));
+          await waitFor(() => app.cropPreviewFilter === 'upscaled', 'Preview select typeahead did not select an option');
+          await settle();
+          const mouseTrigger = doc.querySelector('#cropPreviewDialog .cp-filter .preview-select-trigger');
+          mouseTrigger.click();
+          await waitFor(() => mouseTrigger.getAttribute('aria-expanded') === 'true', 'Preview select did not open with mouse');
+          const first = doc.querySelector('#cropPreviewDialog .cp-filter .preview-select-option');
+          first.click();
+          await waitFor(() => app.cropPreviewFilter === 'all', 'Preview select mouse choice did not update the filter');
+          pass('preview select keyboard and listbox');
+        }
         app[property] = false;
         await waitFor(() => !doc.querySelector(selector).open, selector + ': dialog did not close');
         pass(selector + ' ' + width + '×' + height);
@@ -150,6 +257,37 @@
     }
     frame.style.width = '840px'; frame.style.height = '600px';
     await settle();
+    const dynamicHost = doc.createElement('div');
+    dynamicHost.style.cssText = 'position:fixed;top:60px;left:60px;width:180px;z-index:10000';
+    dynamicHost.innerHTML = `<div x-data="{sampleValue:'a', sampleOptions:[{value:'a',label:'Alpha'},{value:'b',label:'Beta'}]}" @preview-select="sampleValue = $event.detail">${win.previewSelectHtml([], '', 'Dynamic fixture', 'dynamic-preview-select', 'sampleValue', 'sampleOptions')}</div>`;
+    win.Alpine.mutateDom(() => { doc.body.append(dynamicHost); win.Alpine.initTree(dynamicHost); });
+    const dynamicData = win.Alpine.$data(dynamicHost.firstElementChild);
+    dynamicData.sampleOptions = [{value:'b',label:'Updated Beta'}, {value:'c',label:'Gamma'}];
+    dynamicData.sampleValue = 'b';
+    await settle();
+    const dynamicTrigger = doc.getElementById('dynamic-preview-select');
+    assert(dynamicTrigger.textContent.includes('Updated Beta'), 'Preview select did not refresh dynamic options');
+    dynamicTrigger.click();
+    await waitFor(() => dynamicTrigger.getAttribute('aria-expanded') === 'true', 'Dynamic preview select did not open');
+    await settle();
+    const dynamicOptions = dynamicHost.querySelectorAll('.preview-select-option');
+    const lastOption = dynamicOptions[dynamicOptions.length - 1];
+    lastOption.dispatchEvent(new win.MouseEvent('mousemove', {bubbles:true}));
+    lastOption.dispatchEvent(new win.MouseEvent('mousemove', {bubbles:true}));
+    await settle();
+    assert(lastOption.classList.contains('is-active') && dynamicTrigger.getAttribute('aria-activedescendant') === lastOption.id, `Preview select hover did not update its active option: class=${lastOption.className} active=${dynamicTrigger.getAttribute('aria-activedescendant')} expected=${lastOption.id}`);
+    dynamicTrigger.blur();
+    lastOption.click();
+    await waitFor(() => dynamicData.sampleValue === 'c', 'Dynamic preview select did not dispatch the selected value');
+    assert(doc.activeElement === dynamicTrigger, 'Preview select did not restore focus after mouse selection');
+    dynamicTrigger.click();
+    await waitFor(() => dynamicTrigger.getAttribute('aria-expanded') === 'true', 'Dynamic preview select did not reopen');
+    dynamicTrigger.dispatchEvent(new win.KeyboardEvent('keydown', {key:'Home', bubbles:true, cancelable:true}));
+    dynamicTrigger.dispatchEvent(new win.KeyboardEvent('keydown', {key:'Enter', bubbles:true, cancelable:true}));
+    await waitFor(() => dynamicData.sampleValue === 'b', 'Dynamic preview select keyboard navigation failed after mouse selection');
+    win.Alpine.destroyTree(dynamicHost);
+    dynamicHost.remove();
+    pass('preview select dynamic options');
     const aux = doc.createElement('div');
     aux.className = 'modal modal-workbench parameter-doc-modal';
     doc.body.append(aux);
@@ -168,6 +306,8 @@
     else if (win && savedLocale !== undefined) win.localStorage.setItem('anima-locale', savedLocale);
     if (win && savedEditorDir === null) win.sessionStorage.removeItem('tagEditor_lastDir');
     else if (win && savedEditorDir !== undefined) win.sessionStorage.setItem('tagEditor_lastDir', savedEditorDir);
+    if (win && savedTaggerMode === null) win.localStorage.removeItem('anima-tagger-mode');
+    else if (win && savedTaggerMode !== undefined) win.localStorage.setItem('anima-tagger-mode', savedTaggerMode);
     if (doc && originalTheme) doc.documentElement.dataset.theme = originalTheme;
   }
 })();

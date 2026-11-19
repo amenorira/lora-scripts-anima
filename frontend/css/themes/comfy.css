@@ -11,6 +11,7 @@
   /* azure 主色：solid=azure-600 #0b8ce9，文字/hover=azure-400 #31b9f4 */
   --accent: #31b9f4;
   --accent-solid: #0b8ce9;
+  --accent-solid-hover: #075f9f;
   --accent-hover: #78bae9;
   --accent-soft: rgba(49, 185, 244, 0.14);
   --accent-muted: rgba(49, 185, 244, 0.08);
@@ -28,7 +29,7 @@
 
   --text-primary: #ffffff;
   --text-secondary: #a0a0a0;   /* smoke-700 */
-  --text-tertiary: #8a8a8a;    /* smoke-800 */
+  --text-tertiary: #9b9ba1;
   --text-sidebar: #a0a0a0;
   --text-sidebar-muted: #8a8a8a;
   --text-sidebar-active: #ffffff;
@@ -37,6 +38,9 @@
   --border-default: #3c3d42;
   --border-input: #494a50;
   --border-focus: #31b9f4;
+  --select-arrow-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23a0a0a0' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --scrollbar-thumb: rgba(255, 255, 255, 0.16);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.28);
   --border-subtle: #313235;
 
   --text-preview: #e6e6e6;
@@ -44,7 +48,7 @@
   --text-preview-eq: #78bae9;
   --text-preview-num: #fd9903;
   --text-preview-str: #00cd72;
-  --text-preview-comment: #6b6b6b;
+  --text-preview-comment: #8e8e93;
   --toml-change-flash: rgba(253, 153, 3, 0.45);
 
   /* ComfyUI 面板阴影：1px 1px 8px #0006 */
@@ -109,45 +113,47 @@
   --diff-added: #00cd72;
   --diff-removed: #f75951;
 
+  /* Darker blue keeps white button labels readable in both states. */
+  --btn-primary-bg: #0974c4;
+  --btn-start-bg: #0974c4;
+  --btn-accent-color: #fff;
+  --btn-accent-border: #0974c4;
+  --btn-accent-hover-bg: var(--accent-solid-hover);
+  --btn-accent-hover-color: #fff;
+
+  --monitor-page-bg: var(--bg-root);
   --monitor-card-bg: color-mix(in srgb, var(--bg-surface) 88%, var(--bg-sunken));
   --monitor-card-border: color-mix(in srgb, var(--border-default) 82%, transparent);
   --monitor-card-shadow: none;
+  --monitor-tile-bg: color-mix(in srgb, var(--monitor-card-bg) 76%, var(--bg-surface-raised));
+
+  --log-bg: #1b1c1e;
+  --log-fg: #e5e5e5;
+  --log-line-hover: #262729;
+  --log-line-number: #7a7a7a;
+  --log-lvl-info: #6796e6;
+  --log-lvl-warn: #cd9731;
+  --log-lvl-error: #f44747;
+  --log-lvl-debug: #b267e6;
+  --log-error-weight: 400;
+  --log-ts: #8b949e;
+  --log-str: #a5d6ff;
+  --log-num: #79c0ff;
+  --log-const: #79c0ff;
+  --log-kw: #ff7b72;
+  --log-exc: #ffa198;
+  --log-path: #7ee787;
+  --log-module: #d2a8ff;
+  --log-unit: #8b949e;
+  --log-punct: #8b949e;
+  --log-url: #48a0c7;
+  --log-mark-bg: rgba(253, 153, 3, 0.32);
 }
 
 /* ── 本主题专属组件规则 ───────────────────────────────────── */
 
-/* ComfyUI 滚动条：半透明白 */
-[data-theme="comfy"] ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.16); }
-[data-theme="comfy"] ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.28); }
-
 /* Theme icon: CSS-driven visibility (decoupled from Alpine x-show) */
 [data-theme="comfy"] .theme-icon-comfy { display: block; }
-
-/* 原生 select 下拉箭头：换成浅灰描边 */
-[data-theme="comfy"] select {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23a0a0a0' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  /* 补全 repeat/position：.te-sort-wrap 等处用 background 简写只图改底色，
-     会把这两项重置成 repeat/0 0，箭头图平铺成一栏小三角 */
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-}
-/* 标签编辑器工具栏/分页的小下拉 padding 太小放不下箭头，保持无箭头（与浅色一致） */
-[data-theme="comfy"] .te-sort-wrap select,
-[data-theme="comfy"] .te-pager select { background-image: none; }
-
-/* ComfyUI 主按钮是实心 azure 白字；本应用默认是描边幽灵按钮，这里实心化 */
-[data-theme="comfy"] .btn-primary {
-  background: var(--accent-solid); color: #ffffff; border-color: var(--accent-solid);
-}
-[data-theme="comfy"] .btn-primary:hover {
-  background: var(--accent); color: #ffffff; border-color: var(--accent);
-}
-[data-theme="comfy"] .btn-start {
-  background: var(--accent-solid); color: #ffffff; border-color: var(--accent-solid);
-}
-[data-theme="comfy"] .btn-start:hover {
-  background: var(--accent); color: #ffffff; border-color: var(--accent);
-}
 
 /* A raised sidebar lets the selected page merge into the darker workspace. */
 [data-theme="comfy"] .sidebar { --sidebar-shell-bg: var(--bg-surface); }
@@ -162,15 +168,6 @@
 [data-theme="comfy"] .env-tab:hover { color: var(--text-primary); background: transparent; }
 [data-theme="comfy"] .monitor-tab.active,
 [data-theme="comfy"] .env-tab.active { color: var(--text-primary); }
-
-/* 实时日志：近黑基底 + VSCode dark+ 配色（基底规则即该配色，这里补容器与悬浮） */
-[data-theme="comfy"] .monitor-logs-container {
-  --log-bg: #1b1c1e;
-  --log-fg: #e5e5e5;
-}
-[data-theme="comfy"] .log-line:hover { background: #262729; }
-[data-theme="comfy"] .log-line::before { color: #7a7a7a; }
-[data-theme="comfy"] .log-line mark { background: rgba(253, 153, 3, 0.32); }
 
 [data-theme="comfy"] .toast {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);

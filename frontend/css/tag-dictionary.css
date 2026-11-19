@@ -60,13 +60,13 @@
 .te-suggest-item.active .te-dict-item-name { color: var(--accent); }
 .te-dict-item-count {
   margin-left: auto;
-  font-size: 9px;
+  font-size: var(--font-size-xs);
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .te-dict-item-zh { font-size: 11px; color: var(--text-secondary); overflow-wrap: anywhere; }
-.te-dict-item-alias { font-size: 10px; color: var(--text-tertiary); overflow-wrap: anywhere; }
+.te-dict-item-alias { font-size: var(--font-size-xs); color: var(--text-tertiary); overflow-wrap: anywhere; }
 .te-dict-item-zh:empty,
 .te-dict-item-alias:empty,
 .te-dict-item-count:empty { display: none; }
@@ -100,7 +100,7 @@
 }
 .te-dict-hover-cat {
   flex-shrink: 0;
-  font-size: 9px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   color: var(--tag-cat, var(--text-tertiary));
   text-transform: uppercase;
@@ -112,11 +112,11 @@
 .te-dict-hover-row { display: flex; flex-wrap: wrap; gap: 2px 6px; font-size: 11px; }
 .te-dict-hover-key { flex-shrink: 0; color: var(--text-tertiary); }
 .te-dict-hover-val { flex: 1; min-width: 0; color: var(--text-secondary); overflow-wrap: anywhere; }
-.te-dict-mono { font-family: var(--font-mono); font-size: 10px; }
+.te-dict-mono { font-family: var(--font-mono); font-size: var(--font-size-xs); }
 
 .te-dict-hover-count {
   margin-left: auto;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
 }
@@ -128,7 +128,7 @@
 .te-dict-btn.busy { opacity: 0.7; }
 .te-dict-status {
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   color: var(--text-tertiary);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -151,12 +151,12 @@
 }
 .te-dict-panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .te-dict-panel-title { font-size: 12px; font-weight: 600; color: var(--text-primary); }
-.te-dict-panel-state { font-size: 10px; color: var(--text-tertiary); }
+.te-dict-panel-state { font-size: var(--font-size-xs); color: var(--text-tertiary); }
 .te-dict-panel-info { display: flex; flex-wrap: wrap; gap: 4px 8px; font-size: 11px; color: var(--text-secondary); }
 .te-dict-panel-info span:empty { display: none; }
-.te-dict-panel-hint { font-size: 10px; line-height: 1.5; color: var(--text-tertiary); }
+.te-dict-panel-hint { font-size: var(--font-size-xs); line-height: 1.5; color: var(--text-tertiary); }
 .te-dict-panel-progress { font-size: 11px; color: var(--accent); font-variant-numeric: tabular-nums; }
-.te-dict-panel-error { font-size: 10px; color: var(--danger); overflow-wrap: anywhere; }
+.te-dict-panel-error { font-size: var(--font-size-xs); color: var(--danger); overflow-wrap: anywhere; }
 
 .te-dict-panel-action {
   align-self: flex-start;
@@ -191,8 +191,8 @@
   height: 13px;
   flex-shrink: 0;
   border: 1px solid var(--border-input);
-  border-radius: var(--radius-sm);
-  font-size: 10px;
+  border-radius: var(--radius-control);
+  font-size: var(--font-size-xs);
   line-height: 12px;
   text-align: center;
   color: var(--accent);

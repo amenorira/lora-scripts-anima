@@ -27,8 +27,8 @@
   container: tool-page / inline-size;
 }
 .tool-workspace :where(button, [role="separator"], [tabindex]):focus-visible {
-  outline: 2px solid var(--border-focus);
-  outline-offset: 2px;
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
 .tool-workspace :where(button:disabled) { cursor: not-allowed; }
 .tool-workspace :is(.anima-select-trigger, .tool-drop-zone):disabled { opacity: var(--disabled-opacity); }
@@ -223,7 +223,7 @@
 .tool-task-log { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--bg-root); }
 .tool-log-header, .tool-log-header > div { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
 .tool-log-header { justify-content: space-between; min-height: 35px; padding: 4px 8px; border-bottom: 1px solid var(--border-subtle); font-size: 12px; }
-.tool-log-header .btn { min-height: 24px; padding: 2px 6px; border-color: transparent; }
+.tool-log-header .btn { border-color: transparent; }
 .tool-log-phase { color: var(--text-secondary); font-size: 11px; }
 .tool-log-phase.running { color: var(--accent); }
 .tool-log-error { padding: 8px; background: var(--danger-soft); font-size: 12px; overflow-wrap: anywhere; }
@@ -247,7 +247,7 @@
 .tool-divider { position: relative; cursor: col-resize; touch-action: none; }
 .tool-divider::before { position: absolute; inset: 0 4px; background: var(--border-default); content: ""; }
 .tool-divider::after { position: absolute; top: calc(50% - 13px); left: 3px; width: 4px; height: 26px; border-radius: var(--radius-pill); background: var(--text-tertiary); content: ""; }
-.tool-divider:focus-visible { outline: none; }
+.tool-divider:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring-color); outline-offset: -2px; }
 .tool-divider:is(:hover,:focus-visible,.dragging)::before,
 .tool-divider:is(:hover,:focus-visible,.dragging)::after { background: var(--accent); }
 body.tool-divider-dragging, body.tool-divider-dragging * { cursor: col-resize !important; user-select: none !important; }

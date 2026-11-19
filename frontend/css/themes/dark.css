@@ -10,6 +10,7 @@
   /* Neutral gray surfaces; color stays in text, states and section accents. */
   --accent: #6b9fe8;
   --accent-solid: #3276d8;
+  --accent-solid-hover: #3072d2;
   --accent-hover: #82aff0;
   --accent-soft: rgba(107, 159, 232, 0.13);
   --accent-muted: rgba(107, 159, 232, 0.07);
@@ -33,6 +34,9 @@
   --border-default: #424247;
   --border-input: #45454a;
   --border-focus: #6b9fe8;
+  --select-arrow-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23a1a09a' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --scrollbar-thumb: rgba(178, 178, 184, 0.24);
+  --scrollbar-thumb-hover: rgba(178, 178, 184, 0.42);
 
   --text-preview: #f0f1f2;
   --text-preview-key: #c4a0f0;
@@ -93,36 +97,46 @@
   --diff-added: #55e055;
   --diff-removed: #e05555;
 
-  --monitor-card-bg: color-mix(in srgb, var(--bg-surface) 88%, var(--bg-sunken));
-  --monitor-card-border: color-mix(in srgb, var(--border-default) 82%, transparent);
-  --monitor-card-shadow: none;
-}
+  --btn-primary-bg: var(--accent-soft);
+  --btn-start-bg: transparent;
+  --btn-accent-color: var(--accent);
+  --btn-accent-border: var(--accent);
+  --btn-accent-hover-bg: var(--accent-solid-hover);
+  --btn-accent-hover-color: #fff;
 
-[data-theme="dark"] .route-monitor-dashboard {
   --monitor-page-bg: var(--bg-sidebar);
   --monitor-card-bg: color-mix(in srgb, var(--bg-sunken) 82%, var(--bg-surface));
+  --monitor-card-border: color-mix(in srgb, var(--border-default) 82%, transparent);
+  --monitor-card-shadow: none;
   --monitor-tile-bg: color-mix(in srgb, var(--monitor-card-bg) 82%, var(--bg-surface-raised));
+
+  --log-bg: #232325;
+  --log-fg: #e5e7ea;
+  --log-line-hover: #303034;
+  --log-line-number: #a0a5ad;
+  --log-lvl-info: #6796e6;
+  --log-lvl-warn: #cd9731;
+  --log-lvl-error: #f44747;
+  --log-lvl-debug: #b267e6;
+  --log-error-weight: 400;
+  --log-ts: #8b949e;
+  --log-str: #a5d6ff;
+  --log-num: #79c0ff;
+  --log-const: #79c0ff;
+  --log-kw: #ff7b72;
+  --log-exc: #ffa198;
+  --log-path: #7ee787;
+  --log-module: #d2a8ff;
+  --log-unit: #8b949e;
+  --log-punct: #8b949e;
+  --log-url: #48a0c7;
+  --log-mark-bg: rgba(210, 164, 78, 0.32);
 }
 
 /* ── 本主题专属组件规则 ───────────────────────────────────── */
 
-[data-theme="dark"] ::-webkit-scrollbar-thumb { background: rgba(178, 178, 184, 0.24); }
-[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: rgba(178, 178, 184, 0.42); }
-
 /* Theme icon: CSS-driven visibility (decoupled from Alpine x-show) */
 [data-theme="dark"] .theme-icon-dark { display: block; }
-
-/* 原生 select 下拉箭头：换成浅灰描边 */
-[data-theme="dark"] select {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23a1a09a' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  /* 补全 repeat/position：.te-sort-wrap 等处用 background 简写只图改底色，
-     会把这两项重置成 repeat/0 0，箭头图平铺成一栏小三角 */
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-}
-/* 标签编辑器工具栏/分页的小下拉 padding 太小放不下箭头，保持无箭头（与浅色一致） */
-[data-theme="dark"] .te-sort-wrap select,
-[data-theme="dark"] .te-pager select { background-image: none; }
 
 /* Sidebar paint is owned by the shared connected-tab layer in every state. */
 [data-theme="dark"] .sidebar { --sidebar-shell-bg: var(--bg-surface); }
@@ -130,32 +144,6 @@
 [data-theme="dark"] .sidebar-header .brand-name { color: var(--text-sidebar-active); }
 [data-theme="dark"] .sidebar-dropdown-menu button:hover { background: var(--hover-overlay); color: var(--text-sidebar-active); }
 [data-theme="dark"] .sidebar-dropdown-menu button.active { color: var(--text-sidebar-active); }
-
-/* 实时日志：深色基底（VSCode dark+ 配色即 app.css 基底，这里只补容器与悬浮） */
-[data-theme="dark"] .monitor-logs-container {
-  --log-bg: #232325;
-  --log-fg: #e5e7ea;
-}
-/* Keep the original vivid syntax colors on the softer gray log surface. */
-[data-theme="dark"] .log-line:hover { background: #303034; }
-[data-theme="dark"] .log-line::before { color: #a0a5ad; }
-[data-theme="dark"] .log-lvl-INFO { color: #6796E6; }
-[data-theme="dark"] .log-lvl-WARN { color: #CD9731; }
-[data-theme="dark"] .log-lvl-ERROR { color: #F44747; }
-[data-theme="dark"] .log-lvl-DEBUG { color: #B267E6; }
-[data-theme="dark"] .log-ts,
-[data-theme="dark"] .log-unit,
-[data-theme="dark"] .log-punct { color: #8b949e; }
-[data-theme="dark"] .log-str { color: #a5d6ff; }
-[data-theme="dark"] .log-num,
-[data-theme="dark"] .log-const,
-[data-theme="dark"] .log-hex { color: #79c0ff; }
-[data-theme="dark"] .log-kw { color: #ff7b72; }
-[data-theme="dark"] .log-exc { color: #ffa198; }
-[data-theme="dark"] .log-path { color: #7ee787; }
-[data-theme="dark"] .log-module { color: #d2a8ff; }
-[data-theme="dark"] .log-url { color: #48A0C7; }
-[data-theme="dark"] .log-line mark { background: rgba(210, 164, 78, 0.32); }
 
 [data-theme="dark"] .toast {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.38);

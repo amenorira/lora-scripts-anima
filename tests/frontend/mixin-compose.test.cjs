@@ -9,7 +9,7 @@ test('the production script order assembles the complete application without col
   let factory;
   const context = {window:{addEventListener(){},dispatchEvent(){}},
     navigator:{language:'en-US',languages:['en-US']},
-    document:{addEventListener(name,callback){const list=listeners.get(name)||[];list.push(callback);listeners.set(name,list);},getElementById:()=>null,
+    document:{documentElement:{lang:'en'},addEventListener(name,callback){const list=listeners.get(name)||[];list.push(callback);listeners.set(name,list);},getElementById:()=>null,
       createElement:()=>({}),head:{appendChild:script=>scripts.push(script)}},
     localStorage:{getItem:()=>null,setItem(){},removeItem(){}},
     Alpine:{data(name,create){if(name==='animaApp')factory=create;}},
