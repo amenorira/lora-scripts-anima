@@ -7,7 +7,7 @@
 | Anima、SDXL、Krea 2 | `32/32` |
 | MOSS-Image | `16/1` |
 
-MOSS-Image 可选择原生 `networks.lora_generic`、`networks.loha` 或 `networks.lokr`。三者支持 rank/module dropout、LoRA+、正则 rank/学习率设置，以及可选的 DiT 文本投影与细化层；Qwen 文本编码器保持冻结。LoKr 额外支持 `lokr_factor`。
+MOSS-Image 可选择原生 `networks.lora_generic`、`networks.loha` 或 `networks.lokr`。三者支持 rank/module dropout、LoRA+、按正则表达式配置 Rank / 学习率，以及可选的 DiT 文本投影与细化层；Qwen 文本编码器保持冻结。LoKr 额外支持 `lokr_factor`。
 
 MOSS 的目标层均为线性层，界面仅提供线性层适用的参数，网络实现限定为上述三种原生模块。相同 rank 下，各算法的参数量和缩放可能不同，可用结构预览核对。
 
@@ -19,7 +19,7 @@ MOSS 的目标层均为线性层，界面仅提供线性层适用的参数，网
 这部分默认使用主干学习率。需要单独指定时，在自定义网络参数中填写 `network_reg_lrs=.*text_embedder.*=5e-5`，将匹配层的学习率设为 `5e-5`。EmoSens 对所有参数使用统一学习率，此覆盖规则对它无效。
 
 <!-- doc-anchor: dimension -->
-## 网络维度
+## Rank（网络维度）
 
 `network_dim` 是标准 LoRA 两个矩阵之间的维度，通常称为 rank。Anima、SDXL、Krea 2 默认 `32`，MOSS-Image 默认 `16`。
 
@@ -65,7 +65,7 @@ Alpha 不改变参数量或文件大小。按钮只赋值一次，之后修改 R
 
 Alpha 会改变训练时的梯度，学习率则参与计算参数更新。AdamW 等优化器还会根据梯度统计调整更新幅度。调整 Alpha 后，按实际训练效果重新校准学习率。
 
-实际调整时，先固定 Rank 和其他设置，只改 Alpha，用相同提示词、种子比较几个保存节点。如果学得明显变慢，再尝试提高学习率；若不稳定或很快过拟合，则先降低学习率。不要仅凭缩放比例一次把学习率提高几十倍。
+实际调整时，先固定 Rank 和其他设置，只改 Alpha，用相同提示词、种子比较几个模型存档。如果学得明显变慢，再尝试提高学习率；若不稳定或很快过拟合，则先降低学习率。不要仅凭缩放比例一次把学习率提高几十倍。
 
 ### 其他情况
 
@@ -136,7 +136,7 @@ LyCORIS LoKr 的 `full_matrix` 和 `decompose_both` 默认关闭。开启 `full_
 <!-- doc-anchor: dropout -->
 ## 网络丢弃与标注丢弃
 
-网络丢弃在训练时随机屏蔽特征或分支，默认概率为 `0`。提高概率会使更多前向计算跳过对应元素、通道或分支。出现固定姿势、背景绑定时，先比较更早的检查点，再单独测试丢弃设置。
+网络丢弃在训练时随机屏蔽特征或分支，默认概率为 `0`。提高概率会使更多前向计算跳过对应元素、通道或分支。出现固定姿势、背景绑定时，先比较更早的模型存档，再单独测试丢弃设置。
 
 | 类型与配置键 | 丢弃对象 | 主要目的 |
 | --- | --- | --- |
@@ -177,9 +177,9 @@ Anima 的 LyCORIS DoRA（`dora_wd`）按层类型选择计算路径：
 
 默认 Rank / Alpha 为 `32/32`，覆盖 DiT 的全部 264 个 Linear 层：主块 attention、MLP、文本融合 transformer 和投影 MLP。文本融合层属于 DiT，Qwen 文本编码器仍冻结并使用缓存。调制和 RMSNorm 使用原始张量，自动排除在 Linear LoRA 的目标范围外。
 
-Krea 2 可选择原生 LoRA，或通过 LyCORIS 配置面板选择 LoCon、LoKr、LoHa。四种方式共用“训练目标层”选项：全部 Linear（264 层）、主干 Attention（140 层）、主干 Attention + MLP（224 层）、自定义正则。全部 Linear 包含输入输出、时间投影及文本融合投影层。
+Krea 2 可选择原生 LoRA，或通过 LyCORIS 配置面板选择 LoCon、LoKr、LoHa。四种方式共用“训练目标层”选项：全部 Linear（264 层）、主干 Attention（140 层）、主干 Attention + MLP（224 层）、自定义正则表达式。全部 Linear 包含输入输出、时间投影及文本融合投影层。
 
-自定义正则每行一项，对原始 Linear 层名完整匹配；排除优先于包含。例如，包含 `blocks\.[0-9]+\.attn\..*` 选择主干注意力，包含 `.*` 并排除 `txtfusion\..*` 则去掉文本融合层。没有匹配目标时，启动前会报错。
+自定义正则表达式每行一项，对原始 Linear 层名完整匹配；排除优先于包含。例如，包含 `blocks\.[0-9]+\.attn\..*` 选择主干注意力，包含 `.*` 并排除 `txtfusion\..*` 则去掉文本融合层。没有匹配目标时，启动前会报错。
 
 LyCORIS 面板按算法提供 factor、Full Matrix、双因子分解、不平衡分解、标量、rsLoRA、DoRA、旁路模式和内核后端等适用选项。Krea 2 的训练目标均为线性层。
 

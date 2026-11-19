@@ -28,14 +28,14 @@ Start with AdamW8bit. Compare StableAdamW for update spikes, or a Paged variant 
 | AdamW8bit | Everyday default | Small tensors keep FP32 state by design |
 | PagedAdamW8bit | When the regular 8-bit optimizer still does not fit | Uses AdamW8bit updates with paged state; paging adds CPU/GPU transfers |
 | StableAdamW | Update spikes, low-precision LoRA weights | State uses the training parameter dtype; internal clipping limits update magnitude |
-| Lion | Sign-based momentum updates for comparison | Works with a different LR range; tune it separately |
+| Lion | Sign-based momentum updates with less state memory than full-precision AdamW | Works with a different LR range; tune it separately |
 | Lion8bit | Lion with less state VRAM | Needs its own LR sweep |
 | PagedLion8bit | Lion8bit that also needs paging | Paging changes where momentum state is stored; active paging adds CPU/GPU transfers |
 | Prodigy | Optimizer-estimated update scale | LR acts as a multiplier; start at `1.0`. Fixed at `1.0` for sd-scripts, editable for Krea 2. Not supported with LoRA+ here |
 | ProdigyPlusScheduleFree | Automatic step-size estimation and internal scheduling | External scheduler and warmup are ignored; compare against an established baseline |
 | Automagic3 / Automagic4 | Adapt per-group learning rates; v4 also reduces updates to highly sensitive elements | Both are experimental; trainable parameters stay in FP32. Fused updates require gradient accumulation of 1, global gradient clipping of 0, no fp16 mixed precision, and a single GPU |
 | AdaFactor | Very tight optimizer memory | Relative-step mode takes over the LR and restricts LoRA+ |
-| CAME | Compare factorized state, residual-confidence scaling, and internal RMS clipping | Uses three betas; stores second moments by row and column for factorable tensors |
+| CAME | Memory-efficient factored state with residual-confidence scaling and internal RMS clipping | Uses three betas; stores second moments by row and column for factorable tensors |
 | AdamWScheduleFree | Testing AdamW without an external scheduler | Uses internal warmup, default `warmup_steps=0`; evaluation and saving use averaged weights |
 | EmoSens | Experimental optimizer | Requires gradient accumulation of 1; fp16 mixed precision and multi-GPU are not supported; LoRA+ not supported |
 | Muon | Momentum orthogonalization for two-dimensional LoRA matrices | Supports Anima, MOSS-Image, and Krea 2; uses PyTorch's native implementation and requires two-dimensional parameters |
@@ -46,14 +46,14 @@ Start with AdamW8bit. Compare StableAdamW for update spikes, or a Paged variant 
 | LoRA-RITE | Trying an update rule designed for LoRA's structure | Supports Anima native LoRA, Krea 2 native LoRA, and Krea 2 LoCon; uses internal clipping and locks `max_grad_norm` to `0` |
 | SOAP | Adam-style updates in a rotated coordinate system | Preconditioning adds memory and computation; the project caps preconditioned dimensions at `256` by default |
 
-Memory notes above refer only to optimizer state. Peak usage also depends on resolution, rank, batch size, cache, and preview generation.
+Optimizer-state memory notes above exclude model weights and activations. Peak usage also depends on resolution, rank, batch size, cache, and preview generation.
 
 <!-- doc-anchor: stable-comparison -->
 ## AdamW8bit, CAME, StableAdamW: how they differ
 
 **AdamW8bit** stores larger state tensors in 8-bit and smaller ones in FP32.
 
-**CAME** uses factorized state, residual-confidence scaling, and internal RMS clipping. Record state memory, update behavior, and generated results when comparing it.
+**CAME** uses factorized state, residual-confidence scaling, and internal RMS clipping. For memory-constrained runs, compare it with AdamW8bit using peak VRAM, time per step, and generated results.
 
 **StableAdamW limits unusually large updates.** It supports standard schedulers, warmup, `max_grad_norm`, and LoRA+. Anima starts at `lr=2e-5`, `betas=(0.9, 0.99)`, `eps=1e-8`, and `weight_decay=0`; SDXL starts at `1e-4`. It uses more state memory than AdamW8bit and is mainly useful for update stability problems.
 
@@ -63,7 +63,7 @@ Memory notes above refer only to optimizer state. Peak usage also depends on res
 <!-- doc-anchor: learning-rate -->
 ### Learning rate
 
-Learning rate sets the overall update scale. With the optimizer and other settings fixed, raising it enlarges the terms controlled by the learning rate; lowering it reduces them. Internally adaptive optimizers also compute their own step size. Use generated results from several checkpoints to find a usable range.
+A rate that is too low can leave features underfit; one that is too high can cause instability or early overfitting. Adaptive optimizers also calculate an internal step size. Compare generated results from several checkpoints to find a usable range.
 
 The table lists project starting values for Anima. Each optimizer uses its own update scale and needs separate learning-rate tuning.
 

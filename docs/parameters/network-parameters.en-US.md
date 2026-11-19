@@ -69,7 +69,7 @@ In practice, keep Rank and other settings fixed, change Alpha alone, and compare
 
 ### Other settings
 
-Start within `1–Rank` in most cases. Alpha equal to Rank gives a multiplier of 1. Alpha above Rank amplifies the matrix product and is allowed by the current standard LoRA implementations. Some native implementations treat Alpha 0 as Rank, giving a multiplier of 1 with standard scaling.
+Start between `1` and the Rank value in most cases. Alpha equal to Rank gives a multiplier of 1. Alpha above Rank amplifies the matrix product and is allowed by the current standard LoRA implementations. Some native implementations treat Alpha 0 as Rank, giving a multiplier of 1 with standard scaling.
 
 With `rs_lora` enabled, the denominator becomes √Rank. At Rank 32 and Alpha 1, the multiplier changes from `0.03125` to about `0.177`; Alpha equal to Rank no longer gives a multiplier of 1 either. Revisit Alpha and the learning rate after switching. rsLoRA addresses diminishing scaling at high ranks; the paper's experiments primarily use language models.
 

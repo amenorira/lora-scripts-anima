@@ -38,17 +38,17 @@ Anima, SDXL, and MOSS-Image use [kohya-ss/sd-scripts](https://github.com/kohya-s
 
 ## Feature Overview
 
-- **Training configuration** — Edit training settings, preview TOML, import YAML / TOML, export YAML, and review training history
-- **Pre-training previews** — Timestep distribution, learning-rate curve, and matrix structure modals computed locally; [view previews](#pre-training-previews)
-- **LyCORIS adapter panel** — LoCon / LoHa / LoKr with algorithm-aware parameters, a selectable kernel backend (auto / Triton / TileLang / compile / Torch), LoRA+ support, and Anima training-scope refinement
-- **Many optimizers** — AdamW, Lion, Prodigy, CAME, StableAdamW, Adafactor, ScheduleFree, Adan, AdEMAMix, Muon, plus the bundled LoRA-RITE and the experimental LoRA-Muon, each with its own defaults and constraint hints
-- **Real-time Hardware Monitor** — GPU utilization, VRAM, and temperature; CPU and RAM usage; Chart.js charts, TensorBoard integration, and live logs
-- **Native Tag Editor** — Built-in image tag editor with batch find-and-replace, deduplication, sorting, cleanup, and more
-- **Tagger Workspace** — WD EVA02-Large, WD ViT-Large, CL Tagger, Camie Tagger, and [PixAI Tagger v1.0](https://huggingface.co/pixai-labs/pixai-tagger-v1.0) with single-image inspection, category thresholds, and batch caption output; PixAI runs locally with PyTorch, supports style tags, and downloads about 1.95 GB on first use; AI tagging connects to any vision API speaking OpenAI-compatible (Chat Completions / Responses) or Anthropic Messages protocols
-- **EmoSens Adaptive Optimizer** — Built-in EmoSens v3.9 adjusts the learning rate based on loss changes and suggests when to stop
-- **Internationalization (i18n)** — Chinese, English, and Japanese UI and built-in guides, with browser-language detection and a persistent language preference
-- **Three themes** — Light, dark, and ComfyUI themes, with auto-follow system preference or manual toggle
-- **Backend Connectivity Indicator** — Real-time frontend-backend connection status with disconnect duration
+- **Training configuration** — Edit training settings, preview TOML, import YAML / TOML, export YAML, and review training history.
+- **Pre-training previews** — Timestep distribution, learning-rate curve, and matrix structure modals computed locally; [view previews](#pre-training-previews).
+- **LyCORIS adapter panel** — LoCon / LoHa / LoKr with algorithm-aware parameters, a selectable kernel backend (auto / Triton / TileLang / compile / Torch), LoRA+ support, and Anima training-scope refinement.
+- **Many optimizers** — AdamW, Lion, Prodigy, CAME, StableAdamW, Adafactor, ScheduleFree, Adan, AdEMAMix, Muon, plus the bundled LoRA-RITE and the experimental LoRA-Muon, each with its own defaults and constraint hints.
+- **Real-time hardware monitor** — GPU utilization, VRAM, and temperature; CPU and RAM usage; Chart.js charts, TensorBoard integration, and live logs.
+- **Native tag editor** — Built-in image tag editor with batch find-and-replace, deduplication, sorting, cleanup, and more.
+- **Tagger workspace** — WD EVA02-Large, WD ViT-Large, CL Tagger, Camie Tagger, and [PixAI Tagger v1.0](https://huggingface.co/pixai-labs/pixai-tagger-v1.0) with single-image inspection, category thresholds, and batch caption output; PixAI runs locally with PyTorch, supports style tags, and downloads about 1.95 GB on first use; AI tagging connects to any vision API speaking OpenAI-compatible (Chat Completions / Responses) or Anthropic Messages protocols.
+- **EmoSens adaptive optimizer** — Built-in EmoSens v3.9 adjusts the learning rate based on loss changes and suggests when to stop.
+- **Internationalization (i18n)** — Chinese, English, and Japanese UI and built-in guides, with browser-language detection and a persistent language preference.
+- **Three themes** — Light, dark, and ComfyUI themes, with auto-follow system preference or manual toggle.
+- **Backend connectivity indicator** — Real-time frontend-backend connection status with disconnect duration.
 
 ## Training Interface
 

@@ -36,14 +36,14 @@
 <!-- doc-anchor: parameters -->
 ## 训练器参数
 
-“启用 LoRA+”关闭时不输出倍率，开启后使用界面的倍率字段。SDXL、Anima、MOSS-Image 的自定义网络参数中的同名 `loraplus_*` 项会被清理，以界面值为准。Krea 2 导入旧配置时，会将附加参数中的全局倍率迁移到界面字段。
+“启用 LoRA+” 关闭时不输出倍率，开启后使用界面的倍率字段。SDXL、Anima、MOSS-Image 的自定义网络参数中的同名 `loraplus_*` 项会被清理，以界面值为准。Krea 2 导入旧配置时，会将附加参数中的全局倍率迁移到界面字段。
 
 以下示例展示运行用 TOML 的写法；应用下载的配置文件使用 YAML。倍率属于 `network_args`；设置多个倍率时，合并到同一个列表中。Krea 2 仅提供全局倍率，使用 LoRA+ 时需手动配置 Rank 和 Alpha，并关闭“从权重推导维度”。
 
 <!-- doc-anchor: loraplus-lr-ratio -->
 ### `loraplus_lr_ratio`
 
-全局倍率，默认 `2.0`。UNet/DiT 和文本编码器的单独倍率留空时使用该值。
+全局倍率，默认 `2.0`。UNet / DiT 和文本编码器的单独倍率留空时使用该值。
 
 | 训练类型 | 界面最小值 | 步进 |
 | --- | --- | --- |
@@ -53,7 +53,7 @@
 <!-- doc-anchor: loraplus-unet-lr-ratio -->
 ### `loraplus_unet_lr_ratio`
 
-只覆盖 UNet/DiT 的倍率，默认留空并使用全局值。Anima、MOSS-Image 沿用 `unet` 参数名，实际对应 DiT 主干。该字段用于 sd-scripts 训练路径。
+只覆盖 UNet / DiT 的倍率，默认留空并使用全局值。Anima、MOSS-Image 沿用 `unet` 参数名，实际对应 DiT 主干。该字段用于 sd-scripts 训练路径。
 
 仅训练文本编码器时，此参数无效。
 
@@ -88,12 +88,12 @@ sd-scripts 路径先确定各组件的基础学习率，再对指定参数组应
 
 | 训练部分 | 优先读取 | 为空时回退到 |
 | --- | --- | --- |
-| UNet/DiT | `unet_lr` | `learning_rate` |
+| UNet / DiT | `unet_lr` | `learning_rate` |
 | 文本编码器 | `text_encoder_lr` | `learning_rate` |
 
 Krea 2 使用 `learning_rate` 作为 DiT 的基础学习率。
 
-单独填写 `unet_lr` 或 `text_encoder_lr` 时，对应组件按自己的学习率计算。例如 `learning_rate=1e-4`、`unet_lr=8e-5`、UNet/DiT 倍率为 `2.0` 时：
+单独填写 `unet_lr` 或 `text_encoder_lr` 时，对应组件按自己的学习率计算。例如 `learning_rate=1e-4`、`unet_lr=8e-5`、UNet / DiT 倍率为 `2.0` 时：
 
 <div class="doc-equation doc-equation-compact" role="group" aria-label="UNet LoRA+ 实际学习率示例">
   <div class="doc-equation-expression"><span class="doc-math-var">LR</span><sub>base</sub> = 8 × 10<sup>−5</sup></div>
@@ -103,7 +103,7 @@ Krea 2 使用 `learning_rate` 作为 DiT 的基础学习率。
 <!-- doc-anchor: cautions -->
 ## 风险与限制
 
-比较较高倍率时，缩短保存间隔，检查最佳结果是否提前，以及后续检查点是否出现固定姿势、背景或提示词控制下降。
+比较较高倍率时，缩短保存间隔，检查最佳结果是否提前，以及后续模型存档是否出现固定姿势、背景或提示词控制下降。
 
 <span id="effects"></span>
 
