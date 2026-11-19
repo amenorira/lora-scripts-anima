@@ -148,7 +148,7 @@
   border-bottom: 0;
 }
 .tool-workspace :is(.tool-form-section .field, .field-feedback) {
-  transition: background-color var(--duration-fast) ease, border-left-color var(--duration-fast) var(--ease-out);
+  transition: background-color var(--duration-fast) ease;
 }
 .tool-workspace :is(.tool-form-section .field, .field-feedback):has(:focus-visible) {
   background: var(--hover-overlay);

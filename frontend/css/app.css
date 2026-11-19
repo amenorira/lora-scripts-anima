@@ -724,10 +724,10 @@ input[type="checkbox"]:focus-visible {
 
 /* ── Form Fields (row-based layout: info left, control right) ── */
 .field {
+  position: relative;
   padding: 10px 0 10px 10px;
-  border-left: 3px solid transparent;
+  border-left: 2px solid transparent;
   border-bottom: 1px solid var(--border-default);
-  transition: border-left-color 0.25s var(--ease-out);
 }
 .field-row {
   display: flex; align-items: center; gap: 12px;
@@ -736,18 +736,25 @@ input[type="checkbox"]:focus-visible {
 .field-info {
   flex: 1; min-width: 0;
 }
-/* ── Change indicator: amber left bar (color only, no layout shift) ── */
-.field.field-changed {
-  border-left-color: var(--state-changed);
+/* 独立状态线在相邻字段间留白，不改变布局。 */
+.field::before {
+  content: '';
+  position: absolute;
+  top: 1px; bottom: 1px; left: -2px;
+  width: 2px;
+  background-color: transparent;
+  pointer-events: none;
+  transition: background-color 0.25s var(--ease-out);
+}
+.field.field-changed::before {
+  background-color: var(--state-changed);
 }
 /* ── Filled indicator: green left bar —— 仅指定字段（必填/关键路径字段）
      判定=非空且非 schema 原始默认值，用 field.default 而非 formDefaults（不被配置导入重置影响）。
      优先级高于橙色 field-changed：同时命中时绿色覆盖，表示"已就绪填写"。 ── */
-.field.field-filled {
-  border-left-color: var(--state-filled);
+.field.field-filled::before {
+  background-color: var(--state-filled);
 }
-/* 嵌套字段（field-nested）的橙/绿条规则移至 #trainFormContent .field-nested 虚线规则之后，
-   用更高特异性覆盖虚线左边框——见下方嵌套缩进段。 */
 
 /* ── Field info (parameter name + description, stacked) ──── */
 .field-key {
@@ -890,8 +897,6 @@ input[type="checkbox"]:focus-visible {
   padding-left: 12px;
   border-left: 2px dashed var(--border-default);
 }
-/* 嵌套字段的橙/绿条规则移至 #trainFormContent .field-nested 虚线规则之后，
-   用更高特异性覆盖虚线左边框——见下方嵌套缩进段。 */
 
 /* ── Menu button (square, 24×24) ─────────────────────────── */
 .btn-menu {
@@ -1469,10 +1474,15 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
 :is(#trainFormContent .field, .tool-workspace .field-feedback, .tool-workspace .tool-form-section .field) {
   border-radius: var(--radius-xs);
 }
+/* Keep status and nesting borders straight across themes. */
+:is(#trainFormContent .field, .tool-workspace .tool-form-section .field) {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
 #trainFormContent .field {
   padding: 8px 8px 8px 10px;
   margin: 0 -8px;
-  transition: background-color var(--duration-fast) ease, border-left-color var(--duration-fast) var(--ease-out);
+  transition: background-color var(--duration-fast) ease;
 }
 /* 条件字段的位移和淡入淡出由批量 FLIP 动画处理。 */
 #trainFormContent .field-conditional {
@@ -1499,18 +1509,6 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   margin-left: 28px;
   border-left-color: var(--text-sidebar-muted);
 }
-/* 嵌套字段改值指示条：必须放在 #trainFormContent .field-nested 虚线规则之后，
-   且用 .field.field-nested.field-changed (1,0,3) 提升特异性，覆盖上方虚线左边框
-   （含 data-nest-level≥2 的 1,0,2 规则）。否则子字段改值后橙/绿条被虚线灰色压住不显示。 */
-#trainFormContent .field.field-nested.field-changed {
-  border-left-color: var(--state-changed);
-  border-left-style: solid;
-}
-#trainFormContent .field.field-nested.field-filled {
-  border-left-color: var(--state-filled);
-  border-left-style: solid;
-}
-
 /* ── Right Panel ─────────────────────────────────────────── */
 .right-panel {
   --panel-available-w: max(300px, calc(max(100vw, var(--app-min-width)) - 700px));
