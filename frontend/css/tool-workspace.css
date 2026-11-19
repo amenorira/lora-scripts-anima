@@ -1,5 +1,3 @@
-:root:has(.route-tool-workspace) { --app-min-width: 800px; }
-
 .main-content.route-tool-workspace {
   display: flex;
   flex-direction: column;
@@ -70,8 +68,6 @@
   color: var(--text-primary);
   font-size: 12px;
 }
-.tool-notice button { display: inline-flex; align-items: center; gap: 5px; padding: 3px 0; border: 0; background: none; color: var(--accent); cursor: pointer; }
-
 .tool-batch-layout, .tool-single-layout {
   display: grid;
   flex: 1 1 0;
@@ -184,7 +180,7 @@
 .field-row.is-stacked > :is(.field-menu-wrap, .caption-field-actions) { position: absolute; inset: 0 0 auto auto; }
 .tool-form-section .field-menu-wrap { flex: none; }
 .tool-form-section .btn-menu:not(:hover):not(:focus-visible):not([aria-expanded="true"]) { border-color: transparent; background: transparent; }
-.tool-form-column .anima-select-trigger { min-height: var(--control-h-form); }
+:is(.tool-form-column, .tool-field-form) .anima-select-trigger { min-height: var(--control-h-form); }
 .tool-action-panel .tool-action { width: 100%; min-height: var(--control-height); white-space: normal; }
 .tool-action-panel .field-hint { margin-block: 0; overflow-wrap: anywhere; }
 .tool-action-source { display: flex; align-items: flex-start; gap: 9px; padding: 8px 0 10px; border-bottom: 1px solid var(--border-subtle); }

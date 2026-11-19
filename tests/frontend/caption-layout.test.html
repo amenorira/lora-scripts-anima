@@ -11,7 +11,7 @@
 (async () => {
   const frame = document.querySelector('iframe'), results = document.querySelector('#results'), lines = [];
   const savedTab = localStorage.getItem('anima-ai-tab');
-  const viewports = [[800,600],[853,480],[900,700],[960,540],[1024,768],[1280,720],[1440,900]];
+  const viewports = [[840,600],[853,480],[900,700],[960,540],[1024,768],[1280,720],[1440,900]];
   const assert = (value,message) => { if (!value) throw new Error(message); };
   const waitFor = async (condition,message) => {
     const deadline = Date.now() + 15000;
@@ -39,7 +39,7 @@
       } else toggleRows.push([center]);
     }
     const rows = [], heights = [];
-    for (const field of doc.querySelectorAll('.caption-request-settings .caption-parameter-grid > .field')) {
+    for (const field of doc.querySelectorAll('.caption-request-settings .tool-field-grid > .field')) {
       const box = field.getBoundingClientRect();
       const control = field.querySelector('.stepper,.anima-select-trigger');
       if (!box.height || !control) continue;
@@ -98,15 +98,25 @@
           assertControlAlignment(doc,label);
           await assertChangeIndicatorStability(doc,label);
           assert(doc.querySelectorAll('.caption-settings details').length === 0, label + ': configuration has collapsible sections');
+          const layout = doc.querySelector('.caption-workflow-layout');
+          const stacked = win.getComputedStyle(layout).display === 'flex';
           const panes = tab === 'single'
-            ? [doc.querySelector('.caption-single-main'),doc.querySelector('.caption-single-layout .caption-settings-column')]
-            : [...doc.querySelectorAll('.caption-batch-layout > .caption-settings-column,.caption-batch-layout > .tagger-action-panel')];
+            ? [doc.querySelector('.caption-single-main'),doc.querySelector('.tool-single-layout .caption-settings-column')]
+            : [...doc.querySelectorAll('.caption-batch-layout > .caption-settings-column,.caption-batch-layout > .tool-action-panel')];
+          assert(panes.length === 2 && panes.every(Boolean), label + ': missing workspace panes');
           for (const pane of panes) {
             const bounds = pane.getBoundingClientRect();
-            assert(bounds.height > 100 && bounds.top >= 0 && bounds.bottom <= height + 1, label + ': pane escapes viewport');
+            assert(bounds.height > 100, label + ': pane has no usable height');
             assert(pane.scrollWidth <= pane.clientWidth + 1, label + ': horizontal overflow');
-            pane.scrollTop = pane.scrollHeight;
-            assert(pane.scrollHeight <= pane.clientHeight + 1 || pane.scrollTop > 0, label + ': pane cannot scroll');
+            if (!stacked) {
+              assert(bounds.top >= 0 && bounds.bottom <= height + 1, label + ': pane escapes viewport');
+              pane.scrollTop = pane.scrollHeight;
+              assert(pane.scrollHeight <= pane.clientHeight + 1 || pane.scrollTop > 0, label + ': pane cannot scroll');
+            }
+          }
+          if (stacked) {
+            layout.scrollTop = layout.scrollHeight;
+            assert(layout.scrollHeight <= layout.clientHeight + 1 || layout.scrollTop > 0, label + ': stacked workspace cannot scroll');
           }
           await settle();
           if (tab === 'single') {
@@ -115,8 +125,9 @@
             const candidateControl = candidateRows[candidateRows.length - 1];
             candidateControl.scrollIntoView({block:'center'}); await settle();
             const last = candidateControl.getBoundingClientRect();
-            assert(last.bottom <= right.getBoundingClientRect().bottom + 1 && last.top >= right.getBoundingClientRect().top, label + ': candidate controls unreachable');
-            assert(left.querySelector('.caption-candidate-text').getBoundingClientRect().bottom <= left.getBoundingClientRect().bottom + 1, label + ': long preview unreachable');
+            const viewport = stacked ? layout.getBoundingClientRect() : right.getBoundingClientRect();
+            assert(last.bottom <= viewport.bottom + 1 && last.top >= viewport.top - 1, label + ': candidate controls unreachable');
+            if (!stacked) assert(left.querySelector('.caption-candidate-text').getBoundingClientRect().bottom <= left.getBoundingClientRect().bottom + 1, label + ': long preview unreachable');
           }
           pass(label);
         }

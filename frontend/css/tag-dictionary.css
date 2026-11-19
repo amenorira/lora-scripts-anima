@@ -21,7 +21,7 @@
   color: var(--text-primary);
 }
 .te-editor-tag[class*="te-dict-cat-"] .te-editor-tag-name { color: var(--tag-cat); }
-.te-editor-tag:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.te-editor-tag:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring-color); outline-offset: var(--focus-ring-offset); }
 
 .te-editor-tag-name { min-width: 0; overflow-wrap: anywhere; }
 .te-editor-tag { max-width: 100%; }

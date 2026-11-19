@@ -314,6 +314,8 @@
 		"tools": "Tools",
 		"tagger": "Tagger",
 		"tagEditor": "Tag Editor",
+		"aiCaptioning": "AI Annotation",
+		"regularization": "Regularization images",
 		"system": "System",
 		"environment": "Environment",
 		"uiSettings": "UI Settings",

@@ -7,9 +7,9 @@
          {key:'plan', id:'reg-tab-plan', panel:'reg-panel-gallery', icon:'list', label:regT('detailedPlan'), select:() => regShowPlan()},
          {key:'inspect', id:'reg-tab-inspect', panel:'reg-panel-gallery', icon:'grid', label:regT('inspect'), select:() => regInspect()}
        ])" @keydown="moveToolTab($event)"></nav>
-  <div class="tool-training-notice" x-show="trainingActive" role="status">
+  <div class="tool-notice" x-show="trainingActive" role="status">
     <span x-text="regT('trainingBlocked')"></span>
-    <button @click="navigate('monitor-dashboard')"><span x-text="t('tagger.openMonitor')"></span><svg><use href="#ti-external"></use></svg></button>
+    <button type="button" class="btn btn-secondary btn-sm" @click="navigate('monitor-dashboard')"><span x-text="t('tagger.openMonitor')"></span><svg aria-hidden="true"><use href="#ti-external"></use></svg></button>
   </div>
   <div x-show="regTab === 'settings'" role="tabpanel" id="reg-panel-settings" aria-labelledby="reg-tab-settings" class="tool-batch-layout">
     <div class="reg-form tool-form-column">

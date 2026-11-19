@@ -314,6 +314,8 @@
 		"tools": "工具",
 		"tagger": "Tagger 打标器",
 		"tagEditor": "标签编辑器",
+		"aiCaptioning": "AI 标注",
+		"regularization": "正则图生成",
 		"system": "系统",
 		"environment": "环境管理",
 		"uiSettings": "UI 设置",

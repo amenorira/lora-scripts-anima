@@ -12,10 +12,11 @@
 
   --sidebar-w: 180px;
   --panel-w: clamp(320px, 30vw, 500px);
-  --app-min-width: 1024px;
+  --app-min-width: 840px;
 
   /* Shared spacing and control tokens for the desktop workbench. */
   --space-1: 4px;
+  --space-2: 8px;
   --space-3: 16px;
   --space-4: 24px;
   --control-h-form: 34px;
@@ -1119,7 +1120,7 @@ textarea { resize: vertical; min-height: 56px; font-family: inherit; font-size: 
   box-shadow: 0 0 0 2px var(--accent-soft);
   transition: border-color var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
 }
-.stepper input { border: none; border-radius: 0; flex: 1; width: 0; text-align: center; padding: 7px 4px; box-shadow: none; }
+.stepper input { min-height: 0; border: none; border-radius: 0; flex: 1; width: 0; text-align: center; padding: 7px 4px; box-shadow: none; }
 .stepper input:focus { box-shadow: none; }
 .stepper button {
   width: 32px; border: none; flex-shrink: 0;
@@ -1533,10 +1534,6 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
 }
 .main-content.route-training .page-header { padding-top: var(--space-4); }
 
-@media (max-width: 1023px) {
-  :root:has([data-route="train-*"][aria-current="page"]) { --app-min-width: 760px; }
-}
-
 /* ── Training workbench + vertical section rail ───────────── */
 .train-workbench {
   display: flex;
@@ -1548,6 +1545,25 @@ body.panel-resizing * { cursor: col-resize !important; user-select: none !import
 .train-workbench-main {
   flex: 1;
   min-width: 0;
+  container: train-form / inline-size;
+}
+@container train-form (max-width: 480px) {
+  #trainFormContent .field-row:has(> .field-control):not(:has(> .field-control > .toggle)) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 10px;
+  }
+  #trainFormContent .field-row > .field-info { grid-column: 1; grid-row: 1; }
+  #trainFormContent .field-row > .field-menu-wrap { grid-column: 2; grid-row: 1; }
+  #trainFormContent .field-row > .field-control {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    flex-wrap: wrap;
+    min-width: 0;
+    max-width: 100%;
+  }
+  #trainFormContent .field-control > :is(input, .anima-select, .stepper) { min-width: 0; max-width: 100%; }
+  #trainFormContent .field-hint { overflow-wrap: anywhere; }
 }
 .train-rail-anchor {
   /* Stay in the form's scroll chain without reserving any layout space. */
@@ -1933,6 +1949,12 @@ dialog.modal-overlay::backdrop { background: transparent; }
   max-height: calc(100vh - var(--modal-workbench-margin-y));
   max-height: calc(100dvh - var(--modal-workbench-margin-y));
   overflow: hidden;
+}
+.modal-workbench--large {
+  --modal-workbench-width: 1280px;
+  --modal-workbench-margin-x: 32px;
+  --modal-workbench-margin-y: 32px;
+  height: 1200px;
 }
 .parameter-doc-modal { --modal-workbench-width: 56rem; }
 .parameter-doc-modal .modal-header { flex-shrink: 0; }
@@ -2851,7 +2873,7 @@ input[type="range"]::-webkit-slider-thumb {
   padding: 24px 28px 0;
   background: var(--monitor-page-bg);
 }
-@media (min-width: 1024px) and (max-width: 1200px) {
+@media (max-width: 1200px) {
   .main-fullscreen .route-monitor-dashboard { min-width: 0; padding-inline: 16px; }
 }
 .monitor-sticky-stack {
@@ -2862,6 +2884,12 @@ input[type="range"]::-webkit-slider-thumb {
 .route-monitor-dashboard .page-header {
   display: flex; align-items: center; justify-content: space-between;
   gap: 18px; min-height: 38px; margin-bottom: 12px;
+}
+@media (max-width: 1023px) {
+  .route-monitor-dashboard .page-header { flex-wrap: wrap; gap: 8px 16px; }
+  .route-monitor-dashboard .monitor-page-heading { flex-basis: 100%; }
+  .route-monitor-dashboard .monitor-resbar { justify-content: flex-start; width: 100%; overflow: visible; }
+  .route-monitor-dashboard .m-res-stats { flex-wrap: wrap; row-gap: 4px; }
 }
 .route-monitor-dashboard .page-header .page-title { font-size: 22px; }
 .monitor-page-heading { display: flex; flex: 1 1 auto; align-items: center; min-width: 0; }
@@ -3564,7 +3592,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .m-res-chip + .m-res-chip { border-left: 1px solid var(--border-default); padding-left: 10px; }
 .m-res-chip-name {
-  display: block; max-width: 230px; font-size: 11.5px; font-weight: 600; color: var(--text-secondary);
+  display: block; max-width: min(230px, 100%); font-size: 11.5px; font-weight: 600; color: var(--text-secondary);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 /* 指标行：若干「标签 + 数值」横向排列 */
@@ -5107,8 +5135,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: var(--disabled-opa
 }
 
 /* ── 布局骨架 ─────────────────────────────────────────── */
-/* 环境管理允许桌面窄窗口；训练工作台仍保留原有最小宽度。 */
-:root:has([data-route="environment"][aria-current="page"]) { --app-min-width: 760px; }
 .route-environment {
   width: 100%; max-width: 1480px; margin-inline: auto;
   --env-text-secondary: color-mix(in srgb, var(--text-primary) 76%, var(--bg-surface));

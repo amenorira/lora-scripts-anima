@@ -1,6 +1,7 @@
-"""Serve the real UI and its browser layout regression at /__caption_layout_test/.
+"""Serve the real UI and browser layout regressions.
 
-Run with venv Python and -B. The test page reports PASS/FAIL for desktop sizes.
+Run with venv Python and -B; open /__caption_layout_test/ or /__desktop_layout_test/.
+Each page reports PASS/FAIL for desktop sizes.
 Training/monitor startup is disabled; no model requests or caption writes occur.
 """
 from contextlib import asynccontextmanager
@@ -29,6 +30,11 @@ test_app = FastAPI(lifespan=lifespan)
 @test_app.get('/__caption_layout_test/')
 async def layout_test():
     return FileResponse(ROOT / 'tests/frontend/caption-layout.test.html')
+
+
+@test_app.get('/__desktop_layout_test/')
+async def desktop_layout_test():
+    return FileResponse(ROOT / 'tests/frontend/desktop-layout.test.html')
 
 
 test_app.mount('/', app)

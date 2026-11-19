@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Desktop shell layout regression</title>
+<style>body { margin: 16px; font: 14px system-ui; } iframe { display: block; border: 1px solid #888; } pre { white-space: pre-wrap; }</style>
+<h1>Desktop shell layout regression</h1>
+<p>Production routes and dialogs with no training or dataset writes.</p>
+<pre id="results" role="status">Running…</pre>
+<iframe title="Production desktop workspace" src="/anima-ui/#regularization" style="width:840px;height:700px"></iframe>
+<script>
+(async () => {
+  const frame = document.querySelector('iframe'), results = document.querySelector('#results'), lines = [];
+  const assert = (value, message) => { if (!value) throw new Error(message); };
+  const waitFor = async (condition, message) => {
+    const deadline = Date.now() + 15000;
+    while (!condition()) {
+      if (Date.now() > deadline) throw new Error(message);
+      await new Promise(resolve => setTimeout(resolve, 30));
+    }
+  };
+  const pass = message => { lines.push('PASS ' + message); results.textContent = lines.join('\n'); };
+  let doc, win, app, savedLocale, originalLocale, originalTheme, savedEditorDir;
+  const settle = async () => {
+    await win.Alpine.nextTick();
+    await new Promise(resolve => win.requestAnimationFrame(() => win.requestAnimationFrame(resolve)));
+    doc.getAnimations().forEach(animation => { if (animation.effect?.getTiming().iterations !== Infinity) animation.finish(); });
+  };
+  const navigate = async route => {
+    app.navigate(route);
+    await waitFor(() => app.currentRoute === route && !app.routeTransitioning, 'Route did not load: ' + route);
+    await settle();
+  };
+  const checkShell = label => {
+    const width = frame.clientWidth, main = doc.querySelector('.main-content');
+    assert(doc.documentElement.scrollWidth <= width + 1, label + ': page overflows');
+    assert(main.scrollWidth <= main.clientWidth + 1, label + ': main workspace overflows');
+  };
+  const checkPopup = async (trigger, containerSelector, popupSelector, label) => {
+    assert(trigger, label + ': trigger is missing');
+    trigger.scrollIntoView({block:'center'});
+    await settle();
+    trigger.click();
+    const container = trigger.closest(containerSelector);
+    await waitFor(() => container.querySelector(popupSelector), label + ': popup did not open');
+    await settle();
+    const menu = container.querySelector(popupSelector), anchor = trigger.getBoundingClientRect(), box = menu.getBoundingClientRect();
+    const hit = doc.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    assert(box.width && box.height && box.left >= 0 && box.right <= win.innerWidth + 1 && box.top >= 0 && box.bottom <= win.innerHeight + 1, label + ': popup escapes viewport');
+    assert(Math.min(Math.abs(box.top - anchor.bottom), Math.abs(anchor.top - box.bottom)) < 8 && box.right > anchor.left && box.left < anchor.right, label + ': popup is detached from trigger');
+    assert(hit && menu.contains(hit), label + ': popup is obscured');
+    trigger.click();
+    await settle();
+  };
+  try {
+    await waitFor(() => frame.contentDocument?.querySelector('#reg-tab-settings'), 'Regularization did not mount directly');
+    doc = frame.contentDocument; win = frame.contentWindow; app = win.Alpine.$data(doc.body);
+    savedLocale = win.localStorage.getItem('anima-locale');
+    savedEditorDir = win.sessionStorage.getItem('tagEditor_lastDir');
+    win.sessionStorage.removeItem('tagEditor_lastDir');
+    originalLocale = win.I18N.getLocale(); originalTheme = doc.documentElement.dataset.theme;
+    await settle();
+    const tabs = [...doc.querySelectorAll('#regularizationWorkspaceHost [role="tab"]')];
+    assert(tabs.length === 3 && tabs[0].getAttribute('aria-selected') === 'true', 'Regularization tabs lack selection semantics');
+    const icon = tabs[0].querySelector('svg');
+    assert(icon && doc.querySelector(icon.querySelector('use').getAttribute('href')) && icon.getBBox().width > 0, 'Direct-load tab icon is missing');
+    for (const theme of ['light', 'dark', 'comfy']) {
+      doc.documentElement.dataset.theme = theme;
+      await settle();
+      const button = doc.querySelector('#regularizationWorkspaceHost .btn-start');
+      const style = win.getComputedStyle(button);
+      assert(parseFloat(style.borderRadius) === (theme === 'comfy' ? 6 : 2), theme + ': wrong primary button radius');
+      assert((style.backgroundColor !== 'rgba(0, 0, 0, 0)') === (theme === 'comfy'), theme + ': wrong primary button fill');
+      checkShell(theme + ' regularization');
+      pass(theme + ' regularization and primary button');
+    }
+    const wasTraining = app.trainingActive;
+    app.trainingActive = true;
+    await settle();
+    const notice = doc.querySelector('#regularizationWorkspaceHost .tool-notice');
+    const noticeButton = notice.querySelector('button');
+    assert(notice.getBoundingClientRect().height && noticeButton.classList.contains('btn') && noticeButton.type === 'button', 'Training notice is not usable');
+    assert(noticeButton.getBoundingClientRect().right <= notice.getBoundingClientRect().right + 1, 'Training notice button overflows');
+    app.trainingActive = wasTraining;
+    await settle();
+    pass('regularization training notice');
+    for (const locale of ['zh-CN', 'en-US', 'ja-JP']) {
+      assert(await win.I18N.setLocale(locale), 'Locale did not load: ' + locale);
+      await settle();
+      for (const [route, key] of [['ai-captioning','nav.aiCaptioning'], ['regularization','nav.regularization']]) {
+        const label = doc.querySelector(`[data-route="${route}"] span[x-text]`).textContent.trim();
+        assert(label && label === win.I18N.t(key) && label !== key, locale + ': missing navigation translation ' + key);
+      }
+      pass(locale + ' navigation labels');
+    }
+    await win.I18N.setLocale(originalLocale);
+    await settle();
+    for (const route of ['monitor-dashboard', 'train-basic', 'tagger', 'ai-captioning', 'regularization', 'home', 'history', 'docs', 'tagEditor', 'environment', 'settings', 'tensorboard']) {
+      await navigate(route);
+      if (route === 'train-basic') await waitFor(() => doc.querySelector('#trainFormContent .field'), 'Training form did not mount');
+      if (route === 'tagger') await waitFor(() => doc.querySelector('#tagger-tab-folder'), 'Tagger did not mount');
+      if (route === 'ai-captioning') await waitFor(() => doc.querySelector('#caption-tab-batch'), 'Caption workspace did not mount');
+      for (const width of [840, 1024, 1280]) {
+        frame.style.width = width + 'px';
+        await settle();
+        const label = route + ' ' + width;
+        checkShell(label);
+        if (route === 'train-basic') {
+          const overflowing = [...doc.querySelectorAll('#trainFormContent .field')].filter(el => el.getClientRects().length && el.scrollWidth > el.clientWidth + 1);
+          assert(!overflowing.length, label + ': a training field overflows');
+          if (width === 840 || width === 1280) {
+            const action = doc.querySelector('#trainFormContent .field .btn-menu:not(:disabled)');
+            const select = [...doc.querySelectorAll('#trainFormContent .field .anima-select-trigger')].find(el => !el.disabled && el.getClientRects().length);
+            await checkPopup(action, '.field-menu-wrap', '.field-menu-popup.is-positioned', label + ' field menu');
+            await checkPopup(select, '.anima-select', '.anima-select-menu-positioned', label + ' select');
+          }
+        }
+        if (route === 'monitor-dashboard') {
+          const title = doc.querySelector('.monitor-page-heading').getBoundingClientRect();
+          const bar = doc.querySelector('#monitorResbar');
+          const rect = bar.getBoundingClientRect();
+          assert(!rect.width || rect.left >= title.right - 1 || rect.top >= title.bottom - 1, label + ': title and resources overlap');
+          for (const chip of bar.querySelectorAll('.m-res-chip')) {
+            const name = chip.querySelector('.m-res-chip-name');
+            if (name) assert(name.getBoundingClientRect().right <= chip.getBoundingClientRect().right + 1, label + ': device name overflows');
+          }
+        }
+        pass(label);
+      }
+      frame.style.width = '800px';
+      await settle();
+      assert(win.getComputedStyle(doc.documentElement).getPropertyValue('--app-min-width').trim() === '840px' && doc.documentElement.scrollWidth === 840, route + ': inconsistent minimum width');
+      pass(route + ' minimum width');
+    }
+    await navigate('train-basic');
+    for (const [width, height] of [[840,600], [1600,1000], [1600,1400]]) {
+      frame.style.width = width + 'px'; frame.style.height = height + 'px';
+      await settle();
+      for (const [property, selector] of [['promptWorkbenchOpen','#promptWorkbenchDialog'], ['cropPreviewOpen','#cropPreviewDialog']]) {
+        app[property] = true;
+        await waitFor(() => doc.querySelector(selector).open, selector + ': dialog did not open');
+        await settle();
+        const box = doc.querySelector(selector + ' .modal').getBoundingClientRect();
+        assert(box.left >= 0 && box.right <= width + 1 && box.top >= 0 && box.bottom <= height + 1, selector + ': dialog escapes viewport');
+        const margin = property === 'cropPreviewOpen' && (width <= 800 || height <= 650) ? 16 : 32;
+        assert(Math.abs(box.width - Math.min(1280, width - margin)) < 2 && Math.abs(box.height - Math.min(1200, height - margin)) < 2, selector + ': dialog dimensions changed');
+        app[property] = false;
+        await waitFor(() => !doc.querySelector(selector).open, selector + ': dialog did not close');
+        pass(selector + ' ' + width + '×' + height);
+      }
+    }
+    frame.style.width = '840px'; frame.style.height = '600px';
+    await settle();
+    const aux = doc.createElement('div');
+    aux.className = 'modal modal-workbench parameter-doc-modal';
+    doc.body.append(aux);
+    const other = aux.getBoundingClientRect();
+    assert(other.width < 820 && other.height < 600, 'Shared workbench unexpectedly forced other modals to large size');
+    aux.remove();
+    pass('other workbench modal sizing');
+    results.textContent += `\nPASS: ${lines.length} desktop shell scenarios`;
+    document.documentElement.dataset.testStatus = 'passed';
+  } catch (error) {
+    results.textContent = [...lines, 'FAIL: ' + error.message].join('\n');
+    document.documentElement.dataset.testStatus = 'failed';
+  } finally {
+    if (win && originalLocale) await win.I18N.setLocale(originalLocale);
+    if (win && savedLocale === null) win.localStorage.removeItem('anima-locale');
+    else if (win && savedLocale !== undefined) win.localStorage.setItem('anima-locale', savedLocale);
+    if (win && savedEditorDir === null) win.sessionStorage.removeItem('tagEditor_lastDir');
+    else if (win && savedEditorDir !== undefined) win.sessionStorage.setItem('tagEditor_lastDir', savedEditorDir);
+    if (doc && originalTheme) doc.documentElement.dataset.theme = originalTheme;
+  }
+})();
+</script>
+</html>

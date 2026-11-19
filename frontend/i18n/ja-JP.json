@@ -314,6 +314,8 @@
 		"tools": "ツール",
 		"tagger": "タグ付け",
 		"tagEditor": "タグ編集",
+		"aiCaptioning": "AI アノテーション",
+		"regularization": "正則化画像",
 		"system": "システム",
 		"environment": "環境",
 		"uiSettings": "画面設定",

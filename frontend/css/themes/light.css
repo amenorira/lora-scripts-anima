@@ -99,6 +99,16 @@
   --state-filled: #16a34a;
   --diff-added: #16884f;
   --diff-removed: #dc4c4c;
+
+  --monitor-card-bg: color-mix(in srgb, var(--bg-surface) 92%, var(--bg-sunken));
+  --monitor-card-border: color-mix(in srgb, var(--border-default) 85%, transparent);
+  --monitor-card-shadow: none;
+}
+
+[data-theme="light"] .route-monitor-dashboard {
+  --monitor-page-bg: var(--bg-sidebar);
+  --monitor-card-bg: var(--bg-surface);
+  --monitor-tile-bg: var(--bg-surface-raised);
 }
 
 /* ── 本主题专属组件规则 ───────────────────────────────────── */

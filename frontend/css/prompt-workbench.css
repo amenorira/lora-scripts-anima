@@ -1,6 +1,5 @@
 /* Reuse the crop workbench shell, training controls and Tag Editor chips. */
 .pw-entry { display:flex; align-items:center; margin-top:7px; }
-.modal.prompt-workbench-modal { width:1280px; max-width:calc(100vw - 32px); min-width:0; height:1200px; max-height:calc(100dvh - 32px); overflow:hidden; }
 .prompt-workbench-modal .modal-header { padding:10px 18px; gap:16px; flex:0 0 auto; }
 .pw-heading { display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 16px; min-width:0; }
 .pw-header-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; }
@@ -8,7 +7,7 @@
 .pw-content { display:flex; flex-direction:column; flex:1; min-height:0; overflow:hidden; }
 .pw-prompts { padding:10px 18px 12px; flex:0 0 auto; min-height:0; }
 .pw-prompt-list { display:flex; flex-direction:column; gap:4px; max-height:min(26dvh,208px); overflow-y:auto; scrollbar-gutter:stable; }
-.pw-prompt-row { display:flex; align-items:center; gap:6px; min-height:34px; padding:2px 4px; border:1px solid var(--border-subtle); border-radius:var(--radius-control); background:var(--bg-input); min-width:0; }
+.pw-prompt-row { display:flex; align-items:center; gap:6px; min-height:var(--control-h-form); padding:2px 4px; border:1px solid var(--border-subtle); border-radius:var(--radius-control); background:var(--bg-input); min-width:0; }
 .pw-prompt-row.selected { border-color:var(--accent); background:var(--accent-soft); }
 .pw-prompt-row.pw-sort-shift { transition:transform 120ms var(--ease-out); }
 .pw-prompt-row.pw-sort-placeholder { border-color:var(--accent); border-style:dashed; background:var(--accent-soft); transition:none; }
