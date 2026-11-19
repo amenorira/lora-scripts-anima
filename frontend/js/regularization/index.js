@@ -8,7 +8,7 @@ window.regularizationMixin = {
   _regTaskRequest: 0, _regTaskNeedsSync: false, _regRunsPending: null,
   regItems: [], regItemsTotal: 0, regFilter: 'all', regLogs: [], regLogsOpen: false, _regLogPending: null,
   regGalleryLoading: '', regMoreError: '', _regMoreRequest: 0, _regResultRefresh: 0,
-  regSelected: null, regTrainRoute: 'train-basic', regPendingTrainingPath: '', _regTopic: null, _regTimer: null, _regLoaded: false, _regRefreshing: false,
+  regSelected: null, regSourceHelpOpen: false, regTrainRoute: 'train-basic', regPendingTrainingPath: '', _regTopic: null, _regTimer: null, _regLoaded: false, _regRefreshing: false,
   regWorkspaceLoading: false, regWorkspaceError: '', _regBuildVersion: 0, _regRestoringVersion: 0, _regInitPromise: null,
   get regRunning() { return ['created', 'running', 'stopping'].includes(this.regTask?.status); },
   get regTaskMatchesPlan() { return this.regRunning || !!this.regPlan && this.regTask?.output_path === this.regPlan.output_path; },
@@ -80,7 +80,7 @@ window.regularizationMixin = {
           if (version !== detailVersion || !this.detail) return;
           const popup = this.$refs.sourceDetail;
           if (!popup) return;
-          const body = popup.querySelector('.te-dict-hover-body');
+          const body = popup.querySelector('.tool-popover-body');
           const maxWidth = Math.max(1, window.innerWidth - 24);
           const maxHeight = Math.max(1, window.innerHeight - 24);
           // Widen long captions until they fit vertically, using the viewport as the limit.
@@ -243,6 +243,8 @@ window.regularizationMixin = {
     } else if (this._regTimer) { clearInterval(this._regTimer); this._regTimer = null; }
   },
   stopRegularizationWorkspace() {
+    this.regSourceHelpOpen = false;
+    this.regSelected = null;
     ++this._regBuildVersion;
     this._regRestoringVersion = 0;
     ++this._regTaskRequest;
@@ -330,7 +332,7 @@ window.regularizationMixin = {
   regToggleSection(key, header) {
     const collapsed = !this.regSectionCollapsed[key];
     this.regSectionCollapsed[key] = collapsed;
-    this._animateCollapse(header.nextElementSibling, collapsed);
+    this._animateCollapse(header.nextElementSibling, collapsed, { fade: false });
   },
   regRenderControls(force = false) {
     const host = document.getElementById('regTrainingControls');
@@ -345,46 +347,61 @@ window.regularizationMixin = {
       formDefaults: { value: this.regDefaults },
       _getEnvHint: { value: () => '' }, _getOutputPathHint: { value: () => '' },
     });
-    const helpFields = new Set(['source_dir', 'ignore_first', 'exclude_tags', 'caption_candidate', 'sampler', 'scheduler', 'steps', 'cfg', 'seed', 'per_image', 'expand_repeats', 'size_mode', 'flow_shift', 'precision', 'blocks_to_swap', 'text_encoder_cpu', 'gpu_index', 'bucket_no_upscale', 'min_bucket_reso', 'max_bucket_reso', 'bucket_reso_steps']);
-    const field = (key, type = 'text', extra = {}) => ({ key, type, descKey: 'regularization.' + key, helpKey: helpFields.has(key) ? 'regularization.help.' + key : undefined, default: this.regDefaults[key], nested: false, labelOnly: true, ...extra });
+    const helpFields = new Set(['ignore_first', 'exclude_tags', 'caption_candidate', 'sampler', 'scheduler', 'steps', 'cfg', 'seed', 'per_image', 'expand_repeats', 'size_mode', 'flow_shift', 'precision', 'blocks_to_swap', 'text_encoder_cpu', 'gpu_index', 'bucket_no_upscale', 'min_bucket_reso', 'max_bucket_reso', 'bucket_reso_steps']);
+    const field = (key, type = 'text', extra = {}) => ({
+      key, type, descKey: 'regularization.' + key,
+      helpKey: helpFields.has(key) ? 'regularization.help.' + key : undefined,
+      default: this.regDefaults[key], nested: false, labelOnly: true,
+      layout: type === 'toggle' ? undefined : 'stacked', ...extra,
+    });
     const num = (key, step = 1) => {
       const schema = this.regMetadata.fields[key];
       return field(key, 'number', { min: schema.minimum, max: schema.maximum, step: schema.multipleOf ?? step });
     };
     const labels = { euler_a: 'euler_ancestral', bf16: 'BF16', fp16: 'FP16', auto: this.regT('autoSize'), manual: this.regT('manualMemory'), bucket: this.regT('bucket'), fixed: this.regT('fixed') };
-    const select = key => field(key, 'select', { selectAlign: key === 'model_type' ? 'left' : 'right', options: this.regMetadata.fields[key].enum.filter(v =>
+    const select = key => field(key, 'select', { options: this.regMetadata.fields[key].enum.filter(v =>
       this.regSettings.model_type !== 'sdxl' || (key !== 'sampler' || v !== 'er_sde') &&
       (key !== 'scheduler' || (this.regSettings.sampler === 'euler_a' ? ['normal'] : ['normal', 'karras', 'exponential']).includes(v))
     ).map(v => ({v, l: v === 'sdxl' ? 'SDXL' : v === 'anima' ? 'Anima' : labels[v] || v, ...(key === 'model_type' ? {} : {dKey: `regularization.options.${key}.${v}`})})) });
     const action = (label, click, icon, disabled = 'false') => `<button type="button" class="btn btn-secondary reg-control-action" @click="${click}" :disabled="${disabled}" :title="regT('${label}')" :aria-label="regT('${label}')"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg></button>`;
     const seedActions = action('randomSeed', "setField('seed', '-1')", '<path d="m3 7 3 0 12 10h3m-4-14 4 0v4M3 17h3l3-3m6-4 3-3h3m-4 10h4v-4"/>')
       + action('reuseSeed', "setField('seed', regTask.master_seed)", '<path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/>', 'regTask?.master_seed == null');
-    const widthField = num('width');
-    widthField.controlActions = '<span class="reg-control-spacer" aria-hidden="true"></span>';
     const heightField = num('height');
     heightField.controlActions = action('swapSize', 'regSwapSize()', '<path d="M8 3v18m-4-4 4 4 4-4M16 21V3m-4 4 4-4 4 4"/>');
     const groups = [
-      ['dataset', [field('source_dir', 'text', { role: 'file-folder', required: true,
-        controlActions: `<button type="button" class="btn btn-secondary btn-sm" :disabled="regBusy || regRunning" :title="regT('importHelp')" @click="regImportTraining()" x-text="regT('import')"></button>` })]],
+      ['dataset', [field('source_dir', 'text', {
+        role: 'file-folder', required: true, helpKey: 'regularization.sourceCaptionHint',
+        controlActions: `<button type="button" class="field-doc-link" aria-haspopup="dialog" aria-controls="reg-source-help" @click="regSourceHelpOpen = true" x-text="regT('sourceFolderRules')"></button>`,
+      })]],
       ['models', [select('model_type'), ...['dit', 'text_encoder', 'vae', 'checkpoint', 'sdxl_vae'].map(key => field(key, 'text', { role: 'file-model', required: key !== 'sdxl_vae' }))]],
       ['prompts', [field('caption_candidate', 'select', {options: ['', 'original', 'long', 'medium', 'short', 'first_line'].map(v => ({
         v, l: v === '' ? this.regT('chooseCandidate') : v === 'first_line' ? this.regT('candidateFirstLine') : this.t('moss.candidate_' + v),
       }))}), num('ignore_first'), field('exclude_tags')]],
       ['quantity', [select('sampler'), select('scheduler'), num('flow_shift', .1), num('steps'), num('cfg', .1),
         field('seed', 'text', { controlActions: seedActions })]],
-      ['size', [select('size_mode'), widthField, heightField, field('resolution'), field('enable_bucket', 'toggle'), num('per_image'), field('expand_repeats', 'toggle')]],
+      ['size', [select('size_mode'), num('width'), heightField, field('resolution'), field('enable_bucket', 'toggle'), num('per_image'), field('expand_repeats', 'toggle')]],
       ['deviceOptions', [select('memory_mode'), select('precision'), num('blocks_to_swap'), field('text_encoder_cpu', 'toggle'), num('gpu_index')]],
     ];
-    const sectionHeader = key => `<div class="card-header" role="button" tabindex="0" :aria-expanded="!regSectionCollapsed['${key}']" @click="regToggleSection('${key}', $el)" @keydown.enter.prevent="$el.click()" @keydown.space.prevent="$el.click()"><svg class="card-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg><span>${this.esc(this.regT(key))}</span></div>`;
+    const importAction = `<button type="button" class="btn btn-secondary btn-sm" :disabled="regBusy || regRunning" :title="regT('importHelp')" @click="regImportTraining()" x-text="regT('import')"></button>`;
+    const sectionStart = (key, extraClass = '') => `
+      <section class="tool-form-section ${extraClass}" :class="{'is-collapsed': regSectionCollapsed['${key}']}">
+        <header class="tool-section-title">
+          <h2><span class="tool-section-toggle" role="button" tabindex="0" :aria-expanded="!regSectionCollapsed['${key}']"
+                    @click="regToggleSection('${key}', $el.closest('header'))" @keydown.enter.prevent="$el.click()" @keydown.space.prevent="$el.click()">
+            <span>${this.esc(this.regT(key))}</span><svg aria-hidden="true"><use href="#ti-chevron"></use></svg>
+          </span></h2>
+          ${key === 'dataset' ? importAction : ''}
+        </header>
+        <div class="tool-section-body" :inert="!!regSectionCollapsed['${key}']">`;
     const bucketFields = [field('bucket_no_upscale', 'toggle'), num('min_bucket_reso', 16), num('max_bucket_reso', 16), num('bucket_reso_steps')];
     this._regFields = Object.fromEntries(groups.flatMap(([,fields]) => fields.map(field => [field.key, field])));
     for (const definition of bucketFields) this._regFields[definition.key] = definition;
     let html = '<div x-data="regFormControls()">';
     for (const [title, fields] of groups) {
-      const section = {dataset:'model', models:'model', prompts:'caption', quantity:'training', size:'regularization', deviceOptions:'performance'}[title];
-      html += '<div class="card" data-section="' + section + '" :class="{\'card-collapsed\': regSectionCollapsed[\'' + title + '\']}">' + sectionHeader(title);
-      html += '<div class="card-body" :inert="!!regSectionCollapsed[\'' + title + '\']">';
+      const fieldGrid = title !== 'dataset' && title !== 'models';
+      html += sectionStart(title);
       if (title === 'prompts') html += document.getElementById('regPromptFields').innerHTML;
+      if (fieldGrid) html += '<div class="tool-field-grid">';
       for (const definition of fields) {
         let rendered = this.renderField.call(scope, definition);
         let show = '';
@@ -396,11 +413,21 @@ window.regularizationMixin = {
         if (definition.key === 'blocks_to_swap') show += " && form.model_type !== 'sdxl'";
         if (['dit', 'text_encoder', 'vae'].includes(definition.key)) show = "form.model_type !== 'sdxl'";
         if (['checkpoint', 'sdxl_vae'].includes(definition.key)) show = "form.model_type === 'sdxl'";
-        html += show ? '<div x-show="' + show + '" x-cloak>' + rendered + '</div>' : rendered;
-        if (definition.key === 'source_dir') html += '<details class="field-hint"><summary>' + this.esc(this.regT('sourceFolderRules')) + '</summary><p>' + this.esc(this.regT('sourceFolderRulesHelp')) + '</p></details>';
+        if (show || !fieldGrid && !definition.role) {
+          const layout = !fieldGrid && !definition.role ? ' class="tool-field-compact"' : '';
+          const visibility = show ? ' x-show="' + show + '" x-cloak' : '';
+          rendered = '<div' + layout + visibility + '>' + rendered + '</div>';
+        }
+        html += rendered;
       }
-      if (title === 'size') html += '<div class="card reg-extra-options" :class="{\'card-collapsed\': regSectionCollapsed.bucketSettings}" x-show="form.size_mode === \'bucket\' && form.enable_bucket">' + sectionHeader('bucketSettings') + '<div class="card-body" :inert="!!regSectionCollapsed.bucketSettings">' + bucketFields.map(definition => this.renderField.call(scope, definition)).join('') + '</div></div>';
-      html += '</div></div>';
+      if (fieldGrid) html += '</div>';
+      if (title === 'size') {
+        html += `<div class="tool-field-compact" x-show="form.size_mode === 'bucket' && form.enable_bucket">
+          ${sectionStart('bucketSettings', 'reg-bucket-section')}
+          <div class="tool-field-grid">${bucketFields.map(definition => this.renderField.call(scope, definition)).join('')}</div>
+          </div></section></div>`;
+      }
+      html += '</div></section>';
     }
     host.innerHTML = html + '</div>'; host.dataset.locale = this.locale; host.dataset.localeRevision = localeRevision;
     Alpine.initTree(host);
@@ -436,6 +463,20 @@ window.regularizationMixin = {
       return {time: (record?.timestamp || line.time)?.match(/\d{2}:\d{2}:\d{2}/)?.[0] || '',
         key: JSON.stringify([raw, occurrence]), message, level: /ERROR|CRITICAL/.test(level) || /Traceback|Error:/.test(message) ? 'error' : /WARN/.test(level) ? 'warning' : /Completed|已完成/.test(message) ? 'success' : line.level};
     });
+  },
+  regWorkspaceLog() {
+    return {
+      key: this.regRunKey,
+      title: this.regT('logs'),
+      phase: this.regPhaseLabel(),
+      running: this.regRunning,
+      open: this.regLogsOpen,
+      lines: this.regLogs,
+      hasLogs: this.regTaskMatchesPlan && this.regLogs.length > 0,
+      error: this.regTaskMatchesPlan && this.regTask?.error,
+      empty: this.regT('logsEmpty'),
+      entries: () => this.regVisibleLogs(),
+    };
   },
   async regCopyLogs() {
     try { await navigator.clipboard.writeText(this.regLogs.join('\n')); this.toast(this.t('common.copied')); }
@@ -687,20 +728,6 @@ window.regularizationMixin = {
   regShowSettings() {
     this.regTab = 'settings';
     if (this.currentRoute === 'regularization' && this.regRunKey) void this.regLoadLogs().catch(error => this.regReportError(error.message));
-  },
-  regTabKey(event) {
-    const tabs = ['settings', 'plan', 'inspect'];
-    const current = tabs.indexOf(this.regTab);
-    const index = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
-      : event.key === 'ArrowRight' ? (current + 1) % tabs.length
-      : event.key === 'ArrowLeft' ? (current + tabs.length - 1) % tabs.length : -1;
-    if (index < 0) return;
-    event.preventDefault();
-    const tab = tabs[index];
-    if (tab === 'settings') this.regShowSettings();
-    else if (tab === 'plan') void this.regShowPlan();
-    else void this.regInspect();
-    this.$nextTick(() => document.getElementById('reg-tab-' + tab).focus());
   },
   async regSelectFilter() {
     ++this._regResultRequest;

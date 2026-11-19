@@ -108,7 +108,6 @@
 		"usableSources": "可用 {valid} / {total} 张源图",
 		"skippedSourcesHelp": "可在详细生成计划中查看原因。",
 		"help": {
-			"source_dir": "每张图片需要同名 .txt，如 a.png 与 a.txt。普通标注只读取第一行；检测到多段或疑似多段标注时，需要选择读取方式。缺少标注或标注处理后为空的图片会跳过，原文件不修改。",
 			"ignore_first": "从每张图片的标签开头移除指定数量的标签。常用于去掉角色触发词；0 表示保留全部。",
 			"exclude_tags": "移除匹配的标签，多个标签用逗号分隔。匹配时忽略大小写、空白和下划线，例如 long_hair 与 long hair 视为相同。处理后的标签会随生成图片保存。",
 			"sampler": "决定每一步如何去噪。",
@@ -273,8 +272,17 @@
 		"applied": "已启用正则数据",
 		"changed": "计划已变化，请检查后重新点击开始",
 		"refresh": "刷新",
-		"sourceFolderRules": "目录扫描规则",
-		"sourceFolderRulesHelp": "可选择直接存放图片的目录，或包含训练子目录（如 10_name）的根目录。若存在有效训练子目录，或以 0 或负整数加下划线开头的禁用子目录（如 0_name、-1_name），则仅读取重复次数大于 0 的子目录直下的图片；否则仅读取所选目录直下的图片。所选目录自身以 0 或负整数加下划线开头时，不读取其直下的图片。",
+		"sourceCaptionHint": "图片旁边要有同名的 .txt，比如 a.png 对应 a.txt。",
+		"sourceFolderRules": "目录与标注规则",
+		"sourceHelp": {
+			"folderTitle": "选哪个目录",
+			"folderDirect": "图片直接放在目录里时，选存图的目录，只读这一层。",
+			"folderTraining": "如果有 10_name 这类带数字和下划线的子目录，就只读重复次数大于 0 的子目录，每个子目录也只读一层。",
+			"folderDisabled": "0_name、-1_name 这类目录会跳过。直接选这种目录时，也不会读它这一层的图片。",
+			"captionTitle": "怎么读标注",
+			"captionRead": "普通标注只读第一行。页面提示有多个候选时，选你要用的一段。",
+			"captionSkip": "找不到标注，或清理后标注为空，就跳过这张图。扫描只读取原文件。"
+		},
 		"caption_candidate": "多段标注候选",
 		"chooseCandidate": "请选择",
 		"candidateFirstLine": "普通标注第一行（误识别时使用）",

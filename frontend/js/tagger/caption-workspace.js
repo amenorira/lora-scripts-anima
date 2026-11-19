@@ -106,17 +106,6 @@ window.captionWorkspaceMixin = {
     if (tab === 'single') void this.syncCaptionPreviewState();
     if (focus) this.$nextTick?.(() => document.getElementById('caption-tab-' + tab)?.focus());
   },
-  captionTabKey(event) {
-    const tabs = ['batch','single','overview'];
-    let i = tabs.indexOf(this.captionTab);
-    if (event.key === 'ArrowRight') i = (i + 1) % 3;
-    else if (event.key === 'ArrowLeft') i = (i + 2) % 3;
-    else if (event.key === 'Home') i = 0;
-    else if (event.key === 'End') i = 2;
-    else return;
-    event.preventDefault();
-    void this.selectCaptionTab(tabs[i]);
-  },
   async showCaptionFailures() {
     const batch = this.captionBatchState();
     if (!batch.source || !batch.taskId || !(batch.task?.failed > 0)

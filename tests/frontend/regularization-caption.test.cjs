@@ -221,18 +221,3 @@ test('regenerating while switching to settings refreshes the new task logs', asy
   assert.equal(logs, 2);
   assert.equal(app.regTask.task_id, 'new-task');
 });
-
-test('regularization tabs switch and move focus with arrow keys', () => {
-  const focused = [];
-  const { window } = loadFrontend('regularization/index', {
-    window: {}, document: { getElementById: id => ({ focus: () => focused.push(id) }) },
-  });
-  const app = composeMixins(window.regularizationMixin, {
-    regTab: 'settings', regShowPlan() { this.regTab = 'plan'; }, $nextTick: callback => callback(),
-  });
-  let prevented = false;
-  app.regTabKey({ key: 'ArrowRight', preventDefault: () => { prevented = true; } });
-  assert.equal(prevented, true);
-  assert.equal(app.regTab, 'plan');
-  assert.deepEqual(focused, ['reg-tab-plan']);
-});

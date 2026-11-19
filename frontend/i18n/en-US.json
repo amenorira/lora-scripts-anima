@@ -106,7 +106,6 @@
 		"bucketSettings": "Bucket details",
 		"noUsableSources": "No usable images. Check the skip reasons in the detailed plan.",
 		"help": {
-			"source_dir": "Each image needs a matching .txt caption, such as a.png and a.txt. Ordinary captions use the first line; choose a candidate when named sections are detected. Images with missing or empty processed captions are skipped. Source files stay unchanged.",
 			"ignore_first": "Remove this many tags from the start of each caption, for example a character trigger. Use 0 to keep all tags.",
 			"exclude_tags": "Remove matching tags, separated by commas. Matching ignores case, whitespace and underscores, so long_hair and long hair match. Processed captions are saved with generated images.",
 			"sampler": "Determines how each step removes noise.",
@@ -273,8 +272,17 @@
 		"applied": "Regularization data enabled",
 		"changed": "The plan changed. Review it and click Start again",
 		"refresh": "Refresh",
-		"sourceFolderRules": "Folder scanning rules",
-		"sourceFolderRulesHelp": "Choose a folder containing images directly, or a dataset root with training subfolders such as 10_name. If it contains a valid training subfolder or a disabled subfolder whose name starts with zero or a negative integer followed by an underscore (such as 0_name or -1_name), only images directly inside subfolders with a positive repeat count are read. Otherwise, only images directly inside the selected folder are read. If the selected folder itself starts with zero or a negative integer followed by an underscore, its direct images are not read.",
+		"sourceCaptionHint": "Keep a matching .txt next to each image, for example a.txt next to a.png.",
+		"sourceFolderRules": "Folder and caption rules",
+		"sourceHelp": {
+			"folderTitle": "Which folder to choose",
+			"folderDirect": "For a flat collection of images, choose the folder that holds them.",
+			"folderTraining": "If the folder contains subfolders with a number and an underscore, such as 10_name, the scan reads images one level deep in subfolders with a positive repeat count only.",
+			"folderDisabled": "Folders like 0_name and -1_name are skipped. If you select one directly, its top-level images are skipped too.",
+			"captionTitle": "How captions are read",
+			"captionRead": "Plain captions use the first line. If the page finds multiple candidates, choose the one you want to use.",
+			"captionSkip": "Images are skipped if their caption is missing or empty after cleanup. The scan only reads the original files."
+		},
 		"caption_candidate": "Caption candidate",
 		"chooseCandidate": "Choose a candidate",
 		"candidateFirstLine": "First line of ordinary caption (false detection)",

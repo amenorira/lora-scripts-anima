@@ -72,7 +72,7 @@
       ctx._tdTrackHover();
     });
     document.addEventListener('transitionrun', function (event) {
-      if (event.target.closest?.('.tagger-single-layout, .te-main')) ctx._tdTrackHover();
+      if (event.target.closest?.('.tool-single-layout, .te-main')) ctx._tdTrackHover();
     }, true);
     document.addEventListener('keydown', function (event) {
       if (event.key === 'Escape') ctx.tagDictionaryCloseHover();

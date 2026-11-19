@@ -2,6 +2,38 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadFrontend, composeMixins, deferred } = require('./helpers.cjs');
 
+test('tool tabs move focus and activate the next enabled page', () => {
+  const components = {};
+  loadFrontend('shared/tool-workspace', {
+    window: {},
+    document: { addEventListener: (_, callback) => callback() },
+    Alpine: {
+      directive: () => ({ before() {} }),
+      data: (name, factory) => { components[name] = factory; },
+    },
+  });
+  const actions = [];
+  const buttons = ['settings', 'plan', 'inspect'].map(key => ({
+    focus: () => actions.push(['focus', key]),
+    click: () => actions.push(['activate', key]),
+  }));
+  const component = components.toolWorkspaceTabs(() => 'settings', () => []);
+  const navigate = (key, target, enabled) => component.moveToolTab({
+    key, target,
+    currentTarget: { querySelectorAll: selector => {
+      assert.equal(selector, 'button[role="tab"]:enabled');
+      return enabled;
+    } },
+    preventDefault: () => actions.push(['prevent']),
+  });
+  navigate('ArrowRight', buttons[0], buttons);
+  navigate('ArrowRight', buttons[0], [buttons[0], buttons[2]]);
+  assert.deepEqual(actions, [
+    ['prevent'], ['focus', 'plan'], ['activate', 'plan'],
+    ['prevent'], ['focus', 'inspect'], ['activate', 'inspect'],
+  ]);
+});
+
 test('concurrent template mounts share a request and retry after failure', async () => {
   const pending = deferred(), initialized = [], children = [{}, {}];
   const host = { dataset: {}, children, innerHTML: '' };

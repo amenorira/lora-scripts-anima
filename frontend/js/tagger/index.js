@@ -28,6 +28,7 @@ window.taggerMixin = {
   taggerDragOver: false,
   taggerSingleLeftWidth: 55,
   taggerSingleResizing: false,
+  _taggerResizePointer: null,
   taggerSettings: {
     preset: 'balanced',
     conflict: 'ignore',
@@ -536,24 +537,30 @@ window.taggerMixin = {
   },
 
   startTaggerSingleResize(event) {
-    if (event && event.button !== 0) return;
+    if (event.button !== 0 || this.taggerSingleResizing) return;
+    const divider = event.currentTarget;
+    divider.focus();
+    divider.setPointerCapture(event.pointerId);
+    this._taggerResizePointer = event.pointerId;
     this.taggerSingleResizing = true;
-    document.body.classList.add('tagger-single-resizing');
+    document.body.classList.add('tool-divider-dragging');
   },
 
   resizeTaggerSingleLayout(event) {
-    if (!this.taggerSingleResizing) return;
-    const layout = document.querySelector('.tagger-single-layout');
-    if (!layout) return;
-    const rect = layout.getBoundingClientRect();
-    const width = Math.max(1, rect.width);
-    const percent = ((event.clientX - rect.left) / width) * 100;
-    this.taggerSingleLeftWidth = Math.min(70, Math.max(30, Math.round(percent * 10) / 10));
+    if (!this.taggerSingleResizing || event.pointerId !== this._taggerResizePointer) return;
+    const {left, width} = event.currentTarget.closest('.tool-single-layout').getBoundingClientRect();
+    if (width) this.setTaggerSingleWidth(Math.round((event.clientX - left) / width * 1000) / 10);
   },
 
-  stopTaggerSingleResize() {
+  setTaggerSingleWidth(percent) {
+    this.taggerSingleLeftWidth = Math.min(70, Math.max(30, percent));
+  },
+
+  stopTaggerSingleResize(event) {
+    if (event && event.pointerId !== this._taggerResizePointer) return;
+    this._taggerResizePointer = null;
     this.taggerSingleResizing = false;
-    document.body.classList.remove('tagger-single-resizing');
+    document.body.classList.remove('tool-divider-dragging');
   },
 
   selectTaggerItem(item) {

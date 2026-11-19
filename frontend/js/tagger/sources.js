@@ -26,26 +26,6 @@ window.taggerSourcesMixin = {
     }
   },
 
-  // 模式 tab 滑动指示条：与监控台 tab 共用 .monitor-tab-indicator 样式
-  _syncTaggerTabIndicator(selector = '.tagger-mode-tabs') {
-    const bar = document.querySelector(selector);
-    if (!bar) return;
-    const indicator = bar.querySelector('.monitor-tab-indicator');
-    const active = bar.querySelector('button.active');
-    if (!indicator || !active || !active.offsetWidth) return;
-    if (!bar.classList.contains('indicator-ready')) {
-      bar.classList.add('no-anim');
-      indicator.style.width = active.offsetWidth + 'px';
-      indicator.style.transform = 'translateX(' + active.offsetLeft + 'px)';
-      void indicator.offsetWidth; // 强制 reflow，首次定位不播放动画
-      bar.classList.remove('no-anim');
-      bar.classList.add('indicator-ready');
-      return;
-    }
-    indicator.style.width = active.offsetWidth + 'px';
-    indicator.style.transform = 'translateX(' + active.offsetLeft + 'px)';
-  },
-
   _captureTaggerModeState() {
     return {
       sourcePath: this.taggerSourcePath,

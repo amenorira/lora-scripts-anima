@@ -32,15 +32,15 @@
   <link rel="stylesheet" href="/anima-ui/css/themes/light.css">
   <link rel="stylesheet" href="/anima-ui/css/themes/dark.css">
   <link rel="stylesheet" href="/anima-ui/css/themes/comfy.css">
-  <link rel="stylesheet" href="/anima-ui/css/tagger.css">
-  <link rel="stylesheet" href="/anima-ui/css/ai-captioning.css">
-  <link rel="stylesheet" href="/anima-ui/css/regularization.css">
+  <link rel="stylesheet" href="/anima-ui/css/tool-workspace.css">
+  <link rel="stylesheet" href="/anima-ui/css/image-tools.css">
   <link rel="stylesheet" href="/anima-ui/css/motion.css">
   <link rel="stylesheet" href="/anima-ui/css/tag-dictionary.css">
   <script src="/anima-ui/js/shared/i18n.js" defer></script>
   <script src="/anima-ui/js/shared/constants.js" defer></script>
   <script src="/anima-ui/js/shared/mixin-compose.js" defer></script>
   <script src="/anima-ui/js/shared/utils.js" defer></script>
+  <script src="/anima-ui/js/shared/tool-workspace.js" defer></script>
   <script src="/anima-ui/js/shared/image-loading.js" defer></script>
   <script src="/anima-ui/js/shared/image-viewport.js" defer></script>
   <script src="/anima-ui/js/shared/ui-interactions.js" defer></script>
@@ -298,7 +298,7 @@
   <!-- ── Main Content ─────────────────────────────────────── -->
   <div class="main-area">
     <main class="main-content" id="mainContent" tabindex="-1"
-          :class="{ 'main-fullscreen': currentRoute === 'tagEditor' || currentRoute === 'tensorboard' || currentRoute === 'monitor-dashboard', 'route-monitor-shell': currentRoute === 'monitor-dashboard', 'route-tagger-shell': ['tagger', 'ai-captioning', 'regularization'].includes(currentRoute), 'route-tagger-single': ['tagger', 'ai-captioning'].includes(currentRoute) && taggerSourceMode.endsWith('single'), 'route-caption-shell': currentRoute === 'ai-captioning', 'route-caption-overview': currentRoute === 'ai-captioning' && captionTab === 'overview', 'route-training': currentRoute && currentRoute.startsWith('train-'), 'route-transitioning': routeTransitioning }"
+          :class="{ 'main-fullscreen': currentRoute === 'tagEditor' || currentRoute === 'tensorboard' || currentRoute === 'monitor-dashboard', 'route-monitor-shell': currentRoute === 'monitor-dashboard', 'route-tool-workspace': ['tagger', 'ai-captioning', 'regularization'].includes(currentRoute), 'route-training': currentRoute && currentRoute.startsWith('train-'), 'route-transitioning': routeTransitioning }"
               :aria-busy="routeTransitioning ? 'true' : 'false'">
 
       <!-- Route: Home -->
@@ -598,19 +598,19 @@
       </div>
 
       <!-- Route: Tagger -->
-      <div x-show="['tagger', 'ai-captioning'].includes(currentRoute)" class="tagger-route" x-cloak>
+      <div x-show="['tagger', 'ai-captioning'].includes(currentRoute)" class="tool-route" x-cloak>
         <div class="dashboard-empty" x-show="taggerWorkspaceLoading || taggerWorkspaceError" role="status">
           <p x-text="taggerWorkspaceError || t('common.loading')"></p>
           <button type="button" class="btn btn-secondary btn-sm" x-show="taggerWorkspaceError" @click="buildTaggerForm()" x-text="t('monitor.retryLoad')"></button>
         </div>
-        <div id="taggerWorkspaceHost" x-show="!taggerWorkspaceLoading && !taggerWorkspaceError"></div>
+        <div id="taggerWorkspaceHost" class="tool-workspace-host" x-show="!taggerWorkspaceLoading && !taggerWorkspaceError"></div>
       </div>
-      <div x-show="currentRoute === 'regularization'" class="tagger-route" x-cloak>
+      <div x-show="currentRoute === 'regularization'" class="tool-route" x-cloak>
         <div class="dashboard-empty" x-show="regWorkspaceLoading || regWorkspaceError" role="status">
           <p x-text="regWorkspaceError || t('common.loading')"></p>
           <button type="button" class="btn btn-secondary btn-sm" x-show="regWorkspaceError" @click="buildRegularizationForm()" x-text="t('monitor.retryLoad')"></button>
         </div>
-        <div id="regularizationWorkspaceHost" x-show="!regWorkspaceLoading && !regWorkspaceError"></div>
+        <div id="regularizationWorkspaceHost" class="tool-workspace-host" x-show="!regWorkspaceLoading && !regWorkspaceError"></div>
       </div>
 
       <!-- Route: Tag Editor -->
@@ -2330,6 +2330,114 @@
     </div>
   </div>
 </dialog>
+
+<svg class="tool-icon-sprite" aria-hidden="true">
+  <symbol id="ti-folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v10H3z"/><path d="M3 6v12"/></symbol>
+  <symbol id="ti-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></symbol>
+  <symbol id="ti-play" viewBox="0 0 24 24"><path d="m7 4 13 8-13 8z"/></symbol>
+  <symbol id="ti-stop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14"/></symbol>
+  <symbol id="ti-fit" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
+  <symbol id="ti-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+  <symbol id="ti-check" viewBox="0 0 24 24"><path d="m20 6-11 11-5-5"/></symbol>
+  <symbol id="ti-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="ti-collapse-all" viewBox="0 0 24 24"><path d="M12 3v6m-4-4 4 4 4-4M12 21v-6m-4 4 4-4 4 4M4 12h16"/></symbol>
+  <symbol id="ti-expand-all" viewBox="0 0 24 24"><path d="M12 9V3m-4 4 4-4 4 4M12 15v6m-4-4 4 4 4-4M4 12h16"/></symbol>
+  <symbol id="ti-retry" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol>
+  <symbol id="ti-external" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+  <symbol id="ti-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="ti-eye-off" viewBox="0 0 24 24"><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 10 8 10 8a13.16 13.16 0 0 1-1.67 2.68M6.61 6.61A13.5 13.5 0 0 0 2 12s3 8 10 8a9.74 9.74 0 0 0 5.39-1.61"/><path d="m2 2 20 20"/><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/></symbol>
+  <symbol id="ti-zap" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></symbol>
+  <symbol id="ti-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+  <symbol id="ti-settings" viewBox="0 0 24 24"><path d="M4 7h5m4 0h7M4 17h9m4 0h3"/><circle cx="11" cy="7" r="2"/><circle cx="15" cy="17" r="2"/></symbol>
+  <symbol id="ti-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+</svg>
+
+<template id="tool-part-header">
+  <div class="tool-heading"><h1 class="page-title" x-text="toolTitle()"></h1></div>
+  <div class="monitor-resbar tool-resources" :id="toolResourceId"></div>
+</template>
+
+<template id="tool-part-tabs">
+  <template x-for="tab in toolTabs" :key="tab.id">
+    <button type="button" role="tab" class="monitor-tab" :class="{active:activeToolTab === tab.key}" :id="tab.id" :aria-controls="tab.panel"
+            :aria-selected="String(activeToolTab === tab.key)" :tabindex="activeToolTab === tab.key ? 0 : -1"
+            :disabled="toolTabsDisabled" @click="tab.select()">
+      <svg aria-hidden="true"><use :href="'#ti-' + tab.icon"></use></svg>
+      <span x-text="tab.label"></span>
+      <small class="monitor-tab-count" x-show="tab.count != null" x-text="tab.count"></small>
+    </button>
+  </template>
+  <span class="monitor-tab-indicator" aria-hidden="true" x-effect="activeToolTab; toolTabs; $nextTick(() => syncToolTabIndicator($el.parentElement))"></span>
+</template>
+
+<template id="tool-part-task-log">
+  <header class="tool-log-header">
+    <div><strong x-text="taskLog.title"></strong><span class="tool-log-phase" :class="{running:taskLog.running}" x-text="taskLog.phase"></span></div>
+    <div>
+      <button type="button" class="btn btn-ghost btn-sm" x-show="copyTaskLog && taskLog.hasLogs" @click="copyTaskLog()" x-text="t('common.copy')"></button>
+      <button type="button" class="btn btn-ghost btn-sm" x-show="taskLog.hasLogs" :aria-expanded="String(taskLog.open)" @click="toggleTaskLog()" x-text="t(taskLog.open ? 'common.collapse' : 'common.expand')"></button>
+    </div>
+  </header>
+  <div class="tool-log-error" x-show="taskLog.error" role="alert" x-text="taskLog.error"></div>
+  <div class="tool-log-stream" tabindex="0" :aria-label="taskLog.title" @scroll="updateLogFollow($el)"
+       x-effect="taskLog.lines?.length; taskLog.open; syncLogPosition($el, taskLog.key)">
+    <template x-for="line in taskLog.entries()" :key="line.key">
+      <div class="tool-log-line" :class="[line.level, !line.time && 'untimed']">
+        <time x-show="line.time" x-text="line.time"></time><code x-text="line.message"></code>
+      </div>
+    </template>
+    <div class="tool-log-empty" x-show="!taskLog.hasLogs" x-text="taskLog.empty"></div>
+  </div>
+</template>
+
+<template id="tool-part-divider">
+  <div class="tool-divider" :class="{dragging:taggerSingleResizing}" role="separator" aria-orientation="vertical"
+       aria-valuemin="30" aria-valuemax="70" :aria-valuenow="taggerSingleLeftWidth" :aria-label="t('tagger.resizePanels')" tabindex="0"
+       @pointerdown.prevent="startTaggerSingleResize($event)" @pointermove="resizeTaggerSingleLayout($event)"
+       @lostpointercapture="stopTaggerSingleResize($event)" @keydown.left.prevent="setTaggerSingleWidth(taggerSingleLeftWidth - 1)"
+       @keydown.right.prevent="setTaggerSingleWidth(taggerSingleLeftWidth + 1)"
+       @keydown.home.prevent="setTaggerSingleWidth(30)" @keydown.end.prevent="setTaggerSingleWidth(70)"></div>
+</template>
+
+<template id="tool-part-single-preview">
+  <div class="tool-preview-toolbar" x-show="taggerSource">
+    <span :title="taggerSource?.display_name || taggerSource?.path" x-text="taggerSource?.display_name || taggerSource?.path"></span>
+    <button type="button" class="btn-icon" @click="resetTaggerPreview()" :title="t('tagger.fit')" :aria-label="t('tagger.fit')"><svg aria-hidden="true"><use href="#ti-fit"></use></svg></button>
+  </div>
+  <button type="button" class="tool-drop-zone" x-show="!taggerSource" :disabled="previewDisabled()" @click="choosePreviewImage()">
+    <svg aria-hidden="true"><use href="#ti-image"></use></svg>
+    <strong x-text="t('tagger.dropImageHere')"></strong><span x-text="t('tagger.orPaste')"></span>
+  </button>
+  <div class="tool-preview-image" x-data="{failed:false, imageUrl:''}" x-effect="if (imageUrl !== previewImageUrl()) { imageUrl = previewImageUrl(); failed = false; }"
+       x-show="taggerSource" :class="{zoomed:taggerPreviewScale > 1, panning:taggerPreviewPanning}"
+       @wheel.prevent="zoomTaggerPreview($event)" @pointerdown="startTaggerPreviewPan($event)"
+       @pointermove="moveTaggerPreviewPan($event)" @pointerup="stopTaggerPreviewPan($event)"
+       @pointercancel="stopTaggerPreviewPan($event)" @dblclick="resetTaggerPreview()">
+    <img x-show="!failed" x-image="imageUrl" :style="taggerPreviewTransform()" :alt="t('tagger.preview')" @load="resetTaggerPreview()" @image-ready="failed = false" @error="failed = true" draggable="false">
+    <span class="field-hint" x-show="failed" role="status" x-text="t('caption.imageUnavailable')"></span>
+  </div>
+</template>
+
+<template id="tool-part-select-menu">
+  <div class="anima-select-menu" :class="{'anima-select-menu-positioned':positioned, 'anima-select-menu-described':hasDescriptions}">
+    <div class="anima-select-menu-scroll">
+      <template x-for="(group, index) in displayGroups" :key="index">
+        <div class="anima-select-group">
+          <div class="anima-select-group-label" x-show="group.label" x-text="group.label"></div>
+          <template x-for="option in group.options" :key="option.v">
+            <div class="anima-select-option" :class="{active:option.v === value}" @click="select(option.v)">
+              <span class="anima-select-option-content">
+                <span class="anima-select-option-label" :title="option.l" x-text="option.l"></span>
+                <span class="anima-select-option-desc" x-show="option.d" x-text="option.d"></span>
+              </span>
+              <svg class="anima-select-check" x-show="option.v === value" aria-hidden="true"><use href="#ti-check"></use></svg>
+            </div>
+          </template>
+        </div>
+      </template>
+    </div>
+  </div>
+</template>
 
 </body>
 </html>

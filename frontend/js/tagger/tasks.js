@@ -354,7 +354,7 @@ window.taggerTasksMixin = {
   },
 
   taggerPhaseLabel() {
-    const phase = this.taggerTask?.phase || (this.taggerScanning ? 'scanning' : 'ready');
+    const phase = this.taggerTask?.phase || (this.taggerScanning ? 'scanning' : this.taggerRunning ? 'created' : 'ready');
     return this.t('tagger.phase.' + phase, phase.replace(/_/g, ' '));
   },
 
@@ -364,6 +364,23 @@ window.taggerTasksMixin = {
       time: line.match(/^\[([^\]]+)\]\s*/)?.[1] || '--:--:--', level: 'info',
       message: line.replace(/^\[[^\]]+\]\s*/, ''),
     } : line);
+  },
+
+  taggerWorkspaceLog() {
+    return {
+      key: this.taggerTaskId,
+      title: this.t('tagger.logTitle'),
+      phase: this.taggerPhaseLabel(),
+      running: this.taggerRunning,
+      open: this.taggerLogsOpen,
+      lines: this.taggerTask?.logs,
+      hasLogs: !!this.taggerTask?.logs?.length,
+      error: this.taggerTask?.error_detail,
+      empty: this.t('tagger.logsEmpty'),
+      entries: () => this.taggerVisibleLogs().map((line, index) => ({
+        ...line, key: index, message: this.taggerLogMessage(line),
+      })),
+    };
   },
 
   taggerLogMessage(line) {

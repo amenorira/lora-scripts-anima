@@ -354,7 +354,7 @@ window.trainingFieldRenderer = {
       inputHtml = `<label class="toggle"><input type="checkbox" aria-label="${fieldAriaLabel}"${labelAttrs} :checked="form.${dataKey}" @change="setField('${dataKey}', $event.target.checked)${previewScroll}"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>`;
     } else if (field.type === 'select') {
       const fc = this._trainingSelectConfig(field);
-      const selectAlign = field.selectAlign === 'left' ? 'left' : 'right';
+      const selectAlign = field.layout === 'stacked' ? 'left' : 'right';
       const configExpression = ['foreach', 'adamw_fused', 'krea_adamw_fused'].includes(dataKey)
         ? `() => _trainingSelectConfig(findFieldDef('${dataKey}'))` : `'${this.escJson(fc)}'`;
       const triggerHtml = `<button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle($event)" aria-label="${fieldAriaLabel}"${labelAttrs} aria-haspopup="listbox" :aria-expanded="open ? 'true' : 'false'"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>`;
@@ -562,7 +562,7 @@ window.trainingFieldRenderer = {
       ? `<div class="field-hint" data-krea-sample-mode role="status" aria-live="polite" x-show="form.enable_krea_samples" x-text="kreaSampleModeText()">${this.esc(this.kreaSampleModeText())}</div>`
       : '';
     return `<div class="field${condClass}${nestedClass}${staticReadonlyClass}" :class="{ 'field-changed': ${changedExpr}, 'field-filled': ${_filledExpr} }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}${nestLevelAttr}>
-      <div class="field-row">
+      <div class="field-row${field.layout === 'stacked' && !isFullWidth ? ' is-stacked' : ''}">
         ${controlSection}
         ${fieldMenuHtml}
       </div>
