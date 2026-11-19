@@ -72,8 +72,8 @@
         details.append(summary, pre); content.appendChild(details);
       }
       const record = {
-        key, node, persistent: options.persistent ?? (type === 'error'),
-        remaining: Math.max(0, options.duration ?? (type === 'warning' ? 6000 : 2800)),
+        key, node, persistent: options.persistent ?? false,
+        remaining: Math.max(0, options.duration ?? (type === 'error' ? 8000 : type === 'warning' ? 6000 : 2800)),
         started: 0, timer: null, hovered: false, focused: false,
         previousFocus: document.activeElement,
       };
