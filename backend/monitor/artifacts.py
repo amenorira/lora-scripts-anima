@@ -169,7 +169,9 @@ def newest_previews(
     enrich_sample_loss(result, od, run_dir)
     for item in result:
         sample = item["sample"]
-        if sample.get("step_source") == "log":
+        if sample.get("step_source") == "event":
+            sample["metadata_version"] += ":event:" + sample["batch_id"]
+        elif sample.get("step_source") == "log":
             # The recovered value can appear after the image; unrelated log
             # appends must not continuously invalidate realtime previews.
             call_digest = hashlib.sha256(sample["batch_id"].encode("utf-8")).hexdigest()[:24]

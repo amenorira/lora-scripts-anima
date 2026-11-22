@@ -158,6 +158,8 @@ def enrich_legacy_sample_steps(previews: list[dict], *run_paths: Path, calls=Non
     pending = []
     for preview in previews:
         sample = preview.get("sample") or {}
+        if sample.get("step_source") == "event":
+            continue
         prompt_missing = sample.get("metadata_source") == "filename" and "prompt" not in sample.get("params", {})
         if sample.get("stage_kind") != "epoch" or (sample.get("step") is not None and not prompt_missing):
             continue

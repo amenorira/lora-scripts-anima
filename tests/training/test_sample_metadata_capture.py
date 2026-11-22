@@ -20,6 +20,9 @@ from backend.training.preview import metadata
 
 class SampleMetadataCaptureTests(unittest.TestCase):
     def setUp(self):
+        paths = patch.object(sys, "path", [str(Path(__file__).resolve().parents[2] / "vendor" / "sd-scripts"), *sys.path])
+        paths.start()
+        self.addCleanup(paths.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
@@ -37,9 +40,10 @@ class SampleMetadataCaptureTests(unittest.TestCase):
         self.counter_patch.start()
         self.addCleanup(self.counter_patch.stop)
 
-    def fake_native(self, *, architecture="anima", skip_second=False, pnginfo=None, before_save=None):
-        prompts = [{"prompt": "portrait", "negative_prompt": "blur", "enum": index, "seed": 42 + index} for index in range(2)]
-        loader = SimpleNamespace(load_prompts=lambda *a, **k: prompts)
+    def fake_native(self, *, architecture="anima", skip_second=False, pnginfo=None, before_save=None, prompts=None):
+        if prompts is None:
+            prompts = [{"prompt": "portrait", "negative_prompt": "blur", "enum": index, "seed": 42 + index} for index in range(2)]
+        loader = SimpleNamespace(get_sample_prompts=lambda args: prompts)
         metadata._patch_save_and_loader(Image, loader)
 
         def do_sample(height, width, seed, dit, crossattn_emb, steps, dtype, device,
@@ -70,7 +74,7 @@ class SampleMetadataCaptureTests(unittest.TestCase):
         def sample_images(accelerator, args, epoch, steps):
             save_dir = self.root / "sample"
             save_dir.mkdir(exist_ok=True)
-            for prompt in loader.load_prompts(args.sample_prompts)[accelerator.process_index::accelerator.num_processes]:
+            for prompt in loader.get_sample_prompts(args)[accelerator.process_index::accelerator.num_processes]:
                 inference(args, save_dir, prompt, epoch, steps)
             return "success"
 
@@ -78,6 +82,26 @@ class SampleMetadataCaptureTests(unittest.TestCase):
 
     def previews(self):
         return newest_previews(str(self.root), force_refresh=True)
+
+    def test_manual_and_scheduled_high_slots_record_their_actual_prompt_identity(self):
+        cases = [
+            ({"enum": 100, "_anima_manual": True, "_anima_preset_index": 6}, "manual", 6),
+            ({"enum": 101, "_anima_manual": True}, "manual", None),
+            ({"enum": 102}, "scheduled", 102),
+        ]
+        prompts = [{**fields, "prompt": str(fields["enum"]), "seed": 42} for fields, _, _ in cases]
+        self.fake_native(prompts=prompts)(self.accelerator, self.args, None, 200)
+        previews = self.previews()
+        self.assertEqual(len(previews), len(cases))
+        for preview, (_, origin, index) in zip(previews, cases):
+            sample = preview["sample"]
+            self.assertEqual((sample["batch_status"], sample["metadata_source"], sample["comparable"]),
+                             ("complete", "recorded", True))
+            with Image.open(self.root / preview["path"]) as png:
+                embedded = json.loads(png.info["anima_sample"])
+            for metadata_record in (sample, embedded):
+                self.assertEqual((metadata_record["sample_origin"], metadata_record["prompt_index"]), (origin, index))
+                self.assertEqual(metadata_record.get("source_prompt_index"), index if origin == "manual" else None)
 
     def test_later_save_does_not_stamp_a_replaced_image(self):
         def replace_first_image(prompt):
@@ -92,9 +116,9 @@ class SampleMetadataCaptureTests(unittest.TestCase):
         self.assertEqual(first["sample"]["metadata_source"], "filename")
         self.assertEqual(second["sample"]["metadata_source"], "recorded")
 
-    def in_training_frame(self, architecture, callback, *, epoch=3, step=200, path=None, name=None,
+    def in_training_frame(self, callback, *, epoch=3, step=200, path=None, name=None,
                           frame_args=None, frame_accelerator=None, source=None):
-        _, default_name, default_path = metadata._TRAINING_FRAMES[architecture]
+        default_name, default_path = "_run_training_loop", metadata._KREA_TRAINER
         name = name or default_name
         namespace = {}
         exec(compile(f"def {name}(args, accelerator, current_epoch, global_step, callback):\n    return callback()\n",
@@ -105,7 +129,8 @@ class SampleMetadataCaptureTests(unittest.TestCase):
 
     def test_step_capture_observes_actual_sd_script_epoch_without_changing_sampler_args(self):
         sampler = self.fake_native()
-        self.assertEqual(self.in_training_frame("anima", lambda: sampler(self.accelerator, self.args, None, 200)), "success")
+        self.args._anima_preview_epoch = 3
+        self.assertEqual(sampler(self.accelerator, self.args, None, 200), "success")
         samples = [item["sample"] for item in self.previews()]
         self.assertEqual({(sample["stage_kind"], sample["stage_value"], sample["epoch"], sample["batch_label"]) for sample in samples},
                          {("step", 200, 3, "Epoch 3 · Step 200")})
@@ -116,28 +141,29 @@ class SampleMetadataCaptureTests(unittest.TestCase):
         self.assertIsNone(batch["epoch"], "the sampler's step-trigger argument is preserved")
         self.assertEqual(batch["current_epoch"], 3)
 
-    def test_all_supported_trainers_read_their_matching_shared_epoch(self):
-        for architecture in ("anima", "moss_image", "krea2"):
-            with self.subTest(architecture=architecture):
-                observed = self.in_training_frame(architecture, lambda: metadata._current_training_epoch(self.args, self.accelerator, 200, architecture))
-                self.assertEqual(observed, 3)
+    def test_sd_scripts_reads_the_trainer_epoch_callback(self):
+        for architecture in ("anima", "moss_image"):
+            for value in (None, 0, 2.5, True, 3):
+                self.args._anima_preview_epoch = value
+                self.assertEqual(metadata._current_training_epoch(self.args, self.accelerator, 200, architecture),
+                                 3 if value == 3 else None)
 
     def test_epoch_probe_requires_same_process_arguments_and_step(self):
-        probe = lambda: metadata._current_training_epoch(self.args, self.accelerator, 200, "anima")
+        probe = lambda: metadata._current_training_epoch(self.args, self.accelerator, 200, "krea2")
         self.assertIsNone(probe(), "an unrelated caller must not invent an epoch")
-        self.assertIsNone(self.in_training_frame("anima", probe, frame_args=SimpleNamespace()))
-        self.assertIsNone(self.in_training_frame("anima", probe, frame_accelerator=SimpleNamespace()))
-        self.assertIsNone(self.in_training_frame("anima", probe, step=201))
-        self.assertIsNone(self.in_training_frame("anima", probe, source=SimpleNamespace(value=3)))
-        self.assertIsNone(self.in_training_frame("anima", probe, path=self.root / "train_network.py"))
-        self.assertIsNone(self.in_training_frame("anima", probe, name="other_train"))
+        self.assertIsNone(self.in_training_frame(probe, frame_args=SimpleNamespace()))
+        self.assertIsNone(self.in_training_frame(probe, frame_accelerator=SimpleNamespace()))
+        self.assertIsNone(self.in_training_frame(probe, step=201))
+        self.assertIsNone(self.in_training_frame(probe, source=SimpleNamespace(value=3)))
+        self.assertIsNone(self.in_training_frame(probe, path=self.root / "train_network.py"))
+        self.assertIsNone(self.in_training_frame(probe, name="other_train"))
 
     def test_epoch_probe_handles_pre_loop_resume_and_bad_epoch_values(self):
         for source in (Value("i", 0), Value("i", -1), Value("d", 3.0), Value(ctypes.c_bool, True)):
             with self.subTest(source=source):
-                observed = self.in_training_frame("anima", lambda: metadata._current_training_epoch(self.args, self.accelerator, 200, "anima"), source=source)
+                observed = self.in_training_frame(lambda: metadata._current_training_epoch(self.args, self.accelerator, 200, "krea2"), source=source)
                 self.assertIsNone(observed)
-        self.assertIsNone(self.in_training_frame("anima", lambda: metadata._current_training_epoch(self.args, self.accelerator, 0, "anima"), step=0))
+        self.assertIsNone(self.in_training_frame(lambda: metadata._current_training_epoch(self.args, self.accelerator, 0, "krea2"), step=0))
 
         class BrokenEpoch(metadata.SynchronizedBase):
             def __init__(self):
@@ -147,7 +173,7 @@ class SampleMetadataCaptureTests(unittest.TestCase):
             def value(self):
                 raise RuntimeError("shared counter unavailable")
 
-        self.assertIsNone(self.in_training_frame("anima", lambda: metadata._current_training_epoch(self.args, self.accelerator, 200, "anima"), source=BrokenEpoch()))
+        self.assertIsNone(self.in_training_frame(lambda: metadata._current_training_epoch(self.args, self.accelerator, 200, "krea2"), source=BrokenEpoch()))
 
     def test_krea_step_wrapper_preserves_trigger_and_reads_current_epoch(self):
         observed = []
@@ -157,7 +183,7 @@ class SampleMetadataCaptureTests(unittest.TestCase):
             return "success"
 
         sampler = metadata._wrap_batch(sample_images, "krea2")
-        result = self.in_training_frame("krea2", lambda: sampler(SimpleNamespace(), self.accelerator, self.args, None, 200, [{}]))
+        result = self.in_training_frame(lambda: sampler(SimpleNamespace(), self.accelerator, self.args, None, 200, [{}]))
         self.assertEqual(result, "success")
         self.assertIsNone(observed[0]["epoch"])
         self.assertEqual((observed[0]["current_epoch"], observed[0]["step"]), (3, 200))
@@ -170,7 +196,7 @@ class SampleMetadataCaptureTests(unittest.TestCase):
             return "success"
 
         sampler = metadata._wrap_batch(sample_images, "anima")
-        self.assertEqual(self.in_training_frame("anima", lambda: sampler(self.accelerator, self.args, 0, 0), step=0), "success")
+        self.assertEqual(self.in_training_frame(lambda: sampler(self.accelerator, self.args, 0, 0), step=0), "success")
         self.assertEqual(observed[0]["epoch"], 0)
         self.assertIsNone(observed[0]["current_epoch"])
 
