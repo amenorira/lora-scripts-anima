@@ -233,17 +233,20 @@ def read_tensorboard_loss(
         series_list = []
         for tag in scalar_tags:
             try:
-                events = ea.Scalars(tag)[-limit:]
+                events = ea.Scalars(tag)
             except Exception:
                 continue
+            window_events = events[-limit:]
             points = [
                 {"step": int(e.step), "value": float(e.value)}
-                for e in events
+                for e in window_events
             ]
             if not points:
                 continue
             raw_points = points
-            best = min(raw_points, key=lambda p: p["value"])
+            # 主图的全程最低值也要覆盖已从显示窗口裁掉的早期观测。
+            extrema_events = events if tag in {"loss/average", "loss/current"} else window_events
+            best = min(extrema_events, key=lambda event: event.value)
             if len(points) > downsample_to and not _is_epoch_loss_tag(tag):
                 points = _lttb_downsample(points, downsample_to)
             values = [p["value"] for p in points]
@@ -252,8 +255,8 @@ def read_tensorboard_loss(
                 "name": tag.replace("/", " ").replace("_", " "),
                 "points": points,
                 "latest": values[-1],
-                "min": best["value"],
-                "min_step": best["step"],
+                "min": float(best.value),
+                "min_step": int(best.step),
                 "max": max(p["value"] for p in raw_points),
                 # 小图需要连续的最新原始点；全局 LTTB 曲线的尾部会随重采样改变。
                 # 40 个诊断观测各需前置 120 点；参照图仍由前端截取最近 120 点。

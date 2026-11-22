@@ -17,6 +17,25 @@ from tests.monitor.test_cross_drive_outputs import CrossDriveSandbox
 
 
 class SampleEpochLossTests(unittest.TestCase):
+    def test_full_loss_minimum_survives_display_window_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+            writer = EventFileWriter(str(run / "log"))
+            try:
+                for step in range(1, 9):
+                    writer.add_event(Event(step=step, summary=Summary(value=[
+                        Summary.Value(tag="loss/average", simple_value=step / 10),
+                    ])))
+                writer.flush()
+                series, = training.read_tensorboard_loss(run_dir=str(run), limit=4, downsample_to=3)
+                self.assertEqual([point["step"] for point in series["diagnostic_points"]], [5, 6, 7, 8])
+                self.assertEqual(len(series["points"]), 3)
+                self.assertEqual(series["min_step"], 1)
+                self.assertAlmostEqual(series["min"], .1)
+            finally:
+                writer.close()
+                training._tb_cache.pop(str(run / "log"), None)
+
     def test_epoch_partitions_survive_downsampling_and_incremental_reads(self):
         with tempfile.TemporaryDirectory() as directory:
             run = Path(directory)

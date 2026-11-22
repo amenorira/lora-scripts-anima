@@ -21,6 +21,8 @@ window.monitorCoreMixin = {
   historyReuseSource: '', historyReuseWarning: '', historyResumeMeta: null, _historyReuseUndo: null,
   _historyCardPointer: null,
   logAutoScroll: true, monitorTab: 'overview',
+  monitorChartMode: 'window',
+  monitorChartShowLr: false,
   monitorParamQuery: '',
   monitorParamsExpanded: false,
   _monitorParamContext: null, _monitorParamCache: null,

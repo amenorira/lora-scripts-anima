@@ -38,7 +38,7 @@
     if (copy) track.append(copy);
     const instance = {read() {
       const width = source.scrollWidth;
-      const overflowing = element.clientWidth > 0 && width - (bounce ? 14 : 0) > element.clientWidth + 1;
+      const overflowing = element.clientWidth > 0 && width > element.clientWidth + (bounce ? 14 : 1);
       const distance = bounce ? Math.max(0, width - element.clientWidth)
         : width + (parseFloat(getComputedStyle(track).columnGap) || 64);
       return {overflowing, distance};

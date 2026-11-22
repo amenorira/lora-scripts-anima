@@ -63,6 +63,87 @@ test('epoch progress parser resolves intra-epoch fill and parameter fallback', (
   assert.equal(done.epochFraction, 1);
 });
 
+test('hero chart downsampling keeps endpoints and extrema while full diagnostic window stays 120 points', () => {
+  const longSeries = Array.from({ length: 1200 }, (_, i) => ({
+    step: i + 1,
+    value: i === 599 ? 0.005 : i === 899 ? 0.95 : 0.1 + Math.sin(i / 20) * 0.02,
+  }));
+  const view = makeOverview({
+    monitorLossSeries: [{ tag: 'loss/average', points: longSeries }],
+  });
+  const compressed = view._downsampleHeroPoints(longSeries, 160);
+  assert.ok(compressed.length <= 180);
+  assert.equal(compressed[0].step, 1);
+  assert.equal(compressed.at(-1).step, 1200);
+  assert.ok(compressed.some(p => p.step === 600 && p.value === 0.005));
+  assert.ok(compressed.some(p => p.step === 900 && p.value === 0.95));
+
+  const windowPts = view._trainingDiagnosticPoints(120);
+  assert.equal(windowPts.length, 120);
+  const diag = view._trainingDiagnostics(windowPts);
+  assert.equal(diag.windowSize, 60);
+  assert.equal(diag.previousStartStep, 1081);
+  assert.equal(diag.recentEndStep, 1200);
+});
+
+test('jumping from a preview timeline marker selects that batch and opens the samples tab', () => {
+  const batch = { id: 'batch-e10' };
+  const panel = {};
+  let located = false;
+  const view = makeOverview({
+    _sampleDataModel: () => ({ byBatch: new Map([[batch.id, batch]]) }),
+    _sampleOverviewPanel: () => panel,
+    _scrollOverviewToBatch(targetPanel, targetBatch) {
+      assert.equal(this.monitorTab, 'samples');
+      assert.equal(targetPanel, panel);
+      assert.equal(targetBatch, batch);
+      located = true;
+    },
+  });
+  view._jumpToPreviewBatch('batch-e10', 18);
+  assert.equal(view.sampleBatchId, 'batch-e10');
+  assert.equal(view.previewStep, 18);
+  assert.equal(view.monitorTab, 'samples');
+  assert.ok(located);
+});
+
+test('odd diagnostic windows exclude the unplotted point from the minimum and gap', () => {
+  const points = [1, 4, 3, 2, 5, 6, 7].map((value, i) => ({ step: i + 1, value }));
+  const diagnostic = makeOverview()._trainingDiagnostics(points);
+  assert.equal(diagnostic.bestStep, 4);
+  assert.equal(diagnostic.gapFromBestPct, 250);
+  const view = makeOverview();
+  assert.equal(view._lossGapPercent(.1, 0), null);
+  assert.equal(view._lossGapPercent(0, 0), 0);
+});
+
+test('full chart includes the reported minimum in its readout, with a disconnected anchor before retained history', () => {
+  const pts = [{step: 10, value: .3}, {step: 12, value: .4}];
+  const series = {tag: 'loss/average', points: pts, min: .1, min_step: 2};
+  const svg = {setAttribute() {}};
+  const wrap = { dataset: {}, querySelector: selector => ({
+    '[data-hero-chart-stage]': {clientWidth: 500}, '[data-hero-chart-svg]': svg,
+  })[selector] };
+  const card = {dataset: {}, querySelectorAll: () => [], querySelector: selector => selector === '[data-hero-chart-wrap]' ? wrap : null};
+  const root = {dataset: {}, querySelector: () => card};
+  const view = makeOverview({monitorChartMode: 'full', monitorLossSeries: [series], esc: String,
+    _bindDiagnosticInteractions() {}, _patchDiagnosticGauges() {}});
+  const patch = () => view._patchTrainingDiagnostics(root, key => key, {state: 'RUNNING'}, false);
+  patch();
+  assert.deepEqual(wrap._chartState.coords.map(p => p.step), [2, 10, 12]);
+  const path = /data-hero-main-path d="([^"]+)"/.exec(svg.innerHTML)[1];
+  assert.ok(path.startsWith('M' + wrap._chartState.coords[1].x.toFixed(1) + ' '));
+  series.min_step = 11;
+  view.lossDataVersion = 1;
+  patch();
+  assert.deepEqual(wrap._chartState.coords.map(p => p.step), [10, 11, 12]);
+  assert.equal(pts.length, 2);
+  assert.match(svg.innerHTML, /m-latest-pulse/);
+  view.controlState = {state: 'paused'};
+  patch();
+  assert.doesNotMatch(svg.innerHTML, /m-latest-pulse/);
+});
+
 test('LR projections use the recorded process count, inverse sqrt timescale and polynomial end rate', () => {
   const project = (scheduler, args, processes = 1) => makeOverview({
     monitorData: { gpu_processes: processes },
@@ -85,6 +166,33 @@ test('restart projection samples both sides of a cycle boundary', () => {
   const curve = view._projectLrSchedule([{step: 1200, value: 1e-4}], 2400);
   assert.ok(curve.find(p => p.step === 1249).value < 1e-6);
   assert.ok(curve.find(p => p.step === 1250).value > .99e-4);
+});
+
+test('continuous gauge color interpolation uses shortest hue arc without purple detours', () => {
+  const view = makeOverview();
+  const hueOf = color => Number(/^hsl\(([\d.]+)/.exec(color)?.[1]);
+  const cNeg = view._changeGaugeColor(-3.0);
+  const cMildNeg = view._changeGaugeColor(-1.0);
+  const cZero = view._changeGaugeColor(0);
+  const cMildPos = view._changeGaugeColor(0.9);
+  const cMidPos = view._changeGaugeColor(3.5);
+  const cHighPos = view._changeGaugeColor(5.4);
+  assert.notEqual(cNeg, cMildNeg);
+  assert.notEqual(cMildNeg, cZero);
+  assert.notEqual(cZero, cMildPos);
+  assert.notEqual(cMildPos, cHighPos);
+  for (const col of [cMildPos, cMidPos, cHighPos]) {
+    const h = hueOf(col);
+    assert.ok(h <= 50 || h >= 350, `positive change hue should stay amber/red, got ${col}`);
+  }
+
+  const vLow = view._volatilityGaugeColor(2.0);
+  const vMid = view._volatilityGaugeColor(7.0);
+  const vHigh = view._volatilityGaugeColor(13.8);
+  assert.notEqual(vLow, vMid);
+  assert.notEqual(vMid, vHigh);
+  const vh = hueOf(vHigh);
+  assert.ok(vh <= 20 || vh >= 350, `high volatility hue should stay orange/red, got ${vHigh}`);
 });
 
 test('adaptive epoch grid keeps 1:1 direct blocks up to hundreds of epochs and falls back cleanly only when extreme', () => {
