@@ -18,7 +18,7 @@ window.monitorCoreMixin = {
   configSnapshotOpen: false, configSnapshotLoading: false, configSnapshotError: '', configSnapshotRunDir: '',
   _currentSnapshot: null, _snapshotRequestSeq: 0, _snapshotAbort: null, _reuseRequestSeq: 0, _reuseAbort: null,
   historyReuseBusy: '', _historyReuseApplying: false,
-  historyReuseSource: '', historyReuseWarning: '', _historyReuseUndo: null,
+  historyReuseSource: '', historyReuseWarning: '', historyResumeMeta: null, _historyReuseUndo: null,
   _historyCardPointer: null,
   logAutoScroll: true, monitorTab: 'overview',
   monitorParamQuery: '',
@@ -29,6 +29,7 @@ window.monitorCoreMixin = {
   _outputFilesKnownCount: 0, _outputCountVersion: 0,
   outputSearch: '', outputFilter: 'all',
   outputModelSortKey: 'time', outputModelSortDir: 'desc',
+  outputStateSortKey: 'time', outputStateSortDir: 'desc',
   outputOtherSortKey: 'time', outputOtherSortDir: 'desc',
   _renderRAF: null,  // requestAnimationFrame 节流标记
 
@@ -185,7 +186,7 @@ window.monitorCoreMixin = {
     this.isIdle = !active;
     const keys = {
       CREATED: 'monitor.created', RUNNING: 'monitor.training',
-      FINISHED: 'monitor.finished', TERMINATED: 'monitor.terminated',
+      FINISHED: 'monitor.finished', TERMINATED: 'monitor.terminated', STOPPED: 'control.stopped',
       FAILED: 'monitor.error', UNKNOWN: 'monitor.taskStateUnknown', IDLE: 'monitor.idle',
     };
     this.statusText = label || (keys[code] ? this.t(keys[code]) : code);
@@ -222,7 +223,8 @@ window.monitorCoreMixin = {
     try {
       const controller = new AbortController();
       timeout = setTimeout(() => controller.abort(), 4000);
-      const response = await fetch('/api/realtime/state?hardware=' + !this.realtimeReady, { cache: 'no-store', signal: controller.signal });
+      const url = '/api/realtime/state?hardware=' + !this.realtimeReady + (this.liveTaskId ? '&task_id=' + encodeURIComponent(this.liveTaskId) : '');
+      const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
       if (!response.ok) throw new Error('state request failed');
       const body = await response.json();
       if (body.status !== 'success' || !body.data) throw new Error('invalid state response');
@@ -268,17 +270,22 @@ window.monitorCoreMixin = {
       if (this.selectedRunDir) {
         this.claimLiveTask(activeId);
         this._applyTaskView(active.status);
+        this.applyTrainingControl?.(activeId, active.control || null);
         this.realtimeTaskStateUnknown = false;
         return;
       }
       // 任务边界（新启动/页面刷新恢复/他处启动）：清理上一轮残留并切换订阅。
       this.beginLiveMonitorTask(activeId, active.status);
+      this.applyTrainingControl?.(activeId, active.control || null);
       return;
     }
     if (!activeId && prevId) {
       // 拥有的任务已到终态。注册表只驱逐终态任务，所以"列表里没有"或
       // "已是终态"都可作为结算依据（终态事件丢失时由这里兜底）。
       const finished = managed.find(task => task && task.id === prevId) || null;
+      if (finished?.control) this.applyTrainingControl?.(prevId, finished.control);
+      this.controlDialog = '';
+      this.controlState = null;
       const status = finished ? finished.status : 'IDLE';
       const prevStatus = this._prevState;
       this.releaseLiveTask();
@@ -291,6 +298,7 @@ window.monitorCoreMixin = {
     if (active) {
       // 同一任务：同步状态（如 CREATED → RUNNING），进度字段由 WS 流维护。
       this._applyTaskView(active.status);
+      if (active.control) this.applyTrainingControl?.(activeId, active.control);
       this._setMonitorRealtimeTask(active.id);
       this.realtimeTaskStateUnknown = false;
       return;
@@ -348,7 +356,7 @@ window.monitorCoreMixin = {
     if (!hasMonitorDetail) return;
     const snapshotTaskId = next.active_task && next.active_task.id || active && active.id || '';
     // Transport idle does not erase the run the user is still inspecting.
-    if (!snapshotTaskId && this.currentOutputRunDir && ['FINISHED', 'FAILED', 'TERMINATED'].includes(this.monitorData && this.monitorData.state)) return;
+    if (!snapshotTaskId && this.currentOutputRunDir && ['FINISHED', 'FAILED', 'TERMINATED', 'STOPPED'].includes(this.monitorData && this.monitorData.state)) return;
     if (this.liveTaskId && snapshotTaskId !== this.liveTaskId) return;
     const nextLogSourceKey = snapshotTaskId ? 'task:' + snapshotTaskId : '';
     const reusingFullLog = !!(
@@ -497,16 +505,17 @@ window.monitorCoreMixin = {
   },
 
   handleTaskCompletion(prevState, newState) {
-    if (!['RUNNING', 'CREATED'].includes(prevState) || !['FINISHED', 'FAILED', 'TERMINATED'].includes(newState)) return;
-    const msg = this.t(newState === 'FINISHED' ? 'monitor.trainCompleted' : newState === 'FAILED' ? 'monitor.trainFailed' : 'monitor.trainTerminated');
-    this.toast(msg, newState === 'FINISHED' ? 'success' : 'error');
+    const outcomes = {FINISHED: 'monitor.trainCompleted', FAILED: 'monitor.trainFailed', TERMINATED: 'monitor.trainTerminated', STOPPED: 'control.stopped'};
+    if (!['RUNNING', 'CREATED'].includes(prevState) || !outcomes[newState]) return;
+    const msg = this.t(outcomes[newState]);
+    this.toast(msg, newState === 'FAILED' ? 'error' : 'info');
     if ('Notification' in window && Notification.permission === 'granted') {
       new Notification('lora-scripts-anima', { body: msg });
     }
     const origTitle = document.title;
     let flashCount = 0;
     const flashTimer = setInterval(() => {
-      document.title = flashCount % 2 === 0 ? (newState === 'FINISHED' ? '✅ ' : '⚠ ') + msg : origTitle;
+      document.title = flashCount % 2 === 0 ? msg : origTitle;
       flashCount++;
       if (flashCount >= 6) { clearInterval(flashTimer); document.title = origTitle; }
     }, 800);
@@ -515,6 +524,7 @@ window.monitorCoreMixin = {
   handleRealtimeTaskProgress(data) {
     if (!data || !data.data) return;
     const progress = data.data;
+    if (progress.step != null && this.monitorData?.step > progress.step) return;
 
     // 只合并事件中实际存在的有效字段，避免增量日志用 null 清空旧状态。
     if (this.monitorData) {

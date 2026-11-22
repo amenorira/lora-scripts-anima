@@ -81,7 +81,7 @@ document.addEventListener('alpine:init', () => {
     get backendStatusLabel() {
       if (this.realtimeState === 'offline') return this.t('common.backendDisconnected');
       if (this.realtimeState === 'degraded' || this.realtimeState === 'connecting') return this.t('common.backendDelayed');
-      if (this.trainingActive) return this.t('common.trainingInProgress');
+      if (this.trainingActive) return this.t(this.controlState?.state === 'paused' ? 'control.paused' : 'common.trainingInProgress');
       if (this.regularizationActive) return this.t('common.regularizationInProgress');
       return this.t('common.backendConnected');
     },
@@ -424,7 +424,7 @@ document.addEventListener('alpine:init', () => {
     // 在新页挂载前启用短淡入，避免先显示一帧再重启动画。
     _playRouteEnter(mainContent) {
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-      mainContent.classList.remove('route-enter', 'scroll-entering');
+      mainContent.classList.remove('route-enter');
       void mainContent.offsetWidth; // 强制 reflow，让连续切换能重启动画
       mainContent.classList.add('route-enter');
       clearTimeout(this._routeEnterTimer);
@@ -741,6 +741,7 @@ document.addEventListener('alpine:init', () => {
     docs: window.docsMixin, trainingCore: window.trainingCoreMixin,
     datasetRepeat: window.datasetRepeatMixin, trainingLrPreview: window.trainingLrPreviewMixin,
     trainingShapePreview: window.trainingShapePreviewMixin, trainingToml: window.trainingTomlMixin,
+    trainingControl: window.trainingControlMixin,
     trainingCropPreview: window.trainingCropPreviewMixin,
     trainingPromptWorkbench: window.trainingPromptWorkbenchMixin,
     trainingPromptTagTools: window.trainingPromptTagToolsMixin,

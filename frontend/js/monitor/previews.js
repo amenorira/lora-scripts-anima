@@ -383,10 +383,26 @@ window.monitorPreviewsMixin = {
 
   _sampleCaseLabel(preview, includeSeed = undefined, promptText = undefined) {
     const sample = this._sampleRecord(preview);
-    const batchIndices = Number.isInteger(sample.prompt_index) ? null : this._sampleDataModel().byBatch.get(sample.batch_id)?.indices || [];
-    const number = Number.isInteger(sample.prompt_index) && sample.prompt_index >= 0 ? sample.prompt_index + 1
-      : Math.max(0, batchIndices?.findIndex(index => this.previews[index] === preview) ?? -1) + 1;
-    const prompt = promptText ?? this.t('monitor.samplePrompt').replace('{n}', number);
+    let prompt = promptText;
+    if (prompt == null) {
+      if (sample.sample_origin === 'manual') {
+        const sourceIdx = Number.isInteger(sample.source_prompt_index) && sample.source_prompt_index >= 0
+          ? sample.source_prompt_index : null;
+        if (sourceIdx != null) {
+          prompt = this.t('control.manualPresetLabel').replace('{n}', sourceIdx + 1);
+        } else {
+          const text = this._samplePromptText(preview);
+          prompt = text
+            ? this.t('control.manualTextLabel').replace('{text}', text.length > 24 ? text.slice(0, 24) + '…' : text)
+            : this.t('control.previewTitle');
+        }
+      } else {
+        const batchIndices = Number.isInteger(sample.prompt_index) ? null : this._sampleDataModel().byBatch.get(sample.batch_id)?.indices || [];
+        const number = Number.isInteger(sample.prompt_index) && sample.prompt_index >= 0 ? sample.prompt_index + 1
+          : Math.max(0, batchIndices?.findIndex(index => this.previews[index] === preview) ?? -1) + 1;
+        prompt = this.t('monitor.samplePrompt').replace('{n}', number);
+      }
+    }
     const showSeed = includeSeed === undefined ? this._sampleNeedsSeed(preview) : includeSeed;
     let label = prompt + (showSeed ? ' ' + (sample.seed == null ? this.t('monitor.sampleNoSeed') : this.t('monitor.sampleSeed').replace('{n}', sample.seed)) : '');
     const model = this._sampleDataModel(), batch = model.byBatch.get(sample.batch_id);
@@ -1034,12 +1050,13 @@ window.monitorPreviewsMixin = {
   },
 
   _sampleMetadata(filename) {
-    const match = String(filename || '').match(/(?:^|_)(e?)(\d{6})_(\d{2})_/i);
+    const match = String(filename || '').match(/(?:^|_)(e?)(\d{6})_(\d{2,})_/i);
     if (!match) return { stage: '', prompt: '' };
     const kind = match[1] ? 'epoch' : 'step';
+    const index = Number(match[3]);
     return {
       stage: kind + ':' + Number(match[2]),
-      prompt: this.t('monitor.samplePrompt').replace('{n}', Number(match[3]) + 1),
+      prompt: this.t('monitor.samplePrompt').replace('{n}', index + 1),
     };
   },
 

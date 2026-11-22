@@ -8,7 +8,6 @@ window.trainingTomlMixin = {
   tomlHighlighted: '',
   isTraining: false,
   trainingStarting: false,
-  trainingStopping: '',
   isIdle: true,
   taskId: null,
   statusText: 'Idle',
@@ -787,21 +786,6 @@ window.trainingTomlMixin = {
     this.beginLiveMonitorTask(taskId, status || 'CREATED');
     this.realtimeTaskStateUnknown = false;
     return true;
-  },
-
-  async stopTraining() {
-    const taskId = this.liveTaskId || this.taskId;
-    if (!taskId || this.trainingStopping === taskId || (!this.isTraining && !this.trainingBlocked)) return;
-    this.trainingStopping = taskId;
-    try {
-      const response = await fetch('/api/tasks/terminate/' + encodeURIComponent(taskId));
-      if (!response.ok) throw new Error(this.t('monitor.stopFailed'));
-      this.toast(this.t('training.stopHint'), 'info');
-      // 后端在 terminate 返回前就已把任务结算为 TERMINATED；立刻对账一次，
-      // 终态由轮询写入方统一绘制（补一次轮询让它亚秒级可见）。
-      void this._pollTrainingState();
-    } catch(e) { this.toast(this.t('common.failed')+': '+e.message, 'error'); }
-    finally { if (this.trainingStopping === taskId) this.trainingStopping = ''; }
   },
 
   resetRealtimeTrainingState() {

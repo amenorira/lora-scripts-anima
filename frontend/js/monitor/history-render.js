@@ -55,8 +55,8 @@ window.monitorHistoryRenderMixin = {
         html += '>';
         html += '<div class="hist-card-head">';
         html += '<h2 class="hist-name" title="' + this.esc(h.name || '') + '">' + this.esc(h.name || '') + '</h2>';
-        const statusColors = { completed: 'ok', failed: 'danger', terminated: 'muted' };
-        const statusLabels = { completed: t('statusCompleted'), failed: t('statusFailed'), terminated: t('statusTerminated') };
+        const statusColors = { completed: 'ok', failed: 'danger', terminated: 'muted', stopped: 'muted' };
+        const statusLabels = { completed: t('statusCompleted'), failed: t('statusFailed'), terminated: t('statusTerminated'), stopped: t('statusStopped') };
         html += '<span class="m-badge m-badge-' + (statusColors[h.status] || 'muted') + '"><i aria-hidden="true"></i>' + this.esc(statusLabels[h.status] || t('statusUnknown')) + '</span>';
         if (artifactOffline) html += '<span class="m-badge m-badge-danger"><i aria-hidden="true"></i>' + this.esc(t('artifactOffline')) + '</span>';
         html += '</div>';
@@ -582,7 +582,7 @@ window.monitorHistoryRenderMixin = {
     }
   },
 
-  async reuseConfig(runDir, snapshot = null) {
+  async reuseConfig(runDir, snapshot = null, resumeState = '', resumeStep = null) {
     if (this.historyReuseBusy || !runDir) return;
     const t = (k, fb) => this.tMonitor(k, fb);
     const seq = ++this._reuseRequestSeq;
@@ -623,14 +623,20 @@ window.monitorHistoryRenderMixin = {
       }));
       this._historyReuseApplying = true;
       await this._applyConfigToTraining(j.data.reuse_params);
+      if (resumeState) this.form.resume = resumeState;
       this._trainingDocumentId = null;
       this._historyReuseUndo = undo;
-      this.historyReuseSource = j.data.name || runDir;
+      const sourceName = j.data.name || runDir;
+      this.historyReuseSource = sourceName;
+      this.historyResumeMeta = resumeState ? { source: sourceName, step: resumeStep, path: resumeState } : null;
       const ignored = this._lastConfigImportIgnoredFields || [];
       this.historyReuseWarning = [j.data.config_warning, ignored.length ? this.t('common.importedWithIgnoredFields').replace('{fields}', ignored.join(', ')) : ''].filter(Boolean).join('\n');
       if (this.historyReuseWarning) this.toast(this.historyReuseWarning, 'warning');
-      else this.toast(t('configLoaded'), 'success');
-      if (routeSeq === this._routeTransitionSeq) this.navigate('train-basic');
+      else if (!resumeState) this.toast(t('configLoaded'), 'success');
+      if (routeSeq === this._routeTransitionSeq) {
+        if (this._routeScrollPositions) this._routeScrollPositions['train-basic'] = 0;
+        this.navigate('train-basic');
+      }
     } catch (e) {
       if (seq === this._reuseRequestSeq && e.name !== 'AbortError') this.toast(e.message || t('configLoadError'), 'error', { details: errorDetails });
     } finally {
@@ -653,6 +659,7 @@ window.monitorHistoryRenderMixin = {
   dismissHistoryReuse() {
     this.historyReuseSource = '';
     this.historyReuseWarning = '';
+    this.historyResumeMeta = null;
     this._historyReuseUndo = null;
   },
 

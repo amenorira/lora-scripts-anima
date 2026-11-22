@@ -104,6 +104,7 @@
   <script src="/anima-ui/js/training/prompt-triggers.js" defer></script>
   <link rel="stylesheet" href="/anima-ui/css/prompt-workbench.css">
   <script src="/anima-ui/js/training/toml.js" defer></script>
+  <script src="/anima-ui/js/training/run-control.js" defer></script>
   <script src="/anima-ui/js/training/config-io.js" defer></script>
   <script src="/anima-ui/js/tagger/ai-caption-options.js" defer></script>
   <script src="/anima-ui/js/tagger/caption-workspace.js" defer></script>
@@ -254,7 +255,7 @@
 
     <div class="sidebar-bottom">
       <!-- Backend connectivity and global GPU task indicator -->
-      <div class="backend-status" :class="{ connected: realtimeState === 'online' && !trainingActive && !regularizationActive, training: realtimeState === 'online' && (trainingActive || regularizationActive), degraded: realtimeState === 'degraded' || realtimeState === 'connecting', disconnected: realtimeState === 'offline' }"
+      <div class="backend-status" :class="{ connected: realtimeState === 'online' && !trainingActive && !regularizationActive, paused: realtimeState === 'online' && trainingActive && controlState?.state === 'paused', training: realtimeState === 'online' && ((trainingActive && controlState?.state !== 'paused') || regularizationActive), degraded: realtimeState === 'degraded' || realtimeState === 'connecting', disconnected: realtimeState === 'offline' }"
            :title="backendStatusLabel">
         <span class="backend-status-dot"></span>
         <span class="backend-status-label" x-text="backendStatusLabel"></span>
@@ -399,7 +400,7 @@
         <div class="hist-toolbar">
           <input type="search" class="hist-search" x-model="historySearch" :placeholder="t('monitor.searchHistory')" :aria-label="t('monitor.searchHistory')" @input.debounce.200ms="historyPage = 1; renderHistory()">
           <div class="hist-filters" role="group" :aria-label="t('monitor.historyStatusFilter')">
-            <template x-for="filter in [['all','logLevelAll'], ['completed','statusCompleted'], ['failed','statusFailed'], ['terminated','statusTerminated'], ['unknown','statusUnknown']]" :key="filter[0]">
+            <template x-for="filter in [['all','logLevelAll'], ['completed','statusCompleted'], ['failed','statusFailed'], ['terminated','statusTerminated'], ['stopped','statusStopped'], ['unknown','statusUnknown']]" :key="filter[0]">
               <button type="button" class="hist-filter-btn" :class="{active:historyFilter===filter[0]}" :aria-pressed="historyFilter===filter[0]" @click="historyFilter=filter[0];historyPage=1;renderHistory()" x-text="t('monitor.'+filter[1])"></button>
             </template>
           </div>
@@ -543,9 +544,17 @@
         </div>
 
         <div class="history-reuse-notice" x-show="historyReuseSource" x-cloak role="status">
-          <div class="history-reuse-text"><span x-text="t('monitor.historyReuseNotice').replace('{name}', historyReuseSource)"></span><small x-show="historyReuseWarning" x-text="historyReuseWarning"></small></div>
-          <button class="btn btn-sm btn-secondary" :disabled="!!historyReuseBusy" @click="undoHistoryReuse()" x-text="t(historyReuseBusy === 'undo' ? 'monitor.restoringConfig' : 'monitor.undoHistoryReuse')"></button>
-          <button class="btn-icon" :disabled="!!historyReuseBusy" @click="dismissHistoryReuse()" :aria-label="t('common.close')">×</button>
+          <div class="history-reuse-text">
+            <span x-text="historyResumeMeta ? (historyResumeMeta.step != null ? t('control.resumeReadyStep').replace('{name}', historyResumeMeta.source).replace('{step}', historyResumeMeta.step) : t('control.resumeReadySource').replace('{name}', historyResumeMeta.source)) : t('monitor.historyReuseNotice').replace('{name}', historyReuseSource)"></span>
+            <small x-show="historyResumeMeta && form.resume && form.resume !== historyResumeMeta.path" x-text="t('control.resumePathEdited')"></small>
+            <small x-show="historyResumeMeta && !form.resume" x-text="t('control.resumePathCleared')"></small>
+            <small x-show="historyReuseWarning" x-text="historyReuseWarning"></small>
+          </div>
+          <div class="history-reuse-actions">
+            <button type="button" class="btn btn-sm btn-ghost" x-show="historyResumeMeta" @click="focusTrainingField('resume')" x-text="t('control.locateResume')"></button>
+            <button type="button" class="btn btn-sm btn-secondary" :disabled="!!historyReuseBusy" @click="undoHistoryReuse()" x-text="t(historyReuseBusy === 'undo' ? 'monitor.restoringConfig' : 'monitor.undoHistoryReuse')"></button>
+            <button type="button" class="btn-icon" :disabled="!!historyReuseBusy" @click="dismissHistoryReuse()" :aria-label="t('common.close')">×</button>
+          </div>
         </div>
         <div class="train-workbench">
 
@@ -1683,17 +1692,17 @@
             <div class="btn-row">
               <button class="btn btn-start" style="flex:1" @click="startTraining()"
                       :disabled="isTraining || trainingStarting || showConfirmModal || trainingBlocked || regularizationActive"
-                      x-text="trainingStarting ? t('common.starting') : (isTraining ? t('common.training') : (regularizationActive ? t('common.regularizationInProgress') : (trainingBlocked ? t('training.trainingInProgress') : t('common.startTraining'))))">
+                      x-text="trainingStarting ? t('common.starting') : (isTraining ? t(controlState?.state === 'paused' ? 'control.paused' : 'common.training') : (regularizationActive ? t('common.regularizationInProgress') : (trainingBlocked ? t(controlState?.state === 'paused' ? 'control.paused' : 'training.trainingInProgress') : t('common.startTraining'))))">
                 Start Training
               </button>
-              <button class="btn btn-stop" style="flex:1" @click="stopTraining()"
+              <button class="btn btn-stop" style="flex:1" x-show="isTraining || trainingBlocked || trainingStopping === (liveTaskId || taskId)" @click="stopTraining()"
                       :disabled="!isTraining || trainingStopping === (liveTaskId || taskId)" :title="t('training.stopHint')" x-text="trainingStopping === (liveTaskId || taskId) ? t('regularization.stopping') : t('common.stopTraining')">
                 Stop Training
               </button>
             </div>
             <div x-show="trainingBlocked || regularizationActive" class="start-blocked-inline" @click="navigate(regularizationActive ? 'regularization' : 'monitor-dashboard')">
               <span class="start-blocked-dot"></span>
-              <span x-text="regularizationActive ? t('common.regularizationInProgress') : t('training.taskRunning')"></span>
+              <span x-text="regularizationActive ? t('common.regularizationInProgress') : t(controlState?.state === 'paused' ? 'control.paused' : 'training.taskRunning')"></span>
               <span class="start-blocked-link" x-text="regularizationActive ? t('common.viewGeneration') : t('training.goToMonitor')"></span>
             </div>
           </div>
@@ -1740,7 +1749,116 @@
   </div>
 </dialog>
 
-<!-- ── Confirm Modal ───────────────────────────────────── -->
+<!-- ── Runtime training actions ─────────────────────────── -->
+<dialog class="modal-overlay" x-dialog="!!controlDialog" @dialog-close="controlDialog = ''" @click.self="controlDialog = ''" aria-labelledby="controlTitle" x-cloak>
+  <form class="modal control-dialog" tabindex="-1" data-dialog-autofocus :class="controlDialog === 'sample' ? 'control-sample-modal' : 'modal-confirm control-stop-modal'" @submit.prevent="submitTrainingControl(controlDialog, controlDialogTask)">
+    <header :class="controlDialog === 'sample' ? 'modal-header control-sample-header' : 'confirm-heading'">
+      <span class="confirm-icon control-stop-icon" x-show="controlDialog === 'stop'" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg></span>
+      <div class="control-header-title">
+        <h2 id="controlTitle" class="confirm-title" x-text="t(controlDialog === 'sample' ? 'control.previewTitle' : 'common.stopTraining')"></h2>
+        <span class="control-header-context" x-show="controlDialog === 'sample' && (controlRunName || controlStepText)">
+          <span class="control-context-name" x-show="controlRunName" x-text="controlRunName"></span>
+          <span class="control-context-step" x-show="controlStepText" x-text="controlStepText"></span>
+        </span>
+      </div>
+      <button type="button" class="btn-icon preview-close" @click="controlDialog = ''" :aria-label="t('common.close')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m18 6-12 12M6 6l12 12"/></svg></button>
+    </header>
+    <div class="modal-body" :class="controlDialog === 'sample' ? 'control-sample-body' : 'confirm-body'">
+      <div class="control-context" x-show="controlDialog === 'stop' && (controlRunName || controlStepText)">
+        <span class="control-context-name" x-show="controlRunName" x-text="controlRunName"></span>
+        <span class="control-context-step" x-show="controlStepText" x-text="controlStepText"></span>
+      </div>
+      <p class="confirm-message" x-show="controlLoading" x-text="t('common.loading')"></p>
+      <template x-if="!controlLoading && controlDialog === 'stop'">
+        <div class="control-stop-body">
+          <div class="control-stop-choices" x-show="controlCanStopAtStep">
+            <div class="settings-panel">
+              <label class="settings-row">
+                <span class="settings-row-main">
+                  <span class="settings-row-label" id="stopWeightsLabel" x-text="t('control.stopWeights')"></span>
+                  <span class="control-row-meta" :class="'is-' + controlWeightsSaveMeta.tone" x-show="controlWeightsSaveMeta.text" x-text="controlWeightsSaveMeta.text"></span>
+                </span>
+                <span class="settings-row-action toggle"><input type="checkbox" role="switch" x-model="controlSaveWeights" aria-labelledby="stopWeightsLabel"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
+              </label>
+              <label class="settings-row">
+                <span class="settings-row-main">
+                  <span class="settings-row-label" id="stopStateLabel" x-text="t('control.save_state')"></span>
+                  <span class="control-row-meta" :class="'is-' + controlStateSaveMeta.tone" x-show="controlStateSaveMeta.text" x-text="controlStateSaveMeta.text"></span>
+                </span>
+                <span class="settings-row-action toggle"><input type="checkbox" role="switch" x-model="controlSaveState" aria-labelledby="stopStateLabel"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
+              </label>
+            </div>
+            <p class="control-consequence" x-show="controlStopConsequence" x-text="controlStopConsequence"></p>
+          </div>
+          <p class="confirm-message" x-show="!controlCanStopAtStep" x-text="t(controlState?.command?.status === 'pending' ? 'control.stopPending' : 'control.stopUnavailable')"></p>
+          <p class="control-force-note" x-text="t('control.forceHint')"></p>
+        </div>
+      </template>
+      <template x-if="!controlLoading && controlDialog === 'sample'">
+        <div class="control-options">
+          <div class="control-field">
+            <label class="control-field-label" x-text="t('control.promptSource')"></label>
+            <div class="anima-select"
+                 x-data="animaSelect(() => controlPromptSelectConfig, controlIndex)"
+                 @click.outside="close()"
+                 @anima-select-change="selectControlPrompt($event.detail.value)">
+              <input type="hidden" :value="controlIndex">
+              <button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle($event)" :aria-label="t('control.selectPrompt') + '：' + selectedLabel" aria-haspopup="listbox" :aria-expanded="open ? 'true' : 'false'">
+                <span class="anima-select-trigger-text" x-text="selectedLabel"></span>
+                <svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="m6 9 6 6 6-6"/>
+                </svg>
+              </button>
+              <template x-if="open">
+                <div class="anima-select-menu" :class="{ 'anima-select-menu-described': hasDescriptions, 'anima-select-menu-positioned': positioned }">
+                  <div class="anima-select-menu-scroll">
+                    <template x-for="opt in flatOptions" :key="opt.v">
+                      <div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)">
+                        <span class="anima-select-option-content">
+                          <span class="anima-select-option-label" x-text="opt.l" :title="opt.l"></span>
+                          <span class="anima-select-option-desc" x-show="opt.d" x-text="opt.d" :title="opt.d"></span>
+                        </span>
+                        <svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+          <div class="control-field">
+            <label class="control-field-label" for="controlPromptText" x-text="t('control.prompt')"></label>
+            <textarea id="controlPromptText" x-model="controlPrompt" :readonly="!controlCanEditPrompt" rows="4" maxlength="32768" :placeholder="t('control.promptPlaceholder')"></textarea>
+            <p class="control-field-hint" role="status" x-show="controlSampleHint" x-text="controlSampleHint"></p>
+          </div>
+          <div class="control-sample-params">
+            <div class="control-sample-grid">
+              <label class="control-param-col-2"><span x-text="t('control.width')"></span><input type="number" x-model="controlWidth" min="64" max="4096" step="8" :placeholder="controlWidthPlaceholder"></label>
+              <label class="control-param-col-2"><span x-text="t('control.height')"></span><input type="number" x-model="controlHeight" min="64" max="4096" step="8" :placeholder="controlHeightPlaceholder"></label>
+              <label class="control-param-col-2"><span x-text="t('control.cfg')"></span><input type="number" x-model="controlScale" min="0.5" max="50" step="0.5" :placeholder="controlScalePlaceholder"></label>
+              <label class="control-param-col-3"><span x-text="t('control.seed')"></span><input type="text" x-model="controlSeed" inputmode="numeric" pattern="-?[0-9]+" :placeholder="controlSeedPlaceholder"></label>
+              <label class="control-param-col-3"><span x-text="t('control.steps')"></span><input type="number" x-model="controlSteps" min="1" max="1000" :placeholder="controlStepsPlaceholder"></label>
+            </div>
+          </div>
+          <div class="control-inherited-neg" x-show="controlNegativeSummary">
+            <span class="control-inherited-neg-label" x-text="t('control.negativeInherited')"></span>
+            <span class="control-inherited-neg-value" :title="controlNegativeSummary" x-text="controlNegativeSummary"></span>
+          </div>
+        </div>
+      </template>
+    </div>
+    <footer class="modal-footer control-footer">
+      <button type="button" class="btn control-footer-btn control-force-btn" x-show="!controlLoading && controlDialog === 'stop'" data-control-force
+              :disabled="!canSubmitControlDialog('force')" @click="submitTrainingControl('force', controlDialogTask)" x-text="t('control.force')"></button>
+      <button type="button" class="btn btn-secondary control-footer-btn" @click="controlDialog = ''" x-text="t('common.cancel')"></button>
+      <button type="submit" class="btn control-footer-btn" :class="controlDialog === 'sample' ? 'btn-primary' : 'btn-stop-confirm'"
+              x-show="controlDialog === 'sample' || controlCanStopAtStep" :disabled="!canSubmitControlDialog()"
+              x-text="controlDialog === 'sample' ? t('control.generate') : controlStopButtonLabel"></button>
+    </footer>
+  </form>
+</dialog>
 <dialog id="confirmDialog" x-ref="confirmRoot" class="modal-overlay" x-dialog="showConfirmModal" @click.self="cancelConfirm()"
         @dialog-close="cancelConfirm()" @dialog-after-close="confirmAfterClose()"
         :data-switching="confirmSwitching || confirmBusy ? '' : null"

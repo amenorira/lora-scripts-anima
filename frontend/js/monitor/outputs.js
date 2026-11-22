@@ -132,13 +132,19 @@ window.monitorOutputsMixin = {
       ? this._outputFilesKnownCount : 0;
   },
 
+  _hasOutputStates() {
+    return (this.outputFiles || []).some(file => file.category === 'state');
+  },
+
   _visibleOutputFiles() {
     const query = String(this.outputSearch || '').trim().toLowerCase();
-    const filter = this.outputFilter || 'all';
+    const hasStates = this._hasOutputStates();
+    const filter = (this.outputFilter === 'states' && !hasStates) ? 'all' : (this.outputFilter || 'all');
     return (this.outputFiles || []).filter(file => {
-      const isModel = file.category === 'model';
-      if (filter === 'models' && !isModel) return false;
-      if (filter === 'others' && isModel) return false;
+      const cat = file.category;
+      if (filter === 'models' && cat !== 'model') return false;
+      if (filter === 'states' && cat !== 'state') return false;
+      if (filter === 'others' && (cat === 'model' || cat === 'state')) return false;
       return !query || String(file.name || '').toLowerCase().includes(query);
     });
   },
@@ -146,7 +152,8 @@ window.monitorOutputsMixin = {
   _sortedOutputs() {
     const files = this._visibleOutputFiles();
     const models = files.filter(f => f.category === 'model');
-    const others = files.filter(f => f.category !== 'model');
+    const states = files.filter(f => f.category === 'state');
+    const others = files.filter(f => f.category !== 'model' && f.category !== 'state');
     const sortFiles = (items, key, direction) => items.slice().sort((a, b) => {
       const dir = direction === 'desc' ? -1 : 1;
       let va, vb;
@@ -154,6 +161,16 @@ window.monitorOutputsMixin = {
         if (a.ckpt_loss == null || b.ckpt_loss == null) return (a.ckpt_loss == null ? 1 : 0) - (b.ckpt_loss == null ? 1 : 0);
         va = (a.ckpt_loss == null) ? Infinity : a.ckpt_loss;
         vb = (b.ckpt_loss == null) ? Infinity : b.ckpt_loss;
+      } else if (key === 'step') {
+        // Keep step and epoch on separate scales. Known steps come first in either direction.
+        for (const field of ['ckpt_step', 'ckpt_epoch']) {
+          va = a[field]; vb = b[field];
+          if (va == null && vb == null) continue;
+          if (va == null) return 1;
+          if (vb == null) return -1;
+          return (va - vb) * dir;
+        }
+        return 0;
       } else if (key === 'time') {
         va = a.mtime || 0; vb = b.mtime || 0;
       } else if (key === 'size') {
@@ -174,14 +191,14 @@ window.monitorOutputsMixin = {
     });
     return {
       models: sortFiles(models, this.outputModelSortKey || 'loss', this.outputModelSortDir || 'asc'),
+      states: sortFiles(states, this.outputStateSortKey || 'time', this.outputStateSortDir || 'desc'),
       others: sortFiles(others, this.outputOtherSortKey || 'time', this.outputOtherSortDir || 'desc'),
     };
   },
 
   setOutputSort(group, key) {
-    const modelGroup = group === 'models';
-    const keyField = modelGroup ? 'outputModelSortKey' : 'outputOtherSortKey';
-    const dirField = modelGroup ? 'outputModelSortDir' : 'outputOtherSortDir';
+    const keyField = group === 'models' ? 'outputModelSortKey' : (group === 'states' ? 'outputStateSortKey' : 'outputOtherSortKey');
+    const dirField = group === 'models' ? 'outputModelSortDir' : (group === 'states' ? 'outputStateSortDir' : 'outputOtherSortDir');
     if (this[keyField] === key) {
       this[dirField] = this[dirField] === 'asc' ? 'desc' : 'asc';
     } else {
@@ -192,9 +209,18 @@ window.monitorOutputsMixin = {
   },
 
   setOutputFilter(filter) {
-    if (!['all', 'models', 'others'].includes(filter)) return;
+    if (!['all', 'models', 'states', 'others'].includes(filter)) return;
     this.outputFilter = filter;
     this.renderDashboard();
+  },
+
+  resumeFromOutputState(relPath, step = null) {
+    if (!this.selectedRunDir || !relPath || this.historyReuseBusy) return;
+    const baseDir = String(this.currentArtifactData()?.artifact_dir || '').replace(/[\\/]+$/, '');
+    const sep = baseDir.includes('\\') ? '\\' : '/';
+    const cleanRel = String(relPath).replace(/^[\\/]+/, '').replace(/[\\/]/g, sep);
+    const fullPath = baseDir ? baseDir + sep + cleanRel : cleanRel;
+    return this.reuseConfig(this.selectedRunDir, null, fullPath, step == null ? null : Number(step));
   },
 
   setOutputSearch(value) {
@@ -227,9 +253,10 @@ window.monitorOutputsMixin = {
       this.toast(this.t('monitor.selectFilesFirst'));
       return;
     }
-    const filesParam = selected.map(f => encodeURIComponent(f)).join(',');
+    const query = new URLSearchParams({run_dir: runDir});
+    selected.forEach(path => query.append('path', path));
     this.toast(this.t('monitor.preparingDownload'));
-    this._triggerDownload('/api/monitor/outputs/download?run_dir=' + encodeURIComponent(runDir) + '&files=' + filesParam);
+    this._triggerDownload('/api/monitor/outputs/download?' + query);
   },
 
   async downloadAllOutputs() {
@@ -243,6 +270,12 @@ window.monitorOutputsMixin = {
     if (!path) return;
     const runDir = this.currentOutputRunDir;
     if (!runDir) return;
+    const item = (this.outputFiles || []).find(file => file.path === path);
+    if (item?.is_dir) {
+      this.toast(this.t('monitor.preparingDownload'));
+      this._triggerDownload('/api/monitor/outputs/download?run_dir=' + encodeURIComponent(runDir) + '&path=' + encodeURIComponent(path));
+      return;
+    }
     this._triggerDownload('/api/monitor/outputs/download-file?run_dir=' + encodeURIComponent(runDir) + '&path=' + encodeURIComponent(path));
   },
 };

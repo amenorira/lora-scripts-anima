@@ -11,6 +11,9 @@ window.monitorSummaryMixin = {
     root.dataset.motionContext = motionContext;
     root._metricMotion = animate;
     const { state, completed, terminal, running } = this._summaryStatus(d, isHistory);
+    const liveControl = !isHistory && this.liveTaskId && this.controlTask === this.liveTaskId ? this.controlState : null;
+    const reported = liveControl?.progress;
+    const paused = liveControl?.state === 'paused';
     const total = Number(d.total_steps) || 0;
     const step = completed && total ? total : (Number(d.step) || 0);
     const rawPercent = d.percent != null ? Number(d.percent) : (total ? step / total * 100 : 0);
@@ -21,7 +24,6 @@ window.monitorSummaryMixin = {
     const lrLatest = lrSeries && (lrSeries.latest != null ? Number(lrSeries.latest) : (lrPoints.length ? Number(lrPoints[lrPoints.length - 1].value) : null));
     const lrMax = lrSeries && (lrSeries.max != null ? Number(lrSeries.max) : (lrPoints.length ? Math.max(...lrPoints.map(point => Number(point.value)).filter(Number.isFinite)) : null));
     const lrRange = terminal && lrPoints.length >= 2 && Number.isFinite(lrMax) && Number.isFinite(lrLatest);
-    const connection = isHistory ? null : this._monitorConnectionMeta(t);
     const stateLabels = { RUNNING: t('trainingInProgress'), CREATED: t('created'), FINISHED: t('finished'), FAILED: t('statusFailed'), TERMINATED: t('terminated'), UNKNOWN: t('statusUnknown'), IDLE: t('standby') };
     const set = (key, value) => {
       const el = root.querySelector('[data-summary-field="' + key + '"]');
@@ -33,16 +35,30 @@ window.monitorSummaryMixin = {
     };
     const status = root.querySelector('[data-summary-state]');
     if (status) {
-      status.dataset.tone = state === 'FAILED' ? 'danger' : (state === 'TERMINATED' ? 'muted' : (state === 'RUNNING' || completed ? 'ok' : 'muted'));
-      status.textContent = stateLabels[state] || state;
-    }
-    const connectionEl = root.querySelector('[data-summary-connection]');
-    if (connectionEl) {
-      connectionEl.hidden = !connection;
-      if (connection) connectionEl.textContent = connection.label;
+      const command = liveControl?.command;
+      const transition = running && command?.status === 'pending' && {pause:'pausing', resume:'resuming', stop:'stopping'}[command.action];
+      const phase = transition || (running && paused ? 'paused' : state.toLowerCase());
+      const label = transition || phase === 'paused' || phase === 'stopped' ? this.t('control.' + phase) : stateLabels[state] || state;
+      status.dataset.phase = phase;
+      if (status.textContent !== label) status.textContent = label;
     }
     const stop = root.querySelector('[data-summary-stop]');
     if (stop) stop.hidden = isHistory || !this._isActiveState(state);
+    const toggle = root.querySelector('[data-summary-toggle]');
+    if (toggle) {
+      const allowed = running && liveControl?.allowed;
+      const action = allowed && (allowed.includes('resume') ? 'resume' : allowed.includes('pause') ? 'pause' : '');
+      toggle.hidden = !action;
+      if (action) {
+        toggle.dataset.action = action;
+        toggle.classList.toggle('m-cmd-resume', action === 'resume');
+        toggle.classList.toggle('btn-secondary', action !== 'resume');
+        toggle.setAttribute('aria-label', this.t('control.' + action));
+        const label = toggle.querySelector('span');
+        const text = this.t('control.' + action + 'Button');
+        if (label.textContent !== text) label.textContent = text;
+      }
+    }
     const notice = root.querySelector('[data-summary-notice]');
     if (notice) {
       const messages = [];
@@ -60,7 +76,10 @@ window.monitorSummaryMixin = {
       ? epoch + '/' + totalEpochs : epoch;
     set('epoch', t('epochProgress') + ' ' + epochProgress);
     const lossPoints = this._cleanLossPoints(lossSeries && (lossSeries.diagnostic_points || lossSeries.points));
-    const latestLoss = lossPoints[lossPoints.length - 1];
+    const seriesLoss = lossPoints.at(-1);
+    const metricsStep = reported?.metrics_step ?? reported?.step;
+    const latestLoss = Number.isFinite(reported?.loss) && metricsStep >= (seriesLoss?.step ?? 0)
+      ? {step:metricsStep, value:reported.loss} : seriesLoss;
     set('loss', latestLoss ? this._formatDiagnosticValue(latestLoss.value) : (d.loss != null ? d.loss : '—'));
     // 每次实际显示新采样时记录比较基准；批量到达的中间 step 不冒充上次读数。
     const displayedLoss = root._displayedLoss;
@@ -69,7 +88,7 @@ window.monitorSummaryMixin = {
       root._displayedLoss = {
         context: motionContext,
         point: latestLoss,
-        trend: this._summaryLossChange(lossSeries, isHistory ? undefined : (sameLossContext ? (displayedLoss.point ?? null) : null)),
+        trend: this._summaryLossChange(lossSeries, isHistory ? undefined : (sameLossContext ? (displayedLoss.point ?? null) : null), latestLoss),
       };
     }
     const lossTrend = root._displayedLoss.trend;
@@ -79,7 +98,8 @@ window.monitorSummaryMixin = {
       if (lossTrend) this._patchLossChange(lossChange, lossTrend.percent, t(isHistory ? 'lossVsPreviousSample' : 'lossVsPreviousDisplay'), animate);
     }
     set('loss-meta', latestLoss ? t('lossUpdatedAt').replace('{n}', latestLoss.step) : t('recentLoss'));
-    set('lr', this._formatLearningRate(lrLatest ?? (isHistory ? null : d.lr), '—'));
+    const showReportedLr = Number.isFinite(reported?.lr) && metricsStep >= (lrPoints.at(-1)?.step ?? 0);
+    set('lr', this._formatLearningRate(showReportedLr ? reported.lr : lrLatest ?? (isHistory ? null : d.lr), '—'));
     const lrRangeEl = root.querySelector('[data-summary-field="lr-range"]');
     if (lrRangeEl) {
       lrRangeEl.hidden = !lrRange;
@@ -87,7 +107,15 @@ window.monitorSummaryMixin = {
     }
     set('lr-meta', this._summarySchedulerMeta(t, total) || (lrRange && completed && lrLatest === 0 ? t('schedulerFinished') : ''));
     set('speed', d.speed || '—');
-    set('speed-meta', t(!isHistory && running ? 'currentSpeed' : 'lastSpeed'));
+    const wait = liveControl?.timing?.data_wait_ratio;
+    const speedLabel = t(!isHistory && running && !paused ? 'currentSpeed' : 'lastSpeed');
+    set('speed-meta', speedLabel);
+    const speedMeta = root.querySelector('[data-summary-field="speed-meta"]');
+    if (speedMeta) {
+      speedMeta.title = Number.isFinite(wait)
+        ? this.t('control.waitShare').replace('{pct}', (wait * 100).toFixed(1) + '%') + '\n' + this.t('control.waitHint')
+        : '';
+    }
     this._patchSummaryTime(root, d, t, isHistory, animate);
     const progress = root.querySelector('[data-overview-progress]');
     if (progress) {
@@ -112,10 +140,11 @@ window.monitorSummaryMixin = {
   _patchSummaryTime(root, d, t, isHistory, animate) {
     const { terminal, running } = this._summaryStatus(d, isHistory);
     const result = terminal && d.train_result;
-    const elapsed = !isHistory && running ? this._observeMonitorClock(d) : this._monitorDurationSeconds(d.elapsed);
+    const paused = !isHistory && running && this.controlState?.state === 'paused';
+    const elapsed = !isHistory && running && !paused ? this._observeMonitorClock(d) : this._monitorDurationSeconds(d.elapsed);
     const duration = this._formatMonitorDuration(result?.duration_str || d.elapsed || '—', result ? result.duration_sec : elapsed);
     const eta = d.eta ? this._formatMonitorDuration(d.eta) : '';
-    const showRemaining = running && !!eta;
+    const showRemaining = running && !paused && !!eta;
     const endedAt = result?.ended_at ? this._formatRunEndTime(result.ended_at) : '';
     const hasTimeTrend = this._summaryTelemetrySamples(isHistory).samples.filter(sample => Number.isFinite(sample.remainingRate)).length >= 2;
     const timeMeta = [
@@ -149,9 +178,21 @@ window.monitorSummaryMixin = {
   _overviewMetricsHtml(d, t, isHistory) {
     const { state } = this._summaryStatus(d, isHistory);
     let html = '<section class="m-console-card m-overview-metrics">';
-    html += '<div class="m-card-heading"><div><span>' + this.esc(t('runSummary')) + '</span></div>';
-    html += '<div class="m-summary-actions"><span class="m-summary-state" data-summary-state></span><span class="m-summary-connection" data-summary-connection hidden role="status" aria-live="polite"></span>';
-    if (!isHistory) html += '<button type="button" class="btn btn-sm m-summary-stop" data-summary-stop hidden @click="stopTraining()" :disabled="trainingStopping === (liveTaskId || taskId)" x-text="trainingStopping === (liveTaskId || taskId) ? t(\'regularization.stopping\') : t(\'common.stopTraining\')" title="' + this.esc(t('training.stopHint')) + '">' + this.esc(t('stopTraining')) + '</button>';
+    html += '<div class="m-card-heading m-summary-heading"><div class="m-summary-title"><span>' + this.esc(t('runSummary')) + '</span>' + (isHistory ? '' : '<span class="m-summary-state" data-summary-state role="status"></span>') + '</div>';
+    html += '<div class="m-summary-actions">';
+    if (!isHistory) {
+      html += `
+        <button type="button" class="btn btn-sm btn-secondary m-summary-command" data-summary-toggle hidden
+          :aria-disabled="controlSubmitting || controlState?.command?.status === 'pending' || trainingStopping === liveTaskId"
+          @click="submitTrainingControl($el.dataset.action)">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><g class="m-icon-pause"><rect x="3.5" y="3" width="3.2" height="10" rx="0.8"/><rect x="9.3" y="3" width="3.2" height="10" rx="0.8"/></g><path class="m-icon-resume" d="M4.5 3.1a.6.6 0 0 1 .9-.52l8.1 4.9a.6.6 0 0 1 0 1.04l-8.1 4.9a.6.6 0 0 1-.9-.52z"/></svg><span></span>
+        </button>
+        <button type="button" class="btn btn-sm btn-secondary m-summary-command m-cmd-stop" data-summary-stop hidden aria-haspopup="dialog"
+          aria-label="${this.esc(t('stopTraining'))}" :disabled="trainingStopping === (liveTaskId || taskId)" @click="stopTraining()">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="1.2"/></svg><span>${this.esc(this.t('control.stopButton'))}</span>
+        </button>`;
+    }
+    if (isHistory || this._isActiveState(state)) html += this._summaryActionMenuHtml(isHistory);
     html += '</div></div>';
     if (!isHistory) html += '<div class="m-summary-notice" data-summary-notice hidden role="alert"></div>';
     if (!isHistory && state === 'UNKNOWN') return html + '</section>';
@@ -167,7 +208,9 @@ window.monitorSummaryMixin = {
     }
     html += '<div class="m-summary-progress"><div class="m-summary-progress-top"><span>' + this.esc(t('overallProgress')) + '</span><div class="m-summary-progress-figures"><strong data-summary-field="step"></strong><b data-summary-field="percent"></b></div></div>';
     html += '<div class="m-overview-progress" role="progressbar" aria-label="' + this.esc(t('overallProgress')) + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i data-overview-progress></i></div>';
-    html += '<div class="m-summary-progress-bottom"><span data-summary-field="epoch"></span></div></div>';
+    html += '<div class="m-summary-progress-bottom"><span data-summary-field="epoch"></span>';
+    if (!isHistory) html += `<span role="status" x-text="controlTask === liveTaskId && controlState?.command?.status === 'pending' && ['save','save_state','sample'].includes(controlState.command.action) ? t(controlState.command.action === 'sample' && controlState.command.phase === 'encoding' ? 'control.encodingPending' : 'control.' + controlState.command.action + 'Pending') : (controlState?.state === 'paused' && controlState.replica ? t('control.replica') : '')"></span>`;
+    html += '</div></div>';
     html += '<div class="m-live-metrics">';
     html += this._summaryTileHtml('loss', t('currentLoss'), t('recentLoss'), t('localTrendScaleHint'));
     html += this._summaryTileHtml('lr', t('lr'), '', t('localTrendScaleHint'));
@@ -177,14 +220,46 @@ window.monitorSummaryMixin = {
     return html;
   },
 
+  _summaryActionMenuHtml(isHistory) {
+    if (isHistory) {
+      return `<button type="button" class="btn btn-sm btn-secondary m-summary-command" data-control-action="restore"
+        x-show="runDetailData?.resume_state" x-cloak :disabled="!!historyReuseBusy"
+        @click="reuseConfig(selectedRunDir, null, runDetailData.resume_state, runDetailData.resume_step)"
+        x-text="runDetailData?.resume_step == null ? t('control.resumeFrom') : t('control.resumeStep').replace('{step}', runDetailData.resume_step)"></button>`;
+    }
+    const label = this.esc(this.t('control.more'));
+    const visible = "liveTaskId && controlTask === liveTaskId && ['sample','save','save_state'].some(a => controlState?.allowed?.includes(a))";
+    const sampleIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="1.5"/><path d="m4 17 5-5 3 3 3-4 6 7"/></svg>';
+    const saveIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>';
+    const stateIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+    const items = `<button type="button" role="menuitem" tabindex="-1" data-control-action="sample"
+        x-show="controlState?.allowed?.includes('sample')"
+        :disabled="controlSubmitting || controlState?.command?.status === 'pending'"
+        @click="close(); openTrainingControl('sample')">${sampleIcon}<span x-text="t('control.previewTitle')"></span></button>
+      <button type="button" role="menuitem" tabindex="-1" data-control-action="save"
+        x-show="controlState?.allowed?.includes('save')"
+        :disabled="controlSubmitting || controlState?.command?.status === 'pending'"
+        @click="close(); submitTrainingControl('save')">${saveIcon}<span x-text="t('control.save')"></span></button>
+      <button type="button" role="menuitem" tabindex="-1" data-control-action="save_state"
+        x-show="controlState?.allowed?.includes('save_state')"
+        :disabled="controlSubmitting || controlState?.command?.status === 'pending'"
+        @click="close(); submitTrainingControl('save_state')">${stateIcon}<span x-text="t('control.save_state')"></span></button>`;
+    return `<div class="m-summary-menu" x-data="actionMenu" x-show="${visible}" x-cloak :class="{open}" @keydown="key($event)" @click.outside="close(false)" @focusout="focusOut($event)">
+      <button type="button" class="btn btn-sm btn-secondary m-summary-command" data-summary-menu x-ref="trigger" title="${label}" aria-label="${label}" aria-haspopup="menu" :aria-expanded="open" aria-controls="summary-action-list" @click="toggle()">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="3.2" cy="8" r="1.35"/><circle cx="8" cy="8" r="1.35"/><circle cx="12.8" cy="8" r="1.35"/></svg>
+      </button>
+      <div id="summary-action-list" class="field-menu-popup" x-ref="menu" x-show="open" :class="{'is-positioned':positioned}" :inert="!open" role="menu" aria-label="${label}" x-cloak>${items}</div>
+    </div>`;
+  },
+
   // 所有卡片共用生命周期解释；状态只影响文案与交互，不改变曲线的指标定义。
   _summaryStatus(d, isHistory) {
     let state = isHistory ? 'UNKNOWN' : (d.state || 'IDLE');
     if (isHistory && d.train_result && d.train_result.status) {
       const status = String(d.train_result.status).toUpperCase();
-      state = { COMPLETED: 'FINISHED', FINISHED: 'FINISHED', ERROR: 'FAILED', TIMEOUT: 'FAILED', FAILED: 'FAILED', TERMINATED: 'TERMINATED' }[status] || 'UNKNOWN';
+      state = { COMPLETED: 'FINISHED', FINISHED: 'FINISHED', ERROR: 'FAILED', TIMEOUT: 'FAILED', FAILED: 'FAILED', TERMINATED: 'TERMINATED', STOPPED: 'STOPPED' }[status] || 'UNKNOWN';
     }
-    return { state, running: state === 'RUNNING', completed: state === 'FINISHED', terminal: isHistory || ['FINISHED', 'FAILED', 'TERMINATED'].includes(state) };
+    return { state, running: state === 'RUNNING', completed: state === 'FINISHED', terminal: isHistory || ['FINISHED', 'FAILED', 'TERMINATED', 'STOPPED'].includes(state) };
   },
 
   _summaryTileHtml(key, label, meta, scaleHint = '') {
@@ -265,14 +340,14 @@ window.monitorSummaryMixin = {
     return this.monitorLossSeries.find(item => item.tag === 'loss/current');
   },
 
-  _summaryLossChange(series, previousPoint) {
+  _summaryLossChange(series, previousPoint, displayedPoint) {
     const points = this._cleanLossPoints(series && (series.diagnostic_points || series.points));
-    const latest = points.at(-1);
+    const latest = displayedPoint ?? points.at(-1);
     const baseline = previousPoint === undefined ? points.at(-2) : previousPoint;
     if (!latest || !baseline || latest.step < baseline.step) return null;
     const previous = baseline.value;
     if (Math.abs(previous) < 1e-12) return null;
-    const percent = (points[points.length - 1].value - previous) / Math.abs(previous) * 100;
+    const percent = (latest.value - previous) / Math.abs(previous) * 100;
     return Number.isFinite(percent) ? { percent } : null;
   },
 

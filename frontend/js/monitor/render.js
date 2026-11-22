@@ -58,7 +58,7 @@ window.monitorRenderMixin = {
     const historyEl = document.getElementById('monitorHistoryContext');
     if (historyEl) {
       const signature = isHistory
-        ? [locale, this.selectedRunDir || '', d.config && d.config.output_name || '', d.train_result && d.train_result.status || '', d.artifact_available].join(':')
+        ? [locale, this.selectedRunDir || '', d.config?.output_name, d.train_result?.status, d.artifact_available].join(':')
         : '';
       if (this._historyContextSignature !== signature) {
         this._historyContextSignature = signature;
@@ -105,17 +105,17 @@ window.monitorRenderMixin = {
   // ═══════════════════════════════════════════════════════════
   _historyBannerHtml(d, t) {
     const runName = (d.config && d.config.output_name) || ((this.selectedRunDir || '').split(/[\\/]/).pop() || '');
-    let html = '<div class="m-history-banner">';
+    let html = '<div class="m-history-banner"><div class="m-history-identity">';
     html += '<svg class="m-history-icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
     html += '<span class="m-history-label">' + this.esc(t('viewingHistory')) + '</span>';
-    html += '<b class="m-history-name">' + this.esc(runName) + '</b>';
+    html += '<b class="m-history-name" title="' + this.esc(runName) + '">' + this.esc(runName) + '</b>';
     const state = this._summaryStatus(d, true).state;
-    const stClass = state === 'FINISHED' ? 'ok' : (state === 'FAILED' ? 'danger' : 'muted');
-    const stLabel = state === 'FINISHED' ? t('statusCompleted') : state === 'FAILED' ? t('statusFailed') : state === 'TERMINATED' ? t('statusTerminated') : t('statusUnknown');
+    const stClass = state === 'FINISHED' ? 'ok' : (state === 'FAILED' || state === 'TERMINATED' ? 'danger' : 'muted');
+    const stLabel = t({FINISHED: 'statusCompleted', FAILED: 'statusFailed', TERMINATED: 'statusTerminated', STOPPED: 'statusStopped'}[state] || 'statusUnknown');
     html += '<span class="m-badge m-badge-' + stClass + '"><i aria-hidden="true"></i>' + this.esc(stLabel) + '</span>';
     if (d.artifact_available === false) html += '<span class="m-badge m-badge-danger"><i aria-hidden="true"></i>' + this.esc(t('artifactOffline')) + '</span>';
-    html += '<div class="m-history-spacer"></div>';
-    html += '<button class="btn btn-sm btn-secondary" @click="navigate(\'history\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>' + this.esc(t('backToHistory')) + '</button>';
+    html += '</div>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="navigate(\'history\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>' + this.esc(t('backToHistory')) + '</button>';
     html += '</div>';
     return html;
   },
@@ -168,6 +168,7 @@ window.monitorRenderMixin = {
       return;
     }
     if (tab === 'overview') {
+      let restoreControlFocus;
       const sig = 'ov:' + this._shellLocale + ':' + this._summaryStatus(d, isHistory).state + ':' + this.trainParamsVersion;
       if (panelEmpty || this._builtOverviewSig !== sig || this._builtParamSchema !== window.TRAIN_SECTIONS) {
         this._builtOverviewSig = sig;
@@ -178,6 +179,10 @@ window.monitorRenderMixin = {
           ? { start: paramInput.selectionStart, end: paramInput.selectionEnd } : null;
         const overviewContext = isHistory ? 'history:' + this.selectedRunDir : 'live:' + (d.run_dir || this.liveTaskId || d.active_task?.id || '');
         const sameContext = panel.dataset.overviewContext === overviewContext;
+        if (sameContext && panel.contains(document.activeElement)) {
+          if (document.activeElement.hasAttribute('data-summary-toggle')) restoreControlFocus = '[data-summary-toggle]';
+          if (document.activeElement.hasAttribute('data-summary-stop')) restoreControlFocus = '[data-summary-stop]';
+        }
         const method = panel.querySelector('.m-diagnostic-details');
         const methodOpen = method?.open;
         const methodFocused = method && document.activeElement === method.querySelector('summary');
@@ -201,6 +206,7 @@ window.monitorRenderMixin = {
         }
       }
       this._patchOverviewStatus(panel, d, t, isHistory);
+      if (restoreControlFocus) panel.querySelector(restoreControlFocus + ':not([hidden])')?.focus({preventScroll:true});
       return;
     }
     if (tab === 'samples') {
@@ -275,7 +281,11 @@ window.monitorRenderMixin = {
     }
     if (tab === 'outputs') {
       if ((this._outputFilesNeedsRefresh || (tabChanged && !this.outputFiles.length)) && !this.outputFilesLoading) this.loadOutputFiles();
-      const sig = 'out:' + this._shellLocale + ':' + this.outputFilesVersion + ':' + this.selectedOutputFiles.join('|') + ':' + (!this.outputFiles.length && this.outputFilesLoading && !this._outputFilesLoaded ? 1 : 0) + ':' + this.outputSearch + ':' + this.outputFilter + ':' + this.outputModelSortKey + ':' + this.outputModelSortDir + ':' + this.outputOtherSortKey + ':' + this.outputOtherSortDir + ':' + (this.outputFilesError || '') + ':' + (d.artifact_available === false ? 0 : 1);
+      const sig = ['out', this._shellLocale, this.outputFilesVersion, this.selectedOutputFiles.join('|'),
+        !this.outputFiles.length && this.outputFilesLoading && !this._outputFilesLoaded ? 1 : 0,
+        this.outputSearch, this.outputFilter, this.outputModelSortKey, this.outputModelSortDir,
+        this.outputStateSortKey, this.outputStateSortDir, this.outputOtherSortKey, this.outputOtherSortDir,
+        this.outputFilesError || '', d.artifact_available === false ? 0 : 1].join(':');
       if (panelEmpty || this._builtOutputsSig !== sig) {
         // Preserve scroll position across re-renders
         const scrollEl = panel.querySelector('.m-outputs-scroll');

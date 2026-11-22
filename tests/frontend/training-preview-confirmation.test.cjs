@@ -304,17 +304,125 @@ test('editing the form before preview confirmation cancels the pending submissio
   assert.equal(errors[0][0], 'training.preflightChanged');
 });
 
-test('concurrent stop actions send one request for the active task', async () => {
+test('opening stop only reads choices, confirming twice sends one graceful command', async () => {
   const pending = deferred(), requests = [];
-  const { window } = loadFrontend('training/toml', { window: {}, fetch: url => { requests.push(url); return pending.promise; } });
-  const app = composeMixins(window.trainingTomlMixin, {
-    liveTaskId: 'task-a', isTraining: true, t: key => key, toast() {}, _pollTrainingState() {},
+  const state = {allowed: ['stop'], command: null};
+  const { window } = loadFrontend('training/run-control', { window: {}, fetch: (url, options) => {
+    requests.push([url, options && JSON.parse(options.body)]);
+    return options ? pending.promise : Promise.resolve({ok:true, json: async () => state});
+  } });
+  const app = composeMixins(window.trainingControlMixin, {
+    liveTaskId: 'task-a', t: key => key, toast() {}, _wakeTrainingStatePoll() {},
   });
-  const stop = app.stopTraining();
   await app.stopTraining();
-  assert.deepEqual(requests, ['/api/tasks/terminate/task-a']);
-  assert.equal(app.trainingStopping, 'task-a');
-  pending.resolve({ ok: true });
+  assert.equal(app.controlDialog, 'stop');
+  assert.equal(app.controlSaveWeights, false);
+  assert.equal(app.controlSaveState, false);
+  assert.deepEqual(requests, [['/api/monitor/control/task-a?prompts=false', undefined]]);
+  const stop = app.submitTrainingControl('stop');
+  await app.submitTrainingControl('stop');
+  assert.equal(requests.length, 2);
+  assert.deepEqual(requests[1][1], {action:'stop', mode:'discard'});
+  pending.resolve({ ok: true, json: async () => state });
   await stop;
-  assert.equal(app.trainingStopping, '');
+  assert.equal(app.controlDialog, '');
+});
+
+test('each stop dialog starts with both saves off and submits the selected combination', async () => {
+  const posts = [];
+  const {window} = loadFrontend('training/run-control', {window: {}, fetch: async (_, options) => {
+    if (options) posts.push(JSON.parse(options.body));
+    return {ok:true, json:async () => ({allowed:['stop'], command:null})};
+  }});
+  const app = composeMixins(window.trainingControlMixin, {
+    liveTaskId:'running', t:k => k, toast() {}, _wakeTrainingStatePoll() {},
+  });
+  for (const [weights, state, mode] of [[true,true,'both'], [false,true,'state'], [true,false,'weights'], [false,false,'discard']]) {
+    await app.stopTraining();
+    assert.equal(app.controlSaveWeights, false);
+    assert.equal(app.controlSaveState, false);
+    app.controlSaveWeights = weights;
+    app.controlSaveState = state;
+    await app.submitTrainingControl('stop');
+    assert.deepEqual(posts.at(-1), {action:'stop', mode});
+  }
+  assert.equal(posts.length, 4);
+});
+
+test('one force click targets the open stop dialog even when graceful stop is unavailable', async () => {
+  const posts = [], pending = deferred();
+  const {window} = loadFrontend('training/run-control', {window: {}, fetch: async (_, options) => {
+    if (options) {
+      posts.push(JSON.parse(options.body));
+      return pending.promise;
+    }
+    return {ok:true, json:async () => ({allowed:[], command:{id:'1', status:'pending'}})};
+  }});
+  const app = composeMixins(window.trainingControlMixin, {
+    liveTaskId:'running', t:k => k, toast() {}, _wakeTrainingStatePoll() {},
+  });
+  await app.submitTrainingControl('force');
+  await app.stopTraining();
+  await app.submitTrainingControl('stop');
+  await app.submitTrainingControl('force', 'another-task');
+  app.controlDialog = '';
+  await app.submitTrainingControl('force');
+  assert.deepEqual(posts, []);
+  await app.stopTraining();
+  app.controlSaveWeights = app.controlSaveState = true;
+  const force = app.submitTrainingControl('force');
+  await app.submitTrainingControl('force');
+  await app.submitTrainingControl('stop');
+  assert.deepEqual(posts, [{action:'force'}]);
+  pending.resolve({ok:true, json:async () => ({status:'success'})});
+  await force;
+  assert.equal(app.controlDialog, '');
+});
+
+test('manual preview reuses preset index when unchanged and inherits selected preset via base_index when edited', async () => {
+  const posts = [];
+  const state = {
+    state: 'running',
+    allowed: ['sample', 'stop'],
+    new_prompt: true,
+    external_encoder: true,
+    preview_defaults: { width: 1024, height: 1024, scale: 4.0, sample_steps: 20 },
+    prompts: [
+      { prompt: 'first prompt', width: 1024, height: 1024, scale: 4.0, seed: 11, sample_steps: 20 },
+      { prompt: 'second prompt', width: 768, height: 512, scale: 5.5, negative_prompt: 'bad', seed: 77, sample_steps: 0 },
+    ],
+    command: null,
+  };
+  const { window } = loadFrontend('training/run-control', {
+    window: {},
+    fetch: async (_, options) => {
+      if (options) posts.push(JSON.parse(options.body));
+      return { ok: true, json: async () => state };
+    },
+  });
+  const app = composeMixins(window.trainingControlMixin, {
+    liveTaskId: 'run-1', t: k => k, toast() {}, _wakeTrainingStatePoll() {},
+  });
+
+  await app.openTrainingControl('sample');
+  assert.equal(app.controlIndex, '0');
+  assert.equal(app.controlPrompt, 'first prompt');
+  assert.equal(app.controlUsesText, false);
+
+  app.selectControlPrompt('1');
+  assert.equal(app.controlPrompt, 'second prompt');
+  assert.equal(app.controlActiveTemplate.width, 768);
+  assert.equal(app.controlStepsPlaceholder, 'control.modelDefaultSteps');
+  await app.submitTrainingControl('sample');
+  assert.deepEqual(posts.at(-1), { action: 'sample', index: 1 });
+
+  await app.openTrainingControl('sample');
+  app.selectControlPrompt('1');
+  app.controlPrompt = 'second prompt, sunset light';
+  app.controlSeed = '-9223372036854775808';
+  assert.equal(app.controlPromptModified, true);
+  assert.equal(app.controlStepsPlaceholder, 'control.modelDefaultSteps');
+  assert.equal(app.controlUsesText, true);
+  await app.submitTrainingControl('sample');
+  assert.deepEqual(posts.at(-1), { action: 'sample', prompt: 'second prompt, sunset light', base_index: 1, seed: '-9223372036854775808' });
 });

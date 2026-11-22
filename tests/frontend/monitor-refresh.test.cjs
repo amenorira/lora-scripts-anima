@@ -90,6 +90,57 @@ test('background sample refresh can reuse the monitor cache', async () => {
   await pending;
 });
 
+test('changing the state sort key or direction rerenders the output list', () => {
+  const panel = {firstElementChild: {}, querySelector: () => null, contains: () => false, classList: {add() {}}};
+  const document = {getElementById: () => ({querySelector: () => panel})};
+  const {window} = loadFrontend('monitor/render', {window: {}, document});
+  const app = composeMixins(window.monitorRenderMixin, {
+    _builtTab: 'outputs', selectedOutputFiles: [], outputFiles: [{}], outputStateSortKey: 'name', outputStateSortDir: 'asc',
+    _renderOutputsTab() {return this.outputStateSortKey + '-' + this.outputStateSortDir;},
+  });
+  const render = () => app._renderTab('outputs', {}, null, null, () => '', false);
+  render();
+  assert.equal(panel.innerHTML, 'name-asc');
+  app.outputStateSortKey = 'size';
+  render();
+  assert.equal(panel.innerHTML, 'size-asc');
+  app.outputStateSortDir = 'desc';
+  render();
+  assert.equal(panel.innerHTML, 'size-desc');
+});
+
+test('state checkpoint sorting uses saved steps and keeps epoch-only saves together at the end', () => {
+  const {window} = loadFrontend('monitor/outputs');
+  const app = composeMixins(window.monitorOutputsMixin, {
+    outputStateSortKey: 'step', outputFiles: [
+      {name: 'epoch2', ckpt_epoch: 2, ckpt_step: 240}, {name: 'legacy3', ckpt_epoch: 3},
+      {name: 'step100', ckpt_step: 100}, {name: 'legacy1', ckpt_epoch: 1},
+      {name: 'unknown'}, {name: 'step0', ckpt_step: 0},
+    ].map(file => ({category: 'state', ...file})),
+  });
+  const order = () => Array.from(app._sortedOutputs().states, row => row.name);
+  app.outputStateSortDir = 'asc';
+  assert.deepEqual(order(), ['step0', 'step100', 'epoch2', 'legacy1', 'legacy3', 'unknown']);
+  app.outputStateSortDir = 'desc';
+  assert.deepEqual(order(), ['epoch2', 'step100', 'step0', 'legacy3', 'legacy1', 'unknown']);
+});
+
+test('history offers downloads for distributed states and resume for ordinary states', () => {
+  const {window} = loadFrontend(['training/field-renderer', 'monitor/core', 'monitor/render']);
+  const app = composeMixins(window.trainingFieldRenderer, window.utilsMixin, window.monitorCoreMixin, window.monitorRenderMixin, {
+    selectedRunDir: 'output/run', runDetailData: {}, t: key => key, outputFilter: 'states',
+    outputFiles: [], outputFilesSelected: {},
+  });
+  for (const name of ['fsdp-state', 'deepspeed-state']) {
+    app.outputFiles = [{category: 'state', name, path: name, resumable: false}];
+    const html = app._renderOutputsTab(app.t);
+    assert.ok(html.includes(`downloadSingleOutput('${name}')`));
+    assert.doesNotMatch(html, /resumeFromOutputState|fsdpIncompatible/);
+  }
+  app.outputFiles[0] = {category: 'state', name: 'epoch-state', path: 'epoch-state', resumable: true, ckpt_step: 240};
+  assert.match(app._renderOutputsTab(app.t), /resumeFromOutputState\('epoch-state',240\)/);
+});
+
 test('artifact notices refresh only changed samples and coalesce changes during a read', async () => {
   const {app, requests} = requestHarness();
   app.currentRoute = 'monitor-dashboard';
