@@ -95,6 +95,9 @@ class Krea2Trainer(Krea2NetworkTrainer):
 
 
 def main():
+    from backend.training.checkpoint_state import track_state_saves
+
+    track_state_saves()
     parser = krea2_setup_parser(setup_parser_common())
     args = read_config_from_file(parser.parse_args(), parser)
     args.dit_dtype = 'bfloat16'

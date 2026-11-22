@@ -1,7 +1,9 @@
 import asyncio
+import io
 import json
 import tempfile
 import unittest
+import zipfile
 from contextlib import ExitStack
 from pathlib import Path
 from types import SimpleNamespace
@@ -49,6 +51,87 @@ class CrossDriveSandbox(unittest.TestCase):
 
 
 class RunRegistryTests(CrossDriveSandbox):
+    def test_state_archives_and_size_include_distributed_checkpoint_members(self):
+        import torch
+        from torch.distributed import checkpoint
+        from backend.monitor.artifacts import list_output_files
+        from backend.monitor.routes import _output_archive_files
+
+        state = self.external / "sharded-state"
+        state.mkdir()
+        groups = ("pytorch_model_fsdp_0", "pytorch_model_fsdp_1", "optimizer_0", "optimizer_1")
+        for folder in groups:
+            writer = checkpoint.FileSystemWriter(state / folder, thread_count=2)
+            checkpoint.save({"weight": torch.ones(2), "bias": torch.ones(1)}, storage_writer=writer)
+        torch.save({}, state / "random_states_0.pkl")
+        shard_dir = state / "pytorch_model_fsdp_0"
+        (shard_dir / ".private").write_bytes(b"hidden")
+        (shard_dir / "__private").write_bytes(b"hidden")
+        members = dict((path.relative_to(state).as_posix(), path.stat().st_size)
+                       for path, _ in _output_archive_files(self.external, [state.name]))
+        self.assertEqual(set(members), {"random_states_0.pkl"} | {
+            f"{folder}/{name}" for folder in groups
+            for name in (".metadata", "__0_0.distcp", "__0_1.distcp")
+        })
+        item, = list_output_files(str(self.external))
+        self.assertEqual((item["category"], item["resumable"]), ("state", False))
+        self.assertEqual(item["size"], sum(members.values()))
+
+    def test_download_preserves_commas_and_literal_percent_escapes_in_each_path(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from backend.monitor.routes import router
+
+        state = self.external / "demo,v2-state"
+        state.mkdir()
+        (state / "optimizer.bin").write_bytes(b"opt")
+        name = "literal%2C.txt"
+        (self.external / name).write_text("keep")
+        app = FastAPI()
+        app.include_router(router)
+        record = {"artifact_available": True, "artifact_path": str(self.external)}
+        with TestClient(app) as client, patch("backend.monitor.routes._resolve_run_record", return_value=record):
+            for selections in ([state.name], [state.name, name]):
+                response = client.get("/monitor/outputs/download", params=[("path", p) for p in selections])
+                with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+                    self.assertEqual(archive.namelist(), [state.name + "/optimizer.bin", *selections[1:]])
+
+    def test_download_all_excludes_active_temporary_archives_inside_artifact_root(self):
+        from backend.monitor.routes import download_outputs
+
+        downloads = self.external / "downloads"
+        downloads.mkdir()
+        (downloads / ".download-concurrent.zip").touch()
+        (self.external / "result.txt").write_bytes(b"result")
+        record = {"artifact_available": True, "artifact_path": str(self.external)}
+        write_member = zipfile.ZipFile.write
+
+        def checked_write(archive, source, member):
+            self.assertNotEqual(Path(archive.filename), source, "attempted to archive the open ZIP")
+            write_member(archive, source, member)
+
+        with (patch("backend.monitor.routes._resolve_run_record", return_value=record),
+              patch.object(zipfile.ZipFile, "write", checked_write),
+              patch("tools.runtime_paths.runtime_cache_dir", return_value=downloads)):
+            response = asyncio.run(download_outputs("run", "", ""))
+        try:
+            with zipfile.ZipFile(response.path) as archive:
+                self.assertEqual(archive.namelist(), ["result.txt"])
+                self.assertEqual(archive.read("result.txt"), b"result")
+        finally:
+            asyncio.run(response.background())
+
+    def test_output_archive_includes_visible_members_once_for_overlapping_selections(self):
+        from backend.monitor.routes import _output_archive_files
+
+        state = self.external / "demo-state"
+        state.mkdir()
+        weights = state / "model.safetensors"
+        weights.touch()
+        (state / ".private").touch()
+        members = list(_output_archive_files(self.external, ["demo-state", "demo-state/model.safetensors", "."]))
+        self.assertEqual(members, [(weights.resolve(), Path("demo-state/model.safetensors"))])
+
     def test_artifact_count_change_refreshes_older_preview_before_notice(self):
         sample = self.external / "sample"
         sample.mkdir()
@@ -95,6 +178,12 @@ class RunRegistryTests(CrossDriveSandbox):
 
                 (internal / "train_task.log").write_text("log", encoding="utf-8")
                 (internal / "result.json").write_text("{}", encoding="utf-8")
+                (internal / "prompts.json").write_text('["prompt copy"]', encoding="utf-8")
+                with (internal / "config.toml").open("a", encoding="utf-8") as config:
+                    saved_dir = "/previous-machine/run" if external else internal.as_posix()
+                    config.write(f'sample_prompts = "{saved_dir}/prompts.json"\nlogging_dir = "{saved_dir}/log"\n')
+                source = self.root / "prompts.json"
+                source.write_text('["original"]', encoding="utf-8")
                 (internal / "output_dir.txt").write_text(str(artifact), encoding="utf-8")
                 (internal / "log").mkdir()
                 (internal / "log" / "events.out.tfevents.test").write_bytes(b"tb")
@@ -106,6 +195,8 @@ class RunRegistryTests(CrossDriveSandbox):
 
                 self.assertTrue(run_registry.mark_run_deleted(internal))
                 self.assertFalse((internal / "config.toml").exists())
+                self.assertFalse((internal / "prompts.json").exists())
+                self.assertEqual(source.read_text(encoding="utf-8"), '["original"]')
                 self.assertFalse((internal / "train_task.log").exists())
                 self.assertFalse((internal / "output_dir.txt").exists())
                 self.assertFalse((internal / "log").exists())
@@ -116,6 +207,15 @@ class RunRegistryTests(CrossDriveSandbox):
                 self.assertTrue(tombstone["deleted"])
                 self.assertIsNone(run_registry.load_run_record(internal))
 
+
+    def test_deleting_history_preserves_unrelated_prompt_file_in_artifacts(self):
+        internal = self.output / "inline-run"
+        self._write_config(internal / "config.toml", internal)
+        run_registry.write_run_record(internal, artifact_dir=internal, task_id="inline")
+        user_file = internal / "prompts.json"
+        user_file.write_text('["my prompts"]', encoding="utf-8")
+        self.assertTrue(run_registry.mark_run_deleted(internal))
+        self.assertTrue(user_file.exists())
 
     def test_live_log_cursor_keeps_overwrites_and_resets(self):
         log = self.output / "train_tail.log"

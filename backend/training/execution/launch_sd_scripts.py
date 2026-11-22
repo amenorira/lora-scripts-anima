@@ -112,7 +112,7 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
             code="invalidOutputPath", params={"path": requested_output_dir}, details=str(exc),
         )
     internal_run_dir = (OUTPUT_DIR / run_dir_name).resolve()
-    artifact_run_dir = output_base_path if is_resume else output_base_path / run_dir_name
+    artifact_run_dir = output_base_path / run_dir_name
     # ──────────────────────────────────────────────────────────
 
     suggest_cpu_threads, error = await sd_scripts_preflight.check_input_files(config, model_train_type)
@@ -145,7 +145,6 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
             run_files.prepare_run_directories,
             artifact_run_dir,
             internal_run_dir,
-            resume=is_resume,
             owned=reserved_task.owned_run_paths,
         )
     except OSError as exc:

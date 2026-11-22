@@ -10,10 +10,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import APIRouter, Query, Request
+from backend.monitor.run_control import saved_training_state
 
 from backend.monitor.training import (
     read_tensorboard_loss,
@@ -23,6 +26,7 @@ from backend.monitor.artifacts import (
     newest_previews, list_output_files, read_output_summary,
 )
 from backend.monitor.checkpoints import enrich_model_files_with_loss
+from backend.training.checkpoint_state import is_distributed_state_member
 from backend.monitor.history import scan_history
 from backend.monitor.log_files import find_run_log_path, find_train_log_path, read_log_slice
 from backend.monitor.live_snapshot import read_run_log_progress
@@ -34,6 +38,7 @@ from backend.monitor.run_registry import (
     RunDeletionError,
     normalize_run_status,
     resolve_artifact_file,
+    reusable_prompt_file,
 )
 from backend.training.config.training_config import (
     TRAINING_CONFIG_NAME,
@@ -207,7 +212,7 @@ async def delete_history_run(request: Request):
     if not isinstance(run_dir, str) or not run_dir:
         return {"status": "error", "message": "run_dir is required"}
 
-    record = await asyncio.to_thread(load_run_record, run_dir, include_deleted=True)
+    record = await asyncio.to_thread(load_run_record, run_dir, include_deleted=True, use_local_fallback=False)
     if not record:
         return {"status": "error", "message": "Run directory not found / 目录不存在", "error_code": "monitorRunNotFound"}
     tid = record.get("task_id")
@@ -298,6 +303,12 @@ async def monitor_run_detail(run_dir: str = Query("")):
     train_result, run_info = await asyncio.to_thread(_read_meta_files, abs_run_dir)
     if train_result is not None:
         result["train_result"] = train_result
+    if record["artifact_available"]:
+        task = tm.get_task(record["task_id"]) if record.get("task_id") else None
+        if task is None or task.snapshot()["status"] not in {"CREATED", "RUNNING"}:
+            result.update(await asyncio.to_thread(
+                saved_training_state, abs_run_dir / "log" / ".run-control", artifact_dir, abs_run_dir
+            ))
     if run_info is not None:
         result["run_info"] = run_info
 
@@ -446,7 +457,7 @@ async def monitor_outputs(run_dir: str = Query(""), task_id: str = Query("")):
     internal_dir = Path(record["run_path"])
     # 并发读取文件列表 + TensorBoard loss series，再合并给模型文件注入 ckpt_loss
     files, tb_series = await asyncio.gather(
-        asyncio.to_thread(list_output_files, str(artifact_dir)),
+        asyncio.to_thread(list_output_files, str(artifact_dir), internal_dir),
         asyncio.to_thread(read_tensorboard_loss, downsample_to=0, run_dir=str(internal_dir)),
     )
     await asyncio.to_thread(enrich_model_files_with_loss, files, tb_series, str(internal_dir))
@@ -460,9 +471,56 @@ async def monitor_outputs(run_dir: str = Query(""), task_id: str = Query("")):
     }
 
 
+def _output_archive_files(root: Path, selections: list[str]):
+    root = root.resolve()
+    seen = set()
+
+    def visible_target(path, *, state_member=False):
+        try:
+            target = path.resolve(strict=True)
+        except (OSError, RuntimeError):
+            return None
+        if not target.is_relative_to(root):
+            return None
+        parts = target.relative_to(root).parts
+        if state_member and target == path:
+            parts = parts[:-1]
+        if not any(p.startswith((".", "__")) for p in parts):
+            return target
+        return None
+
+    for selection in selections:
+        rel = Path(selection)
+        if rel.anchor or any(part.startswith((".", "__")) for part in rel.parts):
+            continue
+        target = visible_target(root / rel)
+        if target is None:
+            continue
+        if target.is_file():
+            if rel not in seen:
+                seen.add(rel)
+                yield target, rel
+            continue
+        for directory, dirs, names in os.walk(target):
+            parent = Path(directory)
+            # Prune hidden directories, symlinks and Windows junctions before descent.
+            dirs[:] = [d for d in dirs if not d.startswith((".", "__")) and visible_target(parent / d) == parent / d]
+            for name in names:
+                child = parent / name
+                hidden = name.startswith((".", "__"))
+                if hidden and (child.is_symlink() or not is_distributed_state_member(child)):
+                    continue
+                member = rel / child.relative_to(target)
+                source = visible_target(child, state_member=hidden)
+                if source is not None and source.is_file() and member not in seen:
+                    seen.add(member)
+                    yield source, member
+
+
 @router.get("/monitor/outputs/download")
-async def download_outputs(run_dir: str = Query(""), task_id: str = Query(""), files: str = Query("")):
-    """下载输出文件（zip 格式，流式传输）。files 为逗号分隔的相对路径列表，为空则下载全部。"""
+async def download_outputs(run_dir: str = Query(""), task_id: str = Query(""), files: str = "",
+                           path: Annotated[list[str] | None, Query()] = None):
+    """下载全部或选定产物。每个 path 表示一条完整路径，files 兼容旧版客户端。"""
     import tempfile
     import zipfile
     import urllib.parse
@@ -473,40 +531,31 @@ async def download_outputs(run_dir: str = Query(""), task_id: str = Query(""), f
         return {"status": "error", "message": "Artifact directory unavailable / 产物目录不可用"}
     rd = Path(record["artifact_path"])
 
-    # 解析要下载的文件列表
-    if files:
-        file_list = [urllib.parse.unquote(f.strip()) for f in files.split(",") if f.strip()]
+    if path is not None:
+        file_list = [item for item in path if item]
     else:
-        # 下载全部（跳过隐藏目录）
-        file_list = []
-        for p in rd.rglob("*"):
-            if p.is_file():
-                parts = p.relative_to(rd).parts
-                if any(part.startswith(".") or part.startswith("__") for part in parts):
-                    continue
-                file_list.append(str(p.relative_to(rd)).replace("\\", "/"))
-
-    if not file_list:
-        return {"status": "error", "message": "No files to download / 无可下载文件"}
+        file_list = [urllib.parse.unquote(f.strip()) for f in files.split(",") if f.strip()] if files else ["."]
 
     zip_name = f"{rd.name}_outputs.zip"
 
     # 打包 ZIP 到临时文件（在独立线程池中，不阻塞事件循环）
     # 使用 ZIP_STORED（不压缩）：模型文件已高度优化，DEFLATE 几乎无效且耗时
-    def _build_zip(run_dir_path: Path, paths: list[str]) -> Path:
+    def _build_zip(run_dir_path: Path, paths: list[str]) -> Path | None:
         from tools.runtime_paths import runtime_cache_dir
 
-        tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False, dir=runtime_cache_dir("downloads"))
+        # A historical artifact root can contain the download cache itself.
+        tmp = tempfile.NamedTemporaryFile(prefix=".download-", suffix=".zip", delete=False,
+                                          dir=runtime_cache_dir("downloads"))
         tmp.close()
         dst = Path(tmp.name)
         try:
             with zipfile.ZipFile(dst, "w", zipfile.ZIP_STORED, allowZip64=True) as zf:
-                for rel in paths:
-                    abs_path = (run_dir_path / rel).resolve()
-                    if not abs_path.resolve().is_relative_to(run_dir_path.resolve()):
-                        continue
-                    if abs_path.is_file():
-                        zf.write(abs_path, rel)
+                for source, member in _output_archive_files(run_dir_path, paths):
+                    zf.write(source, member)
+                empty = not zf.filelist
+            if empty:
+                dst.unlink()
+                return None
         except Exception:
             dst.unlink(missing_ok=True)
             raise
@@ -514,6 +563,8 @@ async def download_outputs(run_dir: str = Query(""), task_id: str = Query(""), f
 
     try:
         tmp_path = await asyncio.to_thread(_build_zip, rd, file_list)
+        if tmp_path is None:
+            return {"status": "error", "message": "No files to download / 无可下载文件"}
     except Exception as e:
         return {"status": "error", "message": f"Failed to create zip: {str(e)}"}
 
@@ -531,14 +582,12 @@ async def download_outputs(run_dir: str = Query(""), task_id: str = Query(""), f
 async def download_single_output(run_dir: str = Query(""), path: str = Query("")):
     """下载单个输出文件（直接返回原始文件，无需打包 zip）。"""
     import mimetypes
-    import urllib.parse
     from fastapi.responses import FileResponse
 
     if not run_dir or not path:
         return {"status": "error", "message": "run_dir and path are required"}
 
-    decoded = urllib.parse.unquote(path)
-    p = await asyncio.to_thread(resolve_artifact_file, run_dir, decoded)
+    p = await asyncio.to_thread(resolve_artifact_file, run_dir, path)
     if not p:
         return {"status": "error", "message": "Invalid path / 无效路径"}
     if not p.is_file():
@@ -613,6 +662,10 @@ async def get_config_from_run(run_dir: str = Query("")):
                 if reusable_params.get("model_train_type") == "krea2-lora":
                     reusable_params = extract_network_form(reusable_params)
                 validate_network_preset(reusable_params)
+            prompt_key = "prompt_file" if str(reusable_params.get("prompt_file") or "").strip() else "sample_prompts"
+            prompt_file = reusable_params.get(prompt_key)
+            if isinstance(prompt_file, str) and prompt_file.strip():
+                reusable_params[prompt_key] = await asyncio.to_thread(reusable_prompt_file, record, prompt_file)
             # Copy as a new run. Resuming is an explicit action on the training page.
             reusable_params["resume"] = ""
             if config_format == "toml" or params.get("resume") or not reusable_params.get("output_dir"):

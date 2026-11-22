@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import threading
@@ -17,6 +18,9 @@ from backend.image_preview import build_image_preview_url
 from backend.monitor.checkpoints import LORA_EXTENSIONS, parse_checkpoint
 from backend.monitor.sample_loss import enrich_sample_loss
 from backend.monitor.sample_metadata import legacy_sample_metadata, read_sample_records, sample_manifest_version
+from backend.training.checkpoint_state import (
+    SAVE_IN_PROGRESS, STATE_INVENTORY, has_fsdp_files, is_distributed_state_member, resumable_state,
+)
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
@@ -33,7 +37,7 @@ def _is_hidden(name: str) -> bool:
     return name.startswith(_HIDDEN_PREFIXES)
 
 
-def _iter_files(root: Path, *, recursive: bool = True):
+def _iter_files(root: Path, *, recursive: bool = True, state_members: bool = False):
     """Reuse directory entries for type and stat, pruning hidden directories."""
     pending = [(root, "")]
     while pending:
@@ -42,7 +46,8 @@ def _iter_files(root: Path, *, recursive: bool = True):
         try:
             with os.scandir(directory) as entries:
                 for entry in entries:
-                    if _is_hidden(entry.name):
+                    if _is_hidden(entry.name) and not (state_members and entry.is_file(follow_symlinks=False)
+                                                       and is_distributed_state_member(Path(entry.path))):
                         continue
                     try:
                         if entry.is_file():
@@ -183,9 +188,90 @@ def newest_previews(
     return result[-limit:] if limit else result
 
 
-# 日志/元数据文件在输出列表中归为"其他"分类，便于前端区分模型/样本/日志
+# 日志/元数据文件在输出列表中归为"其他"分类，便于前端区分模型/样本/配置/日志
 META_FILES = {"config.toml", "training.yaml", "run_info.txt", "output_dir.txt", "prompts.txt", "result.json",
                "error.log", "task_meta.json"}
+CONFIG_EXTENSIONS = {".toml", ".yaml", ".yml", ".json"}
+_RE_STATE_STEP = re.compile(r"-step(?P<step>\d+)-state$", re.IGNORECASE)
+_RE_STATE_EPOCH = re.compile(r"-(?P<epoch>\d{6})-state$", re.IGNORECASE)
+
+
+def _is_training_state_dir(path: Path) -> bool:
+    """Identify an accelerate/sd-scripts training state directory."""
+    try:
+        return (path / "train_state.json").is_file() or (
+            path.name.lower().endswith("-state") and (
+                (path / SAVE_IN_PROGRESS).is_file() or (path / STATE_INVENTORY).is_file()
+                or (path / "pytorch_model").is_dir()
+                or ((path / "random_states_0.pkl").is_file() and (
+                    (path / "optimizer.bin").is_file() or has_fsdp_files(path.iterdir())
+                ))
+            )
+        )
+    except OSError:
+        return False
+
+
+def _parse_state_dir(path: Path, name: str) -> dict:
+    """Extract step/epoch info from a training state directory name or train_state.json."""
+    m = _RE_STATE_STEP.search(name)
+    if m:
+        return {"ckpt_type": "step", "ckpt_epoch": None, "ckpt_step": int(m.group("step"))}
+    m = _RE_STATE_EPOCH.search(name)
+    epoch = int(m.group("epoch")) if m else None
+    step = None
+    try:
+        data = json.loads((path / "train_state.json").read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            for value in (data.get("global_step"), data.get("current_step")):
+                if type(value) is int and value >= 0:
+                    step = value
+                    break
+    except (OSError, ValueError):
+        pass
+    kind = "epoch" if epoch is not None else "step" if step is not None else None
+    return {"ckpt_type": kind, "ckpt_epoch": epoch, "ckpt_step": step}
+
+
+def _dir_summary(path: Path, dir_stat) -> tuple[int, float]:
+    """Compute total byte size and latest mtime for a directory archive."""
+    total_size = 0
+    latest_mtime = dir_stat.st_mtime
+    for child, _ in _iter_files(path, state_members=True):
+        try:
+            st = child.stat()
+        except OSError:
+            continue
+        total_size += st.st_size
+        if st.st_mtime > latest_mtime:
+            latest_mtime = st.st_mtime
+    return total_size, latest_mtime
+
+
+def _iter_output_entries(root: Path):
+    """Yield files and whole training-state directories without descending into state folders."""
+    pending = [(root, "")]
+    while pending:
+        directory, prefix = pending.pop()
+        children = []
+        try:
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    if _is_hidden(entry.name):
+                        continue
+                    try:
+                        if entry.is_file():
+                            yield entry, prefix + entry.name, False
+                        elif not entry.is_symlink() and entry.is_dir():
+                            if _is_training_state_dir(Path(entry.path)):
+                                yield entry, prefix + entry.name, True
+                            else:
+                                children.append((entry.path, prefix + entry.name + "/"))
+                    except OSError:
+                        continue
+        except OSError:
+            pass
+        pending.extend(reversed(children))
 
 
 def _output_entries(run_dir: str):
@@ -193,14 +279,16 @@ def _output_entries(run_dir: str):
     rd = Path(run_dir)
     if not rd.is_absolute():
         rd = (REPO_ROOT / run_dir).resolve()
-    return _iter_files(rd)
+    return _iter_output_entries(rd)
 
 
 def read_output_summary(run_dir: str) -> dict:
     """轻量总数与模型变更签名；不读取样本/日志等文件的元数据或解析检查点。"""
     count, image_count, models = 0, 0, []
-    for entry, rel in _output_entries(run_dir):
+    for entry, rel, is_dir in _output_entries(run_dir):
         count += 1
+        if is_dir:
+            continue
         suffix = os.path.splitext(entry.name)[1].lower()
         if suffix in IMAGE_EXTENSIONS:
             image_count += 1
@@ -210,10 +298,27 @@ def read_output_summary(run_dir: str) -> dict:
     return {"count": count, "image_count": image_count, "models": sorted(models)}
 
 
-def list_output_files(run_dir: str) -> list[dict]:
+def list_output_files(run_dir: str, internal_dir: Path | None = None) -> list[dict]:
     """列出已由调用方验证的产物目录，路径统一相对该目录返回。"""
     result = []
-    for file, rel in _output_entries(run_dir):
+    for file, rel, is_dir in _output_entries(run_dir):
+        stat = file.stat()
+        if is_dir:
+            dir_path = Path(file.path)
+            total_size, latest_mtime = _dir_summary(dir_path, stat)
+            state_entry = {
+                "name": file.name,
+                "path": rel,
+                "size": total_size,
+                "mtime": latest_mtime,
+                "is_lora": False,
+                "is_dir": True,
+                "category": "state",
+                "resumable": resumable_state(dir_path, internal_dir),
+            }
+            state_entry.update(_parse_state_dir(dir_path, file.name))
+            result.append(state_entry)
+            continue
         suffix = os.path.splitext(file.name)[1].lower()
         is_lora = suffix in LORA_EXTENSIONS
         is_image = suffix in IMAGE_EXTENSIONS
@@ -221,13 +326,14 @@ def list_output_files(run_dir: str) -> list[dict]:
             category = "model"
         elif is_image:
             category = "sample"
+        elif suffix in CONFIG_EXTENSIONS:
+            category = "config"
         elif file.name in META_FILES or suffix in {".log", ".txt"}:
             category = "log"
         elif "events.out.tfevents" in file.name or suffix == ".tfevents":
             category = "tensorboard"
         else:
             category = "other"
-        stat = file.stat()
         entry = {
             "name": file.name,
             "path": rel,
@@ -249,7 +355,7 @@ def list_output_files(run_dir: str) -> list[dict]:
                 entry["ckpt_step"] = None
                 entry["ckpt_loss"] = None
         result.append(entry)
-    # 模型文件优先，其次样本，再日志，最后其他；同类按修改时间倒序
-    cat_order = {"model": 0, "sample": 1, "log": 2, "tensorboard": 3, "other": 4}
+    # 模型文件优先，其次续训状态、样本、配置、日志，最后其他；同类按修改时间倒序
+    cat_order = {"model": 0, "state": 1, "sample": 2, "config": 3, "log": 4, "tensorboard": 5, "other": 6}
     result.sort(key=lambda f: (cat_order.get(f["category"], 9), -f["mtime"]))
     return result

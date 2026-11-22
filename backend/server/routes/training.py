@@ -224,7 +224,7 @@ def _inspect_output_path(path: str, output_name: str, resume: bool) -> dict:
         except OSError:
             pass
     run_name = f"{run_files.safe_output_name(output_name)}_时间戳"
-    artifact_preview = base if resume else base / run_name
+    artifact_preview = base / run_name
     monitor_preview = OUTPUT_DIR.resolve() / run_name
     return {
         "base_dir": str(base),

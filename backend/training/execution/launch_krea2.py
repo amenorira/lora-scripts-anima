@@ -64,11 +64,11 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task):
         )
 
     internal_run_dir = (OUTPUT_DIR / run_dir_name).resolve()
-    artifact_run_dir = output_base_path if is_resume else output_base_path / run_dir_name
+    artifact_run_dir = output_base_path / run_dir_name
     try:
         await _settled_to_thread(
             run_files.prepare_run_directories, artifact_run_dir, internal_run_dir,
-            resume=is_resume, owned=reserved_task.owned_run_paths,
+            owned=reserved_task.owned_run_paths,
         )
     except OSError as exc:
         return _training_error(
