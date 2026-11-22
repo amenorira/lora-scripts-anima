@@ -147,7 +147,8 @@ window.monitorHistoryMixin = {
     this.runDetailLoading = true;
     this.runDetailError = '';
     this._resetOutputFilesForRun(runDir);
-    this.monitorTab = ['overview', 'logs', 'samples', 'outputs'].includes(tab) ? tab : 'overview';
+    this._resetDatasetDiagForRun?.('run:' + runDir);
+    this.monitorTab = ['overview', 'logs', 'samples', 'outputs', 'dataset'].includes(tab) ? tab : 'overview';
     this.monitorParamQuery = '';
     this._shellBuilt = false;
     this._forceLogRebuild = true;
@@ -214,6 +215,7 @@ window.monitorHistoryMixin = {
     this.previewsVersion++;
     this.previewStep = 0;
     this._resetOutputFilesForRun('');
+    this._resetDatasetDiagForRun?.('');
     this.logFullQuery = '';
     this.logFullMatchIdx = -1;
     this.logFullLoading = false;

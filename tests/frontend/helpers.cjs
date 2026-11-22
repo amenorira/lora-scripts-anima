@@ -22,8 +22,8 @@ function trainingFieldSections() {
 
 const FRONTEND_DEPENDENCIES = {
   'environment/core': ['environment/loading', 'environment/models', 'environment/components', 'environment/tasks'],
-  'monitor/core': ['monitor/logs', 'monitor/metrics', 'monitor/history', 'monitor/outputs', 'monitor/previews'],
-  'monitor/render': ['shared/utils', 'monitor/logs', 'monitor/metrics', 'monitor/summary', 'monitor/diagnostics', 'monitor/resource-bar', 'monitor/sample-layout', 'monitor/artifacts-render', 'monitor/history-render', ],
+  'monitor/core': ['monitor/logs', 'monitor/metrics', 'monitor/history', 'monitor/outputs', 'monitor/previews', 'monitor/dataset-diagnostics'],
+  'monitor/render': ['shared/utils', 'monitor/logs', 'monitor/metrics', 'monitor/summary', 'monitor/diagnostics', 'monitor/resource-bar', 'monitor/sample-layout', 'monitor/artifacts-render', 'monitor/history-render', 'monitor/dataset-diagnostics-render'],
   'monitor/artifacts-render': ['monitor/sample-layout'],
   'monitor/resource-bar': ['shared/utils'],
   'tagger/index': ['shared/utils', 'tagger/tasks', 'tagger/sources', ],

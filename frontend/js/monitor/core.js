@@ -71,7 +71,7 @@ window.monitorCoreMixin = {
     });
   },
   setMonitorTab(tab, focusTab) {
-    const tabs = ['overview', 'logs', 'samples', 'outputs'];
+    const tabs = ['overview', 'logs', 'samples', 'outputs', 'dataset'];
     if (!tabs.includes(tab)) return;
     this.monitorTab = tab;
     if (this.selectedRunDir && window.location?.hash) {
@@ -87,7 +87,7 @@ window.monitorCoreMixin = {
     }
   },
   moveMonitorTab(delta) {
-    const tabs = ['overview', 'logs', 'samples', 'outputs'];
+    const tabs = ['overview', 'logs', 'samples', 'outputs', 'dataset'];
     const current = Math.max(0, tabs.indexOf(this.monitorTab));
     const next = (current + delta + tabs.length) % tabs.length;
     this.setMonitorTab(tabs[next], true);
@@ -479,6 +479,7 @@ window.monitorCoreMixin = {
     this.previewsVersion++;
     this.previewStep = 0;
     this._resetOutputFilesForRun('');
+    this._resetDatasetDiagForRun?.('');
     this._cancelPreviewMediaQueue();
     this._releasePreviewMediaObjectUrls();
     this._logFullNeedsResync = true;
@@ -508,6 +509,13 @@ window.monitorCoreMixin = {
 
   handleTaskCompletion(prevState, newState) {
     const outcomes = {FINISHED: 'monitor.trainCompleted', FAILED: 'monitor.trainFailed', TERMINATED: 'monitor.trainTerminated', STOPPED: 'control.stopped'};
+    if (!this.selectedRunDir) {
+      this._datasetDiagNeedsRefresh = true;
+      this._stopDatasetDiagPolling?.();
+      if (this.currentRoute === 'monitor-dashboard' && this.monitorTab === 'dataset') {
+        void this.loadDatasetDiagnostics?.({ silent: true, force: true });
+      }
+    }
     if (!['RUNNING', 'CREATED'].includes(prevState) || !outcomes[newState]) return;
     const msg = this.t(outcomes[newState]);
     this.toast(msg, newState === 'FAILED' ? 'error' : 'info');
@@ -716,6 +724,9 @@ window.monitorCoreMixin = {
     this._cancelPreviewMediaQueue();
     this._releasePreviewMediaObjectUrls();
     this.closePreviewLightbox();
+    this._suspendDatasetDiagnostics?.();
+    this.closeDatasetDiagModal?.();
+    this._disconnectDatasetDiagUI?.();
   },
 
 };
@@ -727,3 +738,5 @@ window.composeAppMixins(window.monitorCoreMixin, { monitorOutputsMixin: window.m
 window.composeAppMixins(window.monitorCoreMixin, { monitorHistoryMixin: window.monitorHistoryMixin });
 
 window.composeAppMixins(window.monitorCoreMixin, { monitorMetricsMixin: window.monitorMetricsMixin });
+
+window.composeAppMixins(window.monitorCoreMixin, { monitorDatasetDiagMixin: window.monitorDatasetDiagMixin });

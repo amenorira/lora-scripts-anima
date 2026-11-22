@@ -187,6 +187,46 @@ class TrainingControlTests(unittest.TestCase):
         """)
         self.assertTrue(self.control.stopped_at_exit())
 
+    def test_sample_loss_log_is_throttled_and_flushed_on_finish(self):
+        self.run_trainer("""
+            import json
+            from pathlib import Path
+            from types import SimpleNamespace
+            import torch
+            from library import run_control
+
+            control = run_control.create_run_controller(SimpleNamespace(run_control=True))
+            control.start({}, max_train_steps=10)
+            loss_file = Path(control.run_dir) / "loss.jsonl"
+
+            batch1 = {
+                "image_keys": ["a.png", "b.png"],
+                "target_sizes_hw": torch.tensor([[512, 512], [768, 512]]),
+                "loss_weights": torch.tensor([1.0, 0.5]),
+                "subset_indices": [(0, 0), (0, 1)],
+            }
+            control.on_batch_fetched(batch1, global_step=0)
+            control.record_sample_losses(batch1, torch.tensor([0.2, 0.8]), torch.tensor([0.15, 0.35]))
+            control.on_step_end(global_step=1, loss=0.25)
+            lines_after_step1 = [json.loads(line) for line in loss_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+            assert len(lines_after_step1) == 3  # run_id header + 2 samples from step 1
+
+            # Immediate second step within 5s must be throttled until flush interval or finish()
+            batch2 = {"image_keys": ["c.png"], "target_sizes_hw": torch.tensor([[512, 512]])}
+            control.on_batch_fetched(batch2, global_step=1)
+            control.record_sample_losses(batch2, torch.tensor([0.5]), torch.tensor([0.2]))
+            control._last_status_write = 0.0
+            control.on_step_end(global_step=2, loss=0.2)
+            lines_after_step2 = [json.loads(line) for line in loss_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+            assert len(lines_after_step2) == 3
+
+            control.finish("finished")
+            lines_after_finish = [json.loads(line) for line in loss_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+            assert len(lines_after_finish) == 4
+            assert lines_after_finish[-1]["image"] == "c.png"
+            assert lines_after_finish[-1]["step"] == 2
+        """)
+
     def test_cpu_state_interrupted_during_overwrite_can_only_resume_after_successful_retry(self):
         self.run_trainer("""
             import os

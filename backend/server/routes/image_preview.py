@@ -105,6 +105,10 @@ async def image_preview(
             source = await asyncio.to_thread(source_item, source_token, index)
         except (KeyError, IndexError, ValueError):
             source = None
+    elif scope == "loss_sample":
+        from backend.monitor.dataset_diagnostics import resolve_loss_sample_image
+
+        source = await asyncio.to_thread(resolve_loss_sample_image, run_dir, path)
     if source is None:
         return PlainTextResponse("", status_code=404)
     return await serve_preview_file(source, variant=variant, size=size, request=request, orient=scope != "crop")

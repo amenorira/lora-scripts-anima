@@ -2,6 +2,7 @@
 import os
 import runpy
 import sys
+import time
 from pathlib import Path
 
 
@@ -47,6 +48,8 @@ if __name__ == "__main__":
             root = os.environ["ANIMA_RUN_CONTROL_DIR"] if args.run_control and is_main_process else None
             super().__init__(root, status_interval=1.0)
             self.trainer_args = args
+            self._last_loss_flush = -5.0
+            self._force_loss_flush = False
 
         def on_epoch_start(self, *, epoch):
             # The sampler receives epoch=None for step and on-demand previews.
@@ -64,9 +67,21 @@ if __name__ == "__main__":
                 self._status["progress"]["global_step"] = step
             return super().set_paused(paused, step=step)
 
-        def record_sample_losses(self, batch, timesteps, losses):
-            # The desktop monitor consumes aggregate metrics only.
-            pass
+        def _flush_sample_losses(self):
+            if not self._pending_losses:
+                return
+            now = time.monotonic()
+            if not self._force_loss_flush and len(self._pending_losses) < 128 and (now - self._last_loss_flush) < 5.0:
+                return
+            super()._flush_sample_losses()
+            self._last_loss_flush = now
+
+        def finish(self, state="finished"):
+            self._force_loss_flush = True
+            try:
+                return super().finish(state=state)
+            finally:
+                self._force_loss_flush = False
 
     def gui_manifest(args, *values, **kwargs):
         manifest = build_manifest(args, *values, **kwargs)

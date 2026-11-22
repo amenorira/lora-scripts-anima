@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from backend.monitor.run_control import ControlRequest, saved_training_state
 
 from backend.monitor.training import (
@@ -26,6 +27,11 @@ from backend.monitor.artifacts import (
     newest_previews, list_output_files, read_output_summary,
 )
 from backend.monitor.checkpoints import enrich_model_files_with_loss
+from backend.monitor.dataset_diagnostics import (
+    analyze_dataset_diagnostics,
+    has_dataset_diagnostics,
+    read_dataset_diagnostic_image,
+)
 from backend.training.checkpoint_state import is_distributed_state_member
 from backend.monitor.history import scan_history
 from backend.monitor.log_files import find_run_log_path, find_train_log_path, read_log_slice
@@ -293,6 +299,7 @@ async def monitor_run_detail(run_dir: str = Query("")):
     #    首屏即有，避免懒加载完成后按钮宽度变化引起指示条错位）──
     if record["artifact_available"]:
         result["output_count"] = (await asyncio.to_thread(read_output_summary, str(artifact_dir)))["count"]
+    result["has_dataset_diagnostics"] = await asyncio.to_thread(has_dataset_diagnostics, abs_run_dir)
 
     result.update(await asyncio.to_thread(read_run_log_progress, abs_run_dir, _LOG_DETAIL_TAIL_LINES))
 
@@ -477,6 +484,72 @@ async def monitor_outputs(run_dir: str = Query(""), task_id: str = Query("")):
             "artifact_available": True,
         },
     }
+
+
+@router.get("/monitor/dataset-diagnostics")
+async def monitor_dataset_diagnostics(
+    run_dir: str = Query(""),
+    task_id: str = Query(""),
+    min_count: int = Query(3, ge=1, le=100),
+    bins: int = Query(10, ge=2, le=30),
+    run_id: str = Query(""),
+    known_revision: str = Query("", max_length=128),
+    refresh_local: bool = Query(False),
+):
+    """Per-sample loss diagnostics (residuals, slopes, groups, and per-image breakdown)."""
+    record = await asyncio.to_thread(_resolve_live_record, task_id, run_dir)
+    is_active = False
+    if record and record.get("task_id"):
+        tid = record["task_id"]
+        is_active = any(
+            t.get("id") == tid and t.get("status") in {"CREATED", "RUNNING"}
+            for t in tm.training_dump()
+        )
+    data = await asyncio.to_thread(
+        analyze_dataset_diagnostics,
+        record,
+        min_count=min_count,
+        num_bins=bins,
+        run_id=run_id,
+        is_active=is_active,
+        known_revision=known_revision,
+        refresh_local=refresh_local,
+    )
+    return await asyncio.to_thread(JSONResponse, {"status": "success", "revision": data["revision"], "data": data})
+
+
+@router.get("/monitor/dataset-diagnostics/image")
+async def monitor_dataset_diagnostic_image(
+    run_dir: str = Query(""),
+    task_id: str = Query(""),
+    image_id: str = Query(""),
+    min_count: int = Query(3, ge=1, le=100),
+    bins: int = Query(10, ge=2, le=30),
+    run_id: str = Query(""),
+    refresh_local: bool = Query(False),
+):
+    """Detailed per-epoch / per-timestep loss trace and local caption for a single training image."""
+    record = await asyncio.to_thread(_resolve_live_record, task_id, run_dir)
+    if not record or not image_id:
+        return JSONResponse(
+            status_code=404,
+            content={"status": "error", "message": "Image diagnostics not found", "error_code": "monitorDatasetImageNotFound"},
+        )
+    detail = await asyncio.to_thread(
+        read_dataset_diagnostic_image,
+        record,
+        image_id=image_id,
+        min_count=min_count,
+        num_bins=bins,
+        run_id=run_id,
+        refresh_local=refresh_local,
+    )
+    if not detail:
+        return JSONResponse(
+            status_code=404,
+            content={"status": "error", "message": "Image diagnostics not found", "error_code": "monitorDatasetImageNotFound"},
+        )
+    return {"status": "success", "data": detail}
 
 
 def _output_archive_files(root: Path, selections: list[str]):

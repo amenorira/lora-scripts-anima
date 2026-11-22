@@ -32,11 +32,16 @@ window.monitorRenderMixin = {
 
     // ── 1. 外壳层：仅在首次或历史模式切换时构建 ──
     if (!this._shellBuilt || this._shellHistoryMode !== isHistory || this._shellLocale !== locale) {
+      this._disconnectDatasetDiagUI?.();
       // The old shell can still be in the DOM after a route reset has cleared
       // _shellBuilt. Its delayed close callback is lost when we replace it.
       if (document.getElementById('previewLightbox')) {
         this.closePreviewLightbox();
         this.clearPreviewLightbox?.();
+      }
+      if (document.getElementById('datasetDiagModal')) {
+        this.closeDatasetDiagModal?.();
+        this.clearDatasetDiagModal?.();
       }
       this._shellBuilt = true;
       this._shellHistoryMode = isHistory;
@@ -48,8 +53,10 @@ window.monitorRenderMixin = {
       shell += '<div class="m-tab-panel" data-tab="logs" hidden></div>';
       shell += '<div class="m-tab-panel" data-tab="samples" hidden></div>';
       shell += '<div class="m-tab-panel" data-tab="outputs" hidden></div>';
+      shell += '<div class="m-tab-panel" data-tab="dataset" hidden></div>';
       shell += '</div>';
       shell += this._previewLightboxHtml(t);
+      shell += this._datasetDiagModalHtml(t);
       shell += '</div>';
       el.innerHTML = shell;
     }
@@ -75,7 +82,7 @@ window.monitorRenderMixin = {
     this._renderTab(tab, d, gpu, sys, t, isHistory);
 
     // ── 4. Tab 滑动指示条：按钮文本/计数徽标变化时重算位置 ──
-    const tabIndicatorSig = tab + '|' + locale + '|' + this.logTotal + '|' + this.previews.length + '|' + this.outputTabCount;
+    const tabIndicatorSig = tab + '|' + locale + '|' + this.logTotal + '|' + this.previews.length + '|' + this.outputTabCount + '|' + (this.datasetDiagTabCount || 0);
     if (this._tabIndicatorSig !== tabIndicatorSig) {
       this._tabIndicatorSig = tabIndicatorSig;
       requestAnimationFrame(() => this._syncMonitorTabIndicator());
@@ -139,6 +146,11 @@ window.monitorRenderMixin = {
         this._cancelSampleGridMotion?.(contentEl.querySelector('.m-tab-panel[data-tab="samples"]')?.querySelector('.preview-grid'));
         this._cancelPreviewMediaQueue();
         this._disconnectSampleExpansionUI?.();
+      }
+      if (prevTab === 'dataset' && tab !== 'dataset') {
+        this._suspendDatasetDiagnostics?.();
+        this.closeDatasetDiagModal?.();
+        this._pauseDatasetDiagCharts?.(contentEl.querySelector('.m-tab-panel[data-tab="dataset"]'));
       }
       contentEl.querySelectorAll('.m-tab-panel').forEach(panel => {
         const isActive = panel.dataset.tab === tab;
@@ -319,6 +331,128 @@ window.monitorRenderMixin = {
       }
       return;
     }
+    if (tab === 'dataset') {
+      const source = this._datasetDiagSource();
+      if (this._datasetDiagSourceKey !== source.key
+        || (!this._datasetDiagRequest && (this._datasetDiagNeedsRefresh || !this._datasetDiagLoaded))) {
+        void this.loadDatasetDiagnostics({ renderStart: false, silent: this._datasetDiagLoaded });
+      }
+      if (!isHistory) this._syncDatasetDiagPolling?.();
+      const data = this.datasetDiagData;
+      const dataSig = this._datasetDiagSnapshotVersion;
+      if (!source.key || !data || !data.available) {
+        const emptySig = [
+          'ddEmpty', this._shellLocale, dataSig,
+          this.datasetDiagLoading ? 1 : 0, this.datasetDiagError || '',
+          data?.reason || '', source.key,
+          (!this.selectedRunDir && this.liveTaskId) ? 1 : 0,
+        ].join(':');
+        if (panelEmpty || panel.dataset.ddEmptySig !== emptySig) {
+          panel._ddHeroRO?.disconnect();
+          panel._ddHeroRO = null;
+          if (!tabChanged && !panelEmpty) panel.classList.add('no-enter-anim');
+          else panel.classList.remove('no-enter-anim');
+          panel.innerHTML = this._renderDatasetDiagTab(t);
+          panel.dataset.ddEmptySig = emptySig;
+          panel._ddHeadingSig = '';
+          panel._ddAnalysisSig = '';
+          panel._ddImagesSig = '';
+        }
+        return;
+      }
+
+      const gfKey = this.datasetDiagGroupFilter ? (this.datasetDiagGroupFilter.dim + ':' + this.datasetDiagGroupFilter.key) : '';
+      let shell = panel.querySelector('[data-dd-shell="1"]');
+      if (!shell) {
+        if (!tabChanged && !panelEmpty) panel.classList.add('no-enter-anim');
+        else panel.classList.remove('no-enter-anim');
+        panel.innerHTML = this._datasetDiagShellHtml(t);
+        shell = panel.querySelector('[data-dd-shell="1"]');
+        panel.dataset.ddEmptySig = '';
+        panel._ddHeadingSig = '';
+        panel._ddAnalysisSig = '';
+        panel._ddImagesSig = '';
+        panel._ddRenderedSearch = '';
+      } else {
+        panel.classList.add('no-enter-anim');
+      }
+
+      const headingSlot = shell.querySelector('[data-dd-slot="heading"]');
+      const analysisSlot = shell.querySelector('[data-dd-slot="analysis"]');
+      const imagesSlot = shell.querySelector('[data-dd-slot="images"]');
+      const scrollTop = panel.scrollTop;
+
+      const headingSig = JSON.stringify([
+        this._shellLocale, dataSig, this.datasetDiagLoading, this.datasetDiagError,
+        this.datasetDiagMinCount, this.datasetDiagRunId, source.key,
+      ]);
+      if (headingSlot && panel._ddHeadingSig !== headingSig) {
+        panel._ddHeadingSig = headingSig;
+        const activeId = (document.activeElement && headingSlot.contains(document.activeElement)) ? document.activeElement.id : '';
+        headingSlot.innerHTML = this._renderDatasetDiagHeading(t, data);
+        if (activeId) document.getElementById(activeId)?.focus({ preventScroll: true });
+      }
+
+      const analysisMode = this._ddActiveAnalysisMode
+        ? this._ddActiveAnalysisMode(data)
+        : (this.datasetDiagHeroMode === 'timestep' ? 'timestep' : 'quadrant');
+      const analysisSig = JSON.stringify([
+        this._shellLocale, dataSig, analysisMode,
+        analysisMode === 'groups' ? this.datasetDiagGroupDim : '',
+        analysisMode === 'groups' ? gfKey : '',
+        source.key,
+      ]);
+      if (analysisSlot && panel._ddAnalysisSig !== analysisSig) {
+        panel._ddAnalysisSig = analysisSig;
+        const activeAnalysisId = (document.activeElement && analysisSlot.contains(document.activeElement)) ? document.activeElement.id : '';
+        this._pauseDatasetDiagCharts(panel);
+        analysisSlot.innerHTML = this._renderDatasetDiagAnalysisCard(t, data);
+        if (activeAnalysisId) {
+          const target = document.getElementById(activeAnalysisId);
+          if (target && !target.disabled) target.focus({ preventScroll: true });
+        }
+      }
+
+      const imagesSig = JSON.stringify([
+        this._shellLocale, dataSig, this.datasetDiagPreset, gfKey,
+        this.datasetDiagSearch, this.datasetDiagRegMode, this.datasetDiagSort,
+        this.datasetDiagViewMode, this.datasetDiagDisplayLimit, source.key,
+      ]);
+      if (imagesSlot && panel._ddImagesSig !== imagesSig) {
+        panel._ddImagesSig = imagesSig;
+        const input = imagesSlot.querySelector('.m-output-search-input');
+        const activeId = imagesSlot.contains(document.activeElement) ? document.activeElement.id : '';
+        const focused = input && document.activeElement === input;
+        const selection = focused ? [input.selectionStart, input.selectionEnd] : null;
+        const searchChanged = panel._ddRenderedSearch !== this.datasetDiagSearch;
+        panel._ddRenderedSearch = this.datasetDiagSearch;
+        if (input) input.remove();
+        imagesSlot.innerHTML = this._renderDatasetDiagImagesCard(t, data);
+        const replacement = imagesSlot.querySelector('.m-output-search-input');
+        if (input && replacement) {
+          replacement.replaceWith(input);
+          if (searchChanged && input.value !== this.datasetDiagSearch) input.value = this.datasetDiagSearch;
+          if (focused) { input.focus({ preventScroll: true }); input.setSelectionRange(...selection); }
+        }
+        if (!focused && activeId) {
+          const target = document.getElementById(activeId);
+          if (target && !target.disabled) target.focus({ preventScroll: true });
+        }
+      }
+      panel.scrollTop = scrollTop;
+      this._bindDatasetDiagCharts(panel);
+      return;
+    }
+  },
+
+  _disconnectDatasetDiagUI() {
+    const panel = document.querySelector?.('.m-tab-panel[data-tab="dataset"]');
+    this._pauseDatasetDiagCharts?.(panel);
+    const modal = document.getElementById('datasetDiagModalRight');
+    if (modal) {
+      (modal._ddModalROs || []).forEach(observer => observer.disconnect());
+      modal._ddModalROs = [];
+    }
   },
 
   // 滑动指示条：跟随激活 tab 的位置与宽度（首次定位不播放动画）
@@ -375,3 +509,5 @@ window.composeAppMixins(window.monitorRenderMixin, { monitorArtifactsRenderMixin
 window.composeAppMixins(window.monitorRenderMixin, { monitorDiagnosticsMixin: window.monitorDiagnosticsMixin });
 
 window.composeAppMixins(window.monitorRenderMixin, { monitorSummaryMixin: window.monitorSummaryMixin });
+
+window.composeAppMixins(window.monitorRenderMixin, { monitorDatasetDiagRenderMixin: window.monitorDatasetDiagRenderMixin });

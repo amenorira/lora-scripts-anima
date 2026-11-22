@@ -5,6 +5,7 @@ import asyncio
 from pathlib import Path
 
 from backend.monitor.artifacts import newest_previews, read_output_summary
+from backend.monitor.dataset_diagnostics import has_dataset_diagnostics
 from backend.monitor.log_files import find_run_log_path, read_log_slice
 from backend.monitor.run_control import read_object, reported_progress
 from backend.monitor.run_registry import find_run_record_by_task_id, read_run_config
@@ -60,6 +61,7 @@ async def build_live_monitor_snapshot(
         "artifact_external": bool(record and record["artifact_external"]),
         "preview_enabled": record["preview_enabled"] if record else None,
         "log_timestep_loss": (record.get("extra") or {}).get("log_timestep_loss") if record else None,
+        "has_dataset_diagnostics": await asyncio.to_thread(has_dataset_diagnostics, run_path) if detail and run_path else False,
         "log_total": 0, "output_count": 0,
     }
     if not active:
