@@ -11,6 +11,18 @@ from backend.server.routes import realtime
 
 
 class RealtimeReplayTests(unittest.TestCase):
+    def test_stopped_training_replay_expires_with_other_terminal_tasks(self):
+        async def scenario():
+            hub = RealtimeHub()
+            with patch("backend.core.realtime.time.time", return_value=100):
+                await hub.publish("task:train", "task.status", {"status": "STOPPED"})
+            with patch("backend.core.realtime.time.time", return_value=701):
+                await hub.prune()
+            _, replay, _ = await hub.subscribe("task:train")
+            self.assertEqual(replay, [])
+
+        asyncio.run(scenario())
+
     def test_publish_during_subscribe_has_no_replay_gap_or_duplicate(self):
         async def scenario():
             hub = RealtimeHub()

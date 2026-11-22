@@ -44,7 +44,7 @@ def normalize_run_status(value: Any) -> str:
     return {
         "completed": "completed", "finished": "completed",
         "failed": "failed", "error": "failed", "timeout": "failed",
-        "terminated": "terminated",
+        "terminated": "terminated", "stopped": "stopped",
     }.get(str(value or "").lower(), "unknown")
 
 

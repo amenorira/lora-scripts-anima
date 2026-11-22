@@ -21,13 +21,14 @@ from backend.monitor.hardware import gpu_info, system_info
 from backend.monitor.training import parse_log_progress, primary_learning_rate_tag, read_tensorboard_incremental
 from backend.monitor.artifacts import newest_previews, read_output_summary
 from backend.monitor.log_files import find_train_log_path, read_log_slice
+from backend.monitor.run_control import reported_progress
 from backend.monitor.run_registry import find_run_record_by_task_id, read_run_config
 from backend.tasks import tm
 
 logger = logging.getLogger(__name__)
 
 _PROGRESS_FIELDS = (
-    "step", "total_steps", "percent", "loss", "lr", "epoch",
+    "step", "total_steps", "percent", "loss", "lr", "metrics_step", "epoch",
     "eta", "elapsed", "speed", "has_error", "error_msg",
 )
 _MAX_REALTIME_LOG_CHARS = 48 * 1024
@@ -230,7 +231,7 @@ class TaskMonitor:
             
             # 状态变化事件
             if current_status != last_status:
-                terminal = current_status in ("FINISHED", "TERMINATED", "FAILED")
+                terminal = current_status in ("FINISHED", "TERMINATED", "FAILED", "STOPPED")
                 if terminal:
                     await self._collect_task_data(task_id)
                 await realtime_hub.publish(task_topic(task_id), "task.status", {
@@ -277,20 +278,19 @@ class TaskMonitor:
                 self._read_log_delta, task_id, run_dir_path
             )
 
-            if log_delta is not None:
-                new_lines = log_delta["lines"]
-                # 从增量行中解析进度（无需额外 4MB tail 读取）
-                parsed_progress = await asyncio.to_thread(
-                    parse_log_progress, new_lines
-                )
-                if parsed_progress:
-                    progress = self._merge_progress(task_id, parsed_progress)
-                    payload = {key: progress[key] for key in _PROGRESS_FIELDS if key in progress}
+            task = tm.get_task(task_id)
+            updates = reported_progress(await asyncio.to_thread(task.control.status)) if task and task.control else {}
+            if log_delta:
+                updates = await asyncio.to_thread(parse_log_progress, log_delta["lines"], updates)
+            if updates:
+                previous = dict(self._last_progress.get(task_id, {}))
+                progress = self._merge_progress(task_id, updates)
+                if progress != previous:
                     await realtime_hub.publish(task_topic(task_id), "task.progress", {
                         "task_id": task_id,
                         "kind": "training",
                         "status": "RUNNING",
-                        "data": payload,
+                        "data": progress,
                     })
 
                     # 控制台始终更新同一个 Rich Live 任务，不保留历史进度行。
@@ -298,6 +298,8 @@ class TaskMonitor:
                         task_id, progress, output_name
                     )
 
+            if log_delta is not None:
+                new_lines = log_delta["lines"]
                 log_lines, log_truncated = _bounded_realtime_log_lines(new_lines)
                 await realtime_hub.publish(task_topic(task_id), "task.log", {
                     "task_id": task_id,
@@ -330,6 +332,20 @@ class TaskMonitor:
         make slow connections progressively worse.
         """
         if not record or not record.get("artifact_available") or not await realtime_hub.subscriber_count("artifacts"):
+            return
+        task = tm.get_task(task_id)
+        events = await asyncio.to_thread(task.control.artifact_events) if task and task.control else None
+        if events is not None:
+            if events:
+                root = str(record["artifact_path"])
+                previews_changed = "samples_generated" in events
+                if previews_changed:
+                    await asyncio.to_thread(newest_previews, root, 0, True, record.get("run_dir", ""))
+                summary = await asyncio.to_thread(read_output_summary, root)
+                await realtime_hub.publish("artifacts", "task.artifacts", {
+                    "task_id": task_id, "kind": "training", "output_count": summary["count"],
+                    "previews_changed": previews_changed,
+                })
             return
         now = time.monotonic()
         if now - self._last_artifact_check.get(task_id, 0.0) < 2.0:

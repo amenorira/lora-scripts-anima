@@ -316,10 +316,18 @@ _RE_ERROR_EXIT = re.compile(r"exited with code [1-9]", re.IGNORECASE)
 _RE_ERROR_FAIL = re.compile(r"failed to (?:load|initialize|open|import|download|start|create)", re.IGNORECASE)
 
 
-def parse_log_progress(lines: list[str]) -> dict:
+def parse_log_progress(lines: list[str], native: dict | None = None) -> dict:
     """从训练日志中解析进度、Loss、LR"""
     text = "\n".join(lines[-3000:])
-    info: dict[str, Any] = {}
+    info = dict(native or {})
+    if not info.get("error_msg"):
+        for pattern in (_RE_ERROR_CUDA, _RE_ERROR_FAIL, _RE_ERROR_EXEC, _RE_ERROR_EXIT, _RE_ERROR_TRACEBACK):
+            match = pattern.search(text)
+            if match:
+                info.update(has_error=True, error_msg=match.group(0))
+                break
+    if native:
+        return info
 
     # 进度: "steps: 45%|████ | 450/1000 [02:30<03:03]"
     # 最后一条匹配记录是最新训练进度。
@@ -364,18 +372,6 @@ def parse_log_progress(lines: list[str]) -> dict:
     if speed_m:
         last = speed_m[-1]
         info["speed"] = last.group(1) + last.group(2)
-
-    error_matchers = [
-        _RE_ERROR_TRACEBACK, _RE_ERROR_CUDA,
-        _RE_ERROR_EXEC, _RE_ERROR_EXIT,
-        _RE_ERROR_FAIL,
-    ]
-    for pattern in error_matchers:
-        if pattern.search(text):
-            info["has_error"] = True
-            m = pattern.search(text)
-            info["error_msg"] = m.group(0) if m else ""
-            break
 
     return info
 

@@ -50,9 +50,14 @@ def _managed_state() -> dict[str, Any]:
 
 
 @router.get("/api/realtime/state")
-async def realtime_state(hardware: bool = False) -> dict[str, Any]:
+async def realtime_state(hardware: bool = False, task_id: str = "") -> dict[str, Any]:
     """Small lifecycle reconciliation; hardware is optional for disconnected clients."""
     data = _managed_state()
+    for item in data["tasks"]["managed"]:
+        if item["status"] == "RUNNING" or item["id"] == task_id:
+            task = tm.get_task(item["id"])
+            if task and task.control:
+                item["control"] = await asyncio.to_thread(task.control.view)
     if hardware:
         gpu, system = await asyncio.gather(asyncio.to_thread(gpu_info), asyncio.to_thread(system_info))
         data["hardware"] = {"gpu": gpu, "system": system, "sampled_at": time.time()}

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from backend.monitor.artifacts import newest_previews, read_output_summary
 from backend.monitor.log_files import find_run_log_path, read_log_slice
+from backend.monitor.run_control import read_object, reported_progress
 from backend.monitor.run_registry import find_run_record_by_task_id, read_run_config
 from backend.monitor.training import extract_train_params, parse_log_progress, read_tensorboard_loss
 
@@ -21,8 +22,9 @@ STATE_LABELS = {
 def read_run_log_progress(run_path: Path, limit: int) -> dict:
     """Share normalized tail rows and progress between live and historical detail."""
     page = read_log_slice(find_run_log_path(run_path), limit=limit, tail=True)
+    native = reported_progress(read_object(run_path / "log" / ".run-control" / "status.json"))
     return {"log_total": page["total"], "log_lines": page["lines"],
-            **parse_log_progress(page["lines"])}
+            **parse_log_progress(page["lines"], native)}
 
 
 async def build_live_monitor_snapshot(

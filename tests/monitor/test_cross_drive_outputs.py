@@ -12,6 +12,7 @@ from unittest.mock import patch
 from backend.monitor import history, run_registry
 from backend.monitor.artifacts import newest_previews
 from backend.monitor.monitor import TaskMonitor
+from backend.monitor.run_control import TrainingControl
 
 
 class CrossDriveSandbox(unittest.TestCase):
@@ -132,17 +133,21 @@ class RunRegistryTests(CrossDriveSandbox):
         members = list(_output_archive_files(self.external, ["demo-state", "demo-state/model.safetensors", "."]))
         self.assertEqual(members, [(weights.resolve(), Path("demo-state/model.safetensors"))])
 
-    def test_artifact_count_change_refreshes_older_preview_before_notice(self):
+    def test_multi_process_monitor_refreshes_late_rank_files_without_an_event(self):
         sample = self.external / "sample"
         sample.mkdir()
         (sample / "demo_000002_00_20261114090002.png").write_bytes(b"latest")
         record = {"artifact_available": True, "artifact_path": self.external}
         monitor = TaskMonitor()
+        control = TrainingControl(self.root, multi_process=False)
+        (self.root / "manifest.json").write_text('{"training":{"num_processes":2}}')
+        (self.root / "events.jsonl").write_text('{"event":"samples_generated"}\n')
         clock = SimpleNamespace(monotonic=lambda: 10.0)
 
         async def collect():
             with (
                 patch("backend.monitor.monitor.time", clock),
+                patch("backend.monitor.monitor.tm.get_task", return_value=SimpleNamespace(control=control)),
                 patch("backend.monitor.monitor.realtime_hub.subscriber_count", return_value=1),
                 patch("backend.monitor.monitor.realtime_hub.publish") as publish,
             ):

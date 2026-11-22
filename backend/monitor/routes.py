@@ -15,8 +15,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Request
-from backend.monitor.run_control import saved_training_state
+from fastapi import APIRouter, HTTPException, Query, Request
+from backend.monitor.run_control import ControlRequest, saved_training_state
 
 from backend.monitor.training import (
     read_tensorboard_loss,
@@ -151,22 +151,29 @@ def _resolve_live_record(task_id: str = "", run_dir: str = "") -> dict | None:
     return find_run_record_by_task_id(tid) if tid else None
 
 
-@router.post("/monitor/stop")
-async def monitor_stop():
-    """停止当前正在运行的训练任务"""
-    tasks = tm.training_dump()
-    running_task_id = None
-    for t in tasks:
-        if t.get("status") == "RUNNING":
-            running_task_id = t.get("id")
-            break
-    if not running_task_id:
-        return {"status": "error", "message": "No running task found / 没有正在运行的任务"}
+@router.get("/monitor/control/{task_id}")
+async def training_control_state(task_id: str, prompts: bool = False):
+    task = tm.get_task(task_id)
+    if task is None or task.control is None:
+        return {"state": None, "allowed": [], "command": None}
+    return await asyncio.to_thread(task.control.view, prompts=prompts)
+
+
+@router.post("/monitor/control/{task_id}")
+async def training_control_command(task_id: str, request: ControlRequest):
+    task = tm.get_task(task_id)
+    item = task.snapshot() if task else {}
+    if item.get("kind", "training") != "training" or item.get("status") not in ("CREATED", "RUNNING"):
+        raise HTTPException(409, "unavailable")
+    if request.action == "force":
+        await asyncio.to_thread(task.terminate)
+        return {"state": "terminating", "allowed": [], "command": None}
+    if not task.control or task.stop_requested or item["status"] != "RUNNING":
+        raise HTTPException(409, "unavailable")
     try:
-        tm.terminate_task(running_task_id)
-        return {"status": "success", "message": "Task stopped / 任务已停止"}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return await asyncio.to_thread(task.control.submit, request, task.environ)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 @router.get("/monitor/history")

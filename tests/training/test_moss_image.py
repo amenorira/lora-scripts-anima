@@ -28,6 +28,87 @@ def moss_config(**overrides):
 
 
 class MossImageLaunchTests(unittest.IsolatedAsyncioTestCase):
+    async def test_cached_launch_keeps_external_prompts_after_source_changes(self):
+        import tomllib
+        from backend.server.routes import training as routes
+        from backend.training.execution import launch_sd_scripts
+        from backend.tasks import TaskManager
+
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            root = Path(directory)
+            subset = root / "train/1_demo"
+            subset.mkdir(parents=True)
+            Image.new("RGB", (64, 64)).save(subset / "image.png")
+            (subset / "image.txt").write_text("caption")
+            model = root / "model.safetensors"
+            model.touch()
+            source = root / "manual.TXT"
+            form = moss_config(pretrained_model_name_or_path=str(model), text_encoder=str(model), vae=str(model),
+                               train_data_dir=str(subset.parent), output_dir=str(root / "artifacts"),
+                               enable_preview=True, sample_at_first=True, positive_prompts="", prompt_file=str(source),
+                               cache_text_encoder_outputs=True)
+            stack.enter_context(patch.object(routes, "tm", TaskManager()))
+            stack.enter_context(patch.object(launch_sd_scripts, "OUTPUT_DIR", root / "runs"))
+            stack.enter_context(patch.object(launch_sd_scripts, "AUTOSAVE_DIR", root / "autosave"))
+            launch = stack.enter_context(patch.object(routes, "run_train", return_value={"status": "success", "data": {}}))
+            source.write_text("reserved --s 0")
+            result = await routes._prepare_training(routes.launch.prepare_run, dict(form))
+            self.assertEqual(result.data["errorCode"], "previewConfigInvalid", result)
+            launch.assert_not_called()
+            structured = source.with_suffix(".json")
+            structured.write_text('["cat", {"prompt":"dog","width":"1024"}]')
+            result = await routes._prepare_training(routes.launch.prepare_run, form | {"prompt_file": str(structured)})
+            self.assertEqual(result.data["errorCode"], "previewConfigInvalid", result)
+            self.assertIn("prompt #2, width", result.message)
+            launch.assert_not_called()
+            structured.write_text('["cat --ss ddim","reserved --s 0",{"prompt":"dog","flow_shift":" 5e0 "}]')
+            result = await routes._prepare_training(routes.launch.prepare_run, form | {"prompt_file": str(structured)})
+            self.assertEqual(result["status"], "success", result)
+            native = tomllib.loads(Path(launch.call_args.args[0]).read_text(encoding="utf-8"))
+            self.assertNotIn("prompt_file", native)
+            structured.write_text('["updated"]')
+            self.assertEqual(json.loads(Path(native["sample_prompts"]).read_text()),
+                             ["cat --ss ddim", "reserved --s 0", {"prompt": "dog", "flow_shift": 5.0}])
+
+    def test_scheduled_and_manual_only_prompt_sources(self):
+        from backend.training.config.option_contracts import validate_sd_option_dependencies
+        from backend.training.preview.prompt_file import read_prompt_entries, require_scheduled_prompt
+
+        form = moss_config(enable_preview=True, sample_interval_mode="none", sample_at_first=False,
+                           positive_prompts="", reserved_prompts="manual")
+        for options, invalid in (({}, False), ({"sample_at_first": True}, True),
+                                 ({"sample_interval_mode": "steps", "sample_every_n_steps": 5}, True)):
+            errors = validate_sd_option_dependencies(form | options)
+            self.assertEqual(any("positive_prompts" in msg for msg in errors), invalid)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "prompts.TOML"
+            path.write_text('[prompt]\nwidth=512\n[[prompt.subset]]\nprompt="manual"\nsample_steps=0')
+            entries = read_prompt_entries(path)
+            self.assertEqual(entries, [{"width": 512, "prompt": "manual", "sample_steps": 0}])
+            with self.assertRaises(ValueError):
+                require_scheduled_prompt(entries)
+            path.write_text('[prompt]\nwidth="512"\n[[prompt.subset]]\nprompt="test"')
+            with self.assertRaisesRegex(ValueError, "prompt #1, width"):
+                read_prompt_entries(path)
+            path.write_text('[prompt]\nflow_shift="-1.25"\n[[prompt.subset]]\nprompt="test"')
+            self.assertEqual(read_prompt_entries(path, moss=True)[0]["flow_shift"], -1.25)
+            with self.assertRaisesRegex(ValueError, "prompt #1, flow_shift"):
+                read_prompt_entries(path)
+            for invalid in ("bad", "nan", "1e999"):
+                path.write_text(f'[prompt]\nflow_shift="{invalid}"\n[[prompt.subset]]\nprompt="test"')
+                with self.assertRaisesRegex(ValueError, "prompt #1, flow_shift"):
+                    read_prompt_entries(path, moss=True)
+            path = path.with_suffix(".JSON")
+            path.write_text('[{"prompt":"cat","negative_prompt":null,"seed":null}]')
+            self.assertEqual(read_prompt_entries(path), [{"prompt": "cat", "seed": None}])
+            path.write_text('["first --s 0 --s 4", {"prompt":"manual","sample_steps":0}]')
+            require_scheduled_prompt(read_prompt_entries(path))
+            for suffix, content in ((".JSON", "{}"), (".toml", "x=1"), (".csv", "cat")):
+                invalid = path.with_suffix(suffix)
+                invalid.write_text(content)
+                with self.assertRaises(ValueError):
+                    read_prompt_entries(invalid)
+
     async def test_preparation_writes_native_config_dataset_and_structured_prompts(self):
         import tomllib
         from backend.server.routes import training as routes

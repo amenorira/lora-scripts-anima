@@ -249,6 +249,9 @@ def run_train(
         if sys.platform == "win32":
             args.extend(["--rdzv_backend", "c10d"])
     # Add the script and its config flag. Krea caching takes a dataset TOML.
+    control_root = (extra_env or {}).get("ANIMA_RUN_CONTROL_DIR")
+    if control_root:
+        args.append(str(Path(__file__).with_name("sd_scripts_entry.py")))
     args.append(str(script))
     if config_argument:
         args.extend([config_argument, toml_path])
@@ -262,6 +265,9 @@ def run_train(
     except RuntimeError as exc:
         return {"status": "error", "message": str(exc)}
     task = reserved_task
+    if control_root:
+        from backend.monitor.run_control import TrainingControl
+        task.control = TrainingControl(Path(control_root), len(validated_ids) > 1)
 
     task_id = task.task_id
     task_id_short = task_id[:8]
@@ -336,6 +342,9 @@ def run_train(
                     error_msg = f"exit code {result.returncode}"
                 else:
                     status = "completed"
+                    if task.control and task.control.stopped_at_exit():
+                        status = "stopped"
+                        task.stopped_at_step = True
         except subprocess.TimeoutExpired:
             status = "timeout"
             error_msg = "Training timed out / 训练超时"
@@ -370,7 +379,7 @@ def run_train(
             except Exception:
                 log.exception("Failed to record training result / 无法记录训练结果")
             # ── C: 失败时提取尾部错误日志 ─────────────────────
-            if status != "completed":
+            if status not in ("completed", "stopped"):
                 try:
                     _write_error_tail(log_file, run_path, task_id_short)
                 except Exception:
@@ -384,6 +393,8 @@ def run_train(
             # ── D: 控制台结束简短信息（带 run 元信息 + 时长）──
             _log_run_end(status, run_meta, duration, exit_code, task_id_short)
         finally:
+            if task.control:
+                task.control.close()
             # The worker owns the slot through results, callbacks, and log settlement.
             task.complete_work(failed=validation_failed)
 
@@ -591,6 +602,8 @@ def _log_run_end(status: str, meta: dict, duration: float, exit_code: int, task_
         elif meta.get("epochs"):
             step_info = f" · {meta['epochs']} epochs"
         log.info(f"Training completed / 训练完成: {name} · elapsed {dur}{step_info} · exit {exit_code}")
+    elif status in ("stopped", "terminated"):
+        log.info(f"Training stopped / 训练已停止: {name} · {status} · elapsed {dur}")
     elif status == "timeout":
         log.error(f"Training timed out / 训练超时: {name} · elapsed {dur} · task={task_id_short}")
     else:
