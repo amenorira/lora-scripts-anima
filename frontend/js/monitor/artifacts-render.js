@@ -3540,8 +3540,7 @@ window.monitorArtifactsRenderMixin = {
         html += '<div class="output-item' + (isSelected ? ' selected' : '') + '" @click="toggleOutputFile(\'' + fpJs + '\')">';
         html += '<input type="checkbox" id="outputSelect-' + this.esc(encodeURIComponent(f.path)) + '" aria-label="' + this.esc(t('selectOutputFile').replace('{name}', f.name)) + '" ' + (isSelected ? 'checked' : '') + ' @click.stop="toggleOutputFile(\'' + fpJs + '\')">';
         html += this._fileIconSvg(f);
-        const tag = '<small class="output-dir-tag">' + this.esc(t('fileFolderTag')) + '</small>';
-        html += '<span class="output-name" title="' + this.esc(f.name) + '"><span class="output-name-text">' + this.esc(f.name) + '</span>' + tag + '</span>';
+        html += '<span class="output-name" title="' + this.esc(f.name) + '"><span class="output-name-text">' + this.esc(f.name) + '</span></span>';
         html += badge || '<span class="m-ckpt-badge m-muted">—</span>';
         html += '<span class="output-size">' + this._formatFileSize(f.size) + '</span>';
         html += '<span class="output-time">' + this._formatFileTime(f.mtime) + '</span>';

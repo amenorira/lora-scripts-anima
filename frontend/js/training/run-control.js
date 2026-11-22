@@ -226,7 +226,7 @@ window.trainingControlMixin = {
     if (this.controlState?.state === 'paused') {
       return this.t(saving ? 'control.stopPausedSave' : 'control.stopPausedDiscard');
     }
-    return saving ? '' : this.t('control.stopConsequenceDiscard');
+    return this.t(saving ? 'control.stopConsequenceSave' : 'control.stopConsequenceDiscard');
   },
 
   selectControlPrompt(index) {

@@ -406,7 +406,7 @@
           </div>
         </div>
         <div class="hist-results" role="status" aria-live="polite" x-show="_historyLoaded" x-cloak>
-          <span x-text="t('monitor.historyCount').replace('{shown}', historyPageShown).replace('{matched}', historyFilteredCount).replace('{total}', historyItems.length)"></span>
+          <span x-text="(historyPageShown === historyFilteredCount || historyFilteredCount === historyItems.length) ? t('monitor.historyCountSimple').replace('{shown}', historyPageShown).replace('{total}', historyItems.length) : t('monitor.historyCount').replace('{shown}', historyPageShown).replace('{matched}', historyFilteredCount).replace('{total}', historyItems.length)"></span>
           <button class="hist-action" x-show="historySearch || historyFilter !== 'all'" @click="clearHistoryFilters()" x-text="t('monitor.clearHistoryFilters')"></button>
         </div>
         <div class="ui-inline-alert" role="alert" x-show="historyError" x-cloak>

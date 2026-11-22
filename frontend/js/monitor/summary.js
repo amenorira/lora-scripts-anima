@@ -600,7 +600,7 @@ window.monitorSummaryMixin = {
         <i class="m-speed-wait-compute" style="width:${(100 - clampedWait * 100).toFixed(1)}%"></i>
         <i class="m-speed-wait-io" style="width:${(clampedWait * 100).toFixed(1)}%"></i>
       </div>`;
-      if (tile) tile.setAttribute('title', tip);
+      if (tile) tile.setAttribute('title', samples.length >= 2 ? t('speedCadenceHint') : tip);
     } else if (tile) {
       tile.setAttribute('title', t('speedCadenceHint'));
     }
