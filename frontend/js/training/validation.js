@@ -208,7 +208,8 @@ window.trainingValidation = {
     if (this.form.model_train_type !== 'moss-image-lora') return {};
     const errors = {};
     if (this.form.enable_preview && (this.form.sample_at_first || this.form.sample_interval_mode !== 'none')
-      && !String(this.form.positive_prompts || '').trim()) {
+      && !this.form.randomly_choice_prompt
+      && ![this.form.positive_prompts, this.form.prompt_file, this.form.sample_prompts].some(value => String(value || '').trim())) {
       errors.positive_prompts = this.t('common.previewPromptRequired');
     }
     const weights = this.form.base_weights;

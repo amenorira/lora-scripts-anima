@@ -46,6 +46,21 @@ def import_native_training_form(params: dict, *, profile_id: str | None = None) 
             form.setdefault("krea_split_attn", "true" if form.pop("split_attn") else "false")
     else:
         form = extract_optimizer_form(form)
+        # Native TOML carries the schedule directly, without the desktop preview toggle.
+        if (form.get("sample_prompts") or form.get("prompt_file")) and "enable_preview" not in form:
+            from backend.training.config.option_contracts import sample_interval_mode
+
+            interval = sample_interval_mode(form)
+            form["enable_preview"] = bool(form.get("sample_at_first") or interval != "none")
+            form["sample_interval_mode"] = interval
+        if (imported_type in ("anima-lora", "moss-image-lora") and not form.get("enable_preview")
+                and (form.get("cache_text_encoder_outputs") or form.get("cache_text_encoder_outputs_to_disk"))
+                and form.get("sample_prompts") and form.get("logging_dir")):
+            log = PurePosixPath(str(form["logging_dir"]).replace("\\", "/"))
+            prompt = PurePosixPath(str(form["sample_prompts"]).replace("\\", "/"))
+            if prompt == log / ".run-control" / "manual-preview.json":
+                # A cached run without scheduled prompts creates its own reference embedding.
+                form.pop("sample_prompts")
     form = extract_network_form(form, model_train_type=imported_type)
     from backend.training.preview.config import normalize_form
 

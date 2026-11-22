@@ -33,6 +33,33 @@ ${code}`], { cwd: ROOT, input: JSON.stringify(input), encoding: 'utf8', timeout:
   return result.stdout.trim() ? JSON.parse(result.stdout) : null;
 }
 
+test('imported prompt files survive drafts, native export, and launch without changing inline defaults', async () => {
+  const file = './captions/Preview.TXT';
+  for (const [key, schedule] of [['prompt_file', {sample_at_first: true}], ['sample_prompts', {}]]) {
+    const raw = { model_train_type: 'moss-image-lora', [key]: file, ...schedule };
+    const imported = python('from backend.training.config.config_import import import_native_training_form\nprint(json.dumps(import_native_training_form(data)))', raw);
+    const app = application(raw.model_train_type);
+    assert.equal(app._collectTrainingPayload().sample_prompts, undefined);
+    await app._applyImportedFlatConfig(imported);
+    assert.deepEqual(Array.from(app._lastConfigImportIgnoredFields), []);
+    const draft = app._profileFormFromDraft(raw.model_train_type, app._buildFormDefaults(raw.model_train_type), app.form);
+    assert.equal(draft.sample_prompts, file);
+    app.form = draft;
+    app.updateToml();
+    assert.ok(app.tomlRaw.includes('sample_prompts = "./captions/Preview.TXT"'));
+    const launch = app._collectTrainingPayload();
+    assert.equal(launch.sample_prompts, file);
+    assert.equal(launch.sample_at_first === true, !!schedule.sample_at_first);
+    assert.equal(launch.sample_every_n_epochs, undefined);
+    assert.equal(launch.prompt_file, undefined);
+    python(`
+from backend.training.config.training_config import build_training_config, extract_training_form
+restored = extract_training_form(build_training_config(data, profile_id=data['model_train_type']))
+assert restored['sample_prompts'] == data['sample_prompts'] == adapt_config(data)[0]['sample_prompts']
+`, launch);
+  }
+});
+
 test('changing the Anima checkpoint changes the structure preview request', () => {
   const app = application('anima-lora');
   for (const model of ['./models/original.safetensors', './models/deeper.safetensors']) {

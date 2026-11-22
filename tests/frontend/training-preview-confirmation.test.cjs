@@ -70,6 +70,19 @@ test('preview summary separates active prompts and keeps multiline MOSS text tog
   }
 });
 
+test('preview confirmation shows and edits the imported file that supplies the prompts', async () => {
+  const { model, focused } = application('moss-image-lora');
+  model.form.sample_prompts = './prompts.json';
+  const pending = model.startTraining();
+  await turn();
+  const field = model.confirmDialog.fields[2];
+  assert.equal(field.value, './prompts.json');
+  model.confirmSecondaryAction();
+  await pending;
+  model.confirmAfterClose();
+  assert.deepEqual(focused, ['sample_prompts']);
+});
+
 for (const [action, cacheAction] of [['confirmAction', 'server-cache-scope'], ['confirmSecondaryAction', 'keep']]) {
   test(`preview to cache ${action} keeps the host open through asynchronous checks and submits the reviewed snapshot`, async () => {
     const first = deferred(), second = deferred();

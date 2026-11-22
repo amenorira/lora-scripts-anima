@@ -63,7 +63,7 @@ window.trainingTomlMixin = {
         const k = f.key;
         if (f.hidden) continue;
         if (!this._fieldShowIfMet(f)) continue;
-        if (k === 'sample_prompts' || k.startsWith('_')) continue;
+        if (k.startsWith('_')) continue;
 
         const v = this.form[k];
         if ((v === '' && !f.keepEmpty) || v === null || v === undefined) continue;
@@ -683,7 +683,8 @@ window.trainingTomlMixin = {
       payload._form_state = JSON.parse(signature);
 
       const krea = payload.model_train_type === 'krea2-lora';
-      const promptKey = krea ? 'krea_sample_prompts' : 'positive_prompts';
+      const promptFile = !krea && payload.sample_prompts;
+      const promptKey = promptFile ? 'sample_prompts' : krea ? 'krea_sample_prompts' : 'positive_prompts';
       if (this.confirmPreviewBeforeTraining && payload[krea ? 'enable_krea_samples' : 'enable_preview']) {
         await this.openConfirm({
           title: this.t('trainingPreview.title'),
@@ -692,7 +693,8 @@ window.trainingTomlMixin = {
           fields: [
             { label: this.t('field.train_data_dir'), value: payload.train_data_dir },
             { label: this.t('field.output_name'), value: payload.output_name },
-            { label: this.t('trainingPreview.positivePrompts'), items: this._previewPositivePromptItems(payload) },
+            promptFile ? { label: this.t('field.previewPromptFile'), value: promptFile }
+              : { label: this.t('trainingPreview.positivePrompts'), items: this._previewPositivePromptItems(payload) },
           ],
           secondaryLabel: this.t('trainingPreview.editPrompts'),
           next: choice => choice === 'confirm' && unchanged() ? this._submitTraining(payload, true) : null,

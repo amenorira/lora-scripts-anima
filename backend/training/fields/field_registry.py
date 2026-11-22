@@ -655,6 +655,8 @@ shared_training_field('save_state', default=False, target="toml", omit_default=T
 ]},
 {"key": "preview_loras", "type": "lora-list", "default": [], "section": "preview", "desc_key": "field.preview_loras", "hint_key": "field.preview_lorasHint", "target": "ui", "group": ["anima", "moss_image"], "show_if": {"key": "enable_preview", "eq": True}},
 *quality_prompt_fields("enable_preview"),
+# Only imported prompt files need a path control; clearing it restores inline prompts.
+{"key": "sample_prompts", "type": "text", "default": "", "section": "preview", "desc_key": "field.previewPromptFile", "hint_key": "field.previewPromptFileHint", "target": "toml", "nested": False, "show_if": {"key": "sample_prompts", "neq": ""}},
 {"key": "positive_prompts", "type": "textarea", "default": "", "section": "preview", "desc_key": "field.sample_prompts", "target": "ui", "hint_key": "field.sample_promptsHint", "show_if": {"key": "enable_preview", "eq": True}},
 # Retain existing saved configurations. New manual prompts are edited in the running task's preview dialog.
 {"key": "reserved_prompts", "type": "hidden", "default": "", "section": "preview", "desc_key": "control.reserved", "target": "ui", "group": ["anima", "sdxl", "moss_image"], "hidden": True},

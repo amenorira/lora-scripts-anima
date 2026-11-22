@@ -85,7 +85,8 @@ window.trainingConfigIoMixin = {
         (section.fields || []).forEach(field => validKeys.add(field.key));
       });
       const imported = {};
-      this._lastConfigImportIgnoredFields = Object.keys(parsed).filter(key => !validKeys.has(key));
+      this._lastConfigImportIgnoredFields = Object.keys(parsed).filter(key =>
+        !validKeys.has(key === 'prompt_file' ? 'sample_prompts' : key));
       Object.entries(migrated).forEach(([key, value]) => {
         if (validKeys.has(key)) imported[key] = value;
       });

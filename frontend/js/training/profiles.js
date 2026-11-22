@@ -252,6 +252,11 @@ window.trainingProfiles = {
       }
       return values;
     }
+    if (Object.hasOwn(values, 'prompt_file')) {
+      const file = String(values.prompt_file || '').trim();
+      if (file) values.sample_prompts = file;
+      delete values.prompt_file;
+    }
     const has = key => values[key] !== undefined && values[key] !== null && values[key] !== '';
     if (!has('sample_interval_mode')) {
       const specified = ['sample_every_n_epochs', 'sample_every_n_steps'].some(key => Object.hasOwn(values, key));
