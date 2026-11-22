@@ -33,6 +33,74 @@ ${code}`], { cwd: ROOT, input: JSON.stringify(input), encoding: 'utf8', timeout:
   return result.stdout.trim() ? JSON.parse(result.stdout) : null;
 }
 
+test('changing the Anima checkpoint changes the structure preview request', () => {
+  const app = application('anima-lora');
+  for (const model of ['./models/original.safetensors', './models/deeper.safetensors']) {
+    app.form.pretrained_model_name_or_path = model;
+    assert.equal(app._shapeEstimatePayload().pretrained_model_name_or_path, model);
+  }
+});
+
+test('Anima preview shares estimates across opens and refreshes a replaced checkpoint on demand', async () => {
+  let depth = 28;
+  let requests = 0;
+  let responseReady;
+  const q = { id: 'q', name: 'blocks.*.self_attn.q_proj' };
+  const mlp = { id: 'mlp', name: 'blocks.*.mlp' };
+  let groups = [q, mlp];
+  const { window } = loadFrontend('training/shape-preview', {
+    window: {}, setTimeout, clearTimeout, AbortController,
+    fetch: async () => {
+      requests++;
+      if (responseReady) await responseReady;
+      return { ok: true, json: async () => ({ status: 'success', data: { depth, estimatedBytes: depth * 1024, groups } }) };
+    },
+  });
+  const app = Object.assign({}, window.trainingShapePreviewMixin, {
+    form: { model_train_type: 'anima-lora', network_dim: 8 },
+    _openManagedModal(key) { this[key] = true; }, _closeManagedModal(key) { this[key] = false; }, $nextTick() {},
+    _shapeEstimatePayload() { return { pretrained_model_name_or_path: './models/current.safetensors', network_dim: this.form.network_dim }; },
+  });
+  app.scheduleShapeEstimate(); // The file size estimate starts before the dialog opens.
+  app.openShapePreview();
+  assert.equal(app.shapePreviewMounted, true);
+  await app.refreshShapeEstimate();
+  assert.equal(app.shapePreviewSelected, 'q');
+  app.selectShapePreview('mlp');
+  app.closeShapePreview();
+  app.openShapePreview();
+  assert.equal(app.shapeEstimateLoading, false);
+  assert.equal(app.shapeEstimate.estimatedBytes, 28 * 1024);
+  app.form.network_dim = 16;
+  app.scheduleShapeEstimate();
+  await app.refreshShapeEstimate();
+  app.form.network_dim = 8;
+  app.scheduleShapeEstimate();
+  assert.equal(app.shapeEstimateLoading, false);
+  assert.equal(app.shapePreviewSelected, 'mlp');
+  assert.equal(requests, 2);
+  depth = 40;
+  groups = [q];
+  app.closeShapePreview();
+  app.scheduleShapeEstimate(true);
+  let finishRequest;
+  responseReady = new Promise(resolve => { finishRequest = resolve; });
+  const pending = app.refreshShapeEstimate();
+  app.openShapePreview();
+  assert.equal(app.shapePreviewOpen, true);
+  assert.equal(app.shapeEstimateLoading, true);
+  assert.equal(app.shapeEstimate.depth, 28);
+  finishRequest();
+  await pending;
+  assert.equal(app.shapeEstimate.estimatedBytes, 40 * 1024);
+  assert.equal(app.shapePreviewSelected, 'q');
+  assert.equal(requests, 3);
+  app.form.network_dim = 16;
+  app.scheduleShapeEstimate();
+  assert.equal(app.shapeEstimateLoading, true);
+  await app.refreshShapeEstimate();
+});
+
 test('native argument import survives frontend defaults, TOML export, and launch', async () => {
   const originals = [
     { model_train_type: 'anima-lora', network_module: 'lycoris.kohya', network_args:

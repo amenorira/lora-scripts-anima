@@ -15,6 +15,8 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
+from backend.constants import DEFAULT_ANIMA_DIT
+from backend.training.config.anima_blocks import anima_block_count
 from backend.training.config.moss_image import NETWORK_MODULES as MOSS_NETWORK_MODULES
 from backend.training.config.krea2_network import (
     KREA2_NETWORK_MODULES, build_krea2_network_args, build_krea2_network_preset,
@@ -61,15 +63,23 @@ async def warm_up():
         log.warning("Shape preview warm-up failed / 结构预览预热失败", exc_info=True)
 
 
-def _anima_config():
-    # Read the same fixed architecture as the training loader, without loading weights.
+def _anima_config(checkpoint=None):
+    # Preserve the stock architecture preview before the default model is downloaded.
+    blocks = 28
+    if checkpoint:
+        path = ROOT / Path(checkpoint).expanduser()
+        if path.exists() or path.resolve() != (ROOT / DEFAULT_ANIMA_DIT).resolve():
+            blocks = anima_block_count(path)
+    # Read the remaining fixed architecture settings from the training loader.
     source = ROOT / "vendor/sd-scripts/library/anima_utils.py"
     tree = ast.parse(source.read_text(encoding="utf-8"))
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "dit_config" for t in node.targets):
-            return {ast.literal_eval(k): ({"attn_mode": "torch", "split_attn": False}[v.id]
+            config = {ast.literal_eval(k): ({"attn_mode": "torch", "split_attn": False}[v.id]
                     if isinstance(v, ast.Name) else ast.literal_eval(v))
                     for k, v in zip(node.value.keys, node.value.values)}
+            config["num_blocks"] = blocks
+            return config
     raise ValueError("Anima architecture configuration was not found")
 
 
@@ -182,7 +192,7 @@ def _inspect_network(form):
         else:
             from library.anima_models import Anima
 
-            model = Anima(**_anima_config())
+            model = Anima(**_anima_config(config.get("pretrained_model_name_or_path")))
         originals = {id(m): (name, m) for name, m in model.named_modules()}
         text_encoders = []
         if not config.get("network_train_unet_only"):
@@ -264,13 +274,11 @@ def _inspect_network(form):
                        "useScalar": "scalar" in dict(adapter.named_parameters())}
             key = json.dumps(details, sort_keys=True)
             if key not in groups:
-                groups[key] = {**details, "count": 0, "paths": []}
+                groups[key] = {**details, "id": name, "count": 0, "paths": []}
             groups[key]["count"] += 1
             groups[key]["paths"].append(name)
             total_params += params
         rows = list(groups.values())
-        for index, row in enumerate(rows):
-            row["id"] = str(index)
         # All tensors have the save dtype; safetensors orders their payload by name.
         cursor = 0
         for key in sorted(header):

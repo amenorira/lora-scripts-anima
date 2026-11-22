@@ -158,6 +158,13 @@ async def check_input_files(config, model_train_type) -> tuple[int | None, dict 
         vae_path = config.get("vae", "").strip()
         if not os.path.exists(vae_path):
             return None, _training_error(message=f"VAE model not found / VAE 模型不存在: {vae_path}", code="vaeNotFound", params={"path": vae_path})
+        from backend.training.config.anima_blocks import validate_anima_block_limits
+
+        try:
+            await _settled_to_thread(validate_anima_block_limits, config["pretrained_model_name_or_path"],
+                                     config.get("blocks_to_swap") or 0, config.get("gradient_checkpointing_skip_blocks") or 0)
+        except ValueError as exc:
+            return None, _training_error(message=str(exc), code="invalidTrainingConfig", details=[str(exc)])
 
     if model_train_type == "moss-image-lora":
         from backend.training.config.moss_image import validate_captions, validate_model_files

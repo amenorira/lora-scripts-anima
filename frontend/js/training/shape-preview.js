@@ -8,6 +8,8 @@ window.trainingShapePreviewMixin = {
   shapeEstimateLoading: false,
   shapePreviewSelected: '',
   _shapeEstimateSignature: '',
+  _shapeEstimateCache: new Map(),
+  _shapeEstimateRevision: 0,
   _shapeEstimateTimer: null,
   _shapeEstimateBusy: false,
 
@@ -34,23 +36,43 @@ window.trainingShapePreviewMixin = {
       .flatMap(section => section.fields.map(field => field.key));
     keys.push('model_train_type', 'qwen3', 'save_precision', 'save_model_as',
       'full_bf16', 'full_fp16', 'cache_text_encoder_outputs', 'optimizer_type', 'fp8_base', 'convrot_int8');
+    if (config.model_train_type === 'anima-lora') keys.push('pretrained_model_name_or_path');
     return Object.fromEntries(keys.filter(key => key in config).map(key => [key, config[key]]));
   },
 
-  scheduleShapeEstimate() {
-    const signature = JSON.stringify(this._shapeEstimatePayload());
-    if (signature === this._shapeEstimateSignature) return;
+  scheduleShapeEstimate(force = false) {
+    const payload = this._shapeEstimatePayload();
+    const signature = JSON.stringify(payload);
+    const sameConfig = signature === this._shapeEstimateSignature;
+    if (!force && sameConfig) return;
+    if (force) {
+      // All estimates for a replaced Anima checkpoint share the same path.
+      const checkpoint = payload.pretrained_model_name_or_path;
+      for (const key of this._shapeEstimateCache.keys()) {
+        if (key === signature || (checkpoint && JSON.parse(key).pretrained_model_name_or_path === checkpoint))
+          this._shapeEstimateCache.delete(key);
+      }
+    }
     this._shapeEstimateSignature = signature;
-    this.shapeEstimate = null;
-    this.shapeEstimateError = '';
-    this.shapeEstimateLoading = this.shapePreviewSupported();
+    this._shapeEstimateRevision++;
     clearTimeout(this._shapeEstimateTimer);
-    if (this.shapePreviewSupported()) this._shapeEstimateTimer = setTimeout(() => this.refreshShapeEstimate(), 500);
+    this.shapeEstimateError = '';
+    const cached = this._shapeEstimateCache.get(signature);
+    if (cached) {
+      this._applyShapeEstimate(cached);
+      this.shapeEstimateLoading = false;
+      return;
+    }
+    if (!sameConfig) this.shapeEstimate = null;
+    this.shapeEstimateLoading = this.shapePreviewSupported();
+    if (this.shapeEstimateLoading) this._shapeEstimateTimer = setTimeout(() => this.refreshShapeEstimate(), force ? 0 : 500);
   },
 
   async refreshShapeEstimate() {
     if (this._shapeEstimateBusy || !this.shapePreviewSupported()) return;
+    clearTimeout(this._shapeEstimateTimer);
     this._shapeEstimateBusy = true;
+    const revision = this._shapeEstimateRevision;
     const signature = this._shapeEstimateSignature;
     const controller = new AbortController();
     let timedOut = false;
@@ -65,24 +87,31 @@ window.trainingShapePreviewMixin = {
         signal: controller.signal,
       });
       const result = await response.json();
-      if (signature !== this._shapeEstimateSignature) return;
+      if (revision !== this._shapeEstimateRevision) return;
       if (!response.ok || result.status !== 'success') throw new Error(result.message || this.t('shapePreview.estimateFailed'));
-      this.shapeEstimate = result.data;
-      const groups = result.data.groups;
-      this.shapePreviewSelected = groups.find(g => g.name === 'blocks.*.self_attn.q_proj')?.id
-        || groups.find(g => g.name === 'blocks.*.attn.wq')?.id
-        || groups.find(g => g.name === 'layers.*.proj.q')?.id
-        || groups.find(g => g.name.startsWith('blocks.*.self_attn.'))?.id || groups[0]?.id || '';
+      this._applyShapeEstimate(result.data);
+      this._shapeEstimateCache.set(signature, result.data);
+      if (this._shapeEstimateCache.size > 8) this._shapeEstimateCache.delete(this._shapeEstimateCache.keys().next().value);
     } catch (error) {
-      if (signature === this._shapeEstimateSignature) {
+      if (revision === this._shapeEstimateRevision) {
         this.shapeEstimateError = timedOut ? this.t('shapePreview.estimateTimeout') : error.message;
       }
     } finally {
       clearTimeout(timeout);
       this._shapeEstimateBusy = false;
-      if (signature !== this._shapeEstimateSignature) this.refreshShapeEstimate();
-      else this.shapeEstimateLoading = false;
+      if (revision === this._shapeEstimateRevision) this.shapeEstimateLoading = false;
+      else if (this.shapeEstimateLoading) this.refreshShapeEstimate();
     }
+  },
+
+  _applyShapeEstimate(estimate) {
+    this.shapeEstimate = estimate;
+    const groups = estimate.groups;
+    this.shapePreviewSelected = groups.find(g => g.id === this.shapePreviewSelected)?.id
+      || groups.find(g => g.name === 'blocks.*.self_attn.q_proj')?.id
+      || groups.find(g => g.name === 'blocks.*.attn.wq')?.id
+      || groups.find(g => g.name === 'layers.*.proj.q')?.id
+      || groups.find(g => g.name.startsWith('blocks.*.self_attn.'))?.id || groups[0]?.id || '';
   },
 
   _shapePreviewBytes(bytes) {
@@ -91,7 +120,7 @@ window.trainingShapePreviewMixin = {
   },
 
   shapeEstimateSummary() {
-    if (this.shapeEstimateLoading) return this.t('shapePreview.estimating');
+    if (this.shapeEstimateLoading && !this.shapeEstimate) return this.t('shapePreview.estimating');
     if (this.shapeEstimateError) return this.t('shapePreview.estimateFailed');
     if (!this.shapeEstimate) return '';
     return `${this.t('shapePreview.estimatedSize')} ${this._shapePreviewBytes(this.shapeEstimate.estimatedBytes)}`;
@@ -99,8 +128,7 @@ window.trainingShapePreviewMixin = {
 
   openShapePreview() {
     if (!this.shapePreviewSupported()) return;
-    if (this.shapeEstimateError) this._shapeEstimateSignature = '';
-    this.scheduleShapeEstimate();
+    this.scheduleShapeEstimate(!!this.shapeEstimateError);
     this.shapePreviewMounted = true;
     this._openManagedModal('shapePreviewOpen');
   },

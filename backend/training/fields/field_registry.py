@@ -14,6 +14,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from backend.constants import DEFAULT_ANIMA_DIT
 from backend.training.core_registry import PROFILES
 from backend.training.fields.lycoris_layout import apply_lycoris_panel_layout
 from backend.training.fields.shared_fields import quality_prompt_fields, shared_training_field
@@ -272,7 +273,7 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "model_train_type", "type": "select", "default": "sdxl-lora", "section": "model", "desc_key": "field.model_train_type", "target": "ui", "hidden": True, "options": [{"v": "sdxl-lora", "l": "SDXL LoRA", "dk": "opt.model_train_type_sdxl-lora"}, {"v": "anima-lora", "l": "Anima LoRA", "dk": "opt.model_train_type_anima-lora"}, {"v": "krea2-lora", "l": "Krea 2 LoRA", "dk": "opt.model_train_type_krea2-lora"}]},
 # 三个底模路径默认指向环境管理页可下载的 Anima 核心文件（见 tools/download_anima_model.py）。
 # Anima 用户下载后即可直接开训；SDXL 底模由用户选择，VAE 留空使用底模内置权重。
-{"key": "pretrained_model_name_or_path", "type": "text", "default": "./models/anima-base-v1.0.safetensors", "default_by_group": {"sdxl": ""}, "section": "model", "desc_key": "field.pretrained_model_name_or_path", "target": "toml", "role": "file-model", "required": True},
+{"key": "pretrained_model_name_or_path", "type": "text", "default": DEFAULT_ANIMA_DIT, "default_by_group": {"sdxl": ""}, "section": "model", "desc_key": "field.pretrained_model_name_or_path", "target": "toml", "role": "file-model", "required": True},
 {"key": "vae", "type": "text", "default": "./models/qwen_image_vae.safetensors", "default_by_group": {"sdxl": ""}, "section": "model", "desc_key": "field.vae", "target": "toml", "role": "file-model", "requiredGroups": ["anima"]},
 {"key": "qwen3", "type": "text", "default": "./models/qwen_3_06b_base.safetensors", "section": "model", "desc_key": "field.qwen3", "hint_key": "field.qwen3Hint", "target": "toml", "role": "file-model", "group": "anima", "required": True},
 {"key": "train_data_dir", "type": "text", "default": "./train", "section": "model", "desc_key": "field.train_data_dir", "target": "toml", "role": "file-folder", "required": True},
@@ -420,7 +421,7 @@ shared_training_field('gradient_checkpointing',
     target="toml",
     omit_default=True,
 ),
-{"key": "gradient_checkpointing_skip_blocks", "type": "number", "default": 0, "section": "training", "desc_key": "field.gradient_checkpointing_skip_blocks", "hint_key": "field.gradient_checkpointing_skip_blocksHint", "target": "toml", "min": 0, "max": 28, "step": 1, "group": "anima", "show_if": {"key": "gradient_checkpointing", "eq": True}, "omit_default": True},
+{"key": "gradient_checkpointing_skip_blocks", "type": "number", "default": 0, "section": "training", "desc_key": "field.gradient_checkpointing_skip_blocks", "hint_key": "field.gradient_checkpointing_skip_blocksHint", "target": "toml", "min": 0, "step": 1, "group": "anima", "show_if": {"key": "gradient_checkpointing", "eq": True}, "omit_default": True},
 shared_training_field('seed', default=1337, target="toml"),
 shared_training_field('mixed_precision', default="bf16", target="toml"),
     # full_bf16: 将模型 + Network 全部参数 cast 为 bf16，消除 autocast 与 compile/LoRA 交互的 dtype 不一致问题。
@@ -594,7 +595,7 @@ shared_training_field('mixed_precision', default="bf16", target="toml"),
     {"key": "vae_chunk_size", "type": "number", "default": "", "section": "performance", "desc_key": "field.vae_chunk_size", "target": "toml", "min": 2, "step": 2, "group": "anima", "hint_key": "field.vae_chunk_sizeHint"},
     {"key": "vae_disable_cache", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.vae_disable_cache", "target": "toml", "group": "anima", "readonly_if": {"key": "qwen_image_vae_2d", "eq": True, "reason_key": "field.vae_disable_cache2dLocked"}},
     {"key": "vae_batch_size", "type": "number", "default": "", "section": "performance", "desc_key": "field.vae_batch_size", "target": "toml", "min": 1, "step": 1, "hint_key": "field.vae_batch_sizeHint"},
-    {"key": "blocks_to_swap", "type": "number", "section": "performance", "desc_key": "field.blocks_to_swap", "target": "toml", "min": 0, "max": 26, "step": 1, "group": "anima", "hint_key": "field.blocks_to_swapHint"},
+    {"key": "blocks_to_swap", "type": "number", "section": "performance", "desc_key": "field.blocks_to_swap", "target": "toml", "min": 0, "step": 1, "group": "anima", "hint_key": "field.blocks_to_swapHint"},
     {"key": "block_swap_h2d_only", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.block_swap_h2d_only", "hint_key": "field.block_swap_h2d_onlyHint", "target": "toml", "group": ["anima", "moss_image"], "show_if": {"key": "blocks_to_swap", "neq": 0}, "omit_default": True},
     shared_training_field('block_swap_ring_size', default=2, target="toml", group=["anima", "moss_image"]),
     {"key": "use_pinned_memory_for_block_swap", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.use_pinned_memory_for_block_swap", "hint_key": "field.use_pinned_memory_for_block_swapHint", "target": "toml", "group": ["anima", "moss_image"], "show_if": [{"key": "blocks_to_swap", "neq": 0}, {"key": "block_swap_h2d_only", "eq": True}], "omit_default": True},
@@ -655,6 +656,8 @@ shared_training_field('save_state', default=False, target="toml", omit_default=T
 {"key": "preview_loras", "type": "lora-list", "default": [], "section": "preview", "desc_key": "field.preview_loras", "hint_key": "field.preview_lorasHint", "target": "ui", "group": ["anima", "moss_image"], "show_if": {"key": "enable_preview", "eq": True}},
 *quality_prompt_fields("enable_preview"),
 {"key": "positive_prompts", "type": "textarea", "default": "", "section": "preview", "desc_key": "field.sample_prompts", "target": "ui", "hint_key": "field.sample_promptsHint", "show_if": {"key": "enable_preview", "eq": True}},
+# Retain existing saved configurations. New manual prompts are edited in the running task's preview dialog.
+{"key": "reserved_prompts", "type": "hidden", "default": "", "section": "preview", "desc_key": "control.reserved", "target": "ui", "group": ["anima", "sdxl", "moss_image"], "hidden": True},
 {"key": "negative_prompts", "type": "textarea", "default": "", "section": "preview", "desc_key": "field.negative_prompts", "target": "ui", "show_if": {"key": "enable_preview", "eq": True}},
     # 仅 SDXL 暴露采样器（sd-scripts 的 diffusers scheduler 路径）。
     # Anima 采样写死 Euler flow-match，sample_sampler 是假参数，故按 group:sdxl 隐藏。
