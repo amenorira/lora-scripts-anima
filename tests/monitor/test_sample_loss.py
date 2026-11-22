@@ -2,6 +2,7 @@ import tempfile
 import unittest
 import asyncio
 import json
+import math
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,6 +18,34 @@ from tests.monitor.test_cross_drive_outputs import CrossDriveSandbox
 
 
 class SampleEpochLossTests(unittest.TestCase):
+    def test_nonfinite_loss_values_do_not_reach_history_payload(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+            writer = EventFileWriter(str(run / "log"))
+            try:
+                for step, value in enumerate([.5, .125, .25, .5, math.inf, .75, math.nan], start=1):
+                    writer.add_event(Event(step=step, summary=Summary(value=[
+                        Summary.Value(tag="loss/average", simple_value=math.nan if step == 1 else value),
+                        Summary.Value(tag="loss/current", simple_value=-math.inf if step == 1 else value),
+                        Summary.Value(tag="lr/unet", simple_value=value),
+                        Summary.Value(tag="loss/epoch", simple_value=-math.inf),
+                    ])))
+                writer.flush()
+                snapshot = training.read_tensorboard_loss(run_dir=str(run), limit=5)
+                json.dumps(snapshot, allow_nan=False)
+                by_tag = {series["tag"]: series for series in snapshot}
+                self.assertEqual(set(by_tag), {"loss/average", "loss/current", "lr/unet"})
+                for tag, series in by_tag.items():
+                    self.assertEqual([p["step"] for p in series["points"]], [3, 4, 6])
+                    self.assertEqual(series["diagnostic_points"], series["points"])
+                    self.assertEqual(series["latest"], .75)
+                    self.assertEqual(series["max"], .75)
+                    expected_min = (.25, 3) if tag == "lr/unet" else (.125, 2)
+                    self.assertEqual((series["min"], series["min_step"]), expected_min)
+            finally:
+                writer.close()
+                training._tb_cache.pop(str(run / "log"), None)
+
     def test_full_loss_minimum_survives_display_window_limit(self):
         with tempfile.TemporaryDirectory() as directory:
             run = Path(directory)

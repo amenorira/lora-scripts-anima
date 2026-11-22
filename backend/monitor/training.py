@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import ast
 import logging
+import math
 import re
 import threading
 import time
@@ -239,14 +240,14 @@ def read_tensorboard_loss(
             window_events = events[-limit:]
             points = [
                 {"step": int(e.step), "value": float(e.value)}
-                for e in window_events
+                for e in window_events if math.isfinite(e.value)
             ]
             if not points:
                 continue
             raw_points = points
             # 主图的全程最低值也要覆盖已从显示窗口裁掉的早期观测。
             extrema_events = events if tag in {"loss/average", "loss/current"} else window_events
-            best = min(extrema_events, key=lambda event: event.value)
+            best = min((e for e in extrema_events if math.isfinite(e.value)), key=lambda e: e.value)
             if len(points) > downsample_to and not _is_epoch_loss_tag(tag):
                 points = _lttb_downsample(points, downsample_to)
             values = [p["value"] for p in points]
