@@ -309,10 +309,17 @@ def load_run_record(
         schema_version = int(meta.get("schema_version") or 1)
     except (TypeError, ValueError):
         schema_version = 1
+    gpu_ids = extra.get("gpu_ids")
+    gpu_processes = None
+    if isinstance(gpu_ids, list):
+        gpu_processes = max(1, len(gpu_ids))
+    elif "gpu_ids" in extra and gpu_ids is None:
+        gpu_processes = 1
     return {
         **meta,
         "extra": extra,
         "schema_version": schema_version,
+        "gpu_processes": gpu_processes,
         "task_id": meta.get("task_id"),
         "run_dir": internal.relative_to(REPO_ROOT).as_posix(),
         "run_path": internal,

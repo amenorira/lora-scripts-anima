@@ -190,7 +190,7 @@ window.monitorRenderMixin = {
         panel.innerHTML = this._renderOverviewTab(d, t, isHistory);
         panel.dataset.overviewContext = overviewContext;
         delete panel.dataset.diagnosticVersion;
-        delete panel.dataset.sparklineVersion;
+        delete panel.dataset.matrixVersion;
         delete panel.dataset.telemetryVersion;
         delete panel.dataset.motionContext;
         this.initMonitorParams(panel);

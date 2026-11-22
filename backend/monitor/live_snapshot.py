@@ -53,6 +53,7 @@ async def build_live_monitor_snapshot(
         "step": 0, "total_steps": 0, "percent": 0, "loss": None, "lr": None,
         "epoch": None, "eta": None, "speed": None, "has_error": False, "error_msg": None,
         "run_dir": record["run_dir"] if record else "",
+        "gpu_processes": record.get("gpu_processes") if record else None,
         "output_dir": record["run_dir"] if record else "",
         "artifact_dir": record["artifact_dir"] if record else "",
         "artifact_available": bool(record and record["artifact_available"]),

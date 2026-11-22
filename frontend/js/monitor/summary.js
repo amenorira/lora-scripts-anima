@@ -16,6 +16,8 @@ window.monitorSummaryMixin = {
     const paused = liveControl?.state === 'paused';
     const total = Number(d.total_steps) || 0;
     const step = completed && total ? total : (Number(d.step) || 0);
+    const stepSlot = String(Math.max(total, step)).length + 'ch';
+    if (root.style.getPropertyValue('--m-step-slot') !== stepSlot) root.style.setProperty('--m-step-slot', stepSlot);
     const rawPercent = d.percent != null ? Number(d.percent) : (total ? step / total * 100 : 0);
     const percent = completed ? 100 : Math.max(0, Math.min(100, Number.isFinite(rawPercent) ? rawPercent : 0));
     const lossSeries = this._summaryLossSeries();
@@ -80,6 +82,9 @@ window.monitorSummaryMixin = {
     const metricsStep = reported?.metrics_step ?? reported?.step;
     const latestLoss = Number.isFinite(reported?.loss) && metricsStep >= (seriesLoss?.step ?? 0)
       ? {step:metricsStep, value:reported.loss} : seriesLoss;
+    const avgLossSeries = this.monitorLossSeries.find(item => item.tag === 'loss/average');
+    const avgLossPoints = this._cleanLossPoints(avgLossSeries && (avgLossSeries.diagnostic_points || avgLossSeries.points));
+    const latestAvgLoss = avgLossPoints.at(-1) || (Number.isFinite(avgLossSeries?.latest) ? { value: Number(avgLossSeries.latest) } : null);
     set('loss', latestLoss ? this._formatDiagnosticValue(latestLoss.value) : (d.loss != null ? d.loss : '—'));
     // 每次实际显示新采样时记录比较基准；批量到达的中间 step 不冒充上次读数。
     const displayedLoss = root._displayedLoss;
@@ -97,7 +102,8 @@ window.monitorSummaryMixin = {
       lossChange.hidden = !lossTrend;
       if (lossTrend) this._patchLossChange(lossChange, lossTrend.percent, t(isHistory ? 'lossVsPreviousSample' : 'lossVsPreviousDisplay'), animate);
     }
-    set('loss-meta', latestLoss ? t('lossUpdatedAt').replace('{n}', latestLoss.step) : t('recentLoss'));
+    const lossMetaText = latestLoss ? t('lossUpdatedAt').replace('{n}', latestLoss.step) : t('recentLoss');
+    set('loss-meta', lossMetaText);
     const showReportedLr = Number.isFinite(reported?.lr) && metricsStep >= (lrPoints.at(-1)?.step ?? 0);
     set('lr', this._formatLearningRate(showReportedLr ? reported.lr : lrLatest ?? (isHistory ? null : d.lr), '—'));
     const lrRangeEl = root.querySelector('[data-summary-field="lr-range"]');
@@ -107,8 +113,13 @@ window.monitorSummaryMixin = {
     }
     set('lr-meta', this._summarySchedulerMeta(t, total) || (lrRange && completed && lrLatest === 0 ? t('schedulerFinished') : ''));
     set('speed', d.speed || '—');
-    const wait = liveControl?.timing?.data_wait_ratio;
-    const speedLabel = t(!isHistory && running && !paused ? 'currentSpeed' : 'lastSpeed');
+    const wait = !isHistory && running ? liveControl?.timing?.data_wait_ratio : null;
+    const telemetrySamples = this._summaryTelemetrySamples(isHistory).samples;
+    const validSpeeds = telemetrySamples.map(sample => sample.speedSec).filter(value => Number.isFinite(value) && value > 0);
+    const avgSpeedSec = validSpeeds.length >= 2 ? validSpeeds.reduce((sum, value) => sum + value, 0) / validSpeeds.length : null;
+    const speedLabel = Number.isFinite(wait)
+      ? t('speedComputeWait').replace('{compute}', Math.round((1 - Math.max(0, Math.min(1, wait))) * 100)).replace('{wait}', Math.round(Math.max(0, Math.min(1, wait)) * 100))
+      : (avgSpeedSec ? t('speedAvgShort').replace('{v}', this._formatSpeedFromSeconds(avgSpeedSec, d.speed)) : t(!isHistory && running && !paused ? 'currentSpeed' : 'lastSpeed'));
     set('speed-meta', speedLabel);
     const speedMeta = root.querySelector('[data-summary-field="speed-meta"]');
     if (speedMeta) {
@@ -122,18 +133,16 @@ window.monitorSummaryMixin = {
       progress.style.width = percent + '%';
       progress.parentElement.setAttribute('aria-valuenow', String(percent));
     }
-    if (root.dataset.sparklineVersion !== String(this.lossDataVersion)) {
-      root.dataset.sparklineVersion = String(this.lossDataVersion);
-      const lossPath = root.querySelector('[data-summary-spark="loss"]');
-      const lrPath = root.querySelector('[data-summary-spark="lr"]');
-      for (const [path, series] of [[lossPath, lossSeries], [lrPath, lrSeries]]) {
-        // 学习率展示近期斜率；20% 的绝对值下限会把缓慢衰减压成近乎水平的线。
-        if (path) {
-          this._patchRollingSparkline(path, series?.diagnostic_points?.length ? series.diagnostic_points : (series?.points || []), animate, root.dataset.motionContext, { relativeSpan: path === lrPath ? .02 : .2 });
-        }
-      }
+    const live = running && !paused;
+    this._patchSummaryLossProfile(root, lossSeries || avgLossSeries, latestAvgLoss?.value ?? null, live, t, animate);
+    this._patchSummaryLrProfile(root, lrSeries, total, live, t);
+    const matrixVersion = [this.lossDataVersion, this.trainParamsVersion, total, step, percent, d.epoch, live, completed, motionContext].join('|');
+    if (root.dataset.matrixVersion !== matrixVersion) {
+      root.dataset.matrixVersion = matrixVersion;
+      this._patchSummaryTimeViz(root, d, total, step, percent, completed, live, t, animate);
     }
-    this._patchSummaryTelemetry(root, t, isHistory);
+    this._bindSummaryVizInteractions(root);
+    this._patchSummaryTelemetry(root, t, isHistory, wait, running && !paused);
     this._patchTrainingDiagnostics(root, t, d, isHistory);
   },
 
@@ -146,11 +155,8 @@ window.monitorSummaryMixin = {
     const eta = d.eta ? this._formatMonitorDuration(d.eta) : '';
     const showRemaining = running && !paused && !!eta;
     const endedAt = result?.ended_at ? this._formatRunEndTime(result.ended_at) : '';
-    const hasTimeTrend = this._summaryTelemetrySamples(isHistory).samples.filter(sample => Number.isFinite(sample.remainingRate)).length >= 2;
-    const timeMeta = [
-      showRemaining ? t('elapsed') + ' ' + duration : endedAt ? t('endedAt') + ' ' + endedAt : '',
-      !showRemaining && hasTimeTrend ? t('timeTrendCaption') : '',
-    ].filter(Boolean).join(' · ');
+    const formattedEnd = endedAt ? String(endedAt).replace(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})$/, '$1\n$2') : '';
+    const timeMeta = showRemaining ? t('elapsed') + ' ' + duration : (formattedEnd ? t('endedAt') + ' ' + formattedEnd : '');
     for (const [key, value] of [
       ['time-label', t(showRemaining ? 'estimatedRemaining' : running ? 'elapsed' : 'totalDuration')],
       ['time', showRemaining ? eta : duration],
@@ -212,9 +218,9 @@ window.monitorSummaryMixin = {
     if (!isHistory) html += `<span role="status" x-text="controlTask === liveTaskId && controlState?.command?.status === 'pending' && ['save','save_state','sample'].includes(controlState.command.action) ? t(controlState.command.action === 'sample' && controlState.command.phase === 'encoding' ? 'control.encodingPending' : 'control.' + controlState.command.action + 'Pending') : (controlState?.state === 'paused' && controlState.replica ? t('control.replica') : '')"></span>`;
     html += '</div></div>';
     html += '<div class="m-live-metrics">';
-    html += this._summaryTileHtml('loss', t('currentLoss'), t('recentLoss'), t('localTrendScaleHint'));
-    html += this._summaryTileHtml('lr', t('lr'), '', t('localTrendScaleHint'));
-    html += this._summaryTileHtml('speed', t('speed'), t('currentSpeed'));
+    html += this._summaryTileHtml('loss', t('currentLoss'), t('recentLoss'), t('lossPulseHint'));
+    html += this._summaryTileHtml('lr', t('lr'), '', t('lrRecordedProfileHint'));
+    html += this._summaryTileHtml('speed', t('speed'), t('currentSpeed'), t('speedCadenceHint'));
     html += this._summaryTileHtml('time', t('elapsed'), '');
     html += '</div></section>';
     return html;
@@ -263,14 +269,13 @@ window.monitorSummaryMixin = {
   },
 
   _summaryTileHtml(key, label, meta, scaleHint = '') {
-    let html = '<div class="m-live-metric m-live-metric-' + key + '"' + (scaleHint ? ' title="' + this.esc(label + ' · ' + scaleHint) + '"' : '') + '><span class="m-metric-label">' + this._monitorIconHtml(key) + '<span' + (key === 'time' ? ' data-summary-field="time-label"' : '') + '>' + this.esc(label) + '</span></span>';
+    let html = '<div class="m-live-metric m-live-metric-' + key + '"' + (scaleHint ? ' title="' + this.esc(scaleHint) + '"' : '') + '>';
+    html += '<div class="m-metric-head"><span class="m-metric-label">' + this._monitorIconHtml(key) + '<span' + (key === 'time' ? ' data-summary-field="time-label"' : '') + '>' + this.esc(label) + '</span></span><span class="m-metric-hud" data-summary-hud aria-hidden="true"></span></div>';
     html += '<div class="m-metric-reading"><strong data-summary-field="' + key + '">—</strong>';
     if (key === 'loss') html += '<span class="m-metric-change" data-summary-loss-change hidden></span>';
     if (key === 'lr') html += '<span class="m-metric-range" data-summary-field="lr-range" hidden></span>';
-    html += '</div><small data-summary-field="' + key + '-meta">' + this.esc(meta) + '</small>';
-    html += '<svg class="m-metric-sparkline" viewBox="0 0 120 34" preserveAspectRatio="none" ' + (key === 'speed' || key === 'time' ? 'role="img" hidden' : 'aria-hidden="true"') + '>';
-    if (key === 'time') html += '<line data-summary-time-baseline x1="4" x2="116" y1="17" y2="17" visibility="hidden"/>';
-    html += '<path data-summary-spark="' + key + '"></path></svg>';
+    html += '</div><div class="m-metric-viz m-metric-viz-' + key + '" data-summary-viz="' + key + '" hidden></div>';
+    html += '<small data-summary-field="' + key + '-meta">' + this.esc(meta) + '</small>';
     return html + '</div>';
   },
 
@@ -281,47 +286,742 @@ window.monitorSummaryMixin = {
     return { version, samples: (samples || []).slice(-40) };
   },
 
-  _patchSummaryTelemetry(root, t, isHistory) {
+  _formatSpeedFromSeconds(seconds, sampleText = '') {
+    if (!Number.isFinite(seconds) || seconds <= 0) return '—';
+    const preferItPerSec = /it\/s/i.test(String(sampleText || '')) || seconds < 1;
+    if (preferItPerSec) return (1 / seconds).toFixed(2) + 'it/s';
+    return seconds.toFixed(2) + 's/it';
+  },
+
+  _downsampleSeriesPoints(points, maxPoints = 72) {
+    if (!Array.isArray(points) || points.length <= maxPoints) return points || [];
+    const lastIndex = points.length - 1;
+    let minIdx = 0, maxIdx = 0;
+    for (let i = 1; i < points.length; i++) {
+      if (points[i].value < points[minIdx].value) minIdx = i;
+      if (points[i].value > points[maxIdx].value) maxIdx = i;
+    }
+    const indices = new Set([0, lastIndex, minIdx, maxIdx]);
+    const stride = lastIndex / Math.max(1, maxPoints - 1);
+    for (let i = 0; i < maxPoints; i++) indices.add(Math.min(lastIndex, Math.round(i * stride)));
+    return Array.from(indices).sort((a, b) => a - b).map(i => points[i]);
+  },
+
+  // 单调限幅平滑样条：保证折线顺滑有机，且在预热拐点与平直段绝不过冲。
+  _smoothSplinePath(coords, tension = 0.2) {
+    if (!coords.length) return '';
+    if (coords.length === 1) return `M${coords[0].x.toFixed(1)} ${coords[0].y.toFixed(1)}`;
+    if (coords.length === 2) return `M${coords[0].x.toFixed(1)} ${coords[0].y.toFixed(1)} L${coords[1].x.toFixed(1)} ${coords[1].y.toFixed(1)}`;
+    let d = `M${coords[0].x.toFixed(1)} ${coords[0].y.toFixed(1)}`;
+    for (let i = 0; i < coords.length - 1; i++) {
+      const p0 = coords[Math.max(0, i - 1)];
+      const p1 = coords[i];
+      const p2 = coords[i + 1];
+      const p3 = coords[Math.min(coords.length - 1, i + 2)];
+      const minY = Math.min(p1.y, p2.y);
+      const maxY = Math.max(p1.y, p2.y);
+      const cp1x = Math.min(p2.x, p1.x + (p2.x - p0.x) * tension);
+      const cp1y = Math.max(minY, Math.min(maxY, p1.y + (p2.y - p0.y) * tension));
+      const cp2x = Math.max(p1.x, p2.x - (p3.x - p1.x) * tension);
+      const cp2y = Math.max(minY, Math.min(maxY, p2.y - (p3.y - p1.y) * tension));
+      d += ` C${cp1x.toFixed(1)} ${cp1y.toFixed(1)} ${cp2x.toFixed(1)} ${cp2y.toFixed(1)} ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+    }
+    return d;
+  },
+
+  // 青色 · 右下底边漫入式 Loss 平滑波形（左侧渐隐融入，无悬空底线）
+  _patchSummaryLossProfile(root, series, avgValue, isLiveRunning, t, animate) {
+    const host = root.querySelector('[data-summary-viz="loss"]');
+    if (!host) return;
+    const source = series?.diagnostic_points || series?.points;
+    const last = host._profile;
+    if (last && last.source === source && last.avgValue === avgValue && last.live === isLiveRunning) return;
+    host._profile = { source, avgValue, live: isLiveRunning };
+    const raw = this._cleanLossPoints(source).slice(-30);
+    if (raw.length < 2) { host.hidden = true; host.innerHTML = ''; return; }
+    // 轻度三点加权平滑用于轮廓造型，悬停仍读取真实单步数值。
+    const display = raw.map((pt, i) => {
+      const prev = raw[Math.max(0, i - 1)].value;
+      const next = raw[Math.min(raw.length - 1, i + 1)].value;
+      const smooth = i === 0 || i === raw.length - 1 ? pt.value : prev * 0.22 + pt.value * 0.56 + next * 0.22;
+      return { step: pt.step, value: pt.value, yVal: smooth };
+    });
+    const yVals = display.map(p => p.yVal);
+    const meanVal = Number.isFinite(avgValue) ? avgValue : yVals.reduce((s, v) => s + v, 0) / yVals.length;
+    const minV = Math.min(...yVals, meanVal);
+    const maxV = Math.max(...yVals, meanVal);
+    const pad = Math.max((maxV - minV) * 0.24, Math.abs(meanVal) * 0.1, 1e-6);
+    const low = Math.max(0, minV - pad * 0.85);
+    const high = maxV + pad;
+    const span = Math.max(high - low, 1e-9);
+    const vbW = 200, vbH = 92;
+    const xStart = 6, xEnd = 188;
+    const toX = idx => xStart + (idx / Math.max(1, display.length - 1)) * (xEnd - xStart);
+    const toY = v => 72 - ((v - low) / span) * 42;
+    const coords = display.map((pt, i) => ({ x: toX(i), y: toY(pt.yVal), step: pt.step, value: pt.value }));
+    const lineD = this._smoothSplinePath(coords, 0.2);
+    const lastPt = coords[coords.length - 1];
+    const firstPt = coords[0];
+    const areaD = lineD + ` L${lastPt.x.toFixed(1)} ${vbH} L${firstPt.x.toFixed(1)} ${vbH} Z`;
+    const meanY = Math.max(24, Math.min(76, toY(meanVal))).toFixed(1);
+    const slotW = (xEnd - xStart) / Math.max(1, coords.length - 1);
+    const gradId = 'm-loss-grad-' + (this.selectedRunDir ? 'h' : 'l');
+    const guideId = 'm-loss-guide-' + (this.selectedRunDir ? 'h' : 'l');
+    let hits = '';
+    host._hudIndexChars = String(Math.round(lastPt.step)).length;
+    host._hudValueChars = 0;
+    coords.forEach((pt, idx) => {
+      const k = `Step ${Math.round(pt.step)}`;
+      const v = this._formatDiagnosticValue(pt.value);
+      host._hudValueChars = Math.max(host._hudValueChars, v.length);
+      hits += `<g class="m-viz-item" data-viz-idx="${idx}" data-viz-key="${this.esc(k)}" data-viz-val="${this.esc(v)}"><rect class="m-viz-hit" x="${(pt.x - slotW / 2).toFixed(1)}" y="14" width="${Math.max(4, slotW).toFixed(1)}" height="${vbH - 14}"/><line class="m-viz-guide" x1="${pt.x.toFixed(1)}" x2="${pt.x.toFixed(1)}" y1="${Math.max(16, pt.y - 6).toFixed(1)}" y2="${vbH}" stroke="url(#${guideId})"/><circle class="m-viz-hover-dot is-loss" cx="${pt.x.toFixed(1)}" cy="${pt.y.toFixed(1)}" r="3.4"/></g>`;
+    });
+    host.hidden = false;
+    host.innerHTML = `<svg class="m-viz-svg m-loss-profile-svg" viewBox="0 0 ${vbW} ${vbH}" preserveAspectRatio="xMaxYMax meet" aria-hidden="true">
+      <defs>
+        <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="var(--accent)" stop-opacity=".1"/>
+          <stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>
+        </linearGradient>
+        <linearGradient id="${guideId}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="var(--accent)" stop-opacity=".72"/>
+          <stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <line class="m-loss-mean-line" x1="${xStart}" x2="${xEnd}" y1="${meanY}" y2="${meanY}"/>
+      <path class="m-loss-area" fill="url(#${gradId})" d="${areaD}"/>
+      <path class="m-loss-line" d="${lineD}"/>
+      ${isLiveRunning ? `<circle class="m-loss-pulse" cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="5.6"/>` : ''}
+      <circle class="m-loss-dot" cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="2.9"/>
+      ${hits}
+    </svg>`;
+    const tile = host.closest?.('.m-live-metric');
+    if (tile) {
+      const avgNote = Number.isFinite(avgValue) ? ' (' + t('lossAvgShort').replace('{v}', this._formatDiagnosticValue(avgValue)) + ')' : '';
+      tile.setAttribute('title', t('lossPulseHint') + avgNote);
+    }
+    this._restoreSummaryVizHover(host);
+    if (animate && this._monitorMotionAllowed()) {
+      host.querySelector('.m-loss-dot')?.animate?.(
+        [{ transform: 'scale(1.45)', opacity: .72 }, { transform: 'scale(1)', opacity: 1 }],
+        { duration: 240, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
+      );
+    }
+  },
+
+  // 紫色 · 学习率全程调度曲线（确定性调度器预测虚线轨迹 + 实线已记录轨迹）
+  _projectLrSchedule(lrPoints, totalSteps) {
+    if (!lrPoints.length || !totalSteps) return [];
+    const last = lrPoints[lrPoints.length - 1];
+    if (!Number.isFinite(last.step) || !Number.isFinite(last.value) || last.step >= totalSteps) return [];
+    const { params, scheduler, rawWarmup, optimizer, adaptive, parameterScaled } = this._summarySchedule();
+    if (adaptive || parameterScaled || optimizer.endsWith('schedulefree') || params.get('lr_scheduler_type')) return [];
+    if (!['constant', 'constant_with_warmup', 'linear', 'cosine', 'cosine_with_restarts', 'polynomial', 'inverse_sqrt'].includes(scheduler)) return [];
+    for (const key of params.keys()) {
+      if (key.startsWith('lr_scheduler_args.') && !(scheduler === 'polynomial' && key === 'lr_scheduler_args.lr_end')) return [];
+    }
+    const run = this.selectedRunDir ? this.runDetailData : this.monitorData;
+    if (!run?.gpu_processes && (rawWarmup > 0 || scheduler === 'inverse_sqrt')) return [];
+    const schedulerSteps = totalSteps * (run?.gpu_processes || 1);
+    const warmup = rawWarmup > 0 && rawWarmup < 1 ? Math.floor(rawWarmup * schedulerSteps) : rawWarmup;
+    const curve = {
+      scheduler, totalSteps: schedulerSteps, warmupFraction: warmup / schedulerSteps,
+      cycles: Number(params.get('lr_scheduler_num_cycles') ?? 1),
+      power: Number(params.get('lr_scheduler_power') ?? 1),
+      timescale: Number(params.get('lr_scheduler_timescale') ?? (warmup || 10000)),
+      endRatio: Number(params.get('lr_scheduler_args.lr_end') ?? 1e-7) / Number(params.get('learning_rate')),
+    };
+    if (scheduler === 'polynomial' && !(curve.endRatio >= 0 && curve.endRatio < 1 && curve.power > 0 && warmup < schedulerSteps)) return [];
+    const factorAt = step => window.trainingLrPreviewMixin._lrPreviewMultiplier(step / totalSteps, curve);
+    const scale = last.value / factorAt(last.step);
+    if (!Number.isFinite(scale) || scale <= 0) return [];
+    const steps = new Set([totalSteps]);
+    const add = step => { if (step > last.step && step <= totalSteps) steps.add(step); };
+    for (let i = 1; i < 24; i++) add(last.step + (totalSteps - last.step) * i / 24);
+    const warmupEnd = totalSteps * curve.warmupFraction;
+    add(warmupEnd);
+    if (scheduler === 'cosine_with_restarts' && warmupEnd < totalSteps) {
+      const period = (totalSteps - warmupEnd) / curve.cycles;
+      const first = Math.max(0, Math.floor((last.step - warmupEnd) / period));
+      if (!Number.isSafeInteger(curve.cycles) || curve.cycles < 1 || curve.cycles - first > 24) return [];
+      for (let i = first; i < curve.cycles; i++) {
+        const start = warmupEnd + i * period;
+        add(Math.ceil(start));
+        add(start + period / 2);
+        add(Math.ceil(warmupEnd + (i + 1) * period) - 1);
+      }
+    }
+    return [last, ...Array.from(steps).sort((a, b) => a - b).map(step => ({step, value: factorAt(step) * scale}))];
+  },
+
+  _patchSummaryLrProfile(root, lrSeries, totalSteps, isLiveRunning, t) {
+    const host = root.querySelector('[data-summary-viz="lr"]');
+    if (!host) return;
+    const source = lrSeries?.points || lrSeries?.diagnostic_points;
+    const run = this.selectedRunDir ? this.runDetailData : this.monitorData;
+    const version = [totalSteps, run?.gpu_processes, this.trainParamsVersion, isLiveRunning].join('|');
+    if (host._profile?.version === version && host._profile.source === source) return;
+    host._profile = { source, version };
+    const allPoints = this._cleanLossPoints(source);
+    if (allPoints.length < 2) { host.hidden = true; host.innerHTML = ''; return; }
+    const past = this._downsampleSeriesPoints(allPoints, 64);
+    const future = this._projectLrSchedule(past, totalSteps);
+    const minStep = past[0].step <= Math.max(20, (totalSteps || 0) * 0.08) ? 0 : past[0].step;
+    const maxStep = Math.max(totalSteps || 0, past[past.length - 1].step, minStep + 1);
+    const maxVal = Math.max(...past.map(p => p.value), ...future.map(p => p.value), 1e-12) * 1.15;
+    const vbW = 200, vbH = 92;
+    const xStart = 6, xEnd = 188;
+    const toX = s => xStart + ((s - minStep) / (maxStep - minStep)) * (xEnd - xStart);
+    const toY = v => 72 - (Math.max(0, v) / maxVal) * 52;
+    const pastCoords = past.map(p => ({ x: toX(p.step), y: toY(p.value), step: p.step, value: p.value }));
+    const pastD = this._smoothSplinePath(pastCoords, 0.14);
+    const lastPt = pastCoords[pastCoords.length - 1];
+    const firstPt = pastCoords[0];
+    const areaD = pastD + ` L${lastPt.x.toFixed(1)} ${vbH} L${firstPt.x.toFixed(1)} ${vbH} Z`;
+    const futureCoords = future.map(p => ({ x: toX(p.step), y: toY(p.value) }));
+    const futureD = futureCoords.length >= 2 ? this._smoothSplinePath(futureCoords, 0.16) : '';
+    const slotW = Math.max(3, (lastPt.x - firstPt.x) / Math.max(1, pastCoords.length - 1));
+    const gradId = 'm-lr-grad-' + (this.selectedRunDir ? 'h' : 'l');
+    const guideId = 'm-lr-guide-' + (this.selectedRunDir ? 'h' : 'l');
+    host._hudIndexChars = String(Math.round(maxStep)).length;
+    host._hudValueChars = 0;
+    const lrHits = pastCoords.map((pt, idx) => {
+      const k = `Step ${Math.round(pt.step)}`;
+      const v = this._formatLearningRate(pt.value, '—');
+      host._hudValueChars = Math.max(host._hudValueChars, v.length);
+      return `<g class="m-viz-item" data-viz-idx="${idx}" data-viz-key="${this.esc(k)}" data-viz-val="${this.esc(v)}"><rect class="m-viz-hit" x="${(pt.x - slotW / 2).toFixed(1)}" y="6" width="${slotW.toFixed(1)}" height="${vbH - 6}"/><line class="m-viz-guide" x1="${pt.x.toFixed(1)}" x2="${pt.x.toFixed(1)}" y1="${Math.max(10, pt.y - 6).toFixed(1)}" y2="${vbH}" stroke="url(#${guideId})"/><circle class="m-viz-hover-dot is-lr" cx="${pt.x.toFixed(1)}" cy="${pt.y.toFixed(1)}" r="3.4"/></g>`;
+    }).join('');
+    host.hidden = false;
+    host.innerHTML = `<svg class="m-viz-svg m-lr-profile-svg" viewBox="0 0 ${vbW} ${vbH}" preserveAspectRatio="xMaxYMax meet" aria-hidden="true">
+      <defs>
+        <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="var(--section-training)" stop-opacity=".1"/>
+          <stop offset="100%" stop-color="var(--section-training)" stop-opacity="0"/>
+        </linearGradient>
+        <linearGradient id="${guideId}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="var(--lr-viz-color)" stop-opacity=".72"/>
+          <stop offset="100%" stop-color="var(--lr-viz-color)" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <path class="m-lr-area" fill="url(#${gradId})" d="${areaD}"/>
+      ${futureD ? `<path class="m-lr-future" d="${futureD}"/>` : ''}
+      <path class="m-lr-past" d="${pastD}"/>
+      ${isLiveRunning ? `<circle class="m-lr-pulse" cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="5.6"/>` : ''}
+      <circle class="m-lr-dot" cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="2.9"/>
+      ${lrHits}
+    </svg>`;
+    const tile = host.closest?.('.m-live-metric');
+    if (tile) tile.setAttribute('title', t(futureD ? 'lrScheduleProfileHint' : 'lrRecordedProfileHint'));
+    this._restoreSummaryVizHover(host);
+  },
+
+  // 翠绿 · 右下底边漫入式细竖脉冲纹（平稳时呈柔和渐升绿纹，卡顿掉速即明显凹陷标黄）+ 实时等待占比底边细线
+  _patchSummaryTelemetry(root, t, isHistory, waitRatio = null, isLiveRunning = false) {
     const telemetry = this._summaryTelemetrySamples(isHistory);
-    // 时间小图始终表达预计剩余的变化率；结束和历史回看保留同一种统计口径。
-    const version = telemetry.version;
+    const waitKey = Number.isFinite(waitRatio) ? Math.round(waitRatio * 1000) : 'none';
+    const version = [telemetry.version, waitKey, isLiveRunning ? 1 : 0, this._shellLocale || ''].join('|');
     if (root.dataset.telemetryVersion === version) return;
     root.dataset.telemetryVersion = version;
-    for (const [key, field, label] of [
-      ['speed', 'speedSec', 'speedTrendLabel'], ['time', 'remainingRate', 'remainingTrendLabel'],
-    ]) {
-      const path = root.querySelector('[data-summary-spark="' + key + '"]');
-      if (!path) continue;
-      const rate = field === 'remainingRate';
-      const speed = field === 'speedSec';
-      const points = telemetry.samples.filter(sample => Number.isFinite(sample[field]) && (rate || (speed ? sample[field] > 0 : sample[field] >= 0)))
-        .map(sample => ({ step: sample.observation, value: speed ? 1 / sample[field] : sample[field] }))
-        .filter(point => Number.isFinite(point.value));
-      const minimumSpan = speed ? .001 : 0;
-      const relativeSpan = field === 'speedSec' ? .005 : .02;
-      // 正常倒计时的导数为 -1，固定在中线；扩大两侧量程以容纳实际变化，不裁掉峰值。
-      const radius = rate ? Math.max(1, ...points.map(point => Math.abs(point.value + 1))) * 1.2 : 0;
-      const frame = this._patchRollingSparkline(path, points, root._metricMotion, root.dataset.motionContext + '|' + field, {
-        minimumSpan, relativeSpan, fixedBounds: rate ? { low: -1 - radius, high: -1 + radius } : null,
+    const host = root.querySelector('[data-summary-viz="speed"]');
+    if (!host) return;
+    const samples = telemetry.samples.filter(s => Number.isFinite(s.speedSec) && s.speedSec > 0).slice(-26);
+    const hasWait = Number.isFinite(waitRatio);
+    const tile = host.closest?.('.m-live-metric');
+    if (samples.length < 2 && !hasWait) {
+      host.hidden = true;
+      host.innerHTML = '';
+      tile?.removeAttribute('title');
+      return;
+    }
+
+    let svgHtml = '';
+    host._hudIndexChars = String(samples.at(-1)?.step || 0).length;
+    host._hudValueChars = 0;
+    if (samples.length >= 2) {
+      const sampleSpeedText = this.selectedRunDir ? this.runDetailData?.speed : this.monitorData?.speed;
+      const rates = samples.map(s => ({ step: s.step, sec: s.speedSec, rate: 1 / s.speedSec }));
+      const avgRate = rates.reduce((sum, r) => sum + r.rate, 0) / rates.length;
+      const vbW = 200, vbH = 92;
+      const floorY = hasWait ? 82 : 92;
+      const maxBarH = hasWait ? 54 : 62;
+      const baseBarH = hasWait ? 38 : 44;
+      const count = rates.length;
+      const barW = 3.8;
+      const xRight = 188;
+      const stepX = Math.min(7.2, (xRight - 10) / Math.max(1, count - 1));
+      const xStart = xRight - stepX * (count - 1);
+      const gradId = 'm-speed-bar-grad-' + (isHistory ? 'h' : 'l');
+      const slowGradId = 'm-speed-slow-grad-' + (isHistory ? 'h' : 'l');
+      let bars = '';
+      rates.forEach((r, idx) => {
+        // 以平均速度为基准（1.0 → baseBarH），平稳时整齐舒展，提速略高，卡顿掉速明显下凹并转暖琥珀警示。
+        const rel = r.rate / Math.max(avgRate, 1e-6);
+        const isSlow = rel < 0.8;
+        const barH = Math.max(12, Math.min(maxBarH, baseBarH + (rel - 1) * baseBarH * 1.45));
+        const cx = xStart + idx * stepX;
+        const y = floorY - barH;
+        const recency = count > 1 ? idx / (count - 1) : 1;
+        const alpha = (0.46 + recency * 0.52).toFixed(2);
+        const isLatest = idx === count - 1;
+        const k = `Step ${Math.round(r.step)}`;
+        const v = this._formatSpeedFromSeconds(r.sec, sampleSpeedText);
+        host._hudValueChars = Math.max(host._hudValueChars, v.length);
+        bars += `<g class="m-viz-item m-speed-bar-item${isLatest ? ' is-latest' : ''}${isSlow ? ' is-slow' : ''}" data-viz-idx="${idx}" data-viz-key="${this.esc(k)}" data-viz-val="${this.esc(v)}">
+          <rect class="m-viz-hit" x="${(cx - stepX / 2).toFixed(1)}" y="10" width="${Math.max(stepX, barW + 2).toFixed(1)}" height="${floorY - 10}"/>
+          <rect class="m-speed-bar" x="${(cx - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW}" height="${(floorY - y).toFixed(1)}" rx="1.9" fill="url(#${isSlow ? slowGradId : gradId})" style="--bar-alpha:${alpha}"/>
+          <circle class="m-speed-hover-dot" cx="${cx.toFixed(1)}" cy="${Math.max(12, y - 5).toFixed(1)}" r="2"/>
+        </g>`;
       });
-      if (key === 'time') root.querySelector('[data-summary-time-baseline]')?.setAttribute('visibility', rate && frame.path ? 'visible' : 'hidden');
-      const svg = path.parentElement;
-      if (svg) {
-        const tile = svg.closest?.('.m-live-metric');
-        if (frame.path) svg.removeAttribute('hidden');
-        else svg.setAttribute('hidden', '');
-        if (frame.path) {
-          const title = t(label) + (rate ? '' : ' · ' + t('localTrendScaleHint'));
-          svg.setAttribute('aria-label', title);
-          svg.setAttribute('title', title);
-          // 小图不接收鼠标事件，说明由整个卡片提供，窄桌面隐藏小图时也可查看。
-          tile?.setAttribute('title', title);
-        } else {
-          svg.removeAttribute('aria-label');
-          svg.removeAttribute('title');
-          tile?.removeAttribute('title');
+      svgHtml = `<svg class="m-viz-svg m-speed-profile-svg${isLiveRunning ? ' is-live' : ''}" viewBox="0 0 ${vbW} ${vbH}" preserveAspectRatio="xMaxYMax meet" aria-hidden="true">
+        <defs>
+          <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="var(--speed-viz-color)" stop-opacity=".72"/>
+            <stop offset="68%" stop-color="var(--speed-viz-color)" stop-opacity=".24"/>
+            <stop offset="100%" stop-color="var(--speed-viz-color)" stop-opacity="0"/>
+          </linearGradient>
+          <linearGradient id="${slowGradId}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="var(--warning)" stop-opacity=".8"/>
+            <stop offset="68%" stop-color="var(--warning)" stop-opacity=".24"/>
+            <stop offset="100%" stop-color="var(--warning)" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        ${bars}
+      </svg>`;
+    }
+
+    let waitHtml = '';
+    if (hasWait) {
+      const clampedWait = Math.max(0, Math.min(1, waitRatio));
+      const computePct = Math.round((1 - clampedWait) * 100);
+      const waitPct = Math.round(clampedWait * 100);
+      const tip = t('speedComputeWait').replace('{compute}', computePct).replace('{wait}', waitPct);
+      const waitKeyLabel = t('speedComputeShort') + ' / ' + t('speedWaitShort');
+      waitHtml = `<div class="m-speed-wait-bar" data-viz-idx="wait" data-viz-key="${this.esc(waitKeyLabel)}" data-viz-val="${computePct}% / ${waitPct}%" title="${this.esc(tip)}">
+        <i class="m-speed-wait-compute" style="width:${(100 - clampedWait * 100).toFixed(1)}%"></i>
+        <i class="m-speed-wait-io" style="width:${(clampedWait * 100).toFixed(1)}%"></i>
+      </div>`;
+      if (tile) tile.setAttribute('title', tip);
+    } else if (tile) {
+      tile.setAttribute('title', t('speedCadenceHint'));
+    }
+
+    host.hidden = false;
+    host.innerHTML = svgHtml + waitHtml;
+    this._restoreSummaryVizHover(host);
+    if (isLiveRunning && this._monitorMotionAllowed()) {
+      host.querySelector('.m-speed-bar-item.is-latest .m-speed-bar')?.animate?.(
+        [{ transform: 'scaleY(0.76)', opacity: .65 }, { transform: 'scaleY(1)', opacity: 1 }],
+        { duration: 260, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
+      );
+    }
+  },
+
+  _parseEpochProgress(d, totalSteps, step, completed, percent) {
+    const raw = String(d.epoch ?? '').trim();
+    const match = raw.match(/^(\d+)\s*(?:\/\s*(\d+))?$/);
+    const paramEpochs = Number((this.trainParams || []).find(param => param.key === 'max_train_epochs')?.value);
+    const currentEpoch = match ? Number(match[1]) : 0;
+    const totalEpochs = match && match[2] ? Number(match[2]) : (Number.isInteger(paramEpochs) && paramEpochs > 0 ? paramEpochs : 0);
+    let epochFraction = 0;
+    if (completed || percent >= 99.9) {
+      epochFraction = 1;
+    } else if (totalEpochs > 0 && totalSteps > 0 && step >= 0) {
+      const stepsPerEpoch = totalSteps / totalEpochs;
+      const doneEpochs = Math.max(0, currentEpoch - 1);
+      epochFraction = Math.max(0.06, Math.min(1, (step - doneEpochs * stepsPerEpoch) / Math.max(1, stepsPerEpoch)));
+    } else if (totalEpochs > 0) {
+      epochFraction = Math.max(0.1, Math.min(1, (percent / 100) * totalEpochs - Math.max(0, currentEpoch - 1)));
+    }
+    return { currentEpoch, totalEpochs, epochFraction };
+  },
+
+  // 自适应正方形矩阵排布：在可用矩形内求解最大方块边长，尽量一轮一格（至多 400 格），仅极端轮数才分桶。
+  _computeAdaptiveEpochGrid(totalEpochs, hasStepFallback, availW = 148, availH = 64) {
+    const minDirectCell = 3.5;
+    const solveForCount = count => {
+      const maxCell = count <= 10 ? 13 : (count <= 20 ? 11.5 : 10.5);
+      let best = null;
+      const maxRows = Math.min(count, 14);
+      for (let rows = 1; rows <= maxRows; rows++) {
+        const cols = Math.ceil(count / rows);
+        const rough = Math.min(availW / cols, availH / rows);
+        const gap = rough >= 10.5 ? 3 : (rough >= 6.2 ? 2 : (rough >= 4.4 ? 1.5 : 1));
+        const maxW = (availW - (cols - 1) * gap) / cols;
+        const maxH = (availH - (rows - 1) * gap) / rows;
+        const size = Math.min(maxCell, maxW, maxH);
+        if (size <= 0) continue;
+        const waste = (rows * cols - count) / Math.max(1, cols);
+        const landscapeBonus = cols >= rows ? 0.04 : 0;
+        const score = size * (1 - waste * 0.22 + landscapeBonus);
+        if (!best || score > best.score) {
+          best = { cols, rows, size, gap, score };
         }
       }
+      return best;
+    };
+
+    if (totalEpochs >= 1 && totalEpochs <= 400) {
+      const direct = solveForCount(totalEpochs);
+      if (direct && direct.size >= minDirectCell) {
+        const radius = direct.size >= 9 ? 2 : (direct.size >= 5.5 ? 1.5 : 1);
+        return { useDirectEpochs: true, blockCount: totalEpochs, cols: direct.cols, size: direct.size, gap: direct.gap, radius };
+      }
+    }
+    if (totalEpochs > 0 || hasStepFallback) {
+      const bucketCount = totalEpochs > 100 ? 120 : 40;
+      const packed = solveForCount(bucketCount) || { cols: 10, size: 9, gap: 2 };
+      const radius = packed.size >= 9 ? 2 : (packed.size >= 5.5 ? 1.5 : 1);
+      return { useDirectEpochs: false, blockCount: bucketCount, cols: packed.cols, size: packed.size, gap: packed.gap, radius };
+    }
+    return { useDirectEpochs: false, blockCount: 0, cols: 0, size: 0, gap: 0, radius: 2 };
+  },
+
+  // 琥珀色 · 迅雷式轮次/进度正方形矩阵（自适应一轮一格，实时推进时从总进度条飞入新块）
+  _patchSummaryTimeViz(root, d, totalSteps, step, percent, completed, isLiveRunning, t, animate) {
+    const host = root.querySelector('[data-summary-viz="time"]');
+    if (!host) return;
+    const { currentEpoch, totalEpochs, epochFraction } = this._parseEpochProgress(d, totalSteps, step, completed, percent);
+
+    const tile = host.closest?.('.m-live-metric');
+    const tileW = tile?.clientWidth || 268;
+    const leftTextW = Math.max(
+      tile?.querySelector('.m-metric-reading')?.offsetWidth || 0,
+      tile?.querySelector('small[data-summary-field="time-meta"]')?.offsetWidth || 0,
+      86,
+    );
+    const availW = Math.max(106, Math.min(200, tileW - leftTextW - 38));
+    const availH = 56;
+    const prevState = host._matrixState;
+    const sameContext = prevState?.context === root.dataset.motionContext;
+    const epochSeries = this.monitorLossSeries.find(item => item.tag === 'loss/epoch_average')?.points;
+    const legacyEpochSeries = this.monitorLossSeries.find(item => item.tag === 'loss/epoch')?.points;
+    const directVersion = [currentEpoch, totalEpochs, completed, percent >= 99.9, isLiveRunning, availW].join('|');
+    host._epochReflowArgs = [d, totalSteps, step, percent, completed, isLiveRunning, t];
+    if (prevState && sameContext && prevState.directVersion === directVersion
+        && prevState.epochSeries === epochSeries && prevState.legacyEpochSeries === legacyEpochSeries) {
+      const activeCell = prevState.activeCell;
+      const fill = activeCell?.querySelector('.m-epoch-fill');
+      if (fill) fill.style.width = Math.round(epochFraction * 100) + '%';
+      if (activeCell && animate && step > prevState.step && this._monitorMotionAllowed()) {
+        this._launchProgressBlockFlight(root, activeCell, false);
+      }
+      prevState.step = step;
+      return;
+    }
+    const layout = this._computeAdaptiveEpochGrid(totalEpochs, totalSteps > 0 || percent > 0, availW, availH);
+    const { useDirectEpochs, blockCount, cols, size, gap, radius } = layout;
+    if (!blockCount) {
+      host._matrixState = null;
+      host.hidden = true;
+      host.innerHTML = '';
+      return;
+    }
+
+    let doneCount = 0;
+    let activeIdx = -1;
+    const epochLossMap = new Map();
+    if (useDirectEpochs) {
+      for (const source of [epochSeries, legacyEpochSeries]) {
+        for (const point of this._cleanLossPoints(source)) {
+          const epoch = Math.round(point.step);
+          if (!epochLossMap.has(epoch)) epochLossMap.set(epoch, point.value);
+        }
+      }
+    }
+    const cellData = [];
+    host._hudIndexChars = useDirectEpochs && epochLossMap.size ? String(totalEpochs).length : 0;
+    host._hudValueChars = 0;
+    for (let i = 1; i <= blockCount; i++) {
+      let isDone = false;
+      let isActive = false;
+      let fillPct = 0;
+      let vizKey = '';
+      let vizVal = '';
+      if (useDirectEpochs) {
+        isDone = completed || (currentEpoch > 0 && i < currentEpoch) || (i === currentEpoch && percent >= 99.9);
+        isActive = !isDone && isLiveRunning && i === currentEpoch;
+        fillPct = isActive ? Math.round(epochFraction * 100) : 0;
+        const lossVal = epochLossMap.get(i);
+        if (Number.isFinite(lossVal)) {
+          vizKey = `Epoch ${i}`;
+          vizVal = `Loss ${this._formatDiagnosticValue(lossVal)}`;
+        } else {
+          vizKey = 'Epoch';
+          vizVal = `${i} / ${totalEpochs}`;
+        }
+      } else {
+        const blockPct = 100 / blockCount;
+        const startPct = (i - 1) * blockPct;
+        const endPct = i * blockPct;
+        isDone = completed || percent >= endPct - 0.05;
+        isActive = !isDone && isLiveRunning && percent > startPct;
+        fillPct = isActive ? Math.max(8, Math.min(100, Math.round(((percent - startPct) / blockPct) * 100))) : 0;
+        if (totalEpochs > 0) {
+          const epStart = Math.max(1, Math.floor(((i - 1) / blockCount) * totalEpochs) + 1);
+          const epEnd = Math.min(totalEpochs, Math.ceil((i / blockCount) * totalEpochs));
+          vizKey = 'Epoch';
+          vizVal = epStart === epEnd ? `${epStart}` : `${epStart}–${epEnd}`;
+        } else if (totalSteps > 0) {
+          const sStart = Math.max(1, Math.floor(((i - 1) / blockCount) * totalSteps) + 1);
+          const sEnd = Math.min(totalSteps, Math.ceil((i / blockCount) * totalSteps));
+          vizKey = 'Step';
+          vizVal = `${sStart}–${sEnd}`;
+        } else {
+          vizKey = '';
+          vizVal = `${Math.round(endPct)}%`;
+        }
+      }
+      if (isDone) doneCount++;
+      host._hudValueChars = Math.max(host._hudValueChars, vizVal.length);
+      if (isActive) activeIdx = i - 1;
+      const tone = blockCount > 1 ? (0.82 + ((i - 1) / (blockCount - 1)) * 0.18).toFixed(2) : '1';
+      cellData.push({ idx: i - 1, isDone, isActive, fillPct, vizKey, vizVal, tone });
+    }
+
+    host.hidden = false;
+    const existingMatrix = host.querySelector('.m-epoch-matrix');
+    const existingCells = existingMatrix?.children;
+    if (existingMatrix && existingCells && existingCells.length === blockCount) {
+      // 格数不变时原地更新各格状态，保留悬停态与进行中格的平滑填充过渡，绝不因重建 DOM 闪烁。
+      existingMatrix.style.setProperty('--block-cols', String(cols));
+      existingMatrix.style.setProperty('--block-size', size.toFixed(2) + 'px');
+      existingMatrix.style.setProperty('--block-gap', gap + 'px');
+      existingMatrix.style.setProperty('--block-radius', radius + 'px');
+      for (const item of cellData) {
+        const cell = existingCells[item.idx];
+        if (!cell) continue;
+        cell.style.setProperty('--cell-tone', item.tone);
+        cell.dataset.vizKey = item.vizKey;
+        cell.dataset.vizVal = item.vizVal;
+        if (cell.dataset.sealing === '1') continue;
+        cell.classList.toggle('is-done', item.isDone);
+        cell.classList.toggle('is-active', item.isActive);
+        let fill = cell.querySelector('.m-epoch-fill');
+        if (item.isActive) {
+          if (!fill) {
+            fill = document.createElement('i');
+            fill.className = 'm-epoch-fill';
+            cell.appendChild(fill);
+          }
+          fill.style.width = item.fillPct + '%';
+        } else if (fill) {
+          fill.remove();
+        }
+      }
+    } else {
+      const cells = cellData.map(item => {
+        const cls = 'm-block-cell m-epoch-cell' + (item.isDone ? ' is-done' : item.isActive ? ' is-active' : '');
+        const inner = item.isActive ? `<i class="m-epoch-fill" style="width:${item.fillPct}%"></i>` : '';
+        return `<span class="${cls}" style="--cell-tone:${item.tone}" data-block-index="${item.idx}" data-viz-idx="${item.idx}" data-viz-key="${this.esc(item.vizKey)}" data-viz-val="${this.esc(item.vizVal)}">${inner}</span>`;
+      }).join('');
+      const matrixStyle = `--block-cols:${cols};--block-size:${size.toFixed(2)}px;--block-gap:${gap}px;--block-radius:${radius}px`;
+      host.innerHTML = `<div class="m-block-matrix m-epoch-matrix" style="${matrixStyle}">${cells}</div>`;
+    }
+    this._restoreSummaryVizHover(host);
+    host._matrixState = { context: root.dataset.motionContext, doneCount, step, epochSeries, legacyEpochSeries,
+      directVersion: useDirectEpochs ? directVersion : null,
+      activeCell: activeIdx < 0 ? null : host.querySelector(`[data-block-index="${activeIdx}"]`) };
+    host._epochLayoutArgs = { totalEpochs, hasStepFallback: totalSteps > 0 || percent > 0, blockCount, tileW };
+
+    if (animate && isLiveRunning && sameContext && this._monitorMotionAllowed()) {
+      const completedNewBlock = doneCount > prevState.doneCount;
+      const steppedForward = step > (prevState.step || 0);
+      if (completedNewBlock) {
+        const targetIndex = Math.min(blockCount - 1, doneCount - 1);
+        const targetCell = host.querySelector(`[data-block-index="${targetIndex}"]`);
+        this._launchProgressBlockFlight(root, targetCell, true);
+      } else if (steppedForward && activeIdx >= 0) {
+        const targetCell = host.querySelector(`[data-block-index="${activeIdx}"]`);
+        this._launchProgressBlockFlight(root, targetCell, false);
+      }
+    }
+  },
+
+  // 飞块落位动效：从顶部总进度条当前末端“生”出一个色块，弧线飞入并落位到方块矩阵对应格。
+  _launchProgressBlockFlight(root, targetCell, isFullBlock) {
+    if (!root || !targetCell || !document.body || !Element.prototype.animate) return;
+    if (root._flightBusy && !isFullBlock) return;
+    const bar = root.querySelector('[data-overview-progress]');
+    if (!bar) return;
+    const barRect = bar.getBoundingClientRect();
+    const cellRect = targetCell.getBoundingClientRect();
+    if (!barRect.width || !cellRect.width || !cellRect.height) return;
+
+    root._flightBusy = true;
+    const sx = Math.max(barRect.left + 4, barRect.right - 3);
+    const sy = barRect.top + barRect.height / 2;
+    const ex = cellRect.left + cellRect.width / 2;
+    const ey = cellRect.top + cellRect.height / 2;
+    const mx = sx + (ex - sx) * 0.48 + 16;
+    const my = sy + (ey - sy) * 0.32 - 14;
+
+    const flyer = document.createElement('span');
+    flyer.className = 'm-flying-block' + (isFullBlock ? ' is-full' : ' is-micro');
+    const w = isFullBlock ? Math.max(6, cellRect.width) : 4.5;
+    const h = isFullBlock ? Math.max(6, cellRect.height) : 4.5;
+    flyer.style.width = w + 'px';
+    flyer.style.height = h + 'px';
+    flyer.style.left = '0px';
+    flyer.style.top = '0px';
+    document.body.appendChild(flyer);
+
+    let sealingFill = null;
+    if (isFullBlock) {
+      // 飞行途中保持当前格处于将满未满的亮态，绝不闪暗，等飞块落位瞬间封满。
+      targetCell.dataset.sealing = '1';
+      targetCell.classList.remove('is-done');
+      targetCell.classList.add('is-active');
+      sealingFill = targetCell.querySelector('.m-epoch-fill');
+      if (!sealingFill) {
+        sealingFill = document.createElement('i');
+        sealingFill.className = 'm-epoch-fill';
+        targetCell.appendChild(sealingFill);
+      }
+      sealingFill.style.width = '88%';
+    }
+    const duration = isFullBlock ? 400 : 340;
+    const anim = flyer.animate([
+      {
+        transform: `translate(${(sx - w / 2).toFixed(1)}px, ${(sy - h / 2).toFixed(1)}px) scale(0.75)`,
+        backgroundColor: 'var(--accent)',
+        opacity: isFullBlock ? 0.96 : 0.85,
+      },
+      {
+        transform: `translate(${(mx - w / 2).toFixed(1)}px, ${(my - h / 2).toFixed(1)}px) scale(${isFullBlock ? 1.12 : 1.05})`,
+        backgroundColor: 'color-mix(in srgb, var(--accent) 42%, var(--section-optimizer))',
+        opacity: 1,
+        offset: 0.46,
+      },
+      {
+        transform: `translate(${(ex - w / 2).toFixed(1)}px, ${(ey - h / 2).toFixed(1)}px) scale(1)`,
+        backgroundColor: 'var(--section-optimizer)',
+        opacity: isFullBlock ? 1 : 0.9,
+      },
+    ], { duration, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
+
+    const cleanup = () => {
+      flyer.remove();
+      root._flightBusy = false;
+      if (isFullBlock) {
+        delete targetCell.dataset.sealing;
+        sealingFill?.remove();
+        targetCell.classList.remove('is-active');
+        targetCell.classList.add('is-done');
+        targetCell.animate?.(
+          [{ transform: 'scale(1.18)', filter: 'brightness(1.16)' }, { transform: 'scale(1)', filter: 'brightness(1)' }],
+          { duration: 200, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
+        );
+      } else {
+        targetCell.animate?.(
+          [{ filter: 'brightness(1.15)' }, { filter: 'brightness(1)' }],
+          { duration: 160, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
+        );
+      }
+    };
+    anim.onfinish = cleanup;
+    anim.oncancel = cleanup;
+  },
+
+  _showSummaryVizHud(host, item, visible = true) {
+    const hud = host.closest('.m-live-metric')?.querySelector('[data-summary-hud]');
+    if (!hud) return;
+    const key = item.dataset.vizKey || '';
+    const value = item.dataset.vizVal || '';
+    const counter = /^(Step|Epoch)(?: (\d+))?$/.exec(key);
+    const indexWidth = (host._hudIndexChars || 1) + 'ch';
+    hud.style.setProperty('--m-index-slot', counter?.[1] === 'Step' ? `max(var(--m-step-slot, 1ch), ${indexWidth})` : indexWidth);
+    hud.style.setProperty('--m-value-slot', (host._hudValueChars || 1) + 'ch');
+    const keyHtml = counter && (counter[2] || host._hudIndexChars)
+      ? counter[1] + ' <span class="m-hud-index">' + (counter[2] || '') + '</span>' : this.esc(key);
+    const valHtml = value.startsWith('Loss ')
+      ? '<span class="m-hud-prefix">Loss </span>' + this.esc(value.slice(5)) : this.esc(value);
+    hud.innerHTML = (key ? `<span class="m-metric-hud-key">${keyHtml}</span>` : '')
+      + `<b class="m-metric-hud-val">${valHtml}</b>`;
+    hud.classList.toggle('is-visible', visible);
+  },
+
+  _restoreSummaryVizHover(host) {
+    if (host._hoverIdx == null) {
+      // Reserve the readout's intrinsic width before the pointer enters the graph.
+      const sample = host.querySelector('[data-viz-idx]');
+      if (sample) this._showSummaryVizHud(host, sample, false);
+      return;
+    }
+    const item = host.querySelector(`[data-viz-idx="${host._hoverIdx}"]`);
+    if (!item) return;
+    host.querySelectorAll('.is-hovered').forEach(el => { if (el !== item) el.classList.remove('is-hovered'); });
+    item.classList.add('is-hovered');
+    this._showSummaryVizHud(host, item);
+  },
+
+  // 左卡右上角常驻 HUD 槽位：悬停微图时在右上角报数，不替换左下说明文字；跨方块间隙及实时步数更新时保持高亮与读数不闪烁。
+  _bindSummaryVizInteractions(root) {
+    const grid = root.querySelector('.m-live-metrics');
+    if (!grid || grid._vizBound) return;
+    grid._vizBound = true;
+    const clearTile = tile => {
+      if (!tile) return;
+      const viz = tile.querySelector('[data-summary-viz]');
+      if (viz) delete viz._hoverIdx;
+      const hud = tile.querySelector('[data-summary-hud]');
+      if (hud) hud.classList.remove('is-visible');
+      tile.querySelectorAll('.is-hovered').forEach(el => el.classList.remove('is-hovered'));
+    };
+    grid.addEventListener('pointerover', event => {
+      const item = event.target.closest?.('[data-viz-val]');
+      if (!item) return;
+      const viz = item.closest('[data-summary-viz]');
+      if (viz) {
+        viz._hoverIdx = item.dataset.vizIdx ?? null;
+        viz.querySelectorAll('.is-hovered').forEach(el => {
+          if (el !== item) el.classList.remove('is-hovered');
+        });
+        item.classList.add('is-hovered');
+        this._showSummaryVizHud(viz, item);
+      }
+    });
+    grid.addEventListener('pointerout', event => {
+      const viz = event.target.closest?.('[data-summary-viz]');
+      if (!viz) return;
+      // 只要指针仍在同一个微图容器内（包括方块之间的间隙），就不清空读数和高亮，彻底杜绝闪烁。
+      if (event.relatedTarget && viz.contains(event.relatedTarget)) return;
+      clearTile(viz.closest('.m-live-metric'));
+    });
+    grid.addEventListener('mouseleave', () => {
+      grid.querySelectorAll('.m-live-metric').forEach(clearTile);
+    });
+
+    // 侧边栏折叠或窗口缩放时，零重绘更新轮次正方形矩阵的行列与边长。
+    const timeTile = grid.querySelector('.m-live-metric-time');
+    if (timeTile && typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => {
+        const host = timeTile.querySelector('[data-summary-viz="time"]');
+        const meta = host?._epochLayoutArgs;
+        if (!meta || host.hidden) return;
+        const nextW = Math.round(timeTile.clientWidth || 0);
+        if (nextW <= 120 || Math.abs(nextW - (meta.tileW || 0)) < 10) return;
+        meta.tileW = nextW;
+        const leftTextW = Math.max(
+          timeTile.querySelector('.m-metric-reading')?.offsetWidth || 0,
+          timeTile.querySelector('small[data-summary-field="time-meta"]')?.offsetWidth || 0,
+          86,
+        );
+        const availW = Math.max(106, Math.min(200, nextW - leftTextW - 38));
+        const layout = this._computeAdaptiveEpochGrid(meta.totalEpochs, meta.hasStepFallback, availW, 56);
+        if (!layout.blockCount) return;
+        if (layout.blockCount !== meta.blockCount && host._epochReflowArgs) {
+          this._patchSummaryTimeViz(root, ...host._epochReflowArgs, false);
+          return;
+        }
+        const matrix = host.querySelector('.m-epoch-matrix');
+        if (matrix) {
+          matrix.style.setProperty('--block-cols', String(layout.cols));
+          matrix.style.setProperty('--block-size', layout.size.toFixed(2) + 'px');
+          matrix.style.setProperty('--block-gap', layout.gap + 'px');
+          matrix.style.setProperty('--block-radius', layout.radius + 'px');
+        }
+      });
+      ro.observe(timeTile);
     }
   },
 
@@ -351,7 +1051,9 @@ window.monitorSummaryMixin = {
     return Number.isFinite(percent) ? { percent } : null;
   },
 
-  _summarySchedulerMeta(t, totalSteps) {
+  _summarySchedule() {
+    const cached = this._summaryScheduleCache;
+    if (cached && cached.source === this.trainParams && cached.version === this.trainParamsVersion) return cached;
     const params = new Map((this.trainParams || []).map(item => [item.key, item.value]));
     const optimizer = String(params.get('optimizer_type') || '').trim().toLowerCase().split('.').pop();
     // 训练配置中的 optimizer_args 已展开为独立条目；旧配置可能保留表单字段。
@@ -368,9 +1070,17 @@ window.monitorSummaryMixin = {
       || optimizer === 'prodigy' || optimizer.startsWith('dadapt')
       || (optimizer === 'adafactor' && (relativeStep == null || enabled(relativeStep) || enabled(warmupInit)));
     const externalAdaptive = optimizer === 'prodigy' || optimizer.startsWith('dadapt');
-    if (adaptive && !externalAdaptive) return t('lrAdaptive');
     const scaleParameter = optimizerArg('scale_parameter', 'adafactor_scale_parameter', 'krea_adafactor_scale_parameter');
     const parameterScaled = optimizer === 'adafactor' && (scaleParameter == null || enabled(scaleParameter));
+    return this._summaryScheduleCache = { source: this.trainParams, version: this.trainParamsVersion, params,
+      optimizer, optimizerArg, adaptive, externalAdaptive, parameterScaled,
+      scheduler: String(params.get('lr_scheduler') || '').trim().toLowerCase(),
+      rawWarmup: Number(params.get('lr_warmup_steps') ?? 0) };
+  },
+
+  _summarySchedulerMeta(t, totalSteps) {
+    const { params, scheduler, optimizer, optimizerArg, adaptive, externalAdaptive, parameterScaled } = this._summarySchedule();
+    if (adaptive && !externalAdaptive) return t('lrAdaptive');
     const rateMode = externalAdaptive ? 'lrAdaptive' : parameterScaled ? 'lrParameterScaled' : '';
 
     // RAdamScheduleFree uses rectification for its warmup and has no warmup_steps argument.
@@ -383,7 +1093,6 @@ window.monitorSummaryMixin = {
       return ['Schedule-Free', detail].filter(Boolean).join(' · ');
     }
 
-    const scheduler = params.get('lr_scheduler');
     if (!scheduler) return rateMode ? t(rateMode) : '';
     const labels = { constant: 'lrScheduleConstant', constant_with_warmup: 'lrScheduleWarmup', linear: 'lrScheduleLinear', cosine: 'lrScheduleCosine', cosine_with_restarts: 'lrScheduleRestarts', polynomial: 'lrSchedulePolynomial', inverse_sqrt: 'lrScheduleInverseSqrt' };
     const label = rateMode && scheduler === 'constant' ? t('lrScheduleConstantShort')

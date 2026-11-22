@@ -66,18 +66,7 @@ window.monitorMetricsMixin = {
     for (const sample of incoming) byKey.set(keyOf(sample), sample);
     const samples = [...byKey.values()].sort((a, b) => a.step - b.step || (a.elapsedSec ?? 0) - (b.elapsedSec ?? 0));
     const visible = samples.slice(-80);
-    const added = visible.filter(sample => !previousKeys.has(keyOf(sample))).length;
-    if (!added) return previous;
-    const end = (previous.at(-1)?.observation || 0) + added;
-    // 先补齐时间顺序，再计算导数；正常追加保留旧点编号，回填允许修复中间缺口。
-    return visible.map((sample, index) => {
-      const last = samples[samples.length - visible.length + index - 1];
-      return { ...sample, observation: end - visible.length + index + 1,
-        remainingRate: last && Number.isFinite(last.elapsedSec) && Number.isFinite(last.remainingSec)
-          && Number.isFinite(sample.elapsedSec) && Number.isFinite(sample.remainingSec) && sample.elapsedSec > last.elapsedSec
-          ? (sample.remainingSec - last.remainingSec) / (sample.elapsedSec - last.elapsedSec) : null,
-      };
-    });
+    return visible.some(sample => !previousKeys.has(keyOf(sample))) ? visible : previous;
   },
 
   _parseMonitorPerfLogs(lines = []) {
