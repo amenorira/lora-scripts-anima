@@ -2341,20 +2341,26 @@ dialog.modal-overlay::backdrop { background: transparent; }
 }
 .preview-linked-layout { position: relative; }
 .preview-connector {
-  position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; z-index: 4; pointer-events: none;
+  position: absolute; left: 0; top: 0; width: 0; height: 0; z-index: 4; pointer-events: none;
   color: var(--accent); opacity: 0; transition: opacity 160ms ease-out;
 }
 .preview-connector[data-kind="warmup"] { color: var(--warning); }
 .preview-connector[data-kind="timestep-range"] { color: var(--chart-range); }
 .preview-connector.is-active { opacity: .65; }
 .preview-connector[data-kind="rank"].is-active { opacity: .45; }
-.preview-connector path { fill: none; stroke: currentColor; stroke-width: 1; stroke-dasharray: 4 5; }
-.preview-connector .preview-connector-dots { fill: currentColor; stroke: none; }
-.preview-connector.is-active path:not(.preview-connector-dots) { animation: preview-connector-flow 900ms linear infinite; }
-@keyframes preview-connector-flow { to { stroke-dashoffset: -9; } }
+.preview-connector-segment { position: absolute; left: 0; top: 0; height: 0; transform-origin: left center; }
+.preview-connector-segment::after { content: ""; position: absolute; right: -2px; top: -2px; width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
+.preview-connector-segment > i { position: absolute; inset: -.5px 0 auto; height: 1px; overflow: hidden; }
+.preview-connector-segment > i::before { content: ""; position: absolute; inset: 0 0 0 -9px; background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 9px); }
+@media (prefers-reduced-motion: no-preference) {
+  .preview-connector.is-active .preview-connector-segment > i::before { animation: preview-connector-flow 900ms linear infinite; }
+}
+@keyframes preview-connector-flow { to { transform: translateX(9px); } }
+@media (forced-colors: active) {
+  .preview-connector-segment { forced-color-adjust: none; color: LinkText; }
+}
 @media (prefers-reduced-motion: reduce) {
   .preview-connector { transition: none; }
-  .preview-connector.is-active path:not(.preview-connector-dots) { animation: none; }
 }
 .lr-layout-sidebar {
   min-width: 0; display: flex; flex-direction: column;

@@ -450,8 +450,29 @@
     };
   }
 
+  // Each target gets a clipped strip of dashes and a stationary endpoint.
+  function drawPreviewConnector(layer, kind, sx, sy, ends) {
+    layer.dataset.kind = kind;
+    layer.style.left = sx + 'px';
+    layer.style.top = sy + 'px';
+    ends.forEach(([tx, ty], index) => {
+      let segment = layer.children[index];
+      if (!segment) {
+        segment = document.createElement('span');
+        segment.className = 'preview-connector-segment';
+        segment.append(document.createElement('i'));
+        layer.append(segment);
+      }
+      const dx = tx - sx, dy = ty - sy;
+      segment.style.width = Math.hypot(dx, dy) + 'px';
+      segment.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
+    });
+    while (layer.children.length > ends.length) layer.lastElementChild.remove();
+    layer.classList.toggle('is-active', ends.length > 0);
+  }
+
   window.AnimaUI = {
-    bindDialog, settleDialog, dismissPopups, setDialogOrigin,
+    bindDialog, settleDialog, dismissPopups, setDialogOrigin, drawPreviewConnector,
     registerPopup: (element, close) => popups.set(element, close),
     unregisterPopup: element => popups.delete(element),
     topDialog: () => dialogs.at(-1) || null,
@@ -470,15 +491,15 @@
     // data-preview-sidebar / data-preview-diagram regions. Matching link/target
     // keys connect one source to all targets; data-preview-anchor="region" is for chart ranges.
     Alpine.data('previewConnector', () => {
-      let root, svg, path, dots, hovered, focused, frame, resize, mutations;
+      let root, layer, hovered, focused, frame, resize, mutations;
       const sourceFor = node => node?.closest?.('[data-preview-link]');
       const paint = () => {
         frame = null;
         const source = hovered?.matches(':hover') ? hovered : focused?.matches(':focus-visible') ? focused : null;
         const kind = source?.dataset.previewLink;
         const targets = kind ? [...root.querySelectorAll(`[data-preview-target="${kind}"]`)] : [];
-        if (!source || !root.contains(source) || !targets.length) { svg.classList.remove('is-active'); return; }
-        if (dialogMotions.has(root.closest('dialog'))) { svg.classList.remove('is-active'); return; }
+        if (!source || !root.contains(source) || !targets.length) { layer.classList.remove('is-active'); return; }
+        if (dialogMotions.has(root.closest('dialog'))) { layer.classList.remove('is-active'); return; }
         const sidebar = source.closest('[data-preview-sidebar]');
         const chart = targets[0].closest('[data-preview-diagram]');
         const value = source.querySelector('dd, b') || source;
@@ -488,7 +509,7 @@
         const side = sidebar?.getBoundingClientRect(), diagram = chart?.getBoundingClientRect();
         // Only connect side-by-side layouts.
         if (!side || !diagram || diagram.left < side.right || !s.height) {
-          svg.classList.remove('is-active'); return;
+          layer.classList.remove('is-active'); return;
         }
         const x = value => value - r.left + root.scrollLeft;
         const y = value => value - r.top + root.scrollTop;
@@ -503,10 +524,7 @@
           const scale = Math.max(Math.abs(dx) / (t.width / 2 + 4), Math.abs(dy) / (t.height / 2 + 4), 1);
           return [cx + dx / scale, cy + dy / scale];
         });
-        svg.dataset.kind = kind;
-        path.setAttribute('d', ends.map(([tx, ty]) => `M ${sx} ${sy} L ${tx} ${ty}`).join(' '));
-        dots.setAttribute('d', ends.map(([tx, ty]) => `M ${tx - 2} ${ty} a 2 2 0 1 0 4 0 a 2 2 0 1 0 -4 0`).join(' '));
-        svg.classList.toggle('is-active', ends.length > 0);
+        drawPreviewConnector(layer, kind, sx, sy, ends);
       };
       const schedule = () => { if (frame == null) frame = requestAnimationFrame(paint); };
       const pointer = event => {
@@ -522,10 +540,10 @@
       return {
         init() {
           root = this.$el;
-          const create = tag => document.createElementNS('http://www.w3.org/2000/svg', tag);
-          svg = create('svg'); path = create('path'); dots = create('path');
-          svg.classList.add('preview-connector'); svg.setAttribute('aria-hidden', 'true');
-          dots.classList.add('preview-connector-dots'); svg.append(path, dots); root.append(svg);
+          layer = document.createElement('div');
+          layer.className = 'preview-connector';
+          layer.setAttribute('aria-hidden', 'true');
+          root.append(layer);
           root.addEventListener('pointerover', pointer); root.addEventListener('pointerout', pointer);
           root.addEventListener('focusin', focus); root.addEventListener('focusout', focus);
           root.addEventListener('keydown', schedule);
@@ -540,7 +558,7 @@
           root.removeEventListener('pointerover', pointer); root.removeEventListener('pointerout', pointer);
           root.removeEventListener('focusin', focus); root.removeEventListener('focusout', focus);
           root.removeEventListener('keydown', schedule);
-          root.removeEventListener('scroll', schedule, true); svg.remove();
+          root.removeEventListener('scroll', schedule, true); layer.remove();
           root.closest('dialog')?.removeEventListener('dialog-after-open', schedule);
         },
       };
