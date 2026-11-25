@@ -810,6 +810,7 @@
     setDatasetDiagSort(sortKey) {
       if (!sortKey || this.datasetDiagSort === sortKey) return;
       this.datasetDiagSort = sortKey;
+      this.datasetDiagDisplayLimit = 120;
       this.renderDashboard?.();
     },
 
@@ -830,6 +831,7 @@
       if (!['grid', 'table'].includes(mode) || this.datasetDiagViewMode === mode) return;
       this.datasetDiagViewMode = mode;
       writeStoredViewMode(mode);
+      this.datasetDiagDisplayLimit = 120;
       this.renderDashboard?.();
     },
 
@@ -1242,7 +1244,7 @@
       ].join('|');
     },
 
-    openDatasetDiagModal(imageId) {
+    openDatasetDiagModal(imageId, openerEl = null) {
       if (!imageId) return;
       this._unpinDatasetDiagScatterCard?.();
       this._cancelDatasetDiagNeighborPrefetch();
@@ -1263,6 +1265,8 @@
       this.datasetDiagModalDetail = hasFullCache ? cached : (!reopen ? cached : null);
       this.datasetDiagModalError = '';
       this.datasetDiagViewport.reset(false);
+      const doc = globalThis.document;
+      const dialog = doc?.getElementById?.('datasetDiagModal');
 
       if (reopen && !hasFullCache) {
         // Settle fast local detail fetches briefly (~90ms) so the dialog enters once with ready content.
@@ -1275,6 +1279,7 @@
             this._datasetDiagOpenTimer = 0;
           }
           this._datasetDiagModalOpening = false;
+          if (dialog && openerEl) globalThis.window?.AnimaUI?.setDialogOrigin?.(dialog, openerEl);
           this.datasetDiagModalOpen = true;
           this._patchDatasetDiagModal?.();
           this._revealDatasetDiagModalAfterOpen();
@@ -1284,16 +1289,18 @@
         return;
       }
 
-      this.datasetDiagModalOpen = true;
       if (reopen) {
+        if (dialog && openerEl) globalThis.window?.AnimaUI?.setDialogOrigin?.(dialog, openerEl);
+        this.datasetDiagModalOpen = true;
         this._patchDatasetDiagModal?.();
         this._revealDatasetDiagModalAfterOpen();
       } else {
-        const doc = globalThis.document;
-        const dialog = doc?.getElementById?.('datasetDiagModal');
-        const openers = doc?.querySelectorAll?.('.m-dd-card[data-dd-image-id], .m-dd-table-row[data-dd-image-id]');
-        const openerEl = openers ? Array.from(openers).find(el => el.dataset?.ddImageId === String(imageId)) : null;
-        if (dialog && openerEl) globalThis.window?.AnimaUI?.setDialogOrigin?.(dialog, openerEl);
+        this.datasetDiagModalOpen = true;
+        const resolvedOpener = openerEl || (() => {
+          const openers = doc?.querySelectorAll?.('.m-dd-card[data-dd-image-id], .m-dd-table-row[data-dd-image-id]');
+          return openers ? Array.from(openers).find(el => el.dataset?.ddImageId === String(imageId)) : null;
+        })();
+        if (dialog && resolvedOpener) globalThis.window?.AnimaUI?.setDialogOrigin?.(dialog, resolvedOpener);
         this._patchDatasetDiagModal?.();
       }
       void this.loadDatasetDiagImageDetail(imageId, reopen || !hasFullCache);

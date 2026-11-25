@@ -1262,3 +1262,905 @@ test('no-reg datasets align overview/detail revision, keep poll stability, cache
   const navList = navApp._datasetDiagModalNavList();
   assert.equal(navList.length, hugeData.by_image.length);
 });
+
+function makeImagesScrollFixture() {
+  const makeClassList = () => {
+    const set = new Set();
+    return {
+      add(...cs) { cs.forEach(c => set.add(c)); },
+      remove(...cs) { cs.forEach(c => set.delete(c)); },
+      toggle(cls, force) {
+        const on = force === undefined ? !set.has(cls) : Boolean(force);
+        if (on) set.add(cls);
+        else set.delete(cls);
+        return on;
+      },
+      contains: cls => set.has(cls),
+    };
+  };
+  const toolbarEl = {
+    querySelector: () => null,
+    querySelectorAll: () => [],
+  };
+  const makeSlot = () => ({
+    innerHTML: '',
+    hidden: false,
+    scrollTop: 0,
+    contains: () => false,
+    classList: makeClassList(),
+    querySelector() { return null; },
+  });
+  const imagesSlot = {
+    ...makeSlot(),
+    set innerHTML(markup) {
+      this.markup = markup;
+      this.root = { classList: makeClassList() };
+      this.body = Object.assign(new EventTarget(), {
+        classList: makeClassList(), scrollTop: 0, scrollLeft: 0,
+      });
+    },
+    get innerHTML() { return this.markup || ''; },
+    querySelector(sel) {
+      if (sel === '[data-dd-images-toolbar]' && this.body) return toolbarEl;
+      if (sel === '[data-dd-images-body]') return this.body;
+      if (sel === '.m-dd-images') return this.root;
+      return null;
+    },
+  };
+  const fields = {
+    '[data-dd-slot="heading"]': makeSlot(),
+    '[data-dd-slot="analysis"]': makeSlot(),
+    '[data-dd-slot="images"]': imagesSlot,
+  };
+  const shell = { querySelector: selector => fields[selector] || null };
+  const panel = {
+    scrollTop: 0,
+    dataset: {},
+    firstElementChild: shell,
+    querySelector: sel => (sel === '[data-dd-shell="1"]' ? shell : null),
+    classList: makeClassList(),
+  };
+  global.document = {
+    activeElement: null,
+    getElementById: () => ({ querySelector: () => panel }),
+    querySelector: sel => (sel === '.m-tab-panel[data-tab="dataset"]' ? panel : null),
+  };
+
+  const app = makeApp({
+    _builtTab: 'dataset',
+    _datasetDiagSourceKey: 'run:output/example',
+    _datasetDiagLoaded: true,
+    datasetDiagSubTab: 'images',
+    datasetDiagData: snapshot('r1'),
+    runDetailData: {},
+    renderDashboard() { this._renderTab('dataset', {}, null, null, k => this.tMonitor(k), true); },
+    _renderDatasetDiagAnalysisCard: () => '<div data-dd-analysis></div>',
+    _bindDatasetDiagCharts() {},
+    _renderDatasetDiagHeading: () => '<div class="m-dd-topbar"></div>',
+    _renderDatasetDiagImagesCard: () => '<section class="m-dd-images"><div data-dd-images-toolbar></div><div data-dd-images-body>body</div></section>',
+    _patchDatasetDiagImagesToolbar: () => true,
+    _renderDatasetDiagImagesBodyHtml: () => 'updated-body',
+  });
+  app.renderDashboard();
+  const scroll = () => {
+    imagesSlot.body.scrollTop = 140;
+    imagesSlot.body.scrollLeft = 24;
+    imagesSlot.body.dispatchEvent(new Event('scroll'));
+  };
+  const position = () => [imagesSlot.body.scrollTop, imagesSlot.body.scrollLeft];
+  return { app, imagesSlot, scroll, position };
+}
+
+test('a poll that rebuilds the images toolbar restores both scroll axes on the new body', () => {
+  const { app, imagesSlot, scroll, position } = makeImagesScrollFixture();
+  const previousBody = imagesSlot.body;
+  assert.equal(imagesSlot.root.classList.contains('is-scrolled'), false);
+  scroll();
+  assert.equal(imagesSlot.root.classList.contains('is-scrolled'), true);
+
+  app.datasetDiagData = snapshot('r2', { by_directory: [{ directory: 'a' }, { directory: 'b' }] });
+  app._datasetDiagSnapshotVersion += 1;
+  app.renderDashboard();
+  assert.notEqual(imagesSlot.body, previousBody);
+  assert.deepEqual(position(), [140, 24]);
+  assert.equal(imagesSlot.root.classList.contains('is-scrolled'), true);
+  app.setDatasetDiagPreset('attention');
+  assert.deepEqual(position(), [0, 0]);
+  assert.equal(imagesSlot.root.classList.contains('is-scrolled'), false);
+});
+
+test('returning from overview preserves image scroll only for the same filter', () => {
+  const { app, scroll, position } = makeImagesScrollFixture();
+  scroll();
+  app.setDatasetDiagSubTab('overview');
+  app.setDatasetDiagSubTab('images');
+  assert.deepEqual(position(), [140, 24]);
+  app.setDatasetDiagSubTab('overview');
+  app.openDatasetDiagPreset('attention');
+  assert.deepEqual(position(), [0, 0]);
+});
+
+test('changing the run segment or minimum sample count resets image scroll', async () => {
+  const { app, scroll, position } = makeImagesScrollFixture();
+  global.fetch = async () => response(snapshot('r2', { run_id: 'new' }));
+  scroll();
+  await app.setDatasetDiagRunId('new');
+  assert.deepEqual(position(), [0, 0]);
+  scroll();
+  await app.setDatasetDiagMinCount(5);
+  assert.deepEqual(position(), [0, 0]);
+});
+
+test('leaving images view or dataset tab releases imagesSlot DOM and restores scroll on return', () => {
+  const { app, imagesSlot, scroll, position } = makeImagesScrollFixture();
+  const dsPanel = global.document.querySelector('.m-tab-panel[data-tab="dataset"]');
+  const otherPanel = {
+    classList: { add() {}, remove() {}, toggle() {} },
+    dataset: { tab: 'overview' },
+    hidden: true,
+    firstElementChild: {},
+    contains: () => false,
+    querySelector: () => null,
+  };
+  const prevGetById = global.document.getElementById;
+  const prevRaf = global.requestAnimationFrame;
+  global.requestAnimationFrame = () => 0;
+  global.document.getElementById = id => (id === 'monitorTabContent'
+    ? {
+      querySelectorAll: () => [dsPanel, otherPanel],
+      querySelector: sel => (sel === '.m-tab-panel[data-tab="dataset"]' ? dsPanel : otherPanel),
+    }
+    : prevGetById(id));
+  let marqueeCleared = 0;
+  app._clearDatasetDiagImagesMarquee = () => { marqueeCleared += 1; };
+  app._summaryStatus = () => ({ state: 'FINISHED' });
+  app._renderOverviewTab = () => 'overview';
+  app._patchOverviewStatus = () => {};
+  app.initMonitorParams = () => {};
+  app.trainParamsVersion = 0;
+
+  try {
+    scroll();
+    // 1. Leaving to overview clears imagesSlot and marquee, then restores scroll when returning
+    app.setDatasetDiagSubTab('overview');
+    assert.equal(imagesSlot.innerHTML, '');
+    assert.equal(dsPanel._ddImagesSig, '');
+    assert.ok(marqueeCleared >= 1);
+
+    app.setDatasetDiagSubTab('images');
+    assert.notEqual(imagesSlot.innerHTML, '');
+    assert.deepEqual(position(), [140, 24]);
+    assert.equal(imagesSlot.root.classList.contains('is-scrolled'), true);
+
+    // 2. Leaving top-level dataset tab clears imagesSlot, then restores scroll when returning
+    app._renderTab('overview', {}, null, null, k => app.tMonitor(k), true);
+    assert.equal(imagesSlot.innerHTML, '');
+    assert.equal(dsPanel._ddImagesSig, '');
+
+    app._renderTab('dataset', {}, null, null, k => app.tMonitor(k), true);
+    assert.notEqual(imagesSlot.innerHTML, '');
+    assert.deepEqual(position(), [140, 24]);
+    assert.equal(imagesSlot.root.classList.contains('is-scrolled'), true);
+  } finally {
+    global.document.getElementById = prevGetById;
+    if (prevRaf === undefined) delete global.requestAnimationFrame;
+    else global.requestAnimationFrame = prevRaf;
+  }
+});
+
+test('sorting and view mode switches reset datasetDiagDisplayLimit back to 120', () => {
+  const app = makeApp({ datasetDiagData: snapshot('r1') });
+  assert.equal(app.datasetDiagDisplayLimit, 120);
+
+  app.showMoreDatasetDiagImages();
+  app.showMoreDatasetDiagImages();
+  assert.equal(app.datasetDiagDisplayLimit, 360);
+
+  app.setDatasetDiagSort('residual_asc');
+  assert.equal(app.datasetDiagDisplayLimit, 120);
+
+  app.showMoreDatasetDiagImages();
+  assert.equal(app.datasetDiagDisplayLimit, 240);
+  app.toggleDatasetDiagColumnSort('loss');
+  assert.equal(app.datasetDiagDisplayLimit, 120);
+
+  app.showMoreDatasetDiagImages();
+  assert.equal(app.datasetDiagDisplayLimit, 240);
+  app.setDatasetDiagViewMode('table');
+  assert.equal(app.datasetDiagDisplayLimit, 120);
+
+  // Calling with the same value is a no-op and preserves current limit
+  app.showMoreDatasetDiagImages();
+  assert.equal(app.datasetDiagDisplayLimit, 240);
+  app.setDatasetDiagSort('loss_desc');
+  app.setDatasetDiagViewMode('table');
+  assert.equal(app.datasetDiagDisplayLimit, 240);
+});
+
+test('image cards and rows omit per-item Alpine directives and use delegated modal open + on-demand marquee', () => {
+  const img = {
+    image_id: 'img_1', name: 'very_long_filename_for_marquee_test.png',
+    image: 'D:/ds/very_long_filename_for_marquee_test.png', dir_label: 'ds',
+    resolution: '1024x1024', count: 5, epochs: 3, mean_loss: 0.25, mean_residual: 0.15,
+    slope: -0.02, status: 'learning', thumb_url: '/api/image-preview?path=img_1',
+  };
+  const modalApp = makeApp({ datasetDiagData: snapshot('r1', { by_image: [img] }) });
+  const cardHtml = modalApp._ddImageCardHtml(k => modalApp.tMonitor(k), img);
+  const rowHtml = modalApp._ddImageTableRowHtml(k => modalApp.tMonitor(k), img, 0.5);
+  for (const html of [cardHtml, rowHtml]) {
+    assert.ok(!html.includes('@click'));
+    assert.ok(!html.includes('@keydown'));
+    assert.ok(!html.includes('x-loop-marquee'));
+    assert.ok(html.includes('data-dd-image-id="img_1"'));
+  }
+
+  const makeClassList = () => {
+    const set = new Set();
+    return {
+      add: (...cs) => cs.forEach(c => set.add(c)),
+      remove: (...cs) => cs.forEach(c => set.delete(c)),
+      contains: c => set.has(c),
+    };
+  };
+  const opened = [];
+  const marqueeCalls = [];
+  let marqueeDestroyed = 0;
+  const prevInit = global.window.initLoopMarquee;
+  const prevDoc = global.document;
+  global.window.initLoopMarquee = (el, source, opts) => {
+    marqueeCalls.push({ el, source, opts });
+    el.classList.add('loop-marquee');
+    source.classList.add('loop-marquee-text');
+    return () => { marqueeDestroyed += 1; };
+  };
+  global.document = { activeElement: null };
+
+  try {
+    const spanEl = { classList: makeClassList() };
+    const nameEl = {
+      clientWidth: 80,
+      scrollWidth: 160,
+      firstElementChild: spanEl,
+      classList: makeClassList(),
+    };
+    const innerBtn = {
+      closest: sel => (sel.includes('button') ? innerBtn : sel.includes('data-dd-image-id') ? cardEl : null),
+    };
+    const cardEl = {
+      dataset: { ddImageId: 'img_1' },
+      contains: node => node === cardEl || node === nameEl || node === innerBtn,
+      matches: () => false,
+      querySelector: sel => (sel.includes('.m-dd-card-name') ? nameEl : null),
+      closest: sel => (sel.includes('data-dd-image-id') || sel.includes('.m-dd-card') ? cardEl : null),
+    };
+    const imagesBody = Object.assign(new EventTarget(), {
+      contains: node => node === cardEl || node === nameEl || node === innerBtn,
+    });
+
+    const app = makeApp({
+      openDatasetDiagModal(id, opener) { opened.push([id, opener]); },
+    });
+    app._bindDatasetDiagImagesBodyEvents(imagesBody);
+    // Calling twice does not duplicate listeners
+    app._bindDatasetDiagImagesBodyEvents(imagesBody);
+
+    // Delegated click & keyboard open modal with openerEl
+    const clickEv = new Event('click');
+    Object.defineProperty(clickEv, 'target', { value: cardEl });
+    imagesBody.dispatchEvent(clickEv);
+    assert.deepEqual(opened, [['img_1', cardEl]]);
+
+    let prevented = false;
+    const spaceEv = Object.assign(new Event('keydown'), { key: ' ', preventDefault() { prevented = true; } });
+    Object.defineProperty(spaceEv, 'target', { value: cardEl });
+    imagesBody.dispatchEvent(spaceEv);
+    assert.equal(prevented, true);
+    assert.equal(opened.length, 2);
+
+    // Nested interactive button or modifier keys do not trigger modal open
+    const innerClick = new Event('click');
+    Object.defineProperty(innerClick, 'target', { value: innerBtn });
+    imagesBody.dispatchEvent(innerClick);
+    const ctrlEnter = Object.assign(new Event('keydown'), { key: 'Enter', ctrlKey: true });
+    Object.defineProperty(ctrlEnter, 'target', { value: cardEl });
+    imagesBody.dispatchEvent(ctrlEnter);
+    assert.equal(opened.length, 2);
+
+    // Non-overflowing text skips initLoopMarquee
+    nameEl.scrollWidth = 60;
+    const overNonOverflow = new Event('pointerover');
+    Object.defineProperty(overNonOverflow, 'target', { value: cardEl });
+    imagesBody.dispatchEvent(overNonOverflow);
+    assert.equal(marqueeCalls.length, 0);
+
+    // Overflowing text initializes marquee on hover and cleans up on leave
+    nameEl.scrollWidth = 160;
+    const overEv = new Event('pointerover');
+    Object.defineProperty(overEv, 'target', { value: cardEl });
+    imagesBody.dispatchEvent(overEv);
+    assert.equal(marqueeCalls.length, 1);
+    assert.equal(marqueeCalls[0].opts.bounce, true);
+    assert.equal(nameEl.classList.contains('loop-marquee'), true);
+
+    const outEv = new Event('pointerout');
+    Object.defineProperty(outEv, 'target', { value: cardEl });
+    imagesBody.dispatchEvent(outEv);
+    assert.equal(marqueeDestroyed, 1);
+    assert.equal(nameEl.classList.contains('loop-marquee'), false);
+    assert.equal(spanEl.classList.contains('loop-marquee-text'), false);
+  } finally {
+    global.window.initLoopMarquee = prevInit;
+    global.document = prevDoc;
+  }
+});
+
+function createMiniDomElement(tag = 'div') {
+  const classSet = new Set();
+  const listeners = new Map();
+  const styleObj = {
+    setProperty(k, v) { this[k] = String(v); },
+  };
+  const el = {
+    tagName: tag.toUpperCase(),
+    attrs: {},
+    dataset: {},
+    children: [],
+    parentNode: null,
+    style: styleObj,
+    hidden: false,
+    inert: false,
+    scrollTop: 0,
+    scrollLeft: 0,
+    _text: '',
+    _html: '',
+    classList: {
+      add(...cs) { cs.forEach(c => String(c).split(/\s+/).filter(Boolean).forEach(x => classSet.add(x))); },
+      remove(...cs) { cs.forEach(c => String(c).split(/\s+/).filter(Boolean).forEach(x => classSet.delete(x))); },
+      toggle(c, force) {
+        const on = force === undefined ? !classSet.has(c) : Boolean(force);
+        if (on) classSet.add(c);
+        else classSet.delete(c);
+        return on;
+      },
+      contains: c => classSet.has(c),
+    },
+    setAttribute(k, v) {
+      const str = String(v);
+      this.attrs[k] = str;
+      if (k === 'class') {
+        classSet.clear();
+        str.split(/\s+/).filter(Boolean).forEach(c => classSet.add(c));
+      } else if (k === 'style') {
+        for (const decl of str.split(';')) {
+          const idx = decl.indexOf(':');
+          if (idx > 0) styleObj[decl.slice(0, idx).trim()] = decl.slice(idx + 1).trim();
+        }
+      } else if (k.startsWith('data-')) {
+        const camel = k.slice(5).replace(/-([a-z])/g, (_, ch) => ch.toUpperCase());
+        this.dataset[camel] = str;
+      }
+    },
+    getAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attrs, k) ? this.attrs[k] : null; },
+    hasAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attrs, k); },
+    removeAttribute(k) { delete this.attrs[k]; },
+    appendChild(child) {
+      child.parentNode = this;
+      this.children.push(child);
+      return child;
+    },
+    removeChild(child) {
+      const idx = this.children.indexOf(child);
+      if (idx >= 0) this.children.splice(idx, 1);
+      if (child) child.parentNode = null;
+      return child;
+    },
+    remove() {
+      if (this.parentNode) this.parentNode.removeChild(this);
+    },
+    replaceWith(other) {
+      if (!this.parentNode || !other) return;
+      const idx = this.parentNode.children.indexOf(this);
+      if (idx >= 0) {
+        other.parentNode = this.parentNode;
+        this.parentNode.children.splice(idx, 1, other);
+        this.parentNode = null;
+      }
+    },
+    contains(target) {
+      let cur = target;
+      while (cur) {
+        if (cur === this) return true;
+        cur = cur.parentNode;
+      }
+      return false;
+    },
+    closest(sel) {
+      let cur = this;
+      while (cur) {
+        if (matchesSimple(cur, sel)) return cur;
+        cur = cur.parentNode;
+      }
+      return null;
+    },
+    addEventListener(type, fn) {
+      if (!listeners.has(type)) listeners.set(type, []);
+      listeners.get(type).push(fn);
+    },
+    dispatchEvent(ev) {
+      for (const fn of (listeners.get(ev.type) || [])) fn(ev);
+    },
+    querySelector(sel) { return this.querySelectorAll(sel)[0] || null; },
+    querySelectorAll(sel) {
+      const branches = String(sel).split(',').map(s => s.trim()).filter(Boolean);
+      const out = [];
+      const seen = new Set();
+      const visit = node => {
+        for (const child of node.children) {
+          for (const branch of branches) {
+            const parts = branch.split(/\s+/).filter(Boolean);
+            if (matchesDescendant(child, parts, this)) {
+              if (!seen.has(child)) {
+                seen.add(child);
+                out.push(child);
+              }
+              break;
+            }
+          }
+          visit(child);
+        }
+      };
+      visit(this);
+      return out;
+    },
+  };
+  Object.defineProperty(el, 'className', {
+    get() { return Array.from(classSet).join(' '); },
+    set(val) { el.setAttribute('class', val); },
+  });
+  Object.defineProperty(el, 'textContent', {
+    get() {
+      if (!el.children.length) return el._text;
+      return el._text + el.children.map(c => c.textContent).join('');
+    },
+    set(val) {
+      el.children.length = 0;
+      el._text = String(val);
+    },
+  });
+  Object.defineProperty(el, 'innerHTML', {
+    get() { return el._html; },
+    set(val) {
+      el._html = String(val);
+      el.children.length = 0;
+      el._text = '';
+      parseHtmlInto(el, el._html);
+    },
+  });
+  return el;
+}
+
+function matchesSimple(node, sel) {
+  if (!node || !node.tagName) return false;
+  let rest = sel.trim();
+  const tagMatch = /^([a-zA-Z0-9_-]+)/.exec(rest);
+  if (tagMatch) {
+    if (node.tagName !== tagMatch[1].toUpperCase()) return false;
+    rest = rest.slice(tagMatch[1].length);
+  }
+  while (rest.length) {
+    if (rest.startsWith('#')) {
+      const m = /^#([a-zA-Z0-9_-]+)/.exec(rest);
+      if (!m || node.attrs.id !== m[1]) return false;
+      rest = rest.slice(m[0].length);
+    } else if (rest.startsWith('.')) {
+      const m = /^\.([a-zA-Z0-9_-]+)/.exec(rest);
+      if (!m || !node.classList.contains(m[1])) return false;
+      rest = rest.slice(m[0].length);
+    } else if (rest.startsWith('[')) {
+      const m = /^\[([^=\]]+)(?:="([^"]*)")?\]/.exec(rest);
+      if (!m) return false;
+      const val = node.getAttribute(m[1]);
+      if (m[2] !== undefined ? val !== m[2] : val === null) return false;
+      rest = rest.slice(m[0].length);
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+
+function matchesDescendant(node, parts, root) {
+  if (!matchesSimple(node, parts[parts.length - 1])) return false;
+  let idx = parts.length - 2;
+  let cur = node.parentNode;
+  while (idx >= 0 && cur && cur !== root) {
+    if (matchesSimple(cur, parts[idx])) idx -= 1;
+    cur = cur.parentNode;
+  }
+  return idx < 0;
+}
+
+function parseHtmlInto(root, html) {
+  const voidTags = new Set(['img', 'input', 'br', 'hr', 'meta', 'link', 'rect', 'circle', 'path', 'line', 'polyline']);
+  const stack = [root];
+  const tokenRe = /<(\/)?([a-zA-Z0-9-]+)([^>]*?)(\/)?>|([^<]+)/g;
+  let m;
+  while ((m = tokenRe.exec(html)) !== null) {
+    if (m[5] !== undefined) {
+      stack[stack.length - 1]._text += m[5];
+      continue;
+    }
+    const isClose = !!m[1];
+    const tag = m[2].toLowerCase();
+    const selfClose = !!m[4] || voidTags.has(tag);
+    if (isClose) {
+      for (let i = stack.length - 1; i > 0; i--) {
+        if (stack[i].tagName === tag.toUpperCase()) {
+          stack.length = i;
+          break;
+        }
+      }
+      continue;
+    }
+    const node = createMiniDomElement(tag);
+    const attrStr = m[3] || '';
+    const attrRe = /([@:a-zA-Z0-9_-]+)(?:="([^"]*)")?/g;
+    let am;
+    while ((am = attrRe.exec(attrStr)) !== null) {
+      const rawVal = am[2] !== undefined ? am[2] : '';
+      const decodedVal = rawVal
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&');
+      node.setAttribute(am[1], decodedVal);
+    }
+    stack[stack.length - 1].appendChild(node);
+    if (!selfClose) stack.push(node);
+  }
+}
+
+test('Chromium hidden=true zeroing scrollTop/scrollLeft still preserves grid vertical and narrow table scroll across images -> overview -> images', () => {
+  const prevDoc = global.document;
+  const makeClassList = () => {
+    const set = new Set();
+    return {
+      add(...cs) { cs.forEach(c => set.add(c)); },
+      remove(...cs) { cs.forEach(c => set.delete(c)); },
+      toggle(cls, force) {
+        const on = force === undefined ? !set.has(cls) : Boolean(force);
+        if (on) set.add(cls);
+        else set.delete(cls);
+        return on;
+      },
+      contains: cls => set.has(cls),
+    };
+  };
+  const toolbarEl = { querySelector: () => null, querySelectorAll: () => [] };
+  const makeSlot = () => ({
+    innerHTML: '', hidden: false, scrollTop: 0, contains: () => false, classList: makeClassList(), querySelector() { return null; },
+  });
+  // Emulate Chromium behavior: when imagesSlot.hidden becomes true (display: none), reading scrollTop/scrollLeft returns 0 and resets scroll offsets.
+  const imagesSlot = {
+    ...makeSlot(),
+    _hidden: false,
+    get hidden() { return this._hidden; },
+    set hidden(val) {
+      this._hidden = Boolean(val);
+      if (this._hidden && this.body) {
+        this.body._scrollTop = 0;
+        this.body._scrollLeft = 0;
+      }
+    },
+    set innerHTML(markup) {
+      this.markup = markup;
+      this.root = { classList: makeClassList() };
+      const body = Object.assign(new EventTarget(), {
+        classList: makeClassList(),
+        _scrollTop: 0,
+        _scrollLeft: 0,
+        get scrollTop() { return imagesSlot._hidden ? 0 : this._scrollTop; },
+        set scrollTop(v) { this._scrollTop = imagesSlot._hidden ? 0 : v; },
+        get scrollLeft() { return imagesSlot._hidden ? 0 : this._scrollLeft; },
+        set scrollLeft(v) { this._scrollLeft = imagesSlot._hidden ? 0 : v; },
+      });
+      this.body = body;
+    },
+    get innerHTML() { return this.markup || ''; },
+    querySelector(sel) {
+      if (sel === '[data-dd-images-toolbar]' && this.body) return toolbarEl;
+      if (sel === '[data-dd-images-body]') return this.body;
+      if (sel === '.m-dd-images') return this.root;
+      return null;
+    },
+  };
+  const fields = {
+    '[data-dd-slot="heading"]': makeSlot(),
+    '[data-dd-slot="analysis"]': makeSlot(),
+    '[data-dd-slot="images"]': imagesSlot,
+  };
+  const shell = { querySelector: selector => fields[selector] || null };
+  const panel = {
+    scrollTop: 0, dataset: {}, firstElementChild: shell,
+    querySelector: sel => (sel === '[data-dd-shell="1"]' ? shell : null),
+    classList: makeClassList(),
+  };
+  global.document = {
+    activeElement: null,
+    getElementById: () => ({ querySelector: () => panel }),
+    querySelector: sel => (sel === '.m-tab-panel[data-tab="dataset"]' ? panel : null),
+  };
+
+  try {
+    const app = makeApp({
+      _builtTab: 'dataset',
+      _datasetDiagSourceKey: 'run:output/example',
+      _datasetDiagLoaded: true,
+      datasetDiagSubTab: 'images',
+      datasetDiagViewMode: 'grid',
+      datasetDiagData: snapshot('r1'),
+      runDetailData: {},
+      renderDashboard() { this._renderTab('dataset', {}, null, null, k => this.tMonitor(k), true); },
+      _renderDatasetDiagAnalysisCard: () => '<div data-dd-analysis></div>',
+      _bindDatasetDiagCharts() {},
+      _renderDatasetDiagHeading: () => '<div class="m-dd-topbar"></div>',
+      _renderDatasetDiagImagesCard: () => '<section class="m-dd-images"><div data-dd-images-toolbar></div><div data-dd-images-body>body</div></section>',
+      _patchDatasetDiagImagesToolbar: () => true,
+      _renderDatasetDiagImagesBodyHtml: () => 'updated-body',
+    });
+    app.renderDashboard();
+
+    // 1. Grid vertical scroll preserved across images -> overview -> images
+    imagesSlot.body.scrollTop = 320;
+    imagesSlot.body.dispatchEvent(new Event('scroll'));
+    app.setDatasetDiagSubTab('overview');
+    assert.equal(imagesSlot.hidden, true);
+    assert.equal(imagesSlot.innerHTML, '');
+    app.setDatasetDiagSubTab('images');
+    assert.equal(imagesSlot.hidden, false);
+    assert.equal(imagesSlot.body.scrollTop, 320);
+
+    // 2. Narrow table vertical + horizontal scroll preserved across images -> overview -> images
+    app.setDatasetDiagViewMode('table');
+    imagesSlot.body.scrollTop = 260;
+    imagesSlot.body.scrollLeft = 88;
+    imagesSlot.body.dispatchEvent(new Event('scroll'));
+    app.setDatasetDiagSubTab('overview');
+    assert.equal(imagesSlot.hidden, true);
+    app.setDatasetDiagSubTab('images');
+    assert.equal(imagesSlot.hidden, false);
+    assert.deepEqual([imagesSlot.body.scrollTop, imagesSlot.body.scrollLeft], [260, 88]);
+  } finally {
+    global.document = prevDoc;
+  }
+});
+
+test('_disconnectDatasetDiagUI releases imagesSlot DOM and clears marquee when leaving monitor route', () => {
+  const prevDoc = global.document;
+  const { app, imagesSlot, scroll } = makeImagesScrollFixture();
+  const dsPanel = global.document.querySelector('.m-tab-panel[data-tab="dataset"]');
+  let disconnectedRO = 0;
+  let clearedMarquee = 0;
+  app._clearDatasetDiagImagesMarquee = () => { clearedMarquee += 1; };
+  const modalRight = { _ddModalROs: [{ disconnect() { disconnectedRO += 1; } }] };
+  const prevGetById = global.document.getElementById;
+  global.document.getElementById = id => (id === 'datasetDiagModalRight' ? modalRight : prevGetById(id));
+  try {
+    scroll();
+    assert.notEqual(imagesSlot.innerHTML, '');
+    assert.notEqual(dsPanel._ddImagesSig, '');
+    app._disconnectDatasetDiagUI();
+    assert.equal(imagesSlot.innerHTML, '');
+    assert.equal(dsPanel._ddImagesSig, '');
+    assert.ok(clearedMarquee >= 1);
+    assert.equal(disconnectedRO, 1);
+    assert.deepEqual(modalRight._ddModalROs, []);
+  } finally {
+    global.document = prevDoc;
+  }
+});
+
+test('isDataPoll patches same-order images in-place preserving DOM/img nodes, skips untouched cards, and falls back on order change', () => {
+  const prevDoc = global.document;
+  const imgA = {
+    image_id: 'a1', name: 'alpha.png', image: 'D:/ds/g1/alpha.png', directory: 'D:/ds/g1', dir_label: 'g1',
+    resolution: '512x512', count: 5, epochs: 2, mean_loss: 0.25, mean_residual: 0.22, slope: 0.02,
+    status: 'attention', is_reg: false, thumb_url: '/api/image-preview?id=a1&v=1',
+  };
+  const imgB = {
+    image_id: 'b1', name: 'beta.png', image: 'D:/ds/g2/beta.png', directory: 'D:/ds/g2', dir_label: 'g2',
+    resolution: '768x768', count: 6, epochs: 2, mean_loss: 0.12, mean_residual: -0.15, slope: -0.03,
+    status: 'learning', is_reg: false, thumb_url: '/api/image-preview?id=b1&v=1',
+  };
+  const imgC = {
+    image_id: 'c1', name: 'gamma.png', image: 'D:/ds/g2/gamma.png', directory: 'D:/ds/g2', dir_label: 'g2',
+    resolution: '768x768', count: 4, epochs: 2, mean_loss: 0.18, mean_residual: 0.05, slope: -0.01,
+    status: 'normal', is_reg: false, thumb_url: '/api/image-preview?id=c1&v=1',
+  };
+
+  const makeSnap = (rev, items, dirResidual = 0.1) => snapshot(rev, {
+    summary: { images_total: items.length, counts: { attention: 1, learning: 1, normal: 1 } },
+    by_directory: [
+      { directory: 'D:/ds/g1', label: 'g1', count: 10, images: 1, mean_residual: 0.22 },
+      { directory: 'D:/ds/g2', label: 'g2', count: 10, images: 2, mean_residual: dirResidual },
+    ],
+    by_image: items,
+  });
+
+  const headingSlot = createMiniDomElement('div');
+  const analysisSlot = createMiniDomElement('div');
+  const imagesSlot = createMiniDomElement('div');
+  const shell = createMiniDomElement('div');
+  shell.setAttribute('data-dd-shell', '1');
+  headingSlot.setAttribute('data-dd-slot', 'heading');
+  analysisSlot.setAttribute('data-dd-slot', 'analysis');
+  imagesSlot.setAttribute('data-dd-slot', 'images');
+  shell.appendChild(headingSlot);
+  shell.appendChild(analysisSlot);
+  shell.appendChild(imagesSlot);
+  const panel = createMiniDomElement('div');
+  panel.appendChild(shell);
+  const monitorContent = { querySelector: sel => (sel === '.m-tab-panel[data-tab="dataset"]' ? panel : null) };
+  global.document = {
+    activeElement: null,
+    getElementById: id => (id === 'monitorTabContent' ? monitorContent : null),
+    querySelector: sel => (sel === '.m-tab-panel[data-tab="dataset"]' ? panel : null),
+    createElement: tag => createMiniDomElement(tag),
+  };
+
+  try {
+    const app = makeApp({
+      _builtTab: 'dataset',
+      _datasetDiagSourceKey: 'run:output/example',
+      _datasetDiagLoaded: true,
+      datasetDiagSubTab: 'images',
+      datasetDiagViewMode: 'grid',
+      datasetDiagSort: 'residual_desc',
+      datasetDiagGroupByFolder: true,
+      datasetDiagData: makeSnap('r1', [imgA, imgB, imgC]),
+      runDetailData: {},
+      renderDashboard() { this._renderTab('dataset', {}, null, null, k => this.tMonitor(k), true); },
+      _renderDatasetDiagAnalysisCard: () => '<div data-dd-analysis></div>',
+      _bindDatasetDiagCharts() {},
+      _renderDatasetDiagHeading: () => '<div class="m-dd-topbar"></div>',
+      _patchDatasetDiagHeading() {},
+      escapeJsString: s => String(s ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"),
+    });
+    app.renderDashboard();
+
+    const bodyEl = imagesSlot.querySelector('[data-dd-images-body]');
+    const cardA0 = bodyEl.querySelector('.m-dd-card[data-dd-image-id="a1"]');
+    const imgElA0 = cardA0.querySelector('img');
+    const cardB0 = bodyEl.querySelector('.m-dd-card[data-dd-image-id="b1"]');
+    let touchedUntouchedCard = false;
+    const origBQuery = cardB0.querySelector.bind(cardB0);
+    cardB0.querySelector = sel => {
+      touchedUntouchedCard = true;
+      return origBQuery(sel);
+    };
+
+    // 1. Live data poll updates only a1 (same order & structure) -> in-place patch keeps DOM refs & skips b1
+    const imgAUpdated = {
+      ...imgA, count: 9, mean_residual: 0.15, slope: -0.04, status: 'learning',
+      thumb_url: '/api/image-preview?id=a1&v=2',
+    };
+    app.datasetDiagData = makeSnap('r2', [imgAUpdated, imgB, imgC], -0.05);
+    app._datasetDiagImageFilterCache = null;
+    app._datasetDiagGroupedCache = null;
+    app._datasetDiagUpdatedIds = new Set(['a1']);
+    app._datasetDiagSnapshotVersion += 1;
+    app.renderDashboard();
+
+    assert.strictEqual(bodyEl.querySelector('.m-dd-card[data-dd-image-id="a1"]'), cardA0);
+    assert.strictEqual(cardA0.querySelector('img'), imgElA0);
+    assert.equal(imgElA0.getAttribute('src'), '/api/image-preview?id=a1&v=2');
+    assert.equal(cardA0.querySelector('.m-dd-card-res b').textContent, '+15.0%');
+    assert.equal(cardA0.querySelector('.m-dd-card-flag').classList.contains('is-info'), true);
+    assert.equal(touchedUntouchedCard, false, 'Untouched card must skip DOM reads/writes when _datasetDiagUpdatedIds is non-empty');
+
+    // 2. Table view patches residual bar, loss, count/epochs, status in-place when maxAbs changes
+    app.setDatasetDiagGroupByFolder(false);
+    app.setDatasetDiagViewMode('table');
+    app.renderDashboard();
+    const rowA0 = bodyEl.querySelector('.m-dd-table-row[data-dd-image-id="a1"]');
+    const rowB0 = bodyEl.querySelector('.m-dd-table-row[data-dd-image-id="b1"]');
+    const prevBWidth = rowB0.querySelector('.m-gauge-fill').style.width;
+
+    const imgAExtreme = { ...imgAUpdated, count: 12, epochs: 3, mean_loss: 0.45, mean_residual: 1.5, slope: 0.05, status: 'attention' };
+    app.datasetDiagData = makeSnap('r3', [imgAExtreme, imgB, imgC]);
+    app._datasetDiagImageFilterCache = null;
+    app._datasetDiagGroupedCache = null;
+    app._datasetDiagUpdatedIds = new Set(['a1']);
+    app._datasetDiagSnapshotVersion += 1;
+    app.renderDashboard();
+
+    assert.strictEqual(bodyEl.querySelector('.m-dd-table-row[data-dd-image-id="a1"]'), rowA0);
+    assert.strictEqual(bodyEl.querySelector('.m-dd-table-row[data-dd-image-id="b1"]'), rowB0);
+    assert.equal(rowA0.querySelector('.m-dd-num-val').textContent, '+150.0%');
+    assert.equal(rowA0.querySelectorAll('.m-dd-num')[1].textContent, '12 / 3');
+    assert.equal(rowA0.querySelectorAll('.m-dd-num')[2].textContent, '0.4500');
+    assert.equal(rowA0.querySelector('.m-dd-pill').classList.contains('is-warn'), true);
+    assert.notEqual(rowB0.querySelector('.m-gauge-fill').style.width, prevBWidth, 'maxAbs increase rescales gauge bar on untouched rows');
+
+    // 3. Order change in new snapshot falls back to full body rebuild
+    const imgBHigher = { ...imgB, mean_residual: 2.0, status: 'attention' };
+    app.datasetDiagData = makeSnap('r4', [imgAExtreme, imgBHigher, imgC]);
+    app._datasetDiagImageFilterCache = null;
+    app._datasetDiagGroupedCache = null;
+    app._datasetDiagUpdatedIds = new Set(['b1']);
+    app._datasetDiagSnapshotVersion += 1;
+    app.renderDashboard();
+
+    const rowsAfterReorder = bodyEl.querySelectorAll('.m-dd-table-row');
+    assert.deepEqual(rowsAfterReorder.map(r => r.dataset.ddImageId), ['b1', 'a1', 'c1']);
+    assert.notStrictEqual(rowsAfterReorder[0], rowB0);
+    assert.notStrictEqual(rowsAfterReorder[1], rowA0);
+
+    // 4. Peer-baseline residual shift + is_reg badge toggle updates cards & rows in place even when _datasetDiagUpdatedIds only lists image A
+    app.datasetDiagRegMode = 'all';
+    app.datasetDiagEffectiveRegMode = '';
+    app.setDatasetDiagSort('name_asc');
+    app.setDatasetDiagViewMode('grid');
+    app.datasetDiagData = makeSnap('r5', [
+      { ...imgA, is_reg: true, mean_residual: 0.10 },
+      { ...imgB, count: 6, mean_residual: -0.138 },
+      { ...imgC, is_reg: false, mean_residual: 0.05 },
+    ]);
+    app._datasetDiagImageFilterCache = null;
+    app._datasetDiagGroupedCache = null;
+    app._datasetDiagSnapshotVersion += 1;
+    app.renderDashboard();
+
+    const peerGridBody = imagesSlot.querySelector('[data-dd-images-body]');
+    const peerCardA = peerGridBody.querySelector('.m-dd-card[data-dd-image-id="a1"]');
+    const peerCardB = peerGridBody.querySelector('.m-dd-card[data-dd-image-id="b1"]');
+    const peerCardC = peerGridBody.querySelector('.m-dd-card[data-dd-image-id="c1"]');
+    assert.ok(peerCardA.querySelector('.m-dd-card-reg'));
+    assert.equal(peerCardC.querySelector('.m-dd-card-reg'), null);
+
+    app.datasetDiagData = makeSnap('r6', [
+      { ...imgA, count: 6, is_reg: null, mean_residual: 0.11 },
+      { ...imgB, count: 6, mean_residual: -0.141 },
+      { ...imgC, is_reg: true, mean_residual: 0.05 },
+    ]);
+    app._datasetDiagImageFilterCache = null;
+    app._datasetDiagGroupedCache = null;
+    app._datasetDiagUpdatedIds = new Set(['a1']);
+    app._datasetDiagSnapshotVersion += 1;
+    app.renderDashboard();
+
+    assert.strictEqual(peerGridBody.querySelector('.m-dd-card[data-dd-image-id="b1"]'), peerCardB);
+    assert.equal(peerCardB.querySelector('.m-dd-card-res b').textContent, '-14.1%', 'Peer image B residual must update in grid even if omitted from _datasetDiagUpdatedIds');
+    assert.equal(peerCardA.querySelector('.m-dd-card-reg'), null, 'is_reg true -> null must remove badge in grid');
+    assert.ok(peerCardC.querySelector('.m-dd-card-reg'), 'is_reg false -> true must add badge in grid');
+
+    // Same check in table view
+    app.setDatasetDiagViewMode('table');
+    app.renderDashboard();
+    const peerTableBody = imagesSlot.querySelector('[data-dd-images-body]');
+    const peerRowA = peerTableBody.querySelector('.m-dd-table-row[data-dd-image-id="a1"]');
+    const peerRowB = peerTableBody.querySelector('.m-dd-table-row[data-dd-image-id="b1"]');
+    const peerRowC = peerTableBody.querySelector('.m-dd-table-row[data-dd-image-id="c1"]');
+    assert.equal(peerRowA.querySelector('.output-dir-tag'), null);
+    assert.ok(peerRowC.querySelector('.output-dir-tag'));
+
+    app.datasetDiagData = makeSnap('r7', [
+      { ...imgA, count: 7, is_reg: true, mean_residual: 0.12 },
+      { ...imgB, count: 6, mean_residual: -0.149 },
+      { ...imgC, is_reg: null, mean_residual: 0.05 },
+    ]);
+    app._datasetDiagImageFilterCache = null;
+    app._datasetDiagGroupedCache = null;
+    app._datasetDiagUpdatedIds = new Set(['a1']);
+    app._datasetDiagSnapshotVersion += 1;
+    app.renderDashboard();
+
+    assert.strictEqual(peerTableBody.querySelector('.m-dd-table-row[data-dd-image-id="b1"]'), peerRowB);
+    assert.equal(peerRowB.querySelector('.m-dd-num-val').textContent, '-14.9%', 'Peer image B residual must update in table even if omitted from _datasetDiagUpdatedIds');
+    assert.ok(peerRowA.querySelector('.output-dir-tag'), 'is_reg null -> true must add badge in table');
+    assert.equal(peerRowC.querySelector('.output-dir-tag'), null, 'is_reg true -> null must remove badge in table');
+  } finally {
+    global.document = prevDoc;
+  }
+});

@@ -15,6 +15,21 @@
         + '</button>';
     },
 
+    _ddImagePatchSig(img, viewMode, maxAbs) {
+      return [
+        img.mean_residual ?? '',
+        img.slope ?? '',
+        img.count ?? '',
+        img.epochs ?? '',
+        img.mean_loss ?? '',
+        img.resolution ?? '',
+        img.status ?? '',
+        img.thumb_url || '',
+        img.is_reg ? 1 : 0,
+        viewMode === 'table' ? maxAbs : '',
+      ].join('|');
+    },
+
     _ddImageCardHtml(t, img) {
       const resText = this._ddFormatResidual(img.mean_residual);
       const color = this._ddResidualColor(img.mean_residual);
@@ -25,10 +40,9 @@
       const statusMeta = this._ddStatusMeta(t, img.status, img.slope);
       const resoText = this._ddFormatResolution(img.resolution);
       const countReso = t('ddCardCountReso').replace('{n}', img.count).replace('{reso}', resoText);
-      const idJs = this.esc(this.escapeJsString(img.image_id));
-      let html = '<article class="m-dd-card" role="button" tabindex="0" data-dd-image-id="' + this.esc(img.image_id) + '"'
-        + ' aria-haspopup="dialog"'
-        + ' @click="openDatasetDiagModal(\'' + idJs + '\')" @keydown.enter.prevent="openDatasetDiagModal(\'' + idJs + '\')" @keydown.space.prevent="openDatasetDiagModal(\'' + idJs + '\')">';
+      const sig = this._ddImagePatchSig(img, 'grid', '');
+      let html = '<article class="m-dd-card" role="button" tabindex="0" data-dd-image-id="' + this.esc(img.image_id) + '" data-dd-sig="' + this.esc(sig) + '"'
+        + ' aria-haspopup="dialog">';
       html += '<div class="m-dd-card-media">';
       if (img.thumb_url) {
         html += '<img src="' + this.esc(img.thumb_url) + '" alt="' + this.esc(img.name) + '" loading="lazy" decoding="async"/>';
@@ -37,7 +51,7 @@
       }
       html += '</div>';
       html += '<div class="m-dd-card-body">';
-      html += '<div class="m-dd-card-top"><strong class="m-dd-card-name" x-loop-marquee.bounce title="' + this.esc(img.image) + '"><span>' + this.esc(img.name) + '</span></strong>'
+      html += '<div class="m-dd-card-top"><strong class="m-dd-card-name" title="' + this.esc(img.image) + '"><span>' + this.esc(img.name) + '</span></strong>'
         + '<span class="m-dd-card-res"><small class="m-dd-card-kv">' + this.esc(t('ddCardResidual')) + '</small><b style="color:' + color + '">' + this.esc(resText) + '</b></span></div>';
       html += '<div class="m-dd-card-metrics">'
         + '<span class="m-dd-card-slope"><small class="m-dd-card-kv">' + this.esc(t('ddCardSlope')) + '</small><b style="color:' + slopeColor + '">' + this.esc(slopeText) + '</b></span>'
@@ -54,16 +68,15 @@
       const resText = this._ddFormatResidual(img.mean_residual);
       const color = this._ddResidualColor(img.mean_residual);
       const statusMeta = this._ddStatusMeta(t, img.status, img.slope);
-      const idJs = this.esc(this.escapeJsString(img.image_id));
-      let html = '<div class="output-item m-dd-table-row" role="button" tabindex="0" data-dd-image-id="' + this.esc(img.image_id) + '"'
-        + ' aria-haspopup="dialog"'
-        + ' @click="openDatasetDiagModal(\'' + idJs + '\')" @keydown.enter.prevent="openDatasetDiagModal(\'' + idJs + '\')" @keydown.space.prevent="openDatasetDiagModal(\'' + idJs + '\')">';
+      const sig = this._ddImagePatchSig(img, 'table', maxAbs);
+      let html = '<div class="output-item m-dd-table-row" role="button" tabindex="0" data-dd-image-id="' + this.esc(img.image_id) + '" data-dd-sig="' + this.esc(sig) + '"'
+        + ' aria-haspopup="dialog">';
       html += '<div class="m-dd-row-thumb">'
         + (img.thumb_url
           ? '<img src="' + this.esc(img.thumb_url) + '" alt="" loading="lazy" decoding="async"/>'
           : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/></svg>')
         + '</div>';
-      html += '<div class="m-dd-row-name" title="' + this.esc(img.image) + '"><strong x-loop-marquee.bounce><span>' + this.esc(img.name) + '</span></strong>'
+      html += '<div class="m-dd-row-name" title="' + this.esc(img.image) + '"><strong><span>' + this.esc(img.name) + '</span></strong>'
         + '<div class="m-dd-row-sub"><span>' + this.esc(img.dir_label) + '</span>'
         + (img.is_reg ? '<small class="output-dir-tag">' + this.esc(t('ddRegTag')) + '</small>' : '') + '</div></div>';
       html += '<span class="m-dd-num">' + this.esc(this._ddFormatResolution(img.resolution)) + '</span>';
@@ -100,9 +113,12 @@
         .filter(k => this.datasetDiagCollapsedFolders[k])
         .sort()
         .join('\u0000');
+      const effectiveRegMode = this._datasetDiagEffectiveRegMode
+        ? this._datasetDiagEffectiveRegMode()
+        : this.datasetDiagRegMode;
       return JSON.stringify([
         this._shellLocale, dataSig, this.datasetDiagPreset, gfKey,
-        this.datasetDiagSearch, this.datasetDiagRegMode, this.datasetDiagSort,
+        this.datasetDiagSearch, effectiveRegMode, this.datasetDiagSort,
         this.datasetDiagViewMode, !!this.datasetDiagGroupByFolder, collapsedFoldersKey,
         this.datasetDiagDisplayLimit, sourceKey,
       ]);
@@ -145,6 +161,7 @@
       const imagesSlot = panel?.querySelector?.('[data-dd-slot="images"]');
       const sectionEl = imagesSlot?.querySelector?.('#datasetDiagImagesSection');
       if (!sectionEl) return false;
+      this._clearDatasetDiagImagesMarquee?.(sectionEl.querySelector?.('[data-dd-images-body]'));
 
       const t = k => this.tMonitor(k);
       const viewMode = this.datasetDiagViewMode === 'table' ? 'table' : 'grid';
@@ -469,7 +486,7 @@
           });
           html += '</div>';
         } else {
-          html += '<div class="m-dd-table-wrap"><div class="output-list output-table m-dd-table">';
+          html += '<div class="m-dd-table-wrap"><div class="output-list output-table m-dd-table" data-dd-max-abs="' + maxAbs + '">';
           html += '<div class="output-table-head">'
             + this._ddSortColHtml(t, 'name', 'name_desc', 'name_asc', t('ddColImage'))
             + '<span>' + this.esc(t('ddDimResolution')) + '</span>'
@@ -503,7 +520,7 @@
         if (viewMode === 'grid') {
           html += '<div class="m-dd-grid">' + visible.map(img => this._ddImageCardHtml(t, img)).join('') + '</div>';
         } else {
-          html += '<div class="m-dd-table-wrap"><div class="output-list output-table m-dd-table">';
+          html += '<div class="m-dd-table-wrap"><div class="output-list output-table m-dd-table" data-dd-max-abs="' + maxAbs + '">';
           html += '<div class="output-table-head">'
             + this._ddSortColHtml(t, 'name', 'name_desc', 'name_asc', t('ddColImage'))
             + '<span>' + this.esc(t('ddDimResolution')) + '</span>'
@@ -619,6 +636,410 @@
         moreRow.hidden = true;
       }
       return true;
+    },
+
+    _ddSetStatusToneClass(el, baseClass, tone) {
+      if (!el) return;
+      if (el.classList?.toggle) {
+        for (const candidate of ['danger', 'warn', 'info', 'muted', 'neutral']) {
+          el.classList.toggle('is-' + candidate, candidate === tone);
+        }
+        return;
+      }
+      const nextClass = baseClass + ' is-' + tone;
+      if (el.className !== nextClass) el.className = nextClass;
+    },
+
+    _ddPatchCardMedia(mediaEl, img, isTable, t) {
+      if (!mediaEl) return;
+      const imgEl = mediaEl.querySelector?.('img');
+      if (img.thumb_url) {
+        if (imgEl) {
+          const curSrc = typeof imgEl.getAttribute === 'function' ? imgEl.getAttribute('src') : imgEl.src;
+          if (curSrc !== img.thumb_url) {
+            if (typeof imgEl.setAttribute === 'function') imgEl.setAttribute('src', img.thumb_url);
+            else imgEl.src = img.thumb_url;
+          }
+          if (!isTable) {
+            const nextAlt = String(img.name || '');
+            const curAlt = typeof imgEl.getAttribute === 'function' ? imgEl.getAttribute('alt') : imgEl.alt;
+            if (curAlt !== nextAlt) {
+              if (typeof imgEl.setAttribute === 'function') imgEl.setAttribute('alt', nextAlt);
+              else imgEl.alt = nextAlt;
+            }
+          }
+        } else {
+          const altAttr = isTable ? '' : this.esc(img.name);
+          mediaEl.innerHTML = '<img src="' + this.esc(img.thumb_url) + '" alt="' + altAttr + '" loading="lazy" decoding="async"/>';
+        }
+        return;
+      }
+      if (isTable) {
+        if (imgEl || !mediaEl.querySelector?.('svg')) {
+          mediaEl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/></svg>';
+        }
+      } else if (imgEl || !mediaEl.querySelector?.('.m-dd-media-placeholder')) {
+        mediaEl.innerHTML = '<div class="m-dd-media-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/></svg><span>' + this.esc(t('ddLocalMissingShort')) + '</span></div>';
+      }
+    },
+
+    _ddSyncRegBadge(hostEl, wantReg, className, labelText) {
+      if (!hostEl) return true;
+      const existing = hostEl.querySelector?.(className === 'output-dir-tag' ? '.output-dir-tag' : '.m-dd-card-reg');
+      if (wantReg) {
+        if (existing) {
+          if (existing.textContent !== labelText) existing.textContent = labelText;
+          return true;
+        }
+        const doc = globalThis.document;
+        if (typeof doc?.createElement !== 'function' || typeof hostEl.appendChild !== 'function') return false;
+        const badge = doc.createElement('small');
+        badge.className = className;
+        badge.textContent = labelText;
+        hostEl.appendChild(badge);
+        return true;
+      }
+      if (existing) {
+        if (typeof existing.remove === 'function') existing.remove();
+        else if (existing.parentNode && typeof existing.parentNode.removeChild === 'function') existing.parentNode.removeChild(existing);
+        else return false;
+      }
+      return true;
+    },
+
+    _ddPatchImageCard(card, t, img) {
+      this._ddPatchCardMedia(card.querySelector?.('.m-dd-card-media'), img, false, t);
+
+      const resText = this._ddFormatResidual(img.mean_residual);
+      const color = this._ddResidualColor(img.mean_residual);
+      const resEl = card.querySelector?.('.m-dd-card-res b');
+      if (resEl) {
+        if (resEl.textContent !== resText) resEl.textContent = resText;
+        if (resEl.style && resEl.style.color !== color) resEl.style.color = color;
+      }
+
+      const slopeColor = this._ddSlopeColor(img.slope);
+      const slopeText = img.slope != null ? (this._ddFormatSlope(img.slope) + t('ddSlopeUnit')) : '—';
+      const slopeEl = card.querySelector?.('.m-dd-card-slope b');
+      if (slopeEl) {
+        if (slopeEl.textContent !== slopeText) slopeEl.textContent = slopeText;
+        if (slopeEl.style && slopeEl.style.color !== slopeColor) slopeEl.style.color = slopeColor;
+      }
+
+      const resoText = this._ddFormatResolution(img.resolution);
+      const countReso = t('ddCardCountReso').replace('{n}', img.count).replace('{reso}', resoText);
+      const resoEl = card.querySelector?.('.m-dd-card-reso');
+      if (resoEl) {
+        if (resoEl.textContent !== countReso) resoEl.textContent = countReso;
+        const curTitle = typeof resoEl.getAttribute === 'function' ? resoEl.getAttribute('title') : resoEl.title;
+        if (curTitle !== countReso) {
+          if (typeof resoEl.setAttribute === 'function') resoEl.setAttribute('title', countReso);
+          else resoEl.title = countReso;
+        }
+      }
+
+      const statusMeta = this._ddStatusMeta(t, img.status, img.slope);
+      const flagEl = card.querySelector?.('.m-dd-card-flag');
+      if (flagEl) {
+        this._ddSetStatusToneClass(flagEl, 'm-dd-card-flag', statusMeta.tone);
+        if (flagEl.textContent !== statusMeta.label) flagEl.textContent = statusMeta.label;
+      }
+      this._ddSyncRegBadge(card.querySelector?.('.m-dd-card-foot'), Boolean(img.is_reg), 'output-dir-tag m-dd-card-reg', t('ddRegTag'));
+    },
+
+    _ddPatchTableRowGauge(row, img, maxAbs) {
+      const gaugeEl = row.querySelector?.('.m-dd-gauge');
+      if (!gaugeEl) return;
+      const m = this._ddGaugeMetrics(img.mean_residual, maxAbs);
+      const trackEl = gaugeEl.querySelector?.('.m-gauge-track');
+      const fillEl = trackEl?.querySelector?.('.m-gauge-fill') || gaugeEl.querySelector?.('.m-gauge-fill');
+      if (!m.valid) {
+        if (fillEl) {
+          if (trackEl) trackEl.innerHTML = '<span class="m-gauge-zero" style="left:50%"></span>';
+          else fillEl.remove?.();
+        }
+        return;
+      }
+      if (fillEl) {
+        if (fillEl.classList?.toggle) {
+          fillEl.classList.toggle('is-neg', m.isNeg);
+          fillEl.classList.toggle('is-pos', !m.isNeg);
+        } else {
+          fillEl.className = 'm-gauge-fill ' + (m.isNeg ? 'is-neg' : 'is-pos');
+        }
+        const leftStr = m.left.toFixed(1) + '%';
+        const widthStr = m.width.toFixed(1) + '%';
+        if (fillEl.style) {
+          if (fillEl.style.left !== leftStr) fillEl.style.left = leftStr;
+          if (fillEl.style.width !== widthStr) fillEl.style.width = widthStr;
+          if (typeof fillEl.style.setProperty === 'function') {
+            fillEl.style.setProperty('--gauge-bar-color', m.color);
+          } else {
+            fillEl.style['--gauge-bar-color'] = m.color;
+          }
+        }
+      } else if (trackEl) {
+        trackEl.innerHTML = '<span class="m-gauge-zero" style="left:50%"></span>'
+          + '<span class="m-gauge-fill ' + (m.isNeg ? 'is-neg' : 'is-pos') + '" style="left:' + m.left.toFixed(1)
+          + '%;width:' + m.width.toFixed(1) + '%;--gauge-bar-color:' + m.color + '"></span>';
+      }
+    },
+
+    _ddPatchImageTableRow(row, t, img, maxAbs) {
+      this._ddPatchCardMedia(row.querySelector?.('.m-dd-row-thumb'), img, true, t);
+
+      const numCols = Array.from(row.querySelectorAll?.('.m-dd-num') || []);
+      const resoText = this._ddFormatResolution(img.resolution);
+      if (numCols[0] && numCols[0].textContent !== resoText) numCols[0].textContent = resoText;
+
+      const countText = img.count + ' / ' + img.epochs;
+      if (numCols[1] && numCols[1].textContent !== countText) numCols[1].textContent = countText;
+
+      const lossText = this._ddFormatLoss(img.mean_loss);
+      if (numCols[2] && numCols[2].textContent !== lossText) numCols[2].textContent = lossText;
+
+      const slopeText = this._ddFormatSlope(img.slope);
+      const slopeColor = this._ddSlopeColor(img.slope);
+      if (numCols[3]) {
+        if (numCols[3].textContent !== slopeText) numCols[3].textContent = slopeText;
+        if (numCols[3].style && numCols[3].style.color !== slopeColor) numCols[3].style.color = slopeColor;
+      }
+
+      const resText = this._ddFormatResidual(img.mean_residual);
+      const color = this._ddResidualColor(img.mean_residual);
+      const resValEl = row.querySelector?.('.m-dd-num-val');
+      if (resValEl) {
+        if (resValEl.textContent !== resText) resValEl.textContent = resText;
+        if (resValEl.style && resValEl.style.color !== color) resValEl.style.color = color;
+      }
+      this._ddPatchTableRowGauge(row, img, maxAbs);
+
+      const statusMeta = this._ddStatusMeta(t, img.status, img.slope);
+      const pillEl = row.querySelector?.('.m-dd-pill');
+      if (pillEl) {
+        this._ddSetStatusToneClass(pillEl, 'm-dd-pill', statusMeta.tone);
+        if (pillEl.textContent !== statusMeta.label) pillEl.textContent = statusMeta.label;
+      }
+      this._ddSyncRegBadge(row.querySelector?.('.m-dd-row-sub'), Boolean(img.is_reg), 'output-dir-tag', t('ddRegTag'));
+    },
+
+    _ddPatchFolderHead(headBtn, t, group, shownCount) {
+      const countEl = headBtn.querySelector?.('.m-dd-folder-count');
+      if (countEl) {
+        const nextCount = (shownCount != null && shownCount > 0 && shownCount < group.totalCount)
+          ? (shownCount + ' / ' + group.totalCount)
+          : t('ddGroupCountShort').replace('{n}', group.totalCount);
+        if (countEl.textContent !== nextCount) countEl.textContent = nextCount;
+      }
+      if (group.meanResidual != null) {
+        const resEl = headBtn.querySelector?.('.m-dd-folder-res');
+        if (resEl) {
+          const resText = t('ddCardResidual') + ' ' + this._ddFormatResidual(group.meanResidual);
+          const resColor = this._ddResidualColor(group.meanResidual, { scale: 'group' });
+          if (resEl.textContent !== resText) resEl.textContent = resText;
+          if (resEl.style && resEl.style.color !== resColor) resEl.style.color = resColor;
+        }
+      }
+    },
+
+    _patchDatasetDiagImagesInPlace(bodyEl, t, data) {
+      if (!bodyEl || !data) return false;
+      const filtered = this._datasetDiagFilteredImages();
+      if (!filtered.length) return false;
+
+      const limit = this.datasetDiagDisplayLimit || 120;
+      const viewMode = this.datasetDiagViewMode === 'table' ? 'table' : 'grid';
+      const canGroup = !!this._datasetDiagHasMultipleFolders?.(data);
+      const groupByFolder = Boolean(canGroup && this.datasetDiagGroupByFolder);
+      const maxAbs = filtered.reduce((m, r) => Math.max(m, Math.abs(Number(r.mean_residual) || 0)), 0.55);
+      const itemSelector = viewMode === 'grid' ? '.m-dd-card' : '.m-dd-table-row';
+      const tableEl = viewMode === 'table' ? bodyEl.querySelector?.('.m-dd-table') : null;
+      const gridEl = viewMode === 'grid' ? bodyEl.querySelector?.('.m-dd-grid') : null;
+      if (viewMode === 'table' && (!tableEl || bodyEl.querySelector?.('.m-dd-grid'))) return false;
+      if (viewMode === 'grid' && ((!gridEl && !groupByFolder) || bodyEl.querySelector?.('.m-dd-table'))) return false;
+
+      const itemsMatchOrder = (nodes, items) => {
+        if (nodes.length !== items.length) return false;
+        for (let i = 0; i < items.length; i++) {
+          if (nodes[i]?.dataset?.ddImageId !== items[i].image_id) return false;
+        }
+        return true;
+      };
+
+      let hasMore = false;
+      let remaining = 0;
+      let groupPlan = null;
+      let flatNodes = null;
+      let flatItems = null;
+
+      if (groupByFolder) {
+        const grouped = this._ddComputeGroupedSlices(filtered, limit);
+        const slices = grouped.slices;
+        hasMore = grouped.hasMore;
+        remaining = grouped.remaining;
+        if (viewMode === 'grid' && !bodyEl.querySelector?.('.m-dd-folder-groups')) return false;
+        const secNodes = Array.from(bodyEl.querySelectorAll?.(
+          viewMode === 'grid' ? '.m-dd-folder-group' : '.m-dd-table-folder-section'
+        ) || []);
+        if (!slices.length || secNodes.length !== slices.length) return false;
+
+        groupPlan = [];
+        for (let i = 0; i < slices.length; i++) {
+          const s = slices[i];
+          const sec = secNodes[i];
+          const secKey = viewMode === 'grid'
+            ? (sec.dataset?.ddFolderGroup || '')
+            : (sec.querySelector?.('.m-dd-table-folder-head')?.dataset?.ddFolderGroup || sec.dataset?.ddTableFolderSection || '');
+          if (secKey !== s.group.key) return false;
+
+          const headBtn = sec.querySelector?.(viewMode === 'grid' ? '.m-dd-folder-head' : '.m-dd-table-folder-head');
+          const folderBody = sec.querySelector?.('[data-dd-folder-body]');
+          const inner = folderBody?.querySelector?.('.m-dd-folder-body-inner');
+          if (!headBtn || !folderBody || !inner) return false;
+
+          const domCollapsed = Boolean(
+            sec.classList?.contains?.('is-collapsed')
+            || folderBody.inert
+            || folderBody.hasAttribute?.('inert')
+          );
+          if (domCollapsed !== s.isCollapsed) return false;
+          if (Boolean(headBtn.querySelector?.('.m-dd-folder-res')) !== (s.group.meanResidual != null)) return false;
+          if (Boolean(headBtn.querySelector?.('.m-dd-folder-reg')) !== Boolean(s.group.isReg)) return false;
+
+          const nodes = Array.from(inner.querySelectorAll?.(itemSelector) || []);
+          if (!s.isCollapsed) {
+            if (viewMode === 'grid' && s.visibleItems.length > 0 && !inner.querySelector?.('.m-dd-grid')) return false;
+            if (!itemsMatchOrder(nodes, s.visibleItems)) return false;
+          }
+          groupPlan.push({ s, headBtn, inner, nodes });
+        }
+      } else {
+        if (bodyEl.querySelector?.('.m-dd-folder-group, .m-dd-table-folder-section')) return false;
+        flatItems = filtered.slice(0, limit);
+        hasMore = filtered.length > flatItems.length;
+        remaining = filtered.length - flatItems.length;
+        const container = viewMode === 'grid' ? gridEl : tableEl;
+        if (!container) return false;
+        flatNodes = Array.from(container.querySelectorAll?.(itemSelector) || []);
+        if (!itemsMatchOrder(flatNodes, flatItems)) return false;
+      }
+
+      const moreRow = bodyEl.querySelector?.('[data-dd-more-row]');
+      const moreVisible = Boolean(moreRow && !moreRow.hidden);
+      if (moreVisible !== hasMore) return false;
+      const moreBtn = hasMore ? moreRow?.querySelector?.('button') : null;
+      if (hasMore && !moreBtn) return false;
+
+      if (hasMore && moreBtn) {
+        const nextMoreText = t('ddShowMore').replace('{n}', remaining);
+        if (moreBtn.textContent !== nextMoreText) moreBtn.textContent = nextMoreText;
+      }
+
+      const patchPairList = (nodes, items) => {
+        for (let i = 0; i < items.length; i++) {
+          const img = items[i];
+          const node = nodes[i];
+          const sig = this._ddImagePatchSig(img, viewMode, maxAbs);
+          const prevSig = node._ddPatchSig ?? node.dataset?.ddSig;
+          if (prevSig === sig) continue;
+          if (viewMode === 'grid') this._ddPatchImageCard(node, t, img);
+          else this._ddPatchImageTableRow(node, t, img, maxAbs);
+          node._ddPatchSig = sig;
+          if (node.dataset) node.dataset.ddSig = sig;
+        }
+      };
+
+      if (groupPlan) {
+        for (const entry of groupPlan) {
+          this._ddPatchFolderHead(entry.headBtn, t, entry.s.group, entry.s.isCollapsed ? null : entry.s.visibleItems.length);
+          if (entry.s.isCollapsed) {
+            // 折叠前曾展开的分组仍残留旧 DOM，清空可防止下次展开时命中旧指标。
+            if (entry.nodes.length > 0) entry.inner.innerHTML = '';
+          } else {
+            patchPairList(entry.nodes, entry.s.visibleItems);
+          }
+        }
+      } else {
+        patchPairList(flatNodes, flatItems);
+      }
+
+      bodyEl._ddLastMaxAbs = maxAbs;
+      if (tableEl?.dataset) tableEl.dataset.ddMaxAbs = String(maxAbs);
+      return true;
+    },
+
+    _clearDatasetDiagImagesMarquee(imagesBody) {
+      const cur = imagesBody?._ddActiveMarquee;
+      if (!cur) return;
+      imagesBody._ddActiveMarquee = null;
+      try { cur.destroy?.(); } catch (_) {}
+      cur.nameEl?.classList?.remove?.('loop-marquee');
+      cur.sourceEl?.classList?.remove?.('loop-marquee-text');
+    },
+
+    _bindDatasetDiagImagesBodyEvents(imagesBody) {
+      if (!imagesBody || imagesBody._ddEventsBound || typeof imagesBody.addEventListener !== 'function') return;
+      imagesBody._ddEventsBound = true;
+
+      const interactiveChild = (target, card) => {
+        const hit = target?.closest?.('button, a, input, select, textarea, [contenteditable="true"], [role="button"]');
+        return Boolean(hit && hit !== card && card.contains?.(hit));
+      };
+
+      imagesBody.addEventListener('click', event => {
+        if (event.defaultPrevented) return;
+        const card = event.target?.closest?.('.m-dd-card[data-dd-image-id], .m-dd-table-row[data-dd-image-id]');
+        if (!card || (typeof imagesBody.contains === 'function' && !imagesBody.contains(card))) return;
+        if (interactiveChild(event.target, card)) return;
+        const imageId = card.dataset?.ddImageId;
+        if (imageId) this.openDatasetDiagModal(imageId, card);
+      });
+
+      imagesBody.addEventListener('keydown', event => {
+        if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        const card = event.target?.closest?.('.m-dd-card[data-dd-image-id], .m-dd-table-row[data-dd-image-id]');
+        if (!card || (typeof imagesBody.contains === 'function' && !imagesBody.contains(card))) return;
+        if (interactiveChild(event.target, card)) return;
+        event.preventDefault?.();
+        const imageId = card.dataset?.ddImageId;
+        if (imageId) this.openDatasetDiagModal(imageId, card);
+      });
+
+      const activateMarquee = target => {
+        const card = target?.closest?.('.m-dd-card, .m-dd-table-row');
+        if (!card || (typeof imagesBody.contains === 'function' && !imagesBody.contains(card))) return;
+        const cur = imagesBody._ddActiveMarquee;
+        if (cur?.card === card) return;
+        this._clearDatasetDiagImagesMarquee(imagesBody);
+        if (typeof globalThis.window?.initLoopMarquee !== 'function') return;
+        const nameEl = card.querySelector?.('.m-dd-card-name, .m-dd-row-name strong');
+        const sourceEl = nameEl?.firstElementChild;
+        if (!nameEl || !sourceEl) return;
+        if (!(nameEl.clientWidth > 0 && nameEl.scrollWidth > nameEl.clientWidth)) return;
+        const destroy = globalThis.window.initLoopMarquee(nameEl, sourceEl, { bounce: true });
+        imagesBody._ddActiveMarquee = { card, nameEl, sourceEl, destroy };
+      };
+
+      const deactivateMarquee = (target, relatedTarget, isFocusLeave) => {
+        const card = target?.closest?.('.m-dd-card, .m-dd-table-row');
+        if (!card) return;
+        if (relatedTarget && card.contains?.(relatedTarget)) return;
+        const cur = imagesBody._ddActiveMarquee;
+        if (!cur || cur.card !== card) return;
+        if (isFocusLeave) {
+          if (card.matches?.(':hover')) return;
+        } else {
+          const activeEl = globalThis.document?.activeElement;
+          if (activeEl && card.contains?.(activeEl)) return;
+        }
+        this._clearDatasetDiagImagesMarquee(imagesBody);
+      };
+
+      imagesBody.addEventListener('pointerover', event => activateMarquee(event.target));
+      imagesBody.addEventListener('focusin', event => activateMarquee(event.target));
+      imagesBody.addEventListener('pointerout', event => deactivateMarquee(event.target, event.relatedTarget, false));
+      imagesBody.addEventListener('focusout', event => deactivateMarquee(event.target, event.relatedTarget, true));
     },
 
     _renderDatasetDiagImagesCard(t, data) {
