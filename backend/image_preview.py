@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import threading
 import urllib.parse
@@ -24,6 +25,8 @@ _PRUNE_INTERVAL = 128
 _writes_since_prune = _PRUNE_INTERVAL - 1
 # A fixed set of locks bounds memory while still deduplicating same-key renders.
 _render_locks = tuple(threading.Lock() for _ in range(256))
+# Bound concurrent cold decode/resize/encode workers to cap memory spikes on 4K PNG/WebP.
+_decode_semaphore = threading.Semaphore(3)
 
 _VARIANT_DEFAULTS = {
     "thumb": {"size": 320, "quality": 90},
@@ -134,6 +137,41 @@ def _render_mode(image: Image.Image) -> tuple[Image.Image, bool]:
     return image, False
 
 
+def _thumbnail_target_size(src_size: tuple[int, int], max_size: int) -> tuple[int, int] | None:
+    """Match Pillow thumbnail() aspect-ratio rounding for a square target box."""
+    width, height = src_size
+    if width <= 0 or height <= 0 or (max_size >= width and max_size >= height):
+        return None
+    aspect = width / height
+    if 1.0 >= aspect:
+        x = max(
+            min(
+                math.floor(max_size * aspect),
+                math.ceil(max_size * aspect),
+                key=lambda n: abs(aspect - n / max_size),
+            ),
+            1,
+        )
+        return x, max_size
+    y = max(
+        min(
+            math.floor(max_size / aspect),
+            math.ceil(max_size / aspect),
+            key=lambda n: 0 if n == 0 else abs(aspect - max_size / n),
+        ),
+        1,
+    )
+    return max_size, y
+
+
+def _apply_preview_orientation(image: Image.Image, orient: bool) -> None:
+    if orient:
+        ImageOps.exif_transpose(image, in_place=True)
+    else:
+        image.load()
+        image.info.pop("exif", None)
+
+
 def get_cached_preview_path(
     source: Path,
     variant: str = "preview",
@@ -173,16 +211,30 @@ def get_cached_preview_path(
         cache_dir.mkdir(parents=True, exist_ok=True)
         temporary = cache_dir / f".{key}.{os.getpid()}.{threading.get_ident()}.tmp"
         try:
-            with open_preview_source(source) as opened:
-                # We own the decoder and only need the preview, so keep one
-                # full-size pixel buffer for images that do not need rotation.
-                if orient:
-                    ImageOps.exif_transpose(opened, in_place=True)
+            with _decode_semaphore, open_preview_source(source) as opened:
+                if target_size is not None and opened.format in {"JPEG", "MPO"}:
+                    exif_orient = opened.getexif().get(274) if orient else None
+                    if orient and exif_orient in {5, 6, 7, 8}:
+                        transposed = _thumbnail_target_size((opened.height, opened.width), target_size)
+                        final_size = (transposed[1], transposed[0]) if transposed is not None else None
+                    else:
+                        final_size = _thumbnail_target_size(opened.size, target_size)
+                    if final_size is not None:
+                        # Draft JPEG decoders at >=2x final dimensions before exif_transpose()/load()
+                        # forces a full-resolution decode; preserve the exact draft crop box.
+                        draft_res = opened.draft(None, (final_size[0] * 2, final_size[1] * 2))
+                        box = draft_res[1] if draft_res is not None else None
+                        if opened.size != final_size:
+                            resized = opened.resize(final_size, Image.Resampling.LANCZOS, box=box, reducing_gap=2.0)
+                            opened.im = resized.im
+                            opened._size = resized.size
+                            opened._mode = resized.mode
+                            opened.readonly = 0
+                    _apply_preview_orientation(opened, orient)
                 else:
-                    opened.load()
-                    opened.info.pop("exif", None)
-                if target_size is not None:
-                    opened.thumbnail((target_size, target_size), Image.Resampling.LANCZOS)
+                    _apply_preview_orientation(opened, orient)
+                    if target_size is not None:
+                        opened.thumbnail((target_size, target_size), Image.Resampling.LANCZOS)
                 image, lossless = _render_mode(opened)
                 save_options = {
                     "format": "WEBP",
