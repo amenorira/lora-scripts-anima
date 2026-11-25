@@ -120,32 +120,32 @@ window.monitorDiagnosticsMixin = {
   _diagnosticText(t, code, kind) {
     const copy = {
       insufficient: {
-        label: ['diagnosticInsufficient', '数据不足'],
-        summary: ['diagnosticInsufficientSummary', '至少需要 6 个有效 Loss 点才能判断近期趋势。'],
+        label: 'diagnosticInsufficient',
+        summary: 'diagnosticInsufficientSummary',
       },
       converging: {
-        label: ['diagnosticConverging', '训练 Loss 持续下降'],
-        summary: ['diagnosticConvergingSummary', '近期训练 Loss 平均值持续下降，优化目标仍在改善。'],
+        label: 'diagnosticConverging',
+        summary: 'diagnosticConvergingSummary',
       },
       plateau: {
-        label: ['diagnosticPlateau', '进入平台期'],
-        summary: ['diagnosticPlateauSummary', '近期变化很小且波动不大，Loss 可能进入平台期。'],
+        label: 'diagnosticPlateau',
+        summary: 'diagnosticPlateauSummary',
       },
       rebound: {
-        label: ['diagnosticRebound', '近期反弹'],
-        summary: ['diagnosticReboundSummary', '近期 Loss 平均值明显高于前一段时间。'],
+        label: 'diagnosticRebound',
+        summary: 'diagnosticReboundSummary',
       },
       volatile: {
-        label: ['diagnosticVolatile', '波动异常'],
-        summary: ['diagnosticVolatileSummary', '近期 Loss 起伏较大，训练稳定性需要关注。'],
+        label: 'diagnosticVolatile',
+        summary: 'diagnosticVolatileSummary',
       },
       steady: {
-        label: ['diagnosticSteady', '趋势暂不明确'],
-        summary: ['diagnosticSteadySummary', '近期 Loss 尚未呈现明确趋势，请结合预览图评估训练效果。'],
+        label: 'diagnosticSteady',
+        summary: 'diagnosticSteadySummary',
       },
     };
     const item = copy[code] || copy.insufficient;
-    return t(item[kind][0], item[kind][1]);
+    return t(item[kind]);
   },
 
   _fillDiagnosticTemplate(template, values) {
@@ -172,15 +172,15 @@ window.monitorDiagnosticsMixin = {
       plateauVolatility: rules.plateauCv,
     };
     const copy = {
-      insufficient: ['diagnosticEvidenceInsufficient', '当前 {count} 个有效 Loss 点；至少 {minimum} 个点后才会比较两个相邻时间段。'],
-      converging: ['diagnosticEvidenceConverging', '近期平均值下降 {magnitude}，符合下降条件；波动程度为 {volatility}。'],
-      plateau: ['diagnosticEvidencePlateau', '平均值变化幅度为 {magnitude}，波动程度为 {volatility}，符合平台期条件。'],
-      rebound: ['diagnosticEvidenceRebound', '近期平均值上升 {magnitude}，符合反弹条件；反弹信号优先判定。'],
-      volatile: ['diagnosticEvidenceVolatile', '近期波动程度为 {volatility}，符合异常波动条件；同期平均值变化为 {change}。'],
-      steady: ['diagnosticEvidenceSteady', '平均值变化 {change}、波动程度 {volatility}，不符合下降、反弹、异常波动或平台期条件。'],
+      insufficient: 'diagnosticEvidenceInsufficient',
+      converging: 'diagnosticEvidenceConverging',
+      plateau: 'diagnosticEvidencePlateau',
+      rebound: 'diagnosticEvidenceRebound',
+      volatile: 'diagnosticEvidenceVolatile',
+      steady: 'diagnosticEvidenceSteady',
     };
-    const item = copy[diagnostic.code] || copy.insufficient;
-    return this._fillDiagnosticTemplate(t(item[0], item[1]), values);
+    const key = copy[diagnostic.code] || copy.insufficient;
+    return this._fillDiagnosticTemplate(t(key), values);
   },
 
   _diagnosticWindowEvidence(t, diagnostic) {
@@ -629,7 +629,7 @@ window.monitorDiagnosticsMixin = {
     }
   },
 
-  _previewMarkersForChart(d, totalSteps, totalEpochs) {
+  _previewMarkersForChart(d, totalSteps, totalEpochs, t = k => this.tMonitor(k)) {
     if (!this.previews?.length || typeof this._sampleDataModel !== 'function') return [];
     const model = this._sampleDataModel();
     if (!model?.batches?.length) return [];
@@ -647,9 +647,9 @@ window.monitorDiagnosticsMixin = {
       }
       if (step === null && epoch === null) continue;
       const thumbUrl = preview.thumb_url || preview.url || '';
-      const shortLabel = epoch !== null && step !== null
-        ? `Epoch ${epoch} (Step ${step})`
-        : (epoch !== null ? `Epoch ${epoch}` : `Step ${step}`);
+      const epochText = epoch !== null ? t('sampleEpoch').replace('{n}', epoch) : '';
+      const stepText = step !== null ? t('sampleStep').replace('{n}', step) : '';
+      const shortLabel = epochText && stepText ? `${epochText} (${stepText})` : (epochText || stepText);
       out.push({
         batchId: batch.id,
         firstIndex: firstIdx,
@@ -724,7 +724,7 @@ window.monitorDiagnosticsMixin = {
 
     const totalSteps = Number(d.total_steps) || 0;
     const { totalEpochs } = this._parseEpochProgress ? this._parseEpochProgress(d, totalSteps, Number(d.step) || 0, false, 0) : { totalEpochs: 0 };
-    const previewMarkersAll = this._previewMarkersForChart(d, totalSteps, totalEpochs);
+    const previewMarkersAll = this._previewMarkersForChart(d, totalSteps, totalEpochs, t);
 
     // ── Mode: 每轮（纯净渐变柱状图 + 聚光悬停，无折线/无杂点） ──
     if (mode === 'epoch') {
@@ -778,7 +778,7 @@ window.monitorDiagnosticsMixin = {
       const midY = (padT + plotH / 2).toFixed(1);
       const midIdx = Math.floor((coords.length - 1) / 2);
       const midEpochLabel = coords.length >= 6
-        ? `<text x="${coords[midIdx].x.toFixed(1)}" y="${height - 4}" text-anchor="middle">Epoch ${coords[midIdx].epoch}</text>`
+        ? `<text x="${coords[midIdx].x.toFixed(1)}" y="${height - 4}" text-anchor="middle">${this.esc(t('sampleEpoch').replace('{n}', coords[midIdx].epoch))}</text>`
         : '';
 
       svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
@@ -805,9 +805,9 @@ window.monitorDiagnosticsMixin = {
         <g class="m-chart-axes">
           <text x="${padL - 6}" y="${padT + 4}" text-anchor="end">${this._formatDiagnosticValue(high)}</text>
           <text x="${padL - 6}" y="${baseY + 1}" text-anchor="end">${this._formatDiagnosticValue(low)}</text>
-          <text x="${padL}" y="${height - 4}" text-anchor="start">Epoch ${coords[0].epoch}</text>
+          <text x="${padL}" y="${height - 4}" text-anchor="start">${this.esc(t('sampleEpoch').replace('{n}', coords[0].epoch))}</text>
           ${midEpochLabel}
-          <text x="${padL + plotW}" y="${height - 4}" text-anchor="end">Epoch ${coords[coords.length - 1].epoch}</text>
+          <text x="${padL + plotW}" y="${height - 4}" text-anchor="end">${this.esc(t('sampleEpoch').replace('{n}', coords[coords.length - 1].epoch))}</text>
         </g>`;
 
       wrap.hidden = false;
@@ -927,7 +927,7 @@ window.monitorDiagnosticsMixin = {
     const calSpan = Math.abs(calBot - calTop);
     const gapText = this._formatDiagnosticPercent(this._lossGapPercent(latestPt.value, bestPt.value), true);
     const bestValText = this._formatDiagnosticValue(bestPt.value);
-    const bestStepText = `Step ${Math.round(bestPt.step)}`;
+    const bestStepText = t('sampleStep').replace('{n}', Math.round(bestPt.step));
     // 无边框高对比度抠边文字标注，避免厚重方框遮挡曲线。
     const bestAlignRight = bestPt.x > padL + plotW - 84;
     const bestAlignLeft = bestPt.x < padL + 84;
@@ -961,7 +961,7 @@ window.monitorDiagnosticsMixin = {
 
     const midY = (padT + plotH / 2).toFixed(1);
     const splitStepLabel = (!isFull && hasWindowSplit && splitX != null)
-      ? `<text x="${splitX.toFixed(1)}" y="${height - 4}" text-anchor="middle">Step ${Math.round(diagnostic.recentStartStep)}</text>`
+      ? `<text x="${splitX.toFixed(1)}" y="${height - 4}" text-anchor="middle">${this.esc(t('sampleStep').replace('{n}', Math.round(diagnostic.recentStartStep)))}</text>`
       : '';
 
     const areaGradId = 'm-hero-area-' + (isHistory ? 'h' : 'l');
@@ -1015,9 +1015,9 @@ window.monitorDiagnosticsMixin = {
         <text x="${padL - 6}" y="${padT + 4}" text-anchor="end">${this._formatDiagnosticValue(high)}</text>
         <text x="${padL - 6}" y="${padT + plotH + 1}" text-anchor="end">${this._formatDiagnosticValue(low)}</text>
         ${lrAxisHtml}
-        <text x="${padL}" y="${height - 4}" text-anchor="start">Step ${Math.round(minStep)}</text>
+        <text x="${padL}" y="${height - 4}" text-anchor="start">${this.esc(t('sampleStep').replace('{n}', Math.round(minStep)))}</text>
         ${splitStepLabel}
-        <text x="${padL + plotW}" y="${height - 4}" text-anchor="end">Step ${Math.round(maxStep)}</text>
+        <text x="${padL + plotW}" y="${height - 4}" text-anchor="end">${this.esc(t('sampleStep').replace('{n}', Math.round(maxStep)))}</text>
       </g>
       <g class="m-chart-hover" data-chart-hover display="none">
         <line class="m-chart-crosshair" data-hover-line y1="${padT}" y2="${padT + plotH}" stroke="url(#${cursorGradId})"/>
@@ -1125,7 +1125,7 @@ window.monitorDiagnosticsMixin = {
       if (readEl) {
         const delta = this._epochDeltaText(nearest);
         const deltaText = this.esc(t('epochDeltaPrev')).replace('{delta}', `<span class="m-hud-percent">${delta}</span>`);
-        readEl.innerHTML = `<span class="m-hud-step">Epoch <span class="m-hud-index">${nearest.epoch}</span></span>`
+        readEl.innerHTML = `<span class="m-hud-step">${this.esc(t('epoch'))} <span class="m-hud-index">${nearest.epoch}</span></span>`
           + `<span class="m-hud-item is-epoch"><i></i><em>${this.esc(t('chartSeriesSmooth'))}</em> <span class="m-hud-value">${this._formatDiagnosticValue(nearest.value)}</span></span>`
           + `<span class="m-hud-delta${delta ? '' : ' is-empty'}">${deltaText}</span>`
           + (nearest.preview ? `<span class="m-hud-hint">${this.esc(t('chartEpochClickSample'))}</span>` : '');
@@ -1141,7 +1141,7 @@ window.monitorDiagnosticsMixin = {
     const smoothDot = hoverGroup.querySelector('[data-hover-dot="smooth"]');
     const lrDot = hoverGroup.querySelector('[data-hover-dot="lr"]');
 
-    const parts = [`<span class="m-hud-step">Step <span class="m-hud-index">${Math.round(nearest.step)}</span></span>`];
+    const parts = [`<span class="m-hud-step">${this.esc(t('stepLabel'))} <span class="m-hud-index">${Math.round(nearest.step)}</span></span>`];
     if (smoothDot) {
       smoothDot.setAttribute('cx', nearest.x.toFixed(1));
       smoothDot.setAttribute('cy', nearest.y.toFixed(1));

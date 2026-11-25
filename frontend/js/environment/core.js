@@ -157,7 +157,7 @@ window.environmentCoreMixin = {
 
   // 复制日志到剪贴板（错误条"复制日志"按钮，xformers/Triton/模型通用）
   _envCopyLog(text) {
-    const done = () => this.toast(this.t('environment.copied') || 'Copied', 'success');
+    const done = () => this.toast(this.t('environment.copied'), 'success');
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text || '').then(done, () => {});

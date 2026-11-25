@@ -66,7 +66,7 @@ window.datasetRepeatMixin = {
     if (!subsets.length) return '';
     const applied = subsets.reduce((sum, subset) => sum + Number(subset.sample_count || 0), 0);
     const preview = this.datasetRepeatTotalSamples();
-    return this._datasetRepeatText('datasetRepeat.total', 'Train samples {samples}', {
+    return this._datasetRepeatText('datasetRepeat.total', {
       samples: preview === applied ? String(applied) : `${applied} → ${preview}`,
     });
   },
@@ -152,7 +152,7 @@ window.datasetRepeatMixin = {
   datasetRepeatUndoLabel() {
     const last = this.datasetRepeatLastApplied;
     if (!last) return '';
-    return this._datasetRepeatText('datasetRepeat.applied', 'Applied {count} changes', {
+    return this._datasetRepeatText('datasetRepeat.applied', {
       count: last.items.length,
     });
   },
@@ -276,7 +276,7 @@ window.datasetRepeatMixin = {
       result = await response.json();
     } catch (error) {
       // 网络层/解析失败拿不到后端 errorCode，单独包一条本地化文案。
-      throw new Error(this._datasetRepeatText('datasetRepeat.errors.requestFailed', 'Request failed: {message}', {
+      throw new Error(this._datasetRepeatText('datasetRepeat.errors.requestFailed', {
         message: error.message,
       }));
     }
@@ -347,7 +347,7 @@ window.datasetRepeatMixin = {
         dir,
         items: applied.map(item => ({ oldName: item.oldName, newName: item.newName })),
       };
-      this.toast(this._datasetRepeatText('datasetRepeat.applied', 'Applied {count} changes', {
+      this.toast(this._datasetRepeatText('datasetRepeat.applied', {
         count: applied.length,
       }));
     } catch (error) {
@@ -373,9 +373,9 @@ window.datasetRepeatMixin = {
     }
   },
 
-  _datasetRepeatText(key, fallback, values) {
+  _datasetRepeatText(key, values) {
     void this.locale;
-    let text = this.t(key, fallback);
+    let text = this.t(key);
     Object.keys(values || {}).forEach(name => {
       text = text.replaceAll(`{${name}}`, () => String(values[name]));
     });
@@ -399,7 +399,7 @@ window.datasetRepeatMixin = {
     };
     // 未覆盖的 errorCode 走兜底，不把后端的中英双语 message 直接塞进界面。
     const key = keys[data.errorCode] || 'datasetRepeat.errors.failed';
-    const message = this._datasetRepeatText(key, (result && result.message) || '', params);
+    const message = this._datasetRepeatText(key, params);
     const recovery = (data.recovery || []).map(item => `${item.currentPath} → ${item.originalPath}`).join('\n');
     return recovery ? `${message}\n${recovery}` : message;
   },

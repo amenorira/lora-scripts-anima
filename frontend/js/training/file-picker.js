@@ -170,7 +170,7 @@ window.trainingFilePicker = {
   // 注意：这些方法依赖 this.t()，不能写成 getter——测试会用 Object.assign 展开
   // mixin，getter 会在展开时被立即调用（此时 this 上还没有 t），直接抛错。
   pickerTitle() {
-    return this.t('common.pickerSelect', 'Select {field}')
+    return this.t('common.pickerSelect')
       .replace('{field}', () => this._pickerFieldLabel(this._pickerKey));
   },
 
@@ -188,8 +188,8 @@ window.trainingFilePicker = {
   pickerContextText() {
     const n = this.filteredPickerFiles.length;
     const unit = ['train-dir', 'reg-dir'].includes(this._pickerKind)
-      ? this.t('common.pickerFolderUnit', 'folders')
-      : this.t('common.pickerFileUnit', 'files');
+      ? this.t('common.pickerFolderUnit')
+      : this.t('common.pickerFileUnit');
     return (this._pickerRoot || '') + ' · ' + n + ' ' + unit;
   },
 
@@ -199,13 +199,13 @@ window.trainingFilePicker = {
     const n = this.filteredPickerFiles.length;
     if (!this._pickerFilter || n === total) return '';
     const unit = ['train-dir', 'reg-dir'].includes(this._pickerKind)
-      ? this.t('common.pickerFolderUnit', 'folders')
-      : this.t('common.pickerFileUnit', 'files');
+      ? this.t('common.pickerFolderUnit')
+      : this.t('common.pickerFileUnit');
     return n + ' / ' + total + ' ' + unit;
   },
 
   pickerEmptyText() {
-    return this.t('common.pickerEmpty', 'No files found') + (this._pickerRoot ? ' · ' + this._pickerRoot : '');
+    return this.t('common.pickerEmpty') + (this._pickerRoot ? ' · ' + this._pickerRoot : '');
   },
 
   pickerSizeText(f) {
@@ -222,13 +222,13 @@ window.trainingFilePicker = {
   pickerDetailText(f) {
     const parts = [];
     if (['train-dir', 'reg-dir'].includes(this._pickerKind) && typeof f.images === 'number') {
-      let s = f.images + ' ' + this.t('common.pickerImagesUnit', 'images');
-      if (f.images > 0) s += ' · ' + (f.captioned || 0) + ' ' + this.t('common.pickerCaptionedUnit', 'captioned');
+      let s = f.images + ' ' + this.t('common.pickerImagesUnit');
+      if (f.images > 0) s += ' · ' + (f.captioned || 0) + ' ' + this.t('common.pickerCaptionedUnit');
       parts.push(s);
     }
     if (f.mtime) {
       const d = this._pickerFormatDate(f.mtime);
-      if (d) parts.push(this.t('common.pickerModified', 'Modified') + ' ' + d);
+      if (d) parts.push(this.t('common.pickerModified') + ' ' + d);
     }
     return parts.join(' · ');
   },

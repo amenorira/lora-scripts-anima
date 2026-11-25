@@ -83,10 +83,7 @@ window.trainingPreflight = {
     if (!String(payload.train_data_dir || '').trim()) {
       this.stepEstimate = null;
       this.stepEstimateLoading = false;
-      this._setStepEstimateError(
-        'stepEstimate.selectDataset',
-        'Select a dataset directory to calculate steps'
-      );
+      this._setStepEstimateError('stepEstimate.selectDataset');
       if (this.lrPreviewOpen) this.refreshLrPreview();
       return null;
     }
@@ -129,7 +126,7 @@ window.trainingPreflight = {
       this.stepEstimate = null;
       this._setStepEstimateError(
         'stepEstimate.errors.requestFailed',
-        'Request failed: {message}',
+        '',
         { message: error.message }
       );
       return null;
@@ -153,7 +150,7 @@ window.trainingPreflight = {
   _setStepEstimateError(key, fallback, params, localizeLegacy) {
     this.stepEstimateError = {
       key: key || '',
-      fallback: fallback || this.t('stepEstimate.failed'),
+      fallback: fallback || (key ? '' : this.t('stepEstimate.failed')),
       params: params && typeof params === 'object' ? params : {},
       localizeLegacy: !!localizeLegacy,
     };

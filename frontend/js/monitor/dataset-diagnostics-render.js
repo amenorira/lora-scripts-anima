@@ -68,19 +68,19 @@
     },
 
     _ddStatusMeta(t, status, slope = null) {
-      if (status === 'non_finite') return { label: t('ddStatusNonFinite', 'NaN / Inf'), tone: 'danger' };
+      if (status === 'non_finite') return { label: t('ddStatusNonFinite'), tone: 'danger' };
       if (status === 'attention') {
         return {
-          label: slope == null ? t('ddTrendPending', '高残差待查')
-            : slope < 0 ? t('ddSlowDrop', '高残差下降慢') : t('ddStatusUnconverged', '高残差未下降'),
+          label: slope == null ? t('ddTrendPending')
+            : slope < 0 ? t('ddSlowDrop') : t('ddStatusUnconverged'),
           tone: 'warn',
         };
       }
-      if (status === 'learning') return { label: t('ddStatusLearning', '高残差下降中'), tone: 'info' };
-      if (status === 'insufficient_reference') return { label: t('ddReferenceFew', '参照不足'), tone: 'muted' };
-      if (status === 'easy') return { label: t('ddStatusLow', '低于均值'), tone: 'neutral' };
-      if (status === 'insufficient') return { label: t('ddStatusInsufficient', '采样不足'), tone: 'muted' };
-      return { label: t('ddStatusNormal', '接近均值'), tone: 'neutral' };
+      if (status === 'learning') return { label: t('ddStatusLearning'), tone: 'info' };
+      if (status === 'insufficient_reference') return { label: t('ddReferenceFew'), tone: 'muted' };
+      if (status === 'easy') return { label: t('ddStatusLow'), tone: 'neutral' };
+      if (status === 'insufficient') return { label: t('ddStatusInsufficient'), tone: 'muted' };
+      return { label: t('ddStatusNormal'), tone: 'neutral' };
     },
 
     _ddSelectHtml(options, value, label, id, action, valueBinding = '', optionsBinding = '') {
@@ -125,7 +125,7 @@
       const t = (k, fb) => this.tMonitor(k, fb);
       return [1, 3, 5, 10].map(n => ({
         value: n,
-        label: t('ddMinCountOpt', '≥ {n} 次').replace('{n}', n),
+        label: t('ddMinCountOpt').replace('{n}', n),
       }));
     },
 
@@ -136,14 +136,14 @@
         const shortId = String(id).length > 8 ? String(id).slice(0, 8) : String(id);
         const num = runs.length - i;
         const label = i === 0
-          ? t('ddRunLatest', '最新 ({id})').replace('{id}', shortId)
-          : t('ddRunSegment', '第 {n} 段 ({id})').replace('{n}', num).replace('{id}', shortId);
+          ? t('ddRunLatest').replace('{id}', shortId)
+          : t('ddRunSegment').replace('{n}', num).replace('{id}', shortId);
         return { value: String(id), label };
       });
       if (runs.length > 1) {
         items.unshift({
           value: 'all',
-          label: t('ddRunAll', '合并全部记录（{n} 段）').replace('{n}', runs.length),
+          label: t('ddRunAll').replace('{n}', runs.length),
         });
       }
       return items;
@@ -152,22 +152,22 @@
     _ddSortOptions() {
       const t = (k, fb) => this.tMonitor(k, fb);
       return [
-        { value: 'residual_desc', label: t('ddSortResidualDesc', '残差：高到低') },
-        { value: 'residual_asc', label: t('ddSortResidualAsc', '残差：低到高') },
-        { value: 'slope_desc', label: t('ddSortSlopeDesc', '斜率：上升优先') },
-        { value: 'slope_asc', label: t('ddSortSlopeAsc', '斜率：下降最快') },
-        { value: 'loss_desc', label: t('ddSortLossDesc', '原始均 Loss：高到低') },
-        { value: 'count_desc', label: t('ddSortCountDesc', '采样次数：多到少') },
-        { value: 'name_asc', label: t('ddSortNameAsc', '文件名：A 到 Z') },
+        { value: 'residual_desc', label: t('ddSortResidualDesc') },
+        { value: 'residual_asc', label: t('ddSortResidualAsc') },
+        { value: 'slope_desc', label: t('ddSortSlopeDesc') },
+        { value: 'slope_asc', label: t('ddSortSlopeAsc') },
+        { value: 'loss_desc', label: t('ddSortLossDesc') },
+        { value: 'count_desc', label: t('ddSortCountDesc') },
+        { value: 'name_asc', label: t('ddSortNameAsc') },
       ];
     },
 
     _ddNoiseZonesSummaryHtml(t, data) {
       const nz = data.noise_zones || {};
       const zones = [
-        ['high', t('ddZoneHigh', '高噪声区'), '1000–667'],
-        ['mid', t('ddZoneMid', '中噪声区'), '667–333'],
-        ['low', t('ddZoneLow', '低噪声区'), '333–0'],
+        ['high', t('ddZoneHigh'), '1000–667'],
+        ['mid', t('ddZoneMid'), '667–333'],
+        ['low', t('ddZoneLow'), '333–0'],
       ];
       let html = '<div class="m-dd-zones-strip" data-dd-hero-zones>';
       zones.forEach(([key, label, range]) => {
@@ -180,8 +180,8 @@
         html += '<div class="m-dd-zone-vals"><strong class="m-dd-num-val">' + this.esc(lossText) + '</strong>'
           + '<span class="m-dd-zone-share">'
           + (count > 0
-            ? this.esc(t('ddZoneShareCount', '占比 {pct}%（{n} 次）').replace('{pct}', sharePct).replace('{n}', count))
-            : this.esc(t('ddZoneEmpty', '无采样')))
+            ? this.esc(t('ddZoneShareCount').replace('{pct}', sharePct).replace('{n}', count))
+            : this.esc(t('ddZoneEmpty')))
           + '</span></div>';
         html += '</div>';
       });
@@ -196,33 +196,33 @@
 
       if (!hasSource) {
         return '<div class="m-section m-dd-section"><div class="dashboard-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/><path d="M8 11h6M11 8v6"/></svg>'
-          + '<p>' + this.esc(t('ddEmptyNoRun', '开始训练或从历史记录选择一次运行后，可在此查看逐图 Loss 诊断。')) + '</p></div></div>';
+          + '<p>' + this.esc(t('ddEmptyNoRun')) + '</p></div></div>';
       }
 
       if (this.datasetDiagLoading && !data) {
-        return '<div class="m-section m-dd-section"><div class="dashboard-empty" role="status"><p>' + this.esc(t('loading', '加载中...')) + '</p></div></div>';
+        return '<div class="m-section m-dd-section"><div class="dashboard-empty" role="status"><p>' + this.esc(t('loading')) + '</p></div></div>';
       }
 
       if (this.datasetDiagError && !data) {
-        return '<div class="m-section m-dd-section"><div class="dashboard-empty dashboard-empty-danger"><p>' + this.esc(t('ddLoadFailed', '训练集诊断数据加载失败，请重试。')) + '</p>'
-          + '<button type="button" class="btn btn-sm btn-secondary" @click="refreshDatasetDiagnostics()">' + this.esc(t('refresh', '刷新')) + '</button></div></div>';
+        return '<div class="m-section m-dd-section"><div class="dashboard-empty dashboard-empty-danger"><p>' + this.esc(t('ddLoadFailed')) + '</p>'
+          + '<button type="button" class="btn btn-sm btn-secondary" @click="refreshDatasetDiagnostics()">' + this.esc(t('refresh')) + '</button></div></div>';
       }
 
       if (!data || !data.available) {
         const reason = data?.reason || 'not_recorded';
         const copyMap = {
-          unsupported_engine: ['ddEmptyUnsupported', 'Krea 2（musubi-tuner）暂未记录逐样本 Loss 日志；当前支持 SDXL、Anima 与 MOSS-Image。'],
-          waiting: ['ddEmptyWaiting', '训练已启动，正在等待首批样本写入逐图 Loss 记录（每约 5 秒落盘一次）。'],
-          empty: ['ddEmptyNoSamples', '此记录段尚无逐图采样。'],
-          not_recorded: ['ddEmptyNotRecorded', '本次训练未记录逐样本 Loss 日志。'],
-          no_run: ['ddEmptyNoRun', '开始训练或从历史记录选择一次运行后，可在此查看逐图 Loss 诊断。'],
+          unsupported_engine: 'ddEmptyUnsupported',
+          waiting: 'ddEmptyWaiting',
+          empty: 'ddEmptyNoSamples',
+          not_recorded: 'ddEmptyNotRecorded',
+          no_run: 'ddEmptyNoRun',
         };
-        const pair = copyMap[reason] || copyMap.not_recorded;
+        const reasonKey = copyMap[reason] || copyMap.not_recorded;
         let html = '<div class="m-section m-dd-section">' + (data?.available_runs?.length > 1 || this.datasetDiagError ? this._renderDatasetDiagHeading(t, data || {}) : '')
           + '<div class="dashboard-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3v18h18"/><circle cx="9" cy="14" r="1.5"/><circle cx="14" cy="9" r="1.5"/><circle cx="18" cy="12" r="1.5"/></svg>'
-          + '<p>' + this.esc(t(pair[0], pair[1])) + '</p>';
+          + '<p>' + this.esc(t(reasonKey)) + '</p>';
         if (reason === 'waiting') {
-          html += '<button type="button" class="btn btn-sm btn-secondary" @click="refreshDatasetDiagnostics()">' + this.esc(t('refresh', '刷新')) + '</button>';
+          html += '<button type="button" class="btn btn-sm btn-secondary" @click="refreshDatasetDiagnostics()">' + this.esc(t('refresh')) + '</button>';
         }
         return html + '</div></div>';
       }
@@ -255,18 +255,18 @@
 
       let html = '<section class="m-console-card m-dd-analysis" data-dd-analysis>';
       html += '<div class="m-card-heading m-dd-analysis-head">';
-      html += '<div class="m-dd-analysis-title-wrap"><span>' + this.esc(t('ddAnalysis', '分布与分组')) + '</span>'
+      html += '<div class="m-dd-analysis-title-wrap"><span>' + this.esc(t('ddAnalysis')) + '</span>'
         + (mode === 'quadrant' ? '<span class="m-dd-qualified" data-dd-chart-coverage></span>' : '')
         + '</div>';
       html += '<div class="m-dd-analysis-head-ctl">';
-      html += '<div class="m-segmented m-chart-modes" role="tablist" aria-label="' + this.esc(t('ddAnalysis', '分布与分组')) + '">';
+      html += '<div class="m-segmented m-chart-modes" role="tablist" aria-label="' + this.esc(t('ddAnalysis')) + '">';
       html += '<button type="button" id="ddAnalysisModeQuadrant" role="tab" class="m-segmented-btn' + (mode === 'quadrant' ? ' active' : '') + '" aria-selected="' + (mode === 'quadrant') + '" @click="setDatasetDiagHeroMode(\'quadrant\')">'
-        + this.esc(t('ddHeroScatter', '逐图分布')) + '</button>';
+        + this.esc(t('ddHeroScatter')) + '</button>';
       html += '<button type="button" id="ddAnalysisModeTimestep" role="tab" class="m-segmented-btn' + (mode === 'timestep' ? ' active' : '') + '" aria-selected="' + (mode === 'timestep') + '" @click="setDatasetDiagHeroMode(\'timestep\')">'
-        + this.esc(t('ddHeroNoise', '噪声区间')) + '</button>';
+        + this.esc(t('ddHeroNoise')) + '</button>';
       if (hasGroups) {
         html += '<button type="button" id="ddAnalysisModeGroups" role="tab" class="m-segmented-btn' + (mode === 'groups' ? ' active' : '') + '" aria-selected="' + (mode === 'groups') + '" @click="setDatasetDiagHeroMode(\'groups\')">'
-          + this.esc(t('ddGroupsTitle', '分组对比')) + '</button>';
+          + this.esc(t('ddGroupsTitle')) + '</button>';
       }
       html += '</div></div></div>';
       html += mode === 'groups' ? this._renderDatasetDiagGroupsCard(t, data) : this._renderDatasetDiagHeroSlot(t, data);
@@ -280,51 +280,52 @@
       const activeRunId = this.datasetDiagRunId || data.run_id || '';
 
       const metaSpans = data.available ? [
-        '<span>' + this.esc(t('ddMetaImages', '{n} 张图').replace('{n}', summary.images_total || 0)) + '</span>',
-        '<span>' + this.esc(t('ddMetaSamples', '共 {n} 次采样').replace('{n}', (summary.samples || 0) + (summary.non_finite_total || 0))) + '</span>',
+        '<span>' + this.esc(t('ddMetaImages').replace('{n}', summary.images_total || 0)) + '</span>',
+        '<span>' + this.esc(t('ddMetaSamples').replace('{n}', (summary.samples || 0) + (summary.non_finite_total || 0))) + '</span>',
       ] : [];
       if (summary.epoch_from != null && summary.epoch_to != null) {
+        const epLabel = t('ddEpochLabel');
         metaSpans.push('<span>' + this.esc(summary.epoch_from === summary.epoch_to
-          ? `Epoch ${summary.epoch_to}`
-          : `Epoch ${summary.epoch_from}–${summary.epoch_to}`) + '</span>');
+          ? `${epLabel} ${summary.epoch_to}`
+          : `${epLabel} ${summary.epoch_from}–${summary.epoch_to}`) + '</span>');
       }
       if ((summary.non_finite_total || 0) > 0) {
-        metaSpans.push('<span class="is-danger">' + this.esc(t('ddMetaNanCount', '{n} 次 NaN / Inf').replace('{n}', summary.non_finite_total)) + '</span>');
+        metaSpans.push('<span class="is-danger">' + this.esc(t('ddMetaNanCount').replace('{n}', summary.non_finite_total)) + '</span>');
       }
 
-      const infoLabel = t('ddInfoTooltip', '查看训练集诊断说明');
+      const infoLabel = t('ddInfoTooltip');
       const infoIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
         + '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>';
 
       let html = '<section class="m-console-card m-dd-overview">';
       html += '<div class="m-card-heading m-diagnostic-heading">';
-      html += '<div class="m-dd-title-block"><div class="m-dd-title-row"><span>' + this.esc(t('datasetDiagnostics', '训练集诊断')) + '</span>'
+      html += '<div class="m-dd-title-block"><div class="m-dd-title-row"><span>' + this.esc(t('datasetDiagnostics')) + '</span>'
         + '<button type="button" id="ddInfoBtn" class="m-dd-info-btn" @click="openParameterDoc(\'dataset-diagnostics\')"'
         + ' aria-haspopup="dialog" title="' + this.esc(infoLabel) + '" aria-label="' + this.esc(infoLabel) + '">'
         + infoIcon + '</button></div>'
         + '<div class="m-dd-head-meta">' + metaSpans.join('') + '</div></div>';
       html += '<div class="m-diagnostic-heading-actions">';
       if (availableRuns.length > 1) {
-        html += '<label class="m-dd-inline-ctl m-dd-run-wrap"><span>' + this.esc(t('ddRunSegmentLabel', '记录段')) + '</span>'
-          + this._ddSelectHtml(this._ddRunOptions(), activeRunId, t('ddRunSegmentLabel', '记录段'),
+        html += '<label class="m-dd-inline-ctl m-dd-run-wrap"><span>' + this.esc(t('ddRunSegmentLabel')) + '</span>'
+          + this._ddSelectHtml(this._ddRunOptions(), activeRunId, t('ddRunSegmentLabel'),
             'ddRunSelect', 'setDatasetDiagRunId($event.target.value)', 'datasetDiagRunId', '_ddRunOptions()')
           + '</label>';
       }
       if (data.available) {
-        html += '<label class="m-dd-inline-ctl" title="' + this.esc(t('ddMinSamplesHint', '单张图至少达到此可比较采样数，才参与残差分类。')) + '">'
-          + '<span>' + this.esc(t('ddMinSamplesLabel', '最少采样')) + '</span>'
-          + this._ddSelectHtml(this._ddMinCountOptions(), this.datasetDiagMinCount, t('ddMinSamplesLabel', '最少采样'),
+        html += '<label class="m-dd-inline-ctl" title="' + this.esc(t('ddMinSamplesHint')) + '">'
+          + '<span>' + this.esc(t('ddMinSamplesLabel')) + '</span>'
+          + this._ddSelectHtml(this._ddMinCountOptions(), this.datasetDiagMinCount, t('ddMinSamplesLabel'),
             'ddMinCountSelect', 'setDatasetDiagMinCount($event.target.value)', 'datasetDiagMinCount', '_ddMinCountOptions()')
           + '</label>';
         if ((summary.images_qualified || 0) < (summary.images_total || 0)) {
-          html += '<span class="m-dd-qualified">' + this.esc(t('ddQualified', '{n} / {total} 张满足').replace('{n}', summary.images_qualified || 0).replace('{total}', summary.images_total || 0)) + '</span>';
+          html += '<span class="m-dd-qualified">' + this.esc(t('ddQualified').replace('{n}', summary.images_qualified || 0).replace('{total}', summary.images_total || 0)) + '</span>';
         }
       }
       html += '<button type="button" id="ddRefreshBtn" class="btn btn-sm btn-secondary refresh-button" :class="{ \'is-loading\': datasetDiagLoading || datasetDiagRefreshFeedback }" @click="refreshDatasetDiagnostics()" :disabled="datasetDiagLoading">'
-        + this._refreshIconHtml() + '<span>' + this.esc(t('refresh', '刷新')) + '</span></button></div></div>';
-      if (this.datasetDiagError) html += '<div class="m-dd-notice-strip" role="alert">' + this.esc(t('ddRefreshFailed', '更新失败，当前仍显示上次加载的记录。')) + '</div>';
-      if (summary.multi_gpu_partial) html += '<div class="m-dd-notice-strip">' + this.esc(t('ddMultiGpuNotice', '多卡训练仅记录主进程 (rank 0) 样本。')) + '</div>';
-      if (summary.unknown_timestep_count > 0) html += '<div class="m-dd-notice-strip">' + this.esc(t('ddUnknownTimestep', '{n} 次采样缺少时间步，仅计入原始均 Loss').replace('{n}', summary.unknown_timestep_count)) + '</div>';
+        + this._refreshIconHtml() + '<span>' + this.esc(t('refresh')) + '</span></button></div></div>';
+      if (this.datasetDiagError) html += '<div class="m-dd-notice-strip" role="alert">' + this.esc(t('ddRefreshFailed')) + '</div>';
+      if (summary.multi_gpu_partial) html += '<div class="m-dd-notice-strip">' + this.esc(t('ddMultiGpuNotice')) + '</div>';
+      if (summary.unknown_timestep_count > 0) html += '<div class="m-dd-notice-strip">' + this.esc(t('ddUnknownTimestep').replace('{n}', summary.unknown_timestep_count)) + '</div>';
       return html + '</section>';
     },
 
@@ -335,7 +336,7 @@
       const heroMode = this.datasetDiagHeroMode === 'timestep' ? 'timestep' : 'quadrant';
       let html = '<section class="m-dd-analysis-chart">';
 
-      if (!hasSlope && heroMode === 'quadrant') html += '<div class="m-dd-notice-strip">' + this.esc(t('ddEarlySlopeHint', '单张图需在至少 3 个 Epoch 有可比较采样，才能计算斜率。')) + '</div>';
+      if (!hasSlope && heroMode === 'quadrant') html += '<div class="m-dd-notice-strip">' + this.esc(t('ddEarlySlopeHint')) + '</div>';
 
       html += '<div class="m-hero-chart-wrap m-dd-hero-wrap" data-dd-hero-wrap data-mode="' + this.esc(heroMode) + '">';
 
@@ -343,22 +344,22 @@
       let axisCaption = '';
       let legendHtml = '';
       if (heroMode === 'timestep') {
-        axisCaption = t('ddTimestepAxisDesc', '左高噪声 (1000) → 右低噪声 (0)，展示全集在各时间步区间的平均 Loss');
-        legendHtml = '<span class="m-dd-leg"><i class="is-bar-peak"></i><span>' + this.esc(t('ddLegPeakBin', '最高 Loss 区间')) + '</span></span>'
-          + '<span class="m-dd-leg"><i class="is-bar-base"></i><span>' + this.esc(t('ddLegMeanBin', '区间均 Loss')) + '</span></span>';
+        axisCaption = t('ddTimestepAxisDesc');
+        legendHtml = '<span class="m-dd-leg"><i class="is-bar-peak"></i><span>' + this.esc(t('ddLegPeakBin')) + '</span></span>'
+          + '<span class="m-dd-leg"><i class="is-bar-base"></i><span>' + this.esc(t('ddLegMeanBin')) + '</span></span>';
       } else if (hasSlope) {
-        axisCaption = t('ddQuadAxisDesc', '横轴为残差（相对同噪声均 Loss），纵轴为斜率（每 Epoch 残差变化）');
-        legendHtml = '<span class="m-dd-leg"><i class="is-zone"></i><span>' + this.esc(t('ddPresetAttention', '高残差待查')) + '</span></span>'
-          + '<span class="m-dd-leg"><i class="is-dot is-high"></i><span>' + this.esc(t('ddStatusHighResidual', '正残差 (>0%)')) + '</span></span>'
-          + '<span class="m-dd-leg"><i class="is-dot is-ok"></i><span>' + this.esc(t('ddLegNegResidual', '负残差 (<0%)')) + '</span></span>';
+        axisCaption = t('ddQuadAxisDesc');
+        legendHtml = '<span class="m-dd-leg"><i class="is-zone"></i><span>' + this.esc(t('ddPresetAttention')) + '</span></span>'
+          + '<span class="m-dd-leg"><i class="is-dot is-high"></i><span>' + this.esc(t('ddStatusHighResidual')) + '</span></span>'
+          + '<span class="m-dd-leg"><i class="is-dot is-ok"></i><span>' + this.esc(t('ddLegNegResidual')) + '</span></span>';
         if ((counts.non_finite || 0) > 0) {
-          legendHtml += '<span class="m-dd-leg"><i class="is-nan-ring"></i><span>' + this.esc(t('ddStatusNonFinite', 'NaN / Inf')) + '</span></span>';
+          legendHtml += '<span class="m-dd-leg"><i class="is-nan-ring"></i><span>' + this.esc(t('ddStatusNonFinite')) + '</span></span>';
         }
       } else {
-        axisCaption = t('ddEarlyAxisDesc', '横轴为残差（相对同噪声均 Loss），柱高为各区间图片数');
-        legendHtml = '<span class="m-dd-leg"><i class="is-line-dash-warn"></i><span>' + this.esc(t('ddLegHighThresh', '+20% 残差线')) + '</span></span>';
+        axisCaption = t('ddEarlyAxisDesc');
+        legendHtml = '<span class="m-dd-leg"><i class="is-line-dash-warn"></i><span>' + this.esc(t('ddLegHighThresh')) + '</span></span>';
         if ((counts.non_finite || 0) > 0) {
-          legendHtml += '<span class="m-dd-leg"><i class="is-nan-ring"></i><span>' + this.esc(t('ddStatusNonFinite', 'NaN / Inf')) + '</span></span>';
+          legendHtml += '<span class="m-dd-leg"><i class="is-nan-ring"></i><span>' + this.esc(t('ddStatusNonFinite')) + '</span></span>';
         }
       }
       html += '<div class="m-dd-chart-bar"><span class="m-dd-axis-summary">' + this.esc(axisCaption) + '</span>'
@@ -366,8 +367,8 @@
 
       // Row 2 (fixed-height readout strip; no shifting/wrapping on hover)
       const idleHint = heroMode === 'timestep'
-        ? t('ddTimestepHoverHint', '悬停柱条查看该区间的样本数与均 Loss')
-        : t('ddScatterHoverHint', '悬停圆点预览图片与残差，点击查看详情');
+        ? t('ddTimestepHoverHint')
+        : t('ddScatterHoverHint');
       html += '<div class="m-dd-readout-bar">'
         + '<span class="m-dd-ro-idle" data-dd-hud-range>' + this.esc(idleHint) + '</span>'
         + '<div class="m-dd-ro-live" data-dd-hud-readout></div>'
@@ -381,17 +382,17 @@
       html += '<div class="m-chart-preview-pop m-dd-preview-pop" data-dd-preview-pop hidden>'
         + '<div class="m-preview-pop-main"><img alt="" decoding="async"/></div>'
         + '<div class="m-chart-preview-foot"><strong x-loop-marquee.bounce><span data-dd-pop-title></span></strong>'
-        + '<span class="m-dd-pop-hint">' + this.esc(t('ddPopClickHint', '点击看详情')) + '</span></div></div>';
+        + '<span class="m-dd-pop-hint">' + this.esc(t('ddPopClickHint')) + '</span></div></div>';
       html += '</div></section>';
       return html;
     },
 
     _renderDatasetDiagGroupsCard(t, data) {
       const dims = [
-        ['resolution', t('ddDimResolution', '分桶尺寸'), data.by_resolution || []],
-        ['subset', t('ddDimSubset', '子集'), data.by_subset || []],
-        ['directory', t('ddDimDirectory', '目录'), data.by_directory || []],
-        ['batch_size', t('ddDimBatchSize', '批次大小'), data.by_batch_size || []],
+        ['resolution', t('ddDimResolution'), data.by_resolution || []],
+        ['subset', t('ddDimSubset'), data.by_subset || []],
+        ['directory', t('ddDimDirectory'), data.by_directory || []],
+        ['batch_size', t('ddDimBatchSize'), data.by_batch_size || []],
       ];
       if (!dims.some(d => d[2].length >= 2)) return '';
 
@@ -403,7 +404,7 @@
 
       let html = '<section class="m-dd-groups">';
       html += '<div class="m-dd-groups-bar">';
-      html += '<div class="m-segmented" role="tablist" aria-label="' + this.esc(t('ddGroupsTitle', '分组对比')) + '">';
+      html += '<div class="m-segmented" role="tablist" aria-label="' + this.esc(t('ddGroupsTitle')) + '">';
       dims.forEach(([dim, label, rows]) => {
         const active = dim === activeDim;
         html += '<button type="button" id="ddGroupDim_' + this.esc(dim) + '" role="tab" class="m-segmented-btn' + (active ? ' active' : '') + '"'
@@ -413,18 +414,18 @@
           + '</button>';
       });
       html += '</div>';
-      html += '<small class="m-dd-groups-hint">' + this.esc(canFilterByDim ? t('ddGroupsHint', '点击分组可筛选下方图片') : t('ddGroupsBatchHint', '批次大小仅供汇总对照，不筛选单图')) + '</small>';
+      html += '<small class="m-dd-groups-hint">' + this.esc(canFilterByDim ? t('ddGroupsHint') : t('ddGroupsBatchHint')) + '</small>';
       html += '</div>';
 
       if (!activeRows.length) {
-        html += '<div class="dashboard-empty dashboard-empty-compact"><p>' + this.esc(t('ddNoGroupData', '暂无分组数据')) + '</p></div>';
+        html += '<div class="dashboard-empty dashboard-empty-compact"><p>' + this.esc(t('ddNoGroupData')) + '</p></div>';
       } else {
         html += '<div class="m-dd-group-table">';
-        html += '<div class="m-dd-group-head"><span>' + this.esc(t('ddColGroup', '分组')) + '</span>'
-          + '<span class="m-dd-num-col">' + this.esc(t('ddColImages', '图片数')) + '</span>'
-          + '<span class="m-dd-num-col">' + this.esc(t('ddColSamples', '采样数')) + '</span>'
-          + '<span class="m-dd-num-col">' + this.esc(t('ddColMeanLoss', '均 Loss')) + '</span>'
-          + '<span class="m-dd-res-head">' + this.esc(t('ddColRelative', '残差')) + '</span></div>';
+        html += '<div class="m-dd-group-head"><span>' + this.esc(t('ddColGroup')) + '</span>'
+          + '<span class="m-dd-num-col">' + this.esc(t('ddColImages')) + '</span>'
+          + '<span class="m-dd-num-col">' + this.esc(t('ddColSamples')) + '</span>'
+          + '<span class="m-dd-num-col">' + this.esc(t('ddColMeanLoss')) + '</span>'
+          + '<span class="m-dd-res-head">' + this.esc(t('ddColRelative')) + '</span></div>';
         activeRows.forEach(row => {
           const isSelected = gf && gf.dim === activeDim && gf.key === row.key;
           const resText = this._ddFormatResidual(row.mean_residual);
@@ -436,7 +437,7 @@
             : '';
           html += '<div class="m-dd-group-row' + (canFilterByDim ? ' is-clickable' : '') + (isSelected ? ' is-selected' : '') + '"' + attrs + '>';
           html += '<span class="m-dd-group-name" title="' + this.esc(fullTitle) + '"><span>' + this.esc(rowLabel) + '</span>'
-            + (row.is_reg ? '<small class="output-dir-tag">' + this.esc(t('ddRegTag', '正则')) + '</small>' : '') + '</span>';
+            + (row.is_reg ? '<small class="output-dir-tag">' + this.esc(t('ddRegTag')) + '</small>' : '') + '</span>';
           html += '<span class="m-dd-num m-dd-num-col">' + this.esc(row.images) + '</span>';
           html += '<span class="m-dd-num m-dd-num-col">' + this.esc(row.count) + '</span>';
           html += '<span class="m-dd-num m-dd-num-col">' + this.esc(this._ddFormatLoss(row.mean_loss)) + '</span>';
@@ -460,52 +461,52 @@
       const maxAbs = filtered.reduce((m, r) => Math.max(m, Math.abs(Number(r.mean_residual) || 0)), 0.55);
 
       const presets = [
-        ['all', t('ddPresetAll', '全部'), summary.images_total || 0],
-        ['attention', t('ddPresetAttention', '高残差待查'), counts.attention || 0],
-        ['learning', t('ddStatusLearning', '高残差下降中'), counts.learning || 0],
-        ['easy', t('ddPresetLow', '低于均值'), counts.easy || 0],
+        ['all', t('ddPresetAll'), summary.images_total || 0],
+        ['attention', t('ddPresetAttention'), counts.attention || 0],
+        ['learning', t('ddStatusLearning'), counts.learning || 0],
+        ['easy', t('ddPresetLow'), counts.easy || 0],
       ];
       if ((counts.non_finite || 0) > 0) {
-        presets.splice(3, 0, ['non_finite', t('ddPresetNonFinite', 'NaN / Inf'), counts.non_finite]);
+        presets.splice(3, 0, ['non_finite', t('ddPresetNonFinite'), counts.non_finite]);
       }
 
       let html = '<section id="datasetDiagImagesSection" class="m-console-card m-dd-images">';
       html += '<div class="m-card-heading m-dd-images-head">';
-      html += '<div class="m-dd-images-title-wrap"><span>' + this.esc(t('ddImagesTitle', '逐图排查')) + '</span>'
+      html += '<div class="m-dd-images-title-wrap"><span>' + this.esc(t('ddImagesTitle')) + '</span>'
         + '<span class="m-logs-count">' + filtered.length + '</span></div>';
       html += '<div class="m-dd-images-head-ctl">';
-      html += '<div class="m-segmented" role="group" aria-label="' + this.esc(t('ddPresetsLabel', '筛选类别')) + '">';
+      html += '<div class="m-segmented" role="group" aria-label="' + this.esc(t('ddPresetsLabel')) + '">';
       presets.forEach(([key, label, cnt]) => {
         const active = this.datasetDiagPreset === key;
         html += '<button type="button" class="m-segmented-btn' + (active ? ' active' : '') + '" aria-pressed="' + active + '" @click="setDatasetDiagPreset(\'' + key + '\')">'
           + this.esc(label) + ' <small class="m-dd-tab-n">' + cnt + '</small></button>';
       });
       html += '</div>';
-      html += '<div class="m-segmented m-dd-view-switch" role="group" aria-label="' + this.esc(t('ddViewModeLabel', '显示方式')) + '">'
-        + '<button type="button" class="m-segmented-btn' + (viewMode === 'grid' ? ' active' : '') + '" aria-pressed="' + (viewMode === 'grid') + '" @click="setDatasetDiagViewMode(\'grid\')" title="' + this.esc(t('ddViewGrid', '网格')) + '">'
+      html += '<div class="m-segmented m-dd-view-switch" role="group" aria-label="' + this.esc(t('ddViewModeLabel')) + '">'
+        + '<button type="button" class="m-segmented-btn' + (viewMode === 'grid' ? ' active' : '') + '" aria-pressed="' + (viewMode === 'grid') + '" @click="setDatasetDiagViewMode(\'grid\')" title="' + this.esc(t('ddViewGrid')) + '">'
         + '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>'
-        + '<span>' + this.esc(t('ddViewGrid', '网格')) + '</span></button>'
-        + '<button type="button" class="m-segmented-btn' + (viewMode === 'table' ? ' active' : '') + '" aria-pressed="' + (viewMode === 'table') + '" @click="setDatasetDiagViewMode(\'table\')" title="' + this.esc(t('ddViewTable', '表格')) + '">'
+        + '<span>' + this.esc(t('ddViewGrid')) + '</span></button>'
+        + '<button type="button" class="m-segmented-btn' + (viewMode === 'table' ? ' active' : '') + '" aria-pressed="' + (viewMode === 'table') + '" @click="setDatasetDiagViewMode(\'table\')" title="' + this.esc(t('ddViewTable')) + '">'
         + '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>'
-        + '<span>' + this.esc(t('ddViewTable', '表格')) + '</span></button></div>';
+        + '<span>' + this.esc(t('ddViewTable')) + '</span></button></div>';
       html += '</div></div>';
 
       html += '<div class="m-dd-subbar">';
       html += '<label class="m-output-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>'
         + '<input class="m-output-search-input" type="search" value="' + this.esc(this.datasetDiagSearch) + '"'
-        + ' aria-label="' + this.esc(t('ddSearchImages', '搜索文件名、路径或子集...')) + '" placeholder="' + this.esc(t('ddSearchImages', '搜索文件名、路径或子集...')) + '"'
+        + ' aria-label="' + this.esc(t('ddSearchImages')) + '" placeholder="' + this.esc(t('ddSearchImages')) + '"'
         + ' @input.debounce.180ms="setDatasetDiagSearch($event.target.value)"></label>';
       if (this.datasetDiagGroupFilter) {
         const gf = this.datasetDiagGroupFilter;
-        html += '<button type="button" class="m-dd-filter-chip" @click="clearDatasetDiagGroupFilter()" title="' + this.esc(t('clearHistoryFilters', '清除筛选')) + '">'
+        html += '<button type="button" class="m-dd-filter-chip" @click="clearDatasetDiagGroupFilter()" title="' + this.esc(t('clearHistoryFilters')) + '">'
           + '<span>' + this.esc(gf.label || gf.key) + '</span><span aria-hidden="true">×</span></button>';
       }
       if (summary.has_reg_images) {
-        html += '<div class="m-segmented" role="group" aria-label="' + this.esc(t('ddRegFilterLabel', '筛选正则图片')) + '">';
+        html += '<div class="m-segmented" role="group" aria-label="' + this.esc(t('ddRegFilterLabel')) + '">';
         [
-          ['all', this.t('cropPreview.includeReg') || t('ddRegInclude', '含正则图片')],
-          ['exclude', this.t('cropPreview.excludeReg') || t('ddRegExclude', '不含正则图片')],
-          ['only', this.t('cropPreview.onlyReg') || t('ddRegOnly', '仅正则图片')],
+          ['all', this.t('cropPreview.includeReg') || t('ddRegInclude')],
+          ['exclude', this.t('cropPreview.excludeReg') || t('ddRegExclude')],
+          ['only', this.t('cropPreview.onlyReg') || t('ddRegOnly')],
         ].forEach(([mode, label]) => {
           const active = this.datasetDiagRegMode === mode;
           html += '<button type="button" class="m-segmented-btn' + (active ? ' active' : '') + '" aria-pressed="' + active + '" @click="setDatasetDiagRegMode(\'' + mode + '\')">' + this.esc(label) + '</button>';
@@ -513,14 +514,14 @@
         html += '</div>';
       }
       html += '<div class="m-dd-sort-wrap">'
-        + this._ddSelectHtml(this._ddSortOptions(), this.datasetDiagSort, t('ddSortLabel', '排序'),
+        + this._ddSelectHtml(this._ddSortOptions(), this.datasetDiagSort, t('ddSortLabel'),
           'ddSortSelect', 'setDatasetDiagSort($event.target.value)', 'datasetDiagSort', '_ddSortOptions()')
         + '</div>';
       html += '</div>';
 
       if (!visible.length) {
-        html += '<div class="dashboard-empty dashboard-empty-compact"><p>' + this.esc(t('ddNoMatchingImages', '当前筛选条件下没有匹配的图片')) + '</p>'
-          + '<button type="button" class="btn btn-sm btn-secondary" @click="resetDatasetDiagFilters()">' + this.esc(t('clearHistoryFilters', '清除筛选')) + '</button></div>';
+        html += '<div class="dashboard-empty dashboard-empty-compact"><p>' + this.esc(t('ddNoMatchingImages')) + '</p>'
+          + '<button type="button" class="btn btn-sm btn-secondary" @click="resetDatasetDiagFilters()">' + this.esc(t('clearHistoryFilters')) + '</button></div>';
         html += '</section>';
         return html;
       }
@@ -532,8 +533,8 @@
           const color = this._ddResidualColor(img.mean_residual);
           const slopeColor = this._ddSlopeColor(img.slope);
           const slopeText = img.slope != null
-            ? (this._ddFormatSlope(img.slope) + '/Epoch')
-            : t('ddZoneCount', '{n} 次采样').replace('{n}', img.count);
+            ? (this._ddFormatSlope(img.slope) + t('ddSlopeUnit'))
+            : t('ddZoneCount').replace('{n}', img.count);
           const statusMeta = this._ddStatusMeta(t, img.status, img.slope);
           const resoText = this._ddFormatResolution(img.resolution);
           const idJs = this.esc(this.escapeJsString(img.image_id));
@@ -543,7 +544,7 @@
           if (img.thumb_url) {
             html += '<img src="' + this.esc(img.thumb_url) + '" alt="' + this.esc(img.name) + '" loading="lazy" decoding="async"/>';
           } else {
-            html += '<div class="m-dd-media-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/></svg><span>' + this.esc(t('ddLocalMissingShort', '未找到本地图')) + '</span></div>';
+            html += '<div class="m-dd-media-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/></svg><span>' + this.esc(t('ddLocalMissingShort')) + '</span></div>';
           }
           html += '</div>';
           html += '<div class="m-dd-card-body">';
@@ -554,20 +555,20 @@
             + '<span class="m-dd-card-reso">' + this.esc(resoText) + '</span></div>';
           html += '<div class="m-dd-card-foot">'
             + '<span class="m-dd-card-flag is-' + this.esc(statusMeta.tone) + '">' + this.esc(statusMeta.label) + '</span>'
-            + (img.is_reg ? '<small class="output-dir-tag m-dd-card-reg">' + this.esc(t('ddRegTag', '正则')) + '</small>' : '')
+            + (img.is_reg ? '<small class="output-dir-tag m-dd-card-reg">' + this.esc(t('ddRegTag')) + '</small>' : '')
             + '</div>';
           html += '</div></article>';
         });
         html += '</div>';
       } else {
         html += '<div class="m-dd-table-wrap"><div class="output-list output-table m-dd-table">';
-        html += '<div class="output-table-head"><span></span><span>' + this.esc(t('ddColImage', '图片')) + '</span>'
-          + '<span>' + this.esc(t('ddDimResolution', '分桶尺寸')) + '</span>'
-          + '<span class="m-dd-num-col">' + this.esc(t('ddColCountEpochs', '采样 / Epoch')) + '</span>'
-          + '<span class="m-dd-num-col">' + this.esc(t('ddColMeanLoss', '均 Loss')) + '</span>'
-          + '<span class="m-dd-res-head">' + this.esc(t('ddColRelative', '残差')) + '</span>'
-          + '<span class="m-dd-num-col">' + this.esc(t('ddColSlope', '斜率 (/Epoch)')) + '</span>'
-          + '<span>' + this.esc(t('ddColStatus', '状态')) + '</span></div>';
+        html += '<div class="output-table-head"><span></span><span>' + this.esc(t('ddColImage')) + '</span>'
+          + '<span>' + this.esc(t('ddDimResolution')) + '</span>'
+          + '<span class="m-dd-num-col">' + this.esc(t('ddColCountEpochs')) + '</span>'
+          + '<span class="m-dd-num-col">' + this.esc(t('ddColMeanLoss')) + '</span>'
+          + '<span class="m-dd-res-head">' + this.esc(t('ddColRelative')) + '</span>'
+          + '<span class="m-dd-num-col">' + this.esc(t('ddColSlope')) + '</span>'
+          + '<span>' + this.esc(t('ddColStatus')) + '</span></div>';
         visible.forEach(img => {
           const resText = this._ddFormatResidual(img.mean_residual);
           const color = this._ddResidualColor(img.mean_residual);
@@ -582,7 +583,7 @@
             + '</div>';
           html += '<div class="m-dd-row-name" title="' + this.esc(img.image) + '"><strong>' + this.esc(img.name) + '</strong>'
             + '<div class="m-dd-row-sub"><span>' + this.esc(img.dir_label) + '</span>'
-            + (img.is_reg ? '<small class="output-dir-tag">' + this.esc(t('ddRegTag', '正则')) + '</small>' : '') + '</div></div>';
+            + (img.is_reg ? '<small class="output-dir-tag">' + this.esc(t('ddRegTag')) + '</small>' : '') + '</div></div>';
           html += '<span class="m-dd-num">' + this.esc(this._ddFormatResolution(img.resolution)) + '</span>';
           html += '<span class="m-dd-num m-dd-num-col">' + this.esc(img.count + ' / ' + img.epochs) + '</span>';
           html += '<span class="m-dd-num m-dd-num-col">' + this.esc(this._ddFormatLoss(img.mean_loss)) + '</span>';
@@ -597,7 +598,7 @@
       if (hasMore) {
         const remaining = filtered.length - visible.length;
         html += '<div class="m-dd-more-row"><button type="button" class="btn btn-sm btn-secondary" @click="showMoreDatasetDiagImages()">'
-          + this.esc(t('ddShowMore', '显示更多（剩余 {n} 张）').replace('{n}', remaining)) + '</button></div>';
+          + this.esc(t('ddShowMore').replace('{n}', remaining)) + '</button></div>';
       }
       html += '</section>';
       return html;
@@ -754,10 +755,10 @@
         || wrap.closest?.('[data-dd-slot="hero"]')?.querySelector('[data-dd-chart-coverage]');
       if (!element) return;
       if (shown < eligible) {
-        element.textContent = t('ddChartCoverage', '抽样显示 {shown} / {eligible} 张（共 {total} 张）')
+        element.textContent = t('ddChartCoverage')
           .replace('{shown}', shown).replace('{eligible}', eligible).replace('{total}', total);
       } else if (eligible < total) {
-        element.textContent = t('ddChartShown', '显示 {n} / {total} 张')
+        element.textContent = t('ddChartShown')
           .replace('{n}', eligible).replace('{total}', total);
       } else {
         element.textContent = '';
@@ -778,7 +779,7 @@
         svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
         svg.setAttribute('width', '100%');
         svg.setAttribute('height', String(height));
-        svg.innerHTML = `<text class="is-sans" x="${width / 2}" y="${height / 2}" text-anchor="middle" fill="var(--text-tertiary)" font-size="12">${this.esc(t('ddNoQuadrantPoints', '尚无达到采样门槛且具备斜率的图片'))}</text>`;
+        svg.innerHTML = `<text class="is-sans" x="${width / 2}" y="${height / 2}" text-anchor="middle" fill="var(--text-tertiary)" font-size="12">${this.esc(t('ddNoQuadrantPoints'))}</text>`;
         wrap._ddChartState = null;
         return;
       }
@@ -854,10 +855,10 @@
           ${threshSvg}
         </g>
         <g class="m-dd-quad-labels">
-          <text class="m-dd-axis-dir" x="${padL + 6}" y="${padT + 12}" text-anchor="start">${this.esc(t('ddQuadDirUp', '↑ 斜率为正（残差上升）'))}</text>
-          <text class="is-alert" x="${(padL + plotW - 6).toFixed(1)}" y="${padT + 12}" text-anchor="end">${this.esc(t('ddQuadTopRight', '高残差待查'))}</text>
-          <text class="m-dd-axis-dir" x="${padL + 6}" y="${(padT + plotH - 6).toFixed(1)}" text-anchor="start">${this.esc(t('ddQuadDirDown', '↓ 斜率为负（残差下降）'))}</text>
-          <text x="${(padL + plotW - 6).toFixed(1)}" y="${(padT + plotH - 6).toFixed(1)}" text-anchor="end">${this.esc(t('ddQuadBottomRight', '高残差下降中'))}</text>
+          <text class="m-dd-axis-dir" x="${padL + 6}" y="${padT + 12}" text-anchor="start">${this.esc(t('ddQuadDirUp'))}</text>
+          <text class="is-alert" x="${(padL + plotW - 6).toFixed(1)}" y="${padT + 12}" text-anchor="end">${this.esc(t('ddQuadTopRight'))}</text>
+          <text class="m-dd-axis-dir" x="${padL + 6}" y="${(padT + plotH - 6).toFixed(1)}" text-anchor="start">${this.esc(t('ddQuadDirDown'))}</text>
+          <text x="${(padL + plotW - 6).toFixed(1)}" y="${(padT + plotH - 6).toFixed(1)}" text-anchor="end">${this.esc(t('ddQuadBottomRight'))}</text>
         </g>
         <g class="m-dd-crosshair" data-dd-crosshair display="none">
           <line data-dd-ch-x y1="${padT}" y2="${padT + plotH}"/>
@@ -891,7 +892,7 @@
         svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
         svg.setAttribute('width', '100%');
         svg.setAttribute('height', String(height));
-        svg.innerHTML = `<text class="is-sans" x="${width / 2}" y="${height / 2}" text-anchor="middle" fill="var(--text-tertiary)" font-size="12">${this.esc(t('ddNoReferencePoints', '尚无可在同一噪声区间内比较的图片'))}</text>`;
+        svg.innerHTML = `<text class="is-sans" x="${width / 2}" y="${height / 2}" text-anchor="middle" fill="var(--text-tertiary)" font-size="12">${this.esc(t('ddNoReferencePoints'))}</text>`;
         wrap._ddChartState = null;
         return;
       }
@@ -967,8 +968,8 @@
           <line class="is-thresh" x1="${xHigh.toFixed(1)}" x2="${xHigh.toFixed(1)}" y1="${padT}" y2="${padT + plotH}"/>
         </g>
         <g class="m-dd-quad-labels">
-          <text class="m-dd-axis-dir" x="${padL + 6}" y="${padT + 12}" text-anchor="start">${this.esc(t('ddQuadLeft', '← 低于均值'))}</text>
-          <text class="is-alert" x="${(padL + plotW - 6).toFixed(1)}" y="${padT + 12}" text-anchor="end">${this.esc(t('ddEarlyRight', '高于均值 →'))}</text>
+          <text class="m-dd-axis-dir" x="${padL + 6}" y="${padT + 12}" text-anchor="start">${this.esc(t('ddQuadLeft'))}</text>
+          <text class="is-alert" x="${(padL + plotW - 6).toFixed(1)}" y="${padT + 12}" text-anchor="end">${this.esc(t('ddEarlyRight'))}</text>
         </g>
         <g class="m-dd-crosshair" data-dd-crosshair display="none">
           <line data-dd-ch-x y1="${padT}" y2="${padT + plotH}"/>
@@ -1001,7 +1002,7 @@
         svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
         svg.setAttribute('width', '100%');
         svg.setAttribute('height', String(height));
-        svg.innerHTML = `<text class="is-sans" x="${width / 2}" y="${height / 2}" text-anchor="middle" fill="var(--text-tertiary)" font-size="12">${this.esc(t('ddTimestepOverlayEmpty', '暂无已知时间步的采样记录。'))}</text>`;
+        svg.innerHTML = `<text class="is-sans" x="${width / 2}" y="${height / 2}" text-anchor="middle" fill="var(--text-tertiary)" font-size="12">${this.esc(t('ddTimestepOverlayEmpty'))}</text>`;
         wrap._ddChartState = null;
         return;
       }
@@ -1120,9 +1121,9 @@
         if (readEl) {
           const hiStr = String(Math.round(bestBar.tHigh));
           const loStr = String(Math.round(bestBar.tLow));
-          readEl.innerHTML = `<span class="m-dd-ro-metric"><em>${this.esc(t('ddColTimestep', '时间步'))}</em><strong class="m-dd-ro-num" style="min-inline-size:9ch">${this.esc(hiStr)}–${this.esc(loStr)}</strong></span>`
-            + `<span class="m-dd-ro-metric"><em>${this.esc(t('ddColMeanLoss', '均 Loss'))}</em><strong class="m-dd-ro-num" style="min-inline-size:6.5ch">${this.esc(this._ddFormatLoss(bestBar.mean_loss))}</strong></span>`
-            + `<span class="m-dd-ro-metric"><em>${this.esc(t('ddColSamples', '采样'))}</em><strong class="m-dd-ro-num" style="min-inline-size:4ch">${this.esc(bestBar.count)}</strong></span>`;
+          readEl.innerHTML = `<span class="m-dd-ro-metric"><em>${this.esc(t('ddColTimestep'))}</em><strong class="m-dd-ro-num" style="min-inline-size:9ch">${this.esc(hiStr)}–${this.esc(loStr)}</strong></span>`
+            + `<span class="m-dd-ro-metric"><em>${this.esc(t('ddColMeanLoss'))}</em><strong class="m-dd-ro-num" style="min-inline-size:6.5ch">${this.esc(this._ddFormatLoss(bestBar.mean_loss))}</strong></span>`
+            + `<span class="m-dd-ro-metric"><em>${this.esc(t('ddColSamples'))}</em><strong class="m-dd-ro-num" style="min-inline-size:4ch">${this.esc(bestBar.count)}</strong></span>`;
         }
         return;
       }
@@ -1166,12 +1167,12 @@
       if (readEl) {
         const resStr = this._ddFormatResidual(best.mean_residual);
         const slopeHtml = best.slope != null
-          ? `<span class="m-dd-ro-metric"><em>${this.esc(t('ddColSlope', '斜率 (/Epoch)'))}</em><strong class="m-dd-ro-num" style="min-inline-size:6ch">${this.esc(this._ddFormatSlope(best.slope))}</strong></span>`
+          ? `<span class="m-dd-ro-metric"><em>${this.esc(t('ddColSlope'))}</em><strong class="m-dd-ro-num" style="min-inline-size:6ch">${this.esc(this._ddFormatSlope(best.slope))}</strong></span>`
           : '';
         readEl.innerHTML = `<span class="m-dd-ro-name"><i style="background:${best.fill}"></i><span>${this.esc(best.name)}</span></span>`
-          + `<span class="m-dd-ro-metric"><em>${this.esc(t('ddColRelative', '残差'))}</em><strong class="m-dd-ro-num" style="min-inline-size:6.5ch">${this.esc(resStr)}</strong></span>`
+          + `<span class="m-dd-ro-metric"><em>${this.esc(t('ddColRelative'))}</em><strong class="m-dd-ro-num" style="min-inline-size:6.5ch">${this.esc(resStr)}</strong></span>`
           + slopeHtml
-          + `<span class="m-dd-ro-metric"><em>${this.esc(t('ddColSamples', '采样数'))}</em><strong class="m-dd-ro-num" style="min-inline-size:3.5ch">${this.esc(best.count)}</strong></span>`;
+          + `<span class="m-dd-ro-metric"><em>${this.esc(t('ddColSamples'))}</em><strong class="m-dd-ro-num" style="min-inline-size:3.5ch">${this.esc(best.count)}</strong></span>`;
       }
       if (pop) {
         const img = pop.querySelector('img');
@@ -1240,16 +1241,16 @@
         + '</div>'
         + '<div class="m-dd-modal-tools">'
         + '<div class="preview-lightbox-navigation">'
-        + '<button type="button" id="ddModalPrev" class="btn-icon preview-lightbox-nav prev" @click="datasetDiagModalNav(-1)" title="' + this.esc(t('ddPrevShortcut', '上一张 (←)')) + '" aria-label="' + this.esc(t('prev', '上一张')) + '">' + left + '</button>'
+        + '<button type="button" id="ddModalPrev" class="btn-icon preview-lightbox-nav prev" @click="datasetDiagModalNav(-1)" title="' + this.esc(t('ddPrevShortcut')) + '" aria-label="' + this.esc(t('prev')) + '">' + left + '</button>'
         + '<span id="datasetDiagModalCounter" class="m-dd-modal-counter">0 / 0</span>'
-        + '<button type="button" id="ddModalNext" class="btn-icon preview-lightbox-nav next" @click="datasetDiagModalNav(1)" title="' + this.esc(t('ddNextShortcut', '下一张 (→)')) + '" aria-label="' + this.esc(t('next', '下一张')) + '">' + right + '</button>'
+        + '<button type="button" id="ddModalNext" class="btn-icon preview-lightbox-nav next" @click="datasetDiagModalNav(1)" title="' + this.esc(t('ddNextShortcut')) + '" aria-label="' + this.esc(t('next')) + '">' + right + '</button>'
         + '</div>'
         + '<div class="preview-lightbox-zoom">'
-        + '<button type="button" class="btn-icon preview-icon-button" @click="setDatasetDiagZoomScale(datasetDiagZoomScale / 1.18)" :disabled="datasetDiagZoomScale <= 1" title="' + this.esc(t('ddZoomOutShortcut', '缩小 (-)')) + '" aria-label="' + this.esc(this.t('tagEditor.zoomOut')) + '">' + zoomOut + '</button>'
-        + '<button type="button" class="preview-zoom-value" @click="resetDatasetDiagZoom(true)" title="' + this.esc(t('ddZoomResetShortcut', '重置缩放 (0)')) + '" x-text="Math.round(datasetDiagZoomScale * 100) + \'%\'">100%</button>'
-        + '<button type="button" class="btn-icon preview-icon-button" @click="setDatasetDiagZoomScale(datasetDiagZoomScale * 1.18)" :disabled="datasetDiagZoomScale >= 8" title="' + this.esc(t('ddZoomInShortcut', '放大 (+)')) + '" aria-label="' + this.esc(this.t('tagEditor.zoomIn')) + '">' + zoomIn + '</button>'
+        + '<button type="button" class="btn-icon preview-icon-button" @click="setDatasetDiagZoomScale(datasetDiagZoomScale / 1.18)" :disabled="datasetDiagZoomScale <= 1" title="' + this.esc(t('ddZoomOutShortcut')) + '" aria-label="' + this.esc(this.t('tagEditor.zoomOut')) + '">' + zoomOut + '</button>'
+        + '<button type="button" class="preview-zoom-value" @click="resetDatasetDiagZoom(true)" title="' + this.esc(t('ddZoomResetShortcut')) + '" x-text="Math.round(datasetDiagZoomScale * 100) + \'%\'">100%</button>'
+        + '<button type="button" class="btn-icon preview-icon-button" @click="setDatasetDiagZoomScale(datasetDiagZoomScale * 1.18)" :disabled="datasetDiagZoomScale >= 8" title="' + this.esc(t('ddZoomInShortcut')) + '" aria-label="' + this.esc(this.t('tagEditor.zoomIn')) + '">' + zoomIn + '</button>'
         + '</div>'
-        + '<button type="button" class="btn-icon preview-icon-button preview-close" @click="closeDatasetDiagModal()" title="' + this.esc(t('ddCloseShortcut', '关闭 (Esc)')) + '" aria-label="' + this.esc(t('close', '关闭')) + '">' + close + '</button>'
+        + '<button type="button" class="btn-icon preview-icon-button preview-close" @click="closeDatasetDiagModal()" title="' + this.esc(t('ddCloseShortcut')) + '" aria-label="' + this.esc(t('close')) + '">' + close + '</button>'
         + '</div></div>'
         + '<div class="m-dd-modal-body">'
         + '<div class="m-dd-modal-left">'
@@ -1260,9 +1261,9 @@
         + '<img id="datasetDiagModalImg" class="m-dd-modal-img" alt="" :style="\'transform:\' + _datasetDiagTransform()" draggable="false" @load="_constrainDatasetDiagZoom()"/>'
         + '<div id="datasetDiagModalMissing" class="m-dd-modal-missing" hidden>'
         + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/></svg>'
-        + '<p>' + this.esc(t('ddModalImageMissing', '未找到本地原图文件，无法预览。')) + '</p></div>'
-        + '<button type="button" id="ddModalSidePrev" class="m-sample-sidebar-side-nav prev m-dd-modal-side-nav" @pointerdown.stop @click.stop="datasetDiagModalNav(-1)" title="' + this.esc(t('ddPrevShortcut', '上一张 (←)')) + '" aria-label="' + this.esc(t('prev', '上一张')) + '"><span>' + left + '</span></button>'
-        + '<button type="button" id="ddModalSideNext" class="m-sample-sidebar-side-nav next m-dd-modal-side-nav" @pointerdown.stop @click.stop="datasetDiagModalNav(1)" title="' + this.esc(t('ddNextShortcut', '下一张 (→)')) + '" aria-label="' + this.esc(t('next', '下一张')) + '"><span>' + right + '</span></button>'
+        + '<p>' + this.esc(t('ddModalImageMissing')) + '</p></div>'
+        + '<button type="button" id="ddModalSidePrev" class="m-sample-sidebar-side-nav prev m-dd-modal-side-nav" @pointerdown.stop @click.stop="datasetDiagModalNav(-1)" title="' + this.esc(t('ddPrevShortcut')) + '" aria-label="' + this.esc(t('prev')) + '"><span>' + left + '</span></button>'
+        + '<button type="button" id="ddModalSideNext" class="m-sample-sidebar-side-nav next m-dd-modal-side-nav" @pointerdown.stop @click.stop="datasetDiagModalNav(1)" title="' + this.esc(t('ddNextShortcut')) + '" aria-label="' + this.esc(t('next')) + '"><span>' + right + '</span></button>'
         + '</div>'
         + '<div id="datasetDiagModalFoot" class="m-dd-modal-foot"></div>'
         + '</div>'
@@ -1339,13 +1340,13 @@
         const fi = detail?.file_info;
         const metaSpans = [];
         if (fi?.width && fi?.height) {
-          metaSpans.push('<span>' + this.esc(`${t('ddOrigSize', '原图')} ${fi.width} × ${fi.height}`) + '</span>');
+          metaSpans.push('<span>' + this.esc(`${t('ddOrigSize')} ${fi.width} × ${fi.height}`) + '</span>');
         }
         if (fi?.size) {
           metaSpans.push('<span>' + this.esc(this._formatFileSize ? this._formatFileSize(fi.size) : `${fi.size} B`) + '</span>');
         }
         if (imgInfo.is_reg) {
-          metaSpans.push('<span>' + this.esc(t('ddRegTag', '正则')) + '</span>');
+          metaSpans.push('<span>' + this.esc(t('ddRegTag')) + '</span>');
         }
         if (!metaSpans.length && imgInfo.dir_label) {
           metaSpans.push('<span>' + this.esc(imgInfo.dir_label) + '</span>');
@@ -1354,9 +1355,9 @@
         const copyJs = this.esc(this.escapeJsString(rawPath));
         footEl.innerHTML = '<div class="m-dd-modal-meta" title="' + this.esc(rawPath) + '">' + metaSpans.join('') + '</div>'
           + '<div class="m-dd-modal-actions">'
-          + '<button type="button" class="btn btn-sm btn-secondary" @click="copyDatasetDiagText(\'' + copyJs + '\')">' + this.esc(t('ddCopyPath', '复制路径')) + '</button>'
+          + '<button type="button" class="btn btn-sm btn-secondary" @click="copyDatasetDiagText(\'' + copyJs + '\')">' + this.esc(t('ddCopyPath')) + '</button>'
           + (fi?.exists && detail?.caption?.editor_safe === true
-            ? '<button type="button" class="btn btn-sm btn-primary" @click="openDatasetDiagInTagEditor()">' + this.esc(t('ddOpenTagEditor', '在标签编辑器中打开')) + '</button>'
+            ? '<button type="button" class="btn btn-sm btn-primary" @click="openDatasetDiagInTagEditor()">' + this.esc(t('ddOpenTagEditor')) + '</button>'
             : '')
           + '</div>';
       }
@@ -1367,13 +1368,14 @@
       if (this.datasetDiagModalLoading && !detail) {
         (rightEl._ddModalROs || []).forEach(ro => ro.disconnect());
         rightEl._ddModalROs = [];
-        rightEl.innerHTML = '<div class="dashboard-empty dashboard-empty-compact m-dd-modal-loading"><p>' + this.esc(t('loading', '加载中...')) + '</p></div>';
+        rightEl.innerHTML = '<div class="dashboard-empty dashboard-empty-compact m-dd-modal-loading"><p>' + this.esc(t('loading')) + '</p></div>';
         return;
       }
       if (this.datasetDiagModalError && !detail) {
         (rightEl._ddModalROs || []).forEach(ro => ro.disconnect());
         rightEl._ddModalROs = [];
-        rightEl.innerHTML = '<div class="dashboard-empty dashboard-empty-compact dashboard-empty-danger"><p>' + this.esc(t('ddModalLoadFailed', '单图诊断明细加载失败。')) + '</p></div>';
+        const modalError = this.datasetDiagModalError === 'loadFailed' ? t('ddModalLoadFailed') : this.datasetDiagModalError;
+        rightEl.innerHTML = '<div class="dashboard-empty dashboard-empty-compact dashboard-empty-danger"><p>' + this.esc(modalError) + '</p></div>';
         return;
       }
       if (!detail) {
@@ -1401,38 +1403,38 @@
         const firstNf = nfSamples[0];
         const coordsHtml = firstNf
           ? '<span class="m-dd-nan-coords">'
-            + `<span>Epoch ${this.esc(firstNf.epoch ?? '?')}</span>`
-            + `<span>Step ${this.esc(firstNf.step ?? '?')}</span>`
+            + `<span>${this.esc(t('ddEpochLabel'))} ${this.esc(firstNf.epoch ?? '?')}</span>`
+            + `<span>${this.esc(t('ddStepLabel'))} ${this.esc(firstNf.step ?? '?')}</span>`
             + `<span>t = ${this.esc(this._ddFormatTimestep(firstNf.timestep, detail.timestep_scale))}</span>`
             + '</span>'
           : '';
         const extraHtml = img.non_finite_count > 1
-          ? '<span class="m-dd-nan-extra">' + this.esc(t('ddNanTotalCount', '共 {n} 次').replace('{n}', img.non_finite_count)) + '</span>'
+          ? '<span class="m-dd-nan-extra">' + this.esc(t('ddNanTotalCount').replace('{n}', img.non_finite_count)) + '</span>'
           : '';
         html += '<div class="m-dd-nan-row">'
-          + '<span class="m-dd-nan-label">' + this.esc(t('ddNanSampleLabel', '出现 NaN / Inf 异常 Loss')) + '</span>'
+          + '<span class="m-dd-nan-label">' + this.esc(t('ddNanSampleLabel')) + '</span>'
           + '<div class="m-dd-nan-meta">' + coordsHtml + extraHtml + '</div>'
           + '</div>';
       }
 
       html += '<div class="m-dd-modal-stats">';
-      html += '<div class="m-dd-stat"><span>' + this.esc(t('ddKpiRelative', '残差')) + '</span><strong style="color:' + resColor + '">' + this.esc(this._ddFormatResidual(img.mean_residual)) + '</strong></div>';
-      html += '<div class="m-dd-stat"><span>' + this.esc(t('ddKpiSlope', '每 Epoch 斜率')) + '</span><strong style="color:' + slopeColor + '">' + this.esc(this._ddFormatSlope(img.slope)) + '</strong></div>';
-      html += '<div class="m-dd-stat"><span>' + this.esc(t('ddKpiMeanLoss', '原始均 Loss')) + '</span><strong>' + this.esc(this._ddFormatLoss(img.mean_loss)) + '</strong></div>';
-      html += '<div class="m-dd-stat"><span>' + this.esc(t('ddFiniteSamples', '采样次数')) + '</span><strong>'
+      html += '<div class="m-dd-stat"><span>' + this.esc(t('ddKpiRelative')) + '</span><strong style="color:' + resColor + '">' + this.esc(this._ddFormatResidual(img.mean_residual)) + '</strong></div>';
+      html += '<div class="m-dd-stat"><span>' + this.esc(t('ddKpiSlope')) + '</span><strong style="color:' + slopeColor + '">' + this.esc(this._ddFormatSlope(img.slope)) + '</strong></div>';
+      html += '<div class="m-dd-stat"><span>' + this.esc(t('ddKpiMeanLoss')) + '</span><strong>' + this.esc(this._ddFormatLoss(img.mean_loss)) + '</strong></div>';
+      html += '<div class="m-dd-stat"><span>' + this.esc(t('ddFiniteSamples')) + '</span><strong>'
         + this.esc(img.count) + '</strong><span>'
-        + this.esc(t('ddEpochCoverage', '覆盖 {n} 个 Epoch').replace('{n}', img.epochs)) + '</span></div>';
+        + this.esc(t('ddEpochCoverage').replace('{n}', img.epochs)) + '</span></div>';
       html += '</div>';
       if (img.comparable_count != null && img.comparable_count < img.count) {
-        html += '<p class="m-dd-notice-strip">' + this.esc(t('ddComparableCount', '有同噪声参照的采样 {n} / {total} 次').replace('{n}', img.comparable_count).replace('{total}', img.count)) + '</p>';
+        html += '<p class="m-dd-notice-strip">' + this.esc(t('ddComparableCount').replace('{n}', img.comparable_count).replace('{total}', img.count)) + '</p>';
       }
 
       // 3-zone noise breakdown strip
       const imgZones = img.noise_zones || {};
       const zoneDefs = [
-        ['high', t('ddModalZoneHigh', '高噪残差'), '1000–667'],
-        ['mid', t('ddModalZoneMid', '中噪残差'), '667–333'],
-        ['low', t('ddModalZoneLow', '低噪残差'), '333–0'],
+        ['high', t('ddModalZoneHigh'), '1000–667'],
+        ['mid', t('ddModalZoneMid'), '667–333'],
+        ['low', t('ddModalZoneLow'), '333–0'],
       ];
       html += '<div class="m-dd-modal-zones">';
       zoneDefs.forEach(([key, label, range]) => {
@@ -1440,8 +1442,8 @@
         const zVal = z ? this._ddFormatResidual(z.mean_residual) : '—';
         const zColor = z ? this._ddResidualColor(z.mean_residual) : 'var(--text-tertiary)';
         const zCountText = z
-          ? t('ddZoneCount', '{n} 次采样').replace('{n}', z.count)
-          : t('ddZoneEmpty', '无采样');
+          ? t('ddZoneCount').replace('{n}', z.count)
+          : t('ddZoneEmpty');
         html += '<div class="m-dd-modal-zone">'
           + '<span class="m-dd-modal-zone-label">' + this.esc(`${label} (${range})`) + '</span>'
           + '<strong style="color:' + zColor + '">' + this.esc(zVal) + '</strong>'
@@ -1453,22 +1455,22 @@
       // Chart 1: Per-Epoch change (separated Row 1 title+legend / Row 2 fixed readout)
       html += '<section class="m-dd-modal-sec">';
       html += '<div class="m-dd-modal-sec-head">'
-        + '<span class="m-dd-sec-title">' + this.esc(t('ddEpochTrendTitle', '各 Epoch 残差走势')) + '</span>'
+        + '<span class="m-dd-sec-title">' + this.esc(t('ddEpochTrendTitle')) + '</span>'
         + (epochs.length >= 2
           ? '<div class="m-dd-legend">'
-            + '<span class="m-dd-leg"><i class="is-line-accent"></i><span>' + this.esc(t('ddLegEpochMean', 'Epoch 均值')) + '</span></span>'
-            + (epochs.length >= 3 ? '<span class="m-dd-leg"><i class="is-line-dash"></i><span>' + this.esc(t('ddLegTrend', '趋势')) + '</span></span>' : '')
+            + '<span class="m-dd-leg"><i class="is-line-accent"></i><span>' + this.esc(t('ddLegEpochMean')) + '</span></span>'
+            + (epochs.length >= 3 ? '<span class="m-dd-leg"><i class="is-line-dash"></i><span>' + this.esc(t('ddLegTrend')) + '</span></span>' : '')
             + '</div>'
           : '')
         + '</div>';
       if (epochs.length >= 2) {
         html += '<div class="m-dd-mini-readout" data-dd-epoch-readout>'
-          + '<span class="m-dd-mini-idle">' + this.esc(t('ddEpochHoverHint', '悬停折线查看各 Epoch 残差与均 Loss')) + '</span>'
+          + '<span class="m-dd-mini-idle">' + this.esc(t('ddEpochHoverHint')) + '</span>'
           + '<div class="m-dd-mini-live" data-dd-epoch-hud></div>'
           + '</div>';
         html += '<div class="m-dd-mini-stage" data-dd-epoch-stage><svg class="m-dd-mini-svg" data-dd-epoch-svg aria-hidden="true"></svg></div>';
       } else {
-        html += '<p class="m-dd-mini-empty">' + this.esc(t('ddEpochTrendFew', '至少需要 2 个可比较 Epoch 才能绘制趋势折线。')) + '</p>';
+        html += '<p class="m-dd-mini-empty">' + this.esc(t('ddEpochTrendFew')) + '</p>';
       }
       html += '</section>';
 
@@ -1476,23 +1478,23 @@
       const hasAnyTs = detail.timestep_scale !== 'unknown' && samples.some(s => s.timestep != null);
       html += '<section class="m-dd-modal-sec">';
       html += '<div class="m-dd-modal-sec-head">'
-        + '<span class="m-dd-sec-title">' + this.esc(t('ddTimestepOverlayTitle', '各时间步 Loss 对照')) + '</span>'
+        + '<span class="m-dd-sec-title">' + this.esc(t('ddTimestepOverlayTitle')) + '</span>'
         + (hasAnyTs
           ? '<div class="m-dd-legend">'
-            + (detail.by_timestep?.length ? '<span class="m-dd-leg"><i class="is-line-base"></i><span>' + this.esc(t('ddLegDatasetBase', '全集均 Loss')) + '</span></span>' : '')
-            + '<span class="m-dd-leg"><i class="is-dot is-sample"></i><span>' + this.esc(t('ddLegThisImage', '本图采样')) + '</span></span>'
+            + (detail.by_timestep?.length ? '<span class="m-dd-leg"><i class="is-line-base"></i><span>' + this.esc(t('ddLegDatasetBase')) + '</span></span>' : '')
+            + '<span class="m-dd-leg"><i class="is-dot is-sample"></i><span>' + this.esc(t('ddLegThisImage')) + '</span></span>'
             + (samples.some(s => s.non_finite) ? '<span class="m-dd-leg"><i class="is-nan-x">×</i><span>NaN / Inf</span></span>' : '')
             + '</div>'
           : '')
         + '</div>';
       if (hasAnyTs) {
         html += '<div class="m-dd-mini-readout" data-dd-ts-readout>'
-          + '<span class="m-dd-mini-idle">' + this.esc(t('ddModalTimestepHoverHint', '左高噪声 (1000) → 右低噪声 (0)，悬停圆点查看单次采样')) + '</span>'
+          + '<span class="m-dd-mini-idle">' + this.esc(t('ddModalTimestepHoverHint')) + '</span>'
           + '<div class="m-dd-mini-live" data-dd-ts-hud></div>'
           + '</div>';
         html += '<div class="m-dd-mini-stage" data-dd-ts-stage><svg class="m-dd-mini-svg" data-dd-ts-svg aria-hidden="true"></svg></div>';
       } else {
-        html += '<p class="m-dd-mini-empty">' + this.esc(t('ddTimestepOverlayEmpty', '暂无已知时间步的采样记录。')) + '</p>';
+        html += '<p class="m-dd-mini-empty">' + this.esc(t('ddTimestepOverlayEmpty')) + '</p>';
       }
       html += '</section>';
 
@@ -1500,30 +1502,30 @@
       html += '<section class="m-dd-modal-sec m-dd-caption-sec">';
       html += '<div class="m-dd-modal-sec-head">'
         + '<div class="m-dd-cap-head-left">'
-        + '<span class="m-dd-sec-title">' + this.esc(cap.source === 'class_tokens' ? t('ddClassTokens', '子集类别词（class_tokens）') : t('ddCaptionTitle', '标注文本')) + '</span>'
+        + '<span class="m-dd-sec-title">' + this.esc(cap.source === 'class_tokens' ? t('ddClassTokens') : t('ddCaptionTitle')) + '</span>'
         + (cap.filename && cap.source !== 'class_tokens' ? '<span class="m-dd-cap-file" title="' + this.esc(cap.path || cap.filename) + '">' + this.esc(cap.filename) + '</span>' : '')
         + '</div>';
       if (cap.path && cap.editor_safe === false && cap.source !== 'class_tokens') {
-        html += '<button type="button" class="btn btn-sm btn-secondary" @click="copyDatasetDiagText(datasetDiagModalDetail.caption.path)">' + this.esc(t('ddCopyCaptionPath', '复制标注路径')) + '</button>';
+        html += '<button type="button" class="btn btn-sm btn-secondary" @click="copyDatasetDiagText(datasetDiagModalDetail.caption.path)">' + this.esc(t('ddCopyCaptionPath')) + '</button>';
       }
       if (cap.exists && cap.text) {
-        html += '<button type="button" class="btn btn-sm btn-ghost" @click="copyDatasetDiagText(datasetDiagModalDetail.caption.text)">' + this.esc(t('copy', '复制')) + '</button>';
+        html += '<button type="button" class="btn btn-sm btn-ghost" @click="copyDatasetDiagText(datasetDiagModalDetail.caption.text)">' + this.esc(t('copy')) + '</button>';
       }
       html += '</div>';
       if (cap.error) {
         html += '<p class="m-dd-mini-empty is-danger">' + this.esc(cap.error) + '</p>';
       } else if (cap.source === 'ambiguous') {
-        html += '<p class="m-dd-mini-empty">' + this.esc(t('ddCaptionAmbiguous', '该图片关联多个标注来源，请查看对应子集的配置。')) + '</p>';
+        html += '<p class="m-dd-mini-empty">' + this.esc(t('ddCaptionAmbiguous')) + '</p>';
       } else if (cap.source === 'metadata' && !cap.exists) {
-        const hint = cap.text_available ? t('ddMetadataEntryMissing', '元数据中未找到此图片的标注。')
-          : t('ddMetadataCaption', '标注存放在元数据文件中，可复制路径查看。');
+        const hint = cap.text_available ? t('ddMetadataEntryMissing')
+          : t('ddMetadataCaption');
         html += '<p class="m-dd-mini-empty">' + this.esc(hint) + '</p>';
       } else if (cap.source === 'unknown' && detail.file_info?.exists) {
-        html += '<p class="m-dd-mini-empty">' + this.esc(t('ddUnknownCaption', '未记录数据集子集配置，无法定位标注文件。')) + '</p>';
+        html += '<p class="m-dd-mini-empty">' + this.esc(t('ddUnknownCaption')) + '</p>';
       } else if (!cap.exists) {
-        html += '<p class="m-dd-mini-empty">' + this.esc(detail.file_info?.exists ? t('ddCaptionNotFound', '未找到该子集配置的标注文件。') : t('ddCaptionUnavailable', '源文件不在本地，无法读取标注文件。')) + '</p>';
+        html += '<p class="m-dd-mini-empty">' + this.esc(detail.file_info?.exists ? t('ddCaptionNotFound') : t('ddCaptionUnavailable')) + '</p>';
       } else if (!cap.text.trim()) {
-        html += '<p class="m-dd-mini-empty">' + this.esc(t('ddCaptionEmpty', '标注文件为空。')) + '</p>';
+        html += '<p class="m-dd-mini-empty">' + this.esc(t('ddCaptionEmpty')) + '</p>';
       } else {
         html += '<pre class="m-dd-caption-text">' + this.esc(cap.text) + '</pre>';
       }
@@ -1531,12 +1533,12 @@
 
       // Samples collapsible table
       html += '<details class="m-dd-samples-details"><summary><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg><span>'
-        + this.esc(t('ddSamplesLogTitle', '采样明细（共 {n} 次）').replace('{n}', detail.samples_total || samples.length))
+        + this.esc(t('ddSamplesLogTitle').replace('{n}', detail.samples_total || samples.length))
         + '</span></summary>';
       if (detail.samples_truncated) {
-        html += '<p class="m-dd-mini-empty m-dd-samples-trunc">' + this.esc(t('ddSamplesTruncated', '仅展示最近 {n} 条记录').replace('{n}', samples.length)) + '</p>';
+        html += '<p class="m-dd-mini-empty m-dd-samples-trunc">' + this.esc(t('ddSamplesTruncated').replace('{n}', samples.length)) + '</p>';
       }
-      html += '<div class="m-dd-samples-table"><div class="m-dd-sample-head"><span>Epoch</span><span>Step</span><span>' + this.esc(t('ddColTimestep', '时间步')) + '</span><span>Loss</span><span>' + this.esc(t('ddColRelativeShort', '残差')) + '</span><span>' + this.esc(t('ddDimResolution', '分桶尺寸')) + '</span></div>';
+      html += '<div class="m-dd-samples-table"><div class="m-dd-sample-head"><span>' + this.esc(t('ddEpochLabel')) + '</span><span>' + this.esc(t('ddStepLabel')) + '</span><span>' + this.esc(t('ddColTimestep')) + '</span><span>' + this.esc(t('ddLossLabel')) + '</span><span>' + this.esc(t('ddColRelativeShort')) + '</span><span>' + this.esc(t('ddDimResolution')) + '</span></div>';
       samples.slice().reverse().forEach(s => {
         const resColorCell = s.non_finite ? 'var(--danger)' : this._ddResidualColor(s.residual);
         html += '<div class="m-dd-sample-row">'
@@ -1607,9 +1609,9 @@
           }
           epReadout?.classList.add('is-hovering');
           if (epHud) {
-            epHud.innerHTML = `<span class="m-dd-ro-metric"><b class="m-dd-ro-num">Epoch ${this.esc(best.epoch)}</b></span>`
-              + `<span class="m-dd-ro-metric"><em>${this.esc(t('ddColRelativeShort', '残差'))}</em><b class="m-dd-ro-num" style="min-inline-size:6.5ch">${this.esc(this._ddFormatResidual(best.mean_residual))}</b></span>`
-              + `<span class="m-dd-ro-metric"><em>Loss</em><b class="m-dd-ro-num" style="min-inline-size:6.5ch">${this.esc(this._ddFormatLoss(best.mean_loss))}</b></span>`;
+            epHud.innerHTML = `<span class="m-dd-ro-metric"><b class="m-dd-ro-num">${this.esc(t('ddEpochLabel'))} ${this.esc(best.epoch)}</b></span>`
+              + `<span class="m-dd-ro-metric"><em>${this.esc(t('ddColRelativeShort'))}</em><b class="m-dd-ro-num" style="min-inline-size:6.5ch">${this.esc(this._ddFormatResidual(best.mean_residual))}</b></span>`
+              + `<span class="m-dd-ro-metric"><em>${this.esc(t('ddLossLabel'))}</em><b class="m-dd-ro-num" style="min-inline-size:6.5ch">${this.esc(this._ddFormatLoss(best.mean_loss))}</b></span>`;
           }
         });
         epStage.addEventListener('pointerleave', () => {
@@ -1673,14 +1675,16 @@
           }
           tsReadout?.classList.add('is-hovering');
           if (tsHud) {
+            const epShort = this.esc(t('ddEpShort'));
+            const stepLabel = this.esc(t('ddStepLabel'));
             const tsText = this._ddFormatTimestep(best.timestep, detail.timestep_scale);
             tsHud.innerHTML = best.non_finite
-              ? `<span class="m-dd-ro-metric"><b class="m-dd-ro-num">Ep ${this.esc(best.epoch ?? '?')} / Step ${this.esc(best.step ?? '?')}</b></span>`
+              ? `<span class="m-dd-ro-metric"><b class="m-dd-ro-num">${epShort} ${this.esc(best.epoch ?? '?')} / ${stepLabel} ${this.esc(best.step ?? '?')}</b></span>`
                 + `<span class="m-dd-ro-metric"><em>t</em><b class="m-dd-ro-num" style="min-inline-size:3.5ch">${this.esc(tsText)}</b></span>`
                 + `<span class="m-dd-ro-metric is-danger"><b class="m-dd-ro-num">NaN / Inf</b></span>`
-              : `<span class="m-dd-ro-metric"><b class="m-dd-ro-num">Ep ${this.esc(best.epoch ?? '?')} / Step ${this.esc(best.step ?? '?')}</b></span>`
+              : `<span class="m-dd-ro-metric"><b class="m-dd-ro-num">${epShort} ${this.esc(best.epoch ?? '?')} / ${stepLabel} ${this.esc(best.step ?? '?')}</b></span>`
                 + `<span class="m-dd-ro-metric"><em>t</em><b class="m-dd-ro-num" style="min-inline-size:3.5ch">${this.esc(tsText)}</b></span>`
-                + `<span class="m-dd-ro-metric"><em>Loss</em><b class="m-dd-ro-num" style="min-inline-size:6.5ch">${this.esc(this._ddFormatLoss(best.loss))}</b></span>`
+                + `<span class="m-dd-ro-metric"><em>${this.esc(t('ddLossLabel'))}</em><b class="m-dd-ro-num" style="min-inline-size:6.5ch">${this.esc(this._ddFormatLoss(best.loss))}</b></span>`
                 + `<span class="m-dd-ro-metric"><b class="m-dd-ro-num" style="min-inline-size:6.5ch;color:${this._ddResidualColor(best.residual)}">${this.esc(this._ddFormatResidual(best.residual))}</b></span>`;
           }
         });
@@ -1750,8 +1754,8 @@
           ${showTopTick ? `<text x="${padL - 5}" y="${padT + 4}" text-anchor="end">${this._ddFormatResidual(maxV)}</text>` : ''}
           <text x="${padL - 5}" y="${(yZero + 3).toFixed(1)}" text-anchor="end">0%</text>
           ${showBotTick ? `<text x="${padL - 5}" y="${padT + plotH + 1}" text-anchor="end">${this._ddFormatResidual(minV)}</text>` : ''}
-          <text x="${padL}" y="${height - 5}" text-anchor="start">Epoch ${minE}</text>
-          <text x="${padL + plotW}" y="${height - 5}" text-anchor="end">Epoch ${maxE}</text>
+          <text x="${padL}" y="${height - 5}" text-anchor="start">${this.esc(t('ddEpochLabel'))} ${minE}</text>
+          <text x="${padL + plotW}" y="${height - 5}" text-anchor="end">${this.esc(t('ddEpochLabel'))} ${maxE}</text>
         </g>`;
 
       stage._ddState = { coords };
@@ -1834,9 +1838,9 @@
           <line x1="${xDiv333.toFixed(1)}" x2="${xDiv333.toFixed(1)}" y1="${padT}" y2="${padT + plotH}"/>
         </g>
         <g class="m-dd-mini-zone-labels">
-          <text x="${((padL + xDiv667) / 2).toFixed(1)}" y="${padT - 5}" text-anchor="middle">${this.esc(t('ddZoneHighShort', '高噪'))}</text>
-          <text x="${((xDiv667 + xDiv333) / 2).toFixed(1)}" y="${padT - 5}" text-anchor="middle">${this.esc(t('ddZoneMidShort', '中噪'))}</text>
-          <text x="${((xDiv333 + padL + plotW) / 2).toFixed(1)}" y="${padT - 5}" text-anchor="middle">${this.esc(t('ddZoneLowShort', '低噪'))}</text>
+          <text x="${((padL + xDiv667) / 2).toFixed(1)}" y="${padT - 5}" text-anchor="middle">${this.esc(t('ddZoneHighShort'))}</text>
+          <text x="${((xDiv667 + xDiv333) / 2).toFixed(1)}" y="${padT - 5}" text-anchor="middle">${this.esc(t('ddZoneMidShort'))}</text>
+          <text x="${((xDiv333 + padL + plotW) / 2).toFixed(1)}" y="${padT - 5}" text-anchor="middle">${this.esc(t('ddZoneLowShort'))}</text>
         </g>
         ${areaD ? `<path class="m-dd-base-area" d="${areaD}"/>` : ''}
         <path class="m-dd-base-line" d="${baseD}"/>

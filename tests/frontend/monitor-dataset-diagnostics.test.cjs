@@ -1,6 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { loadGlobalFrontend, composeMixins, response } = require('./helpers.cjs');
+const { loadGlobalFrontend, composeMixins, response, readRepo } = require('./helpers.cjs');
+
+const zhDict = JSON.parse(readRepo('frontend/i18n/zh-CN.json'));
 
 global.requestAnimationFrame = () => 0;
 global.document = {
@@ -23,7 +25,7 @@ function makeApp(overrides = {}) {
     localeRevision: 0,
     logTotal: 0,
     previews: [],
-    t(key, fb) { return fb || key; },
+    t(key) { return key.split('.').reduce((v, part) => v?.[part], zhDict) ?? key; },
     escapeJsString(s) { return String(s ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"); },
     toast() {},
     navigate() {},
@@ -154,7 +156,7 @@ test('dataset diagnostics filtering, sorting, group linkage, multi-run merge, an
   a.setDatasetDiagSort('slope_asc');
   assert.equal(a._datasetDiagFilteredImages()[0].name, 'learn.png');
 
-  const html = a._renderDatasetDiagTab((k, fb) => fb || k);
+  const html = a._renderDatasetDiagTab(k => a.tMonitor(k));
   assert.ok(html.includes('m-dd-overview'));
   assert.ok(html.includes('id="ddInfoBtn"'));
   assert.ok(html.includes("openParameterDoc('dataset-diagnostics')"));
@@ -200,14 +202,14 @@ test('dataset diagnostics filtering, sorting, group linkage, multi-run merge, an
 
   // Groups mode renders group comparison table inside the unified analysis card
   a.setDatasetDiagHeroMode('groups');
-  const groupsAnalysisHtml = a._renderDatasetDiagAnalysisCard((k, fb) => fb || k, SAMPLE_DATA);
+  const groupsAnalysisHtml = a._renderDatasetDiagAnalysisCard(k => a.tMonitor(k), SAMPLE_DATA);
   assert.ok(groupsAnalysisHtml.includes('m-dd-groups'));
   assert.ok(groupsAnalysisHtml.includes('m-dd-groups-bar'));
   assert.ok(groupsAnalysisHtml.includes('id="ddGroupDim_resolution"'));
 
   // Hero noise zone strip appears in timestep mode without inline method block
   a.setDatasetDiagHeroMode('timestep');
-  const heroNoiseHtml = a._renderDatasetDiagHeroSlot((k, fb) => fb || k, SAMPLE_DATA);
+  const heroNoiseHtml = a._renderDatasetDiagHeroSlot(k => a.tMonitor(k), SAMPLE_DATA);
   assert.ok(heroNoiseHtml.includes('m-dd-zones-strip'));
   assert.ok(!heroNoiseHtml.includes('m-diagnostic-method-content'));
   assert.ok(!heroNoiseHtml.includes('m-diagnostic-rules'));
@@ -217,8 +219,8 @@ test('dataset diagnostics filtering, sorting, group linkage, multi-run merge, an
   singleGroup.by_resolution = [SAMPLE_DATA.by_resolution[0]];
   singleGroup.by_subset = [SAMPLE_DATA.by_subset[0]];
   singleGroup.by_directory = [SAMPLE_DATA.by_directory[0]];
-  assert.equal(a._renderDatasetDiagGroupsCard((k, fb) => fb || k, singleGroup), '');
-  const singleGroupAnalysisHtml = a._renderDatasetDiagAnalysisCard((k, fb) => fb || k, singleGroup);
+  assert.equal(a._renderDatasetDiagGroupsCard(k => a.tMonitor(k), singleGroup), '');
+  const singleGroupAnalysisHtml = a._renderDatasetDiagAnalysisCard(k => a.tMonitor(k), singleGroup);
   assert.ok(!singleGroupAnalysisHtml.includes('id="ddAnalysisModeGroups"'));
 
   // Switching run_id (including merged "all") forwards run_id parameter
@@ -319,7 +321,7 @@ test('modal renders factual NaN row, 3 noise zones, anti-squeeze chart readouts,
   assert.equal(a.datasetDiagModalDetail.caption.text, '1girl, solo');
 
   // Normal/attention right panel has 3-zone strip, separated readout strips, NO pink-red AI note banner, NO middots
-  const rightHtmlClean = a._renderDatasetDiagModalRightHtml((k, fb) => fb || k, a.datasetDiagModalDetail);
+  const rightHtmlClean = a._renderDatasetDiagModalRightHtml(k => a.tMonitor(k), a.datasetDiagModalDetail);
   assert.ok(!rightHtmlClean.includes('m-dd-modal-note'));
   assert.ok(!rightHtmlClean.includes('m-dd-nan-row'));
   assert.ok(rightHtmlClean.includes('m-dd-modal-zones'));
@@ -333,7 +335,7 @@ test('modal renders factual NaN row, 3 noise zones, anti-squeeze chart readouts,
   await new Promise(resolve => setTimeout(resolve, 15));
   assert.equal(a.datasetDiagModalDetail.image.image_id, 'cccccccccccccccc');
 
-  const rightHtmlNan = a._renderDatasetDiagModalRightHtml((k, fb) => fb || k, a.datasetDiagModalDetail);
+  const rightHtmlNan = a._renderDatasetDiagModalRightHtml(k => a.tMonitor(k), a.datasetDiagModalDetail);
   assert.ok(rightHtmlNan.includes('m-dd-nan-row'));
   assert.ok(rightHtmlNan.includes('Epoch 2'));
   assert.ok(rightHtmlNan.includes('t = 850'));
@@ -341,7 +343,7 @@ test('modal renders factual NaN row, 3 noise zones, anti-squeeze chart readouts,
   // Timestep overlay renders NaN marker and 1000 (left) -> 0 (right)
   const tsSvg = { attrs: {}, innerHTML: '', setAttribute(k, v) { this.attrs[k] = v; } };
   const tsStage = { clientWidth: 420 };
-  a._renderDatasetDiagModalTimestepSvg(tsStage, tsSvg, a.datasetDiagModalDetail, (k, fb) => fb || k);
+  a._renderDatasetDiagModalTimestepSvg(tsStage, tsSvg, a.datasetDiagModalDetail, k => a.tMonitor(k));
   assert.ok(tsSvg.innerHTML.includes('m-dd-nan-mark'));
   assert.ok(tsSvg.innerHTML.includes('m-dd-base-line'));
   assert.ok(tsSvg.innerHTML.includes('m-dd-mini-zone-labels'));

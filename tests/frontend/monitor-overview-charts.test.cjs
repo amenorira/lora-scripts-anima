@@ -1,13 +1,14 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { loadGlobalFrontend } = require('./helpers.cjs');
+const { loadGlobalFrontend, readRepo } = require('./helpers.cjs');
 
 global.document = { hidden: false, getElementById: () => null, querySelector: () => null };
-loadGlobalFrontend(['training/lr-preview', 'monitor/metrics', 'monitor/diagnostics', 'monitor/summary']);
+loadGlobalFrontend(['shared/utils', 'training/lr-preview', 'monitor/metrics', 'monitor/diagnostics', 'monitor/summary']);
 
 function makeOverview(overrides = {}) {
   return Object.assign(
     Object.create(window.monitorSummaryMixin),
+    window.utilsMixin,
     window.monitorDiagnosticsMixin,
     window.monitorMetricsMixin,
     {
@@ -216,4 +217,98 @@ test('adaptive epoch grid keeps 1:1 direct blocks up to hundreds of epochs and f
   assert.equal(g800.useDirectEpochs, false);
   assert.equal(g800.blockCount, 120);
   assert.ok(g800.size >= 5.5);
+});
+
+test('hero charts and summary HUD localize Step, Epoch, and Loss in Japanese', () => {
+  const jaDict = JSON.parse(readRepo('frontend/i18n/ja-JP.json'));
+  const tFn = key => key.split('.').reduce((v, part) => v?.[part], jaDict) ?? key;
+  const view = makeOverview({
+    t: tFn,
+    _shellLocale: 'ja-JP',
+    esc: String,
+    monitorLossSeries: [
+      { tag: 'loss/average', points: [{ step: 10, value: 0.4 }, { step: 20, value: 0.3 }, { step: 30, value: 0.2 }, { step: 40, value: 0.25 }, { step: 50, value: 0.22 }, { step: 60, value: 0.2 }] },
+      { tag: 'loss/epoch_average', points: [{ step: 1, value: 0.35 }, { step: 2, value: 0.25 }] },
+    ],
+    previews: [{ name: 'img.png', epoch: 2, step: 60, thumb_url: '/thumb' }],
+    _sampleDataModel: () => ({
+      batches: [{ id: 'b2', indices: [0] }],
+      records: [{ sample: { epoch: 2, step: 60 }, preview: { thumb_url: '/thumb' } }],
+    }),
+    _bindDiagnosticInteractions() {},
+    _patchDiagnosticGauges() {},
+  });
+  const translate = k => view.tMonitor(k);
+
+  const markers = view._previewMarkersForChart({}, 100, 2, translate);
+  assert.equal(markers[0].label, 'エポック 2 (ステップ 60)');
+
+  const readEl = { style: { setProperty() {} }, innerHTML: '' };
+  const stageEl = { clientWidth: 500, classList: { toggle() {}, remove() {} } };
+  const hoverGroup = {
+    setAttribute() {},
+    removeAttribute() {},
+    querySelectorAll: () => [],
+    querySelector: () => ({ setAttribute() {}, removeAttribute() {} }),
+  };
+  const svg = {
+    attrs: {},
+    innerHTML: '',
+    setAttribute(k, v) { this.attrs[k] = v; },
+    querySelectorAll: () => [],
+    querySelector: selector => selector === '[data-chart-hover]' ? hoverGroup : null,
+  };
+  const wrap = {
+    dataset: {},
+    classList: { add() {}, remove() {} },
+    querySelector: selector => ({
+      '[data-hero-chart-stage]': stageEl,
+      '[data-hero-chart-svg]': svg,
+      '[data-chart-hud-readout]': readEl,
+    })[selector] || null,
+  };
+  const card = {
+    dataset: {},
+    querySelectorAll: () => [],
+    querySelector: selector => selector === '[data-hero-chart-wrap]' ? wrap : null,
+  };
+  const root = { dataset: {}, querySelector: () => card };
+
+  view.monitorChartMode = 'window';
+  view._patchTrainingDiagnostics(root, translate, { state: 'RUNNING', total_steps: 100, epoch: '2/2' }, false);
+  assert.ok(svg.innerHTML.includes('ステップ 10'), svg.innerHTML);
+  assert.ok(!svg.innerHTML.includes('Step '), svg.innerHTML);
+  view._updateHeroChartHover(wrap, 0.5);
+  assert.ok(readEl.innerHTML.includes('ステップ <span class="m-hud-index">'), readEl.innerHTML);
+  assert.ok(!readEl.innerHTML.includes('Step '), readEl.innerHTML);
+
+  view.monitorChartMode = 'epoch';
+  view._patchTrainingDiagnostics(root, translate, { state: 'RUNNING', total_steps: 100, epoch: '2/2' }, false);
+  assert.ok(svg.innerHTML.includes('エポック 1'), svg.innerHTML);
+  assert.ok(!svg.innerHTML.includes('Epoch '), svg.innerHTML);
+  view._updateHeroChartHover(wrap, 0.75);
+  assert.ok(readEl.innerHTML.includes('エポック <span class="m-hud-index">'), readEl.innerHTML);
+  assert.ok(!readEl.innerHTML.includes('Epoch '), readEl.innerHTML);
+
+  const hud = { style: { setProperty() {} }, classList: { toggle() {} }, innerHTML: '' };
+  const tile = { clientWidth: 268, querySelector: selector => selector === '[data-summary-hud]' ? hud : null };
+  const vizHost = {
+    hidden: false,
+    innerHTML: '',
+    closest: () => tile,
+    querySelector: () => null,
+  };
+  const summaryRoot = { dataset: {}, querySelector: selector => selector === '[data-summary-viz="time"]' ? vizHost : null };
+  view._patchSummaryTimeViz(summaryRoot, { epoch: '2/2' }, 100, 60, 60, false, true, translate, false);
+  assert.ok(vizHost.innerHTML.includes('data-viz-kind="epoch"'), vizHost.innerHTML);
+  assert.ok(vizHost.innerHTML.includes('data-viz-val-kind="loss"'), vizHost.innerHTML);
+
+  view._showSummaryVizHud(vizHost, { dataset: { vizKind: 'epoch', vizNum: '2', vizVal: '0.2500', vizValKind: 'loss' } }, true);
+  assert.ok(hud.innerHTML.includes('エポック <span class="m-hud-index">2</span>'), hud.innerHTML);
+  assert.ok(hud.innerHTML.includes('<span class="m-hud-prefix">損失 </span>0.2500'), hud.innerHTML);
+  assert.ok(!hud.innerHTML.includes('Epoch') && !hud.innerHTML.includes('Loss'), hud.innerHTML);
+
+  view._showSummaryVizHud(vizHost, { dataset: { vizKind: 'step', vizNum: '60', vizVal: '0.2000', vizValKind: '' } }, true);
+  assert.ok(hud.innerHTML.includes('ステップ <span class="m-hud-index">60</span>'), hud.innerHTML);
+  assert.ok(!hud.innerHTML.includes('Step'), hud.innerHTML);
 });

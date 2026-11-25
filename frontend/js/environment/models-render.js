@@ -1,13 +1,13 @@
 // 模型分组 → 槽位 / 标题 / 无文件时回退仓库（与后端 MODEL_FILES 的 group 字段对应）
 const ENV_MODEL_GROUPS = {
-  'Anima': { slot: 'animaModel', titleKey: 'animaModel.animaTitle', titleFallback: 'Anima Models', fallbackRepo: 'circlestone-labs/Anima' },
+  'Anima': { slot: 'animaModel', titleKey: 'animaModel.animaTitle', fallbackRepo: 'circlestone-labs/Anima' },
   'Krea 2': {
-    slot: 'krea2', titleKey: 'animaModel.krea2Title', titleFallback: 'Krea 2 Models', fallbackRepo: 'Comfy-Org/Krea-2',
+    slot: 'krea2', titleKey: 'animaModel.krea2Title', fallbackRepo: 'Comfy-Org/Krea-2',
     trainingModels: ['krea2_raw_bf16.safetensors', 'krea2_raw_int8_convrot.safetensors'],
     noteKey: 'animaModel.kreaNote', noteDetails: ['animaModel.kreaQuantizationNote', 'animaModel.kreaPreviewNote'],
   },
-  'MOSS-Image': { slot: 'moss', titleKey: 'animaModel.mossTitle', titleFallback: 'MOSS-Image Models', fallbackRepo: 'Comfy-Org/MOSS-Image', noteKey: 'animaModel.mossNote', noteDetails: ['animaModel.mossTrainingNote', 'animaModel.mossTokenizerNote'] },
-  'Train Use': { slot: 'trainUse', titleKey: 'animaModel.trainUseTitle', titleFallback: 'Additional Models', fallbackRepo: 'ame-la/train_use_models', requiredComponents: ['model'] },
+  'MOSS-Image': { slot: 'moss', titleKey: 'animaModel.mossTitle', fallbackRepo: 'Comfy-Org/MOSS-Image', noteKey: 'animaModel.mossNote', noteDetails: ['animaModel.mossTrainingNote', 'animaModel.mossTokenizerNote'] },
+  'Train Use': { slot: 'trainUse', titleKey: 'animaModel.trainUseTitle', fallbackRepo: 'ame-la/train_use_models', requiredComponents: ['model'] },
 };
 const ENV_MODEL_COMPONENT_KEYS = { model: 'componentModel', lora: 'componentLora', encoder: 'componentEncoder', vae: 'componentVae', other: 'componentOther' };
 
@@ -48,22 +48,22 @@ window.environmentModelsRenderMixin = {
     const groupTask = !this.animaModelStatus || !p.group || p.group === 'all' || p.group === modelGroup;
     const groupBusy = busy && groupTask;
     const groupError = error && groupTask ? error : null;
-    const view = ENV_MODEL_GROUPS[modelGroup] || { slot: 'animaModel', titleKey: 'animaModel.animaTitle', titleFallback: 'Anima Models', fallbackRepo: 'circlestone-labs/Anima' };
+    const view = ENV_MODEL_GROUPS[modelGroup] || { slot: 'animaModel', titleKey: 'animaModel.animaTitle', fallbackRepo: 'circlestone-labs/Anima' };
     const slotId = view.slot;
     const open = this._envCardOpen(slotId);
-    const title = T(view.titleKey, view.titleFallback);
+    const title = T(view.titleKey);
 
     const missing = this._envModelMissingComponents(files, modelGroup);
     const componentsReady = files.length > 0 && missing.length === 0;
     const state = groupError ? 'err' : !files.length || groupBusy ? 'loading' : componentsReady ? 'ok' : 'muted';
     const badge = groupError
-      ? `<span class="env-badge env-badge-err">${T('operationFailed','Operation failed')}</span>`
+      ? `<span class="env-badge env-badge-err">${T('operationFailed')}</span>`
       : !files.length
-        ? `<span class="env-badge env-badge-loading">${T('loadingShort','Loading…')}</span>`
+        ? `<span class="env-badge env-badge-loading">${T('loadingShort')}</span>`
         : groupBusy
-          ? `<span class="env-badge env-badge-loading">${T('animaModel.downloading','Downloading')}</span>`
+          ? `<span class="env-badge env-badge-loading">${T('animaModel.downloading')}</span>`
           : componentsReady
-            ? `<span class="env-badge env-badge-ok">${modelGroup === 'Train Use' ? T('animaModel.downloaded','Downloaded') : T('animaModel.componentsReady','Components available')}</span>`
+            ? `<span class="env-badge env-badge-ok">${modelGroup === 'Train Use' ? T('animaModel.downloaded') : T('animaModel.componentsReady')}</span>`
             : '';
 
     // 按必需组件判断齐备；同类下载多个变体不会抵消缺少的另一类。
@@ -71,10 +71,10 @@ window.environmentModelsRenderMixin = {
     const totalBytes = doneFiles.reduce((sum, f) => sum + (f.size_bytes ?? (f.size_gb || 0) * 1073741824), 0);
     const missingNames = missing.map(kind => T('animaModel.' + (kind === 'model' && view.trainingModels ? 'componentTrainingModel' : ENV_MODEL_COMPONENT_KEYS[kind])));
     const countText = !doneFiles.length
-      ? T('animaModel.notDownloaded', 'Not downloaded')
+      ? T('animaModel.notDownloaded')
       : missing.length
-        ? T('animaModel.missingComponents', 'Missing: {components}').replace('{components}', missingNames.join(' / '))
-        : T('animaModel.localSize', 'Local files · {size}').replace('{size}', this._humanBytes(totalBytes));
+        ? T('animaModel.missingComponents').replace('{components}', missingNames.join(' / '))
+        : T('animaModel.localSize').replace('{size}', this._humanBytes(totalBytes));
     const countHtml = files.length
       ? `<span class="env-mgroup-count">${countText}</span>`
       : '';
@@ -82,14 +82,14 @@ window.environmentModelsRenderMixin = {
     // 下载入口仅放在具体文件旁，组头只负责展开列表。
     const head = this._renderRowHead(slotId, open, {
       name: title, version: countHtml, badge,
-      detailKey: slotId, detailLabel: T('animaModel.filesLabel','Files'),
+      detailKey: slotId, detailLabel: T('animaModel.filesLabel'),
     });
 
     let body = '';
     if (groupError) body += this._renderErrorBar(T, groupError, 'animaModelLog');
     if (view.noteKey) {
       body += `<aside class="env-download-note">
-        <h3>${this.esc(T('animaModel.downloadGuide','Download guide'))}</h3>
+        <h3>${this.esc(T('animaModel.downloadGuide'))}</h3>
         <p class="env-download-note-lead">${this.esc(T(view.noteKey))}</p>
         ${(view.noteDetails || []).map(key => `<p>${this.esc(T(key))}</p>`).join('')}
       </aside>`;
@@ -97,7 +97,7 @@ window.environmentModelsRenderMixin = {
 
     // 整体批量进度（下载中显示）
     if (groupBusy && aggregate && aggregate.fileTotal > 1) {
-      const fileOf = T('animaModel.fileOf','File {i}/{n}').replace('{i}', aggregate.fileIndex).replace('{n}', aggregate.fileTotal);
+      const fileOf = T('animaModel.fileOf').replace('{i}', aggregate.fileIndex).replace('{n}', aggregate.fileTotal);
       body += `<div class="env-model-aggregate">
         <div class="env-progress-bar"><div style="width:${aggregate.pct}%"></div></div>
         <div class="env-progress-meta">
@@ -140,31 +140,31 @@ window.environmentModelsRenderMixin = {
         progressHtml = `<div class="env-file-progress">
             <div class="env-progress-bar env-progress-indeterminate"><div></div></div>
             <div class="env-progress-meta">
-              <span class="env-progress-stage">${T('animaModel.connecting','Connecting')}${p.file_total > 1 ? ` ${idx}/${tt}` : ''}</span>
+              <span class="env-progress-stage">${T('animaModel.connecting')}${p.file_total > 1 ? ` ${idx}/${tt}` : ''}</span>
             </div>
           </div>`;
       } else if (isQueued) {
         rowCls += ' env-file-queued';
-        statusHtml = `<span class="env-badge env-badge-loading">${T('animaModel.pending','Pending')}</span>`;
+        statusHtml = `<span class="env-badge env-badge-loading">${T('animaModel.pending')}</span>`;
       } else if (f.exists) {
-        statusHtml = `<span class="env-badge env-badge-ok">${T('animaModel.downloaded','Downloaded')}</span>`;
+        statusHtml = `<span class="env-badge env-badge-ok">${T('animaModel.downloaded')}</span>`;
       } else if (!busy && groupTask && phase === 'error' && curFile === f.filename) {
         rowCls += ' env-file-failed';
-        statusHtml = `<span class="env-badge env-badge-err">${T('animaModel.failed','Failed')}</span>`;
+        statusHtml = `<span class="env-badge env-badge-err">${T('animaModel.failed')}</span>`;
       } else if (!busy && groupTask && inBatch && phase === 'done') {
         rowCls += ' env-file-failed';
-        statusHtml = `<span class="env-badge env-badge-err">${T('animaModel.failed','Failed')}</span>`;
+        statusHtml = `<span class="env-badge env-badge-err">${T('animaModel.failed')}</span>`;
       } else {
         // 未下载是中性状态：灰徽标，不用警告色
-        statusHtml = `<span class="env-badge env-badge-muted">${T('animaModel.notDownloaded','Not downloaded')}</span>`;
+        statusHtml = `<span class="env-badge env-badge-muted">${T('animaModel.notDownloaded')}</span>`;
       }
 
       if (isCurrent || isQueued) {
-        actionHtml = `<button class="btn btn-sm btn-ghost env-model-dl" disabled>${T('animaModel.downloading','Downloading')}</button>`;
+        actionHtml = `<button class="btn btn-sm btn-ghost env-model-dl" disabled>${T('animaModel.downloading')}</button>`;
       } else if (f.exists) {
-        actionHtml = `<button class="btn btn-sm btn-ghost env-model-dl" data-group="${this.escapeAttr(modelGroup)}" data-file="${this.escapeAttr(f.filename)}" ${busy?'disabled':''} title="${T('animaModel.redownload','Redownload')}">${T('animaModel.redownload','Redownload')}</button>`;
+        actionHtml = `<button class="btn btn-sm btn-ghost env-model-dl" data-group="${this.escapeAttr(modelGroup)}" data-file="${this.escapeAttr(f.filename)}" ${busy?'disabled':''} title="${T('animaModel.redownload')}">${T('animaModel.redownload')}</button>`;
       } else {
-        actionHtml = `<button class="btn btn-sm btn-secondary env-model-dl" data-group="${this.escapeAttr(modelGroup)}" data-file="${this.escapeAttr(f.filename)}" ${busy?'disabled':''}>${T('animaModel.download','Download')}</button>`;
+        actionHtml = `<button class="btn btn-sm btn-secondary env-model-dl" data-group="${this.escapeAttr(modelGroup)}" data-file="${this.escapeAttr(f.filename)}" ${busy?'disabled':''}>${T('animaModel.download')}</button>`;
       }
 
       const sizeBytes = f.exists ? (f.size_bytes ?? (f.size_gb || 0) * 1073741824) : f.download_size_bytes;
@@ -172,7 +172,7 @@ window.environmentModelsRenderMixin = {
       const destPath = f.dest_path || (destDir + f.filename);
       const description = f.desc_key ? this.t(f.desc_key, f.desc) : f.desc || '';
       const originHtml = f.source_page
-        ? ` <a href="${this.escapeAttr(f.source_page)}" target="_blank" rel="noopener" class="env-link" title="${T('animaModel.openOriginalPage','Open the original model page')}">${T('animaModel.originalPage','Original page')} &#8599;</a>`
+        ? ` <a href="${this.escapeAttr(f.source_page)}" target="_blank" rel="noopener" class="env-link" title="${T('animaModel.openOriginalPage')}">${T('animaModel.originalPage')} &#8599;</a>`
         : '';
       body += `<div class="${rowCls}">
         <div class="env-file-main">
@@ -189,13 +189,13 @@ window.environmentModelsRenderMixin = {
     }
 
     if (!files.length) {
-      body += `<div class="env-file"><span class="env-badge env-badge-loading">${T('loadingShort','Loading…')}</span></div>`;
+      body += `<div class="env-file"><span class="env-badge env-badge-loading">${T('loadingShort')}</span></div>`;
     }
     body += `</div>`; // .env-file-list
 
     // 下载日志（子折叠，覆盖持久化）
     if (this.animaModelLog && groupTask) {
-      body += this._renderSubCollapse('animaModelLog', T('animaModel.progressLog','Progress Log'), this._envCardOpen('animaModelLog'), this._renderLog(this.animaModelLog));
+      body += this._renderSubCollapse('animaModelLog', T('animaModel.progressLog'), this._envCardOpen('animaModelLog'), this._renderLog(this.animaModelLog));
     }
 
     return `<div class="env-mgroup env-row-${state}${open ? ' env-open' : ''}" data-env-row="${slotId}">`

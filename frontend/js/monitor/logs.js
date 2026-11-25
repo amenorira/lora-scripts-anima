@@ -264,8 +264,7 @@ window.monitorLogRenderMixin = {
   // ═══════════════════════════════════════════════════════════
   _logsTabShellHtml(t) {
     let html = '<div class="m-section m-logs-section">';
-    const titleKey = 'logFullTitle';
-    html += '<div class="m-view-header"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t(titleKey,'Logs')) + '</span><span class="m-logs-count" data-field="log-count">' + this._logDisplayCount() + '</span><span class="m-log-mode-indicator"><i></i>' + this.esc(this.selectedRunDir ? t('historyMode') : t('live')) + '</span></div>';
+    html += '<div class="m-view-header"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t('logFullTitle')) + '</span><span class="m-logs-count" data-field="log-count">' + this._logDisplayCount() + '</span><span class="m-log-mode-indicator"><i></i>' + this.esc(this.selectedRunDir ? t('historyMode') : t('live')) + '</span></div>';
     html += '<div class="m-view-actions m-logs-tools">';
     html += this._logFullToolbarHtml(t);
     html += '</div></div>';
@@ -452,7 +451,7 @@ window.monitorLogRenderMixin = {
       const badge = node.querySelector('.log-repeat-count');
       if (badge) {
         const range = `${item.lineNo}–${item.lineNo + item.count - 1}`;
-        const times = item.firstTime ? ` · ${item.firstTime} → ${item.lastTime}` : '';
+        const times = item.firstTime ? ` · ${item.firstTime}–${item.lastTime}` : '';
         const boundary = (offset > 0 && item.lineNo === offset + 1)
           || (offset + lines.length < this.logTotal && item.lineNo + item.count - 1 === offset + lines.length);
         badge.textContent = boundary ? this.t('monitor.logRepeatPageCount').replace('{count}', item.count) : '×' + item.count;

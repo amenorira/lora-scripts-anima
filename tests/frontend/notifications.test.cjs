@@ -31,7 +31,7 @@ function setup() {
       if (timer.at <= now) { timers.delete(id); timer.callback(); }
     }
   };
-  return { center: context.window.AnimaUI.createNotifications(container, (_key, fallback) => fallback), advance };
+  return { center: context.window.AnimaUI.createNotifications(container, key => key), advance };
 }
 
 test('error notifications expire after eight seconds, pausing while hovered or focused', () => {

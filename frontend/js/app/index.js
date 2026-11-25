@@ -607,7 +607,7 @@ document.addEventListener('alpine:init', () => {
 
     // ── Toast ──────────────────────────────────────────────
     toast(message, type, options = {}) {
-      return window.AnimaUI.notify(message, type, options, (key, fallback) => this.t(key, fallback));
+      return window.AnimaUI.notify(message, type, options, key => this.t(key));
     },
 
     // ── Backend disconnect duration (realtime.js owns connectivity) ─

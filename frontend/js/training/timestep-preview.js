@@ -277,12 +277,12 @@ window.trainingTimestepPreview = {
     const weightLine = data.weighting !== 'uniform'
       ? `<polyline class="timestep-curve-weight" points="${esc(data.weightPoints)}"></polyline>` : '';
     const baselineLegend = data.compare
-      ? `<span><i class="legend-baseline"></i><span>${t('timestepPreview.baseline', 'Base distribution')}</span></span>` : '';
+      ? `<span><i class="legend-baseline"></i><span>${t('timestepPreview.baseline')}</span></span>` : '';
     const weightLegend = data.weighting !== 'uniform'
-      ? `<span><i class="legend-weight"></i><span>${t('timestepPreview.lossWeight', 'Loss weight (log scale)')}</span></span>` : '';
+      ? `<span><i class="legend-weight"></i><span>${t('timestepPreview.lossWeight')}</span></span>` : '';
     const inspectTitle = data.fixedTimestep != null
-      ? `<span class="timestep-inspect-title">${t('timestepPreview.fixedDistribution', 'Fixed timestep (100%)')}</span>`
-      : `<span class="timestep-inspect-title timestep-help-target" tabindex="0" aria-describedby="timestep-density-help">${t('timestepPreview.relativeDensity', 'Relative PDF')}<span id="timestep-density-help" class="timestep-help-popup" role="tooltip">${t('timestepPreview.densityHint', 'Higher parts of the curve indicate more frequent sampling of nearby timesteps.')}</span></span>`;
+      ? `<span class="timestep-inspect-title">${t('timestepPreview.fixedDistribution')}</span>`
+      : `<span class="timestep-inspect-title timestep-help-target" tabindex="0" aria-describedby="timestep-density-help">${t('timestepPreview.relativeDensity')}<span id="timestep-density-help" class="timestep-help-popup" role="tooltip">${t('timestepPreview.densityHint')}</span></span>`;
     // The timestep axis runs from 1000 on the left to 0 on the right.
     const hasRange = Number.isFinite(data.percentile10) && Number.isFinite(data.percentile90);
     const rangeLeft = hasRange ? Number(Math.max(0, Math.min(100, 100 - data.percentile90 / 10)).toFixed(1)) : 0;
@@ -317,10 +317,10 @@ window.trainingTimestepPreview = {
         <div class="timestep-yaxis-ticks">${yticks}</div>
       </div>
       <div class="timestep-preview-frame">
-        <div class="timestep-preview-zones" role="group" aria-label="${t('timestepPreview.zoneShare', 'Sampling share')}">
-          <div class="zone-col"><span>${t('timestepPreview.structureZone', 'High noise')}</span><b>${esc(fmtPercent(data.baselineHighPercent, data.highPercent, data.compare))}</b></div>
-          <div class="zone-col"><span>${t('timestepPreview.middleZone', 'Mid noise')}</span><b>${esc(fmtPercent(data.baselineMidPercent, data.midPercent, data.compare))}</b></div>
-          <div class="zone-col"><span>${t('timestepPreview.detailZone', 'Low noise')}</span><b>${esc(fmtPercent(data.baselineLowPercent, data.lowPercent, data.compare))}</b></div>
+        <div class="timestep-preview-zones" role="group" aria-label="${t('timestepPreview.zoneShare')}">
+          <div class="zone-col"><span>${t('timestepPreview.structureZone')}</span><b>${esc(fmtPercent(data.baselineHighPercent, data.highPercent, data.compare))}</b></div>
+          <div class="zone-col"><span>${t('timestepPreview.middleZone')}</span><b>${esc(fmtPercent(data.baselineMidPercent, data.midPercent, data.compare))}</b></div>
+          <div class="zone-col"><span>${t('timestepPreview.detailZone')}</span><b>${esc(fmtPercent(data.baselineLowPercent, data.lowPercent, data.compare))}</b></div>
         </div>
       <div class="timestep-preview-chart" data-chart-plot aria-hidden="true">
         <svg class="timestep-grid-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -338,7 +338,7 @@ window.trainingTimestepPreview = {
           ${weightLine}
         </svg>
         <div class="timestep-median-line" style="left: ${esc(data.medianPercent)}%">
-          <span class="timestep-median-tag">${t(data.fixedTimestep != null ? 'timestepPreview.fixedLabel' : 'timestepPreview.medianLabel', 't = {value}').replace('{value}', esc(data.median))}</span>
+          <span class="timestep-median-tag">${t(data.fixedTimestep != null ? 'timestepPreview.fixedLabel' : 'timestepPreview.medianLabel').replace('{value}', esc(data.median))}</span>
         </div>
         <div class="timestep-hover-indicator" data-chart-indicator style="display:none"></div>
         ${rangeOverlay}
@@ -352,7 +352,7 @@ window.trainingTimestepPreview = {
     </div>
     <div class="timestep-preview-legend">
       ${baselineLegend}
-      <span><i class="legend-distribution"></i><span>${t('timestepPreview.currentDistribution', 'Current distribution')}</span></span>
+      <span><i class="legend-distribution"></i><span>${t('timestepPreview.currentDistribution')}</span></span>
       ${weightLegend}
     </div>
     `;
@@ -364,8 +364,8 @@ window.trainingTimestepPreview = {
     const index = Math.min(densities.length - 1, Math.floor(progress * densities.length));
     const density = densities[index] ?? 0;
     return [
-      this.t('timestepPreview.timestepValue', 't = {value}').replace('{value}', Math.round((1 - progress) * 1000)),
-      this.t('timestepPreview.densityValue', 'Probability density: {value}').replace('{value}', density.toFixed(5)),
+      this.t('timestepPreview.timestepValue').replace('{value}', Math.round((1 - progress) * 1000)),
+      this.t('timestepPreview.densityValue').replace('{value}', density.toFixed(5)),
     ];
   },
 

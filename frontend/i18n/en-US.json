@@ -576,6 +576,7 @@
 		"noTraining": "No training task running",
 		"noTrainingHint": "Start training to see real-time progress and parameters here",
 		"step": "Steps",
+		"stepLabel": "Step",
 		"loss": "Loss",
 		"lr": "Learning Rate",
 		"epoch": "Epoch",

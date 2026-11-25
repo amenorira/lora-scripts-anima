@@ -1,6 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { loadGlobalFrontend, composeMixins, response, deferred } = require('./helpers.cjs');
+const { loadGlobalFrontend, composeMixins, response, deferred, readRepo } = require('./helpers.cjs');
+
+const zhDict = JSON.parse(readRepo('frontend/i18n/zh-CN.json'));
 
 loadGlobalFrontend(['shared/utils', 'monitor/core', 'monitor/render']);
 
@@ -9,7 +11,7 @@ function makeApp(overrides = {}) {
     currentRoute: 'monitor-dashboard',
     monitorTab: 'dataset',
     selectedRunDir: 'output/example',
-    tMonitor: (_, fallback) => fallback,
+    t(key) { return key.split('.').reduce((v, part) => v?.[part], zhDict) ?? key; },
     renderDashboard() {},
     _patchDatasetDiagModal() {},
     _syncDatasetDiagImageStyle() {},
@@ -78,7 +80,7 @@ test('an in-flight task request cannot block a run-directory request or overwrit
   const app = makeApp({
     selectedRunDir: null, liveTaskId: null, monitorData: { state: 'FINISHED' }, _builtTab: 'dataset',
     _renderDatasetDiagTab: () => '',
-    renderDashboard() { this._renderTab('dataset', {}, null, null, (_, fallback) => fallback, false); },
+    renderDashboard() { this._renderTab('dataset', {}, null, null, k => this.tMonitor(k), false); },
   });
   app.renderDashboard();
   assert.equal(requests.length, 0);
@@ -221,7 +223,7 @@ test('always-expanded analysis slot renders quadrant by default, switches to gro
     _renderDatasetDiagImagesCard: () => 'images',
     _bindDatasetDiagCharts() {},
   });
-  const render = () => app._renderTab('dataset', {}, null, null, (_, fallback) => fallback, true);
+  const render = () => app._renderTab('dataset', {}, null, null, k => app.tMonitor(k), true);
 
   render();
   assert.equal(lastAnalysisMode, 'quadrant');
@@ -295,7 +297,7 @@ test('changing the comparison threshold updates classification and chart eligibi
   const coverage = {};
   const svg = { setAttribute() {} };
   const wrap = { querySelector: () => coverage };
-  const render = () => app._renderDatasetDiagQuadrantSvg(wrap, svg, app.datasetDiagData, 800, (_, fallback) => fallback);
+  const render = () => app._renderDatasetDiagQuadrantSvg(wrap, svg, app.datasetDiagData, 800, k => app.tMonitor(k));
   await app.loadDatasetDiagnostics();
   app.toggleDatasetDiagGroupFilter('resolution', '768x768');
   app.setDatasetDiagPreset('attention');
@@ -331,7 +333,7 @@ test('large scatter plots report coverage and preserve status representatives an
   const coverage = {};
   const svg = { setAttribute() {} };
   const wrap = { querySelector: () => coverage };
-  app._renderDatasetDiagQuadrantSvg(wrap, svg, data, 800, (_, fallback) => fallback);
+  app._renderDatasetDiagQuadrantSvg(wrap, svg, data, 800, k => app.tMonitor(k));
   assert.equal(wrap._ddChartState.coords.length, 1000);
   const shown = new Set(wrap._ddChartState.coords.map(point => point.image_id));
   for (const id of [53, 987, 1234, 4401, 5100, 7097]) assert.ok(shown.has(String(id)));

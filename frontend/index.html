@@ -225,13 +225,13 @@
          @click="navigate('ai-captioning')" href="javascript:void(0)" :aria-current="currentRoute === 'ai-captioning' ? 'page' : null">
         <span class="sidebar-tab-fill" aria-hidden="true"></span>
         <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="m7 15 3-6 3 6M8 13h4M16 9v6M9 1v3M15 1v3M9 20v3M15 20v3"/></svg></span>
-        <span x-text="t('nav.aiCaptioning', 'AI Annotation')">AI Annotation</span>
+        <span x-text="t('nav.aiCaptioning')">AI Annotation</span>
       </a>
       <a class="sidebar-item" data-route="regularization" data-group="tools" :class="{ active: currentRoute === 'regularization' }"
          @click="navigate('regularization')" href="javascript:void(0)" :aria-current="currentRoute === 'regularization' ? 'page' : null">
         <span class="sidebar-tab-fill" aria-hidden="true"></span>
         <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1"/><path d="m21 15-5-5L5 21M16 3v6M13 6h6"/></svg></span>
-        <span x-text="t('nav.regularization', 'Regularization images')">Regularization images</span>
+        <span x-text="t('nav.regularization')">Regularization images</span>
       </a>
 
       <!-- System -->
@@ -311,7 +311,7 @@
       <div x-show="currentRoute === 'home'" x-cloak>
         <div class="home-hero">
           <h1 class="home-hero-title">lora-scripts-anima</h1>
-          <div class="home-hero-subtitle" x-text="t('home.subtitle', 'A local LoRA training tool')"></div>
+          <div class="home-hero-subtitle" x-text="t('home.subtitle')"></div>
 
           <div class="home-hero-meta" x-show="version && version !== displayVersion()">
             <span class="home-hero-meta-item">
@@ -320,10 +320,10 @@
           </div>
 
           <div class="home-hero-author">
-            <span class="home-hero-author-k" x-text="t('home.author', 'Author')">Author</span>
+            <span class="home-hero-author-k" x-text="t('home.author')">Author</span>
             <a class="home-hero-author-link" href="https://github.com/amenorira" target="_blank" rel="noopener">amenorira</a>
             <span class="home-hero-author-sep" aria-hidden="true">·</span>
-            <span class="home-hero-author-k" x-text="t('home.github', 'GitHub')">GitHub</span>
+            <span class="home-hero-author-k" x-text="t('home.github')">GitHub</span>
             <a class="home-hero-author-link" href="https://github.com/amenorira/lora-scripts-anima" target="_blank" rel="noopener">lora-scripts-anima</a>
           </div>
 
@@ -351,39 +351,39 @@
           </div>
           <div id="monitorHistoryContext"></div>
           <!-- Monitor Tabs -->
-          <div class="monitor-tabs" role="tablist" :aria-label="t('monitor.dashboardTabs','Dashboard views')">
+          <div class="monitor-tabs" role="tablist" :aria-label="t('monitor.dashboardTabs')">
             <button id="monitor-tab-overview" type="button" role="tab" class="monitor-tab" :class="{ active: monitorTab === 'overview' }"
                     :aria-selected="monitorTab === 'overview'" :tabindex="monitorTab === 'overview' ? 0 : -1" aria-controls="monitorDashboard"
                     @click="setMonitorTab('overview')" @keydown.right.prevent="moveMonitorTab(1)" @keydown.left.prevent="moveMonitorTab(-1)" @keydown.home.prevent="setMonitorTab('overview', true)" @keydown.end.prevent="setMonitorTab('dataset', true)">
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-              <span x-text="t('monitor.overview','Overview')">Overview</span>
+              <span x-text="t('monitor.overview')">Overview</span>
             </button>
             <button id="monitor-tab-logs" type="button" role="tab" class="monitor-tab" :class="{ active: monitorTab === 'logs' }"
                     :aria-selected="monitorTab === 'logs'" :tabindex="monitorTab === 'logs' ? 0 : -1" aria-controls="monitorDashboard"
                     @click="setMonitorTab('logs')" @keydown.right.prevent="moveMonitorTab(1)" @keydown.left.prevent="moveMonitorTab(-1)" @keydown.home.prevent="setMonitorTab('overview', true)" @keydown.end.prevent="setMonitorTab('dataset', true)">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/></svg>
-              <span x-text="t('monitor.logTitle','Logs')">Logs</span>
+              <span x-text="t('monitor.logTitle')">Logs</span>
               <span class="monitor-tab-count" x-show="logTotal > 0" x-text="logTotal"></span>
             </button>
             <button id="monitor-tab-samples" type="button" role="tab" class="monitor-tab" :class="{ active: monitorTab === 'samples' }"
                     :aria-selected="monitorTab === 'samples'" :tabindex="monitorTab === 'samples' ? 0 : -1" aria-controls="monitorDashboard"
                     @click="setMonitorTab('samples')" @keydown.right.prevent="moveMonitorTab(1)" @keydown.left.prevent="moveMonitorTab(-1)" @keydown.home.prevent="setMonitorTab('overview', true)" @keydown.end.prevent="setMonitorTab('dataset', true)">
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/></svg>
-              <span x-text="t('monitor.samples','Samples')">Samples</span>
+              <span x-text="t('monitor.samples')">Samples</span>
               <span class="monitor-tab-count" x-show="previews.length > 0" x-text="previews.length"></span>
             </button>
             <button id="monitor-tab-outputs" type="button" role="tab" class="monitor-tab" :class="{ active: monitorTab === 'outputs' }"
                     :aria-selected="monitorTab === 'outputs'" :tabindex="monitorTab === 'outputs' ? 0 : -1" aria-controls="monitorDashboard"
                     @click="setMonitorTab('outputs')" @keydown.right.prevent="moveMonitorTab(1)" @keydown.left.prevent="moveMonitorTab(-1)" @keydown.home.prevent="setMonitorTab('overview', true)" @keydown.end.prevent="setMonitorTab('dataset', true)">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v3h16v-3"/></svg>
-              <span x-text="t('monitor.outputs','Outputs')">Outputs</span>
+              <span x-text="t('monitor.outputs')">Outputs</span>
               <span class="monitor-tab-count" x-show="outputTabCount > 0" x-text="outputTabCount"></span>
             </button>
             <button id="monitor-tab-dataset" type="button" role="tab" class="monitor-tab" :class="{ active: monitorTab === 'dataset' }"
                     :aria-selected="monitorTab === 'dataset'" :tabindex="monitorTab === 'dataset' ? 0 : -1" aria-controls="monitorDashboard"
                     @click="setMonitorTab('dataset')" @keydown.right.prevent="moveMonitorTab(1)" @keydown.left.prevent="moveMonitorTab(-1)" @keydown.home.prevent="setMonitorTab('overview', true)" @keydown.end.prevent="setMonitorTab('dataset', true)">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><circle cx="9" cy="14" r="1.5"/><circle cx="14" cy="9" r="1.5"/><circle cx="18" cy="13" r="1.5"/></svg>
-              <span x-text="t('monitor.datasetDiagnostics','Dataset diagnostics')">Dataset diagnostics</span>
+              <span x-text="t('monitor.datasetDiagnostics')">Dataset diagnostics</span>
               <span class="monitor-tab-count" x-show="datasetDiagTabCount > 0" x-text="datasetDiagTabCount"></span>
             </button>
             <span class="ui-tab-indicator" aria-hidden="true"></span>
@@ -575,7 +575,7 @@
         <!-- Train type selector -->
         <div class="train-tab-card" x-show="_trainFormMountedRoute === currentRoute">
           <div class="train-type-select-wrap">
-            <label class="train-type-label" x-text="t('field.model_train_type', 'Training Type')"></label>
+            <label class="train-type-label" x-text="t('field.model_train_type')"></label>
             <div class="anima-select" style="min-width:200px"
                  x-data="animaSelect(() => ({options: trainTypes.map(tt => ({v: tt.v, l: tt.l, d: t(tt.dk, '')}))}), form.model_train_type, {align:'right'})"
                  @click.outside="close()"
@@ -1694,7 +1694,7 @@
             <div class="btn-row" x-show="form.model_train_type === 'krea2-lora'">
               <button class="btn btn-ghost btn-sm" style="flex:1" @click="prepareKrea2Cache()"
                       :disabled="isTraining || trainingStarting || showConfirmModal || regularizationActive"
-                      x-text="t('krea2.prepareCache', 'Prepare Krea 2 Caches')">
+                      x-text="t('krea2.prepareCache')">
                 Prepare Krea 2 Caches
               </button>
             </div>
@@ -1730,11 +1730,11 @@
 
 <!-- Near-fullscreen LyCORIS configuration panel. Fields bind directly to form. -->
 <dialog id="lycorisDialog" class="modal-overlay modal-overlay--morph lycoris-modal-overlay" x-dialog="lycorisModalOpen" @click.self="closeLycorisConfig()"
-        @dialog-close="closeLycorisConfig()" :aria-label="t('field.lycorisConfigTitle', 'LyCORIS configuration')" x-cloak>
+        @dialog-close="closeLycorisConfig()" :aria-label="t('field.lycorisConfigTitle')" x-cloak>
   <div class="modal lycoris-modal modal-workbench modal-workbench--lycoris">
     <div class="modal-header lycoris-modal-header">
       <div>
-        <div class="lycoris-modal-title" x-text="t('field.lycorisConfigTitle', 'LyCORIS configuration')">LyCORIS configuration</div>
+        <div class="lycoris-modal-title" x-text="t('field.lycorisConfigTitle')">LyCORIS configuration</div>
         <div class="lycoris-modal-subtitle" x-text="lycorisSummary()"></div>
       </div>
       <button type="button" class="btn-icon lycoris-modal-close" @click="closeLycorisConfig()" :aria-label="t('common.close')">
@@ -1744,7 +1744,7 @@
     <div class="lycoris-modal-body">
       <div class="lycoris-form-scroll" id="lycorisConfigContent"></div>
       <aside class="lycoris-preview-panel">
-        <div class="lycoris-preview-title" x-text="t('field.lycorisPreviewTitle', 'LyCORIS configuration')">LyCORIS configuration</div>
+        <div class="lycoris-preview-title" x-text="t('field.lycorisPreviewTitle')">LyCORIS configuration</div>
         <div class="panel-preview lycoris-config-preview" x-html="lycorisConfigPreviewHtml()"></div>
         <div class="lycoris-preview-notes" x-show="lycorisConfigNotes()" x-text="lycorisConfigNotes()"></div>
       </aside>
@@ -1949,14 +1949,14 @@
              @keydown.arrow-down.prevent="pickerMove(1, $event)"
              @keydown.arrow-up.prevent="pickerMove(-1, $event)"
              @keydown.enter.prevent="pickerConfirm($event)"
-             :placeholder="t('common.pickerSearchPlaceholder','Filter by name')">
-      <span class="picker-kbd-hint" x-text="t('common.pickerKbdHint','↑↓ select · Enter confirm')"></span>
+             :placeholder="t('common.pickerSearchPlaceholder')">
+      <span class="picker-kbd-hint" x-text="t('common.pickerKbdHint')"></span>
     </div>
     <div class="picker-list">
-      <p class="picker-empty" x-show="_pickerLoading" x-text="t('common.pickerLoading','Scanning files…')" role="status"></p>
+      <p class="picker-empty" x-show="_pickerLoading" x-text="t('common.pickerLoading')" role="status"></p>
       <div class="picker-empty" x-show="!_pickerLoading && _pickerError" role="alert">
         <span x-text="_pickerError"></span>
-        <button type="button" class="btn btn-ghost btn-sm" @click="retryFilePicker()" x-text="t('common.pickerRetry','Retry')"></button>
+        <button type="button" class="btn btn-ghost btn-sm" @click="retryFilePicker()" x-text="t('common.pickerRetry')"></button>
       </div>
       <p class="picker-empty" x-show="!_pickerLoading && !_pickerError && filteredPickerFiles.length === 0" x-text="pickerEmptyText()"></p>
       <template x-for="group in (!_pickerLoading && !_pickerError ? pickerGroups : [])" :key="group.dir">
@@ -1972,7 +1972,7 @@
                   <span class="picker-row-name" x-text="f.name || ''"></span>
                   <span class="picker-row-current" x-show="pickerIsCurrent(f)">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                    <span x-text="t('common.pickerCurrentTag','Current')"></span>
+                    <span x-text="t('common.pickerCurrentTag')"></span>
                   </span>
                 </div>
                 <span class="picker-row-detail" x-show="pickerDetailText(f)" x-text="pickerDetailText(f)"></span>
@@ -2368,7 +2368,7 @@
           <template x-for="item in row.items" :key="item.id">
             <button type="button" class="cp-tile" :id="'crop-image-' + item.id" :data-crop-image="item.id" :title="item.name" :aria-label="item.name + ' · ' + cropPreviewInfo(item)" :disabled="!!item.error" @click="focusCropPreview(item)">
               <div class="cp-stage" x-show="!item.error" x-html="cropPreviewImageHtml(item)"></div>
-              <div class="cp-stage cp-error" x-show="item.error" x-text="item.error"></div>
+              <div class="cp-stage cp-error" x-show="item.error" x-text="cropPreviewItemError(item)"></div>
               <span class="cp-tile-info" x-show="item.error" x-text="item.name"></span>
               <span class="cp-tile-meta" x-show="!item.error">
                 <span class="cp-dimensions">

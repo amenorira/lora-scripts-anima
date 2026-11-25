@@ -576,6 +576,7 @@
 		"noTraining": "暂无训练任务运行",
 		"noTrainingHint": "启动训练后，实时进度与训练参数将在此显示",
 		"step": "Step",
+		"stepLabel": "Step",
 		"loss": "Loss",
 		"lr": "学习率",
 		"epoch": "Epoch",

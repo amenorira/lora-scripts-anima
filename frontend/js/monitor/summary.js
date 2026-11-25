@@ -334,9 +334,10 @@ window.monitorSummaryMixin = {
     const host = root.querySelector('[data-summary-viz="loss"]');
     if (!host) return;
     const source = series?.diagnostic_points || series?.points;
+    const locale = this._shellLocale || '';
     const last = host._profile;
-    if (last && last.source === source && last.avgValue === avgValue && last.live === isLiveRunning) return;
-    host._profile = { source, avgValue, live: isLiveRunning };
+    if (last && last.source === source && last.avgValue === avgValue && last.live === isLiveRunning && last.locale === locale) return;
+    host._profile = { source, avgValue, live: isLiveRunning, locale };
     const raw = this._cleanLossPoints(source).slice(-30);
     if (raw.length < 2) { host.hidden = true; host.innerHTML = ''; return; }
     // 轻度三点加权平滑用于轮廓造型，悬停仍读取真实单步数值。
@@ -371,10 +372,9 @@ window.monitorSummaryMixin = {
     host._hudIndexChars = String(Math.round(lastPt.step)).length;
     host._hudValueChars = 0;
     coords.forEach((pt, idx) => {
-      const k = `Step ${Math.round(pt.step)}`;
       const v = this._formatDiagnosticValue(pt.value);
       host._hudValueChars = Math.max(host._hudValueChars, v.length);
-      hits += `<g class="m-viz-item" data-viz-idx="${idx}" data-viz-key="${this.esc(k)}" data-viz-val="${this.esc(v)}"><rect class="m-viz-hit" x="${(pt.x - slotW / 2).toFixed(1)}" y="14" width="${Math.max(4, slotW).toFixed(1)}" height="${vbH - 14}"/><line class="m-viz-guide" x1="${pt.x.toFixed(1)}" x2="${pt.x.toFixed(1)}" y1="${Math.max(16, pt.y - 6).toFixed(1)}" y2="${vbH}" stroke="url(#${guideId})"/><circle class="m-viz-hover-dot is-loss" cx="${pt.x.toFixed(1)}" cy="${pt.y.toFixed(1)}" r="3.4"/></g>`;
+      hits += `<g class="m-viz-item" data-viz-idx="${idx}" data-viz-kind="step" data-viz-num="${Math.round(pt.step)}" data-viz-val="${this.esc(v)}"><rect class="m-viz-hit" x="${(pt.x - slotW / 2).toFixed(1)}" y="14" width="${Math.max(4, slotW).toFixed(1)}" height="${vbH - 14}"/><line class="m-viz-guide" x1="${pt.x.toFixed(1)}" x2="${pt.x.toFixed(1)}" y1="${Math.max(16, pt.y - 6).toFixed(1)}" y2="${vbH}" stroke="url(#${guideId})"/><circle class="m-viz-hover-dot is-loss" cx="${pt.x.toFixed(1)}" cy="${pt.y.toFixed(1)}" r="3.4"/></g>`;
     });
     host.hidden = false;
     host.innerHTML = `<svg class="m-viz-svg m-loss-profile-svg" viewBox="0 0 ${vbW} ${vbH}" preserveAspectRatio="xMaxYMax meet" aria-hidden="true">
@@ -459,7 +459,7 @@ window.monitorSummaryMixin = {
     if (!host) return;
     const source = lrSeries?.points || lrSeries?.diagnostic_points;
     const run = this.selectedRunDir ? this.runDetailData : this.monitorData;
-    const version = [totalSteps, run?.gpu_processes, this.trainParamsVersion, isLiveRunning].join('|');
+    const version = [totalSteps, run?.gpu_processes, this.trainParamsVersion, isLiveRunning, this._shellLocale || ''].join('|');
     if (host._profile?.version === version && host._profile.source === source) return;
     host._profile = { source, version };
     const allPoints = this._cleanLossPoints(source);
@@ -486,10 +486,9 @@ window.monitorSummaryMixin = {
     host._hudIndexChars = String(Math.round(maxStep)).length;
     host._hudValueChars = 0;
     const lrHits = pastCoords.map((pt, idx) => {
-      const k = `Step ${Math.round(pt.step)}`;
       const v = this._formatLearningRate(pt.value, '—');
       host._hudValueChars = Math.max(host._hudValueChars, v.length);
-      return `<g class="m-viz-item" data-viz-idx="${idx}" data-viz-key="${this.esc(k)}" data-viz-val="${this.esc(v)}"><rect class="m-viz-hit" x="${(pt.x - slotW / 2).toFixed(1)}" y="6" width="${slotW.toFixed(1)}" height="${vbH - 6}"/><line class="m-viz-guide" x1="${pt.x.toFixed(1)}" x2="${pt.x.toFixed(1)}" y1="${Math.max(10, pt.y - 6).toFixed(1)}" y2="${vbH}" stroke="url(#${guideId})"/><circle class="m-viz-hover-dot is-lr" cx="${pt.x.toFixed(1)}" cy="${pt.y.toFixed(1)}" r="3.4"/></g>`;
+      return `<g class="m-viz-item" data-viz-idx="${idx}" data-viz-kind="step" data-viz-num="${Math.round(pt.step)}" data-viz-val="${this.esc(v)}"><rect class="m-viz-hit" x="${(pt.x - slotW / 2).toFixed(1)}" y="6" width="${slotW.toFixed(1)}" height="${vbH - 6}"/><line class="m-viz-guide" x1="${pt.x.toFixed(1)}" x2="${pt.x.toFixed(1)}" y1="${Math.max(10, pt.y - 6).toFixed(1)}" y2="${vbH}" stroke="url(#${guideId})"/><circle class="m-viz-hover-dot is-lr" cx="${pt.x.toFixed(1)}" cy="${pt.y.toFixed(1)}" r="3.4"/></g>`;
     }).join('');
     host.hidden = false;
     host.innerHTML = `<svg class="m-viz-svg m-lr-profile-svg" viewBox="0 0 ${vbW} ${vbH}" preserveAspectRatio="xMaxYMax meet" aria-hidden="true">
@@ -563,10 +562,9 @@ window.monitorSummaryMixin = {
         const recency = count > 1 ? idx / (count - 1) : 1;
         const alpha = (0.46 + recency * 0.52).toFixed(2);
         const isLatest = idx === count - 1;
-        const k = `Step ${Math.round(r.step)}`;
         const v = this._formatSpeedFromSeconds(r.sec, sampleSpeedText);
         host._hudValueChars = Math.max(host._hudValueChars, v.length);
-        bars += `<g class="m-viz-item m-speed-bar-item${isLatest ? ' is-latest' : ''}${isSlow ? ' is-slow' : ''}" data-viz-idx="${idx}" data-viz-key="${this.esc(k)}" data-viz-val="${this.esc(v)}">
+        bars += `<g class="m-viz-item m-speed-bar-item${isLatest ? ' is-latest' : ''}${isSlow ? ' is-slow' : ''}" data-viz-idx="${idx}" data-viz-kind="step" data-viz-num="${Math.round(r.step)}" data-viz-val="${this.esc(v)}">
           <rect class="m-viz-hit" x="${(cx - stepX / 2).toFixed(1)}" y="10" width="${Math.max(stepX, barW + 2).toFixed(1)}" height="${floorY - 10}"/>
           <rect class="m-speed-bar" x="${(cx - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW}" height="${(floorY - y).toFixed(1)}" rx="1.9" fill="url(#${isSlow ? slowGradId : gradId})" style="--bar-alpha:${alpha}"/>
           <circle class="m-speed-hover-dot" cx="${cx.toFixed(1)}" cy="${Math.max(12, y - 5).toFixed(1)}" r="2"/>
@@ -695,7 +693,7 @@ window.monitorSummaryMixin = {
     const sameContext = prevState?.context === root.dataset.motionContext;
     const epochSeries = this.monitorLossSeries.find(item => item.tag === 'loss/epoch_average')?.points;
     const legacyEpochSeries = this.monitorLossSeries.find(item => item.tag === 'loss/epoch')?.points;
-    const directVersion = [currentEpoch, totalEpochs, completed, percent >= 99.9, isLiveRunning, availW].join('|');
+    const directVersion = [currentEpoch, totalEpochs, completed, percent >= 99.9, isLiveRunning, availW, this._shellLocale || ''].join('|');
     host._epochReflowArgs = [d, totalSteps, step, percent, completed, isLiveRunning, t];
     if (prevState && sameContext && prevState.directVersion === directVersion
         && prevState.epochSeries === epochSeries && prevState.legacyEpochSeries === legacyEpochSeries) {
@@ -735,18 +733,22 @@ window.monitorSummaryMixin = {
       let isDone = false;
       let isActive = false;
       let fillPct = 0;
-      let vizKey = '';
+      let vizKind = '';
+      let vizNum = '';
       let vizVal = '';
+      let vizValKind = '';
       if (useDirectEpochs) {
         isDone = completed || (currentEpoch > 0 && i < currentEpoch) || (i === currentEpoch && percent >= 99.9);
         isActive = !isDone && isLiveRunning && i === currentEpoch;
         fillPct = isActive ? Math.round(epochFraction * 100) : 0;
         const lossVal = epochLossMap.get(i);
         if (Number.isFinite(lossVal)) {
-          vizKey = `Epoch ${i}`;
-          vizVal = `Loss ${this._formatDiagnosticValue(lossVal)}`;
+          vizKind = 'epoch';
+          vizNum = String(i);
+          vizVal = this._formatDiagnosticValue(lossVal);
+          vizValKind = 'loss';
         } else {
-          vizKey = 'Epoch';
+          vizKind = 'epoch';
           vizVal = `${i} / ${totalEpochs}`;
         }
       } else {
@@ -759,23 +761,23 @@ window.monitorSummaryMixin = {
         if (totalEpochs > 0) {
           const epStart = Math.max(1, Math.floor(((i - 1) / blockCount) * totalEpochs) + 1);
           const epEnd = Math.min(totalEpochs, Math.ceil((i / blockCount) * totalEpochs));
-          vizKey = 'Epoch';
+          vizKind = 'epoch';
           vizVal = epStart === epEnd ? `${epStart}` : `${epStart}–${epEnd}`;
         } else if (totalSteps > 0) {
           const sStart = Math.max(1, Math.floor(((i - 1) / blockCount) * totalSteps) + 1);
           const sEnd = Math.min(totalSteps, Math.ceil((i / blockCount) * totalSteps));
-          vizKey = 'Step';
+          vizKind = 'step';
           vizVal = `${sStart}–${sEnd}`;
         } else {
-          vizKey = '';
           vizVal = `${Math.round(endPct)}%`;
         }
       }
       if (isDone) doneCount++;
-      host._hudValueChars = Math.max(host._hudValueChars, vizVal.length);
+      const prefixLen = vizValKind === 'loss' ? (t('loss') + ' ').length : 0;
+      host._hudValueChars = Math.max(host._hudValueChars, prefixLen + vizVal.length);
       if (isActive) activeIdx = i - 1;
       const tone = blockCount > 1 ? (0.82 + ((i - 1) / (blockCount - 1)) * 0.18).toFixed(2) : '1';
-      cellData.push({ idx: i - 1, isDone, isActive, fillPct, vizKey, vizVal, tone });
+      cellData.push({ idx: i - 1, isDone, isActive, fillPct, vizKind, vizNum, vizVal, vizValKind, tone });
     }
 
     host.hidden = false;
@@ -791,8 +793,10 @@ window.monitorSummaryMixin = {
         const cell = existingCells[item.idx];
         if (!cell) continue;
         cell.style.setProperty('--cell-tone', item.tone);
-        cell.dataset.vizKey = item.vizKey;
+        cell.dataset.vizKind = item.vizKind;
+        cell.dataset.vizNum = item.vizNum;
         cell.dataset.vizVal = item.vizVal;
+        cell.dataset.vizValKind = item.vizValKind;
         if (cell.dataset.sealing === '1') continue;
         cell.classList.toggle('is-done', item.isDone);
         cell.classList.toggle('is-active', item.isActive);
@@ -812,7 +816,7 @@ window.monitorSummaryMixin = {
       const cells = cellData.map(item => {
         const cls = 'm-block-cell m-epoch-cell' + (item.isDone ? ' is-done' : item.isActive ? ' is-active' : '');
         const inner = item.isActive ? `<i class="m-epoch-fill" style="width:${item.fillPct}%"></i>` : '';
-        return `<span class="${cls}" style="--cell-tone:${item.tone}" data-block-index="${item.idx}" data-viz-idx="${item.idx}" data-viz-key="${this.esc(item.vizKey)}" data-viz-val="${this.esc(item.vizVal)}">${inner}</span>`;
+        return `<span class="${cls}" style="--cell-tone:${item.tone}" data-block-index="${item.idx}" data-viz-idx="${item.idx}" data-viz-kind="${this.esc(item.vizKind)}" data-viz-num="${this.esc(item.vizNum)}" data-viz-val="${this.esc(item.vizVal)}" data-viz-val-kind="${this.esc(item.vizValKind)}">${inner}</span>`;
       }).join('');
       const matrixStyle = `--block-cols:${cols};--block-size:${size.toFixed(2)}px;--block-gap:${gap}px;--block-radius:${radius}px`;
       host.innerHTML = `<div class="m-block-matrix m-epoch-matrix" style="${matrixStyle}">${cells}</div>`;
@@ -925,17 +929,22 @@ window.monitorSummaryMixin = {
   _showSummaryVizHud(host, item, visible = true) {
     const hud = host.closest('.m-live-metric')?.querySelector('[data-summary-hud]');
     if (!hud) return;
-    const key = item.dataset.vizKey || '';
+    const kind = item.dataset.vizKind || '';
+    const num = item.dataset.vizNum || '';
+    const valKind = item.dataset.vizValKind || '';
     const value = item.dataset.vizVal || '';
-    const counter = /^(Step|Epoch)(?: (\d+))?$/.exec(key);
+    const label = kind === 'step' ? this.tMonitor('stepLabel')
+      : kind === 'epoch' ? this.tMonitor('epoch') : (item.dataset.vizKey || '');
     const indexWidth = (host._hudIndexChars || 1) + 'ch';
-    hud.style.setProperty('--m-index-slot', counter?.[1] === 'Step' ? `max(var(--m-step-slot, 1ch), ${indexWidth})` : indexWidth);
+    hud.style.setProperty('--m-index-slot', kind === 'step' ? `max(var(--m-step-slot, 1ch), ${indexWidth})` : indexWidth);
     hud.style.setProperty('--m-value-slot', (host._hudValueChars || 1) + 'ch');
-    const keyHtml = counter && (counter[2] || host._hudIndexChars)
-      ? counter[1] + ' <span class="m-hud-index">' + (counter[2] || '') + '</span>' : this.esc(key);
-    const valHtml = value.startsWith('Loss ')
-      ? '<span class="m-hud-prefix">Loss </span>' + this.esc(value.slice(5)) : this.esc(value);
-    hud.innerHTML = (key ? `<span class="m-metric-hud-key">${keyHtml}</span>` : '')
+    const keyHtml = (kind === 'step' || kind === 'epoch') && (num || host._hudIndexChars)
+      ? `${this.esc(label)} <span class="m-hud-index">${this.esc(num)}</span>`
+      : this.esc(label);
+    const valHtml = valKind === 'loss'
+      ? `<span class="m-hud-prefix">${this.esc(this.tMonitor('loss'))} </span>${this.esc(value)}`
+      : this.esc(value);
+    hud.innerHTML = (label ? `<span class="m-metric-hud-key">${keyHtml}</span>` : '')
       + `<b class="m-metric-hud-val">${valHtml}</b>`;
     hud.classList.toggle('is-visible', visible);
   },
