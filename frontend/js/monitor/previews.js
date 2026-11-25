@@ -1,6 +1,6 @@
 /* 样本筛选、刷新与媒体队列；由 monitor-core.js 装配，沿用同一份监控状态。 */
 window.monitorPreviewsMixin = {
-  sampleBatchId: '', sampleBatchSortDir: 'desc', sampleTrainingSortDir: 'desc', sampleLossSortAscending: true,
+  sampleBatchId: '', sampleBatchSortDir: 'desc',
   sampleLossMode: 'off', _sampleLossCache: null, _sampleSortCache: null,
   sampleSidebarVisible: true, sampleSidebarOpen: true, _sampleSidebarInspecting: false,
   sampleSidebarView: {key: '', scale: 1, x: 0, y: 0},
@@ -77,7 +77,6 @@ window.monitorPreviewsMixin = {
     this._cancelPreviewRailDrag?.('_previewViewTimeline');
     this._sampleOverviewJumpId = '';
     this.sampleBatchId = ''; this.sampleBatchSortDir = 'desc';
-    this.sampleTrainingSortDir = 'desc'; this.sampleLossSortAscending = true;
     this.sampleExpandedBatchId = ''; this._sampleExpansionPausedFollow = false;
     this._cancelSampleGridMotion?.(this._sampleOverviewPanel?.()?.querySelector('.m-sample-batches'));
     this._clearPreviewComparison();
@@ -93,15 +92,28 @@ window.monitorPreviewsMixin = {
     this._loadSampleViewPreferences();
   },
 
+  _normalizeSampleBatchSort(value, legacyAscending = true) {
+    const canonical = [
+      'desc', 'asc',
+      'loss-overall-asc', 'loss-overall-desc',
+      'loss-high-asc', 'loss-high-desc',
+      'loss-mid-asc', 'loss-mid-desc',
+      'loss-low-asc', 'loss-low-desc',
+    ];
+    if (canonical.includes(value)) return value;
+    if (['loss-overall', 'loss-high', 'loss-mid', 'loss-low'].includes(value)) {
+      return value + (legacyAscending === false ? '-desc' : '-asc');
+    }
+    return '';
+  },
+
   _loadSampleViewPreferences() {
     try {
       const saved = JSON.parse(localStorage.getItem('anima-sample-view') || '{}');
       if (typeof saved?.sidebar === 'boolean') this.sampleSidebarVisible = saved.sidebar;
       if (typeof saved?.viewerTimeline === 'boolean') this.previewViewTimelineVisible = saved.viewerTimeline;
-      if (['asc', 'desc', 'loss-overall', 'loss-high', 'loss-mid', 'loss-low'].includes(saved?.sort)) this.sampleBatchSortDir = saved.sort;
-      const trainingSort = ['asc', 'desc'].includes(saved?.sort) ? saved.sort : saved?.trainingSort;
-      if (['asc', 'desc'].includes(trainingSort)) this.sampleTrainingSortDir = trainingSort;
-      if (typeof saved?.lossAscending === 'boolean') this.sampleLossSortAscending = saved.lossAscending;
+      const sort = this._normalizeSampleBatchSort(saved?.sort, saved?.lossAscending !== false);
+      if (sort) this.sampleBatchSortDir = sort;
       if (saved?.comparisonLayout === 'horizontal' || saved?.comparisonLayout === 'vertical') this.previewComparisonLayout = saved.comparisonLayout;
       if (['off', 'overall', 'detailed'].includes(saved?.lossMode)) this.sampleLossMode = saved.lossMode;
     } catch { /* Keep the current layout if storage is unavailable. */ }
@@ -111,7 +123,7 @@ window.monitorPreviewsMixin = {
     try {
       localStorage.setItem('anima-sample-view', JSON.stringify({sidebar: this.sampleSidebarVisible,
         viewerTimeline: this.previewViewTimelineVisible, sort: this.sampleBatchSortDir, comparisonLayout: this.previewComparisonLayout,
-        lossMode: this.sampleLossMode, trainingSort: this.sampleTrainingSortDir, lossAscending: this.sampleLossSortAscending}));
+        lossMode: this.sampleLossMode}));
     } catch { /* The controls remain usable without storage. */ }
   },
 
@@ -261,28 +273,25 @@ window.monitorPreviewsMixin = {
   },
 
   get sampleEffectiveBatchSort() {
-    const sort = this.sampleBatchSortDir || 'desc';
-    return ['loss-high', 'loss-mid', 'loss-low'].includes(sort) && !this.sampleDetailedLossAvailable ? 'loss-overall' : sort;
+    const sort = this._normalizeSampleBatchSort(this.sampleBatchSortDir) || 'desc';
+    const match = sort.match(/^loss-(high|mid|low)-(asc|desc)$/);
+    return match && !this.sampleDetailedLossAvailable ? 'loss-overall-' + match[2] : sort;
   },
 
   get sampleLossSortKey() {
-    const sort = this.sampleEffectiveBatchSort;
-    return sort.startsWith('loss-') ? sort.slice(5) : '';
-  },
-
-  get sampleSortCriterion() {
-    const sort = this.sampleEffectiveBatchSort;
-    return sort.startsWith('loss-') ? sort : 'training';
+    const match = this.sampleEffectiveBatchSort.match(/^loss-(overall|high|mid|low)-(asc|desc)$/);
+    return match ? match[1] : '';
   },
 
   get sampleSortAscending() {
-    return this.sampleBatchSortDir?.startsWith('loss-') ? this.sampleLossSortAscending : this.sampleBatchSortDir === 'asc';
+    const sort = this.sampleEffectiveBatchSort;
+    return sort === 'asc' || sort.endsWith('-asc');
   },
 
   _sampleBatchOrder(items = this.previews) {
     // Presentation ranking never changes canonical chronology or comparison baselines.
     const model = this._sampleDataModel(items), sort = this.sampleEffectiveBatchSort;
-    const key = sort.startsWith('loss-') ? sort.slice(5) : '';
+    const key = this.sampleLossSortKey;
     const ascending = this.sampleSortAscending;
     const lossIndex = key ? this._sampleEpochLossIndex() : null, cached = this._sampleSortCache;
     if (cached?.model === model && cached.sort === sort && cached.requested === this.sampleBatchSortDir
@@ -323,25 +332,17 @@ window.monitorPreviewsMixin = {
     return this.sampleBatchSortDir !== 'asc' ? 0 : Math.max(0, (grid?.scrollHeight || 0) - (grid?.clientHeight || 0));
   },
 
-  setSampleSortCriterion(criterion) {
-    if (criterion === this.sampleSortCriterion) return;
-    this.setSampleBatchSort(criterion === 'training' ? this.sampleTrainingSortDir : criterion);
-  },
-
-  toggleSampleSortDirection() {
-    if (!this.sampleLossSortKey) {
-      this.setSampleBatchSort(this.sampleSortAscending ? 'desc' : 'asc');
-      return;
-    }
-    this.sampleLossSortAscending = !this.sampleSortAscending;
-    this._applySampleBatchSort();
-  },
-
   setSampleBatchSort(dir) {
-    if (!['asc', 'desc', 'loss-overall', 'loss-high', 'loss-mid', 'loss-low'].includes(dir) || dir === this.sampleBatchSortDir
-        || (['loss-high', 'loss-mid', 'loss-low'].includes(dir) && !this.sampleDetailedLossAvailable)) return;
+    const valid = [
+      'desc', 'asc',
+      'loss-overall-asc', 'loss-overall-desc',
+      'loss-high-asc', 'loss-high-desc',
+      'loss-mid-asc', 'loss-mid-desc',
+      'loss-low-asc', 'loss-low-desc',
+    ];
+    if (!valid.includes(dir) || dir === this.sampleBatchSortDir
+        || (/^loss-(high|mid|low)-/.test(dir) && !this.sampleDetailedLossAvailable)) return;
     this.sampleBatchSortDir = dir;
-    if (dir === 'asc' || dir === 'desc') this.sampleTrainingSortDir = dir;
     this._applySampleBatchSort();
   },
 

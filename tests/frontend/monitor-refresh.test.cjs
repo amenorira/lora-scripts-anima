@@ -235,12 +235,12 @@ test('sample snapshots request staged arrival motion only for new tiles in the s
       querySelectorAll: selector => selector === '.m-sample-batch' ? [] : tiles});
     const previous = mode === 'initial' ? null : grid([oldTile]);
     const next = grid(mode === 'refresh' ? [oldTile] : [oldTile, newTile]);
-    const sort = mode === 'direction' ? 'loss-overall' : 'desc';
-    const context = ['run', '', sort, false, 'test', false];
+    const sort = mode === 'direction' ? 'loss-overall-desc' : 'desc';
+    const context = ['run', '', sort, 'test', false];
     if (mode === 'run') context[0] = 'previous-run';
     if (mode === 'sort') context[2] = 'asc';
-    if (mode === 'direction') context[3] = true;
-    if (mode === 'locale') context[4] = 'previous-locale';
+    if (mode === 'direction') context[2] = 'loss-overall-asc';
+    if (mode === 'locale') context[3] = 'previous-locale';
     const panel = {firstElementChild: previous ? {} : null, _sampleMotionContext: JSON.stringify(context),
       classList: {add() {}}, contains: () => false,
       querySelector: selector => ['.preview-grid', '.m-sample-batches'].includes(selector) ? (rebuilt ? next : previous) : null,
@@ -249,7 +249,7 @@ test('sample snapshots request staged arrival motion only for new tiles in the s
     const {window} = loadFrontend(['monitor/render'], {window: {}, document, requestAnimationFrame() {}});
     const app = composeMixins(window.monitorArtifactsRenderMixin, window.monitorRenderMixin, {
       _builtTab: mode === 'tab' ? 'overview' : 'samples', _builtSamplesSig: 'previous', _shellLocale: 'test', previewsVersion: 2,
-      currentOutputRunDir: 'run', selectedRunDir: '', sampleBatchSortDir: sort, sampleSortAscending: false, weakNetworkMode: false, runDetailData: {},
+      currentOutputRunDir: 'run', selectedRunDir: '', sampleBatchSortDir: sort, weakNetworkMode: false, runDetailData: {},
       _sampleOverviewAtEnd: false, _sampleResetScroll: mode === 'reset',
       _patchSampleBatchOrder() {}, _disconnectSampleExpansionUI() {}, _cancelSampleGridMotion() {}, _cancelPreviewMediaQueue() {},
       _capturePreviewMedia: () => new Map(), _restorePreviewMedia() {}, _renderSamplesTab: () => 'samples',

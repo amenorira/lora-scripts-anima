@@ -237,7 +237,7 @@ window.monitorRenderMixin = {
         this._sampleLayoutAction++;
         const grid = panel.querySelector('.preview-grid');
         const motionContext = JSON.stringify([this.currentOutputRunDir || '', this.selectedRunDir || '', this.sampleBatchSortDir,
-          this.sampleSortAscending, this._shellLocale, this.weakNetworkMode]);
+          this._shellLocale, this.weakNetworkMode]);
         const before = grid && !tabChanged && !this._sampleResetScroll && panel._sampleMotionContext === motionContext
           ? this._captureSampleLayout(grid) : null;
         this._cancelSampleGridMotion?.(grid);

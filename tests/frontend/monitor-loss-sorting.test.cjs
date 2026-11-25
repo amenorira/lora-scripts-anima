@@ -24,12 +24,12 @@ test('loss ordering is ascending, keeps zero, breaks ties by recency, and leaves
   const value = app();
   for (const [key, expected] of [['overall', [2, 4, 3, 1, 5]], ['high', [1, 3, 2, 5, 4]],
     ['mid', [3, 2, 1, 4, 5]], ['low', [4, 2, 1, 3, 5]]]) {
-    value.sampleBatchSortDir = 'loss-' + key;
+    value.sampleBatchSortDir = 'loss-' + key + '-asc';
     assert.deepEqual(value._sampleOverviewBatches().map(batch => Number(batch.id.slice(1))), expected);
     assert.deepEqual(value._previewLightboxDisplayIndices().map(index => index + 1), expected);
   }
   assert.deepEqual(value._sampleDataModel().batches.map(batch => batch.id), ['b1', 'b2', 'b3', 'b4', 'b5']);
-  value.sampleBatchSortDir = 'loss-overall';
+  value.sampleBatchSortDir = 'loss-overall-asc';
   assert.equal(value.sampleSidebarNavigationTarget(-1), 1);
   assert.equal(value.sampleSidebarNavigationTarget(1), 2);
   assert.equal(value._previewLightboxNavigationTarget(1), 2);
@@ -37,9 +37,9 @@ test('loss ordering is ascending, keeps zero, breaks ties by recency, and leaves
 
 test('reversing loss keeps missing values last, preserves selection, and shares the order with the viewer', () => {
   const value = app();
-  value.setSampleSortCriterion('loss-overall');
+  value.setSampleBatchSort('loss-overall-asc');
   const ascending = value._sampleBatchOrder();
-  value.toggleSampleSortDirection();
+  value.setSampleBatchSort('loss-overall-desc');
   assert.notEqual(value._sampleBatchOrder(), ascending);
   const expected = [1, 4, 3, 2, 5];
   assert.deepEqual(value._sampleOverviewBatches().map(batch => Number(batch.id.slice(1))), expected);
@@ -48,17 +48,16 @@ test('reversing loss keeps missing values last, preserves selection, and shares 
   assert.equal(value.sampleBatchId, 'b4');
   assert.equal(value.previewStep, 3);
 
-  value.setSampleSortCriterion('loss-high');
+  value.setSampleBatchSort('loss-high-desc');
   assert.deepEqual(value._sampleOverviewBatches().map(batch => Number(batch.id.slice(1))), [2, 3, 1, 5, 4]);
   value.monitorData.log_timestep_loss = false;
-  assert.equal(value.sampleSortCriterion, 'loss-overall');
-  value.toggleSampleSortDirection();
-  assert.equal(value.sampleBatchSortDir, 'loss-high', 'changing direction preserves the unavailable metric preference');
-  assert.equal(value.sampleSortAscending, true);
+  assert.equal(value.sampleEffectiveBatchSort, 'loss-overall-desc');
+  assert.equal(value.sampleBatchSortDir, 'loss-high-desc', 'falling back preserves the unavailable metric preference');
+  assert.equal(value.sampleSortAscending, false);
 });
 
 test('unrelated metrics reuse the ranking while epoch corrections and historical runs invalidate it', () => {
-  const value = app(); value.sampleBatchSortDir = 'loss-overall';
+  const value = app(); value.sampleBatchSortDir = 'loss-overall-asc';
   const order = value._sampleBatchOrder();
   value.lossSeries.push({tag: 'lr/unet', points: [{step: 100, value: .1}]}); value.lossDataVersion++;
   assert.equal(value._sampleBatchOrder(), order);
@@ -71,7 +70,7 @@ test('unrelated metrics reuse the ranking while epoch corrections and historical
 
 test('loss ranking does not resume chronological following when another epoch is sampled', () => {
   const value = app(); value.previews = value.previews.slice(0, 4); value.previewsVersion++;
-  value.sampleBatchSortDir = 'loss-overall';
+  value.sampleBatchSortDir = 'loss-overall-asc';
   const selected = value.previews[3], next = {...selected, name: '6.png', path: 'sample/6.png',
     sample: {...selected.sample, batch_id: 'b6', batch_label: 'Epoch 6', epoch: 6, step: 2400}};
   value._replacePreviewItems([...value.previews, next]);
@@ -82,22 +81,34 @@ test('loss ranking does not resume chronological following when another epoch is
 
 test('partition options follow logging availability and a saved partition falls back to overall loss', () => {
   const value = app();
-  assert.deepEqual(value._sampleSortOptions().map(option => option.value), ['training', 'loss-overall', 'loss-high', 'loss-mid', 'loss-low']);
-  value.sampleBatchSortDir = 'loss-high'; value.monitorData.log_timestep_loss = false;
-  assert.equal(value.sampleEffectiveBatchSort, 'loss-overall');
-  assert.deepEqual(value._sampleSortOptions().map(option => option.value), ['training', 'loss-overall']);
-  value.setSampleBatchSort('loss-low'); assert.equal(value.sampleBatchSortDir, 'loss-high');
+  const options = value._sampleSortOptions();
+  assert.deepEqual(options.map(option => option.value), [
+    'desc', 'asc',
+    'loss-overall-asc', 'loss-overall-desc',
+    'loss-high-asc', 'loss-high-desc',
+    'loss-mid-asc', 'loss-mid-desc',
+    'loss-low-asc', 'loss-low-desc',
+  ]);
+  assert.equal(options.some(option => 'family' in option), false);
+  value.sampleBatchSortDir = 'loss-high-desc'; value.monitorData.log_timestep_loss = false;
+  assert.equal(value.sampleEffectiveBatchSort, 'loss-overall-desc');
+  assert.deepEqual(value._sampleSortOptions().map(option => option.value), ['desc', 'asc', 'loss-overall-asc', 'loss-overall-desc']);
+  value.setSampleBatchSort('loss-low-asc'); assert.equal(value.sampleBatchSortDir, 'loss-high-desc');
   value.monitorData.log_timestep_loss = true;
   const originalStorage = Object.getOwnPropertyDescriptor(global, 'localStorage'), writes = [];
+  let stored = JSON.stringify({sort: 'loss-mid'});
   Object.defineProperty(global, 'localStorage', {configurable: true, value: {
-    getItem: () => JSON.stringify({sort: 'loss-mid'}), setItem: (_key, data) => writes.push(JSON.parse(data)),
+    getItem: () => stored, setItem: (_key, data) => writes.push(JSON.parse(data)),
   }});
   try {
-    value._loadSampleViewPreferences(); assert.equal(value.sampleBatchSortDir, 'loss-mid');
+    value._loadSampleViewPreferences(); assert.equal(value.sampleBatchSortDir, 'loss-mid-asc');
     assert.equal(value.sampleSortAscending, true, 'old loss preferences default to ascending');
+    stored = JSON.stringify({sort: 'loss-high', lossAscending: false});
+    value._loadSampleViewPreferences(); assert.equal(value.sampleBatchSortDir, 'loss-high-desc');
+    assert.equal(value.sampleSortAscending, false);
     value.previewComparisonOrder = ['fixed-b', 'fixed-a', null];
-    value.setSampleBatchSort('loss-low');
-    assert.equal(writes.at(-1).sort, 'loss-low');
+    value.setSampleBatchSort('loss-low-asc');
+    assert.equal(writes.at(-1).sort, 'loss-low-asc');
     assert.equal(value.previewsVersion, 1, 'sorting does not rebuild the media viewport');
     assert.equal(value.previewStep, 3);
     assert.deepEqual(value.previewComparisonOrder, ['fixed-b', 'fixed-a', null]);
@@ -121,7 +132,7 @@ test('new epoch values move existing batch nodes while preserving the visible an
   window.AnimaSampleLayout = {captureAnchor: () => ({batchId: 'b3'}), restoreAnchor: (_grid, anchor) => {restores++; return anchor;}};
   try {
     value._patchSampleBatchOrder(panel, true);
-    value.sampleBatchSortDir = 'loss-high'; value._patchSampleBatchOrder(panel);
+    value.sampleBatchSortDir = 'loss-high-asc'; value._patchSampleBatchOrder(panel);
     assert.deepEqual(grid.children.map(node => node.dataset.batchId), ['b1', 'b3', 'b2', 'b5', 'b4']);
     assert(grid.children.every(node => nodes.get(node.dataset.batchId) === node));
     assert.equal(restores, 1);

@@ -107,37 +107,31 @@ window.monitorArtifactsRenderMixin = {
   },
 
   _sampleSortOptions() {
-    const options = [{value: 'training', label: this.t('monitor.sampleSortTraining')}];
-    const family = this.t('monitor.sampleLossSortGroup');
-    options.push({value: 'loss-overall', label: this.t('monitor.sampleLossSortOverall'), family});
-    if (this.sampleDetailedLossAvailable) for (const key of ['high', 'mid', 'low']) {
-      options.push({value: 'loss-' + key, label: this.t('monitor.sampleLossSort' + key[0].toUpperCase() + key.slice(1)), family});
+    const options = [
+      {value: 'desc', label: this.t('monitor.sampleSortTrainingDesc')},
+      {value: 'asc', label: this.t('monitor.sampleSortTrainingAsc')},
+      {value: 'loss-overall-asc', label: this.t('monitor.sampleSortLossOverallAsc')},
+      {value: 'loss-overall-desc', label: this.t('monitor.sampleSortLossOverallDesc')},
+    ];
+    if (this.sampleDetailedLossAvailable) {
+      options.push(
+        {value: 'loss-high-asc', label: this.t('monitor.sampleSortLossHighAsc')},
+        {value: 'loss-high-desc', label: this.t('monitor.sampleSortLossHighDesc')},
+        {value: 'loss-mid-asc', label: this.t('monitor.sampleSortLossMidAsc')},
+        {value: 'loss-mid-desc', label: this.t('monitor.sampleSortLossMidDesc')},
+        {value: 'loss-low-asc', label: this.t('monitor.sampleSortLossLowAsc')},
+        {value: 'loss-low-desc', label: this.t('monitor.sampleSortLossLowDesc')},
+      );
     }
     return options;
   },
 
-  _sampleSortDirectionLabel(ascending = this.sampleSortAscending) {
-    return this.t(this.sampleLossSortKey
-      ? (ascending ? 'monitor.sampleSortLowToHigh' : 'monitor.sampleSortHighToLow')
-      : (ascending ? 'monitor.sampleSortOldToNew' : 'monitor.sampleSortNewToOld'));
-  },
-
-  _sampleSortDirectionHint() {
-    return this.t('monitor.sampleSortDirectionHint')
-      .replace('{current}', this._sampleSortDirectionLabel())
-      .replace('{next}', this._sampleSortDirectionLabel(!this.sampleSortAscending));
-  },
-
   _sampleSortControlHtml(id) {
-    const label = this.t('monitor.sampleOrder'), direction = this._sampleSortDirectionLabel();
+    const label = this.t('monitor.sampleOrder');
     return '<div class="m-samples-sort"><span>' + this.esc(label) + '</span>'
-      + this._sampleSelectHtml(this._sampleSortOptions(), this.sampleSortCriterion, label, id,
-        'setSampleSortCriterion($event.target.value)', '', 'sampleSortCriterion', '_sampleSortOptions()')
-      + '<button type="button" id="' + this.esc(id + 'Direction') + '" class="btn btn-sm btn-secondary m-sample-sort-direction"'
-      + ' @click="toggleSampleSortDirection()" aria-label="' + this.esc(this._sampleSortDirectionHint()) + '"'
-      + ' :aria-label="_sampleSortDirectionHint()" :title="_sampleSortDirectionHint()">'
-      + '<span aria-hidden="true" x-text="sampleSortAscending ? \'↑\' : \'↓\'">' + (this.sampleSortAscending ? '↑' : '↓') + '</span>'
-      + '<span x-text="_sampleSortDirectionLabel()">' + this.esc(direction) + '</span></button></div>';
+      + this._sampleSelectHtml(this._sampleSortOptions(), this.sampleEffectiveBatchSort, label, id,
+        'setSampleBatchSort($event.target.value)', '', 'sampleEffectiveBatchSort', '_sampleSortOptions()')
+      + '</div>';
   },
 
   _patchSampleBatchOrder(panel, freshlyRendered = false) {
