@@ -2588,3 +2588,35 @@ test('wheel zoom animation updates st.liveScale for 4-arg hit testing, hover vis
     assert.equal(hit?.image_id, movingDot.image_id);
   });
 });
+
+test('long-epoch converging_slope scales scatter threshold label, Y auto-bounds, slope color, and trend pill', () => {
+  const longRunData = {
+    ...structuredClone(SAMPLE_DATA),
+    thresholds: { ...SAMPLE_DATA.thresholds, converging_slope: -0.005 },
+  };
+  const app = makeApp({ datasetDiagData: longRunData });
+  assert.ok(app._ddSlopeColor(-0.006).includes('--diag-tone-ok'));
+  assert.ok(!app._ddSlopeColor(-0.003).includes('--diag-tone-ok'));
+  assert.ok(app._ddTrendPillHtml(k => k, -0.006).includes('is-good'));
+
+  const bounds = app._ddResolveScatterAutoBounds(
+    null,
+    'q|long|3',
+    { xMin: -0.25, xMax: 0.45, yMin: -0.012, yMax: 0.008 },
+    true,
+    -0.005,
+  );
+  assert.equal(bounds.yMin, -0.02);
+  assert.equal(bounds.yMax, 0.02);
+
+  const stage = makeEl('div');
+  stage.clientWidth = 700;
+  stage.clientHeight = 440;
+  const svg = makeEl('svg');
+  const wrap = makeEl('div');
+  wrap.dataset = { mode: 'quadrant' };
+  wrap.querySelector = sel => (sel === '[data-dd-hero-stage]' ? stage : sel === '[data-dd-hero-svg]' ? svg : null);
+  app._renderDatasetDiagHeroSvg(wrap, stage, svg, { animate: false });
+  assert.ok(svg.innerHTML.includes('data-dd-thresh-label="conv"'));
+  assert.ok(svg.innerHTML.includes('>-0.5%</text>'));
+});

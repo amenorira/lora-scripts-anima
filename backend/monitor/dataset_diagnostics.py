@@ -34,6 +34,8 @@ MANIFEST_FILE = "manifest.json"
 HIGH_RESIDUAL_THRESHOLD = 0.20
 LOW_RESIDUAL_THRESHOLD = -0.20
 CONVERGING_SLOPE_THRESHOLD = -0.02
+MIN_CONVERGING_SLOPE_THRESHOLD = -0.004
+CONVERGING_CUMULATIVE_DROP = 0.10
 _MAX_CACHED_FILES = 4
 _MAX_INDEX_LRU = 4
 _MAX_CACHED_SAMPLES = 500_000
@@ -1198,6 +1200,16 @@ def _row_is_reg(
     return None
 
 
+def _converging_slope_threshold(epoch_from: int | None, epoch_to: int | None) -> float:
+    if epoch_from is None or epoch_to is None or epoch_to <= epoch_from:
+        return CONVERGING_SLOPE_THRESHOLD
+    span = epoch_to - epoch_from
+    return -min(
+        abs(CONVERGING_SLOPE_THRESHOLD),
+        max(abs(MIN_CONVERGING_SLOPE_THRESHOLD), round(CONVERGING_CUMULATIVE_DROP / span, 6)),
+    )
+
+
 def _classify_image(
     *,
     count: int,
@@ -1206,6 +1218,7 @@ def _classify_image(
     mean_residual: float | None,
     slope: float | None,
     min_count: int,
+    converging_slope: float = CONVERGING_SLOPE_THRESHOLD,
 ) -> str:
     if non_finite_count > 0:
         return "non_finite"
@@ -1214,7 +1227,7 @@ def _classify_image(
     if comparable_count < min_count or mean_residual is None:
         return "insufficient_reference"
     if mean_residual >= HIGH_RESIDUAL_THRESHOLD:
-        if slope is not None and slope <= CONVERGING_SLOPE_THRESHOLD:
+        if slope is not None and slope <= converging_slope:
             return "learning"
         return "attention"
     if mean_residual <= LOW_RESIDUAL_THRESHOLD:
@@ -1577,7 +1590,10 @@ def _preview_fields_for(
     )
 
 
-def _image_stats(state, index, entry, labels, stats, epoch_stats, zone_stats, min_samples):
+def _image_stats(
+    state, index, entry, labels, stats, epoch_stats, zone_stats, min_samples,
+    *, converging_slope: float = CONVERGING_SLOPE_THRESHOLD,
+):
     resolutions, subsets, subset_labels = Counter(), Counter(), Counter()
     reg = set()
     for structure in entry["structures"]:
@@ -1604,12 +1620,15 @@ def _image_stats(state, index, entry, labels, stats, epoch_stats, zone_stats, mi
         "noise_zones": {zone: values if values["count"] else None for zone, values in zone_stats.items()},
         "status": _classify_image(count=stats["count"], comparable_count=stats["comparable_count"],
                                   non_finite_count=non_finite, mean_residual=stats["mean_residual"],
-                                  slope=slope, min_count=min_samples),
+                                  slope=slope, min_count=min_samples, converging_slope=converging_slope),
         "thumb_url": "", "preview_url": "",
     }
 
 
-def _overview_images(state, index, means, eligible, labels, zones, min_samples):
+def _overview_images(
+    state, index, means, eligible, labels, zones, min_samples,
+    *, converging_slope: float = CONVERGING_SLOPE_THRESHOLD,
+):
     size = len(state.images)
     totals = index.totals("image", size, means, eligible)
     total, _, compared, residual, slope_compared, slope_residual = index.epoch_totals(state.epoch_numbers)
@@ -1623,6 +1642,7 @@ def _overview_images(state, index, means, eligible, labels, zones, min_samples):
             [column[image] for column in epochs],
             {zone: _stats_at(zones, image * len(ZONES) + z) for z, zone in enumerate(ZONES)},
             min_samples,
+            converging_slope=converging_slope,
         )
         for image, entry in enumerate(state.images)
         if totals[0][image] or index.non_finite.get(image)
@@ -1888,7 +1908,11 @@ def _render_overview(
     num_processes = (_opt_int(training.get("num_processes")) if isinstance(training, dict) else None) or 1
     means, distinct, eligible = index.baseline()
     zones = index.totals("zone", len(state.images) * len(ZONES), means, eligible)
-    by_image = _overview_images(state, index, means, eligible, labels, zones, min_samples)
+    converging_slope = _converging_slope_threshold(index.epoch_from, index.epoch_to)
+    by_image = _overview_images(
+        state, index, means, eligible, labels, zones, min_samples,
+        converging_slope=converging_slope,
+    )
     groups = _group_tables(state, index, means, eligible, labels, by_image=by_image)
     timestep_profile = _build_timestep_profile(
         state, index, by_image, means=means, eligible=eligible, sampling_config=sampling_config,
@@ -1930,7 +1954,7 @@ def _render_overview(
         "verdict": verdict, "notable_group": _pick_notable_group(groups, min_samples),
         "thresholds": {
             "high_residual": HIGH_RESIDUAL_THRESHOLD, "low_residual": LOW_RESIDUAL_THRESHOLD,
-            "converging_slope": CONVERGING_SLOPE_THRESHOLD, "min_count": min_samples, "num_bins": index.num_bins,
+            "converging_slope": converging_slope, "min_count": min_samples, "num_bins": index.num_bins,
         },
         "summary": {
             "samples": total_finite, "non_finite_total": total_non_finite,
@@ -2389,6 +2413,7 @@ def read_dataset_diagnostic_image(
                 allowed_structures=allowed_structures, reg_mask_version=state.reg_mask_version,
             )
             means, distinct, eligible = index.baseline()
+            converging_slope = _converging_slope_threshold(index.epoch_from, index.epoch_to)
             summary_key = (selected, profile, bins, min_samples, effective_reg_mode, deweight_scheme)
             cached_entry = state.summary_lru.get(summary_key)
             cached_summary = (
@@ -2446,7 +2471,10 @@ def read_dataset_diagnostic_image(
                     zone: _stats_values(*index.single("zone", image * len(ZONES) + z, means, eligible))
                     for z, zone in enumerate(ZONES)
                 }
-                image_summary = _image_stats(state, index, entry, labels, stats, epoch_stats, zones, min_samples)
+                image_summary = _image_stats(
+                    state, index, entry, labels, stats, epoch_stats, zones, min_samples,
+                    converging_slope=converging_slope,
+                )
             cum_by_ep = index.cumulative_image_trajectory_residuals(
                 entry["index"], state.epoch_images, state.epoch_numbers, image_epoch_ids=epoch_ids,
             )
@@ -2476,11 +2504,13 @@ def read_dataset_diagnostic_image(
             cache_epoch = (state.state_token, state.local_generation)
             run_ref = record.get("run_dir", "")
             loss_deweighted = bool(index.deweight_scheme)
+            run_epoch_from = index.epoch_from
     finally:
         _trim_loss_cache()
 
     trajectory = _build_image_trajectory(
         non_finite, epoch_numbers, epoch_totals, min_samples, cum_by_ep,
+        run_epoch_from=run_epoch_from,
     )
     diag_losses = finite_losses.tolist()
     samples = [_detail_sample(row, residual, diag_loss) for row, residual, diag_loss in zip(finite_rows, residuals, diag_losses)]
@@ -2505,7 +2535,7 @@ def read_dataset_diagnostic_image(
         "timestep_scale": scale, "sampling_config": sampling_config,
         "thresholds": {
             "high_residual": HIGH_RESIDUAL_THRESHOLD, "low_residual": LOW_RESIDUAL_THRESHOLD,
-            "converging_slope": CONVERGING_SLOPE_THRESHOLD, "min_count": min_samples, "num_bins": bins,
+            "converging_slope": converging_slope, "min_count": min_samples, "num_bins": bins,
         },
         "subset_meta": subset_meta,
         "image": image_summary, "epoch_series": epochs, "trajectory": trajectory,
@@ -2549,6 +2579,7 @@ def _build_image_trajectory(
     epoch_totals: list[np.ndarray],
     min_samples: int,
     cum_by_ep: dict[int, tuple[int, int, float]],
+    run_epoch_from: int | None = None,
 ) -> list[dict[str, Any]]:
     """Reconstruct cumulative per-epoch scatter coordinates without future-epoch look-ahead."""
     nf_by_epoch: dict[int, int] = Counter(int(row["epoch"]) for row in non_finite if row.get("epoch") is not None)
@@ -2616,6 +2647,10 @@ def _build_image_trajectory(
                     mean_residual=cum_mean_res,
                     slope=prefix_slope,
                     min_count=min_samples,
+                    converging_slope=_converging_slope_threshold(
+                        run_epoch_from if run_epoch_from is not None else ep0,
+                        ep,
+                    ),
                 ),
             })
 

@@ -37,11 +37,17 @@
       return `color-mix(in srgb, ${dangerTone} ${pct}%, ${warnTone})`;
     },
 
+    _ddConvergingSlopeThreshold() {
+      const val = Number(this.datasetDiagData?.thresholds?.converging_slope);
+      return Number.isFinite(val) && val < 0 ? val : -0.02;
+    },
+
     _ddSlopeColor(slope) {
       if (slope == null || slope === '' || !Number.isFinite(Number(slope))) return 'var(--text-secondary)';
       const val = Number(slope);
-      if (val <= -0.02) return 'color-mix(in srgb, var(--diag-tone-ok, var(--success)) 86%, var(--text-primary))';
-      if (val >= 0.01) return 'color-mix(in srgb, var(--diag-tone-danger, var(--danger)) 82%, var(--text-primary))';
+      const convSlope = this._ddConvergingSlopeThreshold();
+      if (val <= convSlope) return 'color-mix(in srgb, var(--diag-tone-ok, var(--success)) 86%, var(--text-primary))';
+      if (val >= Math.max(0.002, Math.abs(convSlope) * 0.5)) return 'color-mix(in srgb, var(--diag-tone-danger, var(--danger)) 82%, var(--text-primary))';
       return 'color-mix(in srgb, var(--text-primary) 82%, var(--text-secondary))';
     },
 
@@ -742,8 +748,10 @@
       const meanSlope = bucket?.meanSlope != null && Number.isFinite(Number(bucket.meanSlope))
         ? Number(bucket.meanSlope)
         : null;
+      const convSlope = this._ddConvergingSlopeThreshold();
+      const riseSlope = Math.max(0.002, Math.abs(convSlope) * 0.4);
       if (meanSlope != null && item.key !== 'non_finite' && item.key !== 'unqualified'
-          && (item.key === 'learning' || item.key === 'attention' || meanSlope <= -0.02 || meanSlope >= 0.008)) {
+          && (item.key === 'learning' || item.key === 'attention' || meanSlope <= convSlope || meanSlope >= riseSlope)) {
         parts.push(t('ddStatusTipSlope').replace('{slope}', this._ddFormatSlope(meanSlope) + t('ddSlopeUnit')));
       }
       if (showTrainShare) {
@@ -1442,7 +1450,9 @@
     _ddTrendPillHtml(t, slopeValue) {
       const slope = slopeValue != null && Number.isFinite(Number(slopeValue)) ? Number(slopeValue) : null;
       if (slope == null) return '';
-      if (slope <= -0.02) {
+      const convSlope = this._ddConvergingSlopeThreshold();
+      const riseSlope = Math.max(0.002, Math.abs(convSlope) * 0.4);
+      if (slope <= convSlope) {
         const pct = Math.abs(slope * 100).toFixed(1);
         const label = t('ddGroupTrendRate').replace('{slope}', this._ddFormatSlope(slope));
         const tip = t('ddGroupTrendTipGood').replace('{pct}', pct);
@@ -1451,7 +1461,7 @@
           + '<polyline points="2,3.5 5.2,6.7 7.2,4.7 10,8.5"/><polyline points="7.5,8.5 10,8.5 10,6"/></svg>'
           + '<span>' + this.esc(label) + '</span></span>';
       }
-      if (slope >= 0.008) {
+      if (slope >= riseSlope) {
         const pct = Math.abs(slope * 100).toFixed(1);
         const label = t('ddGroupTrendRate').replace('{slope}', this._ddFormatSlope(slope));
         const tip = t('ddGroupTrendTipBad').replace('{pct}', pct);
@@ -1520,8 +1530,10 @@
       if (row?.slope != null && Number.isFinite(Number(row.slope))) {
         const s = Number(row.slope);
         const pct = Math.abs(s * 100).toFixed(1);
-        if (s <= -0.02) tipParts.push(t('ddGroupTrendTipGood').replace('{pct}', pct));
-        else if (s >= 0.008) tipParts.push(t('ddGroupTrendTipBad').replace('{pct}', pct));
+        const convSlope = this._ddConvergingSlopeThreshold();
+        const riseSlope = Math.max(0.002, Math.abs(convSlope) * 0.4);
+        if (s <= convSlope) tipParts.push(t('ddGroupTrendTipGood').replace('{pct}', pct));
+        else if (s >= riseSlope) tipParts.push(t('ddGroupTrendTipBad').replace('{pct}', pct));
         else tipParts.push(t('ddGroupTrendTipFlat'));
       }
       const augText = this._ddGroupAugText(t, row?.aug_flags);

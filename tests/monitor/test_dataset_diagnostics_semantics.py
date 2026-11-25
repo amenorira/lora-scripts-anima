@@ -47,6 +47,13 @@ class DatasetDiagnosticsSemanticsTests(CrossDriveSandbox):
         for overrides, expected in cases:
             with self.subTest(overrides=overrides):
                 self.assertEqual(diagnostics._classify_image(**(eligible | overrides)), expected)
+        self.assertEqual(diagnostics._converging_slope_threshold(1, 6), -0.02)
+        self.assertEqual(diagnostics._converging_slope_threshold(1, 21), -0.005)
+        self.assertEqual(diagnostics._converging_slope_threshold(1, 51), -0.004)
+        self.assertEqual(
+            diagnostics._classify_image(**(eligible | {"slope": -0.008, "converging_slope": -0.005})),
+            "learning",
+        )
         record = self._record()
         record["extra"] = {"trainer_file": "anima_train_network.py"}
         self.assertEqual(diagnostics._detect_profile(record), "anima-lora")
@@ -296,5 +303,72 @@ class DatasetDiagnosticsSemanticsTests(CrossDriveSandbox):
             self.assertEqual(detail["image"]["mean_residual"], images["a.png"]["mean_residual"])
             missing_detail = diagnostics.read_dataset_diagnostic_image(record, image_id=images["d.png"]["image_id"], min_count=1)
             self.assertIsNone(missing_detail["samples"][0]["residual"])
+        finally:
+            diagnostics.clear_dataset_diagnostics_cache()
+
+    def test_long_epoch_run_scales_converging_slope_threshold_in_overview_and_detail(self):
+        record = self._record(model_train_type="anima-lora")
+        record["extra"] = {"profile_id": "anima-lora"}
+        control = Path(record["run_path"]) / "log" / ".run-control"
+        control.mkdir(parents=True)
+        rows = []
+        # 21 epochs (span = 20 -> converging_slope = -0.005):
+        # two peers stay at 0.20; hard_learning.png drops linearly from 0.34 (+70% vs peers) to 0.28 (+40% vs peers),
+        # so peer-referenced slope is -1.5%/epoch (between -2.0% and -0.5%) and mean_residual >= +20%.
+        for ep in range(1, 22):
+            hard_loss = 0.34 - (0.06 * (ep - 1) / 20.0)
+            rows.append(_row("hard_learning.png", 0.5, hard_loss, epoch=ep))
+            rows.append(_row("peer1.png", 0.5, 0.20, epoch=ep))
+            rows.append(_row("peer2.png", 0.5, 0.20, epoch=ep))
+        with (control / "loss.jsonl").open("w", encoding="utf-8") as stream:
+            stream.write(json.dumps({"run_id": "run_long"}) + "\n")
+            for row in rows:
+                stream.write(json.dumps(row) + "\n")
+        try:
+            result = diagnostics.analyze_dataset_diagnostics(record, min_count=3)
+            self.assertAlmostEqual(result["thresholds"]["converging_slope"], -0.005, places=6)
+            images = {entry["name"]: entry for entry in result["by_image"]}
+            hard = images["hard_learning.png"]
+            self.assertGreaterEqual(hard["mean_residual"], 0.20)
+            self.assertGreater(hard["slope"], -0.02)
+            self.assertLessEqual(hard["slope"], -0.005)
+            self.assertEqual(hard["status"], "learning")
+            detail = diagnostics.read_dataset_diagnostic_image(record, image_id=hard["image_id"], min_count=3)
+            self.assertAlmostEqual(detail["thresholds"]["converging_slope"], -0.005, places=6)
+            self.assertEqual(detail["image"]["status"], "learning")
+            self.assertEqual(detail["trajectory"][-1]["status"], "learning")
+        finally:
+            diagnostics.clear_dataset_diagnostics_cache()
+
+    def test_late_appearing_image_matches_overview_and_trajectory_endpoint_in_long_run(self):
+        record = self._record(model_train_type="anima-lora")
+        record["extra"] = {"profile_id": "anima-lora"}
+        control = Path(record["run_path"]) / "log" / ".run-control"
+        control.mkdir(parents=True)
+        rows = []
+        # 20 epochs (span = 19 -> converging_slope = -0.005263):
+        # late.png only appears in epochs 18..20 with ~+45% residual and -1.0%/epoch slope,
+        # which is steeper than the run's -0.5263%/epoch threshold (learning) even though its local span is 2.
+        for ep in range(1, 21):
+            rows.append(_row("peer1.png", 0.5, 0.20, epoch=ep))
+            rows.append(_row("peer2.png", 0.5, 0.20, epoch=ep))
+            if ep >= 18:
+                late_loss = {18: 0.292, 19: 0.290, 20: 0.288}[ep]
+                rows.append(_row("late.png", 0.5, late_loss, epoch=ep))
+        with (control / "loss.jsonl").open("w", encoding="utf-8") as stream:
+            stream.write(json.dumps({"run_id": "run_late"}) + "\n")
+            for row in rows:
+                stream.write(json.dumps(row) + "\n")
+        try:
+            result = diagnostics.analyze_dataset_diagnostics(record, min_count=3)
+            self.assertAlmostEqual(result["thresholds"]["converging_slope"], -0.005263, places=6)
+            images = {entry["name"]: entry for entry in result["by_image"]}
+            late = images["late.png"]
+            self.assertGreaterEqual(late["mean_residual"], 0.20)
+            self.assertAlmostEqual(late["slope"], -0.01, places=4)
+            self.assertEqual(late["status"], "learning")
+            detail = diagnostics.read_dataset_diagnostic_image(record, image_id=late["image_id"], min_count=3)
+            self.assertEqual(detail["image"]["status"], "learning")
+            self.assertEqual(detail["trajectory"][-1]["status"], "learning")
         finally:
             diagnostics.clear_dataset_diagnostics_cache()

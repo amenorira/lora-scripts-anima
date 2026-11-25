@@ -1748,7 +1748,7 @@
       if (axis === 'x') {
         step = abs <= 1.0 ? 0.20 : (abs <= 3.0 ? 0.50 : (abs <= 10.0 ? 2.0 : Math.pow(10, Math.floor(Math.log10(abs)))));
       } else {
-        step = abs <= 0.12 ? 0.04 : (abs <= 0.40 ? 0.08 : (abs <= 2.0 ? 0.20 : Math.pow(10, Math.floor(Math.log10(abs)))));
+        step = abs <= 0.03 ? 0.01 : (abs <= 0.06 ? 0.02 : (abs <= 0.12 ? 0.04 : (abs <= 0.40 ? 0.08 : (abs <= 2.0 ? 0.20 : Math.pow(10, Math.floor(Math.log10(abs)))))));
       }
       const snapped = dir < 0 ? Math.floor(val / step) * step : Math.ceil(val / step) * step;
       return Math.round(snapped * 1e6) / 1e6;
@@ -1780,13 +1780,15 @@
       return [min, max];
     },
 
-    _ddResolveScatterAutoBounds(wrap, key, raw, hasY = true) {
+    _ddResolveScatterAutoBounds(wrap, key, raw, hasY = true, convSlope = -0.02) {
       const snappedXMin = this._ddSnapOutward(Math.min(-0.35, raw.xMin - Math.max(0.05, Math.abs(raw.xMin) * 0.08)), 'x', -1);
       let xMin = raw.xMin >= -1.0 ? Math.max(-1.0, snappedXMin) : snappedXMin;
       let xMax = this._ddSnapOutward(Math.max(0.40, raw.xMax + Math.max(0.06, Math.abs(raw.xMax) * 0.08)), 'x', 1);
       [xMin, xMax] = this._ddSoftCenterAxisBounds(xMin, xMax, 'x');
-      let yMin = hasY ? this._ddSnapOutward(Math.min(-0.08, raw.yMin - Math.max(0.016, Math.abs(raw.yMin) * 0.14)), 'y', -1) : -1;
-      let yMax = hasY ? this._ddSnapOutward(Math.max(0.08, raw.yMax + Math.max(0.016, Math.abs(raw.yMax) * 0.14)), 'y', 1) : 1;
+      const minYMag = Math.max(0.016, Math.min(0.08, Math.abs(Number(convSlope) || 0.02) * 4));
+      const minYPad = Math.max(0.0032, minYMag * 0.2);
+      let yMin = hasY ? this._ddSnapOutward(Math.min(-minYMag, raw.yMin - Math.max(minYPad, Math.abs(raw.yMin) * 0.14)), 'y', -1) : -1;
+      let yMax = hasY ? this._ddSnapOutward(Math.max(minYMag, raw.yMax + Math.max(minYPad, Math.abs(raw.yMax) * 0.14)), 'y', 1) : 1;
       if (hasY) [yMin, yMax] = this._ddSoftCenterAxisBounds(yMin, yMax, 'y');
 
       if (wrap && wrap._ddAutoBoundsKey === key && wrap._ddAutoBounds) {
@@ -1794,8 +1796,9 @@
         if (raw.xMin >= prev.xMin + 0.02 && xMin > prev.xMin && Math.abs(xMin) >= Math.abs(prev.xMin) * 0.55) xMin = prev.xMin;
         if (raw.xMax <= prev.xMax - 0.02 && xMax < prev.xMax && Math.abs(xMax) >= Math.abs(prev.xMax) * 0.55) xMax = prev.xMax;
         if (hasY) {
-          if (raw.yMin >= prev.yMin + 0.008 && yMin > prev.yMin && Math.abs(yMin) >= Math.abs(prev.yMin) * 0.55) yMin = prev.yMin;
-          if (raw.yMax <= prev.yMax - 0.008 && yMax < prev.yMax && Math.abs(yMax) >= Math.abs(prev.yMax) * 0.55) yMax = prev.yMax;
+          const yHoldTol = Math.max(0.0016, minYMag * 0.1);
+          if (raw.yMin >= prev.yMin + yHoldTol && yMin > prev.yMin && Math.abs(yMin) >= Math.abs(prev.yMin) * 0.55) yMin = prev.yMin;
+          if (raw.yMax <= prev.yMax - yHoldTol && yMax < prev.yMax && Math.abs(yMax) >= Math.abs(prev.yMax) * 0.55) yMax = prev.yMax;
         }
       }
       const bounds = hasY ? { xMin, xMax, yMin, yMax } : { xMin, xMax };
@@ -3162,7 +3165,7 @@
           x: (attX + 4).toFixed(1),
           y: convLabelY.toFixed(1),
           anchor: 'start',
-          text: `${Math.round(convSlopeVal * 100)}%`,
+          text: this._ddFormatTickPct(convSlopeVal, 1),
         },
         att: {
           visible: attW > 54 && attH > 20,
@@ -3659,6 +3662,8 @@
       if (!isPanFrame) {
         this._ddSetChartCoverage(wrap, t, displayed.length, points.length, ptSet.imagesCount);
       }
+      const highResVal = data.thresholds?.high_residual ?? 0.20;
+      const convSlopeVal = data.thresholds?.converging_slope ?? -0.02;
       const autoBounds = this._ddResolveScatterAutoBounds(
         wrap,
         `q|${data.run_id || ''}|${minCount}`,
@@ -3668,7 +3673,8 @@
           yMin: lowest.slope,
           yMax: highest.slope,
         },
-        true
+        true,
+        convSlopeVal
       );
       const z = this.datasetDiagScatterZoom;
       const hasZoom = !!(z && Number.isFinite(z.xMin) && Number.isFinite(z.xMax)
@@ -3701,8 +3707,6 @@
       const axisY = Math.max(padT, Math.min(padT + plotH, yZero));
       const layout = this._ddComputeScatterAxisLayout(axisX, axisY, xZero, yZero, padL, padT, plotW, plotH, hasZoom);
 
-      const highResVal = data.thresholds?.high_residual ?? 0.20;
-      const convSlopeVal = data.thresholds?.converging_slope ?? -0.02;
       const xHigh = toX(highResVal);
       const yConv = toY(convSlopeVal);
 
@@ -3793,7 +3797,7 @@
       const topRightY = padT + 13;
       const quadLabelsHtml = `
         ${showHighTick ? `<text class="m-dd-thresh-label m-dd-text-halo" data-dd-thresh-label="high" x="${highLabelX.toFixed(1)}" y="${padT + 11}" text-anchor="${highLabelAnchor}">+${Math.round(highResVal * 100)}%</text>` : ''}
-        ${showConvTick ? `<text class="m-dd-thresh-label m-dd-text-halo" data-dd-thresh-label="conv" x="${(yConvX1 + 4).toFixed(1)}" y="${convLabelY.toFixed(1)}" text-anchor="start">${Math.round(convSlopeVal * 100)}%</text>` : ''}
+        ${showConvTick ? `<text class="m-dd-thresh-label m-dd-text-halo" data-dd-thresh-label="conv" x="${(yConvX1 + 4).toFixed(1)}" y="${convLabelY.toFixed(1)}" text-anchor="start">${this.esc(this._ddFormatTickPct(convSlopeVal, 1))}</text>` : ''}
         ${(attW > 54 && attH > 20) ? `<text class="is-alert m-dd-text-halo" data-dd-zone-label="attention" x="${(padL + plotW - 6).toFixed(1)}" y="${topRightY}" text-anchor="end">${this.esc(t('ddQuadTopRight'))}${attCount ? ' · ' + attCount : ''}</text>` : ''}
         ${(lrnW > 54 && lrnH > 20) ? `<text class="is-learning m-dd-text-halo" data-dd-zone-label="learning" x="${(padL + plotW - 6).toFixed(1)}" y="${(padT + plotH - 6).toFixed(1)}" text-anchor="end">${this.esc(t('ddQuadBottomRight'))}${lrnCount ? ' · ' + lrnCount : ''}</text>` : ''}`;
 
