@@ -126,6 +126,12 @@
   --monitor-card-border: color-mix(in srgb, var(--border-default) 82%, transparent);
   --monitor-card-shadow: none;
   --monitor-tile-bg: color-mix(in srgb, var(--monitor-card-bg) 76%, var(--bg-surface-raised));
+  --diag-tone-ok: #28c785;
+  --diag-tone-calm: #7aa2c4;
+  --diag-tone-warn: #f0a330;
+  --diag-tone-danger: #f2625a;
+  --diag-prev-line: rgba(176, 180, 188, 0.58);
+  --diag-full-line: #c8ccd2;
 
   --log-bg: #1b1c1e;
   --log-fg: #e5e5e5;

@@ -85,9 +85,9 @@ window.monitorDiagnosticsMixin = {
     });
 
     if (changePct >= rules.reboundChange) Object.assign(base, { code: 'rebound', tone: 'danger' });
-    else if (volatilityPct >= rules.volatileCv) Object.assign(base, { code: 'volatile', tone: 'danger' });
+    else if (volatilityPct >= rules.volatileCv) Object.assign(base, { code: 'volatile', tone: 'warn' });
     else if (changePct <= rules.convergingChange) Object.assign(base, { code: 'converging', tone: 'ok' });
-    else if (Math.abs(changePct) < rules.plateauAbsChange && volatilityPct < rules.plateauCv) Object.assign(base, { code: 'plateau', tone: 'warn' });
+    else if (Math.abs(changePct) < rules.plateauAbsChange && volatilityPct < rules.plateauCv) Object.assign(base, { code: 'plateau', tone: 'calm' });
     else Object.assign(base, { code: 'steady', tone: 'neutral' });
     return base;
   },
@@ -243,7 +243,7 @@ window.monitorDiagnosticsMixin = {
     html += '<div class="m-hero-chart-wrap" data-hero-chart-wrap hidden>';
     html += '<div class="m-chart-hud" data-chart-hud><span class="m-chart-hud-range" data-chart-hud-range></span><span class="m-chart-hud-readout" data-chart-hud-readout></span></div>';
     html += '<div class="m-hero-chart-stage" data-hero-chart-stage><svg class="m-hero-chart-svg" data-hero-chart-svg aria-hidden="true"></svg></div>';
-    html += '<div class="m-chart-preview-pop" data-chart-preview-pop hidden><button type="button" class="m-preview-pop-main" data-preview-pop-lightbox><img alt="" decoding="async"/></button><div class="m-chart-preview-foot"><strong x-loop-marquee.bounce><span data-preview-pop-title></span></strong><button type="button" class="m-preview-pop-link" data-preview-pop-samples>' + this.esc(t('chartPreviewSamples')) + ' →</button></div></div>';
+    html += '<div class="m-chart-preview-pop" data-chart-preview-pop hidden><button type="button" class="m-preview-pop-main" data-preview-pop-lightbox><img alt="" decoding="async"/></button><div class="m-chart-preview-foot"><strong x-loop-marquee.bounce><span data-preview-pop-title></span></strong><button type="button" class="m-preview-pop-link" data-preview-pop-samples>' + this.esc(t('chartPreviewSamples')) + '</button></div></div>';
     html += '</div>';
     html += '</div>';
 
@@ -549,31 +549,40 @@ window.monitorDiagnosticsMixin = {
     return `hsl(${last[0]} ${last[1]}% ${last[2]}%)`;
   },
 
+  _gaugeLightnessDelta() {
+    const theme = typeof document !== 'undefined'
+      ? document.documentElement?.getAttribute?.('data-theme')
+      : '';
+    return theme === 'light' ? -7 : 0;
+  },
+
   _changeGaugeColor(changePct) {
+    const dl = this._gaugeLightnessDelta();
     // 负向从中性灰平滑入翠绿（收敛好）；正向从中性灰平滑过琥珀、橙红到珊瑚红（反弹警告），不经过绿或紫。
     if (changePct < 0) {
       return this._lerpHslColor([
-        { v: -4.5, hsl: [148, 66, 48] },
-        { v: -2.0, hsl: [152, 58, 50] },
-        { v: 0.0, hsl: [168, 12, 54] },
+        { v: -4.5, hsl: [148, 66, 48 + dl] },
+        { v: -2.0, hsl: [152, 58, 50 + dl] },
+        { v: 0.0, hsl: [168, 12, 54 + dl] },
       ], changePct);
     }
     return this._lerpHslColor([
-      { v: 0.0, hsl: [46, 12, 54] },
-      { v: 1.8, hsl: [42, 82, 54] },
-      { v: 3.0, hsl: [18, 84, 56] },
-      { v: 6.0, hsl: [358, 78, 58] },
+      { v: 0.0, hsl: [46, 12, 54 + dl] },
+      { v: 1.8, hsl: [42, 82, 52 + dl] },
+      { v: 3.0, hsl: [18, 84, 54 + dl] },
+      { v: 6.0, hsl: [358, 78, 56 + dl] },
     ], changePct);
   },
 
   _volatilityGaugeColor(volPct) {
+    const dl = this._gaugeLightnessDelta();
     // 越低越翠绿（平稳），4%~10% 平滑过渡到暖琥珀，10%~15%+ 按短弧过渡到珊瑚红（高波动）。
     return this._lerpHslColor([
-      { v: 0.0, hsl: [148, 66, 48] },
-      { v: 4.0, hsl: [142, 60, 48] },
-      { v: 8.5, hsl: [42, 84, 54] },
-      { v: 12.0, hsl: [12, 82, 56] },
-      { v: 15.0, hsl: [358, 78, 58] },
+      { v: 0.0, hsl: [148, 66, 48 + dl] },
+      { v: 4.0, hsl: [142, 60, 48 + dl] },
+      { v: 8.5, hsl: [42, 84, 52 + dl] },
+      { v: 12.0, hsl: [12, 82, 54 + dl] },
+      { v: 15.0, hsl: [358, 78, 56 + dl] },
     ], volPct);
   },
 
@@ -698,6 +707,198 @@ window.monitorDiagnosticsMixin = {
     return curr;
   },
 
+  _heroPathD(coords) {
+    if (!coords || coords.length < 2) return '';
+    return coords.map((c, i) => (i ? 'L' : 'M') + c.x.toFixed(1) + ' ' + c.y.toFixed(1)).join(' ');
+  },
+
+  _splitHeroCoordsAtX(coords, splitX) {
+    if (!coords || coords.length < 2 || !Number.isFinite(splitX)) return { prev: [], recent: coords || [] };
+    if (splitX <= coords[0].x) return { prev: [], recent: coords };
+    if (splitX >= coords[coords.length - 1].x) return { prev: coords, recent: [] };
+    const idx = coords.findIndex(c => c.x >= splitX);
+    if (idx <= 0) return { prev: [], recent: coords };
+    if (idx < coords.length - 1 && Math.abs(coords[idx].x - splitX) < 0.05) {
+      return { prev: coords.slice(0, idx + 1), recent: coords.slice(idx) };
+    }
+    const a = coords[idx - 1];
+    const b = coords[idx];
+    const ratio = (splitX - a.x) / Math.max(b.x - a.x, 1e-6);
+    const splitPt = { x: splitX, y: a.y + (b.y - a.y) * ratio };
+    return {
+      prev: [...coords.slice(0, idx), splitPt],
+      recent: [splitPt, ...coords.slice(idx)],
+    };
+  },
+
+  _patchHeroSeriesSvg(svg, m) {
+    const q = sel => svg.querySelector(sel);
+    const setAttrs = (el, attrs) => {
+      if (!el) return;
+      for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
+    };
+    const showEl = (el, visible) => {
+      if (!el) return;
+      if (visible) el.removeAttribute('display');
+      else el.setAttribute('display', 'none');
+    };
+
+    setAttrs(q('[data-hero-grid-top]'), { x1: m.padL, x2: m.padL + m.plotW, y1: m.padT, y2: m.padT });
+    setAttrs(q('[data-hero-grid-mid]'), { x1: m.padL, x2: m.padL + m.plotW, y1: m.midY, y2: m.midY });
+    setAttrs(q('[data-hero-grid-axis]'), { x1: m.padL, x2: m.padL + m.plotW, y1: m.padT + m.plotH, y2: m.padT + m.plotH });
+
+    const fullBg = q('[data-hero-full-bg]');
+    showEl(fullBg, m.showFullBg);
+    if (m.showFullBg) {
+      setAttrs(fullBg, {
+        x: m.fullBgX.toFixed(1),
+        y: m.padT,
+        width: m.fullBgWidth.toFixed(1),
+        height: m.plotH,
+      });
+    }
+
+    const diffBand = q('[data-hero-diff-band]');
+    showEl(diffBand, Boolean(m.diffBandD));
+    if (m.diffBandD) setAttrs(diffBand, { d: m.diffBandD });
+
+    const splitLine = q('[data-hero-split-line]');
+    showEl(splitLine, m.showSplitLine);
+    if (m.showSplitLine) {
+      setAttrs(splitLine, { x1: m.splitX.toFixed(1), x2: m.splitX.toFixed(1), y1: m.padT, y2: m.padT + m.plotH });
+    }
+
+    const splitConn = q('[data-hero-split-conn]');
+    showEl(splitConn, m.showSplitConn);
+    if (m.showSplitConn) {
+      setAttrs(splitConn, {
+        x1: m.splitX.toFixed(1), x2: m.splitX.toFixed(1),
+        y1: m.yPrev.toFixed(1), y2: m.yRec.toFixed(1),
+      });
+    }
+
+    const prevMean = q('[data-hero-prev-mean]');
+    const recMean = q('[data-hero-rec-mean]');
+    const prevLabel = q('[data-hero-prev-label]');
+    const recLabel = q('[data-hero-rec-label]');
+    showEl(prevMean, m.showWindowMeans);
+    showEl(recMean, m.showWindowMeans);
+    showEl(prevLabel, m.showWindowMeans);
+    showEl(recLabel, m.showWindowMeans);
+    if (m.showWindowMeans) {
+      const prevEndX = Math.max(m.padL + 4, m.splitX);
+      const recEndX = m.padL + m.plotW;
+      setAttrs(prevMean, { x1: m.padL.toFixed(1), x2: prevEndX.toFixed(1), y1: m.yPrev.toFixed(1), y2: m.yPrev.toFixed(1) });
+      setAttrs(recMean, { x1: m.splitX.toFixed(1), x2: recEndX.toFixed(1), y1: m.yRec.toFixed(1), y2: m.yRec.toFixed(1) });
+      setAttrs(prevLabel, { x: (m.padL + 3).toFixed(1), y: Math.max(m.padT + 9, m.yPrev - 4).toFixed(1) });
+      if (prevLabel) prevLabel.textContent = m.prevMeanText;
+      setAttrs(recLabel, { x: (recEndX - 3).toFixed(1), y: Math.max(m.padT + 9, m.yRec - 4).toFixed(1) });
+      if (recLabel) recLabel.textContent = m.deltaText;
+    }
+
+    const prevPath = q('[data-hero-prev-path]');
+    showEl(prevPath, Boolean(m.prevD));
+    if (prevPath) {
+      prevPath.setAttribute('class', m.prevPathClass);
+      prevPath.setAttribute('d', m.prevD || '');
+    }
+
+    const lrPath = q('[data-hero-lr-path]');
+    showEl(lrPath, Boolean(m.lrD));
+    if (m.lrD) setAttrs(lrPath, { d: m.lrD });
+
+    const mainPath = q('[data-hero-main-path]');
+    showEl(mainPath, Boolean(m.recD));
+    setAttrs(mainPath, { d: m.recD || '' });
+
+    setAttrs(q('[data-hero-cal-ref]'), {
+      x1: m.bestPt.x.toFixed(1), x2: m.latestPt.x.toFixed(1),
+      y1: m.bestPt.y.toFixed(1), y2: m.bestPt.y.toFixed(1),
+    });
+    const showCalStem = m.calSpan >= 3;
+    const calStem = q('[data-hero-cal-stem]');
+    const calTopCap = q('[data-hero-cal-top]');
+    const calBotCap = q('[data-hero-cal-bot]');
+    showEl(calStem, showCalStem);
+    showEl(calTopCap, showCalStem);
+    showEl(calBotCap, showCalStem);
+    if (showCalStem) {
+      setAttrs(calStem, { x1: m.caliperX.toFixed(1), x2: m.caliperX.toFixed(1), y1: m.calTop.toFixed(1), y2: m.calBot.toFixed(1) });
+      setAttrs(calTopCap, { x1: (m.caliperX - 3).toFixed(1), x2: (m.caliperX + 3).toFixed(1), y1: m.calTop.toFixed(1), y2: m.calTop.toFixed(1) });
+      setAttrs(calBotCap, { x1: (m.caliperX - 3).toFixed(1), x2: (m.caliperX + 3).toFixed(1), y1: m.calBot.toFixed(1), y2: m.calBot.toFixed(1) });
+    }
+    setAttrs(q('[data-caliper-target]'), { cx: m.caliperX.toFixed(1), cy: m.calBot.toFixed(1) });
+    const calText = q('[data-hero-cal-text]');
+    setAttrs(calText, { x: (m.latestPt.x - 2).toFixed(1), y: m.calLabelY.toFixed(1) });
+    if (calText) calText.textContent = m.gapText;
+
+    setAttrs(q('[data-hero-best-gx]'), { x1: m.padL, x2: m.bestPt.x.toFixed(1), y1: m.bestPt.y.toFixed(1), y2: m.bestPt.y.toFixed(1) });
+    setAttrs(q('[data-hero-best-gy]'), { x1: m.bestPt.x.toFixed(1), x2: m.bestPt.x.toFixed(1), y1: m.bestPt.y.toFixed(1), y2: (m.padT + m.plotH).toFixed(1) });
+    setAttrs(q('[data-hero-best-ring]'), { cx: m.bestPt.x.toFixed(1), cy: m.bestPt.y.toFixed(1) });
+    setAttrs(q('[data-hero-best-dot]'), { cx: m.bestPt.x.toFixed(1), cy: m.bestPt.y.toFixed(1) });
+    setAttrs(q('[data-hero-best-callout]'), { x: m.bestTextX.toFixed(1), y: m.bestTextY.toFixed(1), 'text-anchor': m.bestAnchor });
+    const bestValEl = q('[data-hero-best-val]');
+    const bestStepEl = q('[data-hero-best-step]');
+    if (bestValEl) bestValEl.textContent = m.bestValText;
+    if (bestStepEl) bestStepEl.textContent = ' ' + m.bestStepText;
+
+    const latestGroup = q('[data-hero-latest]');
+    let pulse = q('[data-hero-latest-pulse]');
+    if (m.isLiveRunning) {
+      if (!pulse && latestGroup) {
+        pulse = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        pulse.setAttribute('class', 'm-latest-pulse');
+        pulse.setAttribute('data-hero-latest-pulse', '');
+        pulse.setAttribute('r', '6');
+        latestGroup.insertBefore(pulse, latestGroup.firstChild);
+      }
+      setAttrs(pulse, { cx: m.latestPt.x.toFixed(1), cy: m.latestPt.y.toFixed(1) });
+    } else if (pulse) {
+      pulse.remove();
+    }
+    setAttrs(q('[data-hero-latest-dot]'), { cx: m.latestPt.x.toFixed(1), cy: m.latestPt.y.toFixed(1) });
+
+    const eventsGroup = q('[data-hero-events]');
+    if (eventsGroup) {
+      const existing = Array.from(eventsGroup.children);
+      m.events.forEach((ev, i) => {
+        let el = existing[i];
+        if (!el) {
+          el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          el.setAttribute('class', 'm-chart-event-diamond');
+          eventsGroup.appendChild(el);
+        }
+        setAttrs(el, {
+          'data-event-idx': i,
+          'data-preview-batch-id': ev.batchId,
+          'data-preview-index': ev.firstIndex,
+          d: `M${ev.x.toFixed(1)} ${(m.padT + m.plotH - 3).toFixed(1)} l3.2 3.2 -3.2 3.2 -3.2 -3.2 Z`,
+        });
+      });
+      for (let i = m.events.length; i < existing.length; i++) existing[i].remove();
+    }
+
+    const axisHigh = q('[data-hero-axis-high]');
+    const axisLow = q('[data-hero-axis-low]');
+    const axisLrMax = q('[data-hero-axis-lrmax]');
+    const axisLrMin = q('[data-hero-axis-lrmin]');
+    const axisStart = q('[data-hero-axis-start]');
+    const axisMid = q('[data-hero-axis-mid]');
+    const axisEnd = q('[data-hero-axis-end]');
+    if (axisHigh) { setAttrs(axisHigh, { x: m.padL - 6, y: m.padT + 4 }); axisHigh.textContent = m.highText; }
+    if (axisLow) { setAttrs(axisLow, { x: m.padL - 6, y: m.padT + m.plotH + 1 }); axisLow.textContent = m.lowText; }
+    showEl(axisLrMax, Boolean(m.lrMaxText));
+    showEl(axisLrMin, Boolean(m.lrMinText));
+    if (m.lrMaxText && axisLrMax) { setAttrs(axisLrMax, { x: m.padL + m.plotW - 4, y: m.padT + 10 }); axisLrMax.textContent = m.lrMaxText; }
+    if (m.lrMinText && axisLrMin) { setAttrs(axisLrMin, { x: m.padL + m.plotW - 4, y: m.padT + m.plotH - 4 }); axisLrMin.textContent = m.lrMinText; }
+    if (axisStart) { setAttrs(axisStart, { x: m.padL, y: m.height - 4 }); axisStart.textContent = m.startStepText; }
+    showEl(axisMid, Boolean(m.splitStepText));
+    if (m.splitStepText && axisMid) { setAttrs(axisMid, { x: m.splitX.toFixed(1), y: m.height - 4 }); axisMid.textContent = m.splitStepText; }
+    if (axisEnd) { setAttrs(axisEnd, { x: m.padL + m.plotW, y: m.height - 4 }); axisEnd.textContent = m.endStepText; }
+
+    setAttrs(q('[data-hover-line]'), { y1: m.padT, y2: m.padT + m.plotH });
+  },
+
   _renderHeroChart(wrap, chart, d, isHistory, t, options = {}) {
     if (!wrap) return;
     wrap._lastRenderArgs = [chart, d, isHistory, t];
@@ -728,6 +929,7 @@ window.monitorDiagnosticsMixin = {
 
     // ── Mode: 每轮（纯净渐变柱状图 + 聚光悬停，无折线/无杂点） ──
     if (mode === 'epoch') {
+      if (svg.dataset) svg.dataset.heroScaffold = 'epoch';
       const epochPoints = rawPrimary;
       const vals = epochPoints.map(p => p.value);
       const bestIdx = epochPoints.indexOf(best);
@@ -826,6 +1028,7 @@ window.monitorDiagnosticsMixin = {
     // ── Mode: 诊断窗口 (window) 或 全程 (full) ──
     const isFull = mode === 'full';
     if (rawPrimary.length < 2) {
+      this._clearHeroChartHover(wrap);
       wrap.hidden = true;
       wrap._chartState = null;
       return;
@@ -856,16 +1059,15 @@ window.monitorDiagnosticsMixin = {
     const spanV = Math.max(high - low, 1e-9);
     const toYUnclamped = v => padT + plotH - ((v - low) / spanV) * plotH;
     const toY = v => Math.max(padT + 1, Math.min(padT + plotH - 1, toYUnclamped(v)));
-    const clipId = 'm-hero-clip-' + (isHistory ? 'h' : 'l');
 
     // 主平滑曲线坐标
     const coords = displayPrimary.map(pt => ({ step: pt.step, value: pt.value, x: toX(pt.step), y: toY(pt.value) }));
-    const smoothD = coords.map((c, i) => (i ? 'L' : 'M') + c.x.toFixed(1) + ' ' + c.y.toFixed(1)).join(' ');
-    const areaD = smoothD + ` L${coords[coords.length - 1].x.toFixed(1)} ${(padT + plotH).toFixed(1)} L${coords[0].x.toFixed(1)} ${(padT + plotH).toFixed(1)} Z`;
+    const smoothD = this._heroPathD(coords);
 
     // 紫色 LR 次坐标叠加曲线
-    let lrVisualHtml = '';
-    let lrAxisHtml = '';
+    let lrD = '';
+    let lrMaxText = '';
+    let lrMinText = '';
     const lrPoints = this.monitorChartShowLr
       ? chart.lrPoints.filter(pt => pt.step >= minStep && pt.step <= maxStep)
       : [];
@@ -878,16 +1080,16 @@ window.monitorDiagnosticsMixin = {
       const lrLow = Math.max(0, lrMin - lrPad), lrHigh = lrMax + lrPad;
       const lrSpan = Math.max(lrHigh - lrLow, 1e-12);
       lrToY = v => padT + plotH - ((v - lrLow) / lrSpan) * plotH;
-      const lrD = lrDraw.map((p, i) => (i ? 'L' : 'M') + toX(p.step).toFixed(1) + ' ' + lrToY(p.value).toFixed(1)).join(' ');
-      lrVisualHtml = `<path class="m-chart-lr-line" d="${lrD}"/>`;
-      lrAxisHtml = `
-        <text class="is-lr" x="${padL + plotW - 4}" y="${padT + 10}" text-anchor="end">${this._formatLearningRate(lrMax, '')}</text>
-        <text class="is-lr" x="${padL + plotW - 4}" y="${padT + plotH - 4}" text-anchor="end">${this._formatLearningRate(lrMin, '')}</text>`;
+      lrD = lrDraw.map((p, i) => (i ? 'L' : 'M') + toX(p.step).toFixed(1) + ' ' + lrToY(p.value).toFixed(1)).join(' ');
+      lrMaxText = this._formatLearningRate(lrMax, '');
+      lrMinText = this._formatLearningRate(lrMin, '');
     }
 
     // 诊断窗口区间分区：中线精准落在前段末点与近段首点正中（锁定在 50% 位置），推进步数时绝不左右抖动。
-    let windowProofHtml = '';
+    const rules = this._trainingDiagnosticRules();
     const hasWindowSplit = diagnostic.windowSize > 0 && Number.isFinite(diagnostic.previousMean) && Number.isFinite(diagnostic.recentMean);
+    const isFullHistorySplit = isFull && hasWindowSplit && diagnostic.windowSize >= rules.windowMax && diagnostic.previousStartStep > minStep;
+    const splitStep = hasWindowSplit ? (isFullHistorySplit ? diagnostic.previousStartStep : diagnostic.recentStartStep) : null;
     let splitX = null;
     if (!isFull && hasWindowSplit) {
       const prevEndPt = rawPrimary[diagnostic.windowSize - 1];
@@ -895,26 +1097,43 @@ window.monitorDiagnosticsMixin = {
       splitX = (prevEndPt && recStartPt)
         ? (toX(prevEndPt.step) + toX(recStartPt.step)) / 2
         : toX(diagnostic.recentStartStep);
-      const prevStartX = padL;
-      const prevEndX = Math.max(prevStartX + 4, splitX);
+    } else if (isFull && hasWindowSplit) {
+      splitX = isFullHistorySplit
+        ? toX(diagnostic.previousStartStep)
+        : (toX(diagnostic.previousEndStep) + toX(diagnostic.recentStartStep)) / 2;
+    }
+
+    let prevD = '';
+    let recD = smoothD;
+    if (hasWindowSplit && splitX != null) {
+      const splitSegs = this._splitHeroCoordsAtX(coords, splitX);
+      prevD = this._heroPathD(splitSegs.prev);
+      const splitRecD = this._heroPathD(splitSegs.recent);
+      recD = prevD ? splitRecD : (splitRecD || smoothD);
+    }
+    const prevPathClass = 'm-chart-prev-line' + (isFullHistorySplit ? ' is-full' : '');
+
+    const showWindowMeans = !isFull && hasWindowSplit && splitX != null;
+    const showFullBg = isFullHistorySplit && splitX != null;
+    const showSplitLine = hasWindowSplit && splitX != null;
+    const fullBgWidth = showFullBg ? Math.min(plotW, Math.max(4, padL + plotW - splitX)) : 0;
+    const fullBgX = showFullBg ? Math.max(padL, Math.min(splitX, padL + plotW - fullBgWidth)) : padL;
+    let yPrev = 0;
+    let yRec = 0;
+    let diffBandD = '';
+    let showSplitConn = false;
+    let deltaText = '';
+    if (showWindowMeans) {
       const recEndX = padL + plotW;
-      const yPrev = toY(diagnostic.previousMean);
-      const yRec = toY(diagnostic.recentMean);
-      const deltaText = this._formatDiagnosticPercent(diagnostic.changePct, true);
-      windowProofHtml = `
-        <g class="m-chart-window-proof">
-          <line class="m-window-split" x1="${splitX.toFixed(1)}" x2="${splitX.toFixed(1)}" y1="${padT}" y2="${padT + plotH}"/>
-          <line class="m-window-mean is-prev" x1="${prevStartX.toFixed(1)}" x2="${prevEndX.toFixed(1)}" y1="${yPrev.toFixed(1)}" y2="${yPrev.toFixed(1)}"/>
-          <line class="m-window-mean is-recent" x1="${splitX.toFixed(1)}" x2="${recEndX.toFixed(1)}" y1="${yRec.toFixed(1)}" y2="${yRec.toFixed(1)}"/>
-          <text class="m-window-mean-label is-prev" x="${(prevStartX + 3).toFixed(1)}" y="${Math.max(padT + 9, yPrev - 4).toFixed(1)}">${this.esc(t('chartPrevMean'))}</text>
-          <text class="m-window-mean-label is-recent" x="${(recEndX - 3).toFixed(1)}" y="${Math.max(padT + 9, yRec - 4).toFixed(1)}" text-anchor="end">${this.esc(deltaText)}</text>
-        </g>`;
-    } else if (isFull && hasWindowSplit && diagnostic.previousStartStep > minStep) {
-      const winStartX = toX(diagnostic.previousStartStep);
-      windowProofHtml = `
-        <g class="m-chart-window-bracket">
-          <line class="m-window-split" x1="${winStartX.toFixed(1)}" x2="${winStartX.toFixed(1)}" y1="${padT}" y2="${padT + plotH}"/>
-        </g>`;
+      yPrev = toY(diagnostic.previousMean);
+      yRec = toY(diagnostic.recentMean);
+      const bandTop = Math.min(yPrev, yRec);
+      const bandBot = Math.max(yPrev, yRec);
+      if (bandBot - bandTop >= 0.5) {
+        diffBandD = `M${splitX.toFixed(1)} ${bandTop.toFixed(1)} H${recEndX.toFixed(1)} V${bandBot.toFixed(1)} H${splitX.toFixed(1)} Z`;
+        showSplitConn = true;
+      }
+      deltaText = this._formatDiagnosticPercent(diagnostic.changePct, true);
     }
 
     // 最低点与最新点锚点 + 电子卡尺（悬停距最低值时显出）
@@ -939,91 +1158,128 @@ window.monitorDiagnosticsMixin = {
       ? Math.max(padT + 12, Math.min(padT + plotH - 4, calMidY + 3.5))
       : (latestPt.y > padT + 20 ? latestPt.y - 10 : latestPt.y + 16);
 
-    const caliperHtml = `
-      <g class="m-chart-caliper">
-        <line class="m-caliper-ref" x1="${bestPt.x.toFixed(1)}" x2="${latestPt.x.toFixed(1)}" y1="${bestPt.y.toFixed(1)}" y2="${bestPt.y.toFixed(1)}"/>
-        ${calSpan >= 3 ? `
-          <line class="m-caliper-stem" x1="${caliperX.toFixed(1)}" x2="${caliperX.toFixed(1)}" y1="${calTop.toFixed(1)}" y2="${calBot.toFixed(1)}"/>
-          <line class="m-caliper-cap" x1="${(caliperX - 3).toFixed(1)}" x2="${(caliperX + 3).toFixed(1)}" y1="${calTop.toFixed(1)}" y2="${calTop.toFixed(1)}"/>
-          <line class="m-caliper-cap" x1="${(caliperX - 3).toFixed(1)}" x2="${(caliperX + 3).toFixed(1)}" y1="${calBot.toFixed(1)}" y2="${calBot.toFixed(1)}"/>
-        ` : ''}
-        <circle class="m-caliper-target" data-caliper-target cx="${caliperX.toFixed(1)}" cy="${calBot.toFixed(1)}" r="2"/>
-        <text class="m-caliper-text" x="${(latestPt.x - 2).toFixed(1)}" y="${calLabelY.toFixed(1)}" text-anchor="end">${this.esc(gapText)}</text>
-      </g>`;
-
     // X 轴底边预览图事件菱形刻度
     const events = previewMarkersAll
       .filter(m => m.step != null && m.step >= minStep && m.step <= maxStep)
       .map(m => ({ ...m, x: toX(m.step) }));
-    const eventsHtml = events.map((ev, i) =>
-      `<path class="m-chart-event-diamond" data-event-idx="${i}" data-preview-batch-id="${this.esc(ev.batchId)}" data-preview-index="${ev.firstIndex}" d="M${ev.x.toFixed(1)} ${(padT + plotH - 3).toFixed(1)} l3.2 3.2 -3.2 3.2 -3.2 -3.2 Z"/>`
-    ).join('');
 
     const midY = (padT + plotH / 2).toFixed(1);
-    const splitStepLabel = (!isFull && hasWindowSplit && splitX != null)
-      ? `<text x="${splitX.toFixed(1)}" y="${height - 4}" text-anchor="middle">${this.esc(t('sampleStep').replace('{n}', Math.round(diagnostic.recentStartStep)))}</text>`
+    const highText = this._formatDiagnosticValue(high);
+    const lowText = this._formatDiagnosticValue(low);
+    const startStepText = t('sampleStep').replace('{n}', Math.round(minStep));
+    const splitStepText = showWindowMeans
+      ? t('sampleStep').replace('{n}', Math.round(diagnostic.recentStartStep))
       : '';
+    const endStepText = t('sampleStep').replace('{n}', Math.round(maxStep));
+    const prevMeanText = t('chartPrevMean');
 
-    const areaGradId = 'm-hero-area-' + (isHistory ? 'h' : 'l');
+    const historyFlag = isHistory ? '1' : '0';
     const cursorGradId = 'm-hero-cursor-' + (isHistory ? 'h' : 'l');
+    const canPatch = !!(
+      svg.dataset
+      && svg.dataset.heroScaffold === 'series'
+      && svg.dataset.heroHistory === historyFlag
+      && typeof svg.querySelector === 'function'
+      && svg.querySelector('[data-hero-main-path]')
+      && typeof document?.createElementNS === 'function'
+    );
+
     svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
     svg.setAttribute('width', String(width));
     svg.setAttribute('height', String(height));
-    svg.innerHTML = `
-      <defs>
-        <clipPath id="${clipId}"><rect x="${padL}" y="${padT}" width="${plotW}" height="${plotH}"/></clipPath>
-        <linearGradient id="${areaGradId}" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="var(--hero-tone-color)" stop-opacity=".08"/>
-          <stop offset="100%" stop-color="var(--hero-tone-color)" stop-opacity="0"/>
-        </linearGradient>
-        <linearGradient id="${cursorGradId}" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="var(--text-secondary)" stop-opacity=".06"/>
-          <stop offset="35%" stop-color="var(--text-secondary)" stop-opacity=".38"/>
-          <stop offset="75%" stop-color="var(--text-secondary)" stop-opacity=".38"/>
-          <stop offset="100%" stop-color="var(--text-secondary)" stop-opacity=".08"/>
-        </linearGradient>
-      </defs>
-      <g class="m-chart-grid">
-        <line x1="${padL}" x2="${padL + plotW}" y1="${padT}" y2="${padT}"/>
-        <line x1="${padL}" x2="${padL + plotW}" y1="${midY}" y2="${midY}"/>
-        <line x1="${padL}" x2="${padL + plotW}" y1="${padT + plotH}" y2="${padT + plotH}" class="is-axis"/>
-      </g>
-      <g class="m-chart-plot-series" data-hero-series>
-        ${windowProofHtml}
-        <path class="m-chart-smooth-area" clip-path="url(#${clipId})" fill="url(#${areaGradId})" d="${areaD}"/>
-        ${lrVisualHtml}
-        <path class="m-chart-smooth-line" data-hero-main-path d="${smoothD}"/>
-      </g>
-      ${caliperHtml}
-      <g class="m-chart-best-anchor">
-        <g class="m-best-guides">
-          <line x1="${padL}" x2="${bestPt.x.toFixed(1)}" y1="${bestPt.y.toFixed(1)}" y2="${bestPt.y.toFixed(1)}"/>
-          <line x1="${bestPt.x.toFixed(1)}" x2="${bestPt.x.toFixed(1)}" y1="${bestPt.y.toFixed(1)}" y2="${(padT + plotH).toFixed(1)}"/>
+
+    if (canPatch) {
+      this._patchHeroSeriesSvg(svg, {
+        width, height, padL, padT, plotW, plotH, midY, isLiveRunning,
+        splitX, showFullBg, fullBgX, fullBgWidth, showSplitLine, showWindowMeans, showSplitConn,
+        yPrev, yRec, diffBandD, prevMeanText, deltaText,
+        prevD, prevPathClass, recD, lrD,
+        bestPt, latestPt, caliperX, calTop, calBot, calSpan, calLabelY, gapText,
+        bestValText, bestStepText, bestAnchor, bestTextX, bestTextY,
+        events, highText, lowText, lrMaxText, lrMinText,
+        startStepText, splitStepText, endStepText,
+      });
+    } else {
+      const prevEndX = splitX != null ? Math.max(padL + 4, splitX) : padL + 4;
+      const recEndX = padL + plotW;
+      const splitXStr = (splitX != null ? splitX : padL).toFixed(1);
+      const eventsHtml = events.map((ev, i) =>
+        `<path class="m-chart-event-diamond" data-event-idx="${i}" data-preview-batch-id="${this.esc(ev.batchId)}" data-preview-index="${ev.firstIndex}" d="M${ev.x.toFixed(1)} ${(padT + plotH - 3).toFixed(1)} l3.2 3.2 -3.2 3.2 -3.2 -3.2 Z"/>`
+      ).join('');
+      const calStemAttrs = calSpan >= 3 ? '' : ' display="none"';
+
+      svg.innerHTML = `
+        <defs>
+          <linearGradient id="${cursorGradId}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="var(--text-secondary)" stop-opacity=".06"/>
+            <stop offset="35%" stop-color="var(--text-secondary)" stop-opacity=".38"/>
+            <stop offset="75%" stop-color="var(--text-secondary)" stop-opacity=".38"/>
+            <stop offset="100%" stop-color="var(--text-secondary)" stop-opacity=".08"/>
+          </linearGradient>
+        </defs>
+        <g class="m-chart-grid">
+          <line data-hero-grid-top x1="${padL}" x2="${padL + plotW}" y1="${padT}" y2="${padT}"/>
+          <line data-hero-grid-mid x1="${padL}" x2="${padL + plotW}" y1="${midY}" y2="${midY}"/>
+          <line data-hero-grid-axis x1="${padL}" x2="${padL + plotW}" y1="${padT + plotH}" y2="${padT + plotH}" class="is-axis"/>
         </g>
-        <circle class="m-best-ring" cx="${bestPt.x.toFixed(1)}" cy="${bestPt.y.toFixed(1)}" r="8"/>
-        <circle class="m-best-dot" cx="${bestPt.x.toFixed(1)}" cy="${bestPt.y.toFixed(1)}" r="3.4"/>
-        <text class="m-best-callout" x="${bestTextX.toFixed(1)}" y="${bestTextY.toFixed(1)}" text-anchor="${bestAnchor}">
-          <tspan class="is-val">${this.esc(bestValText)}</tspan><tspan class="is-step"> ${this.esc(bestStepText)}</tspan>
-        </text>
-      </g>
-      <g class="m-chart-latest">
-        ${isLiveRunning ? `<circle class="m-latest-pulse" cx="${latestPt.x.toFixed(1)}" cy="${latestPt.y.toFixed(1)}" r="6"/>` : ''}
-        <circle class="m-latest-dot" cx="${latestPt.x.toFixed(1)}" cy="${latestPt.y.toFixed(1)}" r="3"/>
-      </g>
-      <g class="m-chart-events">${eventsHtml}</g>
-      <g class="m-chart-axes">
-        <text x="${padL - 6}" y="${padT + 4}" text-anchor="end">${this._formatDiagnosticValue(high)}</text>
-        <text x="${padL - 6}" y="${padT + plotH + 1}" text-anchor="end">${this._formatDiagnosticValue(low)}</text>
-        ${lrAxisHtml}
-        <text x="${padL}" y="${height - 4}" text-anchor="start">${this.esc(t('sampleStep').replace('{n}', Math.round(minStep)))}</text>
-        ${splitStepLabel}
-        <text x="${padL + plotW}" y="${height - 4}" text-anchor="end">${this.esc(t('sampleStep').replace('{n}', Math.round(maxStep)))}</text>
-      </g>
-      <g class="m-chart-hover" data-chart-hover display="none">
-        <line class="m-chart-crosshair" data-hover-line y1="${padT}" y2="${padT + plotH}" stroke="url(#${cursorGradId})"/>
-        <circle class="m-hover-dot is-lr" data-hover-dot="lr" r="2.8" display="none"/>
-        <circle class="m-hover-dot is-smooth" data-hover-dot="smooth" r="3.2" display="none"/>
-      </g>`;
+        <g class="m-chart-plot-series" data-hero-series>
+          <g class="m-chart-overlays" data-hero-overlays>
+            <rect class="m-full-window-bg" data-hero-full-bg x="${fullBgX.toFixed(1)}" y="${padT}" width="${fullBgWidth.toFixed(1)}" height="${plotH}"${showFullBg ? '' : ' display="none"'}/>
+            <path class="m-window-diff-band" data-hero-diff-band d="${diffBandD}"${diffBandD ? '' : ' display="none"'}/>
+            <line class="m-window-split" data-hero-split-line x1="${splitXStr}" x2="${splitXStr}" y1="${padT}" y2="${padT + plotH}"${showSplitLine ? '' : ' display="none"'}/>
+            <line class="m-window-split-connector" data-hero-split-conn x1="${splitXStr}" x2="${splitXStr}" y1="${yPrev.toFixed(1)}" y2="${yRec.toFixed(1)}"${showSplitConn ? '' : ' display="none"'}/>
+            <line class="m-window-mean is-prev" data-hero-prev-mean x1="${padL.toFixed(1)}" x2="${prevEndX.toFixed(1)}" y1="${yPrev.toFixed(1)}" y2="${yPrev.toFixed(1)}"${showWindowMeans ? '' : ' display="none"'}/>
+            <line class="m-window-mean is-recent" data-hero-rec-mean x1="${splitXStr}" x2="${recEndX.toFixed(1)}" y1="${yRec.toFixed(1)}" y2="${yRec.toFixed(1)}"${showWindowMeans ? '' : ' display="none"'}/>
+            <text class="m-window-mean-label is-prev" data-hero-prev-label x="${(padL + 3).toFixed(1)}" y="${Math.max(padT + 9, yPrev - 4).toFixed(1)}"${showWindowMeans ? '' : ' display="none"'}>${this.esc(prevMeanText)}</text>
+            <text class="m-window-mean-label is-recent" data-hero-rec-label x="${(recEndX - 3).toFixed(1)}" y="${Math.max(padT + 9, yRec - 4).toFixed(1)}" text-anchor="end"${showWindowMeans ? '' : ' display="none"'}>${this.esc(deltaText)}</text>
+          </g>
+          <path class="${prevPathClass}" data-hero-prev-path d="${prevD}"${prevD ? '' : ' display="none"'}/>
+          <path class="m-chart-lr-line" data-hero-lr-path d="${lrD}"${lrD ? '' : ' display="none"'}/>
+          <path class="m-chart-smooth-line" data-hero-main-path d="${recD}"${recD ? '' : ' display="none"'}/>
+        </g>
+        <g class="m-chart-caliper">
+          <line class="m-caliper-ref" data-hero-cal-ref x1="${bestPt.x.toFixed(1)}" x2="${latestPt.x.toFixed(1)}" y1="${bestPt.y.toFixed(1)}" y2="${bestPt.y.toFixed(1)}"/>
+          <line class="m-caliper-stem" data-hero-cal-stem x1="${caliperX.toFixed(1)}" x2="${caliperX.toFixed(1)}" y1="${calTop.toFixed(1)}" y2="${calBot.toFixed(1)}"${calStemAttrs}/>
+          <line class="m-caliper-cap" data-hero-cal-top x1="${(caliperX - 3).toFixed(1)}" x2="${(caliperX + 3).toFixed(1)}" y1="${calTop.toFixed(1)}" y2="${calTop.toFixed(1)}"${calStemAttrs}/>
+          <line class="m-caliper-cap" data-hero-cal-bot x1="${(caliperX - 3).toFixed(1)}" x2="${(caliperX + 3).toFixed(1)}" y1="${calBot.toFixed(1)}" y2="${calBot.toFixed(1)}"${calStemAttrs}/>
+          <circle class="m-caliper-target" data-caliper-target cx="${caliperX.toFixed(1)}" cy="${calBot.toFixed(1)}" r="2"/>
+          <text class="m-caliper-text" data-hero-cal-text x="${(latestPt.x - 2).toFixed(1)}" y="${calLabelY.toFixed(1)}" text-anchor="end">${this.esc(gapText)}</text>
+        </g>
+        <g class="m-chart-best-anchor">
+          <g class="m-best-guides">
+            <line data-hero-best-gx x1="${padL}" x2="${bestPt.x.toFixed(1)}" y1="${bestPt.y.toFixed(1)}" y2="${bestPt.y.toFixed(1)}"/>
+            <line data-hero-best-gy x1="${bestPt.x.toFixed(1)}" x2="${bestPt.x.toFixed(1)}" y1="${bestPt.y.toFixed(1)}" y2="${(padT + plotH).toFixed(1)}"/>
+          </g>
+          <circle class="m-best-ring" data-hero-best-ring cx="${bestPt.x.toFixed(1)}" cy="${bestPt.y.toFixed(1)}" r="8"/>
+          <circle class="m-best-dot" data-hero-best-dot cx="${bestPt.x.toFixed(1)}" cy="${bestPt.y.toFixed(1)}" r="3.4"/>
+          <text class="m-best-callout" data-hero-best-callout x="${bestTextX.toFixed(1)}" y="${bestTextY.toFixed(1)}" text-anchor="${bestAnchor}">
+            <tspan class="is-val" data-hero-best-val>${this.esc(bestValText)}</tspan><tspan class="is-step" data-hero-best-step> ${this.esc(bestStepText)}</tspan>
+          </text>
+        </g>
+        <g class="m-chart-latest" data-hero-latest>
+          ${isLiveRunning ? `<circle class="m-latest-pulse" data-hero-latest-pulse cx="${latestPt.x.toFixed(1)}" cy="${latestPt.y.toFixed(1)}" r="6"/>` : ''}
+          <circle class="m-latest-dot" data-hero-latest-dot cx="${latestPt.x.toFixed(1)}" cy="${latestPt.y.toFixed(1)}" r="3"/>
+        </g>
+        <g class="m-chart-events" data-hero-events>${eventsHtml}</g>
+        <g class="m-chart-axes">
+          <text data-hero-axis-high x="${padL - 6}" y="${padT + 4}" text-anchor="end">${highText}</text>
+          <text data-hero-axis-low x="${padL - 6}" y="${padT + plotH + 1}" text-anchor="end">${lowText}</text>
+          <text class="is-lr" data-hero-axis-lrmax x="${padL + plotW - 4}" y="${padT + 10}" text-anchor="end"${lrMaxText ? '' : ' display="none"'}>${lrMaxText}</text>
+          <text class="is-lr" data-hero-axis-lrmin x="${padL + plotW - 4}" y="${padT + plotH - 4}" text-anchor="end"${lrMinText ? '' : ' display="none"'}>${lrMinText}</text>
+          <text data-hero-axis-start x="${padL}" y="${height - 4}" text-anchor="start">${this.esc(startStepText)}</text>
+          <text data-hero-axis-mid x="${splitXStr}" y="${height - 4}" text-anchor="middle"${splitStepText ? '' : ' display="none"'}>${this.esc(splitStepText)}</text>
+          <text data-hero-axis-end x="${padL + plotW}" y="${height - 4}" text-anchor="end">${this.esc(endStepText)}</text>
+        </g>
+        <g class="m-chart-hover" data-chart-hover display="none">
+          <line class="m-chart-crosshair" data-hover-line y1="${padT}" y2="${padT + plotH}" stroke="url(#${cursorGradId})"/>
+          <circle class="m-hover-dot is-lr" data-hover-dot="lr" r="2.8" display="none"/>
+          <circle class="m-hover-dot is-smooth" data-hover-dot="smooth" r="3.2" display="none"/>
+        </g>`;
+      if (svg.dataset) {
+        svg.dataset.heroScaffold = 'series';
+        svg.dataset.heroHistory = historyFlag;
+      }
+    }
 
     wrap.hidden = false;
     wrap.dataset.mode = mode;
@@ -1033,6 +1289,10 @@ window.monitorDiagnosticsMixin = {
       seriesLabel: t(chart.primaryIsAvg ? 'chartSeriesSmooth' : 'currentLoss'), lrToY, events, t,
       indexLimit: Math.max(totalSteps, maxStep),
       defaultRange: '',
+      splitX,
+      splitStep,
+      hasPrevSegment: Boolean(prevD),
+      isFullHistorySplit,
     };
     this._setHeroHudDefault(wrap);
     if (options.animateSwitch && this._monitorMotionAllowed()) this._animateHeroEntrance(svg, mode);
@@ -1146,7 +1406,12 @@ window.monitorDiagnosticsMixin = {
       smoothDot.setAttribute('cx', nearest.x.toFixed(1));
       smoothDot.setAttribute('cy', nearest.y.toFixed(1));
       smoothDot.removeAttribute('display');
-      parts.push(`<span class="m-hud-item is-smooth"><i></i><em>${this.esc(state.seriesLabel)}</em> <span class="m-hud-value">${this._formatDiagnosticValue(nearest.value)}</span></span>`);
+      const isPrevSeg = Boolean(state.hasPrevSegment && Number.isFinite(state.splitStep) && nearest.step < state.splitStep);
+      const isFullSeg = isPrevSeg && Boolean(state.isFullHistorySplit);
+      smoothDot.classList?.toggle('is-prev-seg', isPrevSeg);
+      smoothDot.classList?.toggle('is-full-seg', isFullSeg);
+      const hudSmoothClass = 'm-hud-item is-smooth' + (isPrevSeg ? ' is-prev-seg' : '') + (isFullSeg ? ' is-full-seg' : '');
+      parts.push(`<span class="${hudSmoothClass}"><i></i><em>${this.esc(state.seriesLabel)}</em> <span class="m-hud-value">${this._formatDiagnosticValue(nearest.value)}</span></span>`);
     }
     const hasLr = state.lrToY && nearest.step >= state.lrLookup[0].step && nearest.step <= state.lrLookup.at(-1).step;
     const lrPt = hasLr ? this._lookupNearestByStep(state.lrLookup, nearest.step) : null;
@@ -1224,18 +1489,18 @@ window.monitorDiagnosticsMixin = {
 
   _clearHeroChartHover(wrap) {
     if (wrap._chartState) wrap._chartState.hovered = null;
-    wrap.classList.remove('is-hovering');
+    wrap.classList?.remove('is-hovering');
     wrap._activePreviewEvent = null;
-    wrap.querySelector('[data-hero-chart-stage]')?.classList.remove('has-preview-snap');
+    wrap.querySelector('[data-hero-chart-stage]')?.classList?.remove('has-preview-snap');
     const svg = wrap.querySelector('[data-hero-chart-svg]');
-    const hoverGroup = svg?.querySelector('[data-chart-hover]');
+    const hoverGroup = svg?.querySelector?.('[data-chart-hover]');
     if (hoverGroup) {
       hoverGroup.setAttribute('display', 'none');
-      hoverGroup.querySelectorAll('[data-hover-dot]').forEach(el => el.setAttribute('display', 'none'));
+      hoverGroup.querySelectorAll?.('[data-hover-dot]')?.forEach(el => el.setAttribute('display', 'none'));
     }
-    svg?.querySelector('[data-epoch-bars]')?.classList.remove('has-hover');
-    svg?.querySelectorAll('.m-epoch-bar.is-hovered').forEach(el => el.classList.remove('is-hovered'));
-    svg?.querySelectorAll('.m-chart-event-diamond.is-active').forEach(el => el.classList.remove('is-active'));
+    svg?.querySelector?.('[data-epoch-bars]')?.classList?.remove('has-hover');
+    svg?.querySelectorAll?.('.m-epoch-bar.is-hovered')?.forEach(el => el.classList.remove('is-hovered'));
+    svg?.querySelectorAll?.('.m-chart-event-diamond.is-active')?.forEach(el => el.classList.remove('is-active'));
     const pop = wrap.querySelector('[data-chart-preview-pop]');
     if (pop) pop.hidden = true;
     this._setHeroHudDefault(wrap);
@@ -1267,6 +1532,18 @@ window.monitorDiagnosticsMixin = {
     const hasLr = lrSource.length >= 2;
     const activeMode = (mode === 'epoch' && !hasEpoch) ? 'window' : mode;
     const hasPlotData = windowPoints.length >= 2 || hasEpoch;
+
+    const motionContext = root.dataset.motionContext || '';
+    const hasDiagnosticTone = diagnostic.code !== 'insufficient';
+    const toneReadySameContext = card.dataset.toneContext === motionContext && card.dataset.toneReady === '1';
+    // 仅在相同上下文且已首帧着色的后续实时更新时开启变色过渡，避免刷新或异步首帧拉取时灰→彩闪烁。
+    card.classList?.toggle('is-live-motion', Boolean(root._metricMotion && toneReadySameContext && hasDiagnosticTone));
+    if (hasDiagnosticTone) {
+      card.dataset.toneContext = motionContext;
+      card.dataset.toneReady = '1';
+    } else {
+      delete card.dataset.toneReady;
+    }
 
     card.dataset.diagnosticState = diagnostic.code;
     card.dataset.diagnosticTone = diagnostic.tone;
@@ -1363,10 +1640,10 @@ window.monitorDiagnosticsMixin = {
     const gapMetric = card.querySelector('[data-diagnostic-metric="gap"]');
     const rules = this._trainingDiagnosticRules();
     if (changeMetric) changeMetric.dataset.tone = diagnostic.changePct == null ? 'muted' : (diagnostic.changePct <= rules.convergingChange ? 'ok' : (diagnostic.changePct >= rules.reboundChange ? 'danger' : 'neutral'));
-    if (volatilityMetric) volatilityMetric.dataset.tone = diagnostic.volatilityPct == null ? 'muted' : (diagnostic.volatilityPct >= rules.volatileCv ? 'danger' : (diagnostic.volatilityPct < rules.plateauCv ? 'ok' : 'neutral'));
+    if (volatilityMetric) volatilityMetric.dataset.tone = diagnostic.volatilityPct == null ? 'muted' : (diagnostic.volatilityPct >= rules.volatileCv ? 'warn' : (diagnostic.volatilityPct < rules.plateauCv ? 'ok' : 'neutral'));
     if (gapMetric) gapMetric.dataset.tone = gapVal == null ? 'muted' : 'neutral';
 
-    this._patchDiagnosticGauges(card, diagnostic, Boolean(root._metricMotion), root.dataset.motionContext || '');
+    this._patchDiagnosticGauges(card, diagnostic, Boolean(root._metricMotion), motionContext);
 
     const wrap = card.querySelector('[data-hero-chart-wrap]');
     if (wrap) {
@@ -1374,6 +1651,8 @@ window.monitorDiagnosticsMixin = {
         wrap._chartContext = root.dataset.motionContext;
         wrap._hoverPointer = null;
         delete wrap.dataset.focus;
+        this._clearHeroChartHover(wrap);
+        this._paintDiagnosticConnector(card, '');
       }
       this._renderHeroChart(wrap, { mode: activeMode, points, best, diagnostic, lrPoints, primaryIsAvg: seriesSet.primaryIsAvg }, d, isHistory, t, options);
     }
