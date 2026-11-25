@@ -76,7 +76,7 @@ window.taggerTasksMixin = {
       };
       const response = await fetch('/api/tagger/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const body = await response.json();
-      if (body.status !== 'success') throw new Error(body.message || this.t('tagger.startFailed'));
+      if (body.status !== 'success') throw new Error(this.localizeApiError?.(body, 'tagger.startFailed') || body.message || this.t('tagger.startFailed'));
       this._clearTaggerResultState(mode);
       this.attachTaggerTask(body.data.task_id, mode);
     } catch (error) { this.toast(error.message, 'error'); }
@@ -327,7 +327,9 @@ window.taggerTasksMixin = {
         }
         return;
       }
-      if (body.status !== 'success' || !body.data?.task_id) throw new Error(body.message || this.t('tagger.retryRequestFailed'));
+      if (body.status !== 'success' || !body.data?.task_id) {
+        throw new Error(this.localizeApiError?.(body, 'tagger.retryRequestFailed') || body.message || this.t('tagger.retryRequestFailed'));
+      }
       this._rememberTaggerServer(body.data);
       this.attachTaggerTask(body.data.task_id, mode);
     } catch (error) { if (isCurrent() && this._taggerSameServer(instanceId, responseData)) this.toast(error.message, 'error'); }

@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, patch
 from PIL import Image
 
 from backend.tagger import workspace, workspace_tasks
+from backend.tagger.errors import TaggerNotFoundError, TaggerRuntimeError, error_data
 from backend.server.routes import tagger as tagger_routes
 from backend.tasks import tm
 
@@ -26,13 +27,42 @@ class TaggerResponseIdentityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_status_and_retry_failures_identify_the_server(self):
         with (patch.object(tagger_routes, "task_snapshot", return_value={"status": "error", "error_detail": "Task not found"}),
-              patch.object(tagger_routes, "retry_failed_task", side_effect=ValueError("retry failed"))):
+              patch.object(tagger_routes, "retry_failed_task", side_effect=TaggerNotFoundError("taggerTaskNotFound", "Task not found"))):
             status = await tagger_routes.get_tagger_workspace_task("old-task")
             retry = await tagger_routes.retry_tagger_workspace_task("old-task")
         self.assertEqual(status.status, "fail")
         self.assertEqual(retry.status, "fail")
         self.assertEqual(status.data["server_instance_id"], tagger_routes.SERVER_INSTANCE_ID)
+        self.assertEqual(status.data["errorCode"], "taggerTaskNotFound")
         self.assertEqual(retry.data["server_instance_id"], tagger_routes.SERVER_INSTANCE_ID)
+        self.assertEqual(retry.data["errorCode"], "taggerTaskNotFound")
+
+    def test_coded_runtime_and_not_found_errors_preserve_base_classes(self):
+        runtime_err = TaggerRuntimeError("taggerAnotherTaskRunning", "busy")
+        not_found_err = TaggerNotFoundError("taggerTaskNotFound", "missing")
+        self.assertIsInstance(runtime_err, RuntimeError)
+        self.assertIsInstance(not_found_err, KeyError)
+        self.assertEqual(error_data(runtime_err), {"errorCode": "taggerAnotherTaskRunning", "errorParams": {}})
+        self.assertEqual(error_data(not_found_err), {"errorCode": "taggerTaskNotFound", "errorParams": {}})
+
+    async def test_scan_source_not_found_and_api_test_preserve_error_codes(self):
+        from backend.tagger.errors import TaggerUserError
+        from starlette.requests import Request
+
+        with tempfile.TemporaryDirectory() as temporary:
+            missing = Path(temporary) / "does_not_exist"
+            with self.assertRaises(TaggerUserError) as ctx:
+                workspace.scan_source(str(missing), True)
+            self.assertEqual(ctx.exception.code, "taggerSourceNotFound")
+
+        async def _recv():
+            return {"type": "http.request", "body": b'{"base_url": ""}', "more_body": False}
+
+        req = Request({"type": "http", "method": "POST", "path": "/tagger/api/test", "headers": []}, _recv)
+        with patch.object(tagger_routes.api_engine, "list_models", side_effect=TaggerUserError("taggerInvalidApi", "bad api")):
+            resp = await tagger_routes.tagger_api_test(req)
+        self.assertEqual(resp.status, "fail")
+        self.assertEqual(resp.data, {"errorCode": "taggerInvalidApi", "errorParams": {}})
 
 
 class TaggerWorkspaceTests(unittest.TestCase):

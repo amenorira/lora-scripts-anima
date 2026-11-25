@@ -88,7 +88,9 @@ window.trainingShapePreviewMixin = {
       });
       const result = await response.json();
       if (revision !== this._shapeEstimateRevision) return;
-      if (!response.ok || result.status !== 'success') throw new Error(result.message || this.t('shapePreview.estimateFailed'));
+      if (!response.ok || result.status !== 'success') {
+        throw new Error(this.localizeApiError?.(result, 'shapePreview.estimateFailed') || result.message || this.t('shapePreview.estimateFailed'));
+      }
       this._applyShapeEstimate(result.data);
       this._shapeEstimateCache.set(signature, result.data);
       if (this._shapeEstimateCache.size > 8) this._shapeEstimateCache.delete(this._shapeEstimateCache.keys().next().value);

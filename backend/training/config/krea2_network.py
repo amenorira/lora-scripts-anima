@@ -282,10 +282,15 @@ def build_krea2_network_args(config: dict, preset_path: str | Path) -> list[str]
 
 def extract_krea2_network_form(config: dict) -> dict:
     """Restore guided controls from native args without losing old LoRA filters."""
+    from backend.training.config.training_config import TrainingConfigError
+
     result = dict(config)
     native = result.pop("network_args", [])
     if not isinstance(native, list) or any(not isinstance(arg, str) for arg in native):
-        raise ValueError("network_args must be a string array / 必须为字符串数组")
+        raise TrainingConfigError(
+            "network_args must be a string array / 必须为字符串数组",
+            code="configNetworkArgsMustBeList",
+        )
     inverse = {value: key for key, value in _LYCORIS_ARGS.items()}
     inverse.update(algo="lycoris_algo", dropout="dropout", rank_dropout="rank_dropout",
                    module_dropout="module_dropout", loraplus_lr_ratio="loraplus_lr_ratio")
@@ -302,7 +307,10 @@ def extract_krea2_network_form(config: dict) -> dict:
             if key == "loraplus_lr_ratio":
                 parsed["enable_loraplus"] = True
         elif key == "preset":
-            raise ValueError("preset: import the portable training.yaml to restore Krea 2 target layers / 请导入 training.yaml 恢复 Krea 2 目标层设置")
+            raise TrainingConfigError(
+                "preset: import the portable training.yaml to restore Krea 2 target layers / 请导入 training.yaml 恢复 Krea 2 目标层设置",
+                code="configKrea2PresetRequiresYaml",
+            )
         else:
             extras.append(arg)
     if extras:

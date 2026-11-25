@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 from backend.tasks import tm
+from backend.tagger.errors import TaggerNotFoundError
 from backend.tagger.workspace_state import (
     _ACTIVE_TASK_STATUSES, _sources, _sources_lock, _tasks, _tasks_lock,
 )
@@ -123,7 +124,7 @@ def task_items(task_id: str, offset: int = 0, limit: int = 120, failed_only: boo
     with _tasks_lock:
         task = _tasks.get(task_id)
     if not task:
-        raise KeyError("Task not found / 任务不存在")
+        raise TaggerNotFoundError("taggerTaskNotFound", "Task not found / 任务不存在")
     with task["lock"]:
         items = task["items"]
         start = max(0, offset)
@@ -148,7 +149,7 @@ def task_check_prompt(task_id: str) -> dict:
     with _tasks_lock:
         task = _tasks.get(task_id)
     if not task:
-        raise KeyError("Task not found / 任务不存在")
+        raise TaggerNotFoundError("taggerTaskNotFound", "Task not found / 任务不存在")
     with task["lock"]:
         return {"prompt": task.get("check_prompt", ""), "path": task.get("check_prompt_image", "")}
 

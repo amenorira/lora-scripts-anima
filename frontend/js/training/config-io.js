@@ -16,7 +16,7 @@ window.trainingConfigIoMixin = {
       });
       const data = await response.json();
       if (data.status !== 'success' || !data.data || !data.data.content) {
-        throw new Error(data.message || this.t('common.exportFailed'));
+        throw new Error(this.localizeApiError?.(data, 'common.exportFailed') || data.message || this.t('common.exportFailed'));
       }
       const blob = new Blob([data.data.content], { type: 'application/yaml;charset=utf-8' });
       const url = URL.createObjectURL(blob);
@@ -152,7 +152,9 @@ window.trainingConfigIoMixin = {
         });
         const d = await r.json();
         if (!sourceIsCurrent()) return;
-        if (d.status !== 'success') throw new Error(d.message || this.t('common.parseError'));
+        if (d.status !== 'success') {
+          throw new Error(this.localizeApiError?.(d, 'common.parseError') || d.message || this.t('common.parseError'));
+        }
         const parsed = d.data.data || {};
         if (Object.keys(parsed).length === 0) throw new Error(this.t('common.invalidToml'));
         let applying;

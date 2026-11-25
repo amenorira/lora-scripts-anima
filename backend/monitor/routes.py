@@ -220,10 +220,10 @@ async def delete_history_run(request: Request):
     try:
         body = await request.json()
     except Exception:
-        return {"status": "error", "message": "Invalid request body"}
+        return {"status": "error", "message": "Invalid request body", "error_code": "invalidJson"}
     run_dir = body.get("run_dir", "") if isinstance(body, dict) else ""
     if not isinstance(run_dir, str) or not run_dir:
-        return {"status": "error", "message": "run_dir is required"}
+        return {"status": "error", "message": "run_dir is required", "error_code": "monitorRunNotFound"}
 
     record = await asyncio.to_thread(load_run_record, run_dir, include_deleted=True, use_local_fallback=False)
     if not record:
@@ -256,7 +256,7 @@ async def monitor_run_detail(run_dir: str = Query("")):
     """获取指定历史训练的详情：Loss/LR 图表 + 日志 + 配置参数 + 预览样本。
     run_dir 为相对于项目根的路径（如 output/my_lora_20260527-143021）"""
     if not run_dir:
-        return {"status": "error", "message": "run_dir is required"}
+        return {"status": "error", "message": "run_dir is required", "error_code": "monitorRunNotFound"}
 
     record = await asyncio.to_thread(load_run_record, run_dir)
     if not record:
@@ -347,7 +347,7 @@ async def monitor_log_slice(
     tail=True 时定位到文件末尾（实时任务首次进入、未知 total 时用）。
     """
     if not run_dir and not task_id:
-        return {"status": "error", "message": "run_dir or task_id is required"}
+        return {"status": "error", "message": "run_dir or task_id is required", "error_code": "monitorLogSourceMissing"}
 
     log_path = await asyncio.to_thread(_resolve_monitor_log_path, run_dir, task_id)
     if not log_path:
@@ -391,7 +391,7 @@ async def monitor_preview_metadata(
     from fastapi.responses import JSONResponse, Response
 
     if not run_dir or not path:
-        return {"status": "error", "message": "run_dir and path are required"}
+        return {"status": "error", "message": "run_dir and path are required", "error_code": "monitorPreviewNotFound"}
     decoded = urllib.parse.unquote(path)
     p = await asyncio.to_thread(resolve_artifact_file, run_dir, decoded)
     if not p:
@@ -461,11 +461,12 @@ async def monitor_outputs(run_dir: str = Query(""), task_id: str = Query("")):
     """
     record = await asyncio.to_thread(_resolve_run_record, run_dir, task_id)
     if not record:
-        return {"status": "error", "message": "Run directory not found / 运行目录不存在"}
+        return {"status": "error", "message": "Run directory not found / 运行目录不存在", "error_code": "monitorRunNotFound"}
     if not record["artifact_available"]:
         return {
             "status": "error",
             "message": "Artifact directory unavailable / 产物目录不可用",
+            "error_code": "monitorArtifactUnavailable",
             "data": {"artifact_dir": record["artifact_dir"], "artifact_available": False},
         }
     artifact_dir = Path(record["artifact_path"])
@@ -607,9 +608,9 @@ async def download_outputs(run_dir: str = Query(""), task_id: str = Query(""), f
     import urllib.parse
     record = await asyncio.to_thread(_resolve_run_record, run_dir, task_id)
     if not record:
-        return {"status": "error", "message": "Run directory not found / 运行目录不存在"}
+        return {"status": "error", "message": "Run directory not found / 运行目录不存在", "error_code": "monitorRunNotFound"}
     if not record["artifact_available"]:
-        return {"status": "error", "message": "Artifact directory unavailable / 产物目录不可用"}
+        return {"status": "error", "message": "Artifact directory unavailable / 产物目录不可用", "error_code": "monitorArtifactUnavailable"}
     rd = Path(record["artifact_path"])
 
     if path is not None:
@@ -645,9 +646,9 @@ async def download_outputs(run_dir: str = Query(""), task_id: str = Query(""), f
     try:
         tmp_path = await asyncio.to_thread(_build_zip, rd, file_list)
         if tmp_path is None:
-            return {"status": "error", "message": "No files to download / 无可下载文件"}
+            return {"status": "error", "message": "No files to download / 无可下载文件", "error_code": "monitorNoDownloadableFiles"}
     except Exception as e:
-        return {"status": "error", "message": f"Failed to create zip: {str(e)}"}
+        return {"status": "error", "message": f"Failed to create zip: {str(e)}", "error_code": "monitorDownloadFailed", "error_details": str(e)}
 
     from fastapi.responses import FileResponse
     from starlette.background import BackgroundTask
@@ -666,13 +667,13 @@ async def download_single_output(run_dir: str = Query(""), path: str = Query("")
     from fastapi.responses import FileResponse
 
     if not run_dir or not path:
-        return {"status": "error", "message": "run_dir and path are required"}
+        return {"status": "error", "message": "run_dir and path are required", "error_code": "monitorInvalidDownloadRequest"}
 
     p = await asyncio.to_thread(resolve_artifact_file, run_dir, path)
     if not p:
-        return {"status": "error", "message": "Invalid path / 无效路径"}
+        return {"status": "error", "message": "Invalid path / 无效路径", "error_code": "monitorInvalidPath"}
     if not p.is_file():
-        return {"status": "error", "message": "File not found / 文件不存在"}
+        return {"status": "error", "message": "File not found / 文件不存在", "error_code": "monitorFileNotFound"}
 
     if p.suffix.lower() == '.log':
         from backend.monitor.log_download import snapshot_response
@@ -687,20 +688,20 @@ async def get_snapshot(task_id: str = Query("")):
     from backend.monitor.snapshot import get_config_snapshot
     
     if not task_id:
-        return {"status": "error", "message": "task_id required"}
+        return {"status": "error", "message": "task_id required", "error_code": "monitorConfigNotFound"}
     
     snapshot = get_config_snapshot(task_id)
     if snapshot:
         return {"status": "success", "data": snapshot}
     else:
-        return {"status": "error", "message": "Snapshot not found"}
+        return {"status": "error", "message": "Snapshot not found", "error_code": "monitorConfigNotFound"}
 
 
 @router.get("/monitor/config-from-run")
 async def get_config_from_run(run_dir: str = Query("")):
     """Get training config content from a run directory."""
     if not run_dir:
-        return {"status": "error", "message": "run_dir required"}
+        return {"status": "error", "message": "run_dir required", "error_code": "monitorRunNotFound"}
     
     record = await asyncio.to_thread(load_run_record, run_dir)
     if not record:
@@ -733,6 +734,8 @@ async def get_config_from_run(run_dir: str = Query("")):
             content = config_file.read_text(encoding="utf-8")
             params = read_run_config(config_file.parent)
         reuse_error = None
+        reuse_error_code = None
+        reuse_error_params = None
         reusable_params = None
         try:
             if config_format == "toml":
@@ -754,6 +757,8 @@ async def get_config_from_run(run_dir: str = Query("")):
         except ValueError as exc:
             reusable_params = None
             reuse_error = str(exc)
+            reuse_error_code = getattr(exc, "code", None)
+            reuse_error_params = getattr(exc, "params", None)
         profile_id = params.get("model_train_type") or (record.get("extra") or {}).get("profile_id") or (reusable_params or {}).get("model_train_type", "")
         return {
             "status": "success",
@@ -764,6 +769,8 @@ async def get_config_from_run(run_dir: str = Query("")):
                 "train_params": extract_train_params(params, profile_id),
                 "reuse_params": reusable_params,
                 "reuse_error": reuse_error,
+                "reuse_error_code": reuse_error_code,
+                "reuse_error_params": reuse_error_params,
                 "name": params.get("output_name", abs_run_dir.name),
                 "config_format": config_format,
                 "schema_version": schema_version,
@@ -776,4 +783,4 @@ async def get_config_from_run(run_dir: str = Query("")):
             }
         }
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": str(e), "error_code": "monitorConfigReadFailed", "error_details": str(e)}

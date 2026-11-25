@@ -1,10 +1,10 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { TRAINING_CORE_SCRIPTS, loadFrontend, deferred } = require('./helpers.cjs');
+const { TRAINING_CORE_SCRIPTS, loadFrontend, deferred, readRepo } = require('./helpers.cjs');
 
-function importApplication(fields = [{ key: 'learning_rate' }]) {
+function importApplication(fields = [{ key: 'learning_rate' }], dictionary = null) {
   const readers = [], requests = [], toasts = [], ticks = [], persisted = [];
-  const { window } = loadFrontend(['training/profiles', 'training/config-io'], {
+  const { window } = loadFrontend(['shared/utils', 'training/profiles', 'training/config-io'], {
     window: { getVisibleSections: () => [{ fields }], TRAIN_GROUP_MAP: { 'anima-lora': 'anima', 'sdxl-lora': 'sdxl' } },
     FileReader: class {
       constructor() { readers.push(this); }
@@ -17,7 +17,7 @@ function importApplication(fields = [{ key: 'learning_rate' }]) {
     },
     localStorage: { setItem: (_key, value) => persisted.push(JSON.parse(value)) },
   });
-  const app = Object.assign({}, window.trainingProfiles, window.trainingConfigIoMixin, {
+  const app = Object.assign({}, window.utilsMixin, window.trainingProfiles, window.trainingConfigIoMixin, {
     trainTypes: ['anima-lora', 'sdxl-lora'].map(v => ({ v })),
     form: { model_train_type: 'anima-lora', learning_rate: 'original' },
     currentRoute: 'train-basic', _routeTransitionSeq: 0, _optimizerDrafts: {},
@@ -27,7 +27,8 @@ function importApplication(fields = [{ key: 'learning_rate' }]) {
     _persistActiveTrainingForm() { persisted.push(JSON.parse(JSON.stringify(this.form))); },
     switchTrainType(type) { this.form = { model_train_type: type }; },
     $nextTick: callback => ticks.push(callback),
-    toast: (...args) => toasts.push(args), t: key => key,
+    toast: (...args) => toasts.push(args),
+    t: key => (dictionary ? key.split('.').reduce((v, part) => v?.[part], dictionary) ?? key : key),
   });
   const select = name => app.handleConfigFileImport({ target: { files: [{ name }], value: name } });
   const read = index => readers[index].onload({ target: { result: String(index) } });
@@ -159,4 +160,60 @@ test('cross-profile file import survives the real Alpine training type watcher',
     assert.equal(app.form.learning_rate, 'imported');
     assert.equal(renders, 1);
   } finally { app._trainTypeWatcher(); }
+});
+
+test('config import localizes coded parse errors instead of showing bilingual raw messages', async () => {
+  const jaDict = JSON.parse(readRepo('frontend/i18n/ja-JP.json'));
+  const h = importApplication([{ key: 'learning_rate' }], jaDict);
+  h.select('legacy.toml');
+  const pending = h.read(0);
+  h.requests[0].resolve({
+    json: async () => ({
+      status: 'fail',
+      message: 'Structured preset files are no longer supported / 不再支持结构化预设文件',
+      data: { errorCode: 'configStructuredPresetUnsupported', errorParams: {} },
+    }),
+  });
+  await pending;
+  assert.equal(h.toasts.length, 1);
+  assert.deepEqual(h.toasts[0], [`${jaDict.common.parseError}: ${jaDict.errors.configStructuredPresetUnsupported}`, 'error']);
+});
+
+test('config import localizes profile, field-list, and line-number syntax errors in Japanese', async () => {
+  const jaDict = JSON.parse(readRepo('frontend/i18n/ja-JP.json'));
+  const h = importApplication([{ key: 'learning_rate' }], jaDict);
+  const cases = [
+    {
+      file: 'retired.toml',
+      errorCode: 'configUnknownProfile',
+      errorParams: { profile: 'retired-profile' },
+      expected: jaDict.errors.configUnknownProfile.replace('{profile}', 'retired-profile'),
+    },
+    {
+      file: 'bad-args.toml',
+      errorCode: 'configNetworkArgsMustBeList',
+      errorParams: {},
+      expected: jaDict.errors.configNetworkArgsMustBeList,
+    },
+    {
+      file: 'syntax.toml',
+      errorCode: 'configParseFailed',
+      errorParams: { detail: 'TOML: line 3 column 5 | YAML: bad indentation' },
+      expected: jaDict.errors.configParseFailed.replace('{detail}', 'TOML: line 3 column 5 | YAML: bad indentation'),
+    },
+  ];
+  for (let i = 0; i < cases.length; i++) {
+    const item = cases[i];
+    h.select(item.file);
+    const pending = h.read(i);
+    h.requests[i].resolve({
+      json: async () => ({
+        status: 'fail',
+        message: 'Raw bilingual message / 原文消息',
+        data: { errorCode: item.errorCode, errorParams: item.errorParams },
+      }),
+    });
+    await pending;
+    assert.deepEqual(h.toasts[i], [`${jaDict.common.parseError}: ${item.expected}`, 'error']);
+  }
 });

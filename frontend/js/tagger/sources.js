@@ -192,7 +192,7 @@ window.taggerSourcesMixin = {
       data.append('file', file, file.name);
       const response = await fetch('/api/tagger/uploads', { method: 'POST', body: data });
       const body = await response.json();
-      if (body.status !== 'success') throw new Error(body.message || this.t('tagger.uploadFailed'));
+      if (body.status !== 'success') throw new Error(this.localizeApiError?.(body, 'tagger.uploadFailed') || body.message || this.t('tagger.uploadFailed'));
       if (version !== this._taggerSourceScanVersion || mode !== this.taggerSourceMode || route !== this.currentRoute) return;
       body.data.display_name = file.name || this.t('tagger.singleImage');
       this._releaseTaggerPreview();

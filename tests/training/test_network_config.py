@@ -2,8 +2,11 @@ import copy
 import unittest
 
 from backend.training.config.adapter import adapt_config
+from backend.training.config.config_import import import_native_training_form
 from backend.training.config.network_config import extract_network_form, validate_network_preset
+from backend.training.config.training_config import TrainingConfigError
 from backend.training.config.validation import validate_training_config
+from backend.training.shape_preview import ShapePreviewError, inspect_network
 
 
 class NetworkConfigTests(unittest.TestCase):
@@ -43,6 +46,21 @@ class NetworkConfigTests(unittest.TestCase):
                     adapt_config({**form, "model_train_type": "sdxl-lora"})
             errors = validate_training_config({"model_train_type": "anima-lora", "lycoris_preset": preset})
             self.assertTrue(any("lycoris_preset" in error for error in errors))
+
+    def test_import_and_krea2_shape_preview_emit_structured_error_codes(self):
+        with self.assertRaises(TrainingConfigError) as profile_ctx:
+            import_native_training_form({"model_train_type": "retired-profile"})
+        self.assertEqual(profile_ctx.exception.code, "configUnknownProfile")
+        self.assertEqual(profile_ctx.exception.params, {"profile": "retired-profile"})
+
+        with self.assertRaises(TrainingConfigError) as args_ctx:
+            extract_network_form({"model_train_type": "anima-lora", "network_args": 1})
+        self.assertEqual(args_ctx.exception.code, "configNetworkArgsMustBeList")
+
+        with self.assertRaises(ShapePreviewError) as preview_ctx:
+            inspect_network({"model_train_type": "krea2-lora", "module_dropout": 2})
+        self.assertEqual(preview_ctx.exception.code, "shapePreviewInvalidKrea2Network")
+        self.assertEqual(preview_ctx.exception.params, {"fields": "module_dropout"})
 
 
 if __name__ == "__main__":

@@ -21,6 +21,15 @@ _sessions: OrderedDict[str, tuple[float, dict[str, Path]]] = OrderedDict()
 _lock = threading.Lock()
 
 
+class CropPreviewError(ValueError):
+    """Per-image or viewport crop failure with a stable localization code."""
+
+    def __init__(self, code: str, message: str, **params):
+        super().__init__(message)
+        self.code = code
+        self.params = params
+
+
 def resolve_preview_image(token: str, image_id: str) -> Path | None:
     with _lock:
         entry = _sessions.get(token)
@@ -56,7 +65,7 @@ def crop_geometry(original, bucket, resized):
     rw, rh = resized
     bw, bh = bucket
     if min(width, height, rw, rh, bw, bh) <= 0 or bw > rw or bh > rh:
-        raise ValueError("Invalid crop dimensions / 图片尺寸无法用于当前分桶")
+        raise CropPreviewError("cropPreviewInvalidDimensions", "Invalid crop dimensions / 图片尺寸无法用于当前分桶")
     left, top = (rw - bw) // 2, (rh - bh) // 2
     return {
         "original": [width, height], "bucket": [bw, bh], "resized": [rw, rh],
@@ -69,7 +78,10 @@ def crop_geometry(original, bucket, resized):
 def inspect_crops(config: dict) -> dict:
     root = Path(str(config.get("train_data_dir") or ""))
     if not config.get("train_data_dir") or not root.is_dir():
-        raise StepEstimateError("Select a valid training dataset directory / 请选择有效的训练数据集目录")
+        raise StepEstimateError(
+            "Select a valid training dataset directory / 请选择有效的训练数据集目录",
+            code="cropPreviewInvalidDataset",
+        )
     krea = config.get("model_train_type") == "krea2-lora"
     enabled = bool(config.get("enable_bucket", krea))
     random_crop = bool(config.get("random_crop", False)) and not krea
@@ -113,21 +125,26 @@ def inspect_crops(config: dict) -> dict:
             else:
                 bucket, resized = resolution, original
                 if config.get("face_crop_aug_range"):
-                    raise ValueError("Face-aware crop preview is unavailable / 暂不支持人脸增强裁剪预览")
+                    raise CropPreviewError("cropPreviewFaceCropUnavailable", "Face-aware crop preview is unavailable / 暂不支持人脸增强裁剪预览")
                 if min(original[0] - bucket[0], original[1] - bucket[1]) < 0:
-                    raise ValueError("Image is smaller than the training resolution / 图片小于训练尺寸，请启用分桶或调整分辨率")
+                    raise CropPreviewError("cropPreviewImageSmaller", "Image is smaller than the training resolution / 图片小于训练尺寸，请启用分桶或调整分辨率")
                 if original != bucket and not random_crop:
-                    raise ValueError("Enable bucketing or random crop for this image / 此图片需要启用分桶或随机裁剪")
+                    raise CropPreviewError("cropPreviewNeedsBucketOrRandomCrop", "Enable bucketing or random crop for this image / 此图片需要启用分桶或随机裁剪")
             item.update(crop_geometry(original, bucket, resized))
             versions[image_id] = f"{stat.st_mtime_ns}-{stat.st_size}"
             capability[image_id] = source
         except (OSError, SyntaxError, Image.DecompressionBombError, ValueError, AssertionError, ZeroDivisionError) as exc:
             item["error"] = str(exc)
+            if isinstance(exc, CropPreviewError):
+                item["error_code"] = exc.code
+                if exc.params:
+                    item["error_params"] = exc.params
         items.append(item)
     if not items:
         raise StepEstimateError(
             "No supported training images found / 未找到可用训练图片" +
-            ("（Krea 2 需要同名标注文件）" if krea else "（请检查子目录的重复次数前缀）")
+            ("（Krea 2 需要同名标注文件）" if krea else "（请检查子目录的重复次数前缀）"),
+            code="cropPreviewNoImagesKrea2" if krea else "cropPreviewNoImages",
         )
     with _lock:
         now = time.monotonic()

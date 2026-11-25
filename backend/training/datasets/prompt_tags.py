@@ -6,6 +6,8 @@ from functools import lru_cache
 import json
 from pathlib import Path
 
+from backend.training.datasets.step_estimator import StepEstimateError
+
 
 @lru_cache(maxsize=4096)
 def _caption_tags(filename: str, modified_ns: int, size: int) -> tuple[str, ...] | None:
@@ -34,10 +36,16 @@ def inspect_prompt_tags(config: dict) -> dict:
     directory = str(config.get("train_data_dir") or "").strip()
     root = Path(directory)
     if not directory or not root.is_dir():
-        raise ValueError("Select a valid training dataset directory / 请选择有效的训练数据集目录")
+        raise StepEstimateError(
+            "Select a valid training dataset directory / 请选择有效的训练数据集目录",
+            code="cropPreviewInvalidDataset",
+        )
     extension = str(config.get("caption_extension") or ".txt").strip()
     if not extension.startswith(".") or extension == "." or any(c in extension for c in "/\\\r\n"):
-        raise ValueError("Invalid caption extension / 标注扩展名无效")
+        raise StepEstimateError(
+            "Invalid caption extension / 标注扩展名无效",
+            code="promptTagsInvalidCaptionExtension",
+        )
     if config.get("model_train_type") == "krea2-lora":
         from backend.training.datasets.krea2_dataset import dataset_groups
 

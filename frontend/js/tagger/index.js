@@ -173,7 +173,9 @@ window.taggerMixin = {
     try {
       const response = await fetch('/api/tagger/models');
       const body = await response.json();
-      if (body.status !== 'success' || !body.data) throw new Error(body.message || this.t('tagger.modelRegistryUnavailable'));
+      if (body.status !== 'success' || !body.data) {
+        throw new Error(this.localizeApiError?.(body, 'tagger.modelRegistryUnavailable') || body.message || this.t('tagger.modelRegistryUnavailable'));
+      }
       this.taggerModels = body.data.models || [];
       const savedModel = localStorage.getItem('anima-tagger-model') || '';
       if (!this.taggerSelectedModel && this.taggerModels.some(model => model.id === savedModel)) {

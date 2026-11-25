@@ -22,7 +22,7 @@ from backend.tagger.interrogator import (
     on_interrogate,
 )
 from backend.tagger import captioning, api_engine
-from backend.tagger.errors import error_data
+from backend.tagger.errors import TaggerUserError, error_data
 from backend.tagger import workspace
 from backend.tagger.registry import DEFAULT_MODEL_ID, MODEL_SPEC_BY_ID, model_payload
 from backend.tagger.workspace import (
@@ -53,7 +53,7 @@ def _copy_upload(stream, target: Path) -> None:
         while chunk := stream.read(1024 * 1024):
             written += len(chunk)
             if written > 100 * 1024 * 1024:
-                raise ValueError("Image exceeds the 100 MB upload limit / 图片超过 100 MB 限制")
+                raise TaggerUserError("taggerUploadTooLarge", "Image exceeds the 100 MB upload limit / 图片超过 100 MB 限制")
             output.write(chunk)
 
 
@@ -71,7 +71,7 @@ async def run_interrogate(req: TaggerInterrogateRequest):
     try:
         workspace.claim_direct_tagger(owner)
     except RuntimeError as exc:
-        return APIResponseFail(message=str(exc))
+        return APIResponseFail(message=str(exc), data=error_data(exc))
     interrogator = available_interrogators.get(
         req.interrogator_model,
         available_interrogators[DEFAULT_MODEL_ID],
@@ -135,7 +135,10 @@ async def stop_interrogate(task_id: str):
     """Cancel a running tagger task."""
     if cancel_tagger_task(task_id):
         return APIResponseSuccess(data={"message": "Task cancelled / 任务已取消"})
-    return APIResponseFail(message="Task not found / 任务不存在")
+    return APIResponseFail(
+        message="Task not found / 任务不存在",
+        data={"errorCode": "taggerTaskNotFound", "errorParams": {}},
+    )
 
 
 @router.get("/tagger/models")
@@ -163,7 +166,10 @@ async def tagger_scan_source(request: Request):
 @router.post("/tagger/uploads")
 async def tagger_upload(file: UploadFile = File(...)):
     if not file.content_type or not file.content_type.startswith("image/"):
-        return APIResponseFail(message="File is not an image / 文件不是图片")
+        return APIResponseFail(
+            message="File is not an image / 文件不是图片",
+            data={"errorCode": "taggerNotAnImage", "errorParams": {}},
+        )
     suffix = Path(file.filename or "upload.png").suffix.lower() or ".png"
     upload_dir = TAGGER_CACHE_DIR / "uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
@@ -178,7 +184,8 @@ async def tagger_upload(file: UploadFile = File(...)):
     except Exception as exc:
         temporary.unlink(missing_ok=True)
         target.unlink(missing_ok=True)
-        return APIResponseFail(message=f"Upload failed / 上传失败: {str(exc)[:240]}")
+        data = error_data(exc) or {"errorCode": "taggerUploadFailed", "errorParams": {"detail": str(exc)[:240]}}
+        return APIResponseFail(message=f"Upload failed / 上传失败: {str(exc)[:240]}", data=data)
 
 
 @router.get("/tagger/source/{source_token}/items")
@@ -186,7 +193,7 @@ async def list_tagger_source_items(source_token: str, offset: int = 0, limit: in
     try:
         return APIResponseSuccess(data=await asyncio.to_thread(source_items, source_token, offset, limit))
     except Exception as exc:
-        return APIResponseFail(message=str(exc))
+        return APIResponseFail(message=str(exc), data=error_data(exc))
 
 
 def annotation_options(caption_extension: str = ".txt", reference_extension: str = ".txt",
@@ -240,7 +247,10 @@ async def caption_preview(request: Request):
         preview = workspace.prepare_preview(body)
         return APIResponseSuccess(data=await settled_to_thread(workspace.preview_caption, body, preview))
     except InterruptedError:
-        return APIResponseFail(message="Preview cancelled / 预览已取消")
+        return APIResponseFail(
+            message="Preview cancelled / 预览已取消",
+            data={"errorCode": "taggerPreviewCancelled", "errorParams": {}},
+        )
     except Exception as exc:
         message = str(exc)
         key = str((body.get("api") or {}).get("api_key") or "")
@@ -272,7 +282,10 @@ async def start_tagger_workspace_task(request: Request):
 async def get_tagger_workspace_task(task_id: str):
     snapshot = await asyncio.to_thread(task_snapshot, task_id)
     if snapshot.get("status") == "error" and snapshot.get("error_detail", "").startswith("Task not found"):
-        return APIResponseFail(message=snapshot["error_detail"], data={"server_instance_id": SERVER_INSTANCE_ID})
+        return APIResponseFail(
+            message=snapshot["error_detail"],
+            data={"server_instance_id": SERVER_INSTANCE_ID, "errorCode": "taggerTaskNotFound", "errorParams": {}},
+        )
     return APIResponseSuccess(data={**snapshot, "server_instance_id": SERVER_INSTANCE_ID})
 
 
@@ -280,7 +293,10 @@ async def get_tagger_workspace_task(task_id: str):
 async def stop_tagger_workspace_task(task_id: str):
     if cancel_workspace_task(task_id):
         return APIResponseSuccess(data={"message": "Task cancellation requested"})
-    return APIResponseFail(message="Task not found / 任务不存在")
+    return APIResponseFail(
+        message="Task not found / 任务不存在",
+        data={"errorCode": "taggerTaskNotFound", "errorParams": {}},
+    )
 
 
 @router.post("/tagger/tasks/{task_id}/retry")
@@ -294,7 +310,10 @@ async def retry_tagger_workspace_task(task_id: str):
         )
         return APIResponseSuccess(data={"task_id": new_task_id, "server_instance_id": SERVER_INSTANCE_ID})
     except Exception as exc:
-        return APIResponseFail(message=str(exc), data={"server_instance_id": SERVER_INSTANCE_ID})
+        data = {"server_instance_id": SERVER_INSTANCE_ID}
+        if coded := error_data(exc):
+            data.update(coded)
+        return APIResponseFail(message=str(exc), data=data)
 
 
 @router.get("/tagger/tasks/{task_id}/items")
@@ -302,7 +321,7 @@ async def list_tagger_workspace_items(task_id: str, offset: int = 0, limit: int 
     try:
         return APIResponseSuccess(data=await asyncio.to_thread(task_items, task_id, offset, limit, failed_only))
     except Exception as exc:
-        return APIResponseFail(message=str(exc))
+        return APIResponseFail(message=str(exc), data=error_data(exc))
 
 
 @router.get("/tagger/tasks/{task_id}/check-prompt")
@@ -310,7 +329,7 @@ async def get_check_prompt(task_id: str):
     try:
         return APIResponseSuccess(data=workspace.task_check_prompt(task_id))
     except Exception as exc:
-        return APIResponseFail(message=str(exc))
+        return APIResponseFail(message=str(exc), data=error_data(exc))
 
 
 @router.get("/tagger/tasks/active")
@@ -326,27 +345,39 @@ async def tagger_single_image(
 ):
     """Single-image tag inference. Returns all categories with raw confidence scores."""
     if not file.content_type or not file.content_type.startswith("image/"):
-        return APIResponseFail(message="File is not an image / 文件不是图片")
+        return APIResponseFail(
+            message="File is not an image / 文件不是图片",
+            data={"errorCode": "taggerNotAnImage", "errorParams": {}},
+        )
 
     try:
         contents = await file.read()
         image = Image.open(BytesIO(contents))
     except UnidentifiedImageError:
-        return APIResponseFail(message="Cannot identify image format / 无法识别图片格式")
+        return APIResponseFail(
+            message="Cannot identify image format / 无法识别图片格式",
+            data={"errorCode": "taggerUnidentifiedImage", "errorParams": {}},
+        )
     except Exception as exc:
-        return APIResponseFail(message=f"Failed to read image / 图片读取失败: {str(exc)[:200]}")
+        return APIResponseFail(
+            message=f"Failed to read image / 图片读取失败: {str(exc)[:200]}",
+            data={"errorCode": "taggerReadImageFailed", "errorParams": {"detail": str(exc)[:200]}},
+        )
 
     interrogator = available_interrogators.get(interrogator_model)
     if interrogator is None:
         image.close()
-        return APIResponseFail(message=f"Unknown model: {interrogator_model} / 未知模型: {interrogator_model}")
+        return APIResponseFail(
+            message=f"Unknown model: {interrogator_model} / 未知模型: {interrogator_model}",
+            data={"errorCode": "taggerUnknownModel", "errorParams": {"model": interrogator_model}},
+        )
 
     owner = f"single-tagger:{uuid.uuid4().hex}"
     try:
         workspace.claim_direct_tagger(owner)
     except RuntimeError as exc:
         image.close()
-        return APIResponseFail(message=str(exc))
+        return APIResponseFail(message=str(exc), data=error_data(exc))
 
     try:
         def _infer():
@@ -356,7 +387,10 @@ async def tagger_single_image(
         tags = await settled_to_thread(_infer)
     except Exception as exc:
         log.exception("Single-image inference failed / 单张推理失败")
-        return APIResponseFail(message=f"Inference failed / 推理失败: {str(exc)[:200]}")
+        return APIResponseFail(
+            message=f"Inference failed / 推理失败: {str(exc)[:200]}",
+            data={"errorCode": "taggerInferenceFailed", "errorParams": {"detail": str(exc)[:200]}},
+        )
     finally:
         workspace.release_direct_tagger(owner)
         image.close()
@@ -387,4 +421,4 @@ async def tagger_api_test(request: Request):
         )
         return APIResponseSuccess(data={"models": models[:100], "count": len(models)})
     except Exception as exc:
-        return APIResponseFail(message=str(exc))
+        return APIResponseFail(message=str(exc), data=error_data(exc))

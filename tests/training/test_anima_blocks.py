@@ -1,14 +1,18 @@
+import pickle
 import tempfile
 import unittest
 from pathlib import Path
 
 import numpy as np
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from safetensors.numpy import save_file
 
 from backend.regularization.planning import Settings, identity
+from backend.server.routes.training import router as training_router
 from backend.training.config.validation import validate_training_config
 from backend.training.execution.sd_scripts_preflight import check_input_files
-from backend.training.shape_preview import _anima_config
+from backend.training.shape_preview import ShapePreviewError, _anima_config, inspect_network
 from tests.helpers import valid_training_config
 
 
@@ -50,8 +54,41 @@ class AnimaBlockTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(_anima_config()["num_blocks"], 28)
         with tempfile.TemporaryDirectory() as folder:
             model = Path(folder) / "custom.safetensors"
-            with self.assertRaisesRegex(ValueError, "Cannot read Anima"):
+            with self.assertRaisesRegex(ShapePreviewError, "Cannot read Anima") as read_ctx:
                 _anima_config(model)
+            self.assertEqual(read_ctx.exception.code, "shapePreviewAnimaCheckpointReadFailed")
+            self.assertEqual(read_ctx.exception.params["path"], str(model))
+            self.assertTrue(read_ctx.exception.params["detail"])
             checkpoint(model, [0, 2], "")
-            with self.assertRaisesRegex(ValueError, "Missing Anima DiT blocks"):
+            with self.assertRaisesRegex(ShapePreviewError, "Missing Anima DiT blocks") as miss_ctx:
                 _anima_config(model)
+            self.assertEqual(miss_ctx.exception.code, "shapePreviewAnimaCheckpointMissingBlocks")
+            self.assertEqual(miss_ctx.exception.params["path"], str(model))
+
+    def test_shape_preview_route_preserves_unknown_exception_message(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from unittest.mock import patch
+
+        app = FastAPI()
+        app.include_router(training_router, prefix="/api")
+        with ThreadPoolExecutor(max_workers=1) as pool, TestClient(app) as client:
+            with patch("backend.training.shape_preview.preview_pool", return_value=pool), patch(
+                "backend.training.shape_preview.inspect_network", side_effect=RuntimeError("boom in adapter")
+            ):
+                resp = client.post("/api/training/shape-preview", json={"model_train_type": "anima-lora"}).json()
+        self.assertEqual(resp["status"], "fail")
+        self.assertIn("boom in adapter", resp["message"])
+        self.assertIsNone(resp.get("data"))
+
+    def test_shape_preview_error_is_picklable_and_coded(self):
+        err = ShapePreviewError("shapePreviewUnsupportedModule", "Unsupported / 不支持: q_proj", module="q_proj")
+        restored = pickle.loads(pickle.dumps(err))
+        self.assertIsInstance(restored, ShapePreviewError)
+        self.assertIsInstance(restored, ValueError)
+        self.assertEqual(restored.code, "shapePreviewUnsupportedModule")
+        self.assertEqual(restored.params, {"module": "q_proj"})
+        self.assertEqual(str(restored), "Unsupported / 不支持: q_proj")
+
+        with self.assertRaises(ShapePreviewError) as ctx:
+            inspect_network({"model_train_type": "unknown-profile"})
+        self.assertEqual(ctx.exception.code, "shapePreviewUnsupportedProfile")

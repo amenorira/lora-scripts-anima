@@ -15,6 +15,15 @@ SCHEDULERS = ("native", "simple", "sgm_uniform", "beta", "beta57", "normal", "ka
 DEFAULT_QUALITY_PROMPTS = "masterpiece, best quality, highres, absurdres"
 
 
+class PreviewConfigError(ValueError):
+    """Raised when preview sampling or LoRA configuration is invalid."""
+
+    def __init__(self, message: str, *, code: str, **params):
+        super().__init__(message)
+        self.code = code
+        self.params = params
+
+
 def compose_preview_prompts(form, prompts):
     """Prepend quality text without changing editable prompts or sample grouping."""
     if not form.get("enable_quality_prompts"):
@@ -40,9 +49,19 @@ def sampling_options(sampler=None, scheduler=None):
     sampler = "euler" if sampler in (None, "") else sampler
     scheduler = "native" if scheduler in (None, "") else scheduler
     if sampler not in SAMPLERS:
-        raise ValueError(f"Unsupported preview sampler / 不支持的预览采样器: {sampler}")
+        raise PreviewConfigError(
+            f"Unsupported preview sampler / 不支持的预览采样器: {sampler}",
+            code="configUnsupportedFieldValue",
+            field="preview_sampler",
+            value=str(sampler),
+        )
     if scheduler not in SCHEDULERS:
-        raise ValueError(f"Unsupported preview scheduler / 不支持的预览调度器: {scheduler}")
+        raise PreviewConfigError(
+            f"Unsupported preview scheduler / 不支持的预览调度器: {scheduler}",
+            code="configUnsupportedFieldValue",
+            field="preview_scheduler",
+            value=str(scheduler),
+        )
     return {"sampler": sampler, "scheduler": scheduler}
 
 
@@ -54,14 +73,25 @@ def normalize_loras(value, *, check_files=False, allow_incomplete=False):
     if value is None:
         return []
     if not isinstance(value, list):
-        raise ValueError("Preview LoRAs must be a list / 预览 LoRA 必须是列表")
+        raise PreviewConfigError(
+            "Preview LoRAs must be a list / 预览 LoRA 必须是列表",
+            code="configPreviewLorasMustBeList",
+        )
     result = []
     for index, row in enumerate(value, 1):
         if not isinstance(row, dict):
-            raise ValueError(f"Preview LoRA #{index}: expected path and multiplier / 需要路径和权重")
+            raise PreviewConfigError(
+                f"Preview LoRA #{index}: expected path and multiplier / 需要路径和权重",
+                code="configPreviewLoraInvalidRow",
+                index=index,
+            )
         path = row.get("path", "")
         if not isinstance(path, str):
-            raise ValueError(f"Preview LoRA #{index}: path must be text / 路径必须是文本")
+            raise PreviewConfigError(
+                f"Preview LoRA #{index}: path must be text / 路径必须是文本",
+                code="configPreviewLoraPathMustBeText",
+                index=index,
+            )
         path = path.strip()
         raw = row.get("multiplier", 1.0)
         if allow_incomplete and raw in ("", None):
@@ -72,17 +102,34 @@ def normalize_loras(value, *, check_files=False, allow_incomplete=False):
         except (ValueError, TypeError, OverflowError):
             multiplier = float("nan")
         if isinstance(raw, bool) or not math.isfinite(multiplier):
-            raise ValueError(f"Preview LoRA #{index}: multiplier must be finite / 权重必须是有限数值")
+            raise PreviewConfigError(
+                f"Preview LoRA #{index}: multiplier must be finite / 权重必须是有限数值",
+                code="configPreviewLoraMultiplierNotFinite",
+                index=index,
+            )
         if not path and multiplier != 0 and not allow_incomplete:
-            raise ValueError(f"Preview LoRA #{index}: path is required / 请填写文件路径")
+            raise PreviewConfigError(
+                f"Preview LoRA #{index}: path is required / 请填写文件路径",
+                code="configPreviewLoraPathRequired",
+                index=index,
+            )
         file = Path(path).expanduser()
         if path and multiplier != 0 and file.suffix.lower() not in {".safetensors", ".pt", ".pth", ".ckpt", ".bin"}:
-            raise ValueError(f"Preview LoRA #{index}: unsupported weight file / 不支持的权重文件格式")
+            raise PreviewConfigError(
+                f"Preview LoRA #{index}: unsupported weight file / 不支持的权重文件格式",
+                code="configPreviewLoraUnsupportedFile",
+                index=index,
+            )
         if check_files and multiplier != 0:
             if not file.is_absolute():
                 file = Path(__file__).resolve().parents[3] / file
             if not file.is_file():
-                raise ValueError(f"Preview LoRA #{index}: file not found / 文件不存在: {file}")
+                raise PreviewConfigError(
+                    f"Preview LoRA #{index}: file not found / 文件不存在: {file}",
+                    code="configPreviewLoraFileNotFound",
+                    index=index,
+                    path=str(file),
+                )
             path = str(file.resolve())
         result.append({"path": path, "multiplier": multiplier})
     return result

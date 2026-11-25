@@ -6,6 +6,22 @@ const cropPreviewWarmDelay = 100;
 const cropPreviewWarmLifetime = 3000;
 let cropPreviewDetailWarm = null;
 let pendingCropPreviewFrame = null;
+const cropPreviewSourceStorageKey = 'anima-crop-preview-source';
+
+function readStoredCropPreviewSource() {
+  try {
+    const value = globalThis.localStorage?.getItem(cropPreviewSourceStorageKey);
+    return ['exclude', 'only', 'include'].includes(value) ? value : 'exclude';
+  } catch (_) {
+    return 'exclude';
+  }
+}
+
+function writeStoredCropPreviewSource(value) {
+  try {
+    globalThis.localStorage?.setItem(cropPreviewSourceStorageKey, value);
+  } catch (_) {}
+}
 
 function cancelCropPreviewDetailImage(frame) {
   const full = frame?.querySelector('.cp-full-image:not(.is-loaded)');
@@ -33,7 +49,7 @@ window.trainingCropPreviewMixin = {
   cropPreviewItems: [],
   cropPreviewRandom: false,
   cropPreviewFilter: 'all',
-  cropPreviewSource: 'include',
+  cropPreviewSource: readStoredCropPreviewSource(),
   cropPreviewRegConfigured: false,
   cropPreviewBucket: '',
   cropPreviewBucketsExpanded: false,
@@ -58,7 +74,7 @@ window.trainingCropPreviewMixin = {
     this.cropPreviewFocus = null;
     this.cropPreviewFocusOpen = false;
     this.cropPreviewFilter = 'all';
-    this.cropPreviewSource = 'include';
+    this.cropPreviewSource = readStoredCropPreviewSource();
     this.cropPreviewRegConfigured = false;
     this.cropPreviewBucket = '';
     this.cropPreviewBucketsExpanded = false;
@@ -81,7 +97,10 @@ window.trainingCropPreviewMixin = {
       });
       const result = await response.json();
       if (seq !== this._cropPreviewSeq) return;
-      if (!response.ok || result.status !== 'success') throw new Error(result.message || this.t('cropPreview.failed'));
+      if (!response.ok || result.status !== 'success') {
+        throw new Error(this.localizeApiError?.(result, 'cropPreview.failed', { prefixes: ['errors', 'stepEstimate.errors'] })
+          || result.message || this.t('cropPreview.failed'));
+      }
       this.cropPreviewRandom = result.data.random_crop;
       this.cropPreviewItems = result.data.items;
       if (this.cropPreviewRandom) this.shuffleCropPreview();
@@ -163,13 +182,15 @@ window.trainingCropPreviewMixin = {
   },
 
   cropPreviewSourceOptions() {
-    return [['include', 'includeReg'], ['exclude', 'excludeReg'], ['only', 'onlyReg']]
+    return [['exclude', 'excludeReg'], ['only', 'onlyReg'], ['include', 'includeReg']]
       .map(([value, label]) => ({ value, label: this.t(`cropPreview.${label}`) }));
   },
 
   setCropPreviewSource(value) {
+    if (!['exclude', 'only', 'include'].includes(value)) return;
     this._cropBucketMotionCleanup?.();
     this.cropPreviewSource = value;
+    writeStoredCropPreviewSource(value);
     if (this.cropPreviewBucket && !this.cropPreviewBuckets.some(bucket => bucket.key === this.cropPreviewBucket)) {
       this.cropPreviewBucket = '';
     }
@@ -179,7 +200,7 @@ window.trainingCropPreviewMixin = {
 
   get cropPreviewSourceItems() {
     const items = this.cropPreviewItems;
-    const source = this.cropPreviewSource;
+    const source = this.cropPreviewRegConfigured ? this.cropPreviewSource : 'include';
     if (source === 'include') return items;
     const cached = cropPreviewSourceCache.get(items);
     if (cached?.source === source) return cached.items;
@@ -611,6 +632,15 @@ window.trainingCropPreviewMixin = {
     } finally {
       if (seq === this._cropFocusSeq) this._cropFocusRequested = null;
     }
+  },
+
+  cropPreviewItemError(item) {
+    if (!item?.error) return '';
+    return this.localizeApiError?.(
+      { error_code: item.error_code, error_params: item.error_params, message: item.error },
+      'cropPreview.failed',
+      { prefixes: ['errors', 'stepEstimate.errors'] }
+    ) || item.error || this.t('cropPreview.failed');
   },
 
   cropPreviewKey(event) {

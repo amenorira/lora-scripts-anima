@@ -555,7 +555,7 @@
           this.datasetDiagModalError = '';
         } else {
           this.datasetDiagModalDetail = null;
-          this.datasetDiagModalError = body.message || 'loadFailed';
+          this.datasetDiagModalError = this.localizeApiError?.(body, 'monitor.ddModalLoadFailed') || 'loadFailed';
         }
       } catch (_) {
         if (!isCurrent()) return;

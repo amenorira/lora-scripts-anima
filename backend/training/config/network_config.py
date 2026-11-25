@@ -5,6 +5,7 @@ import ast
 from typing import Any
 
 from backend.training.core_registry import PROFILES
+from backend.training.config.training_config import TrainingConfigError
 from backend.training.fields.field_registry import FIELDS, LORAPLUS_RATIO_KEYS, get_fields_json, field_applies_to_profile
 
 
@@ -29,7 +30,11 @@ def validate_network_preset(config: dict[str, Any]) -> None:
     preset = config.get("lycoris_preset", presets[-1] if presets else "full")
     field = next(field for field in FIELDS if field["key"] == "lycoris_preset")
     if any(option["v"] == preset and option.get("group") == "sdxl" for option in field["options"]):
-        raise ValueError(f"lycoris_preset: {preset} has no Anima targets / 此预设不适用于 Anima，请选择 full 或 attn-mlp")
+        raise TrainingConfigError(
+            f"lycoris_preset: {preset} has no Anima targets / 此预设不适用于 Anima，请选择 full 或 attn-mlp",
+            code="configLycorisPresetUnsupported",
+            preset=str(preset),
+        )
 
 
 def extract_network_form(config: dict[str, Any], *, model_train_type: str = "anima-lora") -> dict[str, Any]:
@@ -40,7 +45,11 @@ def extract_network_form(config: dict[str, Any], *, model_train_type: str = "ani
         from backend.training.config.krea2_network import extract_krea2_network_form
         return extract_krea2_network_form(result)
     if profile not in PROFILES:
-        raise ValueError(f"Unsupported model_train_type: {profile}")
+        raise TrainingConfigError(
+            f"Unsupported model_train_type: {profile}",
+            code="configUnknownProfile",
+            profile=str(profile),
+        )
     group = PROFILES[profile].group
     module = result.get("network_module") or {
         "anima": "networks.lora_anima", "sdxl": "networks.lora", "moss_image": "networks.lora_generic",
@@ -54,7 +63,10 @@ def extract_network_form(config: dict[str, Any], *, model_train_type: str = "ani
 
     arguments = result.pop("network_args", [])
     if not isinstance(arguments, list) or any(not isinstance(item, str) for item in arguments):
-        raise ValueError("network_args must be a string array / network_args 必须为字符串数组")
+        raise TrainingConfigError(
+            "network_args must be a string array / network_args 必须为字符串数组",
+            code="configNetworkArgsMustBeList",
+        )
     if arguments:
         # Match adapt_config: explicit controls > custom arguments > native arguments.
         arguments = [*arguments, *str(result.pop("network_args_custom", "") or "").splitlines()]
@@ -75,7 +87,12 @@ def extract_network_form(config: dict[str, Any], *, model_train_type: str = "ani
         field = fields[key]
         value = result.setdefault(field["key"], value)
         if field["type"] == "select" and value not in [option["v"] for option in field["options"]]:
-            raise ValueError(f"{field['key']}: unsupported value {value!r} / 不支持的选项")
+            raise TrainingConfigError(
+                f"{field['key']}: unsupported value {value!r} / 不支持的选项",
+                code="configUnsupportedFieldValue",
+                field=field["key"],
+                value=repr(value),
+            )
     if parsed.keys() & set(LORAPLUS_RATIO_KEYS):
         result.setdefault("enable_loraplus", True)
         # A component-only ratio must not acquire the UI's default global 2x ratio.

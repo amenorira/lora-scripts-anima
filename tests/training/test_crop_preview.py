@@ -61,3 +61,23 @@ class CropPreviewTests(unittest.TestCase):
                     self.assertTrue(source.is_relative_to(root))
                 self.assertIsNone(resolve_preview_image(result['session_id'], '../portrait.png'))
                 self.assertIsNone(resolve_preview_image('invalid', '0'))
+
+    def test_crop_preview_per_image_errors_emit_error_codes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subset = root / '1_subject'
+            subset.mkdir()
+            Image.new('RGB', (128, 128)).save(subset / 'small.png')
+            Image.new('RGB', (320, 256)).save(subset / 'mismatch.png')
+
+            result = inspect_crops(dict(
+                train_data_dir=str(root),
+                resolution='256,256',
+                enable_bucket=False,
+                random_crop=False,
+            ))
+            by_name = {Path(item['name']).name: item for item in result['items']}
+            self.assertIn('error', by_name['small.png'])
+            self.assertEqual(by_name['small.png']['error_code'], 'cropPreviewImageSmaller')
+            self.assertIn('error', by_name['mismatch.png'])
+            self.assertEqual(by_name['mismatch.png']['error_code'], 'cropPreviewNeedsBucketOrRandomCrop')

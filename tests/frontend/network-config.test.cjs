@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { TRAINING_CORE_SCRIPTS, ROOT, loadFrontend, trainingFieldSections } = require('./helpers.cjs');
+const { TRAINING_CORE_SCRIPTS, ROOT, loadFrontend, trainingFieldSections, readRepo } = require('./helpers.cjs');
 
 function application(profile, values = {}) {
   const { window: w } = loadFrontend(['shared/constants', 'shared/utils', 'app/config', ...TRAINING_CORE_SCRIPTS,
@@ -163,4 +163,62 @@ for original, result in zip(data['originals'], data['roundtrips']):
         expected['train_llm_adapter'] = expected.pop('train_text_embedder')
     assert all(actual.get(k) == v for k, v in expected.items()), (expected, actual)
 `, { originals, roundtrips });
+});
+
+test('shape preview localizes coded API failures instead of leaking bilingual backend messages', async () => {
+  const jaDict = JSON.parse(readRepo('frontend/i18n/ja-JP.json'));
+  const { window } = loadFrontend(['shared/utils', 'training/shape-preview'], {
+    window: {},
+    setTimeout,
+    clearTimeout,
+    AbortController,
+    fetch: async () => ({
+      ok: true,
+      json: async () => ({
+        status: 'fail',
+        message: 'Unsupported custom network / 暂不支持此自定义网络',
+        data: { errorCode: 'shapePreviewUnsupportedNetwork', errorParams: {} },
+      }),
+    }),
+  });
+  const app = Object.assign({}, window.utilsMixin, window.trainingShapePreviewMixin, {
+    form: { model_train_type: 'anima-lora', network_dim: 8 },
+    _shapeEstimateSignature: '{}',
+    _shapeEstimateRevision: 1,
+    t: key => key.split('.').reduce((v, part) => v?.[part], jaDict) ?? key,
+  });
+  await app.refreshShapeEstimate();
+  assert.equal(app.shapeEstimateError, jaDict.errors.shapePreviewUnsupportedNetwork);
+  assert.ok(!app.shapeEstimateError.includes('/'));
+});
+
+test('shape preview localizes Krea 2 validation failures while keeping invalid field names', async () => {
+  const jaDict = JSON.parse(readRepo('frontend/i18n/ja-JP.json'));
+  const { window } = loadFrontend(['shared/utils', 'training/shape-preview'], {
+    window: {},
+    setTimeout,
+    clearTimeout,
+    AbortController,
+    fetch: async () => ({
+      ok: true,
+      json: async () => ({
+        status: 'fail',
+        message: 'module_dropout: invalid probability / 概率超出有效范围',
+        data: { errorCode: 'shapePreviewInvalidKrea2Network', errorParams: { fields: 'module_dropout' } },
+      }),
+    }),
+  });
+  const app = Object.assign({}, window.utilsMixin, window.trainingShapePreviewMixin, {
+    form: { model_train_type: 'krea2-lora', module_dropout: 2 },
+    _shapeEstimateSignature: '{}',
+    _shapeEstimateRevision: 1,
+    t: key => key.split('.').reduce((v, part) => v?.[part], jaDict) ?? key,
+  });
+  await app.refreshShapeEstimate();
+  assert.equal(
+    app.shapeEstimateError,
+    jaDict.errors.shapePreviewInvalidKrea2Network.replace('{fields}', 'module_dropout')
+  );
+  assert.ok(app.shapeEstimateError.includes('module_dropout'));
+  assert.ok(!app.shapeEstimateError.includes('/'));
 });

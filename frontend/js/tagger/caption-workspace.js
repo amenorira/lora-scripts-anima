@@ -576,7 +576,7 @@ window.captionWorkspaceMixin = {
     try {
       const body = await (await fetch(`/api/tagger/tasks/${encodeURIComponent(batch.taskId)}/check-prompt`)).json();
       if (!isCurrent()) return;
-      if (body.status !== 'success') throw new Error(body.message);
+      if (body.status !== 'success') throw new Error(this.localizeApiError?.(body, 'common.requestFailed') || body.message || this.t('common.requestFailed'));
       this.captionCheckPrompt = body.data.prompt;
       this.captionCheckPromptPath = body.data.path;
       this.captionPromptOpen = true;

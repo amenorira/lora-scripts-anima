@@ -244,3 +244,31 @@ class DatasetDiagnosticsTests(CrossDriveSandbox):
 
             legacy_data = client.get("/api/monitor/dataset-diagnostics", params={"run_dir": "output/api_legacy"}).json()["data"]
             self.assertEqual((legacy_data["available"], legacy_data["reason"]), (False, "not_recorded"))
+
+    def test_monitor_routes_return_consistent_error_codes(self):
+        # P1-6: monitor_outputs, download_outputs, download_single_output, get_config_from_run error codes
+        run = self._create_run("err_codes")
+        (run / "config.toml").unlink()
+        app = FastAPI()
+        app.include_router(monitor_router, prefix="/api")
+        with TestClient(app) as client:
+            r_missing_out = client.get("/api/monitor/outputs", params={"run_dir": "output/missing_run"}).json()
+            self.assertEqual(r_missing_out["error_code"], "monitorRunNotFound")
+
+            r_unavail_out = client.get("/api/monitor/outputs", params={"run_dir": "output/err_codes"}).json()
+            self.assertEqual(r_unavail_out["error_code"], "monitorArtifactUnavailable")
+
+            r_dl_missing = client.get("/api/monitor/outputs/download", params={"run_dir": "output/missing_run"}).json()
+            self.assertEqual(r_dl_missing["error_code"], "monitorRunNotFound")
+
+            r_dl_unavail = client.get("/api/monitor/outputs/download", params={"run_dir": "output/err_codes"}).json()
+            self.assertEqual(r_dl_unavail["error_code"], "monitorArtifactUnavailable")
+
+            r_dl_single_empty = client.get("/api/monitor/outputs/download-file").json()
+            self.assertEqual(r_dl_single_empty["error_code"], "monitorInvalidDownloadRequest")
+
+            r_dl_single_bad = client.get("/api/monitor/outputs/download-file", params={"run_dir": "output/err_codes", "path": "../secret"}).json()
+            self.assertEqual(r_dl_single_bad["error_code"], "monitorInvalidPath")
+
+            r_cfg_missing = client.get("/api/monitor/config-from-run", params={"run_dir": "output/err_codes"}).json()
+            self.assertEqual(r_cfg_missing["error_code"], "monitorConfigNotFound")
