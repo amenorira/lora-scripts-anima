@@ -1,7 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { loadGlobalFrontend, composeMixins, response, readRepo } = require('./helpers.cjs');
+const { loadGlobalFrontend, loadFrontend, composeMixins, createMemoryStorage, response, readRepo } = require('./helpers.cjs');
 
+global.localStorage = createMemoryStorage();
 const zhDict = JSON.parse(readRepo('frontend/i18n/zh-CN.json'));
 
 global.requestAnimationFrame = () => 0;
@@ -12,7 +13,213 @@ global.document = {
   querySelectorAll: () => [],
 };
 global.window = {};
-loadGlobalFrontend(['shared/utils', 'monitor/logs', 'monitor/core', 'monitor/render']);
+loadGlobalFrontend(['training/timestep-model', 'shared/utils', 'monitor/logs', 'monitor/core', 'monitor/render']);
+
+function makeClassList(initial = []) {
+  const set = new Set(initial);
+  return {
+    _set: set,
+    add: (...cs) => cs.forEach(c => String(c).split(/\s+/).filter(Boolean).forEach(cls => set.add(cls))),
+    remove: (...cs) => cs.forEach(c => String(c).split(/\s+/).filter(Boolean).forEach(cls => set.delete(cls))),
+    toggle(c, force) {
+      const on = force === undefined ? !set.has(c) : Boolean(force);
+      if (on) set.add(c);
+      else set.delete(c);
+      return on;
+    },
+    contains: c => set.has(c),
+  };
+}
+
+function makeEl(tag = 'div', attrs = {}) {
+  const listeners = new Map();
+  const classList = makeClassList(attrs.class ? String(attrs.class).split(/\s+/) : []);
+  const dataset = {};
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k.startsWith('data-')) {
+      dataset[k.slice(5).replace(/-([a-z])/g, (_, ch) => ch.toUpperCase())] = String(v);
+    }
+  }
+  const el = {
+    tagName: tag,
+    tag,
+    nodeType: 1,
+    isConnected: true,
+    hidden: false,
+    attrs: { ...attrs },
+    style: {},
+    dataset,
+    children: [],
+    parentNode: null,
+    clientWidth: 420,
+    clientHeight: 220,
+    offsetWidth: 244,
+    offsetHeight: 256,
+    _html: '',
+    _text: '',
+    _parsed: [],
+    classList,
+    setAttribute(k, v) {
+      this.attrs[k] = String(v);
+      if (k === 'class') {
+        classList._set.clear();
+        String(v).split(/\s+/).filter(Boolean).forEach(c => classList._set.add(c));
+      }
+      if (k.startsWith('data-')) {
+        const camel = k.slice(5).replace(/-([a-z])/g, (_, ch) => ch.toUpperCase());
+        this.dataset[camel] = String(v);
+      }
+    },
+    getAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attrs, k) ? this.attrs[k] : undefined; },
+    removeAttribute(k) { delete this.attrs[k]; },
+    appendChild(child) {
+      child.parentNode = this;
+      this.children.push(child);
+      return child;
+    },
+    removeChild(child) {
+      const idx = this.children.indexOf(child);
+      if (idx >= 0) this.children.splice(idx, 1);
+      child.parentNode = null;
+    },
+    remove() {
+      this.removed = true;
+      this.parentNode?.removeChild?.(this);
+    },
+    addEventListener(type, fn) {
+      if (!listeners.has(type)) listeners.set(type, []);
+      listeners.get(type).push(fn);
+    },
+    removeEventListener(type, fn) {
+      if (!listeners.has(type)) return;
+      listeners.set(type, listeners.get(type).filter(f => f !== fn));
+    },
+    emit(type, ev = {}) {
+      for (const fn of (listeners.get(type) || [])) fn(ev);
+    },
+    closest() { return null; },
+    getBoundingClientRect() { return { left: 0, top: 0, right: el.clientWidth, bottom: el.clientHeight, width: el.clientWidth, height: el.clientHeight }; },
+    querySelector(sel) {
+      if (sel === 'text') return this.children.find(c => c.tagName === 'text') || null;
+      return this.querySelectorAll(sel)[0] || null;
+    },
+    querySelectorAll(sel) {
+      const parts = String(sel).split(',').map(s => s.trim()).filter(Boolean);
+      const matchesOne = (node, s) => {
+        if (s === 'rect') return node.tagName === 'rect';
+        if (s.startsWith('.')) return node.classList.contains(s.slice(1));
+        const exact = /^\[([^=\]]+)="([^"]+)"\]$/.exec(s);
+        if (exact) return node.getAttribute(exact[1]) === exact[2];
+        const pres = /^\[([^=\]]+)\]$/.exec(s);
+        if (pres) return node.getAttribute(pres[1]) !== undefined;
+        return false;
+      };
+      const out = [];
+      const walk = list => {
+        for (const c of list) {
+          if (parts.some(p => matchesOne(c, p))) out.push(c);
+          if (c.children?.length) walk(c.children);
+        }
+      };
+      walk(this.children);
+      walk(this._parsed);
+      return out;
+    },
+  };
+  Object.defineProperty(el, 'innerHTML', {
+    get() { return el._html; },
+    set(val) {
+      el._html = String(val);
+      el.children.length = 0;
+      el._parsed = [];
+      const tagRe = /<(circle|g|line|rect|path|text|button|div|span)\b([^>]*)>/g;
+      let m;
+      while ((m = tagRe.exec(el._html)) !== null) {
+        const node = makeEl(m[1]);
+        const attrRe = /([a-zA-Z0-9_-]+)(?:="([^"]*)")?/g;
+        let am;
+        while ((am = attrRe.exec(m[2])) !== null) {
+          if (am[1]) node.setAttribute(am[1], am[2] ?? '');
+        }
+        el._parsed.push(node);
+        if (el.tagName === 'g' && (el.attrs['data-dd-grid-lines'] !== undefined || el.attrs['data-dd-ag'] !== undefined || m[1] === 'line')) {
+          el.children.push(node);
+        }
+      }
+    },
+  });
+  Object.defineProperty(el, 'textContent', {
+    get() { return el._text; },
+    set(val) { el._text = String(val); },
+  });
+  return el;
+}
+
+function makeWrapStage(mode = 'quadrant', stageW = 680, stageH = 0) {
+  const resetBtn = { hidden: true, closest: () => null };
+  const svg = makeEl('svg');
+  svg.clientWidth = stageW;
+  const stage = makeEl('div');
+  stage.clientWidth = stageW;
+  stage.clientHeight = stageH || 0;
+  const wrap = makeEl('div');
+  wrap.dataset = { mode };
+  wrap.querySelector = sel => (
+    sel === '[data-dd-zoom-reset]' ? resetBtn
+      : sel === '[data-dd-hero-stage]' ? stage
+        : sel === '[data-dd-hero-svg]' ? svg
+          : null
+  );
+  return { wrap, stage, svg, resetBtn };
+}
+
+function withMockEnv(env, fn) {
+  const prev = {
+    document: global.document,
+    requestAnimationFrame: global.requestAnimationFrame,
+    cancelAnimationFrame: global.cancelAnimationFrame,
+    setTimeout: global.setTimeout,
+    clearTimeout: global.clearTimeout,
+    performance: global.performance,
+    fetch: global.fetch,
+    innerWidth: global.window.innerWidth,
+    innerHeight: global.window.innerHeight,
+  };
+  const restore = () => {
+    global.document = prev.document;
+    global.requestAnimationFrame = prev.requestAnimationFrame;
+    global.cancelAnimationFrame = prev.cancelAnimationFrame;
+    global.setTimeout = prev.setTimeout;
+    global.clearTimeout = prev.clearTimeout;
+    global.performance = prev.performance;
+    global.fetch = prev.fetch;
+    global.window.innerWidth = prev.innerWidth;
+    global.window.innerHeight = prev.innerHeight;
+  };
+  if ('document' in env) global.document = env.document;
+  if ('requestAnimationFrame' in env) global.requestAnimationFrame = env.requestAnimationFrame;
+  if ('cancelAnimationFrame' in env) global.cancelAnimationFrame = env.cancelAnimationFrame;
+  if ('setTimeout' in env) global.setTimeout = env.setTimeout;
+  if ('clearTimeout' in env) global.clearTimeout = env.clearTimeout;
+  if ('performance' in env) global.performance = env.performance;
+  if ('fetch' in env) global.fetch = env.fetch;
+  if ('innerWidth' in env) global.window.innerWidth = env.innerWidth;
+  if ('innerHeight' in env) global.window.innerHeight = env.innerHeight;
+  try {
+    const out = fn();
+    if (out && typeof out.then === 'function') {
+      return out.then(
+        res => { restore(); return res; },
+        err => { restore(); throw err; },
+      );
+    }
+    restore();
+    return out;
+  } catch (err) {
+    restore();
+    throw err;
+  }
+}
 
 function makeApp(overrides = {}) {
   const base = composeMixins(window.utilsMixin, window.monitorCoreMixin, window.monitorRenderMixin);
@@ -54,49 +261,49 @@ const SAMPLE_DATA = {
     low: { count: 9, share: 0.3, mean_loss: 0.12, mean_residual: -0.08 },
   },
   by_timestep: [
-    { bin: 0, timestep_from: 0.0, timestep_to: 0.5, count: 15, mean_loss: 0.14 },
-    { bin: 1, timestep_from: 0.5, timestep_to: 1.0, count: 15, mean_loss: 0.34 },
+    { bin: 0, timestep_from: 0.0, timestep_to: 0.5, count: 15, comparable_count: 15, mean_loss: 0.14 },
+    { bin: 1, timestep_from: 0.5, timestep_to: 1.0, count: 15, comparable_count: 15, mean_loss: 0.34 },
   ],
   by_resolution: [
-    { key: '768x1024', label: '768x1024', count: 15, images: 2, mean_loss: 0.28, mean_residual: 0.28 },
-    { key: '1024x1024', label: '1024x1024', count: 15, images: 2, mean_loss: 0.18, mean_residual: -0.25 },
+    { key: '768x1024', label: '768x1024', count: 15, comparable_count: 15, images: 2, mean_loss: 0.28, mean_residual: 0.28 },
+    { key: '1024x1024', label: '1024x1024', count: 15, comparable_count: 15, images: 2, mean_loss: 0.18, mean_residual: -0.25 },
   ],
-  by_batch_size: [{ key: '2', label: 'bs 2', count: 30, images: 4, mean_loss: 0.24, mean_residual: 0.0 }],
+  by_batch_size: [{ key: '2', label: 'bs 2', count: 30, comparable_count: 30, images: 4, mean_loss: 0.24, mean_residual: 0.0 }],
   by_subset: [
-    { key: '0-0', label: '10_char', is_reg: false, count: 22, images: 3, mean_loss: 0.25, mean_residual: 0.08 },
-    { key: '0-1', label: '1_reg', is_reg: true, count: 8, images: 1, mean_loss: 0.19, mean_residual: -0.18 },
+    { key: '0-0', label: '10_char', is_reg: false, count: 22, comparable_count: 22, images: 3, mean_loss: 0.25, mean_residual: 0.08 },
+    { key: '0-1', label: '1_reg', is_reg: true, count: 8, comparable_count: 8, images: 1, mean_loss: 0.19, mean_residual: -0.18 },
   ],
   by_directory: [
-    { key: 'D:/ds/char', label: 'ds/char', full_path: 'D:/ds/char', count: 22, images: 3, mean_loss: 0.25, mean_residual: 0.08 },
+    { key: 'D:/ds/char', label: 'ds/char', full_path: 'D:/ds/char', count: 22, comparable_count: 22, images: 3, mean_loss: 0.25, mean_residual: 0.08 },
   ],
   by_image: [
     {
       image_id: 'aaaaaaaaaaaaaaaa', image: 'D:/ds/char/bad.png', name: 'bad.png',
       directory: 'D:/ds/char', dir_label: 'ds/char', resolution: '768x1024', subset: '0-0', subset_label: '10_char',
-      is_reg: false, count: 8, non_finite_count: 0, epochs: 4, mean_loss: 0.32, mean_residual: 0.42, slope: 0.03,
-      noise_zones: { high: { count: 4, mean_residual: 0.52 }, mid: { count: 2, mean_residual: 0.35 }, low: { count: 2, mean_residual: 0.20 } },
-      status: 'attention', local_available: true, thumb_url: '/api/image-preview?path=aaaaaaaaaaaaaaaa', preview_url: '',
+      is_reg: false, count: 8, comparable_count: 8, non_finite_count: 0, epochs: 4, mean_loss: 0.32, mean_residual: 0.42, slope: 0.03,
+      noise_zones: { high: { count: 4, comparable_count: 4, mean_residual: 0.52 }, mid: { count: 2, comparable_count: 2, mean_residual: 0.35 }, low: { count: 2, comparable_count: 2, mean_residual: 0.20 } },
+      status: 'attention', thumb_url: '/api/image-preview?path=aaaaaaaaaaaaaaaa', preview_url: '',
     },
     {
       image_id: 'bbbbbbbbbbbbbbbb', image: 'D:/ds/char/learn.png', name: 'learn.png',
       directory: 'D:/ds/char', dir_label: 'ds/char', resolution: '768x1024', subset: '0-0', subset_label: '10_char',
-      is_reg: false, count: 8, non_finite_count: 0, epochs: 4, mean_loss: 0.29, mean_residual: 0.25, slope: -0.06,
-      noise_zones: { high: { count: 3, mean_residual: 0.28 }, mid: { count: 3, mean_residual: 0.24 }, low: { count: 2, mean_residual: 0.21 } },
-      status: 'learning', local_available: true, thumb_url: '', preview_url: '',
+      is_reg: false, count: 8, comparable_count: 8, non_finite_count: 0, epochs: 4, mean_loss: 0.29, mean_residual: 0.25, slope: -0.06,
+      noise_zones: { high: { count: 3, comparable_count: 3, mean_residual: 0.28 }, mid: { count: 3, comparable_count: 3, mean_residual: 0.24 }, low: { count: 2, comparable_count: 2, mean_residual: 0.21 } },
+      status: 'learning', thumb_url: '', preview_url: '',
     },
     {
       image_id: 'cccccccccccccccc', image: 'D:/ds/char/nan.png', name: 'nan.png',
       directory: 'D:/ds/char', dir_label: 'ds/char', resolution: '1024x1024', subset: '0-0', subset_label: '10_char',
-      is_reg: false, count: 6, non_finite_count: 1, epochs: 3, mean_loss: 0.21, mean_residual: 0.05, slope: -0.01,
-      noise_zones: { high: { count: 2, mean_residual: 0.08 }, mid: { count: 2, mean_residual: 0.05 }, low: { count: 2, mean_residual: 0.02 } },
-      status: 'non_finite', local_available: true, thumb_url: '', preview_url: '',
+      is_reg: false, count: 6, comparable_count: 6, non_finite_count: 1, epochs: 3, mean_loss: 0.21, mean_residual: 0.05, slope: -0.01,
+      noise_zones: { high: { count: 2, comparable_count: 2, mean_residual: 0.08 }, mid: { count: 2, comparable_count: 2, mean_residual: 0.05 }, low: { count: 2, comparable_count: 2, mean_residual: 0.02 } },
+      status: 'non_finite', thumb_url: '', preview_url: '',
     },
     {
       image_id: 'dddddddddddddddd', image: 'D:/ds/reg/reg1.png', name: 'reg1.png',
       directory: 'D:/ds/reg', dir_label: 'ds/reg', resolution: '1024x1024', subset: '0-1', subset_label: '1_reg',
-      is_reg: true, count: 8, non_finite_count: 0, epochs: 4, mean_loss: 0.14, mean_residual: -0.32, slope: -0.02,
-      noise_zones: { high: { count: 3, mean_residual: -0.30 }, mid: { count: 3, mean_residual: -0.34 }, low: { count: 2, mean_residual: -0.31 } },
-      status: 'easy', local_available: true, thumb_url: '', preview_url: '',
+      is_reg: true, count: 8, comparable_count: 8, non_finite_count: 0, epochs: 4, mean_loss: 0.14, mean_residual: -0.32, slope: -0.02,
+      noise_zones: { high: { count: 3, comparable_count: 3, mean_residual: -0.30 }, mid: { count: 3, comparable_count: 3, mean_residual: -0.34 }, low: { count: 2, comparable_count: 2, mean_residual: -0.31 } },
+      status: 'easy', thumb_url: '', preview_url: '',
     },
   ],
 };
@@ -111,257 +318,1523 @@ test('monitor tab cycling includes dataset tab at the end', () => {
   assert.equal(a.monitorTab, 'dataset');
 });
 
-test('dataset diagnostics filtering, sorting, group linkage, multi-run merge, and streamlined rendering', async () => {
+test('dashboard overview, images view, smart groups deduplication, folding, filtering, and sorting', async () => {
   const seenUrls = [];
-  global.fetch = async url => {
-    seenUrls.push(String(url));
-    if (String(url).includes('/api/monitor/dataset-diagnostics?')) {
-      return response(SAMPLE_DATA);
-    }
-    throw new Error('Unexpected fetch: ' + url);
-  };
-  const a = makeApp();
-  await a.loadDatasetDiagnostics();
-  assert.equal(a.datasetDiagTabCount, 4);
-  // Prioritizes non_finite on initial load when NaN samples exist
-  assert.equal(a.datasetDiagPreset, 'non_finite');
-  assert.deepEqual(a._datasetDiagFilteredImages().map(i => i.name), ['nan.png']);
+  await withMockEnv({
+    fetch: async url => {
+      seenUrls.push(String(url));
+      if (String(url).includes('/api/monitor/dataset-diagnostics?')) return response(SAMPLE_DATA);
+      throw new Error('Unexpected fetch: ' + url);
+    },
+  }, async () => {
+    const a = makeApp();
+    await a.loadDatasetDiagnostics();
+    assert.equal(a.datasetDiagSubTab, 'overview');
+    assert.equal(a.datasetDiagPreset, 'all');
+    assert.equal(a.datasetDiagRegMode, 'exclude');
+    assert.equal(a._datasetDiagHasActiveFilter(), false);
+    assert.deepEqual(a._ddRegOptions().map(o => o.value), ['exclude', 'only', 'all']);
+    assert.equal(a._datasetDiagFilteredImages().length, 3);
+    assert.equal(a._datasetDiagFilteredImages({ ignoreReg: true }).length, 4);
 
-  // Includes merged "all" option when multiple runs exist
-  const runOpts = a._ddRunOptions();
-  assert.equal(runOpts[0].value, 'all');
-  assert.equal(runOpts.length, 3);
+    a.openDatasetDiagPreset('non_finite');
+    assert.equal(a.datasetDiagSubTab, 'images');
+    assert.deepEqual(a._datasetDiagFilteredImages().map(i => i.name), ['nan.png']);
 
-  a.setDatasetDiagPreset('attention');
-  assert.deepEqual(a._datasetDiagFilteredImages().map(i => i.name), ['bad.png']);
+    const runOpts = a._ddRunOptions();
+    assert.equal(runOpts[0].value, 'all');
+    assert.equal(runOpts.length, 3);
 
-  a.setDatasetDiagPreset('easy');
-  assert.deepEqual(a._datasetDiagFilteredImages().map(i => i.name), ['reg1.png']);
+    a.setDatasetDiagPreset('attention');
+    assert.deepEqual(a._datasetDiagFilteredImages().map(i => i.name), ['bad.png']);
 
-  a.setDatasetDiagPreset('all');
-  assert.equal(a._datasetDiagFilteredImages().length, 4);
+    const withNormal = structuredClone(SAMPLE_DATA);
+    withNormal.by_image.push({
+      image_id: 'eeeeeeeeeeeeeeee', image: 'D:/ds/char/ok.png', name: 'ok.png',
+      directory: 'D:/ds/char', dir_label: 'ds/char', resolution: '1024x1024', subset: '0-0', subset_label: '10_char',
+      is_reg: false, count: 6, comparable_count: 6, non_finite_count: 0, epochs: 4, mean_loss: 0.24, mean_residual: 0.02, slope: -0.01,
+      status: 'normal', thumb_url: '', preview_url: '',
+    });
+    const normApp = makeApp({ datasetDiagData: withNormal });
+    normApp.setDatasetDiagPreset('normal');
+    assert.deepEqual(normApp._datasetDiagFilteredImages().map(i => i.name), ['ok.png']);
+    const bd = normApp._ddStatusBreakdown(withNormal);
+    assert.equal(bd.total, 5);
+    assert.equal(
+      bd.counts.non_finite + bd.counts.attention + bd.counts.learning + bd.counts.normal + bd.counts.easy + bd.counts.unqualified,
+      5,
+    );
 
-  a.toggleDatasetDiagGroupFilter('resolution', '768x1024', '768 × 1024');
-  assert.deepEqual(a._datasetDiagFilteredImages().map(i => i.name), ['bad.png', 'learn.png']);
+    a.setDatasetDiagPreset('easy');
+    assert.deepEqual(a._datasetDiagFilteredImages(), []);
+    a.setDatasetDiagRegMode('all');
+    assert.deepEqual(a._datasetDiagFilteredImages().map(i => i.name), ['reg1.png']);
 
-  a.clearDatasetDiagGroupFilter();
-  a.setDatasetDiagRegMode('only');
-  assert.deepEqual(a._datasetDiagFilteredImages().map(i => i.name), ['reg1.png']);
+    a.setDatasetDiagPreset('all');
+    a.toggleDatasetDiagGroupFilter('resolution', '768x1024', '768 × 1024');
+    assert.deepEqual(a._datasetDiagFilteredImages().map(i => i.name), ['bad.png', 'learn.png']);
 
-  a.setDatasetDiagRegMode('all');
-  a.setDatasetDiagSearch('learn');
-  assert.deepEqual(a._datasetDiagFilteredImages().map(i => i.name), ['learn.png']);
+    a.clearDatasetDiagGroupFilter();
+    a.setDatasetDiagRegMode('only');
+    assert.deepEqual(a._datasetDiagFilteredImages().map(i => i.name), ['reg1.png']);
 
-  a.resetDatasetDiagFilters();
-  a.setDatasetDiagSort('slope_asc');
-  assert.equal(a._datasetDiagFilteredImages()[0].name, 'learn.png');
+    a.setDatasetDiagRegMode('all');
+    a.setDatasetDiagSearch('learn');
+    assert.deepEqual(a._datasetDiagFilteredImages().map(i => i.name), ['learn.png']);
 
-  const html = a._renderDatasetDiagTab(k => a.tMonitor(k));
-  assert.ok(html.includes('m-dd-overview'));
-  assert.ok(html.includes('id="ddInfoBtn"'));
-  assert.ok(html.includes("openParameterDoc('dataset-diagnostics')"));
-  assert.ok(html.includes('<section class="m-console-card m-dd-analysis" data-dd-analysis>'));
-  assert.ok(!html.includes('<details class="m-console-card m-diagnostic-details m-dd-analysis"'));
-  assert.ok(html.includes('id="ddAnalysisModeQuadrant"'));
-  assert.ok(html.includes('id="ddAnalysisModeTimestep"'));
-  assert.ok(html.includes('id="ddAnalysisModeGroups"'));
-  assert.ok(html.includes('m-dd-grid'));
-  assert.ok(html.includes('m-dd-chart-bar'));
-  assert.ok(html.includes('m-dd-readout-bar'));
-  assert.ok(html.includes('bad.png'));
-  assert.ok(html.includes('768 × 1024'));
-  // Inline method explanation block and AI styles must stay absent
-  assert.ok(!html.includes('m-diagnostic-method-content'));
-  assert.ok(!html.includes('m-diagnostic-rules'));
-  assert.ok(!html.includes('m-dd-tile'));
-  assert.ok(!html.includes('m-diagnostic-verdict'));
-  assert.ok(!html.includes('m-dd-locate-btn'));
-  assert.ok(!html.includes('m-view-header'));
-  // Grid cards must render 3 rows so high-residual, NaN, and reg cards all keep slope visible
-  const gridHtml = html.slice(html.indexOf('<div class="m-dd-grid">'));
-  assert.ok(!gridHtml.includes('m-dd-gauge'));
-  assert.ok(!gridHtml.includes('<i aria-hidden'));
-  assert.ok(gridHtml.includes('m-dd-card-top'));
-  assert.ok(gridHtml.includes('m-dd-card-metrics'));
-  assert.ok(gridHtml.includes('m-dd-card-foot'));
-  const cards = gridHtml.split('<article class="m-dd-card"').slice(1);
-  assert.equal(cards.length, 4);
-  for (const card of cards) {
-    assert.ok(card.includes('/Epoch'), 'expected slope on every card: ' + card);
-    assert.ok(card.includes('m-dd-card-flag'), 'expected status flag on every card: ' + card);
-  }
-  const regCard = cards.find(card => card.includes('reg1.png'));
-  assert.ok(regCard && regCard.includes('正则') && regCard.includes('低于均值'));
-  const learningCard = cards.find(card => card.includes('learn.png'));
-  assert.ok(learningCard && learningCard.includes('m-dd-card-flag is-info'));
+    a.resetDatasetDiagFilters();
+    assert.equal(a.datasetDiagRegMode, 'all');
+    a.setDatasetDiagSort('slope_asc');
+    assert.equal(a._datasetDiagFilteredImages()[0].name, 'learn.png');
 
-  // Residual colors use theme-aware color-mix()
-  assert.match(a._ddResidualColor(0.25), /^color-mix\(/);
-  assert.match(a._ddResidualColor(-0.2), /^color-mix\(/);
-  assert.match(a._ddResidualColor(0.0), /^color-mix\(/);
+    // Overview shell & inline notices
+    a.setDatasetDiagSubTab('overview');
+    const overviewHtml = a._renderDatasetDiagTab(k => a.tMonitor(k));
+    assert.ok(overviewHtml.includes('id="ddViewTabOverview"'));
+    assert.ok(overviewHtml.includes('id="ddViewTabImages"'));
+    assert.ok(overviewHtml.includes('id="ddInfoBtn"') && overviewHtml.includes("openParameterDoc('dataset-diagnostics')"));
+    assert.ok(overviewHtml.includes('data-dd-unknown-ts-note hidden'));
 
-  // Groups mode renders group comparison table inside the unified analysis card
-  a.setDatasetDiagHeroMode('groups');
-  const groupsAnalysisHtml = a._renderDatasetDiagAnalysisCard(k => a.tMonitor(k), SAMPLE_DATA);
-  assert.ok(groupsAnalysisHtml.includes('m-dd-groups'));
-  assert.ok(groupsAnalysisHtml.includes('m-dd-groups-bar'));
-  assert.ok(groupsAnalysisHtml.includes('id="ddGroupDim_resolution"'));
+    const inlineHintsData = structuredClone(SAMPLE_DATA);
+    inlineHintsData.summary.multi_gpu_partial = true;
+    inlineHintsData.summary.unknown_timestep_count = 4;
+    inlineHintsData.summary.has_slope = false;
+    a.datasetDiagData = inlineHintsData;
+    const inlineHtml = a._renderDatasetDiagTab(k => a.tMonitor(k));
+    assert.ok(inlineHtml.includes(`data-dd-multi-gpu-note>${a.tMonitor('ddMultiGpuNotice')}</span>`));
+    assert.ok(inlineHtml.includes('data-dd-unknown-ts-note><span data-dd-unknown-ts-text>'));
+    assert.ok(inlineHtml.includes('data-dd-early-slope-note>'));
+    a.datasetDiagData = SAMPLE_DATA;
 
-  // Hero noise zone strip appears in timestep mode without inline method block
-  a.setDatasetDiagHeroMode('timestep');
-  const heroNoiseHtml = a._renderDatasetDiagHeroSlot(k => a.tMonitor(k), SAMPLE_DATA);
-  assert.ok(heroNoiseHtml.includes('m-dd-zones-strip'));
-  assert.ok(!heroNoiseHtml.includes('m-diagnostic-method-content'));
-  assert.ok(!heroNoiseHtml.includes('m-diagnostic-rules'));
+    // Live indicator pill states
+    const liveApp = makeApp({
+      datasetDiagData: SAMPLE_DATA, selectedRunDir: '', liveTaskId: 'task-1', controlTask: 'task-1',
+      monitorData: { state: 'RUNNING' }, controlState: { state: 'running' },
+    });
+    assert.ok(liveApp._renderDatasetDiagHeading(k => liveApp.tMonitor(k), SAMPLE_DATA).includes('data-dd-live-state data-phase="running"'));
+    liveApp.controlState = { state: 'paused' };
+    assert.ok(liveApp._renderDatasetDiagHeading(k => liveApp.tMonitor(k), SAMPLE_DATA).includes('data-phase="paused"'));
 
-  // Omit group comparison mode tab and card when no dimension has >= 2 groups
-  const singleGroup = structuredClone(SAMPLE_DATA);
-  singleGroup.by_resolution = [SAMPLE_DATA.by_resolution[0]];
-  singleGroup.by_subset = [SAMPLE_DATA.by_subset[0]];
-  singleGroup.by_directory = [SAMPLE_DATA.by_directory[0]];
-  assert.equal(a._renderDatasetDiagGroupsCard(k => a.tMonitor(k), singleGroup), '');
-  const singleGroupAnalysisHtml = a._renderDatasetDiagAnalysisCard(k => a.tMonitor(k), singleGroup);
-  assert.ok(!singleGroupAnalysisHtml.includes('id="ddAnalysisModeGroups"'));
+    // Active filter pill on overview
+    a.setDatasetDiagPreset('attention');
+    const filteredOverviewHtml = a._renderDatasetDiagTab(k => a.tMonitor(k));
+    assert.ok(filteredOverviewHtml.includes('openDatasetDiagFilteredImages()'));
+    assert.ok(filteredOverviewHtml.includes('resetDatasetDiagFilters()'));
+    a.setDatasetDiagPreset('all');
 
-  // Switching run_id (including merged "all") forwards run_id parameter
-  a.setDatasetDiagRunId('all');
-  await new Promise(resolve => setTimeout(resolve, 10));
-  assert.ok(seenUrls.some(u => u.includes('run_id=all')));
+    // Images view (grid + sortable table)
+    a.setDatasetDiagSubTab('images');
+    const imagesHtml = a._renderDatasetDiagTab(k => a.tMonitor(k));
+    assert.ok(imagesHtml.includes('id="datasetDiagImagesSection"'));
+    assert.ok(imagesHtml.includes('bad.png') && imagesHtml.includes('768 × 1024'));
+    a.setDatasetDiagViewMode('table');
+    const tableHtml = a._renderDatasetDiagTab(k => a.tMonitor(k));
+    assert.equal((tableHtml.match(/class="output-table-sort m-dd-th-sort/g) || []).length, 5);
+    a.setDatasetDiagViewMode('grid');
 
-  a.setDatasetDiagRunId('r0');
-  await new Promise(resolve => setTimeout(resolve, 10));
-  assert.ok(seenUrls.some(u => u.includes('run_id=r0')));
+    // Residual color thresholds & gauge width scaling
+    assert.match(a._ddResidualColor(0.25), /^color-mix\(/);
+    assert.equal(a._ddResidualColor(0.0, { kind: 'graphic' }), 'var(--text-tertiary)');
+    assert.ok(a._ddResidualColor(0.15, { scale: 'group' }).includes('var(--danger)'));
+    assert.ok(a._ddResidualColor(0.15).includes('var(--warning)') && !a._ddResidualColor(0.15).includes('var(--danger)'));
+    const grpGauge = a._ddGaugeMetrics(0.026, 0.20, { scale: 'group' });
+    const imgGauge = a._ddGaugeMetrics(0.026, 0.45);
+    assert.ok(grpGauge.width > imgGauge.width * 1.8);
+
+    // Smart groups: deduplicate directory ONLY on true 1-to-1 bijection over by_image
+    const smartGroupsData = structuredClone(SAMPLE_DATA);
+    smartGroupsData.summary = { ...smartGroupsData.summary, bucket_ar_error: 0.068 };
+    smartGroupsData.by_directory = [
+      { key: 'D:/ds/char', label: 'ds/char', full_path: 'D:/ds/char', count: 22, comparable_count: 22, images: 3, mean_loss: 0.25, mean_residual: 0.08, attention_count: 1, non_finite_count: 0, slope: -0.025 },
+      { key: 'D:/ds/reg', label: 'ds/reg', full_path: 'D:/ds/reg', count: 8, comparable_count: 8, images: 1, mean_loss: 0.19, mean_residual: -0.18, attention_count: 0, non_finite_count: 0, slope: 0.012 },
+    ];
+    smartGroupsData.by_batch_size = [
+      { key: '2', label: 'bs 2', count: 24, comparable_count: 12, images: 3, mean_loss: 0.23, mean_residual: -0.02 },
+      { key: '1', label: 'bs 1', count: 6, comparable_count: 6, images: 1, mean_loss: 0.30, mean_residual: 0.14 },
+    ];
+    smartGroupsData.by_subset[0] = {
+      ...smartGroupsData.by_subset[0],
+      comparable_count: 22, expected_images: 10, num_repeats: 2, loss_weight: 0.5,
+      attention_count: 2, non_finite_count: 0, slope: -0.025, aug_flags: ['flip_aug'],
+    };
+    const dedupedGroupsHtml = a._renderDatasetDiagGroupsCard(k => a.tMonitor(k), smartGroupsData);
+    assert.ok(!dedupedGroupsHtml.includes('data-dd-group-dim="directory"'));
+    assert.ok(dedupedGroupsHtml.includes('data-dd-group-dim="batch_size"'));
+    const batchSection = dedupedGroupsHtml.slice(dedupedGroupsHtml.indexOf('data-dd-group-dim="batch_size"'));
+    assert.ok(!batchSection.includes('is-clickable'), 'Batch rows stay non-clickable');
+    assert.ok(dedupedGroupsHtml.includes('-2.5%/ep'));
+    assert.ok(dedupedGroupsHtml.includes('6.8%'));
+    assert.ok(dedupedGroupsHtml.includes('0.2500'));
+
+    // Stats collision WITHOUT matching image membership must NOT hide directory
+    const statsCollisionData = structuredClone(SAMPLE_DATA);
+    statsCollisionData.by_directory = SAMPLE_DATA.by_subset.map((r, i) => ({
+      key: `D:/ds/other_${i}`, label: `other_${i}`, count: r.count, comparable_count: r.count, images: r.images, mean_loss: r.mean_loss, mean_residual: r.mean_residual,
+    }));
+    assert.ok(a._renderDatasetDiagGroupsCard(k => a.tMonitor(k), statsCollisionData).includes('data-dd-group-dim="directory"'));
+
+    // Dimensions with >5 items fold excess items inside data-dd-group-fold
+    smartGroupsData.by_subset = Array.from({ length: 7 }, (_, i) => ({
+      key: `0-${i}`, label: `sub_${i}`, count: 5, comparable_count: 5, images: 2, mean_loss: 0.25, mean_residual: (i === 6 ? 0.65 : (i - 3) * 0.04),
+    }));
+    const fullGroupsHtml = a._renderDatasetDiagGroupsCard(k => a.tMonitor(k), smartGroupsData);
+    assert.ok(fullGroupsHtml.includes('data-dd-group-fold="subset"'));
+
+    // Resolution order vs residual sort toggle
+    smartGroupsData.by_resolution = [
+      { key: '192x256', label: '192x256', count: 5, comparable_count: 5, images: 2, mean_loss: 0.24, mean_residual: 0.01 },
+      { key: '224x224', label: '224x224', count: 5, comparable_count: 5, images: 2, mean_loss: 0.24, mean_residual: 0.45 },
+      { key: '256x192', label: '256x192', count: 5, comparable_count: 5, images: 2, mean_loss: 0.24, mean_residual: 0.05 },
+      { key: '320x320', label: '320x320', count: 5, comparable_count: 5, images: 2, mean_loss: 0.24, mean_residual: -0.05 },
+    ];
+    a.datasetDiagResoSort = 'residual';
+    const sortedResoHtml = a._renderDatasetDiagGroupsCard(k => a.tMonitor(k), smartGroupsData);
+    assert.ok(sortedResoHtml.indexOf('data-dd-group-row-key="resolution::224x224"') < sortedResoHtml.indexOf('data-dd-group-row-key="resolution::192x256"'));
+    a.datasetDiagResoSort = 'order';
+
+    // Hovering batch_size overlays noise comparison
+    assert.equal(a._ddResolveActiveNoiseComparison(smartGroupsData, null), null);
+    a._datasetDiagHoverPreview = { kind: 'group', dim: 'batch_size', key: '2' };
+    assert.equal(a._ddResolveActiveNoiseComparison(smartGroupsData, null).dim, 'batch_size');
+    a._datasetDiagHoverPreview = null;
+
+    // Omit group comparison when no dimension has >= 2 groups
+    const singleGroup = structuredClone(SAMPLE_DATA);
+    singleGroup.by_resolution = [SAMPLE_DATA.by_resolution[0]];
+    singleGroup.by_subset = [SAMPLE_DATA.by_subset[0]];
+    singleGroup.by_directory = [SAMPLE_DATA.by_directory[0]];
+    assert.equal(a._renderDatasetDiagGroupsCard(k => a.tMonitor(k), singleGroup), '');
+
+    // Switching run_id forwards run_id parameter
+    await a.setDatasetDiagRunId('all');
+    assert.ok(seenUrls.some(u => u.includes('run_id=all')));
+    await a.setDatasetDiagRunId('r0');
+    assert.ok(seenUrls.some(u => u.includes('run_id=r0')));
+  });
 });
 
-test('hero SVG builder maintains equal height and uses 1000-to-0 left-to-right timestep axis', () => {
-  const a = makeApp({ datasetDiagData: SAMPLE_DATA });
-  const makeFakeWrap = () => {
-    const svg = {
-      attrs: {},
-      innerHTML: '',
-      classList: { toggle() {} },
-      setAttribute(k, v) { this.attrs[k] = v; },
-    };
-    return {
-      svg,
-      wrap: { querySelector() { return null; } },
-      stage: { clientWidth: 680 },
-    };
+test('status cards, scope pill/popover, and group dim collapse patch cleanly in-place', () => {
+  const mkData = images => ({
+    ...structuredClone(SAMPLE_DATA),
+    summary: { ...SAMPLE_DATA.summary, images_total: images.length, has_reg_images: images.some(i => i.is_reg) },
+    by_image: images,
+  });
+
+  // 1. Uniform repeats & no reg -> showTrainShare false; skewed repeats + reg -> showTrainShare true
+  const uniformData = mkData([
+    { image_id: 'u1', is_reg: false, count: 10, comparable_count: 10, non_finite_count: 0, mean_residual: 0.482, slope: 0.02, status: 'attention' },
+    { image_id: 'u2', is_reg: false, count: 10, comparable_count: 10, non_finite_count: 0, mean_residual: -0.012, slope: 0.0, status: 'normal' },
+    { image_id: 'u3', is_reg: false, count: 10, comparable_count: 10, non_finite_count: 0, mean_residual: -0.34, slope: -0.01, status: 'easy' },
+  ]);
+  const app = makeApp({ datasetDiagData: uniformData });
+  assert.equal(app._ddStatusBreakdown(uniformData).showTrainShare, false);
+
+  const skewedData = mkData([
+    { image_id: 's1', is_reg: false, count: 5, comparable_count: 5, non_finite_count: 14, mean_residual: 0.1, slope: -0.05, status: 'non_finite' },
+    { image_id: 's2', is_reg: true, count: 40, comparable_count: 40, non_finite_count: 0, mean_residual: 0.524, slope: 0.01, status: 'attention' },
+    { image_id: 's3', is_reg: false, count: 16, comparable_count: 16, non_finite_count: 0, mean_residual: 0.382, slope: -0.13, status: 'learning' },
+    { image_id: 's4', is_reg: false, count: 20, comparable_count: 20, non_finite_count: 0, mean_residual: 0.008, slope: 0.0, status: 'normal' },
+    { image_id: 's5', is_reg: false, count: 5, comparable_count: 5, non_finite_count: 0, mean_residual: -0.31, slope: -0.02, status: 'easy' },
+  ]);
+  const bdSkewed = app._ddStatusBreakdown(skewedData);
+  assert.equal(bdSkewed.showTrainShare, true);
+  assert.equal(bdSkewed.buckets.non_finite.nanCount, 14);
+  assert.equal(bdSkewed.buckets.attention.regCount, 1);
+  assert.equal(bdSkewed.buckets.attention.trainPct, 40);
+
+  // 2. Scope summary math (coverage + min_count + NaN) and in-place dashboard patch
+  const partialData = {
+    ...structuredClone(SAMPLE_DATA),
+    thresholds: { ...SAMPLE_DATA.thresholds, min_count: 5 },
+    summary: {
+      ...SAMPLE_DATA.summary, samples: 112, non_finite_total: 6, images_total: 26, images_expected: 30,
+      images_qualified: 22, images_skipped: 4, epoch_from: 1, epoch_to: 3, step_from: 1, step_to: 112, mean_loss: 0.3812,
+      counts: { attention: 4, learning: 0, easy: 4, normal: 12, non_finite: 2, insufficient: 4 },
+    },
   };
+  const scopeInfo = app._ddScopeSummaryInfo(k => app.tMonitor(k), partialData);
+  assert.equal(scopeInfo.pillCells.find(c => c.key === 'mean_loss').val, '0.3812');
+  assert.equal(scopeInfo.pillCells.some(c => c.key === 'nan' && c.danger), true);
+  assert.ok(scopeInfo.rows.find(r => r.key === 'images').main.includes('26 / 30'));
 
-  // Quadrant scatter
-  const q = makeFakeWrap();
+  const pillEl = { innerHTML: '' };
+  const popEl = { innerHTML: '' };
+  const filterHintEl = { textContent: '' };
+  const filterJumpEl = { textContent: '' };
+  const filterResetEl = { textContent: '' };
+  const existingPillEl = {
+    querySelector: sel => ({
+      '[data-dd-filter-hint]': filterHintEl,
+      '[data-dd-filter-jump]': filterJumpEl,
+      '[data-dd-filter-reset]': filterResetEl,
+    })[sel] || null,
+  };
+  let filterSlotRewrites = 0;
+  let filterSlotInner = '';
+  const filterSlotEl = {
+    get innerHTML() { return filterSlotInner; },
+    set innerHTML(val) { filterSlotInner = val; filterSlotRewrites += 1; },
+    querySelector: sel => (sel === '.m-dd-scatter-filter-pill' && filterSlotInner ? existingPillEl : null),
+  };
+  const verdictEl = {
+    dataset: {},
+    querySelector: sel => ({
+      '[data-dd-verdict-title]': { textContent: '' },
+      '[data-dd-verdict-desc]': { textContent: '' },
+      '[data-dd-scope-pill]': pillEl,
+      '[data-dd-scope-pop]': popEl,
+      '[data-dd-scatter-filter-slot]': filterSlotEl,
+    })[sel] || null,
+  };
+  const slot = { querySelector: sel => (sel === '.m-dd-dash-verdict' ? verdictEl : null), querySelectorAll: () => [] };
+  app.datasetDiagData = partialData;
+  app.datasetDiagPreset = 'attention';
+  app._patchDatasetDiagDashboard(slot, k => app.tMonitor(k), partialData, false);
+  assert.ok(pillEl.innerHTML.includes('0.3812'));
+  assert.equal(filterSlotRewrites, 1);
+
+  // Switching between active filters updates pill text in-place without recreating DOM
+  app.datasetDiagPreset = 'all';
+  app.datasetDiagGroupFilter = { dim: 'subset', key: '0-0', label: '10_char' };
+  app._patchDatasetDiagDashboard(slot, k => app.tMonitor(k), partialData, false);
+  assert.equal(filterSlotRewrites, 1);
+  assert.ok(filterHintEl.textContent.includes('3/26'));
+
+  // Clearing filter removes the pill cleanly
+  app.datasetDiagGroupFilter = null;
+  app._patchDatasetDiagDashboard(slot, k => app.tMonitor(k), partialData, false);
+  assert.equal(filterSlotRewrites, 2);
+  assert.equal(filterSlotInner, '');
+
+  // 3. toggleDatasetDiagGroupDim patches in-place without full re-render
+  let dimRenders = 0;
+  const dimBodyEl = { inert: false };
+  const dimToggleEl = makeEl('button');
+  const dimBlockEl = makeEl('div');
+  dimBlockEl.querySelector = sel => (sel === '[data-dd-group-dim-toggle]' ? dimToggleEl : sel === '[data-dd-group-dim-body]' ? dimBodyEl : null);
+  const dimPanel = { querySelector: sel => (sel === '[data-dd-group-dim="subset"]' ? dimBlockEl : null) };
+  withMockEnv({ document: { querySelector: sel => (sel === '.m-tab-panel[data-tab="dataset"]' ? dimPanel : null) } }, () => {
+    const dimApp = makeApp({ datasetDiagData: SAMPLE_DATA, renderDashboard() { dimRenders += 1; } });
+    dimApp.toggleDatasetDiagGroupDim('subset');
+    assert.equal(dimRenders, 0);
+    assert.equal(dimBlockEl.classList.contains('is-collapsed'), true);
+    assert.equal(dimToggleEl.getAttribute('aria-expanded'), 'false');
+    assert.equal(dimBodyEl.inert, true);
+    dimApp.toggleDatasetDiagGroupFilter('subset', '0-0', 'char');
+    assert.equal(dimApp.datasetDiagCollapsedDims.subset, undefined);
+  });
+});
+
+test('quadrant scatter SVG, piecewise-log compression, auto-bounds soft-centering, zoom/pan, and zone shading', () => {
+  const a = makeApp({ datasetDiagData: SAMPLE_DATA });
+  const q = makeWrapStage('quadrant');
   a._renderDatasetDiagHeroSvg(q.wrap, q.stage, q.svg);
-  assert.equal(q.wrap._ddChartState.kind, 'scatter');
+  assert.equal(Boolean(a.datasetDiagShowZones), false);
+  assert.equal(q.svg.classList.contains('is-zones-on'), false);
   assert.equal(q.wrap._ddChartState.coords.length, 4);
-  assert.equal(q.svg.attrs.height, '236');
-  assert.ok(q.svg.innerHTML.includes('m-dd-alert-zone'));
-  assert.ok(q.svg.innerHTML.includes('m-dd-dot-nan-ring'));
-  assert.ok(q.svg.innerHTML.includes('m-dd-crosshair'));
-  assert.ok(q.svg.innerHTML.includes('style="fill:color-mix('));
-  assert.ok(q.svg.innerHTML.includes('>-2%</text>'));
-  assert.ok(!q.svg.innerHTML.includes(' pp'));
+  assert.equal(q.svg.attrs.height, '440');
 
-  // Timestep baseline maintains exact 236px height and runs 1000 (left) -> 0 (right)
-  a.datasetDiagHeroMode = 'timestep';
-  const ts = makeFakeWrap();
-  a._renderDatasetDiagHeroSvg(ts.wrap, ts.stage, ts.svg);
-  assert.equal(ts.wrap._ddChartState.kind, 'timestep');
-  assert.equal(ts.wrap._ddChartState.coords.length, 2);
-  assert.equal(ts.svg.attrs.height, '236');
-  assert.ok(ts.svg.innerHTML.includes('m-dd-ts-bar'));
-  // High-noise bin [500, 1000] sits to the LEFT of low-noise bin [0, 500]
-  const [leftBar, rightBar] = ts.wrap._ddChartState.coords;
-  assert.ok(leftBar.tHigh > rightBar.tHigh);
-  assert.ok(leftBar.xCenter < rightBar.xCenter);
-  assert.ok(ts.svg.innerHTML.includes('>1000</text>'));
-  assert.ok(ts.svg.innerHTML.includes('>0</text>'));
+  const qSmall = makeWrapStage('quadrant', 680, 200);
+  a._renderDatasetDiagHeroSvg(qSmall.wrap, qSmall.stage, qSmall.svg);
+  assert.equal(qSmall.svg.attrs.height, '360');
 
-  // Early distribution (< 3 epochs) maintains exact 236px height
+  const qLarge = makeWrapStage('quadrant', 680, 900);
+  a._renderDatasetDiagHeroSvg(qLarge.wrap, qLarge.stage, qLarge.svg);
+  assert.equal(qLarge.svg.attrs.height, '720');
+
+  // Deep sub-1% zoom & clamp stay zoomed and toggle reset button
+  a.setDatasetDiagScatterZoom({ xMin: 0.640, xMax: 0.646, yMin: 0.050, yMax: 0.053 });
+  a._renderDatasetDiagHeroSvg(q.wrap, q.stage, q.svg);
+  assert.equal(q.resetBtn.hidden, false);
+  assert.ok(Math.abs(q.wrap._ddChartState.fromX(q.wrap._ddChartState.padL) - 0.640) < 1e-4);
+  a.setDatasetDiagScatterZoom({ xMin: 0.642, xMax: 0.6422, yMin: 0.051, yMax: 0.0511 });
+  assert.ok(a.datasetDiagScatterZoom.xMax - a.datasetDiagScatterZoom.xMin >= 0.001 - 1e-9);
+  assert.ok(a.datasetDiagScatterZoom.yMax - a.datasetDiagScatterZoom.yMin >= 0.0005 - 1e-9);
+  a.resetDatasetDiagScatterZoom();
+  a._renderDatasetDiagHeroSvg(q.wrap, q.stage, q.svg);
+  assert.equal(q.resetBtn.hidden, true);
+
+  // Single-axis and dual-axis piecewise-log compression + status dot colors
+  const xOnlyData = structuredClone(SAMPLE_DATA);
+  xOnlyData.by_image.push({
+    image_id: 'eeeeeeeeeeeeeeee', name: 'xonly.png', is_reg: false, count: 8, comparable_count: 8,
+    mean_residual: 3.0, slope: 0.05, status: 'attention',
+  });
+  const xOnly = makeWrapStage('quadrant', 700, 440);
+  makeApp({ datasetDiagData: xOnlyData })._renderDatasetDiagHeroSvg(xOnly.wrap, xOnly.stage, xOnly.svg);
+  assert.ok(xOnly.wrap._ddCamera.symW_X === 1 && xOnly.wrap._ddCamera.symW_Y === 0);
+
+  const dualData = structuredClone(SAMPLE_DATA);
+  dualData.by_image.push({
+    image_id: 'eeeeeeeeeeeeeeee', name: 'extreme.png', is_reg: false, count: 8, comparable_count: 8,
+    mean_residual: 3.0, slope: -0.5, status: 'learning',
+  });
+  const dual = makeWrapStage('quadrant', 700, 440);
+  makeApp({ datasetDiagData: dualData })._renderDatasetDiagHeroSvg(dual.wrap, dual.stage, dual.svg);
+  const st = dual.wrap._ddChartState;
+  assert.ok(Math.abs(st.fromX(st.coords.find(c => c.image_id === 'eeeeeeeeeeeeeeee').cx) - 3.0) < 0.02);
+  assert.ok(Math.abs(st.fromY(st.coords.find(c => c.image_id === 'eeeeeeeeeeeeeeee').cy) - (-0.5)) < 0.01);
+  const byId = Object.fromEntries(st.coords.map(c => [c.image_id, c]));
+  assert.equal(byId.bbbbbbbbbbbbbbbb.fill, 'var(--accent)');
+  assert.equal(byId.cccccccccccccccc.fill, 'var(--danger)');
+  assert.equal(byId.dddddddddddddddd.fill, 'var(--success)');
+
+  // Auto-bounds soft-centering & -100% physical floor
+  const mkPt = (id, mean_residual, slope, status = 'normal') => ({
+    image_id: id, name: `${id}.png`, count: 8, comparable_count: 8, mean_residual, slope, status,
+  });
+  const mild = makeWrapStage('quadrant', 700, 440);
+  makeApp({ datasetDiagData: { ...structuredClone(SAMPLE_DATA), by_image: [mkPt('p1', -0.55, -0.10, 'easy'), mkPt('p2', 0.68, 0.06, 'attention')] } })
+    ._renderDatasetDiagHeroSvg(mild.wrap, mild.stage, mild.svg);
+  assert.deepEqual(mild.wrap._ddCamera, { kind: 'quadrant', xMin: -0.8, xMax: 0.8, symW_X: 0, yMin: -0.12, yMax: 0.12, symW_Y: 0 });
+
+  const extX = makeWrapStage('quadrant', 700, 440);
+  makeApp({ datasetDiagData: { ...structuredClone(SAMPLE_DATA), by_image: [mkPt('p1', -0.32, -0.05, 'easy'), mkPt('p2', 3.0, 0.05, 'attention')] } })
+    ._renderDatasetDiagHeroSvg(extX.wrap, extX.stage, extX.svg);
+  assert.equal(extX.wrap._ddCamera.xMin, -1.0);
+
+  // Pan & wheel zoom math + stage listener binding (no contextmenu hook)
+  const autoBounds = { xMin: -0.6, xMax: 0.8, yMin: -0.08, yMax: 0.10 };
+  const shifted = a._ddComputePannedScatterZoom({ xMin: 0.1, xMax: 0.5, yMin: -0.02, yMax: 0.04 }, autoBounds, 100, 50, 400, 300, false);
+  assert.ok(Math.abs(shifted.xMin - 0.0) < 1e-9 && Math.abs(shifted.yMin - (-0.01)) < 1e-9);
+  const linSt = {
+    kind: 'scatter', padL: 12, padT: 8, plotW: 400, plotH: 300,
+    fromX: px => autoBounds.xMin + ((px - 12) / 400) * (autoBounds.xMax - autoBounds.xMin),
+    fromY: py => autoBounds.yMin + ((8 + 300 - py) / 300) * (autoBounds.yMax - autoBounds.yMin),
+  };
+  const zIn = a._ddComputeWheeledScatterZoom(linSt, null, autoBounds, { symW_X: 0, symW_Y: 0 }, 312, 83, -120, 0, false);
+  assert.ok(zIn && zIn.xMax - zIn.xMin < autoBounds.xMax - autoBounds.xMin);
+  assert.equal(a._ddComputeWheeledScatterZoom(linSt, { xMin: -0.59, xMax: 0.79, yMin: -0.078, yMax: 0.098 }, autoBounds, { symW_X: 0, symW_Y: 0 }, 212, 158, 240, 0, false), null);
+
+  // Zone shading toggle blocks hit-testing when OFF and cleans hover when turned OFF
+  const zone = makeWrapStage('quadrant', 640, 380);
+  zone.wrap._ddChartState = { kind: 'scatter', zones: [{ preset: 'attention', x1: 300, x2: 600, y1: 10, y2: 200 }] };
+  const zonePanel = {
+    querySelector: sel => (sel === '[data-dd-hero-wrap][data-mode="quadrant"]' ? zone.wrap : null),
+    querySelectorAll: () => [],
+  };
+  withMockEnv({ document: { querySelector: sel => (sel === '.m-tab-panel[data-tab="dataset"]' ? zonePanel : null) } }, () => {
+    assert.equal(a._ddHitTestScatterZone(zone.wrap._ddChartState, 400, 100), null);
+    a.setDatasetDiagShowZones(true);
+    assert.equal(zone.svg.classList.contains('is-zones-on'), true);
+    assert.equal(a._ddHitTestScatterZone(zone.wrap._ddChartState, 400, 100)?.preset, 'attention');
+    zone.wrap._ddHoverZone = 'attention';
+    a.setDatasetDiagShowZones(false);
+    assert.equal(zone.svg.classList.contains('is-zones-on'), false);
+    assert.equal(zone.wrap._ddHoverZone, null);
+  });
+});
+
+test('early 1D beeswarm, 3-stage dot choreography, MAX_SCATTER_EFFECTS cap, and camera rAF animation', () => {
+  // 1. Early 1D beeswarm
   const earlyData = structuredClone(SAMPLE_DATA);
   earlyData.summary.has_slope = false;
-  a.datasetDiagData = earlyData;
-  a.datasetDiagHeroMode = 'quadrant';
-  const early = makeFakeWrap();
-  a._renderDatasetDiagHeroSvg(early.wrap, early.stage, early.svg);
-  assert.equal(early.svg.attrs.height, '236');
-  assert.ok(early.svg.innerHTML.includes('m-dd-hist-bar'));
+  const early = makeWrapStage('quadrant');
+  makeApp({ datasetDiagData: earlyData })._renderDatasetDiagHeroSvg(early.wrap, early.stage, early.svg);
+  assert.equal(early.svg.attrs.height, '440');
+  assert.equal(early.wrap._ddChartState.coords.length, 4);
+  for (const pt of early.wrap._ddChartState.coords) {
+    assert.ok(pt.cy >= early.wrap._ddChartState.padT && pt.cy <= early.wrap._ddChartState.padT + early.wrap._ddChartState.plotH);
+  }
+
+  // 2. 3-stage choreography + MAX_SCATTER_EFFECTS=72 priority cap
+  let fakeNow = 1000;
+  let rafId = 1;
+  let timerId = 1;
+  const rafQueue = new Map();
+  const timers = new Map();
+  const flushTimers = msFilter => {
+    for (const [id, entry] of Array.from(timers.entries())) {
+      if (msFilter === undefined || entry.ms === msFilter) {
+        timers.delete(id);
+        entry.fn();
+      }
+    }
+  };
+  const flushRaf = () => {
+    const entries = Array.from(rafQueue.entries());
+    rafQueue.clear();
+    for (const [, cb] of entries) cb();
+  };
+
+  withMockEnv({
+    document: { createElementNS: (_ns, tag) => makeEl(tag), querySelector: () => null },
+    performance: { now: () => fakeNow },
+    requestAnimationFrame: cb => { const id = rafId++; rafQueue.set(id, cb); return id; },
+    cancelAnimationFrame: id => rafQueue.delete(id),
+    setTimeout: (fn, ms) => { const id = timerId++; timers.set(id, { fn, ms }); return id; },
+    clearTimeout: id => timers.delete(id),
+  }, () => {
+    const app = makeApp({ datasetDiagData: SAMPLE_DATA, _monitorMotionAllowed: () => true });
+    const dotsGroup = makeEl('g');
+    const dotOld = makeEl('circle', { class: 'm-dd-dot is-alert', 'data-dd-image-id': 'aaaaaaaaaaaaaaaa', cx: '100.0', cy: '100.0', r: '5.0' });
+    dotOld.style.fill = 'var(--warning)';
+    dotsGroup.appendChild(dotOld);
+    const trailsGroup = makeEl('g');
+    const pulsesGroup = makeEl('g');
+    const svg = makeEl('svg');
+    svg.querySelector = sel => (sel === '.m-dd-dots' ? dotsGroup : sel === '.m-dd-trails' ? trailsGroup : sel === '.m-dd-pulses' ? pulsesGroup : null);
+    const wrap = { _ddLastPulseSeq: 0, _ddPrevDotCoords: new Map([['aaaaaaaaaaaaaaaa', { cx: 100, cy: 100 }]]) };
+
+    app._ddReconcileScatterDots(svg, wrap, [
+      { image_id: 'aaaaaaaaaaaaaaaa', idx: 0, cx: 200, cy: 200, r: 4.6, fill: 'var(--accent)', status: 'learning', cls: 'm-dd-dot is-learning' },
+      { image_id: 'newdot0000000001', idx: 1, cx: 300, cy: 150, r: 4.0, fill: 'var(--success)', status: 'easy', cls: 'm-dd-dot is-easy' },
+    ], { animate: true, updatedIds: new Set(['aaaaaaaaaaaaaaaa', 'newdot0000000001']), pulseSeq: 1 });
+
+    // Stage 1: pulse on new dot only
+    assert.equal(pulsesGroup.children.length, 1);
+    assert.equal(pulsesGroup.children[0].attrs['data-dd-image-id'], 'newdot0000000001');
+    assert.equal(dotOld.attrs.cx, '100.0');
+
+    // Stage 2: dashed arrow grows linearly
+    fakeNow = 1520;
+    flushTimers(520);
+    assert.equal(trailsGroup.children.length, 1);
+    fakeNow = 1520 + 625;
+    flushRaf();
+    assert.equal(trailsGroup.children[0].children[0].attrs.x2, '150.0');
+
+    // Stage 3: hold + expo-out glide
+    fakeNow = 1520 + 1250;
+    flushRaf();
+    fakeNow += 220;
+    flushTimers(220);
+    assert.equal(svg.classList.contains('is-dot-choreo'), true);
+    fakeNow += 190;
+    flushRaf();
+    assert.ok(Number(dotOld.attrs.cx) > 170);
+    fakeNow += 800;
+    flushRaf();
+    assert.equal(dotOld.attrs.cx, '200.0');
+    assert.equal(svg.classList.contains('is-dot-choreo'), false);
+
+    // MAX_SCATTER_EFFECTS = 72 cap prioritizes non_finite > attention > normal
+    const manyDots = Array.from({ length: 85 }, (_, i) => ({
+      image_id: `id_${i}`,
+      cx: 100 + i * 2,
+      cy: 100 + i,
+      r: 4,
+      fill: 'var(--accent)',
+      status: i === 80 ? 'non_finite' : (i === 79 ? 'attention' : 'normal'),
+      mean_residual: 0.1,
+    }));
+    const capGroup = makeEl('g');
+    const capWrap = { _ddLastPulseSeq: 0, _ddPrevDotCoords: new Map() };
+    app._ddSpawnScatterPulses(capGroup, capWrap, manyDots, { pulseSeq: 2, updatedIds: new Set(manyDots.map(d => d.image_id)) });
+    assert.equal(capGroup.children.length, 72);
+    const pulsedIds = new Set(capGroup.children.map(n => n.attrs['data-dd-image-id']));
+    assert.equal(pulsedIds.has('id_80'), true);
+    assert.equal(pulsedIds.has('id_79'), true);
+
+    // Camera rAF zoom + mid-flight wheel interruption + solid wheel grid opacity
+    const bandsGroup = makeEl('g', { 'data-dd-compressed-bands': '' });
+    const gridGroup = makeEl('g', { 'data-dd-grid-lines': '' });
+    const zoneRects = { attention: makeEl('rect'), learning: makeEl('rect') };
+    const zonesGroup = { querySelector: s => zoneRects[s.match(/data-dd-zone-preset="([^"]+)"/)?.[1]] || null };
+    const axisXGroup = makeEl('g'), axisYGroup = makeEl('g'), axisXTicks = makeEl('g'), axisYTicks = makeEl('g'), axisOrigin = makeEl('g');
+    axisOrigin.appendChild(makeEl('text'));
+    const labelsGroup = makeEl('g', { class: 'm-dd-quad-labels' });
+    const camDots = makeEl('g');
+    camDots.appendChild(makeEl('circle', { class: 'm-dd-dot', 'data-dd-image-id': 'aaaaaaaaaaaaaaaa' }));
+    const camSvg = makeEl('svg', { 'data-dd-svg-kind': 'quadrant', 'data-dd-svg-width': '700', 'data-dd-svg-height': '436' });
+    camSvg.querySelector = sel => ({
+      '.m-dd-dots': camDots, '[data-dd-compressed-bands]': bandsGroup, '[data-dd-grid-lines]': gridGroup,
+      '[data-dd-zones]': zonesGroup, '[data-dd-axis-x-group]': axisXGroup, '[data-dd-axis-y-group]': axisYGroup,
+      '[data-dd-axis-x-ticks]': axisXTicks, '[data-dd-axis-y-ticks]': axisYTicks, '[data-dd-axis-origin]': axisOrigin,
+      '.m-dd-quad-labels': labelsGroup,
+    })[sel] || null;
+    const camWrap = makeEl('div'); camWrap.dataset = { mode: 'quadrant' };
+    const camStage = makeEl('div'); camStage.clientWidth = 700; camStage.clientHeight = 440;
+    app._renderDatasetDiagHeroSvg(camWrap, camStage, camSvg, { animate: false });
+    app.datasetDiagScatterZoom = { xMin: 0.10, xMax: 0.65, yMin: -0.04, yMax: 0.06 };
+    app._renderDatasetDiagHeroSvg(camWrap, camStage, camSvg, { animate: true, durationMs: 150, cameraMode: 'wheel' });
+    assert.equal(camSvg.classList.contains('is-camera-anim'), true);
+    assert.equal(gridGroup.children[0].style.opacity, '1');
+    fakeNow += 75;
+    flushRaf();
+    const midCam = camWrap._ddCurrentCamEval();
+    app.datasetDiagScatterZoom = { xMin: 0.22, xMax: 0.55, yMin: -0.02, yMax: 0.04 };
+    app._renderDatasetDiagHeroSvg(camWrap, camStage, camSvg, { animate: true, durationMs: 150, cameraMode: 'wheel' });
+    assert.ok(Math.abs(camWrap._ddCurrentCamera.xMin - midCam.xMin) < 1e-6);
+    fakeNow += 200;
+    flushRaf();
+    assert.equal(camSvg.classList.contains('is-camera-anim'), false);
+    assert.equal(camWrap._ddTargetCamera.xMin, 0.22);
+  });
 });
 
-test('modal renders factual NaN row, 3 noise zones, anti-squeeze chart readouts, 1000-to-0 overlay, and Tag Editor handoff', async () => {
+test('scatter hover trajectory, pinned card tether/dodge, popover bounds/hysteresis, and overview deselection', () => {
+  const openedModals = [];
+  const docListeners = new Map();
+  const stage = makeEl('div');
+  stage.getBoundingClientRect = () => ({ left: 0, right: 700, top: 0, bottom: 440, width: 700, height: 440 });
+  const svg = makeEl('svg', { 'data-dd-svg-kind': 'quadrant' });
+  svg.getBoundingClientRect = () => stage.getBoundingClientRect();
+  const historyGroup = makeEl('g');
+  const crosshair = makeEl('g');
+  const chX = makeEl('line'), chY = makeEl('line');
+  crosshair.querySelector = s => (s === '[data-dd-ch-x]' ? chX : s === '[data-dd-ch-y]' ? chY : null);
+  const focusRing = makeEl('circle');
+  const tether = makeEl('line');
+  const dotAEl = makeEl('circle', { class: 'm-dd-dot is-alert', 'data-dd-image-id': 'aaaaaaaaaaaaaaaa' });
+  const dotBEl = makeEl('circle', { class: 'm-dd-dot is-easy', 'data-dd-image-id': 'bbbbbbbbbbbbbbbb' });
+  svg.querySelector = sel => ({ '[data-dd-history]': historyGroup, '[data-dd-crosshair]': crosshair, '[data-dd-dot-focus]': focusRing, '[data-dd-pin-tether]': tether })[sel] || null;
+  svg.querySelectorAll = sel => (sel === '.m-dd-dot, .m-dd-dot-nan-ring' ? [dotAEl, dotBEl] : []);
+
+  const pop = makeEl('div');
+  pop.hidden = true;
+  const popImg = makeEl('img');
+  const popMedia = makeEl('div');
+  popImg.parentElement = popMedia;
+  pop.querySelector = sel => (sel === 'img' ? popImg : makeEl('span'));
+  pop.getBoundingClientRect = () => {
+    const l = parseFloat(pop.style.left) || 0;
+    const t = parseFloat(pop.style.top) || 0;
+    return { left: l, top: t, right: l + 244, bottom: t + 256, width: 244, height: 256 };
+  };
+  const wrap = makeEl('div');
+  wrap.dataset = { mode: 'quadrant' };
+  wrap.querySelector = sel => ({ '[data-dd-hero-stage]': stage, '[data-dd-hero-svg]': svg, '[data-dd-preview-pop]': pop, '[data-dd-pin-tether]': tether })[sel] || null;
+  const panel = makeEl('div');
+  panel.querySelectorAll = sel => (sel === '[data-dd-hero-wrap]' ? [wrap] : []);
+  panel.querySelector = sel => (sel === '[data-dd-hero-wrap][data-mode="quadrant"]' ? wrap : null);
+
+  withMockEnv({
+    innerWidth: 1440,
+    innerHeight: 900,
+    requestAnimationFrame: () => 0,
+    cancelAnimationFrame: () => {},
+    document: {
+      querySelector: sel => (sel === '.m-tab-panel[data-tab="dataset"] [data-dd-hero-wrap][data-mode="quadrant"]' ? wrap : sel === '.m-tab-panel[data-tab="dataset"]' ? panel : null),
+      addEventListener(type, fn) { docListeners.set(type, fn); },
+      removeEventListener(type) { docListeners.delete(type); },
+    },
+  }, () => {
+    const app = makeApp({
+      currentRoute: 'monitor-dashboard',
+      monitorTab: 'dataset',
+      datasetDiagData: SAMPLE_DATA,
+      datasetDiagPreset: 'attention',
+      _datasetDiagDetailCache: new Map(),
+      _ddShouldKeepOverviewSelection: target => Boolean(target?.closest?.('.m-dd-preview-pop')),
+      openDatasetDiagModal(id) { openedModals.push(id); },
+    });
+    const cacheKey = app._datasetDiagDetailCacheKey(app._datasetDiagSource(), 'aaaaaaaaaaaaaaaa');
+    app._datasetDiagDetailCache.set(cacheKey, {
+      trajectory: [
+        { epoch: 3, mean_residual: 0.45, slope: 0.04, status: 'attention' },
+        { epoch: 4, mean_residual: 0.35, slope: -0.04, status: 'learning' },
+      ],
+    });
+    app._bindDatasetDiagCharts(panel);
+    wrap._ddChartState = {
+      kind: 'scatter', width: 700, height: 440, padL: 12, padR: 12, padT: 8, plotW: 676, plotH: 422,
+      toX: v => 350 + v * 300, toY: v => 220 - v * 1200,
+      coords: [
+        { image_id: 'aaaaaaaaaaaaaaaa', name: 'bad.png', mean_residual: 0.35, slope: -0.04, count: 10, resolution: '512x512', status: 'learning', cx: 455, cy: 268, r: 4.6, fill: 'var(--accent)', thumb_url: '/thumb/a.png' },
+        { image_id: 'bbbbbbbbbbbbbbbb', name: 'ok.png', mean_residual: -0.35, slope: -0.05, count: 10, resolution: '512x512', status: 'easy', cx: 245, cy: 280, r: 4.0, fill: 'var(--success)', thumb_url: '/thumb/b.png' },
+      ],
+      zones: [],
+    };
+
+    // Hover shows trajectory without popup
+    app._updateDatasetDiagHeroHover(wrap, 455, 268);
+    assert.equal(pop.hidden, true);
+    assert.equal(svg.classList.contains('has-traj-focus'), true);
+    assert.equal(dotAEl.classList.contains('is-traj-active'), true);
+    assert.ok(historyGroup.innerHTML.includes('m-dd-hist-seg'));
+
+    // Click pins card, pan keeps card stationary with tether, settle dodges only if covered
+    wrap._ddLiveDotCoords = new Map([['aaaaaaaaaaaaaaaa', { cx: 380, cy: 230 }]]);
+    stage.emit('pointerdown', { button: 0, isPrimary: true, clientX: 380, clientY: 230, target: svg });
+    wrap._ddLiveDotCoords = null;
+    stage.emit('click', { clientX: 382, clientY: 231, target: svg });
+    assert.equal(pop.hidden, false);
+    assert.equal(pop.classList.contains('is-pinned'), true);
+    assert.equal(openedModals.length, 0);
+
+    const pinnedLeft0 = pop.style.left;
+    const pinnedTop0 = pop.style.top;
+    wrap._ddPan = { active: true };
+    wrap._ddChartState.coords[0] = { ...wrap._ddChartState.coords[0], cx: 560, cy: 360 };
+    app._refreshDatasetDiagActiveHover(wrap);
+    assert.equal(pop.style.left, pinnedLeft0);
+    assert.equal(pop.style.top, pinnedTop0);
+    assert.equal(wrap._ddPopDetached, true);
+    assert.equal(tether.getAttribute('display'), undefined);
+    wrap._ddPan = null;
+
+    // Hovering pinned card freezes it; clicking media opens modal
+    pop.emit('pointerenter');
+    pop.emit('pointerleave');
+    pop.emit('click', { target: { closest: sel => (sel === '.m-dd-pop-media' ? popMedia : null) }, stopPropagation() {} });
+    assert.deepEqual(openedModals, ['aaaaaaaaaaaaaaaa']);
+    assert.equal(pop.hidden, true);
+
+    // First Esc unpins without clearing overview preset; second Esc clears preset
+    stage.emit('pointerdown', { button: 0, isPrimary: true, clientX: 245, clientY: 280, target: svg });
+    stage.emit('click', { clientX: 245, clientY: 280, target: svg });
+    assert.equal(wrap._ddPinnedDot.image_id, 'bbbbbbbbbbbbbbbb');
+    docListeners.get('keydown')({ key: 'Escape', defaultPrevented: false, isComposing: false, preventDefault() {}, target: svg });
+    assert.equal(wrap._ddPinnedDot, null);
+    assert.equal(app.datasetDiagPreset, 'attention');
+    docListeners.get('keydown')({ key: 'Escape', defaultPrevented: false, isComposing: false, preventDefault() {}, target: svg });
+    assert.equal(app.datasetDiagPreset, 'all');
+
+    // Popover placement bounds, hysteresis, and narrow fallback
+    const popBounds = makeEl('div');
+    const bounds = { svgLeft: 20, svgRight: 760, svgTop: 180, svgBottom: 640 };
+    app._ddPositionDatasetDiagPopover(popBounds, { ...bounds, x: 710, y: 400 }, { wasHidden: true });
+    assert.equal(popBounds._ddPopPlacement, 'left');
+    assert.ok(parseInt(popBounds.style.left, 10) + popBounds.offsetWidth <= bounds.svgRight - 8);
+    app._ddPositionDatasetDiagPopover(popBounds, { ...bounds, x: 420, y: 390 }, { wasHidden: false });
+    assert.equal(popBounds._ddPopPlacement, 'left');
+    app._ddPositionDatasetDiagPopover(popBounds, { ...bounds, x: 120, y: 390 }, { wasHidden: false });
+    assert.equal(popBounds._ddPopPlacement, 'right');
+
+    const popNarrow = makeEl('div');
+    app._ddPositionDatasetDiagPopover(popNarrow, { svgLeft: 20, svgRight: 440, svgTop: 80, svgBottom: 720, x: 230, y: 500 }, { wasHidden: true });
+    assert.ok(popNarrow._ddPopPlacement === 'top' || popNarrow._ddPopPlacement === 'bottom');
+
+    panel._ddHeroRO.disconnect();
+    assert.equal(docListeners.has('click'), false);
+    assert.equal(docListeners.has('keydown'), false);
+  });
+});
+
+test('status highlight coordination and optional folder grouping in grid/table views', () => {
+  const segs = ['non_finite', 'attention', 'learning', 'normal', 'easy', 'unqualified'].map(k => makeEl('span', { 'data-dd-status-seg': k }));
+  const rows = ['attention', 'normal', 'unqualified'].map(k => makeEl('div', { 'data-dd-status-key': k }));
+  const zones = ['attention', 'learning'].map(k => makeEl('rect', { 'data-dd-zone-preset': k }));
+  const listEl = makeEl('div');
+  const scatterWrap = { _ddActiveDot: null, _ddHoverZone: null, querySelectorAll: sel => (sel === '[data-dd-zone-preset]' ? zones : []) };
+  const groupRows = [makeEl('div', { 'data-dd-group-row-key': 'subset::char' }), makeEl('div', { 'data-dd-group-row-key': 'subset::reg' })];
+  const panel = {
+    querySelector: sel => (sel === '[data-dd-hero-wrap][data-mode="quadrant"]' ? scatterWrap : sel === '[data-dd-status-list]' ? listEl : null),
+    querySelectorAll: sel => (sel === '[data-dd-status-seg]' ? segs : sel === '[data-dd-status-key]' ? rows : sel === '.m-dd-flat-group-row.is-clickable' ? groupRows : []),
+  };
+  withMockEnv({ document: { querySelector: sel => (sel === '.m-tab-panel[data-tab="dataset"]' ? panel : null) } }, () => {
+    const app = makeApp({ datasetDiagData: SAMPLE_DATA });
+    app.previewDatasetDiagStatus('attention');
+    assert.equal(rows[0].classList.contains('is-preview'), true);
+    assert.equal(segs[3].classList.contains('is-dimmed'), true);
+    assert.equal(zones[0].classList.contains('is-hover'), true);
+    app.clearDatasetDiagPreview();
+
+    scatterWrap._ddActiveDot = { image_id: 'x1', status: 'insufficient', subset: 'char', resolution: '512x512' };
+    app._syncDatasetDiagStatusHighlight(panel);
+    assert.equal(rows[2].classList.contains('is-linked'), true);
+    assert.equal(groupRows[0].classList.contains('is-linked'), true);
+  });
+
+  // Folder grouping in grid/table views + shared subset fallback + collapsed nav filtering
+  const app = makeApp({ datasetDiagData: SAMPLE_DATA, datasetDiagSubTab: 'images', datasetDiagGroupByFolder: false, datasetDiagRegMode: 'all' });
+  assert.ok(!app._renderDatasetDiagImagesCard(k => app.tMonitor(k), SAMPLE_DATA).includes('m-dd-folder-group'));
+  app.setDatasetDiagGroupByFolder(true);
+  const groupedGrid = app._renderDatasetDiagImagesCard(k => app.tMonitor(k), SAMPLE_DATA);
+  assert.equal((groupedGrid.match(/class="m-dd-folder-group"/g) || []).length, 2);
+  assert.equal(app._datasetDiagModalNavList().map(i => i.image_id).join(','), 'cccccccccccccccc,aaaaaaaaaaaaaaaa,bbbbbbbbbbbbbbbb,dddddddddddddddd');
+
+  app.setDatasetDiagViewMode('table');
+  const groupedTable = app._renderDatasetDiagImagesCard(k => app.tMonitor(k), SAMPLE_DATA);
+  assert.equal((groupedTable.match(/class="output-table-head"/g) || []).length, 1);
+  assert.equal((groupedTable.match(/class="m-dd-table-folder-head/g) || []).length, 2);
+  app.toggleDatasetDiagFolderCollapsed('D:/ds/char');
+  app.datasetDiagModalImageId = 'dddddddddddddddd';
+  assert.deepEqual(app._datasetDiagModalNavList().map(i => i.image_id), ['dddddddddddddddd']);
+});
+
+test('timestep chart 18-bin profile, IQR band, theoretical curves, morph animation, and tooltip smart-snap', () => {
+  const a = makeApp({ datasetDiagData: SAMPLE_DATA });
+  const profBins = Array.from({ length: 18 }, (_, bin) => {
+    const empty = bin === 8 || bin === 9;
+    const sparse = bin === 5;
+    return {
+      bin, t_from: bin * (1000 / 18), t_to: (bin + 1) * (1000 / 18),
+      count: empty ? 0 : (sparse ? 1 : 6), images: empty ? 0 : (sparse ? 1 : 4), comparable: !empty && !sparse,
+      mean_loss: empty ? null : (0.12 + bin * 0.015), p25: empty || sparse ? null : (0.09 + bin * 0.012),
+      p75: empty || sparse ? null : (0.16 + bin * 0.018), trend: empty ? null : -0.15, non_finite_count: bin === 15 ? 2 : 0,
+    };
+  });
+  const richData = {
+    ...structuredClone(SAMPLE_DATA),
+    sampling_config: { timestep_sampling: 'sigmoid', discrete_flow_shift: 2.0, min_timestep: 100, max_timestep: 900 },
+    timestep_profile: {
+      num_bins: 18,
+      bins: profBins,
+      by_status: {
+        easy: { counts: Array.from({ length: 18 }, () => 4), mean_loss: Array.from({ length: 18 }, () => 0.09) },
+        attention: { counts: Array.from({ length: 18 }, () => 6), mean_loss: Array.from({ length: 18 }, () => 0.55) },
+      },
+      by_group: {},
+    },
+  };
+  a.datasetDiagData = richData;
+
+  const ts = makeWrapStage('timestep', 360, 176);
+  const tipEl = makeEl('div'); tipEl.hidden = true; tipEl.offsetWidth = 180; tipEl.offsetHeight = 90;
+  const origQuery = ts.wrap.querySelector;
+  ts.wrap.querySelector = sel => (sel === '[data-dd-ts-tooltip]' ? tipEl : origQuery(sel));
+  a._renderDatasetDiagHeroSvg(ts.wrap, ts.stage, ts.svg);
+  assert.equal(ts.wrap._ddChartState.coords.length, 18);
+  assert.ok(ts.wrap._ddChartState.coords[0].xCenter < ts.wrap._ddChartState.coords.at(-1).xCenter);
+  assert.ok(ts.svg.innerHTML.includes('m-dd-ts-iqr-band'));
+  assert.ok(ts.svg.innerHTML.includes('m-dd-ts-theo-line'));
+  assert.ok(ts.svg.innerHTML.includes('m-dd-ts-excluded'));
+
+  // Smart-snap across interior empty bin & excluded bound message
+  const gapBin = ts.wrap._ddChartState.coords.find(c => c.bin === 8);
+  a._updateDatasetDiagHeroHover(ts.wrap, gapBin.xCenter, 60);
+  assert.equal(tipEl.hidden, false);
+  const exclBin = ts.wrap._ddChartState.coords[0];
+  a._updateDatasetDiagHeroHover(ts.wrap, exclBin.xCenter, 60);
+  assert.ok(tipEl.innerHTML.includes('900'));
+
+  // Theoretical curves: flux_shift resolution weighting & subset timestep_offset
+  const baseBins18 = a._ddPrepareTimestepBins(a._ddResolveNoiseProfileBins(richData, 18), null, { minT: 0, maxT: 1000, hasMin: false, hasMax: false }).bins;
+  const sumHigh = shares => shares.slice(0, 6).reduce((acc, v) => acc + v, 0);
+  const fluxSmall = a._ddComputeTheoreticalBinShares({
+    profile: 'anima-lora', sampling_config: { timestep_sampling: 'flux_shift', sigmoid_scale: 1.0 },
+    by_resolution: [{ key: '512x512', count: 100 }, { key: '1536x1536', count: 10 }],
+  }, baseBins18, { minT: 0, maxT: 1000, hasMin: false, hasMax: false });
+  const fluxLarge = a._ddComputeTheoreticalBinShares({
+    profile: 'anima-lora', sampling_config: { timestep_sampling: 'flux_shift', sigmoid_scale: 1.0 },
+    by_resolution: [{ key: '512x512', count: 10 }, { key: '1536x1536', count: 100 }],
+  }, baseBins18, { minT: 0, maxT: 1000, hasMin: false, hasMax: false });
+  assert.ok(sumHigh(fluxLarge) > sumHigh(fluxSmall) + 0.03);
+
+  // Morph animation & reduced motion
+  const tsRafQueue = new Map();
+  let tsRafId = 0;
+  let tsMotionAllowed = true;
+  const runNextFrame = tsNow => {
+    const first = tsRafQueue.entries().next();
+    if (first.done) return false;
+    const [id, cb] = first.value;
+    tsRafQueue.delete(id);
+    cb(tsNow);
+    return true;
+  };
+  withMockEnv({
+    document: { createElementNS: (_ns, tag) => makeEl(tag), querySelector: () => null },
+    requestAnimationFrame: cb => { const id = ++tsRafId; tsRafQueue.set(id, cb); return id; },
+    cancelAnimationFrame: id => tsRafQueue.delete(id),
+  }, () => {
+    const morphApp = makeApp({ datasetDiagData: richData, _monitorMotionAllowed: () => tsMotionAllowed });
+    const baseEl = makeEl('g'), theoEl = makeEl('g'), compEl = makeEl('g'), selEl = makeEl('g'), yMaxEl = makeEl('text'), focusCompEl = makeEl('circle');
+    const fakeSvg = makeEl('svg');
+    fakeSvg.querySelector = sel => ({ '[data-dd-ts-base]': baseEl, '[data-dd-ts-density-theo]': theoEl, '[data-dd-ts-comp]': compEl, '[data-dd-ts-density-sel]': selEl, '[data-dd-ts-y-max]': yMaxEl, '[data-dd-ts-focus-comp]': focusCompEl })[sel] || null;
+    const mStage = makeEl('div'); mStage.clientWidth = 380; mStage.clientHeight = 176;
+    const mWrap = makeEl('div'); mWrap.dataset = { mode: 'timestep' };
+
+    morphApp._renderDatasetDiagHeroSvg(mWrap, mStage, fakeSvg);
+    const baseHigh = fakeSvg._ddTsLiveState.high;
+    morphApp.toggleDatasetDiagOverviewPreset('easy');
+    morphApp._renderDatasetDiagHeroSvg(mWrap, mStage, fakeSvg);
+    assert.equal(tsRafQueue.size, 1);
+    assert.equal(runNextFrame(0), true);
+    assert.equal(runNextFrame(100), true);
+    const midEasyHigh = fakeSvg._ddTsLiveState.high;
+
+    morphApp.toggleDatasetDiagOverviewPreset('attention');
+    morphApp._renderDatasetDiagHeroSvg(mWrap, mStage, fakeSvg);
+    assert.equal(runNextFrame(116), true);
+    assert.ok(Math.abs(fakeSvg._ddTsLiveState.high - midEasyHigh) < 1e-6);
+    assert.equal(runNextFrame(360), true);
+    assert.ok(fakeSvg._ddTsLiveState.high > baseHigh + 0.05);
+
+    morphApp.toggleDatasetDiagOverviewPreset('attention');
+    morphApp._renderDatasetDiagHeroSvg(mWrap, mStage, fakeSvg);
+    assert.equal(runNextFrame(400), true);
+    assert.equal(runNextFrame(600), true);
+    assert.equal(fakeSvg._ddTsLiveState.kind, 'none');
+
+    tsMotionAllowed = false;
+    morphApp.toggleDatasetDiagOverviewPreset('easy');
+    morphApp._renderDatasetDiagHeroSvg(mWrap, mStage, fakeSvg);
+    assert.equal(tsRafQueue.size, 0);
+    assert.equal(fakeSvg._ddTsLiveState.kind, 'series');
+  });
+});
+
+test('modal detail, NaN row, first_non_finite truncation, epoch/timestep charts, linked hover, viewport zoom, and Tag Editor handoff', async () => {
   let navigated = null;
   const makeDetail = (imageObj, extraSamples = []) => ({
     run_id: 'r1',
     timestep_scale: 'unit',
+    thresholds: { high_residual: 0.20 },
+    subset_meta: { num_repeats: 2, aug_flags: ['flip_aug'] },
     image: imageObj,
-    epoch_series: [{ epoch: 1, count: 2, mean_residual: 0.4, mean_loss: 0.3 }, { epoch: 2, count: 2, mean_residual: 0.44, mean_loss: 0.34 }],
-    by_timestep: SAMPLE_DATA.by_timestep,
+    epoch_series: [
+      { epoch: 1, count: 2, mean_residual: 0.4, mean_loss: 0.3, non_finite_count: 0 },
+      { epoch: 2, count: 2, mean_residual: 0.44, mean_loss: 0.34, non_finite_count: extraSamples.some(s => s.non_finite) ? 1 : 0 },
+      { epoch: 3, count: 1, mean_residual: 0.25, mean_loss: 0.32, non_finite_count: 0 },
+    ],
+    timestep_profile: {
+      num_bins: 18,
+      bins: Array.from({ length: 18 }, (_, bin) => ({
+        bin, t_from: bin * (1000 / 18), t_to: (bin + 1) * (1000 / 18),
+        count: 4, images: 3, comparable: true, mean_loss: 0.25, p25: 0.18, p75: 0.32,
+      })),
+    },
     samples: [{ step: 1, epoch: 1, timestep: 0.5, loss: 0.3, residual: 0.4, width: 768, height: 1024 }, ...extraSamples],
     samples_total: 1 + extraSamples.length,
-    samples_truncated: false,
     caption: { exists: true, filename: 'bad.txt', text: '1girl, solo', error: '', editor_safe: true },
     file_info: { exists: true, abs_path: 'D:/ds/char/bad.png', dir_path: 'D:/ds/char', size: 1234, width: 768, height: 1024 },
   });
-  global.fetch = async url => {
-    const s = String(url);
-    if (s.includes('image_id=aaaaaaaaaaaaaaaa')) return response(makeDetail(SAMPLE_DATA.by_image[0]));
-    if (s.includes('image_id=cccccccccccccccc')) return response(makeDetail(SAMPLE_DATA.by_image[2], [{ step: 2, epoch: 2, timestep: 0.85, loss: null, residual: null, non_finite: true }]));
-    throw new Error('Unexpected fetch: ' + url);
-  };
 
-  const a = makeApp({
-    datasetDiagData: SAMPLE_DATA,
-    datasetDiagPreset: 'all',
-    navigate(route) { navigated = route; },
+  await withMockEnv({
+    fetch: async url => {
+      const s = String(url);
+      if (s.includes('image_id=aaaaaaaaaaaaaaaa')) return response(makeDetail(SAMPLE_DATA.by_image[0], [{ step: 3, epoch: 2, timestep: 0.5, loss: 0.301, residual: 0.4 }]));
+      if (s.includes('image_id=cccccccccccccccc')) return response(makeDetail(SAMPLE_DATA.by_image[2], [{ step: 2, epoch: 2, timestep: 0.85, loss: null, residual: null, non_finite: true }]));
+      throw new Error('Unexpected fetch: ' + url);
+    },
+  }, async () => {
+    const a = makeApp({ datasetDiagData: SAMPLE_DATA, navigate(route) { navigated = route; } });
+    a.openDatasetDiagModal('aaaaaaaaaaaaaaaa');
+    await new Promise(resolve => setTimeout(resolve, 15));
+    assert.equal(a.datasetDiagModalOpen, true);
+
+    // Cards/rows omit removed data-dialog-opens while keeping data-dd-image-id and aria-haspopup="dialog"
+    const cardHtml = a._ddImageCardHtml(k => a.tMonitor(k), SAMPLE_DATA.by_image[0]);
+    assert.ok(cardHtml.includes('data-dd-image-id="aaaaaaaaaaaaaaaa"') && cardHtml.includes('aria-haspopup="dialog"'));
+    assert.ok(!cardHtml.includes('data-dialog-opens'));
+    const rowHtml = a._ddImageTableRowHtml(k => a.tMonitor(k), SAMPLE_DATA.by_image[0], 0.5);
+    assert.ok(rowHtml.includes('data-dd-image-id="aaaaaaaaaaaaaaaa"') && rowHtml.includes('aria-haspopup="dialog"'));
+    assert.ok(!rowHtml.includes('data-dialog-opens'));
+
+    const cropDiff = a._ddComputeBucketDiff(1024, 768, '512x512', k => a.tMonitor(k));
+    assert.equal(cropDiff.cropPct, 25);
+    assert.equal(cropDiff.warn, true);
+
+    // Right panel + Tag Editor handoff + footer actions
+    const rightHtml = a._renderDatasetDiagModalRightHtml(k => a.tMonitor(k), a.datasetDiagModalDetail);
+    assert.ok(rightHtml.indexOf('m-dd-caption-sec') < rightHtml.indexOf(a.tMonitor('ddEpochTrendTitle')));
+    a.openDatasetDiagInTagEditor();
+    assert.equal(navigated, 'tagEditor');
+    assert.equal(a.tagEditorSearchQuery, '^bad\\.png$');
+
+    // Truncated logs still show first_non_finite coordinates
+    const nanDetail = makeDetail(SAMPLE_DATA.by_image[2], [{ step: 505, epoch: 5, timestep: 0.85, loss: null, residual: null, non_finite: true }]);
+    nanDetail.image = { ...nanDetail.image, non_finite_count: 2 };
+    nanDetail.first_non_finite = { step: 1, epoch: 1, timestep: 0.25, non_finite: true };
+    nanDetail.samples_truncated = true;
+    const truncNanHtml = a._renderDatasetDiagModalRightHtml(k => a.tMonitor(k), nanDetail);
+    assert.ok(truncNanHtml.includes('t = 250'));
+
+    // Linked hover between modal epoch & timestep charts + zone header hover
+    const epStage = makeEl('div'); epStage.clientHeight = 180;
+    const epSvg = makeEl('svg'); const epTip = makeEl('div'); epTip.hidden = true;
+    const tsStage = makeEl('div'); tsStage.clientHeight = 220;
+    const tsSvg = makeEl('svg'); const tsTip = makeEl('div'); tsTip.hidden = true;
+    const zoneHigh = makeEl('div'); zoneHigh.dataset.ddZoneKey = 'high';
+    const zoneMid = makeEl('div'); zoneMid.dataset.ddZoneKey = 'mid';
+    const zoneLow = makeEl('div'); zoneLow.dataset.ddZoneKey = 'low';
+    const rightEl = {
+      querySelector: sel => ({
+        '[data-dd-epoch-stage]': epStage, '[data-dd-epoch-svg]': epSvg, '[data-dd-ep-tooltip]': epTip,
+        '[data-dd-ts-stage]': tsStage, '[data-dd-ts-svg]': tsSvg, '[data-dd-ts-tooltip]': tsTip,
+      })[sel] || null,
+      querySelectorAll: sel => (sel === '.m-dd-modal-zone[data-dd-zone-key]' ? [zoneHigh, zoneMid, zoneLow] : []),
+    };
+    const linkedDetail = makeDetail(SAMPLE_DATA.by_image[0], [
+      { step: 20, epoch: 2, timestep: 0.5, loss: 0.301, residual: 0.2 },
+      { step: 30, epoch: 1, timestep: 0.65, loss: 0.50, residual: 0.45 },
+      { step: 40, epoch: 2, timestep: 0.654, loss: 0.501, residual: 0.46 },
+      { step: 50, epoch: 3, timestep: 0.80, loss: 0.42, residual: 0.30 },
+    ]);
+    withMockEnv({ requestAnimationFrame: undefined, cancelAnimationFrame: undefined }, () => {
+      a._bindDatasetDiagModalCharts(rightEl, linkedDetail, k => a.tMonitor(k), { immediate: true });
+      const c500 = tsStage._ddState.clusters.find(c => c.items.length === 2 && Math.round(c.t1000) === 500);
+      tsStage.emit('pointermove', { clientX: c500.cx, clientY: c500.cy });
+      const epDots = epSvg.querySelectorAll('[data-dd-ep-dot]');
+      assert.equal(epDots.find(n => n.getAttribute('data-dd-ep-dot') === '1').classList.contains('is-ts-linked'), true);
+      assert.equal(epDots.find(n => n.getAttribute('data-dd-ep-dot') === '2').classList.contains('is-ts-linked'), true);
+      assert.equal(zoneMid.classList.contains('is-zone-hover'), true);
+      assert.ok(tsTip.innerHTML.includes('t = 500'));
+
+      const c650 = tsStage._ddState.clusters.find(c => c.items.length === 2 && c.t1000 > 640 && c.t1000 < 660);
+      tsStage.emit('pointermove', { clientX: c650.cx, clientY: c650.cy });
+      assert.ok(tsTip.innerHTML.includes('650–654'));
+
+      zoneHigh.emit('pointerenter');
+      const tsZoneNodes = tsSvg.querySelectorAll('[data-dd-zone]');
+      assert.ok(tsZoneNodes.filter(n => n.getAttribute('data-dd-zone') === 'high').every(n => n.classList.contains('is-zone-hot')));
+      zoneHigh.emit('pointerleave');
+
+      const ep2 = epStage._ddState.allCoords.find(c => c.epoch === 2);
+      epStage.emit('pointermove', { clientX: ep2.x, clientY: ep2.y });
+      assert.equal(tsSvg.classList.contains('is-ep-linking'), true);
+      epStage.emit('pointerleave');
+      assert.equal(tsSvg.classList.contains('is-ep-linking'), false);
+    });
+
+    // Modal continuous wheel zoom & reset animation via AnimaImageViewport
+    const vpRafQueue = [];
+    let vpNow = 0;
+    const vpContext = loadFrontend(['shared/image-viewport', 'shared/utils', 'monitor/core', 'monitor/render'], {
+      window: {},
+      performance: { now: () => vpNow },
+      requestAnimationFrame: cb => { vpRafQueue.push(cb); return vpRafQueue.length; },
+      cancelAnimationFrame: () => {},
+      document: { hidden: false, getElementById: () => null, querySelector: () => null, querySelectorAll: () => [] },
+    });
+    vpContext.window.matchMedia = () => ({ matches: false });
+    const modalApp = Object.assign(composeMixins(vpContext.window.utilsMixin, vpContext.window.monitorCoreMixin, vpContext.window.monitorRenderMixin), {
+      t(key) { return key.split('.').reduce((v, part) => v?.[part], zhDict) ?? key; },
+      _syncDatasetDiagImageStyle() {},
+    });
+    modalApp.datasetDiagViewport.zoom({ deltaY: -12, deltaX: 0, deltaMode: 0, preventDefault() {}, stopPropagation() {} });
+    assert.ok(modalApp.datasetDiagViewport.scale > 1.01 && modalApp.datasetDiagViewport.scale < 1.03);
+    modalApp.datasetDiagViewport.reset(false);
+    modalApp.datasetDiagViewport.zoom({ deltaY: -120, deltaX: 0, deltaMode: 0, preventDefault() {}, stopPropagation() {} });
+    assert.ok(modalApp.datasetDiagViewport.scale > 1.17 && modalApp.datasetDiagViewport.scale < 1.20);
+    modalApp.datasetDiagViewport.reset(true);
+    assert.equal(modalApp.datasetDiagViewport.animating, true);
+    vpRafQueue.shift()(0);
+    vpRafQueue.shift()(100);
+    assert.equal(modalApp.datasetDiagViewport.animating, false);
+    assert.equal(modalApp.datasetDiagViewport.scale, 1);
+
+    // Modal footer omits Copy Path and retains Open Original & Tag Editor
+    const footEl = { innerHTML: '' };
+    withMockEnv({
+      document: { getElementById: id => (id === 'datasetDiagModal' ? {} : id === 'datasetDiagModalFoot' ? footEl : null) },
+    }, () => {
+      a.datasetDiagModalOpen = true;
+      a.datasetDiagModalImageId = 'aaaaaaaaaaaaaaaa';
+      a.datasetDiagModalDetail = {
+        ...linkedDetail,
+        image: { ...linkedDetail.image, preview_url: '/preview/bad.png' },
+        caption: { exists: true, editor_safe: true, text: '1girl' },
+        file_info: { exists: true, abs_path: 'D:/ds/char/bad.png', width: 768, height: 1024, size: 1024 },
+      };
+      window.monitorRenderMixin._patchDatasetDiagModal.call(a);
+      assert.ok(!footEl.innerHTML.includes('ddCopyPath'));
+      assert.ok(footEl.innerHTML.includes('href="/preview/bad.png"'));
+      assert.ok(footEl.innerHTML.includes('openDatasetDiagInTagEditor()'));
+    });
+  });
+});
+
+test('live polling uses 6s cadence, computes sample deltas, and reconciles scatter dots in-place', async () => {
+  const scheduledDelays = [];
+  let payload = { ...structuredClone(SAMPLE_DATA), revision: 'rev1' };
+  await withMockEnv({
+    setTimeout: (_fn, ms) => { scheduledDelays.push(ms); return 999; },
+    clearTimeout: () => {},
+    fetch: async () => response(payload),
+  }, async () => {
+    const app = makeApp({
+      currentRoute: 'monitor-dashboard', monitorTab: 'dataset', selectedRunDir: '',
+      liveTaskId: 'task-live', monitorData: { state: 'RUNNING' }, _monitorMotionAllowed: () => true,
+    });
+    await app.loadDatasetDiagnostics();
+    assert.ok(scheduledDelays.includes(6000));
+    assert.equal(app._datasetDiagUpdatePulseSeq, 0);
+
+    const nextPayload = { ...structuredClone(SAMPLE_DATA), revision: 'rev2' };
+    nextPayload.by_image = nextPayload.by_image.map(img => (
+      img.image_id === 'aaaaaaaaaaaaaaaa' ? { ...img, count: img.count + 2, comparable_count: img.count + 2, mean_residual: 0.36 } : img
+    ));
+    payload = nextPayload;
+    await app.loadDatasetDiagnostics({ silent: true });
+    assert.equal(app._datasetDiagUpdatePulseSeq, 1);
+    assert.equal(app._datasetDiagUpdatedIds.has('aaaaaaaaaaaaaaaa'), true);
+    assert.equal(app._datasetDiagUpdatedIds.has('bbbbbbbbbbbbbbbb'), false);
+
+    const dotA = makeEl('circle', { class: 'm-dd-dot is-alert', 'data-dd-image-id': 'aaaaaaaaaaaaaaaa' });
+    const dotC = makeEl('circle', { class: 'm-dd-dot', 'data-dd-image-id': 'cccccccccccccccc' });
+    const dotsGroup = makeEl('g');
+    dotsGroup.children.push(dotA, dotC);
+    const trailsGroup = makeEl('g');
+    const pulsesGroup = makeEl('g');
+    const fakeSvg = makeEl('svg');
+    fakeSvg.querySelector = sel => (sel === '.m-dd-dots' ? dotsGroup : sel === '.m-dd-trails' ? trailsGroup : sel === '.m-dd-pulses' ? pulsesGroup : null);
+    const wrap = { _ddLastPulseSeq: 0, _ddLastTrailSeq: 0, _ddPrevDotCoords: new Map([['aaaaaaaaaaaaaaaa', { cx: 360, cy: 140 }], ['cccccccccccccccc', { cx: 200, cy: 190 }]]) };
+
+    withMockEnv({
+      document: { createElementNS: (_ns, tag) => makeEl(tag) },
+      requestAnimationFrame: undefined,
+    }, () => {
+      app._ddReconcileScatterDots(fakeSvg, wrap, [
+        { image_id: 'aaaaaaaaaaaaaaaa', idx: 0, cx: 410.5, cy: 120.2, r: 4.5, fill: 'var(--danger)', status: 'attention', cls: 'm-dd-dot is-alert' },
+        { image_id: 'bbbbbbbbbbbbbbbb', idx: 1, cx: 320.0, cy: 200.0, r: 4.0, fill: 'var(--success)', status: 'learning', cls: 'm-dd-dot' },
+        { image_id: 'cccccccccccccccc', idx: 2, cx: 230.0, cy: 190.0, r: 4.0, fill: 'var(--warning)', status: 'normal', cls: 'm-dd-dot' },
+      ], { animate: true, updatedIds: app._datasetDiagUpdatedIds, pulseSeq: app._datasetDiagUpdatePulseSeq });
+      assert.equal(dotsGroup.children[0], dotA);
+      assert.equal(dotA.attrs.cx, '410.5');
+      assert.equal(pulsesGroup.children.length, 1);
+      assert.equal(trailsGroup.children.length, 1);
+      assert.equal(trailsGroup.children[0].attrs['data-dd-image-id'], 'aaaaaaaaaaaaaaaa');
+    });
+  });
+});
+
+// ── High-Value Regression & Boundary Tests ────────────────────────────────────
+
+test('samples modal filter buttons sync .active, aria-pressed, and delegated click without inline onclick', () => {
+  const filterEl = makeEl('div');
+  const bodyEl = makeEl('div');
+  const titleEl = makeEl('strong');
+  const metaEl = makeEl('span');
+  const sepEl = makeEl('span');
+  const winEl = makeEl('div');
+
+  const app = makeApp({
+    datasetDiagModalOpen: true,
+    datasetDiagSamplesModalOpen: true,
+    datasetDiagModalDetail: {
+      image: { image_id: 'nan1', name: 'nan.png', non_finite_count: 1 },
+      samples_total: 2,
+      samples: [
+        { epoch: 1, step: 10, timestep: 0.4, loss: 0.25, residual: 0.1, non_finite: false },
+        { epoch: 2, step: 20, timestep: 0.8, loss: null, residual: null, non_finite: true },
+      ],
+    },
   });
 
-  a.openDatasetDiagModal('aaaaaaaaaaaaaaaa');
-  await new Promise(resolve => setTimeout(resolve, 15));
-  assert.equal(a.datasetDiagModalOpen, true);
-  assert.equal(a.datasetDiagModalDetail.caption.text, '1girl, solo');
+  withMockEnv({
+    document: {
+      querySelector: sel => (sel === '#datasetDiagSamplesModal .m-dd-samples-window' ? winEl : null),
+      getElementById: id => ({
+        datasetDiagSamplesTitle: titleEl,
+        datasetDiagSamplesMeta: metaEl,
+        datasetDiagSamplesFilter: filterEl,
+        datasetDiagSamplesSep: sepEl,
+        datasetDiagSamplesBody: bodyEl,
+      })[id] || null,
+    },
+  }, () => {
+    app.setDatasetDiagSamplesFilter('nan');
+    assert.ok(!filterEl.innerHTML.includes('onclick='), 'Filter buttons must not use inline onclick handlers');
+    const btns = filterEl.querySelectorAll('[data-dd-samples-filter]');
+    assert.equal(btns.length, 2);
+    const allBtn = btns.find(b => b.dataset.ddSamplesFilter === 'all');
+    const nanBtn = btns.find(b => b.dataset.ddSamplesFilter === 'nan');
+    assert.equal(allBtn.classList.contains('active'), false);
+    assert.equal(allBtn.getAttribute('aria-pressed'), 'false');
+    assert.equal(nanBtn.classList.contains('active'), true);
+    assert.equal(nanBtn.getAttribute('aria-pressed'), 'true');
 
-  // Normal/attention right panel has 3-zone strip, separated readout strips, NO pink-red AI note banner, NO middots
-  const rightHtmlClean = a._renderDatasetDiagModalRightHtml(k => a.tMonitor(k), a.datasetDiagModalDetail);
-  assert.ok(!rightHtmlClean.includes('m-dd-modal-note'));
-  assert.ok(!rightHtmlClean.includes('m-dd-nan-row'));
-  assert.ok(rightHtmlClean.includes('m-dd-modal-zones'));
-  assert.ok(rightHtmlClean.includes('m-dd-mini-readout'));
-  assert.ok(rightHtmlClean.includes('0.3000') || rightHtmlClean.includes('0.3200'));
+    // Delegated click switches back to 'all' and updates .active + aria-pressed
+    filterEl.emit('click', { target: { closest: sel => (sel === '[data-dd-samples-filter]' ? allBtn : null) } });
+    assert.equal(app.datasetDiagSamplesFilter, 'all');
+    const btnsAfter = filterEl.querySelectorAll('[data-dd-samples-filter]');
+    assert.equal(btnsAfter.find(b => b.dataset.ddSamplesFilter === 'all').classList.contains('active'), true);
+    assert.equal(btnsAfter.find(b => b.dataset.ddSamplesFilter === 'all').getAttribute('aria-pressed'), 'true');
+    assert.equal(btnsAfter.find(b => b.dataset.ddSamplesFilter === 'nan').classList.contains('active'), false);
+    assert.equal(btnsAfter.find(b => b.dataset.ddSamplesFilter === 'nan').getAttribute('aria-pressed'), 'false');
+  });
+});
 
-  // Navigating to uncached NaN item (sorted first at index 0 by non_finite_count) clears previous detail immediately
-  a.datasetDiagModalNav(-1);
-  assert.equal(a.datasetDiagModalImageId, 'cccccccccccccccc');
-  assert.equal(a.datasetDiagModalDetail, null);
-  await new Promise(resolve => setTimeout(resolve, 15));
-  assert.equal(a.datasetDiagModalDetail.image.image_id, 'cccccccccccccccc');
+test('1s live push updates dashboard in-place without full SVG rebuild or interrupting active scatter animations', () => {
+  const analysisSlot = makeEl('div');
+  const headingSlot = makeEl('div');
+  const imagesSlot = makeEl('div');
+  const shell = {
+    querySelector: sel => ({
+      '[data-dd-slot="heading"]': headingSlot,
+      '[data-dd-slot="analysis"]': analysisSlot,
+      '[data-dd-slot="images"]': imagesSlot,
+    })[sel] || null,
+  };
+  const panel = makeEl('div');
+  panel.dataset = { tab: 'dataset' };
+  panel.querySelector = sel => (sel === '[data-dd-shell="1"]' ? shell : null);
+  Object.defineProperty(panel, 'firstElementChild', { get: () => shell });
+  const contentEl = {
+    querySelectorAll: () => [panel],
+    querySelector: sel => (sel === '.m-tab-panel[data-tab="dataset"]' ? panel : null),
+  };
 
-  const rightHtmlNan = a._renderDatasetDiagModalRightHtml(k => a.tMonitor(k), a.datasetDiagModalDetail);
-  assert.ok(rightHtmlNan.includes('m-dd-nan-row'));
-  assert.ok(rightHtmlNan.includes('Epoch 2'));
-  assert.ok(rightHtmlNan.includes('t = 850'));
+  let scatterRenderCalls = 0;
+  let filterSyncCalls = 0;
+  const app = makeApp({
+    _builtTab: 'dataset',
+    runDetailData: {},
+    _datasetDiagSourceKey: 'run:output/demo',
+    _datasetDiagLoaded: true,
+    datasetDiagData: structuredClone(SAMPLE_DATA),
+    _renderDatasetDiagHeading: () => '<div class="m-dd-topbar"></div>',
+    _renderDatasetDiagAnalysisCard: () => {
+      scatterRenderCalls += 1;
+      return '<div data-dd-analysis><div data-dd-hero-wrap data-mode="quadrant"></div></div>';
+    },
+    _bindDatasetDiagCharts() {},
+  });
 
-  // Timestep overlay renders NaN marker and 1000 (left) -> 0 (right)
-  const tsSvg = { attrs: {}, innerHTML: '', setAttribute(k, v) { this.attrs[k] = v; } };
-  const tsStage = { clientWidth: 420 };
-  a._renderDatasetDiagModalTimestepSvg(tsStage, tsSvg, a.datasetDiagModalDetail, k => a.tMonitor(k));
-  assert.ok(tsSvg.innerHTML.includes('m-dd-nan-mark'));
-  assert.ok(tsSvg.innerHTML.includes('m-dd-base-line'));
-  assert.ok(tsSvg.innerHTML.includes('m-dd-mini-zone-labels'));
-  assert.ok(tsSvg.innerHTML.includes('style="fill:color-mix('));
-  assert.equal(tsStage._ddState.dots.length, 2);
-  const dotMid = tsStage._ddState.dots.find(d => d.timestep === 0.5);
-  const dotHigh = tsStage._ddState.dots.find(d => d.timestep === 0.85);
-  // Higher timestep (t=850) must be farther LEFT than lower timestep (t=500)
-  assert.ok(dotHigh.cx < dotMid.cx);
+  // Prime DOM with shell + initial analysis
+  withMockEnv({
+    document: {
+      activeElement: null,
+      getElementById: id => (id === 'monitorTabContent' ? contentEl : null),
+      querySelector: sel => (sel === '.m-tab-panel[data-tab="dataset"]' ? panel : null),
+    },
+  }, () => {
+    const analysisEl = { dataset: {} };
+    const scatterWrap = makeEl('div');
+    scatterWrap.dataset = { mode: 'quadrant' };
+    analysisSlot.querySelector = sel => (sel === '[data-dd-analysis]' ? analysisEl : sel === '[data-dd-hero-wrap][data-mode="quadrant"]' ? scatterWrap : null);
+    headingSlot.querySelector = () => null;
 
-  // Reopen first from cache and trigger Tag Editor handoff
-  a.openDatasetDiagModal('aaaaaaaaaaaaaaaa');
-  assert.equal(a.datasetDiagModalDetail.image.image_id, 'aaaaaaaaaaaaaaaa');
-  a.openDatasetDiagInTagEditor();
-  assert.equal(a.datasetDiagModalOpen, false);
-  assert.equal(navigated, 'tagEditor');
-  assert.equal(a.tagEditorDir, 'D:/ds/char');
-  assert.equal(a.tagEditorOpenPath, 'D:/ds/char/bad.png');
-  assert.equal(a.tagEditorSearchQuery, '^bad\\.png$');
-  assert.equal(a.tagEditorUseRegex, true);
+    // Override _syncDatasetDiagScatterFilter to count calls
+    app._syncDatasetDiagScatterFilter = () => { filterSyncCalls += 1; };
+
+    app._renderTab('dataset', {}, null, null, k => app.tMonitor(k), true);
+    assert.equal(scatterRenderCalls, 1);
+    assert.equal(filterSyncCalls, 1);
+
+    // 1s live push bumps snapshot version -> patches in-place without rebuilding analysisCard DOM
+    app.datasetDiagData = {
+      ...structuredClone(SAMPLE_DATA),
+      summary: { ...SAMPLE_DATA.summary, samples: 35 },
+    };
+    app._datasetDiagSnapshotVersion += 1;
+    app._renderTab('dataset', {}, null, null, k => app.tMonitor(k), true);
+    assert.equal(scatterRenderCalls, 1, 'Live snapshot push must patch in-place without rebuilding analysis HTML');
+
+    // Active scatter zoom/choreo rAF suppresses filter sync so animation is never interrupted
+    scatterWrap._ddZoomAnimRaf = 42;
+    const prevSyncCalls = filterSyncCalls;
+    app.datasetDiagPreset = 'attention';
+    app._renderTab('dataset', {}, null, null, k => app.tMonitor(k), true);
+    assert.equal(filterSyncCalls, prevSyncCalls, 'Active scatter rAF must suppress _syncDatasetDiagScatterFilter');
+  });
+});
+
+test('folder grouping beyond 120-image display limit preserves subsequent folder headers and updates remaining counts', () => {
+  const imagesA = Array.from({ length: 130 }, (_, i) => ({
+    image_id: `a_${i}`, name: `a_${i}.png`, image: `D:/ds/a/a_${i}.png`,
+    directory: 'D:/ds/a', dir_label: 'ds/a', subset: '0-0', subset_label: 'folder_a',
+    is_reg: false, count: 6, comparable_count: 6, mean_residual: 0.4 - i * 0.001, slope: 0.01, status: 'attention',
+  }));
+  const imagesB = Array.from({ length: 20 }, (_, i) => ({
+    image_id: `b_${i}`, name: `b_${i}.png`, image: `D:/ds/b/b_${i}.png`,
+    directory: 'D:/ds/b', dir_label: 'ds/b', subset: '0-1', subset_label: 'folder_b',
+    is_reg: false, count: 6, comparable_count: 6, mean_residual: 0.1, slope: -0.01, status: 'normal',
+  }));
+  const data = {
+    ...structuredClone(SAMPLE_DATA),
+    summary: { ...SAMPLE_DATA.summary, images_total: 150, has_reg_images: false },
+    by_directory: [
+      { key: 'D:/ds/a', label: 'ds/a', full_path: 'D:/ds/a', count: 780, images: 130, mean_residual: 0.3 },
+      { key: 'D:/ds/b', label: 'ds/b', full_path: 'D:/ds/b', count: 120, images: 20, mean_residual: 0.1 },
+    ],
+    by_subset: [
+      { key: '0-0', label: 'folder_a', is_reg: false, count: 780, images: 130, mean_residual: 0.3 },
+      { key: '0-1', label: 'folder_b', is_reg: false, count: 120, images: 20, mean_residual: 0.1 },
+    ],
+    by_image: [...imagesA, ...imagesB],
+  };
+
+  const app = makeApp({ datasetDiagData: data, datasetDiagSubTab: 'images', datasetDiagGroupByFolder: true, datasetDiagDisplayLimit: 120 });
+  const bodyHtml = app._renderDatasetDiagImagesBodyHtml(k => app.tMonitor(k), data);
+  assert.equal((bodyHtml.match(/class="m-dd-folder-group"/g) || []).length, 2, 'Subsequent folder header beyond 120 limit must stay rendered');
+  assert.ok(bodyHtml.includes('data-dd-folder-group="D:/ds/b"'));
+  assert.ok(bodyHtml.includes('120 / 130'));
+  assert.ok(bodyHtml.includes('data-dd-more-row'));
+  assert.equal((bodyHtml.match(/class="m-dd-card"/g) || []).length, 120);
+
+  const slices = app._ddComputeGroupedSlices(app._datasetDiagFilteredImages(), 120);
+  assert.equal(slices.hasMore, true);
+  assert.equal(slices.remaining, 30);
+  assert.equal(slices.slices[0].visibleItems.length, 120);
+  assert.equal(slices.slices[1].visibleItems.length, 0);
+});
+
+test('SDXL profile defaults to uniform theoretical curve and applies is_reg subset timestep_offset', () => {
+  const a = makeApp({ datasetDiagData: SAMPLE_DATA });
+  const bins18 = Array.from({ length: 18 }, (_, i) => {
+    const bin = 17 - i;
+    return {
+      bin, tFrom: bin * (1000 / 18), tTo: (bin + 1) * (1000 / 18), count: 5, comparable: true, mean_loss: 0.2, excluded: false,
+    };
+  });
+  const noExcl = { minT: 0, maxT: 1000, hasMin: false, hasMax: false };
+
+  // SDXL with empty sampling_config defaults to uniform theoretical shares (~1/18 per bin)
+  const sdxlShares = a._ddComputeTheoreticalBinShares({ profile: 'sdxl-lora', by_subset: [] }, bins18, noExcl);
+  assert.ok(Array.isArray(sdxlShares) && sdxlShares.length === 18);
+  for (const s of sdxlShares) {
+    assert.ok(Math.abs(s - 1 / 18) < 1e-3, `Expected uniform ~0.0556 share for SDXL, got ${s}`);
+  }
+
+  // is_reg subset with timestep_offset MUST shift theoretical sampling mass (sd-scripts reads offset regardless of is_reg)
+  const sumHigh = shares => shares.slice(0, 6).reduce((acc, v) => acc + v, 0);
+  const sigBase = a._ddComputeTheoreticalBinShares({
+    profile: 'anima-lora',
+    sampling_config: { timestep_sampling: 'sigmoid', sigmoid_scale: 1.0 },
+    by_subset: [{ key: '0-0', count: 50, is_reg: false }, { key: '0-1', count: 50, is_reg: true }],
+  }, bins18, noExcl);
+  const sigRegOffset = a._ddComputeTheoreticalBinShares({
+    profile: 'anima-lora',
+    sampling_config: { timestep_sampling: 'sigmoid', sigmoid_scale: 1.0 },
+    by_subset: [{ key: '0-0', count: 50, is_reg: false }, { key: '0-1', count: 50, is_reg: true, timestep_offset: 1.2 }],
+  }, bins18, noExcl);
+  assert.ok(sumHigh(sigRegOffset) > sumHigh(sigBase) + 0.05, 'is_reg subset timestep_offset must apply to theoretical curve');
+});
+
+test('0-sample datasets and all-NaN images render safely without NaN/Infinity coordinates or errors', () => {
+  const zeroData = {
+    available: true,
+    profile: 'anima-lora',
+    run_id: 'r0',
+    timestep_scale: 'unit',
+    thresholds: { min_count: 3, high_residual: 0.2, low_residual: -0.2, converging_slope: -0.02 },
+    summary: { samples: 0, non_finite_total: 0, images_total: 0, images_qualified: 0, has_slope: true, counts: {} },
+    by_image: [],
+    by_timestep: [],
+    by_resolution: [],
+    by_subset: [],
+    by_directory: [],
+  };
+  const zeroApp = makeApp({ datasetDiagData: zeroData });
+  const q0 = makeWrapStage('quadrant');
+  zeroApp._renderDatasetDiagHeroSvg(q0.wrap, q0.stage, q0.svg);
+  assert.ok(q0.svg.innerHTML.includes(zeroApp.tMonitor('ddNoQuadrantPoints')));
+
+  const noSlopeZeroApp = makeApp({ datasetDiagData: { ...zeroData, summary: { ...zeroData.summary, has_slope: false } } });
+  const qNoSlope = makeWrapStage('quadrant');
+  noSlopeZeroApp._renderDatasetDiagHeroSvg(qNoSlope.wrap, qNoSlope.stage, qNoSlope.svg);
+  assert.ok(qNoSlope.svg.innerHTML.includes(noSlopeZeroApp.tMonitor('ddNoReferencePoints')));
+
+  const ts0 = makeWrapStage('timestep');
+  zeroApp._renderDatasetDiagHeroSvg(ts0.wrap, ts0.stage, ts0.svg);
+  assert.ok(ts0.svg.innerHTML.includes(zeroApp.tMonitor('ddTimestepOverlayEmpty')));
+  assert.equal(zeroApp._renderDatasetDiagGroupsCard(k => zeroApp.tMonitor(k), zeroData), '');
+  assert.ok(zeroApp._renderDatasetDiagImagesBodyHtml(k => zeroApp.tMonitor(k), zeroData).includes(zeroApp.tMonitor('ddNoMatchingImages')));
+
+  // All-NaN image + dataset renders safely with no NaN/Infinity coordinates
+  const allNanData = {
+    ...structuredClone(zeroData),
+    summary: { samples: 0, non_finite_total: 4, images_total: 1, images_qualified: 0, has_slope: false, counts: { non_finite: 1 } },
+    by_image: [{
+      image_id: 'nan_only', image: 'D:/ds/nan_only.png', name: 'nan_only.png',
+      resolution: '1024x1024', subset: '0-0', is_reg: false,
+      count: 0, comparable_count: 0, non_finite_count: 4, epochs: 2,
+      mean_loss: null, mean_residual: null, slope: null, status: 'non_finite',
+    }],
+  };
+  const nanApp = makeApp({ datasetDiagData: allNanData });
+  const nanOverview = nanApp._renderDatasetDiagTab(k => nanApp.tMonitor(k));
+  assert.ok(!nanOverview.includes('NaN%') && !nanOverview.includes('Infinity'));
+  const nanDetail = {
+    run_id: 'r0',
+    timestep_scale: 'unit',
+    image: allNanData.by_image[0],
+    epoch_series: [{ epoch: 1, count: 0, mean_residual: null, mean_loss: null, non_finite_count: 4 }],
+    samples: [{ step: 1, epoch: 1, timestep: 0.5, loss: null, residual: null, non_finite: true }],
+    caption: { exists: false },
+    file_info: { exists: true },
+  };
+  const nanRight = nanApp._renderDatasetDiagModalRightHtml(k => nanApp.tMonitor(k), nanDetail);
+  assert.ok(nanRight.includes('m-dd-nan-row'));
+  const tsModalSvg = makeEl('svg');
+  const tsModalStage = makeEl('div');
+  nanApp._renderDatasetDiagModalTimestepSvg(tsModalStage, tsModalSvg, nanDetail, k => nanApp.tMonitor(k));
+  assert.ok(!tsModalSvg.innerHTML.includes('cx="NaN"') && !tsModalSvg.innerHTML.includes('cy="NaN"'));
+  assert.ok(tsModalSvg.innerHTML.includes('m-dd-nan-lane'));
+});
+
+test('malicious filenames, directory paths, and captions are escaped across cards, table, groups, and modal', () => {
+  const xssName = 'bad"><script>alert(1)</script>\'.png';
+  const xssDir = 'D:/ds/<img src=x onerror="alert(2)">\'dir';
+  const xssCap = '<script>steal()</script> & "quoted"';
+  const xssImg = {
+    image_id: 'id\'"><script>',
+    image: `${xssDir}/${xssName}`,
+    name: xssName,
+    directory: xssDir,
+    dir_label: '<svg onload=alert(3)>',
+    resolution: '1024x1024',
+    subset: '0-0\'"><b/>',
+    subset_label: '<b onclick="xss()">sub</b>',
+    is_reg: false,
+    count: 5,
+    comparable_count: 5,
+    non_finite_count: 0,
+    epochs: 2,
+    mean_loss: 0.3,
+    mean_residual: 0.25,
+    slope: -0.01,
+    status: 'attention',
+    thumb_url: '/api/image-preview?path=x" onclick="alert(4)',
+  };
+  const xssData = {
+    ...structuredClone(SAMPLE_DATA),
+    summary: { ...SAMPLE_DATA.summary, images_total: 1, has_reg_images: false },
+    by_directory: [
+      { key: xssDir, label: '<img onerror=1>', full_path: xssDir, count: 5, comparable_count: 5, images: 1, mean_residual: 0.25 },
+      { key: 'D:/safe', label: 'safe', full_path: 'D:/safe', count: 5, comparable_count: 5, images: 1, mean_residual: 0.0 },
+    ],
+    by_subset: [
+      { key: xssImg.subset, label: xssImg.subset_label, is_reg: false, count: 5, comparable_count: 5, images: 1, mean_residual: 0.25 },
+      { key: '0-1', label: 'safe', is_reg: false, count: 5, comparable_count: 5, images: 1, mean_residual: 0.0 },
+    ],
+    by_image: [xssImg],
+  };
+
+  const app = makeApp({ datasetDiagData: xssData });
+  const outputs = [
+    app._ddImageCardHtml(k => app.tMonitor(k), xssImg),
+    app._ddImageTableRowHtml(k => app.tMonitor(k), xssImg, 0.5),
+    app._renderDatasetDiagGroupsCard(k => app.tMonitor(k), xssData),
+    app._renderDatasetDiagModalRightHtml(k => app.tMonitor(k), {
+      run_id: 'r1',
+      timestep_scale: 'unit',
+      image: xssImg,
+      epoch_series: [],
+      samples: [{ step: 1, epoch: 1, timestep: 0.5, loss: 0.3, residual: 0.25 }],
+      caption: { exists: true, filename: xssName + '.txt', text: xssCap, path: xssDir + '/a.txt', editor_safe: false },
+      file_info: { exists: true, abs_path: xssImg.image, dir_path: xssDir },
+    }),
+    app._renderDatasetDiagSamplesBodyHtml(k => app.tMonitor(k), {
+      timestep_scale: 'unit',
+      samples: [{ step: 1, epoch: 1, timestep: 0.5, loss: 0.3, residual: 0.25 }],
+    }, 'all'),
+  ];
+
+  for (const html of outputs) {
+    assert.ok(!html.includes('<script>'), 'Unescaped <script> tag found');
+    assert.ok(!html.includes('<img src=x'), 'Unescaped <img src=x found');
+    assert.ok(!html.includes('<svg onload='), 'Unescaped <svg onload= found');
+    assert.ok(!html.includes('" onclick="alert(4)'), 'Attribute breakout via double quote found');
+  }
+  assert.ok(outputs[0].includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
+  assert.ok(outputs[3].includes('&lt;script&gt;steal()&lt;/script&gt; &amp; &quot;quoted&quot;'));
+});
+
+test('grouped noise summary uses group series for resolution/subset and flux_shift uses joint resolution_offsets', () => {
+  const a = makeApp();
+  const bins = Array.from({ length: 18 }, (_, b) => ({
+    bin: b,
+    t_from: b * (1000 / 18),
+    t_to: (b + 1) * (1000 / 18),
+    count: 100,
+    images: 5,
+    comparable: true,
+    mean_loss: 0.2,
+  }));
+  const multiResoData = {
+    ...structuredClone(SAMPLE_DATA),
+    profile: 'anima-lora',
+    timestep_scale: 'unit',
+    sampling_config: { timestep_sampling: 'flux_shift' },
+    by_resolution: [
+      { key: '512x512', label: '512x512', count: 50, images: 1, mean_loss: 0.2 },
+      { key: '1536x1536', label: '1536x1536', count: 50, images: 1, mean_loss: 0.2 },
+    ],
+    by_subset: [
+      { key: '0-0', label: 'low_sub', count: 50, images: 1, timestep_offset: -2.0 },
+      { key: '0-1', label: 'high_sub', count: 50, images: 1, timestep_offset: 2.0 },
+    ],
+    by_image: [
+      {
+        image_id: 'shared1',
+        name: 'shared.png',
+        resolution: '1536x1536',
+        resolutions: ['512x512', '1536x1536'],
+        subset: '0-1',
+        subsets: ['0-0', '0-1'],
+        noise_zones: {
+          high: { count: 9, comparable_count: 9, mean_residual: 0.5 },
+          mid: { count: 0, comparable_count: 0, mean_residual: null },
+          low: { count: 1, comparable_count: 1, mean_residual: 0.0 },
+        },
+      },
+    ],
+    timestep_profile: {
+      num_bins: 18,
+      bins,
+      by_status: {},
+      by_group: {
+        resolution: {
+          '512x512': {
+            counts: [1, ...new Array(17).fill(0)],
+            mean_loss: [0.2, ...new Array(17).fill(null)],
+          },
+        },
+      },
+      resolution_offsets: [
+        { resolution: '512,512', offset: -2.0, count: 50 },
+        { resolution: '1536,1536', offset: 2.0, count: 50 },
+      ],
+    },
+  };
+
+  // Grouping summary prefers backend 10-bin series.noise_zones over 18-bin plotting fallback
+  const comp = {
+    kind: 'group',
+    dim: 'resolution',
+    key: '512x512',
+    label: '512x512',
+    images: multiResoData.by_image,
+    series: multiResoData.timestep_profile.by_group.resolution['512x512'],
+    tone: 'accent',
+  };
+  const zonesWithSeriesNoise = a._ddComputeComparisonZones(multiResoData, {
+    ...comp,
+    series: {
+      ...comp.series,
+      noise_zones: {
+        high: null,
+        mid: { count: 1, comparable_count: 1, mean_residual: 0.5 },
+        low: null,
+      },
+    },
+  });
+  assert.equal(zonesWithSeriesNoise.mid.count, 1);
+  assert.equal(zonesWithSeriesNoise.mid.comparable_count, 1);
+  assert.equal(zonesWithSeriesNoise.mid.mean_residual, 0.5);
+  assert.equal(zonesWithSeriesNoise.high.count, 0);
+
+  // Fallback when series.noise_zones is absent still counts only the group's 18-bin samples
+  const zones = a._ddComputeComparisonZones(multiResoData, comp);
+  assert.equal(zones.low.count, 1);
+  assert.equal(zones.high.count, 0);
+
+  // Pure-NaN group (omitted from by_group, so series is null) must stay 0 / null instead of falling back to comp.images
+  const nanGroupZones = a._ddComputeComparisonZones(multiResoData, {
+    kind: 'group',
+    dim: 'resolution',
+    key: '768x768',
+    label: '768x768',
+    images: multiResoData.by_image,
+    series: null,
+    tone: 'accent',
+  });
+  assert.deepEqual(nanGroupZones, {
+    high: { count: 0, comparable_count: 0, mean_residual: null },
+    mid: { count: 0, comparable_count: 0, mean_residual: null },
+    low: { count: 0, comparable_count: 0, mean_residual: null },
+  });
+
+  // Theoretical flux_shift curve with joint resolution_offsets differs from independent marginal fallback
+  const normedBins = bins.map(b => ({ ...b, tFrom: b.t_from, tTo: b.t_to, excluded: false }));
+  const jointShares = a._ddComputeTheoreticalBinShares(multiResoData, normedBins, null);
+  const marginalData = structuredClone(multiResoData);
+  delete marginalData.timestep_profile.resolution_offsets;
+  const marginalShares = a._ddComputeTheoreticalBinShares(marginalData, normedBins, null);
+  assert.ok(Array.isArray(jointShares) && jointShares.length === 18);
+  assert.ok(Math.abs(jointShares[17] - marginalShares[17]) > 0.05);
+
+  // Pure-reg fallback (reg_mode='all' while stored preference datasetDiagRegMode='exclude') displays effective reg_mode in selects
+  const pureRegData = {
+    ...structuredClone(SAMPLE_DATA),
+    reg_mode: 'all',
+    summary: { ...SAMPLE_DATA.summary, has_reg_images: true },
+  };
+  const pureRegApp = makeApp({
+    datasetDiagData: pureRegData,
+    datasetDiagRegMode: 'exclude',
+    datasetDiagEffectiveRegMode: 'all',
+  });
+  const topHtml = pureRegApp._renderDatasetDiagHeading(k => pureRegApp.tMonitor(k), pureRegData);
+  const toolbarHtml = pureRegApp._renderDatasetDiagImagesToolbar(k => pureRegApp.tMonitor(k), pureRegData);
+  assert.ok(topHtml.includes(':value="_datasetDiagEffectiveRegMode()"'));
+  assert.ok(toolbarHtml.includes(':value="_datasetDiagEffectiveRegMode()"'));
+  assert.ok(topHtml.includes('<option value="all" selected>'));
+  assert.ok(toolbarHtml.includes('<option value="all" selected>'));
 });

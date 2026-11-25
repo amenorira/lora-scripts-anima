@@ -117,6 +117,33 @@ test('frontend references resolve to existing locale keys and contain no literal
   assert.deepEqual(literalFallbacks, [], `Found duplicate literal fallbacks: ${literalFallbacks.slice(0, 10).join(', ')}`);
 });
 
+test('all monitor.dd* locale keys are referenced in frontend code', () => {
+  const zh = JSON.parse(readRepo('frontend/i18n/zh-CN.json'));
+  const ddKeys = Object.keys(zh.monitor || {}).filter(k => k.startsWith('dd'));
+  assert.ok(ddKeys.length > 0, 'Expected monitor.dd* keys in zh-CN.json');
+
+  const files = [
+    path.join(ROOT, 'frontend/index.html'),
+    ...collectFiles(path.join(ROOT, 'frontend/templates'), ['.html']).map(f => f.fullPath),
+    ...collectFiles(path.join(ROOT, 'frontend/js'), ['.js']).map(f => f.fullPath),
+  ];
+
+  const referenced = new Set();
+  const refRe = /['"`](?:monitor\.)?(dd[A-Za-z0-9_]+)['"`]/g;
+  for (const fullPath of files) {
+    const text = fs.readFileSync(fullPath, 'utf8');
+    for (const match of text.matchAll(refRe)) {
+      referenced.add(match[1]);
+    }
+  }
+
+  const KNOWN_DYNAMIC_PREFIXES = [];
+  const orphanKeys = ddKeys.filter(key =>
+    !referenced.has(key) && !KNOWN_DYNAMIC_PREFIXES.some(prefix => key.startsWith(prefix))
+  );
+  assert.deepEqual(orphanKeys, [], `Orphan monitor.dd* keys not referenced in frontend/: ${orphanKeys.join(', ')}`);
+});
+
 test('backend coded errors exist in all locale dictionaries', () => {
   const dicts = Object.fromEntries(LOCALES.map(locale => [locale, JSON.parse(readRepo(`frontend/i18n/${locale}.json`))]));
   const backendFiles = [

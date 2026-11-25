@@ -55,19 +55,25 @@ window.monitorArtifactsRenderMixin = {
   // ═══════════════════════════════════════════════════════════
   //  样本标签
   // ═══════════════════════════════════════════════════════════
-  _sampleSelectHtml(options, value, label, id, action, className = '', valueBinding = '', optionsBinding = '') {
+  _monitorSelectHtml(options, value, label, id, action, className = '', valueBinding = '', optionsBinding = '') {
     if (typeof window.previewSelectHtml === 'function') {
       const handler = action.replaceAll('$event.target.value', '$event.detail')
         + '; $nextTick(() => document.getElementById(' + JSON.stringify(id) + ')?.focus({ preventScroll: true }))';
       const select = valueBinding || optionsBinding ? window.previewSelectHtml(options, value, label, id, valueBinding, optionsBinding)
         : window.previewSelectHtml(options, value, label, id);
-      return '<div class="m-sample-select ' + this.esc(className) + '" @preview-select="' + this.esc(handler) + '">'
+      const cls = ['m-sample-select', 'm-compact-select', className].filter(Boolean).join(' ');
+      return '<div class="' + this.esc(cls) + '" @preview-select="' + this.esc(handler) + '">'
         + select + '</div>';
     }
     // The native control is a usable fallback if the shared component is unavailable.
-    return '<select id="' + this.esc(id) + '" class="' + this.esc(className) + '" aria-label="' + this.esc(label) + '"'
+    const nativeCls = ['m-compact-select', className].filter(Boolean).join(' ');
+    return '<select id="' + this.esc(id) + '" class="' + this.esc(nativeCls) + '" aria-label="' + this.esc(label) + '"'
       + (valueBinding ? ' :value="' + this.esc(valueBinding) + '"' : '') + ' @change="' + this.esc(action) + '">'
-      + options.map(option => '<option value="' + this.esc(option.value) + '"' + (option.value === value ? ' selected' : '') + '>' + this.esc(option.label) + '</option>').join('') + '</select>';
+      + options.map(option => '<option value="' + this.esc(option.value) + '"' + (String(option.value) === String(value) ? ' selected' : '') + '>' + this.esc(option.label) + '</option>').join('') + '</select>';
+  },
+
+  _sampleSelectHtml(options, value, label, id, action, className = '', valueBinding = '', optionsBinding = '') {
+    return this._monitorSelectHtml(options, value, label, id, action, className, valueBinding, optionsBinding);
   },
 
   _parseSampleStage(label) {

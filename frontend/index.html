@@ -70,6 +70,10 @@
   <script src="/anima-ui/js/monitor/resource-bar.js" defer></script>
   <script src="/anima-ui/js/monitor/diagnostics.js" defer></script>
   <script src="/anima-ui/js/monitor/summary.js" defer></script>
+  <script src="/anima-ui/js/monitor/dataset-diagnostics-format.js" defer></script>
+  <script src="/anima-ui/js/monitor/dataset-diagnostics-scatter.js" defer></script>
+  <script src="/anima-ui/js/monitor/dataset-diagnostics-timestep.js" defer></script>
+  <script src="/anima-ui/js/monitor/dataset-diagnostics-modal.js" defer></script>
   <script src="/anima-ui/js/monitor/dataset-diagnostics-render.js" defer></script>
   <script src="/anima-ui/js/monitor/render.js" defer></script>
   <script src="/anima-ui/js/environment/tasks.js" defer></script>
@@ -384,7 +388,6 @@
                     @click="setMonitorTab('dataset')" @keydown.right.prevent="moveMonitorTab(1)" @keydown.left.prevent="moveMonitorTab(-1)" @keydown.home.prevent="setMonitorTab('overview', true)" @keydown.end.prevent="setMonitorTab('dataset', true)">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><circle cx="9" cy="14" r="1.5"/><circle cx="14" cy="9" r="1.5"/><circle cx="18" cy="13" r="1.5"/></svg>
               <span x-text="t('monitor.datasetDiagnostics')">Dataset diagnostics</span>
-              <span class="monitor-tab-count" x-show="datasetDiagTabCount > 0" x-text="datasetDiagTabCount"></span>
             </button>
             <span class="ui-tab-indicator" aria-hidden="true"></span>
           </div>

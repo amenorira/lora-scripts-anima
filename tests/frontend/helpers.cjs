@@ -23,7 +23,12 @@ function trainingFieldSections() {
 const FRONTEND_DEPENDENCIES = {
   'environment/core': ['environment/loading', 'environment/models', 'environment/components', 'environment/tasks'],
   'monitor/core': ['monitor/logs', 'monitor/metrics', 'monitor/history', 'monitor/outputs', 'monitor/previews', 'monitor/dataset-diagnostics'],
-  'monitor/render': ['shared/utils', 'monitor/logs', 'monitor/metrics', 'monitor/summary', 'monitor/diagnostics', 'monitor/resource-bar', 'monitor/sample-layout', 'monitor/artifacts-render', 'monitor/history-render', 'monitor/dataset-diagnostics-render'],
+  'monitor/render': [
+    'shared/utils', 'monitor/logs', 'monitor/metrics', 'monitor/summary', 'monitor/diagnostics',
+    'monitor/resource-bar', 'monitor/sample-layout', 'monitor/artifacts-render', 'monitor/history-render',
+    'monitor/dataset-diagnostics-format', 'monitor/dataset-diagnostics-scatter',
+    'monitor/dataset-diagnostics-timestep', 'monitor/dataset-diagnostics-modal', 'monitor/dataset-diagnostics-render',
+  ],
   'monitor/artifacts-render': ['monitor/sample-layout'],
   'monitor/resource-bar': ['shared/utils'],
   'tagger/index': ['shared/utils', 'tagger/tasks', 'tagger/sources', ],
@@ -34,6 +39,27 @@ const FRONTEND_DEPENDENCIES = {
 const frontendScripts = files => ['shared/mixin-compose', 'shared/image-viewport', ...[].concat(files).flatMap(file => [
   ...(FRONTEND_DEPENDENCIES[file.replace(/\.js$/, '')] || []), file,
 ])];
+
+function createMemoryStorage() {
+  const store = new Map();
+  return {
+    getItem(key) { return store.has(key) ? store.get(key) : null; },
+    setItem(key, value) { store.set(key, String(value)); },
+    removeItem(key) { store.delete(key); },
+    clear() { store.clear(); },
+  };
+}
+
+function silenceUnconfiguredLocalStorage() {
+  const desc = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  if (desc && desc.get) {
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      writable: true,
+      value: { getItem: () => null, setItem() {}, removeItem() {}, clear() {} },
+    });
+  }
+}
 
 function loadFrontend(files, context = { window: {} }) {
   if (!vm.isContext(context)) vm.createContext(context);
@@ -56,6 +82,7 @@ function loadTagEditor(context = { window: {} }) {
 
 // These tests intentionally compare arrays and objects in Node's own realm.
 function loadGlobalFrontend(files) {
+  silenceUnconfiguredLocalStorage();
   global.window = {};
   for (const file of frontendScripts(files)) vm.runInThisContext(readFrontend(file), { filename: `${file.replace(/\.js$/, '')}.js` });
 }
@@ -73,4 +100,4 @@ function composeMixins(...sources) {
   return app;
 }
 
-module.exports = { TRAINING_CORE_SCRIPTS, ROOT, readRepo, readFrontend, loadFrontend, loadTagEditor, loadGlobalFrontend, response, deferred, composeMixins, trainingFieldSections };
+module.exports = { TRAINING_CORE_SCRIPTS, ROOT, readRepo, readFrontend, loadFrontend, loadTagEditor, loadGlobalFrontend, createMemoryStorage, response, deferred, composeMixins, trainingFieldSections };
