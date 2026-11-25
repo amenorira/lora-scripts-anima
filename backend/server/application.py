@@ -170,7 +170,7 @@ if os.environ.get("ANIMA_DEV") == "1":
     )
 
 # 压缩文本型响应（静态 JS/CSS、字段注册表 JSON 等）；解压后字节不变
-app.add_middleware(GZipMiddleware, minimum_size=1024)
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=3)
 
 _IMMUTABLE_PREVIEW_PATHS = {"/api/image-preview", "/api/monitor/preview-metadata"}
 
