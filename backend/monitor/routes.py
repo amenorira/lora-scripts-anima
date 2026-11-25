@@ -496,6 +496,7 @@ async def monitor_dataset_diagnostics(
     run_id: str = Query(""),
     known_revision: str = Query("", max_length=128),
     refresh_local: bool = Query(False),
+    reg_mode: str = Query("all"),
 ):
     """Per-sample loss diagnostics (residuals, slopes, groups, and per-image breakdown)."""
     record = await asyncio.to_thread(_resolve_live_record, task_id, run_dir)
@@ -515,6 +516,7 @@ async def monitor_dataset_diagnostics(
         is_active=is_active,
         known_revision=known_revision,
         refresh_local=refresh_local,
+        reg_mode=reg_mode,
     )
     return await asyncio.to_thread(JSONResponse, {"status": "success", "revision": data["revision"], "data": data})
 
@@ -528,6 +530,9 @@ async def monitor_dataset_diagnostic_image(
     bins: int = Query(10, ge=2, le=30),
     run_id: str = Query(""),
     refresh_local: bool = Query(False),
+    reg_mode: str = Query("all"),
+    include_local: bool = Query(True),
+    include_profile: bool = Query(True),
 ):
     """Detailed per-epoch / per-timestep loss trace and local caption for a single training image."""
     record = await asyncio.to_thread(_resolve_live_record, task_id, run_dir)
@@ -544,6 +549,9 @@ async def monitor_dataset_diagnostic_image(
         num_bins=bins,
         run_id=run_id,
         refresh_local=refresh_local,
+        reg_mode=reg_mode,
+        include_local=include_local,
+        include_profile=include_profile,
     )
     if not detail:
         return JSONResponse(
