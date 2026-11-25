@@ -1043,7 +1043,7 @@ class DatasetDiagnosticsTests(CrossDriveSandbox):
             r_cfg_missing = client.get("/api/monitor/config-from-run", params={"run_dir": "output/err_codes"}).json()
             self.assertEqual(r_cfg_missing["error_code"], "monitorConfigNotFound")
 
-    def test_no_reg_mode_normalization(self):
+    def test_no_reg_mode_normalization_and_cache_slot_overwrite(self):
         lines = [
             json.dumps({"run_id": "r1", "ts": 1.0}),
             json.dumps({"step": 1, "epoch": 1, "image": "a.png", "dataset": 0, "subset": 0, "timestep": 0.4, "loss": 0.3, "width": 512, "height": 512, "batch_size": 1}),
@@ -1065,6 +1065,17 @@ class DatasetDiagnosticsTests(CrossDriveSandbox):
             rec, image_id=ov_all["by_image"][0]["image_id"], min_count=1, reg_mode="all",
         )
         self.assertEqual(detail["revision"], ov_excl["revision"])
+
+        # Appending new lines expands edges and changes revision; LRU overwrites same slot instead of growing to 4 stale copies
+        loss_path = run / "log" / ".run-control" / "loss.jsonl"
+        for step_idx, t_val in ((3, 0.2), (4, 0.8), (5, 0.9), (6, 0.95)):
+            with loss_path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps({"step": step_idx, "epoch": 2, "image": "a.png", "dataset": 0, "subset": 0, "timestep": t_val, "loss": 0.25, "width": 512, "height": 512, "batch_size": 1}) + "\n")
+            dataset_diagnostics.analyze_dataset_diagnostics(rec, min_count=1, reg_mode="exclude")
+
+        state = dataset_diagnostics._get_loss_state(loss_path)
+        self.assertEqual(len(state.summary_lru), 1)
+        self.assertEqual(len(state.index_lru), 1)
 
     def test_traditional_dir_mode_same_named_train_and_reg_subdirs(self):
         train_img = self.root / "train_root" / "1_person" / "a.png"
@@ -1545,3 +1556,36 @@ class DatasetDiagnosticsTests(CrossDriveSandbox):
         )
         self.assertFalse(det_diff["caption"]["exists"])
         self.assertEqual(det_diff["caption"]["source"], "ambiguous")
+
+    def test_edges_cache_and_reg_scope_cache_incremental_reuse(self):
+        lines = [
+            json.dumps({"run_id": "r1", "ts": 1.0}),
+            json.dumps({"step": 1, "epoch": 1, "image": "train/a.png", "dataset": 0, "subset": 0, "timestep": 0.4, "loss": 0.3, "width": 512, "height": 512, "batch_size": 1}),
+            json.dumps({"step": 2, "epoch": 1, "image": "reg/b.png", "dataset": 0, "subset": 1, "timestep": 0.6, "loss": 0.1, "width": 512, "height": 512, "batch_size": 1}),
+        ]
+        manifest = {
+            "run_id": "r1",
+            "metadata": {
+                "ss_datasets": [{
+                    "subsets": [
+                        {"image_dir": "1_train", "is_reg": False, "img_count": 1},
+                        {"image_dir": "1_reg", "is_reg": True, "img_count": 1},
+                    ]
+                }]
+            },
+        }
+        run = self._create_run("inc_edges", manifest=manifest, loss_lines=lines)
+        rec = run_registry.load_run_record(run)
+        ov1 = dataset_diagnostics.analyze_dataset_diagnostics(rec, min_count=1, reg_mode="exclude")
+        loss_path = run / "log" / ".run-control" / "loss.jsonl"
+        state = dataset_diagnostics._get_loss_state(loss_path)
+        self.assertIn(("r1", "exclude"), state.edges_cache)
+        self.assertEqual(state.edges_cache[("r1", "exclude")][2], (0.4, 0.4))
+
+        with loss_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"step": 3, "epoch": 1, "image": "train/a.png", "dataset": 0, "subset": 0, "timestep": 0.8, "loss": 0.25, "width": 512, "height": 512, "batch_size": 1}) + "\n")
+        ov2 = dataset_diagnostics.analyze_dataset_diagnostics(rec, min_count=1, reg_mode="exclude")
+        self.assertNotEqual(ov2["revision"], ov1["revision"])
+        self.assertEqual(state.edges_cache[("r1", "exclude")][2], (0.4, 0.8))
+
+

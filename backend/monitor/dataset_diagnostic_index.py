@@ -229,11 +229,13 @@ class LossIndex:
         self.profile_non_finite = np.zeros(PROFILE_BINS, dtype=np.int64)
         self._profile_images = [set() for _ in range(PROFILE_BINS)]
         self._profile_histograms = {name: _Histogram(PROFILE_BINS) for name in (*DIMENSIONS, "image")}
+        self._profile_epoch_codes = Codes()
         self._profile_epoch = _Histogram(PROFILE_BINS)
         self._profile_losses = [array("d") for _ in range(PROFILE_BINS)]
         self._profile_loss_seen = [0] * PROFILE_BINS
         self._epoch_totals = None
         self._profile_bins_cache: tuple[int | None, list[dict]] | None = None
+        self._profile_epoch_halves_cache: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | None = None
         self._cum_baseline_cache = None
         self._dim_epoch_codes = {d: Codes() for d in SLOPE_DIMENSIONS}
         self._dim_epoch_groups = {d: array("I") for d in SLOPE_DIMENSIONS}
@@ -247,26 +249,36 @@ class LossIndex:
         self.epoch_from = self.epoch_to = None
 
     @staticmethod
-    def edges_of(runs, allowed_structures=None):
+    def edges_of(runs, allowed_structures=None, *, offsets=None, prev_edges=None):
         if allowed_structures is None or (len(allowed_structures) and bool(np.all(allowed_structures))):
             low = min((rows.t_min for rows in runs.values()), default=math.inf)
             high = max((rows.t_max for rows in runs.values()), default=-math.inf)
             return (low, high) if low != math.inf else (None, None)
         if not len(allowed_structures):
             return (None, None)
-        low, high = math.inf, -math.inf
+        if prev_edges is not None and prev_edges[0] is not None and prev_edges[1] is not None:
+            low, high = float(prev_edges[0]), float(prev_edges[1])
+        else:
+            low, high = math.inf, -math.inf
         limit = len(allowed_structures) - 1
-        for rows in runs.values():
-            if not len(rows):
+        for rid, rows in runs.items():
+            stop = len(rows)
+            start = offsets.get(rid, 0) if offsets is not None else 0
+            if start >= stop:
                 continue
-            st = np.asarray(rows.structure, dtype=np.int64)
-            ts = np.asarray(rows.timestep, dtype=np.float64)
-            ls = np.asarray(rows.loss, dtype=np.float64)
-            mask = (st <= limit) & allowed_structures[np.minimum(st, limit)] & np.isfinite(ts) & np.isfinite(ls)
-            if np.any(mask):
-                t_valid = ts[mask]
-                low = min(low, float(t_valid.min()))
-                high = max(high, float(t_valid.max()))
+            st_all = np.asarray(rows.structure)
+            ts_all = np.asarray(rows.timestep)
+            ls_all = np.asarray(rows.loss)
+            for left in range(start, stop, 100_000):
+                right = min(left + 100_000, stop)
+                st = st_all[left:right]
+                ts = ts_all[left:right]
+                ls = ls_all[left:right]
+                mask = (st <= limit) & allowed_structures[np.minimum(st, limit)] & np.isfinite(ts) & np.isfinite(ls)
+                if np.any(mask):
+                    t_valid = ts[mask]
+                    low = min(low, float(t_valid.min()))
+                    high = max(high, float(t_valid.max()))
         return (low, high) if low != math.inf else (None, None)
 
     @property
@@ -305,6 +317,7 @@ class LossIndex:
             return
         self._epoch_totals = None
         self._profile_bins_cache = None
+        self._profile_epoch_halves_cache = None
         self._cum_baseline_cache = None
         self._group_slopes_cache.clear()
         structures = np.asarray(structures, dtype=np.int64)
@@ -415,10 +428,16 @@ class LossIndex:
                         for dim, column in zip(DIMENSIONS, range(1, len(DIMENSIONS) + 1)):
                             self._profile_histograms[dim].extend(known_meta[:, column], p_bins, known_loss)
                         self._profile_histograms["image"].extend(known_images, p_bins, known_loss)
-                        known_epoch_ids = epoch_ids[known]
-                        valid_ep = epoch_numbers[known_epoch_ids] >= 0
+                        known_ep_nums = epoch_numbers[epoch_ids[known]]
+                        valid_ep = known_ep_nums >= 0
                         if np.any(valid_ep):
-                            self._profile_epoch.extend(known_epoch_ids[valid_ep], p_bins[valid_ep], known_loss[valid_ep])
+                            ep_vals = known_ep_nums[valid_ep]
+                            u_eps, inv = np.unique(ep_vals, return_inverse=True)
+                            ep_cids = np.array(
+                                [self._profile_epoch_codes.get(int(ep)) for ep in u_eps.tolist()],
+                                dtype=np.int64,
+                            )
+                            self._profile_epoch.extend(ep_cids[inv], p_bins[valid_ep], known_loss[valid_ep])
                         for b in range(PROFILE_BINS):
                             mask = p_bins == b
                             if np.any(mask):
@@ -443,28 +462,30 @@ class LossIndex:
                 buf[slot] = val
         self._profile_loss_seen[bin_idx] = seen
 
-    def _profile_epoch_halves(self, epoch_numbers) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def _profile_epoch_halves(self, epoch_numbers=None) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        if epoch_numbers is None:
+            zero_c = np.zeros(PROFILE_BINS, dtype=np.int64)
+            zero_l = np.zeros(PROFILE_BINS, dtype=np.float64)
+            return zero_c, zero_l, zero_c.copy(), zero_l.copy()
+        if self._profile_epoch_halves_cache is not None:
+            return self._profile_epoch_halves_cache
         zero_c = np.zeros(PROFILE_BINS, dtype=np.int64)
         zero_l = np.zeros(PROFILE_BINS, dtype=np.float64)
-        if epoch_numbers is None or not self._profile_epoch._keys:
-            return zero_c, zero_l, zero_c.copy(), zero_l.copy()
-        epoch_arr = np.asarray(epoch_numbers, dtype=np.int64)
+        if not self._profile_epoch._keys:
+            result = (zero_c, zero_l, zero_c.copy(), zero_l.copy())
+            self._profile_epoch_halves_cache = result
+            return result
         keys = np.asarray(self._profile_epoch._keys, dtype=np.int64)
-        epoch_ids, bin_ids = np.divmod(keys, PROFILE_BINS)
-        valid_idx = (epoch_ids >= 0) & (epoch_ids < len(epoch_arr))
-        if not np.any(valid_idx):
-            return zero_c, zero_l, zero_c.copy(), zero_l.copy()
-        ep_nums = epoch_arr[epoch_ids[valid_idx]]
-        bins = bin_ids[valid_idx]
-        counts = np.asarray(self._profile_epoch._counts, dtype=np.int64)[valid_idx]
-        losses = np.asarray(self._profile_epoch._loss, dtype=np.float64)[valid_idx]
-        pos = ep_nums >= 0
-        if not np.any(pos):
-            return zero_c, zero_l, zero_c.copy(), zero_l.copy()
-        ep_nums, bins, counts, losses = ep_nums[pos], bins[pos], counts[pos], losses[pos]
+        ep_cids, bins = np.divmod(keys, PROFILE_BINS)
+        ep_arr = np.asarray(self._profile_epoch_codes.keys, dtype=np.int64)
+        ep_nums = ep_arr[ep_cids]
+        counts = np.asarray(self._profile_epoch._counts, dtype=np.int64)
+        losses = np.asarray(self._profile_epoch._loss, dtype=np.float64)
         unique_epochs = np.unique(ep_nums)
         if len(unique_epochs) < 2:
-            return zero_c, zero_l, zero_c.copy(), zero_l.copy()
+            result = (zero_c, zero_l, zero_c.copy(), zero_l.copy())
+            self._profile_epoch_halves_cache = result
+            return result
         half = len(unique_epochs) // 2
         early_max = int(unique_epochs[half - 1])
         late_min = int(unique_epochs[len(unique_epochs) - half])
@@ -474,7 +495,9 @@ class LossIndex:
         early_l = np.bincount(bins[early_mask], weights=losses[early_mask], minlength=PROFILE_BINS).astype(np.float64)
         late_c = np.bincount(bins[late_mask], weights=counts[late_mask], minlength=PROFILE_BINS).astype(np.int64)
         late_l = np.bincount(bins[late_mask], weights=losses[late_mask], minlength=PROFILE_BINS).astype(np.float64)
-        return early_c, early_l, late_c, late_l
+        result = (early_c, early_l, late_c, late_l)
+        self._profile_epoch_halves_cache = result
+        return result
 
     @staticmethod
     def _halves_trend(early_c: int, early_l: float, late_c: int, late_l: float) -> float | None:

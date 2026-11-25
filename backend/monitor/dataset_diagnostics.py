@@ -2,22 +2,25 @@
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 import math
 import os
 import re
+import stat as stat_module
 import threading
+import urllib.parse
 from array import array
 import tomllib
 from collections import Counter, OrderedDict, defaultdict
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Iterable
 
 import numpy as np
 
 from backend.constants import REPO_ROOT
-from backend.image_preview import IMAGE_EXTENSIONS, build_image_preview_url
+from backend.image_preview import IMAGE_EXTENSIONS
 from backend.monitor.dataset_diagnostic_index import (
     PROFILE_BINS, Codes, DIMENSIONS, LossIndex, SampleRows, ZONES, deweight_losses, epoch_metrics,
 )
@@ -37,12 +40,14 @@ _MAX_CACHED_SAMPLES = 500_000
 _MAX_DETAIL_SAMPLES = 500
 _MAX_METADATA_PREVIEW_BYTES = 16 * 1024 * 1024
 _MAX_LOCAL_STAT_CACHE = 50_000
+_BATCH_SCANDIR_MIN_FILES = 16
 _IMAGE_ID_RE = re.compile(r"^[0-9a-f]{16}$")
 
 _cache_lock = threading.Lock()
 _file_cache: OrderedDict[str, "_LossFileState"] = OrderedDict()
+_state_token_counter = itertools.count(1)
 _local_stat_lock = threading.Lock()
-_local_stat_cache: OrderedDict[tuple[str, str, int], tuple[Path | None, str]] = OrderedDict()
+_local_stat_cache: OrderedDict[str, tuple[tuple[int, int], dict[str, tuple[str | None, str]]]] = OrderedDict()
 
 
 def _finite_float(value: Any) -> float | None:
@@ -85,9 +90,11 @@ def _normalize_image_key(raw_key: str) -> str:
 
 
 def _case_key(path_text: str) -> str:
-    """Case-fold Windows / drive-qualified paths for consistent deduplication across restarts."""
+    """Fold Windows / drive-qualified paths 1:1 per character for consistent deduplication."""
     if os.name == "nt" or (len(path_text) >= 2 and path_text[0].isalpha() and path_text[1] == ":"):
-        return path_text.casefold()
+        if path_text.isascii():
+            return path_text.lower()
+        return "".join(ch.lower() if len(ch.lower()) == 1 else ch for ch in path_text)
     return path_text
 
 
@@ -107,7 +114,7 @@ def _split_image_key(raw_key: str) -> tuple[str, str, str]:
     return name or normalized, directory, dir_label
 
 
-def _resolve_local_image_path(raw_key: str) -> Path | None:
+def _local_image_candidate(raw_key: str) -> Path | None:
     text = str(raw_key or "").strip()
     if not text:
         return None
@@ -115,37 +122,229 @@ def _resolve_local_image_path(raw_key: str) -> Path | None:
         candidate = Path(text)
         if not candidate.is_absolute():
             candidate = REPO_ROOT / candidate
-        if candidate.suffix.lower() not in IMAGE_EXTENSIONS or not candidate.is_file():
+        if candidate.suffix.lower() not in IMAGE_EXTENSIONS:
             return None
-        resolved = candidate.resolve()
-        return resolved if resolved.suffix.lower() in IMAGE_EXTENSIONS else None
+        return candidate
     except (OSError, RuntimeError, ValueError):
         return None
 
 
-def _stat_local_image_cached(state_path: str, raw_key: str, generation: int) -> tuple[Path | None, str]:
-    """Stat local image outside state.lock, cached by (state_path, raw_key, generation)."""
-    cache_key = (state_path, raw_key, generation)
+def _resolve_local_image_with_stat(raw_key: str) -> tuple[Path | None, str]:
+    candidate = _local_image_candidate(raw_key)
+    if candidate is None:
+        return None, ""
+    try:
+        resolved = candidate.resolve(strict=True)
+        if resolved.suffix.lower() not in IMAGE_EXTENSIONS:
+            return None, ""
+        st = resolved.stat()
+        if not stat_module.S_ISREG(st.st_mode):
+            return None, ""
+        return resolved, f"{st.st_mtime_ns}-{st.st_size}"
+    except (OSError, RuntimeError, ValueError):
+        return None, ""
+
+
+def _resolve_local_image_path(raw_key: str) -> Path | None:
+    return _resolve_local_image_with_stat(raw_key)[0]
+
+
+def _drop_local_stat_bucket(state_path: str, max_token: int | None = None) -> None:
     with _local_stat_lock:
-        cached = _local_stat_cache.get(cache_key)
-        if cached is not None:
-            _local_stat_cache.move_to_end(cache_key)
-            return cached
-    resolved = _resolve_local_image_path(raw_key)
-    version = ""
-    if resolved is not None:
-        try:
-            st = resolved.stat()
-            version = f"{st.st_mtime_ns}-{st.st_size}"
-        except OSError:
-            resolved = None
-    result = (resolved, version)
+        if max_token is None:
+            _local_stat_cache.pop(state_path, None)
+            return
+        bucket = _local_stat_cache.get(state_path)
+        if bucket is not None and bucket[0][0] <= max_token:
+            _local_stat_cache.pop(state_path, None)
+
+
+def _store_local_stat_entries(
+    state_path: str,
+    cache_epoch: tuple[int, int],
+    entries: dict[str, tuple[str | None, str]],
+) -> None:
+    if not entries:
+        return
     with _local_stat_lock:
-        _local_stat_cache[cache_key] = result
-        _local_stat_cache.move_to_end(cache_key)
-        while len(_local_stat_cache) > _MAX_LOCAL_STAT_CACHE:
-            _local_stat_cache.popitem(last=False)
-    return result
+        bucket = _local_stat_cache.get(state_path)
+        if bucket is not None:
+            bucket_epoch, items = bucket
+            if cache_epoch < bucket_epoch:
+                return
+            if cache_epoch > bucket_epoch:
+                items = {}
+                _local_stat_cache[state_path] = (cache_epoch, items)
+            _local_stat_cache.move_to_end(state_path)
+        else:
+            items = {}
+            _local_stat_cache[state_path] = (cache_epoch, items)
+
+        for raw_key, value in entries.items():
+            items.pop(raw_key, None)
+            items[raw_key] = value
+
+        total = sum(len(b[1]) for b in _local_stat_cache.values())
+        while total > _MAX_LOCAL_STAT_CACHE and _local_stat_cache:
+            oldest_path, (_, oldest_items) = next(iter(_local_stat_cache.items()))
+            if not oldest_items:
+                _local_stat_cache.popitem(last=False)
+                continue
+            excess = total - _MAX_LOCAL_STAT_CACHE
+            if excess >= len(oldest_items):
+                _local_stat_cache.popitem(last=False)
+                total -= len(oldest_items)
+            else:
+                for key in list(oldest_items)[:excess]:
+                    del oldest_items[key]
+                total -= excess
+
+
+def _stat_local_image_cached(
+    state_path: str,
+    raw_key: str,
+    cache_epoch: tuple[int, int],
+) -> tuple[Path | None, str]:
+    """Stat local image outside state.lock, cached per state_path and current (state_token, generation)."""
+    with _local_stat_lock:
+        bucket = _local_stat_cache.get(state_path)
+        if bucket is not None and bucket[0] == cache_epoch:
+            cached = bucket[1].get(raw_key)
+            if cached is not None:
+                _local_stat_cache.move_to_end(state_path)
+                resolved_str, version = cached
+                return (Path(resolved_str) if resolved_str else None), version
+    resolved, version = _resolve_local_image_with_stat(raw_key)
+    resolved_str = str(resolved) if resolved is not None else None
+    _store_local_stat_entries(state_path, cache_epoch, {raw_key: (resolved_str, version)})
+    return resolved, version
+
+
+def _scan_local_image_dir(
+    parent_dir: Path,
+    items: list[tuple[str, Path]],
+) -> dict[str, tuple[str | None, str]]:
+    """Resolve and stat multiple images sharing a parent directory via one os.scandir."""
+    out: dict[str, tuple[str | None, str]] = {}
+    try:
+        resolved_dir = parent_dir.resolve(strict=True)
+        if not resolved_dir.is_dir():
+            return {raw_key: (None, "") for raw_key, _ in items}
+        exact_entries: dict[str, tuple[str | None, str]] = {}
+        folded_candidates: set[str] = set()
+        symlinks: set[str] = set()
+        folded_symlinks: set[str] = set()
+        with os.scandir(resolved_dir) as dir_iter:
+            for entry in dir_iter:
+                name = entry.name
+                if os.path.splitext(name)[1].lower() not in IMAGE_EXTENSIONS:
+                    continue
+                try:
+                    is_link = entry.is_symlink()
+                except OSError:
+                    is_link = True
+                if is_link:
+                    symlinks.add(name)
+                    if os.name == "nt":
+                        folded_symlinks.add(name.casefold())
+                    continue
+                try:
+                    st = entry.stat(follow_symlinks=False)
+                    if not stat_module.S_ISREG(st.st_mode):
+                        continue
+                    val = (str(resolved_dir / name), f"{st.st_mtime_ns}-{st.st_size}")
+                except OSError:
+                    symlinks.add(name)
+                    if os.name == "nt":
+                        folded_symlinks.add(name.casefold())
+                    continue
+                exact_entries[name] = val
+                if os.name == "nt":
+                    folded_candidates.add(name.casefold())
+    except (FileNotFoundError, NotADirectoryError):
+        return {raw_key: (None, "") for raw_key, _ in items}
+    except (OSError, RuntimeError, ValueError):
+        for raw_key, _ in items:
+            resolved, version = _resolve_local_image_with_stat(raw_key)
+            out[raw_key] = (str(resolved) if resolved is not None else None, version)
+        return out
+
+    for raw_key, candidate in items:
+        fname = candidate.name
+        is_symlink = fname in symlinks or (os.name == "nt" and fname.casefold() in folded_symlinks)
+        if is_symlink:
+            resolved, version = _resolve_local_image_with_stat(raw_key)
+            out[raw_key] = (str(resolved) if resolved is not None else None, version)
+            continue
+        found = exact_entries.get(fname)
+        if found is not None:
+            out[raw_key] = found
+        elif os.name == "nt" and (fname.casefold() in folded_candidates or "~" in fname):
+            resolved, version = _resolve_local_image_with_stat(raw_key)
+            out[raw_key] = (str(resolved) if resolved is not None else None, version)
+        else:
+            out[raw_key] = (None, "")
+    return out
+
+
+def _stat_local_images_batch(
+    state_path: str,
+    raw_keys: Iterable[str],
+    cache_epoch: tuple[int, int],
+) -> dict[str, tuple[str | None, str]]:
+    """Batch-stat local images outside state.lock using per-directory os.scandir on cache misses."""
+    results: dict[str, tuple[str | None, str]] = {}
+    misses: list[str] = []
+    seen_misses: set[str] = set()
+    with _local_stat_lock:
+        bucket = _local_stat_cache.get(state_path)
+        if bucket is not None and bucket[0] == cache_epoch:
+            _local_stat_cache.move_to_end(state_path)
+            items = bucket[1]
+            for raw_key in raw_keys:
+                if raw_key in results:
+                    continue
+                cached = items.get(raw_key)
+                if cached is not None:
+                    results[raw_key] = cached
+                elif raw_key not in seen_misses:
+                    seen_misses.add(raw_key)
+                    misses.append(raw_key)
+        else:
+            for raw_key in raw_keys:
+                if raw_key not in seen_misses:
+                    seen_misses.add(raw_key)
+                    misses.append(raw_key)
+
+    if not misses:
+        return results
+
+    resolved_misses: dict[str, tuple[str | None, str]] = {}
+    dir_groups: dict[str, tuple[Path, list[tuple[str, Path]]]] = {}
+    for raw_key in misses:
+        candidate = _local_image_candidate(raw_key)
+        if candidate is None:
+            resolved_misses[raw_key] = (None, "")
+            continue
+        parent = candidate.parent
+        parent_key = os.path.normpath(str(parent))
+        group = dir_groups.get(parent_key)
+        if group is None:
+            dir_groups[parent_key] = (parent, [(raw_key, candidate)])
+        else:
+            group[1].append((raw_key, candidate))
+
+    for parent_dir, group_items in dir_groups.values():
+        if len(group_items) >= _BATCH_SCANDIR_MIN_FILES:
+            resolved_misses.update(_scan_local_image_dir(parent_dir, group_items))
+        else:
+            for raw_key, _ in group_items:
+                resolved, version = _resolve_local_image_with_stat(raw_key)
+                resolved_misses[raw_key] = (str(resolved) if resolved is not None else None, version)
+
+    _store_local_stat_entries(state_path, cache_epoch, resolved_misses)
+    results.update(resolved_misses)
+    return results
 
 
 class _LossFileState:
@@ -154,6 +353,7 @@ class _LossFileState:
         self.stat_key: tuple[int, int] | None = None
         self.mtime: int | None = None
         self.lock = threading.Lock()
+        self.state_token = next(_state_token_counter)
         self.local_generation = 0
         self.reset()
 
@@ -175,11 +375,12 @@ class _LossFileState:
         self.dir_canonical: dict[str, str] = {}
         self.index_key = None
         self.index = None
-        self.index_lru: OrderedDict[tuple[Any, ...], LossIndex] = OrderedDict()
+        self.index_lru: OrderedDict[tuple[Any, ...], tuple[tuple[Any, Any], int, LossIndex]] = OrderedDict()
         self.cached_revision = None
         self.cached_summary = None
-        self.summary_lru: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        self.summary_lru: OrderedDict[tuple[Any, ...], tuple[str, dict[str, Any]]] = OrderedDict()
         self.local_generation += 1
+        _drop_local_stat_bucket(str(self.path), max_token=self.state_token)
         self.metadata_revision = None
         self.reg_mask_version = 0
         self.structure_labels = []
@@ -189,6 +390,9 @@ class _LossFileState:
         self.reg_dirs: set[str] = set()
         self.canonical_dir_roots: list[tuple[str, bool]] = []
         self.dir_reg_cache: dict[tuple[str, bool], bool | None] = {}
+        self.reg_scope_cache: dict[tuple[Any, ...], tuple[int, int, bool, bool]] = {}
+        self.reg_mask_cache: dict[tuple[int, int, str], np.ndarray] = {}
+        self.edges_cache: dict[tuple[str, str], tuple[int, dict[str, int], tuple[float | None, float | None]]] = {}
 
     def sync(self) -> None:
         try:
@@ -314,19 +518,49 @@ class _LossFileState:
         allowed_structures: np.ndarray | None = None,
         reg_mask_version: int = 0,
     ):
-        edges = LossIndex.edges_of(runs, allowed_structures=allowed_structures)
-        index_key = (run_id, bins, edges, scale, deweight_scheme, reg_mode, reg_mask_version)
-        index = self.index_lru.get(index_key)
-        if index is None:
+        if allowed_structures is None:
+            edges = LossIndex.edges_of(runs)
+        else:
+            edge_key = (run_id, reg_mode)
+            prev = self.edges_cache.get(edge_key)
+            if (
+                prev is not None
+                and prev[0] == reg_mask_version
+                and set(prev[1]).issubset(runs)
+                and all(prev[1].get(rid, 0) <= len(rows) for rid, rows in runs.items())
+            ):
+                if len(prev[1]) == len(runs) and all(prev[1].get(rid, 0) == len(rows) for rid, rows in runs.items()):
+                    edges = prev[2]
+                else:
+                    edges = LossIndex.edges_of(
+                        runs, allowed_structures=allowed_structures, offsets=prev[1], prev_edges=prev[2],
+                    )
+                    self.edges_cache[edge_key] = (
+                        reg_mask_version,
+                        {rid: len(rows) for rid, rows in runs.items()},
+                        edges,
+                    )
+            else:
+                edges = LossIndex.edges_of(runs, allowed_structures=allowed_structures)
+                self.edges_cache[edge_key] = (
+                    reg_mask_version,
+                    {rid: len(rows) for rid, rows in runs.items()},
+                    edges,
+                )
+        slot_key = (run_id, bins, scale, deweight_scheme, reg_mode)
+        cached = self.index_lru.get(slot_key)
+        if cached is not None and cached[0] == edges and cached[1] == reg_mask_version:
+            index = cached[2]
+            self.index_lru.move_to_end(slot_key)
+        else:
             index = LossIndex(bins, edges, scale, deweight_scheme=deweight_scheme)
-            self.index_lru[index_key] = index
+            self.index_lru[slot_key] = (edges, reg_mask_version, index)
+            self.index_lru.move_to_end(slot_key)
             while len(self.index_lru) > _MAX_INDEX_LRU:
                 self.index_lru.popitem(last=False)
-        else:
-            self.index_lru.move_to_end(index_key)
         index.extend(runs, self.structures, self.epoch_numbers, allowed_structures=allowed_structures)
         self.index = index
-        self.index_key = index_key
+        self.index_key = (*slot_key, edges, reg_mask_version)
         return index
 
     def sample_metadata(self, structure):
@@ -349,24 +583,32 @@ class _LossFileState:
 
 def _get_loss_state(loss_path: Path) -> _LossFileState:
     cache_key = str(loss_path)
+    evicted: list[tuple[str, int]] = []
     with _cache_lock:
         state = _file_cache.get(cache_key)
         if state is None:
             state = _LossFileState(loss_path)
             _file_cache[cache_key] = state
             while len(_file_cache) > _MAX_CACHED_FILES:
-                _file_cache.popitem(last=False)
+                evicted_key, oldest = _file_cache.popitem(last=False)
+                evicted.append((evicted_key, oldest.state_token))
         else:
             _file_cache.move_to_end(cache_key)
-        return state
+    for evicted_key, evicted_token in evicted:
+        _drop_local_stat_bucket(evicted_key, max_token=evicted_token)
+    return state
 
 
 def _trim_loss_cache() -> None:
+    evicted: list[tuple[str, int]] = []
     with _cache_lock:
         total = sum(state.sample_count for state in _file_cache.values())
         while total > _MAX_CACHED_SAMPLES and len(_file_cache) > 1:
-            _, oldest = _file_cache.popitem(last=False)
+            evicted_key, oldest = _file_cache.popitem(last=False)
             total -= oldest.sample_count
+            evicted.append((evicted_key, oldest.state_token))
+    for evicted_key, evicted_token in evicted:
+        _drop_local_stat_bucket(evicted_key, max_token=evicted_token)
 
 
 def has_dataset_diagnostics(run_path: Path) -> bool:
@@ -1044,7 +1286,16 @@ def _analysis_revision(
         profile, bins, min_samples, record.get("run_dir", ""), metadata,
         reg_mode, deweight_scheme,
     )
-    return hashlib.sha256(repr(parts).encode()).hexdigest(), metadata
+    data_metadata = metadata[1:] if isinstance(metadata, tuple) else metadata
+    data_parts = (
+        str(state.path), selections, tuple(state.runs), run_id,
+        profile, bins, min_samples, record.get("run_dir", ""), data_metadata,
+        reg_mode, deweight_scheme,
+    )
+    return (
+        hashlib.sha256(repr(parts).encode()).hexdigest(),
+        hashlib.sha256(repr(data_parts).encode()).hexdigest(),
+    )
 
 
 def _unavailable(reason, known_revision, **details):
@@ -1096,6 +1347,9 @@ def _structure_labels(state, revision, manifest, record, *, allow_config: bool =
         state.dir_lookup = _build_dir_lookup(manifest)
         state.canonical_dir_roots = _build_canonical_dir_roots(state.reg_dirs, state.train_dirs)
         state.dir_reg_cache = {}
+        state.reg_scope_cache.clear()
+        state.reg_mask_cache.clear()
+        state.edges_cache.clear()
         state.structure_labels = []
         state.reg_mask_version += 1
     train_dirs = getattr(state, "train_dirs", set())
@@ -1118,21 +1372,34 @@ def _compute_reg_scope(
     labels: list[tuple[str, bool | None]],
     requested_reg_mode: str,
     *,
+    selected: str = "",
     need_mask: bool = True,
 ) -> tuple[str, np.ndarray | None, int, int, bool]:
     """Compute full-run train/reg image counts and effective filter mask for reg_mode."""
     req_mode = requested_reg_mode if requested_reg_mode in ("all", "exclude", "only") else "all"
-    run_structures: set[int] = set()
-    for rows in runs.values():
-        run_structures.update(rows.structures_seen)
-    img_regs: dict[int, set[bool | None]] = defaultdict(set)
-    for structure in run_structures:
-        img_idx = state.structures[structure][0]
-        img_regs[img_idx].add(labels[structure][1])
-    reg_images_total = sum(1 for regs in img_regs.values() if True in regs)
-    train_images_total = sum(1 for regs in img_regs.values() if any(flag is not True for flag in regs))
-    has_reg_images = reg_images_total > 0
-    has_train_rows = train_images_total > 0
+    scope_key = (
+        selected,
+        tuple((rid, len(rows.structures_seen)) for rid, rows in runs.items()),
+        state.reg_mask_version,
+    )
+    cached_scope = state.reg_scope_cache.get(scope_key)
+    if cached_scope is not None:
+        train_images_total, reg_images_total, has_reg_images, has_train_rows = cached_scope
+    else:
+        run_structures: set[int] = set()
+        for rows in runs.values():
+            run_structures.update(rows.structures_seen)
+        img_regs: dict[int, set[bool | None]] = defaultdict(set)
+        for structure in run_structures:
+            img_idx = state.structures[structure][0]
+            img_regs[img_idx].add(labels[structure][1])
+        reg_images_total = sum(1 for regs in img_regs.values() if True in regs)
+        train_images_total = sum(1 for regs in img_regs.values() if any(flag is not True for flag in regs))
+        has_reg_images = reg_images_total > 0
+        has_train_rows = train_images_total > 0
+        if len(state.reg_scope_cache) >= 16:
+            state.reg_scope_cache.clear()
+        state.reg_scope_cache[scope_key] = (train_images_total, reg_images_total, has_reg_images, has_train_rows)
 
     if not has_reg_images:
         return "all", None, train_images_total, reg_images_total, False
@@ -1148,10 +1415,17 @@ def _compute_reg_scope(
     if not need_mask:
         return effective, None, train_images_total, reg_images_total, has_reg_images
 
-    if effective == "exclude":
-        allowed = np.array([labels[s][1] is not True for s in range(len(state.structures))], dtype=bool)
-    else:
-        allowed = np.array([labels[s][1] is True for s in range(len(state.structures))], dtype=bool)
+    mask_key = (len(state.structures), state.reg_mask_version, effective)
+    allowed = state.reg_mask_cache.get(mask_key)
+    if allowed is None:
+        if effective == "exclude":
+            allowed = np.array([labels[s][1] is not True for s in range(len(state.structures))], dtype=bool)
+        else:
+            allowed = np.array([labels[s][1] is True for s in range(len(state.structures))], dtype=bool)
+        allowed.setflags(write=False)
+        for old_key in [k for k in state.reg_mask_cache if k[2] == effective]:
+            state.reg_mask_cache.pop(old_key, None)
+        state.reg_mask_cache[mask_key] = allowed
     return effective, allowed, train_images_total, reg_images_total, has_reg_images
 
 
@@ -1273,17 +1547,34 @@ def _group_tables(state, index, means, eligible, labels, by_image=None):
     return by_dimension
 
 
-def _preview_fields_for(
-    state_path: str, image_key: str, image_id: str, run_dir: str, generation: int,
+def _preview_fields_from_stat(
+    image_id: str,
+    encoded_run_dir: str,
+    stat_entry: tuple[str | None, str] | None,
 ) -> dict[str, str]:
-    local, version = _stat_local_image_cached(state_path, image_key, generation)
+    if not encoded_run_dir or not stat_entry or not stat_entry[0]:
+        return {"thumb_url": "", "preview_url": ""}
+    version = stat_entry[1]
+    suffix = f"{image_id}&run_dir={encoded_run_dir}"
+    if version:
+        suffix = f"{suffix}&v={version}"
+    return {
+        "thumb_url": f"/api/image-preview?scope=loss_sample&variant=thumb&path={suffix}",
+        "preview_url": f"/api/image-preview?scope=loss_sample&variant=preview&path={suffix}",
+    }
+
+
+def _preview_fields_for(
+    state_path: str, image_key: str, image_id: str, run_dir: str, cache_epoch: tuple[int, int],
+) -> dict[str, str]:
+    local, version = _stat_local_image_cached(state_path, image_key, cache_epoch)
     if not local or not run_dir:
         return {"thumb_url": "", "preview_url": ""}
-    url_args = {"scope": "loss_sample", "run_dir": run_dir, "path": image_id, "version": version}
-    return {
-        "thumb_url": build_image_preview_url(variant="thumb", **url_args),
-        "preview_url": build_image_preview_url(variant="preview", **url_args),
-    }
+    return _preview_fields_from_stat(
+        image_id,
+        urllib.parse.quote_plus(run_dir),
+        (str(local), version),
+    )
 
 
 def _image_stats(state, index, entry, labels, stats, epoch_stats, zone_stats, min_samples):
@@ -1707,22 +1998,24 @@ def analyze_dataset_diagnostics(
                 allow_config=config_trusted, fallback_to_key=not config_trusted,
             )
             effective_reg_mode, _, train_total, reg_total, has_reg = _compute_reg_scope(
-                state, runs, labels, req_reg_mode, need_mask=False,
+                state, runs, labels, req_reg_mode, selected=selected, need_mask=False,
             )
-            revision, _ = _analysis_revision(
+            revision, data_revision = _analysis_revision(
                 state, runs, selected, profile, bins, min_samples, record,
                 effective_reg_mode, deweight_scheme, metadata_revision=metadata_revision,
             )
             if revision == known_revision:
                 return {"revision": revision, "unchanged": True}
-            summary = state.summary_lru.get(revision)
-            if summary is not None:
-                state.summary_lru.move_to_end(revision)
+            summary_key = (selected, profile, bins, min_samples, effective_reg_mode, deweight_scheme)
+            cached = state.summary_lru.get(summary_key)
+            if cached is not None and cached[0] == data_revision:
+                summary = cached[1]
+                state.summary_lru.move_to_end(summary_key)
             else:
                 allowed_structures = None
                 if effective_reg_mode in ("exclude", "only"):
                     _, allowed_structures, _, _, _ = _compute_reg_scope(
-                        state, runs, labels, effective_reg_mode, need_mask=True,
+                        state, runs, labels, effective_reg_mode, selected=selected, need_mask=True,
                     )
                 index = state.indexed(
                     selected, runs, bins, _timestep_scale(profile),
@@ -1736,23 +2029,30 @@ def analyze_dataset_diagnostics(
                     effective_reg_mode=effective_reg_mode, train_images_total=train_total,
                     reg_images_total=reg_total, has_reg_images=has_reg,
                 )
-                state.summary_lru[revision] = summary
+                state.summary_lru[summary_key] = (data_revision, summary)
+                state.summary_lru.move_to_end(summary_key)
                 while len(state.summary_lru) > _MAX_INDEX_LRU:
                     state.summary_lru.popitem(last=False)
             state.cached_summary = summary
-            state.cached_revision = revision
+            state.cached_revision = data_revision
             state_path_str = str(state.path)
-            generation = state.local_generation
+            cache_epoch = (state.state_token, state.local_generation)
             run_dir = record.get("run_dir", "")
             raw_images = summary["by_image"]
     finally:
         _trim_loss_cache()
 
+    stat_map = _stat_local_images_batch(
+        state_path_str,
+        (item["image"] for item in raw_images),
+        cache_epoch,
+    )
+    encoded_run_dir = urllib.parse.quote_plus(run_dir) if run_dir else ""
     enriched_images = [
-        {**item, **_preview_fields_for(state_path_str, item["image"], item["image_id"], run_dir, generation)}
+        {**item, **_preview_fields_from_stat(item["image_id"], encoded_run_dir, stat_map.get(item["image"]))}
         for item in raw_images
     ]
-    return {**summary, "by_image": enriched_images}
+    return {**summary, "revision": revision, "by_image": enriched_images}
 
 
 
@@ -2072,9 +2372,9 @@ def read_dataset_diagnostic_image(
             )
             subset_lookup = state.subset_lookup
             effective_reg_mode, allowed_structures, _, _, _ = _compute_reg_scope(
-                state, runs, labels, req_reg_mode, need_mask=True,
+                state, runs, labels, req_reg_mode, selected=selected, need_mask=True,
             )
-            revision, _ = _analysis_revision(
+            revision, data_revision = _analysis_revision(
                 state, runs, selected, profile, bins, min_samples, record,
                 effective_reg_mode, deweight_scheme, metadata_revision=metadata_revision,
             )
@@ -2089,8 +2389,11 @@ def read_dataset_diagnostic_image(
                 allowed_structures=allowed_structures, reg_mask_version=state.reg_mask_version,
             )
             means, distinct, eligible = index.baseline()
-            cached_summary = state.summary_lru.get(revision) or (
-                state.cached_summary if state.cached_revision == revision else None
+            summary_key = (selected, profile, bins, min_samples, effective_reg_mode, deweight_scheme)
+            cached_entry = state.summary_lru.get(summary_key)
+            cached_summary = (
+                cached_entry[1] if (cached_entry is not None and cached_entry[0] == data_revision)
+                else (state.cached_summary if state.cached_revision == data_revision else None)
             )
             if cached_summary is not None:
                 sampling_config = cached_summary["sampling_config"]
@@ -2170,7 +2473,7 @@ def read_dataset_diagnostic_image(
                     subset_meta["loss_weight"] = round(avg_lw, 4)
             state_path_str = str(state.path)
             image_key = entry["key"]
-            generation = state.local_generation
+            cache_epoch = (state.state_token, state.local_generation)
             run_ref = record.get("run_dir", "")
             loss_deweighted = bool(index.deweight_scheme)
     finally:
@@ -2214,8 +2517,15 @@ def read_dataset_diagnostic_image(
         payload["by_timestep"] = by_timestep
         payload["timestep_profile"] = {"num_bins": PROFILE_BINS, "bins": profile_bins}
     if include_local:
-        local_path, _ = _stat_local_image_cached(state_path_str, image_key, generation)
-        image_summary.update(_preview_fields_for(state_path_str, image_key, image_id, run_ref, generation))
+        local_path, version = _stat_local_image_cached(state_path_str, image_key, cache_epoch)
+        encoded_run_ref = urllib.parse.quote_plus(run_ref) if run_ref else ""
+        image_summary.update(
+            _preview_fields_from_stat(
+                image_id,
+                encoded_run_ref,
+                (str(local_path) if local_path is not None else None, version),
+            )
+        )
         payload["caption"] = _read_caption_preview(
             local_path,
             record=record,
@@ -2347,7 +2657,7 @@ def resolve_loss_sample_image(run_dir: str, image_id: str) -> Path | None:
                 return None
             state_path_str = str(state.path)
             image_key = entry["key"]
-            generation = state.local_generation
+            cache_epoch = (state.state_token, state.local_generation)
     finally:
         _trim_loss_cache()
-    return _stat_local_image_cached(state_path_str, image_key, generation)[0]
+    return _stat_local_image_cached(state_path_str, image_key, cache_epoch)[0]
