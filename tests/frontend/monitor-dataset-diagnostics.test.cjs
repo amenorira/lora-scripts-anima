@@ -858,6 +858,9 @@ test('early 1D beeswarm, 3-stage dot choreography, MAX_SCATTER_EFFECTS cap, and 
     assert.ok(Math.abs(camWrap._ddCurrentCamera.xMin - midCam.xMin) < 1e-6);
     fakeNow += 200;
     flushRaf();
+    assert.equal(camSvg.classList.contains('is-camera-anim'), true);
+    fakeNow += 300;
+    flushRaf();
     assert.equal(camSvg.classList.contains('is-camera-anim'), false);
     assert.equal(camWrap._ddTargetCamera.xMin, 0.22);
   });
@@ -1837,4 +1840,751 @@ test('grouped noise summary uses group series for resolution/subset and flux_shi
   assert.ok(toolbarHtml.includes(':value="_datasetDiagEffectiveRegMode()"'));
   assert.ok(topHtml.includes('<option value="all" selected>'));
   assert.ok(toolbarHtml.includes('<option value="all" selected>'));
+});
+
+test('scatter wheel coalesces per frame, uses pure camera path without is-live-motion/layout thrash, and freezes early beeswarm Y during gestures', () => {
+  let fakeNow = 2000;
+  let rafId = 1;
+  const rafQueue = new Map();
+  const flushRaf = () => {
+    const entries = Array.from(rafQueue.entries());
+    rafQueue.clear();
+    for (const [, cb] of entries) cb();
+  };
+
+  const buildMockScatterDom = (modeKind = 'quadrant') => {
+    const bandsGroup = makeEl('g', { 'data-dd-compressed-bands': '' });
+    const gridGroup = makeEl('g', { 'data-dd-grid-lines': '' });
+    const zoneRects = { attention: makeEl('rect', { 'data-dd-zone-preset': 'attention' }), learning: makeEl('rect', { 'data-dd-zone-preset': 'learning' }) };
+    const zonesGroup = makeEl('g', { 'data-dd-zones': '' });
+    zonesGroup.appendChild(zoneRects.attention);
+    zonesGroup.appendChild(zoneRects.learning);
+    const axisXGroup = makeEl('g', { 'data-dd-axis-x-group': '' });
+    const axisYGroup = makeEl('g', { 'data-dd-axis-y-group': '' });
+    const axisXTicks = makeEl('g', { 'data-dd-axis-x-ticks': '' });
+    const axisYTicks = makeEl('g', { 'data-dd-axis-y-ticks': '' });
+    const axesGroup = makeEl('g', { class: 'm-chart-axes' });
+    const axisOrigin = makeEl('g', { 'data-dd-axis-origin': '' });
+    axisOrigin.appendChild(makeEl('text'));
+    const labelsGroup = makeEl('g', { class: 'm-dd-quad-labels' });
+    const dotsGroup = makeEl('g', { class: 'm-dd-dots' });
+    const pulsesGroup = makeEl('g', { class: 'm-dd-pulses' });
+    const trailsGroup = makeEl('g', { class: 'm-dd-trails' });
+    const historyGroup = makeEl('g', { 'data-dd-history': '' });
+    const crosshair = makeEl('g', { 'data-dd-crosshair': '' });
+    const focusRing = makeEl('circle', { 'data-dd-dot-focus': '' });
+    const tether = makeEl('line', { 'data-dd-pin-tether': '' });
+
+    let svgRectReads = 0;
+    let liveMotionAdds = 0;
+    const svg = makeEl('svg', {
+      'data-dd-svg-kind': modeKind,
+      'data-dd-svg-width': '700',
+      'data-dd-svg-height': '436',
+    });
+    const origAdd = svg.classList.add;
+    svg.classList.add = (...cs) => {
+      if (cs.includes('is-live-motion')) liveMotionAdds += 1;
+      origAdd(...cs);
+    };
+    svg.getBoundingClientRect = () => {
+      svgRectReads += 1;
+      return { left: 0, top: 0, right: 700, bottom: 436, width: 700, height: 436 };
+    };
+    const selMap = {
+      '.m-dd-dots': dotsGroup,
+      '.m-dd-pulses': pulsesGroup,
+      '.m-dd-trails': trailsGroup,
+      '[data-dd-history]': historyGroup,
+      '[data-dd-compressed-bands]': bandsGroup,
+      '[data-dd-grid-lines]': gridGroup,
+      '[data-dd-zones]': zonesGroup,
+      '[data-dd-axis-x-group]': axisXGroup,
+      '[data-dd-axis-y-group]': axisYGroup,
+      '[data-dd-axis-x-ticks]': axisXTicks,
+      '[data-dd-axis-y-ticks]': axisYTicks,
+      '.m-chart-axes': axesGroup,
+      '[data-dd-axis-origin]': axisOrigin,
+      '.m-dd-quad-labels': labelsGroup,
+      '[data-dd-crosshair]': crosshair,
+      '[data-dd-dot-focus]': focusRing,
+      '[data-dd-pin-tether]': tether,
+    };
+    svg.querySelector = sel => selMap[sel] || null;
+
+    const stage = makeEl('div');
+    stage.clientWidth = 700;
+    stage.clientHeight = 440;
+    stage.getBoundingClientRect = () => ({ left: 0, top: 0, right: 700, bottom: 440, width: 700, height: 440 });
+    const resetBtn = { hidden: true, closest: () => null };
+    const wrap = makeEl('div');
+    wrap.dataset = { mode: 'quadrant' };
+    wrap.querySelector = sel => ({
+      '[data-dd-hero-stage]': stage,
+      '[data-dd-hero-svg]': svg,
+      '[data-dd-zoom-reset]': resetBtn,
+    })[sel] || null;
+    const panel = makeEl('div');
+    panel.querySelectorAll = sel => (sel === '[data-dd-hero-wrap]' ? [wrap] : []);
+    panel.querySelector = sel => (sel === '[data-dd-hero-wrap][data-mode="quadrant"]' ? wrap : null);
+    return {
+      panel, wrap, stage, svg, dotsGroup, gridGroup, axisXTicks, labelsGroup, resetBtn,
+      getCounters: () => ({ svgRectReads, liveMotionAdds }),
+      resetCounters: () => { svgRectReads = 0; liveMotionAdds = 0; },
+    };
+  };
+
+  // 1. Quadrant wheel coalescing + pure camera path + continuous retargeting
+  const qDom = buildMockScatterDom('quadrant');
+  withMockEnv({
+    document: {
+      createElementNS: (_ns, tag) => makeEl(tag),
+      querySelector: sel => (sel === '.m-tab-panel[data-tab="dataset"]' ? qDom.panel : null),
+      addEventListener() {},
+      removeEventListener() {},
+    },
+    performance: { now: () => fakeNow },
+    requestAnimationFrame: cb => { const id = rafId++; rafQueue.set(id, cb); return id; },
+    cancelAnimationFrame: id => rafQueue.delete(id),
+    setTimeout: () => 0,
+    clearTimeout: () => {},
+  }, () => {
+    const app = makeApp({ datasetDiagData: SAMPLE_DATA, _monitorMotionAllowed: () => true });
+    app._bindDatasetDiagCharts(qDom.panel);
+    // Prime dot nodes as real DOM would have after initial render
+    for (const img of SAMPLE_DATA.by_image) {
+      qDom.dotsGroup.appendChild(makeEl('circle', { class: 'm-dd-dot', 'data-dd-image-id': img.image_id, cx: '350.0', cy: '220.0' }));
+    }
+    qDom.wrap._ddSvgRefs = null;
+    qDom.wrap._ddDotBindings = null;
+    qDom.resetCounters();
+
+    let heroRenderCalls = 0;
+    let reconcileCalls = 0;
+    let filterCalls = 0;
+    let setZoomCalls = 0;
+    const origHero = app._renderDatasetDiagHeroSvg.bind(app);
+    const origReconcile = app._ddReconcileScatterDots.bind(app);
+    const origFilter = app._syncDatasetDiagScatterFilter.bind(app);
+    const origSetZoom = app.setDatasetDiagScatterZoom.bind(app);
+    app._renderDatasetDiagHeroSvg = (...args) => { heroRenderCalls++; return origHero(...args); };
+    app._ddReconcileScatterDots = (...args) => { reconcileCalls++; return origReconcile(...args); };
+    app._syncDatasetDiagScatterFilter = (...args) => { filterCalls++; return origFilter(...args); };
+    app.setDatasetDiagScatterZoom = (...args) => { setZoomCalls++; return origSetZoom(...args); };
+
+    // Emit 3 wheel events within the same frame -> must coalesce into ONE setDatasetDiagScatterZoom
+    let prevented = 0;
+    const mkWheel = dy => ({ deltaY: dy, deltaX: 0, deltaMode: 0, clientX: 350, clientY: 220, preventDefault() { prevented++; } });
+    qDom.stage.emit('wheel', mkWheel(-100));
+    qDom.stage.emit('wheel', mkWheel(-100));
+    qDom.stage.emit('wheel', mkWheel(-100));
+    assert.equal(prevented, 3);
+    assert.equal(setZoomCalls, 0, 'Wheel events must coalesce until rAF flush');
+
+    flushRaf();
+    assert.equal(setZoomCalls, 1, 'Coalesced wheel batch triggers a single setDatasetDiagScatterZoom');
+    assert.equal(heroRenderCalls, 0, 'Pure camera update must bypass _renderDatasetDiagHeroSvg');
+    assert.equal(reconcileCalls, 0, 'Pure camera update must bypass _ddReconcileScatterDots');
+    assert.equal(filterCalls, 0, 'Pure camera update must bypass _syncDatasetDiagScatterFilter');
+    assert.equal(qDom.resetBtn.hidden, false);
+    assert.equal(qDom.stage.classList.contains('is-zoomed'), true);
+    assert.equal(qDom.svg.classList.contains('is-camera-anim'), true);
+    assert.equal(qDom.svg.classList.contains('is-live-motion'), false);
+    assert.deepEqual(qDom.getCounters(), { svgRectReads: 0, liveMotionAdds: 0 });
+
+    const firstToken = qDom.wrap._ddZoomAnimToken;
+    const firstZoom = structuredClone(app.datasetDiagScatterZoom);
+
+    // Step 1 frame (16ms), then send another wheel event -> must retarget continuously without restarting animation
+    fakeNow += 16;
+    flushRaf();
+    const midCam1 = qDom.wrap._ddCurrentCamEval();
+    assert.ok(midCam1.xMin > qDom.wrap._ddAutoBounds.xMin);
+
+    qDom.stage.emit('wheel', mkWheel(-100));
+    flushRaf();
+    assert.equal(setZoomCalls, 2);
+    assert.equal(qDom.wrap._ddZoomAnimToken, firstToken, 'Continuous wheel retargeting must not restart camera animation');
+    assert.ok(app.datasetDiagScatterZoom.xMax - app.datasetDiagScatterZoom.xMin < firstZoom.xMax - firstZoom.xMin);
+    assert.equal(heroRenderCalls, 0);
+    assert.equal(reconcileCalls, 0);
+    assert.equal(filterCalls, 0);
+    assert.deepEqual(qDom.getCounters(), { svgRectReads: 0, liveMotionAdds: 0 });
+
+    // Settle exponential damping completely
+    fakeNow += 500;
+    flushRaf();
+    assert.equal(qDom.svg.classList.contains('is-camera-anim'), false);
+    assert.equal(reconcileCalls, 0, 'Camera settle must skip _ddReconcileScatterDots');
+    assert.equal(filterCalls, 0, 'Camera settle must skip _syncDatasetDiagScatterFilter');
+    assert.ok(Math.abs(qDom.wrap._ddCamera.xMin - app.datasetDiagScatterZoom.xMin) < 1e-9);
+    assert.deepEqual(qDom.getCounters(), { svgRectReads: 0, liveMotionAdds: 0 });
+  });
+
+  // 2. Early 1D beeswarm freezes Y during pan & wheel gestures and reflows once on settle
+  const earlyData = structuredClone(SAMPLE_DATA);
+  earlyData.summary.has_slope = false;
+  const eDom = buildMockScatterDom('early');
+  withMockEnv({
+    document: {
+      createElementNS: (_ns, tag) => makeEl(tag),
+      querySelector: sel => (sel === '.m-tab-panel[data-tab="dataset"]' ? eDom.panel : null),
+      addEventListener() {},
+      removeEventListener() {},
+    },
+    performance: { now: () => fakeNow },
+    requestAnimationFrame: cb => { const id = rafId++; rafQueue.set(id, cb); return id; },
+    cancelAnimationFrame: id => rafQueue.delete(id),
+    setTimeout: () => 0,
+    clearTimeout: () => {},
+  }, () => {
+    const app = makeApp({ datasetDiagData: earlyData, _monitorMotionAllowed: () => true });
+    app._bindDatasetDiagCharts(eDom.panel);
+    for (const img of earlyData.by_image) {
+      const pt = eDom.wrap._ddChartState.coords.find(c => c.image_id === img.image_id);
+      eDom.dotsGroup.appendChild(makeEl('circle', {
+        class: 'm-dd-dot',
+        'data-dd-image-id': img.image_id,
+        cx: pt.cx.toFixed(1),
+        cy: pt.cy.toFixed(1),
+      }));
+    }
+    eDom.wrap._ddSvgRefs = null;
+    eDom.wrap._ddDotBindings = null;
+
+    let beeswarmCalls = 0;
+    let reconcileCalls = 0;
+    let filterCalls = 0;
+    const origBeeswarm = app._ddPlaceEarlyBeeswarm.bind(app);
+    const origReconcile = app._ddReconcileScatterDots.bind(app);
+    const origFilter = app._syncDatasetDiagScatterFilter.bind(app);
+    app._ddPlaceEarlyBeeswarm = (...args) => { beeswarmCalls++; return origBeeswarm(...args); };
+    app._ddReconcileScatterDots = (...args) => { reconcileCalls++; return origReconcile(...args); };
+    app._syncDatasetDiagScatterFilter = (...args) => { filterCalls++; return origFilter(...args); };
+
+    // Wheel zoom in early mode: freezes Y during animation, reflows once on settle
+    eDom.stage.emit('wheel', { deltaY: -120, deltaX: 0, deltaMode: 0, clientX: 350, clientY: 220, preventDefault() {} });
+    flushRaf();
+    fakeNow += 32;
+    flushRaf();
+    assert.equal(beeswarmCalls, 0, 'Early wheel animation must freeze Y without running _ddPlaceEarlyBeeswarm');
+    fakeNow += 500;
+    flushRaf();
+    assert.equal(beeswarmCalls, 1, 'Early wheel settle must reflow _ddPlaceEarlyBeeswarm once');
+    assert.equal(reconcileCalls, 0);
+    assert.equal(filterCalls, 0);
+
+    // Pan in early mode: fast path freezes Y during drag, reflows once on pointerup
+    beeswarmCalls = 0;
+    eDom.stage.emit('pointerdown', { button: 0, isPrimary: true, pointerId: 1, clientX: 350, clientY: 220, target: eDom.svg });
+    eDom.stage.emit('pointermove', { pointerId: 1, buttons: 1, clientX: 310, clientY: 220 });
+    flushRaf();
+    eDom.stage.emit('pointermove', { pointerId: 1, buttons: 1, clientX: 280, clientY: 220 });
+    flushRaf();
+    assert.equal(beeswarmCalls, 0, 'Early pan frames must freeze Y without running _ddPlaceEarlyBeeswarm');
+    assert.equal(reconcileCalls, 0);
+    assert.equal(filterCalls, 0);
+
+    eDom.stage.emit('pointerup', { pointerId: 1, clientX: 280, clientY: 220 });
+    assert.equal(beeswarmCalls, 1, 'Early pan finish must reflow _ddPlaceEarlyBeeswarm once');
+    assert.equal(reconcileCalls, 0);
+    assert.equal(filterCalls, 0);
+  });
+});
+
+test('pan defers new snapshot until pointerup and reconciles residuals cleanly without stale cache', () => {
+  let fakeNow = 3000;
+  let rafId = 1;
+  const rafQueue = new Map();
+  const flushRaf = () => {
+    const entries = Array.from(rafQueue.entries());
+    rafQueue.clear();
+    for (const [, cb] of entries) cb();
+  };
+
+  const mkPanDom = () => {
+    const bandsGroup = makeEl('g', { 'data-dd-compressed-bands': '' });
+    const gridGroup = makeEl('g', { 'data-dd-grid-lines': '' });
+    const zoneRects = { attention: makeEl('rect', { 'data-dd-zone-preset': 'attention' }), learning: makeEl('rect', { 'data-dd-zone-preset': 'learning' }) };
+    const zonesGroup = makeEl('g', { 'data-dd-zones': '' });
+    zonesGroup.appendChild(zoneRects.attention);
+    zonesGroup.appendChild(zoneRects.learning);
+    const axisXGroup = makeEl('g', { 'data-dd-axis-x-group': '' });
+    const axisYGroup = makeEl('g', { 'data-dd-axis-y-group': '' });
+    const axisXTicks = makeEl('g', { 'data-dd-axis-x-ticks': '' });
+    const axisYTicks = makeEl('g', { 'data-dd-axis-y-ticks': '' });
+    const axesGroup = makeEl('g', { class: 'm-chart-axes' });
+    const axisOrigin = makeEl('g', { 'data-dd-axis-origin': '' });
+    axisOrigin.appendChild(makeEl('text'));
+    const labelsGroup = makeEl('g', { class: 'm-dd-quad-labels' });
+    const dotsGroup = makeEl('g', { class: 'm-dd-dots' });
+    const pulsesGroup = makeEl('g', { class: 'm-dd-pulses' });
+    const trailsGroup = makeEl('g', { class: 'm-dd-trails' });
+    const historyGroup = makeEl('g', { 'data-dd-history': '' });
+    const crosshair = makeEl('g', { 'data-dd-crosshair': '' });
+    const focusRing = makeEl('circle', { 'data-dd-dot-focus': '' });
+    const tether = makeEl('line', { 'data-dd-pin-tether': '' });
+    const svg = makeEl('svg', {
+      'data-dd-svg-kind': 'quadrant',
+      'data-dd-svg-width': '700',
+      'data-dd-svg-height': '436',
+    });
+    svg.getBoundingClientRect = () => ({ left: 0, top: 0, right: 700, bottom: 436, width: 700, height: 436 });
+    const selMap = {
+      '.m-dd-dots': dotsGroup,
+      '.m-dd-pulses': pulsesGroup,
+      '.m-dd-trails': trailsGroup,
+      '[data-dd-history]': historyGroup,
+      '[data-dd-compressed-bands]': bandsGroup,
+      '[data-dd-grid-lines]': gridGroup,
+      '[data-dd-zones]': zonesGroup,
+      '[data-dd-axis-x-group]': axisXGroup,
+      '[data-dd-axis-y-group]': axisYGroup,
+      '[data-dd-axis-x-ticks]': axisXTicks,
+      '[data-dd-axis-y-ticks]': axisYTicks,
+      '.m-chart-axes': axesGroup,
+      '[data-dd-axis-origin]': axisOrigin,
+      '.m-dd-quad-labels': labelsGroup,
+      '[data-dd-crosshair]': crosshair,
+      '[data-dd-dot-focus]': focusRing,
+      '[data-dd-pin-tether]': tether,
+    };
+    svg.querySelector = sel => selMap[sel] || null;
+
+    const stage = makeEl('div');
+    stage.clientWidth = 700;
+    stage.clientHeight = 440;
+    stage.getBoundingClientRect = () => ({ left: 0, top: 0, right: 700, bottom: 440, width: 700, height: 440 });
+    const resetBtn = { hidden: true, closest: () => null };
+    const wrap = makeEl('div');
+    wrap.dataset = { mode: 'quadrant' };
+    wrap.querySelector = sel => ({
+      '[data-dd-hero-stage]': stage,
+      '[data-dd-hero-svg]': svg,
+      '[data-dd-zoom-reset]': resetBtn,
+    })[sel] || null;
+    const panel = makeEl('div');
+    panel.querySelectorAll = sel => (sel === '[data-dd-hero-wrap]' ? [wrap] : []);
+    panel.querySelector = sel => (sel === '[data-dd-hero-wrap][data-mode="quadrant"]' ? wrap : null);
+    return { panel, wrap, stage, svg, dotsGroup };
+  };
+
+  const makeSnapshot = (rev, residualShift) => ({
+    ...structuredClone(SAMPLE_DATA),
+    revision: rev,
+    summary: { ...SAMPLE_DATA.summary, images_total: 40, images_qualified: 40 },
+    by_image: Array.from({ length: 40 }, (_, i) => ({
+      image_id: `img_${String(i).padStart(4, '0')}`,
+      image: `D:/ds/char/img_${i}.png`,
+      name: `img_${i}.png`,
+      directory: 'D:/ds/char',
+      dir_label: 'ds/char',
+      resolution: '768x1024',
+      subset: '0-0',
+      subset_label: '10_char',
+      is_reg: false,
+      count: 8,
+      comparable_count: 8,
+      non_finite_count: 0,
+      epochs: 4,
+      mean_loss: 0.25,
+      mean_residual: -0.35 + i * 0.02 + residualShift,
+      slope: -0.05 + (i % 7) * 0.015,
+      status: i % 3 === 0 ? 'attention' : (i % 3 === 1 ? 'learning' : 'normal'),
+      thumb_url: '',
+      preview_url: '',
+    })),
+  });
+
+  const data1 = makeSnapshot('rev1', 0);
+  const data2 = makeSnapshot('rev2', 0.12);
+  const dom = mkPanDom();
+
+  withMockEnv({
+    document: {
+      createElementNS: (_ns, tag) => makeEl(tag),
+      querySelector: sel => (sel === '.m-tab-panel[data-tab="dataset"]' ? dom.panel : null),
+      addEventListener() {},
+      removeEventListener() {},
+    },
+    performance: { now: () => fakeNow },
+    requestAnimationFrame: cb => { const id = rafId++; rafQueue.set(id, cb); return id; },
+    cancelAnimationFrame: id => rafQueue.delete(id),
+    setTimeout: undefined,
+    clearTimeout: undefined,
+  }, () => {
+    const app = makeApp({ datasetDiagData: data1, _monitorMotionAllowed: () => true });
+    app._bindDatasetDiagCharts(dom.panel);
+    for (const pt of dom.wrap._ddChartState.coords) {
+      dom.dotsGroup.appendChild(makeEl('circle', {
+        class: pt.cls || 'm-dd-dot',
+        'data-dd-image-id': pt.image_id,
+        cx: pt.cx.toFixed(1),
+        cy: pt.cy.toFixed(1),
+        r: pt.r.toFixed(1),
+      }));
+    }
+    dom.wrap._ddDotBindings = null;
+    assert.equal(dom.wrap._ddRenderedData, data1);
+
+    // Zoom in so panning is active, then start dragging
+    app.setDatasetDiagScatterZoom({ xMin: -0.4, xMax: 0.5, yMin: -0.06, yMax: 0.06 }, { animate: false });
+    dom.stage.emit('pointerdown', { button: 0, isPrimary: true, pointerId: 7, clientX: 350, clientY: 220, target: dom.svg });
+    dom.stage.emit('pointermove', { pointerId: 7, buttons: 1, clientX: 310, clientY: 220 });
+    flushRaf();
+    assert.equal(dom.wrap._ddPan?.active, true);
+    assert.equal(dom.stage.classList.contains('is-panning'), true);
+
+    // New snapshot arrives mid-pan (via render path + pan move) -> deferred without jumping dots
+    app.datasetDiagData = data2;
+    app._renderDatasetDiagHeroSvg(dom.wrap, dom.stage, dom.svg, { animate: true });
+    assert.equal(dom.wrap._ddPendingDataRefresh, true);
+    assert.equal(dom.wrap._ddRenderedData, data1);
+    assert.equal(dom.wrap._ddDotBindings.data, data1);
+
+    dom.stage.emit('pointermove', { pointerId: 7, buttons: 1, clientX: 280, clientY: 220 });
+    flushRaf();
+    assert.equal(dom.wrap._ddPendingDataRefresh, true);
+    assert.equal(dom.wrap._ddRenderedData, data1);
+
+    // Release pan -> pending refresh is consumed immediately with 0 residual/coord mismatches
+    dom.stage.emit('pointerup', { pointerId: 7, clientX: 280, clientY: 220 });
+    assert.equal(dom.wrap._ddPan, null);
+    assert.equal(dom.stage.classList.contains('is-panning'), false);
+    assert.equal(dom.wrap._ddPendingDataRefresh, false);
+    assert.equal(dom.wrap._ddRenderedData, data2);
+    assert.equal(dom.wrap._ddDotBindings.data, data2);
+
+    const byNewId = new Map(data2.by_image.map(p => [p.image_id, p]));
+    const st = dom.wrap._ddChartState;
+    let mismatches = 0;
+    for (const pt of st.coords) {
+      const expected = byNewId.get(pt.image_id);
+      const dotEl = dom.wrap._ddDotBindings.dotMap.get(pt.image_id);
+      if (!expected || !dotEl) { mismatches++; continue; }
+      if (Math.abs(pt.mean_residual - expected.mean_residual) > 1e-9) mismatches++;
+      if (Math.abs(Number(dotEl.getAttribute('cx')) - st.toX(expected.mean_residual)) > 0.2) mismatches++;
+    }
+    assert.equal(mismatches, 0, 'All dots must reflect the latest snapshot after pointerup');
+
+    // Non-pan _rerenderDatasetDiagScatter with new data bypasses camera fast path and refreshes autoBounds & bindings
+    const data3 = makeSnapshot('rev3', 0.45);
+    app.datasetDiagData = data3;
+    app._rerenderDatasetDiagScatter({ animate: false });
+    assert.equal(dom.wrap._ddRenderedData, data3);
+    assert.equal(dom.wrap._ddDotBindings.data, data3);
+    assert.ok(dom.wrap._ddAutoBounds.xMax > 0.8);
+  });
+});
+
+test('wheel zoom animation updates st.liveScale for 4-arg hit testing, hover visuals, and click pinning', () => {
+  let fakeNow = 5000;
+  let rafId = 1;
+  const rafQueue = new Map();
+  const flushRaf = () => {
+    const entries = Array.from(rafQueue.entries());
+    rafQueue.clear();
+    for (const [, cb] of entries) cb();
+  };
+
+  const bandsGroup = makeEl('g', { 'data-dd-compressed-bands': '' });
+  const gridGroup = makeEl('g', { 'data-dd-grid-lines': '' });
+  const zoneRects = { attention: makeEl('rect', { 'data-dd-zone-preset': 'attention' }), learning: makeEl('rect', { 'data-dd-zone-preset': 'learning' }) };
+  const zonesGroup = makeEl('g', { 'data-dd-zones': '' });
+  zonesGroup.appendChild(zoneRects.attention);
+  zonesGroup.appendChild(zoneRects.learning);
+  const axisXGroup = makeEl('g', { 'data-dd-axis-x-group': '' });
+  const axisYGroup = makeEl('g', { 'data-dd-axis-y-group': '' });
+  const axisXTicks = makeEl('g', { 'data-dd-axis-x-ticks': '' });
+  const axisYTicks = makeEl('g', { 'data-dd-axis-y-ticks': '' });
+  const axisOrigin = makeEl('g', { 'data-dd-axis-origin': '' });
+  axisOrigin.appendChild(makeEl('text'));
+  const labelsGroup = makeEl('g', { class: 'm-dd-quad-labels' });
+  const dotsGroup = makeEl('g', { class: 'm-dd-dots' });
+  const pulsesGroup = makeEl('g', { class: 'm-dd-pulses' });
+  const trailsGroup = makeEl('g', { class: 'm-dd-trails' });
+  const historyGroup = makeEl('g', { 'data-dd-history': '' });
+  const crosshair = makeEl('g', { 'data-dd-crosshair': '', display: 'none' });
+  const chX = makeEl('line', { 'data-dd-ch-x': '' });
+  const chY = makeEl('line', { 'data-dd-ch-y': '' });
+  crosshair.appendChild(chX);
+  crosshair.appendChild(chY);
+  const focusRing = makeEl('circle', { 'data-dd-dot-focus': '', display: 'none' });
+  const tether = makeEl('line', { 'data-dd-pin-tether': '', display: 'none' });
+
+  const svg = makeEl('svg', {
+    'data-dd-svg-kind': 'quadrant',
+    'data-dd-svg-width': '700',
+    'data-dd-svg-height': '436',
+  });
+  svg.getBoundingClientRect = () => ({ left: 0, top: 0, right: 700, bottom: 436, width: 700, height: 436 });
+  svg.querySelector = sel => ({
+    '.m-dd-dots': dotsGroup,
+    '.m-dd-pulses': pulsesGroup,
+    '.m-dd-trails': trailsGroup,
+    '[data-dd-history]': historyGroup,
+    '[data-dd-compressed-bands]': bandsGroup,
+    '[data-dd-grid-lines]': gridGroup,
+    '[data-dd-zones]': zonesGroup,
+    '[data-dd-axis-x-group]': axisXGroup,
+    '[data-dd-axis-y-group]': axisYGroup,
+    '[data-dd-axis-x-ticks]': axisXTicks,
+    '[data-dd-axis-y-ticks]': axisYTicks,
+    '[data-dd-axis-origin]': axisOrigin,
+    '.m-dd-quad-labels': labelsGroup,
+    '[data-dd-crosshair]': crosshair,
+    '[data-dd-ch-x]': chX,
+    '[data-dd-ch-y]': chY,
+    '[data-dd-dot-focus]': focusRing,
+    '[data-dd-pin-tether]': tether,
+  })[sel] || null;
+
+  const pop = makeEl('div', { 'data-dd-preview-pop': '' });
+  pop.hidden = true;
+  const popImg = makeEl('img');
+  popImg.parentElement = makeEl('div');
+  pop.querySelector = sel => (sel === 'img' ? popImg : makeEl('span'));
+
+  const stage = makeEl('div');
+  stage.clientWidth = 700;
+  stage.clientHeight = 440;
+  stage.getBoundingClientRect = () => ({ left: 0, top: 0, right: 700, bottom: 440, width: 700, height: 440 });
+  const resetBtn = { hidden: true, closest: () => null };
+  const wrap = makeEl('div');
+  wrap.dataset = { mode: 'quadrant' };
+  wrap.querySelector = sel => ({
+    '[data-dd-hero-stage]': stage,
+    '[data-dd-hero-svg]': svg,
+    '[data-dd-preview-pop]': pop,
+    '[data-dd-zoom-reset]': resetBtn,
+    '[data-dd-pin-tether]': tether,
+  })[sel] || null;
+  const panel = makeEl('div');
+  panel.querySelectorAll = sel => (sel === '[data-dd-hero-wrap]' ? [wrap] : []);
+  panel.querySelector = sel => (sel === '[data-dd-hero-wrap][data-mode="quadrant"]' ? wrap : null);
+
+  withMockEnv({
+    innerWidth: 1440,
+    innerHeight: 900,
+    document: {
+      createElementNS: (_ns, tag) => makeEl(tag),
+      querySelector: sel => (sel === '.m-tab-panel[data-tab="dataset"]' ? panel : null),
+      addEventListener() {},
+      removeEventListener() {},
+    },
+    performance: { now: () => fakeNow },
+    requestAnimationFrame: cb => { const id = rafId++; rafQueue.set(id, cb); return id; },
+    cancelAnimationFrame: id => rafQueue.delete(id),
+    setTimeout: () => 0,
+    clearTimeout: () => {},
+  }, () => {
+    const app = makeApp({ datasetDiagData: SAMPLE_DATA, _monitorMotionAllowed: () => true });
+    app._bindDatasetDiagCharts(panel);
+    for (const pt of wrap._ddChartState.coords) {
+      dotsGroup.appendChild(makeEl('circle', {
+        class: pt.cls || 'm-dd-dot',
+        'data-dd-image-id': pt.image_id,
+        cx: pt.cx.toFixed(1),
+        cy: pt.cy.toFixed(1),
+      }));
+    }
+    wrap._ddSvgRefs = null;
+    wrap._ddDotBindings = null;
+
+    // Trigger wheel zoom keeping 'aaaaaaaaaaaaaaaa' visible inside plot bounds while live & target diverge
+    stage.emit('wheel', { deltaY: -180, deltaX: 0, deltaMode: 0, clientX: 420, clientY: 190, preventDefault() {} });
+    flushRaf();
+    stage.emit('wheel', { deltaY: -180, deltaX: 0, deltaMode: 0, clientX: 420, clientY: 190, preventDefault() {} });
+    flushRaf();
+    fakeNow += 20;
+    flushRaf();
+
+    const curr = wrap._ddChartState;
+    assert.ok(curr.liveScale && typeof curr.liveScale.toX === 'function' && typeof curr.liveScale.toY === 'function');
+    const targetPt = curr.coords.find(pt => pt.image_id === 'aaaaaaaaaaaaaaaa');
+    const liveCx = curr.liveScale.toX(targetPt.mean_residual);
+    const liveCy = curr.liveScale.toY(targetPt.slope);
+    assert.ok(liveCx >= curr.padL && liveCx <= curr.padL + curr.plotW && liveCy >= curr.padT && liveCy <= curr.padT + curr.plotH);
+    assert.ok(Math.hypot(liveCx - targetPt.cx, liveCy - targetPt.cy) > 30, 'Live frame dot must differ significantly from target position');
+
+    // 4-arg _ddHitTestScatterDot hits live frame position even when _ddLiveDotCoords is null
+    const hitLive = app._ddHitTestScatterDot(curr, liveCx, liveCy, wrap._ddLiveDotCoords);
+    assert.equal(hitLive?.image_id, 'aaaaaaaaaaaaaaaa');
+    assert.equal(app._ddHitTestScatterDot(curr, targetPt.cx, targetPt.cy, wrap._ddLiveDotCoords), null);
+
+    // Hovering at live frame coords aligns focusRing & crosshair to live projection
+    app._updateDatasetDiagHeroHover(wrap, liveCx, liveCy);
+    assert.equal(wrap._ddHoverDot?.image_id, 'aaaaaaaaaaaaaaaa');
+    assert.equal(focusRing.getAttribute('cx'), liveCx.toFixed(1));
+    assert.equal(focusRing.getAttribute('cy'), liveCy.toFixed(1));
+    assert.equal(chX.getAttribute('x1'), liveCx.toFixed(1));
+    assert.equal(chY.getAttribute('y1'), liveCy.toFixed(1));
+
+    // Clicking at live frame coords pins card and anchors popover to live projection
+    stage.emit('pointerdown', { button: 0, isPrimary: true, pointerId: 3, clientX: liveCx, clientY: liveCy, target: svg });
+    stage.emit('click', { clientX: liveCx, clientY: liveCy, target: svg });
+    assert.equal(wrap._ddPinnedDot?.image_id, 'aaaaaaaaaaaaaaaa');
+    assert.equal(pop.hidden, false);
+    assert.ok(Math.abs(wrap._ddPopAnchor.x - liveCx) < 0.2);
+    assert.ok(Math.abs(wrap._ddPopAnchor.y - liveCy) < 0.2);
+
+    // Settling animation clears liveScale to null
+    fakeNow += 600;
+    flushRaf();
+    assert.equal(svg.classList.contains('is-camera-anim'), false);
+    assert.equal(wrap._ddChartState.liveScale, null);
+
+    // Stopping animation mid-flight also clears liveScale to null
+    stage.emit('wheel', { deltaY: -120, deltaX: 0, deltaMode: 0, clientX: 250, clientY: 220, preventDefault() {} });
+    flushRaf();
+    fakeNow += 16;
+    flushRaf();
+    assert.ok(wrap._ddChartState.liveScale);
+    assert.ok(Array.isArray(wrap._ddChartState.liveZones));
+    app._ddStopScatterCameraAnim(wrap, svg);
+    assert.equal(wrap._ddChartState.liveScale, null);
+    assert.equal(wrap._ddChartState.liveZones, null);
+
+    // Quadrant zone hit-testing uses liveZones during camera animation
+    app.setDatasetDiagShowZones(true);
+    stage.emit('wheel', { deltaY: -220, deltaX: 0, deltaMode: 0, clientX: 520, clientY: 160, preventDefault() {} });
+    flushRaf();
+    fakeNow += 16;
+    flushRaf();
+    const animSt = wrap._ddChartState;
+    const liveAtt = animSt.liveZones?.find(z => z.preset === 'attention');
+    assert.ok(liveAtt && liveAtt.x2 > liveAtt.x1 + 10);
+    const zoneHit = app._ddHitTestScatterZone(animSt, (liveAtt.x1 + liveAtt.x2) * 0.5, (liveAtt.y1 + liveAtt.y2) * 0.5);
+    assert.equal(zoneHit?.preset, 'attention');
+    fakeNow += 600;
+    flushRaf();
+  });
+
+  // Early beeswarm reset animation interpolates Y via cyProgress for 4-arg hit-testing & resolve
+  const earlyWrap = makeEl('div');
+  earlyWrap.dataset = { mode: 'quadrant' };
+  const earlySvg = makeEl('svg', {
+    'data-dd-svg-kind': 'early',
+    'data-dd-svg-width': '700',
+    'data-dd-svg-height': '436',
+  });
+  earlySvg.getBoundingClientRect = () => ({ left: 0, top: 0, right: 700, bottom: 436, width: 700, height: 436 });
+  const earlyStage = makeEl('div');
+  earlyStage.clientWidth = 700;
+  earlyStage.clientHeight = 440;
+  earlyStage.getBoundingClientRect = () => ({ left: 0, top: 0, right: 700, bottom: 440, width: 700, height: 440 });
+  const earlyDots = makeEl('g', { class: 'm-dd-dots' });
+  const earlyAxes = makeEl('g', { class: 'm-chart-axes m-dd-axis-group' });
+  const earlyBands = makeEl('g', { 'data-dd-compressed-bands': '' });
+  const earlyGrid = makeEl('g', { 'data-dd-grid-lines': '' });
+  const earlyZones = makeEl('g', { 'data-dd-zones': '' });
+  earlyZones.appendChild(makeEl('rect', { 'data-dd-zone-preset': 'attention' }));
+  const earlyAxisY = makeEl('g', { 'data-dd-axis-y-group': '' });
+  const earlyOrigin = makeEl('g', { 'data-dd-axis-origin': '' });
+  earlyOrigin.appendChild(makeEl('text'));
+  const earlyLabels = makeEl('g', { class: 'm-dd-quad-labels' });
+  const earlyFocus = makeEl('circle', { 'data-dd-dot-focus': '', display: 'none' });
+  const earlyCh = makeEl('g', { 'data-dd-crosshair': '', display: 'none' });
+  const earlyChX = makeEl('line', { 'data-dd-ch-x': '' });
+  const earlyChY = makeEl('line', { 'data-dd-ch-y': '' });
+  earlyCh.appendChild(earlyChX);
+  earlyCh.appendChild(earlyChY);
+  const earlyTether = makeEl('line', { 'data-dd-pin-tether': '', display: 'none' });
+  earlySvg.querySelector = sel => ({
+    '.m-dd-dots': earlyDots,
+    '.m-dd-pulses': makeEl('g', { class: 'm-dd-pulses' }),
+    '.m-dd-trails': makeEl('g', { class: 'm-dd-trails' }),
+    '[data-dd-compressed-bands]': earlyBands,
+    '[data-dd-grid-lines]': earlyGrid,
+    '[data-dd-zones]': earlyZones,
+    '[data-dd-axis-y-group]': earlyAxisY,
+    '.m-chart-axes': earlyAxes,
+    '[data-dd-axis-origin]': earlyOrigin,
+    '.m-dd-quad-labels': earlyLabels,
+    '[data-dd-crosshair]': earlyCh,
+    '[data-dd-ch-x]': earlyChX,
+    '[data-dd-ch-y]': earlyChY,
+    '[data-dd-dot-focus]': earlyFocus,
+    '[data-dd-pin-tether]': earlyTether,
+  })[sel] || null;
+  earlyWrap.querySelector = sel => ({
+    '[data-dd-hero-stage]': earlyStage,
+    '[data-dd-hero-svg]': earlySvg,
+    '[data-dd-preview-pop]': pop,
+    '[data-dd-zoom-reset]': resetBtn,
+    '[data-dd-pin-tether]': earlyTether,
+  })[sel] || null;
+  const earlyPanel = makeEl('div');
+  earlyPanel.querySelectorAll = sel => (sel === '[data-dd-hero-wrap]' ? [earlyWrap] : []);
+  earlyPanel.querySelector = sel => (sel === '[data-dd-hero-wrap][data-mode="quadrant"]' ? earlyWrap : null);
+
+  const earlyData = {
+    ...structuredClone(SAMPLE_DATA),
+    summary: { ...SAMPLE_DATA.summary, has_slope: false },
+    by_image: Array.from({ length: 16 }, (_, i) => ({
+      image_id: `early_${String(i).padStart(4, '0')}`,
+      image: `D:/ds/early_${i}.png`,
+      name: `early_${i}.png`,
+      resolution: '512x512',
+      subset: '0-0',
+      is_reg: false,
+      count: 2,
+      comparable_count: 2,
+      non_finite_count: 0,
+      epochs: 1,
+      mean_loss: 0.25,
+      mean_residual: (i - 8) * 0.005,
+      slope: null,
+      status: 'normal',
+    })),
+  };
+  withMockEnv({
+    innerWidth: 1440,
+    innerHeight: 900,
+    document: {
+      createElementNS: (_ns, tag) => makeEl(tag),
+      querySelector: sel => (sel === '.m-tab-panel[data-tab="dataset"]' ? earlyPanel : null),
+      addEventListener() {},
+      removeEventListener() {},
+    },
+    performance: { now: () => fakeNow },
+    requestAnimationFrame: cb => { const id = rafId++; rafQueue.set(id, cb); return id; },
+    cancelAnimationFrame: id => rafQueue.delete(id),
+    setTimeout: () => 0,
+    clearTimeout: () => {},
+  }, () => {
+    const app = makeApp({ datasetDiagData: earlyData, _monitorMotionAllowed: () => true });
+    app._bindDatasetDiagCharts(earlyPanel);
+    for (const pt of earlyWrap._ddChartState.coords) {
+      earlyDots.appendChild(makeEl('circle', {
+        class: pt.cls || 'm-dd-dot',
+        'data-dd-image-id': pt.image_id,
+        cx: pt.cx.toFixed(1),
+        cy: pt.cy.toFixed(1),
+      }));
+    }
+    earlyWrap._ddSvgRefs = null;
+    earlyWrap._ddDotBindings = null;
+
+    // Zoom in & settle so beeswarm spreads out, then reset zoom to trigger Y interpolation animation
+    earlyStage.emit('wheel', { deltaY: -360, deltaX: 0, deltaMode: 0, clientX: 350, clientY: 220, preventDefault() {} });
+    flushRaf();
+    fakeNow += 600;
+    flushRaf();
+
+    app.resetDatasetDiagScatterZoom();
+    fakeNow += 100;
+    flushRaf();
+
+    const curr = earlyWrap._ddChartState;
+    assert.ok(curr.liveScale && curr.liveScale.toY == null);
+    assert.ok(curr.liveScale.cyProgress > 0 && curr.liveScale.cyProgress < 1);
+    const movingDot = curr.coords.find(pt => Math.abs(pt.cy - pt.prevCy) > 6);
+    assert.ok(movingDot, 'Expected at least one beeswarm dot with Y displacement during reset');
+    const livePos = app._ddResolveDotScreenPos(earlyWrap, movingDot);
+    const expectedCy = movingDot.prevCy + (movingDot.cy - movingDot.prevCy) * curr.liveScale.cyProgress;
+    assert.ok(Math.abs(livePos.cy - expectedCy) < 0.1);
+    const hit = app._ddHitTestScatterDot(curr, livePos.cx, livePos.cy, earlyWrap._ddLiveDotCoords);
+    assert.equal(hit?.image_id, movingDot.image_id);
+  });
 });

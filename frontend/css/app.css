@@ -6916,9 +6916,8 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 [data-theme="light"] .m-dd-dot.is-dimmed { fill-opacity: .16 !important; stroke-opacity: .20 !important; }
 .m-dd-dot-nan-ring { fill: none; stroke: var(--danger); stroke-width: 1.45; opacity: .92; pointer-events: none; transition: opacity var(--duration-slow) var(--ease-out), transform var(--duration-slow) var(--ease-out); }
 .m-dd-dot-nan-ring.is-matched { transform: scale(1.14); }
-.m-dd-dot.is-matched,
-.m-dd-dot.is-dot-enter,
-.m-dd-dot-nan-ring.is-matched { transform-box: fill-box; transform-origin: center; }
+.m-dd-dot,
+.m-dd-dot-nan-ring { transform-box: fill-box; transform-origin: center; }
 .m-dd-dot-nan-ring.is-dimmed { opacity: .14 !important; }
 .m-dd-dot-focus { fill: none; stroke-width: 2; pointer-events: none; transition: cx var(--duration-fast) var(--ease-out), cy var(--duration-fast) var(--ease-out), r var(--duration-fast) var(--ease-out), stroke var(--duration-normal) var(--ease-out); }
 .m-dd-hero-svg.is-live-motion .m-dd-dot {
