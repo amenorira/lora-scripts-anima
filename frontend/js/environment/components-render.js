@@ -221,15 +221,13 @@ window.environmentComponentsRenderMixin = {
       if (command) action = `<button type="button" class="btn btn-sm btn-secondary env-head-btn" data-env-action="moss-accel-${command}">${T(command === 'install' ? 'mossAccelInstall' : command === 'enable' ? 'mossAccelEnable' : 'mossAccelDisable')}</button>`;
     }
     const head = this._renderRowHead('mossAccel', open, {
-      name: T('mossAccelTitle'), action,
+      name: T('mossAccelTitle'), desc: T('mossAccelDesc'), action,
       version: '<span class="env-row-version">FLA 0.5.2 · Conv1D 1.7.0</span>',
       badge: `<span class="env-badge env-badge-${state === 'loading' ? 'loading' : state === 'err' ? 'err' : state === 'ok' ? 'ok' : 'muted'}">${this.esc(label)}</span>`,
       detailKey: 'mossAccel', detailLabel: T('details'),
     });
-    let body = `<div class="env-msg env-msg-info">${this.esc(T('mossAccelDesc'))}</div>`
-      + this._renderDetailGroup('FLA', this.esc(T('mossAccelFlaInfo')))
+    let body = this._renderDetailGroup('FLA', this.esc(T('mossAccelFlaInfo')))
       + this._renderDetailGroup('Conv', this.esc(T('mossAccelConvInfo')))
-      + `<div class="env-msg">${this.esc(T('mossAccelBenefit'))}</div>`
       + `<div class="env-msg env-msg-info">${this.esc(T('mossAccelInfo'))}</div>`;
     if (error) body += this._renderErrorBar(T, error, 'mossAccelInstallLog');
     if (busy) body += this._renderProgressPanel({ stage: 'working', elapsed: this.mossAccelInstallElapsed,

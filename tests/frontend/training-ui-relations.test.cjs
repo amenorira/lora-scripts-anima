@@ -144,6 +144,22 @@ test('Krea imported preview conflicts retain editable paths and can be resolved 
   assert.equal(Object.keys(app._kreaOptionErrors()).length, 0);
 });
 
+test('learning_rate hints suppress editable Prodigy guidance when readonly and resolve profile suffixes', () => {
+  const anima = application('anima-lora', { optimizer_type: 'Prodigy', learning_rate: '1.0' });
+  anima.t = key => (key === 'field.learning_rateHint_emosens_sdxl' ? 'SDXL 1.0' : key);
+  assert.equal(anima._resolveFieldHintKey(anima.findFieldDef('learning_rate'), anima.form, 'anima-lora'), '');
+
+  const krea = application('krea2-lora', { optimizer_type: 'prodigyopt.Prodigy', learning_rate: '1.0' });
+  assert.equal(krea._resolveFieldHintKey(krea.findFieldDef('learning_rate'), krea.form, 'krea2-lora'), '');
+
+  const sdxl = application('sdxl-lora', { optimizer_type: 'vendor.emo_optimizer.emosens.EmoSens', learning_rate: '1.0' });
+  sdxl.t = key => (key === 'field.learning_rateHint_emosens_sdxl' ? 'SDXL 1.0' : '');
+  assert.equal(
+    sdxl._resolveFieldHintKey(sdxl.findFieldDef('learning_rate'), sdxl.form, 'sdxl-lora'),
+    'field.learning_rateHint_emosens_sdxl',
+  );
+});
+
 test('Krea field help follows the sampling mode and dialog links follow their href', async () => {
   const app = docsApp({ form: { model_train_type: 'krea2-lora', timestep_sampling: 'logsnr' } });
   await app.openFieldDoc('timesteps', 'logit-normal');

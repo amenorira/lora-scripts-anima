@@ -654,7 +654,7 @@ window.tagEditorSession = {
     var self = this;
     var run = function() { self._teRemoveDraft(); self.tagEditorLoad(nextDir); };
     if (this.tagEditorModifiedCount() > 0 || this._teHasUnsavedEdits()) {
-      this._teConfirmUnsaved(this.t('tagEditor.unsavedConfirm'), run);
+      this._teConfirmUnsaved(this.t('tagEditor.unsavedConfirm'), run, { actionLabel: this.t('tagEditor.discardAndLeave') });
     } else run();
   },
 
@@ -682,7 +682,7 @@ window.tagEditorSession = {
       try { sessionStorage.removeItem('tagEditor_lastDir'); } catch (e) {}
     };
     if (this.tagEditorModifiedCount() > 0 || this._teHasUnsavedEdits()) {
-      this._teConfirmUnsaved(this.t('tagEditor.unsavedConfirm'), closeNow);
+      this._teConfirmUnsaved(this.t('tagEditor.unsavedConfirm'), closeNow, { actionLabel: this.t('tagEditor.discardAndLeave') });
     } else closeNow();
   },
   _teApplyTagFreq(tags) {
@@ -728,7 +728,7 @@ window.tagEditorSession = {
       this._teConfirmUnsaved(this.t('tagEditor.revertConfirm'), function() {
         self._teRemoveDraft();
         self.tagEditorLoad(self.tagEditorDir);
-      }, 'danger');
+      }, { tone: 'danger', actionLabel: this.t('tagEditor.discardAndRescan') });
     } else {
       this.tagEditorLoad(this.tagEditorDir);
     }
@@ -743,7 +743,7 @@ window.tagEditorSession = {
       if (self.tagEditorDir) self.tagEditorLoad(self.tagEditorDir);
     };
     if (this.tagEditorModifiedCount() > 0 || this._teHasUnsavedEdits()) {
-      this._teConfirmUnsaved(this.t('tagEditor.recursiveUnsavedConfirm'), applyToggle);
+      this._teConfirmUnsaved(this.t('tagEditor.recursiveUnsavedConfirm'), applyToggle, { actionLabel: this.t('tagEditor.discardAndRescan') });
       return;
     }
     applyToggle();

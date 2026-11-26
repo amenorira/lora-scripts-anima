@@ -38,6 +38,9 @@ window.tagEditorPersistence = {
       this._teConfirmBatch(this.t('tagEditor.batchConfirmAll').replace('{n}', modified.length), function() {
         if (epoch !== self2._teLoadEpoch || saveDir !== (self2.tagEditorLoadedDir || self2.tagEditorDir)) return;
         return self2._doSaveAll(modified);
+      }, {
+        title: this.t('tagEditor.saveConfirmTitle'),
+        actionLabel: this.t('tagEditor.saveConfirmAction').replace('{n}', modified.length),
       });
     } else {
       return this._doSaveAll(modified);
@@ -236,19 +239,19 @@ window.tagEditorPersistence = {
 
   tagEditorRestoreSnapshot(sid) {
     if (!this._teCanRestoreCaptions()) return;
-    this._teTimelineAction(sid, 'restore', 'snapshotRestoreConfirmTitle', 'snapshotRestoreConfirm', 'snapshotRestored');
+    this._teTimelineAction(sid, 'restore', 'snapshotRestoreConfirmTitle', 'snapshotRestoreConfirm', 'snapshotRestored', 'snapshotRestoreAction');
   },
 
   tagEditorDeleteSnapshot(sid) {
-    this._teTimelineAction(sid, 'delete', 'snapshotDelete', 'snapshotDeleteConfirm', 'snapshotDeleted');
+    this._teTimelineAction(sid, 'delete', 'snapshotDelete', 'snapshotDeleteConfirm', 'snapshotDeleted', 'snapshotDelete');
   },
 
   // C5: 清理全部快照
   tagEditorClearAllSnapshots() {
-    this._teTimelineAction(null, 'delete', 'snapshotClearConfirmTitle', 'snapshotClearAllConfirm', 'snapshotCleared');
+    this._teTimelineAction(null, 'delete', 'snapshotClearConfirmTitle', 'snapshotClearAllConfirm', 'snapshotCleared', 'snapshotClearAction');
   },
 
-  _teTimelineAction(sid, action, title, message, success) {
+  _teTimelineAction(sid, action, title, message, success, actionKey) {
     if (this.tagEditorSnapshotBusy) return;
     var self = this;
     var epoch = this._teLoadEpoch;
@@ -259,7 +262,7 @@ window.tagEditorPersistence = {
     var context = snapshot ? this._teFormatSnapshotTime(snapshot.timestamp) + ' · ' + this.t('tagEditor.historyStepImages').replace('{n}', snapshot.file_count) : '';
     this.openConfirm({
       title: this.t('tagEditor.' + title), message: description, context,
-      actionLabel: this.t('tagEditor.' + title),
+      actionLabel: this.t('tagEditor.' + (actionKey || title)),
       tone: action === 'delete' || action === 'backup' ? 'danger' : 'warning',
       onConfirm: function() {
         if (epoch !== self._teLoadEpoch || self.tagEditorSnapshotBusy) return;

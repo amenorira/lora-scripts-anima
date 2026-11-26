@@ -738,7 +738,7 @@ window.tagEditorActions = {
       self._tePushHistory({ type: 'rename', desc: oldTag + ' → ' + newTag, affected: targets.length });
       self.tagDictionaryLookupTags?.([newTag]);
       self.toast(self.t('tagEditor.inlineReplaceDone').replace('{old}', oldTag).replace('{new}', newTag).replace('{n}', targets.length));
-    });
+    }, { actionLabel: this.t('bulkAction.replace') });
   },
 
   tagEditorCancelInlineEdit(event) {
@@ -779,7 +779,7 @@ window.tagEditorActions = {
       self._tePushHistory({ type: type, desc: description + ' · ' + self.t('tagEditor.historyStepImages').replace('{n}', changes.length), affected: changes.length });
       onDone?.();
       self.toast(self.t('tagEditor.batchDone'));
-    });
+    }, { actionLabel: actionLabel });
   },
 
   tagEditorRemoveBracketEscapes() {
@@ -800,7 +800,7 @@ window.tagEditorActions = {
       self.tagDictionarySyncChips();
       self._tePushHistory({ type: 'unescape', desc: self.t('tagEditor.unescapeBrackets'), affected: changes.length });
       self.toast(self.t('tagEditor.batchDone'));
-    });
+    }, { actionLabel: this.t('tagEditor.unescapeBrackets') });
   },
 
   tagEditorBatchAdd() {

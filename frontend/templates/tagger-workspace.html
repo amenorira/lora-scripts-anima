@@ -64,11 +64,11 @@
             </div>
             <div class="field">
               <div class="field-row is-stacked">
-                <div class="field-info"><label class="field-key" for="tagger-preset-select" x-text="t(taggerUsesCategoryThresholds() ? 'tagger.categoryThresholds' : 'tagger.preset')"></label><p class="field-desc" x-text="t(taggerUsesCategoryThresholds() ? 'tagger.categoryThresholdsDesc' : 'tagger.presetHelp')"></p></div>
+                <div class="field-info"><label class="field-key" for="tagger-preset-select" x-text="t('tagger.presetLabel')"></label><p class="field-desc" x-text="t('tagger.presetHelp')"></p></div>
                 <div class="field-control">
                   <div class="anima-select tagger-preset-select" x-data="animaSelect(() => taggerPresetSelectConfig(), taggerSettings.preset)" x-effect="value = taggerSettings.preset" @click.outside="close()" @anima-select-change="applyTaggerPreset($event.detail.value)">
                     <input type="hidden" x-ref="modelInput" :value="taggerSettings.preset">
-                    <button id="tagger-preset-select" type="button" class="anima-select-trigger" :class="{ focused: open }" @click="value = taggerSettings.preset; toggle($event)" :aria-label="t(taggerUsesCategoryThresholds() ? 'tagger.categoryThresholds' : 'tagger.preset')"><span class="anima-select-trigger-text" x-text="taggerPresetOptions().find(option => option[0] === taggerSettings.preset)?.[1] || taggerSettings.preset"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button>
+                    <button id="tagger-preset-select" type="button" class="anima-select-trigger" :class="{ focused: open }" @click="value = taggerSettings.preset; toggle($event)" :aria-label="t('tagger.presetLabel')"><span class="anima-select-trigger-text" x-text="taggerPresetOptions().find(option => option[0] === taggerSettings.preset)?.[1] || taggerSettings.preset"></span><svg class="anima-select-chevron" :class="{ open: open }"><use href="#ti-chevron"></use></svg></button>
                     <template x-if="open" x-workspace-part="select-menu"></template>
                   </div>
                 </div>

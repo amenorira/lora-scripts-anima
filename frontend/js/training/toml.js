@@ -162,8 +162,8 @@ window.trainingTomlMixin = {
     // ── 按 section_order 拼接所有分组行 ─────────────────────────
     const lines = this._groupTomlSectionLines(allSections, sectionLines);
 
-    this.tomlRaw = lines.join('\n') || '# ' + this.t('common.noConfigs');
-    this._renderTomlPreview(lines, this.t('common.noConfigs'));
+    this.tomlRaw = lines.join('\n') || '# ' + this.t('common.emptyParameterPreview');
+    this._renderTomlPreview(lines, this.t('common.emptyParameterPreview'));
   },
 
   // Render the copyable Krea 2 application preset with the same TOML
@@ -350,7 +350,7 @@ window.trainingTomlMixin = {
 
   _renderTomlPreview(lines, emptyMessage = '') {
     const html = lines.length === 0
-      ? `<span class="toml-comment"># ${this.esc(emptyMessage || this.t('common.noConfigs'))}</span>`
+      ? `<span class="toml-comment"># ${this.esc(emptyMessage || this.t('common.emptyParameterPreview'))}</span>`
       : this._highlightToml(lines);
     this.tomlHighlighted = html;
 
