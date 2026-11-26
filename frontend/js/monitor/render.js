@@ -306,7 +306,7 @@ window.monitorRenderMixin = {
     }
     if (tab === 'outputs') {
       if ((this._outputFilesNeedsRefresh || (tabChanged && !this.outputFiles.length)) && !this.outputFilesLoading) this.loadOutputFiles();
-      const sig = ['out', this._shellLocale, this.outputFilesVersion, this.selectedOutputFiles.join('|'),
+      const sig = ['out', this._shellLocale, this.outputFilesVersion, this.outputCanReveal, this.selectedOutputFiles.join('|'),
         !this.outputFiles.length && this.outputFilesLoading && !this._outputFilesLoaded ? 1 : 0,
         this.outputSearch, this.outputFilter, this.outputModelSortKey, this.outputModelSortDir,
         this.outputStateSortKey, this.outputStateSortDir, this.outputOtherSortKey, this.outputOtherSortDir,

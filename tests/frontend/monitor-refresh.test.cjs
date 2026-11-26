@@ -169,10 +169,20 @@ test('history offers downloads for distributed states and resume for ordinary st
     app.outputFiles = [{category: 'state', name, path: name, resumable: false}];
     const html = app._renderOutputsTab(app.t);
     assert.ok(html.includes(`downloadSingleOutput('${name}')`));
+    assert.doesNotMatch(html, /output-reveal-btn/);
     assert.doesNotMatch(html, /resumeFromOutputState|fsdpIncompatible/);
   }
   app.outputFiles[0] = {category: 'state', name: 'epoch-state', path: 'epoch-state', resumable: true, ckpt_step: 240};
   assert.match(app._renderOutputsTab(app.t), /resumeFromOutputState\('epoch-state',240\)/);
+  app.outputCanReveal = true;
+  app.outputFilter = 'all';
+  app.outputFiles.push({category:'model', name:'model', path:'sub/model'}, {category:'other', name:'log', path:'sub/log'});
+  for (const selectedRunDir of ['output/run', '']) {
+    app.selectedRunDir = selectedRunDir;
+    const html = app._renderOutputsTab(app.t);
+    assert.equal((html.match(/output-reveal-btn/g) || []).length, 3);
+    for (const {path} of app.outputFiles) assert.ok(html.includes('data-path="' + path + '"'));
+  }
 });
 
 test('artifact notices refresh only changed samples and coalesce changes during a read', async () => {

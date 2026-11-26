@@ -1,6 +1,7 @@
 /* 输出文件加载、筛选、排序与下载；由 monitor-core.js 装配，沿用同一份监控状态。 */
 window.monitorOutputsMixin = {
   outputRefreshFeedback: false, _outputRefreshFeedbackTimer: null,
+  outputCanReveal: false,
 
   _resetOutputFilesForRun(runDir) {
     if (this._outputRefreshFeedbackTimer) clearTimeout(this._outputRefreshFeedbackTimer);
@@ -9,6 +10,7 @@ window.monitorOutputsMixin = {
     this._outputFilesRequestSeq++;
     this._outputFilesRunDir = runDir || '';
     this.outputFiles = [];
+    this.outputCanReveal = false;
     this.outputFilesVersion++;
     this.outputFilesSelected = {};
     this.outputFilesError = '';
@@ -65,6 +67,7 @@ window.monitorOutputsMixin = {
       this._outputFilesLoaded = true;
       if (j.status === 'success') {
         this.outputFiles = j.data || [];
+        this.outputCanReveal = j.meta?.can_reveal === true;
         const paths = new Set(this.outputFiles.map(file => file.path));
         this.outputFilesSelected = Object.fromEntries(this.selectedOutputFiles.filter(path => paths.has(path)).map(path => [path, true]));
         if (countVersion === this._outputCountVersion) {
@@ -264,6 +267,19 @@ window.monitorOutputsMixin = {
     if (!runDir) return;
     this.toast(this.t('monitor.preparingDownload'));
     this._triggerDownload('/api/monitor/outputs/download?run_dir=' + encodeURIComponent(runDir));
+  },
+
+  async revealOutputFile(path) {
+    const runDir = this.currentOutputRunDir;
+    if (!this.outputCanReveal || !runDir || !path) return;
+    try {
+      const query = new URLSearchParams({run_dir: runDir, path});
+      const response = await fetch('/api/monitor/outputs/reveal?' + query, {method: 'POST'});
+      const result = await response.json();
+      if (!response.ok || result.status !== 'success') this.toast(this.localizeApiError(result, 'errors.monitorRevealFailed'), 'error');
+    } catch {
+      this.toast(this.t('errors.monitorRevealFailed'), 'error');
+    }
   },
 
   downloadSingleOutput(path) {

@@ -3482,7 +3482,7 @@ window.monitorArtifactsRenderMixin = {
     }
 
     // Scrollable content
-    html += '<div class="m-outputs-scroll">';
+    html += '<div class="m-outputs-scroll' + (this.outputCanReveal ? ' can-reveal' : '') + '">';
 
     const { models, states, others } = this._sortedOutputs();
 
@@ -3517,7 +3517,7 @@ window.monitorArtifactsRenderMixin = {
           html += '<span title="' + this.esc((f.loss_source || '') + (f.loss_step != null ? ' · step ' + f.loss_step : '')) + '" class="m-ckpt-loss' + (hasLoss ? '' : ' m-muted') + '"><b>' + this.esc(lossTxt) + '</b></span>';
           html += '<span class="output-size">' + this._formatFileSize(f.size) + '</span>';
           html += '<span class="output-time">' + this._formatFileTime(f.mtime) + '</span>';
-          html += '<button class="btn btn-sm btn-secondary output-dl-btn" @click.stop="downloadSingleOutput(\'' + fpJs + '\')" aria-label="' + this.esc(t('common.download') + ': ' + f.name) + '" title="' + this.esc(t('common.download')) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
+          html += this._outputRowActionsHtml(f, fpJs, t);
           html += '</div>';
         });
         html += '</div>';
@@ -3536,7 +3536,6 @@ window.monitorArtifactsRenderMixin = {
         const isSelected = !!this.outputFilesSelected[f.path];
         const fpJs = this.esc(this.escapeJsString(f.path));
         const badge = this._ckptBadgeHtml(f, t);
-        const stepArg = f.ckpt_step != null ? f.ckpt_step : 'null';
         html += '<div class="output-item' + (isSelected ? ' selected' : '') + '" @click="toggleOutputFile(\'' + fpJs + '\')">';
         html += '<input type="checkbox" id="outputSelect-' + this.esc(encodeURIComponent(f.path)) + '" aria-label="' + this.esc(t('selectOutputFile').replace('{name}', f.name)) + '" ' + (isSelected ? 'checked' : '') + ' @click.stop="toggleOutputFile(\'' + fpJs + '\')">';
         html += this._fileIconSvg(f);
@@ -3544,12 +3543,7 @@ window.monitorArtifactsRenderMixin = {
         html += badge || '<span class="m-ckpt-badge m-muted">—</span>';
         html += '<span class="output-size">' + this._formatFileSize(f.size) + '</span>';
         html += '<span class="output-time">' + this._formatFileTime(f.mtime) + '</span>';
-        html += '<span class="output-row-actions">';
-        if (isHistory && f.resumable) {
-          html += '<button type="button" class="btn btn-sm btn-secondary output-resume-btn" :disabled="!!historyReuseBusy" @click.stop="resumeFromOutputState(\'' + fpJs + '\',' + stepArg + ')">' + this.esc(this.t('control.resumeFromShort')) + '</button>';
-        }
-        html += '<button type="button" class="btn btn-sm btn-secondary output-dl-btn" @click.stop="downloadSingleOutput(\'' + fpJs + '\')" aria-label="' + this.esc(t('downloadZip') + ': ' + f.name) + '" title="' + this.esc(t('downloadZip')) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
-        html += '</span>';
+        html += this._outputRowActionsHtml(f, fpJs, t);
         html += '</div>';
       });
       html += '</div>';
@@ -3572,7 +3566,7 @@ window.monitorArtifactsRenderMixin = {
         html += '<span class="output-kind">' + this.esc(fileType) + '</span>';
         html += '<span class="output-size">' + this._formatFileSize(f.size) + '</span>';
         html += '<span class="output-time">' + this._formatFileTime(f.mtime) + '</span>';
-        html += '<button class="btn btn-sm btn-secondary output-dl-btn" @click.stop="downloadSingleOutput(\'' + fpJs + '\')" aria-label="' + this.esc(t('common.download') + ': ' + f.name) + '" title="' + this.esc(t('common.download')) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
+        html += this._outputRowActionsHtml(f, fpJs, t);
         html += '</div>';
       });
       html += '</div>';
@@ -3581,6 +3575,21 @@ window.monitorArtifactsRenderMixin = {
     html += '</div>'; // m-outputs-scroll
     html += '</div>'; // m-section
     return html;
+  },
+
+  _outputRowActionsHtml(file, fpJs, t) {
+    const state = file.category === 'state';
+    let html = '<span class="output-row-actions">';
+    if (state && this.selectedRunDir && file.resumable) {
+      html += '<button type="button" class="btn btn-sm btn-secondary output-resume-btn" :disabled="!!historyReuseBusy" @click.stop="resumeFromOutputState(\'' + fpJs + '\',' + (file.ckpt_step ?? 'null') + ')">' + this.esc(this.t('control.resumeFromShort')) + '</button>';
+    }
+    if (this.outputCanReveal) {
+      const label = t('openOutputLocation');
+      html += '<button type="button" class="btn btn-sm btn-secondary output-reveal-btn" data-path="' + this.esc(file.path) + '" @click.stop="revealOutputFile($el.dataset.path)" aria-label="' + this.esc(label + ': ' + file.name) + '" title="' + this.esc(label) + '"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 18V6a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v1M3 19l3-8h16l-3 9H5a2 2 0 0 1-2-1z"/></svg></button>';
+    }
+    const download = t(state ? 'downloadZip' : 'common.download');
+    html += '<button type="button" class="btn btn-sm btn-secondary output-dl-btn" @click.stop="downloadSingleOutput(\'' + fpJs + '\')" aria-label="' + this.esc(download + ': ' + file.name) + '" title="' + this.esc(download) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
+    return html + '</span>';
   },
 
   _outputFileTypeLabel(f, t) {

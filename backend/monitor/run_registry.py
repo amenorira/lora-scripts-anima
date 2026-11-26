@@ -369,7 +369,7 @@ def find_run_record_by_task_id(task_id: str) -> dict[str, Any] | None:
     return None
 
 
-def resolve_artifact_file(run_dir: str | Path, relative_path: str | Path) -> Path | None:
+def resolve_artifact_file(run_dir: str | Path, relative_path: str | Path, *, preserve_entry: bool = False) -> Path | None:
     """在已登记产物目录内安全解析相对文件路径。"""
     record = load_run_record(run_dir)
     if not record:
@@ -379,11 +379,12 @@ def resolve_artifact_file(run_dir: str | Path, relative_path: str | Path) -> Pat
         return None
     root = record["artifact_path"]
     try:
-        candidate = (root / relative).resolve()
+        entry = root / relative
+        candidate = entry.resolve()
         candidate.relative_to(root)
-    except (OSError, ValueError):
+    except (OSError, ValueError, RuntimeError):
         return None
-    return candidate
+    return entry if preserve_entry else candidate
 
 
 def mark_run_deleted(run_dir: str | Path) -> bool:
