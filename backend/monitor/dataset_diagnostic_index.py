@@ -731,13 +731,8 @@ def epoch_metrics(images, epoch_images, epoch_numbers, total, count, residual, s
     n_epochs = np.bincount(image, minlength=images)
     if not len(epoch):
         empty = np.full(images, np.nan)
-        return observed_count, n_epochs, empty, empty, empty
-
-    lowest = np.full(images, np.iinfo(np.int64).max)
-    highest = np.full(images, -1)
-    np.minimum.at(lowest, image, epoch)
-    np.maximum.at(highest, image, epoch)
-    y = residual[comparable] / count[comparable]
+        no_ep = np.full(images, -1, dtype=np.int64)
+        return observed_count, n_epochs, empty, no_ep, no_ep
 
     s_count = count if slope_count is None else slope_count
     s_residual = residual if slope_residual is None else slope_residual
@@ -745,9 +740,12 @@ def epoch_metrics(images, epoch_images, epoch_numbers, total, count, residual, s
     s_image, s_epoch = epoch_images[s_comparable], epoch_numbers[s_comparable]
     s_n_epochs = np.bincount(s_image, minlength=images)
     if len(s_epoch):
-        s_lowest = np.full(images, np.iinfo(np.int64).max)
+        s_lowest = np.full(images, np.iinfo(np.int64).max, dtype=np.int64)
+        s_highest = np.full(images, -1, dtype=np.int64)
         np.minimum.at(s_lowest, s_image, s_epoch)
+        np.maximum.at(s_highest, s_image, s_epoch)
         x = (s_epoch - s_lowest[s_image]).astype(np.float64)
+        s_lowest[s_n_epochs == 0] = -1
         sy_vals = s_residual[s_comparable] / s_count[s_comparable]
         n = np.maximum(s_n_epochs, 1)
         sx = np.bincount(s_image, weights=x, minlength=images)
@@ -757,10 +755,7 @@ def epoch_metrics(images, epoch_images, epoch_numbers, total, count, residual, s
         slope = np.divide(sxy, sxx, out=np.full(images, np.nan), where=(sxx > 0) & (n >= 3))
     else:
         slope = np.full(images, np.nan)
+        s_lowest = np.full(images, -1, dtype=np.int64)
+        s_highest = np.full(images, -1, dtype=np.int64)
 
-    first, last = np.full(images, np.nan), np.full(images, np.nan)
-    first_positions = epoch == lowest[image]
-    last_positions = epoch == highest[image]
-    first[image[first_positions]] = y[first_positions]
-    last[image[last_positions]] = y[last_positions]
-    return observed_count, n_epochs, slope, first, last
+    return observed_count, n_epochs, slope, s_lowest, s_highest

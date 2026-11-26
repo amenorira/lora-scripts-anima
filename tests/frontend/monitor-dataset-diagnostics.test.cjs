@@ -625,6 +625,41 @@ test('status cards, scope pill/popover, and group dim collapse patch cleanly in-
   });
 });
 
+test('zone clicks select images by status when the same slope has different per-image thresholds', () => {
+  const data = structuredClone(SAMPLE_DATA);
+  data.thresholds.converging_slope = -0.10 / 19;
+  const [late, full] = data.by_image;
+  Object.assign(late, { slope: -0.01, converging_slope: -0.02 });
+  Object.assign(full, { slope: -0.01, converging_slope: data.thresholds.converging_slope });
+  const app = makeApp({ datasetDiagData: data, datasetDiagShowZones: true, datasetDiagPreset: 'all' });
+  const { wrap, stage, svg } = makeWrapStage('quadrant', 680, 440);
+  const panel = makeEl();
+  panel.querySelectorAll = sel => sel === '[data-dd-hero-wrap]' ? [wrap] : [];
+  withMockEnv({document: panel}, () => app._bindDatasetDiagCharts(panel));
+  const chart = wrap._ddChartState;
+  const attention = svg.querySelector('[data-dd-zone-preset="attention"]');
+  const learning = svg.querySelector('[data-dd-zone-preset="learning"]');
+  const attentionBottom = Number(attention.getAttribute('y')) + Number(attention.getAttribute('height'));
+  const learningTop = Number(learning.getAttribute('y'));
+  assert.ok(Math.abs(attentionBottom - chart.toY(full.converging_slope)) < 0.2);
+  assert.ok(Math.abs(learningTop - chart.toY(late.converging_slope)) < 0.2);
+  for (const dot of chart.coords.filter(dot => dot.image_id === late.image_id || dot.image_id === full.image_id)) {
+    assert.ok(dot.cy > attentionBottom && dot.cy < learningTop);
+  }
+
+  const click = y => stage.emit('click', {clientX: chart.toX(0.35), clientY: y});
+  const selected = () => app._datasetDiagFilteredImages().map(img => img.image_id);
+  click(chart.toY(late.slope));
+  assert.equal(app.datasetDiagPreset, 'all');
+  click((chart.padT + attentionBottom) / 2);
+  assert.deepEqual(selected(), [late.image_id]);
+  click((learningTop + chart.padT + chart.plotH) / 2);
+  assert.deepEqual(selected(), [full.image_id]);
+  const modal = image => app._renderDatasetDiagModalRightHtml(key => app.t('monitor.' + key), { image });
+  assert.doesNotMatch(modal(late), /m-dd-group-trend-pill is-good/);
+  assert.match(modal(full), /m-dd-group-trend-pill is-good/);
+});
+
 test('quadrant scatter SVG, piecewise-log compression, auto-bounds soft-centering, zoom/pan, and zone shading', () => {
   const a = makeApp({ datasetDiagData: SAMPLE_DATA });
   const q = makeWrapStage('quadrant');

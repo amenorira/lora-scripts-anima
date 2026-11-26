@@ -7,23 +7,23 @@ Every training step draws a random noise timestep for each sample, and raw loss 
 Following the per-sample analysis approach from Kohya `sd-scripts` (see upstream [`loss.jsonl` and residual analysis](https://github.com/kohya-ss/sd-scripts/blob/v0.13.1/docs/run_control.md#analyzing-the-loss-log--loss-%E3%83%AD%E3%82%B0%E3%81%AE%E5%88%86%E6%9E%90)), diagnostics compares each sample against **other samples at a similar timestep (noise level)** using two metrics:
 
 - **Residual (relative difficulty)**: How high a sample's loss is relative to the mean loss of the same timestep bin. `0%` is the dataset average; positive values are harder to learn, negative values are easier.
-- **Per-epoch slope (whether it is converging)**: Once an image has at least 3 comparable epochs, how fast its residual changes per epoch relative to same-epoch peers. Negative values indicate the model is absorbing the image; values near `0%` or positive indicate a plateau.
+- **Per-epoch slope (whether residual is dropping)**: Once an image has at least 3 comparable epochs, how fast its residual changes per epoch relative to same-epoch peers. Negative values indicate the gap to the dataset average is narrowing; values near `0%` or positive indicate a plateau.
 
 Both metrics measure relative performance **within the same training run**; evaluate overall convergence with checkpoint sample previews.
 
 <!-- doc-anchor: rules -->
 ## Reading Statuses and Recommended Actions
 
-While upstream `analyze_run_loss.py` only sorts images by residual, this UI groups images automatically using **Min samples** (default `≥ 3` comparable samples), `±20%` residual cutoffs, and a **converging slope threshold**.
+While upstream `analyze_run_loss.py` only sorts images by residual, this UI groups images automatically using **Min samples** (default `≥ 3` comparable samples), `±20%` residual cutoffs, and a **drop slope threshold**.
 
-The converging slope threshold is **`-2.0% / epoch`** for short runs (`≤ 6` epochs); past 6 epochs, it scales automatically by **`≥ 10%` cumulative drop across the observed epoch span** (down to **`-0.4% / epoch`**) so steady long-run learners are not flagged as stalled. Treat these cutoffs as quick grouping guides—combine them with scatter plot outliers and list sorting to inspect the top-ranked images:
+The drop slope threshold is calculated from **each image's comparable epoch span** (last minus first comparable epoch): **`-2.0% / epoch`** for spans `≤ 5` (`≤ 6` consecutive epochs), scaled automatically by **`≥ 10%` cumulative drop across that span** for spans between `5` and `25`, and floored at **`-0.4% / epoch`** for spans `≥ 25` so steady long-run learners are not flagged as stalled. Treat these cutoffs as quick grouping guides—combine them with scatter plot outliers and list sorting to inspect the top-ranked images:
 
 | Signal | Condition (matched top to bottom) | Common causes & recommended action |
 | --- | --- | --- |
 | `NaN / Inf` | Non-finite loss recorded (top priority) | Check individual files for corruption or abnormal color spaces; if widespread, review learning rate and mixed precision |
 | `Pending` | Finite or comparable same-bin samples `< Min samples` (**Few samples / Few noise peers** in details) | Not enough samples accumulated yet; wait for more epochs or lower **Min samples** in the header |
-| `High (review)` | Residual `≥ +20%`, with `< 3` epochs or slope above the converging threshold (**High (review / stalled / slow)** in details) | Persistently above average without dropping—often missing/wrong tags, bad files, awkward crops, or conflicting features. Open details to check the image and caption, or click **Open in Tag Editor** for standalone files |
-| `High (dropping)` | Residual `≥ +20%` and slope `≤ converging slope threshold` | Complex composition or features that the model is actively learning; keep the image and monitor subsequent epochs |
+| `High (review)` | Residual `≥ +20%`, with `< 3` epochs or slope above the drop threshold (**High (review / stalled / slow)** in details) | Persistently above average without dropping—often missing/wrong tags, bad files, awkward crops, or conflicting features. Open details to check the image and caption, or click **Open in Tag Editor** for standalone files |
+| `High (dropping)` | Residual `≥ +20%` and slope `≤ drop slope threshold` | Complex composition or features that the model is actively learning; keep the image and monitor subsequent epochs |
 | `Below mean` | Residual `≤ -20%` | Simple composition or near-duplicate images; if many images are very low, check previews for overfitting |
 | `Near mean` | `-20% < residual < +20%` | Tracking the dataset average normally; no action needed |
 
@@ -31,7 +31,7 @@ The converging slope threshold is **`-2.0% / epoch`** for short runs (`≤ 6` ep
 ## Inspection Workflow and Key Controls
 
 1. **Start in Overview to separate isolated bad images from group-wide skew**
-   - **Left scatter plot**: Shows a 1D residual beeswarm before 3 epochs, then switches to a 2D **Residual × Slope** plot. The **top-right quadrant** (high residual and not converging) highlights individual images to inspect first; click a dot to pin its preview card and open details.
+   - **Left scatter plot**: Shows a 1D residual beeswarm before 3 epochs, then switches to a 2D **Residual × Slope** plot. With zones enabled, click the upper-right or lower-right shaded area to select all high-residual images with the corresponding status. When images have different slope thresholds, the gap between the areas can contain either status. Use the dot color to tell them apart. Click a dot to pin its preview card and open details.
    - **Right group comparison**: Aggregates mean residual and slope across **Subsets / Folder / Bucket size / Batch size**. If an entire subset, folder, or aspect-ratio bucket is elevated, check its `num_repeats`, tagging style, crop error, or subset timestep offset; click **`↗`** at the end of a row to jump to that group in Images.
    - **Right timestep bands (`1000 → 0`)**: Plots mean loss across 18 bins from high noise (`1000`) to low noise (`0`), high/mid/low noise sample shares, and the dashed theoretical distribution. Hovering or selecting any status, group, or image overlays a comparison curve to show which noise zone drives the difference.
 2. **Verify source image, bucket crop, and caption in the detail modal**

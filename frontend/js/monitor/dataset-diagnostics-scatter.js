@@ -1638,7 +1638,7 @@
     _ddHitTestScatterZone(st, x, y) {
       const zones = st?.liveZones || st?.zones;
       if (!this.datasetDiagShowZones || !Array.isArray(zones)) return null;
-      return zones.find(z => x >= z.x1 && x <= z.x2 && y >= z.y1 && y <= z.y2) || null;
+      return zones.find(z => x >= z.x1 && x <= z.x2 && y >= z.y1 && (z.exclusiveBottom ? y < z.y2 : y <= z.y2)) || null;
     },
 
     _ddReconcileZoneRect(group, preset, x, y, w, h, show) {
@@ -2718,19 +2718,19 @@
         if (liveZones) liveZones.length = 0;
         if (kind === 'quadrant') {
           const curYConv = curToY(convSlopeVal);
-          const curThreshY = Math.max(padT, Math.min(padT + plotH, curYConv));
-          const curAttH = Math.max(0, curThreshY - padT);
-          const curLrnH = Math.max(0, padT + plotH - curThreshY);
+          const curAttH = Math.max(0, Math.min(padT + plotH, curYConv) - padT);
+          const curLearningY = Math.max(padT, Math.min(padT + plotH, curToY(spec.learningSlopeVal)));
+          const curLrnH = Math.max(0, padT + plotH - curLearningY);
           const attOk = curAttW > 4 && curAttH > 4;
           const lrnOk = curAttW > 4 && curLrnH > 4;
           if (liveZones) {
-            if (attOk) liveZones.push({ preset: 'attention', x1: curAttX, x2: padL + plotW, y1: padT, y2: padT + curAttH });
-            if (lrnOk) liveZones.push({ preset: 'learning', x1: curAttX, x2: padL + plotW, y1: curThreshY, y2: padT + plotH });
+            if (attOk) liveZones.push({ preset: 'attention', x1: curAttX, x2: padL + plotW, y1: padT, y2: padT + curAttH, exclusiveBottom: true });
+            if (lrnOk) liveZones.push({ preset: 'learning', x1: curAttX, x2: padL + plotW, y1: curLearningY, y2: padT + plotH });
           }
           if (zoneAttEl) this._ddSetZoneRectGeom(zoneAttEl, curAttX, padT, curAttW, curAttH, attOk);
           else this._ddReconcileZoneRect(zonesGroup, 'attention', curAttX, padT, curAttW, curAttH, attOk);
-          if (zoneLrnEl) this._ddSetZoneRectGeom(zoneLrnEl, curAttX, curThreshY, curAttW, curLrnH, lrnOk);
-          else this._ddReconcileZoneRect(zonesGroup, 'learning', curAttX, curThreshY, curAttW, curLrnH, lrnOk);
+          if (zoneLrnEl) this._ddSetZoneRectGeom(zoneLrnEl, curAttX, curLearningY, curAttW, curLrnH, lrnOk);
+          else this._ddReconcileZoneRect(zonesGroup, 'learning', curAttX, curLearningY, curAttW, curLrnH, lrnOk);
           if (threshHighEl) {
             const vis = curXHigh >= padL + 8 && curXHigh <= padL + plotW - 16;
             const hlx = curXHigh > padL + plotW - 44 ? curXHigh - 4 : curXHigh + 4;
@@ -3056,6 +3056,8 @@
       let leftmost = points[0], rightmost = points[0], lowest = points[0], highest = points[0];
       let attCount = 0;
       let lrnCount = 0;
+      const reference = data.thresholds?.converging_slope ?? -0.02;
+      let attentionSlope = -Infinity, learningSlope = Infinity;
       for (const point of points) {
         if (point.mean_residual < leftmost.mean_residual) leftmost = point;
         if (point.mean_residual > rightmost.mean_residual) rightmost = point;
@@ -3063,10 +3065,16 @@
         if (point.slope > highest.slope) highest = point;
         if (point.status === 'attention') attCount++;
         else if (point.status === 'learning') lrnCount++;
+        else continue;
+        const threshold = point.converging_slope ?? reference;
+        attentionSlope = Math.max(attentionSlope, threshold);
+        learningSlope = Math.min(learningSlope, threshold);
       }
       const displayed = this._ddRepresentativePoints(points, 1000, [leftmost, rightmost, lowest, highest]);
       const ordered = displayed.slice().sort((a, b) => this._ddDotOrderWeight(a.status) - this._ddDotOrderWeight(b.status));
-      const next = { data, minCount, imagesCount: images.length, points, displayed, ordered, leftmost, rightmost, lowest, highest, attCount, lrnCount };
+      const next = { data, minCount, imagesCount: images.length, points, displayed, ordered, leftmost, rightmost, lowest, highest, attCount, lrnCount,
+        attentionSlope: Number.isFinite(attentionSlope) ? attentionSlope : reference,
+        learningSlope: Number.isFinite(learningSlope) ? learningSlope : reference };
       if (wrap) wrap._ddQuadPointCache = next;
       return next;
     },
@@ -3095,9 +3103,8 @@
       return next;
     },
 
-    _ddBuildScatterMetaSpec(kind, t, ptSet, data, padL, padT, plotW, plotH, hasZoom, layout, xHigh, yConv, axisY, earlyTickY) {
+    _ddBuildScatterMetaSpec(kind, t, ptSet, data, padL, padT, plotW, plotH, hasZoom, layout, xHigh, toY, axisY, earlyTickY) {
       const highResVal = data.thresholds?.high_residual ?? 0.20;
-      const convSlopeVal = data.thresholds?.converging_slope ?? -0.02;
       const attX = Math.max(padL, Math.min(padL + plotW, xHigh));
       const attW = Math.max(0, padL + plotW - attX);
       const showHighTick = xHigh >= padL + 8 && xHigh <= padL + plotW - 16;
@@ -3135,8 +3142,12 @@
       }
 
       const lrnCount = ptSet.lrnCount || 0;
+      // The span between these cutoffs can contain both statuses at the same raw slope.
+      const convSlopeVal = ptSet.attentionSlope;
+      const learningSlopeVal = ptSet.learningSlope;
+      const yConv = toY(convSlopeVal);
       const attH = Math.max(0, Math.min(padT + plotH, yConv) - padT);
-      const lrnY = Math.max(padT, Math.min(padT + plotH, yConv));
+      const lrnY = Math.max(padT, Math.min(padT + plotH, toY(learningSlopeVal)));
       const lrnH = Math.max(0, padT + plotH - lrnY);
       const showConvTick = attW > 28 && yConv >= padT + 14 && yConv <= padT + plotH - 8;
       const convLabelY = Math.abs(yConv - axisY) < 12 ? yConv + 11 : yConv - 4;
@@ -3165,7 +3176,8 @@
           x: (attX + 4).toFixed(1),
           y: convLabelY.toFixed(1),
           anchor: 'start',
-          text: this._ddFormatTickPct(convSlopeVal, 1),
+          text: convSlopeVal === learningSlopeVal ? this._ddFormatTickPct(convSlopeVal, 1)
+            : this._ddFormatTickPct(learningSlopeVal, 1) + ' … ' + this._ddFormatTickPct(convSlopeVal, 1),
         },
         att: {
           visible: attW > 54 && attH > 20,
@@ -3187,7 +3199,7 @@
         + (labelSpec.conv.visible ? `<text class="m-dd-thresh-label m-dd-text-halo" data-dd-thresh-label="conv" x="${labelSpec.conv.x}" y="${labelSpec.conv.y}" text-anchor="start">${this.esc(labelSpec.conv.text)}</text>` : '')
         + (labelSpec.att.visible ? `<text class="is-alert m-dd-text-halo" data-dd-zone-label="attention" x="${labelSpec.att.x}" y="${labelSpec.att.y}" text-anchor="end">${this.esc(labelSpec.att.text)}</text>` : '')
         + (labelSpec.lrn.visible ? `<text class="is-learning m-dd-text-halo" data-dd-zone-label="learning" x="${labelSpec.lrn.x}" y="${labelSpec.lrn.y}" text-anchor="end">${this.esc(labelSpec.lrn.text)}</text>` : '');
-      return { highResVal, convSlopeVal, attX, attW, attH, lrnY, lrnH, xDirItems, yDirItems, labelSpec };
+      return { highResVal, convSlopeVal, learningSlopeVal, attX, attW, attH, lrnY, lrnH, xDirItems, yDirItems, labelSpec };
     },
 
     _ddReflowEarlyBeeswarm(wrap, svg) {
@@ -3349,17 +3361,15 @@
         : [];
 
       const highResVal = data.thresholds?.high_residual ?? 0.20;
-      const convSlopeVal = data.thresholds?.converging_slope ?? -0.02;
       const xHigh = toX(highResVal);
-      const yConv = toY ? toY(convSlopeVal) : midY;
-      const meta = this._ddBuildScatterMetaSpec(kind, t, ptSet, data, padL, padT, plotW, plotH, hasZoom, layout, xHigh, yConv, axisY, earlyTickY);
+      const meta = this._ddBuildScatterMetaSpec(kind, t, ptSet, data, padL, padT, plotW, plotH, hasZoom, layout, xHigh, toY, axisY, earlyTickY);
       const targetCamera = { kind, xMin, xMax, symW_X: symWX, yMin, yMax, symW_Y: symWY };
 
       const zones = [];
       if (isQuadrant) {
         const attOk = meta.attW > 4 && meta.attH > 4;
         const lrnOk = meta.attW > 4 && meta.lrnH > 4;
-        if (attOk) zones.push({ preset: 'attention', x1: meta.attX, x2: padL + plotW, y1: padT, y2: padT + meta.attH });
+        if (attOk) zones.push({ preset: 'attention', x1: meta.attX, x2: padL + plotW, y1: padT, y2: padT + meta.attH, exclusiveBottom: true });
         if (lrnOk) zones.push({ preset: 'learning', x1: meta.attX, x2: padL + plotW, y1: meta.lrnY, y2: padT + plotH });
       } else if (meta.attW > 4) {
         zones.push({ preset: 'attention', x1: meta.attX, x2: padL + plotW, y1: padT, y2: padT + plotH });
@@ -3539,7 +3549,7 @@
         const pinnedSpec = pinnedId ? (curCoords.find(c => c.image_id === pinnedId) || null) : null;
         this._ddRetargetWheelCameraAnim(wrap, svg, {
           kind, width, height, padL, padT, plotW, plotH, hasZoom, t,
-          highResVal: meta.highResVal, convSlopeVal: meta.convSlopeVal,
+          highResVal: meta.highResVal, convSlopeVal: meta.convSlopeVal, learningSlopeVal: meta.learningSlopeVal,
           linX: xCfg.linThresh, linY: yCfg ? yCfg.linThresh : 1,
           earlyTickY, xCfg, yCfg, targetCamera,
           xTicks, yTicks, xDirItems: meta.xDirItems, yDirItems: meta.yDirItems,
@@ -3599,7 +3609,7 @@
         const pinnedSpec = pinnedId ? (curCoords.find(c => c.image_id === pinnedId) || null) : null;
         this._ddStartScatterCameraAnim(svg, wrap, {
           kind, width, height, padL, padT, plotW, plotH, hasZoom, t,
-          highResVal: meta.highResVal, convSlopeVal: meta.convSlopeVal,
+          highResVal: meta.highResVal, convSlopeVal: meta.convSlopeVal, learningSlopeVal: meta.learningSlopeVal,
           linX: xCfg.linThresh, linY: yCfg ? yCfg.linThresh : 1,
           earlyTickY, xCfg, yCfg, fromCam: prevCam, targetCamera,
           animX, animY, dotBindings, coords: curCoords, pinnedSpec,
@@ -3630,7 +3640,7 @@
       }
       const minCount = Number(data.thresholds?.min_count || 3);
       const ptSet = this._ddGetQuadrantPointSet(wrap, data, minCount);
-      const { points, displayed, ordered, leftmost, rightmost, lowest, highest, attCount, lrnCount } = ptSet;
+      const { points, displayed, ordered, leftmost, rightmost, lowest, highest } = ptSet;
 
       const stageEl = wrap?.querySelector?.('[data-dd-hero-stage]');
       if (!points.length) {
@@ -3663,7 +3673,6 @@
         this._ddSetChartCoverage(wrap, t, displayed.length, points.length, ptSet.imagesCount);
       }
       const highResVal = data.thresholds?.high_residual ?? 0.20;
-      const convSlopeVal = data.thresholds?.converging_slope ?? -0.02;
       const autoBounds = this._ddResolveScatterAutoBounds(
         wrap,
         `q|${data.run_id || ''}|${minCount}`,
@@ -3674,7 +3683,7 @@
           yMax: highest.slope,
         },
         true,
-        convSlopeVal
+        ptSet.learningSlope
       );
       const z = this.datasetDiagScatterZoom;
       const hasZoom = !!(z && Number.isFinite(z.xMin) && Number.isFinite(z.xMax)
@@ -3708,7 +3717,7 @@
       const layout = this._ddComputeScatterAxisLayout(axisX, axisY, xZero, yZero, padL, padT, plotW, plotH, hasZoom);
 
       const xHigh = toX(highResVal);
-      const yConv = toY(convSlopeVal);
+      const meta = this._ddBuildScatterMetaSpec('quadrant', t, ptSet, data, padL, padT, plotW, plotH, hasZoom, layout, xHigh, toY, axisY, 0);
 
       const coords = ordered.map(img => {
         const cx = toX(img.mean_residual);
@@ -3718,20 +3727,16 @@
         return { ...img, cx, cy, r: spec.r, fill, cls: spec.cls };
       });
 
-      const attX = Math.max(padL, Math.min(padL + plotW, xHigh));
-      const attW = Math.max(0, padL + plotW - attX);
+      const { attX, attW, attH, lrnY, lrnH } = meta;
       const attY = padT;
-      const attH = Math.max(0, Math.min(padT + plotH, yConv) - padT);
       const attShow = attW > 4 && attH > 4;
 
       const lrnX = attX;
       const lrnW = attW;
-      const lrnY = Math.max(padT, Math.min(padT + plotH, yConv));
-      const lrnH = Math.max(0, padT + plotH - lrnY);
       const lrnShow = lrnW > 4 && lrnH > 4;
 
       const zones = [];
-      if (attShow) zones.push({ preset: 'attention', x1: attX, x2: padL + plotW, y1: attY, y2: attY + attH });
+      if (attShow) zones.push({ preset: 'attention', x1: attX, x2: padL + plotW, y1: attY, y2: attY + attH, exclusiveBottom: true });
       if (lrnShow) zones.push({ preset: 'learning', x1: lrnX, x2: padL + plotW, y1: lrnY, y2: padT + plotH });
 
       const xTicks = this._ddPickScatterTicks(
@@ -3788,18 +3793,7 @@
       const zonesHtml = `<rect class="m-dd-alert-zone m-dd-zone-hit" data-dd-zone-preset="attention" x="${attX.toFixed(1)}" y="${attY.toFixed(1)}" width="${(attShow ? attW : 0).toFixed(1)}" height="${(attShow ? attH : 0).toFixed(1)}"/>`
         + `<rect class="m-dd-learn-zone m-dd-zone-hit" data-dd-zone-preset="learning" x="${lrnX.toFixed(1)}" y="${lrnY.toFixed(1)}" width="${(lrnShow ? lrnW : 0).toFixed(1)}" height="${(lrnShow ? lrnH : 0).toFixed(1)}"/>`;
 
-      const yConvX1 = Math.max(padL, Math.min(padL + plotW, xHigh));
-      const showHighTick = xHigh >= padL + 8 && xHigh <= padL + plotW - 16;
-      const showConvTick = attW > 28 && yConv >= padT + 14 && yConv <= padT + plotH - 8;
-      const highLabelX = xHigh > padL + plotW - 44 ? xHigh - 4 : xHigh + 4;
-      const highLabelAnchor = xHigh > padL + plotW - 44 ? 'end' : 'start';
-      const convLabelY = Math.abs(yConv - axisY) < 12 ? yConv + 11 : yConv - 4;
-      const topRightY = padT + 13;
-      const quadLabelsHtml = `
-        ${showHighTick ? `<text class="m-dd-thresh-label m-dd-text-halo" data-dd-thresh-label="high" x="${highLabelX.toFixed(1)}" y="${padT + 11}" text-anchor="${highLabelAnchor}">+${Math.round(highResVal * 100)}%</text>` : ''}
-        ${showConvTick ? `<text class="m-dd-thresh-label m-dd-text-halo" data-dd-thresh-label="conv" x="${(yConvX1 + 4).toFixed(1)}" y="${convLabelY.toFixed(1)}" text-anchor="start">${this.esc(this._ddFormatTickPct(convSlopeVal, 1))}</text>` : ''}
-        ${(attW > 54 && attH > 20) ? `<text class="is-alert m-dd-text-halo" data-dd-zone-label="attention" x="${(padL + plotW - 6).toFixed(1)}" y="${topRightY}" text-anchor="end">${this.esc(t('ddQuadTopRight'))}${attCount ? ' · ' + attCount : ''}</text>` : ''}
-        ${(lrnW > 54 && lrnH > 20) ? `<text class="is-learning m-dd-text-halo" data-dd-zone-label="learning" x="${(padL + plotW - 6).toFixed(1)}" y="${(padT + plotH - 6).toFixed(1)}" text-anchor="end">${this.esc(t('ddQuadBottomRight'))}${lrnCount ? ' · ' + lrnCount : ''}</text>` : ''}`;
+      const quadLabelsHtml = meta.labelSpec.html;
 
       svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
       svg.setAttribute('width', '100%');
@@ -3914,11 +3908,10 @@
             matchedIds: prevChart?.matchedIds || null, filterActive: !!prevChart?.filterActive,
           };
           this._syncDatasetDiagScatterFilter?.(wrap, { skipReorder: true, skipPopReposition: true });
-          const meta = this._ddBuildScatterMetaSpec('quadrant', t, ptSet, data, padL, padT, plotW, plotH, hasZoom, layout, xHigh, yConv, axisY, 0);
           this._ddStartScatterCameraAnim(svg, wrap, {
             kind: 'quadrant',
             width, height, padL, padT, plotW, plotH, hasZoom, t,
-            highResVal, convSlopeVal, linX: xCfg.linThresh, linY: yCfg.linThresh,
+            highResVal, convSlopeVal: meta.convSlopeVal, learningSlopeVal: meta.learningSlopeVal, linX: xCfg.linThresh, linY: yCfg.linThresh,
             xCfg, yCfg, fromCam: prevCam, targetCamera,
             animX, animY, coords, xTicks, yTicks,
             xDirItems: meta.xDirItems, yDirItems: meta.yDirItems, labelSpec: meta.labelSpec,
@@ -4250,7 +4243,7 @@
             matchedIds: prevChart?.matchedIds || null, filterActive: !!prevChart?.filterActive,
           };
           this._syncDatasetDiagScatterFilter?.(wrap, { skipReorder: true, skipPopReposition: true });
-          const meta = this._ddBuildScatterMetaSpec('early', t, ptSet, data, padL, padT, plotW, plotH, hasZoom, null, xHigh, midY, midY, earlyTickY);
+          const meta = this._ddBuildScatterMetaSpec('early', t, ptSet, data, padL, padT, plotW, plotH, hasZoom, null, xHigh, null, midY, earlyTickY);
           this._ddStartScatterCameraAnim(svg, wrap, {
             kind: 'early',
             width, height, padL, padT, plotW, plotH, hasZoom, t,
@@ -4696,7 +4689,7 @@
       }
       if (slopeEl) {
         const slopeText = dot.slope != null ? (this._ddFormatSlope(dot.slope) + t('ddSlopeUnit')) : '—';
-        const slopeColor = this._ddSlopeColor(dot.slope);
+        const slopeColor = this._ddSlopeColor(dot.slope, dot.converging_slope);
         slopeEl.innerHTML = '<small class="m-dd-card-kv">' + this.esc(t('ddCardSlope')) + '</small>'
           + '<b style="color:' + slopeColor + '">' + this.esc(slopeText) + '</b>';
       }

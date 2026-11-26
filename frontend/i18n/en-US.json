@@ -1134,7 +1134,7 @@
 		"ddVerdictBalancedTitle": "Balanced distribution",
 		"ddVerdictBalancedLearningDesc": "No stalled outliers found; {n} initially harder images are steadily dropping.",
 		"ddVerdictBalancedLearningDescOne": "No stalled outliers found; {n} initially harder image is steadily dropping.",
-		"ddVerdictBalancedDesc": "Evaluated images are near the mean or steadily converging.",
+		"ddVerdictBalancedDesc": "Evaluated images are near the mean or steadily dropping.",
 		"ddViewOverview": "Overview",
 		"ddJumpNan": "Inspect {n} NaN / Inf",
 		"ddJumpAttention": "Inspect {n} high residual",

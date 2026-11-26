@@ -346,9 +346,9 @@ class DatasetDiagnosticsSemanticsTests(CrossDriveSandbox):
         control = Path(record["run_path"]) / "log" / ".run-control"
         control.mkdir(parents=True)
         rows = []
-        # 20 epochs (span = 19 -> converging_slope = -0.005263):
-        # late.png only appears in epochs 18..20 with ~+45% residual and -1.0%/epoch slope,
-        # which is steeper than the run's -0.5263%/epoch threshold (learning) even though its local span is 2.
+        # 20 epochs (run span = 19 -> overview reference converging_slope = -0.005263):
+        # late.png only appears in epochs 18..20 (local comparable span = 2 -> per-image converging_slope = -0.02)
+        # with ~+45% residual and -1.0%/epoch slope (-2% cumulative drop), so it stays "attention".
         for ep in range(1, 21):
             rows.append(_row("peer1.png", 0.5, 0.20, epoch=ep))
             rows.append(_row("peer2.png", 0.5, 0.20, epoch=ep))
@@ -366,9 +366,11 @@ class DatasetDiagnosticsSemanticsTests(CrossDriveSandbox):
             late = images["late.png"]
             self.assertGreaterEqual(late["mean_residual"], 0.20)
             self.assertAlmostEqual(late["slope"], -0.01, places=4)
-            self.assertEqual(late["status"], "learning")
+            self.assertEqual(late["status"], "attention")
+            self.assertAlmostEqual(late["converging_slope"], -0.02)
             detail = diagnostics.read_dataset_diagnostic_image(record, image_id=late["image_id"], min_count=3)
-            self.assertEqual(detail["image"]["status"], "learning")
-            self.assertEqual(detail["trajectory"][-1]["status"], "learning")
+            self.assertAlmostEqual(detail["thresholds"]["converging_slope"], -0.02, places=6)
+            self.assertEqual(detail["image"]["status"], "attention")
+            self.assertEqual(detail["trajectory"][-1]["status"], "attention")
         finally:
             diagnostics.clear_dataset_diagnostics_cache()

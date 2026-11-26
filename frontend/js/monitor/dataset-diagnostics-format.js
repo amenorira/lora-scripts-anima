@@ -42,10 +42,9 @@
       return Number.isFinite(val) && val < 0 ? val : -0.02;
     },
 
-    _ddSlopeColor(slope) {
+    _ddSlopeColor(slope, convSlope = this._ddConvergingSlopeThreshold()) {
       if (slope == null || slope === '' || !Number.isFinite(Number(slope))) return 'var(--text-secondary)';
       const val = Number(slope);
-      const convSlope = this._ddConvergingSlopeThreshold();
       if (val <= convSlope) return 'color-mix(in srgb, var(--diag-tone-ok, var(--success)) 86%, var(--text-primary))';
       if (val >= Math.max(0.002, Math.abs(convSlope) * 0.5)) return 'color-mix(in srgb, var(--diag-tone-danger, var(--danger)) 82%, var(--text-primary))';
       return 'color-mix(in srgb, var(--text-primary) 82%, var(--text-secondary))';
@@ -1447,10 +1446,9 @@
       };
     },
 
-    _ddTrendPillHtml(t, slopeValue) {
+    _ddTrendPillHtml(t, slopeValue, convSlope = this._ddConvergingSlopeThreshold()) {
       const slope = slopeValue != null && Number.isFinite(Number(slopeValue)) ? Number(slopeValue) : null;
       if (slope == null) return '';
-      const convSlope = this._ddConvergingSlopeThreshold();
       const riseSlope = Math.max(0.002, Math.abs(convSlope) * 0.4);
       if (slope <= convSlope) {
         const pct = Math.abs(slope * 100).toFixed(1);

@@ -33,7 +33,7 @@
     _ddImageCardHtml(t, img) {
       const resText = this._ddFormatResidual(img.mean_residual);
       const color = this._ddResidualColor(img.mean_residual);
-      const slopeColor = this._ddSlopeColor(img.slope);
+      const slopeColor = this._ddSlopeColor(img.slope, img.converging_slope);
       const slopeText = img.slope != null
         ? (this._ddFormatSlope(img.slope) + t('ddSlopeUnit'))
         : '—';
@@ -83,7 +83,7 @@
       html += '<span class="m-dd-num m-dd-num-col">' + this.esc(img.count + ' / ' + img.epochs) + '</span>';
       html += '<span class="m-dd-num m-dd-num-col">' + this.esc(this._ddFormatLoss(img.mean_loss)) + '</span>';
       html += '<span class="m-dd-res-cell"><strong class="m-dd-num-val" style="color:' + color + '">' + this.esc(resText) + '</strong>' + this._ddResidualBarHtml(img.mean_residual, maxAbs) + '</span>';
-      html += '<span class="m-dd-num m-dd-num-col" style="color:' + this._ddSlopeColor(img.slope) + '">' + this.esc(this._ddFormatSlope(img.slope)) + '</span>';
+      html += '<span class="m-dd-num m-dd-num-col" style="color:' + this._ddSlopeColor(img.slope, img.converging_slope) + '">' + this.esc(this._ddFormatSlope(img.slope)) + '</span>';
       html += '<span class="m-dd-pill is-' + this.esc(statusMeta.tone) + '">' + this.esc(statusMeta.label) + '</span>';
       html += '</div>';
       return html;
@@ -718,7 +718,7 @@
         if (resEl.style && resEl.style.color !== color) resEl.style.color = color;
       }
 
-      const slopeColor = this._ddSlopeColor(img.slope);
+      const slopeColor = this._ddSlopeColor(img.slope, img.converging_slope);
       const slopeText = img.slope != null ? (this._ddFormatSlope(img.slope) + t('ddSlopeUnit')) : '—';
       const slopeEl = card.querySelector?.('.m-dd-card-slope b');
       if (slopeEl) {
@@ -799,7 +799,7 @@
       if (numCols[2] && numCols[2].textContent !== lossText) numCols[2].textContent = lossText;
 
       const slopeText = this._ddFormatSlope(img.slope);
-      const slopeColor = this._ddSlopeColor(img.slope);
+      const slopeColor = this._ddSlopeColor(img.slope, img.converging_slope);
       if (numCols[3]) {
         if (numCols[3].textContent !== slopeText) numCols[3].textContent = slopeText;
         if (numCols[3].style && numCols[3].style.color !== slopeColor) numCols[3].style.color = slopeColor;
@@ -1164,7 +1164,7 @@
 
     _ddModalKpiHtml(t, img, detail = null) {
       const resColor = this._ddResidualColor(img.mean_residual);
-      const slopeColor = this._ddSlopeColor(img.slope);
+      const slopeColor = this._ddSlopeColor(img.slope, img.converging_slope);
       const totalSamples = detail?.samples_total != null
         ? Number(detail.samples_total)
         : ((Number(img.count) || 0) + (Number(img.non_finite_count) || 0));
@@ -1562,8 +1562,8 @@
       html += '</section>';
 
       const trendBadge = img.slope != null
-        ? (this._ddTrendPillHtml?.(t, img.slope)
-          || '<span class="m-dd-sec-badge" style="color:' + this._ddSlopeColor(img.slope) + '">' + this.esc(this._ddFormatSlope(img.slope) + t('ddSlopeUnit')) + '</span>')
+        ? (this._ddTrendPillHtml?.(t, img.slope, img.converging_slope)
+          || '<span class="m-dd-sec-badge" style="color:' + this._ddSlopeColor(img.slope, img.converging_slope) + '">' + this.esc(this._ddFormatSlope(img.slope) + t('ddSlopeUnit')) + '</span>')
         : '';
       const infoIcon = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 7.4v3.4"/><circle cx="8" cy="5.2" r=".6" fill="currentColor" stroke="none"/></svg>';
       html += '<section class="m-dd-modal-sec' + (finiteEpochs.length >= 2 ? ' m-dd-modal-sec-chart m-dd-modal-sec-ep' : '') + '">';

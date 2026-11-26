@@ -1134,7 +1134,7 @@
 		"ddVerdictBalancedTitle": "分布は安定",
 		"ddVerdictBalancedLearningDesc": "対処が必要な異常画像はありません。初期に難しかった {n} 枚も順調に低下しています。",
 		"ddVerdictBalancedLearningDescOne": "対処が必要な異常画像はありません。初期に難しかった {n} 枚も順調に低下しています。",
-		"ddVerdictBalancedDesc": "集計済みの画像は平均付近か、順調に収束しています。",
+		"ddVerdictBalancedDesc": "集計済みの画像は平均付近か、残差が順調に低下しています。",
 		"ddViewOverview": "概要",
 		"ddJumpNan": "NaN / Inf の {n} 枚を確認",
 		"ddJumpAttention": "要確認 {n} 枚を表示",

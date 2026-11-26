@@ -1592,7 +1592,7 @@ def _preview_fields_for(
 
 def _image_stats(
     state, index, entry, labels, stats, epoch_stats, zone_stats, min_samples,
-    *, converging_slope: float = CONVERGING_SLOPE_THRESHOLD,
+    *, converging_slope: float | None = None,
 ):
     resolutions, subsets, subset_labels = Counter(), Counter(), Counter()
     reg = set()
@@ -1607,8 +1607,18 @@ def _image_stats(
         subset_labels[label] += count
         reg.add(is_reg)
     non_finite = index.non_finite.get(entry["index"], 0)
-    epochs, _, slope, _, _ = epoch_stats
+    epochs, _, slope, slope_ep_from, slope_ep_to = epoch_stats
     slope = _finite_float(float(slope))
+    ep_from, ep_to = int(slope_ep_from), int(slope_ep_to)
+    img_converging_slope = (
+        converging_slope
+        if converging_slope is not None
+        else (
+            _converging_slope_threshold(ep_from, ep_to)
+            if ep_from >= 0 and ep_to >= ep_from
+            else CONVERGING_SLOPE_THRESHOLD
+        )
+    )
     return {
         "image_id": entry["image_id"], "image": entry["key"], "name": entry["name"],
         "directory": entry["directory"], "dir_label": entry["dir_label"] or "(root)",
@@ -1616,18 +1626,17 @@ def _image_stats(
         "subset": subsets.most_common(1)[0][0], "subsets": sorted(subsets),
         "subset_label": subset_labels.most_common(1)[0][0], "is_reg": _reg_status(reg),
         **stats, "non_finite_count": non_finite,
-        "epochs": int(epochs), "slope": slope,
+        "epochs": int(epochs), "slope": slope, "converging_slope": img_converging_slope,
         "noise_zones": {zone: values if values["count"] else None for zone, values in zone_stats.items()},
         "status": _classify_image(count=stats["count"], comparable_count=stats["comparable_count"],
                                   non_finite_count=non_finite, mean_residual=stats["mean_residual"],
-                                  slope=slope, min_count=min_samples, converging_slope=converging_slope),
+                                  slope=slope, min_count=min_samples, converging_slope=img_converging_slope),
         "thumb_url": "", "preview_url": "",
     }
 
 
 def _overview_images(
     state, index, means, eligible, labels, zones, min_samples,
-    *, converging_slope: float = CONVERGING_SLOPE_THRESHOLD,
 ):
     size = len(state.images)
     totals = index.totals("image", size, means, eligible)
@@ -1642,7 +1651,6 @@ def _overview_images(
             [column[image] for column in epochs],
             {zone: _stats_at(zones, image * len(ZONES) + z) for z, zone in enumerate(ZONES)},
             min_samples,
-            converging_slope=converging_slope,
         )
         for image, entry in enumerate(state.images)
         if totals[0][image] or index.non_finite.get(image)
@@ -1911,7 +1919,6 @@ def _render_overview(
     converging_slope = _converging_slope_threshold(index.epoch_from, index.epoch_to)
     by_image = _overview_images(
         state, index, means, eligible, labels, zones, min_samples,
-        converging_slope=converging_slope,
     )
     groups = _group_tables(state, index, means, eligible, labels, by_image=by_image)
     timestep_profile = _build_timestep_profile(
@@ -2413,7 +2420,6 @@ def read_dataset_diagnostic_image(
                 allowed_structures=allowed_structures, reg_mask_version=state.reg_mask_version,
             )
             means, distinct, eligible = index.baseline()
-            converging_slope = _converging_slope_threshold(index.epoch_from, index.epoch_to)
             summary_key = (selected, profile, bins, min_samples, effective_reg_mode, deweight_scheme)
             cached_entry = state.summary_lru.get(summary_key)
             cached_summary = (
@@ -2444,6 +2450,10 @@ def read_dataset_diagnostic_image(
                                key=lambda epoch_id: state.epoch_numbers[epoch_id])
             epoch_numbers = np.array([state.epoch_numbers[epoch_id] for epoch_id in epoch_ids], dtype=np.int64)
             epoch_totals = [column[epoch_ids] for column in index.epoch_totals(state.epoch_numbers)]
+            slope_eps = epoch_numbers[(epoch_totals[4] > 0) & (epoch_numbers >= 0)]
+            img_ep_from = int(slope_eps[0]) if len(slope_eps) else None
+            img_ep_to = int(slope_eps[-1]) if len(slope_eps) else None
+            converging_slope = _converging_slope_threshold(img_ep_from, img_ep_to)
             nf_by_epoch = Counter(int(row["epoch"]) for row in non_finite if row["epoch"] is not None)
             finite_epochs_map = {
                 int(epoch): {"epoch": int(epoch), **_stats_at(epoch_totals[:4], i), "non_finite_count": int(nf_by_epoch.get(int(epoch), 0))}
@@ -2504,13 +2514,11 @@ def read_dataset_diagnostic_image(
             cache_epoch = (state.state_token, state.local_generation)
             run_ref = record.get("run_dir", "")
             loss_deweighted = bool(index.deweight_scheme)
-            run_epoch_from = index.epoch_from
     finally:
         _trim_loss_cache()
 
     trajectory = _build_image_trajectory(
         non_finite, epoch_numbers, epoch_totals, min_samples, cum_by_ep,
-        run_epoch_from=run_epoch_from,
     )
     diag_losses = finite_losses.tolist()
     samples = [_detail_sample(row, residual, diag_loss) for row, residual, diag_loss in zip(finite_rows, residuals, diag_losses)]
@@ -2579,7 +2587,6 @@ def _build_image_trajectory(
     epoch_totals: list[np.ndarray],
     min_samples: int,
     cum_by_ep: dict[int, tuple[int, int, float]],
-    run_epoch_from: int | None = None,
 ) -> list[dict[str, Any]]:
     """Reconstruct cumulative per-epoch scatter coordinates without future-epoch look-ahead."""
     nf_by_epoch: dict[int, int] = Counter(int(row["epoch"]) for row in non_finite if row.get("epoch") is not None)
@@ -2601,6 +2608,7 @@ def _build_image_trajectory(
     cum_res_sum = 0.0
     cum_non_finite = 0
     ep0: int | None = None
+    ep_last: int | None = None
     n = 0
     mx = 0.0
     my = 0.0
@@ -2621,6 +2629,7 @@ def _build_image_trajectory(
                 y = p_res / p_comp
                 if ep0 is None:
                     ep0 = ep
+                ep_last = ep
                 x = float(ep - ep0)
                 n += 1
                 dx = x - mx
@@ -2647,10 +2656,7 @@ def _build_image_trajectory(
                     mean_residual=cum_mean_res,
                     slope=prefix_slope,
                     min_count=min_samples,
-                    converging_slope=_converging_slope_threshold(
-                        run_epoch_from if run_epoch_from is not None else ep0,
-                        ep,
-                    ),
+                    converging_slope=_converging_slope_threshold(ep0, ep_last),
                 ),
             })
 
