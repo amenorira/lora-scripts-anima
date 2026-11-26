@@ -4,6 +4,55 @@
 
 All notable changes to this project are documented in this file.
 
+## v26.1126.0931d - 2026-11-26
+
+This update brings **Dataset Diagnostics** from `sd-scripts` to the training monitor, adds **live pause, on-demand save, manual preview sampling, and checkpoint resuming**, and refreshes the monitor dashboard sparklines, Loss trend chart, and overall interface performance.
+
+### Dataset Diagnostics: Spot Hard-to-Learn, Mislabeled, or Badly Cropped Images
+
+For Anima, SDXL, and MOSS-Image training, the live monitor and training history now include a **Dataset Diagnostics** tab. Built on per-sample loss logging from `sd-scripts`, it compares each image against others at similar noise levels and highlights images whose **Loss stays persistently high (`High (review)`)** versus those that are **complex but actively converging (`High (dropping)`)**, helping you track down missing or wrong tags, watermarks, corrupted files, or awkward bucket crops.
+
+- **Locate issues in Overview:** Click the shaded zone in the upper-right of the scatter plot to filter images that need attention. On the right, compare average difficulty across subsets, folders, or bucket sizes, and inspect Loss across timestep bands.
+- **Inspect single images and edit tags:** Open any image to check its `Source → Bucket` dimensions and crop percentage, review its epoch-by-epoch residual trend and caption, or click **Open in Tag Editor** to fix its tags directly.
+
+![Dataset diagnostics overview](docs/images/dataset-diagnostics.en-US.jpg)
+
+![Dataset diagnostics single-image inspection](docs/images/dataset-diagnostics-detail.en-US.jpg)
+
+The screenshots use simulated data.
+
+### Live Run Controls, On-Demand Previews, and Resuming Training
+
+Control active runs and manage resume states directly from the monitor **Overview** and **Outputs** tabs:
+
+- **Pause, save, and stop:** **Pause / Resume** training at any time, **Save now** (weights or training state), or choose whether to save weights or state before stopping when clicking **Stop**.
+- **Manual preview sampling:** Generate preview images on demand during training without waiting for the next scheduled epoch or step—pick or edit a prompt, adjust dimensions or seed, and sample immediately.
+- **Grouped outputs and one-click resume:** **Outputs** groups model weights, resume-state archives, and configuration files. Click **Resume from here** in training history or outputs to continue from a saved state in a new output directory without overwriting previous results.
+
+### Clearer Monitor Dashboard and Sample Sorting
+
+- **Run summary and Loss trend:** The overview cards show the latest Loss change, projected learning-rate decay, speed cadence bars with compute vs. data-wait ratios, and per-epoch progress blocks. On the right, the Loss trend chart switches between diagnostic window, full run, and per-epoch views, summarizes recent Loss movement, and can overlay the learning-rate curve.
+- **Sample sorting:** Sort samples ascending or descending by training progress or Loss in both the sample browser and image viewer while keeping the selected image in place.
+
+![Training monitor overview and run controls](docs/images/monitor-overview.en-US.jpg)
+
+### Other Improvements
+
+- **Training core sync and dynamic Anima block-count inspection:** Synced the training core to `sd-scripts` v0.13.1 (including Anima AdaLN mixed-precision fixes). Anima automatically reads the DiT block count from the selected checkpoint (including 40-block variants) for block-swap validation, regularization planning, and matrix structure / file-size estimation, with in-modal refresh support when replacing a checkpoint at the same path.
+- **Dataset scope, run segments, and adaptive slope thresholds:** When regularization images exist, diagnostics defaults to **Training only** (switchable to **Regularization only** or **All datasets** so regularization images do not skew the training baseline); supports viewing the **Latest** segment or **All runs combined** across resumed runs; automatically scales the drop slope threshold by each image's comparable epoch span so steady long-run learners are not flagged as stalled.
+- **Timestep deweighting and same-epoch peer fitting:** On Anima and MOSS-Image with `sigma_sqrt` or `cosmap` weighting, diagnostics removes the timestep weight before computing residuals, and fits slopes against same-epoch, same-bin peers to isolate per-image trends from global loss decay. Added built-in Chinese, English, and Japanese *Dataset Diagnostics* guides.
+- **Per-image list and scatter plot responsiveness:** The per-image view supports grid and table modes, collapsible folder grouping, scroll position restoration, and in-place polling updates; the scatter plot supports wheel zoom, drag pan, and multi-epoch trajectories.
+- **Accurate mid-epoch checkpoint resuming:** Resuming from a mid-epoch state restores completed optimizer steps, skips already-trained batches in the current epoch according to gradient accumulation, and finishes at the original total step target.
+- **On-demand prompt encoding and negative seeds for manual previews:** Runs with cached text-encoder outputs automatically encode custom prompts when manual previews are triggered; manual sampling accepts decimal negative seeds and preserves large integer seed precision.
+- **Sample provenance tracking and prompt schedule retention:** Newly generated preview samples record their sampling source (manual vs. scheduled), prompt, full seed, and training step, while backfilling legacy sample metadata and associated Loss. Importing native configs restores `prompt_file` / `sample_prompts` paths and scheduled preview settings (supporting TXT, JSON, and TOML prompt files).
+- **Full-run Loss history retention and non-finite value filtering:** Builds full-run curves from complete step-level TensorBoard history, preserves early peaks and out-of-window historical minimum Loss values during live updates, and filters non-finite (`NaN / Inf`) points so runs with abnormal Loss values still open in history details.
+- **Unified image tool workspaces:** Standardized dashboard-style tabs, two-column layouts, and single/batch category threshold controls across the Tagger, AI Captioning, and Regularization Image workspaces, while fixing long filenames stretching regularization result cards.
+- **Unified page headers, theme contrast, and keyboard accessibility:** Aligned page titles and spacing across all views with automatic wrapping for the resource monitor bar in narrow windows; standardized 2px field status lines; improved button and secondary text contrast across Light, Dark, and ComfyUI themes; improved keyboard navigation across dropdowns, splitters, and the tag editor; error notifications now auto-dismiss after 8 seconds (pausing on hover or focus).
+- **Multilingual messages and parameter guides:** Added memory guidance for Anima and MOSS-Image data-loader worker counts; unified localized error messages and verified Chinese, English, and Japanese UI strings, chart labels, and parameter documentation.
+- **Thumbnail memory and form interaction fixes:** Reduced peak memory and concurrency during cold thumbnail decoding; fixed draft overwriting before the training form mounts, duplicate stop requests, re-importing deleted external-drive runs, and manual block-swap limits in regularization generation.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1118.00423...v26.1126.0931d)
+
 ## v26.1118.00423 - 2026-11-18
 
 This update improves Loss display and multi-image comparisons for training samples, making it easier to view, sort, and compare samples from different stages of training.
