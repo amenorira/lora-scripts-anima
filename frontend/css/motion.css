@@ -9,6 +9,8 @@
   --duration-menu-exit: 150ms;
   --duration-dialog-enter: 180ms;
   --duration-dialog-exit: 150ms;
+  --duration-morph-enter: 300ms;
+  --duration-morph-exit: 270ms;
   --duration-toast-enter: 180ms;
   --duration-toast-exit: 150ms;
   --menu-scale-enter: .97;
@@ -49,14 +51,14 @@
    The outgoing page stays visible until replacement; no separate fade-out. */
 .main-content.route-enter > div,
 .m-tab-panel.active,
-.tagger-batch-layout, .tagger-single-layout,
+.tool-batch-layout, .tool-single-layout,
 .env-panel-in { animation: fade-in var(--duration-slow) cubic-bezier(0, 0, 0.2, 1) backwards; }
 .m-tab-panel.active.no-enter-anim { animation: none; }
 /* Sample cards settle into the final grid once, then translate from old slots. */
 .m-sample-batches { --sample-fan-duration: 200ms; }
 /* Animate only the outer page on navigation. Persistent tab panels animate on
    activation, never when their child content is refreshed. */
-.route-enter :is(.m-tab-panel, .tagger-batch-layout, .tagger-single-layout, .env-panel-in) {
+.route-enter :is(.m-tab-panel, .tool-batch-layout, .tool-single-layout, .env-panel-in) {
   animation-duration: 0s;
 }
 /* Native dialogs own focus containment and background isolation.
@@ -83,10 +85,6 @@ dialog.modal-overlay:not([open]) { pointer-events: none; }
    second CSS exit. Leave an interrupted entrance intact for WAAPI to sample. */
 dialog.preview-lightbox:not([open]),
 dialog.preview-lightbox:not([open]) > .modal { transition: none; }
-:root {
-  --duration-morph-enter: 300ms;
-  --duration-morph-exit: 270ms;
-}
 /* x-dialog animates the silhouette and its contents separately. */
 dialog.modal-overlay--morph {
   --duration-dialog-enter: var(--duration-morph-enter);
@@ -160,7 +158,7 @@ dialog.modal-overlay--morph[data-dialog-nested]::backdrop { background: transpar
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);
 }
-.monitor-tab-indicator, .env-tab-indicator { transition-duration: var(--duration-dialog-enter), var(--duration-dialog-enter), var(--duration-fast); }
+.ui-tab-indicator, .env-tab-indicator { transition-duration: var(--duration-dialog-enter), var(--duration-dialog-enter), var(--duration-fast); }
 .anima-select-chevron { transition: none; }
 @media (prefers-reduced-motion: reduce) {
   .refresh-button.is-loading svg { animation: none; transition: none; transform: rotate(90deg); opacity: .55; }

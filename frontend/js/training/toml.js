@@ -62,7 +62,7 @@ window.trainingTomlMixin = {
         const k = f.key;
         if (f.hidden) continue;
         if (!this._fieldShowIfMet(f)) continue;
-        if (k === 'sample_prompts' || k.startsWith('_')) continue;
+        if (k.startsWith('_')) continue;
 
         const v = this.form[k];
         if ((v === '' && !f.keepEmpty) || v === null || v === undefined) continue;
@@ -166,9 +166,8 @@ window.trainingTomlMixin = {
     this._renderTomlPreview(lines, this.t('common.noConfigs'));
   },
 
-  // Keep all training-core previews on one renderer.  Krea 2 has a
-  // copyable application preset rather than musubi's runtime TOMLs, but it
-  // should still look exactly like the SDXL/Anima TOML preview.
+  // Render the copyable Krea 2 application preset with the same TOML
+  // highlighting as the SDXL and Anima previews.
   _highlightToml(lines) {
     return lines.map(line => {
       if (line === '') {
@@ -570,14 +569,8 @@ window.trainingTomlMixin = {
     return text;
   },
 
-  _trainingErrorDetails(result) {
-    if (typeof this.apiErrorDetails === 'function') return this.apiErrorDetails(result);
-    const details = result?.data?.errorDetails;
-    return Array.isArray(details) ? details.join('\n') : (details || '');
-  },
-
   _showTrainingError(result, fallbackKey = 'common.failed') {
-    this.toast(this._trainingErrorText(result, fallbackKey), 'error', { details: this._trainingErrorDetails(result) });
+    this.toast(this._trainingErrorText(result, fallbackKey), 'error', { details: this.apiErrorDetails(result) });
   },
 
   async prepareKrea2Cache(confirmedPayload = null) {
@@ -614,6 +607,7 @@ window.trainingTomlMixin = {
       this.toast(this.t('common.requestFailed') + ': ' + error.message, 'error');
     } finally {
       this.trainingStarting = false;
+      this.scheduleStepEstimate();
     }
   },
 
@@ -641,41 +635,55 @@ window.trainingTomlMixin = {
   async startTraining(confirmedPayload = null) {
     if (this.isTraining || this.trainingStarting || this.showConfirmModal || this.regularizationActive || this.datasetRepeatApplying) return;
 
-    // Form validation before starting
-    if (!confirmedPayload && !this.validateForm()) {
-      this.toast(this.t('common.formErrors'), 'error');
-      return;
-    }
-
+    const route = this.currentRoute, routeSeq = this._routeTransitionSeq;
+    const onStartPage = () => this.currentRoute === route && this._routeTransitionSeq === routeSeq;
     this.trainingStarting = true;
     try {
       if (confirmedPayload) {
         await this._submitTraining(confirmedPayload);
         return;
       }
-      const outputPathInfo = await this.refreshOutputPathInfo(true);
+      if (this.form.model_train_type === 'krea2-lora' && !await this.ensureKreaDitFormat()) return;
+      if (!onStartPage()) return;
+      this._enforceCheckpointingUiConstraints();
+      this._enforceMossTextEncoderFreeze();
+      if (!this.validateForm()) {
+        this.toast(this.t('common.formErrors'), 'error');
+        return;
+      }
+      this._cancelTrainingPreflight(true);
+      let signature = JSON.stringify(this.form);
+      const form = JSON.parse(signature);
+      const unchanged = () => {
+        if (!onStartPage()) return false;
+        if (JSON.stringify(this.form) === signature) return true;
+        this.toast(this.t('training.preflightChanged'), 'warning');
+        return false;
+      };
+      const outputPathInfo = await this.refreshOutputPathInfo(form);
+      if (!unchanged()) return;
       if (!outputPathInfo || !outputPathInfo.available || !outputPathInfo.writable || outputPathInfo.path_is_directory === false) {
         this.toast(this.outputPathBlockingText(), 'error');
         return;
       }
 
-      const estimate = await this.refreshStepEstimate(true);
+      const estimate = await this.refreshStepEstimate(form, false);
+      if (!unchanged()) return;
       if (!estimate) {
         this.toast(this.stepEstimateErrorText() || this.t('stepEstimate.failed'), 'error');
         return;
       }
 
-      if (this.form.model_train_type === 'krea2-lora') {
-        if (!await this.ensureKreaDitFormat()) return;
-        if (!this.validateForm()) {
-          this.toast(this.t('common.formErrors'), 'error');
-          return;
-        }
-      }
-      const payload = this._collectTrainingPayload();
-      payload._form_state = this._collectTrainingFormSnapshot();
+      this.stepEstimate = estimate;
+      this._reconcileSubsetTimestepOffsets(estimate);
+      this._refreshSubsetTimestepEditor();
+      const payload = JSON.parse(JSON.stringify(this._collectTrainingPayload()));
+      signature = JSON.stringify(this.form);
+      payload._form_state = JSON.parse(signature);
+
       const krea = payload.model_train_type === 'krea2-lora';
-      const promptKey = krea ? 'krea_sample_prompts' : 'positive_prompts';
+      const promptFile = !krea && payload.sample_prompts;
+      const promptKey = promptFile ? 'sample_prompts' : krea ? 'krea_sample_prompts' : 'positive_prompts';
       if (this.confirmPreviewBeforeTraining && payload[krea ? 'enable_krea_samples' : 'enable_preview']) {
         await this.openConfirm({
           title: this.t('trainingPreview.title'),
@@ -684,10 +692,11 @@ window.trainingTomlMixin = {
           fields: [
             { label: this.t('field.train_data_dir'), value: payload.train_data_dir },
             { label: this.t('field.output_name'), value: payload.output_name },
-            { label: this.t('trainingPreview.positivePrompts'), items: this._previewPositivePromptItems(payload) },
+            promptFile ? { label: this.t('field.previewPromptFile'), value: promptFile }
+              : { label: this.t('trainingPreview.positivePrompts'), items: this._previewPositivePromptItems(payload) },
           ],
           secondaryLabel: this.t('trainingPreview.editPrompts'),
-          next: choice => choice === 'confirm' ? this._submitTraining(payload, true) : null,
+          next: choice => choice === 'confirm' && unchanged() ? this._submitTraining(payload, true) : null,
           onAfterClose: choice => {
             if (choice === 'secondary') this.focusTrainingField(promptKey);
           },
@@ -700,6 +709,7 @@ window.trainingTomlMixin = {
       this._applyTaskView('IDLE');
     } finally {
       this.trainingStarting = false;
+      this.scheduleStepEstimate();
     }
   },
 
@@ -776,19 +786,6 @@ window.trainingTomlMixin = {
     this.beginLiveMonitorTask(taskId, status || 'CREATED');
     this.realtimeTaskStateUnknown = false;
     return true;
-  },
-
-  async stopTraining() {
-    const taskId = this.liveTaskId || this.taskId;
-    if (!taskId || (!this.isTraining && !this.trainingBlocked)) return;
-    try {
-      const response = await fetch('/api/tasks/terminate/' + encodeURIComponent(taskId));
-      if (!response.ok) throw new Error(this.t('monitor.stopFailed'));
-      this.toast(this.t('training.stopHint'), 'info');
-      // 后端在 terminate 返回前就已把任务结算为 TERMINATED；立刻对账一次，
-      // 终态由轮询写入方统一绘制（补一次轮询让它亚秒级可见）。
-      void this._pollTrainingState();
-    } catch(e) { this.toast(this.t('common.failed')+': '+e.message); }
   },
 
   resetRealtimeTrainingState() {

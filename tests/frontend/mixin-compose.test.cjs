@@ -9,7 +9,7 @@ test('the production script order assembles the complete application without col
   let factory;
   const context = {window:{addEventListener(){},dispatchEvent(){}},
     navigator:{language:'en-US',languages:['en-US']},
-    document:{addEventListener(name,callback){const list=listeners.get(name)||[];list.push(callback);listeners.set(name,list);},getElementById:()=>null,
+    document:{documentElement:{lang:'en'},addEventListener(name,callback){const list=listeners.get(name)||[];list.push(callback);listeners.set(name,list);},getElementById:()=>null,
       createElement:()=>({}),head:{appendChild:script=>scripts.push(script)}},
     localStorage:{getItem:()=>null,setItem(){},removeItem(){}},
     Alpine:{data(name,create){if(name==='animaApp')factory=create;}},
@@ -27,4 +27,10 @@ test('the production script order assembles the complete application without col
   assert.equal(typeof app.startTraining,'function');
   assert.equal(typeof app.tagEditorSaveAll,'function');
   assert.equal(typeof Object.getOwnPropertyDescriptor(app,'currentOutputRunDir').get,'function');
+});
+
+test('a missing required mixin fails during assembly', () => {
+  const context = vm.createContext({window: {}});
+  vm.runInContext(readFrontend('shared/mixin-compose'), context);
+  assert.throws(() => context.window.composeAppMixins({}, {monitor: undefined}), /Missing mixin: monitor/);
 });

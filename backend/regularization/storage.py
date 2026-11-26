@@ -46,8 +46,8 @@ def read_manifest(root: Path, *, readonly=False):
         _manifest_cache.move_to_end(path)
         while len(_manifest_cache) > 2:
             _manifest_cache.popitem(last=False)
-        # Mutation callers own a copy; result/thumbnail readers share the latest
-        # immutable view, bounded to two runs rather than every past revision.
+        # Writers get a copy. Result and thumbnail readers share the latest
+        # immutable view for each of the two most recently accessed runs.
         return cached[1] if readonly else copy.deepcopy(cached[1])
 
 

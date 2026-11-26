@@ -97,8 +97,8 @@ window.TrainingTimestepPreview = (() => {
       return (lo + hi) / 2;
     };
 
-    // Mode can fold back on itself. Integrate the uniform input on each monotone
-    // branch instead of sampling a histogram or assuming a single inverse.
+    // Mode can fold back on itself. Integrate the uniform input separately
+    // over each monotone branch.
     const modeTransform = r => r + modeScale * (Math.cos(Math.PI * r / 2) ** 2 - 1 + r);
     const turningSin = 2 * (1 + modeScale) / (Math.PI * modeScale);
     const modeBounds = [0, 1];

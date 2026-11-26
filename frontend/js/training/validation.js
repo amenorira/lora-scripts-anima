@@ -57,32 +57,33 @@ window.trainingValidation = {
   },
 
   _refreshTrainingOptionErrors() {
-    const errors = { ...this.formErrors };
-    // Only clear messages we still own; a server error may have replaced the same field's message.
-    Object.entries(this._trainingOptionErrorMessages || {}).forEach(([key, message]) => {
-      if (errors[key] === message) errors[key] = null;
-    });
+    const errors = this.formErrors;
     const current = { ...this._timestepOptionErrors(), ...this._checkpointOffloadErrors(), ...this._mossOptionErrors(),
       ...this._kreaOptionErrors(), ...this._muonOptionErrors(), ...this._adamwOptionErrors() };
+    // Only clear messages we still own; a server error may have replaced the same field's message.
+    Object.entries(this._trainingOptionErrorMessages || {}).forEach(([key, message]) => {
+      if (!(key in current) && errors[key] === message) errors[key] = null;
+    });
+    Object.assign(errors, current);
     this._trainingOptionErrorMessages = current;
-    this.formErrors = { ...errors, ...current };
   },
 
   _adamwOptionValues(overrides = {}) {
-    const form = { ...this.form, ...overrides };
-    if (form.optimizer_type !== 'AdamW') return {};
+    const value = key => Object.hasOwn(overrides, key) ? overrides[key] : this.form[key];
+    if (value('optimizer_type') !== 'AdamW') return {};
     const values = {};
-    for (const line of String(form.optimizer_args_custom || '').split('\n')) {
+    for (const line of String(value('optimizer_args_custom') || '').split('\n')) {
       const match = line.match(/^\s*(fused|foreach|differentiable)\s*=(.*)$/);
       if (!match) continue;
       let literal = match[2].split('#', 1)[0].trim();
       while (literal.startsWith('(') && literal.endsWith(')')) literal = literal.slice(1, -1).trim();
       values[match[1]] = { True: true, False: false, None: null }[literal];
     }
-    const fusedKey = form.model_train_type === 'krea2-lora' ? 'krea_adamw_fused' : 'adamw_fused';
+    const fusedKey = value('model_train_type') === 'krea2-lora' ? 'krea_adamw_fused' : 'adamw_fused';
     for (const [key, argument] of [[fusedKey, 'fused'], ['foreach', 'foreach']]) {
-      if (String(form[key]) === 'true') values[argument] = true;
-      else if (String(form[key]) === 'false') values[argument] = false;
+      const literal = String(value(key));
+      if (literal === 'true') values[argument] = true;
+      else if (literal === 'false') values[argument] = false;
     }
     return values;
   },
@@ -207,7 +208,8 @@ window.trainingValidation = {
     if (this.form.model_train_type !== 'moss-image-lora') return {};
     const errors = {};
     if (this.form.enable_preview && (this.form.sample_at_first || this.form.sample_interval_mode !== 'none')
-      && !String(this.form.positive_prompts || '').trim()) {
+      && !this.form.randomly_choice_prompt
+      && ![this.form.positive_prompts, this.form.prompt_file, this.form.sample_prompts].some(value => String(value || '').trim())) {
       errors.positive_prompts = this.t('common.previewPromptRequired');
     }
     const weights = this.form.base_weights;
@@ -282,7 +284,7 @@ window.trainingValidation = {
     }
     // Cross-field: min_timestep < max_timestep (Anima)
     // 注意：min_timestep/max_timestep 默认都是空串（registry 无显式默认 / default=""）。
-    // Number('') === 0 而非 NaN，必须先排除空串/非数字字符串，否则两个空值会被当作 0>=0 误判为错误。
+    // Number('') 会得到 0。仅在两项都填写有效数字时比较范围。
     const minTsRaw = this.form.min_timestep;
     const maxTsRaw = this.form.max_timestep;
     if (minTsRaw !== '' && minTsRaw !== null && minTsRaw !== undefined &&

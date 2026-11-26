@@ -9,6 +9,30 @@ window.selectMonitorLearningRateSeries = function(series) {
 };
 
 window.monitorMetricsMixin = {
+  _downsampleMonitorPoints(points, maxPoints) {
+    if (points.length <= maxPoints) return points;
+    const first = points[0], last = points.at(-1);
+    const buckets = Math.floor((maxPoints - 2) / 2);
+    const span = Math.max(1, last.step - first.step);
+    const result = [first];
+    // Bucket by training step so repeated compaction still represents early epochs.
+    let i = 1;
+    while (i < points.length - 1) {
+      const bucket = Math.floor((points[i].step - first.step) * buckets / span);
+      let min = points[i], max = points[i];
+      do {
+        const point = points[i++];
+        if (point.value < min.value) min = point;
+        if (point.value > max.value) max = point;
+      } while (i < points.length - 1 && Math.floor((points[i].step - first.step) * buckets / span) === bucket);
+      if (min === max) result.push(min);
+      else if (min.step < max.step) result.push(min, max);
+      else result.push(max, min);
+    }
+    result.push(last);
+    return result;
+  },
+
   _mergeMonitorMetricSnapshot(incoming) {
     // HTTP 提供完整历史，WS 提供更晚的尾部；合并后曲线不会倒退，也不会丢掉回填数据。
     const merged = new Map(incoming.map(series => [series.tag, series]));
@@ -36,7 +60,8 @@ window.monitorMetricsMixin = {
     // them just as the full TensorBoard snapshot does.
     const epochLoss = series.tag === 'loss/epoch' || series.tag === 'loss/epoch_average'
       || series.tag.startsWith('loss/timestep/epoch/');
-    series.points = epochLoss ? combined : combined.slice(-5000);
+    series.points = !epochLoss && combined.length > 5000
+      ? this._downsampleMonitorPoints(combined, 2500) : combined;
     series.latest = fresh.at(-1).value;
     return true;
   },
@@ -66,18 +91,7 @@ window.monitorMetricsMixin = {
     for (const sample of incoming) byKey.set(keyOf(sample), sample);
     const samples = [...byKey.values()].sort((a, b) => a.step - b.step || (a.elapsedSec ?? 0) - (b.elapsedSec ?? 0));
     const visible = samples.slice(-80);
-    const added = visible.filter(sample => !previousKeys.has(keyOf(sample))).length;
-    if (!added) return previous;
-    const end = (previous.at(-1)?.observation || 0) + added;
-    // 先补齐时间顺序，再计算导数；正常追加保留旧点编号，回填允许修复中间缺口。
-    return visible.map((sample, index) => {
-      const last = samples[samples.length - visible.length + index - 1];
-      return { ...sample, observation: end - visible.length + index + 1,
-        remainingRate: last && Number.isFinite(last.elapsedSec) && Number.isFinite(last.remainingSec)
-          && Number.isFinite(sample.elapsedSec) && Number.isFinite(sample.remainingSec) && sample.elapsedSec > last.elapsedSec
-          ? (sample.remainingSec - last.remainingSec) / (sample.elapsedSec - last.elapsedSec) : null,
-      };
-    });
+    return visible.some(sample => !previousKeys.has(keyOf(sample))) ? visible : previous;
   },
 
   _parseMonitorPerfLogs(lines = []) {
@@ -97,10 +111,9 @@ window.monitorMetricsMixin = {
     if (!data || !data.points) return;
 
     if (data.truncated) {
-      // The server intentionally bounded a delayed TensorBoard catch-up.
-      // Rebuild the curve from the HTTP snapshot instead of displaying a
-      // convincing but incomplete increment.
-      this._refreshRealtimeSnapshot(this.realtimeInstanceId, null, { preserveSubscribedCursors: true });
+      // Rebuild the curve from the HTTP snapshot when a TensorBoard
+      // catch-up exceeds the incremental update limit.
+      if (!this.selectedRunDir && this.currentRoute === 'monitor-dashboard') void this.refreshMonitorRealtimeDetail(true);
     }
 
     const points = data.points;
@@ -122,7 +135,7 @@ window.monitorMetricsMixin = {
         this.lossSeries.push(series);
       }
 
-      // HTTP 合并与 WS 增量共用去重和裁尾规则；旧点重放也不能倒退当前读数。
+      // HTTP 合并与 WS 增量共用去重和降采样规则。
       if (!this._appendMonitorMetricPoints(series, newPoints)) continue;
       changed = true;
     }

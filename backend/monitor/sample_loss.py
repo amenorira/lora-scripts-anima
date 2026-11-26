@@ -2,6 +2,7 @@
 from bisect import bisect_right
 from collections import defaultdict
 from datetime import datetime
+import json
 from pathlib import Path
 
 from backend.monitor.history import scan_history
@@ -9,6 +10,107 @@ from backend.monitor.legacy_sample_steps import _read_calls, enrich_legacy_sampl
 from backend.monitor.run_registry import load_run_record, resolve_user_path
 from backend.monitor.sample_metadata import parse_sample_filename
 from backend.monitor.training import read_tensorboard_loss
+
+
+def _command_sample_details(root: Path, event: dict) -> dict:
+    """The completion event identifies the files. Its receipt also identifies the prompts."""
+    cmd = {}
+    result = event.get("result")
+    filename = event.get("file")
+    if isinstance(filename, str) and filename and "/" not in filename and "\\" not in filename:
+        try:
+            receipt = json.loads((root / "commands" / "done" / filename).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            receipt = None
+        if (isinstance(receipt, dict) and receipt.get("status") == "ok"
+                and (not event.get("run_id") or receipt.get("run_id") == event["run_id"])):
+            cmd = receipt.get("command") or {}
+            result = receipt.get("result") or result
+    files = result.get("files") if isinstance(result, dict) else None
+    if not isinstance(cmd, dict) or not isinstance(files, list):
+        return {}
+    indices = [idx for idx in (cmd.get("indices") or []) if type(idx) is int and idx >= 0]
+    prompts = cmd.get("prompts") or []
+    details = {}
+    for pos, raw_path in enumerate(files):
+        if not isinstance(raw_path, str):
+            continue
+        name = Path(raw_path).name
+        info = {"sample_origin": "manual"}
+        if pos < len(indices):
+            info["source_prompt_index"] = indices[pos]
+        else:
+            prompt_pos = pos - len(indices)
+            if 0 <= prompt_pos < len(prompts):
+                entry = prompts[prompt_pos]
+                text = entry.get("prompt") if isinstance(entry, dict) else entry if isinstance(entry, str) else None
+                if isinstance(text, str) and text.strip():
+                    info["prompt"] = text.strip()
+        details["sample/" + name] = info
+    return details
+
+
+def _apply_sample_events(previews, record):
+    """Match filenames reported by this trainer when no per-image metadata was captured."""
+    root = Path(record["run_path"]) / "log" / ".run-control"
+    pending = {item["path"]: item for item in previews if item["sample"].get("metadata_source") == "filename"}
+    if not pending:
+        return
+    manual_details = {}
+    generation_paths = set()
+    generation_step = None
+    try:
+        with (root / "events.jsonl").open("rb") as stream:
+            for line in stream:
+                try:
+                    event = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(event, dict):
+                    continue
+                kind = event.get("event")
+                if kind == "command_finished" and event.get("command") == "sample":
+                    if generation_paths and event.get("status") == "ok" and event.get("step") == generation_step:
+                        details = _command_sample_details(root, event)
+                        manual_details.update((path, details[path]) for path in generation_paths & details.keys())
+                    generation_paths.clear()
+                    continue
+                if kind != "samples_generated":
+                    continue
+                step, epoch, stamp = event.get("step"), event.get("epoch"), event.get("ts")
+                generation_paths.clear()
+                generation_step = step
+                if type(step) is not int or type(epoch) is not int or not isinstance(stamp, (int, float)):
+                    continue
+                for name in event.get("files") or []:
+                    item = pending.get("sample/" + name) if isinstance(name, str) else None
+                    if not item:
+                        continue
+                    manual_details.pop(item["path"], None)
+                    # Replaced files must not inherit an earlier generation's details.
+                    mtime = item["version"].split("-", 1)[0]
+                    if not mtime.isdigit() or int(mtime) / 1e9 > stamp + 0.001:
+                        continue
+                    generation_paths.add(item["path"])
+                    item["sample"].update(task_id=record["task_id"], step=step, epoch=epoch,
+                                          step_source="event", batch_id=f"{record['task_id']}:{stamp}:{step}",
+                                          batch_label=f"Epoch {epoch} · Step {step}" if epoch else f"Step {step}")
+    except OSError:
+        return
+    for rel_path, info in manual_details.items():
+        item = pending.get(rel_path)
+        if not item:
+            continue
+        sample = item["sample"]
+        sample["sample_origin"] = "manual"
+        sample["prompt_index"] = info.get("source_prompt_index")
+        sample["prompt_label"] = ""
+        sample["prompt_id"] = "manual:" + rel_path
+        if "source_prompt_index" in info:
+            sample["source_prompt_index"] = info["source_prompt_index"]
+        if "prompt" in info:
+            sample.setdefault("params", {})["prompt"] = info["prompt"]
+            sample["prompt_label"] = info["prompt"][:128]
 
 
 def enrich_sample_loss(previews: list[dict], artifact_root: Path, run_dir: str) -> None:
@@ -23,6 +125,15 @@ def enrich_sample_loss(previews: list[dict], artifact_root: Path, run_dir: str) 
     if not current:
         enrich_legacy_sample_steps(previews, resolve_user_path(run_dir) if run_dir else artifact_root, artifact_root)
         return
+
+    if current.get("run_path") and current.get("task_id"):
+        _apply_sample_events(previews, current)
+        if all(item["sample"].get("task_id") == current["task_id"] and item["sample"].get("step") is not None
+               for item in previews):
+            for item in previews:
+                item["sample"].pop("epoch_loss", None)
+                item["sample"]["loss_run_dir"] = current["run_dir"]
+            return
 
     catalog = scan_history()
     related = {item["run_dir"]: item for item in catalog if Path(item["artifact_dir"]) == artifact_root}

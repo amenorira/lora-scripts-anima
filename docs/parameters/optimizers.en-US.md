@@ -28,14 +28,14 @@ Start with AdamW8bit. Compare StableAdamW for update spikes, or a Paged variant 
 | AdamW8bit | Everyday default | Small tensors keep FP32 state by design |
 | PagedAdamW8bit | When the regular 8-bit optimizer still does not fit | Uses AdamW8bit updates with paged state; paging adds CPU/GPU transfers |
 | StableAdamW | Update spikes, low-precision LoRA weights | State uses the training parameter dtype; internal clipping limits update magnitude |
-| Lion | Sign-based momentum updates for comparison | Works with a different LR range; tune it separately |
+| Lion | Sign-based momentum updates with less state memory than full-precision AdamW | Works with a different LR range; tune it separately |
 | Lion8bit | Lion with less state VRAM | Needs its own LR sweep |
 | PagedLion8bit | Lion8bit that also needs paging | Paging changes where momentum state is stored; active paging adds CPU/GPU transfers |
 | Prodigy | Optimizer-estimated update scale | LR acts as a multiplier; start at `1.0`. Fixed at `1.0` for sd-scripts, editable for Krea 2. Not supported with LoRA+ here |
 | ProdigyPlusScheduleFree | Automatic step-size estimation and internal scheduling | External scheduler and warmup are ignored; compare against an established baseline |
 | Automagic3 / Automagic4 | Adapt per-group learning rates; v4 also reduces updates to highly sensitive elements | Both are experimental; trainable parameters stay in FP32. Fused updates require gradient accumulation of 1, global gradient clipping of 0, no fp16 mixed precision, and a single GPU |
 | AdaFactor | Very tight optimizer memory | Relative-step mode takes over the LR and restricts LoRA+ |
-| CAME | Compare factorized state, residual-confidence scaling, and internal RMS clipping | Uses three betas; stores second moments by row and column for factorable tensors |
+| CAME | Memory-efficient factored state with residual-confidence scaling and internal RMS clipping | Uses three betas; stores second moments by row and column for factorable tensors |
 | AdamWScheduleFree | Testing AdamW without an external scheduler | Uses internal warmup, default `warmup_steps=0`; evaluation and saving use averaged weights |
 | EmoSens | Experimental optimizer | Requires gradient accumulation of 1; fp16 mixed precision and multi-GPU are not supported; LoRA+ not supported |
 | Muon | Momentum orthogonalization for two-dimensional LoRA matrices | Supports Anima, MOSS-Image, and Krea 2; uses PyTorch's native implementation and requires two-dimensional parameters |
@@ -46,14 +46,14 @@ Start with AdamW8bit. Compare StableAdamW for update spikes, or a Paged variant 
 | LoRA-RITE | Trying an update rule designed for LoRA's structure | Supports Anima native LoRA, Krea 2 native LoRA, and Krea 2 LoCon; uses internal clipping and locks `max_grad_norm` to `0` |
 | SOAP | Adam-style updates in a rotated coordinate system | Preconditioning adds memory and computation; the project caps preconditioned dimensions at `256` by default |
 
-Memory notes above refer only to optimizer state. Peak usage also depends on resolution, rank, batch size, cache, and preview generation.
+Optimizer-state memory notes above exclude model weights and activations. Peak usage also depends on resolution, rank, batch size, cache, and preview generation.
 
 <!-- doc-anchor: stable-comparison -->
 ## AdamW8bit, CAME, StableAdamW: how they differ
 
 **AdamW8bit** stores larger state tensors in 8-bit and smaller ones in FP32.
 
-**CAME** uses factorized state, residual-confidence scaling, and internal RMS clipping. Record state memory, update behavior, and generated results when comparing it.
+**CAME** uses factorized state, residual-confidence scaling, and internal RMS clipping. For memory-constrained runs, compare it with AdamW8bit using peak VRAM, time per step, and generated results.
 
 **StableAdamW limits unusually large updates.** It supports standard schedulers, warmup, `max_grad_norm`, and LoRA+. Anima starts at `lr=2e-5`, `betas=(0.9, 0.99)`, `eps=1e-8`, and `weight_decay=0`; SDXL starts at `1e-4`. It uses more state memory than AdamW8bit and is mainly useful for update stability problems.
 
@@ -63,7 +63,7 @@ Memory notes above refer only to optimizer state. Peak usage also depends on res
 <!-- doc-anchor: learning-rate -->
 ### Learning rate
 
-Learning rate sets the overall update scale. With the optimizer and other settings fixed, raising it enlarges the terms controlled by the learning rate; lowering it reduces them. Internally adaptive optimizers also compute their own step size. Use generated results from several checkpoints to find a usable range.
+A rate that is too low can leave features underfit; one that is too high can cause instability or early overfitting. Adaptive optimizers also calculate an internal step size. Compare generated results from several checkpoints to find a usable range.
 
 The table lists project starting values for Anima. Each optimizer uses its own update scale and needs separate learning-rate tuning.
 
@@ -80,7 +80,7 @@ The table lists project starting values for Anima. Each optimizer uses its own u
 | SOAP | `2e-5` | Start comparisons from the AdamW baseline |
 | Lion / Lion8bit / PagedLion8bit | `5e-6` | Lion's guidance is roughly `3`–`10`× smaller than AdamW |
 | AdamWScheduleFree | `1e-4` | Schedule-Free guidance often `1`–`10`× higher than the base optimizer; treated as experimental on Anima |
-| Prodigy / ProdigyPlus | `1.0` | D-adaptation scale; not comparable to `2e-5` |
+| Prodigy / ProdigyPlus | `1.0` | Adaptive step-size multiplier. The actual step size also depends on the estimated D value |
 | AdaFactor relative step | Controlled by the optimizer; entered LR does not control updates | With both `relative_step` and `warmup_init` off, Anima manual mode starts at `2e-5` |
 | Automagic3 / Automagic4 | `2e-5` | Starting rate for automatic adjustment |
 | EmoSens | Transformer LoRA `0.1`, U-Net LoRA `1.0` | Multiplier for its internally adjusted rate |
@@ -174,7 +174,7 @@ Available for AdamW, StableAdamW, CAME, Adan, AdamWScheduleFree, and Krea 2's Li
 - **Enabled** (`True`): allow batched updates to reduce GPU call overhead. Usually faster, but may increase peak VRAM usage.
 - **Disabled** (`False`): update tensors individually, useful when VRAM is tight or comparing implementations.
 
-Auto does not avoid OOM based on remaining VRAM. AdamW cannot use `foreach=True` and `fused=True` together. Native configs pass this through `optimizer_args`, for example `"foreach=False"`.
+When VRAM is tight, explicitly set `False` to force per-tensor updates. AdamW cannot use `foreach=True` and `fused=True` together. Native configs pass this through `optimizer_args`, for example `"foreach=False"`.
 
 <!-- doc-anchor: muon-options -->
 ### Muon options
@@ -315,7 +315,7 @@ LoRA-RITE uses gradients with factor scaling removed and low-rank matrix precond
 
 - **Learning rate** (Anima default `1e-4`): initially compare values within `5e-5`–`2e-4`. Keep the data, rank, and step count fixed, then compare checkpoints using the same prompts and seeds.
 - **Betas**: default `0.9, 0.999`.
-- **Epsilon** (default `1e-6`): note the semantics — this is a root epsilon, squared internally before use; do not carry over the Adam-style `1e-8`.
+- **Epsilon** (default `1e-6`): LoRA-RITE squares this value before using it. Start with the default.
 - **Gradient clip threshold** (`clip_unmagnified_grad`, default `1.0`): limits the gradient norm after removing the scaling induced by the LoRA factors. Lower positive values impose a stronger limit; `0` disables clipping. The UI locks `max_grad_norm` to `0` because this optimizer uses its own clipping rule.
 - Supports Anima native LoRA, Krea 2 native LoRA, and Krea 2 LoCon. Krea 2 LoCon requires `use_scalar` and DoRA off. LoRA+ is incompatible because grouped learning rates break the A/B pairing assumption.
 - With a zero-initialized up matrix, the first few steps mostly update up, and down joins later.
@@ -369,7 +369,7 @@ Before reading a curve, check whether it records group learning rate, `D × lr`,
 - **Steps before D freezes** (`prodigy_steps`, default `0`): after this many steps `D` freezes at its current value and the estimation buffers are released. For the case where `D` has been verified and the second half should not change it; `0` keeps estimating throughout.
 - **Bias correction and automatic warmup** (`use_bias_correction`, off by default): selects a RAdam variant with bias correction and automatic warmup, slowing adjustment of `D`. If `D` stops growing after enabling it, compare with it off.
 - **SPEED estimator** (`use_speed`, off by default): raises `D` when directional progress reaches a historical peak, uses less state, and tolerates overall gradient rescaling. It is experimental; upstream warns when it is combined with nonzero weight decay.
-- **Cautious updates** (`use_cautious`, off by default): removes update components that disagree with the current gradient. This implementation masks the update directly, rather than modifying the first-moment state. Enable it for a separate comparison of directional filtering.
+- **Cautious updates** (`use_cautious`, off by default): masks update components that disagree with the current gradient while preserving the first-moment calculation. Enable it to compare the effect of directional filtering.
 - **Orthogonal gradient updates** (`use_orthograd`, off by default): uses only the gradient component orthogonal to the current weight direction. Enable it when testing this constraint.
 
 - **Estimate D per parameter group** (`split_groups`, on by default): each group estimates step size independently, such as separate text-encoder and DiT groups. Disabling it gives all groups one shared estimate.
@@ -472,7 +472,7 @@ These LoRA multipliers follow [upstream guidance](https://github.com/muooon/EmoS
 **Common settings**
 
 - **Stop-signal threshold** `stopcoef`: defaults to `0.04`. Suggests considering a stop when training has settled and recent average loss is at or below this value. Higher values make the hint easier to trigger. Values above `1` are allowed; `0` disables triggering.
-- **Show convergence hints** `notify`: on by default. The log message `[READY TO STOP]` suggests considering a stop; it does not end training. Compare nearby saved models before deciding whether to stop. Turning this switch off only hides the message and does not affect training.
+- **Show convergence hints** `notify`: on by default. Controls whether the log shows `[READY TO STOP]`. When the hint appears, compare nearby saved models to decide when to stop training manually.
 - **Enable shadow weights** `use_shadow`: off by default. Keeps an extra copy of the weights and blends it with the current weights when loss changes suddenly, using more GPU memory.
 
 Other defaults match upstream: `betas=(0.9, 0.995)`, `eps=1e-8`, and `weight_decay=0.01`.

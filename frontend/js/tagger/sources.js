@@ -17,33 +17,6 @@ window.taggerSourcesMixin = {
     this._taggerModeStates[mode] = null;
     this._restoreTaggerModeState(stored);
     this.resetTaggerPreview();
-    // 布局重建触发入场动画（m-tab-enter），期间隐藏页面滚动条 thumb 避免位移撑大滚动区导致闪现
-    const scroller = document.querySelector('.main-content');
-    if (scroller) {
-      scroller.classList.add('scroll-entering');
-      clearTimeout(this._scrollEnteringTimer);
-      this._scrollEnteringTimer = setTimeout(() => scroller.classList.remove('scroll-entering'), 520);
-    }
-  },
-
-  // 模式 tab 滑动指示条：与监控台 tab 共用 .monitor-tab-indicator 样式
-  _syncTaggerTabIndicator(selector = '.tagger-mode-tabs') {
-    const bar = document.querySelector(selector);
-    if (!bar) return;
-    const indicator = bar.querySelector('.monitor-tab-indicator');
-    const active = bar.querySelector('button.active');
-    if (!indicator || !active || !active.offsetWidth) return;
-    if (!bar.classList.contains('indicator-ready')) {
-      bar.classList.add('no-anim');
-      indicator.style.width = active.offsetWidth + 'px';
-      indicator.style.transform = 'translateX(' + active.offsetLeft + 'px)';
-      void indicator.offsetWidth; // 强制 reflow，首次定位不播放动画
-      bar.classList.remove('no-anim');
-      bar.classList.add('indicator-ready');
-      return;
-    }
-    indicator.style.width = active.offsetWidth + 'px';
-    indicator.style.transform = 'translateX(' + active.offsetLeft + 'px)';
   },
 
   _captureTaggerModeState() {
@@ -52,14 +25,12 @@ window.taggerSourcesMixin = {
       source: this.taggerSource,
       taskId: this.taggerTaskId,
       items: this.taggerItems,
-      itemsTotal: this.taggerItemsTotal,
       selectedIndex: this.taggerSelectedIndex,
       resultText: this.taggerResultText,
       resultCategories: this.taggerResultCategories,
       categoryState: this.taggerCategoryState,
       loadedResultKey: this._taggerLoadedResultKey,
       previewObjectUrl: this._taggerPreviewObjectUrl,
-      failedOnly: this.taggerFailedOnly,
       logsOpen: this.taggerLogsOpen,
     };
   },
@@ -69,7 +40,6 @@ window.taggerSourcesMixin = {
     this.taggerSource = state?.source || null;
     this.taggerTaskId = state?.taskId || null;
     this.taggerItems = state?.items || [];
-    this.taggerItemsTotal = Number(state?.itemsTotal || 0);
     this.taggerSelectedIndex = Number(state?.selectedIndex || 0);
     this.taggerResultText = state?.resultText || '';
     this.taggerResultCategories = state?.resultCategories || {};
@@ -77,7 +47,6 @@ window.taggerSourcesMixin = {
     this._taggerLoadedResultKey = state?.loadedResultKey || '';
     this._taggerPreviewObjectUrl = state?.previewObjectUrl || null;
     this.syncTaggerDictionary();
-    this.taggerFailedOnly = !!state?.failedOnly;
     this.taggerLogsOpen = !!state?.logsOpen;
   },
 
@@ -160,7 +129,6 @@ window.taggerSourcesMixin = {
     if (this.taggerSource && path !== scannedPath) {
       this.taggerSource = null;
       this.taggerItems = [];
-      this.taggerItemsTotal = 0;
       this.taggerSelectedIndex = 0;
       this.taggerResultText = '';
       this.taggerResultCategories = {};
@@ -224,7 +192,7 @@ window.taggerSourcesMixin = {
       data.append('file', file, file.name);
       const response = await fetch('/api/tagger/uploads', { method: 'POST', body: data });
       const body = await response.json();
-      if (body.status !== 'success') throw new Error(body.message || this.t('tagger.uploadFailed'));
+      if (body.status !== 'success') throw new Error(this.localizeApiError?.(body, 'tagger.uploadFailed') || body.message || this.t('tagger.uploadFailed'));
       if (version !== this._taggerSourceScanVersion || mode !== this.taggerSourceMode || route !== this.currentRoute) return;
       body.data.display_name = file.name || this.t('tagger.singleImage');
       this._releaseTaggerPreview();
@@ -283,7 +251,6 @@ window.taggerSourcesMixin = {
     this.taggerSource = source;
     this.taggerSourcePath = source.display_name || source.path || this.taggerSourcePath;
     this.taggerItems = (source.items || []).map(item => Object.assign({ status: 'pending' }, item));
-    this.taggerItemsTotal = Number(source.total || this.taggerItems.length);
     this.taggerSelectedIndex = 0;
     this.taggerResultText = '';
     this.taggerResultCategories = {};

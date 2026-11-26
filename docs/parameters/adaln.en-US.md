@@ -20,20 +20,20 @@ Custom inclusion patterns can also add modulation layers. Check the structure pr
 <!-- doc-anchor: usage -->
 ## Comparing on and off
 
-To test the wider scope, keep data, learning rate, rank, seed, and total steps fixed and change only the AdaLN switch. Compare both target features and prompt control.
+To test the wider scope, keep data, learning rate, rank, seed, and total steps fixed and change only the Train AdaLN layers setting. Compare both target features and prompt control.
 
 <!-- doc-anchor: default-behavior -->
 ## Upstream default behavior
 
-Native Anima networks exclude layers matching `.*(_modulation|_norm|_embedder|final_layer).*` by default, including modulation, normalization, embedding, and output layers (`networks/lora_anima.py`; native LoHa / LoKr use the same configuration through `network_base.py`).
+Native Anima networks exclude layers matching `.*(_modulation|_norm|_embedder|final_layer).*` by default, including modulation, normalization, embedding, and output layers (`final_layer`). This comes from `networks/lora_anima.py`; native LoHa / LoKr use the same configuration through `network_base.py`.
 
-Enabling the toggle injects this into `network_args`:
+Enabling Train AdaLN layers injects this into `network_args`:
 
 ```
 include_patterns=['.*(adaln_modulation_cross_attn|adaln_modulation_mlp|adaln_modulation_self_attn).*']
 ```
 
-which exempts exactly these three modulation branches. An existing `include_patterns` in the custom network arguments is merged into that single entry. The norm, embedder, and final layers stay excluded.
+which exempts exactly these three modulation branches. An existing `include_patterns` in the custom network arguments is merged into that single entry. The norm, embedder, and output layers (`final_layer`) stay excluded.
 
 The structure preview shows the added parameters and estimated file size for the selected algorithm, rank, and training scope.
 

@@ -64,11 +64,11 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task):
         )
 
     internal_run_dir = (OUTPUT_DIR / run_dir_name).resolve()
-    artifact_run_dir = output_base_path if is_resume else output_base_path / run_dir_name
+    artifact_run_dir = output_base_path / run_dir_name
     try:
         await _settled_to_thread(
             run_files.prepare_run_directories, artifact_run_dir, internal_run_dir,
-            resume=is_resume, owned=reserved_task.owned_run_paths,
+            owned=reserved_task.owned_run_paths,
         )
     except OSError as exc:
         return _training_error(
@@ -79,7 +79,7 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task):
 
     config["output_dir"] = str(artifact_run_dir)
     config["logging_dir"] = str(internal_run_dir / "log")
-    dataset_config = build_krea2_dataset_config(config)
+    dataset_config = build_krea2_dataset_config(config, preflight["dataset_groups"])
     dataset_config_file = internal_run_dir / "dataset.toml"
     sample_prompts_file = (
         internal_run_dir / "sample_prompts.txt" if bool(config.get("enable_krea_samples", False)) else None
@@ -195,7 +195,7 @@ async def prepare_cache(config: dict, reserved_task):
 
     dataset_config_file = run_dir / "dataset.toml"
     cache_request_file = run_dir / "cache-request.json"
-    dataset_toml = toml_writer.dumps(build_krea2_dataset_config(config))
+    dataset_toml = toml_writer.dumps(build_krea2_dataset_config(config, preflight["dataset_groups"]))
     try:
         def _write_cache_files():
             dataset_config_file.write_text(dataset_toml, encoding="utf-8")

@@ -60,15 +60,3 @@ def kernel_signature(function, architecture):
             parameter.kind in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD) for parameter in signature.parameters.values()):
         raise PreviewCompatibilityError(f"sd-scripts {KERNELS[architecture][0]} signature changed / 去噪接口参数已改变")
     return signature
-
-
-def sampling_due(args, epoch, steps):
-    # Same schedule semantics as the upstream public sampler. Keep this contract
-    # covered against the actual functions; it avoids disk/GPU work on each step.
-    if steps == 0:
-        return bool(getattr(args, "sample_at_first", False))
-    epochs = getattr(args, "sample_every_n_epochs", None)
-    interval = getattr(args, "sample_every_n_steps", None)
-    if epochs is not None:
-        return bool(epochs > 0 and epoch is not None and epoch % epochs == 0)
-    return bool(interval and interval > 0 and epoch is None and steps % interval == 0)

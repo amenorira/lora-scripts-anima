@@ -13,8 +13,8 @@
    —— 否则每次渲染都会去追踪整个缓存。UI 侧的响应式只保留一个
    版本号 tagDictionaryVersion，缓存更新后自增，模板靠它重新求值。
 
-   词典是增强不是依赖：manifest/core 任何一步失败都只是让翻译、配色、
-   词典补全和悬停说明消失，Tag Editor 本身照常工作。
+   词典提供翻译、配色、补全和悬停说明。加载 manifest 或 core 失败时，
+   标签编辑器继续提供基本编辑功能。
    ================================================================ */
 
 var TD_BASE = '/api/tageditor/dictionary/asset/';
@@ -838,7 +838,7 @@ window.tagDictionaryMixin = {
         state.hoverObserver = new ResizeObserver(() => this._tdTrackHover());
         var card = document.getElementById('teDictHover');
         if (card) state.hoverObserver.observe(card);
-        var workspace = el.closest('.tagger-single-layout, .te-main');
+        var workspace = el.closest('.tool-single-layout, .te-main');
         if (workspace) state.hoverObserver.observe(workspace);
       }
       this._tdTrackHover();
@@ -887,7 +887,7 @@ window.tagDictionaryMixin = {
         self.tagDictionaryCloseHover();
         return;
       }
-      var browser = anchor.closest('.tagger-category-browser, .tagger-single-main, .te-editor-body, .te-tagcloud, .te-sidebar-body');
+      var browser = anchor.closest('.tagger-category-browser, .tool-single-main, .te-editor-body, .te-tagcloud, .te-sidebar-body');
       var rect = anchor.getBoundingClientRect();
       var bounds = browser && browser.getBoundingClientRect();
       if (rect.bottom <= 0 || rect.top >= window.innerHeight || rect.bottom === rect.top ||
@@ -897,7 +897,7 @@ window.tagDictionaryMixin = {
       }
       var style = self._tdHoverStyle(anchor, rect);
       if (style !== self.tagDictionaryHover.style) self.tagDictionaryHover.style = style;
-      var workspace = anchor.closest('.tagger-single-layout, .te-main');
+      var workspace = anchor.closest('.tool-single-layout, .te-main');
       if (workspace?.getAnimations({ subtree: true }).some(animation => animation.playState === 'running' &&
         ['max-height', 'width', 'grid-template-columns', 'transform'].includes(animation.transitionProperty))) {
         state.hoverFrame = requestAnimationFrame(update);

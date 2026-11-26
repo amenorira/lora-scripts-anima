@@ -6,10 +6,12 @@ window.monitorHistoryRenderMixin = {
   renderHistory() {
     const el = document.getElementById('historyList');
     if (!el) return;
-    try {
     const t = (k, fb) => this.tMonitor(k, fb);
     const hasRunning = this.runningTask && this._isActiveState(this.runningTask.status);
-    const items = this.filteredHistoryItems;
+    const filteredItems = this.filteredHistoryItems;
+    this.historyFilteredCount = filteredItems.length;
+    this.historyPage = Math.max(1, Math.min(this.historyPage, Math.ceil(filteredItems.length / this.historyPageSize) || 1));
+    const items = filteredItems.slice((this.historyPage - 1) * this.historyPageSize, this.historyPage * this.historyPageSize);
     const hasHistory = items && items.length;
 
     let html = '';
@@ -53,8 +55,8 @@ window.monitorHistoryRenderMixin = {
         html += '>';
         html += '<div class="hist-card-head">';
         html += '<h2 class="hist-name" title="' + this.esc(h.name || '') + '">' + this.esc(h.name || '') + '</h2>';
-        const statusColors = { completed: 'ok', failed: 'danger', terminated: 'muted' };
-        const statusLabels = { completed: t('statusCompleted'), failed: t('statusFailed'), terminated: t('statusTerminated') };
+        const statusColors = { completed: 'ok', failed: 'danger', terminated: 'muted', stopped: 'muted' };
+        const statusLabels = { completed: t('statusCompleted'), failed: t('statusFailed'), terminated: t('statusTerminated'), stopped: t('statusStopped') };
         html += '<span class="m-badge m-badge-' + (statusColors[h.status] || 'muted') + '"><i aria-hidden="true"></i>' + this.esc(statusLabels[h.status] || t('statusUnknown')) + '</span>';
         if (artifactOffline) html += '<span class="m-badge m-badge-danger"><i aria-hidden="true"></i>' + this.esc(t('artifactOffline')) + '</span>';
         html += '</div>';
@@ -97,16 +99,11 @@ window.monitorHistoryRenderMixin = {
     if (activeId) document.getElementById(activeId)?.focus({ preventScroll: true });
     this._historyRenderLocale = this.locale;
     this._historyRenderLocaleRevision = this.localeRevision;
-    } catch (e) {
-      el.innerHTML = '<div class="dashboard-empty" style="padding:48px"><p>⚠ ' + (this.t ? this.t('monitor.historyRenderError') : 'Error displaying history. Check browser console (F12).') + '</p></div>';
-    }
   },
 
   _viewHistoryCardSnapshot(runDir, event) {
     const press = this._historyCardPointer;
     this._historyCardPointer = null;
-    // Only suppress this gesture's drag selection. Fast repeated clicks can
-    // leave a browser word selection, which must not block later activation.
     if (event.detail && press && Math.hypot(event.clientX - press.x, event.clientY - press.y) >= 4) {
       const selection = window.getSelection?.();
       if (selection?.isCollapsed === false && selection.containsNode(event.currentTarget, true)) return;
@@ -357,8 +354,8 @@ window.monitorHistoryRenderMixin = {
           const rest = removeLeadingIndent(rendered[i + 2], match[1]);
           if (rest === null) break;
           const state = scalar.quote ? this._readSnapshotYamlQuoted(value, 0, scalar.quote, true) : null;
-          // A backslash at the end of a double-quoted line removes the break,
-          // so leave it untouched rather than displaying it as a space.
+          // A trailing backslash in a double-quoted line escapes the break.
+          // Skip space folding at that boundary.
           if (state?.escapedBreak) break;
           lineHtml += '<span class="m-config-fold">' + parts[i + 1] + match[1] + '</span>' + rest;
           i += 2;
@@ -585,7 +582,7 @@ window.monitorHistoryRenderMixin = {
     }
   },
 
-  async reuseConfig(runDir, snapshot = null) {
+  async reuseConfig(runDir, snapshot = null, resumeState = '', resumeStep = null) {
     if (this.historyReuseBusy || !runDir) return;
     const t = (k, fb) => this.tMonitor(k, fb);
     const seq = ++this._reuseRequestSeq;
@@ -601,6 +598,8 @@ window.monitorHistoryRenderMixin = {
         errorDetails = this.apiErrorDetails(j);
         throw new Error(j.data?.reuse_error || this.localizeApiError(j, 'monitor.configLoadError'));
       }
+      await window.loadTrainingFields();
+      if (seq !== this._reuseRequestSeq) return;
       this._ensureTrainingSession?.('train-basic');
       // When startup restore is disabled, some saved profiles are intentionally
       // absent from the in-memory undo snapshot. Keep their original storage
@@ -624,14 +623,20 @@ window.monitorHistoryRenderMixin = {
       }));
       this._historyReuseApplying = true;
       await this._applyConfigToTraining(j.data.reuse_params);
+      if (resumeState) this.form.resume = resumeState;
       this._trainingDocumentId = null;
       this._historyReuseUndo = undo;
-      this.historyReuseSource = j.data.name || runDir;
+      const sourceName = j.data.name || runDir;
+      this.historyReuseSource = sourceName;
+      this.historyResumeMeta = resumeState ? { source: sourceName, step: resumeStep, path: resumeState } : null;
       const ignored = this._lastConfigImportIgnoredFields || [];
       this.historyReuseWarning = [j.data.config_warning, ignored.length ? this.t('common.importedWithIgnoredFields').replace('{fields}', ignored.join(', ')) : ''].filter(Boolean).join('\n');
       if (this.historyReuseWarning) this.toast(this.historyReuseWarning, 'warning');
-      else this.toast(t('configLoaded'), 'success');
-      if (routeSeq === this._routeTransitionSeq) this.navigate('train-basic');
+      else if (!resumeState) this.toast(t('configLoaded'), 'success');
+      if (routeSeq === this._routeTransitionSeq) {
+        if (this._routeScrollPositions) this._routeScrollPositions['train-basic'] = 0;
+        this.navigate('train-basic');
+      }
     } catch (e) {
       if (seq === this._reuseRequestSeq && e.name !== 'AbortError') this.toast(e.message || t('configLoadError'), 'error', { details: errorDetails });
     } finally {
@@ -654,6 +659,7 @@ window.monitorHistoryRenderMixin = {
   dismissHistoryReuse() {
     this.historyReuseSource = '';
     this.historyReuseWarning = '';
+    this.historyResumeMeta = null;
     this._historyReuseUndo = null;
   },
 
@@ -693,17 +699,6 @@ window.monitorHistoryRenderMixin = {
   },
 
   async _applyConfigToTraining(params) {
-    if (!params || !this.form) return;
-    if (typeof this._applyImportedFlatConfig === 'function') {
-      await this._applyImportedFlatConfig(params);
-      return;
-    }
-    for (const key of Object.keys(params)) {
-      if (key === 'sample_prompts' || key.startsWith('_')) continue;
-      if (params[key] !== undefined && params[key] !== null && this.form.hasOwnProperty(key)) {
-        this.form[key] = String(params[key]);
-      }
-    }
-    if (this.updateToml) this.updateToml();
+    await this._applyImportedFlatConfig(params);
   },
 };

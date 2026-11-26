@@ -60,27 +60,27 @@ window.environmentComponentsRenderMixin = {
     if (this.xfBusy) {
       const head = this._renderRowHead('xf', open, {
         name: 'xformers',
-        desc: T('xfHint','Memory-efficient attention'),
-        version: '', badge: `<span class="env-badge env-badge-loading">${T('installing','Installing...')}</span>`,
-        detailKey: 'xf', detailLabel: T('details','Details'),
+        desc: T('xfHint'),
+        version: '', badge: `<span class="env-badge env-badge-loading">${T('installing')}</span>`,
+        detailKey: 'xf', detailLabel: T('details'),
       });
-      const body = this._renderProgressPanel({ stage: 'working', elapsed: this.xfInstallElapsed, stageLabel: T('xfInstallingHint','Downloading...') })
+      const body = this._renderProgressPanel({ stage: 'working', elapsed: this.xfInstallElapsed, stageLabel: T('xfInstallingHint') })
         + this._renderLog(this.xfInstallLog);
       return this._renderRow('xf', 'loading', open, head, body);
     }
 
     const state = this.xfError ? 'err' : !xs ? 'loading' : xfInstalled ? 'ok' : 'muted';
-    const badge = this.xfError ? `<span class="env-badge env-badge-err">${T('operationFailed','Operation failed')}</span>`
-      : !xs ? `<span class="env-badge env-badge-loading">${T('loadingShort','Loading…')}</span>`
-      : xfInstalled ? `<span class="env-badge env-badge-ok">${T('installed','Installed')}</span>`
-      : `<span class="env-badge env-badge-muted">${T('optionalNotInstalled','Optional · Not installed')}</span>`;
+    const badge = this.xfError ? `<span class="env-badge env-badge-err">${T('operationFailed')}</span>`
+      : !xs ? `<span class="env-badge env-badge-loading">${T('loadingShort')}</span>`
+      : xfInstalled ? `<span class="env-badge env-badge-ok">${T('installed')}</span>`
+      : `<span class="env-badge env-badge-muted">${T('optionalNotInstalled')}</span>`;
     const version = xfInstalled && xs.version ? `<span class="env-row-version">v${this.esc(xs.version)}</span>` : '';
-    const headBtn = xs ? `<button type="button" class="btn btn-sm ${xfInstalled ? 'btn-ghost' : 'btn-secondary'} env-head-btn" data-env-action="xf">${xfInstalled ? T('reinstall','Reinstall') : T('install','Install')}</button>` : '';
+    const headBtn = xs ? `<button type="button" class="btn btn-sm ${xfInstalled ? 'btn-ghost' : 'btn-secondary'} env-head-btn" data-env-action="xf">${xfInstalled ? T('reinstall') : T('install')}</button>` : '';
     const head = this._renderRowHead('xf', open, {
       name: 'xformers',
-      desc: T('xfHint','Memory-efficient attention'),
+      desc: T('xfHint'),
       version, badge, action: headBtn,
-      detailKey: 'xf', detailLabel: T('details','Details'),
+      detailKey: 'xf', detailLabel: T('details'),
     });
 
     let body = '';
@@ -92,9 +92,9 @@ window.environmentComponentsRenderMixin = {
       if (xfEnv.python_tag) envItems.push(`<span class="env-env-item"><em>${xfEnv.python_tag}</em></span>`);
       if (xfEnv.torch_ver) envItems.push(`<span class="env-env-item">PyTorch <em>${xfEnv.torch_ver}</em></span>`);
       if (xfEnv.cuda_ver) envItems.push(`<span class="env-env-item">CUDA <em>cu${xfEnv.cuda_ver.replace('.','')}</em></span>`);
-      body += this._renderDetailGroup(T('envLabel','Env'), envItems.join(' &middot; ') || `<span class="env-text-dim">${T('notDetected','N/A')}</span>`);
+      body += this._renderDetailGroup(T('envLabel'), envItems.join(' &middot; ') || `<span class="env-text-dim">${T('notDetected')}</span>`);
 
-      if (!xfInstalled) body += `<div class="env-msg env-msg-info">${T('xfInstallInfo','Installs latest compatible version from PyPI.')}</div>`;
+      if (!xfInstalled) body += `<div class="env-msg env-msg-info">${T('xfInstallInfo')}</div>`;
 
     }
     body += `<div class="env-actions">${this._renderRefreshBtn('xf', this.xfBusy)}</div>`;
@@ -120,13 +120,13 @@ window.environmentComponentsRenderMixin = {
   },
 
   _renderCoreHeadParts(T, meta, available = true, error = null, loaded = !!meta) {
-    if (error) return { version: '', badge: `<span class="env-badge env-badge-err">${T('loadFailed', 'Load failed')}</span>` };
-    if (!loaded) return { version: '', badge: `<span class="env-badge env-badge-loading">${T('loadingShort','Loading…')}</span>` };
-    if (!available) return { version: '', badge: `<span class="env-badge env-badge-muted">${T('coreNotReady', 'Not configured')}</span>` };
+    if (error) return { version: '', badge: `<span class="env-badge env-badge-err">${T('loadFailed')}</span>` };
+    if (!loaded) return { version: '', badge: `<span class="env-badge env-badge-loading">${T('loadingShort')}</span>` };
+    if (!available) return { version: '', badge: `<span class="env-badge env-badge-muted">${T('coreNotReady')}</span>` };
     const info = this._coreVersionInfo(meta);
     const version = info.label
       ? `<a href="${this.escapeAttr(info.url)}" target="_blank" rel="noopener" class="env-row-version env-link"><code>${this.esc(info.label)}</code></a>` : '';
-    return { version, badge: `<span class="env-badge env-badge-ok">${T('coreReady','Ready')}</span>` };
+    return { version, badge: `<span class="env-badge env-badge-ok">${T('coreReady')}</span>` };
   },
 
   _renderCoreRepositoryDetails(T, meta, fallbackRepo) {
@@ -153,10 +153,10 @@ window.environmentComponentsRenderMixin = {
     const state = error ? 'err' : !sd ? 'loading' : available ? 'ok' : 'muted';
     const parts = this._renderCoreHeadParts(T, sdLocal, available, error, !!sd);
     const head = this._renderRowHead('sd', open, {
-      name: T('sdScriptsTitle','sd-scripts'),
-      desc: T('sdScriptsDesc','kohya-ss/sd-scripts'),
+      name: T('sdScriptsTitle'),
+      desc: T('sdScriptsDesc'),
       version: parts.version, badge: parts.badge,
-      detailKey: 'sd', detailLabel: T('details','Details'),
+      detailKey: 'sd', detailLabel: T('details'),
     });
     const body = (error ? this._renderErrorBar(T, error, null) : '') + (sd ? this._renderCoreRepositoryDetails(T, sdLocal, 'kohya-ss/sd-scripts') : '');
     return this._renderRow('sd', state, open, head, body);
@@ -172,9 +172,9 @@ window.environmentComponentsRenderMixin = {
     const parts = this._renderCoreHeadParts(T, adapter?.version || null, available, error, !!registry);
     const head = this._renderRowHead('lycoris', open, {
       name: 'LyCORIS',
-      desc: T('lycorisDesc', 'LoRA adapter core'),
+      desc: T('lycorisDesc'),
       version: parts.version, badge: parts.badge,
-      detailKey: 'lycoris', detailLabel: T('details','Details'),
+      detailKey: 'lycoris', detailLabel: T('details'),
     });
     let body = '';
     if (error) body += this._renderErrorBar(T, error, null);
@@ -192,9 +192,9 @@ window.environmentComponentsRenderMixin = {
     const parts = this._renderCoreHeadParts(T, engine?.version || null, available, error, !!registry);
     const head = this._renderRowHead('musubi', open, {
       name: 'musubi-tuner',
-      desc: T('musubiDesc', 'Krea 2 training core'),
+      desc: T('musubiDesc'),
       version: parts.version, badge: parts.badge,
-      detailKey: 'musubi', detailLabel: T('details','Details'),
+      detailKey: 'musubi', detailLabel: T('details'),
     });
     let body = '';
     if (error) body += this._renderErrorBar(T, error, null);
@@ -255,31 +255,31 @@ window.environmentComponentsRenderMixin = {
     if (this.tritonBusy) {
       const head = this._renderRowHead('triton', open, {
         name: 'Triton',
-        desc: T('tritonDesc','GPU compile backend for torch.compile'),
-        version: '', badge: `<span class="env-badge env-badge-loading">${T('installing','Installing...')}</span>`,
-        detailKey: 'triton', detailLabel: T('details','Details'),
+        desc: T('tritonDesc'),
+        version: '', badge: `<span class="env-badge env-badge-loading">${T('installing')}</span>`,
+        detailKey: 'triton', detailLabel: T('details'),
       });
-      const body = this._renderProgressPanel({ stage: 'working', elapsed: this.tritonInstallElapsed, stageLabel: T('tritonInstallingHint','Downloading...') })
+      const body = this._renderProgressPanel({ stage: 'working', elapsed: this.tritonInstallElapsed, stageLabel: T('tritonInstallingHint') })
         + this._renderLog(this.tritonInstallLog);
       return this._renderRow('triton', 'loading', open, head, body);
     }
 
     const state = this.tritonError ? 'err' : !tr ? 'loading' : tr.installed ? 'ok' : 'muted';
     const badge = this.tritonError
-      ? `<span class="env-badge env-badge-err">${T('operationFailed','Operation failed')}</span>`
+      ? `<span class="env-badge env-badge-err">${T('operationFailed')}</span>`
       : !tr
-        ? `<span class="env-badge env-badge-loading">${T('loadingShort','Loading…')}</span>`
+        ? `<span class="env-badge env-badge-loading">${T('loadingShort')}</span>`
         : tr.installed
-          ? `<span class="env-badge env-badge-ok">${T('tritonInstalled','Installed')}</span>`
-          : `<span class="env-badge env-badge-muted">${T('notInstalled','Not installed')}</span>`;
+          ? `<span class="env-badge env-badge-ok">${T('tritonInstalled')}</span>`
+          : `<span class="env-badge env-badge-muted">${T('notInstalled')}</span>`;
     const version = tr && tr.installed && tr.version
       ? `<span class="env-row-version">v${this.esc(tr.version)}${tr.package ? ' · ' + this.esc(tr.package) : ''}</span>` : '';
-    const headBtn = tr ? `<button type="button" class="btn btn-sm ${tr?.installed ? 'btn-ghost' : 'btn-secondary'} env-head-btn" data-env-action="triton">${tr?.installed ? T('reinstall','Reinstall') : T('install','Install')}</button>` : '';
+    const headBtn = tr ? `<button type="button" class="btn btn-sm ${tr?.installed ? 'btn-ghost' : 'btn-secondary'} env-head-btn" data-env-action="triton">${tr?.installed ? T('reinstall') : T('install')}</button>` : '';
     const head = this._renderRowHead('triton', open, {
       name: 'Triton',
-      desc: T('tritonDesc','GPU compile backend for torch.compile'),
+      desc: T('tritonDesc'),
       version, badge, action: headBtn,
-      detailKey: 'triton', detailLabel: T('details','Details'),
+      detailKey: 'triton', detailLabel: T('details'),
     });
 
     let body = '';
@@ -287,9 +287,9 @@ window.environmentComponentsRenderMixin = {
 
     if (tr) {
       if (tr.installed) {
-        body += this._renderDetailGroup(T('verLabel','Ver'), `<span class="env-env-item">${this.esc(tr.package||'triton')} <em>v${this.esc(tr.version||'?')}</em></span>`);
+        body += this._renderDetailGroup(T('verLabel'), `<span class="env-env-item">${this.esc(tr.package||'triton')} <em>v${this.esc(tr.version||'?')}</em></span>`);
       } else {
-        body += `<div class="env-msg env-msg-info">${T('tritonInstallInfo','Enables DiT per-block compilation. Windows installs a triton-windows version matched to PyTorch; Linux installs triton.')}</div>`;
+        body += `<div class="env-msg env-msg-info">${T('tritonInstallInfo')}</div>`;
       }
     }
     body += `<div class="env-actions">${this._renderRefreshBtn('triton', this.tritonBusy)}</div>`;

@@ -19,7 +19,7 @@ window.environmentRenderMixin = {
       cancelAnimationFrame(this._environmentRenderFrame);
       this._environmentRenderFrame = null;
     }
-    const T = (k, fb) => this.t('environment.' + k) || fb || k;
+    const T = k => this.t('environment.' + k);
     this._ensureEnvSkeleton(el, T);
     this._updateEnvSectionTitles(el, T);
     this._syncEnvTabDom(el);
@@ -75,9 +75,9 @@ window.environmentRenderMixin = {
     el.innerHTML = ''
       + '<div data-env-slot="overview"></div>'
       + '<div class="env-tabs" role="tablist" data-env-tabs>'
-      +   `<button type="button" role="tab" class="env-tab" data-env-tab="env">${this.esc(T('envTabEnv','Environment'))}</button>`
-      +   `<button type="button" role="tab" class="env-tab" data-env-tab="models">${this.esc(T('envTabModels','Models'))}</button>`
-      +   `<button type="button" role="tab" class="env-tab" data-env-tab="data">${this.esc(T('envTabData','Downloads'))}</button>`
+      +   `<button type="button" role="tab" class="env-tab" data-env-tab="env">${this.esc(T('envTabEnv'))}</button>`
+      +   `<button type="button" role="tab" class="env-tab" data-env-tab="models">${this.esc(T('envTabModels'))}</button>`
+      +   `<button type="button" role="tab" class="env-tab" data-env-tab="data">${this.esc(T('envTabData'))}</button>`
       +   '<span class="env-tab-indicator" aria-hidden="true"></span>'
       + '</div>'
       + '<div class="env-tab-panel" data-env-tab-panel="env">'
@@ -217,11 +217,11 @@ window.environmentRenderMixin = {
       const n = el.querySelector('[data-env-title="' + key + '"]');
       if (n && n.textContent !== text) n.textContent = text;
     };
-    set('accel', T('sectionAccel', 'Performance acceleration'));
-    set('core', T('sectionCore', 'Training Core'));
-    set('models', T('sectionModels', 'Models'));
-    set('data', T('sectionData', 'Downloads'));
-    const tabLabels = { env: T('envTabEnv', 'Environment'), models: T('envTabModels', 'Models'), data: T('envTabData', 'Downloads') };
+    set('accel', T('sectionAccel'));
+    set('core', T('sectionCore'));
+    set('models', T('sectionModels'));
+    set('data', T('sectionData'));
+    const tabLabels = { env: T('envTabEnv'), models: T('envTabModels'), data: T('envTabData') };
     el.querySelectorAll('[data-env-tab]').forEach(btn => {
       const label = tabLabels[btn.dataset.envTab];
       if (btn.textContent !== label) btn.textContent = label;
@@ -232,11 +232,11 @@ window.environmentRenderMixin = {
       if (node.innerHTML !== columnHtml) node.innerHTML = columnHtml;
     });
     const dataNote = el.querySelector('[data-env-note="data"]');
-    const dataNoteText = T('sectionDataNote', 'Available offline after download');
+    const dataNoteText = T('sectionDataNote');
     if (dataNote && dataNote.textContent !== dataNoteText) dataNote.textContent = dataNoteText;
     // 「下载到哪」的极短说明只在区标题行出现一次（文件行已逐行显示目标路径）
     const note = el.querySelector('[data-env-note="models"]');
-    const noteText = T('animaModel.destShort', 'Downloads to models/');
+    const noteText = T('animaModel.destShort');
     if (note && note.textContent !== noteText) note.textContent = noteText;
   },
 
@@ -279,19 +279,19 @@ window.environmentRenderMixin = {
     const allLoaded = accelReady && coreReady && modelsReady && dictionaryState !== 'checking';
     const working = this.faBusy || this.xfBusy || this.tritonBusy || this.mossAccelBusy || this.animaModelBusy || dictionaryState === 'installing';
 
-    // 完成查询不等于能运行所有训练：只报告查询与任务状态。
+    // 环境概览显示当前查询和安装任务的状态。
     let heroState, heroTitle, heroSub;
     if (hasError) {
       heroState = 'err';
-      heroTitle = T('overview.needsAttention', 'Needs attention');
-      heroSub = T('overview.subError', 'Check the highlighted rows for error details.');
+      heroTitle = T('overview.needsAttention');
+      heroSub = T('overview.subError');
     } else if (!allLoaded || this.environmentLoading || working) {
       heroState = 'loading';
-      heroTitle = working ? T('overview.working', 'Task in progress') : T('overview.checking', 'Checking environment...');
+      heroTitle = working ? T('overview.working') : T('overview.checking');
       heroSub = '';
     } else {
       heroState = 'ok';
-      heroTitle = T('overview.checked', 'Check complete');
+      heroTitle = T('overview.checked');
       heroSub = '';
     }
 
@@ -301,11 +301,11 @@ window.environmentRenderMixin = {
       return `<span>${label} ${num}</span>`;
     };
     const summaryHtml = `<div class="env-hero-summary">`
-      + summary(accelDone, 'overview.accelCount', accelReady, T('overview.accel', 'Acceleration'))
+      + summary(accelDone, 'overview.accelCount', accelReady, T('overview.accel'))
       + `<span class="env-summary-sep">·</span>`
-      + summary(coreDone, 'overview.availableCount', coreReady, T('overview.core', 'Training core'))
+      + summary(coreDone, 'overview.availableCount', coreReady, T('overview.core'))
       + `<span class="env-summary-sep">·</span>`
-      + `<span>${T('overview.models', 'Models')} ${modelsReady ? this.esc(T('animaModel.localFileCount', '{count} local files').replace('{count}', modelDone)) : '–'}</span>`
+      + `<span>${T('overview.models')} ${modelsReady ? this.esc(T('animaModel.localFileCount').replace('{count}', modelDone)) : '–'}</span>`
       + `</div>`;
 
     // 加载态：spinner + 文案并入 Hero 标题行（页面级仅此一个加载指示，
@@ -323,11 +323,11 @@ window.environmentRenderMixin = {
       +   `</div>`
       + `</div>`
       + `<div class="env-hero-side">`
-      +   `<button type="button" class="btn btn-sm btn-ghost env-toggle-all" data-env-toggle-all="open">${T('envExpandAll','Expand all')}</button>`
-      +   `<button type="button" class="btn btn-sm btn-ghost env-toggle-all" data-env-toggle-all="close">${T('envCollapseAll','Collapse all')}</button>`
+      +   `<button type="button" class="btn btn-sm btn-ghost env-toggle-all" data-env-toggle-all="open">${T('envExpandAll')}</button>`
+      +   `<button type="button" class="btn btn-sm btn-ghost env-toggle-all" data-env-toggle-all="close">${T('envCollapseAll')}</button>`
       +   `<button type="button" class="btn btn-sm btn-secondary refresh-button" data-env-refresh="all">`
       +     this._refreshIconHtml()
-      +     `<span>${this.esc(T('refreshAll', 'Refresh all'))}</span></button>`
+      +     `<span>${this.esc(T('refreshAll'))}</span></button>`
       + `</div>`
       + `</section>`;
   },
@@ -348,7 +348,7 @@ window.environmentRenderMixin = {
       + `<div class="env-row-ops">`
       +   (parts.action || '')
       +   (parts.detailKey
-          ? `<button type="button" class="env-text-link env-detail-link" data-env-detail="${parts.detailKey}" aria-expanded="${open ? 'true' : 'false'}">${this.esc(parts.detailLabel || this.t('environment.details','Details'))}<span class="env-caret" aria-hidden="true"></span></button>`
+          ? `<button type="button" class="env-text-link env-detail-link" data-env-detail="${parts.detailKey}" aria-expanded="${open ? 'true' : 'false'}">${this.esc(parts.detailLabel || this.t('environment.details'))}<span class="env-caret" aria-hidden="true"></span></button>`
           : '')
       + `</div>`
       + `</div>`;
@@ -365,7 +365,7 @@ window.environmentRenderMixin = {
   // 错误条：常驻显示失败原因 + 可选"复制日志"按钮
   _renderErrorBar(T, msg, logKey) {
     const copyBtn = logKey && this[logKey]
-      ? `<button class="btn btn-ghost btn-sm env-copy-log" data-env-copy="${logKey}">${T('copyLog', 'Copy log')}</button>`
+      ? `<button class="btn btn-ghost btn-sm env-copy-log" data-env-copy="${logKey}">${T('copyLog')}</button>`
       : '';
     return `<div class="env-msg env-msg-err env-errorbar"><pre>${this.esc(msg)}</pre>${copyBtn}</div>`;
   },
@@ -392,7 +392,7 @@ window.environmentRenderMixin = {
   //          'connecting'  → 不定式条 + 连接中文案
   //          'installing'/'working' → spinner + 阶段文案 + 计时
   _renderProgressPanel(opts) {
-    const T = (k, fb) => this.t('environment.' + k) || fb || k;
+    const T = k => this.t('environment.' + k);
     const stage = opts.stage || 'working';
     const elapsed = this._formatElapsed(opts.elapsed || 0);
     let bar = '', meta = '';
@@ -404,14 +404,14 @@ window.environmentRenderMixin = {
     } else if (stage === 'downloading') {
       // 有速度但 total 未知（单连接兜底阶段）
       bar = `<div class="env-progress-bar env-progress-indeterminate"><div></div></div>`;
-      meta = `<span class="env-progress-stage">${T('downloading','Downloading')}</span><span class="env-progress-meta-r">${(opts.speedMB||0).toFixed(1)} MB/s · ${this._humanBytes(opts.downloadedBytes||0)}</span>`;
+      meta = `<span class="env-progress-stage">${T('downloading')}</span><span class="env-progress-meta-r">${(opts.speedMB||0).toFixed(1)} MB/s · ${this._humanBytes(opts.downloadedBytes||0)}</span>`;
     } else if (stage === 'connecting') {
       const fileCount = opts.fileTotal > 1 ? ` ${opts.fileIndex || 1}/${opts.fileTotal}` : '';
       bar = `<div class="env-progress-bar env-progress-indeterminate"><div></div></div>`;
-      meta = `<span class="env-progress-stage">${T('connecting','Connecting')}${fileCount}</span>`;
+      meta = `<span class="env-progress-stage">${T('connecting')}${fileCount}</span>`;
     } else {
       // installing / working
-      const stageLabel = opts.stageLabel || (stage === 'installing' ? T('stageInstalling','Installing…') : T('installingHint','Working…'));
+      const stageLabel = opts.stageLabel || (stage === 'installing' ? T('stageInstalling') : T('installingHint'));
       bar = `<div class="env-progress-spinner-wrap"><div class="env-install-spinner"></div><span class="env-progress-stage">${stageLabel}</span></div>`;
       meta = `<span class="env-progress-time">${elapsed}</span>`;
     }

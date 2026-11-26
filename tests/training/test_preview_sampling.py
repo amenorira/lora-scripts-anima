@@ -1,5 +1,6 @@
 import copy
 import random
+import sys
 from contextlib import nullcontext
 from pathlib import Path
 import tempfile
@@ -57,6 +58,10 @@ class PreviewModel(torch.nn.Module):
 
 class PreviewSamplingTests(unittest.TestCase):
     def setUp(self):
+        vendor = Path(__file__).resolve().parents[2] / "vendor" / "sd-scripts"
+        paths = patch.object(sys, "path", [str(vendor), *sys.path])
+        paths.start()
+        self.addCleanup(paths.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         path = Path(self.temp.name) / "external.safetensors"
@@ -72,6 +77,7 @@ class PreviewSamplingTests(unittest.TestCase):
         self.options = SimpleNamespace(sample_at_first=True, sample_every_n_steps=2, sample_every_n_epochs=None)
         self.prompts = Path(self.temp.name) / "prompts.json"
         self.prompts.write_text('[{"prompt": "tiny", "scale": 1}]', encoding="utf-8")
+        self.options.sample_prompts = str(self.prompts)
 
     def arguments(self):
         return (self.accelerator, self.options, None, 2, self.model, self.vae, self.te, None, None)
@@ -159,7 +165,7 @@ class PreviewSamplingTests(unittest.TestCase):
         arguments[8] = SimpleNamespace(encode_tokens=encode)
         rng = torch.get_rng_state()
         with patch("backend.training.preview.anima.load_text_encoder", return_value=encoder) as loader, \
-             patch.dict(sampler.__globals__, {"sampling": SimpleNamespace(load_prompts=lambda path: [{"prompt": "tiny", "scale": 1}])}):
+             patch.dict(sampler.__globals__, {"sampling": SimpleNamespace(get_sample_prompts=lambda args: [{"prompt": "tiny", "scale": 1}])}):
             sample = wrap_sampler(sampler, document)
             with self.assertRaisesRegex(ValueError, "text encoding failure"):
                 sample(*arguments)

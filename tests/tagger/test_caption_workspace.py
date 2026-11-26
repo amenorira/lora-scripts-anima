@@ -36,3 +36,29 @@ class CaptionWorkspaceTests(unittest.TestCase):
                     self.scan(caption_extension=extension)
                 self.assertEqual(target.read_bytes(), original)
         self.assertEqual(output_options(extension=".caption.txt")["caption_extension"], ".caption.txt")
+
+    def test_source_and_task_errors_carry_stable_error_codes(self):
+        from backend.tagger.errors import TaggerIndexError, TaggerNotFoundError, TaggerUserError, error_data
+
+        with self.assertRaises(TaggerUserError) as root_ctx:
+            workspace.scan_source(str(Path(self.root.anchor)))
+        self.assertEqual(root_ctx.exception.code, "taggerRootNotAllowed")
+
+        with self.assertRaises(TaggerNotFoundError) as source_ctx:
+            workspace.source_items("expired-token")
+        self.assertEqual(source_ctx.exception.code, "taggerSourceExpired")
+
+        scanned = self.scan()
+        with self.assertRaises(TaggerIndexError) as index_ctx:
+            workspace.annotation_detail(scanned["source_token"], 99, {})
+        self.assertIsInstance(index_ctx.exception, IndexError)
+        self.assertEqual(index_ctx.exception.code, "taggerImageIndexOutOfRange")
+        self.assertEqual(error_data(index_ctx.exception), {"errorCode": "taggerImageIndexOutOfRange", "errorParams": {}})
+
+        with self.assertRaises(TaggerNotFoundError) as items_ctx:
+            workspace.task_items("missing-task")
+        self.assertEqual(items_ctx.exception.code, "taggerTaskNotFound")
+
+        with self.assertRaises(TaggerNotFoundError) as prompt_ctx:
+            workspace.task_check_prompt("missing-task")
+        self.assertEqual(prompt_ctx.exception.code, "taggerTaskNotFound")

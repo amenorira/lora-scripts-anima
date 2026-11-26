@@ -3,7 +3,7 @@ window.composeAppMixins = function(target, sources) {
   const owners = new Map(Reflect.ownKeys(target).map(key => [key, 'base']));
   const descriptors = {};
   for (const [name, source] of Object.entries(sources)) {
-    if (!source) continue;
+    if (!source) throw new Error(`Missing mixin: ${name}`);
     for (const key of Reflect.ownKeys(source)) {
       if (owners.has(key)) throw new Error(`Duplicate mixin property ${String(key)}: ${owners.get(key)} / ${name}`);
       owners.set(key, name);

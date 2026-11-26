@@ -27,6 +27,7 @@ _MAX_TOTAL_HISTORY_BYTES = 32 * 1024 * 1024
 _MAX_TERMINAL_TOPICS = 128
 _MAX_SUBSCRIBER_QUEUE = 64
 _TERMINAL_TASK_TTL = 600.0
+_TERMINAL_TASK_STATUSES = {"FINISHED", "FAILED", "TERMINATED", "STOPPED"}
 _MAX_TASK_LOG_ITEMS = 100
 _MAX_TASK_LOG_CHARS = 48 * 1024
 _MAX_TASK_PAYLOAD_BYTES = 64 * 1024
@@ -35,6 +36,32 @@ _MAX_TASK_PAYLOAD_BYTES = 64 * 1024
 def task_topic(task_id: str) -> str:
     """Return the canonical realtime topic for any long-running task."""
     return f"task:{task_id}"
+
+
+def offer_realtime(queue: asyncio.Queue, event: dict) -> None:
+    """Replace an overflowed batch with a resync marker and the newest event."""
+    # Both queue operations run synchronously on the owning event loop.
+    if queue.full():
+        dropped_topics: set[str] = set()
+        global_resync = False
+        while not queue.empty():
+            dropped = queue.get_nowait()
+            if dropped.get("op") == "event":
+                dropped_topic = dropped.get("topic")
+                if dropped_topic:
+                    dropped_topics.add(dropped_topic)
+                else:
+                    global_resync = True
+            elif dropped.get("op") == "resync_required":
+                affected = dropped.get("topics") or []
+                if affected:
+                    dropped_topics.update(affected)
+                else:
+                    global_resync = True
+        if global_resync or dropped_topics:
+            queue.put_nowait({"op": "resync_required", "topics": [] if global_resync else sorted(dropped_topics),
+                              "reason": "slow_consumer", "server_instance_id": SERVER_INSTANCE_ID})
+    queue.put_nowait(event)
 
 
 def _json_size(value: dict[str, Any]) -> int:
@@ -75,9 +102,8 @@ def _compact_task_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
             result[key] = value[-_MAX_TASK_LOG_CHARS:]
             truncated = True
     if _json_size(result) > _MAX_TASK_PAYLOAD_BYTES:
-        # A provider may include arbitrary nested diagnostics. Retain task
-        # identity/progress-like scalar fields and mark the omission instead
-        # of permitting a multi-megabyte realtime message.
+        # Trim oversized diagnostics to scalar task identity and progress fields.
+        # Mark that part of the payload was omitted.
         retained: dict[str, Any] = {}
         for key, value in result.items():
             if isinstance(value, (str, int, float, bool)) or value is None:
@@ -99,13 +125,12 @@ def _compact_task_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
 class RealtimeHub:
     """Topic fan-out with bounded event replay.
 
-    Events remain process-local by design.  A new backend instance receives a
-    new ``SERVER_INSTANCE_ID``; clients must then request a fresh snapshot
-    instead of attempting to replay cursors from the old process.
+    Events are process-local. When ``SERVER_INSTANCE_ID`` changes, clients
+    must request a fresh snapshot. All state changes run without suspension
+    on the server's event loop.
     """
 
     def __init__(self) -> None:
-        self._lock = asyncio.Lock()
         self._subscribers: dict[str, set[asyncio.Queue[dict[str, Any]]]] = defaultdict(set)
         self._history: dict[str, deque[dict[str, Any]]] = defaultdict(deque)
         self._history_bytes: dict[str, int] = defaultdict(int)
@@ -114,7 +139,7 @@ class RealtimeHub:
         self._sequence_floor = 0
 
     def _prune(self) -> None:
-        """Called under the hub lock; live subscriptions keep their sequence."""
+        """Live subscriptions keep their sequence."""
         now = time.time()
         removable = [(topic, ended) for topic, ended in self._terminal_topics.items()
                      if not self._subscribers.get(topic)]
@@ -129,91 +154,52 @@ class RealtimeHub:
             self._terminal_topics.pop(topic, None)
 
     async def prune(self) -> None:
-        async with self._lock:
-            self._prune()
+        self._prune()
 
     async def publish(self, topic: str, event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         """Publish one canonical event without ever blocking a producer."""
         emitted_at = time.time()
-        async with self._lock:
-            self._next_seq[topic] = self._next_seq.get(topic, self._sequence_floor) + 1
-            event: dict[str, Any] = {
-                "op": "event",
-                "topic": topic,
-                "seq": self._next_seq[topic],
-                "type": event_type,
-                "emitted_at": emitted_at,
-                "payload": payload,
-            }
-            history = self._history[topic]
-            history.append(event)
-            self._history_bytes[topic] += _json_size(event)
-            while history and (
-                len(history) > _MAX_HISTORY_EVENTS
-                or self._history_bytes[topic] > _MAX_HISTORY_BYTES
-            ):
-                self._history_bytes[topic] -= _json_size(history.popleft())
+        self._next_seq[topic] = self._next_seq.get(topic, self._sequence_floor) + 1
+        event: dict[str, Any] = {
+            "op": "event",
+            "topic": topic,
+            "seq": self._next_seq[topic],
+            "type": event_type,
+            "emitted_at": emitted_at,
+            "payload": payload,
+        }
+        history = self._history[topic]
+        history.append(event)
+        self._history_bytes[topic] += _json_size(event)
+        while history and (
+            len(history) > (1 if topic == "hardware" else _MAX_HISTORY_EVENTS)
+            or self._history_bytes[topic] > _MAX_HISTORY_BYTES
+        ):
+            self._history_bytes[topic] -= _json_size(history.popleft())
 
-            if topic.startswith("task:") and event_type in {"task.status", "task.result"}:
-                if payload.get("status") in {"FINISHED", "FAILED", "TERMINATED"}:
-                    self._terminal_topics.setdefault(topic, emitted_at)
-                    if len(self._terminal_topics) > _MAX_TERMINAL_TOPICS:
-                        self._prune()
-                else:
-                    self._terminal_topics.pop(topic, None)
+        if topic.startswith("task:") and event_type in {"task.status", "task.result"}:
+            if payload.get("status") in _TERMINAL_TASK_STATUSES:
+                self._terminal_topics.setdefault(topic, emitted_at)
+                if len(self._terminal_topics) > _MAX_TERMINAL_TOPICS:
+                    self._prune()
+            else:
+                self._terminal_topics.pop(topic, None)
 
-            # Enforce capacity at its only growth point; the monitor owns TTL scans.
-            total = sum(self._history_bytes.values())
-            if total > _MAX_TOTAL_HISTORY_BYTES:
-                for oldest_topic in sorted(self._history, key=lambda key: self._history[key][0]["emitted_at"] if self._history[key] else emitted_at):
-                    history = self._history[oldest_topic]
-                    while history and total > _MAX_TOTAL_HISTORY_BYTES:
-                        size = _json_size(history.popleft())
-                        self._history_bytes[oldest_topic] -= size
-                        total -= size
+        # Enforce capacity at its only growth point; the monitor owns TTL scans.
+        total = sum(self._history_bytes.values())
+        if total > _MAX_TOTAL_HISTORY_BYTES:
+            for oldest_topic in sorted(self._history, key=lambda key: self._history[key][0]["emitted_at"] if self._history[key] else emitted_at):
+                history = self._history[oldest_topic]
+                while history and total > _MAX_TOTAL_HISTORY_BYTES:
+                    size = _json_size(history.popleft())
+                    self._history_bytes[oldest_topic] -= size
+                    total -= size
 
-            subscribers = list(self._subscribers.get(topic, ()))
+        subscribers = list(self._subscribers.get(topic, ()))
 
         for queue in subscribers:
-            self._offer(queue, event)
+            offer_realtime(queue, event)
         return event
-
-    @staticmethod
-    def _offer(queue: asyncio.Queue[dict[str, Any]], event: dict[str, Any]) -> None:
-        """Offer an event without letting one slow subscriber grow memory.
-
-        Keeping merely the latest 256 events is not sufficient: a client that
-        lost the beginning of that range cannot infer the gap when its cursor
-        was zero.  On overflow we therefore discard the stale batch and put a
-        protocol-level resync marker before the newest event.  The WebSocket
-        forwarder passes that marker through unchanged and the browser obtains
-        an HTTP snapshot before it trusts subsequent incremental data.
-        """
-        if queue.full():
-            while True:
-                try:
-                    queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    break
-            topic = event.get("topic")
-            marker = {
-                "op": "resync_required",
-                "topics": [topic] if isinstance(topic, str) else [],
-                "reason": "slow_consumer",
-                "server_instance_id": SERVER_INSTANCE_ID,
-            }
-            try:
-                queue.put_nowait(marker)
-            except asyncio.QueueFull:
-                # This should be impossible after draining, but producer
-                # safety matters more than an individual notification.
-                logger.debug("Realtime subscriber queue could not accept resync marker")
-        try:
-            queue.put_nowait(event)
-        except asyncio.QueueFull:
-            # Another consumer raced us.  The resync marker above already
-            # tells this client to rebuild from a snapshot.
-            logger.debug("Realtime subscriber queue stayed full for topic=%s", event.get("topic"))
 
     async def subscribe(
         self,
@@ -227,50 +213,48 @@ class RealtimeHub:
         except (TypeError, ValueError):
             resume_seq = 0
 
-        async with self._lock:
-            history = self._history.get(topic, deque())
-            latest_seq = self._next_seq.get(topic, 0)
-            replay: list[dict[str, Any]] = []
-            resync_required = bool(resume_seq and not latest_seq)
+        history = self._history.get(topic, deque())
+        latest_seq = self._next_seq.get(topic, 0)
+        replay: list[dict[str, Any]] = []
+        resync_required = bool(resume_seq and not latest_seq)
 
-            if latest_seq:
-                if resume_seq > latest_seq:
+        if latest_seq:
+            if resume_seq > latest_seq:
+                resync_required = True
+            elif topic == "hardware" and history:
+                # Hardware is a latest-value stream; intermediate samples
+                # are not needed to reconstruct the current display.
+                replay = [history[-1]] if latest_seq > resume_seq else []
+            elif history:
+                oldest_seq = history[0]["seq"]
+                if resume_seq < oldest_seq - 1:
                     resync_required = True
-                elif history:
-                    oldest_seq = history[0]["seq"]
-                    if resume_seq < oldest_seq - 1:
-                        resync_required = True
-                    else:
-                        replay = [event for event in history if event["seq"] > resume_seq]
-                elif latest_seq > resume_seq:
-                    resync_required = True
+                else:
+                    replay = [event for event in history if event["seq"] > resume_seq]
+            elif latest_seq > resume_seq:
+                resync_required = True
 
-            self._subscribers[topic].add(queue)
+        self._subscribers[topic].add(queue)
         return queue, replay, resync_required
 
     async def unsubscribe(self, topic: str, queue: asyncio.Queue[dict[str, Any]]) -> None:
-        async with self._lock:
-            subscribers = self._subscribers.get(topic)
-            if not subscribers:
-                return
-            subscribers.discard(queue)
-            if not subscribers:
-                self._subscribers.pop(topic, None)
+        subscribers = self._subscribers.get(topic)
+        if not subscribers:
+            return
+        subscribers.discard(queue)
+        if not subscribers:
+            self._subscribers.pop(topic, None)
 
     async def subscriber_count(self, topic: str) -> int:
-        async with self._lock:
-            return len(self._subscribers.get(topic, ()))
+        return len(self._subscribers.get(topic, ()))
 
     async def cursors(self) -> dict[str, int]:
         """Return the latest sequence for every topic in this process.
 
-        A bootstrap snapshot represents state through this instant.  Giving
-        the browser these cursors lets its first subscription replay only
-        events created after that snapshot, rather than re-appending old logs
-        or metric points that are already in it.
+        Bootstrap captures these cursors before reading state. The browser
+        uses them to replay events with later sequence numbers.
         """
-        async with self._lock:
-            return dict(self._next_seq)
+        return dict(self._next_seq)
 
 
 def _normalize_status(snapshot: dict[str, Any]) -> str:
@@ -301,9 +285,26 @@ class _TrackedTask:
     task_id: str
     kind: str
     snapshot_provider: Callable[[], dict[str, Any]]
+    on_expire: Callable[[], None] | None = None
     last_status: str | None = None
     last_signature: str | None = None
     terminal_at: float | None = None
+    terminal_payload: dict[str, Any] | None = None
+
+    async def read_payload(self) -> dict[str, Any] | None:
+        if self.terminal_payload is not None:
+            return self.terminal_payload
+        try:
+            data = _compact_task_snapshot(await asyncio.to_thread(self.snapshot_provider))
+        except Exception:
+            logger.debug("Realtime task snapshot failed: %s", self.task_id, exc_info=True)
+            return None
+        return {
+            "task_id": self.task_id,
+            "kind": self.kind,
+            "status": _normalize_status(data),
+            "data": data,
+        }
 
 
 class RealtimeTaskRegistry:
@@ -316,7 +317,6 @@ class RealtimeTaskRegistry:
 
     def __init__(self, hub: RealtimeHub) -> None:
         self._hub = hub
-        self._lock = asyncio.Lock()
         self._tasks: dict[str, _TrackedTask] = {}
 
     async def register(
@@ -324,10 +324,11 @@ class RealtimeTaskRegistry:
         task_id: str,
         kind: str,
         snapshot_provider: Callable[[], dict[str, Any]],
+        *,
+        on_expire: Callable[[], None] | None = None,
     ) -> None:
-        tracked = _TrackedTask(task_id=task_id, kind=kind, snapshot_provider=snapshot_provider)
-        async with self._lock:
-            self._tasks[task_id] = tracked
+        tracked = _TrackedTask(task_id, kind, snapshot_provider, on_expire)
+        self._tasks[task_id] = tracked
         await self._hub.publish(
             task_topic(task_id),
             "task.status",
@@ -335,70 +336,44 @@ class RealtimeTaskRegistry:
         )
 
     async def poll(self) -> None:
-        async with self._lock:
-            tasks = list(self._tasks.values())
+        tasks = list(self._tasks.values())
 
         now = time.time()
         for tracked in tasks:
-            try:
-                snapshot = await asyncio.to_thread(tracked.snapshot_provider)
-                if not isinstance(snapshot, dict):
-                    snapshot = {"status": "error", "error": "Invalid realtime task snapshot"}
-            except Exception as exc:
-                logger.debug("Realtime task snapshot failed: %s", tracked.task_id, exc_info=True)
-                snapshot = {"status": "error", "error": str(exc)}
-
-            snapshot = _compact_task_snapshot(snapshot)
-            status = _normalize_status(snapshot)
-            payload = {
-                "task_id": tracked.task_id,
-                "kind": tracked.kind,
-                "status": status,
-                "data": snapshot,
-            }
-            signature = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
-
-            status_changed = status != tracked.last_status
-            if status_changed:
-                await self._hub.publish(task_topic(tracked.task_id), "task.status", payload)
-                if status in {"FINISHED", "FAILED", "TERMINATED"}:
-                    await self._hub.publish(task_topic(tracked.task_id), "task.result", payload)
-                tracked.last_status = status
-            if signature != tracked.last_signature and (
-                status not in {"FINISHED", "FAILED", "TERMINATED"} or status_changed
-            ):
-                await self._hub.publish(task_topic(tracked.task_id), "task.progress", payload)
+            if tracked.terminal_at is not None:
+                if now - tracked.terminal_at > _TERMINAL_TASK_TTL:
+                    if self._tasks.get(tracked.task_id) is not tracked:
+                        continue
+                    del self._tasks[tracked.task_id]
+                    if tracked.on_expire:
+                        await asyncio.to_thread(tracked.on_expire)
+                continue
+            payload = await tracked.read_payload()
+            if payload is None:
+                continue
+            status = payload["status"]
+            topic = task_topic(tracked.task_id)
+            if status in _TERMINAL_TASK_STATUSES:
+                tracked.terminal_at = now
+                tracked.terminal_payload = payload
+                await self._hub.publish(topic, "task.status", payload)
+                continue
+            signature = json.dumps(payload["data"], ensure_ascii=False, sort_keys=True, default=str)
+            if status != tracked.last_status:
+                await self._hub.publish(topic, "task.status", payload)
+            elif signature != tracked.last_signature:
+                await self._hub.publish(topic, "task.progress", payload)
+            tracked.last_status = status
             tracked.last_signature = signature
 
-            if status in {"FINISHED", "FAILED", "TERMINATED"}:
-                tracked.terminal_at = tracked.terminal_at or now
-            elif tracked.terminal_at is not None:
-                tracked.terminal_at = None
-
-        async with self._lock:
-            for task_id, tracked in list(self._tasks.items()):
-                if tracked.terminal_at and now - tracked.terminal_at > _TERMINAL_TASK_TTL:
-                    self._tasks.pop(task_id, None)
-
     async def snapshot(self) -> list[dict[str, Any]]:
-        async with self._lock:
-            tasks = list(self._tasks.values())
+        tasks = list(self._tasks.values())
 
         result: list[dict[str, Any]] = []
         for tracked in tasks:
-            try:
-                data = await asyncio.to_thread(tracked.snapshot_provider)
-                if not isinstance(data, dict):
-                    data = {"status": "error", "error": "Invalid realtime task snapshot"}
-            except Exception as exc:
-                data = {"status": "error", "error": str(exc)}
-            data = _compact_task_snapshot(data)
-            result.append({
-                "task_id": tracked.task_id,
-                "kind": tracked.kind,
-                "status": _normalize_status(data),
-                "data": data,
-            })
+            payload = await tracked.read_payload()
+            if payload is not None:
+                result.append(payload)
         return result
 
 

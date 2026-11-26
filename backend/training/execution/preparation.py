@@ -107,5 +107,5 @@ def discard_preparation(task) -> None:
                 (directory / name).unlink(missing_ok=True)
             directory.rmdir()
         except OSError:
-            # Any unexpected content is left in place rather than recursively deleted.
+            # Keep the directory and its contents if removing the empty directory fails.
             log.warning("Incomplete run preparation retained / 保留未完成的运行目录: %s", directory)

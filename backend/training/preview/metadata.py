@@ -12,8 +12,7 @@ import os
 from pathlib import Path
 import sys
 
-from backend.monitor.sample_metadata import SCHEMA_VERSION, parse_sample_filename, write_sample_batch
-from .compat import sampling_due
+from backend.monitor.sample_metadata import SCHEMA_VERSION, parse_sample_filename, sample_item_record, write_prepared_sample_batch
 
 
 logger = logging.getLogger(__name__)
@@ -22,11 +21,7 @@ _IMAGE = ContextVar("anima_sample_image", default=None)
 _COUNTERS = {}
 _FLAG = "_anima_sample_metadata_hook"
 _ROOT = Path(__file__).resolve().parents[3]
-_TRAINING_FRAMES = {
-    "anima": ("train_network.py", "train", (_ROOT / "vendor" / "sd-scripts" / "train_network.py").resolve()),
-    "moss_image": ("train_network.py", "train", (_ROOT / "vendor" / "sd-scripts" / "train_network.py").resolve()),
-    "krea2": ("trainer_base.py", "_run_training_loop", (_ROOT / "vendor" / "musubi-tuner" / "src" / "musubi_tuner" / "training" / "trainer_base.py").resolve()),
-}
+_KREA_TRAINER = (_ROOT / "vendor" / "musubi-tuner" / "src" / "musubi_tuner" / "training" / "trainer_base.py").resolve()
 
 
 def _current_training_epoch(trainer_args, accelerator, steps, architecture):
@@ -36,15 +31,17 @@ def _current_training_epoch(trainer_args, accelerator, steps, architecture):
     counter only from a known synchronous training frame with the same call
     arguments and global step. Never infer epochs from configured step counts.
     """
-    target = _TRAINING_FRAMES.get(architecture)
-    if target is None or type(steps) is not int or steps <= 0:
+    if type(steps) is not int or steps <= 0:
         return None
+    if architecture != "krea2":
+        epoch = getattr(trainer_args, "_anima_preview_epoch", None)
+        return epoch if type(epoch) is int and epoch > 0 else None
     frame = None
     try:
         frame = sys._getframe(1)
         while frame is not None:
             code = frame.f_code
-            if code.co_name == target[1] and Path(code.co_filename).name == target[0] and Path(code.co_filename).resolve() == target[2]:
+            if code.co_name == "_run_training_loop" and Path(code.co_filename).resolve() == _KREA_TRAINER:
                 values = frame.f_locals
                 global_step = values.get("global_step")
                 if values.get("args") is not trainer_args or values.get("accelerator") is not accelerator or type(global_step) is not int or global_step != steps:
@@ -75,7 +72,7 @@ def _flush(batch):
     if batch["batch"]["expected"] is None or batch["batch"]["expected"] == 0:
         return
     try:
-        write_sample_batch(batch["root"], batch["batch"], batch["items"], process_index=batch["rank"], num_processes=batch["processes"])
+        write_prepared_sample_batch(batch["root"], batch["batch"], batch["items"], process_index=batch["rank"], num_processes=batch["processes"])
     except Exception:
         logger.warning("Sample metadata could not be saved / 无法保存采样参数记录", exc_info=True)
 
@@ -121,7 +118,22 @@ def _native_params(values, architecture):
               "flow_shift": prompt.get("flow_shift", 5.0 if architecture == "moss_image" else 3.0)}
     if architecture == "krea2":
         params.pop("flow_shift")
-    return {"params": params, "prompt_index": prompt.get("enum"), "prompt_label": prompt.get("name") or prompt.get("label"), "verified": False}
+    raw_enum = prompt.get("enum")
+    is_manual = bool(prompt.get("_anima_manual"))
+    preset_index = prompt.get("_anima_preset_index")
+    if not (isinstance(preset_index, int) and not isinstance(preset_index, bool) and preset_index >= 0):
+        preset_index = None
+    record = {
+        "params": params,
+        "filename_index": raw_enum,
+        "prompt_index": preset_index if is_manual else raw_enum,
+        "prompt_label": prompt.get("name") or prompt.get("label"),
+        "sample_origin": "manual" if is_manual else "scheduled",
+        "verified": False,
+    }
+    if is_manual and preset_index is not None:
+        record["source_prompt_index"] = preset_index
+    return record
 
 
 def _wrap_image(function, architecture):
@@ -205,7 +217,8 @@ def _wrap_krea_inference(function):
 
 def _sampling_due(args, epoch, steps, architecture="anima"):
     if architecture != "krea2":
-        return sampling_due(args, epoch, steps)
+        from library.sampling import should_sample_images
+        return should_sample_images(args, epoch, steps)
     if steps == 0:
         return bool(getattr(args, "sample_at_first", False))
     epochs, interval = getattr(args, "sample_every_n_epochs", None), getattr(args, "sample_every_n_steps", None)
@@ -229,8 +242,10 @@ def _wrap_batch(function, architecture):
         parameters = values.get("sample_parameters")
         if architecture == "krea2" and parameters is None:
             return None
-        if architecture != "krea2" and not Path(getattr(trainer_args, "sample_prompts", "")).is_file():
-            return None
+        if architecture != "krea2":
+            from library import sampling
+            if not sampling.has_sample_prompts(trainer_args):
+                return None
         accelerator = values["accelerator"]
         ordinal = _COUNTERS.get(architecture, 0) + 1
         _COUNTERS[architecture] = ordinal
@@ -299,7 +314,7 @@ def _patch_save_and_loader(image_module, sampling_module=None):
                 try:
                     path = Path(fp).resolve()
                     parsed = parse_sample_filename(path.name, frame_suffix=active["params"]["architecture"] == "krea2")
-                    if parsed and path.is_relative_to(batch["root"]) and parsed["prompt_index"] == active["prompt_index"]:
+                    if parsed and path.is_relative_to(batch["root"]) and parsed["prompt_index"] == active["filename_index"]:
                         params = {**active["params"], "width": image.size[0], "height": image.size[1]}
                         # A negative seed is a request for randomization, never an actual seed.
                         if parsed["seed"] is not None and parsed["seed"] >= 0:
@@ -308,7 +323,9 @@ def _patch_save_and_loader(image_module, sampling_module=None):
                             params["seed"] = None
                         item = {
                             "params": params, "prompt_index": active["prompt_index"], "prompt_label": active["prompt_label"],
-                            "params_complete": active["verified"]}
+                            "sample_origin": active["sample_origin"], "params_complete": active["verified"]}
+                        if "source_prompt_index" in active:
+                            item["source_prompt_index"] = active["source_prompt_index"]
                 except Exception:
                     logger.warning("Sample save parameters are unavailable / 无法记录当前样图的保存参数", exc_info=True)
             if item is not None:
@@ -323,7 +340,7 @@ def _patch_save_and_loader(image_module, sampling_module=None):
             result = original(image, fp, *args, **options)
             if item is not None:
                 try:
-                    batch["items"][path.relative_to(batch["root"]).as_posix()] = item
+                    batch["items"][path.relative_to(batch["root"]).as_posix()] = sample_item_record(path, item)
                     _flush(batch)
                 except Exception:
                     logger.warning("Saved sample metadata is unavailable / 无法记录已保存样图的参数", exc_info=True)
@@ -331,7 +348,7 @@ def _patch_save_and_loader(image_module, sampling_module=None):
         save._anima_sample_save_metadata = True
         image_module.Image.save = save
     if sampling_module is not None:
-        loader = sampling_module.load_prompts
+        loader = sampling_module.get_sample_prompts
         if not getattr(loader, "_anima_sample_loader_metadata", False):
             @functools.wraps(loader)
             def load(*args, **kwargs):
@@ -342,7 +359,7 @@ def _patch_save_and_loader(image_module, sampling_module=None):
                     _flush(batch)
                 return prompts
             load._anima_sample_loader_metadata = True
-            sampling_module.load_prompts = load
+            sampling_module.get_sample_prompts = load
 
 
 def install_import_hook():
@@ -392,7 +409,7 @@ def install_import_hook():
                         batch_wrapper = _wrap_batch(module.sample_images, architecture)
                         image_wrapper = _wrap_image(module._sample_image_inference, architecture)
                         kernel_wrapper = _wrap_kernel(getattr(module, kernel), architecture)
-                        if not callable(module.Image.Image.save) or not callable(module.sampling.load_prompts):
+                        if not callable(module.Image.Image.save) or not callable(module.sampling.get_sample_prompts):
                             raise TypeError("Sample save/loader interface changed")
                         module.sample_images = batch_wrapper
                         module._sample_image_inference = image_wrapper

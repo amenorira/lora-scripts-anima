@@ -12,7 +12,6 @@ window.trainingCoreMixin = {
   _activeTrainType: '',
 
   _trainTypePanel: null,
-  _trainFieldsRevision: 0,
   _profileWatcherSetupHandle: null,
   _profileWatcherSetupUsesIdle: false,
 
@@ -108,8 +107,7 @@ window.trainingCoreMixin = {
     return !!panel
       && panel.dataset.trainType === trainType
       && panel.getAttribute('data-panel-ready') === '1'
-      && panel.dataset.panelLocale === String(this.locale || '')
-      && panel.dataset.fieldsRevision === String(this._trainFieldsRevision || 0);
+      && panel.dataset.panelLocale === String(this.locale || '');
   },
 
   _commitTrainTypeSwitch(target) {
@@ -240,7 +238,7 @@ window.trainingCoreMixin = {
     this.updateToml();
     // 防御：renderTrainingForm 用 innerHTML 重建了 animaSelect 组件，Alpine 异步初始化。
     // 在下一个 tick 再次确保 network_module 与训练类型一致，防止组件初始化时读到旧值
-    // 导致下拉显示 networks.lora（anima 下该选项已被 group 过滤，会显示原始值而非标签）。
+    // 导致下拉显示已被 Anima 选项分组过滤掉的原始值 networks.lora。
     const switchedForm = this.form;
     this.$nextTick(() => {
       if (this.form !== switchedForm || this.form.model_train_type !== v) return;
@@ -252,8 +250,8 @@ window.trainingCoreMixin = {
   },
 
   suspendTrainForm(route) {
+    if (!route || route !== this._trainFormMountedRoute) return;
     this._cancelKreaDitFormatCheck();
-    if (!route || !route.startsWith('train-')) return;
 
     this._invalidateTrainingPickers();
     this._cancelScheduledTrainTypeSwitch();
@@ -293,10 +291,6 @@ window.trainingCoreMixin = {
       (this[key] || []).forEach(stop => { if (typeof stop === 'function') stop(); });
       this[key] = [];
     });
-    if (this._trainingFieldsLoadedHandler) {
-      window.removeEventListener('training-fields-loaded', this._trainingFieldsLoadedHandler);
-      this._trainingFieldsLoadedHandler = null;
-    }
     this._cancelTrainingPreflight();
     clearTimeout(this._conditionalMotionTimer);
     this._conditionalMotionTimer = null;
@@ -367,9 +361,6 @@ window.trainingCoreMixin = {
     let trainType = routeTrainType;
     if (saved && saved.model_train_type && validTrainTypes.includes(saved.model_train_type)) {
       trainType = saved.model_train_type;
-    } else if (saved && saved.model_train_type === 'sd-lora') {
-      // Migrate old value
-      saved.model_train_type = routeTrainType;
     }
 
     const defaults = this._buildFormDefaults(trainType);
@@ -383,18 +374,9 @@ window.trainingCoreMixin = {
     const hasSavedDraft = Object.keys(savedProfileDraft).length > 0 || !!saved;
     this._activateProfileFieldSources(trainType, defaults, mergedSavedDraft, hasSavedDraft);
     this._activeTrainType = trainType;
-    // Ensure model_train_type is valid (saved may have been from another route)
-    if (!validTrainTypes.includes(this.form.model_train_type)) {
-      this.form.model_train_type = trainType;
-    }
     this._normalizeProfileSelectValues(this.form.model_train_type, defaults);
-    // Fix incompatible network_module after merge
     if (this.form.model_train_type === 'krea2-lora') {
       this._applyKrea2ModelDefaults(this.form, defaults);
-    } else if (this.form.model_train_type === 'anima-lora' && this.form.network_module === 'networks.lora') {
-      this.form.network_module = 'networks.lora_anima';
-    } else if (this.form.model_train_type === 'sdxl-lora' && ['networks.lora_anima', 'networks.lora_generic'].includes(this.form.network_module)) {
-      this.form.network_module = 'networks.lora';
     }
     this.formDefaults = { ...defaults };
     if (applyPendingPath) this.regApplyPendingTrainingPath?.();
@@ -523,37 +505,6 @@ window.trainingCoreMixin = {
 
     self._setupTrainTypeWatcher();
 
-    // The form may mount before /api/fields returns. Rehydrate missing
-    // profile-scoped fields (notably Krea 2) once the authoritative registry
-    // arrives instead of leaving the user with the static fallback schema.
-    if (self._trainingFieldsLoadedHandler) {
-      window.removeEventListener('training-fields-loaded', self._trainingFieldsLoadedHandler);
-    }
-    self._trainingFieldsLoadedHandler = () => {
-      if (!self._trainFormMountedRoute) return;
-      self._trainFieldsRevision += 1;
-      const activeType = self.form.model_train_type || 'anima-lora';
-      const freshDefaults = self._buildFormDefaults(activeType);
-      Object.keys(freshDefaults).forEach(key => {
-        if (self.form[key] === undefined) {
-          self.form[key] = freshDefaults[key];
-          self._setFieldSource(key, 'default', activeType);
-        }
-      });
-      self._normalizeProfileSelectValues(activeType, freshDefaults);
-      if (activeType === 'krea2-lora') self._applyKrea2ModelDefaults(self.form, freshDefaults);
-      self.formDefaults = { ...freshDefaults };
-      self._syncKrea2CacheDir();
-      self._destroyTrainTypePanel();
-      self.renderTrainingForm(activeType, null, true);
-      self.setupAutoValueWatchers();
-      self.setupShowIfWatchers();
-      self.setupReadonlyWatchers();
-      self.setupKreaDitFormatWatcher();
-      self.updateToml();
-    };
-    window.addEventListener('training-fields-loaded', self._trainingFieldsLoadedHandler);
-
     // Synchronize the form once from the shared realtime snapshot.
     this.refreshTrainingRealtimeState();
     this.scheduleOutputPathInfo();
@@ -606,13 +557,13 @@ window.trainingCoreMixin = {
     return panel;
   },
 
-  renderTrainingForm(trainType, targetId, force = false) {
+  renderTrainingForm(trainType, targetId) {
     const root = document.getElementById(targetId || 'trainFormContent');
     if (!root) return;
     const activeType = trainType || this.form.model_train_type || 'anima-lora';
     const container = targetId ? root : this._activateTrainTypePanel(root, activeType);
 
-    if (!targetId && !force && this._trainTypePanelIsReady(activeType)) {
+    if (!targetId && this._trainTypePanelIsReady(activeType)) {
       this._nestLevelCache = null;
       this.buildSectionNav();
       this._syncAllConditionalFields();
@@ -628,11 +579,12 @@ window.trainingCoreMixin = {
       const allFields = this._orderFieldsByDependencies(visibleFields);
 
       html += `<div class="card" data-section="${section.key}" :class="{ 'card-collapsed': _sectionCollapsed['${section.key}'] }">`;
-      html += `<div class="card-header" @click="toggleSection('${section.key}')">`;
+      const bodyId = `training-section-${activeType}-${section.key}`;
+      html += `<button type="button" class="card-header" @click="toggleSection('${section.key}')" :aria-expanded="String(!_sectionCollapsed['${section.key}'])" aria-controls="${bodyId}">`;
       html += `<svg class="card-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>`;
       html += this.trainingText(section.titleKey);
-      html += `</div>`;
-      html += `<div class="card-body" :inert="_sectionCollapsed['${section.key}']" :aria-hidden="_sectionCollapsed['${section.key}'] ? 'true' : null">`;
+      html += `</button>`;
+      html += `<div id="${bodyId}" class="card-body" :inert="_sectionCollapsed['${section.key}']" :aria-hidden="_sectionCollapsed['${section.key}'] ? 'true' : null">`;
       if (section.key === 'training' && !targetId) html += this.renderStepEstimatePanel();
 
       // 按 FIELDS 顺序渲染字段：条件子项由 show_if 挂到触发字段下做层级缩进，不引入分组盒子。
@@ -641,7 +593,7 @@ window.trainingCoreMixin = {
         if (f.key === 'network_module') {
           html += `<div class="lycoris-config-entry" x-show="form.network_module === 'lycoris.kohya'" x-cloak>`
             + `<button type="button" class="lycoris-config-button" data-dialog-opens="lycorisDialog" @click="openLycorisConfig()">`
-            + `<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>${this.trainingText('field.configureLycoris', 'Configure LyCORIS')}</button>`
+            + `<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>${this.trainingText('field.configureLycoris')}</button>`
             + `<span class="lycoris-config-summary" x-text="lycorisSummary()"></span></div>`;
         }
         if (f.key === 'mode_scale') html += this.renderSubsetTimestepOffsets();
@@ -655,7 +607,6 @@ window.trainingCoreMixin = {
     if (!targetId) {
       container.setAttribute('data-panel-ready', '1');
       container.dataset.panelLocale = String(this.locale || '');
-      container.dataset.fieldsRevision = String(this._trainFieldsRevision || 0);
     }
     // 构建右侧分组导航指示器（#1）并绑定滚动高亮
     this.buildSectionNav();
@@ -871,12 +822,8 @@ window.trainingCoreMixin = {
     if (cachePathChanged) this.updateToml();
   },
 
-  // ── Training status from the shared realtime snapshot ─────
+  // ── Training status from the global task poll ─────
   refreshTrainingRealtimeState() {
-    if (this.realtimeSnapshot && typeof this.applyRealtimeTrainingSnapshot === 'function') {
-      this.applyRealtimeTrainingSnapshot(this.realtimeSnapshot);
-      return;
-    }
     this.trainingBlocked = !!this.trainingActive;
     if (!this.trainingBlocked) this.activeTaskId = null;
   }

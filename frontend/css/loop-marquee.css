@@ -19,8 +19,12 @@
 /* Fade in the caption's outer gutter; the first letter stays opaque until it moves. */
 .loop-marquee.is-bouncing.is-overflowing { mask-image:linear-gradient(to right,transparent,#000 8px,#000 calc(100% - 14px),transparent); }
 .loop-marquee.is-bouncing.is-overflowing:is(:hover,:focus-visible,:focus-within) .loop-marquee-track,
+.m-chart-preview-pop:not([hidden]) .loop-marquee.is-bouncing.is-overflowing .loop-marquee-track,
 .m-samples-section .preview-grid-item:is(:hover,:focus-visible,[data-sample-image-selected="true"]) .loop-marquee.is-bouncing.is-overflowing .loop-marquee-track,
-.m-sample-batch[data-sample-selected="true"] .m-sample-batch-cover .loop-marquee.is-bouncing.is-overflowing .loop-marquee-track {
+.m-sample-batch[data-sample-selected="true"] .m-sample-batch-cover .loop-marquee.is-bouncing.is-overflowing .loop-marquee-track,
+.m-dd-flat-group-row:is(:hover,:focus-visible,:focus-within,.is-selected) .loop-marquee.is-bouncing.is-overflowing .loop-marquee-track,
+.m-dd-card:is(:hover,:focus-visible,:focus-within) .loop-marquee.is-bouncing.is-overflowing .loop-marquee-track,
+.m-dd-table-row:is(:hover,:focus-visible,:focus-within) .loop-marquee.is-bouncing.is-overflowing .loop-marquee-track {
   animation:loop-marquee-bounce var(--loop-marquee-duration) linear infinite;
 }
 @keyframes loop-marquee-bounce {

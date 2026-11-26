@@ -6,9 +6,38 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from backend.core.realtime import RealtimeHub, RealtimeTaskRegistry, task_topic
 from backend.tasks import TaskManager, TaskStatus
 from backend.training.execution import supervisor
 from tests.helpers import stub_supervisor
+
+
+class RealtimeTaskTests(unittest.IsolatedAsyncioTestCase):
+    async def test_terminal_snapshot_is_sent_once_and_reused_until_expiry(self):
+        hub = RealtimeHub()
+        registry = RealtimeTaskRegistry(hub)
+        provider = Mock(side_effect=[
+            {"status": "running", "current": 1},
+            OSError("temporarily unavailable"),
+            {"status": "finished", "current": 2},
+        ])
+        cleanup = Mock()
+        await registry.register("install", "install", provider, on_expire=cleanup)
+        with patch("backend.core.realtime.time.time", return_value=100) as clock:
+            for _ in range(6):
+                await registry.poll()
+            snapshot = await registry.snapshot()
+            self.assertEqual(provider.call_count, 3)
+            _, replay, resync = await hub.subscribe(task_topic("install"))
+            self.assertFalse(resync)
+            self.assertEqual([event["payload"]["status"] for event in replay], ["CREATED", "RUNNING", "FINISHED"])
+            self.assertEqual(replay[-1]["payload"], snapshot[0])
+            self.assertEqual(snapshot[0]["data"]["current"], 2)
+            cleanup.assert_not_called()
+            clock.return_value = 701
+            await registry.poll()
+            self.assertEqual(await registry.snapshot(), [])
+            cleanup.assert_called_once_with()
 
 
 class TaskStateMachineTests(unittest.TestCase):

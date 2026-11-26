@@ -470,9 +470,7 @@ window.trainingFieldRelations = {
       return null;
     }
 
-    // LyCORIS LoKr uses -1 for automatic factor selection; zero is not a
-    // meaningful factor. Normalize manual input to the documented automatic
-    // value instead of allowing a configuration that fails at train startup.
+    // Normalize a manual LoKr factor of 0 to LyCORIS's automatic value, -1.
     if (key === 'lokr_factor' && value !== '' && value !== null && value !== undefined) {
       const factor = Number(value);
       if (factor === 0) value = -1;

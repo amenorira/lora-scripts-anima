@@ -1,6 +1,5 @@
 /* Reuse the crop workbench shell, training controls and Tag Editor chips. */
 .pw-entry { display:flex; align-items:center; margin-top:7px; }
-.modal.prompt-workbench-modal { width:1280px; max-width:calc(100vw - 32px); min-width:0; height:1200px; max-height:calc(100dvh - 32px); overflow:hidden; }
 .prompt-workbench-modal .modal-header { padding:10px 18px; gap:16px; flex:0 0 auto; }
 .pw-heading { display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 16px; min-width:0; }
 .pw-header-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; }
@@ -8,7 +7,7 @@
 .pw-content { display:flex; flex-direction:column; flex:1; min-height:0; overflow:hidden; }
 .pw-prompts { padding:10px 18px 12px; flex:0 0 auto; min-height:0; }
 .pw-prompt-list { display:flex; flex-direction:column; gap:4px; max-height:min(26dvh,208px); overflow-y:auto; scrollbar-gutter:stable; }
-.pw-prompt-row { display:flex; align-items:center; gap:6px; min-height:34px; padding:2px 4px; border:1px solid var(--border-subtle); border-radius:var(--radius-control); background:var(--bg-input); min-width:0; }
+.pw-prompt-row { display:flex; align-items:center; gap:6px; min-height:var(--control-h-form); padding:2px 4px; border:1px solid var(--border-subtle); border-radius:var(--radius-control); background:var(--bg-input); min-width:0; }
 .pw-prompt-row.selected { border-color:var(--accent); background:var(--accent-soft); }
 .pw-prompt-row.pw-sort-shift { transition:transform 120ms var(--ease-out); }
 .pw-prompt-row.pw-sort-placeholder { border-color:var(--accent); border-style:dashed; background:var(--accent-soft); transition:none; }
@@ -30,11 +29,11 @@ body.pw-prompt-sorting, body.pw-prompt-sorting * { cursor:grabbing!important; us
 .pw-tag-add.te-editor-add { flex:0 1 340px; width:340px; max-width:100%; min-width:160px; padding:0; border:0; }
 .pw-tag-add button:disabled { opacity:var(--disabled-opacity); cursor:default; }
 .pw-prompt-chips { display:flex; flex-wrap:wrap; align-items:flex-start; align-content:flex-start; gap:4px; min-height:30px; max-height:24dvh; overflow-y:auto; overflow-x:hidden; padding:2px 0; border:0; background:transparent; }
-.pw-prompt-chips:focus-visible { outline:2px solid var(--border-focus); outline-offset:1px; }
+.pw-prompt-chips:focus-visible { outline:var(--focus-ring-width) solid var(--focus-ring-color); outline-offset:var(--focus-ring-offset); }
 .te-editor-tag.pw-selected-tag { max-width:100%; flex-direction:row; align-items:flex-start; gap:3px; touch-action:none; }
 .pw-chip-body { display:flex; flex-direction:column; min-width:0; }
 .pw-chip-body .te-editor-tag-name { overflow-wrap:anywhere; }
-.pw-chip-count.te-tag-count { margin:0; align-self:flex-start; font-size:9px; line-height:12px; }
+.pw-chip-count.te-tag-count { margin:0; align-self:flex-start; font-size:var(--font-size-xs); line-height:12px; }
 .pw-trigger-mark { width:11px; height:14px; flex:none; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; color:var(--text-secondary); }
 .pw-chip-remove { align-self:center; padding:0; margin-left:3px; border:0; background:none; color:var(--text-tertiary); font-size:14px; line-height:14px; cursor:pointer; }
 .pw-chip-remove:hover { color:var(--danger); }
@@ -57,7 +56,7 @@ body.pw-tag-sorting, body.pw-tag-sorting * { cursor:grabbing!important; user-sel
 .pw-exclusions-body > .field-hint { margin:0 0 12px; }
 .pw-exclusions-layout { display:flex; gap:12px; min-height:0; }
 .pw-exclusion-list { flex:1; min-width:0; height:320px; max-height:48dvh; overflow:auto; border:1px solid var(--border-input); border-radius:var(--radius-control); background:var(--bg-input); padding:3px; }
-.pw-exclusion-list:focus-visible { outline:2px solid var(--border-focus); outline-offset:2px; }
+.pw-exclusion-list:focus-visible { outline:var(--focus-ring-width) solid var(--focus-ring-color); outline-offset:var(--focus-ring-offset); }
 .pw-exclusion-row { display:flex; align-items:center; height:30px; min-height:30px; padding:3px 8px; border:1px solid transparent; border-radius:var(--radius-control); font-size:13px; line-height:22px; cursor:default; }
 .pw-exclusion-row:hover { background:var(--hover-overlay); }
 .pw-exclusion-row[aria-selected="true"] { border-color:var(--accent); background:var(--accent-soft); }

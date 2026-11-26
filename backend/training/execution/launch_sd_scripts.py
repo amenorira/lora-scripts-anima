@@ -1,5 +1,4 @@
 """Prepare sd-scripts profiles under an existing task reservation."""
-import os
 import json
 from pathlib import Path
 
@@ -11,6 +10,7 @@ from backend.training.config import toml_writer
 from backend.training.execution import run_files, sd_scripts_preflight
 from backend.training.config.metrics_config import training_metrics_environment
 from backend.training.preview.config import CONFIG_NAME, ENV_KEY, prepare_config as prepare_preview_config
+from backend.training.preview.prompt_file import read_prompt_entries, require_scheduled_prompt
 from backend.training.execution.preparation import training_error as _training_error
 from backend.training.datasets.sd_dataset_config import build_sd_scripts_dataset_config
 from backend.training.cache.rebuild import clear_cache_files, prepare_cache_choice, sd_scripts_cache_files
@@ -19,7 +19,7 @@ from backend.training.config.training_config import (
 )
 
 
-def get_sample_prompts(config: dict):
+def get_sample_prompts(config: dict, *, require_scheduled: bool = False):
     """Build prompt text; filesystem errors must abort preparation."""
     import random
     from backend.training.preview.config import compose_preview_prompts
@@ -51,37 +51,46 @@ def get_sample_prompts(config: dict):
         positive_prompts = sample_prompt_file.read_text(encoding="utf-8")
 
     positive_prompts = compose_preview_prompts(config, positive_prompts)
+    reserved = compose_preview_prompts(config, config.get("reserved_prompts") or "")
 
     if is_moss:
-        import json
-
-        if not positive_prompts or not positive_prompts.strip():
-            return ''
-        return json.dumps([{
-            "prompt": positive_prompts, "negative_prompt": negative_prompts or "",
+        entries = [{
+            "prompt": prompt, "negative_prompt": negative_prompts or "",
             "width": sample_width, "height": sample_height,
-            "scale": sample_cfg, "sample_steps": sample_steps,
+            "scale": sample_cfg, "sample_steps": steps,
             "seed": sample_seed, "flow_shift": sample_flow_shift,
-        }], ensure_ascii=False)
+        } for prompt, steps in ((positive_prompts, sample_steps), (reserved, 0)) if prompt and prompt.strip()]
+        if require_scheduled:
+            require_scheduled_prompt(entries)
+        return json.dumps(entries, ensure_ascii=False) if entries else ""
 
     # Sanitise negative prompt: replace newlines with ", " to keep --n on one line
     negative_prompts = negative_prompts.replace(chr(10), ", ") if negative_prompts else ""
 
-    param_suffix = (
-        f'--n {negative_prompts} '
-        f'--w {sample_width} --h {sample_height} '
-        f'--l {sample_cfg} --s {sample_steps} --d {sample_seed} '
-        f'--fs {sample_flow_shift}'
-    )
+    def param_suffix(steps):
+        return (
+            f'--n {negative_prompts} '
+            f'--w {sample_width} --h {sample_height} '
+            f'--l {sample_cfg} --s {steps} --d {sample_seed} '
+            f'--fs {sample_flow_shift}'
+        )
 
-    if positive_prompts and positive_prompts.strip():
-        # Multi-line: treat each non-empty line as a separate sample entry
-        lines = [ln.strip() for ln in positive_prompts.strip().splitlines() if ln.strip()]
-        sample_prompts_arg = chr(10).join(f'{line} {param_suffix}' for line in lines)
-    else:
-        sample_prompts_arg = ''
+    return "\n".join(f"{line.strip()} {param_suffix(steps)}"
+                     for text, steps in ((positive_prompts or "", sample_steps), (reserved, 0))
+                     for line in text.splitlines() if line.strip())
 
-    return sample_prompts_arg
+
+def write_manual_preview_cache(control_dir: Path, options: dict) -> Path:
+    # Upstream checks external encodings against one cached embedding. Its scheduled
+    # sampler skips zero-step entries, including this empty reference prompt.
+    fields = {"width": "sample_width", "height": "sample_height", "scale": "sample_cfg",
+              "seed": "sample_seed", "flow_shift": "sample_flow_shift", "negative_prompt": "negative_prompts"}
+    template = {key: options[src] for key, src in fields.items() if options.get(src) is not None}
+    template.update(prompt="", sample_steps=0)
+    path = control_dir / "manual-preview.json"
+    control_dir.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps([template], ensure_ascii=False), encoding="utf-8")
+    return path
 
 
 async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, profile):
@@ -112,7 +121,7 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
             code="invalidOutputPath", params={"path": requested_output_dir}, details=str(exc),
         )
     internal_run_dir = (OUTPUT_DIR / run_dir_name).resolve()
-    artifact_run_dir = output_base_path if is_resume else output_base_path / run_dir_name
+    artifact_run_dir = output_base_path / run_dir_name
     # ──────────────────────────────────────────────────────────
 
     suggest_cpu_threads, error = await sd_scripts_preflight.check_input_files(config, model_train_type)
@@ -123,21 +132,29 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
     if error is not None:
         return error
 
+    prompt_file = str(config.get("sample_prompts") or "").strip()
+    scheduled_moss = model_train_type == "moss-image-lora" and any(
+        config.get(key) for key in ("sample_at_first", "sample_every_n_steps", "sample_every_n_epochs")
+    )
     sample_prompts_arg = ""
-    # Raw trainer TOMLs call the prompt file sample_prompts; the UI calls it prompt_file.
-    prompt_file = str(settings.ui_config.get("prompt_file") or settings.ui_config.get("sample_prompts") or "").strip()
-    if prompt_file:
-        if not os.path.exists(prompt_file):
-            return _training_error(message=f"Sample prompt file not found / 采样提示词文件不存在: {prompt_file}",
-                                   code="samplePromptNotFound", params={"path": prompt_file})
-        config["sample_prompts"] = prompt_file
-    else:
-        try:
-            sample_prompts_arg = await _settled_to_thread(get_sample_prompts, settings.ui_config)
-
-        except ValueError as e:
-            log.error(f"Error while processing prompts / 处理采样提示词时出错: {e}")
-            return _training_error(message=str(e), code="previewConfigInvalid", details=str(e))
+    try:
+        if prompt_file:
+            entries = await _settled_to_thread(read_prompt_entries, Path(prompt_file), moss=model_train_type == "moss-image-lora")
+            if scheduled_moss:
+                require_scheduled_prompt(entries)
+            if (model_train_type in ("anima-lora", "moss-image-lora")
+                    and (config.get("cache_text_encoder_outputs") or config.get("cache_text_encoder_outputs_to_disk"))):
+                sample_prompts_arg = json.dumps(entries, ensure_ascii=False, allow_nan=False)
+            else:
+                config["sample_prompts"] = prompt_file
+        else:
+            sample_prompts_arg = await _settled_to_thread(get_sample_prompts, settings.ui_config, require_scheduled=scheduled_moss)
+    except FileNotFoundError as exc:
+        if prompt_file:
+            return _training_error(message=str(exc), code="samplePromptNotFound", params={"path": prompt_file})
+        return _training_error(message=str(exc), code="previewConfigInvalid", details=str(exc))
+    except (OSError, ValueError, TypeError) as exc:
+        return _training_error(message=str(exc), code="previewConfigInvalid", details=str(exc))
 
     try:
         # 优先检查用户产物目录；磁盘 I/O 放入线程，避免离线盘阻塞 API。
@@ -145,7 +162,6 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
             run_files.prepare_run_directories,
             artifact_run_dir,
             internal_run_dir,
-            resume=is_resume,
             owned=reserved_task.owned_run_paths,
         )
     except OSError as exc:
@@ -159,13 +175,16 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
         )
 
     config["output_dir"] = str(artifact_run_dir)
+    config["run_control"] = True
     config["logging_dir"] = str(internal_run_dir / "log")
 
     if sample_prompts_arg:
-        prompts_path = internal_run_dir / ("prompts.json" if model_train_type == "moss-image-lora" else "prompts.txt")
-        prompts_path.write_text(sample_prompts_arg, encoding="utf-8")
+        prompts_path = internal_run_dir / ("prompts.json" if prompt_file or model_train_type == "moss-image-lora" else "prompts.txt")
         config["sample_prompts"] = str(prompts_path)
-        log.info(f"Sample prompts written / 采样 prompt 已写入: {prompts_path}")
+    elif (not config.get("sample_prompts") and model_train_type in ("anima-lora", "moss-image-lora")
+          and len(gpu_ids or []) <= 1
+          and (config.get("cache_text_encoder_outputs") or config.get("cache_text_encoder_outputs_to_disk"))):
+        config["sample_prompts"] = str(write_manual_preview_cache(internal_run_dir / "log" / ".run-control", settings.ui_config))
 
     # ── A: autosave — 保留最近 50 个，清理旧文件 ────────────
     AUTOSAVE_DIR.mkdir(parents=True, exist_ok=True)
@@ -189,6 +208,9 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
         dataset_toml = toml_writer.dumps(dataset_config)
 
     def _write_run_files():
+        if sample_prompts_arg:
+            prompts_path.write_text(sample_prompts_arg, encoding="utf-8")
+            log.info(f"Sample prompts written / 采样 prompt 已写入: {prompts_path}")
         with open(toml_file, "w", encoding="utf-8") as f:
             f.write(toml_content)
         run_config_file = str(internal_run_dir / "config.toml")
@@ -228,6 +250,9 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
             "adapter_id": settings.adapter_id,
         },
         extra_env={
+            "ANIMA_RUN_CONTROL_DIR": str(internal_run_dir / "log" / ".run-control"),
+            "ANIMA_RESUME_TRAINING": "1" if is_resume else "",
+            "ANIMA_MANUAL_PREVIEW_STEPS": str(settings.ui_config.get("sample_steps") or ""),
             ENV_KEY: str(internal_run_dir / CONFIG_NAME) if preview_config is not None else "",
             **training_metrics_environment(settings.ui_config),
             "ANIMA_ENABLE_FLASH_ATTN": "1" if config.get("attn_mode") == "flash" else "0",

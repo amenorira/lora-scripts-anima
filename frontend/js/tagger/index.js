@@ -1,7 +1,6 @@
 /* Tagger desktop workspace. State is kept in Alpine; large media stays in browser/server caches. */
 window.taggerMixin = {
   taggerModels: [],
-  taggerHardware: {},
   taggerSelectedModel: '',
   taggerSourceMode: 'folder',
   taggerSourcePath: '',
@@ -13,13 +12,11 @@ window.taggerMixin = {
   get taggerTask() { return this.taggerTaskById(this.taggerTaskId); },
   get taggerRunning() { return this.taggerTaskActive(this.taggerTaskId); },
   taggerItems: [],
-  taggerItemsTotal: 0,
   taggerSelectedIndex: 0,
   taggerResultText: '',
   taggerResultCategories: {},
   taggerCategoryState: {},
   taggerFilmstripCollapsed: false,
-  taggerFailedOnly: false,
   taggerLogsOpen: false,
   taggerPreviewScale: 1,
   taggerPreviewX: 0,
@@ -31,6 +28,7 @@ window.taggerMixin = {
   taggerDragOver: false,
   taggerSingleLeftWidth: 55,
   taggerSingleResizing: false,
+  _taggerResizePointer: null,
   taggerSettings: {
     preset: 'balanced',
     conflict: 'ignore',
@@ -52,18 +50,30 @@ window.taggerMixin = {
   },
   _taggerRealtimeTopic: null,
   _taggerLastItemsFetch: 0,
+  _taggerItemsRefreshTimer: null,
+  _taggerItemsError: null,
   _taggerPreviewObjectUrl: null,
   _taggerLoadedResultKey: '',
   _taggerRouteInitialized: false,
   _taggerFormVersion: 0,
-  _taggerMountPromise: null,
+  taggerWorkspaceLoading: false,
+  taggerWorkspaceError: '',
   _taggerModeStates: { folder: null, single: null, 'api-folder': null, 'api-single': null },
 
   async buildTaggerForm() {
     const route = this.currentRoute;
     const version = ++this._taggerFormVersion;
     const isCurrent = () => this.currentRoute === route && version === this._taggerFormVersion;
-    await this._mountTaggerWorkspace();
+    this.taggerWorkspaceLoading = true;
+    this.taggerWorkspaceError = '';
+    try {
+      await this._mountTaggerWorkspace(route);
+    } catch (error) {
+      if (isCurrent()) this.taggerWorkspaceError = error.message;
+      return;
+    } finally {
+      if (isCurrent()) this.taggerWorkspaceLoading = false;
+    }
     if (!isCurrent()) return;
     this.tagDictionaryInit();
     this._loadTaggerSettings();
@@ -121,34 +131,20 @@ window.taggerMixin = {
     });
   },
 
-  async _mountTaggerWorkspace() {
+  async _mountTaggerWorkspace(route = this.currentRoute) {
     const host = document.getElementById('taggerWorkspaceHost');
-    if (!host || host.dataset.mounted === '1') return;
-    if (this._taggerMountPromise) return this._taggerMountPromise;
-    // Both routes share this host; navigation must join its pending mount.
-    this._taggerMountPromise = (async () => {
-      try {
-        const response = await fetch('/anima-ui/templates/tagger-workspace.html');
-        if (!response.ok) throw new Error(this.t('tagger.workspaceLoadFailed'));
-        host.innerHTML = await response.text();
-        const captionTemplate = await fetch('/anima-ui/templates/caption-workspace.html');
-        if (!captionTemplate.ok) throw new Error(this.t('caption.workspaceLoadFailed'));
-        host.querySelector('#captionWorkspaceMount').outerHTML = await captionTemplate.text();
-        host.dataset.mounted = '1';
-        if (window.Alpine) Alpine.initTree(host);
-      } catch (error) {
-        host.textContent = error.message;
-      }
-    })();
-    try {
-      await this._taggerMountPromise;
-    } finally {
-      this._taggerMountPromise = null;
+    if (!host) throw new Error(this.t('tagger.workspaceLoadFailed'));
+    await window.mountWorkspaceTemplate(host, '/anima-ui/templates/tagger-workspace.html', this.t('tagger.workspaceLoadFailed'));
+    if (route === 'ai-captioning') {
+      const mount = host.querySelector('#captionWorkspaceMount');
+      await window.mountWorkspaceTemplate(mount, '/anima-ui/templates/caption-workspace.html', this.t('caption.workspaceLoadFailed'), true);
     }
   },
 
   stopTaggerWorkspace() {
     ++this._taggerFormVersion;
+    clearTimeout(this._taggerItemsRefreshTimer);
+    this._taggerItemsRefreshTimer = null;
     this.stopCaptionWorkspace?.();
     this.tagDictionaryCleanup();
     this.realtimeUnsubscribe('hardware');
@@ -177,9 +173,10 @@ window.taggerMixin = {
     try {
       const response = await fetch('/api/tagger/models');
       const body = await response.json();
-      if (body.status !== 'success' || !body.data) throw new Error(body.message || this.t('tagger.modelRegistryUnavailable'));
+      if (body.status !== 'success' || !body.data) {
+        throw new Error(this.localizeApiError?.(body, 'tagger.modelRegistryUnavailable') || body.message || this.t('tagger.modelRegistryUnavailable'));
+      }
       this.taggerModels = body.data.models || [];
-      this.taggerHardware = body.data.hardware || {};
       const savedModel = localStorage.getItem('anima-tagger-model') || '';
       if (!this.taggerSelectedModel && this.taggerModels.some(model => model.id === savedModel)) {
         this.taggerSelectedModel = savedModel;
@@ -542,24 +539,30 @@ window.taggerMixin = {
   },
 
   startTaggerSingleResize(event) {
-    if (event && event.button !== 0) return;
+    if (event.button !== 0 || this.taggerSingleResizing) return;
+    const divider = event.currentTarget;
+    divider.focus();
+    divider.setPointerCapture(event.pointerId);
+    this._taggerResizePointer = event.pointerId;
     this.taggerSingleResizing = true;
-    document.body.classList.add('tagger-single-resizing');
+    document.body.classList.add('tool-divider-dragging');
   },
 
   resizeTaggerSingleLayout(event) {
-    if (!this.taggerSingleResizing) return;
-    const layout = document.querySelector('.tagger-single-layout');
-    if (!layout) return;
-    const rect = layout.getBoundingClientRect();
-    const width = Math.max(1, rect.width);
-    const percent = ((event.clientX - rect.left) / width) * 100;
-    this.taggerSingleLeftWidth = Math.min(70, Math.max(30, Math.round(percent * 10) / 10));
+    if (!this.taggerSingleResizing || event.pointerId !== this._taggerResizePointer) return;
+    const {left, width} = event.currentTarget.closest('.tool-single-layout').getBoundingClientRect();
+    if (width) this.setTaggerSingleWidth(Math.round((event.clientX - left) / width * 1000) / 10);
   },
 
-  stopTaggerSingleResize() {
+  setTaggerSingleWidth(percent) {
+    this.taggerSingleLeftWidth = Math.min(70, Math.max(30, percent));
+  },
+
+  stopTaggerSingleResize(event) {
+    if (event && event.pointerId !== this._taggerResizePointer) return;
+    this._taggerResizePointer = null;
     this.taggerSingleResizing = false;
-    document.body.classList.remove('tagger-single-resizing');
+    document.body.classList.remove('tool-divider-dragging');
   },
 
   selectTaggerItem(item) {

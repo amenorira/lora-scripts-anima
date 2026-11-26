@@ -43,7 +43,7 @@
 <!-- doc-anchor: loraplus-lr-ratio -->
 ### `loraplus_lr_ratio`
 
-全局倍率，默认 `2.0`。UNet/DiT 和文本编码器的单独倍率留空时使用该值。
+全局倍率，默认 `2.0`。UNet / DiT 和文本编码器的单独倍率留空时使用该值。
 
 | 训练类型 | 界面最小值 | 步进 |
 | --- | --- | --- |
@@ -53,7 +53,7 @@
 <!-- doc-anchor: loraplus-unet-lr-ratio -->
 ### `loraplus_unet_lr_ratio`
 
-只覆盖 UNet/DiT 的倍率，默认留空并使用全局值。Anima、MOSS-Image 沿用 `unet` 参数名，实际对应 DiT 主干。该字段用于 sd-scripts 训练路径。
+只覆盖 UNet / DiT 的倍率，默认留空并使用全局值。Anima、MOSS-Image 沿用 `unet` 参数名，实际对应 DiT 主干。该字段用于 sd-scripts 训练路径。
 
 仅训练文本编码器时，此参数无效。
 
@@ -88,12 +88,12 @@ sd-scripts 路径先确定各组件的基础学习率，再对指定参数组应
 
 | 训练部分 | 优先读取 | 为空时回退到 |
 | --- | --- | --- |
-| UNet/DiT | `unet_lr` | `learning_rate` |
+| UNet / DiT | `unet_lr` | `learning_rate` |
 | 文本编码器 | `text_encoder_lr` | `learning_rate` |
 
 Krea 2 使用 `learning_rate` 作为 DiT 的基础学习率。
 
-单独填写 `unet_lr` 或 `text_encoder_lr` 时，对应组件按自己的学习率计算。例如 `learning_rate=1e-4`、`unet_lr=8e-5`、UNet/DiT 倍率为 `2.0` 时：
+单独填写 `unet_lr` 或 `text_encoder_lr` 时，对应组件按自己的学习率计算。例如 `learning_rate=1e-4`、`unet_lr=8e-5`、UNet / DiT 倍率为 `2.0` 时：
 
 <div class="doc-equation doc-equation-compact" role="group" aria-label="UNet LoRA+ 实际学习率示例">
   <div class="doc-equation-expression"><span class="doc-math-var">LR</span><sub>base</sub> = 8 × 10<sup>−5</sup></div>
@@ -103,7 +103,7 @@ Krea 2 使用 `learning_rate` 作为 DiT 的基础学习率。
 <!-- doc-anchor: cautions -->
 ## 风险与限制
 
-比较较高倍率时，缩短保存间隔，检查最佳结果是否提前，以及后续检查点是否出现固定姿势、背景或提示词控制下降。
+比较较高倍率时，缩短保存间隔，检查最佳结果是否提前，以及后续模型存档是否出现固定姿势、背景或提示词控制下降。
 
 <span id="effects"></span>
 
@@ -130,7 +130,7 @@ LoRA+ 的效果需要区分学习速度和最终质量。
 | CAME | 支持 | 保留不同参数组的独立学习率 |
 | StableAdamW、Muon、Adan、AdEMAMix、AdEMAMix8bit、SOAP | 支持 | 保留不同参数组的独立学习率 |
 | AdamWScheduleFree | 支持 | 保留参数组，但内部调整会改变训练中的实际学习率 |
-| Automagic3 / Automagic4 | 条件支持 | 每个参数组的初始学习率都必须在 `min_lr` 与 `max_lr` 之间。各组独立调整，训练中不保证维持初始倍率 |
+| Automagic3 / Automagic4 | 条件支持 | 每个参数组的初始学习率都必须在 `min_lr` 与 `max_lr` 之间。各组独立调整，学习率倍率可能随训练变化 |
 | AdaFactor | 仅手动学习率模式 | `relative_step` 与 `warmup_init` 必须关闭。默认相对步长模式会忽略参数组学习率，界面会自动关闭并锁定 LoRA+ |
 | Prodigy、ProdigyPlus | 不支持 | 当前 sd-scripts 训练路径无法可靠保留不同参数组的独立学习率，界面与后端都会阻止该组合 |
 | EmoSens | 不支持 | EmoSens 用单一全局 `emoPulse` 更新所有参数，并在每步后统一各参数组学习率，倍率会失效 |

@@ -40,10 +40,10 @@ window.environmentDictionaryRenderMixin = {
     }
 
     const head = this._renderRowHead('dictionary', open, {
-      name: T('dictRowName', 'Danbooru Chinese dictionary'),
-      desc: T('dictRowDesc', 'Tag translations, colors and notes for the Tag Editor'),
+      name: T('dictRowName'),
+      desc: T('dictRowDesc'),
       version, badge, action,
-      detailKey: 'dictionary', detailLabel: T('details', 'Details'),
+      detailKey: 'dictionary', detailLabel: T('details'),
     });
 
     return this._renderRow('dictionary', dataState === 'installing' ? 'loading'

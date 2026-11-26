@@ -158,6 +158,8 @@ def enrich_legacy_sample_steps(previews: list[dict], *run_paths: Path, calls=Non
     pending = []
     for preview in previews:
         sample = preview.get("sample") or {}
+        if sample.get("step_source") == "event":
+            continue
         prompt_missing = sample.get("metadata_source") == "filename" and "prompt" not in sample.get("params", {})
         if sample.get("stage_kind") != "epoch" or (sample.get("step") is not None and not prompt_missing):
             continue
@@ -186,8 +188,8 @@ def enrich_legacy_sample_steps(previews: list[dict], *run_paths: Path, calls=Non
             sample["batch_label"] = f"Epoch {sample['epoch']} · Step {sample['step']}"
         if sample.get("metadata_source") == "filename" and len(matching) == 1 and matching[0].step == sample.get("step"):
             call = matching[0]
-            # One actual call can save several prompts at different times.
-            # Its start, rather than each image timestamp, separates resumes.
+            # A call may save images at different times. Use its start time to
+            # group those images and distinguish resumed runs.
             sample["batch_id"] = f"legacy:{parsed['prefix']}:epoch:{sample['epoch']}:call:{call.start.isoformat()}:{call.step}"
         if (sample.get("metadata_source") != "filename" or "prompt" in sample.get("params", {})
                 or parsed["prompt_index"] != 0 or sample.get("prompt_index") != 0 or len(matching) != 1):

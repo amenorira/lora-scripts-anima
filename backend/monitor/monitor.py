@@ -21,13 +21,14 @@ from backend.monitor.hardware import gpu_info, system_info
 from backend.monitor.training import parse_log_progress, primary_learning_rate_tag, read_tensorboard_incremental
 from backend.monitor.artifacts import newest_previews, read_output_summary
 from backend.monitor.log_files import find_train_log_path, read_log_slice
+from backend.monitor.run_control import reported_progress
 from backend.monitor.run_registry import find_run_record_by_task_id, read_run_config
 from backend.tasks import tm
 
 logger = logging.getLogger(__name__)
 
 _PROGRESS_FIELDS = (
-    "step", "total_steps", "percent", "loss", "lr", "epoch",
+    "step", "total_steps", "percent", "loss", "lr", "metrics_step", "epoch",
     "eta", "elapsed", "speed", "has_error", "error_msg",
 )
 _MAX_REALTIME_LOG_CHARS = 48 * 1024
@@ -98,15 +99,16 @@ class TaskMonitor:
 
     def __init__(self):
         self._running = False
-        self._task: asyncio.Task | None = None
+        self._tasks: list[asyncio.Task] = []
         self._sample_interval = 1.0  # 真实采样间隔（秒）
         self._last_status: dict[str, str] = {}  # task_id -> last_status
         self._last_log_cursor: dict[str, dict] = {}  # 与分页共用规范化行号，包含可被覆盖的末行。
         self._last_progress: dict[str, dict[str, Any]] = {}  # task_id -> 最近一次有效字段
+        self._output_names: dict[str, str] = {}
         self._primary_lr_tag: dict[str, str] = {}
         self._last_artifact_check: dict[str, float] = {}
-        self._last_artifact_signature: dict[str, str] = {}
-        self._pending_artifact_signature: dict[str, str] = {}
+        self._last_artifact_signature: dict[str, tuple] = {}
+        self._pending_artifact_signature: dict[str, tuple] = {}
         # 控制台进度条状态
         self._console_progress = None
         self._progress_task_id = None
@@ -118,19 +120,20 @@ class TaskMonitor:
             return
 
         self._running = True
-        self._task = asyncio.create_task(self._monitor_loop())
+        self._tasks = [
+            asyncio.create_task(self._monitor_loop(self._check_all_tasks)),
+            asyncio.create_task(self._monitor_loop(self._poll_tracked_tasks)),
+            asyncio.create_task(self._monitor_loop(self._collect_hardware)),
+        ]
         logger.info("任务监控器已启动")
 
     async def stop(self) -> None:
         """停止监控器"""
         self._running = False
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-            self._task = None
+        for task in self._tasks:
+            task.cancel()
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+        self._tasks = []
         self._stop_console_progress()
         logger.info("任务监控器已停止")
 
@@ -194,17 +197,21 @@ class TaskMonitor:
             current[key] = value
         return dict(current)
     
-    async def _monitor_loop(self) -> None:
-        """主监控循环"""
+    async def _monitor_loop(self, sample) -> None:
+        """Sample each independent domain without accumulating overlapping work."""
         while self._running:
             try:
-                await self._check_all_tasks()
+                await sample()
                 await asyncio.sleep(self._sample_interval)
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"监控循环异常: {e}", exc_info=True)
+                logger.error("监控循环异常 (%s): %s", sample.__name__, e, exc_info=True)
                 await asyncio.sleep(1)  # 出错后短暂等待
+
+    async def _poll_tracked_tasks(self) -> None:
+        await realtime_tasks.poll()
+        await realtime_hub.prune()
     
     async def _check_all_tasks(self) -> None:
         """检查所有任务状态"""
@@ -224,7 +231,9 @@ class TaskMonitor:
             
             # 状态变化事件
             if current_status != last_status:
-                self._last_status[task_id] = current_status
+                terminal = current_status in ("FINISHED", "TERMINATED", "FAILED", "STOPPED")
+                if terminal:
+                    await self._collect_task_data(task_id)
                 await realtime_hub.publish(task_topic(task_id), "task.status", {
                     "task_id": task_id,
                     "kind": "training",
@@ -234,10 +243,10 @@ class TaskMonitor:
                     "tasks": tasks,
                     "training_active": any(item.get("status") in {"CREATED", "RUNNING"} for item in tasks),
                 })
+                self._last_status[task_id] = current_status
                 
                 # 任务结束时清理
-                if current_status in ("FINISHED", "TERMINATED", "FAILED"):
-                    await self._collect_task_data(task_id)
+                if terminal:
                     await realtime_hub.publish(task_topic(task_id), "task.result", {
                         "task_id": task_id,
                         "kind": "training",
@@ -252,47 +261,45 @@ class TaskMonitor:
             if current_status == "RUNNING":
                 await self._collect_task_data(task_id)
         
-        # 现有打标、下载和环境安装任务通过注册表桥接到同一个实时通道。
-        await realtime_tasks.poll()
-        await realtime_hub.prune()
-
-        # 收集硬件信息（仅在有可见订阅时以 1 Hz 真实采样）
-        await self._collect_hardware()
-    
     async def _collect_task_data(self, task_id: str) -> None:
         """收集任务进度和日志增量"""
         try:
             record = await asyncio.to_thread(find_run_record_by_task_id, task_id)
             run_dir = str(record["run_path"]) if record else None
             run_dir_path = Path(run_dir) if run_dir else None
-            train_config = await asyncio.to_thread(read_run_config, run_dir_path) if run_dir_path else {}
+            if run_dir_path and task_id not in self._output_names:
+                config = await asyncio.to_thread(read_run_config, run_dir_path)
+                if config:
+                    self._output_names[task_id] = config.get("output_name", "")
+            output_name = self._output_names.get(task_id, "")
 
             # 增量索引只扫描追加内容，行号/进度条覆盖规则与 HTTP 分页一致。
             log_delta = await asyncio.to_thread(
                 self._read_log_delta, task_id, run_dir_path
             )
 
-            if log_delta is not None:
-                new_lines = log_delta["lines"]
-                # 从增量行中解析进度（无需额外 4MB tail 读取）
-                parsed_progress = await asyncio.to_thread(
-                    parse_log_progress, new_lines
-                )
-                if parsed_progress:
-                    progress = self._merge_progress(task_id, parsed_progress)
-                    payload = {key: progress[key] for key in _PROGRESS_FIELDS if key in progress}
+            task = tm.get_task(task_id)
+            updates = reported_progress(await asyncio.to_thread(task.control.status)) if task and task.control else {}
+            if log_delta:
+                updates = await asyncio.to_thread(parse_log_progress, log_delta["lines"], updates)
+            if updates:
+                previous = dict(self._last_progress.get(task_id, {}))
+                progress = self._merge_progress(task_id, updates)
+                if progress != previous:
                     await realtime_hub.publish(task_topic(task_id), "task.progress", {
                         "task_id": task_id,
                         "kind": "training",
                         "status": "RUNNING",
-                        "data": payload,
+                        "data": progress,
                     })
 
                     # 控制台始终更新同一个 Rich Live 任务，不保留历史进度行。
                     self._update_console_progress(
-                        task_id, progress, train_config.get("output_name", "")
+                        task_id, progress, output_name
                     )
 
+            if log_delta is not None:
+                new_lines = log_delta["lines"]
                 log_lines, log_truncated = _bounded_realtime_log_lines(new_lines)
                 await realtime_hub.publish(task_topic(task_id), "task.log", {
                     "task_id": task_id,
@@ -311,7 +318,7 @@ class TaskMonitor:
             await self._collect_tb_incremental(
                 task_id,
                 run_dir=run_dir,
-                output_name=train_config.get("output_name", ""),
+                output_name=output_name,
             )
             await self._collect_artifact_update(task_id, record)
         except Exception as e:
@@ -324,35 +331,43 @@ class TaskMonitor:
         itself (or a whole growing preview list) on the realtime socket would
         make slow connections progressively worse.
         """
-        if not record or not record.get("artifact_available"):
+        if not record or not record.get("artifact_available") or not await realtime_hub.subscriber_count("artifacts"):
+            return
+        task = tm.get_task(task_id)
+        events = await asyncio.to_thread(task.control.artifact_events) if task and task.control else None
+        if events is not None:
+            if events:
+                root = str(record["artifact_path"])
+                previews_changed = "samples_generated" in events
+                if previews_changed:
+                    await asyncio.to_thread(newest_previews, root, 0, True, record.get("run_dir", ""))
+                summary = await asyncio.to_thread(read_output_summary, root)
+                await realtime_hub.publish("artifacts", "task.artifacts", {
+                    "task_id": task_id, "kind": "training", "output_count": summary["count"],
+                    "previews_changed": previews_changed,
+                })
             return
         now = time.monotonic()
         if now - self._last_artifact_check.get(task_id, 0.0) < 2.0:
             return
         self._last_artifact_check[task_id] = now
-        previews = await asyncio.to_thread(
-            newest_previews,
-            str(record["artifact_path"]),
-            1,
-            False,
-            record.get("run_dir", ""),
-        )
-        latest = previews[-1] if previews else None
-        outputs = await asyncio.to_thread(read_output_summary, str(record["artifact_path"]))
-        signature = repr((latest.get("path", "") if latest else "", latest.get("version", "") if latest else "",
-                          (latest.get("sample") or {}).get("metadata_version", "") if latest else "", outputs["count"], outputs["models"]))
+        root = str(record["artifact_path"])
+        outputs = await asyncio.to_thread(read_output_summary, root)
         previous = self._pending_artifact_signature.get(task_id)
+        # An older preview can be added or removed inside the cache TTL.
+        refresh = previous is not None and outputs["image_count"] != previous[2]
+        previews = await asyncio.to_thread(newest_previews, root, 0, refresh, record.get("run_dir", ""))
+        signature = (outputs["count"], outputs["models"], outputs["image_count"], previews)
         self._pending_artifact_signature[task_id] = signature
-        if previous != signature:
-            return
-        if signature == self._last_artifact_signature.get(task_id):
+        last = self._last_artifact_signature.get(task_id)
+        if previous != signature or signature == last:
             return
         self._last_artifact_signature[task_id] = signature
-        await realtime_hub.publish(task_topic(task_id), "task.artifacts", {
+        await realtime_hub.publish("artifacts", "task.artifacts", {
             "task_id": task_id,
             "kind": "training",
-            "latest_preview": latest,
             "output_count": outputs["count"],
+            "previews_changed": last is None or last[3] != previews,
         })
 
     def _read_log_delta(self, task_id: str, output_dir_path: Path | None = None) -> dict | None:
@@ -367,7 +382,9 @@ class TaskMonitor:
             previous = self._last_log_cursor.get(task_id)
             if previous and previous["stamp"] == stamp:
                 return None
-            page = read_log_slice(log_path, limit=_MAX_REALTIME_LOG_LINES, tail=True)
+            same_file = previous and stamp[:3] == previous["stamp"][:3]
+            cursor = (max(0, previous["total"] - 2), previous["generation"]) if same_file else None
+            page = read_log_slice(log_path, limit=_MAX_REALTIME_LOG_LINES, tail=True, tail_cursor=cursor)
             total, lines = page["total"], page["lines"]
             reset = bool(previous and (stamp[:3] != previous["stamp"][:3]
                          or page["generation"] != previous["generation"]))
@@ -454,6 +471,7 @@ class TaskMonitor:
         # 被误判为一次新的状态变化并重复发送终态事件。
         self._last_log_cursor.pop(task_id, None)
         self._last_progress.pop(task_id, None)
+        self._output_names.pop(task_id, None)
         self._primary_lr_tag.pop(task_id, None)
         self._last_artifact_check.pop(task_id, None)
         self._last_artifact_signature.pop(task_id, None)

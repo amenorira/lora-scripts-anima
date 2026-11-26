@@ -2,6 +2,7 @@
 from pathlib import PurePosixPath
 
 from backend.training.core_registry import PROFILES
+from backend.training.config.training_config import TrainingConfigError
 
 
 def infer_training_profile(params: dict, metadata: dict | None = None) -> str | None:
@@ -10,7 +11,11 @@ def infer_training_profile(params: dict, metadata: dict | None = None) -> str | 
     explicit = params.get("model_train_type") or extra.get("profile_id")
     if explicit:
         if not isinstance(explicit, str) or explicit not in PROFILES:
-            raise ValueError(f"Unknown training profile / 未知训练类型: {explicit}")
+            raise TrainingConfigError(
+                f"Unknown training profile / 未知训练类型: {explicit}",
+                code="configUnknownProfile",
+                profile=str(explicit),
+            )
         return explicit
     trainer = PurePosixPath(str(extra.get("trainer_file", "")).replace("\\", "/")).name
     if trainer == "krea2_train_network.py":
@@ -32,7 +37,10 @@ def import_native_training_form(params: dict, *, profile_id: str | None = None) 
 
     imported_type = infer_training_profile(params) or profile_id
     if not imported_type:
-        raise ValueError("Cannot identify this run's training type / 无法识别此记录的训练类型，请从训练页手动导入配置")
+        raise TrainingConfigError(
+            "Cannot identify this run's training type / 无法识别此记录的训练类型，请从训练页手动导入配置",
+            code="configCannotIdentifyProfile",
+        )
     form = extract_scheduler_form({**params, "model_train_type": imported_type})
     if imported_type == "moss-image-lora":
         # Native TOML omissions mean argparse defaults, independent of our recommended preset.
@@ -46,8 +54,29 @@ def import_native_training_form(params: dict, *, profile_id: str | None = None) 
             form.setdefault("krea_split_attn", "true" if form.pop("split_attn") else "false")
     else:
         form = extract_optimizer_form(form)
+        # Native TOML carries the schedule directly, without the desktop preview toggle.
+        if (form.get("sample_prompts") or form.get("prompt_file")) and "enable_preview" not in form:
+            from backend.training.config.option_contracts import sample_interval_mode
+
+            interval = sample_interval_mode(form)
+            form["enable_preview"] = bool(form.get("sample_at_first") or interval != "none")
+            form["sample_interval_mode"] = interval
+        if (imported_type in ("anima-lora", "moss-image-lora") and not form.get("enable_preview")
+                and (form.get("cache_text_encoder_outputs") or form.get("cache_text_encoder_outputs_to_disk"))
+                and form.get("sample_prompts") and form.get("logging_dir")):
+            log = PurePosixPath(str(form["logging_dir"]).replace("\\", "/"))
+            prompt = PurePosixPath(str(form["sample_prompts"]).replace("\\", "/"))
+            if prompt == log / ".run-control" / "manual-preview.json":
+                # A cached run without scheduled prompts creates its own reference embedding.
+                form.pop("sample_prompts")
     form = extract_network_form(form, model_train_type=imported_type)
     from backend.training.preview.config import normalize_form
 
-    normalize_form(form)
+    try:
+        normalize_form(form)
+    except ValueError as exc:
+        code = getattr(exc, "code", None)
+        if code:
+            raise TrainingConfigError(str(exc), code=code, **(getattr(exc, "params", None) or {})) from exc
+        raise
     return form

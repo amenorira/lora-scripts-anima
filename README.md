@@ -42,10 +42,11 @@ Anima、SDXL 和 MOSS-Image 使用 [kohya-ss/sd-scripts](https://github.com/kohy
 - **训练前预览** — 时间步分布、学习率曲线与矩阵结构三个本地预览弹窗，[查看预览](#pre-training-previews)
 - **LyCORIS 适配器面板** — 支持 LoCon / LoHa / LoKr，按算法动态显示参数，可选内核后端（auto / Triton / TileLang / compile / Torch），并支持 LoRA+ 与 Anima 训练范围细化
 - **多种优化器** — AdamW、Lion、Prodigy、CAME、StableAdamW、Adafactor、ScheduleFree、Adan、AdEMAMix、Muon 等常用优化器，外加内置的 LoRA-RITE 与测试中的 LoRA-Muon，各自带默认值与约束提示
-- **实时硬件监控** — 显示 GPU 利用率、显存与温度，以及 CPU/RAM 使用率；集成 Chart.js 动态图表、TensorBoard 和实时日志
+- **实时训练监控与控制** — 显示 GPU 利用率、显存与温度，以及 CPU/RAM 使用率；集成 Loss 趋势诊断、实时日志与 TensorBoard，支持训练中暂停、立即保存、手动预览采样与从存档续训
+- **训练集诊断** — 基于 `sd-scripts` 逐样本 Loss 记录，对比同噪声区间下的残差与变化趋势，定位难学、漏标错标或裁剪不当的图片，支持分组对比、单图审片与跳转标签编辑器
 - **原生标签编辑器** — 内置图片标签编辑器，支持批量查找替换、去重、排序、清理等操作
 - **Tagger 工作台** — 集成 WD EVA02-Large、WD ViT-Large、CL Tagger、Camie Tagger 与 [PixAI Tagger v1.0](https://huggingface.co/pixai-labs/pixai-tagger-v1.0)，支持单图检查、分类阈值控制和批量标签写入；PixAI 使用本地 PyTorch 推理，支持风格分类，首次下载约 1.95 GB；另可对接 OpenAI 兼容（Chat Completions / Responses）或 Anthropic Messages 协议的 AI 打标
-- **EmoSens 自适应优化器** — 内置 EmoSens v3.9，可根据损失变化调整学习率并提示停止时机
+- **EmoSens 自适应优化器** — 内置 EmoSens v3.9，可根据 Loss 变化调整学习率并提示停止时机
 - **国际化（i18n）** — 中文、英文和日语界面及内置指南，支持浏览器语言自动检测并保存语言偏好
 - **三种主题** — 浅色、深色与 ComfyUI 主题，支持跟随系统、手动切换
 - **后端连接状态指示器** — 实时显示前后端连接状态及断连时长
@@ -74,6 +75,20 @@ Anima、SDXL 和 MOSS-Image 使用 [kohya-ss/sd-scripts](https://github.com/kohy
 
 ![不同训练阶段的样本对比](docs/images/sample-comparison.zh-CN.jpg)
 
+### 训练监控与运行控制
+
+查看训练进度、速度与 Loss 趋势，训练途中可随时暂停、立即保存权重或状态、手动生成预览图，或从已有存档续训。
+
+![训练监控概览与运行控制](docs/images/monitor-overview.zh-CN.jpg)
+
+### 训练集诊断
+
+基于 `sd-scripts` 的逐样本 Loss 记录，按残差与每轮变化趋势筛出一直高 Loss 的异常图片，查看子集与分桶差异，并点开单图核对分桶裁剪与标签（演示数据）。
+
+![训练集诊断总览](docs/images/dataset-diagnostics.zh-CN.jpg)
+
+![训练集诊断单图审片弹窗](docs/images/dataset-diagnostics-detail.zh-CN.jpg)
+
 <a name="pre-training-previews"></a>
 
 ## 训练前预览
@@ -86,7 +101,7 @@ Anima、SDXL 和 MOSS-Image 使用 [kohya-ss/sd-scripts](https://github.com/kohy
 
 ### 学习率曲线预览
 
-在 **学习率变化方式** 下点击「查看学习率曲线」，预览预热、衰减与重启，读取各训练步的学习率。侧栏显示当前组件的生效学习率和预热步数，支持切换 DiT / 文本编码器；自行管理调度的优化器会显示相应说明。详见[优化器指南](docs/parameters/optimizers.zh-CN.md)。
+在 **学习率调度器** 下点击「查看学习率曲线」，预览预热、衰减与重启，读取各训练步的学习率。侧栏显示当前组件的生效学习率和预热步数，支持切换 DiT / 文本编码器；自行管理调度的优化器会显示相应说明。详见[优化器指南](docs/parameters/optimizers.zh-CN.md)。
 
 ![学习率曲线预览：预热与余弦衰减曲线](docs/images/lr-preview.zh-CN.png)
 
@@ -177,6 +192,7 @@ git switch --track origin/dev
 - [时间步指南](docs/parameters/timesteps.zh-CN.md)：flow matching 时间步采样、Loss 权重与分布预览说明
 - [AdaLN 调制层指南](docs/parameters/adaln.zh-CN.md)：调制层的作用、上游默认行为，以及哪些训练适合开启
 - [矩阵结构与文件大小指南](docs/parameters/matrix-preview.zh-CN.md)：实际模块结构、参数量、训练范围与保存体积估算
+- [训练集诊断指南](docs/parameters/dataset-diagnostics.zh-CN.md)：逐样本残差与斜率判定、常见高残差原因及排查方法
 
 ## 程序参数
 
@@ -197,7 +213,7 @@ git switch --track origin/dev
 
 ## 注意力加速
 
-Anima / MOSS 默认使用 `torch`，Krea2 默认使用 `sdpa`。SDPA 根据当前 PyTorch 构建和输入选择可用内核；Windows 安装包不一定包含内置 FlashAttention。
+Anima / MOSS 默认使用 `torch`，Krea2 默认使用 `sdpa`。SDPA 根据当前 PyTorch 构建和输入选择可用内核。Windows 上的内置 FlashAttention 支持取决于安装的 PyTorch 构建。
 
 使用独立 FlashAttention 2：在「环境管理」中安装完成后，将 Anima / MOSS 的 `attn_mode` 设为 `flash`。安装器匹配 Python、PyTorch、CUDA 和平台，只安装扩展，不更换 PyTorch。Krea2 的旧 `flash_attn` 配置仍转为 `sdpa`。
 

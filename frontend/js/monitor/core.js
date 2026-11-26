@@ -6,22 +6,23 @@
 
 window.monitorCoreMixin = {
   // ── State ──────────────────────────────────────────────
-  monitorData: null,
+  monitorData: null, monitorDetailError: false,
   previewsVersion: 0, trainParamsVersion: 0,
   runDetailLoading: false, runDetailError: '',
   gpuInfo: null, sysInfo: null, lossSeries: [], lossDataVersion: 0, trainParams: [],
   previews: [], previewStep: 0, previewsLoading: false, historyItems: [], runningTask: null,
   // Refresh ownership and cacheable snapshot freshness advance independently.
-  _previewRequestSeq: 0, _previewSnapshotSeq: 0,
+  _previewRequestSeq: 0, _previewSnapshotSeq: 0, _previewRefreshPending: false,
   weakNetworkMode: true,
   _previewMediaQueue: [], _previewMediaAbort: null, _previewMediaLoading: false, _previewMediaPaused: false, _previewMediaObjectUrls: [], _previewMediaGeneration: 0,
   configSnapshotOpen: false, configSnapshotLoading: false, configSnapshotError: '', configSnapshotRunDir: '',
   _currentSnapshot: null, _snapshotRequestSeq: 0, _snapshotAbort: null, _reuseRequestSeq: 0, _reuseAbort: null,
   historyReuseBusy: '', _historyReuseApplying: false,
-  historyReuseSource: '', historyReuseWarning: '', _historyReuseUndo: null,
+  historyReuseSource: '', historyReuseWarning: '', historyResumeMeta: null, _historyReuseUndo: null,
   _historyCardPointer: null,
-  logAutoScroll: true, logLines: [],
-  _logContentVersion: 0, monitorTab: 'overview',
+  logAutoScroll: true, monitorTab: 'overview',
+  monitorChartMode: 'window',
+  monitorChartShowLr: false,
   monitorParamQuery: '',
   monitorParamsExpanded: false,
   _monitorParamContext: null, _monitorParamCache: null,
@@ -30,6 +31,7 @@ window.monitorCoreMixin = {
   _outputFilesKnownCount: 0, _outputCountVersion: 0,
   outputSearch: '', outputFilter: 'all',
   outputModelSortKey: 'time', outputModelSortDir: 'desc',
+  outputStateSortKey: 'time', outputStateSortDir: 'desc',
   outputOtherSortKey: 'time', outputOtherSortDir: 'desc',
   _renderRAF: null,  // requestAnimationFrame 节流标记
 
@@ -44,22 +46,16 @@ window.monitorCoreMixin = {
   _logFullResultQuery: '',     // 已返回的匹配所属的搜索词
   logFullMatchIdx: -1,         // 当前定位的匹配在 logFullMatches 中的下标
   logFullLoading: false, logRefreshFeedback: false, _logRefreshFeedbackTimer: null,
-  logTotal: 0,                 // 当前日志源的规范化总行数，独立于分页/尾部缓冲。
-  _logTailOffset: 0,
+  logTotal: 0,                 // 当前日志源的规范化总行数。
+  _liveLogEnd: 0,              // 实时日志尾部行号，HTTP 翻页不更新。
   _logFullLoaded: false,       // full 模式末页是否已加载（首屏/重连自动拉取用）
   _logFullNeedsResync: false,  // 实时重连后需全量 resync（防丢事件）
   _logFullSlide: false,        // full 模式实时增量 slide 待执行
   _logSliceRequestSeq: 0,      // 日志分页请求序号；切换实时/历史源时丢弃过期响应
   _logFullSourceKey: '',       // 当前完整日志缓冲所属的 task/run，切页时用于安全复用
 
-  _resetLogRefreshFeedback() {
-    if (this._logRefreshFeedbackTimer) clearTimeout(this._logRefreshFeedbackTimer);
-    this._logRefreshFeedbackTimer = null;
-    this.logRefreshFeedback = false;
-  },
-
   // ── 历史页筛选状态 ──
-  historySearch: '', historyFilter: 'all',  // all|completed|failed|terminated
+  historySearch: '', historyFilter: 'all', historyPage: 1, historyPageSize: 30, historyFilteredCount: 0,
   historyLoading: false, historyRefreshing: false, historyRefreshFeedback: false,
   historyError: '', historyDeleting: '', _historyLoaded: false, _historyRefreshFeedbackTimer: null,
   _historyRequestSeq: 0, _historyTimer: null, _historyTaskSignature: null, _historyProgressPending: false,
@@ -75,7 +71,7 @@ window.monitorCoreMixin = {
     });
   },
   setMonitorTab(tab, focusTab) {
-    const tabs = ['overview', 'logs', 'samples', 'outputs'];
+    const tabs = ['overview', 'logs', 'samples', 'outputs', 'dataset'];
     if (!tabs.includes(tab)) return;
     this.monitorTab = tab;
     if (this.selectedRunDir && window.location?.hash) {
@@ -91,17 +87,17 @@ window.monitorCoreMixin = {
     }
   },
   moveMonitorTab(delta) {
-    const tabs = ['overview', 'logs', 'samples', 'outputs'];
+    const tabs = ['overview', 'logs', 'samples', 'outputs', 'dataset'];
     const current = Math.max(0, tabs.indexOf(this.monitorTab));
     const next = (current + delta + tabs.length) % tabs.length;
     this.setMonitorTab(tabs[next], true);
   },
   _prevState: null,
-  _lastRealtimePreviewRefreshAt: 0,
 
   // ── Realtime subscription state ────────────────────────
   _monitorRealtimeTopic: null,
   _monitorRealtimeDetailGeneration: 0,
+  _monitorRealtimeDetailRequest: null,
   monitorPerfSamples: null,
   _monitorPerfVersion: 0,
   _monitorProgressVersion: 0,
@@ -137,6 +133,8 @@ window.monitorCoreMixin = {
 
   _setMonitorRealtimeTask(taskId) {
     const next = taskId ? 'task:' + taskId : null;
+    if (next && this.currentRoute === 'monitor-dashboard' && !this.selectedRunDir) this.realtimeSubscribe('artifacts');
+    else this.realtimeUnsubscribe('artifacts');
     if (next === this._monitorRealtimeTopic) return;
     if (this._monitorRealtimeTopic) this.realtimeUnsubscribe(this._monitorRealtimeTopic);
     this._monitorRealtimeTopic = next;
@@ -190,61 +188,73 @@ window.monitorCoreMixin = {
     this.isIdle = !active;
     const keys = {
       CREATED: 'monitor.created', RUNNING: 'monitor.training',
-      FINISHED: 'monitor.finished', TERMINATED: 'monitor.terminated',
+      FINISHED: 'monitor.finished', TERMINATED: 'monitor.terminated', STOPPED: 'control.stopped',
       FAILED: 'monitor.error', UNKNOWN: 'monitor.taskStateUnknown', IDLE: 'monitor.idle',
     };
     this.statusText = label || (keys[code] ? this.t(keys[code]) : code);
     if (!this.monitorData || typeof this.monitorData !== 'object') this.monitorData = {};
+    const changed = this.monitorData.state !== code || this.monitorData.state_label !== this.statusText;
     this.monitorData.state = code;
     this.monitorData.state_label = this.statusText;
     this._prevState = code;
-    if (!this.selectedRunDir && this.currentRoute === 'monitor-dashboard') this.scheduleRender();
+    if (changed && !this.selectedRunDir && this.currentRoute === 'monitor-dashboard') this.scheduleRender();
   },
 
-  startTrainingStatePoll() {
-    if (this._statePollTimer) return;
-    const poll = async () => {
-      await this._pollTrainingState();
-      this._statePollTimer = setTimeout(poll, document.hidden ? 10000 : this.liveTaskId || this.regularizationActive ? 1500 : 5000);
-    };
-    this._statePollTimer = setTimeout(poll, 0);
+  _scheduleTrainingStatePoll(delay) {
+    clearTimeout(this._statePollTimer);
+    this._statePollTimer = setTimeout(async () => {
+      this._statePollTimer = null;
+      try { await this._pollTrainingState(); }
+      finally {
+        const delay = document.hidden ? 10000 : this.liveTaskId || this.regularizationActive ? 1500 : 5000;
+        this._scheduleTrainingStatePoll(delay);
+      }
+    }, delay);
+  },
+
+  _wakeTrainingStatePoll() {
+    if (!this._statePollInFlight) this._scheduleTrainingStatePoll(0);
   },
 
   async _pollTrainingState() {
     if (this._statePollInFlight) return;
     this._statePollInFlight = true;
     this._statePollDiscard = false;
-    const requestedAt = Date.now();
-    let timeout;
+    const requestedAt = Date.now(), requestedInstanceId = this.realtimeInstanceId;
+    let timeout, snapshot;
     try {
       const controller = new AbortController();
       timeout = setTimeout(() => controller.abort(), 4000);
-      const response = await fetch('/api/realtime/state?hardware=' + !this.realtimeReady, { cache: 'no-store', signal: controller.signal });
-      if (!response.ok) return;
+      const url = '/api/realtime/state?hardware=' + !this.realtimeReady + (this.liveTaskId ? '&task_id=' + encodeURIComponent(this.liveTaskId) : '');
+      const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
+      if (!response.ok) throw new Error('state request failed');
       const body = await response.json();
-      if (body.status !== 'success' || !body.data) return;
-      const snapshot = body.data;
-      const nextId = snapshot.server_instance_id;
-      if (nextId && this.realtimeInstanceId && nextId !== this.realtimeInstanceId) {
-        this.realtimeInstanceId = nextId;
-        this._saveRealtimeInstanceId();
-        this._handleRealtimeServerRestart();
-      }
-      // WS 掉线时资源圆环仍有数据（状态轮询顺带带回硬件采样）。
-      if (!this.realtimeReady && snapshot.hardware) this.handleRealtimeHardware(snapshot.hardware);
-      if (typeof this.applyRegularizationActivity === 'function') this.applyRegularizationActivity(snapshot, requestedAt);
-      if (!this._statePollDiscard) this._applyManagedTrainingState(snapshot, requestedAt);
-    } catch (_) {
-      // 后端不可达：保持最后已知状态；连接指示由探针/WS 状态机负责。
-    } finally {
+      if (body.status !== 'success' || !body.data) throw new Error('invalid state response');
+      snapshot = body.data;
+    } catch (_) { return; }
+    finally {
       clearTimeout(timeout);
       this._statePollInFlight = false;
     }
+    this._recordRealtimeHttpResult(true);
+    const nextId = snapshot.server_instance_id;
+    if (this.realtimeInstanceId !== requestedInstanceId && nextId !== this.realtimeInstanceId) return;
+    const restarted = !!nextId && !!this.realtimeInstanceId && nextId !== this.realtimeInstanceId;
+    const identified = !!nextId && !this.realtimeInstanceId;
+    if (restarted || identified) {
+      this.realtimeInstanceId = nextId;
+      this._saveRealtimeInstanceId();
+      if (restarted) this._handleRealtimeServerRestart();
+    }
+    // WS 掉线时资源圆环仍有数据（状态轮询顺带带回硬件采样）。
+    if (!this.realtimeReady && snapshot.hardware) this.handleRealtimeHardware(snapshot.hardware);
+    this.applyRegularizationActivity(snapshot, requestedAt);
+    if (!this._statePollDiscard) this._applyManagedTrainingState(snapshot, requestedAt);
+    if (restarted || (identified && (this.liveTaskId || !this.currentOutputRunDir))) void this.refreshMonitorRealtimeDetail();
   },
 
   _applyManagedTrainingState(snapshot, requestedAt) {
-    // 快照只代表"取回前"的事实：所有权在本轮请求发出后才变过的，
-    // 这份任务列表既不能证明新任务存在，也不能证明旧任务已结束。
+    // 任务归属在请求发出后发生变化时，跳过这份旧任务列表。
     if (requestedAt != null && requestedAt < (this.liveTaskBoundaryAt || 0)) return;
     const managed = snapshot && snapshot.tasks && snapshot.tasks.managed || [];
     const historySignature = managed.filter(Boolean).map(task => task.id + ':' + task.status).join('|');
@@ -262,17 +272,22 @@ window.monitorCoreMixin = {
       if (this.selectedRunDir) {
         this.claimLiveTask(activeId);
         this._applyTaskView(active.status);
+        this.applyTrainingControl?.(activeId, active.control || null);
         this.realtimeTaskStateUnknown = false;
         return;
       }
       // 任务边界（新启动/页面刷新恢复/他处启动）：清理上一轮残留并切换订阅。
       this.beginLiveMonitorTask(activeId, active.status);
+      this.applyTrainingControl?.(activeId, active.control || null);
       return;
     }
     if (!activeId && prevId) {
       // 拥有的任务已到终态。注册表只驱逐终态任务，所以"列表里没有"或
       // "已是终态"都可作为结算依据（终态事件丢失时由这里兜底）。
       const finished = managed.find(task => task && task.id === prevId) || null;
+      if (finished?.control) this.applyTrainingControl?.(prevId, finished.control);
+      this.controlDialog = '';
+      this.controlState = null;
       const status = finished ? finished.status : 'IDLE';
       const prevStatus = this._prevState;
       this.releaseLiveTask();
@@ -285,6 +300,7 @@ window.monitorCoreMixin = {
     if (active) {
       // 同一任务：同步状态（如 CREATED → RUNNING），进度字段由 WS 流维护。
       this._applyTaskView(active.status);
+      if (active.control) this.applyTrainingControl?.(activeId, active.control);
       this._setMonitorRealtimeTask(active.id);
       this.realtimeTaskStateUnknown = false;
       return;
@@ -303,6 +319,12 @@ window.monitorCoreMixin = {
       this.handleRealtimeHardware(event.payload);
       return;
     }
+    if (event.topic === 'artifacts') {
+      if (event.type === 'task.artifacts' && event.payload?.task_id === this.liveTaskId) {
+        this.handleRealtimeTaskArtifacts(event.payload);
+      }
+      return;
+    }
     if (!this._monitorRealtimeTopic || event.topic !== this._monitorRealtimeTopic) return;
     const payload = event.payload || {};
     // task.status / task.result 不在这里消费：生命周期状态由轮询统一结算，
@@ -310,7 +332,6 @@ window.monitorCoreMixin = {
     if (event.type === 'task.progress') this.handleRealtimeTaskProgress(payload);
     else if (event.type === 'task.log') this.handleRealtimeTaskLog(payload);
     else if (event.type === 'task.metrics') this.handleRealtimeTaskMetrics(payload);
-    else if (event.type === 'task.artifacts') this.handleRealtimeTaskArtifacts(payload);
   },
 
   handleRealtimeResyncRequired(topics) {
@@ -337,7 +358,7 @@ window.monitorCoreMixin = {
     if (!hasMonitorDetail) return;
     const snapshotTaskId = next.active_task && next.active_task.id || active && active.id || '';
     // Transport idle does not erase the run the user is still inspecting.
-    if (!snapshotTaskId && this.currentOutputRunDir && ['FINISHED', 'FAILED', 'TERMINATED'].includes(this.monitorData && this.monitorData.state)) return;
+    if (!snapshotTaskId && this.currentOutputRunDir && ['FINISHED', 'FAILED', 'TERMINATED', 'STOPPED'].includes(this.monitorData && this.monitorData.state)) return;
     if (this.liveTaskId && snapshotTaskId !== this.liveTaskId) return;
     const nextLogSourceKey = snapshotTaskId ? 'task:' + snapshotTaskId : '';
     const reusingFullLog = !!(
@@ -348,14 +369,9 @@ window.monitorCoreMixin = {
     );
 
     if (nextLogSourceKey && this._logFullSourceKey && this._logFullSourceKey !== nextLogSourceKey) {
-      this._resetLogRefreshFeedback();
+      this._resetLogPage();
       this._logSliceRequestSeq++;
       this.logFullLoading = false;
-      this.logFullLines = [];
-      this.logFullOffset = 0;
-      this.logTotal = 0;
-      this.logFullMatches = [];
-      this._logFullResultQuery = '';
       this.logFullMatchIdx = -1;
       this._logFullLoaded = false;
       this._logFullNeedsResync = false;
@@ -427,7 +443,7 @@ window.monitorCoreMixin = {
 
   resetRealtimeMonitorState() {
     this._invalidatePreviewRequest();
-    if (typeof this.closePreviewLightbox === 'function') this.closePreviewLightbox();
+    this.closePreviewLightbox();
     const wasRunning = !!(
       (this.monitorData && this.monitorData.state === 'RUNNING')
       || this._monitorRealtimeTopic
@@ -454,14 +470,7 @@ window.monitorCoreMixin = {
       if (this.currentRoute === 'monitor-dashboard') this.scheduleRender();
       return wasRunning;
     }
-    this._resetLogRefreshFeedback();
-    this.logLines = [];
-    this.logFullLines = [];
-    this.logFullOffset = 0;
-    this.logTotal = 0;
-    this._logTailOffset = 0;
-    this.logFullMatches = [];
-    this._logFullResultQuery = '';
+    this._resetLogPage();
     this._logFullSourceKey = '';
     this.trainParams = [];
     this.trainParamsVersion++;
@@ -470,6 +479,7 @@ window.monitorCoreMixin = {
     this.previewsVersion++;
     this.previewStep = 0;
     this._resetOutputFilesForRun('');
+    this._resetDatasetDiagForRun?.('');
     this._cancelPreviewMediaQueue();
     this._releasePreviewMediaObjectUrls();
     this._logFullNeedsResync = true;
@@ -498,16 +508,24 @@ window.monitorCoreMixin = {
   },
 
   handleTaskCompletion(prevState, newState) {
-    if (!['RUNNING', 'CREATED'].includes(prevState) || !['FINISHED', 'FAILED', 'TERMINATED'].includes(newState)) return;
-    const msg = this.t(newState === 'FINISHED' ? 'monitor.trainCompleted' : newState === 'FAILED' ? 'monitor.trainFailed' : 'monitor.trainTerminated');
-    this.toast(msg, newState === 'FINISHED' ? 'success' : 'error');
+    const outcomes = {FINISHED: 'monitor.trainCompleted', FAILED: 'monitor.trainFailed', TERMINATED: 'monitor.trainTerminated', STOPPED: 'control.stopped'};
+    if (!this.selectedRunDir) {
+      this._datasetDiagNeedsRefresh = true;
+      this._stopDatasetDiagPolling?.();
+      if (this.currentRoute === 'monitor-dashboard' && this.monitorTab === 'dataset') {
+        void this.loadDatasetDiagnostics?.({ silent: true, force: true });
+      }
+    }
+    if (!['RUNNING', 'CREATED'].includes(prevState) || !outcomes[newState]) return;
+    const msg = this.t(outcomes[newState]);
+    this.toast(msg, newState === 'FAILED' ? 'error' : 'info');
     if ('Notification' in window && Notification.permission === 'granted') {
       new Notification('lora-scripts-anima', { body: msg });
     }
     const origTitle = document.title;
     let flashCount = 0;
     const flashTimer = setInterval(() => {
-      document.title = flashCount % 2 === 0 ? (newState === 'FINISHED' ? '✅ ' : '⚠ ') + msg : origTitle;
+      document.title = flashCount % 2 === 0 ? msg : origTitle;
       flashCount++;
       if (flashCount >= 6) { clearInterval(flashTimer); document.title = origTitle; }
     }, 800);
@@ -516,6 +534,7 @@ window.monitorCoreMixin = {
   handleRealtimeTaskProgress(data) {
     if (!data || !data.data) return;
     const progress = data.data;
+    if (progress.step != null && this.monitorData?.step > progress.step) return;
 
     // 只合并事件中实际存在的有效字段，避免增量日志用 null 清空旧状态。
     if (this.monitorData) {
@@ -544,16 +563,9 @@ window.monitorCoreMixin = {
     const eventSourceKey = this._monitorRealtimeTopic || '';
 
     if (eventSourceKey && this._logFullSourceKey && this._logFullSourceKey !== eventSourceKey) {
-      this._resetLogRefreshFeedback();
+      this._resetLogPage();
       this._logSliceRequestSeq++;
       this.logFullLoading = false;
-      this.logLines = [];
-      this.logTotal = 0;
-      this._logTailOffset = 0;
-      this.logFullLines = [];
-      this.logFullOffset = 0;
-      this.logFullMatches = [];
-      this._logFullResultQuery = '';
       this.logFullMatchIdx = -1;
       this._logFullLoaded = false;
       this._logFullNeedsResync = true;
@@ -572,13 +584,10 @@ window.monitorCoreMixin = {
       this.logFullMatchIdx = -1;
       this._logFullNeedsResync = false;
     }
-    const tail = this._mergeRealtimeLogPage(this.logLines, this._logTailOffset, logData, this._logCap());
-    this._logTailOffset = tail.offset;
+    const gap = logData.offset > this._liveLogEnd;
+    this._liveLogEnd = logData.log_total;
     this.logTotal = logData.log_total;
-    if (tail.changed) {
-      this._logContentVersion++;
-    }
-    if (logData.truncated || tail.gap) this._logFullNeedsResync = true;
+    if (logData.truncated || gap) this._logFullNeedsResync = true;
 
     // 总数始终更新；只有当前末页正在跟随时才移动分页内容。
     if ((atLastPage && following && !logData.truncated) || logData.reset) {
@@ -600,7 +609,7 @@ window.monitorCoreMixin = {
 
     if (!this.selectedRunDir && this.currentRoute === 'monitor-dashboard') {
       this.scheduleRender();
-    } else if (['tagger', 'ai-captioning'].includes(this.currentRoute) && typeof this.renderTaggerResourceBar === 'function') {
+    } else if (['tagger', 'ai-captioning'].includes(this.currentRoute)) {
       this.renderTaggerResourceBar();
     } else if (this.currentRoute === 'regularization') {
       this.renderRegularizationResourceBar();
@@ -612,17 +621,14 @@ window.monitorCoreMixin = {
     // No one can see this list off the dashboard; defer its full metadata
     // refresh until the page is opened, where the detail snapshot hydrates it.
     if (!data || this.selectedRunDir || this.currentRoute !== 'monitor-dashboard') return;
-    // The socket event is intentionally tiny. Load the cacheable metadata list
-    // only after a real artifact notice, rather than repeatedly requesting it.
+    // Keep the socket payload small. Fetch the cacheable metadata list when an
+    // artifact event arrives.
     this._outputCountVersion++;
     this._applyOutputCount(this.currentOutputRunDir, data.output_count);
     this._outputFilesNeedsRefresh = true;
     this.scheduleRender();
-    const now = Date.now();
-    if (now - this._lastRealtimePreviewRefreshAt < 500) return;
-    this._lastRealtimePreviewRefreshAt = now;
-    this.refreshPreviews(false);
-    if (this.monitorTab === 'outputs') void this.loadOutputFiles();
+    if (data.previews_changed !== false) this._previewRefreshPending = true;
+    if (this._previewRefreshPending && !this.previewsLoading) void this.refreshPreviews(false);
   },
 
   startMonitorRealtime() {
@@ -632,61 +638,73 @@ window.monitorCoreMixin = {
     if (!this.selectedRunDir) this._setMonitorRealtimeTask(this.liveTaskId);
     if (!this.monitorData) this.monitorData = { state: 'IDLE', state_label: this.t('monitor.idle') };
     this.renderDashboard();
-    if (this.realtimeSnapshot) {
-      if (!this.monitorData?.detail) this.applyRealtimeMonitorSnapshot(this.realtimeSnapshot);
-      // Curves, progress and artifacts are refreshed from disk on entry. A
-      // complete log page for the same task stays in memory so queued replay
-      // can fill the page-switch gap without a later HTTP response replacing it.
-      void this.refreshMonitorRealtimeDetail();
-    }
+    // HTTP detail also works when the socket has never connected.
+    void this.refreshMonitorRealtimeDetail();
   },
-  async refreshMonitorRealtimeDetail() {
+  async refreshMonitorRealtimeDetail(afterPending = false) {
     if (this.currentRoute !== 'monitor-dashboard' || this.selectedRunDir) return;
     const runDir = this.currentOutputRunDir;
-    if (!this.selectedRunDir && !this.liveTaskId && runDir) {
-      const generation = ++this._monitorRealtimeDetailGeneration;
-      const versions = { logs: this._logObservationVersion || 0, outputs: this._outputCountVersion || 0, progress: this._monitorProgressVersion || 0, previews: this._previewSnapshotSeq };
-      try {
-        const response = await fetch('/api/monitor/run-detail?run_dir=' + encodeURIComponent(runDir));
-        const body = await response.json();
-        if (generation !== this._monitorRealtimeDetailGeneration || this.selectedRunDir || this.liveTaskId || this.currentOutputRunDir !== runDir) return;
-        if (body.status === 'success') {
-          this.applyRealtimeMonitorSnapshot({ monitor: Object.assign({}, body.data, {
-            detail: true, active_task: this.monitorData.active_task,
-          }) }, versions);
-          this._logFullNeedsResync = true;
-          this._outputFilesNeedsRefresh = true;
-          this.renderDashboard();
-        }
-      } catch (_) { this.toast(this.t('monitor.loadRunFailed'), 'error'); }
-      return;
-    }
-    // 详情是 HTTP 读取，不要求 WS 存活：隧道弱网下 WS 可能长期不可用，
-    // 而状态轮询仍在工作。socket 在线时传入它作为过期判据，离线时传 null。
-    const socket = this.realtimeSocket && this.realtimeSocket.readyState === WebSocket.OPEN
-      ? this.realtimeSocket
-      : null;
-    const generation = ++this._monitorRealtimeDetailGeneration;
-    await this._refreshRealtimeSnapshot(this.realtimeInstanceId, socket, {
-      monitorDetail: true,
-      monitorDetailGeneration: generation,
-      preserveSubscribedCursors: true,
-    });
-    if (this.currentRoute !== 'monitor-dashboard' || generation !== this._monitorRealtimeDetailGeneration) return;
-    // If this call joined a compact bootstrap already in flight, issue one
-    // detail request after it settles instead of leaving the dashboard empty.
-    if (this.currentRoute === 'monitor-dashboard'
-      && generation === this._monitorRealtimeDetailGeneration
-      && this.realtimeSnapshot
-      && !(this.monitorData && this.monitorData.detail)) {
-      await this._refreshRealtimeSnapshot(this.realtimeInstanceId, socket, {
-        monitorDetail: true,
-        monitorDetailGeneration: generation,
-        preserveSubscribedCursors: true,
+    const taskId = this.liveTaskId, boundary = this.liveTaskBoundaryAt;
+    const historical = !taskId && runDir;
+    const instanceId = historical ? null : this.realtimeInstanceId;
+    const key = JSON.stringify([instanceId, taskId, runDir, boundary]);
+    const pending = this._monitorRealtimeDetailRequest;
+    if (pending && pending.key === key && pending.generation === this._monitorRealtimeDetailGeneration) {
+      if (!afterPending) return pending.promise;
+      pending.followup ||= pending.promise.then(() => {
+        if (pending.generation === this._monitorRealtimeDetailGeneration) return this.refreshMonitorRealtimeDetail();
       });
+      return pending.followup;
     }
+    if (pending) pending.controller.abort();
+    const generation = ++this._monitorRealtimeDetailGeneration;
+    this.monitorDetailError = false;
+    const versions = { logs: this._logObservationVersion || 0, outputs: this._outputCountVersion || 0, progress: this._monitorProgressVersion || 0, previews: this._previewSnapshotSeq };
+    const request = { key, generation, controller: new AbortController(), promise: null };
+    const isCurrent = () => this.currentRoute === 'monitor-dashboard' && !this.selectedRunDir
+      && generation === this._monitorRealtimeDetailGeneration && this.liveTaskId === taskId
+      && this.liveTaskBoundaryAt === boundary && this.currentOutputRunDir === runDir
+      && (historical || this.realtimeInstanceId === instanceId);
+    request.promise = (async () => {
+      const url = historical ? '/api/monitor/run-detail?run_dir=' + encodeURIComponent(runDir)
+        : '/api/realtime/monitor-detail';
+      const timeout = historical ? null : setTimeout(() => request.controller.abort(), 10000);
+      let body;
+      try {
+        for (let attempt = 0; ; attempt++) {
+          try {
+            const response = await fetch(url, { signal: request.controller.signal });
+            body = await response.json();
+            if (!response.ok || body.status !== 'success' || !body.data) throw new Error('monitor detail unavailable');
+            break;
+          } catch (error) {
+            if (attempt || !isCurrent() || request.controller.signal.aborted) throw error;
+          }
+        }
+      } catch (_) {
+        if (isCurrent()) { this.monitorDetailError = true; this.finishProgress(); }
+        return;
+      } finally {
+        if (timeout) clearTimeout(timeout);
+        if (this._monitorRealtimeDetailRequest?.generation === generation) this._monitorRealtimeDetailRequest = null;
+      }
+      if (!isCurrent()) return;
+      if (historical) {
+        this.applyRealtimeMonitorSnapshot({ monitor: Object.assign({}, body.data, {
+          detail: true, active_task: this.monitorData.active_task,
+        }) }, versions);
+        this._logFullNeedsResync = true;
+        this._outputFilesNeedsRefresh = true;
+        this.renderDashboard();
+      } else if (!instanceId || body.data.server_instance_id === instanceId) {
+        this.applyRealtimeMonitorSnapshot(body.data, versions);
+      }
+    })();
+    this._monitorRealtimeDetailRequest = request;
+    return request.promise;
   },
   stopMonitorRealtime() {
+    this.monitorDetailError = false;
     this._invalidatePreviewRequest();
     this._sampleLayoutAction++;
     this._cancelSampleGridMotion?.(this._sampleOverviewPanel?.()?.querySelector('.preview-grid'));
@@ -695,7 +713,9 @@ window.monitorCoreMixin = {
     if (this._monitorClockTimer) clearInterval(this._monitorClockTimer);
     this._monitorClockTimer = null;
     this._monitorRealtimeDetailGeneration++;
+    this._monitorRealtimeDetailRequest?.controller.abort();
     this.realtimeUnsubscribe('hardware');
+    this.realtimeUnsubscribe('artifacts');
     // 任务订阅由训练生命周期管理；离开页面只暂停绘制，继续维护当前任务的曲线。
     if (this._renderRAF) { cancelAnimationFrame(this._renderRAF); this._renderRAF = null; }
     this._dashboardRendered = false;
@@ -703,7 +723,10 @@ window.monitorCoreMixin = {
     this._logFullSlide = false;
     this._cancelPreviewMediaQueue();
     this._releasePreviewMediaObjectUrls();
-    if (typeof this.closePreviewLightbox === 'function') this.closePreviewLightbox();
+    this.closePreviewLightbox();
+    this._suspendDatasetDiagnostics?.();
+    this.closeDatasetDiagModal?.();
+    this._disconnectDatasetDiagUI?.();
   },
 
 };
@@ -715,3 +738,5 @@ window.composeAppMixins(window.monitorCoreMixin, { monitorOutputsMixin: window.m
 window.composeAppMixins(window.monitorCoreMixin, { monitorHistoryMixin: window.monitorHistoryMixin });
 
 window.composeAppMixins(window.monitorCoreMixin, { monitorMetricsMixin: window.monitorMetricsMixin });
+
+window.composeAppMixins(window.monitorCoreMixin, { monitorDatasetDiagMixin: window.monitorDatasetDiagMixin });

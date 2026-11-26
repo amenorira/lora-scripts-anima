@@ -71,7 +71,7 @@ def _parse_subset_name(raw: Any) -> str:
 
 def _normalize_changes(changes: Any) -> list[tuple[str, int]]:
     # 只拦形状不对的请求（非列表 / 元素非对象），避免后续 .get 直接抛。
-    # 空列表不是错误：没有改动就什么也不做，返回空计划，由调用方当成功处理。
+    # 空列表返回空计划，调用方按成功处理。
     if not isinstance(changes, list) or any(not isinstance(item, dict) for item in changes):
         raise DatasetRepeatError(
             "Invalid dataset change list / 数据集修改列表无效",

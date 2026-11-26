@@ -5,15 +5,21 @@ import time
 from pathlib import Path
 
 from backend.tasks import tm
+from backend.tagger.errors import TaggerNotFoundError
 from backend.tagger.workspace_state import (
     _ACTIVE_TASK_STATUSES, _sources, _sources_lock, _tasks, _tasks_lock,
 )
 
 
+def _touch_task(task: dict) -> None:
+    task["updated_at"] = time.time()
+    task["snapshot_revision"] += 1
+
+
 def _task_log(task: dict, event: str, level: str = "info", **data) -> None:
     with task["lock"]:
         task["logs"].append({"time": time.strftime("%H:%M:%S"), "event": event, "level": level, **data})
-        task["updated_at"] = time.time()
+        _touch_task(task)
 
 def _record_task_item(task: dict, index: int, outcome: dict) -> None:
     with task["lock"]:
@@ -22,6 +28,7 @@ def _record_task_item(task: dict, index: int, outcome: dict) -> None:
         task["current"] += 1
         item = task["items"][index]
         item.update({key: outcome[key] for key in ("status", "tag_count", "error", "event", "planned_action") if key in outcome})
+        task["items_version"] += 1
         task["current_file"] = item["name"]
         if "result" in outcome:
             task["current_result"] = task["results"][index] = outcome["result"]
@@ -60,6 +67,7 @@ def _finish_task(task: dict, status: str, error: str = "") -> None:
             for item in task["items"]:
                 if item["status"] in {"pending", "running"}:
                     item.update(status="cancelled", event="cancelled")
+            task["items_version"] += 1
         task.update(status=status, phase={"done": "completed", "cancelled": "cancelled", "error": "error"}[status],
                     error_detail=error or None)
         level = ("error" if status == "error" or task["failed"] == task["total"] else
@@ -77,6 +85,7 @@ def _task_snapshot_unlocked(task: dict) -> dict:
         "status": task["status"],
         "phase": task["phase"],
         "current": current,
+        "items_version": task["items_version"],
         "total": task["total"],
         "current_file": task.get("current_file", ""),
         "success": task["success"],
@@ -85,7 +94,7 @@ def _task_snapshot_unlocked(task: dict) -> dict:
         "written": task["written"],
         "reused": task["reused"],
         "checked": task["checked"],
-        "plan": task["plan"],
+        "plan": dict(task["plan"]),
         "has_check_prompt": bool(task.get("check_prompt")),
         "speed": round(speed, 2),
         "eta_seconds": round(remaining / speed) if speed > 0 else None,
@@ -100,6 +109,7 @@ def _task_snapshot_unlocked(task: dict) -> dict:
         "error_detail": task.get("error_detail"),
         **({"current_result": task.get("current_result")} if task["engine"] != "api" else {}),
         "updated_at": task["updated_at"],
+        "snapshot_revision": task["snapshot_revision"],
     }
 
 def task_snapshot(task_id: str) -> dict:
@@ -114,7 +124,7 @@ def task_items(task_id: str, offset: int = 0, limit: int = 120, failed_only: boo
     with _tasks_lock:
         task = _tasks.get(task_id)
     if not task:
-        raise KeyError("Task not found / 任务不存在")
+        raise TaggerNotFoundError("taggerTaskNotFound", "Task not found / 任务不存在")
     with task["lock"]:
         items = task["items"]
         start = max(0, offset)
@@ -139,7 +149,7 @@ def task_check_prompt(task_id: str) -> dict:
     with _tasks_lock:
         task = _tasks.get(task_id)
     if not task:
-        raise KeyError("Task not found / 任务不存在")
+        raise TaggerNotFoundError("taggerTaskNotFound", "Task not found / 任务不存在")
     with task["lock"]:
         return {"prompt": task.get("check_prompt", ""), "path": task.get("check_prompt_image", "")}
 
@@ -152,7 +162,7 @@ def cancel_task(task_id: str) -> bool:
         if task["status"] in {"created", "running"}:
             task["status"] = "cancelling"
             task["phase"] = "cancelling"
-            task["updated_at"] = time.time()
+            _touch_task(task)
         task["cancel_event"].set()
     return True
 

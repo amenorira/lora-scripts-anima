@@ -56,7 +56,7 @@ def read_caption_snapshot(cap_path: Path) -> tuple[str, str, int]:
         raise OSError(f"Caption changed while reading / 读取期间标签发生变化: {cap_path}")
     digest = hashlib.sha1(data).hexdigest()
     # The editor, transaction rollback and timeline share this exact text.
-    # Refuse invalid UTF-8 instead of overwriting undecodable bytes with U+FFFD.
+    # Decode strictly so invalid UTF-8 stops editing and preserves the original file.
     text = data.decode("utf-8")
     return text, f"{stat.st_mtime_ns}:{stat.st_size}:{digest}", stat.st_mtime_ns
 
@@ -186,7 +186,7 @@ def dataset_disk_state(dir_path: Path, recursive: bool) -> tuple[set[str], dict[
 
 
 def scan_selected_images(dir_path: Path, selected_paths: set[str]) -> list[dict]:
-    """Only scan and read tags for selected images, instead of full directory scan."""
+    """Read tags for the selected images only."""
     dir_resolved = dir_path.resolve()
     images = []
     img_exts = set(IMAGE_EXTENSIONS)

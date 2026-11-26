@@ -10,11 +10,11 @@ function app(overrides = {}) {
   Object.assign(value, window.realtimeMixin, {
     currentRoute: 'monitor-dashboard', liveTaskId: 'A',
     monitorData: { state: 'RUNNING', active_task: { id: 'A' }, step: 12, detail: true },
-    lossSeries: [], previews: [], logLines: [], logFullLines: [],
+    lossSeries: [], previews: [], logFullLines: [],
     _previewMediaObjectUrls: [], _realtimeTopics: new Set(),
     t: key => key, renderDashboard() {}, scheduleRender() {},
-    startProgress() {}, finishProgress() {}, toast() {},
-    _sendRealtimeSubscriptions() {}, _saveRealtimeCursors() {},
+    startProgress() {}, finishProgress() {}, toast() {}, closePreviewLightbox() {},
+    _sendRealtimeSubscriptions() {},
     _saveRealtimeInstanceId() {}, _applyRealtimeSnapshotCursors() {},
   }, overrides);
   return value;
@@ -27,9 +27,11 @@ const snapshot = (id = 'A') => ({
 test('page switches retain the task subscription and history does not overwrite live curves', () => {
   const a = app({ refreshMonitorRealtimeDetail() {} });
   a._setMonitorRealtimeTask('A');
+  assert.ok(a._realtimeTopics.has('artifacts'));
   a.stopMonitorRealtime();
   a.currentRoute = 'settings';
   assert.equal(a._monitorRealtimeTopic, 'task:A');
+  assert.ok(!a._realtimeTopics.has('artifacts'));
   a.handleRealtimeMonitorEvent({ topic: 'task:A', type: 'task.progress', payload: { data: { step: 98 } } });
   a.selectedRunDir = 'output/history';
   a.runDetailData = { tensorboard_loss: [{ tag: 'history' }] };
@@ -42,6 +44,7 @@ test('page switches retain the task subscription and history does not overwrite 
   a.startMonitorRealtime();
   assert.equal(a._monitorRealtimeTopic, 'task:A');
   assert.ok(a._realtimeTopics.has('task:A'));
+  assert.ok(a._realtimeTopics.has('artifacts'));
   a.handleRealtimeMonitorEvent({ topic: 'task:A', type: 'task.progress', payload: { data: { step: 99 } } });
   assert.equal(a.monitorData.step, 99);
   a._setMonitorRealtimeTask(null);
@@ -50,11 +53,54 @@ test('page switches retain the task subscription and history does not overwrite 
   a.stopMonitorRealtime();
 });
 
-test('snapshot started before task switch cannot overwrite the new task', async () => {
+test('dashboard loads details even if the socket has never produced a snapshot', () => {
+  let reads = 0;
+  const a = app({ refreshMonitorRealtimeDetail() { reads++; } });
+  a.startMonitorRealtime();
+  assert.equal(reads, 1);
+  a.stopMonitorRealtime();
+});
+
+test('opening the dashboard does not replace newer hardware with an old bootstrap sample', async () => {
+  const a = app({ currentRoute: 'home', realtimeInstanceId: 'server', monitorData: { state: 'IDLE' },
+    applyRealtimeTaggerSnapshot() {}, applyRealtimeRegularizationSnapshot() {},
+    applyRealtimeEnvironmentSnapshot() {}, refreshMonitorRealtimeDetail() {} });
+  global.fetch = async () => response({ server_instance_id: 'server',
+    hardware: { gpu: { sample: 1 } }, monitor: { detail: false } });
+  assert.equal(await a._refreshRealtimeSnapshot('server'), true);
+  a.handleRealtimeHardware({ gpu: { sample: 2 } });
+  a.currentRoute = 'monitor-dashboard';
+  a.startMonitorRealtime();
+  assert.equal(a.gpuInfo.sample, 2);
+  a.stopMonitorRealtime();
+});
+
+test('realtime logs detect a gap independently of the HTTP page total', () => {
+  const a = app({_logFullSourceKey: 'task:A', _liveLogEnd: 100, logTotal: 105,
+    logFullOffset: 0, logFullLines: ['page one'], logAutoScroll: false});
+  a._setMonitorRealtimeTask('A');
+  a.handleRealtimeTaskLog({data: {offset: 105, log_total: 106, lines: ['new']}});
+  assert.equal(a._logFullNeedsResync, true);
+  assert.equal(a._liveLogEnd, 106);
+  assert.deepEqual(a.logFullLines, ['page one']);
+});
+
+test('truncated metric events refresh details without advancing transport cursors', () => {
+  let refreshes = 0;
+  const a = app({ refreshMonitorRealtimeDetail() { refreshes++; }, _realtimeCursors: { 'task:A': 4 } });
+  a.handleRealtimeTaskMetrics({ points: {}, truncated: true });
+  assert.equal(refreshes, 1);
+  assert.equal(a._realtimeCursors['task:A'], 4);
+  a.currentRoute = 'home';
+  a.handleRealtimeTaskMetrics({ points: {}, truncated: true });
+  assert.equal(refreshes, 1);
+});
+
+test('monitor detail started before task switch cannot overwrite the new task', async () => {
   const pending = deferred();
   global.fetch = () => pending.promise;
   const a = app();
-  const request = a._refreshRealtimeSnapshot(null, null, { monitorDetail: true });
+  const request = a.refreshMonitorRealtimeDetail();
   a.claimLiveTask('B');
   a.monitorData = { state: 'RUNNING', active_task: { id: 'B' }, step: 2 };
   pending.resolve(response(snapshot('A')));
@@ -74,8 +120,10 @@ test('live epoch loss retains the oldest sample value beyond 5000 points while s
   const index = a._sampleEpochLossIndex();
   for (const series of a.lossSeries) {
     const epoch = epochTags.includes(series.tag);
-    assert.equal(series.points.length, epoch ? 5001 : 5000, series.tag);
-    assert.equal(series.points[0].step, epoch ? 1 : 2, series.tag);
+    if (epoch) assert.equal(series.points.length, 5001, series.tag);
+    else assert.ok(series.points.length <= 5000, series.tag);
+    assert.equal(series.points[0].step, 1, series.tag);
+    assert.equal(series.points.at(-1).step, 5001, series.tag);
     assert.equal(series.latest, .09);
     if (epoch) assert.equal(index.get(series.tag).get(1), .1, 'the first sample still resolves its epoch loss');
   }

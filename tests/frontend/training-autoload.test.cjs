@@ -17,6 +17,7 @@ function application(entries, autoLoadHistory) {
   };
   const window = {
     t: key => key, addEventListener() {}, removeEventListener() {},
+    loadTrainingFields: async () => {},
     TRAIN_GROUP_MAP: {},
     getVisibleSections: () => [{ key: 'training', fields: [
       { key: 'learning_rate', type: 'text', default: 'default-rate' },
@@ -49,6 +50,24 @@ function application(entries, autoLoadHistory) {
   });
   return { app, storage };
 }
+
+test('leaving before the training form mounts preserves saved drafts and their field sources', () => {
+  const saved = { model_train_type: 'sdxl-lora', learning_rate: 'old-rate' };
+  const entries = {
+    [activeKey]: JSON.stringify(saved),
+    [profilesKey]: JSON.stringify({ 'sdxl-lora': saved }),
+    [sourcesKey]: JSON.stringify({ version: 1, profiles: { 'sdxl-lora': { learning_rate: 'user' } } }),
+  };
+  const { app, storage } = application(entries, true);
+  app.suspendTrainForm(route);
+  assert.deepEqual(Object.fromEntries(storage), entries);
+
+  app.buildTrainForm();
+  assert.equal(app.form.learning_rate, 'old-rate');
+  app.form.learning_rate = 'new-rate';
+  app.suspendTrainForm(route);
+  assert.equal(JSON.parse(storage.get(activeKey)).learning_rate, 'new-rate');
+});
 
 test('startup restore honors the setting and preserves old drafts when disabled', () => {
   const saved = { model_train_type: 'sdxl-lora', learning_rate: 'old-rate', train_data_dir: 'old-train' };

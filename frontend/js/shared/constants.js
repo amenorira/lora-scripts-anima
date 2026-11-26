@@ -10,7 +10,6 @@ window.UI_CONSTANTS = {
   ],
 
   LOG: {
-    MAX_LINES: 5000,        // 内存环形缓冲上限（实时尾部 DOM 渲染行数）
     FULL_PAGE_SIZE: 1000,   // 「完整日志」模式每页拉取行数
   },
 };

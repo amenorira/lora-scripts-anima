@@ -155,5 +155,5 @@ def validate_sd_option_dependencies(config: dict) -> list[str]:
             and not any(str(config.get(key) or "").strip() for key in (
                 "positive_prompts", "prompt_file", "sample_prompts"
             ))):
-        errors.append("positive_prompts: MOSS preview requires a prompt or prompt file / MOSS 预览需要填写提示词或指定提示词文件")
+        errors.append("positive_prompts: MOSS automatic previews require a non-reserved prompt or prompt file / MOSS 自动预览需要填写非保留提示词或指定提示词文件")
     return errors

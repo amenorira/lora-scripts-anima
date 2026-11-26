@@ -183,8 +183,8 @@ def _validate_automagic(
     name = optimizer_type.rsplit(".", 1)[-1]
     errors: list[str] = []
     if optimizer_type == AUTOMAGIC4_OPTIMIZER_TYPE:
-        # The shared empty-value codec treats NaN as an unset form control.
-        # Explicit non-finite sensitivity settings must fail validation instead.
+        # Reject explicit non-finite values before the shared form codec treats
+        # NaN as an unset field.
         for form_key in AUTOMAGIC4_MERGED_ARG_MAP:
             value = config.get(form_key)
             if isinstance(value, float) and math.isnan(value):

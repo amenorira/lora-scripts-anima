@@ -52,16 +52,44 @@ test('sidebar, viewer thumbnails and sorting save independent preferences withou
     value.toggleSampleSidebar({currentTarget: {checked: true}});
     assert.deepEqual(settings(value), {sidebar: true, viewerTimeline: false, sort: 'desc'});
     value.setSampleBatchSort('asc');
+    const defaults = {comparisonLayout: 'horizontal', lossMode: 'off'};
     assert.deepEqual(saved.writes, [
-      {sidebar: false, viewerTimeline: true, sort: 'desc', comparisonLayout: 'horizontal', lossMode: 'off'},
-      {sidebar: false, viewerTimeline: false, sort: 'desc', comparisonLayout: 'horizontal', lossMode: 'off'},
-      {sidebar: true, viewerTimeline: false, sort: 'desc', comparisonLayout: 'horizontal', lossMode: 'off'},
-      {sidebar: true, viewerTimeline: false, sort: 'asc', comparisonLayout: 'horizontal', lossMode: 'off'},
+      {...defaults, sidebar: false, viewerTimeline: true, sort: 'desc'},
+      {...defaults, sidebar: false, viewerTimeline: false, sort: 'desc'},
+      {...defaults, sidebar: true, viewerTimeline: false, sort: 'desc'},
+      {...defaults, sidebar: true, viewerTimeline: false, sort: 'asc'},
     ]);
     assert.equal(value.previewStep, 4);
     assert.equal(value.sampleBatchId, 'selected-batch');
-    value.setSampleBatchSort('asc'); value.setSampleBatchSort('invalid');
+    value.setSampleBatchSort('asc'); value.setSampleBatchSort('invalid'); value.setSampleBatchSort('loss-overall');
     assert.equal(saved.writes.length, 4, 'unchanged or invalid sorting requests do not overwrite preferences');
+  });
+});
+
+test('explicit loss sorting persists across reloads and legacy preferences migrate cleanly', () => {
+  const saved = storage(JSON.stringify({sort: 'asc'}));
+  withStorage(saved, () => {
+    const value = app();
+    value.setSampleBatchSort('loss-overall-desc');
+    assert.equal(value.sampleSortAscending, false);
+
+    const reopened = app();
+    assert.equal(reopened.sampleBatchSortDir, 'loss-overall-desc');
+    assert.equal(reopened.sampleSortAscending, false);
+    reopened.setSampleBatchSort('asc');
+    assert.equal(reopened.sampleSortAscending, true);
+  });
+
+  withStorage(storage(JSON.stringify({sort: 'loss-overall', lossAscending: false})), () => {
+    const migrated = app();
+    assert.equal(migrated.sampleBatchSortDir, 'loss-overall-desc');
+    assert.equal(migrated.sampleSortAscending, false);
+  });
+
+  withStorage(storage(JSON.stringify({sort: 'loss-overall'})), () => {
+    const migratedDefault = app();
+    assert.equal(migratedDefault.sampleBatchSortDir, 'loss-overall-asc');
+    assert.equal(migratedDefault.sampleSortAscending, true);
   });
 });
 

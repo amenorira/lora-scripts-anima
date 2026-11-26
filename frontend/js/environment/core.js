@@ -124,7 +124,7 @@ window.environmentCoreMixin = {
   _formatElapsed(sec) { const m = Math.floor(sec/60), s = Math.floor(sec%60); return m+':'+String(s).padStart(2,'0'); },
 
   // 字节数 → 人类可读，自适应单位（对齐后端 _human_bytes 风格，但带单位名）。
-  // 239MB 显示 "239.11 MB" 而非 "0.23 GB"；5.2GB 仍显示 "5.20 GB"。
+  // 自适应单位示例："239.11 MB" 和 "5.20 GB"。
   _humanBytes(b) {
     if (!b || b < 0 || !isFinite(b)) return '0 B';
     const units = [['B',1],['KB',1024],['MB',1048576],['GB',1073741824],['TB',1099511627776]];
@@ -157,7 +157,7 @@ window.environmentCoreMixin = {
 
   // 复制日志到剪贴板（错误条"复制日志"按钮，xformers/Triton/模型通用）
   _envCopyLog(text) {
-    const done = () => this.toast(this.t('environment.copied') || 'Copied', 'success');
+    const done = () => this.toast(this.t('environment.copied'), 'success');
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text || '').then(done, () => {});

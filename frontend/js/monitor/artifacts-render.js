@@ -55,19 +55,25 @@ window.monitorArtifactsRenderMixin = {
   // ═══════════════════════════════════════════════════════════
   //  样本标签
   // ═══════════════════════════════════════════════════════════
-  _sampleSelectHtml(options, value, label, id, action, className = '', valueBinding = '', optionsBinding = '') {
+  _monitorSelectHtml(options, value, label, id, action, className = '', valueBinding = '', optionsBinding = '') {
     if (typeof window.previewSelectHtml === 'function') {
       const handler = action.replaceAll('$event.target.value', '$event.detail')
         + '; $nextTick(() => document.getElementById(' + JSON.stringify(id) + ')?.focus({ preventScroll: true }))';
       const select = valueBinding || optionsBinding ? window.previewSelectHtml(options, value, label, id, valueBinding, optionsBinding)
         : window.previewSelectHtml(options, value, label, id);
-      return '<div class="m-sample-select ' + this.esc(className) + '" @preview-select="' + this.esc(handler) + '">'
+      const cls = ['m-sample-select', 'm-compact-select', className].filter(Boolean).join(' ');
+      return '<div class="' + this.esc(cls) + '" @preview-select="' + this.esc(handler) + '">'
         + select + '</div>';
     }
     // The native control is a usable fallback if the shared component is unavailable.
-    return '<select id="' + this.esc(id) + '" class="' + this.esc(className) + '" aria-label="' + this.esc(label) + '"'
+    const nativeCls = ['m-compact-select', className].filter(Boolean).join(' ');
+    return '<select id="' + this.esc(id) + '" class="' + this.esc(nativeCls) + '" aria-label="' + this.esc(label) + '"'
       + (valueBinding ? ' :value="' + this.esc(valueBinding) + '"' : '') + ' @change="' + this.esc(action) + '">'
-      + options.map(option => '<option value="' + this.esc(option.value) + '"' + (option.value === value ? ' selected' : '') + '>' + this.esc(option.label) + '</option>').join('') + '</select>';
+      + options.map(option => '<option value="' + this.esc(option.value) + '"' + (String(option.value) === String(value) ? ' selected' : '') + '>' + this.esc(option.label) + '</option>').join('') + '</select>';
+  },
+
+  _sampleSelectHtml(options, value, label, id, action, className = '', valueBinding = '', optionsBinding = '') {
+    return this._monitorSelectHtml(options, value, label, id, action, className, valueBinding, optionsBinding);
   },
 
   _parseSampleStage(label) {
@@ -107,11 +113,21 @@ window.monitorArtifactsRenderMixin = {
   },
 
   _sampleSortOptions() {
-    const options = [{value: 'asc', label: this.t('monitor.trainingOrder')}, {value: 'desc', label: this.t('monitor.latestFirst')}];
-    const family = this.t('monitor.sampleLossSortGroup');
-    options.push({value: 'loss-overall', label: this.t('monitor.sampleLossSortOverall'), family});
-    if (this.sampleDetailedLossAvailable) for (const key of ['high', 'mid', 'low']) {
-      options.push({value: 'loss-' + key, label: this.t('monitor.sampleLossSort' + key[0].toUpperCase() + key.slice(1)), family});
+    const options = [
+      {value: 'desc', label: this.t('monitor.sampleSortTrainingDesc')},
+      {value: 'asc', label: this.t('monitor.sampleSortTrainingAsc')},
+      {value: 'loss-overall-asc', label: this.t('monitor.sampleSortLossOverallAsc')},
+      {value: 'loss-overall-desc', label: this.t('monitor.sampleSortLossOverallDesc')},
+    ];
+    if (this.sampleDetailedLossAvailable) {
+      options.push(
+        {value: 'loss-high-asc', label: this.t('monitor.sampleSortLossHighAsc')},
+        {value: 'loss-high-desc', label: this.t('monitor.sampleSortLossHighDesc')},
+        {value: 'loss-mid-asc', label: this.t('monitor.sampleSortLossMidAsc')},
+        {value: 'loss-mid-desc', label: this.t('monitor.sampleSortLossMidDesc')},
+        {value: 'loss-low-asc', label: this.t('monitor.sampleSortLossLowAsc')},
+        {value: 'loss-low-desc', label: this.t('monitor.sampleSortLossLowDesc')},
+      );
     }
     return options;
   },
@@ -120,7 +136,8 @@ window.monitorArtifactsRenderMixin = {
     const label = this.t('monitor.sampleOrder');
     return '<div class="m-samples-sort"><span>' + this.esc(label) + '</span>'
       + this._sampleSelectHtml(this._sampleSortOptions(), this.sampleEffectiveBatchSort, label, id,
-        'setSampleBatchSort($event.target.value)', '', 'sampleEffectiveBatchSort', '_sampleSortOptions()') + '</div>';
+        'setSampleBatchSort($event.target.value)', '', 'sampleEffectiveBatchSort', '_sampleSortOptions()')
+      + '</div>';
   },
 
   _patchSampleBatchOrder(panel, freshlyRendered = false) {
@@ -151,7 +168,7 @@ window.monitorArtifactsRenderMixin = {
     } else if (anchor) this._sampleScrollAnchor = window.AnimaSampleLayout.restoreAnchor(grid, anchor);
     if (this.sampleExpandedBatchId) this._refreshSampleGroupOutline(panel);
     if (focused && document.activeElement !== focused) focused.focus({preventScroll: true});
-    if (this.previewLightboxOpen && previous?.requested === order.requested
+    if (this.previewLightboxOpen && previous?.requested === order.requested && previous?.ascending === order.ascending
         && (this.sampleLossSortKey || previous?.sort.startsWith('loss-'))) this._updatePreviewLightbox();
   },
 
@@ -395,7 +412,16 @@ window.monitorArtifactsRenderMixin = {
       this.previewStep = this._sampleBatchNavigationIndex(batch, this.previews[this.previewStep]);
     }
     let html = '<div class="m-section m-samples-section" :class="{\'is-preview-open\':previewLightboxOpen}"><div class="m-view-header m-samples-toolbar"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t('previewSamples')) + '</span></div>';
-    html += this._monitorRefreshButtonHtml(t, 'sample') + '<div class="m-view-actions">';
+    html += this._monitorRefreshButtonHtml(t, 'sample');
+    if (!isHistory) {
+      html += '<button type="button" class="btn btn-sm btn-secondary m-sample-manual-btn"'
+        + ' x-show="liveTaskId && controlTask === liveTaskId && controlState?.allowed?.includes(\'sample\')" x-cloak'
+        + ' :disabled="controlSubmitting || controlState?.command?.status === \'pending\'"'
+        + ' @click="openTrainingControl(\'sample\')">'
+        + '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="1.5"/><path d="m4 17 5-5 3 3 3-4 6 7"/></svg>'
+        + '<span x-text="controlState?.command?.status === \'pending\' && controlState?.command?.action === \'sample\' ? t(controlState.command.phase === \'encoding\' ? \'control.encodingShort\' : \'control.samplingShort\') : t(\'control.previewTitle\')"></span></button>';
+    }
+    html += '<div class="m-view-actions">';
     if (showPreviews) {
       html += this._sampleLossControlHtml('sampleLossMode');
       if (this.previewHasNew) html += '<button type="button" id="sampleLatestBatch" class="btn btn-sm btn-secondary" @click="jumpToLatestOverviewBatch()">' + this.esc(t('previewNewSamples')) + '</button>';
@@ -763,8 +789,7 @@ window.monitorArtifactsRenderMixin = {
       grid.append(outline);
     }
     outline._sampleRows = rows;
-    // Bound the isolated paint layer to this group instead of the entire
-    // scroll history. Geometry changes keep the same flowing stroke alive.
+    // Bound the paint layer to this group and reuse the stroke as its geometry changes.
     const left = Math.floor(Math.min(...rows.map(row => row.left))) - 1;
     const top = Math.floor(Math.min(...rows.map(row => row.top))) - 1;
     const width = Math.ceil(Math.max(...rows.map(row => row.right))) + 1 - left;
@@ -1222,8 +1247,8 @@ window.monitorArtifactsRenderMixin = {
   _revealPreviewViewAfterOpen(box) {
     this._previewOpenObserver?.disconnect();
     this._previewOpenObserver = null;
-    // The dialog opens on Alpine's next tick. Long histories can delay that
-    // tick, so wait for the actual open attribute instead of a frame limit.
+    // Long histories can delay Alpine's next tick. Wait for the dialog's open
+    // attribute before continuing.
     const onOpen = () => {
       if (!this.previewLightboxOpen || !box.isConnected || !box.open) return;
       this._previewOpenObserver?.disconnect();
@@ -3398,10 +3423,13 @@ window.monitorArtifactsRenderMixin = {
   //  输出标签
   // ═══════════════════════════════════════════════════════════
   _renderOutputsTab(t) {
+    const isHistory = !!this.selectedRunDir;
     const d = this.currentArtifactData();
     const runDir = this.currentOutputRunDir;
     const artifactUnavailable = !!runDir && (d.artifact_available === false || this.outputFilesError === 'artifactUnavailable');
     const canUseFiles = !!runDir && !artifactUnavailable && this.outputFiles.length > 0;
+    const hasStates = this._hasOutputStates();
+    const activeFilter = (this.outputFilter === 'states' && !hasStates) ? 'all' : (this.outputFilter || 'all');
     const visibleFiles = this._visibleOutputFiles();
     const visibleCount = visibleFiles.length;
     const selectedCount = this.selectedOutputFiles.length;
@@ -3412,15 +3440,21 @@ window.monitorArtifactsRenderMixin = {
     }
     html += '<div class="m-view-header"><div class="m-output-toolbar-top"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t('outputs')) + '</span>' + (this.outputFiles.length ? '<span class="m-logs-count">' + this.outputFiles.length + '</span>' : '') + '</div>';
     html += this._monitorRefreshButtonHtml(t, 'output');
-    html += '<div class="m-output-selection-tools"><span class="m-output-selection-count" role="status">' + this.esc(t('selected')) + ' <strong>' + selectedCount + '</strong> / ' + this.outputFiles.length;
-    if (hiddenSelected > 0) html += '<small>' + this.esc(t('hiddenSelectedOutputs').replace('{n}', hiddenSelected)) + '</small>';
-    html += '</span><button type="button" id="outputClearSelection" class="btn btn-sm btn-secondary" @click="deselectAllOutputFiles()"' + (!selectedCount ? ' disabled' : '') + '>' + this.esc(t('clearSelection')) + '</button>';
+    html += '<div class="m-output-selection-tools">';
+    if (selectedCount > 0) {
+      html += '<span class="m-output-selection-count" role="status">' + this.esc(t('selected')) + ' <strong>' + selectedCount + '</strong> / ' + this.outputFiles.length;
+      if (hiddenSelected > 0) html += '<small>' + this.esc(t('hiddenSelectedOutputs').replace('{n}', hiddenSelected)) + '</small>';
+      html += '</span><button type="button" id="outputClearSelection" class="btn btn-sm btn-secondary" @click="deselectAllOutputFiles()">' + this.esc(t('clearSelection')) + '</button>';
+    }
     html += '<button type="button" id="outputDownload" class="btn btn-sm btn-primary m-output-download"' + (this.outputFilesLoading || !canUseFiles ? ' disabled' : '') + ' @click="' + (selectedCount ? 'downloadSelectedOutputs()' : 'downloadAllOutputs()') + '" :disabled="outputFilesLoading || ' + (!canUseFiles) + '"><span' + (selectedCount ? ' class="is-hidden"' : '') + '>' + this.esc(t('downloadAll')) + '</span><span' + (!selectedCount ? ' class="is-hidden"' : '') + '>' + this.esc(t('downloadSelected')) + '</span></button></div></div>';
     html += '<div class="m-view-actions m-output-toolbar-filters">';
     html += '<label class="m-output-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="m-output-search-input" type="search" value="' + this.esc(this.outputSearch) + '" aria-label="' + this.esc(t('searchOutputs')) + '" placeholder="' + this.esc(t('searchOutputs')) + '" @input.debounce.180ms="setOutputSearch($event.target.value)"></label>';
     html += '<div class="m-segmented" role="group" aria-label="' + this.esc(t('outputFilter')) + '">';
-    [['all', t('filterAll')], ['models', t('filterModels')], ['others', t('filterOthers')]].forEach(item => {
-      html += '<button type="button" id="outputFilter-' + item[0] + '" aria-pressed="' + (this.outputFilter === item[0]) + '" class="m-segmented-btn' + (this.outputFilter === item[0] ? ' active' : '') + '" @click="setOutputFilter(\'' + item[0] + '\')">' + this.esc(item[1]) + '</button>';
+    const filterItems = [['all', t('filterAll')], ['models', t('filterModels')]];
+    if (hasStates) filterItems.push(['states', t('filterStates')]);
+    filterItems.push(['others', t('filterOthers')]);
+    filterItems.forEach(item => {
+      html += '<button type="button" id="outputFilter-' + item[0] + '" aria-pressed="' + (activeFilter === item[0]) + '" class="m-segmented-btn' + (activeFilter === item[0] ? ' active' : '') + '" @click="setOutputFilter(\'' + item[0] + '\')">' + this.esc(item[1]) + '</button>';
     });
     html += '</div>';
     html += '<button type="button" id="outputSelectVisible" class="btn btn-sm btn-secondary"' + (this.outputFilesLoading || !canUseFiles || !visibleCount ? ' disabled' : '') + ' @click="selectAllOutputFiles()" :disabled="outputFilesLoading || ' + (!canUseFiles || !visibleCount) + '">' + this.esc(t('selectVisible')) + '</button>';
@@ -3450,63 +3484,91 @@ window.monitorArtifactsRenderMixin = {
     // Scrollable content
     html += '<div class="m-outputs-scroll">';
 
-    const { models, others } = this._sortedOutputs();
+    const { models, states, others } = this._sortedOutputs();
 
-    if (!models.length && !others.length) {
+    if (!models.length && !states.length && !others.length) {
       html += '<div class="dashboard-empty dashboard-empty-compact"><p>' + this.esc(t('noMatchingOutputs')) + '</p><button class="btn btn-sm btn-secondary" @click="clearOutputFilters()">' + this.esc(t('clearHistoryFilters')) + '</button></div>';
       return html + '</div></div>';
     }
 
     // ── 模型存档区（带 loss + 排序）──
-    if (this.outputFilter !== 'others') {
-    html += '<div class="m-ckpt-section">';
-    html += '<div class="m-section-title"><span>' + this.esc(t('modelCheckpoints')) + ' <span class="m-logs-count">' + models.length + '</span></span></div>';
+    if (activeFilter === 'all' || activeFilter === 'models') {
+      html += '<div class="m-ckpt-section">';
+      html += '<div class="m-section-title"><span>' + this.esc(t('modelCheckpoints')) + ' <span class="m-logs-count">' + models.length + '</span></span></div>';
 
-    if (models.length) {
-      const bestPath = this._bestCheckpointPath(this.outputFiles.filter(file => file.category === 'model'));
-      html += '<div class="output-list output-table"><div class="output-table-head"><span></span><span></span>' + this._outputSortHeadHtml('models', 'name', t('fileName')) + '<span>' + this.esc(t('checkpoint')) + '</span>' + this._outputSortHeadHtml('models', 'loss', t('loss')) + this._outputSortHeadHtml('models', 'size', t('sortSize')) + this._outputSortHeadHtml('models', 'time', t('modifiedTime')) + '<span>' + this.esc(t('actions')) + '</span></div>';
-      models.forEach(f => {
+      if (models.length) {
+        const bestPath = this._bestCheckpointPath(this.outputFiles.filter(file => file.category === 'model'));
+        html += '<div class="output-list output-table"><div class="output-table-head"><span></span><span></span>' + this._outputSortHeadHtml('models', 'name', t('fileName')) + '<span>' + this.esc(t('checkpoint')) + '</span>' + this._outputSortHeadHtml('models', 'loss', t('loss')) + this._outputSortHeadHtml('models', 'size', t('sortSize')) + this._outputSortHeadHtml('models', 'time', t('modifiedTime')) + '<span>' + this.esc(t('actions')) + '</span></div>';
+        models.forEach(f => {
+          const isSelected = !!this.outputFilesSelected[f.path];
+          const fpJs = this.esc(this.escapeJsString(f.path));
+          const isBest = f.path === bestPath;
+          html += '<div class="output-item' + (isSelected ? ' selected' : '') + (isBest ? ' m-ckpt-best' : '') + '" @click="toggleOutputFile(\'' + fpJs + '\')">';
+          html += '<input type="checkbox" id="outputSelect-' + this.esc(encodeURIComponent(f.path)) + '" aria-label="' + this.esc(t('selectOutputFile').replace('{name}', f.name)) + '" ' + (isSelected ? 'checked' : '') + ' @click.stop="toggleOutputFile(\'' + fpJs + '\')">';
+          html += this._fileIconSvg(f);
+          html += '<span class="output-name" title="' + this.esc(f.name) + '"><span class="output-name-text">' + this.esc(f.name) + '</span>' + (isBest ? '<small class="m-best-label">' + this.esc(t('lowestLoss')) + '</small>' : '') + '</span>';
+          const badge = this._ckptBadgeHtml(f, t);
+          if (badge) html += badge;
+          else if (f.is_lora) html += '<span class="badge output-lora-badge">LoRA</span>';
+          else html += '<span class="m-ckpt-badge m-muted">—</span>';
+          const numericLoss = Number(f.ckpt_loss);
+          const hasLoss = f.ckpt_loss != null && Number.isFinite(numericLoss);
+          const lossTxt = hasLoss ? (f.loss_approximate ? '≈ ' : '') + numericLoss.toFixed(4) : '--';
+          html += '<span title="' + this.esc((f.loss_source || '') + (f.loss_step != null ? ' · step ' + f.loss_step : '')) + '" class="m-ckpt-loss' + (hasLoss ? '' : ' m-muted') + '"><b>' + this.esc(lossTxt) + '</b></span>';
+          html += '<span class="output-size">' + this._formatFileSize(f.size) + '</span>';
+          html += '<span class="output-time">' + this._formatFileTime(f.mtime) + '</span>';
+          html += '<button class="btn btn-sm btn-secondary output-dl-btn" @click.stop="downloadSingleOutput(\'' + fpJs + '\')" aria-label="' + this.esc(t('common.download') + ': ' + f.name) + '" title="' + this.esc(t('common.download')) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
+          html += '</div>';
+        });
+        html += '</div>';
+      } else {
+        html += '<div class="dashboard-empty" style="padding:24px"><p>' + this.esc(t('noModelFiles')) + '</p></div>';
+      }
+      html += '</div>';
+    }
+
+    // ── 续训状态区（文件夹目录）──
+    if ((activeFilter === 'all' || activeFilter === 'states') && states.length) {
+      html += '<div class="m-ckpt-section">';
+      html += '<div class="m-section-title"><span>' + this.esc(t('stateCheckpoints')) + ' <span class="m-logs-count">' + states.length + '</span></span></div>';
+      html += '<div class="output-list output-table output-table-state' + (isHistory ? ' is-history' : '') + '"><div class="output-table-head"><span></span><span></span>' + this._outputSortHeadHtml('states', 'name', t('folderName')) + this._outputSortHeadHtml('states', 'step', t('checkpoint')) + this._outputSortHeadHtml('states', 'size', t('sortSize')) + this._outputSortHeadHtml('states', 'time', t('modifiedTime')) + '<span>' + this.esc(t('actions')) + '</span></div>';
+      states.forEach(f => {
         const isSelected = !!this.outputFilesSelected[f.path];
         const fpJs = this.esc(this.escapeJsString(f.path));
-        const isBest = f.path === bestPath;
-        html += '<div class="output-item' + (isSelected ? ' selected' : '') + (isBest ? ' m-ckpt-best' : '') + '" @click="toggleOutputFile(\'' + fpJs + '\')">';
+        const badge = this._ckptBadgeHtml(f, t);
+        const stepArg = f.ckpt_step != null ? f.ckpt_step : 'null';
+        html += '<div class="output-item' + (isSelected ? ' selected' : '') + '" @click="toggleOutputFile(\'' + fpJs + '\')">';
         html += '<input type="checkbox" id="outputSelect-' + this.esc(encodeURIComponent(f.path)) + '" aria-label="' + this.esc(t('selectOutputFile').replace('{name}', f.name)) + '" ' + (isSelected ? 'checked' : '') + ' @click.stop="toggleOutputFile(\'' + fpJs + '\')">';
         html += this._fileIconSvg(f);
-        html += '<span class="output-name" title="' + this.esc(f.name) + '">' + this.esc(f.name) + (isBest ? '<small class="m-best-label">' + this.esc(t('lowestLoss')) + '</small>' : '') + '</span>';
-        const badge = this._ckptBadgeHtml(f, t);
-        if (badge) html += badge;
-        else if (f.is_lora) html += '<span class="badge output-lora-badge">LoRA</span>';
-        else html += '<span class="m-ckpt-badge m-muted">—</span>';
-        const numericLoss = Number(f.ckpt_loss);
-        const hasLoss = f.ckpt_loss != null && Number.isFinite(numericLoss);
-        const lossTxt = hasLoss ? (f.loss_approximate ? '≈ ' : '') + numericLoss.toFixed(4) : '--';
-        html += '<span title="' + this.esc((f.loss_source || '') + (f.loss_step != null ? ' · step ' + f.loss_step : '')) + '" class="m-ckpt-loss' + (hasLoss ? '' : ' m-muted') + '"><b>' + this.esc(lossTxt) + '</b></span>';
+        html += '<span class="output-name" title="' + this.esc(f.name) + '"><span class="output-name-text">' + this.esc(f.name) + '</span></span>';
+        html += badge || '<span class="m-ckpt-badge m-muted">—</span>';
         html += '<span class="output-size">' + this._formatFileSize(f.size) + '</span>';
         html += '<span class="output-time">' + this._formatFileTime(f.mtime) + '</span>';
-        html += '<button class="btn btn-sm btn-secondary output-dl-btn" @click.stop="downloadSingleOutput(\'' + fpJs + '\')" aria-label="' + this.esc(t('common.download') + ': ' + f.name) + '" title="' + this.esc(t('common.download')) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
+        html += '<span class="output-row-actions">';
+        if (isHistory && f.resumable) {
+          html += '<button type="button" class="btn btn-sm btn-secondary output-resume-btn" :disabled="!!historyReuseBusy" @click.stop="resumeFromOutputState(\'' + fpJs + '\',' + stepArg + ')">' + this.esc(this.t('control.resumeFromShort')) + '</button>';
+        }
+        html += '<button type="button" class="btn btn-sm btn-secondary output-dl-btn" @click.stop="downloadSingleOutput(\'' + fpJs + '\')" aria-label="' + this.esc(t('downloadZip') + ': ' + f.name) + '" title="' + this.esc(t('downloadZip')) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>';
+        html += '</span>';
         html += '</div>';
       });
       html += '</div>';
-    } else {
-      html += '<div class="dashboard-empty" style="padding:24px"><p>' + this.esc(t('noModelFiles')) + '</p></div>';
-    }
-    html += '</div>';
+      html += '</div>';
     }
 
     // ── 其他文件区 ──
-    if (this.outputFilter !== 'models' && others.length) {
+    if ((activeFilter === 'all' || activeFilter === 'others') && others.length) {
       html += '<div class="m-ckpt-section">';
       html += '<div class="m-section-title"><span>' + this.esc(t('otherFiles')) + ' <span class="m-logs-count">' + others.length + '</span></span></div>';
       html += '<div class="output-list output-table output-table-other"><div class="output-table-head"><span></span><span></span>' + this._outputSortHeadHtml('others', 'name', t('fileName')) + this._outputSortHeadHtml('others', 'type', t('fileType')) + this._outputSortHeadHtml('others', 'size', t('sortSize')) + this._outputSortHeadHtml('others', 'time', t('modifiedTime')) + '<span>' + this.esc(t('actions')) + '</span></div>';
       others.forEach(f => {
         const isSelected = !!this.outputFilesSelected[f.path];
         const fpJs = this.esc(this.escapeJsString(f.path));
-        const extension = (f.name || '').includes('.') ? (f.name || '').split('.').pop().toUpperCase() : '';
-        const fileType = f.is_lora ? 'LoRA' : (f.category || extension || '—');
+        const fileType = this._outputFileTypeLabel(f, t);
         html += '<div class="output-item' + (isSelected ? ' selected' : '') + '" @click="toggleOutputFile(\'' + fpJs + '\')">';
         html += '<input type="checkbox" id="outputSelect-' + this.esc(encodeURIComponent(f.path)) + '" aria-label="' + this.esc(t('selectOutputFile').replace('{name}', f.name)) + '" ' + (isSelected ? 'checked' : '') + ' @click.stop="toggleOutputFile(\'' + fpJs + '\')">';
         html += this._fileIconSvg(f);
-        html += '<span class="output-name" title="' + this.esc(f.name) + '">' + this.esc(f.name) + '</span>';
+        html += '<span class="output-name" title="' + this.esc(f.name) + '"><span class="output-name-text">' + this.esc(f.name) + '</span></span>';
         html += '<span class="output-kind">' + this.esc(fileType) + '</span>';
         html += '<span class="output-size">' + this._formatFileSize(f.size) + '</span>';
         html += '<span class="output-time">' + this._formatFileTime(f.mtime) + '</span>';
@@ -3521,10 +3583,25 @@ window.monitorArtifactsRenderMixin = {
     return html;
   },
 
+  _outputFileTypeLabel(f, t) {
+    if (f.is_lora) return 'LoRA';
+    const map = {
+      state: 'fileTypeState',
+      sample: 'fileTypeSample',
+      config: 'fileTypeConfig',
+      log: 'fileTypeLog',
+      tensorboard: 'fileTypeTensorboard',
+      other: 'fileTypeOther',
+    };
+    const key = map[f.category];
+    if (key) return t(key);
+    const ext = (f.name || '').includes('.') ? (f.name || '').split('.').pop().toUpperCase() : '';
+    return ext || t('fileTypeOther');
+  },
+
   _outputSortHeadHtml(group, key, label) {
-    const modelGroup = group === 'models';
-    const activeKey = modelGroup ? this.outputModelSortKey : this.outputOtherSortKey;
-    const activeDir = modelGroup ? this.outputModelSortDir : this.outputOtherSortDir;
+    const activeKey = group === 'models' ? this.outputModelSortKey : (group === 'states' ? this.outputStateSortKey : this.outputOtherSortKey);
+    const activeDir = group === 'models' ? this.outputModelSortDir : (group === 'states' ? this.outputStateSortDir : this.outputOtherSortDir);
     const active = activeKey === key;
     let html = '<button type="button" id="outputSort-' + group + '-' + key + '" aria-label="' + this.esc(label + (active ? ' ' + this.t('monitor.' + (activeDir === 'asc' ? 'sortAscending' : 'sortDescending')) : '')) + '" class="output-table-sort' + (active ? ' active' : '') + '" @click="setOutputSort(\'' + group + '\',\'' + key + '\')">' + this.esc(label);
     if (active) html += '<span aria-hidden="true">' + (activeDir === 'asc' ? '↑' : '↓') + '</span>';
@@ -3556,6 +3633,10 @@ window.monitorArtifactsRenderMixin = {
     // Weight icon for model files
     if (cat === 'model') {
       return '<svg class="output-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>';
+    }
+    // Folder/archive icon for training state directories
+    if (cat === 'state') {
+      return '<svg class="output-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
     }
     // Image icon for samples
     if (cat === 'sample' || ['png','jpg','jpeg','webp','gif'].includes(ext)) {

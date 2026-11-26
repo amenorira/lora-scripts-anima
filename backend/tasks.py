@@ -27,13 +27,14 @@ class TaskStatus(Enum):
     FINISHED = 2
     TERMINATED = 3
     FAILED = 4
+    STOPPED = 5
 
 
-_TERMINAL_STATUSES = frozenset({TaskStatus.FINISHED, TaskStatus.TERMINATED, TaskStatus.FAILED})
+_TERMINAL_STATUSES = frozenset({TaskStatus.FINISHED, TaskStatus.TERMINATED, TaskStatus.FAILED, TaskStatus.STOPPED})
 
 
 def kill_proc_tree(pid: int, *, processes: list | None = None) -> None:
-    """终止进程树并确认退出；超时不能当作已释放资源。"""
+    """终止进程树。等待退出超时后抛出 TimeoutExpired，由调用方继续保留资源占用。"""
     if processes is None:
         processes = []
     try:
@@ -74,6 +75,8 @@ class Task:
         self._exit_collected = False
         self._work_complete = False
         self._work_failed = False
+        self.control = None
+        self.stopped_at_step = False
 
     def configure_reserved(self, command: List[str]) -> None:
         """Hand a reserved slot to the launcher without opening a second slot."""
@@ -107,6 +110,8 @@ class Task:
                 self.status = TaskStatus.TERMINATED
             elif self.process is None:
                 self.status = TaskStatus.FAILED
+            elif self.stopped_at_step:
+                self.status = TaskStatus.STOPPED
             elif self._exit_collected:
                 self.status = (
                     TaskStatus.FINISHED
@@ -301,6 +306,10 @@ class TaskManager:
             task = self.tasks.get(task_id)
         if task is not None:
             task.terminate()
+
+    def get_task(self, task_id: str) -> Optional[Task]:
+        with self._lock:
+            return self.tasks.get(task_id)
 
     def dump(self) -> List[Dict]:
         """全部任务的快照（线程安全），状态以枚举名（如 RUNNING）给出。"""

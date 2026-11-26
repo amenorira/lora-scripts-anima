@@ -317,9 +317,8 @@ def _normalize_krea2_defaults(config: dict) -> None:
     }.items():
         config.setdefault(key, default)
 
-    # Keep every cache beside the dataset that produced it.  This is a UI and
-    # launch invariant rather than an optional musubi argument: a stale preset
-    # or direct API call must not scatter Krea cache files elsewhere.
+    # Derive the cache directory from the dataset for every launch, including
+    # launches from older presets and direct API calls.
     automatic_cache_dir = krea2_auto_cache_dir(config.get("train_data_dir"))
     if automatic_cache_dir:
         config["dataset_cache_dir"] = automatic_cache_dir
@@ -553,10 +552,8 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
             )
     adafactor_relative_step = config["krea_adafactor_relative_step"] is True
 
-    # musubi's trainer returns an internal dummy scheduler for ScheduleFree,
-    # and switches to its own AdafactorSchedule in relative-step mode.  Keep
-    # the persisted config honest rather than displaying external settings
-    # that the upstream training loop will ignore.
+    # Lock the external scheduler settings when musubi handles scheduling.
+    # ScheduleFree uses a dummy scheduler and relative-step Adafactor uses AdafactorSchedule.
     internal_scheduler = optimizer_type in _KREA2_INTERNAL_SCHEDULER_OPTIMIZERS or (
         optimizer_type == "AdaFactor" and adafactor_relative_step
     )
@@ -644,10 +641,12 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
     return errors
 
 
-def build_krea2_dataset_config(config: dict[str, Any]) -> dict[str, Any]:
+def build_krea2_dataset_config(config: dict[str, Any], groups: list | None = None) -> dict[str, Any]:
     """Build musubi's separate dataset TOML object from the visible Krea form."""
 
     width, height = parse_krea2_resolution(config["resolution"])
+    if groups is None:
+        groups = dataset_groups(config)
     return {
         "general": {
             "resolution": [width, height],
@@ -662,7 +661,7 @@ def build_krea2_dataset_config(config: dict[str, Any]) -> dict[str, Any]:
                 "cache_directory": str(cache),
                 "num_repeats": int(config.get("krea_num_repeats", 1)),
             }
-            for directory, cache, _ in dataset_groups(config)
+            for directory, cache, _ in groups
         ],
     }
 

@@ -99,6 +99,10 @@ test('sorting retains overview presentation order and selection', () => {
   assert.deepEqual([...ascending.matchAll(/class="m-sample-batch"[^>]*data-batch-id="([^"]+)"/g)].map(match => match[1]), ['step-1', 'step-2']);
   assert.equal(value.sampleBatchId, 'step-1');
   assert.match(html, /id="sampleBatchSort"/);
+  assert.doesNotMatch(html, /sampleBatchSortDirection|m-sample-sort-direction|toggleSampleSortDirection/);
+  const lightboxHtml = value._previewLightboxHtml(key => value.t('monitor.' + key));
+  assert.match(lightboxHtml, /id="previewViewerSort"/);
+  assert.doesNotMatch(lightboxHtml, /previewViewerSortDirection|m-sample-sort-direction|toggleSampleSortDirection/);
   assert.equal((html.match(/class="preview-grid-item m-sample-batch-cover"/g) || []).length, 2);
 });
 

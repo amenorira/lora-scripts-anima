@@ -32,11 +32,16 @@ window.monitorRenderMixin = {
 
     // ── 1. 外壳层：仅在首次或历史模式切换时构建 ──
     if (!this._shellBuilt || this._shellHistoryMode !== isHistory || this._shellLocale !== locale) {
+      this._disconnectDatasetDiagUI?.();
       // The old shell can still be in the DOM after a route reset has cleared
       // _shellBuilt. Its delayed close callback is lost when we replace it.
       if (document.getElementById('previewLightbox')) {
         this.closePreviewLightbox();
         this.clearPreviewLightbox?.();
+      }
+      if (document.getElementById('datasetDiagModal')) {
+        this.closeDatasetDiagModal?.();
+        this.clearDatasetDiagModal?.();
       }
       this._shellBuilt = true;
       this._shellHistoryMode = isHistory;
@@ -48,8 +53,10 @@ window.monitorRenderMixin = {
       shell += '<div class="m-tab-panel" data-tab="logs" hidden></div>';
       shell += '<div class="m-tab-panel" data-tab="samples" hidden></div>';
       shell += '<div class="m-tab-panel" data-tab="outputs" hidden></div>';
+      shell += '<div class="m-tab-panel" data-tab="dataset" hidden></div>';
       shell += '</div>';
       shell += this._previewLightboxHtml(t);
+      shell += this._datasetDiagModalHtml(t);
       shell += '</div>';
       el.innerHTML = shell;
     }
@@ -58,7 +65,7 @@ window.monitorRenderMixin = {
     const historyEl = document.getElementById('monitorHistoryContext');
     if (historyEl) {
       const signature = isHistory
-        ? [locale, this.selectedRunDir || '', d.config && d.config.output_name || '', d.train_result && d.train_result.status || '', d.artifact_available].join(':')
+        ? [locale, this.selectedRunDir || '', d.config?.output_name, d.train_result?.status, d.artifact_available].join(':')
         : '';
       if (this._historyContextSignature !== signature) {
         this._historyContextSignature = signature;
@@ -105,17 +112,17 @@ window.monitorRenderMixin = {
   // ═══════════════════════════════════════════════════════════
   _historyBannerHtml(d, t) {
     const runName = (d.config && d.config.output_name) || ((this.selectedRunDir || '').split(/[\\/]/).pop() || '');
-    let html = '<div class="m-history-banner">';
+    let html = '<div class="m-history-banner"><div class="m-history-identity">';
     html += '<svg class="m-history-icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
     html += '<span class="m-history-label">' + this.esc(t('viewingHistory')) + '</span>';
-    html += '<b class="m-history-name">' + this.esc(runName) + '</b>';
+    html += '<b class="m-history-name" title="' + this.esc(runName) + '">' + this.esc(runName) + '</b>';
     const state = this._summaryStatus(d, true).state;
-    const stClass = state === 'FINISHED' ? 'ok' : (state === 'FAILED' ? 'danger' : 'muted');
-    const stLabel = state === 'FINISHED' ? t('statusCompleted') : state === 'FAILED' ? t('statusFailed') : state === 'TERMINATED' ? t('statusTerminated') : t('statusUnknown');
+    const stClass = state === 'FINISHED' ? 'ok' : (state === 'FAILED' || state === 'TERMINATED' ? 'danger' : 'muted');
+    const stLabel = t({FINISHED: 'statusCompleted', FAILED: 'statusFailed', TERMINATED: 'statusTerminated', STOPPED: 'statusStopped'}[state] || 'statusUnknown');
     html += '<span class="m-badge m-badge-' + stClass + '"><i aria-hidden="true"></i>' + this.esc(stLabel) + '</span>';
     if (d.artifact_available === false) html += '<span class="m-badge m-badge-danger"><i aria-hidden="true"></i>' + this.esc(t('artifactOffline')) + '</span>';
-    html += '<div class="m-history-spacer"></div>';
-    html += '<button class="btn btn-sm btn-secondary" @click="navigate(\'history\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>' + this.esc(t('backToHistory')) + '</button>';
+    html += '</div>';
+    html += '<button type="button" class="btn btn-sm btn-secondary" @click="navigate(\'history\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>' + this.esc(t('backToHistory')) + '</button>';
     html += '</div>';
     return html;
   },
@@ -139,6 +146,13 @@ window.monitorRenderMixin = {
         this._cancelSampleGridMotion?.(contentEl.querySelector('.m-tab-panel[data-tab="samples"]')?.querySelector('.preview-grid'));
         this._cancelPreviewMediaQueue();
         this._disconnectSampleExpansionUI?.();
+      }
+      if (prevTab === 'dataset' && tab !== 'dataset') {
+        this._suspendDatasetDiagnostics?.();
+        this.closeDatasetDiagModal?.();
+        const dsPanel = contentEl.querySelector('.m-tab-panel[data-tab="dataset"]');
+        this._pauseDatasetDiagCharts?.(dsPanel);
+        this._releaseDatasetDiagImagesSlot?.(dsPanel);
       }
       contentEl.querySelectorAll('.m-tab-panel').forEach(panel => {
         const isActive = panel.dataset.tab === tab;
@@ -168,6 +182,7 @@ window.monitorRenderMixin = {
       return;
     }
     if (tab === 'overview') {
+      let restoreControlFocus;
       const sig = 'ov:' + this._shellLocale + ':' + this._summaryStatus(d, isHistory).state + ':' + this.trainParamsVersion;
       if (panelEmpty || this._builtOverviewSig !== sig || this._builtParamSchema !== window.TRAIN_SECTIONS) {
         this._builtOverviewSig = sig;
@@ -178,6 +193,10 @@ window.monitorRenderMixin = {
           ? { start: paramInput.selectionStart, end: paramInput.selectionEnd } : null;
         const overviewContext = isHistory ? 'history:' + this.selectedRunDir : 'live:' + (d.run_dir || this.liveTaskId || d.active_task?.id || '');
         const sameContext = panel.dataset.overviewContext === overviewContext;
+        if (sameContext && panel.contains(document.activeElement)) {
+          if (document.activeElement.hasAttribute('data-summary-toggle')) restoreControlFocus = '[data-summary-toggle]';
+          if (document.activeElement.hasAttribute('data-summary-stop')) restoreControlFocus = '[data-summary-stop]';
+        }
         const method = panel.querySelector('.m-diagnostic-details');
         const methodOpen = method?.open;
         const methodFocused = method && document.activeElement === method.querySelector('summary');
@@ -185,7 +204,7 @@ window.monitorRenderMixin = {
         panel.innerHTML = this._renderOverviewTab(d, t, isHistory);
         panel.dataset.overviewContext = overviewContext;
         delete panel.dataset.diagnosticVersion;
-        delete panel.dataset.sparklineVersion;
+        delete panel.dataset.matrixVersion;
         delete panel.dataset.telemetryVersion;
         delete panel.dataset.motionContext;
         this.initMonitorParams(panel);
@@ -201,6 +220,7 @@ window.monitorRenderMixin = {
         }
       }
       this._patchOverviewStatus(panel, d, t, isHistory);
+      if (restoreControlFocus) panel.querySelector(restoreControlFocus + ':not([hidden])')?.focus({preventScroll:true});
       return;
     }
     if (tab === 'samples') {
@@ -218,7 +238,8 @@ window.monitorRenderMixin = {
         this._disconnectSampleExpansionUI?.(true);
         this._sampleLayoutAction++;
         const grid = panel.querySelector('.preview-grid');
-        const motionContext = JSON.stringify([this.currentOutputRunDir || '', this.selectedRunDir || '', this.sampleBatchSortDir, this._shellLocale, this.weakNetworkMode]);
+        const motionContext = JSON.stringify([this.currentOutputRunDir || '', this.selectedRunDir || '', this.sampleBatchSortDir,
+          this._shellLocale, this.weakNetworkMode]);
         const before = grid && !tabChanged && !this._sampleResetScroll && panel._sampleMotionContext === motionContext
           ? this._captureSampleLayout(grid) : null;
         this._cancelSampleGridMotion?.(grid);
@@ -274,7 +295,11 @@ window.monitorRenderMixin = {
     }
     if (tab === 'outputs') {
       if ((this._outputFilesNeedsRefresh || (tabChanged && !this.outputFiles.length)) && !this.outputFilesLoading) this.loadOutputFiles();
-      const sig = 'out:' + this._shellLocale + ':' + this.outputFilesVersion + ':' + this.selectedOutputFiles.join('|') + ':' + (!this.outputFiles.length && this.outputFilesLoading && !this._outputFilesLoaded ? 1 : 0) + ':' + this.outputSearch + ':' + this.outputFilter + ':' + this.outputModelSortKey + ':' + this.outputModelSortDir + ':' + this.outputOtherSortKey + ':' + this.outputOtherSortDir + ':' + (this.outputFilesError || '') + ':' + (d.artifact_available === false ? 0 : 1);
+      const sig = ['out', this._shellLocale, this.outputFilesVersion, this.selectedOutputFiles.join('|'),
+        !this.outputFiles.length && this.outputFilesLoading && !this._outputFilesLoaded ? 1 : 0,
+        this.outputSearch, this.outputFilter, this.outputModelSortKey, this.outputModelSortDir,
+        this.outputStateSortKey, this.outputStateSortDir, this.outputOtherSortKey, this.outputOtherSortDir,
+        this.outputFilesError || '', d.artifact_available === false ? 0 : 1].join(':');
       if (panelEmpty || this._builtOutputsSig !== sig) {
         // Preserve scroll position across re-renders
         const scrollEl = panel.querySelector('.m-outputs-scroll');
@@ -308,13 +333,394 @@ window.monitorRenderMixin = {
       }
       return;
     }
+    if (tab === 'dataset') {
+      const source = this._datasetDiagSource();
+      if (this._datasetDiagSourceKey !== source.key
+        || (!this._datasetDiagRequest && (this._datasetDiagNeedsRefresh || !this._datasetDiagLoaded))) {
+        void this.loadDatasetDiagnostics({ renderStart: false, silent: this._datasetDiagLoaded });
+      }
+      if (!isHistory) this._syncDatasetDiagPolling?.();
+      const data = this.datasetDiagData;
+      const dataSig = this._datasetDiagSnapshotVersion;
+      if (!source.key || !data || !data.available) {
+        const emptySig = [
+          'ddEmpty', this._shellLocale, dataSig,
+          this.datasetDiagLoading ? 1 : 0, this.datasetDiagError || '',
+          data?.reason || '', source.key,
+          (!this.selectedRunDir && this.liveTaskId) ? 1 : 0,
+        ].join(':');
+        if (panelEmpty || panel.dataset.ddEmptySig !== emptySig) {
+          panel._ddHeroRO?.disconnect();
+          panel._ddHeroRO = null;
+          this._clearDatasetDiagImagesMarquee?.(panel.querySelector?.('[data-dd-images-body]'));
+          if (!tabChanged && !panelEmpty) panel.classList.add('no-enter-anim');
+          else panel.classList.remove('no-enter-anim');
+          panel.innerHTML = this._renderDatasetDiagTab(t);
+          panel.dataset.ddEmptySig = emptySig;
+          panel._ddHeadingSig = '';
+          panel._ddAnalysisSig = '';
+          panel._ddImagesSig = '';
+          panel._ddSavedImagesScroll = null;
+        }
+        return;
+      }
+
+      const gfKey = this.datasetDiagGroupFilter ? (this.datasetDiagGroupFilter.dim + ':' + this.datasetDiagGroupFilter.key) : '';
+      let savedScroll = null;
+      let didRebuildDom = false;
+      const captureScroll = () => {
+        if (savedScroll !== null) {
+          didRebuildDom = true;
+          return;
+        }
+        const curShell = panel.querySelector?.('[data-dd-shell="1"]');
+        const curAnalysis = curShell?.querySelector?.('[data-dd-slot="analysis"]');
+        const curImagesBody = curShell?.querySelector?.('[data-dd-slot="images"]')?.querySelector?.('[data-dd-images-body]');
+        savedScroll = {
+          panelTop: panel.scrollTop || 0,
+          analysisTop: curAnalysis?.scrollTop || 0,
+          imagesTop: curImagesBody?.scrollTop || 0,
+          imagesLeft: curImagesBody?.scrollLeft || 0,
+        };
+        didRebuildDom = true;
+      };
+      let shell = panel.querySelector('[data-dd-shell="1"]');
+      if (!shell) {
+        if (!tabChanged && !panelEmpty) panel.classList.add('no-enter-anim');
+        else panel.classList.remove('no-enter-anim');
+        panel.innerHTML = this._datasetDiagShellHtml(t);
+        shell = panel.querySelector('[data-dd-shell="1"]');
+        panel.dataset.ddEmptySig = '';
+        panel._ddHeadingSig = '';
+        panel._ddHeadingStructSig = '';
+        panel._ddAnalysisSig = '';
+        panel._ddAnalysisStructSig = '';
+        panel._ddScatterFilterSig = '';
+        panel._ddImagesSig = '';
+        panel._ddImagesNoLimitSig = '';
+        panel._ddImagesToolbarStructSig = '';
+        panel._ddImagesScrollKey = '';
+        panel._ddSavedImagesScroll = null;
+        panel._ddRenderedSearch = '';
+        panel._ddLastView = '';
+        panel._ddLastDataSig = '';
+      } else {
+        panel.classList.add('no-enter-anim');
+      }
+
+      const headingSlot = shell.querySelector('[data-dd-slot="heading"]');
+      const analysisSlot = shell.querySelector('[data-dd-slot="analysis"]');
+      const imagesSlot = shell.querySelector('[data-dd-slot="images"]');
+
+      const view = this._ddActiveSubTab
+        ? this._ddActiveSubTab(data)
+        : (this.datasetDiagSubTab === 'images' ? 'images' : 'overview');
+      const prevView = panel._ddLastView || '';
+      const switchedView = !!prevView && prevView !== view && !tabChanged;
+      panel._ddLastView = view;
+      const filteredLen = this._datasetDiagFilteredImages
+        ? this._datasetDiagFilteredImages().length
+        : 0;
+      const hasFilter = this._datasetDiagHasActiveFilter?.() || false;
+      const hasRegImages = this._datasetDiagHasRegImages ? this._datasetDiagHasRegImages(data) : Boolean(data.summary?.has_reg_images);
+      const effectiveRegMode = this._datasetDiagEffectiveRegMode ? this._datasetDiagEffectiveRegMode(data) : (this.datasetDiagRegMode || 'exclude');
+      const liveState = this._ddLiveStatusState ? this._ddLiveStatusState(t) : { visible: false, paused: false };
+      if (panel._ddLastHasSlope !== undefined && panel._ddLastHasSlope !== !!data.summary?.has_slope) {
+        this.datasetDiagScatterZoom = null;
+      }
+      panel._ddLastHasSlope = !!data.summary?.has_slope;
+
+      const headingStructSig = JSON.stringify([
+        this._shellLocale, this.datasetDiagLoading, this.datasetDiagError,
+        this.datasetDiagMinCount, this.datasetDiagRunId || data.run_id || '',
+        (data.available_runs || []).length, source.key, liveState.visible,
+        hasRegImages,
+      ]);
+      const headingSig = JSON.stringify([
+        headingStructSig, dataSig, view, gfKey, filteredLen, hasFilter,
+        liveState.phase, !!data.summary?.multi_gpu_partial, effectiveRegMode,
+      ]);
+      if (headingSlot && panel._ddHeadingSig !== headingSig) {
+        const canPatchHeading = !!headingSlot.querySelector?.('.m-dd-topbar')
+          && panel._ddHeadingStructSig === headingStructSig
+          && typeof this._patchDatasetDiagHeading === 'function';
+        panel._ddHeadingSig = headingSig;
+        panel._ddHeadingStructSig = headingStructSig;
+        if (canPatchHeading) {
+          this._patchDatasetDiagHeading(headingSlot, t, data);
+        } else {
+          captureScroll();
+          const activeId = (document.activeElement && headingSlot.contains(document.activeElement)) ? document.activeElement.id : '';
+          headingSlot.innerHTML = this._renderDatasetDiagHeading(t, data);
+          if (activeId) document.getElementById(activeId)?.focus({ preventScroll: true });
+        }
+      }
+
+      if (view !== 'images') {
+        // 先于 hidden = true 读取 scrollTop/scrollLeft，避免 display:none 后浏览器读出 0。
+        this._releaseDatasetDiagImagesSlot?.(panel);
+      }
+      if (imagesSlot) {
+        imagesSlot.hidden = view !== 'images';
+        imagesSlot.classList?.toggle('m-dd-view-enter', switchedView && view === 'images');
+      }
+      if (analysisSlot) {
+        analysisSlot.hidden = view !== 'overview';
+        analysisSlot.classList?.toggle('m-dd-view-enter', switchedView && view === 'overview');
+      }
+
+      let analysisAnimated = false;
+      let analysisTouched = false;
+      let resetImagesScroll = false;
+      let currentImagesScrollKey = '';
+      if (view === 'images') {
+        if (analysisSlot) {
+          this._pauseDatasetDiagCharts(panel);
+          if (analysisSlot.innerHTML) analysisSlot.innerHTML = '';
+          panel._ddAnalysisSig = '';
+          panel._ddAnalysisStructSig = '';
+          panel._ddScatterFilterSig = '';
+        }
+        const collapsedFoldersKey = Object.keys(this.datasetDiagCollapsedFolders || {})
+          .filter(k => this.datasetDiagCollapsedFolders[k])
+          .sort()
+          .join('\u0000');
+        const canGroup = !!this._datasetDiagHasMultipleFolders?.(data);
+        const imagesToolbarStructSig = JSON.stringify([this._shellLocale, source.key, hasRegImages, canGroup]);
+        const imagesScrollKey = JSON.stringify([
+          source.key, data.run_id || this.datasetDiagRunId, this.datasetDiagMinCount,
+          this.datasetDiagPreset, gfKey, this.datasetDiagSearch, effectiveRegMode,
+          this.datasetDiagSort, this.datasetDiagViewMode, !!this.datasetDiagGroupByFolder,
+        ]);
+        currentImagesScrollKey = imagesScrollKey;
+        const imagesNoLimitSig = JSON.stringify([
+          this._shellLocale, dataSig, this.datasetDiagPreset, gfKey,
+          this.datasetDiagSearch, effectiveRegMode, this.datasetDiagSort,
+          this.datasetDiagViewMode, !!this.datasetDiagGroupByFolder, collapsedFoldersKey,
+          source.key,
+        ]);
+        const imagesSig = this._ddComputeImagesSig
+          ? this._ddComputeImagesSig(dataSig, source.key, gfKey)
+          : JSON.stringify([
+            this._shellLocale, dataSig, this.datasetDiagPreset, gfKey,
+            this.datasetDiagSearch, effectiveRegMode, this.datasetDiagSort,
+            this.datasetDiagViewMode, !!this.datasetDiagGroupByFolder, collapsedFoldersKey,
+            this.datasetDiagDisplayLimit, source.key,
+          ]);
+        if (imagesSlot && panel._ddImagesSig !== imagesSig) {
+          const hadPrevImages = !!panel._ddImagesSig;
+          const prevLimit = panel._ddLastImagesLimit;
+          const nextLimit = this.datasetDiagDisplayLimit || 120;
+          const isPaginationOnly = panel._ddLastImagesDataSig === dataSig
+            && panel._ddImagesNoLimitSig === imagesNoLimitSig
+            && prevLimit !== undefined
+            && nextLimit > prevLimit;
+          const isDataPoll = panel._ddLastImagesDataSig !== undefined && panel._ddLastImagesDataSig !== dataSig;
+          const searchChanged = panel._ddRenderedSearch !== this.datasetDiagSearch;
+          const toolbarEl = imagesSlot.querySelector?.('[data-dd-images-toolbar]');
+          const bodyEl = imagesSlot.querySelector?.('[data-dd-images-body]');
+          const canPatchSplit = Boolean(
+            toolbarEl && bodyEl
+            && panel._ddImagesToolbarStructSig === imagesToolbarStructSig
+            && typeof this._patchDatasetDiagImagesToolbar === 'function'
+            && typeof this._renderDatasetDiagImagesBodyHtml === 'function'
+          );
+
+          resetImagesScroll = Boolean(panel._ddImagesScrollKey && panel._ddImagesScrollKey !== imagesScrollKey);
+          panel._ddImagesSig = imagesSig;
+          panel._ddImagesNoLimitSig = imagesNoLimitSig;
+          panel._ddImagesToolbarStructSig = imagesToolbarStructSig;
+          panel._ddImagesScrollKey = imagesScrollKey;
+          panel._ddLastImagesLimit = nextLimit;
+          panel._ddLastImagesDataSig = dataSig;
+          panel._ddRenderedSearch = this.datasetDiagSearch;
+
+          if (canPatchSplit) {
+            let handledPagination = false;
+            if (isPaginationOnly && typeof this._appendDatasetDiagImagesPage === 'function') {
+              handledPagination = this._appendDatasetDiagImagesPage(bodyEl, t, data, prevLimit) !== false;
+            }
+            if (!handledPagination) {
+              this._patchDatasetDiagImagesToolbar(toolbarEl, t, data);
+              const input = toolbarEl.querySelector?.('.m-output-search-input');
+              if (input && searchChanged && document.activeElement !== input && input.value !== this.datasetDiagSearch) {
+                input.value = this.datasetDiagSearch;
+              }
+              let patchedInPlace = false;
+              if (isDataPoll && typeof this._patchDatasetDiagImagesInPlace === 'function') {
+                patchedInPlace = this._patchDatasetDiagImagesInPlace(bodyEl, t, data) === true;
+              }
+              if (!patchedInPlace) {
+                captureScroll();
+                this._clearDatasetDiagImagesMarquee?.(bodyEl);
+                const activeBodyId = (document.activeElement && bodyEl.contains(document.activeElement)) ? document.activeElement.id : '';
+                bodyEl.innerHTML = this._renderDatasetDiagImagesBodyHtml(t, data);
+                if (hadPrevImages && !switchedView && !isPaginationOnly && !isDataPoll) {
+                  bodyEl.classList?.add?.('m-dd-content-enter');
+                }
+                if (activeBodyId) {
+                  const target = document.getElementById(activeBodyId);
+                  if (target && !target.disabled) target.focus({ preventScroll: true });
+                }
+              }
+            }
+          } else {
+            captureScroll();
+            this._clearDatasetDiagImagesMarquee?.(imagesSlot.querySelector?.('[data-dd-images-body]'));
+            const input = imagesSlot.querySelector('.m-output-search-input');
+            const activeId = imagesSlot.contains(document.activeElement) ? document.activeElement.id : '';
+            const focused = input && document.activeElement === input;
+            const selection = focused ? [input.selectionStart, input.selectionEnd] : null;
+            if (input) input.remove();
+            imagesSlot.innerHTML = this._renderDatasetDiagImagesCard(t, data);
+            if (hadPrevImages && !switchedView && !isPaginationOnly && !isDataPoll) {
+              imagesSlot.querySelector?.('[data-dd-images-body]')?.classList?.add?.('m-dd-content-enter');
+            }
+            const replacement = imagesSlot.querySelector('.m-output-search-input');
+            if (input && replacement) {
+              replacement.replaceWith(input);
+              if (searchChanged && input.value !== this.datasetDiagSearch) input.value = this.datasetDiagSearch;
+              if (focused) { input.focus({ preventScroll: true }); input.setSelectionRange(...selection); }
+            }
+            if (!focused && activeId) {
+              const target = document.getElementById(activeId);
+              if (target && !target.disabled) target.focus({ preventScroll: true });
+            }
+          }
+        }
+      } else {
+        const analysisStructSig = JSON.stringify([
+          this._shellLocale, source.key, data.run_id || '',
+          !!data.summary?.has_slope, this.datasetDiagError,
+        ]);
+        const analysisSig = JSON.stringify([
+          analysisStructSig, dataSig, this.datasetDiagPreset || 'all', gfKey, hasFilter, filteredLen,
+          effectiveRegMode,
+        ]);
+        if (analysisSlot && panel._ddAnalysisSig !== analysisSig) {
+          const canPatchAnalysis = !!analysisSlot.querySelector?.('[data-dd-analysis]')
+            && panel._ddAnalysisStructSig === analysisStructSig
+            && typeof this._patchDatasetDiagDashboard === 'function';
+          const animate = !!(panel._ddLastDataSig && panel._ddLastDataSig !== dataSig)
+            && (!this.selectedRunDir || (this._datasetDiagUpdatedIds?.size > 0));
+          analysisAnimated = animate;
+          analysisTouched = true;
+          panel._ddAnalysisSig = analysisSig;
+          panel._ddAnalysisStructSig = analysisStructSig;
+          if (canPatchAnalysis) {
+            this._patchDatasetDiagDashboard(analysisSlot, t, data, animate);
+          } else {
+            captureScroll();
+            const activeAnalysisId = (document.activeElement && analysisSlot.contains(document.activeElement)) ? document.activeElement.id : '';
+            this._pauseDatasetDiagCharts(panel);
+            analysisSlot.innerHTML = this._renderDatasetDiagAnalysisCard(t, data);
+            if (activeAnalysisId) {
+              const target = document.getElementById(activeAnalysisId);
+              if (target && !target.disabled) target.focus({ preventScroll: true });
+            }
+          }
+        }
+      }
+      panel._ddLastDataSig = dataSig;
+      const restoredImagesScroll = (view === 'images' && panel._ddSavedImagesScroll
+        && panel._ddSavedImagesScroll.scrollKey === currentImagesScrollKey && !resetImagesScroll)
+        ? panel._ddSavedImagesScroll
+        : null;
+      if (view === 'images') panel._ddSavedImagesScroll = null;
+      if (didRebuildDom && savedScroll !== null) {
+        panel.scrollTop = savedScroll.panelTop;
+        if (analysisSlot && (savedScroll.analysisTop || 'scrollTop' in analysisSlot)) {
+          analysisSlot.scrollTop = savedScroll.analysisTop;
+        }
+        const nextImagesBody = imagesSlot?.querySelector?.('[data-dd-images-body]');
+        if (nextImagesBody && (resetImagesScroll || restoredImagesScroll || savedScroll.imagesTop || savedScroll.imagesLeft || 'scrollTop' in nextImagesBody)) {
+          nextImagesBody.scrollTop = resetImagesScroll ? 0 : (restoredImagesScroll ? restoredImagesScroll.top : savedScroll.imagesTop);
+          nextImagesBody.scrollLeft = resetImagesScroll ? 0 : (restoredImagesScroll ? restoredImagesScroll.left : savedScroll.imagesLeft);
+        }
+      } else if (resetImagesScroll || restoredImagesScroll) {
+        const nextImagesBody = imagesSlot?.querySelector?.('[data-dd-images-body]');
+        if (nextImagesBody) {
+          nextImagesBody.scrollTop = resetImagesScroll ? 0 : restoredImagesScroll.top;
+          nextImagesBody.scrollLeft = resetImagesScroll ? 0 : restoredImagesScroll.left;
+        }
+      }
+      if (view === 'images') {
+        const imagesBody = imagesSlot?.querySelector?.('[data-dd-images-body]');
+        if (imagesBody) {
+          const syncImagesScrolled = () => {
+            const imagesRoot = imagesBody.closest?.('.m-dd-images') || imagesSlot?.querySelector?.('.m-dd-images');
+            imagesRoot?.classList?.toggle?.('is-scrolled', (imagesBody.scrollTop || 0) > 1);
+          };
+          if (!imagesBody._ddScrollBound && typeof imagesBody.addEventListener === 'function') {
+            imagesBody._ddScrollBound = true;
+            imagesBody.addEventListener('scroll', syncImagesScrolled, { passive: true });
+          }
+          this._bindDatasetDiagImagesBodyEvents?.(imagesBody);
+          syncImagesScrolled();
+        }
+      }
+      if (view === 'overview') {
+        this._bindDatasetDiagCharts(panel);
+        const hover = this._datasetDiagHoverPreview;
+        const hoverSig = hover ? [hover.kind, hover.preset || '', hover.dim || '', hover.key || '', hover.imageId || ''].join(':') : '';
+        const scatterFilterSig = JSON.stringify([
+          dataSig, this.datasetDiagPreset || 'all', gfKey, hasFilter, hoverSig, effectiveRegMode,
+        ]);
+        const scatterWrap = analysisSlot?.querySelector?.('[data-dd-hero-wrap][data-mode="quadrant"]')
+          || analysisSlot?.querySelector?.('[data-dd-hero-wrap]');
+        const scatterAnimating = Boolean(scatterWrap?._ddZoomAnimRaf || scatterWrap?._ddDotChoreoRaf);
+        if (!scatterAnimating && (analysisTouched || switchedView || tabChanged || panel._ddScatterFilterSig !== scatterFilterSig)) {
+          panel._ddScatterFilterSig = scatterFilterSig;
+          this._syncDatasetDiagScatterFilter?.(panel, { skipReorder: !!analysisAnimated });
+        }
+      }
+      return;
+    }
+  },
+
+  _releaseDatasetDiagImagesSlot(panel) {
+    if (!panel) return;
+    const shell = panel.querySelector?.('[data-dd-shell="1"]');
+    const imagesSlot = shell?.querySelector?.('[data-dd-slot="images"]');
+    const imagesBody = imagesSlot?.querySelector?.('[data-dd-images-body]');
+    if (imagesBody) {
+      this._clearDatasetDiagImagesMarquee?.(imagesBody);
+    }
+    if (imagesSlot && imagesSlot.innerHTML) {
+      if (imagesBody) {
+        panel._ddSavedImagesScroll = {
+          top: imagesBody.scrollTop || 0,
+          left: imagesBody.scrollLeft || 0,
+          scrollKey: panel._ddImagesScrollKey || '',
+        };
+      }
+      imagesSlot.innerHTML = '';
+    }
+    panel._ddImagesSig = '';
+    panel._ddImagesNoLimitSig = '';
+    panel._ddImagesToolbarStructSig = '';
+    panel._ddLastImagesLimit = undefined;
+    panel._ddLastImagesDataSig = undefined;
+    panel._ddRenderedSearch = '';
+  },
+
+  _disconnectDatasetDiagUI() {
+    const panel = document.querySelector?.('.m-tab-panel[data-tab="dataset"]');
+    this._pauseDatasetDiagCharts?.(panel);
+    this._clearDatasetDiagImagesMarquee?.(panel?.querySelector?.('[data-dd-images-body]'));
+    this._releaseDatasetDiagImagesSlot?.(panel);
+    const modal = document.getElementById('datasetDiagModalRight');
+    if (modal) {
+      (modal._ddModalROs || []).forEach(observer => observer.disconnect());
+      modal._ddModalROs = [];
+    }
   },
 
   // 滑动指示条：跟随激活 tab 的位置与宽度（首次定位不播放动画）
   _syncMonitorTabIndicator() {
     const bar = document.querySelector('.monitor-tabs');
     if (!bar) return;
-    const indicator = bar.querySelector('.monitor-tab-indicator');
+    const indicator = bar.querySelector('.ui-tab-indicator');
     const active = bar.querySelector('.monitor-tab.active');
     if (!indicator || !active || !active.offsetWidth) {
       // 路由隐藏时布局不可用：清空签名，让下一次 renderDashboard 重新调度定位
@@ -364,3 +770,5 @@ window.composeAppMixins(window.monitorRenderMixin, { monitorArtifactsRenderMixin
 window.composeAppMixins(window.monitorRenderMixin, { monitorDiagnosticsMixin: window.monitorDiagnosticsMixin });
 
 window.composeAppMixins(window.monitorRenderMixin, { monitorSummaryMixin: window.monitorSummaryMixin });
+
+window.composeAppMixins(window.monitorRenderMixin, { monitorDatasetDiagRenderMixin: window.monitorDatasetDiagRenderMixin });

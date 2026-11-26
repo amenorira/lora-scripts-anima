@@ -4,6 +4,7 @@ const {loadGlobalFrontend, composeMixins, response, deferred} = require('./helpe
 
 global.document = {getElementById: () => null};
 loadGlobalFrontend(['shared/utils', 'monitor/logs', 'monitor/core', 'monitor/render']);
+window.loadTrainingFields = async () => {};
 
 function app(overrides = {}) {
   return Object.assign(composeMixins(window.utilsMixin, window.monitorCoreMixin, window.monitorRenderMixin), {
@@ -11,6 +12,18 @@ function app(overrides = {}) {
     toast() {}, startProgress() {}, finishProgress() {}, renderHistory() {}, navigate() {},
   }, overrides);
 }
+
+test('opening history uses the catalog while manual refresh requests discovery', async () => {
+  const requests = [];
+  global.fetch = async url => {
+    requests.push(url);
+    return response({running: null, history: []});
+  };
+  const a = app();
+  await a.loadHistory();
+  await a.loadHistory(false, true);
+  assert.deepEqual(requests, ['/api/monitor/history', '/api/monitor/history?refresh=true']);
+});
 
 test('copy uses the converted form and undo restores both profile drafts', async () => {
   const original = {model_train_type: 'moss-image-lora', output_name: 'my draft'};

@@ -106,14 +106,11 @@ def version_error(package_name: str, expected: str | None, installed: str) -> st
 def shared_runtime_status(*, verify_imports: bool = True) -> dict[str, Any]:
     """Check the one shared Krea 2 / sd-scripts training environment.
 
-    This intentionally does not require a CUDA device to be visible: a GUI may
-    run on a machine without a compatible driver, while the important invariant
-    here is that the installed Torch build is CUDA-capable rather than a second
-    CPU-only wheel inside an abandoned core venv.
+    Verify that the shared environment has a CUDA-enabled Torch build. This
+    check can also run on GUI hosts without a visible GPU or compatible driver.
 
-    ``verify_imports=False`` is the launcher hot path. It only reads package
-    metadata (plus the CUDA wheel tag), so a healthy GUI launch does not spend
-    several seconds importing Qwen3-VL. A full import check still runs after a
+    ``verify_imports=False`` reads only package metadata and the CUDA wheel tag
+    for a faster GUI launch. A full import check runs after a
     dependency repair, in the Environment page, and before Krea 2 work.
     """
 

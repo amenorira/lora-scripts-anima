@@ -55,6 +55,15 @@ _DOCUMENTS = {
             "ja-JP": "parameters/memory-optimization.ja-JP.md",
         },
     },
+    "dataset-diagnostics": {
+        "category": "training",
+        "order": 30,
+        "files": {
+            "zh-CN": "parameters/dataset-diagnostics.zh-CN.md",
+            "en-US": "parameters/dataset-diagnostics.en-US.md",
+            "ja-JP": "parameters/dataset-diagnostics.ja-JP.md",
+        },
+    },
     "lora-plus": {
         "category": "network",
         "order": 10,

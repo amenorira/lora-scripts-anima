@@ -69,9 +69,8 @@ _fields_payload_lock = threading.Lock()
 def _fields_payload() -> tuple[str, bytes]:
     """Process-stable fields JSON + strong ETag (body hash).
 
-    The registry is static per process (get_fields_json caches it), so the
-    serialized payload is built once and reused; unchanged clients get a 304
-    instead of re-downloading ~88 KB on every page load.
+    Serialize the registry once per process and return 304 to clients with
+    a matching ETag to save the ~88 KB transfer.
     """
     global _fields_payload_cache
     with _fields_payload_lock:
@@ -248,17 +247,6 @@ async def get_files(pick_type) -> APIResponse:
     with _files_cache_lock:
         _files_cache[pick_type] = (now, dirs)
     return APIResponseSuccess(data={"files": dirs})
-
-
-_RESPONSE_TRIM_NONE = {"response_model_exclude_none": True}
-
-
-@router.get("/tasks/terminate/{task_id}", **_RESPONSE_TRIM_NONE)
-async def terminate_task(task_id: str):
-    # 杀进程树要等子进程退出（psutil wait 最长约 10 秒），必须放线程池，
-    # 否则事件循环被阻塞，期间的 HTTP/WS/监控轮询全部冻结、事件乱序。
-    await asyncio.to_thread(tm.terminate_task, task_id)
-    return APIResponseSuccess()
 
 
 @router.get("/graphic_cards")

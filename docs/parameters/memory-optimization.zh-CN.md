@@ -4,9 +4,9 @@
 ## Anima
 
 <!-- doc-anchor: anima-partial-checkpointing -->
-### 跳过检查点的末尾块数
+### 末尾跳过梯度检查点的块数
 
-约 1 MP 图片，batch 1，LoRA rank 16，bf16，Flash Attention；启用梯度检查点、latent 和文本缓存。显存取训练时 nvidia-smi 峰值。
+约 1 MP 图片，batch 1，LoRA rank 16，bf16，Flash Attention；启用梯度检查点、Latent 和文本缓存。显存数据为训练期间 `nvidia-smi` 测得的峰值占用。
 
 | 跳过块数 | PRO 6000 Blackwell 显存 | 秒/步 | RTX 4090 显存 | 秒/步 |
 | --- | --- | --- | --- | --- |
@@ -22,11 +22,11 @@
 ## MOSS-Image
 
 <!-- doc-anchor: moss-partial-checkpointing -->
-### 跳过检查点的末尾块数
+### 末尾跳过梯度检查点的块数
 
 #### RTX PRO 6000 Blackwell
 
-约 1 MP 图片，batch 1，LoRA rank 16，Flash Attention；启用梯度检查点、latent 和文本缓存。INT8 + compile 的步时取预热后。
+约 1 MP 图片，batch 1，LoRA rank 16，Flash Attention；启用梯度检查点、Latent 和文本缓存。INT8 + compile 的步时取预热后。
 
 显存为训练阶段 nvidia-smi 峰值（含 CUDA 上下文）。使用 bf16 文本编码器生成缓存时，启动峰值约 15.6 GB。
 
@@ -64,9 +64,9 @@ RTX PRO 6000 Blackwell，1024×1024，batch 1，梯度检查点。此组未注�
 来源：[sd-scripts](https://github.com/kohya-ss/sd-scripts/blob/b8da8698a05ed26f647760c0a42481d8c825d7fe/docs/moss_image_train_network.md)
 
 <!-- doc-anchor: moss-block-swap -->
-### 换出块数
+### 块交换（Block Swap）
 
-RTX PRO 6000 Blackwell，Windows，1024×1024，batch 1，LoRA rank 16，AdamW；梯度检查点、latent 磁盘缓存。换块为传统方式。
+RTX PRO 6000 Blackwell，Windows，1024×1024，batch 1，LoRA rank 16，AdamW；梯度检查点、Latent 磁盘缓存。块交换使用传统方式。
 
 | DiT / 文本编码器 | 配置 | 启动显存 | 训练显存 | CPU 内存 |
 | --- | --- | --- | --- | --- |
@@ -74,7 +74,7 @@ RTX PRO 6000 Blackwell，Windows，1024×1024，batch 1，LoRA rank 16，AdamW�
 | ConvRot INT8 / ConvRot INT8 | 仅 DiT，文本缓存 | 9.1 GB | 9.1 GB | 9.9 GB |
 | ConvRot INT8 / ConvRot INT8 | 仅 DiT，文本缓存，换出 20 块 | 7.9 GB | 6.9 GB | 14.0 GB |
 | ConvRot INT8 / ConvRot INT8 | 仅 DiT，文本缓存，换出 36 块 | 7.9 GB | 5.2 GB | 15.6 GB |
-| ConvRot INT8 / ConvRot INT8 | 仅 DiT，文本缓存，Unsloth 卸载 | 8.2 GB | 8.2 GB | 11.2 GB |
+| ConvRot INT8 / ConvRot INT8 | 仅 DiT，文本缓存，Unsloth 异步激活卸载 | 8.2 GB | 8.2 GB | 11.2 GB |
 | bf16 / ConvRot INT8 | 仅 DiT，文本缓存，换出 20 块 | 9.0 GB | 9.0 GB | 18.5 GB |
 | ConvRot INT8 / ConvRot INT8 | DiT + 文本编码器 LoRA，无文本缓存 | 17.1 GB | 17.1 GB | 8.4 GB |
 | bf16 / bf16 | DiT + 文本编码器 LoRA，无文本缓存 | 32.4 GB | 32.4 GB | 16.1 GB |
@@ -89,7 +89,7 @@ RTX 3090，PCIe Gen3 x4，bf16，1024×1024，batch 1。
 
 | 方式 | 显存 | 秒/步 |
 | --- | --- | --- |
-| 传统换块 | — | ≈ 11.7 |
+| 传统块交换 | — | ≈ 11.7 |
 | H2D-only + 锁页 | ≈ 7 GB | ≈ 9.4 |
 
 —：上游未提供。

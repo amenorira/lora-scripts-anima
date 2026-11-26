@@ -2,7 +2,7 @@
 // 与 training-lr-preview.js / training-shape-preview.js 同属训练表单的功能面板 mixin。
 window.datasetRepeatMixin = {
   // 一行草稿的合法性、改后的次数、改后的目录名都在这里判定一次，其余取值方法都从它派生。
-  // 参数用 subset 对象而非名字：表格每格都会求值，按名字查找会退化成 O(n²)。
+  // 表格每格都会求值。直接传入 subset 对象可省去按名字查找。
   datasetRepeatParse(subset) {
     const current = Number(subset.repeats || 0);
     const raw = String(this.datasetRepeatInputValue(subset)).trim();
@@ -66,7 +66,7 @@ window.datasetRepeatMixin = {
     if (!subsets.length) return '';
     const applied = subsets.reduce((sum, subset) => sum + Number(subset.sample_count || 0), 0);
     const preview = this.datasetRepeatTotalSamples();
-    return this._datasetRepeatText('datasetRepeat.total', 'Train samples {samples}', {
+    return this._datasetRepeatText('datasetRepeat.total', {
       samples: preview === applied ? String(applied) : `${applied} → ${preview}`,
     });
   },
@@ -152,13 +152,13 @@ window.datasetRepeatMixin = {
   datasetRepeatUndoLabel() {
     const last = this.datasetRepeatLastApplied;
     if (!last) return '';
-    return this._datasetRepeatText('datasetRepeat.applied', 'Applied {count} changes', {
+    return this._datasetRepeatText('datasetRepeat.applied', {
       count: last.items.length,
     });
   },
 
-  // subset_timestep_offsets 用文件夹名做 key，对不上的 key 会被 _reconcileSubsetTimestepOffsets
-  // 静默删掉，改名必须同步搬。从原字典整体映射而非逐个改写，互换/环形改名才不会互相覆盖。
+  // subset_timestep_offsets 只保留现有文件夹名对应的键。改名时基于原字典迁移偏移设置，
+  // 使互换或环形改名中的每个文件夹都保留自己的偏移。
   _renameSubsetTimestepOffsets(pairs) {
     const moves = new Map((pairs || [])
       .filter(item => item.oldName !== item.newName)
@@ -276,7 +276,7 @@ window.datasetRepeatMixin = {
       result = await response.json();
     } catch (error) {
       // 网络层/解析失败拿不到后端 errorCode，单独包一条本地化文案。
-      throw new Error(this._datasetRepeatText('datasetRepeat.errors.requestFailed', 'Request failed: {message}', {
+      throw new Error(this._datasetRepeatText('datasetRepeat.errors.requestFailed', {
         message: error.message,
       }));
     }
@@ -304,7 +304,7 @@ window.datasetRepeatMixin = {
     const refreshEstimateIfNeeded = async (changed) => {
       // Restore cancelled estimates and edits deferred while directory names were unstable.
       if (isCurrent() && (changed || estimateWasPending || this._stepEstimateRequestSeq !== estimateRequestSeq)) {
-        await this.refreshStepEstimate(true);
+        await this.refreshStepEstimate();
       }
     };
     try {
@@ -347,7 +347,7 @@ window.datasetRepeatMixin = {
         dir,
         items: applied.map(item => ({ oldName: item.oldName, newName: item.newName })),
       };
-      this.toast(this._datasetRepeatText('datasetRepeat.applied', 'Applied {count} changes', {
+      this.toast(this._datasetRepeatText('datasetRepeat.applied', {
         count: applied.length,
       }));
     } catch (error) {
@@ -373,9 +373,9 @@ window.datasetRepeatMixin = {
     }
   },
 
-  _datasetRepeatText(key, fallback, values) {
+  _datasetRepeatText(key, values) {
     void this.locale;
-    let text = this.t(key, fallback);
+    let text = this.t(key);
     Object.keys(values || {}).forEach(name => {
       text = text.replaceAll(`{${name}}`, () => String(values[name]));
     });
@@ -399,7 +399,7 @@ window.datasetRepeatMixin = {
     };
     // 未覆盖的 errorCode 走兜底，不把后端的中英双语 message 直接塞进界面。
     const key = keys[data.errorCode] || 'datasetRepeat.errors.failed';
-    const message = this._datasetRepeatText(key, (result && result.message) || '', params);
+    const message = this._datasetRepeatText(key, params);
     const recovery = (data.recovery || []).map(item => `${item.currentPath} → ${item.originalPath}`).join('\n');
     return recovery ? `${message}\n${recovery}` : message;
   },

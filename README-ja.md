@@ -34,21 +34,22 @@ Anima、SDXL、MOSS-Image の学習エンジンには [kohya-ss/sd-scripts](http
 | Krea 2 RAW DiT | musubi-tuner | LoRA | LoCon / LoHa / LoKr |
 
 - **MOSS-Image** では DiT のテキスト投影層と Refiner を学習対象にできます。Qwen テキストエンコーダーは凍結したままです。
-- **Krea 2** の学習前に、画像の潜在表現（latent）と Qwen3-VL のテキストエンコード結果をキャッシュしてください。
+- **Krea 2** の学習前に、画像の latent（潜在特徴）と Qwen3-VL のテキストエンコード結果をキャッシュしてください。
 
 ## 主な機能
 
-- **学習設定** — 学習パラメータの編集、TOML のプレビュー、YAML / TOML のインポート、YAML のエクスポート、学習履歴の確認
-- **学習前のプレビュー** — タイムステップ分布、学習率曲線、行列構造をローカルで計算して表示する 3 種類のダイアログ。[プレビューを見る](#pre-training-previews)
-- **LyCORIS アダプターパネル** — LoCon / LoHa / LoKr に対応し、アルゴリズムに応じたパラメータを表示。カーネルバックエンド（auto / Triton / TileLang / compile / Torch）の選択、LoRA+、Anima の学習範囲の詳細設定に対応
-- **豊富なオプティマイザー** — AdamW、Lion、Prodigy、CAME、StableAdamW、Adafactor、ScheduleFree、Adan、AdEMAMix、Muon などに加え、内蔵の LoRA-RITE と実験的な LoRA-Muon を提供。各オプティマイザーの既定値と制約を表示
-- **リアルタイムのハードウェア監視** — GPU 使用率・VRAM・温度、CPU・RAM 使用率を表示。Chart.js のグラフ、TensorBoard、リアルタイムログを統合
-- **内蔵タグエディター** — 画像のタグを編集し、一括検索・置換、重複除去、並べ替え、クリーンアップなどを実行
-- **タグ付けワークスペース** — WD EVA02-Large、WD ViT-Large、CL Tagger、Camie Tagger、[PixAI Tagger v1.0](https://huggingface.co/pixai-labs/pixai-tagger-v1.0) を統合。画像単位の確認、カテゴリ別のしきい値、一括キャプション出力に対応。PixAI はローカルの PyTorch で推論し、スタイルタグに対応。初回のダウンロードは約 1.95 GB。AI タグ付けでは OpenAI 互換（Chat Completions / Responses）または Anthropic Messages プロトコルの画像対応 API を利用可能
-- **EmoSens 適応型オプティマイザー** — 損失の変化に応じて学習率を調整し、停止時期を提示する EmoSens v3.9 を内蔵
-- **多言語対応（i18n）** — 中国語・英語・日本語の UI と内蔵ガイド。ブラウザーの言語を自動検出し、選択した言語を保存
-- **3 種類のテーマ** — ライト、ダーク、ComfyUI。システム設定への追従と手動切り替えに対応
-- **バックエンド接続状態の表示** — 接続状態と切断からの経過時間をリアルタイムで表示
+- **学習設定** — 学習パラメータの編集、TOML のプレビュー、YAML / TOML のインポート、YAML のエクスポート、学習履歴の確認。
+- **学習前のプレビュー** — タイムステップ分布、学習率曲線、行列構造をローカルで計算して表示する 3 種類のダイアログ。[プレビューを見る](#pre-training-previews)。
+- **LyCORIS アダプターパネル** — LoCon / LoHa / LoKr に対応し、アルゴリズムに応じたパラメータを表示。カーネルバックエンド（auto / Triton / TileLang / compile / Torch）の選択、LoRA+、Anima の学習範囲の詳細設定に対応。
+- **豊富なオプティマイザー** — AdamW、Lion、Prodigy、CAME、StableAdamW、Adafactor、ScheduleFree、Adan、AdEMAMix、Muon などに加え、内蔵の LoRA-RITE と実験的な LoRA-Muon を提供。各オプティマイザーの既定値と制約を表示。
+- **リアルタイム監視と実行制御** — GPU 使用率・VRAM・温度、CPU・RAM 使用率、損失の推移グラフ、リアルタイムログ、TensorBoard を統合。学習中の一時停止・再開、即時保存、手動プレビュー生成、保存状態からの再開に対応。
+- **データセット診断** — `sd-scripts` のサンプル別損失ログに基づき、同程度のノイズ区間での残差と推移から学習しにくい画像やタグ不備・トリミング不良を特定。グループ比較、画像別の詳細確認、タグ編集への直接移動に対応。
+- **内蔵タグエディター** — 画像のタグを編集し、一括検索・置換、重複除去、並べ替え、クリーンアップなどを実行。
+- **タグ付けワークスペース** — WD EVA02-Large、WD ViT-Large、CL Tagger、Camie Tagger、[PixAI Tagger v1.0](https://huggingface.co/pixai-labs/pixai-tagger-v1.0) を統合。画像単位の確認、カテゴリ別のしきい値、一括キャプション出力に対応。PixAI はローカルの PyTorch で推論し、スタイルタグに対応。初回のダウンロードは約 1.95 GB。AI タグ付けでは OpenAI 互換（Chat Completions / Responses）または Anthropic Messages プロトコルの画像対応 API を利用可能。
+- **EmoSens 適応型オプティマイザー** — 損失の変化に応じて学習率を調整し、停止時期を提示する EmoSens v3.9 を内蔵。
+- **多言語対応（i18n）** — 中国語・英語・日本語の UI と内蔵ガイド。ブラウザーの言語を自動検出し、選択した言語を保存。
+- **3 種類のテーマ** — ライト、ダーク、ComfyUI。システム設定への追従と手動切り替えに対応。
+- **バックエンド接続状態の表示** — 接続状態と切断からの経過時間をリアルタイムで表示。
 
 ## 学習画面
 
@@ -74,6 +75,20 @@ Anima、SDXL、MOSS-Image の学習エンジンには [kohya-ss/sd-scripts](http
 
 ![異なる学習段階のサンプル比較](docs/images/sample-comparison.ja-JP.jpg)
 
+### 学習モニターと実行制御
+
+進捗、速度、損失の推移を確認しながら、学習の一時停止、重みや学習状態の即時保存、手動プレビューの生成、保存済み状態からの学習再開を行えます。
+
+![学習モニター概要と実行制御](docs/images/monitor-overview.ja-JP.jpg)
+
+### データセット診断
+
+`sd-scripts` のサンプル別損失ログから残差が高いままの画像を見つけ、サブセットやバケットごとの偏りを比較したり、画像を開いてトリミング範囲やキャプションを確認したりできます（画像はデモ用です）。
+
+![データセット診断の概要](docs/images/dataset-diagnostics.ja-JP.jpg)
+
+![データセット診断の画像別詳細](docs/images/dataset-diagnostics-detail.ja-JP.jpg)
+
 <a name="pre-training-previews"></a>
 
 ## 学習前のプレビュー
@@ -86,7 +101,7 @@ Anima、SDXL、MOSS-Image の学習エンジンには [kohya-ss/sd-scripts](http
 
 ### 学習率曲線
 
-学習率スケジュールの設定から学習率のプレビューを開くと、ウォームアップ、減衰、リスタート、各学習ステップの学習率を確認できます。サイドバーには選択した DiT / テキストエンコーダーの実効学習率とウォームアップステップ数を表示します。スケジュールを自動管理するオプティマイザーには、その動作の説明を表示します。詳しくは[オプティマイザーガイド](docs/parameters/optimizers.ja-JP.md)を参照してください。
+学習率スケジューラの設定から学習率のプレビューを開くと、ウォームアップ、減衰、リスタート、各学習ステップの学習率を確認できます。サイドバーには選択した DiT / テキストエンコーダーの実効学習率とウォームアップステップ数を表示します。スケジュールを自動管理するオプティマイザーには、その動作の説明を表示します。詳しくは[オプティマイザーガイド](docs/parameters/optimizers.ja-JP.md)を参照してください。
 
 ![学習率曲線プレビュー：ウォームアップとコサイン減衰](docs/images/lr-preview.ja-JP.jpg)
 
@@ -175,6 +190,7 @@ SSH でアクセスする場合は、GUI のポートを転送します。GUI �
 - [タイムステップガイド](docs/parameters/timesteps.ja-JP.md)：flow matching のタイムステップサンプリング、損失の重み、分布プレビュー
 - [AdaLN モジュレーション層ガイド](docs/parameters/adaln.ja-JP.md)：モジュレーション層の役割、上流の既定動作、有効化が適する学習
 - [行列構造とファイルサイズのガイド](docs/parameters/matrix-preview.ja-JP.md)：実際のモジュール形状、パラメータ数、学習範囲、保存サイズの推定
+- [データセット診断ガイド](docs/parameters/dataset-diagnostics.ja-JP.md)：サンプル別の残差と傾きの判定基準、高残差の主な原因と確認手順
 
 ## 起動引数
 
@@ -195,7 +211,7 @@ SSH でアクセスする場合は、GUI のポートを転送します。GUI �
 
 ## Attention の高速化
 
-Anima / MOSS の既定値は `torch`、Krea2 は `sdpa` です。SDPA は PyTorch のビルドと入力に応じて利用可能なカーネルを選択します。Windows 版に内蔵 FlashAttention が含まれているとは限りません。
+Anima / MOSS の既定値は `torch`、Krea2 は `sdpa` です。SDPA は PyTorch のビルドと入力に応じて利用可能なカーネルを選択します。Windows で内蔵 FlashAttention を利用できるかは、インストールした PyTorch のビルドによって決まります。
 
 外部 FlashAttention 2 は「環境管理」でインストールし、完了後に Anima / MOSS の `attn_mode` を `flash` に設定します。インストーラーは Python・PyTorch・CUDA・プラットフォームを照合し、PyTorch を変更せず拡張機能だけをインストールします。Krea2 の旧 `flash_attn` 設定は引き続き `sdpa` に変換します。
 

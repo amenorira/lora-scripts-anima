@@ -15,6 +15,7 @@ from PIL import Image, UnidentifiedImageError
 
 from backend.log import log
 from backend.tagger import captioning, api_engine
+from backend.tagger.errors import TaggerNotFoundError, TaggerRuntimeError, TaggerUserError
 from backend.tagger.interrogator import (
     available_interrogators,
     gpu_inference_lock,
@@ -26,6 +27,7 @@ from backend.tagger.registry import MODEL_SPEC_BY_ID
 from backend.utils.file_io import atomic_write_text, read_text
 from backend.tasks import tm
 from backend.tagger.workspace_tasks import (
+    _touch_task,
     _task_log,
     _record_task_item,
     _finish_task,
@@ -63,10 +65,10 @@ def claim_direct_tagger(owner: str, *, remote=False, cancel_event=None) -> None:
     """One synchronous Tagger request, sharing the batch gate without a new task."""
     with _tasks_lock:
         if _direct_tagger or any(task["status"] in _ACTIVE_TASK_STATUSES for task in _tasks.values()) or has_active_legacy_tagger_task():
-            raise RuntimeError("Another Tagger task is running / 已有反推任务正在运行")
+            raise TaggerRuntimeError("taggerAnotherTaskRunning", "Another Tagger task is running / 已有反推任务正在运行")
         claim = tm.claim_dataset_reader if remote else tm.claim_external
         if not claim(owner):
-            raise RuntimeError("Resource is busy / 训练、打标、生成任务或目录重命名正在运行")
+            raise TaggerRuntimeError("taggerResourceBusy", "Resource is busy / 训练、打标、生成任务或目录重命名正在运行")
         _direct_tagger.update(owner=owner, remote=remote, cancel_event=cancel_event, phase="preparing")
 
 
@@ -114,7 +116,7 @@ def preview_caption(payload: dict, request: dict | None = None) -> dict:
         token = str(payload.get("source_token") or "")
         source = _get_source(token)
         if source["kind"] not in {"file", "upload"}:
-            raise ValueError("Preview requires a single image / 预览请选择单张图片")
+            raise TaggerUserError("taggerPreviewSingleImageOnly", "Preview requires a single image / 预览请选择单张图片")
         path = source_item(token, int(payload.get("index", 0)))
         # Preview consumes prompts and candidates, not batch output filenames.
         settings = {key: value for key, value in (payload.get("captioning") or {}).items()
@@ -244,6 +246,7 @@ def _run_api_task(task: dict, paths: list[Path], options: dict, config) -> None:
         task["started_at"] = time.time()
         task["status"] = "cancelling" if task["cancel_event"].is_set() else "running"
         task["phase"] = phase
+        _touch_task(task)
     _task_log(task, "api_start" if phase == "api_request" else phase, "phase", total=len(paths), model=config.model,
               endpoint=config.base_url, concurrency=config.concurrency)
     error = ""
@@ -265,8 +268,9 @@ def _run_api_task(task: dict, paths: list[Path], options: dict, config) -> None:
                         break
                     with task["lock"]:
                         task["items"][index]["status"] = "running"
+                        task["items_version"] += 1
                         task["current_file"] = path.name
-                        task["updated_at"] = time.time()
+                        _touch_task(task)
                     pending[pool.submit(_caption_one, task, config, path, runtime)] = index
 
             fill_pending()
@@ -338,12 +342,13 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
             if task["cancel_event"].is_set():
                 raise InterruptedError("cancelled")
             task["phase"] = phase
-            task["updated_at"] = time.time()
+            _touch_task(task)
 
     with task["lock"]:
         task["started_at"] = time.time()
         task["status"] = "cancelling" if task["cancel_event"].is_set() else "running"
         task["phase"] = "cancelling" if task["cancel_event"].is_set() else "created"
+        _touch_task(task)
     spec = None
     prefetch_stop = threading.Event()
     producer = None
@@ -380,7 +385,8 @@ def _run_task(task: dict, paths: list[Path], options: dict, conflict: str, write
             with task["lock"]:
                 task["current_file"] = path.name
                 task["items"][index]["status"] = "running"
-                task["updated_at"] = time.time()
+                task["items_version"] += 1
+                _touch_task(task)
             writing = False
             try:
                 if decode_error:
@@ -473,7 +479,7 @@ def create_task(payload: dict) -> str:
     _cleanup()
     engine = str(payload.get("engine") or "onnx")
     if engine not in {"onnx", "pytorch", "api"}:
-        raise ValueError("Unknown engine / 未知引擎")
+        raise TaggerUserError("taggerUnknownEngine", "Unknown engine / 未知引擎")
     options = dict(payload.get("options") or {})
     config = None
     if engine == "api":
@@ -482,30 +488,30 @@ def create_task(payload: dict) -> str:
         model_id = f"api:{config.model}"
     else:
         if training_active():
-            raise RuntimeError("Training or generation is using the GPU / 训练或正则生成任务正在使用 GPU")
+            raise TaggerRuntimeError("taggerGpuBusy", "Training or generation is using the GPU / 训练或正则生成任务正在使用 GPU")
         model_id = str(payload.get("model_id") or "")
         if model_id not in MODEL_SPEC_BY_ID:
-            raise ValueError("Unknown model / 未知模型")
+            raise TaggerUserError("taggerUnknownModel", "Unknown model / 未知模型", model=model_id)
         engine = MODEL_SPEC_BY_ID[model_id].engine
     if has_active_tagger_task():
-        raise RuntimeError("Another Tagger task is running / 已有反推任务正在运行")
+        raise TaggerRuntimeError("taggerAnotherTaskRunning", "Another Tagger task is running / 已有反推任务正在运行")
     source_token = str(payload.get("source_token") or "")
     conflict = str(payload.get("conflict") or "ignore")
     if conflict not in {"ignore", "copy", "prepend"}:
-        raise ValueError("Invalid caption conflict action / 无效的标签冲突策略")
+        raise TaggerUserError("taggerInvalidConflictAction", "Invalid caption conflict action / 无效的标签冲突策略")
     with _sources_lock:
         source = _sources.get(source_token)
         if not source:
-            raise ValueError("Source expired or not found / 输入源已过期或不存在")
+            raise TaggerUserError("taggerSourceExpired", "Source expired or not found / 输入源已过期或不存在")
     with source["annotation_lock"]:
         paths = list(source["paths"])
         source_kind = source["kind"]
         source_root = source["root"]
         overview_source_token = source.get("overview_source_token", source_token)
         if engine == "api" and source_kind != "folder":
-            raise ValueError("MOSS requires an image directory / MOSS 标注请选择图片目录")
+            raise TaggerUserError("taggerMossRequiresDirectory", "MOSS requires an image directory / MOSS 标注请选择图片目录")
         if not paths:
-            raise ValueError("No supported images found / 没有找到支持的图片")
+            raise TaggerUserError("taggerNoSupportedImages", "No supported images found / 没有找到支持的图片")
         if engine == "api":
             for index in range(len(paths)):
                 _source_path(source, index)
@@ -542,6 +548,7 @@ def create_task(payload: dict) -> str:
         "api_payload": dict(payload.get("api") or {}) if engine == "api" else None,
         "total": len(paths),
         "current": 0,
+        "items_version": 0,
         "success": 0,
         "skipped": 0,
         "failed": 0,
@@ -556,6 +563,7 @@ def create_task(payload: dict) -> str:
         "cancel_event": threading.Event(),
         "started_at": 0.0,
         "updated_at": time.time(),
+        "snapshot_revision": 0,
         "error_detail": None,
         "options": options,
         "conflict": conflict,
@@ -567,18 +575,18 @@ def create_task(payload: dict) -> str:
         task.update(current_result=None, results={})
     with _tasks_lock:
         if _direct_tagger or any(item.get("status") in _ACTIVE_TASK_STATUSES for item in _tasks.values()):
-            raise RuntimeError("Another Tagger task is running / 已有反推任务正在运行")
+            raise TaggerRuntimeError("taggerAnotherTaskRunning", "Another Tagger task is running / 已有反推任务正在运行")
         if has_active_legacy_tagger_task():
-            raise RuntimeError("Another Tagger task is running / 已有反推任务正在运行")
+            raise TaggerRuntimeError("taggerAnotherTaskRunning", "Another Tagger task is running / 已有反推任务正在运行")
         if engine != "api" or write_captions:
             owner = f"tagger:{task_id}"
             if not tm.claim_external(owner):
-                raise RuntimeError("Training, tagging or generation task is active / 训练、打标或正则生成任务正在运行")
+                raise TaggerRuntimeError("taggerResourceBusy", "Training, tagging or generation task is active / 训练、打标或正则生成任务正在运行")
             task["resource_claim"] = owner
         else:
             owner = f"tagger-reader:{task_id}"
             if not tm.claim_dataset_reader(owner):
-                raise RuntimeError("Dataset folders are being renamed / 数据集目录正在重命名")
+                raise TaggerRuntimeError("taggerDatasetRenaming", "Dataset folders are being renamed / 数据集目录正在重命名")
             task["dataset_claim"] = owner
         _tasks[task_id] = task
     try:
@@ -611,7 +619,7 @@ def retry_failed_task(task_id: str) -> str:
     with _tasks_lock:
         previous = _tasks.get(task_id)
     if not previous:
-        raise KeyError("Task not found / 任务不存在")
+        raise TaggerNotFoundError("taggerTaskNotFound", "Task not found / 任务不存在")
     with previous["lock"]:
         failed_paths = [
             Path(item["path"])
@@ -628,9 +636,9 @@ def retry_failed_task(task_id: str) -> str:
         source_kind = previous["source_kind"]
         overview_source_token = previous.get("overview_source_token", previous["source_token"])
         if previous["status"] in _ACTIVE_TASK_STATUSES:
-            raise ValueError("Wait for the task to finish / 请等待任务结束后重试")
+            raise TaggerUserError("taggerWaitTaskFinish", "Wait for the task to finish / 请等待任务结束后重试")
     if not failed_paths:
-        raise ValueError("No failed items to retry / 没有可重试的失败项")
+        raise TaggerUserError("taggerNoFailedItems", "No failed items to retry / 没有可重试的失败项")
     token = uuid.uuid4().hex[:16]
     with _sources_lock:
         _sources[token] = {

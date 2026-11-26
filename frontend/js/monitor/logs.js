@@ -6,21 +6,28 @@ window.monitorLogCoreMixin = {
     try { await navigator.clipboard.writeText(lines.join('\n')); this.toast(this.t('common.copied')); }
     catch (_) { this.toast(this.t('common.failed'), 'error'); }
   },
-  // 内存缓冲上限 / 分页大小（取自 constants.js LOG）
-  _logCap() { return (window.UI_CONSTANTS && window.UI_CONSTANTS.LOG && window.UI_CONSTANTS.LOG.MAX_LINES) || 5000; },
   _logPageSize() { return (window.UI_CONSTANTS && window.UI_CONSTANTS.LOG && window.UI_CONSTANTS.LOG.FULL_PAGE_SIZE) || 1000; },
 
+  _resetLogPage() {
+    if (this._logRefreshFeedbackTimer) clearTimeout(this._logRefreshFeedbackTimer);
+    this._logRefreshFeedbackTimer = null;
+    this.logRefreshFeedback = false;
+    this.logFullLines = [];
+    this.logFullOffset = 0;
+    this.logTotal = 0;
+    this._liveLogEnd = 0;
+    this.logFullMatches = [];
+    this._logFullResultQuery = '';
+  },
+
   _applyMonitorLogSnapshot(lines = [], total = 0, preserveFull = false) {
-    const tail = lines.slice(-this._logCap());
     preserveFull = preserveFull && total >= this.logTotal
       && !((this.logAutoScroll || this._logAtBottom) && this.logFullOffset + this.logFullLines.length >= this.logTotal);
     this.logTotal = total;
     this._logObservationVersion = (this._logObservationVersion || 0) + 1;
-    this.logLines = tail;
-    this._logTailOffset = Math.max(0, total - tail.length);
-    this._logContentVersion++;
+    this._liveLogEnd = total;
     if (!preserveFull) {
-      this.logFullLines = tail.slice(-this._logPageSize());
+      this.logFullLines = lines.slice(-this._logPageSize());
       this.logFullOffset = Math.max(0, total - this.logFullLines.length);
       this._logFullLoaded = true;
       this._logFullNeedsResync = false;
@@ -257,8 +264,7 @@ window.monitorLogRenderMixin = {
   // ═══════════════════════════════════════════════════════════
   _logsTabShellHtml(t) {
     let html = '<div class="m-section m-logs-section">';
-    const titleKey = 'logFullTitle';
-    html += '<div class="m-view-header"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t(titleKey,'Logs')) + '</span><span class="m-logs-count" data-field="log-count">' + this._logDisplayCount() + '</span><span class="m-log-mode-indicator"><i></i>' + this.esc(this.selectedRunDir ? t('historyMode') : t('live')) + '</span></div>';
+    html += '<div class="m-view-header"><div class="m-view-heading"><span class="m-view-title">' + this.esc(t('logFullTitle')) + '</span><span class="m-logs-count" data-field="log-count">' + this._logDisplayCount() + '</span><span class="m-log-mode-indicator"><i></i>' + this.esc(this.selectedRunDir ? t('historyMode') : t('live')) + '</span></div>';
     html += '<div class="m-view-actions m-logs-tools">';
     html += this._logFullToolbarHtml(t);
     html += '</div></div>';
@@ -445,7 +451,7 @@ window.monitorLogRenderMixin = {
       const badge = node.querySelector('.log-repeat-count');
       if (badge) {
         const range = `${item.lineNo}–${item.lineNo + item.count - 1}`;
-        const times = item.firstTime ? ` · ${item.firstTime} → ${item.lastTime}` : '';
+        const times = item.firstTime ? ` · ${item.firstTime}–${item.lastTime}` : '';
         const boundary = (offset > 0 && item.lineNo === offset + 1)
           || (offset + lines.length < this.logTotal && item.lineNo + item.count - 1 === offset + lines.length);
         badge.textContent = boundary ? this.t('monitor.logRepeatPageCount').replace('{count}', item.count) : '×' + item.count;

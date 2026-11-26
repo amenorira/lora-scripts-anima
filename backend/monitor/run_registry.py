@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.constants import AUTOSAVE_DIR, OUTPUT_DIR, REPO_ROOT
+from backend.training.checkpoint_state import state_resume_status
 from backend.utils.file_io import atomic_write_text
 
 
@@ -43,7 +44,7 @@ def normalize_run_status(value: Any) -> str:
     return {
         "completed": "completed", "finished": "completed",
         "failed": "failed", "error": "failed", "timeout": "failed",
-        "terminated": "terminated",
+        "terminated": "terminated", "stopped": "stopped",
     }.get(str(value or "").lower(), "unknown")
 
 
@@ -193,9 +194,18 @@ def _read_config_revision(path: Path, mtime_ns: int, size: int) -> dict:
         return tomllib.load(handle)
 
 
+@lru_cache(maxsize=64)
+def _read_meta_revision(path: Path, revision: tuple[int, int, int, int]) -> dict:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return data if isinstance(data, dict) else {}
+
+
 def read_run_config(run_dir: str | Path) -> dict:
     """Read this run's immutable config; never substitute another run's autosave."""
-    path = Path(run_dir) / "config.toml"
+    return _read_config_file(Path(run_dir) / "config.toml")
+
+
+def _read_config_file(path: Path) -> dict:
     try:
         stat = path.stat()
         return _read_config_revision(path, stat.st_mtime_ns, stat.st_size)
@@ -221,10 +231,10 @@ def _preview_enabled(run_dir: Path, extra: dict[str, Any]) -> bool | None:
 
 
 def _run_dir_holds_artifacts(run_dir: Path) -> bool:
-    """运行目录自身是否承载模型/预览产物（整个运行目录被拷贝/搬迁的场景）。
+    """运行目录自身是否承载训练产物（整个运行目录被拷贝/搬迁的场景）。
 
     与 ``artifacts.LORA_EXTENSIONS`` 保持一致；此处不能导入 artifacts（循环依赖），
-    故内联模型扩展名集合。判定足够保守：只有运行目录内确实存在模型或预览产物
+    故内联模型扩展名集合。只有运行目录内确实存在模型或预览产物
     才认为发生了整体搬迁，避免误修"产物目录暂不可用"的正常记录。
     """
     if not run_dir.is_dir():
@@ -244,13 +254,19 @@ def load_run_record(
     run_dir: str | Path,
     *,
     include_deleted: bool = False,
+    use_local_fallback: bool = True,
 ) -> dict[str, Any] | None:
     """读取运行记录，并兼容没有 v2 metadata 的旧项目内运行。"""
     internal = resolve_internal_run_dir(run_dir)
     if internal is None or not internal.is_dir():
         return None
 
-    meta = _load_json(internal / RUN_META_NAME) or {}
+    meta_path = internal / RUN_META_NAME
+    try:
+        stat = meta_path.stat()
+        meta = _read_meta_revision(meta_path, (stat.st_dev, stat.st_ino, stat.st_mtime_ns, stat.st_size))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        meta = {}
     extra = meta.get("extra") if isinstance(meta.get("extra"), dict) else {}
     if meta.get("deleted") and not include_deleted:
         return None
@@ -268,12 +284,22 @@ def load_run_record(
     except (OSError, ValueError):
         artifact = Path(artifact_raw)
 
-    # 记录中的产物目录在本机不可用，但运行目录自身承载了模型/预览产物
-    # （整个运行目录被从其他机器拷贝到 output/ 下）。此时修复记录元数据，
-    # 使其指向真实位置，而不是每次读取都做临时回退。
-    if not artifact.is_dir() and _run_dir_holds_artifacts(internal):
-        artifact = internal
-        _repair_artifact_location(internal, meta, artifact)
+    # 运行目录可能整体迁移到本机 output/。原产物目录失效且运行目录
+    # 已包含训练产物时，将实际位置写回运行记录。
+    artifact_available = artifact.is_dir()
+    if not artifact_available and use_local_fallback and not meta.get("deleted"):
+        if _run_dir_holds_artifacts(internal):
+            artifact = internal
+            artifact_available = True
+            if not meta.get("deletion_pending"):
+                # Keep the source identity when permanently relocating a copied run.
+                meta = {**meta, "source_artifact_dir": meta.get("source_artifact_dir") or str(artifact_raw)}
+                _repair_artifact_location(internal, meta, artifact)
+        elif any(path.is_dir() and not path.is_symlink() and state_resume_status(path, internal) != "incomplete"
+                 for path in internal.glob("*-state")):
+            # A copied state is usable locally even if the original drive reconnects later.
+            artifact = internal
+            artifact_available = True
 
     output_base = meta.get("output_base_dir")
     if not output_base:
@@ -283,21 +309,24 @@ def load_run_record(
         schema_version = int(meta.get("schema_version") or 1)
     except (TypeError, ValueError):
         schema_version = 1
-    try:
-        artifact_external = artifact.resolve() != internal.resolve()
-    except OSError:
-        artifact_external = artifact != internal
+    gpu_ids = extra.get("gpu_ids")
+    gpu_processes = None
+    if isinstance(gpu_ids, list):
+        gpu_processes = max(1, len(gpu_ids))
+    elif "gpu_ids" in extra and gpu_ids is None:
+        gpu_processes = 1
     return {
         **meta,
         "extra": extra,
         "schema_version": schema_version,
+        "gpu_processes": gpu_processes,
         "task_id": meta.get("task_id"),
-        "run_dir": run_dir_ref(internal),
+        "run_dir": internal.relative_to(REPO_ROOT).as_posix(),
         "run_path": internal,
         "artifact_dir": str(artifact),
         "artifact_path": artifact,
-        "artifact_available": artifact.is_dir(),
-        "artifact_external": artifact_external,
+        "artifact_available": artifact_available,
+        "artifact_external": artifact != internal,
         "preview_enabled": _preview_enabled(internal, extra),
         "output_base_dir": str(output_base),
         "deleted": bool(meta.get("deleted", False)),
@@ -348,7 +377,7 @@ def resolve_artifact_file(run_dir: str | Path, relative_path: str | Path) -> Pat
     relative = Path(relative_path)
     if relative.is_absolute():
         return None
-    root = Path(record["artifact_path"]).resolve()
+    root = record["artifact_path"]
     try:
         candidate = (root / relative).resolve()
         candidate.relative_to(root)
@@ -366,8 +395,38 @@ def mark_run_deleted(run_dir: str | Path) -> bool:
             _invalidate_history()
 
 
+def _run_prompt_snapshot(run_dir: Path, config: dict) -> Path | None:
+    """Recognize launcher-owned prompt files, including paths saved before a move."""
+    prompt = Path(str(config.get("sample_prompts") or "").replace("\\", "/"))
+    if prompt.name not in {"prompts.json", "prompts.txt"}:
+        return None
+    local = run_dir / prompt.name
+    log = Path(str(config.get("logging_dir") or "").replace("\\", "/"))
+    if prompt == local or (log.name == "log" and log.parent != Path(".") and prompt.parent == log.parent):
+        return local
+    return None
+
+
+def reusable_prompt_file(record: dict, source: str) -> str:
+    source_path = REPO_ROOT / source.strip().replace("\\", "/")
+    if source_path.is_file():
+        return source
+    run_dir = Path(record["run_path"])
+    config = read_run_config(run_dir)
+    locations = [run_dir]
+    if record.get("imported") and record["artifact_available"]:
+        # Earlier legacy imports left the JSON snapshot in the original run.
+        locations.append(Path(record["artifact_path"]))
+    for directory in locations:
+        snapshot = _run_prompt_snapshot(directory, config)
+        if snapshot and snapshot.is_file():
+            return str(snapshot)
+    return source
+
+
 def _delete_run_files(run_dir: str | Path) -> bool:
-    record = load_run_record(run_dir, include_deleted=True)
+    # Keep the registered location through partial cleanup and after the disk reconnects.
+    record = load_run_record(run_dir, include_deleted=True, use_local_fallback=False)
     if not record:
         return False
     if record.get("deleted"):
@@ -392,9 +451,18 @@ def _delete_run_files(run_dir: str | Path) -> bool:
         "deletion_result": record.get("deletion_result") or _load_json(internal / "result.json") or {},
         "created_at": started_at or datetime.fromtimestamp(internal.stat().st_mtime).isoformat(),
     })
+    if artifact == internal and not tombstone.get("source_artifact_dir"):
+        # Recover the source of a run relocated before the registry preserved it.
+        source = record["extra"].get("legacy_source") or tombstone["deletion_config"].get("output_dir")
+        if source:
+            tombstone["source_artifact_dir"] = source
     _atomic_write_json(internal / RUN_META_NAME, tombstone)
     failures = []
-    for name in _CONTROL_FILES:
+    files = _CONTROL_FILES
+    snapshot = _run_prompt_snapshot(internal, tombstone["deletion_config"])
+    if snapshot:
+        files = files | {snapshot.name}
+    for name in files:
         try:
             (internal / name).unlink(missing_ok=True)
         except OSError:
@@ -440,9 +508,10 @@ def _safe_import_name(artifact_dir: Path) -> str:
     return f"{base}_imported_{digest}"
 
 
-def _copy_legacy_control_files(source: Path, destination: Path, autosave: Path) -> None:
+def _copy_legacy_control_files(source: Path, destination: Path, autosave: Path, params: dict) -> None:
     destination.mkdir(parents=True, exist_ok=True)
-    for name in _CONTROL_FILES:
+    snapshot = _run_prompt_snapshot(source, read_run_config(source) or params)
+    for name in _CONTROL_FILES | ({snapshot.name} if snapshot else set()):
         source_file = source / name
         if source_file.is_file():
             try:
@@ -484,10 +553,20 @@ def import_legacy_external_runs(limit: int = 50) -> dict[str, int]:
 
     known_artifacts: set[str] = set()
     for record in iter_run_records(include_deleted=True):
-        try:
-            known_artifacts.add(os.path.normcase(str(Path(record["artifact_path"]).resolve())))
-        except OSError:
-            continue
+        source = record.get("source_artifact_dir") or record["extra"].get("legacy_source")
+        if not source and (record["deleted"] or record.get("deletion_pending")) and record["artifact_path"] == record["run_path"]:
+            # Old markers may only identify the original output through their launch metadata or autosave.
+            source = record["extra"].get("output_dir")
+            if not source and record.get("autosave_file"):
+                autosave = REPO_ROOT / record["autosave_file"]
+                if autosave.parent == AUTOSAVE_DIR:
+                    source = _read_config_file(autosave).get("output_dir")
+        for location in (record["artifact_path"], source):
+            if location:
+                try:
+                    known_artifacts.add(os.path.normcase(str(resolve_user_path(location))))
+                except (OSError, ValueError):
+                    continue
 
     configs = sorted(
         AUTOSAVE_DIR.glob("*.toml"),
@@ -525,7 +604,7 @@ def import_legacy_external_runs(limit: int = 50) -> dict[str, int]:
             continue
 
         internal = OUTPUT_DIR / _safe_import_name(artifact)
-        _copy_legacy_control_files(artifact, internal, autosave)
+        _copy_legacy_control_files(artifact, internal, autosave, params)
         old_meta = _load_json(artifact / RUN_META_NAME) or {}
         old_extra = old_meta.get("extra") if isinstance(old_meta.get("extra"), dict) else {}
         source_config = artifact / "config.toml"

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import ast
 import logging
+import math
 import re
 import threading
 import time
@@ -142,7 +143,7 @@ def _get_cached_accumulator(log_dir: Path, *, incremental: bool = False, epoch_o
 
 # ── TensorBoard Event 降采样 (LTTB) ────────────────────────
 
-def _lttb_downsample(points: list[dict], target: int) -> list[dict]:
+def _lttb_downsample(points, target: int):
     """Largest Triangle Three Buckets 降采样，保留曲线视觉特征"""
     n = len(points)
     if n <= target or target < 3:
@@ -162,13 +163,13 @@ def _lttb_downsample(points: list[dict], target: int) -> list[dict]:
 
         max_area = -1.0
         max_idx = bucket_start
-        pa_x = points[a]["step"]
-        pa_y = points[a]["value"]
+        pa_x = points[a].step
+        pa_y = points[a].value
 
         for j in range(bucket_start, bucket_end):
             area = abs(
-                (points[j]["step"] - pa_x) * (points[n - 1]["value"] - pa_y)
-                - (points[n - 1]["step"] - pa_x) * (points[j]["value"] - pa_y)
+                (points[j].step - pa_x) * (points[n - 1].value - pa_y)
+                - (points[n - 1].step - pa_x) * (points[j].value - pa_y)
             )
             if area > max_area:
                 max_area = area
@@ -182,7 +183,7 @@ def _lttb_downsample(points: list[dict], target: int) -> list[dict]:
 
 
 def read_tensorboard_loss(
-    limit: int = 50000,
+    limit: int | None = None,
     downsample_to: int = 2000,
     run_dir: str | None = None,
     *,
@@ -233,31 +234,35 @@ def read_tensorboard_loss(
         series_list = []
         for tag in scalar_tags:
             try:
-                events = ea.Scalars(tag)[-limit:]
+                events = ea.Scalars(tag)
             except Exception:
                 continue
-            points = [
-                {"step": int(e.step), "value": float(e.value)}
-                for e in events
-            ]
-            if not points:
+            # Full step curves use every epoch. Keep the existing cap for raw
+            # exports and epoch series, which are returned without downsampling.
+            sample_curve = downsample_to >= 3 and not _is_epoch_loss_tag(tag)
+            window = limit if limit is not None or sample_curve else 50000
+            source = events[-window:] if window else events
+            finite = [event for event in source if math.isfinite(event.value)]
+            if not finite:
                 continue
-            raw_points = points
-            best = min(raw_points, key=lambda p: p["value"])
-            if len(points) > downsample_to and not _is_epoch_loss_tag(tag):
-                points = _lttb_downsample(points, downsample_to)
-            values = [p["value"] for p in points]
+            primary = tag in {"loss/average", "loss/current"}
+            extrema = finite
+            if primary and len(source) < len(events):
+                extrema = (e for e in events if math.isfinite(e.value))
+            best = min(extrema, key=lambda e: e.value)
+            curve = _lttb_downsample(finite, downsample_to) if sample_curve and len(finite) > downsample_to else finite
+            tail = finite[-160:] if primary else finite[-40:]
             series_list.append({
                 "tag": tag,
                 "name": tag.replace("/", " ").replace("_", " "),
-                "points": points,
-                "latest": values[-1],
-                "min": best["value"],
-                "min_step": best["step"],
-                "max": max(p["value"] for p in raw_points),
+                "points": [{"step": int(e.step), "value": float(e.value)} for e in curve],
+                "latest": float(finite[-1].value),
+                "min": float(best.value),
+                "min_step": int(best.step),
+                "max": float(max(e.value for e in finite)),
                 # 小图需要连续的最新原始点；全局 LTTB 曲线的尾部会随重采样改变。
                 # 40 个诊断观测各需前置 120 点；参照图仍由前端截取最近 120 点。
-                "diagnostic_points": raw_points[-160:] if tag in {"loss/average", "loss/current"} else raw_points[-40:],
+                "diagnostic_points": [{"step": int(e.step), "value": float(e.value)} for e in tail],
             })
 
         if series_list:
@@ -316,13 +321,21 @@ _RE_ERROR_EXIT = re.compile(r"exited with code [1-9]", re.IGNORECASE)
 _RE_ERROR_FAIL = re.compile(r"failed to (?:load|initialize|open|import|download|start|create)", re.IGNORECASE)
 
 
-def parse_log_progress(lines: list[str]) -> dict:
+def parse_log_progress(lines: list[str], native: dict | None = None) -> dict:
     """从训练日志中解析进度、Loss、LR"""
     text = "\n".join(lines[-3000:])
-    info: dict[str, Any] = {}
+    info = dict(native or {})
+    if not info.get("error_msg"):
+        for pattern in (_RE_ERROR_CUDA, _RE_ERROR_FAIL, _RE_ERROR_EXEC, _RE_ERROR_EXIT, _RE_ERROR_TRACEBACK):
+            match = pattern.search(text)
+            if match:
+                info.update(has_error=True, error_msg=match.group(0))
+                break
+    if native:
+        return info
 
     # 进度: "steps: 45%|████ | 450/1000 [02:30<03:03]"
-    # 取最后一个匹配（最新进度），而不是 search() 返回的第一个
+    # 最后一条匹配记录是最新训练进度。
     progress_matches = list(_RE_PROGRESS.finditer(text))
     if progress_matches:
         m = progress_matches[-1]
@@ -364,18 +377,6 @@ def parse_log_progress(lines: list[str]) -> dict:
     if speed_m:
         last = speed_m[-1]
         info["speed"] = last.group(1) + last.group(2)
-
-    error_matchers = [
-        _RE_ERROR_TRACEBACK, _RE_ERROR_CUDA,
-        _RE_ERROR_EXEC, _RE_ERROR_EXIT,
-        _RE_ERROR_FAIL,
-    ]
-    for pattern in error_matchers:
-        if pattern.search(text):
-            info["has_error"] = True
-            m = pattern.search(text)
-            info["error_msg"] = m.group(0) if m else ""
-            break
 
     return info
 

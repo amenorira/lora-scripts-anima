@@ -17,6 +17,10 @@
       var resolved = (t === 'light' || t === 'dark' || t === 'comfy') ? t
         : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
       document.documentElement.setAttribute('data-theme', resolved);
+      var savedLocale = localStorage.getItem('anima-locale');
+      var browserLanguage = (navigator.language || '').toLowerCase();
+      document.documentElement.lang = ['zh-CN', 'en-US', 'ja-JP'].includes(savedLocale) ? savedLocale
+        : browserLanguage.startsWith('zh') ? 'zh-CN' : browserLanguage.startsWith('ja') ? 'ja-JP' : 'en-US';
       // Restore the preferred preview width before first paint. CSS caps its
       // visible width on narrow desktops without losing the saved preference.
       var pw = parseInt(localStorage.getItem('anima-panel-w'), 10);
@@ -32,15 +36,15 @@
   <link rel="stylesheet" href="/anima-ui/css/themes/light.css">
   <link rel="stylesheet" href="/anima-ui/css/themes/dark.css">
   <link rel="stylesheet" href="/anima-ui/css/themes/comfy.css">
-  <link rel="stylesheet" href="/anima-ui/css/tagger.css">
-  <link rel="stylesheet" href="/anima-ui/css/ai-captioning.css">
-  <link rel="stylesheet" href="/anima-ui/css/regularization.css">
+  <link rel="stylesheet" href="/anima-ui/css/tool-workspace.css">
+  <link rel="stylesheet" href="/anima-ui/css/image-tools.css">
   <link rel="stylesheet" href="/anima-ui/css/motion.css">
   <link rel="stylesheet" href="/anima-ui/css/tag-dictionary.css">
   <script src="/anima-ui/js/shared/i18n.js" defer></script>
   <script src="/anima-ui/js/shared/constants.js" defer></script>
   <script src="/anima-ui/js/shared/mixin-compose.js" defer></script>
   <script src="/anima-ui/js/shared/utils.js" defer></script>
+  <script src="/anima-ui/js/shared/tool-workspace.js" defer></script>
   <script src="/anima-ui/js/shared/image-loading.js" defer></script>
   <script src="/anima-ui/js/shared/image-viewport.js" defer></script>
   <script src="/anima-ui/js/shared/ui-interactions.js" defer></script>
@@ -59,12 +63,18 @@
   <script src="/anima-ui/js/monitor/outputs.js" defer></script>
   <script src="/anima-ui/js/monitor/history.js" defer></script>
   <script src="/anima-ui/js/monitor/metrics.js" defer></script>
+  <script src="/anima-ui/js/monitor/dataset-diagnostics.js" defer></script>
   <script src="/anima-ui/js/monitor/core.js" defer></script>
   <script src="/anima-ui/js/monitor/history-render.js" defer></script>
   <script src="/anima-ui/js/monitor/artifacts-render.js" defer></script>
   <script src="/anima-ui/js/monitor/resource-bar.js" defer></script>
   <script src="/anima-ui/js/monitor/diagnostics.js" defer></script>
   <script src="/anima-ui/js/monitor/summary.js" defer></script>
+  <script src="/anima-ui/js/monitor/dataset-diagnostics-format.js" defer></script>
+  <script src="/anima-ui/js/monitor/dataset-diagnostics-scatter.js" defer></script>
+  <script src="/anima-ui/js/monitor/dataset-diagnostics-timestep.js" defer></script>
+  <script src="/anima-ui/js/monitor/dataset-diagnostics-modal.js" defer></script>
+  <script src="/anima-ui/js/monitor/dataset-diagnostics-render.js" defer></script>
   <script src="/anima-ui/js/monitor/render.js" defer></script>
   <script src="/anima-ui/js/environment/tasks.js" defer></script>
   <script src="/anima-ui/js/environment/components.js" defer></script>
@@ -91,7 +101,6 @@
   <script src="/anima-ui/js/training/core.js" defer></script>
   <script src="/anima-ui/js/training/dataset-repeat.js" defer></script>
   <script src="/anima-ui/js/training/lr-preview.js" defer></script>
-  <script src="/anima-ui/js/shared/preview-select.js" defer></script>
   <script src="/anima-ui/js/training/shape-preview.js" defer></script>
   <script src="/anima-ui/js/training/crop-preview-grid.js" defer></script>
   <script src="/anima-ui/js/training/crop-preview.js" defer></script>
@@ -101,6 +110,7 @@
   <script src="/anima-ui/js/training/prompt-triggers.js" defer></script>
   <link rel="stylesheet" href="/anima-ui/css/prompt-workbench.css">
   <script src="/anima-ui/js/training/toml.js" defer></script>
+  <script src="/anima-ui/js/training/run-control.js" defer></script>
   <script src="/anima-ui/js/training/config-io.js" defer></script>
   <script src="/anima-ui/js/tagger/ai-caption-options.js" defer></script>
   <script src="/anima-ui/js/tagger/caption-workspace.js" defer></script>
@@ -219,13 +229,13 @@
          @click="navigate('ai-captioning')" href="javascript:void(0)" :aria-current="currentRoute === 'ai-captioning' ? 'page' : null">
         <span class="sidebar-tab-fill" aria-hidden="true"></span>
         <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="m7 15 3-6 3 6M8 13h4M16 9v6M9 1v3M15 1v3M9 20v3M15 20v3"/></svg></span>
-        <span x-text="t('moss.pageTitle')">AI 标注</span>
+        <span x-text="t('nav.aiCaptioning')">AI Annotation</span>
       </a>
       <a class="sidebar-item" data-route="regularization" data-group="tools" :class="{ active: currentRoute === 'regularization' }"
          @click="navigate('regularization')" href="javascript:void(0)" :aria-current="currentRoute === 'regularization' ? 'page' : null">
         <span class="sidebar-tab-fill" aria-hidden="true"></span>
         <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1"/><path d="m21 15-5-5L5 21M16 3v6M13 6h6"/></svg></span>
-        <span x-text="regT('title')">Regularization</span>
+        <span x-text="t('nav.regularization')">Regularization images</span>
       </a>
 
       <!-- System -->
@@ -251,7 +261,7 @@
 
     <div class="sidebar-bottom">
       <!-- Backend connectivity and global GPU task indicator -->
-      <div class="backend-status" :class="{ connected: realtimeState === 'online' && !trainingActive && !regularizationActive, training: realtimeState === 'online' && (trainingActive || regularizationActive), degraded: realtimeState === 'degraded' || realtimeState === 'connecting', disconnected: realtimeState === 'offline' }"
+      <div class="backend-status" :class="{ connected: realtimeState === 'online' && !trainingActive && !regularizationActive, paused: realtimeState === 'online' && trainingActive && controlState?.state === 'paused', training: realtimeState === 'online' && ((trainingActive && controlState?.state !== 'paused') || regularizationActive), degraded: realtimeState === 'degraded' || realtimeState === 'connecting', disconnected: realtimeState === 'offline' }"
            :title="backendStatusLabel">
         <span class="backend-status-dot"></span>
         <span class="backend-status-label" x-text="backendStatusLabel"></span>
@@ -298,14 +308,14 @@
   <!-- ── Main Content ─────────────────────────────────────── -->
   <div class="main-area">
     <main class="main-content" id="mainContent" tabindex="-1"
-          :class="{ 'main-fullscreen': currentRoute === 'tagEditor' || currentRoute === 'tensorboard' || currentRoute === 'monitor-dashboard', 'route-monitor-shell': currentRoute === 'monitor-dashboard', 'route-tagger-shell': ['tagger', 'ai-captioning', 'regularization'].includes(currentRoute), 'route-tagger-single': ['tagger', 'ai-captioning'].includes(currentRoute) && taggerSourceMode.endsWith('single'), 'route-caption-shell': currentRoute === 'ai-captioning', 'route-caption-overview': currentRoute === 'ai-captioning' && captionTab === 'overview', 'route-training': currentRoute && currentRoute.startsWith('train-'), 'route-transitioning': routeTransitioning }"
+          :class="{ 'main-fullscreen': currentRoute === 'tagEditor' || currentRoute === 'tensorboard' || currentRoute === 'monitor-dashboard', 'route-monitor-shell': currentRoute === 'monitor-dashboard', 'route-tool-workspace': ['tagger', 'ai-captioning', 'regularization'].includes(currentRoute), 'route-page-shell': ['history', 'docs', 'environment', 'settings'].includes(currentRoute), 'route-training': currentRoute && currentRoute.startsWith('train-'), 'route-transitioning': routeTransitioning }"
               :aria-busy="routeTransitioning ? 'true' : 'false'">
 
       <!-- Route: Home -->
       <div x-show="currentRoute === 'home'" x-cloak>
         <div class="home-hero">
           <h1 class="home-hero-title">lora-scripts-anima</h1>
-          <div class="home-hero-subtitle" x-text="t('home.subtitle', 'A local LoRA training tool')"></div>
+          <div class="home-hero-subtitle" x-text="t('home.subtitle')"></div>
 
           <div class="home-hero-meta" x-show="version && version !== displayVersion()">
             <span class="home-hero-meta-item">
@@ -314,10 +324,10 @@
           </div>
 
           <div class="home-hero-author">
-            <span class="home-hero-author-k" x-text="t('home.author', 'Author')">Author</span>
+            <span class="home-hero-author-k" x-text="t('home.author')">Author</span>
             <a class="home-hero-author-link" href="https://github.com/amenorira" target="_blank" rel="noopener">amenorira</a>
             <span class="home-hero-author-sep" aria-hidden="true">·</span>
-            <span class="home-hero-author-k" x-text="t('home.github', 'GitHub')">GitHub</span>
+            <span class="home-hero-author-k" x-text="t('home.github')">GitHub</span>
             <a class="home-hero-author-link" href="https://github.com/amenorira/lora-scripts-anima" target="_blank" rel="noopener">lora-scripts-anima</a>
           </div>
 
@@ -336,7 +346,7 @@
       <!-- Route: Monitor Dashboard -->
       <div x-show="currentRoute === 'monitor-dashboard'" x-cloak class="route-monitor-dashboard">
         <div class="monitor-sticky-stack">
-          <div class="page-header">
+          <div class="page-header page-heading-row">
             <div class="monitor-page-heading">
               <h1 class="page-title" x-text="t(selectedRunDir ? 'monitor.historyDetail' : 'nav.monitorDashboard')">Training Dashboard</h1>
             </div>
@@ -345,43 +355,53 @@
           </div>
           <div id="monitorHistoryContext"></div>
           <!-- Monitor Tabs -->
-          <div class="monitor-tabs" role="tablist" :aria-label="t('monitor.dashboardTabs','Dashboard views')">
+          <div class="monitor-tabs" role="tablist" :aria-label="t('monitor.dashboardTabs')">
             <button id="monitor-tab-overview" type="button" role="tab" class="monitor-tab" :class="{ active: monitorTab === 'overview' }"
                     :aria-selected="monitorTab === 'overview'" :tabindex="monitorTab === 'overview' ? 0 : -1" aria-controls="monitorDashboard"
-                    @click="setMonitorTab('overview')" @keydown.right.prevent="moveMonitorTab(1)" @keydown.left.prevent="moveMonitorTab(-1)" @keydown.home.prevent="setMonitorTab('overview', true)" @keydown.end.prevent="setMonitorTab('outputs', true)">
+                    @click="setMonitorTab('overview')" @keydown.right.prevent="moveMonitorTab(1)" @keydown.left.prevent="moveMonitorTab(-1)" @keydown.home.prevent="setMonitorTab('overview', true)" @keydown.end.prevent="setMonitorTab('dataset', true)">
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-              <span x-text="t('monitor.overview','Overview')">Overview</span>
+              <span x-text="t('monitor.overview')">Overview</span>
             </button>
             <button id="monitor-tab-logs" type="button" role="tab" class="monitor-tab" :class="{ active: monitorTab === 'logs' }"
                     :aria-selected="monitorTab === 'logs'" :tabindex="monitorTab === 'logs' ? 0 : -1" aria-controls="monitorDashboard"
-                    @click="setMonitorTab('logs')" @keydown.right.prevent="moveMonitorTab(1)" @keydown.left.prevent="moveMonitorTab(-1)" @keydown.home.prevent="setMonitorTab('overview', true)" @keydown.end.prevent="setMonitorTab('outputs', true)">
+                    @click="setMonitorTab('logs')" @keydown.right.prevent="moveMonitorTab(1)" @keydown.left.prevent="moveMonitorTab(-1)" @keydown.home.prevent="setMonitorTab('overview', true)" @keydown.end.prevent="setMonitorTab('dataset', true)">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/></svg>
-              <span x-text="t('monitor.logTitle','Logs')">Logs</span>
+              <span x-text="t('monitor.logTitle')">Logs</span>
               <span class="monitor-tab-count" x-show="logTotal > 0" x-text="logTotal"></span>
             </button>
             <button id="monitor-tab-samples" type="button" role="tab" class="monitor-tab" :class="{ active: monitorTab === 'samples' }"
                     :aria-selected="monitorTab === 'samples'" :tabindex="monitorTab === 'samples' ? 0 : -1" aria-controls="monitorDashboard"
-                    @click="setMonitorTab('samples')" @keydown.right.prevent="moveMonitorTab(1)" @keydown.left.prevent="moveMonitorTab(-1)" @keydown.home.prevent="setMonitorTab('overview', true)" @keydown.end.prevent="setMonitorTab('outputs', true)">
+                    @click="setMonitorTab('samples')" @keydown.right.prevent="moveMonitorTab(1)" @keydown.left.prevent="moveMonitorTab(-1)" @keydown.home.prevent="setMonitorTab('overview', true)" @keydown.end.prevent="setMonitorTab('dataset', true)">
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/></svg>
-              <span x-text="t('monitor.samples','Samples')">Samples</span>
+              <span x-text="t('monitor.samples')">Samples</span>
               <span class="monitor-tab-count" x-show="previews.length > 0" x-text="previews.length"></span>
             </button>
             <button id="monitor-tab-outputs" type="button" role="tab" class="monitor-tab" :class="{ active: monitorTab === 'outputs' }"
                     :aria-selected="monitorTab === 'outputs'" :tabindex="monitorTab === 'outputs' ? 0 : -1" aria-controls="monitorDashboard"
-                    @click="setMonitorTab('outputs')" @keydown.right.prevent="moveMonitorTab(1)" @keydown.left.prevent="moveMonitorTab(-1)" @keydown.home.prevent="setMonitorTab('overview', true)" @keydown.end.prevent="setMonitorTab('outputs', true)">
+                    @click="setMonitorTab('outputs')" @keydown.right.prevent="moveMonitorTab(1)" @keydown.left.prevent="moveMonitorTab(-1)" @keydown.home.prevent="setMonitorTab('overview', true)" @keydown.end.prevent="setMonitorTab('dataset', true)">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v3h16v-3"/></svg>
-              <span x-text="t('monitor.outputs','Outputs')">Outputs</span>
+              <span x-text="t('monitor.outputs')">Outputs</span>
               <span class="monitor-tab-count" x-show="outputTabCount > 0" x-text="outputTabCount"></span>
             </button>
-            <span class="monitor-tab-indicator" aria-hidden="true"></span>
+            <button id="monitor-tab-dataset" type="button" role="tab" class="monitor-tab" :class="{ active: monitorTab === 'dataset' }"
+                    :aria-selected="monitorTab === 'dataset'" :tabindex="monitorTab === 'dataset' ? 0 : -1" aria-controls="monitorDashboard"
+                    @click="setMonitorTab('dataset')" @keydown.right.prevent="moveMonitorTab(1)" @keydown.left.prevent="moveMonitorTab(-1)" @keydown.home.prevent="setMonitorTab('overview', true)" @keydown.end.prevent="setMonitorTab('dataset', true)">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><circle cx="9" cy="14" r="1.5"/><circle cx="14" cy="9" r="1.5"/><circle cx="18" cy="13" r="1.5"/></svg>
+              <span x-text="t('monitor.datasetDiagnostics')">Dataset diagnostics</span>
+            </button>
+            <span class="ui-tab-indicator" aria-hidden="true"></span>
           </div>
+        </div>
+        <div class="ui-inline-alert" x-show="monitorDetailError" role="alert" x-cloak>
+          <span x-text="t('monitor.loadRunFailed')"></span>
+          <button type="button" class="btn btn-sm btn-secondary" @click="refreshMonitorRealtimeDetail()" x-text="t('monitor.retryLoad')"></button>
         </div>
         <div id="monitorDashboard" role="tabpanel" :aria-labelledby="'monitor-tab-' + monitorTab"></div>
       </div>
 
       <!-- Route: History -->
       <div x-show="currentRoute === 'history'" x-cloak class="route-history">
-        <div class="page-header">
+        <div class="page-header page-heading-row">
           <h1 class="page-title" x-text="t('nav.history')">Training History</h1>
           <button type="button" class="btn btn-sm btn-secondary refresh-button" :class="{ 'is-loading': historyRefreshing || historyRefreshFeedback }"
                   :aria-disabled="historyLoading ? 'true' : 'false'" :aria-busy="historyRefreshing ? 'true' : 'false'" @click="refreshHistory()">
@@ -390,22 +410,27 @@
           </button>
         </div>
         <div class="hist-toolbar">
-          <input type="search" class="hist-search" x-model="historySearch" :placeholder="t('monitor.searchHistory')" :aria-label="t('monitor.searchHistory')" @input.debounce.200ms="renderHistory()">
+          <input type="search" class="hist-search" x-model="historySearch" :placeholder="t('monitor.searchHistory')" :aria-label="t('monitor.searchHistory')" @input.debounce.200ms="historyPage = 1; renderHistory()">
           <div class="hist-filters" role="group" :aria-label="t('monitor.historyStatusFilter')">
-            <template x-for="filter in [['all','logLevelAll'], ['completed','statusCompleted'], ['failed','statusFailed'], ['terminated','statusTerminated'], ['unknown','statusUnknown']]" :key="filter[0]">
-              <button type="button" class="hist-filter-btn" :class="{active:historyFilter===filter[0]}" :aria-pressed="historyFilter===filter[0]" @click="historyFilter=filter[0];renderHistory()" x-text="t('monitor.'+filter[1])"></button>
+            <template x-for="filter in [['all','logLevelAll'], ['completed','statusCompleted'], ['failed','statusFailed'], ['terminated','statusTerminated'], ['stopped','statusStopped'], ['unknown','statusUnknown']]" :key="filter[0]">
+              <button type="button" class="hist-filter-btn" :class="{active:historyFilter===filter[0]}" :aria-pressed="historyFilter===filter[0]" @click="historyFilter=filter[0];historyPage=1;renderHistory()" x-text="t('monitor.'+filter[1])"></button>
             </template>
           </div>
         </div>
         <div class="hist-results" role="status" aria-live="polite" x-show="_historyLoaded" x-cloak>
-          <span x-text="t('monitor.historyCount').replace('{shown}', filteredHistoryItems.length).replace('{total}', historyItems.length)"></span>
+          <span x-text="(historyPageShown === historyFilteredCount || historyFilteredCount === historyItems.length) ? t('monitor.historyCountSimple').replace('{shown}', historyPageShown).replace('{total}', historyItems.length) : t('monitor.historyCount').replace('{shown}', historyPageShown).replace('{matched}', historyFilteredCount).replace('{total}', historyItems.length)"></span>
           <button class="hist-action" x-show="historySearch || historyFilter !== 'all'" @click="clearHistoryFilters()" x-text="t('monitor.clearHistoryFilters')"></button>
         </div>
-        <div class="hist-load-error" role="alert" x-show="historyError" x-cloak>
+        <div class="ui-inline-alert" role="alert" x-show="historyError" x-cloak>
           <span x-text="historyError"></span>
           <button class="btn btn-sm btn-secondary" :disabled="historyLoading" @click="refreshHistory()" x-text="t('monitor.refreshHistory')"></button>
         </div>
         <div id="historyList" class="history-list" :aria-busy="historyLoading"></div>
+        <nav class="hist-pagination" x-show="historyPageCount > 1" :aria-label="t('monitor.historyPagination')" x-cloak>
+          <button type="button" class="btn btn-sm btn-secondary" :disabled="historyPage <= 1" @click="setHistoryPage(historyPage - 1)" x-text="t('monitor.prevPage')"></button>
+          <span role="status" aria-live="polite" x-text="historyPage + ' / ' + historyPageCount"></span>
+          <button type="button" class="btn btn-sm btn-secondary" :disabled="historyPage >= historyPageCount" @click="setHistoryPage(historyPage + 1)" x-text="t('monitor.nextPage')"></button>
+        </nav>
       </div>
 
       <!-- Route: TensorBoard -->
@@ -526,24 +551,34 @@
         </aside>
         </div>
 
-        <div class="page-header">
-          <div class="page-header-left">
-            <h1 class="page-title" x-text="pageTitle">Training</h1>
-          </div>
+        <div class="page-header page-heading-row">
+          <h1 class="page-title" x-text="pageTitle">Training</h1>
         </div>
 
         <div class="history-reuse-notice" x-show="historyReuseSource" x-cloak role="status">
-          <div class="history-reuse-text"><span x-text="t('monitor.historyReuseNotice').replace('{name}', historyReuseSource)"></span><small x-show="historyReuseWarning" x-text="historyReuseWarning"></small></div>
-          <button class="btn btn-sm btn-secondary" :disabled="!!historyReuseBusy" @click="undoHistoryReuse()" x-text="t(historyReuseBusy === 'undo' ? 'monitor.restoringConfig' : 'monitor.undoHistoryReuse')"></button>
-          <button class="btn-icon" :disabled="!!historyReuseBusy" @click="dismissHistoryReuse()" :aria-label="t('common.close')">×</button>
+          <div class="history-reuse-text">
+            <span x-text="historyResumeMeta ? (historyResumeMeta.step != null ? t('control.resumeReadyStep').replace('{name}', historyResumeMeta.source).replace('{step}', historyResumeMeta.step) : t('control.resumeReadySource').replace('{name}', historyResumeMeta.source)) : t('monitor.historyReuseNotice').replace('{name}', historyReuseSource)"></span>
+            <small x-show="historyResumeMeta && form.resume && form.resume !== historyResumeMeta.path" x-text="t('control.resumePathEdited')"></small>
+            <small x-show="historyResumeMeta && !form.resume" x-text="t('control.resumePathCleared')"></small>
+            <small x-show="historyReuseWarning" x-text="historyReuseWarning"></small>
+          </div>
+          <div class="history-reuse-actions">
+            <button type="button" class="btn btn-sm btn-ghost" x-show="historyResumeMeta" @click="focusTrainingField('resume')" x-text="t('control.locateResume')"></button>
+            <button type="button" class="btn btn-sm btn-secondary" :disabled="!!historyReuseBusy" @click="undoHistoryReuse()" x-text="t(historyReuseBusy === 'undo' ? 'monitor.restoringConfig' : 'monitor.undoHistoryReuse')"></button>
+            <button type="button" class="btn-icon" :disabled="!!historyReuseBusy" @click="dismissHistoryReuse()" :aria-label="t('common.close')">×</button>
+          </div>
         </div>
         <div class="train-workbench">
 
         <div class="train-workbench-main">
+        <div class="dashboard-empty" x-show="_trainFormMountedRoute !== currentRoute" role="status">
+          <p x-text="t(trainFieldsLoadFailed ? 'common.requestFailed' : 'common.loading')"></p>
+          <button type="button" class="btn btn-secondary btn-sm" x-show="trainFieldsLoadFailed" @click="loadTrainForm()" x-text="t('monitor.retryLoad')"></button>
+        </div>
         <!-- Train type selector -->
-        <div class="train-tab-card">
+        <div class="train-tab-card" x-show="_trainFormMountedRoute === currentRoute">
           <div class="train-type-select-wrap">
-            <label class="train-type-label" x-text="t('field.model_train_type', 'Training Type')"></label>
+            <label class="train-type-label" x-text="t('field.model_train_type')"></label>
             <div class="anima-select" style="min-width:200px"
                  x-data="animaSelect(() => ({options: trainTypes.map(tt => ({v: tt.v, l: tt.l, d: t(tt.dk, '')}))}), form.model_train_type, {align:'right'})"
                  @click.outside="close()"
@@ -585,22 +620,32 @@
       </div>
 
       <!-- Route: Tagger -->
-      <div x-show="['tagger', 'ai-captioning'].includes(currentRoute)" class="tagger-route" x-cloak>
-        <div id="taggerWorkspaceHost"></div>
+      <div x-show="['tagger', 'ai-captioning'].includes(currentRoute)" class="tool-route" x-cloak>
+        <div class="dashboard-empty" x-show="taggerWorkspaceLoading || taggerWorkspaceError" role="status">
+          <p x-text="taggerWorkspaceError || t('common.loading')"></p>
+          <button type="button" class="btn btn-secondary btn-sm" x-show="taggerWorkspaceError" @click="buildTaggerForm()" x-text="t('monitor.retryLoad')"></button>
+        </div>
+        <div id="taggerWorkspaceHost" class="tool-workspace-host" x-show="!taggerWorkspaceLoading && !taggerWorkspaceError"></div>
       </div>
-      <div x-show="currentRoute === 'regularization'" class="tagger-route" x-cloak>
-        <div id="regularizationWorkspaceHost"></div>
+      <div x-show="currentRoute === 'regularization'" class="tool-route" x-cloak>
+        <div class="dashboard-empty" x-show="regWorkspaceLoading || regWorkspaceError" role="status">
+          <p x-text="regWorkspaceError || t('common.loading')"></p>
+          <button type="button" class="btn btn-secondary btn-sm" x-show="regWorkspaceError" @click="buildRegularizationForm()" x-text="t('monitor.retryLoad')"></button>
+        </div>
+        <div id="regularizationWorkspaceHost" class="tool-workspace-host" x-show="!regWorkspaceLoading && !regWorkspaceError"></div>
       </div>
 
       <!-- Route: Tag Editor -->
       <div x-show="currentRoute === 'tagEditor'" x-cloak
         x-init="tagEditorRestorePanelWidth(); tagEditorInitLayout()"
+        @visibilitychange.document="_teRefreshOnVisible()"
+        @focus.window="_teRefreshOnVisible()"
         @keydown.window="tagEditorHandleKeydown($event)"
         @resize.window="if (currentRoute === 'tagEditor') tagEditorCloseContextMenus(true)"
         @scroll.capture="if (!$event.target.closest?.('.te-ctx')) tagEditorCloseContextMenus(true, $event.target)">
 
         <!-- Saving overlay -->
-        <div x-show="tagEditorSaving" class="te-saving-overlay" x-transition>
+        <div x-show="tagEditorSaving" class="te-saving-overlay" role="status" aria-live="polite" x-transition>
           <div class="te-saving-box">
             <span x-text="t('tagEditor.saving')"></span>
             <template x-if="_teSaveProgress > 0">
@@ -784,9 +829,8 @@
               :title="t('tagEditor.recursiveHint')"
               x-text="t('tagEditor.recursive')"></button>
           </div>
-          <!-- 还没加载数据集时顶栏不存在，词典的下载入口放这里，装好后自动收起。
-               用 x-if 而不是 x-show：Alpine 的 x-show 变更走 requestAnimationFrame，
-               在后台标签页/内嵌视图里可能不触发；x-if 是同步插入，状态一变就到位。 -->
+          <!-- 未加载数据集时在这里显示词典下载入口。x-if 同步更新入口，
+               在后台标签页和内嵌视图里也能及时收起。 -->
           <template x-if="tagDictionaryStatus() !== 'ready'">
             <div class="te-empty-dict">
               <template x-if="tagDictionaryActionVisible()">
@@ -794,7 +838,7 @@
                   x-text="tagDictionaryActionLabel()"></button>
               </template>
               <span class="te-dict-status" x-text="tagDictionaryStatus() === 'absent' ? t('tagEditor.dictHint') : tagDictionaryStatusText()"></span>
-              <span class="te-dict-panel-error" x-show="tagDictionaryInstallError" x-text="tagDictionaryInstallError"></span>
+              <span class="te-dict-panel-error" role="alert" x-show="tagDictionaryInstallError" x-text="tagDictionaryInstallError"></span>
             </div>
           </template>
         </div>
@@ -821,7 +865,7 @@
               <span class="te-badge" x-show="tagEditorLeftCollapsed && tagEditorActiveFilterCount()" :title="t('tagEditor.activeFilters').replace('{n}', tagEditorActiveFilterCount())" :aria-label="t('tagEditor.activeFilters').replace('{n}', tagEditorActiveFilterCount())" x-text="tagEditorActiveFilterCount()"></span>
             </button>
             <div class="te-dataset-controls">
-              <button class="te-topbar-btn te-dataset-button" @click="tagEditorRequestSwitch()" :title="t('tagEditor.switchDataset')">
+              <button type="button" class="te-topbar-btn te-dataset-button" @click="tagEditorRequestSwitch()" :title="t('tagEditor.switchDataset')" :aria-label="t('tagEditor.switchDataset')">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M8 13h8M13 10l3 3-3 3"/></svg>
                 <span x-text="tagEditorLoadedDir || tagEditorDir"></span>
               </button>
@@ -846,7 +890,7 @@
                 @click="tagEditorUseRegex = !tagEditorUseRegex; _teValidateRegex(tagEditorSearchQuery); tagEditorSchedulePageFetch(true)"
                 x-text='".*"' :title="t('tagEditor.regexSearch')" :aria-label="t('tagEditor.regexSearch')" :aria-pressed="tagEditorUseRegex"></button>
               </div>
-              <div class="te-regex-error" x-show="tagEditorRegexError" x-text="t('tagEditor.regexError')"></div>
+              <div class="te-regex-error" role="alert" x-show="tagEditorRegexError" x-text="t('tagEditor.regexError')"></div>
             </div>
             <div class="te-topbar-secondary">
             <div class="te-editor-view" role="group" :aria-label="t('tagEditor.workMode')">
@@ -919,7 +963,7 @@
                     <div class="te-dict-panel-progress" x-text="tagDictionaryInstallText()"></div>
                   </template>
                   <template x-if="tagDictionaryInstallError">
-                    <div class="te-dict-panel-error" x-text="tagDictionaryInstallError"></div>
+                    <div class="te-dict-panel-error" role="alert" x-text="tagDictionaryInstallError"></div>
                   </template>
                   <template x-if="tagDictionaryActionVisible()">
                     <button class="te-dict-panel-action" @click="tagDictionaryPrimaryAction()"
@@ -998,8 +1042,8 @@
                   <input type="text" :value="tagEditorTagSearch"
                     :placeholder="t('tagEditor.searchTags')"
                     @input="tagEditorSetTagSearch($event.target.value)">
-                  <button class="te-search-clear" x-show="tagEditorTagSearch"
-                    @click="tagEditorClearTagSearch()">&times;</button>
+                  <button type="button" class="te-search-clear" x-show="tagEditorTagSearch"
+                    @click="tagEditorClearTagSearch()" :title="t('tagEditor.clearSearch')" :aria-label="t('tagEditor.clearSearch')">&times;</button>
                 </div>
                 <div class="te-logic-btns">
                   <button :class="{ active: tagEditorTagLogic === 'AND' }" @click="tagEditorTagLogic = 'AND'; tagEditorSchedulePageFetch(true)"
@@ -1572,7 +1616,7 @@
 
       <!-- Route: Environment -->
       <div class="route-environment" x-show="currentRoute === 'environment'" x-cloak>
-        <div class="page-header">
+        <div class="page-header page-heading-row">
           <h1 class="page-title" x-text="t('environment.title')">Environment</h1>
         </div>
         <div id="environmentPage"></div>
@@ -1580,7 +1624,7 @@
 
       <!-- Route: Settings -->
       <div class="route-settings" x-show="currentRoute === 'settings'" x-cloak>
-        <div class="page-header">
+        <div class="page-header page-heading-row">
           <h1 class="page-title" x-text="t('settings.title')">UI Settings</h1>
         </div>
         <div class="settings-sections">
@@ -1648,31 +1692,29 @@
               <button class="btn btn-ghost btn-sm" @click="resetAllParams()" x-text="t('common.resetAll')">Reset All</button>
               <button class="btn btn-ghost btn-sm" @click="downloadConfig()" x-text="t('common.download')">Download</button>
               <button class="btn btn-ghost btn-sm" @click="importConfigFile()" x-text="t('common.import')">Import</button>
-            </div>
-            <div class="btn-row">
-              <button class="btn btn-ghost btn-sm" style="flex:1" @click="copyToml()" x-text="t('common.copy')">Copy</button>
+              <button class="btn btn-ghost btn-sm" @click="copyToml()" x-text="t('common.copy')">Copy</button>
             </div>
             <div class="btn-row" x-show="form.model_train_type === 'krea2-lora'">
               <button class="btn btn-ghost btn-sm" style="flex:1" @click="prepareKrea2Cache()"
                       :disabled="isTraining || trainingStarting || showConfirmModal || regularizationActive"
-                      x-text="t('krea2.prepareCache', 'Prepare Krea 2 Caches')">
+                      x-text="t('krea2.prepareCache')">
                 Prepare Krea 2 Caches
               </button>
             </div>
             <div class="btn-row">
               <button class="btn btn-start" style="flex:1" @click="startTraining()"
                       :disabled="isTraining || trainingStarting || showConfirmModal || trainingBlocked || regularizationActive"
-                      x-text="trainingStarting ? t('common.starting') : (isTraining ? t('common.training') : (regularizationActive ? t('common.regularizationInProgress') : (trainingBlocked ? t('training.trainingInProgress') : t('common.startTraining'))))">
+                      x-text="trainingStarting ? t('common.starting') : (isTraining ? t(controlState?.state === 'paused' ? 'control.paused' : 'common.training') : (regularizationActive ? t('common.regularizationInProgress') : (trainingBlocked ? t(controlState?.state === 'paused' ? 'control.paused' : 'training.trainingInProgress') : t('common.startTraining'))))">
                 Start Training
               </button>
-              <button class="btn btn-stop" style="flex:1" @click="stopTraining()"
-                      :disabled="!isTraining" :title="t('training.stopHint')" x-text="t('common.stopTraining')">
+              <button class="btn btn-stop" style="flex:1" x-show="isTraining || trainingBlocked || trainingStopping === (liveTaskId || taskId)" @click="stopTraining()"
+                      :disabled="!isTraining || trainingStopping === (liveTaskId || taskId)" :title="t('training.stopHint')" x-text="trainingStopping === (liveTaskId || taskId) ? t('regularization.stopping') : t('common.stopTraining')">
                 Stop Training
               </button>
             </div>
             <div x-show="trainingBlocked || regularizationActive" class="start-blocked-inline" @click="navigate(regularizationActive ? 'regularization' : 'monitor-dashboard')">
               <span class="start-blocked-dot"></span>
-              <span x-text="regularizationActive ? t('common.regularizationInProgress') : t('training.taskRunning')"></span>
+              <span x-text="regularizationActive ? t('common.regularizationInProgress') : t(controlState?.state === 'paused' ? 'control.paused' : 'training.taskRunning')"></span>
               <span class="start-blocked-link" x-text="regularizationActive ? t('common.viewGeneration') : t('training.goToMonitor')"></span>
             </div>
           </div>
@@ -1691,11 +1733,11 @@
 
 <!-- Near-fullscreen LyCORIS configuration panel. Fields bind directly to form. -->
 <dialog id="lycorisDialog" class="modal-overlay modal-overlay--morph lycoris-modal-overlay" x-dialog="lycorisModalOpen" @click.self="closeLycorisConfig()"
-        @dialog-close="closeLycorisConfig()" :aria-label="t('field.lycorisConfigTitle', 'LyCORIS configuration')" x-cloak>
+        @dialog-close="closeLycorisConfig()" :aria-label="t('field.lycorisConfigTitle')" x-cloak>
   <div class="modal lycoris-modal modal-workbench modal-workbench--lycoris">
     <div class="modal-header lycoris-modal-header">
       <div>
-        <div class="lycoris-modal-title" x-text="t('field.lycorisConfigTitle', 'LyCORIS configuration')">LyCORIS configuration</div>
+        <div class="lycoris-modal-title" x-text="t('field.lycorisConfigTitle')">LyCORIS configuration</div>
         <div class="lycoris-modal-subtitle" x-text="lycorisSummary()"></div>
       </div>
       <button type="button" class="btn-icon lycoris-modal-close" @click="closeLycorisConfig()" :aria-label="t('common.close')">
@@ -1705,7 +1747,7 @@
     <div class="lycoris-modal-body">
       <div class="lycoris-form-scroll" id="lycorisConfigContent"></div>
       <aside class="lycoris-preview-panel">
-        <div class="lycoris-preview-title" x-text="t('field.lycorisPreviewTitle', 'LyCORIS configuration')">LyCORIS configuration</div>
+        <div class="lycoris-preview-title" x-text="t('field.lycorisPreviewTitle')">LyCORIS configuration</div>
         <div class="panel-preview lycoris-config-preview" x-html="lycorisConfigPreviewHtml()"></div>
         <div class="lycoris-preview-notes" x-show="lycorisConfigNotes()" x-text="lycorisConfigNotes()"></div>
       </aside>
@@ -1719,7 +1761,116 @@
   </div>
 </dialog>
 
-<!-- ── Confirm Modal ───────────────────────────────────── -->
+<!-- ── Runtime training actions ─────────────────────────── -->
+<dialog class="modal-overlay" x-dialog="!!controlDialog" @dialog-close="controlDialog = ''" @click.self="controlDialog = ''" aria-labelledby="controlTitle" x-cloak>
+  <form class="modal control-dialog" tabindex="-1" data-dialog-autofocus :class="controlDialog === 'sample' ? 'control-sample-modal' : 'modal-confirm control-stop-modal'" @submit.prevent="submitTrainingControl(controlDialog, controlDialogTask)">
+    <header :class="controlDialog === 'sample' ? 'modal-header control-sample-header' : 'confirm-heading'">
+      <span class="confirm-icon control-stop-icon" x-show="controlDialog === 'stop'" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg></span>
+      <div class="control-header-title">
+        <h2 id="controlTitle" class="confirm-title" x-text="t(controlDialog === 'sample' ? 'control.previewTitle' : 'common.stopTraining')"></h2>
+        <span class="control-header-context" x-show="controlDialog === 'sample' && (controlRunName || controlStepText)">
+          <span class="control-context-name" x-show="controlRunName" x-text="controlRunName"></span>
+          <span class="control-context-step" x-show="controlStepText" x-text="controlStepText"></span>
+        </span>
+      </div>
+      <button type="button" class="btn-icon preview-close" @click="controlDialog = ''" :aria-label="t('common.close')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m18 6-12 12M6 6l12 12"/></svg></button>
+    </header>
+    <div class="modal-body" :class="controlDialog === 'sample' ? 'control-sample-body' : 'confirm-body'">
+      <div class="control-context" x-show="controlDialog === 'stop' && (controlRunName || controlStepText)">
+        <span class="control-context-name" x-show="controlRunName" x-text="controlRunName"></span>
+        <span class="control-context-step" x-show="controlStepText" x-text="controlStepText"></span>
+      </div>
+      <p class="confirm-message" x-show="controlLoading" x-text="t('common.loading')"></p>
+      <template x-if="!controlLoading && controlDialog === 'stop'">
+        <div class="control-stop-body">
+          <div class="control-stop-choices" x-show="controlCanStopAtStep">
+            <div class="settings-panel">
+              <label class="settings-row">
+                <span class="settings-row-main">
+                  <span class="settings-row-label" id="stopWeightsLabel" x-text="t('control.stopWeights')"></span>
+                  <span class="control-row-meta" :class="'is-' + controlWeightsSaveMeta.tone" x-show="controlWeightsSaveMeta.text" x-text="controlWeightsSaveMeta.text"></span>
+                </span>
+                <span class="settings-row-action toggle"><input type="checkbox" role="switch" x-model="controlSaveWeights" aria-labelledby="stopWeightsLabel"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
+              </label>
+              <label class="settings-row">
+                <span class="settings-row-main">
+                  <span class="settings-row-label" id="stopStateLabel" x-text="t('control.save_state')"></span>
+                  <span class="control-row-meta" :class="'is-' + controlStateSaveMeta.tone" x-show="controlStateSaveMeta.text" x-text="controlStateSaveMeta.text"></span>
+                </span>
+                <span class="settings-row-action toggle"><input type="checkbox" role="switch" x-model="controlSaveState" aria-labelledby="stopStateLabel"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
+              </label>
+            </div>
+            <p class="control-consequence" x-show="controlStopConsequence" x-text="controlStopConsequence"></p>
+          </div>
+          <p class="confirm-message" x-show="!controlCanStopAtStep" x-text="t(controlState?.command?.status === 'pending' ? 'control.stopPending' : 'control.stopUnavailable')"></p>
+          <p class="control-force-note" x-text="t('control.forceHint')"></p>
+        </div>
+      </template>
+      <template x-if="!controlLoading && controlDialog === 'sample'">
+        <div class="control-options">
+          <div class="control-field">
+            <label class="control-field-label" x-text="t('control.promptSource')"></label>
+            <div class="anima-select"
+                 x-data="animaSelect(() => controlPromptSelectConfig, controlIndex)"
+                 @click.outside="close()"
+                 @anima-select-change="selectControlPrompt($event.detail.value)">
+              <input type="hidden" :value="controlIndex">
+              <button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle($event)" :aria-label="t('control.selectPrompt') + '：' + selectedLabel" aria-haspopup="listbox" :aria-expanded="open ? 'true' : 'false'">
+                <span class="anima-select-trigger-text" x-text="selectedLabel"></span>
+                <svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="m6 9 6 6 6-6"/>
+                </svg>
+              </button>
+              <template x-if="open">
+                <div class="anima-select-menu" :class="{ 'anima-select-menu-described': hasDescriptions, 'anima-select-menu-positioned': positioned }">
+                  <div class="anima-select-menu-scroll">
+                    <template x-for="opt in flatOptions" :key="opt.v">
+                      <div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)">
+                        <span class="anima-select-option-content">
+                          <span class="anima-select-option-label" x-text="opt.l" :title="opt.l"></span>
+                          <span class="anima-select-option-desc" x-show="opt.d" x-text="opt.d" :title="opt.d"></span>
+                        </span>
+                        <svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+          <div class="control-field">
+            <label class="control-field-label" for="controlPromptText" x-text="t('control.prompt')"></label>
+            <textarea id="controlPromptText" x-model="controlPrompt" :readonly="!controlCanEditPrompt" rows="4" maxlength="32768" :placeholder="t('control.promptPlaceholder')"></textarea>
+            <p class="control-field-hint" role="status" x-show="controlSampleHint" x-text="controlSampleHint"></p>
+          </div>
+          <div class="control-sample-params">
+            <div class="control-sample-grid">
+              <label class="control-param-col-2"><span x-text="t('control.width')"></span><input type="number" x-model="controlWidth" min="64" max="4096" step="8" :placeholder="controlWidthPlaceholder"></label>
+              <label class="control-param-col-2"><span x-text="t('control.height')"></span><input type="number" x-model="controlHeight" min="64" max="4096" step="8" :placeholder="controlHeightPlaceholder"></label>
+              <label class="control-param-col-2"><span x-text="t('control.cfg')"></span><input type="number" x-model="controlScale" min="0.5" max="50" step="0.5" :placeholder="controlScalePlaceholder"></label>
+              <label class="control-param-col-3"><span x-text="t('control.seed')"></span><input type="text" x-model="controlSeed" inputmode="numeric" pattern="-?[0-9]+" :placeholder="controlSeedPlaceholder"></label>
+              <label class="control-param-col-3"><span x-text="t('control.steps')"></span><input type="number" x-model="controlSteps" min="1" max="1000" :placeholder="controlStepsPlaceholder"></label>
+            </div>
+          </div>
+          <div class="control-inherited-neg" x-show="controlNegativeSummary">
+            <span class="control-inherited-neg-label" x-text="t('control.negativeInherited')"></span>
+            <span class="control-inherited-neg-value" :title="controlNegativeSummary" x-text="controlNegativeSummary"></span>
+          </div>
+        </div>
+      </template>
+    </div>
+    <footer class="modal-footer control-footer">
+      <button type="button" class="btn control-footer-btn control-force-btn" x-show="!controlLoading && controlDialog === 'stop'" data-control-force
+              :disabled="!canSubmitControlDialog('force')" @click="submitTrainingControl('force', controlDialogTask)" x-text="t('control.force')"></button>
+      <button type="button" class="btn btn-secondary control-footer-btn" @click="controlDialog = ''" x-text="t('common.cancel')"></button>
+      <button type="submit" class="btn control-footer-btn" :class="controlDialog === 'sample' ? 'btn-primary' : 'btn-stop-confirm'"
+              x-show="controlDialog === 'sample' || controlCanStopAtStep" :disabled="!canSubmitControlDialog()"
+              x-text="controlDialog === 'sample' ? t('control.generate') : controlStopButtonLabel"></button>
+    </footer>
+  </form>
+</dialog>
 <dialog id="confirmDialog" x-ref="confirmRoot" class="modal-overlay" x-dialog="showConfirmModal" @click.self="cancelConfirm()"
         @dialog-close="cancelConfirm()" @dialog-after-close="confirmAfterClose()"
         :data-switching="confirmSwitching || confirmBusy ? '' : null"
@@ -1801,14 +1952,14 @@
              @keydown.arrow-down.prevent="pickerMove(1, $event)"
              @keydown.arrow-up.prevent="pickerMove(-1, $event)"
              @keydown.enter.prevent="pickerConfirm($event)"
-             :placeholder="t('common.pickerSearchPlaceholder','Filter by name')">
-      <span class="picker-kbd-hint" x-text="t('common.pickerKbdHint','↑↓ select · Enter confirm')"></span>
+             :placeholder="t('common.pickerSearchPlaceholder')">
+      <span class="picker-kbd-hint" x-text="t('common.pickerKbdHint')"></span>
     </div>
     <div class="picker-list">
-      <p class="picker-empty" x-show="_pickerLoading" x-text="t('common.pickerLoading','Scanning files…')" role="status"></p>
+      <p class="picker-empty" x-show="_pickerLoading" x-text="t('common.pickerLoading')" role="status"></p>
       <div class="picker-empty" x-show="!_pickerLoading && _pickerError" role="alert">
         <span x-text="_pickerError"></span>
-        <button type="button" class="btn btn-ghost btn-sm" @click="retryFilePicker()" x-text="t('common.pickerRetry','Retry')"></button>
+        <button type="button" class="btn btn-ghost btn-sm" @click="retryFilePicker()" x-text="t('common.pickerRetry')"></button>
       </div>
       <p class="picker-empty" x-show="!_pickerLoading && !_pickerError && filteredPickerFiles.length === 0" x-text="pickerEmptyText()"></p>
       <template x-for="group in (!_pickerLoading && !_pickerError ? pickerGroups : [])" :key="group.dir">
@@ -1824,7 +1975,7 @@
                   <span class="picker-row-name" x-text="f.name || ''"></span>
                   <span class="picker-row-current" x-show="pickerIsCurrent(f)">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                    <span x-text="t('common.pickerCurrentTag','Current')"></span>
+                    <span x-text="t('common.pickerCurrentTag')"></span>
                   </span>
                 </div>
                 <span class="picker-row-detail" x-show="pickerDetailText(f)" x-text="pickerDetailText(f)"></span>
@@ -2018,9 +2169,8 @@
         @dialog-close="closeShapePreview()" @dialog-after-close="shapePreviewMounted = false" :aria-label="t('shapePreview.title')" x-cloak>
   <div class="modal shape-preview-modal modal-workbench modal-workbench--shape">
     <div class="modal-header">
-      <div>
-        <div x-text="t('shapePreview.title')">Matrix structure preview</div>
-      </div>
+      <div style="flex:1" x-text="t('shapePreview.title')">Matrix structure preview</div>
+      <button type="button" class="btn btn-ghost btn-sm" @click="scheduleShapeEstimate(true)" :disabled="shapeEstimateLoading" x-text="t('monitor.refresh')"></button>
       <button type="button" class="btn-icon preview-close shape-preview-close" @click="closeShapePreview()" :aria-label="t('common.close')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
@@ -2036,7 +2186,7 @@
 <!-- ── Preview prompt workbench ───────────────────────── -->
 <dialog id="promptWorkbenchDialog" class="modal-overlay modal-overlay--morph" data-dialog-fast-open x-dialog="promptWorkbenchOpen"
         @click.self="closePromptWorkbench()" @dialog-close="closePromptWorkbench()" @dialog-after-open="positionPromptWorkbenchTagSuggestions()" @dialog-after-close="releasePromptWorkbenchView()" :aria-label="t('promptWorkbench.title')" x-cloak>
-  <div class="modal prompt-workbench-modal">
+  <div class="modal modal-workbench modal-workbench--large prompt-workbench-modal">
     <div class="modal-header">
       <div class="pw-heading"><span x-text="t('promptWorkbench.title')"></span><span class="pw-summary" x-text="promptWorkbenchSummary()"></span></div>
       <button type="button" class="btn-icon preview-close" @click="closePromptWorkbench()" :aria-label="t('common.close')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m18 6-12 12M6 6l12 12"/></svg></button>
@@ -2146,7 +2296,7 @@
 <dialog id="cropPreviewDialog" class="modal-overlay modal-overlay--morph" data-dialog-fast-open x-dialog="cropPreviewOpen" @click.self="cropPreviewDismiss()"
         @dialog-after-open="_cropPreviewEntered = true" @dialog-after-close="clearCropPreview()"
         @dialog-close="cropPreviewDismiss()" :aria-label="t('cropPreview.title')" x-cloak>
-  <div class="modal crop-preview-modal" @keydown.tab="cropPreviewTab($event)">
+  <div class="modal modal-workbench modal-workbench--large crop-preview-modal" @keydown.tab="cropPreviewTab($event)">
     <header class="modal-header">
       <div class="cp-heading"><span x-text="t('cropPreview.title')"></span>
         <span class="cp-summary" x-show="cropPreviewItems.length">
@@ -2221,7 +2371,7 @@
           <template x-for="item in row.items" :key="item.id">
             <button type="button" class="cp-tile" :id="'crop-image-' + item.id" :data-crop-image="item.id" :title="item.name" :aria-label="item.name + ' · ' + cropPreviewInfo(item)" :disabled="!!item.error" @click="focusCropPreview(item)">
               <div class="cp-stage" x-show="!item.error" x-html="cropPreviewImageHtml(item)"></div>
-              <div class="cp-stage cp-error" x-show="item.error" x-text="item.error"></div>
+              <div class="cp-stage cp-error" x-show="item.error" x-text="cropPreviewItemError(item)"></div>
               <span class="cp-tile-info" x-show="item.error" x-text="item.name"></span>
               <span class="cp-tile-meta" x-show="!item.error">
                 <span class="cp-dimensions">
@@ -2310,6 +2460,114 @@
     </div>
   </div>
 </dialog>
+
+<svg class="tool-icon-sprite" aria-hidden="true">
+  <symbol id="ti-folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v10H3z"/><path d="M3 6v12"/></symbol>
+  <symbol id="ti-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></symbol>
+  <symbol id="ti-play" viewBox="0 0 24 24"><path d="m7 4 13 8-13 8z"/></symbol>
+  <symbol id="ti-stop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14"/></symbol>
+  <symbol id="ti-fit" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
+  <symbol id="ti-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+  <symbol id="ti-check" viewBox="0 0 24 24"><path d="m20 6-11 11-5-5"/></symbol>
+  <symbol id="ti-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="ti-collapse-all" viewBox="0 0 24 24"><path d="M12 3v6m-4-4 4 4 4-4M12 21v-6m-4 4 4-4 4 4M4 12h16"/></symbol>
+  <symbol id="ti-expand-all" viewBox="0 0 24 24"><path d="M12 9V3m-4 4 4-4 4 4M12 15v6m-4-4 4 4 4-4M4 12h16"/></symbol>
+  <symbol id="ti-retry" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol>
+  <symbol id="ti-external" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+  <symbol id="ti-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="ti-eye-off" viewBox="0 0 24 24"><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 10 8 10 8a13.16 13.16 0 0 1-1.67 2.68M6.61 6.61A13.5 13.5 0 0 0 2 12s3 8 10 8a9.74 9.74 0 0 0 5.39-1.61"/><path d="m2 2 20 20"/><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/></symbol>
+  <symbol id="ti-zap" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></symbol>
+  <symbol id="ti-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+  <symbol id="ti-settings" viewBox="0 0 24 24"><path d="M4 7h5m4 0h7M4 17h9m4 0h3"/><circle cx="11" cy="7" r="2"/><circle cx="15" cy="17" r="2"/></symbol>
+  <symbol id="ti-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+</svg>
+
+<template id="tool-part-header">
+  <div class="tool-heading"><h1 class="page-title" x-text="toolTitle()"></h1></div>
+  <div class="monitor-resbar tool-resources" :id="toolResourceId"></div>
+</template>
+
+<template id="tool-part-tabs">
+  <template x-for="tab in toolTabs" :key="tab.id">
+    <button type="button" role="tab" class="monitor-tab" :class="{active:activeToolTab === tab.key}" :id="tab.id" :aria-controls="tab.panel"
+            :aria-selected="String(activeToolTab === tab.key)" :tabindex="activeToolTab === tab.key ? 0 : -1"
+            :disabled="toolTabsDisabled" @click="tab.select()">
+      <svg aria-hidden="true"><use :href="'#ti-' + tab.icon"></use></svg>
+      <span x-text="tab.label"></span>
+      <small class="monitor-tab-count" x-show="tab.count != null" x-text="tab.count"></small>
+    </button>
+  </template>
+  <span class="ui-tab-indicator" aria-hidden="true" x-effect="activeToolTab; toolTabs; $nextTick(() => syncToolTabIndicator($el.parentElement))"></span>
+</template>
+
+<template id="tool-part-task-log">
+  <header class="tool-log-header">
+    <div><strong x-text="taskLog.title"></strong><span class="tool-log-phase" :class="{running:taskLog.running}" x-text="taskLog.phase"></span></div>
+    <div>
+      <button type="button" class="btn btn-ghost btn-sm" x-show="copyTaskLog && taskLog.hasLogs" @click="copyTaskLog()" x-text="t('common.copy')"></button>
+      <button type="button" class="btn btn-ghost btn-sm" x-show="taskLog.hasLogs" :aria-expanded="String(taskLog.open)" @click="toggleTaskLog()" x-text="t(taskLog.open ? 'common.collapse' : 'common.expand')"></button>
+    </div>
+  </header>
+  <div class="tool-log-error" x-show="taskLog.error" role="alert" x-text="taskLog.error"></div>
+  <div class="tool-log-stream" tabindex="0" :aria-label="taskLog.title" @scroll="updateLogFollow($el)"
+       x-effect="taskLog.lines?.length; taskLog.open; syncLogPosition($el, taskLog.key)">
+    <template x-for="line in taskLog.entries()" :key="line.key">
+      <div class="tool-log-line" :class="[line.level, !line.time && 'untimed']">
+        <time x-show="line.time" x-text="line.time"></time><code x-text="line.message"></code>
+      </div>
+    </template>
+    <div class="tool-log-empty" x-show="!taskLog.hasLogs" x-text="taskLog.empty"></div>
+  </div>
+</template>
+
+<template id="tool-part-divider">
+  <div class="tool-divider" :class="{dragging:taggerSingleResizing}" role="separator" aria-orientation="vertical"
+       aria-valuemin="30" aria-valuemax="70" :aria-valuenow="taggerSingleLeftWidth" :aria-label="t('tagger.resizePanels')" tabindex="0"
+       @pointerdown.prevent="startTaggerSingleResize($event)" @pointermove="resizeTaggerSingleLayout($event)"
+       @lostpointercapture="stopTaggerSingleResize($event)" @keydown.left.prevent="setTaggerSingleWidth(taggerSingleLeftWidth - 1)"
+       @keydown.right.prevent="setTaggerSingleWidth(taggerSingleLeftWidth + 1)"
+       @keydown.home.prevent="setTaggerSingleWidth(30)" @keydown.end.prevent="setTaggerSingleWidth(70)"></div>
+</template>
+
+<template id="tool-part-single-preview">
+  <div class="tool-preview-toolbar" x-show="taggerSource">
+    <span :title="taggerSource?.display_name || taggerSource?.path" x-text="taggerSource?.display_name || taggerSource?.path"></span>
+    <button type="button" class="btn-icon" @click="resetTaggerPreview()" :title="t('tagger.fit')" :aria-label="t('tagger.fit')"><svg aria-hidden="true"><use href="#ti-fit"></use></svg></button>
+  </div>
+  <button type="button" class="tool-drop-zone" x-show="!taggerSource" :disabled="previewDisabled()" @click="choosePreviewImage()">
+    <svg aria-hidden="true"><use href="#ti-image"></use></svg>
+    <strong x-text="t('tagger.dropImageHere')"></strong><span x-text="t('tagger.orPaste')"></span>
+  </button>
+  <div class="tool-preview-image" x-data="{failed:false, imageUrl:''}" x-effect="if (imageUrl !== previewImageUrl()) { imageUrl = previewImageUrl(); failed = false; }"
+       x-show="taggerSource" :class="{zoomed:taggerPreviewScale > 1, panning:taggerPreviewPanning}"
+       @wheel.prevent="zoomTaggerPreview($event)" @pointerdown="startTaggerPreviewPan($event)"
+       @pointermove="moveTaggerPreviewPan($event)" @pointerup="stopTaggerPreviewPan($event)"
+       @pointercancel="stopTaggerPreviewPan($event)" @dblclick="resetTaggerPreview()">
+    <img x-show="!failed" x-image="imageUrl" :style="taggerPreviewTransform()" :alt="t('tagger.preview')" @load="resetTaggerPreview()" @image-ready="failed = false" @error="failed = true" draggable="false">
+    <span class="field-hint" x-show="failed" role="status" x-text="t('caption.imageUnavailable')"></span>
+  </div>
+</template>
+
+<template id="tool-part-select-menu">
+  <div class="anima-select-menu" :class="{'anima-select-menu-positioned':positioned, 'anima-select-menu-described':hasDescriptions}">
+    <div class="anima-select-menu-scroll">
+      <template x-for="(group, index) in displayGroups" :key="index">
+        <div class="anima-select-group">
+          <div class="anima-select-group-label" x-show="group.label" x-text="group.label"></div>
+          <template x-for="option in group.options" :key="option.v">
+            <div class="anima-select-option" :class="{active:option.v === value}" @click="select(option.v)">
+              <span class="anima-select-option-content">
+                <span class="anima-select-option-label" :title="option.l" x-text="option.l"></span>
+                <span class="anima-select-option-desc" x-show="option.d" x-text="option.d"></span>
+              </span>
+              <svg class="anima-select-check" x-show="option.v === value" aria-hidden="true"><use href="#ti-check"></use></svg>
+            </div>
+          </template>
+        </div>
+      </template>
+    </div>
+  </div>
+</template>
 
 </body>
 </html>

@@ -16,13 +16,13 @@ logger = logging.getLogger(__name__)
 
 def prompt_texts(original, values, architecture):
     sampling = original.__globals__.get("sampling")
-    load = getattr(sampling, "load_prompts", None)
+    load = getattr(sampling, "get_sample_prompts", None)
     if not callable(load):
         raise PreviewCompatibilityError("Sampler prompt loader changed / 预览提示词加载接口已改变")
     replacement = values.get("prompt_replacement")
     texts = {}
     accelerator = values["accelerator"]
-    prompts = load(values["args"].sample_prompts)
+    prompts = load(values["args"])
     prompts = prompts[getattr(accelerator, "process_index", 0)::getattr(accelerator, "num_processes", 1)]
     for prompt in prompts:
         positive, negative = prompt.get("prompt", ""), prompt.get("negative_prompt", "")

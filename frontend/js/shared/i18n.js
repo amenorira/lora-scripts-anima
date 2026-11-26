@@ -69,6 +69,7 @@ const I18N = (() => {
     }
     _locale = resolved;
     _messages = _cache[resolved] || null;
+    document.documentElement.lang = resolved;
     return _locale;
   }
 
@@ -113,6 +114,7 @@ const I18N = (() => {
     _locale = loc;
     localStorage.setItem('anima-locale', loc);
     _messages = _cache[loc] || _cache['en-US'] || null;
+    document.documentElement.lang = loc;
     window.dispatchEvent(new CustomEvent('locale-changed', { detail: { locale: loc } }));
     return true;
   }

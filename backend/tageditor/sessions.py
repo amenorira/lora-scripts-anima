@@ -44,6 +44,10 @@ def _image_index(images: tuple[dict, ...]) -> dict[str, dict]:
     }
 
 
+def _image_directory(item: dict) -> str:
+    return str(item.get("rel_path", item.get("name", ""))).replace("\\", "/").rpartition("/")[0]
+
+
 def session_image_payload(session_id: str, item: dict) -> dict:
     rel_path = item["rel_path"]
     version = str(item.get("modified_ns", ""))
@@ -251,36 +255,35 @@ class DatasetSessionService:
         session = self.get(session_id)
         query = (search, use_regex, quick_filter, tuple(include_tags), tuple(exclude_tags),
                  tag_logic, sort_by, sort_asc, sort_by2, sort_asc2, group_by_dir)
-        items = None
+        result = None
+        working = session
         if caption_overrides:
             # 请求内的工作正文只参与查询，不修改扫描基线、修订号或共享查询缓存。
             working = replace(session, images=tuple(
                 {**item, "tags": caption_overrides[item["path"]]} if item["path"] in caption_overrides else item
                 for item in session.images
             ))
-            items = self._filter_images(working, *query)
         else:
             with self._lock:
-                items = session.queries.get(query)
-                if items is not None:
+                result = session.queries.get(query)
+                if result is not None:
                     session.queries.move_to_end(query)
-        if items is None:
-            items = self._filter_images(session, *query)
-            with self._lock:
-                session.queries[query] = items
-                session.queries.move_to_end(query)
-                while len(session.queries) > 4:
-                    session.queries.popitem(last=False)
+        if result is None:
+            items = self._filter_images(working, *query)
+            directory_counts = dict(Counter(map(_image_directory, items))) if group_by_dir else {}
+            result = items, directory_counts
+            if not caption_overrides:
+                with self._lock:
+                    session.queries[query] = result
+                    session.queries.move_to_end(query)
+                    while len(session.queries) > 4:
+                        session.queries.popitem(last=False)
+        items, directory_counts = result
         total = len(items)
         page_size = max(30, min(page_size, 240))
         total_pages = max(1, (total + page_size - 1) // page_size)
         page = max(1, min(page, total_pages))
         start = (page - 1) * page_size
-        directory_counts = {}
-        if group_by_dir:
-            for item in items:
-                directory = str(item.get("rel_path", item.get("name", ""))).replace("\\", "/").rpartition("/")[0]
-                directory_counts[directory] = directory_counts.get(directory, 0) + 1
         return {
             "items": [session_image_payload(session_id, item) for item in items[start:start + page_size]],
             "total": total,
@@ -335,7 +338,7 @@ class DatasetSessionService:
         items.sort(key=lambda item: sort_value(item, sort_by), reverse=not sort_asc)
         if group_by_dir:
             # 分页前归组；稳定排序保留每个目录内的主、次排序。
-            items.sort(key=lambda item: str(item.get("rel_path", item.get("name", ""))).replace("\\", "/").rpartition("/")[0])
+            items.sort(key=_image_directory)
         return tuple(items)
 
     def _prune_locked(self, now: float) -> None:

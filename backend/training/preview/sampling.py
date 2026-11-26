@@ -4,14 +4,13 @@ from __future__ import annotations
 from contextlib import contextmanager, nullcontext
 import functools
 import logging
-from pathlib import Path
 import random
 import sys
 
 import numpy as np
 import torch
 
-from .compat import PreviewCompatibilityError, sampling_due, sampling_signature
+from .compat import PreviewCompatibilityError, sampling_signature
 from .lora import LoRAManager, preserve_training_adapters
 from .config import sampling_options
 from .kernels import override_kernel
@@ -27,9 +26,8 @@ def _release_cuda_cache(device):
         return
     failed = sys.exc_info()[0] is not None
     try:
-        # Native allocator cache flushing is process-wide, including when a
-        # device context is selected. Reserve this fallback for failed/late
-        # releases instead of repeating upstream's successful-path cleanup.
+        # Allocator cache flushing is process-wide, even with a device selected.
+        # Use this fallback only for failed or late releases.
         torch.cuda.empty_cache()
     except Exception:
         if not failed:
@@ -47,6 +45,8 @@ def _log_cuda_memory(device, phase):
 
 
 def wrap_sampler(original, document):
+    from library.sampling import has_sample_prompts, should_sample_images
+
     signature = sampling_signature(original)
     manager = LoRAManager(document["loras"], document["architecture"])
     options = sampling_options(document.get("sampler"), document.get("scheduler"))
@@ -58,10 +58,9 @@ def wrap_sampler(original, document):
         bound = signature.bind(*args, **kwargs)
         bound.apply_defaults()
         values = bound.arguments
-        if not sampling_due(values["args"], values["epoch"], values["steps"]):
+        if not should_sample_images(values["args"], values["epoch"], values["steps"]):
             return original(*args, **kwargs)
-        prompt_file = getattr(values["args"], "sample_prompts", None)
-        if prompt_file is not None and not Path(prompt_file).is_file():
+        if not has_sample_prompts(values["args"]):
             # Preserve upstream log-and-skip before reading external weights.
             if "sample_prompts_te_outputs" in signature.parameters:
                 bound.arguments["sample_prompts_te_outputs"] = None

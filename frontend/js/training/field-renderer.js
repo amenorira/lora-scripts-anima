@@ -354,7 +354,7 @@ window.trainingFieldRenderer = {
       inputHtml = `<label class="toggle"><input type="checkbox" aria-label="${fieldAriaLabel}"${labelAttrs} :checked="form.${dataKey}" @change="setField('${dataKey}', $event.target.checked)${previewScroll}"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>`;
     } else if (field.type === 'select') {
       const fc = this._trainingSelectConfig(field);
-      const selectAlign = field.selectAlign === 'left' ? 'left' : 'right';
+      const selectAlign = field.layout === 'stacked' ? 'left' : 'right';
       const configExpression = ['foreach', 'adamw_fused', 'krea_adamw_fused'].includes(dataKey)
         ? `() => _trainingSelectConfig(findFieldDef('${dataKey}'))` : `'${this.escJson(fc)}'`;
       const triggerHtml = `<button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle($event)" aria-label="${fieldAriaLabel}"${labelAttrs} aria-haspopup="listbox" :aria-expanded="open ? 'true' : 'false'"><span class="anima-select-trigger-text" x-text="selectedLabel"></span><svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>`;
@@ -399,10 +399,7 @@ window.trainingFieldRenderer = {
     // ── Embed file picker buttons inside input ──
     let controlHtml = '';
     if (field.role && field.role.startsWith('file-') && !isStaticReadonly) {
-      // 本地系统选择器在无图形环境的服务器上不可用：整颗按钮不渲染，只留内置浏览器
-      const localBtnHtml = this.localPickerAvailable
-        ? `<button type="button" class="btn-icon" @click="localFilePicker('${dataKey}','${field.role}')" :title="t('common.localPicker')" :aria-label="t('common.browseLocal')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>`
-        : '';
+      const localBtnHtml = `<button type="button" class="btn-icon" x-show="localPickerAvailable" @click="localFilePicker('${dataKey}','${field.role}')" :title="t('common.localPicker')" :aria-label="t('common.browseLocal')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>`;
       controlHtml = `<div class="field-input-wrap">${inputHtml}<div class="field-input-actions">${localBtnHtml}<button type="button" class="btn-icon" @click="builtinFilePicker('${dataKey}','${field.role}')" :title="t('common.builtinBrowser')" :aria-label="t('common.searchBuiltin')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button></div></div>`;
     } else {
       controlHtml = inputHtml;
@@ -513,8 +510,8 @@ window.trainingFieldRenderer = {
     const nestLevelAttr = ` data-nest-level="${nestLevel}"`;
 
     // ── Build body row ──
-    // merged 字段（优化器参数）显示真正写进 optimizer_args 的参数名，而不是内部表单键：
-    // 同一时刻只显示一个优化器的参数，重名不会歧义，且这个名字与文档、日志一致。
+    // 优化器参数显示写入 optimizer_args 的名称，与文档和日志保持一致。
+    // 表单每次只显示当前优化器的参数。
     const displayKey = field.argKey || dataKey;
     const infoHtml = field.labelOnly
       ? `<div class="field-info"><div class="field-key">${labelHtml}${requiredMark}${docLink}</div>${field.helpKey ? `<div class="field-desc">${this.trainingText(field.helpKey)}</div>` : ''}</div>`
@@ -565,7 +562,7 @@ window.trainingFieldRenderer = {
       ? `<div class="field-hint" data-krea-sample-mode role="status" aria-live="polite" x-show="form.enable_krea_samples" x-text="kreaSampleModeText()">${this.esc(this.kreaSampleModeText())}</div>`
       : '';
     return `<div class="field${condClass}${nestedClass}${staticReadonlyClass}" :class="{ 'field-changed': ${changedExpr}, 'field-filled': ${_filledExpr} }" data-field-row="${this.escapeAttr(dataKey)}"${condAttrs}${readonlyAttrs}${nestLevelAttr}>
-      <div class="field-row">
+      <div class="field-row${field.layout === 'stacked' && !isFullWidth ? ' is-stacked' : ''}">
         ${controlSection}
         ${fieldMenuHtml}
       </div>

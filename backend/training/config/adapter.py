@@ -265,6 +265,9 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
     返回 (adapted_config, warnings)
     """
     source = config.copy()
+    prompt_file = str(source.pop("prompt_file", "") or "").strip()
+    if prompt_file:
+        source["sample_prompts"] = prompt_file
     from backend.training.config.option_contracts import (
         effective_training_scope, normalize_sd_options, validate_sd_option_dependencies,
     )

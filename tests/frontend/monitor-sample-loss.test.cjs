@@ -121,9 +121,9 @@ test('shared artifact directories display each run loss in captions, ranking and
   assert.deepEqual(read()[1].previous, historical.previous);
   assert.match(value._sampleCardCaptionHtml(model.batches[1]), /0\.1200/);
   assert.match(value._sampleLossOverlayHtml(older), /-20\.0%/);
-  value.sampleBatchSortDir = 'loss-overall';
+  value.sampleBatchSortDir = 'loss-overall-asc';
   assert.equal(value._sampleOverviewBatches()[0].id, own.sample.batch_id);
-  value.sampleBatchSortDir = 'loss-low';
+  value.sampleBatchSortDir = 'loss-low-asc';
   assert.equal(value._sampleOverviewBatches()[0].id, older.sample.batch_id);
   value.previewCompareActive = true;
   value.previewReferences = [older]; value.previewComparisonOrder = [older.path, null];
@@ -148,7 +148,7 @@ test('legacy filenames and demo batches display loss without task IDs in either 
   demo.sample.batch_id = 'demo-epoch-000003';
   const name = 'demo_e000001_00_20261115145912_4200.png';
   value.previews = [{name, path: 'sample/' + name}, demo]; value.previewsVersion++;
-  value.sampleLossMode = 'overall'; value.sampleBatchSortDir = 'loss-overall';
+  value.sampleLossMode = 'overall'; value.sampleBatchSortDir = 'loss-overall-asc';
   const model = value._sampleDataModel();
   for (const detail of [{tensorboard_loss: value.lossSeries}, {task_id: 'demo-task', tensorboard_loss: value.lossSeries}]) {
     value.selectedRunDir = 'output/demo'; value.runDetailData = detail;

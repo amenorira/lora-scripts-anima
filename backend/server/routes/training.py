@@ -24,7 +24,10 @@ from backend.training.datasets.dataset_repeat import DatasetRepeatError, apply_s
 from backend.training.cache.krea2_cache import get_krea2_cache_status
 from backend.training.config.krea2_options import KREA2_PROFILE_ID
 from backend.training.execution.krea2_preflight import inspect_krea2_checkpoint_format
+from backend.training.datasets.crop_preview import CropPreviewError
+from backend.training.datasets.krea2_dataset import Krea2ResolutionError
 from backend.training.datasets.step_estimator import StepEstimateError, estimate_training_steps
+from backend.training.shape_preview import ShapePreviewError
 from backend.training.cache.rebuild import delete_te_cache
 from backend.training.config.training_config import (
     TrainingConfigError,
@@ -50,46 +53,67 @@ router = APIRouter()
 async def training_prompt_tags(request: Request):
     from backend.training.datasets.prompt_tags import inspect_prompt_tags
 
-    payload, error = await _read_json_object(request)
+    payload, error = await _read_json_object(request, with_error_code=True)
     if error is not None:
         return error
     try:
         return APIResponseSuccess(data=await asyncio.to_thread(inspect_prompt_tags, payload))
+    except (StepEstimateError, Krea2ResolutionError, CropPreviewError) as exc:
+        return APIResponseFail(
+            message=str(exc),
+            data={"errorCode": exc.code, "errorParams": getattr(exc, "params", {})},
+        )
     except Exception as exc:
-        return APIResponseFail(message=str(exc) or type(exc).__name__)
+        return APIResponseFail(
+            message=str(exc) or type(exc).__name__,
+        )
 
 
 @router.post("/training/crop-preview")
 async def training_crop_preview(request: Request):
     from backend.training.datasets.crop_preview import inspect_crops
 
-    payload, error = await _read_json_object(request)
+    payload, error = await _read_json_object(request, with_error_code=True)
     if error is not None:
         return error
     try:
         return APIResponseSuccess(data=await asyncio.to_thread(inspect_crops, payload))
+    except (StepEstimateError, Krea2ResolutionError, CropPreviewError) as exc:
+        return APIResponseFail(
+            message=str(exc),
+            data={"errorCode": exc.code, "errorParams": getattr(exc, "params", {})},
+        )
     except Exception as exc:
-        return APIResponseFail(message=str(exc) or type(exc).__name__)
+        return APIResponseFail(
+            message=str(exc) or type(exc).__name__,
+        )
 
 
 @router.post("/training/shape-preview")
 async def training_shape_preview(request: Request):
     from backend.training.shape_preview import inspect_network, preview_pool
 
-    payload, error = await _read_json_object(request)
+    payload, error = await _read_json_object(request, with_error_code=True)
     if error is not None:
         return error
     try:
         result = await asyncio.get_running_loop().run_in_executor(preview_pool(), inspect_network, payload)
         return APIResponseSuccess(data=result)
+    except ShapePreviewError as exc:
+        return APIResponseFail(
+            message=str(exc),
+            data={"errorCode": exc.code, "errorParams": exc.params},
+        )
     except Exception as exc:
-        return APIResponseFail(message=str(exc) or type(exc).__name__)
+        return APIResponseFail(
+            message=str(exc) or type(exc).__name__,
+        )
 
 
 async def _read_json_object(
     request: Request,
     *,
-    with_error_code: bool = False,
+    with_error_code: bool = True,
     object_message: str = "Training configuration must be an object / 训练参数必须是对象",
 ) -> tuple[dict | None, APIResponseFail | None]:
     """解析请求体为 JSON 对象；失败时返回与原调用方一致的错误响应。"""
@@ -112,26 +136,49 @@ async def _read_json_object(
     return payload, None
 
 
+def _profile_error_response(exc: TrainingProfileError, config: dict) -> APIResponseFail:
+    profile_id = str(config.get("model_train_type") or "")
+    if "Unsupported training profile" in str(exc):
+        return APIResponseFail(
+            message=str(exc),
+            data={"errorCode": "configUnknownProfile", "errorParams": {"profile": profile_id}},
+        )
+    return APIResponseFail(
+        message=str(exc),
+        data={"errorCode": "invalidConfig", "errorParams": {}},
+    )
+
+
 @router.post("/training/export-config")
 async def export_training_config(request: Request):
     """Serialize the current form into the application-level YAML format."""
     payload, error = await _read_json_object(
-        request, object_message="Training form must be an object / 训练表单必须是对象"
+        request,
+        with_error_code=True,
+        object_message="Training form must be an object / 训练表单必须是对象",
     )
     if error:
         return error
     if not isinstance(payload.get("form"), dict):
-        return APIResponseFail(message="Training form must be an object / 训练表单必须是对象")
+        return APIResponseFail(
+            message="Training form must be an object / 训练表单必须是对象",
+            data={"errorCode": "invalidConfig", "errorParams": {}},
+        )
     form = dict(payload["form"])
     try:
         profile = resolve_training_profile(form)
+        document = build_training_config(
+            form,
+            profile_id=profile.id,
+            document_id=payload.get("document_id"),
+        )
     except TrainingProfileError as exc:
-        return APIResponseFail(message=str(exc))
-    document = build_training_config(
-        form,
-        profile_id=profile.id,
-        document_id=payload.get("document_id"),
-    )
+        return _profile_error_response(exc, form)
+    except TrainingConfigError as exc:
+        return APIResponseFail(
+            message=str(exc),
+            data={"errorCode": exc.code or "invalidConfig", "errorParams": exc.params},
+        )
     filename = f"{run_files.safe_output_name(str(form.get('output_name') or 'training'))}.yaml"
     return APIResponseSuccess(
         data={
@@ -167,23 +214,62 @@ async def parse_training_toml(req: TrainingTomlParseRequest):
                 }
             )
         except TrainingConfigError as exc:
-            return APIResponseFail(message=f"Invalid TOML / YAML 配置解析失败: TOML: {toml_error}; YAML: {exc}")
+            if exc.code:
+                return APIResponseFail(
+                    message=str(exc),
+                    data={"errorCode": exc.code, "errorParams": exc.params},
+                )
+            detail = f"TOML: {toml_error} | YAML: {exc}"
+            return APIResponseFail(
+                message=f"Invalid TOML / YAML 配置解析失败: {detail}",
+                data={"errorCode": "configParseFailed", "errorParams": {"detail": detail}},
+            )
         except ValueError as exc:
-            return APIResponseFail(message=str(exc))
+            if code := getattr(exc, "code", None):
+                return APIResponseFail(
+                    message=str(exc),
+                    data={"errorCode": code, "errorParams": getattr(exc, "params", None) or {}},
+                )
+            return APIResponseFail(
+                message=str(exc),
+                data={"errorCode": "invalidConfig", "errorParams": {}},
+            )
     if not isinstance(parsed, dict):
-        return APIResponseFail(message="Invalid training config / 训练配置结构无效")
+        return APIResponseFail(
+            message="Invalid training config / 训练配置结构无效",
+            data={"errorCode": "invalidConfig", "errorParams": {}},
+        )
     if "metadata" in parsed or "data" in parsed:
         return APIResponseFail(
             message=(
                 "Structured preset files are no longer supported; import a flat training TOML instead / "
                 "不再支持结构化预设文件，请导入扁平训练 TOML"
-            )
+            ),
+            data={"errorCode": "configStructuredPresetUnsupported", "errorParams": {}},
         )
     from backend.training.config.config_import import import_native_training_form
     try:
         parsed = import_native_training_form(parsed, profile_id=req.model_train_type or "anima-lora")
+    except TrainingConfigError as exc:
+        if exc.code:
+            return APIResponseFail(
+                message=str(exc),
+                data={"errorCode": exc.code, "errorParams": exc.params},
+            )
+        return APIResponseFail(
+            message=str(exc),
+            data={"errorCode": "invalidConfig", "errorParams": {}},
+        )
     except ValueError as exc:
-        return APIResponseFail(message=str(exc))
+        if code := getattr(exc, "code", None):
+            return APIResponseFail(
+                message=str(exc),
+                data={"errorCode": code, "errorParams": getattr(exc, "params", None) or {}},
+            )
+        return APIResponseFail(
+            message=str(exc),
+            data={"errorCode": "invalidConfig", "errorParams": {}},
+        )
     return APIResponseSuccess(data={"data": parsed})
 
 available_scripts = [
@@ -224,7 +310,7 @@ def _inspect_output_path(path: str, output_name: str, resume: bool) -> dict:
         except OSError:
             pass
     run_name = f"{run_files.safe_output_name(output_name)}_时间戳"
-    artifact_preview = base if resume else base / run_name
+    artifact_preview = base / run_name
     monitor_preview = OUTPUT_DIR.resolve() / run_name
     return {
         "base_dir": str(base),
@@ -344,7 +430,10 @@ async def krea2_model_format(request: Request):
         return error
     path = payload.get("path")
     if not isinstance(path, str) or not path.strip():
-        return APIResponseFail(message="Model path required / 请指定模型路径")
+        return APIResponseFail(
+            message="Model path required / 请指定模型路径",
+            data={"errorCode": "trainingModelPathRequired", "errorParams": {}},
+        )
     result = await asyncio.to_thread(inspect_krea2_checkpoint_format, Path(path.strip()))
     return APIResponseSuccess(data=result)
 
@@ -357,9 +446,12 @@ async def krea2_cache_status(request: Request):
     try:
         profile = resolve_training_profile(config)
     except TrainingProfileError as exc:
-        return APIResponseFail(message=str(exc))
+        return _profile_error_response(exc, config)
     if profile.id != KREA2_PROFILE_ID:
-        return APIResponseFail(message="Krea 2 profile required / 此接口仅支持 Krea 2 配置档")
+        return APIResponseFail(
+            message="Krea 2 profile required / 此接口仅支持 Krea 2 配置档",
+            data={"errorCode": "trainingKrea2ProfileRequired", "errorParams": {}},
+        )
     return APIResponseSuccess(data=await asyncio.to_thread(get_krea2_cache_status, config))
 
 
@@ -386,7 +478,10 @@ async def run_vendor_script(request: Request, background_tasks: BackgroundTasks)
     j = json.loads(paras.decode("utf-8"))
     script_name = j["script_name"]
     if script_name not in available_scripts:
-        return APIResponseFail(message=f"Unknown script / 未登记的脚本: {script_name}")
+        return APIResponseFail(
+            message=f"Unknown script / 未登记的脚本: {script_name}",
+            data={"errorCode": "invalidConfig", "errorParams": {}},
+        )
     del j["script_name"]
     result = []
     for k, v in j.items():
@@ -395,7 +490,10 @@ async def run_vendor_script(request: Request, background_tasks: BackgroundTasks)
             result.append(str(v))
     script_path = Path(os.getcwd()) / "vendor" / "sd-scripts" / script_name
     if not script_path.exists():
-        return APIResponseFail(message=f"Script not found / 脚本不存在: {script_name}")
+        return APIResponseFail(
+            message=f"Script not found / 脚本不存在: {script_name}",
+            data={"errorCode": "invalidConfig", "errorParams": {}},
+        )
     cmd_list = [launch_utils.python_bin, str(script_path)] + result
     background_tasks.add_task(launch_utils.run, cmd_list)
     return APIResponseSuccess()
@@ -408,7 +506,7 @@ async def delete_te_cache_files(request: TeCacheDeleteRequest):
     if errors:
         return APIResponseFail(
             message="Failed to delete some cache files / 部分缓存文件删除失败:\n" + "\n".join(errors),
-            data={"deleted": deleted},
+            data={"deleted": deleted, "errorCode": "trainingTeCacheDeleteFailed", "errorParams": {}},
         )
     log.info(f"[TE cache] deleted {deleted} cache file(s) / 已删除 {deleted} 个缓存文件")
     return APIResponseSuccess(data={"deleted": deleted})

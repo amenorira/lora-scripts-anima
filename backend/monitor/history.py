@@ -31,10 +31,15 @@ def invalidate_history_cache() -> None:
 
 # ── 历史记录 ──────────────────────────────────────────────
 
-def scan_history() -> list[dict]:
-    """扫描内部运行记录；旧跨盘记录会先由 autosave 幂等导入。"""
-    # Background warm-up and the first page request share one scan/migration.
+def scan_history(*, refresh: bool = False) -> list[dict]:
+    """Scan the history; startup and manual refresh also discover legacy runs."""
     with _history_scan_lock:
+        if refresh:
+            try:
+                import_legacy_external_runs()
+            except (OSError, ValueError) as exc:
+                logging.getLogger(__name__).warning("Cannot import legacy runs: %s", exc)
+            invalidate_history_cache()
         return _scan_history()
 
 
@@ -46,11 +51,6 @@ def _scan_history() -> list[dict]:
             return _history_cache[1]
         generation = _history_cache_generation
 
-    try:
-        import_legacy_external_runs()
-    except Exception:
-        # 旧记录迁移是增强功能，失败不能影响现有历史页。
-        pass
     history: list[dict] = []
     for record in iter_run_records():
         try:

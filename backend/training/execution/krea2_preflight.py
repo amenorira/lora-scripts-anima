@@ -9,6 +9,7 @@ from typing import Any
 from backend.training.core_registry import MUSUBI_TUNER_DIR
 from backend.training.cache.krea2_cache import get_krea2_cache_status
 from backend.training.config.krea2_options import OPTIONAL_OPTIMIZER_PACKAGES, is_empty
+from backend.training.datasets.krea2_dataset import dataset_groups
 from backend.training.execution.musubi_runtime import shared_runtime_status
 
 
@@ -103,7 +104,8 @@ def krea2_preflight(config: dict[str, Any], require_cache: bool = True) -> dict[
             continue
         if not is_empty(config.get(key)) and not Path(str(config[key])).is_file():
             errors.append(f"{key}: weights not found / 权重文件不存在: {config[key]}")
-    cache_status = get_krea2_cache_status(config)
+    groups = dataset_groups(config)
+    cache_status = get_krea2_cache_status(config, groups=groups)
     if not cache_status["image_count"]:
         errors.append("Dataset has no supported images with matching captions / 数据集目录没有带同名标注的可用图片，请检查图片格式和标注扩展名")
     errors.extend(cache_status["conflicts"])
@@ -112,4 +114,4 @@ def krea2_preflight(config: dict[str, Any], require_cache: bool = True) -> dict[
             "Krea 2 latent/text caches are missing or stale; prepare both caches before training / "
             "Krea 2 latent 与文本缓存缺失或已失效，请先生成缓存"
         )
-    return {"ok": not errors, "errors": errors, "cache": cache_status, "runtime": runtime}
+    return {"ok": not errors, "errors": errors, "cache": cache_status, "runtime": runtime, "dataset_groups": groups}

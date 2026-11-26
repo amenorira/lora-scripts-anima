@@ -96,7 +96,7 @@ window.trainingLrPreviewMixin = {
     if (!(raw > 0)) {
       return { raw, fraction: 0, label: '', visible: false };
     }
-    const stepsUnit = this.t('lrPreview.stepsUnit', 'steps');
+    const stepsUnit = this.t('lrPreview.stepsUnit');
     if (raw < 1) {
       return {
         raw,
@@ -119,7 +119,7 @@ window.trainingLrPreviewMixin = {
     return {
       raw,
       fraction: 0.1,
-      label: `${Math.round(raw).toLocaleString()} ${stepsUnit} (${this.t('lrPreview.estimatedWarmup', 'previewed as 10%')})`,
+      label: `${Math.round(raw).toLocaleString()} ${stepsUnit} (${this.t('lrPreview.estimatedWarmup')})`,
       visible: true,
       estimated: true,
     };
@@ -156,8 +156,8 @@ window.trainingLrPreviewMixin = {
     const loraUp = isKrea2 && selectedComponent === 'unet_plus';
     const chartUnet = selectedComponent === 'unet' || selectedComponent === 'unet_plus';
     const chartComponent = chartUnet
-      ? (isKrea2 ? components.find(option => option.value === selectedComponent)?.label : this.t('lrPreview.unetComponent', 'U-Net / DiT'))
-      : (trainTextEncoder ? this.t('lrPreview.textEncoderComponent', 'Text Encoder') : this.t('lrPreview.learningRateAxis'));
+      ? (isKrea2 ? components.find(option => option.value === selectedComponent)?.label : this.t('lrPreview.unetComponent'))
+      : (trainTextEncoder ? this.t('lrPreview.textEncoderComponent') : this.t('lrPreview.learningRateAxis'));
     const chartRateText = chartUnet
       ? (unetRateText || baseRateText)
       : (textEncoderRateText || baseRateText);
@@ -293,7 +293,7 @@ window.trainingLrPreviewMixin = {
     const warmupX = warmup.visible && warmup.fraction <= 1 ? (warmup.fraction * 100).toFixed(2) : null;
     const axisLabels = [0, 0.25, 0.5, 0.75, 1].map(progress => {
       if (totalSteps > 0) {
-        return this.t('lrPreview.stepLabel', '{count} steps')
+        return this.t('lrPreview.stepLabel')
           .replace('{count}', Math.round(progress * totalSteps).toLocaleString());
       }
       return this._lrPreviewFormatPercent(progress);
@@ -303,12 +303,12 @@ window.trainingLrPreviewMixin = {
     if (!unavailable && !isKrea2) notes.push(this.t('lrPreview.baseGroupNote'));
     if (endpointJump) notes.push(this.t('lrPreview.endpointJumpNote'));
     if (!totalSteps && !unavailable) {
-      notes.push(this.t('lrPreview.noStepNote', 'Total steps are unavailable, so the x-axis shows 0–100% training progress.'));
+      notes.push(this.t('lrPreview.noStepNote'));
       if (estimatedSteps) notes.push(this.t('lrPreview.estimatedStepsNote')
         .replace('{steps}', estimatedSteps.toLocaleString()));
       if (warmup.estimated) {
-        notes.push(this.t('lrPreview.estimatedWarmupNote', 'Warmup is set to {steps}; the curve renders it as 10% of training progress for this preview.')
-          .replace('{steps}', `${Math.round(warmup.raw).toLocaleString()} ${this.t('lrPreview.stepsUnit', 'steps')}`));
+        notes.push(this.t('lrPreview.estimatedWarmupNote')
+          .replace('{steps}', `${Math.round(warmup.raw).toLocaleString()} ${this.t('lrPreview.stepsUnit')}`));
       }
     }
 
@@ -322,11 +322,11 @@ window.trainingLrPreviewMixin = {
       components,
       rateSource: loraUp ? 'learning_rate × loraplus_lr_ratio'
         : chartUnet ? (unetRateText ? 'unet_lr' : 'learning_rate') : (textEncoderRateText ? 'text_encoder_lr' : 'learning_rate'),
-      chartLabel: `${this.t('lrPreview.learningRateAxis', 'Learning rate')} · ${chartComponent}`,
+      chartLabel: `${this.t('lrPreview.learningRateAxis')} · ${chartComponent}`,
       totalSteps,
       totalStepsText: totalSteps > 0 ? Number(totalSteps).toLocaleString() : '',
       warmupVisible: !unavailable,
-      warmupLabel: warmup.label || `0 ${this.t('lrPreview.stepsUnit', 'steps')}`,
+      warmupLabel: warmup.label || `0 ${this.t('lrPreview.stepsUnit')}`,
       warmupX,
       warmupEstimated: !!warmup.estimated,
       warning: !!unavailable || warmup.estimated || !totalSteps,
@@ -351,10 +351,7 @@ window.trainingLrPreviewMixin = {
       currentAreaPath: curvePaths.areaPath,
       baselineLinePath: `M 0,${baselineY} L 100,${baselineY}`,
       axisLabels,
-      chartAlt: this.t(
-        'lrPreview.chartAlt',
-        'Learning-rate curve for the current configuration'
-      ),
+      chartAlt: this.t('lrPreview.chartAlt'),
     };
   },
 
@@ -363,9 +360,9 @@ window.trainingLrPreviewMixin = {
     const esc = value => String(value == null ? '' : value)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-    const t = (key, fallback) => {
+    const t = key => {
       const translated = typeof this.t === 'function' ? this.t(key) : '';
-      return esc(translated || fallback);
+      return esc(translated || key);
     };
     const yTicks = (data.yTicks || []).map(tick =>
       `<span class="lr-ytick-label" style="bottom:${(100 - parseFloat(tick.y)).toFixed(1)}%">${esc(tick.label)}</span>`
@@ -376,8 +373,8 @@ window.trainingLrPreviewMixin = {
     const baselineCurve = data.baselineLinePath
       ? `<path class="lr-curve-baseline" d="${esc(data.baselineLinePath)}"></path>` : '';
     const warmupEndLabel = data.warmupEstimated
-      ? t('lrPreview.estimatedWarmupEnd', 'Warmup end (10% preview)')
-      : t('lrPreview.warmupEnd', 'Warmup end');
+      ? t('lrPreview.estimatedWarmupEnd')
+      : t('lrPreview.warmupEnd');
     const warmupLine = data.warmupVisible && data.warmupX !== null
       ? `<div class="lr-warmup-region" data-preview-target="warmup" data-preview-anchor="region" aria-hidden="true" style="width:${Math.max(0, Math.min(100, Number(data.warmupX) || 0))}%"></div><div class="lr-warmup-line" style="left:${esc(data.warmupX)}%"><span class="lr-warmup-tag">${warmupEndLabel}</span></div>`
       : '';
@@ -385,9 +382,9 @@ window.trainingLrPreviewMixin = {
     return `
       <div class="lr-inspect-bar">
         <div class="lr-inspect-value">
-          <span><small>${t('lrPreview.position', 'Step / progress')}</small><b class="lr-hover-x" data-chart-value>—</b></span>
-          <span title="${esc(data.chartLabel)}"><small>${t('lrPreview.learningRateAxis', 'Learning rate')}</small><b class="lr-hover-value" data-chart-value>—</b></span>
-          <span><small>${t('lrPreview.multiplier', 'Multiplier')}</small><b class="lr-hover-multiplier" data-chart-value>—</b></span>
+          <span><small>${t('lrPreview.position')}</small><b class="lr-hover-x" data-chart-value>—</b></span>
+          <span title="${esc(data.chartLabel)}"><small>${t('lrPreview.learningRateAxis')}</small><b class="lr-hover-value" data-chart-value>—</b></span>
+          <span><small>${t('lrPreview.multiplier')}</small><b class="lr-hover-multiplier" data-chart-value>—</b></span>
         </div>
       </div>
     <div class="lr-chart-box">
@@ -416,8 +413,8 @@ window.trainingLrPreviewMixin = {
       <span class="axis-right">${esc(axisLabels[4])}</span>
     </div>
     <div class="lr-preview-legend">
-      <span><i class="legend-current"></i><span>${t('lrPreview.currentCurve', 'Current curve')}</span></span>
-      <span><i class="legend-baseline"></i><span>${t('lrPreview.baseReference', 'Base ×1.0')}</span></span>
+      <span><i class="legend-current"></i><span>${t('lrPreview.currentCurve')}</span></span>
+      <span><i class="legend-baseline"></i><span>${t('lrPreview.baseReference')}</span></span>
     </div>`;
   },
 

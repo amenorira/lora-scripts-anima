@@ -1,6 +1,6 @@
 # タイムステップ
 
-学習では、画像ごとにノイズのタイムステップを選び、その値に応じて画像の潜在表現とノイズを混ぜます。高いタイムステップはノイズを多く含み、低いタイムステップは元画像の情報を多く残します。
+学習では、画像ごとにノイズのタイムステップを選び、その値に応じて画像の latent とノイズを混ぜます。高いタイムステップはノイズを多く含み、低いタイムステップは元画像の情報を多く残します。
 
 Anima、MOSS-Image、Krea 2 はフローマッチングを使い、正規化したタイムステップが混合係数を決めます。
 
@@ -49,7 +49,7 @@ MOSS-Image の新規設定は、0.95 での打ち切りと 1% の一様サンプ
 | 学習タイムステップ | 現在の画像に加えるノイズ量 | `timestep_sampling` |
 | 生成ステップ数 | サンプラーのノイズ除去ステップ数。1 ステップのモデル計算回数はサンプラーで異なる | `sample_steps` |
 
-「学習ステップ 500」は、オプティマイザによる更新が 500 回行われたことを表します。本文の式は正規化した `t∈[0,1]` を使い、画面はおよそ `T=1000t` で表示します。`T≈500` は画像とノイズの混合係数がそれぞれ約半分です。1 回の更新でも、画像ごとにタイムステップが選ばれます。
+「学習ステップ 500」は、オプティマイザによる更新が 500 回行われたことを表します。このガイドの式は正規化した `t∈[0,1]` を使い、画面はおよそ `T=1000t` で表示します。`T≈500` は画像とノイズの混合係数がそれぞれ約半分です。1 回の更新でも、画像ごとにタイムステップが選ばれます。
 
 <!-- doc-anchor: visualizer -->
 ## 分布プレビュー
@@ -139,7 +139,7 @@ sigmoid 分布に `discrete_flow_shift` を適用し、低ノイズ側または�
 
 ### `logsnr`
 
-`logit_mean` の既定値は `0` です。大きくすると低ノイズ、小さくすると高ノイズが増えます。`logit_std` の既定値は `1` です。大きくすると分布が広がり、小さくすると集中します。`sigma + logit_normal` と名前は共通ですが、変換式が異なるため、値をそのまま流用できません。
+`logit_mean` の既定値は `0` です。大きくすると低ノイズ、小さくすると高ノイズが増えます。`logit_std` の既定値は `1` です。大きくすると分布が広がり、小さくすると集中します。`sigma + logit_normal` では同じ名前のパラメータを別の式で変換します。方式を切り替えたら、分布プレビューを見ながら値を選び直してください。
 
 SNR は信号とノイズの強度比で、LogSNR はその対数です。LogSNR が高いほど画像の信号が強く、ノイズが少なくなります。
 
@@ -180,7 +180,7 @@ Krea 2 の `logsnr` は、`logit_mean` と `logit_std` で定義した分布か�
 
 <div class="doc-equation" role="group" aria-label="discrete flow shift の式">
   <div class="doc-equation-kicker">固定フローシフト</div>
-  <div class="doc-equation-expression"><var>t</var><sub>shifted</sub> = <span class="doc-frac"><span><var>s</var> · <var>t</var></span><span>1 + (<var>s</var> − 1) · <var>t</var></span></span></div>
+  <div class="doc-equation-expression"><var>t</var><sub>shifted</sub> = (<var>s</var> · <var>t</var>) / (1 + (<var>s</var> − 1) · <var>t</var>)</div>
   <p><var>s</var> は <code>discrete_flow_shift</code> です。</p>
 </div>
 
@@ -203,7 +203,7 @@ Krea 2 の `logsnr` は、`logit_mean` と `logit_std` で定義した分布か�
 {"10_group_a": -0.25, "3_group_b": 0.20}
 ```
 
-0 以外のサブセットオフセットがある場合、学習開始時に別の `dataset.toml` を生成します。実行用のメイン TOML には直接書き込みませんが、アプリから書き出す YAML と実行ごとの `training.yaml` には保存します。
+0 以外のサブセットオフセットは、学習開始時に別の `dataset.toml` に書き込みます。アプリから書き出す YAML と実行ごとの `training.yaml` にも保存されます。以下は `dataset.toml` の例です。
 
 ```toml
 [[datasets.subsets]]
@@ -267,13 +267,13 @@ Anima/MOSS で使用できます。`logit_mean` と `logit_std` の logit-normal
 
 <div class="doc-equation" role="group" aria-label="sigma sqrt による損失重み付けの式">
   <div class="doc-equation-kicker">低ノイズを重視</div>
-  <div class="doc-equation-expression"><var>w</var> = <span class="doc-frac"><span>1</span><span><var>σ</var><sup>2</sup></span></span></div>
+  <div class="doc-equation-expression"><var>w</var> = 1 / <var>σ</var><sup>2</sup></div>
   <p><var>σ</var> が 0 に近づくと、重みが急増します。</p>
 </div>
 
 <div class="doc-equation" role="group" aria-label="cosmap による損失重み付けの式">
   <div class="doc-equation-kicker">中ノイズを重視</div>
-  <div class="doc-equation-expression"><var>w</var> = <span class="doc-frac"><span>2</span><span><var>π</var> · (1 − 2 · <var>σ</var> + 2 · <var>σ</var><sup>2</sup><span class="doc-math-close">)</span></span></span></div>
+  <div class="doc-equation-expression"><var>w</var> = 2 / (<var>π</var> · (1 − 2 · <var>σ</var> + 2 · <var>σ</var><sup>2</sup>))</div>
   <p>中ノイズの重みは両端より高くなります。この曲線はサンプリング頻度を変えません。</p>
 </div>
 
@@ -364,7 +364,7 @@ Min-SNR と不偏推定による損失（debiased estimation loss）は、サン
 <!-- doc-anchor: flow-matching -->
 ## タイムステップの仕組み
 
-学習前に、VAE が画像を潜在表現へ変換します。モデルが扱うのはこの表現です。画像の潜在表現を <var>x</var>、ランダムノイズを <var>ε</var>、正規化したタイムステップを <var>t</var> とすると、ノイズを加えた入力は次のようになります。
+学習前に、VAE が画像を latent に変換します。モデルが扱うのはこの表現です。画像の latent を <var>x</var>、ランダムノイズを <var>ε</var>、正規化したタイムステップを <var>t</var> とすると、ノイズを加えた入力は次のようになります。
 
 <div class="doc-equation" role="group" aria-label="フローマッチングのノイズ付き入力の式">
   <div class="doc-equation-kicker">ノイズを加えた入力</div>

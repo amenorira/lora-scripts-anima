@@ -25,7 +25,7 @@ AdaLN は現在のノイズレベルに応じて特徴のスケール・オフ�
 <!-- doc-anchor: default-behavior -->
 ## 上流実装の既定動作
 
-Anima の標準ネットワークは、既定で `.*(_modulation|_norm|_embedder|final_layer).*` に一致する変調・正規化・埋め込み・出力層を除外します（`networks/lora_anima.py`。標準の LoHa / LoKr も `network_base.py` 経由で同じ設定を使います）。
+Anima の標準ネットワークは、既定で `.*(_modulation|_norm|_embedder|final_layer).*` に一致する変調・正規化・埋め込み・出力層（`final_layer`）を除外します（`networks/lora_anima.py`。標準の LoHa / LoKr も `network_base.py` 経由で同じ設定を使います）。
 
 スイッチをオンにすると、次の指定を `network_args` に追加します。
 
@@ -33,9 +33,9 @@ Anima の標準ネットワークは、既定で `.*(_modulation|_norm|_embedder
 include_patterns=['.*(adaln_modulation_cross_attn|adaln_modulation_mlp|adaln_modulation_self_attn).*']
 ```
 
-この 3 つの変調分岐だけを除外の例外にします。追加引数に既存の `include_patterns` がある場合は 1 つの項目に統合します。正規化層・埋め込み層・最終層は引き続き除外します。
+この 3 つの変調分岐だけを除外の例外にします。追加引数に既存の `include_patterns` がある場合は 1 つの項目に統合します。正規化層・埋め込み層・出力層（`final_layer`）は引き続き除外します。
 
-追加されるパラメータ数と推定ファイルサイズは、選択したアルゴリズム・ランク・学習範囲に応じて構造プレビューで確認できます。
+追加されるパラメータ数と推定ファイルサイズは、選択したアルゴリズム・Rank・学習範囲に応じて構造プレビューで確認できます。
 
 <!-- doc-anchor: settings -->
 ## 他の設定との関係

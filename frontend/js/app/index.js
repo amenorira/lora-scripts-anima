@@ -81,22 +81,18 @@ document.addEventListener('alpine:init', () => {
     get backendStatusLabel() {
       if (this.realtimeState === 'offline') return this.t('common.backendDisconnected');
       if (this.realtimeState === 'degraded' || this.realtimeState === 'connecting') return this.t('common.backendDelayed');
-      if (this.trainingActive) return this.t('common.trainingInProgress');
+      if (this.trainingActive) return this.t(this.controlState?.state === 'paused' ? 'control.paused' : 'common.trainingInProgress');
       if (this.regularizationActive) return this.t('common.regularizationInProgress');
       return this.t('common.backendConnected');
     },
     // 本地系统文件选择器是否可用（无图形环境的 Linux 服务器上不可用，对应按钮直接隐藏）
     localPickerAvailable: true,
+    trainFieldsLoadFailed: false,
 
       // ── Init ───────────────────────────────────────────────
-    async init() {
+    init() {
       // bootstrap.js waits for translations before Alpine initializes the DOM.
       this.locale = I18N.getLocale();
-      // Keep <html lang> in sync with the active locale from the very first
-      // paint (index.html defaults to lang="en"): screen readers and browser
-      // translation/checking features rely on it.
-      document.documentElement.lang = this.locale;
-
       // Language controls are usable while backend initialization is awaiting.
       // Subscribe now, but leave workspace mounting to the initial route build.
       let routeMounted = false;
@@ -106,7 +102,6 @@ document.addEventListener('alpine:init', () => {
         this.localeRevision++;
         // A successful retry can load the same language after startup failed.
         if (previousLocale === this.locale) this._trainFormLocale = '';
-        document.documentElement.lang = this.locale;
         const r = this.currentRoute;
         const cfg = ROUTE_CONFIG[r] || {};
         if (cfg.titleKey) this.pageTitle = this.t(cfg.titleKey) || cfg.title || r;
@@ -133,23 +128,14 @@ document.addEventListener('alpine:init', () => {
       this.pageTitle = cfg.titleKey ? (this.t(cfg.titleKey) || cfg.title || route) : (cfg.title || route);
       document.title = this.pageTitle + ' | lora-scripts-anima';
 
-      try {
-        const r = await fetch('/api/version');
-        if (r.ok) {
-          const d = await r.json();
-          if (d.status === 'success' && d.data && d.data.version) this.version = d.data.version;
-          else this.version = 'dev';
-        } else {
-          this.version = 'dev';
-        }
-      } catch (e) { this.version = 'dev'; }
-
-      // 本地选择器可用性：请求失败保持默认 true（本地场景），只在后端明确返回 false 时隐藏按钮
-      try {
-        const pr = await fetch('/api/file_picker_available');
-        const pd = await pr.json();
-        if (pd.status === 'success' && pd.data) this.localPickerAvailable = !!pd.data.available;
-      } catch (e) { /* 保持默认 */ }
+      void fetch('/api/version').then(async response => {
+        const body = await response.json();
+        this.version = response.ok && body.status === 'success' && body.data?.version || 'dev';
+      }).catch(() => { this.version = 'dev'; });
+      void fetch('/api/file_picker_available').then(async response => {
+        const body = await response.json();
+        if (body.status === 'success') this.localPickerAvailable = !!body.data.available;
+      }).catch(() => {});
 
       this.theme = localStorage.getItem('anima-theme') || 'auto';
       this.resolveTheme();
@@ -184,10 +170,10 @@ document.addEventListener('alpine:init', () => {
         if (this.theme === 'auto') this.resolveTheme();
       });
 
+      this.startRealtime();
+
       this.buildRouteContent();
       routeMounted = true;
-
-      this.startRealtime();
 
       this._initPanelResizer();
 
@@ -374,12 +360,18 @@ document.addEventListener('alpine:init', () => {
 
     _scheduleRoute(route) {
       const prev = this.currentRoute;
-      this.cancelHistoryInteractions?.();
+      this.cancelHistoryInteractions();
       const transitionSeq = ++this._routeTransitionSeq;
       this._pendingRoute = route;
       if (!this.routeTransitioning) {
         this.routeTransitioning = true;
         this.startProgress();
+      }
+      // A tag editor leave must commit in the same turn as its unsaved check.
+      if (prev === 'tagEditor') {
+        this._pendingRoute = '';
+        this._commitRoute(route, prev, transitionSeq);
+        return;
       }
       // The training form mounts hundreds of controls. Leave a short paint
       // window so the progress bar becomes visible before that work starts.
@@ -403,15 +395,10 @@ document.addEventListener('alpine:init', () => {
         this.closeCaptionDetail?.();
       }
       // Cleanup tag editor resources when leaving
-      if (prev === 'tagEditor' && typeof this.tagEditorCleanup === 'function') {
-        this.tagEditorCleanup();
-      }
-      if (prev === 'docs' && route !== 'docs' && typeof this.cleanupDocsReader === 'function') {
-        this.cleanupDocsReader();
-      }
+      if (prev === 'tagEditor') this.tagEditorCleanup();
+      if (prev === 'docs' && route !== 'docs') this.cleanupDocsReader();
       if (prev && prev.startsWith('train-') && !route.startsWith('train-')) {
-        if (typeof this.suspendTrainForm === 'function') this.suspendTrainForm(prev);
-        else if (typeof this.stopSectionScroll === 'function') this.stopSectionScroll();
+        this.suspendTrainForm(prev);
       }
       if (mainContent) this._playRouteEnter(mainContent);
       this.currentRoute = route;
@@ -437,7 +424,7 @@ document.addEventListener('alpine:init', () => {
     // 在新页挂载前启用短淡入，避免先显示一帧再重启动画。
     _playRouteEnter(mainContent) {
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-      mainContent.classList.remove('route-enter', 'scroll-entering');
+      mainContent.classList.remove('route-enter');
       void mainContent.offsetWidth; // 强制 reflow，让连续切换能重启动画
       mainContent.classList.add('route-enter');
       clearTimeout(this._routeEnterTimer);
@@ -445,8 +432,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     showRightPanel() {
-      const r = this.currentRoute;
-      return !!(r && r.startsWith('train-'));
+      return this.currentRoute === this._trainFormMountedRoute;
     },
 
     // Most routes translate through Alpine's t() bindings. Refresh only
@@ -471,25 +457,33 @@ document.addEventListener('alpine:init', () => {
     },
 
     // ── Route Content Builder ───────────────────────────────
+    async loadTrainForm() {
+      const route = this.currentRoute;
+      this.trainFieldsLoadFailed = false;
+      try {
+        await window.loadTrainingFields();
+      } catch (_) {
+        if (this.currentRoute === route) this.trainFieldsLoadFailed = true;
+        return;
+      }
+      if (this.currentRoute === route && this._trainFormMountedRoute !== route) this.buildTrainForm();
+    },
+
     buildRouteContent(options) {
       const r = this.currentRoute;
       const routeTransition = !!(options && options.routeTransition);
       let progressManagedByRoute = false;
-      if (r !== 'history') this.stopHistoryRefresh?.();
+      if (r !== 'history') this.stopHistoryRefresh();
       if (!r.startsWith('monitor-')) {
         this.stopMonitorRealtime();
-        if ((this.selectedRunDir || this.runDetailData) && typeof this.resetRunDetailState === 'function') {
-          this.resetRunDetailState();
-        } else {
-          this.selectedRunDir = null;
-          this.runDetailData = null;
-        }
+        if (this.selectedRunDir || this.runDetailData) this.resetRunDetailState();
       }
       // Stop rendering a tagger task when leaving; the backend task continues.
-      if (!['tagger', 'ai-captioning'].includes(r) && typeof this.stopTaggerWorkspace === 'function') this.stopTaggerWorkspace();
-      if (r !== 'regularization' && typeof this.stopRegularizationWorkspace === 'function') this.stopRegularizationWorkspace();
+      if (!['tagger', 'ai-captioning'].includes(r)) this.stopTaggerWorkspace();
+      if (r !== 'regularization') this.stopRegularizationWorkspace();
       if (r && r.startsWith('train-')) {
-        this.buildTrainForm();
+        if (this._trainFormMountedRoute === r) this.buildTrainForm();
+        else void this.loadTrainForm();
       } else if (['tagger', 'ai-captioning'].includes(r)) {
         this.buildTaggerForm();
       } else if (r === 'regularization') {
@@ -506,6 +500,11 @@ document.addEventListener('alpine:init', () => {
         if (runDir) this.viewRunDetail(runDir, true, query.get('tab') || 'overview');
         else if (this.selectedRunDir) this.resetRunDetailState();
         this.startMonitorRealtime();
+        if (!window.TRAIN_SECTIONS) {
+          void window.loadTrainingFields().then(() => {
+            if (this.currentRoute === r) this.scheduleRender();
+          }, () => {});
+        }
         progressManagedByRoute = true;
         // The dashboard hydrates from the shared realtime snapshot.
       } else if (r === 'history') {
@@ -608,7 +607,7 @@ document.addEventListener('alpine:init', () => {
 
     // ── Toast ──────────────────────────────────────────────
     toast(message, type, options = {}) {
-      return window.AnimaUI.notify(message, type, options, (key, fallback) => this.t(key, fallback));
+      return window.AnimaUI.notify(message, type, options, key => this.t(key));
     },
 
     // ── Backend disconnect duration (realtime.js owns connectivity) ─
@@ -639,7 +638,7 @@ document.addEventListener('alpine:init', () => {
 
     // Home hero "Release" badge: use the real version from /api/version
     // (e.g. "v26.1017.13c72-4-g3dc39b4f" → "v26.1017.13c72").
-    // Keep loading/unknown states explicit instead of showing an old release.
+    // Show an explicit loading or unknown state until a version is available.
     displayVersion() {
       const v = String(this.version || '');
       if (!v || v === '...') return '...';
@@ -650,7 +649,7 @@ document.addEventListener('alpine:init', () => {
 
     // ── Right Panel Resizer ─────────────────────────────────
     // 鼠标拖拽调整右侧面板宽度并持久化到 localStorage。
-    // 宽度通过 CSS 变量 --panel-w 应用（而非 element inline width），这样：
+    // 通过 CSS 变量 --panel-w 应用宽度：
     //   1. 首帧渲染前由 index.html 的 blocking 脚本设好，无刷新闪现；
     //   2. 桌面窄窗口仍保留主表单的最小可用宽度。
     _PANEL_MIN_W: 300,
@@ -742,6 +741,7 @@ document.addEventListener('alpine:init', () => {
     docs: window.docsMixin, trainingCore: window.trainingCoreMixin,
     datasetRepeat: window.datasetRepeatMixin, trainingLrPreview: window.trainingLrPreviewMixin,
     trainingShapePreview: window.trainingShapePreviewMixin, trainingToml: window.trainingTomlMixin,
+    trainingControl: window.trainingControlMixin,
     trainingCropPreview: window.trainingCropPreviewMixin,
     trainingPromptWorkbench: window.trainingPromptWorkbenchMixin,
     trainingPromptTagTools: window.trainingPromptTagToolsMixin,

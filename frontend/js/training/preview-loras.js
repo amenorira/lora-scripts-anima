@@ -34,8 +34,7 @@ window.trainingPreviewLoras = {
       : this.builtinFilePicker('preview_loras', 'file-model', target);
   },
   previewLorasHtml() {
-    const local = this.localPickerAvailable
-      ? `<button type="button" class="btn-icon" @click="pickPreviewLora(index, true)" :title="t('common.localPicker')" :aria-label="t('common.browseLocal')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>` : '';
+    const local = `<button type="button" class="btn-icon" x-show="localPickerAvailable" @click="pickPreviewLora(index, true)" :title="t('common.localPicker')" :aria-label="t('common.browseLocal')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>`;
     return `<div class="preview-loras">
       <template x-for="(row, index) in (form.preview_loras || [])" :key="index">
         <div class="preview-lora-row">

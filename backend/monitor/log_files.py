@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 
 from backend.constants import OUTPUT_DIR
-from backend.monitor.log_parser import clean_bytes, record_frames
+from backend.monitor.log_parser import clean_bytes
 from backend.monitor.log_index import indexed_slice
 
 
@@ -14,19 +14,6 @@ from backend.monitor.log_index import indexed_slice
 
 # 日志 tail 读取的最大字节数（实时快照读取用，约 20000+ 行）
 _LOG_TAIL_BYTES = 2 * 1024 * 1024  # 2 MiB
-
-def _normalized_log_lines(log_path: Path):
-    """Yield every cleaned frame, including repeated renderings of one step."""
-    with open(log_path, "rb") as handle:
-        for raw_line in handle:
-            for _, line in record_frames(raw_line):
-                yield line
-
-
-def read_clean_log_lines(path: Path) -> list[str]:
-    """Read the same normalized rows used by full-log pagination."""
-    return list(_normalized_log_lines(path))
-
 
 def _tail_file(path: Path, max_bytes: int = _LOG_TAIL_BYTES) -> list[str]:
     """高效读取文件尾部内容（不加载整个文件到内存），并清理终端控制字符"""
@@ -118,7 +105,7 @@ def find_run_log_path(run_dir_path: Path) -> Path | None:
 
 
 def read_log_slice(log_path: Path, offset: int = 0, limit: int = 1000,
-                   query: str = "", tail: bool = False) -> dict:
+                   query: str = "", tail: bool = False, *, tail_cursor: tuple[int, int] | None = None) -> dict:
     """读取日志文件的指定行区间（分页）+ 可选全文件搜索。
 
     磁盘文件是完整日志的真相源：使用换行字节偏移索引定位页面，仅读取当前页
@@ -137,6 +124,6 @@ def read_log_slice(log_path: Path, offset: int = 0, limit: int = 1000,
     try:
         if not log_path or not log_path.exists() or log_path.stat().st_size == 0:
             return empty
-        return indexed_slice(log_path, offset, limit, query, tail)
+        return indexed_slice(log_path, offset, limit, query, tail, tail_cursor=tail_cursor)
     except FileNotFoundError:
         return empty

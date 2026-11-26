@@ -5,10 +5,11 @@ window.regularizationMixin = {
   regTab: 'settings', regPlan: null, regSources: [], regEdits: {}, regPlanDirty: false, regPreviewDirty: false, regPlanConsumed: false,
   regBusy: false, regError: '', regNewRound: false, regTask: null, regRunKey: '', regRuns: [],
   regularizationActive: false, _regActivityBoundaryAt: 0,
-  _regTaskRequest: 0, _regTaskNeedsSync: false,
-  regItems: [], regItemsTotal: 0, regFilter: 'all', regLogs: [], regLogsOpen: false, _regLogRequest: 0,
+  _regTaskRequest: 0, _regTaskNeedsSync: false, _regRunsPending: null,
+  regItems: [], regItemsTotal: 0, regFilter: 'all', regLogs: [], regLogsOpen: false, _regLogPending: null,
   regGalleryLoading: '', regMoreError: '', _regMoreRequest: 0, _regResultRefresh: 0,
-  regSelected: null, regTrainRoute: 'train-basic', regPendingTrainingPath: '', _regTopic: null, _regTimer: null, _regLoaded: false, _regRefreshing: false,
+  regSelected: null, regSourceHelpOpen: false, regTrainRoute: 'train-basic', regPendingTrainingPath: '', _regTopic: null, _regTimer: null, _regLoaded: false, _regRefreshing: false,
+  regWorkspaceLoading: false, regWorkspaceError: '', _regBuildVersion: 0, _regRestoringVersion: 0, _regInitPromise: null,
   get regRunning() { return ['created', 'running', 'stopping'].includes(this.regTask?.status); },
   get regTaskMatchesPlan() { return this.regRunning || !!this.regPlan && this.regTask?.output_path === this.regPlan.output_path; },
   get regProgress() {
@@ -22,10 +23,10 @@ window.regularizationMixin = {
     if (requestedAt < this._regActivityBoundaryAt) return;
     this.regularizationActive = !!snapshot?.server?.regularization_active;
   },
-  regAcceptStart(task) {
+  regAcceptStart(task, refreshResults = true) {
     this.regularizationActive = true;
     this._regActivityBoundaryAt = Date.now();
-    this.regApplyTask({ ...task, status: 'created', phase: 'loading' });
+    this.regApplyTask({ ...task, status: 'created', phase: 'loading' }, refreshResults);
   },
   get regGalleryCount() { return this.regTab === 'plan' ? this.regSources.length : this.regItems.length; },
   get regGalleryTotal() { return this.regTab === 'plan' ? this.regPlan?.source_count || 0 : this.regItemsTotal; },
@@ -79,7 +80,7 @@ window.regularizationMixin = {
           if (version !== detailVersion || !this.detail) return;
           const popup = this.$refs.sourceDetail;
           if (!popup) return;
-          const body = popup.querySelector('.te-dict-hover-body');
+          const body = popup.querySelector('.tool-popover-body');
           const maxWidth = Math.max(1, window.innerWidth - 24);
           const maxHeight = Math.max(1, window.innerHeight - 24);
           // Widen long captions until they fit vertically, using the viewport as the limit.
@@ -113,7 +114,7 @@ window.regularizationMixin = {
     return this.regT('usableSources').replace('{valid}', this.regPlan.valid_sources).replace('{total}', this.regPlan.source_count);
   },
   regReasonText(item) {
-    if (!item?.reason_code || typeof this.localizeApiError !== 'function') return item?.reason || '';
+    if (!item?.reason_code) return item?.reason || '';
     return this.localizeApiError({error_code: item.reason_code, message: item.reason || ''});
   },
   regPromptSizing() {
@@ -147,8 +148,8 @@ window.regularizationMixin = {
       throw new Error(this.regT('changed'));
     }
     if (result.status !== 'success') {
-      const error = new Error(this.localizeApiError?.(result) || result.message || this.t('common.requestFailed'));
-      error.details = this.apiErrorDetails?.(result) || '';
+      const error = new Error(this.localizeApiError(result));
+      error.details = this.apiErrorDetails(result);
       throw error;
     }
     return result.data;
@@ -182,38 +183,57 @@ window.regularizationMixin = {
     }
   },
   async buildRegularizationForm() {
-    if (!this._regLoaded) {
-      try {
-        this.regMetadata = await this.regRequest('/metadata');
-      } catch (error) { this.regReportError(error.message); return; }
-      this.regInitSettings();
-      this._regLoaded = true;
+    const version = ++this._regBuildVersion;
+    const isCurrent = () => this.currentRoute === 'regularization' && version === this._regBuildVersion;
+    this.regWorkspaceLoading = true;
+    this.regWorkspaceError = '';
+    try {
+      if (!this._regLoaded) {
+        if (!this._regInitPromise) this._regInitPromise = (async () => {
+          this.regMetadata = await this.regRequest('/metadata');
+          this.regInitSettings();
+          this._regLoaded = true;
+        })().finally(() => { this._regInitPromise = null; });
+        await this._regInitPromise;
+      }
+      if (!isCurrent()) return;
+      const host = document.getElementById('regularizationWorkspaceHost');
+      if (host.dataset.mounted !== '1') {
+        await window.mountWorkspaceTemplate(host, '/anima-ui/templates/regularization-workspace.html', this.t('common.requestFailed'));
+      }
+    } catch (error) {
+      if (isCurrent()) this.regWorkspaceError = error.message;
+      return;
+    } finally {
+      if (isCurrent()) this.regWorkspaceLoading = false;
     }
-    const host = document.getElementById('regularizationWorkspaceHost');
-    if (host && !host.dataset.mounted) {
-      const response = await fetch('/anima-ui/templates/regularization-workspace.html');
-      host.innerHTML = await response.text(); host.dataset.mounted = '1';
-      Alpine.initTree(host);
-    }
+    if (!isCurrent()) return;
     this.regRenderControls();
     if (this.currentRoute !== 'regularization') return;
     this.realtimeSubscribe('hardware'); this.renderRegularizationResourceBar();
-    await this.regRefreshRuns();
-    const active = this.regRuns.find(run => ['created', 'running', 'stopping'].includes(run.status));
-    const stored = localStorage.getItem('anima-reg-run');
-    const restored = active || this.regRuns.find(run => run.run_key === stored);
-    if (stored && !restored) localStorage.removeItem('anima-reg-run');
-    if (restored) {
-      this.regRunKey = restored.run_key; this.regApplyTask(restored);
-      localStorage.setItem('anima-reg-run', restored.run_key);
-      if (this.regRunning) {
-        const page = await this.regRequest('/runs/' + encodeURIComponent(this.regRunKey) + '/items?limit=1');
-        Object.assign(this.regSettings, this.regDefaults, page.settings, { seed: String(page.settings.seed) });
-        this.regRenderControls(true);
+    this._regRestoringVersion = version;
+    try {
+      if (await this.regRefreshRuns() === false || !isCurrent()) return;
+      const active = this.regRuns.find(run => ['created', 'running', 'stopping'].includes(run.status));
+      const stored = localStorage.getItem('anima-reg-run');
+      const restored = active || this.regRuns.find(run => run.run_key === stored);
+      if (stored && !restored) localStorage.removeItem('anima-reg-run');
+      if (restored) {
+        this.regRunKey = restored.run_key; this.regApplyTask(restored, false);
+        localStorage.setItem('anima-reg-run', restored.run_key);
+        if (this.regRunning) {
+          const page = await this.regRequest('/runs/' + encodeURIComponent(restored.run_key) + '/items?limit=1');
+          if (!isCurrent() || this.regRunKey !== restored.run_key || this.regTask?.task_id !== restored.task_id) return;
+          Object.assign(this.regSettings, this.regDefaults, page.settings, { seed: String(page.settings.seed) });
+          this.regRenderControls(true);
+        }
+        if (this._regRestoringVersion === version) this._regRestoringVersion = 0;
+        if (this.regTab === 'inspect') await this.regLoadResults();
+        else if (this.regTab === 'settings') await this.regLoadLogs();
       }
-      if (this.regTab === 'inspect') await this.regLoadResults();
-      await this.regLoadLogs();
-    }
+    } catch (error) { if (isCurrent()) this.regReportError(error.message, error.details); return; }
+    finally { if (this._regRestoringVersion === version) this._regRestoringVersion = 0; }
+    if (!isCurrent()) return;
     this.regSyncTimer();
     if ((!this.regPlan || this.regPreviewDirty) && !this.regRunning) this.regScheduleScan();
   },
@@ -223,7 +243,14 @@ window.regularizationMixin = {
     } else if (this._regTimer) { clearInterval(this._regTimer); this._regTimer = null; }
   },
   stopRegularizationWorkspace() {
+    this.regSourceHelpOpen = false;
+    this.regSelected = null;
+    ++this._regBuildVersion;
+    this._regRestoringVersion = 0;
     ++this._regTaskRequest;
+    this._regRunsPending = this._regLogPending = null;
+    ++this._regResultRequest;
+    this._regResultRefresh = 0;
     this._regRefreshing = false;
     this._regScanVersion++;
     clearTimeout(this._regScanTimer); this._regScanTimer = null;
@@ -257,7 +284,9 @@ window.regularizationMixin = {
     if (this.regRunning || this.regBusy) return;
     if (typeof this.regDefaults[key] === 'number') value = value === '' ? '' : Number(value);
     const field = this._regFields[key];
-    if (value !== '' && field?.type === 'number' && Number.isFinite(value)) value = Math.max(field.min, Math.min(field.max, value));
+    if (field?.type === 'number' && Number.isFinite(value)) {
+      value = Math.max(field.min ?? -Infinity, Math.min(field.max ?? Infinity, value));
+    }
     if (Object.is(this.regSettings[key], value)) return;
     const previousSampler = this.regSettings.sampler;
     this._regUndo[key] = this.regSettings[key];
@@ -305,7 +334,7 @@ window.regularizationMixin = {
   regToggleSection(key, header) {
     const collapsed = !this.regSectionCollapsed[key];
     this.regSectionCollapsed[key] = collapsed;
-    this._animateCollapse(header.nextElementSibling, collapsed);
+    this._animateCollapse(header.nextElementSibling, collapsed, { fade: false });
   },
   regRenderControls(force = false) {
     const host = document.getElementById('regTrainingControls');
@@ -320,46 +349,61 @@ window.regularizationMixin = {
       formDefaults: { value: this.regDefaults },
       _getEnvHint: { value: () => '' }, _getOutputPathHint: { value: () => '' },
     });
-    const helpFields = new Set(['source_dir', 'ignore_first', 'exclude_tags', 'caption_candidate', 'sampler', 'scheduler', 'steps', 'cfg', 'seed', 'per_image', 'expand_repeats', 'size_mode', 'flow_shift', 'precision', 'blocks_to_swap', 'text_encoder_cpu', 'gpu_index', 'bucket_no_upscale', 'min_bucket_reso', 'max_bucket_reso', 'bucket_reso_steps']);
-    const field = (key, type = 'text', extra = {}) => ({ key, type, descKey: 'regularization.' + key, helpKey: helpFields.has(key) ? 'regularization.help.' + key : undefined, default: this.regDefaults[key], nested: false, labelOnly: true, ...extra });
+    const helpFields = new Set(['ignore_first', 'exclude_tags', 'caption_candidate', 'sampler', 'scheduler', 'steps', 'cfg', 'seed', 'per_image', 'expand_repeats', 'size_mode', 'flow_shift', 'precision', 'blocks_to_swap', 'text_encoder_cpu', 'gpu_index', 'bucket_no_upscale', 'min_bucket_reso', 'max_bucket_reso', 'bucket_reso_steps']);
+    const field = (key, type = 'text', extra = {}) => ({
+      key, type, descKey: 'regularization.' + key,
+      helpKey: helpFields.has(key) ? 'regularization.help.' + key : undefined,
+      default: this.regDefaults[key], nested: false, labelOnly: true,
+      layout: type === 'toggle' ? undefined : 'stacked', ...extra,
+    });
     const num = (key, step = 1) => {
       const schema = this.regMetadata.fields[key];
       return field(key, 'number', { min: schema.minimum, max: schema.maximum, step: schema.multipleOf ?? step });
     };
     const labels = { euler_a: 'euler_ancestral', bf16: 'BF16', fp16: 'FP16', auto: this.regT('autoSize'), manual: this.regT('manualMemory'), bucket: this.regT('bucket'), fixed: this.regT('fixed') };
-    const select = key => field(key, 'select', { selectAlign: key === 'model_type' ? 'left' : 'right', options: this.regMetadata.fields[key].enum.filter(v =>
+    const select = key => field(key, 'select', { options: this.regMetadata.fields[key].enum.filter(v =>
       this.regSettings.model_type !== 'sdxl' || (key !== 'sampler' || v !== 'er_sde') &&
       (key !== 'scheduler' || (this.regSettings.sampler === 'euler_a' ? ['normal'] : ['normal', 'karras', 'exponential']).includes(v))
     ).map(v => ({v, l: v === 'sdxl' ? 'SDXL' : v === 'anima' ? 'Anima' : labels[v] || v, ...(key === 'model_type' ? {} : {dKey: `regularization.options.${key}.${v}`})})) });
     const action = (label, click, icon, disabled = 'false') => `<button type="button" class="btn btn-secondary reg-control-action" @click="${click}" :disabled="${disabled}" :title="regT('${label}')" :aria-label="regT('${label}')"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg></button>`;
     const seedActions = action('randomSeed', "setField('seed', '-1')", '<path d="m3 7 3 0 12 10h3m-4-14 4 0v4M3 17h3l3-3m6-4 3-3h3m-4 10h4v-4"/>')
       + action('reuseSeed', "setField('seed', regTask.master_seed)", '<path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/>', 'regTask?.master_seed == null');
-    const widthField = num('width');
-    widthField.controlActions = '<span class="reg-control-spacer" aria-hidden="true"></span>';
     const heightField = num('height');
     heightField.controlActions = action('swapSize', 'regSwapSize()', '<path d="M8 3v18m-4-4 4 4 4-4M16 21V3m-4 4 4-4 4 4"/>');
     const groups = [
-      ['dataset', [field('source_dir', 'text', { role: 'file-folder', required: true,
-        controlActions: `<button type="button" class="btn btn-secondary btn-sm" :disabled="regBusy || regRunning" :title="regT('importHelp')" @click="regImportTraining()" x-text="regT('import')"></button>` })]],
+      ['dataset', [field('source_dir', 'text', {
+        role: 'file-folder', required: true, helpKey: 'regularization.sourceCaptionHint',
+        controlActions: `<button type="button" class="field-doc-link" aria-haspopup="dialog" aria-controls="reg-source-help" @click="regSourceHelpOpen = true" x-text="regT('sourceFolderRules')"></button>`,
+      })]],
       ['models', [select('model_type'), ...['dit', 'text_encoder', 'vae', 'checkpoint', 'sdxl_vae'].map(key => field(key, 'text', { role: 'file-model', required: key !== 'sdxl_vae' }))]],
       ['prompts', [field('caption_candidate', 'select', {options: ['', 'original', 'long', 'medium', 'short', 'first_line'].map(v => ({
         v, l: v === '' ? this.regT('chooseCandidate') : v === 'first_line' ? this.regT('candidateFirstLine') : this.t('moss.candidate_' + v),
       }))}), num('ignore_first'), field('exclude_tags')]],
       ['quantity', [select('sampler'), select('scheduler'), num('flow_shift', .1), num('steps'), num('cfg', .1),
         field('seed', 'text', { controlActions: seedActions })]],
-      ['size', [select('size_mode'), widthField, heightField, field('resolution'), field('enable_bucket', 'toggle'), num('per_image'), field('expand_repeats', 'toggle')]],
+      ['size', [select('size_mode'), num('width'), heightField, field('resolution'), field('enable_bucket', 'toggle'), num('per_image'), field('expand_repeats', 'toggle')]],
       ['deviceOptions', [select('memory_mode'), select('precision'), num('blocks_to_swap'), field('text_encoder_cpu', 'toggle'), num('gpu_index')]],
     ];
-    const sectionHeader = key => `<div class="card-header" role="button" tabindex="0" :aria-expanded="!regSectionCollapsed['${key}']" @click="regToggleSection('${key}', $el)" @keydown.enter.prevent="$el.click()" @keydown.space.prevent="$el.click()"><svg class="card-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg><span>${this.esc(this.regT(key))}</span></div>`;
+    const importAction = `<button type="button" class="btn btn-secondary btn-sm" :disabled="regBusy || regRunning" :title="regT('importHelp')" @click="regImportTraining()" x-text="regT('import')"></button>`;
+    const sectionStart = (key, extraClass = '') => `
+      <section class="tool-form-section ${extraClass}" :class="{'is-collapsed': regSectionCollapsed['${key}']}">
+        <header class="tool-section-title">
+          <h2><span class="tool-section-toggle" role="button" tabindex="0" :aria-expanded="!regSectionCollapsed['${key}']"
+                    @click="regToggleSection('${key}', $el.closest('header'))" @keydown.enter.prevent="$el.click()" @keydown.space.prevent="$el.click()">
+            <span>${this.esc(this.regT(key))}</span><svg aria-hidden="true"><use href="#ti-chevron"></use></svg>
+          </span></h2>
+          ${key === 'dataset' ? importAction : ''}
+        </header>
+        <div class="tool-section-body" :inert="!!regSectionCollapsed['${key}']">`;
     const bucketFields = [field('bucket_no_upscale', 'toggle'), num('min_bucket_reso', 16), num('max_bucket_reso', 16), num('bucket_reso_steps')];
     this._regFields = Object.fromEntries(groups.flatMap(([,fields]) => fields.map(field => [field.key, field])));
     for (const definition of bucketFields) this._regFields[definition.key] = definition;
     let html = '<div x-data="regFormControls()">';
     for (const [title, fields] of groups) {
-      const section = {dataset:'model', models:'model', prompts:'caption', quantity:'training', size:'regularization', deviceOptions:'performance'}[title];
-      html += '<div class="card" data-section="' + section + '" :class="{\'card-collapsed\': regSectionCollapsed[\'' + title + '\']}">' + sectionHeader(title);
-      html += '<div class="card-body" :inert="!!regSectionCollapsed[\'' + title + '\']">';
+      const fieldGrid = title !== 'dataset' && title !== 'models';
+      html += sectionStart(title);
       if (title === 'prompts') html += document.getElementById('regPromptFields').innerHTML;
+      if (fieldGrid) html += '<div class="tool-field-grid">';
       for (const definition of fields) {
         let rendered = this.renderField.call(scope, definition);
         let show = '';
@@ -371,11 +415,21 @@ window.regularizationMixin = {
         if (definition.key === 'blocks_to_swap') show += " && form.model_type !== 'sdxl'";
         if (['dit', 'text_encoder', 'vae'].includes(definition.key)) show = "form.model_type !== 'sdxl'";
         if (['checkpoint', 'sdxl_vae'].includes(definition.key)) show = "form.model_type === 'sdxl'";
-        html += show ? '<div x-show="' + show + '" x-cloak>' + rendered + '</div>' : rendered;
-        if (definition.key === 'source_dir') html += '<details class="field-hint"><summary>' + this.esc(this.regT('sourceFolderRules')) + '</summary><p>' + this.esc(this.regT('sourceFolderRulesHelp')) + '</p></details>';
+        if (show || !fieldGrid && !definition.role) {
+          const layout = !fieldGrid && !definition.role ? ' class="tool-field-compact"' : '';
+          const visibility = show ? ' x-show="' + show + '" x-cloak' : '';
+          rendered = '<div' + layout + visibility + '>' + rendered + '</div>';
+        }
+        html += rendered;
       }
-      if (title === 'size') html += '<div class="card reg-extra-options" :class="{\'card-collapsed\': regSectionCollapsed.bucketSettings}" x-show="form.size_mode === \'bucket\' && form.enable_bucket">' + sectionHeader('bucketSettings') + '<div class="card-body" :inert="!!regSectionCollapsed.bucketSettings">' + bucketFields.map(definition => this.renderField.call(scope, definition)).join('') + '</div></div>';
-      html += '</div></div>';
+      if (fieldGrid) html += '</div>';
+      if (title === 'size') {
+        html += `<div class="tool-field-compact" x-show="form.size_mode === 'bucket' && form.enable_bucket">
+          ${sectionStart('bucketSettings', 'reg-bucket-section')}
+          <div class="tool-field-grid">${bucketFields.map(definition => this.renderField.call(scope, definition)).join('')}</div>
+          </div></section></div>`;
+      }
+      html += '</div></section>';
     }
     host.innerHTML = html + '</div>'; host.dataset.locale = this.locale; host.dataset.localeRevision = localeRevision;
     Alpine.initTree(host);
@@ -411,6 +465,20 @@ window.regularizationMixin = {
       return {time: (record?.timestamp || line.time)?.match(/\d{2}:\d{2}:\d{2}/)?.[0] || '',
         key: JSON.stringify([raw, occurrence]), message, level: /ERROR|CRITICAL/.test(level) || /Traceback|Error:/.test(message) ? 'error' : /WARN/.test(level) ? 'warning' : /Completed|已完成/.test(message) ? 'success' : line.level};
     });
+  },
+  regWorkspaceLog() {
+    return {
+      key: this.regRunKey,
+      title: this.regT('logs'),
+      phase: this.regPhaseLabel(),
+      running: this.regRunning,
+      open: this.regLogsOpen,
+      lines: this.regLogs,
+      hasLogs: this.regTaskMatchesPlan && this.regLogs.length > 0,
+      error: this.regTaskMatchesPlan && this.regTask?.error,
+      empty: this.regT('logsEmpty'),
+      entries: () => this.regVisibleLogs(),
+    };
   },
   async regCopyLogs() {
     try { await navigator.clipboard.writeText(this.regLogs.join('\n')); this.toast(this.t('common.copied')); }
@@ -501,7 +569,7 @@ window.regularizationMixin = {
       this.regApplyTask(await this.regRequest('/tasks/' + task.task_id));
       this.regPlanConsumed = true;
       this.regNewRound = false;
-      await this.regRefreshRuns();
+      await this.regRefreshRuns(true);
     });
   },
   async regAgain() {
@@ -547,8 +615,10 @@ window.regularizationMixin = {
       void this.regLoadResults().catch(error => { this.regReportError(error.message); });
     }
     if (wasRunning && !this.regRunning) {
-      void this.regRefreshRuns();
-      if (refreshResults && this.regTab !== 'inspect') void this.regLoadLogs();
+      void this.regRefreshRuns(true).catch(error => this.regReportError(error.message, error.details));
+      if (this.regTab === 'settings') {
+        void this.regLoadLogs(true).catch(error => this.regReportError(error.message));
+      }
     }
   },
   handleRealtimeRegularizationEvent(event) {
@@ -556,8 +626,9 @@ window.regularizationMixin = {
     if (['task.status', 'task.progress', 'task.result'].includes(event.type) && event.payload?.data) this.regApplyTask(event.payload.data);
   },
   applyRealtimeRegularizationSnapshot(snapshot) {
+    if (this.currentRoute !== 'regularization' || !this.regRunning) return;
     const tracked = snapshot?.tasks?.tracked?.find(task => task.task_id === this.regTask?.task_id);
-    if (tracked && this.currentRoute === 'regularization') this.regApplyTask(tracked.data);
+    if (tracked) this.regApplyTask(tracked.data);
   },
   resetRealtimeRegularizationState() {
     // A recovered terminal run is absent from the new server's WS registry.
@@ -583,12 +654,13 @@ window.regularizationMixin = {
         this.regApplyTask(task);
         if (!this.regRunning) return;
       }
-      await this.regLoadLogs();
+      if (this.regTab === 'settings' && this.regTaskMatchesPlan) await this.regLoadLogs();
     } catch (error) { if (isCurrent()) this.regReportError(error.message); }
     finally { if (request === this._regTaskRequest) this._regRefreshing = false; }
   },
   regClearRun() {
     const outputPath = this.regTask?.output_path;
+    this._regLogPending = null;
     ++this._regResultRequest;
     this._regResultRefresh = 0;
     this.regRunKey = ''; this.regTask = null; this.regItems = []; this.regItemsTotal = 0;
@@ -601,23 +673,44 @@ window.regularizationMixin = {
       this.regPlan = null; this.regSources = []; this.regPlanConsumed = false; this.regPlanDirty = true;
     }
   },
-  async regRefreshRuns() {
+  async regRefreshRuns(refreshAfterPending = false) {
+    const pending = this._regRunsPending;
+    if (pending) {
+      if (!refreshAfterPending) return pending;
+      const version = this._regBuildVersion;
+      try { await pending; } catch (_) { /* The follow-up is a fresh read. */ }
+      if (version !== this._regBuildVersion) return false;
+      return this.regRefreshRuns();
+    }
     const key = this.regRunKey;
-    this.regRuns = await this.regRequest('/runs');
-    if (key && key === this.regRunKey && !this.regRunning && !this.regRuns.some(run => run.run_key === key)) this.regClearRun();
+    const promise = this.regRequest('/runs').then(runs => {
+      if (this._regRunsPending !== promise) return false;
+      this.regRuns = runs;
+      if (key && key === this.regRunKey && !this.regRunning && !runs.some(run => run.run_key === key)) this.regClearRun();
+      return true;
+    }, error => {
+      if (this._regRunsPending === promise) throw error;
+      return false;
+    }).finally(() => {
+      if (this._regRunsPending === promise) this._regRunsPending = null;
+    });
+    this._regRunsPending = promise;
+    return promise;
   },
   async regResume(failedOnly = false) {
     if (this.trainingActive || this.regRunning) return;
     if (this.regTab !== 'inspect' && this.regPlanDirty) { this.regReportError(this.regT('resumeDirty')); return; }
     await this.regAction(async () => {
       const task = await this.regRequest('/runs/' + encodeURIComponent(this.regRunKey) + '/resume', { failed_only: failedOnly });
-      this.regAcceptStart(task);
-      this.regApplyTask(await this.regRequest('/tasks/' + task.task_id));
+      this.regAcceptStart(task, false);
+      this.regApplyTask(await this.regRequest('/tasks/' + task.task_id), false);
       await this.regLoadResults();
+      if (this.regTab === 'settings' && this.regRunning) await this.regLoadLogs();
     });
   },
   async regSelectRun() {
     if (!this.regRunKey) { this.regClearRun(); return; }
+    this._regLogPending = null;
     ++this._regResultRequest;
     this.regSelected = null; this.regLogs = []; this.regTask = null; this.regItems = []; this.regItemsTotal = 0; this.regMoreError = '';
     this.regSyncTimer();
@@ -626,7 +719,17 @@ window.regularizationMixin = {
   },
   async regInspect() {
     this.regTab = 'inspect';
-    await this.regAction(async () => { await this.regRefreshRuns(); if (this.regRunKey) await this.regLoadResults(); });
+    if (this._regRestoringVersion) return;
+    const version = this._regBuildVersion;
+    await this.regAction(async () => {
+      if (await this.regRefreshRuns() === false || this.currentRoute !== 'regularization'
+        || version !== this._regBuildVersion || this.regTab !== 'inspect') return;
+      if (this.regRunKey) await this.regLoadResults();
+    });
+  },
+  regShowSettings() {
+    this.regTab = 'settings';
+    if (this.currentRoute === 'regularization' && this.regRunKey) void this.regLoadLogs().catch(error => this.regReportError(error.message));
   },
   async regSelectFilter() {
     ++this._regResultRequest;
@@ -646,7 +749,7 @@ window.regularizationMixin = {
       } catch (error) {
         if (key !== this.regRunKey || filter !== this.regFilter || request !== this._regResultRequest) return false;
         // The directory may have been removed after the result list was fetched.
-        await this.regRefreshRuns();
+        await this.regRefreshRuns(true);
         if (key !== this.regRunKey) return false;
         throw error;
       }
@@ -658,7 +761,6 @@ window.regularizationMixin = {
         Object.assign(this.regSettings, this.regDefaults, page.settings);
         if (this._regLoaded && model !== this.regSettings.model_type) this.regRenderControls(true);
       }
-      if (!append) await this.regLoadLogs();
       return true;
     } finally {
       if (!append && this._regResultRefresh === request) this._regResultRefresh = 0;
@@ -673,7 +775,7 @@ window.regularizationMixin = {
       Object.assign(this.regSettings, this.regDefaults, saved.settings);
       if (this._regLoaded) this.regRenderControls(true);
       this.regEdits = saved.overrides; this.regSources = []; this.regPlan = null; this.regPlanConsumed = false;
-      this.regChanged(); this.regPlanDirty = false; this.regPreviewDirty = false; this.regTab = 'settings'; this.toast(this.regT('settingsLoaded'));
+      this.regChanged(); this.regPlanDirty = false; this.regPreviewDirty = false; this.regShowSettings(); this.toast(this.regT('settingsLoaded'));
     });
   },
   regImage(item, variant = 'thumb') { return '/api/regularization/runs/' + encodeURIComponent(this.regRunKey) + '/preview/' + item.index + '?variant=' + variant; },
@@ -721,19 +823,29 @@ window.regularizationMixin = {
     await this.regAction(async () => {
       const result = await this.regRequest('/runs/' + encodeURIComponent(key) + '/items/' + item.index + '/' + action, {});
       if (action === 'regenerate') {
-        this.regAcceptStart(result);
-        this.regApplyTask(await this.regRequest('/tasks/' + result.task_id));
+        this.regAcceptStart(result, false);
+        this.regApplyTask(await this.regRequest('/tasks/' + result.task_id), false);
       }
-      await this.regLoadResults(); this.regSelected = null; this.regPlanDirty = true;
+      await this.regLoadResults();
+      if (action === 'regenerate' && this.regTab === 'settings' && this.regRunning) await this.regLoadLogs();
+      this.regSelected = null; this.regPlanDirty = true;
     });
   },
-  async regLoadLogs() {
-    const request = ++this._regLogRequest;
+  async regLoadLogs(force = false) {
     const key = this.regRunKey;
-    if (!key) { this.regLogs = []; return; }
-    const lines = await this.regRequest('/runs/' + encodeURIComponent(key) + '/logs');
-    if (key === this.regRunKey && request === this._regLogRequest &&
-        (lines.length !== this.regLogs.length || lines.some((line, index) => line !== this.regLogs[index]))) this.regLogs = lines;
+    if (!key) { this._regLogPending = null; this.regLogs = []; return; }
+    const pending = this._regLogPending;
+    if (!force && pending?.key === key) return pending.promise;
+    const promise = this.regRequest('/runs/' + encodeURIComponent(key) + '/logs').then(lines => {
+      if (key === this.regRunKey && this._regLogPending?.promise === promise &&
+          (lines.length !== this.regLogs.length || lines.some((line, index) => line !== this.regLogs[index]))) this.regLogs = lines;
+    }, error => {
+      if (key === this.regRunKey && this._regLogPending?.promise === promise) throw error;
+    }).finally(() => {
+      if (this._regLogPending?.promise === promise) this._regLogPending = null;
+    });
+    this._regLogPending = { key, promise };
+    return promise;
   },
   regImportTraining() {
     if (this.regRunning || this.regBusy) return;
@@ -774,6 +886,6 @@ window.regularizationMixin = {
     if (!['anima-lora', 'sdxl-lora'].includes(this.form.model_train_type)) { this.regReportError(this.regT('onlyAnima')); return; }
     this.setField('reg_data_dir', path); this.setField('enable_reg_data', true);
     this.scheduleStepEstimate(); this.updateToml();
-    if (typeof this.toast === 'function') this.toast(this.regT('applied'), 'success');
+    this.toast(this.regT('applied'), 'success');
   },
 };

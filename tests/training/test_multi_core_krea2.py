@@ -78,7 +78,7 @@ class Krea2PreparationLifecycleTests(unittest.TestCase):
 
             with patch.object(training_routes, "tm", manager), \
                  patch.object(training_routes.launch_krea2, "OUTPUT_DIR", root / "runs"), \
-                 patch.object(training_routes.launch_krea2, "krea2_preflight", return_value={"ok": True, "errors": [], "cache": {"ready": True}}), \
+                 patch.object(training_routes.launch_krea2, "krea2_preflight", return_value={"ok": True, "errors": [], "cache": {"ready": True}, "dataset_groups": []}), \
                  patch.object(training_routes.preparation, "mark_cache_manifest", side_effect=settle_manifest), \
                  stub_supervisor():
                 try:

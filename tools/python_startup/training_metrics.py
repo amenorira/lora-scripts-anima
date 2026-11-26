@@ -79,6 +79,7 @@ class TrainingMetrics:
         self.average = _BucketWindow()
         self.epoch_totals = [0.0] * 6
         self.pending_timesteps = None
+        self.distribution_batches = []
         self.timestep_counts = None
         self.distribution_dirty = False
         self.distribution_step = None
@@ -118,28 +119,40 @@ class TrainingMetrics:
     def finish_step(self):
         self.step_finished = True
 
+    def _count_timesteps(self, sampled):
+        import numpy as np
+
+        bins = np.clip(sampled.astype(np.int64), 0, _TIMESTEP_BINS - 1)
+        counts = np.bincount(bins, minlength=_TIMESTEP_BINS)
+        if self.timestep_counts is None:
+            self.timestep_counts = counts
+        else:
+            self.timestep_counts += counts
+        self.distribution_dirty = True
+
+    def _count_pending_batches(self):
+        import torch
+
+        batches, self.distribution_batches = self.distribution_batches, []
+        sampled = batches[0] if len(batches) == 1 else torch.cat(batches)
+        self._count_timesteps(sampled.cpu().numpy())
+
     def loss_logs(self, include_average=False):
         logs = {}
         totals = None
         if self.pending_timesteps is not None:
-            import numpy as np
-            import torch
-
-            # Share one device-to-host transfer when both switches are on.
-            # Count-only mode never computes or transfers loss bucket stats.
             if self.totals is not None:
+                import torch
+
+                # Share the transfer when loss already needs a value for this batch.
                 data = torch.cat((self.totals.reshape(-1), self.pending_timesteps)).cpu().numpy()
                 totals = data[:6].tolist()
-                sampled = data[6:]
+                self._count_timesteps(data[6:])
             else:
-                sampled = self.pending_timesteps.cpu().numpy()
-            bins = np.clip(sampled.astype(np.int64), 0, _TIMESTEP_BINS - 1)
-            counts = np.bincount(bins, minlength=_TIMESTEP_BINS)
-            if self.timestep_counts is None:
-                self.timestep_counts = counts
-            else:
-                self.timestep_counts += counts
-            self.distribution_dirty = True
+                self.distribution_batches.append(self.pending_timesteps)
+                # Bound the queue even when one optimizer step spans many batches.
+                if len(self.distribution_batches) >= _DISTRIBUTION_INTERVAL:
+                    self._count_pending_batches()
         elif self.totals is not None:
             totals = self.totals.cpu().reshape(-1).tolist()
         if totals is not None:
@@ -166,6 +179,8 @@ class TrainingMetrics:
         return _bucket_logs(self.epoch_totals, "epoch/")
 
     def write_distribution(self, writer, step=None):
+        if self.distribution_batches:
+            self._count_pending_batches()
         if not self.distribution_dirty:
             return
         from tensorboard.compat.proto import summary_pb2, tensor_pb2, tensor_shape_pb2, types_pb2
@@ -219,6 +234,7 @@ def _observe(state, action):
             state.enabled = False
             state.totals = None
             state.pending_timesteps = None
+            state.distribution_batches.clear()
             state.pending_norm = None
             _warn(exc)
     return None

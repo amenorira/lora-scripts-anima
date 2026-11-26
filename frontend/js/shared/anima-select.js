@@ -5,14 +5,19 @@
 
 document.addEventListener('alpine:init', () => {
   let nextListboxId = 0;
-  Alpine.data('animaSelect', (fieldConfigJson, initialValue, { align = 'left' } = {}) => {
+  const createAnimaSelect = (fieldConfigJson, initialValue, { align = 'left', preview = false } = {}) => {
+    const triggerSelector = preview ? '.preview-select-trigger' : '.anima-select-trigger';
+    const menuSelector = preview ? '.preview-select-menu' : '.anima-select-menu';
+    const optionSelector = preview ? '.preview-select-option' : '.anima-select-option';
     // Most field configs are static. A function may be supplied by workspaces
     // whose options arrive asynchronously (for example the Tagger registry).
     const fieldConfigFactory = typeof fieldConfigJson === 'function' ? fieldConfigJson : null;
     let fieldConfig = {};
     try {
-      if (fieldConfigFactory) {
+      if (fieldConfigFactory && !preview) {
         fieldConfig = fieldConfigFactory() || {};
+      } else if (fieldConfigFactory) {
+        fieldConfig = {};
       } else if (typeof fieldConfigJson === 'string') {
         const binary = atob(fieldConfigJson);
         const bytes = Uint8Array.from(binary, function(c) { return c.charCodeAt(0); });
@@ -42,11 +47,17 @@ document.addEventListener('alpine:init', () => {
     _openUp: false,
     value: initialValue,
     activeIndex: -1,
+    get active() { return this.activeIndex; },
+    set active(index) { this.activeIndex = index; },
+    search: '',
+    searchTime: 0,
+    position: '',
     _lastScrolledActiveIndex: -1,
     _listboxId: `anima-select-listbox-${++nextListboxId}`,
     _positionFrame: null,
     _closeAnimation: null,
     _reopenAnimation: null,
+    _rootElement: null,
     // Declare instance-owned handlers: Alpine otherwise assigns new keys to
     // the outer scope, letting sibling selects overwrite each other's handlers.
     _scrollHandler: null,
@@ -74,7 +85,7 @@ document.addEventListener('alpine:init', () => {
         }
         return translatedGroups;
       }
-      try { return normalizedGroups(fieldConfigFactory() || {}); }
+      try { return normalizedGroups(fieldConfigFactory.call(this) || {}); }
       catch (_) { return []; }
     },
 
@@ -95,10 +106,14 @@ document.addEventListener('alpine:init', () => {
       const opt = this.flatOptions.find(o => o.v === this.value);
       return opt ? opt.l : String(this.value || '');
     },
+    get selected() {
+      return this.options?.find(option => String(option.value) === String(this.value)) || this.options?.[0];
+    },
 
     init() {
+      this._rootElement = this.$el;
       this.$watch('open', (isOpen) => {
-        const trigger = this.$el.querySelector('.anima-select-trigger');
+        const trigger = this._rootElement.querySelector(triggerSelector);
         if (trigger) trigger.setAttribute('aria-expanded', String(isOpen));
         if (isOpen) {
           this.positioned = false;
@@ -107,16 +122,22 @@ document.addEventListener('alpine:init', () => {
           window.addEventListener('resize', this._resizeHandler);
           this.$nextTick(() => { if (this.open) this.positionMenu(); });
         } else {
-          window.AnimaUI?.unregisterPopup(this.$el);
+          trigger?.removeAttribute('aria-activedescendant');
+          window.AnimaUI?.unregisterPopup(this._rootElement);
           window.removeEventListener('scroll', this._scrollHandler, true);
           window.removeEventListener('resize', this._resizeHandler);
         }
       });
-      const trigger = this.$el.querySelector('.anima-select-trigger');
+      const trigger = this.$el.querySelector(triggerSelector);
       if (trigger) {
         trigger.setAttribute('aria-haspopup', 'listbox');
         trigger.setAttribute('aria-expanded', 'false');
+        if (preview) trigger.setAttribute('aria-controls', this._listboxId);
       }
+      if (preview) this.$nextTick(() => {
+        const menu = this.$el.querySelector(menuSelector);
+        if (menu) menu.id = this._listboxId;
+      });
       this._keyHandler = e => this.onKeydown(e);
       this.$el.addEventListener('keydown', this._keyHandler);
 
@@ -124,7 +145,7 @@ document.addEventListener('alpine:init', () => {
       this._scrollHandler = (e) => {
         if (!this.open) return;
         const target = e.target;
-        if (target && typeof target.closest === 'function' && target.closest('.anima-select-menu')) return;
+        if (target && typeof target.closest === 'function' && target.closest(menuSelector)) return;
         this.schedulePositionMenu();
       };
       this._resizeHandler = () => { if (this.open) this.schedulePositionMenu(); };
@@ -133,7 +154,7 @@ document.addEventListener('alpine:init', () => {
       // (e.g. by autoValue, config import, undo, reset, or any programmatic form update).
       // Alpine x-model sets el.value directly on the DOM property, so we intercept
       // the native setter to keep this.value in sync.
-      const input = this.$refs.modelInput;
+      const input = preview ? null : this.$refs.modelInput;
       if (input) {
         const self = this;
         const protoDesc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
@@ -154,11 +175,12 @@ document.addEventListener('alpine:init', () => {
     },
 
     destroy() {
-      window.AnimaUI?.unregisterPopup(this.$el);
+      const root = this._rootElement || this.$el;
+      window.AnimaUI?.unregisterPopup(root);
       if (this._closeAnimation) this._closeAnimation.cancel();
       if (this._reopenAnimation) this._reopenAnimation.cancel();
       if (this._keyHandler) {
-        this.$el.removeEventListener('keydown', this._keyHandler);
+        root.removeEventListener('keydown', this._keyHandler);
       }
       if (this._scrollHandler) {
         window.removeEventListener('scroll', this._scrollHandler, true);
@@ -173,7 +195,9 @@ document.addEventListener('alpine:init', () => {
 
     close() {
       if (!this.open || this._closeAnimation) return;
-      const menu = this.$el.querySelector('.anima-select-menu');
+      if (preview) { this.open = false; return; }
+      const root = this._rootElement || this.$el;
+      const menu = root.querySelector(menuSelector);
       const motion = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       if (!motion || !menu || !menu.animate) { this.open = false; return; }
       // Keep x-if mounted until exit finishes. Inert prevents duplicate selections.
@@ -181,7 +205,7 @@ document.addEventListener('alpine:init', () => {
       const from = { opacity: style.opacity, transform: style.transform };
       if (this._reopenAnimation) { this._reopenAnimation.cancel(); this._reopenAnimation = null; }
       menu.inert = true;
-      this.$el.querySelector('.anima-select-trigger')?.setAttribute('aria-expanded', 'false');
+      root.querySelector(triggerSelector)?.setAttribute('aria-expanded', 'false');
       const animation = menu.animate([
         from,
         { opacity: 0, transform: `scale(${style.getPropertyValue('--menu-scale-exit').trim() || '.99'})` }
@@ -204,19 +228,20 @@ document.addEventListener('alpine:init', () => {
       this.open = false;
     },
 
-    _enabledIndices() {
-      return this.flatOptions.map((option, index) =>
+    _enabledIndices(options = this.flatOptions) {
+      return options.map((option, index) =>
         option.disabled || option.enabled === false ? -1 : index).filter(index => index >= 0);
     },
 
-    _syncOptionA11y() {
-      const trigger = this.$el.querySelector('.anima-select-trigger');
-      const menu = this.$el.querySelector('.anima-select-menu');
+    _syncOptionA11y(scroll = true) {
+      const root = this._rootElement || this.$el;
+      const trigger = root.querySelector(triggerSelector);
+      const menu = root.querySelector(menuSelector);
       if (!trigger || !menu) return;
       menu.id = this._listboxId;
       menu.setAttribute('role', 'listbox');
       trigger.setAttribute('aria-controls', this._listboxId);
-      const options = menu.querySelectorAll('.anima-select-option');
+      const options = menu.querySelectorAll(optionSelector);
       const flatOptions = this.flatOptions;
       options.forEach((element, index) => {
         const option = flatOptions[index];
@@ -225,11 +250,12 @@ document.addEventListener('alpine:init', () => {
         element.setAttribute('aria-selected', String(!!option && String(option.v) === String(this.value)));
         element.setAttribute('aria-disabled', String(!!option && (option.disabled || option.enabled === false)));
         element.classList.toggle('kb-active', index === this.activeIndex);
+        if (preview) element.classList.toggle('is-active', index === this.activeIndex);
       });
       if (this.activeIndex >= 0 && options[this.activeIndex]) {
         trigger.setAttribute('aria-activedescendant', options[this.activeIndex].id);
-        if (this._lastScrolledActiveIndex !== this.activeIndex) {
-          const scroller = menu.querySelector('.anima-select-menu-scroll');
+        if (scroll && this._lastScrolledActiveIndex !== this.activeIndex) {
+          const scroller = preview ? menu : menu.querySelector('.anima-select-menu-scroll');
           const optionRect = options[this.activeIndex].getBoundingClientRect();
           const scrollRect = scroller.getBoundingClientRect();
           // Only scroll the options, never the page or the containing panel.
@@ -244,12 +270,14 @@ document.addEventListener('alpine:init', () => {
     },
 
     show(key) {
-      const enabled = this._enabledIndices();
-      if (!enabled.length) return;
-      window.AnimaUI?.settleDialog(this.$el);
-      window.AnimaUI?.registerPopup(this.$el, () => this.dismiss());
+      const options = this.flatOptions;
+      const enabled = this._enabledIndices(options);
+      if (!enabled.length && !preview) return;
+      const root = this._rootElement || this.$el;
+      window.AnimaUI?.settleDialog(root);
+      window.AnimaUI?.registerPopup(root, () => this.dismiss());
       if (this._closeAnimation) {
-        const menu = this.$el.querySelector('.anima-select-menu');
+        const menu = root.querySelector(menuSelector);
         const style = menu && getComputedStyle(menu);
         const from = style && { opacity: style.opacity, transform: style.transform };
         this._closeAnimation.onfinish = null;
@@ -264,10 +292,11 @@ document.addEventListener('alpine:init', () => {
             });
           }
         }
-        this.$el.querySelector('.anima-select-trigger')?.setAttribute('aria-expanded', 'true');
+        root.querySelector(triggerSelector)?.setAttribute('aria-expanded', 'true');
       }
-      const selected = enabled.find(index => String(this.flatOptions[index].v) === String(this.value));
-      if (key === 'Home') this.activeIndex = enabled[0];
+      const selected = enabled.find(index => String(options[index].v) === String(this.value));
+      if (preview) this.activeIndex = selected === undefined ? (enabled[0] ?? -1) : selected;
+      else if (key === 'Home') this.activeIndex = enabled[0];
       else if (key === 'End') this.activeIndex = enabled[enabled.length - 1];
       else this.activeIndex = selected === undefined
         ? (key === 'ArrowUp' ? enabled[enabled.length - 1] : enabled[0]) : selected;
@@ -276,8 +305,18 @@ document.addEventListener('alpine:init', () => {
     },
 
     onKeydown(event) {
-      if (!event.target.closest('.anima-select-trigger') || event.target.disabled) return;
+      if (!event.target.closest(triggerSelector) || event.target.disabled) return;
       const key = event.key;
+      if (preview && key.length === 1 && key !== ' ' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();
+        if (!this.open) this.show();
+        this.search = Date.now() - this.searchTime > 700 ? key : this.search + key;
+        this.searchTime = Date.now();
+        const search = this.search.toLowerCase();
+        const index = this.flatOptions.findIndex(option => `${option.family || ''} ${option.l}`.toLowerCase().includes(search));
+        if (index >= 0) { this.activeIndex = index; this.$nextTick(() => this._syncOptionA11y()); }
+        return;
+      }
       if (this._closeAnimation && ['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter', ' '].includes(key)) {
         event.preventDefault(); this.show(key); return;
       }
@@ -312,7 +351,8 @@ document.addEventListener('alpine:init', () => {
       else {
         const current = enabled.indexOf(this.activeIndex);
         const direction = key === 'ArrowDown' ? 1 : -1;
-        this.activeIndex = enabled[(current + direction + enabled.length) % enabled.length];
+        this.activeIndex = preview ? enabled[Math.max(0, Math.min(enabled.length - 1, current + direction))]
+          : enabled[(current + direction + enabled.length) % enabled.length];
       }
       this._syncOptionA11y();
     },
@@ -323,9 +363,16 @@ document.addEventListener('alpine:init', () => {
       this.value = v;
       this.activeIndex = this.flatOptions.findIndex(option => String(option.v) === String(v));
       this.close();
-      this.syncToModel();
-      this.$dispatch('anima-select-change', { value: v });
+      if (!preview) this.syncToModel();
+      if (preview) {
+        (this._rootElement || this.$el).querySelector(triggerSelector)?.focus();
+        this.$dispatch('preview-select', v);
+      } else this.$dispatch('anima-select-change', { value: v });
     },
+
+    choose(index) { const option = this.flatOptions[index]; if (option) this.select(option.v); },
+    reveal() { this.$nextTick(() => { if (this.open) this._syncOptionA11y(); }); },
+    key(event) { this.onKeydown(event); },
 
     syncToModel() {
       const input = this.$refs.modelInput;
@@ -370,9 +417,9 @@ document.addEventListener('alpine:init', () => {
 
     // 根据触发器的位置选择方向和可用高度，避免菜单覆盖触发器。
     positionMenu() {
-      const root = this.$el;
-      const trigger = root.querySelector('.anima-select-trigger');
-      const menu = root.querySelector('.anima-select-menu');
+      const root = this._rootElement || this.$el;
+      const trigger = root.querySelector(triggerSelector);
+      const menu = root.querySelector(menuSelector);
       if (!trigger || !menu) return;
       const firstPosition = !this.positioned;
       const r = trigger.getBoundingClientRect();
@@ -383,10 +430,10 @@ document.addEventListener('alpine:init', () => {
       const vw = window.innerWidth;
       const vh = window.innerHeight;
       // 带说明的选项需要更宽的阅读区域；窄屏下仍由视口宽度兜底。
-      const width = Math.min(Math.max(r.width, this.hasDescriptions ? 320 : 200), vw - 16);
+      const width = preview ? Math.min(r.width, vw - 16) : Math.min(Math.max(r.width, this.hasDescriptions ? 320 : 200), vw - 16);
       menu.style.width = Math.round(width) + 'px';
-      const menuScroll = menu.querySelector('.anima-select-menu-scroll');
-      const maxScrollHeight = 520;
+      const menuScroll = preview ? menu : menu.querySelector('.anima-select-menu-scroll');
+      const maxScrollHeight = preview ? 360 : 520;
       const desiredHeight = Math.min(menuScroll ? menuScroll.scrollHeight : menu.scrollHeight, maxScrollHeight) + 2;
       const spaceBelow = Math.max(0, vh - r.bottom - 12);
       const spaceAbove = Math.max(0, r.top - 12);
@@ -412,5 +459,40 @@ document.addEventListener('alpine:init', () => {
     },
 
     });
+  };
+  Alpine.data('animaSelect', createAnimaSelect);
+  Alpine.data('previewSelect', (options, value) => {
+    const component = createAnimaSelect(function() {
+      return {options: this.options.map(option => ({...option, v: option.value, l: option.label, d: option.detail}))};
+    }, value, {preview: true});
+    component.options = options;
+    return component;
   });
 });
+
+// Preview menus keep their compact presentation and event contract while using
+// the same selection, keyboard and positioning implementation as other selects.
+window.previewSelectHtml = function(options, value, label, triggerId = '', valueBinding = '', optionsBinding = '') {
+  const esc = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+  const initialValue = valueBinding ? esc(valueBinding) : esc(JSON.stringify(value));
+  const initialOptions = optionsBinding ? esc(optionsBinding) : esc(JSON.stringify(options));
+  const watchers = [];
+  if (valueBinding) watchers.push(`$watch('${esc(valueBinding)}', next => value = next)`);
+  if (optionsBinding) watchers.push(`$watch('${esc(optionsBinding)}', next => options = next)`);
+  const sync = watchers.length ? ` x-init="${watchers.join('; ')}"` : '';
+  return `<div class="preview-select" x-data="previewSelect(${initialOptions}, ${initialValue})"${sync} @click.outside="open = false" @resize.window="open = false">
+    <button type="button" class="preview-select-trigger" ${triggerId ? `id="${esc(triggerId)}"` : ''} x-ref="trigger" role="combobox" aria-haspopup="listbox" aria-label="${esc(label)}" :aria-expanded="open" @click="open ? open = false : show()">
+      <span><span x-text="selected?.selectedLabel || selected?.label || ''"></span><span class="preview-select-count" x-show="selected?.count != null" x-text="' (' + selected?.count + ')'"></span></span><span class="preview-select-chevron" aria-hidden="true"></span>
+    </button>
+    <div class="preview-select-menu" role="listbox" x-ref="menu" aria-label="${esc(label)}" x-show="open" x-cloak :inert="!open">
+      <template x-for="(option, index) in options" :key="option.value">
+        <div>
+          <div class="preview-select-group" x-show="option.family && (index === 0 || options[index - 1].family !== option.family)" x-text="option.family"></div>
+          <div class="preview-select-option" role="option" :data-index="index" :aria-selected="option.value === value" :class="{'is-active': index === active}" @mousemove="if (active !== index) { active = index; $nextTick(() => { if (open) _syncOptionA11y(false) }) }" @mousedown.prevent @click="choose(index)">
+            <span><span x-text="option.label"></span><span class="preview-select-count" x-show="option.count != null" x-text="' (' + option.count + ')'"></span></span><small x-show="option.detail" x-text="option.detail"></small><span class="preview-select-check" x-show="option.value === value" aria-hidden="true">✓</span>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>`;
+};

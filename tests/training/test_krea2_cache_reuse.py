@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from backend.training.cache import krea2_cache_runner as runner
+from backend.training.cache import krea2_cache, krea2_cache_runner as runner
 from backend.training.core_registry import MUSUBI_TUNER_DIR
 from backend.training.cache.krea2_cache import complete_stage, get_krea2_cache_status, mark_cache_manifest, prepare_cache_manifest
 from tests.training.test_multi_core_krea2 import krea2_config
@@ -37,6 +37,21 @@ class Krea2CacheReuseTests(unittest.TestCase):
         with patch.object(sys, "argv", self.runner_args()), patch.object(runner, "_run") as launch:
             runner.main()
         launch.assert_not_called()
+
+    def test_stage_validation_reuses_one_scan_and_skips_forced_reuse_checks(self):
+        self.finish_cache()
+        with patch.object(krea2_cache, "dataset_groups", wraps=krea2_cache.dataset_groups) as scan:
+            complete_stage(self.config, "latents")
+            self.assertEqual(scan.call_count, 1)
+            scan.reset_mock()
+            with patch.object(krea2_cache, "output_records", wraps=krea2_cache.output_records) as stat_outputs:
+                self.assertIsNone(mark_cache_manifest(self.config, "completed"))
+                self.assertEqual(stat_outputs.call_count, 2)
+            self.assertEqual(scan.call_count, 1)
+            scan.reset_mock()
+            self.config["krea_cache_reuse"] = False
+            self.assertFalse(krea2_cache.can_reuse_stage(self.config, "latents"))
+            scan.assert_not_called()
 
 
     def test_changed_inputs_invalidate_only_the_affected_stage(self):

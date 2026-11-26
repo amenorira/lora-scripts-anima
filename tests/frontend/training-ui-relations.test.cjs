@@ -1,12 +1,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { TRAINING_CORE_SCRIPTS, loadFrontend } = require('./helpers.cjs');
+const { TRAINING_CORE_SCRIPTS, loadFrontend, trainingFieldSections } = require('./helpers.cjs');
 
 function application(profile, values = {}) {
-  const { window: w } = loadFrontend(['shared/constants', 'shared/utils', 'app/config', ...TRAINING_CORE_SCRIPTS, 'training/toml', 'training/dataset-repeat', 'training/config-io'], {
-    window: {}, document: { getElementById: () => null, querySelectorAll: () => [] }, btoa, TextEncoder, clearTimeout,
+  const context = loadFrontend(['shared/constants', 'shared/utils', 'app/config', ...TRAINING_CORE_SCRIPTS, 'training/toml', 'training/dataset-repeat', 'training/config-io'], {
+    window: { TRAIN_SECTIONS: trainingFieldSections() }, document: { getElementById: () => null, querySelectorAll: () => [] }, btoa, TextEncoder, clearTimeout,
     requestAnimationFrame: callback => setTimeout(callback, 0), cancelAnimationFrame: clearTimeout,
   });
+  const w = context.window;
+  context.ROUTE_CONFIG = w.ROUTE_CONFIG;
   w.t = key => key;
   const app = Object.assign({}, w.utilsMixin, w.trainingCoreMixin, w.trainingTomlMixin, w.datasetRepeatMixin, w.trainingConfigIoMixin, {
     t: key => key, toast() {}, pushHistory() {}, _persistProfileFieldSources() {},
@@ -21,6 +23,21 @@ function application(profile, values = {}) {
   app._activeTrainType = profile;
   return app;
 }
+
+test('restored drafts retain their fields while incompatible network selections are normalized', () => {
+  for (const [savedType, module, type, expected] of [
+    ['sd-lora', 'networks.lora', 'anima-lora', 'networks.lora_anima'],
+    ['sdxl-lora', 'networks.lora_anima', 'sdxl-lora', 'networks.lora'],
+    ['anima-lora', 'lycoris.kohya', 'anima-lora', 'lycoris.kohya'],
+    ['moss-image-lora', 'networks.lora_generic', 'moss-image-lora', 'networks.lora_generic'],
+  ]) {
+    const app = application('anima-lora', { model_train_type: savedType, network_module: module, learning_rate: '0.123' });
+    app._initializeTrainingFormState('train-basic', true);
+    assert.equal(app.form.model_train_type, type);
+    assert.equal(app.form.network_module, expected);
+    assert.equal(app.form.learning_rate, '0.123');
+  }
+});
 
 function watchAutoValues(app) {
   // Load the shipped Alpine reactivity/watch implementation without starting

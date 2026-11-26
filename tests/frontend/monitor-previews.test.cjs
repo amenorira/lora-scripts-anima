@@ -13,7 +13,7 @@ function harness() {
     currentRoute: 'monitor-dashboard', liveTaskId: 'A', taskId: 'A',
     monitorData: {state: 'RUNNING', active_task: {id: 'A'}},
     renderDashboard: () => renders.push(app.currentRoute), scheduleRender() {},
-    realtimeSubscribe() {}, realtimeUnsubscribe() {}, refreshMonitorRealtimeDetail() {}, t: key => key,
+    realtimeSubscribe() {}, realtimeUnsubscribe() {}, refreshMonitorRealtimeDetail() {}, closePreviewLightbox() {}, t: key => key,
   });
   return {app, requests, renders, core: window.monitorCoreMixin};
 }

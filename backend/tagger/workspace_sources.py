@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 
 from backend.tagger import captioning
-from backend.tagger.errors import TaggerUserError
+from backend.tagger.errors import TaggerIndexError, TaggerNotFoundError, TaggerUserError
 from backend.tagger.workspace_state import (
     _IMAGE_EXTENSIONS, _MAX_RECENT_ITEMS, _sources, _sources_lock,
     _tasks, _tasks_lock, _cleanup,
@@ -28,9 +28,9 @@ def scan_source(path_value: str, recursive: bool = True, caption_extension: str 
     _cleanup()
     path = Path(path_value).expanduser().resolve()
     if not path.exists():
-        raise TaggerUserError("tagger_source_not_found", "Source does not exist / 输入路径不存在")
+        raise TaggerUserError("taggerSourceNotFound", "Source does not exist / 输入路径不存在")
     if path == Path(path.anchor):
-        raise ValueError("Filesystem root is not allowed / 不允许选择磁盘根目录")
+        raise TaggerUserError("taggerRootNotAllowed", "Filesystem root is not allowed / 不允许选择磁盘根目录")
     images = _enumerate_images(path, recursive)
     token = uuid.uuid4().hex[:16]
     caption_extension = "." + str(caption_extension).strip().lstrip(".")
@@ -89,17 +89,17 @@ def source_item(source_token: str, index: int) -> Path:
 def _source_path(source: dict, index: int) -> Path:
     paths = source["paths"]
     if index < 0 or index >= len(paths):
-        raise IndexError("Image index out of range / 图片索引超出范围")
+        raise TaggerIndexError("taggerImageIndexOutOfRange", "Image index out of range / 图片索引超出范围")
     candidate = paths[index].resolve()
     root = Path(str(source["root"])).resolve()
     if source.get("kind") in {"file", "upload"}:
         if candidate != root:
-            raise ValueError("Image escaped source scope / 图片超出输入源范围")
+            raise TaggerUserError("taggerImageOutsideSource", "Image escaped source scope / 图片超出输入源范围")
     else:
         try:
             candidate.relative_to(root)
         except ValueError as exc:
-            raise ValueError("Image escaped source scope / 图片超出输入源范围") from exc
+            raise TaggerUserError("taggerImageOutsideSource", "Image escaped source scope / 图片超出输入源范围") from exc
     return candidate
 
 def _get_source(token: str) -> dict:
@@ -107,7 +107,7 @@ def _get_source(token: str) -> dict:
     with _sources_lock:
         source = _sources.get(token)
     if source is None:
-        raise KeyError("Source expired or not found / 输入源已过期或不存在")
+        raise TaggerNotFoundError("taggerSourceExpired", "Source expired or not found / 输入源已过期或不存在")
     return source
 
 def _annotation_states(source: dict, settings: dict, *, cached: bool = False) -> tuple[list[dict], dict]:
@@ -134,7 +134,7 @@ def _annotation_states(source: dict, settings: dict, *, cached: bool = False) ->
                     try:
                         parent.relative_to(root)
                     except ValueError as exc:
-                        raise ValueError("Image escaped source scope / 图片超出输入源范围") from exc
+                        raise TaggerUserError("taggerImageOutsideSource", "Image escaped source scope / 图片超出输入源范围") from exc
                 parents[path.parent] = parent
             try:
                 if captioning.is_reparse(path.lstat()):
@@ -158,9 +158,9 @@ def _annotation_text(path: Path, settings: dict, state: dict) -> dict:
 def annotations(token: str, offset=0, limit=60, status="all", q="", refresh=False, options=None, task_id="", cached=False) -> dict:
     source = _get_source(token)
     if source["kind"] != "folder":
-        raise ValueError("Overview requires a directory / 总览仅支持批量目录")
+        raise TaggerUserError("taggerOverviewRequiresDirectory", "Overview requires a directory / 总览仅支持批量目录")
     if status not in {"all", "missing", "missing_json", "invalid_json", "ordinary", "failed"}:
-        raise ValueError("Invalid annotation filter / 无效的标注筛选")
+        raise TaggerUserError("taggerInvalidAnnotationFilter", "Invalid annotation filter / 无效的标注筛选")
     settings = captioning.output_options(options, options.get("caption_extension", ".txt")) if options is not None else source["caption_options"]
     with source["annotation_lock"]:
         if refresh and not source.get("subset"):
@@ -235,7 +235,7 @@ def caption_plan(token: str, options: dict) -> dict:
     """Plan and validate writes separately from the read-only annotation browser."""
     source = _get_source(token)
     if source["kind"] != "folder":
-        raise ValueError("MOSS requires an image directory / MOSS 标注请选择图片目录")
+        raise TaggerUserError("taggerMossRequiresDirectory", "MOSS requires an image directory / MOSS 标注请选择图片目录")
     settings = captioning.plan_options(options)
     with source["annotation_lock"]:
         states, counts = _annotation_states(source, settings)
@@ -246,7 +246,7 @@ def source_items(source_token: str, offset: int = 0, limit: int = 120) -> dict:
     with _sources_lock:
         source = _sources.get(source_token)
         if not source:
-            raise KeyError("Source expired or not found / 输入源已过期或不存在")
+            raise TaggerNotFoundError("taggerSourceExpired", "Source expired or not found / 输入源已过期或不存在")
         paths = source["paths"]
         start = max(0, offset)
         page = paths[start:start + max(1, min(limit, 500))]

@@ -72,11 +72,103 @@ test('manual sample refresh retries failed lightbox thumbnails outside the tab p
   app._replacePreviewItems = () => false;
   app._followLatestPreview = () => {};
   const pending = app.refreshPreviews();
+  assert.match(requests[0].url, /[?&]refresh=1(?:&|$)/);
   requests[0].resolve(response([]));
   await pending;
   assert.equal(retries, 1);
   assert.equal(app.previewsVersion, 1, 'unchanged metadata still refreshes failed media');
   app._invalidatePreviewRequest();
+});
+
+test('background sample refresh can reuse the monitor cache', async () => {
+  const {app, requests} = requestHarness();
+  app._replacePreviewItems = () => false;
+  app._followLatestPreview = () => {};
+  const pending = app.refreshPreviews(false);
+  assert.doesNotMatch(requests[0].url, /[?&]refresh=/);
+  requests[0].resolve(response([]));
+  await pending;
+});
+
+test('changing the state sort key or direction rerenders the output list', () => {
+  const panel = {firstElementChild: {}, querySelector: () => null, contains: () => false, classList: {add() {}}};
+  const document = {getElementById: () => ({querySelector: () => panel})};
+  const {window} = loadFrontend('monitor/render', {window: {}, document});
+  const app = composeMixins(window.monitorRenderMixin, {
+    _builtTab: 'outputs', selectedOutputFiles: [], outputFiles: [{}], outputStateSortKey: 'name', outputStateSortDir: 'asc',
+    _renderOutputsTab() {return this.outputStateSortKey + '-' + this.outputStateSortDir;},
+  });
+  const render = () => app._renderTab('outputs', {}, null, null, () => '', false);
+  render();
+  assert.equal(panel.innerHTML, 'name-asc');
+  app.outputStateSortKey = 'size';
+  render();
+  assert.equal(panel.innerHTML, 'size-asc');
+  app.outputStateSortDir = 'desc';
+  render();
+  assert.equal(panel.innerHTML, 'size-desc');
+});
+
+test('state checkpoint sorting uses saved steps and keeps epoch-only saves together at the end', () => {
+  const {window} = loadFrontend('monitor/outputs');
+  const app = composeMixins(window.monitorOutputsMixin, {
+    outputStateSortKey: 'step', outputFiles: [
+      {name: 'epoch2', ckpt_epoch: 2, ckpt_step: 240}, {name: 'legacy3', ckpt_epoch: 3},
+      {name: 'step100', ckpt_step: 100}, {name: 'legacy1', ckpt_epoch: 1},
+      {name: 'unknown'}, {name: 'step0', ckpt_step: 0},
+    ].map(file => ({category: 'state', ...file})),
+  });
+  const order = () => Array.from(app._sortedOutputs().states, row => row.name);
+  app.outputStateSortDir = 'asc';
+  assert.deepEqual(order(), ['step0', 'step100', 'epoch2', 'legacy1', 'legacy3', 'unknown']);
+  app.outputStateSortDir = 'desc';
+  assert.deepEqual(order(), ['epoch2', 'step100', 'step0', 'legacy3', 'legacy1', 'unknown']);
+});
+
+test('history offers downloads for distributed states and resume for ordinary states', () => {
+  const {window} = loadFrontend(['training/field-renderer', 'monitor/core', 'monitor/render']);
+  const app = composeMixins(window.trainingFieldRenderer, window.utilsMixin, window.monitorCoreMixin, window.monitorRenderMixin, {
+    selectedRunDir: 'output/run', runDetailData: {}, t: key => key, outputFilter: 'states',
+    outputFiles: [], outputFilesSelected: {},
+  });
+  for (const name of ['fsdp-state', 'deepspeed-state']) {
+    app.outputFiles = [{category: 'state', name, path: name, resumable: false}];
+    const html = app._renderOutputsTab(app.t);
+    assert.ok(html.includes(`downloadSingleOutput('${name}')`));
+    assert.doesNotMatch(html, /resumeFromOutputState|fsdpIncompatible/);
+  }
+  app.outputFiles[0] = {category: 'state', name: 'epoch-state', path: 'epoch-state', resumable: true, ckpt_step: 240};
+  assert.match(app._renderOutputsTab(app.t), /resumeFromOutputState\('epoch-state',240\)/);
+});
+
+test('artifact notices refresh only changed samples and coalesce changes during a read', async () => {
+  const {app, requests} = requestHarness();
+  app.currentRoute = 'monitor-dashboard';
+  app.scheduleRender = () => {};
+  app._replacePreviewItems = () => false;
+  app._followLatestPreview = () => {};
+  app.handleRealtimeTaskArtifacts({output_count: 1, previews_changed: false});
+  assert.equal(requests.length, 0);
+  app.handleRealtimeTaskArtifacts({output_count: 2, previews_changed: true});
+  app.handleRealtimeTaskArtifacts({output_count: 3, previews_changed: true});
+  app.handleRealtimeTaskArtifacts({output_count: 4, previews_changed: true});
+  assert.equal(requests.length, 1);
+  requests[0].resolve(response([]));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(requests.length, 2);
+  requests[1].resolve(response([]));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app.previewsLoading, false);
+  assert.equal(requests.length, 2);
+  app.handleRealtimeTaskArtifacts({output_count: 5, previews_changed: true});
+  requests[2].reject(new Error('temporary'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(requests.length, 3, 'a failed refresh does not immediately loop');
+  app.handleRealtimeTaskArtifacts({output_count: 6, previews_changed: false});
+  assert.equal(requests.length, 4);
+  requests[3].resolve(response([]));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app._previewRefreshPending, false);
 });
 
 test('sample refresh preserves grid position after modal selection, but initial and explicit resets reveal it', () => {
@@ -136,16 +228,18 @@ test('sample snapshots keep a pressed cover in the DOM until pointer completion'
 });
 
 test('sample snapshots request staged arrival motion only for new tiles in the same visible browsing context', () => {
-  for (const mode of ['incoming', 'refresh', 'initial', 'run', 'sort', 'locale', 'tab', 'reset']) {
+  for (const mode of ['incoming', 'refresh', 'initial', 'run', 'sort', 'direction', 'locale', 'tab', 'reset']) {
     let rebuilt = false, motions = 0;
     const oldTile = {dataset: {sampleTileKey: 'old'}}, newTile = {dataset: {sampleTileKey: 'new'}};
     const grid = tiles => ({scrollTop: 0, classList: {contains: () => true},
       querySelectorAll: selector => selector === '.m-sample-batch' ? [] : tiles});
     const previous = mode === 'initial' ? null : grid([oldTile]);
     const next = grid(mode === 'refresh' ? [oldTile] : [oldTile, newTile]);
-    const context = ['run', '', 'desc', 'test', false];
+    const sort = mode === 'direction' ? 'loss-overall-desc' : 'desc';
+    const context = ['run', '', sort, 'test', false];
     if (mode === 'run') context[0] = 'previous-run';
     if (mode === 'sort') context[2] = 'asc';
+    if (mode === 'direction') context[2] = 'loss-overall-asc';
     if (mode === 'locale') context[3] = 'previous-locale';
     const panel = {firstElementChild: previous ? {} : null, _sampleMotionContext: JSON.stringify(context),
       classList: {add() {}}, contains: () => false,
@@ -155,7 +249,7 @@ test('sample snapshots request staged arrival motion only for new tiles in the s
     const {window} = loadFrontend(['monitor/render'], {window: {}, document, requestAnimationFrame() {}});
     const app = composeMixins(window.monitorArtifactsRenderMixin, window.monitorRenderMixin, {
       _builtTab: mode === 'tab' ? 'overview' : 'samples', _builtSamplesSig: 'previous', _shellLocale: 'test', previewsVersion: 2,
-      currentOutputRunDir: 'run', selectedRunDir: '', sampleBatchSortDir: 'desc', weakNetworkMode: false, runDetailData: {},
+      currentOutputRunDir: 'run', selectedRunDir: '', sampleBatchSortDir: sort, weakNetworkMode: false, runDetailData: {},
       _sampleOverviewAtEnd: false, _sampleResetScroll: mode === 'reset',
       _patchSampleBatchOrder() {}, _disconnectSampleExpansionUI() {}, _cancelSampleGridMotion() {}, _cancelPreviewMediaQueue() {},
       _capturePreviewMedia: () => new Map(), _restorePreviewMedia() {}, _renderSamplesTab: () => 'samples',

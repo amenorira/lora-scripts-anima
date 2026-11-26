@@ -32,6 +32,7 @@ window.monitorPreviewsMixin = {
   _previewOriginalCache: null,
   _previewMediaByUrl: null,
   _previewMediaRetryNeeded: false,
+  _previewMediaRetryTimer: null,
 
   get sampleSidebarActive() {
     return this.sampleSidebarVisible && this.sampleSidebarOpen && !!this.previews?.[this.previewStep];
@@ -91,12 +92,28 @@ window.monitorPreviewsMixin = {
     this._loadSampleViewPreferences();
   },
 
+  _normalizeSampleBatchSort(value, legacyAscending = true) {
+    const canonical = [
+      'desc', 'asc',
+      'loss-overall-asc', 'loss-overall-desc',
+      'loss-high-asc', 'loss-high-desc',
+      'loss-mid-asc', 'loss-mid-desc',
+      'loss-low-asc', 'loss-low-desc',
+    ];
+    if (canonical.includes(value)) return value;
+    if (['loss-overall', 'loss-high', 'loss-mid', 'loss-low'].includes(value)) {
+      return value + (legacyAscending === false ? '-desc' : '-asc');
+    }
+    return '';
+  },
+
   _loadSampleViewPreferences() {
     try {
       const saved = JSON.parse(localStorage.getItem('anima-sample-view') || '{}');
       if (typeof saved?.sidebar === 'boolean') this.sampleSidebarVisible = saved.sidebar;
       if (typeof saved?.viewerTimeline === 'boolean') this.previewViewTimelineVisible = saved.viewerTimeline;
-      if (['asc', 'desc', 'loss-overall', 'loss-high', 'loss-mid', 'loss-low'].includes(saved?.sort)) this.sampleBatchSortDir = saved.sort;
+      const sort = this._normalizeSampleBatchSort(saved?.sort, saved?.lossAscending !== false);
+      if (sort) this.sampleBatchSortDir = sort;
       if (saved?.comparisonLayout === 'horizontal' || saved?.comparisonLayout === 'vertical') this.previewComparisonLayout = saved.comparisonLayout;
       if (['off', 'overall', 'detailed'].includes(saved?.lossMode)) this.sampleLossMode = saved.lossMode;
     } catch { /* Keep the current layout if storage is unavailable. */ }
@@ -256,20 +273,29 @@ window.monitorPreviewsMixin = {
   },
 
   get sampleEffectiveBatchSort() {
-    const sort = this.sampleBatchSortDir || 'desc';
-    return ['loss-high', 'loss-mid', 'loss-low'].includes(sort) && !this.sampleDetailedLossAvailable ? 'loss-overall' : sort;
+    const sort = this._normalizeSampleBatchSort(this.sampleBatchSortDir) || 'desc';
+    const match = sort.match(/^loss-(high|mid|low)-(asc|desc)$/);
+    return match && !this.sampleDetailedLossAvailable ? 'loss-overall-' + match[2] : sort;
   },
 
   get sampleLossSortKey() {
+    const match = this.sampleEffectiveBatchSort.match(/^loss-(overall|high|mid|low)-(asc|desc)$/);
+    return match ? match[1] : '';
+  },
+
+  get sampleSortAscending() {
     const sort = this.sampleEffectiveBatchSort;
-    return sort.startsWith('loss-') ? sort.slice(5) : '';
+    return sort === 'asc' || sort.endsWith('-asc');
   },
 
   _sampleBatchOrder(items = this.previews) {
     // Presentation ranking never changes canonical chronology or comparison baselines.
-    const model = this._sampleDataModel(items), sort = this.sampleEffectiveBatchSort, key = this.sampleLossSortKey;
+    const model = this._sampleDataModel(items), sort = this.sampleEffectiveBatchSort;
+    const key = this.sampleLossSortKey;
+    const ascending = this.sampleSortAscending;
     const lossIndex = key ? this._sampleEpochLossIndex() : null, cached = this._sampleSortCache;
-    if (cached?.model === model && cached.sort === sort && cached.requested === this.sampleBatchSortDir && cached.lossIndex === lossIndex) return cached;
+    if (cached?.model === model && cached.sort === sort && cached.requested === this.sampleBatchSortDir
+        && cached.ascending === ascending && cached.lossIndex === lossIndex) return cached;
     const batches = [...model.batches];
     if (key) {
       const values = new Map(batches.map(batch => {
@@ -277,9 +303,16 @@ window.monitorPreviewsMixin = {
         const value = this._sampleEpochLoss(sample, lossIndex).values[key];
         return [batch.id, Number.isFinite(value) ? value : Infinity];
       }));
-      batches.sort((a, b) => values.get(a.id) !== values.get(b.id) ? values.get(a.id) - values.get(b.id) : b.position - a.position);
-    } else if (sort !== 'asc') batches.reverse();
-    const order = {model, sort, requested: this.sampleBatchSortDir, lossIndex, batches, positions: new Map(batches.map((batch, index) => [batch.id, index]))};
+      batches.sort((a, b) => {
+        const left = values.get(a.id), right = values.get(b.id);
+        if (left === right) return b.position - a.position;
+        if (left === Infinity) return 1;
+        if (right === Infinity) return -1;
+        return ascending ? left - right : right - left;
+      });
+    } else if (!ascending) batches.reverse();
+    const order = {model, sort, requested: this.sampleBatchSortDir, ascending, lossIndex, batches,
+      positions: new Map(batches.map((batch, index) => [batch.id, index]))};
     if (items === this.previews) this._sampleSortCache = order;
     return order;
   },
@@ -300,10 +333,21 @@ window.monitorPreviewsMixin = {
   },
 
   setSampleBatchSort(dir) {
-    if (!['asc', 'desc', 'loss-overall', 'loss-high', 'loss-mid', 'loss-low'].includes(dir) || dir === this.sampleBatchSortDir
-        || (['loss-high', 'loss-mid', 'loss-low'].includes(dir) && !this.sampleDetailedLossAvailable)) return;
-    this._sampleLayoutAction++;
+    const valid = [
+      'desc', 'asc',
+      'loss-overall-asc', 'loss-overall-desc',
+      'loss-high-asc', 'loss-high-desc',
+      'loss-mid-asc', 'loss-mid-desc',
+      'loss-low-asc', 'loss-low-desc',
+    ];
+    if (!valid.includes(dir) || dir === this.sampleBatchSortDir
+        || (/^loss-(high|mid|low)-/.test(dir) && !this.sampleDetailedLossAvailable)) return;
     this.sampleBatchSortDir = dir;
+    this._applySampleBatchSort();
+  },
+
+  _applySampleBatchSort() {
+    this._sampleLayoutAction++;
     this._saveSampleViewPreferences();
     // Sorting changes presentation without selecting or acknowledging another image.
     this._sampleResetScroll = true; this._sampleScrollAnchor = null;
@@ -340,10 +384,26 @@ window.monitorPreviewsMixin = {
 
   _sampleCaseLabel(preview, includeSeed = undefined, promptText = undefined) {
     const sample = this._sampleRecord(preview);
-    const batchIndices = Number.isInteger(sample.prompt_index) ? null : this._sampleDataModel().byBatch.get(sample.batch_id)?.indices || [];
-    const number = Number.isInteger(sample.prompt_index) && sample.prompt_index >= 0 ? sample.prompt_index + 1
-      : Math.max(0, batchIndices?.findIndex(index => this.previews[index] === preview) ?? -1) + 1;
-    const prompt = promptText ?? this.t('monitor.samplePrompt').replace('{n}', number);
+    let prompt = promptText;
+    if (prompt == null) {
+      if (sample.sample_origin === 'manual') {
+        const sourceIdx = Number.isInteger(sample.source_prompt_index) && sample.source_prompt_index >= 0
+          ? sample.source_prompt_index : null;
+        if (sourceIdx != null) {
+          prompt = this.t('control.manualPresetLabel').replace('{n}', sourceIdx + 1);
+        } else {
+          const text = this._samplePromptText(preview);
+          prompt = text
+            ? this.t('control.manualTextLabel').replace('{text}', text.length > 24 ? text.slice(0, 24) + '…' : text)
+            : this.t('control.previewTitle');
+        }
+      } else {
+        const batchIndices = Number.isInteger(sample.prompt_index) ? null : this._sampleDataModel().byBatch.get(sample.batch_id)?.indices || [];
+        const number = Number.isInteger(sample.prompt_index) && sample.prompt_index >= 0 ? sample.prompt_index + 1
+          : Math.max(0, batchIndices?.findIndex(index => this.previews[index] === preview) ?? -1) + 1;
+        prompt = this.t('monitor.samplePrompt').replace('{n}', number);
+      }
+    }
     const showSeed = includeSeed === undefined ? this._sampleNeedsSeed(preview) : includeSeed;
     let label = prompt + (showSeed ? ' ' + (sample.seed == null ? this.t('monitor.sampleNoSeed') : this.t('monitor.sampleSeed').replace('{n}', sample.seed)) : '');
     const model = this._sampleDataModel(), batch = model.byBatch.get(sample.batch_id);
@@ -529,8 +589,8 @@ window.monitorPreviewsMixin = {
     let order = (this.previewComparisonOrder || []).filter((key, index, items) => valid.has(key) && items.indexOf(key) === index);
     for (const key of keys) if (!order.includes(key)) order.splice(order.includes(null) ? order.indexOf(null) : order.length, 0, key);
     if (!order.includes(null)) order.push(null);
-    // A waiting slot is never the baseline. Removing a reference also retains
-    // a fixed first image rather than turning the browsing slot into a baseline.
+    // Move the waiting slot to the end when enabled or first in the order.
+    // This keeps an image as the baseline after a reference is removed.
     if (this.previewComparisonWaiting || order[0] === null) order = order.filter(key => key !== null).concat(null);
     if (order.length !== this.previewComparisonOrder.length || order.some((key, index) => key !== this.previewComparisonOrder[index])) this.previewComparisonOrder = order;
     return order;
@@ -632,8 +692,8 @@ window.monitorPreviewsMixin = {
         return other.prompt_id === sample.prompt_id && (other.seed == null ? sample.seed == null : sample.seed != null && String(other.seed) === String(sample.seed));
       });
       const exact = candidates.filter(index => this._sampleCaseKey(items[index]) === this._sampleCaseKey(current));
-      // A temporal inspection keeps the selected prompt and seed. Missing or
-      // ambiguous cases are skipped rather than silently selecting another seed.
+      // Among prompt-and-seed matches, prefer a unique exact case.
+      // Otherwise use a sole candidate and skip batches without one.
       return exact.length === 1 ? exact[0] : candidates.length === 1 ? candidates[0] : -1;
     }).filter(index => index >= 0);
   },
@@ -684,6 +744,7 @@ window.monitorPreviewsMixin = {
     this._previewRequestSeq++;
     this._previewSnapshotSeq++;
     this.previewsLoading = false;
+    this._previewRefreshPending = false;
   },
 
   _applyPreviewSnapshot(previews, snapshotSeq = this._previewSnapshotSeq) {
@@ -754,6 +815,8 @@ window.monitorPreviewsMixin = {
   },
 
   _cancelPreviewMediaQueue() {
+    if (this._previewMediaRetryTimer !== null) clearTimeout(this._previewMediaRetryTimer);
+    this._previewMediaRetryTimer = null;
     this._previewMediaGeneration++;
     for (const item of this._previewMediaQueue) delete item.image.dataset.previewQueued;
     if (this._previewMediaActive) delete this._previewMediaActive.dataset.previewQueued;
@@ -824,14 +887,19 @@ window.monitorPreviewsMixin = {
         this._setPreviewMediaSource(next.image, next.url, objectUrl);
       }
     } catch (error) {
-      // Cancellation and transient slow-link failures remain retryable on the
-      // next render or when realtime freshness recovers.
+      // A failed thumbnail can recover even on a static historical dashboard.
       if (next.image && next.image.isConnected) {
         delete next.image.dataset.previewQueued;
         if (error?.name !== 'AbortError' && generation === this._previewMediaGeneration) {
           this._previewMediaObserver?.unobserve(next.image);
           this._previewMediaRetryNeeded = true;
           next.image.closest?.('.preview-thumb-frame')?.classList.add('is-error');
+          if (this.currentRoute === 'monitor-dashboard' && this.monitorTab === 'samples') {
+            this._previewMediaRetryTimer ??= setTimeout(() => {
+              this._previewMediaRetryTimer = null;
+              if (this._previewMediaRetryNeeded) this.scheduleRender();
+            }, 1000);
+          }
         }
       }
     } finally {
@@ -916,6 +984,9 @@ window.monitorPreviewsMixin = {
     // feedback visible briefly without holding the request or its results.
     if (notifyOnFailure) this._showRefreshFeedback('preview');
     this.previewsLoading = true;
+    const artifactRefresh = this._previewRefreshPending;
+    this._previewRefreshPending = false;
+    let applied = false;
     const requestSeq = ++this._previewRequestSeq;
     this._previewSnapshotSeq++;
     const sourceRunDir = this.currentOutputRunDir;
@@ -926,7 +997,8 @@ window.monitorPreviewsMixin = {
     try {
       // ``limit=0`` means all compact preview metadata. Image bytes continue
       // through the thumbnail queue (or normal browser loading when disabled).
-      let url = '/api/monitor/previews?refresh=1&limit=0';
+      let url = '/api/monitor/previews?limit=0';
+      if (notifyOnFailure) url += '&refresh=1';
       const runDir = this.currentOutputRunDir;
       if (runDir) {
         url += '&run_dir=' + encodeURIComponent(runDir);
@@ -951,12 +1023,19 @@ window.monitorPreviewsMixin = {
           if (j.meta.preview_enabled !== undefined) target.preview_enabled = j.meta.preview_enabled;
         }
         this._followLatestPreview();
+        applied = true;
       } else if (notifyOnFailure) this.toast?.(this.t('monitor.previewRefreshFailed'), 'error');
     } catch (e) {
       if (notifyOnFailure && isCurrent()) this.toast?.(this.t('monitor.previewRefreshFailed'), 'error');
     } finally {
       if (requestSeq === this._previewRequestSeq) {
         this.previewsLoading = false;
+        if (this._previewRefreshPending) {
+          void this.refreshPreviews(false);
+        } else if (artifactRefresh && !applied) {
+          // A later artifact notice can retry a failed sample read.
+          this._previewRefreshPending = true;
+        }
         if (this.currentRoute === 'monitor-dashboard') this.renderDashboard();
       }
     }
@@ -972,12 +1051,13 @@ window.monitorPreviewsMixin = {
   },
 
   _sampleMetadata(filename) {
-    const match = String(filename || '').match(/(?:^|_)(e?)(\d{6})_(\d{2})_/i);
+    const match = String(filename || '').match(/(?:^|_)(e?)(\d{6})_(\d{2,})_/i);
     if (!match) return { stage: '', prompt: '' };
     const kind = match[1] ? 'epoch' : 'step';
+    const index = Number(match[3]);
     return {
       stage: kind + ':' + Number(match[2]),
-      prompt: this.t('monitor.samplePrompt').replace('{n}', Number(match[3]) + 1),
+      prompt: this.t('monitor.samplePrompt').replace('{n}', index + 1),
     };
   },
 

@@ -11,7 +11,8 @@ from typing import Literal
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from backend.constants import REPO_ROOT
+from backend.constants import DEFAULT_ANIMA_DIT, REPO_ROOT
+from backend.training.config.anima_blocks import validate_anima_block_limits
 from . import storage
 
 
@@ -21,7 +22,7 @@ class Settings(BaseModel):
     model_type: Literal["anima", "sdxl"] = "anima"
     checkpoint: str = ""
     sdxl_vae: str = ""
-    dit: str = "./models/anima-base-v1.0.safetensors"
+    dit: str = DEFAULT_ANIMA_DIT
     text_encoder: str = "./models/qwen_3_06b_base.safetensors"
     vae: str = "./models/qwen_image_vae.safetensors"
     ignore_first: int = Field(0, ge=0, le=10000)
@@ -48,7 +49,7 @@ class Settings(BaseModel):
     bucket_reso_steps: int = Field(64, ge=16, le=512, multiple_of=16)
     memory_mode: Literal["auto", "manual"] = "auto"
     precision: Literal["bf16", "fp16"] = "bf16"
-    blocks_to_swap: int = Field(0, ge=0, le=26)
+    blocks_to_swap: int = Field(0, ge=0)
     text_encoder_cpu: bool = True
     gpu_index: int = Field(0, ge=0, le=31)
 
@@ -148,8 +149,7 @@ def source_caption(text: str, candidate: str) -> tuple[str, bool]:
     selected = sections.get(candidate, "").strip()
     if not selected:
         raise CaptionSelectionError("regularization_candidate_missing", "Selected caption candidate is missing or empty / 所选标注候选缺失或为空")
-    # The generated training caption must be one line. Preserve all text while
-    # converting candidate line breaks to spaces instead of dropping later lines.
+    # Join all candidate lines with spaces to produce a single training caption.
     return " ".join(line.strip() for line in selected.splitlines()), True
 
 
@@ -276,6 +276,8 @@ def identity(settings, root, sources):
         if not path.is_file():
             raise ValueError(f"Model not found / 模型不存在: {path}")
         config[key] = str(path)
+    if settings.model_type == "anima" and settings.memory_mode == "manual":
+        validate_anima_block_limits(config["dit"], settings.blocks_to_swap)
     models = [source_stamp(Path(config[k])) for k in model_keys]
     return config, digest({"settings": config, "sources": [identity_source(s) for s in sources], "models": models})
 

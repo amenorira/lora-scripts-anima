@@ -97,7 +97,7 @@ async def warm_startup_caches() -> None:
     """Optional disk scans and training imports run after the ready banner."""
     from backend.log import log
     results = await asyncio.gather(
-        asyncio.to_thread(scan_history),  # Includes idempotent legacy migration.
+        asyncio.to_thread(scan_history, refresh=True),
         asyncio.to_thread(warm_step_estimator),
         return_exceptions=True,
     )
@@ -170,7 +170,7 @@ if os.environ.get("ANIMA_DEV") == "1":
     )
 
 # 压缩文本型响应（静态 JS/CSS、字段注册表 JSON 等）；解压后字节不变
-app.add_middleware(GZipMiddleware, minimum_size=1024)
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=3)
 
 _IMMUTABLE_PREVIEW_PATHS = {"/api/image-preview", "/api/monitor/preview-metadata"}
 
@@ -181,10 +181,10 @@ _DICTIONARY_ASSET_PREFIX = "/api/tageditor/dictionary/asset/"
 def apply_cache_policy(url: URL, headers: MutableHeaders) -> None:
     """按资源类型分级缓存策略：
 
-    - 生成类预览走自身 ETag（慢速远程链路上不能再被 no-store 冲掉）
+    - 生成类预览保留自身的缓存头和 ETag
     - 带内容哈希的词典内容文件长期缓存；manifest 保持 revalidate
     - /api/ 一律 revalidate（no-cache），稳定注册表靠各自 ETag 应答 304
-    - 前端资源与 HTML 入口保持 revalidate，不能把手工查询串当成内容哈希
+    - 前端资源与 HTML 入口每次重新校验，包括带版本查询串的资源
     - 图片/字体/图标短缓存；未版本化的 JS/CSS 不缓存
     """
     path = url.path

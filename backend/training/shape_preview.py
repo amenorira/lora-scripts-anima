@@ -15,6 +15,8 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
+from backend.constants import DEFAULT_ANIMA_DIT
+from backend.training.config.anima_blocks import AnimaCheckpointError, anima_block_count
 from backend.training.config.moss_image import NETWORK_MODULES as MOSS_NETWORK_MODULES
 from backend.training.config.krea2_network import (
     KREA2_NETWORK_MODULES, build_krea2_network_args, build_krea2_network_preset,
@@ -28,6 +30,22 @@ SUPPORTED = {
     "krea2-lora": set(KREA2_NETWORK_MODULES),
 }
 _pool = None
+
+
+def _rebuild_shape_preview_error(code: str, message: str, params: dict):
+    return ShapePreviewError(code, message, **params)
+
+
+class ShapePreviewError(ValueError):
+    """Validation failure with a stable localization key across spawn workers."""
+
+    def __init__(self, code: str, message: str, **params):
+        super().__init__(message)
+        self.code = code
+        self.params = params
+
+    def __reduce__(self):
+        return (_rebuild_shape_preview_error, (self.code, str(self), self.params))
 
 
 def preview_pool():
@@ -61,15 +79,28 @@ async def warm_up():
         log.warning("Shape preview warm-up failed / 结构预览预热失败", exc_info=True)
 
 
-def _anima_config():
-    # Read the same fixed architecture as the training loader, without loading weights.
+def _anima_config(checkpoint=None):
+    # Preserve the stock architecture preview before the default model is downloaded.
+    blocks = 28
+    if checkpoint:
+        path = ROOT / Path(checkpoint).expanduser()
+        if path.exists() or path.resolve() != (ROOT / DEFAULT_ANIMA_DIT).resolve():
+            try:
+                blocks = anima_block_count(path)
+            except AnimaCheckpointError as exc:
+                if exc.code == "shapePreviewAnimaCheckpointMissingBlocks":
+                    raise ShapePreviewError("shapePreviewAnimaCheckpointMissingBlocks", str(exc), **exc.params) from exc
+                raise ShapePreviewError("shapePreviewAnimaCheckpointReadFailed", str(exc), **exc.params) from exc
+    # Read the remaining fixed architecture settings from the training loader.
     source = ROOT / "vendor/sd-scripts/library/anima_utils.py"
     tree = ast.parse(source.read_text(encoding="utf-8"))
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "dit_config" for t in node.targets):
-            return {ast.literal_eval(k): ({"attn_mode": "torch", "split_attn": False}[v.id]
+            config = {ast.literal_eval(k): ({"attn_mode": "torch", "split_attn": False}[v.id]
                     if isinstance(v, ast.Name) else ast.literal_eval(v))
                     for k, v in zip(node.value.keys, node.value.values)}
+            config["num_blocks"] = blocks
+            return config
     raise ValueError("Anima architecture configuration was not found")
 
 
@@ -124,13 +155,23 @@ def _inspect_network(form):
 
     train_type = form.get("model_train_type")
     if train_type not in SUPPORTED:
-        raise ValueError("Unsupported training profile / 不支持此训练类型的结构预览")
+        raise ShapePreviewError(
+            "shapePreviewUnsupportedProfile",
+            "Unsupported training profile / 不支持此训练类型的结构预览",
+        )
     is_krea2 = train_type == "krea2-lora"
     if is_krea2:
         config = dict(form)
         errors = validate_krea2_network(config)
         if errors:
-            raise ValueError("; ".join(errors))
+            fields = list(dict.fromkeys(
+                item.split(":", 1)[0].strip() for item in errors if ":" in item
+            ))
+            raise ShapePreviewError(
+                "shapePreviewInvalidKrea2Network",
+                "; ".join(errors),
+                fields=", ".join(fields) if fields else "; ".join(errors),
+            )
         config["network_args"] = build_krea2_network_args(config, "krea2-preview")
         if config.get("network_module") == "lycoris.kohya":
             config["network_dropout"] = config.get("dropout", 0) if config.get("lycoris_algo") == "lora" else 0
@@ -140,13 +181,25 @@ def _inspect_network(form):
         config, _ = adapt_config(form)
     module_name = config.get("network_module")
     if module_name not in SUPPORTED[train_type]:
-        raise ValueError("Unsupported custom network / 暂不支持此自定义网络")
+        raise ShapePreviewError(
+            "shapePreviewUnsupportedNetwork",
+            "Unsupported custom network / 暂不支持此自定义网络",
+        )
     if train_type == "moss-image-lora" and not config.get("network_train_unet_only"):
-        raise ValueError("MOSS-Image preview requires a frozen text encoder / MOSS-Image 结构预览要求冻结文本编码器")
+        raise ShapePreviewError(
+            "shapePreviewMossFreezeTextEncoder",
+            "MOSS-Image preview requires a frozen text encoder / MOSS-Image 结构预览要求冻结文本编码器",
+        )
     if config.get("dim_from_weights"):
-        raise ValueError("Dimensions from checkpoint cannot be estimated / 暂不支持从已有权重推导结构")
+        raise ShapePreviewError(
+            "shapePreviewDimFromWeights",
+            "Dimensions from checkpoint cannot be estimated / 暂不支持从已有权重推导结构",
+        )
     if config.get("save_model_as", "safetensors") != "safetensors":
-        raise ValueError("File size estimation requires safetensors / 文件大小估算仅支持 safetensors")
+        raise ShapePreviewError(
+            "shapePreviewRequiresSafetensors",
+            "File size estimation requires safetensors / 文件大小估算仅支持 safetensors",
+        )
 
     for path in (ROOT / "vendor", ROOT / "vendor/sd-scripts", ROOT / "vendor/musubi-tuner/src"):
         if str(path) not in sys.path:
@@ -163,11 +216,11 @@ def _inspect_network(form):
     rank = int(config.get("network_dim", 4))
     alpha = float(config.get("network_alpha", 1))
     if rank < 1 or not math.isfinite(alpha):
-        raise ValueError("Invalid dim or alpha / dim 或 alpha 无效")
+        raise ShapePreviewError("shapePreviewInvalidDimAlpha", "Invalid dim or alpha / dim 或 alpha 无效")
     precision = config.get("save_precision") or ("bf16" if config.get("full_bf16") else "fp16" if config.get("full_fp16") else "float")
     bytes_per = {"fp16": 2, "bf16": 2, "float": 4, "fp32": 4}.get(precision)
     if bytes_per is None:
-        raise ValueError("Unknown save precision / 无法识别保存精度")
+        raise ShapePreviewError("shapePreviewUnknownPrecision", "Unknown save precision / 无法识别保存精度")
     # PyTorch 2.12 trunc_normal_ checks sampled values, which fake tensors lack.
     # This isolated shape-only worker needs no random weight values.
     with FakeTensorMode(), patch.object(torch.nn.init, "trunc_normal_", lambda tensor, *args, **kwargs: tensor):
@@ -182,7 +235,7 @@ def _inspect_network(form):
         else:
             from library.anima_models import Anima
 
-            model = Anima(**_anima_config())
+            model = Anima(**_anima_config(config.get("pretrained_model_name_or_path")))
         originals = {id(m): (name, m) for name, m in model.named_modules()}
         text_encoders = []
         if not config.get("network_train_unet_only"):
@@ -192,7 +245,10 @@ def _inspect_network(form):
             config_path = qwen_path / "config.json" if qwen_path.is_dir() and config.get("qwen3") else ROOT / "vendor/sd-scripts/configs/qwen3_06b/config.json"
             qwen_config = json.loads(config_path.read_text(encoding="utf-8"))
             if qwen_config.get("model_type") != "qwen3":
-                raise ValueError("Unknown text encoder architecture / 不支持此文本编码器结构")
+                raise ShapePreviewError(
+                    "shapePreviewUnknownTextEncoder",
+                    "Unknown text encoder architecture / 不支持此文本编码器结构",
+                )
             encoder = Qwen3Model(Qwen3Config(**qwen_config))
             text_encoders.append(encoder)
             originals.update({id(m): (f"qwen3.{name}", m) for name, m in encoder.named_modules()})
@@ -219,7 +275,10 @@ def _inspect_network(form):
         full_count = 0
         adapters = ([] if config.get("network_train_text_encoder_only") else network.unet_loras) + getattr(network, "text_encoder_loras", [])
         if not adapters:
-            raise ValueError("No adapter modules matched / 当前配置没有匹配到可训练的适配器模块")
+            raise ShapePreviewError(
+                "shapePreviewNoModulesMatched",
+                "No adapter modules matched / 当前配置没有匹配到可训练的适配器模块",
+            )
         for adapter in adapters:
             original = getattr(adapter, "org_module", None)
             if original is None:
@@ -228,11 +287,19 @@ def _inspect_network(form):
                 original = original[0]
             name, original = originals[id(original)]
             if not isinstance(original, torch.nn.Linear):
-                raise ValueError(f"Unsupported preview module / 暂不支持此模块预览: {name}")
+                raise ShapePreviewError(
+                    "shapePreviewUnsupportedModule",
+                    f"Unsupported preview module / 暂不支持此模块预览: {name}",
+                    module=name,
+                )
             algo_class = type(adapter).__name__
             algo = {"LoRAModule": "lora", "LoConModule": "lora", "LoHaModule": "loha", "LohaModule": "loha", "LoKrModule": "lokr", "LokrModule": "lokr"}.get(algo_class)
             if algo is None:
-                raise ValueError(f"Unsupported per-module algorithm / 暂不支持此逐层算法: {algo_class}")
+                raise ShapePreviewError(
+                    "shapePreviewUnsupportedAlgo",
+                    f"Unsupported per-module algorithm / 暂不支持此逐层算法: {algo_class}",
+                    algo=algo_class,
+                )
             # Native adapters register the original module until apply_to().
             if "org_module" in adapter._modules:
                 del adapter.org_module
@@ -264,13 +331,11 @@ def _inspect_network(form):
                        "useScalar": "scalar" in dict(adapter.named_parameters())}
             key = json.dumps(details, sort_keys=True)
             if key not in groups:
-                groups[key] = {**details, "count": 0, "paths": []}
+                groups[key] = {**details, "id": name, "count": 0, "paths": []}
             groups[key]["count"] += 1
             groups[key]["paths"].append(name)
             total_params += params
         rows = list(groups.values())
-        for index, row in enumerate(rows):
-            row["id"] = str(index)
         # All tensors have the save dtype; safetensors orders their payload by name.
         cursor = 0
         for key in sorted(header):

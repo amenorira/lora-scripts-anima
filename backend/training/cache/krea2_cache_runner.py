@@ -65,12 +65,9 @@ def main() -> None:
         ("text_encoder", "text encoder cache / 文本编码缓存", args.text_device, args.text_cache_batch_size, "--text_encoder", args.text_encoder),
     ):
         if config is not None:
-            from backend.training.cache.krea2_cache import (
-                read_cache_manifest, get_krea2_cache_status, complete_stage, reusable_stages, stage_fingerprints,
-            )
+            from backend.training.cache.krea2_cache import can_reuse_stage, complete_stage
 
-            manifest, _ = read_cache_manifest(config["dataset_cache_dir"])
-            if reusable_stages(config, manifest, get_krea2_cache_status(config), stage_fingerprints(config))[stage]:
+            if can_reuse_stage(config, stage):
                 print(f"[Krea 2 cache] reuse / 复用 {label}", flush=True)
                 continue
         dataset_config = _stage_dataset(Path(args.dataset_config), stage, batch_size)

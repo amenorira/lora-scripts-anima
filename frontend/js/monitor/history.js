@@ -16,6 +16,20 @@ window.monitorHistoryMixin = {
   clearHistoryFilters() {
     this.historySearch = '';
     this.historyFilter = 'all';
+    this.historyPage = 1;
+    this.renderHistory();
+  },
+
+  get historyPageCount() {
+    return Math.max(1, Math.ceil(this.historyFilteredCount / this.historyPageSize));
+  },
+
+  get historyPageShown() {
+    return Math.min(this.historyPageSize, Math.max(0, this.historyFilteredCount - (this.historyPage - 1) * this.historyPageSize));
+  },
+
+  setHistoryPage(page) {
+    this.historyPage = Math.max(1, Math.min(this.historyPageCount, page));
     this.renderHistory();
   },
 
@@ -34,7 +48,7 @@ window.monitorHistoryMixin = {
     this.historyRefreshing = manual;
     this.historyError = '';
     try {
-      const r = await fetch('/api/monitor/history' + (background ? '' : '?refresh=true'));
+      const r = await fetch('/api/monitor/history' + (manual ? '?refresh=true' : ''));
       const d = await r.json();
       if (seq !== this._historyRequestSeq) return;
       if (d.status !== 'success') throw new Error(d.message || this.t('monitor.historyLoadError'));
@@ -117,19 +131,11 @@ window.monitorHistoryMixin = {
     this._invalidatePreviewRequest();
     this._runDetailRequestSeq++;
     this._logSliceRequestSeq++;
-    this._resetLogRefreshFeedback();
-    this.logLines = [];
-    this.logTotal = 0;
-    this._logTailOffset = 0;
-    this.logFullLines = [];
-    this.logFullOffset = 0;
-    this.logFullMatches = [];
+    this._resetLogPage();
     this.logFullQuery = '';
-    this._logFullResultQuery = '';
     this.logFullMatchIdx = -1;
     this.logFullLoading = false;
     this._logFullSourceKey = 'run:' + runDir;
-    this._logContentVersion++;
     this.selectedRunDir = runDir;
     this.runDetailData = null;
     this.lossDataVersion++;
@@ -141,7 +147,8 @@ window.monitorHistoryMixin = {
     this.runDetailLoading = true;
     this.runDetailError = '';
     this._resetOutputFilesForRun(runDir);
-    this.monitorTab = ['overview', 'logs', 'samples', 'outputs'].includes(tab) ? tab : 'overview';
+    this._resetDatasetDiagForRun?.('run:' + runDir);
+    this.monitorTab = ['overview', 'logs', 'samples', 'outputs', 'dataset'].includes(tab) ? tab : 'overview';
     this.monitorParamQuery = '';
     this._shellBuilt = false;
     this._forceLogRebuild = true;
@@ -196,7 +203,7 @@ window.monitorHistoryMixin = {
     this._invalidatePreviewRequest();
     this._runDetailRequestSeq++;
     this._logSliceRequestSeq++;
-    this._resetLogRefreshFeedback();
+    this._resetLogPage();
     this.selectedRunDir = null;
     this.runDetailData = null;
     this.lossDataVersion++;
@@ -208,12 +215,8 @@ window.monitorHistoryMixin = {
     this.previewsVersion++;
     this.previewStep = 0;
     this._resetOutputFilesForRun('');
-    this.logLines = [];
-    this.logFullLines = [];
-    this.logFullOffset = 0;
-    this.logFullMatches = [];
+    this._resetDatasetDiagForRun?.('');
     this.logFullQuery = '';
-    this._logFullResultQuery = '';
     this.logFullMatchIdx = -1;
     this.logFullLoading = false;
     this._shellBuilt = false;
@@ -222,8 +225,5 @@ window.monitorHistoryMixin = {
     this._logFullNeedsResync = false;
     this._logFullSlide = false;
     this._logFullSourceKey = '';
-    this.logTotal = 0;
-    this._logTailOffset = 0;
-    this._logContentVersion++;
   },
 };

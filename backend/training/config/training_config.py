@@ -36,10 +36,16 @@ SECTION_ORDER = [
     "misc",
 ]
 INTERNAL_PROFILE_KEYS = {"model_train_type", "engine_id", "adapter_id", "gpu_ids"}
+APPLICATION_YAML_MARKERS = ("kind", "schema_version", "profile", "parameters", "form")
 
 
 class TrainingConfigError(ValueError):
-    """Raised when a training YAML document is invalid or unsupported."""
+    """Raised when a training YAML/TOML document is invalid or unsupported."""
+
+    def __init__(self, message: str, *, code: str | None = None, **params):
+        super().__init__(message)
+        self.code = code
+        self.params = params
 
 
 class _UniqueKeySafeLoader(yaml.SafeLoader):
@@ -340,9 +346,8 @@ def extract_training_form(document: dict[str, Any]) -> dict[str, Any]:
         visit({key: value for key, value in misc.items() if key in field_keys})
     # Structured sections take precedence over legacy copies in misc.
     visit({key: value for key, value in parameters.items() if key != "misc"})
-    # Unknown API parameters are saved directly in misc. Preserve them on read
-    # too, so frontend imports can report unsupported fields instead of silently
-    # dropping them before its whitelist has a chance to warn the user.
+    # Preserve unknown API parameters from misc so the frontend can list
+    # unsupported fields during import.
     if isinstance(misc, dict):
         for key, value in misc.items():
             if key not in field_keys:
@@ -360,7 +365,11 @@ def _normalize_preview_form(form):
     try:
         normalize_form(form)
     except ValueError as exc:
-        raise TrainingConfigError(str(exc)) from exc
+        raise TrainingConfigError(
+            str(exc),
+            code=getattr(exc, "code", None),
+            **(getattr(exc, "params", None) or {}),
+        ) from exc
 
 
 def build_training_config(
@@ -423,24 +432,55 @@ def _validate_training_document(
     allowed = allowed_kinds or {"training"}
     if not isinstance(document, dict):
         raise TrainingConfigError("Training YAML root must be an object")
-    if document.get("kind") not in allowed:
+    kind = document.get("kind")
+    if not isinstance(kind, str) or kind not in allowed:
+        if any(marker in document for marker in APPLICATION_YAML_MARKERS):
+            raise TrainingConfigError("Unsupported YAML kind", code="configYamlUnsupportedKind")
         raise TrainingConfigError("Unsupported YAML kind")
-    if document.get("schema_version") not in SUPPORTED_TRAINING_CONFIG_SCHEMAS:
-        raise TrainingConfigError(f"Unsupported training YAML schema: {document.get('schema_version')}")
+    schema_version = document.get("schema_version")
+    if isinstance(schema_version, bool) or not isinstance(schema_version, int):
+        raise TrainingConfigError(
+            f"Unsupported training YAML schema: {schema_version}",
+            code="configYamlInvalidField",
+            field="schema_version",
+        )
+    if schema_version not in SUPPORTED_TRAINING_CONFIG_SCHEMAS:
+        raise TrainingConfigError(
+            f"Unsupported training YAML schema: {schema_version}",
+            code="configYamlUnsupportedSchema",
+            version=str(schema_version),
+        )
     document_id = document.get("document_id")
     if document_id is not None:
         try:
             UUID(str(document_id))
         except (ValueError, TypeError, AttributeError) as exc:
-            raise TrainingConfigError("Training YAML document_id must be a UUID") from exc
+            raise TrainingConfigError(
+                "Training YAML document_id must be a UUID",
+                code="configYamlInvalidField",
+                field="document_id",
+            ) from exc
     profile = document.get("profile")
-    if not isinstance(profile, dict) or not str(profile.get("id") or "").strip():
-        raise TrainingConfigError("Training YAML profile.id is required")
-    if document.get("schema_version") == 1:
+    profile_id = profile.get("id") if isinstance(profile, dict) else None
+    if not isinstance(profile_id, str) or not profile_id.strip():
+        raise TrainingConfigError(
+            "Training YAML profile.id is required",
+            code="configYamlInvalidField",
+            field="profile.id",
+        )
+    if schema_version == 1:
         if not isinstance(document.get("form"), dict):
-            raise TrainingConfigError("Training YAML form must be an object")
+            raise TrainingConfigError(
+                "Training YAML form must be an object",
+                code="configYamlInvalidField",
+                field="form",
+            )
     elif not isinstance(document.get("parameters"), dict):
-        raise TrainingConfigError("Training YAML parameters must be an object")
+        raise TrainingConfigError(
+            "Training YAML parameters must be an object",
+            code="configYamlInvalidField",
+            field="parameters",
+        )
     return document
 
 
@@ -451,7 +491,7 @@ def parse_training_config_text(
 ) -> dict[str, Any]:
     """Safely parse and validate an application-level YAML document."""
     if len(content.encode("utf-8")) > MAX_TRAINING_CONFIG_BYTES:
-        raise TrainingConfigError("Training YAML is too large")
+        raise TrainingConfigError("Training YAML is too large", code="configFileTooLarge")
     try:
         document = yaml.load(content, Loader=_UniqueKeySafeLoader)
     except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
@@ -463,7 +503,7 @@ def load_training_config(path: str | Path) -> dict[str, Any]:
     """Safely load and validate a generated training YAML document."""
     source = Path(path)
     if source.stat().st_size > MAX_TRAINING_CONFIG_BYTES:
-        raise TrainingConfigError("Training YAML is too large")
+        raise TrainingConfigError("Training YAML is too large", code="configFileTooLarge")
     try:
         content = read_text(source)
     except (OSError, UnicodeDecodeError) as exc:

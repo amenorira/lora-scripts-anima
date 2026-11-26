@@ -139,7 +139,7 @@ When buckets are enabled, images with similar resolutions and aspect ratios are 
 
 ### `logsnr`
 
-`logit_mean` defaults to `0`: higher values favor low noise and lower values favor high noise. `logit_std` defaults to `1`: higher values spread samples out and lower values concentrate them. These names are shared with `sigma + logit_normal`, but the conversion formulas differ, so their values are not interchangeable.
+`logit_mean` defaults to `0`: higher values favor low noise and lower values favor high noise. `logit_std` defaults to `1`: higher values spread samples out and lower values concentrate them. `sigma + logit_normal` uses the same parameter names with a different conversion formula. After switching methods, use the distribution preview to choose the values again.
 
 SNR is the ratio of signal strength to noise strength, and LogSNR is its logarithmic form. Higher LogSNR means a stronger image signal and less noise.
 
@@ -180,7 +180,7 @@ Let <var>s</var> be the shift value. The transform is:
 
 <div class="doc-equation" role="group" aria-label="Discrete flow shift equation">
   <div class="doc-equation-kicker">Fixed flow shift</div>
-  <div class="doc-equation-expression"><var>t</var><sub>shifted</sub> = <span class="doc-frac"><span><var>s</var> · <var>t</var></span><span>1 + (<var>s</var> − 1) · <var>t</var></span></span></div>
+  <div class="doc-equation-expression"><var>t</var><sub>shifted</sub> = (<var>s</var> · <var>t</var>) / (1 + (<var>s</var> − 1) · <var>t</var>)</div>
   <p><var>s</var> is <code>discrete_flow_shift</code>.</p>
 </div>
 
@@ -203,7 +203,7 @@ The mapping looks like this:
 {"10_group_a": -0.25, "3_group_b": 0.20}
 ```
 
-When nonzero subset offsets are configured, launch generates a separate `dataset.toml`. Offsets are not added directly to the main training TOML, but are retained in the app's YAML export and the run's `training.yaml`:
+When nonzero subset offsets are configured, launch writes them to a separate `dataset.toml`. The app's YAML export and the run's `training.yaml` also retain them. Example `dataset.toml`:
 
 ```toml
 [[datasets.subsets]]
@@ -218,7 +218,7 @@ During training, the offset is carried with each image into the batch. Images fr
 
 Subset offsets are supported by `sigmoid`, `shift`, `flux_shift`, `truncated_logit_normal`, and `sigma + logit_normal`. The `uniform` path and other `sigma` schemes ignore this value.
 
-Start within `-0.5` to `+0.5`. Negative values increase low-noise sampling; positive values increase high-noise sampling. A positive offset on an existing high-noise shift further reduces low-noise coverage. Confirm each subset's noise proportions in the preview.
+Start between `-0.5` and `+0.5`. Negative values increase low-noise sampling; positive values increase high-noise sampling. A positive offset on an existing high-noise shift further reduces low-noise coverage. Confirm each subset's noise proportions in the preview.
 
 The preview shows the base distribution (all offsets zero), the overall distribution, or an individual subset. The overall distribution weights subsets by sample count and includes regularization samples with the base distribution. Adjust one subset at a time and keep the default run as a control. Offsets affect training sampling only; validation loss remains comparable when the other validation settings stay fixed.
 
@@ -267,13 +267,13 @@ In these formulas, σ is the noise mixing ratio: values near 0 mean less noise, 
 
 <div class="doc-equation" role="group" aria-label="Sigma sqrt loss weighting equation">
   <div class="doc-equation-kicker">Low-noise weighting</div>
-  <div class="doc-equation-expression"><var>w</var> = <span class="doc-frac"><span>1</span><span><var>σ</var><sup>2</sup></span></span></div>
+  <div class="doc-equation-expression"><var>w</var> = 1 / <var>σ</var><sup>2</sup></div>
   <p>The weight rises rapidly as <var>σ</var> approaches 0.</p>
 </div>
 
 <div class="doc-equation" role="group" aria-label="Cosmap loss weighting equation">
   <div class="doc-equation-kicker">Mid-noise weighting</div>
-  <div class="doc-equation-expression"><var>w</var> = <span class="doc-frac"><span>2</span><span><var>π</var> · (1 − 2 · <var>σ</var> + 2 · <var>σ</var><sup>2</sup><span class="doc-math-close">)</span></span></span></div>
+  <div class="doc-equation-expression"><var>w</var> = 2 / (<var>π</var> · (1 − 2 · <var>σ</var> + 2 · <var>σ</var><sup>2</sup>))</div>
   <p>Medium-noise weights are higher than those at either end. This curve does not change sampling frequency.</p>
 </div>
 

@@ -5,7 +5,7 @@
 
   function createNotifications(container, translate) {
     const records = new Map();
-    const text = (key, fallback) => translate('notifications.' + key, fallback);
+    const text = key => translate('notifications.' + key);
     const button = (label, className, handler) => {
       const node = document.createElement('button');
       node.type = 'button'; node.className = className; node.textContent = label;
@@ -66,29 +66,29 @@
         const details = document.createElement('details');
         details.className = 'toast-details';
         const summary = document.createElement('summary');
-        summary.textContent = text('details', 'Details');
+        summary.textContent = text('details');
         const pre = document.createElement('pre');
         pre.textContent = detailsText;
         details.append(summary, pre); content.appendChild(details);
       }
       const record = {
-        key, node, persistent: options.persistent ?? (type === 'error'),
-        remaining: Math.max(0, options.duration ?? (type === 'warning' ? 6000 : 2800)),
+        key, node, persistent: options.persistent ?? false,
+        remaining: Math.max(0, options.duration ?? (type === 'error' ? 8000 : type === 'warning' ? 6000 : 2800)),
         started: 0, timer: null, hovered: false, focused: false,
         previousFocus: document.activeElement,
       };
       if (type === 'error' || detailsText) {
-        const copy = button(text('copy', 'Copy details'), 'toast-copy', async () => {
+        const copy = button(text('copy'), 'toast-copy', async () => {
           try {
             await navigator.clipboard.writeText(detailsText && detailsText !== message ? message + '\n\n' + detailsText : message);
-            copy.textContent = text('copied', 'Copied');
-          } catch (_) { copy.textContent = text('copyFailed', 'Copy failed'); }
+            copy.textContent = text('copied');
+          } catch (_) { copy.textContent = text('copyFailed'); }
         });
         content.appendChild(copy);
       }
       const close = button('×', 'toast-close', () => dismiss(key));
-      close.setAttribute('aria-label', text('dismiss', 'Dismiss notification'));
-      close.title = text('dismiss', 'Dismiss notification');
+      close.setAttribute('aria-label', text('dismiss'));
+      close.title = text('dismiss');
       const icon = document.createElement('span');
       icon.className = 'toast-symbol'; icon.setAttribute('aria-hidden', 'true');
       icon.textContent = type === 'error' ? '!' : type === 'warning' ? '!' : type === 'success' ? '✓' : 'i';

@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from backend.core.realtime import (
+    offer_realtime,
     PROTOCOL_VERSION,
     SERVER_INSTANCE_ID,
     SERVER_STARTED_AT,
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _MAX_CONNECTION_QUEUE = 64
-_ALLOWED_STATIC_TOPICS = {"server", "hardware"}
+_ALLOWED_STATIC_TOPICS = {"server", "hardware", "artifacts"}
 
 
 def _valid_topic(topic: Any) -> bool:
@@ -49,9 +50,14 @@ def _managed_state() -> dict[str, Any]:
 
 
 @router.get("/api/realtime/state")
-async def realtime_state(hardware: bool = False) -> dict[str, Any]:
+async def realtime_state(hardware: bool = False, task_id: str = "") -> dict[str, Any]:
     """Small lifecycle reconciliation; hardware is optional for disconnected clients."""
     data = _managed_state()
+    for item in data["tasks"]["managed"]:
+        if item["status"] == "RUNNING" or item["id"] == task_id:
+            task = tm.get_task(item["id"])
+            if task and task.control:
+                item["control"] = await asyncio.to_thread(task.control.view)
     if hardware:
         gpu, system = await asyncio.gather(asyncio.to_thread(gpu_info), asyncio.to_thread(system_info))
         data["hardware"] = {"gpu": gpu, "system": system, "sampled_at": time.time()}
@@ -63,10 +69,8 @@ async def _snapshot_payload(
     monitor_detail: bool = False,
     preview_limit: int = 36,
 ) -> dict[str, Any]:
-    # Capture cursors *before* reading any state. Events emitted after this
-    # point have a later seq and are replayed after subscribe instead of being
-    # accidentally skipped, and the task list read below is then guaranteed to
-    # include every change up to the captured cursors.
+    # Capture cursors before reading state. The task list includes changes up
+    # to those cursors, and later events can be replayed after subscription.
     cursors = await realtime_hub.cursors()
     state = _managed_state()
     gpu, system, tracked_tasks, monitor = await asyncio.gather(
@@ -113,6 +117,18 @@ async def realtime_snapshot(
     }
 
 
+@router.get("/api/realtime/monitor-detail")
+async def realtime_monitor_detail() -> dict[str, Any]:
+    """Read disk-backed monitor data without rebuilding the transport snapshot."""
+    tasks = tm.training_dump()
+    monitor = await build_live_monitor_snapshot(tasks=tasks, detail=True, preview_limit=0)
+    return {"status": "success", "data": {
+        "server_instance_id": SERVER_INSTANCE_ID,
+        "tasks": {"managed": tasks},
+        "monitor": monitor,
+    }}
+
+
 @router.websocket("/ws/realtime")
 async def realtime_socket(websocket: WebSocket) -> None:
     """Serve small, replayable realtime JSON events over one same-origin socket."""
@@ -120,36 +136,9 @@ async def realtime_socket(websocket: WebSocket) -> None:
     outbound: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=_MAX_CONNECTION_QUEUE)
     subscriptions: dict[str, tuple[asyncio.Queue[dict[str, Any]], asyncio.Task]] = {}
     handshaken = False
-    client_instance_id: str | None = None
 
     def enqueue(message: dict[str, Any]) -> None:
-        """Bound connection memory and make every overflow recoverable.
-
-        The connection queue multiplexes topics, so dropping only its oldest
-        item can silently discard the first event of a sequence.  Clear the
-        stale batch and put one global resync marker ahead of the newest
-        message instead.  A snapshot is cheaper and more correct than trying
-        to guess which topic(s) were lost.
-        """
-        if outbound.full():
-            while True:
-                try:
-                    outbound.get_nowait()
-                except asyncio.QueueEmpty:
-                    break
-            try:
-                outbound.put_nowait({
-                    "op": "resync_required",
-                    "topics": [],
-                    "reason": "slow_consumer",
-                    "server_instance_id": SERVER_INSTANCE_ID,
-                })
-            except asyncio.QueueFull:
-                logger.debug("Realtime outbound queue could not accept resync marker")
-        try:
-            outbound.put_nowait(message)
-        except asyncio.QueueFull:
-            logger.debug("Realtime outbound queue remained full")
+        offer_realtime(outbound, message)
 
     async def close_subscription(topic: str) -> None:
         current = subscriptions.pop(topic, None)
@@ -169,14 +158,17 @@ async def realtime_socket(websocket: WebSocket) -> None:
             return
         await close_subscription(topic)
         queue, replay, resync_required = await realtime_hub.subscribe(topic, resume_seq)
-        for event in replay:
-            enqueue(event)
-        if resync_required:
+        # Reserve one outbound slot for recovery while replay is enqueued.
+        # The send loop drains the queue after this batch is enqueued.
+        if resync_required or len(replay) > max(0, outbound.maxsize - outbound.qsize() - 1):
             enqueue({
                 "op": "resync_required",
                 "topics": [topic],
                 "server_instance_id": SERVER_INSTANCE_ID,
             })
+        else:
+            for event in replay:
+                enqueue(event)
 
         async def forward() -> None:
             while True:
@@ -185,7 +177,7 @@ async def realtime_socket(websocket: WebSocket) -> None:
         subscriptions[topic] = (queue, asyncio.create_task(forward()))
 
     async def receive_loop() -> None:
-        nonlocal handshaken, client_instance_id
+        nonlocal handshaken
         while True:
             message = await websocket.receive_json()
             if not isinstance(message, dict):
@@ -193,41 +185,18 @@ async def realtime_socket(websocket: WebSocket) -> None:
             op = message.get("op")
             if op == "hello":
                 handshaken = True
-                incoming_instance_id = message.get("server_instance_id")
-                client_instance_id = incoming_instance_id if isinstance(incoming_instance_id, str) else None
                 enqueue({
                     "op": "ready",
                     "protocol": PROTOCOL_VERSION,
                     "server_instance_id": SERVER_INSTANCE_ID,
                     "started_at": SERVER_STARTED_AT,
                 })
-                if client_instance_id and client_instance_id != SERVER_INSTANCE_ID:
-                    # Do not replay a cursor from another in-memory backend
-                    # instance.  The client must bootstrap a fresh snapshot.
-                    enqueue({
-                        "op": "resync_required",
-                        "topics": [],
-                        "reason": "server_instance_changed",
-                        "server_instance_id": SERVER_INSTANCE_ID,
-                    })
-                    # The ready message already establishes this instance for
-                    # the rest of this socket's lifetime.  The browser clears
-                    # its cursors before it subscribes again.
-                    client_instance_id = SERVER_INSTANCE_ID
                 continue
             if not handshaken:
                 enqueue({"op": "error", "code": "hello_required"})
                 continue
             if op == "subscribe":
                 resume = message.get("resume") or {}
-                if client_instance_id and client_instance_id != SERVER_INSTANCE_ID:
-                    enqueue({
-                        "op": "resync_required",
-                        "topics": list(message.get("topics") or []),
-                        "reason": "server_instance_changed",
-                        "server_instance_id": SERVER_INSTANCE_ID,
-                    })
-                    continue
                 for topic in message.get("topics") or []:
                     await open_subscription(topic, resume.get(topic, 0) if isinstance(resume, dict) else 0)
             elif op == "unsubscribe":

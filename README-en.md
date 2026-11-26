@@ -38,17 +38,18 @@ Anima, SDXL, and MOSS-Image use [kohya-ss/sd-scripts](https://github.com/kohya-s
 
 ## Feature Overview
 
-- **Training configuration** — Edit training settings, preview TOML, import YAML / TOML, export YAML, and review training history
-- **Pre-training previews** — Timestep distribution, learning-rate curve, and matrix structure modals computed locally; [view previews](#pre-training-previews)
-- **LyCORIS adapter panel** — LoCon / LoHa / LoKr with algorithm-aware parameters, a selectable kernel backend (auto / Triton / TileLang / compile / Torch), LoRA+ support, and Anima training-scope refinement
-- **Many optimizers** — AdamW, Lion, Prodigy, CAME, StableAdamW, Adafactor, ScheduleFree, Adan, AdEMAMix, Muon, plus the bundled LoRA-RITE and the experimental LoRA-Muon, each with its own defaults and constraint hints
-- **Real-time Hardware Monitor** — GPU utilization, VRAM, and temperature; CPU and RAM usage; Chart.js charts, TensorBoard integration, and live logs
-- **Native Tag Editor** — Built-in image tag editor with batch find-and-replace, deduplication, sorting, cleanup, and more
-- **Tagger Workspace** — WD EVA02-Large, WD ViT-Large, CL Tagger, Camie Tagger, and [PixAI Tagger v1.0](https://huggingface.co/pixai-labs/pixai-tagger-v1.0) with single-image inspection, category thresholds, and batch caption output; PixAI runs locally with PyTorch, supports style tags, and downloads about 1.95 GB on first use; AI tagging connects to any vision API speaking OpenAI-compatible (Chat Completions / Responses) or Anthropic Messages protocols
-- **EmoSens Adaptive Optimizer** — Built-in EmoSens v3.9 adjusts the learning rate based on loss changes and suggests when to stop
-- **Internationalization (i18n)** — Chinese, English, and Japanese UI and built-in guides, with browser-language detection and a persistent language preference
-- **Three themes** — Light, dark, and ComfyUI themes, with auto-follow system preference or manual toggle
-- **Backend Connectivity Indicator** — Real-time frontend-backend connection status with disconnect duration
+- **Training configuration** — Edit training settings, preview TOML, import YAML / TOML, export YAML, and review training history.
+- **Pre-training previews** — Timestep distribution, learning-rate curve, and matrix structure modals computed locally; [view previews](#pre-training-previews).
+- **LyCORIS adapter panel** — LoCon / LoHa / LoKr with algorithm-aware parameters, a selectable kernel backend (auto / Triton / TileLang / compile / Torch), LoRA+ support, and Anima training-scope refinement.
+- **Many optimizers** — AdamW, Lion, Prodigy, CAME, StableAdamW, Adafactor, ScheduleFree, Adan, AdEMAMix, Muon, plus the bundled LoRA-RITE and the experimental LoRA-Muon, each with its own defaults and constraint hints.
+- **Real-time monitor and run controls** — GPU utilization, VRAM, and temperature; CPU and RAM usage; Loss trend diagnostics, live logs, and TensorBoard integration, plus live pause/resume, on-demand saving, manual preview sampling, and checkpoint resuming.
+- **Dataset diagnostics** — Built on `sd-scripts` per-sample loss logging, compares residuals and trends across similar noise levels to spot hard-to-learn, mislabeled, or badly cropped images, with group comparisons, single-image inspection, and direct links to the tag editor.
+- **Native tag editor** — Built-in image tag editor with batch find-and-replace, deduplication, sorting, cleanup, and more.
+- **Tagger workspace** — WD EVA02-Large, WD ViT-Large, CL Tagger, Camie Tagger, and [PixAI Tagger v1.0](https://huggingface.co/pixai-labs/pixai-tagger-v1.0) with single-image inspection, category thresholds, and batch caption output; PixAI runs locally with PyTorch, supports style tags, and downloads about 1.95 GB on first use; AI tagging connects to any vision API speaking OpenAI-compatible (Chat Completions / Responses) or Anthropic Messages protocols.
+- **EmoSens adaptive optimizer** — Built-in EmoSens v3.9 adjusts the learning rate based on loss changes and suggests when to stop.
+- **Internationalization (i18n)** — Chinese, English, and Japanese UI and built-in guides, with browser-language detection and a persistent language preference.
+- **Three themes** — Light, dark, and ComfyUI themes, with auto-follow system preference or manual toggle.
+- **Backend connectivity indicator** — Real-time frontend-backend connection status with disconnect duration.
 
 ## Training Interface
 
@@ -73,6 +74,20 @@ Browse samples by batch, inspect their generation details, switch prompts, and p
 ![Training samples and preview sidebar](docs/images/sample-browser.en-US.jpg)
 
 ![Comparing samples from different training stages](docs/images/sample-comparison.en-US.jpg)
+
+### Training monitor and run controls
+
+Track progress, speed, and Loss trends, pause or save weights and training state at any time, trigger manual preview sampling, or resume from a saved checkpoint.
+
+![Training monitor overview and run controls](docs/images/monitor-overview.en-US.jpg)
+
+### Dataset diagnostics
+
+Using per-sample loss records from `sd-scripts`, filter images with persistently high residuals, compare subsets and buckets, and open individual images to check bucket crops and captions. Data shown is simulated.
+
+![Dataset diagnostics overview](docs/images/dataset-diagnostics.en-US.jpg)
+
+![Dataset diagnostics single-image inspection](docs/images/dataset-diagnostics-detail.en-US.jpg)
 
 <a name="pre-training-previews"></a>
 
@@ -175,6 +190,7 @@ Detailed training parameter documentation lives in `docs/parameters/`:
 - [Timestep Guide](docs/parameters/timesteps.en-US.md): flow-matching timestep sampling, loss weighting, and the distribution preview
 - [AdaLN Modulation Guide](docs/parameters/adaln.en-US.md): what the modulation layers do, upstream defaults, and when enabling them helps
 - [Matrix Structure and File Size](docs/parameters/matrix-preview.en-US.md): actual module shapes, parameter counts, training scope, and saved-weight estimates
+- [Dataset Diagnostics Guide](docs/parameters/dataset-diagnostics.en-US.md): per-sample residual and slope status rules, common causes of high residual, and inspection workflow
 
 ## Program Arguments
 
@@ -195,7 +211,7 @@ Detailed training parameter documentation lives in `docs/parameters/`:
 
 ## Attention Acceleration
 
-Anima / MOSS defaults to `torch` and Krea2 to `sdpa`. SDPA selects available kernels based on the PyTorch build and input; Windows builds may not include built-in FlashAttention.
+Anima / MOSS defaults to `torch` and Krea2 to `sdpa`. SDPA selects an available kernel based on the PyTorch build and input. On Windows, built-in FlashAttention support depends on the installed PyTorch build.
 
 For external FlashAttention 2, install it from Environment and select `attn_mode=flash` for Anima / MOSS after installation completes. The installer matches Python, PyTorch, CUDA and platform, and installs only the extension without replacing PyTorch. Krea2's legacy `flash_attn` setting still maps to `sdpa`.
 

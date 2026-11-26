@@ -215,8 +215,8 @@ def resolve_training_profile(config: dict[str, Any]) -> TrainingProfile:
     """Resolve and normalize legacy/new runtime selectors in-place.
 
     model_train_type remains the persisted profile key for backward
-    compatibility. New clients may also send engine_id and adapter_id; those
-    values are verified rather than trusted as executable paths.
+    compatibility. Validate any engine_id and adapter_id supplied by clients
+    against the registered training profile.
     """
 
     profile_id = str(config.get("model_train_type") or "sdxl-lora")
@@ -229,8 +229,7 @@ def resolve_training_profile(config: dict[str, Any]) -> TrainingProfile:
             "训练配置档与训练核心不匹配"
         )
 
-    # LyCORIS is independently selectable in the product, but deliberately
-    # remains mounted on sd-scripts rather than becoming a duplicate runtime.
+    # The UI exposes LyCORIS separately. This adapter uses the sd-scripts runtime.
     requested_adapter = str(config.get("adapter_id") or "")
     if profile.id == "moss-image-lora" and (
         requested_adapter == "lycoris" or config.get("network_module") == "lycoris.kohya"

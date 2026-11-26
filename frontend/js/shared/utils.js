@@ -8,6 +8,25 @@
 // 训练类型 → 字段分组映射（config.js 与 training-core.js 共用）
 window.TRAIN_GROUP_MAP = { 'sdxl-lora': 'sdxl', 'anima-lora': 'anima', 'krea2-lora': 'krea2', 'moss-image-lora': 'moss_image' };
 
+window.mountWorkspaceTemplate = (() => {
+  const pending = new WeakMap();
+  return (host, url, errorText, childrenOnly = false) => {
+    if (host.dataset.mounted === '1') return;
+    if (!pending.has(host)) {
+      const request = (async () => {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(errorText);
+        host.innerHTML = await response.text();
+        if (childrenOnly) for (const child of host.children) Alpine.initTree(child);
+        else Alpine.initTree(host);
+        host.dataset.mounted = '1';
+      })().finally(() => pending.delete(host));
+      pending.set(host, request);
+    }
+    return pending.get(host);
+  };
+})();
+
 window.utilsMixin = {
   // Canonical HTML escape (text content & "-delimited attributes).
   // Handles null/undefined/0 correctly.
@@ -45,16 +64,25 @@ window.utilsMixin = {
   // Fixed API failures use stable codes; unknown and third-party errors retain
   // their original message. Parameters are text and must still be escaped by
   // callers that insert the returned string into HTML.
-  localizeApiError(payload, fallbackKey = 'common.requestFailed', fallbackText) {
+  localizeApiError(payload, fallbackKey = 'common.requestFailed', fallbackTextOrOptions, options) {
+    const opts = (fallbackTextOrOptions && typeof fallbackTextOrOptions === 'object')
+      ? fallbackTextOrOptions
+      : (options && typeof options === 'object' ? options : {});
+    const fallbackText = typeof fallbackTextOrOptions === 'string' ? fallbackTextOrOptions : opts.fallbackText;
+    const prefixes = Array.isArray(opts.prefixes) && opts.prefixes.length ? opts.prefixes : ['errors'];
     const body = payload && typeof payload === 'object' ? payload : {};
     const data = body.data && typeof body.data === 'object' ? body.data : {};
-    const code = body.error_code || data.errorCode;
-    const key = code ? `errors.${code}` : '';
-    const translated = key ? this.t(key) : '';
-    if (typeof translated === 'string' && translated && translated !== key) {
+    const code = body.error_code || data.errorCode || body.errorCode;
+    if (code) {
       const params = body.error_params || data.errorParams || {};
-      return String(translated).replace(/\{([A-Za-z0-9_]+)\}/g, (match, name) =>
-        Object.hasOwn(params, name) && params[name] != null ? String(params[name]) : match);
+      for (const prefix of prefixes) {
+        const key = `${prefix}.${code}`;
+        const translated = this.t(key);
+        if (typeof translated === 'string' && translated && translated !== key) {
+          return String(translated).replace(/\{([A-Za-z0-9_]+)\}/g, (match, name) =>
+            Object.hasOwn(params, name) && params[name] != null ? String(params[name]) : match);
+        }
+      }
     }
     return body.message || this.t(fallbackKey, fallbackText) || fallbackText || fallbackKey;
   },

@@ -41,14 +41,14 @@ def _integer(value, minimum=0):
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= minimum else None
 
 
-def _browser_json(value):
+def browser_json(value):
     """Preserve exact uint64 seeds and weight versions across JSON/JavaScript."""
     if isinstance(value, int) and not isinstance(value, bool) and abs(value) > 2 ** 53 - 1:
         return str(value)
     if isinstance(value, dict):
-        return {key: _browser_json(item) for key, item in value.items()}
+        return {key: browser_json(item) for key, item in value.items()}
     if isinstance(value, list):
-        return [_browser_json(item) for item in value]
+        return [browser_json(item) for item in value]
     return value
 
 
@@ -113,21 +113,30 @@ def write_sample_batch(artifact_root, batch: dict, items: dict, *, process_index
     records after an image has been replaced. All ranks share batch.id.
     """
     root = Path(artifact_root).resolve()
+    saved = {}
+    for relative, item in items.items():
+        path = _safe_path(root, relative)
+        if path is not None and path.is_file() and isinstance(item, dict):
+            saved[relative] = sample_item_record(path, item)
+    return write_prepared_sample_batch(root, batch, saved, process_index=process_index, num_processes=num_processes)
+
+
+def sample_item_record(path: Path, item: dict) -> dict:
+    return {**_json_value(item), "file_version": file_version(path)}
+
+
+def write_prepared_sample_batch(root: Path, batch: dict, items: dict, *, process_index=0, num_processes=1) -> Path:
+    """Write records stamped when each image was saved under the canonical root."""
     identifier = str(batch["id"])
     if not identifier or len(identifier) > 256:
         raise ValueError("invalid sample batch id")
     rank, count = _integer(process_index), _integer(num_processes, 1)
     if rank is None or count is None or rank >= count:
         raise ValueError("invalid sample process index")
-    saved = {}
-    for relative, item in items.items():
-        path = _safe_path(root, relative)
-        if path is not None and path.is_file() and isinstance(item, dict):
-            saved[relative] = {**_json_value(item), "file_version": file_version(path)}
     directory = root / "sample" / ".anima-preview" / "batches"
     directory.mkdir(parents=True, exist_ok=True)
     destination = directory / f"{_digest(identifier)}-r{rank}.json"
-    payload = {"schema_version": SCHEMA_VERSION, "batch": _json_value(batch), "items": saved,
+    payload = {"schema_version": SCHEMA_VERSION, "batch": _json_value(batch), "items": items,
                "process_index": rank, "num_processes": count}
     fd, temporary = tempfile.mkstemp(prefix=".sample-", suffix=".tmp", dir=directory)
     try:
@@ -162,6 +171,12 @@ def _normalize(batch: dict, item: dict, status: str, expected: int | None) -> di
         raise ValueError("sample params must be an object")
     seed = _integer(params.get("seed"))
     index = _integer(item.get("prompt_index"))
+    origin = item.get("sample_origin")
+    if origin not in ("manual", "scheduled"):
+        origin = "scheduled"
+    source_index = _integer(item.get("source_prompt_index"))
+    if origin == "manual" and index is not None and index >= 100:
+        index = source_index
     prompt = params.get("prompt")
     negative = params.get("negative_prompt")
     prompt_known = isinstance(prompt, str) and isinstance(negative, str)
@@ -177,20 +192,26 @@ def _normalize(batch: dict, item: dict, status: str, expected: int | None) -> di
     value = trigger_epoch if kind == "epoch" else step
     label = item.get("prompt_label")
     if not isinstance(label, str) or not label.strip():
-        label = (prompt.strip()[:64] if isinstance(prompt, str) else "") or (f"Prompt {index + 1}" if index is not None else "")
+        label = (prompt.strip()[:64] if isinstance(prompt, str) else "") or (
+            f"Prompt {index + 1}" if index is not None and origin != "manual" else ""
+        )
     order = _integer(batch.get("order")) or 0
     batch_label = (f"Epoch {epoch} · Step {step}" if epoch is not None and step is not None
                    else f"{'Epoch' if kind == 'epoch' else 'Step'} {value}" if value is not None else "")
     owner = _BATCH_TASK.fullmatch(str(batch["id"]))
-    return {"batch_id": str(batch["id"]), "batch_order": order // 1000 if order > 2 ** 53 - 1 else order,
-            "task_id": owner[1] if owner else None,
-            "batch_label": batch_label,
-            "batch_expected": expected, "batch_status": status, "batch_inferred": False,
-            "stage_kind": kind, "stage_value": value, "step": step, "epoch": epoch,
-            "prompt_id": "prompt:" + _digest([prompt, negative]) if prompt_known else "recorded-slot:" + str(index),
-            "prompt_label": label[:128], "prompt_index": index, "seed": _browser_json(seed),
-            "params": _browser_json(params), "condition_key": _digest({key: value for key, value in params.items() if key not in _PROMPT_KEYS}) if comparable else None,
-            "pair_key": _digest(params) if comparable else None, "comparable": comparable, "metadata_source": "recorded"}
+    record = {"batch_id": str(batch["id"]), "batch_order": order // 1000 if order > 2 ** 53 - 1 else order,
+              "task_id": owner[1] if owner else None,
+              "batch_label": batch_label,
+              "batch_expected": expected, "batch_status": status, "batch_inferred": False,
+              "stage_kind": kind, "stage_value": value, "step": step, "epoch": epoch,
+              "sample_origin": origin,
+              "prompt_id": "prompt:" + _digest([prompt, negative]) if prompt_known else "recorded-slot:" + str(index),
+              "prompt_label": label[:128], "prompt_index": index, "seed": browser_json(seed),
+              "params": browser_json(params), "condition_key": _digest({key: value for key, value in params.items() if key not in _PROMPT_KEYS}) if comparable else None,
+              "pair_key": _digest(params) if comparable else None, "comparable": comparable, "metadata_source": "recorded"}
+    if source_index is not None:
+        record["source_prompt_index"] = source_index
+    return record
 
 
 def sample_manifest_version(artifact_root, *, force_refresh=False) -> str:
@@ -307,12 +328,14 @@ def legacy_sample_metadata(name: str, relative: str) -> dict:
             order = int(datetime.strptime(parsed["timestamp"], "%Y%m%d%H%M%S").timestamp() * 1_000_000)
         except ValueError:
             order = 0
+        raw_index = parsed["prompt_index"]
         return {"batch_id": f"legacy:{prefix}:{kind}:{value}", "batch_order": order,
                 "batch_label": f"{'Epoch' if kind == 'epoch' else 'Step'} {value}", "batch_expected": None,
                 "batch_status": "unknown", "batch_inferred": True, "stage_kind": kind, "stage_value": value,
                 "step": value if kind == "step" else None, "epoch": value if kind == "epoch" else None,
-                "prompt_id": f"legacy:{prefix}:{parsed['prompt_index']}", "prompt_label": f"Prompt {parsed['prompt_index'] + 1}",
-                "prompt_index": parsed["prompt_index"], "seed": _browser_json(_integer(parsed["seed"])), "params": {},
+                "sample_origin": "scheduled", "prompt_id": f"legacy:{prefix}:{raw_index}",
+                "prompt_label": f"Prompt {raw_index + 1}", "prompt_index": raw_index,
+                "seed": browser_json(_integer(parsed["seed"])), "params": {},
                 "condition_key": None, "pair_key": None, "comparable": False, "metadata_source": "filename"}
     return {"batch_id": "unknown:" + _digest(relative), "batch_order": 0, "batch_label": name,
             "batch_expected": None, "batch_status": "unknown", "batch_inferred": True, "stage_kind": "unknown",

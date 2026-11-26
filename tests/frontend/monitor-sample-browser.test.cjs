@@ -1265,9 +1265,16 @@ test('a visible weak-network thumbnail can retry after failure without scrolling
   const value = app([]), observed = new Set(); let fetched = 0;
   value.weakNetworkMode = true; value._previewMediaQueue = []; value._previewMediaObjectUrls = [];
   value._previewMediaGeneration = 0; value._previewMediaLoading = false; value._previewMediaPaused = false;
+  value.currentRoute = 'monitor-dashboard'; value.monitorTab = 'samples';
   const image = {isConnected: true, dataset: {previewUrl: '/retry?v=1'}, closest: () => ({classList: {add() {}}})};
   const root = {querySelectorAll: () => [image]};
-  const previous = {fetch: global.fetch, observer: global.IntersectionObserver, create: URL.createObjectURL};
+  const previous = {fetch: global.fetch, observer: global.IntersectionObserver, create: URL.createObjectURL, setTimeout: global.setTimeout};
+  let retry;
+  global.setTimeout = callback => { retry = callback; return 1; };
+  value.scheduleRender = () => {
+    value._previewMediaRetryNeeded = false;
+    value.schedulePreviewMediaLoads(root);
+  };
   global.IntersectionObserver = class {
     constructor(callback) {this.callback = callback;}
     observe(target) {if (observed.has(target)) return; observed.add(target); queueMicrotask(() => this.callback([{target, isIntersecting: true}]));}
@@ -1280,9 +1287,13 @@ test('a visible weak-network thumbnail can retry after failure without scrolling
     value.schedulePreviewMediaLoads(root); await new Promise(resolve => setImmediate(resolve));
     assert.equal(fetched, 1); assert.equal(value._previewMediaRetryNeeded, true);
     assert.equal(observed.has(image), false, 'the next observe must produce a fresh visible entry');
-    value.schedulePreviewMediaLoads(root); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(typeof retry, 'function');
+    retry(); await new Promise(resolve => setImmediate(resolve));
     assert.equal(fetched, 2); assert.equal(image.src, 'blob:retry');
-  } finally {global.fetch = previous.fetch; global.IntersectionObserver = previous.observer; URL.createObjectURL = previous.create;}
+  } finally {
+    global.fetch = previous.fetch; global.IntersectionObserver = previous.observer;
+    URL.createObjectURL = previous.create; global.setTimeout = previous.setTimeout;
+  }
 });
 
 test('case labels omit redundant seeds but distinguish seeds and conditions within a batch', () => {

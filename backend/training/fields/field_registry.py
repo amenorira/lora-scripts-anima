@@ -6,7 +6,7 @@
 前后端共享此定义。
 
 与 Musubi 语义一致的基础控件复用 shared_fields；默认值和适用范围仍由各训练配置定义。
-普通字段在此新增记录后运行 tools/dev/regen_config_fallback.py 同步前端；
+前端通过 /api/fields 读取这里的字段定义。
 合并参数、网络映射和跨字段约束仍需同步相应配置契约。
 """
 from __future__ import annotations
@@ -14,6 +14,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from backend.constants import DEFAULT_ANIMA_DIT
 from backend.training.core_registry import PROFILES
 from backend.training.fields.lycoris_layout import apply_lycoris_panel_layout
 from backend.training.fields.shared_fields import quality_prompt_fields, shared_training_field
@@ -272,7 +273,7 @@ FIELDS: list[dict[str, Any]] = [
 {"key": "model_train_type", "type": "select", "default": "sdxl-lora", "section": "model", "desc_key": "field.model_train_type", "target": "ui", "hidden": True, "options": [{"v": "sdxl-lora", "l": "SDXL LoRA", "dk": "opt.model_train_type_sdxl-lora"}, {"v": "anima-lora", "l": "Anima LoRA", "dk": "opt.model_train_type_anima-lora"}, {"v": "krea2-lora", "l": "Krea 2 LoRA", "dk": "opt.model_train_type_krea2-lora"}]},
 # 三个底模路径默认指向环境管理页可下载的 Anima 核心文件（见 tools/download_anima_model.py）。
 # Anima 用户下载后即可直接开训；SDXL 底模由用户选择，VAE 留空使用底模内置权重。
-{"key": "pretrained_model_name_or_path", "type": "text", "default": "./models/anima-base-v1.0.safetensors", "default_by_group": {"sdxl": ""}, "section": "model", "desc_key": "field.pretrained_model_name_or_path", "target": "toml", "role": "file-model", "required": True},
+{"key": "pretrained_model_name_or_path", "type": "text", "default": DEFAULT_ANIMA_DIT, "default_by_group": {"sdxl": ""}, "section": "model", "desc_key": "field.pretrained_model_name_or_path", "target": "toml", "role": "file-model", "required": True},
 {"key": "vae", "type": "text", "default": "./models/qwen_image_vae.safetensors", "default_by_group": {"sdxl": ""}, "section": "model", "desc_key": "field.vae", "target": "toml", "role": "file-model", "requiredGroups": ["anima"]},
 {"key": "qwen3", "type": "text", "default": "./models/qwen_3_06b_base.safetensors", "section": "model", "desc_key": "field.qwen3", "hint_key": "field.qwen3Hint", "target": "toml", "role": "file-model", "group": "anima", "required": True},
 {"key": "train_data_dir", "type": "text", "default": "./train", "section": "model", "desc_key": "field.train_data_dir", "target": "toml", "role": "file-folder", "required": True},
@@ -327,7 +328,7 @@ shared_training_field('network_dropout', default=0, target="toml"),
     # AdaLN 调制层（Anima 专属，见上方 ADALN_* 常量注释）。lycoris.kohya 的 Anima
     # 路径未验证，不在支持集合内。
     {"key": "train_adaln", "type": "toggle", "default": False, "section": "network", "desc_key": "field.train_adaln", "target": "ui", "group": "anima", "nested": False, "show_if": _show_if_one_of("network_module", ADALN_INCLUDE_MODULES), "hint_key": "field.train_adalnHint", "doc_slug": "adaln", "doc_anchor": "overview"},
-    # LoRA+ 是 network_args 功能，不是顶层 CLI 参数。UI 开关仅控制是否生成下列三个
+    # LoRA+ 通过 network_args 传递。UI 开关控制是否生成下列三个
     # sd-scripts 原生参数；支持面与各 network module 的 create_network 实现保持一致。
     {"key": "enable_loraplus", "type": "toggle", "default": False, "section": "network", "desc_key": "field.enable_loraplus", "target": "ui", "nested": False, "show_if_any": _loraplus_show_if(), "layout_parent": "network_module", "hint_key": "field.enable_loraplusHint", "auto_value": _loraplus_auto_disable_rules(), "readonly_if_any": _loraplus_readonly_conditions(), "readonly_reason_key": "field.enable_loraplus_optimizerLocked", "doc_slug": "lora-plus", "doc_anchor": "overview"},
     # 三个比率项的 show_if_any 每组末位是 network_module，不显式 layout_parent 会被
@@ -346,8 +347,8 @@ shared_training_field('network_dropout', default=0, target="toml"),
     {"key": "lycoris_anima_sd_default", "type": "toggle", "default": False, "section": "network", "desc_key": "field.lycoris_anima_sd_default", "target": "ui", "group": "anima", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_preset", "eq": "attn-mlp"}], "hint_key": "field.lycoris_anima_sd_defaultHint", "omit_default": True},
     {"key": "lycoris_anima_train_adaln", "type": "toggle", "default": False, "section": "network", "desc_key": "field.lycoris_anima_train_adaln", "target": "ui", "group": "anima", "show_if": [{"key": "network_module", "eq": "lycoris.kohya"}, {"key": "lycoris_preset", "eq": "attn-mlp"}, {"key": "lycoris_anima_sd_default", "eq": True}], "hint_key": "field.lycoris_anima_train_adalnHint", "omit_default": True},
     # lycoris_kernel_backend：LyCORIS 融合内核后端。vendor 经 LYCORIS_KERNEL_BACKEND
-    # 环境变量读取（kernels/dispatch.py:58 / select.py:78），是进程级开关而非 network_args
-    # —— /run 路由把它转为训练子进程环境变量，target 保持 ui 不进 TOML。
+    # 环境变量读取（kernels/dispatch.py:58 / select.py:78）。
+    # /run 路由将 UI 字段传入训练子进程的环境变量。
     # 不可用后端由探测函数回退 auto 并提示（与 attn_mode 降级同模式）。
     shared_training_field('lycoris_kernel_backend', default="auto", target="ui"),
     # conv_dim/conv_alpha（LoCon：给 3x3 Conv2d 单独设秩）支持面：
@@ -420,7 +421,7 @@ shared_training_field('gradient_checkpointing',
     target="toml",
     omit_default=True,
 ),
-{"key": "gradient_checkpointing_skip_blocks", "type": "number", "default": 0, "section": "training", "desc_key": "field.gradient_checkpointing_skip_blocks", "hint_key": "field.gradient_checkpointing_skip_blocksHint", "target": "toml", "min": 0, "max": 28, "step": 1, "group": "anima", "show_if": {"key": "gradient_checkpointing", "eq": True}, "omit_default": True},
+{"key": "gradient_checkpointing_skip_blocks", "type": "number", "default": 0, "section": "training", "desc_key": "field.gradient_checkpointing_skip_blocks", "hint_key": "field.gradient_checkpointing_skip_blocksHint", "target": "toml", "min": 0, "step": 1, "group": "anima", "show_if": {"key": "gradient_checkpointing", "eq": True}, "omit_default": True},
 shared_training_field('seed', default=1337, target="toml"),
 shared_training_field('mixed_precision', default="bf16", target="toml"),
     # full_bf16: 将模型 + Network 全部参数 cast 为 bf16，消除 autocast 与 compile/LoRA 交互的 dtype 不一致问题。
@@ -594,7 +595,7 @@ shared_training_field('mixed_precision', default="bf16", target="toml"),
     {"key": "vae_chunk_size", "type": "number", "default": "", "section": "performance", "desc_key": "field.vae_chunk_size", "target": "toml", "min": 2, "step": 2, "group": "anima", "hint_key": "field.vae_chunk_sizeHint"},
     {"key": "vae_disable_cache", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.vae_disable_cache", "target": "toml", "group": "anima", "readonly_if": {"key": "qwen_image_vae_2d", "eq": True, "reason_key": "field.vae_disable_cache2dLocked"}},
     {"key": "vae_batch_size", "type": "number", "default": "", "section": "performance", "desc_key": "field.vae_batch_size", "target": "toml", "min": 1, "step": 1, "hint_key": "field.vae_batch_sizeHint"},
-    {"key": "blocks_to_swap", "type": "number", "section": "performance", "desc_key": "field.blocks_to_swap", "target": "toml", "min": 0, "max": 26, "step": 1, "group": "anima", "hint_key": "field.blocks_to_swapHint"},
+    {"key": "blocks_to_swap", "type": "number", "section": "performance", "desc_key": "field.blocks_to_swap", "target": "toml", "min": 0, "step": 1, "group": "anima", "hint_key": "field.blocks_to_swapHint"},
     {"key": "block_swap_h2d_only", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.block_swap_h2d_only", "hint_key": "field.block_swap_h2d_onlyHint", "target": "toml", "group": ["anima", "moss_image"], "show_if": {"key": "blocks_to_swap", "neq": 0}, "omit_default": True},
     shared_training_field('block_swap_ring_size', default=2, target="toml", group=["anima", "moss_image"]),
     {"key": "use_pinned_memory_for_block_swap", "type": "toggle", "default": False, "section": "performance", "desc_key": "field.use_pinned_memory_for_block_swap", "hint_key": "field.use_pinned_memory_for_block_swapHint", "target": "toml", "group": ["anima", "moss_image"], "show_if": [{"key": "blocks_to_swap", "neq": 0}, {"key": "block_swap_h2d_only", "eq": True}], "omit_default": True},
@@ -654,7 +655,11 @@ shared_training_field('save_state', default=False, target="toml", omit_default=T
 ]},
 {"key": "preview_loras", "type": "lora-list", "default": [], "section": "preview", "desc_key": "field.preview_loras", "hint_key": "field.preview_lorasHint", "target": "ui", "group": ["anima", "moss_image"], "show_if": {"key": "enable_preview", "eq": True}},
 *quality_prompt_fields("enable_preview"),
+# Only imported prompt files need a path control; clearing it restores inline prompts.
+{"key": "sample_prompts", "type": "text", "default": "", "section": "preview", "desc_key": "field.previewPromptFile", "hint_key": "field.previewPromptFileHint", "target": "toml", "nested": False, "show_if": {"key": "sample_prompts", "neq": ""}},
 {"key": "positive_prompts", "type": "textarea", "default": "", "section": "preview", "desc_key": "field.sample_prompts", "target": "ui", "hint_key": "field.sample_promptsHint", "show_if": {"key": "enable_preview", "eq": True}},
+# Retain existing saved configurations. New manual prompts are edited in the running task's preview dialog.
+{"key": "reserved_prompts", "type": "hidden", "default": "", "section": "preview", "desc_key": "control.reserved", "target": "ui", "group": ["anima", "sdxl", "moss_image"], "hidden": True},
 {"key": "negative_prompts", "type": "textarea", "default": "", "section": "preview", "desc_key": "field.negative_prompts", "target": "ui", "show_if": {"key": "enable_preview", "eq": True}},
     # 仅 SDXL 暴露采样器（sd-scripts 的 diffusers scheduler 路径）。
     # Anima 采样写死 Euler flow-match，sample_sampler 是假参数，故按 group:sdxl 隐藏。
@@ -692,7 +697,7 @@ _extend_moss_fields(FIELDS)
 # 各训练配置共用弹窗的分组与稳定顺序；字段支持面和参数语义仍由各自定义。
 apply_lycoris_panel_layout(FIELDS)
 
-# Constraints that depend on LyCORIS semantics rather than generic control type.
+# Apply LyCORIS-specific field constraints.
 _field_by_key = {field["key"]: field for field in FIELDS}
 _field_by_key["dropout"]["max"] = 1
 _field_by_key["lycoris_algo"]["hint_key"] = "field.lycoris_algoHint"

@@ -107,7 +107,7 @@ def _settle(task_id: str, status: str, **fields) -> None:
         state = _task_states.get(task_id)
         if state is None:
             return
-        if status == "done" and state.get("status") == "cancelled":
+        if status == "done" and state.get("status") == "cancelling":
             status = "cancelled"
         state.update(fields)
         state["status"] = status
@@ -117,7 +117,7 @@ def _settle(task_id: str, status: str, **fields) -> None:
 def _is_cancelled(task_id: str) -> bool:
     with _states_lock:
         state = _task_states.get(task_id)
-        return bool(state) and state.get("status") == "cancelled"
+        return bool(state) and state.get("status") == "cancelling"
 
 
 def get_tagger_task_snapshot(task_id: str) -> dict:
@@ -134,15 +134,15 @@ def cancel_tagger_task(task_id: str) -> bool:
         state = _task_states.get(task_id)
         if state is None:
             return False
-        state["status"] = "cancelled"
-        state["logs"].append('Task cancelled by user')
-        state["_completed_at"] = time.time()
+        if state.get("status") == "running":
+            state["status"] = "cancelling"
+            state["logs"].append('Cancellation requested by user')
         return True
 
 
 def has_active_legacy_tagger_task() -> bool:
     with _states_lock:
-        return any(state.get("status") == "running" for state in _task_states.values())
+        return any(state.get("status") in {"running", "cancelling"} for state in _task_states.values())
 
 
 # ── 批量流水线 ───────────────────────────────────────────

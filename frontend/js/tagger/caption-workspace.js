@@ -106,17 +106,6 @@ window.captionWorkspaceMixin = {
     if (tab === 'single') void this.syncCaptionPreviewState();
     if (focus) this.$nextTick?.(() => document.getElementById('caption-tab-' + tab)?.focus());
   },
-  captionTabKey(event) {
-    const tabs = ['batch','single','overview'];
-    let i = tabs.indexOf(this.captionTab);
-    if (event.key === 'ArrowRight') i = (i + 1) % 3;
-    else if (event.key === 'ArrowLeft') i = (i + 2) % 3;
-    else if (event.key === 'Home') i = 0;
-    else if (event.key === 'End') i = 2;
-    else return;
-    event.preventDefault();
-    void this.selectCaptionTab(tabs[i]);
-  },
   async showCaptionFailures() {
     const batch = this.captionBatchState();
     if (!batch.source || !batch.taskId || !(batch.task?.failed > 0)
@@ -247,7 +236,7 @@ window.captionWorkspaceMixin = {
   },
   async waitCaptionPreviewSettled() {
     const id = this.captionPreviewRequestId;
-    // A lost network connection cannot prove the server released its gate.
+    // Poll for server confirmation before clearing the active preview.
     while (id === this.captionPreviewRequestId && this.captionPreviewBusy) {
       try {
         const body = await (await fetch('/api/tagger/caption/preview-state')).json();
@@ -587,7 +576,7 @@ window.captionWorkspaceMixin = {
     try {
       const body = await (await fetch(`/api/tagger/tasks/${encodeURIComponent(batch.taskId)}/check-prompt`)).json();
       if (!isCurrent()) return;
-      if (body.status !== 'success') throw new Error(body.message);
+      if (body.status !== 'success') throw new Error(this.localizeApiError?.(body, 'common.requestFailed') || body.message || this.t('common.requestFailed'));
       this.captionCheckPrompt = body.data.prompt;
       this.captionCheckPromptPath = body.data.path;
       this.captionPromptOpen = true;

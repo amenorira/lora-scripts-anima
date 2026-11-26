@@ -267,7 +267,10 @@ window.trainingPromptWorkbenchMixin = {
       });
       const result = await response.json();
       if (seq !== this._promptWorkbenchSeq) return;
-      if (!response.ok || result.status !== 'success') throw new Error(result.message || this.t('promptWorkbench.failed'));
+      if (!response.ok || result.status !== 'success') {
+        throw new Error(this.localizeApiError?.(result, 'promptWorkbench.failed', { prefixes: ['errors', 'stepEstimate.errors'] })
+          || result.message || this.t('promptWorkbench.failed'));
+      }
       this.promptWorkbenchData = result.data;
       this.preparePromptWorkbenchTriggers?.();
       if (this.promptWorkbenchSubset && !result.data.subsets.some(subset => subset.id === this.promptWorkbenchSubset)) this.promptWorkbenchSubset = '';
