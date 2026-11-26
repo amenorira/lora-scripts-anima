@@ -80,6 +80,24 @@ class HFDownloadTests(unittest.TestCase):
         self.assertEqual(out.read_bytes(), good_payload)
         self.assertFalse(self.dest.with_suffix(".bin.partial").exists())
 
+    def test_public_wheel_fallback_keeps_head_range_and_full_get_anonymous(self):
+        urls = ["https://huggingface.co/wheel", "https://github.com/wheel"]
+        # Upstream ignores Range, so the downloader also exercises its full GET.
+        with patch.object(hf, "_auth_headers") as auth, \
+             patch.object(hf, "_PART_MIN", 6), \
+             patch("requests.head", side_effect=[OSError("offline"), reply()]) as head, \
+             patch("requests.get", side_effect=[reply(), reply()]) as get:
+            hf.download_url_with_fallback(urls, self.dest)
+
+        auth.assert_not_called()
+        self.assertEqual([call.args[0] for call in head.call_args_list], urls)
+        self.assertEqual([call.args[0] for call in get.call_args_list], [urls[1]] * 2)
+        for call in head.call_args_list + get.call_args_list:
+            self.assertNotIn("Authorization", call.kwargs["headers"])
+            self.assertEqual(call.kwargs["headers"]["Accept-Encoding"], "identity")
+        self.assertEqual(get.call_args_list[0].kwargs["headers"]["Range"], "bytes=0-5")
+        self.assertNotIn("Range", get.call_args_list[1].kwargs["headers"])
+
     def test_hf_download_preserves_authentication(self):
         url = "https://huggingface.co/repo/resolve/main/file"
         with patch.object(hf, "hf_resolve_urls", return_value=[url]), \

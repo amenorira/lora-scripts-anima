@@ -1,4 +1,5 @@
 """Tests for automatic network endpoint detection and mirror fallback."""
+import json
 import os
 import tempfile
 import unittest
@@ -7,6 +8,9 @@ from unittest.mock import patch
 
 from tools import network_mirror as nm
 from tools.pip_index_config import read_indexes
+
+ROOT = Path(__file__).resolve().parents[2]
+
 
 class NetworkMirrorTests(unittest.TestCase):
     def setUp(self):
@@ -70,6 +74,23 @@ class NetworkMirrorTests(unittest.TestCase):
             third = nm.resolve_hf_endpoints()
         self.assertEqual(third[0], nm.HF_MIRROR)
         self.assertEqual(os.environ["HF_ENDPOINT"], nm.HF_MIRROR)
+
+    def test_wheel_download_urls_always_prefer_hf_then_upstream_fallback(self):
+        fa_entries = json.loads((ROOT / "tools" / "flash_attention_wheels.json").read_text(encoding="utf-8"))
+        moss_entries = json.loads((ROOT / "tools" / "moss_acceleration_wheels.json").read_text(encoding="utf-8"))
+
+        with patch.object(nm, "resolve_hf_endpoints", return_value=[nm.HF_OFFICIAL, nm.HF_MIRROR]):
+            fa_urls = nm.wheel_download_urls(fa_entries[0])
+            moss_urls = nm.wheel_download_urls(moss_entries[-1])
+
+        self.assertTrue(fa_urls[0].startswith("https://huggingface.co/datasets/ame-la/lora-scripts-anima-wheels/resolve/main/flash_attn/"))
+        self.assertTrue(fa_urls[1].startswith("https://hf-mirror.com/datasets/ame-la/lora-scripts-anima-wheels/resolve/main/flash_attn/"))
+        self.assertEqual(fa_urls[2], fa_entries[0]["url"])
+        self.assertFalse(any("ghfast.top" in u or "gh-proxy.com" in u for u in fa_urls))
+
+        self.assertTrue(moss_urls[0].startswith("https://huggingface.co/datasets/ame-la/lora-scripts-anima-wheels/resolve/main/moss_acceleration/"))
+        self.assertTrue(moss_urls[1].startswith("https://hf-mirror.com/datasets/ame-la/lora-scripts-anima-wheels/resolve/main/moss_acceleration/"))
+        self.assertEqual(moss_urls[2], moss_entries[-1]["url"])
 
     def test_select_pip_index_respects_existing_and_picks_fastest_mirror(self):
         self.assertIsNone(nm.select_pip_index(env={"PIP_INDEX_URL": "https://custom.example/simple"}))

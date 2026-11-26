@@ -3098,10 +3098,6 @@
 			"usage": "After installation, select flash under Attention implementation (attn_mode) for Anima or MOSS, or select FlashAttention under Attention backend for Krea 2.",
 			"unsupported": "Requires an available NVIDIA Ampere or newer GPU and a matching CUDA build of PyTorch.",
 			"noWheel": "No bundled wheel matches this Python, PyTorch, CUDA and platform combination.",
-			"source": "Download source",
-			"source_auto": "Automatic fallback",
-			"source_direct": "GitHub direct",
-			"source_mirror": "Mirrors first",
 			"stage": {
 				"resolving": "Matching a wheel",
 				"connecting": "Connecting",
@@ -3818,7 +3814,6 @@
 		"monitorMetadataReadFailed": "Could not read image metadata.",
 		"environmentDownloadBusy": "A model download is already in progress. Wait for it to finish.",
 		"environmentMossVerifyRequired": "Install and verify the acceleration components first.",
-		"environmentInvalidDownloadSource": "Invalid download source. Select another source.",
 		"environmentGpuTaskBusy": "Finish the active training or GPU task first.",
 		"regularization_candidate_not_plain": "This file cannot use the first-line option. Select Original, Long, Medium or Short.",
 		"caption_invalid_extension_format": "The caption extension is invalid. It cannot contain a path or invalid filename characters, or end in a period. The output caption extension cannot be empty.",

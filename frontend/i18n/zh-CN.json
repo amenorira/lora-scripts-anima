@@ -3098,10 +3098,6 @@
 			"usage": "安装后，在 Anima 或 MOSS 的注意力实现（attn_mode）中选择 flash；Krea 2 则在“注意力实现”中选择 FlashAttention。",
 			"unsupported": "需要可用的 NVIDIA Ampere 或更新架构显卡，以及匹配的 CUDA 版 PyTorch。",
 			"noWheel": "当前 Python、PyTorch、CUDA 或平台组合没有预置轮子。",
-			"source": "下载源",
-			"source_auto": "自动切换",
-			"source_direct": "GitHub 直连",
-			"source_mirror": "镜像优先",
 			"stage": {
 				"resolving": "匹配轮子",
 				"connecting": "连接下载源",
@@ -3818,7 +3814,6 @@
 		"monitorMetadataReadFailed": "读取图片元数据失败。",
 		"environmentDownloadBusy": "已有模型下载任务进行中，请等待完成。",
 		"environmentMossVerifyRequired": "请先安装并验证加速组件。",
-		"environmentInvalidDownloadSource": "下载源无效，请重新选择。",
 		"environmentGpuTaskBusy": "请先结束正在运行的训练或 GPU 任务。",
 		"regularization_candidate_not_plain": "此文件不能使用“普通标注第一行”，请选择“原有标注”或长、中、短描述。",
 		"caption_invalid_extension_format": "标注扩展名格式无效。扩展名不能包含路径或非法文件名字符，也不能以点结尾；输出标注扩展名不能为空。",

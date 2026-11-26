@@ -34,17 +34,7 @@ window.environmentComponentsRenderMixin = {
         elapsed: this.faInstallElapsed,
       });
     }
-    const sources = { options: ['auto', 'direct', 'mirror'].map(v => ({ v, l: T('fa.source_' + v) })) };
-    body += `<div class="env-actions"><div class="env-download-source"><span>${this.esc(T('fa.source'))}</span>
-      <div class="anima-select" x-data="animaSelect('${this.escJson(sources)}', '${this.escapeAttr(this.faSource)}')" @click.outside="close()" @anima-select-change="faSource = $event.detail.value">
-        <button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle()" aria-label="${this.escapeAttr(T('fa.source'))}" ${this.faBusy ? 'disabled' : ''}>
-          <span class="anima-select-trigger-text" x-text="selectedLabel">${this.esc(T('fa.source_' + this.faSource))}</span>
-          <svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-        </button>
-        <template x-if="open"><div class="anima-select-menu" :class="{ 'anima-select-menu-positioned': positioned }"><div class="anima-select-menu-scroll">
-          <template x-for="opt in flatOptions" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-label" x-text="opt.l"></span><svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg></div></template>
-        </div></div></template>
-      </div></div>`
+    body += `<div class="env-actions">`
       + (status?.installed ? `<button type="button" class="btn btn-sm btn-ghost" data-env-action="fa-install" ${disabled ? 'disabled' : ''}>${this.esc(T('reinstall'))}</button>` : '')
       + this._renderRefreshBtn('fa', this.faBusy, true) + '</div>';
     if (this.faInstallLog) body += this._renderLog(this.faInstallLog);

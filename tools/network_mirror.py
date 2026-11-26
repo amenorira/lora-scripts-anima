@@ -201,6 +201,26 @@ def hf_resolve_urls(
     ]
 
 
+def wheel_download_urls(entry: dict) -> list[str]:
+    """Return wheel download URLs: HF mirror repo first, upstream URL as fallback."""
+    urls: list[str] = []
+    hf_repo = entry.get("hf_repo")
+    hf_path = entry.get("hf_path")
+    if hf_repo and hf_path:
+        urls.extend(
+            hf_resolve_urls(
+                hf_repo,
+                hf_path,
+                revision=entry.get("hf_revision", "main"),
+                repo_type=entry.get("hf_repo_type", "dataset"),
+            )
+        )
+    upstream_url = (entry.get("url") or "").strip()
+    if upstream_url:
+        urls.append(upstream_url)
+    return _dedupe_urls(urls)
+
+
 def _configured_pip_index(env: Mapping[str, str] | None = None) -> str | None:
     source = os.environ if env is None else env
     if env_index := (source.get("PIP_INDEX_URL") or "").strip():

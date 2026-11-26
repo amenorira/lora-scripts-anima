@@ -4,7 +4,7 @@
    ================================================================ */
 
 window.environmentCoreMixin = {
-  faStatus: null, faBusy: false, faError: null, faSource: 'auto',
+  faStatus: null, faBusy: false, faError: null,
   faInstallJobId: null, faInstallLog: '', faInstallElapsed: 0, faProgress: null,
   // ── xformers State ───────────────────────────────────
   xfStatus: null, xfBusy: false, xfError: null,

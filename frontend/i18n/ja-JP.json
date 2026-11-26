@@ -3098,10 +3098,6 @@
 			"usage": "インストール後、Anima または MOSS の Attention 実装（attn_mode）で flash を選択し、Krea 2 では「Attention バックエンド」で FlashAttention を選択してください。",
 			"unsupported": "利用可能な NVIDIA Ampere 以降の GPU と、対応する CUDA 版 PyTorch が必要です。",
 			"noWheel": "現在の Python・PyTorch・CUDA・プラットフォームに対応する wheel は用意されていません。",
-			"source": "ダウンロード元",
-			"source_auto": "自動切り替え",
-			"source_direct": "GitHub に直接接続",
-			"source_mirror": "ミラー優先",
 			"stage": {
 				"resolving": "対応 wheel を検索",
 				"connecting": "接続中",
@@ -3818,7 +3814,6 @@
 		"monitorMetadataReadFailed": "画像のメタデータを読み込めませんでした。",
 		"environmentDownloadBusy": "モデルのダウンロードがすでに実行中です。完了までお待ちください。",
 		"environmentMossVerifyRequired": "先に高速化コンポーネントをインストールして検証してください。",
-		"environmentInvalidDownloadSource": "ダウンロード元が無効です。選び直してください。",
 		"environmentGpuTaskBusy": "実行中の学習または GPU タスクを先に終了してください。",
 		"regularization_candidate_not_plain": "このファイルは「通常のキャプションの先頭行」を使えません。「元のキャプション」か長文・標準・短文を選択してください。",
 		"caption_invalid_extension_format": "キャプションの拡張子が無効です。パスやファイル名に使えない文字を含めず、末尾をピリオドにしないでください。出力キャプションの拡張子は空にできません。",
