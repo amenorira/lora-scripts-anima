@@ -9,19 +9,19 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-import time
-import urllib.request
+import threading
 from urllib.parse import unquote, urlsplit
 
 from packaging.tags import sys_tags
 from packaging.utils import parse_wheel_filename
 from packaging.version import Version
 
+from backend.utils.hf_download import download_url_with_fallback
+from tools.network_mirror import invalidate_hf_cache, wheel_download_urls
+
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / "cache" / "flash_attn"
 CATALOG = Path(__file__).with_name("flash_attention_wheels.json")
-MIRRORS = ("https://ghfast.top/", "https://gh-proxy.com/")
-USER_AGENT = "lora-scripts-anima/flash-attention"
 
 
 def package_version(name: str) -> str | None:
@@ -107,72 +107,53 @@ def validate_download(path: Path, wheel: dict) -> None:
         raise RuntimeError("Wheel checksum mismatch / 轮子校验值不一致")
 
 
-def download_wheel(wheel: dict, emit, *, source: str = "auto") -> Path:
+def download_wheel(wheel: dict, emit) -> Path:
     CACHE.mkdir(parents=True, exist_ok=True)
     dest = CACHE / wheel["name"]
-    partial = dest.with_suffix(".whl.part")
-    for cached in (dest, partial):
-        if not cached.exists() or (cached == partial and cached.stat().st_size < wheel["size"]):
-            continue
+    dest.with_suffix(".whl.part").unlink(missing_ok=True)
+    if dest.exists():
         try:
-            validate_download(cached, wheel)
+            validate_download(dest, wheel)
         except RuntimeError:
-            cached.unlink()
+            dest.unlink()
         else:
-            if cached != dest:
-                cached.replace(dest)
             emit(stage="downloaded", message="Using verified cached wheel / 使用已校验的缓存轮子")
             return dest
-    urls = [wheel["url"]] + [prefix + wheel["url"] for prefix in MIRRORS]
-    if source == "direct":
-        urls = urls[:1]
-    elif source == "mirror":
-        urls = urls[1:] + urls[:1]
-    failures = []
-    for attempt, url in enumerate(urls, 1):
-        offset = partial.stat().st_size if partial.exists() else 0
-        emit(stage="connecting", message=f"Connecting {attempt}/{len(urls)}: {urlsplit(url).netloc} / 连接下载源")
-        headers = {"User-Agent": USER_AGENT, "Accept-Encoding": "identity"}
-        if offset:
-            headers["Range"] = f"bytes={offset}-"
-        try:
-            request = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(request, timeout=30) as response:
-                resume = response.status == 206
-                if resume:
-                    content_range = response.headers.get("Content-Range", "")
-                    if not re.fullmatch(rf"bytes {offset}-\d+/{wheel['size']}", content_range):
-                        raise RuntimeError("Invalid resume response / 断点续传响应无效")
-                else:
-                    offset = 0
-                started, received, last = time.monotonic(), 0, 0.0
-                with partial.open("ab" if resume else "wb") as output:
-                    while chunk := response.read1(256 * 1024):
-                        output.write(chunk)
-                        received += len(chunk)
-                        if offset + received > wheel["size"]:
-                            raise RuntimeError("Download exceeds expected size / 下载大小异常")
-                        now = time.monotonic()
-                        if now - last >= 0.25:
-                            emit(stage="downloading", downloaded=offset + received, total=wheel["size"],
-                                 speed=received / max(now - started, 0.001))
-                            last = now
-            if partial.stat().st_size != wheel["size"]:
-                raise RuntimeError("Incomplete wheel download / 轮子下载不完整")
-            try:
-                validate_download(partial, wheel)
-            except RuntimeError:
-                partial.unlink()
-                raise
-            partial.replace(dest)
-            emit(stage="downloaded", downloaded=wheel["size"], total=wheel["size"])
-            return dest
-        except Exception as exc:
-            if partial.exists() and partial.stat().st_size > wheel["size"]:
-                partial.unlink()
-            failures.append(f"{urlsplit(url).netloc}: {exc}")
-            emit(stage="retrying", message=failures[-1])
-    raise RuntimeError("Wheel download failed / 轮子下载失败:\n" + "\n".join(failures))
+
+    progress: dict = {}
+    lock = threading.Lock()
+
+    def _on_log(message: str) -> None:
+        with lock:
+            phase = progress.get("phase")
+        if "next source" in message:
+            emit(stage="retrying", message=message)
+        elif phase == "connecting":
+            emit(stage="connecting", message=message)
+        else:
+            emit(message=message)
+
+    def _on_progress(_line: str) -> None:
+        with lock:
+            downloaded = int(progress.get("downloaded") or 0)
+            total = int(progress.get("total") or wheel["size"])
+            speed_mb = float(progress.get("speed") or 0.0)
+        emit(stage="downloading", downloaded=downloaded, total=total, speed=speed_mb * 1048576.0)
+
+    download_url_with_fallback(
+        wheel_download_urls(wheel),
+        dest,
+        progress=progress,
+        lock=lock,
+        on_log=_on_log,
+        on_progress=_on_progress,
+        label=wheel["name"],
+        expected_size=wheel["size"],
+        expected_sha256=wheel["sha256"],
+        on_source_fail=lambda _url, _err: invalidate_hf_cache(),
+    )
+    emit(stage="downloaded", downloaded=wheel["size"], total=wheel["size"])
+    return dest
 
 
 def _pip(wheel: Path, emit) -> None:
@@ -185,11 +166,11 @@ def _pip(wheel: Path, emit) -> None:
         raise RuntimeError((result.stderr or result.stdout)[-4000:])
 
 
-def install(emit, *, source: str = "auto") -> None:
+def install(emit) -> None:
     emit(stage="resolving", message="Matching Python, PyTorch, CUDA and platform / 匹配运行环境")
     wheel = resolve_wheel(detect_environment())
     emit(message=wheel["name"])
-    path = download_wheel(wheel, emit, source=source)
+    path = download_wheel(wheel, emit)
     emit(stage="installing", message="Installing wheel / 安装轮子")
     _pip(path, emit)
     emit(stage="verifying", message="Verifying installed extension / 验证安装结果")

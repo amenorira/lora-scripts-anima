@@ -4,35 +4,48 @@
   - backend/server/api.py（Anima 模型下载）
   - backend/tagger/tagger_download.py（tagger 模型下载）
   - tools/download_anima_model.py（Anima CLI 薄封装）
+  - tools/flash_attention.py / tools/moss_acceleration.py（预编译轮子下载）
 
 特性：
   - requests 流式下载（绕开 hf_hub_download 在 hf 0.34.3 + hf_xet 下拿不到进度的坑）
-  - 多分块并发（Range）+ 续传（.partN/.partial）+ 端点回退（主端点失败切 hf-mirror.com）
+  - 多分块并发（Range）+ 续传（.partN/.partial）+ 自动端点选路与低速切源回退
   - 进度/速度精确计算，写入外部共享 progress dict（供实时任务快照读取）
   - rich Progress 进度条（朴素 ASCII #/. 风格，经 make_progress_bar() 统一构造）
 
 公共 API：
+  - download_url_with_fallback(urls, dest, ...) -> Path
   - download_hf_file(repo_id, hf_path, dest, *, progress, on_log, on_progress, progress_lock, revision) -> Path
   - make_progress_bar(console=None) -> rich.progress.Progress
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import threading
 import time
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Optional, Sequence
 from urllib.parse import urlsplit
+
+from tools.network_mirror import (
+    hf_resolve_urls,
+    invalidate_hf_cache,
+)
 
 
 # ── 下载参数 ──────────────────────────────────────────
 _CHUNK = 256 * 1024               # 256 KB，弱网时更快落盘并刷新进度
 _COPY_BUF = 8 * 1024 * 1024       # 合并分块时的读写缓冲
-_CONNECT_TIMEOUT = 2             # 单次连接等待；失败直接换源，不叠加内部重试
-_READ_TIMEOUT = 5                # 连续无数据等待，不限制正常传输的总时长
-_HEAD_TIMEOUT = (2, 2)           # 元信息探测也快速失败
+_CONNECT_TIMEOUT = 2              # 单次连接等待；失败直接换源，不叠加内部重试
+_READ_TIMEOUT = 5                 # 连续无数据等待，不限制正常传输的总时长
+_HEAD_TIMEOUT = (2, 2)            # 元信息探测也快速失败
+
+# 低速停滞保护（仅在还有备用源时生效）
+_MIN_SPEED_BYTES = 50 * 1024      # 50 KB/s
+_LOW_SPEED_WINDOW = 10.0          # 连续低速 10s 则保留进度并切换备用源
 
 # 多线程分块下载
 _MAX_PARTS = 8                    # 最多 8 个并发分块
@@ -41,7 +54,7 @@ _REPORT_INTERVAL = 0.3            # 进度条 / 共享 progress 刷新间隔（�
 
 
 class IntegrityError(IOError):
-    """下载内容完整性错误（大小校验失败 / 坏分块 / 内容截断）。
+    """下载内容完整性错误（大小校验失败 / 坏分块 / 内容截断 / 校验值不匹配）。
 
     与普通网络错误区分：端点切换时遇到 IntegrityError 才清理已下的 .partN/
     .partial（坏数据不能续传），普通网络瞬断则保留以供下个端点跨源续传——
@@ -49,23 +62,8 @@ class IntegrityError(IOError):
     """
 
 
-def _hf_endpoint() -> str:
-    """读取 HF_ENDPOINT（如 https://hf-mirror.com），默认 huggingface.co。"""
-    return os.environ.get("HF_ENDPOINT") or "https://huggingface.co"
-
-
-# 首选端点不变，镜像和官方均可回退；自定义端点之后也会尝试这两个源。
-_FALLBACK_ENDPOINTS: list[str] = ["https://hf-mirror.com", "https://huggingface.co"]
-
-
-def _endpoints_for_download() -> list[str]:
-    """返回下载端点优先级列表：主端点在前，备用端点去重后追加。"""
-    main = _hf_endpoint()
-    eps = [main]
-    for ep in _FALLBACK_ENDPOINTS:
-        if ep.rstrip("/") not in (m.rstrip("/") for m in eps):
-            eps.append(ep)
-    return eps
+class _StallError(IOError):
+    """下载速度持续过低，保留已落盘分块并切换到下一个备用源续传。"""
 
 
 def _auth_headers() -> dict[str, str]:
@@ -85,18 +83,12 @@ def _auth_headers() -> dict[str, str]:
     return headers
 
 
-def _resolve_url(repo_id: str, hf_path: str, revision: str = "main",
-                 endpoint: Optional[str] = None, repo_type: str = "model") -> str:
-    """构造 HF resolve 下载地址。endpoint 为空时用 HF_ENDPOINT/默认。
-
-    repo_type 决定地址里是否有 /datasets/ 前缀：模型仓库用 "model"（默认），
-    数据集仓库必须传 "dataset"，否则会 404。"""
-    from huggingface_hub import hf_hub_url
-    return hf_hub_url(
-        repo_id=repo_id, filename=hf_path,
-        repo_type=repo_type, revision=revision,
-        endpoint=endpoint or _hf_endpoint(),
-    )
+def _reject_html_response(response, *, allow_html: bool = False) -> None:
+    if allow_html:
+        return
+    content_type = (response.headers.get("content-type") or "").lower()
+    if "text/html" in content_type:
+        raise IntegrityError("Unexpected HTML response / 收到非预期 HTML 页面")
 
 
 def _human_bytes(n: float) -> str:
@@ -121,19 +113,19 @@ def _format_progress_line(filename: str, pct: int, downloaded: int,
         pct_s = f"{pct:3d}%"
         return (f"{filename} [{bar}] {pct_s} "
                 f"{_human_bytes(downloaded)}/{_human_bytes(total)} {speed:5.1f}MB/s")
-    # total 未知：不画百分比条，只显示已下字节 + 速度
     name = filename if len(filename) <= 24 else filename[:23] + "…"
     return f"{name} {_human_bytes(downloaded)} {speed:5.1f}MB/s"
 
 
-def _head_total(url: str) -> int:
+def _head_total(url: str, headers: dict[str, str]) -> int:
     """只探测一次：无长度或不支持 HEAD 时直接 GET，连接失败交给端点回退。"""
     import requests
-    with requests.head(url, headers=_auth_headers(), allow_redirects=True,
+    with requests.head(url, headers=headers, allow_redirects=True,
                        timeout=_HEAD_TIMEOUT) as h:
         if h.status_code in (405, 501):
             return 0
         h.raise_for_status()
+        _reject_html_response(h)
         if h.status_code in (200, 206) and h.headers.get("content-encoding", "identity") == "identity":
             cr = h.headers.get("content-range") or ""
             if "/" in cr:
@@ -165,9 +157,32 @@ def _range_response(response, start: int, end: int | None = None) -> int:
     return int(match[3])
 
 
+def _verify_and_promote(
+    partial: Path,
+    dest: Path,
+    *,
+    expected_size: int | None,
+    expected_sha256: str | None,
+    stream_total: int,
+    filename: str,
+) -> int:
+    """校验大小与可选 SHA-256，全部通过后原子替换目标文件。"""
+    got = partial.stat().st_size
+    target_size = expected_size if expected_size is not None else stream_total
+    if target_size > 0 and got != target_size:
+        raise IntegrityError(f"{filename}: size mismatch / 大小不匹配 {got} != {target_size}")
+    if expected_sha256:
+        with open(partial, "rb") as stream:
+            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        if digest.lower() != expected_sha256.lower():
+            raise IntegrityError(f"{filename}: sha256 mismatch / 校验值不匹配")
+    os.replace(partial, dest)
+    return got
+
+
 def _download_part(url: str, part_file: Path, range_start: int, range_end: int,
                    part_index: int, part_size: int, part_bytes: list[int],
-                   stop: threading.Event | None = None, expected_total: int | None = None) -> None:
+                   stop: threading.Event, expected_total: int, headers: dict[str, str]) -> None:
     """每块仅尝试一次；失败由端点层续传，其他线程收到停止信号即退出。"""
     import requests
     if stop is not None and stop.is_set():
@@ -179,13 +194,13 @@ def _download_part(url: str, part_file: Path, range_start: int, range_end: int,
     if done == part_size:
         return
     start = range_start + done
-    headers = _auth_headers()
-    headers["Range"] = f"bytes={start}-{range_end}"
-    with requests.get(url, headers=headers, stream=True, allow_redirects=True,
+    range_headers = {**headers, "Range": f"bytes={start}-{range_end}"}
+    with requests.get(url, headers=range_headers, stream=True, allow_redirects=True,
                       timeout=(_CONNECT_TIMEOUT, _READ_TIMEOUT)) as r:
         if r.status_code == 416:
             raise IntegrityError("Download range rejected / 下载范围已失效")
         r.raise_for_status()
+        _reject_html_response(r)
         if r.status_code == 200:
             raise _RangeUnsupported()
         actual_total = _range_response(r, start, range_end)
@@ -217,11 +232,26 @@ def _split_ranges(total: int, n_parts: int) -> list[tuple[int, int]]:
     return ranges
 
 
+def _below_speed_window(samples: deque[tuple[float, int]], now: float, downloaded: int) -> bool:
+    """Use cumulative bytes over a full window so chunk boundaries do not reset the timer."""
+    samples.append((now, downloaded))
+    cutoff = now - _LOW_SPEED_WINDOW
+    while len(samples) > 1 and samples[1][0] <= cutoff:
+        samples.popleft()
+    start, previous = samples[0]
+    return start <= cutoff and downloaded - previous < _MIN_SPEED_BYTES * (now - start)
+
+
 def _download_single_stream(url: str, dest: Path, partial: Path,
                             progress: dict, lock: threading.Lock,
                             filename: str, file_index: int, file_total: int,
                             on_log: Optional[Callable[[str], None]],
-                            on_progress: Optional[Callable[[str], None]]) -> Path:
+                            on_progress: Optional[Callable[[str], None]],
+                            *,
+                            headers: dict[str, str],
+                            allow_stall_abort: bool = False,
+                            expected_size: Optional[int] = None,
+                            expected_sha256: Optional[str] = None) -> Path:
     """小文件或不支持分块时单连接下载；失败保留 partial，交给下一端点续传。"""
     import requests
 
@@ -231,9 +261,8 @@ def _download_single_stream(url: str, dest: Path, partial: Path,
             except Exception: pass
 
     existing = partial.stat().st_size if partial.exists() else 0
-    headers = dict(_auth_headers())
     if existing > 0:
-        headers["Range"] = f"bytes={existing}-"
+        headers = {**headers, "Range": f"bytes={existing}-"}
 
     with requests.get(url, headers=headers, stream=True, allow_redirects=True,
                       timeout=(_CONNECT_TIMEOUT, _READ_TIMEOUT)) as r:
@@ -241,6 +270,7 @@ def _download_single_stream(url: str, dest: Path, partial: Path,
         if r.status_code == 416:
             raise IntegrityError("Download resume rejected / 本地续传范围已失效")
         r.raise_for_status()
+        _reject_html_response(r, allow_html=dest.suffix.lower() in (".html", ".htm"))
         if r.status_code == 206:
             stream_total = _range_response(r, existing)
         else:
@@ -251,79 +281,81 @@ def _download_single_stream(url: str, dest: Path, partial: Path,
                 stream_total = 0
             if r.headers.get("content-encoding", "identity") != "identity":
                 stream_total = 0
+        if expected_size is not None and stream_total > 0 and stream_total != expected_size:
+            raise IntegrityError(f"{filename}: size mismatch / 大小不匹配 {stream_total} != {expected_size}")
         downloaded = existing
         last_rep = time.monotonic()
         last_bytes = downloaded
+        samples = deque([(last_rep, downloaded)])
+        effective_total = stream_total or (expected_size or 0)
         with lock:
-            progress.update({"downloaded": downloaded, "total": stream_total,
+            progress.update({"downloaded": downloaded, "total": effective_total,
                              "speed": 0.0, "phase": "downloading"})
         with open(partial, "ab" if existing else "wb") as f:
             for chunk in r.iter_content(chunk_size=_CHUNK):
                 if not chunk:
                     continue
-                if stream_total > 0 and downloaded + len(chunk) > stream_total:
+                if effective_total > 0 and downloaded + len(chunk) > effective_total:
                     raise IntegrityError(f"{filename}: download exceeds expected size")
                 f.write(chunk)
                 downloaded += len(chunk)
                 now = time.monotonic()
-                if now - last_rep >= _REPORT_INTERVAL:
-                    speed = (downloaded - last_bytes) / max(now - last_rep, 1e-6) / (1024 ** 2)
+                dt = now - last_rep
+                if dt >= _REPORT_INTERVAL:
+                    speed_bps = (downloaded - last_bytes) / max(dt, 1e-6)
+                    speed = speed_bps / (1024 ** 2)
                     with lock:
                         progress.update({"downloaded": downloaded, "speed": round(speed, 2)})
                     if on_progress:
                         try:
-                            pct = int(downloaded * 100 / stream_total) if stream_total > 0 else -1
-                            on_progress(_format_progress_line(filename, pct, downloaded, stream_total, speed))
+                            pct = int(downloaded * 100 / effective_total) if effective_total > 0 else -1
+                            on_progress(_format_progress_line(filename, pct, downloaded, effective_total, speed))
                         except Exception:
                             pass
+                    if (allow_stall_abort and downloaded != effective_total
+                            and _below_speed_window(samples, now, downloaded)):
+                        raise _StallError(f"{filename}: sustained low speed")
                     last_rep, last_bytes = now, downloaded
-    got = partial.stat().st_size
-    if stream_total > 0 and got != stream_total:
-        raise IntegrityError(f"{filename}: size mismatch / 大小不匹配 {got} != {stream_total}")
-    os.replace(partial, dest)
+
+    got = _verify_and_promote(
+        partial, dest,
+        expected_size=expected_size,
+        expected_sha256=expected_sha256,
+        stream_total=stream_total,
+        filename=filename,
+    )
     with lock:
         progress.update({"filename": filename, "file_index": file_index,
-                         "file_total": file_total, "downloaded": got, "total": stream_total or got,
+                         "file_total": file_total, "downloaded": got, "total": effective_total or got,
                          "speed": 0.0, "phase": "file_done"})
-    _log(f"{filename}: 100% | {_human_bytes(got)}/{_human_bytes(stream_total or got)} [Done / 完成]")
+    _log(f"{filename}: 100% | {_human_bytes(got)}/{_human_bytes(effective_total or got)} [Done / 完成]")
     return dest
 
 
-def download_url_with_fallback(urls: list[str], dest: Path, *,
-                               progress: dict | None = None,
-                               lock: Optional[threading.Lock] = None,
-                               on_log: Optional[Callable[[str], None]] = None,
-                               on_progress: Optional[Callable[[str], None]] = None,
-                               file_index: int = 0, file_total: int = 1,
-                               label: Optional[str] = None) -> Path:
-    """按序尝试多个 URL 下载同一文件（多分块并发 + 续传 + 进度上报）。
-
-    urls: 按优先级排序的下载候选 URL 列表（端点回退 / 镜像代理变体均可）。
-    前一个 URL 失败时按错误类型分别处理：
-      - 网络瞬断 → 保留 .partN/.partial，下个端点跨源续传（弱网鲁棒性关键）；
-      - 完整性错误 → 清理坏分块后从下个端点重头下（避免坏数据污染最终文件）。
-    最后一个 URL 失败才抛异常。
-    内部复用 _download_one_endpoint（URL 通用，非 HF 专属）。
-    进度写入共享 progress dict（线程安全），供实时任务快照读取。
-
-    参数:
-        urls: 候选 URL 列表（至少 1 个）
-        dest: 落盘目标路径
-        progress: 线程间共享的进度 dict；每次更新原地覆盖
-        lock: 保护 progress 的锁（可传入后端共享锁，使读取端与之互斥）
-        on_log: 事件日志回调（开始/完成/失败/端点切换），换行打印
-        on_progress: 单行进度回调（百分比+速度），供控制台 \\r 或 rich Progress
-        file_index/file_total: 批量下载时的序号/总数，写入 progress 供前端显示
-        label: 切换日志里显示的文件标识；默认取 dest.name
-
-    返回最终落盘 Path；失败抛异常。
-    """
+def download_url_with_fallback(
+    urls: Sequence[str],
+    dest: Path,
+    *,
+    progress: dict | None = None,
+    lock: Optional[threading.Lock] = None,
+    on_log: Optional[Callable[[str], None]] = None,
+    on_progress: Optional[Callable[[str], None]] = None,
+    file_index: int = 0,
+    file_total: int = 1,
+    label: Optional[str] = None,
+    expected_size: Optional[int] = None,
+    expected_sha256: Optional[str] = None,
+    on_source_fail: Optional[Callable[[str, Exception], None]] = None,
+    headers: dict[str, str] | None = None,
+) -> Path:
+    """按序尝试多个 URL 下载同一文件（多分块并发 + 续传 + 低速切源 + 进度上报）。"""
     if not urls:
         raise ValueError("urls must not be empty / urls 不能为空")
 
     lock = lock if lock is not None else threading.Lock()
     progress = progress if progress is not None else {}
     label = label or dest.name
+    request_headers = {"Accept-Encoding": "identity", **(headers or {})}
 
     def _log(m):
         if on_log:
@@ -333,7 +365,7 @@ def download_url_with_fallback(urls: list[str], dest: Path, *,
     last_err: Exception | None = None
     for u_idx, url in enumerate(urls):
         is_last = u_idx == len(urls) - 1
-        source = urlsplit(url).netloc
+        source = urlsplit(url).netloc or url
         with lock:
             progress.update({"source": source, "source_index": u_idx + 1,
                              "source_total": len(urls), "phase": "connecting"})
@@ -342,24 +374,31 @@ def download_url_with_fallback(urls: list[str], dest: Path, *,
             result = _download_one_endpoint(
                 url, dest, progress, lock, on_log, on_progress,
                 file_index=file_index, file_total=file_total,
+                headers=request_headers,
+                allow_stall_abort=not is_last,
+                expected_size=expected_size,
+                expected_sha256=expected_sha256,
             )
             cleanup_temp(dest)
             return result
         except IntegrityError as e:
-            # 坏数据：必须清理 .partN/.partial，否则下个端点会接着坏分块续传导致最终文件损坏
             last_err = e
             cleanup_temp(dest)
+            if on_source_fail:
+                try: on_source_fail(url, e)
+                except Exception: pass
             if is_last:
                 raise
-            _log(f"{label}: source {url} integrity error, cleared and restarting from next source / 源 {url} 完整性错误，已清理并切换重下...")
+            _log(f"{label}: source {source} integrity error, cleared and restarting from next source / 源 {source} 完整性错误，已清理并切换重下...")
             continue
         except Exception as e:
             last_err = e
-            # 普通网络瞬断：保留 .partN/.partial，下个端点可跨源续传（弱网鲁棒性关键）——
-            # 临时文件不绑定 URL，下一端点从已落盘的偏移继续，并校验返回区间。
+            if on_source_fail:
+                try: on_source_fail(url, e)
+                except Exception: pass
             if is_last:
                 raise
-            _log(f"{label}: source {url} network error ({type(e).__name__}), keeping progress and resuming from next source / 源 {url} 网络中断（{type(e).__name__}），保留进度切换备用源续传...")
+            _log(f"{label}: source {source} interrupted ({type(e).__name__}), keeping progress and resuming from next source / 源 {source} 中断（{type(e).__name__}），保留进度切换备用源续传...")
     raise last_err if last_err else RuntimeError("download failed")
 
 
@@ -370,78 +409,65 @@ def download_hf_file(repo_id: str, hf_path: str, dest: Path, *,
                      on_progress: Optional[Callable[[str], None]] = None,
                      revision: str = "main",
                      file_index: int = 0, file_total: int = 1,
-                     repo_type: str = "model") -> Path:
-    """下载单个 HF 文件（多分块并发 + 续传 + 进度上报 + 端点回退）。
-
-    首选 HF_ENDPOINT，失败后在官方和镜像之间回退，不在单个端点内部重试。
-    大文件 → 多分块；小文件或未知大小 → 单连接（从 GET 响应头读取 total）。
-    进度写入共享 progress dict（线程安全），供实时任务快照读取。
-
-    本函数是 download_url_with_fallback 的 HF 专属薄封装：把 HF 端点列表解析成
-    URL 列表后委托通用入口执行，端点回退语义不变。
-
-    参数:
-        repo_id: HF 仓库 id（如 circlestone-labs/Anima）
-        hf_path: 仓库内文件路径
-        dest: 落盘目标路径
-        progress: 线程间共享的进度 dict；每次更新原地覆盖
-        lock: 保护 progress 的锁（可传入后端共享锁，使读取端与之互斥）
-        on_log: 事件日志回调（开始/完成/失败/端点切换），换行打印
-        on_progress: 单行进度回调（百分比+速度），供控制台 \\r 或 rich Progress
-        revision: HF revision，默认 main
-        file_index/file_total: 批量下载时的序号/总数，写入 progress 供前端显示
-        repo_type: "model"（默认）或 "dataset"，决定地址里是否有 /datasets/ 前缀
-
-    返回最终落盘 Path；失败抛异常。
-    """
-    # HF 端点列表 → resolve URL 列表，交给通用下载入口（端点回退语义不变）
-    urls = [
-        _resolve_url(repo_id, hf_path, revision=revision, endpoint=endpoint, repo_type=repo_type)
-        for endpoint in _endpoints_for_download()
-    ]
+                     repo_type: str = "model",
+                     expected_size: Optional[int] = None,
+                     expected_sha256: Optional[str] = None) -> Path:
+    """下载单个 HF 文件（自动选路 + 多分块并发 + 续传 + 低速切源 + 进度上报）。"""
+    urls = hf_resolve_urls(
+        repo_id, hf_path, revision=revision, repo_type=repo_type
+    )
     return download_url_with_fallback(
         urls, dest,
         progress=progress, lock=lock,
         on_log=on_log, on_progress=on_progress,
         file_index=file_index, file_total=file_total,
         label=hf_path,
+        headers=_auth_headers(),
+        expected_size=expected_size,
+        expected_sha256=expected_sha256,
+        on_source_fail=lambda _url, _err: invalidate_hf_cache(),
     )
 
 
 def _download_one_endpoint(url: str, dest: Path, progress: dict, lock: threading.Lock,
                            on_log, on_progress, *,
-                           file_index: int, file_total: int) -> Path:
-    """对单个 URL 执行下载（多分块并发 + 续传 + 进度上报线程）。
-
-    大文件多分块，小文件或不支持 Range 时单连接。返回最终落盘 Path。
-    """
+                           file_index: int, file_total: int,
+                           headers: dict[str, str],
+                           allow_stall_abort: bool = False,
+                           expected_size: Optional[int] = None,
+                           expected_sha256: Optional[str] = None) -> Path:
+    """对单个 URL 执行下载（多分块并发 + 续传 + 进度上报线程）。"""
     def _log(m):
         if on_log:
             try: on_log(m)
             except Exception: pass
 
-    # filename 用于 progress 显示，取 dest 文件名
     filename = dest.name
     with lock:
         progress.update({"filename": filename, "file_index": file_index,
                          "file_total": file_total, "downloaded": 0, "total": 0,
                          "speed": 0.0, "phase": "connecting"})
-    total = _head_total(url)
+    total = _head_total(url, headers)
+    if expected_size is not None and total > 0 and total != expected_size:
+        raise IntegrityError(f"{filename}: size mismatch / 大小不匹配 {total} != {expected_size}")
     partial = dest.with_suffix(dest.suffix + ".partial")
 
-    # 小文件或 total 未知 → 单连接，以 GET 响应为准，避免旧 HEAD 缓存影响小 CSV。
     if total < _PART_MIN:
-        return _download_single_stream(url, dest, partial, progress, lock,
-                                       filename, file_index, file_total, on_log, on_progress)
+        return _download_single_stream(
+            url, dest, partial, progress, lock,
+            filename, file_index, file_total, on_log, on_progress,
+            headers=headers,
+            allow_stall_abort=allow_stall_abort,
+            expected_size=expected_size,
+            expected_sha256=expected_sha256,
+        )
 
-    # 决定分块数
     n_parts = 1 if total < _PART_MIN else min(_MAX_PARTS, max(1, total // _PART_MIN))
     ranges = _split_ranges(total, n_parts)
     part_sizes = [re_ - rs + 1 for rs, re_ in ranges]
     part_files = [dest.with_suffix(dest.suffix + f".part{i}") for i in range(n_parts)]
     part_bytes: list[int] = [0] * n_parts
 
-    # 从已存在的 part 文件恢复进度（续传）
     for i, pf in enumerate(part_files):
         if pf.exists():
             sz = pf.stat().st_size
@@ -452,17 +478,19 @@ def _download_one_endpoint(url: str, dest: Path, progress: dict, lock: threading
                          "file_total": file_total, "downloaded": sum(part_bytes),
                          "total": total, "speed": 0.0, "phase": "downloading"})
 
-    # 进度上报线程：聚合各分块字节 → 更新共享 progress + 控制台进度
     stop = threading.Event()
+    stall_err: list[Exception] = []
 
     def _report():
         last_bytes = sum(part_bytes)
         last_ts = time.monotonic()
+        samples = deque([(last_ts, last_bytes)])
         while not stop.wait(_REPORT_INTERVAL):
             now = time.monotonic()
             cur = sum(part_bytes)
             dt = now - last_ts
-            speed = (cur - last_bytes) / max(dt, 1e-6) / (1024 ** 2)
+            speed_bps = (cur - last_bytes) / max(dt, 1e-6)
+            speed = speed_bps / (1024 ** 2)
             pct = int(cur * 100 / total) if total > 0 else 0
             with lock:
                 progress.update({"filename": filename, "file_index": file_index,
@@ -473,6 +501,10 @@ def _download_one_endpoint(url: str, dest: Path, progress: dict, lock: threading
                     on_progress(_format_progress_line(filename, pct, cur, total, speed))
                 except Exception:
                     pass
+            if allow_stall_abort and cur < total and _below_speed_window(samples, now, cur):
+                stall_err.append(_StallError(f"{filename}: sustained low speed"))
+                stop.set()
+                break
             last_bytes = cur
             last_ts = now
 
@@ -481,25 +513,31 @@ def _download_one_endpoint(url: str, dest: Path, progress: dict, lock: threading
 
     try:
         with ThreadPoolExecutor(max_workers=n_parts) as ex:
-            futs = [ex.submit(_download_part, url, part_files[i], rs, re_,
-                              i, part_sizes[i], part_bytes, stop, total)
-                    for i, (rs, re_) in enumerate(ranges)]
+            futs = [
+                ex.submit(
+                    _download_part, url, part_files[i], rs, re_,
+                    i, part_sizes[i], part_bytes, stop, total, headers,
+                )
+                for i, (rs, re_) in enumerate(ranges)
+            ]
             try:
                 for f in as_completed(futs):
                     f.result()
             except Exception:
-                # 必须在退出 executor 等待线程之前通知停止，避免其他分块继续整份下载。
                 stop.set()
                 _log(f"{filename}: stopping remaining parts / 正在停止其余分块连接")
                 for f in futs:
                     f.cancel()
+                if stall_err:
+                    raise stall_err[0]
                 raise
+        if stall_err:
+            raise stall_err[0]
         stop.set()
         reporter.join(timeout=2)
 
         with lock:
             progress.update({"downloaded": total, "speed": 0.0, "phase": "assembling"})
-        # 合并到临时文件，校验通过后才替换正式文件。
         with open(partial, "wb") as out:
             for pf in part_files:
                 with open(pf, "rb") as inp:
@@ -512,10 +550,13 @@ def _download_one_endpoint(url: str, dest: Path, progress: dict, lock: threading
                     os.unlink(pf)
                 except Exception:
                     pass
-        got = partial.stat().st_size
-        if got != total:
-            raise IntegrityError(f"Size mismatch / 大小不匹配: {got} != {total}")
-        os.replace(partial, dest)
+        got = _verify_and_promote(
+            partial, dest,
+            expected_size=expected_size,
+            expected_sha256=expected_sha256,
+            stream_total=total,
+            filename=filename,
+        )
         with lock:
             progress.update({"downloaded": got, "speed": 0.0, "phase": "file_done"})
         if on_progress:
@@ -529,8 +570,14 @@ def _download_one_endpoint(url: str, dest: Path, progress: dict, lock: threading
         stop.set()
         reporter.join(timeout=2)
         _log(f"{filename}: range unsupported, using one connection / 源不支持分块，改用单连接")
-        result = _download_single_stream(url, dest, partial, progress, lock,
-                                         filename, file_index, file_total, on_log, on_progress)
+        result = _download_single_stream(
+            url, dest, partial, progress, lock,
+            filename, file_index, file_total, on_log, on_progress,
+            headers=headers,
+            allow_stall_abort=allow_stall_abort,
+            expected_size=expected_size,
+            expected_sha256=expected_sha256,
+        )
         cleanup_temp(dest)
         return result
     except Exception:

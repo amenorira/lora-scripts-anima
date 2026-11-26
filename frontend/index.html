@@ -473,12 +473,29 @@
               <span class="spinner"></span>
               <span x-text="t('docs.loading')">Loading documentation...</span>
             </div>
-            <div class="docs-error" x-show="!docsHtml && docsError" x-cloak role="alert">
+            <div class="docs-error" x-show="docsError" x-cloak role="alert">
               <span x-text="docsError"></span>
               <button type="button" class="btn btn-ghost btn-sm" @click="loadDocsPage(true)" x-text="t('docs.retry')">Retry</button>
             </div>
             <div class="docs-empty" x-show="!docsIndexLoading && docsDocuments.length === 0 && !docsError"
                  x-cloak x-text="t('docs.empty')">No documents</div>
+            <details class="docs-inline-outline" x-show="docsHtml && docsTocItems.length" x-cloak>
+              <summary x-text="t('docs.onThisPage')">On this page</summary>
+              <nav class="docs-toc" @click="handleInlineDocsTocClick($event)"
+                   :aria-label="t('docs.onThisPage')">
+                <ul class="docs-toc-list">
+                  <template x-for="item in docsTocItems" :key="'inline-' + item.anchor">
+                    <li :class="'level-' + item.level">
+                      <a :href="'#' + encodeURIComponent(item.anchor)" :title="item.title"
+                         :class="{ active: docsActiveAnchor === item.anchor }"
+                         :aria-current="docsActiveAnchor === item.anchor ? 'location' : null">
+                        <span x-text="item.title"></span>
+                      </a>
+                    </li>
+                  </template>
+                </ul>
+              </nav>
+            </details>
             <article id="docsArticle" class="markdown-body" x-show="docsHtml" x-cloak
                      x-html="docsHtml" @click="handleDocsContentClick($event)"></article>
           </section>
@@ -910,7 +927,7 @@
               </button>
               <button :class="{ active: tagEditorQuickFilter === 'modified' }"
                 @click="tagEditorQuickFilter = (tagEditorQuickFilter === 'modified' ? 'all' : 'modified'); tagEditorSchedulePageFetch(true)">
-                <span x-text="t('tagEditor.unsavedChanges')"></span>
+                <span x-text="t('tagEditor.filterUnsaved')"></span>
                 <span class="te-badge" x-text="tagEditorGetQuickCount('modified')"></span>
               </button>
             </div>
@@ -1256,17 +1273,15 @@
                 </div>
                 <span class="te-selection-count" x-text="tagEditorSelectionLabel()"></span>
                 <div class="te-sidebar-undo">
-                  <button @click="tagEditorUndo()" :disabled="tagEditorHistoryIdx < 0" :title="t('tagEditor.undoHint')">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <button type="button" @click="tagEditorUndo()" :disabled="tagEditorHistoryIdx < 0" :title="t('tagEditor.undoHint') + ' (Ctrl+Z)'" :aria-label="t('tagEditor.undoHint')">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                       <polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>
                     </svg>
-                    <span x-text="t('tagEditor.undoHint')"></span>
                   </button>
-                  <button @click="tagEditorRedo()" :disabled="tagEditorHistoryIdx >= tagEditorHistory.length - 1" :title="t('tagEditor.redoHint')">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <button type="button" @click="tagEditorRedo()" :disabled="tagEditorHistoryIdx >= tagEditorHistory.length - 1" :title="t('tagEditor.redoHint') + ' (Ctrl+Y)'" :aria-label="t('tagEditor.redoHint')">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                       <polyline points="15 14 20 9 15 4"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/>
                     </svg>
-                    <span x-text="t('tagEditor.redoHint')"></span>
                   </button>
                 </div>
               </div>
@@ -1309,7 +1324,7 @@
                         :aria-label="t('tagEditor.selectImage').replace('{name}', img.rel_path || img.name)"
                         @change="tagEditorToggleSelect(img.path, $event)">
                     </div>
-                    <div class="te-card-mod" x-show="img.tags !== tagEditorOriginal[img.path]" :title="t('tagEditor.modified')">
+                    <div class="te-card-mod" x-show="img.tags !== tagEditorOriginal[img.path]" :title="t('tagEditor.filterUnsaved')">
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg>
                     </div>
                     <div class="te-card-nocap" x-show="!img.has_caption" :title="t('tagEditor.cardNoCaption')">
@@ -1689,8 +1704,8 @@
           <div class="panel-preview" id="tomlPreview" x-init="$el.textContent = t('common.loading')" x-effect="updateTomlDebounced()"></div>
           <div class="panel-actions">
             <div class="btn-row">
-              <button class="btn btn-ghost btn-sm" @click="resetAllParams()" x-text="t('common.resetAll')">Reset All</button>
-              <button class="btn btn-ghost btn-sm" @click="downloadConfig()" x-text="t('common.download')">Download</button>
+              <button class="btn btn-ghost btn-sm" @click="resetAllParams()" :title="t('common.resetAllHint')" x-text="t('common.resetAll')">Reset</button>
+              <button class="btn btn-ghost btn-sm" @click="downloadConfig()" :title="t('common.exportConfigHint')" x-text="t('common.exportConfig')">Export</button>
               <button class="btn btn-ghost btn-sm" @click="importConfigFile()" x-text="t('common.import')">Import</button>
               <button class="btn btn-ghost btn-sm" @click="copyToml()" x-text="t('common.copy')">Copy</button>
             </div>
@@ -1708,7 +1723,7 @@
                 Start Training
               </button>
               <button class="btn btn-stop" style="flex:1" x-show="isTraining || trainingBlocked || trainingStopping === (liveTaskId || taskId)" @click="stopTraining()"
-                      :disabled="!isTraining || trainingStopping === (liveTaskId || taskId)" :title="t('training.stopHint')" x-text="trainingStopping === (liveTaskId || taskId) ? t('regularization.stopping') : t('common.stopTraining')">
+                      :disabled="!isTraining || trainingStopping === (liveTaskId || taskId)" :title="t('training.stopHint')" x-text="trainingStopping === (liveTaskId || taskId) ? t('control.stopping') : t('common.stopTraining')">
                 Stop Training
               </button>
             </div>
@@ -1753,7 +1768,7 @@
       </aside>
     </div>
     <div class="modal-footer lycoris-modal-footer">
-      <button type="button" class="btn btn-ghost btn-sm" x-show="form.model_train_type === 'anima-lora'"
+      <button type="button" class="btn btn-ghost btn-sm" x-show="shapePreviewSupported()"
               @click="closeLycorisConfig(() => openShapePreview())"
               x-text="t('shapePreview.open')">Structure preview</button>
       <button type="button" class="btn btn-ghost btn-sm" @click="closeLycorisConfig()" x-text="t('common.close')">Close</button>
@@ -2170,6 +2185,7 @@
   <div class="modal shape-preview-modal modal-workbench modal-workbench--shape">
     <div class="modal-header">
       <div style="flex:1" x-text="t('shapePreview.title')">Matrix structure preview</div>
+      <button type="button" class="btn btn-ghost btn-sm" @click="openParameterDoc('matrix-preview')" x-text="t('docs.openGuide')"></button>
       <button type="button" class="btn btn-ghost btn-sm" @click="scheduleShapeEstimate(true)" :disabled="shapeEstimateLoading" x-text="t('monitor.refresh')"></button>
       <button type="button" class="btn-icon preview-close shape-preview-close" @click="closeShapePreview()" :aria-label="t('common.close')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -2300,8 +2316,8 @@
     <header class="modal-header">
       <div class="cp-heading"><span x-text="t('cropPreview.title')"></span>
         <span class="cp-summary" x-show="cropPreviewItems.length">
-          <span><span x-text="t('cropPreview.originalSize')"></span> <strong x-text="cropPreviewCount(cropPreviewTotals.count)"></strong></span>
-          <span :title="t('cropPreview.sampleHint')"><span x-text="t('cropPreview.trainingCount')"></span> <strong x-text="cropPreviewCount(cropPreviewTotals.samples)"></strong></span>
+          <span><span x-text="t('cropPreview.sourceCount')"></span> <strong x-text="cropPreviewCount(cropPreviewTotals.count)"></strong></span>
+          <span :title="t('cropPreview.sampleHint')"><span x-text="t('cropPreview.trainingCount')"></span> <strong x-text="cropPreviewTotals.samples"></strong></span>
           <span><span x-text="t('cropPreview.bucketCount')"></span> <strong x-text="cropPreviewBuckets.length"></strong></span>
         </span>
       </div>
@@ -2327,16 +2343,16 @@
         <button type="button" class="cp-bucket-chip" :aria-pressed="!cropPreviewBucket" @click="selectCropPreviewBucket('')" :title="t('cropPreview.sampleHint')">
           <span class="cp-bucket-size" x-text="t('cropPreview.buckets')"></span>
           <span class="cp-bucket-counts">
-            <span><span class="cp-meta-label" x-text="t('cropPreview.originalSize')"></span><strong x-text="cropPreviewCount(cropPreviewTotals.count)"></strong></span>
-            <span><span class="cp-meta-label" x-text="t('cropPreview.trainingCount')"></span><strong x-text="cropPreviewCount(cropPreviewTotals.samples)"></strong></span>
+            <span><span class="cp-meta-label" x-text="t('cropPreview.sourceCount')"></span><strong x-text="cropPreviewCount(cropPreviewTotals.count)"></strong></span>
+            <span><span class="cp-meta-label" x-text="t('cropPreview.trainingCount')"></span><strong x-text="cropPreviewTotals.samples"></strong></span>
           </span>
         </button>
         <template x-for="bucket in cropPreviewBuckets" :key="bucket.key">
           <button type="button" class="cp-bucket-chip" :aria-pressed="cropPreviewBucket === bucket.key" @click="selectCropPreviewBucket(bucket.key)" :title="t('cropPreview.sampleHint')">
             <span class="cp-bucket-size" x-text="bucket.key"></span>
             <span class="cp-bucket-counts">
-              <span><span class="cp-meta-label" x-text="t('cropPreview.originalSize')"></span><strong x-text="cropPreviewCount(bucket.count)"></strong></span>
-              <span><span class="cp-meta-label" x-text="t('cropPreview.trainingCount')"></span><strong x-text="cropPreviewCount(bucket.samples)"></strong></span>
+              <span><span class="cp-meta-label" x-text="t('cropPreview.sourceCount')"></span><strong x-text="cropPreviewCount(bucket.count)"></strong></span>
+              <span><span class="cp-meta-label" x-text="t('cropPreview.trainingCount')"></span><strong x-text="bucket.samples"></strong></span>
             </span>
           </button>
         </template>
@@ -2422,7 +2438,7 @@
         @dialog-close="closeParameterDoc()" :aria-label="docsDocumentTitle(parameterDocSlug)" x-cloak>
   <div class="modal modal-workbench parameter-doc-modal">
     <div class="modal-header">
-      <span x-text="docsDocumentTitle(parameterDocSlug)"></span>
+      <span style="flex:1" x-text="docsDocumentTitle(parameterDocSlug)"></span>
       <button type="button" class="btn-icon" data-dialog-autofocus @click="closeParameterDoc()" :aria-label="t('common.close')">×</button>
     </div>
     <div id="parameterDocBody" class="modal-body" tabindex="0" :aria-busy="parameterDocLoading">

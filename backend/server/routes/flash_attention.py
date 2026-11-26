@@ -1,7 +1,7 @@
 """FlashAttention installation and status endpoints."""
 import asyncio
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 
 from backend.core.install_jobs import InstallJobs
 from tools import flash_attention
@@ -16,12 +16,5 @@ async def status() -> dict:
 
 
 @router.post("/flash-attn/install")
-async def install(request: Request) -> dict:
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    source = body.get("source", "auto") if isinstance(body, dict) else None
-    if source not in ("auto", "direct", "mirror"):
-        return {"success": False, "message": "Invalid download source / 下载源无效", "error_code": "environmentInvalidDownloadSource"}
-    return await install_jobs.start(flash_attention.install, source=source)
+async def install() -> dict:
+    return await install_jobs.start(flash_attention.install)

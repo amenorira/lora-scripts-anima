@@ -34,17 +34,7 @@ window.environmentComponentsRenderMixin = {
         elapsed: this.faInstallElapsed,
       });
     }
-    const sources = { options: ['auto', 'direct', 'mirror'].map(v => ({ v, l: T('fa.source_' + v) })) };
-    body += `<div class="env-actions"><div class="env-download-source"><span>${this.esc(T('fa.source'))}</span>
-      <div class="anima-select" x-data="animaSelect('${this.escJson(sources)}', '${this.escapeAttr(this.faSource)}')" @click.outside="close()" @anima-select-change="faSource = $event.detail.value">
-        <button type="button" class="anima-select-trigger" :class="{ focused: open }" @click="toggle()" aria-label="${this.escapeAttr(T('fa.source'))}" ${this.faBusy ? 'disabled' : ''}>
-          <span class="anima-select-trigger-text" x-text="selectedLabel">${this.esc(T('fa.source_' + this.faSource))}</span>
-          <svg class="anima-select-chevron" :class="{ open: open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-        </button>
-        <template x-if="open"><div class="anima-select-menu" :class="{ 'anima-select-menu-positioned': positioned }"><div class="anima-select-menu-scroll">
-          <template x-for="opt in flatOptions" :key="opt.v"><div class="anima-select-option" :class="{ active: opt.v === value }" @click="select(opt.v)"><span class="anima-select-option-label" x-text="opt.l"></span><svg class="anima-select-check" x-show="opt.v === value" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg></div></template>
-        </div></div></template>
-      </div></div>`
+    body += `<div class="env-actions">`
       + (status?.installed ? `<button type="button" class="btn btn-sm btn-ghost" data-env-action="fa-install" ${disabled ? 'disabled' : ''}>${this.esc(T('reinstall'))}</button>` : '')
       + this._renderRefreshBtn('fa', this.faBusy, true) + '</div>';
     if (this.faInstallLog) body += this._renderLog(this.faInstallLog);
@@ -75,7 +65,9 @@ window.environmentComponentsRenderMixin = {
       : xfInstalled ? `<span class="env-badge env-badge-ok">${T('installed')}</span>`
       : `<span class="env-badge env-badge-muted">${T('optionalNotInstalled')}</span>`;
     const version = xfInstalled && xs.version ? `<span class="env-row-version">v${this.esc(xs.version)}</span>` : '';
-    const headBtn = xs ? `<button type="button" class="btn btn-sm ${xfInstalled ? 'btn-ghost' : 'btn-secondary'} env-head-btn" data-env-action="xf">${xfInstalled ? T('reinstall') : T('install')}</button>` : '';
+    const headBtn = xs && !xfInstalled
+      ? `<button type="button" class="btn btn-sm btn-secondary env-head-btn" data-env-action="xf">${this.esc(T('install'))}</button>`
+      : '';
     const head = this._renderRowHead('xf', open, {
       name: 'xformers',
       desc: T('xfHint'),
@@ -97,7 +89,9 @@ window.environmentComponentsRenderMixin = {
       if (!xfInstalled) body += `<div class="env-msg env-msg-info">${T('xfInstallInfo')}</div>`;
 
     }
-    body += `<div class="env-actions">${this._renderRefreshBtn('xf', this.xfBusy)}</div>`;
+    body += `<div class="env-actions">`
+      + (xfInstalled ? `<button type="button" class="btn btn-sm btn-ghost" data-env-action="xf">${this.esc(T('reinstall'))}</button>` : '')
+      + this._renderRefreshBtn('xf', this.xfBusy, true) + '</div>';
 
     return this._renderRow('xf', state, open, head, body);
   },
@@ -220,16 +214,20 @@ window.environmentComponentsRenderMixin = {
       const command = status.enabled ? 'disable' : status.available ? 'enable' : status.can_install ? 'install' : null;
       if (command) action = `<button type="button" class="btn btn-sm btn-secondary env-head-btn" data-env-action="moss-accel-${command}">${T(command === 'install' ? 'mossAccelInstall' : command === 'enable' ? 'mossAccelEnable' : 'mossAccelDisable')}</button>`;
     }
+    const flaVer = status?.versions?.['flash-linear-attention'] || '0.5.2';
+    const convVer = status?.versions?.['causal-conv1d'] || '1.7.0';
+    const versionText = `FLA ${flaVer} · Conv1D ${convVer}`;
     const head = this._renderRowHead('mossAccel', open, {
-      name: T('mossAccelTitle'), action,
-      version: '<span class="env-row-version">FLA 0.5.2 · Conv1D 1.7.0</span>',
+      name: T('mossAccelTitle'), desc: T('mossAccelDesc'), action,
+      version: status?.installed ? `<span class="env-row-version">${this.esc(versionText)}</span>` : '',
       badge: `<span class="env-badge env-badge-${state === 'loading' ? 'loading' : state === 'err' ? 'err' : state === 'ok' ? 'ok' : 'muted'}">${this.esc(label)}</span>`,
       detailKey: 'mossAccel', detailLabel: T('details'),
     });
-    let body = `<div class="env-msg env-msg-info">${this.esc(T('mossAccelDesc'))}</div>`
+    let body = (!status?.installed
+      ? this._renderDetailGroup(this.esc(T('mossAccelTargetVersion')), `<span class="env-row-version">${this.esc(versionText)}</span>`)
+      : '')
       + this._renderDetailGroup('FLA', this.esc(T('mossAccelFlaInfo')))
       + this._renderDetailGroup('Conv', this.esc(T('mossAccelConvInfo')))
-      + `<div class="env-msg">${this.esc(T('mossAccelBenefit'))}</div>`
       + `<div class="env-msg env-msg-info">${this.esc(T('mossAccelInfo'))}</div>`;
     if (error) body += this._renderErrorBar(T, error, 'mossAccelInstallLog');
     if (busy) body += this._renderProgressPanel({ stage: 'working', elapsed: this.mossAccelInstallElapsed,
@@ -237,9 +235,9 @@ window.environmentComponentsRenderMixin = {
     if (status?.reason) body += `<div class="env-msg env-msg-info">${this.esc(T('mossAccelReason_' + status.reason))}</div>`;
     if (status?.verification?.gpu) body += this._renderDetailGroup('GPU', this.esc(status.verification.gpu));
     if (!busy) {
-      body += `<div class="env-actions">${this._renderRefreshBtn('mossAccel', false, true)}`;
-      if (status?.installed && status.can_install) body += `<button type="button" class="btn btn-sm btn-ghost" data-env-action="moss-accel-install">${T('mossAccelReinstall')}</button>`;
-      body += '</div>';
+      body += '<div class="env-actions">';
+      if (status?.available && status.can_install) body += `<button type="button" class="btn btn-sm btn-ghost" data-env-action="moss-accel-install">${this.esc(T('mossAccelReinstall'))}</button>`;
+      body += `${this._renderRefreshBtn('mossAccel', false, true)}</div>`;
     }
     return this._renderRow('mossAccel', state, open, head, body);
   },
@@ -274,7 +272,9 @@ window.environmentComponentsRenderMixin = {
           : `<span class="env-badge env-badge-muted">${T('notInstalled')}</span>`;
     const version = tr && tr.installed && tr.version
       ? `<span class="env-row-version">v${this.esc(tr.version)}${tr.package ? ' · ' + this.esc(tr.package) : ''}</span>` : '';
-    const headBtn = tr ? `<button type="button" class="btn btn-sm ${tr?.installed ? 'btn-ghost' : 'btn-secondary'} env-head-btn" data-env-action="triton">${tr?.installed ? T('reinstall') : T('install')}</button>` : '';
+    const headBtn = tr && !tr.installed
+      ? `<button type="button" class="btn btn-sm btn-secondary env-head-btn" data-env-action="triton">${this.esc(T('install'))}</button>`
+      : '';
     const head = this._renderRowHead('triton', open, {
       name: 'Triton',
       desc: T('tritonDesc'),
@@ -292,7 +292,9 @@ window.environmentComponentsRenderMixin = {
         body += `<div class="env-msg env-msg-info">${T('tritonInstallInfo')}</div>`;
       }
     }
-    body += `<div class="env-actions">${this._renderRefreshBtn('triton', this.tritonBusy)}</div>`;
+    body += `<div class="env-actions">`
+      + (tr?.installed ? `<button type="button" class="btn btn-sm btn-ghost" data-env-action="triton">${this.esc(T('reinstall'))}</button>` : '')
+      + this._renderRefreshBtn('triton', this.tritonBusy, true) + '</div>';
     return this._renderRow('triton', state, open, head, body);
   },
 

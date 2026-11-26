@@ -1,77 +1,73 @@
+<a name="guide-title"></a>
 # LoRA+
 
-> LoRA+ sets different learning rates for the adapter's two parameter groups while keeping the parameter count unchanged. It is off by default; when enabled, the default ratio is `2.0`.
+> LoRA+ assigns different learning rates to the adapter's two low-rank parameter groups without changing parameter count or file size. It defaults to off, and uses a default ratio of `2.0` when enabled.
 
-It supports eligible networks for SDXL, Anima, and MOSS-Image, plus native LoRA and LyCORIS LoCon for Krea 2. See Supported network modules for grouping and the optimizer table for compatibility.
+Supported across eligible networks on SDXL, Anima, and MOSS-Image plus native LoRA and LyCORIS LoCon on Krea 2; check [supported network modules](#support) and [optimizer compatibility](#optimizer-compatibility) before enabling.
 
-<!-- doc-anchor: overview -->
-## Quick overview
+<a name="overview"></a>
+## Overview, when to use, and ratio guide
 
-In standard LoRA, `lora_down` keeps the base learning rate, while `lora_up` uses that rate multiplied by the ratio.
+<div id="mechanism"></div>
 
-At `1.0`, both groups use the same learning rate. Krea 2 also accepts positive ratios below `1`, which give `lora_up` a lower learning rate than the base.
+Standard LoRA expresses each layer's weight update as `ΔW = (Alpha / Rank) × B × A`, initializing `lora_down` (`A`) randomly to project inputs down to Rank dimensions and `lora_up` (`B`) to zero to project back to the output size. Because `lora_up` starts at zero, `lora_down` receives zero gradient on the first step, giving the two factors asymmetric early update dynamics. LoRA+ keeps `lora_down` at the base learning rate and multiplies `lora_up` (or the mapped factor in native LoHa / LoKr) by `ratio`:
 
-For a base learning rate of `2e-5`:
+<div class="doc-equation doc-equation-compact" role="group" aria-label="LoRA+ learning-rate equations">
+  <div class="doc-equation-expression"><span class="doc-math-var">LR</span><sub>down</sub> = <span class="doc-math-var">LR</span><sub>base</sub></div>
+  <div class="doc-equation-expression"><span class="doc-math-var">LR</span><sub>up</sub> = <span class="doc-math-var">LR</span><sub>base</sub> · <span class="doc-math-var">ratio</span></div>
+</div>
+
+With a base learning rate of `2e-5` (raising the base rate scales both groups together, whereas raising `ratio` accelerates `lora_up` alone):
 
 | Ratio | `lora_down` rate | `lora_up` rate |
 | --- | --- | --- |
-| 1 | `2e-5` | `2e-5` |
-| 2 | `2e-5` | `4e-5` |
-| 4 | `2e-5` | `8e-5` |
+| `1.0` (equal-rate baseline) | `2e-5` | `2e-5` |
+| `2.0` (default starting point) | `2e-5` | `4e-5` |
+| `4.0` | `2e-5` | `8e-5` |
 
-Raising the base learning rate affects both groups. Raising the LoRA+ ratio affects only the designated group.
+<div id="good-cases"></div>
+<div id="ratio-guidance"></div>
 
-<!-- doc-anchor: good-cases -->
-## When LoRA+ is worth trying
+- **When to enable**: Try LoRA+ when facial identity, outfit details, or brushwork converge slowly at a safe base learning rate (such as `2e-5–1e-4`), and raising the global learning rate degrades base-model structure or causes artifacts.
+- **Recommended ratio (`2.0–4.0`)**: Compare the default `2.0` against an equal-rate (`1.0`) baseline with the same base learning rate and seed. Krea 2 also accepts positive ratios in `0.01–1.0` when you want `lora_up` below the base rate.
+- **Avoid extreme ratios such as `16` at typical LoRA rates**: The paper and `sd-scripts` examples tested `16` on language models or tiny base learning rates (`~1e-5`). At standard image LoRA rates (`5e-5–1e-4`), `16×` pushes `lora_up` to `8e-4–1.6e-3`, frequently causing early color blowout, locked poses/backgrounds, or weaker response to non-trigger prompt tokens.
 
-After establishing a baseline without LoRA+, keep the base learning rate and other settings fixed and compare ratios `1` and `2`. Record results at matching steps and the step of each run's best result.
+<a name="parameters"></a>
+## Trainer parameters and effective learning rates
 
-<!-- doc-anchor: ratio-guidance -->
-## Choosing a ratio
+When **Enable LoRA+** is off, no ratios are exported. When on, the dedicated form fields take priority (for SDXL, Anima, and MOSS-Image, duplicate `loraplus_*` entries in **Custom network arguments** are stripped automatically; Krea 2 migrates legacy global ratios into the form field on import). Krea 2 exposes only the global ratio—when enabling LoRA+ there, set Rank and Alpha manually and turn off **Infer LoRA rank from existing weights**.
 
-Compare the default ratio `2.0` with the equal-rate baseline `1.0`. Keep the base learning rate fixed when testing other ratios, and calculate the scaled rate as in the example above.
-
-The paper and sd-scripts documentation use `16` in their experiments; this trainer defaults to `2.0`. Compare those ratios together with their respective base learning rates.
-
-<!-- doc-anchor: parameters -->
-## Trainer parameters
-
-With Enable LoRA+ off, no ratios are exported. With it on, the dedicated ratio fields supply the values. For SDXL, Anima, and MOSS-Image, matching `loraplus_*` entries in custom network arguments are removed so the form values take priority. Krea 2 imports a legacy global ratio from additional arguments into the form field.
-
-The examples below show runtime TOML; configurations downloaded from the app use YAML. Ratios belong in `network_args`; combine multiple ratios in a single list. Krea 2 provides only the global ratio. To use LoRA+ there, configure rank and Alpha manually and turn off dimension inference from weights.
-
-<!-- doc-anchor: loraplus-lr-ratio -->
+<a name="loraplus-lr-ratio"></a>
 ### `loraplus_lr_ratio`
 
-The global ratio defaults to `2.0`. UNet/DiT and text-encoder components inherit it when their own ratio is empty.
+Global ratio (default `2.0`), inherited whenever component-specific ratios are left blank.
 
-| Training profile | UI minimum | Step |
+| Model type | UI minimum | Step |
 | --- | --- | --- |
 | SDXL, Anima, MOSS-Image | `1.0` | `0.5` |
 | Krea 2 | `0.01` | `0.1` |
 
-<!-- doc-anchor: loraplus-unet-lr-ratio -->
+<a name="loraplus-unet-lr-ratio"></a>
 ### `loraplus_unet_lr_ratio`
 
-Overrides the UNet/DiT ratio. Defaults to empty, which inherits the global ratio. Anima and MOSS-Image retain the `unet` parameter name for their DiT backbone. This field belongs to the sd-scripts path.
+Overrides the UNet / DiT backbone ratio on the `sd-scripts` path, falling back to `loraplus_lr_ratio` when empty (Anima and MOSS-Image retain the `unet` parameter name for their DiT backbone). Inactive when training only the text encoder.
 
-Has no effect when training only the text encoder.
-
-<!-- doc-anchor: loraplus-text-encoder-lr-ratio -->
+<a name="loraplus-text-encoder-lr-ratio"></a>
 ### `loraplus_text_encoder_lr_ratio`
 
-Overrides the text-encoder LoRA ratio. Defaults to empty, which inherits the global ratio.
+Overrides the text-encoder LoRA ratio on the `sd-scripts` path, falling back to `loraplus_lr_ratio` when empty. Active only when the text encoder is trained—**Train UNet only** / **Train DiT only** and **Cache text encoder outputs** leave it inactive, and MOSS-Image and Krea 2 keep their text encoders frozen. Check both trigger strength and prompt flexibility after changing it.
 
-Applies only when the text encoder is trained. UNet-only training and text-encoder output caching make it inactive. MOSS-Image and Krea 2 keep the text encoder frozen. After changing it, check trigger response and control from the rest of the prompt.
+<a name="effective-lr"></a>
+### Ratio fallback and effective learning rate
 
-The fallback order is component ratio → global ratio → LoRA+ disabled for that component:
+The `sd-scripts` path resolves each component's base learning rate first (`unet_lr` / `text_encoder_lr`, falling back to `learning_rate`; Krea 2 uses `learning_rate` directly for the DiT) and then applies **component ratio → global ratio**:
 
-| Component | Preferred setting | Fallback |
+| Component | Base learning-rate source | Ratio precedence |
 | --- | --- | --- |
-| Backbone | Backbone LoRA+ ratio | Global LoRA+ ratio |
-| Text encoder | Text encoder LoRA+ ratio | Global LoRA+ ratio |
+| UNet / DiT backbone | `unet_lr` (falls back to `learning_rate`) | `loraplus_unet_lr_ratio` → `loraplus_lr_ratio` |
+| Text encoder | `text_encoder_lr` (falls back to `learning_rate`) | `loraplus_text_encoder_lr_ratio` → `loraplus_lr_ratio` |
 
-Example sd-scripts export with multiple ratios:
+Presets downloaded from the app use YAML, while generated `sd-scripts` runtime TOML combines active ratios into one `network_args` list:
 
 ```toml
 network_args = [
@@ -81,146 +77,74 @@ network_args = [
 ]
 ```
 
-<!-- doc-anchor: effective-lr -->
-## Effective learning rates
-
-The sd-scripts path first determines each component's base learning rate, then applies the ratio to its designated parameter group:
-
-| Component | Preferred base rate | Used when empty |
-| --- | --- | --- |
-| UNet/DiT | `unet_lr` | `learning_rate` |
-| Text encoder | `text_encoder_lr` | `learning_rate` |
-
-Krea 2 uses `learning_rate` as the DiT base learning rate.
-
-When `unet_lr` or `text_encoder_lr` is set, the calculation uses that component's own rate. For example, with `learning_rate=1e-4`, `unet_lr=8e-5`, and a UNet/DiT ratio of `2.0`:
+For example, with `learning_rate=1e-4`, `unet_lr=8e-5`, and a backbone ratio of `2.0`, the backbone scales from its own `8e-5` base rate:
 
 <div class="doc-equation doc-equation-compact" role="group" aria-label="Example effective UNet LoRA+ learning rates">
   <div class="doc-equation-expression"><span class="doc-math-var">LR</span><sub>base</sub> = 8 × 10<sup>−5</sup></div>
   <div class="doc-equation-expression"><span class="doc-math-var">LR</span><sub>plus</sub> = 8 × 10<sup>−5</sup> · 2 = 1.6 × 10<sup>−4</sup></div>
 </div>
 
-<!-- doc-anchor: cautions -->
-## Risks and limitations
+<a name="optimizer-compatibility"></a>
+## Optimizer compatibility and supported networks
 
-Save more frequently when comparing higher ratios. Check whether the best result occurs earlier and whether later checkpoints show fixed poses, backgrounds, or weaker prompt control.
-
-<span id="effects"></span>
-
-<!-- doc-anchor: testing -->
-## Evaluating the result
-
-Evaluate learning speed separately from final quality.
-
-| Comparison | What it answers |
-| --- | --- |
-| Models saved at the same step | Whether the character, style, or concept is learned sooner |
-| The best model from each run | Whether the best attainable result improves |
-| New poses, backgrounds, and unseen subjects | Whether the learned features remain flexible |
-
-When LoRA+ only brings the best result forward, its main benefit is fewer training steps. If the target and a fixed composition are memorized earlier together, review both the ratio and the stopping point.
-
-<!-- doc-anchor: optimizer-compatibility -->
-## Optimizers and schedulers
+Selecting an incompatible optimizer or adaptive mode automatically disables LoRA+ in the UI with an explanation, and backend validation rejects conflicting presets or API payloads:
 
 | Optimizer | LoRA+ status | Notes |
 | --- | --- | --- |
-| AdamW, AdamW8bit, PagedAdamW8bit | Supported | Preserve separate per-group learning rates |
-| Lion, Lion8bit, PagedLion8bit | Supported | Preserve separate per-group learning rates |
-| CAME | Supported | Preserves separate per-group learning rates |
-| StableAdamW, Muon, Adan, AdEMAMix, AdEMAMix8bit, SOAP | Supported | Preserve separate per-group learning rates |
-| AdamWScheduleFree | Supported | Keeps the groups, but internal adjustments change the effective rates during training |
-| Automagic3 / Automagic4 | Conditional | Every initial group rate must lie within `min_lr` and `max_lr`. Groups adapt independently, so the initial ratio may change during training |
-| AdaFactor | Manual-LR mode only | Both `relative_step` and `warmup_init` must be off. The default relative-step mode ignores per-group rates, so the UI disables and locks LoRA+ |
-| Prodigy, ProdigyPlus | Unsupported | The current sd-scripts path cannot reliably preserve separate per-group rates; both UI and backend reject the combination |
-| EmoSens | Unsupported | Updates every parameter with one global `emoPulse` and resets all groups to that rate each step, which removes the ratio |
-| LoRA-Muon | Not supported | The current joint-update implementation requires complete LoRA factor pairs |
-| LoRA-RITE | Not supported | Its current factor-pair handling is incompatible with LoRA+ parameter groups |
+| AdamW, AdamW8bit, PagedAdamW8bit | Supported | Preserve independent per-group learning rates |
+| Lion, Lion8bit, PagedLion8bit, CAME | Supported | Preserve independent per-group learning rates |
+| StableAdamW, Muon, Adan, AdEMAMix, AdEMAMix8bit, SOAP | Supported | Preserve independent per-group learning rates |
+| AdamWScheduleFree | Supported | Preserves parameter groups while internal scheduling adjusts effective step scale |
+| Automagic3 / Automagic4 | Conditional | Every group's initial rate (including the scaled `plus` group) must lie within `min_lr`–`max_lr`; groups adapt independently during training |
+| AdaFactor | Manual-LR mode only | Both `relative_step` and `warmup_init` must be off; default relative-step mode ignores per-group rates, so the UI locks LoRA+ off |
+| Prodigy, ProdigyPlusScheduleFree | Unsupported | Per-group ratios are not preserved reliably; both UI and backend block this combination across all model types (including Krea 2) |
+| EmoSens | Unsupported | Applies one global `emoPulse` and resets all parameter groups to the same rate every step |
+| LoRA-Muon, LoRA-RITE | Unsupported | Paired-factor joint updates require intact low-rank factor pairs and cannot split `lora_down` and `lora_up` into separate groups |
 
-Switching to an incompatible mode turns LoRA+ off and shows the reason. Backend validation also rejects incompatible combinations from older presets or direct API calls.
+Watch upper bounds with Automagic: a starting rate of `2e-5` with a ratio of `12` puts the `plus` group at `2.4e-4`, exceeding the default `max_lr` (`2e-4`)—lower the ratio or raise `max_lr` before launching. Conventional external schedulers and warmup scale all parameter groups by the same factor, keeping the configured ratio intact.
 
-For example, an Automagic starting rate of `2e-5` and a LoRA+ ratio of `12` give a group rate of `2.4e-4`, above the default `2e-4` upper bound. Lower the ratio or raise the bound before training.
+<a name="support"></a>
+### Supported network modules
 
-This trainer's conventional external schedulers apply the same multiplier to each group, preserving the initial ratio. Warmup changes the early learning rate without changing grouping. Internally adaptive optimizers also change step size; distinguish logged group rates from actual update scales.
-
-<!-- doc-anchor: support -->
-## Supported network modules
-
-The following network modules provide the LoRA+ toggle:
-
-| Network module | Parameter receiving the ratio | Notes |
+| Network module | Scaled parameter group | Scope and notes |
 | --- | --- | --- |
-| `networks.lora` | `lora_up` | Standard LoRA+ grouping |
-| `networks.lora_anima` | `lora_up` | Standard LoRA+ grouping for Anima |
-| `networks.lora_generic` | `lora_up` | Standard LoRA+ grouping for MOSS |
-| `networks.lora_krea2` | `lora_up` | Native LoRA grouping for Krea 2 |
-| `networks.loha` | `hada_w2_a` | The sd-scripts extension for LoHa |
-| `networks.lokr` | `lokr_w1` | The sd-scripts extension for LoKr |
-| `lycoris.kohya` (LoCon / algo `lora` only) | `lora_up` et al. | LoCon for Anima and Krea 2 groups by the parameter name `lora_up` |
+| `networks.lora` | `lora_up` | Standard SDXL LoRA |
+| `networks.lora_anima` | `lora_up` | Native Anima LoRA |
+| `networks.lora_generic` | `lora_up` | Native MOSS-Image LoRA |
+| `networks.lora_krea2` | `lora_up` | Native Krea 2 LoRA |
+| `networks.loha` | `hada_w2_a` | `sd-scripts` LoHa group mapping |
+| `networks.lokr` | `lokr_w1` | `sd-scripts` LoKr group mapping |
+| `lycoris.kohya` (LoCon / `lora` only) | `lora_up` et al. | LyCORIS supports LoRA+ only in LoCon mode on Anima and Krea 2 |
 
-The sd-scripts native LoHa and LoKr modules use their own group mappings. LyCORIS LoRA+ supports LoCon (`lora`) only.
+<a name="testing"></a>
+## Evaluation, TensorBoard checks, and troubleshooting
 
-<!-- doc-anchor: tensorboard -->
-## TensorBoard
+<div id="cautions"></div>
+<div id="effects"></div>
 
-With LoRA+ enabled and both backbone and text encoder trained, standard SDXL LoRA records these group names:
+Save checkpoints at shorter intervals when testing ratios above `2.0`, separating faster convergence from peak quality:
 
-```text
-lr/unet
-lr/unet plus
-lr/textencoder
-lr/textencoder plus
-```
+| Comparison | Question answered |
+| --- | --- |
+| Checkpoints saved at the same step | Did the character, style, or concept converge earlier? |
+| Best checkpoint from each run | Did peak attainable image quality improve, or merely arrive sooner? |
+| Novel poses, backgrounds, and unseen subjects | Did faster convergence lock in training compositions or weaken prompt control? |
 
-Krea 2 trains only the DiT and records `lr/unet` and `lr/unet plus` with LoRA+ enabled.
+<div id="faq"></div>
 
-Anima numbers its text-encoder groups. Training that component records:
+If overfitting appears earlier or colors look overcooked, inspect earlier checkpoints first, or step the ratio back toward `1.0–2.0` while checking base learning rate and dataset repeats.
 
-```text
-lr/textencoder 1
-lr/textencoder 1 plus
-```
+<a name="tensorboard"></a>
+### Verifying in TensorBoard
 
-`plus` marks the group receiving the ratio. Block learning rates or other multi-group configurations add more names and curves. See the FAQ below for ratio checks.
+When TensorBoard logging is enabled, `plus` identifies the parameter group receiving the LoRA+ multiplier:
 
-<!-- doc-anchor: mechanism -->
-## How it works
+- **SDXL (backbone + text encoder)**: Logs `lr/unet`, `lr/unet plus`, `lr/textencoder`, and `lr/textencoder plus`.
+- **Krea 2 / DiT-only runs**: Logs `lr/unet` and `lr/unet plus`.
+- **Anima (with text encoder trained)**: Numbers text-encoder groups as `lr/textencoder 1` and `lr/textencoder 1 plus` (block-wise learning rates add further curves).
 
-Standard LoRA represents a layer’s weight change using two smaller matrices. `lora_down` projects the input to rank dimensions, and `lora_up` projects it to the layer’s output dimension.
+With standard optimizers, confirm that `plus / base` equals your configured ratio wherever the learning rate is nonzero; internally adaptive optimizers evolve each group's curve independently, so evaluate them alongside sample generations.
 
-For a layer with 2048 input features, 8192 output features, and rank 32, the LoRA branch is:
+<div id="references"></div>
 
-```text
-2048 input features → lora_down → 32 features → lora_up → 8192 output features
-```
-
-The weight change is `ΔW = (Alpha / rank) × B × A`, where A is `lora_down` and B is `lora_up`.
-
-In the current sd-scripts implementation, `lora_down` is initialized with random values and `lora_up` starts at zero. On the first backward pass, `lora_down` receives a zero gradient because `lora_up` is still zero; once `lora_up` is updated, `lora_down` begins receiving a nonzero gradient. The two matrices therefore have different update dynamics early in training.
-
-Without LoRA+, both groups use the same learning rate. With it enabled, `lora_down` keeps the base rate and `lora_up` multiplies it by the chosen ratio:
-
-<div class="doc-equation doc-equation-compact" role="group" aria-label="LoRA+ learning-rate equations">
-  <div class="doc-equation-expression"><span class="doc-math-var">LR</span><sub>down</sub> = <span class="doc-math-var">LR</span><sub>base</sub></div>
-  <div class="doc-equation-expression"><span class="doc-math-var">LR</span><sub>up</sub> = <span class="doc-math-var">LR</span><sub>base</sub> · <span class="doc-math-var">ratio</span></div>
-</div>
-
-<!-- doc-anchor: faq -->
-## Frequently asked questions
-
-**The result got worse or overfitting appeared earlier after enabling LoRA+. What should I do?**
-
-Disable LoRA+ or lower the ratio to `1.0`, then check the base learning rate, repeated data, and stopping point.
-
-**How do I confirm that LoRA+ is actually active?**
-
-When TensorBoard logging is enabled, inspect the base and plus curves for components being trained, such as `lr/unet` and `lr/unet plus`. With a conventional optimizer and both groups active, their ratio should match the configured ratio wherever the learning rate is nonzero. Adaptive group rates change with each group's state; inspect each curve alongside dedicated metrics and generated results.
-
-<!-- doc-anchor: references -->
-## Evidence and references
-
-The sd-scripts configuration path is defined in `backend/training/config/adapter.py`; Krea 2 ratios and network restrictions are in `krea2_network.py` and `krea2_optimizers.py`. Optimizer compatibility is in `optimizer_contracts.py`. Grouping, initialization, and log names are implemented in the vendored `networks/lora.py`, `lora_anima.py`, and `network_base.py`. The links below point to fixed revisions:
-
-- [This project's sd-scripts fork: `train_network_advanced.md` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/docs/train_network_advanced.md)
-- [This project's sd-scripts fork: `loha_lokr.md` (pinned revision)](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/docs/loha_lokr.md)
-- [LoRA+: Efficient Low Rank Adaptation of Large Models](https://arxiv.org/abs/2402.12354)
+References: [LoRA+ paper (arXiv:2402.12354)](https://arxiv.org/abs/2402.12354) · [sd-scripts `train_network_advanced.md`](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/docs/train_network_advanced.md) · [sd-scripts `loha_lokr.md`](https://github.com/amenorira/lora-scripts-anima/blob/85b6582dd4fb202bd5a6a7e301874c901fbc7e48/vendor/sd-scripts/docs/loha_lokr.md)

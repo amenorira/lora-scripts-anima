@@ -26,6 +26,8 @@ window.docsMixin = {
   _docsContentRequestId: 0,
   _docsPendingLocale: '',
   _docsPendingAnchor: '',
+  _docsRequestedSlug: '',
+  _docsRequestedAnchor: '',
   _docsContentCache: Object.create(null),
   _docsContentAbortController: null,
   _docsContentPromise: null,
@@ -69,7 +71,7 @@ window.docsMixin = {
     if (reloadIndex) {
       const requestId = ++this._docsListRequestId;
       this.docsIndexLoading = true;
-      if (!this.docsHtml) this.docsError = '';
+      this.docsError = '';
 
       try {
         const response = await fetch('/api/docs?locale=' + encodeURIComponent(locale));
@@ -83,16 +85,15 @@ window.docsMixin = {
         this._docsLocale = result.data.locale || locale;
       } catch (error) {
         if (requestId !== this._docsListRequestId) return;
-        const message = this.t('docs.loadError') + ': ' + (error.message || String(error));
-        if (this.docsHtml && typeof this.toast === 'function') this.toast(message, 'error');
-        else this.docsError = message;
+        this.docsError = this.t('docs.loadError') + ': ' + (error.message || String(error));
         return;
       } finally {
         if (requestId === this._docsListRequestId) this.docsIndexLoading = false;
       }
     }
 
-    const requestedSlug = this.docsSelectedSlug;
+    const requestedSlug = this._docsRequestedSlug || this.docsSelectedSlug;
+    const requestedAnchor = this._docsRequestedSlug ? (this._docsRequestedAnchor || '') : '';
     const fallbackSlug = this.docsDocuments.length ? this.docsDocuments[0].slug : '';
     const slug = this.docsDocuments.some(doc => doc.slug === requestedSlug) ? requestedSlug : fallbackSlug;
 
@@ -100,12 +101,14 @@ window.docsMixin = {
       this._cancelDocsContentRequest();
       this._teardownDocsScrollSpy();
       this.docsSelectedSlug = '';
+      this._docsRequestedSlug = '';
+      this._docsRequestedAnchor = '';
       this.docsHtml = '';
       this.docsTocItems = [];
       this._docsContentLocale = '';
       return;
     }
-    await this.selectParameterDoc(slug, '', { force: !!force });
+    await this.selectParameterDoc(slug, slug === requestedSlug ? requestedAnchor : '', { force: !!force });
   },
 
   async _fetchDocsContent(slug, locale, signal) {
@@ -121,11 +124,14 @@ window.docsMixin = {
     return result.data;
   },
 
-  async selectParameterDoc(slug, anchor, options) {
+  async selectParameterDoc(slug, anchor = slug === this._docsRequestedSlug ? this._docsRequestedAnchor : '', options) {
     if (!slug) return;
     const locale = this.locale || 'zh-CN';
     const normalizedAnchor = anchor || '';
     const force = !!(options && options.force);
+    this.docsError = '';
+    this._docsRequestedSlug = slug;
+    this._docsRequestedAnchor = normalizedAnchor;
 
     if (!force && this.docsPendingSlug === slug && this._docsPendingLocale === locale) {
       this._docsPendingAnchor = normalizedAnchor;
@@ -133,6 +139,8 @@ window.docsMixin = {
     }
 
     if (!force && this.docsSelectedSlug === slug && this._docsContentLocale === locale && this.docsHtml) {
+      this._docsRequestedSlug = '';
+      this._docsRequestedAnchor = '';
       this._cancelDocsContentRequest();
       this._updateDocsDocumentTitle();
       const restoreScrollSpy = this.routeTransitioning || !this._docsTocScrollHandler;
@@ -164,7 +172,6 @@ window.docsMixin = {
     this._docsPendingLocale = locale;
     this._docsPendingAnchor = normalizedAnchor;
     this.docsContentLoading = true;
-    if (!this.docsHtml) this.docsError = '';
 
     const requestPromise = (async () => {
       try {
@@ -175,9 +182,7 @@ window.docsMixin = {
         this._commitDocsContent(data, this._docsPendingAnchor);
       } catch (error) {
         if (requestId !== this._docsContentRequestId || error.name === 'AbortError') return;
-        const message = this.t('docs.loadError') + ': ' + (error.message || String(error));
-        if (this.docsHtml && typeof this.toast === 'function') this.toast(message, 'error');
-        else this.docsError = message;
+        this.docsError = this.t('docs.loadError') + ': ' + (error.message || String(error));
       } finally {
         if (requestId === this._docsContentRequestId) {
           this.docsContentLoading = false;
@@ -196,6 +201,8 @@ window.docsMixin = {
 
   _commitDocsContent(documentData, anchor) {
     this.docsSelectedSlug = documentData.slug || '';
+    this._docsRequestedSlug = '';
+    this._docsRequestedAnchor = '';
     this.docsHtml = documentData.html || '';
     this.docsTocItems = [];
     this.docsError = '';
@@ -264,6 +271,25 @@ window.docsMixin = {
     this.docsIndexLoading = false;
     this._cancelDocsContentRequest();
     this._teardownDocsScrollSpy();
+  },
+
+  openFieldDoc(slug, anchor) {
+    if (
+      this.form?.model_train_type === 'krea2-lora'
+      && slug === 'timesteps'
+      && anchor === 'logit-normal'
+      && this.form?.timestep_sampling === 'logsnr'
+    ) {
+      return this.openParameterDoc(slug, 'logsnr');
+    }
+    if (
+      slug === 'optimizers'
+      && anchor === 'prodigy-options'
+      && String(this.form?.optimizer_type || '').includes('ProdigyPlusScheduleFree')
+    ) {
+      return this.openParameterDoc(slug, 'prodigyplus-options');
+    }
+    return this.openParameterDoc(slug, anchor);
   },
 
   async openParameterDoc(slug, anchor, options) {
@@ -361,6 +387,15 @@ window.docsMixin = {
     this.parameterDocError = '';
   },
 
+  // Collapse the inline outline before measuring, so the target does not move afterwards.
+  handleInlineDocsTocClick(event) {
+    const link = event.target.closest && event.target.closest('a');
+    if (!link) return;
+    const details = link.closest && link.closest('details');
+    if (details) details.open = false;
+    this.handleDocsContentClick(event);
+  },
+
   handleDocsContentClick(event, inDialog = false) {
     const link = event.target.closest && event.target.closest('a');
     if (!link) return;
@@ -369,9 +404,9 @@ window.docsMixin = {
     if (docLink || href.startsWith('#')) {
       event.preventDefault();
       const anchor = docLink ? docLink[2] || '' : decodeURIComponent(href.slice(1));
-      if (inDialog) this.openParameterDoc(docLink ? docLink[1] : this.parameterDocSlug, anchor);
-      else if (docLink) this.selectParameterDoc(docLink[1], anchor);
-      else this.scrollToDocAnchor(anchor, true);
+      if (inDialog) return this.openParameterDoc(docLink ? docLink[1] : this.parameterDocSlug, anchor);
+      if (docLink) return this.selectParameterDoc(docLink[1], anchor);
+      this.scrollToDocAnchor(anchor, true);
     }
   },
 

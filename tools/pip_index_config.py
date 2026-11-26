@@ -1,28 +1,27 @@
 """Read both pip index settings once, using pip's own configuration precedence.
 
-Output is tab-separated key/value data, never shell commands. Environment
-overrides continue to be handled by the launchers. No configuration is written.
+Output uses stable, tab-separated keys for the launchers.
 """
 from __future__ import annotations
 
 
 def read_indexes() -> dict[str, str]:
-    # Import the same config loader as `pip config get` on demand.
-    import os
-    from pip._internal.configuration import Configuration, get_configuration_files, kinds
+    from pip._internal.configuration import Configuration
     from pip._internal.exceptions import ConfigurationError
 
-    # Match `pip config get`: read the venv config if present, or the user config.
-    files = get_configuration_files()
-    selected = kinds.SITE if any(os.path.exists(p) for p in files[kinds.SITE]) else kinds.USER
-    config = Configuration(isolated=False, load_only=selected)
+    config = Configuration(isolated=False)
     config.load()
     indexes = {}
-    for key in ("global.index-url", "global.extra-index-url"):
-        try:
-            indexes[key] = config.get_value(key)
-        except ConfigurationError:
-            continue
+    for option in ("index-url", "extra-index-url"):
+        # pip install applies environment options after [install] and [global].
+        for section in (":env:", "install", "global"):
+            try:
+                value = config.get_value(f"{section}.{option}")
+            except ConfigurationError:
+                continue
+            if value:
+                indexes[f"global.{option}"] = value
+                break
     return indexes
 
 

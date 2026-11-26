@@ -52,5 +52,67 @@ class IsolatedBundleTests(unittest.TestCase):
         self.assertNotIn("--upgrade", command)
 
 
+def _run_inline_coro(coro):
+    try:
+        coro.send(None)
+    except StopIteration as stop:
+        return stop.value
+    finally:
+        coro.close()
+    raise AssertionError("Coroutine yielded unexpectedly")
+
+
+async def _inline_to_thread(func, /, *args, **kwargs):
+    return func(*args, **kwargs)
+
+
+class EnvironmentErrorCodeRouteTests(unittest.TestCase):
+    def test_moss_enabled_route_returns_structured_error_codes(self):
+        from backend.server.routes import moss_acceleration as moss_route
+
+        class DummyRequest:
+            def __init__(self, payload):
+                self._payload = payload
+
+            async def json(self):
+                return self._payload
+
+        with patch.object(moss_route.asyncio, "to_thread", side_effect=_inline_to_thread):
+            invalid = _run_inline_coro(moss_route.enabled(DummyRequest({"enabled": "yes"})))
+            self.assertFalse(invalid["success"])
+            self.assertEqual(invalid["error_code"], "environmentInvalidToggleRequest")
+
+            with patch.object(moss_route.moss_acceleration, "set_enabled", side_effect=OSError("disk full")):
+                failed = _run_inline_coro(moss_route.enabled(DummyRequest({"enabled": True})))
+            self.assertFalse(failed["success"])
+            self.assertEqual(failed["error_code"], "environmentMossToggleFailed")
+            self.assertEqual(failed["error_details"], "disk full")
+
+    def test_environment_route_snapshots_and_download_validation_include_error_codes(self):
+        from backend.server.routes import environment as env_route
+
+        missing_install = env_route._install_job_snapshot("missing-job-id")
+        self.assertEqual(missing_install["error_code"], "environmentJobNotFound")
+
+        missing_dl = env_route._download_job_snapshot("missing-dl-id")
+        self.assertEqual(missing_dl["error_code"], "environmentJobNotFound")
+        self.assertEqual(missing_dl["progress"]["error_code"], "environmentJobNotFound")
+
+        triton_info = env_route._triton_status_sync()
+        if triton_info.get("platform_note"):
+            self.assertNotIn("一键安装", triton_info["platform_note"])
+            self.assertNotIn("one-click install", triton_info["platform_note"])
+
+        class DummyRequest:
+            async def json(self):
+                return {"group": "nonexistent-group", "file": "missing.safetensors"}
+
+        with patch.object(env_route.asyncio, "to_thread", side_effect=_inline_to_thread):
+            unknown = _run_inline_coro(env_route.anima_model_download(DummyRequest()))
+        self.assertFalse(unknown["success"])
+        self.assertEqual(unknown["error_code"], "environmentUnknownModel")
+        self.assertEqual(unknown["error_params"], {"group": "nonexistent-group", "file": "missing.safetensors"})
+
+
 if __name__ == "__main__":
     unittest.main()

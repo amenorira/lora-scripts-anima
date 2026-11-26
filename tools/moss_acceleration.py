@@ -12,12 +12,16 @@ import struct
 import subprocess
 import sys
 import tempfile
-import urllib.request
+import threading
 from uuid import uuid4
 
 from packaging.specifiers import SpecifierSet
 
+from backend.utils.hf_download import download_url_with_fallback
+from tools.network_mirror import invalidate_hf_cache, wheel_download_urls
+
 ROOT = Path(__file__).resolve().parents[1]
+
 CACHE = ROOT / "cache" / "moss_acceleration"
 CATALOG = Path(__file__).with_name("moss_acceleration_wheels.json")
 VERSIONS = {"flash-linear-attention": "0.5.2", "fla-core": "0.5.2", "causal-conv1d": "1.7.0"}
@@ -132,8 +136,10 @@ def set_enabled(enabled: bool) -> dict:
 
 
 def _verified_file(path: Path, entry: dict) -> bool:
-    return (path.is_file() and path.stat().st_size == entry["size"]
-            and hashlib.sha256(path.read_bytes()).hexdigest() == entry["sha256"])
+    if not path.is_file() or path.stat().st_size != entry["size"]:
+        return False
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest() == entry["sha256"]
 
 
 def download_wheel(entry: dict, emit) -> Path:
@@ -142,20 +148,34 @@ def download_wheel(entry: dict, emit) -> Path:
     destination = directory / entry["name"]
     if _verified_file(destination, entry):
         return destination
-    temporary = directory / (entry["name"] + ".part")
-    request = urllib.request.Request(entry["url"], headers={"User-Agent": "lora-scripts-anima/moss-acceleration"})
+    legacy_part = directory / (entry["name"] + ".part")
+    if legacy_part.exists():
+        legacy_part.unlink(missing_ok=True)
+
+    urls = wheel_download_urls(entry)
+    progress: dict = {}
+    lock = threading.Lock()
     emit(stage="downloading", message=entry["name"])
-    with urllib.request.urlopen(request, timeout=60) as response, temporary.open("wb") as output:
-        received = 0
-        while chunk := response.read(1024 * 1024):
-            received += len(chunk)
-            if received > entry["size"]:
-                raise RuntimeError("Wheel size mismatch / 安装包大小不匹配")
-            output.write(chunk)
-            emit(stage="downloading", downloaded=received, total=entry["size"])
-    if not _verified_file(temporary, entry):
-        raise RuntimeError("Wheel SHA256 mismatch / 安装包 SHA256 校验失败")
-    os.replace(temporary, destination)
+
+    def _on_progress(_line: str) -> None:
+        with lock:
+            downloaded = int(progress.get("downloaded") or 0)
+            total = int(progress.get("total") or entry["size"])
+        emit(stage="downloading", downloaded=downloaded, total=total)
+
+    download_url_with_fallback(
+        urls,
+        destination,
+        progress=progress,
+        lock=lock,
+        on_log=lambda message: emit(message=message),
+        on_progress=_on_progress,
+        label=entry["name"],
+        expected_size=entry["size"],
+        expected_sha256=entry["sha256"],
+        on_source_fail=lambda _url, _err: invalidate_hf_cache(),
+    )
+    emit(stage="downloading", downloaded=entry["size"], total=entry["size"])
     return destination
 
 

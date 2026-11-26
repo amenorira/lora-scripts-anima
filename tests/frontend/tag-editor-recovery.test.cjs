@@ -1,6 +1,30 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { loadTagEditor, response, deferred } = require('./helpers.cjs');
+const { loadTagEditor, loadFrontend, composeMixins, response, deferred } = require('./helpers.cjs');
+
+test('closing the draft prompt keeps the stored draft; only explicit discard removes it', async () => {
+  const key = 'tagEditor_draft_/dataset';
+  for (const [action, kept] of [['cancelConfirm', true], ['confirmSecondaryAction', false]]) {
+    const store = new Map([[key, JSON.stringify({ version: 2, items: [{ path: 'a', tags: 'draft' }], pending: [] })]]);
+    const storage = { getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, v), removeItem: k => store.delete(k) };
+    const context = { window: {}, URLSearchParams, AbortController, setTimeout, clearTimeout,
+      localStorage: storage, sessionStorage: storage, fetch: async () => response({}) };
+    loadTagEditor(context);
+    const dialog = loadFrontend(['shared/confirmation-dialog'], { window: {} }).window.confirmationDialogMixin;
+    const app = composeMixins(context.window.tagEditorMixin, dialog, {
+      tagEditorDir: '/dataset', tagEditorLoadedDir: '/dataset', _teLoadEpoch: 1, _teDraftRemainder: [],
+      currentRoute: 'tagEditor', t: k => k, toast() {}, $nextTick: callback => callback(),
+    });
+    app._teCheckDraft();
+    assert.equal(app.showConfirmModal, true);
+    assert.equal(app.confirmDialog.actionLabel, 'tagEditor.draftRestoreAction');
+    assert.equal(app.confirmDialog.secondaryLabel, 'tagEditor.draftDiscardAction');
+    assert.equal(app.confirmDialog.cancelLabel, 'common.cancel');
+    await app[action]();
+    assert.equal(store.has(key), kept, action);
+    assert.equal(app._teDraftRemainder.length, kept ? 1 : 0, action);
+  }
+});
 
 function fixture() {
   const raw = '\uFEFF  cat, dog\r\n';

@@ -1,621 +1,394 @@
+<a name="guide-title"></a>
 # 优化器选择与参数指南
 
-<!-- doc-anchor: quick-choice -->
+<a name="quick-choice"></a>
 ## 快速选择
 
-优化器根据梯度更新模型参数，主要影响学习速度、显存占用和稳定性。本文覆盖 Anima、SDXL、MOSS-Image 和 Krea 2；默认值与支持范围按训练类型区分。
+优化器决定根据梯度更新权重的步幅、方向平滑与状态显存占用。本指南覆盖 Anima、SDXL、MOSS-Image 和 Krea 2 四种训练类型。
 
-初次训练选 AdamW8bit。出现更新幅度异常时比较 StableAdamW，优化器状态显存不足时考虑 Paged 版本。更换优化器后，按下方学习率表选择起点。
+- **初次训练或建立基准**：选择 `AdamW8bit`，配合各训练类型的默认学习率与调度器。
+- **优化器状态显存不足**：先用 `8bit` 变体；仍超出显存时对比 `PagedAdamW8bit` 或分解二阶状态的 `CAME`。
+- **Loss 偶发尖峰或低精度权重更新不稳**：固定数据与学习率，对比 [`StableAdamW`](#stableadamw-options)。
+- **减少手动试错步长**：对比 [`Prodigy`](#prodigy-options) 或 [`ProdigyPlusScheduleFree`](#prodigyplus-options)，通过 `d_coef` 微调尺度。
 
-| 主要需求 | 可供对比的备选方案 | 关注什么 |
+| 调参目标 | 优先对比方案 | 重点观察指标 |
 | --- | --- | --- |
-| 建立通用基准 | AdamW8bit | 总步数、模型存档、预览结果、峰值显存和每步耗时 |
-| 降低优化器状态显存 | 8-bit；必要时比较 Paged 版本 | 实际峰值显存和数据传输开销 |
-| 处理更新幅度异常或低精度更新误差 | StableAdamW | 更新日志中的尖峰，以及多个模型存档的生成结果 |
-| 使用低显存的分解状态和更新裁剪 | CAME | 稳定性、速度与最终生成结果 |
-| 减少手动调整学习率的试错 | Prodigy 系列 | D 的变化，以及目标特征首次充分出现的模型存档 |
-| 尝试矩阵更新方法 | Muon、SOAP | 学习速度与额外计算成本 |
-| 尝试针对 LoRA 因子设计的方法 | LoRA-Muon、LoRA-RITE | 因子配对支持范围与独立学习率调整 |
+| 建立通用基准 | `AdamW8bit` | 各阶段模型存档的生成画面、峰值显存、单步耗时 |
+| 降低状态显存占用 | `AdamW8bit`、`CAME`；极限显存用 `PagedAdamW8bit` | 峰值显存与触发换页后的单步耗时变化 |
+| 抑制更新尖峰或低精度舍入误差 | `StableAdamW` | 梯度范数尖峰是否消失、多阶段存档的画面稳定性 |
+| 自动估计步长或免外部调度 | `Prodigy`、`ProdigyPlusScheduleFree`、`AdamWScheduleFree` | 日志中 `D` 的增长轨迹、目标特征成型的最早存档 |
+| 验证矩阵正交化或子空间预条件 | `Muon`、`LoRA-Muon`、`LoRA-RITE`、`SOAP` | 早期收敛速度、单步额外算力开销、过拟合拐点 |
 
-<!-- doc-anchor: optimizer-type -->
-## 当前可用优化器
+<a name="optimizer-type"></a>
+## 可用优化器与各核心初始学习率
 
 <span id="limits"></span>
+<span id="stable-comparison"></span>
+<span id="starting-configs"></span>
 
-| 优化器 | 主要用途 | 限制与注意事项 |
+下表按界面下拉框的 6 个分组列出全部 22 个优化器、四种训练类型的项目初始学习率（仅自动覆盖未手动修改的默认值）及核心限制。表中的显存说明仅指优化器状态，实际峰值显存还受分辨率、Rank、批次大小、缓存与预览采样影响。
+
+**1. AdamW 及其存储变体**
+
+| 优化器 | 机制与定位 | Anima 初始 LR | 其他核心初始 LR | 关键限制与说明 |
+| --- | --- | ---: | --- | --- |
+| `AdamW8bit` | 通用默认；大张量状态量化为 8-bit，小张量保留 FP32 | `2e-5` | SDXL / MOSS / Krea 2：`1e-4` | 禁用 `amsgrad`；阈值见 [`min_8bit_size`](#min-8bit-size) |
+| `AdamW` | 未量化状态的基准对照 | `2e-5` | SDXL / MOSS / Krea 2：`1e-4` | FP32 状态显存高于 8-bit；支持 [`fused`](#adamw-fused) 与 [`foreach`](#foreach) |
+| `PagedAdamW8bit` | 显存不足时将 8-bit 状态分页换出至系统内存 | `2e-5` | SDXL / MOSS / Krea 2：`1e-4` | 更新数学与 `AdamW8bit` 一致；换页会增加 CPU/GPU 传输耗时 |
+
+**2. 内置稳定化机制**
+
+| 优化器 | 机制与定位 | Anima 初始 LR | 其他核心初始 LR | 关键限制与说明 |
+| --- | --- | ---: | --- | --- |
+| `StableAdamW` | 在 AdamW 上增加内部更新 RMS 裁剪与 Kahan 补偿求和 | `2e-5` | SDXL / MOSS / Krea 2：`1e-4` | 状态显存高于 `AdamW8bit`；项目默认 `weight_decay=0` |
+| `CAME` | 按行/列分解二阶状态，结合残差置信度缩放与内部 RMS 裁剪 | `1.5e-5` | SDXL / MOSS：`1e-4`；Krea 2：`2e-4` | 使用 3 个 beta；适合显存受限时与 `AdamW8bit` 对照 |
+
+**3. 前瞻差分与符号更新**
+
+| 优化器 | 机制与定位 | Anima 初始 LR | 其他核心初始 LR | 关键限制与说明 |
+| --- | --- | ---: | --- | --- |
+| `Adan` | 同时跟踪梯度与相邻步梯度差分的 Nesterov 动量 | `1e-5` | SDXL / MOSS：`5e-5`；Krea 2：`1e-4` | 使用 3 个 beta；有效步长偏大，Anima 按 AdamW 半值起步 |
+| `Lion` / `Lion8bit` / `PagedLion8bit` | 符号动量更新，仅维护一阶动量状态 | `5e-6` | SDXL / MOSS：`2e-5`；Krea 2：`1e-4` | 可用学习率区间比 AdamW 小约 3～10 倍，需单独调参 |
+
+**4. 双时间尺度梯度记忆**
+
+| 优化器 | 机制与定位 | Anima 初始 LR | 其他核心初始 LR | 关键限制与说明 |
+| --- | --- | ---: | --- | --- |
+| `AdEMAMix` / `AdEMAMix8bit` | 叠加快速与慢速两组指数移动平均，兼顾近期梯度与长期趋势 | `2e-5` | SDXL / MOSS / Krea 2：`1e-4` | 使用 3 个 beta；渐增步数留空时自动按预估总步数填入 |
+
+**5. 内部学习率估计与调度**
+
+| 优化器 | 机制与定位 | Anima 初始 LR | 其他核心初始 LR | 关键限制与说明 |
+| --- | --- | ---: | --- | --- |
+| `Prodigy` | D-adaptation 自动估计步长尺度 `D` | `1.0`（锁定） | SDXL / MOSS / Krea 2：`1.0`（锁定） | 全训练类型均锁定 `learning_rate=1.0`，改用 `d_coef` 缩放；自动切 `cosine` 调度；不支持 [LoRA+](#loraplus) |
+| `ProdigyPlusScheduleFree` | 自动估计步长 `D` 并内置平均权重调度 | `1.0`（锁定） | SDXL / MOSS / Krea 2：`1.0`（锁定） | 锁定 `learning_rate=1.0` 与外部调度 `constant`；默认开启内部缩放并锁定 `max_grad_norm=0`；不支持 LoRA+ |
+| `AdamWScheduleFree` | 用权重平均替代外部衰减调度的 AdamW | `1e-4` | SDXL / MOSS：`3e-4`；Krea 2：`0.0025` | 外部调度锁定为 `constant`，预热改用内部 [`warmup_steps`](#schedulefree-warmup) |
+| `AdaFactor` | 分解状态极省显存；默认按步数自动计算相对步长 | 自动接管（手动 `2e-5`） | SDXL / MOSS / Krea 2：自动接管（手动 `1e-4`） | `max_grad_norm` 锁定为 `0`；需同时关闭 `relative_step` 与 `warmup_init` 才可用手动 LR、外部调度与 LoRA+ |
+| `Automagic3` / `Automagic4` | 按参数组梯度符号一致率自适应调节 LR；v4 另按敏感度缩小高敏元素更新 | `2e-5` | SDXL / MOSS / Krea 2：`2e-5` | 实验性；锁定外部调度 `constant` 并保持可训练参数 FP32；`fused=True` 要求单卡、累积为 `1`、`max_grad_norm=0`、禁用 `fp16` |
+| `EmoSens` | 按 Loss 变化自动调节全局学习率并给出收敛提示 | `0.1` | MOSS / Krea 2：`0.1`；SDXL：`1.0` | 实验性；要求单卡、梯度累积 `1`、禁用 `fp16`；锁定外部调度 `constant`；不支持组件独立 LR 与 LoRA+ |
+
+**6. 矩阵结构更新**
+
+| 优化器 | 机制与定位 | Anima 初始 LR | 其他核心初始 LR | 关键限制与说明 |
+| --- | --- | ---: | --- | --- |
+| `Muon` | 对二维矩阵动量做 Newton-Schulz 正交化 | `2e-5` | MOSS / Krea 2：`1e-4`（SDXL 不支持） | 仅支持二维参数；LyCORIS 须关闭 `use_scalar` 与 `train_norm` |
+| `LoRA-Muon` | 将 `lora_down` / `lora_up` 配对做低秩流形谱下降更新 | `0.02` | Krea 2：`0.1`（SDXL / MOSS 不支持） | 仅支持 Anima 原生 LoRA、Krea 2 原生 LoRA 与 **Krea 2 LoCon**（关 `use_scalar` 和 DoRA）；不支持 LoRA+ |
+| `LoRA-RITE` | 消除等价 A/B 因子缩放差异的低秩预条件更新 | `1e-4` | Krea 2：`1e-4`（SDXL / MOSS 不支持） | 支持范围同 `LoRA-Muon`；内置裁剪并将 `max_grad_norm` 锁定为 `0`；不支持 LoRA+ |
+| `SOAP` | 在梯度协方差特征基旋转坐标系内执行 Adam 更新 | `2e-5` | SDXL / MOSS / Krea 2：`1e-4` | 预条件矩阵增加显存与算力；项目默认最大预条件轴长 `256`、`weight_decay=0` |
+
+> **常用三者取舍**：日常优先用 `AdamW8bit`。当显存非常吃紧时，可对比 `CAME`（记录峰值显存与单步耗时）。当训练日志出现偶发梯度尖峰或使用 `full_bf16` 低精度可训练权重时，保持相同学习率对比 `StableAdamW`。完整参数细节见下方[通用参数](#parameters)与[专用参数](#specific-options)。
+
+<a name="parameters"></a>
+## 通用优化与调度参数
+
+<a name="learning-rate"></a>
+### 学习率（learning_rate）
+
+学习率过低会导致人物五官、服装结构欠拟合；过高会导致 Loss 震荡、色彩溢出或早期几个轮次迅速锁死训练图姿势与背景。更换优化器或调整网络缩放比例后，先从[上方初始学习率表](#optimizer-type)起步，并在固定提示词与种子下横向对比多个阶段的模型存档。
+
+- **组件独立学习率覆盖关系**：`unet_lr`（DiT / U-Net）与 `text_encoder_lr` 留空时默认沿用总 `learning_rate`；填入数值后分别覆盖对应参数组。使用 Krea 2 时，权重衰减、`betas`、`eps` 等使用对应的 `krea_*` 字段（含义与下方同名小节一致）。
+- **`network_alpha / network_dim` 的联动**：该比值决定 LoRA 分支的前向缩放。MOSS-Image 默认 `rank=16, alpha=1` 搭配 `1e-4`；Anima 与 Krea 2 默认 `rank=32, alpha=32`（缩放为 `1.0`）。若从上游 `alpha=1` 配方迁移到 `alpha=dim`，必须同步下调学习率。
+- **Lion 的权重衰减比例**：Lion 的初始学习率约为 AdamW 的 1/3～1/10；本项目保留自身的权重衰减默认值，若需严格复现 Lion 论文配方，可将 `weight_decay` 相应放大 3～10 倍。
+
+<a name="scheduler-warmup"></a>
+### 学习率调度器与预热（lr_scheduler / lr_warmup_steps）
+
+新配置默认调度器：SDXL 为 `cosine_with_restarts`，Anima、MOSS-Image 和 Krea 2 为 `constant`。测试预热时建议从 `constant_with_warmup` 或 `cosine` 起步，预热步数先控制在总优化器步数的 `5%` 以内（Krea 2 与 `warmup_stable_decay` 的步数框还支持填 `[0, 1)` 的小数比例）。
+
+**优化器对调度器的自动接管与联动：**
+
+- **内部管理调度的优化器**：选择 `AdamWScheduleFree`、`ProdigyPlusScheduleFree`、`Automagic3`、`Automagic4`、`EmoSens`，或开启 `relative_step` 的 `AdaFactor` 时，界面会自动将外部 `lr_scheduler` 锁定为 `constant`、外部 `lr_warmup_steps` 锁定为 `0`。
+- **Prodigy 调度建议**：切换到 `Prodigy` 时，未手动修改的调度器会自动设为 `cosine`。避免对 `Prodigy` 使用 `cosine_with_restarts`（周期重启会干扰 `D` 步长估计）；开启外部预热时后端会自动启用 `safeguard_warmup=True`。
+
+| 调度器 | 曲线行为与适用场景 | 专用子参数与注意事项 |
 | --- | --- | --- |
-| AdamW | 未量化状态的 AdamW 基准 | 状态精度随训练参数精度；默认 FP32 状态的显存比 8-bit 版本高 |
-| AdamW8bit | 通用默认 | 小张量默认保留 FP32 状态，这是正常行为 |
-| PagedAdamW8bit | 常规 8-bit 优化器仍放不下显存时 | 沿用 AdamW8bit 更新算法，状态增加分页机制；触发换页时增加 CPU/GPU 数据传输 |
-| StableAdamW | 更新幅度异常、低精度 LoRA 权重 | 状态与训练参数使用相同精度；内部裁剪限制更新幅度 |
-| Lion | 使用符号动量更新，状态显存低于全精度 AdamW | 合理学习率范围与 AdamW 不同，需要重新调整 |
-| Lion8bit | 降低 Lion 的状态显存 | 需要独立调整学习率 |
-| PagedLion8bit | Lion8bit 同时需要分页时 | 分页改变动量状态的存储位置；触发换页时增加 CPU/GPU 数据传输 |
-| Prodigy | 由优化器估计更新尺度 | 学习率作为倍率，建议从 `1.0` 开始；sd-scripts 固定为 `1.0`，Krea 2 可调整；本项目不支持搭配 LoRA+ |
-| ProdigyPlusScheduleFree | 自动估计步长并在内部管理调度 | 外部 scheduler 和 warmup 不生效；适合已有基准后的对照 |
-| Automagic3 / Automagic4 | 自动调整参数组学习率；Automagic4 还会缩小高敏感度参数的更新幅度 | 两版均为实验性；可训练参数保持 FP32；融合更新要求梯度累积为 1、全局梯度裁剪为 0、禁用 mixed_precision=fp16、仅使用单卡 |
-| AdaFactor | 优化器状态显存紧张 | relative step 模式会接管学习率，并限制 LoRA+ |
-| CAME | 使用低显存的分解状态、残差置信度缩放和内部 RMS 裁剪 | 使用三个 beta；可因子化张量的二阶状态按行、列存储 |
-| AdamWScheduleFree | 测试不依赖外部 scheduler 的 AdamW | 使用内部 warmup，项目默认 `warmup_steps=0`；评估和保存使用平均权重 |
-| EmoSens | 项目实验性优化器 | 要求梯度累积为 1、禁用 mixed_precision=fp16、仅支持单卡，不支持 LoRA+ |
-| Muon | 对二维 LoRA 矩阵执行动量正交化 | 支持 Anima、MOSS-Image 和 Krea 2；使用 PyTorch 原生实现，仅接受二维参数 |
-| LoRA-Muon | 针对标准 LoRA 因子分解的低秩谱下降优化器 | 支持 Anima 原生 LoRA、Krea 2 原生 LoRA 与 LoCon；要求完整因子配对，学习率需单独校准 |
-| Adan | 利用相邻梯度的变化调整更新 | 本项目初始学习率为 AdamW 的一半；使用三个 beta |
-| AdEMAMix | 同时使用短期和长期梯度平均 | alpha 决定长期动量贡献，慢速动量权重渐增步数决定何时达到目标权重 |
-| AdEMAMix8bit | 使用 AdEMAMix 且优化器状态显存紧张时 | 与全精度版本的差异主要在状态量化 |
-| LoRA-RITE | 试验专为 LoRA 结构设计的更新方式 | 支持 Anima 原生 LoRA、Krea 2 原生 LoRA 与 LoCon；自带梯度裁剪，`max_grad_norm` 锁定为 `0` |
-| SOAP | 在旋转坐标系中执行 Adam 式更新 | 预条件矩阵增加显存与计算开销；本项目将最大预条件维度设为 `256` |
+| `constant` / `constant_with_warmup` | 全程（或预热后）保持恒定学习率；适合短程训练并按固定间隔保存存档挑最佳轮次 | Krea 2 的 `constant` 不接受非零预热，需预热请选 `constant_with_warmup` |
+| `cosine` | 预热后按单轮余弦平滑衰减至 `0`；适合总步数确定、希望末段平稳收敛的常规训练 | 无额外参数 |
+| `cosine_with_min_lr` | 余弦衰减但保留最低学习率下限，防止末段彻底停更 | `lr_scheduler_min_lr_ratio`（终点比例 `0～1`）、`lr_scheduler_num_cycles` |
+| `cosine_with_restarts` | 按 `lr_scheduler_num_cycles` 周期衰减并跳回峰值重启；`1` 时等同单轮余弦 | 重启瞬间学习率跳升，不适合自适应步长优化器 |
+| `warmup_stable_decay`（WSD） | 预热 → 恒定平台期 → 末段衰减；兼顾中段充分学习与末段平稳收尾 | `lr_warmup_steps` + `lr_decay_steps` 之和不可超过总步数；`warmup_type`（默认 `linear`）与 `decay_type`（默认 `cosine`）均支持 `linear`、`cosine`、`1-sqrt`；`lr_scheduler_min_lr_ratio` 同时设定预热起点与衰减终点 |
+| `piecewise_constant` | 按指定步数阶梯切换倍率 | `step_rules` 格式为 `倍率:累计结束步数,...,最后倍率`（如 `1:1000,0.5:1600,0.1` 表示 0–999 步 100%、1000–1599 步 50%、1600 步起 10%）；外部预热锁定为 `0` |
+| `linear` / `polynomial` | 预热后按直线或幂函数衰减（sd-scripts 的 `polynomial` 终点为 `1e-7`） | `lr_scheduler_power` 控制多项式幂次（默认 `1.0`） |
+| `inverse_sqrt` | 预热后按 `1 / √(1 + Δstep / timescale)` 缓慢衰减，适合长程微调 | `lr_scheduler_timescale` 默认 `10000` |
+| `rex`（仅 Krea 2） | 从最低学习率预热至基准值，再按 REX 倒数曲线末段加速收敛回最低值 | `lr_scheduler_min_lr_ratio` 留空默认 `0.01`（基准值的 1%）；需已知总训练步数 |
 
-表中的优化器状态显存说明不含模型权重与激活值。实际峰值还受分辨率、rank、batch、缓存和预览生成影响。
-
-<!-- doc-anchor: stable-comparison -->
-## AdamW8bit、CAME、StableAdamW 的区别
-
-**AdamW8bit** 使用 8-bit 保存较大的状态张量，小张量保留 FP32。
-
-**CAME** 使用分解状态、残差置信度缩放和内部 RMS 裁剪。它适合在优化器状态显存紧张时与 AdamW8bit 对照；记录峰值显存、每步耗时和生成结果。
-
-**StableAdamW 限制异常大的参数更新。** 支持常规调度器、预热、`max_grad_norm` 和 LoRA+。Anima 初始配置为 `lr=2e-5`、`betas=(0.9, 0.99)`、`eps=1e-8`、`weight_decay=0`；SDXL 初始学习率为 `1e-4`。状态显存高于 AdamW8bit，主要用于处理更新稳定性问题。
-
-<!-- doc-anchor: parameters -->
-## 参数说明
-
-<!-- doc-anchor: learning-rate -->
-### 学习率（learning rate）
-
-学习率过低时目标特征可能学不充分，过高时训练可能不稳定或过早过拟合。自适应优化器还会计算内部步长；请对比多个模型存档的生成结果来选择合适范围。
-
-下表列出 Anima 的项目初始配置。各优化器使用不同更新尺度，需分别调整学习率。
-
-| 优化器 | Anima 初始学习率 | 使用说明 |
-| --- | ---: | --- |
-| AdamW / AdamW8bit / PagedAdamW8bit | `2e-5` | Anima 官方模型卡的 rank 32 基线；8-bit 与分页不改变 LR 语义 |
-| StableAdamW | `2e-5` | 先与 AdamW 同尺度，单独比较稳定化更新 |
-| Muon (`match_rms_adamw`) | `2e-5` | 通过矩阵尺寸缩放，使更新 RMS 接近 AdamW 的量级 |
-| LoRA-Muon | `0.02` | 实验性起点，需独立调整；构造函数默认 `0.1` |
-| CAME | `1.5e-5` | 按 AdamW 基线的 `0.75` 倍起步 |
-| Adan | `1e-5` | 按 AdamW 基线的 `0.5` 倍起步，独立比较收敛速度 |
-| AdEMAMix / AdEMAMix8bit | `2e-5` | 论文沿用 Adam 量级的学习率；8-bit 不改变学习率语义 |
-| LoRA-RITE | `1e-4` | 更新尺度与 Adam 族不同，单独调整学习率 |
-| SOAP | `2e-5` | 从 AdamW 基线开始比较 |
-| Lion / Lion8bit / PagedLion8bit | `5e-6` | Lion 官方建议 LR 比 AdamW 小约 `3`～`10` 倍 |
-| AdamWScheduleFree | `1e-4` | 官方建议常比基准优化器高 `1`～`10` 倍；Anima 缺少充分验证，按实验方案使用 |
-| Prodigy / ProdigyPlus | `1.0` | 自适应步长的倍率，实际步长还取决于 D 估计值 |
-| AdaFactor relative step | 由优化器接管，输入 LR 不控制更新 | 关闭 `relative_step` 和 `warmup_init` 后，Anima 手动模式从 `2e-5` 开始 |
-| Automagic3 / Automagic4 | `2e-5` | 自动调整学习率的起点 |
-| EmoSens | Transformer LoRA `0.1`、U-Net LoRA `1.0` | 自动学习率的倍率 |
-
-Lion 的 `5e-6` 沿用官方“LR 约为 AdamW 的 1/3～1/10”的建议；本项目保持自己的权重衰减默认值。复现官方配方时，还需将 weight decay 相应增大 3～10 倍。
-
-其他训练类型使用各自的初始配置：
-
-| 训练类型 | 基准学习率 | 其他初始推荐值 |
-| --- | --- | --- |
-| SDXL | AdamW/StableAdamW `1e-4` | CAME `1e-4`；Lion `2e-5`；AdamWScheduleFree `3e-4` |
-| MOSS-Image | `1e-4`，配合 `rank=16, alpha=1` | Muon 同样从 `1e-4` 开始 |
-| Krea 2 | AdamW8bit `1e-4` | CAME `2e-4`；Lion `1e-4`；AdamWScheduleFree `0.0025`；LoRA-Muon `0.1`；LoRA-RITE `1e-4`；EmoSens 倍率 `0.1` |
-
-Krea 2 的权重衰减、betas、eps 使用对应的 `krea_*` 界面字段；参见[权重衰减](#weight-decay)、[动量参数](#betas)和[数值稳定项](#eps)的说明。
-
-`network_alpha / network_dim` 会缩放 LoRA 分支。上游 sd-scripts 的 `1e-4` 示例对应 `alpha=1`；改用本项目的 `rank=32, alpha=32` 时，需要重新调整学习率。
-
-人物过早出现构图僵化、串色或提示词响应下降时，可以降低学习率或减少训练步数。学习不足时，先确认触发词和有效训练步数，再小幅提高学习率。Lion 的合理学习率范围与 AdamW 不同，需要单独测试。
-
-AdaFactor 开启 `relative_step` 后，按更新步数计算实际步长；输入学习率只供调度代理初始化显示，不控制参数更新，外部调度器也不生效。`scale_parameter` 另行决定是否乘以参数 RMS。使用手动学习率、外部调度器或 LoRA+ 时，需同时关闭 `relative_step` 和 `warmup_init`。
-
-<!-- doc-anchor: scheduler-warmup -->
-### 学习率调度器与预热（scheduler 和 warmup）
-
-AdamW、AdamW8bit、StableAdamW、Lion、CAME、Muon 和 LoRA-Muon 使用外部学习率调度器。Anima 新配置默认用 `constant`。测试预热时，可用 `constant_with_warmup`，先将预热步数控制在总优化器步数的 `5%` 以内。
-
-`cosine_with_restarts` 在 `num_cycles=1` 时运行一轮衰减；大于 `1` 时周期重启。
-
-AdamWScheduleFree 和 ProdigyPlusScheduleFree 自己管理调度，界面会把外部调度器固定为 constant。AdamWScheduleFree 的内部预热与 `lr_warmup_steps` 是两回事；ProdigyPlusScheduleFree 没有暴露对应的可调预热参数。
-
-`warmup_stable_decay`（WSD）按“预热 → 恒定 → 末段衰减”运行：
-
-- `lr_warmup_steps`、`lr_decay_steps` 接受整数步数或 `0～1` 之间的比例（不含 `1`）；两段之和须在总步数以内，恒定阶段取剩余步数，长度为 `0` 的阶段跳过。
-- `warmup_type` 默认 `linear`，`decay_type` 默认 `cosine`；两者都支持 `linear`、`cosine`、`1-sqrt`。`1-sqrt` 预热前慢后快，衰减前快后慢。
-- 最低学习率比例决定预热起点和衰减终点。余弦周期数仅影响 cosine 衰减，设为 `1` 时单向下降。
-
-`piecewise_constant` 的 `step_rules` 格式为 `倍率:累计结束步数,...,最后倍率`。例如 `1:1000,0.5:1600,0.1` 表示 0～999 步使用基础学习率，1000～1599 步使用基础值的 50%，1600 步起使用 10%。结束步数须为递增正整数，倍率为有限非负数，允许大于 `1`；最后一项只填倍率。
-
-该调度器将 `lr_warmup_steps` 固定为 `0`。sd-scripts 路径按调度器步数解释规则，多进程时预览换算为训练步数。有切换点的阶梯曲线需等待总步数估算。
-
-在“学习率调度器”下点击“查看学习率曲线”，可检查预热、衰减和重启的形状。侧栏显示当前组件的基础学习率、预热步数，以及训练开始、中途和结束时的学习率；有多个可训练组件时，可切换组件查看各自曲线，例如同时训练 DiT 和文本编码器，或使用 Krea 2 的 LoRA+。总步数尚未确定时，预览会显示估算提示。曲线表示调度器输出，内部自适应步长由优化器在训练中另行计算。
+在“学习率调度器”字段下点击**“查看学习率曲线”**，可实时检查预热区间、衰减拐点与开始/中途/结束三点读数；同时训练 DiT 与文本编码器或启用 Krea 2 LoRA+ 时，可在弹窗侧栏切换组件分别查看曲线。曲线展示外部调度器输出，优化器内部的自适应步长在训练中另行计算。
 
 ![ComfyUI 主题下的学习率曲线：10,000 步、500 步预热与余弦衰减](../images/lr-preview.zh-CN.png)
 
-| 参数 | 主要用途 | 过强或过大时需要留意 |
+<a name="gradient-clipping"></a>
+### 梯度裁剪阈值（max_grad_norm）
+
+界面字段名为**“梯度裁剪阈值”**。常规优化器默认 `1.0`（按全局 L2 范数抑制偶发异常大梯度），设为 `0` 关闭裁剪。阈值过低会压制正常特征更新。
+
+**各优化器的联动与锁定规则：**
+
+- **强制锁定为 `0`**（改用优化器内部裁剪或防止双重缩放）：`AdaFactor`、`LoRA-RITE`，以及开启内部缩放（默认 `use_stableadamw=True` 或 `eps=None`）时的 `ProdigyPlusScheduleFree`；此外启用 `Automagic` 的 `fused=True` 时也必须为 `0`。
+- **自动推荐设为 `0`**（仍可手动修改）：`Prodigy`（外部裁剪可能压低 `D` 估计）以及 Anima / Krea 2 下的 `LoRA-Muon`。
+- **正常生效**：`AdamW` 系列、`StableAdamW`、`CAME`、`Lion` 系列、`Adan`、`AdEMAMix`、`AdamWScheduleFree`、`SOAP`、`EmoSens` 及 `fused=False` 的 `Automagic`。
+
+<a name="weight-decay"></a>
+### 权重衰减（weight_decay）
+
+权重衰减持续收缩可训练权重幅度。数值过大会阻碍特征拟合；`0` 关闭衰减。项目按优化器特性提供两档初始值：
+
+- **默认 `0.01`**：`AdamW`、`AdamW8bit`、`PagedAdamW8bit`、`Adan`、`AdEMAMix`、`AdEMAMix8bit`、`EmoSens`。
+- **默认 `0`**：`StableAdamW`、`CAME`、`Lion` 系列、`Prodigy`、`ProdigyPlusScheduleFree`、`AdamWScheduleFree`、`AdaFactor`、`Automagic3/4`、`Muon`（显式覆盖 PyTorch 原生默认 `0.1`）、`LoRA-Muon`、`LoRA-RITE`、`SOAP`（显式覆盖库默认 `0.01`）。
+
+人物 LoRA 建议先保留项目默认值；做跨优化器纯净算法对比时（如 `AdamW8bit` 对照 `StableAdamW`），请将两组的 `weight_decay` 设为同一数值。
+
+<a name="betas"></a>
+### 动量系数（betas）
+
+`betas` 控制历史梯度统计的平滑窗口：越接近 `1` 历史保留越久、响应越慢；调低则更快跟随近期梯度。无明确排障需求时保留各优化器默认值：
+
+| 优化器 | 默认 `betas` | 各分量控制的统计量 |
 | --- | --- | --- |
-| 动量相关系数 | 平滑短期梯度波动，利用近期或长期趋势 | 历史保留过久，跟不上训练方向变化 |
-| 权重衰减 | 约束可训练权重持续增大 | 目标特征难以充分拟合 |
-| 梯度裁剪 | 缩小偶发的过大梯度 | 阈值过低会压制正常更新 |
-| 数值稳定项 | 避免分母过小造成异常放大 | 过大会改变自适应缩放 |
+| `AdamW` 系列、`Prodigy`、`AdamWScheduleFree`、`LoRA-RITE` | `0.9, 0.999` | 一阶梯度均值、二阶梯度平方均值 |
+| `StableAdamW`、`Lion` 系列、`ProdigyPlusScheduleFree` | `0.9, 0.99` | 一阶动量（Lion 为插值/更新双系数；其余为一阶/二阶矩） |
+| `EmoSens` | `0.9, 0.995` | 一阶与二阶梯度统计 |
+| `SOAP` | `0.95, 0.95` | 旋转空间一阶/二阶矩（未填 `shampoo_beta` 时第二项兼管预条件矩阵） |
+| `Adan` | `0.98, 0.92, 0.99` | 梯度均值、相邻步梯度差分均值、前瞻组合梯度平方均值 |
+| `CAME`、`AdEMAMix` 系列 | `0.9, 0.999, 0.9999` | CAME：一阶矩、二阶分解矩、残差置信度；AdEMAMix：快动量、二阶矩、慢动量 |
 
-训练稳定时保留这些参数的默认值，优先调整学习率与训练长度。
-
-<!-- doc-anchor: betas -->
-### 动量参数（betas）
-
-没有明确的调整依据时，保留默认值：
-
-- AdamW 系列：`0.9, 0.999`
-- StableAdamW、Lion：`0.9, 0.99`
-- CAME：`0.9, 0.999, 0.9999`
-
-beta 越高，对应统计保留历史越久、响应越慢；越低则更快跟随近期梯度。不同优化器的 beta 分别控制不同统计，具体含义见各优化器小节。
-
-<!-- doc-anchor: eps -->
+<a name="eps"></a>
 ### 数值稳定项（eps）
 
-`eps` 防止分母过小导致数值放大。StableAdamW 默认 `1e-8`；PyTorch Muon 默认 `1e-7`。没有可复现的数值问题时，不建议修改。
+`eps` 加在自适应归一化分母中防止除零放大。无复现的 NaN 或数值下溢时保持默认：
 
-<!-- doc-anchor: weight-decay -->
-### 权重衰减（weight decay）
+- **默认 `1e-8`**：`AdamW` 系列、`StableAdamW`、`Prodigy`、`ProdigyPlusScheduleFree`、`AdamWScheduleFree`、`EmoSens`、`Adan`、`AdEMAMix` 系列、`SOAP`。
+- **特殊默认与语义**：`Muon` 默认 `1e-7`（正交化归一化下限）；`LoRA-RITE` 默认 `1e-6`（根 ε，内部平方后参与计算）；`Automagic3/4` 默认 `1e-30`（平方梯度下限）；`ProdigyPlusScheduleFree` 支持显式填入 `None` 切换为尺度不变的 Adam-atan2 更新（同时锁定 `max_grad_norm=0`）。`AdaFactor` 与 `CAME` 使用各自的专用稳定项字段。
 
-对本文重点介绍的优化器，本训练器提供以下起点：AdamW、AdamW8bit 和 PagedAdamW8bit 为 `0.01`；CAME、StableAdamW、Muon 与 LoRA-Muon 为 `0`。PyTorch Muon 自身默认 `0.1`，本训练器为 LoRA 起步显式覆盖为 `0`，用户仍可修改。
+<a name="min-8bit-size"></a>
+### 8-bit 最小量化尺寸（min_8bit_size）
 
-提高权重衰减会加强权重收缩，过大会妨碍目标特征学习；降低会减弱这一约束，`0` 关闭衰减。人物 LoRA 先保留项目默认值，需要比较约束强度时再单独调整。
+适用于 `AdamW8bit`、`PagedAdamW8bit`、`Lion8bit`、`PagedLion8bit`，默认 `4096`：元素数少于 `4096` 的小张量保留 FP32 优化器状态，更大张量才量化为 8-bit。低 Rank 训练若怀疑极小矩阵量化引入误差，可提高到 `16384` 对照；仅影响状态存储精度。
 
-<!-- doc-anchor: adamw-fused -->
-### AdamW 融合更新（fused）
-
-选择 AdamW 后，可在优化器参数中设置“AdamW 融合更新”：自动沿用 PyTorch 的选择，启用传入 `fused=True`，禁用传入 `fused=False`。融合更新合并优化器算子，减少调用开销，实际提速取决于训练配置。
-
-启用时将 foreach 保持为自动或禁用，且不能设置 `differentiable=True`。界面会禁选产生冲突的选项；导入配置或自定义参数产生冲突时，会立即在对应字段下提示。自动模式保留自定义参数中的设置。原生配置通过 `optimizer_args` 传递，例如 `"fused=True"`；导入后会还原为对应的界面选项。
-
-<!-- doc-anchor: foreach -->
+<a name="foreach"></a>
 ### 批量张量更新（foreach）
 
-适用于 AdamW、StableAdamW、CAME、Adan、AdamWScheduleFree，以及 Krea 2 的 Lion。
+适用于 `AdamW`、`StableAdamW`、`CAME`、`Adan`、`AdamWScheduleFree` 及 Krea 2 的 `Lion`：
 
-- **自动**（默认）：使用优化器的默认策略。AdamWScheduleFree 使用原生默认值，其他优化器接收 `None`。
-- **启用**（`True`）：允许批量更新，减少 GPU 调用开销，通常更快，但可能增加峰值显存。
-- **禁用**（`False`）：逐张量更新，适合显存紧张或需要对照测试的情况。
+- **自动**（`auto`，默认）：沿用各优化器默认策略。
+- **启用**（`true`）：合并多张量算子减少 GPU 内核启动开销，单步更快，但会小幅提高更新瞬间的峰值显存。
+- **禁用**（`false`）：逐张量串行更新，显存吃紧时可显式设为禁用；`AdamW` 下不能与 `fused=True` 同时开启。
 
-显存不足时，显式设为 `False` 可强制逐张量更新。AdamW 的 `foreach=True` 与 `fused=True` 不能同时使用。原生配置通过 `optimizer_args` 传递，例如 `"foreach=False"`。
+<a name="adamw-fused"></a>
+### AdamW 融合更新（fused）
 
-<!-- doc-anchor: muon-options -->
-### Muon 参数
+仅 `AdamW` 可用。设为**启用**（`true`）时调用 PyTorch 融合内核合并更新步骤以降低调度开销，但不可与 `foreach=True` 或自定义参数 `differentiable=True` 同用（界面会自动拦截冲突项）。**自动**（`auto`）沿用 PyTorch 默认选择并保留自定义参数。
 
-Muon 先累积梯度动量，再对二维矩阵更新做近似正交化。它分别处理 `lora_down` 和 `lora_up`，适合比较矩阵更新方式对学习速度与结果的影响。
+<a name="loraplus"></a>
+### LoRA+ 兼容性
 
-MOSS-Image 的原生 `networks.lora_generic`、`networks.loha` 和 `networks.lokr` 在 DiT 及可选 text embedder 上均使用二维可训练参数，可使用 Muon，也支持 LoRA+ 和常规调度器。切换到 Muon 时，未手动修改的学习率使用 `1e-4`，对应 MOSS 默认 `rank=16, alpha=1`；`adjust_lr_fn=match_rms_adamw`、`weight_decay=0`。这些起始值仍需通过训练对照评估。
+除 **`Prodigy`、`ProdigyPlusScheduleFree`、`EmoSens`、`LoRA-RITE`、`LoRA-Muon`**（分组倍率会破坏全局自适应步长或 A/B 因子配对，界面会自动关闭并锁定 LoRA+）外，其余优化器均可搭配 LoRA+。
 
-Muon 只支持二维参数。搭配 `lycoris.kohya` 时必须关闭 `use_scalar` 和 `train_norm`，它们会引入标量或一维参数；表单、导入配置和自定义 `network_args` 都会检查此限制。
+- `AdaFactor` 搭配 LoRA+ 时，必须同时关闭 [`relative_step` 与 `warmup_init`](#adafactor-options)。
+- `Automagic3 / Automagic4` 搭配 LoRA+ 时，乘上倍率后的实际起始学习率仍须落在 `[min_lr, max_lr]` 范围内。完整倍率建议见 [LoRA+ 参数指南](lora-plus.zh-CN.md#optimizer-compatibility)。
 
-Muon 每个参数维护一组动量状态，少于全精度 AdamW 的两组状态，但每步增加矩阵乘法。比较时记录峰值显存和每步耗时。
+<a name="specific-options"></a>
+## 各优化器专用参数
 
-#### 更新幅度
-
-- **学习率**（`learning_rate`，Anima 默认 `2e-5`）：控制正交化更新的整体尺度。使用默认 `match_rms_adamw` 缩放时，界面从此值起步；更换缩放规则后重新调整学习率。
-- **学习率缩放**（`adjust_lr_fn`，默认 `match_rms_adamw`）：按矩阵尺寸缩放更新，便于从 AdamW 学习率起步。更换规则后需重新调节学习率。
-- **权重衰减**（`weight_decay`，默认 `0`）：在更新中收缩 LoRA 因子，`0` 关闭。PyTorch 库默认值为 `0.1`，本训练器使用界面填写的值。
-
-#### 动量
-
-- **动量系数**（`momentum`，默认 `0.95`）：必须满足 `0 ≤ momentum < 1`。值越大，历史动量保留比例越高，当前梯度进入动量的比例越小；`1` 会停止梯度更新，因此不允许使用。
-- **Nesterov 动量**（`nesterov`，默认开启）：决定正交化前如何组合当前梯度和历史动量，开启后会在正交化前把当前梯度加入动量；可用固定配置对照生成结果。
-
-#### 正交化
-
-- **迭代次数**（`ns_steps`，默认 `5`）：控制有限次多项式近似的计算量。近似结果同时取决于迭代系数；日常训练保持 `5`。
-- **迭代系数**（`ns_coefficients`，默认 `3.4445, -4.775, 2.0315`）：决定 Newton-Schulz 迭代的多项式。修改会改变近似算法，应与迭代次数一起验证数值结果。
-- **数值稳定项**（`eps`，默认 `1e-7`）：设置正交化归一化分母的下限，防止除零。用于排查该计算中的 NaN 或异常放大。
-
-第一次比较建议只把 AdamW8bit 换成 Muon，保持数据、rank、alpha、scheduler、步数和学习率不变。确认训练稳定后，再单独测试学习率或 weight decay。同时修改 NS 系数和迭代次数会让结果难以解释，建议一次只调整一个。
-
-<!-- doc-anchor: lora-muon-options -->
-### LoRA-Muon 参数
-
-一个 LoRA 的实际作用来自两个因子的乘积。将一个因子放大、另一个同比缩小，可以保持合成结果不变。普通 Muon 分别更新这两个因子，因此这种尺度分配会影响优化过程。
-
-LoRA-Muon 配对更新两个因子，按它们共同表示的权重变化计算更新方向。学习率需独立调整。
-
-#### 参数表
-
-学习率和全局梯度裁剪使用训练字段，权重衰减使用界面对应项；其余参数通过 `optimizer_args` 传入。
-
-| 参数 | 默认值 | 合法范围 | 作用与建议 |
-| --- | ---: | --- | --- |
-| `learning_rate` | Anima `0.02`；Krea 2 `0.1` | 有限数且 `≥ 0` | 控制整体更新尺度，优先调整此项 |
-| `weight_decay` | `0` | 有限数且 `≥ 0`；同时要求 `learning_rate * weight_decay < 1` | 使用论文的分拆式解耦衰减。没有明确对照结果时保持 `0` |
-| `momentum` | `0.9` | `0 ≤ momentum < 1` | 梯度的一阶指数移动平均。增大后保留更多历史平均，当前梯度的权重更小 |
-| `ns_steps` | `8` | 整数 `1–8` | 矩阵符号的 Polar Express / Newton–Schulz 迭代次数。减少会降低计算量，也会让近似更粗 |
-| `inv_sqrt_steps` | `7` | 整数 `1–7` | 常规 Gram 逆平方根路径的迭代次数；减小会减少矩阵计算并改变近似结果，冷启动保护和特征值分解回退不使用此次数 |
-| `msign_eps` | `1e-20` | 有限数且 `≥ 0` | 加在矩阵符号归一化分母中的除零保护 |
-| `inv_sqrt_eps` | `1e-5` | 有限数且 `≥ 0` | 用于 Gram 正则化，也参与冷启动阈值和特征值下限的计算；修改会改变因子尺度校正 |
-| `inv_sqrt_gamma` | `1.001` | 有限数且 `> 0` | Gram 逆平方根迭代的阻尼系数。没有数值问题时保持默认 |
-| `gauge_rebalance` | `false` | `true` / `false` | 定期平衡两个 LoRA 因子的尺度，改善数值条件 |
-| `gauge_rebalance_alpha` | `1.0` | `0 < alpha ≤ 1` | 重平衡强度的阻尼指数；越接近 `1`，单次调整越充分。仅在启用重平衡后有意义 |
-| `gauge_rebalance_interval` | `1` | 整数 `≥ 1` | 每隔多少个优化器步执行一次重平衡 |
-| `gauge_power_steps` | `2` | 整数 `≥ 1` | 估计两个因子谱范数时使用的幂迭代次数。次数越多越慢 |
-| `max_grad_norm` | 推荐 `0` | `≥ 0` | 在 `optimizer.step` 前执行的全局 L2 梯度裁剪；`0` 表示关闭 |
-
-优先调整 `learning_rate`，其余参数保留默认值。观察到两个因子尺度明显失衡时，可单独启用 `gauge_rebalance` 比较。
-
-Anima 从 `0.02`、Krea 2 从 `0.1` 开始，按倍数向下或向上比较学习率。先用短训练检查 Loss 剧烈波动和特征学习速度，再缩小测试范围。
-
-Anima 主干 LoRA 的 `unet_lr` 若已填写，会覆盖该参数组的 `learning_rate`；使用正则匹配学习率 `reg_lrs` 时，匹配模块也使用自己的学习率。调参前先检查这些覆盖值，避免只修改总学习率却没有改变目标模块的实际学习率。
-
-#### 相关网络设置与兼容性
-
-`network_dim` 和 `network_alpha` 属于网络设置，可分别填写：
-
-- `network_dim` 决定 LoRA rank。
-- `network_alpha / network_dim` 决定 LoRA 分支的前向缩放；两者相等时缩放为 `1`。
-- 优化器不会显式补偿这个前向缩放；比较不同 rank 时先保持 `alpha / dim` 一致，改变比例后需重新校准学习率。
-- 优化器要求同一模块的 `lora_down` 与 `lora_up` rank 维度匹配，并且以完整参数对传入。
-
-需要减少参数量、动量状态和 Gram 计算量时，可手动选择 `dim=16, alpha=16`。Rank / Alpha 默认仍为 `32/32`。
-
-当前实现还有以下限制：
-
-- 支持 Anima 的 `networks.lora_anima`、Krea 2 的 `networks.lora_krea2` 和 LyCORIS LoCon；Krea 2 LoCon 需关闭 `use_scalar` 与 DoRA。
-- 不支持 LoRA+，因为拆分参数组会破坏完整的 `lora_down → lora_up` 配对。
-- LoKr、LoHa 等结构不适用。
-- 支持 Linear LoRA，以及上投影为 1×1 的 Conv LoRA 形状。当前 Anima DiT 主干使用 Linear 层，不使用卷积 LoRA。
-- FP16/BF16 参数的矩阵运算会在 FP32 中完成，再写回原参数精度；不需要额外设置 `dtype` 参数。
-- 一阶动量保持 FP32；恢复优化器状态时直接从模型存档恢复到计算精度与当前参数设备，避免先降为 FP16/BF16 再转回 FP32。
-- 支持 sd-scripts 的外部学习率调度器；LoRA-Muon 本身不接管 scheduler 或 warmup。
-
-#### 计算原理
-
-| 名词 | 在这里可以怎样理解 |
-| --- | --- |
-| 因子配对 | 将同一 LoRA 的 down 与 up 一起处理 |
-| Gram 矩阵 | 描述因子内部不同方向的大小与相关性 |
-| 白化 | 根据另一侧因子的统计，调整当前更新在不同方向上的尺度 |
-| 矩阵符号方向 | 对矩阵的奇异值尺度进行变换，保留主要矩阵方向 |
-| 因子平衡 | 避免两个等价因子的数值大小悬殊，属于数值条件调整 |
-
-#### 更新过程
-
-1. 分别计算两个 LoRA 因子的梯度移动平均，也就是一阶动量。
-2. 根据另一侧因子的 Gram 矩阵计算逆平方根，用它调整当前因子不同方向的尺度。文中把这个过程简称为“白化”。
-3. 对调整后的动量计算矩阵符号方向，再乘一次 Gram 逆平方根，得到因子更新。
-4. 用学习率 `η` 控制合成权重更新的一阶总预算，并把预算平均分给两个因子方向。
-
-论文把 `η` 称为信赖域半径，用于约束合成权重一阶更新的谱范数。
-
-<!-- doc-anchor: adan-options -->
-### Adan 参数
-
-Adan 同时跟踪梯度和相邻步骤的梯度变化。Anima 从 `1e-5` 开始，按特征出现速度、Loss 稳定性和最佳模型存档调整。
-
-- **动量参数**（`betas`，默认 `0.98, 0.92, 0.99`）：分别控制梯度平均、相邻步梯度差分的平均，以及 `g + β2 × (g − 上一步梯度)` 的平方统计。
-- **数值稳定项**（`eps`，默认 `1e-8`）：与 AdamW 语义相同。
-- **权重衰减**（`weight_decay`，默认 `0.01`）与**解耦开关**（`weight_decouple`，默认开启）：开启时在更新前按 `1 − lr × weight_decay` 收缩权重；关闭时在更新后除以 `1 + lr × weight_decay`。`weight_decay=0` 时两种设置都不施加衰减。
-- Adan 自带的 `max_grad_norm` 参数在本训练器中保持 `0`，梯度裁剪统一由界面上的 `max_grad_norm`（全局梯度裁剪阈值）字段负责。
-
-<!-- doc-anchor: ademamix-options -->
-### AdEMAMix 参数
-
-AdEMAMix 同时维护短期和长期梯度移动平均。Beta1 与 Beta3 控制两组历史的衰减速度，Alpha 控制长期动量加入更新的倍率。
-
-| 参数 | 控制什么 | 调大后的含义 |
-| --- | --- | --- |
-| `alpha` | 长期趋势在更新中的权重 | 更重视长期趋势，不会延长历史衰减时间 |
-| 第三个 beta | 长期趋势保留历史的速度 | 越接近 1，历史衰减越慢，响应也越慢 |
-| `t_alpha` | 长期趋势权重的渐增步数 | 更晚达到设定权重 |
-| `t_beta3` | 历史衰减系数的渐变步数 | 更晚达到设定的长期记忆长度 |
-
-这里的 `alpha` 是优化器混合权重，与网络 Alpha 无关。短训练先保留默认值；长期趋势介入太晚时，再缩短慢速动量权重渐增步数。
-
-`alpha` 默认 `5.0`；设为 `0` 时不加入慢速平均。`t_alpha`、`t_beta3` 默认留空，启动前自动采用预估总步数；自定义优化器参数已提供对应值时保留该值。填 `0` 表示不缓升，正整数指定从初始值渐变到目标值的步数：alpha 从 0 开始，β3 从 β1 开始。
-
-- **动量参数**（`betas`，默认 `0.9, 0.999, 0.9999`）：分别控制短期梯度平均、梯度平方平均和长期梯度平均。**数值稳定项** `eps` 默认 `1e-8`。**权重衰减** `weight_decay` 默认 `0.01`，力度随学习率缩放。
-- 8-bit 变体将达到量化阈值的三组状态数值从每个 4 字节改为 1 字节，另需量化尺度等数据。量化仅作用于优化器状态；模型权重和其他训练张量仍占用显存。默认小于 4096 元素的张量保留 FP32 状态。
-
-<!-- doc-anchor: lorarite-options -->
-### LoRA-RITE 参数
-
-LoRA-RITE 用去除因子缩放影响的梯度和低秩矩阵预条件，减少等价 A/B 因子表示对更新的影响。Anima 从 `1e-4` 开始，与 AdamW8bit 比较。
-
-- **学习率**（Anima 默认 `1e-4`）：先在 `5e-5`～`2e-4` 之间比较。固定数据、rank 和步数，用相同提示词与种子比较各模型存档。
-- **动量参数**（`betas`）：默认 `0.9, 0.999`。
-- **数值稳定项**（`eps`，默认 `1e-6`）：LoRA-RITE 会先对该值平方再参与计算。初次使用时从默认值开始。
-- **梯度裁剪阈值**（`clip_unmagnified_grad`，默认 `1.0`）：限制去除 LoRA 因子缩放影响后的梯度范数。正值越小，限制越强；`0` 表示不裁剪。该优化器使用自己的裁剪规则，因此界面的 `max_grad_norm` 锁定为 `0`。
-- 支持 Anima 原生 LoRA、Krea 2 原生 LoRA 与 LoCon。Krea 2 LoCon 需关闭 `use_scalar` 和 DoRA；LoRA+ 的分组学习率会破坏 A/B 配对，因此不能同用。
-- LoRA 的 up 矩阵零初始化时，最初几步主要更新 up，down 随后加入。
-
-<!-- doc-anchor: soap-options -->
-### SOAP 参数
-
-SOAP 根据梯度方向之间的相关性选择坐标系，在该坐标系中执行 Adam 式更新，再将更新转回原坐标。
-
-| 参数 | 默认值 | 作用与调整方向 |
-| --- | --- | --- |
-| `max_precondition_dim` | `256` | 参与矩阵预条件的最大轴长。提高会增加显存和计算开销，降低会让更多轴仅使用逐元素缩放 |
-| `precondition_frequency` | `10` | 每隔多少步重算坐标系。增大节省计算，减小更快跟随梯度变化；`1` 每步重算 |
-| `shampoo_beta` | 留空，跟随第二个 beta | 越大保留历史越久、响应越慢 |
-| `normalize_gradient` | 关闭 | 按更新张量的均方根归一化整体尺度 |
-| `correct_bias` | 开启 | 修正历史平均从零开始产生的偏差 |
-| `precondition_1d` | 关闭 | 对符合维度上限的一维参数做预条件，如 `train_norm` 的归一化层权重 |
-
-- **学习率**（Anima 默认 `2e-5`）：先沿用 AdamW 基线。库默认的 `3e-3` 是面向整模型训练的尺度，不要直接搬过来。
-- **动量参数**（`betas`，默认 `0.95, 0.95`）：两项。第二项同时是预条件矩阵的滑动平均系数（未单独填写时）。与 AdamW 的 `0.9, 0.999` 不同，做对照时要注意二阶状态的历史长度也一起变了。
-- **数值稳定项**（`eps`，默认 `1e-8`）：加在平方梯度开方之后，语义与 AdamW 相同。
-- **权重衰减**（`weight_decay`，默认 `0`）：库默认 `0.01`，本项目沿用自己的 `0`，由界面显式写出。实现内部固定为解耦、非固定衰减，没有对应开关。
-- **梯度裁剪**：SOAP 没有内部裁剪，界面上的 `max_grad_norm`（全局梯度裁剪阈值）照常生效。其默认 `1.0` 与 sd-scripts 自身默认一致，不写入配置文件，也没有针对 SOAP 的锁定。
-- 预条件的统计矩阵与坐标矩阵按轴长平方占用显存：FP32 下，512 维轴两张矩阵合计约 2 MiB，1024 维约 8 MiB。项目默认上限为 `256`，超过此长度的轴不建立这些矩阵。
-- SOAP 第一步建立预条件状态，第二步开始更新权重。
-
-<!-- doc-anchor: prodigyplus-options -->
-### ProdigyPlus 参数
-
-Prodigy 系列在训练中估计步长，界面学习率作为倍率使用，默认 `1.0`。
-
-| 数值 | 含义 | 默认值与建议 |
-| --- | --- | --- |
-| `D` | 优化器估计的步长尺度 | 由训练过程更新，可在日志中观察 |
-| 学习率字段 | 步长计算的倍率 | `1.0`，保持默认 |
-| `d0` | 初始步长估计 | `1e-6`，设置 D 估计的起点 |
-| `d_coef` | 步长估计的缩放系数 | `1.0`；需要调整自动步长时优先比较此项，较大值提高估计尺度 |
-
-ProdigyPlusScheduleFree 还维护供评估与保存使用的平均权重。平均可以减少对最后一个训练状态的依赖，但也会使刚学到的变化逐步反映到保存结果中。
-
-`schedulefree_c` 的默认值为 `0`，按下表选择平均规则：
-
-| 取值 | 行为 |
-| --- | --- |
-| `0` | 使用原有平均规则 |
-| 正数 | 使用可调平均规则；值越大越快响应近期更新，越小平均越平滑 |
-
-读取曲线前，确认记录的是参数组学习率、`D × lr` 或实际更新量，并结合多个训练阶段的生成结果评估。
-
-- **D 增长限制**（`d_limiter`，默认开启）：默认 `d_coef=1` 时，限制 D 每步最多增长约 `19%`。关闭后移除此涨幅限制；SPEED 使用自己的限制，不读取该开关。
-- **停止调整 D 的步数**（`prodigy_steps`，默认 `0`）：到达该步数后 `D` 冻结在当前值，估计缓存同时释放。适用于 `D` 已确认合适、后半程不再变化的场景；`0` 表示全程持续估计。
-- **偏差校正与自动预热**（`use_bias_correction`，默认关闭）：使用 RAdam 变体，加入偏差校正与自动预热，也会减慢 `D` 的调整。启用后若 `D` 长期不增长，可先关闭比较。
-- **SPEED 估计器**（`use_speed`，默认关闭）：方向性进展达到历史峰值时上调 `D`，状态更少，对梯度整体缩放不敏感。属于实验选项，与非零权重衰减同用时上游会输出警告。
-- **谨慎更新**（`use_cautious`，默认关闭）：直接屏蔽与当前梯度方向不一致的更新分量，保留一阶动量的计算。可开启此项对比方向筛选的效果。
-- **正交梯度更新**（`use_orthograd`，默认关闭）：仅使用与当前权重方向正交的梯度分量。需要比较这一约束时再启用。
-
-- **按参数组分别估计 D**（`split_groups`，默认开启）：各参数组独立估计步长，例如文本编码器与 DiT 分开估计；关闭后所有组共用一次估计。
-- **多组共用平均 D**（`split_groups_mean`，默认关闭）：仅在 `split_groups` 开启时生效。开启后各组使用 `D` 的调和平均值，再乘各组学习率，适合需要统一自适应尺度的对照。较小的 `D` 会拉低平均值；关闭时各组独立估计和使用 `D`。
-- **分解二阶矩**（`factored`，默认开启）：用行、列统计近似完整二阶矩，减少状态显存。排查 NaN 或 `D` 长期不增长时，可关闭以比较完整统计。
-- **分解统计保持 FP32**（`factored_fp32`，默认开启）：开启时使用 FP32 保存行、列统计；关闭时跟随梯度精度。梯度为 FP32 时，两种设置的状态存储相同。
-- **权重衰减跟随学习率**（`weight_decay_by_lr`，默认开启）：开启时衰减系数乘自适应步长；关闭时每步直接使用完整衰减系数。两种模式的数值尺度不同，切换后重新检查 weight_decay。
-- **内部更新缩放**（`use_stableadamw`，界面字段为 `prodigyplus_use_stableadamw`，默认开启）：按更新 RMS 限制幅度。开启时，或 `eps=None` 使用 Adam-atan2 时，全局梯度裁剪锁定为 `0`。排查自适应步长异常时可单独比较关闭后的结果。
-- **进阶选项**（通过自定义 `optimizer_args` 传入）：`use_grams`、`use_adopt` 为实验性更新变体；`use_focus` 处理大步长下的噪声，并关闭 `factored` 与 Adam-atan2；`beta3` 控制 `D` 估计的移动平均，默认 √β2；`stochastic_rounding` 仅影响 BF16 权重。
-
-<!-- doc-anchor: gradient-clipping -->
-### 全局梯度裁剪（max_grad_norm）
-
-`max_grad_norm=1` 是常用起点，`0` 关闭。降低正数阈值会加强裁剪，提高则允许更大的梯度。StableAdamW 可正常搭配；LoRA-Muon 推荐 `0`，LoRA-RITE 锁定为 `0` 并使用内部裁剪。
-
-<!-- doc-anchor: min-8bit-size -->
-### 8-bit 状态最小张量尺寸（min_8bit_size）
-
-默认 `4096`，小于这个规模的张量保留 FP32 优化器状态。
-
-提高后更多张量保留 FP32 状态，显存增加；降低后量化更多张量。低 rank 训练出现小张量数值问题时可测试 `16384`。该项仅控制优化器状态精度。
-
-<!-- doc-anchor: stableadamw-options -->
+<a name="stableadamw-options"></a>
 ### StableAdamW 专用参数
 
-`kahan_sum=True` 用补偿求和减少低精度更新的舍入误差，主要作用于 LoRA 可训练权重本身为 FP16/BF16 的情况。只选择 `mixed_precision=bf16` 时，LoRA 可训练权重仍是 FP32；开启 `full_bf16` 后才转为 BF16。
+- **Kahan 补偿求和**（`kahan_sum`，默认开启）：补偿低精度权重累加时的舍入截断误差，主要在开启 `full_bf16`（LoRA 可训练权重本身转为 BF16）时发挥作用；仅开 `mixed_precision=bf16` 时可训练权重仍为 FP32。
+- **解耦权重衰减**（`weight_decouple`，默认开启）：执行标准 AdamW 解耦衰减；`weight_decay=0` 时无影响，建议保持开启。
 
-`weight_decouple=True` 使用 AdamW 式解耦权重衰减。`weight_decay=0` 时此开关不改变计算结果，建议保持开启。
+<a name="came-options"></a>
+### CAME 参数
 
-<!-- doc-anchor: came-clipping -->
-### CAME 内部裁剪
+<span id="came-clipping"></span>
 
-`came_clip_threshold` 默认 `1.0`，传给优化器的 `clip_threshold`，裁剪内部更新的均方根（RMS）。降低阈值加强裁剪，提高则放宽。它与全局 `max_grad_norm` 独立，反复出现尖峰时再调整。
+- **内部裁剪阈值**（`clip_threshold`，默认 `1.0`）：裁剪内部更新张量的均方根（RMS），与外部 `max_grad_norm` 独立；调小限制更强，出现持续尖峰时再下调。
+- **权重衰减与边界项**：`weight_decouple`（默认开启）与 `fixed_decay`（默认关闭）控制衰减形式；`ams_bound`（默认关闭）保留历史最大残差二阶矩；`eps1`（默认 `1e-30`）与 `eps2`（默认 `1e-16`）分别稳定梯度平方与残差统计，通常保持默认。
 
-<!-- doc-anchor: schedulefree-warmup -->
-### Schedule-Free 预热（warmup）
+<a name="adan-options"></a>
+### Adan 参数
 
-AdamWScheduleFree 使用内部 `warmup_steps`，外部 `lr_warmup_steps` 无效。项目默认 `0`，即不预热。初期更新不稳定时可测试少量内部预热；增加步数会延长学习率爬升阶段。
+Adan 利用当前梯度与相邻步梯度差分的组合加速收敛，有效步长大于 AdamW：Anima 从 `1e-5` 起步，SDXL / MOSS-Image 从 `5e-5` 起步，Krea 2 从 `1e-4` 起步。`weight_decouple` 默认开启（更新前按 `1 − lr × weight_decay` 收缩权重）；优化器内置的裁剪参数固定为 `0`，统一由界面的[梯度裁剪阈值](#gradient-clipping)控制。
 
-<!-- doc-anchor: stochastic-rounding -->
-### 随机舍入（stochastic rounding）
+<a name="ademamix-options"></a>
+### AdEMAMix 参数
 
-随机舍入减少低精度更新长期朝同一方向取整造成的误差。ProdigyPlus 沿用库默认行为，本训练器不另加开关。
+AdEMAMix 同时维护快速动量（`β1=0.9`）与长期慢速动量（`β3=0.9999`），通过混合权重 `alpha` 将长期趋势叠加进每步更新（此 `alpha` 与网络 Alpha 无关）。
 
-<!-- doc-anchor: automagic-lr -->
+| 参数 | 默认值 | 作用与调参方向 |
+| --- | --- | --- |
+| `alpha` | `5.0` | 慢速动量混入更新的倍率；调大增强长期方向权重，`0` 退化为无慢速项 |
+| `t_alpha` | 留空（自动取预估总步数） | `alpha` 从 `0` 线性爬升到设定值的步数；填 `0` 关闭缓升立即满额生效 |
+| `t_beta3` | 留空（自动取预估总步数） | 慢速衰减率从 `β1` 过渡到 `β3` 的步数；短训若嫌慢动量介入过晚可手动缩短 |
+
+`AdEMAMix8bit` 将达到 `4096` 元素阈值的三组状态张量量化为 8-bit 以节省显存，学习率语义与全精度版一致。
+
+<a name="prodigy-options"></a>
+### Prodigy 参数
+
+Prodigy 在训练中动态估计步长尺度 `D`，**所有训练类型（含 sd-scripts 与 Krea 2）均将 `learning_rate`（及组件学习率）只读锁定为 `1.0`**，实际步长调整统一通过 `d_coef` 完成：
+
+- **`d_coef`**（默认 `1.0`）：步长估计倍率。特征学习偏慢时试 `1.2～2.0`，过早过拟合或震荡时试 `0.5～0.8`。
+- **`d0`**（默认 `1e-6`）：初始 `D` 起点，一般无需改动；日志中可观察 `D` 随步数爬升并趋稳的过程。
+- **`safeguard_warmup`**（仅 sd-scripts，默认关闭）：防止外部预热期间过早放大 `D`；设置非零 `lr_warmup_steps` 时后端会自动开启。
+
+<a name="prodigyplus-options"></a>
+### ProdigyPlusScheduleFree 参数
+
+<span id="stochastic-rounding"></span>
+
+该优化器结合 Prodigy 步长估计与 Schedule-Free 平均权重（评估与保存模型时自动使用平滑权重），`learning_rate` 锁定为 `1.0`，外部调度器锁定为 `constant`。
+
+**核心调节项（优先关注）：**
+
+- **`d_coef`**（默认 `1.0`）与 **`d0`**（默认 `1e-6`）：含义同 `Prodigy`，调自动步长幅度优先改 `d_coef`。
+- **`schedulefree_c`**（默认 `0`）：设为 `0` 使用标准全局平均；填正整数启用窗口化权重平均，数值越大越快反映近期学到的细节，越小平滑越强。
+- **`prodigy_steps`**（默认 `0`）：到达指定步数后冻结 `D` 并释放估计缓存，适合确认前半程 `D` 收敛稳定后固定后半程步长；`0` 全程持续估计。
+- **`d_limiter`**（默认开启）：`d_coef=1` 时限制单步 `D` 最大涨幅约 `19%`，防止早期步长暴冲。
+
+**排障与实验开关（常规训练保持默认即可）：**
+
+| 参数 | 默认 | 何时调整 |
+| --- | --- | --- |
+| `use_stableadamw`（界面为 `prodigyplus_use_stableadamw`） | 开启 | 按更新 RMS 限幅并将 `max_grad_norm` 锁定为 `0`；仅在排查步长异常压制时关闭对照 |
+| `factored` / `factored_fp32` | 开启 / 开启 | 行列分解二阶矩节省显存并以 FP32 存储；遇 NaN 或 `D` 长期卡死不涨时可关闭 `factored` 测试完整二阶矩 |
+| `split_groups` / `split_groups_mean` | 开启 / 关闭 | 默认各参数组（如 DiT 与文本编码器）独立估计 `D`；开启 `split_groups_mean` 改为共用各组 `D` 的调和平均值 |
+| `weight_decay_by_lr` | 开启 | 让权重衰减乘上自适应步长；切换后数值量级变化，需重设 `weight_decay` |
+| `use_bias_correction` | 关闭 | 启用 RAdam 式偏差校正与自动预热，会减缓 `D` 爬升；开启后若 `D` 不增长请关回 |
+| `use_speed` / `use_cautious` / `use_orthograd` | 关闭 | 实验性变体：SPEED 方向峰值估计（非零衰减时上游会告警）、同向更新掩码、权重正交梯度投影 |
+
+库内置 BF16 随机舍入按默认行为运行，无需额外开关；`use_grams`、`use_adopt`、`use_focus`、`beta3` 等可通过自定义 `optimizer_args` 传入（禁用 `fused_back_pass`）。
+
+<a name="schedulefree-warmup"></a>
+### AdamWScheduleFree 预热（warmup_steps）
+
+`AdamWScheduleFree` 忽略外部 `lr_warmup_steps`，专用 `warmup_steps`（界面字段 `schedulefree_warmup_steps` / `krea_schedulefree_warmup_steps`）设置内部线性预热步数。项目默认 `0`；若开训初期梯度范数剧烈抖动，可填入总步数的 `3%～5%` 测试。
+
+<a name="adafactor-options"></a>
+### AdaFactor 参数
+
+`AdaFactor` 用行列分解替代完整二阶动量以极小化状态显存，默认运行在自动相对步长模式（`max_grad_norm` 全程锁定为 `0`，改用内部 `clip_threshold`）：
+
+- **自动步长模式**（默认 `relative_step=True`、`scale_parameter=True`、`warmup_init=False`）：步长按更新步数和参数 RMS 自动计算，填写的 `learning_rate` 与外部调度器均不参与更新；开启 `warmup_init` 会拉长初期步长爬升。
+- **手动学习率模式**：需**同时关闭 `relative_step` 与 `warmup_init`**（关闭 `relative_step` 时界面会自动联动关闭 `scale_parameter` 和 `warmup_init`），此后方可手动指定学习率（Anima 默认 `2e-5`，其他 `1e-4`）、启用外部调度器或搭配 LoRA+。
+- **`clip_threshold`**（默认 `1.0`）与 **`eps`**（默认 `1e-30, 1e-3`，分别为梯度平方稳定项与参数尺度下限）：保持默认即可。
+
+<a name="automagic-lr"></a>
 ### Automagic3 / Automagic4 参数
 
-两版均集成自 AI Toolkit 的 [Automagic3](https://github.com/ostris/ai-toolkit/blob/c2864bba48a6f94ab1171d9df47b1335f8306355/toolkit/optimizers/automagic3.py) 和 [Automagic4](https://github.com/ostris/ai-toolkit/blob/534d462ff622e334e1a65b42884d96d98315d75a/toolkit/optimizers/automagic4.py)，仍属实验性优化器。可用相同设置做短程对照，比较学习率曲线和预览结果。
+集成自 AI Toolkit 的实验性自适应优化器（[Automagic3](https://github.com/ostris/ai-toolkit/blob/c2864bba48a6f94ab1171d9df47b1335f8306355/toolkit/optimizers/automagic3.py) / [Automagic4](https://github.com/ostris/ai-toolkit/blob/534d462ff622e334e1a65b42884d96d98315d75a/toolkit/optimizers/automagic4.py)）。两者均统计参数组近期更新方向的一致性动态升降学习率（持续同向推高、频繁反向压低）；Automagic4 进一步根据平方梯度估计元素敏感度，自动缩小高敏权重的更新幅度，并在第 1 步仅采集基准统计、第 2 步起更新权重。
 
-Automagic3 汇总各参数组近期的更新方向，自动调节该组的学习率。持续同向的更新推动学习率上升，连续交替的更新推动学习率下降；实际调整由组内汇总结果决定。`learning_rate` 是新训练的起始值。
+| 参数 | 初始值 | 有效范围 | 作用与调参提示 |
+| --- | ---: | --- | --- |
+| `learning_rate` | `2e-5` | `[min_lr, max_lr]` 内正数 | 新训练的起始学习率（含组件独立 LR 与 LoRA+ 放大后的组学习率均须落在上下限内） |
+| `min_lr` / `max_lr` | `1e-8` / `2e-4` | `0 < min_lr ≤ max_lr` | 自适应学习率下限与上限；若 TensorBoard 曲线长期顶满 `max_lr` 且欠拟合，可适当上调 `max_lr` |
+| `polarity_history` | `8` | 整数 `2–64` | 记录最近多少步的更新方向；窗口填满后开始调 LR，调大更平滑但增加显存 |
+| `clip_threshold` | `1.0` | `> 0` | 内部 RMS 与逐元素裁剪阈值；越小限制越强 |
+| `sensitivity_quantile` | `0.9` | 仅 v4；`(0, 1]` | 组内敏感度分位阈值；调低会缩小更多高敏元素的更新幅度 |
+| `step_target` | `0.1` | 仅 v4；`(0, 2)` | 方向翻转率中性点；调高使学习率更容易上升 |
+| `fused` | `False` | 布尔值 | 开启后在反向传播梯度就绪时立即更新并释放梯度以省显存 |
+| `beta2` / `eps` / `weight_decay` | `0.999` / `1e-30` / `0` | 常规范围 | 二阶统计平滑、除零保护与权重衰减 |
 
-Automagic4 在内部裁剪后，根据梯度平方统计估计的敏感度缩小高敏感元素的更新，并按方向翻转率调整组学习率。`sensitivity_quantile` 设置敏感度参考，`step_target` 设置学习率控制器的中性点。
+**运行与续训限制**：外部调度锁定为 `constant`；可训练参数强制保持 FP32（自动关闭 `full_bf16`，BF16 混合精度前向计算仍可用）。开启 `fused=True` 要求**单 GPU、梯度累积 `1`、`max_grad_norm=0`、禁用 `mixed_precision=fp16`**。带状态断点续训会恢复已学到的自适应学习率与方向历史（改上下限在下次调参步生效）。
 
-下表列出本训练器的初始值。导入配置时会保留显式指定的学习率和 `max_lr`；旧配置未指定 `max_lr` 时使用当前默认值 `2e-4`。导入后请检查学习率上限、组件学习率和 LoRA+ 倍率。
+<a name="emosens-options"></a>
+### EmoSens v3.9.3 参数
 
-| 参数 | 初始值 | 范围 | 作用 |
-| --- | --- | --- | --- |
-| `learning_rate` | `2e-5` | 有限正数，位于上下限内 | 设置新训练的起始学习率 |
-| `min_lr` | `1e-8` | 有限正数，不大于 `max_lr` | 限制自动调节的最低学习率 |
-| `max_lr` | `2e-4` | 有限正数，不小于 `min_lr` | 限制自动调节的最高学习率 |
-| `beta2` | `0.999` | `0 ≤ beta2 < 1` | 平滑梯度平方统计；越接近 1，历史保留越久 |
-| `clip_threshold` | `1.0` | 有限正数 | 限制内部更新的均方根和单个分量；值越小，限制越强 |
-| `polarity_history` | `8` | 整数 `2–64` | 记录最近多少次实际参数更新的方向，供学习率调整使用 |
-| `sensitivity_quantile` | `0.9` | 仅 v4；`0 < q ≤ 1` | 对参数组内各张量的几何平均敏感度按元素数加权取分位数，作为下一步的参考值；调低通常会缩小更多元素的更新 |
-| `step_target` | `0.1` | 仅 v4；`0 < step_target < 2` | 用于计算方向翻转率的中性点；其他条件相同时，调高使学习率更倾向上升 |
-| `fused` | `False` | 布尔值 | 开启后，在反向传播中逐个更新参数并释放对应梯度 |
-| `eps` | `1e-30` | 有限正数 | 为梯度平方统计提供数值稳定项，避免除零 |
-| `weight_decay` | `0` | 有限非负数 | 收缩可训练权重；`0` 关闭权重衰减 |
+<span id="emosens-v393"></span>
 
-界面的 Automagic 参数及 `eps`、`weight_decay` 写入 `optimizer_args`；`learning_rate` 保留在顶层。Krea 2 使用对应的数值稳定项和权重衰减字段。各参数组的起始学习率都须满足 `min_lr ≤ 起始学习率 ≤ max_lr`，包括组件独立学习率及 LoRA+ 倍率形成的分组值。
+EmoSens 根据训练 Loss 轨迹自动调节全局学习率（[上游说明](https://github.com/muooon/EmoSens) / [v3.9.3 实现](https://github.com/muooon/EmoSens/blob/e2c7bb3293baeb339a2d4a21f21ccbdc0260d3be/optimizer/emosens.py)）。`learning_rate` 作为倍率使用：**Transformer / DiT LoRA（Anima、MOSS-Image、Krea 2）默认 `0.1`**（自动学习率上限 `3e-4`），**U-Net LoRA（SDXL）默认 `1.0`**（自动上限 `3e-3`，倍率 `>1` 时上限维持 `3e-3`）。
 
-可先用默认设置训练，并在启用 TensorBoard 日志后查看各参数组的学习率曲线。如果曲线经常贴近 `max_lr`，可结合预览结果优先考虑调整上限。新训练的起始学习率也影响初期更新；Automagic4 的 `sensitivity_quantile` 和 `step_target` 可以先保留默认。Automagic4 还会按敏感度缩放部分元素的更新。
+- **`stopcoef`**（默认 `0.04`）：收敛提示阈值。训练趋稳且近期平均 Loss `≤ stopcoef` 时触发提示；调大更易触发，`0` 关闭判定。
+- **`notify`**（默认开启）：满足条件时在日志输出 `[READY TO STOP]`，提示可对比附近模型存档决定是否手动停训。
+- **`use_shadow`**（默认关闭）：额外驻留一份影子权重并在 Loss 突变时混合缓冲，会增加显存占用。
+- **使用限制**：仅支持**单 GPU、梯度累积固定为 `1`、禁用 `mixed_precision=fp16`**；外部调度锁定为 `constant`；所有可训练参数共用同一实际学习率，不支持 LoRA+，填写 `unet_lr` / `text_encoder_lr` 不会产生分组差异。断点续训时请保持原倍率、`notify` 和 `use_shadow` 设置一致。
 
-#### 历史步数与内部裁剪
+<a name="muon-options"></a>
+### Muon 参数
 
-新训练的 Automagic4 在首次优化器步骤中只测量梯度平方统计和敏感度参考，不更新权重；下一步才开始更新权重并记录方向。
+Muon 对二维矩阵的一阶动量执行 Newton-Schulz 多项式正交化，分别更新 `lora_down` 与 `lora_up`，仅维护单组动量状态但每步增加小矩阵乘法。支持 **Anima、MOSS-Image 与 Krea 2**（不支持含四维卷积核的 SDXL）。
 
-`polarity_history=8` 表示记录最近 8 次实际参数更新。历史尚未填满时，参数按当前学习率更新；填满后汇总结果才可能调整后续学习率。较长的窗口响应更慢，历史缓存也占用更多显存。恢复训练时改变窗口长度，会重新收集符号历史。
+- **二维参数限制**：搭配 `lycoris.kohya` 时必须关闭会引入一维/标量参数的 `use_scalar` 与 `train_norm`（界面与启动校验会自动拦截）。
+- **幅度与缩放**：默认 `adjust_lr_fn=match_rms_adamw` 按矩阵尺寸把更新 RMS 对齐到 AdamW 量级，因此可直接从 Anima `2e-5`、MOSS / Krea 2 `1e-4` 起步；若改为 `original` 必须重新寻找数量级更大的学习率。`weight_decay` 项目默认 `0`（覆盖 PyTorch 默认 `0.1`）。
+- **动量与正交化**：`momentum` 默认 `0.95`（`[0, 1)`）、`nesterov` 默认开启、`ns_steps` 默认 `5`、`ns_coefficients` 默认 `3.4445, -4.775, 2.0315`、`eps` 默认 `1e-7`。日常对比只需固定 `ns_steps=5` 与默认系数，单独调节学习率或衰减。
 
-普通模式可以先通过 `max_grad_norm` 裁剪梯度。两版随后对内部更新做均方根（RMS）裁剪和逐元素裁剪；v4 再应用敏感度缩放。之后加入非零权重衰减项，最后乘以当前自适应学习率。
+<a name="lora-muon-options"></a>
+### LoRA-Muon 参数
 
-#### 恢复训练
+普通 Muon 独立更新 `lora_down` 和 `lora_up`，当两侧因子数值尺度一太一小时会影响更新效率。LoRA-Muon 将同一层的 `down/up` 作为配对整体，通过对方因子的 Gram 统计校正方向尺度后再做矩阵正交化更新，在因子尺度不均或追求更快早期特征成型时可与 `AdamW8bit` / `Muon` 对照。
 
-恢复包含优化器状态的训练时，会继续使用保存的自适应学习率；方向历史在形状匹配时一并恢复，Automagic4 也会恢复敏感度参考。起始学习率用于新训练。
+**调参体感与过拟合信号**：Anima 从 `0.02`、Krea 2 从 `0.1` 起步（若填写了 `unet_lr` 会覆盖主干组的 `learning_rate`）。若几百步内 Loss 剧烈跳变、预览画面迅速锁死训练图姿势或高饱和色块溢出，说明学习率偏高，按 `0.5×` 递减测试；网络 `network_alpha / network_dim` 比例改变后也须重新校准学习率。
 
-修改上下限后，保存的学习率可能暂时位于新范围之外；该参数组下次进行学习率调整时才按新范围限制。恢复前请检查原训练的实际学习率和新的上下限。
+| 参数 | 默认值 | 有效范围 | 作用与建议 |
+| --- | ---: | --- | --- |
+| `learning_rate` / `weight_decay` | Anima `0.02`、Krea 2 `0.1` / `0` | `≥ 0`，且 `lr × wd < 1` | 核心步幅预算与论文分拆式解耦衰减；优先只调 `learning_rate`，`max_grad_norm` 推荐 `0` |
+| `momentum` | `0.9` | `0 ≤ m < 1` | 一阶梯度移动平均系数 |
+| `ns_steps` / `inv_sqrt_steps` | `8` / `7` | 整数 `1–8` / `1–7` | 矩阵符号与 Gram 逆平方根迭代步数；调小省算力但近似变粗，日常保持默认 |
+| `msign_eps` / `inv_sqrt_eps` / `inv_sqrt_gamma` | `1e-20` / `1e-5` / `1.001` | 非负 / 非负 / `> 0` | 矩阵符号除零保护、Gram 正则化下限与迭代阻尼；无数值异常勿改 |
+| `gauge_rebalance`（及 `alpha` / `interval` / `power_steps`） | `False`（`1.0` / `1` / `2`） | 开关与子项 | 定期按谱范数平衡 `down/up` 两因子的数值大小；怀疑长训因子尺度严重失衡时再单独开启对照 |
 
-#### 反向传播时更新参数
+**支持范围与硬性约束**：仅支持 **Anima 原生 `networks.lora_anima`、Krea 2 原生 `networks.lora_krea2` 以及 Krea 2 的 `lycoris.kohya` LoCon（须关闭 `use_scalar` 与 DoRA）**；不支持 Anima LoCon、SDXL、MOSS-Image、LoHa/LoKr 及 [LoRA+](#loraplus)。FP16/BF16 权重的内部矩阵运算与一阶动量自动保持 FP32，支持常规外部调度器。
 
-`fused=False` 是项目默认值，参数在常规优化器更新阶段更新，可以使用梯度累积和全局梯度裁剪。`fused=True` 会在某个参数的梯度就绪后立即更新它并释放对应梯度，减少同时保留的梯度。开启需要单 GPU、梯度累积为 `1`、`max_grad_norm=0`，且混合精度选择 `bf16` 或 `no`。内部 `clip_threshold` 在两种模式下都生效。
+<a name="lorarite-options"></a>
+### LoRA-RITE 参数
 
-本项目要求可训练参数保持 FP32，因此 `full_bf16` 和旧配置或 API 输入中的 `full_fp16` 都会关闭；BF16 混合精度计算仍可使用。两种更新模式都由优化器管理学习率，外部调度器固定为 `constant`，外部预热固定为 `0`。
+LoRA-RITE 通过消除因子缩放影响的梯度与低秩矩阵预条件，保证等价 A/B 分解下的更新一致性。支持范围与 `LoRA-Muon` 相同：**Anima 原生 LoRA、Krea 2 原生 LoRA 与 Krea 2 LoCon（关闭 `use_scalar` 与 DoRA）**，不支持 LoRA+。
 
-### EmoSens v3.9.3
+- **学习率**：Anima 与 Krea 2 均从 `1e-4` 起步，建议在 `5e-5～2e-4` 区间对比存档。
+- **`clip_unmagnified_grad`**（默认 `1.0`）：裁剪去缩放后的内部梯度范数（越小越严，`0` 不裁剪）；界面全局 `max_grad_norm` 自动锁定为 `0`。
+- **`betas`** 默认 `0.9, 0.999`；**`eps`** 默认 `1e-6`（内部平方后使用），保持默认即可。
 
-EmoSens 会根据 Loss 的变化自动调整学习率。使用时，在 `learning_rate` 中填写倍率。按上游的架构分类，Transformer / DiT LoRA（如 Anima、MOSS-Image）建议从 `0.1` 开始，U-Net LoRA（如 SDXL）从 `1.0` 开始。训练中的实际学习率会持续变化，可以在训练日志中查看。
+<a name="soap-options"></a>
+### SOAP 参数
 
-上述 LoRA 倍率来自[上游建议](https://github.com/muooon/EmoSens)，后续按数据集和生成结果调整。
+SOAP 每隔若干步统计梯度协方差以更新旋转特征基，在去相关的旋转坐标系内执行 Adam 更新后再映回原空间（第 1 步建立预条件状态，第 2 步起更新权重）。Anima 从 `2e-5`、其他核心从 `1e-4` 起步（切勿照搬库面向全模型训练的 `3e-3`）。
 
-**常用设置**
-
-- **停止信号触发阈值** `stopcoef`：默认 `0.04`。训练趋于稳定，且近期平均 Loss 低于或等于这个值时，提示可以考虑停止。调大更容易触发，可以填写大于 `1` 的值；设为 `0` 不触发。
-- **显示收敛提示** `notify`：默认开启，控制日志是否显示 `[READY TO STOP]`。看到提示后，可以比较附近保存的模型效果，再决定何时手动停止训练。
-- **启用影子权重** `use_shadow`：默认关闭。开启后额外保留一份权重，在 Loss 突然变化时与当前权重混合，会增加显存占用。
-
-其余参数默认与上游一致：`betas=(0.9, 0.995)`、`eps=1e-8`、`weight_decay=0.01`。
-
-**使用限制**
-
-当前仅支持单卡，梯度累积固定为 `1`，混合精度请选择 `bf16` 或 `no`。EmoSens 用训练 Loss 计算学习率，当前训练路径未适配梯度累积、FP16 Loss 缩放和多卡估计同步。
-
-学习率调度和预热由界面固定，无需另行设置；全局梯度裁剪仍可使用。EmoSens 对所有参与训练的参数使用同一个学习率，因此不支持 LoRA+，单独设置 UNet / DiT 或文本编码器学习率也不会改变它们的实际学习率。如需只训练某个组件，请使用对应的训练开关。
-
-**学习率上限与恢复训练**
-
-[当前 v3.9.3 实现](https://github.com/muooon/EmoSens/blob/e2c7bb3293baeb339a2d4a21f21ccbdc0260d3be/optimizer/emosens.py)中，倍率 `0.1` 和 `1.0` 的自动学习率上限分别为 `3e-4` 和 `3e-3`；倍率超过 `1` 后，上限保持 `3e-3`。
-
-恢复训练时，请沿用原来的学习率倍率、收敛提示和影子权重设置，状态文件不会完整恢复这些配置。从旧版状态继续训练，也会使用新版的学习率上限规则。
-
-<!-- doc-anchor: loraplus -->
-### LoRA+
-
-大多数优化器都可以搭配 LoRA+，包括 Muon、Automagic3 和 Automagic4；例外是 Prodigy、ProdigyPlus、EmoSens、LoRA-RITE 和 LoRA-Muon（LoRA+ 的分组学习率与 LoRA-RITE 的 A/B 配对、LoRA-Muon 的联合更新路径均不兼容），AdaFactor 则需要同时关闭 `relative_step` 和 `warmup_init`。
-
-切换优化器后重新检查 LoRA+ 倍率；Automagic3 / Automagic4 还要求倍率后的学习率落在 `min_lr` 与 `max_lr` 之间。完整限制见 LoRA+ 文档的“优化器与调度器”。
-
-<!-- doc-anchor: scenarios -->
-## 不同数据集需要检查的内容
-
-<!-- doc-anchor: one-image -->
-### 只有一张立绘
-
-Anima 用 AdamW8bit 从 `1e-5`～`2e-5` 开始，并提高模型存档保存频率。SDXL 按自己的基线调整。单图容易绑定姿势和构图，评估时使用新视角和表情，并比较更早的模型存档。
-
-<!-- doc-anchor: few-shot -->
-### 2～5 张少图人物
-
-使用 AdamW8bit 建立基准，并缩短保存间隔。检查图片中重复姿势、背景和服装的占比。
-
-<!-- doc-anchor: galgame -->
-### Galgame 多表情立绘
-
-标注每张立绘的表情、服装和姿势。表情数量不均衡时，按表情分组检查采样次数；使用新姿势和新背景提示词检查身份与固定构图是否绑定。
-
-<!-- doc-anchor: dmm-mixed -->
-### DMM 卡面、特效、伙伴角色混合
-
-标注或移除伙伴角色、文字、水印和特效，区分不同服装与形态。
-
-<!-- doc-anchor: mixed-quality -->
-### 图片质量参差
-
-清理模糊图、压缩截图、重复裁剪和高度相似的连续帧。对保留的不同来源图片设置独立子集并检查重复次数。
-
-<!-- doc-anchor: outfits-forms -->
-### 多服装、多形态
-
-分别标注服装和形态，检查各子集的采样次数。评估时使用不同服装、形态的提示词，检查身份是否保持、服装是否可控，以及形态之间是否串色。
-
-<!-- doc-anchor: style-lora -->
-### 风格 LoRA
-
-使用不同主体和构图的训练图，分别标注内容特征。评估时生成训练集未出现的主体，检查线条、配色和造型是否保留。
-
-<!-- doc-anchor: vram -->
-### 显存紧张
-
-优化器状态不足时先使用 8-bit 版本；仍不足再比较 Paged 版本。触发分页会增加 CPU/GPU 状态传输。`min_8bit_size=4096` 表示更小的张量保留 32-bit 状态。
-
-<!-- doc-anchor: starting-configs -->
-## 训练对照配置
-
-| 用途 | 优化器与参数 | 其他设置 |
+| 参数 | 默认值 | 作用与显存/算力权衡 |
 | --- | --- | --- |
-| Anima 通用基准 | AdamW8bit，LR 用上方主表，`weight_decay=0.01` | constant，`max_grad_norm=1`，项目默认 rank/alpha，只训练 DiT |
-| Anima 分解状态对照 | CAME，LR 用上方主表；其余保持默认 | constant，`max_grad_norm=1`；记录状态显存和每步耗时 |
-| Anima 梯度尖峰对照 | StableAdamW，LR 用上方主表，保留项目默认稳定性参数 | Kahan 开启，constant，`max_grad_norm=1` |
-| Anima LoRA-Muon 实验 | LoRA-Muon，LR 用上方主表，其他参数保持默认 | constant，`max_grad_norm=0`；Rank / Alpha 默认仍为 `32/32`，需要 `16/16` 时手动填写；固定 Rank / Alpha，只调整学习率 |
-| Anima Lion 实验 | Lion / Lion8bit，LR 用上方主表 | constant；权重衰减按实验目标单独设置 |
+| `max_precondition_dim` | `256` | 参与矩阵预条件的最大轴长（覆盖库默认 `10000`）；超过此长度的轴仅做逐元素缩放。FP32 下单轴两张矩阵在 512 维约占 2 MiB、1024 维约 8 MiB，调高会显著增加显存与特征分解耗时 |
+| `precondition_frequency` | `10` | 重算旋转坐标系的步数间隔；调大省算力，调小更快追踪梯度方向变化 |
+| `shampoo_beta` | 留空（跟随第 2 个 beta） | 预条件统计的移动平均系数；默认 `betas=(0.95, 0.95)` |
+| `normalize_gradient` / `correct_bias` / `precondition_1d` | 关 / 开 / 关 | RMS 归一化更新张量、修正零初始化偏差、对上限内的一维参数（如 `train_norm`）建立预条件 |
 
-生成结果开始反复出现训练图中的固定姿势、背景或服装时，比较更早的模型存档。缩短训练以总更新次数为准：
+项目默认 `weight_decay=0`（显式写入以覆盖库默认 `0.01`），外部 `max_grad_norm` 正常生效。
 
-| 调整条件 | 减少 repeats 后会怎样 |
-| --- | --- |
-| 固定训练轮数 | 减少图片总采样次数；每轮更新次数按批次、累积和分桶尾批重新计算 |
-| 固定总训练步数 | 总更新次数不变；改变每轮数据量、打乱周期和子集的相对采样次数 |
-| 只减少某个子集的 repeats | 降低该子集相对其他子集的采样权重；只有一个子集时，不改变子集间比例 |
+<a name="troubleshooting"></a>
+## 按现象排查与对照测试
 
-完整累积窗口的有效批次为“批次大小 × 累积步数 × GPU 数”。比较训练方案时保留相同的批次与累积设置，避免分桶尾批和样本组合变化。
+<span id="scenarios"></span>
+<span id="ab-testing"></span>
 
-<!-- doc-anchor: troubleshooting -->
-## 按现象排查
-
-| 现象 | 优先检查 | 可考虑的优化器调整 |
+| 观察现象 | 优先检查（非优化器因素） | 优化器与学习率调整方向 |
 | --- | --- | --- |
-| Loss 值平稳，但预览质量差 | 数据、标注、预览提示词、模型存档时机 | 完成左列检查后，再比较学习率与训练长度 |
-| 孤立且可复现的 loss 或梯度尖峰 | 对应批次、异常图片、学习率 | 对比 StableAdamW，或单独调整全局梯度裁剪阈值 |
-| 出现 NaN / Inf | 立即停止；检查学习率、精度设置、异常数据和恢复点 | 排除配置或数据问题后再比较 StableAdamW；不要用裁剪掩盖持续性问题 |
-| 优化器状态导致显存不足 | 分别检查状态、分辨率、batch 和预览的显存占用 | 先用 8-bit；仍不足时再用 Paged 版本 |
-| 很快记住姿势、背景或服装 | 步数、repeats、学习率、数据重复 | 比较更早的模型存档，缩短训练，并检查重复图片和固定构图的占比 |
-| 人物特征长期学不进去 | 触发词、caption、有效步数、rank 和训练目标 | 确认上述项目后，再小幅提高学习率 |
+| 1～5 张极少图迅速锁死姿势、背景或构图 | 重复构图占比、提示词是否写清背景与动作变化 | `AdamW8bit` 下调学习率（如 Anima `1e-5～1.5e-5`），缩短保存间隔挑早期存档 |
+| Loss 平稳但生成画面人物不像或泛化差 | 触发词、标注质量、预览提示词/CFG、训练总步数 | 确认数据无误后，按 `1.5×～2×` 步进小幅上调学习率或延长步数 |
+| 图片画质参差，出现孤立可复现的梯度/Loss 尖峰 | 定位对应批次中的模糊图、极端长宽比或脏标注 | 清理异常图后对比 [`StableAdamW`](#stableadamw-options)，或适当收紧 `max_grad_norm` |
+| 训练出现 `NaN / Inf` | 学习率是否错填数量级、精度设置、损坏图像或异常断点状态 | 先修正配置与数据；切勿仅靠调低裁剪阈值掩盖持续性数值发散 |
+| 优化器状态撑爆显存（OOM） | 分辨率、批次大小、缓存与采样预览显存开销 | 全精度改用 `AdamW8bit` / `CAME`；仍不足再换 `PagedAdamW8bit` 或 `AdaFactor` |
 
-<!-- doc-anchor: ab-testing -->
-## 怎么做有效的 A/B
+**规范对照测试（A/B）要点**：通用控制变量流程见[时间步指南的对照实验方法](timesteps.zh-CN.md#comparison-method)。跨优化器对比时，须从同一底模全新初始化各自优化器状态，固定数据集、标注、有效批次（`批次大小 × 梯度累积 × GPU 数`）、总更新步数与预览种子；对于更新尺度不同的优化器（如 `AdamW8bit` vs `Lion` / `LoRA-Muon` / `Prodigy`），应先各自调出可用学习率，再在相同训练预算下对比最佳模型存档的人物还原度、换装可控性与提示词响应。
 
-通用对照步骤见[时间步指南](timesteps.zh-CN.md#comparison-method)。比较优化器时还需固定标注、底模、VAE、批次和生成采样参数；从学习率表中的各自初始值出发，为每个优化器找到可用范围，同时记录梯度范数、峰值显存和训练时间。比较人物还原、服装控制、背景或姿势绑定及提示词响应。
-
-比较优化器时从同一底模开始，各自初始化优化器状态。
-
-Prodigy、Muon、LoRA-Muon 等采用不同更新尺度，比较时使用各自调好的学习率。最终比较的是同一训练预算下的完整配置。
-
-<!-- doc-anchor: faq -->
+<a name="faq"></a>
 ## 常见问题
 
-**为什么切换模型类型或优化器后，学习率被替换了？**
+**为什么切换训练类型或优化器后，学习率自动变了？**
 
-普通推荐值仅在当前值来自默认或自动推荐时更新，手动值和导入值保持原样。sd-scripts 训练切换到 Prodigy、ProdigyPlus 等锁定学习率的模式时，界面会将学习率设为 `1.0`。Krea 2 的 Prodigy 倍率仍可手动调整。
+当学习率仍处于默认值或上一次自动推荐值时，切换训练类型或优化器会自动填入对应起点；你手动输入的值和导入配置的值会原样保留。切换到 `Prodigy` 或 `ProdigyPlusScheduleFree` 例外：所有训练类型都会将其强制锁定为 `1.0`。
 
-**为什么 Prodigy 的学习率被锁定为 1.0？**
+**为什么 Prodigy 在 Anima、SDXL、MOSS-Image 和 Krea 2 下的学习率都被锁定为 `1.0`？**
 
-Prodigy 属于 D-adaptation 系的自适应优化器，学习率作为缩放基准使用。sd-scripts 文档建议设为 `1.0` 左右，本训练器在该训练路径中固定为 `1.0`；Krea 2 建议从 `1.0` 开始，但允许调整倍率。
+`Prodigy` 属于 D-adaptation 自适应步长优化器，`learning_rate` 仅作基准缩放因子。本训练器在 sd-scripts 与 Krea 2 两条运行路径中均将其锁定为 `1.0` 以防止误填常规学习率（如 `1e-4`）导致完全学不动；如需微调自动步长强弱，请修改 [`d_coef`](#prodigy-options)。
 
-**为什么 StableAdamW 的 weight_decay 在配置里是 0？**
+**为什么 `StableAdamW` 和 `SOAP` 生成的配置里 `weight_decay` 是 `0`？**
 
-库默认值为 `0.01`，本项目显式覆盖为 `0`。它与 AdamW8bit 默认的 `0.01` 不同；需要隔离优化器差异时，两组使用相同衰减值。
+两者上游库默认值为 `0.01`，本项目将其初始值显式设为 `0` 并写入配置以保持行为确定性。若需与 `AdamW8bit`（默认 `0.01`）严格隔离单一变量对比，请手动将两组的 `weight_decay` 统一。
 
-<!-- doc-anchor: evidence -->
+<a name="evidence"></a>
 ## 依据与参考资料
 
-项目默认值与兼容性见 `backend/training/fields/optimizer_metadata.py`、`optimizer_contracts.py` 和 `field_registry.py`。算法细节以 vendor 和 venv 中实际加载的实现为准；LoRA-Muon 来源见 `vendor/lora_muon/SOURCE.md`。下列论文说明算法，固定提交链接保留为参考：
+项目默认值、自动填值与参数契约定义见 `backend/training/fields/optimizer_metadata.py`、`backend/training/config/optimizer_contracts.py`、`backend/training/fields/field_registry.py` 及 `backend/training/fields/krea2_fields.py`；`LoRA-Muon` 实现说明见 `vendor/lora_muon/SOURCE.md`。主要算法与上游参考：
 
-- [Anima 官方模型卡（固定提交）](https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md)
-- [sd-scripts Anima LoRA 训练文档（固定提交）](https://github.com/kohya-ss/sd-scripts/blob/37a1cbbc5725ed2a3575506e7bd2001c9908ac92/docs/anima_train_network.md)
-- [CAME 官方实现与调参说明（固定提交）](https://github.com/yangluo7/CAME/tree/e77c5c022eaf71f1efb82a1433032cdcd5c52610)
-- [Lion 官方实现与调参说明（固定提交）](https://github.com/google/automl/tree/6a54c8741e7c3265d4547c4f35f47a0391122dc5/lion)
-- [Schedule-Free 官方实现与调参说明（固定提交）](https://github.com/facebookresearch/schedule_free/tree/70785b53e778d0e872c0bbb75ff4ee54ee10c291)
-- [Transformers 余弦重启调度器实现（固定提交）](https://github.com/huggingface/transformers/blob/71c6f699ac9b3f8fc42a6a3e9dc59034c349a678/src/transformers/optimization.py)
-- [CAME: Confidence-guided Adaptive Memory Efficient Optimization](https://arxiv.org/abs/2307.02047)
-- [Symbolic Discovery of Optimization Algorithms (Lion)](https://arxiv.org/abs/2302.06675)
-- [Prodigy: An Expeditiously Adaptive Parameter-Free Learner](https://arxiv.org/abs/2306.06101)
-- [The Road Less Scheduled](https://arxiv.org/abs/2405.15682)
-- [LoRA+: Efficient Low Rank Adaptation of Large Models](https://arxiv.org/abs/2402.12354)
-- [Adan: Adaptive Nesterov Momentum Algorithm for Faster Optimizing Deep Models](https://arxiv.org/abs/2208.06677)
-- [The AdEMAMix Optimizer: Better, Faster, Older](https://arxiv.org/abs/2409.03137)
-- [LoRA Done RITE: Robust Invariant Transformation Equilibration for LoRA Optimization](https://arxiv.org/abs/2410.20625)
-- [LoRA-RITE 官方实现（固定提交）](https://github.com/gkevinyen5418/LoRA-RITE/tree/d4186b6fedb39300d23c00ce0334db09719da9fc)
-- [LoRA-Muon: Spectral Steepest Descent on the Low-Rank Manifold](https://arxiv.org/abs/2606.12921)
-- [pytorch-optimizer 实现（固定提交）](https://github.com/kozistr/pytorch_optimizer/tree/3d08fa02cb6617d4d12365ca0f7d643b72e8cbe8)
-- [bitsandbytes 优化器实现（固定提交）](https://github.com/bitsandbytes-foundation/bitsandbytes/tree/a2b90e6eae31a958e6b4d85edf2cfb2b91e9ce29)
+- [Anima 官方模型卡](https://huggingface.co/circlestone-labs/Anima/blob/f7382c4bf9d7ffe4ceea593a0adbb470c56dd79b/README.md) · [sd-scripts Anima 训练文档](https://github.com/kohya-ss/sd-scripts/blob/37a1cbbc5725ed2a3575506e7bd2001c9908ac92/docs/anima_train_network.md)
+- [pytorch-optimizer 实现](https://github.com/kozistr/pytorch_optimizer/tree/3d08fa02cb6617d4d12365ca0f7d643b72e8cbe8) · [bitsandbytes 优化器实现](https://github.com/bitsandbytes-foundation/bitsandbytes/tree/a2b90e6eae31a958e6b4d85edf2cfb2b91e9ce29) · [Transformers 调度器实现](https://github.com/huggingface/transformers/blob/71c6f699ac9b3f8fc42a6a3e9dc59034c349a678/src/transformers/optimization.py)
+- [CAME 论文](https://arxiv.org/abs/2307.02047) 与 [官方实现](https://github.com/yangluo7/CAME/tree/e77c5c022eaf71f1efb82a1433032cdcd5c52610) · [Lion 论文](https://arxiv.org/abs/2302.06675) 与 [官方实现](https://github.com/google/automl/tree/6a54c8741e7c3265d4547c4f35f47a0391122dc5/lion)
+- [Prodigy 论文](https://arxiv.org/abs/2306.06101) · [Schedule-Free 论文](https://arxiv.org/abs/2405.15682) 与 [官方实现](https://github.com/facebookresearch/schedule_free/tree/70785b53e778d0e872c0bbb75ff4ee54ee10c291)
+- [Adan 论文](https://arxiv.org/abs/2208.06677) · [AdEMAMix 论文](https://arxiv.org/abs/2409.03137) · [LoRA+ 论文](https://arxiv.org/abs/2402.12354)
+- [LoRA-RITE 论文](https://arxiv.org/abs/2410.20625) 与 [官方实现](https://github.com/gkevinyen5418/LoRA-RITE/tree/d4186b6fedb39300d23c00ce0334db09719da9fc) · [LoRA-Muon 论文](https://arxiv.org/abs/2606.12921)

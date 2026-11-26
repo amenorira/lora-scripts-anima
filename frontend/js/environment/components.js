@@ -16,10 +16,7 @@ window.environmentComponentsMixin = {
     this.faProgress = { stage: 'resolving' };
     this._envForceOpen('fa'); this.renderEnvironment();
     try {
-      const response = await fetch('/api/flash-attn/install', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source: this.faSource }),
-      });
+      const response = await fetch('/api/flash-attn/install', { method: 'POST' });
       const result = await response.json();
       if (!response.ok || !result.success || !result.job_id) throw new Error(this.localizeApiError(result, 'environment.installFailed'));
       this.faInstallJobId = result.job_id;

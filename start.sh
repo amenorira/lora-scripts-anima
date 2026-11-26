@@ -144,17 +144,18 @@ fi
 # 逻辑：用 pip 自身的配置加载器一次读取 index-url / extra-index-url——
 #   http://  → export https:// 等价物 + 登记 PIP_TRUSTED_HOST（升级，避免被忽略）
 #   https:// → 不动（已安全）
-#   无/默认  → 不动（走官方 PyPI）
-# 不内置任何镜像，CN/国外自动适配。torch 的 +cu130 轮子仍由命令行
-# --extra-index-url 取得，与镜像源互不干扰。
+#   未配置   → 并发探测 PyPI 官方与国内镜像，仅在官方慢/不可达时临时选用镜像
+# torch 的 +cu130 轮子仍由命令行 --extra-index-url 取得，与镜像源互不干扰。
 _fix_pip_mirror() {
     local hosts=""
+    local has_index=0
     local py="$VENV_PYTHON"
     [ -f "$py" ] || py="$PYTHON_BIN"
     # 探测 pip 配置中的 index-url 与 extra-index-url（涵盖 pip.conf 与环境变量合并后的生效值）
     local key val
     while IFS=$'\t' read -r key val; do
         [ -n "$val" ] || continue
+        [ "$key" = "global.index-url" ] && has_index=1
         if [[ "$val" == http://* ]]; then
             local rest="${val#http://}"
             [ -n "$rest" ] || continue
@@ -181,6 +182,14 @@ _fix_pip_mirror() {
         done
         export PIP_TRUSTED_HOST="${merged# }"
         _console_message "[Setup] Upgraded HTTP pip mirror to HTTPS; trusted-host: ${merged# } / 已将 HTTP pip 镜像临时升级为 HTTPS。"
+    fi
+    if [ -z "${PIP_INDEX_URL:-}" ] && [ "$has_index" = "0" ]; then
+        local auto_url
+        auto_url="$("$py" -B -m tools.network_mirror pip-index 2>/dev/null | head -n 1 || true)"
+        if [ -n "$auto_url" ]; then
+            export PIP_INDEX_URL="$auto_url"
+            _console_message "[Setup] Auto-selected PyPI mirror for this launch: $auto_url / 本次启动已自动选用 PyPI 镜像：$auto_url"
+        fi
     fi
 }
 
@@ -237,9 +246,6 @@ do_install() {
 # -- Venv check --
 export HF_HOME=huggingface
 export PYTHONUTF8=1
-# 默认走 hf-mirror.com 镜像加速；国外用户可 export HF_ENDPOINT=https://huggingface.co 回直连
-# （仅当用户未自行设置 HF_ENDPOINT 时才赋默认值）
-export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
 STARTUP_HOOKS="$SCRIPT_DIR/tools/python_startup"
 case ":${PYTHONPATH:-}:" in
     *":$STARTUP_HOOKS:"*) ;;

@@ -370,7 +370,7 @@ window.tagEditorMixin = {
   // ===== Restore from .bak backup =====
   tagEditorRestoreBackup() {
     if (!this._teCanRestoreCaptions()) return;
-    this._teTimelineAction(null, 'backup', 'backupRestoreConfirmTitle', 'restoreConfirm', 'restored');
+    this._teTimelineAction(null, 'backup', 'backupRestoreConfirmTitle', 'restoreConfirm', 'restored', 'restoreBackup');
   },
 
   // ===== Card Interactions =====
@@ -585,18 +585,28 @@ window.tagEditorMixin = {
   },
 
   // ===== Navigation Guard =====
-  _teConfirmUnsaved(msg, cb, tone = 'warning') {
-    this.openConfirm({ title: this.t('tagEditor.unsavedConfirmTitle'), message: msg, tone, onConfirm: cb });
-  },
-
-  _teConfirmBatch(msg, cb) {
+  _teConfirmUnsaved(msg, cb, options = 'warning') {
+    var cfg = typeof options === 'string' ? { tone: options } : (options || {});
     this.openConfirm({
-      title: this.t('tagEditor.batchEditConfirmTitle'), message: msg,
-      actionLabel: this.t('tagEditor.batchConfirm'), onConfirm: cb,
+      title: cfg.title || this.t('tagEditor.unsavedConfirmTitle'),
+      message: msg,
+      tone: cfg.tone || 'warning',
+      actionLabel: cfg.actionLabel || this.t('tagEditor.discardChangesAction'),
+      onConfirm: cb,
     });
   },
 
-  _teConfirmTagBatch(msg, cb) {
+  _teConfirmBatch(msg, cb, options = {}) {
+    this.openConfirm({
+      title: options.title || this.t('tagEditor.batchEditConfirmTitle'),
+      message: msg,
+      tone: options.tone || 'neutral',
+      actionLabel: options.actionLabel || this.t('tagEditor.batchConfirm'),
+      onConfirm: cb,
+    });
+  },
+
+  _teConfirmTagBatch(msg, cb, options = {}) {
     var epoch = this._teLoadEpoch, modeEpoch = this._teModeEpoch;
     var generation = this._teExternalGeneration;
     var captionVersion = this._teCaptionQueryVersion;
@@ -606,7 +616,7 @@ window.tagEditorMixin = {
           captionVersion === this._teCaptionQueryVersion &&
           this.tagEditorAllowsTagOps()) return cb();
       this.toast(this.t('tagEditor.batchStale'), 'warning');
-    });
+    }, options);
   },
 
   _teHasUnsavedEdits() {

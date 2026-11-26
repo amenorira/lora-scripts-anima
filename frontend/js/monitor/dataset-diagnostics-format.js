@@ -1251,10 +1251,11 @@
           + '</label>';
       }
       if (data.available && hasRegImages) {
-        html += '<div class="m-dd-reg-wrap m-dd-top-reg-wrap" data-dd-top-reg-wrap' + (view === 'images' ? ' hidden' : '') + '>'
+        html += '<label class="m-dd-inline-ctl m-dd-reg-wrap m-dd-top-reg-wrap" data-dd-top-reg-wrap' + (view === 'images' ? ' hidden' : '') + '>'
+          + '<span>' + this.esc(t('ddRegFilterLabel')) + '</span>'
           + this._ddSelectHtml(this._ddRegOptions(), regMode, t('ddRegFilterLabel'),
             'ddTopRegSelect', 'setDatasetDiagRegMode($event.target.value)', '_datasetDiagEffectiveRegMode()', '_ddRegOptions()')
-          + '</div>';
+          + '</label>';
       }
       if (data.available) {
         html += '<label class="m-dd-inline-ctl" title="' + this.esc(t('ddMinSamplesHint')) + '">'

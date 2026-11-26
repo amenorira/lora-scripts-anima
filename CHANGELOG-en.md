@@ -4,6 +4,30 @@
 
 All notable changes to this project are documented in this file.
 
+## v26.1127.00938 - 2026-11-27
+
+This update focuses on **more reliable dependency, model, and acceleration downloads**: models, tag dictionaries, pip dependencies, and FlashAttention / MOSS acceleration packages now automatically select fast endpoints and fall back when connections stall. It also reorganizes the Chinese, English, and Japanese guides and fixes several issues in dataset diagnostics, tag draft recovery, and the environment workspace.
+
+### Automatic Mirror Selection and Download Reliability
+
+- **Automatic Hugging Face endpoint selection for models and dictionaries:** Probes and caches reachable endpoints while respecting an explicit `HF_ENDPOINT`. Falls back to an alternate mirror on connection failure or sustained low transfer speeds, resumes valid downloaded chunks, and verifies file size and integrity.
+- **Automatic pip index fallback:** Windows and Linux launchers as well as environment install tasks preserve any active pip configuration, temporarily selecting a faster mirror only when no custom index is configured and the official PyPI index is slow or unreachable.
+- **Streamlined acceleration wheel installs:** FlashAttention and MOSS text acceleration wheels download anonymously from hosted mirrors with automatic upstream fallback and unified file-size and SHA-256 verification, removing manual source selection.
+- **Localized error reporting:** Environment installation, model download, and MOSS acceleration toggle failures now return structured error codes rendered in the active UI language.
+
+### Reorganized Trilingual Docs and Parameter Guide Fixes
+
+- **Updated trilingual README and eight parameter guides:** Refreshed VRAM and block-swap guidance across supported models and unified section anchors between GitHub and the built-in documentation viewer.
+- **Fixed built-in parameter guide navigation:** Field help now resolves by model type, timestep strategy, and optimizer (preserving Krea 2 notes); fixed section jumps after retrying failed loads and table-of-contents scrolling in narrow windows.
+
+### UI and Interaction Fixes
+
+- **Dataset diagnostics layout and scatter plot fixes:** Switches between single- and two-column layouts based on container width to remove large gaps; preserves aspect-ratio scaling, visible-range ticks, and SVG hover hit-testing when resizing or zooming, and sizes timestep and detail charts to their containers.
+- **Preserve unsaved tag editor drafts on dialog close:** Separates **Restore**, **Discard**, and **Cancel** in the draft recovery dialog so closing the dialog preserves unsaved changes unless explicitly discarded.
+- **Environment page layout and localization polish:** Aligned the environment workspace to the shared left baseline, refined table column widths, consolidated xformers and Triton reinstall actions inside expanded details, cleaned up MOSS target version display, and unified trilingual UI copy, read-only learning-rate hints, and crop preview image/sample counts.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1126.0c2ab...v26.1127.00938)
+
 ## v26.1126.0c2ab - 2026-11-26
 
 Fixed Loss updates and diagnostic window counts when training reports multiple readings for the same step.

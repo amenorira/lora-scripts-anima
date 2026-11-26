@@ -285,7 +285,7 @@ document.addEventListener('alpine:init', () => {
         this._scheduleRoute(route);
       };
       if (this._routeNeedsConfirmation()) {
-        if (!this.showConfirmModal) this._teConfirmUnsaved(this.t('tagEditor.unsavedConfirm'), commit);
+        if (!this.showConfirmModal) this._teConfirmUnsaved(this.t('tagEditor.unsavedConfirm'), commit, { actionLabel: this.t('tagEditor.discardAndLeave') });
         return;
       }
       commit();
@@ -337,7 +337,7 @@ document.addEventListener('alpine:init', () => {
             if (!this._blockedRoute) return;
             this._blockedRoute.accepted = true;
             if (this._blockedRoute.reverted) this._retryBlockedRoute();
-          });
+          }, { actionLabel: this.t('tagEditor.discardAndLeave') });
         }
         return;
       }

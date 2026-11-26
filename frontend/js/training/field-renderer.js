@@ -233,8 +233,29 @@ window.trainingFieldRenderer = {
     return field.hintKey;
   },
 
+  _isFieldReadonlyWithReason(field, values) {
+    if (!field) return false;
+    const prev = this.form;
+    const useCustomValues = values && values !== prev;
+    if (useCustomValues) this.form = values;
+    try {
+      if (field.readonlyIf && field.readonlyIf.reasonKey && typeof this._evalShowIfCond === 'function') {
+        return !!this._evalShowIfCond(field.readonlyIf);
+      }
+      if (field.readonlyIfAny && field.readonlyReasonKey && typeof this._readonlyIfAnyMet === 'function') {
+        return !!this._readonlyIfAnyMet(field.readonlyIfAny);
+      }
+      return false;
+    } finally {
+      if (useCustomValues) this.form = prev;
+    }
+  },
+
   _resolveFieldHintOverrideKey(field, values) {
     if (!field) return '';
+    if (field.key === 'learning_rate' && this._isFieldReadonlyWithReason(field, values)) {
+      return null;
+    }
     if (field.key === 'learning_rate' && values?.optimizer_type === 'AdaFactor') {
       const prefix = values.model_train_type === 'krea2-lora' ? 'krea_' : '';
       return values[`${prefix}adafactor_relative_step`] !== false || values[`${prefix}adafactor_warmup_init`] === true
@@ -265,6 +286,7 @@ window.trainingFieldRenderer = {
 
   _resolveFieldHintKey(field, values, trainType) {
     const overrideKey = this._resolveFieldHintOverrideKey(field, values);
+    if (overrideKey === null) return '';
     return this._resolveFieldBaseHintKey(overrideKey ? { hintKey: overrideKey } : field, trainType);
   },
 
@@ -322,7 +344,7 @@ window.trainingFieldRenderer = {
       ? field.docAnchorByProfile[trainType] : field.docAnchor || '';
     const docSlug = field.docAnchorByProfile && !docAnchor ? null : field.docSlug;
     const docLink = docSlug
-      ? `<button type="button" class="field-doc-link" @click.stop="openParameterDoc('${this.escapeAttr(docSlug)}','${this.escapeAttr(docAnchor)}')"${this.trainingI18nAttrs('docs.openGuide')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>${this.trainingText('docs.openGuide')}</button>`
+      ? `<button type="button" class="field-doc-link" @click.stop="openFieldDoc('${this.escapeAttr(docSlug)}','${this.escapeAttr(docAnchor)}')"${this.trainingI18nAttrs('docs.openGuide')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>${this.trainingText('docs.openGuide')}</button>`
       : '';
     const currentGroup = window.TRAIN_GROUP_MAP[this.form.model_train_type || 'anima-lora'] || 'all';
     let isRequired = field.required;
@@ -553,9 +575,7 @@ window.trainingFieldRenderer = {
       ? `form.${toggleKey} && (${valueChangedExpr} || String(form.${toggleKey}) !== String(formDefaults.${toggleKey}))`
       : valueChangedExpr;
     const hintExpr = `fieldHintText('${this.escapeAttr(dataKey)}')`;
-    const hintHtml = dataKey === 'attn_mode'
-      ? `<div class="field-hint" x-text="t('opt.attn_mode_' + form.attn_mode)">${this.esc(this.t('opt.attn_mode_' + val))}</div>`
-      : field.hintKeyBy
+    const hintHtml = field.hintKeyBy
       ? `<div class="field-hint" x-show="${hintExpr}" x-text="${hintExpr}">${this.esc(hint)}</div>`
       : (hint ? `<div class="field-hint">${this.trainingText(this._resolveFieldHintKey(field, this.form, trainType))}</div>` : '');
     const kreaSampleModeHtml = trainType === 'krea2-lora' && dataKey === 'enable_krea_samples'
@@ -589,7 +609,6 @@ window.trainingFieldRenderer = {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19V3"/></svg>
             <span x-text="t('timestepPreview.open')">View timestep distribution</span>
           </button>
-          <span class="field-hint" x-text="t('timestepPreview.entryHint')"></span>
         </div>`;
       case 'lr_scheduler':
         return `<div class="lr-preview-entry">

@@ -2,11 +2,9 @@
 
 # lora-scripts-anima
 
-_Anima、SDXL、MOSS-Image、Krea 2 に対応したローカル LoRA 学習ツール。_
+_Anima・SDXL・MOSS-Image・Krea 2 に対応したローカル LoRA 学習ツール_
 
-学習設定、画像のタグ付け、キャプションの一括編集、学習進捗のリアルタイム監視ができます。
-
-Anima、SDXL、MOSS-Image の学習エンジンには [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts)、Krea 2 には [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) を使用しています。[LyCORIS](https://github.com/KohakuBlueleaf/LyCORIS) により、Anima、SDXL、Krea 2 では LoCon、LoHa、LoKr などの学習方式も利用できます。
+ベースモデルのダウンロード、自動タグ付け、AI キャプション、タグ一括編集、正則化画像の生成、事前プレビュー、リアルタイム監視をひとつの画面で行えます。
 
 </div>
 
@@ -24,277 +22,230 @@ Anima、SDXL、MOSS-Image の学習エンジンには [kohya-ss/sd-scripts](http
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-en.md">English</a>
 </p>
 
-### 対応モデル
+## 対応モデルと VRAM 目安
 
-| ベースモデル | 学習エンジン | ネイティブ方式 | LyCORIS |
-|--------------|--------------|----------------|---------|
-| SDXL | sd-scripts | LoRA / LoHa / LoKr | LoCon / LoHa / LoKr |
-| Anima | sd-scripts | LoRA / LoHa / LoKr | LoCon / LoHa / LoKr |
-| MOSS-Image | sd-scripts | LoRA / LoHa / LoKr | — |
-| Krea 2 RAW DiT | musubi-tuner | LoRA | LoCon / LoHa / LoKr |
+| ベースモデル | 学習エンジン | ネイティブ方式 | LyCORIS 方式 | 1024px 学習時の VRAM 目安（Batch 1） |
+|--------------|--------------|----------------|--------------|--------------------------------------|
+| SDXL | [sd-scripts](https://github.com/kohya-ss/sd-scripts) | LoRA / LoHa / LoKr | [LoCon / LoHa / LoKr](https://github.com/KohakuBlueleaf/LyCORIS) | 8 GB 以上 |
+| Anima | [sd-scripts](https://github.com/kohya-ss/sd-scripts) | LoRA / LoHa / LoKr | LoCon / LoHa / LoKr | 約 6.5 GB から（bf16 + 勾配チェックポイント） |
+| MOSS-Image | [sd-scripts](https://github.com/kohya-ss/sd-scripts) | LoRA / LoHa / LoKr | — | 約 9〜10 GB（ConvRot INT8、ブロックスワップ併用で約 5.2 GB）／約 13.5 GB（bf16） |
+| Krea 2 RAW DiT | [musubi-tuner](https://github.com/kohya-ss/musubi-tuner) | LoRA | LoCon / LoHa / LoKr | スケール付き FP8 / ConvRot INT8・ブロックスワップに対応 |
 
-- **MOSS-Image** では DiT のテキスト投影層と Refiner を学習対象にできます。Qwen テキストエンコーダーは凍結したままです。
-- **Krea 2** の学習前に、画像の latent（潜在特徴）と Qwen3-VL のテキストエンコード結果をキャッシュしてください。
+- **ベースモデルの入手**：起動後、サイドバーの **環境 → モデル** から必要な構成ファイルを確認し、Anima・Krea 2・MOSS-Image のメインモデル、VAE、テキストエンコーダ、プレビュー高速化 LoRA を `models/` へ直接ダウンロードできます（レジューム対応）。
+- **MOSS-Image**：DiT のテキスト入力投影層と Refiner を学習対象に含めることも可能です（Qwen テキストエンコーダは凍結）。
+- **Krea 2**：学習開始前に、学習画面から画像 latent と Qwen3-VL テキストエンコーダの出力キャッシュを生成できます（データセット内の `.krea2-cache` に保存）。
+- GPU やブロックスワップ設定ごとの実測値は [VRAM と速度の実測ガイド](docs/parameters/memory-optimization.ja-JP.md) を参照してください。
 
-## 主な機能
+## クイックスタート
 
-- **学習設定** — 学習パラメータの編集、TOML のプレビュー、YAML / TOML のインポート、YAML のエクスポート、学習履歴の確認。
-- **学習前のプレビュー** — タイムステップ分布、学習率曲線、行列構造をローカルで計算して表示する 3 種類のダイアログ。[プレビューを見る](#pre-training-previews)。
-- **LyCORIS アダプターパネル** — LoCon / LoHa / LoKr に対応し、アルゴリズムに応じたパラメータを表示。カーネルバックエンド（auto / Triton / TileLang / compile / Torch）の選択、LoRA+、Anima の学習範囲の詳細設定に対応。
-- **豊富なオプティマイザー** — AdamW、Lion、Prodigy、CAME、StableAdamW、Adafactor、ScheduleFree、Adan、AdEMAMix、Muon などに加え、内蔵の LoRA-RITE と実験的な LoRA-Muon を提供。各オプティマイザーの既定値と制約を表示。
-- **リアルタイム監視と実行制御** — GPU 使用率・VRAM・温度、CPU・RAM 使用率、損失の推移グラフ、リアルタイムログ、TensorBoard を統合。学習中の一時停止・再開、即時保存、手動プレビュー生成、保存状態からの再開に対応。
-- **データセット診断** — `sd-scripts` のサンプル別損失ログに基づき、同程度のノイズ区間での残差と推移から学習しにくい画像やタグ不備・トリミング不良を特定。グループ比較、画像別の詳細確認、タグ編集への直接移動に対応。
-- **内蔵タグエディター** — 画像のタグを編集し、一括検索・置換、重複除去、並べ替え、クリーンアップなどを実行。
-- **タグ付けワークスペース** — WD EVA02-Large、WD ViT-Large、CL Tagger、Camie Tagger、[PixAI Tagger v1.0](https://huggingface.co/pixai-labs/pixai-tagger-v1.0) を統合。画像単位の確認、カテゴリ別のしきい値、一括キャプション出力に対応。PixAI はローカルの PyTorch で推論し、スタイルタグに対応。初回のダウンロードは約 1.95 GB。AI タグ付けでは OpenAI 互換（Chat Completions / Responses）または Anthropic Messages プロトコルの画像対応 API を利用可能。
-- **EmoSens 適応型オプティマイザー** — 損失の変化に応じて学習率を調整し、停止時期を提示する EmoSens v3.9 を内蔵。
-- **多言語対応（i18n）** — 中国語・英語・日本語の UI と内蔵ガイド。ブラウザーの言語を自動検出し、選択した言語を保存。
-- **3 種類のテーマ** — ライト、ダーク、ComfyUI。システム設定への追従と手動切り替えに対応。
-- **バックエンド接続状態の表示** — 接続状態と切断からの経過時間をリアルタイムで表示。
+### 動作環境
 
-## 学習画面
+- **OS と Python**：64 ビット版 Windows または Linux。Windows では初回起動時に、案内に従って現在のユーザー向けに 64 ビット版 Python 3.12 を既存環境や `PATH` に影響させず導入でき、ZIP 版では Git も導入できます。Linux では事前に `git`、`python3.12`、`python3.12-venv` をインストールしてください。
+- **GPU とドライバ**：学習には NVIDIA GPU と **R580 以降のドライバ** が必要です。起動スクリプトは RTX 30 / 40 / 50 シリーズに対応する **PyTorch 2.12.1 + CUDA 13.0** を導入します。NVIDIA GPU のない環境でも GUI を起動してデータセットや設定を編集できます。
 
-### 学習フォーム
+### インストールと起動
 
-設定をグループごとに編集し、学習ステップの計算過程と TOML のプレビューを確認できます。
+| OS | 入手方法 | 起動コマンド |
+|----|----------|--------------|
+| Windows（初心者向け） | GitHub で **Code → Download ZIP** を選び、すべて展開 | `start.bat` をダブルクリック（またはターミナルで `.\start.bat`） |
+| Windows / Linux | `git clone --depth 1 --no-tags https://github.com/amenorira/lora-scripts-anima.git` | Windows：`.\start.bat` · Linux：`bash start.sh` |
 
-![学習フォームとステップ数の計算](docs/images/training-form.ja-JP.jpg)
-
-### プレビュープロンプト
-
-サンプリングの品質・ポジティブ・ネガティブプロンプトを設定でき、学習データのタグから選択、編集、並べ替えもできます。
-
-![プレビューのサンプリングとプロンプトの設定](docs/images/preview-settings.ja-JP.jpg)
-
-![学習データのタグからプレビュープロンプトを編集](docs/images/preview-prompts.ja-JP.jpg)
-
-### 学習サンプル
-
-バッチごとにサンプルと生成情報を確認し、プロンプトの切り替えや画像の固定で学習段階を比較できます（画像はデモ用です）。
-
-![学習サンプル一覧とプレビューのサイドバー](docs/images/sample-browser.ja-JP.jpg)
-
-![異なる学習段階のサンプル比較](docs/images/sample-comparison.ja-JP.jpg)
-
-### 学習モニターと実行制御
-
-進捗、速度、損失の推移を確認しながら、学習の一時停止、重みや学習状態の即時保存、手動プレビューの生成、保存済み状態からの学習再開を行えます。
-
-![学習モニター概要と実行制御](docs/images/monitor-overview.ja-JP.jpg)
-
-### データセット診断
-
-`sd-scripts` のサンプル別損失ログから残差が高いままの画像を見つけ、サブセットやバケットごとの偏りを比較したり、画像を開いてトリミング範囲やキャプションを確認したりできます（画像はデモ用です）。
-
-![データセット診断の概要](docs/images/dataset-diagnostics.ja-JP.jpg)
-
-![データセット診断の画像別詳細](docs/images/dataset-diagnostics-detail.ja-JP.jpg)
-
-<a name="pre-training-previews"></a>
-
-## 学習前のプレビュー
-
-### タイムステップ分布
-
-学習タイムステップのサンプリング設定で **「タイムステップ分布を表示」** を開くと、確率密度、損失の重み、高・中・低ノイズの割合を確認できます。基本分布と学習全体の分布を切り替えてタイムステップの中央値を比較し、グラフにカーソルを合わせて値を読み取れます。詳しくは[タイムステップガイド](docs/parameters/timesteps.ja-JP.md)を参照してください。
-
-![タイムステップ分布プレビュー：確率密度、損失の重み、ノイズ領域の割合](docs/images/timestep-preview.ja-JP.jpg)
-
-### 学習率曲線
-
-学習率スケジューラの設定から学習率のプレビューを開くと、ウォームアップ、減衰、リスタート、各学習ステップの学習率を確認できます。サイドバーには選択した DiT / テキストエンコーダーの実効学習率とウォームアップステップ数を表示します。スケジュールを自動管理するオプティマイザーには、その動作の説明を表示します。詳しくは[オプティマイザーガイド](docs/parameters/optimizers.ja-JP.md)を参照してください。
-
-![学習率曲線プレビュー：ウォームアップとコサイン減衰](docs/images/lr-preview.ja-JP.jpg)
-
-### 行列構造
-
-Anima、MOSS-Image、Krea 2 の学習では、学習ネットワークモジュールの設定から **「構造プレビュー」** を開けます。Attention や MLP などのモジュールを切り替え、行列の形状、実効 rank と alpha、スケーリング、該当する層数、パラメータ数を確認できます。
-
-同じ場所の **推定重みファイルサイズ** で、重みの保存に必要なディスク容量を学習前に確認できます。[行列構造とファイルサイズのガイド](docs/parameters/matrix-preview.ja-JP.md)
-
-![行列構造プレビュー：LoKr のクロネッカー分解とパラメータ数](docs/images/shape-preview.ja-JP.jpg)
-
-## 使い方
-
-### クイックスタート
-
-展開またはクローンしたプロジェクトフォルダーで、使用する OS のコマンドを実行してください。
-
-| OS | インストールと起動 |
-|----|--------------------|
-| Windows | `.\start.bat` |
-| Linux | `bash start.sh` |
-
-初回起動時に仮想環境を作成し、依存パッケージを自動インストールします。起動後、GUI が [http://127.0.0.1:12333](http://127.0.0.1:12333) で自動的に開きます。
-
-### 必要な環境
-
-- **Windows** では初回起動時に、案内に従って現在のユーザー向けに 64 ビット版 Python 3.12 を追加できます。既存の Python と併用できます。ZIP 版では Git もインストールできます。
-- **Linux** では Git と 64 ビット版 Python 3.12 を事前にインストールしてください。`venv` が見つからない場合は、`python3.12-venv` などの対応パッケージを追加してください。
-- **学習**には NVIDIA GPU と R580 以降のドライバーが必要です。起動スクリプトは RTX 30/40/50 シリーズに対応する PyTorch 2.12.1 + CUDA 13.0 を自動インストールします。GUI は NVIDIA GPU のない環境でも起動できます。
-
-互換性のない Python でプロジェクトの `venv` を作成した場合は、そのフォルダーの名前を変更し、起動スクリプトを再実行して環境を作り直してください。
-
-Krea 2 と sd-scripts はプロジェクトのメイン `venv` を共有します。メイン環境で学習できることを確認した後、旧版の `venv/cores/musubi` を手動で削除できます。[プロジェクトの依存関係](requirements.txt)
-
-### Windows：ZIP をダウンロード（初心者向け）
-
-1. GitHub で **Code → Download ZIP** を選び、すべて展開してから `start.bat` をダブルクリックします。
-2. `.git` がない場合は、Git for Windows のインストールと、更新可能なリポジトリへの修復を確認する画面が出ます。推奨の選択肢を選んでください。
-3. 修復時には `main` のみ取得し、他のブランチやタグは取得しません。置き換え対象のソースファイルは、先に `bootstrap-backups/<日時>.zip` に保存します。`venv`、モデル、出力、キャッシュ、ログ、ユーザー設定を含む `config` ディレクトリ全体は同期対象から除外し、上書きや削除は行いません。
-4. ソースの同期後、起動処理を一度再実行してから `venv` を作成し、学習用の依存パッケージをインストールします。
-
-Git のインストール、またはソース同期開始前の修復に失敗しても元の ZIP で起動を続行し、次回再試行できます。同期開始後に失敗した場合は起動を停止し、バックアップ情報を残します。エラーを解決してから `start.bat` を再実行してください。Python または必須の依存パッケージのインストール失敗時も停止し、二言語のエラーを表示します。
-
-### Git でクローン
-
-```sh
-git clone --depth 1 --no-tags https://github.com/amenorira/lora-scripts-anima.git
-cd lora-scripts-anima
-```
-
-既定のブランチ `main` を浅くクローンします。クローン後は上の「クイックスタート」に従って起動してください。
+初回起動時は、確認プロンプトに従って仮想環境 `venv` の作成と依存パッケージの導入を行います（`--quiet` / `-q` を付けると確認なしで自動実行します）。ターミナルに `READY` と表示されたら、ブラウザで **[http://127.0.0.1:12333](http://127.0.0.1:12333)** を開いてください（ポート 12333 が使用中の場合は `30000〜30020` の空きポートへ自動変更し、URL をターミナルに表示します）。
 
 <details>
-<summary>dev への切り替えと完全な履歴の取得</summary>
+<summary>ZIP 版の Git 初期化・dev ブランチへの切り替え・venv の再構築</summary>
 
-浅いクローンから初めて `dev` に切り替える場合は、次のコマンドを実行します。
-
-```sh
-git remote set-branches --add origin dev
-git fetch origin
-git switch --track origin/dev
-```
-
-以降は `git switch main` または `git switch dev` で切り替えられます。追跡中のブランチの完全な履歴は `git fetch --unshallow`、タグは `git fetch --tags` で取得できます。
+- **Windows ZIP 版の自動リポジトリ初期化**：フォルダ内に `.git` がない場合、`start.bat` は Git for Windows の導入と `main` ブランチを追跡する更新可能なリポジトリへの初期化を提案します（推奨の選択肢を選んでください）。差分のある古いソースファイルは先に `bootstrap-backups/<日時>.zip` へ退避し、`venv`・`models`・`output`・`config`・`cache`・`logs` などのユーザーデータは保護されます。同期完了後、起動スクリプトが自動的に一度再起動してから `venv` を構築します。同期開始前に失敗した場合は元の ZIP のまま起動を続行し、同期途中の失敗や Python・必須パッケージ導入失敗時は英語・中国語のエラーメッセージを表示して停止します。
+- **`dev` ブランチへの切り替え**：浅いクローンから初めて `dev` へ切り替える際は次のコマンドを実行します。
+  ```sh
+  git remote set-branches --add origin dev
+  git fetch origin
+  git switch --track origin/dev
+  ```
+  以降は `git switch main` / `git switch dev` で切り替えられます。完全な履歴は `git fetch --unshallow`、タグは `git fetch --tags` で取得できます。
+- **`venv` の作り直し**：非対応バージョンの Python で作成した `venv` がある場合は、プロジェクト内の `venv` フォルダの名前を変更または削除して起動スクリプトを再実行してください。Krea 2 と `sd-scripts` はメインの `venv` を共有するため（[依存パッケージ一覧](requirements.txt)）、メイン環境での動作を確認した後は旧版の `venv/cores/musubi` を手動で削除できます。
 
 </details>
 
-### リアルタイム通信と低速なリモート接続
+## 主な機能とワークフロー
 
-SSH でアクセスする場合は、GUI のポートを転送します。GUI の URL の末尾に `/tensorboard/` を付けると TensorBoard を開けます。例は `http://127.0.0.1:12333/tensorboard/` です。転送先のローカルポートが異なる場合は、そのポートを使ってください。TensorBoard の起動に失敗した場合は `logs/tensorboard.log` を確認してください。
+### 1. 実行環境・高速化・モデル取得（サイドバー「環境」）
+- **実行環境**：Python / PyTorch / CUDA や `sd-scripts`、`LyCORIS`、`musubi-tuner` の準備状態を確認し、`FlashAttention 2`、`xformers`、`Triton`、**MOSS テキスト高速化（FLA + Conv1D）** をワンクリックで導入・切り替えできます。
+- **モデル**：メインモデル、テキストエンコーダ、VAE、プレビュー用 LoRA の配置状況をグループごとに確認し、不足ファイルを `models/` へ直接ダウンロードできます。
+- **ダウンロード**：オフライン利用可能な **Danbooru 中国語辞書** を取得・更新し、タグ編集での検索とホバー解説に利用できます。
 
-リモートのプレビューでリアルタイム更新が遅くなる場合は、**UI 設定 → 低速接続向けモード**をオンにすると、サムネイルを 1 枚ずつ読み込みます。手動で設定するまでは、ブラウザーが低速接続またはデータ節約モードを報告した場合に自動でオンになります。
+### 2. データセット作成・タグ整理・正則化（サイドバー「ツール」）
+- **Tagger**：WD EVA02-Large、WD ViT-Large、CL Tagger、Camie Tagger、[PixAI Tagger v1.0](https://huggingface.co/pixai-labs/pixai-tagger-v1.0)（ローカル PyTorch 推論・スタイルタグ対応、初回のみ約 1.95 GB を取得）を統合し、1 枚単位の確認、カテゴリ別のしきい値調整、一括出力を行えます。
+- **AI キャプション**：独立したワークスペースから OpenAI 互換（Chat Completions / Responses）や Anthropic Messages プロトコルの画像対応 API に接続し、複数の長さプリセットによる生成や未完了分の追加生成を行えます。
+- **タグ編集**：タグチップとテキストの切り替え、一括検索・置換、重複除去、並べ替え、クリーンアップ、編集履歴からの復元に加え、オフライン辞書検索とホバーカードを備えています。
+- **正則化画像の生成**：プロンプトからローカルで正則化画像を一括生成でき、中断からの再開、失敗項目の再試行、1 枚単位の再生成に対応します。
 
-### 更新方法
+### 3. 学習設定・アダプタ・オプティマイザ（サイドバー「LoRA 学習」）
+- **フォーム編集とインポート・エクスポート**：グループ別にパラメータを編集しながらステップ数計算と生成される TOML をリアルタイムで確認できます。YAML 設定のエクスポート、YAML や旧形式のフラットな TOML のインポート（未対応項目の通知付き）に対応し、過去の実行は **学習履歴** から確認できます。
+- **LyCORIS アダプタ設定**：LoCon / LoHa / LoKr に対応し、方式に応じた項目を表示します。カーネルバックエンド（`auto` / `Triton` / `TileLang` / `compile` / `Torch`）、LoRA+、DoRA、対象モジュール（Attention、MLP、AdaLN など）の絞り込みを設定できます。
+- **20 種類以上のオプティマイザ**：AdamW（標準 / 8-bit / Paged）、StableAdamW、CAME、Adan、Lion、AdEMAMix、Prodigy、ProdigyPlusScheduleFree、AdamWScheduleFree、AdaFactor、Muon、SOAP に加え、内蔵の LoRA-RITE、Automagic3 / Automagic4、実験的な LoRA-Muon、適応型の **EmoSens v3.9.3**（`vendor/emo_optimizer/` に収録。損失の変化から学習率を自動調整し停止時期の目安をログに表示。既定値は SDXL が学習率 `1.0`、Anima / MOSS-Image が `0.1`、スケジューラ `constant`、`max_grad_norm=0`）を搭載し、選択時に推奨初期値と制約を自動反映します。
+- **[4 種類の事前プレビュー](#pre-training-previews)**：学習を始める前に、バケットのトリミング範囲、タイムステップ分布、学習率曲線、行列構造と推定ファイルサイズを確認できます。
 
-更新前に学習ツールを閉じてください。Windows では **`update.bat`** をダブルクリックし、更新後に `start.bat` を実行します。更新スクリプトは現在のブランチをファストフォワードで更新し、ソースの変更、ステージ済みの変更、履歴の分岐があれば停止します。手動で更新するには、プロジェクトフォルダーで `git pull --ff-only` を実行します。
+### 4. リアルタイム監視・実行制御・データセット診断（サイドバー「モニター」）
+- **リソースと損失の監視**：GPU 使用率・VRAM・温度、CPU・RAM 使用率、損失推移の診断、リアルタイムログ、内蔵 TensorBoard を統合しています。
+- **学習中の実行制御**：`sd-scripts`（SDXL / Anima / MOSS-Image）の学習中はいつでも一時停止・再開、重みや学習状態の即時保存、手動プレビュー生成を実行できます。保存済み状態からの学習再開は全 4 モデルに対応します。
+- **データセット診断**：`sd-scripts` のサンプル別損失ログ（SDXL / Anima / MOSS-Image 対応）に基づき、同じノイズ区間での**残差**とエポックごとの傾きから学習しにくい画像やタグ・トリミングの不備を特定し、タグ編集へ直接移動できます。
+- **多言語 UI とテーマ**：日本語・中国語・英語の UI と内蔵ガイド（ブラウザ言語の自動検出と設定保存に対応）、ライト・ダーク・ComfyUI の 3 テーマ、バックエンド接続状態の表示を備えています。
 
-旧版のサンプルプロンプト、Accelerate 設定、キャッシュのバージョンファイルが Git の追跡対象から外れる際は、先にバックアップし元の内容を保持します。既定のサンプルは `tools/defaults/` に置き、起動時には不足する設定だけを作成します。旧版に更新スクリプトがない場合は、PowerShell から `& "新ZIPフォルダー\update.bat" "--bootstrap-root=旧プロジェクトの絶対パス"` を実行すれば、旧起動スクリプトや学習環境を入れ替えずに移行できます。
+## 画面プレビュー
+
+### 学習フォームとプレビュープロンプト
+
+グループごとに設定を調整しながらステップ数の計算過程と TOML 出力を確認できます。プレビュー用の品質・ポジティブ・ネガティブプロンプトは直接入力するほか、学習データのタグから選択・編集・並べ替えもできます。
+
+![学習フォームとステップ数の計算](docs/images/training-form.ja-JP.jpg)
+
+| プレビューのサンプリングとプロンプト設定 | 学習データのタグからプロンプトを編集 |
+| --- | --- |
+| ![プレビューのサンプリングとプロンプトの設定](docs/images/preview-settings.ja-JP.jpg) | ![学習データのタグからプレビュープロンプトを編集](docs/images/preview-prompts.ja-JP.jpg) |
+
+### 学習モニター・サンプル比較・データセット診断
+
+**モニター → ダッシュボード** で進捗・速度・損失の推移を追跡しつつ、一時停止や即時保存、手動プレビューを実行できます。段階ごとのサンプルを固定して並べ比べたり、データセット診断で残差が高いままの画像を絞り込んで確認したりできます（画面のサンプルと診断データはデモ用です）。
+
+![学習モニター概要と実行制御](docs/images/monitor-overview.ja-JP.jpg)
+
+| 学習サンプル一覧と生成情報 | 学習段階ごとのサンプル比較 |
+| --- | --- |
+| ![学習サンプル一覧とプレビューのサイドバー](docs/images/sample-browser.ja-JP.jpg) | ![異なる学習段階のサンプル比較](docs/images/sample-comparison.ja-JP.jpg) |
+
+| データセット診断の概要（領域散布図とグループ比較） | 画像別のトリミング範囲・キャプション確認 |
+| --- | --- |
+| ![データセット診断の概要](docs/images/dataset-diagnostics.ja-JP.jpg) | ![データセット診断の画像別詳細](docs/images/dataset-diagnostics-detail.ja-JP.jpg) |
+
+<a id="pre-training-previews"></a>
+
+## 学習前のプレビュー
+
+- **バケットとトリミングのプレビュー**：データセット設定にある **「トリミングをプレビュー」** から、元画像のサイズ、バケット割り当て、トリミング範囲、拡大の有無を事前に確認できます。
+- **タイムステップ分布プレビュー**：**タイムステップのサンプリング**（Krea 2 では **タイムステップのサンプリング方法**）にある **「タイムステップ分布を表示」** を開き、確率密度、損失の重み、高・中・低ノイズ領域の割合、基本分布と全体分布の中央値の差を確認できます。詳しくは [タイムステップガイド](docs/parameters/timesteps.ja-JP.md) を参照してください。
+- **学習率曲線プレビュー**：**学習率スケジューラ** にある **「学習率の曲線を表示」** を開き、ウォームアップ・減衰・リスタートの推移や DiT / テキストエンコーダ別の学習率を読み取れます。内部でスケジュールを管理するオプティマイザ（ScheduleFree、Automagic、EmoSens など）では外部スケジューラを使わない旨を表示します。詳しくは [オプティマイザとスケジューラのガイド](docs/parameters/optimizers.ja-JP.md) を参照してください。
+- **行列構造とファイルサイズのプレビュー**：Anima、MOSS-Image、Krea 2 では、**学習ネットワーク** にある **「構造プレビュー」** から Attention や MLP ごとの行列形状、実効 Rank / Alpha、スケーリング、該当レイヤー数、パラメータ数、**推定重みファイルサイズ** を確認できます。詳しくは [行列構造とファイルサイズのガイド](docs/parameters/matrix-preview.ja-JP.md) を参照してください。
+
+| タイムステップ分布プレビュー | 学習率曲線プレビュー |
+| --- | --- |
+| ![タイムステップ分布プレビュー：確率密度、損失の重み、ノイズ領域の割合](docs/images/timestep-preview.ja-JP.jpg) | ![学習率曲線プレビュー：ウォームアップとコサイン減衰](docs/images/lr-preview.ja-JP.jpg) |
+
+![行列構造プレビュー：LoKr のクロネッカー分解とパラメータ数](docs/images/shape-preview.ja-JP.jpg)
+
+## Attention と学習の高速化
+
+- **Anima / MOSS-Image**：`attn_mode` の既定値は `torch`（PyTorch SDPA。導入済みの PyTorch バージョンと入力に応じて利用可能なカーネルを選択）です。**環境 → 実行環境** で外部 FlashAttention 2 または xformers を導入した後は、`attn_mode` を `flash` または `xformers` に切り替えられます（Python・PyTorch・CUDA・OS に合う拡張パッケージのみを導入し、既存の PyTorch は変更しません）。MOSS-Image では同じ画面から **MOSS テキスト高速化（FLA + Conv1D）** も導入・有効化できます。
+- **Krea 2**：Attention バックエンドの既定値は `SDPA` で、`FlashAttention` または `xFormers` も選択できます（`xFormers` 利用時は分割 Attention が必要です）。
+- **SDXL**：パフォーマンス設定で `sdpa` または `xformers` を有効化できます。
 
 ## 学習パラメータガイド
 
-学習パラメータの詳細は `docs/parameters/` にあります。
+詳細なガイドは `docs/parameters/` に収録しており、サイドバーの **パラメータガイド** や各設定項目のヘルプボタンからも閲覧できます。
 
-- [LoRA+ ガイド](docs/parameters/lora-plus.ja-JP.md)：仕組み、倍率の選択、オプティマイザーとの互換性、評価方法
-- [オプティマイザー選択とパラメータガイド](docs/parameters/optimizers.ja-JP.md)：オプティマイザーの比較、学習率・weight decay の初期設定、データセットに応じた選択
-- [タイムステップガイド](docs/parameters/timesteps.ja-JP.md)：flow matching のタイムステップサンプリング、損失の重み、分布プレビュー
-- [AdaLN モジュレーション層ガイド](docs/parameters/adaln.ja-JP.md)：モジュレーション層の役割、上流の既定動作、有効化が適する学習
-- [行列構造とファイルサイズのガイド](docs/parameters/matrix-preview.ja-JP.md)：実際のモジュール形状、パラメータ数、学習範囲、保存サイズの推定
-- [データセット診断ガイド](docs/parameters/dataset-diagnostics.ja-JP.md)：サンプル別の残差と傾きの判定基準、高残差の主な原因と確認手順
+- [ネットワークパラメータガイド](docs/parameters/network-parameters.ja-JP.md)：LoRA / LoHa / LoKr の比較、Rank / Alpha、DoRA、MOSS テキスト層、Krea 2 対象モジュール
+- [LoRA+ ガイド](docs/parameters/lora-plus.ja-JP.md)：上下行列で学習率を分ける仕組み、推奨倍率、オプティマイザ互換性、効果の見極め方
+- [AdaLN モジュレーション層ガイド](docs/parameters/adaln.ja-JP.md)：モジュレーション層の役割、ネイティブと LyCORIS の既定範囲の違い、有効化が適する場面
+- [行列構造とファイルサイズのガイド](docs/parameters/matrix-preview.ja-JP.md)：モジュール別の行列形状、アルゴリズム間のパラメータ数の揃え方、対応範囲、保存容量の推定
+- [オプティマイザとスケジューラのガイド](docs/parameters/optimizers.ja-JP.md)：6 グループ別の選び方、モデル別の初期学習率、スケジューラ比較、専用オプション
+- [タイムステップガイド](docs/parameters/timesteps.ja-JP.md)：flow matching のサンプリング、高・中・低ノイズ域の役割、損失の重み、サブセットオフセット
+- [VRAM と速度の実測ガイド](docs/parameters/memory-optimization.ja-JP.md)：VRAM 容量別の推奨設定、勾配チェックポイントの部分スキップ、ConvRot INT8、ブロックスワップ実測値
+- [データセット診断ガイド](docs/parameters/dataset-diagnostics.ja-JP.md)：サンプル別の残差と傾きによる 6 段階判定、領域着色フィルタ、問題画像の確認手順
 
-## 起動引数
+## 更新方法とリモート接続
 
-| 引数 | 型 | 既定値 | 説明 |
-|------|----|--------|------|
-| `--host` | str | "127.0.0.1" | サーバーのホスト名 |
-| `--port` | int | 12333 | サーバーのポート |
-| `--listen` | bool | false | 外部からのアクセスを許可 |
-| `--skip-prepare-environment` | bool | false | 起動時の依存環境の確認・修復を省略 |
-| `--skip-prepare-onnxruntime` | bool | false | onnxruntime-gpu のインストール確認のみ省略 |
-| `--disable-tensorboard` | bool | false | GUI と同時に内蔵 TensorBoard を起動しない |
-| `--tensorboard-port` | int | 0 | TensorBoard の内部ポート。0 は自動割り当て。通常は設定不要 |
-| `--localization` | str | | UI の言語とローカライズ設定 |
-| `--dev` | bool | false | 開発者モード |
-| `--quiet` / `-q` | bool | false | Python / venv の依存パッケージを自動インストール。オプションの Git 修復は既定で実行しない |
-| `--setup-git` | bool | false | Windows：推奨の Git インストール / ZIP リポジトリ修復を非対話で実行 |
-| `--skip-git-setup` | bool | false | Windows：今回の起動では Git インストールやリポジトリ修復の確認を表示しない |
+### 更新方法
 
-## Attention の高速化
+更新前に本ツールを終了してください。Windows では **`update.bat`** をダブルクリックし、完了後に `start.bat` を起動します。Linux または手動更新ではプロジェクトのルートフォルダで `git pull --ff-only` を実行します。更新処理は現在のブランチをファストフォワードで進め、`config/`・`models/`・`train/`・`output/` などのユーザーデータは変更しません。追跡中のソースに未コミット・ステージ済みの変更や履歴の分岐がある場合は安全のため停止します。
 
-Anima / MOSS の既定値は `torch`、Krea2 は `sdpa` です。SDPA は PyTorch のビルドと入力に応じて利用可能なカーネルを選択します。Windows で内蔵 FlashAttention を利用できるかは、インストールした PyTorch のビルドによって決まります。
+<details>
+<summary>旧設定の引き継ぎと旧フォルダからの移行</summary>
 
-外部 FlashAttention 2 は「環境管理」でインストールし、完了後に Anima / MOSS の `attn_mode` を `flash` に設定します。インストーラーは Python・PyTorch・CUDA・プラットフォームを照合し、PyTorch を変更せず拡張機能だけをインストールします。Krea2 の旧 `flash_attn` 設定は引き続き `sdpa` に変換します。
+初期設定のテンプレートは `tools/defaults/` にあり、起動時は不足している設定ファイルのみを作成します。過去に Git 管理対象だったサンプルプロンプトや Accelerate 設定は、更新時に自動バックアップしたうえで元の内容を保持します。`update.bat` がない古いフォルダを更新する場合は、PowerShell で `& "新ZIPフォルダ\update.bat" "--bootstrap-root=旧プロジェクトの絶対パス"` を実行すると、仮想環境を作り直さずに移行できます。
 
-## EmoSens 適応型オプティマイザー
+</details>
 
-内蔵の EmoSens v3.9 は `vendor/emo_optimizer/` にあります。
+### リモート接続と低速回線
 
-### 推奨設定
+SSH 経由で利用する場合は GUI のポートのみを転送します。URL の末尾に `/tensorboard/` を付けると内蔵 TensorBoard を開けます（例：`http://127.0.0.1:12333/tensorboard/`。ローカル側の転送ポートが異なる場合はそのポートに読み替えてください。起動に失敗した場合は `logs/tensorboard.log` を確認してください）。
 
-| 学習方式 | 学習率 | スケジューラー | max_grad_norm |
-|----------|:------:|:--------------:|:-------------:|
-| SDXL LoRA | 1.0 | constant | 0 |
-| Anima LoRA（DiT） | 0.1 | constant | 0 |
+リモート環境でプレビュー画像の読み込みによりリアルタイム更新が遅くなる場合は、**画面設定 → 低速接続向けモード** をオンにするとサムネイルを 1 枚ずつ読み込みます。手動で変更するまでは、ブラウザが低速接続またはデータセーバーを報告した場合に自動でオンになります。
 
-学習フォームのオプティマイザーの一覧から `EmoSens` を選択すると利用できます。
+## 起動引数とディレクトリ構成
 
-## 学習設定のインポート・エクスポート
+必要に応じて起動スクリプトへ引数を渡せます（例：`.\start.bat --listen`、`bash start.sh --port 12345`）。
 
-- **エクスポート**：学習ページのパラメータプレビューから現在の YAML 設定をダウンロード。TOML プレビューでは学習パラメータを確認
-- **インポート**：YAML または旧形式のフラットな TOML ファイルを読み込み、対応する学習方式のフォームに有効なフィールドを反映。未対応のフィールドは無視した旨を表示
+<details>
+<summary>すべての起動引数を表示</summary>
 
-## 環境管理
+| 引数 | 対象 | 型 | 既定値 | 説明 |
+|------|------|----|--------|------|
+| `--host` | バックエンド | str | `"127.0.0.1"` | サーバーの待ち受けホスト名 |
+| `--port` | バックエンド | int | `12333` | サーバーの待ち受けポート（使用時は `30000〜30020` にフォールバック） |
+| `--listen` | バックエンド | bool | `false` | `0.0.0.0` で待ち受け、LAN・外部アクセスを許可 |
+| `--skip-prepare-environment` | バックエンド | bool | `false` | 起動時の依存環境チェック・修復を省略 |
+| `--skip-prepare-onnxruntime` | バックエンド | bool | `false` | `onnxruntime-gpu` のチェックのみ省略 |
+| `--disable-tensorboard` | バックエンド | bool | `false` | GUI と同時に内蔵 TensorBoard を起動しない |
+| `--tensorboard-port` | バックエンド | int | `0` | TensorBoard の内部ポート。`0` は自動割り当て（アクセスは `/tensorboard/` 経由） |
+| `--dev` | バックエンド | bool | `false` | 開発者モード（CORS と自動リロードを有効化） |
+| `--quiet` / `-q` | 起動スクリプト | bool | `false` | 確認なしで `venv` と依存パッケージを導入（任意の Git 初期化確認は省略） |
+| `--setup-git` | Windows 起動処理 | bool | `false` | 推奨の Git 導入と ZIP リポジトリ初期化を非対話で実行 |
+| `--skip-git-setup` | Windows 起動処理 | bool | `false` | 今回の起動では Git 導入・リポジトリ初期化の確認を表示しない |
 
-GUI の **「環境」** タブで次の情報や機能を利用できます。
+</details>
 
-- Python / PyTorch / CUDA のバージョン情報
-- sd-scripts、LyCORIS アダプターバックエンド、musubi-tuner の状態
-- musubi-tuner Krea 2 の共有実行環境の状態（sd-scripts と共有する CUDA 版 PyTorch、依存パッケージのバージョン統一状況）
-- Flash Attention のインストール状態の確認とワンクリックインストール
-- インストール候補の wheel 一覧のプレビュー
+### 主なユーザー用フォルダ
 
-## プロジェクト構成
+- `models/` — ベースモデル、VAE、テキストエンコーダ、プレビュー高速化 LoRA の既定保存先
+- `train/` — 学習データセット（画像と同名のキャプションファイル）の既定フォルダ
+- `output/` — 出力された重み、再開用ステート、プレビュー画像、実行記録
+- `config/` — 自動保存されたフォームの下書き、プリセット、ローカル設定
+- `logs/` — アプリケーションログ（`anima.log`）および `tensorboard.log`
 
-```
+<details>
+<summary>プロジェクト全体のディレクトリ構成を表示</summary>
+
+```text
 lora-scripts-anima/
-├── vendor/sd-scripts/          ← Anima / SDXL / MOSS-Image 学習エンジン（固定した上流スナップショット）
-├── vendor/musubi-tuner/        ← Krea 2 学習エンジン（固定した上流スナップショット）
-├── vendor/lycoris/             ← LyCORIS アダプターバックエンド（固定した上流スナップショット）
-├── vendor/emo_optimizer/       ← EmoSens 適応型オプティマイザー
-├── vendor/lora_muon/           ← 実験的な LoRA-Muon オプティマイザー
+├── models/ · train/ · output/  ← モデル・学習データ・出力先（保護対象のユーザーデータ）
+├── config/ · logs/             ← ローカル設定・自動保存・実行ログ
+├── vendor/
+│   ├── sd-scripts/             ← Anima / SDXL / MOSS-Image 学習エンジン（上流の固定スナップショット）
+│   ├── musubi-tuner/           ← Krea 2 学習エンジン（上流の固定スナップショット）
+│   ├── lycoris/                ← LyCORIS アダプタバックエンド（上流の固定スナップショット）
+│   ├── emo_optimizer/          ← EmoSens v3.9.3 適応型オプティマイザ
+│   ├── automagic_optimizer/    ← Automagic3 / Automagic4 適応型オプティマイザ
+│   └── lora_muon/              ← 実験的な LoRA-Muon オプティマイザ
 ├── backend/                    ← FastAPI バックエンド
-│   ├── server/                 ← アプリ構成、HTTP ルート、静的リソース、プロキシ
-│   ├── core/                   ← リアルタイムタスクの調整とインストール処理
-│   ├── training/               ← 役割別に整理した学習モジュール
-│   │   ├── fields/             ← フィールド定義、既定値、選択肢のメタデータ
-│   │   ├── config/             ← 設定変換、インポート・エクスポート、検証
-│   │   ├── datasets/           ← データセット解析、繰り返し回数、ステップ数の推定
-│   │   ├── execution/          ← 実行準備、起動振り分け、プロセス管理
-│   │   └── cache/              ← キャッシュの確認、生成、再利用
-│   ├── monitor/                ← 学習監視（GPU、システム、ログ、プレビュー、履歴）
-│   ├── tageditor/              ← 内蔵タグエディター
-│   ├── tagger/                 ← タグ付けモジュール（WD / CL / Camie / PixAI / AI API）
-│   ├── regularization/         ← 正則化画像の生成、サンプリング、復旧
-│   └── gui.py                  ← GUI の内部エントリーポイント（起動スクリプトから呼び出し）
+│   ├── server/                 ← アプリ構成、HTTP ルート、静的配信、プロキシ
+│   ├── core/                   ← リアルタイムタスク調整・インストール処理管理
+│   ├── training/               ← フィールド定義、設定検証、ステップ数推定、キャッシュ、実行管理
+│   ├── monitor/                ← リソース監視、サンプル比較、履歴、データセット診断
+│   ├── tageditor/              ← タグ編集バックエンド
+│   ├── tagger/                 ← 自動タグ付け（WD / CL / Camie / PixAI）・AI キャプション API
+│   ├── regularization/         ← 正則化画像の生成・サンプリング・復旧
+│   └── gui.py                  ← GUI サーバーの内部エントリ（起動スクリプトから呼び出し）
 ├── frontend/                   ← Alpine.js SPA フロントエンド
-│   ├── js/                     ← 機能別に整理したスクリプト
-│   │   ├── app/                ← アプリ構成とルーティング設定
-│   │   ├── shared/             ← 共通 UI、通知、国際化、リアルタイム通信
-│   │   ├── training/           ← 学習フォーム、設定、プレビュー
-│   │   ├── monitor/            ← 監視、履歴、ログ、出力
-│   │   ├── environment/        ← 環境情報、コンポーネント導入、モデル取得
-│   │   ├── tagger/             ← 自動タグ付けと AI キャプションのワークスペース
-│   │   ├── docs/               ← パラメータガイドの閲覧
-│   │   ├── regularization/     ← 正則化画像生成のワークスペース
-│   │   ├── tag-editor/         ← タグ編集、セッション、永続化
-│   │   └── tag-dictionary/     ← 辞書、Worker、ホバーカード
-│   ├── templates/              ← 必要時に読み込むワークスペース HTML
-│   └── css/ · i18n/ · assets/   ← スタイル、翻訳、静的リソース
-├── config/                     ← ローカル設定と自動保存
-├── docs/                       ← パラメータガイドとプレビュー画像
-├── tools/                      ← 起動・インストール・実行ツール。開発用スクリプトは tools/dev/
-├── tests/                      ← バックエンド回帰テストとフロントエンド操作テスト
-├── start.bat / start.sh        ← 起動スクリプト
-└── requirements.txt            ← プロジェクト全体で共通の依存関係一覧（torch は起動時に別途インストール）
+│   ├── js/                     ← 機能別モジュール（training / monitor / environment / tagger / tag-editor / tag-dictionary / regularization / docs / shared）
+│   ├── templates/              ← オンデマンド読み込みのワークスペース HTML
+│   └── css/ · i18n/ · assets/   ← スタイル、3 言語翻訳ファイル、静的アセット
+├── docs/                       ← 内蔵パラメータガイド（docs/parameters/）と画面スクリーンショット
+├── tools/                      ← 起動・高速化モジュール導入・実行補助ツール（開発用は tools/dev/）
+├── tests/                      ← バックエンド回帰テスト・フロントエンド操作テスト
+├── start.bat / start.sh        ← Windows / Linux 起動スクリプト
+├── update.bat                  ← Windows ファストフォワード更新スクリプト
+└── requirements.txt            ← バックエンドと両学習エンジンで共有する単一の依存関係一覧（PyTorch は起動時に別途導入）
 ```
+
+</details>
 
 ## 謝辞
 
 - [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Anima / SDXL / MOSS-Image 学習エンジン
 - [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) — Krea 2 学習エンジン
-- [**LyCORIS**](https://github.com/KohakuBlueleaf/LyCORIS) — LoCon / LoHa / LoKr の学習アルゴリズムとアダプター
+- [KohakuBlueleaf/LyCORIS](https://github.com/KohakuBlueleaf/LyCORIS) — LoCon / LoHa / LoKr の学習アルゴリズムとアダプタ
 - [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) — 初期設計の参考
 
 ## ライセンス
 
-本プロジェクトは [MIT ライセンス](LICENSE) で公開しています。`vendor/` 内のサードパーティーコンポーネントは、それぞれ元のライセンス（Apache-2.0 / MIT）を保持します。
+本プロジェクトは [MIT ライセンス](LICENSE) で公開しています。`vendor/` 内のサードパーティコンポーネントは、それぞれ元のライセンス（Apache-2.0 / MIT）を保持します。

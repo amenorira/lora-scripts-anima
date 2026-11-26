@@ -96,12 +96,14 @@ async def report_runtime_banner() -> None:
 async def warm_startup_caches() -> None:
     """Optional disk scans and training imports run after the ready banner."""
     from backend.log import log
+    from tools.network_mirror import warm_up_hf_endpoint
     results = await asyncio.gather(
         asyncio.to_thread(scan_history, refresh=True),
         asyncio.to_thread(warm_step_estimator),
+        asyncio.to_thread(warm_up_hf_endpoint),
         return_exceptions=True,
     )
-    for name, result in zip(("history", "step estimator"), results):
+    for name, result in zip(("history", "step estimator", "hf endpoint"), results):
         if isinstance(result, Exception):
             log.warning("Startup cache warm-up failed / 启动缓存预热失败 (%s): %s", name, result)
 

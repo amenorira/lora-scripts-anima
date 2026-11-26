@@ -73,7 +73,12 @@ def _install_job_snapshot(job_id: str, tail: int = 20) -> dict:
         job = _install_jobs.get(job_id)
         job = dict(job) if job else None
     if not job:
-        return {"status": "error", "done": True, "error": "Job not found / 任务不存在"}
+        return {
+            "status": "error",
+            "done": True,
+            "error": "Job not found / 任务不存在",
+            "error_code": "environmentJobNotFound",
+        }
     try:
         lines = _read_install_log_tail(job["log_path"], tail)
     except Exception:
@@ -109,12 +114,14 @@ def _start_install_job(cmd: list[str], max_retries: int = 2) -> str:
         }
 
     def _run():
+        from tools.network_mirror import apply_pip_index_env
+        env = apply_pip_index_env()
         for attempt in range(max_retries + 1):
             try:
                 if attempt > 0:
                     log_file.write(f"\n[RETRY] Attempt {attempt + 1}/{max_retries + 1}...\n")
                     log_file.flush()
-                process = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, text=True)
+                process = subprocess.Popen(cmd, env=env, stdout=log_file, stderr=subprocess.STDOUT, text=True)
                 process.wait()
                 if process.returncode == 0:
                     with _install_jobs_lock:
@@ -167,7 +174,26 @@ def _download_job_snapshot(job_id: str) -> dict:
                 "success": job.get("success"),
                 "elapsed": time.time() - job.get("start", 0),
             }
-    return {"status": "error", "done": True, "progress": {"phase": "error", "error": "Job not found / 任务不存在"}, "log": []}
+    return {
+        "status": "error",
+        "done": True,
+        "error_code": "environmentJobNotFound",
+        "progress": {
+            "phase": "error",
+            "error": "Job not found / 任务不存在",
+            "error_code": "environmentJobNotFound",
+        },
+        "log": [],
+    }
+
+
+class _UnknownDownloadTargetError(RuntimeError):
+    def __init__(self, group: str | None, only_file: str | None) -> None:
+        self.group = group or "-"
+        self.only_file = only_file or "-"
+        super().__init__(
+            f"Unknown model or group / 未知模型或分组: group={self.group}, file={self.only_file}"
+        )
 
 
 def _start_download_job(only_file: str | None = None, group: str | None = None) -> str | None:
@@ -182,7 +208,7 @@ def _start_download_job(only_file: str | None = None, group: str | None = None) 
         and (not only_file or item[2] == only_file or item[1] == only_file)
     ]
     if not files:
-        raise RuntimeError(f"Unknown model or group / 未知模型或分组: group={group or '-'}, file={only_file or '-'}")
+        raise _UnknownDownloadTargetError(group, only_file)
 
     job_id = uuid4().hex[:12]
     shared_progress: dict = {"group": group or "all"}
@@ -252,7 +278,12 @@ def _start_download_job(only_file: str | None = None, group: str | None = None) 
         except Exception as exc:
             log_lines.append(f"[ERROR] {exc}")
             with _download_jobs_lock:
-                shared_progress.update({"phase": "error", "error": str(exc)})
+                shared_progress.update({
+                    "phase": "error",
+                    "error": str(exc),
+                    "error_code": "environmentModelDownloadFailed",
+                    "error_details": str(exc),
+                })
                 _download_jobs[job_id]["done"] = True
                 _download_jobs[job_id]["success"] = False
         finally:
@@ -304,8 +335,20 @@ async def anima_model_download(request: Request) -> dict:
         pass
     try:
         job_id = await asyncio.to_thread(_start_download_job, only_file, group)
+    except _UnknownDownloadTargetError as exc:
+        return {
+            "success": False,
+            "message": str(exc),
+            "error_code": "environmentUnknownModel",
+            "error_params": {"group": exc.group, "file": exc.only_file},
+        }
     except Exception as exc:
-        return {"success": False, "message": str(exc)}
+        return {
+            "success": False,
+            "message": str(exc),
+            "error_code": "environmentDownloadStartFailed",
+            "error_details": str(exc),
+        }
     if job_id is None:
         return {"success": False, "message": "已有下载任务进行中 / A download is already running", "error_code": "environmentDownloadBusy"}
     await realtime_tasks.register(
@@ -441,9 +484,9 @@ def _triton_status_sync() -> dict:
             package_label_en = f"triton-windows{version_spec}" if version_spec else "a compatible triton-windows version"
             platform_note = (
                 "Triton 未安装。Windows 需先安装 VC++ Redistributable，"
-                f"然后在环境管理页一键安装与当前 PyTorch 匹配的 {package_label} / "
+                f"然后在环境管理页安装与当前 PyTorch 匹配的 {package_label} / "
                 "Triton not installed. Windows: install VC++ Redist first, "
-                f"then one-click install {package_label_en} matched to the active PyTorch version"
+                f"then install {package_label_en} matched to the active PyTorch version"
             )
         else:
             platform_note = "Triton 未安装。Linux 用户: pip install triton / Triton not installed. Linux: pip install triton"

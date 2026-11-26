@@ -101,26 +101,42 @@ window.environmentTasksMixin = {
     this[busyKey] = false;
     this[idKey] = null;
     this._setEnvironmentRealtimeTask(slot, null);
-    const fallback = this.t(slot === 'animaModel' ? 'environment.animaModel.failed' : 'environment.installFailed');
+    const fallbackKey = slot === 'animaModel' ? 'environment.animaModel.failed' : 'environment.installFailed';
+    const fallback = this.t(fallbackKey);
+    const resolveError = (payload, raw) => {
+      if (payload?.error_code && typeof this.localizeApiError === 'function') {
+        const localized = this.localizeApiError(payload, fallbackKey);
+        const details = typeof this.apiErrorDetails === 'function' ? this.apiErrorDetails(payload) : '';
+        return details && details !== localized ? `${localized}\n${details}` : localized;
+      }
+      return raw || fallback;
+    };
     if (slot === 'fa') {
       await this.faRefresh(true);
-      if (failed) this.faError = data.error || data.lines || fallback;
+      if (failed) this.faError = resolveError(data, data.error || data.lines);
     } else if (slot === 'xf') {
-      const msg = failed ? (data.error || data.lines || fallback) : null;
+      const msg = failed ? resolveError(data, data.error || data.lines) : null;
       await this.xfRefresh(true).catch(() => {});
       if (failed) this.xfError = msg;
     } else if (slot === 'triton') {
-      const msg = failed ? ((Array.isArray(data.lines) && data.lines[data.lines.length - 1]) || data.lines || this.tritonInstallLog || fallback) : null;
+      const rawTriton = (Array.isArray(data.lines) && data.lines[data.lines.length - 1]) || data.lines || this.tritonInstallLog;
+      const msg = failed ? resolveError(data, rawTriton) : null;
       await this.tritonRefresh(true).catch(() => {});
       if (failed) this.tritonError = msg;
     } else if (slot === 'animaModel') {
-      const msg = failed ? ((data.progress || {}).error || (Array.isArray(data.log) && data.log[data.log.length - 1]) || fallback) : null;
-      if (failed) this.toast(fallback, 'error');
+      const prog = data.progress || {};
+      const errSource = prog.error_code ? prog : data;
+      const rawModel = prog.error || (Array.isArray(data.log) && data.log[data.log.length - 1]);
+      const msg = failed ? resolveError(errSource, rawModel) : null;
+      const toastMsg = errSource?.error_code && typeof this.localizeApiError === 'function'
+        ? this.localizeApiError(errSource, fallbackKey)
+        : fallback;
+      if (failed) this.toast(toastMsg, 'error');
       await this.animaModelRefresh(true).catch(() => {});
       if (failed) this.animaModelError = msg;
     } else if (slot === 'mossAccel') {
       await this.mossAccelRefresh(true);
-      if (failed) this.mossAccelError = data.error || data.lines || fallback;
+      if (failed) this.mossAccelError = resolveError(data, data.error || data.lines);
     }
     this.finishProgress();
     this.scheduleEnvironmentRender();

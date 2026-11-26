@@ -814,7 +814,7 @@ window.regularizationMixin = {
     const key = this.regRunKey, selected = this.regSelected;
     if (action === 'regenerate') {
       const choice = await this.openConfirm({
-        title: this.regT('regenerate'), message: this.regT('replaceHelp'),
+        title: this.regT('regenerateTitle'), message: this.regT('replaceHelp'),
         tone: 'danger', actionLabel: this.regT('regenerate'),
       });
       if (choice !== 'confirm' || key !== this.regRunKey || selected !== this.regSelected ||

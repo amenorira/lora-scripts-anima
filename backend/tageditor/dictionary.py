@@ -28,6 +28,7 @@ from pathlib import Path
 from huggingface_hub import HfApi
 
 from backend.utils.hf_download import IntegrityError, download_hf_file
+from tools.network_mirror import invalidate_hf_cache, resolve_hf_endpoints
 from tools.dev.build_tag_dictionary import (
     CATEGORY_FILES,
     LEGACY_ASSET_DIR,
@@ -154,25 +155,31 @@ class DictionarySourceError(RuntimeError):
 
 
 def _remote_info():
-    """统一获取官方提交和五份 CSV 的指纹；镜像只负责固定提交的文件传输。"""
-    try:
-        info = HfApi(endpoint="https://huggingface.co").dataset_info(
-            SOURCE_REPO, files_metadata=True, timeout=8)
-        if not info.sha:
-            raise ValueError("Dictionary source revision is missing / 词典数据源缺少版本号")
-        files = {item.rfilename: item for item in info.siblings}
-        hashes = {}
-        for path, _ in HF_FILES:
-            if path not in files:
-                raise ValueError(f"Source file is missing / 缺少数据源文件：{path}")
-            item = files[path]
-            kind, digest = ("sha256", item.lfs.sha256) if item.lfs else ("blob", item.blob_id)
-            if not digest:
-                raise ValueError(f"File fingerprint is missing / 缺少文件指纹：{path}")
-            hashes[path] = (kind, digest)
-        return info.sha, hashes
-    except Exception as error:
-        raise DictionarySourceError(f"Could not retrieve the official dictionary version / 无法获取官方词典版本：{error}") from error
+    """按自动选路候选端点获取提交和五份 CSV 的指纹，官方不可达时自动回退镜像。"""
+    endpoints = resolve_hf_endpoints()
+    last_error: Exception | None = None
+    for endpoint in endpoints:
+        try:
+            info = HfApi(endpoint=endpoint).dataset_info(
+                SOURCE_REPO, files_metadata=True, timeout=8)
+            if not info.sha:
+                raise ValueError("Dictionary source revision is missing / 词典数据源缺少版本号")
+            files = {item.rfilename: item for item in info.siblings}
+            hashes = {}
+            for path, _ in HF_FILES:
+                if path not in files:
+                    raise ValueError(f"Source file is missing / 缺少数据源文件：{path}")
+                item = files[path]
+                kind, digest = ("sha256", item.lfs.sha256) if item.lfs else ("blob", item.blob_id)
+                if not digest:
+                    raise ValueError(f"File fingerprint is missing / 缺少文件指纹：{path}")
+                hashes[path] = (kind, digest)
+            return info.sha, hashes
+        except Exception as error:
+            last_error = error
+            invalidate_hf_cache()
+            continue
+    raise DictionarySourceError(f"Could not retrieve the official dictionary version / 无法获取官方词典版本：{last_error}") from last_error
 
 
 def check_update(force: bool = False) -> dict:
@@ -356,6 +363,7 @@ def _download_sources(force: bool) -> None:
                 progress.update({"filename": local_name, "file_index": index,
                                   "file_total": total, "downloaded": 0, "total": 0,
                                   "speed": 0.0, "phase": "connecting"})
+            kind, expected = remote[hf_path]
             download_hf_file(
                 SOURCE_REPO, hf_path, target,
                 progress=progress, lock=_lock,
@@ -363,6 +371,7 @@ def _download_sources(force: bool) -> None:
                 on_log=_log,
                 repo_type="dataset",   # 数据源是数据集仓库，地址要带 /datasets/
                 revision=revision,
+                expected_sha256=(expected if kind == "sha256" else None),
             )
             if not matches(target, remote[hf_path]):
                 target.unlink(missing_ok=True)

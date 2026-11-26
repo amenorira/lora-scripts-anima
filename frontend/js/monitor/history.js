@@ -92,7 +92,7 @@ window.monitorHistoryMixin = {
     this.openConfirm({
       title: this.t('monitor.confirmDeleteRunTitle'), context: identity,
       message: this.t('monitor.confirmDeleteRun'), tone: 'danger',
-      actionLabel: this.t('monitor.confirmDeleteRunTitle'),
+      actionLabel: this.t('monitor.confirmDeleteRunAction'),
       onConfirm: () => this._deleteHistoryRun(runDir),
     });
   },
