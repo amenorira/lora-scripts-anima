@@ -2,6 +2,22 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {loadFrontend, composeMixins, deferred} = require('./helpers.cjs');
 
+test('regularization numeric settings apply only the bounds in the field schema', () => {
+  const { window } = loadFrontend('regularization/index', { window: {} });
+  const app = composeMixins(window.regularizationMixin, {
+    regDefaults: { blocks_to_swap: 0, steps: 20 },
+    regSettings: { blocks_to_swap: 0, steps: 20 },
+    _regFields: { blocks_to_swap: { type: 'number', min: 0 }, steps: { type: 'number', min: 1, max: 100 } },
+    regChanged() {},
+  });
+  app.regSetField('blocks_to_swap', '8');
+  assert.equal(app.regSettings.blocks_to_swap, 8);
+  app.regSetField('blocks_to_swap', '-1');
+  assert.equal(app.regSettings.blocks_to_swap, 0);
+  app.regSetField('steps', '150');
+  assert.equal(app.regSettings.steps, 100);
+});
+
 test('generation stops when named captions have no selected candidate', async () => {
   const {window} = loadFrontend('regularization/index', {window:{}});
   const messages = [], calls = [];

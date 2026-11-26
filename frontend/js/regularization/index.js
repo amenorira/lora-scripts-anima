@@ -284,7 +284,9 @@ window.regularizationMixin = {
     if (this.regRunning || this.regBusy) return;
     if (typeof this.regDefaults[key] === 'number') value = value === '' ? '' : Number(value);
     const field = this._regFields[key];
-    if (value !== '' && field?.type === 'number' && Number.isFinite(value)) value = Math.max(field.min, Math.min(field.max, value));
+    if (field?.type === 'number' && Number.isFinite(value)) {
+      value = Math.max(field.min ?? -Infinity, Math.min(field.max ?? Infinity, value));
+    }
     if (Object.is(this.regSettings[key], value)) return;
     const previousSampler = this.regSettings.sampler;
     this._regUndo[key] = this.regSettings[key];
