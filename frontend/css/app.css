@@ -2954,6 +2954,9 @@ dialog.modal-overlay::backdrop { background: transparent; }
   border: none; border-radius: 0;
   background: var(--bg-surface);
 }
+@media (prefers-reduced-motion: no-preference) {
+  #tensorboardFrame .iframe-full { transition: opacity .5s; }
+}
 
 
 /* ── Slider ──────────────────────────────────────────────── */
@@ -4065,7 +4068,7 @@ input[type="range"]::-webkit-slider-thumb {
 .m-res-stat { display: inline-flex; align-items: baseline; gap: 4px; white-space: nowrap; }
 .m-res-stat-label { font-size: 11.5px; color: var(--text-tertiary); }
 .m-res-stat-val {
-  font-family: var(--font-mono); font-size: 11.5px; font-weight: 650; color: var(--text-primary);
+  font-family: var(--font-mono); font-size: 11.5px; font-weight: 650; color: var(--res-color, var(--text-primary));
   font-variant-numeric: tabular-nums; text-align: right;
 }
 /* 数值右对齐 + 按字段限定最小宽度，避免位数变化时整行抖动 */
@@ -4081,9 +4084,13 @@ input[type="range"]::-webkit-slider-thumb {
 .m-res-meter { display: flex; flex-direction: column; align-items: stretch; gap: 3px; min-width: 70px; }
 .m-res-stat-line { display: flex; align-items: baseline; gap: 3px; }
 .m-res-mini { display: block; height: 2px; border-radius: var(--radius-pill); overflow: hidden; background: var(--bg-sunken); }
-.m-res-mini i { display: block; height: 100%; border-radius: inherit; background: currentColor; color: var(--res-ok); transition: width .5s var(--ease-out); }
-.m-res-meter:has(.m-res-warn) .m-res-mini i { color: var(--res-warn); }
-.m-res-meter:has(.m-res-danger) .m-res-mini i { color: var(--res-danger); }
+.m-res-stat:has(.m-res-ok) { --res-color: var(--res-ok); }
+.m-res-stat:has(.m-res-warn) { --res-color: var(--res-warn); }
+.m-res-stat:has(.m-res-danger) { --res-color: var(--res-danger); }
+.m-res-mini i { display: block; height: 100%; border-radius: inherit; background: var(--res-color); transition: width .5s var(--ease-out); }
+@media (prefers-reduced-motion: reduce) {
+  .m-res-mini i { transition: none; }
+}
 
 /* ── 输出：模型存档区（checkpoint badge + loss + 排序）── */
 .m-ckpt-section { margin-top: 4px; }
@@ -6069,8 +6076,10 @@ input:disabled, select:disabled, textarea:disabled { opacity: var(--disabled-opa
 
 @media (prefers-reduced-motion: reduce) {
   .env-load-spinner,
+  .env-install-spinner,
+  .env-progress-indeterminate > div,
   .env-file-active { animation: none; }
-  .env-tab-indicator { transition: none; }
+  .env-tab-indicator, .env-progress-bar > div { transition: none; }
 }
 
 /* 使用实际内容宽度：侧栏、窗口缩放均影响断点；超宽屏不无限拉伸。 */
