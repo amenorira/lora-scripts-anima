@@ -4,6 +4,10 @@
 
 All notable changes to this project are documented in this file.
 
+## v26.1126.0c2ab - 2026-11-26
+
+Fixed Loss updates and diagnostic window counts when training reports multiple readings for the same step.
+
 ## v26.1126.0bdc5 - 2026-11-26
 
 Fixed interface issues in the training monitor and dataset diagnostics from the previous major release.
