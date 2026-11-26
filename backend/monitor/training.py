@@ -143,7 +143,7 @@ def _get_cached_accumulator(log_dir: Path, *, incremental: bool = False, epoch_o
 
 # ── TensorBoard Event 降采样 (LTTB) ────────────────────────
 
-def _lttb_downsample(points: list[dict], target: int) -> list[dict]:
+def _lttb_downsample(points, target: int):
     """Largest Triangle Three Buckets 降采样，保留曲线视觉特征"""
     n = len(points)
     if n <= target or target < 3:
@@ -163,13 +163,13 @@ def _lttb_downsample(points: list[dict], target: int) -> list[dict]:
 
         max_area = -1.0
         max_idx = bucket_start
-        pa_x = points[a]["step"]
-        pa_y = points[a]["value"]
+        pa_x = points[a].step
+        pa_y = points[a].value
 
         for j in range(bucket_start, bucket_end):
             area = abs(
-                (points[j]["step"] - pa_x) * (points[n - 1]["value"] - pa_y)
-                - (points[n - 1]["step"] - pa_x) * (points[j]["value"] - pa_y)
+                (points[j].step - pa_x) * (points[n - 1].value - pa_y)
+                - (points[n - 1].step - pa_x) * (points[j].value - pa_y)
             )
             if area > max_area:
                 max_area = area
@@ -183,7 +183,7 @@ def _lttb_downsample(points: list[dict], target: int) -> list[dict]:
 
 
 def read_tensorboard_loss(
-    limit: int = 50000,
+    limit: int | None = None,
     downsample_to: int = 2000,
     run_dir: str | None = None,
     *,
@@ -237,31 +237,32 @@ def read_tensorboard_loss(
                 events = ea.Scalars(tag)
             except Exception:
                 continue
-            window_events = events[-limit:]
-            points = [
-                {"step": int(e.step), "value": float(e.value)}
-                for e in window_events if math.isfinite(e.value)
-            ]
-            if not points:
+            # Full step curves use every epoch. Keep the existing cap for raw
+            # exports and epoch series, which are returned without downsampling.
+            sample_curve = downsample_to >= 3 and not _is_epoch_loss_tag(tag)
+            window = limit if limit is not None or sample_curve else 50000
+            source = events[-window:] if window else events
+            finite = [event for event in source if math.isfinite(event.value)]
+            if not finite:
                 continue
-            raw_points = points
-            # 主图的全程最低值也要覆盖已从显示窗口裁掉的早期观测。
-            extrema_events = events if tag in {"loss/average", "loss/current"} else window_events
-            best = min((e for e in extrema_events if math.isfinite(e.value)), key=lambda e: e.value)
-            if len(points) > downsample_to and not _is_epoch_loss_tag(tag):
-                points = _lttb_downsample(points, downsample_to)
-            values = [p["value"] for p in points]
+            primary = tag in {"loss/average", "loss/current"}
+            extrema = finite
+            if primary and len(source) < len(events):
+                extrema = (e for e in events if math.isfinite(e.value))
+            best = min(extrema, key=lambda e: e.value)
+            curve = _lttb_downsample(finite, downsample_to) if sample_curve and len(finite) > downsample_to else finite
+            tail = finite[-160:] if primary else finite[-40:]
             series_list.append({
                 "tag": tag,
                 "name": tag.replace("/", " ").replace("_", " "),
-                "points": points,
-                "latest": values[-1],
+                "points": [{"step": int(e.step), "value": float(e.value)} for e in curve],
+                "latest": float(finite[-1].value),
                 "min": float(best.value),
                 "min_step": int(best.step),
-                "max": max(p["value"] for p in raw_points),
+                "max": float(max(e.value for e in finite)),
                 # 小图需要连续的最新原始点；全局 LTTB 曲线的尾部会随重采样改变。
                 # 40 个诊断观测各需前置 120 点；参照图仍由前端截取最近 120 点。
-                "diagnostic_points": raw_points[-160:] if tag in {"loss/average", "loss/current"} else raw_points[-40:],
+                "diagnostic_points": [{"step": int(e.step), "value": float(e.value)} for e in tail],
             })
 
         if series_list:

@@ -72,7 +72,7 @@ test('hero chart downsampling keeps endpoints and extrema while full diagnostic 
   const view = makeOverview({
     monitorLossSeries: [{ tag: 'loss/average', points: longSeries }],
   });
-  const compressed = view._downsampleHeroPoints(longSeries, 160);
+  const compressed = view._downsampleMonitorPoints(longSeries, 160);
   assert.ok(compressed.length <= 180);
   assert.equal(compressed[0].step, 1);
   assert.equal(compressed.at(-1).step, 1200);
@@ -143,6 +143,28 @@ test('full chart includes the reported minimum in its readout, with a disconnect
   view.controlState = {state: 'paused'};
   patch();
   assert.doesNotMatch(svg.innerHTML, /m-latest-pulse/);
+});
+
+test('full chart spans a long live run after repeated compaction and keeps the raw diagnostic window', () => {
+  const svg = { setAttribute() {} };
+  const wrap = { dataset: {}, querySelector: selector => ({
+    '[data-hero-chart-stage]': { clientWidth: 500 }, '[data-hero-chart-svg]': svg,
+  })[selector] };
+  const card = { dataset: {}, querySelectorAll: () => [], querySelector: selector => selector === '[data-hero-chart-wrap]' ? wrap : null };
+  const series = { tag: 'loss/average', points: [] };
+  const view = makeOverview({ monitorChartMode: 'full', monitorLossSeries: [series], esc: String,
+    _bindDiagnosticInteractions() {}, _patchDiagnosticGauges() {} });
+  const points = Array.from({ length: 16000 }, (_, i) => ({ step: i + 1, value: i === 199 ? 2 : 1 - i / 16000 }));
+  for (let i = 0; i < points.length; i += 100) {
+    view._appendMonitorMetricPoints(series, points.slice(i, i + 100));
+  }
+  view._patchTrainingDiagnostics({ dataset: {}, querySelector: () => card }, key => key, { state: 'RUNNING' }, false);
+  const steps = wrap._chartState.coords.map(point => point.step);
+  assert.equal(steps[0], 1);
+  assert.ok(steps.includes(200), 'the early spike stays on the displayed curve');
+  assert.equal(steps.at(-1), 16000);
+  assert.ok(series.points.length <= 5000);
+  assert.deepEqual(view._trainingDiagnosticPoints(), points.slice(-120));
 });
 
 test('LR projections use the recorded process count, inverse sqrt timescale and polynomial end rate', () => {

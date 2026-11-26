@@ -120,8 +120,10 @@ test('live epoch loss retains the oldest sample value beyond 5000 points while s
   const index = a._sampleEpochLossIndex();
   for (const series of a.lossSeries) {
     const epoch = epochTags.includes(series.tag);
-    assert.equal(series.points.length, epoch ? 5001 : 5000, series.tag);
-    assert.equal(series.points[0].step, epoch ? 1 : 2, series.tag);
+    if (epoch) assert.equal(series.points.length, 5001, series.tag);
+    else assert.ok(series.points.length <= 5000, series.tag);
+    assert.equal(series.points[0].step, 1, series.tag);
+    assert.equal(series.points.at(-1).step, 5001, series.tag);
     assert.equal(series.latest, .09);
     if (epoch) assert.equal(index.get(series.tag).get(1), .1, 'the first sample still resolves its epoch loss');
   }

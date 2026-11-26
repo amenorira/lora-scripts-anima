@@ -671,28 +671,6 @@ window.monitorDiagnosticsMixin = {
     return out;
   },
 
-  _downsampleHeroPoints(points, maxPoints = 200) {
-    if (points.length <= maxPoints) return points;
-    const buckets = Math.max(20, Math.floor(maxPoints / 2));
-    const stride = (points.length - 2) / buckets;
-    const result = [points[0]];
-    for (let i = 0; i < buckets; i++) {
-      const start = 1 + Math.floor(i * stride);
-      const end = Math.min(points.length - 1, 1 + Math.floor((i + 1) * stride));
-      if (start >= end) continue;
-      let minPt = points[start], maxPt = points[start];
-      for (let j = start + 1; j < end; j++) {
-        if (points[j].value < minPt.value) minPt = points[j];
-        if (points[j].value > maxPt.value) maxPt = points[j];
-      }
-      if (minPt === maxPt) result.push(minPt);
-      else if (minPt.step <= maxPt.step) result.push(minPt, maxPt);
-      else result.push(maxPt, minPt);
-    }
-    result.push(points[points.length - 1]);
-    return result;
-  },
-
   _lookupNearestByStep(points, targetStep) {
     if (!points?.length) return null;
     let lo = 0, hi = points.length - 1;
@@ -1034,7 +1012,7 @@ window.monitorDiagnosticsMixin = {
       return;
     }
 
-    const displayPrimary = isFull ? this._downsampleHeroPoints(rawPrimary, 200).slice() : rawPrimary;
+    const displayPrimary = isFull ? this._downsampleMonitorPoints(rawPrimary, 200).slice() : rawPrimary;
     // 快照可能只保留抽样曲线；把区间内的原始最低点也画进折线。裁尾前的最低点单独标注。
     if (isFull && best.step >= displayPrimary[0].step && best.step <= displayPrimary.at(-1).step) {
       const at = displayPrimary.findIndex(point => point.step >= best.step);
@@ -1073,7 +1051,7 @@ window.monitorDiagnosticsMixin = {
       : [];
     let lrToY = null;
     if (lrPoints.length >= 2) {
-      const lrDraw = this._downsampleHeroPoints(lrPoints, 120);
+      const lrDraw = this._downsampleMonitorPoints(lrPoints, 120);
       const lrVals = lrDraw.map(p => p.value);
       const lrMin = Math.min(...lrVals), lrMax = Math.max(...lrVals);
       const lrPad = Math.max((lrMax - lrMin) * 0.14, Math.abs(lrMax) * 0.08, 1e-12);

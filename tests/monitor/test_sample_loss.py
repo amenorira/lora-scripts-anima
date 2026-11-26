@@ -4,7 +4,7 @@ import asyncio
 import json
 import math
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from PIL import Image
 from tensorboard.compat.proto.event_pb2 import Event
@@ -18,6 +18,23 @@ from tests.monitor.test_cross_drive_outputs import CrossDriveSandbox
 
 
 class SampleEpochLossTests(unittest.TestCase):
+    def test_full_step_snapshot_covers_more_than_fifty_thousand_events(self):
+        from tensorboard.backend.event_processing.event_accumulator import ScalarEvent
+
+        events = [ScalarEvent(0, step, 1 / step) for step in range(1, 60001)]
+        accumulator = Mock()
+        accumulator.Tags.return_value = {"scalars": ["loss/average", "lr/unet"]}
+        accumulator.Scalars.return_value = events
+        with tempfile.TemporaryDirectory() as directory, patch.object(training, "_get_cached_accumulator", return_value=accumulator):
+            (Path(directory) / "log").mkdir()
+            snapshot = training.read_tensorboard_loss(run_dir=directory, downsample_to=500)
+        self.assertEqual(len(snapshot), 2)
+        for series in snapshot:
+            self.assertEqual(len(series["points"]), 500)
+            self.assertEqual((series["points"][0]["step"], series["points"][-1]["step"]), (1, 60000))
+            tail_length = 160 if series["tag"] == "loss/average" else 40
+            self.assertEqual([p["step"] for p in series["diagnostic_points"]], list(range(60001 - tail_length, 60001)))
+
     def test_nonfinite_loss_values_do_not_reach_history_payload(self):
         with tempfile.TemporaryDirectory() as directory:
             run = Path(directory)
