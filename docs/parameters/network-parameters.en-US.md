@@ -1,205 +1,180 @@
+<a name="guide-title"></a>
 # Network parameters
 
-Network settings determine the adapter's matrix structure, training scope, and weight-file size. New configurations use dropout `0` and the following rank/Alpha defaults:
+Network parameters control the adapter's matrix factorization, target layer scope, and saved weight size. New configurations default to dropout `0`, with Rank / Alpha defaults set by model type:
 
-| Training profile | Default rank / Alpha |
+| Model type | Default Rank / Alpha |
 | --- | --- |
-| Anima, SDXL, Krea 2 | `32/32` |
-| MOSS-Image | `16/1` |
+| Anima, SDXL, Krea 2 | `32 / 32` |
+| MOSS-Image | `16 / 1` |
 
-MOSS-Image offers native `networks.lora_generic`, `networks.loha`, and `networks.lokr`. All three support rank/module dropout, LoRA+, regex rank/learning-rate settings, and optional DiT text projection and refiner training; Qwen stays frozen. LoKr also exposes `lokr_factor`.
+After changing the algorithm, Rank, factorization settings, or target scope, open [Matrix structure and file size](matrix-preview.en-US.md) to verify trainable parameter counts, effective scale, and estimated `.safetensors` file size.
 
-MOSS targets linear layers, so the UI provides linear-layer controls and the three native modules listed above. Parameter counts and scaling can vary between algorithms at the same rank; check the structure preview.
+<a name="algorithms"></a>
+## LoRA, LoHa, and LoKr
 
-<!-- doc-anchor: moss-text-embedder -->
-## MOSS text projection and refiner blocks
-
-`train_text_embedder` defaults to off. Enabling it adds adapters using the selected LoRA / LoHa / LoKr algorithm to the DiT text input projection and two refiner blocks. Qwen stays frozen, so text caching remains available.
-
-These modules inherit the backbone learning rate. To set matched layers to `5e-5`, enter `network_reg_lrs=.*text_embedder.*=5e-5` in custom network arguments. EmoSens uses one learning rate for all parameters, so this override is inactive with EmoSens.
-
-<!-- doc-anchor: dimension -->
-## Network dimension
-
-`network_dim`, also called rank, sets the intermediate dimension between standard LoRA's two matrices. It defaults to `32` for Anima, SDXL, and Krea 2, and `16` for MOSS-Image.
-
-| Adjustment | What it provides | Cost or limitation |
+| Algorithm | Weight-update representation | Practical trade-offs and selection |
 | --- | --- | --- |
-| Higher rank | A wider range of weight changes | More parameters, larger files, and more optimizer state |
-| Lower rank | Fewer parameters and smaller files | Lower maximum rank of the represented weight change |
+| Standard LoRA / LoCon | Product of two low-rank matrices `B × A` | Broadest inference compatibility (ComfyUI, WebUI, Diffusers); supports [LoRA+](lora-plus.en-US.md) and paired-factor optimizers (`LoRA-Muon`, `LoRA-RITE`). Recommended default starting point |
+| LoHa | Elementwise (Hadamard) product of two low-rank pairs | Higher effective rank ceiling per Rank, at **roughly 2× the trainable parameters** of standard LoRA at the same Rank (halve Rank to match file size); suited to multi-concept or dense style experiments |
+| LoKr | Kronecker product `W1 ⊗ W2`, where factors can be low-rank | Shaped jointly by `lokr_factor` and Rank (Rank `8–16` is a common starting point); balances compact files with high-rank capacity when the target inference loader supports LyCORIS |
 
-When comparing algorithms, use the actual parameter counts in the structure preview to compare configuration sizes.
+Available network modules by model type:
 
-<!-- doc-anchor: alpha -->
-## Alpha
+- **Anima, SDXL**: Native `sd-scripts` modules (`networks.lora_anima` / `networks.lora`, `networks.loha`, `networks.lokr`) or `lycoris.kohya` (LoCon, LoHa, LoKr).
+- **MOSS-Image**: Linear-only native modules (`networks.lora_generic`, `networks.loha`, `networks.lokr`). All three support rank/module dropout, [LoRA+](lora-plus.en-US.md), regex-based per-layer Rank/learning-rate overrides (`network_reg_dims` / `network_reg_lrs`), and optional [DiT text projection and refiner blocks](#moss-text-embedder); the Qwen text encoder stays frozen.
+- **Krea 2**: Native LoRA (`networks.lora_krea2`) or LyCORIS (LoCon, LoHa, LoKr) across up to 264 DiT Linear layers; see [Krea 2 target filtering](#krea-targets).
 
-LoRA stores two small matrices, A and B. During training and use, their product is multiplied by `Alpha / Rank` to produce the weight change added to the base model:
+When comparing algorithms, match total trainable parameters in the [structure preview](matrix-preview.en-US.md) first, then evaluate checkpoints with identical prompts and seeds ([comparison workflow](timesteps.en-US.md#comparison-method)).
+
+<a name="dimension"></a>
+## Rank (network dimension)
+
+`network_dim` (Rank) sets the intermediate dimension of low-rank factors. It defaults to `32` for Anima, SDXL, and Krea 2, and `16` for MOSS-Image.
+
+| Scenario or training symptom | Typical standard LoRA Rank | Guidance |
+| --- | --- | --- |
+| Single character, facial identity, or simple prop | `16–32` (`8–16` for LoKr) | Captures facial features, hair, and one outfit cleanly while keeping file size and overfitting risk low |
+| Multiple outfits, complex art style, or larger datasets | `32–64` (`16–32` for LoHa) | Provides extra capacity for varied textures, lighting, and brushwork |
+| Rank too low (`4–8` on detailed subjects) | Raise to `16–32` | Fine facial traits, costume ornaments, or stroke textures stay soft and underfit even after loss levels off |
+| Rank too high (`64–128+` on 15–30 image datasets) | Lower to `16–32` | Inflates file and optimizer-state size while memorizing poses, backgrounds, and dataset noise faster |
+
+<a name="alpha"></a>
+## Alpha and rsLoRA
+
+Standard LoRA scales the low-rank matrix product by `Alpha / Rank` during both training and inference, without changing parameter count or file size:
 
 ```text
 ΔW = (Alpha / Rank) × B × A
 ```
 
-Very small LoRA weights can round to zero when saved at low precision, losing some of the learned changes. One reason Kohya introduced Network Alpha was to reduce this risk: a smaller `Alpha / Rank` multiplier allows larger internal weights to represent the desired weight change. With Rank fixed, a smaller Alpha requires a larger matrix product B × A to represent the same ΔW. To reduce the risk of losing small weights when saving, you can lower Alpha before your next training run, for example to half the Rank or to 1.
+With Rank and learning rate held fixed, lowering Alpha scales down the per-step update magnitude and backward gradients while letting larger internal weights represent the same `ΔW` (originally introduced in Kohya scripts to reduce low-precision FP16 / BF16 rounding of tiny weights to zero). Raising Alpha increases effective update strength.
 
-For example, at Rank 32, lowering Alpha from 32 to 1 changes the multiplier from 1 to `1/32`, so representing the same ΔW requires a matrix product 32 times as large. The values actually learned still depend on training.
+<a name="alpha-choice"></a>
+### Practical values and shortcuts
 
-### Choosing a value
+Keep the defaults for initial runs (`32 / 32` on Anima, SDXL, and Krea 2; `16 / 1` on MOSS-Image). When following an existing recipe, copy Rank, Alpha, and learning rate together. For standard LoRA at Rank `32`:
 
-For a first run, keep the defaults: Rank 32 / Alpha 32 for Anima, SDXL, and Krea 2; Rank 16 / Alpha 1 for MOSS-Image. When following an existing training recipe, keep its Rank, Alpha, and learning rate together.
-
-To try a smaller Alpha, click `½ dim` to set it to half the Rank, or click `1` to set it to 1. If the default is already 1, there is no need to lower it further for this purpose.
-
-For standard LoRA at Rank 32:
-
-| Shortcut | Alpha | Multiplier | When to use it |
+| Shortcut | Alpha | `Alpha / Rank` scale | Typical use |
 | --- | --- | --- | --- |
-| `= dim` | 32 | 1 | A starting point with no extra reduction of the matrix product |
-| `½ dim` | 16 | 0.5 | A first step when trying a smaller Alpha |
-| `1` | 1 | 1/32 | Follow an Alpha-1 recipe or explore much smaller scaling |
+| `= dim` | `32` | `1.0` | Unscaled baseline suited to most initial runs |
+| `½ dim` | `16` | `0.5` | Gentle first step to soften early updates and smooth convergence |
+| `1` | `1` | `1/32` (`0.03125`) | Strong downscaling used by MOSS-Image defaults and Alpha-1 recipes |
 
-When comparing Alpha 1 with other values, consider the learning rate, optimizer, and data together.
+Each shortcut writes Alpha once; changing Rank afterward does not update Alpha automatically. Some native modules treat `Alpha = 0` as equal to Rank (scale `1.0`).
 
-Alpha does not change parameter count or file size. Each shortcut sets the value once; changing Rank afterward does not update Alpha.
+<a name="alpha-lr"></a>
+### Coordinating with learning rate
 
-### How it relates to learning rate
+Adaptive optimizers such as AdamW normalize updates by first and second gradient moments, so effective update speed does not scale linearly with `Alpha / Rank`—do not multiply the learning rate by 32× simply because Alpha changed from `32` to `1`. Keep other settings fixed, compare checkpoints across epochs with matching seeds, and raise the learning rate modestly only if convergence becomes clearly sluggish, or lower it if early checkpoints blow out colors or lock poses.
 
-Alpha affects gradients during training, and the learning rate enters the parameter update calculation. Optimizers such as AdamW also use gradient statistics to scale updates. After changing Alpha, recalibrate the learning rate based on training results.
+<a name="rslora"></a>
+### rsLoRA (rank-stabilized scaling)
 
-In practice, keep Rank and other settings fixed, change Alpha alone, and compare several checkpoints using the same prompts and seeds. If learning becomes noticeably slower, try increasing the learning rate. If training becomes unstable or overfits quickly, lower it first. Avoid jumping to a learning rate tens of times larger based on the multiplier alone.
+Enabling `rs_lora` replaces the denominator `Rank` with `√Rank` (`ΔW = (Alpha / √Rank) × B × A`) so update strength does not decay at high ranks.
 
-### Other settings
-
-Start between `1` and the Rank value in most cases. Alpha equal to Rank gives a multiplier of 1. Alpha above Rank amplifies the matrix product and is allowed by the current standard LoRA implementations. Some native implementations treat Alpha 0 as Rank, giving a multiplier of 1 with standard scaling.
-
-With `rs_lora` enabled, the denominator becomes √Rank. At Rank 32 and Alpha 1, the multiplier changes from `0.03125` to about `0.177`; Alpha equal to Rank no longer gives a multiplier of 1 either. Revisit Alpha and the learning rate after switching. rsLoRA addresses diminishing scaling at high ranks; the paper's experiments primarily use language models.
-
-LoHa and LoKr also depend on their matrix structures. Check their scale in the structure preview, and see [full matrices](#full-matrix) for LoKr's full-factor behavior.
+Toggling `rs_lora` shifts effective scaling sharply: at Rank `32`, leaving `Alpha = 32` jumps the multiplier from `1.0` to **`√32 ≈ 5.66`**, and `Alpha = 1` jumps from `0.03125` to **`≈ 0.177`**. Always lower Alpha (for example to `1` or `4–8`) or reduce the learning rate when turning `rs_lora` on to avoid early gradient blowups or rapid overfitting. Inspect LoHa and LoKr scales in the [structure preview](matrix-preview.en-US.md), and see [Full matrices and both-factor decomposition](#full-matrix) for full-factor LoKr rules.
 
 References: [Kohya parameter guide](https://github.com/bmaltais/kohya_ss/wiki/LoRA-training-parameters#network-alpha) · [LoRA §4.1](https://arxiv.org/html/2106.09685v2#S4.SS1) · [rsLoRA](https://arxiv.org/html/2312.03732v1)
 
-<!-- doc-anchor: algorithms -->
-## LoRA, LoHa, and LoKr
-
-| Algorithm | Representation | Configuration implication |
-| --- | --- | --- |
-| LoRA | Product of two low-rank matrices | Rank directly sets the intermediate dimension |
-| LoHa | Elementwise product of two low-rank products | Dimension sets the intermediate size of each low-rank product |
-| LoKr | Kronecker product of two factors, which may themselves be low-rank | Factor and dimension control different levels of decomposition |
-
-Standard LoRA is the default starting point. When comparing LoHa or LoKr, check parameter counts in the structure preview, then evaluate fidelity and new scenarios with matching prompts and seeds.
-
-<!-- doc-anchor: lokr-factor -->
+<a name="lokr-factor"></a>
 ## LoKr factor
 
-The basic form is `ΔW = scale × (W1 ⊗ W2)`. W1 and W2 jointly represent the weight change through their Kronecker product.
+LoKr represents weight updates via the Kronecker product `ΔW = scale × (W1 ⊗ W2)`. The UI field `lokr_factor` (passed as `factor`) controls how layer dimensions are split between `W1` and `W2`, including in full-matrix mode; `Rank` (`dim`) sets the intermediate rank when factors are decomposed further.
 
-`factor` determines their shape allocation and remains active in full-matrix mode. `dim` sets the intermediate rank when a factor is decomposed further.
+The default `-1` chooses a near-balanced factor split automatically. On a single `2048×2048` Linear layer with full factors and balanced splitting:
 
-The UI field is `lokr_factor`; the network receives it as `factor`. `-1` selects a near-balanced dimension split automatically. An explicit value changes the dimensions of the two Kronecker factors; inspect their shapes and parameter counts after changing it.
-
-For illustration, consider one 2048×2048 weight layer with direct matrix factors and balanced factorization:
-
-| Factor | W1 shape | W2 shape | Parameters in the two factors |
+| `lokr_factor` | `W1` shape | `W2` shape | Parameters in that layer |
 | --- | --- | --- | --- |
-| 4 | 4×4 | 512×512 | 262,160 |
-| 8 | 8×8 | 256×256 | 65,600 |
+| `4` | `4×4` | `512×512` | `262,160` |
+| `8` | `8×8` | `256×256` | `65,600` |
 
-Increasing factor from 4 to 8 reduces the parameter count in this example. Other layers use their own dimension splits; check the structure preview for the complete adapter size.
+Here, raising `lokr_factor` from `4` to `8` cuts parameter count fourfold. Because layers vary in shape, check total adapter size in the [structure preview](matrix-preview.en-US.md) after any change.
 
-<!-- doc-anchor: full-matrix -->
-## Full matrices and decomposition of both factors
+<a name="full-matrix"></a>
+## Full matrices and both-factor decomposition
 
-LyCORIS LoKr defaults to `full_matrix=false` and `decompose_both=false`. Enabling `full_matrix` stores W1 and W2 directly and ignores `decompose_both`. With it off, factors also switch to direct storage when dim reaches their shape-dependent threshold.
+LyCORIS LoKr defaults to `full_matrix=false` and `decompose_both=false`. Turning `full_matrix` on stores both `W1` and `W2` directly as dense matrices and ignores `decompose_both`. Even with `full_matrix` off, any factor whose `Rank ≥ max(dim1, dim2) / 2` (shown as the **W2 full-storage threshold** in the structure preview) automatically switches to direct matrix storage.
 
-| Setting | W1 | W2 |
+| Setting combination | `W1` storage | `W2` storage |
 | --- | --- | --- |
-| Full-matrix mode off, both-factor decomposition off | Direct matrix | Low-rank or direct, depending on dim and shape |
-| Full-matrix mode off, both-factor decomposition on | Low-rank when eligible | Low-rank or direct, depending on dim and shape |
-| Explicit full-matrix mode | Direct matrix | Direct matrix |
+| `full_matrix` off, `decompose_both` off | Direct matrix | Low-rank below threshold; direct matrix at or above threshold |
+| `full_matrix` off, `decompose_both` on | Low-rank when eligible | Low-rank below threshold; direct matrix at or above threshold |
+| `full_matrix` on | Direct matrix | Direct matrix |
 
-When both factors are stored directly, increasing dim no longer adds parameters to those factors. The current implementation still distinguishes these scales:
+Once both `W1` and `W2` are stored directly, raising Rank stops adding parameters to those factors, while LyCORIS LoKr scaling still depends on `rs_lora`:
 
-| Both factors are full matrices | Internal Alpha | Module scale |
+| Both factors stored as full matrices | Internal Alpha | Resulting module `scale` |
 | --- | --- | --- |
-| `rs_lora=false` | Set to dim | 1 |
-| `rs_lora=true` | Set to dim | √dim |
+| `rs_lora=false` | Set to `dim` | `1` |
+| `rs_lora=true` | Set to `dim` | `√dim` |
 
-These scaling rules apply to this project's LyCORIS LoKr; check the structure preview for the resulting values.
+<div id="preview"></div>
 
-<!-- doc-anchor: unbalanced -->
+Use [Matrix structure and file size](matrix-preview.en-US.md) to inspect **Layers storing full W2** and per-layer `scale` after changing decomposition options.
+
+<a name="unbalanced"></a>
 ## Unbalanced factorization
 
-Unbalanced factorization swaps the two parts of the output dimension between factors, changing the aspect ratios of W1 and W2. Parameter count depends on the layer dimensions and decomposition mode; compare the actual counts before and after switching in the structure preview.
+`unbalanced_factorization` defaults to off. Enabling it swaps how the split output dimensions are assigned between `W1` and `W2`, changing both factor aspect ratios. Adjust it only when testing specific compression ratios or matrix shapes, and verify both parameter count and scale in the [structure preview](matrix-preview.en-US.md).
 
-`unbalanced_factorization` is off by default. Change it when comparing matrix shapes or compression options, and check both parameter count and scale.
+<a name="dora-bypass"></a>
+## DoRA (weight decomposition) and bypass mode
 
-<!-- doc-anchor: dropout -->
+LyCORIS exposes `dora_wd` (DoRA weight decomposition) and `bypass_mode` (bypass forward pass) to control how adapter updates are applied:
+
+- **DoRA (`dora_wd`)**: Decomposes updated weights into direction and a trainable per-output-channel magnitude (norm) by reconstructing `W + ΔW` before normalizing direction. Enabling DoRA requires **`bypass_mode` off**, and ordinary feature `dropout` is inactive on this weight-reconstruction path.
+- **Bypass mode (`bypass_mode`)**: Computes adapter output on a separate branch `W(x) + ΔW(x)` without merging into base weights—required when quantized base weights cannot be reconstructed directly during forward passes.
+- **Quantization and algorithm constraints**:
+  - **Anima (LyCORIS)**: Linear and Conv LoCon, LoHa, and LoKr all support DoRA when `bypass_mode` is off.
+  - **Krea 2 (LyCORIS)**: Enabling `DiT FP8 dynamic quantization` (`fp8_base`) or `ConvRot INT8` (`convrot_int8`) forces `bypass_mode=true`. To use DoRA on Krea 2, turn off both quantizations and `bypass_mode`, and keep ordinary `dropout = 0` on LyCORIS LoCon (positive ordinary dropout enables bypass mode).
+
+<a name="dropout"></a>
 ## Network and caption dropout
 
-Network dropout randomly masks features or branches during training and defaults to probability `0`. Higher probabilities omit more elements, channels, or branches from forward passes. If generated poses or backgrounds become fixed, compare earlier checkpoints before testing dropout separately.
+Dropout randomly masks features, low-rank channels, adapter branches, or text conditioning during forward passes (default `0`; saved weight files keep all parameters). If poses or backgrounds lock in, test earlier checkpoints before tuning dropout; when adding regularization, start around **`0.05–0.1`** (`> 0.2` often slows convergence or softens subject detail).
 
-| Type and key | What is omitted | Main purpose |
+| Dropout type and key | What is masked | Purpose and caveats |
 | --- | --- | --- |
-| Standard LoRA feature dropout `network_dropout` | Elements of intermediate features | Reduce reliance on fixed feature combinations |
-| Standard LoRA rank dropout `rank_dropout` | Low-rank channels | Reduce reliance on a few channels |
-| Module dropout `module_dropout` | A layer's entire adapter branch | That layer uses its base-model output when the branch is omitted |
-| Full-caption dropout `caption_dropout_rate` | All text conditioning | Include training without text; the image is still used |
-| Tag dropout `caption_tag_dropout_rate` | Individual tags | Reduce reliance on complete tag combinations |
+| Feature dropout `network_dropout` | Intermediate adapter activations | Reduces reliance on fixed local feature combinations |
+| Rank dropout `rank_dropout` | Subset of low-rank channels | Spreads representation across channels |
+| Module dropout `module_dropout` | Entire layer adapter branch | Masked layers output the unmodified base model activation for that step |
+| Full-caption dropout `caption_dropout_rate` | Entire prompt (SDXL) | Mixes unconditional steps into training; `keep_tokens` does not prevent full-caption drops |
+| Tag dropout `caption_tag_dropout_rate` | Individual comma-separated tags | Decouples trigger words from background/outfit tags; leading tags set by `keep_tokens` stay protected |
 
-Dropout does not remove parameters from the saved file. Leading tags marked for retention are protected from individual tag dropout, but not from full-caption dropout.
+**Interaction with text-encoder caching**: Setting `caption_tag_dropout_rate > 0` (or `caption_dropout_rate > 0` on SDXL) requires re-encoding randomized captions every step, so the UI **automatically disables and locks `Cache text encoder outputs`**, keeping the text encoder in VRAM and increasing step time.
 
-For this project’s current LyCORIS LoKr, behavior also depends on the actual forward path:
+In Anima and SDXL LyCORIS LoKr, active dropout types also depend on the forward path (Krea 2's LyCORIS LoKr UI exposes `module_dropout` only):
 
-| Actual LoKr path | Ordinary feature dropout | Rank dropout |
-| --- | --- | --- |
-| Direct bypass output | Applied to adapter outputs | Not used by this path |
-| Weight reconstruction | Not used by this path | Masks output channels of the combined weight update |
+| LyCORIS LoKr forward path | Ordinary feature `dropout` | `rank_dropout` | `module_dropout` |
+| --- | --- | --- | --- |
+| Bypass output (`bypass_mode=true`) | Active (masks branch output) | Inactive | Active |
+| Weight reconstruction (`bypass_mode=false`) | Inactive | Active (masks output channels of `ΔW`) | Active |
 
-Module dropout works in both paths. Quantization and weight decomposition affect which path is selected; check the active path before adjusting feature or rank dropout.
-
-Anima's LyCORIS DoRA (`dora_wd`) uses the following paths:
-
-| Layer type | DoRA requirements |
-| --- | --- |
-| Ordinary Linear/Conv: LoCon, LoHa, LoKr | Turn off `bypass_mode` to apply the trainable magnitude through weight reconstruction; feature dropout is inactive on this path |
-| FP8 weight-only: LoKr | Enabling DoRA forces weight reconstruction, overriding Bypass |
-| FP8 weight-only: LoCon, LoHa | Creating DoRA adapters on these layers is currently unsupported |
-
-See [Krea 2 targets](#krea-targets) for its quantization and bypass restrictions.
-
-<!-- doc-anchor: preview -->
-## Check the actual structure
-
-After changing dimension, factor, full-matrix mode, or unbalanced factorization, inspect the matrices, parameter count, and scale in the structure preview. When comparing algorithms, record the actual trainable parameter count; see the [controlled comparison steps](timesteps.en-US.md#comparison-method).
-
-<!-- doc-anchor: krea-targets -->
+<a name="krea-targets"></a>
 ## Krea 2: default targets and filtering
 
-Rank/Alpha defaults to `32/32`, targeting all 264 DiT Linear layers: main-block attention, MLPs, the text-fusion transformer, and projection MLPs. Text fusion belongs to the DiT; the Qwen text encoder stays frozen and cached. Modulation and RMSNorm use raw tensors, which are automatically outside the Linear LoRA target scope.
+Krea 2 defaults to Rank / Alpha `32 / 32` across all 264 DiT Linear layers (main-block attention, MLPs, the text-fusion transformer, and projection MLPs). Text fusion runs inside the DiT while the Qwen text encoder remains frozen and cached; modulation and RMSNorm tensors are outside Linear LoRA scope.
 
-Krea 2 offers native LoRA and LyCORIS LoCon / LoKr / LoHa, all using the same target selector: All Linear (264), Main Attention (140), Main Attention + MLP (224), or custom regexes. All Linear includes input/output, time, and text-fusion projections.
+Native LoRA and LyCORIS (LoCon, LoKr, LoHa) share the same target-layer selector:
 
-Custom regexes fully match original Linear layer names, one per line; exclusions take precedence. Include `blocks\.[0-9]+\.attn\..*` for main attention, or include `.*` and exclude `txtfusion\..*` to omit text fusion. Empty selections fail before launch.
+- **All Linear (264 layers)**: Covers main blocks plus input/output, timestep, and text-fusion projections.
+- **Main Attention (140 layers)**: Targets backbone attention projections only for the smallest adapter footprint.
+- **Main Attention + MLP (224 layers)**: Covers core backbone blocks while omitting peripheral and text-fusion projections.
+- **Custom regex**: One full-match regex per line against original Linear layer names, with **exclusions taking priority over inclusions**. For example, including `blocks\.[0-9]+\.attn\..*` selects main attention, while including `.*` and excluding `txtfusion\..*` drops text fusion. An empty match fails validation before launch.
 
-The LyCORIS panel shows the applicable factor, full-matrix, decompose-both, unbalanced factorization, scalar, rsLoRA, DoRA, bypass, and kernel controls for each algorithm. Krea 2 targets linear layers.
-
-| Algorithm | Dropout and LoRA+ support |
+| Krea 2 network mode | Dropout and LoRA+ support |
 | --- | --- |
-| Native LoRA | Rank/module dropout and LoRA+ |
-| LyCORIS LoCon | Ordinary dropout, rank/module dropout, and LoRA+; positive ordinary dropout enables bypass, and DoRA requires ordinary dropout `0` |
-| LyCORIS LoHa | Rank/module dropout |
-| LyCORIS LoKr | Module dropout only on the current path |
+| Native LoRA | `rank_dropout`, `module_dropout`, and [LoRA+](lora-plus.en-US.md) |
+| LyCORIS LoCon | Ordinary `dropout`, `rank_dropout`, `module_dropout`, and [LoRA+](lora-plus.en-US.md); [DoRA](#dora-bypass) requires ordinary `dropout = 0` |
+| LyCORIS LoHa | `rank_dropout` and `module_dropout` |
+| LyCORIS LoKr | `module_dropout` only on the current path |
 
-FP8 or ConvRot INT8 base weights force LyCORIS bypass mode. DoRA requires both quantization modes and `bypass_mode` to be off.
+Export portable presets via `training.yaml` (runtime target presets are generated automatically). Under **All Linear (264 layers)**, legacy native LoRA configurations still accept `exclude_patterns=['.*\.mlp\..*','first','last\.linear','tmlp\..*','txtmlp\..*','tproj\.1','txtfusion\..*']` in **Custom network arguments** (`include_patterns` only restores excluded layers); new runs should use the target selector directly and avoid passing native arguments into LyCORIS. See the [Krea 2 upstream target guide](https://github.com/kohya-ss/musubi-tuner/blob/f8a1b03794a49239a3539015075f5123d6c07d66/docs/krea2.md#lora-target-layers--loraの対象レイヤー).
 
-Save portable settings as `training.yaml`; the per-run target preset is generated automatically.
+<a name="moss-text-embedder"></a>
+## MOSS text projection and refiner blocks
 
-Legacy native LoRA Network arguments remain supported under All Linear. New configurations should use the target selector:
+In MOSS-Image, `train_text_embedder` defaults to off. Enabling it adds **11 adapter modules** across the DiT text input projection and two text refiner blocks using the selected LoRA / LoHa / LoKr algorithm (expanding target layers from `252` to `263`, or `71.0 MiB → 74.4 MiB` for standard LoRA at Rank 16 in `bf16`). Because the Qwen text encoder itself remains frozen, text-encoder output caching stays available.
 
-```text
-exclude_patterns=['.*\.mlp\..*','first','last\.linear','tmlp\..*','txtmlp\..*','tproj\.1','txtfusion\..*']
-```
-
-In legacy native arguments, `include_patterns` adds matching layers back and does not remove default targets. For LyCORIS, use the target selector and guided controls.
-
-[Krea 2 upstream guide](https://github.com/kohya-ss/musubi-tuner/blob/f8a1b03794a49239a3539015075f5123d6c07d66/docs/krea2.md#lora-target-layers--loraの対象レイヤー)
+These 11 modules inherit the backbone learning rate by default. To assign a separate rate such as `5e-5`, add `network_reg_lrs=.*text_embedder.*=5e-5` in **Custom network arguments** (inactive with `EmoSens`, which enforces one global rate across all parameters). On Anima, see **Train LLM adapter blocks** (`train_llm_adapter`) and the [AdaLN modulation guide](adaln.en-US.md) for adapting conditioning layers without unfreezing Qwen3.

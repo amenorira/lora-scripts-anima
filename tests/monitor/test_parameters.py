@@ -1,6 +1,8 @@
 import unittest
+from pathlib import PurePosixPath
 
 from backend.monitor.training import extract_train_params
+from backend.server.routes.docs import _render_markdown
 
 
 class TrainingParameterTests(unittest.TestCase):
@@ -45,6 +47,21 @@ class TrainingParameterTests(unittest.TestCase):
         self.assertNotIn("string_value", params["optimizer_args.foreach"])
         self.assertNotIn("string_value", params["optimizer_args.eps"])
         self.assertNotIn("string_value", params["network_args.preset"])
+
+    def test_docs_markdown_slugify_preserves_explicit_anchors_and_unicode_headings(self):
+        html, toc = _render_markdown(
+            '<a name="explicit-id"></a>\n## 显式章节\n\n'
+            '<!-- doc-anchor: legacy-id -->\n### 旧版章节\n\n'
+            '### 怎么选\n\n### 1. 第一步\n\n### 123\n',
+            PurePosixPath("parameters/network-parameters.zh-CN.md"),
+        )
+        self.assertIn('<h2 id="explicit-id">显式章节</h2>', html)
+        self.assertIn('href="#explicit-id"', toc)
+        self.assertNotIn('name="explicit-id"', html)
+        self.assertIn('<h3 id="legacy-id">旧版章节</h3>', html)
+        self.assertIn('id="怎么选"', html)
+        self.assertIn('id="1-第一步"', html)
+        self.assertIn('id="section-123"', html)
 
 
 if __name__ == "__main__":

@@ -2,11 +2,9 @@
 
 # lora-scripts-anima
 
-_A local LoRA training tool for Anima, SDXL, MOSS-Image, and Krea 2._
+_A local LoRA training suite for Anima, SDXL, MOSS-Image, and Krea 2_
 
-Configure training, tag images, edit captions in bulk, and monitor training progress in real time.
-
-Anima, SDXL, and MOSS-Image use [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) as their training engine, while Krea 2 uses [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner). [LyCORIS](https://github.com/KohakuBlueleaf/LyCORIS) adds support for algorithms such as LoCon, LoHa, and LoKr for Anima, SDXL, and Krea 2.
+Download base models, auto-tag images, generate AI captions and regularization images, edit tags in bulk, preview training schedules, and monitor runs in real time.
 
 </div>
 
@@ -15,7 +13,7 @@ Anima, SDXL, and MOSS-Image use [kohya-ss/sd-scripts](https://github.com/kohya-s
     <img alt="GitHub Repo stars" src="https://img.shields.io/github/stars/amenorira/lora-scripts-anima">
   </a>
   <a href="https://raw.githubusercontent.com/amenorira/lora-scripts-anima/main/LICENSE" style="margin: 2px;">
-    <img src="https://img.shields.io/github/license/amenorira/lora-scripts-anima" alt="license">
+    <img src="https://img.shields.io/github/license/amenorira/lora-scripts-anima" alt="License">
   </a>
 </p>
 
@@ -24,276 +22,244 @@ Anima, SDXL, and MOSS-Image use [kohya-ss/sd-scripts](https://github.com/kohya-s
   <a href="https://github.com/amenorira/lora-scripts-anima/blob/main/README-ja.md">日本語</a>
 </p>
 
-### Supported Model Types
+## Supported Models and VRAM Reference
 
-| Base Model | Training Engine | Native Algorithms | LyCORIS |
-|------------|-----------------|-------------------|---------|
-| SDXL | sd-scripts | LoRA / LoHa / LoKr | LoCon / LoHa / LoKr |
-| Anima | sd-scripts | LoRA / LoHa / LoKr | LoCon / LoHa / LoKr |
-| MOSS-Image | sd-scripts | LoRA / LoHa / LoKr | — |
-| Krea 2 RAW DiT | musubi-tuner | LoRA | LoCon / LoHa / LoKr |
+| Base Model | Training Engine | Native Algorithms | LyCORIS Algorithms | 1024px VRAM Reference (Batch 1) |
+|------------|-----------------|-------------------|--------------------|---------------------------------|
+| SDXL | [sd-scripts](https://github.com/kohya-ss/sd-scripts) | LoRA / LoHa / LoKr | [LoCon / LoHa / LoKr](https://github.com/KohakuBlueleaf/LyCORIS) | ≥ 8 GB |
+| Anima | [sd-scripts](https://github.com/kohya-ss/sd-scripts) | LoRA / LoHa / LoKr | LoCon / LoHa / LoKr | From ≈ 6.5 GB (bf16 + gradient checkpointing) |
+| MOSS-Image | [sd-scripts](https://github.com/kohya-ss/sd-scripts) | LoRA / LoHa / LoKr | — | ≈ 9–10 GB (ConvRot INT8, down to ≈ 5.2 GB with block swap) / ≈ 13.5 GB (bf16) |
+| Krea 2 RAW DiT | [musubi-tuner](https://github.com/kohya-ss/musubi-tuner) | LoRA | LoCon / LoHa / LoKr | Supports scaled FP8 / ConvRot INT8 and block swap |
 
-- **MOSS-Image** can train the DiT's text projection and refiner layers. The Qwen text encoder stays frozen.
-- **Krea 2** requires image latent and Qwen3-VL text-encoder caches before training.
+- **Base model downloads**: Open **Environment → Models** in the sidebar to check required files and download Anima, Krea 2, and MOSS-Image base models, VAEs, text encoders, and preview acceleration LoRAs directly into `models/` with resume support.
+- **MOSS-Image**: Optionally trains the DiT's text input projection and refiner layers while keeping the Qwen text encoder frozen.
+- **Krea 2**: Generates image latent and Qwen3-VL text-encoder caches directly from the training page before a run starts (saved under `.krea2-cache` inside the dataset folder).
+- Detailed VRAM and step-speed benchmarks across GPUs and block-swap settings are available in the [Memory and Speed Guide](docs/parameters/memory-optimization.en-US.md).
 
-## Feature Overview
-
-- **Training configuration** — Edit training settings, preview TOML, import YAML / TOML, export YAML, and review training history.
-- **Pre-training previews** — Timestep distribution, learning-rate curve, and matrix structure modals computed locally; [view previews](#pre-training-previews).
-- **LyCORIS adapter panel** — LoCon / LoHa / LoKr with algorithm-aware parameters, a selectable kernel backend (auto / Triton / TileLang / compile / Torch), LoRA+ support, and Anima training-scope refinement.
-- **Many optimizers** — AdamW, Lion, Prodigy, CAME, StableAdamW, Adafactor, ScheduleFree, Adan, AdEMAMix, Muon, plus the bundled LoRA-RITE and the experimental LoRA-Muon, each with its own defaults and constraint hints.
-- **Real-time monitor and run controls** — GPU utilization, VRAM, and temperature; CPU and RAM usage; Loss trend diagnostics, live logs, and TensorBoard integration, plus live pause/resume, on-demand saving, manual preview sampling, and checkpoint resuming.
-- **Dataset diagnostics** — Built on `sd-scripts` per-sample loss logging, compares residuals and trends across similar noise levels to spot hard-to-learn, mislabeled, or badly cropped images, with group comparisons, single-image inspection, and direct links to the tag editor.
-- **Native tag editor** — Built-in image tag editor with batch find-and-replace, deduplication, sorting, cleanup, and more.
-- **Tagger workspace** — WD EVA02-Large, WD ViT-Large, CL Tagger, Camie Tagger, and [PixAI Tagger v1.0](https://huggingface.co/pixai-labs/pixai-tagger-v1.0) with single-image inspection, category thresholds, and batch caption output; PixAI runs locally with PyTorch, supports style tags, and downloads about 1.95 GB on first use; AI tagging connects to any vision API speaking OpenAI-compatible (Chat Completions / Responses) or Anthropic Messages protocols.
-- **EmoSens adaptive optimizer** — Built-in EmoSens v3.9 adjusts the learning rate based on loss changes and suggests when to stop.
-- **Internationalization (i18n)** — Chinese, English, and Japanese UI and built-in guides, with browser-language detection and a persistent language preference.
-- **Three themes** — Light, dark, and ComfyUI themes, with auto-follow system preference or manual toggle.
-- **Backend connectivity indicator** — Real-time frontend-backend connection status with disconnect duration.
-
-## Training Interface
-
-### Training form
-
-Adjust settings by group while viewing the step calculation and TOML preview.
-
-![Training form and step calculation](docs/images/training-form.en-US.jpg)
-
-### Preview prompts
-
-Set quality, positive, and negative prompts for sampling, or select, edit, and reorder prompts from dataset tags.
-
-![Preview sampling and prompt settings](docs/images/preview-settings.en-US.jpg)
-
-![Editing preview prompts from dataset tags](docs/images/preview-prompts.en-US.jpg)
-
-### Training samples
-
-Browse samples by batch, inspect their generation details, switch prompts, and pin images to compare training stages. Samples shown are simulated.
-
-![Training samples and preview sidebar](docs/images/sample-browser.en-US.jpg)
-
-![Comparing samples from different training stages](docs/images/sample-comparison.en-US.jpg)
-
-### Training monitor and run controls
-
-Track progress, speed, and Loss trends, pause or save weights and training state at any time, trigger manual preview sampling, or resume from a saved checkpoint.
-
-![Training monitor overview and run controls](docs/images/monitor-overview.en-US.jpg)
-
-### Dataset diagnostics
-
-Using per-sample loss records from `sd-scripts`, filter images with persistently high residuals, compare subsets and buckets, and open individual images to check bucket crops and captions. Data shown is simulated.
-
-![Dataset diagnostics overview](docs/images/dataset-diagnostics.en-US.jpg)
-
-![Dataset diagnostics single-image inspection](docs/images/dataset-diagnostics-detail.en-US.jpg)
-
-<a name="pre-training-previews"></a>
-
-## Pre-training Previews
-
-### Timestep distribution
-
-Open **View timestep distribution** under the sampling field to inspect sampling density, loss weighting, and high / mid / low noise shares. Switch between base and overall training distributions, compare median timesteps, and hover to read curve values. See the [timestep guide](docs/parameters/timesteps.en-US.md).
-
-![Timestep distribution preview: probability density, loss weighting, and noise-zone shares](docs/images/timestep-preview.en-US.png)
-
-### Learning-rate curve
-
-Open **View learning-rate curve** under the schedule field to inspect warmup, decay, restarts, and rates at individual steps. The sidebar shows the effective rate and warmup steps for the selected DiT or text-encoder component. Optimizers that manage their own schedule display the relevant explanation. See the [optimizer guide](docs/parameters/optimizers.en-US.md).
-
-![Learning-rate curve preview: warmup and cosine decay](docs/images/lr-preview.en-US.png)
-
-### Matrix structure
-
-For Anima, MOSS-Image, or Krea 2 training, open **Structure preview** under **Training network module**. Switch between attention, MLP, and other modules to inspect matrix shapes, effective rank and alpha, scaling, matching layer counts, and parameter counts.
-
-The same panel shows the **estimated weight file size**, so you can check how much disk space the saved weights will use before training. [Matrix structure and file size guide](docs/parameters/matrix-preview.en-US.md)
-
-![Matrix structure preview: LoKr Kronecker decomposition and parameter count](docs/images/shape-preview.en-US.png)
-
-## Usage
-
-### Quick Start
-
-Run the command for your platform from the extracted or cloned project folder.
-
-| Platform | Install + Launch |
-|----------|-----------------|
-| Windows | `.\start.bat` |
-| Linux | `bash start.sh` |
-
-First launch automatically creates a virtual environment and installs all dependencies. The GUI opens at [http://127.0.0.1:12333](http://127.0.0.1:12333).
+## Quick Start
 
 ### Prerequisites
 
-- **Windows** can install 64-bit Python 3.12 for the current user on first launch, alongside existing Python installations. The ZIP setup can also install Git.
-- **Linux** requires Git and 64-bit Python 3.12. If the system reports that `venv` is missing, install the matching package, such as `python3.12-venv`.
-- **Training** requires an NVIDIA GPU and driver R580 or newer. The startup script installs PyTorch 2.12.1 with CUDA 13.0 for RTX 30/40/50 series GPUs. The GUI can also run on machines without an NVIDIA GPU.
+- **OS and Python**: 64-bit Windows or Linux. On first launch, Windows can install 64-bit Python 3.12 for the current user alongside existing Python versions without modifying `PATH`, and ZIP downloads can also install Git automatically. On Linux, install `git`, `python3.12`, and `python3.12-venv` beforehand.
+- **GPU and driver**: Training requires an NVIDIA GPU with driver **R580 or newer**. The launcher installs **PyTorch 2.12.1 + CUDA 13.0** for RTX 30 / 40 / 50 series GPUs. Machines without an NVIDIA GPU can still launch the GUI to prepare datasets and configurations.
 
-If an incompatible Python version created the project's `venv`, rename that folder and rerun the startup script to rebuild the environment.
+### Install and launch
 
-Krea 2 and sd-scripts share the project's main `venv`. Once training works in the main environment, you can remove any legacy `venv/cores/musubi` folder manually. [Project dependencies](requirements.txt)
+| Platform | Setup Method | Launch Command |
+|----------|--------------|----------------|
+| Windows (beginner-friendly) | Click **Code → Download ZIP** on GitHub and extract completely | Double-click `start.bat` (or run `.\start.bat` in a terminal) |
+| Windows / Linux | `git clone --depth 1 --no-tags https://github.com/amenorira/lora-scripts-anima.git` | Windows: `.\start.bat` · Linux: `bash start.sh` |
 
-### Windows: Download ZIP (beginner-friendly)
-
-1. On GitHub, choose **Code → Download ZIP**, fully extract it, and double-click `start.bat`.
-2. If `.git` is missing, the bootstrap asks to install Git for Windows and repair the folder as an updateable repository; choose the recommended option.
-3. Repair fetches only `main`, without other branches or tags. Source files that would be replaced are first saved to `bootstrap-backups/<timestamp>.zip`. The process excludes `venv`, models, outputs, caches, logs, and the entire user `config` directory, so they are never overwritten or cleaned.
-4. After the source files are synchronized, the bootstrap restarts once, creates `venv`, and installs the training dependencies.
-
-Git installation failures and repair failures before source synchronization only produce a warning, allowing the original ZIP to start and setup to be retried later. Failures after synchronization begins stop startup and retain backup details; resolve the error and run `start.bat` again to retry. Python or core dependency failures also stop startup with a bilingual error.
-
-### Clone with Git
-
-```sh
-git clone --depth 1 --no-tags https://github.com/amenorira/lora-scripts-anima.git
-cd lora-scripts-anima
-```
-
-This makes a shallow clone of the default branch, `main`. Follow Quick Start above to launch the trainer.
+On first launch, the launcher prompts to create the `venv` virtual environment and install dependencies (pass `--quiet` / `-q` for unattended installation). Once the terminal prints `READY`, open **[http://127.0.0.1:12333](http://127.0.0.1:12333)** in your browser (if port 12333 is in use, an available port in `30000–30020` is selected automatically and printed in the terminal).
 
 <details>
-<summary>Switch to dev or fetch full history</summary>
+<summary>Hugging Face endpoint and PyPI mirror settings</summary>
 
-After a shallow clone, run these commands the first time you switch to `dev`.
-
-```sh
-git remote set-branches --add origin dev
-git fetch origin
-git switch --track origin/dev
-```
-
-Afterward, use `git switch main` or `git switch dev`. Run `git fetch --unshallow` to download the full history of tracked branches, and `git fetch --tags` to download tags.
+- **Hugging Face endpoint (important outside mainland China)**: When `HF_ENDPOINT` is unset, the launcher defaults to `https://hf-mirror.com`. To download models, taggers, and dictionaries directly from Hugging Face, set `HF_ENDPOINT` before launching:
+  - PowerShell: `$env:HF_ENDPOINT="https://huggingface.co"; .\start.bat`
+  - CMD: `set "HF_ENDPOINT=https://huggingface.co" && start.bat`
+  - Linux: `HF_ENDPOINT=https://huggingface.co bash start.sh`
+- **Custom PyPI index (optional)**:
+  - PowerShell: `$env:PIP_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"; .\start.bat`
+  - CMD: `set "PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple" && start.bat`
+  - Linux: `PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple bash start.sh`
 
 </details>
 
-### Realtime and Slow Remote Connections
+<details>
+<summary>ZIP repository setup, switching to dev, and rebuilding venv</summary>
 
-For SSH access, forward the GUI port. Open TensorBoard by adding `/tensorboard/` to the GUI address, for example `http://127.0.0.1:12333/tensorboard/`. Use your local forwarded port if it differs. If TensorBoard fails to start, check `logs/tensorboard.log`.
+- **Automatic Git setup for Windows ZIP downloads**: When `.git` is missing, `start.bat` offers to install Git for Windows and initialize the folder as an updateable repository tracking `main` only. Any differing source files are backed up to `bootstrap-backups/<timestamp>.zip` first, while `venv`, `models`, `output`, `config`, `cache`, and `logs` remain untouched. After syncing source files, the launcher restarts once and sets up `venv`. Failures before synchronization starts only show a warning and continue launching; interruptions during synchronization stop startup and retain the backup record for retry.
+- **Switching to the `dev` branch**: After a shallow clone, run these commands the first time you switch to `dev`:
+  ```sh
+  git remote set-branches --add origin dev
+  git fetch origin
+  git switch --track origin/dev
+  ```
+  Use `git switch main` or `git switch dev` afterward. Run `git fetch --unshallow` for full commit history or `git fetch --tags` for tags.
+- **Rebuilding `venv`**: If `venv` was created with an incompatible Python version, rename or delete the project's `venv` folder and rerun the launcher. Krea 2 and `sd-scripts` share the main `venv` (see [requirements.txt](requirements.txt)); any legacy `venv/cores/musubi` folder can be removed manually once training works.
 
-If remote previews slow down live updates, enable **Slow connection compatibility** in **UI Settings** to load thumbnails one at a time. Before you set a preference, the mode turns on automatically when the browser reports a slow connection or data saver mode.
+</details>
 
-### Updating later
+## Core Workflow and Features
 
-Close the trainer before updating. On Windows, double-click **`update.bat`**, then run `start.bat` after the update succeeds. The updater fast-forwards the current branch and stops if it finds source edits, staged changes, or divergent history. To update manually, run `git pull --ff-only` in the project folder.
+### 1. Runtime, accelerators, and model downloads (Sidebar: **Environment**)
+- **Runtime**: Check Python / PyTorch / CUDA versions and `sd-scripts`, `LyCORIS`, and `musubi-tuner` readiness; install or toggle `FlashAttention 2`, `xformers`, `Triton`, and **MOSS Text Acceleration (FLA + Conv1D)** in one click.
+- **Models**: Verify required base models, text encoders, VAEs, and preview LoRAs by group, and download missing files into `models/` with resume support.
+- **Downloads**: Download and update the offline **Danbooru Chinese dictionary** for tag search and hover definitions in the Tag Editor.
 
-When legacy sample prompts, Accelerate settings, and the cache version file stop being tracked, the updater backs them up and preserves their contents. Defaults live in `tools/defaults/`; startup creates only missing settings. If an older folder has no updater, run `& "new-ZIP-folder\update.bat" "--bootstrap-root=absolute-path-to-old-project"` in PowerShell to migrate without replacing its bootstrap or training environment.
+### 2. Dataset tagging, captioning, and regularization (Sidebar: **Tools**)
+- **Tagger**: Local auto-tagging with WD EVA02-Large, WD ViT-Large, CL Tagger, Camie Tagger, and [PixAI Tagger v1.0](https://huggingface.co/pixai-labs/pixai-tagger-v1.0) (local PyTorch inference with style tags; ~1.95 GB download on first use), featuring single-image inspection, category thresholds, and batch output.
+- **AI Annotation**: Dedicated workspace connecting to any vision API compatible with OpenAI (Chat Completions / Responses) or Anthropic Messages protocols, with multi-length caption presets and resume support for unfinished images.
+- **Tag Editor**: Chip and plain-text views, batch find-and-replace, deduplication, sorting, cleanup, edit-history restore, and offline dictionary search with hover cards.
+- **Regularization Images**: Batch-generate regularization images locally from prompts, with run resume, failed-item retry, and single-image regeneration.
+
+### 3. Training configuration, adapters, and optimizers (Sidebar: **LoRA Training**)
+- **Configuration and import/export**: Edit grouped parameters while viewing live step calculations and generated TOML; export YAML presets, import YAML or legacy flat TOML files (with notices for ignored fields), and inspect past runs under **Training Records**.
+- **LyCORIS adapter modal**: Configure LoCon / LoHa / LoKr with algorithm-specific fields, selectable kernel backends (`auto` / `Triton` / `TileLang` / `compile` / `Torch`), LoRA+, DoRA, and module-level target filtering (such as attention, MLP, and AdaLN).
+- **20+ built-in optimizers**: Includes AdamW (standard / 8-bit / Paged), StableAdamW, CAME, Adan, Lion, AdEMAMix, Prodigy, ProdigyPlusScheduleFree, AdamWScheduleFree, AdaFactor, Muon, SOAP, plus bundled LoRA-RITE, Automagic3 / Automagic4, experimental LoRA-Muon, and **EmoSens v3.9.3** (in `vendor/emo_optimizer/`, adapting step size from loss changes and logging stop hints; defaults to LR `1.0` on SDXL and `0.1` on Anima / MOSS-Image with `constant` scheduler and `max_grad_norm=0`), each with curated starting values and constraint hints.
+- **[Four pre-training previews](#pre-training-previews)**: Inspect dataset bucket crops, timestep distributions, learning-rate curves, and matrix shapes with estimated file size before starting a run.
+
+### 4. Real-time monitoring, run controls, and diagnostics (Sidebar: **Monitor**)
+- **Resource and loss monitoring**: Live GPU utilization, VRAM, temperature, and CPU / RAM metrics alongside loss trend analysis, live logs, and bundled TensorBoard.
+- **Live run controls**: Pause/resume `sd-scripts` runs (SDXL / Anima / MOSS-Image), save weights or training state on demand, and trigger manual preview sampling at any step; checkpoint resuming is supported across all four model types.
+- **Dataset diagnostics**: Uses per-sample loss logs from `sd-scripts` (SDXL / Anima / MOSS-Image) to compare residuals and per-epoch slopes within matching noise intervals, spotting hard-to-learn, mislabeled, or poorly cropped images with direct links to the Tag Editor.
+- **Internationalization and desktop themes**: Chinese, English, and Japanese UI and built-in guides (auto-detects browser language and saves your choice), light / dark / ComfyUI themes, and a real-time backend connection indicator.
+
+## Interface Tour
+
+### Training form and preview prompts
+
+Adjust parameters by group alongside live step estimates and TOML output; configure quality, positive, and negative sampling prompts or assemble them directly from dataset tags.
+
+![Training form and step calculation](docs/images/training-form.en-US.jpg)
+
+| Preview sampling and prompt settings | Assembling preview prompts from dataset tags |
+| --- | --- |
+| ![Preview sampling and prompt settings](docs/images/preview-settings.en-US.jpg) | ![Editing preview prompts from dataset tags](docs/images/preview-prompts.en-US.jpg) |
+
+### Monitor dashboard, sample comparison, and dataset diagnostics
+
+Track progress, step speed, and loss trends in **Monitor → Dashboard** while pausing, saving, or sampling on demand; pin preview images across epochs to compare stages, or inspect persistently high-residual images in Dataset diagnostics (demo samples and diagnostic data shown).
+
+![Training monitor overview and run controls](docs/images/monitor-overview.en-US.jpg)
+
+| Sample browser and generation metadata | Side-by-side comparison across training stages |
+| --- | --- |
+| ![Training samples and preview sidebar](docs/images/sample-browser.en-US.jpg) | ![Comparing samples from different training stages](docs/images/sample-comparison.en-US.jpg) |
+
+| Dataset diagnostics overview (zone scatter and group comparison) | Single-image bucket crop and caption inspection |
+| --- | --- |
+| ![Dataset diagnostics overview](docs/images/dataset-diagnostics.en-US.jpg) | ![Dataset diagnostics single-image inspection](docs/images/dataset-diagnostics-detail.en-US.jpg) |
+
+<a id="pre-training-previews"></a>
+
+## Pre-training Previews
+
+- **Bucket and crop preview**: Click **Preview image crops** under the dataset section to check original dimensions, bucket assignments, crop regions, and upscaling before training.
+- **Timestep distribution preview**: Click **View timestep distribution** under **Timestep sampling** (`Timestep sampling method` on Krea 2) to inspect probability density, loss weighting, high / mid / low noise shares, and median timestep shifts between base and overall distributions. See the [Timestep Guide](docs/parameters/timesteps.en-US.md).
+- **Learning-rate curve preview**: Click **View learning-rate curve** under **Learning rate scheduler** to read warmup, decay, and restart values at any step and switch between DiT and text-encoder components; optimizers that manage their own schedule (such as ScheduleFree, Automagic, and EmoSens) note that external scheduling is bypassed. See the [Optimizer and Scheduler Guide](docs/parameters/optimizers.en-US.md).
+- **Matrix structure and file-size preview**: For Anima, MOSS-Image, or Krea 2, click **Structure preview** under **Training network module** to inspect per-module matrix shapes, effective rank / alpha, scaling, matching layer counts, parameter counts, and the **estimated weight file size**. See the [Matrix Structure and File Size Guide](docs/parameters/matrix-preview.en-US.md).
+
+| Timestep distribution preview | Learning-rate curve preview |
+| --- | --- |
+| ![Timestep distribution preview: probability density, loss weighting, and noise-zone shares](docs/images/timestep-preview.en-US.png) | ![Learning-rate curve preview: warmup and cosine decay](docs/images/lr-preview.en-US.png) |
+
+![Matrix structure preview: LoKr Kronecker decomposition and parameter count](docs/images/shape-preview.en-US.png)
+
+## Attention and Training Acceleration
+
+- **Anima / MOSS-Image**: `attn_mode` defaults to `torch` (PyTorch SDPA, which selects an available kernel for the installed PyTorch version and inputs). After installing standalone FlashAttention 2 or xformers from **Environment → Runtime**, switch `attn_mode` to `flash` or `xformers` (the installer matches Python, PyTorch, CUDA, and platform to install only the extension without replacing PyTorch). MOSS-Image also supports one-click installation and toggling of **MOSS Text Acceleration (FLA + Conv1D)** on the same page.
+- **Krea 2**: Attention backend defaults to `SDPA` and can also be switched to `FlashAttention` or `xFormers` (`xFormers` requires split attention enabled).
+- **SDXL**: Supports `sdpa` and `xformers` in the performance section.
 
 ## Training Parameter Guides
 
-Detailed training parameter documentation lives in `docs/parameters/`:
+Built-in parameter documentation lives in `docs/parameters/` (also accessible from **Parameter Guide** in the sidebar or via help buttons next to form fields):
 
-- [LoRA+ Guide](docs/parameters/lora-plus.en-US.md): how LoRA+ works, ratio selection, optimizer compatibility, and evaluation
-- [Optimizer Selection and Parameter Guide](docs/parameters/optimizers.en-US.md): optimizer comparison, learning rate and weight decay starting points, dataset-based selection
-- [Timestep Guide](docs/parameters/timesteps.en-US.md): flow-matching timestep sampling, loss weighting, and the distribution preview
-- [AdaLN Modulation Guide](docs/parameters/adaln.en-US.md): what the modulation layers do, upstream defaults, and when enabling them helps
-- [Matrix Structure and File Size](docs/parameters/matrix-preview.en-US.md): actual module shapes, parameter counts, training scope, and saved-weight estimates
-- [Dataset Diagnostics Guide](docs/parameters/dataset-diagnostics.en-US.md): per-sample residual and slope status rules, common causes of high residual, and inspection workflow
+- [Network Parameters Guide](docs/parameters/network-parameters.en-US.md): LoRA / LoHa / LoKr comparison, rank and alpha, DoRA, MOSS text layers, and Krea 2 target modules
+- [LoRA+ Guide](docs/parameters/lora-plus.en-US.md): Asymmetric matrix learning rates, recommended ratios, optimizer compatibility, and evaluation
+- [AdaLN Modulation Guide](docs/parameters/adaln.en-US.md): Role of modulation layers, default scope differences between native networks and LyCORIS, and when to enable them
+- [Matrix Structure and File Size Guide](docs/parameters/matrix-preview.en-US.md): Per-module shapes, parameter-count alignment across algorithms, support boundaries, and disk-size estimates
+- [Optimizer and Scheduler Guide](docs/parameters/optimizers.en-US.md): Quick selection across six optimizer groups, starting learning rates per model, scheduler curves, and optimizer-specific options
+- [Timestep Guide](docs/parameters/timesteps.en-US.md): Flow-matching timestep sampling, high / mid / low noise learning roles, loss weighting, and subset offsets
+- [Memory and Speed Guide](docs/parameters/memory-optimization.en-US.md): Recommended settings by VRAM tier, partial gradient checkpointing, ConvRot INT8, and block-swap benchmarks
+- [Dataset Diagnostics Guide](docs/parameters/dataset-diagnostics.en-US.md): Six-state residual and slope rules, zone-shading filters, and single-image inspection workflow
 
-## Program Arguments
+## Updating and Remote Access
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `--host` | str | "127.0.0.1" | Server hostname |
-| `--port` | int | 12333 | Server port |
-| `--listen` | bool | false | Enable listening mode (allow external access) |
-| `--skip-prepare-environment` | bool | false | Do not check or repair dependencies at startup |
-| `--skip-prepare-onnxruntime` | bool | false | Skip the onnxruntime-gpu install check only |
-| `--disable-tensorboard` | bool | false | Do not launch the bundled TensorBoard with the GUI |
-| `--tensorboard-port` | int | 0 | Internal TensorBoard port; 0 selects an available port automatically |
-| `--localization` | str | | Interface language and localization setting |
-| `--dev` | bool | false | Developer mode |
-| `--quiet` / `-q` | bool | false | Automatically install Python/venv dependencies; optional Git repair remains disabled |
-| `--setup-git` | bool | false | Windows: non-interactively perform the recommended Git install/ZIP repair |
-| `--skip-git-setup` | bool | false | Windows: suppress Git installation or repository-repair prompts for this launch |
+### Updating
 
-## Attention Acceleration
+Close the trainer before updating. On Windows, double-click **`update.bat`**, then run `start.bat` once the update completes; on Linux (or manually), run `git pull --ff-only` in the project root. Updates fast-forward the current branch without touching `config/`, `models/`, `train/`, or `output/`, and stop safely if tracked source files have local or staged edits.
 
-Anima / MOSS defaults to `torch` and Krea2 to `sdpa`. SDPA selects an available kernel based on the PyTorch build and input. On Windows, built-in FlashAttention support depends on the installed PyTorch build.
+<details>
+<summary>Legacy configuration preservation and cross-folder migration</summary>
 
-For external FlashAttention 2, install it from Environment and select `attn_mode=flash` for Anima / MOSS after installation completes. The installer matches Python, PyTorch, CUDA and platform, and installs only the extension without replacing PyTorch. Krea2's legacy `flash_attn` setting still maps to `sdpa`.
+Default templates live in `tools/defaults/`; startup creates only missing configuration files without overwriting existing ones. Legacy sample prompts and Accelerate configs that stopped being tracked by Git are backed up and preserved automatically during updates. To migrate an older folder that has no `update.bat`, run `& "new-ZIP-folder\update.bat" "--bootstrap-root=absolute-path-to-old-project"` in PowerShell without replacing its virtual environment.
 
-## EmoSens Adaptive Optimizer
+</details>
 
-The bundled EmoSens v3.9 lives in `vendor/emo_optimizer/`.
+### Remote access and slow connections
 
-### Recommended Settings
+For SSH access, forward only the GUI port. Open the bundled TensorBoard by appending `/tensorboard/` to the GUI URL, such as `http://127.0.0.1:12333/tensorboard/` (substitute your local forwarded port if different; check `logs/tensorboard.log` if TensorBoard fails to start).
 
-| Training Type | Learning Rate | Scheduler | max_grad_norm |
-|---------------|:------------:|:---------:|:-------------:|
-| SDXL LoRA | 1.0 | constant | 0 |
-| Anima LoRA (DiT) | 0.1 | constant | 0 |
+If loading preview images over a remote link delays real-time status updates, enable **Slow connection compatibility** under **UI Settings** to load thumbnails one at a time. Before you choose a preference, this mode defaults on automatically when the browser reports a slow connection or data saver mode.
 
-Select `EmoSens` from the optimizer dropdown in the training form.
+## Launch Arguments and Project Layout
 
-## Training Configuration Import and Export
+Pass arguments to the launch script as needed (for example, `.\start.bat --listen` or `bash start.sh --port 12345`):
 
-- **Export**: Download the current YAML configuration from the training preview panel; the TOML preview shows the training parameters
-- **Import**: Load YAML or a legacy flat TOML file and apply supported fields to the matching training form; unsupported fields are reported as ignored
+<details>
+<summary>View all launch arguments</summary>
 
-## Environment Management
+| Argument | Scope | Type | Default | Description |
+|----------|-------|------|---------|-------------|
+| `--host` | Backend server | str | `"127.0.0.1"` | Server listen hostname |
+| `--port` | Backend server | int | `12333` | Server listen port (falls back to `30000–30020` if occupied) |
+| `--listen` | Backend server | bool | `false` | Listen on `0.0.0.0` for LAN or external access |
+| `--skip-prepare-environment` | Backend server | bool | `false` | Skip dependency check and repair at startup |
+| `--skip-prepare-onnxruntime` | Backend server | bool | `false` | Skip the `onnxruntime-gpu` check only |
+| `--disable-tensorboard` | Backend server | bool | `false` | Do not launch the bundled TensorBoard |
+| `--tensorboard-port` | Backend server | int | `0` | Internal TensorBoard port; `0` picks a free port automatically (accessed via `/tensorboard/`) |
+| `--dev` | Backend server | bool | `false` | Developer mode (enables CORS and auto-reload) |
+| `--quiet` / `-q` | Launcher script | bool | `false` | Create `venv` and install dependencies unattended; skips optional Git setup prompts |
+| `--setup-git` | Windows launcher | bool | `false` | Perform the recommended Git install and ZIP repository setup non-interactively |
+| `--skip-git-setup` | Windows launcher | bool | `false` | Suppress Git installation and repository setup prompts for this launch |
 
-The GUI **Environment** tab provides:
-- Python / PyTorch / CUDA version info
-- core status for sd-scripts, the LyCORIS adapter backend, and musubi-tuner
-- musubi-tuner Krea 2 shared-runtime status (shared CUDA-enabled PyTorch and dependency-version alignment)
-- Flash Attention installation status with one-click install
-- Candidate wheel list preview
+</details>
 
-## Project Structure
+### Key user directories
 
-```
+- `models/` — Default directory for base models, VAEs, text encoders, and preview acceleration LoRAs
+- `train/` — Default directory for training datasets (images and matching caption files)
+- `output/` — Saved LoRA weights, resume states, preview samples, and run records
+- `config/` — Autosaved form drafts, presets, and local settings
+- `logs/` — Application logs (`anima.log`) and `tensorboard.log`
+
+<details>
+<summary>View full project and source directory tree</summary>
+
+```text
 lora-scripts-anima/
-├── vendor/sd-scripts/          ← Anima / SDXL / MOSS-Image training engine (pinned upstream snapshot)
-├── vendor/musubi-tuner/        ← Krea 2 core (pinned upstream snapshot)
-├── vendor/lycoris/             ← LyCORIS adapter backend (pinned upstream snapshot)
-├── vendor/emo_optimizer/       ← EmoSens adaptive optimizer
-├── vendor/lora_muon/           ← LoRA-Muon experimental optimizer
+├── models/ · train/ · output/  ← Models, datasets, and training outputs (protected user data)
+├── config/ · logs/             ← Local settings, autosaves, and runtime logs
+├── vendor/
+│   ├── sd-scripts/             ← Anima / SDXL / MOSS-Image training engine (pinned upstream snapshot)
+│   ├── musubi-tuner/           ← Krea 2 training core (pinned upstream snapshot)
+│   ├── lycoris/                ← LyCORIS adapter backend (pinned upstream snapshot)
+│   ├── emo_optimizer/          ← EmoSens v3.9.3 adaptive optimizer
+│   ├── automagic_optimizer/    ← Automagic3 / Automagic4 adaptive optimizers
+│   └── lora_muon/              ← LoRA-Muon experimental optimizer
 ├── backend/                    ← FastAPI backend
 │   ├── server/                 ← App assembly, HTTP routes, static assets, and proxy
-│   ├── core/                   ← Realtime task coordination and install-job lifecycle
-│   ├── training/               ← Training modules grouped by responsibility
-│   │   ├── fields/             ← Field registry, defaults, and option metadata
-│   │   ├── config/             ← Configuration conversion, import/export, and validation
-│   │   ├── datasets/           ← Dataset parsing, repeat counts, and step estimation
-│   │   ├── execution/          ← Run preparation, launch dispatch, and process management
-│   │   └── cache/              ← Cache inspection, generation, and reuse
-│   ├── monitor/                ← Training monitor (GPU/system/logs/preview/history)
-│   ├── tageditor/              ← Native tag editor
-│   ├── tagger/                 ← Tagging module (WD / CL / Camie / PixAI / AI endpoints)
+│   ├── core/                   ← Real-time task coordination and install-job lifecycle
+│   ├── training/               ← Field registry, config validation, step estimation, caches, and execution
+│   ├── monitor/                ← Resource monitoring, sample comparison, history, and dataset diagnostics
+│   ├── tageditor/              ← Tag Editor backend
+│   ├── tagger/                 ← Local taggers (WD / CL / Camie / PixAI) and AI captioning endpoints
 │   ├── regularization/         ← Regularization image generation, sampling, and recovery
-│   └── gui.py                  ← Internal GUI entry (called by launch scripts)
+│   └── gui.py                  ← Internal GUI server entry (invoked by launch scripts)
 ├── frontend/                   ← Alpine.js SPA frontend
-│   ├── js/                     ← Scripts grouped by feature
-│   │   ├── app/                ← Application assembly and route configuration
-│   │   ├── shared/             ← Shared controls, notifications, i18n, and realtime transport
-│   │   ├── training/           ← Training forms, configuration, and previews
-│   │   ├── monitor/            ← Monitoring, history, logs, and outputs
-│   │   ├── environment/        ← Environment status, component installation, and downloads
-│   │   ├── tagger/             ← Automatic tagging and AI captioning workspaces
-│   │   ├── docs/               ← Parameter documentation reader
-│   │   ├── regularization/     ← Regularization image generation workspace
-│   │   ├── tag-editor/         ← Caption editing, sessions, and persistence
-│   │   └── tag-dictionary/     ← Dictionary, Worker, and hover cards
-│   ├── templates/              ← Workspace HTML templates loaded on demand
-│   └── css/ · i18n/ · assets/   ← Styles, translations, and static assets
-├── config/                     ← Local configuration and autosaves
-├── docs/                       ← Parameter guides and preview screenshots
-├── tools/                      ← Bootstrap, installation and runtime tools; developer scripts in tools/dev/
-├── tests/                      ← Backend regressions and frontend interaction tests
-├── start.bat / start.sh        ← Launch scripts
-└── requirements.txt            ← Single authoritative dependency list (backend and training cores share it; torch is installed by the launcher)
+│   ├── js/                     ← Feature modules (training / monitor / environment / tagger / tag-editor / tag-dictionary / regularization / docs / shared)
+│   ├── templates/              ← On-demand workspace HTML templates
+│   └── css/ · i18n/ · assets/   ← Stylesheets, trilingual locale bundles, and static assets
+├── docs/                       ← Built-in parameter guides (docs/parameters/) and UI screenshots
+├── tools/                      ← Launcher bootstrap, accelerator installers, and runtime utilities (dev scripts in tools/dev/)
+├── tests/                      ← Backend regression and frontend interaction tests
+├── start.bat / start.sh        ← Windows / Linux launch scripts
+├── update.bat                  ← Windows fast-forward update script
+└── requirements.txt            ← Single authoritative dependency list shared by backend and both training engines (PyTorch is installed separately by the launcher)
 ```
+
+</details>
 
 ## Acknowledgements
 
 - [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — Anima / SDXL / MOSS-Image training engine
 - [kohya-ss/musubi-tuner](https://github.com/kohya-ss/musubi-tuner) — Krea 2 training core
-- [**LyCORIS**](https://github.com/KohakuBlueleaf/LyCORIS) — LoCon / LoHa / LoKr training algorithms and adapter support
+- [KohakuBlueleaf/LyCORIS](https://github.com/KohakuBlueleaf/LyCORIS) — LoCon / LoHa / LoKr training algorithms and adapter support
 - [Akegarasu/lora-scripts](https://github.com/Akegarasu/lora-scripts) — Early design reference
 
 ## License
 
-This project is released under the [MIT License](LICENSE). Third-party components under `vendor/` keep their original licenses (Apache-2.0 / MIT).
+This project is released under the [MIT License](LICENSE). Third-party components under `vendor/` retain their original licenses (Apache-2.0 / MIT).

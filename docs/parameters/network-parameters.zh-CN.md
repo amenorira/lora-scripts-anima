@@ -1,205 +1,180 @@
+<a name="guide-title"></a>
 # 网络参数
 
-网络参数决定适配器的矩阵结构、训练范围和权重文件大小。新配置的默认丢弃率为 `0`，Rank / Alpha 按训练类型设置：
+网络参数决定适配器的矩阵分解结构、训练覆盖范围和权重文件大小。新建配置的默认丢弃率为 `0`，Rank / Alpha 默认值按训练类型区分：
 
 | 训练类型 | 默认 Rank / Alpha |
 | --- | --- |
-| Anima、SDXL、Krea 2 | `32/32` |
-| MOSS-Image | `16/1` |
+| Anima、SDXL、Krea 2 | `32 / 32` |
+| MOSS-Image | `16 / 1` |
 
-MOSS-Image 可选择原生 `networks.lora_generic`、`networks.loha` 或 `networks.lokr`。三者支持 rank/module dropout、LoRA+、按正则表达式配置 Rank / 学习率，以及可选的 DiT 文本投影与细化层；Qwen 文本编码器保持冻结。LoKr 额外支持 `lokr_factor`。
+修改算法、Rank、分解因子或目标层后，可在[矩阵结构与文件大小](matrix-preview.zh-CN.md)弹窗中实时核对可训练参数量、缩放倍率与 `.safetensors` 预计体积。
 
-MOSS 的目标层均为线性层，界面仅提供线性层适用的参数，网络实现限定为上述三种原生模块。相同 rank 下，各算法的参数量和缩放可能不同，可用结构预览核对。
+<a name="algorithms"></a>
+## LoRA、LoHa 与 LoKr
 
-<!-- doc-anchor: moss-text-embedder -->
-## MOSS 文本投影与细化层
+| 算法 | 权重增量表示 | 特点与选择建议 |
+| --- | --- | --- |
+| 标准 LoRA / LoCon | 两个低秩矩阵相乘 `B × A` | 推理端兼容性最广（ComfyUI、WebUI、Diffusers），支持 [LoRA+](lora-plus.zh-CN.md) 及配对因子优化器（`LoRA-Muon`、`LoRA-RITE`），建议作为默认起点 |
+| LoHa | 两组低秩乘积再逐元素相乘（Hadamard 积） | 相同 Rank 下有效秩上限更高，但**可训练参数量约为标准 LoRA 的 2 倍**；对齐文件体积时通常将 Rank 减半，适合多概念或复杂画风测试 |
+| LoKr | 两个因子做 Kronecker 积 `W1 ⊗ W2`，因子内部可继续低秩分解 | 由 `lokr_factor` 与 Rank 共同控制形状，常用起点为 Rank `8–16`；兼顾小体积压缩与高秩表达，推理端需确认加载器支持 LyCORIS |
 
-`train_text_embedder` 默认关闭。开启后，按所选 LoRA / LoHa / LoKr 算法，为 DiT 的文本输入投影和两个细化块增加适配器。Qwen 文本编码器仍冻结，因此可继续使用文本缓存。
+各训练类型支持的网络模块如下：
 
-这部分默认使用主干学习率。需要单独指定时，在自定义网络参数中填写 `network_reg_lrs=.*text_embedder.*=5e-5`，将匹配层的学习率设为 `5e-5`。EmoSens 对所有参数使用统一学习率，此覆盖规则对它无效。
+- **Anima、SDXL**：可选 `sd-scripts` 原生模块（`networks.lora_anima` / `networks.lora`、`networks.loha`、`networks.lokr`）或 `lycoris.kohya`（LoCon、LoHa、LoKr）。
+- **MOSS-Image**：目标均为线性层，限定使用原生 `networks.lora_generic`、`networks.loha`、`networks.lokr`。三者均支持秩/模块丢弃、[LoRA+](lora-plus.zh-CN.md)、按正则表达式覆盖局部 Rank / 学习率（`network_reg_dims` / `network_reg_lrs`），以及可选的 [DiT 文本投影与细化层](#moss-text-embedder)；Qwen 文本编码器保持冻结。
+- **Krea 2**：可选原生 LoRA（`networks.lora_krea2`）或 LyCORIS（LoCon、LoHa、LoKr），覆盖最多 264 个 DiT 线性层，筛选规则见 [Krea 2 训练范围与筛选](#krea-targets)。
 
-<!-- doc-anchor: dimension -->
+对比不同算法时，先在[结构预览](matrix-preview.zh-CN.md)中对齐总可训练参数量，再用相同提示词与种子评估还原度和泛化表现（对照步骤见[时间步指南](timesteps.zh-CN.md#comparison-method)）。
+
+<a name="dimension"></a>
 ## Rank（网络维度）
 
-`network_dim` 是标准 LoRA 两个矩阵之间的维度，通常称为 rank。Anima、SDXL、Krea 2 默认 `32`，MOSS-Image 默认 `16`。
+`network_dim`（Rank）指定低秩分解的中间维度。Anima、SDXL、Krea 2 默认 `32`，MOSS-Image 默认 `16`。
 
-| 调整 | 可以得到什么 | 代价与限制 |
+| 典型场景与现象 | 标准 LoRA 参考范围 | 说明与排查 |
 | --- | --- | --- |
-| 提高维度 | 能表示更丰富的权重变化 | 参数、文件和优化器状态增加 |
-| 降低维度 | 参数更少、文件更小 | 权重增量可表示的最大秩降低 |
+| 单一角色、面部特征或简单物件 | `16–32`（LoKr 常用 `8–16`） | 足以学习五官、发型与单套服饰特征，兼顾泛化与较小文件体积 |
+| 多套服装、复杂画风或大中型数据集 | `32–64`（LoHa 常用 `16–32`） | 容纳更丰富的材质、光影和笔触变化 |
+| Rank 偏低（复杂目标设为 `4–8`） | 按需上调至 `16–32` | Loss 趋平后五官细节、服装纹样或笔触质感仍模糊、欠拟合 |
+| Rank 偏高（15–30 张小图集设为 `64–128+`） | 下调至 `16–32` | 文件与优化器状态显著增大，更容易把训练集背景、固定姿势和噪点一并背下 |
 
-比较不同算法时，使用结构预览中的实际参数量衡量配置规模。
+<a name="alpha"></a>
+## Alpha 与 rsLoRA
 
-<!-- doc-anchor: alpha -->
-## Alpha
-
-LoRA 保存的是两个小矩阵 A、B。训练和使用时，将它们相乘，再乘上 `Alpha / Rank`，得到加到原模型上的权重变化：
+标准 LoRA 在前向与保存应用时按 `Alpha / Rank` 缩放矩阵乘积，参数量与文件体积保持不变：
 
 ```text
 ΔW = (Alpha / Rank) × B × A
 ```
 
-LoRA 权重过小时，低精度保存可能将其舍入为 0，丢失部分学到的变化。Kohya 引入 Network Alpha 的一个用途是降低这种风险：用较小的 `Alpha / Rank` 缩放，让内部权重可以用较大的数值表示所需的权重变化。固定 Rank 时，Alpha 越小，要表示相同的 ΔW，矩阵乘积 B × A 就需要越大。如果担心小权重在保存时损失，可以在下一次训练前降低 Alpha，例如设为 Rank 的一半或 1。
+固定 Rank 与学习率时，调小 Alpha 会按比例缩小单步有效更新幅度与反传梯度，同时让内部权重以更大的数值表达相同的 `ΔW`（早期 Kohya 引入该参数也用于减轻 FP16 / BF16 保存时极小权重下溢舍入为 `0` 的损失）；调大 Alpha 则放大有效更新强度。
 
-例如 Rank 为 32 时，把 Alpha 从 32 降到 1，倍率就从 1 变为 `1/32`，表达相同 ΔW 所需的矩阵乘积增至 32 倍。实际学到的数值仍由训练过程决定。
+<a name="alpha-choice"></a>
+### 常用取值与快捷按钮
 
-### 怎么选
+初次训练保留默认值即可（Anima、SDXL、Krea 2 为 `32 / 32`，MOSS-Image 为 `16 / 1`）；套用现成配方时，须将 Rank、Alpha 与学习率成套沿用。以 Rank `32`、标准 LoRA 为例：
 
-初次训练可保留默认值：Anima、SDXL、Krea 2 为 Rank 32 / Alpha 32，MOSS-Image 为 Rank 16 / Alpha 1。已有训练配方时，Rank、Alpha 和学习率一起沿用。
-
-想尝试较小的 Alpha 时，可以点击 `½ dim` 设为 Rank 的一半，或点击 `1` 设为 1。默认已是 1 时无需为此继续调小。
-
-以 Rank 32、标准 LoRA 为例：
-
-| 快捷按钮 | Alpha | 计算时乘以 | 选择思路 |
+| 快捷按钮 | Alpha | `Alpha / Rank` 倍率 | 适用场景 |
 | --- | --- | --- | --- |
-| `= dim` | 32 | 1 | 不额外缩小矩阵乘积，适合作为起点 |
-| `½ dim` | 16 | 0.5 | 想尝试较小 Alpha 时，可先从减半开始 |
-| `1` | 1 | 1/32 | 使用较强的缩小比例，适合沿用 Alpha 1 的配方，或比较小 Alpha 的效果 |
+| `= dim` | `32` | `1.0` | 无额外缩放，适合大多数常规训练起点 |
+| `½ dim` | `16` | `0.5` | 温和压低前期更新冲劲、平滑收敛时优先尝试 |
+| `1` | `1` | `1/32`（`0.03125`） | 沿用 MOSS-Image 等小 Alpha 配方，或搭配较高学习率做细粒度微调 |
 
-比较 Alpha 1 和其他设置时，请一起考虑学习率、优化器和数据。
+快捷按钮仅在点击时计算一次数值，后续修改 Rank 时 Alpha 保持原值。部分原生实现会将 `Alpha = 0` 视为等于 Rank（倍率为 `1.0`）。
 
-Alpha 不改变参数量或文件大小。按钮只赋值一次，之后修改 Rank，Alpha 不会跟着变。
+<a name="alpha-lr"></a>
+### 与学习率联动
 
-### 和学习率的关系
+AdamW 等自适应优化器会根据梯度一阶、二阶统计量归一化步长，实际更新速度不会随 `Alpha / Rank` 呈线性变化——把 Alpha 从 `32` 改到 `1` 时，切勿直接将学习率乘以 32 倍。调整时先固定其余参数并保存多轮存档：若收敛明显迟缓再小幅上调学习率；若前期色彩过曝或迅速锁死姿势，则优先下调学习率。
 
-Alpha 会改变训练时的梯度，学习率则参与计算参数更新。AdamW 等优化器还会根据梯度统计调整更新幅度。调整 Alpha 后，按实际训练效果重新校准学习率。
+<a name="rslora"></a>
+### rsLoRA（秩稳定缩放）
 
-实际调整时，先固定 Rank 和其他设置，只改 Alpha，用相同提示词、种子比较几个模型存档。如果学得明显变慢，再尝试提高学习率；若不稳定或很快过拟合，则先降低学习率。不要仅凭缩放比例一次把学习率提高几十倍。
+开启 `rs_lora` 后，缩放分母由 `Rank` 改为 `√Rank`（`ΔW = (Alpha / √Rank) × B × A`），用于缓解高 Rank 下有效更新衰减。
 
-### 其他情况
-
-通常先在 `1～Rank` 之间选择。Alpha 等于 Rank 时，缩放为 1；大于 Rank 时会放大矩阵乘积，当前标准 LoRA 实现允许这样设置。部分原生实现会将 Alpha 0 当作 Rank，按标准公式计算时缩放为 1。
-
-开启 `rs_lora` 后，分母变为 √Rank。以 Rank 32 为例，同样是 Alpha 1，缩放从 `0.03125` 变为约 `0.177`；Alpha 等于 Rank 时，缩放也不再是 1。切换后应重新选择 Alpha 和学习率。rsLoRA 针对高 Rank 下的缩放衰减提出改进，论文中的实验主要使用语言模型。
-
-LoHa、LoKr 还受各自矩阵结构影响，具体缩放可看结构预览；LoKr 的完整因子见[完整矩阵说明](#full-matrix)。
+切换开关会大幅改变实际缩放倍率：以 Rank `32` 为例，保持 `Alpha = 32` 时倍率会从 `1.0` 跳升至 **`√32 ≈ 5.66`**；`Alpha = 1` 时倍率也会从 `0.03125` 升至 **`≈ 0.177`**。开启 `rs_lora` 后务必同步调低 Alpha（如设为 `1` 或 `4–8`）或下调学习率，否则极易引发前期梯度爆炸或过早过拟合。LoHa、LoKr 的具体缩放可在[结构预览](matrix-preview.zh-CN.md)中核对，LoKr 完整因子的缩放见[完整矩阵与双因子分解](#full-matrix)。
 
 参考：[Kohya 参数说明](https://github.com/bmaltais/kohya_ss/wiki/LoRA-training-parameters#network-alpha) · [LoRA 原论文 §4.1](https://arxiv.org/html/2106.09685v2#S4.SS1) · [rsLoRA 论文](https://arxiv.org/html/2312.03732v1)
 
-<!-- doc-anchor: algorithms -->
-## LoRA、LoHa 与 LoKr
-
-| 算法 | 怎样表示变化 | 对配置的含义 |
-| --- | --- | --- |
-| LoRA | 两个低秩矩阵相乘 | rank 直接决定中间维度 |
-| LoHa | 两组低秩结果再逐元素相乘 | dim 决定两组低秩乘积各自的中间维度 |
-| LoKr | 两个因子做 Kronecker 积，因子还可继续低秩分解 | factor 与 dim 分别控制两层不同的分解 |
-
-标准 LoRA 是默认起点。比较 LoHa、LoKr 时，使用结构预览核对参数量，再用相同提示词与种子比较还原度和新场景表现。
-
-<!-- doc-anchor: lokr-factor -->
+<a name="lokr-factor"></a>
 ## LoKr 分解因子
 
-LoKr 的基本形式是 `ΔW = scale × (W1 ⊗ W2)`。W1 和 W2 通过 Kronecker 积共同表示权重增量。
+LoKr 通过两个因子的 Kronecker 积表示权重增量：`ΔW = scale × (W1 ⊗ W2)`。界面字段 `lokr_factor`（传入网络参数 `factor`）控制两个因子的长宽拆分，在完整矩阵模式下同样生效；`Rank`（`dim`）控制因子内部继续低秩分解的中间维度。
 
-`factor` 决定两个因子的尺寸搭配，在完整矩阵模式下仍然有效。`dim` 决定因子内部继续低秩分解时的中间维度。
+默认 `-1` 自动取最接近均衡的因数拆分。以单个 `2048×2048` 线性层在完整因子模式下的均衡拆分为例：
 
-界面字段为 `lokr_factor`，传入网络时使用 `factor`。`-1` 自动选择接近均衡的尺寸拆分；填写具体值会改变两个 Kronecker 因子的尺寸，修改后查看结构预览中的形状和参数量。
-
-下面比较一个 2048×2048 权重层的完整因子表示，使用均衡分解：
-
-| factor | W1 形状 | W2 形状 | 两因子参数量 |
+| `lokr_factor` | `W1` 形状 | `W2` 形状 | 该层参数量 |
 | --- | --- | --- | --- |
-| 4 | 4×4 | 512×512 | 262,160 |
-| 8 | 8×8 | 256×256 | 65,600 |
+| `4` | `4×4` | `512×512` | `262,160` |
+| `8` | `8×8` | `256×256` | `65,600` |
 
-在此例中，factor 从 4 增至 8 会减小参数量。其他层按各自尺寸拆分，整个适配器的大小以结构预览为准。
+此例中将因子从 `4` 增至 `8` 反而显著减小参数量。模型各层维度不同，调整后请在[结构预览](matrix-preview.zh-CN.md)中检查整体参数量。
 
-<!-- doc-anchor: full-matrix -->
+<a name="full-matrix"></a>
 ## 完整矩阵与双因子分解
 
-LyCORIS LoKr 的 `full_matrix` 和 `decompose_both` 默认关闭。开启 `full_matrix` 后，W1 和 W2 都直接保存为矩阵，忽略 `decompose_both`。关闭时，dim 达到对应因子的尺寸阈值也会触发完整矩阵存储。
+LyCORIS LoKr 的 `full_matrix` 与 `decompose_both` 默认关闭。显式开启 `full_matrix` 时，`W1` 和 `W2` 均直接存为完整矩阵并忽略 `decompose_both`；未开启时，只要某层的 `Rank ≥ max(dim1, dim2) / 2`（对应结构预览中的“W2 完整存储阈值”），该因子也会自动转为完整矩阵存储。
 
-| 设置 | W1 | W2 |
+| 配置组合 | `W1` 存储方式 | `W2` 存储方式 |
 | --- | --- | --- |
-| 非完整矩阵，关闭双因子分解 | 直接矩阵 | 由 dim 与尺寸决定是否低秩分解 |
-| 非完整矩阵，开启双因子分解 | 满足条件时继续低秩分解 | 由 dim 与尺寸决定是否低秩分解 |
-| 显式开启完整矩阵 | 直接矩阵 | 直接矩阵 |
+| 关闭 `full_matrix`、关闭 `decompose_both` | 完整矩阵 | 低于阈值时低秩分解，达到阈值时完整矩阵 |
+| 关闭 `full_matrix`、开启 `decompose_both` | 满足条件时低秩分解 | 低于阈值时低秩分解，达到阈值时完整矩阵 |
+| 开启 `full_matrix` | 完整矩阵 | 完整矩阵 |
 
-两个因子都直接保存时，提高 dim 不再增加这两个因子的参数量，但当前实现的缩放仍需区分：
+当 `W1`、`W2` 均为完整矩阵时，继续调高 Rank 不会增加这两个因子的参数量，但 LyCORIS LoKr 的缩放规则仍区分 `rs_lora`：
 
-| 两因子均为完整矩阵 | 内部 Alpha | 模块的 scale |
+| 两因子均为完整矩阵 | 内部 Alpha | 模块实际 `scale` |
 | --- | --- | --- |
-| `rs_lora=false` | 使用 dim | 1 |
-| `rs_lora=true` | 使用 dim | √dim |
+| `rs_lora=false` | 取 `dim` | `1` |
+| `rs_lora=true` | 取 `dim` | `√dim` |
 
-上述缩放规则适用于本项目的 LyCORIS LoKr，可在结构预览中核对。
+<div id="preview"></div>
 
-<!-- doc-anchor: unbalanced -->
+修改上述分解选项后，可在[矩阵结构与文件大小](matrix-preview.zh-CN.md)中逐层查看 `W2` 完整存储层数与实际 `scale`。
+
+<a name="unbalanced"></a>
 ## 不平衡分解
 
-不平衡分解交换输出维度拆分后两部分的分配，使 W1 和 W2 采用另一组长宽搭配。参数量取决于层的输入、输出维度和分解方式；在结构预览中比较切换前后的实际数值。
+`unbalanced_factorization` 默认关闭。开启后将交换输出维度两个因数的分配顺序，改变 `W1` 与 `W2` 的长宽比例。仅在测试特定矩阵形状或体积压缩方案时切换，并在[结构预览](matrix-preview.zh-CN.md)中同时核对参数量与缩放倍率。
 
-`unbalanced_factorization` 默认关闭。仅在比较矩阵形状或压缩方案时调整，并同时查看参数量和缩放。
+<a name="dora-bypass"></a>
+## DoRA（权重分解）与旁路模式
 
-<!-- doc-anchor: dropout -->
+LyCORIS 提供 `dora_wd`（DoRA 权重分解）与 `bypass_mode`（旁路前向计算）两项底层路径控制：
+
+- **DoRA（`dora_wd`）**：将更新后的权重拆分为方向与可训练的输出通道幅度（范数），需要在前向计算中先合并重建 `W + ΔW` 再做方向归一化。因此开启 DoRA 时必须**关闭 `bypass_mode`**，且该重建路径下普通特征丢弃（`dropout`）不生效。
+- **旁路模式（`bypass_mode`）**：不合并底模权重，改为单独计算适配器分支输出 `W(x) + ΔW(x)`。底模处于无法直接合并的低精度量化状态时必须启用旁路模式。
+- **量化与算法限制**：
+  - **Anima（LyCORIS）**：线性层与卷积层的 LoCon、LoHa、LoKr 在关闭 `bypass_mode` 时均可启用 DoRA。
+  - **Krea 2（LyCORIS）**：开启 `DiT FP8 动态量化`（`fp8_base`）或 `ConvRot INT8`（`convrot_int8`）会强制启用 `bypass_mode`。若要使用 DoRA，须同时关闭这两种底模量化与 `bypass_mode`；LyCORIS LoCon 还需将普通 `dropout` 保持为 `0`（正数普通丢弃会自动切回旁路模式）。
+
+<a name="dropout"></a>
 ## 网络丢弃与标注丢弃
 
-网络丢弃在训练时随机屏蔽特征或分支，默认概率为 `0`。提高概率会使更多前向计算跳过对应元素、通道或分支。出现固定姿势、背景绑定时，先比较更早的模型存档，再单独测试丢弃设置。
+丢弃（Dropout）在训练前向传播中随机屏蔽部分特征、通道或条件，默认均为 `0`（保存的权重文件不会减少参数）。出现构图或姿势僵化时，优先对比更早轮次的模型存档；确需正则化时，通常在 **`0.05–0.1`** 范围内小幅测试，过高（`> 0.2`）会拖慢收敛或冲淡主体细节。
 
-| 类型与配置键 | 丢弃对象 | 主要目的 |
+| 类型与配置键 | 屏蔽对象 | 适用目的与注意事项 |
 | --- | --- | --- |
-| 标准 LoRA 特征丢弃 `network_dropout` | 中间特征中的部分元素 | 减少对固定特征组合的依赖 |
-| 标准 LoRA 秩丢弃 `rank_dropout` | 部分低秩通道 | 减少对少数通道的依赖 |
-| 模块丢弃 `module_dropout` | 某层的整个适配器分支 | 该层在被丢弃的前向计算中使用底模输出 |
-| 完整标注丢弃 `caption_dropout_rate` | 整段文字条件 | 加入无文字条件的训练，图片仍参与 |
-| 标签丢弃 `caption_tag_dropout_rate` | 部分标签 | 减少对完整标签组合的依赖 |
+| 特征丢弃 `network_dropout` | 适配器中间特征元素 | 缓解对固定局部特征组合的依赖 |
+| 秩丢弃 `rank_dropout` | 部分低秩通道 | 避免少数通道独占表达 |
+| 模块丢弃 `module_dropout` | 整层适配器分支 | 被屏蔽层在该步直接使用底模原输出 |
+| 整段标注丢弃 `caption_dropout_rate` | 整条文本提示词（SDXL） | 混入无条件训练样本；`keep_tokens` 无法阻止整段丢弃 |
+| 标签丢弃 `caption_tag_dropout_rate` | 逗号分隔的单个标签 | 减弱角色触发词与背景/服装标签的死绑；受 `keep_tokens`（保留前 N 个标签）保护 |
 
-丢弃不会删除保存文件中的参数。固定保留的开头标签能避开单标签丢弃，但不能阻止整段标注被丢弃。
+**与文本编码器缓存的互斥限制**：只要 `caption_tag_dropout_rate > 0`（或 SDXL 中 `caption_dropout_rate > 0`），每步都需要实时随机抽样标签并重新编码文本，界面会**自动关闭并锁定“缓存文本编码”**，显存占用和单步耗时都会上升。
 
-当前 LyCORIS LoKr 还必须按实际前向计算路径区分：
+Anima / SDXL 的 LyCORIS LoKr 中，不同前向路径支持的丢弃类型也不同（Krea 2 的 LyCORIS LoKr 界面仅开放 `module_dropout`）：
 
-| LoKr 的实际计算路径 | 普通特征 Dropout | Rank Dropout |
-| --- | --- | --- |
-| 旁路输出计算 | 作用于适配器输出 | 此路径不使用 |
-| 重建权重计算 | 此路径不使用 | 按输出通道屏蔽合成的更新权重 |
+| LyCORIS LoKr 计算路径 | 普通特征 `dropout` | `rank_dropout` | `module_dropout` |
+| --- | --- | --- | --- |
+| 旁路计算（`bypass_mode=true`） | 生效（作用于分支输出） | 不使用 | 生效 |
+| 重建权重（`bypass_mode=false`） | 不使用 | 生效（按输出通道屏蔽增量权重） | 生效 |
 
-模块丢弃在两条路径中均生效。量化和权重分解设置会影响实际路径；调整特征或秩丢弃前，应确认当前使用哪条路径。
-
-Anima 的 LyCORIS DoRA（`dora_wd`）按层类型选择计算路径：
-
-| 层类型 | DoRA 的使用条件 |
-| --- | --- |
-| 普通 Linear/Conv：LoCon、LoHa、LoKr | 关闭 `bypass_mode`，通过重建权重应用可训练的幅度参数；该路径不使用特征丢弃 |
-| FP8 weight-only：LoKr | 开启 DoRA 后强制重建权重，覆盖 Bypass 设置 |
-| FP8 weight-only：LoCon、LoHa | 当前实现不支持在这些层创建 DoRA 适配器 |
-
-参见 [Krea 2 的量化与旁路限制](#krea-targets)。
-
-<!-- doc-anchor: preview -->
-## 用结构预览核对配置
-
-修改维度、factor、完整矩阵或不平衡分解后，可在结构预览中检查实际矩阵、参数量和缩放。比较不同算法时记录实际可训练参数量；对照方法见[时间步指南中的实验步骤](timesteps.zh-CN.md#comparison-method)。
-
-<!-- doc-anchor: krea-targets -->
+<a name="krea-targets"></a>
 ## Krea 2：默认训练范围与筛选
 
-默认 Rank / Alpha 为 `32/32`，覆盖 DiT 的全部 264 个 Linear 层：主块 attention、MLP、文本融合 transformer 和投影 MLP。文本融合层属于 DiT，Qwen 文本编码器仍冻结并使用缓存。调制和 RMSNorm 使用原始张量，自动排除在 Linear LoRA 的目标范围外。
+Krea 2 默认 Rank / Alpha 为 `32 / 32`，覆盖 DiT 全部 264 个线性层（主干注意力、MLP、文本融合 Transformer 与各类投影 MLP）。文本融合层位于 DiT 内部，Qwen 文本编码器始终冻结并使用文本缓存；调制与 RMSNorm 使用原始张量，不在 Linear LoRA 覆盖范围内。
 
-Krea 2 可选择原生 LoRA，或通过 LyCORIS 配置面板选择 LoCon、LoKr、LoHa。四种方式共用“训练目标层”选项：全部 Linear（264 层）、主干 Attention（140 层）、主干 Attention + MLP（224 层）、自定义正则表达式。全部 Linear 包含输入输出、时间投影及文本融合投影层。
+原生 LoRA 与 LyCORIS（LoCon、LoKr、LoHa）共用“训练目标层”预设：
 
-自定义正则表达式每行一项，对原始 Linear 层名完整匹配；排除优先于包含。例如，包含 `blocks\.[0-9]+\.attn\..*` 选择主干注意力，包含 `.*` 并排除 `txtfusion\..*` 则去掉文本融合层。没有匹配目标时，启动前会报错。
+- **全部 Linear（264 层）**：包含主干、输入/输出、时间步投影及文本融合层。
+- **主干 Attention（140 层）**：仅训练主干块的注意力投影层，体积最小。
+- **主干 Attention + MLP（224 层）**：覆盖主干核心变换层，排除外围与文本融合投影。
+- **自定义正则表达式**：每行一条，对原始 Linear 层名做完整匹配，**排除规则优先于包含规则**。例如包含 `blocks\.[0-9]+\.attn\..*` 等效于主干注意力；包含 `.*` 同时排除 `txtfusion\..*` 可单独剔除文本融合层。匹配结果为空时会在启动前直接报错。
 
-LyCORIS 面板按算法提供 factor、Full Matrix、双因子分解、不平衡分解、标量、rsLoRA、DoRA、旁路模式和内核后端等适用选项。Krea 2 的训练目标均为线性层。
-
-| 算法 | 丢弃与 LoRA+ 支持 |
+| Krea 2 网络方式 | 丢弃与 LoRA+ 支持 |
 | --- | --- |
-| 原生 LoRA | 支持 rank/module dropout 与 LoRA+ |
-| LyCORIS LoCon | 支持普通 dropout、rank/module dropout 与 LoRA+；普通 dropout 为正数时启用旁路，使用 DoRA 时需将普通 dropout 设为 `0` |
-| LyCORIS LoHa | 支持 rank/module dropout |
-| LyCORIS LoKr | 当前路径仅提供 module dropout |
+| 原生 LoRA | 支持 `rank_dropout`、`module_dropout` 与 [LoRA+](lora-plus.zh-CN.md) |
+| LyCORIS LoCon | 支持普通 `dropout`、`rank_dropout`、`module_dropout` 与 [LoRA+](lora-plus.zh-CN.md)；开启 [DoRA](#dora-bypass) 时普通 `dropout` 须设为 `0` |
+| LyCORIS LoHa | 支持 `rank_dropout`、`module_dropout` |
+| LyCORIS LoKr | 当前仅开放 `module_dropout` |
 
-FP8 或 ConvRot INT8 底模会强制 LyCORIS 使用旁路模式。使用 DoRA 时，需要关闭这两种量化和 `bypass_mode`。
+保存或迁移配置请使用导出的 `training.yaml`（运行目录中的目标预设文件会在启动时自动生成）。旧版原生 LoRA 在“全部 Linear（264 层）”下仍兼容在“自定义网络参数”中填写 `exclude_patterns=['.*\.mlp\..*','first','last\.linear','tmlp\..*','txtmlp\..*','tproj\.1','txtfusion\..*']`（`include_patterns` 仅用于加回被排除层）；新建配置请直接使用“训练目标层”选择器，切勿将原生参数混入 LyCORIS。参见 [Krea 2 上游目标层文档](https://github.com/kohya-ss/musubi-tuner/blob/f8a1b03794a49239a3539015075f5123d6c07d66/docs/krea2.md#lora-target-layers--loraの対象レイヤー)。
 
-保存或迁移配置请使用 `training.yaml`，运行目录中的目标预设由程序自动生成。
+<a name="moss-text-embedder"></a>
+## MOSS 文本投影与细化层
 
-旧版原生 LoRA 的“网络附加参数”仍兼容下列写法，但须将目标范围保留为“全部 Linear”；新配置建议直接选择目标范围：
+MOSS-Image 的 `train_text_embedder` 默认关闭。开启后会按所选 LoRA / LoHa / LoKr 算法，为 DiT 内部的文本输入投影层与 2 个文本细化块额外增加 **11 个适配器模块**（覆盖层数由 `252` 增至 `263`，以标准 LoRA Rank 16 `bf16` 为例预计文件由约 `71.0 MiB` 增至 `74.4 MiB`）。由于 Qwen 文本编码器本身仍冻结，文本编码缓存可正常开启。
 
-```text
-exclude_patterns=['.*\.mlp\..*','first','last\.linear','tmlp\..*','txtmlp\..*','tproj\.1','txtfusion\..*']
-```
-
-旧版原生参数中，`include_patterns` 会加回匹配层，不会自动排除默认目标。LyCORIS 请使用目标范围和参数控件，避免将原生 LoRA 参数混入 LyCORIS。
-
-[Krea 2 上游指南](https://github.com/kohya-ss/musubi-tuner/blob/f8a1b03794a49239a3539015075f5123d6c07d66/docs/krea2.md#lora-target-layers--loraの対象レイヤー)
+这 11 个模块默认沿用主干学习率。若需单独压低学习率，可在“自定义网络参数”中填写 `network_reg_lrs=.*text_embedder.*=5e-5`（`EmoSens` 对所有参数强制同步单一学习率，该正则覆盖对它不生效）。Anima 若需在不解冻 Qwen3 的前提下扩展条件适配范围，可查看界面的“训练 LLM Adapter 模块”开关及 [AdaLN 调制层指南](adaln.zh-CN.md)。

@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from markdown import Markdown
 from markdown.extensions import Extension
+from markdown.extensions.toc import slugify_unicode
 from markdown.preprocessors import Preprocessor
 from markdown.treeprocessors import Treeprocessor
 
@@ -25,6 +26,7 @@ _SUPPORTED_LOCALES = {"zh-CN", "en-US", "ja-JP"}
 _DOC_ANCHOR_RE = re.compile(
     r"^\s*<!--\s*doc-anchor:\s*([A-Za-z0-9][A-Za-z0-9_-]*)\s*-->\s*$"
 )
+_NAMED_ANCHOR_RE = re.compile(r'^\s*<a name="([A-Za-z0-9][A-Za-z0-9_-]*)"></a>\s*$')
 _ATX_HEADING_RE = re.compile(r"^#{1,6}[ \t]+\S")
 # Document resources; localized catalog text lives in frontend/i18n/*.json.
 _DOCUMENTS = {
@@ -104,31 +106,17 @@ _DOCUMENTS = {
 
 
 class _DocAnchorPreprocessor(Preprocessor):
-    """Turn invisible doc anchor comments into Markdown heading attributes."""
+    """Attach a preceding named anchor or legacy anchor comment to its heading."""
 
     def run(self, lines: list[str]) -> list[str]:
         output: list[str] = []
-        pending_anchor: str | None = None
-
         for line in lines:
-            marker = _DOC_ANCHOR_RE.match(line)
-            if marker:
-                if pending_anchor is not None:
-                    output.append(f"<!-- doc-anchor: {pending_anchor} -->")
-                pending_anchor = marker.group(1)
-                continue
-
-            if pending_anchor is not None:
-                if _ATX_HEADING_RE.match(line):
-                    line = f"{line.rstrip()} {{#{pending_anchor}}}"
-                else:
-                    output.append(f"<!-- doc-anchor: {pending_anchor} -->")
-                pending_anchor = None
-
+            if output and _ATX_HEADING_RE.match(line):
+                marker = _NAMED_ANCHOR_RE.match(output[-1]) or _DOC_ANCHOR_RE.match(output[-1])
+                if marker:
+                    output.pop()
+                    line = f"{line.rstrip()} {{#{marker.group(1)}}}"
             output.append(line)
-
-        if pending_anchor is not None:
-            output.append(f"<!-- doc-anchor: {pending_anchor} -->")
         return output
 
 
@@ -201,6 +189,15 @@ class _ResourceExtension(Extension):
         )
 
 
+def _slugify_heading(value: str, separator: str) -> str:
+    slug = slugify_unicode(value, separator)
+    if not slug:
+        return "section"
+    if slug.isdigit():
+        return f"section{separator}{slug}"
+    return slug
+
+
 def _render_markdown(source: str, relative_path: PurePosixPath) -> tuple[str, str]:
     renderer = Markdown(
         extensions=[
@@ -209,7 +206,13 @@ def _render_markdown(source: str, relative_path: PurePosixPath) -> tuple[str, st
             _DocAnchorExtension(),
             _ResourceExtension(relative_path.parent),
         ],
-        extension_configs={"toc": {"permalink": False, "toc_depth": "2-3"}},
+        extension_configs={
+            "toc": {
+                "permalink": False,
+                "toc_depth": "2-3",
+                "slugify": _slugify_heading,
+            },
+        },
         output_format="html5",
     )
     html = renderer.convert(source)
