@@ -160,6 +160,8 @@ test('backend coded errors exist in all locale dictionaries', () => {
     'backend/tagger/workspace_tasks.py',
     'backend/server/routes/training.py',
     'backend/server/routes/tagger.py',
+    'backend/server/routes/environment.py',
+    'backend/server/routes/moss_acceleration.py',
     'backend/monitor/routes.py',
   ];
   const codes = new Set();

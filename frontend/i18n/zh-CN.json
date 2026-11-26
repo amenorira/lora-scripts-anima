@@ -3917,6 +3917,12 @@
 		"trainingTeCacheDeleteFailed": "部分文本编码器缓存文件删除失败。",
 		"shapePreviewAnimaCheckpointReadFailed": "无法读取 Anima 权重 {path}：{detail}",
 		"shapePreviewAnimaCheckpointMissingBlocks": "Anima 权重缺少 DiT 块：{path}",
-		"failed": "操作失败。"
+		"failed": "操作失败。",
+		"environmentJobNotFound": "未找到该后台任务，可能已结束或过期。",
+		"environmentUnknownModel": "未知的模型或分组（分组：{group}，文件：{file}）。",
+		"environmentDownloadStartFailed": "启动模型下载失败。",
+		"environmentModelDownloadFailed": "模型下载失败。",
+		"environmentInvalidToggleRequest": "开关状态参数无效。",
+		"environmentMossToggleFailed": "切换 MOSS 文本加速状态失败。"
 	}
 }

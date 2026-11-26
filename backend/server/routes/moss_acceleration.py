@@ -21,13 +21,22 @@ async def enabled(request: Request) -> dict:
         body = await request.json()
         value = body.get("enabled") if isinstance(body, dict) else None
         if not isinstance(value, bool):
-            raise ValueError("enabled must be boolean / enabled 必须为布尔值")
+            return {
+                "success": False,
+                "message": "enabled must be boolean / enabled 必须为布尔值",
+                "error_code": "environmentInvalidToggleRequest",
+            }
         result = await asyncio.to_thread(moss_acceleration.set_enabled, value)
         return {"success": True, "data": result}
     except RuntimeError as exc:
         return {"success": False, "message": str(exc), "error_code": "environmentMossVerifyRequired"}
     except (ValueError, OSError) as exc:
-        return {"success": False, "message": str(exc)}
+        return {
+            "success": False,
+            "message": str(exc),
+            "error_code": "environmentMossToggleFailed",
+            "error_details": str(exc),
+        }
 
 
 @router.post("/moss-acceleration/install")

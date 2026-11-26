@@ -3917,6 +3917,12 @@
 		"trainingTeCacheDeleteFailed": "一部のテキストエンコーダキャッシュを削除できませんでした。",
 		"shapePreviewAnimaCheckpointReadFailed": "Anima チェックポイントを読み込めません ({path}): {detail}",
 		"shapePreviewAnimaCheckpointMissingBlocks": "Anima チェックポイントに DiT ブロックが見つかりません: {path}",
-		"failed": "操作に失敗しました。"
+		"failed": "操作に失敗しました。",
+		"environmentJobNotFound": "バックグラウンドタスクが見つかりません。終了または期限切れの可能性があります。",
+		"environmentUnknownModel": "不明なモデルまたはグループです（グループ: {group}、ファイル: {file}）。",
+		"environmentDownloadStartFailed": "モデルのダウンロードを開始できませんでした。",
+		"environmentModelDownloadFailed": "モデルのダウンロードに失敗しました。",
+		"environmentInvalidToggleRequest": "切り替え状態の指定が無効です。",
+		"environmentMossToggleFailed": "MOSS テキスト高速化の切り替えに失敗しました。"
 	}
 }

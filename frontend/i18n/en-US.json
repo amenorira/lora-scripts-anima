@@ -3917,6 +3917,12 @@
 		"trainingTeCacheDeleteFailed": "Failed to delete some text encoder cache files.",
 		"shapePreviewAnimaCheckpointReadFailed": "Cannot read Anima checkpoint {path}: {detail}",
 		"shapePreviewAnimaCheckpointMissingBlocks": "Missing Anima DiT blocks in checkpoint: {path}",
-		"failed": "Operation failed."
+		"failed": "Operation failed.",
+		"environmentJobNotFound": "Task not found; it may have finished or expired.",
+		"environmentUnknownModel": "Unknown model or group (group: {group}, file: {file}).",
+		"environmentDownloadStartFailed": "Failed to start model download.",
+		"environmentModelDownloadFailed": "Model download failed.",
+		"environmentInvalidToggleRequest": "Invalid toggle state parameter.",
+		"environmentMossToggleFailed": "Failed to update MOSS Text Acceleration state."
 	}
 }
