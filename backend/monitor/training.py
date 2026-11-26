@@ -40,6 +40,7 @@ _LOSS_TAGS = (
     "loss/average", "loss/current", "loss/epoch_average", "loss/epoch",
     "loss/timestep/epoch/low", "loss/timestep/epoch/mid", "loss/timestep/epoch/high",
 )
+_STEP_LOSS_TAGS = {"loss/average", "loss/current"}
 
 
 def _is_epoch_loss_tag(tag: str) -> bool:
@@ -111,10 +112,16 @@ def _get_cached_accumulator(log_dir: Path, *, incremental: bool = False, epoch_o
                     self.last_steps = {}
 
                 def _ProcessScalar(self, tag, wall_time, step, scalar):
-                    # Keep the existing monotonic-step delivery contract. TensorBoard
-                    # owns file parsing, rotation and partial-record recovery.
-                    if (tag in _LOSS_TAGS or _is_lr_tag(tag)) and step > self.last_steps.get(tag, -1):
-                        self.pending.setdefault(tag, []).append({"step": int(step), "value": float(scalar)})
+                    if not math.isfinite(scalar):
+                        return
+                    if tag in _STEP_LOSS_TAGS:
+                        # 同一步的修正可能在下一次轮询才写入。
+                        point = {"step": step, "value": scalar}
+                        if tag == "loss/current" and math.isfinite(wall_time):
+                            point["wall_time"] = wall_time
+                        self.pending.setdefault(tag, {})[step] = point
+                    elif (tag in _LOSS_TAGS or _is_lr_tag(tag)) and step > self.last_steps.get(tag, -1):
+                        self.pending.setdefault(tag, {})[step] = {"step": step, "value": scalar}
                         self.last_steps[tag] = step
 
             accumulator_type = LiveAccumulator
@@ -245,13 +252,17 @@ def read_tensorboard_loss(
             finite = [event for event in source if math.isfinite(event.value)]
             if not finite:
                 continue
-            primary = tag in {"loss/average", "loss/current"}
+            primary = tag in _STEP_LOSS_TAGS
             extrema = finite
             if primary and len(source) < len(events):
                 extrema = (e for e in events if math.isfinite(e.value))
             best = min(extrema, key=lambda e: e.value)
             curve = _lttb_downsample(finite, downsample_to) if sample_curve and len(finite) > downsample_to else finite
-            tail = finite[-160:] if primary else finite[-40:]
+            if primary:
+                by_step = {event.step: event for event in finite}
+                tail = [by_step[step] for step in sorted(by_step)[-160:]]
+            else:
+                tail = finite[-40:]
             series_list.append({
                 "tag": tag,
                 "name": tag.replace("/", " ").replace("_", " "),
@@ -263,6 +274,7 @@ def read_tensorboard_loss(
                 # 小图需要连续的最新原始点；全局 LTTB 曲线的尾部会随重采样改变。
                 # 40 个诊断观测各需前置 120 点；参照图仍由前端截取最近 120 点。
                 "diagnostic_points": [{"step": int(e.step), "value": float(e.value)} for e in tail],
+                **({"latest_wall_time": tail[-1].wall_time} if tag == "loss/current" and math.isfinite(tail[-1].wall_time) else {}),
             })
 
         if series_list:
@@ -295,7 +307,10 @@ def read_tensorboard_incremental(run_dir: str | None = None) -> dict[str, list[d
             ea = _get_cached_accumulator(log_dir, incremental=True)
             if ea is not None:
                 pending, ea.pending = ea.pending, {}
-                return pending
+                return {
+                    tag: [values[step] for step in sorted(values)]
+                    for tag, values in pending.items()
+                }
     return {}
 
 

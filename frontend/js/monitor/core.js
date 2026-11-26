@@ -418,7 +418,7 @@ window.monitorCoreMixin = {
     if (next.system) this.sysInfo = next.system;
     if (hasMonitorDetail) {
       const incoming = Array.isArray(next.tensorboard_loss) ? next.tensorboard_loss : [];
-      this.lossSeries = sameTask ? this._mergeMonitorMetricSnapshot(incoming) : incoming;
+      this.lossSeries = sameTask ? this._mergeMonitorMetricSnapshot(incoming, versions?.pendingLoss) : incoming;
       next.tensorboard_loss = this.lossSeries;
       this.lossDataVersion++;
       const nextParams = Array.isArray(next.train_params) ? next.train_params : [];
@@ -664,7 +664,8 @@ window.monitorCoreMixin = {
     const generation = ++this._monitorRealtimeDetailGeneration;
     this.monitorDetailError = false;
     const versions = { logs: this._logObservationVersion || 0, outputs: this._outputCountVersion || 0, progress: this._monitorProgressVersion || 0, previews: this._previewSnapshotSeq };
-    const request = { key, generation, controller: new AbortController(), promise: null };
+    versions.pendingLoss = new Map();
+    const request = { key, generation, controller: new AbortController(), promise: null, pendingLoss: versions.pendingLoss };
     const isCurrent = () => this.currentRoute === 'monitor-dashboard' && !this.selectedRunDir
       && generation === this._monitorRealtimeDetailGeneration && this.liveTaskId === taskId
       && this.liveTaskBoundaryAt === boundary && this.currentOutputRunDir === runDir

@@ -18,6 +18,44 @@ from tests.monitor.test_cross_drive_outputs import CrossDriveSandbox
 
 
 class SampleEpochLossTests(unittest.TestCase):
+    def test_step_loss_keeps_last_finite_value_before_windowing_and_across_polls(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+            writer = EventFileWriter(str(run / "log"))
+            tags = ("loss/current", "loss/average")
+
+            def record(step, value):
+                writer.add_event(Event(step=step, summary=Summary(value=[
+                    Summary.Value(tag=tag, simple_value=value) for tag in tags
+                ])))
+
+            try:
+                for step in range(0, 400, 2):
+                    for value in (0, step, math.nan):
+                        record(step, value)
+                writer.flush()
+                initial = training.read_tensorboard_incremental(run_dir=directory)
+                for step in (380, 398):
+                    record(step, -step)
+                    record(step, math.inf)
+                writer.flush()
+                updates = training.read_tensorboard_incremental(run_dir=directory)
+                snapshot = training.read_tensorboard_loss(run_dir=directory, downsample_to=10)
+                expected = [{"step": s, "value": -s if s in (380, 398) else s} for s in range(0, 400, 2)]
+                for series in snapshot:
+                    tag = series["tag"]
+                    self.assertEqual(len(initial[tag]), 200)
+                    if tag == "loss/current":
+                        self.assertEqual(updates[tag][-1]["wall_time"], series["latest_wall_time"])
+                    live = {p["step"]: {"step": p["step"], "value": p["value"]} for p in initial[tag] + updates[tag]}
+                    self.assertEqual([p["step"] for p in updates[tag]], [380, 398])
+                    self.assertEqual(list(live.values()), expected)
+                    self.assertEqual(series["diagnostic_points"], expected[-160:])
+            finally:
+                writer.close()
+                training._tb_cache.pop(str(run / "log"), None)
+                training._tb_live_cache.pop(str(run / "log"), None)
+
     def test_full_step_snapshot_covers_more_than_fifty_thousand_events(self):
         from tensorboard.backend.event_processing.event_accumulator import ScalarEvent
 

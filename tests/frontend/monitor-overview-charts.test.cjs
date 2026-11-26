@@ -24,6 +24,14 @@ function makeOverview(overrides = {}) {
   );
 }
 
+// These plots inspect completed points while a subsequent batch is in progress.
+function liveLossSeries(points, extra = {}) {
+  return {tag: 'loss/average', points, ...extra, get diagnostic_points() {
+    const last = points.at(-1);
+    return [...points, {step: last.step + 1, value: last.value}];
+  }};
+}
+
 test('a summary range retargets from its displayed projection and respects reduced motion', () => {
   const {withAnimationFrames} = require('./helpers-animation.cjs');
   withAnimationFrames(({tick, frames}) => {
@@ -118,7 +126,7 @@ test('epoch progress parser resolves intra-epoch fill and parameter fallback', (
   assert.equal(done.epochFraction, 1);
 });
 
-test('hero chart downsampling keeps endpoints and extrema while the diagnostic window compares two sets of 50 points', () => {
+test('hero chart downsampling keeps endpoints and extrema while the diagnostic window compares two sets of 40 points', () => {
   const longSeries = Array.from({ length: 1200 }, (_, i) => ({
     step: i + 1,
     value: i === 599 ? 0.005 : i === 899 ? 0.95 : 0.1 + Math.sin(i / 20) * 0.02,
@@ -134,10 +142,10 @@ test('hero chart downsampling keeps endpoints and extrema while the diagnostic w
   assert.ok(compressed.some(p => p.step === 900 && p.value === 0.95));
 
   const windowPts = view._trainingDiagnosticPoints();
-  assert.equal(windowPts.length, 100);
+  assert.equal(windowPts.length, 80);
   const diag = view._trainingDiagnostics(windowPts);
-  assert.equal(diag.windowSize, 50);
-  assert.equal(diag.previousStartStep, 1101);
+  assert.equal(diag.windowSize, 40);
+  assert.equal(diag.previousStartStep, 1121);
   assert.equal(diag.recentEndStep, 1200);
 });
 
@@ -174,7 +182,7 @@ test('odd diagnostic windows exclude the unplotted point from the minimum and ga
 
 test('full chart includes the reported minimum in its readout, with a disconnected anchor before retained history', () => {
   const pts = [{step: 10, value: .3}, {step: 12, value: .4}];
-  const series = {tag: 'loss/average', points: pts, min: .1, min_step: 2};
+  const series = liveLossSeries(pts, {min: .1, min_step: 2});
   const svg = {setAttribute() {}};
   const wrap = { dataset: {}, querySelector: selector => ({
     '[data-hero-chart-stage]': {clientWidth: 500}, '[data-hero-chart-svg]': svg,
@@ -183,7 +191,7 @@ test('full chart includes the reported minimum in its readout, with a disconnect
   const root = {dataset: {}, querySelector: () => card};
   const view = makeOverview({monitorChartMode: 'full', monitorLossSeries: [series], esc: String,
     _bindDiagnosticInteractions() {}, _patchDiagnosticGauges() {}});
-  const patch = () => view._patchTrainingDiagnostics(root, key => key, {state: 'RUNNING', detail: true}, false);
+  const patch = () => view._patchTrainingDiagnostics(root, key => key, {state: 'RUNNING', step: 13, detail: true}, false);
   patch();
   assert.deepEqual(wrap._chartState.coords.map(p => p.step), [2, 10, 12]);
   const path = /data-hero-main-path d="([^"]+)"/.exec(svg.innerHTML)[1];
@@ -216,9 +224,58 @@ test('full chart spans a long live run after repeated compaction and keeps the r
   const steps = wrap._chartState.coords.map(point => point.step);
   assert.equal(steps[0], 1);
   assert.ok(steps.includes(200), 'the early spike stays on the displayed curve');
-  assert.equal(steps.at(-1), 16000);
+  assert.equal(steps.at(-1), 15999);
   assert.ok(series.points.length <= 5000);
-  assert.deepEqual(view._trainingDiagnosticPoints(), points.slice(-100));
+  assert.deepEqual(view._trainingDiagnosticPoints(), points.slice(-80));
+});
+
+test('live Loss corrections and HTTP snapshots yield the same distinct-step window', () => {
+  const tag = 'loss/average';
+  const series = {tag, points: []};
+  const pendingLoss = new Map();
+  const view = makeOverview({lossSeries: [series], monitorLossSeries: [series], _monitorRealtimeDetailRequest: {pendingLoss}});
+  const canonical = Array.from({length: 175}, (_, i) => ({step: i * 3, value: .1 + i / 1000}));
+  const batch = canonical.flatMap(point => [{...point, value: 1}, point, {...point, value: NaN}]);
+  view._appendMonitorMetricPoints(series, batch);
+  assert.deepEqual(series.diagnostic_points, canonical.slice(-160));
+  const snapshot = {tag, points: series.points.slice(), diagnostic_points: series.diagnostic_points.slice()};
+  const updates = [canonical.at(-5), canonical.at(-1)].map(point => ({...point, value: .05}));
+  view.handleRealtimeTaskMetrics({points: {[tag]: updates}});
+  view.monitorLossSeries = view._mergeMonitorMetricSnapshot([snapshot], pendingLoss);
+  const expected = canonical.slice(-80);
+  expected[75] = updates[0];
+  expected[79] = updates[1];
+  assert.deepEqual(view._trainingDiagnosticPoints(), expected);
+  assert.deepEqual(view._trainingDiagnostics(), view._trainingDiagnostics(expected));
+});
+
+test('each batch can update current Loss while the diagnostic plot waits for the next step or terminal state', () => {
+  const series = [], charts = [];
+  const card = {dataset: {}, querySelectorAll: () => [], querySelector: s => s === '[data-hero-chart-wrap]' ? wrap : null};
+  const wrap = {_chartContext: 'run', dataset: {}};
+  const root = {dataset: {motionContext: 'run'}, querySelector: () => card};
+  const view = makeOverview({lossSeries: series, monitorLossSeries: series, lossDataVersion: 0,
+    _bindDiagnosticInteractions() {}, _patchDiagnosticGauges() {}, _renderHeroChart(_, chart) { charts.push(chart); }});
+  const read = (step, current, average, time, progress = step) => {
+    view.handleRealtimeTaskMetrics({points: {
+      'loss/current': [{step, value: current, wall_time: time}],
+      'loss/average': [{step, value: average}],
+    }});
+    view._patchTrainingDiagnostics(root, String, {state:'RUNNING', detail: true, step:progress}, false);
+    const raw = view._summaryLossSeries();
+    return view._summaryCurrentLoss({metrics_step: step, loss: 1, metrics_time: time - 1}, raw.points.at(-1), raw.latest_wall_time).value;
+  };
+  read(407, .026491, .040475, 1);
+  assert.equal(read(408, .030779, .039398, 2), .030779);
+  const renders = charts.length;
+  assert.equal(read(408, .043019, .039776, 3, 409), .043019);
+  assert.equal(charts.length, renders);
+  assert.equal(charts.at(-1).points.at(-1).step, 407);
+  read(409, .04, .0395, 4);
+  assert.deepEqual(charts.at(-1).points.at(-1), {step:408, value:.039776});
+  view._patchTrainingDiagnostics(root, String, {state:'FINISHED', detail:true, step:409}, false);
+  assert.equal(charts.at(-1).points.at(-1).step, 409);
+  assert.equal(view._summaryCurrentLoss({metrics_step:409, loss:.05, metrics_time:5}, {step:409, value:.04}, 4).value, .05);
 });
 
 test('LR projections use the recorded process count, inverse sqrt timescale and polynomial end rate', () => {
@@ -460,13 +517,13 @@ test('hero chart splits window diff bands, full-mode odd/even counts, and ultra-
   const winPts = [0.36, 0.34, 0.32, 0.26, 0.24, 0.22].map((value, i) => ({ step: (i + 1) * 10, value }));
   const winView = makeOverview({
     monitorChartMode: 'window',
-    monitorLossSeries: [{ tag: 'loss/average', points: winPts }],
+    monitorLossSeries: [liveLossSeries(winPts)],
     esc: String,
     _bindDiagnosticInteractions() {},
     _patchDiagnosticGauges() {},
   });
   const winH = makeHarness();
-  winView._patchTrainingDiagnostics(winH.root, translate, { state: 'RUNNING', detail: true, total_steps: 100 }, false);
+  winView._patchTrainingDiagnostics(winH.root, translate, { state: 'RUNNING', step: 61, detail: true, total_steps: 100 }, false);
   assert.doesNotMatch(winH.svg.innerHTML, /m-chart-smooth-area/);
   assert.doesNotMatch(winH.svg.innerHTML, /clip-path/);
   assert.match(winH.svg.innerHTML, /class="m-chart-prev-line"/);
@@ -478,41 +535,41 @@ test('hero chart splits window diff bands, full-mode odd/even counts, and ultra-
   const mainStart = mainD.slice(1).split(' ').slice(0, 2).join(' ');
   assert.equal(prevEnd, mainStart, 'split segments meet seamlessly at splitX');
 
-  // 前 100 点在全程模式下按中点切分，覆盖奇数采样和窗口刚满的边界。
-  for (const count of [7, 99, 100]) {
+  // 前 80 点在全程模式下按中点切分，覆盖奇数采样和窗口刚满的边界。
+  for (const count of [7, 79, 80]) {
     const shortFullPts = Array.from({ length: count }, (_, i) => ({
       step: (i + 1) * 10,
       value: 0.4 - i * 0.001,
     }));
     const shortView = makeOverview({
       monitorChartMode: 'full',
-      monitorLossSeries: [{ tag: 'loss/average', points: shortFullPts }],
+      monitorLossSeries: [liveLossSeries(shortFullPts)],
       esc: String,
       _bindDiagnosticInteractions() {},
       _patchDiagnosticGauges() {},
     });
     const shortH = makeHarness();
-    shortView._patchTrainingDiagnostics(shortH.root, translate, { state: 'RUNNING', detail: true, total_steps: 1200 }, false);
+    shortView._patchTrainingDiagnostics(shortH.root, translate, { state: 'RUNNING', step: count * 10 + 1, detail: true, total_steps: 1200 }, false);
     assert.match(shortH.svg.innerHTML, /class="m-chart-prev-line"/);
     assert.doesNotMatch(shortH.svg.innerHTML, /class="m-chart-prev-line is-full"/);
     const shortBgTag = /<rect class="m-full-window-bg"[^>]+>/.exec(shortH.svg.innerHTML)[0];
-    assert.ok(shortBgTag.includes('display="none"'), `count ${count} <= 100 should not show full-history highlight`);
+    assert.ok(shortBgTag.includes('display="none"'), `count ${count} <= 80 should not show full-history highlight`);
   }
 
-  // 第 101 点起，全程模式标出最近 100 点。
-  const historyPoints = Array.from({ length: 101 }, (_, i) => ({
+  // 第 81 点起，全程模式标出最近 80 点。
+  const historyPoints = Array.from({ length: 81 }, (_, i) => ({
     step: (i + 1) * 10,
     value: i < 45 ? 0.5 - i * 0.002 : 0.41 + (i - 45) * 0.002,
   }));
   const historyView = makeOverview({
     monitorChartMode: 'full',
-    monitorLossSeries: [{ tag: 'loss/average', points: historyPoints }],
+    monitorLossSeries: [liveLossSeries(historyPoints)],
     esc: String,
     _bindDiagnosticInteractions() {},
     _patchDiagnosticGauges() {},
   });
   const history = makeHarness();
-  historyView._patchTrainingDiagnostics(history.root, translate, { state: 'RUNNING', detail: true, total_steps: 2000 }, false);
+  historyView._patchTrainingDiagnostics(history.root, translate, { state: 'RUNNING', step: 811, detail: true, total_steps: 2000 }, false);
   assert.match(history.svg.innerHTML, /class="m-chart-prev-line is-full"/);
   const historyBand = /<rect class="m-full-window-bg"[^>]+>/.exec(history.svg.innerHTML)[0];
   assert.ok(!historyBand.includes('display="none"'));
@@ -548,12 +605,12 @@ test('hero chart splits window diff bands, full-mode odd/even counts, and ultra-
   // 诊断结论沿用告警色，指标的数值与条共用实际波动率对应的连续色。
   const volPts = [0.25, 0.25, 0.25, 0.19, 0.31, 0.25].flatMap(value => Array(4).fill(value)).map((value, i) => ({ step: (i + 1) * 10, value }));
   const volView = makeOverview({
-    monitorLossSeries: [{ tag: 'loss/average', points: volPts }],
+    monitorLossSeries: [liveLossSeries(volPts)],
     esc: String,
     _bindDiagnosticInteractions() {},
   });
   const volH = makeHarness();
-  volView._patchTrainingDiagnostics(volH.root, translate, { state: 'RUNNING', detail: true, total_steps: 100 }, false);
+  volView._patchTrainingDiagnostics(volH.root, translate, { state: 'RUNNING', step: 241, detail: true, total_steps: 300 }, false);
   assert.equal(volH.card.dataset.diagnosticTone, 'warn');
   const volatility = volView._trainingDiagnostics(volPts).volatilityPct;
   assert.equal(volH.volatilityMetric.style.get('--gauge-bar-color'), volView._volatilityGaugeColor(volatility));
@@ -840,12 +897,12 @@ test('diagnostic tone transition activates only after initial paint within the s
   const pts = [{ step: 10, value: 0.36 }, { step: 20, value: 0.34 }];
   const view = makeOverview({
     lossDataVersion: 1,
-    monitorLossSeries: [{ tag: 'loss/average', points: pts }],
+    monitorLossSeries: [liveLossSeries(pts)],
     esc: String,
     _bindDiagnosticInteractions() {},
     _patchDiagnosticGauges() {},
   });
-  const patch = () => view._patchTrainingDiagnostics(root, k => k, { state: 'RUNNING', detail: true, total_steps: 100 }, false);
+  const patch = () => view._patchTrainingDiagnostics(root, k => k, { state: 'RUNNING', step: pts.at(-1).step + 1, detail: true, total_steps: 100 }, false);
 
   // 1. 刷新首帧（数据尚不足）不启用颜色过渡
   patch();
@@ -946,26 +1003,26 @@ test('the initial trace fills the plot, grows from a stable origin, then scrolls
   const card = {dataset: {}, querySelectorAll: () => [], querySelector: s => s === '[data-hero-chart-wrap]' ? wrap : null};
   const root = {dataset: {}, querySelector: () => card};
   const points = Array.from({length: 6}, (_, i) => ({step: i * 20 + 20, value: .1 + i / 100}));
-  const view = makeOverview({lossDataVersion: 0, monitorLossSeries: [{tag: 'loss/average', points}],
+  const view = makeOverview({lossDataVersion: 0, monitorLossSeries: [liveLossSeries(points)],
     _bindDiagnosticInteractions() {}, _patchDiagnosticGauges() {}});
   const render = () => {
     view.lossDataVersion++;
-    view._patchTrainingDiagnostics(root, String, {state:'RUNNING', detail: true, total_steps:2000}, false);
+    view._patchTrainingDiagnostics(root, String, {state:'RUNNING', step: points.at(-1).step + 1, detail: true, total_steps:12000}, false);
     return wrap._chartState;
   };
   const first = render();
   for (let step = 140; step <= 2460; step += 20) {
     points.push({step, value:.21});
     const state = render();
-    assert.equal(state.coords[0].step, Math.max(20, step - 99 * 20));
+    assert.equal(state.coords[0].step, Math.max(20, step - 79 * 20));
     assert.equal(state.coords[0].x, first.padL);
     assert.equal(state.coords.at(-1).x, first.padL + first.plotW);
-    assert.equal(state.stepSpan, Math.min(step - 20, 99 * 20));
+    assert.equal(state.stepSpan, Math.min(step - 20, 79 * 20));
     assert.equal(state.splitX, first.padL + first.plotW / 2);
     if (step === 2020) {
       const diagnostic = view._trainingDiagnostics(points);
       assert.deepEqual([diagnostic.windowSize, diagnostic.previousStartStep, diagnostic.previousEndStep,
-        diagnostic.recentStartStep, diagnostic.recentEndStep], [50, 40, 1020, 1040, 2020]);
+        diagnostic.recentStartStep, diagnostic.recentEndStep], [40, 440, 1220, 1240, 2020]);
     }
     if (step <= 200) assert.equal(state.range.low, first.range.low);
   }

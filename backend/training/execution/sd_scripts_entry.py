@@ -59,6 +59,7 @@ if __name__ == "__main__":
         def on_step_end(self, *, global_step, **metrics):
             if self.enabled and self._started:
                 self._status["progress"]["metrics_step"] = global_step
+                self._status["progress"]["metrics_time"] = time.time()
             super().on_step_end(global_step=global_step, **metrics)
 
         def set_paused(self, paused, *, step):
