@@ -114,12 +114,14 @@ def _start_install_job(cmd: list[str], max_retries: int = 2) -> str:
         }
 
     def _run():
+        from tools.network_mirror import apply_pip_index_env
+        env = apply_pip_index_env()
         for attempt in range(max_retries + 1):
             try:
                 if attempt > 0:
                     log_file.write(f"\n[RETRY] Attempt {attempt + 1}/{max_retries + 1}...\n")
                     log_file.flush()
-                process = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, text=True)
+                process = subprocess.Popen(cmd, env=env, stdout=log_file, stderr=subprocess.STDOUT, text=True)
                 process.wait()
                 if process.returncode == 0:
                     with _install_jobs_lock:

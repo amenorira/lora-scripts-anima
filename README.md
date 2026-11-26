@@ -53,16 +53,6 @@ _支持 Anima、SDXL、MOSS-Image 与 Krea 2 的本地 LoRA 训练工具_
 首次启动会提示确认创建项目虚拟环境 `venv` 并安装全部依赖（附加 `--quiet` / `-q` 可免交互自动安装）。终端打印 `READY / 服务已就绪` 后，在浏览器打开 **[http://127.0.0.1:12333](http://127.0.0.1:12333)**（若 12333 端口被占用，将自动改用 `30000–30020` 并在终端提示实际地址）。
 
 <details>
-<summary>PyPI 镜像设置</summary>
-
-- **PyPI 镜像（国内加速依赖安装）**：
-  - PowerShell：`$env:PIP_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"; .\start.bat`
-  - CMD：`set "PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple" && start.bat`
-  - Linux：`PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple bash start.sh`
-
-</details>
-
-<details>
 <summary>ZIP 仓库初始化、切换 dev 分支与环境重建说明</summary>
 
 - **Windows ZIP 自动转 Git 仓库**：若目录中没有 `.git`，`start.bat` 会询问是否安装 Git for Windows 并初始化为跟踪 `main` 分支的可更新仓库（选推荐项即可）。有差异的旧源码会先备份至 `bootstrap-backups/<时间>.zip`，`venv`、`models`、`output`、`config`、`cache`、`logs` 等用户目录受保护不会被覆盖或清理；同步完成后启动器会自动重启一次并继续部署环境。同步开始前的失败不影响原 ZIP 启动，同步中途中断则会停止启动并保留备份记录以便重试。

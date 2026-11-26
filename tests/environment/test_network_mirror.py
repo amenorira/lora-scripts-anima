@@ -1,9 +1,12 @@
 """Tests for automatic network endpoint detection and mirror fallback."""
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from tools import network_mirror as nm
+from tools.pip_index_config import read_indexes
 
 class NetworkMirrorTests(unittest.TestCase):
     def setUp(self):
@@ -67,6 +70,55 @@ class NetworkMirrorTests(unittest.TestCase):
             third = nm.resolve_hf_endpoints()
         self.assertEqual(third[0], nm.HF_MIRROR)
         self.assertEqual(os.environ["HF_ENDPOINT"], nm.HF_MIRROR)
+
+    def test_select_pip_index_respects_existing_and_picks_fastest_mirror(self):
+        self.assertIsNone(nm.select_pip_index(env={"PIP_INDEX_URL": "https://custom.example/simple"}))
+
+        os.environ["PIP_INDEX_URL"] = "https://env.example/simple"
+        self.assertIsNone(nm.select_pip_index())
+        os.environ.pop("PIP_INDEX_URL")
+
+        with patch.object(nm, "_configured_pip_index", return_value=None), \
+             patch.object(nm, "_probe_url", return_value=(True, 0.2)):
+            self.assertIsNone(nm.select_pip_index())
+
+        def slow_official(url, *, timeout=1.5, **kwargs):
+            if url.startswith(nm.PYPI_OFFICIAL):
+                return (False, 1.5)
+            if "mirrors.aliyun.com" in url:
+                return (True, 0.04)
+            return (True, 0.18)
+
+        with patch.object(nm, "_configured_pip_index", return_value=None), \
+             patch.object(nm, "_probe_url", side_effect=slow_official):
+            selected = nm.select_pip_index()
+            applied = nm.apply_pip_index_env(env={})
+        self.assertEqual(selected, "https://mirrors.aliyun.com/pypi/simple")
+        self.assertEqual(applied["PIP_INDEX_URL"], "https://mirrors.aliyun.com/pypi/simple")
+
+    def test_pip_auto_selection_preserves_effective_install_config(self):
+        from pip._internal.configuration import kinds
+
+        with tempfile.TemporaryDirectory() as tmp:
+            system = Path(tmp) / "system.ini"
+            custom = Path(tmp) / "custom.ini"
+            system.write_text("[global]\nindex-url=https://system.invalid/simple\n", encoding="utf-8")
+            custom.write_text("[global]\nindex-url=https://custom.invalid/simple\n"
+                              "[install]\nindex-url=https://install.invalid/simple\n", encoding="utf-8")
+            files = {kinds.GLOBAL: [str(system)], kinds.USER: [], kinds.SITE: []}
+            os.environ.pop("PIP_CONFIG_FILE", None)
+            with patch("pip._internal.configuration.get_configuration_files", return_value=files), \
+                 patch.object(nm, "_probe_many") as probe:
+                self.assertEqual(read_indexes()["global.index-url"], "https://system.invalid/simple")
+                self.assertIsNone(nm.select_pip_index())
+                child_env = {**os.environ, "PIP_CONFIG_FILE": str(custom)}
+                self.assertEqual(nm._configured_pip_index(child_env), "https://install.invalid/simple")
+                os.environ["PIP_CONFIG_FILE"] = str(custom)
+                self.assertEqual(read_indexes()["global.index-url"], "https://install.invalid/simple")
+                self.assertIsNone(nm.select_pip_index())
+                os.environ["PIP_INDEX_URL"] = "https://environment.invalid/simple"
+                self.assertEqual(read_indexes()["global.index-url"], os.environ["PIP_INDEX_URL"])
+                probe.assert_not_called()
 
     def test_probe_url_rejects_html_and_wrong_prefix_accepts_json_byte(self):
         class FakeResp:

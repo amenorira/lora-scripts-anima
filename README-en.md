@@ -53,16 +53,6 @@ Download base models, auto-tag images, generate AI captions and regularization i
 On first launch, the launcher prompts to create the `venv` virtual environment and install dependencies (pass `--quiet` / `-q` for unattended installation). Once the terminal prints `READY`, open **[http://127.0.0.1:12333](http://127.0.0.1:12333)** in your browser (if port 12333 is in use, an available port in `30000–30020` is selected automatically and printed in the terminal).
 
 <details>
-<summary>PyPI index settings</summary>
-
-- **Custom PyPI index (optional)**:
-  - PowerShell: `$env:PIP_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"; .\start.bat`
-  - CMD: `set "PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple" && start.bat`
-  - Linux: `PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple bash start.sh`
-
-</details>
-
-<details>
 <summary>ZIP repository setup, switching to dev, and rebuilding venv</summary>
 
 - **Automatic Git setup for Windows ZIP downloads**: When `.git` is missing, `start.bat` offers to install Git for Windows and initialize the folder as an updateable repository tracking `main` only. Any differing source files are backed up to `bootstrap-backups/<timestamp>.zip` first, while `venv`, `models`, `output`, `config`, `cache`, and `logs` remain untouched. After syncing source files, the launcher restarts once and sets up `venv`. Failures before synchronization starts only show a warning and continue launching; interruptions during synchronization stop startup and retain the backup record for retry.

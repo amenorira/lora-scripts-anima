@@ -53,16 +53,6 @@ _Anima・SDXL・MOSS-Image・Krea 2 に対応したローカル LoRA 学習ツ�
 初回起動時は、確認プロンプトに従って仮想環境 `venv` の作成と依存パッケージの導入を行います（`--quiet` / `-q` を付けると確認なしで自動実行します）。ターミナルに `READY` と表示されたら、ブラウザで **[http://127.0.0.1:12333](http://127.0.0.1:12333)** を開いてください（ポート 12333 が使用中の場合は `30000〜30020` の空きポートへ自動変更し、URL をターミナルに表示します）。
 
 <details>
-<summary>PyPI ミラーの設定</summary>
-
-- **カスタム PyPI ミラー（任意）**：
-  - PowerShell：`$env:PIP_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"; .\start.bat`
-  - CMD：`set "PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple" && start.bat`
-  - Linux：`PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple bash start.sh`
-
-</details>
-
-<details>
 <summary>ZIP 版の Git 初期化・dev ブランチへの切り替え・venv の再構築</summary>
 
 - **Windows ZIP 版の自動リポジトリ初期化**：フォルダ内に `.git` がない場合、`start.bat` は Git for Windows の導入と `main` ブランチを追跡する更新可能なリポジトリへの初期化を提案します（推奨の選択肢を選んでください）。差分のある古いソースファイルは先に `bootstrap-backups/<日時>.zip` へ退避し、`venv`・`models`・`output`・`config`・`cache`・`logs` などのユーザーデータは保護されます。同期完了後、起動スクリプトが自動的に一度再起動してから `venv` を構築します。同期開始前に失敗した場合は元の ZIP のまま起動を続行し、同期途中の失敗や Python・必須パッケージ導入失敗時は英語・中国語のエラーメッセージを表示して停止します。

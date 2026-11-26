@@ -5,9 +5,12 @@ third-party packages (such as requests) are installed.
 """
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 import os
+from pathlib import Path
+import subprocess
+import sys
 import threading
 import time
 import urllib.request
@@ -16,6 +19,12 @@ from urllib.parse import quote
 HF_OFFICIAL = "https://huggingface.co"
 HF_MIRROR = "https://hf-mirror.com"
 HF_PROBE_PATH = "/gpt2/resolve/main/config.json"
+
+PYPI_OFFICIAL = "https://pypi.org/simple"
+PYPI_MIRRORS = (
+    "https://pypi.tuna.tsinghua.edu.cn/simple",
+    "https://mirrors.aliyun.com/pypi/simple",
+)
 
 CACHE_TTL = 900.0
 _PROBE_USER_AGENT = "lora-scripts-anima/network-probe"
@@ -190,3 +199,80 @@ def hf_resolve_urls(
         f"{ep.rstrip('/')}/{prefix}/resolve/{clean_rev}/{clean_path}"
         for ep in resolve_hf_endpoints()
     ]
+
+
+def _configured_pip_index(env: Mapping[str, str] | None = None) -> str | None:
+    source = os.environ if env is None else env
+    if env_index := (source.get("PIP_INDEX_URL") or "").strip():
+        return env_index
+    try:
+        # pip loads paths such as PIP_CONFIG_FILE from its process environment.
+        if env is not None and dict(env) != dict(os.environ):
+            output = subprocess.check_output(
+                [sys.executable, "-B", str(Path(__file__).with_name("pip_index_config.py"))],
+                env=env, text=True,
+            )
+            for line in output.splitlines():
+                key, _, value = line.partition("\t")
+                if key == "global.index-url":
+                    return value.strip() or None
+            return None
+        from tools.pip_index_config import read_indexes
+
+        return (read_indexes().get("global.index-url") or "").strip() or None
+    except Exception:
+        return None
+
+
+def select_pip_index(
+    *,
+    env: Mapping[str, str] | None = None,
+    timeout: float = 1.5,
+) -> str | None:
+    """Return a fast PyPI mirror URL only when unset and pypi.org is slow/unreachable."""
+    if _configured_pip_index(env):
+        return None
+
+    targets = (PYPI_OFFICIAL, *PYPI_MIRRORS)
+    probe_urls = [base.rstrip("/") + "/pip/" for base in targets]
+    results = _probe_many(probe_urls, timeout=timeout, byte_range=False)
+
+    off_ok, off_t = results.get(probe_urls[0], (False, timeout))
+    if off_ok and off_t <= 1.0:
+        return None
+
+    working = [
+        (mirror, results[url][1])
+        for mirror, url in zip(PYPI_MIRRORS, probe_urls[1:])
+        if results.get(url, (False, timeout))[0]
+    ]
+    if not working:
+        return None
+    working.sort(key=lambda item: item[1])
+    return working[0][0]
+
+
+def apply_pip_index_env(env: dict[str, str] | None = None) -> dict[str, str]:
+    """Return an env dict with auto-selected PIP_INDEX_URL applied if needed."""
+    target = dict(os.environ if env is None else env)
+    if selected := select_pip_index(env=target):
+        target["PIP_INDEX_URL"] = selected
+    return target
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+    cmd = args[0] if args else "hf-endpoint"
+    if cmd == "pip-index":
+        if selected := select_pip_index():
+            print(selected)
+        return 0
+    if cmd == "hf-endpoint":
+        print(warm_up_hf_endpoint())
+        return 0
+    print(f"Unknown command: {cmd}", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
