@@ -53,12 +53,8 @@ Download base models, auto-tag images, generate AI captions and regularization i
 On first launch, the launcher prompts to create the `venv` virtual environment and install dependencies (pass `--quiet` / `-q` for unattended installation). Once the terminal prints `READY`, open **[http://127.0.0.1:12333](http://127.0.0.1:12333)** in your browser (if port 12333 is in use, an available port in `30000–30020` is selected automatically and printed in the terminal).
 
 <details>
-<summary>Hugging Face endpoint and PyPI mirror settings</summary>
+<summary>PyPI index settings</summary>
 
-- **Hugging Face endpoint (important outside mainland China)**: When `HF_ENDPOINT` is unset, the launcher defaults to `https://hf-mirror.com`. To download models, taggers, and dictionaries directly from Hugging Face, set `HF_ENDPOINT` before launching:
-  - PowerShell: `$env:HF_ENDPOINT="https://huggingface.co"; .\start.bat`
-  - CMD: `set "HF_ENDPOINT=https://huggingface.co" && start.bat`
-  - Linux: `HF_ENDPOINT=https://huggingface.co bash start.sh`
 - **Custom PyPI index (optional)**:
   - PowerShell: `$env:PIP_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"; .\start.bat`
   - CMD: `set "PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple" && start.bat`

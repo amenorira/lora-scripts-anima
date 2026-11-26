@@ -1163,7 +1163,6 @@ function Invoke-MainBootstrap {
 
     $env:HF_HOME = Join-Path $script:RepositoryRoot "huggingface"
     $env:PYTHONUTF8 = "1"
-    if (-not $env:HF_ENDPOINT) { $env:HF_ENDPOINT = "https://hf-mirror.com" }
     $startupHooks = Join-Path $script:RepositoryRoot "tools\python_startup"
     $pythonPathEntries = @($env:PYTHONPATH -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     if ($pythonPathEntries -notcontains $startupHooks) {

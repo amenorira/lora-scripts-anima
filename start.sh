@@ -237,9 +237,6 @@ do_install() {
 # -- Venv check --
 export HF_HOME=huggingface
 export PYTHONUTF8=1
-# 默认走 hf-mirror.com 镜像加速；国外用户可 export HF_ENDPOINT=https://huggingface.co 回直连
-# （仅当用户未自行设置 HF_ENDPOINT 时才赋默认值）
-export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
 STARTUP_HOOKS="$SCRIPT_DIR/tools/python_startup"
 case ":${PYTHONPATH:-}:" in
     *":$STARTUP_HOOKS:"*) ;;

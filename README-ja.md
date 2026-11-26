@@ -53,12 +53,8 @@ _Anima・SDXL・MOSS-Image・Krea 2 に対応したローカル LoRA 学習ツ�
 初回起動時は、確認プロンプトに従って仮想環境 `venv` の作成と依存パッケージの導入を行います（`--quiet` / `-q` を付けると確認なしで自動実行します）。ターミナルに `READY` と表示されたら、ブラウザで **[http://127.0.0.1:12333](http://127.0.0.1:12333)** を開いてください（ポート 12333 が使用中の場合は `30000〜30020` の空きポートへ自動変更し、URL をターミナルに表示します）。
 
 <details>
-<summary>Hugging Face 接続先・PyPI ミラーの設定</summary>
+<summary>PyPI ミラーの設定</summary>
 
-- **Hugging Face の接続先（日本国内などから公式サーバーへ直接接続する場合）**：環境変数 `HF_ENDPOINT` が未設定の場合、既定ではミラー（`https://hf-mirror.com`）を使用します。Hugging Face 公式サーバーへ直接接続する場合は、起動前に設定してください。
-  - PowerShell：`$env:HF_ENDPOINT="https://huggingface.co"; .\start.bat`
-  - CMD：`set "HF_ENDPOINT=https://huggingface.co" && start.bat`
-  - Linux：`HF_ENDPOINT=https://huggingface.co bash start.sh`
 - **カスタム PyPI ミラー（任意）**：
   - PowerShell：`$env:PIP_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"; .\start.bat`
   - CMD：`set "PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple" && start.bat`

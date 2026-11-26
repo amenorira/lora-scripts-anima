@@ -53,12 +53,8 @@ _支持 Anima、SDXL、MOSS-Image 与 Krea 2 的本地 LoRA 训练工具_
 首次启动会提示确认创建项目虚拟环境 `venv` 并安装全部依赖（附加 `--quiet` / `-q` 可免交互自动安装）。终端打印 `READY / 服务已就绪` 后，在浏览器打开 **[http://127.0.0.1:12333](http://127.0.0.1:12333)**（若 12333 端口被占用，将自动改用 `30000–30020` 并在终端提示实际地址）。
 
 <details>
-<summary>网络镜像设置（Hugging Face / PyPI）</summary>
+<summary>PyPI 镜像设置</summary>
 
-- **Hugging Face 下载源**：启动器在未设置 `HF_ENDPOINT` 时默认使用 `https://hf-mirror.com` 加速下载。海外环境如需直连官方源，请在启动前设置环境变量：
-  - PowerShell：`$env:HF_ENDPOINT="https://huggingface.co"; .\start.bat`
-  - CMD：`set "HF_ENDPOINT=https://huggingface.co" && start.bat`
-  - Linux：`HF_ENDPOINT=https://huggingface.co bash start.sh`
 - **PyPI 镜像（国内加速依赖安装）**：
   - PowerShell：`$env:PIP_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"; .\start.bat`
   - CMD：`set "PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple" && start.bat`
