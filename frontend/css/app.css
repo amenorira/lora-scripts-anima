@@ -3232,6 +3232,11 @@ input[type="range"]::-webkit-slider-thumb {
 .m-speed-bar { opacity: var(--bar-alpha, .78); transform-box: fill-box; transform-origin: bottom; pointer-events: none; transition: opacity .12s var(--ease-out), filter .12s var(--ease-out); }
 .m-speed-hover-dot { opacity: 0; fill: var(--speed-viz-color); pointer-events: none; transition: opacity .1s var(--ease-out); }
 .m-speed-bar-item.is-slow .m-speed-hover-dot { fill: var(--warning); }
+@media (prefers-reduced-motion: no-preference) {
+  .m-speed-profile-svg.is-live .m-speed-bar-item { transition: transform .24s var(--ease-out); }
+  .m-speed-profile-svg.is-live .m-speed-bar { transition: y .24s var(--ease-out), height .24s var(--ease-out), opacity .12s, filter .12s; }
+  .m-speed-profile-svg.is-live .m-speed-hover-dot { transition: cy .24s var(--ease-out), opacity .1s; }
+}
 .m-speed-bar-item:hover .m-speed-bar,
 .m-speed-bar-item.is-hovered .m-speed-bar { opacity: 1; filter: brightness(1.3); }
 .m-speed-bar-item:hover .m-speed-hover-dot,
@@ -3335,6 +3340,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .m-training-diagnostics { position: relative; --hero-tone-color: color-mix(in srgb, var(--text-primary) 76%, var(--text-secondary)); --caliper-color: var(--warning); display: flex; flex-direction: column; min-height: 252px; }
 .m-training-diagnostics.is-live-motion { transition: --hero-tone-color 280ms var(--ease-out); }
+.m-training-diagnostics[hidden] { display: none; }
 .m-diagnostic-connector[data-kind="best"] { color: var(--accent); }
 .m-diagnostic-connector[data-kind="gap"] { color: var(--warning); }
 .m-training-diagnostics[data-diagnostic-tone="ok"] { --hero-tone-color: var(--diag-tone-ok, var(--success)); }
@@ -3434,7 +3440,7 @@ input[type="range"]::-webkit-slider-thumb {
 .m-best-callout .is-step { fill: var(--text-secondary); font-weight: 500; font-size: 9.5px; }
 .m-hero-chart-wrap[data-focus="best"] .m-best-guides { opacity: 1; }
 .m-hero-chart-wrap[data-focus="best"] .m-best-dot { transform: scale(1.4); }
-.m-hero-chart-wrap[data-focus="best"] .m-best-ring { animation: m-locator-ring 1.35s var(--ease-out) infinite; }
+.m-hero-chart-wrap[data-focus="best"] .m-best-ring { opacity: .7; }
 .m-hero-chart-wrap[data-focus="best"] .m-best-callout { opacity: 1; }
 
 .m-chart-caliper { opacity: 0; pointer-events: none; transition: opacity .16s var(--ease-out); }
@@ -3482,9 +3488,9 @@ input[type="range"]::-webkit-slider-thumb {
 .m-diagnostic-metric-top > span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-tertiary); font-size: 12px; }
 .m-diagnostic-metric-top > strong { color: var(--text-primary); font: 700 18px/1.1 var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .m-diagnostic-metric > small { min-width: 0; color: var(--text-tertiary); font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
-.m-diagnostic-metric[data-tone="ok"] .m-diagnostic-metric-top > strong { color: var(--diag-tone-ok, var(--success)); }
-.m-diagnostic-metric[data-tone="warn"] .m-diagnostic-metric-top > strong { color: var(--diag-tone-warn, var(--warning)); }
-.m-diagnostic-metric[data-tone="danger"] .m-diagnostic-metric-top > strong { color: var(--diag-tone-danger, var(--danger)); }
+.m-diagnostic-metric-gauge { color: var(--gauge-bar-color, var(--text-primary)); }
+.m-diagnostic-metric-gauge .m-diagnostic-metric-top > strong { color: inherit; }
+.m-diagnostic-metric-gauge .m-gauge-fill { background: currentColor; }
 
 .m-diagnostic-metric-link { cursor: pointer; transition: background .14s var(--ease-out); }
 .m-diagnostic-metric-link:hover, .m-diagnostic-metric-link:focus-visible { background: color-mix(in srgb, var(--accent) 5.5%, transparent); outline: none; }
@@ -3499,7 +3505,8 @@ input[type="range"]::-webkit-slider-thumb {
 .m-gauge-zero { transform: translateX(-50%); }
 .m-gauge-origin { left: 0; }
 .m-gauge-fill { position: absolute; top: 0; bottom: 0; z-index: 1; border-radius: var(--radius-pill); background: var(--gauge-bar-color, transparent); }
-.m-diagnostic-metrics.is-live-motion .m-gauge-fill { transition: left .3s var(--ease-out), width .3s var(--ease-out), background-color .24s var(--ease-out); }
+.m-diagnostic-metrics.is-live-motion .m-gauge-fill { transition: left .3s var(--ease-out), width .3s var(--ease-out); }
+.m-diagnostic-metrics.is-live-motion .m-diagnostic-metric-gauge { transition: color .24s var(--ease-out); }
 .m-gauge-change .m-gauge-fill.is-neg { border-radius: var(--radius-pill) 0 0 var(--radius-pill); }
 .m-gauge-change .m-gauge-fill.is-pos,
 .m-gauge-volatility .m-gauge-fill { border-radius: 0 var(--radius-pill) var(--radius-pill) 0; }
@@ -3508,13 +3515,9 @@ input[type="range"]::-webkit-slider-thumb {
   0% { transform: scale(.55); opacity: .7; }
   100% { transform: scale(1.7); opacity: 0; }
 }
-@keyframes m-locator-ring {
-  0% { transform: scale(.45); opacity: .8; }
-  100% { transform: scale(1.65); opacity: 0; }
-}
 @media (prefers-reduced-motion: reduce) {
   .m-loss-pulse, .m-lr-pulse, .m-latest-pulse, .m-best-ring, .m-chart-preview-pop { animation: none !important; }
-  .m-gauge-fill, .m-epoch-fill, .m-speed-wait-compute, .m-speed-wait-io, .m-training-diagnostics, .m-chart-overlays { transition: none !important; }
+  .m-gauge-fill, .m-diagnostic-metric-gauge, .m-epoch-fill, .m-speed-wait-compute, .m-speed-wait-io, .m-training-diagnostics, .m-chart-overlays { transition: none !important; }
 }
 .m-console-card .m-card-heading,
 .m-console-card .m-card-heading * { line-height: 1.2; }

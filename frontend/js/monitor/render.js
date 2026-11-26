@@ -140,6 +140,10 @@ window.monitorRenderMixin = {
     if (tabChanged) {
       const prevTab = this._builtTab;
       this._builtTab = tab;
+      if (prevTab === 'overview') {
+        const card = contentEl.querySelector('.m-training-diagnostics');
+        if (card) card._insufficientContext = null;
+      }
       // 切离样本标签：取消弱网模式下的后台媒体加载队列（面板 DOM 保留，不释放 object URL）
       if (prevTab === 'samples' && tab !== 'samples') {
         this._sampleLayoutAction++;
@@ -183,15 +187,18 @@ window.monitorRenderMixin = {
     }
     if (tab === 'overview') {
       let restoreControlFocus;
-      const sig = 'ov:' + this._shellLocale + ':' + this._summaryStatus(d, isHistory).state + ':' + this.trainParamsVersion;
-      if (panelEmpty || this._builtOverviewSig !== sig || this._builtParamSchema !== window.TRAIN_SECTIONS) {
+      const overviewContext = isHistory ? 'history:' + this.selectedRunDir : 'live:' + (this.liveTaskId || d.active_task?.id || d.run_dir || '');
+      const sig = 'ov:' + this._shellLocale + ':' + this._summaryStatus(d, isHistory).state + ':' + overviewContext;
+      const rebuild = panelEmpty || this._builtOverviewSig !== sig;
+      if (rebuild || panel._paramVersion !== this.trainParamsVersion || panel._paramSchema !== window.TRAIN_SECTIONS) {
         this._builtOverviewSig = sig;
-        this._builtParamSchema = window.TRAIN_SECTIONS;
+        // Keep the raw registry on the DOM node. Alpine proxies arrays stored on the component.
+        panel._paramSchema = window.TRAIN_SECTIONS;
+        panel._paramVersion = this.trainParamsVersion;
         if (!tabChanged) panel.classList.add('no-enter-anim');
         const paramInput = panel.querySelector('.m-param-toolbar input');
         const paramFocus = paramInput && document.activeElement === paramInput
           ? { start: paramInput.selectionStart, end: paramInput.selectionEnd } : null;
-        const overviewContext = isHistory ? 'history:' + this.selectedRunDir : 'live:' + (d.run_dir || this.liveTaskId || d.active_task?.id || '');
         const sameContext = panel.dataset.overviewContext === overviewContext;
         if (sameContext && panel.contains(document.activeElement)) {
           if (document.activeElement.hasAttribute('data-summary-toggle')) restoreControlFocus = '[data-summary-toggle]';
@@ -201,12 +208,16 @@ window.monitorRenderMixin = {
         const methodOpen = method?.open;
         const methodFocused = method && document.activeElement === method.querySelector('summary');
         const scrollTop = panel.scrollTop;
-        panel.innerHTML = this._renderOverviewTab(d, t, isHistory);
-        panel.dataset.overviewContext = overviewContext;
-        delete panel.dataset.diagnosticVersion;
-        delete panel.dataset.matrixVersion;
-        delete panel.dataset.telemetryVersion;
-        delete panel.dataset.motionContext;
+        if (rebuild) {
+          panel.innerHTML = this._renderOverviewTab(d, t, isHistory);
+          panel.dataset.overviewContext = overviewContext;
+          delete panel.dataset.diagnosticVersion;
+          delete panel.dataset.matrixVersion;
+          delete panel.dataset.telemetryVersion;
+          delete panel.dataset.motionContext;
+        } else {
+          panel.querySelector('[data-overview-params]').innerHTML = this._overviewParamsHtml(d, t, isHistory);
+        }
         this.initMonitorParams(panel);
         if (sameContext) {
           const method = panel.querySelector('.m-diagnostic-details');

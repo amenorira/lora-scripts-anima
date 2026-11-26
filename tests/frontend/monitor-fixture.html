@@ -188,7 +188,7 @@
         this.lossSeries[1].points.push({step:d.step,value:this.lossSeries[1].latest});
         this.lossDataVersion++;this.renderDashboard();
       },
-      monitorData:{state:'RUNNING',step:518,total_steps:740,percent:70,loss:.0337,lr:4.26e-5,epoch:14,elapsed:'43:21',eta:'18:34',speed:'5.26 s/it',run_dir:'output/fixture',artifact_dir:'C:/training/models',active_task:{id:'fixture'},training_profile:configProfile||'anima-lora'},
+      monitorData:{state:'RUNNING',detail:true,step:518,total_steps:740,percent:70,loss:.0337,lr:4.26e-5,epoch:14,elapsed:'43:21',eta:'18:34',speed:'5.26 s/it',run_dir:'output/fixture',artifact_dir:'C:/training/models',active_task:{id:'fixture'},training_profile:configProfile||'anima-lora'},
       previews:samples.slice(),previewsVersion:1,weakNetworkMode:true,
       sampleLossMode: ['off', 'overall', 'detailed'].includes(query.get('lossMode')) ? query.get('lossMode') : 'off',
       logLines:logs,

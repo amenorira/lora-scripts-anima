@@ -16,6 +16,40 @@ function requestHarness(document = {getElementById: () => null}) {
   return {app, requests};
 }
 
+test('live overview keeps its chart and progress matrix across telemetry and parameter refreshes', () => {
+  let builds = 0;
+  const params = {};
+  const panel = {dataset: {}, classList: {add() {}}, contains: () => false,
+    querySelector: selector => selector === '[data-overview-params]' ? params : null,
+    set innerHTML(html) { this.firstElementChild = html; builds++; }};
+  const document = {getElementById: () => ({querySelector: () => panel})};
+  const {window} = loadFrontend('monitor/render', {window: {TRAIN_SECTIONS: []}, document});
+  const app = new Proxy(composeMixins(window.monitorRenderMixin, {
+    _builtTab: 'overview', liveTaskId: 'run-a', trainParamsVersion: 1,
+    _summaryStatus: () => ({state: 'RUNNING'}), _renderOverviewTab: () => 'overview',
+    initMonitorParams() {}, _patchOverviewStatus() {}, _overviewParamsHtml() { return String(this.trainParamsVersion); },
+  }), {
+    // Alpine returns a reactive proxy when an array is read back from the component.
+    get(target, key) {
+      const value = target[key];
+      return value === window.TRAIN_SECTIONS ? new Proxy(value, {}) : value;
+    },
+  });
+  const render = step => app._renderTab('overview', {step}, null, null, String, false);
+  render(1);
+  render(2);
+  assert.equal(builds, 1);
+  app.trainParamsVersion++;
+  render(3);
+  assert.equal(params.innerHTML, '2');
+  window.TRAIN_SECTIONS = [];
+  render(4);
+  assert.equal(builds, 1);
+  app.liveTaskId = 'run-b';
+  render(1);
+  assert.equal(builds, 2);
+});
+
 test('a delayed log search cannot overwrite newer input or enable stale match navigation', async () => {
   const {app, requests} = requestHarness();
   app.logFullQuery = 'old';
