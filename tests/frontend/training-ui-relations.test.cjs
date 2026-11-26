@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { TRAINING_CORE_SCRIPTS, loadFrontend, trainingFieldSections } = require('./helpers.cjs');
+const vm = require('node:vm');
+const { TRAINING_CORE_SCRIPTS, loadFrontend, readRepo, trainingFieldSections } = require('./helpers.cjs');
 
 function application(profile, values = {}) {
   const context = loadFrontend(['shared/constants', 'shared/utils', 'app/config', ...TRAINING_CORE_SCRIPTS, 'training/toml', 'training/dataset-repeat', 'training/config-io'], {
@@ -141,4 +142,87 @@ test('Krea imported preview conflicts retain editable paths and can be resolved 
   app.setField('blocks_to_swap', 0);
   assert.equal(app.form.turbo_dit, './turbo.safetensors');
   assert.equal(Object.keys(app._kreaOptionErrors()).length, 0);
+});
+
+test('Krea field help follows the sampling mode and dialog links follow their href', async () => {
+  const app = docsApp({ form: { model_train_type: 'krea2-lora', timestep_sampling: 'logsnr' } });
+  await app.openFieldDoc('timesteps', 'logit-normal');
+  assert.equal(app.parameterDocOpen, true);
+  assert.equal(app.parameterDocSlug, 'timesteps');
+  assert.equal(app.parameterDocAnchor, 'logsnr');
+  const link = { getAttribute: () => '#logit-normal' };
+  await app.handleDocsContentClick({ target: { closest: () => link }, preventDefault() {} }, true);
+  assert.equal(app.parameterDocAnchor, 'logit-normal');
+});
+
+function docsApp(extra = {}) {
+  const context = loadFrontend(['docs/index'], {
+    window: {},
+    AbortController, setTimeout, clearTimeout,
+    document: {
+      createElement: () => ({ innerHTML: '', content: { querySelectorAll: () => [], replaceChildren() {} } }),
+      getElementById: () => null,
+    },
+    fetch: async url => ({ ok: true, json: async () => ({ status: 'success', data: url.startsWith('/api/docs/')
+      ? { slug: url.slice('/api/docs/'.length).split('?')[0], locale: 'zh-CN', html: `<h2 id="x">${url}</h2>` }
+      : { locale: 'zh-CN', documents: [{ slug: 'optimizers' }, { slug: 'timesteps' }] } }) }),
+  });
+  return Object.assign({}, context.window.docsMixin, {
+    currentRoute: 'train-basic', locale: 'zh-CN', form: {},
+    t: key => key, $nextTick: callback => callback(), ...extra,
+  });
+}
+
+test('reader retry button and sidebar retry both preserve a failed chapter link', async () => {
+  const html = readRepo('frontend/index.html');
+  const errorPanel = html.match(/<div class="docs-error"[^>]*>[\s\S]*?<\/div>/)[0];
+  const visible = errorPanel.match(/x-show="([^"]+)"/)[1];
+  const retryClick = errorPanel.match(/<button[^>]*@click="([^"]+)"/)[1];
+  const sidebarClick = html.match(/<button[^>]*class="docs-index-item"[^>]*@click="([^"]+)"/)[1];
+
+  for (const click of [retryClick, sidebarClick]) {
+    const app = docsApp({
+      currentRoute: 'docs', docsSelectedSlug: 'optimizers', _docsContentLocale: 'zh-CN',
+      docsHtml: '<h2>optimizers</h2>', doc: { slug: 'timesteps' },
+    });
+    const evaluate = expression => vm.runInNewContext(`with (reader) { ${expression} }`, { reader: app });
+    const scrolled = [];
+    app.scrollToDocAnchor = anchor => scrolled.push(anchor);
+    app._fetchDocsContent = async () => { throw new Error('HTTP 503'); };
+    await app.selectParameterDoc('timesteps', 'krea-range');
+    assert.equal(app.docsSelectedSlug, 'optimizers');
+    assert.match(app.docsHtml, /optimizers/);
+    assert.match(app.docsError, /HTTP 503/);
+    assert.ok(evaluate(visible));
+
+    app._fetchDocsContent = async slug => ({ slug, locale: 'zh-CN', html: '<h2 id="krea-range">Krea range</h2>' });
+    await evaluate(click);
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.equal(app.docsSelectedSlug, 'timesteps');
+    assert.match(app.docsHtml, /Krea range/);
+    assert.ok(!evaluate(visible));
+    assert.deepEqual(scrolled, ['krea-range']);
+  }
+});
+
+test('inline outline collapses before measuring the anchor scroll target', () => {
+  const app = docsApp({ currentRoute: 'docs' });
+  const details = { open: true };
+  const link = { getAttribute: () => '#logsnr', closest: selector => (selector === 'details' ? details : null) };
+  let openWhenScrolled = null;
+  app.scrollToDocAnchor = () => { openWhenScrolled = details.open; };
+  app.handleInlineDocsTocClick({ target: { closest: () => link }, preventDefault() {} });
+  assert.equal(openWhenScrolled, false);
+});
+
+test('Prodigy fields open prodigy-options, switching to ProdigyPlus options for ProdigyPlusScheduleFree', async () => {
+  for (const [optimizer, expected] of [['prodigyopt.Prodigy', 'prodigy-options'],
+    ['prodigyplus.ProdigyPlusScheduleFree', 'prodigyplus-options']]) {
+    const app = docsApp({ form: { model_train_type: 'krea2-lora', optimizer_type: optimizer } });
+    await app.openFieldDoc('optimizers', 'prodigy-options');
+    assert.equal(app.parameterDocAnchor, expected);
+    const link = { getAttribute: () => 'optimizers.zh-CN.md#prodigy-options' };
+    await app.handleDocsContentClick({ target: { closest: () => link }, preventDefault() {} }, true);
+    assert.equal(app.parameterDocAnchor, 'prodigy-options');
+  }
 });
