@@ -348,7 +348,19 @@ window.tagEditorPersistence = {
         if (data && data.length > 0) {
           var self = this;
           this._teDraftRemainder = data;
-          this._teConfirmUnsaved(this.t('tagEditor.draftFound'), async function() {
+          this.openConfirm({
+            title: this.t('tagEditor.draftRestoreTitle'),
+            message: this.t('tagEditor.draftFound'),
+            tone: 'warning',
+            actionLabel: this.t('tagEditor.draftRestoreAction'),
+            secondaryLabel: this.t('tagEditor.draftDiscardAction'),
+            onSecondary: function() {
+              if (epoch === self._teLoadEpoch && dir === (self.tagEditorLoadedDir || self.tagEditorDir)) {
+                self._teDraftRemainder = [];
+                self._teRemoveDraft();
+              }
+            },
+            onConfirm: async function() {
             var isCurrent = () => epoch === self._teLoadEpoch && dir === (self.tagEditorLoadedDir || self.tagEditorDir) && self.currentRoute === 'tagEditor';
             if (!isCurrent() || self._teIsSaving || self._teDraftRestoreBusy) return;
             self._teFlushAllPendingTextEdits();
@@ -403,6 +415,7 @@ window.tagEditorPersistence = {
             } finally {
               if (isCurrent()) self._teDraftRestoreBusy = false;
             }
+            },
           });
         }
       }
