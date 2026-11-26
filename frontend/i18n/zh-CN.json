@@ -1111,6 +1111,7 @@
 		"ddLegThisImage": "本图采样",
 		"ddTimestepOverlayEmpty": "暂无已知时间步的采样记录。",
 		"ddCaptionTitle": "标注文本",
+		"ddResizeCaption": "拖动或按上下方向键调整标注文本高度，双击恢复默认高度",
 		"ddCaptionNotFound": "未找到该子集配置的标注文件。",
 		"ddCaptionUnavailable": "源文件不在本地，无法读取标注文件。",
 		"ddCaptionEmpty": "标注文件为空。",

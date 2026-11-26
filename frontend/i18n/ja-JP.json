@@ -1111,6 +1111,7 @@
 		"ddLegThisImage": "この画像",
 		"ddTimestepOverlayEmpty": "タイムステップが記録されたサンプルがありません。",
 		"ddCaptionTitle": "キャプション",
+		"ddResizeCaption": "上下にドラッグするか上下矢印キーでキャプションの高さを調整。ダブルクリックで元に戻す",
 		"ddCaptionNotFound": "このサブセットで指定されたキャプションファイルが見つかりません。",
 		"ddCaptionUnavailable": "元ファイルがローカルにないためキャプションを読み込めません。",
 		"ddCaptionEmpty": "キャプションファイルは空です。",

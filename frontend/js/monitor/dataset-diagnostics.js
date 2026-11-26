@@ -1262,7 +1262,7 @@
       this.datasetDiagSamplesModalOpen = false;
       this.datasetDiagSamplesFilter = 'all';
       this.datasetDiagModalImageId = imageId;
-      this.datasetDiagModalDetail = hasFullCache ? cached : (!reopen ? cached : null);
+      this.datasetDiagModalDetail = hasFullCache ? cached : null;
       this.datasetDiagModalError = '';
       this.datasetDiagViewport.reset(false);
       const doc = globalThis.document;
@@ -1392,13 +1392,15 @@
       const hasNan = Number(this.datasetDiagModalDetail.image?.non_finite_count || 0) > 0;
       this.datasetDiagSamplesFilter = (filter === 'nan' && hasNan) ? 'nan' : 'all';
       this.datasetDiagSamplesModalOpen = true;
-      this._patchDatasetDiagSamplesModal?.();
+      this._patchDatasetDiagSamplesModal?.(true);
     },
 
     setDatasetDiagSamplesFilter(mode) {
       const hasNan = Number(this.datasetDiagModalDetail?.image?.non_finite_count || 0) > 0;
-      this.datasetDiagSamplesFilter = (mode === 'nan' && hasNan) ? 'nan' : 'all';
-      this._patchDatasetDiagSamplesModal?.();
+      const filter = (mode === 'nan' && hasNan) ? 'nan' : 'all';
+      const changed = this.datasetDiagSamplesFilter !== filter;
+      this.datasetDiagSamplesFilter = filter;
+      this._patchDatasetDiagSamplesModal?.(changed);
     },
 
     closeDatasetDiagSamplesModal() {

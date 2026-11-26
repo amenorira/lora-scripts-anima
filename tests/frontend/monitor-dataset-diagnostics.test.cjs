@@ -318,6 +318,73 @@ test('monitor tab cycling includes dataset tab at the end', () => {
   assert.equal(a.monitorTab, 'dataset');
 });
 
+test('detail polling preserves chart nodes across unrelated revisions and repaints changed geometry with identical KPI text', () => {
+  const image = SAMPLE_DATA.by_image[0];
+  const detail = { image, revision: 'a', epoch_series: [{ epoch: 1, mean_residual: 0.2 }, { epoch: 2, mean_residual: 0.1 }] };
+  const right = makeEl();
+  const modal = makeEl();
+  const bindings = [];
+  const app = makeApp({
+    selectedRunDir: '',
+    _monitorMotionAllowed: () => true,
+    datasetDiagData: SAMPLE_DATA,
+    datasetDiagModalImageId: image.image_id,
+    datasetDiagModalDetail: detail,
+    _patchDatasetDiagModal: window.datasetDiagnosticsModalMixin._patchDatasetDiagModal,
+    _bindDatasetDiagModalCharts(_right, _detail, _t, opts) { bindings.push(opts.animate); },
+  });
+  withMockEnv({ document: {
+    getElementById(id) { return ({ datasetDiagModalRight: right, datasetDiagModal: modal })[id] || null; },
+  } }, () => {
+    app._patchDatasetDiagModal();
+    const stage = right.querySelector('[data-dd-epoch-stage]');
+    assert.ok(stage);
+    app.datasetDiagModalDetail = { ...detail, revision: 'b' };
+    app._patchDatasetDiagModal();
+    assert.deepEqual(bindings, [false]);
+    assert.equal(right.querySelector('[data-dd-epoch-stage]'), stage);
+    app.datasetDiagModalDetail = { ...detail, epoch_series: [{ epoch: 1, mean_residual: 0.3 }, detail.epoch_series[1]] };
+    app._patchDatasetDiagModal();
+    assert.deepEqual(bindings, [false, true]);
+    assert.equal(right.querySelector('[data-dd-epoch-stage]'), stage);
+    app._monitorMotionAllowed = () => false;
+    app.datasetDiagModalDetail = detail;
+    app._patchDatasetDiagModal();
+    assert.deepEqual(bindings, [false, true, false]);
+  });
+});
+
+test('uncached image navigation keeps the previous layout and scroll offset until the next detail is ready', () => {
+  const [first, next] = SAMPLE_DATA.by_image;
+  const right = makeEl(), modal = makeEl(), foot = makeEl();
+  const app = makeApp({
+    datasetDiagData: SAMPLE_DATA, datasetDiagModalImageId: first.image_id,
+    datasetDiagModalDetail: { image: first }, selectedRunDir: 'output/example',
+    _patchDatasetDiagModal: window.datasetDiagnosticsModalMixin._patchDatasetDiagModal,
+    _bindDatasetDiagModalCharts() {},
+  });
+  withMockEnv({document: {getElementById: id => ({
+    datasetDiagModal: modal, datasetDiagModalRight: right, datasetDiagModalFoot: foot,
+  })[id] || null}}, () => {
+    app._patchDatasetDiagModal();
+    const previous = right.innerHTML;
+    right.scrollTop = 42;
+    app.datasetDiagModalImageId = next.image_id;
+    app.datasetDiagModalDetail = null;
+    app.datasetDiagModalLoading = true;
+    app._patchDatasetDiagModal();
+    assert.equal(right.innerHTML, previous);
+    assert.ok(right.inert && foot.inert);
+    app.datasetDiagModalDetail = { image: next };
+    app.datasetDiagModalLoading = false;
+    app._patchDatasetDiagModal();
+    assert.equal(right._ddRenderedImageId, next.image_id);
+    assert.equal(right.inert, false);
+    assert.equal(foot.inert, false);
+    assert.equal(right.scrollTop, 42);
+  });
+});
+
 test('dashboard overview, images view, smart groups deduplication, folding, filtering, and sorting', async () => {
   const seenUrls = [];
   await withMockEnv({

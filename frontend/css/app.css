@@ -7472,6 +7472,7 @@ dialog.m-dd-samples-modal {
 .modal.m-dd-modal-window:focus { outline: none; }
 .m-dd-modal-header { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 16px; min-width: 0; }
 .m-dd-modal-heading { display: flex; align-items: center; gap: 9px; min-width: 0; flex: 1; }
+.m-dd-modal[aria-busy="true"] .m-dd-modal-heading::after { content: ''; width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--accent); }
 .m-dd-modal-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 650 14px/1.2 var(--font-sans); color: var(--text-primary); }
 :is(.m-dd-card-name, .m-dd-row-name strong, .m-dd-modal-title).loop-marquee { text-overflow: clip; }
 .m-dd-modal-sub { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; color: var(--text-secondary); font: 12px/1.2 var(--font-sans); font-variant-numeric: tabular-nums; }
@@ -7502,7 +7503,9 @@ dialog.m-dd-samples-modal {
 .m-dd-modal-size-diff.is-warn { color: var(--diag-tone-warn, var(--warning)); }
 .m-dd-modal-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 
-.m-dd-modal-right { min-width: 0; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; padding: 0; display: flex; flex-direction: column; border-left: 1px solid var(--monitor-card-border); background: var(--bg-surface); }
+.m-dd-modal-right { min-width: 0; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; border-left: 1px solid var(--monitor-card-border); background: var(--bg-surface); }
+.m-dd-modal-right-content { display: flex; flex-direction: column; height: 100%; }
+.m-dd-modal-right-content:has(.m-dd-caption-box) { height: calc(100% + var(--dd-caption-extra, 0px)); }
 .m-dd-nan-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 7px 18px; border-bottom: 1px solid var(--monitor-card-border); transition: background var(--duration-fast) var(--ease-out); }
 .m-dd-nan-row.is-clickable { cursor: pointer; }
 .m-dd-nan-row.is-clickable:hover { background: color-mix(in srgb, var(--danger) 8%, transparent); }
@@ -7646,7 +7649,19 @@ dialog.m-dd-samples-modal {
 .m-dd-cap-head-left { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; min-width: 0; font-family: var(--font-sans); font-variant-numeric: tabular-nums; }
 .m-dd-cap-file { color: var(--text-secondary); font: 500 11.5px/1.2 var(--font-sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
 .m-dd-cap-tags { color: var(--text-tertiary); font: 500 11px/1.2 var(--font-sans); white-space: nowrap; }
-.m-dd-caption-text { margin: 0; max-height: 76px; overflow-y: auto; scrollbar-gutter: stable; padding: 7px 10px; border-radius: var(--radius-xs); border: 1px solid var(--border-subtle); background: var(--bg-input); color: var(--text-primary); font: 12px/1.5 var(--font-sans); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.m-dd-caption-box { --dd-caption-default: 76px; position: relative; min-width: 0; }
+.m-dd-caption-text { margin: 0; height: var(--dd-caption-height, auto); max-height: min(var(--dd-caption-height, var(--dd-caption-default)), 60dvh); overflow-y: auto; scrollbar-gutter: stable; padding: 7px 10px; border-radius: var(--radius-xs); border: 1px solid var(--border-subtle); background: var(--bg-input); color: var(--text-primary); font: 12px/1.5 var(--font-sans); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.m-dd-caption-grip {
+  position: absolute; right: 1px; bottom: 1px; width: 16px; height: 16px;
+  cursor: ns-resize; touch-action: none; user-select: none; color: var(--text-tertiary);
+  background: linear-gradient(135deg, transparent 50%, var(--bg-input) 50%);
+}
+.m-dd-caption-grip::after {
+  content: ''; position: absolute; right: 2px; bottom: 2px; width: 10px; height: 10px;
+  background: repeating-linear-gradient(135deg, transparent 0 2px, currentColor 2px 3px);
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+.m-dd-caption-grip:is(:hover, :focus-visible) { color: var(--accent); }
 
 .modal.m-dd-samples-window {
   width: min(680px, calc(100vw - 48px)); max-width: none; height: auto; max-height: min(620px, calc(100dvh - 96px));
@@ -7704,6 +7719,7 @@ dialog.m-dd-samples-modal {
   .modal.m-dd-modal-window { width: calc(100vw - 20px); height: calc(100dvh - 24px); }
   .m-dd-modal-body { grid-template-columns: 1fr; grid-template-rows: minmax(240px, 42%) minmax(0, 1fr); overflow-y: auto; scrollbar-gutter: stable; }
   .m-dd-modal-right { border-left: 0; border-top: 1px solid var(--monitor-card-border); overflow-y: visible; }
+  .m-dd-modal-right-content, .m-dd-modal-right-content:has(.m-dd-caption-box) { height: auto; }
   .m-dd-modal-sec-chart,
   .m-dd-modal-sec-ts { flex: 0 0 auto; min-height: 0; }
   .m-dd-mini-stage { flex: 0 0 auto; height: 168px; }

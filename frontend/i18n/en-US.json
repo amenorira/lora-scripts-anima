@@ -1111,6 +1111,7 @@
 		"ddLegThisImage": "This image",
 		"ddTimestepOverlayEmpty": "No samples with known timesteps recorded.",
 		"ddCaptionTitle": "Caption",
+		"ddResizeCaption": "Drag or use the up and down arrow keys to resize the caption. Double-click to reset.",
 		"ddCaptionNotFound": "The caption file configured for this subset was not found.",
 		"ddCaptionUnavailable": "Source file not found locally; caption unavailable.",
 		"ddCaptionEmpty": "Caption file is empty.",

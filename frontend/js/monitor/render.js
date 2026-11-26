@@ -725,6 +725,7 @@ window.monitorRenderMixin = {
     if (modal) {
       (modal._ddModalROs || []).forEach(observer => observer.disconnect());
       modal._ddModalROs = [];
+      delete modal._ddChartInput;
     }
   },
 
