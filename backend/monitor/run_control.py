@@ -50,6 +50,7 @@ def reported_progress(status: dict) -> dict:
     rates = {"lr/" + key: value for key, value in (status.get("lr") or {}).items()}
     result = {"step": step, "total_steps": total, "percent": round(min(100, step * 100 / total), 2),
               "metrics_step": p.get("metrics_step"),
+              "metrics_time": p.get("metrics_time"),
               "loss": (status.get("loss") or {}).get("current"),
               "lr": rates.get(primary_learning_rate_tag(rates))}
     if p.get("epoch") is not None and p.get("num_train_epochs"):

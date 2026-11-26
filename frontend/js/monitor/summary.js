@@ -80,8 +80,7 @@ window.monitorSummaryMixin = {
     const lossPoints = this._cleanLossPoints(lossSeries?.diagnostic_points?.length ? lossSeries.diagnostic_points : lossSeries?.points);
     const seriesLoss = lossPoints.at(-1);
     const metricsStep = reported?.metrics_step ?? reported?.step;
-    const latestLoss = Number.isFinite(reported?.loss) && metricsStep >= (seriesLoss?.step ?? 0)
-      ? {step:metricsStep, value:reported.loss} : seriesLoss;
+    const latestLoss = this._summaryCurrentLoss(reported, seriesLoss, lossSeries?.latest_wall_time);
     const avgLossSeries = this.monitorLossSeries.find(item => item.tag === 'loss/average');
     const avgLossPoints = this._cleanLossPoints(avgLossSeries?.diagnostic_points?.length ? avgLossSeries.diagnostic_points : avgLossSeries?.points);
     const latestAvgLoss = avgLossPoints.at(-1) || (Number.isFinite(avgLossSeries?.latest) ? { value: Number(avgLossSeries.latest) } : null);
@@ -1271,6 +1270,15 @@ window.monitorSummaryMixin = {
   // 仅用于摘要：逐次 Loss 与诊断区的平均趋势各司其职。
   _summaryLossSeries() {
     return this.monitorLossSeries.find(item => item.tag === 'loss/current');
+  },
+
+  _summaryCurrentLoss(reported, tensorboardPoint, tensorboardTime) {
+    if (!Number.isFinite(reported?.loss)) return tensorboardPoint;
+    const step = reported.metrics_step ?? reported.step;
+    if (tensorboardPoint && (step < tensorboardPoint.step || (step === tensorboardPoint.step
+      && Number.isFinite(tensorboardTime) && Number.isFinite(reported.metrics_time)
+      && reported.metrics_time < tensorboardTime))) return tensorboardPoint;
+    return Number.isFinite(step) ? {step, value: reported.loss} : tensorboardPoint;
   },
 
   _summaryLossChange(series, previousPoint, displayedPoint) {

@@ -8,6 +8,20 @@ window.selectMonitorLearningRateSeries = function(series) {
   return null;
 };
 
+window.cleanMonitorLossPoints = function(rawPoints) {
+  const byStep = new Map();
+  for (const point of rawPoints || []) {
+    if (point?.step == null || point.step === '' || point.value == null || point.value === '') continue;
+    const step = Number(point.step), value = Number(point.value);
+    if (Number.isFinite(step) && Number.isFinite(value)) {
+      const sample = {step, value};
+      if (Number.isFinite(point.wall_time)) sample.wall_time = point.wall_time;
+      byStep.set(step, sample);
+    }
+  }
+  return Array.from(byStep.values()).sort((left, right) => left.step - right.step);
+};
+
 window.monitorMetricsMixin = {
   _downsampleMonitorPoints(points, maxPoints) {
     if (points.length <= maxPoints) return points;
@@ -33,36 +47,46 @@ window.monitorMetricsMixin = {
     return result;
   },
 
-  _mergeMonitorMetricSnapshot(incoming) {
+  _mergeMonitorMetricSnapshot(incoming, pendingLoss) {
     // HTTP 提供完整历史，WS 提供更晚的尾部；合并后曲线不会倒退，也不会丢掉回填数据。
     const merged = new Map(incoming.map(series => [series.tag, series]));
     for (const live of this.lossSeries || []) {
       const snapshot = merged.get(live.tag);
       if (!snapshot) { merged.set(live.tag, live); continue; }
-      this._appendMonitorMetricPoints(snapshot, live.points, live.diagnostic_points);
+      const end = Number(snapshot.points.at(-1)?.step ?? -Infinity);
+      const newer = points => points.filter(point => Number(point.step) > end);
+      this._appendMonitorMetricPoints(snapshot, newer(live.points), newer(live.diagnostic_points || live.points));
+      if (live.tag === 'loss/current' && live.points.at(-1)?.step > end) snapshot.latest_wall_time = live.latest_wall_time;
+      const updates = pendingLoss?.get(live.tag);
+      if (updates) this._appendMonitorMetricPoints(snapshot, Array.from(updates.values()));
     }
     return [...merged.values()];
   },
 
   _appendMonitorMetricPoints(series, points, rawPoints = points) {
     const lastStep = Number(series.points.at(-1)?.step ?? -Infinity);
-    const fresh = points.filter(point => Number(point.step) > lastStep);
+    const stepLoss = series.tag === 'loss/average' || series.tag === 'loss/current';
+    const fresh = stepLoss ? window.cleanMonitorLossPoints(points) : points.filter(point => Number(point.step) > lastStep);
     if (!fresh.length) return false;
     const limit = series.tag.startsWith('loss/') ? 160 : 40;
-    series.diagnostic_points = (series.diagnostic_points || series.points)
-      .concat(rawPoints.filter(point => Number(point.step) > lastStep)).slice(-limit);
+    const tail = series.diagnostic_points || series.points;
+    series.diagnostic_points = stepLoss
+      ? window.cleanMonitorLossPoints(tail.concat(rawPoints)).slice(-limit)
+      : tail.concat(rawPoints.filter(point => Number(point.step) > lastStep)).slice(-limit);
     for (const point of fresh) {
       if (point.value < (series.min ?? Infinity)) { series.min = point.value; series.min_step = point.step; }
       series.max = Math.max(series.max ?? -Infinity, point.value);
     }
-    const combined = series.points.concat(fresh);
+    let combined = series.points.concat(fresh);
+    if (stepLoss && fresh[0].step <= lastStep) combined = window.cleanMonitorLossPoints(combined);
     // Epoch values are also looked up by historical sample captions, so retain
     // them just as the full TensorBoard snapshot does.
     const epochLoss = series.tag === 'loss/epoch' || series.tag === 'loss/epoch_average'
       || series.tag.startsWith('loss/timestep/epoch/');
     series.points = !epochLoss && combined.length > 5000
       ? this._downsampleMonitorPoints(combined, 2500) : combined;
-    series.latest = fresh.at(-1).value;
+    series.latest = combined.at(-1).value;
+    if (series.tag === 'loss/current' && fresh.at(-1).step >= lastStep) series.latest_wall_time = fresh.at(-1).wall_time;
     return true;
   },
 
@@ -137,6 +161,12 @@ window.monitorMetricsMixin = {
 
       // HTTP 合并与 WS 增量共用去重和降采样规则。
       if (!this._appendMonitorMetricPoints(series, newPoints)) continue;
+      const pending = this._monitorRealtimeDetailRequest?.pendingLoss;
+      if (pending && (tag === 'loss/average' || tag === 'loss/current')) {
+        // HTTP 读取期间收到的同 Step 修正，要在快照之后重放。
+        if (!pending.has(tag)) pending.set(tag, new Map());
+        for (const point of window.cleanMonitorLossPoints(newPoints)) pending.get(tag).set(point.step, point);
+      }
       changed = true;
     }
 

@@ -1,10 +1,10 @@
 /* 训练诊断与多视角交互示波器；由 monitor-render.js 装配。 */
 window.monitorDiagnosticsMixin = {
-  _trainingDiagnosticPoints(limit = this._trainingDiagnosticRules().windowMax * 2) {
+  _trainingDiagnosticPoints(limit = this._trainingDiagnosticRules().windowMax * 2, beforeStep = Infinity) {
     const series = this.monitorLossSeries.find(item => item.tag === 'loss/average')
       || this.monitorLossSeries.find(item => item.tag === 'loss/current');
     const source = limit <= 160 && series?.diagnostic_points?.length ? series.diagnostic_points : series?.points;
-    const cleaned = this._cleanLossPoints(source);
+    const cleaned = this._cleanLossPoints(source).filter(point => point.step < beforeStep);
     return limit > 0 ? cleaned.slice(-limit) : cleaned;
   },
 
@@ -20,26 +20,13 @@ window.monitorDiagnosticsMixin = {
     };
   },
 
-  // Loss 点清洗唯一入口：按 step 去重（保留同 step 的最后一个值）后升序。
-  _cleanLossPoints(rawPoints) {
-    const byStep = new Map();
-    (rawPoints || []).forEach(point => {
-      const rawStep = point && point.step;
-      const rawValue = point && point.value;
-      const step = Number(rawStep);
-      const value = Number(rawValue);
-      if (rawStep !== null && rawStep !== '' && rawStep !== undefined && rawValue !== null && rawValue !== '' && rawValue !== undefined && Number.isFinite(step) && Number.isFinite(value)) {
-        byStep.set(step, { step, value });
-      }
-    });
-    return Array.from(byStep.values()).sort((left, right) => left.step - right.step);
-  },
+  _cleanLossPoints: window.cleanMonitorLossPoints,
 
   _trainingDiagnosticRules() {
     return {
       minimumPoints: 6,
       trendPointsPerWindow: 10,
-      windowMax: 50,
+      windowMax: 40,
       reboundChange: 3,
       volatileCv: 12,
       convergingChange: -2,
@@ -1619,14 +1606,21 @@ window.monitorDiagnosticsMixin = {
   },
 
   _patchTrainingDiagnostics(root, t, d, isHistory, options = {}) {
-    const isPreviousRun = !isHistory && this._summaryStatus(d, isHistory).terminal;
+    const {running, terminal} = this._summaryStatus(d, isHistory);
+    const isPreviousRun = !isHistory && terminal;
     const context = isHistory ? 'history' : (isPreviousRun ? 'previous' : 'live');
     const mode = this.monitorChartMode || 'window';
-    const version = [
-      this.lossDataVersion, this.previewsVersion, this._shellLocale || '', context,
+    const seriesSet = this._allPrimaryLossSeries();
+    const latest = (seriesSet.primary?.diagnostic_points || seriesSet.primary?.points)?.at(-1);
+    // 进入下一 Step 后上一点才封口；终态或历史详情直接包含最后一点。
+    // 进度日志可能先于 TensorBoard 到达，以 Loss 序列本身确认换步。
+    const openStep = running ? Number(latest?.step ?? 0) : Infinity;
+    const viewVersion = [
+      this.previewsVersion, this._shellLocale || '', context,
       mode, !!this.monitorChartShowLr, !isHistory && this.controlState?.state === 'paused',
-      d.total_steps, d.epoch, d.detail === true, this.trainParamsVersion, root.dataset.motionContext,
+      d.total_steps, d.epoch, d.detail === true, this.trainParamsVersion, root.dataset.motionContext, !!root._metricMotion,
     ].join(':');
+    const version = [this.lossDataVersion, openStep, viewVersion].join('|');
     if (root.dataset.diagnosticVersion === version) return;
     root.dataset.diagnosticVersion = version;
 
@@ -1641,15 +1635,21 @@ window.monitorDiagnosticsMixin = {
     }
     this._bindDiagnosticInteractions(card);
 
-    const windowPoints = this._trainingDiagnosticPoints();
+    const windowPoints = this._trainingDiagnosticPoints(undefined, openStep);
     const diagnostic = this._trainingDiagnostics(windowPoints);
-    const seriesSet = this._allPrimaryLossSeries();
     const epochPoints = this._cleanLossPoints(seriesSet.epoch?.points);
     const hasEpoch = epochPoints.length >= 2;
     const lrSource = seriesSet.lr?.points || seriesSet.lr?.diagnostic_points || [];
-    const lrPoints = this.monitorChartShowLr ? this._cleanLossPoints(lrSource) : [];
+    const lrPoints = this.monitorChartShowLr ? this._cleanLossPoints(lrSource).filter(point => point.step < openStep) : [];
     const hasLr = lrSource.length >= 2;
     const activeMode = (mode === 'epoch' && !hasEpoch) ? 'window' : mode;
+    // 同 Step 的批次读数只更新左卡，避免重启动画。迟到的快照可补齐已有窗口。
+    const primary = seriesSet.primary;
+    const fullMin = activeMode === 'full' && primary?.min_step < openStep ? [primary.min_step, primary.min] : null;
+    const frameKey = running ? JSON.stringify([viewVersion, openStep, windowPoints, epochPoints.at(-1),
+      lrPoints.at(-1), hasLr, fullMin, activeMode === 'full' && primary?.points?.[0]?.step]) : null;
+    if (running && card._diagnosticFrameKey === frameKey) return;
+    card._diagnosticFrameKey = frameKey;
     const hasPlotData = windowPoints.length >= 2 || hasEpoch;
 
     const motionContext = root.dataset.motionContext || '';
@@ -1731,7 +1731,7 @@ window.monitorDiagnosticsMixin = {
     if (activeMode !== 'window') {
       const epochMode = activeMode === 'epoch';
       const series = seriesSet.primary;
-      points = epochMode ? epochPoints : this._cleanLossPoints(series?.points || series?.diagnostic_points);
+      points = epochMode ? epochPoints : this._cleanLossPoints(series?.points || series?.diagnostic_points).filter(point => point.step < openStep);
       best = this._lowestLossPoint(points);
       if (!epochMode && best && Number.isFinite(series.min_step) && Number.isFinite(series.min)
           && series.min <= best.value && series.min_step <= points.at(-1).step) {
