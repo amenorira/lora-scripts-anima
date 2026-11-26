@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from ipaddress import ip_address
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
@@ -452,8 +453,19 @@ async def monitor_preview_metadata(
     return JSONResponse({"status": "success", "data": data}, headers=headers)
 
 
+def _can_reveal_output(request: Request | None) -> bool:
+    if os.name != "nt" or request is None or not request.client:
+        return False
+    try:
+        peer = ip_address(request.client.host)
+        server = request.scope.get("server")
+        return peer.is_loopback or bool(server and peer == ip_address(server[0]))
+    except ValueError:
+        return False
+
+
 @router.get("/monitor/outputs")
-async def monitor_outputs(run_dir: str = Query(""), task_id: str = Query("")):
+async def monitor_outputs(run_dir: str = Query(""), task_id: str = Query(""), request: Request = None):
     """获取训练运行的输出文件列表。
 
     优先按 run_dir 解析（live 模式前端传 monitorData.output_dir，历史模式传 selectedRunDir）；
@@ -483,6 +495,7 @@ async def monitor_outputs(run_dir: str = Query(""), task_id: str = Query("")):
         "meta": {
             "artifact_dir": record["artifact_dir"],
             "artifact_available": True,
+            "can_reveal": _can_reveal_output(request),
         },
     }
 
@@ -666,6 +679,27 @@ async def download_outputs(run_dir: str = Query(""), task_id: str = Query(""), f
         filename=zip_name,
         background=BackgroundTask(lambda p=tmp_path: p.unlink(missing_ok=True)),
     )
+
+
+@router.post("/monitor/outputs/reveal")
+def reveal_output(request: Request, run_dir: str, path: str):
+    origin = request.headers.get("origin")
+    if not _can_reveal_output(request) or (origin and origin != f"{request.url.scheme}://{request.url.netloc}"):
+        return JSONResponse({"status": "error", "error_code": "monitorRevealUnavailable"}, status_code=403)
+    relative = Path(path)
+    if relative.anchor or not relative.parts or any(part.startswith((".", "__")) or ":" in part for part in relative.parts):
+        return {"status": "error", "error_code": "monitorInvalidPath"}
+    target = resolve_artifact_file(run_dir, relative, preserve_entry=True)
+    if target is None:
+        return {"status": "error", "error_code": "monitorInvalidPath"}
+    if not (target.is_file() or target.is_dir()):
+        return {"status": "error", "error_code": "monitorFileNotFound"}
+    try:
+        explorer = Path(os.environ["SystemRoot"]) / "explorer.exe"
+        os.startfile(str(explorer), arguments=f'/select,"{target}"')
+    except OSError:
+        return {"status": "error", "error_code": "monitorRevealFailed"}
+    return {"status": "success"}
 
 
 @router.get("/monitor/outputs/download-file")

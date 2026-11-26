@@ -779,7 +779,7 @@
       const microInner = this._ddStatusCardMicroInnerHtml(t, item.key, bucket, showTrainShare);
       const tipText = this._ddStatusCardTooltip(t, item, bucket, showTrainShare);
       return '<div class="m-dd-status-row is-' + item.key + (isSelected ? ' is-selected' : '') + (isSiblingDim ? ' is-sibling-dim' : '') + '"'
-        + ' data-dd-status-key="' + item.key + '"'
+        + ' data-dd-status-key="' + item.key + '"' + (!cnt && !isSelected ? ' hidden' : '')
         + ' title="' + this.esc(tipText) + '"'
         + ' role="button" tabindex="0" aria-pressed="' + isSelected + '"'
         + ' @mouseenter="previewDatasetDiagStatus(\'' + item.key + '\')"'
@@ -832,9 +832,8 @@
           + ' @click="toggleDatasetDiagOverviewPreset(\'' + item.key + '\')"></span>';
       });
       html += '</div>';
-      const visible = meta.filter(item => Number(counts[item.key] || 0) > 0 || activePreset === item.key);
       html += '<div class="m-dd-status-list' + (activePreset !== 'all' ? ' has-selection' : '') + '" data-dd-status-list>';
-      visible.forEach(item => {
+      meta.forEach(item => {
         html += this._ddStatusRowHtml(t, item, bucketOf(item.key), activePreset, !!showTrainShare);
       });
       html += '</div>';
@@ -867,53 +866,46 @@
       });
       const listEl = host.querySelector('[data-dd-status-list]');
       if (!listEl) return;
-      const visible = meta.filter(item => Number(counts[item.key] || 0) > 0 || activePreset === item.key);
-      const existingRows = Array.from(listEl.querySelectorAll('[data-dd-status-key]'));
-      const sameKeys = visible.length === existingRows.length
-        && visible.every((item, idx) => existingRows[idx].dataset.ddStatusKey === item.key);
       listEl.classList.toggle('has-selection', activePreset !== 'all');
-      if (sameKeys) {
-        visible.forEach((item, idx) => {
-          const row = existingRows[idx];
-          const bucket = bucketOf(item.key);
-          const cnt = Number(bucket.count || 0);
-          const pct = Number(bucket.imgPct ?? 0);
-          const isSelected = activePreset === item.key;
-          row.classList.toggle('is-selected', isSelected);
-          row.classList.toggle('is-sibling-dim', activePreset !== 'all' && !isSelected);
-          row.setAttribute('aria-pressed', String(isSelected));
-          const tipText = this._ddStatusCardTooltip(t, item, bucket, !!showTrainShare);
-          if (row.title !== tipText) row.title = tipText;
-          const cntEl = row.querySelector('[data-dd-status-count]');
-          const cntText = String(cnt);
-          if (cntEl && cntEl.textContent !== cntText) cntEl.textContent = cntText;
-          const pctEl = row.querySelector('[data-dd-status-pct]');
-          const pctText = `${pct}%`;
-          if (pctEl && pctEl.textContent !== pctText) pctEl.textContent = pctText;
-          const trendEl = row.querySelector('[data-dd-status-trend]');
-          if (trendEl) {
-            const trendHtml = this._ddStatusCardTrendHtml(t, item.key, bucket);
-            trendEl.hidden = !trendHtml;
-            if (trendEl.innerHTML !== trendHtml) trendEl.innerHTML = trendHtml;
-          }
-          const kvEl = row.querySelector('[data-dd-status-kv]');
-          if (kvEl) {
-            const metricInner = this._ddStatusCardMetricInnerHtml(t, item.key, bucket);
-            kvEl.hidden = !metricInner;
-            if (kvEl.innerHTML !== metricInner) kvEl.innerHTML = metricInner;
-          }
-          const microEl = row.querySelector('[data-dd-status-micro]');
-          if (microEl) {
-            const microInner = this._ddStatusCardMicroInnerHtml(t, item.key, bucket, !!showTrainShare);
-            microEl.hidden = !microInner;
-            if (microEl.innerHTML !== microInner) microEl.innerHTML = microInner;
-          }
-        });
-      } else {
-        listEl.innerHTML = visible.map(item =>
-          this._ddStatusRowHtml(t, item, bucketOf(item.key), activePreset, !!showTrainShare)
-        ).join('');
-      }
+      meta.forEach(item => {
+        const row = listEl.querySelector(`[data-dd-status-key="${item.key}"]`);
+        if (!row) return;
+        const bucket = bucketOf(item.key);
+        const cnt = Number(bucket.count || 0);
+        const pct = Number(bucket.imgPct ?? 0);
+        const isSelected = activePreset === item.key;
+        row.hidden = !cnt && !isSelected;
+        if (row.hidden) return;
+        row.classList.toggle('is-selected', isSelected);
+        row.classList.toggle('is-sibling-dim', activePreset !== 'all' && !isSelected);
+        row.setAttribute('aria-pressed', String(isSelected));
+        const tipText = this._ddStatusCardTooltip(t, item, bucket, !!showTrainShare);
+        if (row.title !== tipText) row.title = tipText;
+        const cntEl = row.querySelector('[data-dd-status-count]');
+        const cntText = String(cnt);
+        if (cntEl && cntEl.textContent !== cntText) cntEl.textContent = cntText;
+        const pctEl = row.querySelector('[data-dd-status-pct]');
+        const pctText = `${pct}%`;
+        if (pctEl && pctEl.textContent !== pctText) pctEl.textContent = pctText;
+        const trendEl = row.querySelector('[data-dd-status-trend]');
+        if (trendEl) {
+          const trendHtml = this._ddStatusCardTrendHtml(t, item.key, bucket);
+          trendEl.hidden = !trendHtml;
+          this._ddPatchHtml(trendEl, trendHtml);
+        }
+        const kvEl = row.querySelector('[data-dd-status-kv]');
+        if (kvEl) {
+          const metricInner = this._ddStatusCardMetricInnerHtml(t, item.key, bucket);
+          kvEl.hidden = !metricInner;
+          this._ddPatchHtml(kvEl, metricInner);
+        }
+        const microEl = row.querySelector('[data-dd-status-micro]');
+        if (microEl) {
+          const microInner = this._ddStatusCardMicroInnerHtml(t, item.key, bucket, !!showTrainShare);
+          microEl.hidden = !microInner;
+          this._ddPatchHtml(microEl, microInner);
+        }
+      });
       this._syncDatasetDiagStatusHighlight?.(host.closest?.('.m-tab-panel[data-tab="dataset"]') || host);
     },
 
@@ -985,6 +977,12 @@
       }
     },
 
+    _ddPatchHtml(host, html) {
+      if (!host || host._ddLastHtml === html) return;
+      host._ddLastHtml = html;
+      host.innerHTML = html;
+    },
+
     _renderDatasetDiagDashboard(t, data) {
       const verdict = this._ddVerdictInfo(t, data);
       const scopeHtml = this._ddHeadScopeHtml(t, data);
@@ -1023,6 +1021,8 @@
 
     _patchDatasetDiagDashboard(slot, t, data, animate = true) {
       if (!slot || !data || !data.available) return;
+      const earlyNote = slot.querySelector('[data-dd-early-slope-note]');
+      if (earlyNote) earlyNote.hidden = !!data.summary?.has_slope;
       const verdictEl = slot.querySelector('.m-dd-dash-verdict');
       if (verdictEl) {
         const verdict = this._ddVerdictInfo(t, data);
@@ -1035,36 +1035,12 @@
         const popEl = verdictEl.querySelector('[data-dd-scope-pop]');
         if (pillEl || popEl) {
           const scopeInfo = this._ddScopeSummaryInfo(t, data);
-          if (pillEl) {
-            const nextPill = this._ddScopePillInnerHtml(t, scopeInfo);
-            if (pillEl._ddLastHtml !== nextPill) {
-              pillEl._ddLastHtml = nextPill;
-              pillEl.innerHTML = nextPill;
-            }
-          }
-          if (popEl) {
-            const nextPop = this._ddScopePopoverInnerHtml(t, scopeInfo);
-            if (popEl._ddLastHtml !== nextPop) {
-              popEl._ddLastHtml = nextPop;
-              popEl.innerHTML = nextPop;
-            }
-          }
+          if (pillEl) this._ddPatchHtml(pillEl, this._ddScopePillInnerHtml(t, scopeInfo));
+          if (popEl) this._ddPatchHtml(popEl, this._ddScopePopoverInnerHtml(t, scopeInfo));
         }
         const actionsEl = verdictEl.querySelector('[data-dd-dash-actions]');
-        const actionsLeftEl = verdictEl.querySelector('[data-dd-dash-actions-left]');
-        if (actionsLeftEl) {
-          const nextActions = this._ddVerdictActionsHtml(t, data);
-          if (actionsLeftEl._ddLastHtml !== nextActions) {
-            actionsLeftEl._ddLastHtml = nextActions;
-            actionsLeftEl.innerHTML = nextActions;
-          }
-        } else if (actionsEl) {
-          const nextActions = this._ddVerdictActionsHtml(t, data);
-          if (actionsEl._ddLastHtml !== nextActions) {
-            actionsEl._ddLastHtml = nextActions;
-            actionsEl.innerHTML = nextActions;
-          }
-        }
+        const actionsHost = verdictEl.querySelector('[data-dd-dash-actions-left]') || actionsEl;
+        if (actionsHost) this._ddPatchHtml(actionsHost, this._ddVerdictActionsHtml(t, data));
         const nanLeg = verdictEl.querySelector('[data-dd-scatter-nan-leg]');
         if (nanLeg) nanLeg.hidden = !((data.summary?.counts?.non_finite || 0) > 0);
         const filterSlot = verdictEl.querySelector('[data-dd-scatter-filter-slot]');
@@ -1081,9 +1057,8 @@
               if (resetEl) resetEl.textContent = t('ddResetFilter');
               filterSlot._ddLastHtml = nextPill;
             }
-          } else if (filterSlot._ddLastHtml !== nextPill) {
-            filterSlot._ddLastHtml = nextPill;
-            filterSlot.innerHTML = nextPill;
+          } else {
+            this._ddPatchHtml(filterSlot, nextPill);
           }
         }
         const zoneCb = verdictEl.querySelector('#ddZoneShadingToggle');
@@ -1123,13 +1098,36 @@
         });
         const arErr = Number(data?.summary?.bucket_ar_error);
         const wantAr = Number.isFinite(arErr) && arErr >= 0.04;
-        const hasAr = !!groupsHost.querySelector('[data-dd-group-ar-badge]');
         const existingRows = Array.from(groupsHost.querySelectorAll('[data-dd-group-row-key]'));
+        const byKey = new Map(existingRows.map(el => [el.dataset.ddGroupRowKey, el]));
+        const orderedRows = expectedRows.map(({ dim, row }) => byKey.get(`${dim}::${row.key}`));
         const sameStructure = expectedRows.length > 0
-          && wantAr === hasAr
           && expectedRows.length === existingRows.length
-          && expectedRows.every((item, idx) => existingRows[idx].dataset.ddGroupRowKey === `${item.dim}::${item.row.key}`);
+          && orderedRows.every(Boolean);
         if (sameStructure) {
+          // Keep the existing fold containers and move ranked rows between their visible and folded slots.
+          if (orderedRows.some((row, i) => row !== existingRows[i])) {
+            const slots = existingRows.map(row => ({ parent: row.parentNode, next: row.nextElementSibling }));
+            for (let i = orderedRows.length - 1; i >= 0; i--) {
+              const { parent, next } = slots[i];
+              const anchor = next && next === existingRows[i + 1] ? orderedRows[i + 1] : next;
+              const el = orderedRows[i];
+              if (el.parentNode !== parent || el.nextElementSibling !== anchor) {
+                if (parent.moveBefore) parent.moveBefore(el, anchor);
+                else parent.insertBefore(el, anchor);
+              }
+            }
+            const filter = this.datasetDiagGroupFilter;
+            const selected = filter && byKey.get(`${filter.dim}::${filter.key}`);
+            groupsHost.querySelectorAll('[data-dd-group-fold]').forEach(fold => {
+              const expanded = !!this.datasetDiagGroupExpanded?.[fold.dataset.ddGroupFold] || !!(selected && fold.contains(selected));
+              if (fold.classList.contains('is-open') === expanded) return;
+              fold.classList.toggle('is-open', expanded);
+              const button = fold.nextElementSibling;
+              button.setAttribute('aria-expanded', String(expanded));
+              button.textContent = expanded ? t('ddGroupFoldCollapse') : t('ddGroupFoldExpand').replace('{n}', button.dataset.ddFoldCount);
+            });
+          }
           const groupsSection = groupsHost.querySelector('.m-dd-groups');
           if (groupsSection) groupsSection.classList.toggle('is-live-motion', !!animate);
           const gf = this.datasetDiagGroupFilter;
@@ -1146,14 +1144,17 @@
             const countEl = groupsHost.querySelector(`[data-dd-group-dim="${dim}"] [data-dd-group-dim-count]`);
             const countText = this._ddGroupDimCountText(t, dim, rows.length);
             if (countEl && countEl.textContent !== countText) countEl.textContent = countText;
-            if (dim === 'resolution' && wantAr) {
+            if (dim === 'resolution') {
               const arEl = groupsHost.querySelector('[data-dd-group-ar-badge]');
-              const arText = t('ddGroupArError').replace('{pct}', (arErr * 100).toFixed(1));
-              if (arEl && arEl.textContent !== arText) arEl.textContent = arText;
+              if (arEl) {
+                arEl.hidden = !wantAr;
+                const arText = wantAr ? t('ddGroupArError').replace('{pct}', (arErr * 100).toFixed(1)) : '';
+                if (arEl.textContent !== arText) arEl.textContent = arText;
+              }
             }
           });
           expectedRows.forEach(({ dim, row, canFilter }, idx) => {
-            const rowEl = existingRows[idx];
+            const rowEl = orderedRows[idx];
             const isSelected = !!(gf && gf.dim === dim && gf.key === row.key);
             if (canFilter) {
               rowEl.classList.toggle('is-selected', isSelected);
@@ -1161,7 +1162,7 @@
             }
             const imgCountEl = rowEl.querySelector('[data-dd-group-img-n]');
             const gmInfo = this._ddGroupMetaInfo(t, dim, row, dimTotals[dim]);
-            if (imgCountEl && imgCountEl.innerHTML !== gmInfo.metaHtml) imgCountEl.innerHTML = gmInfo.metaHtml;
+            this._ddPatchHtml(imgCountEl, gmInfo.metaHtml);
             if (rowEl.title !== gmInfo.tooltip) rowEl.title = gmInfo.tooltip;
             const resText = this._ddFormatResidual(row.mean_residual);
             const resEl = rowEl.querySelector('[data-dd-flat-res]');
@@ -1172,10 +1173,10 @@
             if (canFilter) {
               const alertEl = rowEl.querySelector('[data-dd-group-alert]');
               const nextAlert = this._ddGroupAlertHtml(t, row);
-              if (alertEl && alertEl.innerHTML !== nextAlert) alertEl.innerHTML = nextAlert;
+              this._ddPatchHtml(alertEl, nextAlert);
               const trendEl = rowEl.querySelector('[data-dd-group-trend]');
               const nextTrend = this._ddGroupTrendHtml(t, row);
-              if (trendEl && trendEl.innerHTML !== nextTrend) trendEl.innerHTML = nextTrend;
+              this._ddPatchHtml(trendEl, nextTrend);
             }
             const gm = this._ddGroupGaugeMetrics(row.mean_residual, dimBounds[dim]);
             const fillEl = rowEl.querySelector('[data-row-fill]');
@@ -1186,7 +1187,7 @@
               fillEl.style.backgroundColor = gm.color;
             }
           });
-        } else {
+        } else if (expectedRows.length || !groupsHost.querySelector('.dashboard-empty')) {
           const groupsHtml = this._renderDatasetDiagGroupsCard(t, data);
           groupsHost.innerHTML = groupsHtml || ('<div class="dashboard-empty dashboard-empty-compact"><p>' + this.esc(t('ddNoGroupData')) + '</p></div>');
         }
@@ -1334,8 +1335,8 @@
           + '<div class="m-dd-chart-bar-left">' + leftBarHtml + '</div>'
           + '<div class="m-dd-chart-bar-right"><div class="m-dd-legend" data-dd-noise-legend>' + legendHtml + '</div></div></div>';
         html += this._ddNoiseZonesSummaryHtml(t, data, activeComp);
-      } else if (!hasSlope) {
-        html += '<p class="m-dd-chart-note" data-dd-early-slope-note>' + this.esc(t('ddEarlySlopeHint')) + '</p>';
+      } else {
+        html += '<p class="m-dd-chart-note" data-dd-early-slope-note' + (hasSlope ? ' hidden' : '') + '>' + this.esc(t('ddEarlySlopeHint')) + '</p>';
       }
 
       html += '<div class="m-hero-chart-stage m-dd-hero-stage" data-dd-hero-stage>'
@@ -1440,7 +1441,7 @@
       const barScale = Math.abs(val) < 0.002 ? 0 : Math.max(0.06, Math.min(1, Math.abs(val) / bound));
       return {
         valid: true,
-        barScale,
+        barScale: val < 0 ? -barScale : barScale,
         isNeg: val < 0,
         color: this._ddResidualColor(val, { scale: 'group', kind: 'graphic' }),
       };
@@ -1714,9 +1715,9 @@
         const selectedInTail = !!(gf && gf.dim === dim && hiddenRows.some(r => r.key === gf.key));
         const isExpanded = !!(this.datasetDiagGroupExpanded?.[dim] || selectedInTail);
         const dimJs = this.esc(this.escapeJsString(dim));
-        const arHtml = (dim === 'resolution' && showAr)
-          ? '<span class="m-dd-group-ar-badge" data-dd-group-ar-badge title="' + this.esc(t('ddGroupArErrorTip')) + '">'
-            + this.esc(t('ddGroupArError').replace('{pct}', (arErr * 100).toFixed(1))) + '</span>'
+        const arHtml = dim === 'resolution'
+          ? '<span class="m-dd-group-ar-badge" data-dd-group-ar-badge' + (showAr ? '' : ' hidden') + ' title="' + this.esc(t('ddGroupArErrorTip')) + '">'
+            + (showAr ? this.esc(t('ddGroupArError').replace('{pct}', (arErr * 100).toFixed(1))) : '') + '</span>'
           : '';
         const sortHtml = (dim === 'resolution' && orderedRows.length >= 4)
           ? '<button type="button" class="m-dd-group-sort-btn" @click="toggleDatasetDiagGroupSort()">'

@@ -1,6 +1,6 @@
 /* 训练诊断与多视角交互示波器；由 monitor-render.js 装配。 */
 window.monitorDiagnosticsMixin = {
-  _trainingDiagnosticPoints(limit = 120) {
+  _trainingDiagnosticPoints(limit = this._trainingDiagnosticRules().windowMax * 2) {
     const series = this.monitorLossSeries.find(item => item.tag === 'loss/average')
       || this.monitorLossSeries.find(item => item.tag === 'loss/current');
     const source = limit <= 160 && series?.diagnostic_points?.length ? series.diagnostic_points : series?.points;
@@ -38,7 +38,8 @@ window.monitorDiagnosticsMixin = {
   _trainingDiagnosticRules() {
     return {
       minimumPoints: 6,
-      windowMax: 60,
+      trendPointsPerWindow: 10,
+      windowMax: 50,
       reboundChange: 3,
       volatileCv: 12,
       convergingChange: -2,
@@ -84,7 +85,8 @@ window.monitorDiagnosticsMixin = {
       recentEndStep: recent[recent.length - 1].step,
     });
 
-    if (changePct >= rules.reboundChange) Object.assign(base, { code: 'rebound', tone: 'danger' });
+    if (windowSize < rules.trendPointsPerWindow) Object.assign(base, { code: 'early', tone: 'neutral' });
+    else if (changePct >= rules.reboundChange) Object.assign(base, { code: 'rebound', tone: 'danger' });
     else if (volatilityPct >= rules.volatileCv) Object.assign(base, { code: 'volatile', tone: 'warn' });
     else if (changePct <= rules.convergingChange) Object.assign(base, { code: 'converging', tone: 'ok' });
     else if (Math.abs(changePct) < rules.plateauAbsChange && volatilityPct < rules.plateauCv) Object.assign(base, { code: 'plateau', tone: 'calm' });
@@ -117,7 +119,16 @@ window.monitorDiagnosticsMixin = {
     return (signed && normalized > 0 ? '+' : '') + normalized.toFixed(1) + '%';
   },
 
-  _diagnosticText(t, code, kind) {
+  _diagnosticText(t, diagnostic, kind) {
+    if (diagnostic.code === 'early') {
+      if (kind === 'summary') return this._fillDiagnosticTemplate(t('diagnosticEarlySummary'), {
+        window: diagnostic.windowSize,
+        previous: this._formatDiagnosticValue(diagnostic.previousMean),
+        recent: this._formatDiagnosticValue(diagnostic.recentMean),
+      });
+      if (Math.abs(diagnostic.changePct) < this._trainingDiagnosticRules().plateauAbsChange) return t('diagnosticEarlyClose');
+      return t(diagnostic.changePct < 0 ? 'diagnosticEarlyDown' : 'diagnosticEarlyUp');
+    }
     const copy = {
       insufficient: {
         label: 'diagnosticInsufficient',
@@ -144,7 +155,7 @@ window.monitorDiagnosticsMixin = {
         summary: 'diagnosticSteadySummary',
       },
     };
-    const item = copy[code] || copy.insufficient;
+    const item = copy[diagnostic.code] || copy.insufficient;
     return t(item[kind]);
   },
 
@@ -173,6 +184,7 @@ window.monitorDiagnosticsMixin = {
     };
     const copy = {
       insufficient: 'diagnosticEvidenceInsufficient',
+      early: 'diagnosticEvidenceEarly',
       converging: 'diagnosticEvidenceConverging',
       plateau: 'diagnosticEvidencePlateau',
       rebound: 'diagnosticEvidenceRebound',
@@ -222,7 +234,7 @@ window.monitorDiagnosticsMixin = {
 
   _trainingDiagnosticsHtml(t) {
     const rules = this._trainingDiagnosticRules();
-    let html = '<section class="m-console-card m-training-diagnostics">';
+    let html = '<section class="m-console-card m-training-diagnostics" hidden>';
     html += '<div class="m-card-heading m-diagnostic-heading"><div><span data-diagnostic-field="title">' + this.esc(t('trainingDiagnostics')) + '</span></div>';
     html += '<div class="m-diagnostic-heading-actions">';
     html += '<div class="m-segmented m-chart-modes" role="tablist" aria-label="' + this.esc(t('trainingDiagnostics')) + '">';
@@ -285,7 +297,7 @@ window.monitorDiagnosticsMixin = {
     html += '<div class="m-diagnostic-method-content"><div class="m-diagnostic-evidence"><p data-diagnostic-field="evidence">--</p><small data-diagnostic-field="window-evidence">--</small></div>';
     const methodItems = [
       [t('diagnosticMethodSource'), t('diagnosticMethodSourceText')],
-      [t('diagnosticMethodWindow'), this._fillDiagnosticTemplate(t('diagnosticMethodWindowText'), { total: rules.windowMax * 2, window: rules.windowMax, minimum: rules.minimumPoints })],
+      [t('diagnosticMethodWindow'), this._fillDiagnosticTemplate(t('diagnosticMethodWindowText'), { total: rules.windowMax * 2, window: rules.windowMax, minimum: rules.minimumPoints, trend: rules.trendPointsPerWindow, close: rules.plateauAbsChange })],
       [t('diagnosticMethodChange'), t('diagnosticMethodChangeText')],
       [t('diagnosticMethodVolatility'), t('diagnosticMethodVolatilityText')],
     ];
@@ -518,7 +530,7 @@ window.monitorDiagnosticsMixin = {
       if (typeof ResizeObserver !== 'undefined') {
         const ro = new ResizeObserver(() => {
           if (!wrap?._lastRenderArgs) return;
-          const nextW = Math.round(stage.clientWidth || 0);
+          const nextW = Math.round(stage.querySelector('[data-hero-chart-svg]')?.clientWidth || stage.clientWidth || 0);
           if (nextW > 80 && Math.abs(nextW - (wrap._renderedWidth || 0)) >= 4) {
             this._renderHeroChart(wrap, ...wrap._lastRenderArgs, { animateSwitch: false });
           }
@@ -603,14 +615,15 @@ window.monitorDiagnosticsMixin = {
 
     // 1. 近期变化：零点居中对称平滑压缩尺（连续量程避免整数跳档）+ 无级连续语义色。
     const changePct = diagnostic.changePct;
-    const changeGauge = card.querySelector('[data-gauge="change"]');
-    if (changeGauge && Number.isFinite(changePct)) {
+    const changeMetric = card.querySelector('[data-diagnostic-metric="change"]');
+    if (changeMetric && Number.isFinite(changePct)) {
       const maxAbs = Math.max(10, Math.abs(changePct) * 1.25);
       const knee = 5;
       const denom = Math.log1p(maxAbs / knee);
       const norm = Math.sign(changePct) * (Math.log1p(Math.abs(changePct) / knee) / Math.max(denom, 1e-6));
       const pos = Math.max(2, Math.min(98, 50 + norm * 48));
-      const fill = changeGauge.querySelector('[data-gauge-fill="change"]');
+      changeMetric.style.setProperty('--gauge-bar-color', this._changeGaugeColor(changePct));
+      const fill = changeMetric.querySelector('[data-gauge-fill="change"]');
       if (fill) {
         const isNeg = changePct < -0.05;
         const isPos = changePct > 0.05;
@@ -620,20 +633,19 @@ window.monitorDiagnosticsMixin = {
         const width = isNeg || isPos ? Math.max(1.5, Math.abs(pos - 50)) : 0;
         fill.style.left = left.toFixed(1) + '%';
         fill.style.width = width.toFixed(1) + '%';
-        fill.style.setProperty('--gauge-bar-color', this._changeGaugeColor(changePct));
       }
     }
 
     // 2. 波动程度：单向平滑胶囊条（连续量程避免整数跳档）+ 无级连续语义色。
     const volPct = diagnostic.volatilityPct;
-    const volGauge = card.querySelector('[data-gauge="volatility"]');
-    if (volGauge && Number.isFinite(volPct)) {
+    const volMetric = card.querySelector('[data-diagnostic-metric="volatility"]');
+    if (volMetric && Number.isFinite(volPct)) {
       const maxVol = Math.max(16, volPct * 1.25);
       const curPos = Math.max(2, Math.min(100, (volPct / maxVol) * 100));
-      const fill = volGauge.querySelector('[data-gauge-fill="volatility"]');
+      volMetric.style.setProperty('--gauge-bar-color', this._volatilityGaugeColor(volPct));
+      const fill = volMetric.querySelector('[data-gauge-fill="volatility"]');
       if (fill) {
         fill.style.width = curPos.toFixed(1) + '%';
-        fill.style.setProperty('--gauge-bar-color', this._volatilityGaugeColor(volPct));
       }
     }
   },
@@ -690,6 +702,25 @@ window.monitorDiagnosticsMixin = {
     return coords.map((c, i) => (i ? 'L' : 'M') + c.x.toFixed(1) + ' ' + c.y.toFixed(1)).join(' ');
   },
 
+  // Intersections at the moving edges are for drawing only. Hover uses recorded samples.
+  _heroVisibleLine(points, start, end) {
+    const visible = [];
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i], prev = points[i - 1];
+      if (prev) {
+        for (const step of [start, end]) {
+          if (prev.step < step && step < p.step) {
+            const ratio = (step - prev.step) / (p.step - prev.step);
+            visible.push({ step, value: prev.value + (p.value - prev.value) * ratio });
+          }
+        }
+      }
+      if (p.step > end) break;
+      if (p.step >= start) visible.push(p);
+    }
+    return visible;
+  },
+
   _splitHeroCoordsAtX(coords, splitX) {
     if (!coords || coords.length < 2 || !Number.isFinite(splitX)) return { prev: [], recent: coords || [] };
     if (splitX <= coords[0].x) return { prev: [], recent: coords };
@@ -713,12 +744,18 @@ window.monitorDiagnosticsMixin = {
     const q = sel => svg.querySelector(sel);
     const setAttrs = (el, attrs) => {
       if (!el) return;
-      for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
+      for (const [k, v] of Object.entries(attrs)) {
+        const text = String(v);
+        if (el.getAttribute(k) !== text) el.setAttribute(k, text);
+      }
     };
     const showEl = (el, visible) => {
-      if (!el) return;
+      if (!el || (el.getAttribute('display') !== 'none') === visible) return;
       if (visible) el.removeAttribute('display');
       else el.setAttribute('display', 'none');
+    };
+    const setText = (el, text) => {
+      if (el && el.textContent !== text) el.textContent = text;
     };
 
     setAttrs(q('[data-hero-grid-top]'), { x1: m.padL, x2: m.padL + m.plotW, y1: m.padT, y2: m.padT });
@@ -764,22 +801,18 @@ window.monitorDiagnosticsMixin = {
     showEl(prevLabel, m.showWindowMeans);
     showEl(recLabel, m.showWindowMeans);
     if (m.showWindowMeans) {
-      const prevEndX = Math.max(m.padL + 4, m.splitX);
       const recEndX = m.padL + m.plotW;
-      setAttrs(prevMean, { x1: m.padL.toFixed(1), x2: prevEndX.toFixed(1), y1: m.yPrev.toFixed(1), y2: m.yPrev.toFixed(1) });
+      setAttrs(prevMean, { x1: m.padL, x2: m.splitX.toFixed(1), y1: m.yPrev.toFixed(1), y2: m.yPrev.toFixed(1) });
       setAttrs(recMean, { x1: m.splitX.toFixed(1), x2: recEndX.toFixed(1), y1: m.yRec.toFixed(1), y2: m.yRec.toFixed(1) });
-      setAttrs(prevLabel, { x: (m.padL + 3).toFixed(1), y: Math.max(m.padT + 9, m.yPrev - 4).toFixed(1) });
-      if (prevLabel) prevLabel.textContent = m.prevMeanText;
+      setAttrs(prevLabel, { x: m.padL + 3, y: Math.max(m.padT + 9, m.yPrev - 4).toFixed(1) });
+      setText(prevLabel, m.prevMeanText);
       setAttrs(recLabel, { x: (recEndX - 3).toFixed(1), y: Math.max(m.padT + 9, m.yRec - 4).toFixed(1) });
-      if (recLabel) recLabel.textContent = m.deltaText;
+      setText(recLabel, m.deltaText);
     }
 
     const prevPath = q('[data-hero-prev-path]');
     showEl(prevPath, Boolean(m.prevD));
-    if (prevPath) {
-      prevPath.setAttribute('class', m.prevPathClass);
-      prevPath.setAttribute('d', m.prevD || '');
-    }
+    setAttrs(prevPath, { class: m.prevPathClass, d: m.prevD || '' });
 
     const lrPath = q('[data-hero-lr-path]');
     showEl(lrPath, Boolean(m.lrD));
@@ -808,7 +841,7 @@ window.monitorDiagnosticsMixin = {
     setAttrs(q('[data-caliper-target]'), { cx: m.caliperX.toFixed(1), cy: m.calBot.toFixed(1) });
     const calText = q('[data-hero-cal-text]');
     setAttrs(calText, { x: (m.latestPt.x - 2).toFixed(1), y: m.calLabelY.toFixed(1) });
-    if (calText) calText.textContent = m.gapText;
+    setText(calText, m.gapText);
 
     setAttrs(q('[data-hero-best-gx]'), { x1: m.padL, x2: m.bestPt.x.toFixed(1), y1: m.bestPt.y.toFixed(1), y2: m.bestPt.y.toFixed(1) });
     setAttrs(q('[data-hero-best-gy]'), { x1: m.bestPt.x.toFixed(1), x2: m.bestPt.x.toFixed(1), y1: m.bestPt.y.toFixed(1), y2: (m.padT + m.plotH).toFixed(1) });
@@ -817,8 +850,8 @@ window.monitorDiagnosticsMixin = {
     setAttrs(q('[data-hero-best-callout]'), { x: m.bestTextX.toFixed(1), y: m.bestTextY.toFixed(1), 'text-anchor': m.bestAnchor });
     const bestValEl = q('[data-hero-best-val]');
     const bestStepEl = q('[data-hero-best-step]');
-    if (bestValEl) bestValEl.textContent = m.bestValText;
-    if (bestStepEl) bestStepEl.textContent = ' ' + m.bestStepText;
+    setText(bestValEl, m.bestValText);
+    setText(bestStepEl, ' ' + m.bestStepText);
 
     const latestGroup = q('[data-hero-latest]');
     let pulse = q('[data-hero-latest-pulse]');
@@ -863,16 +896,20 @@ window.monitorDiagnosticsMixin = {
     const axisStart = q('[data-hero-axis-start]');
     const axisMid = q('[data-hero-axis-mid]');
     const axisEnd = q('[data-hero-axis-end]');
-    if (axisHigh) { setAttrs(axisHigh, { x: m.padL - 6, y: m.padT + 4 }); axisHigh.textContent = m.highText; }
-    if (axisLow) { setAttrs(axisLow, { x: m.padL - 6, y: m.padT + m.plotH + 1 }); axisLow.textContent = m.lowText; }
+    const setLabel = (el, x, y, text) => {
+      setAttrs(el, { x, y });
+      setText(el, text);
+    };
+    setLabel(axisHigh, m.padL - 6, m.padT + 4, m.highText);
+    setLabel(axisLow, m.padL - 6, m.padT + m.plotH + 1, m.lowText);
     showEl(axisLrMax, Boolean(m.lrMaxText));
     showEl(axisLrMin, Boolean(m.lrMinText));
-    if (m.lrMaxText && axisLrMax) { setAttrs(axisLrMax, { x: m.padL + m.plotW - 4, y: m.padT + 10 }); axisLrMax.textContent = m.lrMaxText; }
-    if (m.lrMinText && axisLrMin) { setAttrs(axisLrMin, { x: m.padL + m.plotW - 4, y: m.padT + m.plotH - 4 }); axisLrMin.textContent = m.lrMinText; }
-    if (axisStart) { setAttrs(axisStart, { x: m.padL, y: m.height - 4 }); axisStart.textContent = m.startStepText; }
+    if (m.lrMaxText) setLabel(axisLrMax, m.padL + m.plotW - 4, m.padT + 10, m.lrMaxText);
+    if (m.lrMinText) setLabel(axisLrMin, m.padL + m.plotW - 4, m.padT + m.plotH - 4, m.lrMinText);
+    setLabel(axisStart, m.padL, m.height - 4, m.startStepText);
     showEl(axisMid, Boolean(m.splitStepText));
-    if (m.splitStepText && axisMid) { setAttrs(axisMid, { x: m.splitX.toFixed(1), y: m.height - 4 }); axisMid.textContent = m.splitStepText; }
-    if (axisEnd) { setAttrs(axisEnd, { x: m.padL + m.plotW, y: m.height - 4 }); axisEnd.textContent = m.endStepText; }
+    if (m.splitStepText) setLabel(axisMid, m.splitX.toFixed(1), m.height - 4, m.splitStepText);
+    setLabel(axisEnd, m.padL + m.plotW, m.height - 4, m.endStepText);
 
     setAttrs(q('[data-hover-line]'), { y1: m.padT, y2: m.padT + m.plotH });
   },
@@ -885,12 +922,18 @@ window.monitorDiagnosticsMixin = {
     if (!stage || !svg) return;
 
     const { mode, diagnostic, points: rawPrimary, best } = chart;
+    if (wrap._rangeFrame != null) {
+      cancelAnimationFrame(wrap._rangeFrame);
+      wrap._rangeFrame = null;
+    }
     if (wrap._chartState && wrap._chartState.mode !== mode) this._clearHeroChartHover(wrap);
     const { running } = this._summaryStatus(d, isHistory);
     const paused = !isHistory && running && this.controlState?.state === 'paused';
     const isLiveRunning = running && !paused;
 
-    const width = Math.max(240, Math.round(stage.clientWidth || 500));
+    // Measure at the real plot width on the very first visible frame.
+    if (rawPrimary.length >= 2) wrap.hidden = false;
+    const width = Math.max(240, Math.round(svg.clientWidth || stage.clientWidth || 500));
     const height = 152;
     wrap._renderedWidth = width;
 
@@ -907,7 +950,6 @@ window.monitorDiagnosticsMixin = {
 
     // ── Mode: 每轮（纯净渐变柱状图 + 聚光悬停，无折线/无杂点） ──
     if (mode === 'epoch') {
-      if (svg.dataset) svg.dataset.heroScaffold = 'epoch';
       const epochPoints = rawPrimary;
       const vals = epochPoints.map(p => p.value);
       const bestIdx = epochPoints.indexOf(best);
@@ -964,7 +1006,7 @@ window.monitorDiagnosticsMixin = {
       svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
       svg.setAttribute('width', String(width));
       svg.setAttribute('height', String(height));
-      svg.innerHTML = `
+      const markup = `
         <defs>
           <linearGradient id="${barGradId}" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stop-color="var(--text-secondary)" stop-opacity=".55"/>
@@ -990,6 +1032,11 @@ window.monitorDiagnosticsMixin = {
           <text x="${padL + plotW}" y="${height - 4}" text-anchor="end">${this.esc(t('sampleEpoch').replace('{n}', coords[coords.length - 1].epoch))}</text>
         </g>`;
 
+      if (svg._epochMarkup !== markup) {
+        svg.innerHTML = markup;
+        svg._epochMarkup = markup;
+        if (svg.dataset) svg.dataset.heroScaffold = 'epoch';
+      }
       wrap.hidden = false;
       wrap.dataset.mode = 'epoch';
       wrap._chartState = {
@@ -997,13 +1044,15 @@ window.monitorDiagnosticsMixin = {
         coords, events: [], t, indexLimit: Math.max(totalEpochs, coords.at(-1).epoch),
         defaultRange: t('epochAvgMeta').replace('{n}', count).replace('{best}', bestC.epoch),
       };
-      this._setHeroHudDefault(wrap);
+      if (!wrap._hoverPointer) this._setHeroHudDefault(wrap);
       if (options.animateSwitch && this._monitorMotionAllowed()) this._animateHeroEntrance(svg, 'epoch');
       if (wrap._hoverPointer) this._updateHeroChartHover(wrap, wrap._hoverPointer.xRatio, wrap._hoverPointer.y);
+      if (wrap.dataset.focus) this._paintDiagnosticConnector(wrap.closest?.('.m-training-diagnostics'), wrap.dataset.focus);
       return;
     }
 
     // ── Mode: 诊断窗口 (window) 或 全程 (full) ──
+    delete svg._epochMarkup;
     const isFull = mode === 'full';
     if (rawPrimary.length < 2) {
       this._clearHeroChartHover(wrap);
@@ -1012,7 +1061,11 @@ window.monitorDiagnosticsMixin = {
       return;
     }
 
-    const displayPrimary = isFull ? this._downsampleMonitorPoints(rawPrimary, 200).slice() : rawPrimary;
+    const scrolling = !isFull && !isHistory && running;
+    // Odd sample counts leave one point before the two equal comparison halves.
+    // Keep that lead-in on the live trace; only the means and diagnostic anchors use the paired samples.
+    const displayPrimary = isFull ? this._downsampleMonitorPoints(rawPrimary, 200).slice()
+      : scrolling && chart.leadingPoint ? [chart.leadingPoint, ...rawPrimary] : rawPrimary;
     // 快照可能只保留抽样曲线；把区间内的原始最低点也画进折线。裁尾前的最低点单独标注。
     if (isFull && best.step >= displayPrimary[0].step && best.step <= displayPrimary.at(-1).step) {
       const at = displayPrimary.findIndex(point => point.step >= best.step);
@@ -1021,8 +1074,10 @@ window.monitorDiagnosticsMixin = {
     }
     const minStep = Math.min(best.step, displayPrimary[0].step);
     const maxStep = Math.max(displayPrimary[displayPrimary.length - 1].step, minStep + 1);
-    const stepSpan = maxStep - minStep;
-    const toX = step => padL + ((step - minStep) / stepSpan) * plotW;
+    const last = wrap._chartState;
+    const sameView = last?.mode === mode && last.context === wrap._chartContext;
+    const animateRange = isLiveRunning && !isHistory && sameView && last.width === width
+      && !options.animateSwitch && typeof requestAnimationFrame === 'function' && this._monitorMotionAllowed();
 
     // 纵轴量程围绕主平滑曲线与均值自适应留白。
     const primaryVals = displayPrimary.map(p => p.value);
@@ -1034,53 +1089,111 @@ window.monitorDiagnosticsMixin = {
     const baseSpan = Math.max(pHigh - pLow, Math.abs(pHigh) * 0.08, 1e-6);
     const low = pLow - baseSpan * 0.18;
     const high = pHigh + baseSpan * 0.22;
-    const spanV = Math.max(high - low, 1e-9);
-    const toYUnclamped = v => padT + plotH - ((v - low) / spanV) * plotH;
-    const toY = v => Math.max(padT + 1, Math.min(padT + plotH - 1, toYUnclamped(v)));
-
-    // 主平滑曲线坐标
-    const coords = displayPrimary.map(pt => ({ step: pt.step, value: pt.value, x: toX(pt.step), y: toY(pt.value) }));
-    const smoothD = this._heroPathD(coords);
 
     // 紫色 LR 次坐标叠加曲线
-    let lrD = '';
-    let lrMaxText = '';
-    let lrMinText = '';
+    const lineStart = scrolling && animateRange && last.range ? Math.min(minStep, last.range.firstStep ?? minStep) : minStep;
     const lrPoints = this.monitorChartShowLr
-      ? chart.lrPoints.filter(pt => pt.step >= minStep && pt.step <= maxStep)
+      ? chart.lrPoints.filter(pt => pt.step >= lineStart && pt.step <= maxStep)
       : [];
-    let lrToY = null;
-    if (lrPoints.length >= 2) {
-      const lrDraw = this._downsampleMonitorPoints(lrPoints, 120);
-      const lrVals = lrDraw.map(p => p.value);
-      const lrMin = Math.min(...lrVals), lrMax = Math.max(...lrVals);
-      const lrPad = Math.max((lrMax - lrMin) * 0.14, Math.abs(lrMax) * 0.08, 1e-12);
-      const lrLow = Math.max(0, lrMin - lrPad), lrHigh = lrMax + lrPad;
-      const lrSpan = Math.max(lrHigh - lrLow, 1e-12);
-      lrToY = v => padT + plotH - ((v - lrLow) / lrSpan) * plotH;
-      lrD = lrDraw.map((p, i) => (i ? 'L' : 'M') + toX(p.step).toFixed(1) + ' ' + lrToY(p.value).toFixed(1)).join(' ');
-      lrMaxText = this._formatLearningRate(lrMax, '');
-      lrMinText = this._formatLearningRate(lrMin, '');
-    }
+    const lrDraw = lrPoints.length >= 2 ? this._downsampleMonitorPoints(lrPoints, 120) : [];
 
-    // 诊断窗口区间分区：中线精准落在前段末点与近段首点正中（锁定在 50% 位置），推进步数时绝不左右抖动。
     const rules = this._trainingDiagnosticRules();
     const hasWindowSplit = diagnostic.windowSize > 0 && Number.isFinite(diagnostic.previousMean) && Number.isFinite(diagnostic.recentMean);
     const isFullHistorySplit = isFull && hasWindowSplit && diagnostic.windowSize >= rules.windowMax && diagnostic.previousStartStep > minStep;
     const splitStep = hasWindowSplit ? (isFullHistorySplit ? diagnostic.previousStartStep : diagnostic.recentStartStep) : null;
-    let splitX = null;
-    if (!isFull && hasWindowSplit) {
-      const prevEndPt = rawPrimary[diagnostic.windowSize - 1];
-      const recStartPt = rawPrimary[diagnostic.windowSize];
-      splitX = (prevEndPt && recStartPt)
-        ? (toX(prevEndPt.step) + toX(recStartPt.step)) / 2
-        : toX(diagnostic.recentStartStep);
-    } else if (isFull && hasWindowSplit) {
-      splitX = isFullHistorySplit
-        ? toX(diagnostic.previousStartStep)
-        : (toX(diagnostic.previousEndStep) + toX(diagnostic.recentStartStep)) / 2;
+    let boundaryStep = null;
+    if (isFullHistorySplit) {
+      boundaryStep = diagnostic.previousStartStep;
+    } else if (hasWindowSplit) {
+      // Both halves share this guide. Keep it centered whenever the actual
+      // sample boundary permits, including when the trace has one lead-in point.
+      const midpoint = (minStep + maxStep) / 2;
+      boundaryStep = Math.max(diagnostic.previousEndStep, Math.min(midpoint, diagnostic.recentStartStep));
     }
 
+    const layout = { svg, width, height, padL, padR, padT, plotW, plotH, isHistory, isLiveRunning,
+      totalSteps, previewMarkersAll, minStep, maxStep, displayPrimary, scrolling, boundaryStep,
+      splitStep, isFullHistorySplit, hasWindowSplit, lrPoints, lrDraw };
+    const target = { low, high, previousMean: diagnostic.previousMean, recentMean: diagnostic.recentMean };
+    if (scrolling) Object.assign(target, { firstStep: minStep, endStep: maxStep, boundaryStep });
+    if (lineStart < minStep) {
+      const retained = last.sourcePoints.filter(p => p.step < minStep);
+      layout.displayPrimary = retained.concat(displayPrimary);
+    }
+    if (lrDraw.length) {
+      const values = lrDraw.filter(p => p.step >= minStep).map(p => p.value);
+      if (values.length) Object.assign(target, { lrMin: Math.min(...values), lrMax: Math.max(...values) });
+    }
+    const paint = range => this._paintHeroSeries(wrap, chart, layout, range, t, options);
+    if (isHistory || !running || !sameView || !last.range
+        || (scrolling && (maxStep < last.range.endStep || minStep > last.range.endStep))) {
+      paint(target);
+      return;
+    }
+    // Use existing headroom before expanding. Zoom back in only once the signal uses much less of the scale.
+    const oldSpan = last.targetRange.high - last.targetRange.low;
+    if (high - low > oldSpan * .55) {
+      const margin = oldSpan * .04;
+      target.low = pLow < last.targetRange.low + margin ? Math.min(low, last.targetRange.low) : last.targetRange.low;
+      target.high = pHigh > last.targetRange.high - margin ? Math.max(high, last.targetRange.high) : last.targetRange.high;
+    }
+    const keys = Object.keys(target).filter(key => Number.isFinite(target[key]) && Number.isFinite(last.range[key])
+      && target[key] !== last.range[key]);
+    if (!animateRange || !keys.length) {
+      paint(target);
+      return;
+    }
+    const now = performance.now();
+    const continuing = last.transition && Object.keys(target).every(key => target[key] === last.targetRange[key]);
+    const transition = continuing ? last.transition : { start: now, from: last.range };
+    const { start, from } = transition;
+    const frame = now => {
+      wrap._rangeFrame = null;
+      if (wrap.isConnected === false) return;
+      const progress = Math.min(1, Math.max(0, (now - start) / 240));
+      if (progress === 1 || !this._monitorMotionAllowed() || wrap.closest?.('[hidden]')) {
+        paint(target);
+        return;
+      }
+      const eased = 1 - (1 - progress) ** 3;
+      const range = { ...target };
+      for (const key of keys) range[key] = from[key] + (target[key] - from[key]) * eased;
+      paint(range);
+      wrap._chartState.targetRange = target;
+      wrap._chartState.transition = transition;
+      wrap._rangeFrame = requestAnimationFrame(frame);
+    };
+    frame(now);
+  },
+
+  _paintHeroSeries(wrap, chart, layout, range, t, options) {
+    const { svg, width, height, padL, padR, padT, plotW, plotH, isHistory, isLiveRunning,
+      totalSteps, previewMarkersAll, displayPrimary, scrolling,
+      splitStep, isFullHistorySplit, hasWindowSplit, lrPoints, lrDraw } = layout;
+    const { mode, best, diagnostic } = chart;
+    const isFull = mode === 'full';
+    const maxStep = range.endStep ?? layout.maxStep;
+    const firstStep = range.firstStep ?? layout.minStep;
+    const stepSpan = maxStep - firstStep;
+    const toX = step => padL + (step - firstStep) / stepSpan * plotW;
+    const boundary = range.boundaryStep ?? layout.boundaryStep;
+    const splitX = boundary == null ? null : toX(boundary);
+    const { low, high } = range;
+    const spanV = Math.max(high - low, 1e-9);
+    const toY = v => Math.max(padT + 1, Math.min(padT + plotH - 1, padT + plotH - (v - low) / spanV * plotH));
+    const project = pt => ({ step: pt.step, value: pt.value, x: toX(pt.step), y: toY(pt.value) });
+    const visible = scrolling ? this._heroVisibleLine(displayPrimary, firstStep, maxStep) : displayPrimary;
+    const coords = visible.map(project);
+    const lrPad = Math.max((range.lrMax - range.lrMin) * .14, Math.abs(range.lrMax) * .08, 1e-12);
+    const lrLow = Math.max(0, range.lrMin - lrPad);
+    const lrSpan = Math.max(range.lrMax + lrPad - lrLow, 1e-12);
+    const lrToY = Number.isFinite(range.lrMax)
+      ? v => Math.max(padT, Math.min(padT + plotH, padT + plotH - (v - lrLow) / lrSpan * plotH)) : null;
+    const lrLine = scrolling ? this._heroVisibleLine(lrDraw, firstStep, maxStep) : lrDraw;
+    const lrD = lrToY ? this._heroPathD(lrLine.map(p => ({ x: toX(p.step), y: lrToY(p.value) }))) : '';
+    const lrMaxText = lrD ? this._formatLearningRate(range.lrMax, '') : '';
+    const lrMinText = lrD ? this._formatLearningRate(range.lrMin, '') : '';
+    const smoothD = this._heroPathD(coords);
     let prevD = '';
     let recD = smoothD;
     if (hasWindowSplit && splitX != null) {
@@ -1103,8 +1216,8 @@ window.monitorDiagnosticsMixin = {
     let deltaText = '';
     if (showWindowMeans) {
       const recEndX = padL + plotW;
-      yPrev = toY(diagnostic.previousMean);
-      yRec = toY(diagnostic.recentMean);
+      yPrev = toY(range.previousMean);
+      yRec = toY(range.recentMean);
       const bandTop = Math.min(yPrev, yRec);
       const bandBot = Math.max(yPrev, yRec);
       if (bandBot - bandTop >= 0.5) {
@@ -1115,16 +1228,16 @@ window.monitorDiagnosticsMixin = {
     }
 
     // 最低点与最新点锚点 + 电子卡尺（悬停距最低值时显出）
-    const bestPt = { ...best, x: toX(best.step), y: toY(best.value) };
     const latestPt = coords[coords.length - 1];
+    const bestPt = scrolling && best.step > maxStep ? latestPt : project(best);
     const caliperX = padL + plotW + 12;
     const calTop = Math.min(bestPt.y, latestPt.y);
     const calBot = Math.max(bestPt.y, latestPt.y);
     const calMidY = (calTop + calBot) / 2;
     const calSpan = Math.abs(calBot - calTop);
-    const gapText = this._formatDiagnosticPercent(this._lossGapPercent(latestPt.value, bestPt.value), true);
-    const bestValText = this._formatDiagnosticValue(bestPt.value);
-    const bestStepText = t('sampleStep').replace('{n}', Math.round(bestPt.step));
+    const gapText = this._formatDiagnosticPercent(this._lossGapPercent(displayPrimary.at(-1).value, best.value), true);
+    const bestValText = this._formatDiagnosticValue(best.value);
+    const bestStepText = t('sampleStep').replace('{n}', Math.round(best.step));
     // 无边框高对比度抠边文字标注，避免厚重方框遮挡曲线。
     const bestAlignRight = bestPt.x > padL + plotW - 84;
     const bestAlignLeft = bestPt.x < padL + 84;
@@ -1138,15 +1251,15 @@ window.monitorDiagnosticsMixin = {
 
     // X 轴底边预览图事件菱形刻度
     const events = previewMarkersAll
-      .filter(m => m.step != null && m.step >= minStep && m.step <= maxStep)
+      .filter(m => m.step != null && m.step >= firstStep && m.step <= maxStep)
       .map(m => ({ ...m, x: toX(m.step) }));
 
     const midY = (padT + plotH / 2).toFixed(1);
     const highText = this._formatDiagnosticValue(high);
     const lowText = this._formatDiagnosticValue(low);
-    const startStepText = t('sampleStep').replace('{n}', Math.round(minStep));
+    const startStepText = t('sampleStep').replace('{n}', Math.round(firstStep));
     const splitStepText = showWindowMeans
-      ? t('sampleStep').replace('{n}', Math.round(diagnostic.recentStartStep))
+      ? t('sampleStep').replace('{n}', Math.round(boundary))
       : '';
     const endStepText = t('sampleStep').replace('{n}', Math.round(maxStep));
     const prevMeanText = t('chartPrevMean');
@@ -1178,7 +1291,6 @@ window.monitorDiagnosticsMixin = {
         startStepText, splitStepText, endStepText,
       });
     } else {
-      const prevEndX = splitX != null ? Math.max(padL + 4, splitX) : padL + 4;
       const recEndX = padL + plotW;
       const splitXStr = (splitX != null ? splitX : padL).toFixed(1);
       const eventsHtml = events.map((ev, i) =>
@@ -1206,9 +1318,9 @@ window.monitorDiagnosticsMixin = {
             <path class="m-window-diff-band" data-hero-diff-band d="${diffBandD}"${diffBandD ? '' : ' display="none"'}/>
             <line class="m-window-split" data-hero-split-line x1="${splitXStr}" x2="${splitXStr}" y1="${padT}" y2="${padT + plotH}"${showSplitLine ? '' : ' display="none"'}/>
             <line class="m-window-split-connector" data-hero-split-conn x1="${splitXStr}" x2="${splitXStr}" y1="${yPrev.toFixed(1)}" y2="${yRec.toFixed(1)}"${showSplitConn ? '' : ' display="none"'}/>
-            <line class="m-window-mean is-prev" data-hero-prev-mean x1="${padL.toFixed(1)}" x2="${prevEndX.toFixed(1)}" y1="${yPrev.toFixed(1)}" y2="${yPrev.toFixed(1)}"${showWindowMeans ? '' : ' display="none"'}/>
+            <line class="m-window-mean is-prev" data-hero-prev-mean x1="${padL}" x2="${splitXStr}" y1="${yPrev.toFixed(1)}" y2="${yPrev.toFixed(1)}"${showWindowMeans ? '' : ' display="none"'}/>
             <line class="m-window-mean is-recent" data-hero-rec-mean x1="${splitXStr}" x2="${recEndX.toFixed(1)}" y1="${yRec.toFixed(1)}" y2="${yRec.toFixed(1)}"${showWindowMeans ? '' : ' display="none"'}/>
-            <text class="m-window-mean-label is-prev" data-hero-prev-label x="${(padL + 3).toFixed(1)}" y="${Math.max(padT + 9, yPrev - 4).toFixed(1)}"${showWindowMeans ? '' : ' display="none"'}>${this.esc(prevMeanText)}</text>
+            <text class="m-window-mean-label is-prev" data-hero-prev-label x="${padL + 3}" y="${Math.max(padT + 9, yPrev - 4).toFixed(1)}"${showWindowMeans ? '' : ' display="none"'}>${this.esc(prevMeanText)}</text>
             <text class="m-window-mean-label is-recent" data-hero-rec-label x="${(recEndX - 3).toFixed(1)}" y="${Math.max(padT + 9, yRec - 4).toFixed(1)}" text-anchor="end"${showWindowMeans ? '' : ' display="none"'}>${this.esc(deltaText)}</text>
           </g>
           <path class="${prevPathClass}" data-hero-prev-path d="${prevD}"${prevD ? '' : ' display="none"'}/>
@@ -1262,19 +1374,26 @@ window.monitorDiagnosticsMixin = {
     wrap.hidden = false;
     wrap.dataset.mode = mode;
     wrap._chartState = {
-      mode, width, height, padL, padR, padT, plotW, plotH,
-      coords: best.step < coords[0].step ? [bestPt, ...coords] : coords, minStep, stepSpan, lrLookup: lrPoints,
+      mode, width, height, padL, padR, padT, plotW, plotH, context: wrap._chartContext, range, targetRange: range,
+      coords: scrolling ? displayPrimary.filter(p => p.step >= firstStep && p.step <= maxStep).map(project)
+        : (best.step < coords[0].step ? [bestPt, ...coords] : coords),
+      sourcePoints: displayPrimary.slice(Math.max(0, displayPrimary.findIndex(p => p.step >= firstStep) - 1)),
+      minStep: firstStep, stepSpan, lrLookup: lrPoints, scrolling,
       seriesLabel: t(chart.primaryIsAvg ? 'chartSeriesSmooth' : 'currentLoss'), lrToY, events, t,
       indexLimit: Math.max(totalSteps, maxStep),
       defaultRange: '',
       splitX,
       splitStep,
+      hudSized: layout.hudSized,
       hasPrevSegment: Boolean(prevD),
       isFullHistorySplit,
     };
-    this._setHeroHudDefault(wrap);
+    if (!wrap._hoverPointer) this._setHeroHudDefault(wrap);
     if (options.animateSwitch && this._monitorMotionAllowed()) this._animateHeroEntrance(svg, mode);
-    if (wrap._hoverPointer) this._updateHeroChartHover(wrap, wrap._hoverPointer.xRatio, wrap._hoverPointer.y);
+    if (wrap._hoverPointer) {
+      this._updateHeroChartHover(wrap, wrap._hoverPointer.xRatio, wrap._hoverPointer.y);
+      layout.hudSized = wrap._chartState.hudSized;
+    }
     if (wrap.dataset.focus) {
       const card = wrap.closest?.('.m-training-diagnostics');
       if (card) this._paintDiagnosticConnector(card, wrap.dataset.focus);
@@ -1303,8 +1422,12 @@ window.monitorDiagnosticsMixin = {
     const state = wrap._chartState;
     const rangeEl = wrap.querySelector('[data-chart-hud-range]');
     const readEl = wrap.querySelector('[data-chart-hud-readout]');
-    if (rangeEl) rangeEl.textContent = state?.defaultRange || '';
-    if (readEl) readEl.innerHTML = '';
+    const range = state?.defaultRange || '';
+    if (rangeEl && rangeEl.textContent !== range) rangeEl.textContent = range;
+    if (readEl) {
+      if (readEl.firstChild) readEl.replaceChildren();
+      delete readEl._seriesMarkup;
+    }
   },
 
   _epochDeltaText(point) {
@@ -1332,11 +1455,15 @@ window.monitorDiagnosticsMixin = {
 
   _updateHeroChartHover(wrap, xRatio, pointerY = null) {
     const state = wrap._chartState;
-    if (!state || !state.coords.length) return;
+    if (!state) return;
+    const targetX = xRatio * state.width;
+    if (!state.coords.length || (state.scrolling && targetX < state.coords[0].x - 4)) {
+      this._clearHeroChartHover(wrap);
+      return;
+    }
     const svg = wrap.querySelector('[data-hero-chart-svg]');
     if (!svg) return;
 
-    const targetX = xRatio * state.width;
     const fraction = (targetX - state.padL) / state.plotW;
     const activeIdx = Math.min(state.coords.length - 1, Math.max(0, Math.floor(fraction * state.coords.length)));
     const nearest = state.mode === 'epoch' ? state.coords[activeIdx]
@@ -1384,7 +1511,8 @@ window.monitorDiagnosticsMixin = {
       smoothDot.setAttribute('cx', nearest.x.toFixed(1));
       smoothDot.setAttribute('cy', nearest.y.toFixed(1));
       smoothDot.removeAttribute('display');
-      const isPrevSeg = Boolean(state.hasPrevSegment && Number.isFinite(state.splitStep) && nearest.step < state.splitStep);
+      const isPrevSeg = state.hasPrevSegment && (nearest.x < state.splitX
+        || (nearest.x === state.splitX && nearest.step < state.splitStep));
       const isFullSeg = isPrevSeg && Boolean(state.isFullHistorySplit);
       smoothDot.classList?.toggle('is-prev-seg', isPrevSeg);
       smoothDot.classList?.toggle('is-full-seg', isFullSeg);
@@ -1404,7 +1532,13 @@ window.monitorDiagnosticsMixin = {
     } else {
       lrDot?.setAttribute('display', 'none');
     }
-    if (readEl) readEl.innerHTML = parts.join('');
+    if (readEl) {
+      const markup = parts.join('');
+      if (readEl._seriesMarkup !== markup) {
+        readEl.innerHTML = markup;
+        readEl._seriesMarkup = markup;
+      }
+    }
 
     // 仅当指针落到底部预览节点刻度区时才弹出完整预览浮层，浏览曲线时绝不打扰。
     this._updateHeroPreviewPop(wrap, state, targetX, pointerY);
@@ -1491,13 +1625,20 @@ window.monitorDiagnosticsMixin = {
     const version = [
       this.lossDataVersion, this.previewsVersion, this._shellLocale || '', context,
       mode, !!this.monitorChartShowLr, !isHistory && this.controlState?.state === 'paused',
-      d.total_steps, d.epoch, this.trainParamsVersion, root.dataset.motionContext,
+      d.total_steps, d.epoch, d.detail === true, this.trainParamsVersion, root.dataset.motionContext,
     ].join(':');
     if (root.dataset.diagnosticVersion === version) return;
     root.dataset.diagnosticVersion = version;
 
     const card = root.querySelector('.m-training-diagnostics');
     if (!card) return;
+    // A compact live snapshot has no Loss history. Wait for detail before
+    // presenting any verdict, including "insufficient".
+    card.hidden = !isHistory && d.detail !== true;
+    if (card.hidden) {
+      card._insufficientContext = null;
+      return;
+    }
     this._bindDiagnosticInteractions(card);
 
     const windowPoints = this._trainingDiagnosticPoints();
@@ -1513,6 +1654,19 @@ window.monitorDiagnosticsMixin = {
 
     const motionContext = root.dataset.motionContext || '';
     const hasDiagnosticTone = diagnostic.code !== 'insufficient';
+    const metrics = card.querySelector('.m-diagnostic-metrics');
+    const wrap = card.querySelector('[data-hero-chart-wrap]');
+    const entering = [];
+    const liveDetail = !isHistory && !isPreviousRun && d.detail === true;
+    if (liveDetail && hasDiagnosticTone && root._metricMotion && card._insufficientContext === motionContext
+        && this._monitorMotionAllowed() && card.animate) {
+      if (wrap?.hidden && hasPlotData) entering.push(wrap);
+      if (metrics?.hidden && hasDiagnosticTone) entering.push(metrics);
+    }
+    const beforeHeight = entering.length ? card.getBoundingClientRect().height : 0;
+    // Only an insufficient result from a loaded snapshot can arm the reveal.
+    // The empty shell shown before the first detail response is not a sample.
+    card._insufficientContext = liveDetail && !hasDiagnosticTone ? motionContext : null;
     const toneReadySameContext = card.dataset.toneContext === motionContext && card.dataset.toneReady === '1';
     // 仅在相同上下文且已首帧着色的后续实时更新时开启变色过渡，避免刷新或异步首帧拉取时灰→彩闪烁。
     card.classList?.toggle('is-live-motion', Boolean(root._metricMotion && toneReadySameContext && hasDiagnosticTone));
@@ -1549,7 +1703,6 @@ window.monitorDiagnosticsMixin = {
       }
     }
 
-    const metrics = card.querySelector('.m-diagnostic-metrics');
     if (metrics) metrics.hidden = diagnostic.code === 'insufficient';
 
     const setText = (field, value) => {
@@ -1562,8 +1715,8 @@ window.monitorDiagnosticsMixin = {
     setText('title', isPreviousRun ? t('previousTrainingDiagnostics') : t('trainingDiagnostics'));
     const verdict = card.querySelector('.m-diagnostic-verdict');
     if (verdict) verdict.dataset.diagnosticTone = diagnostic.tone;
-    setText('state', this._diagnosticText(t, diagnostic.code, 'label'));
-    setText('summary', this._diagnosticText(t, diagnostic.code, 'summary'));
+    setText('state', this._diagnosticText(t, diagnostic, 'label'));
+    setText('summary', this._diagnosticText(t, diagnostic, 'summary'));
     setText('evidence', this._diagnosticEvidence(t, diagnostic));
     setText('window-evidence', this._diagnosticWindowEvidence(t, diagnostic));
     // 最低 Loss 与距最低值随当前视图模式（诊断窗口 / 全程 / 每轮）同步切换，保证与图上锚点和连线 100% 一致。
@@ -1613,17 +1766,8 @@ window.monitorDiagnosticsMixin = {
     const isAtBest = Number.isFinite(gapVal) && Math.abs(gapVal) < 0.05;
     setText('gap-meta', t(isAtBest ? gapMetaKeyAtBest : gapMetaKeyAbove));
 
-    const changeMetric = card.querySelector('[data-diagnostic-metric="change"]');
-    const volatilityMetric = card.querySelector('[data-diagnostic-metric="volatility"]');
-    const gapMetric = card.querySelector('[data-diagnostic-metric="gap"]');
-    const rules = this._trainingDiagnosticRules();
-    if (changeMetric) changeMetric.dataset.tone = diagnostic.changePct == null ? 'muted' : (diagnostic.changePct <= rules.convergingChange ? 'ok' : (diagnostic.changePct >= rules.reboundChange ? 'danger' : 'neutral'));
-    if (volatilityMetric) volatilityMetric.dataset.tone = diagnostic.volatilityPct == null ? 'muted' : (diagnostic.volatilityPct >= rules.volatileCv ? 'warn' : (diagnostic.volatilityPct < rules.plateauCv ? 'ok' : 'neutral'));
-    if (gapMetric) gapMetric.dataset.tone = gapVal == null ? 'muted' : 'neutral';
-
     this._patchDiagnosticGauges(card, diagnostic, Boolean(root._metricMotion), motionContext);
 
-    const wrap = card.querySelector('[data-hero-chart-wrap]');
     if (wrap) {
       if (wrap._chartContext !== root.dataset.motionContext) {
         wrap._chartContext = root.dataset.motionContext;
@@ -1632,7 +1776,26 @@ window.monitorDiagnosticsMixin = {
         this._clearHeroChartHover(wrap);
         this._paintDiagnosticConnector(card, '');
       }
-      this._renderHeroChart(wrap, { mode: activeMode, points, best, diagnostic, lrPoints, primaryIsAvg: seriesSet.primaryIsAvg }, d, isHistory, t, options);
+      const leadingPoint = activeMode === 'window' && windowPoints.length > points.length ? windowPoints[0] : null;
+      this._renderHeroChart(wrap, { mode: activeMode, points, leadingPoint, best, diagnostic, lrPoints, primaryIsAvg: seriesSet.primaryIsAvg }, d, isHistory, t, options);
+    }
+    if (beforeHeight > 0) {
+      // The ready card stretches to match the summary in a desktop grid. Include
+      // that extra height in the reveal and leave SVG geometry at full size.
+      card._revealAnimation?.cancel();
+      const height = card.getBoundingClientRect().height;
+      const regions = entering.map(el => [el, el.getBoundingClientRect().height]);
+      const timing = { duration: 220, easing: 'cubic-bezier(.2,.7,.2,1)' };
+      card._revealAnimation = card.animate([
+        { height: beforeHeight + 'px', minHeight: '0px' },
+        { height: height + 'px', minHeight: '0px' },
+      ], timing);
+      for (const [el, regionHeight] of regions) {
+        el.animate([
+          { height: '0px', opacity: 0, overflow: 'clip' },
+          { height: regionHeight + 'px', opacity: 1, overflow: 'clip' },
+        ], timing);
+      }
     }
   },
 };

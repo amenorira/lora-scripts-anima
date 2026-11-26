@@ -16,6 +16,31 @@ class HistoryTests(CrossDriveSandbox):
         run_registry.write_run_record(run, artifact_dir=self.external, **kwargs)
         return run
 
+    def test_reveal_selects_the_registered_output_entry(self):
+        from starlette.requests import Request
+
+        self.make_run()
+        request = Request({"type": "http", "scheme": "http", "path": "/api/monitor/outputs/reveal",
+                           "headers": [(b"origin", b"http://127.0.0.1:8000")],
+                           "server": ("127.0.0.1", 8000), "client": ("127.0.0.1", 10000), "query_string": b""})
+        folder = self.external / "模型, 1-state"
+        folder.mkdir()
+        model = folder / "a & b.safetensors"
+        model.touch()
+        with patch.object(routes, "_can_reveal_output", return_value=True), \
+                patch.dict(routes.os.environ, {"SystemRoot": "Windows"}), \
+                patch.object(routes.os, "startfile", create=True) as start:
+            for entry in (folder, model):
+                result = routes.reveal_output(request, "output/demo", entry.relative_to(self.external).as_posix())
+                self.assertEqual(result["status"], "success")
+                start.assert_called_with(str(Path("Windows") / "explorer.exe"), arguments=f'/select,"{entry}"')
+            start.reset_mock()
+            for path in ("../config.toml", "", ".private/output.txt", str(model), "gone.txt"):
+                self.assertEqual(routes.reveal_output(request, "output/demo", path)["status"], "error")
+            external = Request({**request.scope, "headers": [(b"origin", b"https://another.example")]})
+            self.assertEqual(routes.reveal_output(external, "output/demo", model.name).status_code, 403)
+            start.assert_not_called()
+
     def test_partial_delete_stays_visible_and_retry_preserves_artifacts(self):
         run = self.make_run()
         log = run / "train_demo.log"

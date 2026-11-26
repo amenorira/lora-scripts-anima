@@ -318,6 +318,73 @@ test('monitor tab cycling includes dataset tab at the end', () => {
   assert.equal(a.monitorTab, 'dataset');
 });
 
+test('detail polling preserves chart nodes across unrelated revisions and repaints changed geometry with identical KPI text', () => {
+  const image = SAMPLE_DATA.by_image[0];
+  const detail = { image, revision: 'a', epoch_series: [{ epoch: 1, mean_residual: 0.2 }, { epoch: 2, mean_residual: 0.1 }] };
+  const right = makeEl();
+  const modal = makeEl();
+  const bindings = [];
+  const app = makeApp({
+    selectedRunDir: '',
+    _monitorMotionAllowed: () => true,
+    datasetDiagData: SAMPLE_DATA,
+    datasetDiagModalImageId: image.image_id,
+    datasetDiagModalDetail: detail,
+    _patchDatasetDiagModal: window.datasetDiagnosticsModalMixin._patchDatasetDiagModal,
+    _bindDatasetDiagModalCharts(_right, _detail, _t, opts) { bindings.push(opts.animate); },
+  });
+  withMockEnv({ document: {
+    getElementById(id) { return ({ datasetDiagModalRight: right, datasetDiagModal: modal })[id] || null; },
+  } }, () => {
+    app._patchDatasetDiagModal();
+    const stage = right.querySelector('[data-dd-epoch-stage]');
+    assert.ok(stage);
+    app.datasetDiagModalDetail = { ...detail, revision: 'b' };
+    app._patchDatasetDiagModal();
+    assert.deepEqual(bindings, [false]);
+    assert.equal(right.querySelector('[data-dd-epoch-stage]'), stage);
+    app.datasetDiagModalDetail = { ...detail, epoch_series: [{ epoch: 1, mean_residual: 0.3 }, detail.epoch_series[1]] };
+    app._patchDatasetDiagModal();
+    assert.deepEqual(bindings, [false, true]);
+    assert.equal(right.querySelector('[data-dd-epoch-stage]'), stage);
+    app._monitorMotionAllowed = () => false;
+    app.datasetDiagModalDetail = detail;
+    app._patchDatasetDiagModal();
+    assert.deepEqual(bindings, [false, true, false]);
+  });
+});
+
+test('uncached image navigation keeps the previous layout and scroll offset until the next detail is ready', () => {
+  const [first, next] = SAMPLE_DATA.by_image;
+  const right = makeEl(), modal = makeEl(), foot = makeEl();
+  const app = makeApp({
+    datasetDiagData: SAMPLE_DATA, datasetDiagModalImageId: first.image_id,
+    datasetDiagModalDetail: { image: first }, selectedRunDir: 'output/example',
+    _patchDatasetDiagModal: window.datasetDiagnosticsModalMixin._patchDatasetDiagModal,
+    _bindDatasetDiagModalCharts() {},
+  });
+  withMockEnv({document: {getElementById: id => ({
+    datasetDiagModal: modal, datasetDiagModalRight: right, datasetDiagModalFoot: foot,
+  })[id] || null}}, () => {
+    app._patchDatasetDiagModal();
+    const previous = right.innerHTML;
+    right.scrollTop = 42;
+    app.datasetDiagModalImageId = next.image_id;
+    app.datasetDiagModalDetail = null;
+    app.datasetDiagModalLoading = true;
+    app._patchDatasetDiagModal();
+    assert.equal(right.innerHTML, previous);
+    assert.ok(right.inert && foot.inert);
+    app.datasetDiagModalDetail = { image: next };
+    app.datasetDiagModalLoading = false;
+    app._patchDatasetDiagModal();
+    assert.equal(right._ddRenderedImageId, next.image_id);
+    assert.equal(right.inert, false);
+    assert.equal(foot.inert, false);
+    assert.equal(right.scrollTop, 42);
+  });
+});
+
 test('dashboard overview, images view, smart groups deduplication, folding, filtering, and sorting', async () => {
   const seenUrls = [];
   await withMockEnv({
@@ -511,6 +578,12 @@ test('dashboard overview, images view, smart groups deduplication, folding, filt
     await a.setDatasetDiagRunId('r0');
     assert.ok(seenUrls.some(u => u.includes('run_id=r0')));
   });
+});
+
+test('group residual gauge uses the same zero origin in both directions', () => {
+  const app = makeApp();
+  assert.equal(app._ddGroupGaugeMetrics(-0.04, 0.12).barScale, -app._ddGroupGaugeMetrics(0.04, 0.12).barScale);
+  assert.equal(app._ddGroupGaugeMetrics(null).barScale, 0);
 });
 
 test('status cards, scope pill/popover, and group dim collapse patch cleanly in-place', () => {
@@ -1192,6 +1265,35 @@ test('timestep chart 18-bin profile, IQR band, theoretical curves, morph animati
     morphApp._renderDatasetDiagHeroSvg(mWrap, mStage, fakeSvg);
     assert.equal(tsRafQueue.size, 0);
     assert.equal(fakeSvg._ddTsLiveState.kind, 'series');
+
+    // New training samples keep the same scaffold. Retarget from the displayed
+    // distribution even if the next snapshot arrives before the morph settles.
+    tsMotionAllowed = true;
+    const previous = fakeSvg._ddTsLiveState;
+    const binIndex = previous.coords.findIndex(c => c.bin === 7);
+    const updated = structuredClone(richData);
+    const bin = updated.timestep_profile.bins[7];
+    bin.mean_loss += 0.12;
+    bin.count += 10;
+    morphApp.datasetDiagData = updated;
+    const hitLayer = fakeSvg.innerHTML;
+    morphApp._renderDatasetDiagHeroSvg(mWrap, mStage, fakeSvg);
+    assert.equal(fakeSvg.innerHTML, hitLayer);
+    assert.ok(runNextFrame(700) && runNextFrame(750));
+    const shown = fakeSvg._ddTsLiveState.coords[binIndex];
+    assert.ok(shown.mean_loss > previous.coords[binIndex].mean_loss && shown.mean_loss < bin.mean_loss);
+    const pendingFrame = fakeSvg._ddTsAnimRaf;
+    morphApp._renderDatasetDiagHeroSvg(mWrap, mStage, fakeSvg);
+    assert.equal(fakeSvg._ddTsAnimRaf, pendingFrame);
+    const second = structuredClone(updated);
+    second.timestep_profile.bins[7].mean_loss += 0.08;
+    morphApp.datasetDiagData = second;
+    morphApp._renderDatasetDiagHeroSvg(mWrap, mStage, fakeSvg);
+    assert.ok(runNextFrame(760));
+    assert.equal(fakeSvg._ddTsLiveState.coords[binIndex].mean_loss, shown.mean_loss);
+    assert.ok(runNextFrame(970));
+    assert.equal(fakeSvg._ddTsLiveState.coords[binIndex].mean_loss, second.timestep_profile.bins[7].mean_loss);
+    assert.equal(fakeSvg.innerHTML, hitLayer);
   });
 });
 

@@ -140,6 +140,10 @@ window.monitorRenderMixin = {
     if (tabChanged) {
       const prevTab = this._builtTab;
       this._builtTab = tab;
+      if (prevTab === 'overview') {
+        const card = contentEl.querySelector('.m-training-diagnostics');
+        if (card) card._insufficientContext = null;
+      }
       // 切离样本标签：取消弱网模式下的后台媒体加载队列（面板 DOM 保留，不释放 object URL）
       if (prevTab === 'samples' && tab !== 'samples') {
         this._sampleLayoutAction++;
@@ -183,15 +187,18 @@ window.monitorRenderMixin = {
     }
     if (tab === 'overview') {
       let restoreControlFocus;
-      const sig = 'ov:' + this._shellLocale + ':' + this._summaryStatus(d, isHistory).state + ':' + this.trainParamsVersion;
-      if (panelEmpty || this._builtOverviewSig !== sig || this._builtParamSchema !== window.TRAIN_SECTIONS) {
+      const overviewContext = isHistory ? 'history:' + this.selectedRunDir : 'live:' + (this.liveTaskId || d.active_task?.id || d.run_dir || '');
+      const sig = 'ov:' + this._shellLocale + ':' + this._summaryStatus(d, isHistory).state + ':' + overviewContext;
+      const rebuild = panelEmpty || this._builtOverviewSig !== sig;
+      if (rebuild || panel._paramVersion !== this.trainParamsVersion || panel._paramSchema !== window.TRAIN_SECTIONS) {
         this._builtOverviewSig = sig;
-        this._builtParamSchema = window.TRAIN_SECTIONS;
+        // Keep the raw registry on the DOM node. Alpine proxies arrays stored on the component.
+        panel._paramSchema = window.TRAIN_SECTIONS;
+        panel._paramVersion = this.trainParamsVersion;
         if (!tabChanged) panel.classList.add('no-enter-anim');
         const paramInput = panel.querySelector('.m-param-toolbar input');
         const paramFocus = paramInput && document.activeElement === paramInput
           ? { start: paramInput.selectionStart, end: paramInput.selectionEnd } : null;
-        const overviewContext = isHistory ? 'history:' + this.selectedRunDir : 'live:' + (d.run_dir || this.liveTaskId || d.active_task?.id || '');
         const sameContext = panel.dataset.overviewContext === overviewContext;
         if (sameContext && panel.contains(document.activeElement)) {
           if (document.activeElement.hasAttribute('data-summary-toggle')) restoreControlFocus = '[data-summary-toggle]';
@@ -201,12 +208,16 @@ window.monitorRenderMixin = {
         const methodOpen = method?.open;
         const methodFocused = method && document.activeElement === method.querySelector('summary');
         const scrollTop = panel.scrollTop;
-        panel.innerHTML = this._renderOverviewTab(d, t, isHistory);
-        panel.dataset.overviewContext = overviewContext;
-        delete panel.dataset.diagnosticVersion;
-        delete panel.dataset.matrixVersion;
-        delete panel.dataset.telemetryVersion;
-        delete panel.dataset.motionContext;
+        if (rebuild) {
+          panel.innerHTML = this._renderOverviewTab(d, t, isHistory);
+          panel.dataset.overviewContext = overviewContext;
+          delete panel.dataset.diagnosticVersion;
+          delete panel.dataset.matrixVersion;
+          delete panel.dataset.telemetryVersion;
+          delete panel.dataset.motionContext;
+        } else {
+          panel.querySelector('[data-overview-params]').innerHTML = this._overviewParamsHtml(d, t, isHistory);
+        }
         this.initMonitorParams(panel);
         if (sameContext) {
           const method = panel.querySelector('.m-diagnostic-details');
@@ -295,7 +306,7 @@ window.monitorRenderMixin = {
     }
     if (tab === 'outputs') {
       if ((this._outputFilesNeedsRefresh || (tabChanged && !this.outputFiles.length)) && !this.outputFilesLoading) this.loadOutputFiles();
-      const sig = ['out', this._shellLocale, this.outputFilesVersion, this.selectedOutputFiles.join('|'),
+      const sig = ['out', this._shellLocale, this.outputFilesVersion, this.outputCanReveal, this.selectedOutputFiles.join('|'),
         !this.outputFiles.length && this.outputFilesLoading && !this._outputFilesLoaded ? 1 : 0,
         this.outputSearch, this.outputFilter, this.outputModelSortKey, this.outputModelSortDir,
         this.outputStateSortKey, this.outputStateSortDir, this.outputOtherSortKey, this.outputOtherSortDir,
@@ -343,9 +354,10 @@ window.monitorRenderMixin = {
       const data = this.datasetDiagData;
       const dataSig = this._datasetDiagSnapshotVersion;
       if (!source.key || !data || !data.available) {
+        panel._ddWaitingSource = !isHistory && source.key && (!data || ['waiting', 'empty'].includes(data.reason)) ? source.key : '';
         const emptySig = [
-          'ddEmpty', this._shellLocale, dataSig,
-          this.datasetDiagLoading ? 1 : 0, this.datasetDiagError || '',
+          'ddEmpty', this._shellLocale, JSON.stringify(data?.available_runs || []), this.datasetDiagRunId,
+          !data && this.datasetDiagLoading ? 1 : 0, this.datasetDiagError || '',
           data?.reason || '', source.key,
           (!this.selectedRunDir && this.liveTaskId) ? 1 : 0,
         ].join(':');
@@ -417,6 +429,8 @@ window.monitorRenderMixin = {
         : (this.datasetDiagSubTab === 'images' ? 'images' : 'overview');
       const prevView = panel._ddLastView || '';
       const switchedView = !!prevView && prevView !== view && !tabChanged;
+      const enterView = switchedView || (!tabChanged && panel._ddWaitingSource === source.key);
+      panel._ddWaitingSource = '';
       panel._ddLastView = view;
       const filteredLen = this._datasetDiagFilteredImages
         ? this._datasetDiagFilteredImages().length
@@ -431,14 +445,14 @@ window.monitorRenderMixin = {
       panel._ddLastHasSlope = !!data.summary?.has_slope;
 
       const headingStructSig = JSON.stringify([
-        this._shellLocale, this.datasetDiagLoading, this.datasetDiagError,
+        this._shellLocale, this.datasetDiagError,
         this.datasetDiagMinCount, this.datasetDiagRunId || data.run_id || '',
-        (data.available_runs || []).length, source.key, liveState.visible,
+        data.available_runs || [], source.key,
         hasRegImages,
       ]);
       const headingSig = JSON.stringify([
         headingStructSig, dataSig, view, gfKey, filteredLen, hasFilter,
-        liveState.phase, !!data.summary?.multi_gpu_partial, effectiveRegMode,
+        liveState.visible, liveState.phase, !!data.summary?.multi_gpu_partial, effectiveRegMode,
       ]);
       if (headingSlot && panel._ddHeadingSig !== headingSig) {
         const canPatchHeading = !!headingSlot.querySelector?.('.m-dd-topbar')
@@ -460,13 +474,11 @@ window.monitorRenderMixin = {
         // 先于 hidden = true 读取 scrollTop/scrollLeft，避免 display:none 后浏览器读出 0。
         this._releaseDatasetDiagImagesSlot?.(panel);
       }
-      if (imagesSlot) {
-        imagesSlot.hidden = view !== 'images';
-        imagesSlot.classList?.toggle('m-dd-view-enter', switchedView && view === 'images');
-      }
-      if (analysisSlot) {
-        analysisSlot.hidden = view !== 'overview';
-        analysisSlot.classList?.toggle('m-dd-view-enter', switchedView && view === 'overview');
+      for (const [slot, name] of [[imagesSlot, 'images'], [analysisSlot, 'overview']]) {
+        if (!slot) continue;
+        slot.hidden = view !== name;
+        // Let the active slot finish its entrance across ordinary snapshot renders.
+        if (slot.hidden || tabChanged || enterView) slot.classList?.toggle('m-dd-view-enter', enterView && !slot.hidden);
       }
 
       let analysisAnimated = false;
@@ -591,7 +603,7 @@ window.monitorRenderMixin = {
       } else {
         const analysisStructSig = JSON.stringify([
           this._shellLocale, source.key, data.run_id || '',
-          !!data.summary?.has_slope, this.datasetDiagError,
+          this.datasetDiagError,
         ]);
         const analysisSig = JSON.stringify([
           analysisStructSig, dataSig, this.datasetDiagPreset || 'all', gfKey, hasFilter, filteredLen,
@@ -713,6 +725,7 @@ window.monitorRenderMixin = {
     if (modal) {
       (modal._ddModalROs || []).forEach(observer => observer.disconnect());
       modal._ddModalROs = [];
+      delete modal._ddChartInput;
     }
   },
 

@@ -16,6 +16,40 @@ function requestHarness(document = {getElementById: () => null}) {
   return {app, requests};
 }
 
+test('live overview keeps its chart and progress matrix across telemetry and parameter refreshes', () => {
+  let builds = 0;
+  const params = {};
+  const panel = {dataset: {}, classList: {add() {}}, contains: () => false,
+    querySelector: selector => selector === '[data-overview-params]' ? params : null,
+    set innerHTML(html) { this.firstElementChild = html; builds++; }};
+  const document = {getElementById: () => ({querySelector: () => panel})};
+  const {window} = loadFrontend('monitor/render', {window: {TRAIN_SECTIONS: []}, document});
+  const app = new Proxy(composeMixins(window.monitorRenderMixin, {
+    _builtTab: 'overview', liveTaskId: 'run-a', trainParamsVersion: 1,
+    _summaryStatus: () => ({state: 'RUNNING'}), _renderOverviewTab: () => 'overview',
+    initMonitorParams() {}, _patchOverviewStatus() {}, _overviewParamsHtml() { return String(this.trainParamsVersion); },
+  }), {
+    // Alpine returns a reactive proxy when an array is read back from the component.
+    get(target, key) {
+      const value = target[key];
+      return value === window.TRAIN_SECTIONS ? new Proxy(value, {}) : value;
+    },
+  });
+  const render = step => app._renderTab('overview', {step}, null, null, String, false);
+  render(1);
+  render(2);
+  assert.equal(builds, 1);
+  app.trainParamsVersion++;
+  render(3);
+  assert.equal(params.innerHTML, '2');
+  window.TRAIN_SECTIONS = [];
+  render(4);
+  assert.equal(builds, 1);
+  app.liveTaskId = 'run-b';
+  render(1);
+  assert.equal(builds, 2);
+});
+
 test('a delayed log search cannot overwrite newer input or enable stale match navigation', async () => {
   const {app, requests} = requestHarness();
   app.logFullQuery = 'old';
@@ -135,10 +169,20 @@ test('history offers downloads for distributed states and resume for ordinary st
     app.outputFiles = [{category: 'state', name, path: name, resumable: false}];
     const html = app._renderOutputsTab(app.t);
     assert.ok(html.includes(`downloadSingleOutput('${name}')`));
+    assert.doesNotMatch(html, /output-reveal-btn/);
     assert.doesNotMatch(html, /resumeFromOutputState|fsdpIncompatible/);
   }
   app.outputFiles[0] = {category: 'state', name: 'epoch-state', path: 'epoch-state', resumable: true, ckpt_step: 240};
   assert.match(app._renderOutputsTab(app.t), /resumeFromOutputState\('epoch-state',240\)/);
+  app.outputCanReveal = true;
+  app.outputFilter = 'all';
+  app.outputFiles.push({category:'model', name:'model', path:'sub/model'}, {category:'other', name:'log', path:'sub/log'});
+  for (const selectedRunDir of ['output/run', '']) {
+    app.selectedRunDir = selectedRunDir;
+    const html = app._renderOutputsTab(app.t);
+    assert.equal((html.match(/output-reveal-btn/g) || []).length, 3);
+    for (const {path} of app.outputFiles) assert.ok(html.includes('data-path="' + path + '"'));
+  }
 });
 
 test('artifact notices refresh only changed samples and coalesce changes during a read', async () => {

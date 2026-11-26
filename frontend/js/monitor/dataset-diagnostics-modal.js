@@ -1,5 +1,188 @@
 /* 训练集诊断逐图列表、单图详情弹窗与采样明细弹窗；由 dataset-diagnostics-render.js 聚合。 */
 (() => {
+  // Match samples across bin/cluster changes using the first recorded observation in the cluster.
+  function clusterKey(cluster) {
+    const sample = cluster.items[0];
+    return [sample.epoch, sample.step, sample.timestep, sample.loss, !!sample.non_finite].join('/');
+  }
+
+  function syncDetailChildren(parent, nextParent, keyOf, update) {
+    const groups = new Map();
+    for (const el of parent.children) {
+      const key = keyOf(el);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(el);
+    }
+    let before = parent.firstElementChild;
+    for (const next of Array.from(nextParent.children)) {
+      const el = groups.get(keyOf(next))?.shift();
+      if (el) {
+        if (el !== before) parent.insertBefore(el, before);
+        before = el.nextElementSibling;
+        update(el, next);
+      } else {
+        parent.insertBefore(next, before);
+      }
+    }
+    for (const remaining of groups.values()) for (const el of remaining) el.remove();
+  }
+
+  function patchDetailSections(parent, source) {
+    const key = el => el.dataset.ddModalSection || el.classList[0] || el.localName;
+    syncDetailChildren(parent, source, key, (el, next) => {
+      if (el.classList.contains('m-dd-mini-stage') || el.isEqualNode(next)) return;
+      // Keep the reader's scroll position, keyboard focus and pointer capture during live updates.
+      if (el.classList.contains('m-dd-caption-box') && el.textContent === next.textContent
+          && el.lastElementChild.title === next.lastElementChild.title) return;
+      if (next.hasAttribute('data-dd-modal-section')) {
+        el.className = next.className;
+        patchDetailSections(el, next);
+      } else {
+        el.replaceWith(next);
+      }
+    });
+  }
+
+  const geometry = new Set(['x','y','x1','x2','y1','y2','cx','cy','r','width','height']);
+  function detailIqrPath(points) {
+    const parts = [];
+    let span = [];
+    const flush = () => {
+      if (span.length >= 2) {
+        const upper = span.map((p, i) => (i ? 'L' : 'M') + p.x.toFixed(1) + ' ' + p.yP75.toFixed(1));
+        const lower = span.reverse().map(p => 'L' + p.x.toFixed(1) + ' ' + p.yP25.toFixed(1));
+        parts.push([...upper, ...lower, 'Z'].join(' '));
+      }
+      span = [];
+    };
+    for (const point of points) {
+      if (point.excluded) flush();
+      else if (point.yP25 != null && point.yP75 != null) span.push(point);
+    }
+    flush();
+    return parts.join(' ');
+  }
+
+  function patchDetailSvg(svg, markup, frames) {
+    const target = svg.cloneNode(false);
+    target.innerHTML = markup;
+    const key = el => [el.localName, el.classList[0], el.dataset.ddMark, el.dataset.ddEpDot, el.dataset.ddEpNan,
+      el.dataset.ddModalBin, el.dataset.ddCluster].join(':');
+    const update = (el, next) => {
+      // The crosshair and focus dot belong to the current pointer, including between data frames.
+      if (el.matches('[data-dd-ts-focus],[data-dd-ep-focus]')) return;
+      if (el.matches('[data-dd-ts-ch],[data-dd-ep-ch]')) {
+        el.setAttribute('y1', next.getAttribute('y1'));
+        el.setAttribute('y2', next.getAttribute('y2'));
+        return;
+      }
+      for (const {name, value} of next.attributes) {
+        const old = el.getAttribute(name);
+        if (old === value) continue;
+        if (frames && old !== null && geometry.has(name) && Number.isFinite(+old) && Number.isFinite(+value)) {
+          frames.push(t => el.setAttribute(name, t === 1 ? value : (+old + (+value - +old) * t).toFixed(2)));
+        } else {
+          el.setAttribute(name, value);
+        }
+      }
+      for (const attr of Array.from(el.attributes)) if (!next.hasAttribute(attr.name)) el.removeAttribute(attr.name);
+      if (el.localName === 'text') {
+        const text = next.textContent;
+        if (el.textContent === text) return;
+        el.textContent = text;
+      } else if (next.childElementCount || el.childElementCount) {
+        syncDetailChildren(el, next, key, update);
+      }
+    };
+    syncDetailChildren(svg, target, key, update);
+  }
+
+  function drawDetailFrame(stage, svg, markup, state, animate, formatAxis, patchProfile) {
+    const previous = stage._ddState;
+    if (stage._ddLiveFrame) cancelAnimationFrame(stage._ddLiveFrame);
+    stage._ddLiveFrame = 0;
+    stage._ddState = state;
+    if (!previous || !svg.cloneNode) {
+      svg.innerHTML = markup;
+      return;
+    }
+    const frames = animate ? [] : null;
+    patchDetailSvg(svg, markup, frames);
+    if (!frames) return;
+    // Interpolate the scale used by the marks, then invert that exact scale for the axis labels.
+    const fromMap = previous.yMap, toMap = {...state.yMap};
+    if (Object.keys(toMap).some(key => fromMap[key] !== toMap[key])) {
+      const high = svg.querySelector('[data-dd-mark="high"]');
+      const low = svg.querySelector('[data-dd-mark="low"]');
+      frames.push(t => {
+        for (const key of Object.keys(toMap)) state.yMap[key] = fromMap[key] + (toMap[key] - fromMap[key]) * t;
+        const { origin, gain, top, bottom } = state.yMap;
+        if (high) high.textContent = formatAxis((origin - top) / gain);
+        if (low) low.textContent = formatAxis((origin - bottom) / gain);
+      });
+    }
+    patchProfile?.(previous, frames);
+    if (!frames.length) return;
+    const epoch = !!state.allCoords;
+    if (epoch) {
+      const labels = svg.querySelectorAll('[data-dd-epoch-bound]');
+      const old = previous.xMap, next = { ...state.xMap };
+      frames.push(t => {
+        const map = state.xMap;
+        map.origin = old.origin + (next.origin - old.origin) * t;
+        map.gain = old.gain + (next.gain - old.gain) * t;
+        for (const el of labels) {
+          const x = Number(el.getAttribute('x'));
+          el.textContent = state.epochLabel + ' ' + Math.round((x - map.origin) / map.gain);
+        }
+      });
+    }
+    const coordKey = epoch ? pt => pt.epoch : clusterKey;
+    const prevPoints = new Map((epoch ? previous.allCoords : previous.clusters).map(pt => [coordKey(pt), pt]));
+    const points = epoch ? state.allCoords : state.clusters;
+    const fields = epoch ? ['x', 'y'] : ['cx', 'cy'];
+    const marks = new Map();
+    for (const el of svg.querySelectorAll(epoch ? '[data-dd-ep-dot]' : '[data-dd-cluster]')) {
+      const key = epoch ? Number(el.dataset.ddEpDot) : el.dataset.ddCluster;
+      if (!marks.has(key)) marks.set(key, []);
+      marks.get(key).push(el);
+    }
+    for (const pt of points) {
+      const key = coordKey(pt);
+      const old = prevPoints.get(key);
+      if (!old && pt.non_finite) continue;
+      for (const field of fields) {
+        const to = pt[field];
+        const vertical = field === 'y' || field === 'cy';
+        const value = (toMap.origin - to) / toMap.gain;
+        const from = old ? old[field] : vertical ? fromMap.origin - value * fromMap.gain
+          : epoch ? previous.xMap.origin + pt.epoch * previous.xMap.gain : to;
+        if (!Number.isFinite(from) || !Number.isFinite(to) || from === to) continue;
+        frames.push(t => {
+          pt[field] = from + (to - from) * t;
+          if (!old) for (const el of marks.get(key) || []) el.setAttribute(vertical ? 'cy' : 'cx', pt[field].toFixed(2));
+        });
+      }
+      if (!old && marks.has(key)) {
+        frames.push(t => {
+          const x = pt[fields[0]], y = pt[fields[1]];
+          const clipped = y < state.yMap.top || y > state.yMap.bottom || (epoch && (x < state.xMap.left || x > state.xMap.right));
+          for (const el of marks.get(key)) el.style.opacity = t >= 1 ? '' : clipped ? '0' : String(t);
+        });
+      }
+    }
+    const start = performance.now();
+    const paint = now => {
+      stage._ddLiveFrame = 0;
+      if (!stage.isConnected) return;
+      const t = 1 - Math.pow(1 - Math.min(1, Math.max(0, now - start) / 240), 3);
+      for (const frame of frames) frame(t);
+      stage._ddRefreshHover?.();
+      if (t < 1) stage._ddLiveFrame = requestAnimationFrame(paint);
+    };
+    paint(start);
+  }
+
   window.datasetDiagnosticsModalMixin = {
     _ddSortColHtml(t, column, descKey, ascKey, label, rightAlign = false) {
       const cur = this.datasetDiagSort || 'residual_desc';
@@ -441,6 +624,23 @@
       return true;
     },
 
+    _ddFolderSectionHtml(t, { group, isCollapsed, visibleItems }, viewMode, maxAbs) {
+      const grid = viewMode === 'grid';
+      const tag = grid ? 'section' : 'div';
+      const key = this.esc(group.key);
+      const collapsed = isCollapsed ? ' is-collapsed' : '';
+      const rows = isCollapsed ? '' : visibleItems.map(img => grid
+        ? this._ddImageCardHtml(t, img) : this._ddImageTableRowHtml(t, img, maxAbs)).join('');
+      return '<' + tag + ' class="' + (grid ? 'm-dd-folder-group' : 'm-dd-table-folder-section') + collapsed
+        + '" ' + (grid ? 'data-dd-folder-group' : 'data-dd-table-folder-section') + '="' + key + '">'
+        + '<button type="button" class="' + (grid ? 'm-dd-folder-head' : 'm-dd-table-folder-head') + collapsed
+        + '" data-dd-folder-group="' + key + '" aria-expanded="' + (!isCollapsed) + '" title="' + this.esc(group.fullPath)
+        + '" @click="toggleDatasetDiagFolderCollapsed(\'' + this.esc(this.escapeJsString(group.key)) + '\')">'
+        + this._ddFolderHeadInnerHtml(t, group, isCollapsed ? null : visibleItems.length) + '</button>'
+        + '<div class="m-dd-folder-body" data-dd-folder-body="' + key + '"' + (isCollapsed ? ' inert' : '') + '><div class="m-dd-folder-body-inner">'
+        + (grid && !isCollapsed ? '<div class="m-dd-grid">' + rows + '</div>' : rows) + '</div></div></' + tag + '>';
+    },
+
     _renderDatasetDiagImagesBodyHtml(t, data) {
       const filtered = this._datasetDiagFilteredImages();
       if (!filtered.length) {
@@ -469,21 +669,7 @@
 
         if (viewMode === 'grid') {
           html += '<div class="m-dd-folder-groups">';
-          slices.forEach(({ group, isCollapsed, visibleItems }) => {
-            const keyJs = this.esc(this.escapeJsString(group.key));
-            const keyEsc = this.esc(group.key);
-            html += '<section class="m-dd-folder-group' + (isCollapsed ? ' is-collapsed' : '') + '" data-dd-folder-group="' + keyEsc + '">';
-            html += '<button type="button" class="m-dd-folder-head' + (isCollapsed ? ' is-collapsed' : '') + '" data-dd-folder-group="' + keyEsc + '" aria-expanded="' + (!isCollapsed) + '"'
-              + ' title="' + this.esc(group.fullPath) + '" @click="toggleDatasetDiagFolderCollapsed(\'' + keyJs + '\')">'
-              + this._ddFolderHeadInnerHtml(t, group, isCollapsed ? null : visibleItems.length)
-              + '</button>';
-            html += '<div class="m-dd-folder-body" data-dd-folder-body="' + keyEsc + '"' + (isCollapsed ? ' inert' : '') + '><div class="m-dd-folder-body-inner">'
-              + (!isCollapsed && visibleItems.length
-                ? '<div class="m-dd-grid">' + visibleItems.map(img => this._ddImageCardHtml(t, img)).join('') + '</div>'
-                : '')
-              + '</div></div>';
-            html += '</section>';
-          });
+          html += slices.map(slice => this._ddFolderSectionHtml(t, slice, viewMode, maxAbs)).join('');
           html += '</div>';
         } else {
           html += '<div class="m-dd-table-wrap"><div class="output-list output-table m-dd-table" data-dd-max-abs="' + maxAbs + '">';
@@ -495,21 +681,7 @@
             + '<span class="m-dd-res-head">' + this._ddSortColHtml(t, 'residual', 'residual_desc', 'residual_asc', t('ddColRelative'), true) + '</span>'
             + this._ddSortColHtml(t, 'slope', 'slope_desc', 'slope_asc', t('ddColSlope'), true)
             + '<span>' + this.esc(t('ddColStatus')) + '</span></div>';
-          slices.forEach(({ group, isCollapsed, visibleItems }) => {
-            const keyJs = this.esc(this.escapeJsString(group.key));
-            const keyEsc = this.esc(group.key);
-            html += '<div class="m-dd-table-folder-section' + (isCollapsed ? ' is-collapsed' : '') + '" data-dd-table-folder-section="' + keyEsc + '">';
-            html += '<button type="button" class="m-dd-table-folder-head' + (isCollapsed ? ' is-collapsed' : '') + '" data-dd-folder-group="' + keyEsc + '"'
-              + ' aria-expanded="' + (!isCollapsed) + '" title="' + this.esc(group.fullPath) + '" @click="toggleDatasetDiagFolderCollapsed(\'' + keyJs + '\')">'
-              + this._ddFolderHeadInnerHtml(t, group, isCollapsed ? null : visibleItems.length)
-              + '</button>';
-            html += '<div class="m-dd-folder-body" data-dd-folder-body="' + keyEsc + '"' + (isCollapsed ? ' inert' : '') + '><div class="m-dd-folder-body-inner">'
-              + (!isCollapsed && visibleItems.length
-                ? visibleItems.map(img => this._ddImageTableRowHtml(t, img, maxAbs)).join('')
-                : '')
-              + '</div></div>';
-            html += '</div>';
-          });
+          html += slices.map(slice => this._ddFolderSectionHtml(t, slice, viewMode, maxAbs)).join('');
           html += '</div></div>';
         }
       } else {
@@ -534,10 +706,8 @@
         }
       }
 
-      if (hasMore) {
-        html += '<div class="m-dd-more-row" data-dd-more-row><button type="button" class="btn btn-sm btn-secondary" @click="showMoreDatasetDiagImages()">'
-          + this.esc(t('ddShowMore').replace('{n}', remaining)) + '</button></div>';
-      }
+      html += '<div class="m-dd-more-row" data-dd-more-row' + (hasMore ? '' : ' hidden') + '><button type="button" class="btn btn-sm btn-secondary" @click="showMoreDatasetDiagImages()">'
+        + this.esc(t('ddShowMore').replace('{n}', remaining)) + '</button></div>';
       return html;
     },
 
@@ -858,19 +1028,20 @@
       if (viewMode === 'table' && (!tableEl || bodyEl.querySelector?.('.m-dd-grid'))) return false;
       if (viewMode === 'grid' && ((!gridEl && !groupByFolder) || bodyEl.querySelector?.('.m-dd-table'))) return false;
 
-      const itemsMatchOrder = (nodes, items) => {
-        if (nodes.length !== items.length) return false;
-        for (let i = 0; i < items.length; i++) {
-          if (nodes[i]?.dataset?.ddImageId !== items[i].image_id) return false;
-        }
-        return true;
-      };
-
       let hasMore = false;
       let remaining = 0;
       let groupPlan = null;
       let flatNodes = null;
       let flatItems = null;
+      const placeBefore = (host, node, anchor) => {
+        if (node.nextElementSibling === anchor) return;
+        if (host.moveBefore) host.moveBefore(node, anchor);
+        else {
+          const focus = document.activeElement;
+          host.insertBefore(node, anchor);
+          if (node.contains(focus)) focus.focus({ preventScroll: true });
+        }
+      };
 
       if (groupByFolder) {
         const grouped = this._ddComputeGroupedSlices(filtered, limit);
@@ -881,17 +1052,22 @@
         const secNodes = Array.from(bodyEl.querySelectorAll?.(
           viewMode === 'grid' ? '.m-dd-folder-group' : '.m-dd-table-folder-section'
         ) || []);
-        if (!slices.length || secNodes.length !== slices.length) return false;
-
+        const foldersHost = viewMode === 'grid' ? bodyEl.querySelector('.m-dd-folder-groups') : tableEl;
+        if (!foldersHost || !slices.length) return false;
+        if (viewMode === 'table' && !secNodes.length && tableEl.querySelector('.m-dd-table-row')) return false;
+        const byKey = new Map(secNodes.map(sec => [sec.dataset.ddFolderGroup || sec.dataset.ddTableFolderSection, sec]));
         groupPlan = [];
-        for (let i = 0; i < slices.length; i++) {
+        let nextFolder = null;
+        for (let i = slices.length - 1; i >= 0; i--) {
           const s = slices[i];
-          const sec = secNodes[i];
-          const secKey = viewMode === 'grid'
-            ? (sec.dataset?.ddFolderGroup || '')
-            : (sec.querySelector?.('.m-dd-table-folder-head')?.dataset?.ddFolderGroup || sec.dataset?.ddTableFolderSection || '');
-          if (secKey !== s.group.key) return false;
-
+          let sec = byKey.get(s.group.key);
+          if (!sec) {
+            foldersHost.insertAdjacentHTML('beforeend', this._ddFolderSectionHtml(t, s, viewMode, maxAbs));
+            sec = foldersHost.lastElementChild;
+          }
+          byKey.delete(s.group.key);
+          placeBefore(foldersHost, sec, nextFolder);
+          nextFolder = sec;
           const headBtn = sec.querySelector?.(viewMode === 'grid' ? '.m-dd-folder-head' : '.m-dd-table-folder-head');
           const folderBody = sec.querySelector?.('[data-dd-folder-body]');
           const inner = folderBody?.querySelector?.('.m-dd-folder-body-inner');
@@ -903,16 +1079,18 @@
             || folderBody.hasAttribute?.('inert')
           );
           if (domCollapsed !== s.isCollapsed) return false;
-          if (Boolean(headBtn.querySelector?.('.m-dd-folder-res')) !== (s.group.meanResidual != null)) return false;
-          if (Boolean(headBtn.querySelector?.('.m-dd-folder-reg')) !== Boolean(s.group.isReg)) return false;
+          if (Boolean(headBtn.querySelector?.('.m-dd-folder-res')) !== (s.group.meanResidual != null)
+              || Boolean(headBtn.querySelector?.('.m-dd-folder-reg')) !== Boolean(s.group.isReg)) {
+            headBtn.innerHTML = this._ddFolderHeadInnerHtml(t, s.group, s.isCollapsed ? null : s.visibleItems.length);
+          }
 
           const nodes = Array.from(inner.querySelectorAll?.(itemSelector) || []);
           if (!s.isCollapsed) {
             if (viewMode === 'grid' && s.visibleItems.length > 0 && !inner.querySelector?.('.m-dd-grid')) return false;
-            if (!itemsMatchOrder(nodes, s.visibleItems)) return false;
           }
           groupPlan.push({ s, headBtn, inner, nodes });
         }
+        for (const removed of byKey.values()) removed.remove();
       } else {
         if (bodyEl.querySelector?.('.m-dd-folder-group, .m-dd-table-folder-section')) return false;
         flatItems = filtered.slice(0, limit);
@@ -921,24 +1099,32 @@
         const container = viewMode === 'grid' ? gridEl : tableEl;
         if (!container) return false;
         flatNodes = Array.from(container.querySelectorAll?.(itemSelector) || []);
-        if (!itemsMatchOrder(flatNodes, flatItems)) return false;
       }
 
       const moreRow = bodyEl.querySelector?.('[data-dd-more-row]');
-      const moreVisible = Boolean(moreRow && !moreRow.hidden);
-      if (moreVisible !== hasMore) return false;
       const moreBtn = hasMore ? moreRow?.querySelector?.('button') : null;
       if (hasMore && !moreBtn) return false;
+      if (moreRow) moreRow.hidden = !hasMore;
 
       if (hasMore && moreBtn) {
         const nextMoreText = t('ddShowMore').replace('{n}', remaining);
         if (moreBtn.textContent !== nextMoreText) moreBtn.textContent = nextMoreText;
       }
 
-      const patchPairList = (nodes, items) => {
-        for (let i = 0; i < items.length; i++) {
+      const patchPairList = (host, nodes, items) => {
+        const byId = new Map(nodes.map(node => [node.dataset.ddImageId, node]));
+        let next = null;
+        for (let i = items.length - 1; i >= 0; i--) {
           const img = items[i];
-          const node = nodes[i];
+          let node = byId.get(img.image_id);
+          if (!node) {
+            const markup = viewMode === 'grid' ? this._ddImageCardHtml(t, img) : this._ddImageTableRowHtml(t, img, maxAbs);
+            host.insertAdjacentHTML('beforeend', markup);
+            node = host.lastElementChild;
+          }
+          byId.delete(img.image_id);
+          placeBefore(host, node, next);
+          next = node;
           const sig = this._ddImagePatchSig(img, viewMode, maxAbs);
           const prevSig = node._ddPatchSig ?? node.dataset?.ddSig;
           if (prevSig === sig) continue;
@@ -947,6 +1133,7 @@
           node._ddPatchSig = sig;
           if (node.dataset) node.dataset.ddSig = sig;
         }
+        for (const removed of byId.values()) removed.remove();
       };
 
       if (groupPlan) {
@@ -956,11 +1143,12 @@
             // 折叠前曾展开的分组仍残留旧 DOM，清空可防止下次展开时命中旧指标。
             if (entry.nodes.length > 0) entry.inner.innerHTML = '';
           } else {
-            patchPairList(entry.nodes, entry.s.visibleItems);
+            const host = viewMode === 'grid' ? entry.inner.querySelector('.m-dd-grid') : entry.inner;
+            if (host) patchPairList(host, entry.nodes, entry.s.visibleItems);
           }
         }
       } else {
-        patchPairList(flatNodes, flatItems);
+        patchPairList(gridEl || tableEl, flatNodes, flatItems);
       }
 
       bodyEl._ddLastMaxAbs = maxAbs;
@@ -1109,7 +1297,7 @@
         + '</div>'
         + '<div id="datasetDiagModalFoot" class="m-dd-modal-foot"></div>'
         + '</div>'
-        + '<div id="datasetDiagModalRight" class="m-dd-modal-right"></div>'
+        + '<div class="m-dd-modal-right"><div id="datasetDiagModalRight" class="m-dd-modal-right-content"></div></div>'
         + '</div></div></dialog>'
         + '<dialog id="datasetDiagSamplesModal" class="modal-overlay m-dd-samples-modal"'
         + ' x-dialog="datasetDiagSamplesModalOpen" @click.self.stop="closeDatasetDiagSamplesModal()"'
@@ -1292,12 +1480,25 @@
     _patchDatasetDiagModal() {
       const dialog = document.getElementById('datasetDiagModal');
       if (!dialog) return;
+      const rightEl = document.getElementById('datasetDiagModalRight');
+      const footEl = document.getElementById('datasetDiagModalFoot');
+      const detail = this.datasetDiagModalDetail;
+      // Keep the displayed image and its charts together until the next full
+      // detail is ready. Its actions must not operate on the pending image.
+      const switching = !detail && !this.datasetDiagModalError && Boolean(rightEl?._ddRenderedImageId)
+        && rightEl._ddRenderedImageId !== this.datasetDiagModalImageId;
+      if (rightEl) rightEl.inert = switching;
+      if (footEl) footEl.inert = switching;
+      if (switching) {
+        dialog.setAttribute?.('aria-busy', 'true');
+        return;
+      }
+      dialog.removeAttribute?.('aria-busy');
       const t = k => this.tMonitor(k);
 
       const navList = this._datasetDiagModalNavList();
       const idx = navList.findIndex(item => item.image_id === this.datasetDiagModalImageId);
       const listImg = idx >= 0 ? navList[idx] : (this.datasetDiagData?.by_image || []).find(i => i.image_id === this.datasetDiagModalImageId);
-      const detail = this.datasetDiagModalDetail;
       const imgInfo = detail?.image || listImg;
 
       const titleEl = document.getElementById('datasetDiagModalTitle');
@@ -1333,7 +1534,7 @@
         if (imgInfo.is_reg) {
           bits.push('<small class="output-dir-tag">' + this.esc(t('ddRegTag')) + '</small>');
         }
-        subEl.innerHTML = bits.join('<span class="m-dd-modal-sub-sep" aria-hidden="true">·</span>');
+        this._ddPatchHtml(subEl, bits.join('<span class="m-dd-modal-sub-sep" aria-hidden="true">·</span>'));
       }
       if (curEl && totEl) {
         curEl.textContent = idx >= 0 ? String(idx + 1) : '—';
@@ -1399,7 +1600,6 @@
         }
       }
 
-      const footEl = document.getElementById('datasetDiagModalFoot');
       if (footEl && imgInfo) {
         const fi = detail?.file_info;
         const metaSpans = [];
@@ -1441,14 +1641,13 @@
             tagEditorBtn = '<button type="button" class="btn btn-sm btn-primary" disabled title="' + this.esc(t('ddTagEditorDisabledReason')) + '">' + this.esc(t('ddOpenTagEditor')) + '</button>';
           }
         }
-        footEl.innerHTML = '<div class="m-dd-modal-meta" title="' + this.esc(rawPath) + '">' + metaSpans.join('<span class="m-dd-modal-meta-dot" aria-hidden="true">·</span>') + '</div>'
+        this._ddPatchHtml(footEl, '<div class="m-dd-modal-meta" title="' + this.esc(rawPath) + '">' + metaSpans.join('<span class="m-dd-modal-meta-dot" aria-hidden="true">·</span>') + '</div>'
           + '<div class="m-dd-modal-actions">'
           + openOrigBtn
           + tagEditorBtn
-          + '</div>';
+          + '</div>');
       }
 
-      const rightEl = document.getElementById('datasetDiagModalRight');
       if (!rightEl) return;
 
       if (this.datasetDiagModalLoading && !detail) {
@@ -1466,6 +1665,8 @@
         return;
       }
       if (this.datasetDiagModalError && !detail) {
+        rightEl._ddRenderedImageId = '';
+        delete rightEl._ddLastHtml;
         (rightEl._ddModalROs || []).forEach(ro => ro.disconnect());
         rightEl._ddModalROs = [];
         rightEl._ddWasPending = false;
@@ -1481,22 +1682,104 @@
       }
 
       const wasPending = Boolean(rightEl._ddWasPending);
-      const navChanged = Boolean(rightEl._ddRenderedImageId && rightEl._ddRenderedImageId !== this.datasetDiagModalImageId);
+      const firstDetail = !rightEl._ddRenderedImageId;
       rightEl._ddWasPending = false;
-      rightEl.innerHTML = this._renderDatasetDiagModalRightHtml(t, detail);
-      rightEl._ddRenderedImageId = this.datasetDiagModalImageId;
-      if (navChanged || wasPending) {
-        rightEl.scrollTop = 0;
-        if (rightEl.classList) {
-          rightEl.classList.remove('m-dd-content-enter');
-          void rightEl.getBoundingClientRect?.();
-          rightEl.classList.add('m-dd-content-enter');
-        }
+      const rightHtml = this._renderDatasetDiagModalRightHtml(t, detail);
+      const chartInput = JSON.stringify([this.locale, this._shellLocale, detail.timestep_scale, detail.thresholds?.high_residual,
+        detail.image?.slope, detail.epoch_series, detail.samples, this._ddResolveNoiseProfileBins(detail, 18),
+        detail.sampling_config || this.datasetDiagData?.sampling_config]);
+      const sameImage = !wasPending && rightEl._ddRenderedImageId === this.datasetDiagModalImageId;
+      const htmlChanged = !sameImage || rightEl._ddLastHtml !== rightHtml;
+      const chartsChanged = htmlChanged || rightEl._ddChartInput !== chartInput;
+      if (htmlChanged) {
+        if (sameImage && rightEl.ownerDocument) {
+          const template = rightEl.ownerDocument.createElement('template');
+          template.innerHTML = rightHtml;
+          patchDetailSections(rightEl, template.content);
+        } else rightEl.innerHTML = rightHtml;
+        rightEl._ddLastHtml = rightHtml;
       }
-      this._bindDatasetDiagModalCharts(rightEl, detail, t);
+      rightEl._ddChartInput = chartInput;
+      rightEl._ddRenderedImageId = this.datasetDiagModalImageId;
+      if (firstDetail) {
+        const scrollPane = rightEl.closest?.('.m-dd-modal-right') || rightEl;
+        scrollPane.scrollTop = 0;
+      }
+      if (firstDetail && wasPending && rightEl.classList) {
+        rightEl.classList.remove('m-dd-content-enter');
+        void rightEl.getBoundingClientRect?.();
+        rightEl.classList.add('m-dd-content-enter');
+      }
+      if (chartsChanged) this._bindDatasetDiagModalCharts(rightEl, detail, t, {
+        dataChanged: true, animate: sameImage && !this.selectedRunDir && this._monitorMotionAllowed(),
+      });
       if (this.datasetDiagSamplesModalOpen && detail) {
         this._patchDatasetDiagSamplesModal();
       }
+    },
+
+    datasetDiagCaptionSizer() {
+      let observer;
+      return {
+        init() {
+          const box = this.$el;
+          const text = box.firstElementChild;
+          const grip = box.lastElementChild;
+          const pane = box.closest('.m-dd-modal-right');
+          const minimum = parseFloat(getComputedStyle(box).getPropertyValue('--dd-caption-default'));
+          let inheritedHeight = parseFloat(pane.style.getPropertyValue('--dd-caption-height')) || 0;
+          const limits = () => Math.max(minimum, Math.min(
+            Math.max(inheritedHeight, text.scrollHeight + text.offsetHeight - text.clientHeight),
+            Math.round(window.innerHeight * .6)
+          ));
+          const sync = () => {
+            const maximum = limits();
+            // Add exactly the caption's extra height to the scrollable content.
+            // The two charts retain the space they had with the default caption.
+            pane.style.setProperty('--dd-caption-extra', Math.max(0, text.offsetHeight - minimum) + 'px');
+            grip.hidden = maximum <= minimum && !pane.style.getPropertyValue('--dd-caption-height');
+            grip.setAttribute('aria-valuemin', minimum);
+            grip.setAttribute('aria-valuemax', maximum);
+            grip.setAttribute('aria-valuenow', Math.max(minimum, Math.min(maximum, text.offsetHeight)));
+          };
+          const setHeight = height => {
+            if (height === null) {
+              inheritedHeight = 0;
+              pane.style.removeProperty('--dd-caption-height');
+            }
+            else pane.style.setProperty('--dd-caption-height', Math.round(Math.max(minimum, Math.min(limits(), height))) + 'px');
+            sync();
+          };
+          let drag = null;
+          grip.onpointerdown = event => {
+            if (event.button !== 0 || !event.isPrimary) return;
+            event.preventDefault();
+            grip.focus({preventScroll: true});
+            drag = {id: event.pointerId, y: event.clientY, height: text.offsetHeight};
+            grip.setPointerCapture(event.pointerId);
+          };
+          grip.onpointermove = event => {
+            if (drag?.id === event.pointerId) setHeight(drag.height + event.clientY - drag.y);
+          };
+          grip.onlostpointercapture = () => { drag = null; };
+          grip.ondblclick = () => setHeight(null);
+          grip.onkeydown = event => {
+            const step = parseFloat(getComputedStyle(text).lineHeight);
+            if (event.key === 'ArrowDown') setHeight(text.offsetHeight + step);
+            else if (event.key === 'ArrowUp') setHeight(text.offsetHeight - step);
+            else if (event.key === 'Home') setHeight(null);
+            else if (event.key === 'End') setHeight(limits());
+            else return;
+            event.preventDefault();
+            event.stopPropagation();
+          };
+          observer = new ResizeObserver(sync);
+          observer.observe(text);
+          observer.observe(pane.closest('.m-dd-modal-window') || pane);
+          sync();
+        },
+        destroy() { observer?.disconnect(); },
+      };
     },
 
     _renderDatasetDiagModalRightHtml(t, detail) {
@@ -1527,7 +1810,7 @@
           capCountText = (trimmed.length === 1 ? t('ddCapCharCountOne') : t('ddCapCharCount')).replace('{n}', trimmed.length);
         }
       }
-      html += '<section class="m-dd-modal-sec m-dd-caption-sec">';
+      html += '<section data-dd-modal-section="caption" class="m-dd-modal-sec m-dd-caption-sec">';
       html += '<div class="m-dd-modal-sec-head">'
         + '<div class="m-dd-cap-head-left">'
         + '<span class="m-dd-sec-title">' + this.esc(cap.source === 'class_tokens' ? t('ddClassTokens') : t('ddCaptionTitle')) + '</span>'
@@ -1557,7 +1840,11 @@
       } else if (!cap.text.trim()) {
         html += '<p class="m-dd-mini-empty">' + this.esc(t('ddCaptionEmpty')) + '</p>';
       } else {
-        html += '<pre class="m-dd-caption-text">' + this.esc(cap.text) + '</pre>';
+        const resizeLabel = this.esc(t('ddResizeCaption'));
+        html += '<div class="m-dd-caption-box" x-data="datasetDiagCaptionSizer()">'
+          + '<pre id="ddModalCaptionText" class="m-dd-caption-text">' + this.esc(cap.text) + '</pre>'
+          + '<div class="m-dd-caption-grip" role="separator" tabindex="0" hidden aria-orientation="horizontal"'
+          + ' aria-controls="ddModalCaptionText" aria-label="' + resizeLabel + '" title="' + resizeLabel + '"></div></div>';
       }
       html += '</section>';
 
@@ -1566,7 +1853,7 @@
           || '<span class="m-dd-sec-badge" style="color:' + this._ddSlopeColor(img.slope, img.converging_slope) + '">' + this.esc(this._ddFormatSlope(img.slope) + t('ddSlopeUnit')) + '</span>')
         : '';
       const infoIcon = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 7.4v3.4"/><circle cx="8" cy="5.2" r=".6" fill="currentColor" stroke="none"/></svg>';
-      html += '<section class="m-dd-modal-sec' + (finiteEpochs.length >= 2 ? ' m-dd-modal-sec-chart m-dd-modal-sec-ep' : '') + '">';
+      html += '<section data-dd-modal-section="epoch" class="m-dd-modal-sec' + (finiteEpochs.length >= 2 ? ' m-dd-modal-sec-chart' : '') + '">';
       html += '<div class="m-dd-modal-sec-head">'
         + '<div class="m-dd-cap-head-left">'
         + '<span class="m-dd-sec-title">' + this.esc(t('ddEpochTrendTitle')) + '</span>'
@@ -1616,7 +1903,7 @@
       ];
       const zoneTotalCount = zoneDefs.reduce((acc, [key]) => acc + Number(imgZones[key]?.count || 0), 0);
       const samplingBadge = this._ddFormatSamplingConfig(detail.sampling_config || this.datasetDiagData?.sampling_config);
-      html += '<section class="m-dd-modal-sec' + (hasAnyTs ? ' m-dd-modal-sec-chart m-dd-modal-sec-ts' : '') + '">';
+      html += '<section data-dd-modal-section="timestep" class="m-dd-modal-sec' + (hasAnyTs ? ' m-dd-modal-sec-chart m-dd-modal-sec-ts' : '') + '">';
       html += '<div class="m-dd-modal-sec-head">'
         + '<div class="m-dd-cap-head-left">'
         + '<span class="m-dd-sec-title">' + this.esc(t('ddTimestepOverlayTitle')) + '</span>'
@@ -1703,7 +1990,7 @@
       return html;
     },
 
-    _patchDatasetDiagSamplesModal() {
+    _patchDatasetDiagSamplesModal(highlightNan = false) {
       const detail = this.datasetDiagModalDetail;
       if (!detail) return;
       const t = k => this.tMonitor(k);
@@ -1748,22 +2035,22 @@
               if (btn) this.setDatasetDiagSamplesFilter(btn.dataset.ddSamplesFilter);
             });
           }
-          filterEl.innerHTML =
+          this._ddPatchHtml(filterEl,
             '<button type="button" class="m-segmented-btn' + (filter === 'all' ? ' active' : '') + '"'
             + ' aria-pressed="' + (filter === 'all') + '" data-dd-samples-filter="all">'
             + this.esc(t('ddSamplesFilterAll').replace('{n}', samples.length)) + '</button>'
             + '<button type="button" class="m-segmented-btn' + (filter === 'nan' ? ' active' : '') + '"'
             + ' aria-pressed="' + (filter === 'nan') + '" data-dd-samples-filter="nan">'
-            + this.esc(t('ddSamplesFilterNan').replace('{n}', samples.filter(s => s.non_finite).length)) + '</button>';
+            + this.esc(t('ddSamplesFilterNan').replace('{n}', samples.filter(s => s.non_finite).length)) + '</button>');
         } else {
           filterEl.hidden = true;
           if (sepEl) sepEl.hidden = true;
-          filterEl.innerHTML = '';
+          this._ddPatchHtml(filterEl, '');
         }
       }
       if (bodyEl) {
-        bodyEl.innerHTML = this._renderDatasetDiagSamplesBodyHtml(t, detail, filter);
-        if (filter === 'nan') {
+        this._ddPatchHtml(bodyEl, this._renderDatasetDiagSamplesBodyHtml(t, detail, filter));
+        if (filter === 'nan' && highlightNan) {
           const firstNanRow = bodyEl.querySelector('.m-dd-sample-row.is-nan-row');
           if (firstNanRow) {
             requestAnimationFrame(() => {
@@ -1896,9 +2183,9 @@
           rowsHtml += `<div class="m-dd-tt-row"><em style="color:var(--diag-tone-danger, var(--danger))">${this.esc(t('ddStatusNonFinite'))}</em>`
             + `<strong class="m-dd-tt-v-main" style="color:var(--diag-tone-danger, var(--danger))">${this.esc(t('ddZoneCountShort').replace('{n}', coord.non_finite_count))}</strong></div>`;
         }
-        epTip.innerHTML = `<div class="m-dd-tt-head"><strong>${this.esc(t('ddEpochLabel'))} ${this.esc(coord.epoch)}</strong>`
+        this._ddPatchHtml(epTip, `<div class="m-dd-tt-head"><strong>${this.esc(t('ddEpochLabel'))} ${this.esc(coord.epoch)}</strong>`
           + (coord.count ? `<span class="m-dd-tt-zone"><span class="m-dd-tt-zone-name">${this.esc(t('ddZoneCountShort').replace('{n}', coord.count))}</span></span>` : '')
-          + `</div><div class="m-dd-tt-section">${rowsHtml}</div>`;
+          + `</div><div class="m-dd-tt-section">${rowsHtml}</div>`);
         epTip.hidden = false;
         this._ddPositionModalTooltip(epStage, epTip, coord.x, coord.y ?? 20);
       };
@@ -1970,9 +2257,9 @@
             headTitle = this.esc(clusterLabel);
           }
         }
-        tsTip.innerHTML = `<div class="m-dd-tt-head"><strong>${headTitle}</strong>`
+        this._ddPatchHtml(tsTip, `<div class="m-dd-tt-head"><strong>${headTitle}</strong>`
           + `<span class="m-dd-tt-zone"><span class="m-dd-tt-zone-name">${this.esc(zoneName)}</span></span></div>`
-          + `<div class="m-dd-tt-section">${bodyHtml}</div>${baseHtml}`;
+          + `<div class="m-dd-tt-section">${bodyHtml}</div>${baseHtml}`);
         tsTip.hidden = false;
         this._ddPositionModalTooltip(tsStage, tsTip, cluster.cx, cluster.cy);
       };
@@ -1989,6 +2276,8 @@
       }
 
       if (epStage && epSvg) {
+        let animateEpoch = !!opts.animate;
+        if (opts.dataChanged) epStage._ddLastW = 0;
         let epRaf = 0;
         let epMoveRaf = 0;
         let epPendingEv = null;
@@ -2001,7 +2290,8 @@
             epStage._ddLastW = nextW;
             epStage._ddLastH = nextH;
             epLastCoord = null;
-            this._renderDatasetDiagModalEpochSvg(epStage, epSvg, epTip, detail, t);
+            this._renderDatasetDiagModalEpochSvg(epStage, epSvg, epTip, detail, t, animateEpoch);
+            animateEpoch = false;
             if (epStage._ddState) {
               epStage._ddState.stageW = nextW;
               epStage._ddState.stageH = nextH;
@@ -2017,13 +2307,18 @@
         rightEl._ddModalROs.push({
           disconnect() {
             roEp?.disconnect();
+            epStage._ddRefreshHover = null;
+            if (epStage._ddLiveFrame) {
+              cancelAnimationFrame(epStage._ddLiveFrame);
+              epStage._ddLiveFrame = 0;
+            }
             if (epRaf) { cancelAnimationFrame(epRaf); epRaf = 0; }
             if (epMoveRaf) { cancelAnimationFrame(epMoveRaf); epMoveRaf = 0; }
             epPendingEv = null;
           },
         });
 
-        const handleEpMove = event => {
+        const handleEpMove = (event, follow = false) => {
           const st = epStage._ddState;
           const pool = st?.allCoords?.length ? st.allCoords : st?.coords;
           if (!st || !pool?.length || !event) return;
@@ -2036,13 +2331,15 @@
             const d = Math.abs(c.x - x);
             if (d < dist) { dist = d; best = c; }
           }
-          if (epLastCoord === best && !epTip?.hidden) return;
+          if (follow) best = pool.find(c => c.epoch === epStage._ddHoverEpoch) || best;
+          if (!follow && epLastCoord === best && !epTip?.hidden) return;
+          epStage._ddHoverEpoch = best.epoch;
           epLastCoord = best;
           const ch = epSvg.querySelector('[data-dd-ep-ch]');
           if (ch) {
             const wasHidden = ch.getAttribute?.('display') === 'none' || ch.attrs?.display === 'none';
             if (ch.style) {
-              ch.classList?.toggle?.('is-moving', !wasHidden);
+              ch.classList?.toggle?.('is-moving', !wasHidden && !follow);
               ch.style.transform = `translateX(${best.x.toFixed(1)}px)`;
               ch.setAttribute('x1', '0');
               ch.setAttribute('x2', '0');
@@ -2066,6 +2363,7 @@
           syncLinkedEpoch(best.epoch, 'epoch');
         };
         epStage.addEventListener('pointermove', event => {
+          epStage._ddPointer = { clientX: event.clientX, clientY: event.clientY };
           epPendingEv = event;
           if (typeof requestAnimationFrame !== 'function') {
             handleEpMove(event);
@@ -2081,6 +2379,7 @@
           }
         }, evOpts);
         epStage.addEventListener('pointerleave', () => {
+          epStage._ddPointer = null;
           if (epMoveRaf) { cancelAnimationFrame(epMoveRaf); epMoveRaf = 0; }
           epPendingEv = null;
           epLastCoord = null;
@@ -2093,6 +2392,7 @@
           if (epTip) epTip.hidden = true;
           syncLinkedEpoch(null, 'epoch');
         }, evOpts);
+        epStage._ddRefreshHover = () => { if (epStage._ddPointer) handleEpMove(epStage._ddPointer, true); };
       }
 
       rightEl.querySelectorAll('.m-dd-modal-zone[data-dd-zone-key]').forEach(cell => {
@@ -2100,6 +2400,8 @@
         cell.addEventListener('pointerleave', () => setActiveZone('', 'header'), evOpts);
       });
       if (tsStage && tsSvg) {
+        let animateSamples = !!opts.animate;
+        if (opts.dataChanged) tsStage._ddLastW = 0;
         let tsRaf = 0;
         let tsMoveRaf = 0;
         let tsPendingEv = null;
@@ -2112,7 +2414,8 @@
             tsStage._ddLastW = nextW;
             tsStage._ddLastH = nextH;
             tsLastCluster = null;
-            this._renderDatasetDiagModalTimestepSvg(tsStage, tsSvg, detail, t);
+            this._renderDatasetDiagModalTimestepSvg(tsStage, tsSvg, detail, t, animateSamples);
+            animateSamples = false;
             if (tsStage._ddState) {
               tsStage._ddState.stageW = nextW;
               tsStage._ddState.stageH = nextH;
@@ -2128,6 +2431,11 @@
         rightEl._ddModalROs.push({
           disconnect() {
             roTs?.disconnect();
+            tsStage._ddRefreshHover = null;
+            if (tsStage._ddLiveFrame) {
+              cancelAnimationFrame(tsStage._ddLiveFrame);
+              tsStage._ddLiveFrame = 0;
+            }
             if (tsRaf) { cancelAnimationFrame(tsRaf); tsRaf = 0; }
             if (tsMoveRaf) { cancelAnimationFrame(tsMoveRaf); tsMoveRaf = 0; }
             tsPendingEv = null;
@@ -2148,7 +2456,7 @@
           setActiveZone('', 'chart');
           syncLinkedEpoch(null, 'timestep');
         };
-        const handleTsMove = event => {
+        const handleTsMove = (event, follow = false) => {
           const st = tsStage._ddState;
           const pool = st?.clusters?.length ? st.clusters : st?.dots;
           if (!st || !pool?.length || !event) return;
@@ -2163,11 +2471,13 @@
             if (d2 <= bestD2) { bestD2 = d2; best = d; }
           }
           const focus = tsSvg.querySelector('[data-dd-ts-focus]');
+          if (follow && tsStage._ddHoverCluster) best = pool.find(c => c.items && clusterKey(c) === tsStage._ddHoverCluster) || best;
           if (!best) {
             if (tsLastCluster !== null || !tsTip?.hidden) clearTsHover();
             return;
           }
-          if (tsLastCluster === best && !tsTip?.hidden) return;
+          if (!follow && tsLastCluster === best && !tsTip?.hidden) return;
+          tsStage._ddHoverCluster = best.items ? clusterKey(best) : null;
           tsLastCluster = best;
           const zKey = best.t1000 >= 2000 / 3 ? 'high' : (best.t1000 >= 1000 / 3 ? 'mid' : 'low');
           setActiveZone(zKey, 'chart');
@@ -2175,7 +2485,7 @@
           if (tsCh) {
             const wasHidden = tsCh.getAttribute?.('display') === 'none' || tsCh.attrs?.display === 'none';
             if (tsCh.style) {
-              tsCh.classList?.toggle?.('is-moving', !wasHidden);
+              tsCh.classList?.toggle?.('is-moving', !wasHidden && !follow);
               tsCh.style.transform = `translateX(${best.cx.toFixed(1)}px)`;
               tsCh.setAttribute('x1', '0');
               tsCh.setAttribute('x2', '0');
@@ -2205,6 +2515,7 @@
           syncLinkedEpoch(linkedEpochs.length ? linkedEpochs : null, 'timestep');
         };
         tsStage.addEventListener('pointermove', event => {
+          tsStage._ddPointer = {clientX: event.clientX, clientY: event.clientY};
           tsPendingEv = event;
           if (typeof requestAnimationFrame !== 'function') {
             handleTsMove(event);
@@ -2219,11 +2530,17 @@
             });
           }
         }, evOpts);
-        tsStage.addEventListener('pointerleave', clearTsHover, evOpts);
+        tsStage.addEventListener('pointerleave', () => {
+          tsStage._ddPointer = null;
+          clearTsHover();
+        }, evOpts);
+        tsStage._ddRefreshHover = () => { if (tsStage._ddPointer) handleTsMove(tsStage._ddPointer, true); };
       }
+      epStage?._ddRefreshHover?.();
+      tsStage?._ddRefreshHover?.();
     },
 
-    _renderDatasetDiagModalEpochSvg(stage, svg, tipEl, detail, t) {
+    _renderDatasetDiagModalEpochSvg(stage, svg, tipEl, detail, t, animate = false) {
       const allEpochs = (detail.epoch_series || []).filter(row => row.epoch != null);
       const series = allEpochs.filter(row => row.mean_residual != null);
       if (series.length < 2) return;
@@ -2289,7 +2606,7 @@
       svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
       svg.setAttribute('width', '100%');
       svg.setAttribute('height', stageH >= 80 ? '100%' : String(height));
-      svg.innerHTML = `
+      const markup = `
         <g class="m-chart-grid">
           <line x1="${padL}" x2="${padL + plotW}" y1="${padT}" y2="${padT}"/>
           <line x1="${padL}" x2="${padL + plotW}" y1="${padT + plotH}" y2="${padT + plotH}" class="is-axis"/>
@@ -2305,15 +2622,20 @@
         <circle class="m-dd-dot-focus" data-dd-ep-focus r="5.5" stroke="var(--diag-full-line, var(--text-secondary))" display="none"/>
         <g class="m-chart-axes">
           ${yHigh != null && yHigh > padT + 10 ? `<text class="m-dd-thresh-label" x="${padL + plotW - 2}" y="${(yHigh - 3).toFixed(1)}" text-anchor="end">+${Math.round(highThresh * 100)}%</text>` : ''}
-          ${showTopTick ? `<text x="${padL - 6}" y="${padT + 4}" text-anchor="end">${this._ddFormatResidual(maxV)}</text>` : ''}
+          ${showTopTick ? `<text data-dd-mark="high" data-dd-range-label x="${padL - 6}" y="${padT + 4}" text-anchor="end">${this._ddFormatResidual(minV + spanV)}</text>` : ''}
           <text class="is-zero" x="${padL - 6}" y="${(yZero + 3).toFixed(1)}" text-anchor="end">0%</text>
-          ${showBotTick ? `<text x="${padL - 6}" y="${padT + plotH + 1}" text-anchor="end">${this._ddFormatResidual(minV)}</text>` : ''}
-          <text x="${toX(minE).toFixed(1)}" y="${height - 5}" text-anchor="start">${this.esc(t('ddEpochLabel'))} ${minE}</text>
-          <text x="${toX(maxE).toFixed(1)}" y="${height - 5}" text-anchor="end">${this.esc(t('ddEpochLabel'))} ${maxE}</text>
+          ${showBotTick ? `<text data-dd-mark="low" data-dd-range-label x="${padL - 6}" y="${padT + plotH + 1}" text-anchor="end">${this._ddFormatResidual(minV)}</text>` : ''}
+          <text data-dd-epoch-bound x="${toX(minE).toFixed(1)}" y="${height - 5}" text-anchor="start">${this.esc(t('ddEpochLabel'))} ${minE}</text>
+          <text data-dd-epoch-bound x="${toX(maxE).toFixed(1)}" y="${height - 5}" text-anchor="end">${this.esc(t('ddEpochLabel'))} ${maxE}</text>
         </g>`;
 
-      stage._ddState = { coords, allCoords, minE, maxE, stageW: width, stageH: height };
-      if (tipEl) tipEl.hidden = true;
+      drawDetailFrame(stage, svg, markup, {
+        coords, allCoords, minE, maxE, stageW: width, stageH: height,
+        xMap: { origin: toX(0), gain: Math.max(20, plotW - plotPadX * 2) / spanE, left: toX(minE), right: toX(maxE) },
+        epochLabel: t('ddEpochLabel'),
+        yMap: { origin: yZero, gain: plotH / spanV, top: padT, bottom: padT + plotH },
+      }, animate, value => this._ddFormatResidual(value));
+      if (tipEl && !stage._ddPointer) tipEl.hidden = true;
     },
 
     _ddClusterModalDots(dots, radius = 5.5) {
@@ -2354,7 +2676,7 @@
       return clusters;
     },
 
-    _renderDatasetDiagModalTimestepSvg(stage, svg, detail, t) {
+    _renderDatasetDiagModalTimestepSvg(stage, svg, detail, t, animate = false) {
       const bins = this._ddResolveNoiseProfileBins(detail, 18);
       const scale = detail.timestep_scale || 'thousand';
       const finiteSamples = (detail.samples || []).filter(s => s.timestep != null && !s.non_finite && s.loss != null);
@@ -2398,6 +2720,7 @@
         const isExcluded = (excluded.hasMax && b.tFrom >= excluded.maxT - 1e-6) || (excluded.hasMin && b.tTo <= excluded.minT + 1e-6);
         return {
           x: toX(tMid),
+          binKey: b.tFrom + ':' + b.tTo,
           y: valid ? toY(b.mean_loss) : null,
           yP25: (valid && b.p25 != null) ? toY(b.p25) : null,
           yP75: (valid && b.p75 != null) ? toY(b.p75) : null,
@@ -2407,24 +2730,10 @@
         };
       });
       const basePaths = this._ddBuildSegmentedLossPaths(basePts, lossBottom);
-      const iqrSegs = [];
-      let iqrSpan = [];
-      const flushIqr = () => {
-        if (iqrSpan.length >= 2) {
-          const top = iqrSpan.map((p, i) => (i ? 'L' : 'M') + p.x.toFixed(1) + ' ' + p.yP75.toFixed(1)).join(' ');
-          const bot = iqrSpan.slice().reverse().map(p => 'L' + p.x.toFixed(1) + ' ' + p.yP25.toFixed(1)).join(' ');
-          iqrSegs.push(`${top} ${bot} Z`);
-        }
-        iqrSpan = [];
-      };
-      for (const p of basePts) {
-        if (p.excluded) flushIqr();
-        else if (p.yP25 != null && p.yP75 != null) iqrSpan.push(p);
-      }
-      flushIqr();
-      const iqrHtml = iqrSegs.length ? `<path class="m-dd-ts-iqr-band" d="${iqrSegs.join(' ')}"/>` : '';
+      const iqr = detailIqrPath(basePts);
+      const iqrHtml = iqr ? `<path class="m-dd-ts-iqr-band" d="${iqr}"/>` : '';
       const isoDotsHtml = basePaths.isolated.map(p =>
-        `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2" fill="var(--text-secondary)" opacity=".85"/>`
+        `<circle data-dd-mark="${p.binKey}" data-dd-isolated cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2" fill="var(--text-secondary)" opacity=".85"/>`
       ).join('');
 
       const epNums = [...finiteSamples, ...nfValid].map(s => s.epoch).filter(v => v != null && Number.isFinite(Number(v))).map(Number);
@@ -2482,17 +2791,17 @@
         const dotZone = zoneOf(c.t1000);
         const isMulti = c.items.length > 1;
         const ring = isMulti
-          ? `<circle class="m-dd-cluster-ring" data-dd-ts-dot-epochs="${this.esc(epochsAttr)}" data-dd-zone="${dotZone}" cx="${c.cx.toFixed(1)}" cy="${c.cy.toFixed(1)}" r="6.2"/>`
+          ? `<circle class="m-dd-cluster-ring" data-dd-ts-dot-epochs="${this.esc(epochsAttr)}" data-dd-cluster="${this.esc(clusterKey(c))}" data-dd-zone="${dotZone}" cx="${c.cx.toFixed(1)}" cy="${c.cy.toFixed(1)}" r="6.2"/>`
           : '';
-        return ring + `<circle class="m-dd-modal-dot" data-dd-ts-dot-epochs="${this.esc(epochsAttr)}" data-dd-zone="${dotZone}" cx="${c.cx.toFixed(1)}" cy="${c.cy.toFixed(1)}" r="${isMulti ? '4.1' : '3.6'}" style="fill:${c.fill};fill-opacity:${c.opacity.toFixed(2)}" stroke="var(--monitor-card-bg)" stroke-width="1.1"/>`;
+        return ring + `<circle class="m-dd-modal-dot" data-dd-ts-dot-epochs="${this.esc(epochsAttr)}" data-dd-cluster="${this.esc(clusterKey(c))}" data-dd-zone="${dotZone}" cx="${c.cx.toFixed(1)}" cy="${c.cy.toFixed(1)}" r="${isMulti ? '4.1' : '3.6'}" style="fill:${c.fill};fill-opacity:${c.opacity.toFixed(2)}" stroke="var(--monitor-card-bg)" stroke-width="1.1"/>`;
       }).join('') + nfClusters.map(c => {
         const epochsAttr = Array.from(new Set(c.items.map(it => it.epoch).filter(v => v != null))).join(',');
         const dotZone = zoneOf(c.t1000);
         const isMulti = c.items.length > 1;
         const ring = isMulti
-          ? `<circle class="m-dd-cluster-ring is-danger" data-dd-ts-dot-epochs="${this.esc(epochsAttr)}" data-dd-zone="${dotZone}" cx="${c.cx.toFixed(1)}" cy="${c.cy.toFixed(1)}" r="6.2"/>`
+          ? `<circle class="m-dd-cluster-ring is-danger" data-dd-ts-dot-epochs="${this.esc(epochsAttr)}" data-dd-cluster="${this.esc(clusterKey(c))}" data-dd-zone="${dotZone}" cx="${c.cx.toFixed(1)}" cy="${c.cy.toFixed(1)}" r="6.2"/>`
           : '';
-        return ring + `<g class="m-dd-nan-mark" data-dd-ts-dot-epochs="${this.esc(epochsAttr)}" data-dd-zone="${dotZone}"><line x1="${(c.cx - 3.2).toFixed(1)}" y1="${(c.cy - 3.2).toFixed(1)}" x2="${(c.cx + 3.2).toFixed(1)}" y2="${(c.cy + 3.2).toFixed(1)}"/><line x1="${(c.cx + 3.2).toFixed(1)}" y1="${(c.cy - 3.2).toFixed(1)}" x2="${(c.cx - 3.2).toFixed(1)}" y2="${(c.cy + 3.2).toFixed(1)}"/></g>`;
+        return ring + `<g class="m-dd-nan-mark" data-dd-ts-dot-epochs="${this.esc(epochsAttr)}" data-dd-cluster="${this.esc(clusterKey(c))}" data-dd-zone="${dotZone}"><line x1="${(c.cx - 3.2).toFixed(1)}" y1="${(c.cy - 3.2).toFixed(1)}" x2="${(c.cx + 3.2).toFixed(1)}" y2="${(c.cy + 3.2).toFixed(1)}"/><line x1="${(c.cx + 3.2).toFixed(1)}" y1="${(c.cy - 3.2).toFixed(1)}" x2="${(c.cx - 3.2).toFixed(1)}" y2="${(c.cy + 3.2).toFixed(1)}"/></g>`;
       }).join('');
 
       const xDiv667 = toX(2000 / 3);
@@ -2519,8 +2828,9 @@
       svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
       svg.setAttribute('width', '100%');
       svg.setAttribute('height', stageH >= 80 ? '100%' : String(height));
-      svg.innerHTML = `
+      const markup = `
         <defs>
+          <clipPath id="${exclPatId}-plot"><rect x="${padL}" y="${lossTop}" width="${plotW}" height="${lossH}"/></clipPath>
           <pattern id="${exclPatId}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
             <rect width="6" height="6" fill="var(--bg-sunken)" fill-opacity="0.34"/>
             <line x1="0" y1="0" x2="0" y2="6" stroke="var(--text-tertiary)" stroke-opacity="0.28" stroke-width="1.5"/>
@@ -2538,17 +2848,19 @@
           <line x1="${padL}" x2="${padL + plotW}" y1="${lossBottom}" y2="${lossBottom}" opacity="0.6"/>
           <line x1="${padL}" x2="${padL + plotW}" y1="${plotBottom}" y2="${plotBottom}" class="is-axis"/>
         </g>
+        <g data-dd-mark="profile" clip-path="url(#${exclPatId}-plot)">
         ${iqrHtml}
-        ${basePaths.solidD ? `<path class="m-dd-base-line is-ref" d="${basePaths.solidD}"/>` : ''}
-        ${basePaths.sparseD ? `<path class="m-dd-base-line is-sparse" d="${basePaths.sparseD}"/>` : ''}
-        ${basePaths.gapD ? `<path class="m-dd-base-line is-gap" d="${basePaths.gapD}"/>` : ''}
+        ${basePaths.solidD ? `<path class="m-dd-base-line is-ref" data-dd-mark="solidD" d="${basePaths.solidD}"/>` : ''}
+        ${basePaths.sparseD ? `<path class="m-dd-base-line is-sparse" data-dd-mark="sparseD" d="${basePaths.sparseD}"/>` : ''}
+        ${basePaths.gapD ? `<path class="m-dd-base-line is-gap" data-dd-mark="gapD" d="${basePaths.gapD}"/>` : ''}
         ${isoDotsHtml}
+        </g>
         <g data-dd-modal-density>${densityBarsHtml}</g>
         <line class="m-dd-mini-ch" data-dd-ts-ch x1="0" x2="0" y1="${lossTop}" y2="${plotBottom}" display="none"/>
         <g>${dotsHtml}</g>
         <circle class="m-dd-dot-focus" data-dd-ts-focus r="6.5" stroke="var(--accent)" display="none"/>
         <g class="m-chart-axes">
-          <text x="${padL - 6}" y="${lossTop + 4}" text-anchor="end">${allL.length ? this._ddFormatLoss(lMax) : ''}</text>
+          <text data-dd-mark="high" data-dd-range-label x="${padL - 6}" y="${lossTop + 4}" text-anchor="end">${allL.length ? this._ddFormatLoss(lMax) : ''}</text>
           <text x="${padL - 6}" y="${lossBottom + 2}" text-anchor="end">0</text>
           <text x="${padL}" y="${height - 4}" text-anchor="start">1000</text>
           <text x="${xDiv667.toFixed(1)}" y="${height - 4}" text-anchor="middle">667</text>
@@ -2556,15 +2868,41 @@
           <text x="${padL + plotW}" y="${height - 4}" text-anchor="end">0</text>
         </g>`;
 
-      stage._ddState = {
+      drawDetailFrame(stage, svg, markup, {
         dots: [...finiteDots, ...nfDots],
         clusters: [...finiteClusters, ...nfClusters],
+        profilePoints: basePts,
+        yMap: { origin: lossBottom, gain: lossH / lSpan, top: lossTop, bottom: lossBottom },
         bins,
         barBins,
         scale,
         stageW: width,
         stageH: height,
-      };
+      }, animate, value => this._ddFormatLoss(value), (previous, frames) => {
+        const prior = new Map(previous.profilePoints.map(p => [p.binKey, p]));
+        const paths = Array.from(svg.querySelectorAll('.m-dd-base-line'));
+        const band = svg.querySelector('.m-dd-ts-iqr-band');
+        const isolated = Array.from(svg.querySelectorAll('[data-dd-isolated]'));
+        const nextPoints = new Map(basePts.map(p => [p.binKey, p]));
+        const before = frames.length;
+        for (const p of basePts) {
+          for (const field of ['y', 'yP25', 'yP75']) {
+            const to = p[field];
+            if (to == null) continue;
+            // A newly populated bin starts at its measured value on the currently displayed scale.
+            const loss = (lossBottom - to) * lSpan / lossH;
+            const from = prior.get(p.binKey)?.[field] ?? previous.yMap.origin - loss * previous.yMap.gain;
+            if (from !== to) frames.push(t => { p[field] = from + (to - from) * t; });
+          }
+        }
+        if (frames.length === before) return;
+        frames.push(() => {
+          const segments = this._ddBuildSegmentedLossPaths(basePts, lossBottom);
+          for (const el of paths) el.setAttribute('d', segments[el.dataset.ddMark]);
+          if (band) band.setAttribute('d', detailIqrPath(basePts));
+          for (const el of isolated) el.setAttribute('cy', nextPoints.get(el.dataset.ddMark).y.toFixed(1));
+        });
+      });
     },
   };
 })();

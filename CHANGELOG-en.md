@@ -4,6 +4,10 @@
 
 All notable changes to this project are documented in this file.
 
+## v26.1126.0bdc5 - 2026-11-26
+
+Fixed interface issues in the training monitor and dataset diagnostics from the previous major release.
+
 ## v26.1126.0931d - 2026-11-26
 
 This update brings **Dataset Diagnostics** from `sd-scripts` to the training monitor, adds **live pause, on-demand save, manual preview sampling, and checkpoint resuming**, and refreshes the monitor dashboard sparklines, Loss trend chart, and overall interface performance.

@@ -57,8 +57,7 @@ window.environmentRenderMixin = {
       const logPositions = Array.from(host.querySelectorAll('.env-log'), pre => ({
         top: pre.scrollTop, following: pre.scrollHeight - pre.clientHeight - pre.scrollTop <= 2,
       }));
-      host.innerHTML = html;
-      this._bindSlotEvents(host, slot, T);
+      if (this._updateEnvSlot(host, html)) this._bindSlotEvents(host, slot, T);
       this._restoreEnvLogs(host, logPositions);
       if (focusedRefresh) {
         const button = Array.from(host.querySelectorAll('[data-env-refresh]')).find(node => node.dataset.envRefresh === focusedRefresh);
@@ -66,6 +65,77 @@ window.environmentRenderMixin = {
       }
     }
     this._syncEnvRefreshButtons(el);
+  },
+
+  // 进度、计时和日志会一起到达。保留按钮、转圈图标、进度条及正在展开的行。
+  _updateEnvSlot(host, html) {
+    if (!html.includes('env-progress-') && !html.includes('class="env-log"')) {
+      host._envLayout = null;
+      host.innerHTML = html;
+      return true;
+    }
+    const template = document.createElement('template');
+    template.innerHTML = html;
+    const selector = '.env-progress-bar > div, .env-progress-meta > span, .env-progress-spinner-wrap .env-progress-stage, .env-log';
+    const fields = Array.from(template.content.querySelectorAll(selector), node => {
+      const slot = node.cloneNode(false);
+      slot.removeAttribute('style');
+      node.replaceWith(slot);
+      return { node, slot };
+    });
+    // 用户可在下载中展开行、收起日志。展开状态单独比对，避免下一次推送打断动画。
+    const foldSelector = '[data-env-row], [data-env-sub], [data-env-toggle], [data-env-detail], [data-env-sub-head], [data-env-body], .env-sub-body';
+    const folds = Array.from(template.content.querySelectorAll(foldSelector), node => {
+      const open = node.classList.contains('env-open');
+      const expanded = node.getAttribute('aria-expanded');
+      const inert = node.inert;
+      node.classList.remove('env-open');
+      node.removeAttribute('aria-expanded');
+      node.inert = false;
+      return {node, open, expanded, inert};
+    });
+    const layout = template.innerHTML;
+    const applyFold = (node, state) => {
+      node.classList.toggle('env-open', state.open);
+      if (state.expanded != null) node.setAttribute('aria-expanded', state.expanded);
+      node.inert = state.inert;
+    };
+    if (fields.length && host._envLayout === layout) {
+      host.querySelectorAll(foldSelector).forEach((node, index) => applyFold(node, folds[index]));
+      const live = host.querySelectorAll(selector);
+      fields.forEach(({ node }, index) => {
+        const target = live[index];
+        if (target.parentElement.classList.contains('env-progress-bar')) {
+          target.style.width = node.style.width;
+        } else if (target.classList.contains('env-log')) {
+          // 安装日志通常只在末尾追加，保留已有行及用户正在选中的文字。
+          let existing = target.firstChild;
+          let incoming = node.firstChild;
+          while (existing && incoming && existing.isEqualNode(incoming)) {
+            existing = existing.nextSibling;
+            incoming = incoming.nextSibling;
+          }
+          while (existing) {
+            const next = existing.nextSibling;
+            existing.remove();
+            existing = next;
+          }
+          while (incoming) {
+            const next = incoming.nextSibling;
+            target.appendChild(incoming);
+            incoming = next;
+          }
+        } else if (target.textContent !== node.textContent) {
+          target.textContent = node.textContent;
+        }
+      });
+      return false;
+    }
+    host._envLayout = layout;
+    for (const state of folds) applyFold(state.node, state);
+    for (const { node, slot } of fields) slot.replaceWith(node);
+    host.replaceChildren(template.content);
+    return true;
   },
 
   // ── 稳定骨架（只建一次）──────────────────────────────

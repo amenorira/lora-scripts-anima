@@ -421,8 +421,12 @@ window.monitorCoreMixin = {
       this.lossSeries = sameTask ? this._mergeMonitorMetricSnapshot(incoming) : incoming;
       next.tensorboard_loss = this.lossSeries;
       this.lossDataVersion++;
-      this.trainParams = Array.isArray(next.train_params) ? next.train_params : [];
-      this.trainParamsVersion++;
+      const nextParams = Array.isArray(next.train_params) ? next.train_params : [];
+      const prevParams = Array.isArray(this.trainParams) ? this.trainParams : [];
+      if (nextParams.length !== prevParams.length || JSON.stringify(nextParams) !== JSON.stringify(prevParams)) {
+        this.trainParams = nextParams;
+        this.trainParamsVersion++;
+      }
       if (!versions || versions.logs === (this._logObservationVersion || 0)) {
         this._applyMonitorLogSnapshot(next.log_lines, next.log_total, reusingFullLog);
       }

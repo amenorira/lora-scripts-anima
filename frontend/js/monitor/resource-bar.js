@@ -104,8 +104,8 @@ window.resourceBar = {
     const _set = (key, val, grade) => {
       const e = bar.querySelector('[data-field="' + key + '"]');
       if (!e) return;
-      e.textContent = val;
-      if (grade) e.className = 'm-res-stat-val m-res-' + grade;
+      if (e.textContent !== val) e.textContent = val;
+      if (grade && !e.classList.contains('m-res-' + grade)) e.className = 'm-res-stat-val m-res-' + grade;
     };
     const _meter = (key, val) => {
       const e = bar.querySelector('[data-meter-fill="' + key + '"]');

@@ -864,17 +864,20 @@
       const t = k => this.tMonitor(k);
       const width = Math.max(260, Math.round(stage.clientWidth || 700));
       this._ddStopScatterDotChoreo?.(wrap, svg);
+      const cameraWasMoving = !!wrap?._ddZoomAnimRaf;
       const interruptedCam = this._ddStopScatterCameraAnim?.(wrap, svg) || wrap?._ddCurrentCamera || wrap?._ddCamera || null;
       const wantMotion = !!(options.animate && (!this._monitorMotionAllowed || this._monitorMotionAllowed()));
       const renderOpts = {
         ...options,
         stageHeight: Math.round(stage.clientHeight || 0),
         prevCamera: interruptedCam ? { ...interruptedCam } : null,
+        cameraWasMoving,
         wantMotion,
       };
 
-      const modeChanged = wrap?._ddLastMode && wrap._ddLastMode !== mode;
-      if (wrap) wrap._ddLastMode = mode;
+      const nextKind = mode === 'quadrant' && !data.summary?.has_slope ? 'early' : mode;
+      const modeChanged = wrap?._ddLastMode && wrap._ddLastMode !== nextKind;
+      if (wrap) wrap._ddLastMode = nextKind;
       svg.classList.toggle('is-mode-enter', !!modeChanged);
 
       if (mode === 'timestep') {
@@ -3800,7 +3803,7 @@
       svg.setAttribute('height', String(height));
 
       const clipId = 'm-dd-clip-q-' + (this.selectedRunDir ? 'h' : 'l');
-      const dotOpts = { ...options, scaleChanged };
+      const dotOpts = { ...options, scaleChanged: scaleChanged || options.cameraWasMoving };
       if (this._ddCanReconcileSvg(svg, 'quadrant', width, height, '.m-dd-dots')) {
         svg.setAttribute('data-dd-svg-zoom', zoomSig);
         svg.classList?.toggle?.('is-zones-on', !!this.datasetDiagShowZones);
@@ -3827,21 +3830,17 @@
           } else {
             svg.classList?.toggle?.('is-live-motion', wantLiveMotion);
           }
-          if (gridGroup) gridGroup.innerHTML = gridLinesHtml;
-          if (bandsGroup) bandsGroup.innerHTML = bandsHtml;
+          this._ddSyncGridPool(gridGroup, xTicks, yTicks, padL, padT, plotW, plotH, toX, toY);
+          this._ddPatchBandSlots(this._ddEnsureBandSlots(bandsGroup, t), padL, padT, plotW, plotH,
+            xMin, xMax, yMin, yMax, symWX, symWY, toX, toY, layout, xCfg.linThresh, yCfg.linThresh, true, attShow);
           this._ddReconcileZoneRect(zonesGroup, 'attention', attX, attY, attW, attH, attShow);
           this._ddReconcileZoneRect(zonesGroup, 'learning', lrnX, lrnY, lrnW, lrnH, lrnShow);
           if (axisXGroup) axisXGroup.style.transform = `translateY(${axisY.toFixed(1)}px)`;
           if (axisYGroup) axisYGroup.style.transform = `translateX(${axisX.toFixed(1)}px)`;
-          if (axisXTicks) {
-            axisXTicks.innerHTML = xAxisTicksHtml;
-            axisXTicks._ddTickPool = null;
-          }
-          if (axisYTicks) {
-            axisYTicks.innerHTML = yAxisTicksHtml;
-            axisYTicks._ddTickPool = null;
-          }
-          if (gridGroup) gridGroup._ddGridPool = null;
+          this._ddSyncAxisTicksPool(axisXTicks, 'quadrant', 'x', xTicks, meta.xDirItems,
+            { minPx: layout.xTickMinPx, maxPx: layout.xTickMaxPx, tickY: layout.xTickY });
+          this._ddSyncAxisTicksPool(axisYTicks, 'quadrant', 'y', yTicks, meta.yDirItems,
+            { minPx: layout.yTickMinPx, maxPx: layout.yTickMaxPx, tickX: layout.yTickX, tickAnchor: layout.yTickAnchor });
           if (axisOrigin) {
             axisOrigin.style.transform = `translate(${axisX.toFixed(1)}px,${axisY.toFixed(1)}px)`;
             axisOrigin.style.opacity = layout.showOriginZero ? '1' : '0';
@@ -3852,10 +3851,7 @@
               ot.setAttribute('text-anchor', layout.originAnchor);
             }
           }
-          if (labelsGroup) {
-            labelsGroup.innerHTML = quadLabelsHtml;
-            labelsGroup._ddLabelPool = null;
-          }
+          this._ddSyncLabelsPool(labelsGroup, 'quadrant', meta.labelSpec);
           if (wrap) {
             wrap._ddRenderedData = data;
             if (this.datasetDiagData === data) wrap._ddPendingDataRefresh = false;
@@ -3880,7 +3876,7 @@
         };
 
         const prevCam = options.prevCamera;
-        const canCameraRaf = scaleChanged
+        const canCameraRaf = (scaleChanged || options.cameraWasMoving)
           && options.animate
           && prevCam
           && prevCam.kind === 'quadrant'
@@ -4009,7 +4005,7 @@
         return;
       }
       const ptSet = this._ddGetEarlyPointSet(wrap, data);
-      const { points, displayed, leftmost, rightmost, attCount } = ptSet;
+      const { points, displayed, leftmost, rightmost } = ptSet;
 
       const stageEl = wrap?.querySelector?.('[data-dd-hero-stage]');
       if (!points.length) {
@@ -4128,21 +4124,16 @@
       const gridLinesHtml = xTicks.filter(tk => !tk.boundary).map(tk =>
         `<line${tk.compressed ? ' class="is-compressed"' : ''} x1="${tk.px.toFixed(1)}" x2="${tk.px.toFixed(1)}" y1="${padT}" y2="${padT + plotH}"/>`
       ).join('');
-      const xDirHtml = (!hasZoom && plotW > 220)
-        ? `<text class="m-dd-axis-dir" x="${padL + 2}" y="${padT + 11}" text-anchor="start">${this.esc(t('ddQuadAxisResEasy'))}</text>`
-          + `<text class="m-dd-axis-dir" x="${padL + plotW - 2}" y="${padT + plotH - 6}" text-anchor="end">${this.esc(t('ddQuadAxisResHard'))}</text>`
-        : '';
+      const meta = this._ddBuildScatterMetaSpec('early', t, ptSet, data, padL, padT, plotW, plotH, hasZoom, null, xHigh, null, midY, earlyTickY);
+      const xDirHtml = meta.xDirItems.map(d =>
+        `<text class="m-dd-axis-dir" x="${d.x}" y="${d.y}" text-anchor="${d.anchor}">${this.esc(d.text)}</text>`
+      ).join('');
       const xTicksHtml = xTicks.map(tk =>
         `<text x="${tk.px.toFixed(1)}" y="${earlyTickY}" text-anchor="middle">${this.esc(tk.label)}</text>`
       ).join('') + xDirHtml;
 
       const zoneHtml = `<rect class="m-dd-alert-zone m-dd-zone-hit" data-dd-zone-preset="attention" x="${attX.toFixed(1)}" y="${padT}" width="${(zoneShow ? zoneW : 0).toFixed(1)}" height="${plotH.toFixed(1)}"/>`;
-      const showHighTick = xHigh >= padL + 8 && xHigh <= padL + plotW - 16;
-      const highLabelX = xHigh > padL + plotW - 44 ? xHigh - 4 : xHigh + 4;
-      const highLabelAnchor = xHigh > padL + plotW - 44 ? 'end' : 'start';
-      const labelsHtml = `
-        ${showHighTick ? `<text class="m-dd-thresh-label m-dd-text-halo" data-dd-thresh-label="high" x="${highLabelX.toFixed(1)}" y="${padT + 11}" text-anchor="${highLabelAnchor}">+${Math.round(highResVal * 100)}%</text>` : ''}
-        ${zoneW > 54 ? `<text class="is-alert m-dd-text-halo" data-dd-zone-label="attention" x="${(padL + plotW - 6).toFixed(1)}" y="${padT + 13}" text-anchor="end">${this.esc(t('ddEarlyRight'))}${attCount ? ' · ' + attCount : ''}</text>` : ''}`;
+      const labelsHtml = meta.labelSpec.html;
 
       const targetCamera = { kind: 'early', xMin, xMax, symW_X: symWX, yMin: -1, yMax: 1, symW_Y: 0 };
       svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
@@ -4150,7 +4141,7 @@
       svg.setAttribute('height', String(height));
 
       const clipId = 'm-dd-clip-e-' + (this.selectedRunDir ? 'h' : 'l');
-      const dotOpts = { ...options, scaleChanged };
+      const dotOpts = { ...options, scaleChanged: scaleChanged || options.cameraWasMoving };
       if (this._ddCanReconcileSvg(svg, 'early', width, height, '.m-dd-dots')) {
         svg.setAttribute('data-dd-svg-zoom', zoomSig);
         svg.classList?.toggle?.('is-zones-on', !!this.datasetDiagShowZones);
@@ -4175,25 +4166,18 @@
           } else {
             svg.classList?.toggle?.('is-live-motion', wantLiveMotion);
           }
-          if (gridGroup) {
-            gridGroup.innerHTML = gridLinesHtml;
-            gridGroup._ddGridPool = null;
-          }
-          if (bandsGroup) bandsGroup.innerHTML = bandsHtml;
+          this._ddSyncGridPool(gridGroup, xTicks, [], padL, padT, plotW, plotH, toX, null);
+          this._ddPatchBandSlots(this._ddEnsureBandSlots(bandsGroup, t), padL, padT, plotW, plotH,
+            xMin, xMax, -1, 1, symWX, 0, toX, null, null, xCfg.linThresh, 1, false, zoneShow);
           this._ddReconcileZoneRect(zonesGroup, 'attention', attX, padT, zoneW, plotH, zoneShow);
           if (axisYGroup) axisYGroup.style.transform = `translateX(${axisX.toFixed(1)}px)`;
           if (axisOrigin) {
             axisOrigin.style.transform = `translate(${axisX.toFixed(1)}px,${earlyTickY.toFixed(1)}px)`;
             axisOrigin.style.opacity = showXZero ? '1' : '0';
           }
-          if (labelsGroup) {
-            labelsGroup.innerHTML = labelsHtml;
-            labelsGroup._ddLabelPool = null;
-          }
-          if (axesGroup) {
-            axesGroup.innerHTML = xTicksHtml;
-            axesGroup._ddTickPool = null;
-          }
+          this._ddSyncLabelsPool(labelsGroup, 'early', meta.labelSpec);
+          this._ddSyncAxisTicksPool(axesGroup, 'early', 'x', xTicks, meta.xDirItems,
+            { minPx: padL + 18, maxPx: padL + plotW - 18, earlyTickY });
           if (wrap) {
             wrap._ddRenderedData = data;
             if (this.datasetDiagData === data) wrap._ddPendingDataRefresh = false;
@@ -4217,7 +4201,7 @@
         };
 
         const prevCam = options.prevCamera;
-        const canCameraRaf = scaleChanged
+        const canCameraRaf = (scaleChanged || options.cameraWasMoving)
           && options.animate
           && prevCam
           && prevCam.kind === 'early'
@@ -4243,7 +4227,6 @@
             matchedIds: prevChart?.matchedIds || null, filterActive: !!prevChart?.filterActive,
           };
           this._syncDatasetDiagScatterFilter?.(wrap, { skipReorder: true, skipPopReposition: true });
-          const meta = this._ddBuildScatterMetaSpec('early', t, ptSet, data, padL, padT, plotW, plotH, hasZoom, null, xHigh, null, midY, earlyTickY);
           this._ddStartScatterCameraAnim(svg, wrap, {
             kind: 'early',
             width, height, padL, padT, plotW, plotH, hasZoom, t,

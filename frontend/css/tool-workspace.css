@@ -211,6 +211,9 @@
 .tool-task-title span, .tool-task-status dd { font-variant-numeric: tabular-nums; }
 .tool-progress-track { height: 4px; min-width: 0; margin: 7px 0; border-radius: var(--radius-sm); overflow: hidden; background: var(--border-default); }
 .tool-progress-track i { display: block; height: 100%; background: var(--accent-solid); }
+@media (prefers-reduced-motion: no-preference) {
+  .tool-progress-track:not([aria-valuenow="0"]) > i { transition: width var(--duration-normal) var(--ease-out); }
+}
 .tool-task-status dl { display: grid; gap: 3px 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 8px 0 0; font-size: 11px; }
 .tool-task-status dl div { display: flex; justify-content: space-between; gap: 5px; }
 .tool-task-status dt { color: var(--text-secondary); overflow-wrap: anywhere; }

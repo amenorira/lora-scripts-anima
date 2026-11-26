@@ -77,13 +77,13 @@ window.monitorSummaryMixin = {
     const epochProgress = !epoch.includes('/') && Number.isInteger(totalEpochs) && totalEpochs > 0
       ? epoch + '/' + totalEpochs : epoch;
     set('epoch', t('epochProgress') + ' ' + epochProgress);
-    const lossPoints = this._cleanLossPoints(lossSeries && (lossSeries.diagnostic_points || lossSeries.points));
+    const lossPoints = this._cleanLossPoints(lossSeries?.diagnostic_points?.length ? lossSeries.diagnostic_points : lossSeries?.points);
     const seriesLoss = lossPoints.at(-1);
     const metricsStep = reported?.metrics_step ?? reported?.step;
     const latestLoss = Number.isFinite(reported?.loss) && metricsStep >= (seriesLoss?.step ?? 0)
       ? {step:metricsStep, value:reported.loss} : seriesLoss;
     const avgLossSeries = this.monitorLossSeries.find(item => item.tag === 'loss/average');
-    const avgLossPoints = this._cleanLossPoints(avgLossSeries && (avgLossSeries.diagnostic_points || avgLossSeries.points));
+    const avgLossPoints = this._cleanLossPoints(avgLossSeries?.diagnostic_points?.length ? avgLossSeries.diagnostic_points : avgLossSeries?.points);
     const latestAvgLoss = avgLossPoints.at(-1) || (Number.isFinite(avgLossSeries?.latest) ? { value: Number(avgLossSeries.latest) } : null);
     set('loss', latestLoss ? this._formatDiagnosticValue(latestLoss.value) : (d.loss != null ? d.loss : '—'));
     // 每次实际显示新采样时记录比较基准；批量到达的中间 step 不冒充上次读数。
@@ -171,14 +171,17 @@ window.monitorSummaryMixin = {
 
   _renderOverviewTab(d, t, isHistory) {
     let html = '';
-    const { running } = this._summaryStatus(d, isHistory);
     html += '<div class="m-overview-grid">';
     html += this._overviewMetricsHtml(d, t, isHistory);
     html += this._trainingDiagnosticsHtml(t);
     html += '</div>';
-    if (this.trainParams.length) html += this._parametersConsoleHtml(t, d);
-    else if (!running) html += '<div class="m-console-card m-empty-params"><div class="m-card-heading"><span>' + this.esc(t('trainingConfig')) + '</span></div><div class="dashboard-empty dashboard-empty-compact"><p>' + this.esc(t(isHistory ? 'noSavedParams' : 'noParamsHint')) + '</p></div></div>';
-    return html;
+    return html + '<div data-overview-params>' + this._overviewParamsHtml(d, t, isHistory) + '</div>';
+  },
+
+  _overviewParamsHtml(d, t, isHistory) {
+    if (this.trainParams.length) return this._parametersConsoleHtml(t, d);
+    if (this._summaryStatus(d, isHistory).running) return '';
+    return '<div class="m-console-card m-empty-params"><div class="m-card-heading"><span>' + this.esc(t('trainingConfig')) + '</span></div><div class="dashboard-empty dashboard-empty-compact"><p>' + this.esc(t(isHistory ? 'noSavedParams' : 'noParamsHint')) + '</p></div></div>';
   },
 
   _overviewMetricsHtml(d, t, isHistory) {
@@ -329,17 +332,131 @@ window.monitorSummaryMixin = {
     return d;
   },
 
+  // 用同一纵轴投影移动微图的曲线、填充、端点与悬停标记。连续采样从屏幕当前帧接续。
+  _transitionSummaryProjection(host, scale, offset, live, buildPainter) {
+    const previous = host._summaryProjection;
+    if (previous?.frame != null) cancelAnimationFrame(previous.frame);
+    const state = {scale, offset, frame: null};
+    host._summaryProjection = state;
+    if (!previous || !live || !this._monitorMotionAllowed()
+        || (previous.scale === scale && previous.offset === offset)) return;
+    const paint = buildPainter();
+    const start = performance.now();
+    const frame = now => {
+      state.frame = null;
+      if (!host.isConnected || host.hidden || host._summaryProjection !== state) return;
+      const fraction = this._monitorMotionAllowed() && !host.closest('[hidden]')
+        ? Math.max(0, Math.min(1, (now - start) / 240)) : 1;
+      const remaining = (1 - fraction) ** 3;
+      state.scale = scale + (previous.scale - scale) * remaining;
+      state.offset = offset + (previous.offset - offset) * remaining;
+      paint(value => state.offset + value * state.scale);
+      if (fraction < 1) state.frame = requestAnimationFrame(frame);
+    };
+    frame(start);
+  },
+
+  _summaryLrPainter(host, primary, future) {
+    const line = host.querySelector('.m-lr-past');
+    const area = host.querySelector('.m-lr-area');
+    const forecast = host.querySelector('.m-lr-future');
+    const markers = host.querySelectorAll('.m-lr-dot, .m-lr-pulse');
+    const guides = host.querySelectorAll('.m-viz-guide'), dots = host.querySelectorAll('.m-viz-hover-dot');
+    return project => {
+      const toY = value => Math.max(0, Math.min(92, project(Math.max(0, value))));
+      const coords = primary.map(point => ({x: point.x, y: toY(point.value)}));
+      const last = coords.at(-1);
+      const path = this._smoothSplinePath(coords, 0.14);
+      line.setAttribute('d', path);
+      area.setAttribute('d', path + ` L${last.x.toFixed(1)} 92 L${coords[0].x.toFixed(1)} 92 Z`);
+      if (forecast && future.length >= 2) {
+        forecast.setAttribute('d', this._smoothSplinePath(future.map(p => ({x: p.x, y: toY(p.value)})), 0.16));
+      }
+      markers.forEach(node => node.setAttribute('cy', last.y.toFixed(1)));
+      coords.forEach(({y}, i) => {
+        guides[i].setAttribute('y1', Math.max(10, y - 6).toFixed(1));
+        dots[i].setAttribute('cy', y.toFixed(1));
+      });
+    };
+  },
+
+  // Match by step so samples keep their identity as the 30-point window moves.
+  _transitionLossTrace(host, target, targetMean, live, paint) {
+    const previous = host._lossTrace;
+    const motion = live && this._monitorMotionAllowed();
+    if (motion && previous && previous.targetMean === targetMean
+        && previous.target.length === target.length && target.every((p, i) =>
+          p.step === previous.target[i].step && p.y === previous.target[i].y)) return;
+    if (previous?.frame != null) cancelAnimationFrame(previous.frame);
+    const state = {target, targetMean, points: target, mean: targetMean, frame: null};
+    host._lossTrace = state;
+    if (!motion || !previous || previous.target.at(-1).step > target.at(-1).step
+        || previous.target.at(-1).step < target[0].step) {
+      paint(target, targetMean);
+      return;
+    }
+    const newByStep = new Map(target.map(p => [p.step, p]));
+    // Frequent retargets can outlast the whole window. Drop departing points
+    // once they are indistinguishable at the path's 0.1-unit precision.
+    const old = [];
+    for (const point of previous.points) {
+      const last = old.at(-1);
+      if (last && point.step < target[0].step && Math.abs(point.x - last.x) < .05
+          && Math.abs(point.y - last.y) < .05) continue;
+      old.push(point);
+    }
+    const oldByStep = new Map(old.map(p => [p.step, p]));
+    // New samples emerge from the previous tip. Departing samples merge into
+    // the left edge. For a snapshot that backfills a gap, start on the segment.
+    const position = (points, step) => {
+      const i = points.findIndex(p => p.step >= step);
+      if (i < 0) return points.at(-1);
+      if (i === 0) return points[0];
+      const a = points[i - 1], b = points[i];
+      const f = (step - a.step) / (b.step - a.step);
+      return {x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f};
+    };
+    const steps = [...new Set([...oldByStep.keys(), ...newByStep.keys()])].sort((a, b) => a - b);
+    const pairs = steps.map(step => ({
+      step, from: oldByStep.get(step) || position(old, step), to: newByStep.get(step) || position(target, step),
+    }));
+    const start = performance.now();
+    const frame = now => {
+      state.frame = null;
+      if (!host.isConnected || host._lossTrace !== state) return;
+      const progress = this._monitorMotionAllowed() && !host.closest('[hidden]')
+        ? Math.min(1, Math.max(0, (now - start) / 240)) : 1;
+      const remaining = (1 - progress) ** 3;
+      state.points = progress === 1 ? target : pairs.map(({step, from, to}) => ({
+        step, x: to.x + (from.x - to.x) * remaining, y: to.y + (from.y - to.y) * remaining,
+      }));
+      state.mean = targetMean + (previous.mean - targetMean) * remaining;
+      paint(state.points, state.mean);
+      if (progress < 1) state.frame = requestAnimationFrame(frame);
+    };
+    frame(start);
+  },
+
   // 青色 · 右下底边漫入式 Loss 平滑波形（左侧渐隐融入，无悬空底线）
   _patchSummaryLossProfile(root, series, avgValue, isLiveRunning, t, animate) {
     const host = root.querySelector('[data-summary-viz="loss"]');
     if (!host) return;
-    const source = series?.diagnostic_points || series?.points;
+    const source = series?.diagnostic_points?.length ? series.diagnostic_points : series?.points;
     const locale = this._shellLocale || '';
     const last = host._profile;
     if (last && last.source === source && last.avgValue === avgValue && last.live === isLiveRunning && last.locale === locale) return;
     host._profile = { source, avgValue, live: isLiveRunning, locale };
     const raw = this._cleanLossPoints(source).slice(-30);
-    if (raw.length < 2) { host.hidden = true; host.innerHTML = ''; return; }
+    if (raw.length < 2) {
+      if (host._lossTrace?.frame != null) cancelAnimationFrame(host._lossTrace.frame);
+      host.hidden = true;
+      host.innerHTML = '';
+      delete host._lossPulseStep;
+      delete host._lossTrace;
+      delete host._hoverIdx;
+      host.closest?.('.m-live-metric')?.querySelector('[data-summary-hud]')?.classList.remove('is-visible');
+      return;
+    }
     // 轻度三点加权平滑用于轮廓造型，悬停仍读取真实单步数值。
     const display = raw.map((pt, i) => {
       const prev = raw[Math.max(0, i - 1)].value;
@@ -360,53 +477,96 @@ window.monitorSummaryMixin = {
     const toX = idx => xStart + (idx / Math.max(1, display.length - 1)) * (xEnd - xStart);
     const toY = v => 72 - ((v - low) / span) * 42;
     const coords = display.map((pt, i) => ({ x: toX(i), y: toY(pt.yVal), step: pt.step, value: pt.value }));
-    const lineD = this._smoothSplinePath(coords, 0.2);
     const lastPt = coords[coords.length - 1];
-    const firstPt = coords[0];
-    const areaD = lineD + ` L${lastPt.x.toFixed(1)} ${vbH} L${firstPt.x.toFixed(1)} ${vbH} Z`;
-    const meanY = Math.max(24, Math.min(76, toY(meanVal))).toFixed(1);
-    const slotW = (xEnd - xStart) / Math.max(1, coords.length - 1);
+    const meanY = Math.max(24, Math.min(76, toY(meanVal)));
     const gradId = 'm-loss-grad-' + (this.selectedRunDir ? 'h' : 'l');
     const guideId = 'm-loss-guide-' + (this.selectedRunDir ? 'h' : 'l');
-    let hits = '';
+    host.hidden = false;
+    if (!host.querySelector('.m-loss-profile-svg')) {
+      host.innerHTML = `<svg class="m-viz-svg m-loss-profile-svg" viewBox="0 0 ${vbW} ${vbH}" preserveAspectRatio="xMaxYMax meet" aria-hidden="true">
+        <defs>
+          <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="var(--accent)" stop-opacity=".1"/>
+            <stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>
+          </linearGradient>
+          <linearGradient id="${guideId}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="var(--accent)" stop-opacity=".72"/>
+            <stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <line class="m-loss-mean-line" x1="${xStart}" x2="${xEnd}"/>
+        <path class="m-loss-area" fill="url(#${gradId})"/>
+        <path class="m-loss-line"/>
+        <circle class="m-loss-pulse" r="5.6"/>
+        <circle class="m-loss-dot" r="2.9"/>
+        <g data-loss-hits></g>
+      </svg>`;
+    }
+    const pulse = host.querySelector('.m-loss-pulse');
+    pulse.style.display = isLiveRunning ? '' : 'none';
+    const dot = host.querySelector('.m-loss-dot');
+    const line = host.querySelector('.m-loss-line');
+    const area = host.querySelector('.m-loss-area');
+    const mean = host.querySelector('.m-loss-mean-line');
+    const hits = host.querySelector('[data-loss-hits]');
+    const existing = new Map(Array.from(hits.children, node => [Number(node.dataset.vizIdx), node]));
+    const markers = new Map();
     host._hudIndexChars = String(Math.round(lastPt.step)).length;
     host._hudValueChars = 0;
-    coords.forEach((pt, idx) => {
-      const v = this._formatDiagnosticValue(pt.value);
-      host._hudValueChars = Math.max(host._hudValueChars, v.length);
-      hits += `<g class="m-viz-item" data-viz-idx="${idx}" data-viz-kind="step" data-viz-num="${Math.round(pt.step)}" data-viz-val="${this.esc(v)}"><rect class="m-viz-hit" x="${(pt.x - slotW / 2).toFixed(1)}" y="14" width="${Math.max(4, slotW).toFixed(1)}" height="${vbH - 14}"/><line class="m-viz-guide" x1="${pt.x.toFixed(1)}" x2="${pt.x.toFixed(1)}" y1="${Math.max(16, pt.y - 6).toFixed(1)}" y2="${vbH}" stroke="url(#${guideId})"/><circle class="m-viz-hover-dot is-loss" cx="${pt.x.toFixed(1)}" cy="${pt.y.toFixed(1)}" r="3.4"/></g>`;
-    });
-    host.hidden = false;
-    host.innerHTML = `<svg class="m-viz-svg m-loss-profile-svg" viewBox="0 0 ${vbW} ${vbH}" preserveAspectRatio="xMaxYMax meet" aria-hidden="true">
-      <defs>
-        <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="var(--accent)" stop-opacity=".1"/>
-          <stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>
-        </linearGradient>
-        <linearGradient id="${guideId}" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="var(--accent)" stop-opacity=".72"/>
-          <stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>
-        </linearGradient>
-      </defs>
-      <line class="m-loss-mean-line" x1="${xStart}" x2="${xEnd}" y1="${meanY}" y2="${meanY}"/>
-      <path class="m-loss-area" fill="url(#${gradId})" d="${areaD}"/>
-      <path class="m-loss-line" d="${lineD}"/>
-      ${isLiveRunning ? `<circle class="m-loss-pulse" cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="5.6"/>` : ''}
-      <circle class="m-loss-dot" cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="2.9"/>
-      ${hits}
-    </svg>`;
+    for (const pt of coords) {
+      let item = existing.get(pt.step);
+      if (!item) {
+        hits.insertAdjacentHTML('beforeend', `<g class="m-viz-item" data-viz-kind="step"><rect class="m-viz-hit" y="14" height="${vbH - 14}"/><line class="m-viz-guide" y2="${vbH}" stroke="url(#${guideId})"/><circle class="m-viz-hover-dot is-loss" r="3.4"/></g>`);
+        item = hits.lastElementChild;
+        item.dataset.vizIdx = String(pt.step);
+        item.dataset.vizNum = String(Math.round(pt.step));
+      }
+      existing.delete(pt.step);
+      const value = this._formatDiagnosticValue(pt.value);
+      if (item.dataset.vizVal !== value) item.dataset.vizVal = value;
+      host._hudValueChars = Math.max(host._hudValueChars, value.length);
+      markers.set(pt.step, item.children);
+    }
+    for (const item of existing.values()) item.remove();
+    if (!markers.has(Number(host._hoverIdx))) delete host._hoverIdx;
     const tile = host.closest?.('.m-live-metric');
     if (tile) {
       const avgNote = Number.isFinite(avgValue) ? ' (' + t('lossAvgShort').replace('{v}', this._formatDiagnosticValue(avgValue)) + ')' : '';
       tile.setAttribute('title', t('lossPulseHint') + avgNote);
     }
+    this._transitionLossTrace(host, coords, meanY, isLiveRunning && animate, (points, guideY) => {
+      const path = this._smoothSplinePath(points, .2);
+      line.setAttribute('d', path);
+      area.setAttribute('d', path + ` L${xEnd} ${vbH} L${xStart} ${vbH} Z`);
+      mean.setAttribute('y1', guideY.toFixed(1));
+      mean.setAttribute('y2', guideY.toFixed(1));
+      for (const el of [dot, pulse]) {
+        el.setAttribute('cx', xEnd);
+        el.setAttribute('cy', points.at(-1).y.toFixed(1));
+      }
+      points.forEach(({step, x, y}, i) => {
+        const marker = markers.get(step);
+        if (!marker) return;
+        const [hit, guide, hoverDot] = marker;
+        const left = i ? (points[i - 1].x + x) / 2 : xStart;
+        const right = i + 1 < points.length ? (points[i + 1].x + x) / 2 : xEnd;
+        hit.setAttribute('x', left.toFixed(1));
+        hit.setAttribute('width', (right - left).toFixed(1));
+        guide.setAttribute('x1', x.toFixed(1));
+        guide.setAttribute('x2', x.toFixed(1));
+        guide.setAttribute('y1', Math.max(16, y - 6).toFixed(1));
+        hoverDot.setAttribute('cx', x.toFixed(1));
+        hoverDot.setAttribute('cy', y.toFixed(1));
+      });
+    });
     this._restoreSummaryVizHover(host);
-    if (animate && this._monitorMotionAllowed()) {
+    if (animate && isLiveRunning && lastPt.step > host._lossPulseStep && this._monitorMotionAllowed()) {
       host.querySelector('.m-loss-dot')?.animate?.(
         [{ transform: 'scale(1.45)', opacity: .72 }, { transform: 'scale(1)', opacity: 1 }],
         { duration: 240, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
       );
     }
+    host._lossPulseStep = lastPt.step;
   },
 
   // 紫色 · 学习率全程调度曲线（确定性调度器预测虚线轨迹 + 实线已记录轨迹）
@@ -463,7 +623,7 @@ window.monitorSummaryMixin = {
     if (host._profile?.version === version && host._profile.source === source) return;
     host._profile = { source, version };
     const allPoints = this._cleanLossPoints(source);
-    if (allPoints.length < 2) { host.hidden = true; host.innerHTML = ''; return; }
+    if (allPoints.length < 2) { host.hidden = true; host.innerHTML = ''; delete host._summaryProjection; return; }
     const past = this._downsampleSeriesPoints(allPoints, 64);
     const future = this._projectLrSchedule(past, totalSteps);
     const minStep = past[0].step <= Math.max(20, (totalSteps || 0) * 0.08) ? 0 : past[0].step;
@@ -478,7 +638,7 @@ window.monitorSummaryMixin = {
     const lastPt = pastCoords[pastCoords.length - 1];
     const firstPt = pastCoords[0];
     const areaD = pastD + ` L${lastPt.x.toFixed(1)} ${vbH} L${firstPt.x.toFixed(1)} ${vbH} Z`;
-    const futureCoords = future.map(p => ({ x: toX(p.step), y: toY(p.value) }));
+    const futureCoords = future.map(p => ({ x: toX(p.step), y: toY(p.value), value: p.value }));
     const futureD = futureCoords.length >= 2 ? this._smoothSplinePath(futureCoords, 0.16) : '';
     const slotW = Math.max(3, (lastPt.x - firstPt.x) / Math.max(1, pastCoords.length - 1));
     const gradId = 'm-lr-grad-' + (this.selectedRunDir ? 'h' : 'l');
@@ -491,26 +651,55 @@ window.monitorSummaryMixin = {
       return `<g class="m-viz-item" data-viz-idx="${idx}" data-viz-kind="step" data-viz-num="${Math.round(pt.step)}" data-viz-val="${this.esc(v)}"><rect class="m-viz-hit" x="${(pt.x - slotW / 2).toFixed(1)}" y="6" width="${slotW.toFixed(1)}" height="${vbH - 6}"/><line class="m-viz-guide" x1="${pt.x.toFixed(1)}" x2="${pt.x.toFixed(1)}" y1="${Math.max(10, pt.y - 6).toFixed(1)}" y2="${vbH}" stroke="url(#${guideId})"/><circle class="m-viz-hover-dot is-lr" cx="${pt.x.toFixed(1)}" cy="${pt.y.toFixed(1)}" r="3.4"/></g>`;
     }).join('');
     host.hidden = false;
-    host.innerHTML = `<svg class="m-viz-svg m-lr-profile-svg" viewBox="0 0 ${vbW} ${vbH}" preserveAspectRatio="xMaxYMax meet" aria-hidden="true">
-      <defs>
-        <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="var(--section-training)" stop-opacity=".1"/>
-          <stop offset="100%" stop-color="var(--section-training)" stop-opacity="0"/>
-        </linearGradient>
-        <linearGradient id="${guideId}" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="var(--lr-viz-color)" stop-opacity=".72"/>
-          <stop offset="100%" stop-color="var(--lr-viz-color)" stop-opacity="0"/>
-        </linearGradient>
-      </defs>
-      <path class="m-lr-area" fill="url(#${gradId})" d="${areaD}"/>
-      ${futureD ? `<path class="m-lr-future" d="${futureD}"/>` : ''}
-      <path class="m-lr-past" d="${pastD}"/>
-      ${isLiveRunning ? `<circle class="m-lr-pulse" cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="5.6"/>` : ''}
-      <circle class="m-lr-dot" cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="2.9"/>
-      ${lrHits}
-    </svg>`;
+    const existingSvg = host.querySelector('.m-lr-profile-svg');
+    if (existingSvg && existingSvg.querySelector('[data-lr-hits]') && typeof document?.createElementNS === 'function') {
+      existingSvg.querySelector('.m-lr-area')?.setAttribute('d', areaD);
+      const futureEl = existingSvg.querySelector('.m-lr-future');
+      if (futureEl) {
+        if (futureD) { futureEl.setAttribute('d', futureD); futureEl.removeAttribute('display'); }
+        else futureEl.setAttribute('display', 'none');
+      }
+      existingSvg.querySelector('.m-lr-past')?.setAttribute('d', pastD);
+      const dotEl = existingSvg.querySelector('.m-lr-dot');
+      if (dotEl) { dotEl.setAttribute('cx', lastPt.x.toFixed(1)); dotEl.setAttribute('cy', lastPt.y.toFixed(1)); }
+      let pulseEl = existingSvg.querySelector('.m-lr-pulse');
+      if (isLiveRunning) {
+        if (!pulseEl && dotEl) {
+          pulseEl = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          pulseEl.setAttribute('class', 'm-lr-pulse');
+          pulseEl.setAttribute('r', '5.6');
+          existingSvg.insertBefore(pulseEl, dotEl);
+        }
+        if (pulseEl) { pulseEl.setAttribute('cx', lastPt.x.toFixed(1)); pulseEl.setAttribute('cy', lastPt.y.toFixed(1)); }
+      } else if (pulseEl) {
+        pulseEl.remove();
+      }
+      const hitsGroup = existingSvg.querySelector('[data-lr-hits]');
+      if (hitsGroup) hitsGroup.innerHTML = lrHits;
+    } else {
+      host.innerHTML = `<svg class="m-viz-svg m-lr-profile-svg" viewBox="0 0 ${vbW} ${vbH}" preserveAspectRatio="xMaxYMax meet" aria-hidden="true">
+        <defs>
+          <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="var(--section-training)" stop-opacity=".1"/>
+            <stop offset="100%" stop-color="var(--section-training)" stop-opacity="0"/>
+          </linearGradient>
+          <linearGradient id="${guideId}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="var(--lr-viz-color)" stop-opacity=".72"/>
+            <stop offset="100%" stop-color="var(--lr-viz-color)" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <path class="m-lr-area" fill="url(#${gradId})" d="${areaD}"/>
+        <path class="m-lr-future" d="${futureD}"${futureD ? '' : ' display="none"'}/>
+        <path class="m-lr-past" d="${pastD}"/>
+        ${isLiveRunning ? `<circle class="m-lr-pulse" cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="5.6"/>` : ''}
+        <circle class="m-lr-dot" cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="2.9"/>
+        <g data-lr-hits>${lrHits}</g>
+      </svg>`;
+    }
     const tile = host.closest?.('.m-live-metric');
     if (tile) tile.setAttribute('title', t(futureD ? 'lrScheduleProfileHint' : 'lrRecordedProfileHint'));
+    this._transitionSummaryProjection(host, -52 / maxVal, 72, isLiveRunning && root._metricMotion,
+      () => this._summaryLrPainter(host, pastCoords, futureCoords));
     this._restoreSummaryVizHover(host);
   },
 
@@ -529,17 +718,18 @@ window.monitorSummaryMixin = {
     if (samples.length < 2 && !hasWait) {
       host.hidden = true;
       host.innerHTML = '';
+      delete host._speedStep;
       tile?.removeAttribute('title');
       return;
     }
 
-    let svgHtml = '';
+    let svg = host.querySelector('.m-speed-profile-svg');
     host._hudIndexChars = String(samples.at(-1)?.step || 0).length;
     host._hudValueChars = 0;
     if (samples.length >= 2) {
       const sampleSpeedText = this.selectedRunDir ? this.runDetailData?.speed : this.monitorData?.speed;
-      const rates = samples.map(s => ({ step: s.step, sec: s.speedSec, rate: 1 / s.speedSec }));
-      const avgRate = rates.reduce((sum, r) => sum + r.rate, 0) / rates.length;
+      const rates = samples.map(s => 1 / s.speedSec);
+      const avgRate = rates.reduce((sum, rate) => sum + rate, 0) / rates.length;
       const vbW = 200, vbH = 92;
       const floorY = hasWait ? 82 : 92;
       const maxBarH = hasWait ? 54 : 62;
@@ -551,26 +741,8 @@ window.monitorSummaryMixin = {
       const xStart = xRight - stepX * (count - 1);
       const gradId = 'm-speed-bar-grad-' + (isHistory ? 'h' : 'l');
       const slowGradId = 'm-speed-slow-grad-' + (isHistory ? 'h' : 'l');
-      let bars = '';
-      rates.forEach((r, idx) => {
-        // 以平均速度为基准（1.0 → baseBarH），平稳时整齐舒展，提速略高，卡顿掉速明显下凹并转暖琥珀警示。
-        const rel = r.rate / Math.max(avgRate, 1e-6);
-        const isSlow = rel < 0.8;
-        const barH = Math.max(12, Math.min(maxBarH, baseBarH + (rel - 1) * baseBarH * 1.45));
-        const cx = xStart + idx * stepX;
-        const y = floorY - barH;
-        const recency = count > 1 ? idx / (count - 1) : 1;
-        const alpha = (0.46 + recency * 0.52).toFixed(2);
-        const isLatest = idx === count - 1;
-        const v = this._formatSpeedFromSeconds(r.sec, sampleSpeedText);
-        host._hudValueChars = Math.max(host._hudValueChars, v.length);
-        bars += `<g class="m-viz-item m-speed-bar-item${isLatest ? ' is-latest' : ''}${isSlow ? ' is-slow' : ''}" data-viz-idx="${idx}" data-viz-kind="step" data-viz-num="${Math.round(r.step)}" data-viz-val="${this.esc(v)}">
-          <rect class="m-viz-hit" x="${(cx - stepX / 2).toFixed(1)}" y="10" width="${Math.max(stepX, barW + 2).toFixed(1)}" height="${floorY - 10}"/>
-          <rect class="m-speed-bar" x="${(cx - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW}" height="${(floorY - y).toFixed(1)}" rx="1.9" fill="url(#${isSlow ? slowGradId : gradId})" style="--bar-alpha:${alpha}"/>
-          <circle class="m-speed-hover-dot" cx="${cx.toFixed(1)}" cy="${Math.max(12, y - 5).toFixed(1)}" r="2"/>
-        </g>`;
-      });
-      svgHtml = `<svg class="m-viz-svg m-speed-profile-svg${isLiveRunning ? ' is-live' : ''}" viewBox="0 0 ${vbW} ${vbH}" preserveAspectRatio="xMaxYMax meet" aria-hidden="true">
+      if (!svg) {
+        host.insertAdjacentHTML('afterbegin', `<svg class="m-viz-svg m-speed-profile-svg" viewBox="0 0 ${vbW} ${vbH}" preserveAspectRatio="xMaxYMax meet" aria-hidden="true">
         <defs>
           <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stop-color="var(--speed-viz-color)" stop-opacity=".72"/>
@@ -583,35 +755,87 @@ window.monitorSummaryMixin = {
             <stop offset="100%" stop-color="var(--warning)" stop-opacity="0"/>
           </linearGradient>
         </defs>
-        ${bars}
-      </svg>`;
+        <g data-speed-bars></g>
+      </svg>`);
+        svg = host.querySelector('.m-speed-profile-svg');
+      }
+      svg.classList.toggle('is-live', isLiveRunning);
+      const bars = svg.querySelector('[data-speed-bars]');
+      const keys = samples.map(s => JSON.stringify([s.step, s.elapsedSec, s.speedSec, s.remainingSec]));
+      const visible = new Set(keys);
+      for (const item of Array.from(bars.children)) {
+        if (!visible.has(item._sampleKey)) item.remove();
+      }
+      const previous = new Map(Array.from(bars.children, bar => [bar._sampleKey, bar]));
+      let next = bars.firstElementChild;
+      samples.forEach((sample, idx) => {
+        const key = keys[idx];
+        let item = previous.get(key);
+        if (!item) {
+          item = document.createElementNS(svg.namespaceURI, 'g');
+          item.setAttribute('class', 'm-viz-item m-speed-bar-item');
+          item.dataset.vizKind = 'step';
+          item._sampleKey = key;
+          item.innerHTML = `<rect class="m-viz-hit" y="10"/><rect class="m-speed-bar" x="${-barW / 2}" width="${barW}" rx="1.9"/><circle class="m-speed-hover-dot" cx="0" r="2"/>`;
+        }
+        if (item === next) next = next.nextElementSibling;
+        else bars.insertBefore(item, next);
+        const rel = rates[idx] / Math.max(avgRate, 1e-6);
+        const barH = Math.max(12, Math.min(maxBarH, baseBarH + (rel - 1) * baseBarH * 1.45));
+        const y = floorY - barH;
+        const value = this._formatSpeedFromSeconds(sample.speedSec, sampleSpeedText);
+        const [hit, bar, dot] = item.children;
+        item.style.transform = `translateX(${(xStart + idx * stepX).toFixed(1)}px)`;
+        item.classList.toggle('is-latest', idx === count - 1);
+        item.classList.toggle('is-slow', rel < 0.8);
+        item.dataset.vizIdx = String(idx);
+        item.dataset.vizNum = String(Math.round(sample.step));
+        item.dataset.vizVal = value;
+        host._hudValueChars = Math.max(host._hudValueChars, value.length);
+        hit.setAttribute('x', (-stepX / 2).toFixed(1));
+        hit.setAttribute('width', Math.max(stepX, barW + 2).toFixed(1));
+        hit.setAttribute('height', String(floorY - 10));
+        bar.setAttribute('y', y.toFixed(1));
+        bar.setAttribute('height', barH.toFixed(1));
+        bar.setAttribute('fill', `url(#${rel < 0.8 ? slowGradId : gradId})`);
+        bar.style.setProperty('--bar-alpha', (0.46 + idx / (count - 1) * 0.52).toFixed(2));
+        dot.setAttribute('cy', Math.max(12, y - 5).toFixed(1));
+      });
+    } else {
+      svg?.remove();
     }
 
-    let waitHtml = '';
+    host.hidden = false;
+    let waitEl = host.querySelector('.m-speed-wait-bar');
     if (hasWait) {
       const clampedWait = Math.max(0, Math.min(1, waitRatio));
       const computePct = Math.round((1 - clampedWait) * 100);
       const waitPct = Math.round(clampedWait * 100);
       const tip = t('speedComputeWait').replace('{compute}', computePct).replace('{wait}', waitPct);
       const waitKeyLabel = t('speedComputeShort') + ' / ' + t('speedWaitShort');
-      waitHtml = `<div class="m-speed-wait-bar" data-viz-idx="wait" data-viz-key="${this.esc(waitKeyLabel)}" data-viz-val="${computePct}% / ${waitPct}%" title="${this.esc(tip)}">
-        <i class="m-speed-wait-compute" style="width:${(100 - clampedWait * 100).toFixed(1)}%"></i>
-        <i class="m-speed-wait-io" style="width:${(clampedWait * 100).toFixed(1)}%"></i>
-      </div>`;
+      if (!waitEl) {
+        host.insertAdjacentHTML('beforeend', '<div class="m-speed-wait-bar" data-viz-idx="wait"><i class="m-speed-wait-compute"></i><i class="m-speed-wait-io"></i></div>');
+        waitEl = host.querySelector('.m-speed-wait-bar');
+      }
+      waitEl.dataset.vizKey = waitKeyLabel;
+      waitEl.dataset.vizVal = `${computePct}% / ${waitPct}%`;
+      waitEl.title = tip;
+      waitEl.querySelector('.m-speed-wait-compute').style.width = (100 - clampedWait * 100).toFixed(1) + '%';
+      waitEl.querySelector('.m-speed-wait-io').style.width = (clampedWait * 100).toFixed(1) + '%';
       if (tile) tile.setAttribute('title', samples.length >= 2 ? t('speedCadenceHint') : tip);
-    } else if (tile) {
-      tile.setAttribute('title', t('speedCadenceHint'));
+    } else {
+      waitEl?.remove();
+      tile?.setAttribute('title', t('speedCadenceHint'));
     }
-
-    host.hidden = false;
-    host.innerHTML = svgHtml + waitHtml;
     this._restoreSummaryVizHover(host);
-    if (isLiveRunning && this._monitorMotionAllowed()) {
+    const latestStep = samples.at(-1)?.step;
+    if (isLiveRunning && latestStep > host._speedStep && this._monitorMotionAllowed()) {
       host.querySelector('.m-speed-bar-item.is-latest .m-speed-bar')?.animate?.(
         [{ transform: 'scaleY(0.76)', opacity: .65 }, { transform: 'scaleY(1)', opacity: 1 }],
         { duration: 260, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
       );
     }
+    host._speedStep = latestStep;
   },
 
   _parseEpochProgress(d, totalSteps, step, completed, percent) {
@@ -1050,7 +1274,7 @@ window.monitorSummaryMixin = {
   },
 
   _summaryLossChange(series, previousPoint, displayedPoint) {
-    const points = this._cleanLossPoints(series && (series.diagnostic_points || series.points));
+    const points = this._cleanLossPoints(series?.diagnostic_points?.length ? series.diagnostic_points : series?.points);
     const latest = displayedPoint ?? points.at(-1);
     const baseline = previousPoint === undefined ? points.at(-2) : previousPoint;
     if (!latest || !baseline || latest.step < baseline.step) return null;
@@ -1253,7 +1477,8 @@ window.monitorSummaryMixin = {
     const profile = snapshot?.training_profile || snapshot?.config?.model_train_type || values.get('model_train_type')
       || (values.has('dit') ? 'krea2-lora' : ({ 'networks.lora_anima': 'anima-lora', 'networks.lora_generic': 'moss-image-lora', 'networks.lora': 'sdxl-lora' }[values.get('network_module')] || ''))
       || (cached?.params === this.trainParams ? cached.profile : '');
-    if (cached?.params === this.trainParams && cached.version === this.trainParamsVersion && cached.locale === locale && cached.profile === profile && cached.schema === window.TRAIN_SECTIONS) return cached;
+    const cachedSchema = window.Alpine?.raw ? window.Alpine.raw(cached?.schema) : cached?.schema;
+    if (cached?.params === this.trainParams && cached.version === this.trainParamsVersion && cached.locale === locale && cached.profile === profile && cachedSchema === window.TRAIN_SECTIONS) return cached;
     return this._monitorParamCache = { ...this._buildMonitorParamModel(this.trainParams || [], profile, t),
       params: this.trainParams, version: this.trainParamsVersion, locale, profile, schema: window.TRAIN_SECTIONS };
   },

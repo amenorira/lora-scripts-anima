@@ -3,6 +3,49 @@
   const _ddNoiseBinsCache = new WeakMap();
   const _ddTheoSharesCache = new WeakMap();
 
+  function theoreticalPath(coords) {
+    const segments = [];
+    let span = [];
+    for (const c of coords) {
+      if (!c.excluded && c.yTheo != null) {
+        span.push((span.length ? 'L' : 'M') + c.xCenter.toFixed(1) + ' ' + c.yTheo.toFixed(1));
+      } else {
+        if (span.length > 1) segments.push(span.join(' '));
+        span = [];
+      }
+    }
+    if (span.length > 1) segments.push(span.join(' '));
+    return segments.join(' ');
+  }
+
+  function patchDensityProfile(svg, coords, bottom) {
+    const bars = svg.querySelectorAll?.('[data-dd-ts-density-base] rect') || [];
+    for (const bar of bars) {
+      const c = coords[Number(bar.getAttribute('data-dd-ts-idx'))];
+      bar.classList.toggle('is-sparse', !c.comparable);
+      bar.setAttribute('height', c.densityHeight.toFixed(1));
+      bar.setAttribute('y', (bottom - c.densityHeight).toFixed(1));
+    }
+    svg.querySelector?.('.m-dd-ts-theo-line')?.setAttribute('d', theoreticalPath(coords));
+    const marks = svg.querySelectorAll?.('[data-dd-ts-nan] > g') || [];
+    for (const mark of marks) {
+      const c = coords[Number(mark.getAttribute('data-dd-ts-idx'))];
+      if (c.non_finite_count > 0) mark.removeAttribute('display');
+      else mark.setAttribute('display', 'none');
+    }
+  }
+
+  function interpolateProfile(previous, next, fraction) {
+    return next.map((c, i) => {
+      const frame = { ...c };
+      for (const key of ['mean_loss', 'p25', 'p75', 'densityHeight', 'yTheo']) {
+        const from = previous[i][key];
+        if (from != null && c[key] != null) frame[key] = from + (c[key] - from) * fraction;
+      }
+      return frame;
+    });
+  }
+
   window.datasetDiagnosticsTimestepMixin = {
     _ddNoiseExcludedBounds(cfg) {
       const hasMinRaw = Number.isFinite(cfg?.min_timestep);
@@ -597,13 +640,7 @@
           this._ddNoiseExcludedBounds(data.sampling_config)
         ));
       const legEl = root.querySelector('[data-dd-noise-legend]');
-      if (legEl) {
-        const nextLeg = this._ddNoiseLegendHtml(t, comp, resolvedHasTheo);
-        if (legEl._ddLastHtml !== nextLeg) {
-          legEl._ddLastHtml = nextLeg;
-          legEl.innerHTML = nextLeg;
-        }
-      }
+      if (legEl) this._ddPatchHtml(legEl, this._ddNoiseLegendHtml(t, comp, resolvedHasTheo));
       const compZones = precomputedZones !== undefined && precomputedZones !== null
         ? precomputedZones
         : this._ddComputeComparisonZones(data, comp);
@@ -1039,9 +1076,9 @@
     _ddStartTimestepMorphAnim(svg, prev, next, ctx) {
       if (!svg || !ctx) return;
       const {
-        baseEl, theoEl, compEl, selEl, coords,
+        wrap, baseEl, compEl, selEl, coords,
         lossTop, lossBottom, lossH, plotBottom,
-        compHtml, iqrBandHtml, theoLineHtml, baseLayerFullHtml, baseLayerRefHtml,
+        compHtml,
         imageFinite, imageNonFinite, subsetMarkers, toX,
       } = ctx;
 
@@ -1066,7 +1103,8 @@
         }
         return false;
       };
-      const changed = Math.abs(prevState.high - next.high) > 1e-6
+      const profileChanged = prevState.profileKey !== next.profileKey;
+      const changed = profileChanged || Math.abs(prevState.high - next.high) > 1e-6
         || prevState.hasComparison !== next.hasComparison
         || prevState.kind !== next.kind
         || prevState.toneClass !== next.toneClass
@@ -1074,66 +1112,55 @@
         || arrDiff(prevState.compY, next.compY)
         || (prevState.compHtml || '') !== (next.compHtml || '');
 
-      if (!changed) {
+      // Repeated snapshots of the same target must not restart a running transition.
+      const target = svg._ddTsTarget;
+      const sameTarget = target && target.profileKey === next.profileKey
+        && target.high === next.high && target.hasComparison === next.hasComparison
+        && target.kind === next.kind && target.toneClass === next.toneClass
+        && target.compHtml === next.compHtml && !arrDiff(target.barH, next.barH);
+      const motionOk = (!this._monitorMotionAllowed || this._monitorMotionAllowed())
+        && typeof globalThis.requestAnimationFrame === 'function';
+      if (svg._ddTsAnimRaf && sameTarget && motionOk) return;
+      if (!changed && !svg._ddTsAnimRaf) {
         const focusCompEl = svg.querySelector?.('[data-dd-ts-focus-comp]');
         if (focusCompEl) focusCompEl.setAttribute('class', `m-dd-ts-focus-dot is-comp${next.toneClass}`);
         return;
       }
 
       this._ddStopTimestepMorphAnim(svg);
+      svg._ddTsTarget = next;
 
       const focusCompEl = svg.querySelector?.('[data-dd-ts-focus-comp]');
       if (focusCompEl) focusCompEl.setAttribute('class', `m-dd-ts-focus-dot is-comp${next.toneClass}`);
 
-      if (!next.hasComparison) {
-        if (baseEl && !baseEl.querySelector?.('.m-dd-ts-iqr-band') && iqrBandHtml) {
-          baseEl.innerHTML = baseLayerFullHtml;
-        }
-        if (theoEl && theoLineHtml && !theoEl.innerHTML) {
-          theoEl.innerHTML = theoLineHtml;
-        }
-        void svg.getBoundingClientRect?.();
-      }
       svg.classList?.toggle?.('is-ts-comparing', next.hasComparison);
+
+      const paintMarkers = (toY, final) => {
+        if (!compEl) return;
+        if (compEl._ddMarkerLayout === next.markerLayout
+            && this._ddPatchTimestepOverlayInPlace(compEl, next.kind, subsetMarkers, imageFinite, toX, toY, next.toneClass)) return;
+        compEl.innerHTML = final ? compHtml : this._ddBuildTimestepOverlayMarkup(
+          next.kind, coords, subsetMarkers, imageFinite, imageNonFinite, toX, toY, lossTop, lossBottom, next.toneClass
+        );
+        compEl._ddMarkerLayout = next.markerLayout;
+      };
+      if (next.kind !== 'image' && next.kind !== 'subset' && compEl) compEl._ddMarkerLayout = null;
 
       const commitFinal = () => {
         svg._ddTsAnimRaf = 0;
         svg.classList?.remove?.('is-ts-animating');
-        const maxTickEl = svg.querySelector?.('[data-dd-ts-y-max]');
-        if (maxTickEl) {
-          const txt = this._ddFormatLoss(next.high);
-          if (maxTickEl.textContent !== txt) maxTickEl.textContent = txt;
-        }
-        if (baseEl) {
-          const targetBaseHtml = next.hasComparison ? baseLayerRefHtml : baseLayerFullHtml;
-          if (Math.abs(prevState.high - next.high) > 1e-6) {
-            if (baseEl.innerHTML !== targetBaseHtml) baseEl.innerHTML = targetBaseHtml;
-          } else {
-            const baseLines = baseEl.querySelectorAll?.('.m-dd-ts-base-line');
-            if (baseLines?.forEach) {
-              baseLines.forEach(el => el.classList?.toggle?.('is-ref', next.hasComparison));
-              if (!next.hasComparison && iqrBandHtml && !baseEl.querySelector?.('.m-dd-ts-iqr-band')) {
-                baseEl.innerHTML = targetBaseHtml;
-              }
-            } else if (baseEl.innerHTML !== targetBaseHtml) {
-              baseEl.innerHTML = targetBaseHtml;
-            }
-          }
-        }
-        if (theoEl && !next.hasComparison && theoLineHtml && theoEl.innerHTML !== theoLineHtml) {
-          theoEl.innerHTML = theoLineHtml;
-        }
+        const toY = this._ddPatchTimestepBaseScale(svg, baseEl, coords, next.high, lossBottom, lossH, !next.hasComparison, next.hasComparison);
+        if (profileChanged) patchDensityProfile(svg, coords, plotBottom);
         if (compEl) {
           if (compEl.style) compEl.style.opacity = '';
           if (next.kind === 'series') {
             const nextBaseY = coords.map(c => c.y);
             this._ddPatchTimestepCompSeries(compEl, coords, nextBaseY, next.compY, lossBottom, next.toneClass, next.compComparable);
           } else if (next.kind === 'image' || next.kind === 'subset') {
-            if (compEl.innerHTML !== compHtml) compEl.innerHTML = compHtml;
+            paintMarkers(toY, true);
           } else {
             if (compEl.innerHTML) compEl.innerHTML = '';
           }
-          compEl._ddLastHtml = compHtml;
         }
         if (selEl) {
           if (next.kind === 'series') {
@@ -1142,22 +1169,10 @@
             this._ddPatchTimestepDensitySel(selEl, coords, coords.map(() => 0), plotBottom, '', true);
           }
         }
-        svg._ddTsLiveState = {
-          high: next.high,
-          hasComparison: next.hasComparison,
-          kind: next.kind,
-          toneClass: next.toneClass,
-          barH: next.barH.slice(),
-          compY: next.compY.slice(),
-          compComparable: next.compComparable.slice(),
-          compOpacity: next.kind === 'none' ? 0 : 1,
-          compHtml: next.compHtml,
-        };
-        svg._ddTsHasComp = next.hasComparison;
+        svg._ddTsLiveState = next;
+        this._ddSyncTimestepFocus(wrap, svg);
       };
 
-      const motionOk = (!this._monitorMotionAllowed || this._monitorMotionAllowed())
-        && typeof globalThis.requestAnimationFrame === 'function';
       if (!motionOk) {
         commitFinal();
         return;
@@ -1169,7 +1184,6 @@
       const prevToY = v => lossBottom - (Math.max(0, v) / Math.max(1e-6, prevState.high)) * lossH;
       const nextToY = v => lossBottom - (Math.max(0, v) / Math.max(1e-6, next.high)) * lossH;
       let t0 = null;
-      let imageOverlayInit = false;
 
       if (baseEl && !highChanged) {
         baseEl.querySelectorAll?.('.m-dd-ts-base-line')?.forEach?.(el => {
@@ -1177,23 +1191,25 @@
         });
       }
       if (compEl && (next.kind === 'image' || next.kind === 'subset')) {
-        const initMarkup = highChanged
-          ? this._ddBuildTimestepOverlayMarkup(next.kind, coords, subsetMarkers, imageFinite, imageNonFinite, toX, prevToY, lossTop, lossBottom, next.toneClass)
-          : compHtml;
-        if (compEl.innerHTML !== initMarkup) compEl.innerHTML = initMarkup;
-        imageOverlayInit = true;
+        paintMarkers(prevToY, !highChanged);
       }
       svg.classList?.add?.('is-ts-animating');
 
       const step = now => {
         if (t0 === null) t0 = now;
         const rawT = Math.min(1, Math.max(0, (now - t0) / durationMs));
+        if (rawT >= 1 || this._monitorMotionAllowed?.() === false) {
+          commitFinal();
+          return;
+        }
         const e = 1 - Math.pow(1 - rawT, 3);
         const curHigh = prevState.high + (next.high - prevState.high) * e;
-        const curToY = highChanged
-          ? this._ddPatchTimestepBaseScale(svg, baseEl, coords, curHigh, lossBottom, lossH, keepIqrOnScale, next.hasComparison)
+        const frameCoords = profileChanged && prevState.coords ? interpolateProfile(prevState.coords, coords, e) : coords;
+        if (profileChanged) patchDensityProfile(svg, frameCoords, plotBottom);
+        const curToY = highChanged || profileChanged
+          ? this._ddPatchTimestepBaseScale(svg, baseEl, frameCoords, curHigh, lossBottom, lossH, keepIqrOnScale, next.hasComparison)
           : (v => lossBottom - (Math.max(0, v) / Math.max(1e-6, curHigh)) * lossH);
-        const curBaseY = coords.map(c => (c.valid ? curToY(c.mean_loss) : null));
+        const curBaseY = frameCoords.map(c => (c.valid ? curToY(c.mean_loss) : null));
         const curBarH = coords.map((_, i) => (prevState.barH[i] || 0) + ((next.barH[i] || 0) - (prevState.barH[i] || 0)) * e);
         const barTone = next.kind === 'series' ? next.toneClass : prevState.toneClass;
         this._ddPatchTimestepDensitySel(selEl, coords, curBarH, plotBottom, barTone, false);
@@ -1232,16 +1248,8 @@
           this._ddPatchTimestepCompSeries(compEl, coords, curBaseY, curCompY, lossBottom, prevState.toneClass, curComparable);
           if (compEl?.style) compEl.style.opacity = curOp.toFixed(3);
         } else if (next.kind === 'image' || next.kind === 'subset') {
-          curOp = Math.min(1, rawT * 2.4);
-          if (compEl && (!imageOverlayInit || highChanged)) {
-            if (!imageOverlayInit || !this._ddPatchTimestepOverlayInPlace(compEl, next.kind, subsetMarkers, imageFinite, toX, curToY, next.toneClass)) {
-              const nextInner = highChanged
-                ? this._ddBuildTimestepOverlayMarkup(next.kind, coords, subsetMarkers, imageFinite, imageNonFinite, toX, curToY, lossTop, lossBottom, next.toneClass)
-                : compHtml;
-              if (compEl.innerHTML !== nextInner) compEl.innerHTML = nextInner;
-            }
-            imageOverlayInit = true;
-          }
+          curOp = prevState.kind === next.kind ? (prevState.compOpacity + (1 - prevState.compOpacity) * e) : Math.min(1, rawT * 2.4);
+          if (highChanged) paintMarkers(curToY, false);
           if (compEl?.style) compEl.style.opacity = curOp.toFixed(3);
         } else if (prevState.kind !== 'none' && next.kind === 'none') {
           liveKind = prevState.kind;
@@ -1256,6 +1264,8 @@
         }
 
         svg._ddTsLiveState = {
+          coords: frameCoords,
+          profileKey: profileChanged ? null : next.profileKey,
           high: curHigh,
           hasComparison: next.hasComparison,
           kind: liveKind,
@@ -1266,12 +1276,9 @@
           compOpacity: curOp,
           compHtml: next.compHtml,
         };
+        this._ddSyncTimestepFocus(wrap, svg);
 
-        if (rawT < 1) {
-          svg._ddTsAnimRaf = globalThis.requestAnimationFrame(step);
-        } else {
-          commitFinal();
-        }
+        svg._ddTsAnimRaf = globalThis.requestAnimationFrame(step);
       };
 
       svg._ddTsAnimRaf = globalThis.requestAnimationFrame(step);
@@ -1295,7 +1302,8 @@
         this._ddStopTimestepMorphAnim(svg);
         svg._ddTsLiveState = null;
         this._ddPatchNoiseCardChrome(wrap, t, data, comp, !!options.animate, false);
-        svg.removeAttribute?.('data-dd-svg-kind');
+        const wasEmpty = svg.getAttribute?.('data-dd-svg-kind') === 'timestep-empty';
+        svg.setAttribute('data-dd-svg-kind', 'timestep-empty');
         svg.removeAttribute?.('data-dd-svg-width');
         svg.removeAttribute?.('data-dd-svg-height');
         svg.removeAttribute?.('data-dd-svg-zoom');
@@ -1303,12 +1311,15 @@
         svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
         svg.setAttribute('width', '100%');
         svg.setAttribute('height', String(height));
-        svg.innerHTML = `<text class="is-sans" x="${width / 2}" y="${height / 2}" text-anchor="middle" fill="var(--text-tertiary)" font-size="12">${this.esc(t('ddTimestepOverlayEmpty'))}</text>`;
+        const empty = `<text class="is-sans" x="${width / 2}" y="${height / 2}" text-anchor="middle" fill="var(--text-tertiary)" font-size="12">${this.esc(t('ddTimestepOverlayEmpty'))}</text>`;
+        if (!wasEmpty || svg._ddTsEmpty !== empty) svg.innerHTML = empty;
+        svg._ddTsEmpty = empty;
         wrap._ddChartState = null;
         return;
       }
 
       const excluded = this._ddNoiseExcludedBounds(data.sampling_config);
+      svg._ddTsEmpty = null;
       const scale = data.timestep_scale || 'thousand';
       const totalImages = Number(data.summary?.images_total || 0) || null;
       const prepared = this._ddPrepareTimestepBins(rawBins, comp?.series || null, excluded);
@@ -1409,6 +1420,7 @@
           yP75,
           compY,
           share: shareInfo.share,
+          densityHeight: b.count ? Math.max(2, shareInfo.share / maxShare * densityH) : 0,
           theoShare: shareInfo.theoShare,
           yTheo,
         };
@@ -1419,13 +1431,6 @@
       const overlayKind = hasCompSeries
         ? 'series'
         : (subsetMarkers.length ? 'subset' : (comp?.kind === 'image' && comp.detail ? 'image' : 'none'));
-
-      const fullBuilt = this._ddBuildTimestepBaseMarkup(coords, toY, lossBottom, true, false);
-      const refBuilt = this._ddBuildTimestepBaseMarkup(coords, toY, lossBottom, false, true);
-      const iqrBandHtml = fullBuilt.iqrBandHtml;
-      const baseLayerFullHtml = fullBuilt.baseLayerHtml;
-      const baseLayerRefHtml = refBuilt.baseLayerHtml;
-      const baseLayerHtml = hasComparison ? baseLayerRefHtml : baseLayerFullHtml;
 
       const baseYArr = coords.map(c => c.y);
       const compYArr = coords.map(c => (hasCompSeries ? c.compY : null));
@@ -1455,26 +1460,6 @@
         );
       }
 
-      let theoLineHtml = '';
-      if (hasTheoData) {
-        const segs = [];
-        let span = [];
-        const flushTheo = () => {
-          if (span.length >= 2) {
-            segs.push(span.map((c, i) => (i ? 'L' : 'M') + c.xCenter.toFixed(1) + ' ' + c.yTheo.toFixed(1)).join(' '));
-          }
-          span = [];
-        };
-        for (const c of coords) {
-          if (!c.excluded && c.yTheo != null) span.push(c);
-          else flushTheo();
-        }
-        flushTheo();
-        if (segs.length) {
-          theoLineHtml = `<path class="m-dd-ts-theo-line" d="${segs.join(' ')}"/>`;
-        }
-      }
-
       const densitySelHtml = hasCompSeries
         ? coords.map((c, idx) => {
           const ch = targetBarHArr[idx];
@@ -1484,6 +1469,11 @@
         : '';
 
       const nextState = {
+        coords,
+        markerLayout: overlayKind === 'image'
+          ? JSON.stringify([overlayKind, imageFinite.map(s => [s.t1000, s.residual]), imageNonFinite.map(s => s.t1000)])
+          : overlayKind === 'subset' ? JSON.stringify([overlayKind, toneClass, subsetMarkers.map(m => m.zone)]) : null,
+        profileKey: coords.map(c => [c.mean_loss, c.p25, c.p75, c.densityHeight, c.yTheo, c.comparable, c.non_finite_count].join(':')).join('|'),
         high,
         hasComparison,
         kind: overlayKind,
@@ -1496,12 +1486,10 @@
       };
 
       const tsStructSig = [
-        maxShare.toFixed(6),
         excluded.hasMax ? excluded.maxT : '',
         excluded.hasMin ? excluded.minT : '',
-        this.selectedRunDir ? 'h' : 'l',
-        theoShares ? theoShares.map(v => v.toFixed(4)).join(',') : '',
-        bins.map(b => `${b.bin}:${b.count}:${b.mean_loss == null ? '' : b.mean_loss.toFixed(5)}:${b.p25 == null ? '' : b.p25.toFixed(4)}:${b.p75 == null ? '' : b.p75.toFixed(4)}:${b.non_finite_count || 0}:${b.comparable ? 1 : 0}`).join(','),
+        this.selectedRunDir || this.liveTaskId || '', data.run_id || '',
+        bins.map(b => `${b.bin}:${b.tFrom}:${b.tTo}`).join(','),
       ].join('|');
 
       const canPatchOverlay = svg.getAttribute?.('data-dd-svg-kind') === 'timestep'
@@ -1516,12 +1504,11 @@
 
       if (canPatchOverlay) {
         const baseEl = svg.querySelector('[data-dd-ts-base]');
-        const theoEl = svg.querySelector('[data-dd-ts-density-theo]');
         const compEl = svg.querySelector('[data-dd-ts-comp]');
         const selEl = svg.querySelector('[data-dd-ts-density-sel]');
         this._ddStartTimestepMorphAnim(svg, svg._ddTsLiveState, nextState, {
           baseEl,
-          theoEl,
+          wrap,
           compEl,
           selEl,
           coords,
@@ -1530,10 +1517,6 @@
           lossH,
           plotBottom,
           compHtml,
-          iqrBandHtml,
-          theoLineHtml,
-          baseLayerFullHtml,
-          baseLayerRefHtml,
           imageFinite,
           imageNonFinite,
           subsetMarkers,
@@ -1542,17 +1525,17 @@
       } else {
         this._ddStopTimestepMorphAnim(svg);
         svg.classList?.toggle?.('is-ts-comparing', hasComparison);
+        const { baseLayerHtml } = this._ddBuildTimestepBaseMarkup(coords, toY, lossBottom, !hasComparison, hasComparison);
         const densityBarsHtml = coords.map(c => {
-          if (!c.count) return '';
-          const h = Math.max(2, (c.share / maxShare) * densityH);
+          const h = c.densityHeight;
           const cls = 'm-dd-ts-density-bar' + (!c.comparable ? ' is-sparse' : '');
           return `<rect class="${cls}" data-dd-ts-idx="${c.idx}" x="${c.barX.toFixed(1)}" y="${(plotBottom - h).toFixed(1)}" width="${c.barW.toFixed(1)}" height="${h.toFixed(1)}" rx="1"/>`;
         }).join('');
 
-        const nanMarksHtml = coords.filter(c => c.non_finite_count > 0).map(c => {
+        const nanMarksHtml = coords.map(c => {
           const cx = c.xCenter;
           const cy = lossTop + 6;
-          return `<g class="m-dd-ts-nan-mark" data-dd-ts-idx="${c.idx}">`
+          return `<g class="m-dd-ts-nan-mark" data-dd-ts-idx="${c.idx}"${c.non_finite_count > 0 ? '' : ' display="none"'}>`
             + `<line x1="${(cx - 2.8).toFixed(1)}" y1="${(cy - 2.8).toFixed(1)}" x2="${(cx + 2.8).toFixed(1)}" y2="${(cy + 2.8).toFixed(1)}"/>`
             + `<line x1="${(cx + 2.8).toFixed(1)}" y1="${(cy - 2.8).toFixed(1)}" x2="${(cx - 2.8).toFixed(1)}" y2="${(cy + 2.8).toFixed(1)}"/>`
             + `</g>`;
@@ -1601,18 +1584,8 @@
         svg.setAttribute('data-dd-svg-height', String(height));
         svg.setAttribute('data-dd-svg-zoom', '');
         svg.setAttribute('data-dd-ts-sig', tsStructSig);
-        svg._ddTsHasComp = hasComparison;
-        svg._ddTsLiveState = {
-          high: nextState.high,
-          hasComparison: nextState.hasComparison,
-          kind: nextState.kind,
-          toneClass: nextState.toneClass,
-          barH: nextState.barH.slice(),
-          compY: nextState.compY.slice(),
-          compComparable: nextState.compComparable.slice(),
-          compOpacity: nextState.compOpacity,
-          compHtml: nextState.compHtml,
-        };
+        svg._ddTsLiveState = nextState;
+        svg._ddTsTarget = nextState;
         svg.innerHTML = `
           <defs>
             <pattern id="${exclPatId}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -1626,7 +1599,7 @@
             <line x1="${padL}" x2="${padL + plotW}" y1="${(lossTop + lossH / 2).toFixed(1)}" y2="${(lossTop + lossH / 2).toFixed(1)}"/>
             <line x1="${padL}" x2="${padL + plotW}" y1="${plotBottom}" y2="${plotBottom}" class="is-axis"/>
           </g>
-          <g data-dd-ts-density><g data-dd-ts-density-base>${densityBarsHtml}</g><g data-dd-ts-density-sel>${densitySelHtml}</g><g data-dd-ts-density-theo>${hasTheo ? theoLineHtml : ''}</g></g>
+          <g data-dd-ts-density><g data-dd-ts-density-base>${densityBarsHtml}</g><g data-dd-ts-density-sel>${densitySelHtml}</g><g data-dd-ts-density-theo><path class="m-dd-ts-theo-line" d="${theoreticalPath(coords)}"/></g></g>
           <g data-dd-ts-base>${baseLayerHtml}</g>
           <g data-dd-ts-comp>${compHtml}</g>
           <g data-dd-ts-nan>${nanMarksHtml}</g>
@@ -1636,7 +1609,7 @@
           <g data-dd-ts-hits>${hitRectsHtml}</g>
           <g class="m-chart-axes">${axesHtml}</g>`;
         const initCompEl = typeof svg.querySelector === 'function' ? svg.querySelector('[data-dd-ts-comp]') : null;
-        if (initCompEl) initCompEl._ddLastHtml = compHtml;
+        if (initCompEl) initCompEl._ddMarkerLayout = nextState.markerLayout;
       }
 
       wrap._ddChartState = {
@@ -1782,7 +1755,7 @@
 
       const wasHidden = !!tipEl.hidden;
       tipEl.classList?.toggle?.('is-moving', !wasHidden);
-      tipEl.innerHTML = html;
+      this._ddPatchHtml(tipEl, html);
       tipEl.hidden = false;
       const stageW = stage?.clientWidth || st.width || 360;
       const stageH = stage?.clientHeight || st.height || 176;
@@ -1829,27 +1802,29 @@
         }
         ch.removeAttribute('display');
       }
-      const focusBase = svg.querySelector('[data-dd-ts-focus-base]');
-      if (focusBase) {
-        if (!excludedHover && bestBar.valid && bestBar.y != null) {
-          focusBase.setAttribute('cx', bestBar.xCenter.toFixed(1));
-          focusBase.setAttribute('cy', bestBar.y.toFixed(1));
-          focusBase.removeAttribute('display');
-        } else {
-          focusBase.setAttribute('display', 'none');
-        }
-      }
-      const focusComp = svg.querySelector('[data-dd-ts-focus-comp]');
-      if (focusComp) {
-        if (!excludedHover && st.hasCompSeries && bestBar.compY != null) {
-          focusComp.setAttribute('cx', bestBar.xCenter.toFixed(1));
-          focusComp.setAttribute('cy', bestBar.compY.toFixed(1));
-          focusComp.removeAttribute('display');
-        } else {
-          focusComp.setAttribute('display', 'none');
-        }
-      }
+      this._ddSyncTimestepFocus(wrap, svg);
       this._ddRenderTimestepTooltip(wrap, bestBar, wrap._ddHoverMeta);
+    },
+
+    _ddSyncTimestepFocus(wrap, svg) {
+      const bar = wrap?._ddActiveBar;
+      const chart = wrap?._ddChartState;
+      const frame = svg._ddTsLiveState;
+      if (!bar || !chart || !frame) return;
+      const c = frame.coords?.[bar.idx];
+      const baseY = c?.valid ? chart.lossBottom - Math.max(0, c.mean_loss) / frame.high * (chart.lossBottom - chart.lossTop) : null;
+      const compY = frame.kind === 'series' ? frame.compY[bar.idx] : null;
+      for (const [layer, y] of [['base', baseY], ['comp', compY]]) {
+        const dot = svg.querySelector(`[data-dd-ts-focus-${layer}]`);
+        if (!dot) continue;
+        if (wrap._ddHoverMeta?.excludedHover || y == null) {
+          dot.setAttribute('display', 'none');
+        } else {
+          dot.setAttribute('cx', bar.xCenter.toFixed(1));
+          dot.setAttribute('cy', y.toFixed(1));
+          dot.removeAttribute('display');
+        }
+      }
     },
   };
 })();

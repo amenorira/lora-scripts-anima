@@ -597,7 +597,7 @@ document.addEventListener('alpine:init', () => {
       const el = document.getElementById('tensorboardFrame');
       if (!el || el.querySelector('iframe')) return;
       el.innerHTML = `<iframe src="/tensorboard/" title="TensorBoard" class="iframe-full"
-        onload="this.style.opacity='1'" style="opacity:0;transition:opacity 0.5s"></iframe>`;
+        onload="this.style.opacity='1'" style="opacity:0"></iframe>`;
     },
 
     onLocaleChange(locale = this.locale) {
