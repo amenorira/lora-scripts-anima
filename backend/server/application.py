@@ -1,6 +1,8 @@
 import asyncio
+import base64
 import mimetypes
 import os
+import secrets
 import sys
 from contextlib import asynccontextmanager
 
@@ -232,6 +234,41 @@ class CachePolicyMiddleware:
 
 
 app.add_middleware(CachePolicyMiddleware)
+
+
+class BasicAuthMiddleware:
+    """--listen 开放局域网访问时，用 HTTP Basic Auth 保护所有路由（含 WebSocket），
+    避免训练控制面、脚本执行、文件下载等接口被匿名访问。"""
+
+    def __init__(self, app: ASGIApp, credential: str) -> None:
+        self.app = app
+        self.user, _, self.password = credential.partition(":")
+
+    def _authorized(self, scope: Scope) -> bool:
+        raw = dict(scope["headers"]).get(b"authorization", b"").decode("latin-1")
+        if not raw.startswith("Basic "):
+            return False
+        try:
+            user, _, password = base64.b64decode(raw[6:]).decode("utf-8").partition(":")
+        except Exception:
+            return False
+        return secrets.compare_digest(user, self.user) and secrets.compare_digest(password, self.password)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] in ("http", "websocket") and not self._authorized(scope):
+            if scope["type"] == "websocket":
+                await send({"type": "websocket.close", "code": 1008})
+            else:
+                await send({"type": "http.response.start", "status": 401,
+                            "headers": [(b"www-authenticate", b'Basic realm="Anima"')]})
+                await send({"type": "http.response.body", "body": b"Unauthorized"})
+            return
+        await self.app(scope, receive, send)
+
+
+_anima_auth = os.environ.get("ANIMA_AUTH")
+if _anima_auth:
+    app.add_middleware(BasicAuthMiddleware, credential=_anima_auth)
 
 
 app.include_router(api_router, prefix="/api")

@@ -50,6 +50,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Web UI listen host")
     parser.add_argument("--port", type=int, default=12333, help="Web UI listen port")
     parser.add_argument("--listen", action="store_true", help="Listen on 0.0.0.0 (LAN access)")
+    parser.add_argument("--auth", type=str, default=None,
+                        help="username:password required by --listen to protect LAN access")
     parser.add_argument("--skip-prepare-environment", action="store_true",
                         help="Skip dependency check/repair at startup")
     parser.add_argument("--skip-prepare-onnxruntime", action="store_true",
@@ -115,6 +117,14 @@ def launch(args: argparse.Namespace) -> None:
 
     if args.listen:
         args.host = "0.0.0.0"
+        if not args.auth or ":" not in args.auth:
+            log.error(
+                "--listen exposes the control panel to the LAN; refusing to start without "
+                "--auth username:password / --listen 会把控制面开放到局域网，必须同时提供 "
+                "--auth 用户名:密码 才能启动"
+            )
+            sys.exit(1)
+        os.environ["ANIMA_AUTH"] = args.auth
     if args.tensorboard_host is not None:
         log.warning("--tensorboard-host is deprecated and ignored / 此参数已弃用，"
                     "TensorBoard 仅监听回环地址，请通过主端口 /tensorboard/ 访问")
