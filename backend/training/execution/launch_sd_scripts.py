@@ -251,6 +251,7 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
         },
         extra_env={
             "ANIMA_RUN_CONTROL_DIR": str(internal_run_dir / "log" / ".run-control"),
+            "ANIMA_RESUME_TRAINING": "1" if is_resume else "",
             "ANIMA_MANUAL_PREVIEW_STEPS": str(settings.ui_config.get("sample_steps") or ""),
             ENV_KEY: str(internal_run_dir / CONFIG_NAME) if preview_config is not None else "",
             **training_metrics_environment(settings.ui_config),
