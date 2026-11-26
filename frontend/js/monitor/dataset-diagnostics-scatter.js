@@ -1,6 +1,7 @@
 /* 训练集诊断交互式散点图、早期蜂群排布、相机/编排动画与历史轨迹；由 dataset-diagnostics-render.js 聚合。 */
 (() => {
   const MAX_SCATTER_EFFECTS = 72;
+  const SCATTER_REFERENCE_ASPECT = 8 / 5;
 
   function _dotEffectPriority(status) {
     if (status === 'non_finite') return 2;
@@ -178,10 +179,12 @@
         const locate = (event, clampToPlot = false) => {
           const st = wrap._ddChartState;
           if (!st) return;
-          const rect = stage.getBoundingClientRect();
-          if (!rect.width) return;
-          let x = event.clientX - rect.left - Math.max(0, (rect.width - st.width) / 2);
-          let y = event.clientY - rect.top;
+          const matrix = svg.getScreenCTM?.();
+          const rect = matrix ? null : stage.getBoundingClientRect();
+          if (!matrix && !rect.width) return;
+          let { x, y } = matrix
+            ? new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse())
+            : { x: event.clientX - rect.left, y: event.clientY - rect.top };
           if (clampToPlot) {
             x = Math.max(st.padL, Math.min(st.padL + st.plotW, x));
             y = Math.max(st.padT, Math.min(st.padT + st.plotH, y));
@@ -423,16 +426,17 @@
                     };
                   } else if (wrap._ddAutoBounds) {
                     const b = wrap._ddAutoBounds;
+                    const dataBounds = wrap._ddDataBounds;
                     const xCfg = this._ddScatterAxisConfig('x');
                     const yCfg = this._ddScatterAxisConfig('y');
                     camForWheel = {
                       kind: camForWheel?.kind || (ev.isEarly ? 'early' : 'quadrant'),
                       xMin: b.xMin,
                       xMax: b.xMax,
-                      symW_X: (b.xMax > xCfg.trigger || b.xMin < -xCfg.trigger) ? 1 : 0,
+                      symW_X: (dataBounds.xMax > xCfg.trigger || dataBounds.xMin < -xCfg.trigger) ? 1 : 0,
                       yMin: Number.isFinite(b.yMin) ? b.yMin : -1,
                       yMax: Number.isFinite(b.yMax) ? b.yMax : 1,
-                      symW_Y: (!ev.isEarly && Number.isFinite(b.yMin) && Number.isFinite(b.yMax) && (b.yMax > yCfg.trigger || b.yMin < -yCfg.trigger)) ? 1 : 0,
+                      symW_Y: (!ev.isEarly && (dataBounds.yMax > yCfg.trigger || dataBounds.yMin < -yCfg.trigger)) ? 1 : 0,
                     };
                   }
                 }
@@ -575,7 +579,7 @@
           const nextHeight = Math.round(stage.clientHeight || 0);
           const dw = Math.abs(nextWidth - (wrap._ddMeasuredWidth || 0));
           const dh = Math.abs(nextHeight - (wrap._ddMeasuredHeight || 0));
-          if (nextWidth > 120 && (dw >= 4 || (nextHeight > 80 && dh >= 1))) {
+          if (nextWidth > 120 && (dw >= 1 || (nextHeight > 80 && dh >= 1))) {
             wrap._ddMeasuredWidth = nextWidth;
             wrap._ddMeasuredHeight = nextHeight;
             if (!wrap._ddPinnedDot) clearHover();
@@ -661,14 +665,8 @@
       };
     },
 
-    _ddResolveScatterHeight(svg, stage, options = {}) {
-      const measuredH = Math.round(options.stageHeight || stage?.clientHeight || 0);
-      let height = measuredH > 100 ? Math.max(360, Math.min(720, measuredH - 4)) : 440;
-      const prevSvgH = Number(svg?.getAttribute?.('data-dd-svg-height') || 0);
-      if (options.animate && prevSvgH >= 360 && Math.abs(prevSvgH - height) <= 6) {
-        height = prevSvgH;
-      }
-      return height;
+    _ddResolveScatterHeight(stageHeight) {
+      return stageHeight > 100 ? stageHeight - 4 : 440;
     },
 
     _ddSyncZoomUi(wrap, stageEl, hasZoom) {
@@ -789,7 +787,7 @@
             const panKind = panData.summary?.has_slope ? 'quadrant' : 'early';
             const width = Math.max(260, Math.round(stage.clientWidth || 700));
             const stageHeight = Math.round(stage.clientHeight || 0);
-            const height = this._ddResolveScatterHeight(svg, stage, { ...renderOpts, stageHeight });
+            const height = this._ddResolveScatterHeight(stageHeight);
             if (this._ddCanReconcileSvg(svg, panKind, width, height, '.m-dd-dots') && wrap._ddAutoBounds) {
               const minCount = Number(panData.thresholds?.min_count || 3);
               const ptCache = panKind === 'quadrant' ? wrap._ddQuadPointCache : wrap._ddEarlyPointCache;
@@ -815,7 +813,7 @@
         const expectedKind = data.summary?.has_slope ? 'quadrant' : 'early';
         const width = Math.max(260, Math.round(stage.clientWidth || 700));
         const stageHeight = Math.round(stage.clientHeight || 0);
-        const height = this._ddResolveScatterHeight(svg, stage, { ...renderOpts, stageHeight });
+        const height = this._ddResolveScatterHeight(stageHeight);
         if (!dataChanged && this._ddCanReconcileSvg(svg, expectedKind, width, height, '.m-dd-dots') && wrap._ddAutoBounds) {
           const minCount = Number(data.thresholds?.min_count || 3);
           const ptCache = expectedKind === 'quadrant' ? wrap._ddQuadPointCache : wrap._ddEarlyPointCache;
@@ -1783,7 +1781,31 @@
       return [min, max];
     },
 
-    _ddResolveScatterAutoBounds(wrap, key, raw, hasY = true, convSlope = -0.02) {
+    // Fit the data in a reference plot. Extra space extends the visible domain in
+    // warped coordinates, so the two axes always gain the same pixel magnification.
+    _ddFitScatterBounds(bounds, plotW, plotH, refW = SCATTER_REFERENCE_ASPECT, refH = 1, compress = true) {
+      const scale = Math.min(plotW / SCATTER_REFERENCE_ASPECT, plotH)
+        / Math.min(refW / SCATTER_REFERENCE_ASPECT, refH);
+      const extend = (axis, min, max, factor) => {
+        if (Math.abs(factor - 1) < 1e-12) return [min, max];
+        const { linThresh, k, trigger } = this._ddScatterAxisConfig(axis);
+        const weight = compress && (max > trigger || min < -trigger) ? 1 : 0;
+        const lo = this._ddAxisWarp(min, linThresh, k, weight);
+        const hi = this._ddAxisWarp(max, linThresh, k, weight);
+        const extra = (hi - lo) * (factor - 1) / 2;
+        // Residuals from finite nonnegative losses have a physical floor at -100%.
+        const shift = compress && axis === 'x' && min >= -1 ? Math.max(0, -1 - (lo - extra)) : 0;
+        return [
+          this._ddAxisUnwarp(lo - extra + shift, linThresh, k, weight),
+          this._ddAxisUnwarp(hi + extra + shift, linThresh, k, weight),
+        ];
+      };
+      const [xMin, xMax] = extend('x', bounds.xMin, bounds.xMax, plotW / refW / scale);
+      const [yMin, yMax] = extend('y', bounds.yMin, bounds.yMax, plotH / refH / scale);
+      return { xMin, xMax, yMin, yMax };
+    },
+
+    _ddResolveScatterAutoBounds(wrap, key, raw, hasY = true, convSlope = -0.02, plotW, plotH) {
       const snappedXMin = this._ddSnapOutward(Math.min(-0.35, raw.xMin - Math.max(0.05, Math.abs(raw.xMin) * 0.08)), 'x', -1);
       let xMin = raw.xMin >= -1.0 ? Math.max(-1.0, snappedXMin) : snappedXMin;
       let xMax = this._ddSnapOutward(Math.max(0.40, raw.xMax + Math.max(0.06, Math.abs(raw.xMax) * 0.08)), 'x', 1);
@@ -1794,8 +1816,8 @@
       let yMax = hasY ? this._ddSnapOutward(Math.max(minYMag, raw.yMax + Math.max(minYPad, Math.abs(raw.yMax) * 0.14)), 'y', 1) : 1;
       if (hasY) [yMin, yMax] = this._ddSoftCenterAxisBounds(yMin, yMax, 'y');
 
-      if (wrap && wrap._ddAutoBoundsKey === key && wrap._ddAutoBounds) {
-        const prev = wrap._ddAutoBounds;
+      if (wrap && wrap._ddAutoBoundsKey === key && wrap._ddDataBounds) {
+        const prev = wrap._ddDataBounds;
         if (raw.xMin >= prev.xMin + 0.02 && xMin > prev.xMin && Math.abs(xMin) >= Math.abs(prev.xMin) * 0.55) xMin = prev.xMin;
         if (raw.xMax <= prev.xMax - 0.02 && xMax < prev.xMax && Math.abs(xMax) >= Math.abs(prev.xMax) * 0.55) xMax = prev.xMax;
         if (hasY) {
@@ -1804,9 +1826,13 @@
           if (raw.yMax <= prev.yMax - yHoldTol && yMax < prev.yMax && Math.abs(yMax) >= Math.abs(prev.yMax) * 0.55) yMax = prev.yMax;
         }
       }
-      const bounds = hasY ? { xMin, xMax, yMin, yMax } : { xMin, xMax };
+      const dataBounds = hasY ? { xMin, xMax, yMin, yMax } : { xMin, xMax };
+      const bounds = hasY && plotW && plotH
+        ? this._ddFitScatterBounds(dataBounds, plotW, plotH)
+        : dataBounds;
       if (wrap) {
         wrap._ddAutoBoundsKey = key;
+        wrap._ddDataBounds = dataBounds;
         wrap._ddAutoBounds = bounds;
       }
       return bounds;
@@ -1838,7 +1864,7 @@
 
       if (!compressed) {
         const span = Math.max(1e-4, max - min);
-        const maxCount = Math.max(4, Math.min(8, Math.floor((plotSpanPx || 400) / (axis === 'x' ? 92 : 56))));
+        const maxCount = Math.max(4, Math.floor((plotSpanPx || 400) / (axis === 'x' ? 92 : 56)));
         const steps = [0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.10, 0.20, 0.25, 0.50, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0];
         const step = steps.find(s => span / s <= maxCount) || Math.pow(10, Math.ceil(Math.log10(span / Math.max(2, maxCount - 1))));
         const decimals = step < 0.001 ? 2 : (step < 0.01 ? 1 : 0);
@@ -3307,7 +3333,7 @@
       const hasZoom = isQuadrant
         ? !!(z && Number.isFinite(z.xMin) && Number.isFinite(z.xMax)
             && Number.isFinite(z.yMin) && Number.isFinite(z.yMax)
-            && (z.xMax - z.xMin) >= 0.0005 && (z.yMax - z.yMin) >= 0.0002)
+            && z.xMax > z.xMin && z.yMax > z.yMin)
         : !!(z && Number.isFinite(z.xMin) && Number.isFinite(z.xMax) && (z.xMax - z.xMin) >= 0.0005);
 
       this._ddSyncZoomUi(wrap, stageEl, hasZoom);
@@ -3318,8 +3344,9 @@
       const yMax = isQuadrant ? (hasZoom ? z.yMax : autoBounds.yMax) : 1;
       const xCfg = this._ddScatterAxisConfig('x');
       const yCfg = isQuadrant ? this._ddScatterAxisConfig('y') : null;
-      const xCompressed = !hasZoom && (xMax > xCfg.trigger || xMin < -xCfg.trigger);
-      const yCompressed = isQuadrant && !hasZoom && (yMax > yCfg.trigger || yMin < -yCfg.trigger);
+      const raw = wrap._ddDataBounds;
+      const xCompressed = !hasZoom && (raw.xMax > xCfg.trigger || raw.xMin < -xCfg.trigger);
+      const yCompressed = isQuadrant && !hasZoom && (raw.yMax > yCfg.trigger || raw.yMin < -yCfg.trigger);
       const symWX = xCompressed ? 1 : 0;
       const symWY = yCompressed ? 1 : 0;
       const zoomSig = hasZoom
@@ -3630,7 +3657,7 @@
 
     _renderDatasetDiagQuadrantSvg(wrap, svg, data, width, t, options = {}) {
       const measuredH = Math.round(options.stageHeight || wrap?.querySelector?.('[data-dd-hero-stage]')?.clientHeight || 0);
-      const height = this._ddResolveScatterHeight(svg, null, { ...options, stageHeight: measuredH });
+      const height = this._ddResolveScatterHeight(measuredH);
       const padL = 12, padR = 12, padT = 8, padB = 10;
       const plotW = Math.max(120, width - padL - padR);
       const plotH = Math.max(72, height - padT - padB);
@@ -3686,12 +3713,16 @@
           yMax: highest.slope,
         },
         true,
-        ptSet.learningSlope
+        ptSet.learningSlope, plotW, plotH
       );
-      const z = this.datasetDiagScatterZoom;
+      let z = this.datasetDiagScatterZoom;
       const hasZoom = !!(z && Number.isFinite(z.xMin) && Number.isFinite(z.xMax)
-        && Number.isFinite(z.yMin) && Number.isFinite(z.yMax)
-        && (z.xMax - z.xMin) >= 0.0005 && (z.yMax - z.yMin) >= 0.0002);
+        && Number.isFinite(z.yMin) && Number.isFinite(z.yMax) && z.xMax > z.xMin && z.yMax > z.yMin);
+      const previous = wrap._ddChartState;
+      if (hasZoom && previous?.toY && (previous.plotW !== plotW || previous.plotH !== plotH)) {
+        z = this._ddFitScatterBounds(z, plotW, plotH, previous.plotW, previous.plotH, false);
+        this.datasetDiagScatterZoom = z;
+      }
       if (!isPanFrame) this._ddSyncZoomUi(wrap, stageEl, hasZoom);
       const xMin = hasZoom ? z.xMin : autoBounds.xMin;
       const xMax = hasZoom ? z.xMax : autoBounds.xMax;
@@ -3699,8 +3730,9 @@
       const yMax = hasZoom ? z.yMax : autoBounds.yMax;
       const xCfg = this._ddScatterAxisConfig('x');
       const yCfg = this._ddScatterAxisConfig('y');
-      const xCompressed = !hasZoom && (xMax > xCfg.trigger || xMin < -xCfg.trigger);
-      const yCompressed = !hasZoom && (yMax > yCfg.trigger || yMin < -yCfg.trigger);
+      const raw = wrap._ddDataBounds;
+      const xCompressed = !hasZoom && (raw.xMax > xCfg.trigger || raw.xMin < -xCfg.trigger);
+      const yCompressed = !hasZoom && (raw.yMax > yCfg.trigger || raw.yMin < -yCfg.trigger);
       const symWX = xCompressed ? 1 : 0;
       const symWY = yCompressed ? 1 : 0;
       const zoomSig = hasZoom
@@ -3993,7 +4025,7 @@
 
     _renderDatasetDiagEarlySvg(wrap, svg, data, width, t, options = {}) {
       const measuredH = Math.round(options.stageHeight || wrap?.querySelector?.('[data-dd-hero-stage]')?.clientHeight || 0);
-      const height = this._ddResolveScatterHeight(svg, null, { ...options, stageHeight: measuredH });
+      const height = this._ddResolveScatterHeight(measuredH);
       const padL = 12, padR = 12, padT = 8, padB = 20;
       const plotW = Math.max(120, width - padL - padR);
       const plotH = Math.max(70, height - padT - padB);

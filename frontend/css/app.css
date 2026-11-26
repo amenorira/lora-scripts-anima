@@ -6473,7 +6473,7 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 .m-tab-panel[data-tab="dataset"] { overflow: hidden; scrollbar-gutter: auto; }
 .m-tab-panel[data-tab="dataset"] > .m-dd-section:only-child { flex: 1; min-width: 0; max-width: 100%; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding-bottom: 0; font-family: var(--font-sans); }
 .m-dd-section > [data-dd-slot="heading"] { flex: none; }
-.m-dd-section > [data-dd-slot="analysis"]:not([hidden]) { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; padding-bottom: 12px; container-type: inline-size; }
+.m-dd-section > [data-dd-slot="analysis"]:not([hidden]) { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; padding-bottom: 12px; container: dd-analysis / inline-size; }
 .m-dd-section > [data-dd-slot="images"]:not([hidden]) { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .m-dd-section > .dashboard-empty { flex: 1; min-height: 0; overflow-y: auto; }
 .m-dd-topbar {
@@ -6532,7 +6532,7 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 
 .m-dd-dash-grid {
   flex: 1 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) clamp(320px, 35%, 460px);
-  grid-template-rows: minmax(0, 1fr); gap: 14px; align-items: stretch; min-width: 0; max-height: 850px;
+  grid-template-rows: minmax(0, 1fr); gap: 14px; align-items: stretch; min-width: 0;
 }
 .m-dd-dash-main { display: flex; flex-direction: column; min-width: 0; overflow: hidden; container-type: inline-size; }
 .m-dd-dash-side-shell { position: relative; min-width: 0; min-height: 0; }
@@ -7486,8 +7486,8 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 .m-dd-th-arrow { display: inline-block; width: 10px; text-align: center; flex: none; font-size: 10px; line-height: 1; opacity: .88; }
 .m-dd-table-row { cursor: pointer; contain: layout style paint; content-visibility: auto; contain-intrinsic-size: auto 56px; transition: background var(--duration-fast) var(--ease-out); }
 .m-dd-table-row > .m-dd-pill { justify-self: end; }
-@container (max-width: 900px) {
-  .m-dd-dash-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; max-height: none; }
+@container dd-analysis (max-width: 900px) {
+  .m-dd-dash-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; }
   .m-dd-dash-side-shell { position: static; }
   .m-dd-dash-side { position: static; overflow-y: visible; scrollbar-gutter: auto; }
   .m-dd-dash-scatter .m-dd-hero-stage { flex: 0 0 auto; height: clamp(368px, 50dvh, 488px); min-height: 368px; max-height: 488px; }

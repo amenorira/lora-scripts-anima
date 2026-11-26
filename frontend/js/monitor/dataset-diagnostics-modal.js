@@ -2548,7 +2548,7 @@
       const hasNanEpochs = allEpochs.some(row => (row.non_finite_count || 0) > 0);
       const stageH = Math.round(stage.clientHeight || 0);
       const fallbackH = hasNanEpochs ? 176 : 164;
-      const height = stageH >= 80 ? Math.min(320, stageH) : fallbackH;
+      const height = stageH >= 80 ? stageH : fallbackH;
       const padL = 48, padR = 14, padT = hasNanEpochs ? 22 : 12, padB = 22;
       const plotW = Math.max(60, width - padL - padR);
       const plotH = Math.max(40, height - padT - padB);
@@ -2689,7 +2689,7 @@
       const hasNanTrack = nfValid.length > 0;
       const stageH = Math.round(stage.clientHeight || 0);
       const fallbackH = hasNanTrack ? 216 : 196;
-      const height = stageH >= 80 ? Math.min(340, stageH) : fallbackH;
+      const height = stageH >= 80 ? stageH : fallbackH;
       const padL = 48, padR = 14, padT = hasNanTrack ? 36 : 12, padB = 20;
       const plotW = Math.max(60, width - padL - padR);
       const plotBottom = height - padB;

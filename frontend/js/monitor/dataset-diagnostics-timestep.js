@@ -1287,7 +1287,7 @@
     _renderDatasetDiagTimestepSvg(wrap, svg, data, width, t, options = {}) {
       const comp = options._resolvedComp !== undefined ? options._resolvedComp : this._ddResolveActiveNoiseComparison(data);
       const measuredH = Math.round(options.stageHeight || wrap?.querySelector?.('[data-dd-hero-stage]')?.clientHeight || 0);
-      const height = measuredH > 90 ? Math.max(162, Math.min(192, measuredH)) : 176;
+      const height = measuredH > 90 ? measuredH : 176;
       const padL = 48, padR = 10, padT = 10, padB = 19;
       const plotW = Math.max(120, width - padL - padR);
       const plotBottom = height - padB;

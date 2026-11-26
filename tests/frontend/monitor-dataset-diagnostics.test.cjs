@@ -744,11 +744,11 @@ test('quadrant scatter SVG, piecewise-log compression, auto-bounds soft-centerin
 
   const qSmall = makeWrapStage('quadrant', 680, 200);
   a._renderDatasetDiagHeroSvg(qSmall.wrap, qSmall.stage, qSmall.svg);
-  assert.equal(qSmall.svg.attrs.height, '360');
+  assert.equal(qSmall.svg.attrs.height, '196');
 
   const qLarge = makeWrapStage('quadrant', 680, 900);
   a._renderDatasetDiagHeroSvg(qLarge.wrap, qLarge.stage, qLarge.svg);
-  assert.equal(qLarge.svg.attrs.height, '720');
+  assert.equal(qLarge.svg.attrs.height, '896');
 
   // Deep sub-1% zoom & clamp stay zoomed and toggle reset button
   a.setDatasetDiagScatterZoom({ xMin: 0.640, xMax: 0.646, yMin: 0.050, yMax: 0.053 });
@@ -794,7 +794,8 @@ test('quadrant scatter SVG, piecewise-log compression, auto-bounds soft-centerin
   const mild = makeWrapStage('quadrant', 700, 440);
   makeApp({ datasetDiagData: { ...structuredClone(SAMPLE_DATA), by_image: [mkPt('p1', -0.55, -0.10, 'easy'), mkPt('p2', 0.68, 0.06, 'attention')] } })
     ._renderDatasetDiagHeroSvg(mild.wrap, mild.stage, mild.svg);
-  assert.deepEqual(mild.wrap._ddCamera, { kind: 'quadrant', xMin: -0.8, xMax: 0.8, symW_X: 0, yMin: -0.12, yMax: 0.12, symW_Y: 0 });
+  assert.deepEqual(mild.wrap._ddDataBounds, { xMin: -0.8, xMax: 0.8, yMin: -0.12, yMax: 0.12 });
+  assert.equal(mild.wrap._ddCamera.xMax, -mild.wrap._ddCamera.xMin);
 
   const extX = makeWrapStage('quadrant', 700, 440);
   makeApp({ datasetDiagData: { ...structuredClone(SAMPLE_DATA), by_image: [mkPt('p1', -0.32, -0.05, 'easy'), mkPt('p2', 3.0, 0.05, 'attention')] } })
@@ -831,6 +832,35 @@ test('quadrant scatter SVG, piecewise-log compression, auto-bounds soft-centerin
     assert.equal(zone.svg.classList.contains('is-zones-on'), false);
     assert.equal(zone.wrap._ddHoverZone, null);
   });
+});
+
+test('quadrant resizing preserves point geometry and hit coordinates at overview and zoom scales', () => {
+  const data = structuredClone(SAMPLE_DATA);
+  data.by_image[0].mean_residual = 2.5;
+  const app = makeApp({datasetDiagData: data});
+  const { wrap, stage, svg } = makeWrapStage('quadrant', 700, 440);
+  for (const zoom of [null, {xMin: -1, xMax: 3, yMin: -0.3, yMax: 0.3}]) {
+    app.datasetDiagScatterZoom = zoom;
+    let initial;
+    for (const [width, height] of [[700, 440], [1800, 1100], [850, 1150], [700, 440]]) {
+      stage.clientWidth = width;
+      stage.clientHeight = height;
+      app._renderDatasetDiagHeroSvg(wrap, stage, svg);
+      const st = wrap._ddChartState;
+      const dx = st.toX(2.5) - st.toX(0);
+      const dy = st.toY(0) - st.toY(0.05);
+      initial ??= {ratio: dx / dy, x: st.toX(0), y: st.toY(0)};
+      assert.ok(Math.abs(dx / dy - initial.ratio) < 1e-8);
+      assert.equal(wrap._ddCamera.symW_X, zoom ? 0 : 1);
+      assert.equal(wrap._ddCamera.symW_Y, 0);
+      const dot = st.coords.find(d => d.image_id === data.by_image[0].image_id);
+      assert.equal(app._ddHitTestScatterDot(st, dot.cx, dot.cy)?.image_id, dot.image_id);
+      if (width === 700) {
+        assert.ok(Math.abs(st.toX(0) - initial.x) < 1e-8);
+        assert.ok(Math.abs(st.toY(0) - initial.y) < 1e-8);
+      }
+    }
+  }
 });
 
 test('early 1D beeswarm, 3-stage dot choreography, MAX_SCATTER_EFFECTS cap, and camera rAF animation', () => {
