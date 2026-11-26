@@ -250,8 +250,8 @@ window.trainingCoreMixin = {
   },
 
   suspendTrainForm(route) {
+    if (!route || route !== this._trainFormMountedRoute) return;
     this._cancelKreaDitFormatCheck();
-    if (!route || !route.startsWith('train-')) return;
 
     this._invalidateTrainingPickers();
     this._cancelScheduledTrainTypeSwitch();
