@@ -3210,6 +3210,7 @@
 		"tritonNotInstalled": "未安装",
 		"tritonDesc": "默认安装的训练依赖，支持 LyCORIS 融合内核与 torch.compile GPU 编译",
 		"mossAccelTitle": "MOSS 文本加速",
+		"mossAccelTargetVersion": "目标版本",
 		"mossAccelDesc": "用于加速 MOSS 的 Qwen3.5 文本编码器。",
 		"mossAccelFlaInfo": "Flash Linear Attention，加速线性注意力计算。",
 		"mossAccelConvInfo": "causal-conv1d，加速因果卷积计算。",

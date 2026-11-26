@@ -3210,6 +3210,7 @@
 		"tritonNotInstalled": "Not installed",
 		"tritonDesc": "Installed by default for LyCORIS fused kernels and torch.compile GPU compilation",
 		"mossAccelTitle": "MOSS Text Acceleration",
+		"mossAccelTargetVersion": "Target",
 		"mossAccelDesc": "Accelerates the Qwen3.5 text encoder used by MOSS.",
 		"mossAccelFlaInfo": "Flash Linear Attention: faster linear attention computation.",
 		"mossAccelConvInfo": "causal-conv1d: faster causal convolution computation.",

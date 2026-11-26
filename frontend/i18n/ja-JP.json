@@ -3210,6 +3210,7 @@
 		"tritonNotInstalled": "未インストール",
 		"tritonDesc": "LyCORIS の融合カーネルと torch.compile の GPU コンパイル用に標準でインストールします",
 		"mossAccelTitle": "MOSS テキスト高速化",
+		"mossAccelTargetVersion": "対象版",
 		"mossAccelDesc": "MOSS が使う Qwen3.5 テキストエンコーダを高速化します。",
 		"mossAccelFlaInfo": "Flash Linear Attention：線形アテンションの計算を高速化します。",
 		"mossAccelConvInfo": "causal-conv1d：因果畳み込みの計算を高速化します。",

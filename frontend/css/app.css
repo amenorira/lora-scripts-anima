@@ -5664,7 +5664,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: var(--disabled-opa
 
 /* ── 布局骨架 ─────────────────────────────────────────── */
 .route-environment {
-  width: 100%; max-width: 1480px; margin-inline: auto;
+  width: 100%; max-width: 1520px;
   --env-text-secondary: color-mix(in srgb, var(--text-primary) 76%, var(--bg-surface));
   --env-detail-bg: color-mix(in srgb, var(--bg-sunken) 85%, var(--bg-surface));
 }
@@ -6142,7 +6142,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: var(--disabled-opa
 }
 @container env-card (min-width: 560px) {
   .env-column-head, .env-component-head {
-    display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, .85fr) minmax(0, 1fr) 152px;
+    display: grid; grid-template-columns: minmax(0, 1.9fr) minmax(0, 1.05fr) minmax(72px, .65fr) 152px;
     column-gap: 16px;
   }
   .env-column-head {
@@ -6152,6 +6152,14 @@ input:disabled, select:disabled, textarea:disabled { opacity: var(--disabled-opa
   .env-column-head > :last-child { min-width: 130px; text-align: right; }
   .env-component-head > .env-flow-main { grid-column: auto; }
   .env-component-head > .env-row-ops { min-width: 130px; }
+  [data-env-anchor-target="core"] .env-column-head,
+  [data-env-anchor-target="core"] .env-component-head {
+    grid-template-columns: minmax(0, 2fr) minmax(0, .9fr) minmax(72px, .6fr) 76px;
+  }
+  [data-env-anchor-target="core"] .env-column-head > :last-child,
+  [data-env-anchor-target="core"] .env-component-head > .env-row-ops {
+    min-width: 0;
+  }
 }
 @container env-card (min-width: 780px) {
   .env-file-main { grid-template-columns: minmax(0, 1fr) 80px 110px auto; }
