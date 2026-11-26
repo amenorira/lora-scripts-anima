@@ -1654,6 +1654,20 @@ function createMiniDomElement(tag = 'div') {
       if (child) child.parentNode = null;
       return child;
     },
+    get lastElementChild() { return this.children.at(-1) || null; },
+    get nextElementSibling() {
+      const siblings = this.parentNode?.children;
+      return siblings?.[siblings.indexOf(this) + 1] || null;
+    },
+    insertBefore(child, anchor) {
+      child.remove();
+      child.parentNode = this;
+      this.children.splice(anchor ? this.children.indexOf(anchor) : this.children.length, 0, child);
+    },
+    insertAdjacentHTML(position, markup) {
+      assert.equal(position, 'beforeend');
+      parseHtmlInto(this, markup);
+    },
     remove() {
       if (this.parentNode) this.parentNode.removeChild(this);
     },
@@ -1961,7 +1975,7 @@ test('_disconnectDatasetDiagUI releases imagesSlot DOM and clears marquee when l
   }
 });
 
-test('isDataPoll patches same-order images in-place preserving DOM/img nodes, skips untouched cards, and falls back on order change', () => {
+test('live image updates preserve cards and thumbnails when values, rank or list membership change', () => {
   const prevDoc = global.document;
   const imgA = {
     image_id: 'a1', name: 'alpha.png', image: 'D:/ds/g1/alpha.png', directory: 'D:/ds/g1', dir_label: 'g1',
@@ -2059,6 +2073,16 @@ test('isDataPoll patches same-order images in-place preserving DOM/img nodes, sk
     assert.equal(cardA0.querySelector('.m-dd-card-flag').classList.contains('is-info'), true);
     assert.equal(touchedUntouchedCard, false, 'Untouched card must skip DOM reads/writes when _datasetDiagUpdatedIds is non-empty');
 
+    const folderA = cardA0.closest('.m-dd-folder-group');
+    app.datasetDiagData = makeSnap('r2b', [imgAUpdated, { ...imgB, mean_residual: .9 }, imgC]);
+    app._datasetDiagSnapshotVersion++;
+    app._datasetDiagImageFilterCache = null;
+    app._datasetDiagGroupedCache = null;
+    app.renderDashboard();
+    assert.strictEqual(bodyEl.querySelectorAll('.m-dd-folder-group')[1], folderA);
+    assert.strictEqual(bodyEl.querySelector('.m-dd-card[data-dd-image-id="a1"]'), cardA0);
+    assert.strictEqual(cardA0.querySelector('img'), imgElA0);
+
     // 2. Table view patches residual bar, loss, count/epochs, status in-place when maxAbs changes
     app.setDatasetDiagGroupByFolder(false);
     app.setDatasetDiagViewMode('table');
@@ -2083,7 +2107,7 @@ test('isDataPoll patches same-order images in-place preserving DOM/img nodes, sk
     assert.equal(rowA0.querySelector('.m-dd-pill').classList.contains('is-warn'), true);
     assert.notEqual(rowB0.querySelector('.m-gauge-fill').style.width, prevBWidth, 'maxAbs increase rescales gauge bar on untouched rows');
 
-    // 3. Order change in new snapshot falls back to full body rebuild
+    // Reordering by residual moves rows with their existing thumbnails.
     const imgBHigher = { ...imgB, mean_residual: 2.0, status: 'attention' };
     app.datasetDiagData = makeSnap('r4', [imgAExtreme, imgBHigher, imgC]);
     app._datasetDiagImageFilterCache = null;
@@ -2094,8 +2118,17 @@ test('isDataPoll patches same-order images in-place preserving DOM/img nodes, sk
 
     const rowsAfterReorder = bodyEl.querySelectorAll('.m-dd-table-row');
     assert.deepEqual(rowsAfterReorder.map(r => r.dataset.ddImageId), ['b1', 'a1', 'c1']);
-    assert.notStrictEqual(rowsAfterReorder[0], rowB0);
-    assert.notStrictEqual(rowsAfterReorder[1], rowA0);
+    assert.strictEqual(rowsAfterReorder[0], rowB0);
+    assert.strictEqual(rowsAfterReorder[1], rowA0);
+    const imgD = { ...imgC, image_id: 'd1', name: 'delta.png', mean_residual: 1.7 };
+    app.datasetDiagData = makeSnap('r4b', [imgAExtreme, imgD, imgBHigher]);
+    app._datasetDiagSnapshotVersion++;
+    app._datasetDiagImageFilterCache = null;
+    app.renderDashboard();
+    const withNewImage = bodyEl.querySelectorAll('.m-dd-table-row');
+    assert.deepEqual(withNewImage.map(r => r.dataset.ddImageId), ['b1', 'd1', 'a1']);
+    assert.strictEqual(withNewImage[0], rowB0);
+    assert.strictEqual(withNewImage[2], rowA0);
 
     // 4. Peer-baseline residual shift + is_reg badge toggle updates cards & rows in place even when _datasetDiagUpdatedIds only lists image A
     app.datasetDiagRegMode = 'all';

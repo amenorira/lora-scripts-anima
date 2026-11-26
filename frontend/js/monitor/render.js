@@ -354,9 +354,10 @@ window.monitorRenderMixin = {
       const data = this.datasetDiagData;
       const dataSig = this._datasetDiagSnapshotVersion;
       if (!source.key || !data || !data.available) {
+        panel._ddWaitingSource = !isHistory && source.key && (!data || ['waiting', 'empty'].includes(data.reason)) ? source.key : '';
         const emptySig = [
-          'ddEmpty', this._shellLocale, dataSig,
-          this.datasetDiagLoading ? 1 : 0, this.datasetDiagError || '',
+          'ddEmpty', this._shellLocale, JSON.stringify(data?.available_runs || []), this.datasetDiagRunId,
+          !data && this.datasetDiagLoading ? 1 : 0, this.datasetDiagError || '',
           data?.reason || '', source.key,
           (!this.selectedRunDir && this.liveTaskId) ? 1 : 0,
         ].join(':');
@@ -428,6 +429,8 @@ window.monitorRenderMixin = {
         : (this.datasetDiagSubTab === 'images' ? 'images' : 'overview');
       const prevView = panel._ddLastView || '';
       const switchedView = !!prevView && prevView !== view && !tabChanged;
+      const enterView = switchedView || (!tabChanged && panel._ddWaitingSource === source.key);
+      panel._ddWaitingSource = '';
       panel._ddLastView = view;
       const filteredLen = this._datasetDiagFilteredImages
         ? this._datasetDiagFilteredImages().length
@@ -442,14 +445,14 @@ window.monitorRenderMixin = {
       panel._ddLastHasSlope = !!data.summary?.has_slope;
 
       const headingStructSig = JSON.stringify([
-        this._shellLocale, this.datasetDiagLoading, this.datasetDiagError,
+        this._shellLocale, this.datasetDiagError,
         this.datasetDiagMinCount, this.datasetDiagRunId || data.run_id || '',
-        (data.available_runs || []).length, source.key, liveState.visible,
+        data.available_runs || [], source.key,
         hasRegImages,
       ]);
       const headingSig = JSON.stringify([
         headingStructSig, dataSig, view, gfKey, filteredLen, hasFilter,
-        liveState.phase, !!data.summary?.multi_gpu_partial, effectiveRegMode,
+        liveState.visible, liveState.phase, !!data.summary?.multi_gpu_partial, effectiveRegMode,
       ]);
       if (headingSlot && panel._ddHeadingSig !== headingSig) {
         const canPatchHeading = !!headingSlot.querySelector?.('.m-dd-topbar')
@@ -471,13 +474,11 @@ window.monitorRenderMixin = {
         // 先于 hidden = true 读取 scrollTop/scrollLeft，避免 display:none 后浏览器读出 0。
         this._releaseDatasetDiagImagesSlot?.(panel);
       }
-      if (imagesSlot) {
-        imagesSlot.hidden = view !== 'images';
-        imagesSlot.classList?.toggle('m-dd-view-enter', switchedView && view === 'images');
-      }
-      if (analysisSlot) {
-        analysisSlot.hidden = view !== 'overview';
-        analysisSlot.classList?.toggle('m-dd-view-enter', switchedView && view === 'overview');
+      for (const [slot, name] of [[imagesSlot, 'images'], [analysisSlot, 'overview']]) {
+        if (!slot) continue;
+        slot.hidden = view !== name;
+        // Let the active slot finish its entrance across ordinary snapshot renders.
+        if (slot.hidden || tabChanged || enterView) slot.classList?.toggle('m-dd-view-enter', enterView && !slot.hidden);
       }
 
       let analysisAnimated = false;
@@ -602,7 +603,7 @@ window.monitorRenderMixin = {
       } else {
         const analysisStructSig = JSON.stringify([
           this._shellLocale, source.key, data.run_id || '',
-          !!data.summary?.has_slope, this.datasetDiagError,
+          this.datasetDiagError,
         ]);
         const analysisSig = JSON.stringify([
           analysisStructSig, dataSig, this.datasetDiagPreset || 'all', gfKey, hasFilter, filteredLen,

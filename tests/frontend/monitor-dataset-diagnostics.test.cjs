@@ -513,6 +513,12 @@ test('dashboard overview, images view, smart groups deduplication, folding, filt
   });
 });
 
+test('group residual gauge uses the same zero origin in both directions', () => {
+  const app = makeApp();
+  assert.equal(app._ddGroupGaugeMetrics(-0.04, 0.12).barScale, -app._ddGroupGaugeMetrics(0.04, 0.12).barScale);
+  assert.equal(app._ddGroupGaugeMetrics(null).barScale, 0);
+});
+
 test('status cards, scope pill/popover, and group dim collapse patch cleanly in-place', () => {
   const mkData = images => ({
     ...structuredClone(SAMPLE_DATA),
@@ -1192,6 +1198,35 @@ test('timestep chart 18-bin profile, IQR band, theoretical curves, morph animati
     morphApp._renderDatasetDiagHeroSvg(mWrap, mStage, fakeSvg);
     assert.equal(tsRafQueue.size, 0);
     assert.equal(fakeSvg._ddTsLiveState.kind, 'series');
+
+    // New training samples keep the same scaffold. Retarget from the displayed
+    // distribution even if the next snapshot arrives before the morph settles.
+    tsMotionAllowed = true;
+    const previous = fakeSvg._ddTsLiveState;
+    const binIndex = previous.coords.findIndex(c => c.bin === 7);
+    const updated = structuredClone(richData);
+    const bin = updated.timestep_profile.bins[7];
+    bin.mean_loss += 0.12;
+    bin.count += 10;
+    morphApp.datasetDiagData = updated;
+    const hitLayer = fakeSvg.innerHTML;
+    morphApp._renderDatasetDiagHeroSvg(mWrap, mStage, fakeSvg);
+    assert.equal(fakeSvg.innerHTML, hitLayer);
+    assert.ok(runNextFrame(700) && runNextFrame(750));
+    const shown = fakeSvg._ddTsLiveState.coords[binIndex];
+    assert.ok(shown.mean_loss > previous.coords[binIndex].mean_loss && shown.mean_loss < bin.mean_loss);
+    const pendingFrame = fakeSvg._ddTsAnimRaf;
+    morphApp._renderDatasetDiagHeroSvg(mWrap, mStage, fakeSvg);
+    assert.equal(fakeSvg._ddTsAnimRaf, pendingFrame);
+    const second = structuredClone(updated);
+    second.timestep_profile.bins[7].mean_loss += 0.08;
+    morphApp.datasetDiagData = second;
+    morphApp._renderDatasetDiagHeroSvg(mWrap, mStage, fakeSvg);
+    assert.ok(runNextFrame(760));
+    assert.equal(fakeSvg._ddTsLiveState.coords[binIndex].mean_loss, shown.mean_loss);
+    assert.ok(runNextFrame(970));
+    assert.equal(fakeSvg._ddTsLiveState.coords[binIndex].mean_loss, second.timestep_profile.bins[7].mean_loss);
+    assert.equal(fakeSvg.innerHTML, hitLayer);
   });
 });
 

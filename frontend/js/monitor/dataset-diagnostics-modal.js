@@ -441,6 +441,23 @@
       return true;
     },
 
+    _ddFolderSectionHtml(t, { group, isCollapsed, visibleItems }, viewMode, maxAbs) {
+      const grid = viewMode === 'grid';
+      const tag = grid ? 'section' : 'div';
+      const key = this.esc(group.key);
+      const collapsed = isCollapsed ? ' is-collapsed' : '';
+      const rows = isCollapsed ? '' : visibleItems.map(img => grid
+        ? this._ddImageCardHtml(t, img) : this._ddImageTableRowHtml(t, img, maxAbs)).join('');
+      return '<' + tag + ' class="' + (grid ? 'm-dd-folder-group' : 'm-dd-table-folder-section') + collapsed
+        + '" ' + (grid ? 'data-dd-folder-group' : 'data-dd-table-folder-section') + '="' + key + '">'
+        + '<button type="button" class="' + (grid ? 'm-dd-folder-head' : 'm-dd-table-folder-head') + collapsed
+        + '" data-dd-folder-group="' + key + '" aria-expanded="' + (!isCollapsed) + '" title="' + this.esc(group.fullPath)
+        + '" @click="toggleDatasetDiagFolderCollapsed(\'' + this.esc(this.escapeJsString(group.key)) + '\')">'
+        + this._ddFolderHeadInnerHtml(t, group, isCollapsed ? null : visibleItems.length) + '</button>'
+        + '<div class="m-dd-folder-body" data-dd-folder-body="' + key + '"' + (isCollapsed ? ' inert' : '') + '><div class="m-dd-folder-body-inner">'
+        + (grid && !isCollapsed ? '<div class="m-dd-grid">' + rows + '</div>' : rows) + '</div></div></' + tag + '>';
+    },
+
     _renderDatasetDiagImagesBodyHtml(t, data) {
       const filtered = this._datasetDiagFilteredImages();
       if (!filtered.length) {
@@ -469,21 +486,7 @@
 
         if (viewMode === 'grid') {
           html += '<div class="m-dd-folder-groups">';
-          slices.forEach(({ group, isCollapsed, visibleItems }) => {
-            const keyJs = this.esc(this.escapeJsString(group.key));
-            const keyEsc = this.esc(group.key);
-            html += '<section class="m-dd-folder-group' + (isCollapsed ? ' is-collapsed' : '') + '" data-dd-folder-group="' + keyEsc + '">';
-            html += '<button type="button" class="m-dd-folder-head' + (isCollapsed ? ' is-collapsed' : '') + '" data-dd-folder-group="' + keyEsc + '" aria-expanded="' + (!isCollapsed) + '"'
-              + ' title="' + this.esc(group.fullPath) + '" @click="toggleDatasetDiagFolderCollapsed(\'' + keyJs + '\')">'
-              + this._ddFolderHeadInnerHtml(t, group, isCollapsed ? null : visibleItems.length)
-              + '</button>';
-            html += '<div class="m-dd-folder-body" data-dd-folder-body="' + keyEsc + '"' + (isCollapsed ? ' inert' : '') + '><div class="m-dd-folder-body-inner">'
-              + (!isCollapsed && visibleItems.length
-                ? '<div class="m-dd-grid">' + visibleItems.map(img => this._ddImageCardHtml(t, img)).join('') + '</div>'
-                : '')
-              + '</div></div>';
-            html += '</section>';
-          });
+          html += slices.map(slice => this._ddFolderSectionHtml(t, slice, viewMode, maxAbs)).join('');
           html += '</div>';
         } else {
           html += '<div class="m-dd-table-wrap"><div class="output-list output-table m-dd-table" data-dd-max-abs="' + maxAbs + '">';
@@ -495,21 +498,7 @@
             + '<span class="m-dd-res-head">' + this._ddSortColHtml(t, 'residual', 'residual_desc', 'residual_asc', t('ddColRelative'), true) + '</span>'
             + this._ddSortColHtml(t, 'slope', 'slope_desc', 'slope_asc', t('ddColSlope'), true)
             + '<span>' + this.esc(t('ddColStatus')) + '</span></div>';
-          slices.forEach(({ group, isCollapsed, visibleItems }) => {
-            const keyJs = this.esc(this.escapeJsString(group.key));
-            const keyEsc = this.esc(group.key);
-            html += '<div class="m-dd-table-folder-section' + (isCollapsed ? ' is-collapsed' : '') + '" data-dd-table-folder-section="' + keyEsc + '">';
-            html += '<button type="button" class="m-dd-table-folder-head' + (isCollapsed ? ' is-collapsed' : '') + '" data-dd-folder-group="' + keyEsc + '"'
-              + ' aria-expanded="' + (!isCollapsed) + '" title="' + this.esc(group.fullPath) + '" @click="toggleDatasetDiagFolderCollapsed(\'' + keyJs + '\')">'
-              + this._ddFolderHeadInnerHtml(t, group, isCollapsed ? null : visibleItems.length)
-              + '</button>';
-            html += '<div class="m-dd-folder-body" data-dd-folder-body="' + keyEsc + '"' + (isCollapsed ? ' inert' : '') + '><div class="m-dd-folder-body-inner">'
-              + (!isCollapsed && visibleItems.length
-                ? visibleItems.map(img => this._ddImageTableRowHtml(t, img, maxAbs)).join('')
-                : '')
-              + '</div></div>';
-            html += '</div>';
-          });
+          html += slices.map(slice => this._ddFolderSectionHtml(t, slice, viewMode, maxAbs)).join('');
           html += '</div></div>';
         }
       } else {
@@ -534,10 +523,8 @@
         }
       }
 
-      if (hasMore) {
-        html += '<div class="m-dd-more-row" data-dd-more-row><button type="button" class="btn btn-sm btn-secondary" @click="showMoreDatasetDiagImages()">'
-          + this.esc(t('ddShowMore').replace('{n}', remaining)) + '</button></div>';
-      }
+      html += '<div class="m-dd-more-row" data-dd-more-row' + (hasMore ? '' : ' hidden') + '><button type="button" class="btn btn-sm btn-secondary" @click="showMoreDatasetDiagImages()">'
+        + this.esc(t('ddShowMore').replace('{n}', remaining)) + '</button></div>';
       return html;
     },
 
@@ -858,19 +845,20 @@
       if (viewMode === 'table' && (!tableEl || bodyEl.querySelector?.('.m-dd-grid'))) return false;
       if (viewMode === 'grid' && ((!gridEl && !groupByFolder) || bodyEl.querySelector?.('.m-dd-table'))) return false;
 
-      const itemsMatchOrder = (nodes, items) => {
-        if (nodes.length !== items.length) return false;
-        for (let i = 0; i < items.length; i++) {
-          if (nodes[i]?.dataset?.ddImageId !== items[i].image_id) return false;
-        }
-        return true;
-      };
-
       let hasMore = false;
       let remaining = 0;
       let groupPlan = null;
       let flatNodes = null;
       let flatItems = null;
+      const placeBefore = (host, node, anchor) => {
+        if (node.nextElementSibling === anchor) return;
+        if (host.moveBefore) host.moveBefore(node, anchor);
+        else {
+          const focus = document.activeElement;
+          host.insertBefore(node, anchor);
+          if (node.contains(focus)) focus.focus({ preventScroll: true });
+        }
+      };
 
       if (groupByFolder) {
         const grouped = this._ddComputeGroupedSlices(filtered, limit);
@@ -881,17 +869,22 @@
         const secNodes = Array.from(bodyEl.querySelectorAll?.(
           viewMode === 'grid' ? '.m-dd-folder-group' : '.m-dd-table-folder-section'
         ) || []);
-        if (!slices.length || secNodes.length !== slices.length) return false;
-
+        const foldersHost = viewMode === 'grid' ? bodyEl.querySelector('.m-dd-folder-groups') : tableEl;
+        if (!foldersHost || !slices.length) return false;
+        if (viewMode === 'table' && !secNodes.length && tableEl.querySelector('.m-dd-table-row')) return false;
+        const byKey = new Map(secNodes.map(sec => [sec.dataset.ddFolderGroup || sec.dataset.ddTableFolderSection, sec]));
         groupPlan = [];
-        for (let i = 0; i < slices.length; i++) {
+        let nextFolder = null;
+        for (let i = slices.length - 1; i >= 0; i--) {
           const s = slices[i];
-          const sec = secNodes[i];
-          const secKey = viewMode === 'grid'
-            ? (sec.dataset?.ddFolderGroup || '')
-            : (sec.querySelector?.('.m-dd-table-folder-head')?.dataset?.ddFolderGroup || sec.dataset?.ddTableFolderSection || '');
-          if (secKey !== s.group.key) return false;
-
+          let sec = byKey.get(s.group.key);
+          if (!sec) {
+            foldersHost.insertAdjacentHTML('beforeend', this._ddFolderSectionHtml(t, s, viewMode, maxAbs));
+            sec = foldersHost.lastElementChild;
+          }
+          byKey.delete(s.group.key);
+          placeBefore(foldersHost, sec, nextFolder);
+          nextFolder = sec;
           const headBtn = sec.querySelector?.(viewMode === 'grid' ? '.m-dd-folder-head' : '.m-dd-table-folder-head');
           const folderBody = sec.querySelector?.('[data-dd-folder-body]');
           const inner = folderBody?.querySelector?.('.m-dd-folder-body-inner');
@@ -903,16 +896,18 @@
             || folderBody.hasAttribute?.('inert')
           );
           if (domCollapsed !== s.isCollapsed) return false;
-          if (Boolean(headBtn.querySelector?.('.m-dd-folder-res')) !== (s.group.meanResidual != null)) return false;
-          if (Boolean(headBtn.querySelector?.('.m-dd-folder-reg')) !== Boolean(s.group.isReg)) return false;
+          if (Boolean(headBtn.querySelector?.('.m-dd-folder-res')) !== (s.group.meanResidual != null)
+              || Boolean(headBtn.querySelector?.('.m-dd-folder-reg')) !== Boolean(s.group.isReg)) {
+            headBtn.innerHTML = this._ddFolderHeadInnerHtml(t, s.group, s.isCollapsed ? null : s.visibleItems.length);
+          }
 
           const nodes = Array.from(inner.querySelectorAll?.(itemSelector) || []);
           if (!s.isCollapsed) {
             if (viewMode === 'grid' && s.visibleItems.length > 0 && !inner.querySelector?.('.m-dd-grid')) return false;
-            if (!itemsMatchOrder(nodes, s.visibleItems)) return false;
           }
           groupPlan.push({ s, headBtn, inner, nodes });
         }
+        for (const removed of byKey.values()) removed.remove();
       } else {
         if (bodyEl.querySelector?.('.m-dd-folder-group, .m-dd-table-folder-section')) return false;
         flatItems = filtered.slice(0, limit);
@@ -921,24 +916,32 @@
         const container = viewMode === 'grid' ? gridEl : tableEl;
         if (!container) return false;
         flatNodes = Array.from(container.querySelectorAll?.(itemSelector) || []);
-        if (!itemsMatchOrder(flatNodes, flatItems)) return false;
       }
 
       const moreRow = bodyEl.querySelector?.('[data-dd-more-row]');
-      const moreVisible = Boolean(moreRow && !moreRow.hidden);
-      if (moreVisible !== hasMore) return false;
       const moreBtn = hasMore ? moreRow?.querySelector?.('button') : null;
       if (hasMore && !moreBtn) return false;
+      if (moreRow) moreRow.hidden = !hasMore;
 
       if (hasMore && moreBtn) {
         const nextMoreText = t('ddShowMore').replace('{n}', remaining);
         if (moreBtn.textContent !== nextMoreText) moreBtn.textContent = nextMoreText;
       }
 
-      const patchPairList = (nodes, items) => {
-        for (let i = 0; i < items.length; i++) {
+      const patchPairList = (host, nodes, items) => {
+        const byId = new Map(nodes.map(node => [node.dataset.ddImageId, node]));
+        let next = null;
+        for (let i = items.length - 1; i >= 0; i--) {
           const img = items[i];
-          const node = nodes[i];
+          let node = byId.get(img.image_id);
+          if (!node) {
+            const markup = viewMode === 'grid' ? this._ddImageCardHtml(t, img) : this._ddImageTableRowHtml(t, img, maxAbs);
+            host.insertAdjacentHTML('beforeend', markup);
+            node = host.lastElementChild;
+          }
+          byId.delete(img.image_id);
+          placeBefore(host, node, next);
+          next = node;
           const sig = this._ddImagePatchSig(img, viewMode, maxAbs);
           const prevSig = node._ddPatchSig ?? node.dataset?.ddSig;
           if (prevSig === sig) continue;
@@ -947,6 +950,7 @@
           node._ddPatchSig = sig;
           if (node.dataset) node.dataset.ddSig = sig;
         }
+        for (const removed of byId.values()) removed.remove();
       };
 
       if (groupPlan) {
@@ -956,11 +960,12 @@
             // 折叠前曾展开的分组仍残留旧 DOM，清空可防止下次展开时命中旧指标。
             if (entry.nodes.length > 0) entry.inner.innerHTML = '';
           } else {
-            patchPairList(entry.nodes, entry.s.visibleItems);
+            const host = viewMode === 'grid' ? entry.inner.querySelector('.m-dd-grid') : entry.inner;
+            if (host) patchPairList(host, entry.nodes, entry.s.visibleItems);
           }
         }
       } else {
-        patchPairList(flatNodes, flatItems);
+        patchPairList(gridEl || tableEl, flatNodes, flatItems);
       }
 
       bodyEl._ddLastMaxAbs = maxAbs;

@@ -6609,6 +6609,7 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
               opacity var(--duration-slow) var(--ease-out),
               transform var(--duration-fast) var(--ease-out);
 }
+.m-dd-status-row[hidden] { display: none; }
 .m-dd-status-row.is-non_finite { --dd-tone: var(--danger); }
 .m-dd-status-row.is-attention { --dd-tone: color-mix(in srgb, var(--danger) 50%, var(--warning)); }
 .m-dd-status-row.is-learning { --dd-tone: var(--accent); }
@@ -6977,7 +6978,7 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 .m-dd-hero-svg.is-live-motion .m-dd-ts-density-sel {
   transition: y .28s var(--ease-out), height .28s var(--ease-out), fill var(--duration-slow) var(--ease-out), fill-opacity var(--duration-slow) var(--ease-out), opacity var(--duration-normal) var(--ease-out);
 }
-.m-dd-hero-svg.is-ts-animating .m-dd-ts-density-sel {
+.m-dd-hero-svg.is-ts-animating :is(.m-dd-ts-density-bar, .m-dd-ts-density-sel, .m-dd-ts-focus-dot) {
   transition: fill var(--duration-slow) var(--ease-out), fill-opacity var(--duration-slow) var(--ease-out) !important;
 }
 .m-dd-ts-excluded { pointer-events: none; }
@@ -7020,6 +7021,9 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 .m-dd-ts-focus-dot.is-comp { stroke: var(--accent); }
 .m-dd-ts-focus-dot.is-comp.is-tone-danger { stroke: var(--danger); }
 .m-dd-ts-focus-dot.is-comp.is-tone-warn { stroke: var(--warning); }
+@media (prefers-reduced-motion: reduce) {
+  .m-dd-hero-wrap[data-mode="timestep"] :is(.m-dd-hero-svg *, .m-dd-ts-tooltip) { transition: none !important; }
+}
 .m-dd-ts-foot-note { margin: 0; padding: 0 12px 6px; font: 450 10.5px/1.35 var(--font-sans); color: var(--text-tertiary); }
 .m-dd-ts-foot-note[hidden] { display: none; }
 .m-dd-ts-tooltip {
@@ -7157,6 +7161,7 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 .m-dd-group-dim-block.is-collapsed .m-dd-group-dim-caret { transform: rotate(-90deg); }
 .m-dd-group-dim-title { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font: 650 12px/1.2 var(--font-sans); color: var(--text-primary); }
 .m-dd-group-dim-count { font: 500 11px/1.2 var(--font-sans); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.m-dd-group-ar-badge[hidden] { display: none; }
 .m-dd-group-ar-badge {
   font: 500 11px/1.2 var(--font-sans); font-variant-numeric: tabular-nums;
   color: var(--diag-tone-warn, var(--warning)); cursor: help;
@@ -7266,9 +7271,7 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
   position: absolute; left: 50%; top: -3px; bottom: -3px; width: 2px; border-radius: 1px; transform: translateX(-50%);
   background: color-mix(in srgb, var(--text-primary) 42%, var(--border-default)); z-index: 2; pointer-events: none;
 }
-.m-dd-gauge-fill { position: absolute; top: 0; bottom: 0; width: 50%; z-index: 1; }
-.m-dd-gauge-fill.is-pos { left: 50%; transform-origin: left center; border-radius: 0 var(--radius-pill) var(--radius-pill) 0; }
-.m-dd-gauge-fill.is-neg { right: 50%; transform-origin: right center; border-radius: var(--radius-pill) 0 0 var(--radius-pill); }
+.m-dd-gauge-fill { position: absolute; top: 0; bottom: 0; left: 50%; width: 50%; z-index: 1; transform-origin: left center; border-radius: 0 var(--radius-pill) var(--radius-pill) 0; }
 .m-dd-groups.is-live-motion .m-dd-gauge-fill,
 .m-dd-groups.is-live-motion .m-gauge-fill {
   transition: transform .28s var(--ease-out), background-color .22s var(--ease-out);
@@ -7296,6 +7299,10 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 .m-dd-res-cell > strong { font-size: 12px; }
 .m-dd-gauge { padding: 2px 0; }
 .m-dd-gauge .m-gauge-track { background: color-mix(in srgb, var(--text-primary) 13%, var(--bg-sunken)); }
+@media (prefers-reduced-motion: no-preference) {
+  .m-dd-table-row .m-gauge-fill { transition: left .24s var(--ease-out), width .24s var(--ease-out), background-color .24s var(--ease-out); }
+  .m-dd-table-row .m-dd-num-val { transition: color .24s var(--ease-out); }
+}
 .m-dd-gauge .m-gauge-zero { background: color-mix(in srgb, var(--text-primary) 42%, var(--border-default)); }
 
 .m-dd-images.is-frameless { flex: 1; min-height: 0; display: flex; flex-direction: column; min-width: 0; background: transparent; border: 0; border-radius: 0; box-shadow: none; }
