@@ -173,7 +173,9 @@ If loading preview images over a remote link delays real-time status updates, en
 
 ## Launch Arguments and Project Layout
 
-Pass arguments to the launch script as needed (for example, `.\start.bat --listen` or `bash start.sh --port 12345`):
+Pass arguments to the launch script as needed, for example `.\start.bat --listen` or `bash start.sh --port 12345`.
+
+To require a password on the LAN, start with `.\start.bat --listen --auth "username:password"` and sign in at the browser prompt. With `--listen` alone, anyone who can reach the port can control the trainer. The password may appear in shell history and process listings. On untrusted networks, encrypt the connection with an HTTPS reverse proxy or SSH tunnel.
 
 <details>
 <summary>View all launch arguments</summary>
@@ -183,6 +185,7 @@ Pass arguments to the launch script as needed (for example, `.\start.bat --liste
 | `--host` | Backend server | str | `"127.0.0.1"` | Server listen hostname |
 | `--port` | Backend server | int | `12333` | Server listen port (falls back to `30000–30020` if occupied) |
 | `--listen` | Backend server | bool | `false` | Listen on `0.0.0.0` for LAN or external access |
+| `--auth` | Backend server | str | Off | Require HTTP Basic authentication for the UI, API, WebSocket, and TensorBoard proxy on any bind address. Format: `username:password` |
 | `--skip-prepare-environment` | Backend server | bool | `false` | Skip dependency check and repair at startup |
 | `--skip-prepare-onnxruntime` | Backend server | bool | `false` | Skip the `onnxruntime-gpu` check only |
 | `--disable-tensorboard` | Backend server | bool | `false` | Do not launch the bundled TensorBoard |

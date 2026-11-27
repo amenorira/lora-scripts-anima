@@ -173,7 +173,9 @@ _支持 Anima、SDXL、MOSS-Image 与 Krea 2 的本地 LoRA 训练工具_
 
 ## 启动参数与目录结构
 
-可在启动脚本后附加参数（例如 `.\start.bat --listen` 或 `bash start.sh --port 12345`）：
+可在启动脚本后附加参数，例如 `.\start.bat --listen` 或 `bash start.sh --port 12345`。
+
+需要为局域网访问设置密码时，用 `.\start.bat --listen --auth "用户名:密码"` 启动，打开面板后按浏览器提示登录。单独使用 `--listen` 时，能连接此端口的设备均可操作训练面板。命令行中的密码可能出现在终端历史和进程列表中。通过不受信任的网络访问时，请使用 HTTPS 反向代理或 SSH 隧道加密连接。
 
 <details>
 <summary>查看全部启动参数</summary>
@@ -183,6 +185,7 @@ _支持 Anima、SDXL、MOSS-Image 与 Krea 2 的本地 LoRA 训练工具_
 | `--host` | 后端服务 | str | `"127.0.0.1"` | Web 服务监听主机名 |
 | `--port` | 后端服务 | int | `12333` | Web 服务监听端口（占用时回退至 `30000–30020`） |
 | `--listen` | 后端服务 | bool | `false` | 监听 `0.0.0.0`，允许局域网或外部访问 |
+| `--auth` | 后端服务 | str | 未启用 | 为面板、API、WebSocket 和 TensorBoard 代理启用 HTTP Basic 认证。格式为 `用户名:密码`，适用于所有监听地址 |
 | `--skip-prepare-environment` | 后端服务 | bool | `false` | 跳过启动时的运行环境依赖检查与修复 |
 | `--skip-prepare-onnxruntime` | 后端服务 | bool | `false` | 仅跳过 `onnxruntime-gpu` 的安装检查 |
 | `--disable-tensorboard` | 后端服务 | bool | `false` | 不随 GUI 启动内置 TensorBoard |

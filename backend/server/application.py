@@ -1,4 +1,5 @@
 import asyncio
+import ipaddress
 import mimetypes
 import os
 import sys
@@ -14,6 +15,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from backend.server.api import router as api_router
+from backend.server.auth import BasicAuthMiddleware
 from backend.server.routes.training import router as training_router
 from backend.tensorboard_service import PREFIX, service as tensorboard
 from backend.server.proxy import router as proxy_router
@@ -45,6 +47,21 @@ class SPAStaticFiles(StaticFiles):
                 index_response = await super().get_response("index.html", scope)
                 return index_response
             raise
+
+
+def _access_notice(host: str, authenticated: bool) -> str | None:
+    if authenticated:
+        return ("Authentication enabled. Sign in with the configured username and password. / "
+                "已启用认证。请使用启动时设置的用户名和密码登录。")
+    if host.lower().rstrip(".") == "localhost":
+        return None
+    try:
+        if ipaddress.ip_address(host).is_loopback:
+            return None
+    except ValueError:
+        pass  # A hostname may also be reachable from other machines.
+    return ("Authentication off. Anyone who can reach this port can control the trainer. / "
+            "未启用认证。能连接此端口的设备均可操作训练面板。")
 
 
 async def report_runtime_banner() -> None:
@@ -89,6 +106,7 @@ async def report_runtime_banner() -> None:
         url,
         tensorboard_url=tensorboard_url,
         tensorboard_state=state,
+        access_notice=_access_notice(host, auth_digest is not None),
         log_path=REPO_ROOT / "logs" / "anima.log",
     )
 
@@ -161,16 +179,6 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(proxy_router)
 app.include_router(realtime_router)
 
-# CORS 只服务本地调试（ANIMA_DEV=1）；常规 localhost 使用不需要
-if os.environ.get("ANIMA_DEV") == "1":
-    app.add_middleware(
-        fastapi_cors.CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
 # 压缩文本型响应（静态 JS/CSS、字段注册表 JSON 等）；解压后字节不变
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=3)
 
@@ -232,6 +240,20 @@ class CachePolicyMiddleware:
 
 
 app.add_middleware(CachePolicyMiddleware)
+
+auth_digest = os.environ.get("ANIMA_AUTH_DIGEST")
+if auth_digest is not None:
+    app.add_middleware(BasicAuthMiddleware, digest=auth_digest)
+
+# 最后注册，使开发模式的 CORS 先处理浏览器预检，实际请求继续经过认证。
+if os.environ.get("ANIMA_DEV") == "1":
+    app.add_middleware(
+        fastapi_cors.CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 app.include_router(api_router, prefix="/api")
