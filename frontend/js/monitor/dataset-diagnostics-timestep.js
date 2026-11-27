@@ -1781,7 +1781,7 @@
       wrap._ddHoverMeta = { excludedHover, focusX };
       wrap.classList.add('is-hovering');
       svg.querySelectorAll('.m-dd-ts-density-bar.is-hovered').forEach(el => el.classList.remove('is-hovered'));
-      if (!excludedHover) {
+      if (!excludedHover && (bestBar.count > 0 || bestBar.non_finite_count > 0)) {
         svg.querySelector(`.m-dd-ts-density-bar[data-dd-ts-idx="${bestBar.idx}"]`)?.classList.add('is-hovered');
       }
       wrap.querySelectorAll('[data-dd-zone-col]').forEach(el => {

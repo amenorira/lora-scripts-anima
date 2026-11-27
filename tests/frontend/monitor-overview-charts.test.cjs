@@ -208,7 +208,7 @@ test('full chart includes the reported minimum in its readout, with a disconnect
 });
 
 test('full chart spans a long live run after repeated compaction and keeps the raw diagnostic window', () => {
-  const svg = { setAttribute() {} };
+  const svg = { setAttribute() {}, querySelector: () => null, querySelectorAll: () => [] };
   const wrap = { dataset: {}, querySelector: selector => ({
     '[data-hero-chart-stage]': { clientWidth: 500 }, '[data-hero-chart-svg]': svg,
   })[selector] };
@@ -360,7 +360,7 @@ test('hero charts and summary HUD localize Step, Epoch, and Loss in Japanese', (
     _shellLocale: 'ja-JP',
     esc: String,
     monitorLossSeries: [
-      { tag: 'loss/average', points: [{ step: 10, value: 0.4 }, { step: 20, value: 0.3 }, { step: 30, value: 0.2 }, { step: 40, value: 0.25 }, { step: 50, value: 0.22 }, { step: 60, value: 0.2 }] },
+      { tag: 'loss/average', points: [{ step: 10, value: 0.4 }, { step: 20, value: 0.3 }, { step: 30, value: 0.2 }, { step: 40, value: 0.25 }, { step: 50, value: 0.22 }, { step: 60, value: 0.2 }, { step: 70, value: 0.19 }] },
       { tag: 'loss/epoch_average', points: [{ step: 1, value: 0.35 }, { step: 2, value: 0.25 }] },
     ],
     previews: [{ name: 'img.png', epoch: 2, step: 60, thumb_url: '/thumb' }],
@@ -824,15 +824,18 @@ test('live updates patch SVG attributes in place across modes, overlays, hover s
     view._updateHeroChartHover(wrap, 0.75);
     assert.equal(smoothDot.classList.contains('is-prev-seg'), false);
 
-    // 切换 motionContext 或点数回落 < 2 时清除残留 hover 态
+    // 切换 motionContext 或点数回落 < 6（window 模式）时清除残留 hover 态
     root.dataset.motionContext = 'run-b';
     runPatch();
     assert.equal(wrap.classList.contains('is-hovering'), false);
     assert.equal(svg.querySelector('[data-chart-hover]').getAttribute('display'), 'none');
 
+    view.monitorChartMode = 'window';
+    runPatch();
+    assert.equal(wrap.hidden, false);
     view._updateHeroChartHover(wrap, 0.85);
     assert.equal(wrap.classList.contains('is-hovering'), true);
-    pts.splice(0, pts.length, { step: 10, value: 0.3 });
+    pts.splice(0, pts.length, { step: 10, value: 0.3 }, { step: 20, value: 0.28 }, { step: 30, value: 0.26 });
     view.lossDataVersion = 3;
     runPatch();
     assert.equal(wrap.hidden, true);
@@ -844,17 +847,23 @@ test('live updates patch SVG attributes in place across modes, overlays, hover s
   }
 });
 
-test('the dashboard expands only when a loaded live diagnostic moves out of insufficient data', () => {
+test('the dashboard expands chart and metrics together only when a loaded live diagnostic reaches 6 completed points', () => {
   const metrics = { hidden: true, getBoundingClientRect: () => ({height: 100}), animate() {} };
+  const svg = { setAttribute() {}, innerHTML: '' };
+  const wrap = {
+    hidden: true, dataset: {}, classList: { add() {}, remove() {} },
+    getBoundingClientRect: () => ({height: 152}), animate() {},
+    querySelector: s => ({ '[data-hero-chart-stage]': { clientWidth: 500 }, '[data-hero-chart-svg]': svg })[s] || null,
+  };
   let reveals = 0;
   const card = {
     dataset: {}, querySelectorAll: () => [],
-    querySelector: selector => selector === '.m-diagnostic-metrics' ? metrics : null,
+    querySelector: selector => ({ '.m-diagnostic-metrics': metrics, '[data-hero-chart-wrap]': wrap })[selector] || null,
     getBoundingClientRect: () => ({height: 200}),
     animate() { reveals++; },
   };
   const root = { dataset: {motionContext: 'run-a'}, _metricMotion: true, querySelector: () => card };
-  const view = makeOverview({lossDataVersion: 0, _bindDiagnosticInteractions() {}, _patchDiagnosticGauges() {}});
+  const view = makeOverview({lossDataVersion: 0, esc: String, _bindDiagnosticInteractions() {}, _patchDiagnosticGauges() {}});
   const paint = (detail, count) => {
     view.monitorLossSeries = [{tag: 'loss/average', points: Array.from({length: count}, (_, i) => ({step:i+1, value:1/(i+1)}))}];
     view.lossDataVersion++;
@@ -865,17 +874,50 @@ test('the dashboard expands only when a loaded live diagnostic moves out of insu
   assert.equal(card.dataset.diagnosticState, undefined);
   paint(true, 8);
   assert.equal(card.hidden, false);
+  assert.equal(wrap.hidden, false);
   assert.equal(metrics.hidden, false);
   assert.equal(reveals, 0, 'restoring a populated snapshot stays still');
   root.dataset.motionContext = 'run-b';
   paint(true, 0);
   assert.equal(card.hidden, false);
   assert.equal(card.dataset.diagnosticState, 'insufficient');
-  paint(true, 2);
-  assert.equal(reveals, 0, 'the curve is visible while the verdict is still insufficient');
-  paint(true, 6);
-  paint(true, 7);
+  assert.equal(wrap.hidden, true);
+  paint(true, 3);
+  paint(true, 6); // 5 completed points under RUNNING
+  assert.equal(wrap.hidden, true, 'window chart stays hidden before 6 completed points');
+  assert.equal(metrics.hidden, true);
+  assert.equal(reveals, 0);
+  paint(true, 7); // 6 completed points: chart and metrics reveal together
+  assert.equal(wrap.hidden, false);
+  assert.equal(metrics.hidden, false);
   assert.equal(reveals, 1);
+});
+
+test('a short run can switch from the insufficient diagnostic window to its full Loss history', () => {
+  const modes = {};
+  const svg = { setAttribute() {}, querySelector: () => null, querySelectorAll: () => [] };
+  const wrap = { dataset: {}, querySelector: s => ({
+    '[data-hero-chart-stage]': { clientWidth: 500 }, '[data-hero-chart-svg]': svg,
+  })[s] };
+  const card = { dataset: {}, querySelectorAll: () => [], querySelector: s => ({
+    '.m-chart-modes': modes, '[data-hero-chart-wrap]': wrap,
+  })[s] };
+  const root = { dataset: {}, querySelector: () => card };
+  const points = Array.from({ length: 4 }, (_, i) => ({ step: i + 1, value: 1 / (i + 1) }));
+  const view = makeOverview({ monitorLossSeries: [{ tag: 'loss/average', points }],
+    _bindDiagnosticInteractions() {}, _patchDiagnosticGauges() {} });
+  const draw = () => view._patchTrainingDiagnostics(root, String, { state: 'FINISHED', detail: true }, true);
+  draw();
+  assert.equal(wrap.hidden, true);
+  assert.equal(modes.hidden, false);
+  view.monitorChartMode = 'full';
+  draw();
+  assert.equal(wrap.hidden, false);
+  assert.equal(wrap._chartState.coords.length, 4);
+  view.monitorLossSeries[0].points = points.slice(0, 1);
+  view.monitorChartMode = 'window';
+  draw();
+  assert.equal(modes.hidden, true);
 });
 
 test('diagnostic tone transition activates only after initial paint within the same live context', () => {
@@ -939,7 +981,7 @@ test('diagnostic tone transition activates only after initial paint within the s
   assert.equal(card.classList.contains('is-live-motion'), false);
 });
 
-test('live rescaling moves the axis and plotted values together and retargets from the visible range', t => {
+test('live rescaling moves the axis and plotted values together at fixed window spacing and retargets from the visible range', t => {
   const frames = new Map();
   let id = 0;
   const originalRequest = global.requestAnimationFrame;
@@ -955,7 +997,7 @@ test('live rescaling moves the axis and plotted values together and retargets fr
     frames.clear();
     pending.forEach(cb => cb(performance.now() + ms));
   };
-  const svg = { setAttribute() {} };
+  const svg = { setAttribute() {}, querySelector: () => null, querySelectorAll: () => [] };
   const wrap = {dataset: {}, querySelector: key => ({
     '[data-hero-chart-stage]': {clientWidth: 500}, '[data-hero-chart-svg]': svg,
   })[key]};
@@ -968,7 +1010,10 @@ test('live rescaling moves the axis and plotted values together and retargets fr
   draw();
   const initial = wrap._chartState.range.high;
   const oldX = wrap._chartState.coords[2].x;
-  const pitch = wrap._chartState.coords[3].x - oldX;
+  const oldSplitX = wrap._chartState.splitX;
+  const pitch = wrap._chartState.plotW / 79;
+  assert.ok(Math.abs((wrap._chartState.coords[3].x - oldX) - pitch) < 1e-8);
+  assert.ok(Math.abs(wrap._chartState.coords.at(-1).x - (wrap._chartState.padL + wrap._chartState.plotW)) < 1e-8);
   points.push({step: 6, value: .6});
   lrPoints.push({step: 6, value: .002});
   draw();
@@ -976,11 +1021,10 @@ test('live rescaling moves the axis and plotted values together and retargets fr
   advance(80);
   const state = wrap._chartState;
   assert.ok(initial < state.range.high && state.range.high < state.targetRange.high);
-  assert.ok(Math.abs(state.splitX - (state.padL + state.plotW / 2)) < 1e-8);
+  assert.ok(state.splitX < oldSplitX && state.splitX > oldSplitX - pitch * 0.5);
   const point = state.coords[2];
   assert.ok(point.x < oldX && point.x > oldX - pitch);
-  assert.ok(state.coords[3].x - point.x < pitch);
-  assert.ok(state.coords[3].x - point.x > state.plotW / 6);
+  assert.ok(Math.abs((state.coords[3].x - point.x) - pitch) < 1e-8, 'horizontal point spacing stays locked during live animation');
   assert.ok(state.range.lrMax > .001 && state.range.lrMax < .002);
   assert.equal(state.coords.at(-1).step, 5, 'hover exposes only recorded points inside the moving viewport');
   const expectedY = state.padT + state.plotH * (state.range.high - point.value) / (state.range.high - state.range.low);
@@ -991,34 +1035,68 @@ test('live rescaling moves the axis and plotted values together and retargets fr
   assert.equal(frames.size, 1);
   advance(300);
   assert.ok(wrap._chartState.range.high > .75);
-  assert.ok(Math.abs(wrap._chartState.coords[2].x - (state.padL + 2 * state.plotW / 7)) < 1e-8);
+  assert.ok(Math.abs(wrap._chartState.coords[2].x - (state.padL + state.plotW - 5 * pitch)) < 1e-8);
+  assert.ok(Math.abs((wrap._chartState.coords[3].x - wrap._chartState.coords[2].x) - pitch) < 1e-8);
   assert.equal(frames.size, 0);
 });
 
-test('the initial trace fills the plot, grows from a stable origin, then scrolls at fixed spacing', () => {
-  const svg = {setAttribute() {}};
-  const wrap = {dataset: {}, querySelector: s => ({
-    '[data-hero-chart-stage]': {clientWidth: 600}, '[data-hero-chart-svg]': svg,
-  })[s]};
+test('the diagnostic window aligns right at fixed 80-point spacing without deformation, hides unfilled hover, and scrolls seamlessly', () => {
+  const svg = { setAttribute() {}, querySelector: () => null, querySelectorAll: () => [] };
+  const wrapClasses = new Set();
+  const wrap = {
+    dataset: {},
+    classList: {
+      add: n => wrapClasses.add(n),
+      remove: n => wrapClasses.delete(n),
+      contains: n => wrapClasses.has(n),
+    },
+    querySelector: s => ({
+      '[data-hero-chart-stage]': { clientWidth: 600 },
+      '[data-hero-chart-svg]': svg,
+    })[s] || null,
+  };
   const card = {dataset: {}, querySelectorAll: () => [], querySelector: s => s === '[data-hero-chart-wrap]' ? wrap : null};
   const root = {dataset: {}, querySelector: () => card};
   const points = Array.from({length: 6}, (_, i) => ({step: i * 20 + 20, value: .1 + i / 100}));
   const view = makeOverview({lossDataVersion: 0, monitorLossSeries: [liveLossSeries(points)],
     _bindDiagnosticInteractions() {}, _patchDiagnosticGauges() {}});
-  const render = () => {
+  const render = (running = true) => {
     view.lossDataVersion++;
-    view._patchTrainingDiagnostics(root, String, {state:'RUNNING', step: points.at(-1).step + 1, detail: true, total_steps:12000}, false);
+    view._patchTrainingDiagnostics(root, String, {state: running ? 'RUNNING' : 'FINISHED', step: points.at(-1).step + 1, detail: true, total_steps:12000}, !running);
     return wrap._chartState;
   };
   const first = render();
+  const fixedPitch = first.plotW / 79;
+  assert.equal(first.coords.length, 6);
+  assert.equal(first.stepSpan, 79 * 20);
+  assert.ok(Math.abs(first.coords.at(-1).x - (first.padL + first.plotW)) < 1e-8);
+  assert.ok(Math.abs((first.coords[1].x - first.coords[0].x) - fixedPitch) < 1e-8);
+
+  // 左侧空白区悬停应自动清除（即使在历史/非滚动模式下）
+  view._updateHeroChartHover(wrap, (first.padL + 10) / first.width);
+  assert.equal(wrap.classList.contains('is-hovering'), false);
+  view._updateHeroChartHover(wrap, (first.padL + first.plotW - 2) / first.width);
+  assert.equal(wrap.classList.contains('is-hovering'), true);
+
   for (let step = 140; step <= 2460; step += 20) {
     points.push({step, value:.21});
     const state = render();
     assert.equal(state.coords[0].step, Math.max(20, step - 79 * 20));
-    assert.equal(state.coords[0].x, first.padL);
-    assert.equal(state.coords.at(-1).x, first.padL + first.plotW);
-    assert.equal(state.stepSpan, Math.min(step - 20, 79 * 20));
-    assert.equal(state.splitX, first.padL + first.plotW / 2);
+    assert.ok(Math.abs(state.coords.at(-1).x - (first.padL + first.plotW)) < 1e-8);
+    assert.equal(state.stepSpan, 79 * 20);
+    assert.ok(Math.abs((state.coords[1].x - state.coords[0].x) - fixedPitch) < 1e-8);
+    assert.doesNotMatch(svg.innerHTML, /sampleStep[^<]*-\d+/);
+    const unfilledBg = /data-hero-unfilled-bg[^>]*>/.exec(svg.innerHTML)[0];
+    const prevMeanLine = /data-hero-prev-mean[^>]*>/.exec(svg.innerHTML)[0];
+    if (points.length < 80) {
+      assert.ok(!unfilledBg.includes('display="none"'), `unfilled bg visible at count ${points.length}`);
+      assert.ok(prevMeanLine.includes(`x1="${state.coords[0].x.toFixed(1)}"`), 'previous mean starts at actual data start');
+      assert.ok(state.coords[0].x > first.padL + 2);
+    } else {
+      assert.ok(unfilledBg.includes('display="none"'), `unfilled bg hides once 80 points fill (${points.length})`);
+      assert.ok(Math.abs(state.coords[0].x - first.padL) < 1e-8);
+      assert.ok(Math.abs(state.splitX - (first.padL + first.plotW / 2)) < 1e-8);
+    }
     if (step === 2020) {
       const diagnostic = view._trainingDiagnostics(points);
       assert.deepEqual([diagnostic.windowSize, diagnostic.previousStartStep, diagnostic.previousEndStep,
@@ -1026,9 +1104,331 @@ test('the initial trace fills the plot, grows from a stable origin, then scrolls
     }
     if (step <= 200) assert.equal(state.range.low, first.range.low);
   }
+  // 历史/已结束短训练在诊断窗口下同样右对齐定尺且屏蔽左侧空白 hover
+  const shortHistory = Array.from({length: 12}, (_, i) => ({step: (i + 1) * 10, value: 0.3 - i * 0.01}));
+  view.monitorLossSeries = [{tag: 'loss/average', points: shortHistory}];
+  const histState = render(false);
+  assert.ok(histState.coords[0].x > histState.padL + 100);
+  assert.ok(Math.abs(histState.coords.at(-1).x - (histState.padL + histState.plotW)) < 1e-8);
+  view._updateHeroChartHover(wrap, (histState.padL + 10) / histState.width);
+  assert.equal(wrap.classList.contains('is-hovering'), false);
+
+  // 空坐标不抛错
+  wrap._chartState.coords = [];
+  view._updateHeroChartHover(wrap, 0.5);
+  assert.equal(wrap.classList.contains('is-hovering'), false);
+
+  // 大步数/日文长标签在半窗较窄时自动标记 is-crowded，且 LR 叠加时右下最低点标注避让 axisLrMin
+  const jaDict = JSON.parse(readRepo('frontend/i18n/ja-JP.json'));
+  const jaT = key => key.split('.').reduce((v, part) => v?.[part], jaDict) ?? key;
+  const jaView = makeOverview({
+    t: jaT,
+    _shellLocale: 'ja-JP',
+    esc: String,
+    monitorChartShowLr: true,
+    monitorLossSeries: [
+      { tag: 'loss/average', points: Array.from({ length: 14 }, (_, i) => ({ step: 10001 + i, value: i === 12 ? 0.04 : 0.2 - i * 0.004 })) },
+      { tag: 'lr/unet', points: Array.from({ length: 14 }, (_, i) => ({ step: 10001 + i, value: 1e-4 - i * 2e-6 })) },
+    ],
+    _bindDiagnosticInteractions() {},
+    _patchDiagnosticGauges() {},
+  });
+  jaView._patchTrainingDiagnostics(root, k => jaView.tMonitor(k), { state: 'FINISHED', detail: true, total_steps: 20000 }, true);
+  assert.match(svg.innerHTML, /class="is-crowded" data-hero-axis-start/);
+  const bestCalloutY = Number(/data-hero-best-callout[^>]*y="([^"]+)"/.exec(svg.innerHTML)[1]);
+  assert.ok(bestCalloutY <= 12 + 114 - 19, `expected bestCalloutY (${bestCalloutY}) above bottom-right LR label`);
+
+  view.monitorLossSeries = [liveLossSeries(points)];
+  render(true);
   points.push({step: 10000, value:.22});
   const sparse = render();
   const diagnostic = view._trainingDiagnostics(points);
   const cutoff = sparse.minStep + (sparse.splitX - sparse.padL) / sparse.plotW * sparse.stepSpan;
   assert.ok(cutoff >= diagnostic.previousEndStep - 1e-8 && cutoff <= diagnostic.recentStartStep + 1e-8);
+});
+
+test('the summary Loss sparkline anchors right at fixed 30-slot spacing without stretching early samples', () => {
+  const makeEl = () => {
+    const attrs = {};
+    return {
+      dataset: {},
+      style: {},
+      children: [],
+      setAttribute(k, v) { attrs[k] = String(v); },
+      getAttribute(k) { return Object.prototype.hasOwnProperty.call(attrs, k) ? attrs[k] : null; },
+      remove() {
+        const idx = hits.children.indexOf(this);
+        if (idx >= 0) hits.children.splice(idx, 1);
+      },
+    };
+  };
+  const pulse = makeEl(), dot = makeEl(), line = makeEl(), area = makeEl(), mean = makeEl();
+  const hits = {
+    children: [],
+    get lastElementChild() { return this.children.at(-1) || null; },
+    insertAdjacentHTML(_pos, _html) {
+      const item = makeEl();
+      item.children = [makeEl(), makeEl(), makeEl()];
+      this.children.push(item);
+    },
+  };
+  let hasSvg = false;
+  const host = {
+    isConnected: true,
+    hidden: true,
+    set innerHTML(val) { hasSvg = Boolean(val); },
+    get innerHTML() { return hasSvg ? '<svg/>' : ''; },
+    closest: () => null,
+    querySelector: sel => {
+      if (!hasSvg) return null;
+      return ({
+        '.m-loss-profile-svg': {},
+        '.m-loss-pulse': pulse,
+        '.m-loss-dot': dot,
+        '.m-loss-line': line,
+        '.m-loss-area': area,
+        '.m-loss-mean-line': mean,
+        '[data-loss-hits]': hits,
+      })[sel] || null;
+    },
+  };
+  const root = { querySelector: sel => sel === '[data-summary-viz="loss"]' ? host : null };
+  const view = makeOverview();
+  const slotStep = (188 - 6) / 29;
+
+  for (const count of [2, 8, 30, 31]) {
+    const points = Array.from({ length: count }, (_, i) => ({ step: i + 1, value: 0.3 - i * 0.005 }));
+    view._patchSummaryLossProfile(root, { tag: 'loss/current', points }, 0.22, false, String, false);
+    const trace = host._lossTrace.points;
+    const expectedStart = count >= 30 ? 6 : 188 - (count - 1) * slotStep;
+    assert.ok(Math.abs(trace[0].x - expectedStart) < 1e-8, `count ${count} start x`);
+    assert.ok(Math.abs(trace.at(-1).x - 188) < 1e-8, `count ${count} tip stays anchored at xEnd`);
+    assert.ok(Math.abs((trace[1].x - trace[0].x) - slotStep) < 1e-8, `count ${count} pitch locked`);
+    assert.equal(mean.getAttribute('x1'), trace[0].x.toFixed(1));
+    assert.ok(area.getAttribute('d').endsWith(`L188 92 L${trace[0].x.toFixed(1)} 92 Z`));
+    const firstHitLeft = Number(hits.children[0].children[0].getAttribute('x'));
+    assert.ok(firstHitLeft >= trace[0].x - slotStep / 2 - 0.11, `count ${count} hit rect excludes left whitespace`);
+  }
+});
+
+test('the summary LR sparkline keeps early 30-point spacing when totalSteps is unknown, maps full-range when known, and splits hit rects at midpoints', () => {
+  const parseLrHits = html => Array.from(
+    html.matchAll(/<rect class="m-viz-hit" x="([^"]+)" y="6" width="([^"]+)"[^>]*\/>.*?<circle class="m-viz-hover-dot is-lr" cx="([^"]+)" cy="([^"]+)"/g),
+    m => ({ x: Number(m[1]), width: Number(m[2]), cx: Number(m[3]), cy: Number(m[4]) })
+  );
+  const makeLrHost = () => ({
+    isConnected: true,
+    hidden: true,
+    innerHTML: '',
+    closest: () => null,
+    querySelector: () => null,
+  });
+
+  // 1. 未知 totalSteps（0 / null / -1）：早期 2..29 点保留 30 点跨度，不拉满全宽
+  const view = makeOverview({ esc: String });
+  const slotStep = (188 - 6) / 29;
+  for (const totalSteps of [0, null, -1]) {
+    for (const count of [2, 8, 29, 30]) {
+      const host = makeLrHost();
+      const root = { _metricMotion: false, querySelector: sel => sel === '[data-summary-viz="lr"]' ? host : null };
+      const points = Array.from({ length: count }, (_, i) => ({ step: i * 10, value: 1e-4 }));
+      view._patchSummaryLrProfile(root, { tag: 'lr/unet', points }, totalSteps, true, String);
+      const hits = parseLrHits(host.innerHTML);
+      assert.equal(hits.length, count);
+      const expectedLastX = 6 + (count - 1) * slotStep;
+      assert.ok(Math.abs(hits[0].cx - 6) <= 0.1, `totalSteps=${totalSteps} count=${count} starts at xStart`);
+      assert.ok(Math.abs(hits.at(-1).cx - expectedLastX) <= 0.1, `totalSteps=${totalSteps} count=${count} keeps fixed pitch`);
+      if (count < 30) {
+        assert.ok(hits.at(-1).cx < 188 - 2, `count=${count} should not stretch to xEnd`);
+      } else {
+        assert.ok(Math.abs(hits.at(-1).cx - 188) <= 0.1, 'count=30 reaches xEnd');
+      }
+    }
+  }
+
+  // 2. 已知 totalSteps：全程左->右映射，且热区不进入右侧未来预测区
+  const schedView = makeOverview({
+    esc: String,
+    trainParams: [
+      { key: 'optimizer_type', value: 'AdamW8bit' },
+      { key: 'lr_scheduler', value: 'cosine' },
+      { key: 'lr_warmup_steps', value: 100 },
+      { key: 'learning_rate', value: 1e-4 },
+    ],
+  });
+  const knownHost = makeLrHost();
+  const knownRoot = { _metricMotion: false, querySelector: sel => sel === '[data-summary-viz="lr"]' ? knownHost : null };
+  const earlyPts = [{ step: 50, value: 5e-5 }, { step: 150, value: 1e-4 }, { step: 300, value: 9.0e-5 }];
+  schedView._patchSummaryLrProfile(knownRoot, { tag: 'lr/unet', points: earlyPts }, 1000, true, String);
+  const knownHits = parseLrHits(knownHost.innerHTML);
+  assert.equal(knownHits.length, 3);
+  const expected300X = 6 + (300 / 1000) * (188 - 6);
+  assert.ok(Math.abs(knownHits[2].cx - expected300X) <= 0.1);
+  assert.match(knownHost.innerHTML, /class="m-lr-future" d="M[^"]+ 188\.0 /);
+  const lastKnownRight = knownHits[2].x + knownHits[2].width;
+  assert.ok(lastKnownRight <= expected300X + 6 + 0.15, `last hit right ${lastKnownRight} stays out of future region`);
+
+  view._patchSummaryLrProfile(knownRoot, { points: [{ step: 1, value: 1e-4 }, { step: 2, value: 2e-4 }] }, 10000, true, String);
+  const denseHits = parseLrHits(knownHost.innerHTML);
+  assert.equal(denseHits.length, 2);
+  assert.equal(denseHits[0].cx, denseHits[1].cx, 'both guides still use the true full-run scale');
+  assert.ok(denseHits.every(hit => hit.width >= 3), 'each early step has a separate pointer target');
+  assert.equal(denseHits[0].x + denseHits[0].width, denseHits[1].x);
+
+  // 已知 totalSteps 且 lastStep > totalSteps：映射到 [minStep, Math.max(totalSteps, lastStep)]
+  const overflowHost = makeLrHost();
+  const overflowRoot = { _metricMotion: false, querySelector: sel => sel === '[data-summary-viz="lr"]' ? overflowHost : null };
+  schedView._patchSummaryLrProfile(overflowRoot, { tag: 'lr/unet', points: [{ step: 10, value: 1e-4 }, { step: 1200, value: 1e-5 }] }, 1000, true, String);
+  const overflowHits = parseLrHits(overflowHost.innerHTML);
+  assert.ok(Math.abs(overflowHits[1].cx - 188) <= 0.1);
+
+  // 3. 相邻中点热区无重叠、无空洞、且严格裁剪在 [xStart, xEnd]
+  for (const irregularPts of [
+    [
+      { step: 0, value: 1e-4 },
+      { step: 30, value: 1.2e-4 },
+      { step: 90, value: 8e-5 },
+      { step: 150, value: 6e-5 },
+      { step: 290, value: 2e-5 },
+    ],
+    [
+      { step: 1, value: 1e-4 },
+      { step: 2, value: 9e-5 },
+      { step: 100, value: 5e-5 },
+    ],
+    Array.from({ length: 64 }, (_, i) => ({ step: i + 1, value: 1e-4 })),
+  ]) {
+    const irregularHost = makeLrHost();
+    const irregularRoot = { _metricMotion: false, querySelector: sel => sel === '[data-summary-viz="lr"]' ? irregularHost : null };
+    const total = irregularPts.length === 64 ? 10000 : 0;
+    view._patchSummaryLrProfile(irregularRoot, { tag: 'lr/unet', points: irregularPts }, total, false, String);
+    const irregularHits = parseLrHits(irregularHost.innerHTML);
+    assert.equal(irregularHits.length, irregularPts.length);
+    assert.ok(irregularHits[0].x >= 6 - 1e-6, 'first hit rect never enters left margin < xStart');
+    assert.ok(irregularHits.at(-1).x + irregularHits.at(-1).width <= 188 + 1e-6, 'last hit rect never exceeds xEnd');
+    for (let i = 1; i < irregularHits.length; i++) {
+      const prevRight = irregularHits[i - 1].x + irregularHits[i - 1].width;
+      assert.ok(Math.abs(prevRight - irregularHits[i].x) < 1e-9);
+    }
+    assert.ok(irregularHits.every(hit => hit.width > 0));
+  }
+
+  // 数据回落 < 2 点时同步清理 HUD 与 tile title
+  const shrinkHost = makeLrHost();
+  const hud = { classList: { removed: [], remove(c) { this.removed.push(c); } } };
+  const shrinkTile = {
+    title: 'stale',
+    removeAttribute(k) { if (k === 'title') this.title = null; },
+    querySelector: sel => sel === '[data-summary-hud]' ? hud : null,
+  };
+  shrinkHost.closest = () => shrinkTile;
+  shrinkHost._hoverIdx = 1;
+  const shrinkRoot = { _metricMotion: false, querySelector: sel => sel === '[data-summary-viz="lr"]' ? shrinkHost : null };
+  view._patchSummaryLrProfile(shrinkRoot, { tag: 'lr/unet', points: [{ step: 1, value: 1e-4 }] }, 0, false, String);
+  assert.equal(shrinkHost.hidden, true);
+  assert.equal(shrinkHost._hoverIdx, undefined);
+  assert.equal(shrinkTile.title, null);
+  assert.deepEqual(hud.classList.removed, ['is-visible']);
+
+  // 4. CSS 取消 LR 卡片左侧渐隐遮罩
+  const appCss = readRepo('frontend/css/app.css');
+  assert.match(appCss, /\.m-metric-viz-lr\s*\{\s*-webkit-mask-image:\s*none;\s*mask-image:\s*none;\s*\}/);
+
+  // 5. _transitionSummaryProjection 与 _summaryLrPainter 在只变 Y 轴和变点数/X 轴时均无异常残留
+  const { withAnimationFrames } = require('./helpers-animation.cjs');
+  withAnimationFrames(({ tick, frames }) => {
+    const prevCreateElementNS = global.document.createElementNS;
+    const makeSvgEl = (cls = '') => {
+      const attrs = { class: cls };
+      return {
+        children: [],
+        setAttribute(k, v) { attrs[k] = String(v); },
+        getAttribute(k) { return Object.prototype.hasOwnProperty.call(attrs, k) ? attrs[k] : null; },
+        removeAttribute(k) { delete attrs[k]; },
+        remove() {},
+      };
+    };
+    global.document.createElementNS = (_ns, _tag) => makeSvgEl();
+    try {
+      const svg = {
+        past: makeSvgEl('m-lr-past'),
+        area: makeSvgEl('m-lr-area'),
+        future: makeSvgEl('m-lr-future'),
+        dot: makeSvgEl('m-lr-dot'),
+        pulse: makeSvgEl('m-lr-pulse'),
+        guides: [],
+        dots: [],
+        hitsGroup: {
+          _html: '',
+          set innerHTML(val) {
+            this._html = val;
+            svg.guides = Array.from(val.matchAll(/class="m-viz-guide"[^>]*x1="([^"]+)"[^>]*y1="([^"]+)"/g), m => {
+              const el = makeSvgEl('m-viz-guide');
+              el.setAttribute('x1', m[1]);
+              el.setAttribute('y1', m[2]);
+              return el;
+            });
+            svg.dots = Array.from(val.matchAll(/class="m-viz-hover-dot is-lr" cx="([^"]+)" cy="([^"]+)"/g), m => {
+              const el = makeSvgEl('m-viz-hover-dot is-lr');
+              el.setAttribute('cx', m[1]);
+              el.setAttribute('cy', m[2]);
+              return el;
+            });
+          },
+          get innerHTML() { return this._html; },
+        },
+        querySelector(sel) {
+          return ({
+            '[data-lr-hits]': this.hitsGroup,
+            '.m-lr-area': this.area,
+            '.m-lr-future': this.future,
+            '.m-lr-past': this.past,
+            '.m-lr-dot': this.dot,
+            '.m-lr-pulse': this.pulse,
+          })[sel] || null;
+        },
+        querySelectorAll(sel) {
+          if (sel === '.m-lr-dot, .m-lr-pulse') return [this.dot, this.pulse];
+          if (sel === '.m-viz-guide') return this.guides;
+          if (sel === '.m-viz-hover-dot') return this.dots;
+          return [];
+        },
+        insertBefore() {},
+      };
+      const host = {
+        isConnected: true,
+        hidden: false,
+        closest: () => null,
+        querySelector: sel => sel === '.m-lr-profile-svg' ? svg : svg.querySelector(sel),
+        querySelectorAll: sel => svg.querySelectorAll(sel),
+      };
+      const root = { _metricMotion: true, querySelector: sel => sel === '[data-summary-viz="lr"]' ? host : null };
+      const animView = makeOverview({ esc: String, _monitorMotionAllowed: () => true });
+
+      const series1 = [{ step: 0, value: 1e-4 }, { step: 10, value: 1e-4 }];
+      animView._patchSummaryLrProfile(root, { tag: 'lr/unet', points: series1 }, 0, true, String);
+      assert.equal(frames.size, 0);
+
+      // Y 轴比例变化（新增更高 LR 点，同时点数/X 增加）：启动平滑过渡且全部 hover 点数同步
+      const series2 = [...series1, { step: 20, value: 2e-4 }];
+      animView._patchSummaryLrProfile(root, { tag: 'lr/unet', points: series2 }, 0, true, String);
+      assert.equal(frames.size, 1);
+      assert.equal(svg.dots.length, 3);
+      const midDotCy = Number(svg.dots[2].getAttribute('cy'));
+      tick(performance.now() + 80);
+      assert.notEqual(Number(svg.dots[2].getAttribute('cy')), midDotCy);
+      tick(performance.now() + 300);
+      assert.equal(frames.size, 0);
+
+      // 仅 X/点数变化（maxVal 不变）：不启动额外投影动画且直接更新为 4 点坐标
+      const series3 = [...series2, { step: 30, value: 1.5e-4 }];
+      animView._patchSummaryLrProfile(root, { tag: 'lr/unet', points: series3 }, 0, true, String);
+      assert.equal(frames.size, 0);
+      assert.equal(svg.dots.length, 4);
+      assert.ok(Math.abs(Number(svg.dot.getAttribute('cx')) - (6 + 3 * slotStep)) <= 0.1);
+    } finally {
+      if (prevCreateElementNS === undefined) delete global.document.createElementNS;
+      else global.document.createElementNS = prevCreateElementNS;
+    }
+  });
 });

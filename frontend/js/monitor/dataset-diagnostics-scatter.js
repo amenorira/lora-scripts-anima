@@ -1922,7 +1922,7 @@
       const yTickMinPx = ((!hasZoom && plotH > 140) || (!xTicksAbove && yDockedTop)) ? padT + 22 : padT + 18;
       const yTickMaxPx = ((!hasZoom && plotH > 140) || xTicksAbove) ? padT + plotH - 22 : padT + plotH - 16;
       return {
-        xDockedLeft, xDockedRight, yDockedTop, yDockedBottom, showOriginZero,
+        axisX, xDockedLeft, xDockedRight, yDockedTop, yDockedBottom, showOriginZero,
         yTicksRight, yTickX, yTickAnchor, xTicksAbove, xTickY, xDirY,
         yDirOnLeft, yDirX, yDirAnchor, originX, originAnchor, originY,
         xTickMinPx, xTickMaxPx, yTickMinPx, yTickMaxPx,
@@ -1954,7 +1954,7 @@
               rx: padL, ry: padT, rw: bw, rh: plotH,
               lx1: bx, lx2: bx, ly1: padT, ly2: padT + plotH,
               showLabel: bw > 54,
-              tx: bx - 4, ty: padT + 11, anchor: 'end', op,
+              tx: bx - 4, ty: hasY ? padT + 11 : padT + plotH - 6, anchor: 'end', op,
             };
           }
         }
@@ -2760,11 +2760,19 @@
           else this._ddReconcileZoneRect(zonesGroup, 'attention', curAttX, padT, curAttW, curAttH, attOk);
           if (zoneLrnEl) this._ddSetZoneRectGeom(zoneLrnEl, curAttX, curLearningY, curAttW, curLrnH, lrnOk);
           else this._ddReconcileZoneRect(zonesGroup, 'learning', curAttX, curLearningY, curAttW, curLrnH, lrnOk);
+          const curAttLabelVis = curAttW > 54 && curAttH > 20;
           if (threshHighEl) {
             const vis = curXHigh >= padL + 8 && curXHigh <= padL + plotW - 16;
-            const hlx = curXHigh > padL + plotW - 44 ? curXHigh - 4 : curXHigh + 4;
-            threshHighEl.setAttribute('x', hlx.toFixed(1));
-            threshHighEl.setAttribute('text-anchor', curXHigh > padL + plotW - 44 ? 'end' : 'start');
+            const highText = threshHighEl.textContent || `+${Math.round(highResVal * 100)}%`;
+            const attText = zoneAttLabelEl?.textContent || curSpec.labelSpec?.att?.text || '';
+            const cly = (curAttW > 28 && curYConv >= padT + 14 && curYConv <= padT + plotH - 8)
+              ? (Math.abs(curYConv - curAxisY) < 12 ? curYConv + 11 : curYConv - 4)
+              : null;
+            const topObs = curHasZoom ? [] : (curSpec.topObstacles || []);
+            const highPos = this._ddResolveScatterHighLabel(padL, padT, plotW, plotH, curXHigh, highText, curAttLabelVis, attText, cly, topObs, curAxisX);
+            threshHighEl.setAttribute('x', highPos.x);
+            threshHighEl.setAttribute('y', highPos.y);
+            threshHighEl.setAttribute('text-anchor', highPos.anchor);
             threshHighEl.style.opacity = vis ? '1' : '0';
           }
           if (threshConvEl) {
@@ -2774,7 +2782,7 @@
             threshConvEl.setAttribute('y', cly.toFixed(1));
             threshConvEl.style.opacity = vis ? '1' : '0';
           }
-          if (zoneAttLabelEl) zoneAttLabelEl.style.opacity = (curAttW > 54 && curAttH > 20) ? '1' : '0';
+          if (zoneAttLabelEl) zoneAttLabelEl.style.opacity = curAttLabelVis ? '1' : '0';
           if (zoneLrnLabelEl) zoneLrnLabelEl.style.opacity = (curAttW > 54 && curLrnH > 20) ? '1' : '0';
         } else {
           if (liveZones && curAttW > 4) {
@@ -2782,14 +2790,19 @@
           }
           if (zoneAttEl) this._ddSetZoneRectGeom(zoneAttEl, curAttX, padT, curAttW, plotH, curAttW > 4);
           else this._ddReconcileZoneRect(zonesGroup, 'attention', curAttX, padT, curAttW, plotH, curAttW > 4);
+          const curAttLabelVis = curAttW > 54;
           if (threshHighEl) {
             const vis = curXHigh >= padL + 8 && curXHigh <= padL + plotW - 16;
-            const hlx = curXHigh > padL + plotW - 44 ? curXHigh - 4 : curXHigh + 4;
-            threshHighEl.setAttribute('x', hlx.toFixed(1));
-            threshHighEl.setAttribute('text-anchor', curXHigh > padL + plotW - 44 ? 'end' : 'start');
+            const highText = threshHighEl.textContent || `+${Math.round(highResVal * 100)}%`;
+            const attText = zoneAttLabelEl?.textContent || curSpec.labelSpec?.att?.text || '';
+            const topObs = curHasZoom ? [] : (curSpec.topObstacles || []);
+            const highPos = this._ddResolveScatterHighLabel(padL, padT, plotW, plotH, curXHigh, highText, curAttLabelVis, attText, null, topObs);
+            threshHighEl.setAttribute('x', highPos.x);
+            threshHighEl.setAttribute('y', highPos.y);
+            threshHighEl.setAttribute('text-anchor', highPos.anchor);
             threshHighEl.style.opacity = vis ? '1' : '0';
           }
-          if (zoneAttLabelEl) zoneAttLabelEl.style.opacity = curAttW > 54 ? '1' : '0';
+          if (zoneAttLabelEl) zoneAttLabelEl.style.opacity = curAttLabelVis ? '1' : '0';
         }
 
         if (bandsGroup && bandSlots) {
@@ -3132,13 +3145,70 @@
       return next;
     },
 
+    _ddEstimateScatterLabelWidth(text, fontSize = 10.5) {
+      let units = 0;
+      for (const ch of String(text || '')) {
+        if (/[\u3000-\u9fff\uff00-\uffef]/.test(ch)) units += 1.08;
+        else if (ch === ' ') units += 0.48;
+        else units += 0.65;
+      }
+      return units * fontSize;
+    },
+
+    _ddResolveScatterHighLabel(padL, padT, plotW, plotH, xHigh, highText, attVisible, attText, convLabelY = null, topObstacles = [], obstacleOffsetX = 0) {
+      const highW = this._ddEstimateScatterLabelWidth(highText, 10);
+      const attW = attVisible ? this._ddEstimateScatterLabelWidth(attText, 10.5) : 0;
+      const attLeft = padL + plotW - 6 - attW;
+      const hitsObstacle = (left, right) => {
+        if (attVisible && right + 8 > attLeft) return true;
+        for (const obs of topObstacles) {
+          if (obs && right + 6 > obstacleOffsetX + obs.left && left - 6 < obstacleOffsetX + obs.right) return true;
+        }
+        return false;
+      };
+      const rightStart = xHigh + 4;
+      const rightCollidesConv = convLabelY != null && Math.abs((padT + 11) - convLabelY) < 12;
+      const rightOverflows = xHigh > padL + plotW - 44 || (rightStart + highW > padL + plotW - 4);
+      const rightBlocked = rightOverflows || rightCollidesConv || hitsObstacle(rightStart, rightStart + highW);
+
+      const leftEnd = xHigh - 4;
+      const leftStart = leftEnd - highW;
+      const leftFitsBounds = leftStart >= padL + 4;
+      const leftClearsTop = !hitsObstacle(leftStart, leftEnd);
+
+      let x = rightStart;
+      let y = padT + 11;
+      let anchor = 'start';
+      if (rightBlocked) {
+        if (leftFitsBounds && leftClearsTop) {
+          x = leftEnd;
+          anchor = 'end';
+        } else {
+          y = padT + 25;
+          if (convLabelY != null && Math.abs(y - convLabelY) < 12) {
+            y = Math.min(padT + plotH - 6, convLabelY + 12);
+          }
+          if (!rightOverflows && rightStart + highW <= padL + plotW - 4 && (!attVisible || rightStart + highW + 8 <= attLeft || y >= padT + 25)) {
+            x = rightStart;
+            anchor = 'start';
+          } else if (leftFitsBounds) {
+            x = leftEnd;
+            anchor = 'end';
+          } else {
+            x = Math.max(padL + 4 + highW, leftEnd);
+            anchor = 'end';
+          }
+        }
+      }
+      return { x: x.toFixed(1), y: String(Math.round(y * 10) / 10), anchor };
+    },
+
     _ddBuildScatterMetaSpec(kind, t, ptSet, data, padL, padT, plotW, plotH, hasZoom, layout, xHigh, toY, axisY, earlyTickY) {
       const highResVal = data.thresholds?.high_residual ?? 0.20;
       const attX = Math.max(padL, Math.min(padL + plotW, xHigh));
       const attW = Math.max(0, padL + plotW - attX);
       const showHighTick = xHigh >= padL + 8 && xHigh <= padL + plotW - 16;
-      const highLabelX = xHigh > padL + plotW - 44 ? xHigh - 4 : xHigh + 4;
-      const highLabelAnchor = xHigh > padL + plotW - 44 ? 'end' : 'start';
+      const highText = `+${Math.round(highResVal * 100)}%`;
       const attCount = ptSet.attCount || 0;
 
       if (kind === 'early') {
@@ -3148,26 +3218,32 @@
               { text: t('ddQuadAxisResHard'), x: padL + plotW - 2, y: padT + plotH - 6, anchor: 'end' },
             ]
           : [];
+        const topObstacles = xDirItems.length
+          ? [{ left: padL + 2, right: padL + 2 + this._ddEstimateScatterLabelWidth(xDirItems[0].text, 10.5) }]
+          : [];
+        const attVisible = attW > 54;
+        const attText = `${t('ddEarlyRight')}${attCount ? ' · ' + attCount : ''}`;
+        const highPos = this._ddResolveScatterHighLabel(padL, padT, plotW, plotH, xHigh, highText, attVisible, attText, null, topObstacles);
         const labelSpec = {
           high: {
             visible: showHighTick,
-            x: highLabelX.toFixed(1),
-            y: String(padT + 11),
-            anchor: highLabelAnchor,
-            text: `+${Math.round(highResVal * 100)}%`,
+            x: highPos.x,
+            y: highPos.y,
+            anchor: highPos.anchor,
+            text: highText,
           },
           att: {
-            visible: attW > 54,
+            visible: attVisible,
             x: (padL + plotW - 6).toFixed(1),
             y: String(padT + 13),
             anchor: 'end',
-            text: `${t('ddEarlyRight')}${attCount ? ' · ' + attCount : ''}`,
+            text: attText,
           },
         };
         labelSpec.html =
           (labelSpec.high.visible ? `<text class="m-dd-thresh-label m-dd-text-halo" data-dd-thresh-label="high" x="${labelSpec.high.x}" y="${labelSpec.high.y}" text-anchor="${labelSpec.high.anchor}">${this.esc(labelSpec.high.text)}</text>` : '')
           + (labelSpec.att.visible ? `<text class="is-alert m-dd-text-halo" data-dd-zone-label="attention" x="${labelSpec.att.x}" y="${labelSpec.att.y}" text-anchor="end">${this.esc(labelSpec.att.text)}</text>` : '');
-        return { highResVal, convSlopeVal: 0, attX, attW, xDirItems, yDirItems: [], labelSpec };
+        return { highResVal, convSlopeVal: 0, attX, attW, xDirItems, yDirItems: [], topObstacles, labelSpec };
       }
 
       const lrnCount = ptSet.lrnCount || 0;
@@ -3186,19 +3262,50 @@
             { text: t('ddQuadAxisResHard'), x: padL + plotW - 2, y: layout.xDirY, anchor: 'end' },
           ]
         : [];
-      const yDirItems = (!hasZoom && plotH > 140)
-        ? [
-            { text: t('ddQuadAxisSlopeUp'), x: layout.yDirX, y: padT + 11, anchor: layout.yDirAnchor },
-            { text: t('ddQuadAxisSlopeDown'), x: layout.yDirX, y: padT + plotH - 4, anchor: layout.yDirAnchor },
-          ]
-        : [];
+      const attVisible = attW > 54 && attH > 20;
+      const attText = `${t('ddQuadTopRight')}${attCount ? ' · ' + attCount : ''}`;
+      const lrnVisible = attW > 54 && lrnH > 20;
+      const lrnText = `${t('ddQuadBottomRight')}${lrnCount ? ' · ' + lrnCount : ''}`;
+      let yDirItems = [];
+      const topObstacles = [];
+      if (!hasZoom && plotH > 140) {
+        const slopeUpText = t('ddQuadAxisSlopeUp');
+        const slopeDownText = t('ddQuadAxisSlopeDown');
+        const slopeUpW = this._ddEstimateScatterLabelWidth(slopeUpText, 10.5);
+        const slopeDownW = this._ddEstimateScatterLabelWidth(slopeDownText, 10.5);
+        const maxYDirW = Math.max(slopeUpW, slopeDownW);
+        const attW = attVisible ? this._ddEstimateScatterLabelWidth(attText, 10.5) : 0;
+        const lrnW = lrnVisible ? this._ddEstimateScatterLabelWidth(lrnText, 10.5) : 0;
+        const axisX = layout?.axisX ?? padL;
+        const rightTopLimit = attVisible ? (padL + plotW - 6 - attW - 8) : (padL + plotW - 4);
+        const rightBotLimit = lrnVisible ? (padL + plotW - 6 - lrnW - 8) : (padL + plotW - 4);
+        const rightFits = (axisX + 7 + slopeUpW <= rightTopLimit) && (axisX + 7 + slopeDownW <= rightBotLimit);
+        const leftFits = !layout?.yTicksRight && (axisX - 7 - maxYDirW >= padL + 4);
+        const useLeft = (layout?.yDirOnLeft && leftFits) || (!rightFits && leftFits);
+        const useRight = !useLeft && rightFits;
+        if (useLeft || useRight) {
+          const yDirX = useLeft ? -7 : 7;
+          const yDirAnchor = useLeft ? 'end' : 'start';
+          yDirItems = [
+            { text: slopeUpText, x: yDirX, y: padT + 11, anchor: yDirAnchor },
+            { text: slopeDownText, x: yDirX, y: padT + plotH - 4, anchor: yDirAnchor },
+          ];
+          // These labels translate with the Y axis throughout camera animations.
+          topObstacles.push(useLeft
+            ? { left: yDirX - slopeUpW, right: yDirX }
+            : { left: yDirX, right: yDirX + slopeUpW });
+        }
+      }
+      const highPos = this._ddResolveScatterHighLabel(
+        padL, padT, plotW, plotH, xHigh, highText, attVisible, attText, showConvTick ? convLabelY : null, topObstacles, layout.axisX
+      );
       const labelSpec = {
         high: {
           visible: showHighTick,
-          x: highLabelX.toFixed(1),
-          y: String(padT + 11),
-          anchor: highLabelAnchor,
-          text: `+${Math.round(highResVal * 100)}%`,
+          x: highPos.x,
+          y: highPos.y,
+          anchor: highPos.anchor,
+          text: highText,
         },
         conv: {
           visible: showConvTick,
@@ -3209,18 +3316,18 @@
             : this._ddFormatTickPct(learningSlopeVal, 1) + ' … ' + this._ddFormatTickPct(convSlopeVal, 1),
         },
         att: {
-          visible: attW > 54 && attH > 20,
+          visible: attVisible,
           x: (padL + plotW - 6).toFixed(1),
           y: String(padT + 13),
           anchor: 'end',
-          text: `${t('ddQuadTopRight')}${attCount ? ' · ' + attCount : ''}`,
+          text: attText,
         },
         lrn: {
-          visible: attW > 54 && lrnH > 20,
+          visible: lrnVisible,
           x: (padL + plotW - 6).toFixed(1),
           y: String(padT + plotH - 6),
           anchor: 'end',
-          text: `${t('ddQuadBottomRight')}${lrnCount ? ' · ' + lrnCount : ''}`,
+          text: lrnText,
         },
       };
       labelSpec.html =
@@ -3228,7 +3335,7 @@
         + (labelSpec.conv.visible ? `<text class="m-dd-thresh-label m-dd-text-halo" data-dd-thresh-label="conv" x="${labelSpec.conv.x}" y="${labelSpec.conv.y}" text-anchor="start">${this.esc(labelSpec.conv.text)}</text>` : '')
         + (labelSpec.att.visible ? `<text class="is-alert m-dd-text-halo" data-dd-zone-label="attention" x="${labelSpec.att.x}" y="${labelSpec.att.y}" text-anchor="end">${this.esc(labelSpec.att.text)}</text>` : '')
         + (labelSpec.lrn.visible ? `<text class="is-learning m-dd-text-halo" data-dd-zone-label="learning" x="${labelSpec.lrn.x}" y="${labelSpec.lrn.y}" text-anchor="end">${this.esc(labelSpec.lrn.text)}</text>` : '');
-      return { highResVal, convSlopeVal, learningSlopeVal, attX, attW, attH, lrnY, lrnH, xDirItems, yDirItems, labelSpec };
+      return { highResVal, convSlopeVal, learningSlopeVal, attX, attW, attH, lrnY, lrnH, xDirItems, yDirItems, topObstacles, labelSpec };
     },
 
     _ddReflowEarlyBeeswarm(wrap, svg) {
@@ -3583,6 +3690,7 @@
           linX: xCfg.linThresh, linY: yCfg ? yCfg.linThresh : 1,
           earlyTickY, xCfg, yCfg, targetCamera,
           xTicks, yTicks, xDirItems: meta.xDirItems, yDirItems: meta.yDirItems,
+          topObstacles: meta.topObstacles || [],
           labelSpec: meta.labelSpec, pinnedSpec,
           commitFinal: () => commitCameraFrame(!isQuadrant, { settleAfterViewport: true }),
         });
@@ -3644,6 +3752,7 @@
           earlyTickY, xCfg, yCfg, fromCam: prevCam, targetCamera,
           animX, animY, dotBindings, coords: curCoords, pinnedSpec,
           xTicks, yTicks, xDirItems: meta.xDirItems, yDirItems: meta.yDirItems,
+          topObstacles: meta.topObstacles || [],
           labelSpec: meta.labelSpec,
           durationMs: options.durationMs,
           cameraMode: options.cameraMode || '',
@@ -3789,10 +3898,9 @@
         ? `<text class="m-dd-axis-dir" x="${padL + 2}" y="${layout.xDirY}" text-anchor="start">${this.esc(t('ddQuadAxisResEasy'))}</text>`
           + `<text class="m-dd-axis-dir" x="${padL + plotW - 2}" y="${layout.xDirY}" text-anchor="end">${this.esc(t('ddQuadAxisResHard'))}</text>`
         : '';
-      const yDirHtml = (!hasZoom && plotH > 140)
-        ? `<text class="m-dd-axis-dir" x="${layout.yDirX}" y="${padT + 11}" text-anchor="${layout.yDirAnchor}">${this.esc(t('ddQuadAxisSlopeUp'))}</text>`
-          + `<text class="m-dd-axis-dir" x="${layout.yDirX}" y="${padT + plotH - 4}" text-anchor="${layout.yDirAnchor}">${this.esc(t('ddQuadAxisSlopeDown'))}</text>`
-        : '';
+      const yDirHtml = meta.yDirItems.map(d =>
+        `<text class="m-dd-axis-dir" x="${d.x}" y="${d.y}" text-anchor="${d.anchor}">${this.esc(d.text)}</text>`
+      ).join('');
       const targetCamera = { kind: 'quadrant', xMin, xMax, symW_X: symWX, yMin, yMax, symW_Y: symWY };
 
       // Fast camera-only pan path: reuse dot nodes & cached points, skip reconcile/pulses/trails/filter DOM walk.
@@ -3942,7 +4050,7 @@
             highResVal, convSlopeVal: meta.convSlopeVal, learningSlopeVal: meta.learningSlopeVal, linX: xCfg.linThresh, linY: yCfg.linThresh,
             xCfg, yCfg, fromCam: prevCam, targetCamera,
             animX, animY, coords, xTicks, yTicks,
-            xDirItems: meta.xDirItems, yDirItems: meta.yDirItems, labelSpec: meta.labelSpec,
+            xDirItems: meta.xDirItems, yDirItems: meta.yDirItems, topObstacles: meta.topObstacles, labelSpec: meta.labelSpec,
             durationMs: options.durationMs,
             cameraMode: options.cameraMode || '',
             commitFinal: () => commitStatic(true, { settleAfterViewport: true }),
@@ -4265,7 +4373,7 @@
             highResVal, convSlopeVal: 0, linX: xCfg.linThresh, linY: 1,
             earlyTickY, xCfg, yCfg: null, fromCam: prevCam, targetCamera,
             animX, animY: null, coords, xTicks, yTicks: [],
-            xDirItems: meta.xDirItems, yDirItems: [], labelSpec: meta.labelSpec,
+            xDirItems: meta.xDirItems, yDirItems: [], topObstacles: meta.topObstacles || [], labelSpec: meta.labelSpec,
             durationMs: options.durationMs,
             cameraMode: options.cameraMode || '',
             commitFinal: () => {
@@ -5167,7 +5275,10 @@
       if (st.kind === 'timestep' && wrap._ddActiveBar?.bin != null) {
         const nextBar = st.coords.find(c => c.bin === wrap._ddActiveBar.bin || (c.tFrom <= wrap._ddActiveBar.tFrom + 1e-6 && c.tTo >= wrap._ddActiveBar.tTo - 1e-6));
         if (!nextBar) this._clearDatasetDiagHeroHover(wrap);
-        else this._ddApplyTimestepBinHover(wrap, nextBar, wrap._ddHoverMeta || null);
+        else this._ddApplyTimestepBinHover(wrap, nextBar, {
+          excludedHover: Boolean(nextBar.excluded),
+          focusX: nextBar.excluded ? (wrap._ddHoverMeta?.focusX ?? nextBar.xCenter) : nextBar.xCenter,
+        });
         return;
       }
       if (st.kind === 'scatter' && wrap._ddPinnedDot?.image_id) {
@@ -5237,23 +5348,9 @@
           this._clearDatasetDiagHeroHover(wrap);
           return;
         }
-        let targetBar = exact;
-        let excludedHover = Boolean(exact.excluded);
-        let focusX = clampedX;
-        if (!excludedHover) {
-          if (!(exact.count > 0 || exact.non_finite_count > 0)) {
-            let bestDist = Infinity;
-            for (const c of st.coords) {
-              if (c.excluded || !(c.count > 0 || c.non_finite_count > 0)) continue;
-              const d = Math.abs(c.xCenter - clampedX);
-              if (d < bestDist) {
-                bestDist = d;
-                targetBar = c;
-              }
-            }
-          }
-          focusX = targetBar.xCenter;
-        }
+        const targetBar = exact;
+        const excludedHover = Boolean(exact.excluded);
+        const focusX = excludedHover ? clampedX : exact.xCenter;
         if (wrap._ddActiveBar === targetBar && !excludedHover && wrap._ddHoverMeta?.excludedHover === false) return;
         this._ddApplyTimestepBinHover(wrap, targetBar, { excludedHover, focusX });
         return;
