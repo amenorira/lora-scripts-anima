@@ -1,6 +1,7 @@
 """Prepare sd-scripts profiles under an existing task reservation."""
 import json
 from pathlib import Path
+from secrets import randbits
 
 from backend.async_utils import settled_to_thread as _settled_to_thread
 from backend.constants import AUTOSAVE_DIR, OUTPUT_DIR
@@ -99,6 +100,9 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
     if error is not None:
         return error
     config = settings.config
+    if config.get("seed") is None:
+        # Every rank builds its datasets before Accelerate initializes the process group.
+        config["seed"] = randbits(32)
     model_train_type = profile.id
     try:
         preview_config = await _settled_to_thread(prepare_preview_config, settings.ui_config, profile.id)

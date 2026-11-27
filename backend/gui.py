@@ -4,6 +4,7 @@
 端口探测 → uvicorn 托管 FastAPI（生命周期管理内部 TensorBoard）。
 """
 import argparse
+import hashlib
 import os
 import platform
 import sys
@@ -45,11 +46,23 @@ from backend.launch_utils import (
 )
 
 
+def _auth_digest(value: str) -> str:
+    username, _, password = value.partition(":")
+    if not username or not password:
+        raise argparse.ArgumentTypeError(
+            "expected username:password with both fields non-empty / "
+            "格式为 用户名:密码，用户名和密码均不能为空"
+        )
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="LoRA training GUI (Anima suite)")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Web UI listen host")
     parser.add_argument("--port", type=int, default=12333, help="Web UI listen port")
     parser.add_argument("--listen", action="store_true", help="Listen on 0.0.0.0 (LAN access)")
+    parser.add_argument("--auth", type=_auth_digest, dest="auth_digest", metavar="USERNAME:PASSWORD",
+                        help="Require HTTP Basic authentication for the training UI")
     parser.add_argument("--skip-prepare-environment", action="store_true",
                         help="Skip dependency check/repair at startup")
     parser.add_argument("--skip-prepare-onnxruntime", action="store_true",
@@ -120,6 +133,11 @@ def launch(args: argparse.Namespace) -> None:
                     "TensorBoard 仅监听回环地址，请通过主端口 /tensorboard/ 访问")
 
     os.environ["ANIMA_HOST"] = args.host
+    if args.auth_digest is None:
+        os.environ.pop("ANIMA_AUTH_DIGEST", None)
+    else:
+        # The reload worker needs the verifier, but child processes do not need the password.
+        os.environ["ANIMA_AUTH_DIGEST"] = args.auth_digest
     os.environ["ANIMA_PORT"] = str(args.port)
     os.environ["ANIMA_DISABLE_TENSORBOARD"] = "1" if args.disable_tensorboard else "0"
     os.environ["ANIMA_TENSORBOARD_PORT"] = str(args.tensorboard_port)

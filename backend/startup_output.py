@@ -123,6 +123,7 @@ def show_ready(
     tensorboard_url: str | None,
     log_path: Path,
     tensorboard_state: str = "ready",
+    access_notice: str | None = None,
 ) -> None:
     finish_step()
     tensorboard = tensorboard_url or "Disabled / 未启用"
@@ -135,16 +136,21 @@ def show_ready(
         f"Keep this window open / 使用期间请保持此窗口开启"
     )
     _record(message)
+    if access_notice:
+        _record(access_notice)
 
     write = console.print if console is not None else print
     write()
-    _print_summary("READY / 服务已就绪", [
-        ("GUI", gui_url, COLORS["accent"]),
+    rows = [("GUI", gui_url, COLORS["accent"])]
+    if access_notice:
+        rows.append(("Access / 访问", access_notice, ""))
+    rows.extend([
         ("TensorBoard", tensorboard, COLORS["warning"] if tensorboard_state == "failed" else
          COLORS["secondary"] if tensorboard_url else COLORS["muted"]),
         ("Startup / 启动", elapsed, ""),
         ("Log / 日志", str(log_path), COLORS["muted"]),
-    ], style=COLORS["success"], expand=True)
+    ])
+    _print_summary("READY / 服务已就绪", rows, style=COLORS["success"], expand=True)
     write("Keep this window open / 使用期间请保持此窗口开启",
           **({"style": COLORS["muted"], "highlight": False} if console is not None else {}))
     write()

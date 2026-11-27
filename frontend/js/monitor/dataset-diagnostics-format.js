@@ -1251,7 +1251,7 @@
           + '</label>';
       }
       if (data.available && hasRegImages) {
-        html += '<label class="m-dd-inline-ctl m-dd-reg-wrap m-dd-top-reg-wrap" data-dd-top-reg-wrap' + (view === 'images' ? ' hidden' : '') + '>'
+        html += '<label class="m-dd-inline-ctl m-dd-reg-wrap m-dd-top-reg-wrap" data-dd-top-reg-wrap>'
           + '<span>' + this.esc(t('ddRegFilterLabel')) + '</span>'
           + this._ddSelectHtml(this._ddRegOptions(), regMode, t('ddRegFilterLabel'),
             'ddTopRegSelect', 'setDatasetDiagRegMode($event.target.value)', '_datasetDiagEffectiveRegMode()', '_ddRegOptions()')
@@ -1287,11 +1287,6 @@
       if (imgBtn) {
         imgBtn.classList.toggle('active', view === 'images');
         imgBtn.setAttribute('aria-selected', String(view === 'images'));
-      }
-
-      const topRegWrap = slot.querySelector('[data-dd-top-reg-wrap]');
-      if (topRegWrap) {
-        topRegWrap.hidden = view === 'images';
       }
 
       const live = this._ddLiveStatusState(t);

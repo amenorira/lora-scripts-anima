@@ -148,14 +148,15 @@ fi
 # torch 的 +cu130 轮子仍由命令行 --extra-index-url 取得，与镜像源互不干扰。
 _fix_pip_mirror() {
     local hosts=""
-    local has_index=0
+    local skip_probe=0
     local py="$VENV_PYTHON"
     [ -f "$py" ] || py="$PYTHON_BIN"
     # 探测 pip 配置中的 index-url 与 extra-index-url（涵盖 pip.conf 与环境变量合并后的生效值）
     local key val
     while IFS=$'\t' read -r key val; do
         [ -n "$val" ] || continue
-        [ "$key" = "global.index-url" ] && has_index=1
+        [ "$key" = "global.no-index" ] && { skip_probe=1; continue; }
+        [ "$key" = "global.index-url" ] && skip_probe=1
         if [[ "$val" == http://* ]]; then
             local rest="${val#http://}"
             [ -n "$rest" ] || continue
@@ -166,7 +167,7 @@ _fix_pip_mirror() {
         fi
     done < <("$py" -m tools.pip_index_config 2>/dev/null)
     # 同时处理已有的 PIP_* 环境变量（兜底：源仅来自 env 而非 config 的情况）
-    for var in PIP_INDEX_URL PIP_EXTRA_INDEX_URL; do
+    for var in PIP_INDEX_URL PIP_PYPI_URL PIP_EXTRA_INDEX_URL; do
         local val="${!var}"
         if [ -n "$val" ] && [[ "$val" == http://* ]]; then
             local rest="${val#http://}"
@@ -183,11 +184,12 @@ _fix_pip_mirror() {
         export PIP_TRUSTED_HOST="${merged# }"
         _console_message "[Setup] Upgraded HTTP pip mirror to HTTPS; trusted-host: ${merged# } / 已将 HTTP pip 镜像临时升级为 HTTPS。"
     fi
-    if [ -z "${PIP_INDEX_URL:-}" ] && [ "$has_index" = "0" ]; then
+    if [ -z "${PIP_INDEX_URL:-}" ] && [ "$skip_probe" = "0" ]; then
         local auto_url
         auto_url="$("$py" -B -m tools.network_mirror pip-index 2>/dev/null | head -n 1 || true)"
         if [ -n "$auto_url" ]; then
             export PIP_INDEX_URL="$auto_url"
+            export ANIMA_AUTO_PIP_INDEX_URL="$auto_url"
             _console_message "[Setup] Auto-selected PyPI mirror for this launch: $auto_url / 本次启动已自动选用 PyPI 镜像：$auto_url"
         fi
     fi

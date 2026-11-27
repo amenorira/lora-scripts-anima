@@ -114,11 +114,24 @@ def _start_install_job(cmd: list[str], max_retries: int = 2) -> str:
         }
 
     def _run():
-        from tools.network_mirror import apply_pip_index_env
-        env = apply_pip_index_env()
+        from tools.network_mirror import select_pip_index
+
+        env = os.environ.copy()
+        auto_index = None
+        if not any(arg.split("=", 1)[0] in {"--index-url", "--pypi-url", "-i", "--no-index"} for arg in cmd):
+            inherited = env.get("ANIMA_AUTO_PIP_INDEX_URL")
+            if inherited and inherited == env.get("PIP_INDEX_URL"):
+                auto_index = inherited
+            else:
+                auto_index = select_pip_index(env=env)
+            if auto_index:
+                env["PIP_INDEX_URL"] = auto_index
         for attempt in range(max_retries + 1):
             try:
                 if attempt > 0:
+                    if attempt == 1 and auto_index:
+                        env.pop("PIP_INDEX_URL")
+                        log_file.write("\n[RETRY] Falling back to pip's configured or default index. / 自动镜像安装失败，回退到 pip 的配置源或默认源。\n")
                     log_file.write(f"\n[RETRY] Attempt {attempt + 1}/{max_retries + 1}...\n")
                     log_file.flush()
                 process = subprocess.Popen(cmd, env=env, stdout=log_file, stderr=subprocess.STDOUT, text=True)

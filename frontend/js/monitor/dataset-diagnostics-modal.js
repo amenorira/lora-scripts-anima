@@ -502,13 +502,10 @@
     },
 
     _renderDatasetDiagImagesToolbar(t, data) {
-      const summary = data.summary || {};
       const presets = this._ddImagesPresetSpecs(t, data);
       const viewMode = this.datasetDiagViewMode === 'table' ? 'table' : 'grid';
       const canGroup = !!this._datasetDiagHasMultipleFolders?.(data);
       const groupByFolder = Boolean(canGroup && this.datasetDiagGroupByFolder);
-      const hasRegImages = this._datasetDiagHasRegImages ? this._datasetDiagHasRegImages(data) : Boolean(summary.has_reg_images);
-      const regMode = this._datasetDiagEffectiveRegMode ? this._datasetDiagEffectiveRegMode(data) : this.datasetDiagRegMode;
 
       let html = '<div class="m-dd-images-bar-left">';
       html += '<div class="m-segmented m-dd-preset-tabs" data-dd-preset-tabs role="group" aria-label="' + this.esc(t('ddPresetsLabel')) + '">';
@@ -526,12 +523,6 @@
         + '<input class="m-output-search-input" type="search" value="' + this.esc(this.datasetDiagSearch) + '"'
         + ' aria-label="' + this.esc(t('ddSearchImages')) + '" placeholder="' + this.esc(t('ddSearchImages')) + '"'
         + ' @input.debounce.180ms="setDatasetDiagSearch($event.target.value)"></label>';
-      if (hasRegImages) {
-        html += '<div class="m-dd-reg-wrap" data-dd-images-reg-wrap>'
-          + this._ddSelectHtml(this._ddRegOptions(), regMode, t('ddRegFilterLabel'),
-            'ddRegSelect', 'setDatasetDiagRegMode($event.target.value)', '_datasetDiagEffectiveRegMode()', '_ddRegOptions()')
-          + '</div>';
-      }
       html += '<div class="m-dd-sort-wrap">'
         + this._ddSelectHtml(this._ddSortOptions(), this.datasetDiagSort, t('ddSortLabel'),
           'ddSortSelect', 'setDatasetDiagSort($event.target.value)', 'datasetDiagSort', '_ddSortOptions()')
@@ -560,12 +551,9 @@
 
     _patchDatasetDiagImagesToolbar(toolbarEl, t, data) {
       if (!toolbarEl || !data) return false;
-      const summary = data.summary || {};
-      const hasRegImages = this._datasetDiagHasRegImages ? this._datasetDiagHasRegImages(data) : Boolean(summary.has_reg_images);
       const canGroup = !!this._datasetDiagHasMultipleFolders?.(data);
-      const existingRegWrap = toolbarEl.querySelector?.('[data-dd-images-reg-wrap]');
       const existingGroupToggle = toolbarEl.querySelector?.('[data-dd-group-toggle]');
-      if (Boolean(existingRegWrap) !== hasRegImages || Boolean(existingGroupToggle) !== canGroup) {
+      if (Boolean(existingGroupToggle) !== canGroup) {
         return false;
       }
 
@@ -2729,7 +2717,7 @@
           excluded: isExcluded,
         };
       });
-      const basePaths = this._ddBuildSegmentedLossPaths(basePts, lossBottom);
+      const basePaths = this._ddBuildSegmentedLossPaths(basePts);
       const iqr = detailIqrPath(basePts);
       const iqrHtml = iqr ? `<path class="m-dd-ts-iqr-band" d="${iqr}"/>` : '';
       const isoDotsHtml = basePaths.isolated.map(p =>
@@ -2897,7 +2885,7 @@
         }
         if (frames.length === before) return;
         frames.push(() => {
-          const segments = this._ddBuildSegmentedLossPaths(basePts, lossBottom);
+          const segments = this._ddBuildSegmentedLossPaths(basePts);
           for (const el of paths) el.setAttribute('d', segments[el.dataset.ddMark]);
           if (band) band.setAttribute('d', detailIqrPath(basePts));
           for (const el of isolated) el.setAttribute('cy', nextPoints.get(el.dataset.ddMark).y.toFixed(1));

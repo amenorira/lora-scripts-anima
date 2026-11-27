@@ -337,11 +337,10 @@
       return shares;
     },
 
-    _ddBuildSegmentedLossPaths(points, baseY) {
+    _ddBuildSegmentedLossPaths(points) {
       const solidSegs = [];
       const sparseSegs = [];
       const gapSegs = [];
-      const areaSegs = [];
       const isolated = [];
       let span = [];
       const flushSpan = () => {
@@ -350,8 +349,6 @@
         if (validItems.length === 1) {
           isolated.push(validItems[0].pt);
         } else if (validItems.length >= 2) {
-          const line = validItems.map((item, i) => (i ? 'L' : 'M') + item.pt.x.toFixed(1) + ' ' + item.pt.y.toFixed(1)).join(' ');
-          areaSegs.push(`${line} L${validItems.at(-1).pt.x.toFixed(1)} ${baseY.toFixed(1)} L${validItems[0].pt.x.toFixed(1)} ${baseY.toFixed(1)} Z`);
           for (let i = 0; i < validItems.length - 1; i++) {
             const a = validItems[i], b = validItems[i + 1];
             const seg = `M${a.pt.x.toFixed(1)} ${a.pt.y.toFixed(1)} L${b.pt.x.toFixed(1)} ${b.pt.y.toFixed(1)}`;
@@ -374,7 +371,6 @@
         solidD: solidSegs.join(' '),
         sparseD: sparseSegs.join(' '),
         gapD: gapSegs.join(' '),
-        areaD: areaSegs.join(' '),
         isolated,
       };
     },
@@ -569,10 +565,10 @@
       }
       const toneClass = comp.tone === 'danger' ? ' is-tone-danger' : (comp.tone === 'warn' ? ' is-tone-warn' : '');
       if (comp.kind === 'image') {
-        return '<span class="m-dd-leg"><i class="is-line-ref"></i><span>' + this.esc(t('ddNoiseTooltipBase')) + '</span></span>'
+        return '<span class="m-dd-leg"><i class="is-line-base"></i><span>' + this.esc(t('ddNoiseTooltipBase')) + '</span></span>'
           + '<span class="m-dd-leg"><i class="is-dot is-sample"></i><span>' + this.esc(t('ddLegThisImage')) + '</span></span>';
       }
-      return '<span class="m-dd-leg"><i class="is-line-ref"></i><span>' + this.esc(t('ddNoiseTooltipBase')) + '</span></span>'
+      return '<span class="m-dd-leg"><i class="is-line-base"></i><span>' + this.esc(t('ddNoiseTooltipBase')) + '</span></span>'
         + '<span class="m-dd-leg"><i class="is-line-accent' + toneClass + '"></i><span>' + this.esc(t('ddLegSelectedShort')) + '</span></span>';
     },
 
@@ -687,7 +683,7 @@
       svg.classList?.remove?.('is-ts-animating');
     },
 
-    _ddBuildTimestepCompSeriesPaths(coords, baseYArr, compYArr, lossBottom, compComparableArr = null) {
+    _ddBuildTimestepCompSeriesPaths(coords, compYArr, compComparableArr = null) {
       const compPaths = this._ddBuildSegmentedLossPaths(
         coords.map((c, idx) => ({
           x: c.xCenter,
@@ -695,33 +691,15 @@
           comparable: compComparableArr ? !!compComparableArr[idx] : (c.compCount > 0),
           valid: compYArr[idx] != null,
           excluded: c.excluded,
-        })),
-        lossBottom
+        }))
       );
-      const deltaSegs = [];
-      let sharedSpan = [];
-      const flushDelta = () => {
-        const sharedValid = sharedSpan.filter(item => item.by != null && item.cy != null);
-        if (sharedValid.length >= 2) {
-          const top = sharedValid.map((item, i) => (i ? 'L' : 'M') + item.x.toFixed(1) + ' ' + item.cy.toFixed(1)).join(' ');
-          const bot = sharedValid.slice().reverse().map(item => 'L' + item.x.toFixed(1) + ' ' + item.by.toFixed(1)).join(' ');
-          deltaSegs.push(`${top} ${bot} Z`);
-        }
-        sharedSpan = [];
-      };
-      coords.forEach((c, idx) => {
-        if (!c.excluded) sharedSpan.push({ x: c.xCenter, by: baseYArr[idx], cy: compYArr[idx] });
-        else flushDelta();
-      });
-      flushDelta();
       return {
-        deltaD: deltaSegs.join(' '),
         solidD: compPaths.solidD,
         dashedD: [compPaths.sparseD, compPaths.gapD].filter(Boolean).join(' '),
       };
     },
 
-    _ddBuildTimestepBaseData(coords, toY, lossBottom, includeIqr, isRef) {
+    _ddBuildTimestepBaseData(coords, toY) {
       const pts = coords.map(c => ({
         ...c,
         y: c.valid ? toY(c.mean_loss) : null,
@@ -729,33 +707,28 @@
         yP75: (c.valid && c.p75 != null) ? toY(c.p75) : null,
       }));
       const basePaths = this._ddBuildSegmentedLossPaths(
-        pts.map(c => ({ x: c.xCenter, y: c.y, comparable: c.comparable, valid: c.valid, excluded: c.excluded })),
-        lossBottom
+        pts.map(c => ({ x: c.xCenter, y: c.y, comparable: c.comparable, valid: c.valid, excluded: c.excluded }))
       );
-      let iqrD = '';
-      if (includeIqr) {
-        const iqrSegs = [];
-        let span = [];
-        const flushIqr = () => {
-          if (span.length >= 2) {
-            const top = span.map((c, i) => (i ? 'L' : 'M') + c.xCenter.toFixed(1) + ' ' + c.yP75.toFixed(1)).join(' ');
-            const bot = span.slice().reverse().map(c => 'L' + c.xCenter.toFixed(1) + ' ' + c.yP25.toFixed(1)).join(' ');
-            iqrSegs.push(`${top} ${bot} Z`);
-          }
-          span = [];
-        };
-        for (const c of pts) {
-          if (c.excluded) flushIqr();
-          else if (c.yP25 != null && c.yP75 != null) span.push(c);
+      const iqrSegs = [];
+      let span = [];
+      const flushIqr = () => {
+        if (span.length >= 2) {
+          const top = span.map((c, i) => (i ? 'L' : 'M') + c.xCenter.toFixed(1) + ' ' + c.yP75.toFixed(1)).join(' ');
+          const bot = span.slice().reverse().map(c => 'L' + c.xCenter.toFixed(1) + ' ' + c.yP25.toFixed(1)).join(' ');
+          iqrSegs.push(`${top} ${bot} Z`);
         }
-        flushIqr();
-        iqrD = iqrSegs.join(' ');
+        span = [];
+      };
+      for (const c of pts) {
+        if (c.excluded) flushIqr();
+        else if (c.yP25 != null && c.yP75 != null) span.push(c);
       }
+      flushIqr();
+      const iqrD = iqrSegs.join(' ');
       const isolatedX = new Set(basePaths.isolated.map(pt => pt.x.toFixed(1)));
       const showPointDot = (c, idx) => {
-        if (!c.valid) return false;
+        if (c.excluded || !c.valid) return false;
         if (!c.comparable) return true;
-        if (isRef) return false;
         if (isolatedX.has(c.xCenter.toFixed(1))) return true;
         const prevValid = idx > 0 && !pts[idx - 1].excluded && pts[idx - 1].valid;
         const nextValid = idx + 1 < pts.length && !pts[idx + 1].excluded && pts[idx + 1].valid;
@@ -768,23 +741,21 @@
       return { pts, basePaths, iqrD, dotPts };
     },
 
-    _ddBuildTimestepBaseMarkup(coords, toY, lossBottom, includeIqr, isRef) {
-      const { pts, basePaths, iqrD, dotPts } = this._ddBuildTimestepBaseData(coords, toY, lossBottom, includeIqr, isRef);
+    _ddBuildTimestepBaseMarkup(coords, toY) {
+      const { basePaths, iqrD, dotPts } = this._ddBuildTimestepBaseData(coords, toY);
       const iqrBandHtml = iqrD ? `<path class="m-dd-ts-iqr-band" data-dd-ts-iqr d="${iqrD}"/>` : '';
       const basePtsHtml = dotPts.map(c => {
         const sparseCls = c.comparable ? '' : ' is-sparse';
-        return `<circle class="m-dd-ts-dot${sparseCls}" data-dd-ts-base-dot="${c.idx}" cx="${c.xCenter.toFixed(1)}" cy="${c.y.toFixed(1)}" r="${c.comparable ? '2.1' : '2.3'}"/>`;
+        return `<circle class="m-dd-ts-dot${sparseCls}" data-dd-ts-base-dot="${c.idx}" cx="${c.xCenter.toFixed(1)}" cy="${c.y.toFixed(1)}" r="${c.comparable ? '1.5' : '1.6'}"/>`;
       }).join('');
-      const refCls = isRef ? ' is-ref' : '';
-      const baseLayerHtml = `${iqrBandHtml}`
-        + `${basePaths.solidD ? `<path class="m-dd-ts-base-line${refCls}" data-dd-ts-base-solid d="${basePaths.solidD}"/>` : ''}`
-        + `${basePaths.sparseD ? `<path class="m-dd-ts-base-line is-sparse${refCls}" data-dd-ts-base-sparse d="${basePaths.sparseD}"/>` : ''}`
-        + `${basePaths.gapD ? `<path class="m-dd-ts-base-line is-gap${refCls}" data-dd-ts-base-gap d="${basePaths.gapD}"/>` : ''}`
+      return `${iqrBandHtml}`
+        + `${basePaths.solidD ? `<path class="m-dd-ts-base-line" data-dd-ts-base-solid d="${basePaths.solidD}"/>` : ''}`
+        + `${basePaths.sparseD ? `<path class="m-dd-ts-base-line is-sparse" data-dd-ts-base-sparse d="${basePaths.sparseD}"/>` : ''}`
+        + `${basePaths.gapD ? `<path class="m-dd-ts-base-line is-gap" data-dd-ts-base-gap d="${basePaths.gapD}"/>` : ''}`
         + basePtsHtml;
-      return { pts, basePaths, iqrBandHtml, baseLayerHtml };
     },
 
-    _ddBuildTimestepOverlayMarkup(kind, coords, subsetMarkers, imageFinite, imageNonFinite, toX, toY, lossTop, lossBottom, toneClass) {
+    _ddBuildTimestepOverlayMarkup(kind, subsetMarkers, imageFinite, imageNonFinite, toX, toY, lossTop, toneClass) {
       if (kind === 'subset' && subsetMarkers.length) {
         const pts = subsetMarkers.map(m => ({ x: toX(m.t1000), y: toY(m.loss) }));
         let html = '';
@@ -793,7 +764,7 @@
           html += `<path class="m-dd-ts-comp-line${toneClass}" data-dd-ts-comp-line stroke-dasharray="3 3" d="${line}"/>`;
         }
         html += pts.map((p, i) =>
-          `<circle class="m-dd-ts-dot is-comp${toneClass}" data-dd-ts-overlay-dot="${i}" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.2"/>`
+          `<circle class="m-dd-ts-dot is-comp${toneClass}" data-dd-ts-overlay-dot="${i}" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.2"/>`
         ).join('');
         return html;
       }
@@ -906,24 +877,21 @@
       selEl.innerHTML = html;
     },
 
-    _ddPatchTimestepCompSeries(compEl, coords, baseYArr, compYArr, lossBottom, toneClass, compComparableArr = null) {
+    _ddPatchTimestepCompSeries(compEl, coords, compYArr, toneClass, compComparableArr = null) {
       if (!compEl) return;
-      const { deltaD, solidD, dashedD } = this._ddBuildTimestepCompSeriesPaths(
-        coords, baseYArr, compYArr, lossBottom, compComparableArr
+      const { solidD, dashedD } = this._ddBuildTimestepCompSeriesPaths(
+        coords, compYArr, compComparableArr
       );
       const canDomPatch = typeof globalThis.document?.createElementNS === 'function'
         && typeof compEl.querySelector === 'function'
         && typeof compEl.appendChild === 'function';
       if (canDomPatch) {
         const SVG_NS = 'http://www.w3.org/2000/svg';
-        let areaEl = compEl.querySelector('[data-dd-ts-comp-area]');
         let solidEl = compEl.querySelector('[data-dd-ts-comp-solid]');
         let gapEl = compEl.querySelector('[data-dd-ts-comp-gap]');
         let dotsWrap = compEl.querySelector('[data-dd-ts-comp-dots]');
-        if (!areaEl || !solidEl || !gapEl || !dotsWrap) {
+        if (!solidEl || !gapEl || !dotsWrap) {
           compEl.innerHTML = '';
-          areaEl = globalThis.document.createElementNS(SVG_NS, 'path');
-          areaEl.setAttribute('data-dd-ts-comp-area', '');
           solidEl = globalThis.document.createElementNS(SVG_NS, 'path');
           solidEl.setAttribute('data-dd-ts-comp-line', '');
           solidEl.setAttribute('data-dd-ts-comp-solid', '');
@@ -932,18 +900,9 @@
           gapEl.setAttribute('data-dd-ts-comp-gap', '');
           dotsWrap = globalThis.document.createElementNS(SVG_NS, 'g');
           dotsWrap.setAttribute('data-dd-ts-comp-dots', '');
-          compEl.appendChild(areaEl);
           compEl.appendChild(solidEl);
           compEl.appendChild(gapEl);
           compEl.appendChild(dotsWrap);
-        }
-        areaEl.setAttribute('class', `m-dd-ts-comp-area${toneClass}`);
-        if (deltaD) {
-          areaEl.setAttribute('d', deltaD);
-          areaEl.removeAttribute('display');
-        } else {
-          areaEl.setAttribute('d', '');
-          areaEl.setAttribute('display', 'none');
         }
         solidEl.setAttribute('class', `m-dd-ts-comp-line${toneClass}`);
         if (solidD) {
@@ -976,12 +935,12 @@
             if (!dEl) {
               dEl = globalThis.document.createElementNS(SVG_NS, 'circle');
               dEl.setAttribute('data-dd-ts-comp-dot', key);
-              dEl.setAttribute('r', '2.2');
               dotsWrap.appendChild(dEl);
             }
             dEl.setAttribute('class', `m-dd-ts-dot is-comp${toneClass}`);
             dEl.setAttribute('cx', c.xCenter.toFixed(1));
             dEl.setAttribute('cy', cy.toFixed(1));
+            dEl.setAttribute('r', '1.6');
           } else if (dEl) {
             dEl.remove?.();
             if (dEl.parentNode === dotsWrap && typeof dotsWrap.removeChild === 'function') dotsWrap.removeChild(dEl);
@@ -993,17 +952,16 @@
       const dotsHtml = coords.map((c, idx) => {
         const cy = compYArr[idx];
         return cy != null
-          ? `<circle class="m-dd-ts-dot is-comp${toneClass}" data-dd-ts-comp-dot="${c.idx}" cx="${c.xCenter.toFixed(1)}" cy="${cy.toFixed(1)}" r="2.2"/>`
+          ? `<circle class="m-dd-ts-dot is-comp${toneClass}" data-dd-ts-comp-dot="${c.idx}" cx="${c.xCenter.toFixed(1)}" cy="${cy.toFixed(1)}" r="1.6"/>`
           : '';
       }).join('');
       compEl.innerHTML =
-        `<path class="m-dd-ts-comp-area${toneClass}" data-dd-ts-comp-area d="${deltaD}"${deltaD ? '' : ' display="none"'}/>`
-        + `<path class="m-dd-ts-comp-line${toneClass}" data-dd-ts-comp-line data-dd-ts-comp-solid d="${solidD}"${solidD ? '' : ' display="none"'}/>`
+        `<path class="m-dd-ts-comp-line${toneClass}" data-dd-ts-comp-line data-dd-ts-comp-solid d="${solidD}"${solidD ? '' : ' display="none"'}/>`
         + `<path class="m-dd-ts-comp-line is-gap${toneClass}" data-dd-ts-comp-line data-dd-ts-comp-gap d="${dashedD}"${dashedD ? '' : ' display="none"'}/>`
         + `<g data-dd-ts-comp-dots>${dotsHtml}</g>`;
     },
 
-    _ddPatchTimestepBaseScale(svg, baseEl, coords, curHigh, lossBottom, lossH, includeIqr, isRef) {
+    _ddPatchTimestepBaseScale(svg, baseEl, coords, curHigh, lossBottom, lossH) {
       const maxTickEl = svg.querySelector?.('[data-dd-ts-y-max]');
       if (maxTickEl) {
         const txt = this._ddFormatLoss(curHigh);
@@ -1012,13 +970,12 @@
       const curToY = v => lossBottom - (Math.max(0, v) / Math.max(1e-6, curHigh)) * lossH;
       if (!baseEl) return curToY;
 
-      const builtData = this._ddBuildTimestepBaseData(coords, curToY, lossBottom, includeIqr, isRef);
+      const builtData = this._ddBuildTimestepBaseData(coords, curToY);
       const canDomPatch = typeof globalThis.document?.createElementNS === 'function'
         && typeof baseEl.querySelector === 'function'
         && typeof baseEl.appendChild === 'function';
       if (canDomPatch) {
         const SVG_NS = 'http://www.w3.org/2000/svg';
-        const refCls = isRef ? ' is-ref' : '';
         const ensurePath = (attr, cls, d) => {
           let el = baseEl.querySelector(`[${attr}]`);
           if (d) {
@@ -1035,9 +992,9 @@
           }
         };
         ensurePath('data-dd-ts-iqr', 'm-dd-ts-iqr-band', builtData.iqrD);
-        ensurePath('data-dd-ts-base-solid', `m-dd-ts-base-line${refCls}`, builtData.basePaths.solidD);
-        ensurePath('data-dd-ts-base-sparse', `m-dd-ts-base-line is-sparse${refCls}`, builtData.basePaths.sparseD);
-        ensurePath('data-dd-ts-base-gap', `m-dd-ts-base-line is-gap${refCls}`, builtData.basePaths.gapD);
+        ensurePath('data-dd-ts-base-solid', 'm-dd-ts-base-line', builtData.basePaths.solidD);
+        ensurePath('data-dd-ts-base-sparse', 'm-dd-ts-base-line is-sparse', builtData.basePaths.sparseD);
+        ensurePath('data-dd-ts-base-gap', 'm-dd-ts-base-line is-gap', builtData.basePaths.gapD);
 
         const existingDots = new Map();
         for (const dEl of Array.from(baseEl.querySelectorAll('[data-dd-ts-base-dot]'))) {
@@ -1057,7 +1014,7 @@
           dEl.setAttribute('class', `m-dd-ts-dot${c.comparable ? '' : ' is-sparse'}`);
           dEl.setAttribute('cx', c.xCenter.toFixed(1));
           dEl.setAttribute('cy', c.y.toFixed(1));
-          dEl.setAttribute('r', c.comparable ? '2.1' : '2.3');
+          dEl.setAttribute('r', c.comparable ? '1.5' : '1.6');
           dEl.removeAttribute('display');
         }
         for (const [k, dEl] of existingDots) {
@@ -1066,9 +1023,9 @@
         return curToY;
       }
 
-      const built = this._ddBuildTimestepBaseMarkup(coords, curToY, lossBottom, includeIqr, isRef);
-      if (baseEl.innerHTML !== built.baseLayerHtml) {
-        baseEl.innerHTML = built.baseLayerHtml;
+      const baseLayerHtml = this._ddBuildTimestepBaseMarkup(coords, curToY);
+      if (baseEl.innerHTML !== baseLayerHtml) {
+        baseEl.innerHTML = baseLayerHtml;
       }
       return curToY;
     },
@@ -1140,7 +1097,7 @@
         if (compEl._ddMarkerLayout === next.markerLayout
             && this._ddPatchTimestepOverlayInPlace(compEl, next.kind, subsetMarkers, imageFinite, toX, toY, next.toneClass)) return;
         compEl.innerHTML = final ? compHtml : this._ddBuildTimestepOverlayMarkup(
-          next.kind, coords, subsetMarkers, imageFinite, imageNonFinite, toX, toY, lossTop, lossBottom, next.toneClass
+          next.kind, subsetMarkers, imageFinite, imageNonFinite, toX, toY, lossTop, next.toneClass
         );
         compEl._ddMarkerLayout = next.markerLayout;
       };
@@ -1149,13 +1106,12 @@
       const commitFinal = () => {
         svg._ddTsAnimRaf = 0;
         svg.classList?.remove?.('is-ts-animating');
-        const toY = this._ddPatchTimestepBaseScale(svg, baseEl, coords, next.high, lossBottom, lossH, !next.hasComparison, next.hasComparison);
+        const toY = this._ddPatchTimestepBaseScale(svg, baseEl, coords, next.high, lossBottom, lossH);
         if (profileChanged) patchDensityProfile(svg, coords, plotBottom);
         if (compEl) {
           if (compEl.style) compEl.style.opacity = '';
           if (next.kind === 'series') {
-            const nextBaseY = coords.map(c => c.y);
-            this._ddPatchTimestepCompSeries(compEl, coords, nextBaseY, next.compY, lossBottom, next.toneClass, next.compComparable);
+            this._ddPatchTimestepCompSeries(compEl, coords, next.compY, next.toneClass, next.compComparable);
           } else if (next.kind === 'image' || next.kind === 'subset') {
             paintMarkers(toY, true);
           } else {
@@ -1180,16 +1136,10 @@
 
       const durationMs = next.kind === 'none' ? 165 : 200;
       const highChanged = Math.abs(prevState.high - next.high) > 1e-6;
-      const keepIqrOnScale = !next.hasComparison || Boolean(prevState.hasComparison === false && baseEl?.querySelector?.('.m-dd-ts-iqr-band'));
       const prevToY = v => lossBottom - (Math.max(0, v) / Math.max(1e-6, prevState.high)) * lossH;
       const nextToY = v => lossBottom - (Math.max(0, v) / Math.max(1e-6, next.high)) * lossH;
       let t0 = null;
 
-      if (baseEl && !highChanged) {
-        baseEl.querySelectorAll?.('.m-dd-ts-base-line')?.forEach?.(el => {
-          el.classList?.toggle?.('is-ref', next.hasComparison);
-        });
-      }
       if (compEl && (next.kind === 'image' || next.kind === 'subset')) {
         paintMarkers(prevToY, !highChanged);
       }
@@ -1207,9 +1157,8 @@
         const frameCoords = profileChanged && prevState.coords ? interpolateProfile(prevState.coords, coords, e) : coords;
         if (profileChanged) patchDensityProfile(svg, frameCoords, plotBottom);
         const curToY = highChanged || profileChanged
-          ? this._ddPatchTimestepBaseScale(svg, baseEl, frameCoords, curHigh, lossBottom, lossH, keepIqrOnScale, next.hasComparison)
+          ? this._ddPatchTimestepBaseScale(svg, baseEl, frameCoords, curHigh, lossBottom, lossH)
           : (v => lossBottom - (Math.max(0, v) / Math.max(1e-6, curHigh)) * lossH);
-        const curBaseY = frameCoords.map(c => (c.valid ? curToY(c.mean_loss) : null));
         const curBarH = coords.map((_, i) => (prevState.barH[i] || 0) + ((next.barH[i] || 0) - (prevState.barH[i] || 0)) * e);
         const barTone = next.kind === 'series' ? next.toneClass : prevState.toneClass;
         this._ddPatchTimestepDensitySel(selEl, coords, curBarH, plotBottom, barTone, false);
@@ -1231,7 +1180,7 @@
             const startY = py != null ? py : (c.valid ? prevToY(c.mean_loss) : ny);
             return startY + (ny - startY) * e;
           });
-          this._ddPatchTimestepCompSeries(compEl, coords, curBaseY, curCompY, lossBottom, next.toneClass, curComparable);
+          this._ddPatchTimestepCompSeries(compEl, coords, curCompY, next.toneClass, curComparable);
           if (compEl?.style) compEl.style.opacity = curOp.toFixed(3);
         } else if (prevState.kind === 'series' && next.kind === 'none') {
           liveKind = 'series';
@@ -1245,7 +1194,7 @@
             const endY = c.valid ? nextToY(c.mean_loss) : py;
             return py + (endY - py) * e;
           });
-          this._ddPatchTimestepCompSeries(compEl, coords, curBaseY, curCompY, lossBottom, prevState.toneClass, curComparable);
+          this._ddPatchTimestepCompSeries(compEl, coords, curCompY, prevState.toneClass, curComparable);
           if (compEl?.style) compEl.style.opacity = curOp.toFixed(3);
         } else if (next.kind === 'image' || next.kind === 'subset') {
           curOp = prevState.kind === next.kind ? (prevState.compOpacity + (1 - prevState.compOpacity) * e) : Math.min(1, rawT * 2.4);
@@ -1336,7 +1285,7 @@
       for (const b of bins) {
         if (b.count > 0 && b.mean_loss != null) {
           baseVals.push(b.mean_loss);
-          if (!hasComparison && b.p75 != null) baseVals.push(b.p75);
+          if (b.p75 != null) baseVals.push(b.p75);
         }
       }
       const compVals = [];
@@ -1432,9 +1381,8 @@
         ? 'series'
         : (subsetMarkers.length ? 'subset' : (comp?.kind === 'image' && comp.detail ? 'image' : 'none'));
 
-      const baseYArr = coords.map(c => c.y);
-      const compYArr = coords.map(c => (hasCompSeries ? c.compY : null));
-      const compComparableArr = coords.map(c => Boolean(hasCompSeries && c.compCount > 0));
+      const compYArr = coords.map(c => (hasCompSeries && !c.excluded ? c.compY : null));
+      const compComparableArr = coords.map(c => Boolean(hasCompSeries && !c.excluded && c.compCount > 0));
       const targetBarHArr = coords.map(c => {
         if (!hasCompSeries || !(c.compCount > 0)) return 0;
         const compShare = totalCount > 0 ? c.compCount / totalCount : 0;
@@ -1443,20 +1391,19 @@
 
       let compHtml = '';
       if (hasCompSeries) {
-        const { deltaD, solidD, dashedD } = this._ddBuildTimestepCompSeriesPaths(
-          coords, baseYArr, compYArr, lossBottom, compComparableArr
+        const { solidD, dashedD } = this._ddBuildTimestepCompSeriesPaths(
+          coords, compYArr, compComparableArr
         );
-        const dotsHtml = coords.filter(c => c.compY != null).map(c =>
-          `<circle class="m-dd-ts-dot is-comp${toneClass}" data-dd-ts-comp-dot="${c.idx}" cx="${c.xCenter.toFixed(1)}" cy="${c.compY.toFixed(1)}" r="2.2"/>`
+        const dotsHtml = coords.filter(c => !c.excluded && c.compY != null).map(c =>
+          `<circle class="m-dd-ts-dot is-comp${toneClass}" data-dd-ts-comp-dot="${c.idx}" cx="${c.xCenter.toFixed(1)}" cy="${c.compY.toFixed(1)}" r="1.6"/>`
         ).join('');
         compHtml =
-          `<path class="m-dd-ts-comp-area${toneClass}" data-dd-ts-comp-area d="${deltaD}"${deltaD ? '' : ' display="none"'}/>`
-          + `<path class="m-dd-ts-comp-line${toneClass}" data-dd-ts-comp-line data-dd-ts-comp-solid d="${solidD}"${solidD ? '' : ' display="none"'}/>`
+          `<path class="m-dd-ts-comp-line${toneClass}" data-dd-ts-comp-line data-dd-ts-comp-solid d="${solidD}"${solidD ? '' : ' display="none"'}/>`
           + `<path class="m-dd-ts-comp-line is-gap${toneClass}" data-dd-ts-comp-line data-dd-ts-comp-gap d="${dashedD}"${dashedD ? '' : ' display="none"'}/>`
           + `<g data-dd-ts-comp-dots>${dotsHtml}</g>`;
       } else if (overlayKind === 'subset' || overlayKind === 'image') {
         compHtml = this._ddBuildTimestepOverlayMarkup(
-          overlayKind, coords, subsetMarkers, imageFinite, imageNonFinite, toX, toY, lossTop, lossBottom, toneClass
+          overlayKind, subsetMarkers, imageFinite, imageNonFinite, toX, toY, lossTop, toneClass
         );
       }
 
@@ -1525,7 +1472,7 @@
       } else {
         this._ddStopTimestepMorphAnim(svg);
         svg.classList?.toggle?.('is-ts-comparing', hasComparison);
-        const { baseLayerHtml } = this._ddBuildTimestepBaseMarkup(coords, toY, lossBottom, !hasComparison, hasComparison);
+        const baseLayerHtml = this._ddBuildTimestepBaseMarkup(coords, toY);
         const densityBarsHtml = coords.map(c => {
           const h = c.densityHeight;
           const cls = 'm-dd-ts-density-bar' + (!c.comparable ? ' is-sparse' : '');
@@ -1781,7 +1728,7 @@
       wrap._ddHoverMeta = { excludedHover, focusX };
       wrap.classList.add('is-hovering');
       svg.querySelectorAll('.m-dd-ts-density-bar.is-hovered').forEach(el => el.classList.remove('is-hovered'));
-      if (!excludedHover) {
+      if (!excludedHover && (bestBar.count > 0 || bestBar.non_finite_count > 0)) {
         svg.querySelector(`.m-dd-ts-density-bar[data-dd-ts-idx="${bestBar.idx}"]`)?.classList.add('is-hovered');
       }
       wrap.querySelectorAll('[data-dd-zone-col]').forEach(el => {

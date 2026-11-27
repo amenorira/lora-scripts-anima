@@ -175,6 +175,8 @@ SSH 経由で利用する場合は GUI のポートのみを転送します。UR
 
 必要に応じて起動スクリプトへ引数を渡せます（例：`.\start.bat --listen`、`bash start.sh --port 12345`）。
 
+LAN 内でパスワードを求める場合は `.\start.bat --listen --auth "ユーザー名:パスワード"` で起動し、ブラウザーの認証画面でログインします。`--listen` だけで起動すると、ポートに接続できる端末からトレーナーを操作できます。パスワードはシェルの履歴やプロセス一覧に残る場合があります。信頼できないネットワークでは、HTTPS リバースプロキシまたは SSH トンネルで接続を暗号化してください。
+
 <details>
 <summary>すべての起動引数を表示</summary>
 
@@ -183,6 +185,7 @@ SSH 経由で利用する場合は GUI のポートのみを転送します。UR
 | `--host` | バックエンド | str | `"127.0.0.1"` | サーバーの待ち受けホスト名 |
 | `--port` | バックエンド | int | `12333` | サーバーの待ち受けポート（使用時は `30000〜30020` にフォールバック） |
 | `--listen` | バックエンド | bool | `false` | `0.0.0.0` で待ち受け、LAN・外部アクセスを許可 |
+| `--auth` | バックエンド | str | 無効 | すべての待ち受けアドレスで UI、API、WebSocket、TensorBoard プロキシに HTTP Basic 認証を適用。形式は `ユーザー名:パスワード` |
 | `--skip-prepare-environment` | バックエンド | bool | `false` | 起動時の依存環境チェック・修復を省略 |
 | `--skip-prepare-onnxruntime` | バックエンド | bool | `false` | `onnxruntime-gpu` のチェックのみ省略 |
 | `--disable-tensorboard` | バックエンド | bool | `false` | GUI と同時に内蔵 TensorBoard を起動しない |

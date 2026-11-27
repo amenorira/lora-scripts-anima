@@ -445,7 +445,8 @@ window.monitorSummaryMixin = {
     const last = host._profile;
     if (last && last.source === source && last.avgValue === avgValue && last.live === isLiveRunning && last.locale === locale) return;
     host._profile = { source, avgValue, live: isLiveRunning, locale };
-    const raw = this._cleanLossPoints(source).slice(-30);
+    const maxPoints = 30;
+    const raw = this._cleanLossPoints(source).slice(-maxPoints);
     if (raw.length < 2) {
       if (host._lossTrace?.frame != null) cancelAnimationFrame(host._lossTrace.frame);
       host.hidden = true;
@@ -473,7 +474,8 @@ window.monitorSummaryMixin = {
     const span = Math.max(high - low, 1e-9);
     const vbW = 200, vbH = 92;
     const xStart = 6, xEnd = 188;
-    const toX = idx => xStart + (idx / Math.max(1, display.length - 1)) * (xEnd - xStart);
+    const slotStep = (xEnd - xStart) / (maxPoints - 1);
+    const toX = idx => xEnd - (display.length - 1 - idx) * slotStep;
     const toY = v => 72 - ((v - low) / span) * 42;
     const coords = display.map((pt, i) => ({ x: toX(i), y: toY(pt.yVal), step: pt.step, value: pt.value }));
     const lastPt = coords[coords.length - 1];
@@ -535,8 +537,10 @@ window.monitorSummaryMixin = {
     }
     this._transitionLossTrace(host, coords, meanY, isLiveRunning && animate, (points, guideY) => {
       const path = this._smoothSplinePath(points, .2);
+      const firstX = points[0].x.toFixed(1);
       line.setAttribute('d', path);
-      area.setAttribute('d', path + ` L${xEnd} ${vbH} L${xStart} ${vbH} Z`);
+      area.setAttribute('d', path + ` L${xEnd} ${vbH} L${firstX} ${vbH} Z`);
+      mean.setAttribute('x1', firstX);
       mean.setAttribute('y1', guideY.toFixed(1));
       mean.setAttribute('y2', guideY.toFixed(1));
       for (const el of [dot, pulse]) {
@@ -547,7 +551,7 @@ window.monitorSummaryMixin = {
         const marker = markers.get(step);
         if (!marker) return;
         const [hit, guide, hoverDot] = marker;
-        const left = i ? (points[i - 1].x + x) / 2 : xStart;
+        const left = i ? (points[i - 1].x + x) / 2 : Math.max(xStart, x - slotStep / 2);
         const right = i + 1 < points.length ? (points[i + 1].x + x) / 2 : xEnd;
         hit.setAttribute('x', left.toFixed(1));
         hit.setAttribute('width', (right - left).toFixed(1));
@@ -613,6 +617,33 @@ window.monitorSummaryMixin = {
     return [last, ...Array.from(steps).sort((a, b) => a - b).map(step => ({step, value: factorAt(step) * scale}))];
   },
 
+  _summaryLrHitEdges(points, xStart, xEnd) {
+    const radius = 6;
+    const minWidth = 3;
+    const edgePadding = gap => gap < minWidth ? radius : Math.min(radius, gap / 2);
+    const edges = [Math.max(xStart, points[0].x - edgePadding(points[1].x - points[0].x))];
+    for (let i = 1; i < points.length; i++) edges.push((points[i - 1].x + points[i].x) / 2);
+    edges.push(Math.min(xEnd, points.at(-1).x + edgePadding(points.at(-1).x - points.at(-2).x)));
+
+    // Share a small neighborhood when several samples land on the same screen pixel.
+    // Keep the midpoint boundaries to neighboring, well-separated samples.
+    for (let first = 0; first < points.length;) {
+      let last = first;
+      while (last + 1 < points.length && points[last + 1].x - points[last].x < minWidth) last++;
+      if (last > first) {
+        let left = Math.max(edges[first], points[first].x - radius);
+        const right = Math.min(edges[last + 1], points[last].x + radius);
+        const width = Math.min(minWidth, (right - left) / (last - first + 1));
+        for (let i = first + 1; i <= last; i++) {
+          left = Math.min(right - (last - i + 1) * width, Math.max(left + width, edges[i]));
+          edges[i] = left;
+        }
+      }
+      first = last + 1;
+    }
+    return edges;
+  },
+
   _patchSummaryLrProfile(root, lrSeries, totalSteps, isLiveRunning, t) {
     const host = root.querySelector('[data-summary-viz="lr"]');
     if (!host) return;
@@ -622,11 +653,37 @@ window.monitorSummaryMixin = {
     if (host._profile?.version === version && host._profile.source === source) return;
     host._profile = { source, version };
     const allPoints = this._cleanLossPoints(source);
-    if (allPoints.length < 2) { host.hidden = true; host.innerHTML = ''; delete host._summaryProjection; return; }
+    if (allPoints.length < 2) {
+      if (host._summaryProjection?.frame != null) cancelAnimationFrame(host._summaryProjection.frame);
+      host.hidden = true;
+      host.innerHTML = '';
+      delete host._summaryProjection;
+      delete host._hoverIdx;
+      const tile = host.closest?.('.m-live-metric');
+      tile?.querySelector('[data-summary-hud]')?.classList.remove('is-visible');
+      tile?.removeAttribute('title');
+      return;
+    }
     const past = this._downsampleSeriesPoints(allPoints, 64);
     const future = this._projectLrSchedule(past, totalSteps);
     const minStep = past[0].step <= Math.max(20, (totalSteps || 0) * 0.08) ? 0 : past[0].step;
-    const maxStep = Math.max(totalSteps || 0, past[past.length - 1].step, minStep + 1);
+    let maxStep;
+    if (totalSteps > 0) {
+      maxStep = Math.max(totalSteps, past[past.length - 1].step, minStep + 1);
+    } else {
+      const gaps = [];
+      for (let i = 1; i < past.length; i++) {
+        const gap = past[i].step - past[i - 1].step;
+        if (gap > 0) gaps.push(gap);
+      }
+      let stepPitch = 1;
+      if (gaps.length) {
+        gaps.sort((a, b) => a - b);
+        const mid = gaps.length >> 1;
+        stepPitch = (gaps.length & 1) ? gaps[mid] : (gaps[mid - 1] + gaps[mid]) / 2;
+      }
+      maxStep = Math.max(past[past.length - 1].step, minStep + stepPitch * 29, minStep + 1);
+    }
     const maxVal = Math.max(...past.map(p => p.value), ...future.map(p => p.value), 1e-12) * 1.15;
     const vbW = 200, vbH = 92;
     const xStart = 6, xEnd = 188;
@@ -639,15 +696,17 @@ window.monitorSummaryMixin = {
     const areaD = pastD + ` L${lastPt.x.toFixed(1)} ${vbH} L${firstPt.x.toFixed(1)} ${vbH} Z`;
     const futureCoords = future.map(p => ({ x: toX(p.step), y: toY(p.value), value: p.value }));
     const futureD = futureCoords.length >= 2 ? this._smoothSplinePath(futureCoords, 0.16) : '';
-    const slotW = Math.max(3, (lastPt.x - firstPt.x) / Math.max(1, pastCoords.length - 1));
     const gradId = 'm-lr-grad-' + (this.selectedRunDir ? 'h' : 'l');
     const guideId = 'm-lr-guide-' + (this.selectedRunDir ? 'h' : 'l');
     host._hudIndexChars = String(Math.round(maxStep)).length;
     host._hudValueChars = 0;
+    const hitEdges = this._summaryLrHitEdges(pastCoords, xStart, xEnd);
     const lrHits = pastCoords.map((pt, idx) => {
       const v = this._formatLearningRate(pt.value, '—');
       host._hudValueChars = Math.max(host._hudValueChars, v.length);
-      return `<g class="m-viz-item" data-viz-idx="${idx}" data-viz-kind="step" data-viz-num="${Math.round(pt.step)}" data-viz-val="${this.esc(v)}"><rect class="m-viz-hit" x="${(pt.x - slotW / 2).toFixed(1)}" y="6" width="${slotW.toFixed(1)}" height="${vbH - 6}"/><line class="m-viz-guide" x1="${pt.x.toFixed(1)}" x2="${pt.x.toFixed(1)}" y1="${Math.max(10, pt.y - 6).toFixed(1)}" y2="${vbH}" stroke="url(#${guideId})"/><circle class="m-viz-hover-dot is-lr" cx="${pt.x.toFixed(1)}" cy="${pt.y.toFixed(1)}" r="3.4"/></g>`;
+      const left = hitEdges[idx];
+      const width = hitEdges[idx + 1] - left;
+      return `<g class="m-viz-item" data-viz-idx="${idx}" data-viz-kind="step" data-viz-num="${Math.round(pt.step)}" data-viz-val="${this.esc(v)}"><rect class="m-viz-hit" x="${left}" y="6" width="${width}" height="${vbH - 6}"/><line class="m-viz-guide" x1="${pt.x.toFixed(1)}" x2="${pt.x.toFixed(1)}" y1="${Math.max(10, pt.y - 6).toFixed(1)}" y2="${vbH}" stroke="url(#${guideId})"/><circle class="m-viz-hover-dot is-lr" cx="${pt.x.toFixed(1)}" cy="${pt.y.toFixed(1)}" r="3.4"/></g>`;
     }).join('');
     host.hidden = false;
     const existingSvg = host.querySelector('.m-lr-profile-svg');

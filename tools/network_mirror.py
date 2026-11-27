@@ -221,10 +221,16 @@ def wheel_download_urls(entry: dict) -> list[str]:
     return _dedupe_urls(urls)
 
 
-def _configured_pip_index(env: Mapping[str, str] | None = None) -> str | None:
+def _skip_pip_probe(env: Mapping[str, str] | None = None) -> bool:
+    if __package__:
+        from .pip_index_config import pip_flag_enabled, read_indexes
+    else:  # python tools/network_mirror.py pip-index
+        from pip_index_config import pip_flag_enabled, read_indexes
+
     source = os.environ if env is None else env
-    if env_index := (source.get("PIP_INDEX_URL") or "").strip():
-        return env_index
+    has_index = any(source.get(key, "").strip() for key in ("PIP_INDEX_URL", "PIP_PYPI_URL"))
+    if has_index or pip_flag_enabled(source.get("PIP_NO_INDEX", "")):
+        return True
     try:
         # pip loads paths such as PIP_CONFIG_FILE from its process environment.
         if env is not None and dict(env) != dict(os.environ):
@@ -232,16 +238,13 @@ def _configured_pip_index(env: Mapping[str, str] | None = None) -> str | None:
                 [sys.executable, "-B", str(Path(__file__).with_name("pip_index_config.py"))],
                 env=env, text=True,
             )
-            for line in output.splitlines():
-                key, _, value = line.partition("\t")
-                if key == "global.index-url":
-                    return value.strip() or None
-            return None
-        from tools.pip_index_config import read_indexes
-
-        return (read_indexes().get("global.index-url") or "").strip() or None
+            keys = {line.partition("\t")[0] for line in output.splitlines()}
+        else:
+            keys = read_indexes().keys()
+        return "global.index-url" in keys or "global.no-index" in keys
     except Exception:
-        return None
+        # A bootstrap interpreter may have venv but no pip to read its config.
+        return True
 
 
 def select_pip_index(
@@ -250,7 +253,7 @@ def select_pip_index(
     timeout: float = 1.5,
 ) -> str | None:
     """Return a fast PyPI mirror URL only when unset and pypi.org is slow/unreachable."""
-    if _configured_pip_index(env):
+    if _skip_pip_probe(env):
         return None
 
     targets = (PYPI_OFFICIAL, *PYPI_MIRRORS)

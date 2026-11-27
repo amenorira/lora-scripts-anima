@@ -1001,6 +1001,36 @@ test('early 1D beeswarm, 3-stage dot choreography, MAX_SCATTER_EFFECTS cap, and 
     flushRaf();
     assert.equal(camSvg.classList.contains('is-camera-anim'), false);
     assert.equal(camWrap._ddTargetCamera.xMin, 0.22);
+
+    // Return from a wide, off-center viewport to auto bounds in a narrow desktop chart.
+    camStage.clientWidth = 450;
+    app.datasetDiagScatterZoom = { xMin: -2, xMax: 3, yMin: -0.3, yMax: 0.3 };
+    app._renderDatasetDiagHeroSvg(camWrap, camStage, camSvg, { animate: false });
+    app.datasetDiagScatterZoom = null;
+    app._renderDatasetDiagHeroSvg(camWrap, camStage, camSvg, { animate: true, durationMs: 200 });
+    const axisPositions = [];
+    const textBounds = (node, offsetX, size) => {
+      const width = app._ddEstimateScatterLabelWidth(node.textContent, size);
+      const anchor = offsetX + Number(node.getAttribute('x'));
+      const left = node.getAttribute('text-anchor') === 'end' ? anchor - width : anchor;
+      return [left, left + width];
+    };
+    for (const elapsed of [5, 20, 40, 70]) {
+      fakeNow += elapsed;
+      flushRaf();
+      const axisX = Number(/translateX\(([-.\d]+)px\)/.exec(axisYGroup.style.transform)[1]);
+      axisPositions.push(axisX);
+      const slope = axisYTicks.querySelector('.m-dd-axis-dir');
+      const threshold = labelsGroup.querySelector('[data-dd-thresh-label="high"]');
+      assert.ok(slope && threshold);
+      assert.equal(threshold.style.opacity, '1');
+      const [slopeLeft, slopeRight] = textBounds(slope, axisX, 10.5);
+      const [highLeft, highRight] = textBounds(threshold, 0, 10);
+      const rowDistance = Math.abs(Number(slope.getAttribute('y')) - Number(threshold.getAttribute('y')));
+      assert.ok(rowDistance >= 12 || slopeRight <= highLeft || highRight <= slopeLeft,
+        'the threshold and moving Y-axis direction label must stay apart on every sampled frame');
+    }
+    assert.ok(new Set(axisPositions).size > 1);
   });
 });
 
@@ -1223,10 +1253,43 @@ test('timestep chart 18-bin profile, IQR band, theoretical curves, morph animati
   assert.ok(ts.svg.innerHTML.includes('m-dd-ts-theo-line'));
   assert.ok(ts.svg.innerHTML.includes('m-dd-ts-excluded'));
 
-  // Smart-snap across interior empty bin & excluded bound message
+  // IQR band forms one continuous ribbon across non-excluded valid bins while staying clear of excluded bins
+  const iqrEl = ts.svg.querySelector('[data-dd-ts-iqr]');
+  const iqrD = iqrEl?.getAttribute('d') || '';
+  const iqrSegs = iqrD.match(/M[^Z]+Z/g) || [];
+  assert.equal(iqrSegs.length, 1);
   const gapBin = ts.wrap._ddChartState.coords.find(c => c.bin === 8);
+  const nonExclIqr = ts.wrap._ddChartState.coords.filter(c => !c.excluded && c.yP25 != null && c.yP75 != null);
+  const xs = Array.from(iqrSegs[0].matchAll(/[ML](-?\d+(?:\.\d+)?)\s+-?\d+(?:\.\d+)?/g), m => Number(m[1]));
+  assert.ok(Math.abs(Math.min(...xs) - nonExclIqr[0].xCenter) <= 0.2);
+  assert.ok(Math.abs(Math.max(...xs) - nonExclIqr.at(-1).xCenter) <= 0.2);
+
+  // Hovering an interior empty bin stays on that bin, keeps density bars unlit, and shows unmeasured hint
+  const densityBars = ts.svg.querySelectorAll('.m-dd-ts-density-bar');
+  const origSvgQs = ts.svg.querySelector.bind(ts.svg);
+  const origSvgQsa = ts.svg.querySelectorAll.bind(ts.svg);
+  ts.svg.querySelector = sel => {
+    const m = /^\.m-dd-ts-density-bar\[data-dd-ts-idx="(\d+)"\]$/.exec(sel);
+    if (m) return densityBars.find(b => b.getAttribute('data-dd-ts-idx') === m[1]) || null;
+    return origSvgQs(sel);
+  };
+  ts.svg.querySelectorAll = sel => (
+    sel === '.m-dd-ts-density-bar.is-hovered'
+      ? densityBars.filter(b => b.classList.contains('is-hovered'))
+      : origSvgQsa(sel)
+  );
+
+  const validBin = ts.wrap._ddChartState.coords.find(c => c.bin === 7);
+  a._updateDatasetDiagHeroHover(ts.wrap, validBin.xCenter, 60);
+  assert.equal(ts.wrap._ddActiveBar, validBin);
+  assert.equal(ts.svg.querySelectorAll('.m-dd-ts-density-bar.is-hovered').length, 1);
+
   a._updateDatasetDiagHeroHover(ts.wrap, gapBin.xCenter, 60);
+  assert.equal(ts.wrap._ddActiveBar, gapBin);
   assert.equal(tipEl.hidden, false);
+  assert.ok(tipEl.innerHTML.includes(a.tMonitor('ddNoiseTooltipUnmeasured')));
+  assert.equal(ts.svg.querySelectorAll('.m-dd-ts-density-bar.is-hovered').length, 0);
+
   const exclBin = ts.wrap._ddChartState.coords[0];
   a._updateDatasetDiagHeroHover(ts.wrap, exclBin.xCenter, 60);
   assert.ok(tipEl.innerHTML.includes('900'));
@@ -1270,6 +1333,13 @@ test('timestep chart 18-bin profile, IQR band, theoretical curves, morph animati
 
     morphApp._renderDatasetDiagHeroSvg(mWrap, mStage, fakeSvg);
     const baseHigh = fakeSvg._ddTsLiveState.high;
+    const baseIqrD = fakeSvg._parsed.find(n => n.getAttribute('data-dd-ts-iqr') !== undefined)?.getAttribute('d') || '';
+    assert.ok(baseIqrD.length > 0);
+    assert.ok(morphApp._ddNoiseLegendHtml(morphApp.tMonitor.bind(morphApp), { kind: 'status', tone: 'accent' }).includes('is-line-base'));
+    const initBaseDots = fakeSvg._parsed.filter(n => n.getAttribute('data-dd-ts-base-dot') !== undefined);
+    const baseSparseDot = initBaseDots.find(d => d.getAttribute('class').includes('is-sparse'));
+    assert.equal(baseSparseDot?.getAttribute('r'), '1.6');
+
     morphApp.toggleDatasetDiagOverviewPreset('easy');
     morphApp._renderDatasetDiagHeroSvg(mWrap, mStage, fakeSvg);
     assert.equal(tsRafQueue.size, 1);
@@ -1283,6 +1353,15 @@ test('timestep chart 18-bin profile, IQR band, theoretical curves, morph animati
     assert.ok(Math.abs(fakeSvg._ddTsLiveState.high - midEasyHigh) < 1e-6);
     assert.equal(runNextFrame(360), true);
     assert.ok(fakeSvg._ddTsLiveState.high > baseHigh + 0.05);
+    const compIqrEl = baseEl.querySelector('[data-dd-ts-iqr]');
+    assert.ok(compIqrEl && compIqrEl.getAttribute('d') && compIqrEl.getAttribute('d') !== baseIqrD);
+    assert.notEqual(compIqrEl.getAttribute('display'), 'none');
+    assert.equal(baseEl.querySelectorAll('.is-ref').length, 0);
+    assert.equal(compEl.querySelector('[data-dd-ts-comp-area]'), null);
+    const compDot = compEl.querySelector('[data-dd-ts-comp-dot]');
+    assert.equal(compDot?.getAttribute('r'), '1.6');
+    const compBaseSparseDot = baseEl.querySelectorAll('[data-dd-ts-base-dot]').find(d => d.getAttribute('class').includes('is-sparse'));
+    assert.equal(compBaseSparseDot?.getAttribute('r'), '1.6');
 
     morphApp.toggleDatasetDiagOverviewPreset('attention');
     morphApp._renderDatasetDiagHeroSvg(mWrap, mStage, fakeSvg);
@@ -2004,9 +2083,8 @@ test('grouped noise summary uses group series for resolution/subset and flux_shi
   const topHtml = pureRegApp._renderDatasetDiagHeading(k => pureRegApp.tMonitor(k), pureRegData);
   const toolbarHtml = pureRegApp._renderDatasetDiagImagesToolbar(k => pureRegApp.tMonitor(k), pureRegData);
   assert.ok(topHtml.includes(':value="_datasetDiagEffectiveRegMode()"'));
-  assert.ok(toolbarHtml.includes(':value="_datasetDiagEffectiveRegMode()"'));
   assert.ok(topHtml.includes('<option value="all" selected>'));
-  assert.ok(toolbarHtml.includes('<option value="all" selected>'));
+  assert.ok(!toolbarHtml.includes('data-dd-images-reg-wrap'));
 });
 
 test('scatter wheel coalesces per frame, uses pure camera path without is-live-motion/layout thrash, and freezes early beeswarm Y during gestures', () => {
@@ -2786,4 +2864,236 @@ test('long-epoch converging_slope scales scatter threshold label, Y auto-bounds,
   app._renderDatasetDiagHeroSvg(wrap, stage, svg, { animate: false });
   assert.ok(svg.innerHTML.includes('data-dd-thresh-label="conv"'));
   assert.ok(svg.innerHTML.includes('>-0.5%</text>'));
+});
+
+test('narrow scatter and early charts flip +20% threshold label left or dodge to avoid overlapping attention label', () => {
+  const narrowData = {
+    ...structuredClone(SAMPLE_DATA),
+    by_image: [
+      { image_id: 'n1', name: 'n1.png', count: 8, comparable_count: 8, mean_residual: -0.25, slope: -0.05, status: 'easy' },
+      { image_id: 'n2', name: 'n2.png', count: 8, comparable_count: 8, mean_residual: 0.15, slope: -0.02, status: 'normal' },
+      { image_id: 'n3', name: 'n3.png', count: 8, comparable_count: 8, mean_residual: 0.30, slope: 0.08, status: 'attention' },
+      { image_id: 'n4', name: 'n4.png', count: 8, comparable_count: 8, mean_residual: 0.36, slope: 0.12, status: 'attention' },
+    ],
+  };
+  const app = makeApp({ datasetDiagData: narrowData });
+
+  for (const [mode, stageW, stageH] of [['early', 320, 220], ['quadrant', 300, 260]]) {
+    const { wrap, stage, svg } = makeWrapStage(mode, stageW, stageH);
+    app._renderDatasetDiagHeroSvg(wrap, stage, svg, { animate: false });
+    const highEl = svg.querySelector('[data-dd-thresh-label="high"]');
+    const attEl = svg.querySelector('[data-dd-zone-label="attention"]');
+    assert.ok(highEl, `Expected high threshold label in ${mode}`);
+    assert.ok(attEl, `Expected attention zone label in ${mode}`);
+    assert.equal(highEl.getAttribute('text-anchor'), 'end', `Expected ${mode} +20% label to flip left`);
+    const attText = `${app.tMonitor(mode === 'early' ? 'ddEarlyRight' : 'ddQuadTopRight')} · 2`;
+    const attLeft = Number(attEl.getAttribute('x')) - app._ddEstimateScatterLabelWidth(attText, 10.5);
+    assert.ok(Number(highEl.getAttribute('x')) <= attLeft, `Expected ${mode} +20% label to stay left of attention label`);
+  }
+
+  // When flipping left would still touch the attention label horizontally, drop vertically below it
+  for (const [mode, stageW, stageH] of [['early', 240, 220], ['quadrant', 260, 260]]) {
+    const tight = makeWrapStage(mode, stageW, stageH);
+    app._renderDatasetDiagHeroSvg(tight.wrap, tight.stage, tight.svg, { animate: false });
+    const tightHigh = tight.svg.querySelector('[data-dd-thresh-label="high"]');
+    const tightAtt = tight.svg.querySelector('[data-dd-zone-label="attention"]');
+    assert.ok(tightHigh && tightAtt);
+    assert.ok(Number(tightHigh.getAttribute('y')) >= Number(tightAtt.getAttribute('y')) + 10);
+  }
+
+  // When both right (collides with attention) and left (hits padL) lack room at top, drop below attention label
+  const dodged = app._ddResolveScatterHighLabel(12, 8, 140, 200, 32, '+20%', true, 'Needs attention · 12');
+  assert.ok(Number(dodged.y) >= 32);
+
+  // When attVisible is false but convLabelY is at top row, avoid colliding with conv label
+  const dodgedConv = app._ddResolveScatterHighLabel(12, 8, 300, 200, 120, '+20%', false, '', 19);
+  assert.ok(dodgedConv.anchor === 'end' || Number(dodgedConv.y) >= 31);
+
+  // Top-left obstacle blocks left-flip -> drop vertically instead of colliding with left axis hint
+  const dodgedTopObs = app._ddResolveScatterHighLabel(12, 8, 220, 200, 110, '+20%', true, 'Needs attention · 12', null, [{ left: 14, right: 112 }]);
+  assert.ok(Number(dodgedTopObs.y) >= 33);
+});
+
+test('CSS hides .m-dd-inline-ctl[hidden] and .m-dd-leg[hidden] so inline-flex does not override the hidden attribute', () => {
+  const css = readRepo('frontend/css/app.css');
+  assert.match(css, /\.m-dd-inline-ctl\[hidden\]\s*\{\s*display:\s*none;\s*\}/);
+  assert.match(css, /\.m-dd-leg\[hidden\]\s*\{\s*display:\s*none;\s*\}/);
+});
+
+test('images sub-tab keeps only the top-bar dataset/reg selector without duplicating it in the toolbar', () => {
+  const regData = {
+    ...structuredClone(SAMPLE_DATA),
+    summary: { ...SAMPLE_DATA.summary, has_reg_images: true },
+    by_image: [
+      ...SAMPLE_DATA.by_image,
+      { image_id: 'reg1', name: 'reg1.png', count: 6, comparable_count: 6, mean_residual: 0.05, slope: -0.01, status: 'normal', is_reg: true },
+    ],
+  };
+  const app = makeApp({ datasetDiagData: regData, datasetDiagSubTab: 'images' });
+  const html = app._renderDatasetDiagTab(k => app.tMonitor(k));
+  assert.match(html, /data-dd-top-reg-wrap>/);
+  assert.doesNotMatch(html, /data-dd-top-reg-wrap\s+hidden/);
+  assert.doesNotMatch(html, /data-dd-images-reg-wrap/);
+  assert.doesNotMatch(html, /ddRegSelect/);
+});
+
+test('discrete non-adjacent populated bins connect into one continuous P25-P75 IQR ribbon in overview and modal timestep charts', () => {
+  const activeBins = new Set([16, 13, 10, 7, 4, 1]);
+  const width = 1000 / 18;
+  const bins = Array.from({ length: 18 }, (_, bin) => {
+    const active = activeBins.has(bin);
+    return {
+      bin,
+      t_from: bin * width,
+      t_to: (bin + 1) * width,
+      count: active ? 6 : 0,
+      images: active ? 3 : 0,
+      comparable: active,
+      mean_loss: active ? (0.18 + bin * 0.015) : null,
+      p25: active ? (0.14 + bin * 0.012) : null,
+      p75: active ? (0.24 + bin * 0.018) : null,
+      non_finite_count: 0,
+      trend: active ? -0.02 : null,
+    };
+  });
+
+  const discreteData = {
+    ...structuredClone(SAMPLE_DATA),
+    timestep_scale: 'thousand',
+    timestep_profile: {
+      bins,
+      by_status: {},
+      by_group: {},
+    },
+  };
+  const app = makeApp({ datasetDiagData: discreteData });
+
+  const ts = makeWrapStage('timestep', 420, 200);
+  app._renderDatasetDiagHeroSvg(ts.wrap, ts.stage, ts.svg, { animate: false });
+  const heroIqrEl = ts.svg.querySelector('[data-dd-ts-iqr]');
+  assert.ok(heroIqrEl, 'Overview timestep chart should render .m-dd-ts-iqr-band for discrete bins');
+  const heroDots = ts.svg.querySelectorAll('[data-dd-ts-base-dot]');
+  assert.equal(heroDots.length, 6);
+  assert.ok(heroDots.every(d => d.getAttribute('r') === '1.5'));
+  const heroIqrD = heroIqrEl.getAttribute('d') || '';
+  const heroSegs = heroIqrD.match(/M[^Z]+Z/g) || [];
+  assert.equal(heroSegs.length, 1);
+
+  const populatedCoords = ts.wrap._ddChartState.coords.filter(c => activeBins.has(c.bin)).sort((a, b) => a.xCenter - b.xCenter);
+  assert.equal(populatedCoords.length, 6);
+  const heroXs = Array.from(heroSegs[0].matchAll(/[ML](-?\d+(?:\.\d+)?)\s+-?\d+(?:\.\d+)?/g), m => Number(m[1]));
+  assert.ok(Math.abs(Math.min(...heroXs) - populatedCoords[0].xCenter) <= 0.2);
+  assert.ok(Math.abs(Math.max(...heroXs) - populatedCoords.at(-1).xCenter) <= 0.2);
+
+  const detail = {
+    run_id: 'r0',
+    timestep_scale: 'thousand',
+    image: discreteData.by_image[0],
+    timestep_profile: { bins },
+    epoch_series: [{ epoch: 1, count: 6, mean_residual: 0.1, mean_loss: 0.3, non_finite_count: 0 }],
+    samples: Array.from(activeBins).map((bin, i) => ({
+      step: i + 1,
+      epoch: 1,
+      timestep: (bin + 0.5) * width,
+      loss: 0.2 + bin * 0.015,
+      residual: 0.05,
+      non_finite: false,
+    })),
+    caption: { exists: false },
+    file_info: { exists: true },
+  };
+  const modalStage = makeEl('div');
+  modalStage.clientWidth = 520;
+  modalStage.clientHeight = 220;
+  const modalSvg = makeEl('svg');
+  app._renderDatasetDiagModalTimestepSvg(modalStage, modalSvg, detail, k => app.tMonitor(k));
+  const modalIqrEl = modalSvg.querySelector('.m-dd-ts-iqr-band');
+  assert.ok(modalIqrEl, 'Modal timestep chart should render .m-dd-ts-iqr-band for discrete bins');
+  const modalIqrD = modalIqrEl.getAttribute('d') || '';
+  const modalSegs = modalIqrD.match(/M[^Z]+Z/g) || [];
+  assert.equal(modalSegs.length, 1);
+
+  const modalPts = modalStage._ddState.profilePoints.filter((_, i) => activeBins.has(bins.slice().sort((a, b) => b.bin - a.bin)[i].bin));
+  modalPts.sort((a, b) => a.x - b.x);
+  const modalXs = Array.from(modalSegs[0].matchAll(/[ML](-?\d+(?:\.\d+)?)\s+-?\d+(?:\.\d+)?/g), m => Number(m[1]));
+  assert.ok(Math.abs(Math.min(...modalXs) - modalPts[0].x) <= 0.2);
+  assert.ok(Math.abs(Math.max(...modalXs) - modalPts.at(-1).x) <= 0.2);
+});
+
+test('excluded consecutive timestep bins with historical samples never draw base or comparison dots', () => {
+  const width = 1000 / 18;
+  const bins = Array.from({ length: 18 }, (_, bin) => ({
+    bin,
+    t_from: bin * width,
+    t_to: (bin + 1) * width,
+    count: bin === 14 ? 1 : 6,
+    images: bin === 14 ? 1 : 4,
+    comparable: bin !== 14 && bin !== 5,
+    mean_loss: 0.16 + bin * 0.015,
+    p25: 0.12 + bin * 0.012,
+    p75: 0.21 + bin * 0.018,
+    non_finite_count: 0,
+  }));
+  const data = {
+    ...structuredClone(SAMPLE_DATA),
+    timestep_scale: 'thousand',
+    sampling_config: { timestep_sampling: 'uniform', max_timestep: 700 },
+    timestep_profile: {
+      num_bins: 18,
+      bins,
+      by_status: {
+        attention: {
+          counts: Array.from({ length: 18 }, () => 4),
+          mean_loss: Array.from({ length: 18 }, (_, bin) => 0.30 + bin * 0.02),
+        },
+      },
+      by_group: {},
+    },
+  };
+
+  // 1. Initial unselected & comparison renders (fresh SVG build path)
+  const app = makeApp({ datasetDiagData: data, _monitorMotionAllowed: () => false });
+  const ts = makeWrapStage('timestep', 380, 176);
+  app._renderDatasetDiagHeroSvg(ts.wrap, ts.stage, ts.svg, { animate: false });
+
+  const excludedIdx = new Set(
+    ts.wrap._ddChartState.coords.filter(c => c.excluded).map(c => String(c.idx))
+  );
+  assert.ok(excludedIdx.size >= 4, 'multiple consecutive upper bins should be excluded');
+
+  const initBaseDots = ts.svg.querySelectorAll('[data-dd-ts-base-dot]');
+  assert.ok(initBaseDots.some(d => !excludedIdx.has(d.getAttribute('data-dd-ts-base-dot'))), 'non-excluded sparse bin draws dot');
+  assert.ok(initBaseDots.every(d => !excludedIdx.has(d.getAttribute('data-dd-ts-base-dot'))), 'excluded bins must not draw base dots');
+
+  app.toggleDatasetDiagOverviewPreset('attention');
+  const tsComp = makeWrapStage('timestep', 380, 176);
+  app._renderDatasetDiagHeroSvg(tsComp.wrap, tsComp.stage, tsComp.svg, { animate: false });
+
+  const freshBaseDots = tsComp.svg.querySelectorAll('[data-dd-ts-base-dot]');
+  const freshCompDots = tsComp.svg.querySelectorAll('[data-dd-ts-comp-dot]');
+  assert.ok(freshCompDots.length > 0);
+  assert.ok(freshBaseDots.every(d => !excludedIdx.has(d.getAttribute('data-dd-ts-base-dot'))), 'excluded bins must not draw base dots during comparison');
+  assert.ok(freshCompDots.every(d => !excludedIdx.has(d.getAttribute('data-dd-ts-comp-dot'))), 'excluded bins must not draw comparison dots');
+
+  // 2. DOM-patch comparison path (morph commitFinal)
+  withMockEnv({
+    document: { createElementNS: (_ns, tag) => makeEl(tag), querySelector: () => null },
+  }, () => {
+    const patchApp = makeApp({ datasetDiagData: data, _monitorMotionAllowed: () => false });
+    const baseEl = makeEl('g'), theoEl = makeEl('g'), compEl = makeEl('g'), selEl = makeEl('g'), yMaxEl = makeEl('text'), focusCompEl = makeEl('circle');
+    const fakeSvg = makeEl('svg');
+    fakeSvg.querySelector = sel => ({ '[data-dd-ts-base]': baseEl, '[data-dd-ts-density-theo]': theoEl, '[data-dd-ts-comp]': compEl, '[data-dd-ts-density-sel]': selEl, '[data-dd-ts-y-max]': yMaxEl, '[data-dd-ts-focus-comp]': focusCompEl })[sel] || null;
+    const pStage = makeEl('div'); pStage.clientWidth = 380; pStage.clientHeight = 176;
+    const pWrap = makeEl('div'); pWrap.dataset = { mode: 'timestep' };
+
+    patchApp._renderDatasetDiagHeroSvg(pWrap, pStage, fakeSvg);
+    patchApp.toggleDatasetDiagOverviewPreset('attention');
+    patchApp._renderDatasetDiagHeroSvg(pWrap, pStage, fakeSvg);
+
+    const patchedBaseDots = baseEl.querySelectorAll('[data-dd-ts-base-dot]').filter(d => d.getAttribute('display') !== 'none');
+    const patchedCompDots = compEl.querySelectorAll('[data-dd-ts-comp-dot]');
+    assert.ok(patchedCompDots.length > 0);
+    assert.ok(patchedBaseDots.every(d => !excludedIdx.has(d.getAttribute('data-dd-ts-base-dot'))));
+    assert.ok(patchedCompDots.every(d => !excludedIdx.has(d.getAttribute('data-dd-ts-comp-dot'))));
+  });
 });

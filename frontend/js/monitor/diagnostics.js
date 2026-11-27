@@ -35,6 +35,35 @@ window.monitorDiagnosticsMixin = {
     };
   },
 
+  _estimateHeroLabelWidth(text, fontSize = 10.5) {
+    let units = 0;
+    for (const ch of String(text || '')) {
+      if (/[\u3000-\u9fff\uff00-\uffef]/.test(ch)) units += 1.08;
+      else if (ch === ' ') units += 0.48;
+      else units += 0.65;
+    }
+    return units * fontSize;
+  },
+
+  _diagnosticWindowSpan(points, windowMax = this._trainingDiagnosticRules().windowMax) {
+    const fullIntervals = Math.max(1, windowMax * 2 - 1);
+    if (!points || points.length < 2) return fullIntervals;
+    const actualSpan = Math.max(points[points.length - 1].step - points[0].step, 1);
+    if (points.length >= windowMax * 2) return actualSpan;
+    const gaps = [];
+    for (let i = 1; i < points.length; i++) {
+      const gap = points[i].step - points[i - 1].step;
+      if (gap > 0) gaps.push(gap);
+    }
+    let stepPitch = 1;
+    if (gaps.length) {
+      gaps.sort((a, b) => a - b);
+      const mid = gaps.length >> 1;
+      stepPitch = (gaps.length & 1) ? gaps[mid] : (gaps[mid - 1] + gaps[mid]) / 2;
+    }
+    return Math.max(actualSpan, stepPitch * fullIntervals);
+  },
+
   _trainingDiagnostics(points) {
     const rules = this._trainingDiagnosticRules();
     const clean = points ? this._cleanLossPoints(points).slice(-rules.windowMax * 2) : this._trainingDiagnosticPoints();
@@ -760,6 +789,25 @@ window.monitorDiagnosticsMixin = {
       });
     }
 
+    const unfilledBg = q('[data-hero-unfilled-bg]');
+    const startGuide = q('[data-hero-start-guide]');
+    showEl(unfilledBg, m.showUnfilled);
+    showEl(startGuide, m.showUnfilled);
+    if (m.showUnfilled) {
+      setAttrs(unfilledBg, {
+        x: m.padL,
+        y: m.padT,
+        width: m.unfilledWidth.toFixed(1),
+        height: m.plotH,
+      });
+      setAttrs(startGuide, {
+        x1: m.dataStartX.toFixed(1),
+        x2: m.dataStartX.toFixed(1),
+        y1: m.padT,
+        y2: m.padT + m.plotH,
+      });
+    }
+
     const diffBand = q('[data-hero-diff-band]');
     showEl(diffBand, Boolean(m.diffBandD));
     if (m.diffBandD) setAttrs(diffBand, { d: m.diffBandD });
@@ -789,12 +837,14 @@ window.monitorDiagnosticsMixin = {
     showEl(recLabel, m.showWindowMeans);
     if (m.showWindowMeans) {
       const recEndX = m.padL + m.plotW;
-      setAttrs(prevMean, { x1: m.padL, x2: m.splitX.toFixed(1), y1: m.yPrev.toFixed(1), y2: m.yPrev.toFixed(1) });
+      setAttrs(prevMean, { x1: m.prevStartX.toFixed(1), x2: m.splitX.toFixed(1), y1: m.yPrev.toFixed(1), y2: m.yPrev.toFixed(1) });
       setAttrs(recMean, { x1: m.splitX.toFixed(1), x2: recEndX.toFixed(1), y1: m.yRec.toFixed(1), y2: m.yRec.toFixed(1) });
-      setAttrs(prevLabel, { x: m.padL + 3, y: Math.max(m.padT + 9, m.yPrev - 4).toFixed(1) });
+      setAttrs(prevLabel, { x: (m.prevStartX + 3).toFixed(1), y: Math.max(m.padT + 9, m.yPrev - 4).toFixed(1) });
       setText(prevLabel, m.prevMeanText);
+      prevLabel?.classList?.toggle('is-crowded', Boolean(m.prevLabelCrowded));
       setAttrs(recLabel, { x: (recEndX - 3).toFixed(1), y: Math.max(m.padT + 9, m.yRec - 4).toFixed(1) });
       setText(recLabel, m.deltaText);
+      recLabel?.classList?.toggle('is-crowded', Boolean(m.recLabelCrowded));
     }
 
     const prevPath = q('[data-hero-prev-path]');
@@ -893,9 +943,14 @@ window.monitorDiagnosticsMixin = {
     showEl(axisLrMin, Boolean(m.lrMinText));
     if (m.lrMaxText) setLabel(axisLrMax, m.padL + m.plotW - 4, m.padT + 10, m.lrMaxText);
     if (m.lrMinText) setLabel(axisLrMin, m.padL + m.plotW - 4, m.padT + m.plotH - 4, m.lrMinText);
-    setLabel(axisStart, m.padL, m.height - 4, m.startStepText);
+    setLabel(axisStart, m.axisStartX.toFixed(1), m.height - 4, m.startStepText);
+    setAttrs(axisStart, { 'text-anchor': m.axisStartAnchor });
+    axisStart?.classList?.toggle('is-crowded', Boolean(m.axisStartCrowded));
     showEl(axisMid, Boolean(m.splitStepText));
-    if (m.splitStepText) setLabel(axisMid, m.splitX.toFixed(1), m.height - 4, m.splitStepText);
+    if (m.splitStepText) {
+      setLabel(axisMid, m.splitX.toFixed(1), m.height - 4, m.splitStepText);
+      axisMid?.classList?.toggle('is-crowded', Boolean(m.axisMidCrowded));
+    }
     setLabel(axisEnd, m.padL + m.plotW, m.height - 4, m.endStepText);
 
     setAttrs(q('[data-hover-line]'), { y1: m.padT, y2: m.padT + m.plotH });
@@ -919,7 +974,9 @@ window.monitorDiagnosticsMixin = {
     const isLiveRunning = running && !paused;
 
     // Measure at the real plot width on the very first visible frame.
-    if (rawPrimary.length >= 2) wrap.hidden = false;
+    const rules = this._trainingDiagnosticRules();
+    const minSeriesPoints = mode === 'full' ? 2 : rules.minimumPoints;
+    if (rawPrimary.length >= minSeriesPoints || (mode === 'epoch' && rawPrimary.length >= 2)) wrap.hidden = false;
     const width = Math.max(240, Math.round(svg.clientWidth || stage.clientWidth || 500));
     const height = 152;
     wrap._renderedWidth = width;
@@ -1041,7 +1098,7 @@ window.monitorDiagnosticsMixin = {
     // ── Mode: 诊断窗口 (window) 或 全程 (full) ──
     delete svg._epochMarkup;
     const isFull = mode === 'full';
-    if (rawPrimary.length < 2) {
+    if (rawPrimary.length < minSeriesPoints) {
       this._clearHeroChartHover(wrap);
       wrap.hidden = true;
       wrap._chartState = null;
@@ -1059,11 +1116,20 @@ window.monitorDiagnosticsMixin = {
       if (displayPrimary[at].step !== best.step) displayPrimary.splice(at, 0, best);
       else displayPrimary[at] = best;
     }
-    const minStep = Math.min(best.step, displayPrimary[0].step);
-    const maxStep = Math.max(displayPrimary[displayPrimary.length - 1].step, minStep + 1);
+    const dataMinStep = Math.min(best.step, displayPrimary[0].step);
+    const maxStep = Math.max(displayPrimary[displayPrimary.length - 1].step, dataMinStep + 1);
+    const windowSpan = isFull ? Math.max(maxStep - dataMinStep, 1) : this._diagnosticWindowSpan(displayPrimary, rules.windowMax);
+    const viewFirstStep = isFull ? dataMinStep : Math.min(dataMinStep, maxStep - windowSpan);
     const last = wrap._chartState;
     const sameView = last?.mode === mode && last.context === wrap._chartContext;
-    const animateRange = isLiveRunning && !isHistory && sameView && last.width === width
+    if ((!sameView || options.animateSwitch) && svg.classList) {
+      svg.classList.add('is-instant-labels');
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => svg.classList?.remove('is-instant-labels'));
+      }
+    }
+    const disjointRange = scrolling && last?.range && (maxStep < last.range.endStep || dataMinStep > last.range.endStep);
+    const animateRange = isLiveRunning && !isHistory && sameView && !disjointRange && last.width === width
       && !options.animateSwitch && typeof requestAnimationFrame === 'function' && this._monitorMotionAllowed();
 
     // 纵轴量程围绕主平滑曲线与均值自适应留白。
@@ -1078,15 +1144,17 @@ window.monitorDiagnosticsMixin = {
     const high = pHigh + baseSpan * 0.22;
 
     // 紫色 LR 次坐标叠加曲线
-    const lineStart = scrolling && animateRange && last.range ? Math.min(minStep, last.range.firstStep ?? minStep) : minStep;
+    const lineStart = scrolling && animateRange && last.range ? Math.min(viewFirstStep, last.range.firstStep ?? viewFirstStep) : viewFirstStep;
+    const dataStart = scrolling && animateRange && last
+      ? Math.min(dataMinStep, last.dataMinStep ?? dataMinStep, last.sourcePoints?.[0]?.step ?? dataMinStep)
+      : dataMinStep;
     const lrPoints = this.monitorChartShowLr
-      ? chart.lrPoints.filter(pt => pt.step >= lineStart && pt.step <= maxStep)
+      ? chart.lrPoints.filter(pt => pt.step >= dataStart && pt.step <= maxStep)
       : [];
     const lrDraw = lrPoints.length >= 2 ? this._downsampleMonitorPoints(lrPoints, 120) : [];
 
-    const rules = this._trainingDiagnosticRules();
     const hasWindowSplit = diagnostic.windowSize > 0 && Number.isFinite(diagnostic.previousMean) && Number.isFinite(diagnostic.recentMean);
-    const isFullHistorySplit = isFull && hasWindowSplit && diagnostic.windowSize >= rules.windowMax && diagnostic.previousStartStep > minStep;
+    const isFullHistorySplit = isFull && hasWindowSplit && diagnostic.windowSize >= rules.windowMax && diagnostic.previousStartStep > dataMinStep;
     const splitStep = hasWindowSplit ? (isFullHistorySplit ? diagnostic.previousStartStep : diagnostic.recentStartStep) : null;
     let boundaryStep = null;
     if (isFullHistorySplit) {
@@ -1094,26 +1162,25 @@ window.monitorDiagnosticsMixin = {
     } else if (hasWindowSplit) {
       // Both halves share this guide. Keep it centered whenever the actual
       // sample boundary permits, including when the trace has one lead-in point.
-      const midpoint = (minStep + maxStep) / 2;
+      const midpoint = (dataMinStep + maxStep) / 2;
       boundaryStep = Math.max(diagnostic.previousEndStep, Math.min(midpoint, diagnostic.recentStartStep));
     }
 
     const layout = { svg, width, height, padL, padR, padT, plotW, plotH, isHistory, isLiveRunning,
-      totalSteps, previewMarkersAll, minStep, maxStep, displayPrimary, scrolling, boundaryStep,
+      totalSteps, previewMarkersAll, minStep: viewFirstStep, dataMinStep, maxStep, displayPrimary, scrolling, boundaryStep,
       splitStep, isFullHistorySplit, hasWindowSplit, lrPoints, lrDraw };
     const target = { low, high, previousMean: diagnostic.previousMean, recentMean: diagnostic.recentMean };
-    if (scrolling) Object.assign(target, { firstStep: minStep, endStep: maxStep, boundaryStep });
-    if (lineStart < minStep) {
-      const retained = last.sourcePoints.filter(p => p.step < minStep);
+    if (scrolling) Object.assign(target, { firstStep: viewFirstStep, endStep: maxStep, boundaryStep });
+    if (scrolling && animateRange && lineStart < displayPrimary[0].step && last?.sourcePoints?.length) {
+      const retained = last.sourcePoints.filter(p => p.step < displayPrimary[0].step);
       layout.displayPrimary = retained.concat(displayPrimary);
     }
     if (lrDraw.length) {
-      const values = lrDraw.filter(p => p.step >= minStep).map(p => p.value);
+      const values = lrDraw.filter(p => p.step >= dataMinStep).map(p => p.value);
       if (values.length) Object.assign(target, { lrMin: Math.min(...values), lrMax: Math.max(...values) });
     }
     const paint = range => this._paintHeroSeries(wrap, chart, layout, range, t, options);
-    if (isHistory || !running || !sameView || !last.range
-        || (scrolling && (maxStep < last.range.endStep || minStep > last.range.endStep))) {
+    if (isHistory || !running || !sameView || !last.range || disjointRange) {
       paint(target);
       return;
     }
@@ -1171,12 +1238,15 @@ window.monitorDiagnosticsMixin = {
     const project = pt => ({ step: pt.step, value: pt.value, x: toX(pt.step), y: toY(pt.value) });
     const visible = scrolling ? this._heroVisibleLine(displayPrimary, firstStep, maxStep) : displayPrimary;
     const coords = visible.map(project);
+    const dataStartStep = coords.length ? coords[0].step : (range.dataMinStep ?? layout.dataMinStep);
+    const dataStartX = coords.length ? Math.max(padL, Math.min(padL + plotW, coords[0].x)) : padL;
+    const clipStartStep = isFull ? firstStep : Math.max(firstStep, dataStartStep);
     const lrPad = Math.max((range.lrMax - range.lrMin) * .14, Math.abs(range.lrMax) * .08, 1e-12);
     const lrLow = Math.max(0, range.lrMin - lrPad);
     const lrSpan = Math.max(range.lrMax + lrPad - lrLow, 1e-12);
     const lrToY = Number.isFinite(range.lrMax)
       ? v => Math.max(padT, Math.min(padT + plotH, padT + plotH - (v - lrLow) / lrSpan * plotH)) : null;
-    const lrLine = scrolling ? this._heroVisibleLine(lrDraw, firstStep, maxStep) : lrDraw;
+    const lrLine = scrolling ? this._heroVisibleLine(lrDraw, clipStartStep, maxStep) : lrDraw.filter(pt => pt.step >= clipStartStep);
     const lrD = lrToY ? this._heroPathD(lrLine.map(p => ({ x: toX(p.step), y: lrToY(p.value) }))) : '';
     const lrMaxText = lrD ? this._formatLearningRate(range.lrMax, '') : '';
     const lrMinText = lrD ? this._formatLearningRate(range.lrMin, '') : '';
@@ -1193,14 +1263,20 @@ window.monitorDiagnosticsMixin = {
 
     const showWindowMeans = !isFull && hasWindowSplit && splitX != null;
     const showFullBg = isFullHistorySplit && splitX != null;
+    const showUnfilled = !isFull && dataStartX > padL + 2;
+    const unfilledWidth = showUnfilled ? Math.max(0, dataStartX - padL) : 0;
     const showSplitLine = hasWindowSplit && splitX != null;
     const fullBgWidth = showFullBg ? Math.min(plotW, Math.max(4, padL + plotW - splitX)) : 0;
     const fullBgX = showFullBg ? Math.max(padL, Math.min(splitX, padL + plotW - fullBgWidth)) : padL;
+    const prevMeanText = t('chartPrevMean');
+    const deltaText = showWindowMeans ? this._formatDiagnosticPercent(diagnostic.changePct, true) : '';
+    const prevStartX = isFull ? padL : dataStartX;
+    const prevLabelCrowded = showWindowMeans && (splitX - prevStartX) < (this._estimateHeroLabelWidth(prevMeanText, 9.5) + 8);
+    const recLabelCrowded = showWindowMeans && (padL + plotW - splitX) < (this._estimateHeroLabelWidth(deltaText, 9.5) + 8);
     let yPrev = 0;
     let yRec = 0;
     let diffBandD = '';
     let showSplitConn = false;
-    let deltaText = '';
     if (showWindowMeans) {
       const recEndX = padL + plotW;
       yPrev = toY(range.previousMean);
@@ -1211,7 +1287,6 @@ window.monitorDiagnosticsMixin = {
         diffBandD = `M${splitX.toFixed(1)} ${bandTop.toFixed(1)} H${recEndX.toFixed(1)} V${bandBot.toFixed(1)} H${splitX.toFixed(1)} Z`;
         showSplitConn = true;
       }
-      deltaText = this._formatDiagnosticPercent(diagnostic.changePct, true);
     }
 
     // 最低点与最新点锚点 + 电子卡尺（悬停距最低值时显出）
@@ -1230,26 +1305,42 @@ window.monitorDiagnosticsMixin = {
     const bestAlignLeft = bestPt.x < padL + 84;
     const bestAnchor = bestAlignRight ? 'end' : (bestAlignLeft ? 'start' : 'middle');
     const bestTextX = bestAlignRight ? Math.min(padL + plotW - 2, bestPt.x + 4) : (bestAlignLeft ? Math.max(padL + 2, bestPt.x - 4) : bestPt.x);
-    // 最低点下方必然没有曲线经过，有空间时优先放下方完全避开折线谷壁。
-    const bestTextY = bestPt.y <= padT + plotH - 15 ? bestPt.y + 14 : bestPt.y - 11;
+    // 最低点下方必然没有曲线经过，有空间时优先放下方完全避开折线谷壁，并避让右侧 LR 上下极值刻度。
+    let bestTextY = bestPt.y <= padT + plotH - 15 ? bestPt.y + 14 : bestPt.y - 11;
+    if (lrD) {
+      const bestCalloutW = this._estimateHeroLabelWidth(bestValText + ' ' + bestStepText, 10.5);
+      const calloutRightX = bestAnchor === 'end' ? bestTextX : (bestAnchor === 'start' ? bestTextX + bestCalloutW : bestTextX + bestCalloutW / 2);
+      const lrZoneLeftX = padL + plotW - 4 - Math.max(this._estimateHeroLabelWidth(lrMaxText, 10.5), this._estimateHeroLabelWidth(lrMinText, 10.5)) - 6;
+      if (calloutRightX > lrZoneLeftX) {
+        if (lrMinText && bestTextY >= padT + plotH - 19) bestTextY = Math.min(bestPt.y - 11, padT + plotH - 19);
+        if (lrMaxText && bestTextY <= padT + 24) bestTextY = Math.max(bestPt.y + 14, padT + 24);
+      }
+    }
     const calLabelY = calSpan >= 14
       ? Math.max(padT + 12, Math.min(padT + plotH - 4, calMidY + 3.5))
       : (latestPt.y > padT + 20 ? latestPt.y - 10 : latestPt.y + 16);
 
     // X 轴底边预览图事件菱形刻度
     const events = previewMarkersAll
-      .filter(m => m.step != null && m.step >= firstStep && m.step <= maxStep)
+      .filter(m => m.step != null && m.step >= clipStartStep && m.step <= maxStep)
       .map(m => ({ ...m, x: toX(m.step) }));
 
     const midY = (padT + plotH / 2).toFixed(1);
     const highText = this._formatDiagnosticValue(high);
     const lowText = this._formatDiagnosticValue(low);
-    const startStepText = t('sampleStep').replace('{n}', Math.round(firstStep));
+    const startStepVal = isFull ? firstStep : dataStartStep;
+    const startStepText = t('sampleStep').replace('{n}', Math.round(startStepVal));
+    const axisStartX = isFull ? padL : Math.max(padL, dataStartX);
+    const axisStartAnchor = 'start';
     const splitStepText = showWindowMeans
       ? t('sampleStep').replace('{n}', Math.round(boundary))
       : '';
     const endStepText = t('sampleStep').replace('{n}', Math.round(maxStep));
-    const prevMeanText = t('chartPrevMean');
+    const startLabelW = this._estimateHeroLabelWidth(startStepText, 10.5);
+    const midLabelW = this._estimateHeroLabelWidth(splitStepText, 10.5);
+    const endLabelW = this._estimateHeroLabelWidth(endStepText, 10.5);
+    const axisStartCrowded = !isFull && (padL + plotW - axisStartX) < (startLabelW + endLabelW + 10);
+    const axisMidCrowded = showWindowMeans && ((splitX - axisStartX) < (startLabelW + midLabelW / 2 + 10) || (padL + plotW - splitX) < (midLabelW / 2 + endLabelW + 10));
 
     const historyFlag = isHistory ? '1' : '0';
     const cursorGradId = 'm-hero-cursor-' + (isHistory ? 'h' : 'l');
@@ -1269,13 +1360,15 @@ window.monitorDiagnosticsMixin = {
     if (canPatch) {
       this._patchHeroSeriesSvg(svg, {
         width, height, padL, padT, plotW, plotH, midY, isLiveRunning,
-        splitX, showFullBg, fullBgX, fullBgWidth, showSplitLine, showWindowMeans, showSplitConn,
-        yPrev, yRec, diffBandD, prevMeanText, deltaText,
+        splitX, showFullBg, fullBgX, fullBgWidth, showUnfilled, unfilledWidth, dataStartX,
+        showSplitLine, showWindowMeans, showSplitConn,
+        yPrev, yRec, diffBandD, prevStartX, prevMeanText, deltaText, prevLabelCrowded, recLabelCrowded,
         prevD, prevPathClass, recD, lrD,
         bestPt, latestPt, caliperX, calTop, calBot, calSpan, calLabelY, gapText,
         bestValText, bestStepText, bestAnchor, bestTextX, bestTextY,
         events, highText, lowText, lrMaxText, lrMinText,
-        startStepText, splitStepText, endStepText,
+        startStepText, axisStartX, axisStartAnchor, axisStartCrowded,
+        splitStepText, axisMidCrowded, endStepText,
       });
     } else {
       const recEndX = padL + plotW;
@@ -1302,13 +1395,15 @@ window.monitorDiagnosticsMixin = {
         <g class="m-chart-plot-series" data-hero-series>
           <g class="m-chart-overlays" data-hero-overlays>
             <rect class="m-full-window-bg" data-hero-full-bg x="${fullBgX.toFixed(1)}" y="${padT}" width="${fullBgWidth.toFixed(1)}" height="${plotH}"${showFullBg ? '' : ' display="none"'}/>
+            <rect class="m-window-unfilled-bg" data-hero-unfilled-bg x="${padL}" y="${padT}" width="${unfilledWidth.toFixed(1)}" height="${plotH}"${showUnfilled ? '' : ' display="none"'}/>
+            <line class="m-window-start-guide" data-hero-start-guide x1="${dataStartX.toFixed(1)}" x2="${dataStartX.toFixed(1)}" y1="${padT}" y2="${padT + plotH}"${showUnfilled ? '' : ' display="none"'}/>
             <path class="m-window-diff-band" data-hero-diff-band d="${diffBandD}"${diffBandD ? '' : ' display="none"'}/>
             <line class="m-window-split" data-hero-split-line x1="${splitXStr}" x2="${splitXStr}" y1="${padT}" y2="${padT + plotH}"${showSplitLine ? '' : ' display="none"'}/>
             <line class="m-window-split-connector" data-hero-split-conn x1="${splitXStr}" x2="${splitXStr}" y1="${yPrev.toFixed(1)}" y2="${yRec.toFixed(1)}"${showSplitConn ? '' : ' display="none"'}/>
-            <line class="m-window-mean is-prev" data-hero-prev-mean x1="${padL}" x2="${splitXStr}" y1="${yPrev.toFixed(1)}" y2="${yPrev.toFixed(1)}"${showWindowMeans ? '' : ' display="none"'}/>
+            <line class="m-window-mean is-prev" data-hero-prev-mean x1="${prevStartX.toFixed(1)}" x2="${splitXStr}" y1="${yPrev.toFixed(1)}" y2="${yPrev.toFixed(1)}"${showWindowMeans ? '' : ' display="none"'}/>
             <line class="m-window-mean is-recent" data-hero-rec-mean x1="${splitXStr}" x2="${recEndX.toFixed(1)}" y1="${yRec.toFixed(1)}" y2="${yRec.toFixed(1)}"${showWindowMeans ? '' : ' display="none"'}/>
-            <text class="m-window-mean-label is-prev" data-hero-prev-label x="${padL + 3}" y="${Math.max(padT + 9, yPrev - 4).toFixed(1)}"${showWindowMeans ? '' : ' display="none"'}>${this.esc(prevMeanText)}</text>
-            <text class="m-window-mean-label is-recent" data-hero-rec-label x="${(recEndX - 3).toFixed(1)}" y="${Math.max(padT + 9, yRec - 4).toFixed(1)}" text-anchor="end"${showWindowMeans ? '' : ' display="none"'}>${this.esc(deltaText)}</text>
+            <text class="m-window-mean-label is-prev${prevLabelCrowded ? ' is-crowded' : ''}" data-hero-prev-label x="${(prevStartX + 3).toFixed(1)}" y="${Math.max(padT + 9, yPrev - 4).toFixed(1)}"${showWindowMeans ? '' : ' display="none"'}>${this.esc(prevMeanText)}</text>
+            <text class="m-window-mean-label is-recent${recLabelCrowded ? ' is-crowded' : ''}" data-hero-rec-label x="${(recEndX - 3).toFixed(1)}" y="${Math.max(padT + 9, yRec - 4).toFixed(1)}" text-anchor="end"${showWindowMeans ? '' : ' display="none"'}>${this.esc(deltaText)}</text>
           </g>
           <path class="${prevPathClass}" data-hero-prev-path d="${prevD}"${prevD ? '' : ' display="none"'}/>
           <path class="m-chart-lr-line" data-hero-lr-path d="${lrD}"${lrD ? '' : ' display="none"'}/>
@@ -1343,8 +1438,8 @@ window.monitorDiagnosticsMixin = {
           <text data-hero-axis-low x="${padL - 6}" y="${padT + plotH + 1}" text-anchor="end">${lowText}</text>
           <text class="is-lr" data-hero-axis-lrmax x="${padL + plotW - 4}" y="${padT + 10}" text-anchor="end"${lrMaxText ? '' : ' display="none"'}>${lrMaxText}</text>
           <text class="is-lr" data-hero-axis-lrmin x="${padL + plotW - 4}" y="${padT + plotH - 4}" text-anchor="end"${lrMinText ? '' : ' display="none"'}>${lrMinText}</text>
-          <text data-hero-axis-start x="${padL}" y="${height - 4}" text-anchor="start">${this.esc(startStepText)}</text>
-          <text data-hero-axis-mid x="${splitXStr}" y="${height - 4}" text-anchor="middle"${splitStepText ? '' : ' display="none"'}>${this.esc(splitStepText)}</text>
+          <text class="${axisStartCrowded ? 'is-crowded' : ''}" data-hero-axis-start x="${axisStartX.toFixed(1)}" y="${height - 4}" text-anchor="${axisStartAnchor}">${this.esc(startStepText)}</text>
+          <text class="${axisMidCrowded ? 'is-crowded' : ''}" data-hero-axis-mid x="${splitXStr}" y="${height - 4}" text-anchor="middle"${splitStepText ? '' : ' display="none"'}>${this.esc(splitStepText)}</text>
           <text data-hero-axis-end x="${padL + plotW}" y="${height - 4}" text-anchor="end">${this.esc(endStepText)}</text>
         </g>
         <g class="m-chart-hover" data-chart-hover display="none">
@@ -1365,7 +1460,7 @@ window.monitorDiagnosticsMixin = {
       coords: scrolling ? displayPrimary.filter(p => p.step >= firstStep && p.step <= maxStep).map(project)
         : (best.step < coords[0].step ? [bestPt, ...coords] : coords),
       sourcePoints: displayPrimary.slice(Math.max(0, displayPrimary.findIndex(p => p.step >= firstStep) - 1)),
-      minStep: firstStep, stepSpan, lrLookup: lrPoints, scrolling,
+      minStep: firstStep, dataMinStep: layout.dataMinStep, stepSpan, lrLookup: lrPoints, scrolling,
       seriesLabel: t(chart.primaryIsAvg ? 'chartSeriesSmooth' : 'currentLoss'), lrToY, events, t,
       indexLimit: Math.max(totalSteps, maxStep),
       defaultRange: '',
@@ -1444,7 +1539,12 @@ window.monitorDiagnosticsMixin = {
     const state = wrap._chartState;
     if (!state) return;
     const targetX = xRatio * state.width;
-    if (!state.coords.length || (state.scrolling && targetX < state.coords[0].x - 4)) {
+    if (!state.coords.length) {
+      this._clearHeroChartHover(wrap);
+      return;
+    }
+    const leftCutoffX = (state.scrolling || state.mode === 'window') ? state.coords[0].x - 4 : -Infinity;
+    if (targetX < leftCutoffX) {
       this._clearHeroChartHover(wrap);
       return;
     }
@@ -1498,8 +1598,8 @@ window.monitorDiagnosticsMixin = {
       smoothDot.setAttribute('cx', nearest.x.toFixed(1));
       smoothDot.setAttribute('cy', nearest.y.toFixed(1));
       smoothDot.removeAttribute('display');
-      const isPrevSeg = state.hasPrevSegment && (nearest.x < state.splitX
-        || (nearest.x === state.splitX && nearest.step < state.splitStep));
+      const isPrevSeg = state.hasPrevSegment && (nearest.x < state.splitX - 1e-6
+        || (Math.abs(nearest.x - state.splitX) <= 1e-6 && nearest.step < state.splitStep));
       const isFullSeg = isPrevSeg && Boolean(state.isFullHistorySplit);
       smoothDot.classList?.toggle('is-prev-seg', isPrevSeg);
       smoothDot.classList?.toggle('is-full-seg', isFullSeg);
@@ -1645,12 +1745,18 @@ window.monitorDiagnosticsMixin = {
     const activeMode = (mode === 'epoch' && !hasEpoch) ? 'window' : mode;
     // 同 Step 的批次读数只更新左卡，避免重启动画。迟到的快照可补齐已有窗口。
     const primary = seriesSet.primary;
+    const hasWindowPlot = windowPoints.length >= this._trainingDiagnosticRules().minimumPoints;
+    const readFullPoints = () => this._cleanLossPoints(primary?.points || primary?.diagnostic_points)
+      .filter(point => point.step < openStep);
+    const earlyFullPoints = hasWindowPlot ? null : readFullPoints();
     const fullMin = activeMode === 'full' && primary?.min_step < openStep ? [primary.min_step, primary.min] : null;
     const frameKey = running ? JSON.stringify([viewVersion, openStep, windowPoints, epochPoints.at(-1),
-      lrPoints.at(-1), hasLr, fullMin, activeMode === 'full' && primary?.points?.[0]?.step]) : null;
+      lrPoints.at(-1), hasLr, fullMin, earlyFullPoints?.length >= 2, activeMode === 'full' && primary?.points?.[0]?.step]) : null;
     if (running && card._diagnosticFrameKey === frameKey) return;
     card._diagnosticFrameKey = frameKey;
-    const hasPlotData = windowPoints.length >= 2 || hasEpoch;
+    const fullPoints = earlyFullPoints ?? (activeMode === 'full' ? readFullPoints() : null);
+    const hasFullPlot = fullPoints?.length >= 2;
+    const hasSeriesChart = activeMode === 'window' ? hasWindowPlot : activeMode === 'full' && hasFullPlot;
 
     const motionContext = root.dataset.motionContext || '';
     const hasDiagnosticTone = diagnostic.code !== 'insufficient';
@@ -1660,7 +1766,7 @@ window.monitorDiagnosticsMixin = {
     const liveDetail = !isHistory && !isPreviousRun && d.detail === true;
     if (liveDetail && hasDiagnosticTone && root._metricMotion && card._insufficientContext === motionContext
         && this._monitorMotionAllowed() && card.animate) {
-      if (wrap?.hidden && hasPlotData) entering.push(wrap);
+      if (wrap?.hidden && (hasSeriesChart || activeMode === 'epoch')) entering.push(wrap);
       if (metrics?.hidden && hasDiagnosticTone) entering.push(metrics);
     }
     const beforeHeight = entering.length ? card.getBoundingClientRect().height : 0;
@@ -1681,7 +1787,7 @@ window.monitorDiagnosticsMixin = {
     card.dataset.diagnosticTone = diagnostic.tone;
 
     const modeGroup = card.querySelector('.m-chart-modes');
-    if (modeGroup) modeGroup.hidden = !hasPlotData;
+    if (modeGroup) modeGroup.hidden = !(hasWindowPlot || hasFullPlot || hasEpoch);
     card.querySelectorAll('[data-chart-mode]').forEach(btn => {
       const m = btn.dataset.chartMode;
       if (m === 'epoch') btn.hidden = !hasEpoch;
@@ -1693,7 +1799,7 @@ window.monitorDiagnosticsMixin = {
     const layerGroup = card.querySelector('[data-chart-layers]');
     if (layerGroup) {
       const lrBtn = layerGroup.querySelector('[data-chart-layer="lr"]');
-      const showLr = hasPlotData && activeMode !== 'epoch' && hasLr;
+      const showLr = hasSeriesChart && hasLr;
       layerGroup.hidden = !showLr;
       if (lrBtn) {
         lrBtn.hidden = !showLr;
@@ -1731,7 +1837,7 @@ window.monitorDiagnosticsMixin = {
     if (activeMode !== 'window') {
       const epochMode = activeMode === 'epoch';
       const series = seriesSet.primary;
-      points = epochMode ? epochPoints : this._cleanLossPoints(series?.points || series?.diagnostic_points).filter(point => point.step < openStep);
+      points = epochMode ? epochPoints : fullPoints;
       best = this._lowestLossPoint(points);
       if (!epochMode && best && Number.isFinite(series.min_step) && Number.isFinite(series.min)
           && series.min <= best.value && series.min_step <= points.at(-1).step) {
