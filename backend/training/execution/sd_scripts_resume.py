@@ -48,8 +48,11 @@ def training_dataloader(dataset, accelerator, args, epoch, step, workers, seed):
 
 
 def _resume_source(source: str, *, resume: bool = True) -> str:
-    # The counter and loop are locals inside NetworkTrainer.train, with no
-    # upstream override point. Keep each edit anchored to the vendored version.
+    # sd-scripts v0.13.1 仍通过 Accelerate 保存和加载训练状态。这里适配的是
+    # NetworkTrainer.train 内部的采样顺序和步数，两者在上游都是局部变量。
+    # 同步上游时，先用原生训练循环对照 tests/training/test_sd_scripts_resume.py
+    # 中的中断场景，分别核对优化器步数和剩余样本 ID 序列，再移除上游已覆盖的适配。
+    # 下方的唯一匹配检查只能发现源码片段变化；周围逻辑改变也可能影响续训结果。
     loader_edits = (
         ("        set_seed(args.seed)\n", """        set_seed(args.seed)
         from backend.training.execution.sd_scripts_resume import sampling_seed, training_dataloader
@@ -71,6 +74,8 @@ def _resume_source(source: str, *, resume: bool = True) -> str:
         ('json.dump({"current_epoch": current_epoch.value,',
          'json.dump({"data_seed": accelerator.dataloader_config.data_seed, "current_epoch": current_epoch.value,'),
     )
+    # 梯度累积时，断点记录的是优化器步数，轮内跳过的是数据批次。上游跟踪见
+    # https://github.com/kohya-ss/sd-scripts/issues/2407 和 https://github.com/kohya-ss/sd-scripts/pull/2425
     resume_edits = (
         ("                initial_step = steps_from_state\n                steps_from_state = None",
          "                initial_step = steps_from_state"),
