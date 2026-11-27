@@ -2933,7 +2933,7 @@ dialog.modal-overlay::backdrop { background: transparent; }
 .dataset-subset-row--head { min-height: 30px; color: var(--text-tertiary); font-size: 11px; }
 /* 数值列整体居中：表头与它下面的数值中心线重合。控件列（步进器）同理，左对齐会落到最左边的"−"上方。 */
 .dataset-subset-row--head span:nth-child(n + 2) { text-align: center; }
-.dataset-subset-name { display: flex; align-items: baseline; gap: 7px; min-width: 0; overflow: hidden; color: var(--text-primary); font-size: 13px; }
+.dataset-subset-name { display: flex; align-items: baseline; gap: 7px; min-width: 0; color: var(--text-primary); font-size: 13px; }
 .dataset-subset-folder { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dataset-subset-preview { flex: none; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--accent); font-size: 11px; font-variant-numeric: tabular-nums; }
 .dataset-subset-preview:empty { display: none; }
@@ -3782,7 +3782,7 @@ input[type="range"]::-webkit-slider-thumb {
   flex-basis: calc(12px * 1.35 + 11px * 1.35 + 13px); height: calc(12px * 1.35 + 11px * 1.35 + 13px); min-height: 0;
 }
 .m-sample-loss-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 5px; width: 100%; min-width: 0; }
-.m-sample-loss-stage { flex: 1; min-width: 0; }
+.m-sample-loss-stage { flex: 1; min-width: 0; --loop-marquee-gutter-right: 5px; }
 .m-samples-section .m-sample-loss-stage-text { display: inline-flex; align-items: baseline; gap: 8px; }
 .m-samples-section .m-sample-loss-stage-text :is(strong, small) { flex: none; max-width: none; overflow: visible; text-overflow: clip; }
 .preview-stage-heading { display: inline-flex; align-items: baseline; gap: 14px; min-width: 0; overflow: hidden; }
@@ -3866,7 +3866,7 @@ input[type="range"]::-webkit-slider-thumb {
 .output-table .output-item.m-ckpt-best:hover { background: color-mix(in srgb, var(--hover-overlay) 88%, var(--monitor-card-bg)); }
 .output-table .output-item.m-ckpt-best.selected { background: color-mix(in srgb, var(--accent-soft) 72%, var(--monitor-card-bg)); }
 .output-table .output-item:focus-within { outline: 1px solid var(--accent); outline-offset: -1px; }
-.output-table .output-name { display: flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; font-family: var(--font-sans); font-weight: 550; }
+.output-table .output-name { display: flex; align-items: center; gap: 7px; min-width: 0; overflow: visible; font-family: var(--font-sans); font-weight: 550; }
 .output-table .output-name-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .output-dir-tag,
 .m-best-label {
@@ -4043,7 +4043,7 @@ input[type="range"]::-webkit-slider-thumb {
 .m-history-identity > :not(.m-history-name) { flex: none; }
 .m-history-banner > .btn { height: 32px; margin-inline-start: auto; white-space: nowrap; }
 .m-history-label { font-size: 12px; color: var(--text-tertiary); }
-.m-history-name { min-width: 0; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-history-name { min-width: 0; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; --loop-marquee-gutter-left: 6px; }
 
 /* ── 通用徽章（历史/状态）── */
 .m-badge {
@@ -4729,7 +4729,7 @@ dialog.te-shortcuts::backdrop, dialog.te-lightbox::backdrop { background: transp
 .te-card.te-card-no-cap { outline: 1px dashed var(--text-muted); outline-offset: -3px; }
 .te-card-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 4px 6px; background: rgba(0,0,0,0.55); z-index: 2; opacity: 0; transition: opacity 0.1s; pointer-events: none; }
 .te-card:hover .te-card-overlay, .te-card:focus-within .te-card-overlay { opacity: 1; }
-.te-card-name { font-size: 10px; color: rgba(255,255,255,0.9); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.te-card-name { font-size: 10px; color: rgba(255,255,255,0.9); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; --loop-marquee-gutter-left: 6px; --loop-marquee-gutter-right: 6px; }
 .te-card-tags { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 2px; }
 .te-card-tag { font-size: 9px; padding: 0 4px; border-radius: var(--radius-control); background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.8); white-space: nowrap; }
 
@@ -4748,7 +4748,7 @@ body.te-resizing, body.te-resizing * { cursor: col-resize !important; user-selec
 .te-editor-inner::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 2px; }
 
 .te-editor-head { display: flex; align-items: center; gap: 6px; padding: 8px 12px; flex-shrink: 0; border-bottom: 1px solid var(--border-default); }
-.te-editor-name { font-size: 12px; font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.te-editor-name { font-size: 12px; font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; --loop-marquee-gutter-right: 5px; }
 .te-editor-nav { display: flex; gap: 1px; }
 .te-editor-nav button { width: 24px; height: 24px; border: 1px solid var(--border-default); border-radius: var(--radius-control); background: var(--bg-input); color: var(--text-tertiary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background-color 0.1s, border-color 0.1s, color 0.1s; }
 .te-editor-nav button:hover { border-color: var(--accent); color: var(--accent); }
@@ -4834,7 +4834,8 @@ body.te-preview-resizing, body.te-preview-resizing * { cursor: row-resize !impor
 .te-clear-filters:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
 .te-dataset-controls { position: relative; min-width: 0; }
 .te-dataset-button { max-width: 260px; }
-.te-dataset-button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
+.te-dataset-button > svg { flex-shrink: 0; }
+.te-dataset-button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); --loop-marquee-gutter-left: 3px; }
 .te-dataset-switch { position: absolute; z-index: 30; top: calc(100% + 5px); left: 0; display: flex; gap: 6px; width: min(520px, 70vw); padding: 8px; border: 1px solid var(--border-default); background: var(--bg-surface-raised); box-shadow: var(--shadow-lg); }
 .te-dataset-switch input { flex: 1; min-width: 0; height: 30px; padding: 0 8px; border: 1px solid var(--border-input); background: var(--bg-input); color: var(--text-primary); font-family: var(--font-mono); font-size: 11px; }
 
@@ -6673,7 +6674,7 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 .m-dd-status-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 0 14px 10px; }
 .m-dd-status-row {
   display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto;
-  align-content: start; align-items: center; gap: 4px; padding: 7px 10px; min-width: 0;
+  align-content: start; align-items: center; gap: 4px 6px; padding: 7px 10px; min-width: 0;
   border: 1px solid var(--monitor-card-border); border-radius: var(--radius-control);
   background: var(--monitor-tile-bg); color: var(--text-primary); cursor: pointer;
   transition: border-color var(--duration-slow) var(--ease-out),
@@ -6712,10 +6713,10 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 .m-dd-status-row:active { transform: scale(.985); }
 .m-dd-status-row:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring-color); outline-offset: -2px; }
 .m-dd-status-name {
-  grid-column: 1; grid-row: 1; display: inline-flex; align-items: center; gap: 6px;
+  grid-column: 1; grid-row: 1; display: flex; align-items: center; gap: 6px;
   min-width: 0; font: 550 11.5px/1.2 var(--font-sans); color: var(--text-secondary);
 }
-.m-dd-status-name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-dd-status-name-marquee { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; --loop-marquee-gutter-left: 6px; }
 .m-dd-status-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 .m-dd-status-trend { grid-column: 2; grid-row: 1; display: inline-flex; align-items: center; justify-content: flex-end; flex: none; }
 .m-dd-status-trend[hidden] { display: none; }
@@ -7436,6 +7437,7 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 .m-dd-folder-name {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font: 600 12.5px/1.25 var(--font-sans); color: var(--text-primary);
+  --loop-marquee-gutter-left: 6px;
 }
 .m-dd-folder-reg { padding: 0 5px; font-size: 10.5px; line-height: 1.45; flex: none; }
 .m-dd-folder-meta {
@@ -7549,7 +7551,6 @@ dialog.m-dd-samples-modal {
 .m-dd-modal-heading { display: flex; align-items: center; gap: 9px; min-width: 0; flex: 1; }
 .m-dd-modal[aria-busy="true"] .m-dd-modal-heading::after { content: ''; width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--accent); }
 .m-dd-modal-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 650 14px/1.2 var(--font-sans); color: var(--text-primary); }
-:is(.m-dd-card-name, .m-dd-row-name strong, .m-dd-modal-title).loop-marquee { text-overflow: clip; }
 .m-dd-modal-sub { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; color: var(--text-secondary); font: 12px/1.2 var(--font-sans); font-variant-numeric: tabular-nums; }
 .m-dd-modal-sub > span:not(.m-dd-modal-sub-sep) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .m-dd-modal-sub-sep { color: var(--text-tertiary); flex: none; }
@@ -7640,7 +7641,8 @@ dialog.m-dd-samples-modal {
   outline: var(--focus-ring-width) solid var(--focus-ring-color); outline-offset: 1px;
 }
 .m-dd-ctx-k { color: var(--text-tertiary); font-size: 11px; flex: none; }
-.m-dd-ctx-name { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px; }
+.m-dd-ctx-name { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px; --loop-marquee-gutter-left: 4px; --loop-marquee-gutter-right: 4px; }
+.m-dd-ctx-name.loop-marquee.is-bouncing { max-width: calc(160px + var(--loop-marquee-gutter-left, 8px) + var(--loop-marquee-gutter-right, 6px)); }
 .m-dd-ctx-val { font: 650 11.5px/1.2 var(--font-mono); flex: none; }
 .m-dd-ctx-tag { color: var(--text-tertiary); font-size: 11px; white-space: nowrap; }
 
@@ -7723,6 +7725,7 @@ dialog.m-dd-samples-modal {
 
 .m-dd-cap-head-left { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; min-width: 0; font-family: var(--font-sans); font-variant-numeric: tabular-nums; }
 .m-dd-cap-file { color: var(--text-secondary); font: 500 11.5px/1.2 var(--font-sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
+.m-dd-cap-file.loop-marquee.is-bouncing { max-width: calc(200px + var(--loop-marquee-gutter-left, 8px) + var(--loop-marquee-gutter-right, 6px)); }
 .m-dd-cap-tags { color: var(--text-tertiary); font: 500 11px/1.2 var(--font-sans); white-space: nowrap; }
 .m-dd-caption-box { --dd-caption-default: 76px; position: relative; min-width: 0; }
 .m-dd-caption-text { margin: 0; height: var(--dd-caption-height, auto); max-height: min(var(--dd-caption-height, var(--dd-caption-default)), 60dvh); overflow-y: auto; scrollbar-gutter: stable; padding: 7px 10px; border-radius: var(--radius-xs); border: 1px solid var(--border-subtle); background: var(--bg-input); color: var(--text-primary); font: 12px/1.5 var(--font-sans); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }

@@ -798,7 +798,7 @@
         + ' @click="toggleDatasetDiagOverviewPreset(\'' + item.key + '\')"'
         + ' @keydown.enter.prevent="toggleDatasetDiagOverviewPreset(\'' + item.key + '\')"'
         + ' @keydown.space.prevent="toggleDatasetDiagOverviewPreset(\'' + item.key + '\')">'
-        + '<span class="m-dd-status-name"><i class="m-dd-status-dot is-' + item.key + '" aria-hidden="true"></i><span data-dd-status-label>' + this.esc(item.label) + '</span></span>'
+        + '<span class="m-dd-status-name"><i class="m-dd-status-dot is-' + item.key + '" aria-hidden="true"></i><span class="m-dd-status-name-marquee" x-loop-marquee.bounce><span data-dd-status-label>' + this.esc(item.label) + '</span></span></span>'
         + '<span class="m-dd-status-trend" data-dd-status-trend' + (trendHtml ? '' : ' hidden') + '>' + trendHtml + '</span>'
         + '<div class="m-dd-status-nums">'
         + '<div class="m-dd-status-main">'

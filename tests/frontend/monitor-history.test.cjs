@@ -88,3 +88,34 @@ test('undo keeps its recovery entry on failure and restores defaults and source 
   assert.deepEqual(rebuiltSources, undo.fieldSources);
   assert.equal(a._historyReuseUndo, null);
 });
+
+test('history cards render self-hover bounce marquee on truncated model and dataset lines without host wrapper', () => {
+  const listEl = {innerHTML: ''};
+  const prevDoc = global.document;
+  global.document = {getElementById: id => (id === 'historyList' ? listEl : null)};
+  try {
+    const a = app({
+      historyItems: [{
+        run_dir: 'output/run-1',
+        name: 'run-1',
+        status: 'completed',
+        time: '2026-01-01 10:00',
+        model: 'very-long-pretrained-model-name.safetensors',
+        dataset: 'D:/datasets/very-long-dataset-directory-name',
+        lr: 1e-4,
+        dim: 16,
+        alpha: 16,
+        epochs: 10,
+      }],
+      renderHistory: window.monitorHistoryRenderMixin.renderHistory,
+      escapeJsString: s => String(s ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"),
+    });
+    a.renderHistory();
+    assert.ok(listEl.innerHTML.includes('<div class="hist-card-content is-clickable"'));
+    assert.ok(!listEl.innerHTML.includes('hist-card-content is-clickable loop-marquee-host'));
+    assert.ok(listEl.innerHTML.includes('<div class="hist-meta hist-truncate" title="very-long-pretrained-model-name.safetensors" x-loop-marquee.bounce><span>historyModel · very-long-pretrained-model-name.safetensors</span></div>'));
+    assert.ok(listEl.innerHTML.includes('<div class="hist-dataset hist-truncate" title="D:/datasets/very-long-dataset-directory-name" x-loop-marquee.bounce><span>dataset · D:/datasets/very-long-dataset-directory-name</span></div>'));
+  } finally {
+    global.document = prevDoc;
+  }
+});

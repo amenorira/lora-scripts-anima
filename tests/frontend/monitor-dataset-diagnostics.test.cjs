@@ -3284,3 +3284,67 @@ test('high and low residual labels adapt between early stage and slope-ready sta
   assert.ok(app._ddVerdictActionsHtml(t, lateData).includes(t('ddJumpAttention').replace('{n}', 2)));
   assert.ok(app._ddGroupAlertHtml(t, lateData.by_subset[0], true).includes(t('ddGroupAlertAttention').replace('{n}', 2)));
 });
+
+test('status distribution card labels use bounce marquee without ellipsis and animate on hover, focus, or selection', () => {
+  const data = {
+    available: true,
+    summary: {
+      total_images: 4,
+      has_slope: true,
+      counts: { non_finite: 1, attention: 1, learning: 1, normal: 1, easy: 0, unqualified: 0 },
+    },
+    by_image: [
+      { image_id: 'i1', status: 'non_finite', mean_residual: 0.1, train_samples: 1, non_finite_count: 1 },
+      { image_id: 'i2', status: 'attention', mean_residual: 0.2, slope: 0.01, train_samples: 1 },
+      { image_id: 'i3', status: 'learning', mean_residual: 0.1, slope: -0.02, train_samples: 1 },
+      { image_id: 'i4', status: 'normal', mean_residual: 0.0, slope: -0.01, train_samples: 1 },
+    ],
+  };
+  const app = makeApp({ datasetDiagData: data });
+  const t = k => app.tMonitor(k);
+  const statusCardHtml = app._renderDatasetDiagStatusCard(t, data);
+  const rowMatches = statusCardHtml.match(/class="m-dd-status-name-marquee" x-loop-marquee\.bounce><span data-dd-status-label>/g) || [];
+  assert.equal(rowMatches.length, 6);
+
+  const loopMarqueeCss = readRepo('frontend/css/loop-marquee.css');
+  assert.ok(loopMarqueeCss.includes('.m-dd-status-row:is(:hover,:focus-visible,:focus-within,.is-selected) .loop-marquee.is-bouncing.is-overflowing .loop-marquee-track'));
+  assert.ok(loopMarqueeCss.includes('.loop-marquee.is-bouncing { margin-left:calc(-1 * var(--loop-marquee-gutter-left, 8px)); margin-right:calc(-1 * var(--loop-marquee-gutter-right, 6px)); text-overflow:clip; }'));
+  assert.ok(loopMarqueeCss.includes('.loop-marquee.is-bouncing .loop-marquee-text { padding-left:var(--loop-marquee-gutter-left, 8px); padding-right:var(--loop-marquee-gutter-right, 6px); }'));
+  assert.ok(loopMarqueeCss.includes('.loop-marquee.is-bouncing.is-overflowing { mask-image:linear-gradient(to right,transparent,#000 var(--loop-marquee-gutter-left, 8px),#000 calc(100% - var(--loop-marquee-gutter-right, 6px)),transparent); }'));
+
+  const appCss = readRepo('frontend/css/app.css');
+  assert.ok(appCss.includes('gap: 4px 6px; padding: 7px 10px;'));
+  assert.ok(appCss.includes('.m-dd-status-name-marquee { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; --loop-marquee-gutter-left: 6px; }'));
+  assert.ok(!appCss.includes('.m-dd-status-name-marquee.loop-marquee'));
+  assert.ok(appCss.includes('.m-sample-loss-stage { flex: 1; min-width: 0; --loop-marquee-gutter-right: 5px; }'));
+});
+
+test('dataset diagnostics folder heads, group context chips, and caption filename render bounce marquee markup', () => {
+  const data = structuredClone(SAMPLE_DATA);
+  data.by_directory = [
+    { key: 'D:/ds/char', label: 'ds/very-long-char-folder', full_path: 'D:/ds/char', count: 22, comparable_count: 22, images: 3, mean_loss: 0.25, mean_residual: 0.08 },
+    { key: 'D:/ds/reg', label: 'ds/very-long-reg-folder', full_path: 'D:/ds/reg', count: 8, comparable_count: 8, images: 1, mean_loss: 0.19, mean_residual: -0.18 },
+  ];
+  const app = makeApp({ datasetDiagData: data, datasetDiagGroupByFolder: true, datasetDiagRegMode: 'all' });
+  const t = k => app.tMonitor(k);
+
+  app.datasetDiagViewMode = 'grid';
+  const gridHtml = app._renderDatasetDiagImagesBodyHtml(t, data);
+  assert.ok(gridHtml.includes('class="m-dd-folder-head loop-marquee-host"'));
+  assert.ok(gridHtml.includes('<span class="m-dd-folder-name" x-loop-marquee.bounce><span>'));
+
+  app.datasetDiagViewMode = 'table';
+  const tableHtml = app._renderDatasetDiagImagesBodyHtml(t, data);
+  assert.ok(tableHtml.includes('class="m-dd-table-folder-head loop-marquee-host"'));
+  assert.ok(tableHtml.includes('<span class="m-dd-folder-name" x-loop-marquee.bounce><span>'));
+
+  const modalHtml = app._renderDatasetDiagModalRightHtml(t, {
+    image: data.by_image[0],
+    caption: { exists: true, filename: 'very-long-caption-file.txt', path: 'D:/ds/char/very-long-caption-file.txt', text: '1girl, solo' },
+    epoch_series: [],
+    samples: [],
+  });
+  assert.ok(modalHtml.includes('class="m-dd-ctx-item is-link loop-marquee-host"'));
+  assert.ok(modalHtml.includes('<span class="m-dd-ctx-name" x-loop-marquee.bounce><span>'));
+  assert.ok(modalHtml.includes('<span class="m-dd-cap-file" title="D:/ds/char/very-long-caption-file.txt" x-loop-marquee.bounce><span>very-long-caption-file.txt</span></span>'));
+});

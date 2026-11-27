@@ -309,3 +309,71 @@ test('sample snapshots request staged arrival motion only for new tiles in the s
     assert.equal(motions, mode === 'incoming' ? 1 : 0, mode);
   }
 });
+
+test('outputs tab binds delegated bounce marquee once, clears before rebuild, and renders marquee host markup', () => {
+  const events = [];
+  const bindings = [];
+  const panel = {
+    firstElementChild: null,
+    classList: {add() {}, remove() {}},
+    contains: () => false,
+    querySelector: () => null,
+    set innerHTML(html) {
+      events.push('innerHTML:' + html);
+      this._html = html;
+      this.firstElementChild = {};
+    },
+    get innerHTML() { return this._html || ''; },
+  };
+  const contentEl = {
+    querySelector: sel => (sel.includes('data-tab="outputs"') ? panel : null),
+    querySelectorAll: () => [],
+  };
+  const document = {getElementById: id => (id === 'monitorTabContent' ? contentEl : null)};
+  const {window} = loadFrontend(['training/field-renderer', 'monitor/core', 'monitor/render'], {
+    window: {
+      bindDelegatedBounceMarquee(container, opts) {
+        bindings.push({container, opts});
+        return {
+          clear() { events.push('clear'); },
+          destroy() { events.push('destroy'); },
+        };
+      },
+    },
+    document,
+    requestAnimationFrame() {},
+  });
+  const app = composeMixins(window.trainingFieldRenderer, window.utilsMixin, window.monitorCoreMixin, window.monitorRenderMixin, {
+    _builtTab: 'outputs', selectedRunDir: 'output/run', runDetailData: {config: {output_name: 'demo-run'}},
+    t: key => key, outputFilter: 'all', outputFilesSelected: {}, outputFilesVersion: 1,
+    outputFiles: [
+      {category: 'model', name: 'very-long-model.safetensors', path: 'm.safetensors', size: 10, mtime: 1},
+      {category: 'state', name: 'very-long-state-dir', path: 's', size: 10, mtime: 1},
+      {category: 'other', name: 'very-long-log.txt', path: 'l.txt', size: 10, mtime: 1},
+    ],
+  });
+
+  app._renderTab('outputs', app.runDetailData, null, null, app.t, true);
+  assert.equal(bindings.length, 1);
+  assert.equal(bindings[0].container, panel);
+  assert.deepEqual({...bindings[0].opts}, {hostSelector: '.output-item', targetSelector: '.output-name-text'});
+  assert.equal(events[0], 'clear');
+  assert.ok(events[1].startsWith('innerHTML:'));
+  assert.equal((panel.innerHTML.match(/class="output-item loop-marquee-host/g) || []).length, 3);
+  assert.equal((panel.innerHTML.match(/<span class="output-name-text"><span>/g) || []).length, 3);
+  assert.ok(!panel.innerHTML.includes('x-loop-marquee'));
+
+  events.length = 0;
+  app.outputFilesVersion = 2;
+  app._renderTab('outputs', app.runDetailData, null, null, app.t, true);
+  assert.equal(bindings.length, 1, 'persistent panel binding is reused across rebuilds');
+  assert.equal(events[0], 'clear', 'clears active delegated marquee before replacing innerHTML');
+  assert.ok(events[1].startsWith('innerHTML:'));
+
+  events.length = 0;
+  app._renderTab('overview', app.runDetailData, null, null, app.t, true);
+  assert.equal(events[0], 'clear', 'clears active delegated marquee when leaving outputs tab');
+
+  const bannerHtml = app._historyBannerHtml(app.runDetailData, app.t);
+  assert.ok(bannerHtml.includes('<b class="m-history-name" title="demo-run" x-loop-marquee.bounce><span>demo-run</span></b>'));
+});

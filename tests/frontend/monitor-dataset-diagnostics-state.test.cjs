@@ -5,7 +5,7 @@ const { loadGlobalFrontend, composeMixins, createMemoryStorage, response, deferr
 global.localStorage = createMemoryStorage();
 const zhDict = JSON.parse(readRepo('frontend/i18n/zh-CN.json'));
 
-loadGlobalFrontend(['shared/utils', 'monitor/core', 'monitor/render']);
+loadGlobalFrontend(['shared/utils', 'shared/loop-marquee', 'monitor/core', 'monitor/render']);
 
 function makeApp(overrides = {}) {
   return Object.assign(composeMixins(window.utilsMixin, window.monitorCoreMixin, window.monitorRenderMixin), {
@@ -1572,6 +1572,19 @@ test('image cards and rows omit per-item Alpine directives and use delegated mod
     Object.defineProperty(overNonOverflow, 'target', { value: cardEl });
     imagesBody.dispatchEvent(overNonOverflow);
     assert.equal(marqueeCalls.length, 0);
+    const outNonOverflow = new Event('pointerout');
+    Object.defineProperty(outNonOverflow, 'target', { value: cardEl });
+    imagesBody.dispatchEvent(outNonOverflow);
+
+    // 1px subpixel overflow within tolerance also skips initLoopMarquee
+    nameEl.scrollWidth = 81;
+    const overSubpixel = new Event('pointerover');
+    Object.defineProperty(overSubpixel, 'target', { value: cardEl });
+    imagesBody.dispatchEvent(overSubpixel);
+    assert.equal(marqueeCalls.length, 0);
+    const outSubpixel = new Event('pointerout');
+    Object.defineProperty(outSubpixel, 'target', { value: cardEl });
+    imagesBody.dispatchEvent(outSubpixel);
 
     // Overflowing text initializes marquee on hover and cleans up on leave
     nameEl.scrollWidth = 160;
@@ -1586,6 +1599,16 @@ test('image cards and rows omit per-item Alpine directives and use delegated mod
     Object.defineProperty(outEv, 'target', { value: cardEl });
     imagesBody.dispatchEvent(outEv);
     assert.equal(marqueeDestroyed, 1);
+    assert.equal(nameEl.classList.contains('loop-marquee'), false);
+    assert.equal(spanEl.classList.contains('loop-marquee-text'), false);
+
+    // Explicit clear helper delegates to the shared binding
+    const reOverEv = new Event('pointerover');
+    Object.defineProperty(reOverEv, 'target', { value: cardEl });
+    imagesBody.dispatchEvent(reOverEv);
+    assert.equal(marqueeCalls.length, 2);
+    app._clearDatasetDiagImagesMarquee(imagesBody);
+    assert.equal(marqueeDestroyed, 2);
     assert.equal(nameEl.classList.contains('loop-marquee'), false);
     assert.equal(spanEl.classList.contains('loop-marquee-text'), false);
   } finally {

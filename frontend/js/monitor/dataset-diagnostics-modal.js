@@ -283,7 +283,7 @@
         ? this._ddResidualColor(group.meanResidual, { scale: 'group' })
         : '';
       return '<svg class="m-dd-folder-caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.25 8 9.75l3.5-3.5"/></svg>'
-        + '<span class="m-dd-folder-name">' + this.esc(group.label) + '</span>'
+        + '<span class="m-dd-folder-name" x-loop-marquee.bounce><span>' + this.esc(group.label) + '</span></span>'
         + (group.isReg ? '<small class="output-dir-tag m-dd-folder-reg">' + this.esc(t('ddRegTag')) + '</small>' : '')
         + '<span class="m-dd-folder-meta">'
         + '<span class="m-dd-folder-count">' + this.esc(countText) + '</span>'
@@ -624,7 +624,7 @@
         ? this._ddImageCardHtml(t, img) : this._ddImageTableRowHtml(t, img, maxAbs)).join('');
       return '<' + tag + ' class="' + (grid ? 'm-dd-folder-group' : 'm-dd-table-folder-section') + collapsed
         + '" ' + (grid ? 'data-dd-folder-group' : 'data-dd-table-folder-section') + '="' + key + '">'
-        + '<button type="button" class="' + (grid ? 'm-dd-folder-head' : 'm-dd-table-folder-head') + collapsed
+        + '<button type="button" class="' + (grid ? 'm-dd-folder-head' : 'm-dd-table-folder-head') + ' loop-marquee-host' + collapsed
         + '" data-dd-folder-group="' + key + '" aria-expanded="' + (!isCollapsed) + '" title="' + this.esc(group.fullPath)
         + '" @click="toggleDatasetDiagFolderCollapsed(\'' + this.esc(this.escapeJsString(group.key)) + '\')">'
         + this._ddFolderHeadInnerHtml(t, group, isCollapsed ? null : visibleItems.length) + '</button>'
@@ -1148,12 +1148,7 @@
     },
 
     _clearDatasetDiagImagesMarquee(imagesBody) {
-      const cur = imagesBody?._ddActiveMarquee;
-      if (!cur) return;
-      imagesBody._ddActiveMarquee = null;
-      try { cur.destroy?.(); } catch (_) {}
-      cur.nameEl?.classList?.remove?.('loop-marquee');
-      cur.sourceEl?.classList?.remove?.('loop-marquee-text');
+      imagesBody?._ddMarqueeBinding?.clear?.();
     },
 
     _bindDatasetDiagImagesBodyEvents(imagesBody) {
@@ -1185,40 +1180,10 @@
         if (imageId) this.openDatasetDiagModal(imageId, card);
       });
 
-      const activateMarquee = target => {
-        const card = target?.closest?.('.m-dd-card, .m-dd-table-row');
-        if (!card || (typeof imagesBody.contains === 'function' && !imagesBody.contains(card))) return;
-        const cur = imagesBody._ddActiveMarquee;
-        if (cur?.card === card) return;
-        this._clearDatasetDiagImagesMarquee(imagesBody);
-        if (typeof globalThis.window?.initLoopMarquee !== 'function') return;
-        const nameEl = card.querySelector?.('.m-dd-card-name, .m-dd-row-name strong');
-        const sourceEl = nameEl?.firstElementChild;
-        if (!nameEl || !sourceEl) return;
-        if (!(nameEl.clientWidth > 0 && nameEl.scrollWidth > nameEl.clientWidth)) return;
-        const destroy = globalThis.window.initLoopMarquee(nameEl, sourceEl, { bounce: true });
-        imagesBody._ddActiveMarquee = { card, nameEl, sourceEl, destroy };
-      };
-
-      const deactivateMarquee = (target, relatedTarget, isFocusLeave) => {
-        const card = target?.closest?.('.m-dd-card, .m-dd-table-row');
-        if (!card) return;
-        if (relatedTarget && card.contains?.(relatedTarget)) return;
-        const cur = imagesBody._ddActiveMarquee;
-        if (!cur || cur.card !== card) return;
-        if (isFocusLeave) {
-          if (card.matches?.(':hover')) return;
-        } else {
-          const activeEl = globalThis.document?.activeElement;
-          if (activeEl && card.contains?.(activeEl)) return;
-        }
-        this._clearDatasetDiagImagesMarquee(imagesBody);
-      };
-
-      imagesBody.addEventListener('pointerover', event => activateMarquee(event.target));
-      imagesBody.addEventListener('focusin', event => activateMarquee(event.target));
-      imagesBody.addEventListener('pointerout', event => deactivateMarquee(event.target, event.relatedTarget, false));
-      imagesBody.addEventListener('focusout', event => deactivateMarquee(event.target, event.relatedTarget, true));
+      imagesBody._ddMarqueeBinding = globalThis.window?.bindDelegatedBounceMarquee?.(imagesBody, {
+        hostSelector: '.m-dd-card, .m-dd-table-row',
+        targetSelector: '.m-dd-card-name, .m-dd-row-name strong',
+      }) || null;
     },
 
     _renderDatasetDiagImagesCard(t, data) {
@@ -1424,10 +1389,10 @@
         const dimJs = this.esc(this.escapeJsString(dim));
         const keyJs = this.esc(this.escapeJsString(row.key));
         const lblJs = this.esc(this.escapeJsString(displayVal));
-        items.push('<button type="button" class="m-dd-ctx-item is-link" title="' + this.esc(t('ddGroupCtxJumpTip')) + '"'
+        items.push('<button type="button" class="m-dd-ctx-item is-link loop-marquee-host" title="' + this.esc(t('ddGroupCtxJumpTip')) + '"'
           + ' @click="jumpDatasetDiagModalToGroup(\'' + dimJs + '\', \'' + keyJs + '\', \'' + lblJs + '\')">'
           + '<span class="m-dd-ctx-k">' + this.esc(ctxLabel) + '</span>'
-          + '<span class="m-dd-ctx-name">' + this.esc(displayVal) + '</span>'
+          + '<span class="m-dd-ctx-name" x-loop-marquee.bounce><span>' + this.esc(displayVal) + '</span></span>'
           + '<b class="m-dd-ctx-val" style="color:' + color + '">' + this.esc(this._ddFormatResidual(row.mean_residual)) + '</b>'
           + '</button>');
       };
@@ -1805,7 +1770,7 @@
       html += '<div class="m-dd-modal-sec-head">'
         + '<div class="m-dd-cap-head-left">'
         + '<span class="m-dd-sec-title">' + this.esc(cap.source === 'class_tokens' ? t('ddClassTokens') : t('ddCaptionTitle')) + '</span>'
-        + (cap.filename && cap.source !== 'class_tokens' ? '<span class="m-dd-cap-file" title="' + this.esc(cap.path || cap.filename) + '">' + this.esc(cap.filename) + '</span>' : '')
+        + (cap.filename && cap.source !== 'class_tokens' ? '<span class="m-dd-cap-file" title="' + this.esc(cap.path || cap.filename) + '" x-loop-marquee.bounce><span>' + this.esc(cap.filename) + '</span></span>' : '')
         + (capCountText ? '<span class="m-dd-cap-tags">' + this.esc(capCountText) + '</span>' : '')
         + '</div>';
       html += '<div class="m-dd-cap-actions">';

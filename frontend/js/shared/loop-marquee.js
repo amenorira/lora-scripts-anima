@@ -8,6 +8,10 @@
     pending.delete(instance);
     if (!pending.size && frame !== null) {cancelAnimationFrame(frame); frame = null;}
   }
+  function mutateDom(callback) {
+    if (typeof window.Alpine?.mutateDom === 'function') window.Alpine.mutateDom(callback);
+    else callback();
+  }
   function schedule(instance) {
     if (typeof requestAnimationFrame !== 'function') {instance.write(instance.read()); return;}
     pending.add(instance);
@@ -17,9 +21,7 @@
       const jobs = [...pending]; pending.clear();
       // Large grids need all measurements before any class/style write.
       const sizes = jobs.map(job => job.read());
-      const write = () => jobs.forEach((job, index) => job.write(sizes[index]));
-      if (window.Alpine?.mutateDom) window.Alpine.mutateDom(write);
-      else write();
+      mutateDom(() => jobs.forEach((job, index) => job.write(sizes[index])));
     });
   }
   window.initLoopMarquee = function(element, source, {bounce = false} = {}) {
@@ -38,7 +40,7 @@
     if (copy) track.append(copy);
     const instance = {read() {
       const width = source.scrollWidth;
-      const overflowing = element.clientWidth > 0 && width > element.clientWidth + (bounce ? 14 : 1);
+      const overflowing = element.clientWidth > 0 && width > element.clientWidth + 1;
       const distance = bounce ? Math.max(0, width - element.clientWidth)
         : width + (parseFloat(getComputedStyle(track).columnGap) || 64);
       return {overflowing, distance};
@@ -91,9 +93,87 @@
     instances.set(element, destroy);
     return destroy;
   };
-  document.addEventListener('alpine:init', () => {
+  window.bindDelegatedBounceMarquee = function(container, options) {
+    const {hostSelector, targetSelector} = options || {};
+    if (!container || typeof container.addEventListener !== 'function' || !hostSelector || !targetSelector) {
+      return {clear() {}, destroy() {}};
+    }
+    let active = null;
+    let lastCheckedHost = null;
+    const clear = () => {
+      lastCheckedHost = null;
+      if (!active) return;
+      const current = active;
+      active = null;
+      mutateDom(() => {
+        try { current.destroy?.(); } catch (_) {}
+        current.target?.classList?.remove?.('loop-marquee');
+        current.source?.classList?.remove?.('loop-marquee-text');
+      });
+    };
+    const activate = (event, isPointerOver) => {
+      const host = event?.target?.closest?.(hostSelector);
+      if (!host || (typeof container.contains === 'function' && !container.contains(host))) return;
+      if (active?.host === host) return;
+      if (isPointerOver && host === lastCheckedHost && !active) return;
+      if (host !== lastCheckedHost) lastCheckedHost = null;
+      clear();
+      if (typeof window.initLoopMarquee !== 'function') return;
+      lastCheckedHost = host;
+      const target = host.querySelector?.(targetSelector);
+      const source = target?.firstElementChild;
+      if (!target || !source) return;
+      if (!(target.clientWidth > 0 && target.scrollWidth > target.clientWidth + 1)) return;
+      let destroy = null;
+      mutateDom(() => {
+        destroy = window.initLoopMarquee(target, source, {bounce: true});
+      });
+      active = {host, target, source, destroy};
+    };
+    const deactivate = (event, isFocusLeave) => {
+      const host = event?.target?.closest?.(hostSelector);
+      if (!host) return;
+      const related = event?.relatedTarget;
+      if (related && host.contains?.(related)) return;
+      if (!isFocusLeave && host === lastCheckedHost) lastCheckedHost = null;
+      if (!active || active.host !== host) return;
+      if (isFocusLeave) {
+        if (host.matches?.(':hover')) return;
+      } else {
+        const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
+        if (activeEl && host.contains?.(activeEl)) return;
+      }
+      clear();
+    };
+    const onPointerOver = event => activate(event, true);
+    const onFocusIn = event => activate(event, false);
+    const onPointerOut = event => deactivate(event, false);
+    const onFocusOut = event => deactivate(event, true);
+    container.addEventListener('pointerover', onPointerOver);
+    container.addEventListener('focusin', onFocusIn);
+    container.addEventListener('pointerout', onPointerOut);
+    container.addEventListener('focusout', onFocusOut);
+    const destroy = () => {
+      clear();
+      container.removeEventListener?.('pointerover', onPointerOver);
+      container.removeEventListener?.('focusin', onFocusIn);
+      container.removeEventListener?.('pointerout', onPointerOut);
+      container.removeEventListener?.('focusout', onFocusOut);
+    };
+    return {clear, destroy};
+  };
+  if (typeof document !== 'undefined') document.addEventListener('alpine:init', () => {
     Alpine.directive('loop-marquee', (element, {modifiers}, {cleanup}) => {
       Alpine.mutateDom(() => cleanup(window.initLoopMarquee(element, null, {bounce: modifiers.includes('bounce')})));
+    });
+    Alpine.directive('loop-marquee-delegate', (element, {expression}, {evaluate, cleanup}) => {
+      const cfg = expression ? evaluate(expression) : null;
+      if (!cfg || typeof cfg !== 'object') return;
+      const binding = window.bindDelegatedBounceMarquee(element, {
+        hostSelector: cfg.host || cfg.hostSelector,
+        targetSelector: cfg.target || cfg.targetSelector,
+      });
+      cleanup(binding.destroy);
     });
   });
 })();

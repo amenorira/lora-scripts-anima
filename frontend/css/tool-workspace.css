@@ -187,8 +187,8 @@
 .tool-action-source.ready > svg { color: var(--accent); }
 .tool-action-source > div { flex: 1; min-width: 0; }
 .tool-action-source strong { display: block; font-size: 13px; overflow-wrap: anywhere; }
-.tool-action-source span, .tool-task-file { display: block; overflow: hidden; color: var(--text-secondary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.tool-action-source span { margin-top: 3px; }
+.tool-action-source > div > span, .tool-task-file { display: block; overflow: hidden; color: var(--text-secondary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.tool-action-source > div > span { margin-top: 3px; }
 .tool-source-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -256,7 +256,7 @@ body.tool-divider-dragging, body.tool-divider-dragging * { cursor: col-resize !i
 .tool-preview { display: flex; flex-direction: column; min-width: 0; height: clamp(228px, 42dvh, 530px); overflow: hidden; border: 1px solid var(--border-default); border-radius: var(--radius-panel); background: var(--bg-preview); }
 .tool-preview.drag-over { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .tool-preview-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; padding: 3px 5px 3px 10px; border-bottom: 1px solid var(--border-subtle); background: var(--bg-surface); }
-.tool-preview-toolbar span { min-width: 0; overflow: hidden; color: var(--text-secondary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.tool-preview-toolbar > span { min-width: 0; overflow: hidden; color: var(--text-secondary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .tool-drop-zone, .tool-preview-image { display: flex; flex: 1 1 0; align-items: center; justify-content: center; min-width: 0; min-height: 0; }
 .tool-drop-zone { flex-direction: column; gap: 6px; border: 0; background: none; color: var(--text-secondary); font-size: 12px; cursor: pointer; }
 .tool-drop-zone strong { font-size: 13px; color: var(--text-primary); }

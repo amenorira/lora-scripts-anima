@@ -140,7 +140,7 @@
 .caption-overview-grid.is-loading { pointer-events: none; opacity: .65; }
 .caption-overview-grid.is-refreshing { opacity: 1; }
 .caption-overview-item { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-primary); text-align: start; cursor: pointer; }
-.caption-overview-item > strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.caption-overview-item > strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; --loop-marquee-gutter-left: 0px; --loop-marquee-gutter-right: 0px; }
 .caption-overview-item:is(:hover, .selected) .tool-thumbnail { border-color: var(--border-focus); }
 .caption-overview-thumb img, .caption-detail-image img { opacity: 0; transition: opacity var(--duration-fast); }
 .caption-overview-thumb img.loaded, .caption-detail-image img.loaded { opacity: 1; }
@@ -199,12 +199,13 @@
 .reg-inspection-toolbar > .anima-select:nth-of-type(2) { flex-basis: 138px; }
 .reg-inspection-actions, .reg-inspection-path, .reg-gallery-end, .reg-preview-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
 .reg-inspection-path { flex-wrap: nowrap; margin-bottom: 8px; color: var(--text-secondary); font-size: 12px; }
+.reg-inspection-path > span { --loop-marquee-gutter-left: 0px; --loop-marquee-gutter-right: 4px; }
 .reg-inspection-path > button { flex: none; }
 .reg-gallery-end { min-height: 40px; padding: 7px 0; }
 .reg-grid { align-items: start; }
 .reg-result { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; min-width: 0; padding-bottom: 6px; border-bottom: 1px solid var(--border-subtle); }
 .reg-result-heading { display: flex; justify-content: space-between; gap: 5px; align-items: baseline; font-size: 12px; }
-.reg-result-heading > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reg-result-heading > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; --loop-marquee-gutter-left: 0px; --loop-marquee-gutter-right: 4px; }
 .reg-result-heading .reg-help { flex: none; margin: 0; }
 .reg-result-caption { min-height: 3em; margin: 0; }
 .reg-result.excluded .tool-thumbnail { opacity: .6; }
@@ -216,6 +217,7 @@
 .parameter-doc-modal.reg-source-help { --modal-workbench-width: 36rem; }
 .reg-image-modal .modal-header { gap: 8px; flex-wrap: wrap; }
 .reg-image-modal .modal-header > span { flex: 1 1 150px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reg-image-modal .modal-header > span.loop-marquee { text-overflow: clip; }
 .reg-image-modal img { display: block; width: 100%; max-height: 55dvh; object-fit: contain; background: var(--bg-preview); }
 .reg-image-modal p { margin: 8px 0; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 .tool-popover { position: fixed; z-index: 3000; max-width: calc(100vw - 24px); overflow: auto; border: 1px solid var(--border-default); border-radius: var(--radius-panel); background: var(--bg-surface); color: var(--text-primary); box-shadow: var(--shadow-sm); }

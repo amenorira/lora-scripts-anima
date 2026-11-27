@@ -156,7 +156,7 @@
       </main>
 
       <aside class="tool-action-panel" :aria-label="t('tagger.batchMode')">
-        <div class="tool-action-source" :class="{ ready: taggerSource?.total }"><svg><use href="#ti-folder"></use></svg><div><strong x-text="taggerSource?.total ? (taggerSource.total + ' ' + t('tagger.images')) : t('tagger.noSource')"></strong><span x-text="taggerSource?.path || t('tagger.imageDirDesc')"></span></div></div>
+        <div class="tool-action-source" :class="{ ready: taggerSource?.total }"><svg><use href="#ti-folder"></use></svg><div><strong x-text="taggerSource?.total ? (taggerSource.total + ' ' + t('tagger.images')) : t('tagger.noSource')"></strong><span x-loop-marquee.bounce :title="taggerSource?.path || t('tagger.imageDirDesc')"><span x-text="taggerSource?.path || t('tagger.imageDirDesc')"></span></span></div></div>
         <div class="tool-source-summary" x-show="taggerSource"><span><strong x-text="taggerSource?.total || 0"></strong><small x-text="t('tagger.images')"></small></span><span><strong x-text="taggerSource?.directories || 0"></strong><small x-text="t('tagger.folders')"></small></span><span><strong x-text="taggerSource?.with_caption || 0"></strong><small x-text="t('tagger.captions')"></small></span></div>
         <button type="button" class="btn btn-start tool-action" x-show="!taggerRunning" @click="startTagger()" :disabled="!taggerCanStart()"><svg><use href="#ti-play"></use></svg><span x-text="taggerStartLabel()"></span></button>
         <button type="button" class="btn btn-stop tool-action" x-show="taggerRunning" @click="cancelTagger()"><svg><use href="#ti-stop"></use></svg><span x-text="t('tagger.stop')"></span></button>

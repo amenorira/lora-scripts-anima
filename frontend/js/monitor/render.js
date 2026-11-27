@@ -32,6 +32,7 @@ window.monitorRenderMixin = {
 
     // ── 1. 外壳层：仅在首次或历史模式切换时构建 ──
     if (!this._shellBuilt || this._shellHistoryMode !== isHistory || this._shellLocale !== locale) {
+      el.querySelector?.('.m-tab-panel[data-tab="outputs"]')?._outputsMarqueeBinding?.destroy?.();
       this._disconnectDatasetDiagUI?.();
       // The old shell can still be in the DOM after a route reset has cleared
       // _shellBuilt. Its delayed close callback is lost when we replace it.
@@ -115,7 +116,7 @@ window.monitorRenderMixin = {
     let html = '<div class="m-history-banner"><div class="m-history-identity">';
     html += '<svg class="m-history-icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
     html += '<span class="m-history-label">' + this.esc(t('viewingHistory')) + '</span>';
-    html += '<b class="m-history-name" title="' + this.esc(runName) + '">' + this.esc(runName) + '</b>';
+    html += '<b class="m-history-name" title="' + this.esc(runName) + '" x-loop-marquee.bounce><span>' + this.esc(runName) + '</span></b>';
     const state = this._summaryStatus(d, true).state;
     const stClass = state === 'FINISHED' ? 'ok' : (state === 'FAILED' || state === 'TERMINATED' ? 'danger' : 'muted');
     const stLabel = t({FINISHED: 'statusCompleted', FAILED: 'statusFailed', TERMINATED: 'statusTerminated', STOPPED: 'statusStopped'}[state] || 'statusUnknown');
@@ -151,6 +152,9 @@ window.monitorRenderMixin = {
         this._cancelPreviewMediaQueue();
         this._disconnectSampleExpansionUI?.();
       }
+      if (prevTab === 'outputs' && tab !== 'outputs') {
+        contentEl.querySelector?.('.m-tab-panel[data-tab="outputs"]')?._outputsMarqueeBinding?.clear?.();
+      }
       if (prevTab === 'dataset' && tab !== 'dataset') {
         this._suspendDatasetDiagnostics?.();
         this.closeDatasetDiagModal?.();
@@ -175,6 +179,7 @@ window.monitorRenderMixin = {
     const panelEmpty = !panel.firstElementChild;
 
     if (isHistory && !this.runDetailData) {
+      if (tab === 'outputs') panel._outputsMarqueeBinding?.clear?.();
       panel.innerHTML = '<div class="dashboard-empty"><p>' + this.esc(this.runDetailError || t('loading')) + '</p>'
         + (this.runDetailError ? '<button class="btn btn-sm" @click="_fetchRunDetail(selectedRunDir)">' + this.esc(t('refresh')) + '</button>' : '') + '</div>';
       this._builtOverviewSig = null;
@@ -305,6 +310,12 @@ window.monitorRenderMixin = {
       return;
     }
     if (tab === 'outputs') {
+      if (!panel._outputsMarqueeBinding && typeof window.bindDelegatedBounceMarquee === 'function') {
+        panel._outputsMarqueeBinding = window.bindDelegatedBounceMarquee(panel, {
+          hostSelector: '.output-item',
+          targetSelector: '.output-name-text',
+        });
+      }
       if ((this._outputFilesNeedsRefresh || (tabChanged && !this.outputFiles.length)) && !this.outputFilesLoading) this.loadOutputFiles();
       const sig = ['out', this._shellLocale, this.outputFilesVersion, this.outputCanReveal, this.selectedOutputFiles.join('|'),
         !this.outputFiles.length && this.outputFilesLoading && !this._outputFilesLoaded ? 1 : 0,
@@ -327,6 +338,7 @@ window.monitorRenderMixin = {
         const focused = input && document.activeElement === input;
         const selection = focused ? [input.selectionStart, input.selectionEnd] : null;
         if (input) input.remove();
+        panel._outputsMarqueeBinding?.clear();
         panel.innerHTML = this._renderOutputsTab(t);
         const replacement = panel.querySelector('.m-output-search-input');
         if (input && replacement) {

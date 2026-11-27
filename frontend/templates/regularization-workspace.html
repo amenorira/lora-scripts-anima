@@ -30,7 +30,7 @@
     </div>
     <aside class="reg-summary tool-action-panel">
       <h2 x-text="regT('plan')"></h2>
-      <div class="tool-action-source" :class="{ready: regPlan && !regPreviewDirty}"><svg aria-hidden="true"><use href="#ti-folder"></use></svg><div><strong x-text="regSourceSummary()"></strong><span :title="regSettings.source_dir" x-text="regSettings.source_dir"></span></div></div>
+      <div class="tool-action-source" :class="{ready: regPlan && !regPreviewDirty}"><svg aria-hidden="true"><use href="#ti-folder"></use></svg><div><strong x-text="regSourceSummary()"></strong><span x-loop-marquee.bounce :title="regSettings.source_dir"><span x-text="regSettings.source_dir"></span></span></div></div>
       <template x-if="regPlan && (!regPlanConsumed || regPlanDirty) && !regPreviewDirty"><div class="reg-plan-summary">
         <div class="tool-source-summary"><span><strong x-text="regPlan.total"></strong><small x-text="regT('total')"></small></span><span :title="regPlanDirty ? regT('confirmOnGenerate') : ''"><strong x-text="regPlanDirty ? '—' : regPlan.completed"></strong><small x-text="regT('completed')"></small></span><span :title="regPlanDirty ? regT('confirmOnGenerate') : ''"><strong x-text="regPlanDirty ? '—' : regPlan.pending"></strong><small x-text="regT('pending')"></small></span></div>
         <p class="reg-help" x-show="regPlan.invalid_sources" x-text="regT('invalid') + ' ' + regPlan.invalid_sources + ' · ' + regT('skippedSourcesHelp')"></p>
@@ -73,12 +73,12 @@
       <button class="btn btn-secondary" :disabled="regBusy" @click="regInspect()" x-text="regT('refresh')"></button>
       <div class="reg-inspection-actions" x-show="regRunKey"><button class="btn btn-primary btn-sm" :disabled="regBusy || regRunning || !regTask?.completed" @click="regUseForTraining()" x-text="regT('use')"></button><button class="btn btn-ghost btn-sm" :disabled="regBusy || regRunning" @click="regReadRunSettings()" x-text="regT('readSettings')"></button><button class="btn btn-ghost btn-sm" :disabled="regBusy || regRunning || trainingActive || !regTask?.completed" @click="regOpenTagEditor()" x-text="t('nav.tagEditor')"></button><button class="btn btn-secondary btn-sm" x-show="!regRunning && regTask?.pending" :disabled="regBusy || trainingActive" @click="regResume()" x-text="regT('resume')"></button><button class="btn btn-stop btn-sm" x-show="regRunning" :disabled="regBusy" @click="regStop()" x-text="regT('stop')"></button></div>
     </div>
-    <div class="reg-inspection-path" x-show="regRunKey && regTask?.output_path"><span :title="regTask?.output_path" x-text="regTask?.output_path"></span><button type="button" class="btn btn-ghost btn-sm" @click="regCopyOutputPath()" x-text="t('common.copy')"></button></div>
+    <div class="reg-inspection-path" x-show="regRunKey && regTask?.output_path"><span x-loop-marquee.bounce :title="regTask?.output_path"><span x-text="regTask?.output_path"></span></span><button type="button" class="btn btn-ghost btn-sm" @click="regCopyOutputPath()" x-text="t('common.copy')"></button></div>
     <div class="dashboard-empty" x-show="!regItems.length" role="status"><p x-text="regT(regRunKey ? 'noMatches' : 'noResults')"></p></div>
     </div>
-    <div class="tool-gallery-grid reg-grid"><template x-for="card in regCards" :key="card.key"><article class="reg-result" :class="{excluded: !card.source && card.item.status === 'excluded'}" @mouseenter="if (card.source) showDetail(card.source, $event)" @mousemove="if (card.source && !pinned) moveDetail($event)" @mouseleave="if (!pinned) closeDetail()">
+    <div class="tool-gallery-grid reg-grid" x-loop-marquee-delegate="{ host: '.reg-result', target: '.reg-result-heading > strong' }"><template x-for="card in regCards" :key="card.key"><article class="reg-result loop-marquee-host" :class="{excluded: !card.source && card.item.status === 'excluded'}" @mouseenter="if (card.source) showDetail(card.source, $event)" @mousemove="if (card.source && !pinned) moveDetail($event)" @mouseleave="if (!pinned) closeDetail()">
       <button type="button" class="tool-thumbnail reg-image-button" :class="{'is-source': !!card.source}" :aria-label="card.filename + ' · ' + regT(card.source ? 'captionDetails' : 'inspect')" x-show="card.image" @focus="if (card.source) showDetail(card.source, $event)" @blur="if (!pinned) closeDetail()" @click.stop="card.source ? showDetail(card.source, $event, true) : regSelected = card.item"><img :src="card.image" :alt="card.filename" loading="lazy" decoding="async"></button>
-      <div class="reg-result-heading"><strong :title="card.source?.relative || card.filename" x-text="card.filename"></strong><span class="reg-help" x-text="card.label"></span></div>
+      <div class="reg-result-heading"><strong :title="card.source?.relative || card.filename"><span x-text="card.filename"></span></strong><span class="reg-help" x-text="card.label"></span></div>
       <p class="reg-result-caption" :title="card.caption" x-text="card.caption"></p>
       <p class="reg-help" x-text="card.source && regPreviewDirty ? regT('awaitValidation') : card.dimensions"></p>
       <p class="reg-error" x-show="card.error" x-text="card.error"></p>
@@ -125,7 +125,7 @@
     <template x-if="regSelected">
       <div class="modal modal-workbench reg-image-modal">
         <header class="modal-header">
-          <span id="reg-preview-image-title" :title="regSelected.filename" x-text="regSelected.filename"></span>
+          <span id="reg-preview-image-title" x-loop-marquee.bounce :title="regSelected.filename"><span x-text="regSelected.filename"></span></span>
           <div class="reg-preview-actions">
             <button type="button" class="btn btn-ghost btn-sm" :disabled="regBusy || !regCanNavigateImage(-1)" @click="regNavigateImage(-1)" x-text="regT('previousImage')"></button>
             <button type="button" class="btn btn-ghost btn-sm" :disabled="regBusy || !regCanNavigateImage(1)" @click="regNavigateImage(1)" x-text="regT('nextImage')"></button>
