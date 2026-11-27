@@ -1040,20 +1040,21 @@ function Install-Python312 {
 function Repair-PipMirrorForProcess {
     param([string]$PythonExecutable)
     $hosts = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
-    $hasConfiguredIndex = $false
+    $skipProbe = $false
     $indexes = @(Invoke-NativeCapture -FilePath $PythonExecutable -Arguments @("-m", "tools.pip_index_config") -WorkingDirectory $script:RepositoryRoot -AllowFailure)
     foreach ($entry in $indexes) {
         $parts = ([string]$entry) -split "`t", 2
         if ($parts.Count -ne 2) { continue }
         $key, $url = $parts
-        if ($key -eq "global.index-url" -and $url) { $hasConfiguredIndex = $true }
+        if ($key -eq "global.no-index") { $skipProbe = $true; continue }
+        if ($key -eq "global.index-url" -and $url) { $skipProbe = $true }
         if ($url.StartsWith("http://", [StringComparison]::OrdinalIgnoreCase)) {
             $secure = "https://" + $url.Substring(7)
             if ($key -eq "global.extra-index-url") { $env:PIP_EXTRA_INDEX_URL = $secure } else { $env:PIP_INDEX_URL = $secure }
             try { [void]$hosts.Add(([Uri]$secure).Host) } catch { }
         }
     }
-    foreach ($name in @("PIP_INDEX_URL", "PIP_EXTRA_INDEX_URL")) {
+    foreach ($name in @("PIP_INDEX_URL", "PIP_PYPI_URL", "PIP_EXTRA_INDEX_URL")) {
         $value = [Environment]::GetEnvironmentVariable($name, "Process")
         if ($value -and $value.StartsWith("http://", [StringComparison]::OrdinalIgnoreCase)) {
             $secure = "https://" + $value.Substring(7)
@@ -1067,12 +1068,13 @@ function Repair-PipMirrorForProcess {
         $env:PIP_TRUSTED_HOST = $existing -join " "
         Write-Text "pip_mirror_fixed" @($env:PIP_TRUSTED_HOST) -Color Yellow
     }
-    if (-not $env:PIP_INDEX_URL -and -not $hasConfiguredIndex) {
+    if (-not $env:PIP_INDEX_URL -and -not $skipProbe) {
         $autoSelected = @(Invoke-NativeCapture -FilePath $PythonExecutable -Arguments @("-B", "-m", "tools.network_mirror", "pip-index") -WorkingDirectory $script:RepositoryRoot -AllowFailure)
         foreach ($line in $autoSelected) {
             $autoUrl = ([string]$line).Trim()
             if ($autoUrl) {
                 $env:PIP_INDEX_URL = $autoUrl
+                $env:ANIMA_AUTO_PIP_INDEX_URL = $autoUrl
                 Write-Text "pip_mirror_auto" @($env:PIP_INDEX_URL) -Color Cyan
                 break
             }
