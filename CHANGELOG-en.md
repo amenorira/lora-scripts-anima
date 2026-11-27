@@ -4,6 +4,24 @@
 
 All notable changes to this project are documented in this file.
 
+## v26.1128.7f68c - 2026-11-28
+
+This update refines **Dataset Diagnostics** status colors, classification wording, and trilingual guides, extends **bounce-marquee scrolling** for long filenames and paths across the interface, and polishes **crop preview bucket ratios, dialog motion performance, and UI details**.
+
+### Dataset Diagnostics Copy, Colors, and Documentation
+
+- **More neutral labels and early-run wording:** Renamed **High (review)** / **Below mean** to **High (not dropping)** / **Low residual** across Chinese, English, and Japanese; before 3 comparable epochs, labels dynamically display **High residual** with early-stage summary guidance and update in place once 3 epochs are reached. Also fixed terminology and literal translations across all three locales.
+- **Consistent status colors and visual hierarchy:** Standardized **Low residual** to green across table pills, grid cards, detail modals, scatter tooltips, and timestep charts; consolidated **High (not dropping)** dots, status bars, scatter alert zones, and threshold lines to warning amber so they stay distinct from red `NaN / Inf` errors; added muted dashed styling for pending items to separate them visually from near-mean items.
+- **Rewritten trilingual Dataset Diagnostics guide:** Restructured the built-in Chinese, English, and Japanese guides into clear tables, adding a 40-image relative residual example, high/low residual interpretation guidance, and practical tips aligned with current UI behavior.
+
+### UI Polish and Motion Performance
+
+- **Bounce-marquee scrolling for long filenames and paths:** Updated bounce-marquee with symmetric outer fade gutters and unified overflow detection to remove extra trailing whitespace and phantom gaps, and introduced on-demand delegated listeners to eliminate idle observer overhead on large lists. Added marquee support across Dataset Diagnostics (status cards, folder headers, modal group pills, and caption filenames), monitor outputs and history, file picker, tag editor, dataset subsets, and image tools.
+- **Smoother dialog and image preview transitions:** Switched the crop preview focus modal to GPU-composited `transform / opacity` shared-element flyout, staged chrome reveal, and a softer secondary backdrop to avoid per-frame relayout; improved button-to-dialog container morphing, `prefers-reduced-motion` handling, and interruption cleanup while reducing unnecessary layout reads on non-morph dialogs.
+- **Crop preview, shape preview, and form details:** Added simplified integer aspect ratios (such as `4:3` and `16:9`) to the top-right corner of crop preview bucket cards; streamlined the matrix shape preview header by removing redundant help and refresh buttons (reopening after an error still retries automatically); restored compact font sizes for form field descriptions and hints.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1127.0ef9e...v26.1128.7f68c)
+
 ## v26.1127.0ef9e - 2026-11-27
 
 This update adds optional **password protection for the training UI**, fixes **sample ordering when resuming mid-epoch** and edge cases in **offline / automatic mirror pip installs**, and refines chart rendering and hover interactions in the training monitor and dataset diagnostics.
