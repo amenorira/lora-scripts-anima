@@ -12,7 +12,9 @@
 .cp-bucket-chip[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
 .cp-bucket-chip[aria-pressed="true"] .cp-bucket-size { color: var(--accent); }
 .cp-bucket-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cp-bucket-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; width: 100%; min-width: 0; }
 .cp-bucket-size { font-size: 14px; line-height: 1.3; font-weight: 600; }
+.cp-bucket-ratio { flex-shrink: 0; font-size: 11px; line-height: 1.3; font-weight: 400; color: var(--text-tertiary); white-space: nowrap; }
 .cp-bucket-counts { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 3px 12px; width: 100%; font-size: 12px; line-height: 1.4; }
 .cp-bucket-counts > span { display: inline-flex; align-items: baseline; gap: 5px; }
 .cp-bucket-counts .cp-meta-label { margin: 0; font-size: 11px; }

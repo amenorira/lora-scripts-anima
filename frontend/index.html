@@ -2347,7 +2347,10 @@
         </button>
         <template x-for="bucket in cropPreviewBuckets" :key="bucket.key">
           <button type="button" class="cp-bucket-chip" :aria-pressed="cropPreviewBucket === bucket.key" @click="selectCropPreviewBucket(bucket.key)" :title="t('cropPreview.sampleHint')">
-            <span class="cp-bucket-size" x-text="bucket.key"></span>
+            <span class="cp-bucket-head">
+              <span class="cp-bucket-size" x-text="bucket.key"></span>
+              <span class="cp-bucket-ratio" x-show="bucket.ratio" x-text="bucket.ratio"></span>
+            </span>
             <span class="cp-bucket-counts">
               <span><span class="cp-meta-label" x-text="t('cropPreview.sourceCount')"></span><strong x-text="cropPreviewCount(bucket.count)"></strong></span>
               <span><span class="cp-meta-label" x-text="t('cropPreview.trainingCount')"></span><strong x-text="bucket.samples"></strong></span>

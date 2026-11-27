@@ -28,6 +28,14 @@ function cancelCropPreviewDetailImage(frame) {
   full?.removeAttribute('src');
 }
 
+function formatBucketAspectRatio(width, height) {
+  const w = Number(width), h = Number(height);
+  if (!Number.isInteger(w) || !Number.isInteger(h) || w <= 0 || h <= 0) return '';
+  let a = w, b = h;
+  while (b !== 0) { const t = a % b; a = b; b = t; }
+  return `${w / a}:${h / a}`;
+}
+
 function discardPendingCropPreviewFrame() {
   const frame = pendingCropPreviewFrame;
   pendingCropPreviewFrame = null;
@@ -222,7 +230,11 @@ window.trainingCropPreviewMixin = {
       if (item.is_reg) includesReg = true;
       if (item.error) { errors += 1; continue; }
       const key = item.bucket.join(' × ');
-      const bucket = counts.get(key) || { key, count: 0, samples: 0, cropped: 0, upscaled: 0, width: item.bucket[0], height: item.bucket[1] };
+      const bucket = counts.get(key) || {
+        key, count: 0, samples: 0, cropped: 0, upscaled: 0,
+        width: item.bucket[0], height: item.bucket[1],
+        ratio: formatBucketAspectRatio(item.bucket[0], item.bucket[1]),
+      };
       const samples = Number(item.sample_count || 0);
       const cropped = item.crop_percent > 0 ? 1 : 0;
       const upscaled = item.scale > 1.001 ? 1 : 0;
