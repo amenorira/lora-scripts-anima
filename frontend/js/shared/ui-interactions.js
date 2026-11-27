@@ -37,11 +37,17 @@
     if (!element || !origin) return;
     // Preserve the explicit opener because the underlying dialog may become
     // inert and lose focus before the next Alpine effect runs.
-    const source = measureOrigin(origin);
+    const morph = element.classList?.contains('modal-overlay--morph');
+    const source = morph ? measureOrigin(origin) : null;
     if (element.open) {
       dialogOrigins.set(element, origin);
-      dialogSources.set(element, source);
-      if (element.querySelector(mediaTargetSelector)) setHiddenDialogOrigin(element, source?.anchor);
+      if (morph) {
+        dialogSources.set(element, source);
+        const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+        if (element.querySelector(mediaTargetSelector)) {
+          setHiddenDialogOrigin(element, reduced ? null : source?.anchor);
+        }
+      }
     } else pendingDialogOrigins.set(element, { opener: origin, source });
   }
 
@@ -57,21 +63,33 @@
       node.getAttribute('data-dialog-opens') === dialogId && node.getAttribute('@click') === action && node.getClientRects().length);
     return matches.length === 1 ? matches[0] : opener;
   }
+
+  function parseDurationMs(style, name, fallback) {
+    const raw = style.getPropertyValue(name).trim();
+    const value = parseFloat(raw);
+    if (!Number.isFinite(value)) return fallback;
+    if (raw.endsWith('ms')) return value;
+    if (raw.endsWith('s')) return value * 1000;
+    return value;
+  }
+
   function measureOrigin(opener) {
-    const anchor = opener?.querySelector(anchorSelector) || opener;
-    if (!anchor?.isConnected || !anchor.getClientRects().length) return null;
+    const anchor = opener?.querySelector?.(anchorSelector) || opener;
+    if (!anchor?.isConnected || !anchor.getClientRects?.().length) return null;
     const rect = anchor.getBoundingClientRect();
     const style = getComputedStyle(anchor);
-    if (!rect.width || !rect.height || (style.visibility === 'hidden' && !anchor.classList.contains('dialog-morph-origin'))) return null;
+    if (!rect.width || !rect.height || (style.visibility === 'hidden' && !anchor.classList?.contains('dialog-morph-origin'))) return null;
+    const isButton = anchor === opener;
     const transparent = 'rgba(0, 0, 0, 0)';
-    let backgroundColor = style.backgroundColor;
+    let backgroundColor = isButton ? style.backgroundColor : '';
     const visible = {
       top: Math.max(rect.top, 0), right: Math.min(rect.right, window.innerWidth),
       bottom: Math.min(rect.bottom, window.innerHeight), left: Math.max(rect.left, 0),
     };
     for (let parent = anchor.parentElement; parent; parent = parent.parentElement) {
+      if (parent === document.body && (!isButton || backgroundColor !== transparent)) break;
       const parentStyle = getComputedStyle(parent);
-      if (backgroundColor === transparent) backgroundColor = parentStyle.backgroundColor;
+      if (isButton && backgroundColor === transparent) backgroundColor = parentStyle.backgroundColor;
       if (parent === document.body) break;
       const { overflowX, overflowY } = parentStyle;
       if (overflowX === 'visible' && overflowY === 'visible') continue;
@@ -87,11 +105,12 @@
       }
     }
     if (visible.right <= visible.left || visible.bottom <= visible.top) return null;
-    // Computed styles are live. Freeze the button's appearance before the
-    // top layer takes hover and focus away from the source.
-    const paint = { backgroundColor, borderRadius: style.borderRadius,
-      borderTopColor: style.borderTopColor, borderTopWidth: style.borderTopWidth };
-    if (anchor === opener) {
+    let paint = null;
+    if (isButton) {
+      paint = {
+        backgroundColor, borderRadius: style.borderRadius,
+        borderTopColor: style.borderTopColor, borderTopWidth: style.borderTopWidth,
+      };
       for (const name of ['color', 'font', 'letterSpacing', 'padding', 'display', 'gap', 'alignItems', 'justifyContent']) {
         paint[name] = style[name];
       }
@@ -99,10 +118,36 @@
     return { anchor, rect, visible, paint };
   }
 
-  function buttonFlight(element, { source, panel, bounds, dest, opening, animate, reuse }) {
+  function animateButtonSurface(element, { bounds, source, panelRect, panel, animate, reuse, flight }) {
+    const surface = document.createElement('div');
+    surface.className = 'dialog-morph-fill';
+    surface.setAttribute('aria-hidden', 'true');
+    surface.style.borderWidth = panel.borderTopWidth;
+    element.append(surface);
+    flight.surface = surface;
+    reuse(surface, 'surface');
+    const diffBorderWidth = source.paint.borderTopWidth !== panel.borderTopWidth;
+    const shape = (rect, paint) => {
+      const inset = [rect.top - bounds.top, bounds.right - rect.right,
+        bounds.bottom - rect.bottom, rect.left - bounds.left].map(value => `${value}px`).join(' ');
+      const { borderRadius, backgroundColor, borderTopColor, borderTopWidth } = paint;
+      const surfaceFrame = { inset, borderRadius, backgroundColor, borderColor: borderTopColor };
+      if (diffBorderWidth) surfaceFrame.borderWidth = borderTopWidth;
+      return {
+        clip: { clipPath: `inset(${inset} round ${borderRadius})` },
+        surface: surfaceFrame,
+      };
+    };
+    const start = shape(source.visible, source.paint);
+    const end = shape(panelRect, panel);
+    animate(element, start.clip, end.clip);
+    animate(surface, start.surface, end.surface);
+  }
+
+  function buttonFlight(element, { source, panel, bounds, dest, opening, animate, reuse, previous, options, animations, flight }) {
     const { anchor, rect, paint, visible } = source;
     const copy = anchor.cloneNode(true);
-    for (const node of [copy, ...copy.querySelectorAll('[id]')]) node.removeAttribute('id');
+    for (const node of [copy, ...(copy.querySelectorAll?.('[id]') || [])]) node.removeAttribute('id');
     copy.removeAttribute('data-dialog-opens');
     copy.setAttribute('x-ignore', '');
     copy.setAttribute('aria-hidden', 'true');
@@ -114,59 +159,34 @@
       width: `${rect.width}px`, height: `${rect.height}px`, transform: 'none',
     });
     element.append(copy);
+    flight.copy = copy;
     reuse(copy, 'copy');
     const dx = (visible.left + visible.right - dest.left - dest.right) / 2;
     const dy = (visible.top + visible.bottom - dest.top - dest.bottom) / 2;
-    const startScale = Math.max((visible.right - visible.left) / dest.width, (visible.bottom - visible.top) / dest.height);
+    const btnScale = Math.max((visible.right - visible.left) / dest.width, (visible.bottom - visible.top) / dest.height);
+    const startScale = Math.min(1, Math.max(0.22, btnScale));
     animate(panel, { transform: `translate(${dx}px, ${dy}px) scale(${startScale})` },
       { transform: 'translate(0px, 0px) scale(1)' });
-    // Keep the source label at its button while the panel retains its pop.
-    // Fade it quickly on entry and restore it at the end of the return.
-    const label = current => opening
-      ? [{ opacity: 0, offset: .18 }]
-      : [{ opacity: current.opacity, offset: .72 }];
-    const content = opening
-      ? [{ opacity: 0, offset: .10, easing: 'ease-in-out' }, { opacity: 1, offset: .63 }]
-      : [{ opacity: 1, offset: .04, easing: 'ease-in-out' }, { opacity: 0, offset: .36 }];
-    animate(copy, { opacity: 1 }, { opacity: 0 }, label, 'linear');
-    animate(panel, { opacity: 0 }, { opacity: 1 }, content, 'linear');
+    const copyStart = previous.get(copy);
+    const copyOpacity = opening
+      ? [{ opacity: copyStart?.opacity ?? 1 }, { opacity: 0, offset: 0.18 }, { opacity: 0 }]
+      : [{ opacity: copyStart?.opacity ?? 0 }, { opacity: copyStart?.opacity ?? 0, offset: 0.72 }, { opacity: 1 }];
+    animations.push(copy.animate(copyOpacity, { ...options, easing: 'linear' }));
+    const panelStart = previous.get(panel);
+    const panelOpacity = opening
+      ? (panelStart
+        ? [{ opacity: panelStart.opacity, easing: 'ease-out' }, { opacity: 1, offset: 0.56 }, { opacity: 1 }]
+        : [{ opacity: 0 }, { opacity: 0, offset: 0.08, easing: 'ease-out' }, { opacity: 1, offset: 0.56 }, { opacity: 1 }])
+      : [{ opacity: panelStart?.opacity ?? 1 }, { opacity: panelStart?.opacity ?? 1, offset: 0.04, easing: 'ease-in-out' }, { opacity: 0, offset: 0.38 }, { opacity: 0 }];
+    animations.push(panel.animate(panelOpacity, { ...options, easing: 'linear' }));
     element.setAttribute('data-dialog-button-flight', '');
-    return copy;
-  }
-
-  // Clip the panel to the moving outline and paint the rim as a real border.
-  // A translucent fill must composite over the backdrop, not the rim color.
-  function animateSurface(element, { bounds, source, dest, panel, opening, animate, reuse, rounded }) {
-    const surface = document.createElement('div');
-    surface.className = 'dialog-morph-fill';
-    surface.setAttribute('aria-hidden', 'true');
-    element.append(surface);
-    reuse(surface, 'surface');
-    const shape = (rect, paint) => {
-      const inset = [rect.top - bounds.top, bounds.right - rect.right,
-        bounds.bottom - rect.bottom, rect.left - bounds.left].map(value => `${value}px`).join(' ');
-      const { borderRadius, backgroundColor, borderTopColor, borderTopWidth } = paint;
-      return {
-        clip: { clipPath: `inset(${inset} round ${borderRadius})` },
-        surface: { inset, borderRadius, backgroundColor, borderColor: borderTopColor, borderWidth: borderTopWidth },
-      };
-    };
-    const start = shape(source.visible, source.paint);
-    const end = shape(dest, panel);
-    const frames = [];
-    if (rounded) {
-      const middle = Object.fromEntries(['top', 'right', 'bottom', 'left'].map(side =>
-        [side, source.visible[side] + (dest[side] - source.visible[side]) * .36]));
-      frames.push({ ...shape(middle, { ...panel, borderRadius: '16px' }), offset: opening ? .36 : .64 });
-    }
-    for (const [node, layer] of [[element, 'clip'], [surface, 'surface']]) {
-      animate(node, start[layer], end[layer], frames.map(frame => ({ ...frame[layer], offset: frame.offset })));
-    }
-    return surface;
   }
 
   function stopDialogMotion(element) {
-    for (const animation of dialogMotions.get(element) || []) animation.cancel();
+    for (const animation of dialogMotions.get(element) || []) {
+      animation.finished?.catch(() => {});
+      animation.cancel();
+    }
     dialogMotions.delete(element);
     const flight = dialogFlights.get(element);
     flight?.copy?.remove();
@@ -177,12 +197,18 @@
 
   function playDialogMotion(element, opening, capturedSource) {
     const oldFlight = dialogFlights.get(element);
-    const previous = new Map((dialogMotions.get(element) || []).map(animation => {
-      const node = animation.effect.target;
-      const style = getComputedStyle(node);
-      const properties = ['transform', 'opacity', 'clipPath', 'backgroundColor', 'inset', 'borderRadius', 'borderColor', 'borderWidth'];
-      return [node, Object.fromEntries(properties.map(name => [name, style[name]]))];
-    }));
+    const previous = new Map();
+    for (const animation of dialogMotions.get(element) || []) {
+      const node = animation.effect?.target;
+      if (!node || previous.has(node)) continue;
+      const computed = getComputedStyle(node);
+      const props = node === oldFlight?.surface
+        ? ['inset', 'borderRadius', 'backgroundColor', 'borderColor', 'borderWidth']
+        : node === element
+          ? ['clipPath']
+          : ['transform', 'opacity'];
+      previous.set(node, Object.fromEntries(props.map(name => [name, computed[name]])));
+    }
     stopDialogMotion(element);
     const modal = element.querySelector('.modal');
     if (!modal?.animate) return [];
@@ -193,59 +219,75 @@
     const source = capturedSource === undefined
       ? measureOrigin(opener) || (saved?.visible.right <= window.innerWidth && saved.visible.bottom <= window.innerHeight ? saved : null)
       : capturedSource;
-    if (media && source?.anchor !== opener) setHiddenDialogOrigin(element, source?.anchor);
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return [];
-    const panelRect = modal.getBoundingClientRect();
-    const dest = media ? media.getBoundingClientRect() : panelRect;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return [];
     const style = getComputedStyle(element);
-    const options = {
-      duration: parseFloat(style.getPropertyValue(opening ? '--duration-dialog-enter' : '--duration-dialog-exit')),
-      easing: style.getPropertyValue('--ease-disclosure').trim(),
-      fill: 'both',
-    };
+    const duration = parseDurationMs(style, opening ? '--duration-dialog-enter' : '--duration-dialog-exit', opening ? 280 : 240);
+    if (duration <= 0) return [];
+    const easing = style.getPropertyValue('--ease-disclosure').trim() || 'ease-out';
+    const options = { duration, easing, fill: 'both' };
     const animations = [];
-    const animate = (node, hidden, shown, between = [], easing = options.easing) => {
+    const animate = (node, hidden, shown) => {
       const start = previous.get(node);
       const [from, to] = opening ? [hidden, shown] : [shown, hidden];
-      const first = start && Object.fromEntries(Object.keys(from).map(name => [name, start[name] ?? from[name]]));
-      // Keep source-label phases during interrupted opens/closes. The panel
-      // keeps its existing direct retargeting from the interpolated frame.
-      const phased = typeof between === 'function';
-      const frames = [first || from, ...(phased ? between(first || from) : between), to];
-      animations.push(node.animate(first && !phased ? [first, to] : frames, { ...options, easing }));
+      const first = start && Object.fromEntries(
+        Object.keys(from).map(name => [name, (start[name] ?? '') === '' ? from[name] : start[name]])
+      );
+      animations.push(node.animate([first || from, to], options));
     };
-    if (!source || !dest.width || !dest.height || (media && source.anchor === dialogOrigins.get(element))) {
-      animate(modal, { opacity: 0 }, { opacity: 1 });
-    } else {
-      const { anchor, rect } = source;
-      const bounds = element.getBoundingClientRect();
-      const surfaceStyle = getComputedStyle(modal.querySelector('.dialog-morph-surface') || modal);
-      const { borderRadius, borderTopWidth, borderTopColor, backgroundColor } = surfaceStyle;
-      const panel = { borderRadius, borderTopWidth, borderTopColor, backgroundColor };
-      const reuse = (node, key) => {
-        if (oldFlight?.[key]) previous.set(node, previous.get(oldFlight[key]));
-      };
-      const surface = animateSurface(element, { bounds, source, dest: panelRect, panel, opening,
-        animate, reuse, rounded: !!media });
-      let copy;
-      if (media) {
-        const reveal = opening ? [{ opacity: 0, offset: .24 }, { opacity: 1, offset: .79 }]
-          : [{ opacity: 1, offset: .21 }, { opacity: 0, offset: .76 }];
+    dialogMotions.set(element, animations);
+    try {
+      const dest = media ? media.getBoundingClientRect() : null;
+      const panelRect = !media && source?.paint ? modal.getBoundingClientRect() : null;
+      if (media && source && source.anchor !== opener && dest.width && dest.height) {
+        const { rect } = source;
         const dx = rect.left - dest.left;
         const dy = rect.top - dest.top;
-        animate(media, { transform: `translate(${dx}px, ${dy}px) scale(${rect.width / dest.width}, ${rect.height / dest.height})` },
+        animate(media,
+          { transform: `translate(${dx}px, ${dy}px) scale(${rect.width / dest.width}, ${rect.height / dest.height})` },
           { transform: 'translate(0px, 0px) scale(1, 1)' });
         for (const part of modal.querySelectorAll('[data-dialog-chrome]')) {
-          animate(part, { opacity: 0 }, { opacity: 1 }, reveal, 'linear');
+          const start = previous.get(part);
+          const frames = opening
+            ? (start
+              ? [{ opacity: start.opacity, easing: 'ease-out' }, { opacity: 1, offset: 0.72 }, { opacity: 1 }]
+              : [{ opacity: 0 }, { opacity: 0, offset: 0.12, easing: 'ease-out' }, { opacity: 1, offset: 0.72 }, { opacity: 1 }])
+            : [{ opacity: start?.opacity ?? 1, easing: 'ease-out' }, { opacity: 0, offset: 0.42 }, { opacity: 0 }];
+          animations.push(part.animate(frames, { ...options, easing: 'linear' }));
         }
+        const heroSurface = modal.querySelector('.dialog-morph-surface');
+        if (heroSurface) animate(heroSurface, { transform: 'scale(0.97)' }, { transform: 'scale(1)' });
+        setHiddenDialogOrigin(element, source.anchor);
+      } else if (panelRect?.width && panelRect?.height) {
+        const bounds = element.getBoundingClientRect();
+        const modalStyle = getComputedStyle(modal);
+        const panel = {
+          borderRadius: modalStyle.borderRadius,
+          borderTopWidth: modalStyle.borderTopWidth,
+          borderTopColor: modalStyle.borderTopColor,
+          backgroundColor: modalStyle.backgroundColor,
+        };
+        const reuse = (node, key) => {
+          const prev = oldFlight?.[key] && previous.get(oldFlight[key]);
+          if (prev) previous.set(node, prev);
+        };
+        const flight = {};
+        dialogFlights.set(element, flight);
+        animateButtonSurface(element, { bounds, source, panelRect, panel, animate, reuse, flight });
+        buttonFlight(element, {
+          source, panel: modal, bounds, dest: panelRect, opening, animate, reuse, previous, options, animations, flight,
+        });
+        setHiddenDialogOrigin(element, source.anchor);
       } else {
-        copy = buttonFlight(element, { source, panel: modal, bounds, dest, opening, animate, reuse });
-        setHiddenDialogOrigin(element, anchor);
+        setHiddenDialogOrigin(element);
+        animate(modal,
+          { transform: `translate(0px, 0px) scale(${opening ? 0.95 : 0.97})`, opacity: 0 },
+          { transform: 'translate(0px, 0px) scale(1)', opacity: 1 });
       }
-      dialogFlights.set(element, { surface, copy });
+      return animations;
+    } catch (_) {
+      stopDialogMotion(element);
+      return [];
     }
-    dialogMotions.set(element, animations);
-    return animations;
   }
 
   // The sample viewer uses the normal dialog entrance. Its exit is delayed
@@ -258,9 +300,7 @@
     const animations = [];
     try {
       const overlayStyle = getComputedStyle(element), modalStyle = getComputedStyle(modal);
-      const raw = overlayStyle.getPropertyValue('--duration-dialog-exit').trim();
-      const value = parseFloat(raw);
-      const duration = Number.isFinite(value) ? (raw.endsWith('ms') ? value : raw.endsWith('s') ? value * 1000 : value) : 150;
+      const duration = parseDurationMs(overlayStyle, '--duration-dialog-exit', 150);
       if (duration <= 0) return [];
       const options = { duration, easing: overlayStyle.getPropertyValue('--ease-out').trim() || 'ease-out', fill: 'both' };
       animations.push(element.animate([{ opacity: overlayStyle.opacity }, { opacity: 0 }], options));
@@ -284,10 +324,12 @@
     const dialog = modal?.closest('dialog[open]');
     if (!dialog || dialog.hasAttribute('data-dialog-closing')) return;
     // A transforming dialog temporarily becomes the containing block of fixed
-    // menus. Finish its entrance before measuring an immediately opened menu.
-    for (const animation of dialogMotions.get(dialog) || modal.getAnimations?.() || []) {
+    // menus. Finish its entrance and clear fill transforms synchronously.
+    const active = dialogMotions.get(dialog);
+    for (const animation of active || modal.getAnimations?.() || []) {
       if (animation.playState === 'running') animation.finish();
     }
+    if (active) stopDialogMotion(dialog);
   }
 
   function bindDialog(element, nextTick, scheduleOpen = nextTick) {
@@ -354,7 +396,7 @@
             dialogOrigins.delete(element);
           }
           if (explicitOrigin) dialogOrigins.set(element, explicitOrigin.opener);
-          if (!element.open || explicitOrigin) dialogSources.set(element, explicitOrigin?.source);
+          if (morph && (!element.open || explicitOrigin)) dialogSources.set(element, explicitOrigin?.source);
           scheduleOpen(() => {
             if (current !== sequence || !requested || !element.isConnected) return;
             dismissPopups();
@@ -433,6 +475,8 @@
         stopDialogMotion(element);
         dismissPopups(element);
         if (element.open) element.close();
+        element.removeAttribute('data-dialog-closing');
+        element.removeAttribute('data-dialog-nested');
         setHiddenDialogOrigin(element);
         dialogOrigins.delete(element);
         dialogSources.delete(element);
