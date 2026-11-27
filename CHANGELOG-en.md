@@ -4,6 +4,23 @@
 
 All notable changes to this project are documented in this file.
 
+## v26.1127.0ef9e - 2026-11-27
+
+This update adds optional **password protection for the training UI**, fixes **sample ordering when resuming mid-epoch** and edge cases in **offline / automatic mirror pip installs**, and refines chart rendering and hover interactions in the training monitor and dataset diagnostics.
+
+### New Features and Core Fixes
+
+- **Optional training UI authentication (`--auth`):** Pass `--auth "username:password"` at startup to protect the web UI, API, WebSocket, and built-in TensorBoard proxy with HTTP Basic authentication across all listen addresses. `--listen` remains passwordless by default and prints an access notice when binding externally; updated Chinese, English, and Japanese startup docs.
+- **Fixed mid-epoch resume sample order:** Unifies and persists the default sampling seed at startup, restores it before dataset construction on resume, and reconstructs per-epoch sampling and bucket order across persistent DataLoader workers and gradient-accumulation tail batches while preserving explicit validation split seeds.
+- **Improved offline pip detection and auto-mirror fallback:** Follows `pip install` configuration precedence to detect offline mode (`no-index`) and index aliases (`pypi-url`), skipping mirror speed probes when offline or unreadable. Launchers and environment installs now track auto-selected mirrors and fall back to pip's configured or default index on the first retry after failure.
+
+### Training Monitor and Dataset Diagnostics Chart Polish
+
+- **Overview Loss and learning-rate sparklines:** Keeps early-step spacing consistent in the diagnostic window and Loss sparkline while keeping the full-run view toggle accessible for short runs; refines learning-rate sparkline step ranges and dense-point hover targets, and aligns the left fade mask on the learning-rate card with the current Loss card.
+- **Dataset diagnostics charts and interactions:** Unified dataset filter entry points, fixed overlapping scatter-plot labels during zoom and hover feedback on empty timestep bins; standardized timestep chart markers to solid borderless dots, kept the overall curve and P25–P75 band stable while scaling with Y-axis changes during comparison overlays, removed inter-curve fill masks, and prevented excluded timestep bins from rendering baseline or comparison points.
+
+[Full changes](https://github.com/amenorira/lora-scripts-anima/compare/v26.1127.00938...v26.1127.0ef9e)
+
 ## v26.1127.00938 - 2026-11-27
 
 This update focuses on **more reliable dependency, model, and acceleration downloads**: models, tag dictionaries, pip dependencies, and FlashAttention / MOSS acceleration packages now automatically select fast endpoints and fall back when connections stall. It also reorganizes the Chinese, English, and Japanese guides and fixes several issues in dataset diagnostics, tag draft recovery, and the environment workspace.
