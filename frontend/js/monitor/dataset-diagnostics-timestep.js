@@ -375,12 +375,19 @@
       };
     },
 
+    _ddNoiseToneClass(tone) {
+      if (tone === 'danger') return ' is-tone-danger';
+      if (tone === 'warn') return ' is-tone-warn';
+      if (tone === 'ok') return ' is-tone-ok';
+      return '';
+    },
+
     _ddResolveActiveNoiseComparison(data, panel = null) {
       if (!data || !data.available) return null;
       const images = Array.isArray(data.by_image) ? data.by_image : [];
       const profile = data.timestep_profile || {};
       const t = k => this.tMonitor(k);
-      const toneForPreset = p => (p === 'non_finite' ? 'danger' : (p === 'attention' ? 'warn' : 'accent'));
+      const toneForPreset = p => (p === 'non_finite' ? 'danger' : (p === 'attention' ? 'warn' : (p === 'easy' ? 'ok' : 'accent')));
       const source = typeof this._datasetDiagSource === 'function' ? this._datasetDiagSource() : { key: '' };
 
       const resolveImage = imageId => {
@@ -563,7 +570,7 @@
           ? '<span class="m-dd-leg"><i class="is-line-theo"></i><span>' + this.esc(t('ddLegTheoSampling')) + '</span></span>'
           : '';
       }
-      const toneClass = comp.tone === 'danger' ? ' is-tone-danger' : (comp.tone === 'warn' ? ' is-tone-warn' : '');
+      const toneClass = this._ddNoiseToneClass(comp.tone);
       if (comp.kind === 'image') {
         return '<span class="m-dd-leg"><i class="is-line-base"></i><span>' + this.esc(t('ddNoiseTooltipBase')) + '</span></span>'
           + '<span class="m-dd-leg"><i class="is-dot is-sample"></i><span>' + this.esc(t('ddLegThisImage')) + '</span></span>';
@@ -1376,7 +1383,7 @@
       });
 
       const hasCompSeries = Boolean(comp?.series && coords.some(c => c.compCount > 0));
-      const toneClass = comp?.tone === 'danger' ? ' is-tone-danger' : (comp?.tone === 'warn' ? ' is-tone-warn' : '');
+      const toneClass = this._ddNoiseToneClass(comp?.tone);
       const overlayKind = hasCompSeries
         ? 'series'
         : (subsetMarkers.length ? 'subset' : (comp?.kind === 'image' && comp.detail ? 'image' : 'none'));

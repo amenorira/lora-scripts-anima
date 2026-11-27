@@ -427,7 +427,7 @@ window.datasetRepeatMixin = {
         </div>
         <template x-for="subset in datasetRepeatSubsets()" :key="subset.name">
           <div class="dataset-subset-row" :class="{ 'is-dirty': datasetRepeatParse(subset).state === 'dirty', 'is-invalid': datasetRepeatParse(subset).state === 'invalid' }">
-            <span class="dataset-subset-name" :title="subset.name"><span class="dataset-subset-folder" x-text="subset.name"></span><span class="dataset-subset-preview" x-text="datasetRepeatPreviewLabel(subset)"></span></span>
+            <span class="dataset-subset-name" :title="subset.name"><span class="dataset-subset-folder" x-loop-marquee.bounce><span x-text="subset.name"></span></span><span class="dataset-subset-preview" x-text="datasetRepeatPreviewLabel(subset)"></span></span>
             <span class="dataset-subset-meta" x-text="subset.image_count"></span>
             <div class="stepper dataset-subset-stepper">
               <button type="button" @click="stepDatasetRepeat(subset, -1)" :disabled="datasetRepeatReadOnly()">−</button>

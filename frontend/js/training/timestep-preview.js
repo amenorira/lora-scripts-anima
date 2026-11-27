@@ -148,7 +148,7 @@ window.trainingTimestepPreview = {
         .replace('{images}', String(counts.images))
         .replace('{repeats}', String(counts.repeats));
       return `<div class="subset-timestep-row">
-        <span class="subset-timestep-name" title="${this.escapeAttr(name)}">${this.esc(name)}</span>
+        <span class="subset-timestep-name" x-loop-marquee.bounce title="${this.escapeAttr(name)}"><span>${this.esc(name)}</span></span>
         <span class="subset-timestep-meta" data-training-i18n="timestepOffset.sampleFormat" data-training-i18n-params="${this.escapeAttr(JSON.stringify(counts))}">${this.esc(sampleText)}</span>
         <div class="stepper subset-timestep-stepper">
           <button type="button" @click="stepSubsetTimestepOffset(${nameExpr}, -0.05)"${disabled}>−</button>

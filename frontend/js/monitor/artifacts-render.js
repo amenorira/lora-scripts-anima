@@ -3503,10 +3503,10 @@ window.monitorArtifactsRenderMixin = {
           const isSelected = !!this.outputFilesSelected[f.path];
           const fpJs = this.esc(this.escapeJsString(f.path));
           const isBest = f.path === bestPath;
-          html += '<div class="output-item' + (isSelected ? ' selected' : '') + (isBest ? ' m-ckpt-best' : '') + '" @click="toggleOutputFile(\'' + fpJs + '\')">';
+          html += '<div class="output-item loop-marquee-host' + (isSelected ? ' selected' : '') + (isBest ? ' m-ckpt-best' : '') + '" @click="toggleOutputFile(\'' + fpJs + '\')">';
           html += '<input type="checkbox" id="outputSelect-' + this.esc(encodeURIComponent(f.path)) + '" aria-label="' + this.esc(t('selectOutputFile').replace('{name}', f.name)) + '" ' + (isSelected ? 'checked' : '') + ' @click.stop="toggleOutputFile(\'' + fpJs + '\')">';
           html += this._fileIconSvg(f);
-          html += '<span class="output-name" title="' + this.esc(f.name) + '"><span class="output-name-text">' + this.esc(f.name) + '</span>' + (isBest ? '<small class="m-best-label">' + this.esc(t('lowestLoss')) + '</small>' : '') + '</span>';
+          html += '<span class="output-name" title="' + this.esc(f.name) + '"><span class="output-name-text"><span>' + this.esc(f.name) + '</span></span>' + (isBest ? '<small class="m-best-label">' + this.esc(t('lowestLoss')) + '</small>' : '') + '</span>';
           const badge = this._ckptBadgeHtml(f, t);
           if (badge) html += badge;
           else if (f.is_lora) html += '<span class="badge output-lora-badge">LoRA</span>';
@@ -3536,10 +3536,10 @@ window.monitorArtifactsRenderMixin = {
         const isSelected = !!this.outputFilesSelected[f.path];
         const fpJs = this.esc(this.escapeJsString(f.path));
         const badge = this._ckptBadgeHtml(f, t);
-        html += '<div class="output-item' + (isSelected ? ' selected' : '') + '" @click="toggleOutputFile(\'' + fpJs + '\')">';
+        html += '<div class="output-item loop-marquee-host' + (isSelected ? ' selected' : '') + '" @click="toggleOutputFile(\'' + fpJs + '\')">';
         html += '<input type="checkbox" id="outputSelect-' + this.esc(encodeURIComponent(f.path)) + '" aria-label="' + this.esc(t('selectOutputFile').replace('{name}', f.name)) + '" ' + (isSelected ? 'checked' : '') + ' @click.stop="toggleOutputFile(\'' + fpJs + '\')">';
         html += this._fileIconSvg(f);
-        html += '<span class="output-name" title="' + this.esc(f.name) + '"><span class="output-name-text">' + this.esc(f.name) + '</span></span>';
+        html += '<span class="output-name" title="' + this.esc(f.name) + '"><span class="output-name-text"><span>' + this.esc(f.name) + '</span></span></span>';
         html += badge || '<span class="m-ckpt-badge m-muted">—</span>';
         html += '<span class="output-size">' + this._formatFileSize(f.size) + '</span>';
         html += '<span class="output-time">' + this._formatFileTime(f.mtime) + '</span>';
@@ -3559,10 +3559,10 @@ window.monitorArtifactsRenderMixin = {
         const isSelected = !!this.outputFilesSelected[f.path];
         const fpJs = this.esc(this.escapeJsString(f.path));
         const fileType = this._outputFileTypeLabel(f, t);
-        html += '<div class="output-item' + (isSelected ? ' selected' : '') + '" @click="toggleOutputFile(\'' + fpJs + '\')">';
+        html += '<div class="output-item loop-marquee-host' + (isSelected ? ' selected' : '') + '" @click="toggleOutputFile(\'' + fpJs + '\')">';
         html += '<input type="checkbox" id="outputSelect-' + this.esc(encodeURIComponent(f.path)) + '" aria-label="' + this.esc(t('selectOutputFile').replace('{name}', f.name)) + '" ' + (isSelected ? 'checked' : '') + ' @click.stop="toggleOutputFile(\'' + fpJs + '\')">';
         html += this._fileIconSvg(f);
-        html += '<span class="output-name" title="' + this.esc(f.name) + '"><span class="output-name-text">' + this.esc(f.name) + '</span></span>';
+        html += '<span class="output-name" title="' + this.esc(f.name) + '"><span class="output-name-text"><span>' + this.esc(f.name) + '</span></span></span>';
         html += '<span class="output-kind">' + this.esc(fileType) + '</span>';
         html += '<span class="output-size">' + this._formatFileSize(f.size) + '</span>';
         html += '<span class="output-time">' + this._formatFileTime(f.mtime) + '</span>';

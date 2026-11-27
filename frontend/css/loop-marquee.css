@@ -4,24 +4,26 @@
 .loop-marquee-copy { display:none; user-select:none; }
 .loop-marquee.is-overflowing { mask-image:linear-gradient(to right,#000 0%,#000 calc(100% - 18px),transparent 100%); }
 .loop-marquee.is-overflowing .loop-marquee-copy { display:block; }
-.loop-marquee.is-overflowing:is(:hover,:focus-visible,:focus-within),
-.loop-marquee-host:is(:hover,:focus-visible) .loop-marquee.is-overflowing {
+.loop-marquee.is-overflowing:not(.is-bouncing):is(:hover,:focus-visible,:focus-within),
+.loop-marquee-host:is(:hover,:focus-visible) .loop-marquee.is-overflowing:not(.is-bouncing) {
   mask-image:linear-gradient(to right,transparent 0%,#000 18px,#000 calc(100% - 18px),transparent 100%);
 }
-.loop-marquee.is-overflowing:is(:hover,:focus-visible,:focus-within) .loop-marquee-track,
-.loop-marquee-host:is(:hover,:focus-visible) .loop-marquee.is-overflowing .loop-marquee-track {
+.loop-marquee.is-overflowing:not(.is-bouncing):is(:hover,:focus-visible,:focus-within) .loop-marquee-track,
+.loop-marquee-host:is(:hover,:focus-visible) .loop-marquee.is-overflowing:not(.is-bouncing) .loop-marquee-track {
   animation:loop-marquee-travel var(--loop-marquee-duration) linear infinite;
 }
 .loop-marquee .snapshot-path-text { width:auto; overflow:visible; text-overflow:clip; }
 @keyframes loop-marquee-travel { to { transform:translateX(calc(-1 * var(--loop-marquee-distance))); } }
-.loop-marquee.is-bouncing { margin-left:-8px; }
-.loop-marquee.is-bouncing .loop-marquee-text { padding-left:8px; padding-right:14px; }
-/* Fade in the caption's outer gutter; the first letter stays opaque until it moves. */
-.loop-marquee.is-bouncing.is-overflowing { mask-image:linear-gradient(to right,transparent,#000 8px,#000 calc(100% - 14px),transparent); }
+.loop-marquee.is-bouncing { margin-left:calc(-1 * var(--loop-marquee-gutter-left, 8px)); margin-right:calc(-1 * var(--loop-marquee-gutter-right, 6px)); text-overflow:clip; }
+.loop-marquee.is-bouncing .loop-marquee-text { padding-left:var(--loop-marquee-gutter-left, 8px); padding-right:var(--loop-marquee-gutter-right, 6px); }
+/* Fade in both outer gutters; first and last letters stay opaque at each end. */
+.loop-marquee.is-bouncing.is-overflowing { mask-image:linear-gradient(to right,transparent,#000 var(--loop-marquee-gutter-left, 8px),#000 calc(100% - var(--loop-marquee-gutter-right, 6px)),transparent); }
 .loop-marquee.is-bouncing.is-overflowing:is(:hover,:focus-visible,:focus-within) .loop-marquee-track,
+.loop-marquee-host:is(:hover,:focus-visible,:focus-within,.is-selected,[aria-selected="true"]) .loop-marquee.is-bouncing.is-overflowing .loop-marquee-track,
 .m-chart-preview-pop:not([hidden]) .loop-marquee.is-bouncing.is-overflowing .loop-marquee-track,
 .m-samples-section .preview-grid-item:is(:hover,:focus-visible,[data-sample-image-selected="true"]) .loop-marquee.is-bouncing.is-overflowing .loop-marquee-track,
 .m-sample-batch[data-sample-selected="true"] .m-sample-batch-cover .loop-marquee.is-bouncing.is-overflowing .loop-marquee-track,
+.m-dd-status-row:is(:hover,:focus-visible,:focus-within,.is-selected) .loop-marquee.is-bouncing.is-overflowing .loop-marquee-track,
 .m-dd-flat-group-row:is(:hover,:focus-visible,:focus-within,.is-selected) .loop-marquee.is-bouncing.is-overflowing .loop-marquee-track,
 .m-dd-card:is(:hover,:focus-visible,:focus-within) .loop-marquee.is-bouncing.is-overflowing .loop-marquee-track,
 .m-dd-table-row:is(:hover,:focus-visible,:focus-within) .loop-marquee.is-bouncing.is-overflowing .loop-marquee-track {
@@ -36,8 +38,8 @@
 .m-samples-section.is-preview-open .loop-marquee.is-bouncing .loop-marquee-track { animation-play-state:paused!important; }
 @media (prefers-reduced-motion:reduce) {
   .loop-marquee.is-bouncing .loop-marquee-track { animation:none!important; }
-  .loop-marquee.is-overflowing:is(:hover,:focus-visible,:focus-within) .loop-marquee-track,
-  .loop-marquee-host:is(:hover,:focus-visible) .loop-marquee.is-overflowing .loop-marquee-track { animation:none; }
+  .loop-marquee.is-overflowing:not(.is-bouncing):is(:hover,:focus-visible,:focus-within) .loop-marquee-track,
+  .loop-marquee-host:is(:hover,:focus-visible) .loop-marquee.is-overflowing:not(.is-bouncing) .loop-marquee-track { animation:none; }
   .loop-marquee.is-overflowing:focus-visible { overflow-x:auto; mask-image:none; }
   .loop-marquee.is-overflowing .loop-marquee-copy { display:none; }
 }

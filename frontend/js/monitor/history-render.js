@@ -67,13 +67,13 @@ window.monitorHistoryRenderMixin = {
         [h.profile_label, h.network, h.optimizer].filter(Boolean).forEach((label, i) => {
           html += '<span class="hist-tag' + (i === 0 ? ' hist-tag-profile' : '') + '" title="' + this.esc(label) + '">' + this.esc(label) + '</span>';
         });
-        html += '</div><div class="hist-meta hist-truncate" title="' + this.esc(h.model || '') + '">' + this.esc(t('historyModel')) + ' · ' + this.esc(h.model || '') + '</div>';
+        html += '</div><div class="hist-meta hist-truncate" title="' + this.esc(h.model || '') + '" x-loop-marquee.bounce><span>' + this.esc(t('historyModel')) + ' · ' + this.esc(h.model || '') + '</span></div>';
         html += '<dl class="hist-stats">';
         [[t('historyLR'), this._formatLearningRate(h.lr, h.lr ?? '—')], [t('snapshotRankAlpha'), String(h.dim ?? '—') + ' / ' + (h.alpha === '' ? '—' : h.alpha ?? '—')], [t('historyEpochs'), h.epochs]].forEach(([label, value]) => {
           html += '<div><dt>' + this.esc(label) + '</dt><dd>' + this.esc(value ?? '—') + '</dd></div>';
         });
         html += '</dl>';
-        if (h.dataset) html += '<div class="hist-dataset hist-truncate" title="' + this.esc(h.dataset) + '">' + this.esc(t('dataset')) + ' · ' + this.esc(h.dataset) + '</div>';
+        if (h.dataset) html += '<div class="hist-dataset hist-truncate" title="' + this.esc(h.dataset) + '" x-loop-marquee.bounce><span>' + this.esc(t('dataset')) + ' · ' + this.esc(h.dataset) + '</span></div>';
         if (artifactOffline && h.artifact_dir) html += '<div class="hist-artifact is-offline">' + this.esc(h.artifact_dir) + '</div>';
         if (h.deletion_pending || h.warning) html += '<p class="hist-warning">' + this.esc(t(h.deletion_pending ? 'historyCleanupPending' : 'historyResultUnreadable')) + '</p>';
         html += '</div></div>';

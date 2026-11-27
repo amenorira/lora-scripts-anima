@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""按固定 UTC+8 生成发布版本号 YY.MDD.sssss（当天秒数的 5 位小写十六进制，不带 v）。"""
+"""按固定 UTC+8 生成发布版本号 YY.MDD.sssss（周日 00:00:00 起算的当周累计秒数，5 位小写十六进制，不带 v）。"""
 
 import argparse
 from datetime import datetime, timedelta, timezone
@@ -12,10 +12,11 @@ def format_version(when: datetime) -> str:
     if when.tzinfo is None:
         when = when.replace(tzinfo=UTC_PLUS_8)
     when = when.astimezone(UTC_PLUS_8)
-    return (
-        f"{when.year % 100}.{when.month * 100 + when.day}."
-        f"{when.hour * 3600 + when.minute * 60 + when.second:05x}"
+    day_of_week = (when.weekday() + 1) % 7
+    seconds_in_week = (
+        day_of_week * 86400 + when.hour * 3600 + when.minute * 60 + when.second
     )
+    return f"{when.year % 100}.{when.month * 100 + when.day}.{seconds_in_week:05x}"
 
 
 if __name__ == "__main__":

@@ -2878,7 +2878,7 @@ test('narrow scatter and early charts flip +20% threshold label left or dodge to
   };
   const app = makeApp({ datasetDiagData: narrowData });
 
-  for (const [mode, stageW, stageH] of [['early', 320, 220], ['quadrant', 300, 260]]) {
+  for (const [mode, stageW, stageH] of [['early', 420, 220], ['quadrant', 420, 260]]) {
     const { wrap, stage, svg } = makeWrapStage(mode, stageW, stageH);
     app._renderDatasetDiagHeroSvg(wrap, stage, svg, { animate: false });
     const highEl = svg.querySelector('[data-dd-thresh-label="high"]');
@@ -3096,4 +3096,255 @@ test('excluded consecutive timestep bins with historical samples never draw base
     assert.ok(patchedBaseDots.every(d => !excludedIdx.has(d.getAttribute('data-dd-ts-base-dot'))));
     assert.ok(patchedCompDots.every(d => !excludedIdx.has(d.getAttribute('data-dd-ts-comp-dot'))));
   });
+});
+
+test('status tone semantics and noise comparison colors stay consistent across easy, attention, and muted', () => {
+  const app = makeApp({ _monitorMotionAllowed: () => false });
+  const t = k => app.tMonitor(k);
+
+  assert.equal(app._ddStatusMeta(t, 'easy').tone, 'ok');
+  assert.equal(app._ddStatusMeta(t, 'attention', 0.01).tone, 'warn');
+  assert.equal(app._ddStatusMeta(t, 'learning', -0.04).tone, 'info');
+  assert.equal(app._ddStatusMeta(t, 'non_finite').tone, 'danger');
+  assert.equal(app._ddStatusMeta(t, 'insufficient').tone, 'muted');
+  assert.equal(app._ddStatusMeta(t, 'insufficient_reference').tone, 'muted');
+  assert.equal(app._ddStatusMeta(t, 'normal').tone, 'neutral');
+
+  assert.equal(app._ddStatusDotColor('attention'), 'var(--warning)');
+  assert.equal(app._ddStatusDotColor('easy'), 'var(--success)');
+
+  const width = 1000 / 18;
+  const bins = Array.from({ length: 18 }, (_, bin) => ({
+    bin,
+    t_from: bin * width,
+    t_to: (bin + 1) * width,
+    count: 6,
+    images: 3,
+    comparable: true,
+    mean_loss: 0.22 + bin * 0.01,
+    p25: 0.18 + bin * 0.01,
+    p75: 0.26 + bin * 0.01,
+    non_finite_count: 0,
+  }));
+  const makeStatusSeries = offset => ({
+    counts: Array.from({ length: 18 }, () => 3),
+    mean_loss: Array.from({ length: 18 }, (_, bin) => 0.16 + offset + bin * 0.01),
+  });
+  const data = {
+    ...structuredClone(SAMPLE_DATA),
+    timestep_scale: 'thousand',
+    timestep_profile: {
+      num_bins: 18,
+      bins,
+      by_status: {
+        easy: makeStatusSeries(-0.04),
+        normal: makeStatusSeries(0.0),
+      },
+      by_group: {},
+    },
+  };
+  app.datasetDiagData = data;
+
+  app.toggleDatasetDiagOverviewPreset('easy');
+  const easyComp = app._ddResolveActiveNoiseComparison(data, null);
+  assert.equal(easyComp.tone, 'ok');
+  assert.ok(app._ddNoiseLegendHtml(t, easyComp, false).includes('is-line-accent is-tone-ok'));
+
+  const ts = makeWrapStage('timestep', 380, 176);
+  app._renderDatasetDiagHeroSvg(ts.wrap, ts.stage, ts.svg, { animate: false });
+  assert.ok(ts.svg.querySelectorAll('.m-dd-ts-comp-line').every(el => el.classList.contains('is-tone-ok')));
+  assert.ok(ts.svg.querySelectorAll('[data-dd-ts-comp-dot]').every(el => el.classList.contains('is-tone-ok')));
+  assert.ok(ts.svg.querySelectorAll('[data-dd-ts-sel-idx]').every(el => el.classList.contains('is-tone-ok')));
+
+  // Switching to normal via DOM patch removes is-tone-ok so comparison falls back to accent.
+  withMockEnv({
+    document: { createElementNS: (_ns, tag) => makeEl(tag), querySelector: () => null },
+  }, () => {
+    const patchApp = makeApp({ datasetDiagData: data, _monitorMotionAllowed: () => false });
+    const baseEl = makeEl('g'), theoEl = makeEl('g'), compEl = makeEl('g'), selEl = makeEl('g'), yMaxEl = makeEl('text'), focusCompEl = makeEl('circle');
+    const fakeSvg = makeEl('svg');
+    fakeSvg.querySelector = sel => ({
+      '[data-dd-ts-base]': baseEl,
+      '[data-dd-ts-density-theo]': theoEl,
+      '[data-dd-ts-comp]': compEl,
+      '[data-dd-ts-density-sel]': selEl,
+      '[data-dd-ts-y-max]': yMaxEl,
+      '[data-dd-ts-focus-comp]': focusCompEl,
+    })[sel] || null;
+    const pStage = makeEl('div'); pStage.clientWidth = 380; pStage.clientHeight = 176;
+    const pWrap = makeEl('div'); pWrap.dataset = { mode: 'timestep' };
+
+    patchApp.toggleDatasetDiagOverviewPreset('easy');
+    patchApp._renderDatasetDiagHeroSvg(pWrap, pStage, fakeSvg);
+    assert.ok(compEl.querySelectorAll('[data-dd-ts-comp-dot]').every(el => el.classList.contains('is-tone-ok')));
+    assert.ok(selEl.querySelectorAll('[data-dd-ts-sel-idx]').every(el => el.classList.contains('is-tone-ok')));
+
+    patchApp.toggleDatasetDiagOverviewPreset('normal');
+    const normalComp = patchApp._ddResolveActiveNoiseComparison(data, null);
+    assert.equal(normalComp.tone, 'accent');
+    patchApp._renderDatasetDiagHeroSvg(pWrap, pStage, fakeSvg);
+    assert.ok(compEl.querySelectorAll('[data-dd-ts-comp-dot]').every(el => !el.classList.contains('is-tone-ok')));
+    assert.ok(selEl.querySelectorAll('[data-dd-ts-sel-idx]').every(el => !el.classList.contains('is-tone-ok')));
+    assert.equal(focusCompEl.classList.contains('is-tone-ok'), false);
+  });
+});
+
+test('high and low residual labels adapt between early stage and slope-ready stage including in-place DOM patching', () => {
+  const mkStageData = hasSlope => {
+    const base = structuredClone(SAMPLE_DATA);
+    base.verdict = null;
+    base.summary.has_slope = hasSlope;
+    base.summary.has_reg_images = false;
+    base.summary.non_finite_total = 0;
+    base.summary.counts = {
+      attention: 2,
+      learning: 0,
+      normal: 1,
+      easy: 1,
+      non_finite: 0,
+      insufficient: 0,
+      insufficient_reference: 0,
+    };
+    const statuses = ['attention', 'attention', 'normal', 'easy'];
+    base.by_image = base.by_image.map((img, idx) => ({
+      ...img,
+      is_reg: false,
+      non_finite_count: 0,
+      status: statuses[idx],
+      slope: hasSlope ? (statuses[idx] === 'attention' ? 0.01 : 0.0) : null,
+    }));
+    base.by_subset = [{ key: '0-0', label: '10_char', images: 4, count: 16, mean_residual: 0.25, attention_count: 2 }];
+    return base;
+  };
+
+  const earlyData = mkStageData(false);
+  const lateData = mkStageData(true);
+  const app = makeApp({ datasetDiagData: earlyData });
+  const t = k => app.tMonitor(k);
+
+  // 1. Early stage (!has_slope): neutral high-residual labels
+  const earlyVerdict = app._ddVerdictInfo(t, earlyData);
+  assert.equal(earlyVerdict.title, t('ddVerdictEarlyHighTitle').replace('{n}', 2));
+  assert.equal(earlyVerdict.desc, t('ddVerdictEarlyHighDesc'));
+  assert.ok(app._ddVerdictActionsHtml(t, earlyData).includes(t('ddJumpEarlyHigh').replace('{n}', 2)));
+  assert.ok(app._ddGroupAlertHtml(t, earlyData.by_subset[0], false).includes(t('ddGroupAlertEarlyHigh').replace('{n}', 2)));
+
+  const nanEarlyData = structuredClone(earlyData);
+  nanEarlyData.summary.counts.non_finite = 1;
+  nanEarlyData.summary.non_finite_total = 1;
+  const nanEarlyVerdict = app._ddVerdictInfo(t, nanEarlyData);
+  assert.equal(nanEarlyVerdict.desc, t('ddVerdictNanAndEarlyHighDesc').replace('{n}', 2));
+
+  const statusCardHtml = app._renderDatasetDiagStatusCard(t, earlyData);
+  assert.ok(statusCardHtml.includes(t('ddTrendPending')));
+  assert.ok(statusCardHtml.includes(t('ddStatusLow')));
+
+  const earlyPresets = app._ddImagesPresetSpecs(t, earlyData);
+  assert.equal(earlyPresets.find(([key]) => key === 'attention')[1], t('ddTrendPending'));
+  assert.equal(earlyPresets.find(([key]) => key === 'easy')[1], t('ddPresetLow'));
+
+  // 2. Slope-ready transition (has_slope: false -> true): in-place DOM patching updates labels
+  const attLabelEl = { textContent: t('ddTrendPending') };
+  const attRow = makeEl('div', { 'data-dd-status-key': 'attention' });
+  attRow.querySelector = sel => (sel === '[data-dd-status-label]' ? attLabelEl : null);
+  const statusListEl = makeEl('div');
+  statusListEl.querySelector = sel => (sel === '[data-dd-status-key="attention"]' ? attRow : null);
+  const statusHost = makeEl('div');
+  statusHost.querySelector = sel => (sel === '[data-dd-status-list]' ? statusListEl : null);
+
+  app.datasetDiagData = lateData;
+  app._patchDatasetDiagStatusCard(statusHost, t, lateData, false);
+  assert.equal(attLabelEl.textContent, t('ddPresetAttention'));
+
+  const presetKeys = earlyPresets.map(([key]) => key);
+  const tabLabelEls = earlyPresets.map(([, label]) => ({ textContent: label }));
+  const tabNumEls = earlyPresets.map(([, , cnt]) => ({ textContent: String(cnt) }));
+  const tabBtns = presetKeys.map((key, idx) => {
+    const btn = makeEl('button', { 'data-dd-preset-tab': key });
+    btn.querySelector = sel => (sel === '.m-dd-tab-label' ? tabLabelEls[idx] : sel === '.m-dd-tab-n' ? tabNumEls[idx] : null);
+    return btn;
+  });
+  const tabsEl = { querySelectorAll: sel => (sel === '[data-dd-preset-tab]' ? tabBtns : []) };
+  const groupToggleMock = app._datasetDiagHasMultipleFolders(lateData) ? {} : null;
+  const toolbarEl = {
+    querySelector: sel => (
+      sel === '[data-dd-preset-tabs]' ? tabsEl
+        : sel === '[data-dd-group-toggle]' ? groupToggleMock
+          : null
+    ),
+  };
+
+  assert.equal(app._patchDatasetDiagImagesToolbar(toolbarEl, t, lateData), true);
+  const attTabIdx = presetKeys.indexOf('attention');
+  assert.equal(tabLabelEls[attTabIdx].textContent, t('ddPresetAttention'));
+
+  const lateVerdict = app._ddVerdictInfo(t, lateData);
+  assert.equal(lateVerdict.title, t('ddVerdictAttentionTitle').replace('{n}', 2));
+  assert.equal(lateVerdict.desc, t('ddVerdictAttentionDesc'));
+  assert.ok(app._ddVerdictActionsHtml(t, lateData).includes(t('ddJumpAttention').replace('{n}', 2)));
+  assert.ok(app._ddGroupAlertHtml(t, lateData.by_subset[0], true).includes(t('ddGroupAlertAttention').replace('{n}', 2)));
+});
+
+test('status distribution card labels use bounce marquee without ellipsis and animate on hover, focus, or selection', () => {
+  const data = {
+    available: true,
+    summary: {
+      total_images: 4,
+      has_slope: true,
+      counts: { non_finite: 1, attention: 1, learning: 1, normal: 1, easy: 0, unqualified: 0 },
+    },
+    by_image: [
+      { image_id: 'i1', status: 'non_finite', mean_residual: 0.1, train_samples: 1, non_finite_count: 1 },
+      { image_id: 'i2', status: 'attention', mean_residual: 0.2, slope: 0.01, train_samples: 1 },
+      { image_id: 'i3', status: 'learning', mean_residual: 0.1, slope: -0.02, train_samples: 1 },
+      { image_id: 'i4', status: 'normal', mean_residual: 0.0, slope: -0.01, train_samples: 1 },
+    ],
+  };
+  const app = makeApp({ datasetDiagData: data });
+  const t = k => app.tMonitor(k);
+  const statusCardHtml = app._renderDatasetDiagStatusCard(t, data);
+  const rowMatches = statusCardHtml.match(/class="m-dd-status-name-marquee" x-loop-marquee\.bounce><span data-dd-status-label>/g) || [];
+  assert.equal(rowMatches.length, 6);
+
+  const loopMarqueeCss = readRepo('frontend/css/loop-marquee.css');
+  assert.ok(loopMarqueeCss.includes('.m-dd-status-row:is(:hover,:focus-visible,:focus-within,.is-selected) .loop-marquee.is-bouncing.is-overflowing .loop-marquee-track'));
+  assert.ok(loopMarqueeCss.includes('.loop-marquee.is-bouncing { margin-left:calc(-1 * var(--loop-marquee-gutter-left, 8px)); margin-right:calc(-1 * var(--loop-marquee-gutter-right, 6px)); text-overflow:clip; }'));
+  assert.ok(loopMarqueeCss.includes('.loop-marquee.is-bouncing .loop-marquee-text { padding-left:var(--loop-marquee-gutter-left, 8px); padding-right:var(--loop-marquee-gutter-right, 6px); }'));
+  assert.ok(loopMarqueeCss.includes('.loop-marquee.is-bouncing.is-overflowing { mask-image:linear-gradient(to right,transparent,#000 var(--loop-marquee-gutter-left, 8px),#000 calc(100% - var(--loop-marquee-gutter-right, 6px)),transparent); }'));
+
+  const appCss = readRepo('frontend/css/app.css');
+  assert.ok(appCss.includes('gap: 4px 6px; padding: 7px 10px;'));
+  assert.ok(appCss.includes('.m-dd-status-name-marquee { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; --loop-marquee-gutter-left: 6px; }'));
+  assert.ok(!appCss.includes('.m-dd-status-name-marquee.loop-marquee'));
+  assert.ok(appCss.includes('.m-sample-loss-stage { flex: 1; min-width: 0; --loop-marquee-gutter-right: 5px; }'));
+});
+
+test('dataset diagnostics folder heads, group context chips, and caption filename render bounce marquee markup', () => {
+  const data = structuredClone(SAMPLE_DATA);
+  data.by_directory = [
+    { key: 'D:/ds/char', label: 'ds/very-long-char-folder', full_path: 'D:/ds/char', count: 22, comparable_count: 22, images: 3, mean_loss: 0.25, mean_residual: 0.08 },
+    { key: 'D:/ds/reg', label: 'ds/very-long-reg-folder', full_path: 'D:/ds/reg', count: 8, comparable_count: 8, images: 1, mean_loss: 0.19, mean_residual: -0.18 },
+  ];
+  const app = makeApp({ datasetDiagData: data, datasetDiagGroupByFolder: true, datasetDiagRegMode: 'all' });
+  const t = k => app.tMonitor(k);
+
+  app.datasetDiagViewMode = 'grid';
+  const gridHtml = app._renderDatasetDiagImagesBodyHtml(t, data);
+  assert.ok(gridHtml.includes('class="m-dd-folder-head loop-marquee-host"'));
+  assert.ok(gridHtml.includes('<span class="m-dd-folder-name" x-loop-marquee.bounce><span>'));
+
+  app.datasetDiagViewMode = 'table';
+  const tableHtml = app._renderDatasetDiagImagesBodyHtml(t, data);
+  assert.ok(tableHtml.includes('class="m-dd-table-folder-head loop-marquee-host"'));
+  assert.ok(tableHtml.includes('<span class="m-dd-folder-name" x-loop-marquee.bounce><span>'));
+
+  const modalHtml = app._renderDatasetDiagModalRightHtml(t, {
+    image: data.by_image[0],
+    caption: { exists: true, filename: 'very-long-caption-file.txt', path: 'D:/ds/char/very-long-caption-file.txt', text: '1girl, solo' },
+    epoch_series: [],
+    samples: [],
+  });
+  assert.ok(modalHtml.includes('class="m-dd-ctx-item is-link loop-marquee-host"'));
+  assert.ok(modalHtml.includes('<span class="m-dd-ctx-name" x-loop-marquee.bounce><span>'));
+  assert.ok(modalHtml.includes('<span class="m-dd-cap-file" title="D:/ds/char/very-long-caption-file.txt" x-loop-marquee.bounce><span>very-long-caption-file.txt</span></span>'));
 });

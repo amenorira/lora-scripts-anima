@@ -9,8 +9,8 @@
   --duration-menu-exit: 150ms;
   --duration-dialog-enter: 180ms;
   --duration-dialog-exit: 150ms;
-  --duration-morph-enter: 300ms;
-  --duration-morph-exit: 270ms;
+  --duration-morph-enter: 280ms;
+  --duration-morph-exit: 240ms;
   --duration-toast-enter: 180ms;
   --duration-toast-exit: 150ms;
   --menu-scale-enter: .97;
@@ -85,7 +85,7 @@ dialog.modal-overlay:not([open]) { pointer-events: none; }
    second CSS exit. Leave an interrupted entrance intact for WAAPI to sample. */
 dialog.preview-lightbox:not([open]),
 dialog.preview-lightbox:not([open]) > .modal { transition: none; }
-/* x-dialog animates the silhouette and its contents separately. */
+/* x-dialog drives morph panels and media heroes with WAAPI transforms/opacity. */
 dialog.modal-overlay--morph {
   --duration-dialog-enter: var(--duration-morph-enter);
   --duration-dialog-exit: var(--duration-morph-exit);
@@ -93,6 +93,7 @@ dialog.modal-overlay--morph {
   opacity: 1;
   transition: none;
 }
+[data-dialog-anchor="target"] { transform-origin: top left; }
 dialog.modal-overlay--morph > .modal,
 dialog.modal-overlay--morph[open] > .modal {
   opacity: 1;
@@ -112,7 +113,7 @@ dialog.modal-overlay--morph[open] > .modal {
   transition: none !important;
 }
 dialog[data-dialog-button-flight] > .modal { background: transparent; border-color: transparent; box-shadow: none; }
-.dialog-morph-fill { position: absolute; z-index: -1; pointer-events: none; border-style: solid; background-clip: padding-box; }
+.dialog-morph-fill { position: absolute; z-index: -1; pointer-events: none; border-style: solid; background-clip: padding-box; contain: layout style paint; }
 dialog.modal-overlay--morph::backdrop {
   background: var(--bg-overlay);
   opacity: 0;
@@ -125,9 +126,11 @@ dialog.modal-overlay--morph[open]:not([data-dialog-closing])::backdrop {
 @starting-style {
   dialog.modal-overlay--morph[open]:not([data-dialog-closing])::backdrop { opacity: 0; }
 }
-/* A single page scrim persists behind nested details, including their exit. */
-dialog.modal-overlay[data-dialog-nested],
-dialog.modal-overlay--morph[data-dialog-nested]::backdrop { background: transparent; }
+/* Keep non-morph nested dialogs transparent; nested morph dialogs add a dimmed secondary backdrop. */
+dialog.modal-overlay[data-dialog-nested] { background: transparent; }
+dialog.modal-overlay--morph[data-dialog-nested]::backdrop {
+  background: color-mix(in srgb, var(--bg-overlay) 85%, transparent);
+}
 .dialog-morph-surface {
   position: absolute;
   inset: -1px;
@@ -162,7 +165,7 @@ dialog.modal-overlay--morph[data-dialog-nested]::backdrop { background: transpar
 .anima-select-chevron { transition: none; }
 @media (prefers-reduced-motion: reduce) {
   .refresh-button.is-loading svg { animation: none; transition: none; transform: rotate(90deg); opacity: .55; }
-  *, *::before, *::after {
+  *, *::before, *::after, ::backdrop {
     animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important; scroll-behavior: auto !important;
   }

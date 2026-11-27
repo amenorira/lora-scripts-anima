@@ -145,3 +145,22 @@ test('crop preview source scope defaults to training-only, persists via localSto
   assert.equal(store.get('anima-crop-preview-source'), 'only');
   assert.deepEqual(Array.from(reopened.cropPreviewSourceItems, item => item.id), ['t1']);
 });
+
+test('crop preview buckets compute exact simplified aspect ratios via gcd', () => {
+  const a = app();
+  a.cropPreviewItems = [
+    { ...sample, id: 'b1', bucket: [752, 1328], sample_count: 2 },
+    { ...sample, id: 'b2', bucket: [1024, 1024], sample_count: 3 },
+    { ...sample, id: 'b3', bucket: [1280, 720], sample_count: 1 },
+    { ...sample, id: 'b4', bucket: [768, 1024], sample_count: 1 },
+  ];
+  assert.deepEqual(
+    Array.from(a.cropPreviewBuckets, b => [b.key, b.ratio]),
+    [
+      ['752 × 1328', '47:83'],
+      ['768 × 1024', '3:4'],
+      ['1024 × 1024', '1:1'],
+      ['1280 × 720', '16:9'],
+    ]
+  );
+});

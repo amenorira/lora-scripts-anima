@@ -23,9 +23,9 @@
 
 - **提交信息使用中文**：所有 git commit message 必须用中文撰写（可使用 Conventional Commits 前缀，如 `feat: 新增 xxx`、`fix: 修复 xxx`），禁止纯英文提交信息。提交正文不可省略，须用中文项目符号具体说明改动，并使用真实换行，禁止把 `\\n` 作为字面量写入提交信息；优先使用提交模板文件或 shell 的多行字符串传入正文。默认只在本地 commit，未明确要求 push 时不要推送远端。
 - **发布流程（每次发版必须走完）**：
-  - 使用 **UTC+8** CalVer `YY.MDD.sssss`：日期段保持整数、不补零（`year % 100`、`month * 100 + day`）；末段为当天累计秒数（`hour * 3600 + minute * 60 + second`）的固定 5 位小写十六进制，不足补零。例：`2026-10-17 22:30:10` → `26.1017.13c72`。
+  - 使用 **UTC+8** CalVer `YY.MDD.sssss`：日期段保持整数、不补零（`year % 100`、`month * 100 + day`）；末段为周日 00:00:00 起算的当周累计秒数（`day_of_week * 86400 + hour * 3600 + minute * 60 + second`，周日为 0、周六为 6）的固定 5 位小写十六进制（`00000`–`93a7f`），不足补零。例：`2026-10-17 22:30:10`（周六） → `26.1017.92572`。
   - 历史日志和 tag 不改动。以下 `<版本>` 均复用同一次生成结果，`VERSION` 不带 `v`，日志标题、tag、Release 名均带 `v`。
-  - 更新检测和版本先后以 Git 提交关系为准，兼容历史 SemVer 和十进制时间 CalVer；禁止对混合格式的 tag 按字符串、数字或 `packaging.Version` 排序（纯数字的 5 位时间段可能有歧义）。
+  - 更新检测和版本先后以 Git 提交关系为准，兼容历史 SemVer、十进制时间及按天计秒 CalVer；禁止对混合格式的 tag 按字符串、数字或 `packaging.Version` 排序（纯数字的 5 位时间段可能有歧义）。
   1. 在 dev 用 venv Python 执行 `tools/dev/generate_version.py`，保存版本号；若 tag 已存在，至少等一秒再生成，禁止覆盖。
   2. 更新 `VERSION`、`CHANGELOG.md` 和 `CHANGELOG-en.md`，以 `chore: 发布 v<版本> 版本` 提交，并在该提交打 tag `v<版本>`。
   3. 将 dev 合并到 main（合并信息：`merge: 发布 v<版本>`），推送两分支和 tag；再在 dev 执行 `git merge --ff-only main` 并推送，保持分支齐平。

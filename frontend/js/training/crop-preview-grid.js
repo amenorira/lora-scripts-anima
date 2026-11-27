@@ -155,8 +155,8 @@ document.addEventListener('alpine:init', () => {
       const thumbnail = tile.querySelector('[data-dialog-anchor]');
       const { top, bottom } = thumbnail.getBoundingClientRect();
       const viewport = scroller.getBoundingClientRect();
-      // A clipped but visible thumbnail is already a valid morph origin.
-      if (bottom <= viewport.top || top >= viewport.bottom) {
+      // Scroll partially clipped thumbnails into view before an unclipped hero return.
+      if (top < viewport.top || bottom > viewport.bottom) {
         thumbnail.scrollIntoView({ block: 'nearest', behavior: 'instant' });
       }
     }

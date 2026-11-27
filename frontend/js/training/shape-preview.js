@@ -45,14 +45,6 @@ window.trainingShapePreviewMixin = {
     const signature = JSON.stringify(payload);
     const sameConfig = signature === this._shapeEstimateSignature;
     if (!force && sameConfig) return;
-    if (force) {
-      // All estimates for a replaced Anima checkpoint share the same path.
-      const checkpoint = payload.pretrained_model_name_or_path;
-      for (const key of this._shapeEstimateCache.keys()) {
-        if (key === signature || (checkpoint && JSON.parse(key).pretrained_model_name_or_path === checkpoint))
-          this._shapeEstimateCache.delete(key);
-      }
-    }
     this._shapeEstimateSignature = signature;
     this._shapeEstimateRevision++;
     clearTimeout(this._shapeEstimateTimer);
