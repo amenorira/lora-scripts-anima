@@ -6661,7 +6661,7 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 .m-dd-status-seg.is-non_finite,
 .m-dd-status-dot.is-non_finite { background: var(--danger); }
 .m-dd-status-seg.is-attention,
-.m-dd-status-dot.is-attention { background: color-mix(in srgb, var(--danger) 50%, var(--warning)); }
+.m-dd-status-dot.is-attention { background: var(--warning); }
 .m-dd-status-seg.is-learning,
 .m-dd-status-dot.is-learning { background: var(--accent); }
 .m-dd-status-seg.is-normal,
@@ -6683,7 +6683,7 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 }
 .m-dd-status-row[hidden] { display: none; }
 .m-dd-status-row.is-non_finite { --dd-tone: var(--danger); }
-.m-dd-status-row.is-attention { --dd-tone: color-mix(in srgb, var(--danger) 50%, var(--warning)); }
+.m-dd-status-row.is-attention { --dd-tone: var(--warning); }
 .m-dd-status-row.is-learning { --dd-tone: var(--accent); }
 .m-dd-status-row.is-normal {
   --dd-tone: color-mix(in srgb, var(--text-secondary) 72%, var(--border-default));
@@ -6731,7 +6731,7 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
   font-variant-numeric: tabular-nums; color: var(--text-primary);
 }
 .m-dd-status-row.is-non_finite .m-dd-status-count { color: var(--diag-tone-danger, var(--danger)); }
-.m-dd-status-row.is-attention .m-dd-status-count { color: color-mix(in srgb, var(--diag-tone-danger, var(--danger)) 45%, var(--diag-tone-warn, var(--warning))); }
+.m-dd-status-row.is-attention .m-dd-status-count { color: var(--diag-tone-warn, var(--warning)); }
 .m-dd-status-unit { font: 450 10.5px/1 var(--font-sans); color: var(--text-tertiary); margin-left: 2px; }
 .m-dd-status-sep { font-size: 10px; line-height: 1; color: var(--text-tertiary); opacity: .55; margin: 0 3px; }
 .m-dd-status-pct { font: 500 11px/1.05 var(--font-sans); font-variant-numeric: tabular-nums; color: var(--text-tertiary); white-space: nowrap; }
@@ -6740,7 +6740,7 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 .m-dd-status-k { font: 450 10.5px/1 var(--font-sans); color: var(--text-tertiary); }
 .m-dd-status-v { font: 600 11.5px/1 var(--font-sans); font-variant-numeric: tabular-nums; color: var(--text-secondary); }
 .m-dd-status-v.is-tone-non_finite { color: var(--diag-tone-danger, var(--danger)); }
-.m-dd-status-v.is-tone-attention { color: color-mix(in srgb, var(--diag-tone-danger, var(--danger)) 45%, var(--diag-tone-warn, var(--warning))); }
+.m-dd-status-v.is-tone-attention { color: var(--diag-tone-warn, var(--warning)); }
 .m-dd-status-v.is-tone-learning { color: var(--accent); }
 .m-dd-status-v.is-tone-normal { color: var(--text-secondary); }
 .m-dd-status-v.is-tone-easy { color: var(--diag-tone-ok, var(--success)); }
@@ -6869,9 +6869,9 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 .m-dd-leg { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .m-dd-leg[hidden] { display: none; }
 .m-dd-leg i { display: inline-block; flex: none; font-style: normal; }
-.m-dd-leg i.is-zone { width: 10px; height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--danger) 14%, transparent); border: 1px dashed color-mix(in srgb, var(--warning) 75%, transparent); }
+.m-dd-leg i.is-zone { width: 10px; height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--warning) 14%, transparent); border: 1px dashed color-mix(in srgb, var(--warning) 75%, transparent); }
 .m-dd-leg i.is-dot { width: 7px; height: 7px; border-radius: 50%; }
-.m-dd-leg i.is-dot.is-high { background: color-mix(in srgb, var(--danger) 55%, var(--warning)); }
+.m-dd-leg i.is-dot.is-high { background: var(--warning); }
 .m-dd-leg i.is-dot.is-ok { background: var(--success); }
 .m-dd-leg i.is-dot.is-sample { background: linear-gradient(135deg, var(--success), var(--warning) 55%, var(--danger)); }
 .m-dd-leg i.is-dot.is-accent { background: var(--accent); }
@@ -6882,6 +6882,7 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 .m-dd-leg i.is-line-accent { width: 13px; height: 2px; border-radius: 1px; background: var(--accent); }
 .m-dd-leg i.is-line-accent.is-tone-danger { background: var(--danger); }
 .m-dd-leg i.is-line-accent.is-tone-warn { background: var(--warning); }
+.m-dd-leg i.is-line-accent.is-tone-ok { background: var(--success); }
 .m-dd-leg i.is-line-dash { width: 13px; height: 0; border-top: 1.5px dashed var(--diag-full-line, var(--text-secondary)); opacity: .82; }
 .m-dd-leg i.is-line-dash.is-soft { border-top-color: var(--diag-prev-line, var(--text-tertiary)); opacity: .9; }
 .m-dd-leg i.is-line-ref { width: 13px; height: 0; border-top: 1.5px solid var(--diag-full-line, var(--text-secondary)); opacity: .68; }
@@ -6948,13 +6949,13 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 .m-dd-hero-svg.is-zones-on [data-dd-zones] { opacity: 1; pointer-events: auto; }
 .m-dd-hero-svg.is-zones-on .m-dd-quad-labels { opacity: 1; }
 .m-dd-zone-hit { fill: transparent; cursor: pointer; transition: fill var(--duration-normal) var(--ease-out); }
-.m-dd-alert-zone { fill: color-mix(in srgb, var(--danger) 8%, transparent); transition: fill var(--duration-slow) var(--ease-out); }
+.m-dd-alert-zone { fill: color-mix(in srgb, var(--warning) 8%, transparent); transition: fill var(--duration-slow) var(--ease-out); }
 .m-dd-learn-zone { fill: color-mix(in srgb, var(--accent) 4.5%, transparent); transition: fill var(--duration-slow) var(--ease-out); }
 .m-dd-zone-hit:hover,
 .m-dd-zone-hit.is-hover { fill: color-mix(in srgb, var(--text-primary) 4%, transparent); }
 .m-dd-alert-zone:hover,
 .m-dd-alert-zone.is-hover,
-.m-dd-alert-zone.is-active { fill: color-mix(in srgb, var(--danger) 13%, transparent); }
+.m-dd-alert-zone.is-active { fill: color-mix(in srgb, var(--warning) 14%, transparent); }
 .m-dd-learn-zone:hover,
 .m-dd-learn-zone.is-hover,
 .m-dd-learn-zone.is-active { fill: color-mix(in srgb, var(--accent) 9%, transparent); }
@@ -6971,15 +6972,15 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 .m-dd-axis-group text.m-dd-axis-dir { font: 500 10.5px/1 var(--font-sans); opacity: .88; }
 .m-dd-text-halo { paint-order: stroke; stroke: var(--monitor-card-bg); stroke-width: 3.5px; stroke-linejoin: round; pointer-events: none; }
 .m-dd-ref-lines line { stroke: color-mix(in srgb, var(--border-default) 90%, transparent); stroke-width: 1; stroke-dasharray: 3 3; }
-.m-dd-ref-lines line.is-thresh { stroke: color-mix(in srgb, var(--danger) 45%, var(--warning)); stroke-width: 1.15; stroke-dasharray: 4 3; opacity: .78; }
+.m-dd-ref-lines line.is-thresh { stroke: var(--warning); stroke-width: 1.15; stroke-dasharray: 4 3; opacity: .78; }
 .m-dd-ref-lines line.is-zero { stroke: color-mix(in srgb, var(--diag-full-line, var(--text-secondary)) 68%, var(--border-default)); stroke-width: 1.35; stroke-dasharray: none; }
 .m-chart-axes text.is-zero { fill: var(--text-secondary); font-weight: 600; }
 .m-dd-quad-labels text { fill: var(--text-secondary); font: 500 10.5px/1 var(--font-sans); paint-order: stroke; stroke: var(--monitor-card-bg); stroke-width: 4px; stroke-linejoin: round; pointer-events: none; }
-.m-dd-quad-labels text.is-alert { fill: color-mix(in srgb, var(--diag-tone-danger, var(--danger)) 78%, var(--text-secondary)); }
+.m-dd-quad-labels text.is-alert { fill: color-mix(in srgb, var(--diag-tone-warn, var(--warning)) 86%, var(--text-secondary)); }
 .m-dd-quad-labels text.is-learning { fill: color-mix(in srgb, var(--accent) 82%, var(--text-secondary)); }
 .m-chart-axes text.is-sans { font-family: var(--font-sans); }
 .m-dd-quad-labels text.m-dd-thresh-label,
-.m-chart-axes text.m-dd-thresh-label { fill: color-mix(in srgb, var(--diag-tone-danger, var(--danger)) 48%, var(--diag-tone-warn, var(--warning))); font: 600 10px/1 var(--font-mono); }
+.m-chart-axes text.m-dd-thresh-label { fill: var(--diag-tone-warn, var(--warning)); font: 600 10px/1 var(--font-mono); }
 .m-dd-crosshair line { stroke: color-mix(in srgb, var(--border-default) 95%, transparent); stroke-width: 1; stroke-dasharray: 2.5 2.5; pointer-events: none; }
 .m-dd-dots { pointer-events: none; }
 .m-dd-dot { fill-opacity: .78; stroke: var(--monitor-card-bg); stroke-width: 1; transition: fill-opacity var(--duration-slow) var(--ease-out), stroke-opacity var(--duration-slow) var(--ease-out), transform var(--duration-slow) var(--ease-out); }
@@ -7070,11 +7071,13 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 .m-dd-ts-comp-line.is-gap { stroke-dasharray: 3 3; opacity: .82; }
 .m-dd-ts-comp-line.is-tone-danger { stroke: var(--danger); }
 .m-dd-ts-comp-line.is-tone-warn { stroke: var(--warning); }
+.m-dd-ts-comp-line.is-tone-ok { stroke: var(--success); }
 .m-dd-ts-dot { fill: var(--text-secondary); stroke: none; pointer-events: none; }
 .m-dd-ts-dot.is-sparse { fill: var(--warning); }
 .m-dd-ts-dot.is-comp { fill: var(--accent); transition: fill var(--duration-slow) var(--ease-out); }
 .m-dd-ts-dot.is-comp.is-tone-danger { fill: var(--danger); }
 .m-dd-ts-dot.is-comp.is-tone-warn { fill: var(--warning); }
+.m-dd-ts-dot.is-comp.is-tone-ok { fill: var(--success); }
 .m-dd-ts-sample-dot { stroke: var(--monitor-card-bg); stroke-width: 1.1; fill-opacity: .92; pointer-events: none; }
 .m-dd-ts-density-bar { fill: color-mix(in srgb, var(--text-secondary) 22%, transparent); pointer-events: none; transition: fill var(--duration-normal) var(--ease-out), opacity var(--duration-normal) var(--ease-out); }
 .m-dd-ts-density-bar.is-sparse { fill: color-mix(in srgb, var(--warning) 38%, transparent); }
@@ -7083,12 +7086,14 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 .m-dd-ts-density-sel { fill: var(--accent); fill-opacity: .84; pointer-events: none; transition: fill var(--duration-slow) var(--ease-out), fill-opacity var(--duration-slow) var(--ease-out); }
 .m-dd-ts-density-sel.is-tone-danger { fill: var(--danger); }
 .m-dd-ts-density-sel.is-tone-warn { fill: var(--warning); }
+.m-dd-ts-density-sel.is-tone-ok { fill: var(--success); }
 .m-dd-ts-crosshair { stroke: color-mix(in srgb, var(--text-primary) 35%, transparent); stroke-width: 1; stroke-dasharray: 2.5 2.5; pointer-events: none; }
 .m-dd-ts-crosshair.is-moving { transition: transform var(--duration-fast) var(--ease-out); }
 .m-dd-ts-focus-dot { fill: var(--monitor-card-bg); stroke: var(--text-primary); stroke-width: 1.8; pointer-events: none; transition: cx var(--duration-fast) var(--ease-out), cy var(--duration-fast) var(--ease-out), stroke var(--duration-normal) var(--ease-out); }
 .m-dd-ts-focus-dot.is-comp { stroke: var(--accent); }
 .m-dd-ts-focus-dot.is-comp.is-tone-danger { stroke: var(--danger); }
 .m-dd-ts-focus-dot.is-comp.is-tone-warn { stroke: var(--warning); }
+.m-dd-ts-focus-dot.is-comp.is-tone-ok { stroke: var(--success); }
 @media (prefers-reduced-motion: reduce) {
   .m-dd-hero-wrap[data-mode="timestep"] :is(.m-dd-hero-svg *, .m-dd-ts-tooltip) { transition: none !important; }
 }
@@ -7457,6 +7462,7 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 .m-dd-pill.is-warn { border-color: color-mix(in srgb, var(--warning) 42%, var(--border-default)); background: color-mix(in srgb, var(--warning) 14%, var(--bg-surface)); color: var(--diag-tone-warn, var(--warning)); }
 .m-dd-pill.is-info { border-color: color-mix(in srgb, var(--accent) 42%, var(--border-default)); background: color-mix(in srgb, var(--accent) 14%, var(--bg-surface)); color: color-mix(in srgb, var(--accent) 86%, var(--text-primary)); }
 .m-dd-pill.is-ok { border-color: color-mix(in srgb, var(--success) 42%, var(--border-default)); background: color-mix(in srgb, var(--success) 12%, var(--bg-surface)); color: var(--diag-tone-ok, var(--success)); }
+.m-dd-pill.is-muted { border-style: dashed; border-color: var(--border-subtle); background: transparent; color: var(--text-tertiary); font-weight: 500; }
 .m-dd-card-body { display: flex; flex-direction: column; gap: 4px; padding: 9px 11px 10px; min-width: 0; }
 .m-dd-card-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
 .m-dd-card-name { display: block; min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); font: 600 12.5px/1.25 var(--font-sans); }
@@ -7470,8 +7476,9 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 .m-dd-card-flag.is-danger { color: var(--diag-tone-danger, var(--danger)); }
 .m-dd-card-flag.is-warn { color: var(--diag-tone-warn, var(--warning)); }
 .m-dd-card-flag.is-info { color: color-mix(in srgb, var(--accent) 88%, var(--text-primary)); }
+.m-dd-card-flag.is-ok { color: var(--diag-tone-ok, var(--success)); }
 .m-dd-card-flag.is-neutral { color: var(--text-secondary); }
-.m-dd-card-flag.is-muted { color: var(--text-secondary); }
+.m-dd-card-flag.is-muted { color: var(--text-tertiary); font-weight: 500; }
 .m-dd-section .output-dir-tag { color: var(--text-secondary); border-color: var(--border-default); }
 .m-dd-card-reg { padding: 0 5px; font-size: 10.5px; line-height: 1.45; }
 

@@ -2193,6 +2193,60 @@ test('live image updates preserve cards and thumbnails when values, rank or list
     assert.equal(peerRowB.querySelector('.m-dd-num-val').textContent, '-14.9%', 'Peer image B residual must update in table even if omitted from _datasetDiagUpdatedIds');
     assert.ok(peerRowA.querySelector('.output-dir-tag'), 'is_reg null -> true must add badge in table');
     assert.equal(peerRowC.querySelector('.output-dir-tag'), null, 'is_reg true -> null must remove badge in table');
+
+    // 5. Status tone transitions add and remove is-ok cleanly in both table and grid views
+    app.datasetDiagData = makeSnap('r8', [
+      { ...imgA, count: 8, is_reg: false, mean_residual: -0.26, slope: -0.01, status: 'easy' },
+      { ...imgB, count: 6, is_reg: true, mean_residual: -0.149, status: 'normal' },
+      { ...imgC, is_reg: false, mean_residual: 0.05, status: 'insufficient' },
+    ]);
+    app._datasetDiagImageFilterCache = null;
+    app._datasetDiagGroupedCache = null;
+    app._datasetDiagUpdatedIds = new Set(['a1', 'c1']);
+    app._datasetDiagSnapshotVersion += 1;
+    app.renderDashboard();
+    assert.strictEqual(peerTableBody.querySelector('.m-dd-table-row[data-dd-image-id="a1"]'), peerRowA);
+    assert.equal(peerRowA.querySelector('.m-dd-pill').classList.contains('is-ok'), true);
+    assert.equal(peerRowC.querySelector('.m-dd-pill').classList.contains('is-muted'), true);
+
+    app.datasetDiagData = makeSnap('r9', [
+      { ...imgA, count: 9, is_reg: false, mean_residual: 0.28, slope: 0.02, status: 'attention' },
+      { ...imgB, count: 6, is_reg: true, mean_residual: -0.149, status: 'normal' },
+      { ...imgC, is_reg: false, mean_residual: -0.25, slope: -0.01, status: 'easy' },
+    ]);
+    app._datasetDiagImageFilterCache = null;
+    app._datasetDiagGroupedCache = null;
+    app._datasetDiagUpdatedIds = new Set(['a1', 'c1']);
+    app._datasetDiagSnapshotVersion += 1;
+    app.renderDashboard();
+    assert.equal(peerRowA.querySelector('.m-dd-pill').classList.contains('is-ok'), false);
+    assert.equal(peerRowA.querySelector('.m-dd-pill').classList.contains('is-warn'), true);
+    assert.equal(peerRowC.querySelector('.m-dd-pill').classList.contains('is-ok'), true);
+    assert.equal(peerRowC.querySelector('.m-dd-pill').classList.contains('is-muted'), false);
+
+    app.setDatasetDiagViewMode('grid');
+    app.renderDashboard();
+    const toneGridBody = imagesSlot.querySelector('[data-dd-images-body]');
+    const toneCardA = toneGridBody.querySelector('.m-dd-card[data-dd-image-id="a1"]');
+    const toneCardC = toneGridBody.querySelector('.m-dd-card[data-dd-image-id="c1"]');
+    assert.equal(toneCardC.querySelector('.m-dd-card-flag').classList.contains('is-ok'), true);
+    assert.equal(toneCardA.querySelector('.m-dd-card-flag').classList.contains('is-warn'), true);
+
+    app.datasetDiagData = makeSnap('r10', [
+      { ...imgA, count: 10, is_reg: false, mean_residual: -0.24, slope: -0.01, status: 'easy' },
+      { ...imgB, count: 6, is_reg: true, mean_residual: -0.149, status: 'normal' },
+      { ...imgC, is_reg: false, mean_residual: 0.02, slope: 0.0, status: 'normal' },
+    ]);
+    app._datasetDiagImageFilterCache = null;
+    app._datasetDiagGroupedCache = null;
+    app._datasetDiagUpdatedIds = new Set(['a1', 'c1']);
+    app._datasetDiagSnapshotVersion += 1;
+    app.renderDashboard();
+    assert.strictEqual(toneGridBody.querySelector('.m-dd-card[data-dd-image-id="a1"]'), toneCardA);
+    assert.equal(toneCardA.querySelector('.m-dd-card-flag').classList.contains('is-ok'), true);
+    assert.equal(toneCardA.querySelector('.m-dd-card-flag').classList.contains('is-warn'), false);
+    assert.equal(toneCardC.querySelector('.m-dd-card-flag').classList.contains('is-ok'), false);
+    assert.equal(toneCardC.querySelector('.m-dd-card-flag').classList.contains('is-neutral'), true);
   } finally {
     global.document = prevDoc;
   }

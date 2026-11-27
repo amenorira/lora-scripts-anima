@@ -129,14 +129,14 @@
       }
       if (status === 'learning') return { label: t('ddStatusLearning'), tone: 'info' };
       if (status === 'insufficient_reference') return { label: t('ddReferenceFew'), tone: 'muted' };
-      if (status === 'easy') return { label: t('ddStatusLow'), tone: 'neutral' };
+      if (status === 'easy') return { label: t('ddStatusLow'), tone: 'ok' };
       if (status === 'insufficient') return { label: t('ddStatusInsufficient'), tone: 'muted' };
       return { label: t('ddStatusNormal'), tone: 'neutral' };
     },
 
     _ddStatusDotColor(status) {
       if (status === 'non_finite') return 'var(--danger)';
-      if (status === 'attention') return 'color-mix(in srgb, var(--danger) 50%, var(--warning))';
+      if (status === 'attention') return 'var(--warning)';
       if (status === 'learning') return 'var(--accent)';
       if (status === 'easy') return 'var(--success)';
       if (status === 'insufficient' || status === 'insufficient_reference') {

@@ -3097,3 +3097,94 @@ test('excluded consecutive timestep bins with historical samples never draw base
     assert.ok(patchedCompDots.every(d => !excludedIdx.has(d.getAttribute('data-dd-ts-comp-dot'))));
   });
 });
+
+test('status tone semantics and noise comparison colors stay consistent across easy, attention, and muted', () => {
+  const app = makeApp({ _monitorMotionAllowed: () => false });
+  const t = k => app.tMonitor(k);
+
+  assert.equal(app._ddStatusMeta(t, 'easy').tone, 'ok');
+  assert.equal(app._ddStatusMeta(t, 'attention', 0.01).tone, 'warn');
+  assert.equal(app._ddStatusMeta(t, 'learning', -0.04).tone, 'info');
+  assert.equal(app._ddStatusMeta(t, 'non_finite').tone, 'danger');
+  assert.equal(app._ddStatusMeta(t, 'insufficient').tone, 'muted');
+  assert.equal(app._ddStatusMeta(t, 'insufficient_reference').tone, 'muted');
+  assert.equal(app._ddStatusMeta(t, 'normal').tone, 'neutral');
+
+  assert.equal(app._ddStatusDotColor('attention'), 'var(--warning)');
+  assert.equal(app._ddStatusDotColor('easy'), 'var(--success)');
+
+  const width = 1000 / 18;
+  const bins = Array.from({ length: 18 }, (_, bin) => ({
+    bin,
+    t_from: bin * width,
+    t_to: (bin + 1) * width,
+    count: 6,
+    images: 3,
+    comparable: true,
+    mean_loss: 0.22 + bin * 0.01,
+    p25: 0.18 + bin * 0.01,
+    p75: 0.26 + bin * 0.01,
+    non_finite_count: 0,
+  }));
+  const makeStatusSeries = offset => ({
+    counts: Array.from({ length: 18 }, () => 3),
+    mean_loss: Array.from({ length: 18 }, (_, bin) => 0.16 + offset + bin * 0.01),
+  });
+  const data = {
+    ...structuredClone(SAMPLE_DATA),
+    timestep_scale: 'thousand',
+    timestep_profile: {
+      num_bins: 18,
+      bins,
+      by_status: {
+        easy: makeStatusSeries(-0.04),
+        normal: makeStatusSeries(0.0),
+      },
+      by_group: {},
+    },
+  };
+  app.datasetDiagData = data;
+
+  app.toggleDatasetDiagOverviewPreset('easy');
+  const easyComp = app._ddResolveActiveNoiseComparison(data, null);
+  assert.equal(easyComp.tone, 'ok');
+  assert.ok(app._ddNoiseLegendHtml(t, easyComp, false).includes('is-line-accent is-tone-ok'));
+
+  const ts = makeWrapStage('timestep', 380, 176);
+  app._renderDatasetDiagHeroSvg(ts.wrap, ts.stage, ts.svg, { animate: false });
+  assert.ok(ts.svg.querySelectorAll('.m-dd-ts-comp-line').every(el => el.classList.contains('is-tone-ok')));
+  assert.ok(ts.svg.querySelectorAll('[data-dd-ts-comp-dot]').every(el => el.classList.contains('is-tone-ok')));
+  assert.ok(ts.svg.querySelectorAll('[data-dd-ts-sel-idx]').every(el => el.classList.contains('is-tone-ok')));
+
+  // Switching to normal via DOM patch removes is-tone-ok so comparison falls back to accent.
+  withMockEnv({
+    document: { createElementNS: (_ns, tag) => makeEl(tag), querySelector: () => null },
+  }, () => {
+    const patchApp = makeApp({ datasetDiagData: data, _monitorMotionAllowed: () => false });
+    const baseEl = makeEl('g'), theoEl = makeEl('g'), compEl = makeEl('g'), selEl = makeEl('g'), yMaxEl = makeEl('text'), focusCompEl = makeEl('circle');
+    const fakeSvg = makeEl('svg');
+    fakeSvg.querySelector = sel => ({
+      '[data-dd-ts-base]': baseEl,
+      '[data-dd-ts-density-theo]': theoEl,
+      '[data-dd-ts-comp]': compEl,
+      '[data-dd-ts-density-sel]': selEl,
+      '[data-dd-ts-y-max]': yMaxEl,
+      '[data-dd-ts-focus-comp]': focusCompEl,
+    })[sel] || null;
+    const pStage = makeEl('div'); pStage.clientWidth = 380; pStage.clientHeight = 176;
+    const pWrap = makeEl('div'); pWrap.dataset = { mode: 'timestep' };
+
+    patchApp.toggleDatasetDiagOverviewPreset('easy');
+    patchApp._renderDatasetDiagHeroSvg(pWrap, pStage, fakeSvg);
+    assert.ok(compEl.querySelectorAll('[data-dd-ts-comp-dot]').every(el => el.classList.contains('is-tone-ok')));
+    assert.ok(selEl.querySelectorAll('[data-dd-ts-sel-idx]').every(el => el.classList.contains('is-tone-ok')));
+
+    patchApp.toggleDatasetDiagOverviewPreset('normal');
+    const normalComp = patchApp._ddResolveActiveNoiseComparison(data, null);
+    assert.equal(normalComp.tone, 'accent');
+    patchApp._renderDatasetDiagHeroSvg(pWrap, pStage, fakeSvg);
+    assert.ok(compEl.querySelectorAll('[data-dd-ts-comp-dot]').every(el => !el.classList.contains('is-tone-ok')));
+    assert.ok(selEl.querySelectorAll('[data-dd-ts-sel-idx]').every(el => !el.classList.contains('is-tone-ok')));
+    assert.equal(focusCompEl.classList.contains('is-tone-ok'), false);
+  });
+});

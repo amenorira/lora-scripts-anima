@@ -799,7 +799,7 @@
     _ddSetStatusToneClass(el, baseClass, tone) {
       if (!el) return;
       if (el.classList?.toggle) {
-        for (const candidate of ['danger', 'warn', 'info', 'muted', 'neutral']) {
+        for (const candidate of ['danger', 'warn', 'info', 'ok', 'muted', 'neutral']) {
           el.classList.toggle('is-' + candidate, candidate === tone);
         }
         return;
