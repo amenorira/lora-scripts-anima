@@ -2578,7 +2578,6 @@ dialog.modal-overlay::backdrop { background: transparent; }
   --modal-workbench-margin-y: 40px;
 }
 .modal-workbench--shape .modal-header { padding: 14px 20px; }
-.shape-preview-subtitle { margin-top: 2px; color: var(--text-tertiary); font-size: 12.5px; font-weight: 400; }
 .shape-preview-body { padding: 0; }
 .shape-preview-layout {
   display: grid; grid-template-columns: minmax(390px, 0.95fr) minmax(0, 1.4fr); gap: 12px 20px;

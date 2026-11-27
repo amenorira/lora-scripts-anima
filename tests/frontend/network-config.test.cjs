@@ -68,10 +68,11 @@ test('changing the Anima checkpoint changes the structure preview request', () =
   }
 });
 
-test('Anima preview shares estimates across opens and refreshes a replaced checkpoint on demand', async () => {
+test('Anima preview shares estimates across opens and retries failed estimates on reopen', async () => {
   let depth = 28;
   let requests = 0;
   let responseReady;
+  let failNext = false;
   const q = { id: 'q', name: 'blocks.*.self_attn.q_proj' };
   const mlp = { id: 'mlp', name: 'blocks.*.mlp' };
   let groups = [q, mlp];
@@ -80,6 +81,10 @@ test('Anima preview shares estimates across opens and refreshes a replaced check
     fetch: async () => {
       requests++;
       if (responseReady) await responseReady;
+      if (failNext) {
+        failNext = false;
+        return { ok: false, json: async () => ({ status: 'error', message: 'boom' }) };
+      }
       return { ok: true, json: async () => ({ status: 'success', data: { depth, estimatedBytes: depth * 1024, groups } }) };
     },
   });
@@ -106,26 +111,29 @@ test('Anima preview shares estimates across opens and refreshes a replaced check
   assert.equal(app.shapeEstimateLoading, false);
   assert.equal(app.shapePreviewSelected, 'mlp');
   assert.equal(requests, 2);
+  app.closeShapePreview();
   depth = 40;
   groups = [q];
-  app.closeShapePreview();
-  app.scheduleShapeEstimate(true);
+  failNext = true;
+  app.form.network_dim = 32;
+  app.scheduleShapeEstimate();
+  await app.refreshShapeEstimate();
+  assert.equal(app.shapeEstimateError, 'boom');
   let finishRequest;
   responseReady = new Promise(resolve => { finishRequest = resolve; });
-  const pending = app.refreshShapeEstimate();
   app.openShapePreview();
   assert.equal(app.shapePreviewOpen, true);
   assert.equal(app.shapeEstimateLoading, true);
-  assert.equal(app.shapeEstimate.depth, 28);
+  assert.equal(app.shapeEstimateError, '');
+  const pending = app.refreshShapeEstimate();
   finishRequest();
   await pending;
   assert.equal(app.shapeEstimate.estimatedBytes, 40 * 1024);
   assert.equal(app.shapePreviewSelected, 'q');
-  assert.equal(requests, 3);
+  assert.equal(requests, 4);
   app.form.network_dim = 16;
   app.scheduleShapeEstimate();
-  assert.equal(app.shapeEstimateLoading, true);
-  await app.refreshShapeEstimate();
+  assert.equal(app.shapeEstimateLoading, false);
 });
 
 test('native argument import survives frontend defaults, TOML export, and launch', async () => {

@@ -2185,8 +2185,6 @@
   <div class="modal shape-preview-modal modal-workbench modal-workbench--shape">
     <div class="modal-header">
       <div style="flex:1" x-text="t('shapePreview.title')">Matrix structure preview</div>
-      <button type="button" class="btn btn-ghost btn-sm" @click="openParameterDoc('matrix-preview')" x-text="t('docs.openGuide')"></button>
-      <button type="button" class="btn btn-ghost btn-sm" @click="scheduleShapeEstimate(true)" :disabled="shapeEstimateLoading" x-text="t('monitor.refresh')"></button>
       <button type="button" class="btn-icon preview-close shape-preview-close" @click="closeShapePreview()" :aria-label="t('common.close')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
