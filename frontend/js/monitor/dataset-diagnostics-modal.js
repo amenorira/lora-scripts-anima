@@ -468,11 +468,12 @@
           non_finite: summary.counts?.non_finite || 0,
           unqualified: (summary.counts?.insufficient || 0) + (summary.counts?.insufficient_reference || 0),
         };
+      const hasSlope = !!summary.has_slope;
       const presets = [['all', t('ddPresetAll'), statusCounts.all]];
       if (statusCounts.non_finite > 0 || (summary.counts?.non_finite || 0) > 0 || this.datasetDiagPreset === 'non_finite') {
         presets.push(['non_finite', t('ddPresetNonFinite'), statusCounts.non_finite]);
       }
-      presets.push(['attention', t('ddPresetAttention'), statusCounts.attention]);
+      presets.push(['attention', hasSlope ? t('ddPresetAttention') : t('ddTrendPending'), statusCounts.attention]);
       if (statusCounts.learning > 0 || this.datasetDiagPreset === 'learning') {
         presets.push(['learning', t('ddStatusLearning'), statusCounts.learning]);
       }
@@ -564,12 +565,14 @@
         const sameTabs = btns.length === presets.length
           && presets.every(([key], i) => btns[i]?.dataset?.ddPresetTab === key);
         if (sameTabs) {
-          presets.forEach(([key, , cnt], i) => {
+          presets.forEach(([key, label, cnt], i) => {
             const btn = btns[i];
             const active = this.datasetDiagPreset === key;
             btn.classList?.toggle?.('active', active);
             btn.classList?.toggle?.('is-empty', cnt === 0);
             btn.setAttribute?.('aria-pressed', String(active));
+            const labelEl = btn.querySelector?.('.m-dd-tab-label');
+            if (labelEl && labelEl.textContent !== label) labelEl.textContent = label;
             const numEl = btn.querySelector?.('.m-dd-tab-n');
             const numStr = String(cnt);
             if (numEl && numEl.textContent !== numStr) numEl.textContent = numStr;

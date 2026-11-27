@@ -294,12 +294,22 @@
       if (code === 'non_finite') {
         const nfImages = nf || summary.non_finite_total || 1;
         title = (Number(nfImages) === 1 ? t('ddVerdictNanTitleOne') : t('ddVerdictNanTitle')).replace('{n}', nfImages);
-        desc = att > 0
-          ? (Number(att) === 1 ? t('ddVerdictNanAndAttentionDescOne') : t('ddVerdictNanAndAttentionDesc')).replace('{n}', att)
-          : t('ddVerdictNanDesc');
+        if (att > 0) {
+          const descKey = hasSlope
+            ? (Number(att) === 1 ? 'ddVerdictNanAndAttentionDescOne' : 'ddVerdictNanAndAttentionDesc')
+            : (Number(att) === 1 ? 'ddVerdictNanAndEarlyHighDescOne' : 'ddVerdictNanAndEarlyHighDesc');
+          desc = t(descKey).replace('{n}', att);
+        } else {
+          desc = t('ddVerdictNanDesc');
+        }
       } else if (code === 'attention') {
-        title = (Number(att) === 1 ? t('ddVerdictAttentionTitleOne') : t('ddVerdictAttentionTitle')).replace('{n}', att);
-        desc = t('ddVerdictAttentionDesc');
+        if (hasSlope) {
+          title = (Number(att) === 1 ? t('ddVerdictAttentionTitleOne') : t('ddVerdictAttentionTitle')).replace('{n}', att);
+          desc = t('ddVerdictAttentionDesc');
+        } else {
+          title = (Number(att) === 1 ? t('ddVerdictEarlyHighTitleOne') : t('ddVerdictEarlyHighTitle')).replace('{n}', att);
+          desc = t('ddVerdictEarlyHighDesc');
+        }
       } else if (code === 'early') {
         title = t('ddVerdictEarlyTitle');
         desc = t('ddVerdictEarlyDesc')
@@ -557,9 +567,10 @@
           + '<span>' + this.esc(t('ddJumpNan').replace('{n}', counts.non_finite)) + '</span></button>');
       }
       if ((counts.attention || 0) > 0) {
+        const jumpKey = summary.has_slope ? 'ddJumpAttention' : 'ddJumpEarlyHigh';
         actions.push('<button type="button" class="btn btn-sm btn-secondary m-dd-jump-btn is-warn" @click="openDatasetDiagPreset(\'attention\')">'
           + '<i class="m-dd-btn-dot" aria-hidden="true"></i>'
-          + '<span>' + this.esc(t('ddJumpAttention').replace('{n}', counts.attention)) + '</span></button>');
+          + '<span>' + this.esc(t(jumpKey).replace('{n}', counts.attention)) + '</span></button>');
       }
       const ng = data.notable_group;
       if (ng && ng.key) {
@@ -660,10 +671,10 @@
       actionsEl.hidden = !(hasLeft || hasRight);
     },
 
-    _ddStatusRowsMeta(t) {
+    _ddStatusRowsMeta(t, hasSlope = Boolean(this.datasetDiagData?.summary?.has_slope)) {
       return [
         { key: 'non_finite', label: t('ddStatusNonFinite') },
-        { key: 'attention', label: t('ddPresetAttention') },
+        { key: 'attention', label: hasSlope ? t('ddPresetAttention') : t('ddTrendPending') },
         { key: 'learning', label: t('ddStatusLearning') },
         { key: 'normal', label: t('ddStatusNormal') },
         { key: 'easy', label: t('ddStatusLow') },
@@ -787,7 +798,7 @@
         + ' @click="toggleDatasetDiagOverviewPreset(\'' + item.key + '\')"'
         + ' @keydown.enter.prevent="toggleDatasetDiagOverviewPreset(\'' + item.key + '\')"'
         + ' @keydown.space.prevent="toggleDatasetDiagOverviewPreset(\'' + item.key + '\')">'
-        + '<span class="m-dd-status-name"><i class="m-dd-status-dot is-' + item.key + '" aria-hidden="true"></i><span>' + this.esc(item.label) + '</span></span>'
+        + '<span class="m-dd-status-name"><i class="m-dd-status-dot is-' + item.key + '" aria-hidden="true"></i><span data-dd-status-label>' + this.esc(item.label) + '</span></span>'
         + '<span class="m-dd-status-trend" data-dd-status-trend' + (trendHtml ? '' : ' hidden') + '>' + trendHtml + '</span>'
         + '<div class="m-dd-status-nums">'
         + '<div class="m-dd-status-main">'
@@ -809,7 +820,7 @@
       const { total, counts, buckets, showTrainShare } = breakdown;
       const bucketOf = key => (buckets && buckets[key]) || this._ddStatusBucketFallback(counts, total, key);
       const activePreset = this.datasetDiagPreset || 'all';
-      const meta = this._ddStatusRowsMeta(t);
+      const meta = this._ddStatusRowsMeta(t, Boolean(data?.summary?.has_slope));
       const expected = Number(data?.summary?.images_expected || 0);
       const totalText = expected > total
         ? t('ddMetaImagesCoverage').replace('{n}', total).replace('{total}', expected)
@@ -848,7 +859,7 @@
       const { total, counts, buckets, showTrainShare } = breakdown;
       const bucketOf = key => (buckets && buckets[key]) || this._ddStatusBucketFallback(counts, total, key);
       const activePreset = this.datasetDiagPreset || 'all';
-      const meta = this._ddStatusRowsMeta(t);
+      const meta = this._ddStatusRowsMeta(t, Boolean(data?.summary?.has_slope));
       const totalEl = host.querySelector('[data-dd-status-total]');
       const expected = Number(data?.summary?.images_expected || 0);
       const totalText = expected > total
@@ -870,6 +881,8 @@
       meta.forEach(item => {
         const row = listEl.querySelector(`[data-dd-status-key="${item.key}"]`);
         if (!row) return;
+        const lblEl = row.querySelector?.('[data-dd-status-label]');
+        if (lblEl && lblEl.textContent !== item.label) lblEl.textContent = item.label;
         const bucket = bucketOf(item.key);
         const cnt = Number(bucket.count || 0);
         const pct = Number(bucket.imgPct ?? 0);
@@ -1172,7 +1185,7 @@
             }
             if (canFilter) {
               const alertEl = rowEl.querySelector('[data-dd-group-alert]');
-              const nextAlert = this._ddGroupAlertHtml(t, row);
+              const nextAlert = this._ddGroupAlertHtml(t, row, Boolean(data?.summary?.has_slope));
               this._ddPatchHtml(alertEl, nextAlert);
               const trendEl = rowEl.querySelector('[data-dd-group-trend]');
               const nextTrend = this._ddGroupTrendHtml(t, row);
@@ -1548,7 +1561,7 @@
       return candidates.filter(([, , rows]) => rows.length >= 2);
     },
 
-    _ddGroupAlertHtml(t, row) {
+    _ddGroupAlertHtml(t, row, hasSlope = Boolean(this.datasetDiagData?.summary?.has_slope)) {
       const nfCount = Number(row?.non_finite_count || 0);
       const attCount = Number(row?.attention_count || 0);
       if (nfCount > 0) {
@@ -1556,13 +1569,14 @@
           + this.esc(t('ddGroupAlertNan').replace('{n}', nfCount)) + '</span></span>';
       }
       if (attCount > 0) {
+        const alertKey = hasSlope ? 'ddGroupAlertAttention' : 'ddGroupAlertEarlyHigh';
         return '<span class="m-dd-group-alert is-warn"><i class="m-dd-group-alert-dot" aria-hidden="true"></i><span>'
-          + this.esc(t('ddGroupAlertAttention').replace('{n}', attCount)) + '</span></span>';
+          + this.esc(t(alertKey).replace('{n}', attCount)) + '</span></span>';
       }
       return '';
     },
 
-    _ddGroupRowHtml(t, dim, row, scaleBound, dimTotalCount, gf, activeDot) {
+    _ddGroupRowHtml(t, dim, row, scaleBound, dimTotalCount, gf, activeDot, hasSlope = Boolean(this.datasetDiagData?.summary?.has_slope)) {
       const isSelected = !!(gf && gf.dim === dim && gf.key === row.key);
       const isSameDimOther = !!(gf && gf.dim === dim && !isSelected);
       let isLinked = false;
@@ -1582,7 +1596,7 @@
       const lblJs = this.esc(this.escapeJsString(rowLabel));
       const jumpTitle = t('ddRowJumpImages');
       const gm = this._ddGroupGaugeMetrics(row.mean_residual, scaleBound);
-      const alertHtml = this._ddGroupAlertHtml(t, row);
+      const alertHtml = this._ddGroupAlertHtml(t, row, hasSlope);
       const tagsHtml = (row.is_reg ? '<small class="output-dir-tag">' + this.esc(t('ddRegTag')) + '</small>' : '')
         + (dim === 'subset' && Number(row?.num_repeats || 0) > 1
           ? '<small class="m-dd-group-tag">' + this.esc(t('ddGroupRepeatPlain').replace('{n}', Number(row.num_repeats))) + '</small>' : '')
@@ -1651,6 +1665,7 @@
       const gf = this.datasetDiagGroupFilter;
       const panel = globalThis.document?.querySelector?.('.m-tab-panel[data-tab="dataset"]');
       const activeDot = panel?.querySelector?.('[data-dd-hero-wrap][data-mode="quadrant"]')?._ddActiveDot || null;
+      const hasSlope = Boolean(data?.summary?.has_slope);
       const arErr = Number(data?.summary?.bucket_ar_error);
       const showAr = Number.isFinite(arErr) && arErr >= 0.04;
 
@@ -1725,13 +1740,13 @@
         html += '<div class="m-dd-group-dim-body" data-dd-group-dim-body' + (isCollapsed ? ' inert' : '') + '><div class="m-dd-group-dim-body-inner">';
         html += '<div class="m-dd-flat-group-list">';
         visibleRows.forEach(row => {
-          html += this._ddGroupRowHtml(t, dim, row, scaleBound, dimTotalCount, gf, activeDot);
+          html += this._ddGroupRowHtml(t, dim, row, scaleBound, dimTotalCount, gf, activeDot, hasSlope);
         });
         if (needFold) {
           html += '<div class="m-dd-group-fold-body' + (isExpanded ? ' is-open' : '') + '" data-dd-group-fold="' + this.esc(dim) + '">';
           html += '<div class="m-dd-group-fold-inner">';
           hiddenRows.forEach(row => {
-            html += this._ddGroupRowHtml(t, dim, row, scaleBound, dimTotalCount, gf, activeDot);
+            html += this._ddGroupRowHtml(t, dim, row, scaleBound, dimTotalCount, gf, activeDot, hasSlope);
           });
           html += '</div></div>';
           html += '<button type="button" class="m-dd-group-fold-btn" data-dd-group-fold-btn="' + this.esc(dim) + '" data-dd-fold-count="' + hiddenRows.length + '" aria-expanded="' + isExpanded + '" @click="toggleDatasetDiagGroupFold(\'' + dimJs + '\')">'

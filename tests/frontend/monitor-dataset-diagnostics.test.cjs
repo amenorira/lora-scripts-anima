@@ -2878,7 +2878,7 @@ test('narrow scatter and early charts flip +20% threshold label left or dodge to
   };
   const app = makeApp({ datasetDiagData: narrowData });
 
-  for (const [mode, stageW, stageH] of [['early', 320, 220], ['quadrant', 300, 260]]) {
+  for (const [mode, stageW, stageH] of [['early', 420, 220], ['quadrant', 420, 260]]) {
     const { wrap, stage, svg } = makeWrapStage(mode, stageW, stageH);
     app._renderDatasetDiagHeroSvg(wrap, stage, svg, { animate: false });
     const highEl = svg.querySelector('[data-dd-thresh-label="high"]');
@@ -3187,4 +3187,100 @@ test('status tone semantics and noise comparison colors stay consistent across e
     assert.ok(selEl.querySelectorAll('[data-dd-ts-sel-idx]').every(el => !el.classList.contains('is-tone-ok')));
     assert.equal(focusCompEl.classList.contains('is-tone-ok'), false);
   });
+});
+
+test('high and low residual labels adapt between early stage and slope-ready stage including in-place DOM patching', () => {
+  const mkStageData = hasSlope => {
+    const base = structuredClone(SAMPLE_DATA);
+    base.verdict = null;
+    base.summary.has_slope = hasSlope;
+    base.summary.has_reg_images = false;
+    base.summary.non_finite_total = 0;
+    base.summary.counts = {
+      attention: 2,
+      learning: 0,
+      normal: 1,
+      easy: 1,
+      non_finite: 0,
+      insufficient: 0,
+      insufficient_reference: 0,
+    };
+    const statuses = ['attention', 'attention', 'normal', 'easy'];
+    base.by_image = base.by_image.map((img, idx) => ({
+      ...img,
+      is_reg: false,
+      non_finite_count: 0,
+      status: statuses[idx],
+      slope: hasSlope ? (statuses[idx] === 'attention' ? 0.01 : 0.0) : null,
+    }));
+    base.by_subset = [{ key: '0-0', label: '10_char', images: 4, count: 16, mean_residual: 0.25, attention_count: 2 }];
+    return base;
+  };
+
+  const earlyData = mkStageData(false);
+  const lateData = mkStageData(true);
+  const app = makeApp({ datasetDiagData: earlyData });
+  const t = k => app.tMonitor(k);
+
+  // 1. Early stage (!has_slope): neutral high-residual labels
+  const earlyVerdict = app._ddVerdictInfo(t, earlyData);
+  assert.equal(earlyVerdict.title, t('ddVerdictEarlyHighTitle').replace('{n}', 2));
+  assert.equal(earlyVerdict.desc, t('ddVerdictEarlyHighDesc'));
+  assert.ok(app._ddVerdictActionsHtml(t, earlyData).includes(t('ddJumpEarlyHigh').replace('{n}', 2)));
+  assert.ok(app._ddGroupAlertHtml(t, earlyData.by_subset[0], false).includes(t('ddGroupAlertEarlyHigh').replace('{n}', 2)));
+
+  const nanEarlyData = structuredClone(earlyData);
+  nanEarlyData.summary.counts.non_finite = 1;
+  nanEarlyData.summary.non_finite_total = 1;
+  const nanEarlyVerdict = app._ddVerdictInfo(t, nanEarlyData);
+  assert.equal(nanEarlyVerdict.desc, t('ddVerdictNanAndEarlyHighDesc').replace('{n}', 2));
+
+  const statusCardHtml = app._renderDatasetDiagStatusCard(t, earlyData);
+  assert.ok(statusCardHtml.includes(t('ddTrendPending')));
+  assert.ok(statusCardHtml.includes(t('ddStatusLow')));
+
+  const earlyPresets = app._ddImagesPresetSpecs(t, earlyData);
+  assert.equal(earlyPresets.find(([key]) => key === 'attention')[1], t('ddTrendPending'));
+  assert.equal(earlyPresets.find(([key]) => key === 'easy')[1], t('ddPresetLow'));
+
+  // 2. Slope-ready transition (has_slope: false -> true): in-place DOM patching updates labels
+  const attLabelEl = { textContent: t('ddTrendPending') };
+  const attRow = makeEl('div', { 'data-dd-status-key': 'attention' });
+  attRow.querySelector = sel => (sel === '[data-dd-status-label]' ? attLabelEl : null);
+  const statusListEl = makeEl('div');
+  statusListEl.querySelector = sel => (sel === '[data-dd-status-key="attention"]' ? attRow : null);
+  const statusHost = makeEl('div');
+  statusHost.querySelector = sel => (sel === '[data-dd-status-list]' ? statusListEl : null);
+
+  app.datasetDiagData = lateData;
+  app._patchDatasetDiagStatusCard(statusHost, t, lateData, false);
+  assert.equal(attLabelEl.textContent, t('ddPresetAttention'));
+
+  const presetKeys = earlyPresets.map(([key]) => key);
+  const tabLabelEls = earlyPresets.map(([, label]) => ({ textContent: label }));
+  const tabNumEls = earlyPresets.map(([, , cnt]) => ({ textContent: String(cnt) }));
+  const tabBtns = presetKeys.map((key, idx) => {
+    const btn = makeEl('button', { 'data-dd-preset-tab': key });
+    btn.querySelector = sel => (sel === '.m-dd-tab-label' ? tabLabelEls[idx] : sel === '.m-dd-tab-n' ? tabNumEls[idx] : null);
+    return btn;
+  });
+  const tabsEl = { querySelectorAll: sel => (sel === '[data-dd-preset-tab]' ? tabBtns : []) };
+  const groupToggleMock = app._datasetDiagHasMultipleFolders(lateData) ? {} : null;
+  const toolbarEl = {
+    querySelector: sel => (
+      sel === '[data-dd-preset-tabs]' ? tabsEl
+        : sel === '[data-dd-group-toggle]' ? groupToggleMock
+          : null
+    ),
+  };
+
+  assert.equal(app._patchDatasetDiagImagesToolbar(toolbarEl, t, lateData), true);
+  const attTabIdx = presetKeys.indexOf('attention');
+  assert.equal(tabLabelEls[attTabIdx].textContent, t('ddPresetAttention'));
+
+  const lateVerdict = app._ddVerdictInfo(t, lateData);
+  assert.equal(lateVerdict.title, t('ddVerdictAttentionTitle').replace('{n}', 2));
+  assert.equal(lateVerdict.desc, t('ddVerdictAttentionDesc'));
+  assert.ok(app._ddVerdictActionsHtml(t, lateData).includes(t('ddJumpAttention').replace('{n}', 2)));
+  assert.ok(app._ddGroupAlertHtml(t, lateData.by_subset[0], true).includes(t('ddGroupAlertAttention').replace('{n}', 2)));
 });
