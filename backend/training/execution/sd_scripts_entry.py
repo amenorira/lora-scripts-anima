@@ -113,8 +113,7 @@ if __name__ == "__main__":
     sampling.build_forced_prompts = tagged_forced_prompts
     run_control.create_run_controller = DesktopRunController
     run_control.build_manifest = gui_manifest
-    if os.environ.get("ANIMA_RESUME_TRAINING") == "1":
-        from backend.training.execution.sd_scripts_resume import load_resume_trainer
+    from backend.training.execution.sd_scripts_resume import load_resume_trainer
 
-        load_resume_trainer(trainer.parent / "train_network.py")
+    load_resume_trainer(trainer.parent / "train_network.py", resume=os.environ.get("ANIMA_RESUME_TRAINING") == "1")
     runpy.run_path(str(trainer), run_name="__main__")
